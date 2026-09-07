@@ -502,7 +502,7 @@ func _build_ui() -> void:
 	panel.add_theme_stylebox_override("panel", style)
 	_ui.add_child(panel)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(420, 700)
+	scroll.custom_minimum_size = Vector2(420, 320)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	panel.add_child(scroll)
 	var column := VBoxContainer.new()
@@ -516,15 +516,24 @@ func _build_ui() -> void:
 	column.add_child(_status)
 	column.add_child(_chunk_editor.controls)
 	var help := Label.new()
-	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect"
+	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect\nIn Build: 1-4 tools · [ ] brush size · K sky"
 	help.add_theme_color_override("font_color", Color("aab8ad"))
 	help.add_theme_font_size_override("font_size", 13)
 	column.add_child(help)
+	var study_toggle := CheckButton.new()
+	study_toggle.text = "Scene · study controls"
+	study_toggle.focus_mode = Control.FOCUS_NONE
+	column.add_child(study_toggle)
+	var study := VBoxContainer.new()
+	study.visible = false
+	study.add_theme_constant_override("separation", 5)
+	study_toggle.toggled.connect(func(value: bool) -> void: study.visible = value)
+	column.add_child(study)
 	var mood_label := Label.new()
 	mood_label.text = "Scene moods"
-	column.add_child(mood_label)
+	study.add_child(mood_label)
 	var moods := HBoxContainer.new()
-	column.add_child(moods)
+	study.add_child(moods)
 	for i in range(3):
 		var button := Button.new()
 		button.text = ["Warm evening", "Morning mist", "Aurora night"][i]
@@ -535,16 +544,16 @@ func _build_ui() -> void:
 	replay.text = "Replay landscape formation · Y"
 	replay.focus_mode = Control.FOCUS_NONE
 	replay.pressed.connect(_growth.replay)
-	column.add_child(replay)
+	study.add_child(replay)
 	var refill := Button.new()
 	refill.text = "Refill water"
 	refill.focus_mode = Control.FOCUS_NONE
 	refill.pressed.connect(_growth.replay_water)
-	column.add_child(refill)
+	study.add_child(refill)
 	for channel in ["Terrain formation", "Water filling", "Foliage growth"]:
 		var label := Label.new()
 		label.text = channel
-		column.add_child(label)
+		study.add_child(label)
 		var slider := HSlider.new()
 		slider.min_value = 0.0
 		slider.max_value = 1.0
@@ -560,10 +569,10 @@ func _build_ui() -> void:
 		else:
 			_foliage_slider = slider
 			slider.value_changed.connect(_growth.set_foliage)
-		column.add_child(slider)
+		study.add_child(slider)
 	var wind_label := Label.new()
 	wind_label.text = "Wind"
-	column.add_child(wind_label)
+	study.add_child(wind_label)
 	var wind := HSlider.new()
 	_wind_slider = wind
 	wind.min_value = 0.0
@@ -572,21 +581,21 @@ func _build_ui() -> void:
 	wind.value = _wind
 	wind.value_changed.connect(_set_wind)
 	wind.focus_mode = Control.FOCUS_NONE
-	column.add_child(wind)
+	study.add_child(wind)
 	var direction_label := Label.new()
 	direction_label.text = "Wind direction"
-	column.add_child(direction_label)
+	study.add_child(direction_label)
 	var direction := HSlider.new()
 	direction.min_value = -180.0
 	direction.max_value = 180.0
 	direction.value = _atmosphere.direction_angle
 	direction.focus_mode = Control.FOCUS_NONE
 	direction.value_changed.connect(func(value: float) -> void: _atmosphere.direction_angle = value)
-	column.add_child(direction)
+	study.add_child(direction)
 	_remember_setting(direction,_atmosphere,"direction_angle")
 	var fog_label := Label.new()
 	fog_label.text = "Valley fog"
-	column.add_child(fog_label)
+	study.add_child(fog_label)
 	var fog := HSlider.new()
 	_fog_slider = fog
 	fog.max_value = 1.0
@@ -595,10 +604,10 @@ func _build_ui() -> void:
 	fog.focus_mode = Control.FOCUS_NONE
 	fog.editable = RenderingServer.get_current_rendering_method() == "forward_plus"
 	fog.value_changed.connect(_atmosphere.set_fog)
-	column.add_child(fog)
+	study.add_child(fog)
 	var summit_label := Label.new()
 	summit_label.text = "Summit mist · cap and downwind spill"
-	column.add_child(summit_label)
+	study.add_child(summit_label)
 	var summit := HSlider.new()
 	summit.max_value = 1.5
 	summit.step = 0.05
@@ -608,22 +617,22 @@ func _build_ui() -> void:
 	summit.value_changed.connect(func(value: float) -> void:
 		_atmosphere.summit_mist = value
 		_atmosphere._publish_wind())
-	column.add_child(summit)
+	study.add_child(summit)
 	_remember_setting(summit,_atmosphere,"summit_mist")
 	var haze_label := Label.new()
 	haze_label.text = "Haze · atmospheric depth"
-	column.add_child(haze_label)
+	study.add_child(haze_label)
 	_haze_slider = HSlider.new()
 	_haze_slider.max_value = 1.0
 	_haze_slider.step = 0.01
 	_haze_slider.value = _atmosphere.haze_amount
 	_haze_slider.focus_mode = Control.FOCUS_NONE
 	_haze_slider.value_changed.connect(_atmosphere.set_haze)
-	column.add_child(_haze_slider)
+	study.add_child(_haze_slider)
 	for property in ["shroud", "loosen"]:
 		var label := Label.new()
 		label.text = "Fog bank coverage" if property == "shroud" else "Fog bank fluidity"
-		column.add_child(label)
+		study.add_child(label)
 		var slider := HSlider.new()
 		slider.max_value = 1.0
 		slider.step = 0.01
@@ -631,44 +640,44 @@ func _build_ui() -> void:
 		slider.focus_mode = Control.FOCUS_NONE
 		slider.editable = not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus"
 		slider.value_changed.connect(func(value: float) -> void: _atmosphere.set(property, value))
-		column.add_child(slider)
+		study.add_child(slider)
 		_remember_setting(slider,_atmosphere,property)
 	var rays_label := Label.new()
 	rays_label.text = "Light shafts · through cloud gaps"
-	column.add_child(rays_label)
+	study.add_child(rays_label)
 	var rays := HSlider.new()
 	rays.max_value = 3.0
 	rays.step = 0.05
 	rays.value = 1.0
 	rays.focus_mode = Control.FOCUS_NONE
 	rays.value_changed.connect(_atmosphere.set_rays)
-	column.add_child(rays)
+	study.add_child(rays)
 	_remember_setting(rays,_atmosphere,"ray_strength")
 	var gust := Button.new()
 	gust.text = "Send a gust · G"
 	gust.focus_mode = Control.FOCUS_NONE
 	gust.pressed.connect(func() -> void: _atmosphere.send_gust(target))
-	column.add_child(gust)
+	study.add_child(gust)
 	_time_label = Label.new()
 	_time_label.text = "Time of day"
-	column.add_child(_time_label)
+	study.add_child(_time_label)
 	_time_slider = HSlider.new()
 	_time_slider.max_value = 1.0
 	_time_slider.step = 0.001
 	_time_slider.value = _celestial.phase
 	_time_slider.focus_mode = Control.FOCUS_NONE
 	_time_slider.value_changed.connect(_celestial.set_phase)
-	column.add_child(_time_slider)
+	study.add_child(_time_slider)
 	var cycle := CheckBox.new()
 	_cycle_toggle = cycle
 	cycle.text = "Day/night cycle · N advances sun"
 	cycle.focus_mode = Control.FOCUS_NONE
 	cycle.toggled.connect(func(value: bool) -> void: _celestial.cycling = value)
-	column.add_child(cycle)
+	study.add_child(cycle)
 	_remember_setting(cycle,_celestial,"cycling")
 	var night_label := Label.new()
 	night_label.text = "Night fill · landscape visibility"
-	column.add_child(night_label)
+	study.add_child(night_label)
 	var night_fill := HSlider.new()
 	night_fill.max_value = 1.5
 	night_fill.step = 0.05
@@ -677,11 +686,11 @@ func _build_ui() -> void:
 	night_fill.value_changed.connect(func(value: float) -> void:
 		_celestial.night_fill = value
 		_celestial.update_rig())
-	column.add_child(night_fill)
+	study.add_child(night_fill)
 	_remember_setting(night_fill,_celestial,"night_fill")
 	var aurora_label := Label.new()
 	aurora_label.text = "Aurora · visible at night"
-	column.add_child(aurora_label)
+	study.add_child(aurora_label)
 	var aurora := HSlider.new()
 	_aurora_slider = aurora
 	aurora.max_value = 2.0
@@ -689,48 +698,48 @@ func _build_ui() -> void:
 	aurora.value = _celestial.aurora_strength
 	aurora.focus_mode = Control.FOCUS_NONE
 	aurora.value_changed.connect(func(value: float) -> void: _celestial.aurora_strength = value)
-	column.add_child(aurora)
+	study.add_child(aurora)
 	_remember_setting(aurora,_celestial,"aurora_strength")
 	var rainbow := CheckBox.new()
 	rainbow.text = "Hold rainbow · opposite the sun"
 	rainbow.focus_mode = Control.FOCUS_NONE
 	rainbow.toggled.connect(func(value: bool) -> void: _celestial.rainbow_strength = 1.0 if value else 0.0)
-	column.add_child(rainbow)
+	study.add_child(rainbow)
 	_remember_setting(rainbow,_celestial,"rainbow_strength")
 	var face_rainbow := Button.new()
 	face_rainbow.text = "Face rainbow · look opposite the sun"
 	face_rainbow.focus_mode = Control.FOCUS_NONE
 	face_rainbow.pressed.connect(_face_rainbow)
-	column.add_child(face_rainbow)
+	study.add_child(face_rainbow)
 	var weather := OptionButton.new()
 	_weather_selector = weather
 	for title in ["Clear weather", "Rain", "Storm", "Snow", "Fair", "Overcast", "Mist", "Autumn"]:
 		weather.add_item(title)
 	weather.focus_mode = Control.FOCUS_NONE
 	weather.item_selected.connect(_precipitation.set_weather)
-	column.add_child(weather)
+	study.add_child(weather)
 	var autumn_label := Label.new()
 	autumn_label.text = "Autumn · gold and rust"
-	column.add_child(autumn_label)
+	study.add_child(autumn_label)
 	_autumn_slider = HSlider.new()
 	_autumn_slider.max_value = 1.0
 	_autumn_slider.step = 0.01
 	_autumn_slider.focus_mode = Control.FOCUS_NONE
 	_autumn_slider.value_changed.connect(func(value: float) -> void: _precipitation.surface_weather.target_autumn = value)
-	column.add_child(_autumn_slider)
+	study.add_child(_autumn_slider)
 	var cold_label := Label.new()
 	cold_label.text = "Cold · sustained cold freezes water"
-	column.add_child(cold_label)
+	study.add_child(cold_label)
 	_cold_slider = HSlider.new()
 	_cold_slider.min_value = 0.0
 	_cold_slider.max_value = 1.0
 	_cold_slider.step = 0.01
 	_cold_slider.focus_mode = Control.FOCUS_NONE
 	_cold_slider.value_changed.connect(func(value: float) -> void: _precipitation.cold_override = value)
-	column.add_child(_cold_slider)
+	study.add_child(_cold_slider)
 	var cloud_label := Label.new()
 	cloud_label.text = "Cloud cover · overrides weather preset"
-	column.add_child(cloud_label)
+	study.add_child(cloud_label)
 	var clouds := HSlider.new()
 	_cloud_slider = clouds
 	clouds.max_value = 1.0
@@ -738,14 +747,14 @@ func _build_ui() -> void:
 	clouds.value = 0.06
 	clouds.focus_mode = Control.FOCUS_NONE
 	clouds.value_changed.connect(func(value: float) -> void: _precipitation.cloud_override = value)
-	column.add_child(clouds)
+	study.add_child(clouds)
 	var sound := CheckBox.new()
 	var ambience := CheckBox.new()
 	ambience.text = "Wind, rain and waterfall sound"
 	ambience.button_pressed = true
 	ambience.focus_mode = Control.FOCUS_NONE
 	ambience.toggled.connect(func(value: bool) -> void: _ambient_audio.muted = not value)
-	column.add_child(ambience)
+	study.add_child(ambience)
 	_remember_setting(ambience,_ambient_audio,"muted",true)
 	var ambient_volume := HSlider.new()
 	ambient_volume.max_value = 1.0
@@ -754,50 +763,50 @@ func _build_ui() -> void:
 	ambient_volume.focus_mode = Control.FOCUS_NONE
 	ambient_volume.tooltip_text = "Ambient sound volume"
 	ambient_volume.value_changed.connect(func(value: float) -> void: _ambient_audio.volume = value)
-	column.add_child(ambient_volume)
+	study.add_child(ambient_volume)
 	_remember_setting(ambient_volume,_ambient_audio,"volume")
 	sound.text = "Thunder sound"
 	sound.button_pressed = true
 	sound.focus_mode = Control.FOCUS_NONE
 	sound.toggled.connect(func(value: bool) -> void: _thunder_audio.muted = not value)
-	column.add_child(sound)
+	study.add_child(sound)
 	_remember_setting(sound,_thunder_audio,"muted",true)
 	var strike_button := Button.new()
 	strike_button.text = "Lightning · L"
 	strike_button.focus_mode = Control.FOCUS_NONE
 	strike_button.pressed.connect(func() -> void: _lightning.strike(Vector2(target.x, target.z), camera.global_position))
-	column.add_child(strike_button)
+	study.add_child(strike_button)
 	var tremor := Button.new()
 	tremor.text = "Ground tremor · T"
 	tremor.focus_mode = Control.FOCUS_NONE
 	tremor.pressed.connect(func() -> void: _tremor.add(0.7))
-	column.add_child(tremor)
+	study.add_child(tremor)
 	var fireflies := CheckBox.new()
 	var frogs := Button.new()
 	frogs.text = "Startle pond frogs · F"
 	frogs.focus_mode = Control.FOCUS_NONE
 	frogs.pressed.connect(_frog_motion.startle)
-	column.add_child(frogs)
+	study.add_child(frogs)
 	fireflies.text = "Invite fireflies · even in daylight"
 	fireflies.focus_mode = Control.FOCUS_NONE
 	fireflies.toggled.connect(func(value: bool) -> void: _fireflies.called = value)
-	column.add_child(fireflies)
+	study.add_child(fireflies)
 	var startle_birds := Button.new()
 	startle_birds.text = "Startle birds"
 	startle_birds.focus_mode = Control.FOCUS_NONE
 	startle_birds.pressed.connect(func() -> void: _bird_flight.startle(target))
-	column.add_child(startle_birds)
+	study.add_child(startle_birds)
 	var full_flock := CheckButton.new()
 	full_flock.text = "Call the full flock"
 	full_flock.focus_mode = Control.FOCUS_NONE
 	full_flock.toggled.connect(func(value: bool) -> void: _bird_flight.swell_target = 1.0 if value else 0.0)
-	column.add_child(full_flock)
+	study.add_child(full_flock)
 	var encounter := Button.new()
 	encounter.text = "Bigfoot encounter · B"
 	encounter.disabled = not _bigfoot.available
 	encounter.focus_mode = Control.FOCUS_NONE
 	encounter.pressed.connect(_summon_bigfoot)
-	column.add_child(encounter)
+	study.add_child(encounter)
 	var quality := OptionButton.new()
 	_quality = quality
 	quality.add_item("Beauty · ambient occlusion and glow")
@@ -806,7 +815,16 @@ func _build_ui() -> void:
 	quality.disabled = RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	quality.tooltip_text = "Use run-fidelity.command for Forward+ ambient occlusion and glow." if quality.disabled else ""
 	quality.item_selected.connect(_set_quality)
-	column.add_child(quality)
+	study.add_child(quality)
+	# The panel hugs its controls and stops at the window, so the build tools
+	# rarely need scrolling and inspecting leaves no empty column behind.
+	var fit_column := func() -> void:
+		var window := get_window()
+		var room := clampf(window.size.y/window.content_scale_factor-56.0, 320.0, 940.0)
+		scroll.custom_minimum_size.y = minf(column.get_combined_minimum_size().y, room)
+	fit_column.call()
+	column.minimum_size_changed.connect(fit_column)
+	get_window().size_changed.connect(fit_column)
 
 func _set_wind(value: float) -> void:
 	_wind = value

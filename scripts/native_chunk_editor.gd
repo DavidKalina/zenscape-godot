@@ -2,6 +2,34 @@ class_name NativeChunkEditor
 extends Node
 ## Build tools attached to the live fidelity scene. Entering Build never swaps
 ## the chunk, camera, environment or shader; only the controls become active.
+const GROUPS := [
+	["Sculpt",["raise","lower","smooth","flatten"]],
+	["Landscape",["ground","range","mountain"]],
+	["Cover",["grass","blades","meadow","erase"]],
+	["Place",["tree","rock","flower","arch","bigfoot_tree","assets"]],
+	["Water",["pond","waterfall"]],
+]
+const TOOL_TEXT := {
+	"raise":"Build hills with slow, gentle strokes.",
+	"lower":"Press valleys and hollows into the land.",
+	"smooth":"Soften slopes and blend your brushwork.",
+	"flatten":"Level toward the height where you click.",
+	"ground":"Set a resting height, then form the whole floor.",
+	"range":"Shape a ridge across the chunk, then fill its water and flora.",
+	"mountain":"Click to raise a peak. Variation reshuffles its ridges.",
+	"grass":"Paint ground cover, or green the whole chunk at once.",
+	"blades":"Paint standing blades over the grass.",
+	"meadow":"Paint grass and wildflowers together.",
+	"erase":"Brush away cover and placed objects. Undo restores them.",
+	"tree":"Click to plant a tree. It settles onto the ground.",
+	"rock":"Click to set a stone.",
+	"flower":"Click to plant one flower. Zoom in for the detail.",
+	"arch":"Click to raise a stone arch.",
+	"bigfoot_tree":"Click to plant the tree Bigfoot visits.",
+	"assets":"Pick a piece below, then click to place it.",
+	"pond":"Dig a hollow, then click inside to fill it.",
+	"waterfall":"Click the waterfall lip, then a lower landing point.",
+}
 var scene: Node3D
 var terrain: MeshInstance3D
 var data := NativeTerrainData.new()
@@ -40,6 +68,10 @@ var mountain_variation := 7
 var mountain_heading := 0.0
 var mountain_peak := 9.0
 var _tool_settings := {}
+var _tool_buttons := {}
+var _settings := {}
+var _sky_panel: VBoxContainer
+var _sky_toggle: CheckButton
 var _sky_controls := {}
 var controls := VBoxContainer.new()
 var _tools := VBoxContainer.new()
@@ -112,26 +144,20 @@ func _build_controls() -> void:
 	flat.focus_mode = Control.FOCUS_NONE
 	flat.pressed.connect(start_flat)
 	_tools.add_child(flat)
-	var row := GridContainer.new()
-	row.columns = 4
 	var group := ButtonGroup.new()
-	for tool in ["raise","lower","smooth","flatten","ground","range","mountain","grass","blades","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree","waterfall","assets"]:
-		var button := Button.new()
-		button.text = "Bigfoot tree" if tool == "bigfoot_tree" else tool.capitalize()
-		button.toggle_mode = true
-		button.button_group = group
-		button.button_pressed = tool == mode
-		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(func() -> void:
-			finish_stroke()
-			_fall_start = null
-			mode = tool
-			if mode == "waterfall":
-				_status.text = "Click the waterfall lip, then a lower landing point."
-			_update_tool_settings()
-		)
-		row.add_child(button)
-	_tools.add_child(row)
+	for entry: Array in GROUPS:
+		var row := _section(entry[0])
+		for tool: String in entry[1]:
+			var button := Button.new()
+			button.text = "Bigfoot tree" if tool == "bigfoot_tree" else tool.capitalize()
+			button.toggle_mode = true
+			button.button_group = group
+			button.button_pressed = tool == mode
+			button.focus_mode = Control.FOCUS_NONE
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.pressed.connect(select_tool.bind(tool))
+			row.add_child(button)
+			_tool_buttons[tool] = button
 	var asset_picker := OptionButton.new()
 	asset_picker.name = "AssetPicker"
 	asset_picker.focus_mode = Control.FOCUS_NONE
@@ -149,8 +175,8 @@ func _build_controls() -> void:
 	foundation.pressed.connect(form_foundation)
 	_tools.add_child(foundation)
 	_tool_settings[foundation] = ["ground"]
-	_setting("radius","Brush size",0.4,5.0,0.1,["raise","lower","smooth","flatten","grass","blades","meadow","erase","pond"])
-	_setting("strength","Strength",0.4,5.0,0.1,["raise","lower","smooth","flatten","meadow","erase"])
+	_setting("radius","Brush size",0.4,5.0,0.05,["raise","lower","smooth","flatten","grass","blades","meadow","erase","pond"])
+	_setting("strength","Strength",0.4,5.0,0.05,["raise","lower","smooth","flatten","meadow","erase"])
 	_setting("grass_amount","Ground coverage",0.0,1.0,0.05,["grass"])
 	_setting("blade_amount","Blade density",0.0,1.0,0.05,["blades"])
 	var cover := Button.new()
@@ -173,8 +199,8 @@ func _build_controls() -> void:
 	_tool_settings[clear_blades] = ["blades"]
 	_setting("range_height","Range height",0.1,1.8,0.05,["range"])
 	_setting("range_width","Range width",0.3,1.5,0.05,["range"])
-	_setting("range_heading","Range rotation °",-180.0,180.0,5.0,["range"])
-	_setting("range_variation","Range variation",0.0,999.0,1.0,["range"])
+	_setting("range_heading","Range rotation",-180.0,180.0,5.0,["range"],"°")
+	_setting("range_variation","Range variation",0.0,999.0,1.0,["range"],"",true)
 	var range_button := Button.new()
 	range_button.text = "Form mountain landscape"
 	range_button.focus_mode = Control.FOCUS_NONE
@@ -204,11 +230,11 @@ func _build_controls() -> void:
 	_tool_settings[flora_button]=["range"]
 	_setting("mountain_radius","Mountain base radius",1.0,12.0,0.5,["mountain"])
 	_setting("mountain_peak","Peak height",0.5,24.0,0.5,["mountain"])
-	_setting("mountain_variation","Variation",1.0,999.0,1.0,["mountain"])
-	_setting("mountain_heading","Ridge rotation °",-180.0,180.0,5.0,["mountain"])
+	_setting("mountain_variation","Variation",1.0,999.0,1.0,["mountain"],"",true)
+	_setting("mountain_heading","Ridge rotation",-180.0,180.0,5.0,["mountain"],"°")
 	_setting("pond_level","Pond surface height",-1.4,12.0,0.05,["pond"])
 	_setting("object_scale","Object size",0.1,5.0,0.1,NativeTerrainData.ASSETS+["assets"])
-	_setting("object_heading","Rotation °",-180.0,180.0,5.0,["tree","rock","flower","arch","bigfoot_tree","assets"])
+	_setting("object_heading","Rotation",-180.0,180.0,5.0,["tree","rock","flower","arch","bigfoot_tree","assets"],"°")
 	var color_row := HBoxContainer.new()
 	var use_color := CheckBox.new()
 	use_color.text = "Custom color"
@@ -219,6 +245,7 @@ func _build_controls() -> void:
 	tint_picker.name = "PlacementColor"
 	tint_picker.color = object_tint
 	tint_picker.edit_alpha = false
+	tint_picker.custom_minimum_size = Vector2(84,0)
 	tint_picker.color_changed.connect(func(color: Color):
 		object_tint = color
 		use_color.button_pressed = true
@@ -230,8 +257,8 @@ func _build_controls() -> void:
 	_setting("object_width","Width",0.25,3.0,0.05,pose_tools)
 	_setting("object_height","Height",0.25,3.0,0.05,pose_tools)
 	_setting("object_depth","Depth",0.25,3.0,0.05,pose_tools)
-	_setting("object_pitch","Tilt forward °",-90.0,90.0,5.0,pose_tools)
-	_setting("object_roll","Tilt sideways °",-90.0,90.0,5.0,pose_tools)
+	_setting("object_pitch","Tilt forward",-90.0,90.0,5.0,pose_tools,"°")
+	_setting("object_roll","Tilt sideways",-90.0,90.0,5.0,pose_tools,"°")
 	_setting("object_elevation","Vertical offset",-5.0,10.0,0.05,pose_tools)
 	_update_tool_settings()
 	var history := HBoxContainer.new()
@@ -243,33 +270,100 @@ func _build_controls() -> void:
 		history.add_child(button)
 	_tools.add_child(history)
 	_build_sky_controls()
-	_status.text = "Left drag paints · Click places · Right drag orbits\nSave keeps this garden · Open restores it"
+	_status.text = "Left drag paints · Click places · Right drag orbits\n1-4 tools · [ ] brush size · Shift [ ] strength"
 	_status.add_theme_font_size_override("font_size",12)
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size = Vector2(0,34)
 	_tools.add_child(_status)
 
-func _setting(property: String, title: String, low: float, high: float, step: float, modes: Array) -> void:
-	var row := HBoxContainer.new()
+func _section(title: String) -> GridContainer:
 	var label := Label.new()
 	label.text = title
+	label.add_theme_font_size_override("font_size",11)
+	label.add_theme_color_override("font_color",Color("8fa694"))
+	_tools.add_child(label)
+	var grid := GridContainer.new()
+	grid.columns = 4
+	_tools.add_child(grid)
+	return grid
+
+## Continuous settings read as a slider under a label that carries the value;
+## seeds stay whole numbers on a spin box.
+func _setting(property: String, title: String, low: float, high: float, step: float, modes: Array, unit := "", whole := false) -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation",1)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size",12)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(label)
-	var value := SpinBox.new()
+	var value: Range
+	if whole:
+		value = SpinBox.new()
+		var row := HBoxContainer.new()
+		row.add_child(label)
+		row.add_child(value)
+		box.add_child(row)
+	else:
+		value = HSlider.new()
+		value.focus_mode = Control.FOCUS_NONE
+		box.add_child(label)
+		box.add_child(value)
 	value.min_value = low
 	value.max_value = high
 	value.step = step
 	value.value = get(property)
+	_settings[property] = {"control":value,"label":label,"title":title,"unit":unit,"whole":whole}
 	value.value_changed.connect(func(number: float) -> void:
 		set(property,number)
 		if property == "object_heading":
 			object_angle = deg_to_rad(object_heading)
+		_show_setting(property)
 	)
-	row.add_child(value)
-	_tools.add_child(row)
-	_tool_settings[row] = modes
+	_show_setting(property)
+	_tools.add_child(box)
+	_tool_settings[box] = modes
+
+func _show_setting(property: String) -> void:
+	var entry: Dictionary = _settings[property]
+	var number := float(get(property))
+	var text: String = "%d" % roundi(number) if entry.whole or entry.unit == "°" else String.num(number,2)
+	entry.label.text = entry.title if entry.whole else "%s · %s%s" % [entry.title,text,entry.unit]
+
+## Nudge a setting from a hotkey; the control keeps label and property in step.
+func set_setting(property: String, number: float) -> void:
+	if _settings.has(property):
+		_settings[property].control.value = number
+	else:
+		set(property,number)
+
+func select_tool(tool: String) -> void:
+	finish_stroke()
+	_fall_start = null
+	mode = tool
+	for name: String in _tool_buttons:
+		_tool_buttons[name].set_pressed_no_signal(name == tool)
+	if TOOL_TEXT.has(tool):
+		_status.text = TOOL_TEXT[tool]
+	_update_tool_settings()
 
 func _update_tool_settings() -> void:
 	for control: Control in _tool_settings:
 		control.visible = mode in _tool_settings[control]
+
+## Radius the terrain shader should draw for the tool in hand.
+func preview_radius() -> float:
+	if mode == "mountain":
+		return mountain_radius
+	if mode == "flower":
+		return 0.15*object_scale
+	if mode in NativeTerrainData.ASSETS or mode == "assets":
+		return 0.6*object_scale
+	return radius
+
+## The circle only reads truthfully where a footprint exists.
+func preview_wanted() -> bool:
+	if mode == "assets":
+		return false
+	return mode != "waterfall" or _fall_start == null
 
 func cover_grass() -> void:
 	finish_stroke()
@@ -280,11 +374,13 @@ func cover_grass() -> void:
 
 func _build_sky_controls() -> void:
 	var toggle := CheckButton.new()
-	toggle.text = "Sky & weather"
+	toggle.text = "Sky & weather · K"
 	toggle.focus_mode = Control.FOCUS_NONE
+	_sky_toggle = toggle
 	_tools.add_child(toggle)
 	var sky := VBoxContainer.new()
 	sky.visible = false
+	_sky_panel = sky
 	toggle.toggled.connect(func(value: bool) -> void: sky.visible = value)
 	_tools.add_child(sky)
 	var moods := HBoxContainer.new()
@@ -360,6 +456,19 @@ func handle_input(event: InputEvent) -> bool:
 		if event.keycode == KEY_Y:
 			redo()
 			return true
+	if event is InputEventKey and event.pressed and not event.ctrl_pressed and not event.meta_pressed:
+		var tools := {KEY_1:"raise",KEY_2:"lower",KEY_3:"smooth",KEY_4:"flatten"}
+		if tools.has(event.keycode) and not event.echo:
+			select_tool(tools[event.keycode])
+			return true
+		if event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]:
+			var step := 0.25 if event.keycode == KEY_BRACKETRIGHT else -0.25
+			var property := "strength" if event.shift_pressed else "radius"
+			set_setting(property,get(property)+step)
+			return true
+		if event.keycode == KEY_K and not event.echo and _sky_toggle != null:
+			_sky_toggle.button_pressed = not _sky_toggle.button_pressed
+			return true
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
 			finish_stroke()
@@ -423,11 +532,11 @@ func _process(delta: float) -> void:
 	if _painting and (not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995):
 		finish_stroke()
 	var hit: Variant = pick(scene.get_viewport().get_mouse_position()) if not scene._orbiting and not scene._panning else null
-	_material.set_shader_parameter("brush_visible",hit != null)
+	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
-		_material.set_shader_parameter("brush_radius",mountain_radius if mode == "mountain" else radius)
+		_material.set_shader_parameter("brush_radius",preview_radius())
 		if _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:

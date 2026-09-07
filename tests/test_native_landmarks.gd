@@ -26,9 +26,7 @@ func _run() -> void:
 	for entry: Array in [["arch",Vector2(1,2)],["bigfoot_tree",Vector2(6,-4)]]:
 		editor.mode = entry[0]
 		editor.object_scale = 0.8
-		for row: Control in editor._tool_settings:
-			if row is HBoxContainer and row.get_child(0).text == "Rotation °":
-				row.get_child(1).value = 60.0
+		editor.set_setting("object_heading",60.0)
 		var point: Vector2 = entry[1]
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
