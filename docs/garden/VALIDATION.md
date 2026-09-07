@@ -621,23 +621,31 @@ Measured with `tools/profile_refresh.gd` on the same world, before and after:
 
 | | before | after |
 |---|---|---|
-| `build_mesh` (cold, full) | 315 ms | 132 ms |
-| `GardenView.rebuild` (cold, full) | 246 ms | 52 ms |
-| surface map height pass | 73 ms | 8 ms |
-| `paint_streams` | 15 ms | 9 ms |
-| one dab plus `refresh()` | 565 ms | 15 ms |
-| undo on a sculpted chunk | 1,232 ms | 33 ms |
-| undo of the first stroke on a pristine range | 1,232 ms | 100 ms |
+| `build_mesh` (cold, full) | 315 ms | 119 ms |
+| `GardenView.rebuild` (cold, full) | 246 ms | 48 ms |
+| surface map height pass | 73 ms | 7 ms |
+| `paint_streams` | 15 ms | 8 ms |
+| one dab plus `refresh()` | 565 ms | 14 ms |
+| undo on a sculpted chunk | 1,232 ms | 29 ms |
+| undo of the first stroke on a pristine range | 1,232 ms | 91 ms |
 
 The first stroke on a freshly formed landscape is the one slow case: it crosses
 from "heights are identical to the recipe" to "sculpted", which every
 recipe-derived cache has to notice, and undoing it crosses back. That is a
-one-off per chunk, and it is the 100 ms row above rather than the 33 ms one.
+one-off per chunk, and it is the 91 ms row above rather than the 29 ms one.
 
 Not addressed: a cover-painting dab still rebuilds the instance batches, because
 changing a cell's density changes how many blades it scatters and therefore every
-later instance index. Sculpting near water rebuilds the pond surface, the stream
-geometry and the waterfall, which is correct but leaves those dabs at roughly
-80 ms rather than 15 ms. The full 73-test suite was not re-run for this change;
-the fifteen native editor scripts listed in the pond/stream/flora sections above
-were, plus the new incremental test.
+later instance index. That is cheap now only because the water work around it is
+cached. Sculpting on the water is the remaining slow case: a dab through the pond
+measured 85 ms against 14 ms for one clear of it, since the shoreline field, the
+pond surface, the stream geometry and the waterfall all genuinely change and are
+all recomputed whole. Incremental water would be the next step.
+
+The fifteen native editor scripts listed in the pond, stream and flora sections
+above were re-run, plus the new incremental test and the garden, scene, fidelity,
+source-terrain, landscape, growth, habitat, catalog, stream-geometry, mountain
+and fall-strand scripts: all pass. `test_display_fog.gd` fails, but it fails
+identically on the parent commit with no editor involved, so it is not this
+change; it was run under heavy GPU contention. The full 73-test suite was not
+re-run end to end.
