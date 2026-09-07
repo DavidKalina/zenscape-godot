@@ -7,6 +7,9 @@ var material := ShaderMaterial.new()
 var air: Node3D
 var camera: Camera3D
 var buffer := SubViewport.new()
+## Air march render-target scale relative to the window. The source volumes
+## render at 0.5 (0.35 on low quality): the march cost is linear in its square.
+var buffer_scale := 0.5
 
 func setup(atmosphere: Node3D, view: Camera3D, ground: Texture2D, stream: Texture2D) -> void:
 	layer = 0
@@ -45,7 +48,8 @@ func update_view() -> void:
 	material.set_shader_parameter("floor_height", air._ground_min)
 	material.set_shader_parameter("camera_basis", camera.global_basis)
 	var tangent := tan(deg_to_rad(camera.fov) * 0.5)
-	var size := get_viewport().get_visible_rect().size
+	# Physical pixels: the canvas visible rect is in DPI-scaled logical units.
+	var size := Vector2(get_window().size)
 	var orthographic := camera.projection == Camera3D.PROJECTION_ORTHOGONAL
 	var projection_scale := Vector2(tangent * size.x / size.y, tangent)
 	if orthographic:
@@ -53,7 +57,7 @@ func update_view() -> void:
 		projection_scale = Vector2(1.0 / projection.x.x, 1.0 / projection.y.y)
 	material.set_shader_parameter("orthographic", orthographic)
 	blend.set_shader_parameter("surface_orthographic", orthographic)
-	buffer.size = Vector2i(size * 0.5)
+	buffer.size = Vector2i((size * buffer_scale).max(Vector2(64, 64)))
 	depth.resize(Vector2i(size))
 	blend.set_shader_parameter("camera_planes", Vector2(camera.near, camera.far))
 	blend.set_shader_parameter("surface_camera_basis", camera.global_basis)

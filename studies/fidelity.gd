@@ -70,6 +70,9 @@ func _ready() -> void:
 		_film_fps = maxf(1.0, float(engine_args[fps_index + 1]))
 	# Render at the display's physical resolution; scale only the UI by DPI.
 	get_window().content_scale_factor = DisplayServer.screen_get_scale()
+	# Open large when launched as the app; tests size the root themselves.
+	if get_tree().current_scene == self:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	var geometry: Node3D = $Reference
 	_source = geometry.get_meta("source_settings", {})
 	if _source.is_empty():

@@ -1,5 +1,6 @@
 #include "res://shaders/reference_cloud_field.gdshaderinc"
-// Source cloud deck / 3-tap self-shadow march (64 native integration steps), composited in the sky.
+// Source cloud deck / 3-tap self-shadow march: 26 steps as a ceiling with the
+// source's world-unit step floor, composited in the sky.
 vec4 zs_cloud_march(vec3 ro, vec3 rd, vec2 pixel) {
 	if (rd.y < 0.002 || zs_cloud.x < 0.001) return vec4(0.0);
 	float ta = (zs_cloud.z - ro.y) / rd.y;
@@ -7,12 +8,12 @@ vec4 zs_cloud_march(vec3 ro, vec3 rd, vec2 pixel) {
 	float enter = max(min(ta, tb), 0.0);
 	float leave = min(max(ta, tb), 900.0);
 	if (leave <= enter) return vec4(0.0);
-	float step_length = max((leave - enter) / 64.0, zs_cloud.w * 0.04);
+	float step_length = max((leave - enter) / 26.0, zs_cloud.w * 0.085);
 	float t = enter + step_length * wxDither(pixel);
 	float phase = hg(dot(rd, zs_cloud_direction), 0.62) * 5.0 + 1.15;
 	vec3 col = vec3(0.0);
 	float trans = 1.0;
-	for (int i = 0; i < 64; i++) {
+	for (int i = 0; i < 26; i++) {
 		if (trans < 0.02 || t > leave) break;
 		vec3 p = ro + rd * t;
 		float d = cloudAt(p);

@@ -22,11 +22,24 @@ func setup(data: Dictionary) -> void:
 	material.set_shader_parameter("motion",motion)
 	material.set_shader_parameter("particle_count",particle_count)
 	material.set_shader_parameter("rise_height",data.rise)
-	var rect := ColorRect.new()
-	rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rect.material = material
-	add_child(rect)
+	# One quad per particle; the vertex shader places and sizes it like the
+	# source gl_PointSize sprite, so untouched screen pixels cost nothing.
+	var quad := ArrayMesh.new()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector2Array([Vector2(-0.5,-0.5),Vector2(0.5,-0.5),Vector2(0.5,0.5),Vector2(-0.5,0.5)])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0,0),Vector2(1,0),Vector2(1,1),Vector2(0,1)])
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0,1,2,0,2,3])
+	quad.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	var sprites := MultiMeshInstance2D.new()
+	sprites.multimesh = MultiMesh.new()
+	sprites.multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	sprites.multimesh.mesh = quad
+	sprites.multimesh.instance_count = 64
+	for i in range(64):
+		sprites.multimesh.set_instance_transform_2d(i, Transform2D.IDENTITY)
+	sprites.material = material
+	add_child(sprites)
 func update_view(camera: Camera3D, shared_depth: CompositorEffect = null) -> void:
 	var depth: CompositorEffect = shared_depth
 	if depth == null:
@@ -36,8 +49,9 @@ func update_view(camera: Camera3D, shared_depth: CompositorEffect = null) -> voi
 			compositor.compositor_effects = [fallback_depth]
 			camera.compositor = compositor
 		depth = fallback_depth
+	# Sprites are placed in the canvas's logical units; the depth copy is physical.
 	var size := get_viewport().get_visible_rect().size
-	depth.resize(Vector2i(size))
+	depth.resize(get_window().size)
 	if depth.texture.texture_rd_rid.is_valid():
 		material.set_shader_parameter("surface_depth",depth.texture)
 	material.set_shader_parameter("camera_origin",camera.global_position)

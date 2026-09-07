@@ -4,6 +4,9 @@ render_mode unshaded, blend_premul_alpha;
 uniform mat3 camera_basis;
 uniform bool orthographic = false;
 uniform vec2 projection_scale;
+// Source AIR_STEPS is 16 at half resolution, integrated over frames by its
+// temporal reuse. Without that reuse the start dither shows at 16, so 32.
+uniform int air_steps = 32;
 
 void fragment() {
 	vec3 ro = zs_camera_position;
@@ -23,9 +26,9 @@ void fragment() {
 	vec3 scatter = vec3(0.0);
 	float trans = 1.0;
 	if (far_t > near_t) {
-		float step_length = (far_t - near_t) / 64.0;
+		float step_length = (far_t - near_t) / float(air_steps);
 		float t = near_t + step_length * wxDither(SCREEN_UV / SCREEN_PIXEL_SIZE);
-		for (int i = 0; i < 64; i++) {
+		for (int i = 0; i < air_steps; i++) {
 			vec3 p = ro + rd * t;
 			if (p.y < groundAt(p.xz) - 0.15 || trans < 0.03) break;
 			vec4 air = zs_air_sample(p);
