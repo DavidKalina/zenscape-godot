@@ -42,14 +42,38 @@ func _run() -> void:
 	var node: MeshInstance3D = editor.falls.get_child(0)
 	check(node.material_override.shader.resource_path.ends_with("reference_fall.gdshader"),"Authored fall uses native animated shader")
 	check(node.mesh.get_aabb().size.y > 5.0,"Fall geometry spans the full drop for culling and framing")
+	var course := NativeGardenFalls.build_course(data,data.objects[0])
+	check(course.size() == NativeGardenFalls.RINGS,"Terrain route supplies all shader stations")
+	for i in range(1,course.size()):
+		check(course[i].y <= course[i-1].y+0.002,"Water stations never climb uphill")
+	for point in course:
+		var ground: float = data.ground_height(Vector2(point.x,point.z))
+		check(absf(point.y-maxf(ground+0.08,ends[1].y)) < 0.06,"Water follows geology instead of flying above the slope")
+	var probe := NativeTerrainData.new()
+	probe.setup(data.source_mesh)
+	probe.reset_flat()
+	for i in range(probe.points.size()):
+		var point := probe.points[i]
+		probe.heights[i] = 1.5-0.2*point.x-2.0*exp(-point.length_squared()/4.0)
+	var dry_start := Vector3(-6,probe.ground_height(Vector2(-6,0))+0.12,0)
+	var dry_end := Vector3(6,probe.ground_height(Vector2(6,0))+0.06,0)
+	check(NativeWaterCourse.trace(probe,dry_start,dry_end,32).is_empty(),"Dry landing does not flood an intervening depression with imaginary water")
+	probe.reset_flat()
+	check(NativeWaterCourse.half_width(probe,Vector3(0,1,0),Vector3.RIGHT,0.2) == 0.0,"Unsupported first width sample does not fabricate a minimum width")
+	probe.mountain(Vector2.ZERO,2.0,4.0)
+	var crossing := PackedVector3Array([Vector3(-4,0.08,0),Vector3(4,0.08,0)])
+	check(NativeWaterCourse._resample(probe,crossing,2,-1000,PackedVector3Array()).is_empty(),"Rendered segment cannot cut through a ridge between stations")
 	var expected := data.to_document()
 	editor.undo()
 	check(data.objects.is_empty() and editor.falls.get_child_count() == 0,"One undo removes complete two-click waterfall")
 	editor.redo()
 	check(data.to_document() == expected and editor.falls.get_child_count() == 2,"Redo reconstructs waterfall")
 	check(not data.add_waterfall(Vector2(3,0),Vector2(-4,0),1.0),"Uphill waterfall is rejected")
+	var blocked_x := (float(data.objects[0].x)+float(data.objects[0].end_x))*0.5
 	data.begin_stroke()
-	data.mountain(Vector2(-0.5,0),2.0,18.0)
+	for i in range(data.points.size()):
+		if absf(data.points[i].x-blocked_x) < 0.55:
+			data.heights[i] = 24.0
 	data.end_stroke()
 	editor.refresh()
 	check(editor.falls.get_child_count() == 0,"Intervening ridge suspends obstructed fall")

@@ -1,7 +1,7 @@
 class_name NativeGardenFalls
 extends Node3D
 ## Authored falls use the same animated ring shader as the imported waterfall.
-const RINGS := 24
+const RINGS := 32
 const SECTIONS := 10
 var _sprays: Array[CanvasLayer] = []
 var _mist_recipe: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/fall-mist.json"))
@@ -15,18 +15,26 @@ static func endpoints(data: NativeTerrainData, item: Dictionary) -> PackedVector
 			finish.y = maxf(finish.y,pond.level)
 	return PackedVector3Array([start,finish])
 
-static func clear_path(data: NativeTerrainData, item: Dictionary) -> bool:
+static func build_course(data: NativeTerrainData, item: Dictionary) -> PackedVector3Array:
 	var ends := endpoints(data,item)
 	if ends[0].y <= ends[1].y+0.2:
-		return false
-	for i in range(1,RINGS-1):
-		var t := float(i)/(RINGS-1)
-		var point := ends[0].lerp(ends[1],t)
-		point.y = lerpf(ends[0].y,ends[1].y,t*t)
-		var ground: Variant = data.ground_height(Vector2(point.x,point.z))
-		if ground == null or ground > point.y+0.02:
-			return false
-	return true
+		return PackedVector3Array()
+	var water := PackedVector3Array()
+	for pond: Dictionary in data.ponds:
+		var surface := data.pond_surface(pond)
+		if GardenWater.covers(surface,Vector2(item.end_x,item.end_z)):
+			water = surface
+			break
+	var course := NativeWaterCourse.trace(data,ends[0],ends[1],RINGS,water)
+	for i in range(course.size()):
+		var tangent := course[mini(i+1,course.size()-1)]-course[maxi(0,i-1)]
+		var across := Vector3(tangent.x,0,tangent.z).normalized().cross(Vector3.UP)
+		if NativeWaterCourse.half_width(data,course[i],across,item.scale*(0.28+0.18*float(i)/(RINGS-1))) <= 0.0:
+			return PackedVector3Array()
+	return course
+
+static func clear_path(data: NativeTerrainData, item: Dictionary) -> bool:
+	return not build_course(data,item).is_empty()
 
 func rebuild(data: NativeTerrainData) -> void:
 	_sprays.clear()
@@ -36,7 +44,8 @@ func rebuild(data: NativeTerrainData) -> void:
 		if item.asset != "waterfall":
 			continue
 		var ends := endpoints(data,item)
-		if not clear_path(data,item):
+		var course := build_course(data,item)
+		if ends[0].y <= ends[1].y+0.2 or course.is_empty():
 			continue # Keep the record so undoing an obstruction restores the fall.
 		var centers := PackedVector4Array()
 		var widths := PackedVector4Array()
@@ -52,14 +61,17 @@ func rebuild(data: NativeTerrainData) -> void:
 		var previous := ends[0]
 		for i in range(RINGS):
 			var t := float(i)/(RINGS-1)
-			var point := ends[0].lerp(ends[1],t)
-			point.y = lerpf(ends[0].y,ends[1].y,t*t)
+			var point := course[i]
+			var tangent := (course[mini(i+1,RINGS-1)]-course[maxi(0,i-1)]).normalized()
+			direction = Vector3(tangent.x,0,tangent.z).normalized()
+			across = direction.cross(Vector3.UP).normalized()
+			var outward := across.cross(tangent).normalized()
 			length += point.distance_to(previous)
 			previous = point
 			centers[i] = Vector4(point.x,point.y,point.z,length)
-			widths[i] = Vector4(across.x,across.y,across.z,item.scale*(0.28+0.18*t))
-			thicknesses[i] = Vector4(direction.x,0,direction.z,item.scale*0.10)
-			aeration[i] = Vector2(0.25+0.6*t,0.85)
+			widths[i] = Vector4(across.x,across.y,across.z,NativeWaterCourse.half_width(data,point,across,item.scale*(0.28+0.18*t)))
+			thicknesses[i] = Vector4(outward.x,outward.y,outward.z,item.scale*0.07)
+			aeration[i] = Vector2(clampf(-tangent.y,0.0,1.0)*0.75,clampf(-tangent.y,0.0,1.0))
 		var surface := SurfaceTool.new()
 		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for ring in range(RINGS-1):
@@ -70,9 +82,11 @@ func rebuild(data: NativeTerrainData) -> void:
 					surface.set_uv(Vector2(r,angle))
 					surface.set_uv2(Vector2(ring,section))
 					surface.set_color(Color.WHITE)
-					surface.set_normal(across)
+					surface.set_normal(Vector3.UP)
 					var c := centers[r]
-					surface.add_vertex(Vector3(c.x,c.y,c.z)+across*cos(angle)*widths[r].w+direction*sin(angle)*thicknesses[r].w)
+					var a := widths[r]
+					var b := thicknesses[r]
+					surface.add_vertex(Vector3(c.x,c.y,c.z)+Vector3(a.x,a.y,a.z)*cos(angle)*a.w+Vector3(b.x,b.y,b.z)*sin(angle)*b.w)
 		var material := ShaderMaterial.new()
 		material.shader = preload("res://shaders/reference_fall.gdshader")
 		material.set_shader_parameter("ring_count",RINGS)

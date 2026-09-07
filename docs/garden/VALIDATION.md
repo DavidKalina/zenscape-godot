@@ -172,3 +172,25 @@ the imported chunk, exact undo, and the refined green-patch render. The inspecte
 render is `/tmp/native-landmarks.png`. Waterfalls still use the rejected arcing
 route and must be corrected to follow geology. Arch foundations on uneven ground
 also need scrutiny in the next composition. Goal remains incomplete.
+
+## Geological waterfall routing
+
+The arcing route has now been replaced by a bounded downhill trace adapted from
+`waterfall.js`: slope, momentum, and pull toward the chosen landing. Rings sample
+the terrain and orient their cross-sections along the course. Width is limited
+by nearby rock support. Water-level clamping applies only inside the receiving
+pond, so a dry endpoint cannot create an imaginary lake across a depression.
+Rendered segment interiors are sampled at 0.1-unit intervals; routes that cut
+through rock or depart more than 0.25 units from their supporting surface are
+rejected rather than bridged. The 32-ring shader capacity remains a limit, so
+some complex routes require a different source/landing or terrain edits.
+
+The 55-test graphics suite passed before review corrections. Targeted waterfall
+checks then passed after adding dry-depression, first-width-sample, and segment
+interior regressions, alongside visible motion and fresh-scene reopening.
+The inspected waterfall render is `/tmp/native-falls.png`.
+
+Remaining goal evidence: a new complete composition in the visible editor using
+these corrected mountains, green ground and geology-following water; level
+foundations for arches; save/reopen and visual inspection. The previous rejected
+cone-and-arc demo is not completion evidence.
