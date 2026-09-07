@@ -19,6 +19,7 @@ func _run() -> void:
 	root.add_child(scene)
 	scene._ui.visible = false
 	var editor: NativeChunkEditor = scene._chunk_editor
+	editor.reactions_enabled = false
 	editor.set_active(true)
 	editor.start_flat()
 	var data := editor.data

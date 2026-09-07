@@ -37,6 +37,10 @@ var data := NativeTerrainData.new()
 var content: GardenView
 var landmarks: NativeGardenLandmarks
 var falls: NativeGardenFalls
+var reactions: NativeDropReactions
+## Placement plays a short visual reaction. Tests that compare instances turn
+## it off so a committed record renders exactly as it did before.
+var reactions_enabled := true
 var _fall_start: Variant = null
 var catalog_asset := "broadleaf"
 var object_heading := 0.0
@@ -142,6 +146,10 @@ func setup(owner_scene: Node3D) -> void:
 	falls = NativeGardenFalls.new()
 	falls.name = "AuthoredFalls"
 	scene.add_child(falls)
+	reactions = NativeDropReactions.new()
+	reactions.name = "DropReactions"
+	scene.add_child(reactions)
+	reactions.setup(self)
 	_build_controls()
 
 func _build_controls() -> void:
@@ -506,6 +514,7 @@ func handle_input(event: InputEvent) -> bool:
 			data.begin_stroke()
 			_level = hit.y
 			_last_point = Vector2(hit.x,hit.z)
+			var placed := -1
 			if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain","assets"]:
 				if mode == "mountain":
 					data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
@@ -513,10 +522,14 @@ func handle_input(event: InputEvent) -> bool:
 					if not data.add_pond(_last_point,pond_level):
 						_status.text = "Dig a hollow, then set water below its banks."
 				else:
-					if data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "") < 0:
+					placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
+					if placed < 0:
 						_status.text = "This garden has reached its object limit."
 				if data.end_stroke():
 					refresh()
+					if placed > 0 and reactions_enabled:
+						var record: Dictionary = data.objects.back()
+						reactions.play(record.asset,reactions.record_pose(record),record)
 			else:
 				_painting = true
 				dab(_last_point,strength/30.0)

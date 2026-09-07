@@ -14,6 +14,7 @@ func _run() -> void:
 	root.add_child(scene)
 	scene.set_process(false)
 	var editor: NativeChunkEditor = scene._chunk_editor
+	editor.reactions_enabled = false
 	editor.set_process(false)
 	var original_mesh := editor.terrain.mesh
 	var original_colors: PackedColorArray = original_mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]

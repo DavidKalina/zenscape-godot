@@ -13,6 +13,7 @@ func _run() -> void:
 	var scene: Node3D = load("res://studies/fidelity.tscn").instantiate()
 	root.add_child(scene)
 	var editor: NativeChunkEditor = scene._chunk_editor
+	editor.reactions_enabled = false
 	editor.set_active(true)
 	editor.start_flat()
 	scene._ui.visible = false
