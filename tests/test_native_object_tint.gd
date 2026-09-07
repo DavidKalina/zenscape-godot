@@ -14,10 +14,10 @@ func _run() -> void:
 	editor.reactions_enabled = false
 	editor.start_flat()
 	editor.set_active(true)
-	editor.mode="tree"
+	editor.select_tool("tree")
 	scene._reset_camera()
-	var picker: ColorPickerButton=scene._build_panel.find_child("PlacementColor",true,false)
-	check(picker!=null,"Placement color is exposed in editor")
+	var picker: ColorPickerButton=scene._build_palette.find_child("PlacementColor",true,false)
+	check(picker!=null,"Placement color is exposed on the palette")
 	var expected: Array[Color]=[]
 	for i in range(2):
 		var color:=Color("ba663d" if i==0 else "437e65")

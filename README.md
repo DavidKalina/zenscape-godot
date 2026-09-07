@@ -77,11 +77,16 @@ Use **Start flat** for bare earth; Undo restores the previous garden.
 Build opens a **palette** across the bottom of the screen: category tabs
 (Sculpt, Landscape, Cover, Place, Water) over one row of large tiles. Every tree,
 rock, flower, arch and catalog piece shows a portrait of the object itself, and
-the settings for the tool in hand sit beside the row with the Paint colour.
-Click a tile to pick the tool, or **drag a tile into the world**: a translucent
-ghost follows the ground under the pointer, and releasing plants the object with
-its drop reaction. Releasing away from the ground cancels. The side panel keeps
-Start flat, the sky and weather foldout, object colour and Save/Open.
+every control for the tool in hand sits beside the row: its sliders, its
+one-shot actions (Form ground foundation, Form mountain landscape, Fill
+landscape streams / waterfall / flora, Cover chunk in grass, Remove Blades-tool
+patches) and its colour - the Paint colour, or the Custom color box and picker
+that tint a placement. Click a tile to pick the tool, or **drag a tile into the
+world**: a translucent ghost follows the ground under the pointer, and releasing
+plants the object with its drop reaction. Releasing away from the ground
+cancels. The side panel keeps only what is not per-tool: the Build/Inspect
+toggle, Start flat, Undo/Redo, Save/Open, the status line and the sky and
+weather foldout.
 
 ![Build palette](docs/garden/palette.png)
 

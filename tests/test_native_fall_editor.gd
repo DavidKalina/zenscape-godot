@@ -6,8 +6,9 @@ func run() -> void:
 	scene.set_process(false)
 	var editor=scene._chunk_editor
 	editor.start_flat()
+	editor.select_tool("range")
 	editor.form_range()
-	scene._build_panel._tools.find_child("FillLandscapeWaterfall",true,false).pressed.emit()
+	scene._build_palette.action_for("FillLandscapeWaterfall").pressed.emit()
 	var placed: bool=editor.data.landscape_waterfall and editor.content._landscape_falls.size()==1
 	var mesh_arrays: Array=editor.content._landscape_falls[0].mesh.surface_get_arrays(0)
 	var baseline: Dictionary=editor.data.to_document()

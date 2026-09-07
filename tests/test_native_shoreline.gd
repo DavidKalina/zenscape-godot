@@ -8,6 +8,7 @@ func run() -> void:
 	var editor=scene._chunk_editor
 	var reference=editor.data.source_mesh.surface_get_arrays(0)
 	editor.start_flat()
+	editor.select_tool("range")
 	editor.form_range()
 	editor.cover_grass()
 	var before=editor.data.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]
@@ -16,7 +17,7 @@ func run() -> void:
 	var accepted: bool=editor.data.add_pond(Vector2(source.pool.x,source.pool.z),source.pool.waterY)
 	editor.data.end_stroke()
 	var with_streams: bool="--with-streams" in OS.get_cmdline_user_args()
-	if with_streams: scene._build_panel._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
+	if with_streams: scene._build_palette.action_for("FillLandscapeStreams").pressed.emit()
 	var field=preload("res://scripts/native_recipe_water.gd").shoreline(editor.data)
 	var generated=editor.data.build_mesh().surface_get_arrays(0)
 	var vertices: PackedVector3Array=generated[Mesh.ARRAY_VERTEX]

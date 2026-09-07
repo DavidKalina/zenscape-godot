@@ -29,6 +29,7 @@ var _tabs := HBoxContainer.new()
 var _deck := VBoxContainer.new()
 var _strip := VBoxContainer.new()
 var _grid := GridContainer.new()
+var _actions := HFlowContainer.new()
 var _hint := Label.new()
 var _rows := {}
 var _tabs_by_name := {}
@@ -64,6 +65,11 @@ func tile_for(id: String) -> Button:
 	if id == "assets":
 		return _tiles.get(editor.catalog_asset)
 	return _tiles.get(id)
+
+## The one-shot action button the strip shows for the tool in hand, by the node
+## name the editor's action table gives it, or null when this tool has none.
+func action_for(id: String) -> Button:
+	return _actions.get_node_or_null(NodePath(id))
 
 ## Every id the palette shows a tile for, in the order they are laid out.
 func tile_ids() -> Array:
@@ -143,10 +149,17 @@ func _build_strip() -> Control:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_strip.add_child(scroll)
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.add_theme_constant_override("separation",4)
+	scroll.add_child(stack)
 	_grid.columns = 2
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grid.add_theme_constant_override("h_separation",10)
-	scroll.add_child(_grid)
+	stack.add_child(_grid)
+	_actions.add_theme_constant_override("h_separation",4)
+	_actions.add_theme_constant_override("v_separation",3)
+	stack.add_child(_actions)
 	return _strip
 
 func _build_group(title: String, tools: Array) -> void:
@@ -378,10 +391,14 @@ func _on_active_changed(enabled: bool) -> void:
 	else:
 		_cancel_drag()
 
-## The sliders for the tool in hand, plus the Paint colour, beside the tiles.
+## The sliders for the tool in hand, then its one-shot actions and colours,
+## beside the tiles. Every tool's whole set of controls lives here.
 func _rebuild_strip() -> void:
 	for child in _grid.get_children():
 		_grid.remove_child(child)
+		child.queue_free()
+	for child in _actions.get_children():
+		_actions.remove_child(child)
 		child.queue_free()
 	_strip_rows.clear()
 	for spec: Dictionary in editor.settings_for(editor.mode):
@@ -389,21 +406,55 @@ func _rebuild_strip() -> void:
 		entry.box.custom_minimum_size = Vector2(160,0)
 		_grid.add_child(entry.box)
 		_strip_rows[spec.property] = entry
-	if editor.mode != "paint":
-		return
+	for action: Dictionary in editor.actions_for(editor.mode):
+		var button := Button.new()
+		button.name = action.name
+		button.text = action.title
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size",11)
+		button.pressed.connect(Callable(editor,action.method))
+		_actions.add_child(button)
+	if editor.mode == "paint":
+		_actions.add_child(_colour_row("Colour","PaletteColor",editor.paint_color,
+			func(color: Color) -> void: editor.paint_color = color))
+	elif editor.mode in editor.POSE_TOOLS:
+		_actions.add_child(_tint_row())
+
+## The Paint tool names its colour; the picker itself is what a shell drives.
+func _colour_row(title: String, id: String, colour: Color, apply: Callable) -> Control:
 	var row := HBoxContainer.new()
 	var label := Label.new()
-	label.text = "Colour"
+	label.text = title
 	label.add_theme_font_size_override("font_size",11)
 	row.add_child(label)
+	row.add_child(_picker(id,colour,apply))
+	return row
+
+## Placeables tint only when asked; touching the picker asks for them.
+func _tint_row() -> Control:
+	var row := HBoxContainer.new()
+	var box := CheckBox.new()
+	box.name = "CustomColor"
+	box.text = "Custom color"
+	box.button_pressed = editor.custom_tint
+	box.focus_mode = Control.FOCUS_NONE
+	box.add_theme_font_size_override("font_size",11)
+	box.toggled.connect(func(enabled: bool) -> void: editor.custom_tint = enabled)
+	row.add_child(box)
+	row.add_child(_picker("PlacementColor",editor.object_tint,func(colour: Color) -> void:
+		editor.object_tint = colour
+		box.button_pressed = true
+	))
+	return row
+
+func _picker(id: String, colour: Color, apply: Callable) -> ColorPickerButton:
 	var picker := ColorPickerButton.new()
-	picker.name = "PaletteColor"
-	picker.color = editor.paint_color
+	picker.name = id
+	picker.color = colour
 	picker.edit_alpha = false
 	picker.custom_minimum_size = Vector2(72,0)
-	picker.color_changed.connect(func(color: Color) -> void: editor.paint_color = color)
-	row.add_child(picker)
-	_grid.add_child(row)
+	picker.color_changed.connect(apply)
+	return picker
 
 # --- drag to place ----------------------------------------------------------
 

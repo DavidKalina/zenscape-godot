@@ -59,6 +59,17 @@ const SETTINGS := [
 	{"property":"object_elevation","title":"Vertical offset","low":-5.0,"high":10.0,"step":0.05,"unit":"","whole":false,"modes":POSE_TOOLS},
 ]
 const POSE_TOOLS := ["tree","flower","rock","assets"]
+## The one-shot commands a tool offers beside its sliders. The name is the node
+## name a shell should give the button, so scripts and tests can find it.
+const ACTIONS := [
+	{"tool":"ground","name":"FormGroundFoundation","title":"Form ground foundation","method":"form_foundation"},
+	{"tool":"range","name":"FormMountainLandscape","title":"Form mountain landscape","method":"form_range"},
+	{"tool":"range","name":"FillLandscapeStreams","title":"Fill landscape streams","method":"fill_landscape_streams"},
+	{"tool":"range","name":"FillLandscapeWaterfall","title":"Fill landscape waterfall","method":"fill_landscape_waterfall"},
+	{"tool":"range","name":"PopulateLandscapeFlora","title":"Populate landscape flora","method":"fill_landscape_flora"},
+	{"tool":"grass","name":"CoverChunkInGrass","title":"Cover chunk in grass","method":"cover_grass"},
+	{"tool":"blades","name":"RemoveBladePatches","title":"Remove Blades-tool patches","method":"clear_blades"},
+]
 ## A shell listens to these to keep its widgets with the tool state, which
 ## hotkeys and scripted edits change just as often as the controls do.
 signal tool_changed(tool: String)
@@ -192,6 +203,14 @@ func settings_for(tool: String) -> Array:
 	var found: Array = []
 	for entry: Dictionary in SETTINGS:
 		if tool in entry.modes:
+			found.append(entry)
+	return found
+
+## The one-shot commands a tool offers, in the order a shell should show them.
+func actions_for(tool: String) -> Array:
+	var found: Array = []
+	for entry: Dictionary in ACTIONS:
+		if entry.tool == tool:
 			found.append(entry)
 	return found
 

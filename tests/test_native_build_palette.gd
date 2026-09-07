@@ -94,6 +94,40 @@ func _run() -> void:
 	piece_tile.pressed.emit()
 	check(editor.mode == "assets" and editor.catalog_asset == "mushroom","A piece tile selects the catalog tool with that piece")
 	check(palette.tile_for("assets") == piece_tile,"The catalog tool reports the piece in hand")
+	# Per-tool actions and colours live on the strip, each only for its own tool.
+	for action: Dictionary in editor.ACTIONS:
+		editor.select_tool(action.tool)
+		var offered: Button = palette.action_for(action.name)
+		check(offered != null and offered.text == action.title,"The %s strip offers %s" % [action.tool,action.title])
+		for other: String in editor.tools():
+			if other == action.tool:
+				continue
+			editor.select_tool(other)
+			check(palette.action_for(action.name) == null,"%s stays off the %s strip" % [action.title,other])
+	editor.select_tool("grass")
+	editor.set_setting("grass_amount",0.6)
+	editor.data.begin_stroke()
+	editor.data.grass.fill(0.0)
+	editor.data.end_stroke()
+	palette.action_for("CoverChunkInGrass").pressed.emit()
+	var covered := true
+	for value: float in editor.data.grass:
+		covered = covered and is_equal_approx(value,0.6)
+	check(covered,"Cover chunk in grass spreads the strip's density over the chunk")
+	editor.select_tool("tree")
+	editor.custom_tint = false
+	var tint: ColorPickerButton = palette.find_child("PlacementColor",true,false)
+	var box: CheckBox = palette.find_child("CustomColor",true,false)
+	check(tint != null and box != null,"Placeables carry a custom colour box and picker")
+	var chosen := Color("c94f2b")
+	tint.color = chosen
+	tint.color_changed.emit(chosen)
+	check(editor.object_tint == chosen and editor.custom_tint,"The picker tints placements and asks for the custom colour")
+	check(box.button_pressed,"The custom colour box follows the picker")
+	box.button_pressed = false
+	check(not editor.custom_tint,"Unticking the box returns placements to their natural colour")
+	editor.select_tool("raise")
+	check(palette.find_child("PlacementColor",true,false) == null,"Brush tools show no placement colour")
 	# Click placement, kept as the reference the drag has to reproduce.
 	editor.select_tool("tree")
 	editor.set_setting("object_scale",1.4)

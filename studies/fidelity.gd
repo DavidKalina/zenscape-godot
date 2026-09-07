@@ -522,11 +522,11 @@ func _build_ui() -> void:
 	_build_panel = NativeBuildPanel.new()
 	column.add_child(_build_panel)
 	_build_panel.attach(_chunk_editor)
-	# Tools live on the bottom palette; the panel keeps the rest of the build.
+	# Tools and their settings live on the bottom palette; the panel keeps the
+	# global build controls.
 	_build_palette = NativeBuildPalette.new()
 	_ui.add_child(_build_palette)
 	_build_palette.attach(_chunk_editor)
-	_build_panel.hide_tool_rows()
 	var help := Label.new()
 	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect\nIn Build: 1-4 tools · [ ] brush size · K sky"
 	help.add_theme_color_override("font_color", Color("aab8ad"))
@@ -828,12 +828,12 @@ func _build_ui() -> void:
 	quality.tooltip_text = "Use run-fidelity.command for Forward+ ambient occlusion and glow." if quality.disabled else ""
 	quality.item_selected.connect(_set_quality)
 	study.add_child(quality)
-	# The panel hugs its controls and stops at the window, so the build tools
-	# rarely need scrolling and inspecting leaves no empty column behind.
+	# The panel hugs its controls and stops short of the palette, so the column
+	# never overlaps the bar and inspecting leaves no empty column behind.
 	var fit_column := func() -> void:
 		var window := get_window()
 		var bar := NativeBuildPalette.BAR_HEIGHT if _chunk_editor.active else 0.0
-		var room := clampf(window.size.y/window.content_scale_factor-56.0-bar, 320.0, 940.0)
+		var room := clampf(window.size.y/window.content_scale_factor-56.0-bar, 180.0, 940.0)
 		scroll.custom_minimum_size.y = minf(column.get_combined_minimum_size().y, room)
 	fit_column.call()
 	column.minimum_size_changed.connect(fit_column)

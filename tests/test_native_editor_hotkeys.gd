@@ -27,7 +27,7 @@ func _run() -> void:
 	for entry: Array in [[KEY_2,"lower"],[KEY_3,"smooth"],[KEY_4,"flatten"],[KEY_1,"raise"]]:
 		check(key(editor,entry[0]),"Tool key is consumed by build mode")
 		check(editor.mode == entry[1],"Number key selects %s" % entry[1])
-		check(scene._build_panel._tool_buttons[entry[1]].button_pressed,"Tool button follows the key")
+		check(scene._build_palette.tile_for(entry[1]).button_pressed,"Palette tile follows the key")
 	check(editor.status == editor.TOOL_TEXT.raise,"Selecting a tool describes it")
 	var radius: float = editor.radius
 	key(editor,KEY_BRACKETRIGHT)
@@ -35,7 +35,7 @@ func _run() -> void:
 	key(editor,KEY_BRACKETLEFT)
 	key(editor,KEY_BRACKETLEFT)
 	check(is_equal_approx(editor.radius,radius-0.25),"[ narrows the brush")
-	check(is_equal_approx(scene._build_panel._settings.radius.control.value,editor.radius),"The brush slider follows the key")
+	check(is_equal_approx(scene._build_palette._strip_rows.radius.control.value,editor.radius),"The brush slider follows the key")
 	var strength: float = editor.strength
 	key(editor,KEY_BRACKETRIGHT,true)
 	check(is_equal_approx(editor.strength,strength+0.25) and is_equal_approx(editor.radius,radius-0.25),"Shift ] presses harder without resizing the brush")

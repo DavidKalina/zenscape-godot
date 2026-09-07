@@ -14,15 +14,17 @@ func _run() -> void:
 	editor.reactions_enabled = false
 	editor.start_flat()
 	editor.set_active(true)
-	editor.mode="assets"
+	editor.select_tool("assets")
 	editor.object_scale=0.8
 	editor.object_angle=PI/3.0
 	scene._reset_camera()
-	var picker: OptionButton = scene._build_panel._tools.get_node("AssetPicker")
-	check(picker.item_count == 17,"Picker exposes all seventeen added source assets")
-	for i in range(picker.item_count):
-		picker.select(i)
-		picker.item_selected.emit(i)
+	var pieces: Array = preload("res://scripts/native_asset_catalog.gd").PARTS.keys()
+	check(pieces.size() == 17,"The palette exposes all seventeen added source assets")
+	for i in range(pieces.size()):
+		var tile: Button = scene._build_palette.tile_for(pieces[i])
+		check(tile != null,"Every catalog piece has its own palette tile")
+		tile.pressed.emit()
+		check(editor.mode == "assets" and editor.catalog_asset == pieces[i],"The tile puts that piece in hand")
 		var point := Vector3(-7.0+(i%4)*4.0,0,-7.0+(i/4)*4.0)
 		var event := InputEventMouseButton.new()
 		event.button_index=MOUSE_BUTTON_LEFT
@@ -31,8 +33,8 @@ func _run() -> void:
 		editor.handle_input(event)
 		event.pressed=false
 		editor.handle_input(event)
-		check(editor.data.objects.size()==i+1,"Picker asset places through actual camera ray")
-		check(editor.data.objects.back().asset==picker.get_item_metadata(i),"Picked asset is stored by kind")
+		check(editor.data.objects.size()==i+1,"Palette asset places through actual camera ray")
+		check(editor.data.objects.back().asset==pieces[i],"Picked asset is stored by kind")
 	var source=load("res://assets/zen_reference/geometry.scn").instantiate()
 	for kind in preload("res://scripts/native_asset_catalog.gd").PARTS:
 		for node_name in preload("res://scripts/native_asset_catalog.gd").PARTS[kind]:

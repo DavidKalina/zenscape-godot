@@ -12,11 +12,9 @@ func _run() -> void:
 	scene.set_process(false)
 	var editor = scene._chunk_editor
 	editor.start_flat()
-	var button: Button
-	for control in scene._build_panel._tool_settings:
-		if control is Button and control.text == "Form ground foundation":
-			button = control
-	check(button != null,"Foundation is available through editor controls")
+	editor.select_tool("ground")
+	var button: Button = scene._build_palette.action_for("FormGroundFoundation")
+	check(button != null and button.text == "Form ground foundation","Foundation is available through the palette")
 	button.pressed.emit()
 	var heights: PackedFloat32Array = editor.data.heights.duplicate()
 	check(editor.data.blank and editor.data.objects.is_empty(),"Foundation does not reveal imported scenery")

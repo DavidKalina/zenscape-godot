@@ -16,14 +16,15 @@ func run() -> void:
 		for vertex in v: reference.append(water.to_global(vertex))
 	var editor=scene._chunk_editor
 	editor.start_flat()
+	editor.select_tool("range")
 	editor.form_range()
 	editor.cover_grass()
 	var params: Dictionary=JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/terrain-source.json")).pool
 	var accepted: bool=editor.data.add_pond(Vector2(params.x,params.z),params.waterY)
 	var with_fall: bool="--with-fall" in OS.get_cmdline_user_args()
 	var with_streams: bool=with_fall or "--with-streams" in OS.get_cmdline_user_args()
-	if with_streams: scene._build_panel._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
-	if with_fall: scene._build_panel._tools.find_child("FillLandscapeWaterfall",true,false).pressed.emit()
+	if with_streams: scene._build_palette.action_for("FillLandscapeStreams").pressed.emit()
+	if with_fall: scene._build_palette.action_for("FillLandscapeWaterfall").pressed.emit()
 	editor.refresh()
 	var authored: PackedVector3Array=editor.content.pond_vertices
 	var counts: Dictionary={"reference":0,"authored":0,"both":0,"different":0}

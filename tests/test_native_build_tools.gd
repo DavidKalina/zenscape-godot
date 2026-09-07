@@ -113,8 +113,7 @@ func _run() -> void:
 	scene._build_panel._sync_sky_controls()
 	check(is_equal_approx(scene._build_panel._sky_controls.time.value,0.7) and is_equal_approx(scene._build_panel._sky_controls.clouds.value,0.45),"Sky state restores and controls synchronize")
 	scene._ui.visible = true
-	editor.mode = "grass"
-	scene._build_panel._update_tool_settings()
+	editor.select_tool("grass")
 	for child in scene._build_panel._tools.get_children():
 		if child is CheckButton:
 			child.button_pressed = true

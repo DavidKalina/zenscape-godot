@@ -12,11 +12,9 @@ func _run() -> void:
 	scene.set_process(false)
 	var editor = scene._chunk_editor
 	editor.start_flat()
-	var button: Button
-	for control in scene._build_panel._tool_settings:
-		if control is Button and control.text == "Form mountain landscape":
-			button = control
-	check(button != null,"Range generation is exposed through the editor")
+	editor.select_tool("range")
+	var button: Button = scene._build_palette.action_for("FormMountainLandscape")
+	check(button != null and button.text == "Form mountain landscape","Range generation is exposed through the palette")
 	button.pressed.emit()
 	var generated: PackedFloat32Array = editor.data.heights.duplicate()
 	var worst := 0.0

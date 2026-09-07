@@ -55,8 +55,15 @@ and hotkey `2` moving the highlight, and a synthesized drag - press on the Tree
 tile, motion into the view, release over terrain - producing exactly one record
 with the same pose click-to-place produces. A release over the palette places
 nothing, an in-flight ghost never reaches `garden_data` or `save_garden`, and
-hiding `scene._ui` hides the palette. `docs/garden/palette.png` is the native
-capture of Build mode with the Place row open.
+hiding `scene._ui` hides the palette. It also checks that each entry in the
+editor's `ACTIONS` table appears on its own tool's strip and on no other, that
+Cover chunk in grass pressed through the palette spreads the strip's density
+over the chunk, and that the Custom color box and picker drive `custom_tint` and
+`object_tint`. Every per-tool control now lives on the palette; the side panel
+keeps only the Build/Inspect toggle, Start flat, Undo/Redo, Save/Open, the
+status line and the sky and weather foldout, so it no longer overlaps the bar.
+`docs/garden/palette.png` is the native capture of Build mode with the Place row
+open.
 
 `tests/test_native_build_tools.gd` checks one-dab grass visibility without flowers,
 full coverage and undo, v3 migration and v4 roundtrip, malformed density rejection,
