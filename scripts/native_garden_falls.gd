@@ -1,0 +1,124 @@
+class_name NativeGardenFalls
+extends Node3D
+## Authored falls use the same animated ring shader as the imported waterfall.
+const RINGS := 24
+const SECTIONS := 10
+var _sprays: Array[CanvasLayer] = []
+var _mist_recipe: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/fall-mist.json"))
+
+static func endpoints(data: NativeTerrainData, item: Dictionary) -> PackedVector3Array:
+	var start := data.object_position(item)+Vector3.UP*0.12
+	var end_point := Vector2(item.end_x,item.end_z)
+	var finish := Vector3(end_point.x,data.ground_height(end_point)+0.06,end_point.y)
+	for pond: Dictionary in data.ponds:
+		if GardenWater.covers(data.pond_surface(pond),end_point):
+			finish.y = maxf(finish.y,pond.level)
+	return PackedVector3Array([start,finish])
+
+static func clear_path(data: NativeTerrainData, item: Dictionary) -> bool:
+	var ends := endpoints(data,item)
+	if ends[0].y <= ends[1].y+0.2:
+		return false
+	for i in range(1,RINGS-1):
+		var t := float(i)/(RINGS-1)
+		var point := ends[0].lerp(ends[1],t)
+		point.y = lerpf(ends[0].y,ends[1].y,t*t)
+		var ground: Variant = data.ground_height(Vector2(point.x,point.z))
+		if ground == null or ground > point.y+0.02:
+			return false
+	return true
+
+func rebuild(data: NativeTerrainData) -> void:
+	_sprays.clear()
+	for child in get_children():
+		child.free()
+	for item: Dictionary in data.objects:
+		if item.asset != "waterfall":
+			continue
+		var ends := endpoints(data,item)
+		if not clear_path(data,item):
+			continue # Keep the record so undoing an obstruction restores the fall.
+		var centers := PackedVector4Array()
+		var widths := PackedVector4Array()
+		var thicknesses := PackedVector4Array()
+		var aeration := PackedVector2Array()
+		centers.resize(32)
+		widths.resize(32)
+		thicknesses.resize(32)
+		aeration.resize(32)
+		var direction := Vector3(ends[1].x-ends[0].x,0,ends[1].z-ends[0].z).normalized()
+		var across := direction.cross(Vector3.UP).normalized()
+		var length := 0.0
+		var previous := ends[0]
+		for i in range(RINGS):
+			var t := float(i)/(RINGS-1)
+			var point := ends[0].lerp(ends[1],t)
+			point.y = lerpf(ends[0].y,ends[1].y,t*t)
+			length += point.distance_to(previous)
+			previous = point
+			centers[i] = Vector4(point.x,point.y,point.z,length)
+			widths[i] = Vector4(across.x,across.y,across.z,item.scale*(0.28+0.18*t))
+			thicknesses[i] = Vector4(direction.x,0,direction.z,item.scale*0.10)
+			aeration[i] = Vector2(0.25+0.6*t,0.85)
+		var surface := SurfaceTool.new()
+		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for ring in range(RINGS-1):
+			for section in range(SECTIONS):
+				for corner: Vector2i in [Vector2i(0,0),Vector2i(1,0),Vector2i(0,1),Vector2i(0,1),Vector2i(1,0),Vector2i(1,1)]:
+					var r := ring+corner.x
+					var angle := TAU*(section+corner.y)/SECTIONS
+					surface.set_uv(Vector2(r,angle))
+					surface.set_uv2(Vector2(ring,section))
+					surface.set_color(Color.WHITE)
+					surface.set_normal(across)
+					var c := centers[r]
+					surface.add_vertex(Vector3(c.x,c.y,c.z)+across*cos(angle)*widths[r].w+direction*sin(angle)*thicknesses[r].w)
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://shaders/reference_fall.gdshader")
+		material.set_shader_parameter("ring_count",RINGS)
+		material.set_shader_parameter("centers_tau",centers)
+		material.set_shader_parameter("axis_a_width",widths)
+		material.set_shader_parameter("axis_b_thick",thicknesses)
+		material.set_shader_parameter("aer_steep",aeration)
+		material.set_shader_parameter("section_white",PackedFloat32Array([0.1,0.3,0.2,0.5,0.2,0.4,0.1,0.3,0.2,0.4,0.2,0.1]))
+		material.set_shader_parameter("body_white",0.12)
+		material.set_shader_parameter("height_range",Vector2(ends[1].y,ends[0].y))
+		var mesh := MeshInstance3D.new()
+		mesh.name = "Waterfall_%d" % item.id
+		mesh.mesh = surface.commit()
+		mesh.material_override = material
+		mesh.extra_cull_margin = 0.5
+		add_child(mesh)
+
+		var spray := preload("res://studies/fall_mist.gd").new()
+		var recipe := _mist_recipe.duplicate(true)
+		var center := Vector3.ZERO
+		for i in range(recipe.phase.size()):
+			center += Vector3(recipe.positions[i*3],recipe.positions[i*3+1],recipe.positions[i*3+2])
+		center /= recipe.phase.size()
+		for i in range(recipe.phase.size()):
+			var offset := Vector3(recipe.positions[i*3],recipe.positions[i*3+1],recipe.positions[i*3+2])-center
+			var point: Vector3 = ends[1]+offset*float(item.scale)+Vector3.UP*0.1
+			recipe.positions[i*3] = point.x
+			recipe.positions[i*3+1] = point.y
+			recipe.positions[i*3+2] = point.z
+		add_child(spray)
+		spray.setup(recipe)
+		_sprays.append(spray)
+
+func _process(_delta: float) -> void:
+	var scene := get_parent()
+	if _sprays.is_empty():
+		return
+	var depth: CompositorEffect
+	if scene._display_fog != null:
+		depth = scene._display_fog.depth
+	else:
+		# Share the original mist's fallback capture; multiple sprays must not
+		# replace one another's camera compositor.
+		var original: CanvasLayer = scene.get_node("WaterfallSpray")
+		original.update_view(scene.camera)
+		depth = original.fallback_depth
+	for spray in _sprays:
+		spray.visible = scene._growth.terrain >= 0.995 and scene._growth.water >= 0.5
+		spray.update_view(scene.camera,depth)

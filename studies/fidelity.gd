@@ -304,6 +304,7 @@ func _reset_camera(reference_pose := false) -> void:
 			framing_nodes = framing_nodes.filter(func(node: Node) -> bool: return node is Node3D and node.is_visible_in_tree())
 		if _chunk_editor != null:
 			framing_nodes.append_array(_chunk_editor.content.get_children())
+			framing_nodes.append_array(_chunk_editor.falls.get_children())
 			framing_nodes.append_array(_chunk_editor.landmarks.find_children("*","MeshInstance3D",true,false))
 		for node in framing_nodes:
 			if node.get_meta("source_kind","") == "birds":
@@ -432,7 +433,7 @@ func _process(delta: float) -> void:
 	_thunder_audio.update_state(_paused)
 	_lightning.advance(delta, _paused, _precipitation.state.w, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle), sin(_atmosphere._air_angle)), camera.global_position)
 	_atmosphere.advance(delta, _paused)
-	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,0.0 if _chunk_editor.data.blank else _growth.water)
+	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,0.0 if _chunk_editor.data.blank and _chunk_editor.falls.get_child_count() == 0 else _growth.water)
 	_celestial.wind = _atmosphere._air_strength
 	_celestial.advance(delta, _paused)
 	_atmosphere.set_inversion(_celestial.state.zs_inversion.x)
@@ -443,7 +444,7 @@ func _process(delta: float) -> void:
 	_fireflies.update_conditions(_celestial.state.get("zs_daylight",1.0), _precipitation.state.x, _precipitation.surface_weather.cold, _bird_flight.growth)
 	if _chunk_editor.data.blank:
 		_fireflies.visible = false
-	_bigfoot.visible = not _chunk_editor.data.blank
+	_bigfoot.visible = not _chunk_editor.data.blank or _bigfoot.authored_tree
 	_bird_flight.advance(delta, _paused, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle),sin(_atmosphere._air_angle)))
 	_time_slider.set_value_no_signal(_celestial.phase)
 	_fall_foam.advance(_motion_time, _paused, _precipitation.surface_weather.ice, smoothstep(0.0,0.5,_growth.water), _growth.terrain >= 0.995)
@@ -857,7 +858,7 @@ func _film_frame() -> void:
 		get_tree().quit()
 
 func _summon_bigfoot(fog := false) -> void:
-	if not _bigfoot.available or _growth.terrain < 0.995 or _growth.foliage < 0.7:
+	if (_chunk_editor.data.blank and not _bigfoot.authored_tree) or not _bigfoot.available or _growth.terrain < 0.995 or _growth.foliage < 0.7:
 		return
 	_bigfoot.summon(fog)
 	target = _bigfoot._frame.to_global(Vector3(1.05, 1.5, 1.05)) if fog else _bigfoot.focus_point()

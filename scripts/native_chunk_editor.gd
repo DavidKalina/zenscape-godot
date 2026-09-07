@@ -7,6 +7,8 @@ var terrain: MeshInstance3D
 var data := NativeTerrainData.new()
 var content: GardenView
 var landmarks: NativeGardenLandmarks
+var falls: NativeGardenFalls
+var _fall_start: Variant = null
 var object_heading := 0.0
 var pond_level := -0.15
 var object_angle := 0.0
@@ -74,6 +76,9 @@ func setup(owner_scene: Node3D) -> void:
 	landmarks = NativeGardenLandmarks.new()
 	landmarks.name = "AuthoredLandmarks"
 	scene.add_child(landmarks)
+	falls = NativeGardenFalls.new()
+	falls.name = "AuthoredFalls"
+	scene.add_child(falls)
 	_build_controls()
 
 func _build_controls() -> void:
@@ -92,7 +97,7 @@ func _build_controls() -> void:
 	var row := GridContainer.new()
 	row.columns = 4
 	var group := ButtonGroup.new()
-	for tool in ["raise","lower","smooth","flatten","mountain","grass","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree"]:
+	for tool in ["raise","lower","smooth","flatten","mountain","grass","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree","waterfall"]:
 		var button := Button.new()
 		button.text = "Bigfoot tree" if tool == "bigfoot_tree" else tool.capitalize()
 		button.toggle_mode = true
@@ -101,7 +106,10 @@ func _build_controls() -> void:
 		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(func() -> void:
 			finish_stroke()
+			_fall_start = null
 			mode = tool
+			if mode == "waterfall":
+				_status.text = "Click the waterfall lip, then a lower landing point."
 			_update_tool_settings()
 		)
 		row.add_child(button)
@@ -119,7 +127,7 @@ func _build_controls() -> void:
 	_setting("mountain_peak","Peak height",0.5,24.0,0.5,["mountain"])
 	_setting("pond_level","Pond surface height",-1.4,12.0,0.05,["pond"])
 	_setting("object_scale","Object size",0.1,5.0,0.1,NativeTerrainData.ASSETS)
-	_setting("object_heading","Rotation °",-180.0,180.0,5.0,NativeTerrainData.ASSETS)
+	_setting("object_heading","Rotation °",-180.0,180.0,5.0,["tree","rock","flower","arch","bigfoot_tree"])
 	_update_tool_settings()
 	var history := HBoxContainer.new()
 	for entry: Array in [["Undo",undo],["Redo",redo],["Save",save_garden],["Open",open_garden]]:
@@ -222,6 +230,7 @@ func set_active(enabled: bool) -> void:
 	if enabled and scene._growth.terrain < 0.995:
 		_toggle.set_pressed_no_signal(false)
 		return
+	_fall_start = null
 	active = enabled
 	_toggle.set_pressed_no_signal(active)
 	_toggle.text = "Inspect this chunk" if active else "Build this chunk"
@@ -252,6 +261,21 @@ func handle_input(event: InputEvent) -> bool:
 			return true
 		var hit: Variant = pick(event.position)
 		if hit != null:
+			if mode == "waterfall":
+				var point := Vector2(hit.x,hit.z)
+				if _fall_start == null:
+					_fall_start = point
+					_status.text = "Now click the lower landing point. Change tools to cancel."
+				else:
+					data.begin_stroke()
+					var placed := data.add_waterfall(_fall_start,point,object_scale)
+					data.end_stroke()
+					if placed:
+						_fall_start = null
+						refresh()
+					else:
+						_status.text = "Choose a lower landing with no ridge blocking the drop."
+				return true
 			data.begin_stroke()
 			_level = hit.y
 			_last_point = Vector2(hit.x,hit.z)
@@ -322,11 +346,13 @@ func finish_stroke() -> void:
 	data.end_stroke()
 
 func undo() -> void:
+	_fall_start = null
 	finish_stroke()
 	if data.undo():
 		refresh()
 
 func redo() -> void:
+	_fall_start = null
 	finish_stroke()
 	if data.redo():
 		refresh()
@@ -365,6 +391,13 @@ func refresh() -> void:
 	_rebuild_skirt()
 	content.rebuild()
 	landmarks.rebuild(data)
+	falls.rebuild(data)
+	var fall_count := 0
+	for item: Dictionary in data.objects:
+		if item.asset == "waterfall":
+			fall_count += 1
+	if falls.get_child_count()/2 < fall_count:
+		_status.text = "A waterfall is blocked or submerged. Lower the obstruction or undo."
 	# Existing habitat/rain/fog consumers keep the same texture object.
 	var image: Image = _original_ground_map.duplicate()
 	for z in range(image.get_height()):
@@ -384,6 +417,12 @@ func refresh() -> void:
 		streams.fill(Color(0,0,0,0))
 	scene._precipitation.stream_texture.update(streams)
 	scene._bigfoot.ground.setup(terrain)
+	var encounter_pose: Variant = null
+	for item: Dictionary in data.objects:
+		if item.asset == "bigfoot_tree":
+			encounter_pose = Transform3D(Basis(Vector3.UP,item.angle).scaled(Vector3.ONE*item.scale),data.object_position(item))
+			break
+	scene._bigfoot.set_authored_tree(encounter_pose)
 	scene._bird_flight.ground = _original_bird_ground if original else data
 	scene._atmosphere.update_ground_bounds(terrain,original)
 	scene._precipitation.set_ceiling(_original_precip_top if original else scene._atmosphere._summit.y+5.0)
@@ -391,6 +430,7 @@ func refresh() -> void:
 		scene._display_fog.update_view()
 
 func start_flat() -> void:
+	_fall_start = null
 	finish_stroke()
 	data.begin_stroke()
 	data.reset_flat()
@@ -454,6 +494,7 @@ func save_garden() -> bool:
 	return true
 
 func open_garden() -> bool:
+	_fall_start = null
 	var file := FileAccess.open(save_path,FileAccess.READ)
 	if file == null:
 		_status.text = "No saved garden to open yet."

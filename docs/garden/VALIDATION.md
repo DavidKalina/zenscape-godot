@@ -123,16 +123,32 @@ geometry and native materials. Object size and rotation controls apply to these
 and ordinary placed objects. Records persist through Save/Open and participate
 in erase, undo and terrain grounding. R frames nested authored geometry.
 Landmark bases anchor at the sampled center; level the foundation for a broad
-arch on uneven terrain. The authored Bigfoot tree is currently the visual tree;
-it is not yet an encounter anchor.
+arch on uneven terrain. The first authored Bigfoot tree anchors the existing encounter, including its
+rotation and scale. B previews Bigfoot there; removing it restores the original
+encounter anchor (hidden on a blank chunk).
 
 Validation: 53 graphics tests pass. `test_native_landmarks.gd` also passed after
 adding rotation-control, projected-framing, visible arch-base, and fresh-scene
 save/reopen assertions. A rendered blank chunk with an authored mountain, arch,
 and Bigfoot tree was inspected at `/tmp/native-landmarks.png`.
 
-Remaining before completion: author a waterfall with a source and lower landing,
-connect its native flowing water and effects to authored terrain/ponds, connect
-Bigfoot encounter behavior to the authored tree, then build and reopen a complete
-world through the editor and inspect the result. Existing imported demo water is
+Waterfall now accepts two clicks: the lip and a lower landing. Its saved endpoint
+record rebuilds the original ring shader and animated spray; a receiving pond
+supplies the landing water height. Obstructed or submerged falls retain their
+records but stop rendering until terrain/water edits or undo clear the path.
+The original encounter reanchors to the first authored Bigfoot tree.
+
+Remaining before completion: build and reopen a complete world through the
+visible editor, inspect waterfall motion and pond contact in context, and correct
+any usability or visual issues that this reveals. Existing imported demo water is
 not evidence that blank-chunk waterfall authoring works.
+
+Waterfall regression coverage (`test_native_falls.gd`): two camera-ray clicks,
+original shader, pond landing, undo/redo, uphill and obstructed rejection,
+obstruction removal, malformed endpoints, fresh-scene save/reopen, camera-aligned
+spray under both display and native fog, and pixel changes while only flow time
+advances. `/tmp/native-falls.png` is the inspected authored-waterfall render.
+
+After these changes, all 54 graphics regression tests passed. The native-fog
+waterfall run also passed separately. Full interactive demo-world proof remains
+outstanding; this test result does not close the authoring goal.

@@ -4,7 +4,7 @@ extends RefCounted
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 24.0
-const ASSETS := ["tree","rock","flower","arch","bigfoot_tree"]
+const ASSETS := ["tree","rock","flower","arch","bigfoot_tree","waterfall"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -251,7 +251,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 				meadow[index] = clampf(meadow[index]+amount*(1.0-smoothstep(0.0,radius,distance)),0.0,1.0)
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0) -> int:
-	if kind not in ASSETS or ground_height(point) == null or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+	if kind == "waterfall" or kind not in ASSETS or ground_height(point) == null or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
@@ -259,6 +259,19 @@ func place(kind: String, point: Vector2, angle := 0.0, size := 1.0) -> int:
 	next_id += 1
 	objects.append({"id":id,"asset":kind,"x":point.x,"z":point.y,"angle":angle,"scale":size})
 	return id
+
+func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
+	if ground_height(start) == null or ground_height(finish) == null or start.distance_to(finish) < 0.5:
+		return false
+	if not GardenData._number(width,0.1,5.0) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+		return false
+	var item := {"id":next_id,"asset":"waterfall","x":start.x,"z":start.y,"end_x":finish.x,"end_z":finish.y,"angle":0.0,"scale":width}
+	var ends := NativeGardenFalls.endpoints(self,item)
+	if ends[0].y <= ends[1].y+0.5 or not NativeGardenFalls.clear_path(self,item):
+		return false
+	objects.append(item)
+	next_id += 1
+	return true
 
 func object_position(item: Dictionary) -> Vector3:
 	return Vector3(item.x,height_at(item.x,item.z),item.z)
@@ -344,6 +357,13 @@ func load_document(document: Variant) -> bool:
 					return false
 				if not GardenData._number(item.get("angle"),-TAU*100,TAU*100) or not GardenData._number(item.get("scale"),0.1,5.0):
 					return false
+				if item.asset == "waterfall":
+					if not GardenData._number(item.get("end_x"),-14,14) or not GardenData._number(item.get("end_z"),-14,14):
+						return false
+					var endpoint := Vector2(item.end_x,item.end_z)
+					if ground_height(endpoint) == null or endpoint.distance_to(point) < 0.5:
+						return false
+					record.merge({"end_x":endpoint.x,"end_z":endpoint.y})
 				ids[item.id] = true
 				record.merge({"id":int(item.id),"asset":item.asset,"angle":float(item.angle),"scale":float(item.scale)})
 			else:

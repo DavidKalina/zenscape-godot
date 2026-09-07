@@ -11,6 +11,8 @@ var available := false
 var _frame: Node3D
 var _tree: Node3D
 var _tree_rest: Transform3D
+var _source_frame: Transform3D
+var authored_tree := false
 var _anchor: Dictionary
 var automatic_enabled := true
 var forced := false
@@ -109,6 +111,7 @@ func setup(geometry: Node3D) -> void:
 	_frame.position = location
 	_frame.rotation.y = heading
 	_frame.scale = Vector3.ONE * PEEK_SCALE
+	_source_frame = _frame.transform
 	var tree := preload("res://assets/bigfoot/old_tree.glb").instantiate()
 	_tree = tree
 	_tree_rest = tree.transform
@@ -128,6 +131,18 @@ func setup(geometry: Node3D) -> void:
 	_frame.visible = true
 	rig.visible = false
 	print("Bigfoot clearing: ", location)
+
+func set_authored_tree(pose: Variant) -> void:
+	if not available:
+		return
+	var desired: Transform3D = _source_frame if pose == null else Transform3D(pose.basis.scaled(Vector3.ONE*PEEK_SCALE),pose.origin)
+	if desired != _frame.transform:
+		active = false
+		rig.visible = false
+		_frame.transform = desired
+		_anchor = {"grip":_frame.to_global(Vector3(0.455,1.67,-0.356)),"rotation":_frame.global_basis.get_rotation_quaternion()*Basis.from_euler(Vector3(0,-PI/3.0,PI/2.0),EULER_ORDER_YXZ).get_rotation_quaternion()}
+	authored_tree = pose != null
+	_tree.visible = not authored_tree # The editor renders the saved tree itself.
 
 func update_growth(terrain: float, foliage: float) -> void:
 	if not available:
