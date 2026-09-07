@@ -7,6 +7,11 @@ shader_type spatial;
 #include "res://shaders/reference_inversion.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
+uniform bool brush_visible = false;
+uniform vec2 brush_center = vec2(0.0);
+uniform float brush_radius = 1.0;
+uniform vec4 brush_color : source_color = vec4(1.0, 0.91, 0.61, 1.0);
+
 uniform vec4 base_color : source_color = vec4(1.0);
 uniform vec3 emissive_color = vec3(0.0);
 uniform float roughness_value = 1.0;
@@ -116,6 +121,13 @@ void fragment() {
 	}
 	float cloud_shade = cloudShadeAt(vec3(world_position.x, 0.6, world_position.z), zs_cloud_direction);
 	tint *= mix(1.0, 0.42 + 0.58 * cloud_shade, min(1.0, zs_cloud.x * 1.35) * 0.85);
+	if (brush_visible) {
+		float distance_to_brush = length(world_position.xz - brush_center);
+		float aa = max(fwidth(distance_to_brush), 0.025);
+		float ring = 1.0 - smoothstep(0.025, 0.025 + aa, abs(distance_to_brush - brush_radius));
+		float fill = (1.0 - smoothstep(0.0, brush_radius, distance_to_brush)) * 0.13;
+		tint = mix(tint, brush_color.rgb, max(ring * 0.9, fill));
+	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	METALLIC = metalness_value;

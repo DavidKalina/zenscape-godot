@@ -102,8 +102,9 @@ Use **Start flat** for bare earth; Undo restores the previous garden.
 
 The editable plot is currently 24 × 24 units with a 0.5-unit terrain grid.
 It supports hills and hollows; caves and overhangs are outside this heightfield
-model. Garden weather is a compact editable-scene implementation; the fidelity
-scene retains the more extensive atmospheric study.
+model. Garden surfaces, water, lighting and atmospheric compositing now reuse the port;
+precipitation remains a compact implementation. The next integration target is
+Build mode directly inside the fidelity scene, with its original chunk and camera.
 
 ## Structure
 
@@ -117,7 +118,10 @@ scene retains the more extensive atmospheric study.
 - `scripts/orbit_camera.gd`: camera navigation.
 - `scripts/sandbox.gd`: input, brush interface, save lifecycle.
 - `scenes/sandbox.tscn`: scene composition, lighting, backdrop, and camera.
-- `shaders/ground.gdshader`: ground material and projected brush footprint.
+- `shaders/reference_surface.gdshader`: shared source surface shading and optional brush footprint.
+- `scripts/landscape_lighting.gd`: the lighting/sky setup shared with the fidelity scene.
+- `scripts/garden_look.gd`: current garden adapter for source lighting and atmosphere.
+- `scripts/garden_surface_map.gd`: live ground/water fields for atmospheric occlusion.
 
 There is one terrain mesh for now. Introduce internal tiles when measurements
 justify local mesh rebuilds; tiles should remain invisible to the player.

@@ -10,13 +10,15 @@ var _skirt: MeshInstance3D
 
 func _ready() -> void:
 	ground_material = ShaderMaterial.new()
-	ground_material.shader = preload("res://shaders/ground.gdshader")
+	ground_material.shader = preload("res://shaders/reference_surface.gdshader")
+	ground_material.set_shader_parameter("wet_ground", true)
+	ground_material.set_shader_parameter("roughness_value", 0.95)
 	material_override = ground_material
 	_skirt = MeshInstance3D.new()
 	_skirt.name = "EarthSides"
-	var side_material := StandardMaterial3D.new()
-	side_material.vertex_color_use_as_albedo = true
-	side_material.roughness = 1.0
+	var side_material := ShaderMaterial.new()
+	side_material.shader = preload("res://shaders/reference_surface.gdshader")
+	side_material.set_shader_parameter("wet_ground", true)
 	_skirt.material_override = side_material
 	add_child(_skirt)
 	rebuild()
@@ -108,5 +110,5 @@ func _side(surface: SurfaceTool, a: Vector3, b: Vector3) -> void:
 	surface.set_normal(normal)
 	for p in [a, b, bottom_a, b, bottom_b, bottom_a]:
 		var top: bool = p.y > -1.59
-		surface.set_color(Color("ad9875") if top else Color("766457"))
+		surface.set_color((Color("ad9875") if top else Color("766457")).srgb_to_linear())
 		surface.add_vertex(p)

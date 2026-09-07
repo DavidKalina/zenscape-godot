@@ -4,6 +4,7 @@ extends Node3D
 const SAVE_PATH := "user://landscape.json"
 const TOOLS := ["raise", "lower", "smooth", "flatten", "meadow", "tree", "rock", "flower", "pond", "erase"]
 
+var look: GardenLook
 var garden: GardenView
 var pond_level := -0.1
 var placement_scale := 1.0
@@ -41,6 +42,12 @@ func _ready() -> void:
 	_weather_effect = GardenWeather.new()
 	_weather_effect.data = garden.data
 	add_child(_weather_effect)
+	$WorldEnvironment.environment = null
+	$Sun.visible = false
+	$Backdrop.visible = false
+	look = GardenLook.new()
+	add_child(look)
+	look.setup(camera, terrain)
 	_build_interface()
 	if FileAccess.file_exists(save_path):
 		_load()
@@ -54,11 +61,7 @@ func _process(delta: float) -> void:
 		_dirty = true
 		_last_camera_state = view
 	var mouse := get_viewport().get_mouse_position()
-	var on_ui := _panel.get_global_rect().has_point(mouse)
-	var inside_window := get_viewport().get_visible_rect().has_point(mouse)
-	_hit = null
-	if not on_ui and inside_window and not orbit.navigating:
-		_hit = terrain.ray_hit(camera.project_ray_origin(mouse), camera.project_ray_normal(mouse))
+	_hit = _pick_terrain(mouse)
 	var center := Vector2.ZERO
 	if _hit != null:
 		center = Vector2(_hit.x, _hit.z)
@@ -86,6 +89,8 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_hit = _pick_terrain(event.position)
 		if event.pressed and _hit != null and not orbit.navigating:
 			if mode in ["tree", "rock", "flower", "pond"]:
 				_place(Vector2(_hit.x, _hit.z))
@@ -436,12 +441,10 @@ func _refresh() -> void:
 	var weather := garden.data.weather
 	_weather_effect.visible = weather in ["Rain", "Snow"]
 	_weather_selector.select(GardenData.WEATHER.find(weather))
-	var environment: Environment = $WorldEnvironment.environment
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.fog_enabled = weather == "Mist"
-	environment.fog_light_color = Color("b9ceca")
-	environment.fog_density = 0.025 if weather == "Mist" else 0.0
-	environment.background_color = Color("94aaa8") if weather in ["Mist", "Rain"] else Color("cfd9cc")
-	$Sun.light_energy = 0.45 if weather in ["Mist", "Rain"] else 0.85
-	terrain.ground_material.set_shader_parameter("snow", 0.8 if weather == "Snow" else 0.0)
-	terrain.ground_material.set_shader_parameter("wet", 1.0 if weather == "Rain" else 0.0)
+	look.set_weather(weather)
+	look.update_ground(garden.data, garden.pond_vertices)
+
+func _pick_terrain(mouse: Vector2) -> Variant:
+	if _panel.get_global_rect().has_point(mouse) or not get_viewport().get_visible_rect().has_point(mouse) or orbit.navigating:
+		return null
+	return terrain.ray_hit(camera.project_ray_origin(mouse), camera.project_ray_normal(mouse))

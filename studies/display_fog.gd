@@ -45,14 +45,21 @@ func update_view() -> void:
 	material.set_shader_parameter("camera_basis", camera.global_basis)
 	var tangent := tan(deg_to_rad(camera.fov) * 0.5)
 	var size := get_viewport().get_visible_rect().size
+	var orthographic := camera.projection == Camera3D.PROJECTION_ORTHOGONAL
+	var projection_scale := Vector2(tangent * size.x / size.y, tangent)
+	if orthographic:
+		var projection := camera.get_camera_projection()
+		projection_scale = Vector2(1.0 / projection.x.x, 1.0 / projection.y.y)
+	material.set_shader_parameter("orthographic", orthographic)
+	blend.set_shader_parameter("surface_orthographic", orthographic)
 	buffer.size = Vector2i(size * 0.5)
 	depth.resize(Vector2i(size))
 	blend.set_shader_parameter("camera_planes", Vector2(camera.near, camera.far))
 	blend.set_shader_parameter("surface_camera_basis", camera.global_basis)
-	blend.set_shader_parameter("surface_projection_scale", Vector2(tangent * size.x / size.y, tangent))
+	blend.set_shader_parameter("surface_projection_scale", projection_scale)
 	blend.set_shader_parameter("surface_density", air.haze_amount * 0.014 + air.fog_amount * 0.004 + air.shroud * air.shroud * 0.010 if surface_haze_enabled else 0.0)
 	blend.set_shader_parameter("aerial_gain", (1.0 - air.shroud) * (1.0 - air.shroud))
-	material.set_shader_parameter("projection_scale", Vector2(tangent * size.x / size.y, tangent))
+	material.set_shader_parameter("projection_scale", projection_scale)
 	material.set_shader_parameter("shroud", air.shroud)
 	material.set_shader_parameter("loosen", air.loosen)
 	material.set_shader_parameter("density", air.fog_amount)

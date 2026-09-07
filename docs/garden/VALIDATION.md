@@ -34,14 +34,52 @@ water record instead of stacking surfaces. Boundary round trips are covered.
 A nonblocking maintenance suggestion remains: consolidate weather parameters if
 more profiles are added.
 
-## Remaining verification
+## Mouse playtest
 
-The automated scene test calls tool handlers; it does not replace an end-to-end
-mouse playtest. Desktop control successfully selected tools and sculpted in an
-isolated temporary save, then repeatedly lost its actionable window connection
-(`noWindowsAvailable` / concurrent-change errors). A complete mouse-driven loop
-and reopen remains pending. The overall goal should remain active until this
-interaction gap is resolved.
+A separate macOS app identity resolved the desktop-control targeting failure.
+The visible controls were used to start flat, raise a hill, lower a hollow, paint
+308 meadow cells, place a tree, rock and three individual flowers, fill one pond,
+select Rain, and save. The app was closed normally and reopened. A second save
+was byte-identical to the first:
+
+`44f625b5c7a09cd02b40fa46401c67c34d788a3fa06c4d1dade092ed68e8aef7`
+
+The authored world is preserved as `manual-garden.json`. The new input check
+reproduced and fixed a missed first click when leaving the toolbar; picking now
+uses the mouse event position, and the rendered integration test uses real camera
+rays. Loading also restores vector coordinate precision, including near-zero
+ray-picked positions.
+
+## Clarified target: Build mode in the beautiful port
+
+The user clarified that an editor with approximately similar visuals is not the
+target. Build tools must operate in the original inspectable, rotatable fidelity
+scene, on that chunk, with its camera, lighting, textures and shaders. Switching
+from Inspect to Build should add editing tools without changing the landscape's
+appearance or swapping to the old square sandbox.
+
+The separate garden loop is functional and verified, but does not satisfy this
+clarified integration requirement. Keep the goal active. Next work is to attach
+editing to `studies/fidelity.tscn`, preserving the imported terrain topology and
+material payloads, then connect blank initialization, planting, water authoring,
+complete world saves, and the existing environmental controls there.
+
+Rendering groundwork in this iteration:
+
+- The port and garden use the same `LandscapeLighting` setup.
+- Garden surfaces and water use the real source shaders and foliage materials.
+- `GardenSurfaceMap` updates the port's surface texture channels after edits.
+- The port's atmosphere compositor supports the garden's orthographic camera;
+  its original perspective path remains intact.
+- All 50 rendered test scripts passed, including live ground/water-map checks.
+  Review then found that overlapping ponds could overwrite a higher water level
+  with a lower one in the atmosphere map. The map now retains the highest surface;
+  both insertion orders pass the added rendered regression. Atmosphere alone owns
+  wind/gust shader globals.
+
+This is shared rendering infrastructure, not a claim of native Build mode or
+visual parity. Native Build mode must be verified against the unchanged port
+before editing, and with representative authored landscapes after editing.
 
 ## Current scope
 
@@ -50,7 +88,7 @@ The 24-unit plot uses a 48-cell heightfield and remains bounded to −0.65 throu
 objects use persistent IDs and ground-relative positions. Plants use original
 ZenScape meshes; the stone is a small procedural mesh. Pond surfaces are clipped
 to connected terrain triangles; open basins that spill off the plot are refused.
-Weather is a compact garden implementation, not the fidelity scene's full weather
-simulation. Animation phases restart, while authored garden state and camera
+Precipitation remains the compact garden implementation; materials, lighting,
+water and atmospheric compositing now use the port's rendering systems. Animation phases restart, while authored garden state and camera
 framing persist. Object selection/movement, rivers, custom assets, and Workshop
 are future work beyond this requested garden loop.

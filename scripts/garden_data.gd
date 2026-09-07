@@ -113,6 +113,11 @@ func load_document(document: Variant) -> bool:
 			ids[item.id] = true
 			var restored: Dictionary = item.duplicate(true)
 			restored.id = int(item.id)
+			# Positions originate in Godot Vector2/3 (32-bit components).
+			# Reconstruct that precision after JSON parses into 64-bit numbers.
+			var point := Vector2(item.x, item.z)
+			restored.x = point.x
+			restored.z = point.y
 			candidate.objects.append(restored)
 		if not _integer(document.get("next_id")) or document.next_id < 1:
 			return false
@@ -125,7 +130,11 @@ func load_document(document: Variant) -> bool:
 		for pond: Variant in document.ponds:
 			if not pond is Dictionary or not _point_valid(pond) or not _number(pond.get("level"), MIN_HEIGHT, MAX_HEIGHT):
 				return false
-			candidate.ponds.append(pond.duplicate(true))
+			var restored_pond: Dictionary = pond.duplicate(true)
+			var point := Vector2(pond.x, pond.z)
+			restored_pond.x = point.x
+			restored_pond.z = point.y
+			candidate.ponds.append(restored_pond)
 	_restore(candidate._snapshot())
 	_undo.clear()
 	_redo.clear()

@@ -93,9 +93,11 @@ func stroke(scene: Node3D, tool: String, point: Vector2, radius: float, seconds:
 	scene._finish_stroke()
 
 func click(scene: Node3D, point: Vector2) -> void:
-	scene._hit = Vector3(point.x, scene.garden.data.height_at(point), point.y)
+	scene._hit = null
+	var world := Vector3(point.x, scene.garden.data.height_at(point), point.y)
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
+	event.position = scene.camera.unproject_position(world)
 	event.pressed = true
 	scene._unhandled_input(event)
 	event.pressed = false

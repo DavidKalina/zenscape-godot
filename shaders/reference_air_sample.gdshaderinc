@@ -8,7 +8,7 @@ uniform float shroud = 0.0;
 uniform float loosen = 0.0;
 uniform vec3 fog_display;
 uniform float density = 0.45;
-uniform float floor_height = 0.0;
+uniform float floor_height = 0.15;
 uniform float haze = 0.15;
 uniform float rays = 1.0;
 uniform sampler2D stream_map : filter_nearest, repeat_disable;

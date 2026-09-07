@@ -70,3 +70,16 @@ static func covers(vertices: PackedVector3Array, point: Vector2) -> bool:
 		if Geometry2D.is_point_in_polygon(point, polygon):
 			return true
 	return false
+
+static func fetch(data: LandscapeData, point: Vector2, level: float) -> PackedFloat32Array:
+	var distances := PackedFloat32Array()
+	for i in range(8):
+		var direction := Vector2.from_angle(float(i) * PI / 4.0)
+		var distance := 0.0
+		for step in range(1, 49):
+			var sample := point + direction * float(step) * 0.5
+			if not data.contains(sample) or data.height_at(sample) >= level:
+				break
+			distance = float(step) * 0.5
+		distances.append(distance)
+	return distances

@@ -27,20 +27,34 @@ var _fog_material: ShaderMaterial
 var _environment: Environment
 
 func setup(geometry: Node3D, environment: Environment) -> void:
+	setup_ground(geometry.get_node("terrain"), environment)
+
+func setup_ground(terrain: MeshInstance3D, environment: Environment, use_reference_bounds := true) -> void:
 	_environment = environment
-	var terrain: MeshInstance3D = geometry.get_node("terrain")
+	update_ground_bounds(terrain)
+	if use_reference_bounds:
+		var reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/environment.json"))
+		var summit: Array = reference.uSummit
+		_summit = Vector3(summit[0], summit[1], summit[2])
+		_ground_min = reference.uGroundRange[0]
+	_publish_wind()
+	if RenderingServer.get_current_rendering_method() == "forward_plus":
+		_add_fog()
+
+func update_ground_bounds(terrain: MeshInstance3D) -> void:
+	_ground_min = INF
+	_summit = Vector3(0, -INF, 0)
 	for vertex: Vector3 in terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
 		var point := terrain.transform * vertex
 		_ground_min = minf(_ground_min, point.y)
 		if point.y > _summit.y:
 			_summit = point
-	var reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/environment.json"))
-	var summit: Array = reference.uSummit
-	_summit = Vector3(summit[0], summit[1], summit[2])
-	_ground_min = reference.uGroundRange[0]
+	var fog := get_node_or_null("ValleyFog") as FogVolume
+	if fog != null:
+		fog.size = Vector3(28.0, _summit.y - _ground_min + 10.0, 28.0)
+		fog.position = Vector3(0.0, _ground_min - 0.5 + fog.size.y * 0.5, 0.0)
+		_fog_material.set_shader_parameter("floor_height", _ground_min)
 	_publish_wind()
-	if RenderingServer.get_current_rendering_method() == "forward_plus":
-		_add_fog()
 
 func advance(delta: float, paused: bool) -> void:
 	if paused:

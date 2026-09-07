@@ -10,7 +10,7 @@ func _initialize() -> void:
 	garden.brush(Vector2(4, 0), 3, 1, 0.5, "lower", 0)
 	garden.paint_meadow(Vector2(-4, 0), 3, 1)
 	garden.place("tree", Vector2(-4, 0), 0.7, 1.2)
-	garden.place("rock", Vector2(1, 1))
+	garden.place("rock", Vector2(0.00084355659783, 0.99937736988068))
 	garden.place("flower", Vector2(2, 1))
 	check(garden.add_pond(Vector2(4, 0), -0.1), "A hollow can hold a pond")
 	garden.weather = "Rain"

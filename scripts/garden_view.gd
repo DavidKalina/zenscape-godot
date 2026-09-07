@@ -3,23 +3,19 @@ extends Node3D
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
 var data: GardenData
 var _meshes := {}
-var _tints := {"trunk": Color(0.1573, 0.0766, 0.0474), "canopy": Color(0.0652, 0.1788, 0.1081), "stem": Color(0.0782, 0.1946, 0.0452), "petal": Color(0.95, 0.78, 0.35)}
+var _tints := {"canopy": Color(0.0652, 0.1788, 0.1081), "petal": Color(0.95, 0.78, 0.35)}
 var _batches: Array[MultiMeshInstance3D] = []
 var _water: MeshInstance3D
-var _foliage: ShaderMaterial
-var _solid: ShaderMaterial
+var _materials := {}
 var _water_material: ShaderMaterial
 var pond_vertices := PackedVector3Array()
 
 func _ready() -> void:
-	_foliage = ShaderMaterial.new()
-	_foliage.shader = preload("res://shaders/garden_foliage.gdshader")
-	_solid = _foliage.duplicate()
-	_solid.set_shader_parameter("sway", false)
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	for pair: Array in [["trunk", "mesh-8"], ["canopy", "mesh-9"], ["grass", "mesh-10"], ["stem", "flower-stems"], ["petal", "flowers-daisy"]]:
 		var original: MultiMeshInstance3D = source.get_node(pair[1])
 		_meshes[pair[0]] = original.multimesh.mesh
+		_materials[pair[0]] = original.multimesh.mesh.surface_get_material(0).duplicate()
 	source.free()
 	# A faceted stone in the same muted palette as the ground.
 	var sphere := SphereMesh.new()
@@ -35,10 +31,17 @@ func _ready() -> void:
 	var stone := ArrayMesh.new()
 	stone.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	_meshes["rock"] = stone
+	var rock_material := ShaderMaterial.new()
+	rock_material.shader = preload("res://shaders/reference_surface.gdshader")
+	rock_material.set_shader_parameter("flat_faces", true)
+	rock_material.set_shader_parameter("wet_ground", true)
+	_materials["rock"] = rock_material
 	_water = MeshInstance3D.new()
 	_water.name = "Ponds"
 	_water_material = ShaderMaterial.new()
-	_water_material.shader = preload("res://shaders/garden_water.gdshader")
+	_water_material.shader = preload("res://shaders/lake_reference_water.gdshader")
+	_water_material.set_shader_parameter("lake_swell", 0.2)
+	_water_material.set_shader_parameter("lake_algae_amount", 0.2)
 	_water.material_override = _water_material
 	add_child(_water)
 
@@ -89,7 +92,7 @@ func rebuild() -> void:
 		for i in range(placements.size()):
 			batch.multimesh.set_instance_transform(i, placements[i])
 			batch.multimesh.set_instance_color(i, _tints.get(key, Color.WHITE))
-		batch.material_override = _solid if key in ["trunk", "rock"] else _foliage
+		batch.material_override = _materials[key]
 		add_child(batch)
 		_batches.append(batch)
 	pond_vertices.clear()
@@ -100,14 +103,14 @@ func rebuild() -> void:
 		var surface := SurfaceTool.new()
 		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 		surface.set_normal(Vector3.UP)
+		surface.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
+		surface.set_custom_format(1, SurfaceTool.CUSTOM_RGBA_FLOAT)
 		for point in pond_vertices:
+			var depth := maxf(0.0, point.y - data.height_at(Vector2(point.x, point.z)))
+			surface.set_uv2(Vector2(depth, 0.0))
+			var fetch := GardenWater.fetch(data, Vector2(point.x, point.z), point.y)
+			surface.set_custom(0, Color(fetch[0], fetch[1], fetch[2], fetch[3]))
+			surface.set_custom(1, Color(fetch[4], fetch[5], fetch[6], fetch[7]))
+			surface.set_color(Color("79ae9b").lerp(Color("245a5c"), 1.0-exp(-depth/0.45)).srgb_to_linear())
 			surface.add_vertex(point)
 		_water.mesh = surface.commit()
-	set_weather()
-
-func set_weather() -> void:
-	for material: ShaderMaterial in [_foliage, _solid]:
-		material.set_shader_parameter("snow", 0.8 if data.weather == "Snow" else 0.0)
-		material.set_shader_parameter("wet", 1.0 if data.weather == "Rain" else 0.0)
-		material.set_shader_parameter("wind", 1.4 if data.weather == "Rain" else 0.4)
-	_water_material.set_shader_parameter("frozen", 1.0 if data.weather == "Snow" else 0.0)

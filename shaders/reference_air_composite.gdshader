@@ -2,12 +2,17 @@ shader_type canvas_item;
 render_mode unshaded, blend_premul_alpha;
 #include "res://shaders/reference_air_sample.gdshaderinc"
 uniform mat3 camera_basis;
+uniform bool orthographic = false;
 uniform vec2 projection_scale;
 
 void fragment() {
 	vec3 ro = zs_camera_position;
 	vec3 rd = normalize(camera_basis * vec3((SCREEN_UV.x * 2.0 - 1.0) * projection_scale.x, (1.0 - SCREEN_UV.y * 2.0) * projection_scale.y, -1.0));
-	float drawn_floor = mix(0.6, 0.15, smoothstep(0.13, 0.43, zs_growth.x));
+	if (orthographic) {
+		ro += camera_basis * vec3((SCREEN_UV.x * 2.0 - 1.0) * projection_scale.x, (1.0 - SCREEN_UV.y * 2.0) * projection_scale.y, 0.0);
+		rd = -camera_basis[2];
+	}
+	float drawn_floor = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
 	float drawn_top = mix(9.6, zs_summit.y + 9.0, smoothstep(0.13, 0.43, zs_growth.x));
 	vec3 inv = 1.0 / (rd + vec3(0.000001));
 	vec3 a = (vec3(-14.0, drawn_floor - 0.5, -14.0) - ro) * inv;

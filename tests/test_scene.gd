@@ -24,14 +24,15 @@ func _run() -> void:
 	var before := terrain.data.heights.duplicate()
 	# Exercise the same UI selection and input handler used by real brush presses.
 	scene._select_tool("raise")
-	scene._hit = hit
+	scene._hit = null # The pointer was on the toolbar in the previous frame.
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
+	press.position = camera.unproject_position(hit)
 	scene._unhandled_input(press)
 	press.pressed = false
 	scene._unhandled_input(press)
-	_check(terrain.data.heights != before, "A brush click edits terrain")
+	_check(terrain.data.heights != before, "A fast click picks terrain without a cached hover hit")
 	scene._undo()
 	_check(terrain.data.heights == before, "The Undo action restores that click")
 	scene._redo()
