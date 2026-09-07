@@ -680,3 +680,74 @@ and fall-strand scripts: all pass. `test_display_fog.gd` fails, but it fails
 identically on the parent commit with no editor involved, so it is not this
 change; it was run under heavy GPU contention. The full 73-test suite was not
 re-run end to end.
+
+## Temporal fog reuse and a frame profiler that survives macOS (2026-09-07)
+
+Wall-clock frame timing on this Mac has two failure modes that `tools/profile_frame_phases.gd`
+now works around. Fullscreen and, intermittently, maximized windows report exactly
+6.90 ms (145 fps) whatever is drawn, including an empty frame: that reading is a
+presentation cap, not a cost, and any phase that prints it is discarded. And the
+paused scene at native resolution renders under that cap, so single readings cannot
+rank levers at all. `RenderingServer.viewport_get_measured_render_time_gpu` returns
+zero on Metal, and the MoltenVK figures under `--rendering-driver vulkan` were
+inconsistent (the fog buffer reported more time than the whole frame), so the
+profiler measures by multiplication instead: `x3d-K` renders the world K extra
+times into viewports that share the root's world, camera and viewport settings,
+`xfog-K` draws K extra copies of the air march, and phases combine with `+`
+(`x3d-8+msaa-off`). With K = 4 and 8 the frame lands far above the cap and
+`(t(8) - t(4)) / 4` is one pass. `--maximize`, `--fullscreen`, `--paused` and
+`--repeat=N` are new switches; new phases are `fsr2-<s>`, `bilinear-<s>`,
+`msaa-4`, `fxaa`, `taa`, `sky-inc`, `ssao-off`, `glow-off`, `shadows-off`,
+`xblend-K`.
+
+Measured that way at 3024x1706, paused, one pass each:
+
+| | ms |
+|---|---|
+| 3D pass, MSAA 2x, SSAO, glow, shadows | 4.9 |
+| same with MSAA 4x | 4.9 |
+| same without MSAA | 3.3 |
+| same without SSAO / without glow / without shadows | 3.3 / 3.4 / 3.9 |
+| FSR2 at 0.75 / 0.67 / 0.5 | 5.3 / 4.9 / 4.1 |
+| bilinear 0.67 | 2.8 |
+| air march, 0.5 scale, 32 steps (before) | 3.5 |
+| air march, 0.5 scale, 16 steps | 1.8 |
+| waterfall mist | 0.0 |
+
+FSR2 is not a lever on this GPU: its own passes cost what the smaller 3D pass
+saves until 0.5, and bilinear scaling blurs the geometry the source keeps sharp.
+MSAA 4x is free relative to 2x. The march was the one large cost with no visible
+downside to removing, and the source already had the answer.
+
+`studies/display_fog.gd` now ports `weather.js` §2c. The march lands in a
+viewport half the size of the resolved buffer in each axis (360x225 under a
+720x450 buffer), its rays nudged a quarter texel in the source's four-frame
+cycle and its start dither advanced per frame by the source's constant, at the
+source's 16 steps. `shaders/reference_air_resolve.gdshader` fills the buffer:
+it reads the march at the jittered offset, reprojects each pixel through last
+frame's camera to fetch last frame's field, clamps that to the new sample's 3x3
+neighbourhood and blends it under the new sample at the source's 0.12. Where the
+source reprojects through the march's mean depth, the port uses the surface
+depth the compositor effect already captures (fog stops at the surface and pools
+just above it) and treats open sky as the far plane; the clamp absorbs the
+difference. The history is last frame's buffer, copied on the rendering device
+before each draw into a texture the resolve samples through `Texture2DRD`; a
+resize or `forget()` starts fresh, and the march viewport is nested inside the
+buffer so it draws first. The resolved buffer is `use_hdr_2d` so the blend does
+not stall on 8-bit quantisation; the march stays 8-bit, which keeps its
+`ground_map` reads unconverted (a check in the fog test confirms a fresh resolve
+passes the march through with the same mean).
+
+Frame-to-frame variation of the settled field at 1440x900 with fog 0.8, mean
+absolute channel difference: 0.0040 with the history off, 0.0006 at 0.12. The
+worst single pixels still move by up to 0.1 on the fog's silhouette against
+the terrain, which is where the clamp is widest; the composite shows no grain
+there and no ghosting in a 24-frame orbit. `tests/test_display_fog.gd` therefore
+judges fields by their mean difference after 48 settling frames instead of byte
+equality, and additionally checks the march size and the passthrough.
+
+Result at 3024x1706, maximized, all measured in one process: one march copy
+0.7 ms (was 3.5), paused frame 6.7 ms (was 9.4), unpaused 6.7 to 8.3 ms as the
+day advances, against an 8.3 ms budget for 120 Hz. The 3D pass at 4.9 ms is
+now the frame. Incremental sky radiance measured within the noise unpaused and
+was left alone. The 75-test suite passes.

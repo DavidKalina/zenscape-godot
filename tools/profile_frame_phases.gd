@@ -1,7 +1,12 @@
 extends SceneTree
 ## Single-process frame profiler: cycles render configurations in place and
 ## samples wall fps and main-thread time per phase. Usage:
-##   Godot --path . --rendering-method forward_plus --disable-vsync --script res://tools/profile_frame_phases.gd -- --phases=baseline,hide-mist,half-window
+##   Godot --path . --rendering-method forward_plus --disable-vsync --script res://tools/profile_frame_phases.gd -- --maximize --paused --phases=baseline,x3d-4,x3d-8,x3d-4+msaa-off,x3d-8+msaa-off
+## Switches: --maximize, --fullscreen, --paused, --hold=<s>, --repeat=<n>.
+## A phase that prints exactly 6.90 ms hit the macOS presentation cap; discard it.
+## Below that cap only slopes are trustworthy: `x3d-K` renders the world K extra
+## times, `xfog-K` marches the air K extra times, `xblend-K` composites K extra
+## times, and `+` combines phases, so (t(x3d-8) - t(x3d-4)) / 4 is one 3D pass.
 var scene: Node3D
 var phases := ["baseline","empty","baseline"]
 var hold := 4000000
@@ -12,6 +17,9 @@ var proc_us := 0
 var gap_us := 0
 var last_end := 0
 var settle := true
+var gpu_us := 0.0
+var rcpu_us := 0.0
+var fog_gpu_us := 0.0
 var _env_bg := 0
 var _sky: Sky
 func _initialize() -> void:
@@ -19,6 +27,10 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--phases="): phases = Array(a.trim_prefix("--phases=").split(","))
 		if a.begins_with("--hold="): hold = int(a.trim_prefix("--hold=")) * 1000000
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--repeat="):
+			var once := phases.duplicate()
+			for i in range(int(a.trim_prefix("--repeat=")) - 1): phases.append_array(once)
 	_start.call_deferred()
 func _start() -> void:
 	scene = load("res://studies/fidelity.tscn").instantiate()
@@ -29,6 +41,12 @@ func _start() -> void:
 	_kids = scene.get_children()
 	for a in OS.get_cmdline_user_args():
 		if a == "--no-scene-process": _no_process = true
+		if a == "--maximize": DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
+		if a == "--fullscreen": DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
+	RenderingServer.viewport_set_measure_render_time(scene._display_fog.buffer.get_viewport_rid(), true)
+	for a in OS.get_cmdline_user_args():
+		if a == "--paused": scene._paused = true
 	_env_bg = scene._environment.background_mode
 	_sky = scene._environment.sky
 	await create_timer(3.0).timeout
@@ -41,8 +59,62 @@ var _kids: Array = []
 var _per_frame := Callable()
 var _post := Callable()
 var _no_process := false
+var _extra_views: Array = []
+var _extra_rects: Array = []
 func _apply(name: String, on: bool) -> void:
+	if "+" in name and not name.begins_with("hide-mist+") and not name.begins_with("freeze+"):
+		for part in name.split("+"):
+			_apply(part, on)
+		return
 	var e: Environment = scene._environment
+	if name.begins_with("x3d-"):
+		# K extra full 3D renders of the same world from the same camera, so the
+		# frame lands above the presentation cap; (t(2K) - t(K)) / K is one pass.
+		if on:
+			for i in int(name.trim_prefix("x3d-")):
+				var vp := SubViewport.new()
+				vp.world_3d = root.world_3d
+				vp.size = root.size
+				vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+				var cam := Camera3D.new()
+				vp.add_child(cam)
+				cam.make_current()
+				root.add_child(vp)
+				_extra_views.append(vp)
+		else:
+			for vp in _extra_views: vp.queue_free()
+			_extra_views.clear()
+		return
+	if name.begins_with("xblend-"):
+		# K extra copies of the full-window composite (screen texture read + air blend).
+		var fog = scene._display_fog
+		if on:
+			for i in int(name.trim_prefix("xblend-")):
+				var r := ColorRect.new()
+				r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+				r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				r.material = fog.blend
+				fog.add_child(r)
+				_extra_rects.append(r)
+		else:
+			for r in _extra_rects: r.queue_free()
+			_extra_rects.clear()
+		return
+	if name.begins_with("xfog-"):
+		# K extra copies of the air march inside the march target.
+		var buf: SubViewport = scene._display_fog.march
+		if on:
+			for i in int(name.trim_prefix("xfog-")):
+				var r := ColorRect.new()
+				r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+				r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				r.material = scene._display_fog.material
+				buf.add_child(r)
+				_extra_rects.append(r)
+		else:
+			for r in _extra_rects: r.queue_free()
+			_extra_rects.clear()
+		return
 	if name == "factor2":
 		root.get_window().content_scale_factor = 2.0 if on else 1.0
 		if on:
@@ -54,7 +126,7 @@ func _apply(name: String, on: bool) -> void:
 		return
 	if name == "hide-mist+air16":
 		_post = (func(): scene.get_node("WaterfallSpray").visible = false) if on else Callable()
-		scene._display_fog.material.set_shader_parameter("air_steps", 16 if on else 64)
+		scene._display_fog.material.set_shader_parameter("air_steps", 16)
 		return
 	if name == "hide-mist+air16+nofog":
 		_post = (func(): scene.get_node("WaterfallSpray").visible = false; scene._display_fog.visible = false; scene._display_fog.buffer.render_target_update_mode = SubViewport.UPDATE_DISABLED) if on else Callable()
@@ -94,11 +166,16 @@ func _apply(name: String, on: bool) -> void:
 		for c in scene.get_children():
 			if c is CanvasLayer: c.visible = false
 		return
+	if name.begins_with("fsr2-") or name.begins_with("bilinear-"):
+		var fsr := name.begins_with("fsr2-")
+		root.scaling_3d_mode = (Viewport.SCALING_3D_MODE_FSR2 if fsr else Viewport.SCALING_3D_MODE_BILINEAR) if on else Viewport.SCALING_3D_MODE_BILINEAR
+		root.scaling_3d_scale = float(name.get_slice("-", 1)) if on else 1.0
+		return
 	if name.begins_with("air-s"):
 		var parts := name.trim_prefix("air-s").split("-n")
 		var fog = scene._display_fog
 		fog.buffer_scale = float(parts[0]) if on else 0.5
-		fog.material.set_shader_parameter("air_steps", int(parts[1]) if on else 64)
+		fog.material.set_shader_parameter("air_steps", int(parts[1]) if on else 16)
 		return
 	match name:
 		"env-min":
@@ -144,6 +221,20 @@ func _apply(name: String, on: bool) -> void:
 			scene._environment.sky = null if on else _sky
 		"msaa-off":
 			root.msaa_3d = Viewport.MSAA_DISABLED if on else Viewport.MSAA_2X
+		"msaa-4":
+			root.msaa_3d = Viewport.MSAA_4X if on else Viewport.MSAA_2X
+		"fxaa":
+			root.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if on else Viewport.SCREEN_SPACE_AA_DISABLED
+		"taa":
+			root.use_taa = on
+		"sky-inc":
+			_sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL if on else Sky.PROCESS_MODE_REALTIME
+		"ssao-off":
+			e.ssao_enabled = not on
+		"glow-off":
+			e.glow_enabled = not on
+		"shadows-off":
+			for l in scene.find_children("*", "DirectionalLight3D", true, false): l.shadow_enabled = not on
 		"half-window":
 			if on:
 				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
@@ -160,17 +251,26 @@ func _next() -> void:
 	_apply(phases[phase], true)
 	settle = true
 	t0 = Time.get_ticks_usec()
-	frames = 0; proc_us = 0; gap_us = 0
+	frames = 0; proc_us = 0; gap_us = 0; gpu_us = 0.0; rcpu_us = 0.0; fog_gpu_us = 0.0
 func _frame() -> void:
 	var now := Time.get_ticks_usec()
 	if settle:
 		if now - t0 > 1500000:
 			settle = false
-			t0 = now; frames = 0; proc_us = 0; gap_us = 0
+			t0 = now; frames = 0; proc_us = 0; gap_us = 0; gpu_us = 0.0; rcpu_us = 0.0; fog_gpu_us = 0.0
 		last_end = now
 		return
 	frames += 1
 	gap_us += now - last_end
+	for vp in _extra_views:
+		var cam: Camera3D = vp.get_child(0)
+		cam.global_transform = scene.camera.global_transform
+		cam.fov = scene.camera.fov; cam.near = scene.camera.near; cam.far = scene.camera.far
+		vp.msaa_3d = root.msaa_3d; vp.scaling_3d_mode = root.scaling_3d_mode; vp.scaling_3d_scale = root.scaling_3d_scale
+		vp.screen_space_aa = root.screen_space_aa; vp.use_taa = root.use_taa
+	gpu_us += RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid()) * 1000.0
+	rcpu_us += RenderingServer.viewport_get_measured_render_time_cpu(root.get_viewport_rid()) * 1000.0
+	fog_gpu_us += RenderingServer.viewport_get_measured_render_time_gpu(scene._display_fog.buffer.get_viewport_rid()) * 1000.0
 	if _per_frame.is_valid(): _per_frame.call()
 	if scene.process_mode != Node.PROCESS_MODE_DISABLED and not _no_process:
 		var s := Time.get_ticks_usec()
@@ -180,5 +280,5 @@ func _frame() -> void:
 	last_end = Time.get_ticks_usec()
 	if now - t0 > hold:
 		var sec := float(now - t0) / 1e6
-		print("PHASE %-14s fps=%6.1f frame=%6.2fms  fidelity._process=%5.2fms  rest(render+present+other)=%6.2fms  target=%s draws=%d" % [phases[phase], frames/sec, 1000.0*sec/frames, proc_us/1000.0/frames, gap_us/1000.0/frames, str(root.get_texture().get_size()), Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
+		print("PHASE %-14s fps=%6.1f frame=%6.2fms  gpu=%6.2fms (fog %5.2f)  render_cpu=%5.2fms  fidelity._process=%5.2fms  rest=%6.2fms  target=%s draws=%d" % [phases[phase], frames/sec, 1000.0*sec/frames, gpu_us/1000.0/frames, fog_gpu_us/1000.0/frames, rcpu_us/1000.0/frames, proc_us/1000.0/frames, gap_us/1000.0/frames, str(root.get_texture().get_size()), Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
 		_next()
