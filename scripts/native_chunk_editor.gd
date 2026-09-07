@@ -14,6 +14,11 @@ var active := false
 var mode := "raise"
 var radius := 2.2
 var strength := 2.0
+var grass_amount := 0.85
+var mountain_radius := 6.0
+var mountain_peak := 9.0
+var _tool_settings := {}
+var _sky_controls := {}
 var controls := VBoxContainer.new()
 var _tools := VBoxContainer.new()
 var _toggle := Button.new()
@@ -82,7 +87,7 @@ func _build_controls() -> void:
 	var row := GridContainer.new()
 	row.columns = 4
 	var group := ButtonGroup.new()
-	for tool in ["raise","lower","smooth","flatten","meadow","tree","rock","flower","pond","erase"]:
+	for tool in ["raise","lower","smooth","flatten","mountain","grass","meadow","erase","tree","rock","flower","pond"]:
 		var button := Button.new()
 		button.text = tool.capitalize()
 		button.toggle_mode = true
@@ -92,32 +97,23 @@ func _build_controls() -> void:
 		button.pressed.connect(func() -> void:
 			finish_stroke()
 			mode = tool
+			_update_tool_settings()
 		)
 		row.add_child(button)
 	_tools.add_child(row)
-	for setting in ["radius","strength"]:
-		var label := Label.new()
-		label.text = "Brush size" if setting == "radius" else "Strength"
-		_tools.add_child(label)
-		var slider := HSlider.new()
-		slider.min_value = 0.4
-		slider.max_value = 5.0
-		slider.step = 0.1
-		slider.value = radius if setting == "radius" else strength
-		slider.focus_mode = Control.FOCUS_NONE
-		slider.value_changed.connect(func(value: float) -> void: set(setting,value))
-		_tools.add_child(slider)
-	var level_label := Label.new()
-	level_label.text = "Pond surface height"
-	_tools.add_child(level_label)
-	var level_slider := SpinBox.new()
-	level_slider.min_value = -1.4
-	level_slider.max_value = 12.0
-	level_slider.step = 0.05
-	level_slider.value = pond_level
-	level_slider.focus_mode = Control.FOCUS_NONE
-	level_slider.value_changed.connect(func(value: float) -> void: pond_level = value)
-	_tools.add_child(level_slider)
+	_setting("radius","Brush size",0.4,5.0,0.1,["raise","lower","smooth","flatten","grass","meadow","erase","pond"])
+	_setting("strength","Strength",0.4,5.0,0.1,["raise","lower","smooth","flatten","meadow","erase"])
+	_setting("grass_amount","Grass density",0.0,1.0,0.05,["grass"])
+	var cover := Button.new()
+	cover.text = "Cover chunk in grass"
+	cover.focus_mode = Control.FOCUS_NONE
+	cover.pressed.connect(cover_grass)
+	_tools.add_child(cover)
+	_tool_settings[cover] = ["grass"]
+	_setting("mountain_radius","Mountain base radius",1.0,12.0,0.5,["mountain"])
+	_setting("mountain_peak","Peak height",0.5,24.0,0.5,["mountain"])
+	_setting("pond_level","Pond surface height",-1.4,12.0,0.05,["pond"])
+	_update_tool_settings()
 	var history := HBoxContainer.new()
 	for entry: Array in [["Undo",undo],["Redo",redo],["Save",save_garden],["Open",open_garden]]:
 		var button := Button.new()
@@ -126,9 +122,87 @@ func _build_controls() -> void:
 		button.pressed.connect(entry[1])
 		history.add_child(button)
 	_tools.add_child(history)
+	_build_sky_controls()
 	_status.text = "Left drag paints · Click places · Right drag orbits\nSave keeps this garden · Open restores it"
 	_status.add_theme_font_size_override("font_size",12)
 	_tools.add_child(_status)
+
+func _setting(property: String, title: String, low: float, high: float, step: float, modes: Array) -> void:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = title
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var value := SpinBox.new()
+	value.min_value = low
+	value.max_value = high
+	value.step = step
+	value.value = get(property)
+	value.value_changed.connect(func(number: float) -> void: set(property,number))
+	row.add_child(value)
+	_tools.add_child(row)
+	_tool_settings[row] = modes
+
+func _update_tool_settings() -> void:
+	for control: Control in _tool_settings:
+		control.visible = mode in _tool_settings[control]
+
+func cover_grass() -> void:
+	finish_stroke()
+	data.begin_stroke()
+	data.grass.fill(grass_amount)
+	data.end_stroke()
+	refresh()
+
+func _build_sky_controls() -> void:
+	var toggle := CheckButton.new()
+	toggle.text = "Sky & weather"
+	toggle.focus_mode = Control.FOCUS_NONE
+	_tools.add_child(toggle)
+	var sky := VBoxContainer.new()
+	sky.visible = false
+	toggle.toggled.connect(func(value: bool) -> void: sky.visible = value)
+	_tools.add_child(sky)
+	var moods := HBoxContainer.new()
+	for i in range(3):
+		var button := Button.new()
+		button.text = ["Golden hour","Misty dawn","Night"][i]
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(func() -> void: scene._apply_mood(i); _sync_sky_controls())
+		moods.add_child(button)
+	sky.add_child(moods)
+	var weather := OptionButton.new()
+	for preset: String in scene._precipitation.PRESET_NAMES:
+		weather.add_item(preset.capitalize())
+	weather.focus_mode = Control.FOCUS_NONE
+	weather.item_selected.connect(func(index: int) -> void: scene._precipitation.set_weather(index))
+	sky.add_child(weather)
+	_sky_controls.weather = weather
+	for setting: String in ["time","clouds","fog"]:
+		var label := Label.new()
+		label.text = {"time":"Time of day","clouds":"Cloud cover","fog":"Mist"}[setting]
+		sky.add_child(label)
+		var slider := HSlider.new()
+		slider.max_value = 1.0
+		slider.step = 0.01
+		slider.focus_mode = Control.FOCUS_NONE
+		slider.value_changed.connect(func(value: float) -> void:
+			match setting:
+				"time": scene._celestial.set_phase(value)
+				"clouds": scene._precipitation.cloud_override = value
+				"fog": scene._atmosphere.set_fog(value)
+		)
+		sky.add_child(slider)
+		_sky_controls[setting] = slider
+	_sync_sky_controls()
+
+func _sync_sky_controls() -> void:
+	if _sky_controls.is_empty():
+		return
+	_sky_controls.weather.select(scene._precipitation.preset_index)
+	_sky_controls.time.set_value_no_signal(scene._celestial.phase)
+	_sky_controls.clouds.set_value_no_signal(scene._precipitation.cloud_override if scene._precipitation.cloud_override >= 0.0 else scene._celestial.cloud)
+	_sky_controls.fog.set_value_no_signal(scene._atmosphere._fog_target)
 
 func set_active(enabled: bool) -> void:
 	if active == enabled:
@@ -170,8 +244,10 @@ func handle_input(event: InputEvent) -> bool:
 			data.begin_stroke()
 			_level = hit.y
 			_last_point = Vector2(hit.x,hit.z)
-			if mode in ["tree","rock","flower","pond"]:
-				if mode == "pond":
+			if mode in ["tree","rock","flower","pond","mountain"]:
+				if mode == "mountain":
+					data.mountain(_last_point,mountain_radius,mountain_peak)
+				elif mode == "pond":
 					if not data.add_pond(_last_point,pond_level):
 						_status.text = "Dig a hollow, then set water below its banks."
 				else:
@@ -200,6 +276,8 @@ func pick(mouse: Vector2) -> Variant:
 	return data.ray_hit(origin,direction.normalized())
 
 func _process(delta: float) -> void:
+	if active:
+		_sync_sky_controls()
 	if not active:
 		return
 	if _painting and (not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995):
@@ -209,7 +287,7 @@ func _process(delta: float) -> void:
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
-		_material.set_shader_parameter("brush_radius",radius)
+		_material.set_shader_parameter("brush_radius",mountain_radius if mode == "mountain" else radius)
 		if _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
@@ -336,8 +414,10 @@ func _rebuild_skirt() -> void:
 
 func dab(point: Vector2, amount: float) -> void:
 	match mode:
+		"grass": data.paint_grass(point,radius,grass_amount)
 		"meadow": data.paint_meadow(point,radius,amount)
 		"erase":
+			data.paint_grass(point,radius,0.0)
 			data.paint_meadow(point,radius,-amount)
 			data.erase_objects(point,radius)
 		_: data.brush(point,radius,amount,mode,_level)

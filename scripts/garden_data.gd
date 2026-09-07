@@ -168,3 +168,6 @@ func pond_surface(pond: Dictionary) -> PackedVector3Array:
 
 func pond_fetch(point: Vector2, level: float) -> PackedFloat32Array:
 	return GardenWater.fetch(self,point,level)
+
+func grass_density(index: int) -> float:
+	return meadow[index]

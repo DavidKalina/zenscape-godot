@@ -7,6 +7,7 @@ const MAX_HEIGHT := 24.0
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
+var grass := PackedFloat32Array()
 var objects: Array[Dictionary] = []
 var ponds: Array[Dictionary] = []
 var next_id := 1
@@ -24,6 +25,8 @@ var _redo: Array[Dictionary] = []
 var _before := {}
 
 func setup(mesh: ArrayMesh) -> void:
+	grass.resize(MEADOW_CELLS*MEADOW_CELLS)
+	grass.fill(0.0)
 	meadow.resize(MEADOW_CELLS*MEADOW_CELLS)
 	meadow.fill(0.0)
 	source_mesh = mesh
@@ -159,14 +162,19 @@ func build_mesh() -> ArrayMesh:
 			var grid := (points[vertex_ids[i]]+Vector2(14,14))/MEADOW_STEP
 			var cell := clampi(int(grid.y),0,MEADOW_CELLS-1)*MEADOW_CELLS+clampi(int(grid.x),0,MEADOW_CELLS-1)
 			var soil := Color("b49d78").srgb_to_linear()
-			var grass := Color("8ea975").srgb_to_linear()
-			colors[i] = soil.lerp(grass,meadow[cell]) * (0.9+0.2*uv2[i].x)
+			var grass_color := Color("8ea975").srgb_to_linear()
+			colors[i] = soil.lerp(grass_color,grass_density(cell)) * (0.9+0.2*uv2[i].x)
 		if uv2.size() == vertices.size():
 			uv2[i].y = vertices[i].y # The existing growth shader reads target height here.
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3):
 			normals[i+j] = normal
+			if blank:
+				var elevation := vertices[i+j].y
+				var rock_weight := maxf(smoothstep(4.0,9.0,elevation),smoothstep(0.2,0.65,1.0-normal.y))
+				colors[i+j] = colors[i+j].lerp(Color("a99d88").srgb_to_linear(),rock_weight)
+				colors[i+j] = colors[i+j].lerp(Color("eeeade").srgb_to_linear(),smoothstep(10.0,15.0,elevation)*smoothstep(0.45,0.85,normal.y))
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_NORMAL] = normals
@@ -180,18 +188,20 @@ func build_mesh() -> ArrayMesh:
 func reset_flat() -> void:
 	blank = true
 	heights.fill(0.0)
+	grass.fill(0.0)
 	meadow.fill(0.0)
 	objects.clear()
 	ponds.clear()
 	next_id = 1
 
 func _snapshot() -> Dictionary:
-	return {"heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "next_id":next_id}
+	return {"heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
 	heights = state.heights.duplicate()
 	blank = state.blank
 	meadow = state.meadow.duplicate()
+	grass = state.grass.duplicate()
 	objects.assign(state.objects.duplicate(true))
 	ponds.assign(state.ponds.duplicate(true))
 	next_id = state.next_id
@@ -207,6 +217,28 @@ func meadow_position(x: int, z: int) -> Vector2:
 
 func ground_height(point: Vector2) -> Variant:
 	return height_at(point.x,point.y)
+
+func grass_density(index: int) -> float:
+	return maxf(grass[index],meadow[index])
+
+func paint_grass(center: Vector2, radius: float, density: float) -> void:
+	if radius <= 0.0:
+		return
+	for z in range(MEADOW_CELLS):
+		for x in range(MEADOW_CELLS):
+			var distance := (meadow_position(x,z)+Vector2.ONE*MEADOW_STEP*0.5).distance_to(center)
+			if distance < radius:
+				var index := z*MEADOW_CELLS+x
+				grass[index] = lerpf(grass[index],clampf(density,0.0,1.0),1.0-smoothstep(0.0,radius,distance))
+
+func mountain(center: Vector2, radius: float, peak: float) -> void:
+	if radius <= 0.0:
+		return
+	for i in range(points.size()):
+		var distance := points[i].distance_to(center)
+		if distance < radius:
+			var height := clampf(peak,0.0,MAX_HEIGHT)*pow(1.0-distance/radius,1.35)
+			heights[i] = maxf(heights[i],height)
 
 func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 	for z in range(MEADOW_CELLS):
@@ -266,17 +298,21 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	return {"version":3,"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"next_id":next_id}
+	return {"version":4,"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"next_id":next_id}
 
 func _template_id() -> String:
 	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
 
 func load_document(document: Variant) -> bool:
-	if not document is Dictionary or document.get("version") != 3 or document.get("template") != _template_id() or not document.get("blank") is bool:
+	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4) or document.get("template") != _template_id() or not document.get("blank") is bool:
 		return false
 	var loaded := {}
-	for field: String in ["heights","meadow"]:
+	for field: String in ["heights","meadow","grass"]:
 		var values: Variant = document.get(field)
+		if field == "grass" and document.version == 3:
+			values = Array(PackedFloat32Array())
+			values.resize(meadow.size())
+			values.fill(0.0)
 		var count := heights.size() if field == "heights" else meadow.size()
 		if not values is Array or values.size() != count:
 			return false

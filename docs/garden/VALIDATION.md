@@ -11,6 +11,11 @@ same camera, environment, imported chunk and shaders. Escape returns to Inspect.
   captured decorations. The original faceted earth sides follow the new rim.
 - Raise, lower, smooth and flatten operate on the imported irregular topology.
   Height range is −1.5 to 24, across the original 28-unit chunk.
+- Grass paints an independent density layer, with a full-chunk coverage action.
+  Meadow adds mixed grass and flowers; individual flowers remain placeable.
+  Mountain stamps expose base radius (1–12) and peak height (0.5–24); blank
+  terrain blends to stone on high/steep faces and pale summits at high altitude.
+  Editing the imported scene preserves its source vertex colors.
 - Meadow painting uses deterministic cells across that chunk. Trees, grass and
   flowers use source meshes and materials; the rock is a small procedural mesh
   using the native surface shader. Plant positions follow the edited ground.
@@ -18,22 +23,35 @@ same camera, environment, imported chunk and shaders. Escape returns to Inspect.
   the actual mesh. The shared flood algorithm refuses open basins and replacing
   a connected pond avoids duplicate water. Rendering uses the native lake shader,
   depth attributes and directional wind-fetch data.
-- Original weather/time/atmosphere controls remain available. Weather and fog
+- Build includes a Sky & weather foldout with golden hour, misty dawn, night,
+  weather presets, time, clouds and mist, all driving the original scene.
+  Original weather/time/atmosphere controls remain available. Weather and fog
   surface maps update after edits. Rain's ceiling follows tall hills; the display
   fog floor follows deep hollows. Terrain formation temporarily suspends picking.
-- Undo/redo includes terrain, meadow, objects, ponds and blank/source state.
+- Undo/redo includes terrain, grass, meadow, objects, ponds and blank/source state.
   Undoing all edits restores the exact imported terrain/skirt mesh resources and
   the original surface-map bytes.
-- Save/Open use `user://native-garden.json`. The native version-3 document records
+- Save/Open use `user://native-garden.json`. The native version-4 document records
   the source-topology fingerprint, complete authored content, camera and native
   weather/atmosphere state. Scalar simulation doubles use their exact IEEE bytes
   because JSON decimal decoding can round a final bit. Invalid documents are
   validated before replacement; saves use a sibling temporary file and rename.
+  Version-3 documents migrate with an empty independent grass layer.
 - `run-garden.command` reopens that save automatically. `--garden-file=/path/file.json`
   selects a separate save for a playtest. Direct fidelity launches stay on the
   reference scene until the user chooses Open.
 
 ## Automated evidence (2026-09-07)
+
+The 52-test graphics suite passed after the tool additions. The targeted build
+tool test passed again after review fixes for time-transition cancellation and
+authored-content framing. The expanded control panel was inspected in a native
+rendered screenshot.
+
+`tests/test_native_build_tools.gd` checks one-dab grass visibility without flowers,
+full coverage and undo, v3 migration and v4 roundtrip, malformed density rejection,
+actual mouse-event mountain placement, bounds, precipitation ceiling, alpine
+colors, camera framing, and native sky control/state synchronization.
 
 `tests/test_native_chunk_editor.gd`, run with the Metal/Forward+ renderer, verifies:
 

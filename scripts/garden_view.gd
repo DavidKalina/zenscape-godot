@@ -68,7 +68,7 @@ func rebuild() -> void:
 	for z in range(cells):
 		for x in range(cells):
 			var index := z * cells + x
-			var count := int(data.meadow[index] * 8.0)
+			var count := int(data.grass_density(index) * 8.0)
 			var rng := RandomNumberGenerator.new()
 			rng.seed = index * 7919 + 17041
 			for i in range(count):
@@ -79,7 +79,7 @@ func rebuild() -> void:
 				var size := rng.randf_range(0.65, 1.3)
 				var transform := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(p.x, height, p.y))
 				transforms.grass.append(transform)
-				if i % 4 == 0:
+				if i < int(data.meadow[index] * 8.0) and i % 4 == 0:
 					transforms.stem.append(transform)
 					transforms.petal.append(transform)
 	for key: String in transforms:

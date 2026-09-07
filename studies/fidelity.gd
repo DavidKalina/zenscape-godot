@@ -299,7 +299,12 @@ func _reset_camera(reference_pose := false) -> void:
 		var bounds := AABB()
 		var found := false
 		var points := PackedVector3Array()
-		for node in $Reference.get_children():
+		var framing_nodes: Array[Node] = $Reference.get_children()
+		if _chunk_editor != null and _chunk_editor.data.blank:
+			framing_nodes = framing_nodes.filter(func(node: Node) -> bool: return node is Node3D and node.is_visible_in_tree())
+		if _chunk_editor != null:
+			framing_nodes.append_array(_chunk_editor.content.get_children())
+		for node in framing_nodes:
 			if node.get_meta("source_kind","") == "birds":
 				continue
 			if node is MultiMeshInstance3D:
@@ -308,7 +313,7 @@ func _reset_camera(reference_pose := false) -> void:
 					var pose: Transform3D = node.transform * node.multimesh.get_instance_transform(instance)
 					for corner in range(8):
 						points.append(pose * mesh_box.get_endpoint(corner))
-			elif node is MeshInstance3D:
+			elif node is MeshInstance3D and node.mesh != null:
 				for surface in range(node.mesh.get_surface_count()):
 					var vertices: PackedVector3Array = node.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
 					for vertex: Vector3 in vertices:
