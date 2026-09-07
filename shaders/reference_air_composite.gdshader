@@ -43,5 +43,11 @@ void fragment() {
 			t += step_length;
 		}
 	}
-	COLOR = vec4(scatter, 1.0 - trans);
+	// Source wxOut writes vec4(col * alpha, alpha) although col is already
+	// premultiplied by each step's alpha and transmittance, so the stored
+	// colour carries the ray's alpha twice. Thin air is then nearly pure
+	// extinction and only thick air shows its colour: the fog reads as a dark
+	// veil on lit ground instead of a milky one. Kept for parity.
+	float alpha = 1.0 - trans;
+	COLOR = vec4(scatter * alpha, alpha);
 }

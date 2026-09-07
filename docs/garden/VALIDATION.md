@@ -768,3 +768,57 @@ Result at 3024x1706, maximized, all measured in one process: one march copy
 day advances, against an 8.3 ms budget for 120 Hz. The 3D pass at 4.9 ms is
 now the frame. Incremental sky radiance measured within the noise unpaused and
 was left alone. The 75-test suite passes.
+
+## Image cleanliness against the Electron build (2026-09-07)
+
+The complaint was that the Godot image does not look as clean as the optimised
+Electron build. Same-camera pairs settle it: `tools/capture_electron_shot.mjs`
+screenshots the served `dist` in headless Chrome on ANGLE Metal at device pixel
+ratio 2 (real WebGL MSAA, 4 samples, ACES, exposure 1.15, all confirmed from the
+page), and `tools/capture_compare.gd` renders the fidelity scene at the same
+2560x1600 with one lever applied per run. `tools/compare_captures.py` cuts
+matching 100 % crops and prints per-region mean RGB, mean absolute difference and
+an edge-busyness figure, using `sips` and `ffmpeg` because the system Python has
+no PIL. Camera `43,1.13,1.8893,0,3,0`, phase 0.35, seed 7.
+
+What the pairs showed, in the order the handoff ranked the hypotheses:
+
+| Hypothesis | Result |
+|---|---|
+| Anti-aliasing | Not the gap. Edge busyness is equal on both sides (3.58 vs 3.56 on the tree line). MSAA 4x is byte-identical to 2x on Metal; MSAA off and 8x differ, so the driver already runs 2x as 4x. |
+| Fog | The whole gap. At the same dials the Electron fog darkens lit ground (tree line -8.6, snow -13.6 levels) while the Godot fog brightened and blued it (+5.7, +16 blue). |
+| Tone mapping | Materials agree within 1-2 levels at low fog (grass 150.9 vs 150.5, soil 74.6 vs 73.2). The sky zenith is darker in Godot by 10 levels (72 vs 83 at the top of the frame), converging at the horizon; not fixed here. |
+| SSAO / glow | Zero pixel effect: captures with either or both off hash identically to the baseline, at phase 0.35 and 0.95. They cost about 3 ms a frame, so the quality selector now starts on Balanced. |
+| Shadows | No visible difference in the crops; untouched. |
+
+Finding the fog cause took reading the source's own buffers. Rewriting the
+composite quad's fragment shader from the page (`__dbg.scene` reaches it;
+`__dbg.weather().uniforms` reaches the uniforms, which `update` rewrites every
+frame) gave the source's premultiplied colour and alpha as opaque screenshots.
+Alpha matched Godot's resolved buffer to within a few levels everywhere (tree
+line 67.3 vs 67.8), every uniform matched (`uSunColor` 1.370/0.894/0.452,
+`uSkyColor` 0.155/0.250/0.380, ground range 0.15..12.63), the density function
+and the march loop are line for line the same, yet the source's colour was 2.7x
+darker (tree line 10.4 vs 27.9). The reason is `wxOut` in `weather.js`: it
+writes `vec4(col * alpha, alpha)` although `col` is already accumulated
+premultiplied, so the source's fog colour carries the ray's alpha twice. Thin
+air is then nearly pure extinction and only thick air shows its colour, which
+is the dark, crisp veil the Electron build has. `reference_air_composite.gdshader`
+now does the same. At the default weather (fog 0.45, haze 0.15) the tree-line
+crop moved from a mean difference of 18.4 to 2.7 against Electron and the
+summit from 16.2 to 2.5; the fog-minus-clear deltas now have the source's sign
+and size (tree line -12.2 vs -8.6, snow -18.6 vs -13.6, the remainder being the
+surface haze, which on the plinth matches: +2.8/+6.0/+9.7 vs +2.9/+5.9/+9.3).
+
+Two things were not changed and are worth knowing. The Electron app boots the
+mountain at mist 0.04 and haze 0.10 (`main.js`, the non-fog mood) while the
+Godot atmosphere defaults to fog 0.45 and haze 0.15, so out of the box Godot
+shows far more fog than Electron even now that the fog itself matches. And the
+waterfall region still differs by 11.6 (mist sprites and plume placement) and
+the meadow by 8.4 (flower instances), both content rather than rendering.
+
+`tools/dump_air_buffer.gd` saves the Godot march, resolved buffer, alpha and
+frame for the next round of this. The thirteen fog and lighting tests pass:
+display fog, fidelity, autumn, night fill, inversion, inversion surface,
+rainbow weather, surface haze, shroud weather, fog colour, lake display
+composite, alpenglow and paused lighting.
