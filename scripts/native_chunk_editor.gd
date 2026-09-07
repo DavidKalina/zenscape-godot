@@ -6,6 +6,8 @@ var scene: Node3D
 var terrain: MeshInstance3D
 var data := NativeTerrainData.new()
 var content: GardenView
+var landmarks: NativeGardenLandmarks
+var object_heading := 0.0
 var pond_level := -0.15
 var object_angle := 0.0
 var object_scale := 1.0
@@ -69,6 +71,9 @@ func setup(owner_scene: Node3D) -> void:
 	content.name = "AuthoredGarden"
 	content.data = data
 	scene.add_child(content)
+	landmarks = NativeGardenLandmarks.new()
+	landmarks.name = "AuthoredLandmarks"
+	scene.add_child(landmarks)
 	_build_controls()
 
 func _build_controls() -> void:
@@ -87,9 +92,9 @@ func _build_controls() -> void:
 	var row := GridContainer.new()
 	row.columns = 4
 	var group := ButtonGroup.new()
-	for tool in ["raise","lower","smooth","flatten","mountain","grass","meadow","erase","tree","rock","flower","pond"]:
+	for tool in ["raise","lower","smooth","flatten","mountain","grass","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree"]:
 		var button := Button.new()
-		button.text = tool.capitalize()
+		button.text = "Bigfoot tree" if tool == "bigfoot_tree" else tool.capitalize()
 		button.toggle_mode = true
 		button.button_group = group
 		button.button_pressed = tool == mode
@@ -113,6 +118,8 @@ func _build_controls() -> void:
 	_setting("mountain_radius","Mountain base radius",1.0,12.0,0.5,["mountain"])
 	_setting("mountain_peak","Peak height",0.5,24.0,0.5,["mountain"])
 	_setting("pond_level","Pond surface height",-1.4,12.0,0.05,["pond"])
+	_setting("object_scale","Object size",0.1,5.0,0.1,NativeTerrainData.ASSETS)
+	_setting("object_heading","Rotation °",-180.0,180.0,5.0,NativeTerrainData.ASSETS)
 	_update_tool_settings()
 	var history := HBoxContainer.new()
 	for entry: Array in [["Undo",undo],["Redo",redo],["Save",save_garden],["Open",open_garden]]:
@@ -138,7 +145,11 @@ func _setting(property: String, title: String, low: float, high: float, step: fl
 	value.max_value = high
 	value.step = step
 	value.value = get(property)
-	value.value_changed.connect(func(number: float) -> void: set(property,number))
+	value.value_changed.connect(func(number: float) -> void:
+		set(property,number)
+		if property == "object_heading":
+			object_angle = deg_to_rad(object_heading)
+	)
 	row.add_child(value)
 	_tools.add_child(row)
 	_tool_settings[row] = modes
@@ -244,7 +255,7 @@ func handle_input(event: InputEvent) -> bool:
 			data.begin_stroke()
 			_level = hit.y
 			_last_point = Vector2(hit.x,hit.z)
-			if mode in ["tree","rock","flower","pond","mountain"]:
+			if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain"]:
 				if mode == "mountain":
 					data.mountain(_last_point,mountain_radius,mountain_peak)
 				elif mode == "pond":
@@ -353,6 +364,7 @@ func refresh() -> void:
 	sync_visibility()
 	_rebuild_skirt()
 	content.rebuild()
+	landmarks.rebuild(data)
 	# Existing habitat/rain/fog consumers keep the same texture object.
 	var image: Image = _original_ground_map.duplicate()
 	for z in range(image.get_height()):

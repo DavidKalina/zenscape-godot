@@ -4,6 +4,7 @@ extends RefCounted
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 24.0
+const ASSETS := ["tree","rock","flower","arch","bigfoot_tree"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -250,7 +251,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 				meadow[index] = clampf(meadow[index]+amount*(1.0-smoothstep(0.0,radius,distance)),0.0,1.0)
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0) -> int:
-	if kind not in GardenData.ASSETS or ground_height(point) == null or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+	if kind not in ASSETS or ground_height(point) == null or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
@@ -339,7 +340,7 @@ func load_document(document: Variant) -> bool:
 				return false
 			var record := {"x":point.x,"z":point.y}
 			if field == "objects":
-				if item.get("asset") not in GardenData.ASSETS or not GardenData._integer(item.get("id")) or item.id < 1 or item.id >= loaded.next_id or ids.has(item.id):
+				if item.get("asset") not in ASSETS or not GardenData._integer(item.get("id")) or item.id < 1 or item.id >= loaded.next_id or ids.has(item.id):
 					return false
 				if not GardenData._number(item.get("angle"),-TAU*100,TAU*100) or not GardenData._number(item.get("scale"),0.1,5.0):
 					return false

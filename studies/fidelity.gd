@@ -304,6 +304,7 @@ func _reset_camera(reference_pose := false) -> void:
 			framing_nodes = framing_nodes.filter(func(node: Node) -> bool: return node is Node3D and node.is_visible_in_tree())
 		if _chunk_editor != null:
 			framing_nodes.append_array(_chunk_editor.content.get_children())
+			framing_nodes.append_array(_chunk_editor.landmarks.find_children("*","MeshInstance3D",true,false))
 		for node in framing_nodes:
 			if node.get_meta("source_kind","") == "birds":
 				continue
@@ -317,7 +318,7 @@ func _reset_camera(reference_pose := false) -> void:
 				for surface in range(node.mesh.get_surface_count()):
 					var vertices: PackedVector3Array = node.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
 					for vertex: Vector3 in vertices:
-						points.append(node.transform * vertex)
+						points.append(global_transform.affine_inverse() * node.global_transform * vertex)
 		for point: Vector3 in points:
 			bounds = bounds.expand(point) if found else AABB(point,Vector3.ZERO)
 			found = true

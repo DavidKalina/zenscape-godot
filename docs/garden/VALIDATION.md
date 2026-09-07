@@ -112,3 +112,27 @@ The older `manual-garden.json` and `garden-*.png` files document a completed mou
 playtest of the separate prototype. They do **not** prove the clarified native
 Build experience. Object selection/movement, rivers, imported custom assets and
 Steam Workshop remain future work outside this requested garden loop.
+
+## Demo-world authoring goal (in progress)
+
+Goal: create the demo world from a blank chunk using the editor, including its
+Bigfoot tree, mountain, waterfall and arches. The goal is not complete.
+
+Implemented landmarks: Arch and Bigfoot tree palette entries reuse the source
+geometry and native materials. Object size and rotation controls apply to these
+and ordinary placed objects. Records persist through Save/Open and participate
+in erase, undo and terrain grounding. R frames nested authored geometry.
+Landmark bases anchor at the sampled center; level the foundation for a broad
+arch on uneven terrain. The authored Bigfoot tree is currently the visual tree;
+it is not yet an encounter anchor.
+
+Validation: 53 graphics tests pass. `test_native_landmarks.gd` also passed after
+adding rotation-control, projected-framing, visible arch-base, and fresh-scene
+save/reopen assertions. A rendered blank chunk with an authored mountain, arch,
+and Bigfoot tree was inspected at `/tmp/native-landmarks.png`.
+
+Remaining before completion: author a waterfall with a source and lower landing,
+connect its native flowing water and effects to authored terrain/ponds, connect
+Bigfoot encounter behavior to the authored tree, then build and reopen a complete
+world through the editor and inspect the result. Existing imported demo water is
+not evidence that blank-chunk waterfall authoring works.
