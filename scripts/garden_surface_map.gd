@@ -16,6 +16,19 @@ func update(data: GardenData, water: PackedVector3Array) -> void:
 			if data.contains(point):
 				var height := data.height_at(point)
 				image.set_pixel(x, z, Color(height, height, -1000, -1000))
+	paint_water(image,water)
+	if ground.get_width() == 0:
+		ground.set_image(image)
+		var empty := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBAF)
+		empty.fill(Color(0,0,0,0))
+		stream.set_image(empty)
+	else:
+		ground.update(image)
+
+static func _point(x: int, z: int) -> Vector2:
+	return (Vector2(x,z) + Vector2.ONE * 0.5) * SPAN / SIZE - Vector2.ONE * SPAN * 0.5
+
+static func paint_water(image: Image, water: PackedVector3Array) -> void:
 	for i in range(0, water.size(), 3):
 		var polygon := PackedVector2Array()
 		var low := Vector2(INF, INF)
@@ -34,13 +47,3 @@ func update(data: GardenData, water: PackedVector3Array) -> void:
 					var level := water[i].y
 					if level > value.r:
 						image.set_pixel(x,z,Color(level,value.g,value.g,level))
-	if ground.get_width() == 0:
-		ground.set_image(image)
-		var empty := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBAF)
-		empty.fill(Color(0,0,0,0))
-		stream.set_image(empty)
-	else:
-		ground.update(image)
-
-static func _point(x: int, z: int) -> Vector2:
-	return (Vector2(x,z) + Vector2.ONE * 0.5) * SPAN / SIZE - Vector2.ONE * SPAN * 0.5

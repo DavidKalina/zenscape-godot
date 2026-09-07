@@ -42,6 +42,7 @@ func setup(atmosphere: Node3D, view: Camera3D, ground: Texture2D, stream: Textur
 	update_view()
 
 func update_view() -> void:
+	material.set_shader_parameter("floor_height", air._ground_min)
 	material.set_shader_parameter("camera_basis", camera.global_basis)
 	var tangent := tan(deg_to_rad(camera.fov) * 0.5)
 	var size := get_viewport().get_visible_rect().size

@@ -2,6 +2,8 @@ extends Node3D
 ## A rendering study of the original scene. Press Tab to compare the matched
 ## source image; orbit to inspect the genuinely three-dimensional Godot scene.
 
+var _chunk_editor: NativeChunkEditor
+var _saved_setting_controls: Array[Dictionary] = []
 var _display_fog: CanvasLayer
 var camera: Camera3D
 var target := Vector3.ZERO
@@ -119,6 +121,9 @@ func _ready() -> void:
 	_fireflies.setup(JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/fireflies.json")))
 	_growth.setup(geometry)
 	_frog_motion.setup(geometry)
+	_chunk_editor = NativeChunkEditor.new()
+	add_child(_chunk_editor)
+	_chunk_editor.setup(self)
 	_build_ui()
 	if not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":
 		_enable_display_fog()
@@ -258,6 +263,13 @@ func _ready() -> void:
 		_prerolling = true
 		_process(_preroll)
 		_prerolling = false
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--garden-file="):
+			_chunk_editor.save_path = argument.trim_prefix("--garden-file=")
+	if OS.get_cmdline_user_args().has("--garden"):
+		if FileAccess.file_exists(_chunk_editor.save_path):
+			_chunk_editor.open_garden()
+		_chunk_editor.set_active(true)
 	set_process(true)
 
 func _enable_display_fog() -> void:
@@ -334,12 +346,16 @@ func _face_rainbow() -> void:
 func _input(event: InputEvent) -> void:
 	# Releases over the control panel must still finish camera gestures.
 	if event is InputEventMouseButton and not event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT and _chunk_editor != null:
+			_chunk_editor.finish_stroke()
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			_orbiting = false
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			_panning = false
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _chunk_editor != null and _chunk_editor.handle_input(event):
+		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			_panning = event.pressed
@@ -376,7 +392,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_T: _tremor.add(0.7)
 			KEY_L: _lightning.strike(Vector2(target.x, target.z), camera.global_position)
 			KEY_Y: _growth.replay()
-			KEY_ESCAPE: get_tree().change_scene_to_file("res://scenes/sandbox.tscn")
+			KEY_ESCAPE: _chunk_editor.set_active(false)
 
 func _process(delta: float) -> void:
 	# An occluded macOS movie window may update without drawing. Advance once
@@ -391,7 +407,7 @@ func _process(delta: float) -> void:
 	_terrain_slider.set_value_no_signal(_growth.terrain)
 	_foliage_slider.set_value_no_signal(_growth.foliage)
 	_water_slider.set_value_no_signal(_growth.water)
-	$WaterfallSpray.visible = _growth.terrain >= 0.995 and _growth.water >= 0.5
+	$WaterfallSpray.visible = not _chunk_editor.data.blank and _growth.terrain >= 0.995 and _growth.water >= 0.5
 	_bigfoot.update_growth(_growth.terrain,_growth.foliage)
 	_precipitation.wind = _atmosphere.strength
 	_celestial.shroud = _atmosphere.shroud
@@ -410,7 +426,7 @@ func _process(delta: float) -> void:
 	_thunder_audio.update_state(_paused)
 	_lightning.advance(delta, _paused, _precipitation.state.w, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle), sin(_atmosphere._air_angle)), camera.global_position)
 	_atmosphere.advance(delta, _paused)
-	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,_growth.water)
+	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,0.0 if _chunk_editor.data.blank else _growth.water)
 	_celestial.wind = _atmosphere._air_strength
 	_celestial.advance(delta, _paused)
 	_atmosphere.set_inversion(_celestial.state.zs_inversion.x)
@@ -419,6 +435,9 @@ func _process(delta: float) -> void:
 		RenderingServer.global_shader_parameter_set("zs_motion_time", _motion_time)
 	_bird_flight.growth = minf(_growth.foliage, _growth.water) if _growth.terrain >= 0.995 else 0.0
 	_fireflies.update_conditions(_celestial.state.get("zs_daylight",1.0), _precipitation.state.x, _precipitation.surface_weather.cold, _bird_flight.growth)
+	if _chunk_editor.data.blank:
+		_fireflies.visible = false
+	_bigfoot.visible = not _chunk_editor.data.blank
 	_bird_flight.advance(delta, _paused, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle),sin(_atmosphere._air_angle)))
 	_time_slider.set_value_no_signal(_celestial.phase)
 	_fall_foam.advance(_motion_time, _paused, _precipitation.surface_weather.ice, smoothstep(0.0,0.5,_growth.water), _growth.terrain >= 0.995)
@@ -439,6 +458,7 @@ func _process(delta: float) -> void:
 		_display_fog.material.set_shader_parameter("fog_display", _celestial.fog_display)
 		_display_fog.update_view()
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
+	_chunk_editor.sync_visibility()
 	if not _capture.is_empty() and not _capture_done and _elapsed > 1.0:
 		_capture_done = true
 		_capture_frame.call_deferred()
@@ -486,8 +506,9 @@ func _build_ui() -> void:
 	_status.add_theme_color_override("font_color", Color("e1dec6"))
 	_status.add_theme_font_size_override("font_size", 18)
 	column.add_child(_status)
+	column.add_child(_chunk_editor.controls)
 	var help := Label.new()
-	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Esc Sculpting sandbox"
+	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect"
 	help.add_theme_color_override("font_color", Color("aab8ad"))
 	help.add_theme_font_size_override("font_size", 13)
 	column.add_child(help)
@@ -554,6 +575,7 @@ func _build_ui() -> void:
 	direction.focus_mode = Control.FOCUS_NONE
 	direction.value_changed.connect(func(value: float) -> void: _atmosphere.direction_angle = value)
 	column.add_child(direction)
+	_remember_setting(direction,_atmosphere,"direction_angle")
 	var fog_label := Label.new()
 	fog_label.text = "Valley fog"
 	column.add_child(fog_label)
@@ -579,6 +601,7 @@ func _build_ui() -> void:
 		_atmosphere.summit_mist = value
 		_atmosphere._publish_wind())
 	column.add_child(summit)
+	_remember_setting(summit,_atmosphere,"summit_mist")
 	var haze_label := Label.new()
 	haze_label.text = "Haze · atmospheric depth"
 	column.add_child(haze_label)
@@ -601,6 +624,7 @@ func _build_ui() -> void:
 		slider.editable = not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus"
 		slider.value_changed.connect(func(value: float) -> void: _atmosphere.set(property, value))
 		column.add_child(slider)
+		_remember_setting(slider,_atmosphere,property)
 	var rays_label := Label.new()
 	rays_label.text = "Light shafts · through cloud gaps"
 	column.add_child(rays_label)
@@ -611,6 +635,7 @@ func _build_ui() -> void:
 	rays.focus_mode = Control.FOCUS_NONE
 	rays.value_changed.connect(_atmosphere.set_rays)
 	column.add_child(rays)
+	_remember_setting(rays,_atmosphere,"ray_strength")
 	var gust := Button.new()
 	gust.text = "Send a gust · G"
 	gust.focus_mode = Control.FOCUS_NONE
@@ -632,6 +657,7 @@ func _build_ui() -> void:
 	cycle.focus_mode = Control.FOCUS_NONE
 	cycle.toggled.connect(func(value: bool) -> void: _celestial.cycling = value)
 	column.add_child(cycle)
+	_remember_setting(cycle,_celestial,"cycling")
 	var night_label := Label.new()
 	night_label.text = "Night fill · landscape visibility"
 	column.add_child(night_label)
@@ -644,6 +670,7 @@ func _build_ui() -> void:
 		_celestial.night_fill = value
 		_celestial.update_rig())
 	column.add_child(night_fill)
+	_remember_setting(night_fill,_celestial,"night_fill")
 	var aurora_label := Label.new()
 	aurora_label.text = "Aurora · visible at night"
 	column.add_child(aurora_label)
@@ -655,11 +682,13 @@ func _build_ui() -> void:
 	aurora.focus_mode = Control.FOCUS_NONE
 	aurora.value_changed.connect(func(value: float) -> void: _celestial.aurora_strength = value)
 	column.add_child(aurora)
+	_remember_setting(aurora,_celestial,"aurora_strength")
 	var rainbow := CheckBox.new()
 	rainbow.text = "Hold rainbow · opposite the sun"
 	rainbow.focus_mode = Control.FOCUS_NONE
 	rainbow.toggled.connect(func(value: bool) -> void: _celestial.rainbow_strength = 1.0 if value else 0.0)
 	column.add_child(rainbow)
+	_remember_setting(rainbow,_celestial,"rainbow_strength")
 	var face_rainbow := Button.new()
 	face_rainbow.text = "Face rainbow · look opposite the sun"
 	face_rainbow.focus_mode = Control.FOCUS_NONE
@@ -709,6 +738,7 @@ func _build_ui() -> void:
 	ambience.focus_mode = Control.FOCUS_NONE
 	ambience.toggled.connect(func(value: bool) -> void: _ambient_audio.muted = not value)
 	column.add_child(ambience)
+	_remember_setting(ambience,_ambient_audio,"muted",true)
 	var ambient_volume := HSlider.new()
 	ambient_volume.max_value = 1.0
 	ambient_volume.step = 0.05
@@ -717,11 +747,13 @@ func _build_ui() -> void:
 	ambient_volume.tooltip_text = "Ambient sound volume"
 	ambient_volume.value_changed.connect(func(value: float) -> void: _ambient_audio.volume = value)
 	column.add_child(ambient_volume)
+	_remember_setting(ambient_volume,_ambient_audio,"volume")
 	sound.text = "Thunder sound"
 	sound.button_pressed = true
 	sound.focus_mode = Control.FOCUS_NONE
 	sound.toggled.connect(func(value: bool) -> void: _thunder_audio.muted = not value)
 	column.add_child(sound)
+	_remember_setting(sound,_thunder_audio,"muted",true)
 	var strike_button := Button.new()
 	strike_button.text = "Lightning · L"
 	strike_button.focus_mode = Control.FOCUS_NONE
@@ -848,3 +880,14 @@ func _apply_mood(index: int) -> void:
 	_cycle_toggle.set_pressed_no_signal(false)
 	_aurora_slider.set_value_no_signal(mood.aurora)
 	_weather_selector.select(0)
+
+func _remember_setting(control: Control, object: Object, property: String, negate := false) -> void:
+	_saved_setting_controls.append({"control":control,"object":object,"property":property,"negate":negate})
+
+func _sync_saved_controls() -> void:
+	for setting in _saved_setting_controls:
+		var value: Variant = setting.object.get(setting.property)
+		if setting.control is BaseButton:
+			setting.control.set_pressed_no_signal(not bool(value) if setting.negate else bool(value))
+		elif setting.control is Range:
+			setting.control.set_value_no_signal(float(value))

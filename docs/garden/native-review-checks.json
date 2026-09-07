@@ -1,0 +1,17 @@
+[
+  {
+    "test": "test_fireflies.gd",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "test": "test_fidelity.gd",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "test": "test_native_chunk_editor.gd",
+    "pass": true,
+    "exit": 0
+  }
+]

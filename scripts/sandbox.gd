@@ -438,7 +438,7 @@ func _refresh() -> void:
 	if garden == null:
 		return
 	garden.rebuild()
-	var weather := garden.data.weather
+	var weather: String = garden.data.weather
 	_weather_effect.visible = weather in ["Rain", "Snow"]
 	_weather_selector.select(GardenData.WEATHER.find(weather))
 	look.set_weather(weather)

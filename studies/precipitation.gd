@@ -162,3 +162,7 @@ func advance(delta: float, paused: bool, celestial: RefCounted) -> void:
 		var intensity: float = minf(1.0, amount * 1.2) * surface_weather.snow_phase if kind == 1 else amount * (1.0 - surface_weather.snow_phase)
 		_materials[kind].set_shader_parameter("intensity", intensity)
 		_instances[kind].visible_instance_count = int(COUNT[kind] * intensity)
+
+func set_ceiling(height: float) -> void:
+	for material in _materials:
+		material.set_shader_parameter("top",height)

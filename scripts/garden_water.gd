@@ -5,19 +5,11 @@ extends RefCounted
 
 static func surface(data: LandscapeData, pond: Dictionary) -> PackedVector3Array:
 	var triangles: Array[PackedInt32Array] = []
-	var edges := {}
 	for z in range(LandscapeData.CELLS):
 		for x in range(LandscapeData.CELLS):
 			var a := z * LandscapeData.SIDE + x
 			triangles.append(PackedInt32Array([a, a + 1, a + LandscapeData.SIDE]))
 			triangles.append(PackedInt32Array([a + 1, a + LandscapeData.SIDE + 1, a + LandscapeData.SIDE]))
-	for i in range(triangles.size()):
-		var t := triangles[i]
-		for j in range(3):
-			var key := Vector2i(mini(t[j], t[(j+1)%3]), maxi(t[j], t[(j+1)%3]))
-			if not edges.has(key):
-				edges[key] = []
-			edges[key].append(i)
 	var point := Vector2(pond.x, pond.z)
 	var level: float = pond.level
 	if data.height_at(point) >= level:
@@ -26,6 +18,20 @@ static func surface(data: LandscapeData, pond: Dictionary) -> PackedVector3Array
 	var x := mini(int(g.x), LandscapeData.CELLS-1)
 	var z := mini(int(g.y), LandscapeData.CELLS-1)
 	var first := (z * LandscapeData.CELLS + x) * 2 + (1 if g.x-x+g.y-z > 1.0 else 0)
+	var positions := PackedVector3Array()
+	for i in range(data.heights.size()):
+		positions.append(_vertex(data,i))
+	return flood(positions,triangles,first,level)
+
+static func flood(positions: PackedVector3Array, triangles: Array[PackedInt32Array], first: int, level: float) -> PackedVector3Array:
+	var edges := {}
+	for i in range(triangles.size()):
+		var t := triangles[i]
+		for j in range(3):
+			var key := Vector2i(mini(t[j], t[(j+1)%3]), maxi(t[j], t[(j+1)%3]))
+			if not edges.has(key):
+				edges[key] = []
+			edges[key].append(i)
 	var queue: Array[int] = [first]
 	var visited := {first: true}
 	var vertices := PackedVector3Array()
@@ -38,8 +44,8 @@ static func surface(data: LandscapeData, pond: Dictionary) -> PackedVector3Array
 		for j in range(3):
 			var a := triangle[j]
 			var b := triangle[(j+1)%3]
-			var pa := _vertex(data, a)
-			var pb := _vertex(data, b)
+			var pa := positions[a]
+			var pb := positions[b]
 			if pa.y < level:
 				polygon.append(Vector3(pa.x, level, pa.z))
 			if (pa.y < level) != (pb.y < level):

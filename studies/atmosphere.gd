@@ -13,6 +13,7 @@ var shroud := 0.0
 var loosen := 0.0
 var fog_amount := 0.45
 var summit_mist := 1.0
+var ray_strength := 1.0
 var inversion_amount := 0.0
 var _fog_target := 0.45
 var haze_amount := 0.15
@@ -31,17 +32,11 @@ func setup(geometry: Node3D, environment: Environment) -> void:
 
 func setup_ground(terrain: MeshInstance3D, environment: Environment, use_reference_bounds := true) -> void:
 	_environment = environment
-	update_ground_bounds(terrain)
-	if use_reference_bounds:
-		var reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/environment.json"))
-		var summit: Array = reference.uSummit
-		_summit = Vector3(summit[0], summit[1], summit[2])
-		_ground_min = reference.uGroundRange[0]
-	_publish_wind()
+	update_ground_bounds(terrain, use_reference_bounds)
 	if RenderingServer.get_current_rendering_method() == "forward_plus":
 		_add_fog()
 
-func update_ground_bounds(terrain: MeshInstance3D) -> void:
+func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false) -> void:
 	_ground_min = INF
 	_summit = Vector3(0, -INF, 0)
 	for vertex: Vector3 in terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
@@ -49,6 +44,11 @@ func update_ground_bounds(terrain: MeshInstance3D) -> void:
 		_ground_min = minf(_ground_min, point.y)
 		if point.y > _summit.y:
 			_summit = point
+	if use_reference_bounds:
+		var reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/environment.json"))
+		var summit: Array = reference.uSummit
+		_summit = Vector3(summit[0], summit[1], summit[2])
+		_ground_min = reference.uGroundRange[0]
 	var fog := get_node_or_null("ValleyFog") as FogVolume
 	if fog != null:
 		fog.size = Vector3(28.0, _summit.y - _ground_min + 10.0, 28.0)
@@ -128,6 +128,7 @@ func set_ground_texture(texture: Texture2D, stream: Texture2D) -> void:
 		_fog_material.set_shader_parameter("floor_height", _ground_min)
 
 func set_rays(value: float) -> void:
+	ray_strength = value
 	if _fog_material != null:
 		_fog_material.set_shader_parameter("rays", value)
 

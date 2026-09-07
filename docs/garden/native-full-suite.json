@@ -1,0 +1,308 @@
+[
+  {
+    "test": "test_alpenglow.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.46
+  },
+  {
+    "test": "test_ambient_audio.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.88
+  },
+  {
+    "test": "test_autumn.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 3.41
+  },
+  {
+    "test": "test_bear_walk.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_bigfoot.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.43
+  },
+  {
+    "test": "test_bigfoot_lifecycle.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.87
+  },
+  {
+    "test": "test_bigfoot_walk.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.49
+  },
+  {
+    "test": "test_bird_flight.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.3
+  },
+  {
+    "test": "test_camera_exploration.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 2.01
+  },
+  {
+    "test": "test_display_fog.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 3.19
+  },
+  {
+    "test": "test_fall_foam.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.43
+  },
+  {
+    "test": "test_fall_mist.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.0
+  },
+  {
+    "test": "test_fidelity.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.63
+  },
+  {
+    "test": "test_fireflies.gd",
+    "pass": false,
+    "exit": 1,
+    "seconds": 1.81
+  },
+  {
+    "test": "test_fog_color.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 3.27
+  },
+  {
+    "test": "test_frog_motion.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.57
+  },
+  {
+    "test": "test_garden.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.67
+  },
+  {
+    "test": "test_garden_look.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.93
+  },
+  {
+    "test": "test_garden_scene.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.59
+  },
+  {
+    "test": "test_growth.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.77
+  },
+  {
+    "test": "test_ice_highlight.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.39
+  },
+  {
+    "test": "test_inversion.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.67
+  },
+  {
+    "test": "test_inversion_surface.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 4.32
+  },
+  {
+    "test": "test_lake_algae.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.65
+  },
+  {
+    "test": "test_lake_chop.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.51
+  },
+  {
+    "test": "test_lake_complete_lighting.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.63
+  },
+  {
+    "test": "test_lake_display_composite.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.24
+  },
+  {
+    "test": "test_lake_fetch.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.48
+  },
+  {
+    "test": "test_lake_flash.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.25
+  },
+  {
+    "test": "test_lake_glints.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.57
+  },
+  {
+    "test": "test_lake_material.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.57
+  },
+  {
+    "test": "test_landscape.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.43
+  },
+  {
+    "test": "test_leaves.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.89
+  },
+  {
+    "test": "test_lightning.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.79
+  },
+  {
+    "test": "test_native_chunk_editor.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 5.22
+  },
+  {
+    "test": "test_night_fill.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.74
+  },
+  {
+    "test": "test_paused_lighting.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.74
+  },
+  {
+    "test": "test_paused_reveal.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.93
+  },
+  {
+    "test": "test_pond_habitat.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.98
+  },
+  {
+    "test": "test_puffs.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.51
+  },
+  {
+    "test": "test_rain_rings.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.67
+  },
+  {
+    "test": "test_rainbow_weather.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.9
+  },
+  {
+    "test": "test_scene.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.9
+  },
+  {
+    "test": "test_shroud_weather.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.9
+  },
+  {
+    "test": "test_source_terrain.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.45
+  },
+  {
+    "test": "test_surface_haze.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 2.71
+  },
+  {
+    "test": "test_surface_weather.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.44
+  },
+  {
+    "test": "test_thunder_audio.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.45
+  },
+  {
+    "test": "test_water_growth.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.73
+  },
+  {
+    "test": "test_weather_profiles.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 1.86
+  },
+  {
+    "test": "test_wind.gd",
+    "pass": true,
+    "exit": 0,
+    "seconds": 0.48
+  }
+]

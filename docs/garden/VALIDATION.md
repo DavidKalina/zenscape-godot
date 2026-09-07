@@ -1,94 +1,96 @@
-# Garden sandbox implementation and validation
+# Native garden implementation and validation
 
-The requested loop is implemented in `scenes/sandbox.tscn`: start flat, sculpt a
-hill and hollow, paint a meadow, place a tree/rock/individual flower, fill a pond,
-change weather, save, and reopen the garden.
+The current editor runs **inside `studies/fidelity.tscn`**. `run-garden.command`
+opens that original scene with Build controls enabled. Inspect/Build retains the
+same camera, environment, imported chunk and shaders. Escape returns to Inspect.
+`run-sandbox.command` remains the older, separate prototype.
 
-## Evidence (2026-09-07)
+## Current authoring loop
 
-- `tests/test_landscape.gd`: the original 17 terrain checks pass.
-- `tests/test_garden.gd`: flat initialization, complete undo/redo, rooted objects,
-  full-precision JSON persistence, invalid-document rejection, old-save migration,
-  and creation/load capacity boundary round trips pass.
-- `tests/test_garden_scene.gd`, run with Metal/Forward+: constructs the requested
-  garden through tool handlers, checks actual rendered instance anchors, fills
-  only connected terrain, prevents duplicate water on refilling, changes weather,
-  writes a temporary save, destroys the scene, and loads a fresh scene. The world
-  document, camera framing, shoreline vertices, and rendered tree anchor match.
-- All 49 `tests/test_*.gd` scripts passed in a sequential graphics-backed run.
-  After the review's capacity and duplicate-pond fix, the garden model and rendered
-  integration tests passed again.
-- Clear, mist, rain, snow, and reopened screenshots were captured and the clear,
-  rain, and snow renders were visually inspected. Captures are in this directory.
+- Start flat clears the imported terrain's own welded vertices and hides its
+  captured decorations. The original faceted earth sides follow the new rim.
+- Raise, lower, smooth and flatten operate on the imported irregular topology.
+  Height range is −1.5 to 24, across the original 28-unit chunk.
+- Meadow painting uses deterministic cells across that chunk. Trees, grass and
+  flowers use source meshes and materials; the rock is a small procedural mesh
+  using the native surface shader. Plant positions follow the edited ground.
+- Ponds flood connected native terrain triangles and clip their shoreline to
+  the actual mesh. The shared flood algorithm refuses open basins and replacing
+  a connected pond avoids duplicate water. Rendering uses the native lake shader,
+  depth attributes and directional wind-fetch data.
+- Original weather/time/atmosphere controls remain available. Weather and fog
+  surface maps update after edits. Rain's ceiling follows tall hills; the display
+  fog floor follows deep hollows. Terrain formation temporarily suspends picking.
+- Undo/redo includes terrain, meadow, objects, ponds and blank/source state.
+  Undoing all edits restores the exact imported terrain/skirt mesh resources and
+  the original surface-map bytes.
+- Save/Open use `user://native-garden.json`. The native version-3 document records
+  the source-topology fingerprint, complete authored content, camera and native
+  weather/atmosphere state. Scalar simulation doubles use their exact IEEE bytes
+  because JSON decimal decoding can round a final bit. Invalid documents are
+  validated before replacement; saves use a sibling temporary file and rename.
+- `run-garden.command` reopens that save automatically. `--garden-file=/path/file.json`
+  selects a separate save for a playtest. Direct fidelity launches stay on the
+  reference scene until the user chooses Open.
 
-Run model checks headlessly. Run scene checks with graphics: Godot's dummy
-renderer does not return actual MultiMesh transforms and its camera projection
-results differ from the real window. Those tests must exercise the real renderer.
+## Automated evidence (2026-09-07)
 
-## Review
+`tests/test_native_chunk_editor.gd`, run with the Metal/Forward+ renderer, verifies:
 
-The Standards and Spec reviewers both identified the same durability defect:
-creation had no cap, while loading capped objects and ponds. Creation now enforces
-shared limits and shows a refusal message. Refilling a connected pond replaces its
-water record instead of stacking surfaces. Boundary round trips are covered.
-A nonblocking maintenance suggestion remains: consolidate weather parameters if
-more profiles are added.
+1. Build retains original mesh, camera transform, environment and shader.
+2. Native sculpting retains topology, colors, UVs and base-color attributes;
+   shader growth heights follow edited geometry, and undo restores the source.
+3. Event-time mouse rays place content without requiring a cached hover. Right
+   drag remains available for orbiting, and releasing closes the sculpt stroke.
+4. Starting flat, creating a hill/hollow, painting a meadow, placing all three
+   object types, filling a connected pond and selecting native rain all work.
+5. The rendered tree follows terrain edits. Pond vertices have a constant level
+   and the shared weather map contains the authored water surface.
+6. Terrain-formation picking guards, the maximum-height rain ceiling, deep-hollow
+   fog integration and restored settings controls cover the review findings.
+7. A save is opened in a fresh fidelity scene. World values, camera/environment
+   state, shoreline vertices and map bytes match; saving again produces identical
+   file bytes. Malformed terrain input leaves the open world unchanged.
 
-## Mouse playtest
+The complete 51-script graphics suite ran: 50 passed initially; it exposed a
+firefly visibility regression introduced by the blank-canvas path. After fixing
+that regression, `test_fireflies.gd`, `test_fidelity.gd` and the full native garden
+integration passed again. Logs/results are retained alongside this document.
 
-A separate macOS app identity resolved the desktop-control targeting failure.
-The visible controls were used to start flat, raise a hill, lower a hollow, paint
-308 meadow cells, place a tree, rock and three individual flowers, fill one pond,
-select Rain, and save. The app was closed normally and reopened. A second save
-was byte-identical to the first:
+The clean Inspect and newly entered Build PNGs are byte-identical, SHA-256
+`2ae238eaa1948f9e4dbac5d7bb62303c3f25046e497add68ba21a6e396174c10`.
+The paused scene and hidden brush/UI make this a direct renderer-preservation
+check before editing, not a comparison of two approximately matched scenes.
 
-`44f625b5c7a09cd02b40fa46401c67c34d788a3fa06c4d1dade092ed68e8aef7`
+The authored rain scene and fresh-scene reopen captures are also byte-identical,
+SHA-256 `861ea2392c1862b46c0cd37b7f2711db7ce59763b0a30027d96d399882ec54a3`.
 
-The authored world is preserved as `manual-garden.json`. The new input check
-reproduced and fixed a missed first click when leaving the toolbar; picking now
-uses the mouse event position, and the rendered integration test uses real camera
-rays. Loading also restores vector coordinate precision, including near-zero
-ray-picked positions.
+Representative native captures: `native-original.png`, `native-build.png`,
+`native-sculpt.png`, `native-flat.png`, `native-flat-sculpt.png`,
+`native-garden-rain.png`, and `native-garden-reopened.png`.
 
-## Clarified target: Build mode in the beautiful port
+The separate Standards and Spec reviews found growth/picking disagreement,
+precipitation ceiling and fog-floor bounds, stale restored UI controls, and
+shared water-algorithm duplication. These were addressed and the relevant
+integration regressions pass. Existing ObjectDB shutdown warnings also occur in
+fidelity-only tests; the final native checks contain no script or renderer errors.
 
-The user clarified that an editor with approximately similar visuals is not the
-target. Build tools must operate in the original inspectable, rotatable fidelity
-scene, on that chunk, with its camera, lighting, textures and shaders. Switching
-from Inspect to Build should add editing tools without changing the landscape's
-appearance or swapping to the old square sandbox.
+## Completion still requires hands-on verification
 
-The separate garden loop is functional and verified, but does not satisfy this
-clarified integration requirement. Keep the goal active. Next work is to attach
-editing to `studies/fidelity.tscn`, preserving the imported terrain topology and
-material payloads, then connect blank initialization, planting, water authoring,
-complete world saves, and the existing environmental controls there.
+**Keep the goal active.** The native integration test hides controls for its
+camera-ray checks and directly calls brush methods for sustained strokes. It is
+strong evidence for the implementation, not a substitute for the entire visible
+mouse/keyboard workflow. A manual native app launch succeeded, but computer use
+reported that the Mac is locked. The user has been asked to unlock it.
 
-Rendering groundwork in this iteration:
+Next: use the visible Build controls to author the whole loop, check layout and
+brush responsiveness, save, close, reopen through `run-garden.command`, and save
+again. Inspect the resulting native scene and verify that saved content and
+framing survived. The dedicated manual app was closed after the locked-screen result; relaunch it
+with the current code. It uses `/tmp/native-manual.json` so it
+cannot overwrite the user's main garden.
 
-- The port and garden use the same `LandscapeLighting` setup.
-- Garden surfaces and water use the real source shaders and foliage materials.
-- `GardenSurfaceMap` updates the port's surface texture channels after edits.
-- The port's atmosphere compositor supports the garden's orthographic camera;
-  its original perspective path remains intact.
-- All 50 rendered test scripts passed, including live ground/water-map checks.
-  Review then found that overlapping ponds could overwrite a higher water level
-  with a lower one in the atmosphere map. The map now retains the highest surface;
-  both insertion orders pass the added rendered regression. Atmosphere alone owns
-  wind/gust shader globals.
-
-This is shared rendering infrastructure, not a claim of native Build mode or
-visual parity. Native Build mode must be verified against the unchanged port
-before editing, and with representative authored landscapes after editing.
-
-## Current scope
-
-The 24-unit plot uses a 48-cell heightfield and remains bounded to −0.65 through
-8 units vertically. Meadow seeds are stable per cell, and individually placed
-objects use persistent IDs and ground-relative positions. Plants use original
-ZenScape meshes; the stone is a small procedural mesh. Pond surfaces are clipped
-to connected terrain triangles; open basins that spill off the plot are refused.
-Precipitation remains the compact garden implementation; materials, lighting,
-water and atmospheric compositing now use the port's rendering systems. Animation phases restart, while authored garden state and camera
-framing persist. Object selection/movement, rivers, custom assets, and Workshop
-are future work beyond this requested garden loop.
+The older `manual-garden.json` and `garden-*.png` files document a completed mouse
+playtest of the separate prototype. They do **not** prove the clarified native
+Build experience. Object selection/movement, rivers, imported custom assets and
+Steam Workshop remain future work outside this requested garden loop.

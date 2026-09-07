@@ -149,3 +149,22 @@ static func _integer(value: Variant) -> bool:
 
 static func _point_valid(value: Dictionary) -> bool:
 	return _number(value.get("x"), -WIDTH * 0.5, WIDTH * 0.5) and _number(value.get("z"), -WIDTH * 0.5, WIDTH * 0.5)
+
+# Rendering queries shared by the standalone garden and the native chunk.
+func meadow_side() -> int:
+	return CELLS
+
+func meadow_step() -> float:
+	return STEP
+
+func meadow_position(x: int, z: int) -> Vector2:
+	return grid_position(x,z)
+
+func ground_height(point: Vector2) -> Variant:
+	return height_at(point)
+
+func pond_surface(pond: Dictionary) -> PackedVector3Array:
+	return GardenWater.surface(self,pond)
+
+func pond_fetch(point: Vector2, level: float) -> PackedFloat32Array:
+	return GardenWater.fetch(self,point,level)
