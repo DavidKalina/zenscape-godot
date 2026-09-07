@@ -67,32 +67,50 @@ press **F5** for the fidelity scene with Forward+ lighting and volumetric fog.
 Open `scenes/sandbox.tscn` and press **F6** for the sculpting prototype, or use
 **Esc** from the fidelity scene.
 
-## First playable slice
+## Build your own garden
 
-- Raise, lower, smooth, and flatten a 24 × 24 unit patch of ground.
-- Soft brush footprint, adjustable size and strength.
-- Orbit, zoom, and pan around a faceted grassy diorama.
-- Undo and redo complete brushstrokes (up to 50).
-- Save to `user://landscape.json`; reload on launch. Changes also save when the
-  window loses focus or closes normally. Force-quitting bypasses these saves.
+Double-click **`run-sandbox.command`**, open `scenes/sandbox.tscn` and press F6,
+or press Esc from the fidelity scene. Existing terrain saves migrate automatically.
+Use **Start flat** for bare earth; Undo restores the previous garden.
+
+- Raise a hill, lower a hollow, smooth slopes, or flatten to the clicked height.
+- **Meadow:** brush grass and wildflowers onto the earth; slower strokes add density.
+- **Tree / Rock / Flower:** click to place individual objects. Set Object size before
+  placing; zoom closely to position a single daisy. Objects follow sculpted ground.
+- **Pond:** dig a closed hollow, set Water level (default −0.1), then click its bed.
+  Water fills connected ground below that level. Levels that spill off the plot
+  are refused. Raising the bed can shrink or remove the visible pond; Undo restores it.
+- **Erase:** brush away meadow and objects.
+- Choose **Clear, Mist, Rain, or Snow**. Rain darkens surfaces and snow coats ground
+  and foliage, with falling precipitation and an icy pond appearance.
+- **Undo / Redo** cover terrain, planting, ponds, weather, and starting flat.
+- **Save** writes the whole garden and camera framing to `user://landscape.json`.
+  Reopening restores them. Changes also save on focus loss or normal close.
 
 | Control | Action |
 | --- | --- |
-| Left drag | Sculpt |
+| Left drag | Sculpt / paint / erase |
+| Left click | Place selected object / fill pond |
 | 1 / 2 / 3 / 4 | Raise / lower / smooth / flatten |
 | Right drag | Orbit |
 | Middle drag | Pan |
-| Scroll | Zoom |
+| Scroll | Zoom, including close flower placement |
 | [ / ] | Brush size |
 | ⌘Z / Ctrl+Z | Undo |
 | ⌘⇧Z / Ctrl+Shift+Z | Redo |
 | ⌘S / Ctrl+S | Save |
 
-Flatten samples the height where a stroke begins. Terrain supports hills and
-valleys; caves and overhangs are outside this heightfield model.
+The editable plot is currently 24 × 24 units with a 0.5-unit terrain grid.
+It supports hills and hollows; caves and overhangs are outside this heightfield
+model. Garden weather is a compact editable-scene implementation; the fidelity
+scene retains the more extensive atmospheric study.
 
 ## Structure
 
+- `scripts/garden_data.gd`: meadow, object identities, ponds, weather, full-world history, and versioned saves.
+- `scripts/garden_view.gd`: original foliage meshes rendered from stable garden records.
+- `scripts/garden_water.gd`: connected basin filling and clipped shorelines.
+- `scripts/garden_weather.gd`: terrain-aware precipitation.
 - `scripts/landscape_data.gd`: editable heights, brush operations, history, and
   validated serialization. Independent of scene nodes and rendering.
 - `scripts/terrain_view.gd`: terrain mesh, earth sides, brush preview, ray picking.
@@ -109,14 +127,16 @@ justify local mesh rebuilds; tiles should remain invisible to the player.
 ```sh
 godot --headless --editor --path . --import
 godot --headless --path . --script tests/test_landscape.gd
-godot --headless --path . --script tests/test_scene.gd
+godot --headless --path . --script tests/test_garden.gd
+godot --path . --script tests/test_scene.gd
+godot --path . --script tests/test_garden_scene.gd
 ```
 
 ## Direction
 
-Future slices: vegetation painting; selectable rocks and trees that stay rooted
-when terrain changes; assisted river drawing with connected water; wildlife
-placement and gentle behavior. The first slice deliberately focuses on sculpting.
+Future slices: selecting and moving existing objects; assisted river drawing with
+connected water; wildlife placement and gentle behavior; custom asset import.
+See [garden checks and scope](docs/garden/VALIDATION.md) for the current loop.
 
 An entire mountain that can be picked up would need an editable feature layer
 above the sampled heights. Establish that interaction before adding such a layer.

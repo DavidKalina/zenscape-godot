@@ -1,6 +1,8 @@
 shader_type spatial;
 render_mode diffuse_burley;
 
+uniform float snow = 0.0;
+uniform float wet = 0.0;
 uniform vec2 brush_center = vec2(0.0);
 uniform float brush_radius = 2.0;
 uniform bool brush_visible = false;
@@ -12,7 +14,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 color = COLOR.rgb;
+	vec3 color = mix(COLOR.rgb * (1.0 - wet * 0.25), vec3(0.88, 0.94, 0.95), snow);
 	if (brush_visible) {
 		float distance_to_brush = length(world_position.xz - brush_center);
 		float aa = max(fwidth(distance_to_brush), 0.025);

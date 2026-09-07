@@ -12,17 +12,13 @@ const MAX_HEIGHT := 8.0
 const HISTORY_LIMIT := 50
 
 var heights := PackedFloat32Array()
-var _undo: Array[PackedFloat32Array] = []
-var _redo: Array[PackedFloat32Array] = []
-var _before := PackedFloat32Array()
+var _undo: Array[Dictionary] = []
+var _redo: Array[Dictionary] = []
+var _before: Dictionary = {}
 
 func _init() -> void:
 	heights.resize(SIDE * SIDE)
-	for z in range(SIDE):
-		for x in range(SIDE):
-			var p := grid_position(x, z)
-			var hill := exp(-((p.x + 4.0) ** 2 + (p.y + 3.0) ** 2) / 38.0)
-			heights[z * SIDE + x] = 0.25 + hill * 0.8 + sin(p.x * 0.32) * cos(p.y * 0.27) * 0.10
+	heights.fill(0.0)
 
 static func grid_position(x: int, z: int) -> Vector2:
 	return Vector2(x * STEP - WIDTH * 0.5, z * STEP - WIDTH * 0.5)
@@ -48,18 +44,18 @@ func height_at(p: Vector2) -> float:
 
 func begin_stroke() -> void:
 	if _before.is_empty():
-		_before = heights.duplicate()
+		_before = _snapshot()
 
 func end_stroke() -> bool:
 	if _before.is_empty():
 		return false
-	var changed := _before != heights
+	var changed := _before != _snapshot()
 	if changed:
 		_undo.append(_before)
 		if _undo.size() > HISTORY_LIMIT:
 			_undo.pop_front()
 		_redo.clear()
-	_before = PackedFloat32Array()
+	_before = {}
 	return changed
 
 func brush(center: Vector2, radius: float, strength: float, delta: float, mode: String, level: float) -> void:
@@ -94,16 +90,16 @@ func undo() -> bool:
 	end_stroke()
 	if _undo.is_empty():
 		return false
-	_redo.append(heights.duplicate())
-	heights = _undo.pop_back()
+	_redo.append(_snapshot())
+	_restore(_undo.pop_back())
 	return true
 
 func redo() -> bool:
 	end_stroke()
 	if _redo.is_empty():
 		return false
-	_undo.append(heights.duplicate())
-	heights = _redo.pop_back()
+	_undo.append(_snapshot())
+	_restore(_redo.pop_back())
 	return true
 
 func to_document() -> Dictionary:
@@ -128,5 +124,11 @@ func load_document(document: Variant) -> bool:
 	heights = loaded
 	_undo.clear()
 	_redo.clear()
-	_before = PackedFloat32Array()
+	_before = {}
 	return true
+
+func _snapshot() -> Dictionary:
+	return {"heights": heights.duplicate()}
+
+func _restore(snapshot: Dictionary) -> void:
+	heights = snapshot.heights.duplicate()

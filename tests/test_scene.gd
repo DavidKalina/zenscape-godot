@@ -9,6 +9,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var scene := load("res://scenes/sandbox.tscn").instantiate() as Node3D
+	scene.save_path = "/tmp/zenscape-scene-test-unused.json"
 	root.add_child(scene)
 	await process_frame
 	var terrain: TerrainView = scene.get_node("Terrain")

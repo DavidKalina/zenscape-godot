@@ -77,7 +77,11 @@ func _triangle(surface: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void
 	var normal := (c - a).cross(b - a).normalized()
 	var center := (a + b + c) / 3.0
 	var patches := sin(center.x * 0.38 + sin(center.z * 0.45)) * cos(center.z * 0.3) * 0.5 + 0.5
-	var green := Color("98b586").lerp(Color("c2c49a"), patches * 0.7)
+	var green := Color("b49d78").lerp(Color("c8b18b"), patches * 0.7)
+	if data is GardenData:
+		var grid := (Vector2(center.x, center.z) + Vector2.ONE * LandscapeData.WIDTH * 0.5) / LandscapeData.STEP
+		var index := clampi(int(grid.y), 0, LandscapeData.CELLS-1) * LandscapeData.CELLS + clampi(int(grid.x), 0, LandscapeData.CELLS-1)
+		green = green.lerp(Color("8ea975"), data.meadow[index])
 	var rock := smoothstep(2.5, 6.0, center.y) * 0.8 + (1.0 - normal.y) * 0.45
 	var color := green.lerp(Color("bcb29b"), clampf(rock, 0.0, 0.9))
 	color = color.lightened(sin(center.x * 17.1 + center.z * 29.8) * 0.025)

@@ -2,7 +2,16 @@ extends Node3D
 ## Input and application state for the first sculpting study.
 
 const SAVE_PATH := "user://landscape.json"
-const TOOLS := ["raise", "lower", "smooth", "flatten"]
+const TOOLS := ["raise", "lower", "smooth", "flatten", "meadow", "tree", "rock", "flower", "pond", "erase"]
+
+var garden: GardenView
+var pond_level := -0.1
+var placement_scale := 1.0
+var placement_angle := 0.0
+var _weather_effect: GardenWeather
+var _last_camera_state: Array = []
+var _weather_selector: OptionButton
+var save_path := SAVE_PATH
 
 var mode := "raise"
 var radius := 2.2
@@ -23,12 +32,27 @@ var _buttons: Array[Button] = []
 @onready var camera: Camera3D = $OrbitCamera/Camera3D
 
 func _ready() -> void:
+	terrain.data = GardenData.new()
+	terrain.rebuild()
+	garden = GardenView.new()
+	garden.name = "Garden"
+	garden.data = terrain.data
+	add_child(garden)
+	_weather_effect = GardenWeather.new()
+	_weather_effect.data = garden.data
+	add_child(_weather_effect)
 	_build_interface()
-	if FileAccess.file_exists(SAVE_PATH):
+	if FileAccess.file_exists(save_path):
 		_load()
+	_refresh()
+	_last_camera_state = _camera_state()
 	get_tree().auto_accept_quit = false
 
 func _process(delta: float) -> void:
+	var view := _camera_state()
+	if view != _last_camera_state:
+		_dirty = true
+		_last_camera_state = view
 	var mouse := get_viewport().get_mouse_position()
 	var on_ui := _panel.get_global_rect().has_point(mouse)
 	var inside_window := get_viewport().get_visible_rect().has_point(mouse)
@@ -38,7 +62,10 @@ func _process(delta: float) -> void:
 	var center := Vector2.ZERO
 	if _hit != null:
 		center = Vector2(_hit.x, _hit.z)
-	terrain.show_brush(center, radius, _hit != null)
+	var preview_radius := radius
+	if mode in ["tree", "rock", "flower"]:
+		preview_radius = (0.15 if mode == "flower" else 0.6) * placement_scale
+	terrain.show_brush(center, preview_radius, _hit != null)
 	if _painting and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_finish_stroke()
 	if _painting and _hit != null:
@@ -48,8 +75,8 @@ func _process(delta: float) -> void:
 			var previous: Vector2 = _last_brush if _last_brush != null else center
 			var dabs := maxi(1, int(ceil(previous.distance_to(center) / (radius * 0.15))))
 			for i in range(1, dabs + 1):
-				terrain.data.brush(previous.lerp(center, float(i) / dabs), radius, strength, _elapsed / dabs, mode, _level)
-			terrain.rebuild()
+				_dab(previous.lerp(center, float(i) / dabs), _elapsed / dabs)
+			_refresh()
 			_elapsed = 0.0
 			_last_brush = center
 	elif _painting:
@@ -60,14 +87,17 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed and _hit != null and not orbit.navigating:
+			if mode in ["tree", "rock", "flower", "pond"]:
+				_place(Vector2(_hit.x, _hit.z))
+				return
 			terrain.data.begin_stroke()
 			_level = _hit.y
 			_painting = true
 			_elapsed = 0.0
 			_last_brush = Vector2(_hit.x, _hit.z)
 			# A quick click should make a dab even before the next render frame.
-			terrain.data.brush(Vector2(_hit.x, _hit.z), radius, strength, 1.0 / 30.0, mode, _level)
-			terrain.rebuild()
+			_dab(Vector2(_hit.x, _hit.z), 1.0 / 30.0)
+			_refresh()
 		elif not event.pressed:
 			_finish_stroke()
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -119,36 +149,44 @@ func _select_tool(selected: String) -> void:
 		"lower": "Press valleys and hollows into the land.",
 		"smooth": "Soften slopes and blend your brushwork.",
 		"flatten": "Level toward the height where you click.",
+		"meadow": "Paint grass and wildflowers. Slow strokes grow denser.",
+		"tree": "Click to plant a tree. It follows the ground as you sculpt.",
+		"rock": "Click to place a stone.",
+		"flower": "Click to plant an individual daisy. Zoom in for detail.",
+		"pond": "Lower a hollow, then click inside to fill to the water level.",
+		"erase": "Brush away meadow and placed objects. Undo restores them.",
 	}
 	_status.text = descriptions[selected]
 
 func _undo() -> void:
 	_finish_stroke()
 	if terrain.data.undo():
-		terrain.rebuild()
+		_refresh()
 		_dirty = true
 		_status.text = "Undid one brushstroke."
 
 func _redo() -> void:
 	_finish_stroke()
 	if terrain.data.redo():
-		terrain.rebuild()
+		_refresh()
 		_dirty = true
 		_status.text = "Restored one brushstroke."
 
 func _save() -> bool:
 	_finish_stroke()
 	# Write beside the previous save, then replace it only after a successful write.
-	var temporary := SAVE_PATH + ".tmp"
+	var temporary := save_path + ".tmp"
 	var file := FileAccess.open(temporary, FileAccess.WRITE)
 	if file == null:
 		_status.text = "Could not save. Your landscape is still open."
 		return false
-	file.store_string(JSON.stringify(terrain.data.to_document()))
+	var document := terrain.data.to_document()
+	document["view"] = _camera_state()
+	file.store_string(JSON.stringify(document, "", true, true))
 	file.flush()
 	var result := file.get_error()
 	file.close()
-	if result != OK or DirAccess.rename_absolute(temporary, SAVE_PATH) != OK:
+	if result != OK or DirAccess.rename_absolute(temporary, save_path) != OK:
 		_status.text = "Could not finish saving. Please try again."
 		return false
 	_dirty = false
@@ -156,13 +194,37 @@ func _save() -> bool:
 	return true
 
 func _load() -> void:
-	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
-	if file == null or not terrain.data.load_document(JSON.parse_string(file.get_as_text())):
-		_status.text = "Saved landscape could not be read. Started fresh."
+	var file := FileAccess.open(save_path, FileAccess.READ)
+	if file == null:
+		_status.text = "Saved garden could not be opened."
 		return
-	terrain.rebuild()
+	var document: Variant = JSON.parse_string(file.get_as_text())
+	if not document is Dictionary:
+		_status.text = "Saved garden could not be read."
+		return
+	var view: Variant = document.get("view", _camera_state())
+	if not view is Array or view.size() != 6:
+		_status.text = "Saved camera could not be read."
+		return
+	for value: Variant in view:
+		if not GardenData._number(value, -10000, 10000):
+			_status.text = "Saved camera could not be read."
+			return
+	if view[4] < 0.35 or view[4] > 1.35 or view[5] < 3.0 or view[5] > 55.0 or not terrain.data.load_document(document):
+		_status.text = "Saved garden could not be read. Your open garden is unchanged."
+		return
+	orbit.position = Vector3(view[0], view[1], view[2])
+	orbit.yaw = view[3]
+	orbit.pitch = view[4]
+	orbit.rotation = Vector3(-orbit.pitch, orbit.yaw, 0.0)
+	camera.size = view[5]
+	_last_camera_state = _camera_state()
+	_refresh()
 	_dirty = false
-	_status.text = "Welcome back. Your landscape is here."
+	_status.text = "Welcome back. Your garden is here."
+
+func _camera_state() -> Array:
+	return [orbit.position.x, orbit.position.y, orbit.position.z, orbit.yaw, orbit.pitch, camera.size]
 
 func _build_interface() -> void:
 	var layer := CanvasLayer.new()
@@ -190,25 +252,29 @@ func _build_interface() -> void:
 	_panel.theme = ui_theme
 	layer.add_child(_panel)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
+	column.add_theme_constant_override("separation", 8)
 	_panel.add_child(column)
-	var eyebrow := _label("L A N D S C A P E   S T U D Y   0 1", 11)
+	var eyebrow := _label("Z E N S C A P E   ·   G A R D E N", 11)
 	eyebrow.modulate = Color("7a876f")
 	column.add_child(eyebrow)
 	column.add_child(_label("A little room to grow.", 24))
-	var intro := _label("Shape a place, one brushstroke at a time.", 13)
+	var intro := _label("Sculpt. Plant. Settle in.", 13)
 	column.add_child(intro)
 	column.add_child(HSeparator.new())
+	var grid := GridContainer.new()
+	grid.columns = 2
+	column.add_child(grid)
 	var group := ButtonGroup.new()
 	for i in range(TOOLS.size()):
 		var tool: String = TOOLS[i]
-		var button := _button("%d   %s" % [i + 1, tool.capitalize()])
+		var button := _button(tool.capitalize())
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.toggle_mode = true
 		button.button_group = group
 		button.button_pressed = i == 0
 		button.pressed.connect(_select_tool.bind(tool))
-		column.add_child(button)
+		grid.add_child(button)
 		_buttons.append(button)
 	var radius_label := _label("Brush size   %.1f" % radius, 14)
 	column.add_child(radius_label)
@@ -238,6 +304,34 @@ func _build_interface() -> void:
 		strength_label.text = "Strength   %.1f" % strength
 	)
 	column.add_child(strength_slider)
+	var water_row := HBoxContainer.new()
+	water_row.add_child(_label("Water level", 13))
+	var water_level := SpinBox.new()
+	water_level.min_value = LandscapeData.MIN_HEIGHT + 0.01
+	water_level.max_value = LandscapeData.MAX_HEIGHT
+	water_level.step = 0.01
+	water_level.value = pond_level
+	water_level.value_changed.connect(func(value: float) -> void: pond_level = value)
+	water_row.add_child(water_level)
+	column.add_child(water_row)
+	var size_row := HBoxContainer.new()
+	size_row.add_child(_label("Object size", 13))
+	var size_control := SpinBox.new()
+	size_control.min_value = 0.1
+	size_control.max_value = 5.0
+	size_control.step = 0.1
+	size_control.value = placement_scale
+	size_control.value_changed.connect(func(value: float) -> void: placement_scale = value)
+	size_row.add_child(size_control)
+	column.add_child(size_row)
+	_weather_selector = OptionButton.new()
+	for weather: String in GardenData.WEATHER:
+		_weather_selector.add_item(weather)
+	_weather_selector.item_selected.connect(_change_weather)
+	column.add_child(_weather_selector)
+	var fresh := _button("Start flat · undo available")
+	fresh.pressed.connect(_start_flat)
+	column.add_child(fresh)
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 7)
 	for action: Array in [["Undo", _undo], ["Redo", _redo], ["Save", _save]]:
@@ -276,3 +370,78 @@ func _style(color: Color, corner: int) -> StyleBoxFlat:
 	box.content_margin_left = 12
 	box.content_margin_right = 12
 	return box
+
+func _dab(point: Vector2, delta: float) -> void:
+	if mode == "meadow":
+		garden.data.paint_meadow(point, radius, strength * delta)
+	elif mode == "erase":
+		garden.data.paint_meadow(point, radius, -strength * delta * 2.0)
+		garden.data.erase_objects(point, radius)
+	else:
+		garden.data.brush(point, radius, strength, delta, mode, _level)
+
+func _place(point: Vector2) -> void:
+	_finish_stroke()
+	garden.data.begin_stroke()
+	if mode == "pond":
+		var pond := {"x": point.x, "z": point.y, "level": pond_level}
+		var surface := GardenWater.surface(garden.data, pond)
+		if surface.is_empty():
+			garden.data.end_stroke()
+			_status.text = "Water needs a closed hollow below this level. Lower the bed or lower the water level."
+			return
+		# Replace water in this connected basin instead of stacking duplicate surfaces.
+		var remaining: Array[Dictionary] = []
+		for existing: Dictionary in garden.data.ponds:
+			if not GardenWater.covers(surface, Vector2(existing.x, existing.z)):
+				remaining.append(existing)
+		if remaining.size() >= GardenData.MAX_PONDS:
+			garden.data.end_stroke()
+			_status.text = "This garden has reached its pond limit."
+			return
+		garden.data.ponds = remaining
+		garden.data.add_pond(point, pond_level)
+	else:
+		if garden.data.place(mode, point, placement_angle, placement_scale) < 0:
+			garden.data.end_stroke()
+			_status.text = "This garden has reached its object limit. Erase an object to make room."
+			return
+	if garden.data.end_stroke():
+		_dirty = true
+		_refresh()
+		_status.text = "Added %s · Undo available." % mode
+
+func _start_flat() -> void:
+	_finish_stroke()
+	garden.data.begin_stroke()
+	garden.data.reset_flat()
+	if garden.data.end_stroke():
+		_dirty = true
+	_refresh()
+	_status.text = "A fresh patch of earth. Undo brings your garden back."
+
+func _change_weather(index: int) -> void:
+	_finish_stroke()
+	garden.data.begin_stroke()
+	garden.data.weather = GardenData.WEATHER[index]
+	if garden.data.end_stroke():
+		_dirty = true
+	_refresh()
+
+func _refresh() -> void:
+	terrain.rebuild()
+	if garden == null:
+		return
+	garden.rebuild()
+	var weather := garden.data.weather
+	_weather_effect.visible = weather in ["Rain", "Snow"]
+	_weather_selector.select(GardenData.WEATHER.find(weather))
+	var environment: Environment = $WorldEnvironment.environment
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.fog_enabled = weather == "Mist"
+	environment.fog_light_color = Color("b9ceca")
+	environment.fog_density = 0.025 if weather == "Mist" else 0.0
+	environment.background_color = Color("94aaa8") if weather in ["Mist", "Rain"] else Color("cfd9cc")
+	$Sun.light_energy = 0.45 if weather in ["Mist", "Rain"] else 0.85
+	terrain.ground_material.set_shader_parameter("snow", 0.8 if weather == "Snow" else 0.0)
+	terrain.ground_material.set_shader_parameter("wet", 1.0 if weather == "Rain" else 0.0)

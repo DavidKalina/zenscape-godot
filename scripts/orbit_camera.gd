@@ -14,9 +14,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			navigating = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE)
 		if event.pressed:
 			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-				camera.size = clampf(camera.size * 0.92, 14.0, 55.0)
+				camera.size = clampf(camera.size * 0.92, 3.0, 55.0)
 			if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-				camera.size = clampf(camera.size / 0.92, 14.0, 55.0)
+				camera.size = clampf(camera.size / 0.92, 3.0, 55.0)
 	if event is InputEventMouseMotion:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
 			var scale_factor := camera.size / get_viewport().get_visible_rect().size.y
