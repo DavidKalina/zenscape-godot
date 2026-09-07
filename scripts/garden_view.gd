@@ -254,6 +254,9 @@ func rebuild(force := false) -> void:
 		_view_signature = _signature()
 		_view_ready = true
 
+func discard_cache() -> void:
+	_view_ready = false
+
 func _signature() -> PackedByteArray:
 	return var_to_bytes([data.objects_revision,data.objects.size(),data.ponds,data.streams,data.landscape_waterfall,data.grass,data.blades,data.meadow,data.blank,data._recipe_settings])
 

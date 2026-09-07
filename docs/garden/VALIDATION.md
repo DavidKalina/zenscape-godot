@@ -559,3 +559,85 @@ The full 73-test suite was run sequentially for the first time since the water/p
 Known limits, not hidden: the editor's arch tool grounds its baked mesh at the terrain height under the AABB centre, so the arch cannot sit at its source position — that needs a pose/offset for landmarks or a landscape-arch fill. Wildlife (frogs, rings, birds) is not part of population and is still absent. Non-identity range transforms lose float exactness by design. Authored ponds flood as source lakes, with no spill promises and no pond-area cap. Bigfoot remains out of scope.
 
 Still pending: the arch placement follow-up, wildlife, fuller waterfall/stream placement controls and freeform carving, and the final complete manually authored saved/reopened comparison.
+
+### Real-time brush refresh
+
+A drag calls `refresh()` up to thirty times a second and every call used to
+rebuild the whole chunk from the records. On `fall-world-proof.json` (3,178
+object records, 5,334 rendered instances, 3,872 terrain faces) that was 565 ms a
+dab, so the brush moved in visible jumps. The rendered result is unchanged; only
+the amount of work per dab is.
+
+Nothing about the chunk's shape changes while sculpting except the height of the
+vertices under the brush, so three kinds of saving apply. First, values that are
+pure functions of the fixed geometry are computed once: the barycentric solution
+for every sampled XZ point, each face's grass/rock/snow/shimmer palette entries
+and rim flag, and the four sculpt-gradient probes a face reads. These keep the
+original expressions — the same face is chosen in bucket order and the same
+doubles are multiplied — so the palette, shoreline and flora comparisons still
+report the same errors as before. Second, values that only depend on the recipe
+survive an unchanged `_set_recipe`, which is what every sculpt undo restores: the
+recipe's sampled heights and gradients, the water field's grid of unsculpted
+heights (kept in doubles so adding the sculpt delta reproduces the original sum),
+and a memo of `NativeTerrainRecipe.height` for the stream and waterfall samplers.
+Third, the rebuilds themselves are scoped:
+
+- `build_mesh` keeps its last arrays and recomputes only the faces whose bucket
+  meets the changed region. The region is derived by diffing the current heights
+  and cover against the arrays the cached build used, then grown by the largest
+  face diagonal plus the 0.25 gradient offset and one meadow cell, which is the
+  furthest a moved vertex can reach into another face's shading.
+- The shoreline field is reused unless the edit lands on a cell that is wet,
+  borders a wet cell, or seeds a pond. Heights elsewhere are read by the flood
+  and discarded, so the field cannot move. When it is recomputed and comes out
+  different, the whole mesh is rebuilt.
+- `GardenView` keeps its batches and moves only the instances inside the region,
+  re-sampling each from the same recipe the full rebuild used, so the meadow
+  scatter keeps its seeds and every colour is untouched. Object records are
+  tracked by a revision counter because serialising 3,000 of them costs more than
+  the refresh. Stream geometry and the landscape waterfall record which terrain
+  vertices they read through `sample`; identical inputs retrace an identical
+  path, so those recorded heights say exactly when a retrace is needed however
+  far the trace wandered. The waterfall trace is also memoised, since a rebuild
+  asks for it once to render and once per pond for its impact foam.
+- The surface map resamples only the pixels the edit can reach. Both overlays
+  gained a clip rectangle, which is sound because each decides a pixel from that
+  pixel's own ground value alone; `paint_streams` additionally skips pixels
+  outside the rendered streams' bounds, where every sampler misses anyway.
+
+`tests/test_native_refresh_incremental.gd` is the guard. On the populated demo
+world it drives eight strokes — clear of the water, through the pond, along the
+stream, under the waterfall's course, a wide smooth, ground cover, meadow and
+erase — refreshing after every dab exactly as `_process` does, and compares the
+terrain and skirt mesh arrays, every MultiMesh instance transform and colour, the
+pond and stream and waterfall meshes, the landmark poses and both surface map
+textures byte for byte against `force_refresh()`, which discards every cache and
+rebuilds from the same records. It then undoes all eight strokes and asserts the
+result is byte-identical to the world as opened, and that redo matches a full
+rebuild too. It passed with 0 failures. Shrinking the face margin to zero or
+disabling the wet-cell test makes it fail, so those two gates are load-bearing.
+
+Measured with `tools/profile_refresh.gd` on the same world, before and after:
+
+| | before | after |
+|---|---|---|
+| `build_mesh` (cold, full) | 315 ms | 132 ms |
+| `GardenView.rebuild` (cold, full) | 246 ms | 52 ms |
+| surface map height pass | 73 ms | 8 ms |
+| `paint_streams` | 15 ms | 9 ms |
+| one dab plus `refresh()` | 565 ms | 15 ms |
+| undo on a sculpted chunk | 1,232 ms | 33 ms |
+| undo of the first stroke on a pristine range | 1,232 ms | 100 ms |
+
+The first stroke on a freshly formed landscape is the one slow case: it crosses
+from "heights are identical to the recipe" to "sculpted", which every
+recipe-derived cache has to notice, and undoing it crosses back. That is a
+one-off per chunk, and it is the 100 ms row above rather than the 33 ms one.
+
+Not addressed: a cover-painting dab still rebuilds the instance batches, because
+changing a cell's density changes how many blades it scatters and therefore every
+later instance index. Sculpting near water rebuilds the pond surface, the stream
+geometry and the waterfall, which is correct but leaves those dabs at roughly
+80 ms rather than 15 ms. The full 73-test suite was not re-run for this change;
+the fifteen native editor scripts listed in the pond/stream/flora sections above
+were, plus the new incremental test.

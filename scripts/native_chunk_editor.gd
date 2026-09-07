@@ -529,6 +529,16 @@ func refresh() -> void:
 	if scene._display_fog != null:
 		scene._display_fog.update_view()
 
+## Rebuild everything from the records, ignoring every incremental cache. The
+## incremental path must land on exactly this result; the regression test drives
+## a stroke both ways and compares the meshes, instances and map bytes.
+func force_refresh() -> void:
+	data.discard_cache()
+	content.discard_cache()
+	_map_ready = false
+	_bigfoot_mesh = null
+	refresh()
+
 ## Resample only the map pixels the edit can reach. The height pass is kept in
 ## `_map_base`; both overlays are per-pixel functions of that base, so repainting
 ## the changed rectangle over the previous finished maps reproduces them exactly.

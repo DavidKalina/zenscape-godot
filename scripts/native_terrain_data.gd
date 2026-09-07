@@ -38,6 +38,8 @@ var _locate_face := PackedInt32Array()
 var _locate_u := PackedFloat64Array()
 var _locate_v := PackedFloat64Array()
 var _water_grid_h := PackedFloat64Array()
+var _recipe_height_cache := {}
+var _recipe_height_count := 0
 var _face_margin := 0.0
 var _mesh_arrays: Array = []
 var _mesh_result: ArrayMesh
@@ -378,6 +380,13 @@ func moved_region(snapshot: PackedFloat32Array) -> Variant:
 ## Whether an edited region can change the water field. Heights only reach the
 ## flood through cells that are already wet, border a wet cell, or seed a pond;
 ## everywhere else the recipe height is read and discarded.
+## Throw away everything the incremental refresh remembers, so the next build
+## starts from the records alone.
+func discard_cache() -> void:
+	_mesh_result = null
+	_shore_ready = false
+	_strands_ready = false
+
 func water_reaches(region: Rect2) -> bool:
 	if not _shore_ready:
 		return true
@@ -516,6 +525,8 @@ func _set_recipe(settings: Dictionary) -> void:
 	_recipe_heights.clear()
 	_recipe_gradients.clear()
 	_water_grid_h.clear()
+	_recipe_height_cache.clear()
+	_recipe_height_count = 0
 	_strands_ready = false
 	if _recipe == null: return
 	for point in points:
@@ -830,7 +841,25 @@ func fill_landscape_streams() -> bool:
 func stream_ground_height(x: float,z: float) -> float:
 	var p:=Vector2(x,z).clamp(Vector2(-14,-14),Vector2(14,14))
 	if _recipe==null: return float(height_at(p.x,p.y))
-	return _recipe.height(x,z)+(_sculpt_delta(p) if heights!=_recipe_heights else 0.0)
+	return _recipe_height(x,z)+(_sculpt_delta(p) if heights!=_recipe_heights else 0.0)
+
+## Stream banks and the waterfall's trace sample the recipe thousands of times,
+## often at coordinates they have already asked for. The doubles are kept as
+## dictionary keys so a hit returns the identical value the noise produced.
+func _recipe_height(x: float,z: float) -> float:
+	var row: Variant = _recipe_height_cache.get(x)
+	if row == null:
+		row = {}
+		_recipe_height_cache[x] = row
+	var height: Variant = row.get(z)
+	if height == null:
+		height = _recipe.height(x,z)
+		row[z] = height
+		_recipe_height_count += 1
+		if _recipe_height_count >= 262144:
+			_recipe_height_cache.clear()
+			_recipe_height_count = 0
+	return height
 
 func fill_landscape_waterfall() -> bool:
 	if _recipe==null or _recipe_settings.kind!="range": return false

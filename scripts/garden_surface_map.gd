@@ -59,12 +59,21 @@ static func paint_water(image: Image, water: PackedVector3Array, clip := Rect2i(
 static func paint_streams(ground_image: Image,stream_image: Image,nodes: Array[MeshInstance3D],clip := Rect2i(0,0,SIZE,SIZE)) -> void:
 	if nodes.is_empty(): return
 	var surfaces: Array[RefCounted]=[]
+	# Outside a stream's own bounds every sampler misses, so the scan is kept to
+	# the pixels the rendered streams actually cover.
+	var span := Rect2i()
 	for node in nodes:
 		var sampler:=preload("res://scripts/reference_ground.gd").new()
 		sampler.setup(node)
 		surfaces.append(sampler)
-	for z in range(clip.position.y,clip.end.y):
-		for x in range(clip.position.x,clip.end.x):
+		var box := node.transform * node.mesh.get_aabb()
+		var low := (Vector2(box.position.x,box.position.z)+Vector2.ONE*SPAN*0.5)*SIZE/SPAN
+		var high := (Vector2(box.end.x,box.end.z)+Vector2.ONE*SPAN*0.5)*SIZE/SPAN
+		var reach := Rect2i(Vector2i(floori(low.x),floori(low.y)),Vector2i.ZERO).expand(Vector2i(ceili(high.x)+1,ceili(high.y)+1))
+		span = reach if span.size == Vector2i.ZERO else span.merge(reach)
+	span = span.intersection(clip)
+	for z in range(span.position.y,span.end.y):
+		for x in range(span.position.x,span.end.x):
 			var point:=_point(x,z)
 			var value:=ground_image.get_pixel(x,z)
 			for sampler in surfaces:
