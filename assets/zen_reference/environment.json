@@ -1,0 +1,14 @@
+{
+  "uCloudY": 20,
+  "uCloudH": 12,
+  "uSummit": [
+    0.9296875,
+    12.626823545986714,
+    1.5859375
+  ],
+  "uGroundRange": [
+    0.15,
+    12.626823545986714
+  ],
+  "source": "seed 7 mountain weather rig; captured with tools/capture_environment.mjs"
+}

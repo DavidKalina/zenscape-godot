@@ -1,0 +1,21 @@
+import {writeFileSync} from 'node:fs';
+import {openBrowser} from './capture_browser.mjs';
+const {open,evalJs}=await openBrowser('godot-lake-material',{flags:['--use-angle=metal','--ignore-gpu-blocklist']});
+await open('?seed=7&title=0&grow=1,1,1,1&daylen=0&hud=0&aurora=0&bow=0&tod=0.35&wx=shroud:0,cloud:1,rain:1,storm:1,mist:0,haze:0,wind:2.5');
+const camera=(process.env.ZS_LAKE_CAMERA || "8,0.55,1.9,6.2,0.38,-3.4").split(",").map(Number);
+if(camera.length!==6 || camera.some(v=>!Number.isFinite(v)))throw Error("Invalid lake camera");
+const opaqueLake=process.env.ZS_OPAQUE_LAKE === "1";
+const disableAlgae=process.env.ZS_NO_ALGAE === "1";
+const result=await evalJs(`(()=>{
+ const d=__dbg; if(${opaqueLake})d.scene.traverse(o=>{if(o.geometry?.attributes.aFetchA){const m=o.material;const compile=m.onBeforeCompile;m.onBeforeCompile=function(sh,r){compile.call(this,sh,r);const end=sh.fragmentShader.lastIndexOf("}");sh.fragmentShader=sh.fragmentShader.slice(0,end)+"gl_FragColor.a = 1.0;"+sh.fragmentShader.slice(end);};m.customProgramCacheKey=()=>"opaque-lake-probe";m.needsUpdate=true;}}); if(${disableAlgae})d.scene.traverse(o=>{if(o.material?.userData.algae)o.material.userData.algae.uniforms.uAlgae.value=0;}); d.controls.autoRotate=false; d.controls.minDistance=0.5;
+ d.renderer.setPixelRatio(1); d.renderer.setSize(1440,900);
+ d.camera.aspect=1.6; d.camera.updateProjectionMatrix();
+ const [radius,polar,yaw,x,y,z]=${JSON.stringify(camera)};
+ d.controls.target.set(x,y,z);
+ d.camera.position.set(x+radius*Math.sin(polar)*Math.sin(yaw),y+radius*Math.cos(polar),z+radius*Math.sin(polar)*Math.cos(yaw));
+ d.controls.update(); d.film.start(); d.weather().strike(4,-2); let image;
+ for(let i=0;i<3;i++) image=d.film.frame(1/30,{type:'image/png'});
+ return {image,camera:d.camera.position.toArray(),target:d.controls.target.toArray()};
+})()`);
+writeFileSync(new URL('../docs/fidelity/storm-flash-source.png',import.meta.url),Buffer.from(result.image.split(',')[1],'base64'));
+console.log('Source camera',result.camera,'target',result.target);process.exit(0);

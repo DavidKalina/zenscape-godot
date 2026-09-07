@@ -1,0 +1,17 @@
+import {readFileSync, writeFileSync} from 'node:fs';
+import {openBrowser} from './capture_browser.mjs';
+const saved = JSON.parse(readFileSync(new URL('../assets/zen_reference/scene.json', import.meta.url)));
+const lake = saved.meshes.find(m => m.material.water);
+const {open, evalJs} = await openBrowser('godot-lake-wind', {flags:['--use-angle=metal','--ignore-gpu-blocklist']});
+await open(saved.query);
+const candidates = await evalJs(`(()=>{const out=[];__dbg.scene.traverse(o=>{if(o.geometry?.attributes.aFetchA){const a=o.geometry.attributes; const gl=__dbg.renderer.getContext(); const program=__dbg.renderer.properties.get(o.material).currentProgram?.program; if(!program)throw Error("Source lake program unavailable"); const volume=gl.getUniform(program,gl.getUniformLocation(program,"uVolume")); if(!volume)throw Error("Source lake volume unavailable"); const au=o.material.userData.algae?.uniforms; const algae=au?{amount:au.uAlgae.value,richness:au.uAlgaeRichness.value,seed:au.uAlgaeSeed.value,anchors:au.uAlgaeAnchors.value.map(v=>v.toArray())}:null; const sight=o.material.userData.submergedSight; out.push({receiveShadow:o.receiveShadow,algae,sightEnabled:sight?.enabled.value,colors:Array.from(a.color.array),volume:Array.from(volume),positions:Array.from(a.position.array),aFetchA:{size:4,array:Array.from(a.aFetchA.array)},aFetchB:{size:4,array:Array.from(a.aFetchB.array)},look:o.material.userData.waterLook?.value.toArray(),effects:o.material.userData.lakeEffects?.value.toArray()});}});return out;})()`);
+const p = lake.attrs.position.array;
+const match = candidates.find(m => m.positions.length === p.length && p.every((v,i)=>Math.abs(v-m.positions[i])<1e-5));
+if (!match) throw Error('No current source lake matches saved vertex positions; do not attach fetch to mismatched geometry.');
+const colors = lake.attrs.color.array;
+if (colors.length !== match.colors.length || colors.some((v,i)=>Math.abs(v-match.colors[i])>1e-5)) throw Error("Source lake vertex colors changed; inspect palette before updating material data.");
+delete match.colors;
+delete match.positions;
+writeFileSync(new URL('../assets/zen_reference/lake-wind.json', import.meta.url),JSON.stringify({[lake.name]:match}));
+console.log('Exported source lake fetch:', p.length/3, 'vertices; look', match.look, 'volume', match.volume, 'algae', match.algae, 'sight enabled',match.sightEnabled);
+process.exit(0);

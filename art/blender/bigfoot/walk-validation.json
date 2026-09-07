@@ -1,0 +1,18 @@
+{
+  "animation": "Walk",
+  "duration_seconds": 3.6,
+  "fps": 30,
+  "frames": 108,
+  "forward_speed_mps": 0.24193548387096775,
+  "direction": "Godot +Z / Blender -Y",
+  "duty_factor": 0.62,
+  "bones": 36,
+  "deform_bones": 31,
+  "skinned_meshes": 32,
+  "faces": 5368,
+  "max_ik_target_error_m": 5.451402002178102e-06,
+  "max_stance_slip_m": 4.2956716410463456e-06,
+  "min_sole_height_m": -1.0221706361335237e-06,
+  "max_loop_matrix_delta": 7.837739790370625e-18,
+  "scope": "Existing Wanderer geometry preserved; flat-ground walk; game behavior not replaced."
+}

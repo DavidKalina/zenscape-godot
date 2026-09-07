@@ -1,0 +1,17 @@
+{
+  "animation": "Walk",
+  "duration_seconds": 1.6,
+  "fps": 30,
+  "frames": 48,
+  "intended_forward_speed_mps": 0.2604166666666667,
+  "direction": "Godot +Z / Blender -Y",
+  "duty_factor": 0.72,
+  "foot_lift_m": 0.072,
+  "max_ik_target_error_m": 2.735489569706592e-07,
+  "max_stance_slip_m": 3.185504425530426e-07,
+  "max_loop_matrix_delta": 7.631091875381403e-18,
+  "bones": 24,
+  "deform_bones": 15,
+  "mesh_objects": 19,
+  "scope": "In-place flat-ground walk. Game terrain IK and behavior not integrated."
+}

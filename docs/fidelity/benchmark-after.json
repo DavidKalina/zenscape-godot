@@ -1,0 +1,25 @@
+{
+	"camera_path": "source pose during warmup, then 0.055 radians/second for 12 seconds",
+	"device": "Apple M5 Pro (Apple9)",
+	"draw_calls": 88.0,
+	"frames": 4283,
+	"mean_draws_per_second": 356.740228895126,
+	"measurement": "explicit offscreen draws without presentation; not gameplay FPS or GPU timestamps",
+	"median_ms": 1.543,
+	"msaa_3d": 2,
+	"p95_ms": 7.03,
+	"primitives": 330396.0,
+	"quality": "beauty",
+	"render_resolution": [
+		1440,
+		900
+	],
+	"renderer": "forward_plus",
+	"resolution": [
+		1440,
+		900
+	],
+	"sample_seconds": 12,
+	"vsync_mode": 0,
+	"warmup_seconds": 5
+}

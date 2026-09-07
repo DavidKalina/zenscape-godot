@@ -1,0 +1,140 @@
+shader_type sky;
+// March in the final pass: intermediate sky passes also receive native fog.
+#include "res://shaders/reference_cloud_march.gdshaderinc"
+#include "res://shaders/reference_sky_common.gdshaderinc"
+#include "res://shaders/reference_display.gdshaderinc"
+
+        
+        
+        
+        
+        
+        
+        
+        float hash(vec3 p) {
+          return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+        }
+        // one octave of smooth value noise — only ever run on night-sky pixels,
+        // where it clumps the Milky Way; 8 hashes is nothing next to the fog march
+        float vnoise(vec3 p) {
+          vec3 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x),
+                mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+            mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x),
+                mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
+            f.z);
+        }
+        void sky() {
+          // Re-normalize per fragment: the dome's facets span ~15 degrees, and
+          // the interpolated varying shrinks to ~0.991 mid-facet — under the
+          // sun disc's own dot() threshold, which silently erases it.
+          vec3 dir = normalize(EYEDIR);
+          float y = dir.y;
+          // The gradient itself is zsSkyGradient (above): the dome is a caller
+          // of it like anything else that has to know what colour the sky is.
+          vec3 col = zsSkyGradient(dir);
+
+          // Stars: candidates on 3D lattices the dome slices through — round
+          // dots, per-star brightness and a slow twinkle. Two lattices: a
+          // coarse one for the named-feeling bright stars (a few of them warm —
+          // real skies aren't monochrome) and a fine one for the dust that
+          // makes a dark sky read FULL. Faded at the horizon the way air fades
+          // them, and everything in here is gated to night-sky pixels only.
+          // No horizon cutoff: the diorama FLOATS, and the default camera looks
+          // down on it, so almost all the visible "sky" is the dome below y=0 —
+          // a fade at the horizon line blanks the stars from the only band the
+          // player ever sees. Stars run deep below the horizon and only thin
+          // out toward the void under the slab.
+          float starK = zs_night * zs_celestial_clear * smoothstep(-0.55, -0.2, y);
+          if (starK > 0.001) {
+            // The Milky Way: a tilted great-circle band, clumped by smooth
+            // noise so it reads as spilled light, not an airbrushed stripe.
+            vec3 mwN = normalize(vec3(0.6, 0.25, 0.75));
+            float mwD = dot(dir, mwN);
+            float mwBand = exp(-mwD * mwD / 0.045);
+            float mwClump = vnoise(dir * 9.0) * 0.65 + vnoise(dir * 23.0) * 0.35;
+            float mw = mwBand * (0.3 + 0.7 * smoothstep(0.32, 0.8, mwClump));
+            col += vec3(0.55, 0.62, 0.85) * mw * 0.05 * starK;
+
+            // bright stars
+            vec3 sp = dir * 46.0;
+            vec3 cell = floor(sp);
+            float h = hash(cell);
+            vec3 pos = cell + 0.15
+              + 0.7 * vec3(hash(cell + 17.0), hash(cell + 43.0), hash(cell + 71.0));
+            float star = smoothstep(0.3, 0.0, length(sp - pos)) * step(0.66, h);
+            float tw = 0.7 + 0.3 * sin(zs_motion_time * (0.6 + h * 2.4) + h * 40.0);
+            vec3 starTint = mix(vec3(1.0, 0.86, 0.7), vec3(0.75, 0.82, 1.0),
+                                smoothstep(0.1, 0.35, fract(h * 7.31)));
+            col += starTint * star * star * (0.3 + 0.8 * h) * tw * starK;
+
+            // star dust — smaller, dimmer, denser, and denser still inside the
+            // Milky Way's band, which is what the band actually IS
+            vec3 sp2 = dir * 92.0;
+            vec3 cell2 = floor(sp2);
+            float h2 = hash(cell2 + 5.0);
+            vec3 pos2 = cell2 + 0.2
+              + 0.6 * vec3(hash(cell2 + 11.0), hash(cell2 + 29.0), hash(cell2 + 57.0));
+            float dust = smoothstep(0.24, 0.0, length(sp2 - pos2))
+              * step(mix(0.62, 0.42, mwBand), h2);
+            col += vec3(0.7, 0.78, 1.0) * dust * dust * (0.12 + 0.3 * h2) * starK;
+
+            // The occasional meteor: zs_motion_time is diced into windows, each window
+            // hashes into "fires or doesn't" plus a start point and a heading,
+            // and for under a second the head slides along a short arc with a
+            // gaussian streak decaying behind it. Pure function of zs_motion_time — no
+            // state, no uniforms, no cost outside this branch.
+            // Cadence: a candidate every 5s window, ~55% fire, but the arc is
+            // random on the sphere and the camera sees only a sliver of it, so
+            // a streak actually CROSSES the frame about once a minute — an
+            // event you catch out of the corner of your eye, not a light show.
+            float mwin = floor(zs_motion_time / 5.0);
+            float mfire = hash(vec3(mwin, 1.7, 9.2));
+            float mlt = (zs_motion_time - mwin * 5.0) / 0.9;
+            if (mfire > 0.45 && mlt < 1.0) {
+              // spawn anywhere the camera can actually see sky: the visible
+              // dome around a floating diorama is mostly BELOW y=0
+              vec3 mA = normalize(vec3(hash(vec3(mwin, 3.0, 7.0)) - 0.5,
+                                       -0.35 + 0.85 * hash(vec3(mwin, 5.0, 11.0)),
+                                       hash(vec3(mwin, 9.0, 2.0)) - 0.5));
+              vec3 mT = normalize(cross(mA,
+                vec3(hash(vec3(mwin, 4.0, 8.0)) - 0.5,
+                     hash(vec3(mwin, 6.0, 1.0)) - 0.5,
+                     hash(vec3(mwin, 2.0, 5.0)) - 0.5)));
+              vec3 mHead = normalize(mA + mT * (mlt * 0.45));
+              vec3 mTail = normalize(mA + mT * (max(mlt - 0.22, 0.0) * 0.45));
+              vec3 seg = mHead - mTail;
+              float u = clamp(dot(dir - mTail, seg) / (dot(seg, seg) + 1e-6), 0.0, 1.0);
+              vec3 cp = mTail + seg * u;
+              float dd = length(dir - cp);
+              float streak = exp(-dd * dd / 2.0e-5);
+              float env = smoothstep(0.0, 0.1, mlt) * smoothstep(1.0, 0.7, mlt);
+              col += vec3(0.9, 0.95, 1.0) * streak * mix(0.08, 1.0, u) * env * 1.5 * starK;
+            }
+          }
+
+          // The sun: a disc hot enough to bloom through ACES, plus a soft halo.
+          // Reddens as it drops; fades once it is genuinely under the horizon.
+          float sE = zs_sun_direction.y;
+          float sd = dot(dir, zs_sun_direction);
+          float sunVis = zs_celestial_clear * smoothstep(-0.06, 0.01, sE);
+          vec3 sunCol = mix(vec3(1.3, 0.38, 0.10), vec3(1.4, 1.2, 0.95), smoothstep(0.02, 0.4, sE));
+          col += sunCol * 4.0 * smoothstep(0.9992, 0.99965, sd) * sunVis;
+          col += sunCol * 0.18 * pow(max(sd, 0.0), 90.0) * sunVis;
+
+          // The moon: smaller and cooler, gibbous by construction — a second
+          // disc offset anti-sunward (daynight.js computes it) eats the dark
+          // limb. Faintly there by day, full presence at night.
+          float md = dot(dir, zs_moon_direction);
+          float moon = smoothstep(0.99958, 0.99982, md);
+          float bite = smoothstep(0.99958, 0.99982, dot(dir, zs_moon_shadow_direction));
+          float moonVis = zs_celestial_clear * smoothstep(-0.04, 0.03, zs_moon_direction.y) * mix(0.15, 1.0, zs_night);
+          col += vec3(0.86, 0.92, 1.0) * moon * (1.0 - 0.72 * bite) * 1.6 * moonVis;
+          col += vec3(0.5, 0.6, 0.8) * 0.06 * pow(max(md, 0.0), 160.0) * moonVis * zs_night;
+
+          vec4 cloud = zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
+          col = col * (1.0 - cloud.a) + cloud.rgb;
+          COLOR = scene_linear_for_display(clamp(col, vec3(0.0), vec3(0.98)));
+}
