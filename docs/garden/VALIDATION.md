@@ -591,3 +591,92 @@ from physical pixels. Frame time at 3024x1706 went from 40 ms to 20 ms;
 the quality selector, temporal fog reuse and the source's resolution governor
 are the next levers. The 74-test suite passes after hiding the DPI-scaled
 panel in `test_autumn.gd`'s pixel sampling.
+### Real-time brush refresh
+
+A drag calls `refresh()` up to thirty times a second and every call used to
+rebuild the whole chunk from the records. On `fall-world-proof.json` (3,178
+object records, 5,334 rendered instances, 3,872 terrain faces) that was 565 ms a
+dab, so the brush moved in visible jumps. The rendered result is unchanged; only
+the amount of work per dab is.
+
+Nothing about the chunk's shape changes while sculpting except the height of the
+vertices under the brush, so three kinds of saving apply. First, values that are
+pure functions of the fixed geometry are computed once: the barycentric solution
+for every sampled XZ point, each face's grass/rock/snow/shimmer palette entries
+and rim flag, and the four sculpt-gradient probes a face reads. These keep the
+original expressions — the same face is chosen in bucket order and the same
+doubles are multiplied — so the palette, shoreline and flora comparisons still
+report the same errors as before. Second, values that only depend on the recipe
+survive an unchanged `_set_recipe`, which is what every sculpt undo restores: the
+recipe's sampled heights and gradients, the water field's grid of unsculpted
+heights (kept in doubles so adding the sculpt delta reproduces the original sum),
+and a memo of `NativeTerrainRecipe.height` for the stream and waterfall samplers.
+Third, the rebuilds themselves are scoped:
+
+- `build_mesh` keeps its last arrays and recomputes only the faces whose bucket
+  meets the changed region. The region is derived by diffing the current heights
+  and cover against the arrays the cached build used, then grown by the largest
+  face diagonal plus the 0.25 gradient offset and one meadow cell, which is the
+  furthest a moved vertex can reach into another face's shading.
+- The shoreline field is reused unless the edit lands on a cell that is wet,
+  borders a wet cell, or seeds a pond. Heights elsewhere are read by the flood
+  and discarded, so the field cannot move. When it is recomputed and comes out
+  different, the whole mesh is rebuilt.
+- `GardenView` keeps its batches and moves only the instances inside the region,
+  re-sampling each from the same recipe the full rebuild used, so the meadow
+  scatter keeps its seeds and every colour is untouched. Object records are
+  tracked by a revision counter because serialising 3,000 of them costs more than
+  the refresh. Stream geometry and the landscape waterfall record which terrain
+  vertices they read through `sample`; identical inputs retrace an identical
+  path, so those recorded heights say exactly when a retrace is needed however
+  far the trace wandered. The waterfall trace is also memoised, since a rebuild
+  asks for it once to render and once per pond for its impact foam.
+- The surface map resamples only the pixels the edit can reach. Both overlays
+  gained a clip rectangle, which is sound because each decides a pixel from that
+  pixel's own ground value alone; `paint_streams` additionally skips pixels
+  outside the rendered streams' bounds, where every sampler misses anyway.
+
+`tests/test_native_refresh_incremental.gd` is the guard. On the populated demo
+world it drives eight strokes — clear of the water, through the pond, along the
+stream, under the waterfall's course, a wide smooth, ground cover, meadow and
+erase — refreshing after every dab exactly as `_process` does, and compares the
+terrain and skirt mesh arrays, every MultiMesh instance transform and colour, the
+pond and stream and waterfall meshes, the landmark poses and both surface map
+textures byte for byte against `force_refresh()`, which discards every cache and
+rebuilds from the same records. It then undoes all eight strokes and asserts the
+result is byte-identical to the world as opened, and that redo matches a full
+rebuild too. It passed with 0 failures. Shrinking the face margin to zero or
+disabling the wet-cell test makes it fail, so those two gates are load-bearing.
+
+Measured with `tools/profile_refresh.gd` on the same world, before and after:
+
+| | before | after |
+|---|---|---|
+| `build_mesh` (cold, full) | 315 ms | 119 ms |
+| `GardenView.rebuild` (cold, full) | 246 ms | 48 ms |
+| surface map height pass | 73 ms | 7 ms |
+| `paint_streams` | 15 ms | 8 ms |
+| one dab plus `refresh()` | 565 ms | 14 ms |
+| undo on a sculpted chunk | 1,232 ms | 29 ms |
+| undo of the first stroke on a pristine range | 1,232 ms | 91 ms |
+
+The first stroke on a freshly formed landscape is the one slow case: it crosses
+from "heights are identical to the recipe" to "sculpted", which every
+recipe-derived cache has to notice, and undoing it crosses back. That is a
+one-off per chunk, and it is the 91 ms row above rather than the 29 ms one.
+
+Not addressed: a cover-painting dab still rebuilds the instance batches, because
+changing a cell's density changes how many blades it scatters and therefore every
+later instance index. That is cheap now only because the water work around it is
+cached. Sculpting on the water is the remaining slow case: a dab through the pond
+measured 85 ms against 14 ms for one clear of it, since the shoreline field, the
+pond surface, the stream geometry and the waterfall all genuinely change and are
+all recomputed whole. Incremental water would be the next step.
+
+The fifteen native editor scripts listed in the pond, stream and flora sections
+above were re-run, plus the new incremental test and the garden, scene, fidelity,
+source-terrain, landscape, growth, habitat, catalog, stream-geometry, mountain
+and fall-strand scripts: all pass. `test_display_fog.gd` fails, but it fails
+identically on the parent commit with no editor involved, so it is not this
+change; it was run under heavy GPU contention. The full 73-test suite was not
+re-run end to end.

@@ -17,6 +17,14 @@ var _stream_nodes: Array[MeshInstance3D]=[]
 var pond_vertices := PackedVector3Array()
 var _catalog_parts := {}
 var _catalog_poses := {}
+var _sources := {}
+## Bumped by every full rebuild, so consumers of the rendered ponds and streams
+## can tell whether those meshes are the ones they last read.
+var revision := 0
+var _view_ready := false
+var _view_heights := PackedFloat32Array()
+var _view_signature := PackedByteArray()
+var _stream_probe := {}
 
 func _ready() -> void:
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
@@ -65,40 +73,60 @@ func _ready() -> void:
 	_water.material_override = _water_material
 	add_child(_water)
 
-func rebuild() -> void:
+## Brush dabs only lift instances near the stroke, so a refresh first tries to
+## reuse the live batches and move just those. Anything the edit could not have
+## reached - object records, water, painted cover - is verified unchanged before
+## that shortcut is taken, and `force` skips it entirely.
+func rebuild(force := false) -> void:
+	if not force and _reuse():
+		return
 	for batch in _batches:
 		batch.free()
 	_batches.clear()
+	_sources.clear()
 	var transforms := {"trunk": [], "canopy": [], "grass": [], "stem": [], "petal": [], "rock": []}
 	for kind in _catalog_parts:
 		for key in _catalog_parts[kind]:
 			transforms[key] = []
 	var instance_tints := {}
-	for key in transforms: instance_tints[key] = []
+	for key in transforms:
+		instance_tints[key] = []
+		_sources[key] = []
 	for item: Dictionary in data.objects:
 		var tint: Variant = preload("res://scripts/native_object_pose.gd").decode_tint(item.tint) if item.has("tint") else null
 		var position: Vector3 = data.object_position(item)
 		var basis := preload("res://scripts/native_object_pose.gd").decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP, item.angle).scaled(Vector3.ONE * item.scale)
 		var transform := Transform3D(basis, position)
+		var anchor := {"x":item.x,"z":item.z,"basis":basis,"item":item,"pose":null,"lift":0.0}
 		if _catalog_parts.has(item.asset):
 			for key in _catalog_parts[item.asset]:
 				transforms[key].append(transform*_catalog_poses[key])
+				var part := anchor.duplicate()
+				part.pose = _catalog_poses[key]
+				_sources[key].append(part)
 				var colored: bool = _catalog_parts[item.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 				instance_tints[key].append(tint if tint != null and colored else _tints.get(key,Color.WHITE))
 		match item.asset:
 			"tree":
 				transforms.trunk.append(transform)
+				_sources.trunk.append(anchor)
 				instance_tints.trunk.append(Color.WHITE)
 				transforms.canopy.append(transform)
+				_sources.canopy.append(anchor)
 				instance_tints.canopy.append(tint if tint != null else _tints.canopy)
 			"flower":
 				transforms.stem.append(transform)
+				_sources.stem.append(anchor)
 				instance_tints.stem.append(Color.WHITE)
 				transforms.petal.append(transform)
+				_sources.petal.append(anchor)
 				instance_tints.petal.append(tint if tint != null else _tints.petal)
 			"rock":
 				transform.origin.y += 0.24 * item.scale
 				transforms.rock.append(transform)
+				var lifted := anchor.duplicate()
+				lifted.lift = 0.24 * item.scale
+				_sources.rock.append(lifted)
 				instance_tints.rock.append(tint if tint != null else Color.WHITE)
 	var cells: int = data.meadow_side()
 	for z in range(cells):
@@ -114,10 +142,14 @@ func rebuild() -> void:
 					continue
 				var size := rng.randf_range(0.65, 1.3)
 				var transform := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(p.x, height, p.y))
+				var blade := {"x":p.x,"z":p.y,"basis":transform.basis,"item":null,"pose":null,"lift":0.0}
 				transforms.grass.append(transform)
+				_sources.grass.append(blade)
 				if i < int(data.meadow[index] * 8.0) and i % 4 == 0:
 					transforms.stem.append(transform)
+					_sources.stem.append(blade)
 					transforms.petal.append(transform)
+					_sources.petal.append(blade)
 	for key: String in transforms:
 		var placements: Array = transforms[key]
 		if placements.is_empty():
@@ -138,9 +170,11 @@ func rebuild() -> void:
 		_batches.append(batch)
 	for node in _stream_nodes: node.free()
 	_stream_nodes.clear()
+	_stream_probe = {}
 	if data is NativeTerrainData:
 		var gene: Dictionary=data._palette.noise.g.water
 		var ramp:=preload("res://scripts/native_recipe_water.gd").water_ramp(gene)
+		data.begin_probe()
 		for course in data.streams:
 			var geometry: Dictionary=preload("res://scripts/native_stream_geometry.gd").build(course,data.stream_ground_height,ramp)
 			var node:=MeshInstance3D.new()
@@ -149,6 +183,7 @@ func rebuild() -> void:
 			node.material_override=_stream_material
 			add_child(node)
 			_stream_nodes.append(node)
+		_stream_probe = data.end_probe()
 	for mist in _landscape_mists: mist.free()
 	_landscape_mists.clear()
 	if is_instance_valid(_landscape_foam): _landscape_foam.free()
@@ -213,6 +248,58 @@ func rebuild() -> void:
 			surface.set_color(pond_colors[i])
 			surface.add_vertex(point)
 		_water.mesh = surface.commit()
+	revision += 1
+	if data is NativeTerrainData:
+		_view_heights = data.heights.duplicate()
+		_view_signature = _signature()
+		_view_ready = true
+
+func discard_cache() -> void:
+	_view_ready = false
+
+func _signature() -> PackedByteArray:
+	return var_to_bytes([data.objects_revision,data.objects.size(),data.ponds,data.streams,data.landscape_waterfall,data.grass,data.blades,data.meadow,data.blank,data._recipe_settings])
+
+func _stale(record: Dictionary) -> bool:
+	return not record.is_empty() and data.probe_stale(record)
+
+## Move the instances the edit could have lifted and leave every other batch,
+## colour and water surface exactly as the last full rebuild left it.
+func _reuse() -> bool:
+	if not _view_ready or not data is NativeTerrainData or _view_signature != _signature():
+		return false
+	var region: Variant = data.moved_region(_view_heights)
+	if region is bool:
+		return true
+	if region == null:
+		return false
+	if _stale(_stream_probe) or _stale(data.waterfall_probe()):
+		return false
+	if not data.ponds.is_empty() and data.water_reaches(region):
+		return false
+	for batch in _batches:
+		var recipes: Array = _sources[batch.get_meta("part")]
+		for i in range(recipes.size()):
+			var recipe: Dictionary = recipes[i]
+			if not region.has_point(Vector2(recipe.x,recipe.z)):
+				continue
+			var moved: Variant = _instance_transform(recipe)
+			if moved != null:
+				batch.multimesh.set_instance_transform(i,moved)
+	_view_heights = data.heights.duplicate()
+	return true
+
+func _instance_transform(recipe: Dictionary) -> Variant:
+	if recipe.item == null:
+		var height: Variant = data.ground_height(Vector2(recipe.x,recipe.z))
+		if height == null:
+			return null
+		return Transform3D(recipe.basis,Vector3(recipe.x,height,recipe.z))
+	var transform := Transform3D(recipe.basis,data.object_position(recipe.item))
+	if recipe.pose != null:
+		return transform*recipe.pose
+	transform.origin.y += recipe.lift
+	return transform
 
 func _process(_delta: float) -> void:
 	if not is_instance_valid(_landscape_foam): return

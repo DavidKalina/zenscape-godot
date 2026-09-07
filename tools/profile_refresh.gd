@@ -43,4 +43,28 @@ func run() -> void:
 	t("FULL editor.refresh()", func(): editor.refresh())
 	t("end_stroke", func(): data.end_stroke())
 	t("undo", func(): editor.undo())
+	# What a drag actually costs: one dab followed by one refresh, repeated.
+	editor.mode = "raise"
+	editor.radius = 2.2
+	# Leave the chunk sculpted first. The very first stroke on a freshly formed
+	# landscape crosses from "identical to the recipe" to "sculpted", which every
+	# recipe-derived cache has to notice, so it is not a representative drag.
+	data.begin_stroke()
+	editor.dab(Vector2(9.0, 9.0), 0.5)
+	editor.refresh()
+	data.end_stroke()
+	data.begin_stroke()
+	var total := 0.0
+	var worst := 0.0
+	for i in range(10):
+		var start := Time.get_ticks_usec()
+		editor.dab(Vector2(-8.0+0.15*i, -8.0), 0.06)
+		editor.refresh()
+		var spent := (Time.get_ticks_usec()-start)/1000.0
+		total += spent
+		worst = maxf(worst, spent)
+	print("%-34s %8.1f ms  (worst %.1f)" % ["dab + refresh", total/10.0, worst])
+	data.end_stroke()
+	t("undo (sculpted chunk)", func(): editor.undo())
+	t("redo (sculpted chunk)", func(): editor.redo())
 	quit()
