@@ -14,7 +14,8 @@ motion. The imported scenery is not yet sculptable.
 The motion pass preserves shallow-water depth, adds downstream stream highlights
 and a deforming waterfall, and gives birds alternating flaps and glides. Use the
 wind slider, **P** to pause motion, and middle-drag to pan. The quality selector
-offers Beauty and Balanced post-processing. Frame-rate work is paused.
+offers Beauty and Balanced post-processing. The scene renders at the display's
+native resolution; see `docs/garden/VALIDATION.md` for the frame-time budget.
 
 The environment controls now include wind direction and gusts (**G**), valley
 fog, time of day and cycling (**N** advances the sun), aurora, rainbow, and

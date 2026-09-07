@@ -559,3 +559,35 @@ The full 73-test suite was run sequentially for the first time since the water/p
 Known limits, not hidden: the editor's arch tool grounds its baked mesh at the terrain height under the AABB centre, so the arch cannot sit at its source position — that needs a pose/offset for landmarks or a landscape-arch fill. Wildlife (frogs, rings, birds) is not part of population and is still absent. Non-identity range transforms lose float exactness by design. Authored ponds flood as source lakes, with no spill promises and no pond-area cap. Bigfoot remains out of scope.
 
 Still pending: the arch placement follow-up, wildlife, fuller waterfall/stream placement controls and freeform carving, and the final complete manually authored saved/reopened comparison.
+
+## Editor polish: resolution, controls and frame time (2026-09-07)
+
+The fidelity scene rendered into a fixed 1440x960 stretch base that a Retina
+window upscaled about 2.3x. It now renders at physical resolution with only
+the UI scaled by DPI, and maximizes at runtime when it is the main scene so
+tests keep the root size they set. Build tools are grouped into Sculpt,
+Landscape, Cover, Place and Water sections with sliders, tool descriptions,
+1-4 / [ ] / Shift-[ ] / K hotkeys and a tool-aware brush preview
+(`test_native_editor_hotkeys.gd`).
+
+`tools/profile_frame_phases.gd` cycles render configurations inside one
+process; cross-process wall-clock timing on macOS proved bimodal. A CPU sample
+showed the main thread waiting on a GPU fence, and bisection found two
+full-screen shaders rather than scene content: the waterfall mist looped over
+all 64 particles for every window pixel (12.6 ms at 3024x1706), and the air
+fog marched 64 steps where the source `weather.js` marches 16 (10.3 ms). The
+sky cloud march was also 64 steps against the source's 26. Per-frame GDScript
+is 1.4 ms.
+
+Mist is now one instanced quad per particle sized like the source
+`gl_PointSize`, with the same fragment math; `test_fall_mist.gd` and
+`test_native_fall_mist.gd` pass unchanged. Air steps are a shader uniform
+defaulting to 32: 16 matches the source but shows the start dither without
+its temporal accumulation, which is not ported yet. Cloud march uses the
+source's 26-step ceiling and world-unit floor. Fog and depth buffers size
+from physical pixels. Frame time at 3024x1706 went from 40 ms to 20 ms;
+1440x960 runs at about 88 fps. The remaining cost at native resolution is the
+3D pass itself (MSAA, SSAO, glow, shadows over 5.2 Mpx); 3D scaling through
+the quality selector, temporal fog reuse and the source's resolution governor
+are the next levers. The 74-test suite passes after hiding the DPI-scaled
+panel in `test_autumn.gd`'s pixel sampling.
