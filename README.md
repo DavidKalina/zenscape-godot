@@ -74,6 +74,17 @@ Double-click **`run-sandbox.command`**, open `scenes/sandbox.tscn` and press F6,
 or press Esc from the fidelity scene. Existing terrain saves migrate automatically.
 Use **Start flat** for bare earth; Undo restores the previous garden.
 
+Build opens a **palette** across the bottom of the screen: category tabs
+(Sculpt, Landscape, Cover, Place, Water) over one row of large tiles. Every tree,
+rock, flower, arch and catalog piece shows a portrait of the object itself, and
+the settings for the tool in hand sit beside the row with the Paint colour.
+Click a tile to pick the tool, or **drag a tile into the world**: a translucent
+ghost follows the ground under the pointer, and releasing plants the object with
+its drop reaction. Releasing away from the ground cancels. The side panel keeps
+Start flat, the sky and weather foldout, object colour and Save/Open.
+
+![Build palette](docs/garden/palette.png)
+
 - Raise a hill, lower a hollow, smooth slopes, or flatten to the clicked height.
 - **Meadow:** brush grass and wildflowers onto the earth; slower strokes add density.
 - **Tree / Rock / Flower:** click to place individual objects. Set Object size before
@@ -92,6 +103,7 @@ Use **Start flat** for bare earth; Undo restores the previous garden.
 | --- | --- |
 | Left drag | Sculpt / paint / erase |
 | Left click | Place selected object / fill pond |
+| Drag from a palette tile | Carry the object into the world and drop it |
 | 1 / 2 / 3 / 4 | Raise / lower / smooth / flatten |
 | Right drag | Orbit |
 | Middle drag | Pan |

@@ -4,6 +4,7 @@ extends Node3D
 
 var _chunk_editor: NativeChunkEditor
 var _build_panel: NativeBuildPanel
+var _build_palette: NativeBuildPalette
 var _saved_setting_controls: Array[Dictionary] = []
 var _display_fog: CanvasLayer
 var camera: Camera3D
@@ -521,6 +522,11 @@ func _build_ui() -> void:
 	_build_panel = NativeBuildPanel.new()
 	column.add_child(_build_panel)
 	_build_panel.attach(_chunk_editor)
+	# Tools live on the bottom palette; the panel keeps the rest of the build.
+	_build_palette = NativeBuildPalette.new()
+	_ui.add_child(_build_palette)
+	_build_palette.attach(_chunk_editor)
+	_build_panel.hide_tool_rows()
 	var help := Label.new()
 	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect\nIn Build: 1-4 tools · [ ] brush size · K sky"
 	help.add_theme_color_override("font_color", Color("aab8ad"))
@@ -826,11 +832,13 @@ func _build_ui() -> void:
 	# rarely need scrolling and inspecting leaves no empty column behind.
 	var fit_column := func() -> void:
 		var window := get_window()
-		var room := clampf(window.size.y/window.content_scale_factor-56.0, 320.0, 940.0)
+		var bar := NativeBuildPalette.BAR_HEIGHT if _chunk_editor.active else 0.0
+		var room := clampf(window.size.y/window.content_scale_factor-56.0-bar, 320.0, 940.0)
 		scroll.custom_minimum_size.y = minf(column.get_combined_minimum_size().y, room)
 	fit_column.call()
 	column.minimum_size_changed.connect(fit_column)
 	get_window().size_changed.connect(fit_column)
+	_chunk_editor.active_changed.connect(func(_enabled: bool) -> void: fit_column.call())
 
 func _set_wind(value: float) -> void:
 	_wind = value

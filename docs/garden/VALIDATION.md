@@ -48,6 +48,16 @@ tool test passed again after review fixes for time-transition cancellation and
 authored-content framing. The expanded control panel was inspected in a native
 rendered screenshot.
 
+`tests/test_native_build_palette.gd` covers the bottom tool palette: a tile for
+every tool in `tool_groups()` and every catalog piece, a rendered thumbnail on
+each placeable tile (sampled for opaque pixels after a forced draw), tile clicks
+and hotkey `2` moving the highlight, and a synthesized drag - press on the Tree
+tile, motion into the view, release over terrain - producing exactly one record
+with the same pose click-to-place produces. A release over the palette places
+nothing, an in-flight ghost never reaches `garden_data` or `save_garden`, and
+hiding `scene._ui` hides the palette. `docs/garden/palette.png` is the native
+capture of Build mode with the Place row open.
+
 `tests/test_native_build_tools.gd` checks one-dab grass visibility without flowers,
 full coverage and undo, v3 migration and v4 roundtrip, malformed density rejection,
 actual mouse-event mountain placement, bounds, precipitation ceiling, alpine

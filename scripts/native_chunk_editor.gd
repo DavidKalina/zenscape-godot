@@ -304,48 +304,58 @@ func handle_input(event: InputEvent) -> bool:
 		if not event.pressed:
 			finish_stroke()
 			return true
-		var hit: Variant = pick(event.position)
-		if hit != null:
-			if mode == "waterfall":
-				var point := Vector2(hit.x,hit.z)
-				if _fall_start == null:
-					_fall_start = point
-					_set_status("Now click the lower landing point. Change tools to cancel.")
-				else:
-					data.begin_stroke()
-					var placed := data.add_waterfall(_fall_start,point,object_scale)
-					data.end_stroke()
-					if placed:
-						_fall_start = null
-						refresh()
-					else:
-						_set_status("Choose a lower landing with no ridge blocking the drop.")
-				return true
-			data.begin_stroke()
-			_level = hit.y
-			_last_point = Vector2(hit.x,hit.z)
-			var placed := -1
-			if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain","assets"]:
-				if mode == "mountain":
-					data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
-				elif mode == "pond":
-					if not data.add_pond(_last_point,pond_level):
-						_set_status("Dig a hollow, then set water below its banks.")
-				else:
-					placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
-					if placed < 0:
-						_set_status("This garden has reached its object limit.")
-				if data.end_stroke():
-					refresh()
-					if placed > 0 and reactions_enabled:
-						var record: Dictionary = data.objects.back()
-						reactions.play(record.asset,reactions.record_pose(record),record)
-			else:
-				_painting = true
-				dab(_last_point,strength/30.0)
-				refresh()
+		place_at(event.position)
 		return true
 	return false
+
+## Apply the tool in hand at a mouse point, exactly as a left press does. The
+## palette's drag-and-drop commits through here so a dropped object takes the
+## same record, pose and reaction a click would have given it.
+func place_at(mouse: Vector2) -> bool:
+	if not active:
+		return false
+	var hit: Variant = pick(mouse)
+	if hit == null:
+		return false
+	if mode == "waterfall":
+		var point := Vector2(hit.x,hit.z)
+		if _fall_start == null:
+			_fall_start = point
+			_set_status("Now click the lower landing point. Change tools to cancel.")
+		else:
+			data.begin_stroke()
+			var span := data.add_waterfall(_fall_start,point,object_scale)
+			data.end_stroke()
+			if span:
+				_fall_start = null
+				refresh()
+			else:
+				_set_status("Choose a lower landing with no ridge blocking the drop.")
+		return true
+	data.begin_stroke()
+	_level = hit.y
+	_last_point = Vector2(hit.x,hit.z)
+	var placed := -1
+	if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain","assets"]:
+		if mode == "mountain":
+			data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
+		elif mode == "pond":
+			if not data.add_pond(_last_point,pond_level):
+				_set_status("Dig a hollow, then set water below its banks.")
+		else:
+			placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
+			if placed < 0:
+				_set_status("This garden has reached its object limit.")
+		if data.end_stroke():
+			refresh()
+			if placed > 0 and reactions_enabled:
+				var record: Dictionary = data.objects.back()
+				reactions.play(record.asset,reactions.record_pose(record),record)
+	else:
+		_painting = true
+		dab(_last_point,strength/30.0)
+		refresh()
+	return true
 
 func pick(mouse: Vector2) -> Variant:
 	if scene._growth.terrain < 0.995:

@@ -8,6 +8,7 @@ var _tools := VBoxContainer.new()
 var _toggle := Button.new()
 var _status := Label.new()
 var _tool_buttons := {}
+var _tool_rows: Array[Control] = []
 var _settings := {}
 var _tool_settings := {}
 var _sky_panel: VBoxContainer
@@ -185,44 +186,24 @@ func _section(title: String) -> GridContainer:
 	var grid := GridContainer.new()
 	grid.columns = 4
 	_tools.add_child(grid)
+	_tool_rows.append(label)
+	_tool_rows.append(grid)
 	return grid
 
-## Continuous settings read as a slider under a label that carries the value;
-## seeds stay whole numbers on a spin box. Every bound comes from the editor.
+## The palette takes tool selection over; the panel keeps every other control,
+## and its tool buttons stay in the tree so scripts and tests still read them.
+func hide_tool_rows() -> void:
+	for row: Control in _tool_rows:
+		row.visible = false
+
 func _setting(property: String) -> void:
-	var spec := editor.setting_spec(property)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation",1)
-	var label := Label.new()
-	label.add_theme_font_size_override("font_size",12)
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var value: Range
-	if spec.whole:
-		value = SpinBox.new()
-		var row := HBoxContainer.new()
-		row.add_child(label)
-		row.add_child(value)
-		box.add_child(row)
-	else:
-		value = HSlider.new()
-		value.focus_mode = Control.FOCUS_NONE
-		box.add_child(label)
-		box.add_child(value)
-	value.min_value = spec.low
-	value.max_value = spec.high
-	value.step = spec.step
-	value.value = editor.get(property)
-	_settings[property] = {"control":value,"label":label,"title":spec.title,"unit":spec.unit,"whole":spec.whole}
-	value.value_changed.connect(func(number: float) -> void: editor.set_setting(property,number))
-	_show_setting(property)
-	_tools.add_child(box)
-	_tool_settings[box] = spec.modes
+	var entry := NativeSettingRow.build(editor,property)
+	_settings[property] = entry
+	_tools.add_child(entry.box)
+	_tool_settings[entry.box] = entry.modes
 
 func _show_setting(property: String) -> void:
-	var entry: Dictionary = _settings[property]
-	var number := float(editor.get(property))
-	var text: String = "%d" % roundi(number) if entry.whole or entry.unit == "°" else String.num(number,2)
-	entry.label.text = entry.title if entry.whole else "%s · %s%s" % [entry.title,text,entry.unit]
+	NativeSettingRow.show_value(_settings[property],float(editor.get(property)))
 
 func _update_tool_settings() -> void:
 	for control: Control in _tool_settings:
