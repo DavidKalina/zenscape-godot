@@ -68,7 +68,8 @@ func _ready() -> void:
 	var fps_index := engine_args.find("--fixed-fps")
 	if fps_index >= 0 and fps_index + 1 < engine_args.size():
 		_film_fps = maxf(1.0, float(engine_args[fps_index + 1]))
-	get_window().content_scale_size = Vector2i(1440, 900)
+	# Render at the display's physical resolution; scale only the UI by DPI.
+	get_window().content_scale_factor = DisplayServer.screen_get_scale()
 	var geometry: Node3D = $Reference
 	_source = geometry.get_meta("source_settings", {})
 	if _source.is_empty():
