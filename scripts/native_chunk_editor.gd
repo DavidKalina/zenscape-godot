@@ -18,8 +18,11 @@ var active := false
 var mode := "raise"
 var radius := 2.2
 var strength := 2.0
-var grass_amount := 0.85
-var mountain_radius := 6.0
+var grass_amount := 1.0
+var blade_amount := 0.35
+var mountain_radius := 9.0
+var mountain_variation := 7
+var mountain_heading := 0.0
 var mountain_peak := 9.0
 var _tool_settings := {}
 var _sky_controls := {}
@@ -97,7 +100,7 @@ func _build_controls() -> void:
 	var row := GridContainer.new()
 	row.columns = 4
 	var group := ButtonGroup.new()
-	for tool in ["raise","lower","smooth","flatten","mountain","grass","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree","waterfall"]:
+	for tool in ["raise","lower","smooth","flatten","mountain","grass","blades","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree","waterfall"]:
 		var button := Button.new()
 		button.text = "Bigfoot tree" if tool == "bigfoot_tree" else tool.capitalize()
 		button.toggle_mode = true
@@ -114,17 +117,32 @@ func _build_controls() -> void:
 		)
 		row.add_child(button)
 	_tools.add_child(row)
-	_setting("radius","Brush size",0.4,5.0,0.1,["raise","lower","smooth","flatten","grass","meadow","erase","pond"])
+	_setting("radius","Brush size",0.4,5.0,0.1,["raise","lower","smooth","flatten","grass","blades","meadow","erase","pond"])
 	_setting("strength","Strength",0.4,5.0,0.1,["raise","lower","smooth","flatten","meadow","erase"])
-	_setting("grass_amount","Grass density",0.0,1.0,0.05,["grass"])
+	_setting("grass_amount","Ground coverage",0.0,1.0,0.05,["grass"])
+	_setting("blade_amount","Blade density",0.0,1.0,0.05,["blades"])
 	var cover := Button.new()
 	cover.text = "Cover chunk in grass"
 	cover.focus_mode = Control.FOCUS_NONE
 	cover.pressed.connect(cover_grass)
 	_tools.add_child(cover)
 	_tool_settings[cover] = ["grass"]
+	var clear_blades := Button.new()
+	clear_blades.text = "Remove Blades-tool patches"
+	clear_blades.focus_mode = Control.FOCUS_NONE
+	clear_blades.pressed.connect(func() -> void:
+		finish_stroke()
+		data.begin_stroke()
+		data.blades.fill(0.0)
+		data.end_stroke()
+		refresh()
+	)
+	_tools.add_child(clear_blades)
+	_tool_settings[clear_blades] = ["blades"]
 	_setting("mountain_radius","Mountain base radius",1.0,12.0,0.5,["mountain"])
 	_setting("mountain_peak","Peak height",0.5,24.0,0.5,["mountain"])
+	_setting("mountain_variation","Variation",1.0,999.0,1.0,["mountain"])
+	_setting("mountain_heading","Ridge rotation °",-180.0,180.0,5.0,["mountain"])
 	_setting("pond_level","Pond surface height",-1.4,12.0,0.05,["pond"])
 	_setting("object_scale","Object size",0.1,5.0,0.1,NativeTerrainData.ASSETS)
 	_setting("object_heading","Rotation °",-180.0,180.0,5.0,["tree","rock","flower","arch","bigfoot_tree"])
@@ -281,7 +299,7 @@ func handle_input(event: InputEvent) -> bool:
 			_last_point = Vector2(hit.x,hit.z)
 			if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain"]:
 				if mode == "mountain":
-					data.mountain(_last_point,mountain_radius,mountain_peak)
+					data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
 				elif mode == "pond":
 					if not data.add_pond(_last_point,pond_level):
 						_status.text = "Dig a hollow, then set water below its banks."
@@ -467,9 +485,11 @@ func _rebuild_skirt() -> void:
 func dab(point: Vector2, amount: float) -> void:
 	match mode:
 		"grass": data.paint_grass(point,radius,grass_amount)
+		"blades": data.paint_blades(point,radius,blade_amount)
 		"meadow": data.paint_meadow(point,radius,amount)
 		"erase":
 			data.paint_grass(point,radius,0.0)
+			data.paint_blades(point,radius,0.0)
 			data.paint_meadow(point,radius,-amount)
 			data.erase_objects(point,radius)
 		_: data.brush(point,radius,amount,mode,_level)

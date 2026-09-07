@@ -152,3 +152,23 @@ advances. `/tmp/native-falls.png` is the inspected authored-waterfall render.
 After these changes, all 54 graphics regression tests passed. The native-fog
 waterfall run also passed separately. Full interactive demo-world proof remains
 outstanding; this test result does not close the authoring goal.
+
+## Visual correction after user review (in progress)
+
+The user rejected the cone mountain, airborne waterfall arc, and full-chunk
+blade coverage. The earlier interactive demo does not satisfy the goal.
+
+Mountains now adapt the original `world.js` noise/spine/scarp approach into a
+bounded ridge stamp with variation and rotation. Source palette bands supply
+rock faces and snow. This adapts the core shape recipe; it does not port the
+entire word/genome generator. Grass now paints ground color, using the original
+noise-driven green patches. Blades is a separate local density brush. Meadow
+retains its intentional mixed flowers and vegetation. Version 5 saves separate
+ground and blades; version 4 migrates former grass vegetation into blades to
+preserve saved scenes. The Blades-tool removal button clears those patches only.
+
+The 55-test graphics suite passed, followed by targeted checks for painting on
+the imported chunk, exact undo, and the refined green-patch render. The inspected
+render is `/tmp/native-landmarks.png`. Waterfalls still use the rejected arcing
+route and must be corrected to follow geology. Arch foundations on uneven ground
+also need scrutiny in the next composition. Goal remains incomplete.

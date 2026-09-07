@@ -15,6 +15,15 @@ func _run() -> void:
 	scene.set_process(false)
 	var editor: NativeChunkEditor = scene._chunk_editor
 	editor.set_process(false)
+	var original_mesh := editor.terrain.mesh
+	var original_colors: PackedColorArray = original_mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	editor.data.begin_stroke()
+	editor.data.paint_grass(Vector2.ZERO,3.0,1.0)
+	editor.data.end_stroke()
+	editor.refresh()
+	check(editor.terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] != original_colors,"Grass visibly paints the imported chunk")
+	editor.undo()
+	check(editor.terrain.mesh == original_mesh,"Undo unpaints the imported chunk exactly")
 	editor.start_flat()
 	var data := editor.data
 	editor.mode = "grass"
@@ -22,20 +31,32 @@ func _run() -> void:
 	editor.dab(Vector2.ZERO,0.06)
 	data.end_stroke()
 	editor.refresh()
-	check(editor.content.has_node("Grass"),"One grass dab produces visible blades")
+	check(not editor.content.has_node("Grass") and data.grass.count(0.0) < data.grass.size(),"Grass paints ground without scattering blades")
 	check(not editor.content.has_node("Petal"),"Grass-only painting adds no flowers")
 	check(data.undo() and data.grass.count(0.0) == data.grass.size(),"Grass stroke undoes completely")
 	editor.grass_amount = 0.5
 	editor.cover_grass()
 	check(data.grass.count(0.5) == data.grass.size(),"Cover uses chosen density across chunk")
-	check(editor.content.get_node("Grass").multimesh.instance_count > 10000,"Coverage renders native grass instances")
+	check(not editor.content.has_node("Grass"),"Full ground coverage does not scatter blades")
+	editor.mode = "blades"
+	data.begin_stroke()
+	editor.dab(Vector2.ZERO,0.06)
+	data.end_stroke()
+	editor.refresh()
+	check(editor.content.has_node("Grass") and editor.content.get_node("Grass").multimesh.instance_count < 300,"Blade brush creates a local sparse patch")
+	check(not editor.content.has_node("Petal"),"Blade brush does not add flowers")
 	var grass_doc := data.to_document()
 	var legacy := grass_doc.duplicate(true)
 	legacy.version = 3
 	legacy.erase("grass")
 	check(data.load_document(JSON.parse_string(JSON.stringify(legacy))),"Version 3 gardens migrate")
 	check(data.grass.count(0.0) == data.grass.size(),"Migration leaves legacy meadow independent")
-	check(data.load_document(JSON.parse_string(JSON.stringify(grass_doc))),"Version 4 grass round trips through JSON")
+	check(data.load_document(JSON.parse_string(JSON.stringify(grass_doc))),"Version 5 ground and blades round trip through JSON")
+	var version4 := grass_doc.duplicate(true)
+	version4.version = 4
+	version4.erase("blades")
+	check(data.load_document(version4) and data.blades == data.grass,"Version 4 preserves previous grass vegetation")
+	check(data.load_document(grass_doc),"Restore current independent layers")
 	var bad := grass_doc.duplicate(true)
 	bad.grass[4] = 2.0
 	check(not data.load_document(bad) and data.to_document() == grass_doc,"Invalid density rejects atomically")

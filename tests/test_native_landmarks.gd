@@ -19,7 +19,8 @@ func _run() -> void:
 	scene._celestial.set_phase(0.4)
 	scene._reset_camera()
 	editor.data.begin_stroke()
-	editor.data.mountain(Vector2(-5,0),7.0,9.0)
+	editor.data.grass.fill(1.0)
+	editor.data.mountain(Vector2(-5,0),9.0,9.0)
 	editor.data.end_stroke()
 	editor.refresh()
 	for entry: Array in [["arch",Vector2(1,2)],["bigfoot_tree",Vector2(6,-4)]]:
