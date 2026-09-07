@@ -19,6 +19,8 @@ func run() -> void:
 		check(scene._celestial.state["zs_cloud_" + key.to_lower()].distance_to(expected) < 0.00002, "Captured source autumn " + key + " color")
 	# Matched source arch patch is warm stone. The old backface-normal bug
 	# made this same visible face blue-black despite the warm light.
+	# The DPI-scaled control panel would cover the sampled patch at this size.
+	scene._ui.visible = false
 	for i in range(30):
 		RenderingServer.force_draw(false)
 		await process_frame

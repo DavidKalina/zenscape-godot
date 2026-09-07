@@ -43,6 +43,12 @@ var _post := Callable()
 var _no_process := false
 func _apply(name: String, on: bool) -> void:
 	var e: Environment = scene._environment
+	if name == "factor2":
+		root.get_window().content_scale_factor = 2.0 if on else 1.0
+		if on:
+			await create_timer(0.5).timeout
+			print("PHASE   factor2 texture.get_size=%s image=%s window=%s" % [str(root.get_texture().get_size()), str(root.get_texture().get_image().get_size()), str(root.get_window().size)])
+		return
 	if name == "hide-mist":
 		_post = (func(): scene.get_node("WaterfallSpray").visible = false) if on else Callable()
 		return
