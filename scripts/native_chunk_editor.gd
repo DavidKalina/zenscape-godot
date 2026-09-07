@@ -5,7 +5,7 @@ extends Node
 const GROUPS := [
 	["Sculpt",["raise","lower","smooth","flatten"]],
 	["Landscape",["ground","range","mountain"]],
-	["Cover",["grass","blades","meadow","erase"]],
+	["Cover",["grass","blades","meadow","paint","erase"]],
 	["Place",["tree","rock","flower","arch","bigfoot_tree","assets"]],
 	["Water",["pond","waterfall"]],
 ]
@@ -20,6 +20,7 @@ const TOOL_TEXT := {
 	"grass":"Paint ground cover, or green the whole chunk at once.",
 	"blades":"Paint standing blades over the grass.",
 	"meadow":"Paint grass and wildflowers together.",
+	"paint":"Brush your own colour over rock and grass.",
 	"erase":"Brush away cover and placed objects. Undo restores them.",
 	"tree":"Click to plant a tree. It settles onto the ground.",
 	"rock":"Click to set a stone.",
@@ -59,6 +60,9 @@ var ground_elevation := 0.0
 var ground_relief := 1.0
 var grass_amount := 1.0
 var blade_amount := 0.35
+## The Paint tool's colour, held in sRGB the way every other picker here is.
+var paint_color := Color("b06f4a")
+var paint_amount := 0.35
 var range_height := 1.0
 var range_width := 1.0
 var range_heading := 0.0
@@ -772,10 +776,12 @@ func dab(point: Vector2, amount: float) -> void:
 		"grass": data.paint_grass(point,radius,grass_amount)
 		"blades": data.paint_blades(point,radius,blade_amount)
 		"meadow": data.paint_meadow(point,radius,amount)
+		"paint": data.paint_tint(point,radius,paint_color.srgb_to_linear(),paint_amount)
 		"erase":
 			data.paint_grass(point,radius,0.0)
 			data.paint_blades(point,radius,0.0)
 			data.paint_meadow(point,radius,-amount)
+			data.erase_tint(point,radius,amount)
 			data.erase_objects(point,radius)
 		_: data.brush(point,radius,amount,mode,_level)
 
