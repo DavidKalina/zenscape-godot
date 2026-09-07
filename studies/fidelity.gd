@@ -3,6 +3,7 @@ extends Node3D
 ## source image; orbit to inspect the genuinely three-dimensional Godot scene.
 
 var _chunk_editor: NativeChunkEditor
+var _build_panel: NativeBuildPanel
 var _saved_setting_controls: Array[Dictionary] = []
 var _display_fog: CanvasLayer
 var camera: Camera3D
@@ -517,7 +518,9 @@ func _build_ui() -> void:
 	_status.add_theme_color_override("font_color", Color("e1dec6"))
 	_status.add_theme_font_size_override("font_size", 18)
 	column.add_child(_status)
-	column.add_child(_chunk_editor.controls)
+	_build_panel = NativeBuildPanel.new()
+	column.add_child(_build_panel)
+	_build_panel.attach(_chunk_editor)
 	var help := Label.new()
 	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect\nIn Build: 1-4 tools · [ ] brush size · K sky"
 	help.add_theme_color_override("font_color", Color("aab8ad"))

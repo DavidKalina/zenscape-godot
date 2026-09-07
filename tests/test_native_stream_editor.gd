@@ -8,7 +8,7 @@ func run() -> void:
 	var editor=scene._chunk_editor
 	editor.start_flat()
 	editor.form_range()
-	var button: Button=editor._tools.find_child("FillLandscapeStreams",true,false)
+	var button: Button=scene._build_panel._tools.find_child("FillLandscapeStreams",true,false)
 	button.pressed.emit()
 	var placed: bool=editor.data.streams.size()==1 and editor.content._stream_nodes.size()==1
 	var original: Array=editor.content._stream_nodes[0].mesh.surface_get_arrays(0)

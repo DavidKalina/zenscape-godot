@@ -15,7 +15,7 @@ func _run() -> void:
 	editor.set_active(true)
 	editor.mode="tree"
 	scene._reset_camera()
-	var picker: ColorPickerButton=editor.controls.find_child("PlacementColor",true,false)
+	var picker: ColorPickerButton=scene._build_panel.find_child("PlacementColor",true,false)
 	check(picker!=null,"Placement color is exposed in editor")
 	var expected: Array[Color]=[]
 	for i in range(2):

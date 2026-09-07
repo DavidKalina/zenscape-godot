@@ -22,8 +22,8 @@ func run() -> void:
 	var accepted: bool=editor.data.add_pond(Vector2(params.x,params.z),params.waterY)
 	var with_fall: bool="--with-fall" in OS.get_cmdline_user_args()
 	var with_streams: bool=with_fall or "--with-streams" in OS.get_cmdline_user_args()
-	if with_streams: editor._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
-	if with_fall: editor._tools.find_child("FillLandscapeWaterfall",true,false).pressed.emit()
+	if with_streams: scene._build_panel._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
+	if with_fall: scene._build_panel._tools.find_child("FillLandscapeWaterfall",true,false).pressed.emit()
 	editor.refresh()
 	var authored: PackedVector3Array=editor.content.pond_vertices
 	var counts: Dictionary={"reference":0,"authored":0,"both":0,"different":0}

@@ -19,9 +19,9 @@ func run() -> void:
 	var pool: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/terrain-source.json")).pool
 	check(editor.data.add_pond(Vector2(pool.x,pool.z),pool.waterY),"Landscape pond places at the source pool")
 	editor.refresh()
-	editor._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
+	scene._build_panel._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
 	var started := Time.get_ticks_msec()
-	editor._tools.find_child("PopulateLandscapeFlora",true,false).pressed.emit()
+	scene._build_panel._tools.find_child("PopulateLandscapeFlora",true,false).pressed.emit()
 	var elapsed := Time.get_ticks_msec()-started
 	var records: int = editor.data.objects.size()
 	check(records > 0,"Populate button creates landscape records")
@@ -83,7 +83,7 @@ func run() -> void:
 	check(editor.data.load_document(saved),"Saved landscape reopens")
 	editor.refresh()
 	check(editor.data.to_document() == baseline and _same(_rendered(editor.content),rendered),"Reopened landscape matches saved records and rendering")
-	editor._tools.find_child("PopulateLandscapeFlora",true,false).pressed.emit()
+	scene._build_panel._tools.find_child("PopulateLandscapeFlora",true,false).pressed.emit()
 	check(editor.data.objects.size() == records,"Repopulating replaces landscape records rather than duplicating them")
 	var bad: Dictionary = saved.duplicate(true)
 	bad.objects[0].landscape = "yes"

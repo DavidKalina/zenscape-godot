@@ -192,7 +192,7 @@ func _run() -> void:
 	reopened._chunk_editor.set_process(false)
 	reopened._chunk_editor.save_path = save_file
 	var opened: bool = reopened._chunk_editor.open_garden()
-	check(opened, "Fresh fidelity scene opens the native garden: "+reopened._chunk_editor._status.text)
+	check(opened, "Fresh fidelity scene opens the native garden: "+reopened._chunk_editor.status)
 	if not opened:
 		var document: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(save_file))
 		print("STORE VALID ",NativeGardenStore.valid(reopened,document.scene_state)," MODEL VALID ",reopened._chunk_editor.data.load_document(document)," TEMPLATE ",document.template == reopened._chunk_editor.data._template_id())
