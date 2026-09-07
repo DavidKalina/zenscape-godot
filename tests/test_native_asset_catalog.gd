@@ -11,6 +11,7 @@ func _run() -> void:
 	root.add_child(scene)
 	scene.set_process(false)
 	var editor=scene._chunk_editor
+	editor.reactions_enabled = false
 	editor.start_flat()
 	editor.set_active(true)
 	editor.mode="assets"

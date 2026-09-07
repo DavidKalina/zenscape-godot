@@ -19,6 +19,7 @@ func _run() -> void:
 	root.add_child(scene)
 	scene.set_process(false)
 	var editor = scene._chunk_editor
+	editor.reactions_enabled = false
 	editor.start_flat()
 	check(not key(editor,KEY_2),"Keys stay with the scene while inspecting")
 	check(editor.mode == "raise","Inspect mode leaves the tool alone")
