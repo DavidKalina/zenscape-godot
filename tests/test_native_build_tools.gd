@@ -97,25 +97,25 @@ func _run() -> void:
 	scene._reset_camera()
 	check(scene.target.y < 2.0,"Flat framing excludes hidden original mountain")
 	scene._celestial.next_hour()
-	editor._sky_controls.time.value = 0.7
+	scene._build_panel._sky_controls.time.value = 0.7
 	check(scene._celestial._target == -1.0,"Time selection cancels pending next-hour transition")
 	scene._celestial.cycling = false
 	scene._celestial.advance(0.5,false)
-	editor._sky_controls.clouds.value = 0.4
-	editor._sky_controls.fog.value = 0.6
+	scene._build_panel._sky_controls.clouds.value = 0.4
+	scene._build_panel._sky_controls.fog.value = 0.6
 	check(is_equal_approx(scene._celestial.phase,0.7) and is_equal_approx(scene._atmosphere._fog_target,0.6),"Sky sliders control native light and atmosphere")
-	editor._sky_controls.weather.item_selected.emit(1)
+	scene._build_panel._sky_controls.weather.item_selected.emit(1)
 	check(scene._precipitation.preset_index == 1,"Build weather control selects native rain")
-	editor._sky_controls.clouds.value = 0.45
+	scene._build_panel._sky_controls.clouds.value = 0.45
 	var state := NativeGardenStore.capture(scene)
 	scene._celestial.phase = 0.1
 	NativeGardenStore.restore(scene,state)
-	editor._sync_sky_controls()
-	check(is_equal_approx(editor._sky_controls.time.value,0.7) and is_equal_approx(editor._sky_controls.clouds.value,0.45),"Sky state restores and controls synchronize")
+	scene._build_panel._sync_sky_controls()
+	check(is_equal_approx(scene._build_panel._sky_controls.time.value,0.7) and is_equal_approx(scene._build_panel._sky_controls.clouds.value,0.45),"Sky state restores and controls synchronize")
 	scene._ui.visible = true
 	editor.mode = "grass"
-	editor._update_tool_settings()
-	for child in editor._tools.get_children():
+	scene._build_panel._update_tool_settings()
+	for child in scene._build_panel._tools.get_children():
 		if child is CheckButton:
 			child.button_pressed = true
 	for i in range(3):

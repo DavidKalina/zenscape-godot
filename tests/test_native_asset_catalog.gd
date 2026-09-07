@@ -18,7 +18,7 @@ func _run() -> void:
 	editor.object_scale=0.8
 	editor.object_angle=PI/3.0
 	scene._reset_camera()
-	var picker: OptionButton = editor._tools.get_node("AssetPicker")
+	var picker: OptionButton = scene._build_panel._tools.get_node("AssetPicker")
 	check(picker.item_count == 17,"Picker exposes all seventeen added source assets")
 	for i in range(picker.item_count):
 		picker.select(i)

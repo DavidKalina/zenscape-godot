@@ -13,7 +13,7 @@ func run() -> void:
 	editor.form_range()
 	var pool: Dictionary=editor.data._recipe.source.pool
 	editor.data.add_pond(Vector2(pool.x,pool.z),pool.waterY)
-	editor._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
+	scene._build_panel._tools.find_child("FillLandscapeStreams",true,false).pressed.emit()
 	var actual: Image=texture.get_image()
 	var actual_ground: Image=scene._precipitation.ground_texture.get_image()
 	var wet:=0

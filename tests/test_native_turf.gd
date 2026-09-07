@@ -13,7 +13,7 @@ func _run() -> void:
 	var editor = scene._chunk_editor
 	editor.start_flat()
 	var button: Button
-	for control in editor._tool_settings:
+	for control in scene._build_panel._tool_settings:
 		if control is Button and control.text == "Form ground foundation":
 			button = control
 	check(button != null,"Foundation is available through editor controls")
