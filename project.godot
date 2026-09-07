@@ -39,7 +39,6 @@ zs_surface_post={
 "type": "bool",
 "value": false
 }
-
 zs_gust_speed={
 "type": "float",
 "value": 2.36
@@ -256,22 +255,18 @@ zs_flow_time={
 "type": "float",
 "value": 0.0
 }
-
 zs_key_direction={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
-
 zs_key_irradiance={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
-
 zs_rim_direction={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
-
 zs_rim_irradiance={
 "type": "vec3",
 "value": Vector3(0, 0, 0)

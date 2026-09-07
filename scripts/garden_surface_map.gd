@@ -47,3 +47,24 @@ static func paint_water(image: Image, water: PackedVector3Array) -> void:
 					var level := water[i].y
 					if level > value.r:
 						image.set_pixel(x,z,Color(level,value.g,value.g,level))
+
+## Share the reference triangle sampler so rain/fog read the rendered stream's
+## height and growth coordinates, including its fitted banks and tapered ends.
+static func paint_streams(ground_image: Image,stream_image: Image,nodes: Array[MeshInstance3D]) -> void:
+	if nodes.is_empty(): return
+	var surfaces: Array[RefCounted]=[]
+	for node in nodes:
+		var sampler:=preload("res://scripts/reference_ground.gd").new()
+		sampler.setup(node)
+		surfaces.append(sampler)
+	for z in range(SIZE):
+		for x in range(SIZE):
+			var point:=_point(x,z)
+			var value:=ground_image.get_pixel(x,z)
+			for sampler in surfaces:
+				var height: Variant=sampler.height_at(point.x,point.y)
+				if height==null or height<=value.a: continue
+				var info: Vector4=sampler.stream_at(point.x,point.y)
+				value=Color(maxf(value.g,height),value.g,height,height)
+				ground_image.set_pixel(x,z,value)
+				stream_image.set_pixel(x,z,Color(info.x,info.y,info.z,info.w))

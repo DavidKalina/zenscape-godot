@@ -68,10 +68,14 @@ func channel_at(x: float, z: float) -> float:
 			var u := maxf(0, distance/width-1)/1.8
 			best = minf(best, bed+u*u*3)
 	return best
-func height_at(x: float, z: float) -> float:
+func foundation_at(x: float, z: float, mountain_mask := 0.0) -> float:
 	var h: float = g.meadow.base + fbm(x*g.meadow.freq+3,z*g.meadow.freq+3)*g.meadow.amp
 	for stamp: Dictionary in g.stamps:
 		h += stamp.amp * exp(-((x-stamp.x)**2+(z-stamp.z)**2)/stamp.r2)
+	var relief: Dictionary = g.relief
+	return h+(maxf(0,x*relief.tiltX+z*relief.tiltZ)+fbm(x*relief.hillFreq-17,z*relief.hillFreq+23)*relief.hillAmp)*(1-mountain_mask*relief.massFade)
+
+func height_at(x: float, z: float) -> float:
 	var d := spine_distance(x,z)-(fbm(x*0.45+9,z*0.45+9)-0.5)*2.6
 	var side: float = (x-g.spine.cx)*g.spine.perpX+(z-g.spine.cz)*g.spine.perpZ
 	var front := smoothstep(-1.2,1.2,side*g.spine.scarpSign)
@@ -83,8 +87,7 @@ func height_at(x: float, z: float) -> float:
 		top = maxf(top,peak.height*pow(clampf(1-absf(along_ridge-peak.at)/peak.width,0,1),0.85))
 	var crest_height: float = crest.saddle+(1-crest.saddle)*top
 	var m := pow(clampf(1-maxf(0,d)/falloff,0,1),crest.flank)*crest_height
-	var relief: Dictionary = g.relief
-	h += (maxf(0,x*relief.tiltX+z*relief.tiltZ)+fbm(x*relief.hillFreq-17,z*relief.hillFreq+23)*relief.hillAmp)*(1-m*relief.massFade)
+	var h := foundation_at(x,z,m)
 	var n := fbm(x*g.wall.freq+7,z*g.wall.freq)
 	var wn: float = (1-absf(2*n-1))*g.wall.sharp+n*(1-g.wall.sharp)
 	var wall: float = (g.wall.base+g.wall.amp+g.wall.spike)*(0.88+0.12*wn)

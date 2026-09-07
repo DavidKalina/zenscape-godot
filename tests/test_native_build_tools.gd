@@ -84,7 +84,8 @@ func _run() -> void:
 	for i in range(arrays[Mesh.ARRAY_VERTEX].size()):
 		if arrays[Mesh.ARRAY_VERTEX][i].y > arrays[Mesh.ARRAY_VERTEX][summit].y:
 			summit = i
-	check(arrays[Mesh.ARRAY_COLOR][summit].r > 0.25,"Summit uses alpine stone palette")
+	var summit_color: Color = arrays[Mesh.ARRAY_COLOR][summit]
+	check(summit_color.r > summit_color.g or (summit_color.r > 0.8 and summit_color.b > 0.8),"Summit uses warm source rock or snow rather than green ground")
 	scene._reset_camera()
 	check(scene.target.y > 5.0,"Frame includes the authored mountain")
 	for i in range(3):

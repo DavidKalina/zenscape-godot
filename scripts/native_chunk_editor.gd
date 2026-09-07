@@ -9,17 +9,32 @@ var content: GardenView
 var landmarks: NativeGardenLandmarks
 var falls: NativeGardenFalls
 var _fall_start: Variant = null
+var catalog_asset := "broadleaf"
 var object_heading := 0.0
 var pond_level := -0.15
 var object_angle := 0.0
+var custom_tint := false
+var object_tint := Color("7fb069")
 var object_scale := 1.0
+var object_width := 1.0
+var object_height := 1.0
+var object_depth := 1.0
+var object_pitch := 0.0
+var object_roll := 0.0
+var object_elevation := 0.0
 var save_path := "user://native-garden.json"
 var active := false
 var mode := "raise"
 var radius := 2.2
 var strength := 2.0
+var ground_elevation := 0.0
+var ground_relief := 1.0
 var grass_amount := 1.0
 var blade_amount := 0.35
+var range_height := 1.0
+var range_width := 1.0
+var range_heading := 0.0
+var range_variation := 0
 var mountain_radius := 9.0
 var mountain_variation := 7
 var mountain_heading := 0.0
@@ -100,7 +115,7 @@ func _build_controls() -> void:
 	var row := GridContainer.new()
 	row.columns = 4
 	var group := ButtonGroup.new()
-	for tool in ["raise","lower","smooth","flatten","mountain","grass","blades","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree","waterfall"]:
+	for tool in ["raise","lower","smooth","flatten","ground","range","mountain","grass","blades","meadow","erase","tree","rock","flower","pond","arch","bigfoot_tree","waterfall","assets"]:
 		var button := Button.new()
 		button.text = "Bigfoot tree" if tool == "bigfoot_tree" else tool.capitalize()
 		button.toggle_mode = true
@@ -117,6 +132,23 @@ func _build_controls() -> void:
 		)
 		row.add_child(button)
 	_tools.add_child(row)
+	var asset_picker := OptionButton.new()
+	asset_picker.name = "AssetPicker"
+	asset_picker.focus_mode = Control.FOCUS_NONE
+	for kind in preload("res://scripts/native_asset_catalog.gd").PARTS:
+		asset_picker.add_item(kind.replace("_"," ").capitalize())
+		asset_picker.set_item_metadata(asset_picker.item_count-1,kind)
+	asset_picker.item_selected.connect(func(index: int): catalog_asset = asset_picker.get_item_metadata(index))
+	_tools.add_child(asset_picker)
+	_tool_settings[asset_picker] = ["assets"]
+	_setting("ground_elevation","Ground elevation",-1.0,8.0,0.1,["ground"])
+	_setting("ground_relief","Ground relief",0.0,3.0,0.05,["ground"])
+	var foundation := Button.new()
+	foundation.text = "Form ground foundation"
+	foundation.focus_mode = Control.FOCUS_NONE
+	foundation.pressed.connect(form_foundation)
+	_tools.add_child(foundation)
+	_tool_settings[foundation] = ["ground"]
 	_setting("radius","Brush size",0.4,5.0,0.1,["raise","lower","smooth","flatten","grass","blades","meadow","erase","pond"])
 	_setting("strength","Strength",0.4,5.0,0.1,["raise","lower","smooth","flatten","meadow","erase"])
 	_setting("grass_amount","Ground coverage",0.0,1.0,0.05,["grass"])
@@ -139,13 +171,68 @@ func _build_controls() -> void:
 	)
 	_tools.add_child(clear_blades)
 	_tool_settings[clear_blades] = ["blades"]
+	_setting("range_height","Range height",0.1,1.8,0.05,["range"])
+	_setting("range_width","Range width",0.3,1.5,0.05,["range"])
+	_setting("range_heading","Range rotation °",-180.0,180.0,5.0,["range"])
+	_setting("range_variation","Range variation",0.0,999.0,1.0,["range"])
+	var range_button := Button.new()
+	range_button.text = "Form mountain landscape"
+	range_button.focus_mode = Control.FOCUS_NONE
+	range_button.pressed.connect(form_range)
+	_tools.add_child(range_button)
+	_tool_settings[range_button] = ["range"]
+	var stream_button:=Button.new()
+	stream_button.name="FillLandscapeStreams"
+	stream_button.text="Fill landscape streams"
+	stream_button.focus_mode=Control.FOCUS_NONE
+	stream_button.pressed.connect(fill_landscape_streams)
+	_tools.add_child(stream_button)
+	_tool_settings[stream_button]=["range"]
+	var fall_button:=Button.new()
+	fall_button.name="FillLandscapeWaterfall"
+	fall_button.text="Fill landscape waterfall"
+	fall_button.focus_mode=Control.FOCUS_NONE
+	fall_button.pressed.connect(fill_landscape_waterfall)
+	_tools.add_child(fall_button)
+	_tool_settings[fall_button]=["range"]
+	var flora_button:=Button.new()
+	flora_button.name="PopulateLandscapeFlora"
+	flora_button.text="Populate landscape flora"
+	flora_button.focus_mode=Control.FOCUS_NONE
+	flora_button.pressed.connect(fill_landscape_flora)
+	_tools.add_child(flora_button)
+	_tool_settings[flora_button]=["range"]
 	_setting("mountain_radius","Mountain base radius",1.0,12.0,0.5,["mountain"])
 	_setting("mountain_peak","Peak height",0.5,24.0,0.5,["mountain"])
 	_setting("mountain_variation","Variation",1.0,999.0,1.0,["mountain"])
 	_setting("mountain_heading","Ridge rotation °",-180.0,180.0,5.0,["mountain"])
 	_setting("pond_level","Pond surface height",-1.4,12.0,0.05,["pond"])
-	_setting("object_scale","Object size",0.1,5.0,0.1,NativeTerrainData.ASSETS)
-	_setting("object_heading","Rotation °",-180.0,180.0,5.0,["tree","rock","flower","arch","bigfoot_tree"])
+	_setting("object_scale","Object size",0.1,5.0,0.1,NativeTerrainData.ASSETS+["assets"])
+	_setting("object_heading","Rotation °",-180.0,180.0,5.0,["tree","rock","flower","arch","bigfoot_tree","assets"])
+	var color_row := HBoxContainer.new()
+	var use_color := CheckBox.new()
+	use_color.text = "Custom color"
+	use_color.focus_mode = Control.FOCUS_NONE
+	use_color.toggled.connect(func(enabled: bool): custom_tint = enabled)
+	color_row.add_child(use_color)
+	var tint_picker := ColorPickerButton.new()
+	tint_picker.name = "PlacementColor"
+	tint_picker.color = object_tint
+	tint_picker.edit_alpha = false
+	tint_picker.color_changed.connect(func(color: Color):
+		object_tint = color
+		use_color.button_pressed = true
+	)
+	color_row.add_child(tint_picker)
+	_tools.add_child(color_row)
+	_tool_settings[color_row] = ["tree","flower","rock","assets"]
+	var pose_tools := ["tree","flower","rock","assets"]
+	_setting("object_width","Width",0.25,3.0,0.05,pose_tools)
+	_setting("object_height","Height",0.25,3.0,0.05,pose_tools)
+	_setting("object_depth","Depth",0.25,3.0,0.05,pose_tools)
+	_setting("object_pitch","Tilt forward °",-90.0,90.0,5.0,pose_tools)
+	_setting("object_roll","Tilt sideways °",-90.0,90.0,5.0,pose_tools)
+	_setting("object_elevation","Vertical offset",-5.0,10.0,0.05,pose_tools)
 	_update_tool_settings()
 	var history := HBoxContainer.new()
 	for entry: Array in [["Undo",undo],["Redo",redo],["Save",save_garden],["Open",open_garden]]:
@@ -297,14 +384,14 @@ func handle_input(event: InputEvent) -> bool:
 			data.begin_stroke()
 			_level = hit.y
 			_last_point = Vector2(hit.x,hit.z)
-			if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain"]:
+			if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain","assets"]:
 				if mode == "mountain":
 					data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
 				elif mode == "pond":
 					if not data.add_pond(_last_point,pond_level):
 						_status.text = "Dig a hollow, then set water below its banks."
 				else:
-					if data.place(mode,_last_point,object_angle,object_scale) < 0:
+					if data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "") < 0:
 						_status.text = "This garden has reached its object limit."
 				if data.end_stroke():
 					refresh()
@@ -429,10 +516,11 @@ func refresh() -> void:
 			value.r = maxf(value.g,value.a)
 			image.set_pixel(x,z,value)
 	GardenSurfaceMap.paint_water(image,content.pond_vertices)
-	scene._precipitation.ground_texture.update(image)
 	var streams: Image = _original_stream_map.duplicate()
 	if data.blank:
 		streams.fill(Color(0,0,0,0))
+	GardenSurfaceMap.paint_streams(image,streams,content._stream_nodes)
+	scene._precipitation.ground_texture.update(image)
 	scene._precipitation.stream_texture.update(streams)
 	scene._bigfoot.ground.setup(terrain)
 	var encounter_pose: Variant = null
@@ -447,6 +535,31 @@ func refresh() -> void:
 	if scene._display_fog != null:
 		scene._display_fog.update_view()
 
+func _placement_pose() -> Dictionary:
+	if mode not in ["tree","flower","rock","assets"] or (object_width == 1.0 and object_height == 1.0 and object_depth == 1.0 and object_pitch == 0.0 and object_roll == 0.0 and object_elevation == 0.0):
+		return {}
+	var basis := Basis.from_euler(Vector3(deg_to_rad(object_pitch),object_angle,deg_to_rad(object_roll)))
+	basis = basis.scaled_local(Vector3(object_width,object_height,object_depth)*object_scale)
+	return preload("res://scripts/native_object_pose.gd").make(basis,object_elevation)
+
+func form_range() -> void:
+	finish_stroke()
+	_fall_start = null
+	data.begin_stroke()
+	data.form_range(range_height,range_width,deg_to_rad(range_heading),range_variation)
+	data.end_stroke()
+	refresh()
+	_status.text = "Mountain landscape formed, including basin and stream beds. Paint and place to dress it."
+
+func form_foundation() -> void:
+	finish_stroke()
+	_fall_start = null
+	data.begin_stroke()
+	data.form_foundation(ground_elevation,ground_relief)
+	data.end_stroke()
+	refresh()
+	_status.text = "Ground formed. Grass paints its surface; sculpting changes its height."
+
 func start_flat() -> void:
 	_fall_start = null
 	finish_stroke()
@@ -456,7 +569,13 @@ func start_flat() -> void:
 	refresh()
 
 func _rebuild_skirt() -> void:
-	if data.heights == data.original_heights:
+	var rim_unchanged := true
+	for i in range(data.points.size()):
+		var point := data.points[i]
+		if maxf(absf(point.x),absf(point.y)) > 13.9999 and data.heights[i] != data.original_heights[i]:
+			rim_unchanged = false
+			break
+	if rim_unchanged:
 		_skirt.mesh = _skirt_mesh
 		return
 	# Deform the original faceted earth sides, keeping their base and material.
@@ -540,3 +659,36 @@ func sync_visibility() -> void:
 	if data.blank:
 		for node: VisualInstance3D in _source_visibility:
 			node.visible = false
+
+func fill_landscape_streams() -> void:
+	finish_stroke()
+	data.begin_stroke()
+	var accepted:=data.fill_landscape_streams()
+	data.end_stroke()
+	if accepted:
+		refresh()
+		_status.text="Landscape streams filled. Save preserves their courses."
+	else:
+		_status.text="Form a mountain landscape first; its stream must fit inside the chunk."
+
+func fill_landscape_flora() -> void:
+	finish_stroke()
+	data.begin_stroke()
+	var accepted: bool=data.fill_landscape_flora()
+	data.end_stroke()
+	if accepted:
+		refresh()
+		_status.text="Landscape flora populated. Save preserves every plant, log and boulder."
+	else:
+		_status.text="Form a mountain landscape first."
+
+func fill_landscape_waterfall() -> void:
+	finish_stroke()
+	data.begin_stroke()
+	var accepted:=data.fill_landscape_waterfall()
+	data.end_stroke()
+	if accepted:
+		refresh()
+		_status.text="Landscape waterfall filled. Save preserves it."
+	else:
+		_status.text="Form a mountain landscape first."

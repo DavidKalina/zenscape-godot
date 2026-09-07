@@ -433,7 +433,7 @@ func _process(delta: float) -> void:
 	_thunder_audio.update_state(_paused)
 	_lightning.advance(delta, _paused, _precipitation.state.w, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle), sin(_atmosphere._air_angle)), camera.global_position)
 	_atmosphere.advance(delta, _paused)
-	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,0.0 if _chunk_editor.data.blank and _chunk_editor.falls.get_child_count() == 0 else _growth.water)
+	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,0.0 if _chunk_editor.data.blank and _chunk_editor.falls.get_child_count() == 0 and _chunk_editor.content._landscape_falls.is_empty() else _growth.water)
 	_celestial.wind = _atmosphere._air_strength
 	_celestial.advance(delta, _paused)
 	_atmosphere.set_inversion(_celestial.state.zs_inversion.x)

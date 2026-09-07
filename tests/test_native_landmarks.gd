@@ -43,6 +43,9 @@ func _run() -> void:
 	check(scene._bigfoot._frame.position.is_equal_approx(editor.data.object_position(editor.data.objects[1])),"Encounter frame follows authored tree location")
 	scene._summon_bigfoot()
 	check(scene._bigfoot.active and scene._bigfoot.rig.visible,"Authored tree supports Bigfoot preview")
+	for time in [2.0,4.0,6.0,8.0,10.0,12.0]:
+		scene._bigfoot._pose(time,scene.camera.global_position)
+		check(scene._bigfoot.rig.joints[35].quaternion.is_normalized(),"Rotated tree keeps animated wrist rotation valid")
 	var arch: Node3D = editor.landmarks.get_child(0)
 	var geometry: MeshInstance3D = arch.get_child(0)
 	check(geometry.mesh.get_aabb().size.y > 2.0,"Arch geometry retains its full height")

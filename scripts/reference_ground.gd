@@ -11,7 +11,7 @@ func setup(mesh_node: MeshInstance3D) -> void:
 	_buckets.clear()
 	_stream_channels.clear()
 	var arrays := mesh_node.mesh.surface_get_arrays(0)
-	var material := mesh_node.mesh.surface_get_material(0) as ShaderMaterial
+	var material := mesh_node.get_active_material(0) as ShaderMaterial
 	var is_stream: bool = material != null and material.get_shader_parameter("flowing") == true
 	var vertices: PackedVector3Array = mesh_node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	for i in range(0, vertices.size(), 3):

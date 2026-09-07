@@ -125,7 +125,9 @@ func _hold_tree(amount: float, anchor: Dictionary) -> void:
 	shoulder.quaternion = shoulder.quaternion.slerp(upper_aim, amount)
 	elbow.quaternion = elbow.quaternion.slerp(lower_aim, amount)
 	var grip_rotation: Quaternion = anchor.get("rotation", Basis.from_euler(Vector3(0, -PI / 3.0, PI / 2.0), EULER_ORDER_YXZ).get_rotation_quaternion())
-	var wrist_aim := _source_world_rotation(elbow.global_basis).inverse() * grip_rotation
+	# Column normalization matches the source decomposition, but breathing
+	# shear can leave its quaternion non-unit after a parent rotation.
+	var wrist_aim := (_source_world_rotation(elbow.global_basis).normalized().inverse() * grip_rotation.normalized()).normalized()
 	wrist.quaternion = wrist.quaternion.slerp(wrist_aim, amount)
 	for finger in range(4):
 		joints[36 + finger * 4].rotation.x = -0.16 * amount

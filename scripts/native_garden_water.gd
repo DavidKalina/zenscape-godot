@@ -4,6 +4,8 @@ extends RefCounted
 ## against its real sloping triangle. Disconnected hollows remain dry.
 
 static func surface(data: NativeTerrainData, pond: Dictionary) -> PackedVector3Array:
+	if data._recipe != null:
+		return preload("res://scripts/native_recipe_water.gd").surface(data,pond)
 	var triangles: Array[PackedInt32Array] = []
 	for i in range(0,data.vertex_ids.size(),3):
 		triangles.append(data.vertex_ids.slice(i,i+3))
