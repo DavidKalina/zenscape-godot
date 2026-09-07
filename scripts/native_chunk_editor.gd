@@ -61,6 +61,15 @@ var _skirt_mesh: ArrayMesh
 var _boulder_anchors: Array[Transform3D] = []
 var _landmark_pose: Transform3D
 var _last_point: Variant = null
+var _map_base: Image
+var _map_ground: Image
+var _map_stream: Image
+var _map_heights := PackedFloat32Array()
+var _map_revision := -1
+var _map_blank := false
+var _map_original := false
+var _map_ready := false
+var _bigfoot_mesh: Mesh
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -504,25 +513,10 @@ func refresh() -> void:
 	if falls.get_child_count()/2 < fall_count:
 		_status.text = "A waterfall is blocked or submerged. Lower the obstruction or undo."
 	# Existing habitat/rain/fog consumers keep the same texture object.
-	var image: Image = _original_ground_map.duplicate()
-	for z in range(image.get_height()):
-		for x in range(image.get_width()):
-			if original and not data.blank:
-				continue
-			var point := (Vector2(x,z)+Vector2.ONE*0.5)/image.get_width()*32.0-Vector2.ONE*16.0
-			var height: Variant = data.height_at(point.x,point.y)
-			var value := Color(-1000,-1000,-1000,-1000) if data.blank else image.get_pixel(x,z)
-			value.g = float(height) if height != null else -1000.0
-			value.r = maxf(value.g,value.a)
-			image.set_pixel(x,z,value)
-	GardenSurfaceMap.paint_water(image,content.pond_vertices)
-	var streams: Image = _original_stream_map.duplicate()
-	if data.blank:
-		streams.fill(Color(0,0,0,0))
-	GardenSurfaceMap.paint_streams(image,streams,content._stream_nodes)
-	scene._precipitation.ground_texture.update(image)
-	scene._precipitation.stream_texture.update(streams)
-	scene._bigfoot.ground.setup(terrain)
+	_update_surface_maps(original)
+	if terrain.mesh != _bigfoot_mesh:
+		_bigfoot_mesh = terrain.mesh
+		scene._bigfoot.ground.setup(terrain)
 	var encounter_pose: Variant = null
 	for item: Dictionary in data.objects:
 		if item.asset == "bigfoot_tree":
@@ -534,6 +528,59 @@ func refresh() -> void:
 	scene._precipitation.set_ceiling(_original_precip_top if original else scene._atmosphere._summit.y+5.0)
 	if scene._display_fog != null:
 		scene._display_fog.update_view()
+
+## Resample only the map pixels the edit can reach. The height pass is kept in
+## `_map_base`; both overlays are per-pixel functions of that base, so repainting
+## the changed rectangle over the previous finished maps reproduces them exactly.
+func _update_surface_maps(original: bool) -> void:
+	var size := _original_ground_map.get_width()
+	var reusable: bool = _map_ready and _map_revision == content.revision and _map_blank == data.blank and _map_original == original
+	var region: Variant = data.moved_region(_map_heights) if reusable else null
+	if region is bool and reusable:
+		return
+	var clip := Rect2i(0,0,size,size)
+	if region != null:
+		var low: Vector2 = (region.position+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+		var high: Vector2 = (region.end+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+		clip = Rect2i(Vector2i(clampi(floori(low.x),0,size),clampi(floori(low.y),0,size)),Vector2i.ZERO)
+		clip = clip.expand(Vector2i(clampi(ceili(high.x)+1,0,size),clampi(ceili(high.y)+1,0,size)))
+	else:
+		_map_base = _original_ground_map.duplicate()
+	for z in range(clip.position.y,clip.end.y):
+		for x in range(clip.position.x,clip.end.x):
+			if original and not data.blank:
+				continue
+			var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*32.0-Vector2.ONE*16.0
+			var height: Variant = data.height_at(point.x,point.y)
+			var value := Color(-1000,-1000,-1000,-1000) if data.blank else _original_ground_map.get_pixel(x,z)
+			value.g = float(height) if height != null else -1000.0
+			value.r = maxf(value.g,value.a)
+			_map_base.set_pixel(x,z,value)
+	var image: Image
+	var streams: Image
+	if region == null:
+		image = _map_base.duplicate()
+		streams = _original_stream_map.duplicate()
+		if data.blank:
+			streams.fill(Color(0,0,0,0))
+	else:
+		image = _map_ground
+		streams = _map_stream
+		for z in range(clip.position.y,clip.end.y):
+			for x in range(clip.position.x,clip.end.x):
+				image.set_pixel(x,z,_map_base.get_pixel(x,z))
+				streams.set_pixel(x,z,Color(0,0,0,0) if data.blank else _original_stream_map.get_pixel(x,z))
+	GardenSurfaceMap.paint_water(image,content.pond_vertices,clip)
+	GardenSurfaceMap.paint_streams(image,streams,content._stream_nodes,clip)
+	scene._precipitation.ground_texture.update(image)
+	scene._precipitation.stream_texture.update(streams)
+	_map_ground = image
+	_map_stream = streams
+	_map_heights = data.heights.duplicate()
+	_map_revision = content.revision
+	_map_blank = data.blank
+	_map_original = original
+	_map_ready = true
 
 func _placement_pose() -> Dictionary:
 	if mode not in ["tree","flower","rock","assets"] or (object_width == 1.0 and object_height == 1.0 and object_depth == 1.0 and object_pitch == 0.0 and object_roll == 0.0 and object_elevation == 0.0):

@@ -11,11 +11,20 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 	var h := PackedFloat32Array()
 	var xy := PackedVector2Array()
 	var edited: bool = data.heights != data._recipe_heights
+	# The unsculpted recipe height at each grid node only depends on the recipe,
+	# so it is sampled once per recipe and kept in doubles. Adding the sculpt
+	# delta to that double reproduces the original expression exactly.
+	if data._water_grid_h.size() != W*W:
+		data._water_grid_h.resize(W*W)
+		for z in range(W):
+			for x in range(W):
+				data._water_grid_h[z*W+x]=data._recipe.height(-14.0+x*CELL,-14.0+z*CELL)
+	var base: PackedFloat64Array=data._water_grid_h
 	for z in range(W):
 		for x in range(W):
 			var px: float=-14.0+x*CELL
 			var pz: float=-14.0+z*CELL
-			var height: float=data._recipe.height(px,pz)
+			var height: float=base[z*W+x]
 			if edited: height+=data._sculpt_delta(Vector2(px,pz))
 			h.append(height)
 			xy.append(Vector2(px,pz))

@@ -33,6 +33,43 @@ var _recipe_settings := {}
 var _recipe: RefCounted
 var _recipe_heights := PackedFloat32Array()
 var _recipe_gradients: Array[Vector2] = []
+var _locate_cache := {}
+var _locate_face := PackedInt32Array()
+var _locate_u := PackedFloat64Array()
+var _locate_v := PackedFloat64Array()
+var _water_grid_h := PackedFloat64Array()
+var _face_margin := 0.0
+var _mesh_arrays: Array = []
+var _mesh_result: ArrayMesh
+var _mesh_heights := PackedFloat32Array()
+var _mesh_grass := PackedFloat32Array()
+var _mesh_meadow := PackedFloat32Array()
+var _mesh_blank := false
+var _mesh_sculpted := false
+var _mesh_signature := PackedByteArray()
+var _shore_field := {}
+var _shore_ready := false
+var _shore_mask := PackedByteArray()
+var _shore_changed := false
+var _probe := {}
+var _probing := false
+var _face_x := PackedFloat64Array()
+var _face_z := PackedFloat64Array()
+var _face_rock := PackedColorArray()
+var _face_snow := PackedColorArray()
+var _face_shimmer := PackedFloat64Array()
+var _face_rim := PackedByteArray()
+var _strands_cache: Array[Dictionary] = []
+var _strands_probe := {}
+var _strands_seen := {}
+var _strands_ready := false
+var _face_center := PackedVector2Array()
+var _face_probe := PackedInt32Array()
+var _ground_tint := Color("b49d78").srgb_to_linear()
+## Bumped whenever the object records change. Serialising 3,000 records to
+## compare them costs more than the refresh it is meant to shorten, so every
+## method here that touches `objects` reports the change instead.
+var objects_revision := 0
 
 func setup(mesh: ArrayMesh) -> void:
 	blades.resize(MEADOW_CELLS*MEADOW_CELLS)
@@ -54,10 +91,19 @@ func setup(mesh: ArrayMesh) -> void:
 			_neighbors.append(PackedInt32Array())
 		vertex_ids.append(ids[point])
 	original_heights = heights.duplicate()
+	# Every palette lookup a face makes is a function of its fixed XZ centroid, so
+	# the noise is evaluated once here instead of on every rebuild.
 	for i in range(0, vertices.size(), 3):
 		var x: float = (float(vertices[i].x)+float(vertices[i+1].x)+float(vertices[i+2].x))/3.0
 		var z: float = (float(vertices[i].z)+float(vertices[i+1].z)+float(vertices[i+2].z))/3.0
 		_face_grass.append(_palette.grass_at_coordinates(x,z))
+		var center := (vertices[i]+vertices[i+1]+vertices[i+2])/3.0
+		_face_center.append(Vector2(center.x,center.z))
+		_face_x.append(x)
+		_face_z.append(z)
+		_face_rock.append(_palette.rock_at_coordinates(x,z))
+		_face_snow.append(_palette.shimmer_coordinates(_palette.snow,x,z))
+		_face_shimmer.append((_palette.noise.hash_at(x*7.3,z*7.3)-0.5)*0.07)
 	for i in range(0, vertex_ids.size(), 3):
 		var low := Vector2(INF, INF)
 		var high := Vector2(-INF, -INF)
@@ -69,17 +115,52 @@ func setup(mesh: ArrayMesh) -> void:
 				var neighbor := vertex_ids[i+k]
 				if neighbor != id and neighbor not in _neighbors[id]:
 					_neighbors[id].append(neighbor)
+		_face_margin = maxf(_face_margin,(high-low).length())
+		_face_rim.append(1 if maxf(absf(low.x),maxf(absf(low.y),maxf(absf(high.x),absf(high.y)))) > 13.9999 else 0)
 		for z in range(floori(low.y/2), floori(high.y/2)+1):
 			for x in range(floori(low.x/2), floori(high.x/2)+1):
 				var key := Vector2i(x,z)
 				if not _buckets.has(key):
 					_buckets[key] = []
 				_buckets[key].append(i)
+	# A face's colour reads the sculpt gradient 0.25 from its centroid, which
+	# resolves inside a neighbouring triangle, and the meadow cell under that
+	# centroid. Growing an edited region by this margin therefore reaches every
+	# face whose shading could have moved.
+	_face_margin += 0.25+MEADOW_STEP
 
 func height_at(x: float, z: float) -> Variant:
 	return sample(Vector2(x,z), heights)
 
+## The triangulation never changes after setup, so the barycentric solution for a
+## given XZ point is fixed. Editing only moves vertices vertically. Memoising the
+## resolved face and its (u,v) keeps the exact same arithmetic — the same face is
+## still chosen in bucket order and the same doubles are multiplied — while
+## removing the per-query triangle walk that dominated every refresh.
 func sample(point: Vector2, values: PackedFloat32Array) -> Variant:
+	var slot: int = _locate_cache.get(point,-1)
+	if slot < 0:
+		if _locate_cache.size() >= 262144:
+			_locate_cache.clear()
+			_locate_face.clear()
+			_locate_u.clear()
+			_locate_v.clear()
+			_face_probe.clear()
+		slot = _locate_face.size()
+		_locate_cache[point] = slot
+		_locate(point)
+	var i: int = _locate_face[slot]
+	if i < 0:
+		return null
+	if _probing:
+		_probe[vertex_ids[i]] = true
+		_probe[vertex_ids[i+1]] = true
+		_probe[vertex_ids[i+2]] = true
+	var u: float = _locate_u[slot]
+	var v: float = _locate_v[slot]
+	return u*values[vertex_ids[i]]+v*values[vertex_ids[i+1]]+(1.0-u-v)*values[vertex_ids[i+2]]
+
+func _locate(point: Vector2) -> void:
 	for i: int in _buckets.get(Vector2i(floori(point.x/2), floori(point.y/2)), []):
 		var a := points[vertex_ids[i]]
 		var b := points[vertex_ids[i+1]]
@@ -90,8 +171,13 @@ func sample(point: Vector2, values: PackedFloat32Array) -> Variant:
 		var u := ((b.y-c.y)*(point.x-c.x)+(c.x-b.x)*(point.y-c.y))/denominator
 		var v := ((c.y-a.y)*(point.x-c.x)+(a.x-c.x)*(point.y-c.y))/denominator
 		if u >= -0.00001 and v >= -0.00001 and u+v <= 1.00001:
-			return u*values[vertex_ids[i]]+v*values[vertex_ids[i+1]]+(1.0-u-v)*values[vertex_ids[i+2]]
-	return null
+			_locate_face.append(i)
+			_locate_u.append(u)
+			_locate_v.append(v)
+			return
+	_locate_face.append(-1)
+	_locate_u.append(0.0)
+	_locate_v.append(0.0)
 
 func delta_at(point: Vector2) -> float:
 	var current: Variant = sample(point, heights)
@@ -172,63 +258,86 @@ func ground_coverage(point: Vector2) -> float:
 func grass_color_at(point: Vector2) -> Color:
 	return _palette.grass_at(point)
 
-func build_mesh() -> ArrayMesh:
+## A brush dab moves a handful of vertices, so the previous build is kept and
+## only the faces that could have changed are recomputed. `dirty_region()`
+## reports where the data actually differs from that cached build, and the
+## caller may force a full rebuild by clearing the cache first.
+func build_mesh(force := false) -> ArrayMesh:
+	if force:
+		_mesh_result = null
+		_shore_ready = false
 	if heights == original_heights and not blank and grass.count(0.0) == grass.size():
 		return source_mesh
-	var arrays := _arrays.duplicate(true)
+	var signature := var_to_bytes([_recipe_settings,ponds,streams,landscape_waterfall])
+	var sculpted := _recipe != null and heights != _recipe_heights
+	if sculpted:
+		_ensure_face_probes()
+	var reusable: bool = _mesh_result != null and _mesh_blank == blank and _mesh_sculpted == sculpted and _mesh_signature == signature
+	var region: Variant = _mesh_region() if reusable else null
+	if region is bool:
+		return _mesh_result
+	var water_field := _shoreline_field(region) if blank else {}
+	if blank and _shore_changed:
+		region = null
+	var arrays: Array = _mesh_arrays if region != null else _arrays.duplicate(true)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var uv2: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
 	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
-	for i in range(vertices.size()):
-		vertices[i].y = heights[vertex_ids[i]]
-		if uv2.size() == vertices.size():
-			uv2[i].y = vertices[i].y # The existing growth shader reads target height here.
-	var water_field := preload("res://scripts/native_recipe_water.gd").shoreline(self) if blank else {}
-	var sculpted := _recipe != null and heights != _recipe_heights
-	for i in range(0,vertices.size(),3):
+	# The lerp below reads the chunk's untouched authored colour, never the one
+	# an earlier incremental build already wrote into the working copy.
+	var source_colors: PackedColorArray = _arrays[Mesh.ARRAY_COLOR]
+	var paints_uv2 := uv2.size() == vertices.size()
+	var faces: PackedInt32Array = _faces_in(region) if region != null else _all_faces()
+	for i in faces:
+		for j in range(3):
+			vertices[i+j].y = heights[vertex_ids[i+j]]
+			if paints_uv2:
+				uv2[i+j].y = vertices[i+j].y # The existing growth shader reads target height here.
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		var center := (vertices[i]+vertices[i+1]+vertices[i+2])/3.0
 		var point := Vector2(center.x,center.z)
-		var face_x: float = (float(vertices[i].x)+float(vertices[i+1].x)+float(vertices[i+2].x))/3.0
-		var face_z: float = (float(vertices[i].z)+float(vertices[i+1].z)+float(vertices[i+2].z))/3.0
+		var face := i/3
+		var face_x: float = _face_x[face]
+		var face_z: float = _face_z[face]
 		var coverage := ground_coverage(point)
-		var face_color := Color("b49d78").srgb_to_linear().lerp(_face_grass[i/3],coverage)
+		var face_color := _ground_tint.lerp(_face_grass[face],coverage)
 		if blank:
 			var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
 			if _recipe != null:
-				var gradient: Vector2 = _recipe_gradients[i/3]
+				var gradient: Vector2 = _recipe_gradients[face]
 				if sculpted:
-					gradient += Vector2((_sculpt_delta(point+Vector2(0.25,0))-_sculpt_delta(point-Vector2(0.25,0)))/0.5,(_sculpt_delta(point+Vector2(0,0.25))-_sculpt_delta(point-Vector2(0,0.25)))/0.5)
+					var probe := face*4
+					gradient += Vector2((_probe_delta(_face_probe[probe])-_probe_delta(_face_probe[probe+1]))/0.5,(_probe_delta(_face_probe[probe+2])-_probe_delta(_face_probe[probe+3]))/0.5)
 				slope = gradient.length()
 			# The sealed cut is not a geological cliff. Source colorAt samples
 			# the continuous ground before its border is lowered to the rim.
-			var cut_rim := false
-			for j in range(3):
-				var p := points[vertex_ids[i+j]]
-				cut_rim = cut_rim or maxf(absf(p.x),absf(p.y)) > 13.9999
+			var cut_rim := _face_rim[face] == 1
 			if center.y > _palette.snowline-1.8 or (slope > _palette.rock_slope and (not cut_rim or _recipe != null)):
-				face_color = _palette.rock_at_coordinates(face_x,face_z)
+				face_color = _face_rock[face]
 			if center.y > _palette.snowline and slope < 2.4:
-				face_color = _palette.shimmer_coordinates(_palette.snow,face_x,face_z)
+				face_color = _face_snow[face]
 			if not water_field.is_empty():
 				var shore:=preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.shore,face_x,face_z)
 				var running: bool=preload("res://scripts/native_recipe_water.gd").kind_at(water_field,face_x,face_z)==2
 				if running and shore<1.7 and center.y<_palette.snowline-1.8:
-					face_color=_face_grass[i/3]
+					face_color=_face_grass[face]
 				if shore < 0.75 and slope<2.2:
 					var bank: Color = _palette.gravel if running else _palette.sand
 					if shore < -0.05:
 						bank *= 0.78-0.16*minf(1.0,preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.depth,face_x,face_z))
-					face_color = _palette.shimmer_coordinates(bank,face_x,face_z)
+					var shimmer: float = _face_shimmer[face]
+					face_color = Color(bank.r+shimmer,bank.g+shimmer,bank.b+shimmer)
 		if not blank:
-			face_color = colors[i].lerp(_face_grass[i/3],coverage)
+			face_color = source_colors[i].lerp(_face_grass[face],coverage)
 		for j in range(3):
 			normals[i+j] = normal
-			if blank:
+			if blank or coverage > 0.0:
 				colors[i+j] = face_color
-			elif coverage > 0.0:
-				colors[i+j] = face_color
+			else:
+				# Uncovered faces keep the authored colour a full rebuild would
+				# have restored by duplicating the source arrays.
+				colors[i+j] = source_colors[i+j]
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_NORMAL] = normals
@@ -237,13 +346,177 @@ func build_mesh() -> ArrayMesh:
 	var flags := source_mesh.surface_get_format(0) & (Mesh.ARRAY_FORMAT_CUSTOM_MASK << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},flags)
 	result.surface_set_material(0, source_mesh.surface_get_material(0))
+	_mesh_arrays = arrays
+	_mesh_heights = heights.duplicate()
+	_mesh_grass = grass.duplicate()
+	_mesh_meadow = meadow.duplicate()
+	_mesh_blank = blank
+	_mesh_sculpted = sculpted
+	_mesh_signature = signature
+	_mesh_result = result
 	return result
 
+## The XZ rectangle holding every vertex whose height differs from `snapshot`,
+## grown so it also covers everything those vertices can shade or be sampled
+## through. `false` when nothing moved, `null` when the snapshot does not match.
+func moved_region(snapshot: PackedFloat32Array) -> Variant:
+	if heights == snapshot:
+		return false
+	if heights.size() != snapshot.size():
+		return null
+	var region := Rect2()
+	var started := false
+	for i in range(points.size()):
+		if heights[i] == snapshot[i]:
+			continue
+		region = region.expand(points[i]) if started else Rect2(points[i],Vector2.ZERO)
+		started = true
+	if not started:
+		return null
+	return region.grow(_face_margin)
+
+## Whether an edited region can change the water field. Heights only reach the
+## flood through cells that are already wet, border a wet cell, or seed a pond;
+## everywhere else the recipe height is read and discarded.
+func water_reaches(region: Rect2) -> bool:
+	if not _shore_ready:
+		return true
+	var first := (region.position+Vector2(14,14))/NativeRecipeWater.CELL
+	var last := (region.end+Vector2(14,14))/NativeRecipeWater.CELL
+	for j in range(maxi(0,ceili(first.y)),mini(NativeRecipeWater.W-1,floori(last.y))+1):
+		for i in range(maxi(0,ceili(first.x)),mini(NativeRecipeWater.W-1,floori(last.x))+1):
+			if _shore_mask[j*NativeRecipeWater.W+i] == 1:
+				return true
+	return false
+
+## Record which terrain vertices a calculation reads through `sample`. A result
+## derived only from those heights stays valid while they stay put, however far
+## the calculation wandered, because identical inputs retrace identical paths.
+func begin_probe() -> void:
+	_probing = true
+	_probe = {}
+
+func end_probe() -> Dictionary:
+	_probing = false
+	var ids := PackedInt32Array()
+	var values := PackedFloat32Array()
+	for id: int in _probe:
+		ids.append(id)
+		values.append(heights[id])
+	_probe = {}
+	return {"ids":ids,"values":values,"sculpted":heights != _recipe_heights}
+
+func probe_stale(record: Dictionary) -> bool:
+	if record.is_empty() or record.sculpted != (heights != _recipe_heights):
+		return true
+	var ids: PackedInt32Array = record.ids
+	var values: PackedFloat32Array = record.values
+	for k in range(ids.size()):
+		if heights[ids[k]] != values[k]:
+			return true
+	return false
+
+func _all_faces() -> PackedInt32Array:
+	var result := PackedInt32Array()
+	for i in range(0,vertex_ids.size(),3):
+		result.append(i)
+	return result
+
+## Every face whose bounding box shares a terrain bucket with the region.
+func _faces_in(region: Rect2) -> PackedInt32Array:
+	var seen := {}
+	var result := PackedInt32Array()
+	for z in range(floori(region.position.y/2), floori(region.end.y/2)+1):
+		for x in range(floori(region.position.x/2), floori(region.end.x/2)+1):
+			for i: int in _buckets.get(Vector2i(x,z),[]):
+				if seen.has(i):
+					continue
+				seen[i] = true
+				result.append(i)
+	return result
+
+## Where the terrain differs from the cached build. `false` means nothing
+## changed, `null` means the difference cannot be localised.
+func _mesh_region() -> Variant:
+	var moved := heights != _mesh_heights
+	var painted := grass != _mesh_grass or meadow != _mesh_meadow
+	if not moved and not painted:
+		return false
+	if moved and heights.size() != _mesh_heights.size():
+		return null
+	if painted and (grass.size() != _mesh_grass.size() or meadow.size() != _mesh_meadow.size()):
+		return null
+	var region := Rect2()
+	var started := false
+	if moved:
+		var vertical: Variant = moved_region(_mesh_heights)
+		if not vertical is Rect2:
+			return null
+		region = vertical
+		started = true
+	if painted:
+		for k in range(grass.size()):
+			if grass[k] == _mesh_grass[k] and meadow[k] == _mesh_meadow[k]:
+				continue
+			var corner := meadow_position(k%MEADOW_CELLS,k/MEADOW_CELLS)
+			region = region.expand(corner) if started else Rect2(corner,Vector2.ZERO)
+			started = true
+			region = region.expand(corner+Vector2.ONE*MEADOW_STEP)
+	if not started:
+		return null
+	return region.grow(_face_margin)
+
+## Reuse the shoreline field unless the edit could reach the water. Heights only
+## matter to the flood where a cell is already wet, borders a wet cell, or seeds
+## a pond, so an edit clear of those cells leaves the field untouched.
+func _shoreline_field(region: Variant) -> Dictionary:
+	_shore_changed = false
+	if _shore_ready and region != null and not water_reaches(region):
+		return _shore_field
+	var field := preload("res://scripts/native_recipe_water.gd").shoreline(self)
+	var changed := not _shore_ready or field.is_empty() != _shore_field.is_empty()
+	if not changed and not field.is_empty():
+		changed = field.shore != _shore_field.shore or field.depth != _shore_field.depth or field.kind != _shore_field.kind
+	_shore_field = field
+	_shore_mask = _shoreline_mask(field)
+	_shore_ready = true
+	_shore_changed = changed
+	return field
+
+## Wet cells, their neighbours - which can flood or drain next - and every
+## pond's seed window, where the lowest of nine cells starts the flood.
+func _shoreline_mask(field: Dictionary) -> PackedByteArray:
+	var side: int = NativeRecipeWater.W
+	var mask := PackedByteArray()
+	mask.resize(side*side)
+	if not field.is_empty():
+		var shore: PackedFloat32Array = field.shore
+		for k in range(shore.size()):
+			if shore[k] >= 0.0:
+				continue
+			for j in range(maxi(0,k/side-1),mini(side-1,k/side+1)+1):
+				for i in range(maxi(0,k%side-1),mini(side-1,k%side+1)+1):
+					mask[j*side+i] = 1
+	for pond in ponds:
+		var seed_x := int(floor((float(pond.x)+14.0)/NativeRecipeWater.CELL+0.5))
+		var seed_z := int(floor((float(pond.z)+14.0)/NativeRecipeWater.CELL+0.5))
+		for j in range(maxi(0,seed_z-1),mini(side-1,seed_z+1)+1):
+			for i in range(maxi(0,seed_x-1),mini(side-1,seed_x+1)+1):
+				mask[j*side+i] = 1
+	return mask
+
+## Recipes are pure functions of their settings, so restoring the same recipe -
+## which is what every sculpt undo/redo does - can keep the sampled height and
+## gradient tables instead of re-evaluating the source noise ~19,000 times.
 func _set_recipe(settings: Dictionary) -> void:
+	if var_to_bytes(_recipe_settings) == var_to_bytes(settings) and (_recipe == null) == settings.is_empty():
+		return
 	_recipe_settings = settings.duplicate(true)
 	_recipe = null if settings.is_empty() else preload("res://scripts/native_terrain_recipe.gd").new(settings)
 	_recipe_heights.clear()
 	_recipe_gradients.clear()
+	_water_grid_h.clear()
+	_strands_ready = false
 	if _recipe == null: return
 	for point in points:
 		_recipe_heights.append(0.6 if maxf(absf(point.x),absf(point.y)) > 13.9999 else _recipe.height(point.x,point.y))
@@ -252,6 +525,34 @@ func _set_recipe(settings: Dictionary) -> void:
 		var x: float = (float(vertices[i].x)+float(vertices[i+1].x)+float(vertices[i+2].x))/3.0
 		var z: float = (float(vertices[i].z)+float(vertices[i+1].z)+float(vertices[i+2].z))/3.0
 		_recipe_gradients.append(Vector2((_recipe.height(x+0.25,z)-_recipe.height(x-0.25,z))/0.5,(_recipe.height(x,z+0.25)-_recipe.height(x,z-0.25))/0.5))
+
+## Each face reads the sculpt delta at four fixed offsets from its centroid, so
+## the triangle those offsets land in is resolved once and then evaluated with
+## the same expression `_sculpt_delta` uses.
+func _ensure_face_probes() -> void:
+	if _face_probe.size() == _face_center.size()*4:
+		return
+	_face_probe.clear()
+	for face in range(_face_center.size()):
+		for offset: Vector2 in [Vector2(0.25,0),Vector2(-0.25,0),Vector2(0,0.25),Vector2(0,-0.25)]:
+			var point := (_face_center[face]+offset).clamp(Vector2(-14,-14),Vector2(14,14))
+			var slot: int = _locate_cache.get(point,-1)
+			if slot < 0:
+				slot = _locate_face.size()
+				_locate_cache[point] = slot
+				_locate(point)
+			_face_probe.append(slot)
+
+func _probe_delta(slot: int) -> float:
+	var i: int = _locate_face[slot]
+	if i < 0:
+		return 0.0 # `_sculpt_delta` subtracts two nulls here, which is also zero.
+	var u: float = _locate_u[slot]
+	var v: float = _locate_v[slot]
+	var a := vertex_ids[i]
+	var b := vertex_ids[i+1]
+	var c := vertex_ids[i+2]
+	return (u*heights[a]+v*heights[b]+(1.0-u-v)*heights[c])-(u*_recipe_heights[a]+v*_recipe_heights[b]+(1.0-u-v)*_recipe_heights[c])
 
 func _sculpt_delta(point: Vector2) -> float:
 	point = point.clamp(Vector2(-14,-14),Vector2(14,14))
@@ -274,6 +575,7 @@ func reset_flat() -> void:
 	grass.fill(0.0)
 	meadow.fill(0.0)
 	objects.clear()
+	objects_revision += 1
 	ponds.clear()
 	streams.clear()
 	landscape_waterfall=false
@@ -290,6 +592,10 @@ func _restore(state: Dictionary) -> void:
 	meadow = state.meadow.duplicate()
 	grass = state.grass.duplicate()
 	blades = state.blades.duplicate()
+	# Undoing a sculpt stroke restores the very same object records. Spotting that
+	# once here is far cheaper than making the view rebuild all of them.
+	if objects.size() != state.objects.size() or var_to_bytes(objects) != var_to_bytes(state.objects):
+		objects_revision += 1
 	objects.assign(state.objects.duplicate(true))
 	ponds.assign(state.ponds.duplicate(true))
 	streams.assign(state.get("streams",[]).duplicate(true))
@@ -360,6 +666,7 @@ func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictio
 	objects.append({"id":id,"asset":kind,"x":point.x,"z":point.y,"angle":angle,"scale":size})
 	if not pose.is_empty(): objects.back()["pose"] = pose.duplicate(true)
 	if not tint.is_empty(): objects.back()["tint"] = tint
+	objects_revision += 1
 	return id
 
 func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
@@ -372,6 +679,7 @@ func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
 	if ends[0].y <= ends[1].y+0.5 or not NativeGardenFalls.clear_path(self,item):
 		return false
 	objects.append(item)
+	objects_revision += 1
 	next_id += 1
 	return true
 
@@ -380,6 +688,7 @@ func object_position(item: Dictionary) -> Vector3:
 
 func erase_objects(point: Vector2, radius: float) -> void:
 	objects = objects.filter(func(item: Dictionary) -> bool: return Vector2(item.x,item.z).distance_to(point) > radius)
+	objects_revision += 1
 
 func pond_surface(pond: Dictionary) -> PackedVector3Array:
 	return NativeGardenWater.surface(self,pond)
@@ -539,9 +848,30 @@ func waterfall_ground_height(x: float,z: float) -> float:
 	var pz: float=(x*sin(angle)+z*cos(angle))*width
 	return 0.6+(stream_ground_height(px,pz)-0.6)/_recipe_settings.height
 
+## Tracing the landscape fall is expensive and every rebuild asks for it at least
+## twice - once to render it and once per pond for its impact foam. The trace
+## reads the terrain only through `sample`, so recording which heights it read
+## says exactly when the cached strands stop being the ones it would produce.
 func waterfall_strands() -> Array[Dictionary]:
 	if not landscape_waterfall or _recipe==null: return []
-	return preload("res://scripts/native_fall_strand.gd").landscape(waterfall_ground_height,_recipe.source.pool,_recipe.source.g)
+	if _strands_ready and not probe_stale(_strands_probe):
+		if _probing: _probe.merge(_strands_seen)
+		return _strands_cache
+	var outer := _probe
+	var outer_probing := _probing
+	_probe = {}
+	_probing = true
+	_strands_cache = preload("res://scripts/native_fall_strand.gd").landscape(waterfall_ground_height,_recipe.source.pool,_recipe.source.g)
+	_strands_seen = _probe
+	_strands_probe = end_probe()
+	if outer_probing: outer.merge(_strands_seen)
+	_probe = outer
+	_probing = outer_probing
+	_strands_ready = true
+	return _strands_cache
+
+func waterfall_probe() -> Dictionary:
+	return _strands_probe if _strands_ready else {}
 
 func waterfall_impacts() -> Array[Dictionary]:
 	var impacts: Array[Dictionary]=[]
@@ -586,6 +916,7 @@ func fill_landscape_flora() -> bool:
 	var before:=objects
 	var before_id:=next_id
 	objects=kept
+	objects_revision += 1
 	for entry in placements:
 		var m: PackedFloat64Array=entry.m
 		var record: Transform3D
@@ -600,7 +931,9 @@ func fill_landscape_flora() -> bool:
 		if entry.color!=null: tint=preload("res://scripts/native_object_pose.gd").encode_tint(Color(entry.color[0],entry.color[1],entry.color[2]))
 		if height==null or place(entry.asset,point,0.0,1.0,preload("res://scripts/native_object_pose.gd").make(record.basis,record.origin.y-float(height)),tint)<0:
 			objects=before
+			objects_revision += 1
 			next_id=before_id
 			return false
 		objects.back()["landscape"]=true
+		objects_revision += 1
 	return not placements.is_empty()

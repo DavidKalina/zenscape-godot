@@ -28,7 +28,11 @@ func update(data: GardenData, water: PackedVector3Array) -> void:
 static func _point(x: int, z: int) -> Vector2:
 	return (Vector2(x,z) + Vector2.ONE * 0.5) * SPAN / SIZE - Vector2.ONE * SPAN * 0.5
 
-static func paint_water(image: Image, water: PackedVector3Array) -> void:
+## `clip` restricts the work to a pixel rectangle. Both overlays decide each
+## pixel from that pixel's own ground value alone, so painting a sub-rectangle
+## over a map whose other pixels are already correct gives the same image as
+## painting all of it.
+static func paint_water(image: Image, water: PackedVector3Array, clip := Rect2i(0,0,SIZE,SIZE)) -> void:
 	for i in range(0, water.size(), 3):
 		var polygon := PackedVector2Array()
 		var low := Vector2(INF, INF)
@@ -40,8 +44,10 @@ static func paint_water(image: Image, water: PackedVector3Array) -> void:
 			high = high.max(point)
 		var first := (low + Vector2.ONE * SPAN * 0.5) * SIZE / SPAN
 		var last := (high + Vector2.ONE * SPAN * 0.5) * SIZE / SPAN
-		for z in range(clampi(floori(first.y), 0, SIZE-1), clampi(ceili(last.y), 0, SIZE-1)+1):
-			for x in range(clampi(floori(first.x), 0, SIZE-1), clampi(ceili(last.x), 0, SIZE-1)+1):
+		var span := Rect2i(Vector2i(clampi(floori(first.x),0,SIZE-1),clampi(floori(first.y),0,SIZE-1)),Vector2i.ZERO)
+		span = span.expand(Vector2i(clampi(ceili(last.x),0,SIZE-1)+1,clampi(ceili(last.y),0,SIZE-1)+1)).intersection(clip)
+		for z in range(span.position.y, span.end.y):
+			for x in range(span.position.x, span.end.x):
 				if Geometry2D.is_point_in_polygon(_point(x,z), polygon):
 					var value := image.get_pixel(x,z)
 					var level := water[i].y
@@ -50,15 +56,15 @@ static func paint_water(image: Image, water: PackedVector3Array) -> void:
 
 ## Share the reference triangle sampler so rain/fog read the rendered stream's
 ## height and growth coordinates, including its fitted banks and tapered ends.
-static func paint_streams(ground_image: Image,stream_image: Image,nodes: Array[MeshInstance3D]) -> void:
+static func paint_streams(ground_image: Image,stream_image: Image,nodes: Array[MeshInstance3D],clip := Rect2i(0,0,SIZE,SIZE)) -> void:
 	if nodes.is_empty(): return
 	var surfaces: Array[RefCounted]=[]
 	for node in nodes:
 		var sampler:=preload("res://scripts/reference_ground.gd").new()
 		sampler.setup(node)
 		surfaces.append(sampler)
-	for z in range(SIZE):
-		for x in range(SIZE):
+	for z in range(clip.position.y,clip.end.y):
+		for x in range(clip.position.x,clip.end.x):
 			var point:=_point(x,z)
 			var value:=ground_image.get_pixel(x,z)
 			for sampler in surfaces:
