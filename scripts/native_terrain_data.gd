@@ -10,6 +10,7 @@ const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
 var grass := PackedFloat32Array()
 var blades := PackedFloat32Array()
+var tint := PackedFloat32Array()
 var objects: Array[Dictionary] = []
 var ponds: Array[Dictionary] = []
 var streams: Array[Dictionary] = []
@@ -46,6 +47,7 @@ var _mesh_result: ArrayMesh
 var _mesh_heights := PackedFloat32Array()
 var _mesh_grass := PackedFloat32Array()
 var _mesh_meadow := PackedFloat32Array()
+var _mesh_tint := PackedFloat32Array()
 var _mesh_blank := false
 var _mesh_sculpted := false
 var _mesh_signature := PackedByteArray()
@@ -80,6 +82,7 @@ func setup(mesh: ArrayMesh) -> void:
 	grass.fill(0.0)
 	meadow.resize(MEADOW_CELLS*MEADOW_CELLS)
 	meadow.fill(0.0)
+	tint = NativeTerrainTint.make(MEADOW_CELLS*MEADOW_CELLS)
 	source_mesh = mesh
 	_arrays = mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = _arrays[Mesh.ARRAY_VERTEX]
@@ -252,10 +255,19 @@ func redo() -> bool:
 	_restore(_redo.pop_back())
 	return true
 
-func ground_coverage(point: Vector2) -> float:
+func meadow_cell(point: Vector2) -> int:
 	var grid := (point+Vector2(14,14))/MEADOW_STEP
-	var cell := clampi(int(grid.y),0,MEADOW_CELLS-1)*MEADOW_CELLS+clampi(int(grid.x),0,MEADOW_CELLS-1)
+	return clampi(int(grid.y),0,MEADOW_CELLS-1)*MEADOW_CELLS+clampi(int(grid.x),0,MEADOW_CELLS-1)
+
+func ground_coverage(point: Vector2) -> float:
+	var cell := meadow_cell(point)
 	return maxf(grass[cell],meadow[cell]) if blank else grass[cell]
+
+func tint_weight(point: Vector2) -> float:
+	return NativeTerrainTint.weight_at(tint,meadow_cell(point))
+
+func tint_color(point: Vector2) -> Color:
+	return NativeTerrainTint.color_at(tint,meadow_cell(point))
 
 func grass_color_at(point: Vector2) -> Color:
 	return _palette.grass_at(point)
@@ -268,7 +280,7 @@ func build_mesh(force := false) -> ArrayMesh:
 	if force:
 		_mesh_result = null
 		_shore_ready = false
-	if heights == original_heights and not blank and grass.count(0.0) == grass.size():
+	if heights == original_heights and not blank and grass.count(0.0) == grass.size() and NativeTerrainTint.empty(tint):
 		return source_mesh
 	var signature := var_to_bytes([_recipe_settings,ponds,streams,landscape_waterfall])
 	var sculpted := _recipe != null and heights != _recipe_heights
@@ -302,8 +314,10 @@ func build_mesh(force := false) -> ArrayMesh:
 		var face := i/3
 		var face_x: float = _face_x[face]
 		var face_z: float = _face_z[face]
-		var coverage := ground_coverage(point)
+		var cell := meadow_cell(point)
+		var coverage: float = maxf(grass[cell],meadow[cell]) if blank else grass[cell]
 		var face_color := _ground_tint.lerp(_face_grass[face],coverage)
+		var snowed := false
 		if blank:
 			var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
 			if _recipe != null:
@@ -319,6 +333,7 @@ func build_mesh(force := false) -> ArrayMesh:
 				face_color = _face_rock[face]
 			if center.y > _palette.snowline and slope < 2.4:
 				face_color = _face_snow[face]
+				snowed = true
 			if not water_field.is_empty():
 				var shore:=preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.shore,face_x,face_z)
 				var running: bool=preload("res://scripts/native_recipe_water.gd").kind_at(water_field,face_x,face_z)==2
@@ -332,9 +347,13 @@ func build_mesh(force := false) -> ArrayMesh:
 					face_color = Color(bank.r+shimmer,bank.g+shimmer,bank.b+shimmer)
 		if not blank:
 			face_color = source_colors[i].lerp(_face_grass[face],coverage)
+		# Snow settles over whatever was painted, so alpine caps keep covering it.
+		var painted: float = 0.0 if snowed else NativeTerrainTint.weight_at(tint,cell)
+		if painted > 0.0:
+			face_color = NativeTerrainTint.blend(face_color,tint,cell,_face_shimmer[face])
 		for j in range(3):
 			normals[i+j] = normal
-			if blank or coverage > 0.0:
+			if blank or coverage > 0.0 or painted > 0.0:
 				colors[i+j] = face_color
 			else:
 				# Uncovered faces keep the authored colour a full rebuild would
@@ -352,6 +371,7 @@ func build_mesh(force := false) -> ArrayMesh:
 	_mesh_heights = heights.duplicate()
 	_mesh_grass = grass.duplicate()
 	_mesh_meadow = meadow.duplicate()
+	_mesh_tint = tint.duplicate()
 	_mesh_blank = blank
 	_mesh_sculpted = sculpted
 	_mesh_signature = signature
@@ -448,12 +468,12 @@ func _faces_in(region: Rect2) -> PackedInt32Array:
 ## changed, `null` means the difference cannot be localised.
 func _mesh_region() -> Variant:
 	var moved := heights != _mesh_heights
-	var painted := grass != _mesh_grass or meadow != _mesh_meadow
+	var painted := grass != _mesh_grass or meadow != _mesh_meadow or tint != _mesh_tint
 	if not moved and not painted:
 		return false
 	if moved and heights.size() != _mesh_heights.size():
 		return null
-	if painted and (grass.size() != _mesh_grass.size() or meadow.size() != _mesh_meadow.size()):
+	if painted and (grass.size() != _mesh_grass.size() or meadow.size() != _mesh_meadow.size() or tint.size() != _mesh_tint.size()):
 		return null
 	var region := Rect2()
 	var started := false
@@ -465,7 +485,10 @@ func _mesh_region() -> Variant:
 		started = true
 	if painted:
 		for k in range(grass.size()):
-			if grass[k] == _mesh_grass[k] and meadow[k] == _mesh_meadow[k]:
+			var recolored := false
+			for c in range(NativeTerrainTint.STRIDE):
+				recolored = recolored or tint[k*NativeTerrainTint.STRIDE+c] != _mesh_tint[k*NativeTerrainTint.STRIDE+c]
+			if grass[k] == _mesh_grass[k] and meadow[k] == _mesh_meadow[k] and not recolored:
 				continue
 			var corner := meadow_position(k%MEADOW_CELLS,k/MEADOW_CELLS)
 			region = region.expand(corner) if started else Rect2(corner,Vector2.ZERO)
@@ -585,6 +608,7 @@ func reset_flat() -> void:
 	blades.fill(0.0)
 	grass.fill(0.0)
 	meadow.fill(0.0)
+	tint.fill(0.0)
 	objects.clear()
 	objects_revision += 1
 	ponds.clear()
@@ -593,7 +617,7 @@ func reset_flat() -> void:
 	next_id = 1
 
 func _snapshot() -> Dictionary:
-	return {"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
+	return {"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
 	_set_recipe(state.get("terrain_recipe",{}))
@@ -603,6 +627,7 @@ func _restore(state: Dictionary) -> void:
 	meadow = state.meadow.duplicate()
 	grass = state.grass.duplicate()
 	blades = state.blades.duplicate()
+	tint = state.get("tint",NativeTerrainTint.make(MEADOW_CELLS*MEADOW_CELLS)).duplicate()
 	# Undoing a sculpt stroke restores the very same object records. Spotting that
 	# once here is far cheaper than making the view rebuild all of them.
 	if objects.size() != state.objects.size() or var_to_bytes(objects) != var_to_bytes(state.objects):
@@ -632,6 +657,14 @@ func paint_grass(center: Vector2, radius: float, density: float) -> void:
 
 func paint_blades(center: Vector2, radius: float, density: float) -> void:
 	_paint_cover(blades,center,radius,density)
+
+## Paint linear-RGB colour over rock and grass alike. `amount` is the coat this
+## dab lays down; repeated dabs deepen it toward a full-weight tint.
+func paint_tint(center: Vector2, radius: float, color: Color, amount: float) -> void:
+	NativeTerrainTint.paint(tint,MEADOW_CELLS,MEADOW_STEP,center,radius,color,amount)
+
+func erase_tint(center: Vector2, radius: float, amount: float) -> void:
+	NativeTerrainTint.erase(tint,MEADOW_CELLS,MEADOW_STEP,center,radius,amount)
 
 func _paint_cover(layer: PackedFloat32Array, center: Vector2, radius: float, density: float) -> void:
 	if radius <= 0.0:
@@ -734,13 +767,13 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	return {"version":8,"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	return {"version":9,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
 
 func _template_id() -> String:
 	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
 
 func load_document(document: Variant) -> bool:
-	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8) or document.get("template") != _template_id() or not document.get("blank") is bool:
+	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9) or document.get("template") != _template_id() or not document.get("blank") is bool:
 		return false
 	var recipe: Variant = preload("res://scripts/native_terrain_recipe.gd").decode(document.get("terrain_recipe",{})) if document.version >= 6 else {}
 	if not preload("res://scripts/native_terrain_recipe.gd").valid(recipe):
@@ -763,6 +796,11 @@ func load_document(document: Variant) -> bool:
 		loaded[field] = PackedFloat32Array(values)
 	if document.version == 4:
 		loaded.blades = loaded.grass.duplicate() # Preserve saved vegetation; new Grass paints only ground.
+	# Gardens saved before the Paint tool simply have nothing painted.
+	var painted: Variant = NativeTerrainTint.make(meadow.size()) if document.version < 9 else NativeTerrainTint.decode(document.get("tint"),meadow.size())
+	if painted == null:
+		return false
+	loaded.tint = painted
 	loaded.blank = document.blank
 	loaded.objects = []
 	loaded.ponds = []
