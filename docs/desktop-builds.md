@@ -7,8 +7,8 @@ not need Godot, Node.js, or the source repository installed to play.
 
 1. Sign into GitHub and open [Godot desktop builds](https://github.com/DavidKalina/zenscape-godot/actions/workflows/desktop.yml).
 2. Choose a successful run. Its commit identifies exactly which game version was built.
-3. Under **Artifacts**, download **ZenScape-windows-x64** or **ZenScape-mac-universal**.
-4. Extract the download, then extract the game ZIP inside it.
+3. In the run summary, follow **Download Windows and Mac builds** to its draft release.
+4. Download `ZenScape-windows-x64.zip` or `ZenScape-mac-universal.zip` and extract it.
 
 **Windows:** open `ZenScape.exe` from the extracted folder. Keep `ZenScape.pck`
 and any DLLs in that folder; copying only the executable will break the game.
@@ -32,11 +32,15 @@ Use **Save a copy** and **Open diorama** to move a world between computers.
 The workflow runs after pushes to `main`, version tags (`v*`), and pull requests
 targeting `main`. It also runs on `codex/godot-build*` while this setup is being
 introduced. Once the workflow is on `main`, choose **Run workflow** on its Actions
-page to build a selected branch manually. Downloads are retained for 30 days;
-run it again if an old download has expired. No public release is created.
+page to build a selected branch manually. Each push or manual run creates a **draft release**, with the commit in its title
+and a link in the run summary. Pull requests validate exports without creating
+downloads. Draft downloads remain available until you delete that draft release;
+no public release is created. This avoids the account’s full Actions artifact
+storage quota without deleting existing files.
 
 Only committed, pushed files are built. Local uncommitted experiments are not
-included. The repository is private, so downloads require GitHub access.
+included. The repository is private; draft releases require signing in with repository
+write access (the repository owner can download them).
 
 The workflow pins **Godot 4.7.2**, downloads the official editor and templates,
 verifies their SHA-512 checksums, and caches the desktop tools. Linux exports
