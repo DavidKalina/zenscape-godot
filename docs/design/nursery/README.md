@@ -1,3 +1,7 @@
+# Archived: initial toolbar concept
+
+The current implementation is the [command palette](../command-palette/README.md). These images record the earlier bottom-toolbar iteration.
+
 # Floating nursery — first Godot pass
 
 Run `./run-nursery.command` from this worktree. It opens the real fidelity scene directly in Build with the Arch miniature selected. The preview uses current game meshes, materials and placement paths.

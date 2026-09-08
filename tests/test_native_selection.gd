@@ -173,7 +173,7 @@ func _run() -> void:
 	for i in range(8):
 		await process_frame
 	check(panel.size.y < 120.0,"An empty selection inspector stays compact")
-	check(panel.get_global_rect().end.y <= scene._build_palette.get_global_rect().position.y,"The empty inspector sits above the palette")
+	check(not panel.visible,"An empty selection leaves the landscape clear")
 	editor.select_object(tree_id)
 	panel._more.button_pressed = true
 	root.size = Vector2i(960,640)
@@ -182,8 +182,8 @@ func _run() -> void:
 	var panel_rect := panel.get_global_rect()
 	var viewport_rect := root.get_visible_rect()
 	check(panel_rect.position.y >= viewport_rect.position.y and panel_rect.end.y <= viewport_rect.end.y,"Expanded selected-object controls stay inside a shorter window")
-	check(panel_rect.end.y <= scene._build_palette.get_global_rect().position.y,"Expanded controls stay above the palette")
-	check(panel._scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO,"Short windows retain scroll access to advanced controls")
+	check(panel_rect.end.y <= scene._build_palette._launcher.get_global_rect().position.y,"Expanded controls stay above the palette")
+	check(panel._scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED,"Advanced settings use a separate page without scrollbars")
 	DirAccess.remove_absolute(editor.save_path)
 	scene.queue_free()
 	await process_frame

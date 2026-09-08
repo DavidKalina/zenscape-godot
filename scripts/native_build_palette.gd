@@ -1,15 +1,14 @@
 class_name NativeBuildPalette
 extends Control
-## A floating stone-glass shelf with rotating miniatures and expandable settings.
+## Searchable tool and miniature palette. The landscape stays clear until Cmd/Ctrl K.
 ## Placeable tiles carry a thumbnail rendered from the real mesh and material,
 ## and can be dragged into the world, where a ghost follows the ground until
 ## the drop commits through the editor's own placement path. A last tab holds
 ## the sky: mood and weather swatches over the scene's own light and air.
-const TILE := 64.0
+const TILE := 54.0
 const SWATCH := 56.0
 const ICON := 96
-const BAR_HEIGHT := 128.0
-const DOCK_WIDTH := 760.0
+const BAR_HEIGHT := 48.0
 const TAB_TITLES := {"Sculpt":"Shape", "Landscape":"Land", "Cover":"Plant", "Place":"Miniatures"}
 const DRAG_SLOP := 6.0
 const HOVER_SCALE := 1.08
@@ -66,13 +65,11 @@ signal scene_controls_requested
 var editor: NativeChunkEditor
 var _bar := PanelContainer.new()
 var _tabs := HBoxContainer.new()
-var _deck := VBoxContainer.new()
 var _strip := VBoxContainer.new()
 var _scroll := ScrollContainer.new()
 var _grid := GridContainer.new()
 var _actions := HFlowContainer.new()
 var _hint := Label.new()
-var _rows := {}
 var _tabs_by_name := {}
 var _tiles := {}
 var _sky_tiles := {}
@@ -94,7 +91,25 @@ var _press_at := Vector2.ZERO
 var _bob := 0.0
 var _details := PanelContainer.new()
 var _tune := Button.new()
-var _scene_button: Button
+const FOLIAGE := ["tree","flower","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","mushroom"]
+var _search := LineEdit.new()
+var _results := GridContainer.new()
+var _library := Control.new()
+var _scrim := ColorRect.new()
+var _launcher := Button.new()
+var _page_label := Label.new()
+var _empty := Label.new()
+var _entries := {}
+var _matches: Array[String] = []
+var _page := 0
+var _setting_page := 0
+var _setting_pages := HBoxContainer.new()
+var _setting_page_label := Label.new()
+var _page_size := 8
+var _focus_index := 0
+var _previous_page := Button.new()
+var _next_page := Button.new()
+var _search_category := "All"
 var _portraits := {}
 var _portrait_clock := 0.0
 var miniatures_animate := true
@@ -146,7 +161,7 @@ func strip_fits() -> bool:
 
 ## The detached settings panel also shields the terrain from pointer input.
 func contains_pointer(point: Vector2) -> bool:
-	return get_global_rect().has_point(point) or (_details.visible and _details.get_global_rect().has_point(point))
+	return _bar.visible or _launcher.get_global_rect().has_point(point) or _tune.get_global_rect().has_point(point) or (_details.visible and _details.get_global_rect().has_point(point))
 
 ## True while a tile is being dragged towards the world.
 func dragging() -> bool:
@@ -160,93 +175,211 @@ func ghost() -> Node3D:
 
 func _build() -> void:
 	name = "BuildPalette"
-	mouse_filter = Control.MOUSE_FILTER_PASS
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_install_theme()
-	anchor_left = 0.5
-	anchor_right = 0.5
-	anchor_top = 1.0
-	anchor_bottom = 1.0
-	offset_top = -BAR_HEIGHT-18.0
-	offset_bottom = -18.0
-	get_viewport().size_changed.connect(_fit_dock)
-	_fit_dock()
-	_add_glass(self)
-	var style := _stone_style(Color(0.24,0.19,0.23,0.52),22)
-	style.content_margin_left = 16
-	style.content_margin_right = 16
-	style.content_margin_top = 9
-	style.content_margin_bottom = 10
-	_bar.add_theme_stylebox_override("panel",style)
-	_bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_library.visible = false
+	add_child(_library)
+	# Existing tile/control factories retain their ownership under the library.
+	_library.add_child(_hint)
+	_scrim.color = Color(0.04,0.035,0.055,0.18)
+	_scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_scrim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_scrim.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed: close_palette())
+	add_child(_scrim)
+	_bar.add_theme_stylebox_override("panel",_stone_style(Color(0.15,0.13,0.17,0.97),14))
 	add_child(_bar)
+	_bar.minimum_size_changed.connect(_fit_dock.call_deferred)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation",6)
+	column.add_theme_constant_override("separation",10)
 	_bar.add_child(column)
+	var header := HBoxContainer.new()
+	column.add_child(header)
+	var title := Label.new()
+	title.text = "Tools & objects"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size",13)
+	header.add_child(title)
+	var escape := Button.new()
+	escape.text = "Esc"
+	escape.tooltip_text = "Return to the landscape"
+	escape.pressed.connect(close_palette)
+	header.add_child(escape)
+	_search.placeholder_text = "Search plants, objects, terrain, actions…"
+	_search.custom_minimum_size.y = 34
+	_search.clear_button_enabled = true
+	_search.text_changed.connect(func(_text: String) -> void: _page = 0; _refresh_results())
+	_search.text_submitted.connect(func(_text: String) -> void: _activate_result())
+	column.add_child(_search)
 	_tabs.add_theme_constant_override("separation",3)
 	column.add_child(_tabs)
-	_deck.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_deck.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(_deck)
+	_add_category("All","All")
+	for entry: Array in editor.tool_groups(): _build_group(entry[0],entry[1])
+	_build_sky_group()
+	_add_category("Commands","Actions")
+	for id: String in _tiles:
+		var group := "Cover" if id in FOLIAGE else _category_of(_tiles[id].get_meta("tool"))
+		if _tiles[id].get_meta("tool") == "assets" and id not in FOLIAGE: group = "Place"
+		_entries[id] = {"button":_tiles[id],"group":group,"title":_title(id)}
+	for id: String in _sky_tiles:
+		_entries[id] = {"button":_sky_tiles[id],"group":"Sky","title":_sky_tiles[id].tooltip_text.get_slice("\n",0)}
+	for entry: Array in [["undo","Undo",editor.undo],["redo","Redo",editor.redo],
+		["save","Save garden",editor.save_garden],["open","Open garden",editor.open_garden],
+		["inspect","Leave build mode",func() -> void: editor.set_active(false)],
+		["sky_settings","Sky settings",func() -> void: _show_category(SKY_TAB); _details.visible = true; _tune.set_pressed_no_signal(true)]]:
+		var button := Button.new()
+		button.text = entry[1]
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.pressed.connect(func() -> void: entry[2].call(); close_palette())
+		_library.add_child(button)
+		_entries["command_"+entry[0]] = {"button":button,"group":"Commands","title":entry[1]}
+	_results.columns = 4
+	_results.add_theme_constant_override("h_separation",8)
+	_results.add_theme_constant_override("v_separation",8)
+	column.add_child(_results)
+	_empty.text = "No matches. Try another word or category."
+	_empty.add_theme_color_override("font_color",Color("aaa1af"))
+	_empty.custom_minimum_size.y = 100
+	column.add_child(_empty)
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation",8)
+	column.add_child(footer)
+	_page_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_page_label.add_theme_font_size_override("font_size",10)
+	_page_label.add_theme_color_override("font_color",Color("aaa1af"))
+	footer.add_child(_page_label)
+	_previous_page.text = "Previous"
+	_previous_page.pressed.connect(func() -> void: _turn_page(-1))
+	footer.add_child(_previous_page)
+	_next_page.text = "Next"
+	_next_page.pressed.connect(func() -> void: _turn_page(1))
+	footer.add_child(_next_page)
 	_details.name = "ToolDetails"
-	_details.add_theme_stylebox_override("panel",_stone_style(Color(0.22,0.17,0.22,0.96),18))
-	_details.anchor_left = 1.0
-	_details.anchor_right = 1.0
-	_details.offset_left = -384
-	_details.offset_right = 0
-	_details.offset_top = -206
-	_details.offset_bottom = -12
+	_details.add_theme_stylebox_override("panel",_stone_style(Color(0.16,0.14,0.18,0.97),12))
 	_details.visible = false
 	add_child(_details)
 	_details.add_child(_build_strip())
-	for entry: Array in editor.tool_groups():
-		_build_group(entry[0],entry[1])
-	_build_sky_group()
-	# The hint closes the tab row, so everything below it is controls.
-	_tabs.add_child(_build_hint())
-	_tune.text = "Tune"
-	_tune.tooltip_text = "Size, shape, color and tool actions"
+	_launcher.pressed.connect(open_palette)
+	_launcher.custom_minimum_size = Vector2(190,30)
+	_launcher.add_theme_stylebox_override("normal",_stone_style(Color(0.16,0.14,0.18,0.76),10))
+	add_child(_launcher)
+	_tune.icon = _line_icon("tune")
+	_tune.tooltip_text = "Current tool settings"
 	_tune.toggle_mode = true
-	_tune.focus_mode = Control.FOCUS_NONE
 	_tune.toggled.connect(func(open: bool) -> void: _details.visible = open)
-	_tabs.add_child(_tune)
-	for entry: Array in [["↶", "Undo", editor.undo], ["↷", "Redo", editor.redo],
-		["Scene", "Save, open and scene controls", func() -> void: scene_controls_requested.emit()]]:
-		var button := Button.new()
-		button.text = entry[0]
-		button.tooltip_text = entry[1]
-		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(entry[2])
-		_tabs.add_child(button)
-		if entry[0] == "Scene": _scene_button = button
-	_fit_dock()
+	add_child(_tune)
 	_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cursor.size = Vector2(TILE,TILE)
 	_cursor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_cursor.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_cursor.size = Vector2(TILE,TILE)
-	_cursor.pivot_offset = Vector2(TILE,TILE)*0.5
-	_cursor.top_level = true
 	_cursor.visible = false
-	_cursor.modulate = Color(1,1,1,0.9)
 	add_child(_cursor)
-	_show_category(_category_of(editor.mode))
+	get_viewport().size_changed.connect(_fit_dock)
+	_fit_dock()
 	_on_tool_changed(editor.mode)
+	close_palette()
 
-## One line beside the tabs. It never wraps, so the row keeps its height.
-func _build_hint() -> Control:
-	_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hint.clip_text = true
-	_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_hint.add_theme_font_size_override("font_size",12)
-	_hint.add_theme_color_override("font_color",Color("cbbcbf"))
-	_on_status_changed(editor.status)
-	return _hint
+func _add_category(id: String, title: String) -> void:
+	var tab := Button.new()
+	tab.text = title
+	tab.toggle_mode = true
+	tab.button_group = _tab_group
+	tab.focus_mode = Control.FOCUS_NONE
+	tab.pressed.connect(_browse.bind(id))
+	_tabs.add_child(tab)
+	_tabs_by_name[id] = tab
+
+func _browse(id: String) -> void:
+	if id == SKY_TAB: _show_category(SKY_TAB)
+	_search_category = id
+	_page = 0
+	_refresh_results()
+
+func open_palette() -> void:
+	if not editor.active: return
+	_bar.visible = true
+	_scrim.visible = true
+	_launcher.visible = false
+	_tune.visible = false
+	_details.visible = false
+	_tune.set_pressed_no_signal(false)
+	_search.text = ""
+	_search_category = "All"
+	_page = 0
+	_refresh_results()
+	_search.grab_focus()
+
+func close_palette() -> void:
+	_bar.visible = false
+	_scrim.visible = false
+	_launcher.visible = true
+	_tune.visible = true
+	_search.release_focus()
+
+func _refresh_results() -> void:
+	if _entries.is_empty(): return
+	for child in _results.get_children(): child.reparent(_library)
+	_matches.clear()
+	var query := _search.text.strip_edges().to_lower()
+	for id: String in _entries:
+		var entry: Dictionary = _entries[id]
+		if _search_category != "All" and entry.group != _search_category: continue
+		var words: String = entry.title.to_lower()+" "+id.replace("_"," ")
+		if id == "tree": words += " pine forest seed"
+		if id == "meadow": words += " grow flowers foliage"
+		if not query.is_empty() and not query.is_subsequence_of(words): continue
+		_matches.append(id)
+	if query.is_empty() and _search_category == "Cover":
+		var plants: Array[String] = []
+		for id: String in FOLIAGE:
+			if id in _matches: plants.append(id)
+		for id: String in _matches:
+			if id not in plants: plants.append(id)
+		_matches = plants
+	_page = clampi(_page,0,maxi(0,ceili(float(_matches.size())/_page_size)-1))
+	var first := _page*_page_size
+	var last := mini(first+_page_size,_matches.size())
+	for i in range(first,last):
+		var button: Button = _entries[_matches[i]].button
+		button.custom_minimum_size = Vector2((minf(552.0,get_viewport_rect().size.x-32.0)-48.0)/_results.columns,62)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.reparent(_results)
+		button.visible = true
+	_empty.visible = _matches.is_empty()
+	_page_label.text = "%d %s · Enter to choose" % [_matches.size(),"result" if _matches.size() == 1 else "results"] if _matches.size() <= _page_size else "%d–%d of %d" % [first+1,last,_matches.size()]
+	_previous_page.disabled = _page == 0
+	_next_page.disabled = last >= _matches.size()
+	_previous_page.visible = _matches.size() > _page_size
+	_next_page.visible = _previous_page.visible
+	for id: String in _tabs_by_name: _tabs_by_name[id].set_pressed_no_signal(id == _search_category)
+	_focus_index = 0
+	_mark_result()
+	_fit_dock()
+
+func _turn_page(direction: int) -> void:
+	_page += direction
+	_refresh_results()
+
+func _mark_result() -> void:
+	for i in range(_results.get_child_count()):
+		var button: Button = _results.get_child(i)
+		button.self_modulate = Color.WHITE
+		var style := _stone_style(Color(0.63,0.57,0.69,0.12 if i == _focus_index else 0.0),8)
+		style.shadow_size = 0
+		style.set_content_margin_all(4)
+		if button.icon != null: style.content_margin_bottom = 18
+		button.add_theme_stylebox_override("normal",style)
+
+func _activate_result() -> void:
+	if _results.get_child_count() == 0: return
+	_results.get_child(_focus_index).pressed.emit()
 
 func _build_strip() -> Control:
 	_strip.custom_minimum_size = Vector2(352,0)
 	_strip.add_theme_constant_override("separation",4)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_strip.add_child(_scroll)
 	var stack := VBoxContainer.new()
@@ -261,33 +394,33 @@ func _build_strip() -> Control:
 	_actions.add_theme_constant_override("h_separation",4)
 	_actions.add_theme_constant_override("v_separation",3)
 	stack.add_child(_actions)
+	_setting_pages.add_theme_constant_override("separation",8)
+	_setting_page_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_setting_pages.add_child(_setting_page_label)
+	for direction: int in [-1,1]:
+		var button := Button.new()
+		button.text = "Previous" if direction < 0 else "Next"
+		button.pressed.connect(func() -> void:
+			_setting_page = posmod(_setting_page+direction,maxi(1,ceili(_grid.get_child_count()/6.0)))
+			_paginate_settings())
+		_setting_pages.add_child(button)
+	stack.add_child(_setting_pages)
 	return _strip
 
+func _paginate_settings() -> void:
+	var count := _grid.get_child_count()
+	for i in range(count): _grid.get_child(i).visible = i/6 == _setting_page
+	_setting_pages.visible = count > 6
+	_setting_page_label.text = "%d / %d" % [_setting_page+1,maxi(1,ceili(count/6.0))]
+	_fit_details.call_deferred()
+
 func _build_group(title: String, tools: Array) -> void:
-	var tab := Button.new()
-	tab.text = TAB_TITLES.get(title,title)
-	tab.toggle_mode = true
-	tab.button_group = _tab_group
-	tab.focus_mode = Control.FOCUS_NONE
-	tab.pressed.connect(_show_category.bind(title))
-	_tabs.add_child(tab)
-	_tabs_by_name[title] = tab
-	var scroll := ScrollContainer.new()
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.visible = false
-	_deck.add_child(scroll)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation",8)
-	scroll.add_child(row)
-	_rows[title] = scroll
+	_add_category(title,TAB_TITLES.get(title,title))
 	for tool: String in tools:
 		if tool == "assets":
-			for piece: String in NativeAssetCatalog.PARTS:
-				row.add_child(_tile(piece,"assets",piece))
-			continue
-		row.add_child(_tile(tool,tool,""))
+			for piece: String in NativeAssetCatalog.PARTS: _library.add_child(_tile(piece,"assets",piece))
+		else:
+			_library.add_child(_tile(tool,tool,""))
 
 func _tile(id: String, tool: String, piece: String) -> Button:
 	var button := Button.new()
@@ -296,10 +429,17 @@ func _tile(id: String, tool: String, piece: String) -> Button:
 	button.button_group = _tile_group
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(TILE,TILE)
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	button.tooltip_text = "%s\n%s" % [_title(id),editor.TOOL_TEXT.get(tool,"")]
 	button.set_meta("tool",tool)
 	button.set_meta("piece",piece)
 	button.expand_icon = true
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if _portrait(id):
+		for state: String in ["normal","hover","pressed","hover_pressed"]:
+			var style: StyleBoxFlat = theme.get_stylebox(state,"Button").duplicate()
+			style.content_margin_bottom = 18
+			button.add_theme_stylebox_override(state,style)
 	if _portrait(id):
 		button.add_child(_caption(id))
 	else:
@@ -325,8 +465,8 @@ func _caption_text(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.clip_text = true
-	label.add_theme_font_size_override("font_size",10)
-	label.add_theme_color_override("font_color",Color("e8dcd6"))
+	label.add_theme_font_size_override("font_size",9)
+	label.add_theme_color_override("font_color",Color("b9b1bc"))
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE,Control.PRESET_MODE_MINSIZE)
@@ -354,6 +494,8 @@ func _draggable(id: String) -> bool:
 	return _placeable(id) or id == "mountain"
 
 func _category_of(tool: String) -> String:
+	if tool in FOLIAGE or tool == "assets" and editor.catalog_asset in FOLIAGE:
+		return "Cover"
 	for entry: Array in editor.tool_groups():
 		if tool in entry[1]:
 			return entry[0]
@@ -363,68 +505,87 @@ func _category_of(tool: String) -> String:
 ## the sky tab shapes the scene's weather while the same brush waits below it.
 func _show_category(title: String) -> void:
 	_category = title
-	for name: String in _rows:
-		_rows[name].visible = name == title
-		_tabs_by_name[name].set_pressed_no_signal(name == title)
 	_rebuild_strip()
 	_on_status_changed(editor.status)
 
-
 func _fit_dock() -> void:
-	var width := minf(DOCK_WIDTH,get_viewport_rect().size.x-36.0)
-	offset_left = -width*0.5
-	offset_right = width*0.5
+	var screen := get_viewport_rect().size
+	var width := minf(552.0,screen.x-32.0)
+	_bar.reset_size()
+	_bar.size.x = width
+	_bar.position = Vector2((screen.x-width)*0.5,maxf(16.0,(screen.y-_bar.size.y)*0.42))
+	var columns := 3 if width < 490 else 4
+	if _results.columns != columns:
+		_results.columns = columns
+		_page_size = columns*2
+		_refresh_results.call_deferred()
+	_launcher.position = Vector2((screen.x-218.0)*0.5,screen.y-44.0)
+	_launcher.size = Vector2(190,30)
+	_tune.position = _launcher.position+Vector2(198,0)
+	_tune.size = Vector2(26,30)
 	_fit_details.call_deferred()
-	var compact := width < 600.0
-	_hint.visible = not compact
-	for key: String in _tabs_by_name:
-		_tabs_by_name[key].text = "Objects" if compact and key == "Place" else TAB_TITLES.get(key,key)
-	if _scene_button != null: _scene_button.text = "•••" if compact else "Scene"
-	for control in _tabs.get_children():
-		if not control is Button: continue
-		control.add_theme_font_size_override("font_size",11 if compact else 12)
-		for state: String in ["normal","hover","pressed","hover_pressed","disabled","focus"]:
-			var style: StyleBoxFlat = theme.get_stylebox(state,"Button").duplicate()
-			style.content_margin_left = 5 if compact else 7
-			style.content_margin_right = 5 if compact else 7
-			control.add_theme_stylebox_override(state,style)
 
 func _fit_details() -> void:
 	if _scroll.get_child_count() == 0: return
 	var content: Control = _scroll.get_child(0)
-	var available := maxf(64.0,get_viewport_rect().size.y-BAR_HEIGHT-18.0-24.0)
+	var screen := get_viewport_rect().size
+	var available := maxf(64.0,screen.y-BAR_HEIGHT-42.0)
 	var height := clampf(content.get_combined_minimum_size().y+24.0,64.0,available)
-	_details.offset_top = -12.0-height
-	_details.offset_bottom = -12.0
+	_details.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_details.position = Vector2(screen.x-400.0,screen.y-BAR_HEIGHT-28.0-height)
+	_details.size = Vector2(384,height)
+
+## Small antialiased vector icons avoid platform-dependent Unicode glyphs.
+func _line_icon(kind: String) -> Texture2D:
+	var path := ""
+	match kind:
+		"undo": path = '<path d="M8 5 L3 10 L8 15 M3 10 H13 A6 6 0 0 1 13 22"/>'
+		"redo": path = '<path d="M16 5 L21 10 L16 15 M21 10 H11 A6 6 0 0 0 11 22"/>'
+		"close": path = '<path d="M6 6 L18 18 M18 6 L6 18"/>'
+		"menu": path = '<path d="M5 7 H19 M5 12 H19 M5 17 H19"/>'
+		"tune": path = '<path d="M5 7 H19 M5 17 H19"/><circle cx="9" cy="7" r="2.5" fill="#26232b"/><circle cx="15" cy="17" r="2.5" fill="#26232b"/>'
+	var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="#c8c1cc" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">'+path+'</g></svg>'
+	var image := Image.new()
+	image.load_svg_from_string(svg)
+	return ImageTexture.create_from_image(image)
 
 func _stone_style(color: Color, radius: int) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = color
 	style.set_corner_radius_all(radius)
-	style.set_border_width_all(1)
+	style.set_border_width_all(0)
 	style.border_color = Color(0.85,0.73,0.77,0.16)
 	style.set_content_margin_all(12)
-	style.shadow_color = Color(0.16,0.10,0.18,0.23)
-	style.shadow_size = 14
+	style.shadow_color = Color(0.06,0.04,0.08,0.12)
+	style.shadow_size = 5
 	style.shadow_offset = Vector2(0,4)
 	return style
 
 func _install_theme() -> void:
 	var look := Theme.new()
-	look.default_font_size = 12
+	look.default_font_size = 11
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Inter","Helvetica Neue","Arial"])
+	look.default_font = font
+	look.set_icon("clear","LineEdit",_line_icon("close"))
 	for state: String in ["normal","hover","pressed","hover_pressed","disabled","focus"]:
 		var color := Color(0.58,0.45,0.52,0.0)
 		if state == "hover": color.a = 0.20
-		if state in ["pressed","hover_pressed"]: color = Color(0.74,0.58,0.60,0.26)
-		var style := _stone_style(color,12)
+		if state in ["pressed","hover_pressed"]: color = Color(0.64,0.58,0.69,0.12)
+		var style := _stone_style(color,8)
 		style.shadow_size = 0
-		style.set_content_margin_all(7)
-		style.border_color.a = 0.30 if state in ["pressed","hover_pressed"] else 0.0
+		style.set_content_margin_all(4)
+		style.border_color.a = 0.0
 		look.set_stylebox(state,"Button",style)
 	look.set_color("font_color","Button",Color("e4d9d5"))
 	look.set_color("font_hover_color","Button",Color("fff0e3"))
 	look.set_color("font_pressed_color","Button",Color("fff0e3"))
 	look.set_color("font_color","Label",Color("e4d9d5"))
+	for state: String in ["normal","focus","read_only"]:
+		var field := _stone_style(Color(0.55,0.51,0.60,0.08),6)
+		field.shadow_size = 0
+		field.set_content_margin_all(6)
+		look.set_stylebox(state,"LineEdit",field)
 	for state: String in ["scroll","grabber","grabber_highlight","grabber_pressed"]:
 		var rail := StyleBoxFlat.new()
 		rail.bg_color = Color(0.75,0.62,0.68,0.10 if state == "scroll" else 0.38)
@@ -432,22 +593,13 @@ func _install_theme() -> void:
 		rail.content_margin_top = 2
 		rail.content_margin_bottom = 2
 		look.set_stylebox(state,"HScrollBar",rail)
+		var vertical: StyleBoxFlat = rail.duplicate()
+		vertical.content_margin_top = 0
+		vertical.content_margin_bottom = 0
+		vertical.content_margin_left = 1
+		vertical.content_margin_right = 1
+		look.set_stylebox(state,"VScrollBar",vertical)
 	theme = look
-
-func _add_glass(parent: Control) -> void:
-	var glass := ColorRect.new()
-	glass.name = "DreamGlass"
-	glass.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	glass.offset_left = -14
-	glass.offset_right = 14
-	glass.offset_top = -14
-	glass.offset_bottom = 14
-	var material := ShaderMaterial.new()
-	material.shader = preload("res://shaders/nursery_glass.gdshader")
-	glass.material = material
-	parent.add_child(glass)
-	glass.resized.connect(func() -> void: material.set_shader_parameter("panel_size",glass.size))
 
 ## Only the visible slice of the current shelf renders, at 24 Hz. Hidden and
 ## horizontally clipped thumbnails keep their last texture, without 3D work.
@@ -459,12 +611,9 @@ func _animate_portraits(delta: float) -> void:
 		return
 	var step := _portrait_clock
 	_portrait_clock = 0.0
-	if not _rows.has(_category):
-		return
-	var clip: Rect2 = _rows[_category].get_global_rect()
 	for id: String in _portraits:
 		var tile: Button = _tiles[id]
-		if not tile.is_visible_in_tree() or not clip.intersects(tile.get_global_rect()):
+		if not tile.is_visible_in_tree():
 			continue
 		var portrait: Dictionary = _portraits[id]
 		portrait.pivot.rotation.y += step*0.28
@@ -480,40 +629,15 @@ func _sky_ready() -> bool:
 ## Swatches for the three moods on one row and every weather preset on the next,
 ## so a whole sky is one click while the tool in hand waits untouched.
 func _build_sky_group() -> void:
-	if not _sky_ready():
-		return
-	var tab := Button.new()
-	tab.text = SKY_TAB
-	tab.toggle_mode = true
-	tab.button_group = _tab_group
-	tab.focus_mode = Control.FOCUS_NONE
-	tab.pressed.connect(_show_category.bind(SKY_TAB))
-	_tabs.add_child(tab)
-	_tabs_by_name[SKY_TAB] = tab
-	var scroll := ScrollContainer.new()
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.visible = false
-	_deck.add_child(scroll)
-	_rows[SKY_TAB] = scroll
-	var rows := HBoxContainer.new()
-	rows.add_theme_constant_override("separation",12)
-	scroll.add_child(rows)
-	var moods := HBoxContainer.new()
-	moods.add_theme_constant_override("separation",8)
-	rows.add_child(moods)
+	if not _sky_ready(): return
+	_add_category(SKY_TAB,SKY_TAB)
 	for i in range(MOODS.size()):
 		var mood: Dictionary = MOODS[i]
-		moods.add_child(_sky_tile("mood_%d" % i,mood.title,"A whole sky at once",mood,_apply_mood.bind(i)))
-	var weather := HBoxContainer.new()
-	weather.add_theme_constant_override("separation",8)
-	rows.add_child(weather)
+		_library.add_child(_sky_tile("mood_%d" % i,mood.title,"A whole sky at once",mood,_apply_mood.bind(i)))
 	var names: Array = editor.scene._precipitation.PRESET_NAMES
 	for i in range(names.size()):
 		var key: String = names[i]
-		var look: Dictionary = SKIES.get(key,SKIES.clear)
-		weather.add_child(_sky_tile("weather_"+key,_title(key),"Weather preset",look,_choose_weather.bind(i)))
+		_library.add_child(_sky_tile("weather_"+key,_title(key),"Weather preset",SKIES.get(key,SKIES.clear),_choose_weather.bind(i)))
 
 func _sky_tile(id: String, title: String, hint: String, look: Dictionary, apply: Callable) -> Button:
 	var button := Button.new()
@@ -531,7 +655,7 @@ func _sky_tile(id: String, title: String, hint: String, look: Dictionary, apply:
 	swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(swatch)
 	button.add_child(_caption_text(title))
-	button.pressed.connect(apply)
+	button.pressed.connect(func() -> void: apply.call(); close_palette())
 	button.mouse_entered.connect(func() -> void:
 		_scale_tile(button,HOVER_SCALE)
 		_on_status_changed("%s · %s" % [title,hint]))
@@ -555,7 +679,8 @@ func _choose_weather(index: int) -> void:
 func _on_sky_toggle_requested() -> void:
 	if not _sky_ready():
 		return
-	_show_category(_category_of(editor.mode) if _category == SKY_TAB else SKY_TAB)
+	open_palette()
+	_browse(SKY_TAB)
 
 ## Every dial the scene's own study offers for its light, air and weather.
 func _fill_sky_strip() -> void:
@@ -849,6 +974,7 @@ func _choose(id: String) -> void:
 	if button.get_meta("piece") != "":
 		editor.catalog_asset = button.get_meta("piece")
 	editor.select_tool(button.get_meta("tool"))
+	close_palette()
 
 func _scale_tile(button: Button, factor: float) -> void:
 	if not is_instance_valid(button):
@@ -884,6 +1010,7 @@ func _on_setting_changed(property: String, value: float) -> void:
 func _on_status_changed(text: String) -> void:
 	_hint.text = "Sky & atmosphere" if _category == SKY_TAB else _title(editor.catalog_asset if editor.mode == "assets" else editor.mode)
 	_hint.tooltip_text = text
+	_launcher.text = _hint.text+"    ·    "+("⌘ K" if OS.get_name() == "macOS" else "Ctrl K")
 
 func _on_active_changed(enabled: bool) -> void:
 	visible = enabled
@@ -894,6 +1021,8 @@ func _on_active_changed(enabled: bool) -> void:
 
 ## The tool's sliders, actions and colors live in the expandable Tune panel.
 func _rebuild_strip() -> void:
+	_setting_page = 0
+	_paginate_settings.call_deferred()
 	for child in _grid.get_children():
 		_grid.remove_child(child)
 		child.queue_free()
@@ -966,7 +1095,9 @@ func _picker(id: String, colour: Color, apply: Callable) -> ColorPickerButton:
 func _on_tile_input(event: InputEvent, id: String) -> void:
 	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
 		return
-	_choose(id)
+	var button: Button = _tiles[id]
+	if button.get_meta("piece") != "": editor.catalog_asset = button.get_meta("piece")
+	editor.select_tool(button.get_meta("tool"))
 	if not _draggable(id):
 		return
 	_drag_id = id
@@ -974,6 +1105,28 @@ func _on_tile_input(event: InputEvent, id: String) -> void:
 	_press_at = event.global_position
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K and (event.ctrl_pressed or event.meta_pressed):
+		if not editor.active: editor.set_active(true)
+		editor.scene._ui.visible = true
+		if _bar.visible: close_palette()
+		else: open_palette()
+		get_viewport().set_input_as_handled()
+		return
+	if not is_visible_in_tree(): return
+	if event is InputEventKey and event.pressed and not event.echo:
+		if _bar.visible and event.keycode == KEY_ESCAPE:
+			close_palette()
+			get_viewport().set_input_as_handled()
+			return
+		if _bar.visible and event.keycode in [KEY_UP,KEY_DOWN]:
+			_focus_index = clampi(_focus_index+(-1 if event.keycode == KEY_UP else 1),0,maxi(0,_results.get_child_count()-1))
+			_mark_result()
+			get_viewport().set_input_as_handled()
+			return
+		if _bar.visible and event.keycode in [KEY_PAGEUP,KEY_PAGEDOWN]:
+			_turn_page(-1 if event.keycode == KEY_PAGEUP else 1)
+			get_viewport().set_input_as_handled()
+			return
 	if not _pressed:
 		return
 	if event is InputEventMouseMotion:
@@ -991,6 +1144,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _begin_drag() -> void:
+	close_palette()
 	_dragging = true
 	_bob = 0.0
 	_cursor.texture = _thumbs.get(_drag_id)
@@ -1143,8 +1297,8 @@ class ToolGlyph:
 
 	func _draw() -> void:
 		var middle := size*Vector2(0.5,0.44)
-		var span := minf(size.x,size.y)*0.26
-		var color := Color("cfe0cd")
+		var span := minf(size.x,size.y)*0.19
+		var color := Color("bdb7c4")
 		match kind:
 			"up","down":
 				var way := -1.0 if kind == "up" else 1.0
