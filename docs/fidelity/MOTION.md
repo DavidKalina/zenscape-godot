@@ -78,3 +78,18 @@ Current remaining work is tracked in [PARITY.md](PARITY.md). The source celestia
 shader/lighting rig, shared wind, native valley fog, original Bigfoot peek rig,
 camera tremor and precipitation controls have since been added. Full cloud,
 weather, water-detail, growth and wildlife behavior are still incomplete.
+
+## 2026-09-07: camera damping and frame pacing
+
+The source camera is stock OrbitControls with damping: pointer deltas pool and
+5 % of the pool is applied per frame, so the view glides and settles. The
+fidelity scene now pools orbit and pan deltas (`_orbit_delta`, `_pan_delta`) and
+eases them in `_ease_camera` with a frame-rate-independent form of the same
+constant; rotation is `TAU` per viewport height and pan follows the source's
+`2 * distance * tan(fov / 2) / height` per pixel. Wheel zoom uses the source's
+0.95 per 100 px (Godot's precise factor is 0.03 per px), trackpad momentum
+arrives as `InputEventPanGesture` and pinch as `InputEventMagnifyGesture`, the
+idle spin cancels on the first press, and drag motion is read in `_input` so a
+drag crossing the control panel keeps moving the camera. Metal vsync produced a
+~1 s stall once per session and a 60 Hz cadence at the 120 Hz budget, so vsync
+is disabled and `application/run/max_fps` paces the loop at 120.

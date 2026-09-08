@@ -131,6 +131,9 @@ void fragment() {
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	METALLIC = metalness_value;
+	// The source scene has no environment map; sky reflection would lift and
+	// desaturate every shaded facet.
+	SPECULAR = 0.0;
 	// Three.js RE_IndirectDiffuse_Physical applies BRDF_Lambert (albedo / PI)
 	// to hemisphere irradiance. Emission bypasses Godot's BRDF, so include it here.
 	EMISSION = emissive_color + tint * mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;

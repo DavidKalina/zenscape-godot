@@ -19,5 +19,6 @@ void light() {
 	float visibility = 0.5 / max(nl * sqrt(a2 + (1.0 - a2) * nv * nv) + nv * sqrt(a2 + (1.0 - a2) * nl * nl), 0.0001);
 	vec3 f0 = mix(vec3(0.04), ALBEDO, metalness_value);
 	vec3 fresnel = f0 + (1.0 - f0) * pow(1.0 - vh, 5.0);
-	SPECULAR_LIGHT += energy * nl * distribution * visibility * fresnel * SPECULAR_AMOUNT;
+	// Three.js has no per-light specular scale; SPECULAR_AMOUNT would halve the sheen.
+	SPECULAR_LIGHT += energy * nl * distribution * visibility * fresnel;
 }

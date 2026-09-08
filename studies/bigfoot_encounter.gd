@@ -130,6 +130,9 @@ func setup(geometry: Node3D) -> void:
 	_anchor = {"grip": _frame.to_global(Vector3(0.455, 1.67, -0.356)), "rotation": _frame.global_basis.get_rotation_quaternion() * Basis.from_euler(Vector3(0, -PI / 3.0, PI / 2.0), EULER_ORDER_YXZ).get_rotation_quaternion()}
 	_frame.visible = true
 	rig.visible = false
+	# The source seed has no encounter tree; show the native one only while
+	# Bigfoot is out so it does not sit in every reference framing.
+	_tree.visible = false
 	print("Bigfoot clearing: ", location)
 
 func set_authored_tree(pose: Variant) -> void:
@@ -142,7 +145,7 @@ func set_authored_tree(pose: Variant) -> void:
 		_frame.transform = desired
 		_anchor = {"grip":_frame.to_global(Vector3(0.455,1.67,-0.356)),"rotation":_frame.global_basis.get_rotation_quaternion()*Basis.from_euler(Vector3(0,-PI/3.0,PI/2.0),EULER_ORDER_YXZ).get_rotation_quaternion()}
 	authored_tree = pose != null
-	_tree.visible = not authored_tree # The editor renders the saved tree itself.
+	_tree.visible = active and not authored_tree # The editor renders the saved tree itself.
 
 func update_growth(terrain: float, foliage: float) -> void:
 	if not available:
@@ -162,6 +165,7 @@ func summon(fog := false) -> void:
 	rig.position = Vector3(1.05, 0, 1.05) if silhouette else Vector3(0, 0, -0.65)
 	rig.visible = true
 	_frame.visible = true
+	_tree.visible = not authored_tree
 
 func _pose(time: float, camera_position: Vector3) -> void:
 	var mode := "look" if silhouette else "peek"
@@ -203,9 +207,11 @@ func concealed(camera: Camera3D) -> bool:
 func advance(delta: float, paused: bool, camera_position: Vector3, camera: Camera3D = null, growth := 1.0, mist := 0.0) -> void:
 	if not available:
 		return
+	_tree.visible = active and not authored_tree
 	if growth < 0.99:
 		active = false
 		rig.visible = false
+		_tree.visible = false
 		age = 0.0
 		return
 	if paused:

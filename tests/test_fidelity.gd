@@ -150,8 +150,12 @@ func _check_scene() -> void:
 	var target: Vector3 = scene.target
 	var motion := InputEventMouseMotion.new()
 	motion.relative = Vector2(20, 10)
-	scene._unhandled_input(motion)
+	scene._input(motion)
+	_check(scene.target.is_equal_approx(target), "Pan pools until the frame eases it")
+	scene._process(1.0 / 60.0)
 	_check(not scene.target.is_equal_approx(target), "Middle drag pans the scene")
+	scene._process(1.0)
+	_check(scene._pan_delta.length() < 1.0, "Pan settles to under 5 % within a second")
 	button.pressed = false
 	scene._input(button)
 	_check(not scene._panning, "Releasing over UI ends pan")
