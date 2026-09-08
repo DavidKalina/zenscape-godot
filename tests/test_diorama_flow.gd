@@ -25,6 +25,16 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	check(scene._menu.visible and not scene._has_world,"Startup offers a menu without creating a world")
+	check(not scene._paused and scene._auto_orbit,"Cover landscape is alive and gently rotating")
+	check(not scene._chunk_editor.data.ponds.is_empty() and not scene._chunk_editor.data.objects.is_empty(),"Title has a landscape without creating a saved world")
+	check(scene._menu.buttons[1].has_focus() and not scene._continue.visible,"First launch selects New and hides unavailable Continue")
+	check(not scene._save_copy.visible,"Cover does not offer Save a copy")
+	var down := InputEventKey.new()
+	down.keycode = KEY_DOWN
+	down.pressed = true
+	root.push_input(down)
+	await process_frame
+	check(scene._menu.buttons[2].has_focus(),"Arrow key moves selection to Open")
 	scene.new_diorama()
 	var editor = scene._chunk_editor
 	var first: String = editor.save_path
@@ -35,6 +45,12 @@ func _run() -> void:
 	editor.refresh()
 	check(id>0 and scene.invite_bigfoot(Vector3.ZERO),"Blank scene can receive an object and a living Bigfoot")
 	check(scene.save_current(),"Save succeeds")
+	scene.show_menu()
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	scene._input(escape)
+	check(not scene._menu.visible and not scene._paused,"Escape returns from the menu without leaving the world paused")
 	scene.show_menu()
 	scene.new_diorama()
 	var second: String = editor.save_path
@@ -56,11 +72,14 @@ func _run() -> void:
 	scene.show_menu()
 	scene.continue_world()
 	check(scene._has_world and scene.resident_enabled,"Continue can load from disk")
-	for size in [Vector2i(960,640),Vector2i(1440,900)]:
+	for size in [Vector2i(480,320),Vector2i(960,640),Vector2i(1440,900)]:
 		root.size = size
 		await process_frame
 		scene._layout_shell()
 		check(root.get_visible_rect().encloses(Rect2(scene._menu.position,scene._menu.size*scene._menu.scale)),"Menu fits "+str(size))
+		for control in scene._menu._frame.get_children():
+			if control is Control and control.visible:
+				check(root.get_visible_rect().grow(1).encloses(control.get_global_rect()),"Title content fits "+str(size)+": "+str(control.name))
 	scene.free()
 	for name in DirAccess.get_files_at(folder): DirAccess.remove_absolute(folder+"/"+name)
 	DirAccess.remove_absolute(folder)

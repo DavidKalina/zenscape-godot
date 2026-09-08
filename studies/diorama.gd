@@ -3,7 +3,9 @@ extends "res://studies/fidelity_life.gd"
 var library_path := "user://dioramas"
 var recent_file := "user://diorama-recent.cfg"
 var _has_world := false
-var _menu: PanelContainer
+var _menu: Control
+var _save_copy: Button
+var _menu_orbit := false
 var _toolbar: HBoxContainer
 var _home_button: Button
 var _notice: Label
@@ -45,6 +47,9 @@ func _ready() -> void:
 	_frame_diorama()
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
+	# The cover is disposable; New restores the blank-world defaults above.
+	_chunk_editor.form_landscape("plateau","",false)
+	_frame_diorama()
 	_make_shell()
 	_chunk_editor.status_changed.connect(func(text: String) -> void:
 		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
@@ -165,28 +170,14 @@ func _make_shell() -> void:
 	_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_notice)
 	_notice.resized.connect(_layout_shell)
-	_menu = PanelContainer.new()
-	_menu.custom_minimum_size = Vector2(440,490)
-	_menu.add_theme_stylebox_override("panel",_style(Color("292530f5"),Color("9a8361"),22))
+	_menu = preload("res://scripts/title_screen.gd").new()
 	root.add_child(_menu)
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation",10)
-	_menu.add_child(column)
-	var title := Label.new()
-	title.text = "ZenScape"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size",38)
-	column.add_child(title)
-	var subtitle := Label.new()
-	subtitle.text = "A little wilderness, made by you."
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(subtitle)
-	_continue = _button(column,"Continue",continue_world)
-	_button(column,"New diorama",new_diorama)
-	_button(column,"Open diorama…",show_open)
-	_button(column,"Save a copy…",show_save_copy)
-	_button(column,"Settings",func() -> void: _settings.popup_centered(Vector2i(400,260)))
-	_button(column,"Quit",_quit_safely)
+	_continue = _menu.add_action("Continue your diorama","A little wilderness, waiting for you.",continue_world)
+	_menu.add_action("New diorama","",new_diorama)
+	_menu.add_action("Open diorama…","",show_open)
+	_save_copy = _menu.add_action("Save a copy…","",show_save_copy)
+	_menu.add_action("Settings","",func() -> void: _settings.popup_centered(Vector2i(400,260)))
+	_menu.add_action("Quit","",_quit_safely)
 	_file_dialog = FileDialog.new()
 	_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_file_dialog.filters = PackedStringArray(["*.json ; ZenScape diorama"])
@@ -236,9 +227,6 @@ func _make_shell() -> void:
 func _layout_shell() -> void:
 	if _menu == null: return
 	var viewport_size := get_viewport().get_visible_rect().size
-	_menu.size = _menu.get_combined_minimum_size()
-	_menu.scale = Vector2.ONE*minf(1.0,minf((viewport_size.x-32)/_menu.size.x,(viewport_size.y-32)/_menu.size.y))
-	_menu.position = (viewport_size-_menu.size*_menu.scale)*0.5
 	_toolbar.size = _toolbar.get_combined_minimum_size()
 	var kit_scale := minf(1.0,minf(viewport_size.x/1080.0,viewport_size.y/720.0))
 	_toolbar.scale = Vector2.ONE*minf(kit_scale,(viewport_size.x-180)/_toolbar.size.x)
@@ -266,16 +254,21 @@ func show_menu() -> void:
 	if _landscape_editor != null: _landscape_editor.hide()
 	_build_palette.close_palette()
 	_build_palette.set_process_input(false)
-	if not _menu.visible: _before_menu_paused = _paused
-	_paused = true
+	if not _menu.visible:
+		_before_menu_paused = _paused
+		_menu_orbit = _auto_orbit
+	_paused = _has_world
+	_auto_orbit = not _has_world
 	_ui.hide()
 	_toolbar.hide()
 	_menu.show()
 	_continue.disabled = not _has_world and not FileAccess.file_exists(_recent_path())
-	if not _continue.disabled: _continue.grab_focus()
+	_save_copy.disabled = not _has_world
+	_menu.present(not _has_world)
 
 func close_menu() -> void:
 	_menu.hide()
+	_auto_orbit = _menu_orbit
 	_toolbar.show()
 	_build_palette.set_process_input(true)
 	_paused = _before_menu_paused
@@ -404,7 +397,12 @@ func restore_diorama_state(state: Dictionary) -> void:
 
 func _input(event: InputEvent) -> void:
 	if not is_node_ready(): return
-	if _menu != null and (_menu.visible or _file_dialog.visible or _settings.visible): return
+	if _file_dialog != null and (_file_dialog.visible or _settings.visible): return
+	if _menu != null and _menu.visible:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and _has_world:
+			close_menu()
+			get_viewport().set_input_as_handled()
+		return
 	super._input(event)
 
 func blocks_world_input(point: Vector2) -> bool:
