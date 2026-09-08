@@ -47,7 +47,7 @@ func setup(owner_scene: Node3D) -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_button(row,"×",hide)
 	_label(body,"A beautiful starting point. Make it your own.")
-	var help := _label(body,"Choose a card to replace terrain, planting and water. Undo restores your previous landscape.")
+	var help := _label(body,"Choose a complete world: terrain, planting, water, lighting and atmosphere. Undo restores your previous world.")
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.modulate = Color("bdc9c6")
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -104,7 +104,7 @@ func setup(owner_scene: Node3D) -> void:
 	var create_options := VBoxContainer.new()
 	create_options.add_theme_constant_override("separation",8)
 	body.add_child(create_options)
-	var note := _label(create_options,"Previews use suggested colors; your palette stays.")
+	var note := _label(create_options,"Each preset includes its pictured mood. Biome changes and variations keep your custom look.")
 	note.add_theme_font_size_override("font_size",11)
 	note.modulate = Color("bdc9c6")
 	create_options.add_child(status)

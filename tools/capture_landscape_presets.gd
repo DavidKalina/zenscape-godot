@@ -23,8 +23,6 @@ func _run() -> void:
 		for id in Presets.PRESETS:
 			if only != "" and id != only: continue
 			await scene._chunk_editor.form_landscape(id,"",false)
-			preload("res://scripts/scene_look_presets.gd").apply(scene,{"redwood_grove":"enchanted_forest","valley":"golden_meadow","plateau":"alpine_morning","cone":"alpine_morning","ridgeback":"enchanted_forest","horn":"alpine_morning","canyon":"golden_meadow","terraced_pools":"after_the_rain"}[id])
-			if id == "canyon": scene._celestial.look.choose("Desert")
 			var picture := await shot()
 			picture.save_png("res://docs/landscapes/"+id+".png")
 			picture.resize(480,320,Image.INTERPOLATE_LANCZOS)

@@ -13,8 +13,6 @@ func run() -> void:
 	scene._paused = true
 	scene._ui.hide()
 	await scene._chunk_editor.form_landscape("redwood_grove","",false)
-	preload("res://scripts/scene_look_presets.gd").apply(scene,"golden_meadow")
-	scene._atmosphere.set_fog(0.45)
 	scene._auto_orbit = false
 	scene.target = Vector3(0,7,0)
 	scene.distance = 43.0

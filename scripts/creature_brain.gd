@@ -7,9 +7,9 @@ enum Phase { REST, NOTICE, MOVE, INSPECT, BLOCKED }
 const CURIOUS_SPEED := 0.50
 const WANDER_SPEED := 0.85
 const EXCITED_SPEED := 1.50
-var rest_min := 2.0
-var rest_max := 4.0
-var inspection_duration := 2.8
+var rest_min := 4.0
+var rest_max := 8.0
+var inspection_duration := 4.5
 var scenery_chance := 0.7
 var react_immediately := false
 var phase := Phase.REST
@@ -75,10 +75,10 @@ func advance(delta: float) -> void:
 		Phase.REST:
 			_choose_next()
 
-func investigate(point: Vector3, excited := false, id := "") -> bool:
+func investigate(point: Vector3, excited := false, id := "", minimum_travel := 0.0) -> bool:
 	if actor == null or not actor.can_roam() or not point.is_finite(): return false
 	var route := _approach_route(point)
-	if route.is_empty(): return false
+	if route.is_empty() or actor.global_position.distance_to(route[-1])<minimum_travel: return false
 	actor.stop_walking()
 	_route = route
 	_waypoint = 0
@@ -116,13 +116,16 @@ func _choose_next() -> void:
 			var interest: Dictionary = interests[(start+n)%interests.size()]
 			var id := str(interest.id)
 			if float(_cooldowns.get(id,0.0))>_clock: continue
-			if actor.global_position.distance_to(interest.position)>10.0: continue
-			if investigate(interest.position,false,id): return
-	for attempt in range(8):
-		var angle := _rng.randf()*TAU
-		var radius := _rng.randf_range(2.0,4.5)
-		var candidate: Variant = navigation.nearest_safe(actor.global_position+Vector3(cos(angle)*radius,0,sin(angle)*radius))
-		if candidate == null or actor.global_position.distance_to(candidate)<1.0: continue
+			var distance := actor.global_position.distance_to(interest.position)
+			if distance<5.5 or distance>12.0: continue
+			if investigate(interest.position,false,id,4.0): return
+	for attempt in range(16):
+		# Prefer continuing ahead; widen the search if terrain closes that direction.
+		var angle := actor.global_rotation.y+_rng.randf_range(-0.8,0.8) if attempt<4 else _rng.randf()*TAU
+		var confined := attempt >= 8
+		var radius := _rng.randf_range(2.0,4.5) if confined else _rng.randf_range(6.0,10.0)
+		var candidate: Variant = navigation.nearest_safe(actor.global_position+Vector3(sin(angle)*radius,0,cos(angle)*radius))
+		if candidate == null or actor.global_position.distance_to(candidate)<(1.0 if confined else 5.0): continue
 		var route: PackedVector3Array = navigation.path(actor.global_position,candidate)
 		if route.is_empty(): continue
 		_route = route
@@ -136,6 +139,9 @@ func _choose_next() -> void:
 	_blocked()
 
 func _move(delta: float) -> void:
+	# Paths include the start point; it requires no movement or swept check.
+	while _waypoint < _route.size() and actor.global_position.distance_squared_to(_route[_waypoint])<0.000001:
+		_waypoint += 1
 	if _waypoint >= _route.size():
 		actor.stop_walking()
 		if _interest_id.is_empty():
@@ -147,16 +153,21 @@ func _move(delta: float) -> void:
 			reaction.emit("?","Taking a closer look.")
 		return
 	var destination := _route[_waypoint]
-	if not navigation.segment_safe(actor.global_position,destination):
+	if not navigation.motion_safe(actor.global_position,destination,speed*minf(delta,0.05)):
 		_blocked()
 		return
 	if actor.walk_step(destination,speed,delta): _waypoint += 1
 
 func _rest(duration: float) -> void:
 	actor.stop_walking()
+	actor.notice(actor.global_position+actor.global_basis*Vector3(1.8,1.7,5.0))
 	_route.clear()
 	phase = Phase.REST
 	_wait = duration
+
+## Automatic activities wait for a completed journey and its observation pause.
+func ready_for_activity(delta := 0.0) -> bool:
+	return phase == Phase.REST and _wait <= minf(delta,0.1)
 
 func reset_behavior() -> void:
 	_pending_interest.clear()
@@ -169,7 +180,7 @@ func _blocked() -> void:
 	actor.stop_walking()
 	_route.clear()
 	phase = Phase.BLOCKED
-	_wait = 1.5
+	_wait = _rng.randf_range(rest_min,rest_max)
 	if _blocked_cooldown <= 0.0:
 		actor.notice(_destination+Vector3.UP)
 		reaction.emit("?","That way changed. Let's try somewhere else.")

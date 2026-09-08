@@ -22,11 +22,17 @@ static func mesh(part: String) -> ArrayMesh:
 			var h := 8.0+tier*1.05
 			var radius := 2.0-tier*0.25
 			var tip := h+3.0-tier*0.1
+			var center := Vector3(sin(tier*2.1)*0.22,0,cos(tier*1.7)*0.18)
+			var rim: Array[Vector3] = []
 			for side in range(9):
-				var a := side*TAU/9.0+tier*0.2
-				var b := (side+1)*TAU/9.0+tier*0.2
+				var angle := side*TAU/9.0+tier*0.47
+				var reach := radius*rng.randf_range(0.72,1.12)
+				rim.append(center+Vector3(cos(angle)*reach,h+rng.randf_range(-0.25,0.25),sin(angle)*reach))
+			for side in range(9):
+				# Broad missing boughs create openings without fine alpha cutouts.
+				if tier < 4 and side == (tier*3+1)%9: continue
 				var tint := Color("315735").lerp(Color("577345"),rng.randf()*0.65).srgb_to_linear()
-				for p in [Vector3(cos(a)*radius,h,sin(a)*radius),Vector3(cos(b)*radius,h,sin(b)*radius),Vector3(0.2,tip,0)]:
+				for p in [rim[side],rim[(side+1)%9],Vector3(0.2,tip,0)+center*0.5]:
 					st.set_color(tint)
 					st.add_vertex(p)
 	else:
@@ -51,6 +57,8 @@ static func mesh(part: String) -> ArrayMesh:
 	material.set_shader_parameter("plant_growth",true)
 	material.set_shader_parameter("conifer_sway",part != "redwood-fern")
 	material.set_shader_parameter("conifer_height",15.0)
+	if part == "redwood-canopies":
+		material.set_shader_parameter("foliage_transmission",0.42)
 	if part == "redwood-fern":
 		material.set_shader_parameter("sway_enabled",true)
 		material.set_shader_parameter("sway_shape",Vector4(0,0.6,0.045,0.025))

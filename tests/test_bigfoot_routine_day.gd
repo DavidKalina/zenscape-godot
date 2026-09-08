@@ -17,7 +17,8 @@ func _run() -> void:
 	var unsafe := 0
 	var water_count: int = scene.fish.population.size()
 	var previous := ""
-	for frame in range(60*250):
+	# Longer journeys and arrival pauses spread the same activities over more time.
+	for frame in range(60*360):
 		var before: Vector3 = scene.creature.position
 		scene._process(1.0/60.0)
 		distance += before.distance_to(scene.creature.position)

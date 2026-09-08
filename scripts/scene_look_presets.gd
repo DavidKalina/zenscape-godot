@@ -22,34 +22,43 @@ const PRESETS := {
 	"after_the_rain": {"title":"After the rain","description":"Fresh greens and clearing skies.","palette":"Meadow","phase":0.355,"weather":"fair","clouds":0.29,"mist":0.35,"haze":0.15,"wind":0.5,
 		"strength":0.62,"wet":0.55,"humidity":0.75,"rainbow":0.6,"colors":{"sky":"739fb5","horizon":"76949c","glow":"e0d7b7","grass":"70a268","foliage":"528468","water":"619f9f"}},
 }
+# World presets can specialize a look without changing the standalone Looks gallery.
 static var _looks := {}
 
-static func look_document(id: String) -> Dictionary:
-	if not _looks.has(id):
-		var recipe: Dictionary = PRESETS[id]
-		var look := Look.new()
-		look.palette = "Custom"
-		look.colors = Look.preset_colors(recipe.palette)
-		for key in recipe.colors: look.colors[key] = Color(recipe.colors[key])
-		for key in look.settings: look.settings[key] = recipe.get(key,1.0)
-		_looks[id] = look.document()
-	return _looks[id].duplicate(true)
+static func recipe(id: String, overrides: Dictionary = {}) -> Dictionary:
+	var result: Dictionary = PRESETS[id].duplicate(true)
+	for key in overrides:
+		if key == "colors": result.colors.merge(overrides.colors,true)
+		else: result[key] = overrides[key]
+	return result
 
-static func controls(id: String) -> Dictionary:
-	var p: Dictionary = PRESETS[id]
+static func look_document(id: String, overrides: Dictionary = {}) -> Dictionary:
+	if overrides.is_empty() and _looks.has(id): return _looks[id].duplicate(true)
+	var p := recipe(id,overrides)
+	var look := Look.new()
+	look.palette = "Custom"
+	look.colors = Look.preset_colors(p.palette)
+	for key in p.colors: look.colors[key] = Color(p.colors[key])
+	for key in look.settings: look.settings[key] = p.get(key,1.0)
+	var document := look.document()
+	if overrides.is_empty(): _looks[id] = document.duplicate(true)
+	return document
+
+static func controls(id: String, overrides: Dictionary = {}) -> Dictionary:
+	var p := recipe(id,overrides)
 	return {
 		"_celestial":{"phase":p.phase,"cycling":false,"night_fill":p.get("night_fill",1.0),"aurora_strength":p.get("aurora",0.0),"rainbow_strength":p.get("rainbow",0.0),"_rainbow_growth":1.0 if p.get("rainbow",0.0)>0 else 0.0,"_target":-1.0},
-		"_atmosphere":{"strength":p.wind,"direction_angle":25.0,"_fog_target":p.mist,"_haze_target":p.haze,"summit_mist":0.65,"shroud":0.0,"loosen":0.5,"ray_strength":0.65},
+		"_atmosphere":{"strength":p.wind,"direction_angle":p.get("wind_direction",25.0),"_fog_target":p.mist,"_haze_target":p.haze,"summit_mist":p.get("summit_mist",0.65),"shroud":0.0,"loosen":0.5,"ray_strength":p.get("rays",0.65)},
 		"_precipitation":{"cloud_override":p.clouds,"cold_override":p.get("cold",0.0)},
 		"surface_weather":{"autumn":p.get("autumn",0.0),"target_autumn":p.get("autumn",0.0),"cold":p.get("cold",0.0),"target_cold":p.get("cold",0.0),"ice":p.get("ice",0.0),"snow_cover":p.get("snow",0.0),"ground_wet":p.get("wet",0.0),"air_wet":p.get("humidity",0.0)}
 	}
 
-static func apply(scene: Node3D, id: String) -> void:
+static func apply(scene: Node3D, id: String, overrides: Dictionary = {}) -> void:
 	if not PRESETS.has(id): return
-	var p: Dictionary = PRESETS[id]
-	scene._celestial.look.restore(look_document(id))
+	var p := recipe(id,overrides)
+	scene._celestial.look.restore(look_document(id,overrides))
 	scene._precipitation.set_weather(scene._precipitation.PRESET_NAMES.find(p.weather),true)
-	var values := controls(id)
+	var values := controls(id,overrides)
 	for group in values:
 		var object: Object = scene._precipitation.surface_weather if group == "surface_weather" else scene.get(group)
 		for key in values[group]: object.set(key,values[group][key])

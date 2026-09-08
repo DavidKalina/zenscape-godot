@@ -1,0 +1,30 @@
+{
+	"frames_per_sample": 180,
+	"gpu": "Apple M5 Pro (Apple9)",
+	"msaa": "8x",
+	"note": "Frozen scene; no readback or forced draw during samples. Not a full gameplay benchmark.",
+	"renderer": "forward_plus",
+	"samples": [
+		{
+			"effect": false,
+			"median_ms": 8.325,
+			"p95_ms": 9.168
+		},
+		{
+			"effect": true,
+			"median_ms": 8.312,
+			"p95_ms": 9.049
+		},
+		{
+			"effect": false,
+			"median_ms": 8.335,
+			"p95_ms": 8.974
+		},
+		{
+			"effect": true,
+			"median_ms": 8.343,
+			"p95_ms": 8.901
+		}
+	],
+	"viewport": "1440x900"
+}

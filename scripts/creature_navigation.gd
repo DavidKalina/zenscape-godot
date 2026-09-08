@@ -21,6 +21,8 @@ var last_rebuild_usec := 0
 var rebuilding := false
 var _rebuild_cell := 0
 var _rebuild_side := 0
+var _use_shortcuts := true
+var _rejected_connections: Array[Dictionary] = []
 
 ## Terrain provider: ground_height, ponds/pond_surface, streams, objects,
 ## waterfall_impacts. Fidelity supplies imported ground and clearance instead.
@@ -39,6 +41,8 @@ func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slo
 	_nodes.clear()
 	_cells.clear()
 	_edges.clear()
+	_use_shortcuts = true
+	_rejected_connections.clear()
 	_ponds.clear()
 	_courses.clear()
 	_impacts.clear()
@@ -122,6 +126,14 @@ func segment_safe(a: Vector3,b: Vector3) -> bool:
 		previous = position
 	return true
 
+## Routes are validated at planning/edit boundaries. During playback check the
+## actual next foot displacement, so a long clear leg costs no more per frame
+## than a short grid edge. Match CreatureActor's horizontal travel convention.
+func motion_safe(from: Vector3, to: Vector3, travel: float) -> bool:
+	var distance := Vector2(to.x-from.x,to.z-from.z).length()
+	var next := to if distance<=travel else from.lerp(to,travel/distance)
+	return segment_safe(from,next)
+
 func nearest_safe(point: Vector3) -> Variant:
 	if not point.is_finite(): return null
 	var ground: Variant = _ground(point)
@@ -140,6 +152,12 @@ func _connect(point: Vector3) -> int:
 	var distance := INF
 	for i in range(_nodes.size()):
 		var score := _nodes[i].distance_squared_to(point)
+		var rejected := false
+		for connection in _rejected_connections:
+			if connection.node==i and point.distance_squared_to(connection.point)<0.0001:
+				rejected = true
+				break
+		if rejected: continue
 		if score < distance and score < _grid_step*_grid_step*3.0 and segment_safe(point,_nodes[i]):
 			closest = i
 			distance = score
@@ -148,7 +166,7 @@ func _connect(point: Vector3) -> int:
 func path(from: Vector3,to: Vector3) -> PackedVector3Array:
 	if rebuilding: return PackedVector3Array()
 	if not is_safe(from) or not is_safe(to): return PackedVector3Array()
-	if segment_safe(from,to): return PackedVector3Array([from,to])
+	if _use_shortcuts and segment_safe(from,to): return PackedVector3Array([from,to])
 	# Optimistically search the safe-cell graph, then validate just the candidate
 	# route. Rejected edges stay blocked for this map lifetime and force a reroute.
 	# This preserves exact swept checks without querying physics for every edge
@@ -164,19 +182,42 @@ func path(from: Vector3,to: Vector3) -> PackedVector3Array:
 			if not _edges.has(key): _edges[key] = segment_safe(candidate[i],candidate[i+1])
 			if not _edges[key]:
 				valid = false
-		if valid: return candidate
+		if valid: return _straighten(candidate) if _use_shortcuts else candidate
 	return PackedVector3Array()
+
+## Keep only necessary corners. Every shortcut receives the same swept terrain,
+## water and obstacle check as a normal edge; never cut across an unsafe corner.
+func _straighten(route: PackedVector3Array) -> PackedVector3Array:
+	var result := PackedVector3Array([route[0]])
+	var start := 0
+	while start < route.size()-1:
+		var next := start+1
+		for candidate in range(route.size()-1,start+1,-1):
+			if segment_safe(route[start],route[candidate]):
+				next = candidate
+				break
+		result.append(route[next])
+		start = next
+	return result
 
 ## A moving actor may expose a narrow slope/clearance failure between the
 ## original edge samples. Reject that graph edge before asking for another route.
 func reject_segment(a: Vector3, b: Vector3) -> void:
+	# A runtime sample can expose a fine edge missed by a long shortcut.
+	# Replan on the original validated grid until the next terrain rebuild.
+	_use_shortcuts = false
 	var ac := Vector2i(roundi((a.x+14.0)/_grid_step),roundi((a.z+14.0)/_grid_step))
 	var bc := Vector2i(roundi((b.x+14.0)/_grid_step),roundi((b.z+14.0)/_grid_step))
-	if not _cells.has(ac) or not _cells.has(bc): return
-	var ai: int = _cells[ac]
-	var bi: int = _cells[bc]
-	if _nodes[ai].distance_to(a)>0.01 or _nodes[bi].distance_to(b)>0.01: return
-	_edges[Vector2i(mini(ai,bi),maxi(ai,bi))] = false
+	var ai: int = _cells.get(ac,-1)
+	var bi: int = _cells.get(bc,-1)
+	var a_on_grid := ai>=0 and _nodes[ai].distance_to(a)<=0.01
+	var b_on_grid := bi>=0 and _nodes[bi].distance_to(b)<=0.01
+	if not a_on_grid and b_on_grid:
+		_rejected_connections.append({"point":a,"node":bi})
+	elif a_on_grid and not b_on_grid:
+		_rejected_connections.append({"point":b,"node":ai})
+	elif a_on_grid and b_on_grid:
+		_edges[Vector2i(mini(ai,bi),maxi(ai,bi))] = false
 
 func _candidate_path(from: Vector3,to: Vector3) -> PackedVector3Array:
 	var result := PackedVector3Array()

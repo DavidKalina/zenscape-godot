@@ -6,7 +6,7 @@ The preset generates gently rolling native faceted terrain, tall redwoods, ferns
 
 Forest-floor volumetric mist follows the sculpted terrain and local redwood cover. Removing trees changes its coverage. The existing fog and ray controls adjust it, and its animation follows the scene clock. Native mist requires Forward+ rendering. Switching out of the redwood biome restores the ordinary atmosphere.
 
-Generation preserves the current lighting and camera. These captures use the existing Golden Meadow look; no lighting preset is forced onto the user's world. The grove uses the current single-biome landscape workflow; regional biome painting and blending are outside this addition.
+Selecting Redwood Grove applies the demonstrated Golden Meadow lighting, clear weather, 0.45 mist and full ray strength. Other world presets also apply their authored moods. The camera and graphics quality remain under player control. One Undo restores terrain and atmosphere together; changing only the biome, water treatment or variation preserves a customized mood. The grove uses the current single-biome landscape workflow; regional biome painting and blending are outside this addition.
 
 ![Generated grove](overview.png)
 ![Inside the grove](inside.png)

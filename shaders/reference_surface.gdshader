@@ -28,6 +28,9 @@ uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
 uniform bool plant_growth = false;
+// Opt-in for thin foliage; trunks and other shared surfaces stay opaque.
+#define ZS_FOLIAGE_TRANSMISSION
+uniform float foliage_transmission : hint_range(0.0, 1.0) = 0.0;
 uniform bool bird_wings = false;
 uniform bool source_bird_flight = false;
 varying float foliage_gust;
