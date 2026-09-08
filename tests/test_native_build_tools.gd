@@ -96,27 +96,26 @@ func _run() -> void:
 	editor.undo()
 	scene._reset_camera()
 	check(scene.target.y < 2.0,"Flat framing excludes hidden original mountain")
+	var palette: NativeBuildPalette = scene._build_palette
+	palette._show_category("Sky")
 	scene._celestial.next_hour()
-	scene._build_panel._sky_controls.time.value = 0.7
+	palette.sky_row("time").control.value = 0.7
 	check(scene._celestial._target == -1.0,"Time selection cancels pending next-hour transition")
 	scene._celestial.cycling = false
 	scene._celestial.advance(0.5,false)
-	scene._build_panel._sky_controls.clouds.value = 0.4
-	scene._build_panel._sky_controls.fog.value = 0.6
+	palette.sky_row("clouds").control.value = 0.4
+	palette.sky_row("fog").control.value = 0.6
 	check(is_equal_approx(scene._celestial.phase,0.7) and is_equal_approx(scene._atmosphere._fog_target,0.6),"Sky sliders control native light and atmosphere")
-	scene._build_panel._sky_controls.weather.item_selected.emit(1)
-	check(scene._precipitation.preset_index == 1,"Build weather control selects native rain")
-	scene._build_panel._sky_controls.clouds.value = 0.45
+	palette.sky_tile_for("weather_rain").pressed.emit()
+	check(scene._precipitation.preset_index == 1,"The rain swatch selects native rain")
+	palette.sky_row("clouds").control.value = 0.45
 	var state := NativeGardenStore.capture(scene)
 	scene._celestial.phase = 0.1
 	NativeGardenStore.restore(scene,state)
-	scene._build_panel._sync_sky_controls()
-	check(is_equal_approx(scene._build_panel._sky_controls.time.value,0.7) and is_equal_approx(scene._build_panel._sky_controls.clouds.value,0.45),"Sky state restores and controls synchronize")
+	palette._sync_sky()
+	check(is_equal_approx(palette.sky_row("time").control.value,0.7) and is_equal_approx(palette.sky_row("clouds").control.value,0.45),"Sky state restores and the palette synchronizes")
 	scene._ui.visible = true
 	editor.select_tool("grass")
-	for child in scene._build_panel._tools.get_children():
-		if child is CheckButton:
-			child.button_pressed = true
 	for i in range(3):
 		await process_frame
 	RenderingServer.force_draw(false)
