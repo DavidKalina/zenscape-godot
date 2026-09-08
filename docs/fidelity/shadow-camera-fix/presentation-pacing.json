@@ -1,0 +1,59 @@
+[
+	{
+		"fps_cap": 120,
+		"frames": 961,
+		"max_ms": 9.47,
+		"mean_ms": 8.3332924037461,
+		"msaa": 2,
+		"over_16_67_ms": 0,
+		"over_25_ms": 0,
+		"p50_ms": 8.336,
+		"p95_ms": 8.686,
+		"p99_ms": 8.835,
+		"phase": "timer-120",
+		"physical_size": [
+			2400,
+			1500
+		],
+		"reported_refresh_hz": 120.0,
+		"vsync": 0
+	},
+	{
+		"fps_cap": 0,
+		"frames": 961,
+		"max_ms": 11.545,
+		"mean_ms": 8.33278876170656,
+		"msaa": 2,
+		"over_16_67_ms": 0,
+		"over_25_ms": 0,
+		"p50_ms": 8.387,
+		"p95_ms": 9.065,
+		"p99_ms": 9.193,
+		"phase": "display-sync",
+		"physical_size": [
+			2400,
+			1500
+		],
+		"reported_refresh_hz": 120.0,
+		"vsync": 1
+	},
+	{
+		"fps_cap": 120,
+		"frames": 838,
+		"max_ms": 1029.941,
+		"mean_ms": 9.5492816229117,
+		"msaa": 2,
+		"over_16_67_ms": 1,
+		"over_25_ms": 1,
+		"p50_ms": 8.335,
+		"p95_ms": 8.464,
+		"p99_ms": 8.706,
+		"phase": "timer-120-repeat",
+		"physical_size": [
+			2400,
+			1500
+		],
+		"reported_refresh_hz": 120.0,
+		"vsync": 0
+	}
+]

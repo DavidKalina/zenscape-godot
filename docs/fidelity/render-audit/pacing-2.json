@@ -1,0 +1,56 @@
+[
+	{
+		"fps_cap": 120,
+		"frames": 961,
+		"max_ms": 9.992,
+		"mean_ms": 8.33321436004162,
+		"msaa": 2,
+		"over_16_67_ms": 0,
+		"over_25_ms": 0,
+		"p50_ms": 8.332,
+		"p95_ms": 8.457,
+		"p99_ms": 9.019,
+		"phase": "still",
+		"physical_size": [
+			2880,
+			1706
+		],
+		"vsync": 0
+	},
+	{
+		"fps_cap": 120,
+		"frames": 961,
+		"max_ms": 16.412,
+		"mean_ms": 8.33307596253902,
+		"msaa": 2,
+		"over_16_67_ms": 0,
+		"over_25_ms": 0,
+		"p50_ms": 8.334,
+		"p95_ms": 8.446,
+		"p99_ms": 8.735,
+		"phase": "orbit",
+		"physical_size": [
+			2880,
+			1706
+		],
+		"vsync": 0
+	},
+	{
+		"fps_cap": 120,
+		"frames": 961,
+		"max_ms": 8.962,
+		"mean_ms": 8.33299479708637,
+		"msaa": 2,
+		"over_16_67_ms": 0,
+		"over_25_ms": 0,
+		"p50_ms": 8.332,
+		"p95_ms": 8.579,
+		"p99_ms": 8.892,
+		"phase": "still-repeat",
+		"physical_size": [
+			2880,
+			1706
+		],
+		"vsync": 0
+	}
+]

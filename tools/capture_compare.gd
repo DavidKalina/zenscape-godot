@@ -62,7 +62,13 @@ func _apply(lever: String) -> void:
 				l.light_angular_distance = 0.6
 		"baseline": pass
 		_:
-			if lever.begins_with("exposure="):
+			if lever.begins_with("shadow-quality="):
+				RenderingServer.directional_soft_shadow_filter_set_quality(int(lever.trim_prefix("shadow-quality=")))
+			elif lever.begins_with("shadow-blur="):
+				for light in scene._lights: light.shadow_blur = float(lever.trim_prefix("shadow-blur="))
+			elif lever.begins_with("shadow-distance="):
+				for light in scene._lights: light.directional_shadow_max_distance = float(lever.trim_prefix("shadow-distance="))
+			elif lever.begins_with("exposure="):
 				scene._environment.tonemap_exposure = float(lever.trim_prefix("exposure="))
 			elif lever.begins_with("white="):
 				scene._environment.tonemap_white = float(lever.trim_prefix("white="))
