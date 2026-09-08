@@ -79,6 +79,8 @@ func _run() -> void:
 	var unchanged := editor.data.to_document()
 	editor.select_object(tree_id)
 	check(editor.selected_object().get("id") == tree_id,"Selection exposes the selected prop")
+	var tree_parts := editor.selection.parts(tree_id)
+	check(not tree_parts.is_empty() and tree_parts.all(func(part: Dictionary) -> bool: return part.id == tree_id),"Selection bounds request only the selected object's rendered parts")
 	check(editor.data.to_document() == unchanged,"Selecting leaves the saved garden unchanged")
 
 	# Taking hold of a still-arriving piece finishes its reaction, including
@@ -106,6 +108,9 @@ func _run() -> void:
 	var live_tint := Color("ba6042")
 	editor.update_selected({"tint":NativeObjectPose.encode_tint(Color("4d885e"))})
 	editor.update_selected({"tint":NativeObjectPose.encode_tint(live_tint)})
+	var tinted_document := editor.data.to_document()
+	editor._notify_play_geometry()
+	check(editor.data.to_document() == tinted_document,"Geometry notification preserves authored tint and pose records")
 	# Dummy rendering does not retain MultiMesh instance-color readback.
 	if DisplayServer.get_name() != "headless":
 		check(rendered_color(editor,tree_id,"canopy").is_equal_approx(live_tint),"Recoloring updates the visible canopy before the gesture ends")

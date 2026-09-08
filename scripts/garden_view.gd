@@ -24,6 +24,7 @@ var revision := 0
 var _view_ready := false
 var _view_heights := PackedFloat32Array()
 var _view_signature := PackedByteArray()
+var _water_signature := PackedByteArray()
 var _stream_probe := {}
 var _cascade_probe := {}
 
@@ -88,6 +89,12 @@ func _ready() -> void:
 ## that shortcut is taken, and `force` skips it entirely.
 func rebuild(force := false) -> void:
 	if not force and _reuse():
+		return
+	# Object commits do not alter shorelines, streams or waterfall geometry.
+	# Keep those resources (and their revision) so surface maps stay cached too.
+	if not force and _view_ready and data is NativeTerrainData and _view_heights == data.heights and _water_signature == _environment_signature():
+		_rebuild_instances()
+		_view_signature = _signature()
 		return
 	# Water can change without changing the instance recipes. Lift affected
 	# plants and props in place instead of regenerating the entire meadow.
@@ -193,6 +200,7 @@ func rebuild(force := false) -> void:
 	if data is NativeTerrainData:
 		_view_heights = data.heights.duplicate()
 		_view_signature = _signature()
+		_water_signature = _environment_signature()
 		_view_ready = true
 
 func _rebuild_instances() -> void:
@@ -290,6 +298,9 @@ func discard_cache() -> void:
 
 func _signature() -> PackedByteArray:
 	return var_to_bytes([data.objects_revision,data.objects.size(),data.ponds,data.streams,data.landscape_waterfall,data.grass,data.blades,data.meadow,data.blank,data._recipe_settings])
+
+func _environment_signature() -> PackedByteArray:
+	return var_to_bytes([data.ponds,data.streams,data.landscape_waterfall,data.grass,data.blades,data.meadow,data.blank,data._recipe_settings])
 
 func _stale(record: Dictionary) -> bool:
 	return not record.is_empty() and data.probe_stale(record)

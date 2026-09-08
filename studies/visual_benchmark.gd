@@ -13,6 +13,9 @@ func _ready() -> void:
 	get_window().title = "ZenScape · Luminous woodland"
 	scene = load("res://studies/fidelity.tscn").instantiate()
 	add_child(scene)
+	# Preserve the historical A/B comparison; production owns its own live effects.
+	scene._planar_water.enabled = false
+	scene._redwood_mist.enabled = false
 	scene._chunk_editor.save_path = "user://visual-benchmark.json"
 	scene._paused = true
 	scene._auto_orbit = false

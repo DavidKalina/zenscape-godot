@@ -16,7 +16,7 @@ func setup(target: NativeChunkEditor) -> void:
 	material.no_depth_test = true
 	_marker.material_override = material
 
-func parts() -> Array[Dictionary]:
+func parts(only_id := -1) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for batch in editor.content._batches:
 		var key: String = batch.get_meta("part")
@@ -25,8 +25,12 @@ func parts() -> Array[Dictionary]:
 			var item: Variant = sources[i].get("item")
 			if item == null:
 				continue
+			if only_id > 0 and int(item.id) != only_id:
+				continue
 			result.append({"id":int(item.id), "mesh":batch.multimesh.mesh, "transform":batch.global_transform*batch.multimesh.get_instance_transform(i)})
 	for item: Dictionary in editor.data.objects:
+		if only_id > 0 and int(item.id) != only_id:
+			continue
 		if item.asset not in NativeGardenLandmarks.KINDS:
 			continue
 		var node := editor.landmarks.get_node_or_null("%s_%d" % [item.asset,item.id])
@@ -72,7 +76,7 @@ func update_marker(id: int) -> void:
 		return
 	var bounds := AABB()
 	var found := false
-	for part in parts():
+	for part in parts(id):
 		if part.id != id:
 			continue
 		var box: AABB = part.transform*part.mesh.get_aabb()

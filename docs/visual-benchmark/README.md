@@ -1,5 +1,7 @@
 # Luminous woodland — visual benchmark
 
+**Playable integration:** these effects now also run in the ordinary editor. See [playable visuals](../playable-visuals.md) for coverage and verification. The study description below records the original isolated prototype.
+
 A runnable benchmark for crisp faceted dioramas with low drifting mist, shafts
 of sunlight, reflective pools, and calm motion. It builds the existing wooded
 terraces and applies a cool woodland palette under warm light.

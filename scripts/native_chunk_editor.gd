@@ -1085,9 +1085,13 @@ func _refresh_selected_render() -> void:
 	_notify_play_geometry()
 
 func _notify_play_geometry() -> void:
-	var placements := data.objects.duplicate(true)
-	for item in placements:
-		item.erase("tint")
+	# Geometry observers ignore tint. Copy only records that need that field
+	# removed instead of deep-copying the entire world on each mouse event.
+	var placements := data.objects.duplicate()
+	for i in range(placements.size()):
+		if placements[i].has("tint"):
+			placements[i] = placements[i].duplicate()
+			placements[i].erase("tint")
 	var signature := var_to_bytes([data.heights, placements, data.ponds, data.streams, data.landscape_waterfall])
 	if signature != _play_geometry_signature:
 		_play_geometry_signature = signature

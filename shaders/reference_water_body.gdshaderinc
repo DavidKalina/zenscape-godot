@@ -15,6 +15,14 @@
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
 global uniform vec3 zs_palette_water;
+#include "res://shaders/pool_caustics.gdshaderinc"
+uniform bool hide_pool_surface = false;
+uniform bool planar_enabled = false;
+uniform sampler2D planar_reflection : filter_linear, repeat_disable;
+uniform mat4 reflection_matrix;
+uniform sampler2D pond_screen : hint_screen_texture, filter_linear_mipmap;
+uniform sampler2D pond_depth : hint_depth_texture, filter_nearest, repeat_disable;
+uniform float caustics_strength = 0.0;
 uniform float metalness_value = 0.0;
 varying float inversion_transmit;
 uniform bool lake_display_lighting = true;
@@ -65,6 +73,7 @@ void vertex() {
 }
 
 void fragment() {
+	if (hide_pool_surface && !flowing && cut_face < 0.5) discard;
 	// A moving faceted surface catches light through its actual deformed faces.
 	vec3 wave_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (wave_normal.y < 0.0) { wave_normal = -wave_normal; }
@@ -83,6 +92,22 @@ void fragment() {
 	// Source vertex colors already contain the depth palette; retain it.
 	vec3 body = COLOR.rgb * zs_palette_water;
 	vec3 reflection = scene_linear_for_display(clamp(zsSkyGradient(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98)));
+	if (planar_enabled && cut_face < 0.5) {
+		fresnel = 0.16 + 0.72 * pow(1.0 - max(dot(eye, wave_normal), 0.0), 3.0);
+		vec4 projected = reflection_matrix * vec4(world_position, 1.0);
+		vec2 uv = projected.xy / projected.w * vec2(0.5, -0.5) + 0.5;
+		uv += wave_normal.xz * 0.12 * smoothstep(0.0, 0.3, water_depth);
+		reflection = scene_linear_for_display(texture(planar_reflection, clamp(uv, vec2(0.001), vec2(0.999))).rgb);
+		float depth = texture(pond_depth, SCREEN_UV).r;
+		vec4 receiver_view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
+		vec3 receiver = (INV_VIEW_MATRIX * vec4(receiver_view.xyz / receiver_view.w, 1.0)).xyz;
+		float submerged = world_position.y - receiver.y;
+		float shallows = smoothstep(0.04, 0.22, submerged) * (1.0 - smoothstep(0.8, 2.4, submerged));
+		float caustics = zs_pool_caustics(receiver.xz, zs_flow_time) * shallows * caustics_strength * (1.0 - zs_ice) * zs_daylight * zs_celestial_clear;
+		vec3 bed = textureLod(pond_screen, SCREEN_UV, 0.0).rgb * (1.0 + vec3(0.95, 0.90, 0.65) * caustics);
+		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth);
+		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
+	}
 	float glint = smoothstep(0.75, 1.0, zs_water_growth) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
 	if (flowing) {

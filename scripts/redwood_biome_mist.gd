@@ -1,12 +1,18 @@
 extends FogVolume
-## Renderer adapter for the saved redwood biome. Terrain and cover are rebuilt
+## Native landscape mist, with a forest-floor treatment for redwood biomes.
+## Terrain and cover are rebuilt
 ## from editor data; the existing mist/rays controls still set their intensity.
 var revision := -1
+var objects_revision := -1
 var redwoods := 0
 var active := false
+var enabled := true
+var redwood := false
+var woodland_material := ShaderMaterial.new()
 var saved := {}
 var cover: ImageTexture
 var cover_image: Image
+var _cover_signature := PackedByteArray()
 var fog_material := ShaderMaterial.new()
 
 func _init() -> void:
@@ -14,6 +20,7 @@ func _init() -> void:
 	size = Vector3(32,40,32)
 	position.y = 17.0
 	fog_material.shader = preload("res://shaders/redwood_biome_mist.gdshader")
+	woodland_material.shader = preload("res://shaders/beauty_mist.gdshader")
 	material = fog_material
 	visible = false
 
@@ -22,27 +29,38 @@ func _cover(data: NativeTerrainData) -> void:
 	for item in data.objects:
 		if item.asset == "redwood" and data._recipe_settings.get("biome","")=="redwood": trees.append(item)
 	redwoods = trees.size()
+	var footprints: Array = []
+	for tree in trees: footprints.append([tree.x,tree.z,tree.scale])
+	var signature := var_to_bytes(footprints)
+	if cover != null and signature == _cover_signature: return
+	_cover_signature = signature
 	cover_image = Image.create(64,64,false,Image.FORMAT_RF)
-	for y in range(64):
-		for x in range(64):
-			var point := Vector2((x+0.5)*0.5-16,(y+0.5)*0.5-16)
-			var value := 0.0
-			for tree in trees:
-				var radius: float = clampf(tree.scale*3.5,1.5,6.0)
+	cover_image.fill(Color(0,0,0,1))
+	# A tree contributes nothing beyond its radius. Rasterize its footprint
+	# instead of testing every tree against every pixel on each edit.
+	for tree in trees:
+		var radius: float = clampf(tree.scale*3.5,1.5,6.0)
+		var low := Vector2i(clampi(floori((tree.x-radius+16)*2),0,64),clampi(floori((tree.z-radius+16)*2),0,64))
+		var high := Vector2i(clampi(ceili((tree.x+radius+16)*2),0,64),clampi(ceili((tree.z+radius+16)*2),0,64))
+		for y in range(low.y,high.y):
+			for x in range(low.x,high.x):
+				var point := Vector2((x+0.5)*0.5-16,(y+0.5)*0.5-16)
 				var distance := point.distance_to(Vector2(tree.x,tree.z))/radius
-				value = maxf(value,1.0-smoothstep(0.1,1.0,distance))
-			cover_image.set_pixel(x,y,Color(value,0,0,1))
+				var value := maxf(cover_image.get_pixel(x,y).r,1.0-smoothstep(0.1,1.0,distance))
+				cover_image.set_pixel(x,y,Color(value,0,0,1))
 	cover = ImageTexture.create_from_image(cover_image)
 	fog_material.set_shader_parameter("tree_cover",cover)
 
 func sync(scene: Node3D) -> void:
 	var data: NativeTerrainData = scene._chunk_editor.data
-	if revision != scene._chunk_editor.content.revision:
+	if revision != scene._chunk_editor.content.revision or objects_revision != data.objects_revision:
 		revision = scene._chunk_editor.content.revision
+		objects_revision = data.objects_revision
 		_cover(data)
 		fog_material.set_shader_parameter("ground_map",scene._precipitation.ground_texture)
 		fog_material.set_shader_parameter("stream_map",scene._precipitation.stream_texture)
-	var wanted: bool = data._recipe_settings.get("biome","")=="redwood" and redwoods>0 and scene._growth.terrain>=0.995 and scene._growth.foliage>=0.995 and scene._atmosphere.fog_amount>0.001 and RenderingServer.get_current_rendering_method()=="forward_plus"
+	redwood = data._recipe_settings.get("biome", "") == "redwood" and redwoods > 0
+	var wanted: bool = enabled and (data._recipe != null or not data.objects.is_empty() or not data.ponds.is_empty()) and scene._growth.terrain>=0.995 and scene._growth.foliage>=0.995 and scene._atmosphere.fog_amount>0.001 and RenderingServer.get_current_rendering_method()=="forward_plus"
 	var env: Environment = scene._environment
 	if wanted and not active:
 		saved = {"length":env.volumetric_fog_length,"anisotropy":env.volumetric_fog_anisotropy,"ambient":env.volumetric_fog_ambient_inject,"display":scene._display_fog.visible,"valley":scene._atmosphere.get_node("ValleyFog").visible,"rays":[]}
@@ -58,13 +76,17 @@ func sync(scene: Node3D) -> void:
 	active = wanted
 	visible = active
 	if not active: return
+	material = fog_material if redwood else woodland_material
+	woodland_material.set_shader_parameter("ground_map", scene._precipitation.ground_texture)
+	woodland_material.set_shader_parameter("stream_map", scene._precipitation.stream_texture)
+	woodland_material.set_shader_parameter("density", 0.145 * clampf(scene._atmosphere.fog_amount / 0.18, 0.0, 2.0))
 	fog_material.set_shader_parameter("mist_time",scene._motion_time)
 	fog_material.set_shader_parameter("amount",clampf(scene._atmosphere.fog_amount/0.45,0.0,2.0))
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.0
 	env.volumetric_fog_length = 65.0
-	env.volumetric_fog_anisotropy = 0.65
-	env.volumetric_fog_ambient_inject = 0.2
+	env.volumetric_fog_anisotropy = 0.65 if redwood else 0.55
+	env.volumetric_fog_ambient_inject = 0.2 if redwood else 0.25
 	scene._display_fog.visible = false
 	scene._atmosphere.get_node("ValleyFog").visible = false
 	for light in scene._lights:

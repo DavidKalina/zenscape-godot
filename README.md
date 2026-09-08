@@ -275,3 +275,5 @@ formation families. Choose a biome and water treatment, then swap colors freely.
 **Another like this** generates a reproducible variation with those choices kept.
 The **Favorites** tab saves discoveries with thumbnails and restores the complete
 edited scene with undo/redo. See [the landscape guide](docs/landscapes/README.md).
+
+See [playable visual effects](docs/playable-visuals.md) for reflections, caustics, mist, foliage and their editor integration checks.

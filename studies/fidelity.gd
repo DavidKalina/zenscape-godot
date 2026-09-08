@@ -6,10 +6,12 @@ var _chunk_editor: NativeChunkEditor
 var _build_panel: NativeBuildPanel
 var _build_palette: NativeBuildPalette
 var _saved_setting_controls: Array[Dictionary] = []
+var _planar_water = preload("res://scripts/planar_water.gd").new()
 var _redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
 var _leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
 var _waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
 var _leaf_revision := -1
+var _leaf_objects_revision := -1
 var _display_fog: CanvasLayer
 var camera: Camera3D
 var target := Vector3.ZERO
@@ -147,6 +149,7 @@ func _ready() -> void:
 	add_child(_chunk_editor)
 	_chunk_editor.setup(self)
 	add_child(_leaf_litter)
+	add_child(_planar_water)
 	add_child(_redwood_mist)
 	add_child(_waterfall_drips)
 	_atmosphere.setup_wind_trails(_chunk_editor.data.ground_height)
@@ -535,6 +538,7 @@ func _process(delta: float) -> void:
 	_redwood_mist.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
 	_chunk_editor.sync_visibility()
+	_planar_water.sync(self)
 	if not _capture.is_empty() and not _capture_done and _elapsed > 1.0:
 		_capture_done = true
 		_capture_frame.call_deferred()
@@ -1069,8 +1073,9 @@ func _sync_authoring_chrome() -> void:
 		get("_notice").visible = not panel_open and get("_toolbar").visible
 
 func _update_leaf_litter(delta: float) -> void:
-	if _leaf_revision != _chunk_editor.content.revision:
+	if _leaf_revision != _chunk_editor.content.revision or _leaf_objects_revision != _chunk_editor.data.objects_revision:
 		_leaf_revision = _chunk_editor.content.revision
+		_leaf_objects_revision = _chunk_editor.data.objects_revision
 		var anchors: Array = []
 		for object in _chunk_editor.data.objects:
 			if object.asset in ["broadleaf","shrub","redwood"]:

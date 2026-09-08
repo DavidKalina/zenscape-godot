@@ -70,7 +70,7 @@ func run() -> void:
 		scene._atmosphere.set_fog(0.45)
 	await editor.change_landscape_biome("woodland",false)
 	scene._redwood_mist.sync(scene)
-	check(not scene._redwood_mist.active,"Changing biome restores the ordinary atmosphere")
+	check(not scene._redwood_mist.redwood,"Changing biome switches to ordinary landscape mist")
 	await editor.form_landscape("redwood_grove","",false,174)
 	check(data.heights != original_heights,"Another grove variation changes the terrain")
 	scene.free()

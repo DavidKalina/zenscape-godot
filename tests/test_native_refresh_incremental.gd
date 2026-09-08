@@ -124,6 +124,28 @@ func run() -> void:
 	editor.force_refresh()
 	check("redo result is what a full rebuild produces", redone == capture(scene, editor))
 
+	# A prop commit must not regenerate unchanged water and repaint its maps.
+	var water_revision: int = editor.content.revision
+	var pond_mesh: Mesh = editor.content._water.mesh
+	editor.data.begin_stroke()
+	var prop: int = editor.data.place("rock",Vector2(-8,-8),0.0,1.0)
+	editor.data.end_stroke()
+	check("regression prop is placed",prop > 0)
+	editor.refresh()
+	check("prop placement preserves water resources",editor.content.revision == water_revision and editor.content._water.mesh == pond_mesh)
+	compare(scene,editor,"prop placement matches a full rebuild")
+	water_revision = editor.content.revision
+	editor.select_object(prop)
+	editor.begin_selection_edit()
+	editor.update_selected({"x":-7.5})
+	editor.end_selection_edit()
+	check("drag commit preserves water revision",editor.content.revision == water_revision)
+	compare(scene,editor,"drag commit matches a full rebuild")
+	editor.undo()
+	compare(scene,editor,"undo prop move matches a full rebuild")
+	editor.delete_selected()
+	compare(scene,editor,"prop removal matches a full rebuild")
+
 	# A content revision can change water even with unchanged terrain heights.
 	# Both the departed footprint and destination must be repainted exactly.
 	for stream in editor.data.streams:

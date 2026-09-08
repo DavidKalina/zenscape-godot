@@ -1,5 +1,7 @@
 # One-pool caustics prototype
 
+**Playable integration:** these effects now also run in the ordinary editor. See [playable visuals](../playable-visuals.md) for coverage and verification. The study description below records the original isolated prototype.
+
 The lowest pool in the visual benchmark receives soft, slowly changing light
 patches on its visible bed. Press C to toggle them; P freezes their animation.
 The other two pools retain their existing water rendering.

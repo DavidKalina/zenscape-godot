@@ -1,0 +1,81 @@
+{
+	"gpu": "Apple M5 Pro (Apple9)",
+	"rows": [
+		{
+			"ms": 53.829,
+			"operation": "place_commit"
+		},
+		{
+			"ms": 54.408,
+			"operation": "place_commit"
+		},
+		{
+			"ms": 53.129,
+			"operation": "place_commit"
+		},
+		{
+			"ms": 54.144,
+			"operation": "place_commit"
+		},
+		{
+			"ms": 12.334,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 12.597,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 12.886,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 13.149,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 13.979,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 12.801,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 13.91,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 12.33,
+			"operation": "drag_preview"
+		},
+		{
+			"ms": 53.233,
+			"operation": "drag_release"
+		},
+		{
+			"ms": 4.421,
+			"operation": "selection_marker"
+		},
+		{
+			"ms": 1.149,
+			"operation": "instance_preview"
+		},
+		{
+			"ms": 5.769,
+			"operation": "geometry_notification"
+		},
+		{
+			"ms": 27.151,
+			"operation": "content_rebuild"
+		},
+		{
+			"ms": 10.477,
+			"operation": "surface_maps"
+		},
+		{
+			"ms": 14.515,
+			"operation": "remaining_refresh"
+		}
+	]
+}
