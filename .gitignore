@@ -1,3 +1,7 @@
 .godot/
 .DS_Store
 builds/
+
+# Local agent checkouts and disposable validation output.
+.claude/worktrees/
+docs/wind-playground/test-logs/
