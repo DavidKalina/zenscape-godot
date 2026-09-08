@@ -2,9 +2,14 @@ class_name CreatureActor
 extends Node3D
 ## A small interaction contract shared by animated inhabitants. Asset clips own
 ## performance; this node owns carrying, safe placement and attention.
-enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING }
+enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION }
 signal state_changed(value: State)
 signal landed()
+signal action_finished(clip: String, cancelled: bool)
+const HAND_REACH = preload("res://scripts/creature_hand_reach.gd")
+var hand_targets := {}
+var action_clip := ""
+var _action_duration := 0.0
 var state := State.IDLE
 var actor: Node3D
 var player: AnimationPlayer
@@ -76,6 +81,31 @@ func walk_step(destination: Vector3, speed: float, delta: float) -> bool:
 		return true
 	return false
 
+## An authored one-shot or timed loop owns motion until completion/interruption.
+func perform_action(clip: String, duration := -1.0) -> bool:
+	if not can_roam() or not player.has_animation(clip): return false
+	stop_walking()
+	_state(State.ACTION)
+	action_clip = clip
+	_action_duration = player.get_animation(clip).length if duration < 0.0 else duration
+	_gaze_weight = 0.0
+	_play(clip)
+	return true
+
+func cancel_action() -> void:
+	if state != State.ACTION: return
+	_state(State.IDLE)
+	_play("Idle")
+
+func hand_position(side := "R") -> Vector3:
+	return HAND_REACH.palm(skeleton,side)
+
+func reach_hand(point: Vector3, weight: float, side := "R") -> void:
+	hand_targets[side] = {"point":point,"weight":weight}
+
+func clear_hand_targets() -> void:
+	hand_targets.clear()
+
 func stop_walking() -> void:
 	if state != State.WALKING: return
 	_state(State.IDLE)
@@ -139,6 +169,8 @@ func setup(asset_path: String) -> void:
 		assert(player.has_animation(clip),"Missing inhabitant clip: "+clip)
 	for clip in ["Idle","Held","Walk"]:
 		player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+	for clip in ["Sit","Sleep"]:
+		if player.has_animation(clip): player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	for clip in ["Land","Alert"]:
 		player.get_animation(clip).loop_mode = Animation.LOOP_NONE
 	_safe_position = global_position
@@ -154,9 +186,14 @@ func _play(clip: String) -> void:
 	player.advance(0.0)
 
 func _state(value: State) -> void:
+	var cancelled_clip := action_clip if state == State.ACTION and value != State.ACTION else ""
+	if not cancelled_clip.is_empty():
+		action_clip = ""
+		clear_hand_targets()
 	state = value
 	_age = 0.0
 	state_changed.emit(value)
+	if not cancelled_clip.is_empty(): action_finished.emit(cancelled_clip,true)
 
 func is_held() -> bool:
 	return state == State.HELD
@@ -227,6 +264,13 @@ func advance(delta: float) -> void:
 	if player == null or delta <= 0.0: return
 	var dt := minf(delta,0.05)
 	_age += dt
+	if state == State.ACTION and _age >= _action_duration:
+		var finished := action_clip
+		clear_hand_targets()
+		action_clip = ""
+		_state(State.IDLE)
+		_play("Idle")
+		action_finished.emit(finished,false)
 	if state == State.WIND:
 		global_transform = wind_body.feet_transform()
 	elif state == State.RECOVERING:
@@ -275,3 +319,7 @@ func advance(delta: float) -> void:
 		var base := skeleton.get_bone_pose_rotation(_head)
 		skeleton.set_bone_pose_rotation(_head,base*Quaternion.from_euler(Vector3(_gaze_pitch,_gaze_yaw,0)))
 	_gaze_weight = maxf(0.0,_gaze_weight-dt*0.18)
+	if state == State.ACTION:
+		for side: String in hand_targets:
+			var contact: Dictionary = hand_targets[side]
+			HAND_REACH.apply(skeleton,contact.point,contact.weight,side)

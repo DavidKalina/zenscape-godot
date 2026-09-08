@@ -17,7 +17,7 @@ const TOOL_TEXT := {
 	"flatten":"Level toward the height where you click.",
 	"ground":"Set a resting height, then form the whole floor.",
 	"range":"Shape a ridge across the chunk, then fill its water and flora.",
-	"mountain":"Click to raise a peak. Variation reshuffles its ridges.",
+	"mountain":"Click for a peak or drag a ridge. Variation reshuffles its ridges.",
 	"grass":"Paint ground cover, or green the whole chunk at once.",
 	"blades":"Paint standing blades over the grass.",
 	"meadow":"Paint grass and wildflowers together.",
@@ -25,7 +25,7 @@ const TOOL_TEXT := {
 	"erase":"Brush away cover and placed objects. Undo restores them.",
 	"tree":"Click to plant a tree. It settles onto the ground.",
 	"rock":"Click to set a stone.",
-	"flower":"Click to plant one flower. Zoom in for the detail.",
+	"flower":"Click for one flower or drag to plant a trail.",
 	"arch":"Click to raise a stone arch.",
 	"bigfoot_tree":"Click to plant the tree Bigfoot visits.",
 	"assets":"Pick a piece below, then click to place it.",
@@ -134,6 +134,8 @@ var mountain_heading := 0.0
 var mountain_peak := 9.0
 var status := "Left drag paints · Click places · Right drag orbits\n1-4 tools · [ ] brush size · Shift [ ] strength"
 var _painting := false
+var placement_trail := true
+var _trail_point: Variant = null
 var _elapsed := 0.0
 var _level := 0.0
 var _material: ShaderMaterial
@@ -377,7 +379,7 @@ func handle_input(event: InputEvent) -> bool:
 ## palette's drag-and-drop commits through here so a dropped object takes the
 ## same record, pose and reaction a click would have given it.
 func place_at(mouse: Vector2) -> bool:
-	if not active or mode == "select":
+	if not active or mode in ["select","ground","range"]:
 		return false
 	var hit: Variant = pick(mouse)
 	if hit == null:
@@ -398,6 +400,12 @@ func place_at(mouse: Vector2) -> bool:
 				_set_status("Choose a lower landing with no ridge blocking the drop.")
 		return true
 	data.begin_stroke()
+	if placement_trail and trail_available():
+		_painting = true
+		_trail_point = Vector2(hit.x,hit.z)
+		trail_dab(_trail_point)
+		refresh()
+		return true
 	_level = hit.y
 	_last_point = Vector2(hit.x,hit.z)
 	var placed := -1
@@ -425,6 +433,35 @@ func place_at(mouse: Vector2) -> bool:
 		dab(_last_point,strength/30.0)
 		refresh()
 	return true
+
+## Trails share the normal stroke transaction: one drag is one undo step.
+func trail_available() -> bool:
+	return mode in ["flower","mountain"] or (mode == "assets" and catalog_asset in ["button_flower","daisy_flower","spike_flower","umbel_flower"])
+
+func trail_spacing() -> float:
+	return mountain_radius*0.45 if mode == "mountain" else maxf(0.2,object_scale*0.45)
+
+func continue_trail(center: Vector2) -> void:
+	if _trail_point == null:
+		_trail_point = center
+		trail_dab(center)
+		refresh()
+		return
+	var previous: Vector2 = _trail_point
+	var spacing := trail_spacing()
+	var count := mini(128,int(previous.distance_to(center)/spacing))
+	if count == 0: return
+	var direction := previous.direction_to(center)
+	for i in range(1,count+1):
+		trail_dab(previous+direction*spacing*i)
+	_trail_point = previous+direction*spacing*count
+	refresh()
+
+func trail_dab(point: Vector2) -> void:
+	if mode == "mountain":
+		data.mountain(point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
+	else:
+		data.place(catalog_asset if mode == "assets" else mode,point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint else "")
 
 func pointer_in_world(mouse: Vector2) -> bool:
 	if scene._growth.terrain < 0.995 or not scene.get_viewport().get_visible_rect().has_point(mouse):
@@ -456,7 +493,9 @@ func _process(delta: float) -> void:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
 		_material.set_shader_parameter("brush_radius",preview_radius())
-		if _painting:
+		if _painting and placement_trail and trail_available():
+			continue_trail(center)
+		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
 				var previous: Vector2 = _last_point if _last_point != null else center
@@ -468,6 +507,7 @@ func _process(delta: float) -> void:
 				_last_point = center
 	else:
 		_last_point = null
+		_trail_point = null
 		_elapsed = 0.0
 
 func finish_pointer_gesture() -> void:
@@ -480,6 +520,7 @@ func finish_stroke() -> void:
 	if not _painting:
 		return
 	_painting = false
+	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
 	data.end_stroke()

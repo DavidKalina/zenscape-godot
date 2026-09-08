@@ -35,6 +35,10 @@ func _run() -> void:
 	var thin_route := nav.path(Vector3(-2.1,0,0),Vector3(2.1,0,0))
 	check(thin_route.size()>2,"Subcell obstacle causes an alternative route")
 	for i in range(thin_route.size()-1): check(nav.segment_safe(thin_route[i],thin_route[i+1]),"Lazy candidate validation never returns an unsafe edge")
+	# The old 20 cm samples skipped this sliver and allowed the moving actor
+	# to enter an unsafe point from which all future routes were rejected.
+	nav.rebuild(data,func(p: Vector3) -> bool: return not (p.x>0.085 and p.x<0.125 and absf(p.z)<2.0))
+	check(not nav.segment_safe(Vector3.ZERO,Vector3(1,0,0)),"Swept checks detect hazards between old coarse samples")
 	data.streams = [{"pts":[{"x":0.0,"z":-14.0,"h":0.0},{"x":0.0,"z":14.0,"h":0.0}],"width":1.0,"depth":0.1,"surface":0.1,"capHead":false,"capTail":false}]
 	nav.rebuild(data,Callable())
 	check(not nav.is_safe(Vector3.ZERO),"Flowing stream excludes the creature footprint")

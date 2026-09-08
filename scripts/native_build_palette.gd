@@ -122,8 +122,8 @@ var _detail_name := Label.new()
 var _detail_description := Label.new()
 var _meta_table := VBoxContainer.new()
 var _hud_count := Label.new()
-var _placing_banner := Label.new()
 var _placing := ""
+var _tool_rail: Control
 var _hand := preload("res://scripts/native_garden_cursor.gd").new()
 var _inhabitant: CreatureActor
 var _entrance: Tween
@@ -177,7 +177,7 @@ func strip_fits() -> bool:
 
 ## The detached settings panel also shields the terrain from pointer input.
 func contains_pointer(point: Vector2) -> bool:
-	return _bar.visible or _launcher.get_global_rect().has_point(point) or _tune.get_global_rect().has_point(point) or (_details.visible and _details.get_global_rect().has_point(point))
+	return _bar.visible or (_tool_rail != null and _tool_rail.visible and _tool_rail.get_global_rect().has_point(point)) or (_launcher.visible and _launcher.get_global_rect().has_point(point)) or (_tune.visible and _tune.get_global_rect().has_point(point)) or (_details.visible and _details.get_global_rect().has_point(point))
 
 ## True while a tile is being dragged towards the world.
 func dragging() -> bool:
@@ -319,11 +319,6 @@ func _build() -> void:
 	_hud_count.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_hud_count)
 	move_child(_hud_count,2)
-	_placing_banner.add_theme_stylebox_override("normal",_stone_style(Color(0.14,0.16,0.13,0.9),24))
-	_placing_banner.add_theme_font_size_override("font_size",14)
-	_placing_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_placing_banner.visible = false
-	add_child(_placing_banner)
 	_details.name = "ToolDetails"
 	_details.add_theme_stylebox_override("panel",_stone_style(Color(0.16,0.14,0.18,0.97),12))
 	_details.visible = false
@@ -350,6 +345,9 @@ func _build() -> void:
 	add_child(_cursor)
 	add_child(_hand)
 	get_viewport().size_changed.connect(_fit_dock)
+	_tool_rail = preload("res://scripts/native_tool_rail.gd").new()
+	add_child(_tool_rail)
+	_tool_rail.setup(self)
 	_fit_dock()
 	_on_tool_changed(editor.mode)
 	close_palette()
@@ -385,14 +383,13 @@ func _browse(id: String) -> void:
 
 func open_palette() -> void:
 	if not editor.active: return
-	if not _placing.is_empty(): _finish_placing()
+	editor.finish_stroke()
 	_hand.hide_pointer()
 	_bar.visible = true
 	_scrim.visible = true
 	_launcher.visible = false
-	_placing = ""
-	_placing_banner.visible = false
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	_tool_rail.visible = false
 	_tune.visible = false
 	_details.visible = false
 	_tune.set_pressed_no_signal(false)
@@ -414,6 +411,8 @@ func close_palette() -> void:
 	_launcher.visible = _placing.is_empty()
 	_tune.visible = false
 	_search.release_focus()
+	if _category == SKY_TAB: _show_category(_category_of(editor.mode))
+	if _tool_rail != null: _tool_rail.visible = true
 
 func _refresh_results() -> void:
 	if _entries.is_empty(): return
@@ -740,8 +739,7 @@ func _fit_dock() -> void:
 	_fit_wrapper.position = (screen-Vector2(880,540)*fit)*0.5
 	_launcher.position = Vector2((screen.x-220.0)*0.5,screen.y-72.0)
 	_launcher.size = Vector2(220,44)
-	_placing_banner.position = Vector2((screen.x-480.0)*0.5,screen.y-72.0)
-	_placing_banner.size = Vector2(480,44)
+	if _tool_rail != null: _tool_rail.fit()
 	_fit_details.call_deferred()
 
 func _fit_details() -> void:
@@ -903,8 +901,11 @@ func _choose_weather(index: int) -> void:
 func _on_sky_toggle_requested() -> void:
 	if not _sky_ready():
 		return
-	open_palette()
-	_browse(SKY_TAB)
+	if _bar.visible and _category == SKY_TAB:
+		close_palette()
+	else:
+		open_palette()
+		_browse(SKY_TAB)
 
 ## Every dial the scene's own study offers for its light, air and weather.
 func _fill_sky_strip() -> void:
@@ -1221,21 +1222,21 @@ func _choose(id: String) -> void:
 		editor.catalog_asset = button.get_meta("piece")
 	editor.select_tool(button.get_meta("tool"))
 	close_palette()
-	if id == "range": editor.form_range(); editor.select_tool("select")
+	if id == "range":
+		_details.visible = true
+	elif id == "ground": _details.visible = true
 	elif id != "select": _start_placing(id)
 
 func _start_placing(id: String) -> void:
 	_hand.take()
 	_placing = id
 	_launcher.visible = false
-	_placing_banner.text = "●  Placing %s — click the diorama     esc to cancel" % _entries[id].title
-	_placing_banner.visible = true
 	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	if _tool_rail != null: _tool_rail.sync()
 
 func _finish_placing(placed := false) -> void:
 	_hand.release(placed)
 	_placing = ""
-	_placing_banner.visible = false
 	_launcher.visible = true
 	editor.finish_stroke()
 	editor.select_tool("select")
@@ -1249,6 +1250,7 @@ func _style_bigfoot(model: Node3D) -> void:
 		if "_n7_" not in mesh.name and "_n8_" not in mesh.name: mesh.material_override = coat
 
 func _take_special(id: String) -> void:
+	if id in ["bigfoot","wind_gust"]: editor.select_tool("select")
 	close_palette()
 	match id:
 		"fireflies": editor.scene._fireflies.called = true
@@ -1289,9 +1291,8 @@ func _on_tile_hover(id: String, entered: bool) -> void:
 	_on_status_changed("%s · %s" % [_title(id),editor.TOOL_TEXT.get(tool,"")])
 
 func _on_tool_changed(tool: String) -> void:
-	if not _placing.is_empty() and _tiles.has(_placing) and _tiles[_placing].get_meta("tool") != tool:
+	if not _placing.is_empty() and (not _tiles.has(_placing) or _tiles[_placing].get_meta("tool") != tool):
 		_placing = ""
-		_placing_banner.visible = false
 		_launcher.visible = not _bar.visible
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 	var chosen := tile_for(tool)
@@ -1299,6 +1300,7 @@ func _on_tool_changed(tool: String) -> void:
 		_tiles[id].set_pressed_no_signal(_tiles[id] == chosen)
 		_tiles[id].modulate = Color.WHITE
 	_show_category(_category_of(tool))
+	if _tool_rail != null: _tool_rail.sync()
 
 func _on_setting_changed(property: String, value: float) -> void:
 	if not _strip_rows.has(property):
@@ -1404,6 +1406,8 @@ func _on_tile_input(event: InputEvent, id: String) -> void:
 	_press_at = event.global_position
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		editor.finish_stroke()
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K and (event.ctrl_pressed or event.meta_pressed):
 		if not editor.active: editor.set_active(true)
 		editor.scene._ui.visible = true
@@ -1417,14 +1421,20 @@ func _input(event: InputEvent) -> void:
 		_finish_placing(false)
 		get_viewport().set_input_as_handled()
 		return
-	if not _placing.is_empty():
+	if not _bar.visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and editor.mode != "select":
+		_finish_placing()
+		get_viewport().set_input_as_handled()
+		return
+	if not _placing.is_empty() and not _bar.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_finish_placing()
 			get_viewport().set_input_as_handled()
 			return
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not contains_pointer(event.position):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _bar.visible and editor.pointer_in_world(event.position):
 			var placed := _place_special(event.position) if _placing in ["bigfoot","wind_gust"] else editor.place_at(event.position)
-			if placed and (editor.mode != "waterfall" or editor._fall_start == null): _finish_placing(true)
+			if placed:
+				_hand.release(true)
+				if _placing in ["bigfoot","wind_gust"]: _finish_placing(true)
 			get_viewport().set_input_as_handled()
 			return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1589,7 +1599,11 @@ func _drop(mouse: Vector2) -> void:
 			_cursor.visible = false
 			_cursor.scale = Vector2.ONE
 		)
-	_finish_placing(placed)
+	if placed:
+		editor.finish_stroke()
+		_start_placing(_drag_id)
+		_hand.release(true)
+	else: _finish_placing(false)
 	drag_finished.emit(placed)
 
 func _cancel_drag() -> void:
