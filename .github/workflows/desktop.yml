@@ -113,6 +113,8 @@ jobs:
   smoke:
     name: Startup check (${{ matrix.platform }})
     needs: export
+    permissions:
+      contents: write # GitHub only exposes draft releases to writers.
     if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
