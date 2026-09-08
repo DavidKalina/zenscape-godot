@@ -27,6 +27,7 @@ extends Node3D
 ## and throw real dust. Every id in NativeTerrainData.ASSETS but "waterfall"
 ## appears here; anything missing simply does not react.
 const REACTIONS := {
+	"leaf_bed":"settle",
 	"tree":"sprout",
 	"flower":"sprout",
 	"broadleaf":"sprout",

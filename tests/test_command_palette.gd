@@ -41,6 +41,13 @@ func run() -> void:
  check(palette._focus_index == 0,"Down wraps to the first result")
  key(KEY_TAB)
  check(palette._entries[palette._matches[palette._focus_index]].group == "Water","Tab jumps to the next group")
+ for query in ["grass","pine","pond","bigfoot"]:
+  palette._search.text = query
+  palette._refresh_results()
+  check(not palette._matches.is_empty() and palette._entries[palette._matches[0]].title.to_lower() == query,"Exact name leads search for "+query)
+ palette._search.text = ""
+ palette._refresh_results()
+ check(palette._entries[palette._matches[0]].group == "Terrain","Clearing search restores category order")
  palette._browse("Flora")
  palette._search.text = "pine"
  palette._search.text_changed.emit("pine")

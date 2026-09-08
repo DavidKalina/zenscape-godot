@@ -38,6 +38,7 @@ func _ready() -> void:
 	creature.name = "Bigfoot"
 	add_child(creature)
 	creature.setup("res://assets/models/zenscape-bigfoot-interactions.glb")
+	_tremor.shaken.connect(creature.queue_tremor)
 	# Reuse the game's lighting so the authored coat belongs to the landscape.
 	var coat := ShaderMaterial.new()
 	coat.shader = preload("res://shaders/reference_surface.gdshader")
@@ -109,6 +110,7 @@ func _build_play_ui() -> void:
 func _on_creature_state(value: CreatureActor.State) -> void:
 	match value:
 		CreatureActor.State.HELD: _message.text = "Easy there! Find a clear patch to set him down."
+		CreatureActor.State.STUMBLING: _message.text = "Whoa—finding his balance…"
 		CreatureActor.State.LANDING: _message.text = "Finding his feet…"
 		CreatureActor.State.ALERT:
 			_message.text = "You have his attention."

@@ -90,6 +90,7 @@ var _dragging := false
 var _press_at := Vector2.ZERO
 var _bob := 0.0
 var _details := PanelContainer.new()
+var _details_title := Label.new()
 var _tune := Button.new()
 const FOLIAGE := ["tree","flower","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","mushroom"]
 var _search := LineEdit.new()
@@ -268,8 +269,10 @@ func _build() -> void:
 	for id: String in _sky_tiles:
 		_entries[id] = {"button":_sky_tiles[id],"group":"Weather","title":_sky_tiles[id].tooltip_text.get_slice("\n",0),"blurb":"Settle the whole scene into a new atmosphere"}
 	for entry: Array in [["undo","Undo",editor.undo],["redo","Redo",editor.redo],
-		["save","Save garden",editor.save_garden],["open","Open garden",editor.open_garden],
+		["save","Save garden",editor.scene.save_current if editor.scene.has_method("save_current") else editor.save_garden],["open","Open garden",editor.scene.show_open if editor.scene.has_method("show_open") else editor.open_garden],
 		["inspect","Leave build mode",func() -> void: editor.set_active(false)],
+		["landscapes","Landscapes · formation families and biomes",editor.scene.edit_landscape_presets],
+		["scene_colors","Looks & presets · colors and atmosphere",editor.scene.edit_scene_look],
 		["sky_settings","Sky settings",func() -> void: _show_category(SKY_TAB); _details.visible = true; _tune.set_pressed_no_signal(true)],
 		["tool_settings","Tool settings",func() -> void: _details.visible = true; _tune.set_pressed_no_signal(true)]]:
 		var button := Button.new()
@@ -382,6 +385,8 @@ func _browse(id: String) -> void:
 	_refresh_results()
 
 func open_palette() -> void:
+	if editor.scene._landscape_editor != null: editor.scene._landscape_editor.hide()
+	if editor.scene._look_editor != null: editor.scene._look_editor.hide()
 	if not editor.active: return
 	editor.finish_stroke()
 	_hand.hide_pointer()
@@ -414,6 +419,16 @@ func close_palette() -> void:
 	if _category == SKY_TAB: _show_category(_category_of(editor.mode))
 	if _tool_rail != null: _tool_rail.visible = true
 
+## Names outrank incidental words in descriptions. Keep category grouping,
+## bringing the best matching category first only while searching.
+func _search_rank(id: String, query: String) -> int:
+	var title: String = _entries[id].title.to_lower()
+	if title == query: return 0
+	if title.begins_with(query): return 1
+	if title.contains(query): return 2
+	if id.replace("_"," ").contains(query): return 3
+	return 4 if _entries[id].blurb.to_lower().contains(query) else 5
+
 func _refresh_results() -> void:
 	if _entries.is_empty(): return
 	for child in _results.get_children():
@@ -422,15 +437,28 @@ func _refresh_results() -> void:
 	_row_buttons.clear()
 	_matches.clear()
 	var query := _search.text.strip_edges().to_lower()
-	for group: String in CATEGORIES.slice(1):
+	var ordered: Array = _entries.keys()
+	var featured := ["range","mountain","raise","rock","pond","waterfall","tree","broadleaf","meadow","flower","bigfoot","fireflies"]
+	ordered.sort_custom(func(a: String,b: String) -> bool:
+		if not query.is_empty():
+			var ar := _search_rank(a,query)
+			var br := _search_rank(b,query)
+			if ar != br: return ar < br
+		var ai := featured.find(a)
+		var bi := featured.find(b)
+		return (ai if ai >= 0 else 100) < (bi if bi >= 0 else 100))
+	var groups: Array = CATEGORIES.slice(1)
+	if not query.is_empty():
+		var rank := {}
+		for group: String in groups: rank[group] = 5
+		for id: String in ordered:
+			var group: String = _entries[id].group
+			rank[group] = mini(rank[group],_search_rank(id,query))
+		groups.sort_custom(func(a: String,b: String) -> bool:
+			return rank[a] < rank[b] if rank[a] != rank[b] else CATEGORIES.find(a) < CATEGORIES.find(b))
+	for group: String in groups:
 		if _search_category != "All" and _search_category != group: continue
 		var heading_added := false
-		var ordered: Array = _entries.keys()
-		var featured := ["range","mountain","raise","rock","pond","waterfall","tree","broadleaf","meadow","flower","bigfoot","fireflies"]
-		ordered.sort_custom(func(a: String,b: String) -> bool:
-			var ai := featured.find(a)
-			var bi := featured.find(b)
-			return (ai if ai >= 0 else 100) < (bi if bi >= 0 else 100))
 		for id: String in ordered:
 			var entry: Dictionary = _entries[id]
 			if entry.group != group: continue
@@ -602,8 +630,20 @@ func _activate_result() -> void:
 func _build_strip() -> Control:
 	_strip.custom_minimum_size = Vector2(352,0)
 	_strip.add_theme_constant_override("separation",4)
+	var heading := HBoxContainer.new()
+	heading.name = "SettingsHeading"
+	_details_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.add_child(_details_title)
+	var close := Button.new()
+	close.name = "CloseSettings"
+	close.text = "Close"
+	close.pressed.connect(func() -> void:
+		_details.hide()
+		_tune.set_pressed_no_signal(false))
+	heading.add_child(close)
+	_strip.add_child(heading)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_strip.add_child(_scroll)
 	var stack := VBoxContainer.new()
@@ -611,7 +651,7 @@ func _build_strip() -> Control:
 	stack.add_theme_constant_override("separation",4)
 	_scroll.add_child(stack)
 	stack.minimum_size_changed.connect(_fit_details.call_deferred)
-	_grid.columns = 3
+	_grid.columns = 2
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grid.add_theme_constant_override("h_separation",8)
 	stack.add_child(_grid)
@@ -699,6 +739,7 @@ func _caption_text(text: String) -> Label:
 	return label
 
 func _title(id: String) -> String:
+	if _entries.has(id): return str(_entries[id].title)
 	return "Bigfoot tree" if id == "bigfoot_tree" else id.replace("_"," ").capitalize()
 
 func _placeable(id: String) -> bool:
@@ -747,10 +788,14 @@ func _fit_details() -> void:
 	var content: Control = _scroll.get_child(0)
 	var screen := get_viewport_rect().size
 	var available := maxf(64.0,screen.y-BAR_HEIGHT-42.0)
-	var height := clampf(content.get_combined_minimum_size().y+24.0,64.0,available)
+	var height := clampf(content.get_combined_minimum_size().y+64.0,64.0,available)
 	_details.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	_details.position = Vector2(screen.x-400.0,screen.y-BAR_HEIGHT-28.0-height)
-	_details.size = Vector2(384,height)
+	var rail: Rect2 = _tool_rail.get_global_rect() if _tool_rail != null else Rect2(20,92,174,320)
+	var left := rail.end.x+12.0
+	var width := 384.0
+	_details.scale = Vector2.ONE*minf(1.0,maxf(0.1,(screen.x-left-16.0)/width))
+	_details.position = Vector2(left,clampf(rail.position.y,16.0,maxf(16.0,screen.y-BAR_HEIGHT-28.0-height)))
+	_details.size = Vector2(width,height)
 
 ## Small antialiased vector icons avoid platform-dependent Unicode glyphs.
 func _line_icon(kind: String) -> Texture2D:
@@ -852,6 +897,10 @@ func _sky_ready() -> bool:
 ## so a whole sky is one click while the tool in hand waits untouched.
 func _build_sky_group() -> void:
 	if not _sky_ready(): return
+	for title: String in preload("res://scripts/scene_look.gd").MOODS:
+		var recipe: Array = preload("res://scripts/scene_look.gd").MOODS[title]
+		var colors: Dictionary = preload("res://scripts/scene_look.gd").preset_colors(recipe[0])
+		_library.add_child(_sky_tile("scene_mood_"+title,title,"Palette, hour and weather",{"top":colors.sky,"bottom":colors.glow,"mark":"sun"},editor.scene.apply_scene_mood.bind(title)))
 
 	for i in range(MOODS.size()):
 		var mood: Dictionary = MOODS[i]
@@ -912,6 +961,10 @@ func _fill_sky_strip() -> void:
 	var scene: Node3D = editor.scene
 	if not _sky_ready():
 		return
+	var colors := Button.new()
+	colors.text = "Scene colors & atmosphere…"
+	colors.pressed.connect(scene.edit_scene_look)
+	_actions.add_child(colors)
 	var sky: RefCounted = scene._celestial
 	var air: Node3D = scene._atmosphere
 	var weather: Node3D = scene._precipitation
@@ -1264,6 +1317,8 @@ func _place_special(point: Vector2) -> bool:
 	if _placing == "wind_gust":
 		editor.scene._atmosphere.send_gust(world)
 	elif _placing == "bigfoot":
+		if editor.scene.has_method("invite_bigfoot"):
+			return editor.scene.invite_bigfoot(world)
 		if not is_instance_valid(_inhabitant):
 			_inhabitant = CreatureActor.new()
 			editor.scene.add_child(_inhabitant)
@@ -1300,6 +1355,7 @@ func _on_tool_changed(tool: String) -> void:
 		_tiles[id].set_pressed_no_signal(_tiles[id] == chosen)
 		_tiles[id].modulate = Color.WHITE
 	_show_category(_category_of(tool))
+	if tool == "select": _details.hide()
 	if _tool_rail != null: _tool_rail.sync()
 
 func _on_setting_changed(property: String, value: float) -> void:
@@ -1322,6 +1378,8 @@ func _on_active_changed(enabled: bool) -> void:
 
 ## The tool's sliders, actions and colors live in the expandable Tune panel.
 func _rebuild_strip() -> void:
+	_grid.columns = 2
+	_details_title.text = "Sky settings" if _category == SKY_TAB else _title(editor.catalog_asset if editor.mode == "assets" else editor.mode)+" settings"
 	_setting_page = 0
 	_paginate_settings.call_deferred()
 	for child in _grid.get_children():
@@ -1338,16 +1396,18 @@ func _rebuild_strip() -> void:
 	for spec: Dictionary in editor.settings_for(editor.mode):
 		var entry := NativeSettingRow.build(editor,spec.property,true)
 		entry.box.custom_minimum_size = Vector2(104,0)
+		entry.box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		entry.label.clip_text = true
 		_grid.add_child(entry.box)
 		_strip_rows[spec.property] = entry
+	_grid.columns = mini(2,maxi(1,_strip_rows.size()))
 	for action: Dictionary in editor.actions_for(editor.mode):
 		var button := Button.new()
 		button.name = action.name
 		button.text = action.title
 		button.focus_mode = Control.FOCUS_NONE
 		button.add_theme_font_size_override("font_size",11)
-		button.pressed.connect(Callable(editor,action.method))
+		button.pressed.connect(editor.perform_action.bind(action.method))
 		_actions.add_child(button)
 	if editor.mode == "paint":
 		_actions.add_child(_colour_row("Colour","PaletteColor",editor.paint_color,
@@ -1630,6 +1690,8 @@ func _process(delta: float) -> void:
 		_hand.hide_pointer()
 	if editor != null:
 		_hud_count.text = "meadow-01 · %d objects" % (editor.data.objects.size()+(1 if is_instance_valid(_inhabitant) else 0))
+		if editor.scene.has_method("capture_diorama_state"):
+			_hud_count.text = "%d objects" % editor.data.objects.size()
 		_launcher.modulate.a = 1.0 if _launcher.is_hovered() else 0.775+0.225*sin(Time.get_ticks_msec()*TAU/4000.0)
 	if _category == SKY_TAB and not _sky_rows.is_empty() and is_visible_in_tree():
 		_sync_sky()

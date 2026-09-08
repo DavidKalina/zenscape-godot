@@ -16,6 +16,7 @@ func _run() -> void:
 	var button: Button = scene._build_palette.action_for("FormGroundFoundation")
 	check(button != null and button.text == "Form ground foundation","Foundation is available through the palette")
 	button.pressed.emit()
+	while editor.forming: await process_frame
 	var heights: PackedFloat32Array = editor.data.heights.duplicate()
 	check(editor.data.blank and editor.data.objects.is_empty(),"Foundation does not reveal imported scenery")
 	var near_edge: Array[float] = []

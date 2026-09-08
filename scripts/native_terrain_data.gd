@@ -4,7 +4,7 @@ extends RefCounted
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 24.0
-const ASSETS := ["tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
+const ASSETS := ["leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -286,6 +286,12 @@ func grass_color_at(point: Vector2) -> Color:
 ## reports where the data actually differs from that cached build, and the
 ## caller may force a full rebuild by clearing the cache first.
 func build_mesh(force := false) -> ArrayMesh:
+	# The null-budget path never yields; retain the synchronous mesh API for
+	# physics, loading, and offline callers.
+	return call("build_mesh_budgeted",force,null)
+
+func build_mesh_budgeted(force := false, frame_tree: SceneTree = null) -> ArrayMesh:
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	if force:
 		_mesh_result = null
 		_shore_ready = false
@@ -311,8 +317,12 @@ func build_mesh(force := false) -> ArrayMesh:
 	# an earlier incremental build already wrote into the working copy.
 	var source_colors: PackedColorArray = _arrays[Mesh.ARRAY_COLOR]
 	var paints_uv2 := uv2.size() == vertices.size()
+	var biome: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(_recipe_settings.get("biome",""),{})
+	var snowline: float = biome.get("snowline",_palette.snowline)
+	var rock_slope: float = biome.get("rock_slope",_palette.rock_slope)
 	var faces: PackedInt32Array = _faces_in(region) if region != null else _all_faces()
 	for i in faces:
+		if frame_tree != null and i%96 == 0: await budget.checkpoint()
 		for j in range(3):
 			vertices[i+j].y = heights[vertex_ids[i+j]]
 			if paints_uv2:
@@ -338,15 +348,15 @@ func build_mesh(force := false) -> ArrayMesh:
 			# The sealed cut is not a geological cliff. Source colorAt samples
 			# the continuous ground before its border is lowered to the rim.
 			var cut_rim := _face_rim[face] == 1
-			if center.y > _palette.snowline-1.8 or (slope > _palette.rock_slope and (not cut_rim or _recipe != null)):
+			if center.y > snowline-1.8 or (slope > rock_slope and (not cut_rim or _recipe != null)):
 				face_color = _face_rock[face]
-			if center.y > _palette.snowline and slope < 2.4:
+			if center.y > snowline and slope < 2.4:
 				face_color = _face_snow[face]
 				snowed = true
 			if not water_field.is_empty():
 				var shore:=preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.shore,face_x,face_z)
 				var running: bool=preload("res://scripts/native_recipe_water.gd").kind_at(water_field,face_x,face_z)==2
-				if running and shore<1.7 and center.y<_palette.snowline-1.8:
+				if running and shore<1.7 and center.y<snowline-1.8:
 					face_color=_face_grass[face]
 				if shore < 0.75 and slope<2.2:
 					var bank: Color = _palette.gravel if running else _palette.sand
@@ -550,25 +560,41 @@ func _shoreline_mask(field: Dictionary) -> PackedByteArray:
 ## Recipes are pure functions of their settings, so restoring the same recipe -
 ## which is what every sculpt undo/redo does - can keep the sampled height and
 ## gradient tables instead of re-evaluating the source noise ~19,000 times.
-func _set_recipe(settings: Dictionary) -> void:
+func _set_recipe(settings: Dictionary, frame_tree: SceneTree = null) -> void:
 	if var_to_bytes(_recipe_settings) == var_to_bytes(settings) and (_recipe == null) == settings.is_empty():
 		return
+	# Prepare locally: live ground queries keep seeing the complete old recipe
+	# until both sample tables are ready to publish together.
+	var recipe = null if settings.is_empty() else preload("res://scripts/native_terrain_recipe.gd").new(settings)
+	var sampled_heights := PackedFloat32Array()
+	var sampled_gradients: Array[Vector2] = []
+	var sampled_water := PackedFloat64Array()
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
+	if recipe != null:
+		for i in range(points.size()):
+			var point := points[i]
+			sampled_heights.append(0.6 if maxf(absf(point.x),absf(point.y)) > 13.9999 else recipe.height(point.x,point.y))
+			if frame_tree != null and i%16 == 0: await budget.checkpoint()
+		for i in range(_face_x.size()):
+			var x: float = _face_x[i]
+			var z: float = _face_z[i]
+			sampled_gradients.append(Vector2((recipe.height(x+0.25,z)-recipe.height(x-0.25,z))/0.5,(recipe.height(x,z+0.25)-recipe.height(x,z-0.25))/0.5))
+			if frame_tree != null and i%8 == 0: await budget.checkpoint()
+		# Pond shading would otherwise lazily sample this entire grid during the
+		# mesh rebuild. Prepare its exact double-precision values in slices too.
+		if frame_tree != null and not ponds.is_empty():
+			for z in range(NativeRecipeWater.W):
+				for x in range(NativeRecipeWater.W):
+					sampled_water.append(recipe.height(-14.0+x*NativeRecipeWater.CELL,-14.0+z*NativeRecipeWater.CELL))
+					if x%8 == 0: await budget.checkpoint()
 	_recipe_settings = settings.duplicate(true)
-	_recipe = null if settings.is_empty() else preload("res://scripts/native_terrain_recipe.gd").new(settings)
-	_recipe_heights.clear()
-	_recipe_gradients.clear()
-	_water_grid_h.clear()
+	_recipe = recipe
+	_recipe_heights = sampled_heights
+	_recipe_gradients = sampled_gradients
+	_water_grid_h = sampled_water
 	_recipe_height_cache.clear()
 	_recipe_height_count = 0
 	_strands_ready = false
-	if _recipe == null: return
-	for point in points:
-		_recipe_heights.append(0.6 if maxf(absf(point.x),absf(point.y)) > 13.9999 else _recipe.height(point.x,point.y))
-	var vertices: PackedVector3Array = _arrays[Mesh.ARRAY_VERTEX]
-	for i in range(0,vertices.size(),3):
-		var x: float = (float(vertices[i].x)+float(vertices[i+1].x)+float(vertices[i+2].x))/3.0
-		var z: float = (float(vertices[i].z)+float(vertices[i+1].z)+float(vertices[i+2].z))/3.0
-		_recipe_gradients.append(Vector2((_recipe.height(x+0.25,z)-_recipe.height(x-0.25,z))/0.5,(_recipe.height(x,z+0.25)-_recipe.height(x,z-0.25))/0.5))
 
 ## Each face reads the sculpt delta at four fixed offsets from its centroid, so
 ## the triangle those offsets land in is resolved once and then evaluated with
@@ -602,13 +628,13 @@ func _sculpt_delta(point: Vector2) -> float:
 	point = point.clamp(Vector2(-14,-14),Vector2(14,14))
 	return float(sample(point,heights))-float(sample(point,_recipe_heights))
 
-func form_range(height_scale := 1.0, width_scale := 1.0, heading := 0.0, variation := 0) -> void:
-	_set_recipe({"kind":"range","height":height_scale,"width":width_scale,"heading":heading,"variation":variation})
+func form_range(height_scale := 1.0, width_scale := 1.0, heading := 0.0, variation := 0, frame_tree: SceneTree = null) -> void:
+	await _set_recipe({"kind":"range","height":height_scale,"width":width_scale,"heading":heading,"variation":variation},frame_tree)
 	heights = _recipe_heights.duplicate()
 
-func form_foundation(elevation := 0.0, relief := 1.0) -> void:
+func form_foundation(elevation := 0.0, relief := 1.0, frame_tree: SceneTree = null) -> void:
+	await _set_recipe({"kind":"foundation","elevation":elevation,"relief":relief},frame_tree)
 	landscape_waterfall=false
-	_set_recipe({"kind":"foundation","elevation":elevation,"relief":relief})
 	heights = _recipe_heights.duplicate()
 
 func reset_flat() -> void:
@@ -954,6 +980,11 @@ func load_document(document: Variant) -> bool:
 				if not GardenData._number(item.get("level"),MIN_HEIGHT,MAX_HEIGHT):
 					return false
 				record.level = float(item.level)
+				if item.has("basin"):
+					if not item.basin is Array or item.basin.size()!=2: return false
+					for radius in item.basin:
+						if not GardenData._number(radius,0.1,14.0): return false
+					record.basin = item.basin.duplicate()
 			loaded[field].append(record)
 	_restore(loaded)
 	_undo.clear()

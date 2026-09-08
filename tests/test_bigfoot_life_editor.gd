@@ -33,7 +33,8 @@ func run() -> void:
 	check(scene._refresh_phase == 1, "Collision and navigation rebuild are separated by physics boundary")
 	await physics_frame
 	scene._physics_process(1.0/60.0)
-	check(not scene._world_dirty and scene._refresh_phase == 0, "Navigation rebuild completes on following boundary")
+	await rebuild(scene)
+	check(not scene._world_dirty and scene._refresh_phase == 0, "Navigation rebuild completes across budgeted physics boundaries")
 	scene.creature.pick_up()
 	var held: Vector3 = scene.creature.global_position
 	editor.data.heights.fill(1.0)
@@ -44,6 +45,7 @@ func run() -> void:
 	scene._physics_process(1.0/60.0)
 	await physics_frame
 	scene._physics_process(1.0/60.0)
+	await rebuild(scene)
 	check(scene.creature.is_held() and scene.creature.global_position == held, "Editing ground never teleports held creature")
 	check(is_equal_approx(scene.creature._safe_position.y, 1.0), "Held invalid-release fallback tracks edited ground")
 	# A barrier covering his feet relocates him visibly, and undo/redo updates
@@ -126,6 +128,8 @@ func run() -> void:
 	quit(1 if failures else 0)
 
 func rebuild(scene: Node) -> void:
-	scene._physics_process(1.0/60.0)
-	await physics_frame
-	scene._physics_process(1.0/60.0)
+	for i in range(300):
+		if not scene._world_dirty and scene._refresh_phase == 0: return
+		scene._physics_process(1.0/60.0)
+		await physics_frame
+	check(false,"Navigation must finish within the bounded wait")

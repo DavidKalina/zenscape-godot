@@ -37,6 +37,29 @@ func _run() -> void:
 	var aimed: Vector3 = scene.wind.sample_local(scene._home+Vector3.UP)
 	check(aimed.x>10.0 and absf(aimed.z)<1.0,"Camera-projected drag emits wind in aimed world direction")
 	scene.wind.clear()
+	scene._unhandled_input(press)
+	scene._input(motion)
+	var cancel := InputEventKey.new()
+	cancel.keycode = KEY_ESCAPE
+	cancel.pressed = true
+	scene._input(cancel)
+	scene._input(release)
+	check(scene.wind._gusts.is_empty() and scene.gust_visuals.aim.mesh==null,"Escape cancels a gesture without emitting wind")
+	scene._unhandled_input(press)
+	scene._input(motion)
+	var pause_aim := InputEventKey.new()
+	pause_aim.keycode = KEY_P
+	pause_aim.pressed = true
+	scene._unhandled_input(pause_aim)
+	scene._input(release)
+	scene.demo_gust()
+	check(scene.wind._gusts.is_empty() and scene.gust_visuals.aim.mesh==null,"Pause cancels aim and prevents new gusts")
+	scene._unhandled_input(pause_aim)
+	scene._unhandled_input(press)
+	scene._input(motion)
+	scene._notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
+	scene._input(release)
+	check(scene.wind._gusts.is_empty(),"Losing focus cancels an unfinished drag")
 	scene.demo_gust()
 	for i in range(80): await physics_frame
 	check(scene.creature.state == CreatureActor.State.WIND,"Real demo gust starts physical tumble")

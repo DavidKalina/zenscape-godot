@@ -10,6 +10,8 @@ func _run() -> void:
 	var scene = load("res://studies/fidelity_life.tscn").instantiate()
 	root.add_child(scene)
 	scene.set_process(false)
+	scene.set_process_input(false)
+	scene.set_process_unhandled_input(false)
 	scene._refresh_habitat()
 	var distance := 0.0
 	var unsafe := 0
@@ -29,7 +31,7 @@ func _run() -> void:
 		check(kind in scene.routine.history,"Autonomous routine completes "+kind)
 	check(distance>25.0,"He keeps exploring between activities")
 	check(unsafe == 0,"Every autonomous frame remains safely grounded")
-	check(scene.routine.last_cancel.is_empty(),"No stuck approaches or failed performances")
+	check(scene.routine.last_cancel.is_empty(),"No stuck approaches or failed performances: "+scene.routine.last_cancel)
 	check(scene.fish.population.size()==water_count,"Fishing preserves the explicit fish population")
 	print("ROUTINE DAY: distance=",distance," unsafe=",unsafe," history=",scene.routine.history," failures=",failures)
 	scene.free()

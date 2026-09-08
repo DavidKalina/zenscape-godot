@@ -18,6 +18,7 @@ var title := Label.new()
 var hint := Label.new()
 var choices := OptionButton.new()
 var trail := CheckButton.new()
+var dig := Button.new()
 
 func setup(owner_palette: NativeBuildPalette) -> void:
 	palette = owner_palette
@@ -66,6 +67,9 @@ func setup(owner_palette: NativeBuildPalette) -> void:
 		editor.placement_trail = enabled
 		sync())
 	context.add_child(trail)
+	dig.text = "Dig a hollow"
+	dig.pressed.connect(func() -> void: palette._choose("lower"))
+	context.add_child(dig)
 	var tune := Button.new()
 	tune.name = "Settings"
 	tune.text = "Settings"
@@ -101,8 +105,10 @@ func sync() -> void:
 	if index >= 0: choices.select(index)
 	trail.visible = editor.trail_available() and id != "bigfoot"
 	trail.set_pressed_no_signal(editor.placement_trail)
+	dig.visible = id == "pond"
 	if id == "bigfoot": hint.text = "Click once to place. Choosing Bigfoot again moves him."
 	elif editor.trail_available(): hint.text = "Hold and drag. One stroke, one undo. Esc to select." if editor.placement_trail else "Click to stamp. Your item stays selected."
+	elif id == "pond": hint.text = "Dig a hollow, then return to Water. Hover to preview the shoreline."
 	elif family == "Select": hint.text = "Click to select. Drag to move. Delete to remove."
 	elif id in ["ground","range"]: hint.text = "Use Settings to form the whole landscape."
 	elif family in ["Sculpt","Paint"]: hint.text = "Hold and drag to brush. Right drag to orbit."

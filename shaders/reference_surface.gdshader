@@ -1,4 +1,5 @@
 shader_type spatial;
+#include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
@@ -110,7 +111,7 @@ void fragment() {
 		if (dot(face_normal, zs_camera_position - world_position) < 0.0) face_normal = -face_normal;
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
-	vec3 tint = base_color.rgb * COLOR.rgb;
+	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
 	zs_autumn_paint(tint, world_position, zs_autumn);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
 	float surface_wet = 0.0;

@@ -3,6 +3,48 @@
 A new Godot project exploring a cozy landscape sculpting toy. One continuous,
 editable diorama: shape a place with a brush, then gradually bring it to life.
 
+## Create a diorama
+
+Launch **`run-diorama.command`**, or press **F5** in Godot, for the main menu.
+**New diorama** opens a bare, flat chunk in Build mode. Each new diorama gets
+its own JSON file under Godot's `user://dioramas` folder. The current world is
+saved before New, Open, or Quit; a failed save prevents switching. **Continue**
+resumes the current world, or opens the last successfully saved/opened file.
+**Open diorama** chooses a file; **Save a copy** gives it a name and location.
+
+The top bar offers **Build / Enjoy**, **Save**, **Landscapes**, **Colors & sky**, **Bigfoot**, and
+**Overview**. Invite Bigfoot by choosing his button and clicking dry, open
+terrain; his presence and resting habits are saved with the diorama. **H** hides
+or restores the controls, **R** frames the whole chunk, and **Cmd/Ctrl S** saves.
+**Escape** returns to Select first, then opens the menu. Settings offers visual
+quality and nature/thunder sound controls. World files retain these settings;
+there is no separate global preferences file in this first pass.
+
+**Landscapes** opens seven curated formation families, each with a suggested biome:
+Riverfold valley, Skywater plateau, Sleeping volcano, Emerald ridgeback,
+Silverhorn tarn, Sunstone canyon, and Jade terraces. Each card forms the ground,
+water and planting in one undoable action. The **Biome** picker changes planting,
+ground cover and the snowline while preserving sculpting, water and hand-placed
+objects. **Swap palette…** opens the color controls; formation and biome changes
+keep your existing colors, lighting and weather. All seven families work with
+all five biomes. See [landscape presets](docs/landscapes/README.md).
+
+**Colors & sky** opens a visual **Looks** gallery with nine curated presets:
+Alpine morning, Golden meadow, Copper autumn, Rosewater dusk, Enchanted forest,
+Halloween hollow, First snow, Nordic night, and After the rain. Each card shows a real rendered
+preview and applies coordinated colors, lighting and weather in one click.
+Terrain and objects stay in place. The other tabs retain 13 base palettes,
+10 simple moods and all the manual controls. Customize grass,
+foliage, stone, earth, water, sky, light and mist colors; adjust lighting strength,
+exposure and the atmosphere in the Landscape, Sky & light, and Atmosphere tabs. Changes remain editable and save
+with the diorama. **Undo look / Redo** (or Cmd/Ctrl Z while this panel is open)
+restore color and atmosphere edits together. **Reset colors** restores the
+original mountain colors and lighting strengths. Older saves keep their original
+appearance. See [scene looks and controls](docs/scene-look/README.md).
+
+The older study launchers remain available. They keep their original entry
+scenes and save paths.
+
 ## ZenScape fidelity study
 
 Double-click **`run-fidelity.command`** to explore a real ZenScape scene rendered
@@ -64,7 +106,7 @@ original Three.js right. The comparison still shows open lighting/fog difference
 ## Run
 
 Open `project.godot` in **Godot 4.7.2** (standard edition; no .NET needed), then
-press **F5** for the fidelity scene with Forward+ lighting and volumetric fog.
+press **F5** for the diorama main menu with Forward+ lighting and volumetric fog.
 Open `scenes/sandbox.tscn` and press **F6** for the sculpting prototype, or use
 **Esc** from the fidelity scene.
 
@@ -218,3 +260,10 @@ retains turned foliage under its snowpack. Canopy-bound falling leaves now share
 The fidelity scene now blends fog after tone mapping, matching the source
 compositing order. Use `--native-fog` to compare the previous volume renderer.
 See docs/fidelity/DISPLAY-FOG.md for validation and remaining gaps.
+
+
+**Landscapes** now includes connected rivers, cascades and lakes across all seven
+formation families. Choose a biome and water treatment, then swap colors freely.
+**Another like this** generates a reproducible variation with those choices kept.
+The **Favorites** tab saves discoveries with thumbnails and restores the complete
+edited scene with undo/redo. See [the landscape guide](docs/landscapes/README.md).

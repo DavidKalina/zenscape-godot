@@ -225,6 +225,8 @@ func _run() -> void:
 	check(palette.sky_tile_for("weather_snow").button_pressed,"The chosen weather swatch reads as selected")
 	palette.sky_tile_for("weather_mist").pressed.emit()
 	check(scene._precipitation.preset_index == weathers.find("mist") and not palette.sky_tile_for("weather_snow").button_pressed,"Choosing another preset moves the selection")
+	# Weather choices dismiss the catalog; detailed dials are an explicit command.
+	palette._entries["command_sky_settings"].button.pressed.emit()
 	var time_row: Dictionary = palette.sky_row("time")
 	check(not time_row.is_empty(),"The sky strip holds a time of day slider")
 	time_row.control.value = 0.62
@@ -244,7 +246,7 @@ func _run() -> void:
 	editor.handle_input(sky_key)
 	check(palette._bar.visible and palette._search_category == "Weather" and editor.mode == "tree","K opens weather search without changing an idle tool")
 	editor.handle_input(sky_key)
-	check(palette.category() == "Sky","K opens the sky again")
+	check(not palette._bar.visible and editor.mode == "tree","K closes weather search without changing the held tool")
 	editor.select_tool("rock")
 	check(palette.category() == "Place" and not palette.sky_row("time").has("control"),"Picking a tool restores its own strip")
 	# The Mountain tile drags in the same way, and stamps through the editor.

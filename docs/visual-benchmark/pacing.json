@@ -1,0 +1,41 @@
+[
+	{
+		"enhanced": false,
+		"fps_cap": 120,
+		"frames": 481,
+		"max_ms": 11.467,
+		"mean_ms": 8.33075467775468,
+		"p95_ms": 8.63,
+		"p99_ms": 9.25,
+		"pixels": [
+			1440,
+			900
+		]
+	},
+	{
+		"enhanced": true,
+		"fps_cap": 120,
+		"frames": 475,
+		"max_ms": 9.609,
+		"mean_ms": 8.4225747368421,
+		"p95_ms": 8.855,
+		"p99_ms": 9.025,
+		"pixels": [
+			1440,
+			900
+		]
+	},
+	{
+		"enhanced": false,
+		"fps_cap": 120,
+		"frames": 481,
+		"max_ms": 8.966,
+		"mean_ms": 8.33209771309771,
+		"p95_ms": 8.468,
+		"p99_ms": 8.806,
+		"pixels": [
+			1440,
+			900
+		]
+	}
+]

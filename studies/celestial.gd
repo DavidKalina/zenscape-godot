@@ -2,6 +2,8 @@ extends RefCounted
 ## Mountain preset and celestial curves ported from presets.js/daynight.js.
 ## Lighting, sky and reflected sky read the same state.
 
+var look := preload("res://scripts/scene_look.gd").new()
+
 var fog_display := Vector3.ZERO
 var surface_fog_color := Vector3.ZERO
 var aerial_sun_color := Vector3.ZERO
@@ -29,6 +31,7 @@ var _tilt := 0.0
 var _yaw := atan2(20.0, 12.0)
 
 func setup(lights: Array[DirectionalLight3D]) -> void:
+	look.publish()
 	_sun = lights[0]
 	_rim = lights[1]
 	var elevation := asin(14.0 / Vector3(20, 14, 12).length())
@@ -79,7 +82,7 @@ func update_rig() -> void:
 	var warmth := exp(-e * e / (2.0 * 0.13 * 0.13))
 	var sun_energy := 3.4 * smoothstep(-0.03, 0.10, e) * (0.45 + 0.55 * smoothstep(0.08, 0.45, e))
 	var moon_energy := 3.4 * 0.11 * smoothstep(0.02, 0.30, moon.y) * night
-	var tint := _rgb("ffcf8f").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
+	var tint := look.rgb("sun").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
 	tint = _rgb("ff6222").lerp(_rgb("ffb45c"), smoothstep(-0.02, 0.1, e)).lerp(tint, smoothstep(0.1, 0.4, e))
 	var key_direction := sun
 	var energy := sun_energy
@@ -90,17 +93,20 @@ func update_rig() -> void:
 	var overcast := lerpf(1.0, 0.44, cloud) * lerpf(1.0, 0.8, storm) * lerpf(1.0, 0.86, shroud) * lerpf(1.0, 0.92, cold)
 	_sun.position = key_direction * Vector3(20, 14, 12).length()
 	_sun.look_at(Vector3.ZERO)
-	_sun.light_energy = energy * overcast / PI
+	_sun.light_energy = energy * overcast / PI * look.settings.sun_energy
 	_sun.light_color = _color(tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4)).linear_to_srgb()
 	var ambient := smoothstep(-0.12, 0.10, e)
 	var hemi_sky := _rgb("26324e").lerp(_rgb("8fb3d9"), ambient).lerp(_rgb("7d92bd"), warmth * 0.5)
+	hemi_sky *= look.ratio("ambient")
 	hemi_sky = hemi_sky.lerp(Vector3(0.5, 0.55, 0.62), cloud * 0.6).lerp(Vector3(0.66, 0.58, 0.46), autumn * 0.3).lerp(Vector3(0.62, 0.70, 0.85), cold * 0.35)
 	var hemi_ground := _rgb("0d1016").lerp(_rgb("4a5240"), day)
+	hemi_ground *= look.ratio("bounce")
 	_rim.light_energy = 1.1 * (0.3 + 0.7 * day) * lerpf(1.0, 0.5, cloud) / PI
 	_publish("zs_key_direction", _sun.global_basis.z.normalized())
 	var key_color := _sun.light_color.srgb_to_linear()
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
 	_publish("zs_rim_direction", _rim.global_basis.z.normalized())
+	_rim.light_color = _color(look.rgb("rim")).linear_to_srgb()
 	var rim_color := _rim.light_color.srgb_to_linear()
 	_publish("zs_rim_irradiance", Vector3(rim_color.r, rim_color.g, rim_color.b) * _rim.light_energy * PI)
 	_publish("zs_cloud_direction", key_direction)
@@ -111,10 +117,13 @@ func update_rig() -> void:
 	var fill := night * night_fill * lerpf(1.0, 0.4, storm)
 	_publish("zs_hemi_sky", hemi_sky + Vector3(0.22, 0.28, 0.4) * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
-	_publish("zs_hemi_energy", 0.55 * (0.22 + 0.78 * ambient) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill) * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(Vector3(0.055, 0.07, 0.1), day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(Vector3(0.1, 0.14, 0.24), day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(Vector3(0.3, 0.18, 0.14), day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
+	down *= look.ratio("horizon")
+	up *= look.ratio("sky")
+	glow *= look.ratio("glow")
 	var sky_dim := clampf(up.dot(Vector3(0.2126, 0.7152, 0.0722)) / 0.14, 0.08, 1.0)
 	var cover := minf(1.0, cloud * 1.15)
 	# Weather tint targets from weather.js; applied after the hour, as in the source.
@@ -147,12 +156,13 @@ func update_rig() -> void:
 	var sun_on := lerpf(1.0, smoothstep(shade_line - band * 0.5, shade_line + band * 0.5, lid), alpen)
 	var sun_k := minf(1.0, energy / 2.0)
 	var fog_color := (hemi_sky * 0.55 * 1.7).lerp(Vector3(0.30, 0.33, 0.38), storm * 0.6).lerp(Vector3(0.72, 0.66, 0.54), autumn * 0.35).lerp(Vector3(0.62, 0.68, 0.78), cold * 0.45)
-	fog_display = source_display_fog(fog_color, 1.15)
+	fog_color *= look.ratio("fog")
+	fog_display = source_display_fog(fog_color, 1.15 * look.settings.exposure)
 	var display_color := Color(fog_color.x, fog_color.y, fog_color.z).linear_to_srgb()
 	surface_fog_color = Vector3(display_color.r, display_color.g, display_color.b)
 	var aerial_warmth := 0.6 * smoothstep(-0.02, 0.18, key_direction.y) * (1.0 - 0.85 * cloud) * (1.0 - storm)
 	aerial_sun_color = fog_color.lerp(fog_color * Vector3(1.22, 1.06, 0.84), aerial_warmth)
-	var inv_color := source_display_fog(fog_color.lerp(state.zs_cloud_sun, 0.35 * sun_on * sun_k), 1.15)
+	var inv_color := source_display_fog(fog_color.lerp(state.zs_cloud_sun, 0.35 * sun_on * sun_k), 1.15 * look.settings.exposure)
 	_publish("zs_inversion_color", inv_color.lerp(Vector3.ONE, 0.38 * sun_on * sun_k))
 	_publish("zs_night", night)
 	_publish("zs_daylight", day)

@@ -16,6 +16,7 @@ func _run() -> void:
 	var button: Button = scene._build_palette.action_for("FormMountainLandscape")
 	check(button != null and button.text == "Form mountain landscape","Range generation is exposed through the palette")
 	button.pressed.emit()
+	while editor.forming: await process_frame
 	var generated: PackedFloat32Array = editor.data.heights.duplicate()
 	var worst := 0.0
 	for i in range(generated.size()):

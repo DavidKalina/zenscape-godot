@@ -18,10 +18,19 @@ var _ponds: Array[Dictionary] = []
 var _courses: Array[Dictionary] = []
 var _impacts: Array[Dictionary] = []
 var last_rebuild_usec := 0
+var rebuilding := false
+var _rebuild_cell := 0
+var _rebuild_side := 0
 
 ## Terrain provider: ground_height, ponds/pond_surface, streams, objects,
 ## waterfall_impacts. Fidelity supplies imported ground and clearance instead.
 func rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE) -> void:
+	begin_rebuild(data,clearance,grid_step,slope_rise)
+	while not advance_rebuild(1000000): pass
+
+## Live editors spread the grid scan over frames. Callers suspend route planning
+## until completion; a newer edit restarts the scan against the latest world.
+func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE) -> void:
 	_slope_rise = slope_rise
 	_grid_step = clampf(grid_step,0.35,1.0)
 	var began := Time.get_ticks_usec()
@@ -49,14 +58,27 @@ func rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_ris
 		if item.asset == "waterfall":
 			_courses.append({"a":Vector2(item.x,item.z),"b":Vector2(item.end_x,item.end_z),"radius":float(item.scale)*0.5+RADIUS,"level":INF})
 	_impacts = data.waterfall_impacts()
-	for z in range(roundi(28.0/_grid_step)+1):
-		for x in range(roundi(28.0/_grid_step)+1):
-			var point := Vector3(-14.0+x*_grid_step,0,-14.0+z*_grid_step)
-			var grounded: Variant = _ground(point)
-			if grounded != null and _safe_grounded(grounded):
-				_cells[Vector2i(x,z)] = _nodes.size()
-				_nodes.append(grounded)
+	_rebuild_cell = 0
+	_rebuild_side = roundi(28.0/_grid_step)+1
+	rebuilding = true
 	last_rebuild_usec = Time.get_ticks_usec()-began
+
+func advance_rebuild(budget_usec := 2000) -> bool:
+	if not rebuilding: return true
+	var began := Time.get_ticks_usec()
+	while _rebuild_cell < _rebuild_side*_rebuild_side:
+		var x := _rebuild_cell % _rebuild_side
+		var z := _rebuild_cell / _rebuild_side
+		var point := Vector3(-14.0+x*_grid_step,0,-14.0+z*_grid_step)
+		var grounded: Variant = _ground(point)
+		if grounded != null and _safe_grounded(grounded):
+			_cells[Vector2i(x,z)] = _nodes.size()
+			_nodes.append(grounded)
+		_rebuild_cell += 1
+		if Time.get_ticks_usec()-began >= budget_usec: break
+	last_rebuild_usec += Time.get_ticks_usec()-began
+	rebuilding = _rebuild_cell < _rebuild_side*_rebuild_side
+	return not rebuilding
 
 func _ground(point: Vector3) -> Variant:
 	if _data == null or not point.is_finite(): return null
@@ -124,6 +146,7 @@ func _connect(point: Vector3) -> int:
 	return closest
 
 func path(from: Vector3,to: Vector3) -> PackedVector3Array:
+	if rebuilding: return PackedVector3Array()
 	if not is_safe(from) or not is_safe(to): return PackedVector3Array()
 	if segment_safe(from,to): return PackedVector3Array([from,to])
 	# Optimistically search the safe-cell graph, then validate just the candidate

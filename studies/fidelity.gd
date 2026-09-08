@@ -48,6 +48,8 @@ var _environment: Environment
 var _panning := false
 var _quality: OptionButton
 var _atmosphere: Node3D
+var _landscape_editor: PanelContainer
+var _look_editor: PanelContainer
 var _celestial: RefCounted
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
@@ -84,6 +86,7 @@ func _ready() -> void:
 	if get_tree().current_scene == self:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	var geometry: Node3D = $Reference
+	preload("res://scripts/scene_look.gd").source_roles(geometry)
 	_source = geometry.get_meta("source_settings", {})
 	if _source.is_empty():
 		_source = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/scene.json"))
@@ -96,6 +99,7 @@ func _ready() -> void:
 	_setup_environment()
 	_celestial = preload("res://studies/celestial.gd").new()
 	_celestial.setup(_lights)
+	_celestial.look.changed.connect(_update_scene_look)
 	_atmosphere = preload("res://studies/atmosphere.gd").new()
 	add_child(_atmosphere)
 	_atmosphere.setup(geometry, _environment)
@@ -138,6 +142,7 @@ func _ready() -> void:
 	_chunk_editor = NativeChunkEditor.new()
 	add_child(_chunk_editor)
 	_chunk_editor.setup(self)
+	_atmosphere.setup_wind_trails(_chunk_editor.data.ground_height)
 	_build_ui()
 	if not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":
 		_enable_display_fog()
@@ -365,6 +370,8 @@ func _face_rainbow() -> void:
 	_update_camera()
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventGesture and _landscape_editor != null and _landscape_editor.visible and _landscape_editor.get_global_rect().has_point(event.position): return
+	if event is InputEventGesture and _look_editor != null and _look_editor.visible and _look_editor.get_global_rect().has_point(event.position): return
 	# Releases over the control panel must still finish camera gestures.
 	if event is InputEventMouseButton and not event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT and _chunk_editor != null:
@@ -411,6 +418,14 @@ func _ease_camera(delta: float) -> void:
 		_pan_delta *= retain
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and _landscape_editor != null and _landscape_editor.visible:
+		_landscape_editor.hide()
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and _look_editor != null and _look_editor.visible:
+		_look_editor.hide()
+		get_viewport().set_input_as_handled()
+		return
 	if _chunk_editor != null and _chunk_editor.handle_input(event):
 		return
 	if event is InputEventMouseButton:
@@ -455,6 +470,7 @@ func _process(delta: float) -> void:
 		delta = 1.0 / _film_fps
 	_elapsed += delta
 	_growth.advance(delta, _paused, _tremor)
+	if _atmosphere.wind_trails != null: _atmosphere.wind_trails.visible = _growth.terrain>=0.995
 	_terrain_slider.set_value_no_signal(_growth.terrain)
 	_foliage_slider.set_value_no_signal(_growth.foliage)
 	_water_slider.set_value_no_signal(_growth.water)
@@ -980,3 +996,65 @@ func _sync_saved_controls() -> void:
 			setting.control.set_pressed_no_signal(not bool(value) if setting.negate else bool(value))
 		elif setting.control is Range:
 			setting.control.set_value_no_signal(float(value))
+
+func _update_scene_look() -> void:
+	_celestial.update_rig()
+	var exposure: float = float(_source.exposure)/1.08 * _celestial.look.settings.exposure
+	_environment.tonemap_exposure = exposure
+	RenderingServer.global_shader_parameter_set("zs_exposure",exposure)
+
+func edit_scene_look() -> void:
+	if _landscape_editor != null: _landscape_editor.hide()
+	if _look_editor == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 25
+		add_child(layer)
+		_look_editor = preload("res://scripts/scene_look_editor.gd").new()
+		layer.add_child(_look_editor)
+		_look_editor.setup(self)
+		_look_editor.visibility_changed.connect(_sync_authoring_chrome)
+	_look_editor.show()
+	_look_editor.sync()
+	_sync_authoring_chrome()
+
+func apply_scene_mood(title: String) -> void:
+	var recipes: Dictionary = preload("res://scripts/scene_look.gd").MOODS
+	if not recipes.has(title): return
+	var mood: Array = recipes[title]
+	_celestial.look.choose(mood[0])
+	_precipitation.cloud_override = -1.0
+	_precipitation.cold_override = -1.0
+	_precipitation.set_weather(_precipitation.PRESET_NAMES.find(mood[2]),true)
+	_atmosphere.strength = mood[5]
+	_atmosphere._air_strength = mood[5]
+	_atmosphere.set_fog(mood[3])
+	_atmosphere.fog_amount = mood[3]
+	_atmosphere.set_haze(mood[4])
+	_atmosphere.haze_amount = mood[4]
+	_celestial.cycling = false
+	_celestial.aurora_strength = 0.65 if mood[0] == "Moonlit" else 0.0
+	_celestial.set_phase(mood[1])
+	_process(0.0)
+	_sync_saved_controls()
+
+func edit_landscape_presets() -> void:
+	if _look_editor != null: _look_editor.hide()
+	_build_palette.close_palette()
+	if _landscape_editor == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 25
+		add_child(layer)
+		_landscape_editor = preload("res://scripts/landscape_preset_editor.gd").new()
+		layer.add_child(_landscape_editor)
+		_landscape_editor.setup(self)
+		_landscape_editor.visibility_changed.connect(_sync_authoring_chrome)
+	_landscape_editor.show()
+	_landscape_editor.sync()
+	_sync_authoring_chrome()
+
+func _sync_authoring_chrome() -> void:
+	if _landscape_editor != null and _landscape_editor.get("_saving") == true: return
+	var panel_open := (_look_editor != null and _look_editor.visible) or (_landscape_editor != null and _landscape_editor.visible)
+	_build_palette.visible = _chunk_editor.active and not panel_open
+	if has_method("save_current"):
+		get("_notice").visible = not panel_open and get("_toolbar").visible

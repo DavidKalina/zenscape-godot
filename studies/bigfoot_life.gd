@@ -24,6 +24,7 @@ func _ready() -> void:
 	brain.setup(creature, navigation, _interests)
 	brain.reaction.connect(_show_reaction)
 	_chunk_editor.play_geometry_changed.connect(_geometry_changed)
+	_chunk_editor.formation_started.connect(_geometry_changed)
 	_idle_attention = INF
 	gust_tool = false
 	_tool_button.text = "Grab / call Bigfoot"
@@ -47,7 +48,7 @@ func _ready() -> void:
 
 func toggle_build() -> void:
 	_aim_start = null
-	_aim_mesh.mesh = null
+	gust_visuals.clear_aim()
 	if _carrying: _drop(Vector2(-1,-1))
 	building = not building
 	_chunk_editor.set_active(building)
@@ -73,6 +74,7 @@ func _physics_process(delta: float) -> void:
 		var strength: float = _atmosphere._air_strength * _atmosphere.gust_at(_atmosphere._wind_time) * 3.0
 		wind.ambient_velocity = Vector3(cos(_atmosphere._air_angle),0,sin(_atmosphere._air_angle))*strength
 	wind.advance(delta)
+	if _chunk_editor.forming: return
 	if _world_dirty:
 		creature.stop_walking()
 		_world_dirty = false
@@ -83,7 +85,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if _refresh_phase == 1:
 		# Physics sees replacement shapes on this next boundary, before clearance.
-		navigation.rebuild(_chunk_editor.data, play_collisions.can_stand)
+		navigation.begin_rebuild(_chunk_editor.data, play_collisions.can_stand)
+		_refresh_phase = 2
+	if _refresh_phase == 2:
+		if not navigation.advance_rebuild(2000): return
 		_refresh_phase = 0
 		_reconcile_ground()
 		brain.world_changed()

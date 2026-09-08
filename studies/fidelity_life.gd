@@ -4,6 +4,7 @@ var habitat = preload("res://scripts/fidelity_habitat.gd").new()
 var navigation = preload("res://scripts/creature_navigation.gd").new()
 var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
+var resident_enabled := true
 var routine: Node
 var fish: Node
 var spawn_options: Array = []
@@ -20,6 +21,7 @@ func _ready() -> void:
 	_bigfoot.automatic_enabled = false
 	habitat.setup($Reference,_chunk_editor.data)
 	_chunk_editor.play_geometry_changed.connect(_geometry_changed)
+	_chunk_editor.formation_started.connect(_geometry_changed)
 	navigation.rebuild(habitat,habitat.clear_at,0.35,0.3)
 	var spawn: Variant = navigation.nearest_safe(Vector3(3,0,3))
 	if spawn == null:
@@ -30,6 +32,7 @@ func _ready() -> void:
 	add_child(creature)
 	creature.position = spawn
 	creature.setup("res://assets/models/zenscape-bigfoot-routine.glb")
+	_tremor.shaken.connect(creature.queue_tremor)
 	creature.set_process(false)
 	creature._ground_probe = navigation._ground
 	var coat := ShaderMaterial.new()
@@ -56,7 +59,7 @@ func _ready() -> void:
 	panel.position = Vector2(20,20)
 	overlay.add_child(panel)
 	panel.add_child(_life_status)
-	for entry in [["Find Bigfoot",_focus_bigfoot],["Show / hide walkable ground",_toggle_navigation]]:
+	for entry in [["Find Bigfoot",_focus_bigfoot],["Find his resting spot",_focus_resting_spot],["Show / hide walkable ground",_toggle_navigation]]:
 		var button := Button.new()
 		button.text = entry[0]
 		button.pressed.connect(entry[1])
@@ -119,15 +122,24 @@ func _seed_loose_stones() -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	if creature == null: return
-	if _habitat_changed and not _paused: _refresh_habitat()
+	if not resident_enabled:
+		creature.visible = false
+		return
+	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	creature.visible = not _habitat_blocked and _growth.terrain >= 0.995
 	var stopped := _paused or not creature.visible
 	if not stopped:
-		if routine == null or not routine.advance(delta): brain.advance(delta)
+		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
+			if routine == null or not routine.advance(delta): brain.advance(delta)
+		elif routine != null:
+			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
 		_reaction.visible = _reaction_time > 0.0
+	if creature.state == CreatureActor.State.STUMBLING and not stopped:
+		_life_status.text = "Bigfoot · finding his balance · P pause"
+		return
 	_life_status.text = "Bigfoot · %s · P pause" % ["needs a clearing" if _habitat_blocked else ("paused" if stopped else (routine.active if routine != null and not routine.active.is_empty() else CreatureBrain.Phase.keys()[brain.phase].to_lower()))]
 
 func _geometry_changed() -> void:
@@ -135,12 +147,18 @@ func _geometry_changed() -> void:
 	if creature != null: creature.stop_walking()
 	if routine != null: routine.world_changed()
 
-func _refresh_habitat() -> void:
-	_habitat_changed = false
-	habitat.setup($Reference,_chunk_editor.data)
-	navigation.rebuild(habitat,habitat.clear_at,0.35,0.3)
+func _refresh_habitat(budgeted := false) -> void:
+	if _habitat_changed or not budgeted:
+		_habitat_changed = false
+		habitat.setup($Reference,_chunk_editor.data)
+		navigation.begin_rebuild(habitat,habitat.clear_at,0.35,0.3)
+	if budgeted:
+		if not navigation.advance_rebuild(2000): return
+	else:
+		while not navigation.advance_rebuild(1000000): pass
 	var safe: Variant = navigation.nearest_safe(creature.global_position)
 	_habitat_blocked = safe == null
+	if routine != null: routine.habits.preferred()
 	if _habitat_blocked: return
 	if not navigation.is_safe(creature.global_position): creature.reset_at(safe)
 	brain.world_changed()
@@ -151,6 +169,15 @@ func _refresh_habitat() -> void:
 
 func _summon_bigfoot(_fog := false) -> void:
 	if creature != null: _focus_bigfoot()
+
+func _focus_resting_spot() -> void:
+	if routine == null or routine.habits.home == null: return
+	_auto_orbit = false
+	target = routine.habits.home+Vector3.UP*0.5
+	distance = 7.0
+	yaw = 0.4
+	polar = 0.85
+	_update_camera()
 
 func _focus_bigfoot() -> void:
 	frame_creature(10.0,creature.rotation.y-0.65)
@@ -200,3 +227,11 @@ func _toggle_navigation() -> void:
 		material.albedo_color = Color(0.3,1.0,0.5)
 		_nav_view.material_override = material
 	_nav_view.visible = not _nav_view.visible
+
+func capture_life_state() -> Dictionary:
+	return routine.habits.capture()
+
+func restore_life_state(state: Dictionary) -> void:
+	routine.cancel("garden opened")
+	_refresh_habitat()
+	routine.habits.restore(state)

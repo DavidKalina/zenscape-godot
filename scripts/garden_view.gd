@@ -25,6 +25,7 @@ var _view_ready := false
 var _view_heights := PackedFloat32Array()
 var _view_signature := PackedByteArray()
 var _stream_probe := {}
+var _cascade_probe := {}
 
 func _ready() -> void:
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
@@ -68,6 +69,12 @@ func _ready() -> void:
 	rock_material.set_shader_parameter("flat_faces", true)
 	rock_material.set_shader_parameter("wet_ground", true)
 	_materials["rock"] = rock_material
+	_catalog_parts["leaf_bed"] = ["leaf_bed"]
+	_catalog_poses["leaf_bed"] = Transform3D.IDENTITY
+	_meshes["leaf_bed"] = preload("res://scripts/bigfoot_leaf_bed.gd").mesh()
+	_materials["leaf_bed"] = rock_material.duplicate()
+	for key in _materials:
+		_materials[key].set_shader_parameter("palette_role",preload("res://scripts/scene_look.gd").part_role(key))
 	_water = MeshInstance3D.new()
 	_water.name = "Ponds"
 	_water.material_override = _water_material
@@ -109,6 +116,14 @@ func rebuild(force := false) -> void:
 	_landscape_foam=null
 	for node in _landscape_falls: node.free()
 	_landscape_falls.clear()
+	_cascade_probe = {}
+	if data is NativeTerrainData and data._recipe_settings.get("kind") == "formation":
+		data.begin_probe()
+		for course in data.streams:
+			for cascade in preload("res://scripts/native_stream_cascades.gd").build(data,course):
+				add_child(cascade)
+				_landscape_falls.append(cascade)
+		_cascade_probe = data.end_probe()
 	if data is NativeTerrainData and data.landscape_waterfall:
 		var strands: Array=data.waterfall_strands()
 		_landscape_foam=preload("res://scripts/native_fall_foam.gd").new()
@@ -287,7 +302,7 @@ func _reuse() -> bool:
 		return true
 	if region == null:
 		return false
-	if _stale(_stream_probe) or _stale(data.waterfall_probe()):
+	if _stale(_stream_probe) or _stale(_cascade_probe) or _stale(data.waterfall_probe()):
 		return false
 	if not data.ponds.is_empty() and data.water_reaches(region):
 		return false

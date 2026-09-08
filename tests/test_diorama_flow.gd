@@ -1,0 +1,59 @@
+extends SceneTree
+var failures := 0
+func _initialize() -> void:
+	_run.call_deferred()
+func check(ok: bool, message: String) -> void:
+	if not ok:
+		failures += 1
+		push_error(message)
+func _run() -> void:
+	var watchdog := create_timer(90)
+	watchdog.timeout.connect(func() -> void: push_error("Diorama test timed out"); quit(2))
+	var scene = load("res://studies/diorama.tscn").instantiate()
+	var folder := "/private/tmp/zenscape-diorama-test-"+str(Time.get_ticks_usec())
+	scene.library_path = folder
+	scene.recent_file = folder+"/recent.cfg"
+	root.add_child(scene)
+	await process_frame
+	check(scene._menu.visible and not scene._has_world,"Startup offers a menu without creating a world")
+	scene.new_diorama()
+	var editor = scene._chunk_editor
+	var first: String = editor.save_path
+	check(editor.data.blank and editor.data.objects.is_empty() and editor.data.ponds.is_empty() and editor.data.streams.is_empty(),"New world is truly blank")
+	check(not scene.resident_enabled and editor.active,"New world opens in Build without Bigfoot")
+	check(editor.data._undo.is_empty(),"Undo cannot bring the previous world into a new one")
+	var id: int = editor.data.place("rock",Vector2(4,3),0.0,0.4)
+	editor.refresh()
+	check(id>0 and scene.invite_bigfoot(Vector3.ZERO),"Blank scene can receive an object and a living Bigfoot")
+	check(scene.save_current(),"Save succeeds")
+	scene.show_menu()
+	scene.new_diorama()
+	var second: String = editor.save_path
+	check(first != second and FileAccess.file_exists(first),"New uses a separate file and preserves the first world")
+	check(editor.data.objects.is_empty() and not scene.resident_enabled,"New clears objects and resident")
+	scene.show_menu()
+	check(scene.open_path(first),"Open first world")
+	check(not editor.data.object_by_id(id).is_empty() and scene.resident_enabled,"Open restores placement and resident")
+	check(not scene._paused,"Menu pause does not leak into saved world")
+	var before: Dictionary = editor.data.to_document()
+	var corrupt := folder+"/broken.json"
+	var file := FileAccess.open(corrupt,FileAccess.WRITE)
+	file.store_string("{}")
+	file.close()
+	check(not scene.open_path(corrupt),"Malformed file is rejected")
+	check(editor.save_path == first and editor.data.to_document() == before,"Failed open preserves world and current save path")
+	check(scene._recent_path() == first,"Continue remembers last successful world")
+	scene._has_world = false
+	scene.show_menu()
+	scene.continue_world()
+	check(scene._has_world and scene.resident_enabled,"Continue can load from disk")
+	for size in [Vector2i(960,640),Vector2i(1440,900)]:
+		root.size = size
+		await process_frame
+		scene._layout_shell()
+		check(root.get_visible_rect().encloses(Rect2(scene._menu.position,scene._menu.size*scene._menu.scale)),"Menu fits "+str(size))
+	scene.free()
+	for name in DirAccess.get_files_at(folder): DirAccess.remove_absolute(folder+"/"+name)
+	DirAccess.remove_absolute(folder)
+	print("DIORAMA FLOW: failures=",failures)
+	quit(1 if failures else 0)

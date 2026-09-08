@@ -1,6 +1,9 @@
 extends Node
 ## Daily activities own their approaches and authored performances; CreatureBrain
 ## supplies curiosity and wandering between activities.
+var habits = preload("res://scripts/bigfoot_habits.gd").new()
+var _tended := false
+var _tending := false
 var scene: Node
 var active := ""
 var target := {}
@@ -29,7 +32,10 @@ const ORDER := ["stone","tree","sit","fish","sleep"]
 
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
+	habits.setup(scene)
 	scene.creature.action_finished.connect(_action_finished)
+	scene.creature.state_changed.connect(func(state: CreatureActor.State) -> void:
+		if state == CreatureActor.State.STUMBLING and not active.is_empty(): cancel("ground tremor"))
 	for i in range(3):
 		var label := Label3D.new()
 		label.text = "Z"
@@ -61,6 +67,14 @@ func advance(delta: float) -> bool:
 				elif scene.creature.walk_step(destination,0.85,dt): _approach_index += 1
 			return not active.is_empty()
 
+		if _phase == "inspect_home":
+			if _elapsed >= 2.0:
+				if not _rest_stance(scene.creature.position): cancel("home ground changed")
+				else:
+					habits.claim(scene.creature.position)
+					_start_performance(true)
+			return not active.is_empty()
+
 		if _phase == "perform":
 			_effects(dt)
 			return true
@@ -77,9 +91,20 @@ func request(kind: String, chosen: Dictionary = {}) -> bool:
 		var spots: Array = [scene.creature.position]
 		for point in scene.navigation._nodes:
 			if point.distance_to(scene.creature.position)<8.0: spots.append(point)
-		spots.sort_custom(func(a: Vector3,b: Vector3) -> bool: return a.distance_squared_to(scene.creature.position)<b.distance_squared_to(scene.creature.position))
+		spots = habits.rest_candidates(spots,scene.creature.position)
+		var favorite: Variant = habits.preferred()
+		if favorite != null:
+			# Keep an established sheltered home. An outdoor resting spot can
+			# give way to player-created shelter, but only along a safe route.
+			var upgrade := false
+			if not habits.sheltered_home:
+				for candidate: Vector3 in spots:
+					if habits.can_claim(candidate) and _rest_stance(candidate) and not scene.navigation.path(scene.creature.position,candidate).is_empty():
+						upgrade = true
+						break
+			if not upgrade: spots.push_front(favorite)
 		for point: Vector3 in spots:
-			if not _rest_stance(point): continue
+			if not habits.allows(point) or not _rest_stance(point): continue
 			var path: PackedVector3Array = scene.navigation.path(scene.creature.position,point)
 			if path.is_empty(): continue
 			active = kind
@@ -178,12 +203,20 @@ func _target_exists() -> bool:
 		if item.id == target.id and item.position.distance_to(target.position)<0.15: return true
 	return false
 
-func _start_performance() -> void:
+func _start_performance(inspected := false) -> void:
 	scene.creature.stop_walking()
+	if not inspected and active in ["sit","sleep","hibernate"] and habits.can_claim(scene.creature.position):
+		_phase = "inspect_home"
+		_elapsed = 0.0
+		scene.creature.notice(scene.creature.position+Vector3(0,1.5,1))
+		scene.brain.reaction.emit("?","A sheltered place to rest")
+		return
 	scene.brain.reset_behavior()
 	_phase = "perform"
 	_elapsed = 0.0
 	_released = false
+	_tended = false
+	_tending = active in ["sit","sleep","hibernate"] and habits.can_tend(scene.creature.position)
 	if not target.is_empty():
 		var offset: Vector3 = target.position-scene.creature.position
 		scene.creature.rotation.y = float(target.get("facing",atan2(offset.x,offset.z)))
@@ -199,6 +232,16 @@ func _effects(dt: float) -> void:
 	if active in ["sit","sleep","hibernate"]:
 		var weight := smoothstep(0.0,1.4,t) if scene.creature.action_clip == "SitDown" else 1.0-smoothstep(0.0,1.5,t) if scene.creature.action_clip == "StandUp" else 1.0
 		scene.creature.basis = _rest_upright.slerp(_rest_tilt,weight)
+	if _tending and scene.creature.action_clip == "SitDown":
+		# Both hands draw leaves inward as he settles. Commit at contact, once.
+		for side in ["R","L"]:
+			var sign := -1.0 if side == "R" else 1.0
+			var hand: Vector3 = scene.creature.position+_rest_tilt*Vector3(sign*lerpf(0.8,0.45,smoothstep(0.5,1.25,t)),0.14,0.45)
+			scene.creature.reach_hand(hand,smoothstep(0.25,0.65,t)*(1.0-smoothstep(1.15,1.4,t)),side)
+		if t>=1.1 and not _tended:
+			habits.tend(scene.creature.position,_rest_normal,_rest_yaw)
+			_tended = true
+			if habits.stage == 1 and habits.sheltered_home: scene.brain.reaction.emit("Home","Making a leaf bed")
 	if active in ["stone","fish"] and not _released:
 		var reach := smoothstep(0.45,0.95,t)*(1.0-smoothstep(1.10,1.65,t))
 		var point: Vector3 = target.position
@@ -321,11 +364,13 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 		_finish()
 		return
 	if clip == "SitDown":
+		scene.creature.clear_hand_targets()
 		scene.creature.perform_action("Sleep" if active in ["sleep","hibernate"] else "Sit",60.0 if active == "hibernate" else 18.0 if active == "sleep" else 4.0)
 	elif clip in ["Sit","Sleep"]:
 		for label in _sleep_marks: label.visible = false
 		scene.creature.perform_action("StandUp")
 	else:
+		if active in ["sit","sleep","hibernate"]: habits.rested(scene.creature.position)
 		history.append(active)
 		_finish()
 
@@ -355,6 +400,8 @@ func _finish() -> void:
 	_next_action = _clock+9.0
 
 func world_changed() -> void:
+	if habits.writing: return
+	habits.world_changed()
 	# Undo may restore a taken record: remove its transient representation first.
 	for record: Dictionary in scene._chunk_editor.data.objects:
 		for i in range(_projectiles.size()-1,-1,-1):
