@@ -2,7 +2,7 @@ class_name CreatureActor
 extends Node3D
 ## A small interaction contract shared by animated inhabitants. Asset clips own
 ## performance; this node owns carrying, safe placement and attention.
-enum State { IDLE, HELD, LANDING, ALERT }
+enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING }
 signal state_changed(value: State)
 signal landed()
 var state := State.IDLE
@@ -22,6 +22,60 @@ var _age := 0.0
 var _vertical_speed := 0.0
 var _touchdown := false
 var _sway := Vector2.ZERO
+var wind_body: RigidBody3D
+var _wind_field: Node
+var _ground_probe: Callable
+var _safe_landing: Callable
+var _settled_time := 0.0
+var _recover_from := Transform3D.IDENTITY
+var _recover_to := Transform3D.IDENTITY
+var _brace := Vector2.ZERO
+var _standing_basis := Basis.IDENTITY
+const WIND_BODY = preload("res://scripts/creature_wind_body.gd")
+
+func enable_wind(field: Node, ground_probe: Callable, safe_landing: Callable) -> void:
+	_standing_basis = global_basis.orthonormalized()
+	_wind_field = field
+	_ground_probe = ground_probe
+	_safe_landing = safe_landing
+	if wind_body == null:
+		wind_body = WIND_BODY.new()
+		add_child(wind_body)
+		wind_body.top_level = true
+		wind_body.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON
+	wind_body.field = field
+
+func _physics_process(delta: float) -> void:
+	if wind_body == null or not is_instance_valid(_wind_field): return
+	if state == State.HELD or state == State.LANDING: return
+	var wind: Vector3 = _wind_field.sample(global_position+Vector3.UP*1.4)
+	var strength := wind.length()
+	_brace = Vector2(clampf(wind.z*0.016,-0.14,0.14),clampf(-wind.x*0.016,-0.14,0.14))
+	if state != State.WIND and strength >= 7.0:
+		if state != State.RECOVERING: _standing_basis = global_basis.orthonormalized()
+		wind_body.start(global_transform)
+		_settled_time = 0.0
+		_visual.transform = Transform3D.IDENTITY
+		_state(State.WIND)
+		_play("Held")
+	if state == State.WIND:
+		var quiet: bool = strength < 4.0 and wind_body.get_contact_count() > 0 and wind_body.linear_velocity.length() < 0.65 and wind_body.angular_velocity.length() < 0.85
+		_settled_time = _settled_time+delta if quiet else 0.0
+		if (_age > 1.0 and _settled_time > 0.55) or wind_body.global_position.y < _safe_position.y-12.0:
+			_begin_recovery()
+
+func _begin_recovery() -> void:
+	_recover_from = wind_body.feet_transform()
+	var location: Variant = null
+	if _ground_probe.is_valid(): location = _ground_probe.call(wind_body.global_position)
+	if location is Vector3 and _safe_landing.is_valid(): location = _safe_landing.call(location)
+	var destination: Vector3 = location if location is Vector3 and location.is_finite() else _safe_position
+	_recover_to = Transform3D(_standing_basis,destination)
+	wind_body.stop()
+	global_transform = _recover_from
+	_state(State.RECOVERING)
+	_play("Land")
+
 
 func setup(asset_path: String) -> void:
 	add_child(_visual)
@@ -61,6 +115,13 @@ func is_held() -> bool:
 func pick_up() -> bool:
 	if state == State.HELD or player == null:
 		return false
+	if wind_body != null:
+		if state == State.WIND: global_transform = wind_body.feet_transform()
+		var head_world := to_global(Vector3(0,grasp_height,0.04))
+		wind_body.stop()
+		global_basis = _standing_basis
+		global_position = head_world-_standing_basis*Vector3(0,grasp_height,0.04)
+		_visual.transform = Transform3D.IDENTITY
 	_sway = Vector2.ZERO
 	_vertical_speed = 0.0
 	_touchdown = false
@@ -80,6 +141,7 @@ func move_held(world_position: Vector3, delta: float) -> void:
 func release_at(point: Variant) -> bool:
 	if not is_held():
 		return false
+	if point is Vector3 and _safe_landing.is_valid(): point = _safe_landing.call(point)
 	var valid: bool = point is Vector3 and point.is_finite()
 	land_position = point if valid else _safe_position
 	global_position.y = maxf(global_position.y,land_position.y+0.12)
@@ -99,6 +161,9 @@ func notice(point: Vector3) -> void:
 
 func reset_at(point: Vector3) -> void:
 	if not point.is_finite(): return
+	if wind_body != null:
+		wind_body.stop()
+		global_basis = _standing_basis
 	global_position = point
 	land_position = point
 	_safe_position = point
@@ -113,7 +178,18 @@ func advance(delta: float) -> void:
 	if player == null or delta <= 0.0: return
 	var dt := minf(delta,0.05)
 	_age += dt
-	if state == State.LANDING:
+	if state == State.WIND:
+		global_transform = wind_body.feet_transform()
+	elif state == State.RECOVERING:
+		var progress := clampf(_age/1.15,0.0,1.0)
+		var ease := progress*progress*(3.0-2.0*progress)
+		global_transform = _recover_from.interpolate_with(_recover_to,ease)
+		if progress >= 1.0:
+			_safe_position = global_position
+			land_position = global_position
+			_state(State.ALERT)
+			_play("Alert")
+	elif state == State.LANDING:
 		if not _touchdown:
 			_vertical_speed += 12.0*dt
 			global_position.x = move_toward(global_position.x,land_position.x,16.0*dt)
@@ -134,7 +210,7 @@ func advance(delta: float) -> void:
 		_play("Idle")
 	player.advance(dt)
 	var response := 1.0-exp(-10.0*dt)
-	var goal := _sway if state == State.HELD else Vector2.ZERO
+	var goal := _sway if state == State.HELD else (_brace if state == State.IDLE or state == State.ALERT else Vector2.ZERO)
 	_visual.rotation.x = lerpf(_visual.rotation.x,goal.x,response)
 	_visual.rotation.z = lerpf(_visual.rotation.z,goal.y,response)
 	var grip := Vector3(0,grasp_height,0.04)

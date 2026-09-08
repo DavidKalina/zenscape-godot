@@ -78,6 +78,19 @@ void vertex() {
 		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7);
 		foliage_gust = clamp(gust * zs_wind_strength * bend * 0.5, 0.0, 1.0);
 		VERTEX.y -= zs_foliage_wet * bend * wet_droop;
+		// Local gusts have a true world direction, even for rotated/scaled assets.
+		// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.
+		vec3 air = zs_local_wind((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
+		float speed = length(air);
+		if (speed > 0.001) {
+			float response = speed / (speed + 10.0);
+			float flutter = 0.90 + 0.10 * sin(zs_motion_time * 12.0 + phase);
+			float flexibility = max(sway_shape.z, sway_shape.w);
+			vec3 displacement = air / speed * response * flexibility * 3.0 * bend * flutter;
+			VERTEX += inverse(mat3(MODEL_MATRIX)) * displacement;
+			foliage_gust = max(foliage_gust, response * bend);
+		}
+
 	}
 	if (plant_growth) {
 		float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);

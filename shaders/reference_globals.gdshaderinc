@@ -1,5 +1,22 @@
 #ifndef ZS_REFERENCE_GLOBALS
 #define ZS_REFERENCE_GLOBALS
+global uniform vec3 zs_local_ambient_velocity;
+global uniform vec4 zs_local_gust_origin_0;
+global uniform vec4 zs_local_gust_vector_0;
+global uniform vec4 zs_local_gust_origin_1;
+global uniform vec4 zs_local_gust_vector_1;
+global uniform vec4 zs_local_gust_origin_2;
+global uniform vec4 zs_local_gust_vector_2;
+global uniform vec4 zs_local_gust_origin_3;
+global uniform vec4 zs_local_gust_vector_3;
+global uniform vec4 zs_local_gust_origin_4;
+global uniform vec4 zs_local_gust_vector_4;
+global uniform vec4 zs_local_gust_origin_5;
+global uniform vec4 zs_local_gust_vector_5;
+global uniform vec4 zs_local_gust_origin_6;
+global uniform vec4 zs_local_gust_vector_6;
+global uniform vec4 zs_local_gust_origin_7;
+global uniform vec4 zs_local_gust_vector_7;
 global uniform float zs_motion_time;
 global uniform float zs_wind_strength;
 global uniform vec2 zs_wind_direction;

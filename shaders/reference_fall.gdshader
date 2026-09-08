@@ -3,6 +3,7 @@ render_mode cull_disabled, diffuse_lambert;
 
 uniform vec4 base_color : source_color = vec4(1.0);
 #include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/reference_water_gust.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
@@ -54,6 +55,8 @@ void vertex() {
 			+ axis_b_thick[r].xyz * sin(angle) * axis_b_thick[r].w * swell * chop;
 		float drop = tau / max(total, 0.0001);
 		VERTEX.xz += zs_wind_direction * 0.18 * gale * drop * drop * steep;
+		vec3 gust_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		VERTEX += (inverse(MODEL_MATRIX) * vec4(zs_fall_gust_offset(gust_world, drop, steep), 0.0)).xyz;
 	}
 	glass = 1.0 - aer_steep[r].x;
 	int face_ring = int(UV2.x);

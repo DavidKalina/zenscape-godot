@@ -1,5 +1,6 @@
 
 #include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/reference_water_gust.gdshaderinc"
 #include "res://shaders/reference_rain_rings.gdshaderinc"
 #include "res://shaders/reference_lake_chop.gdshaderinc"
 #include "res://shaders/reference_lake_material.gdshaderinc"
@@ -54,7 +55,10 @@ void vertex() {
 	} else if (cut_face < 0.5) {
 		float swell = sin(zs_flow_time * 1.6 + VERTEX.x * 2.3 + VERTEX.z * 1.9) * 0.045;
 		VERTEX.y += swell * lake_swell * (1.0 - zs_ice);
-		if (lake_wind_enabled) VERTEX.y += zs_lake_chop(VERTEX, world_position, water_depth, CUSTOM0, CUSTOM1, lake_state);
+		if (lake_wind_enabled) {
+			VERTEX.y += zs_lake_chop(VERTEX, world_position, water_depth, CUSTOM0, CUSTOM1, lake_state);
+			VERTEX.y += zs_water_gust_height(world_position, water_depth);
+		}
 	}
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -65,6 +69,7 @@ void fragment() {
 	if (wave_normal.y < 0.0) { wave_normal = -wave_normal; }
 	if (!flowing && cut_face < 0.5 && lake_wind_enabled) {
 		wave_normal = zs_lake_fine_normal(wave_normal, world_position, water_depth, lake_state);
+		wave_normal = zs_water_gust_normal(wave_normal, world_position, water_depth);
 	}
 	if (!flowing && cut_face < 0.5 && rain_rings_enabled) {
 		wave_normal = zs_rain_ring_normal(wave_normal, world_position, zs_flow_time, zs_foliage_wet, zs_ice);

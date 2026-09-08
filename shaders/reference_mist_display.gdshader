@@ -1,6 +1,7 @@
 shader_type canvas_item;
 render_mode unshaded;
 #include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/reference_water_gust.gdshaderinc"
 // Source point sprites: each particle is one instanced quad sized like the
 // original gl_PointSize, so the per-fragment cost is the sprite area rather
 // than a 64-particle loop over every window pixel.
@@ -28,6 +29,7 @@ void vertex() {
 		vec3 position = origins[i];
 		position.xz += data.xy*p+zs_wind_direction*(air*p*0.9);
 		position.y += (1.0-(1.0-p)*(1.0-p))*rise_height*(1.0+0.35*air);
+		position += zs_spray_gust_offset(position, p);
 		vec3 view = world_to_view*(position-camera_origin);
 		float distance = -view.z;
 		if (distance >= camera_planes.x && distance <= camera_planes.y) {

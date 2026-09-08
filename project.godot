@@ -275,3 +275,72 @@ zs_rim_irradiance={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
+
+zs_local_ambient_velocity={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+zs_local_gust_origin_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_6={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_6={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_origin_7={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_local_gust_vector_7={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}

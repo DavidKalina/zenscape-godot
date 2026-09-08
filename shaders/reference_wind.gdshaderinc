@@ -49,3 +49,21 @@ float zs_gust_field(vec2 position) {
 float zs_wind_at(vec2 position) {
 	return zs_wind_strength * (0.45 + 1.1 * zs_gust_field(position));
 }
+
+// Same spherical field as LocalWindField.sample_local. Temporal envelopes are
+// computed once by the CPU and published, avoiding render/physics clock drift.
+vec3 zs_local_wind(vec3 worldpos) {
+	vec4 local_gust_centers[8] = vec4[8](zs_local_gust_origin_0, zs_local_gust_origin_1, zs_local_gust_origin_2, zs_local_gust_origin_3, zs_local_gust_origin_4, zs_local_gust_origin_5, zs_local_gust_origin_6, zs_local_gust_origin_7);
+	vec4 local_gust_flows[8] = vec4[8](zs_local_gust_vector_0, zs_local_gust_vector_1, zs_local_gust_vector_2, zs_local_gust_vector_3, zs_local_gust_vector_4, zs_local_gust_vector_5, zs_local_gust_vector_6, zs_local_gust_vector_7);
+	vec3 velocity = vec3(0.0);
+	for (int i = 0; i < 8; i++) {
+		if (local_gust_centers[i].w <= 0.0 || local_gust_flows[i].w <= 0.0) continue;
+		float weight = 1.0 - smoothstep(0.0, 1.0, length(worldpos - local_gust_centers[i].xyz) / local_gust_centers[i].w);
+		velocity += local_gust_flows[i].xyz * local_gust_flows[i].w * weight;
+	}
+	return velocity;
+}
+
+vec3 zs_wind_vector_at(vec3 worldpos) {
+	return zs_local_ambient_velocity + zs_local_wind(worldpos);
+}
