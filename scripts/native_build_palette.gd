@@ -12,6 +12,16 @@ const HOVER_SCALE := 1.08
 const PRESS_SCALE := 0.94
 const TWEEN_TIME := 0.09
 const LANDMARKS := ["tree","rock","flower","arch","bigfoot_tree"]
+## Landscape tools whose stamp is a shape, so the tile can portrait the real
+## heightfield instead of a drawn glyph. Only Mountain stamps at a point, so
+## only Mountain drags; Range forms the whole chunk from its strip button.
+const LANDFORMS := ["mountain","range"]
+const LANDFORM_CELLS := 28
+## Below this the mountain stamp has not left the ground, and drawing it would
+## only lay a flat plate over the terrain for the depth test to fight with.
+const LANDFORM_FLOOR := 0.03
+const LANDFORM_LIFT := 0.02
+const GHOST_ALPHA := 0.55
 ## Simple drawn glyphs stand in for the tools that have no object to render.
 const GLYPHS := {
 	"raise":"up","lower":"down","smooth":"wave","flatten":"bar",
@@ -199,7 +209,7 @@ func _tile(id: String, tool: String, piece: String) -> Button:
 	button.set_meta("tool",tool)
 	button.set_meta("piece",piece)
 	button.expand_icon = true
-	if _placeable(id):
+	if _portrait(id):
 		button.add_child(_caption(id))
 	else:
 		var glyph := ToolGlyph.new()
@@ -235,6 +245,19 @@ func _title(id: String) -> String:
 func _placeable(id: String) -> bool:
 	return id in LANDMARKS or NativeAssetCatalog.PARTS.has(id)
 
+## Landscape tools that shape ground rather than place an object.
+func _landform(id: String) -> bool:
+	return id in LANDFORMS
+
+## Tiles that carry a rendered thumbnail rather than a drawn glyph.
+func _portrait(id: String) -> bool:
+	return _placeable(id) or _landform(id)
+
+## Tiles that can be carried into the world. Range forms the whole chunk at
+## once, so it has no drop point to aim at and stays a click.
+func _draggable(id: String) -> bool:
+	return _placeable(id) or id == "mountain"
+
 func _category_of(tool: String) -> String:
 	for entry: Array in editor.tool_groups():
 		if tool in entry[1]:
@@ -255,7 +278,7 @@ func ensure_thumbnails() -> void:
 	if not _thumbs.is_empty():
 		return
 	for id: String in _tiles:
-		if not _placeable(id):
+		if not _portrait(id):
 			continue
 		var model := build_model(id)
 		if model == null:
@@ -284,6 +307,12 @@ func build_model(id: String) -> Node3D:
 			var tree: Node3D = preload("res://assets/bigfoot/old_tree.glb").instantiate()
 			tree.scale *= preload("res://studies/bigfoot_encounter.gd").PEEK_SCALE
 			root.add_child(tree)
+		"mountain","range":
+			var patch := MeshInstance3D.new()
+			patch.name = "Landform"
+			patch.mesh = _landform_mesh(id)
+			patch.material_override = _landform_material()
+			root.add_child(patch)
 		_:
 			if not view._catalog_parts.has(id):
 				root.free()
@@ -305,6 +334,90 @@ func _part(root: Node3D, mesh: Mesh, material: Material, tint: Color, pose: Tran
 		copy.set_shader_parameter("base_color",(base if base is Color else Color.WHITE)*tint)
 	node.material_override = copy
 	root.add_child(node)
+
+## A patch of ground carrying the shape the landscape tool would stamp, at the
+## size its settings ask for. Mountain evaluates the very stamp function the
+## editor calls; Range evaluates the recipe its Form button installs. The
+## thumbnail and the drag ghost are both this mesh, so the tile and the ghost
+## show the land the tool is about to make.
+func _landform_mesh(id: String) -> ArrayMesh:
+	var palette: NativeTerrainPalette = editor.data._palette
+	var shape: NativeMountainShape = null
+	var recipe: NativeTerrainRecipe = null
+	var span := 1.0
+	if id == "mountain":
+		shape = NativeMountainShape.new(editor.mountain_variation)
+	else:
+		recipe = NativeTerrainRecipe.new({"kind":"range","height":editor.range_height,
+			"width":editor.range_width,"heading":deg_to_rad(editor.range_heading),
+			"variation":editor.range_variation})
+		span = 14.0 # The chunk the range recipe fills reaches 14 units each way.
+	var angle := deg_to_rad(editor.mountain_heading)
+	var grid := PackedVector3Array()
+	for iz in range(LANDFORM_CELLS+1):
+		for ix in range(LANDFORM_CELLS+1):
+			var unit := Vector2(lerpf(-1.0,1.0,float(ix)/LANDFORM_CELLS),lerpf(-1.0,1.0,float(iz)/LANDFORM_CELLS))
+			var flat := unit*span
+			var height := 0.0
+			if shape != null:
+				# The stamp reads its shape in a frame rotated by the heading,
+				# exactly as NativeTerrainData.mountain does.
+				height = editor.mountain_peak*shape.height(unit)
+				flat = (unit*editor.mountain_radius).rotated(angle)
+			else:
+				height = recipe.height(flat.x,flat.y)
+			grid.append(Vector3(flat.x,height,flat.y))
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	for iz in range(LANDFORM_CELLS):
+		for ix in range(LANDFORM_CELLS):
+			var corner := iz*(LANDFORM_CELLS+1)+ix
+			var a := grid[corner]
+			var b := grid[corner+1]
+			var c := grid[corner+LANDFORM_CELLS+1]
+			var d := grid[corner+LANDFORM_CELLS+2]
+			if shape != null and maxf(maxf(a.y,b.y),maxf(c.y,d.y)) < LANDFORM_FLOOR:
+				continue
+			for triangle: Array in [[a,b,c],[b,d,c]]:
+				var normal: Vector3 = (triangle[1]-triangle[0]).cross(triangle[2]-triangle[0]).normalized()
+				if normal.y < 0.0:
+					normal = -normal
+				var center: Vector3 = (triangle[0]+triangle[1]+triangle[2])/3.0
+				var color := _landform_color(palette,center,normal)
+				for point: Vector3 in triangle:
+					vertices.append(point)
+					normals.append(normal)
+					colors.append(color)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	var mesh := ArrayMesh.new()
+	if not vertices.is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	return mesh
+
+## The bands build_mesh paints on an uncovered chunk: bare ground, rock where
+## the slope or the height calls for it, snow on the gentle alpine faces.
+func _landform_color(palette: NativeTerrainPalette, center: Vector3, normal: Vector3) -> Color:
+	var color: Color = editor.data._ground_tint
+	var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
+	if center.y > palette.snowline-1.8 or slope > palette.rock_slope:
+		color = palette.rock_at_coordinates(center.x,center.z)
+	if center.y > palette.snowline and slope < 2.4:
+		color = palette.shimmer_coordinates(palette.snow,center.x,center.z)
+	return color
+
+## Vertex colours arrive from the palette already linear, which is the space a
+## standard material reads them in when it is not told they are sRGB.
+func _landform_material() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.roughness = 1.0
+	return material
 
 func _render(model: Node3D) -> Texture2D:
 	var viewport := SubViewport.new()
@@ -462,7 +575,7 @@ func _on_tile_input(event: InputEvent, id: String) -> void:
 	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
 		return
 	_choose(id)
-	if not _placeable(id):
+	if not _draggable(id):
 		return
 	_drag_id = id
 	_pressed = true
@@ -500,16 +613,60 @@ func _begin_drag() -> void:
 	_ghost.add_child(model)
 	_ghost.visible = false
 	editor.content.add_child(_ghost)
-	for node: MeshInstance3D in _ghost.find_children("*","MeshInstance3D",true,false):
-		node.material_override = _ghost_material()
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_haunt(_ghost)
 
-func _ghost_material() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+## Turn a freshly built model into its own ghost. Every surface keeps the
+## material it was going to render with, so a tree's trunk and canopy stay two
+## different things; the copy is what turns translucent, never the original.
+func _haunt(model: Node3D) -> void:
+	for node: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var whole: Material = node.material_override
+		node.material_override = null
+		if node.mesh == null:
+			continue
+		for surface in range(node.mesh.get_surface_count()):
+			var source: Material = whole
+			if source == null:
+				source = node.get_surface_override_material(surface)
+			if source == null:
+				source = node.mesh.surface_get_material(surface)
+			node.set_surface_override_material(surface,_ghost_material(source))
+
+## The real look, made translucent: the surface's own material where that can
+## carry alpha, and a standard stand-in tinted with the shader's base colour
+## where it cannot. Shading stays on so the form still reads, shadows go off,
+## and the ghost writes no depth, so it neither fights the terrain nor cuts a
+## hole in itself while the terrain in front of it still hides it.
+func _ghost_material(source: Material) -> StandardMaterial3D:
+	var material: StandardMaterial3D
+	var colour := Color(0.86,0.96,0.88)
+	if source is StandardMaterial3D:
+		material = source.duplicate() as StandardMaterial3D
+		colour = material.albedo_color
+	else:
+		material = StandardMaterial3D.new()
+		if source is ShaderMaterial:
+			var base: Variant = source.get_shader_parameter("base_color")
+			if base is Color:
+				# Shader base colours are linear; a standard material's is not.
+				colour = (base as Color).linear_to_srgb()
+		elif source is BaseMaterial3D:
+			colour = (source as BaseMaterial3D).albedo_color
+		material.roughness = 0.85
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = Color(0.86,0.96,0.88,0.42)
+	material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY
+	material.no_depth_test = false
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.albedo_color = Color(colour.r,colour.g,colour.b,GHOST_ALPHA)
+	# A cool glow and a lit rim keep it reading as a promise, not a placement.
+	material.emission_enabled = true
+	material.emission = Color(0.58,0.86,0.72)
+	material.emission_energy_multiplier = 0.32
+	material.rim_enabled = true
+	material.rim = 0.85
+	material.rim_tint = 0.25
 	return material
 
 ## Sit the ghost on the ground under the pointer, matching what a click here
@@ -521,6 +678,13 @@ func _move_ghost(mouse: Vector2) -> bool:
 	if hit == null:
 		_ghost.visible = false
 		return false
+	if _landform(_drag_id):
+		# A landform has no pose to decode and no reason to float: it is the
+		# ground, sat a hair above the terrain so the two never fight.
+		_ghost_ground = hit.y+LANDFORM_LIFT
+		_ghost.transform = Transform3D(Basis.IDENTITY,Vector3(hit.x,_ghost_ground,hit.z))
+		_ghost.visible = true
+		return true
 	var basis := Basis(Vector3.UP,editor.object_angle).scaled(Vector3.ONE*editor.object_scale)
 	var lift := 0.0
 	var pose := editor._placement_pose()
@@ -566,7 +730,7 @@ func _clear_ghost() -> void:
 	_ghost = null
 
 func _process(delta: float) -> void:
-	if not _dragging or _ghost == null or not _ghost.visible:
+	if not _dragging or _ghost == null or not _ghost.visible or _landform(_drag_id):
 		return
 	_bob += delta
 	_ghost.position.y = _ghost_ground+sin(_bob*5.5)*0.06*editor.object_scale
