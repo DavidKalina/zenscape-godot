@@ -1,5 +1,14 @@
 # Wanderer: Blender rig and walk
 
+## Current Godot diorama: woodland model revision
+
+The diorama now uses `zenscape-bigfoot-woodland.blend` /
+`assets/models/zenscape-bigfoot-woodland.glb`: simplified broad coat planes,
+fewer small fur pieces, and solid forefeet. It preserves all twelve routine
+clips and the existing skinned rig. See `docs/bigfoot-woodland/README.md` for
+matched in-product stills, validation, and editing context. Earlier studies
+below describe their historical passes.
+
 ## Native encounter lighting review
 
 Run `studies/bigfoot_lighting.tscn` to inspect the classic model in the actual

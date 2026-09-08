@@ -6,6 +6,10 @@ var _chunk_editor: NativeChunkEditor
 var _build_panel: NativeBuildPanel
 var _build_palette: NativeBuildPalette
 var _saved_setting_controls: Array[Dictionary] = []
+var _redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
+var _leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
+var _waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
+var _leaf_revision := -1
 var _display_fog: CanvasLayer
 var camera: Camera3D
 var target := Vector3.ZERO
@@ -142,6 +146,9 @@ func _ready() -> void:
 	_chunk_editor = NativeChunkEditor.new()
 	add_child(_chunk_editor)
 	_chunk_editor.setup(self)
+	add_child(_leaf_litter)
+	add_child(_redwood_mist)
+	add_child(_waterfall_drips)
 	_atmosphere.setup_wind_trails(_chunk_editor.data.ground_height)
 	_build_ui()
 	if not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":
@@ -493,6 +500,7 @@ func _process(delta: float) -> void:
 	_thunder_audio.update_state(_paused)
 	_lightning.advance(delta, _paused, _precipitation.state.w, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle), sin(_atmosphere._air_angle)), camera.global_position)
 	_atmosphere.advance(delta, _paused)
+	_update_leaf_litter(delta)
 	_ambient_audio.update_state(delta,_paused,_atmosphere._air_strength*_atmosphere.gust_at(_atmosphere._wind_time),_precipitation.state.x,_precipitation.surface_weather.snow_phase,_precipitation.surface_weather.ice,_growth.terrain,0.0 if _chunk_editor.data.blank and _chunk_editor.falls.get_child_count() == 0 and _chunk_editor.content._landscape_falls.is_empty() else _growth.water)
 	_celestial.wind = _atmosphere._air_strength
 	_celestial.advance(delta, _paused)
@@ -524,6 +532,7 @@ func _process(delta: float) -> void:
 		_display_fog.blend.set_shader_parameter("aerial_sun_color", _celestial.aerial_sun_color)
 		_display_fog.material.set_shader_parameter("fog_display", _celestial.fog_display)
 		_display_fog.update_view()
+	_redwood_mist.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
 	_chunk_editor.sync_visibility()
 	if not _capture.is_empty() and not _capture_done and _elapsed > 1.0:
@@ -1058,3 +1067,25 @@ func _sync_authoring_chrome() -> void:
 	_build_palette.visible = _chunk_editor.active and not panel_open
 	if has_method("save_current"):
 		get("_notice").visible = not panel_open and get("_toolbar").visible
+
+func _update_leaf_litter(delta: float) -> void:
+	if _leaf_revision != _chunk_editor.content.revision:
+		_leaf_revision = _chunk_editor.content.revision
+		var anchors: Array = []
+		for object in _chunk_editor.data.objects:
+			if object.asset in ["broadleaf","shrub","redwood"]:
+				anchors.append(Vector2(object.x,object.z))
+		_leaf_litter.seed_from(anchors,_leaf_ground)
+		_waterfall_drips.seed_from(_chunk_editor.content._landscape_falls,_chunk_editor.data)
+	_leaf_litter.visible = _growth.terrain>=0.995 and _growth.foliage>=0.995
+	_leaf_litter.advance(delta,_paused or not _leaf_litter.visible,_atmosphere)
+	_waterfall_drips.visible = _growth.terrain>=0.995 and _growth.water>=0.995 and _precipitation.surface_weather.ice<0.1
+	_waterfall_drips.advance(delta,_paused or not _waterfall_drips.visible)
+
+func _leaf_ground(point: Vector2) -> Variant:
+	var height: Variant = _chunk_editor.data.ground_height(point)
+	if height == null: return null
+	for pond in _chunk_editor.data.ponds:
+		if float(height) < pond.level and Vector2(point.x-pond.x,point.y-pond.z).length()<maxf(pond.get("basin",[4.0,4.0])[0],pond.get("basin",[4.0,4.0])[1])*1.2:
+			return null
+	return height

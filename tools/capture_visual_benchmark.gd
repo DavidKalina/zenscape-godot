@@ -20,12 +20,23 @@ func run() -> void:
 	study.scene.polar = 1.18
 	study.scene.yaw = -0.4
 	study.scene._update_camera()
+	RenderingServer.global_shader_parameter_set("zs_camera_position", study.scene.camera.global_position)
 	for name in ["pond", "pond-no-reflections"]:
-		study.scene._environment.ssr_enabled = name == "pond"
-		study.reflection.visible = name == "pond"
+		for view in study.planar.views: view.material.set_shader_parameter("reflection_strength", 1.0 if name == "pond" else 0.0)
 		for i in range(40): await process_frame
 		RenderingServer.force_draw(false)
 		root.get_texture().get_image().save_png("res://docs/visual-benchmark/" + name + ".png")
+	for view in study.planar.views: view.material.set_shader_parameter("reflection_strength", 1.0)
+	study.scene.target = Vector3(1,2.5,1.5)
+	study.scene.distance = 20.0
+	study.scene.polar = 1.25
+	study.scene.yaw = -0.7
+	study.scene._update_camera()
+	RenderingServer.global_shader_parameter_set("zs_camera_position", study.scene.camera.global_position)
+	for i in range(40):
+		await process_frame
+		RenderingServer.force_draw(false)
+	root.get_texture().get_image().save_png("res://docs/visual-benchmark/hero.png")
 	study.free()
 	await process_frame
 	quit()

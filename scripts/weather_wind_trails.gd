@@ -4,6 +4,9 @@ extends Node3D
 const SHADER = preload("res://shaders/gust_trail.gdshader")
 const CAPACITY := 12
 var enabled := true
+var opacity_scale := 0.45
+var width_scale := 0.65
+var interval_scale := 1.6
 var ground_height: Callable
 var parcels: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
@@ -30,7 +33,7 @@ func advance(delta: float, strength: float, angle: float) -> void:
 	var direction := Vector3(cos(angle),0,sin(angle))
 	_until_birth -= delta
 	if power>0.08 and _until_birth<=0.0:
-		_until_birth = lerpf(2.8,0.5,clampf(power/1.8,0.0,1.0))
+		_until_birth = lerpf(2.8,0.5,clampf(power/1.8,0.0,1.0)) * interval_scale
 		if parcels.size()<CAPACITY: _birth(power,direction)
 	for i in range(parcels.size()-1,-1,-1):
 		var parcel: Dictionary = parcels[i]
@@ -43,7 +46,7 @@ func advance(delta: float, strength: float, angle: float) -> void:
 		var edge := 1.0-smoothstep(11.0,14.0,maxf(absf(node.position.x),absf(node.position.z)))
 		var material := node.material_override as ShaderMaterial
 		material.set_shader_parameter("clock",parcel.age)
-		material.set_shader_parameter("opacity",fade*edge*smoothstep(0.03,0.35,power)*lerpf(0.30,0.55,clampf(power/2.0,0.0,1.0)))
+		material.set_shader_parameter("opacity",opacity_scale*fade*edge*smoothstep(0.03,0.35,power)*lerpf(0.30,0.55,clampf(power/2.0,0.0,1.0)))
 		material.set_shader_parameter("flow_speed",0.12+power*0.16)
 		if phase>=1.0 or edge<=0.0:
 			node.queue_free()
@@ -68,7 +71,7 @@ func _birth(power: float, direction: Vector3) -> void:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var material := ShaderMaterial.new()
 	material.shader = SHADER
-	material.set_shader_parameter("width",lerpf(0.06,0.11,clampf(power/2.0,0.0,1.0)))
+	material.set_shader_parameter("width",width_scale*lerpf(0.06,0.11,clampf(power/2.0,0.0,1.0)))
 	material.set_shader_parameter("opacity",0.0)
 	material.set_shader_parameter("tint",Color(0.81,0.91,0.89))
 	node.material_override = material

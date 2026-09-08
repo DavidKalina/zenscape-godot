@@ -1,73 +1,101 @@
 # Luminous woodland — visual benchmark
 
-Goal: make a small diorama extraordinary to spend time in, preserving crisp
-faceted geometry and calm motion. The target is localized mist, readable shafts
-of sunlight, reflective water, and consistent clarity while orbiting. No gameplay
-expansion is part of this work.
+A runnable benchmark for crisp faceted dioramas with low drifting mist, shafts
+of sunlight, reflective pools, and calm motion. It builds the existing wooded
+terraces and applies a cool woodland palette under warm light.
 
-## First study
+## View it
 
-Run `run-visual-benchmark.command`, or open `studies/visual_benchmark.tscn` in
-Godot 4.7.2 with Forward+. F8 switches between the experimental treatment and
-the original rendering on the same authored composition. Ordinary orbit, zoom,
-and P-to-pause controls remain available.
+Run `run-visual-benchmark.command`, or open `studies/visual_benchmark.tscn` with
+Godot 4.7.2 and Forward+. Drag to orbit, scroll/pinch to zoom, P to pause, F8 to
+compare the original renderer on the same composition, G to send a gust through
+the camera target, C to toggle caustics in the lowest pool, and Esc to close.
+The study consumes other keyboard shortcuts so source editor actions cannot
+invalidate its reflected geometry.
 
-The study builds the existing terraced-pools landscape with woodland planting
-and the Golden meadow look. It is a separate entry point; it does not change the
-main scene, production shaders, or project quality defaults.
+This is an isolated visual benchmark. The main scene, production shaders,
+project quality defaults, terrain editing, and resident behavior are unchanged.
 
-- Native fog uses the existing terrain/water height textures to remain above
-  the landscape. A slowly drifting noise field breaks it into patches, and an
-  altitude falloff keeps the upper silhouettes clear. Real directional-light
-  shadows modulate scattering. Bloom and full-scene temporal AA remain off.
-- The experimental pond shader uses opaque depth colors and small moving
-  facets, enabling native reflections. It uses a stylized specular response;
-  its metallic value is an artistic control, not a physical claim about water.
-- A local reflection probe captures surrounding geometry, excludes the water
-  itself, and affects only the water layer. It supplies an off-screen fallback
-  alongside screen-space reflections.
+## Rendering choices
 
-## Assessment and remaining work
+- The existing terrain/water height maps locate native fog above the ground.
+  Drifting noise creates patches; altitude falloff keeps upper silhouettes
+  clear. Directional light and tree shadows produce actual volumetric shafts.
+- Each of the three pool heights has its own mirrored camera and clipped scene.
+  Geometry below that pool's surface is discarded from its reflected view.
+  This prevents underground terrain from appearing as a false reflection.
+- Reflections update every frame. Small, slow distortion softens the reflection;
+  angle-dependent blending makes water more reflective at grazing angles.
+  The screen color behind the surface supplies the visible bed, with depth-
+  dependent absorption and a soft shallow-water boundary.
+- Reflection views use 512 pixels of width, matching the main camera aspect,
+  and 2× MSAA. They omit their own shadow-map passes. The main view retains
+  its existing full-resolution faceted geometry, shadows, and 4× MSAA.
+- Full-scene TAA and bloom remain off. Source display-fog targets are retained
+  for the F8 control, but hidden in the enhanced mode.
 
-This is a first rendering experiment, **not the completed visual target**.
-Low fog and light/shadow separation are visible, while foreground facets remain
-sharp. The first strong backlighting trial washed out the scene and was reduced.
+The first native-reflection experiment exposed opposite face winding inherited
+from Three.js. The original double-sided material concealed it. The study's
+pool meshes preserve vertex attributes and correct their front-face indices.
+A standard mirror probe confirmed native reflections after the correction;
+per-pool planar views then replaced that experiment to make reflection placement
+coherent across different water heights.
 
-Water is the outstanding visual problem. From the overview, its reflections
-are still less legible than the desired mirror-like pond. The current opaque
-material also gives up seeing the actual bed through water. Do not promote it
-to production as a finished water replacement. Next investigate a planar pond
-reflection with depth/transmission, compare against the current material, and
-retain the calmer result. Multiple pool heights must be handled explicitly.
+## Evidence
 
-The probe currently captures a static scene once. It does not follow changing
-geometry, foliage animation, or time-of-day changes. Source display-fog buffers
-remain allocated in this comparison harness even when hidden, so timings are
-for this study implementation, not an optimized native-fog production path.
+- `comparison.mp4`: six seconds, enhanced LEFT / original renderer RIGHT;
+  identical geometry, authored palette, camera path, and fixed animation clocks.
+- `enhanced.png`, `control.png`: matched overview captures.
+- `pond.png`, `pond-no-reflections.png`: same pond view with just the planar
+  reflection contribution toggled, retaining transmission and atmosphere.
+- `hero.png`: a lower viewing angle for checking light shafts and silhouettes.
+- `pacing.json`: control / enhanced / control wall-frame measurements.
 
-## Reproduce evidence
-
-Use the Godot executable from the launcher with `--path . --rendering-method
+Use the executable from the launcher with `--path . --rendering-method
 forward_plus --script` and one of:
 
-- `res://tools/capture_visual_benchmark.gd`: same-camera stills plus pond view
-  with/without scene reflections. Geometry and simulation are paused.
-- `res://tools/film_visual_benchmark.gd`: two six-second orbits with the same
-  fixed clocks and camera path; PNG sequences in `/private/tmp/zs-beauty-*`.
-  Explicit `RenderingServer.force_draw(false)` keeps off-screen export running
-  when the application window is covered. Enhanced is the left side of the
-  assembled comparison.
-- `res://tools/profile_visual_benchmark.gd`: control/enhanced/control intervals,
-  two-second warmup and four-second sample per phase at 1440×900, 120 FPS cap.
-  Writes `pacing.json`. These are process-frame wall intervals, not GPU timing,
-  actual display presentation, or a hardware minimum specification.
+- `res://tools/capture_visual_benchmark.gd` for the stills.
+- `res://tools/film_visual_benchmark.gd` for the two six-second sequences in
+  `/private/tmp/zs-beauty-*`. The tool explicitly draws frames so export continues
+  when the native window is covered.
+- `res://tools/profile_visual_benchmark.gd` for two-second warmups and four-second
+  samples at 1440×900, with the existing 120 FPS cap. Run measurements separately
+  from recording.
 
-## Initial timing result
+## Scope and limitations
 
-Apple M5 Pro, Metal Forward+, 1440×900 render pixels, existing 4× MSAA and
-120 FPS cap. Mean frame intervals were 8.33 ms / 8.42 ms / 8.33 ms for
-control / enhanced / control. Enhanced p99 was 9.03 ms and maximum 9.61 ms.
-No screenshot process ran during sampling. The cap limits what this can tell
-us about spare GPU capacity. Runtime shader compilation succeeded; the inherited
-atmosphere compositor reports texture RID leaks at application shutdown, which
-still need separate cleanup before treating this as production code.
+The reflected geometry is copied from this fixed composition at setup, so this
+is not yet a drop-in renderer for live terrain editing. It includes the scene's
+compatible surface shaders, including the trees, terrain, rocks, and falls;
+water does not recursively reflect other water. Vegetation's shader motion
+continues through the shared wind clocks. Reflected directional lights use the
+initial authored light settings, and omit cast shadows to avoid three additional
+large shadow-map passes.
+
+Transmission samples screen color rather than physically refracting the scene.
+Its bed sample already includes atmospheric fog; the water pass avoids fogging
+that sample twice. This also means the reflected image does not receive the full
+native fog integral. These are deliberate image/performance compromises in this
+stylized benchmark, not claims of physically exact water.
+
+The inherited scene can report seven texture RIDs at application shutdown. This
+was also present before the planar renderer; production compositor lifecycle
+cleanup remains separate work. Frame intervals measure this benchmark as a
+whole, including the retained comparison infrastructure, and do not establish
+GPU timings, display presentation latency, or hardware minimum specifications.
+
+## Final validation
+
+`tools/verify_visual_benchmark.gd` sends actual P/F8 key events through Godot's
+input dispatch, checks pause/resume and the comparison round trip, confirms the
+source water mesh remains unchanged, and verifies three nonempty front-facing
+horizontal pool meshes. `reflection-difference.png` amplifies the difference
+between the pond captures five times; it isolates the changed contribution to
+the water surfaces.
+
+Apple M5 Pro / Metal / Forward+, 1440×900, 120 FPS cap: final mean frame intervals
+were 8.30 ms / 16.51 ms / 8.33 ms for control / enhanced / control. Enhanced p99
+was 17.35 ms and maximum 19.43 ms. This is roughly 60.6 FPS on average for the
+richer treatment, versus the control reaching its cap. An earlier version with
+720-pixel reflection views and additional shadow maps averaged 18.51 ms. The
+final recording uses the measured 512-pixel reflection configuration.

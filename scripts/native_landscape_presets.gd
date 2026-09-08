@@ -3,6 +3,7 @@ extends RefCounted
 ## planting and water use the ordinary editable, undoable garden records.
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const PRESETS := {
+	"redwood_grove":{"title":"Redwood Grove","family":"redwood_grove","biome":"redwood","palette":"Hollow","description":"Tall redwoods, fern-filled hollows and low drifting forest mist."},
 	"valley":{"title":"Riverfold valley","family":"valley","biome":"meadow","palette":"Meadow","description":"A winding river between open, flowered slopes."},
 	"plateau":{"title":"Skywater plateau","family":"plateau","biome":"woodland","palette":"Mountain","description":"A quiet summit lake above a wooded tableland."},
 	"cone":{"title":"Sleeping volcano","family":"cone","biome":"alpine","palette":"Winter","description":"A sweeping cone, snowy crown and foothill lake."},
@@ -65,14 +66,18 @@ static func dress(data: NativeTerrainData,tree: SceneTree = null) -> void:
 		var slope := _slope(data,p)
 		if h > b.treeline or slope > 1.0 or _wet(data,p): continue
 		var patch: float = data._recipe.source.noise_at(p.x*0.32+17,p.y*0.32-9)
-		if patch < 0.42 or (p.y > 3.0 and absf(p.x)<4.8): continue
+		if biome == "redwood":
+			if patch<0.30 or absf(p.x-data._recipe.formation.channel_x(p.y))<1.65: continue
+		else:
+			if patch < 0.42 or (p.y > 3.0 and absf(p.x)<4.8): continue
 		var close := false
 		for other in occupied:
-			if p.distance_squared_to(other)<1.8: close = true; break
+			if p.distance_squared_to(other)<(5.8 if biome == "redwood" else 1.8): close = true; break
 		if close: continue
 		var kind: String = "tree" if biome == "woodland" and rng.randf()<0.25 else b.tree
 		var size := rng.randf_range(0.75,1.2) if kind == "tree" else rng.randf_range(1.1,1.7)
-		var color := Color("3e7a44") if kind == "tree" else Color("6f9c46")
+		if kind == "redwood": size = rng.randf_range(0.72,1.2)
+		var color := Color("b1c2a5") if kind == "redwood" else Color("3e7a44") if kind == "tree" else Color("6f9c46")
 		color = color.srgb_to_linear()*rng.randf_range(0.82,1.08)
 		if data.place(kind,p,rng.randf()*TAU,size,{},NativeObjectPose.encode_tint(color)) < 0: break
 		data.objects.back()["landscape"] = true
@@ -91,6 +96,9 @@ static func dress(data: NativeTerrainData,tree: SceneTree = null) -> void:
 		elif biome == "wetland": kind = "reeds" if _near_water(data,p) else "bank_grass"
 		elif biome == "meadow": kind = ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4]
 		elif biome == "woodland" and i%7 == 0: kind = "shrub"
+		elif biome == "redwood":
+			if absf(p.x-data._recipe.formation.channel_x(p.y))<1.4: continue
+			kind = "log" if i%29 == 0 else "mushroom" if i%11 == 0 else "fern" if i%3 != 0 else "grass_tuft"
 		var size := rng.randf_range(0.35,0.7) if kind.begins_with("boulder") else rng.randf_range(0.65,1.1)
 		if data.place(kind,p,rng.randf()*TAU,size) < 0: break
 		data.objects.back()["landscape"] = true

@@ -93,7 +93,7 @@ var _bob := 0.0
 var _details := PanelContainer.new()
 var _details_title := Label.new()
 var _tune := Button.new()
-const FOLIAGE := ["tree","flower","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","mushroom"]
+const FOLIAGE := ["redwood","fern","tree","flower","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","mushroom"]
 var _search := LineEdit.new()
 var _results := VBoxContainer.new()
 var _library := Control.new()
@@ -1076,7 +1076,7 @@ func ensure_thumbnails() -> void:
 			continue
 		_thumbs[id] = _render(model,id)
 		_tiles[id].icon = _thumbs[id]
-	var bigfoot_model: Node3D = load("res://assets/models/zenscape-bigfoot-interactions.glb").instantiate()
+	var bigfoot_model: Node3D = load("res://assets/models/zenscape-bigfoot-woodland.glb").instantiate()
 	_style_bigfoot(bigfoot_model)
 	_thumbs["bigfoot"] = _render(bigfoot_model,"bigfoot")
 	for id: String in _entries:
@@ -1142,7 +1142,7 @@ func _part(root: Node3D, mesh: Mesh, material: Material, tint: Color, pose: Tran
 	var copy := material.duplicate() as Material
 	if copy is ShaderMaterial:
 		# The living scene grows and sways these; a portrait wants them formed.
-		for flag: String in ["terrain_growth","plant_growth","sway_enabled","wet_ground"]:
+		for flag: String in ["terrain_growth","plant_growth","sway_enabled","conifer_sway","wet_ground"]:
 			copy.set_shader_parameter(flag,false)
 		var base: Variant = copy.get_shader_parameter("base_color")
 		copy.set_shader_parameter("base_color",(base if base is Color else Color.WHITE)*tint)
@@ -1331,7 +1331,7 @@ func _place_special(point: Vector2) -> bool:
 		if not is_instance_valid(_inhabitant):
 			_inhabitant = CreatureActor.new()
 			editor.scene.add_child(_inhabitant)
-			_inhabitant.setup("res://assets/models/zenscape-bigfoot-interactions.glb")
+			_inhabitant.setup("res://assets/models/zenscape-bigfoot-woodland.glb")
 			_style_bigfoot(_inhabitant.actor)
 		_inhabitant.reset_at(world)
 	return true

@@ -29,6 +29,8 @@ extends Node3D
 const REACTIONS := {
 	"leaf_bed":"settle",
 	"tree":"sprout",
+	"redwood":"sprout",
+	"fern":"sprout",
 	"flower":"sprout",
 	"broadleaf":"sprout",
 	"shrub":"sprout",

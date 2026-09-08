@@ -27,7 +27,7 @@ func _run() -> void:
 		check(not editor.forming,"Formation transaction unlocks: "+id)
 		check(data.blank and data._recipe_settings == settings,"Formation applied: "+id)
 		check(data.objects.size()>25,"Biome has planting and detail: "+id)
-		check(data.ponds.size() == (3 if id == "terraced_pools" else 2 if id == "plateau" else 1),"Authored lakes are present: "+id)
+		check(data.ponds.size() == (0 if id == "redwood_grove" else 3 if id == "terraced_pools" else 2 if id == "plateau" else 1),"Authored lakes are present: "+id)
 		for pool: Dictionary in data.ponds:
 			var surface := data.pond_surface(pool)
 			check(surface.size()>30,"Pool has actual water geometry: "+id)
@@ -35,7 +35,7 @@ func _run() -> void:
 			for point: Vector3 in surface:
 				if maxf(absf(point.x),absf(point.z))>11.25: contained = false; break
 			check(contained,"Pool is contained by its own shore: "+id)
-		check(data.streams.size() == (2 if id in ["valley","canyon","terraced_pools"] else 1),"Each formation has its connected water treatment: "+id)
+		check(data.streams.size() == (0 if id == "redwood_grove" else 2 if id in ["valley","canyon","terraced_pools"] else 1),"Each formation has its connected water treatment: "+id)
 		var generated: Dictionary = data._snapshot()
 		var signature: int = hash(data.heights)
 		check(signature not in signatures,"Distinct family silhouette: "+id)
@@ -95,7 +95,7 @@ func _run() -> void:
 	check(not Recipe.valid(bad),"Unknown biome rejected")
 	scene.edit_landscape_presets()
 	var panel = scene._landscape_editor
-	check(panel.cards.size() == 7,"Gallery exposes every requested family")
+	check(panel.cards.size() == Presets.PRESETS.size(),"Gallery exposes every requested family")
 	for id in panel.cards:
 		check(panel.cards[id].get_child(0).texture != null,"Actual rendered preview: "+id)
 	root.content_scale_factor = 2.0

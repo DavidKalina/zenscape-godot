@@ -33,10 +33,12 @@ func _ready() -> void:
 		var original: MultiMeshInstance3D = source.get_node(pair[1])
 		_meshes[pair[0]] = original.multimesh.mesh
 		_materials[pair[0]] = original.multimesh.mesh.surface_get_material(0).duplicate()
+		if pair[0] in ["trunk", "canopy"]:
+			_materials[pair[0]].set_shader_parameter("conifer_sway", true)
 	for kind in preload("res://scripts/native_asset_catalog.gd").PARTS:
 		_catalog_parts[kind] = []
 		for node_name in preload("res://scripts/native_asset_catalog.gd").PARTS[kind]:
-			var original: Node3D = source.get_node(node_name)
+			var original: Node3D = NativeAssetCatalog.source_node(source,node_name)
 			var key: String = kind+":"+node_name
 			_catalog_parts[kind].append(key)
 			var mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh

@@ -20,6 +20,9 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=1440
 window/size/viewport_height=960
+window/size/mode=3
+window/dpi/allow_hidpi=true
+window/stretch/mode="disabled"
 window/vsync/vsync_mode=0
 window/size/min_width=960
 window/size/min_height=640
@@ -56,7 +59,6 @@ zs_palette_water={
 "type": "vec3",
 "value": Vector3(1, 1, 1)
 }
-
 zs_surface_post={
 "type": "bool",
 "value": false

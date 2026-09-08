@@ -1,8 +1,9 @@
 extends RefCounted
 ## Large silhouettes first, surface detail second. Inspired by the original
 ## landforms.js / world.js profiles; water bowls are part of the same ground.
-const FAMILIES := ["valley","plateau","cone","ridgeback","horn","canyon","terraced_pools"]
+const FAMILIES := ["redwood_grove","valley","plateau","cone","ridgeback","horn","canyon","terraced_pools"]
 const BIOMES := {
+	"redwood":{"title":"Redwood forest", "snowline":99.0, "rock_slope":1.25, "grass":0.72, "trees":65, "tree":"redwood", "treeline":12.0},
 	"alpine":{"title":"Alpine", "snowline":7.8, "rock_slope":1.05, "grass":0.8, "trees":85, "tree":"tree", "treeline":5.0},
 	"woodland":{"title":"Woodland", "snowline":99.0, "rock_slope":1.4, "grass":0.95, "trees":155, "tree":"broadleaf", "treeline":9.0},
 	"meadow":{"title":"Wildflower meadow", "snowline":99.0, "rock_slope":1.3, "grass":1.0, "trees":32, "tree":"broadleaf", "treeline":6.0},
@@ -47,6 +48,10 @@ func raw_height(x: float,z: float) -> float:
 	var mass := 0.0
 	var across := absf(x-channel_x(z))
 	match family:
+		"redwood_grove":
+			ground = 1.35+(n-0.45)*1.4
+			mass = 0.65*sin(x*0.28+composition_offset.x)*sin(z*0.22+composition_offset.y)
+			ground -= 0.22*(1.0-smoothstep(0.7,2.2,across))
 		"valley":
 			var wall := smoothstep(2.8,9.6,across)
 			mass = 6.5*wall*(0.8+0.2*sin(z*0.42+x*0.2))

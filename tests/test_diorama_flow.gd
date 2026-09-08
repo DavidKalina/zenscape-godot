@@ -10,9 +10,18 @@ func _run() -> void:
 	var watchdog := create_timer(90)
 	watchdog.timeout.connect(func() -> void: push_error("Diorama test timed out"); quit(2))
 	var scene = load("res://studies/diorama.tscn").instantiate()
+	# Terrain loading can dispatch mouse/key input before the shell exists.
+	var motion := InputEventMouseMotion.new()
+	scene._input(motion)
+	scene._unhandled_input(motion)
+	var early_key := InputEventKey.new()
+	early_key.keycode = KEY_H
+	early_key.pressed = true
+	scene._unhandled_input(early_key)
 	var folder := "/private/tmp/zenscape-diorama-test-"+str(Time.get_ticks_usec())
 	scene.library_path = folder
 	scene.recent_file = folder+"/recent.cfg"
+	root.size = Vector2i(1440,960)
 	root.add_child(scene)
 	await process_frame
 	check(scene._menu.visible and not scene._has_world,"Startup offers a menu without creating a world")

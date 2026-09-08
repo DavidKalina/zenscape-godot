@@ -72,6 +72,16 @@ void fragment() {
 	for mode in [0, 1, 2, 3]:
 		material.set_shader_parameter("mode", mode)
 		check((await rendered(viewport)).get_data() == baseline.get_data(), "Expired gust restores exact baseline mode %d" % mode)
+	# Atmospheric parcels must reach the same helpers even without a local field.
+	RenderingServer.global_shader_parameter_set("zs_wind_direction", Vector2.RIGHT)
+	RenderingServer.global_shader_parameter_set("zs_puff_0", Vector4(-5,0,0,0.6))
+	RenderingServer.global_shader_parameter_set("zs_gust_distance", 5.0)
+	material.set_shader_parameter("mode", 2)
+	var parcel := (await rendered(viewport)).get_pixel(48,48)
+	check(parcel.r > 0.55 and absf(parcel.b-0.5)<0.005, "Atmospheric parcel carries spray downwind without local gusts")
+	RenderingServer.global_shader_parameter_set("zs_gust_distance", 60.0)
+	check((await rendered(viewport)).get_data() == baseline.get_data(), "Passed atmospheric parcel restores calm water")
+	RenderingServer.global_shader_parameter_set("zs_puff_0", Vector4.ZERO)
 	viewport.queue_free()
 	wind.queue_free()
 	await process_frame

@@ -13,11 +13,8 @@ float zs_noise(vec2 p) {
 		mix(zs_noise_hash(i + vec2(0.0, 1.0)), zs_noise_hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 
-float zs_gust_parts_at(vec2 position, float travel, out float puff) {
+float zs_gust_pulse_at(vec2 position, float travel) {
 	vec2 dir = zs_wind_direction;
-	vec2 q = position - dir * travel;
-	vec2 p = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.09, 0.20);
-	float field = zs_noise(p) * 0.62 + zs_noise(p * 2.3 + vec2(3.7, 9.1 + travel * 0.05)) * 0.38;
 	float pulse = 0.0;
 	vec4 parcels[6] = vec4[6](zs_puff_0, zs_puff_1, zs_puff_2, zs_puff_3, zs_puff_4, zs_puff_5);
 	for (int i = 0; i < 6; i++) {
@@ -33,7 +30,15 @@ float zs_gust_parts_at(vec2 position, float travel, out float puff) {
 	}
 	float distance = length(position - zs_clap.xy) - zs_clap.z;
 	float ring = zs_clap.w * exp(-distance * distance * (distance > 0.0 ? 0.17361 : 0.02041));
-	puff = pulse + ring;
+	return pulse + ring;
+}
+
+float zs_gust_parts_at(vec2 position, float travel, out float puff) {
+	vec2 dir = zs_wind_direction;
+	vec2 q = position - dir * travel;
+	vec2 p = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.09, 0.20);
+	float field = zs_noise(p) * 0.62 + zs_noise(p * 2.3 + vec2(3.7, 9.1 + travel * 0.05)) * 0.38;
+	puff = zs_gust_pulse_at(position, travel);
 	return min(1.0, field + puff);
 }
 

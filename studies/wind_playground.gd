@@ -24,6 +24,7 @@ func _ready() -> void:
 	get_window().title = "ZenScape · Wind Playground"
 	_home = Landscape.populate(_chunk_editor)
 	add_child(wind)
+	_leaf_litter.local_wind = wind
 	add_child(gust_visuals)
 	gust_visuals.setup(wind)
 	add_child(play_collisions)

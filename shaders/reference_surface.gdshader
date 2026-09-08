@@ -1,6 +1,7 @@
 shader_type spatial;
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
@@ -18,6 +19,7 @@ uniform vec3 emissive_color = vec3(0.0);
 uniform float roughness_value = 1.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
+uniform bool conifer_sway = false;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -59,7 +61,10 @@ void vertex() {
 		VERTEX.y += abs(VERTEX.x) * sin(angle);
 		VERTEX.x *= cos(angle);
 	}
-	if (sway_enabled) {
+	if (conifer_sway) {
+		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
+	}
+	if (sway_enabled && !conifer_sway) {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
@@ -67,14 +72,15 @@ void vertex() {
 			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
 		float g = zs_gust_field(root);
 		float gust = 0.22 + 1.15 * g * g;
-		// Preserve source local deformation, including each instance's rotation/scale.
+		// Wind is a world-space direction; asset yaw must not rotate the air.
 		vec2 lean = zs_wind_direction * zs_wind_strength * zs_wind_strength * sway_shape.z * 0.55 * bend * gust;
 		vec2 flap = zs_wind_direction * (wave * bend * sway_shape.z * zs_wind_strength * gust);
 		float shiver = sin(zs_motion_time * 9.3 + phase * 4.7) * smoothstep(0.5, 0.85, g) * 0.35;
 		vec2 side = vec2(-zs_wind_direction.y, zs_wind_direction.x)
 			* ((sin(zs_motion_time * sway_frequency.y * 1.7 + phase * 2.1) + shiver) * bend * sway_shape.w * zs_wind_strength);
 		vec2 motion = lean + flap + side;
-		VERTEX.xz += motion;
+		float instance_scale = length(MODEL_MATRIX[1].xyz);
+		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y) * instance_scale;
 		float arm = max(VERTEX.y - sway_shape.x, 0.25);
 		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7);
 		foliage_gust = clamp(gust * zs_wind_strength * bend * 0.5, 0.0, 1.0);

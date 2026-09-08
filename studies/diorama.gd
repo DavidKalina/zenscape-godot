@@ -403,6 +403,7 @@ func restore_diorama_state(state: Dictionary) -> void:
 	brain.reset_behavior()
 
 func _input(event: InputEvent) -> void:
+	if not is_node_ready(): return
 	if _menu != null and (_menu.visible or _file_dialog.visible or _settings.visible): return
 	super._input(event)
 
@@ -411,6 +412,8 @@ func blocks_world_input(point: Vector2) -> bool:
 	return _menu.visible or _file_dialog.visible or _settings.visible or (_toolbar.is_visible_in_tree() and _toolbar.get_global_rect().has_point(point))
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Terrain setup can dispatch input before the editor and shell exist.
+	if not is_node_ready(): return
 	if _menu != null and (_menu.visible or _file_dialog.visible or _settings.visible): return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_S and (event.meta_pressed or event.ctrl_pressed):
