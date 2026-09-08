@@ -1076,7 +1076,7 @@ func ensure_thumbnails() -> void:
 			continue
 		_thumbs[id] = _render(model,id)
 		_tiles[id].icon = _thumbs[id]
-	var bigfoot_model: Node3D = load("res://assets/models/zenscape-bigfoot-woodland.glb").instantiate()
+	var bigfoot_model: Node3D = load("res://assets/models/zenscape-bigfoot-breathing.glb").instantiate()
 	_style_bigfoot(bigfoot_model)
 	_thumbs["bigfoot"] = _render(bigfoot_model,"bigfoot")
 	for id: String in _entries:
@@ -1331,7 +1331,7 @@ func _place_special(point: Vector2) -> bool:
 		if not is_instance_valid(_inhabitant):
 			_inhabitant = CreatureActor.new()
 			editor.scene.add_child(_inhabitant)
-			_inhabitant.setup("res://assets/models/zenscape-bigfoot-woodland.glb")
+			_inhabitant.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
 			_style_bigfoot(_inhabitant.actor)
 		_inhabitant.reset_at(world)
 	return true

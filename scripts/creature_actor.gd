@@ -22,6 +22,9 @@ var grasp_height := 2.70
 var _safe_position := Vector3.ZERO
 var _visual := Node3D.new()
 var _head := -1
+var _breath: Node3D
+var _mouth: Node3D
+var _mouth_offset := Transform3D.IDENTITY
 var _gaze := Vector3.ZERO
 var _gaze_weight := 0.0
 var _gaze_yaw := 0.0
@@ -198,6 +201,11 @@ func setup(asset_path: String) -> void:
 	assert(player != null and rigs.size() == 1,"An inhabitant needs an animation player and one skeleton")
 	skeleton = rigs[0]
 	_head = skeleton.find_bone("Head")
+	_mouth = actor.find_child("BreathOrigin",true,false) as Node3D
+	if _mouth != null:
+		_mouth_offset = skeleton.get_bone_global_rest(_head).affine_inverse()*skeleton.global_transform.affine_inverse()*_mouth.global_transform
+		_breath = preload("res://scripts/bigfoot_breath.gd").new()
+		add_child(_breath)
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	for clip in ["Idle","Held","Land","Alert","Walk"]:
 		assert(player.has_animation(clip),"Missing inhabitant clip: "+clip)
@@ -281,6 +289,7 @@ func notice(point: Vector3) -> void:
 
 func reset_at(point: Vector3) -> void:
 	if not point.is_finite(): return
+	if _breath != null: _breath.clear()
 	if wind_body != null:
 		wind_body.stop()
 		global_basis = _standing_basis
@@ -365,3 +374,12 @@ func advance(delta: float) -> void:
 		for side: String in hand_targets:
 			var contact: Dictionary = hand_targets[side]
 			HAND_REACH.apply(skeleton,contact.point,contact.weight,side)
+
+	if _breath != null:
+		skeleton.force_update_all_bone_transforms()
+		var idle := state==State.IDLE and player.current_animation=="Idle"
+		var phase := player.current_animation_position/player.get_animation("Idle").length if idle else 0.0
+		var wind := Vector3.ZERO
+		var mouth := skeleton.global_transform*skeleton.get_bone_global_pose(_head)*_mouth_offset
+		if is_instance_valid(_wind_field): wind = _wind_field.sample(mouth.origin)
+		_breath.advance(dt,mouth,phase,idle,wind)

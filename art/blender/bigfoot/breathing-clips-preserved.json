@@ -1,0 +1,13 @@
+{
+  "Alert": true,
+  "FishCatch": true,
+  "Held": true,
+  "Land": true,
+  "Sit": true,
+  "SitDown": true,
+  "Sleep": true,
+  "StandUp": true,
+  "StoneThrow": true,
+  "TreeShake": true,
+  "Walk": true
+}

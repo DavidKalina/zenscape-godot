@@ -1,5 +1,7 @@
 # Wanderer: Blender rig and walk
 
+Current idle source: `zenscape-bigfoot-breathing.blend`, exported as `assets/models/zenscape-bigfoot-breathing.glb`. See `docs/bigfoot-breathing/README.md` for breathing animation and mist validation. The woodland source below remains the base design.
+
 ## Current Godot diorama: woodland model revision
 
 The diorama now uses `zenscape-bigfoot-woodland.blend` /

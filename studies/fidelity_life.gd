@@ -31,7 +31,7 @@ func _ready() -> void:
 	creature.name = "RoamingBigfoot"
 	add_child(creature)
 	creature.position = spawn
-	creature.setup("res://assets/models/zenscape-bigfoot-woodland.glb")
+	creature.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
 	_tremor.shaken.connect(creature.queue_tremor)
 	creature.set_process(false)
 	creature._ground_probe = navigation._ground
