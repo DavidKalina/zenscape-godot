@@ -63,6 +63,8 @@ original Three.js right. The comparison still shows open lighting/fog difference
 
 ## Run
 
+For a standalone Windows or Mac app, use the [desktop build downloads and instructions](docs/desktop-builds.md).
+
 Open `project.godot` in **Godot 4.7.2** (standard edition; no .NET needed), then
 press **F5** for the fidelity scene with Forward+ lighting and volumetric fog.
 Open `scenes/sandbox.tscn` and press **F6** for the sculpting prototype, or use

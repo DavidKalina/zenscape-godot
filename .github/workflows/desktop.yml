@@ -1,0 +1,159 @@
+name: Godot desktop builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/desktop-builds]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  export:
+    name: Export Windows and macOS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot editor and desktop templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/godot
+            ~/.local/share/godot/export_templates
+          key: godot-desktop-linux-${{ env.GODOT_VERSION }}-v1
+
+      - name: Install official Godot editor and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          download="$RUNNER_TEMP/godot-download"
+          mkdir -p "$download" "$HOME/.local/bin"
+          editor="Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          templates="Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          gh release download "${GODOT_VERSION}-stable" --repo godotengine/godot-builds \
+            --pattern "$editor" --pattern "$templates" --pattern SHA512-SUMS.txt \
+            --dir "$download"
+          cd "$download"
+          # Check both archives against the official release's checksums.
+          grep -F -e "$editor" -e "$templates" SHA512-SUMS.txt > desktop-checksums.txt
+          test "$(wc -l < desktop-checksums.txt)" -eq 2
+          sha512sum --check desktop-checksums.txt
+          unzip -q "$editor"
+          install -m 755 "${editor%.zip}" "$HOME/.local/bin/godot"
+          template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$template_dir"
+          unzip -j -q "$templates" templates/windows_release_x86_64.exe \
+            templates/macos.zip templates/version.txt -d "$template_dir"
+
+      - name: Import project assets
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/godot" --version
+          "$HOME/.local/bin/godot" --headless --path . --import 2>&1 | tee import.log
+          ! grep -E 'SCRIPT ERROR:|ERROR:' import.log
+
+      - name: Export release builds
+        run: |
+          mkdir -p builds/windows
+          godot --headless --path . --export-release Windows 2>&1 | tee windows-export.log
+          ! grep -E 'SCRIPT ERROR:|ERROR:' windows-export.log
+          godot --headless --path . --export-release macOS 2>&1 | tee mac-export.log
+          ! grep -E 'SCRIPT ERROR:|ERROR:' mac-export.log
+          cp docs/desktop-builds.md builds/windows/README.md
+          printf 'Commit: %s\nGodot: %s\n' "$GITHUB_SHA" "$GODOT_VERSION" > builds/windows/BUILD.txt
+          (cd builds/windows && zip -r ../ZenScape-windows-x64.zip .)
+
+      - name: Upload Windows download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZenScape-windows-x64
+          path: builds/ZenScape-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload Mac download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZenScape-mac-universal
+          path: builds/ZenScape-mac-universal.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Download instructions
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## ZenScape · Godot desktop builds
+          Download an artifact at the bottom of this run's page, then extract both the artifact and the ZIP inside it.
+
+          - **Windows:** open `ZenScape.exe`. Keep its `.pck` and any DLLs beside it.
+          - **Mac (Apple Silicon or Intel):** move `ZenScape.app` to Applications and open it.
+
+          These are personal test builds without publisher certificates. See `docs/desktop-builds.md` for first-launch instructions.
+          Native smoke checks below verify headless startup; test graphics and mouse feel on your own GPU.
+          EOF
+
+  smoke:
+    name: Startup check (${{ matrix.platform }})
+    needs: export
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            artifact: ZenScape-windows-x64
+          - platform: macOS
+            os: macos-latest
+            artifact: ZenScape-mac-universal
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build
+
+      - name: Launch Windows export
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive build/ZenScape-windows-x64.zip -DestinationPath build/game
+          $process = Start-Process -FilePath "$PWD/build/game/ZenScape.exe" -ArgumentList '--headless', '--quit-after', '120', '--log-file', "$PWD/startup.log" -Wait -PassThru
+          Get-Content startup.log
+          if ($process.ExitCode -ne 0) { throw "Startup failed: $($process.ExitCode)" }
+          if (Select-String -Path startup.log -Pattern 'SCRIPT ERROR:|ERROR:') { throw 'Godot reported startup errors' }
+
+      - name: Launch Mac export
+        if: runner.os == 'macOS'
+        run: |
+          ditto -x -k build/ZenScape-mac-universal.zip build/game
+          executable="$(find build/game -path '*/Contents/MacOS/*' -type f | head -n 1)"
+          test -n "$executable"
+          "$executable" --headless --quit-after 120 --log-file "$PWD/startup.log"
+          cat startup.log
+          ! grep -E 'SCRIPT ERROR:|ERROR:' startup.log
+
+      - name: Keep startup log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: startup-log-${{ matrix.platform }}
+          path: startup.log
+          retention-days: 7
