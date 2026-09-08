@@ -316,3 +316,27 @@ func _process(_delta: float) -> void:
 	for mist in _landscape_mists:
 		mist.visible=scene._growth.terrain>=0.995 and scene._growth.water>=0.5
 		mist.update_view(scene.camera,depth)
+
+## Preview one committed record during an editor gesture without rebuilding
+## meadow batches, terrain or water. The normal rebuild reconciles on release.
+func update_object_preview(record: Dictionary) -> void:
+	var basis := NativeObjectPose.decode_basis(record.pose) if record.has("pose") else Basis(Vector3.UP,record.angle).scaled(Vector3.ONE*record.scale)
+	var tint: Variant = NativeObjectPose.decode_tint(record.tint) if record.has("tint") else null
+	for batch in _batches:
+		var key: String = batch.get_meta("part")
+		var sources: Array = _sources.get(key,[])
+		for i in range(sources.size()):
+			var source: Dictionary = sources[i]
+			if source.item == null or int(source.item.id) != int(record.id):
+				continue
+			source.item = record
+			source.basis = basis
+			source.x = record.x
+			source.z = record.z
+			if record.asset == "rock":
+				source.lift = 0.24*record.scale
+			batch.multimesh.set_instance_transform(i,_instance_transform(source))
+			var colored := key in ["canopy","petal","rock"]
+			if _catalog_parts.has(record.asset):
+				colored = _catalog_parts[record.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
+			batch.multimesh.set_instance_color(i,tint if tint != null and colored else _tints.get(key,Color.WHITE))

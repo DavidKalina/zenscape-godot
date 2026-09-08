@@ -366,7 +366,7 @@ func _input(event: InputEvent) -> void:
 	# Releases over the control panel must still finish camera gestures.
 	if event is InputEventMouseButton and not event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT and _chunk_editor != null:
-			_chunk_editor.finish_stroke()
+			_chunk_editor.finish_pointer_gesture()
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			_orbiting = false
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
@@ -559,8 +559,11 @@ func _build_ui() -> void:
 	_build_palette = NativeBuildPalette.new()
 	_ui.add_child(_build_palette)
 	_build_palette.attach(_chunk_editor)
+	var selection_panel := preload("res://scripts/native_selection_panel.gd").new()
+	_ui.add_child(selection_panel)
+	selection_panel.attach(_chunk_editor)
 	var help := Label.new()
-	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect\nIn Build: 1-4 tools · [ ] brush size · K sky"
+	help.text = "ZenScape seed 7 · fidelity study\nDrag to orbit · Middle drag to pan · Scroll to zoom\nTab Compare · R Frame landscape · Space Drift · P Pause motion\nH Hide controls · Build edits this chunk · Esc Inspect\nIn Build: V Select · 1-4 tools · [ ] brush size · K sky"
 	help.add_theme_color_override("font_color", Color("aab8ad"))
 	help.add_theme_font_size_override("font_size", 13)
 	column.add_child(help)

@@ -6,10 +6,11 @@ const GROUPS := [
 	["Sculpt",["raise","lower","smooth","flatten"]],
 	["Landscape",["ground","range","mountain"]],
 	["Cover",["grass","blades","meadow","paint","erase"]],
-	["Place",["tree","rock","flower","arch","bigfoot_tree","assets"]],
+	["Place",["select","tree","rock","flower","arch","bigfoot_tree","assets"]],
 	["Water",["pond","waterfall"]],
 ]
 const TOOL_TEXT := {
+	"select":"Click a placed object to edit it · Drag to move · V Select · Delete removes",
 	"raise":"Build hills with slow, gentle strokes.",
 	"lower":"Press valleys and hollows into the land.",
 	"smooth":"Soften slopes and blend your brushwork.",
@@ -77,6 +78,13 @@ signal setting_changed(property: String, value: float)
 signal status_changed(text: String)
 signal active_changed(enabled: bool)
 signal sky_toggle_requested()
+signal selection_changed(id: int)
+var selected_object_id := -1
+var selection: NativeObjectSelection
+var _selection_edit := false
+var _selection_drag := false
+var _selection_press := Vector2.ZERO
+var _selection_offset := Vector2.ZERO
 var scene: Node3D
 var terrain: MeshInstance3D
 var data := NativeTerrainData.new()
@@ -187,6 +195,10 @@ func setup(owner_scene: Node3D) -> void:
 	reactions.name = "DropReactions"
 	scene.add_child(reactions)
 	reactions.setup(self)
+	selection = NativeObjectSelection.new()
+	selection.name = "ObjectSelection"
+	scene.add_child(selection)
+	selection.setup(self)
 
 ## The tools a shell may offer, grouped as the build panel lays them out.
 func tool_groups() -> Array:
@@ -241,6 +253,8 @@ func select_tool(tool: String) -> void:
 	finish_stroke()
 	_fall_start = null
 	mode = tool
+	if selection != null:
+		selection.update_marker(selected_object_id)
 	tool_changed.emit(tool)
 	if TOOL_TEXT.has(tool):
 		_set_status(TOOL_TEXT[tool])
@@ -257,7 +271,7 @@ func preview_radius() -> float:
 
 ## The circle only reads truthfully where a footprint exists.
 func preview_wanted() -> bool:
-	if mode == "assets":
+	if mode in ["assets","select"]:
 		return false
 	return mode != "waterfall" or _fall_start == null
 
@@ -286,6 +300,7 @@ func set_active(enabled: bool) -> void:
 	_fall_start = null
 	active = enabled
 	active_changed.emit(active)
+	selection.update_marker(selected_object_id)
 	scene._orbiting = false
 	if active:
 		_previous_override = terrain.material_override
@@ -298,6 +313,13 @@ func set_active(enabled: bool) -> void:
 func handle_input(event: InputEvent) -> bool:
 	if not active:
 		return false
+	if event is InputEventKey and event.pressed and not event.echo and mode == "select":
+		if event.keycode in [KEY_DELETE,KEY_BACKSPACE]:
+			delete_selected()
+			return true
+		if event.keycode == KEY_D and (event.ctrl_pressed or event.meta_pressed):
+			duplicate_selected()
+			return true
 	if event is InputEventKey and event.pressed and not event.echo and (event.ctrl_pressed or event.meta_pressed):
 		if event.keycode == KEY_Z:
 			if event.shift_pressed: redo()
@@ -307,7 +329,7 @@ func handle_input(event: InputEvent) -> bool:
 			redo()
 			return true
 	if event is InputEventKey and event.pressed and not event.ctrl_pressed and not event.meta_pressed:
-		var tools := {KEY_1:"raise",KEY_2:"lower",KEY_3:"smooth",KEY_4:"flatten"}
+		var tools := {KEY_V:"select",KEY_1:"raise",KEY_2:"lower",KEY_3:"smooth",KEY_4:"flatten"}
 		if tools.has(event.keycode) and not event.echo:
 			select_tool(tools[event.keycode])
 			return true
@@ -319,9 +341,27 @@ func handle_input(event: InputEvent) -> bool:
 		if event.keycode == KEY_K and not event.echo and sky_toggle_requested.has_connections():
 			sky_toggle_requested.emit()
 			return true
+	if mode == "select" and event is InputEventMouseMotion and _selection_drag:
+		move_selection_pointer(event.position)
+		return true
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
 			finish_stroke()
+			return true
+		if mode == "select":
+			select_object(pick_object(event.position))
+			if selected_object_id > 0:
+				_selection_press = event.position
+				var ground: Variant = pick(event.position)
+				var item := selected_object()
+				if ground == null:
+					var camera: Camera3D = scene.camera
+					var anchor := terrain.to_global(data.object_position(item))
+					var plane_hit: Variant = Plane(Vector3.UP,anchor.y).intersects_ray(camera.project_ray_origin(event.position),camera.project_ray_normal(event.position))
+					if plane_hit != null:
+						ground = terrain.to_local(plane_hit)
+				_selection_offset = Vector2(item.x-ground.x,item.z-ground.z) if ground != null else Vector2.ZERO
+				_selection_drag = true
 			return true
 		place_at(event.position)
 		return true
@@ -331,7 +371,7 @@ func handle_input(event: InputEvent) -> bool:
 ## palette's drag-and-drop commits through here so a dropped object takes the
 ## same record, pose and reaction a click would have given it.
 func place_at(mouse: Vector2) -> bool:
-	if not active:
+	if not active or mode == "select":
 		return false
 	var hit: Variant = pick(mouse)
 	if hit == null:
@@ -380,14 +420,17 @@ func place_at(mouse: Vector2) -> bool:
 		refresh()
 	return true
 
-func pick(mouse: Vector2) -> Variant:
-	if scene._growth.terrain < 0.995:
-		return null
-	if not scene.get_viewport().get_visible_rect().has_point(mouse):
-		return null
+func pointer_in_world(mouse: Vector2) -> bool:
+	if scene._growth.terrain < 0.995 or not scene.get_viewport().get_visible_rect().has_point(mouse):
+		return false
 	for child in scene._ui.get_children():
 		if child is Control and scene._ui.visible and child.is_visible_in_tree() and child.get_global_rect().has_point(mouse):
-			return null
+			return false
+	return true
+
+func pick(mouse: Vector2) -> Variant:
+	if not pointer_in_world(mouse):
+		return null
 	var camera: Camera3D = scene.camera
 	var origin := terrain.to_local(camera.project_ray_origin(mouse))
 	var direction := terrain.global_basis.inverse()*camera.project_ray_normal(mouse)
@@ -396,7 +439,7 @@ func pick(mouse: Vector2) -> Variant:
 func _process(delta: float) -> void:
 	if not active:
 		return
-	if _painting and (not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995):
+	if (_painting or _selection_drag) and (not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995):
 		finish_stroke()
 	var hit: Variant = pick(scene.get_viewport().get_mouse_position()) if not scene._orbiting and not scene._panning else null
 	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
@@ -418,7 +461,13 @@ func _process(delta: float) -> void:
 		_last_point = null
 		_elapsed = 0.0
 
+func finish_pointer_gesture() -> void:
+	if _selection_drag or _painting:
+		finish_stroke()
+
 func finish_stroke() -> void:
+	_selection_drag = false
+	end_selection_edit()
 	if not _painting:
 		return
 	_painting = false
@@ -495,6 +544,11 @@ func refresh() -> void:
 	scene._precipitation.set_ceiling(_original_precip_top if original else scene._atmosphere._summit.y+5.0)
 	if scene._display_fog != null:
 		scene._display_fog.update_view()
+	if selection != null:
+		if selected_object().is_empty():
+			selected_object_id = -1
+		selection.update_marker(selected_object_id)
+		selection_changed.emit(selected_object_id)
 
 ## Rebuild everything from the records, ignoring every incremental cache. The
 ## incremental path must land on exactly this result; the regression test drives
@@ -676,6 +730,7 @@ func open_garden() -> bool:
 	if not data.load_document(document):
 		_set_status("This garden does not match the chunk. Your open garden is unchanged.")
 		return false
+	selected_object_id = -1
 	refresh()
 	NativeGardenStore.restore(scene,document.scene_state)
 	_set_status("Garden opened.")
@@ -718,3 +773,92 @@ func fill_landscape_waterfall() -> void:
 		_set_status("Landscape waterfall filled. Save preserves it.")
 	else:
 		_set_status("Form a mountain landscape first.")
+
+# --- Editing existing authored objects ---------------------------------------
+func selected_object() -> Dictionary:
+	return data.object_by_id(selected_object_id)
+
+func select_object(id: int) -> void:
+	finish_stroke()
+	reactions.finish_all()
+	var item := data.object_by_id(id)
+	selected_object_id = id if not item.is_empty() and item.asset != "waterfall" else -1
+	selection.update_marker(selected_object_id)
+	selection_changed.emit(selected_object_id)
+
+func pick_object(mouse: Vector2) -> int:
+	return selection.pick(mouse)
+
+func begin_selection_edit() -> void:
+	if _selection_edit or selected_object_id < 0:
+		return
+	data.begin_stroke()
+	_selection_edit = true
+
+func end_selection_edit() -> void:
+	if not _selection_edit:
+		return
+	_selection_edit = false
+	if data.end_stroke():
+		refresh()
+
+func update_selected(changes: Dictionary) -> bool:
+	if selected_object_id < 0:
+		return false
+	var standalone := not _selection_edit
+	begin_selection_edit()
+	var changed := data.update_object(selected_object_id,changes)
+	if changed:
+		_refresh_selected_render()
+		selection_changed.emit(selected_object_id)
+		_set_status("Object changed · Save to keep your work.")
+	if standalone:
+		end_selection_edit()
+	return changed
+
+func move_selection_pointer(mouse: Vector2) -> void:
+	if not _selection_drag or mouse.distance_to(_selection_press) < 5.0 and not _selection_edit:
+		return
+	var ground: Variant = pick(mouse)
+	if ground == null:
+		return
+	begin_selection_edit()
+	update_selected({"x":ground.x+_selection_offset.x,"z":ground.z+_selection_offset.y})
+
+func duplicate_selected() -> int:
+	finish_stroke()
+	if selected_object_id < 0:
+		return -1
+	data.begin_stroke()
+	var id := data.duplicate_object(selected_object_id)
+	# Prefer a nearby visible copy. If the chunk edge blocks it, try the other sides.
+	if id > 0:
+		var item := data.object_by_id(id)
+		for offset in [Vector2(1,0),Vector2(-1,0),Vector2(0,1),Vector2(0,-1)]:
+			if data.update_object(id,{"x":item.x+offset.x,"z":item.z+offset.y}):
+				break
+	data.end_stroke()
+	if id < 0:
+		_set_status("This garden has reached its object limit.")
+		return id
+	refresh()
+	select_object(id)
+	return id
+
+func delete_selected() -> void:
+	finish_stroke()
+	data.begin_stroke()
+	var changed := data.remove_object(selected_object_id)
+	data.end_stroke()
+	if changed:
+		select_object(-1)
+		refresh()
+
+func _refresh_selected_render() -> void:
+	var record := selected_object()
+	if record.is_empty():
+		return
+	content.update_object_preview(record)
+	if record.asset in NativeGardenLandmarks.KINDS:
+		landmarks.rebuild(data)
+	selection.update_marker(selected_object_id)

@@ -1,0 +1,8 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+Metal 4.0 - Forward+ - Using Device #0: Apple - Apple M5 Pro (Apple9)
+
+Flight step 1 position error 0.0 phase error 0.0000000000416 mode differences 0
+Flight step 30 position error 0.00000024575624 phase error 0.00000001807032 mode differences 0
+Flight step 150 position error 0.0000008596304 phase error 0.00000007387412 mode differences 0
+Flight step 300 position error 0.00000190734863 phase error 0.00000024571229 mode differences 0
+PASS: source bird trajectories, modes, wing phase, pause and growth

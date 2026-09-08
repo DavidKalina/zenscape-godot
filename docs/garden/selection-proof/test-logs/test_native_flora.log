@@ -1,0 +1,31 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+Metal 4.0 - Forward+ - Using Device #0: Apple - Apple M5 Pro (Apple9)
+
+Bigfoot clearing: (8.5, 1.671918, -11.5)
+Flora records 3178; instances 5334; elapsed 3012 ms; worst transform 0.00000047683716; worst color 0.0
+  trunk: 103/103 transform 1.7763568394002505e-15 color 0
+  canopy: 103/103 transform 1.7763568394002505e-15 color 0
+  broadleaf:mesh-11: 4/4 transform 1.7763568394002505e-15 color 0
+  broadleaf:broadleaf-canopies: 4/4 transform 1.7763568394002505e-15 color 0
+  shrub:mesh-13: 51/51 transform 1.7763568394002505e-15 color 0
+  reeds:mesh-14: 186/186 transform 1.7763568394002505e-15 color 0
+  bank_grass:mesh-15: 53/53 transform 1.7763568394002505e-15 color 0
+  button_flower:flower-stems: 33/33 transform 8.881784197001252e-16 color 0
+  button_flower:flowers-button: 33/33 transform 8.881784197001252e-16 color 0
+  spike_flower:flower-stems: 1290/1290 transform 4.76837158203125e-07 color 0
+  spike_flower:flowers-spike: 1290/1290 transform 1.7763568394002505e-15 color 0
+  umbel_flower:flower-stems: 182/182 transform 1.7763568394002505e-15 color 0
+  umbel_flower:flowers-umbel: 182/182 transform 1.7763568394002505e-15 color 0
+  daisy_flower:flower-stems: 510/510 transform 2.384185791015625e-07 color 0
+  daisy_flower:flowers-daisy: 510/510 transform 1.7763568394002505e-15 color 0
+  grass_tuft:mesh-10: 700/700 transform 1.7763568394002505e-15 color 0
+  log:logs: 17/17 transform 1.7763568394002505e-15 color 0
+  stump:stumps: 3/3 transform 1.7763568394002505e-15 color 0
+  snag:snags: 8/8 transform 1.7763568394002505e-15 color 0
+  mushroom:fungus-stems: 34/34 transform 1.7763568394002505e-15 color 0
+  mushroom:fungus-caps: 34/34 transform 1.7763568394002505e-15 color 0
+  boulder_1:mesh-4: 1/1 transform 4.111666278561188e-07 color 0
+  boulder_2:mesh-5: 1/1 transform 1.8888216501977695e-07 color 0
+  boulder_3:mesh-6: 1/1 transform 9.727419492122635e-08 color 0
+  boulder_4:mesh-7: 1/1 transform 1.0432850405805993e-07 color 0
+Failures: 0

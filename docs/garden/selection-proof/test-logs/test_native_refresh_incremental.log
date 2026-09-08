@@ -1,0 +1,18 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+Metal 4.0 - Forward+ - Using Device #0: Apple - Apple M5 Pro (Apple9)
+
+Bigfoot clearing: (8.5, 1.671918, -11.5)
+populated demo world opens: ok
+world is the populated one: ok
+raise stroke clear of the water matches a full rebuild: ok
+lower stroke through the pond matches a full rebuild: ok
+raise stroke along the stream matches a full rebuild: ok
+stroke under the waterfall's course matches a full rebuild: ok
+smooth stroke matches a full rebuild: ok
+ground cover stroke matches a full rebuild: ok
+meadow stroke matches a full rebuild: ok
+erase stroke matches a full rebuild: ok
+undo restores the opened world exactly: ok
+undo result is what a full rebuild produces: ok
+redo result is what a full rebuild produces: ok
+Native incremental refresh: 0 failures

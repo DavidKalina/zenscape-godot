@@ -713,6 +713,74 @@ func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictio
 	objects_revision += 1
 	return id
 
+## Object edits share the caller's stroke so a drag is one undoable operation.
+## Return copies to keep renderer revisions and undo history behind this API.
+func object_by_id(id: int) -> Dictionary:
+	var index := _object_index(id)
+	return objects[index].duplicate(true) if index >= 0 else {}
+
+func _object_index(id: int) -> int:
+	for index in range(objects.size()):
+		if objects[index].id == id:
+			return index
+	return -1
+
+## Patch editable properties atomically. Empty/null pose or tint restores the
+## asset default. Waterfalls need their dedicated two-endpoint editing tool.
+func update_object(id: int, changes: Dictionary) -> bool:
+	var index := _object_index(id)
+	if index < 0 or objects[index].asset == "waterfall":
+		return false
+	var candidate := objects[index].duplicate(true)
+	for key in changes:
+		if key not in ["x","z","angle","scale","pose","tint"]:
+			return false
+		var value: Variant = changes[key]
+		if key == "pose" and (value == null or (value is Dictionary and value.is_empty())):
+			candidate.erase(key)
+		elif key == "tint" and (value == null or value == ""):
+			candidate.erase(key)
+		else:
+			candidate[key] = value
+	if not GardenData._number(candidate.x,-14,14) or not GardenData._number(candidate.z,-14,14):
+		return false
+	if ground_height(Vector2(candidate.x,candidate.z)) == null:
+		return false
+	if not GardenData._number(candidate.angle,-TAU*100,TAU*100) or not GardenData._number(candidate.scale,0.1,5.0):
+		return false
+	if candidate.has("pose") and (candidate.asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid(candidate.pose)):
+		return false
+	if candidate.has("tint") and (candidate.asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(candidate.tint)):
+		return false
+	if candidate == objects[index]:
+		return false
+	# Once customized, a generated piece belongs to the user. Refilling the
+	# landscape must only replace untouched generated flora.
+	candidate.erase("landscape")
+	objects[index] = candidate.duplicate(true)
+	objects_revision += 1
+	return true
+
+func duplicate_object(id: int) -> int:
+	var index := _object_index(id)
+	if index < 0 or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+		return -1
+	var copy := objects[index].duplicate(true)
+	copy.id = next_id
+	copy.erase("landscape")
+	next_id += 1
+	objects.append(copy)
+	objects_revision += 1
+	return copy.id
+
+func remove_object(id: int) -> bool:
+	var index := _object_index(id)
+	if index < 0:
+		return false
+	objects.remove_at(index)
+	objects_revision += 1
+	return true
+
 func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
 	if ground_height(start) == null or ground_height(finish) == null or start.distance_to(finish) < 0.5:
 		return false

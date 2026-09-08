@@ -30,6 +30,7 @@ const LANDFORM_LIFT := 0.3
 const GHOST_ALPHA := 0.55
 ## Simple drawn glyphs stand in for the tools that have no object to render.
 const GLYPHS := {
+	"select":"ring",
 	"raise":"up","lower":"down","smooth":"wave","flatten":"bar",
 	"ground":"bar","range":"peak","mountain":"peak",
 	"grass":"tuft","blades":"tuft","meadow":"tuft","paint":"disc","erase":"ring",
