@@ -43,9 +43,17 @@ func setup(source: Dictionary) -> void:
 		# Godot's light energy convention includes PI; the source irradiance does not.
 		light.light_energy = float(entry.intensity) / PI
 		light.shadow_enabled = entry.castShadow
-		light.shadow_bias = 0.1
-		light.shadow_normal_bias = 0.35
-		light.directional_shadow_max_distance = 75.0
+		# Source: one 4096 map fitted to the whole island (~35 texels/m), tight
+		# 3x3 PCF and a slightly negative bias. One orthogonal map over the
+		# diorama keeps far foliage self-shadowed and trunk bases grounded.
+		light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		light.directional_shadow_max_distance = 130.0
+		light.directional_shadow_fade_start = 1.0
+		light.shadow_bias = 0.08
+		light.shadow_normal_bias = 0.8
+		light.shadow_blur = 0.2
+		# Three.js has no environment map: direct GGX only, no split-sum glaze.
+		light.light_specular = 1.0
 		# Source PCFSoftShadowMap filters edges without a distance-growing penumbra.
 		light.light_angular_distance = 0.6 if "--legacy-soft-shadows" in OS.get_cmdline_user_args() else 0.0
 

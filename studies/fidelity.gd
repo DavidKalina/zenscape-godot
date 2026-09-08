@@ -17,6 +17,12 @@ var _ui: CanvasLayer
 var _status: Label
 var _source: Dictionary
 var _orbiting := false
+## Source OrbitControls damping: pointer deltas pool here and 5 % of the pool
+## is applied per 60 Hz frame, so the camera glides and settles.
+const CAMERA_DAMPING := 0.05
+const ZOOM_STEP := 0.95
+var _orbit_delta := Vector2.ZERO
+var _pan_delta := Vector2.ZERO
 var _auto_orbit := false
 var _elapsed := 0.0
 var _capture := ""
@@ -365,6 +371,38 @@ func _input(event: InputEvent) -> void:
 			_orbiting = false
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			_panning = false
+	# Pointer motion is read here so a drag that crosses the control panel
+	# keeps moving the camera, as the source's pointer capture does.
+	if event is InputEventMouseMotion and _orbiting:
+		_orbit_delta += event.relative
+	elif event is InputEventMouseMotion and _panning:
+		_pan_delta += event.relative
+	# macOS delivers trackpad momentum as pan gestures and pinch as magnify.
+	if event is InputEventPanGesture:
+		_zoom(event.delta.y)
+	if event is InputEventMagnifyGesture:
+		distance = clampf(distance / event.factor, 0.5, 150.0)
+		_update_camera()
+
+func _zoom(amount: float) -> void:
+	# Source: 0.95 per 100 px of wheel; Godot's precise factor is 0.03 px.
+	distance = clampf(distance / pow(ZOOM_STEP, amount / 3.0), 0.5, maxf(150.0, distance))
+	_update_camera()
+
+func _ease_camera(delta: float) -> void:
+	var retain := pow(1.0 - CAMERA_DAMPING, delta * 60.0)
+	var apply := 1.0 - retain
+	var height := maxf(get_viewport().get_visible_rect().size.y, 1.0)
+	if _orbit_delta != Vector2.ZERO:
+		var step := _orbit_delta * apply
+		yaw -= TAU * step.x / height
+		polar = clampf(polar - TAU * step.y / height, 0.25, 1.5)
+		_orbit_delta *= retain
+	if _pan_delta != Vector2.ZERO:
+		var step := _pan_delta * apply
+		var reach := 2.0 * distance * tan(deg_to_rad(camera.fov) * 0.5) / height
+		target += (-camera.global_basis.x * step.x + camera.global_basis.y * step.y) * reach
+		_pan_delta *= retain
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _chunk_editor != null and _chunk_editor.handle_input(event):
@@ -374,19 +412,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_panning = event.pressed
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			_orbiting = event.pressed
+		if event.pressed and (_orbiting or _panning):
+			_auto_orbit = false # The source cancels its idle spin on the first press.
 		if event.pressed:
 			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-				distance = maxf(0.5, distance * pow(0.92, maxf(event.factor, 0.01)))
+				_zoom(-maxf(event.factor, 0.01))
 			if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-				distance = minf(maxf(150.0,distance), distance / pow(0.92, maxf(event.factor, 0.01)))
-			_update_camera()
-	if event is InputEventMouseMotion and _orbiting:
-		yaw -= event.relative.x * 0.005
-		polar = clampf(polar - event.relative.y * 0.005, 0.25, 1.5)
-		_update_camera()
-	elif event is InputEventMouseMotion and _panning:
-		target += (-camera.global_basis.x * event.relative.x + camera.global_basis.y * event.relative.y) * distance * 0.001
-		_update_camera()
+				_zoom(maxf(event.factor, 0.01))
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_TAB:
@@ -458,7 +490,7 @@ func _process(delta: float) -> void:
 	_time_label.text = "Time of day · %02d:%02d" % [minutes / 60, minutes % 60]
 	if _auto_orbit:
 		yaw += delta * 0.055
-		_update_camera()
+	_ease_camera(delta)
 	_tremor.advance(delta, _paused)
 	_update_camera()
 	camera.transform = _tremor.apply(camera.transform)

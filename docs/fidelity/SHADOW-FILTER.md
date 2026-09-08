@@ -30,3 +30,20 @@ poses still differ from the source. The lake's blue color mismatch remains.
 Follow-up: `LAKE-SHADOWS.md` identifies and corrects the missing source lake
 shadow-receiving flag, substantially improving the shadowed-water color reported
 in this earlier pass. Reflection and compositing order remain separate gaps.
+
+## 2026-09-07: source-fitted map, tight filter, no reflection glaze
+
+A same-camera daylight pair against the Electron build showed Godot shadow
+edges as blurred stair-steps and shadow interiors near black. The source fits one
+4096 map to the whole island (about 35 texels per metre) with a 3x3 PCF and a
+slightly negative bias, and has no environment map. The sun now uses one
+orthogonal map over the diorama (`directional_shadow_max_distance` 130, fade at
+1.0) on an 8192 atlas (`rendering/lights_and_shadows/directional_shadow/size`),
+soft filter quality "very low" with `shadow_blur` 0.2, bias 0.08 and normal bias
+0.8 (lower values showed depth acne on canopy tiers). The surface shader sets
+`SPECULAR = 0.0` so the realtime sky radiance no longer lifts and desaturates
+shaded facets, and the direct GGX term no longer scales by the light's specular
+amount, which had halved the sun sheen and rim glint. The larger atlas measured
+about 0.13 ms per 3D pass with `tools/profile_frame_phases.gd`. The native
+Bigfoot encounter tree, absent from the source seed, is now shown only while
+Bigfoot is out; it had sat in front of the reference camera in every capture.
