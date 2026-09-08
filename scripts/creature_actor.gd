@@ -2,9 +2,17 @@ class_name CreatureActor
 extends Node3D
 ## A small interaction contract shared by animated inhabitants. Asset clips own
 ## performance; this node owns carrying, safe placement and attention.
-enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING }
+enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUMBLING }
 signal state_changed(value: State)
 signal landed()
+signal action_finished(clip: String, cancelled: bool)
+const HAND_REACH = preload("res://scripts/creature_hand_reach.gd")
+var hand_targets := {}
+var _pending_tremor := 0.0
+var _stumble_strength := 0.0
+var _stumble_duration := 0.0
+var action_clip := ""
+var _action_duration := 0.0
 var state := State.IDLE
 var actor: Node3D
 var player: AnimationPlayer
@@ -76,10 +84,66 @@ func walk_step(destination: Vector3, speed: float, delta: float) -> bool:
 		return true
 	return false
 
+## An authored one-shot or timed loop owns motion until completion/interruption.
+func perform_action(clip: String, duration := -1.0) -> bool:
+	if not can_roam() or not player.has_animation(clip): return false
+	stop_walking()
+	_state(State.ACTION)
+	action_clip = clip
+	_action_duration = player.get_animation(clip).length if duration < 0.0 else duration
+	_gaze_weight = 0.0
+	_play(clip)
+	return true
+
+func cancel_action() -> void:
+	if state != State.ACTION: return
+	_state(State.IDLE)
+	_play("Idle")
+
+func hand_position(side := "R") -> Vector3:
+	return HAND_REACH.palm(skeleton,side)
+
+func reach_hand(point: Vector3, weight: float, side := "R") -> void:
+	hand_targets[side] = {"point":point,"weight":weight}
+
+func clear_hand_targets() -> void:
+	hand_targets.clear()
+
 func stop_walking() -> void:
 	if state != State.WALKING: return
 	_state(State.IDLE)
 	_play("Idle")
+
+## Queue on the event; consume on the actor clock so pause defers the reaction.
+func queue_tremor(strength: float) -> void:
+	if not is_finite(strength) or strength<0.2: return
+	if state in [State.HELD,State.LANDING,State.WIND,State.RECOVERING]: return
+	_pending_tremor = maxf(_pending_tremor,clampf(strength,0.0,1.0))
+
+func _start_stumble(strength: float) -> void:
+	if state in [State.HELD,State.LANDING,State.WIND,State.RECOVERING]: return
+	_stumble_strength = maxf(_stumble_strength,strength) if state == State.STUMBLING else strength
+	_stumble_duration = 1.1+_stumble_strength*1.2
+	_gaze_weight = 0.0
+	_state(State.STUMBLING)
+	_play("Land")
+
+func _pose_stumble() -> void:
+	var fade := smoothstep(0.0,0.12,_age)*(1.0-smoothstep(_stumble_duration-0.6,_stumble_duration,_age))
+	var response := fade*_stumble_strength
+	var spine := skeleton.find_bone("Spine")
+	var roll := sin(_age*9.0)*exp(-_age*0.8)*response*0.65
+	if spine>=0:
+		HAND_REACH._rotate(skeleton,spine,Vector3.UP,Basis.from_euler(Vector3(response*0.12,0,roll))*Vector3.UP,1.0)
+	for side in ["R","L"]:
+		var upper := skeleton.find_bone("UpperArm_"+side)
+		var lower := skeleton.find_bone("Forearm_"+side)
+		if upper<0 or lower<0: continue
+		skeleton.force_update_all_bone_transforms()
+		var arm := skeleton.get_bone_global_pose(lower).origin-skeleton.get_bone_global_pose(upper).origin
+		var sign := -1.0 if side == "R" else 1.0
+		var direction := Vector3(sign,0.1+sin(_age*7.0+sign)*0.2,0.3)
+		HAND_REACH._rotate(skeleton,upper,arm,direction,response)
 
 func enable_wind(field: Node, ground_probe: Callable, safe_landing: Callable) -> void:
 	_standing_basis = global_basis.orthonormalized()
@@ -139,6 +203,8 @@ func setup(asset_path: String) -> void:
 		assert(player.has_animation(clip),"Missing inhabitant clip: "+clip)
 	for clip in ["Idle","Held","Walk"]:
 		player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+	for clip in ["Sit","Sleep"]:
+		if player.has_animation(clip): player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	for clip in ["Land","Alert"]:
 		player.get_animation(clip).loop_mode = Animation.LOOP_NONE
 	_safe_position = global_position
@@ -154,9 +220,14 @@ func _play(clip: String) -> void:
 	player.advance(0.0)
 
 func _state(value: State) -> void:
+	var cancelled_clip := action_clip if state == State.ACTION and value != State.ACTION else ""
+	if not cancelled_clip.is_empty():
+		action_clip = ""
+		clear_hand_targets()
 	state = value
 	_age = 0.0
 	state_changed.emit(value)
+	if not cancelled_clip.is_empty(): action_finished.emit(cancelled_clip,true)
 
 func is_held() -> bool:
 	return state == State.HELD
@@ -216,6 +287,7 @@ func reset_at(point: Vector3) -> void:
 	global_position = point
 	land_position = point
 	_safe_position = point
+	_pending_tremor = 0.0
 	_touchdown = false
 	_sway = Vector2.ZERO
 	_visual.rotation = Vector3.ZERO
@@ -226,7 +298,20 @@ func reset_at(point: Vector3) -> void:
 func advance(delta: float) -> void:
 	if player == null or delta <= 0.0: return
 	var dt := minf(delta,0.05)
+	if _pending_tremor>0.0:
+		_start_stumble(_pending_tremor)
+		_pending_tremor = 0.0
 	_age += dt
+	if state == State.STUMBLING and _age>=_stumble_duration:
+		_state(State.ALERT)
+		_play("Alert")
+	if state == State.ACTION and _age >= _action_duration:
+		var finished := action_clip
+		clear_hand_targets()
+		action_clip = ""
+		_state(State.IDLE)
+		_play("Idle")
+		action_finished.emit(finished,false)
 	if state == State.WIND:
 		global_transform = wind_body.feet_transform()
 	elif state == State.RECOVERING:
@@ -275,3 +360,8 @@ func advance(delta: float) -> void:
 		var base := skeleton.get_bone_pose_rotation(_head)
 		skeleton.set_bone_pose_rotation(_head,base*Quaternion.from_euler(Vector3(_gaze_pitch,_gaze_yaw,0)))
 	_gaze_weight = maxf(0.0,_gaze_weight-dt*0.18)
+	if state == State.STUMBLING: _pose_stumble()
+	if state == State.ACTION:
+		for side: String in hand_targets:
+			var contact: Dictionary = hand_targets[side]
+			HAND_REACH.apply(skeleton,contact.point,contact.weight,side)

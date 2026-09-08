@@ -14,6 +14,7 @@
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
+global uniform vec3 zs_palette_water;
 uniform float metalness_value = 0.0;
 varying float inversion_transmit;
 uniform bool lake_display_lighting = true;
@@ -80,7 +81,7 @@ void fragment() {
 	float fresnel = (0.02 + 0.70 * pow(1.0 - max(dot(eye, wave_normal), 0.0), 5.0)) * (1.0 - cut_face);
 	if (!flowing && source_lake_material) fresnel = zs_lake_reflection(dot(eye, wave_normal)) * (1.0 - cut_face);
 	// Source vertex colors already contain the depth palette; retain it.
-	vec3 body = COLOR.rgb;
+	vec3 body = COLOR.rgb * zs_palette_water;
 	vec3 reflection = scene_linear_for_display(clamp(zsSkyGradient(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98)));
 	float glint = smoothstep(0.75, 1.0, zs_water_growth) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;

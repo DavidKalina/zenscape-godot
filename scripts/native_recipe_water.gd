@@ -53,6 +53,9 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 			if nx<0 or nz<0 or nx>=W or nz>=W: continue
 			var next:=nz*W+nx
 			if wet[next] or h[next]>=pond.level: continue
+			if pond.has("basin"):
+				var radius := Vector2((float(xy[next].x)-pond.x)/pond.basin[0],(float(xy[next].y)-pond.z)/pond.basin[1])
+				if radius.length_squared()>1.0: continue
 			wet[next]=1
 			stack.append(next)
 	var depth_grid:=PackedFloat32Array()

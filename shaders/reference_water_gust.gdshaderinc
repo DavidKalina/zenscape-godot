@@ -1,7 +1,9 @@
 // Local gust response shared by native ponds and source lakes. World-space
 // phases preserve direction across chunk transforms. No gust means no change.
 vec3 zs_water_gust(vec3 world_p) {
-	return zs_local_wind(world_p) * (1.0 - zs_ice);
+	float pulse = zs_gust_pulse_at(world_p.xz, zs_gust_distance);
+	vec3 passing_air = vec3(zs_wind_direction.x, 0.0, zs_wind_direction.y) * pulse * 7.0;
+	return (zs_local_wind(world_p) + passing_air) * (1.0 - zs_ice);
 }
 float zs_water_gust_height(vec3 world_p, float depth) {
 	vec2 wind = zs_water_gust(world_p).xz;

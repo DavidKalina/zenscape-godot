@@ -17,7 +17,7 @@ const TOOL_TEXT := {
 	"flatten":"Level toward the height where you click.",
 	"ground":"Set a resting height, then form the whole floor.",
 	"range":"Shape a ridge across the chunk, then fill its water and flora.",
-	"mountain":"Click to raise a peak. Variation reshuffles its ridges.",
+	"mountain":"Click for a peak or drag a ridge. Variation reshuffles its ridges.",
 	"grass":"Paint ground cover, or green the whole chunk at once.",
 	"blades":"Paint standing blades over the grass.",
 	"meadow":"Paint grass and wildflowers together.",
@@ -25,18 +25,18 @@ const TOOL_TEXT := {
 	"erase":"Brush away cover and placed objects. Undo restores them.",
 	"tree":"Click to plant a tree. It settles onto the ground.",
 	"rock":"Click to set a stone.",
-	"flower":"Click to plant one flower. Zoom in for the detail.",
+	"flower":"Click for one flower or drag to plant a trail.",
 	"arch":"Click to raise a stone arch.",
 	"bigfoot_tree":"Click to plant the tree Bigfoot visits.",
 	"assets":"Pick a piece below, then click to place it.",
-	"pond":"Dig a hollow, then click inside to fill it.",
+	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
 	{"property":"ground_elevation","title":"Ground elevation","low":-1.0,"high":8.0,"step":0.1,"unit":"","whole":false,"modes":["ground"]},
 	{"property":"ground_relief","title":"Ground relief","low":0.0,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["ground"]},
-	{"property":"radius","title":"Brush size","low":0.4,"high":5.0,"step":0.05,"unit":"","whole":false,"modes":["raise","lower","smooth","flatten","grass","blades","meadow","paint","erase","pond"]},
+	{"property":"radius","title":"Brush size","low":0.4,"high":5.0,"step":0.05,"unit":"","whole":false,"modes":["raise","lower","smooth","flatten","grass","blades","meadow","paint","erase"]},
 	{"property":"strength","title":"Strength","low":0.4,"high":5.0,"step":0.05,"unit":"","whole":false,"modes":["raise","lower","smooth","flatten","meadow","erase"]},
 	{"property":"grass_amount","title":"Ground coverage","low":0.0,"high":1.0,"step":0.05,"unit":"","whole":false,"modes":["grass"]},
 	{"property":"blade_amount","title":"Blade density","low":0.0,"high":1.0,"step":0.05,"unit":"","whole":false,"modes":["blades"]},
@@ -49,7 +49,7 @@ const SETTINGS := [
 	{"property":"mountain_peak","title":"Peak height","low":0.5,"high":24.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
 	{"property":"mountain_variation","title":"Variation","low":1.0,"high":999.0,"step":1.0,"unit":"","whole":true,"modes":["mountain"]},
 	{"property":"mountain_heading","title":"Ridge rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["mountain"]},
-	{"property":"pond_level","title":"Pond surface height","low":-1.4,"high":12.0,"step":0.05,"unit":"","whole":false,"modes":["pond"]},
+	{"property":"pond_level","title":"Water level","low":-1.4,"high":12.0,"step":0.05,"unit":"","whole":false,"modes":["pond"]},
 	{"property":"object_scale","title":"Object size","low":0.1,"high":5.0,"step":0.1,"unit":"","whole":false,"modes":NativeTerrainData.ASSETS+["assets"]},
 	{"property":"object_heading","title":"Rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["tree","rock","flower","arch","bigfoot_tree","assets"]},
 	{"property":"object_width","title":"Width","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":POSE_TOOLS},
@@ -99,6 +99,7 @@ var reactions: NativeDropReactions
 ## it off so a committed record renders exactly as it did before.
 var reactions_enabled := true
 var _fall_start: Variant = null
+var pond_preview = preload("res://scripts/native_pond_preview.gd").new()
 var catalog_asset := "broadleaf"
 var object_heading := 0.0
 var pond_level := -0.15
@@ -112,8 +113,13 @@ var object_depth := 1.0
 var object_pitch := 0.0
 var object_roll := 0.0
 var object_elevation := 0.0
+const PLACEMENT_DEFAULTS := {"object_scale":1.0,"object_heading":0.0,"object_angle":0.0,"object_width":1.0,"object_height":1.0,"object_depth":1.0,"object_pitch":0.0,"object_roll":0.0,"object_elevation":0.0,"custom_tint":false,"object_tint":Color("7fb069")}
+var _placement_settings := {}
+var _placement_key := ""
 var save_path := "user://native-garden.json"
 var active := false
+var forming := false
+signal formation_started
 var mode := "raise"
 var radius := 2.2
 var strength := 2.0
@@ -134,6 +140,8 @@ var mountain_heading := 0.0
 var mountain_peak := 9.0
 var status := "Left drag paints · Click places · Right drag orbits\n1-4 tools · [ ] brush size · Shift [ ] strength"
 var _painting := false
+var placement_trail := true
+var _trail_point: Variant = null
 var _elapsed := 0.0
 var _level := 0.0
 var _material: ShaderMaterial
@@ -165,6 +173,7 @@ var update_encounter_ground := true
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	terrain = scene.get_node("Reference/terrain")
+	terrain.add_child(pond_preview)
 	data.setup(terrain.mesh)
 	_original_ground_map = scene._precipitation.ground_texture.get_image()
 	_original_stream_map = scene._precipitation.stream_texture.get_image()
@@ -257,7 +266,18 @@ func _set_status(text: String) -> void:
 
 func select_tool(tool: String) -> void:
 	finish_stroke()
+	pond_preview.clear()
 	_fall_start = null
+	var next_key := catalog_asset if tool == "assets" else tool if tool in NativeTerrainData.ASSETS or tool == "waterfall" else ""
+	if next_key != _placement_key:
+		if not _placement_key.is_empty():
+			var remembered := {}
+			for property: String in PLACEMENT_DEFAULTS: remembered[property] = get(property)
+			_placement_settings[_placement_key] = remembered
+		if not next_key.is_empty():
+			var values: Dictionary = _placement_settings.get(next_key,PLACEMENT_DEFAULTS)
+			for property: String in values: set(property,values[property])
+		_placement_key = next_key
 	mode = tool
 	if selection != null:
 		selection.update_marker(selected_object_id)
@@ -277,7 +297,7 @@ func preview_radius() -> float:
 
 ## The circle only reads truthfully where a footprint exists.
 func preview_wanted() -> bool:
-	if mode in ["assets","select"]:
+	if mode in ["assets","select","pond"]:
 		return false
 	return mode != "waterfall" or _fall_start == null
 
@@ -300,6 +320,7 @@ func set_active(enabled: bool) -> void:
 	if active == enabled:
 		return
 	finish_stroke()
+	pond_preview.clear()
 	if enabled and scene._growth.terrain < 0.995:
 		active_changed.emit(active)
 		return
@@ -317,6 +338,7 @@ func set_active(enabled: bool) -> void:
 		_material = null
 
 func handle_input(event: InputEvent) -> bool:
+	if forming: return false
 	if not active:
 		return false
 	if event is InputEventKey and event.pressed and not event.echo and mode == "select":
@@ -377,7 +399,7 @@ func handle_input(event: InputEvent) -> bool:
 ## palette's drag-and-drop commits through here so a dropped object takes the
 ## same record, pose and reaction a click would have given it.
 func place_at(mouse: Vector2) -> bool:
-	if not active or mode == "select":
+	if not active or mode in ["select","ground","range"]:
 		return false
 	var hit: Variant = pick(mouse)
 	if hit == null:
@@ -398,21 +420,31 @@ func place_at(mouse: Vector2) -> bool:
 				_set_status("Choose a lower landing with no ridge blocking the drop.")
 		return true
 	data.begin_stroke()
+	if placement_trail and trail_available():
+		_painting = true
+		_trail_point = Vector2(hit.x,hit.z)
+		trail_dab(_trail_point)
+		refresh()
+		return true
 	_level = hit.y
 	_last_point = Vector2(hit.x,hit.z)
 	var placed := -1
+	var pond_filled := false
 	if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain","assets"]:
 		if mode == "mountain":
 			data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
 		elif mode == "pond":
-			if not data.add_pond(_last_point,pond_level):
-				_set_status("Dig a hollow, then set water below its banks.")
+			var plan: Dictionary = pond_preview.evaluate(data,_last_point,pond_level)
+			if plan.vertices.is_empty(): _set_status(plan.message)
+			elif data.add_pond(_last_point,pond_level): pond_filled = true
+			else: _set_status("This diorama has reached its pond limit. Remove a pond before adding another.")
 		else:
 			placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
 			if placed < 0:
 				_set_status("This garden has reached its object limit.")
 		if data.end_stroke():
 			refresh()
+			if pond_filled: _set_status("Pond filled. Dig a hollow to shape its banks; Undo removes the water.")
 			if placed > 0 and reactions_enabled:
 				# `placed` is the id this click just minted, and only a click
 				# reaches here. Handing it to the reaction is what keeps a redo
@@ -426,8 +458,41 @@ func place_at(mouse: Vector2) -> bool:
 		refresh()
 	return true
 
+## Trails share the normal stroke transaction: one drag is one undo step.
+func trail_available() -> bool:
+	return mode in ["flower","mountain"] or (mode == "assets" and catalog_asset in ["button_flower","daisy_flower","spike_flower","umbel_flower"])
+
+func trail_spacing() -> float:
+	return mountain_radius*0.45 if mode == "mountain" else maxf(0.2,object_scale*0.45)
+
+func continue_trail(center: Vector2) -> void:
+	if _trail_point == null:
+		_trail_point = center
+		trail_dab(center)
+		refresh()
+		return
+	var previous: Vector2 = _trail_point
+	var spacing := trail_spacing()
+	var count := mini(128,int(previous.distance_to(center)/spacing))
+	if count == 0: return
+	var direction := previous.direction_to(center)
+	for i in range(1,count+1):
+		trail_dab(previous+direction*spacing*i)
+	_trail_point = previous+direction*spacing*count
+	refresh()
+
+func trail_dab(point: Vector2) -> void:
+	if mode == "mountain":
+		data.mountain(point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
+	else:
+		data.place(catalog_asset if mode == "assets" else mode,point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint else "")
+
 func pointer_in_world(mouse: Vector2) -> bool:
+	if scene._landscape_editor != null and scene._landscape_editor.is_visible_in_tree() and scene._landscape_editor.get_global_rect().has_point(mouse): return false
+	if scene._look_editor != null and scene._look_editor.is_visible_in_tree() and scene._look_editor.get_global_rect().has_point(mouse): return false
 	if scene._growth.terrain < 0.995 or not scene.get_viewport().get_visible_rect().has_point(mouse):
+		return false
+	if scene.has_method("blocks_world_input") and scene.blocks_world_input(mouse):
 		return false
 	for child in scene._ui.get_children():
 		if child is Control and scene._ui.visible and child.is_visible_in_tree():
@@ -446,17 +511,23 @@ func pick(mouse: Vector2) -> Variant:
 	return data.ray_hit(origin,direction.normalized())
 
 func _process(delta: float) -> void:
-	if not active:
+	if forming or not active:
+		pond_preview.clear()
 		return
 	if (_painting or _selection_drag) and (not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995):
 		finish_stroke()
 	var hit: Variant = pick(scene.get_viewport().get_mouse_position()) if not scene._orbiting and not scene._panning else null
+	if mode == "pond":
+		var message: String = pond_preview.hover(data,hit,pond_level,delta)
+		if not message.is_empty() and message != status: _set_status(message)
 	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
 		_material.set_shader_parameter("brush_radius",preview_radius())
-		if _painting:
+		if _painting and placement_trail and trail_available():
+			continue_trail(center)
+		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
 				var previous: Vector2 = _last_point if _last_point != null else center
@@ -468,6 +539,7 @@ func _process(delta: float) -> void:
 				_last_point = center
 	else:
 		_last_point = null
+		_trail_point = null
 		_elapsed = 0.0
 
 func finish_pointer_gesture() -> void:
@@ -480,25 +552,64 @@ func finish_stroke() -> void:
 	if not _painting:
 		return
 	_painting = false
+	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
 	data.end_stroke()
 
 func undo() -> void:
-	_fall_start = null
-	finish_stroke()
-	if data.undo():
-		refresh()
+	_history_step(false)
 
 func redo() -> void:
+	_history_step(true)
+
+func _history_step(forward: bool) -> void:
+	if forming: return
 	_fall_start = null
 	finish_stroke()
-	if data.redo():
+	var history: Array = data._redo if forward else data._undo
+	if history.is_empty(): return
+	var saved_scene: Dictionary = history.back().get("favorite_scene",{})
+	var inverse := NativeGardenStore.capture(scene) if not saved_scene.is_empty() else {}
+	if data.redo() if forward else data.undo():
+		if not saved_scene.is_empty():
+			var other: Array = data._undo if forward else data._redo
+			other.back()["favorite_scene"] = inverse
 		refresh()
+		if not saved_scene.is_empty(): _restore_favorite_scene(saved_scene)
 
-func refresh() -> void:
-	_set_status("Garden changed · Save to keep your work.")
-	terrain.mesh = data.build_mesh()
+func _restore_favorite_scene(state: Dictionary) -> void:
+	var panel_visible: bool = scene._landscape_editor != null and scene._landscape_editor.visible
+	NativeGardenStore.restore(scene,state)
+	scene._update_camera()
+	if panel_visible: scene._landscape_editor.show()
+
+func restore_landscape_favorite(library: RefCounted,id: String,live := true) -> bool:
+	if forming: return false
+	finish_stroke()
+	var prepared: Dictionary = library.prepare(scene,id)
+	if prepared.is_empty():
+		_set_status("Could not open that favorite. Your landscape is unchanged.")
+		return false
+	forming = true
+	formation_started.emit()
+	_fall_start = null
+	selected_object_id = -1
+	data.begin_stroke()
+	data._before["favorite_scene"] = NativeGardenStore.capture(scene)
+	data._restore(prepared.terrain)
+	data.end_stroke()
+	await refresh(get_tree() if live else null)
+	_restore_favorite_scene(prepared.scene)
+	forming = false
+	_set_status("Favorite restored · Undo restores your previous landscape and look.")
+	return true
+
+func refresh(frame_tree: SceneTree = null) -> void:
+	pond_preview.clear()
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
+	if not forming: _set_status("Garden changed · Save to keep your work.")
+	terrain.mesh = await data.build_mesh_budgeted(false,frame_tree)
 	var original := data.heights == data.original_heights
 	for entry in _anchors:
 		if data.blank:
@@ -526,11 +637,16 @@ func refresh() -> void:
 	landmark.origin.y += data.delta_at(Vector2(landmark.origin.x, landmark.origin.z))
 	scene._growth._landmark.transform = landmark
 	scene._growth.publish()
+	if frame_tree != null: await budget.checkpoint()
 	sync_visibility()
 	_rebuild_skirt()
+	if frame_tree != null: await budget.checkpoint()
 	content.rebuild()
+	if frame_tree != null: await budget.checkpoint()
+	_settle_bedding_cover()
 	landmarks.rebuild(data)
 	falls.rebuild(data)
+	if frame_tree != null: await budget.checkpoint()
 	var fall_count := 0
 	for item: Dictionary in data.objects:
 		if item.asset == "waterfall":
@@ -538,7 +654,7 @@ func refresh() -> void:
 	if falls.get_child_count()/2 < fall_count:
 		_set_status("A waterfall is blocked or submerged. Lower the obstruction or undo.")
 	# Existing habitat/rain/fog consumers keep the same texture object.
-	_update_surface_maps(original)
+	await _update_surface_maps(original,frame_tree)
 	if update_encounter_ground and terrain.mesh != _bigfoot_mesh:
 		_bigfoot_mesh = terrain.mesh
 		scene._bigfoot.ground.setup(terrain)
@@ -564,6 +680,35 @@ func refresh() -> void:
 ## Rebuild everything from the records, ignoring every incremental cache. The
 ## incremental path must land on exactly this result; the regression test drives
 ## a stroke both ways and compares the meshes, instances and map bytes.
+## A leaf bed presses the original soft bank cover flat beneath it. Derive this
+## from bed records on every refresh: deleting/moving/undoing a bed restores the
+## source cover, and the imported MultiMesh resource is never mutated.
+func _settle_bedding_cover() -> void:
+	var beds: Array[Dictionary] = []
+	for record in data.objects:
+		if record.asset == "leaf_bed": beds.append(record)
+	if beds.is_empty() or data.blank: return
+	for entry in _anchors:
+		var node: MultiMeshInstance3D = entry.node
+		if node.name not in ["mesh-14","mesh-15"]: continue
+		node.multimesh = node.multimesh.duplicate()
+		for i in range(node.multimesh.instance_count):
+			var pose := node.multimesh.get_instance_transform(i)
+			var root := node.to_global(pose.origin)
+			for bed in beds:
+				var center := data.object_position(bed)
+				var size := NativeObjectPose.decode_basis(bed.pose).get_scale() if bed.has("pose") else Vector3.ONE*float(bed.scale)
+				if Vector2(root.x-center.x,root.z-center.z).length()>maxf(size.x,size.z)+0.3 or absf(root.y-center.y)>0.6: continue
+				var normal := NativeObjectPose.decode_basis(bed.pose).y.normalized() if bed.has("pose") else Vector3.UP
+				if normal.y<0.4: continue
+				# Lay the cover along the bed's fitted bank plane. Flattening each
+				# clump horizontally would leave its downhill edge over the bed.
+				root.y = center.y-(normal.x*(root.x-center.x)+normal.z*(root.z-center.z))/normal.y-0.04
+				pose.origin = node.to_local(root)
+				pose.basis = Basis(Quaternion(Vector3.UP,normal))*Basis.from_scale(Vector3(1,0.015,1))*pose.basis
+				node.multimesh.set_instance_transform(i,pose)
+				break
+
 func force_refresh() -> void:
 	data.discard_cache()
 	content.discard_cache()
@@ -575,7 +720,8 @@ func force_refresh() -> void:
 ## Resample only the map pixels the edit can reach. The height pass is kept in
 ## `_map_base`; both overlays are per-pixel functions of that base, so repainting
 ## the changed rectangle over the previous finished maps reproduces them exactly.
-func _update_surface_maps(original: bool) -> void:
+func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> void:
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	var size := _original_ground_map.get_width()
 	var reusable: bool = _map_ready and _map_blank == data.blank and _map_original == original
 	var water_changed: bool = not _map_ready or _map_revision != content.revision
@@ -598,6 +744,7 @@ func _update_surface_maps(original: bool) -> void:
 	else:
 		_map_base = _original_ground_map.duplicate()
 	for z in range(clip.position.y,clip.end.y):
+		if frame_tree != null: await budget.checkpoint()
 		for x in range(clip.position.x,clip.end.x):
 			if original and not data.blank:
 				continue
@@ -618,6 +765,7 @@ func _update_surface_maps(original: bool) -> void:
 		image = _map_ground
 		streams = _map_stream
 		for z in range(clip.position.y,clip.end.y):
+			if frame_tree != null: await budget.checkpoint()
 			for x in range(clip.position.x,clip.end.x):
 				image.set_pixel(x,z,_map_base.get_pixel(x,z))
 				streams.set_pixel(x,z,Color(0,0,0,0) if data.blank else _original_stream_map.get_pixel(x,z))
@@ -663,25 +811,46 @@ func _placement_pose() -> Dictionary:
 	basis = basis.scaled_local(Vector3(object_width,object_height,object_depth)*object_scale)
 	return preload("res://scripts/native_object_pose.gd").make(basis,object_elevation)
 
-func form_range() -> void:
+## Palette actions use the yielding path; offline callers can still form a
+## complete world synchronously. Lock writes until all dependent views agree.
+func perform_action(method: String) -> void:
+	if forming: return
+	if method == "form_range": await form_range(true)
+	elif method == "form_foundation": await form_foundation(true)
+	else: call(method)
+
+func form_range(live := false) -> void:
+	if forming: return
 	finish_stroke()
 	_fall_start = null
+	forming = live
+	if live:
+		formation_started.emit()
+		_set_status("Forming mountain landscape…")
 	data.begin_stroke()
-	data.form_range(range_height,range_width,deg_to_rad(range_heading),range_variation)
+	await data.form_range(range_height,range_width,deg_to_rad(range_heading),range_variation,get_tree() if live else null)
 	data.end_stroke()
-	refresh()
+	await refresh(get_tree() if live else null)
+	forming = false
 	_set_status("Mountain landscape formed, including basin and stream beds. Paint and place to dress it.")
 
-func form_foundation() -> void:
+func form_foundation(live := false) -> void:
+	if forming: return
 	finish_stroke()
 	_fall_start = null
+	forming = live
+	if live:
+		formation_started.emit()
+		_set_status("Forming ground…")
 	data.begin_stroke()
-	data.form_foundation(ground_elevation,ground_relief)
+	await data.form_foundation(ground_elevation,ground_relief,get_tree() if live else null)
 	data.end_stroke()
-	refresh()
+	await refresh(get_tree() if live else null)
+	forming = false
 	_set_status("Ground formed. Grass paints its surface; sculpting changes its height.")
 
 func start_flat() -> void:
+	if forming: return
 	_fall_start = null
 	finish_stroke()
 	data.begin_stroke()
@@ -737,6 +906,7 @@ func dab(point: Vector2, amount: float) -> void:
 		_: data.brush(point,radius,amount,mode,_level)
 
 func save_garden() -> bool:
+	if forming: return false
 	finish_stroke()
 	var document := data.to_document()
 	document.scene_state = NativeGardenStore.capture(scene)
@@ -756,6 +926,7 @@ func save_garden() -> bool:
 	return true
 
 func open_garden() -> bool:
+	if forming: return false
 	_fall_start = null
 	var file := FileAccess.open(save_path,FileAccess.READ)
 	if file == null:
@@ -785,6 +956,7 @@ func sync_visibility() -> void:
 			node.visible = false
 
 func fill_landscape_streams() -> void:
+	if forming: return
 	finish_stroke()
 	data.begin_stroke()
 	var accepted:=data.fill_landscape_streams()
@@ -796,6 +968,7 @@ func fill_landscape_streams() -> void:
 		_set_status("Form a mountain landscape first; its stream must fit inside the chunk.")
 
 func fill_landscape_flora() -> void:
+	if forming: return
 	finish_stroke()
 	data.begin_stroke()
 	var accepted: bool=data.fill_landscape_flora()
@@ -807,6 +980,7 @@ func fill_landscape_flora() -> void:
 		_set_status("Form a mountain landscape first.")
 
 func fill_landscape_waterfall() -> void:
+	if forming: return
 	finish_stroke()
 	data.begin_stroke()
 	var accepted:=data.fill_landscape_waterfall()
@@ -846,6 +1020,7 @@ func end_selection_edit() -> void:
 		refresh()
 
 func update_selected(changes: Dictionary) -> bool:
+	if forming: return false
 	if selected_object_id < 0:
 		return false
 	var standalone := not _selection_edit
@@ -869,6 +1044,7 @@ func move_selection_pointer(mouse: Vector2) -> void:
 	update_selected({"x":ground.x+_selection_offset.x,"z":ground.z+_selection_offset.y})
 
 func duplicate_selected() -> int:
+	if forming: return -1
 	finish_stroke()
 	if selected_object_id < 0:
 		return -1
@@ -889,6 +1065,7 @@ func duplicate_selected() -> int:
 	return id
 
 func delete_selected() -> void:
+	if forming: return
 	finish_stroke()
 	data.begin_stroke()
 	var changed := data.remove_object(selected_object_id)
@@ -915,3 +1092,45 @@ func _notify_play_geometry() -> void:
 	if signature != _play_geometry_signature:
 		_play_geometry_signature = signature
 		play_geometry_changed.emit()
+
+## A complete curated landscape is one terrain transaction. Palette/lighting
+## live outside this transaction and are never changed by its undo or redo.
+func form_landscape(id: String,biome := "",live := true,variation := 37,water := "connected") -> void:
+	if forming or not preload("res://scripts/native_landscape_presets.gd").PRESETS.has(id): return
+	if not NativeTerrainRecipe.valid(preload("res://scripts/native_landscape_presets.gd").recipe(id,biome,variation,water)): return
+	finish_stroke()
+	_fall_start = null
+	selected_object_id = -1
+	forming = true
+	formation_started.emit()
+	_set_status("Forming "+preload("res://scripts/native_landscape_presets.gd").PRESETS[id].title+"…")
+	data.begin_stroke()
+	await preload("res://scripts/native_landscape_presets.gd").form(data,id,biome,get_tree() if live else null,variation,water)
+	data.end_stroke()
+	await refresh(get_tree() if live else null)
+	forming = false
+	_set_status("Landscape ready · Change its biome or colors, or sculpt it further. Undo restores your previous landscape.")
+
+func change_landscape_biome(id: String,live := true) -> void:
+	if forming or data._recipe_settings.get("kind") != "formation" or not preload("res://scripts/native_formation_shape.gd").BIOMES.has(id): return
+	finish_stroke()
+	forming = true
+	formation_started.emit()
+	_set_status("Growing "+preload("res://scripts/native_formation_shape.gd").BIOMES[id].title+"…")
+	data.begin_stroke()
+	await preload("res://scripts/native_landscape_presets.gd").change_biome(data,id,get_tree() if live else null)
+	data.end_stroke()
+	await refresh(get_tree() if live else null)
+	forming = false
+	_set_status("Biome changed · Terrain sculpting, water and your own placed objects are retained.")
+
+func another_landscape(live := true) -> void:
+	if forming or data._recipe_settings.get("kind") != "formation": return
+	var current: Dictionary = data._recipe_settings
+	# A full-period sequence visits all 1,000 variants before repeating.
+	await form_landscape(current.family,current.biome,live,(int(current.variation)+137)%1000,current.get("water","connected"))
+
+func change_landscape_water(water: String,live := true) -> void:
+	if forming or data._recipe_settings.get("kind") != "formation": return
+	var current: Dictionary = data._recipe_settings
+	await form_landscape(current.family,current.biome,live,int(current.variation),water)

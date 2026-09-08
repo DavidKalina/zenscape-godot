@@ -2,6 +2,8 @@ class_name NativeAssetCatalog
 extends RefCounted
 ## Compound placeable assets assembled from the reference's original meshes.
 const PARTS := {
+	"redwood":["redwood-trunk","redwood-canopies"],
+	"fern":["redwood-fern"],
 	"broadleaf":["mesh-11","broadleaf-canopies"],
 	"shrub":["mesh-13"],
 	"reeds":["mesh-14"],
@@ -30,7 +32,7 @@ static var _pivots := {}
 static func part_pose(key: String, original: Node3D, mesh: Mesh) -> Transform3D:
 	if STEM_SCALE.has(key):
 		return Transform3D(Basis.from_scale(Vector3(1.0,STEM_SCALE[key],1.0)),Vector3.ZERO)
-	if original is MultiMeshInstance3D:
+	if original is MultiMeshInstance3D or original.name.begins_with("redwood-"):
 		return Transform3D.IDENTITY
 	var pose := Transform3D(original.basis,Vector3.ZERO)
 	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
@@ -46,8 +48,17 @@ static func pivots() -> Dictionary:
 		var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 		for kind in PARTS:
 			for node_name in PARTS[kind]:
-				var original: Node3D = source.get_node(node_name)
+				var original: Node3D = source_node(source,node_name)
 				var mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
 				_pivots[kind+":"+node_name] = part_pose(kind+":"+node_name,original,mesh)
 		source.free()
 	return _pivots
+
+static func source_node(source: Node3D, node_name: String) -> Node3D:
+	if source.has_node(node_name): return source.get_node(node_name)
+	assert(node_name.begins_with("redwood-"))
+	var node := MeshInstance3D.new()
+	node.name = node_name
+	node.mesh = preload("res://scripts/redwood_assets.gd").mesh(node_name)
+	source.add_child(node)
+	return node

@@ -73,6 +73,7 @@ func _load_bounds() -> void:
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var trunk: MultiMeshInstance3D = source.get_node("mesh-8")
 	_bounds.tree = trunk.multimesh.mesh.get_aabb()
+	_bounds.redwood = preload("res://scripts/redwood_assets.gd").mesh("redwood-trunk").get_aabb()
 	_bounds.rock = AABB(Vector3(-0.6,-0.425,-0.6),Vector3(1.2,0.85,1.2))
 	for kind in ["broadleaf","log","stump","snag","boulder_1","boulder_2","boulder_3","boulder_4"]:
 		# The first broadleaf part is its solid trunk, not the canopy.

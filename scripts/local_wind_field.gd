@@ -6,6 +6,7 @@ extends Node
 ## Calibrate mean physical ambient velocity from atmosphere strength * its gust_at
 ## envelope * 3 m/s, along its smoothed direction. Source noise/advection remains
 ## artistic foliage flutter; advection speed is not air force (zero dial = calm).
+signal updated
 const CAPACITY := 8
 var ambient_velocity := Vector3.ZERO
 var _gusts: Array[Dictionary] = []
@@ -63,6 +64,8 @@ func publish() -> void:
 			vector = Vector4(gust.direction.x, gust.direction.y, gust.direction.z, gust.strength * envelope(gust.age, gust.duration))
 		RenderingServer.global_shader_parameter_set("zs_local_gust_origin_%d" % i, origin)
 		RenderingServer.global_shader_parameter_set("zs_local_gust_vector_%d" % i, vector)
+
+	updated.emit()
 
 func clear() -> void:
 	_gusts.clear()

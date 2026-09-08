@@ -26,6 +26,13 @@ var _wind_time := 0.0
 var puffs := preload("res://studies/wind_puffs.gd").new()
 var _fog_material: ShaderMaterial
 var _environment: Environment
+var wind_trails: Node3D
+
+func setup_wind_trails(probe: Callable) -> void:
+	if wind_trails != null: return
+	wind_trails = preload("res://scripts/weather_wind_trails.gd").new()
+	add_child(wind_trails)
+	wind_trails.setup(probe)
 
 func setup(geometry: Node3D, environment: Environment) -> void:
 	setup_ground(geometry.get_node("terrain"), environment)
@@ -75,6 +82,7 @@ func advance(delta: float, paused: bool) -> void:
 	var cloud_speed := (0.0016 + _air_strength * 0.0022) * delta * 60.0
 	_cloud_drift -= Vector3(direction.x, 0, direction.y) * cloud_speed
 	_cloud_drift.y += delta * 0.004
+	if wind_trails != null: wind_trails.advance(delta,_air_strength*gust_at(_wind_time),_air_angle)
 	puffs.retire(_gust_distance)
 	_publish_wind()
 

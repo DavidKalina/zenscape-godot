@@ -7,7 +7,9 @@ const RADIUS := 0.5
 const SLOPE_PROBE := 0.3
 const MAX_RISE := 0.22
 const LIMIT := 41
-var _data: NativeTerrainData
+var _grid_step := STEP
+var _slope_rise := MAX_RISE
+var _data: RefCounted
 var _clearance: Callable
 var _nodes := PackedVector3Array()
 var _cells := {}
@@ -16,8 +18,21 @@ var _ponds: Array[Dictionary] = []
 var _courses: Array[Dictionary] = []
 var _impacts: Array[Dictionary] = []
 var last_rebuild_usec := 0
+var rebuilding := false
+var _rebuild_cell := 0
+var _rebuild_side := 0
 
-func rebuild(data: NativeTerrainData, clearance: Callable) -> void:
+## Terrain provider: ground_height, ponds/pond_surface, streams, objects,
+## waterfall_impacts. Fidelity supplies imported ground and clearance instead.
+func rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE) -> void:
+	begin_rebuild(data,clearance,grid_step,slope_rise)
+	while not advance_rebuild(1000000): pass
+
+## Live editors spread the grid scan over frames. Callers suspend route planning
+## until completion; a newer edit restarts the scan against the latest world.
+func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE) -> void:
+	_slope_rise = slope_rise
+	_grid_step = clampf(grid_step,0.35,1.0)
 	var began := Time.get_ticks_usec()
 	_data = data
 	_clearance = clearance
@@ -28,7 +43,7 @@ func rebuild(data: NativeTerrainData, clearance: Callable) -> void:
 	_courses.clear()
 	_impacts.clear()
 	for pond in data.ponds:
-		var vertices := data.pond_surface(pond)
+		var vertices: PackedVector3Array = data.pond_surface(pond)
 		var bounds := Rect2()
 		if not vertices.is_empty():
 			bounds = Rect2(Vector2(vertices[0].x,vertices[0].z),Vector2.ZERO)
@@ -43,14 +58,27 @@ func rebuild(data: NativeTerrainData, clearance: Callable) -> void:
 		if item.asset == "waterfall":
 			_courses.append({"a":Vector2(item.x,item.z),"b":Vector2(item.end_x,item.end_z),"radius":float(item.scale)*0.5+RADIUS,"level":INF})
 	_impacts = data.waterfall_impacts()
-	for z in range(LIMIT):
-		for x in range(LIMIT):
-			var point := Vector3(-14.0+x*STEP,0,-14.0+z*STEP)
-			var grounded: Variant = _ground(point)
-			if grounded != null and _safe_grounded(grounded):
-				_cells[Vector2i(x,z)] = _nodes.size()
-				_nodes.append(grounded)
+	_rebuild_cell = 0
+	_rebuild_side = roundi(28.0/_grid_step)+1
+	rebuilding = true
 	last_rebuild_usec = Time.get_ticks_usec()-began
+
+func advance_rebuild(budget_usec := 2000) -> bool:
+	if not rebuilding: return true
+	var began := Time.get_ticks_usec()
+	while _rebuild_cell < _rebuild_side*_rebuild_side:
+		var x := _rebuild_cell % _rebuild_side
+		var z := _rebuild_cell / _rebuild_side
+		var point := Vector3(-14.0+x*_grid_step,0,-14.0+z*_grid_step)
+		var grounded: Variant = _ground(point)
+		if grounded != null and _safe_grounded(grounded):
+			_cells[Vector2i(x,z)] = _nodes.size()
+			_nodes.append(grounded)
+		_rebuild_cell += 1
+		if Time.get_ticks_usec()-began >= budget_usec: break
+	last_rebuild_usec += Time.get_ticks_usec()-began
+	rebuilding = _rebuild_cell < _rebuild_side*_rebuild_side
+	return not rebuilding
 
 func _ground(point: Vector3) -> Variant:
 	if _data == null or not point.is_finite(): return null
@@ -78,14 +106,14 @@ func _safe_grounded(point: Vector3) -> bool:
 	if absf(point.x) > 14.0-RADIUS or absf(point.z) > 14.0-RADIUS: return false
 	for offset in [Vector2(SLOPE_PROBE,0),Vector2(-SLOPE_PROBE,0),Vector2(0,SLOPE_PROBE),Vector2(0,-SLOPE_PROBE)]:
 		var height: Variant = _data.ground_height(Vector2(point.x,point.z)+offset)
-		if height == null or absf(height-point.y) > MAX_RISE: return false
+		if height == null or absf(height-point.y) > _slope_rise: return false
 	if _wet(point): return false
 	return not _clearance.is_valid() or bool(_clearance.call(point))
 
 func segment_safe(a: Vector3,b: Vector3) -> bool:
 	if not a.is_finite() or not b.is_finite(): return false
 	var length := Vector2(a.x-b.x,a.z-b.z).length()
-	var count := maxi(1,int(ceil(length/0.2)))
+	var count := maxi(1,int(ceil(length/0.025)))
 	var previous: Variant = null
 	for i in range(count+1):
 		var position: Variant = _ground(a.lerp(b,float(i)/count))
@@ -112,12 +140,13 @@ func _connect(point: Vector3) -> int:
 	var distance := INF
 	for i in range(_nodes.size()):
 		var score := _nodes[i].distance_squared_to(point)
-		if score < distance and score < STEP*STEP*3.0 and segment_safe(point,_nodes[i]):
+		if score < distance and score < _grid_step*_grid_step*3.0 and segment_safe(point,_nodes[i]):
 			closest = i
 			distance = score
 	return closest
 
 func path(from: Vector3,to: Vector3) -> PackedVector3Array:
+	if rebuilding: return PackedVector3Array()
 	if not is_safe(from) or not is_safe(to): return PackedVector3Array()
 	if segment_safe(from,to): return PackedVector3Array([from,to])
 	# Optimistically search the safe-cell graph, then validate just the candidate
@@ -129,14 +158,25 @@ func path(from: Vector3,to: Vector3) -> PackedVector3Array:
 		if candidate.is_empty(): return candidate
 		var valid := true
 		for i in range(1,candidate.size()-2):
-			var a: int = _cells[Vector2i(roundi((candidate[i].x+14.0)/STEP),roundi((candidate[i].z+14.0)/STEP))]
-			var b: int = _cells[Vector2i(roundi((candidate[i+1].x+14.0)/STEP),roundi((candidate[i+1].z+14.0)/STEP))]
+			var a: int = _cells[Vector2i(roundi((candidate[i].x+14.0)/_grid_step),roundi((candidate[i].z+14.0)/_grid_step))]
+			var b: int = _cells[Vector2i(roundi((candidate[i+1].x+14.0)/_grid_step),roundi((candidate[i+1].z+14.0)/_grid_step))]
 			var key := Vector2i(mini(a,b),maxi(a,b))
 			if not _edges.has(key): _edges[key] = segment_safe(candidate[i],candidate[i+1])
 			if not _edges[key]:
 				valid = false
 		if valid: return candidate
 	return PackedVector3Array()
+
+## A moving actor may expose a narrow slope/clearance failure between the
+## original edge samples. Reject that graph edge before asking for another route.
+func reject_segment(a: Vector3, b: Vector3) -> void:
+	var ac := Vector2i(roundi((a.x+14.0)/_grid_step),roundi((a.z+14.0)/_grid_step))
+	var bc := Vector2i(roundi((b.x+14.0)/_grid_step),roundi((b.z+14.0)/_grid_step))
+	if not _cells.has(ac) or not _cells.has(bc): return
+	var ai: int = _cells[ac]
+	var bi: int = _cells[bc]
+	if _nodes[ai].distance_to(a)>0.01 or _nodes[bi].distance_to(b)>0.01: return
+	_edges[Vector2i(mini(ai,bi),maxi(ai,bi))] = false
 
 func _candidate_path(from: Vector3,to: Vector3) -> PackedVector3Array:
 	var result := PackedVector3Array()
@@ -164,7 +204,7 @@ func _candidate_path(from: Vector3,to: Vector3) -> PackedVector3Array:
 			result.reverse()
 			return result
 		closed[current] = true
-		var cell := Vector2i(roundi((_nodes[current].x+14.0)/STEP),roundi((_nodes[current].z+14.0)/STEP))
+		var cell := Vector2i(roundi((_nodes[current].x+14.0)/_grid_step),roundi((_nodes[current].z+14.0)/_grid_step))
 		for offset in [Vector2i(-1,0),Vector2i(1,0),Vector2i(0,-1),Vector2i(0,1),Vector2i(-1,-1),Vector2i(-1,1),Vector2i(1,-1),Vector2i(1,1)]:
 			if not _cells.has(cell+offset): continue
 			var next: int = _cells[cell+offset]

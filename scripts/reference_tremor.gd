@@ -1,12 +1,14 @@
 extends RefCounted
 ## Source tremor.js trauma curve and deterministic camera-local displacement.
+signal shaken(strength: float)
 var trauma := 0.0
 var clock := 0.0
 var enabled := true
 
 func add(magnitude: float) -> void:
-	if enabled:
+	if enabled and is_finite(magnitude) and magnitude>0.0:
 		trauma = clampf(trauma + magnitude, 0.0, 1.0)
+		shaken.emit(clampf(magnitude,0.0,1.0))
 
 func advance(delta: float, paused: bool) -> void:
 	if not paused:

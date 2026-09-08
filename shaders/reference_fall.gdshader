@@ -1,6 +1,7 @@
 shader_type spatial;
 render_mode cull_disabled, diffuse_lambert;
 
+global uniform vec3 zs_palette_water;
 uniform vec4 base_color : source_color = vec4(1.0);
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_water_gust.gdshaderinc"
@@ -69,7 +70,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 tint = COLOR.rgb * base_color.rgb;
+	vec3 tint = (COLOR.rgb * zs_palette_water) * base_color.rgb;
 	vec3 face = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	if (dot(face, eye) < 0.0) face = -face;

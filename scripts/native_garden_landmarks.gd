@@ -11,6 +11,7 @@ func _ready() -> void:
 	var arch: MeshInstance3D = source.get_node("landmark-arch")
 	_arch_mesh = arch.mesh
 	_arch_material = arch.get_active_material(0).duplicate()
+	_arch_material.set_shader_parameter("palette_role",3)
 	# The source arch is already fully formed. Its growth target coordinates
 	# belong to the original chunk, so placement uses its actual mesh positions.
 	_arch_material.set_shader_parameter("terrain_growth",false)
@@ -45,4 +46,5 @@ func rebuild(data: NativeTerrainData) -> void:
 				var material := ShaderMaterial.new()
 				material.shader = preload("res://shaders/reference_surface.gdshader")
 				material.set_shader_parameter("base_color",original.albedo_color)
+				material.set_shader_parameter("palette_role",4)
 				mesh.material_override = material

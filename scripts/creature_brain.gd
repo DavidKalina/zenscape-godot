@@ -7,6 +7,11 @@ enum Phase { REST, NOTICE, MOVE, INSPECT, BLOCKED }
 const CURIOUS_SPEED := 0.50
 const WANDER_SPEED := 0.85
 const EXCITED_SPEED := 1.50
+var rest_min := 2.0
+var rest_max := 4.0
+var inspection_duration := 2.8
+var scenery_chance := 0.7
+var react_immediately := false
 var phase := Phase.REST
 var actor: Node3D
 var navigation: RefCounted
@@ -53,7 +58,7 @@ func advance(delta: float) -> void:
 		_interrupted = false
 		actor.stop_walking()
 		_wait = 1.5
-	if not _pending_interest.is_empty() and phase == Phase.REST:
+	if not _pending_interest.is_empty() and (phase == Phase.REST or react_immediately):
 		var interest := _pending_interest
 		_pending_interest = {}
 		if investigate(interest.position,true,str(interest.id)): return
@@ -66,7 +71,7 @@ func advance(delta: float) -> void:
 		Phase.NOTICE:
 			phase = Phase.MOVE
 		Phase.INSPECT, Phase.BLOCKED:
-			_rest(_rng.randf_range(2.0,4.0))
+			_rest(_rng.randf_range(rest_min,rest_max))
 		Phase.REST:
 			_choose_next()
 
@@ -105,7 +110,7 @@ func _approach_route(point: Vector3) -> PackedVector3Array:
 func _choose_next() -> void:
 	var interests := _interests()
 	# Rotate selection with a local seeded generator, without affecting scenery RNG.
-	if not interests.is_empty() and _rng.randf()<0.7:
+	if not interests.is_empty() and _rng.randf()<scenery_chance:
 		var start := _rng.randi_range(0,interests.size()-1)
 		for n in range(interests.size()):
 			var interest: Dictionary = interests[(start+n)%interests.size()]
@@ -134,10 +139,10 @@ func _move(delta: float) -> void:
 	if _waypoint >= _route.size():
 		actor.stop_walking()
 		if _interest_id.is_empty():
-			_rest(_rng.randf_range(2.0,4.0))
+			_rest(_rng.randf_range(rest_min,rest_max))
 		else:
 			phase = Phase.INSPECT
-			_wait = 2.8
+			_wait = inspection_duration
 			actor.notice(_look_at+Vector3.UP*0.8)
 			reaction.emit("?","Taking a closer look.")
 		return
