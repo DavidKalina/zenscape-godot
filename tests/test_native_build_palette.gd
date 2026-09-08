@@ -195,9 +195,14 @@ func _run() -> void:
 	editor.select_tool("tree")
 	for i in range(2):
 		await process_frame
-	check(palette.strip_fits(),"The tree strip shows every control without scrolling")
+	check(not palette._details.visible,"Tool details start folded away")
+	palette._tune.button_pressed = true
+	for i in range(2):
+		await process_frame
+	check(palette._details.visible and palette.strip_fits(),"Tune reveals the whole tree strip without scrolling")
+	check(not editor.pointer_in_world(palette._details.get_global_rect().get_center()),"The floating settings panel blocks terrain input")
 	var custom: CheckBox = palette.find_child("CustomColor",true,false)
-	check(custom != null and palette.get_global_rect().encloses(custom.get_global_rect()),"Custom color sits inside the bar for the tree tool")
+	check(custom != null and palette._details.get_global_rect().encloses(custom.get_global_rect()),"Custom color sits inside the details panel for the tree tool")
 	var weathers: Array = scene._precipitation.PRESET_NAMES
 	check(palette._tabs_by_name.has("Sky"),"The palette offers a Sky tab")
 	for i in range(3):

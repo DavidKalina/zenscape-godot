@@ -424,8 +424,11 @@ func pointer_in_world(mouse: Vector2) -> bool:
 	if scene._growth.terrain < 0.995 or not scene.get_viewport().get_visible_rect().has_point(mouse):
 		return false
 	for child in scene._ui.get_children():
-		if child is Control and scene._ui.visible and child.is_visible_in_tree() and child.get_global_rect().has_point(mouse):
-			return false
+		if child is Control and scene._ui.visible and child.is_visible_in_tree():
+			if child is NativeBuildPalette:
+				if child.contains_pointer(mouse): return false
+			elif child.get_global_rect().has_point(mouse):
+				return false
 	return true
 
 func pick(mouse: Vector2) -> Variant:

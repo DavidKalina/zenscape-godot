@@ -1,14 +1,16 @@
 class_name NativeBuildPalette
 extends Control
-## The builder's palette: a bottom bar of large tiles, one row per tool group.
+## A floating stone-glass shelf with rotating miniatures and expandable settings.
 ## Placeable tiles carry a thumbnail rendered from the real mesh and material,
 ## and can be dragged into the world, where a ghost follows the ground until
 ## the drop commits through the editor's own placement path. A last tab holds
 ## the sky: mood and weather swatches over the scene's own light and air.
-const TILE := 72.0
+const TILE := 64.0
 const SWATCH := 56.0
 const ICON := 96
-const BAR_HEIGHT := 198.0
+const BAR_HEIGHT := 128.0
+const DOCK_WIDTH := 760.0
+const TAB_TITLES := {"Sculpt":"Shape", "Landscape":"Land", "Cover":"Plant", "Place":"Miniatures"}
 const DRAG_SLOP := 6.0
 const HOVER_SCALE := 1.08
 const PRESS_SCALE := 0.94
@@ -59,6 +61,7 @@ const SKIES := {
 
 ## Reports every finished drag, so a shell can chime or count placements.
 signal drag_finished(placed: bool)
+signal scene_controls_requested
 
 var editor: NativeChunkEditor
 var _bar := PanelContainer.new()
@@ -89,6 +92,12 @@ var _pressed := false
 var _dragging := false
 var _press_at := Vector2.ZERO
 var _bob := 0.0
+var _details := PanelContainer.new()
+var _tune := Button.new()
+var _scene_button: Button
+var _portraits := {}
+var _portrait_clock := 0.0
+var miniatures_animate := true
 
 ## Take an editor that has already been set up and build the palette for it.
 func attach(target: NativeChunkEditor) -> void:
@@ -130,11 +139,14 @@ func sky_row(key: String) -> Dictionary:
 func category() -> String:
 	return _category
 
-## True while the strip shows everything it holds inside the bar, with nothing
-## left below the fold. Every tool's controls are meant to read at a glance.
+## True when the expanded settings need no vertical scrolling.
 func strip_fits() -> bool:
 	var inner: Control = _scroll.get_child(0)
 	return inner.get_combined_minimum_size().y <= _scroll.size.y+0.5
+
+## The detached settings panel also shields the terrain from pointer input.
+func contains_pointer(point: Vector2) -> bool:
+	return get_global_rect().has_point(point) or (_details.visible and _details.get_global_rect().has_point(point))
 
 ## True while a tile is being dragged towards the world.
 func dragging() -> bool:
@@ -149,45 +161,64 @@ func ghost() -> Node3D:
 func _build() -> void:
 	name = "BuildPalette"
 	mouse_filter = Control.MOUSE_FILTER_PASS
-	custom_minimum_size = Vector2(0,BAR_HEIGHT)
-	# Pinned across the bottom of the viewport, whatever the window becomes.
-	anchor_left = 0.0
+	_install_theme()
+	anchor_left = 0.5
+	anchor_right = 0.5
 	anchor_top = 1.0
-	anchor_right = 1.0
 	anchor_bottom = 1.0
-	offset_left = 0.0
-	offset_right = 0.0
-	offset_top = -BAR_HEIGHT
-	offset_bottom = 0.0
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.055,0.075,0.085,0.92)
-	style.set_corner_radius_all(12)
-	style.content_margin_left = 14
-	style.content_margin_right = 14
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
+	offset_top = -BAR_HEIGHT-18.0
+	offset_bottom = -18.0
+	get_viewport().size_changed.connect(_fit_dock)
+	_fit_dock()
+	_add_glass(self)
+	var style := _stone_style(Color(0.24,0.19,0.23,0.52),22)
+	style.content_margin_left = 16
+	style.content_margin_right = 16
+	style.content_margin_top = 9
+	style.content_margin_bottom = 10
 	_bar.add_theme_stylebox_override("panel",style)
 	_bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_bar)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation",6)
 	_bar.add_child(column)
-	_tabs.add_theme_constant_override("separation",4)
+	_tabs.add_theme_constant_override("separation",3)
 	column.add_child(_tabs)
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation",12)
-	column.add_child(body)
 	_deck.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_deck.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(_deck)
-	body.add_child(VSeparator.new())
-	body.add_child(_build_strip())
+	column.add_child(_deck)
+	_details.name = "ToolDetails"
+	_details.add_theme_stylebox_override("panel",_stone_style(Color(0.22,0.17,0.22,0.96),18))
+	_details.anchor_left = 1.0
+	_details.anchor_right = 1.0
+	_details.offset_left = -384
+	_details.offset_right = 0
+	_details.offset_top = -206
+	_details.offset_bottom = -12
+	_details.visible = false
+	add_child(_details)
+	_details.add_child(_build_strip())
 	for entry: Array in editor.tool_groups():
 		_build_group(entry[0],entry[1])
 	_build_sky_group()
 	# The hint closes the tab row, so everything below it is controls.
 	_tabs.add_child(_build_hint())
+	_tune.text = "Tune"
+	_tune.tooltip_text = "Size, shape, color and tool actions"
+	_tune.toggle_mode = true
+	_tune.focus_mode = Control.FOCUS_NONE
+	_tune.toggled.connect(func(open: bool) -> void: _details.visible = open)
+	_tabs.add_child(_tune)
+	for entry: Array in [["↶", "Undo", editor.undo], ["↷", "Redo", editor.redo],
+		["Scene", "Save, open and scene controls", func() -> void: scene_controls_requested.emit()]]:
+		var button := Button.new()
+		button.text = entry[0]
+		button.tooltip_text = entry[1]
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(entry[2])
+		_tabs.add_child(button)
+		if entry[0] == "Scene": _scene_button = button
+	_fit_dock()
 	_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cursor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_cursor.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -208,7 +239,7 @@ func _build_hint() -> Control:
 	_hint.clip_text = true
 	_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_hint.add_theme_font_size_override("font_size",12)
-	_hint.add_theme_color_override("font_color",Color("aab8ad"))
+	_hint.add_theme_color_override("font_color",Color("cbbcbf"))
 	_on_status_changed(editor.status)
 	return _hint
 
@@ -222,6 +253,7 @@ func _build_strip() -> Control:
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_theme_constant_override("separation",4)
 	_scroll.add_child(stack)
+	stack.minimum_size_changed.connect(_fit_details.call_deferred)
 	_grid.columns = 3
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grid.add_theme_constant_override("h_separation",8)
@@ -233,7 +265,7 @@ func _build_strip() -> Control:
 
 func _build_group(title: String, tools: Array) -> void:
 	var tab := Button.new()
-	tab.text = title
+	tab.text = TAB_TITLES.get(title,title)
 	tab.toggle_mode = true
 	tab.button_group = _tab_group
 	tab.focus_mode = Control.FOCUS_NONE
@@ -293,8 +325,8 @@ func _caption_text(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.clip_text = true
-	label.add_theme_font_size_override("font_size",9)
-	label.add_theme_color_override("font_color",Color("d5e2d6"))
+	label.add_theme_font_size_override("font_size",10)
+	label.add_theme_color_override("font_color",Color("e8dcd6"))
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE,Control.PRESET_MODE_MINSIZE)
@@ -335,6 +367,108 @@ func _show_category(title: String) -> void:
 		_rows[name].visible = name == title
 		_tabs_by_name[name].set_pressed_no_signal(name == title)
 	_rebuild_strip()
+	_on_status_changed(editor.status)
+
+
+func _fit_dock() -> void:
+	var width := minf(DOCK_WIDTH,get_viewport_rect().size.x-36.0)
+	offset_left = -width*0.5
+	offset_right = width*0.5
+	_fit_details.call_deferred()
+	var compact := width < 600.0
+	_hint.visible = not compact
+	for key: String in _tabs_by_name:
+		_tabs_by_name[key].text = "Objects" if compact and key == "Place" else TAB_TITLES.get(key,key)
+	if _scene_button != null: _scene_button.text = "•••" if compact else "Scene"
+	for control in _tabs.get_children():
+		if not control is Button: continue
+		control.add_theme_font_size_override("font_size",11 if compact else 12)
+		for state: String in ["normal","hover","pressed","hover_pressed","disabled","focus"]:
+			var style: StyleBoxFlat = theme.get_stylebox(state,"Button").duplicate()
+			style.content_margin_left = 5 if compact else 7
+			style.content_margin_right = 5 if compact else 7
+			control.add_theme_stylebox_override(state,style)
+
+func _fit_details() -> void:
+	if _scroll.get_child_count() == 0: return
+	var content: Control = _scroll.get_child(0)
+	var available := maxf(64.0,get_viewport_rect().size.y-BAR_HEIGHT-18.0-24.0)
+	var height := clampf(content.get_combined_minimum_size().y+24.0,64.0,available)
+	_details.offset_top = -12.0-height
+	_details.offset_bottom = -12.0
+
+func _stone_style(color: Color, radius: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(radius)
+	style.set_border_width_all(1)
+	style.border_color = Color(0.85,0.73,0.77,0.16)
+	style.set_content_margin_all(12)
+	style.shadow_color = Color(0.16,0.10,0.18,0.23)
+	style.shadow_size = 14
+	style.shadow_offset = Vector2(0,4)
+	return style
+
+func _install_theme() -> void:
+	var look := Theme.new()
+	look.default_font_size = 12
+	for state: String in ["normal","hover","pressed","hover_pressed","disabled","focus"]:
+		var color := Color(0.58,0.45,0.52,0.0)
+		if state == "hover": color.a = 0.20
+		if state in ["pressed","hover_pressed"]: color = Color(0.74,0.58,0.60,0.26)
+		var style := _stone_style(color,12)
+		style.shadow_size = 0
+		style.set_content_margin_all(7)
+		style.border_color.a = 0.30 if state in ["pressed","hover_pressed"] else 0.0
+		look.set_stylebox(state,"Button",style)
+	look.set_color("font_color","Button",Color("e4d9d5"))
+	look.set_color("font_hover_color","Button",Color("fff0e3"))
+	look.set_color("font_pressed_color","Button",Color("fff0e3"))
+	look.set_color("font_color","Label",Color("e4d9d5"))
+	for state: String in ["scroll","grabber","grabber_highlight","grabber_pressed"]:
+		var rail := StyleBoxFlat.new()
+		rail.bg_color = Color(0.75,0.62,0.68,0.10 if state == "scroll" else 0.38)
+		rail.set_corner_radius_all(3)
+		rail.content_margin_top = 2
+		rail.content_margin_bottom = 2
+		look.set_stylebox(state,"HScrollBar",rail)
+	theme = look
+
+func _add_glass(parent: Control) -> void:
+	var glass := ColorRect.new()
+	glass.name = "DreamGlass"
+	glass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	glass.offset_left = -14
+	glass.offset_right = 14
+	glass.offset_top = -14
+	glass.offset_bottom = 14
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/nursery_glass.gdshader")
+	glass.material = material
+	parent.add_child(glass)
+	glass.resized.connect(func() -> void: material.set_shader_parameter("panel_size",glass.size))
+
+## Only the visible slice of the current shelf renders, at 24 Hz. Hidden and
+## horizontally clipped thumbnails keep their last texture, without 3D work.
+func _animate_portraits(delta: float) -> void:
+	if not is_visible_in_tree() or not miniatures_animate:
+		return
+	_portrait_clock += delta
+	if _portrait_clock < 1.0/24.0:
+		return
+	var step := _portrait_clock
+	_portrait_clock = 0.0
+	if not _rows.has(_category):
+		return
+	var clip: Rect2 = _rows[_category].get_global_rect()
+	for id: String in _portraits:
+		var tile: Button = _tiles[id]
+		if not tile.is_visible_in_tree() or not clip.intersects(tile.get_global_rect()):
+			continue
+		var portrait: Dictionary = _portraits[id]
+		portrait.pivot.rotation.y += step*0.28
+		portrait.viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 # --- the sky tab -------------------------------------------------------------
 
@@ -363,8 +497,8 @@ func _build_sky_group() -> void:
 	scroll.visible = false
 	_deck.add_child(scroll)
 	_rows[SKY_TAB] = scroll
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation",6)
+	var rows := HBoxContainer.new()
+	rows.add_theme_constant_override("separation",12)
 	scroll.add_child(rows)
 	var moods := HBoxContainer.new()
 	moods.add_theme_constant_override("separation",8)
@@ -518,8 +652,8 @@ func _sync_sky() -> void:
 
 # --- thumbnails -------------------------------------------------------------
 
-## Render every placeable once into its own transparent viewport. Kept alive so
-## the tiles can keep using the viewport textures as their icons.
+## Seed each portrait once. Visible tiles subsequently turn in their own small
+## transparent viewport; clipped and hidden tiles retain the last rendered pose.
 func ensure_thumbnails() -> void:
 	if not _thumbs.is_empty():
 		return
@@ -529,7 +663,7 @@ func ensure_thumbnails() -> void:
 		var model := build_model(id)
 		if model == null:
 			continue
-		_thumbs[id] = _render(model)
+		_thumbs[id] = _render(model,id)
 		_tiles[id].icon = _thumbs[id]
 
 ## The real meshes and materials for a placeable, in the local frame the garden
@@ -665,7 +799,7 @@ func _landform_material() -> StandardMaterial3D:
 	material.roughness = 1.0
 	return material
 
-func _render(model: Node3D) -> Texture2D:
+func _render(model: Node3D, id: String) -> Texture2D:
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(ICON,ICON)
 	viewport.transparent_bg = true
@@ -693,6 +827,10 @@ func _render(model: Node3D) -> Texture2D:
 		bounds = box if first else bounds.merge(box)
 		first = false
 	var center := bounds.get_center()
+	var pivot := Node3D.new()
+	viewport.add_child(pivot)
+	pivot.position = center
+	model.reparent(pivot)
 	var radius := maxf(bounds.size.length()*0.5,0.05)
 	var camera := Camera3D.new()
 	camera.fov = 32.0
@@ -701,6 +839,7 @@ func _render(model: Node3D) -> Texture2D:
 	viewport.add_child(camera)
 	var away := Vector3(0.62,0.46,1.0).normalized()*(radius/tan(deg_to_rad(camera.fov*0.5))*1.06)
 	camera.look_at_from_position(center+away,center,Vector3.UP)
+	_portraits[id] = {"viewport":viewport,"pivot":pivot}
 	return viewport.get_texture()
 
 # --- selection and feel -----------------------------------------------------
@@ -715,7 +854,10 @@ func _scale_tile(button: Button, factor: float) -> void:
 	if not is_instance_valid(button):
 		return
 	button.pivot_offset = button.size*0.5
+	if button.has_meta("hover_tween"):
+		button.get_meta("hover_tween").kill()
 	var tween := create_tween()
+	button.set_meta("hover_tween",tween)
 	tween.tween_property(button,"scale",Vector2.ONE*factor,TWEEN_TIME).set_trans(Tween.TRANS_SINE)
 
 func _on_tile_hover(id: String, entered: bool) -> void:
@@ -730,7 +872,7 @@ func _on_tool_changed(tool: String) -> void:
 	var chosen := tile_for(tool)
 	for id: String in _tiles:
 		_tiles[id].set_pressed_no_signal(_tiles[id] == chosen)
-		_tiles[id].modulate = Color.WHITE if _tiles[id] == chosen else Color(0.82,0.86,0.83)
+		_tiles[id].modulate = Color.WHITE
 	_show_category(_category_of(tool))
 
 func _on_setting_changed(property: String, value: float) -> void:
@@ -740,7 +882,7 @@ func _on_setting_changed(property: String, value: float) -> void:
 	NativeSettingRow.show_value(_strip_rows[property],value)
 
 func _on_status_changed(text: String) -> void:
-	_hint.text = text.replace("\n"," · ")
+	_hint.text = "Sky & atmosphere" if _category == SKY_TAB else _title(editor.catalog_asset if editor.mode == "assets" else editor.mode)
 	_hint.tooltip_text = text
 
 func _on_active_changed(enabled: bool) -> void:
@@ -750,8 +892,7 @@ func _on_active_changed(enabled: bool) -> void:
 	else:
 		_cancel_drag()
 
-## The sliders for the tool in hand, then its one-shot actions and colours,
-## beside the tiles. Every tool's whole set of controls lives here.
+## The tool's sliders, actions and colors live in the expandable Tune panel.
 func _rebuild_strip() -> void:
 	for child in _grid.get_children():
 		_grid.remove_child(child)
@@ -986,6 +1127,7 @@ func _clear_ghost() -> void:
 	_ghost = null
 
 func _process(delta: float) -> void:
+	_animate_portraits(delta)
 	if _category == SKY_TAB and not _sky_rows.is_empty() and is_visible_in_tree():
 		_sync_sky()
 	if not _dragging or _ghost == null or not _ghost.visible or _landform(_drag_id):
