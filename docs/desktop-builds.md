@@ -30,7 +30,7 @@ Use **Save a copy** and **Open diorama** to move a world between computers.
 ## Make a new build
 
 The workflow runs after pushes to `main`, version tags (`v*`), and pull requests
-targeting `main`. It also runs on `codex/desktop-builds` while this setup is being
+targeting `main`. It also runs on `codex/godot-build*` while this setup is being
 introduced. Once the workflow is on `main`, choose **Run workflow** on its Actions
 page to build a selected branch manually. Downloads are retained for 30 days;
 run it again if an old download has expired. No public release is created.
