@@ -7,6 +7,7 @@ const POSE = preload("res://scripts/native_object_pose.gd")
 var _bounds := {}
 var _arch_faces := PackedVector3Array()
 var _terrain_body: StaticBody3D
+var _standing_query: PhysicsShapeQueryParameters3D
 
 func rebuild(data: NativeTerrainData) -> void:
 	# Disable old bodies immediately, before their deferred deletion, so a rebuild
@@ -45,16 +46,17 @@ func rebuild(data: NativeTerrainData) -> void:
 ## ground validity/slope, while this rejects intersecting authored solid props.
 func can_stand(feet: Vector3) -> bool:
 	if not feet.is_finite() or not is_inside_tree(): return false
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.5
-	capsule.height = 2.3
-	var query := PhysicsShapeQueryParameters3D.new()
-	query.shape = capsule
-	query.transform = Transform3D(Basis.IDENTITY,feet+Vector3.UP*1.15)
-	query.collision_mask = 1
-	query.margin = 0.015
-	if is_instance_valid(_terrain_body): query.exclude = [_terrain_body.get_rid()]
-	return get_world_3d().direct_space_state.intersect_shape(query,1).is_empty()
+	if _standing_query == null:
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = 0.5
+		capsule.height = 2.3
+		_standing_query = PhysicsShapeQueryParameters3D.new()
+		_standing_query.shape = capsule
+		_standing_query.collision_mask = 1
+		_standing_query.margin = 0.015
+	_standing_query.transform = Transform3D(Basis.IDENTITY,feet+Vector3.UP*1.15)
+	_standing_query.exclude = [_terrain_body.get_rid()] if is_instance_valid(_terrain_body) else []
+	return get_world_3d().direct_space_state.intersect_shape(_standing_query,1).is_empty()
 
 func _add_shape(label: String, shape: Shape3D) -> StaticBody3D:
 	var body := StaticBody3D.new()

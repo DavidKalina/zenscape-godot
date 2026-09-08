@@ -1,0 +1,42 @@
+{
+	"gpu": "Apple M5 Pro (Apple9)",
+	"phases": [
+		{
+			"edits": false,
+			"max_ms": 9.208,
+			"median_ms": 8.333,
+			"navigation_rebuild_ms": 0.0,
+			"p95_ms": 8.497,
+			"roaming": false,
+			"samples": 480
+		},
+		{
+			"edits": false,
+			"max_ms": 9.157,
+			"median_ms": 8.338,
+			"navigation_rebuild_ms": 0.0,
+			"p95_ms": 8.486,
+			"roaming": false,
+			"samples": 480
+		},
+		{
+			"edits": true,
+			"max_ms": 237.755,
+			"median_ms": 8.337,
+			"navigation_rebuild_ms": 0.0,
+			"p95_ms": 8.717,
+			"roaming": false,
+			"samples": 480
+		},
+		{
+			"edits": true,
+			"max_ms": 240.619,
+			"median_ms": 8.335,
+			"navigation_rebuild_ms": 0.0,
+			"p95_ms": 8.636,
+			"roaming": false,
+			"samples": 480
+		}
+	],
+	"viewport": "(1440, 960)"
+}

@@ -79,6 +79,9 @@ signal status_changed(text: String)
 signal active_changed(enabled: bool)
 signal sky_toggle_requested()
 signal selection_changed(id: int)
+## Emitted after rendered geometry changes, including live selected-object drags.
+signal play_geometry_changed()
+var _play_geometry_signature := PackedByteArray()
 var selected_object_id := -1
 var selection: NativeObjectSelection
 var _selection_edit := false
@@ -151,10 +154,13 @@ var _map_ground: Image
 var _map_stream: Image
 var _map_heights := PackedFloat32Array()
 var _map_revision := -1
+var _map_water_region: Variant = null
 var _map_blank := false
 var _map_original := false
 var _map_ready := false
 var _bigfoot_mesh: Mesh
+## Standalone creature scenes provide their own physical ground.
+var update_encounter_ground := true
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -530,7 +536,7 @@ func refresh() -> void:
 		_set_status("A waterfall is blocked or submerged. Lower the obstruction or undo.")
 	# Existing habitat/rain/fog consumers keep the same texture object.
 	_update_surface_maps(original)
-	if terrain.mesh != _bigfoot_mesh:
+	if update_encounter_ground and terrain.mesh != _bigfoot_mesh:
 		_bigfoot_mesh = terrain.mesh
 		scene._bigfoot.ground.setup(terrain)
 	var encounter_pose: Variant = null
@@ -550,12 +556,15 @@ func refresh() -> void:
 		selection.update_marker(selected_object_id)
 		selection_changed.emit(selected_object_id)
 
+	_notify_play_geometry()
+
 ## Rebuild everything from the records, ignoring every incremental cache. The
 ## incremental path must land on exactly this result; the regression test drives
 ## a stroke both ways and compares the meshes, instances and map bytes.
 func force_refresh() -> void:
 	data.discard_cache()
 	content.discard_cache()
+	falls.discard_cache()
 	_map_ready = false
 	_bigfoot_mesh = null
 	refresh()
@@ -565,9 +574,17 @@ func force_refresh() -> void:
 ## the changed rectangle over the previous finished maps reproduces them exactly.
 func _update_surface_maps(original: bool) -> void:
 	var size := _original_ground_map.get_width()
-	var reusable: bool = _map_ready and _map_revision == content.revision and _map_blank == data.blank and _map_original == original
+	var reusable: bool = _map_ready and _map_blank == data.blank and _map_original == original
+	var water_changed: bool = not _map_ready or _map_revision != content.revision
+	var water_region: Variant = _surface_water_region() if water_changed else _map_water_region
 	var region: Variant = data.moved_region(_map_heights) if reusable else null
+	if reusable and water_changed:
+		# Restore both the old and new overlay footprints, including removals and
+		# shrinking shores. A content revision need not invalidate the whole map.
+		region = _merge_surface_regions(region,_merge_surface_regions(_map_water_region,water_region))
 	if region is bool and reusable:
+		_map_revision = content.revision
+		_map_water_region = water_region
 		return
 	var clip := Rect2i(0,0,size,size)
 	if region != null:
@@ -609,9 +626,32 @@ func _update_surface_maps(original: bool) -> void:
 	_map_stream = streams
 	_map_heights = data.heights.duplicate()
 	_map_revision = content.revision
+	_map_water_region = water_region
 	_map_blank = data.blank
 	_map_original = original
 	_map_ready = true
+
+## Bounds use the same coordinates as GardenSurfaceMap's triangle samplers.
+## false is an empty overlay; null requests the conservative full-map fallback.
+func _surface_water_region() -> Variant:
+	var region: Variant = false
+	for vertex: Vector3 in content.pond_vertices:
+		if not vertex.is_finite(): return null
+		var point := Vector2(vertex.x,vertex.z)
+		region = region.expand(point) if region is Rect2 else Rect2(point,Vector2.ZERO)
+	for node: MeshInstance3D in content._stream_nodes:
+		if not is_instance_valid(node) or node.mesh == null: return null
+		var box: AABB = node.transform*node.mesh.get_aabb()
+		if not box.position.is_finite() or not box.end.is_finite(): return null
+		var reach := Rect2(Vector2(box.position.x,box.position.z),Vector2(box.size.x,box.size.z))
+		region = _merge_surface_regions(region,reach)
+	return region
+
+func _merge_surface_regions(a: Variant,b: Variant) -> Variant:
+	if a == null or b == null: return null
+	if a is bool: return b
+	if b is bool: return a
+	return a.merge(b)
 
 func _placement_pose() -> Dictionary:
 	if mode not in ["tree","flower","rock","assets"] or (object_width == 1.0 and object_height == 1.0 and object_depth == 1.0 and object_pitch == 0.0 and object_roll == 0.0 and object_elevation == 0.0):
@@ -862,3 +902,13 @@ func _refresh_selected_render() -> void:
 	if record.asset in NativeGardenLandmarks.KINDS:
 		landmarks.rebuild(data)
 	selection.update_marker(selected_object_id)
+	_notify_play_geometry()
+
+func _notify_play_geometry() -> void:
+	var placements := data.objects.duplicate(true)
+	for item in placements:
+		item.erase("tint")
+	var signature := var_to_bytes([data.heights, placements, data.ponds, data.streams, data.landscape_waterfall])
+	if signature != _play_geometry_signature:
+		_play_geometry_signature = signature
+		play_geometry_changed.emit()

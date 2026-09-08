@@ -80,6 +80,105 @@ func _ready() -> void:
 func rebuild(force := false) -> void:
 	if not force and _reuse():
 		return
+	# Water can change without changing the instance recipes. Lift affected
+	# plants and props in place instead of regenerating the entire meadow.
+	var instance_region: Variant = data.moved_region(_view_heights) if not force and data is NativeTerrainData and _view_ready and _view_signature == _signature() else null
+	if instance_region == null:
+		_rebuild_instances()
+	elif instance_region is Rect2:
+		_move_instances(instance_region)
+	for node in _stream_nodes: node.free()
+	_stream_nodes.clear()
+	_stream_probe = {}
+	if data is NativeTerrainData:
+		var gene: Dictionary=data._palette.noise.g.water
+		var ramp:=preload("res://scripts/native_recipe_water.gd").water_ramp(gene)
+		data.begin_probe()
+		for course in data.streams:
+			var geometry: Dictionary=preload("res://scripts/native_stream_geometry.gd").build(course,data.stream_ground_height,ramp)
+			var node:=MeshInstance3D.new()
+			node.name="Stream_%d" % _stream_nodes.size()
+			node.mesh=preload("res://scripts/native_stream_geometry.gd").mesh(geometry)
+			node.material_override=_stream_material
+			add_child(node)
+			_stream_nodes.append(node)
+		_stream_probe = data.end_probe()
+	for mist in _landscape_mists: mist.free()
+	_landscape_mists.clear()
+	if is_instance_valid(_landscape_foam): _landscape_foam.free()
+	_landscape_foam=null
+	for node in _landscape_falls: node.free()
+	_landscape_falls.clear()
+	if data is NativeTerrainData and data.landscape_waterfall:
+		var strands: Array=data.waterfall_strands()
+		_landscape_foam=preload("res://scripts/native_fall_foam.gd").new()
+		_landscape_foam.name="LandscapeFoam"
+		_landscape_foam.transform=data.waterfall_transform()
+		add_child(_landscape_foam)
+		_landscape_foam.setup(strands,data._recipe.source.g.chute.flow,_foam_template)
+		var mist_recipe: Dictionary=preload("res://scripts/native_fall_mist.gd").build(strands,data._recipe.source.g.chute.flow)
+		for batch in preload("res://scripts/native_fall_mist.gd").batches(mist_recipe,data.waterfall_transform()):
+			var mist:=preload("res://studies/fall_mist.gd").new()
+			add_child(mist)
+			mist.setup(batch)
+			_landscape_mists.append(mist)
+		for strand in strands:
+			var node: MeshInstance3D=preload("res://scripts/native_fall_renderer.gd").create(strand)
+			node.name="LandscapeWaterfall_%d" % _landscape_falls.size()
+			node.transform=data.waterfall_transform()
+			add_child(node)
+			_landscape_falls.append(node)
+	pond_vertices.clear()
+	var pond_depths:=PackedFloat32Array()
+	var pond_colors:=PackedColorArray()
+	var pond_fetch_a:=PackedColorArray()
+	var pond_fetch_b:=PackedColorArray()
+	# Adjacent triangles share vertices. Shore-distance sampling is identical at
+	# those points within this rebuild, regardless of which triangle owns them.
+	var fetch_by_vertex := {}
+	for pond: Dictionary in data.ponds:
+		if data is NativeTerrainData and data._recipe != null:
+			var water: Dictionary=preload("res://scripts/native_recipe_water.gd").build(data,pond)
+			pond_vertices.append_array(water.vertices)
+			pond_depths.append_array(water.depths)
+			pond_colors.append_array(water.colors)
+			pond_fetch_a.append_array(water.fetch_a)
+			pond_fetch_b.append_array(water.fetch_b)
+		else:
+			var vertices: PackedVector3Array=data.pond_surface(pond)
+			pond_vertices.append_array(vertices)
+			for point in vertices:
+				var depth:=maxf(0.0,point.y-float(data.ground_height(Vector2(point.x,point.z))))
+				pond_depths.append(depth)
+				if not fetch_by_vertex.has(point):
+					fetch_by_vertex[point] = data.pond_fetch(Vector2(point.x,point.z),point.y)
+				var fetch: PackedFloat32Array=fetch_by_vertex[point]
+				pond_fetch_a.append(Color(fetch[0],fetch[1],fetch[2],fetch[3]))
+				pond_fetch_b.append(Color(fetch[4],fetch[5],fetch[6],fetch[7]))
+				pond_colors.append(Color("79ae9b").lerp(Color("245a5c"),1.0-exp(-depth/0.45)).srgb_to_linear())
+	_water.mesh = null
+	if not pond_vertices.is_empty():
+		var surface := SurfaceTool.new()
+		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		surface.set_normal(Vector3.UP)
+		surface.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
+		surface.set_custom_format(1, SurfaceTool.CUSTOM_RGBA_FLOAT)
+		for i in range(pond_vertices.size()):
+			var point:=pond_vertices[i]
+			var depth:=pond_depths[i]
+			surface.set_uv2(Vector2(depth, 0.0))
+			surface.set_custom(0,pond_fetch_a[i])
+			surface.set_custom(1,pond_fetch_b[i])
+			surface.set_color(pond_colors[i])
+			surface.add_vertex(point)
+		_water.mesh = surface.commit()
+	revision += 1
+	if data is NativeTerrainData:
+		_view_heights = data.heights.duplicate()
+		_view_signature = _signature()
+		_view_ready = true
+
+func _rebuild_instances() -> void:
 	for batch in _batches:
 		batch.free()
 	_batches.clear()
@@ -168,91 +267,6 @@ func rebuild(force := false) -> void:
 		batch.material_override = _materials[key]
 		add_child(batch)
 		_batches.append(batch)
-	for node in _stream_nodes: node.free()
-	_stream_nodes.clear()
-	_stream_probe = {}
-	if data is NativeTerrainData:
-		var gene: Dictionary=data._palette.noise.g.water
-		var ramp:=preload("res://scripts/native_recipe_water.gd").water_ramp(gene)
-		data.begin_probe()
-		for course in data.streams:
-			var geometry: Dictionary=preload("res://scripts/native_stream_geometry.gd").build(course,data.stream_ground_height,ramp)
-			var node:=MeshInstance3D.new()
-			node.name="Stream_%d" % _stream_nodes.size()
-			node.mesh=preload("res://scripts/native_stream_geometry.gd").mesh(geometry)
-			node.material_override=_stream_material
-			add_child(node)
-			_stream_nodes.append(node)
-		_stream_probe = data.end_probe()
-	for mist in _landscape_mists: mist.free()
-	_landscape_mists.clear()
-	if is_instance_valid(_landscape_foam): _landscape_foam.free()
-	_landscape_foam=null
-	for node in _landscape_falls: node.free()
-	_landscape_falls.clear()
-	if data is NativeTerrainData and data.landscape_waterfall:
-		var strands: Array=data.waterfall_strands()
-		_landscape_foam=preload("res://scripts/native_fall_foam.gd").new()
-		_landscape_foam.name="LandscapeFoam"
-		_landscape_foam.transform=data.waterfall_transform()
-		add_child(_landscape_foam)
-		_landscape_foam.setup(strands,data._recipe.source.g.chute.flow,_foam_template)
-		var mist_recipe: Dictionary=preload("res://scripts/native_fall_mist.gd").build(strands,data._recipe.source.g.chute.flow)
-		for batch in preload("res://scripts/native_fall_mist.gd").batches(mist_recipe,data.waterfall_transform()):
-			var mist:=preload("res://studies/fall_mist.gd").new()
-			add_child(mist)
-			mist.setup(batch)
-			_landscape_mists.append(mist)
-		for strand in strands:
-			var node: MeshInstance3D=preload("res://scripts/native_fall_renderer.gd").create(strand)
-			node.name="LandscapeWaterfall_%d" % _landscape_falls.size()
-			node.transform=data.waterfall_transform()
-			add_child(node)
-			_landscape_falls.append(node)
-	pond_vertices.clear()
-	var pond_depths:=PackedFloat32Array()
-	var pond_colors:=PackedColorArray()
-	var pond_fetch_a:=PackedColorArray()
-	var pond_fetch_b:=PackedColorArray()
-	for pond: Dictionary in data.ponds:
-		if data is NativeTerrainData and data._recipe != null:
-			var water: Dictionary=preload("res://scripts/native_recipe_water.gd").build(data,pond)
-			pond_vertices.append_array(water.vertices)
-			pond_depths.append_array(water.depths)
-			pond_colors.append_array(water.colors)
-			pond_fetch_a.append_array(water.fetch_a)
-			pond_fetch_b.append_array(water.fetch_b)
-		else:
-			var vertices: PackedVector3Array=data.pond_surface(pond)
-			pond_vertices.append_array(vertices)
-			for point in vertices:
-				var depth:=maxf(0.0,point.y-float(data.ground_height(Vector2(point.x,point.z))))
-				pond_depths.append(depth)
-				var fetch: PackedFloat32Array=data.pond_fetch(Vector2(point.x,point.z),point.y)
-				pond_fetch_a.append(Color(fetch[0],fetch[1],fetch[2],fetch[3]))
-				pond_fetch_b.append(Color(fetch[4],fetch[5],fetch[6],fetch[7]))
-				pond_colors.append(Color("79ae9b").lerp(Color("245a5c"),1.0-exp(-depth/0.45)).srgb_to_linear())
-	_water.mesh = null
-	if not pond_vertices.is_empty():
-		var surface := SurfaceTool.new()
-		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-		surface.set_normal(Vector3.UP)
-		surface.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
-		surface.set_custom_format(1, SurfaceTool.CUSTOM_RGBA_FLOAT)
-		for i in range(pond_vertices.size()):
-			var point:=pond_vertices[i]
-			var depth:=pond_depths[i]
-			surface.set_uv2(Vector2(depth, 0.0))
-			surface.set_custom(0,pond_fetch_a[i])
-			surface.set_custom(1,pond_fetch_b[i])
-			surface.set_color(pond_colors[i])
-			surface.add_vertex(point)
-		_water.mesh = surface.commit()
-	revision += 1
-	if data is NativeTerrainData:
-		_view_heights = data.heights.duplicate()
-		_view_signature = _signature()
-		_view_ready = true
 
 func discard_cache() -> void:
 	_view_ready = false
@@ -277,6 +291,11 @@ func _reuse() -> bool:
 		return false
 	if not data.ponds.is_empty() and data.water_reaches(region):
 		return false
+	_move_instances(region)
+	_view_heights = data.heights.duplicate()
+	return true
+
+func _move_instances(region: Rect2) -> void:
 	for batch in _batches:
 		var recipes: Array = _sources[batch.get_meta("part")]
 		for i in range(recipes.size()):
@@ -286,8 +305,6 @@ func _reuse() -> bool:
 			var moved: Variant = _instance_transform(recipe)
 			if moved != null:
 				batch.multimesh.set_instance_transform(i,moved)
-	_view_heights = data.heights.duplicate()
-	return true
 
 func _instance_transform(recipe: Dictionary) -> Variant:
 	if recipe.item == null:

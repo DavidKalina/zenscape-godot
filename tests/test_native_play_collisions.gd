@@ -36,7 +36,10 @@ func _run() -> void:
 	check(not hit.is_empty() and absf(hit.position.y-float(data.height_at(0,0)))<0.01,"Rebuild follows sculpted triangle surface exactly")
 	check(collisions.get_child_count()==3,"Rebuild replaces old colliders instead of accumulating ghosts")
 	check(collisions.can_stand(Vector3(0,float(data.height_at(0,0)),0)),"Ground contact alone does not reject standing clearance")
+	var query_id := collisions._standing_query.get_instance_id()
+	var capsule_id := collisions._standing_query.shape.get_rid()
 	check(not collisions.can_stand(Vector3(-3,float(data.height_at(-3,0)),0)),"Standing inside a stone is rejected")
+	check(collisions._standing_query.get_instance_id()==query_id and collisions._standing_query.shape.get_rid()==capsule_id,"Clearance reuses query and physical shape across different points")
 	# A wide rotated object must block its actual volume, beyond any fixed
 	# distance-from-record shortcut. Rotate local X width onto world Z.
 	var wide_pose := NativeObjectPose.make(Basis(Vector3.UP,PI/2).scaled_local(Vector3(5,2,1)),0)

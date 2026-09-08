@@ -1,0 +1,1380 @@
+{
+  "renderer": "Metal / Forward+",
+  "date_utc": "2026-09-08T05:31:02.140929+00:00",
+  "tests": [
+    {
+      "test": "test_alpenglow.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.6,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_alpenglow-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_ambient_audio.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.56,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_ambient_audio-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_autumn.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.83,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_autumn-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bear_walk.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.51,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bear_walk-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bigfoot.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bigfoot-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bigfoot_life_editor.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.14,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bigfoot_life_editor-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bigfoot_life_interruptions.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 14.02,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bigfoot_life_interruptions-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bigfoot_lifecycle.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.66,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bigfoot_lifecycle-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bigfoot_playground.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.64,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bigfoot_playground-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bigfoot_walk.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.41,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bigfoot_walk-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_bird_flight.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.94,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_bird_flight-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_camera_exploration.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.61,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_camera_exploration-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_camera_feedback.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.5,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_camera_feedback-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_creature_actor.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.41,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_creature_actor-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_creature_brain.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.74,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_creature_brain-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_creature_navigation.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.68,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_creature_navigation-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_creature_walk.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_creature_walk-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_creature_wind.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 16.61,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_creature_wind-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_display_fog.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 6.17,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_display_fog-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_fall_foam.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_fall_foam-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_fall_mist.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.01,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_fall_mist-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_fidelity.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.61,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_fidelity-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_fireflies.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.55,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_fireflies-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_fog_color.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.1,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_fog_color-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_frog_motion.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.5,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_frog_motion-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_garden.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.57,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_garden-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_garden_look.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.79,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_garden_look-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_garden_scene.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.17,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_garden_scene-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_growth.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.55,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_growth-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_ice_highlight.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.32,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_ice_highlight-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_inversion.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.6,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_inversion-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_inversion_surface.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.97,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_inversion_surface-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_algae.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.67,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_algae-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_chop.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.51,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_chop-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_complete_lighting.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.62,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_complete_lighting-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_display_composite.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.21,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_display_composite-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_fetch.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.51,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_fetch-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_flash.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.22,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_flash-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_glints.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.57,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_glints-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lake_material.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.56,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lake_material-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_landscape.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.41,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_landscape-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_leaves.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.55,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_leaves-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_lightning.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.55,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_lightning-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_local_wind_field.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.51,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_local_wind_field-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_local_wind_foliage.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_local_wind_foliage-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_local_wind_water.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.9,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_local_wind_water-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_asset_catalog.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.82,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_asset_catalog-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_build_palette.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.99,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_build_palette-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_build_tools.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.94,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_build_tools-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_chunk_editor.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.86,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_chunk_editor-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_drop_reactions.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.82,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_drop_reactions-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_editor_hotkeys.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.66,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_editor_hotkeys-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_course.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.41,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_course-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_editor.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.96,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_editor-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_foam.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.35,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_foam-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_mist.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.98,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_mist-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_renderer.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.61,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_renderer-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_reuse.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.84,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_reuse-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_fall_strand.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_fall_strand-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_falls.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.9,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_falls-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_flora.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 9.77,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_flora-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_landmarks.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.74,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_landmarks-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_mountain_shape.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.57,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_mountain_shape-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_object_editing.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 7.58,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_object_editing-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_object_pose.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.71,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_object_pose-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_object_tint.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.72,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_object_tint-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_paint.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 6.97,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_paint-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_palette.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 3.03,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_palette-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_play_collisions.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.62,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_play_collisions-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_pond_attributes.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.68,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_pond_attributes-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_pond_cache.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.0,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_pond_cache-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_range.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 8.54,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_range-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_recipe_water.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 3.98,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_recipe_water-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_refresh_incremental.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 7.9,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_refresh_incremental-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_selection.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.94,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_selection-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_shoreline.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 3.14,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_shoreline-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_stream_editor.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 3.04,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_stream_editor-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_stream_geometry.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.57,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_stream_geometry-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_stream_surface_map.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 3.2,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_stream_surface_map-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_native_turf.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 2.17,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_native_turf-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_night_fill.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.56,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_night_fill-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_paused_lighting.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.56,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_paused_lighting-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_paused_reveal.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.56,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_paused_reveal-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_pond_habitat.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.55,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_pond_habitat-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_puffs.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_puffs-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_rain_rings.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.62,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_rain_rings-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_rainbow_weather.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.55,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_rainbow_weather-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_scene.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.79,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_scene-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_shroud_weather.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.5,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_shroud_weather-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_source_terrain.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.12,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_source_terrain-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_surface_haze.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.72,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_surface_haze-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_surface_weather.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.45,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_surface_weather-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_thunder_audio.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.45,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_thunder_audio-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_water_growth.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.51,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_water_growth-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_weather_profiles.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.56,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_weather_profiles-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_wind.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 0.46,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_wind-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_wind_demo_landscape.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 1.78,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_wind_demo_landscape-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    },
+    {
+      "test": "test_wind_playground.gd",
+      "attempts": [
+        {
+          "exit_code": 0,
+          "timeout": false,
+          "elapsed_seconds": 3.13,
+          "errors": false,
+          "log": "/tmp/bigfoot-life-test-logs/test_wind_playground-1.log",
+          "error_lines": []
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "passed": 98,
+  "failed": 0
+}

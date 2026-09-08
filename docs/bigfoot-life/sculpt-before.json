@@ -1,0 +1,740 @@
+{
+	"brush_radius": 2.2,
+	"brush_strength": 2.0,
+	"dab": {
+		"max_ms": 0.093,
+		"mean_ms": 0.0621,
+		"median_ms": 0.06,
+		"over_33_ms": 0,
+		"p95_ms": 0.081,
+		"samples": 30
+	},
+	"dab_count": 30,
+	"fps_cap": 120,
+	"gpu": "Apple M5 Pro (Apple9)",
+	"idle_frames": {
+		"max_ms": 12.351,
+		"mean_ms": 8.32122314049587,
+		"median_ms": 8.344,
+		"over_33_ms": 0,
+		"p95_ms": 9.097,
+		"samples": 121
+	},
+	"physical_size": [
+		1440,
+		900
+	],
+	"records": [
+		{
+			"dab_ms": 0.081,
+			"elapsed_ms": 245.165,
+			"index": 0,
+			"last_collision_ms": 7.083,
+			"last_navigation_ms": 26.248,
+			"mode": "raise",
+			"point": [
+				1.14999997615814,
+				2.70000004768372
+			],
+			"refresh_ms": 245.014,
+			"stages": {
+				"anchors": 0.049,
+				"content": 12.668,
+				"extras": 6.378,
+				"falls": 214.287,
+				"landmarks": 0.008,
+				"maps": 6.992,
+				"skirt": 3.113,
+				"terrain": 1.516
+			}
+		},
+		{
+			"dab_ms": 0.052,
+			"elapsed_ms": 512.027,
+			"index": 1,
+			"last_collision_ms": 11.209,
+			"last_navigation_ms": 12.2,
+			"mode": "raise",
+			"point": [
+				1.13370311260223,
+				2.8001344203949
+			],
+			"refresh_ms": 240.648,
+			"stages": {
+				"anchors": 0.049,
+				"content": 11.91,
+				"extras": 6.211,
+				"falls": 212.624,
+				"landmarks": 0.013,
+				"maps": 7.068,
+				"skirt": 1.384,
+				"terrain": 1.387
+			}
+		},
+		{
+			"dab_ms": 0.047,
+			"elapsed_ms": 783.718,
+			"index": 2,
+			"last_collision_ms": 11.187,
+			"last_navigation_ms": 12.42,
+			"mode": "raise",
+			"point": [
+				1.08562982082367,
+				2.8952476978302
+			],
+			"refresh_ms": 245.392,
+			"stages": {
+				"anchors": 0.046,
+				"content": 11.836,
+				"extras": 7.181,
+				"falls": 215.889,
+				"landmarks": 0.013,
+				"maps": 7.835,
+				"skirt": 1.216,
+				"terrain": 1.374
+			}
+		},
+		{
+			"dab_ms": 0.052,
+			"elapsed_ms": 1089.208,
+			"index": 3,
+			"last_collision_ms": 13.155,
+			"last_navigation_ms": 13.91,
+			"mode": "raise",
+			"point": [
+				1.00819051265717,
+				2.9805703163147
+			],
+			"refresh_ms": 275.284,
+			"stages": {
+				"anchors": 0.053,
+				"content": 13.059,
+				"extras": 7.632,
+				"falls": 243.275,
+				"landmarks": 0.013,
+				"maps": 8.395,
+				"skirt": 1.348,
+				"terrain": 1.507
+			}
+		},
+		{
+			"dab_ms": 0.057,
+			"elapsed_ms": 1420.548,
+			"index": 4,
+			"last_collision_ms": 10.928,
+			"last_navigation_ms": 14.793,
+			"mode": "raise",
+			"point": [
+				0.905268371105194,
+				3.05182409286499
+			],
+			"refresh_ms": 302.54,
+			"stages": {
+				"anchors": 0.082,
+				"content": 14.095,
+				"extras": 8.436,
+				"falls": 266.999,
+				"landmarks": 0.007,
+				"maps": 9.493,
+				"skirt": 1.818,
+				"terrain": 1.608
+			}
+		},
+		{
+			"dab_ms": 0.062,
+			"elapsed_ms": 1770.833,
+			"index": 5,
+			"last_collision_ms": 10.83,
+			"last_navigation_ms": 16.497,
+			"mode": "raise",
+			"point": [
+				0.782024443149567,
+				3.10543608665466
+			],
+			"refresh_ms": 319.54,
+			"stages": {
+				"anchors": 0.086,
+				"content": 15.262,
+				"extras": 9.357,
+				"falls": 280.793,
+				"landmarks": 0.013,
+				"maps": 10.382,
+				"skirt": 1.811,
+				"terrain": 1.833
+			}
+		},
+		{
+			"dab_ms": 0.071,
+			"elapsed_ms": 2146.049,
+			"index": 6,
+			"last_collision_ms": 12.107,
+			"last_navigation_ms": 18.116,
+			"mode": "raise",
+			"point": [
+				0.64463859796524,
+				3.13871765136719
+			],
+			"refresh_ms": 341.592,
+			"stages": {
+				"anchors": 0.059,
+				"content": 16.46,
+				"extras": 9.614,
+				"falls": 301.76,
+				"landmarks": 0.009,
+				"maps": 10.17,
+				"skirt": 1.631,
+				"terrain": 1.886
+			}
+		},
+		{
+			"dab_ms": 0.069,
+			"elapsed_ms": 2523.822,
+			"index": 7,
+			"last_collision_ms": 13.648,
+			"last_navigation_ms": 18.21,
+			"mode": "raise",
+			"point": [
+				0.5,
+				3.15000009536743
+			],
+			"refresh_ms": 342.643,
+			"stages": {
+				"anchors": 0.069,
+				"content": 16.681,
+				"extras": 8.404,
+				"falls": 303.613,
+				"landmarks": 0.007,
+				"maps": 10.333,
+				"skirt": 1.575,
+				"terrain": 1.958
+			}
+		},
+		{
+			"dab_ms": 0.069,
+			"elapsed_ms": 2904.503,
+			"index": 8,
+			"last_collision_ms": 14.44,
+			"last_navigation_ms": 18.009,
+			"mode": "raise",
+			"point": [
+				0.35536140203476,
+				3.13871765136719
+			],
+			"refresh_ms": 344.752,
+			"stages": {
+				"anchors": 0.078,
+				"content": 16.257,
+				"extras": 9.319,
+				"falls": 304.046,
+				"landmarks": 0.009,
+				"maps": 10.582,
+				"skirt": 2.451,
+				"terrain": 2.006
+			}
+		},
+		{
+			"dab_ms": 0.068,
+			"elapsed_ms": 3281.618,
+			"index": 9,
+			"last_collision_ms": 13.156,
+			"last_navigation_ms": 18.183,
+			"mode": "raise",
+			"point": [
+				0.217975571751595,
+				3.10543608665466
+			],
+			"refresh_ms": 342.29,
+			"stages": {
+				"anchors": 0.084,
+				"content": 15.841,
+				"extras": 8.698,
+				"falls": 303.584,
+				"landmarks": 0.011,
+				"maps": 10.36,
+				"skirt": 1.568,
+				"terrain": 2.141
+			}
+		},
+		{
+			"dab_ms": 0.075,
+			"elapsed_ms": 3643.666,
+			"index": 10,
+			"last_collision_ms": 14.894,
+			"last_navigation_ms": 18.382,
+			"mode": "raise",
+			"point": [
+				0.0947316288948059,
+				3.05182409286499
+			],
+			"refresh_ms": 325.516,
+			"stages": {
+				"anchors": 0.06,
+				"content": 15.892,
+				"extras": 9.224,
+				"falls": 286.898,
+				"landmarks": 0.009,
+				"maps": 9.606,
+				"skirt": 1.635,
+				"terrain": 2.189
+			}
+		},
+		{
+			"dab_ms": 0.064,
+			"elapsed_ms": 3976.81,
+			"index": 11,
+			"last_collision_ms": 12.444,
+			"last_navigation_ms": 16.663,
+			"mode": "raise",
+			"point": [
+				-0.00819046329706907,
+				2.9805703163147
+			],
+			"refresh_ms": 301.018,
+			"stages": {
+				"anchors": 0.062,
+				"content": 13.672,
+				"extras": 8.181,
+				"falls": 266.712,
+				"landmarks": 0.008,
+				"maps": 8.66,
+				"skirt": 1.801,
+				"terrain": 1.919
+			}
+		},
+		{
+			"dab_ms": 0.059,
+			"elapsed_ms": 4295.925,
+			"index": 12,
+			"last_collision_ms": 15.291,
+			"last_navigation_ms": 15.437,
+			"mode": "raise",
+			"point": [
+				-0.0856297612190247,
+				2.8952476978302
+			],
+			"refresh_ms": 285.472,
+			"stages": {
+				"anchors": 0.054,
+				"content": 13.309,
+				"extras": 7.38,
+				"falls": 253.048,
+				"landmarks": 0.007,
+				"maps": 8.343,
+				"skirt": 1.533,
+				"terrain": 1.795
+			}
+		},
+		{
+			"dab_ms": 0.055,
+			"elapsed_ms": 4604.957,
+			"index": 13,
+			"last_collision_ms": 9.86,
+			"last_navigation_ms": 14.478,
+			"mode": "raise",
+			"point": [
+				-0.133703142404556,
+				2.8001344203949
+			],
+			"refresh_ms": 282.417,
+			"stages": {
+				"anchors": 0.063,
+				"content": 12.34,
+				"extras": 7.2,
+				"falls": 251.295,
+				"landmarks": 0.008,
+				"maps": 8.407,
+				"skirt": 1.346,
+				"terrain": 1.755
+			}
+		},
+		{
+			"dab_ms": 0.054,
+			"elapsed_ms": 4920.415,
+			"index": 14,
+			"last_collision_ms": 12.473,
+			"last_navigation_ms": 14.31,
+			"mode": "raise",
+			"point": [
+				-0.150000005960464,
+				2.70000004768372
+			],
+			"refresh_ms": 286.196,
+			"stages": {
+				"anchors": 0.051,
+				"content": 12.22,
+				"extras": 7.781,
+				"falls": 254.557,
+				"landmarks": 0.007,
+				"maps": 8.386,
+				"skirt": 1.625,
+				"terrain": 1.566
+			}
+		},
+		{
+			"dab_ms": 0.054,
+			"elapsed_ms": 5262.723,
+			"index": 15,
+			"last_collision_ms": 12.777,
+			"last_navigation_ms": 15.841,
+			"mode": "lower",
+			"point": [
+				1.14999997615814,
+				2.70000004768372
+			],
+			"refresh_ms": 310.793,
+			"stages": {
+				"anchors": 0.079,
+				"content": 14.552,
+				"extras": 7.615,
+				"falls": 276.401,
+				"landmarks": 0.017,
+				"maps": 8.944,
+				"skirt": 1.394,
+				"terrain": 1.787
+			}
+		},
+		{
+			"dab_ms": 0.06,
+			"elapsed_ms": 5572.311,
+			"index": 16,
+			"last_collision_ms": 11.879,
+			"last_navigation_ms": 15.259,
+			"mode": "lower",
+			"point": [
+				1.13370311260223,
+				2.8001344203949
+			],
+			"refresh_ms": 279.903,
+			"stages": {
+				"anchors": 0.05,
+				"content": 14.006,
+				"extras": 7.309,
+				"falls": 247.162,
+				"landmarks": 0.008,
+				"maps": 8.395,
+				"skirt": 1.417,
+				"terrain": 1.552
+			}
+		},
+		{
+			"dab_ms": 0.057,
+			"elapsed_ms": 5876.147,
+			"index": 17,
+			"last_collision_ms": 10.913,
+			"last_navigation_ms": 14.684,
+			"mode": "lower",
+			"point": [
+				1.08562982082367,
+				2.8952476978302
+			],
+			"refresh_ms": 276.073,
+			"stages": {
+				"anchors": 0.049,
+				"content": 14.237,
+				"extras": 7.082,
+				"falls": 242.894,
+				"landmarks": 0.007,
+				"maps": 8.462,
+				"skirt": 1.743,
+				"terrain": 1.592
+			}
+		},
+		{
+			"dab_ms": 0.093,
+			"elapsed_ms": 6167.632,
+			"index": 18,
+			"last_collision_ms": 11.719,
+			"last_navigation_ms": 14.635,
+			"mode": "lower",
+			"point": [
+				1.00819051265717,
+				2.9805703163147
+			],
+			"refresh_ms": 262.662,
+			"stages": {
+				"anchors": 0.057,
+				"content": 13.321,
+				"extras": 7.33,
+				"falls": 230.822,
+				"landmarks": 0.007,
+				"maps": 8.164,
+				"skirt": 1.358,
+				"terrain": 1.595
+			}
+		},
+		{
+			"dab_ms": 0.063,
+			"elapsed_ms": 6457.988,
+			"index": 19,
+			"last_collision_ms": 11.464,
+			"last_navigation_ms": 14.003,
+			"mode": "lower",
+			"point": [
+				0.905268371105194,
+				3.05182409286499
+			],
+			"refresh_ms": 262.474,
+			"stages": {
+				"anchors": 0.055,
+				"content": 12.945,
+				"extras": 7.758,
+				"falls": 230.727,
+				"landmarks": 0.007,
+				"maps": 8.082,
+				"skirt": 1.292,
+				"terrain": 1.605
+			}
+		},
+		{
+			"dab_ms": 0.054,
+			"elapsed_ms": 6751.591,
+			"index": 20,
+			"last_collision_ms": 13.499,
+			"last_navigation_ms": 14.602,
+			"mode": "lower",
+			"point": [
+				0.782024443149567,
+				3.10543608665466
+			],
+			"refresh_ms": 263.053,
+			"stages": {
+				"anchors": 0.051,
+				"content": 14.119,
+				"extras": 7.127,
+				"falls": 230.952,
+				"landmarks": 0.009,
+				"maps": 7.929,
+				"skirt": 1.307,
+				"terrain": 1.554
+			}
+		},
+		{
+			"dab_ms": 0.053,
+			"elapsed_ms": 7044.698,
+			"index": 21,
+			"last_collision_ms": 14.027,
+			"last_navigation_ms": 13.989,
+			"mode": "lower",
+			"point": [
+				0.64463859796524,
+				3.13871765136719
+			],
+			"refresh_ms": 262.877,
+			"stages": {
+				"anchors": 0.065,
+				"content": 13.077,
+				"extras": 7.628,
+				"falls": 231.232,
+				"landmarks": 0.007,
+				"maps": 7.993,
+				"skirt": 1.365,
+				"terrain": 1.506
+			}
+		},
+		{
+			"dab_ms": 0.065,
+			"elapsed_ms": 7336.743,
+			"index": 22,
+			"last_collision_ms": 10.357,
+			"last_navigation_ms": 14.556,
+			"mode": "lower",
+			"point": [
+				0.5,
+				3.15000009536743
+			],
+			"refresh_ms": 264.944,
+			"stages": {
+				"anchors": 0.051,
+				"content": 12.59,
+				"extras": 7.115,
+				"falls": 234.166,
+				"landmarks": 0.007,
+				"maps": 8.154,
+				"skirt": 1.298,
+				"terrain": 1.56
+			}
+		},
+		{
+			"dab_ms": 0.06,
+			"elapsed_ms": 7626.431,
+			"index": 23,
+			"last_collision_ms": 12.593,
+			"last_navigation_ms": 14.106,
+			"mode": "lower",
+			"point": [
+				0.35536140203476,
+				3.13871765136719
+			],
+			"refresh_ms": 260.752,
+			"stages": {
+				"anchors": 0.089,
+				"content": 12.808,
+				"extras": 7.47,
+				"falls": 229.63,
+				"landmarks": 0.008,
+				"maps": 7.826,
+				"skirt": 1.436,
+				"terrain": 1.483
+			}
+		},
+		{
+			"dab_ms": 0.061,
+			"elapsed_ms": 7914.034,
+			"index": 24,
+			"last_collision_ms": 11.037,
+			"last_navigation_ms": 14.019,
+			"mode": "lower",
+			"point": [
+				0.217975571751595,
+				3.10543608665466
+			],
+			"refresh_ms": 260.307,
+			"stages": {
+				"anchors": 0.065,
+				"content": 12.847,
+				"extras": 7.716,
+				"falls": 228.509,
+				"landmarks": 0.008,
+				"maps": 8.082,
+				"skirt": 1.377,
+				"terrain": 1.699
+			}
+		},
+		{
+			"dab_ms": 0.062,
+			"elapsed_ms": 8204.886,
+			"index": 25,
+			"last_collision_ms": 12.64,
+			"last_navigation_ms": 13.998,
+			"mode": "lower",
+			"point": [
+				0.0947316288948059,
+				3.05182409286499
+			],
+			"refresh_ms": 261.238,
+			"stages": {
+				"anchors": 0.106,
+				"content": 12.585,
+				"extras": 7.172,
+				"falls": 230.223,
+				"landmarks": 0.007,
+				"maps": 8.061,
+				"skirt": 1.267,
+				"terrain": 1.813
+			}
+		},
+		{
+			"dab_ms": 0.076,
+			"elapsed_ms": 8497.327,
+			"index": 26,
+			"last_collision_ms": 12.361,
+			"last_navigation_ms": 14.687,
+			"mode": "lower",
+			"point": [
+				-0.00819046329706907,
+				2.9805703163147
+			],
+			"refresh_ms": 263.086,
+			"stages": {
+				"anchors": 0.057,
+				"content": 13.078,
+				"extras": 6.834,
+				"falls": 231.555,
+				"landmarks": 0.013,
+				"maps": 8.29,
+				"skirt": 1.517,
+				"terrain": 1.738
+			}
+		},
+		{
+			"dab_ms": 0.056,
+			"elapsed_ms": 8793.606,
+			"index": 27,
+			"last_collision_ms": 11.075,
+			"last_navigation_ms": 13.959,
+			"mode": "lower",
+			"point": [
+				-0.0856297612190247,
+				2.8952476978302
+			],
+			"refresh_ms": 269.131,
+			"stages": {
+				"anchors": 0.072,
+				"content": 12.931,
+				"extras": 6.88,
+				"falls": 238.375,
+				"landmarks": 0.008,
+				"maps": 7.772,
+				"skirt": 1.354,
+				"terrain": 1.734
+			}
+		},
+		{
+			"dab_ms": 0.057,
+			"elapsed_ms": 9105.108,
+			"index": 28,
+			"last_collision_ms": 12.663,
+			"last_navigation_ms": 14.327,
+			"mode": "lower",
+			"point": [
+				-0.133703142404556,
+				2.8001344203949
+			],
+			"refresh_ms": 281.899,
+			"stages": {
+				"anchors": 0.062,
+				"content": 13.049,
+				"extras": 9.2,
+				"falls": 248.004,
+				"landmarks": 0.007,
+				"maps": 8.438,
+				"skirt": 1.314,
+				"terrain": 1.821
+			}
+		},
+		{
+			"dab_ms": 0.057,
+			"elapsed_ms": 9410.844,
+			"index": 29,
+			"last_collision_ms": 11.897,
+			"last_navigation_ms": 13.99,
+			"mode": "lower",
+			"point": [
+				-0.150000005960464,
+				2.70000004768372
+			],
+			"refresh_ms": 277.507,
+			"stages": {
+				"anchors": 0.051,
+				"content": 11.403,
+				"extras": 8.576,
+				"falls": 245.461,
+				"landmarks": 0.009,
+				"maps": 9.034,
+				"skirt": 1.466,
+				"terrain": 1.504
+			}
+		}
+	],
+	"refresh": {
+		"max_ms": 344.752,
+		"mean_ms": 284.5671,
+		"median_ms": 277.507,
+		"over_33_ms": 30,
+		"p95_ms": 342.643,
+		"samples": 30
+	},
+	"refresh_exceeds_33ms": true,
+	"requested_dab_hz": 30,
+	"scene": "bigfoot_life",
+	"sculpt_frames": {
+		"max_ms": 379.579,
+		"mean_ms": 98.2875,
+		"median_ms": 8.469,
+		"over_33_ms": 30,
+		"p95_ms": 353.155,
+		"samples": 102
+	},
+	"total_elapsed_ms": 10017.818,
+	"vsync": 0
+}

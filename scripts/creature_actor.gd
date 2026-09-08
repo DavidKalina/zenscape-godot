@@ -2,7 +2,7 @@ class_name CreatureActor
 extends Node3D
 ## A small interaction contract shared by animated inhabitants. Asset clips own
 ## performance; this node owns carrying, safe placement and attention.
-enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING }
+enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING }
 signal state_changed(value: State)
 signal landed()
 var state := State.IDLE
@@ -31,7 +31,55 @@ var _recover_from := Transform3D.IDENTITY
 var _recover_to := Transform3D.IDENTITY
 var _brace := Vector2.ZERO
 var _standing_basis := Basis.IDENTITY
+const WALK_SPEED_MPS := 0.54/(0.62*3.6)
 const WIND_BODY = preload("res://scripts/creature_wind_body.gd")
+
+## Navigation supplies a nearby, already validated point. Animation owns the
+## stride while this actor owns facing, locomotion and its latest safe feet.
+func can_roam() -> bool:
+	return player != null and state in [State.IDLE,State.ALERT,State.WALKING]
+
+## True means this waypoint was reached; keep the stride continuous until the
+## controller calls stop_walking at the final destination. False means progressing
+## or rejected by can_roam/input.
+func walk_step(destination: Vector3, speed: float, delta: float) -> bool:
+	if not can_roam() or not destination.is_finite() or not is_finite(speed) or not is_finite(delta) or speed <= 0.0 or delta <= 0.0:
+		return false
+	var offset := destination-global_position
+	var horizontal := Vector2(offset.x,offset.z).length()
+	var dt := minf(delta,0.05)
+	var distance := minf(speed*dt,horizontal)
+	var next_feet := destination if horizontal <= 0.001 else global_position+offset*(distance/horizontal)
+	if _ground_probe.is_valid():
+		var ground: Variant = _ground_probe.call(next_feet)
+		if not ground is Vector3 or not ground.is_finite():
+			stop_walking()
+			return false
+		next_feet.y = ground.y
+	if horizontal <= 0.001:
+		global_position = next_feet
+		_safe_position = next_feet
+		land_position = next_feet
+		return true
+	if state != State.WALKING:
+		_state(State.WALKING)
+		_play("Walk")
+	var yaw := atan2(offset.x,offset.z)
+	var facing := global_rotation.y
+	global_basis = Basis(Vector3.UP,lerp_angle(facing,yaw,1.0-exp(-7.0*dt)))
+	_standing_basis = global_basis
+	global_position = next_feet
+	_safe_position = global_position
+	land_position = global_position
+	player.speed_scale = speed/WALK_SPEED_MPS
+	if distance >= horizontal:
+		return true
+	return false
+
+func stop_walking() -> void:
+	if state != State.WALKING: return
+	_state(State.IDLE)
+	_play("Idle")
 
 func enable_wind(field: Node, ground_probe: Callable, safe_landing: Callable) -> void:
 	_standing_basis = global_basis.orthonormalized()
@@ -87,9 +135,9 @@ func setup(asset_path: String) -> void:
 	skeleton = rigs[0]
 	_head = skeleton.find_bone("Head")
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-	for clip in ["Idle","Held","Land","Alert"]:
+	for clip in ["Idle","Held","Land","Alert","Walk"]:
 		assert(player.has_animation(clip),"Missing inhabitant clip: "+clip)
-	for clip in ["Idle","Held"]:
+	for clip in ["Idle","Held","Walk"]:
 		player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	for clip in ["Land","Alert"]:
 		player.get_animation(clip).loop_mode = Animation.LOOP_NONE
@@ -101,6 +149,7 @@ func _process(delta: float) -> void:
 	advance(delta)
 
 func _play(clip: String) -> void:
+	player.speed_scale = 1.0
 	player.play(clip,0.12)
 	player.advance(0.0)
 

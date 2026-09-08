@@ -1,0 +1,470 @@
+{
+	"brush_radius": 2.2,
+	"brush_strength": 2.0,
+	"dab": {
+		"max_ms": 0.09,
+		"mean_ms": 0.0514,
+		"median_ms": 0.048,
+		"over_33_ms": 0,
+		"p95_ms": 0.072,
+		"samples": 30
+	},
+	"dab_count": 30,
+	"fps_cap": 120,
+	"gpu": "Apple M5 Pro (Apple9)",
+	"idle_frames": {
+		"max_ms": 8.969,
+		"mean_ms": 8.32329752066116,
+		"median_ms": 8.24,
+		"over_33_ms": 0,
+		"p95_ms": 8.894,
+		"samples": 121
+	},
+	"physical_size": [
+		1440,
+		900
+	],
+	"records": [
+		{
+			"dab_ms": 0.069,
+			"elapsed_ms": 35.551,
+			"index": 0,
+			"last_collision_ms": 3.219,
+			"last_navigation_ms": 5.541,
+			"mode": "raise",
+			"point": [
+				1.14999997615814,
+				2.70000004768372
+			],
+			"refresh_ms": 35.453,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.05,
+			"elapsed_ms": 76.134,
+			"index": 1,
+			"last_collision_ms": 5.778,
+			"last_navigation_ms": 6.125,
+			"mode": "raise",
+			"point": [
+				1.13370311260223,
+				2.8001344203949
+			],
+			"refresh_ms": 27.764,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.046,
+			"elapsed_ms": 107.19,
+			"index": 2,
+			"last_collision_ms": 5.454,
+			"last_navigation_ms": 5.47,
+			"mode": "raise",
+			"point": [
+				1.08562982082367,
+				2.8952476978302
+			],
+			"refresh_ms": 19.175,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.048,
+			"elapsed_ms": 153.758,
+			"index": 3,
+			"last_collision_ms": 5.007,
+			"last_navigation_ms": 5.541,
+			"mode": "raise",
+			"point": [
+				1.00819051265717,
+				2.9805703163147
+			],
+			"refresh_ms": 25.249,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.049,
+			"elapsed_ms": 183.8,
+			"index": 4,
+			"last_collision_ms": 5.639,
+			"last_navigation_ms": 5.483,
+			"mode": "raise",
+			"point": [
+				0.905268371105194,
+				3.05182409286499
+			],
+			"refresh_ms": 17.788,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.052,
+			"elapsed_ms": 219.325,
+			"index": 5,
+			"last_collision_ms": 5.123,
+			"last_navigation_ms": 5.405,
+			"mode": "raise",
+			"point": [
+				0.782024443149567,
+				3.10543608665466
+			],
+			"refresh_ms": 18.125,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.066,
+			"elapsed_ms": 257.462,
+			"index": 6,
+			"last_collision_ms": 4.941,
+			"last_navigation_ms": 5.48,
+			"mode": "raise",
+			"point": [
+				0.64463859796524,
+				3.13871765136719
+			],
+			"refresh_ms": 20.705,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.052,
+			"elapsed_ms": 293.58,
+			"index": 7,
+			"last_collision_ms": 5.331,
+			"last_navigation_ms": 5.407,
+			"mode": "raise",
+			"point": [
+				0.5,
+				3.15000009536743
+			],
+			"refresh_ms": 18.349,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.066,
+			"elapsed_ms": 332.267,
+			"index": 8,
+			"last_collision_ms": 4.637,
+			"last_navigation_ms": 5.441,
+			"mode": "raise",
+			"point": [
+				0.35536140203476,
+				3.13871765136719
+			],
+			"refresh_ms": 21.224,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.044,
+			"elapsed_ms": 365.796,
+			"index": 9,
+			"last_collision_ms": 4.89,
+			"last_navigation_ms": 5.302,
+			"mode": "raise",
+			"point": [
+				0.217975571751595,
+				3.10543608665466
+			],
+			"refresh_ms": 18.885,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.042,
+			"elapsed_ms": 399.281,
+			"index": 10,
+			"last_collision_ms": 5.28,
+			"last_navigation_ms": 5.357,
+			"mode": "raise",
+			"point": [
+				0.0947316288948059,
+				3.05182409286499
+			],
+			"refresh_ms": 18.825,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.045,
+			"elapsed_ms": 433.094,
+			"index": 11,
+			"last_collision_ms": 5.256,
+			"last_navigation_ms": 5.329,
+			"mode": "raise",
+			"point": [
+				-0.00819046329706907,
+				2.9805703163147
+			],
+			"refresh_ms": 19.153,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.047,
+			"elapsed_ms": 465.417,
+			"index": 12,
+			"last_collision_ms": 4.891,
+			"last_navigation_ms": 5.417,
+			"mode": "raise",
+			"point": [
+				-0.0856297612190247,
+				2.8952476978302
+			],
+			"refresh_ms": 17.557,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.051,
+			"elapsed_ms": 507.559,
+			"index": 13,
+			"last_collision_ms": 4.62,
+			"last_navigation_ms": 5.432,
+			"mode": "raise",
+			"point": [
+				-0.133703142404556,
+				2.8001344203949
+			],
+			"refresh_ms": 24.737,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.044,
+			"elapsed_ms": 540.891,
+			"index": 14,
+			"last_collision_ms": 5.099,
+			"last_navigation_ms": 5.538,
+			"mode": "raise",
+			"point": [
+				-0.150000005960464,
+				2.70000004768372
+			],
+			"refresh_ms": 21.563,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.043,
+			"elapsed_ms": 578.869,
+			"index": 15,
+			"last_collision_ms": 5.374,
+			"last_navigation_ms": 5.554,
+			"mode": "lower",
+			"point": [
+				1.14999997615814,
+				2.70000004768372
+			],
+			"refresh_ms": 25.946,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.047,
+			"elapsed_ms": 615.29,
+			"index": 16,
+			"last_collision_ms": 5.624,
+			"last_navigation_ms": 5.463,
+			"mode": "lower",
+			"point": [
+				1.13370311260223,
+				2.8001344203949
+			],
+			"refresh_ms": 24.607,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.058,
+			"elapsed_ms": 648.478,
+			"index": 17,
+			"last_collision_ms": 4.784,
+			"last_navigation_ms": 5.673,
+			"mode": "lower",
+			"point": [
+				1.08562982082367,
+				2.8952476978302
+			],
+			"refresh_ms": 21.915,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.044,
+			"elapsed_ms": 681.941,
+			"index": 18,
+			"last_collision_ms": 4.435,
+			"last_navigation_ms": 5.589,
+			"mode": "lower",
+			"point": [
+				1.00819051265717,
+				2.9805703163147
+			],
+			"refresh_ms": 22.048,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.042,
+			"elapsed_ms": 711.436,
+			"index": 19,
+			"last_collision_ms": 4.34,
+			"last_navigation_ms": 5.582,
+			"mode": "lower",
+			"point": [
+				0.905268371105194,
+				3.05182409286499
+			],
+			"refresh_ms": 17.972,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.05,
+			"elapsed_ms": 757.101,
+			"index": 20,
+			"last_collision_ms": 5.798,
+			"last_navigation_ms": 5.584,
+			"mode": "lower",
+			"point": [
+				0.782024443149567,
+				3.10543608665466
+			],
+			"refresh_ms": 21.74,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.048,
+			"elapsed_ms": 799.357,
+			"index": 21,
+			"last_collision_ms": 5.527,
+			"last_navigation_ms": 5.469,
+			"mode": "lower",
+			"point": [
+				0.64463859796524,
+				3.13871765136719
+			],
+			"refresh_ms": 18.431,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.047,
+			"elapsed_ms": 831.804,
+			"index": 22,
+			"last_collision_ms": 4.97,
+			"last_navigation_ms": 5.539,
+			"mode": "lower",
+			"point": [
+				0.5,
+				3.15000009536743
+			],
+			"refresh_ms": 17.528,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.09,
+			"elapsed_ms": 866.852,
+			"index": 23,
+			"last_collision_ms": 4.547,
+			"last_navigation_ms": 5.405,
+			"mode": "lower",
+			"point": [
+				0.35536140203476,
+				3.13871765136719
+			],
+			"refresh_ms": 17.56,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.044,
+			"elapsed_ms": 903.127,
+			"index": 24,
+			"last_collision_ms": 4.953,
+			"last_navigation_ms": 5.411,
+			"mode": "lower",
+			"point": [
+				0.217975571751595,
+				3.10543608665466
+			],
+			"refresh_ms": 18.361,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.044,
+			"elapsed_ms": 940.435,
+			"index": 25,
+			"last_collision_ms": 6.352,
+			"last_navigation_ms": 5.52,
+			"mode": "lower",
+			"point": [
+				0.0947316288948059,
+				3.05182409286499
+			],
+			"refresh_ms": 19.899,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.046,
+			"elapsed_ms": 976.321,
+			"index": 26,
+			"last_collision_ms": 5.367,
+			"last_navigation_ms": 5.747,
+			"mode": "lower",
+			"point": [
+				-0.00819046329706907,
+				2.9805703163147
+			],
+			"refresh_ms": 18.163,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.072,
+			"elapsed_ms": 1012.191,
+			"index": 27,
+			"last_collision_ms": 4.893,
+			"last_navigation_ms": 5.619,
+			"mode": "lower",
+			"point": [
+				-0.0856297612190247,
+				2.8952476978302
+			],
+			"refresh_ms": 18.458,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.049,
+			"elapsed_ms": 1049.608,
+			"index": 28,
+			"last_collision_ms": 5.221,
+			"last_navigation_ms": 5.977,
+			"mode": "lower",
+			"point": [
+				-0.133703142404556,
+				2.8001344203949
+			],
+			"refresh_ms": 21.961,
+			"stages": {}
+		},
+		{
+			"dab_ms": 0.047,
+			"elapsed_ms": 1083.719,
+			"index": 29,
+			"last_collision_ms": 5.458,
+			"last_navigation_ms": 6.147,
+			"mode": "lower",
+			"point": [
+				-0.150000005960464,
+				2.70000004768372
+			],
+			"refresh_ms": 18.514,
+			"stages": {}
+		}
+	],
+	"refresh": {
+		"max_ms": 35.453,
+		"mean_ms": 20.9218333333333,
+		"median_ms": 19.175,
+		"over_33_ms": 1,
+		"p95_ms": 27.764,
+		"samples": 30
+	},
+	"refresh_exceeds_33ms": true,
+	"requested_dab_hz": 30,
+	"scene": "bigfoot_life",
+	"sculpt_frames": {
+		"max_ms": 48.318,
+		"mean_ms": 10.384490797546,
+		"median_ms": 8.307,
+		"over_33_ms": 4,
+		"p95_ms": 30.378,
+		"samples": 163
+	},
+	"total_elapsed_ms": 1685.041,
+	"vsync": 0
+}

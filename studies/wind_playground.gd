@@ -132,9 +132,12 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if creature == null: return
 	creature.set_process(not _paused)
-	creature.set_physics_process(not building and not _paused)
+	creature.set_physics_process(_play_physics_enabled() and not _paused)
 	if creature.wind_body != null:
-		creature.wind_body.freeze = _paused or building or not creature.wind_body.active
+		creature.wind_body.freeze = _paused or not _play_physics_enabled() or not creature.wind_body.active
+
+func _play_physics_enabled() -> bool:
+	return not building
 
 func _over_controls(mouse: Vector2) -> bool:
 	if _wind_panel.is_inside_tree() and _wind_panel.get_global_rect().has_point(mouse): return true

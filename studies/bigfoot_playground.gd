@@ -21,6 +21,7 @@ func _ready() -> void:
 	_bigfoot.automatic_enabled = false
 	_bigfoot.active = false
 	_bigfoot.visible = false
+	_chunk_editor.update_encounter_ground = false
 	_ui.visible = false
 	_chunk_editor.start_flat()
 	var data := _chunk_editor.data

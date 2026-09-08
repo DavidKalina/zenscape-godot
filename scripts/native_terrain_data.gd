@@ -74,8 +74,17 @@ var _ground_tint := Color("b49d78").srgb_to_linear()
 ## compare them costs more than the refresh it is meant to shorten, so every
 ## method here that touches `objects` reports the change instead.
 var objects_revision := 0
+## A waterfall queries the same pond at each cross-section. Reuse its exact
+## flood within one terrain state instead of rebuilding topology every time.
+const POND_CACHE_LIMIT := 16
+var _pond_surfaces := {}
+var _pond_cache_heights := PackedFloat32Array()
+var _pond_cache_state := PackedByteArray()
+var pond_cache_hits := 0
+var pond_cache_misses := 0
 
 func setup(mesh: ArrayMesh) -> void:
+	_clear_pond_cache()
 	blades.resize(MEADOW_CELLS*MEADOW_CELLS)
 	blades.fill(0.0)
 	grass.resize(MEADOW_CELLS*MEADOW_CELLS)
@@ -403,6 +412,7 @@ func moved_region(snapshot: PackedFloat32Array) -> Variant:
 ## Throw away everything the incremental refresh remembers, so the next build
 ## starts from the records alone.
 func discard_cache() -> void:
+	_clear_pond_cache()
 	_mesh_result = null
 	_shore_ready = false
 	_strands_ready = false
@@ -803,7 +813,30 @@ func erase_objects(point: Vector2, radius: float) -> void:
 	objects_revision += 1
 
 func pond_surface(pond: Dictionary) -> PackedVector3Array:
-	return NativeGardenWater.surface(self,pond)
+	# Probe callers need the terrain reads as well as the result. Let the native
+	# flood record those dependencies rather than hiding reads behind a hit.
+	if _probing:
+		return NativeGardenWater.surface(self,pond)
+	var state := var_to_bytes([_recipe_settings, _recipe != null, streams, ponds, landscape_waterfall])
+	if heights != _pond_cache_heights or state != _pond_cache_state:
+		_pond_surfaces.clear()
+		_pond_cache_heights = heights.duplicate()
+		_pond_cache_state = state
+	var key := var_to_bytes(pond).hex_encode()
+	if _pond_surfaces.has(key):
+		pond_cache_hits += 1
+		return (_pond_surfaces[key] as PackedVector3Array).duplicate()
+	pond_cache_misses += 1
+	var surface := NativeGardenWater.surface(self,pond)
+	if _pond_surfaces.size() >= POND_CACHE_LIMIT:
+		_pond_surfaces.erase(_pond_surfaces.keys()[0])
+	_pond_surfaces[key] = surface.duplicate()
+	return surface
+
+func _clear_pond_cache() -> void:
+	_pond_surfaces.clear()
+	_pond_cache_heights = PackedFloat32Array()
+	_pond_cache_state = PackedByteArray()
 
 func pond_fetch(point: Vector2, level: float) -> PackedFloat32Array:
 	var distances := PackedFloat32Array()

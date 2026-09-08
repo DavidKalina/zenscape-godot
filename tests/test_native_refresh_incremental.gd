@@ -124,6 +124,19 @@ func run() -> void:
 	editor.force_refresh()
 	check("redo result is what a full rebuild produces", redone == capture(scene, editor))
 
+	# A content revision can change water even with unchanged terrain heights.
+	# Both the departed footprint and destination must be repainted exactly.
+	for stream in editor.data.streams:
+		for point in stream.pts: point.x *= 0.94
+	editor.refresh()
+	compare(scene,editor,"shifted stream footprints match a full rebuild")
+	editor.data.streams.clear()
+	editor.refresh()
+	compare(scene,editor,"removed streams clear their previous pixels exactly")
+	editor.data.ponds.clear()
+	editor.refresh()
+	compare(scene,editor,"removed ponds clear their previous pixels exactly")
+
 	print("Native incremental refresh: %d failures" % failures)
 	scene.queue_free()
 	await process_frame
