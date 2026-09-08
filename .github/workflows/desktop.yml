@@ -23,6 +23,10 @@ jobs:
     name: Export Windows and macOS
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    permissions:
+      contents: write # Private draft build downloads; PR runs only export.
+    outputs:
+      release-tag: ${{ steps.downloads.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -78,40 +82,31 @@ jobs:
           printf 'Commit: %s\nGodot: %s\n' "$GITHUB_SHA" "$GODOT_VERSION" > builds/windows/BUILD.txt
           (cd builds/windows && zip -r ../ZenScape-windows-x64.zip .)
 
-      - name: Upload Windows download
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZenScape-windows-x64
-          path: builds/ZenScape-windows-x64.zip
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-
-      - name: Upload Mac download
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZenScape-mac-universal
-          path: builds/ZenScape-mac-universal.zip
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-
-      - name: Download instructions
+      - name: Create private draft build downloads
+        id: downloads
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          tag="desktop-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          url="$(gh release create "$tag" builds/ZenScape-windows-x64.zip builds/ZenScape-mac-universal.zip \
+            --draft --target "$GITHUB_SHA" --title "Godot desktop · ${GITHUB_REF_NAME} · ${GITHUB_SHA:0:7}" \
+            --notes-file docs/desktop-builds.md)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          printf '## Godot desktop downloads\n\n[Download Windows and Mac builds](%s)\n\nCommit: `%s`\n\n' "$url" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ## ZenScape · Godot desktop builds
-          Download an artifact at the bottom of this run's page, then extract both the artifact and the ZIP inside it.
+          - **Windows:** extract `ZenScape-windows-x64.zip` and open `ZenScape.exe`. Keep its `.pck` and DLLs beside it.
+          - **Mac (Apple Silicon or Intel):** extract `ZenScape-mac-universal.zip`, move `ZenScape.app` to Applications, and open it.
 
-          - **Windows:** open `ZenScape.exe`. Keep its `.pck` and any DLLs beside it.
-          - **Mac (Apple Silicon or Intel):** move `ZenScape.app` to Applications and open it.
-
-          These are personal test builds without publisher certificates. See `docs/desktop-builds.md` for first-launch instructions.
-          Native smoke checks below verify headless startup; test graphics and mouse feel on your own GPU.
+          Sign into GitHub with repository write access to view these draft downloads.
+          Native startup checks below must pass before treating these builds as verified.
+          These are personal test builds without publisher certificates; see the release notes for first-launch instructions.
           EOF
 
   smoke:
     name: Startup check (${{ matrix.platform }})
     needs: export
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -125,10 +120,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: build
+      - name: Download exported game
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.export.outputs.release-tag }}
+          ARCHIVE_NAME: ${{ matrix.artifact }}.zip
+        run: |
+          mkdir -p build
+          gh release download "$BUILD_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ARCHIVE_NAME" --dir build
 
       - name: Launch Windows export
         if: runner.os == 'Windows'
@@ -149,11 +149,3 @@ jobs:
           "$executable" --headless --quit-after 120 --log-file "$PWD/startup.log"
           cat startup.log
           ! grep -E 'SCRIPT ERROR:|ERROR:' startup.log
-
-      - name: Keep startup log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: startup-log-${{ matrix.platform }}
-          path: startup.log
-          retention-days: 7
