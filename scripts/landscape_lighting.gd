@@ -51,7 +51,9 @@ func setup(source: Dictionary) -> void:
 		light.directional_shadow_fade_start = 1.0
 		light.shadow_bias = 0.08
 		light.shadow_normal_bias = 0.8
-		light.shadow_blur = 0.2
+		# A tight but adequately sampled edge: 0.2 exposed shadow-map steps;
+		# 0.5 with medium PCF smooths the silhouette without a broad penumbra.
+		light.shadow_blur = 0.5
 		# Three.js has no environment map: direct GGX only, no split-sum glaze.
 		light.light_specular = 1.0
 		# Source PCFSoftShadowMap filters edges without a distance-growing penumbra.
