@@ -28,6 +28,8 @@ window/vsync/vsync_mode=0
 
 [rendering]
 
+textures/vram_compression/import_s3tc_bptc=true
+textures/vram_compression/import_etc2_astc=true
 renderer/rendering_method.mobile="gl_compatibility"
 anti_aliasing/quality/msaa_3d=2
 lights_and_shadows/directional_shadow/size=8192

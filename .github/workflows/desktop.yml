@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: godot-desktop-${{ github.ref }}
   cancel-in-progress: true
@@ -69,15 +73,18 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/godot" --version
           "$HOME/.local/bin/godot" --headless --path . --import 2>&1 | tee import.log
-          ! grep -E 'SCRIPT ERROR:|ERROR:' import.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' import.log; then exit 1; fi
 
       - name: Export release builds
         run: |
           mkdir -p builds/windows
           godot --headless --path . --export-release Windows 2>&1 | tee windows-export.log
-          ! grep -E 'SCRIPT ERROR:|ERROR:' windows-export.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' windows-export.log; then exit 1; fi
           godot --headless --path . --export-release macOS 2>&1 | tee mac-export.log
-          ! grep -E 'SCRIPT ERROR:|ERROR:' mac-export.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' mac-export.log; then exit 1; fi
+          test -s builds/windows/ZenScape.exe
+          test -s builds/windows/ZenScape.pck
+          test -s builds/ZenScape-mac-universal.zip
           cp docs/desktop-builds.md builds/windows/README.md
           printf 'Commit: %s\nGodot: %s\n' "$GITHUB_SHA" "$GODOT_VERSION" > builds/windows/BUILD.txt
           (cd builds/windows && zip -r ../ZenScape-windows-x64.zip .)
@@ -148,4 +155,4 @@ jobs:
           test -n "$executable"
           "$executable" --headless --quit-after 120 --log-file "$PWD/startup.log"
           cat startup.log
-          ! grep -E 'SCRIPT ERROR:|ERROR:' startup.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' startup.log; then exit 1; fi
