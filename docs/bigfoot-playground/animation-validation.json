@@ -1,0 +1,169 @@
+{
+  "fps": 30,
+  "forward": "Godot +Z / Blender -Y",
+  "clips": {
+    "Idle": {
+      "duration": 4.0,
+      "loop": true,
+      "minimum_height": -5.018865181227739e-07,
+      "endpoint_matrix_delta": 0.0,
+      "bounds_blender": [
+        [
+          -0.6111639142036438,
+          -0.5723200440406799,
+          -5.018865181227739e-07
+        ],
+        [
+          0.5662073493003845,
+          0.29511481523513794,
+          2.716012477874756
+        ]
+      ],
+      "hand_heads_blender_first_frame": [
+        [
+          -0.4235363304615021,
+          -0.225249245762825,
+          0.7026826739311218
+        ],
+        [
+          0.4084949195384979,
+          -0.2756686806678772,
+          0.713071882724762
+        ]
+      ]
+    },
+    "Held": {
+      "duration": 3.0,
+      "loop": true,
+      "minimum_height": 0.03127370402216911,
+      "endpoint_matrix_delta": 0.0,
+      "bounds_blender": [
+        [
+          -1.6296137571334839,
+          -1.0638114213943481,
+          0.03127370402216911
+        ],
+        [
+          1.5939736366271973,
+          0.31231093406677246,
+          2.711911678314209
+        ]
+      ],
+      "hand_heads_blender_first_frame": [
+        [
+          -1.346174716949463,
+          -0.5697495937347412,
+          1.4244513511657715
+        ],
+        [
+          1.0199830532073975,
+          -0.8155413866043091,
+          1.1120160818099976
+        ]
+      ]
+    },
+    "Land": {
+      "duration": 0.7,
+      "loop": false,
+      "minimum_height": -5.1529841584851965e-06,
+      "endpoint_matrix_delta": 0.0,
+      "bounds_blender": [
+        [
+          -0.6111639142036438,
+          -0.7274988293647766,
+          -5.1529841584851965e-06
+        ],
+        [
+          0.566207230091095,
+          0.28766000270843506,
+          2.711911678314209
+        ]
+      ],
+      "hand_heads_blender_first_frame": [
+        [
+          -0.4235363304615021,
+          -0.225249245762825,
+          0.7026826739311218
+        ],
+        [
+          0.4084949195384979,
+          -0.2756686806678772,
+          0.713071882724762
+        ]
+      ]
+    },
+    "Alert": {
+      "duration": 1.2,
+      "loop": false,
+      "minimum_height": -3.355262947479787e-07,
+      "endpoint_matrix_delta": 0.0,
+      "bounds_blender": [
+        [
+          -0.6111639142036438,
+          -0.5629500150680542,
+          -3.355262947479787e-07
+        ],
+        [
+          0.5715450644493103,
+          0.29043713212013245,
+          2.7239115238189697
+        ]
+      ],
+      "hand_heads_blender_first_frame": [
+        [
+          -0.4235363304615021,
+          -0.225249245762825,
+          0.7026826739311218
+        ],
+        [
+          0.4084949195384979,
+          -0.2756686806678772,
+          0.713071882724762
+        ]
+      ]
+    }
+  },
+  "source": "zenscape-bigfoot-classic.blend",
+  "export_animations": [
+    "Alert",
+    "Held",
+    "Idle",
+    "Land",
+    "Walk"
+  ],
+  "exported_bones": 31,
+  "bone_names": [
+    "Pelvis",
+    "Spine",
+    "Head",
+    "UpperArm_L",
+    "Forearm_L",
+    "Hand_L",
+    "Finger_L_1",
+    "Finger_L_1_Tip",
+    "Finger_L_2",
+    "Finger_L_2_Tip",
+    "Finger_L_3",
+    "Finger_L_3_Tip",
+    "Finger_L_4",
+    "Finger_L_4_Tip",
+    "UpperArm_R",
+    "Forearm_R",
+    "Hand_R",
+    "Finger_R_1",
+    "Finger_R_1_Tip",
+    "Finger_R_2",
+    "Finger_R_2_Tip",
+    "Finger_R_3",
+    "Finger_R_3_Tip",
+    "Finger_R_4",
+    "Finger_R_4_Tip",
+    "Thigh_L",
+    "Calf_L",
+    "Foot_L",
+    "Thigh_R",
+    "Calf_R",
+    "Foot_R"
+  ],
+  "walk_channels_preserved_exactly": 93
+}

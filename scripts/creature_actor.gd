@@ -1,0 +1,152 @@
+class_name CreatureActor
+extends Node3D
+## A small interaction contract shared by animated inhabitants. Asset clips own
+## performance; this node owns carrying, safe placement and attention.
+enum State { IDLE, HELD, LANDING, ALERT }
+signal state_changed(value: State)
+signal landed()
+var state := State.IDLE
+var actor: Node3D
+var player: AnimationPlayer
+var skeleton: Skeleton3D
+var land_position := Vector3.ZERO
+var grasp_height := 2.70
+var _safe_position := Vector3.ZERO
+var _visual := Node3D.new()
+var _head := -1
+var _gaze := Vector3.ZERO
+var _gaze_weight := 0.0
+var _gaze_yaw := 0.0
+var _gaze_pitch := 0.0
+var _age := 0.0
+var _vertical_speed := 0.0
+var _touchdown := false
+var _sway := Vector2.ZERO
+
+func setup(asset_path: String) -> void:
+	add_child(_visual)
+	actor = load(asset_path).instantiate()
+	_visual.add_child(actor)
+	player = actor.find_child("AnimationPlayer",true,false)
+	var rigs := actor.find_children("*","Skeleton3D",true,false)
+	assert(player != null and rigs.size() == 1,"An inhabitant needs an animation player and one skeleton")
+	skeleton = rigs[0]
+	_head = skeleton.find_bone("Head")
+	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	for clip in ["Idle","Held","Land","Alert"]:
+		assert(player.has_animation(clip),"Missing inhabitant clip: "+clip)
+	for clip in ["Idle","Held"]:
+		player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+	for clip in ["Land","Alert"]:
+		player.get_animation(clip).loop_mode = Animation.LOOP_NONE
+	_safe_position = global_position
+	land_position = _safe_position
+	_play("Idle")
+
+func _process(delta: float) -> void:
+	advance(delta)
+
+func _play(clip: String) -> void:
+	player.play(clip,0.12)
+	player.advance(0.0)
+
+func _state(value: State) -> void:
+	state = value
+	_age = 0.0
+	state_changed.emit(value)
+
+func is_held() -> bool:
+	return state == State.HELD
+
+func pick_up() -> bool:
+	if state == State.HELD or player == null:
+		return false
+	_sway = Vector2.ZERO
+	_vertical_speed = 0.0
+	_touchdown = false
+	_state(State.HELD)
+	_play("Held")
+	return true
+
+func move_held(world_position: Vector3, delta: float) -> void:
+	if not is_held() or not world_position.is_finite():
+		return
+	var dt := maxf(delta,0.001)
+	var velocity := (world_position-global_position)/dt
+	_sway = Vector2(clampf(velocity.z*0.018,-0.24,0.24),clampf(-velocity.x*0.018,-0.24,0.24))
+	global_position = world_position
+
+## Invalid ground returns to the last safe spot; it never drops into the void.
+func release_at(point: Variant) -> bool:
+	if not is_held():
+		return false
+	var valid: bool = point is Vector3 and point.is_finite()
+	land_position = point if valid else _safe_position
+	global_position.y = maxf(global_position.y,land_position.y+0.12)
+	_vertical_speed = 0.0
+	_touchdown = false
+	_state(State.LANDING)
+	return valid
+
+func notice(point: Vector3) -> void:
+	if not point.is_finite():
+		return
+	_gaze = point
+	_gaze_weight = 1.0
+	if state == State.IDLE or state == State.ALERT:
+		_state(State.ALERT)
+		_play("Alert")
+
+func reset_at(point: Vector3) -> void:
+	if not point.is_finite(): return
+	global_position = point
+	land_position = point
+	_safe_position = point
+	_touchdown = false
+	_sway = Vector2.ZERO
+	_visual.rotation = Vector3.ZERO
+	_visual.position = Vector3.ZERO
+	_state(State.IDLE)
+	_play("Idle")
+
+func advance(delta: float) -> void:
+	if player == null or delta <= 0.0: return
+	var dt := minf(delta,0.05)
+	_age += dt
+	if state == State.LANDING:
+		if not _touchdown:
+			_vertical_speed += 12.0*dt
+			global_position.x = move_toward(global_position.x,land_position.x,16.0*dt)
+			global_position.z = move_toward(global_position.z,land_position.z,16.0*dt)
+			global_position.y = maxf(land_position.y,global_position.y-_vertical_speed*dt)
+			if global_position.y <= land_position.y+0.001 and Vector2(global_position.x-land_position.x,global_position.z-land_position.z).length() < 0.01:
+				global_position = land_position
+				_safe_position = land_position
+				_touchdown = true
+				_age = 0.0
+				_play("Land")
+				landed.emit()
+		elif _age >= player.get_animation("Land").length:
+			_state(State.IDLE)
+			_play("Idle")
+	elif state == State.ALERT and _age >= player.get_animation("Alert").length:
+		_state(State.IDLE)
+		_play("Idle")
+	player.advance(dt)
+	var response := 1.0-exp(-10.0*dt)
+	var goal := _sway if state == State.HELD else Vector2.ZERO
+	_visual.rotation.x = lerpf(_visual.rotation.x,goal.x,response)
+	_visual.rotation.z = lerpf(_visual.rotation.z,goal.y,response)
+	var grip := Vector3(0,grasp_height,0.04)
+	_visual.position = grip-_visual.basis*grip if is_held() else _visual.position.lerp(Vector3.ZERO,response)
+	_sway = _sway.lerp(Vector2.ZERO,1.0-exp(-4.0*dt))
+	# Small additive head turns layer over authored poses. Re-read the animated
+	# bone each frame rather than accumulating rotations into the animation.
+	if _head >= 0:
+		var local := to_local(_gaze)-Vector3.UP*2.15
+		var weight := _gaze_weight if state != State.HELD else 0.0
+		_gaze_yaw = lerpf(_gaze_yaw,clampf(atan2(local.x,local.z),-0.45,0.45)*weight,response)
+		_gaze_pitch = lerpf(_gaze_pitch,clampf(-atan2(local.y,maxf(Vector2(local.x,local.z).length(),0.1)),-0.18,0.18)*weight,response)
+		var base := skeleton.get_bone_pose_rotation(_head)
+		skeleton.set_bone_pose_rotation(_head,base*Quaternion.from_euler(Vector3(_gaze_pitch,_gaze_yaw,0)))
+	_gaze_weight = maxf(0.0,_gaze_weight-dt*0.18)
