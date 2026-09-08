@@ -17,6 +17,12 @@ func _run() -> void:
 	RenderingServer.force_draw(false)
 	var result := root.get_texture().get_image().save_png("res://docs/garden/palette.png")
 	print("Palette capture: docs/garden/palette.png result=",result)
+	scene._build_palette._show_category("Sky")
+	for i in range(6):
+		await process_frame
+	RenderingServer.force_draw(false)
+	var sky := root.get_texture().get_image().save_png("res://docs/garden/palette-sky.png")
+	print("Sky capture: docs/garden/palette-sky.png result=",sky)
 	scene.queue_free()
 	await process_frame
 	quit(0)

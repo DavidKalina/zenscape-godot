@@ -168,6 +168,53 @@ func _run() -> void:
 	check(editor.data.objects.is_empty(),"Releasing off the world places nothing")
 	check(palette.ghost() == null and editor.content.find_child("PaletteGhost",true,false) == null,"A cancelled drag leaves no ghost")
 	check(editor.data.to_document() == saved,"A cancelled drag changes no record")
+	# The sky tab: swatches for the whole sky, sliders for its parts, and never
+	# a change to the tool waiting in hand.
+	editor.select_tool("tree")
+	for i in range(2):
+		await process_frame
+	check(palette.strip_fits(),"The tree strip shows every control without scrolling")
+	var custom: CheckBox = palette.find_child("CustomColor",true,false)
+	check(custom != null and palette.get_global_rect().encloses(custom.get_global_rect()),"Custom color sits inside the bar for the tree tool")
+	var weathers: Array = scene._precipitation.PRESET_NAMES
+	check(palette._tabs_by_name.has("Sky"),"The palette offers a Sky tab")
+	for i in range(3):
+		check(palette.sky_tile_for("mood_%d" % i) != null,"The sky deck carries mood swatch %d" % i)
+	for preset: String in weathers:
+		check(palette.sky_tile_for("weather_"+preset) != null,"The sky deck carries a %s swatch" % preset)
+	palette._tabs_by_name["Sky"].pressed.emit()
+	for i in range(2):
+		await process_frame
+	check(palette.category() == "Sky","The Sky tab shows the sky deck")
+	check(editor.mode == "tree","Choosing the sky leaves the tool in hand alone")
+	check(palette.strip_fits(),"The sky strip shows every dial without scrolling")
+	palette.sky_tile_for("weather_snow").pressed.emit()
+	check(scene._precipitation.preset_index == weathers.find("snow"),"A weather swatch sets the scene's preset")
+	check(palette.sky_tile_for("weather_snow").button_pressed,"The chosen weather swatch reads as selected")
+	palette.sky_tile_for("weather_mist").pressed.emit()
+	check(scene._precipitation.preset_index == weathers.find("mist") and not palette.sky_tile_for("weather_snow").button_pressed,"Choosing another preset moves the selection")
+	var time_row: Dictionary = palette.sky_row("time")
+	check(not time_row.is_empty(),"The sky strip holds a time of day slider")
+	time_row.control.value = 0.62
+	check(is_equal_approx(scene._celestial.phase,0.62),"The time slider moves the sun")
+	scene._celestial.set_phase(0.21)
+	await process_frame
+	check(is_equal_approx(time_row.control.value,0.21),"The time slider follows the scene back")
+	for dial: String in ["clouds","fog","wind","haze","autumn","cold","night_fill","summit_mist"]:
+		check(not palette.sky_row(dial).is_empty(),"The sky strip holds a %s slider" % dial)
+	palette.sky_row("wind").control.value = 1.35
+	check(is_equal_approx(scene._atmosphere.strength,1.35),"The wind slider carries into the air")
+	palette.sky_row("haze").control.value = 0.4
+	check(is_equal_approx(scene._atmosphere.haze_amount,0.4),"The haze slider carries into the air")
+	var sky_key := InputEventKey.new()
+	sky_key.keycode = KEY_K
+	sky_key.pressed = true
+	editor.handle_input(sky_key)
+	check(palette.category() != "Sky" and editor.mode == "tree","K folds the sky away without changing the tool")
+	editor.handle_input(sky_key)
+	check(palette.category() == "Sky","K opens the sky again")
+	editor.select_tool("rock")
+	check(palette.category() == "Place" and not palette.sky_row("time").has("control"),"Picking a tool restores its own strip")
 	# Hiding the scene UI hides the palette with it.
 	scene._ui.visible = false
 	check(not palette.is_visible_in_tree(),"Hiding the scene UI hides the palette")

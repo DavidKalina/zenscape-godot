@@ -23,8 +23,10 @@ same camera, environment, imported chunk and shaders. Escape returns to Inspect.
   the actual mesh. The shared flood algorithm refuses open basins and replacing
   a connected pond avoids duplicate water. Rendering uses the native lake shader,
   depth attributes and directional wind-fetch data.
-- Build includes a Sky & weather foldout with golden hour, misty dawn, night,
-  weather presets, time, clouds and mist, all driving the original scene.
+- Build includes a Sky tab on the palette (also `K`) with golden hour, misty
+  dawn and night swatches, a swatch per weather preset, and sliders for time,
+  clouds, mist, wind, haze, autumn, cold, night fill and summit mist, all
+  driving the original scene. Choosing the tab never changes the active tool.
   Original weather/time/atmosphere controls remain available. Weather and fog
   surface maps update after edits. Rain's ceiling follows tall hills; the display
   fog floor follows deep hollows. Terrain formation temporarily suspends picking.
@@ -60,10 +62,25 @@ editor's `ACTIONS` table appears on its own tool's strip and on no other, that
 Cover chunk in grass pressed through the palette spreads the strip's density
 over the chunk, and that the Custom color box and picker drive `custom_tint` and
 `object_tint`. Every per-tool control now lives on the palette; the side panel
-keeps only the Build/Inspect toggle, Start flat, Undo/Redo, Save/Open, the
-status line and the sky and weather foldout, so it no longer overlaps the bar.
+keeps only the Build/Inspect toggle, Start flat, Undo/Redo, Save/Open and the
+status line, so it no longer overlaps the bar.
 `docs/garden/palette.png` is the native capture of Build mode with the Place row
 open.
+
+The same test covers the Sky tab: it exists beside the tool groups, carries a
+swatch for each of the three moods and each `PRESET_NAMES` weather preset,
+choosing it leaves `editor.mode` untouched, clicking a weather swatch moves
+`scene._precipitation.preset_index` and lights that swatch alone, the time
+slider drives `_celestial.phase` and follows the scene back after `set_phase`,
+the wind and haze sliders reach `_atmosphere.strength` and `haze_amount`, and
+`K` folds the tab in and out with the tool still in hand
+(`tests/test_native_editor_hotkeys.gd` checks the same through the hotkey).
+Strip height is checked rather than eyeballed: `palette.strip_fits()` compares
+the strip's content height against the scrolling area, and the test asserts it
+for the tree tool (the deepest set of sliders, eight of them) and for the sky
+strip on a 1280x800 window, with the Custom color box proved to sit inside
+`palette.get_global_rect()`. The bar is 190 px, the settings grid lays out in
+three columns and the status hint moved onto the tab row to pay for it.
 
 `tests/test_native_build_tools.gd` checks one-dab grass visibility without flowers,
 full coverage and undo, v3 migration and v4 roundtrip, malformed density rejection,

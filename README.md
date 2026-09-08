@@ -75,20 +75,29 @@ or press Esc from the fidelity scene. Existing terrain saves migrate automatical
 Use **Start flat** for bare earth; Undo restores the previous garden.
 
 Build opens a **palette** across the bottom of the screen: category tabs
-(Sculpt, Landscape, Cover, Place, Water) over one row of large tiles. Every tree,
-rock, flower, arch and catalog piece shows a portrait of the object itself, and
-every control for the tool in hand sits beside the row: its sliders, its
+(Sculpt, Landscape, Cover, Place, Water, Sky) over one row of large tiles. Every
+tree, rock, flower, arch and catalog piece shows a portrait of the object itself,
+and every control for the tool in hand sits beside the row: its sliders, its
 one-shot actions (Form ground foundation, Form mountain landscape, Fill
 landscape streams / waterfall / flora, Cover chunk in grass, Remove Blades-tool
 patches) and its colour - the Paint colour, or the Custom color box and picker
 that tint a placement. Click a tile to pick the tool, or **drag a tile into the
 world**: a translucent ghost follows the ground under the pointer, and releasing
 plants the object with its drop reaction. Releasing away from the ground
-cancels. The side panel keeps only what is not per-tool: the Build/Inspect
-toggle, Start flat, Undo/Redo, Save/Open, the status line and the sky and
-weather foldout.
+cancels.
+
+The **Sky** tab (or **K**) holds the weather instead of a tool, so the brush in
+hand is untouched while you work on it: swatches for Golden hour, Misty dawn and
+Night, one for every weather preset (Clear, Rain, Storm, Snow, Fair, Overcast,
+Mist, Autumn), and sliders for time of day, cloud cover, mist, wind, haze,
+autumn, cold, night fill and summit mist. They read the scene back as it drifts,
+so the fidelity study's own weather controls and these never disagree. The side
+panel keeps only what is not per-tool: the Build/Inspect toggle, Start flat,
+Undo/Redo, Save/Open and the status line.
 
 ![Build palette](docs/garden/palette.png)
+
+![The Sky tab](docs/garden/palette-sky.png)
 
 - Raise a hill, lower a hollow, smooth slopes, or flatten to the clicked height.
 - **Meadow:** brush grass and wildflowers onto the earth; slower strokes add density.
@@ -110,6 +119,7 @@ weather foldout.
 | Left click | Place selected object / fill pond |
 | Drag from a palette tile | Carry the object into the world and drop it |
 | 1 / 2 / 3 / 4 | Raise / lower / smooth / flatten |
+| K | Open the Sky tab, or fold it away |
 | Right drag | Orbit |
 | Middle drag | Pan |
 | Scroll | Zoom, including close flower placement |
