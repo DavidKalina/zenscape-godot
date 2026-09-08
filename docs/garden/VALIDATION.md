@@ -82,6 +82,47 @@ strip on a 1280x800 window, with the Custom color box proved to sit inside
 `palette.get_global_rect()`. The bar is 190 px, the settings grid lays out in
 three columns and the status hint moved onto the tab row to pay for it.
 
+The Landscape tools that stamp a shape now portrait that shape. `_landform_mesh`
+builds a small vertex-coloured heightfield through the same thumbnail path the
+object tiles use, so lighting and framing match: Mountain evaluates the very
+`NativeMountainShape` the editor's stamp calls, at the current `mountain_radius`,
+`mountain_peak`, `mountain_variation` and `mountain_heading`; Range evaluates the
+`NativeTerrainRecipe` its Form button installs across the 28-unit chunk. Faces
+take the bands `build_mesh` paints on an uncovered chunk - `_ground_tint`, then
+`rock_at_coordinates` past the palette's slope or height cutoff, then shimmered
+snow above the snowline. Ground and the Sculpt brushes keep their drawn glyphs:
+they level or push the existing surface rather than stamp a shape, so a mesh
+preview would only show whatever was already there.
+
+Mountain also drags. `_draggable` opens the drag path to it, the ghost is the
+same heightfield patch scaled by the tool's radius and peak, and it sits flat on
+the picked ground - identity basis, no pose decode, no bob, lifted 0.02 so it
+does not fight the terrain it is about to become. The drop calls `place_at`, the
+same entry a click uses, so the stamp, its stroke and its undo are identical.
+Range keeps click-to-select: it forms the whole chunk from its strip button and
+has no drop point to aim at.
+
+The drag ghost now wears the model's own materials rather than a flat silhouette.
+`_haunt` clears the whole-instance override and gives every surface a duplicated
+copy of the material it would have rendered with, so a tree's trunk and canopy
+stay two different things; shader-driven parts fall back to a standard material
+tinted with the shader's `base_color` converted out of linear. Each copy is
+shaded per-pixel, alpha at 0.55, with a faint cool emission and rim, shadows off,
+`DEPTH_DRAW_OPAQUE_ONLY` so it writes no depth and cannot cut into itself, and
+depth testing left on so terrain in front still hides it.
+
+`tests/test_native_build_palette.gd` adds checks for all of this: the Mountain
+and Range tiles carry rendered thumbnails while Raise and Ground keep glyphs; a
+synthesized Mountain drag produces a single-surface heightfield ghost wider than
+`mountain_radius` and taller than 0.4 of `mountain_peak`, with an identity basis
+and a y that does not move across frames; the in-flight ghost changes no height;
+the drop raises the vertex nearest the picked point by more than 0.5 and undo
+restores the height array and the document exactly; and the tree ghost's surface
+materials are all translucent, shaded, depth-testing standard materials with no
+shadow casting and more than one distinct albedo. `docs/garden/ghost-object.png`
+and `docs/garden/ghost-landform.png` are the captures of the two ghosts in
+flight, taken with `tools/_ghost_probe.gd`.
+
 `tests/test_native_build_tools.gd` checks one-dab grass visibility without flowers,
 full coverage and undo, v3 migration and v4 roundtrip, malformed density rejection,
 actual mouse-event mountain placement, bounds, precipitation ceiling, alpine

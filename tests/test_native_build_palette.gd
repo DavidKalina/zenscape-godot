@@ -66,7 +66,12 @@ func _run() -> void:
 	for id: String in ["tree","rock","flower","arch","bigfoot_tree","broadleaf","mushroom","log","boulder_1","daisy_flower"]:
 		var portrait: Button = palette.tile_for(id)
 		check(portrait.icon != null and lit(portrait.icon) > 40,"The %s tile shows a rendered thumbnail" % id)
+	# Landscape tools that stamp a shape portrait that shape, not a glyph.
+	for id: String in ["mountain","range"]:
+		var land: Button = palette.tile_for(id)
+		check(land.icon != null and lit(land.icon) > 40,"The %s tile shows a rendered heightfield thumbnail" % id)
 	check(palette.tile_for("raise").icon == null,"Brush tools keep their drawn glyph instead of a portrait")
+	check(palette.tile_for("ground").icon == null,"Ground keeps its drawn glyph; it levels rather than stamps a shape")
 	# The side panel would cover the world at this window size; the palette and
 	# the terrain under it are what this test drives.
 	for child in scene._ui.get_children():
@@ -147,6 +152,23 @@ func _run() -> void:
 	move(target)
 	check(palette.dragging(),"Moving off a tile starts a drag")
 	check(palette.ghost() != null and palette.ghost().visible,"The drag carries a ghost onto the ground")
+	# The ghost wears the real materials, one per surface, turned translucent.
+	var looks := {}
+	var spectral := true
+	for node: MeshInstance3D in palette.ghost().find_children("*","MeshInstance3D",true,false):
+		spectral = spectral and node.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and node.material_override == null
+		for surface in range(node.mesh.get_surface_count()):
+			var worn: Material = node.get_surface_override_material(surface)
+			spectral = spectral and worn is StandardMaterial3D \
+				and worn.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA \
+				and worn.albedo_color.a > 0.0 and worn.albedo_color.a < 1.0 \
+				and worn.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED \
+				and worn.depth_draw_mode == BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY \
+				and not worn.no_depth_test
+			if worn is StandardMaterial3D:
+				looks[worn.albedo_color] = true
+	check(spectral,"Every ghost surface is shaded, translucent, depth-testing without writing, and casts no shadow")
+	check(looks.size() > 1,"The tree ghost keeps its trunk and its canopy as separate materials")
 	check(editor.data.objects.is_empty() and editor.data.to_document() == saved,"An in-flight ghost is not a record")
 	check(editor.save_garden() and JSON.parse_string(FileAccess.get_file_as_string(editor.save_path)).objects.is_empty(),"Saving during a drag writes no ghost")
 	press(target,false)
@@ -215,6 +237,45 @@ func _run() -> void:
 	check(palette.category() == "Sky","K opens the sky again")
 	editor.select_tool("rock")
 	check(palette.category() == "Place" and not palette.sky_row("time").has("control"),"Picking a tool restores its own strip")
+	# The Mountain tile drags in the same way, and stamps through the editor.
+	palette._show_category("Landscape")
+	editor.select_tool("mountain")
+	editor.set_setting("mountain_radius",4.0)
+	editor.set_setting("mountain_peak",6.0)
+	for i in range(2):
+		await process_frame
+	var ground: Variant = editor.pick(target)
+	check(ground != null,"The drop point is still open terrain")
+	var flat := editor.data.heights.duplicate()
+	start = tile_point(palette,"mountain")
+	press(start,true)
+	move(start+Vector2(30,-30))
+	move(target)
+	check(palette.dragging(),"Dragging the Mountain tile starts a drag")
+	var peak: Node3D = palette.ghost()
+	check(peak != null and peak.visible,"The Mountain drag carries a ghost onto the ground")
+	var patch: MeshInstance3D = peak.find_child("Landform",true,false) if peak != null else null
+	check(patch != null and patch.mesh.get_surface_count() == 1,"The landform ghost is a real heightfield patch")
+	check(patch != null and patch.mesh.get_aabb().size.x > editor.mountain_radius,"The landform ghost spans the footprint the radius asks for")
+	check(patch != null and patch.mesh.get_aabb().size.y > editor.mountain_peak*0.4,"The landform ghost stands up to the peak setting")
+	check(peak != null and peak.basis.is_equal_approx(Basis.IDENTITY),"The landform ghost takes no object pose")
+	var rest: float = peak.position.y if peak != null else 0.0
+	for i in range(3):
+		await process_frame
+	check(peak != null and is_equal_approx(peak.position.y,rest),"The landform ghost sits on the ground instead of bobbing")
+	check(editor.data.heights == flat,"An in-flight landform ghost changes no height")
+	press(target,false)
+	check(not palette.dragging() and palette.ghost() == null,"The landform drag ends with the drop")
+	check(editor.data.heights != flat,"Dropping the Mountain tile raises the terrain")
+	var nearest := 0
+	var reach := Vector2(ground.x,ground.z)
+	for i in range(editor.data.points.size()):
+		if editor.data.points[i].distance_to(reach) < editor.data.points[nearest].distance_to(reach):
+			nearest = i
+	check(editor.data.heights[nearest] > flat[nearest]+0.5,"The stamp lands under the pointer, not somewhere else")
+	editor.undo()
+	check(editor.data.heights == flat,"Undo takes the dropped mountain back off the land")
+	check(editor.data.to_document() == saved,"Undoing the drop leaves the record it started from")
 	# Hiding the scene UI hides the palette with it.
 	scene._ui.visible = false
 	check(not palette.is_visible_in_tree(),"Hiding the scene UI hides the palette")
