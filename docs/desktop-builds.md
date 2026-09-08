@@ -8,7 +8,11 @@ not need Godot, Node.js, or the source repository installed to play.
 1. Sign into GitHub and open [Godot desktop builds](https://github.com/DavidKalina/zenscape-godot/actions/workflows/desktop.yml).
 2. Choose a successful run. Its commit identifies exactly which game version was built.
 3. In the run summary, follow **Download Windows and Mac builds** to its draft release.
-4. Download `ZenScape-windows-x64.zip` or `ZenScape-mac-universal.zip` and extract it.
+4. Download `ZenScape-windows-x64-<commit>.zip` or `ZenScape-mac-universal-<commit>.zip` and extract it.
+
+The ZIP filename includes the build commit. Extract each download into a fresh
+folder to avoid launching an older executable or mixing it with another build’s
+`.pck`. On Windows, `BUILD.txt` beside the executable identifies the exact commit.
 
 **Windows:** open `ZenScape.exe` from the extracted folder. Keep `ZenScape.pck`
 and any DLLs in that folder; copying only the executable will break the game.
@@ -44,8 +48,10 @@ write access (the repository owner can download them).
 
 The workflow pins **Godot 4.7.2**, downloads the official editor and templates,
 verifies their SHA-512 checksums, and caches the desktop tools. Linux exports
-both platforms; separate Windows and Mac jobs launch the actual exports to
-check for startup errors. No signing secrets or paid developer accounts are needed.
+both platforms. Before offering downloads, the workflow opens the Windows PCK
+and checks that the diorama menu appears and New diorama opens the current editor
+tool tray. Separate Windows and Mac jobs launch the actual exports to check for
+startup errors. No signing secrets or paid developer accounts are needed.
 
 `export_presets.cfg` includes JSON data read through `FileAccess`, alongside
 Godot resources, and excludes documentation, test tools, and source art. Mac
