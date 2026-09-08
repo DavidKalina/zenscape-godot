@@ -7,6 +7,7 @@ var camera: Camera3D
 var _shader_cache := {}
 var _bindings: Array[Dictionary] = []
 var _material_bindings := {}
+var _used_material_bindings := {}
 var revision := -1
 var objects_revision := -1
 var enabled := true
@@ -19,15 +20,31 @@ func sync(scene: Node3D) -> void:
 		revision = -1
 		return
 	var content: GardenView = scene._chunk_editor.content
-	if revision != content.revision or objects_revision != scene._chunk_editor.data.objects_revision:
+	if revision != content.revision:
 		clear()
 		revision = content.revision
 		objects_revision = scene._chunk_editor.data.objects_revision
 		if content._water.mesh != null and not scene._chunk_editor.data.ponds.is_empty():
 			setup(scene, content._water)
+	elif objects_revision != scene._chunk_editor.data.objects_revision:
+		objects_revision = scene._chunk_editor.data.objects_revision
+		_refresh_geometry(scene)
 	var active: bool = enabled and RenderingServer.get_current_rendering_method() == "forward_plus" and scene._growth.terrain >= 0.995 and scene._growth.water >= 0.995
 	set_enabled(active)
 	if active: update_views()
+
+## Props replace instance batches, not the water or its render configuration.
+## Preserve viewports and compiled shaders instead of paying pipeline creation
+## costs again for every flower placement and every selected-object drag.
+func _refresh_geometry(scene: Node3D) -> void:
+	for binding in _bindings:
+		if is_instance_valid(binding.copy): binding.copy.free()
+	_bindings.clear()
+	_used_material_bindings.clear()
+	for view in views:
+		_copy_geometry(scene,view.viewport,view.level)
+	for key in _material_bindings.keys():
+		if not str(key).begins_with("pond:") and not _used_material_bindings.has(key): _material_bindings.erase(key)
 
 func clear() -> void:
 	if is_instance_valid(source_water):
@@ -38,6 +55,7 @@ func clear() -> void:
 	views.clear()
 	_bindings.clear()
 	_material_bindings.clear()
+	_used_material_bindings.clear()
 	_shader_cache.clear()
 
 func _exit_tree() -> void:
@@ -59,7 +77,9 @@ func setup(scene: Node3D, water_node: MeshInstance3D) -> void:
 		var viewport := SubViewport.new()
 		viewport.size = Vector2i(512,320)
 		viewport.own_world_3d = true
-		viewport.msaa_3d = Viewport.MSAA_2X
+		# Godot tracks one MSAA level for pipeline precompilation. Mixed levels
+		# make newly visible/placed geometry fall back to compiling while drawn.
+		viewport.msaa_3d = scene.get_viewport().msaa_3d
 		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		add_child(viewport)
 		var environment := WorldEnvironment.new()
@@ -123,6 +143,7 @@ func _copy_geometry(node: Node, parent: Node, level: float) -> void:
 						shader.code = code.replace("void fragment() {", "void fragment() {\n if (world_position.y < %.5f) discard;" % (level+0.015))
 						_shader_cache[key] = shader
 					var material_key := str(original.get_instance_id()) + ":" + str(level)
+					_used_material_bindings[material_key] = true
 					if not _material_bindings.has(material_key):
 						var target: ShaderMaterial = original.duplicate()
 						target.shader = _shader_cache[key]
@@ -181,6 +202,8 @@ func update_views() -> void:
 				binding.target.set_shader_parameter(parameter.name, value)
 				binding.values[parameter.name] = value
 	for view in views:
+		if view.viewport.msaa_3d != _scene.get_viewport().msaa_3d:
+			view.viewport.msaa_3d = _scene.get_viewport().msaa_3d
 		view.environment.sky = _scene._environment.sky
 		view.environment.background_mode = _scene._environment.background_mode
 		view.environment.background_color = _scene._environment.background_color

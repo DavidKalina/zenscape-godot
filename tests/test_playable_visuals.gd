@@ -29,6 +29,7 @@ func run() -> void:
 	water.sync(scene)
 	check(water.views.size() == 3, "Playable terraces reflect all three pond levels")
 	for view in water.views:
+		check(view.viewport.msaa_3d == viewport.msaa_3d, "Reflection MSAA matches the scene to share precompiled pipelines")
 		check(view.material.get_shader_parameter("caustics_strength") > 0.0, "Every pond gets caustics")
 		check(view.material.get_shader_parameter("planar_enabled"), "Shared water shader uses reflections")
 	var binding: Dictionary = water._bindings[0]
@@ -68,9 +69,15 @@ func run() -> void:
 		viewport.get_texture().get_image().save_png("/private/tmp/zs-playable-control.png")
 		water.enabled = true
 	var tree: Dictionary = editor.data.objects[0]
+	var reflection_viewport: SubViewport = water.views[0].viewport
+	var reflection_shader: Shader = water._shader_cache.values()[0]
+	var reflection_material: Material = material_binding.target
 	editor.select_object(tree.id)
 	check(editor.update_selected({"x":tree.x + 0.2}), "Object edit succeeds with reflections active")
 	water.sync(scene)
+	check(water.views[0].viewport == reflection_viewport, "Object-only edit preserves reflection viewport")
+	check(water._shader_cache.values().has(reflection_shader), "Object-only edit preserves compiled reflection shaders")
+	check(water._material_bindings.values().any(func(value): return value.target == reflection_material), "Object-only edit preserves unchanged reflected materials")
 	check(water.objects_revision == editor.data.objects_revision, "Reflection rebuild follows object-only edits")
 	check(water._bindings.all(func(b): return is_instance_valid(b.source)), "No deleted source geometry remains after editing")
 	editor.save_path = "/private/tmp/zs-playable-visuals-roundtrip.json"

@@ -12,6 +12,7 @@ var _stem := ColorRect.new()
 var _elapsed := 0.0
 var _entrance: Tween
 var _selected := 0
+var _layout_factor := 1.0
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -62,6 +63,7 @@ func _label(text: String, font: Font, font_size: int, color: Color, at: Vector2,
 	label.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
 	label.add_theme_constant_override("shadow_offset_y",1)
 	_frame.add_child(label)
+	_track_layout(label, at, extent, font_size)
 	return label
 
 func _rule(at: Vector2, extent: Vector2, centered: bool) -> void:
@@ -78,6 +80,7 @@ func _rule(at: Vector2, extent: Vector2, centered: bool) -> void:
 	line.size = extent
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_frame.add_child(line)
+	_track_layout(line, at, extent)
 
 func add_action(text: String, detail: String, action: Callable) -> Button:
 	var index := buttons.size()
@@ -99,8 +102,10 @@ func add_action(text: String, detail: String, action: Callable) -> Button:
 	button.pressed.connect(action)
 	_frame.add_child(button)
 	buttons.append(button)
+	_track_layout(button, button.position, button.size, 22 if index == 0 else 18)
 	if not detail.is_empty():
 		_detail = _label(detail,MONO,10,Color("e2d0aaa6"),Vector2(130,263),Vector2(430,20))
+	_layout()
 	return button
 
 func present(cover: bool) -> void:
@@ -110,10 +115,11 @@ func present(cover: bool) -> void:
 	for button in buttons:
 		button.visible = not button.disabled
 		if button.disabled: continue
-		button.position.y = 222 if row == 0 else 301+(row-1)*49
-		button.add_theme_font_size_override("font_size",22 if row == 0 else 18)
+		button.set_meta("design_position", Vector2(130,222 if row == 0 else 301+(row-1)*49))
+		button.set_meta("design_font_size",22 if row == 0 else 18)
 		if row == 0: button.grab_focus()
 		row += 1
+	_layout()
 	_detail.text = "A little wilderness, waiting for you." if not buttons[0].disabled else "Make a little world of your own."
 	if _entrance: _entrance.kill()
 	modulate.a = 1.0
@@ -125,15 +131,43 @@ func present(cover: bool) -> void:
 		_entrance.tween_property(self,"modulate:a",1.0,1.1)
 		_entrance.parallel().tween_property(_frame,"modulate:a",1.0,2.2).set_delay(0.35)
 
+func _track_layout(control: Control, at: Vector2, extent: Vector2, font_size := 0) -> void:
+	control.set_meta("design_position", at)
+	control.set_meta("design_size", extent)
+	control.set_meta("design_font_size", font_size)
+	if font_size > 0:
+		var font := control.get_theme_font("font")
+		if font is FontVariation:
+			control.set_meta("design_tracking", font.spacing_glyph)
+
 func _layout() -> void:
-	var factor := minf(minf(size.x/1180.0,size.y/613.0),1.75)
-	_frame.scale = Vector2.ONE*factor
-	_frame.position = (size-_frame.size*factor)*0.5
+	_layout_factor = minf(minf(size.x/1180.0,size.y/613.0),1.75)
+	# Resize geometry and rasterize fonts at the final layout size. Scaling a
+	# Control instead magnifies its cached glyphs, even on a native-pixel window.
+	_frame.scale = Vector2.ONE
+	_frame.size = (Vector2(1180,613)*_layout_factor).round()
+	_frame.position = ((size-_frame.size)*0.5).round()
+	for control in _frame.get_children():
+		if not control.has_meta("design_position"): continue
+		control.position = (control.get_meta("design_position") * _layout_factor).round()
+		var font_size: int = control.get_meta("design_font_size")
+		if font_size > 0:
+			control.add_theme_font_size_override("font_size",maxi(1,roundi(font_size*_layout_factor)))
+			if control.has_meta("design_tracking"):
+				control.get_theme_font("font").spacing_glyph = roundi(control.get_meta("design_tracking")*_layout_factor)
+		control.size = (control.get_meta("design_size") * _layout_factor).round().max(Vector2.ONE)
+		if control.material is ShaderMaterial:
+			control.material.set_shader_parameter("glyph_scale", _layout_factor)
+	_update_stem()
 
 func _process(delta: float) -> void:
 	if not visible or buttons.is_empty(): return
 	_elapsed += delta
-	var button := buttons[_selected]
-	_stem.position = button.position+Vector2(-20,4)
-	_stem.size = Vector2(1,30)
+	_update_stem()
 	_stem.modulate.a = 0.55+0.45*(sin(_elapsed*TAU/5.2)*0.5+0.5)
+
+func _update_stem() -> void:
+	if buttons.is_empty(): return
+	var button := buttons[_selected]
+	_stem.position = button.position+(Vector2(-20,4)*_layout_factor).round()
+	_stem.size = Vector2(1,maxf(1.0,roundf(30*_layout_factor)))

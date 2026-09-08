@@ -1,8 +1,9 @@
 shader_type canvas_item;
 render_mode unshaded;
+uniform float glyph_scale = 1.0;
 varying float glyph_y;
 void vertex() {
-	glyph_y = VERTEX.y;
+	glyph_y = VERTEX.y / max(glyph_scale, 0.001);
 }
 void fragment() {
 	vec4 ink = texture(TEXTURE, UV) * COLOR;

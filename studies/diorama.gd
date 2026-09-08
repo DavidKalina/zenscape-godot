@@ -16,6 +16,7 @@ var _settings: AcceptDialog
 var _before_menu_paused := false
 var _defaults := {}
 var _world_menu := MenuButton.new()
+var _performance_trace = preload("res://scripts/performance_trace.gd").new()
 
 func _choose_inhabited_shore() -> void:
 	_chunk_editor.data.reset_flat()
@@ -51,15 +52,21 @@ func _ready() -> void:
 	_chunk_editor.form_landscape("plateau","",false)
 	_frame_diorama()
 	_make_shell()
+	add_child(_performance_trace)
+	_performance_trace.saved.connect(func(path: String) -> void:
+		_notice.text = "Performance capture saved: "+path if not path.is_empty() else "Could not save performance capture."
+		if not path.is_empty() and DisplayServer.get_name() != "headless": OS.shell_show_in_file_manager(path))
 	_chunk_editor.status_changed.connect(func(text: String) -> void:
 		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
 	show_menu()
 
 func _process(delta: float) -> void:
+	var trace_started := Time.get_ticks_usec() if _performance_trace.active else 0
 	super._process(delta)
 	if _home_button != null:
 		_home_button.disabled = not resident_enabled or routine.habits.home == null
 		_home_button.tooltip_text = "Find his sheltered home" if routine.habits.sheltered_home else "Find his resting spot"
+	if trace_started > 0: _performance_trace.last_scene_usec = Time.get_ticks_usec()-trace_started
 
 func _frame_diorama() -> void:
 	target = Vector3(0,-1.0,0)
@@ -397,6 +404,14 @@ func restore_diorama_state(state: Dictionary) -> void:
 
 func _input(event: InputEvent) -> void:
 	if not is_node_ready(): return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
+		if _performance_trace.active:
+			_performance_trace.finish()
+		else:
+			_performance_trace.start(self)
+			_notice.text = "Recording performance · F9 to save · Stops automatically after 60 seconds"
+		get_viewport().set_input_as_handled()
+		return
 	if _file_dialog != null and (_file_dialog.visible or _settings.visible): return
 	if _menu != null and _menu.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and _has_world:
