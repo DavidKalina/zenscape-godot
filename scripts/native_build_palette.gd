@@ -124,6 +124,7 @@ var _meta_table := VBoxContainer.new()
 var _hud_count := Label.new()
 var _placing_banner := Label.new()
 var _placing := ""
+var _hand := preload("res://scripts/native_garden_cursor.gd").new()
 var _inhabitant: CreatureActor
 var _entrance: Tween
 var _mono: Font
@@ -347,6 +348,7 @@ func _build() -> void:
 	_cursor.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_cursor.visible = false
 	add_child(_cursor)
+	add_child(_hand)
 	get_viewport().size_changed.connect(_fit_dock)
 	_fit_dock()
 	_on_tool_changed(editor.mode)
@@ -384,6 +386,7 @@ func _browse(id: String) -> void:
 func open_palette() -> void:
 	if not editor.active: return
 	if not _placing.is_empty(): _finish_placing()
+	_hand.hide_pointer()
 	_bar.visible = true
 	_scrim.visible = true
 	_launcher.visible = false
@@ -1222,13 +1225,15 @@ func _choose(id: String) -> void:
 	elif id != "select": _start_placing(id)
 
 func _start_placing(id: String) -> void:
+	_hand.take()
 	_placing = id
 	_launcher.visible = false
 	_placing_banner.text = "●  Placing %s — click the diorama     esc to cancel" % _entries[id].title
 	_placing_banner.visible = true
 	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 
-func _finish_placing() -> void:
+func _finish_placing(placed := false) -> void:
+	_hand.release(placed)
 	_placing = ""
 	_placing_banner.visible = false
 	_launcher.visible = true
@@ -1407,6 +1412,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if not is_visible_in_tree(): return
+	if _dragging and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_cancel_drag()
+		_finish_placing(false)
+		get_viewport().set_input_as_handled()
+		return
 	if not _placing.is_empty():
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_finish_placing()
@@ -1414,7 +1424,7 @@ func _input(event: InputEvent) -> void:
 			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not contains_pointer(event.position):
 			var placed := _place_special(event.position) if _placing in ["bigfoot","wind_gust"] else editor.place_at(event.position)
-			if placed and (editor.mode != "waterfall" or editor._fall_start == null): _finish_placing()
+			if placed and (editor.mode != "waterfall" or editor._fall_start == null): _finish_placing(true)
 			get_viewport().set_input_as_handled()
 			return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1464,7 +1474,7 @@ func _begin_drag() -> void:
 	_bob = 0.0
 	_cursor.texture = _thumbs.get(_drag_id)
 	_cursor.scale = Vector2.ONE
-	_cursor.visible = true
+	_cursor.visible = false
 	_clear_ghost()
 	var model := build_model(_drag_id)
 	if model == null:
@@ -1579,7 +1589,7 @@ func _drop(mouse: Vector2) -> void:
 			_cursor.visible = false
 			_cursor.scale = Vector2.ONE
 		)
-	_finish_placing()
+	_finish_placing(placed)
 	drag_finished.emit(placed)
 
 func _cancel_drag() -> void:
@@ -1598,6 +1608,12 @@ func _clear_ghost() -> void:
 
 func _process(delta: float) -> void:
 	_animate_portraits(delta)
+	var pointer := get_global_mouse_position()
+	var world_hover := is_visible_in_tree() and editor.active and get_window().has_focus() and get_viewport_rect().has_point(pointer) and not _bar.visible and editor.pointer_in_world(pointer)
+	if world_hover and Input.mouse_mode in [Input.MOUSE_MODE_VISIBLE,Input.MOUSE_MODE_HIDDEN]:
+		_hand.show_at(pointer,not _placing.is_empty() or _dragging or editor._selection_drag,delta)
+	else:
+		_hand.hide_pointer()
 	if editor != null:
 		_hud_count.text = "meadow-01 · %d objects" % (editor.data.objects.size()+(1 if is_instance_valid(_inhabitant) else 0))
 		_launcher.modulate.a = 1.0 if _launcher.is_hovered() else 0.775+0.225*sin(Time.get_ticks_msec()*TAU/4000.0)
