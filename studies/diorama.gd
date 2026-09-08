@@ -13,6 +13,7 @@ var _file_dialog: FileDialog
 var _settings: AcceptDialog
 var _before_menu_paused := false
 var _defaults := {}
+var _world_menu := MenuButton.new()
 
 func _choose_inhabited_shore() -> void:
 	_chunk_editor.data.reset_flat()
@@ -45,7 +46,8 @@ func _ready() -> void:
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
 	_make_shell()
-	_chunk_editor.status_changed.connect(func(text: String) -> void: _notice.text = text)
+	_chunk_editor.status_changed.connect(func(text: String) -> void:
+		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
 	show_menu()
 
 func _process(delta: float) -> void:
@@ -55,12 +57,29 @@ func _process(delta: float) -> void:
 		_home_button.tooltip_text = "Find his sheltered home" if routine.habits.sheltered_home else "Find his resting spot"
 
 func _frame_diorama() -> void:
-	target = Vector3.ZERO
+	target = Vector3(0,-1.0,0)
 	distance = 40.0
 	yaw = 0.35
 	polar = 0.82
 	_auto_orbit = false
 	_update_camera()
+	# Overview leaves a clear strip for the tools instead of hiding the
+	# near edge of the miniature beneath them. Fit the actual terrain bounds.
+	var screen := get_viewport().get_visible_rect().size
+	var kit_scale := minf(1.0,minf(screen.x/1080.0,screen.y/720.0))
+	var safe := Rect2(24,48,screen.x-48,screen.y-80-70*kit_scale)
+	var outline := {}
+	for mesh: MeshInstance3D in [_chunk_editor.terrain,_chunk_editor._skirt]:
+		for surface in range(mesh.mesh.get_surface_count()):
+			var vertices: PackedVector3Array = mesh.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+			for vertex: Vector3 in vertices: outline[mesh.to_global(vertex)] = true
+	for step in range(60):
+		var fits := true
+		for corner: Vector3 in outline:
+			if not safe.has_point(camera.unproject_position(corner)): fits = false
+		if fits: break
+		distance *= 1.04
+		_update_camera()
 
 func _style(fill: Color, border: Color, radius := 18) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -91,7 +110,7 @@ func _make_shell() -> void:
 	layer.add_child(root)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var theme := Theme.new()
-	theme.default_font = load("res://assets/fonts/Nunito.ttf")
+	theme.default_font = _build_palette.theme.default_font
 	theme.default_font_size = 17
 	theme.set_color("font_color","Label",Color("eee7db"))
 	theme.set_color("font_color","Button",Color("eee7db"))
@@ -120,7 +139,27 @@ func _make_shell() -> void:
 	_button(_toolbar,"Overview",_frame_diorama)
 	_home_button = _button(_toolbar,"His spot",_focus_resting_spot)
 	_home_button.disabled = true
+	# The everyday shell shares the dock's warm, quiet controls.
+	for control: Button in _toolbar.get_children():
+		preload("res://scripts/tactile_editor_style.gd").button(control)
+		control.add_theme_font_size_override("font_size",14)
+		control.custom_minimum_size.y = 36
+	_world_menu.text = "World"
+	_world_menu.custom_minimum_size.y = 36
+	_world_menu.add_theme_font_size_override("font_size",14)
+	preload("res://scripts/tactile_editor_style.gd").button(_world_menu)
+	_toolbar.add_child(_world_menu)
+	for index in range(3,8):
+		var action: Button = _toolbar.get_child(index)
+		action.hide()
+		_world_menu.get_popup().add_item(action.text,index)
+	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
+		var action: Button = _toolbar.get_child(id)
+		if not action.disabled: action.pressed.emit())
+	_world_menu.about_to_popup.connect(func() -> void:
+		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled))
 	_notice = Label.new()
+	_notice.add_theme_font_size_override("font_size",13)
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -201,11 +240,13 @@ func _layout_shell() -> void:
 	_menu.scale = Vector2.ONE*minf(1.0,minf((viewport_size.x-32)/_menu.size.x,(viewport_size.y-32)/_menu.size.y))
 	_menu.position = (viewport_size-_menu.size*_menu.scale)*0.5
 	_toolbar.size = _toolbar.get_combined_minimum_size()
-	_toolbar.scale = Vector2.ONE*minf(1.0,(viewport_size.x-40)/_toolbar.size.x)
+	var kit_scale := minf(1.0,minf(viewport_size.x/1080.0,viewport_size.y/720.0))
+	_toolbar.scale = Vector2.ONE*minf(kit_scale,(viewport_size.x-180)/_toolbar.size.x)
 	_toolbar.position = Vector2(viewport_size.x-_toolbar.size.x*_toolbar.scale.x-20,16)
-	_notice.size.x = minf(560.0,maxf(100.0,viewport_size.x-40.0))
+	_notice.scale = Vector2.ONE*kit_scale
+	_notice.size.x = minf(400.0,maxf(100.0,(viewport_size.x-40.0)/kit_scale))
 	_notice.size.y = _notice.get_minimum_size().y
-	_notice.position = Vector2(viewport_size.x-_notice.size.x-20,maxf(72.0,viewport_size.y-80.0-_notice.size.y))
+	_notice.position = Vector2(viewport_size.x-_notice.size.x*kit_scale-20,maxf(72.0,viewport_size.y-100.0-_notice.size.y*kit_scale))
 
 func set_building(enabled: bool) -> void:
 	if not _has_world: return

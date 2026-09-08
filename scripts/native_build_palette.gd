@@ -1,5 +1,6 @@
 class_name NativeBuildPalette
 extends Control
+const TactileStyle = preload("res://scripts/tactile_editor_style.gd")
 ## Searchable tool and miniature palette. The landscape stays clear until Cmd/Ctrl K.
 ## Placeable tiles carry a thumbnail rendered from the real mesh and material,
 ## and can be dragged into the world, where a ghost follows the ground until
@@ -178,7 +179,7 @@ func strip_fits() -> bool:
 
 ## The detached settings panel also shields the terrain from pointer input.
 func contains_pointer(point: Vector2) -> bool:
-	return _bar.visible or (_tool_rail != null and _tool_rail.visible and _tool_rail.get_global_rect().has_point(point)) or (_launcher.visible and _launcher.get_global_rect().has_point(point)) or (_tune.visible and _tune.get_global_rect().has_point(point)) or (_details.visible and _details.get_global_rect().has_point(point))
+	return _bar.visible or (_tool_rail != null and _tool_rail.contains_pointer(point)) or (_launcher.visible and _launcher.get_global_rect().has_point(point)) or (_tune.visible and _tune.get_global_rect().has_point(point)) or (_details.visible and _details.get_global_rect().has_point(point))
 
 ## True while a tile is being dragged towards the world.
 func dragging() -> bool:
@@ -309,12 +310,13 @@ func _build() -> void:
 		rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		surface.add_child(rule)
 	var hud := Label.new()
-	hud.text = "Z E N S C A P E"
+	hud.text = "zenscape"
 	hud.position = Vector2(24,22)
-	hud.add_theme_font_size_override("font_size",15)
+	hud.add_theme_font_size_override("font_size",12)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(hud)
 	move_child(hud,1)
+	_hud_count.visible = false
 	_hud_count.position = Vector2(24,45)
 	_hud_count.add_theme_font_override("font",_mono)
 	_hud_count.add_theme_font_size_override("font_size",11)
@@ -323,7 +325,7 @@ func _build() -> void:
 	add_child(_hud_count)
 	move_child(_hud_count,2)
 	_details.name = "ToolDetails"
-	_details.add_theme_stylebox_override("panel",_stone_style(Color(0.16,0.14,0.18,0.97),12))
+	_details.add_theme_stylebox_override("panel",TactileStyle.panel(20,16))
 	_details.visible = false
 	add_child(_details)
 	_details.add_child(_build_strip())
@@ -351,6 +353,8 @@ func _build() -> void:
 	_tool_rail = preload("res://scripts/native_tool_rail.gd").new()
 	add_child(_tool_rail)
 	_tool_rail.setup(self)
+	_details.visibility_changed.connect(func() -> void:
+		if _details.visible: _tool_rail.close_controls())
 	_fit_dock()
 	_on_tool_changed(editor.mode)
 	close_palette()
@@ -413,7 +417,7 @@ func open_palette() -> void:
 func close_palette() -> void:
 	_bar.visible = false
 	_scrim.visible = false
-	_launcher.visible = _placing.is_empty()
+	_launcher.visible = false
 	_tune.visible = false
 	_search.release_focus()
 	if _category == SKY_TAB: _show_category(_category_of(editor.mode))
@@ -787,14 +791,16 @@ func _fit_details() -> void:
 	if _scroll.get_child_count() == 0: return
 	var content: Control = _scroll.get_child(0)
 	var screen := get_viewport_rect().size
-	var available := maxf(64.0,screen.y-BAR_HEIGHT-42.0)
+	var factor: float = _tool_rail.scale.x if _tool_rail != null else 1.0
+	var available := maxf(64.0,(screen.y-96.0)/factor)
 	var height := clampf(content.get_combined_minimum_size().y+64.0,64.0,available)
 	_details.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	var rail: Rect2 = _tool_rail.get_global_rect() if _tool_rail != null else Rect2(20,92,174,320)
-	var left := rail.end.x+12.0
+	var rail: Rect2 = _tool_rail.context_rect() if _tool_rail != null else Rect2(20,92,174,320)
+	var left := minf(rail.position.x,screen.x-384.0*factor-16.0)
 	var width := 384.0
-	_details.scale = Vector2.ONE*minf(1.0,maxf(0.1,(screen.x-left-16.0)/width))
-	_details.position = Vector2(left,clampf(rail.position.y,16.0,maxf(16.0,screen.y-BAR_HEIGHT-28.0-height)))
+	factor = minf(factor,maxf(0.1,(screen.x-left-16.0)/width))
+	_details.scale = Vector2.ONE*factor
+	_details.position = Vector2(left,clampf(rail.position.y,48.0,maxf(48.0,screen.y-70.0-height*factor)))
 	_details.size = Vector2(width,height)
 
 ## Small antialiased vector icons avoid platform-dependent Unicode glyphs.
@@ -877,11 +883,13 @@ func _animate_portraits(delta: float) -> void:
 		return
 	var step := _portrait_clock
 	_portrait_clock = 0.0
+	var held: Array = _tool_rail.visible_portraits() if _tool_rail != null else []
 	for id: String in _portraits:
-		if not _bar.visible or (not id in _matches):
-			continue
+		var card_visible := id in held
+		var row_visible := _bar.visible and id in _matches
+		if not card_visible and not row_visible: continue
 		var selected := not _matches.is_empty() and _matches[_focus_index] == id
-		if not selected and (not _row_buttons.has(id) or not _row_buttons[id].get_global_rect().intersects(_result_scroll.get_global_rect())): continue
+		if not card_visible and not selected and (not _row_buttons.has(id) or not _row_buttons[id].get_global_rect().intersects(_result_scroll.get_global_rect())): continue
 		var portrait: Dictionary = _portraits[id]
 		portrait.pivot.rotation.y += step*0.28
 		portrait.viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -1078,6 +1086,7 @@ func ensure_thumbnails() -> void:
 		if id in ["wind_gust","fog_bank"]: symbol.kind = "wave"
 		_thumbs[id] = _render_symbol(symbol)
 	if _bar.visible: _refresh_results()
+	if _tool_rail != null: _tool_rail.sync()
 
 func _render_symbol(symbol: Control) -> Texture2D:
 	var viewport := SubViewport.new()
@@ -1290,7 +1299,7 @@ func _start_placing(id: String) -> void:
 func _finish_placing(placed := false) -> void:
 	_hand.release(placed)
 	_placing = ""
-	_launcher.visible = true
+	_launcher.visible = false
 	editor.finish_stroke()
 	editor.select_tool("select")
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
@@ -1348,7 +1357,7 @@ func _on_tile_hover(id: String, entered: bool) -> void:
 func _on_tool_changed(tool: String) -> void:
 	if not _placing.is_empty() and (not _tiles.has(_placing) or _tiles[_placing].get_meta("tool") != tool):
 		_placing = ""
-		_launcher.visible = not _bar.visible
+		_launcher.visible = false
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 	var chosen := tile_for(tool)
 	for id: String in _tiles:
@@ -1398,6 +1407,7 @@ func _rebuild_strip() -> void:
 		entry.box.custom_minimum_size = Vector2(104,0)
 		entry.box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		entry.label.clip_text = true
+		if entry.control is HSlider: TactileStyle.slider(entry.control)
 		_grid.add_child(entry.box)
 		_strip_rows[spec.property] = entry
 	_grid.columns = mini(2,maxi(1,_strip_rows.size()))
@@ -1691,7 +1701,7 @@ func _process(delta: float) -> void:
 	if editor != null:
 		_hud_count.text = "meadow-01 · %d objects" % (editor.data.objects.size()+(1 if is_instance_valid(_inhabitant) else 0))
 		if editor.scene.has_method("capture_diorama_state"):
-			_hud_count.text = "%d objects" % editor.data.objects.size()
+			_hud_count.text = "a little world of your own"
 		_launcher.modulate.a = 1.0 if _launcher.is_hovered() else 0.775+0.225*sin(Time.get_ticks_msec()*TAU/4000.0)
 	if _category == SKY_TAB and not _sky_rows.is_empty() and is_visible_in_tree():
 		_sync_sky()

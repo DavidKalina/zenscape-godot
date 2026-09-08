@@ -12,8 +12,8 @@ saved before New, Open, or Quit; a failed save prevents switching. **Continue**
 resumes the current world, or opens the last successfully saved/opened file.
 **Open diorama** chooses a file; **Save a copy** gives it a name and location.
 
-The top bar offers **Build / Enjoy**, **Save**, **Landscapes**, **Colors & sky**, **Bigfoot**, and
-**Overview**. Invite Bigfoot by choosing his button and clicking dry, open
+The top bar offers **Build / Enjoy**, **Save**, and **World**. World contains
+**Landscapes**, **Colors & sky**, **Bigfoot**, **Overview**, and **His spot**. Invite Bigfoot by choosing his button and clicking dry, open
 terrain; his presence and resting habits are saved with the diorama. **H** hides
 or restores the controls, **R** frames the whole chunk, and **Cmd/Ctrl S** saves.
 **Escape** returns to Select first, then opens the menu. Settings offers visual
@@ -44,6 +44,12 @@ appearance. See [scene looks and controls](docs/scene-look/README.md).
 
 The older study launchers remain available. They keep their original entry
 scenes and save paths.
+
+The building tools live in one shallow bottom tray. Hover an icon for its name;
+click the current item’s name (for example **Pine ···**) to open its miniature
+choices and quick control. **Adjust** replaces that popover with detailed
+settings. **Browse** or **Cmd/Ctrl K** opens the full catalog. Overview frames
+the terrain and its base above the tray. See [the tactile editor pass](docs/design/tactile-editor/README.md).
 
 ## ZenScape fidelity study
 

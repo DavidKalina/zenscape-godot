@@ -48,7 +48,7 @@ func run() -> void:
 	check(editor.data.objects.size() == count,"Toolbar click cannot place an object")
 	scene.set_building(true)
 	palette._choose("rock")
-	click(scene._toolbar.get_child(4).get_global_rect().get_center())
+	scene._world_menu.get_popup().id_pressed.emit(5)
 	await process_frame
 	check(palette._placing == "bigfoot","Bigfoot toolbar button can replace an active placement tool")
 	click(scene._toolbar.get_child(0).get_global_rect().get_center())
@@ -62,8 +62,7 @@ func run() -> void:
 	palette._details.show()
 	await process_frame
 	palette._fit_details()
-	var rail: Rect2 = palette._tool_rail.get_global_rect()
-	check(absf(palette._details.position.x-rail.end.x)<24.0,"Tool settings are adjacent to the tool rail")
+	check(not palette._tool_rail.card.visible,"Detailed controls do not stack over another open card")
 	check(root.get_visible_rect().encloses(palette._details.get_global_rect()),"Settings stay inside the viewport")
 	palette._choose("select")
 	check(not palette._details.visible,"Select does not leave an empty settings panel")
