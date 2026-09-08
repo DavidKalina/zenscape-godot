@@ -44,7 +44,7 @@ const SETTINGS := [
 	{"property":"range_width","title":"Range width","low":0.3,"high":1.5,"step":0.05,"unit":"","whole":false,"modes":["range"]},
 	{"property":"range_heading","title":"Range rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["range"]},
 	{"property":"range_variation","title":"Range variation","low":0.0,"high":999.0,"step":1.0,"unit":"","whole":true,"modes":["range"]},
-	{"property":"mountain_radius","title":"Mountain base radius","low":1.0,"high":12.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
+	{"property":"mountain_radius","title":"Base radius","low":1.0,"high":12.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
 	{"property":"mountain_peak","title":"Peak height","low":0.5,"high":24.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
 	{"property":"mountain_variation","title":"Variation","low":1.0,"high":999.0,"step":1.0,"unit":"","whole":true,"modes":["mountain"]},
 	{"property":"mountain_heading","title":"Ridge rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["mountain"]},

@@ -15,10 +15,16 @@ static func build(editor: NativeChunkEditor, property: String, compact := false)
 	var value: Range
 	if spec.whole:
 		value = SpinBox.new()
-		var row := HBoxContainer.new()
-		row.add_child(label)
-		row.add_child(value)
-		box.add_child(row)
+		if compact:
+			# The palette's narrow grid cells: the box sits under its label
+			# like the sliders do, so neither squeezes the other.
+			box.add_child(label)
+			box.add_child(value)
+		else:
+			var row := HBoxContainer.new()
+			row.add_child(label)
+			row.add_child(value)
+			box.add_child(row)
 	else:
 		value = HSlider.new()
 		value.focus_mode = Control.FOCUS_NONE

@@ -22,7 +22,11 @@ const LANDFORM_CELLS := 28
 ## Below this the mountain stamp has not left the ground, and drawing it would
 ## only lay a flat plate over the terrain for the depth test to fight with.
 const LANDFORM_FLOOR := 0.03
-const LANDFORM_LIFT := 0.02
+## A landform ghost hovers this far above the terrain. It must clear the fog
+## composite's inversion paint, which repaints translucent surfaces sitting on
+## the ground as ground under the Balanced preset and erased the ghost at 0.02;
+## probes on 2026-09-07 showed it whole again from 0.3 up.
+const LANDFORM_LIFT := 0.3
 const GHOST_ALPHA := 0.55
 ## Simple drawn glyphs stand in for the tools that have no object to render.
 const GLYPHS := {
@@ -902,7 +906,12 @@ func _ghost_material(source: Material) -> StandardMaterial3D:
 		material.roughness = 0.85
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY
+	# It must write depth: the display fog composite reads scene depth after
+	# the transparent pass and fogs anything without depth as open sky, which
+	# under the Balanced preset (no ambient-occlusion prepass) erased the
+	# ghost entirely. Nearer faces winning over farther ones also keeps the
+	# translucent form from doubling up where it overlaps itself.
+	material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 	material.no_depth_test = false
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	material.albedo_color = Color(colour.r,colour.g,colour.b,GHOST_ALPHA)

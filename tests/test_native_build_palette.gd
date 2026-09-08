@@ -163,11 +163,11 @@ func _run() -> void:
 				and worn.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA \
 				and worn.albedo_color.a > 0.0 and worn.albedo_color.a < 1.0 \
 				and worn.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED \
-				and worn.depth_draw_mode == BaseMaterial3D.DEPTH_DRAW_OPAQUE_ONLY \
+				and worn.depth_draw_mode == BaseMaterial3D.DEPTH_DRAW_ALWAYS \
 				and not worn.no_depth_test
 			if worn is StandardMaterial3D:
 				looks[worn.albedo_color] = true
-	check(spectral,"Every ghost surface is shaded, translucent, depth-testing without writing, and casts no shadow")
+	check(spectral,"Every ghost surface is shaded, translucent, writes and tests depth, and casts no shadow")
 	check(looks.size() > 1,"The tree ghost keeps its trunk and its canopy as separate materials")
 	check(editor.data.objects.is_empty() and editor.data.to_document() == saved,"An in-flight ghost is not a record")
 	check(editor.save_garden() and JSON.parse_string(FileAccess.get_file_as_string(editor.save_path)).objects.is_empty(),"Saving during a drag writes no ghost")

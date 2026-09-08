@@ -1,7 +1,11 @@
 extends SceneTree
-## Film the palette in use: hover and drag tiles onto the ground, paint a stroke
-## and let the drop reactions play. Frames land in /tmp for ffmpeg; the scene
-## runs live, so the clip's frame rate is measured and written beside the frames.
+## Film the palette in use: hover and drag tiles onto the ground, paint a stroke,
+## let the drop reactions play, carry a mountain in by its ghost and change the
+## sky from its tab. Frames land in /tmp for ffmpeg; the scene runs live, so the
+## clip's frame rate is measured and written beside the frames. Encode with
+## ffmpeg -y -framerate $(cat /private/tmp/palette-film-frames/fps.txt) \
+##   -i /private/tmp/palette-film-frames/%04d.jpg -vf "scale=1280:-2,fps=30" \
+##   -c:v libx264 -pix_fmt yuv420p -crf 20 docs/garden/palette-demo.mp4
 const DIRECTORY := "/private/tmp/palette-film-frames"
 var frame := 0
 var scene: Node3D
@@ -58,6 +62,26 @@ func tile(id: String) -> Vector2:
 func tab(name: String) -> Vector2:
 	return palette._tabs_by_name[name].get_global_rect().get_center()
 
+func swatch(id: String) -> Vector2:
+	return palette.sky_tile_for(id).get_global_rect().get_center()
+
+## Click whatever sits under the pointer after gliding to it.
+func click(target: Vector2, glide_frames := 14, settle := 8) -> void:
+	await glide(target,glide_frames)
+	press(true)
+	await hold(2)
+	press(false)
+	await hold(settle)
+
+## The first of several ground spots that is open terrain on screen, so the
+## film survives a camera or bar change without aiming at the palette.
+func spot(candidates: Array) -> Vector2:
+	for xz: Vector2 in candidates:
+		if editor.pick(ground(xz.x,xz.y)) != null:
+			return xz
+	push_error("no open ground among %s" % [candidates])
+	return candidates[0]
+
 func ground(x: float, z: float) -> Vector2:
 	var point := editor.terrain.to_global(Vector3(x,editor.data.ground_height(Vector2(x,z)),z))
 	return scene.camera.unproject_position(point)
@@ -65,6 +89,7 @@ func ground(x: float, z: float) -> Vector2:
 func drag(id: String, x: float, z: float, settle: int) -> void:
 	if editor.pick(ground(x,z)) == null:
 		push_error("%s target (%s, %s) is not open terrain on screen" % [id,x,z])
+		return
 	await glide(tile(id),16)
 	await hold(8)
 	press(true)
@@ -81,7 +106,7 @@ func state(label: String) -> void:
 	for node in editor.content.find_children("*","MultiMeshInstance3D",true,false):
 		if node.multimesh != null and node.multimesh.instance_count > 0:
 			scales.append("%s:%.2f" % [node.name,node.multimesh.get_instance_transform(0).basis.get_scale().x])
-	print(label," frame=",frame," objects=",editor.data.objects.size()," reactions=",editor.reactions.active_count()," revision=",editor.content.revision," paused=",scene._paused," ",scales)
+	print(label," frame=",frame," objects=",editor.data.objects.size()," reactions=",editor.reactions.active_count()," revision=",editor.content.revision," peak=%.2f" % Array(editor.data.heights).max()," ",scales)
 
 func run() -> void:
 	root.size = Vector2i(1600,1000)
@@ -98,9 +123,11 @@ func run() -> void:
 	for child in scene._ui.get_children():
 		if child is Control and child != palette:
 			child.visible = false
-	scene.target = editor.terrain.to_global(Vector3(0.8,1.6,-0.4))
-	scene.distance = 15.0
-	scene.polar = deg_to_rad(54.0)
+	# The bar covers the bottom two fifths of the frame, so the orbit target
+	# sits nearer the camera than the action and the ground reads above it.
+	scene.target = editor.terrain.to_global(Vector3(0.8,1.6,3.4))
+	scene.distance = 16.0
+	scene.polar = deg_to_rad(52.0)
 	scene.yaw = deg_to_rad(-12.0)
 	scene._update_camera()
 	pointer.size = Vector2(14,14)
@@ -147,6 +174,24 @@ func run() -> void:
 	press(false)
 	await hold(6)
 	await drag("bigfoot_tree",6.5,-7.5,44)
+	# A mountain rides in on its ghost, sized down so it reads inside the frame.
+	await click(tab("Landscape"))
+	editor.set_setting("mountain_radius",3.0)
+	editor.set_setting("mountain_peak",4.5)
+	var peak := spot([Vector2(-6.5,3.0),Vector2(-6.0,0.5),Vector2(5.0,3.0),Vector2(-4.5,-6.0)])
+	await drag("mountain",peak.x,peak.y,26)
+	# Then the sky: snow from a swatch, the time of day from its slider.
+	await click(tab("Sky"))
+	await click(swatch("weather_snow"),14,36)
+	var time: Control = palette.sky_row("time").control
+	var slot := time.get_global_rect()
+	await glide(Vector2(slot.position.x+slot.size.x*0.36,slot.get_center().y),14)
+	press(true)
+	await hold(2)
+	await glide(Vector2(slot.position.x+slot.size.x*0.70,slot.get_center().y),30)
+	press(false)
+	await hold(24)
+	await click(swatch("mood_0"),14,30)
 	var seconds := (Time.get_ticks_msec()-started)/1000.0
 	var fps := frame/seconds
 	FileAccess.open(DIRECTORY.path_join("fps.txt"),FileAccess.WRITE).store_string("%.2f" % fps)

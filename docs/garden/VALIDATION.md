@@ -96,7 +96,7 @@ preview would only show whatever was already there.
 
 Mountain also drags. `_draggable` opens the drag path to it, the ghost is the
 same heightfield patch scaled by the tool's radius and peak, and it sits flat on
-the picked ground - identity basis, no pose decode, no bob, lifted 0.02 so it
+the picked ground - identity basis, no pose decode, no bob, lifted 0.3 so it
 does not fight the terrain it is about to become. The drop calls `place_at`, the
 same entry a click uses, so the stamp, its stroke and its undo are identical.
 Range keeps click-to-select: it forms the whole chunk from its strip button and
@@ -108,8 +108,13 @@ copy of the material it would have rendered with, so a tree's trunk and canopy
 stay two different things; shader-driven parts fall back to a standard material
 tinted with the shader's `base_color` converted out of linear. Each copy is
 shaded per-pixel, alpha at 0.55, with a faint cool emission and rim, shadows off,
-`DEPTH_DRAW_OPAQUE_ONLY` so it writes no depth and cannot cut into itself, and
-depth testing left on so terrain in front still hides it.
+`DEPTH_DRAW_ALWAYS` so it writes depth, and depth testing left on so terrain in
+front still hides it. The ghost first shipped writing no depth, and vanished on
+`main`: the display fog composite reads scene depth after the transparent pass
+and fogs every pixel without depth as open sky. The Beauty preset's
+ambient-occlusion prepass happened to cover it; the Balanced preset, now the
+default, did not. Any alpha-blended geometry that skips depth is hidden the same
+way under Balanced, which is worth knowing for dust and mist sprites.
 
 `tests/test_native_build_palette.gd` adds checks for all of this: the Mountain
 and Range tiles carry rendered thumbnails while Raise and Ground keep glyphs; a
