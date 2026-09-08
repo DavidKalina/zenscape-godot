@@ -11,7 +11,7 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	_rng.seed = 17
 	for i in range(1, 4):
-		_clips.append(AudioStreamMP3.load_from_file("res://assets/audio/thunder-%d.mp3" % i))
+		_clips.append(load("res://assets/audio/thunder-%d.mp3" % i) as AudioStreamMP3)
 
 static func treatment(distance: float, energy: float) -> Vector3:
 	var near := smoothstep(34.0, 6.0, distance)
