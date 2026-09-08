@@ -1,14 +1,15 @@
 class_name NativeBuildPalette
 extends Control
-## The builder's palette: a bottom bar of large tiles, one row per tool group.
+## Searchable tool and miniature palette. The landscape stays clear until Cmd/Ctrl K.
 ## Placeable tiles carry a thumbnail rendered from the real mesh and material,
 ## and can be dragged into the world, where a ghost follows the ground until
 ## the drop commits through the editor's own placement path. A last tab holds
 ## the sky: mood and weather swatches over the scene's own light and air.
-const TILE := 72.0
+const TILE := 54.0
 const SWATCH := 56.0
-const ICON := 96
-const BAR_HEIGHT := 198.0
+const ICON := 256
+const BAR_HEIGHT := 48.0
+const TAB_TITLES := {"Sculpt":"Shape", "Landscape":"Land", "Cover":"Plant", "Place":"Miniatures"}
 const DRAG_SLOP := 6.0
 const HOVER_SCALE := 1.08
 const PRESS_SCALE := 0.94
@@ -59,17 +60,16 @@ const SKIES := {
 
 ## Reports every finished drag, so a shell can chime or count placements.
 signal drag_finished(placed: bool)
+signal scene_controls_requested
 
 var editor: NativeChunkEditor
 var _bar := PanelContainer.new()
 var _tabs := HBoxContainer.new()
-var _deck := VBoxContainer.new()
 var _strip := VBoxContainer.new()
 var _scroll := ScrollContainer.new()
 var _grid := GridContainer.new()
 var _actions := HFlowContainer.new()
 var _hint := Label.new()
-var _rows := {}
 var _tabs_by_name := {}
 var _tiles := {}
 var _sky_tiles := {}
@@ -89,6 +89,46 @@ var _pressed := false
 var _dragging := false
 var _press_at := Vector2.ZERO
 var _bob := 0.0
+var _details := PanelContainer.new()
+var _tune := Button.new()
+const FOLIAGE := ["tree","flower","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","mushroom"]
+var _search := LineEdit.new()
+var _results := VBoxContainer.new()
+var _library := Control.new()
+var _scrim := ColorRect.new()
+var _launcher := Button.new()
+var _page_label := Label.new()
+var _empty := Label.new()
+var _entries := {}
+var _matches: Array[String] = []
+var _page := 0
+var _setting_page := 0
+var _setting_pages := HBoxContainer.new()
+var _setting_page_label := Label.new()
+var _page_size := 8
+var _focus_index := 0
+
+
+var _search_category := "All"
+var _portraits := {}
+var _portrait_clock := 0.0
+var miniatures_animate := true
+const CATEGORIES := ["All", "Terrain", "Water", "Flora", "Creatures", "Weather", "Scene"]
+var _fit_wrapper := Control.new()
+var _result_scroll := ScrollContainer.new()
+var _row_buttons := {}
+var _detail_preview := TextureRect.new()
+var _detail_name := Label.new()
+var _detail_description := Label.new()
+var _meta_table := VBoxContainer.new()
+var _hud_count := Label.new()
+var _placing_banner := Label.new()
+var _placing := ""
+var _hand := preload("res://scripts/native_garden_cursor.gd").new()
+var _inhabitant: CreatureActor
+var _entrance: Tween
+var _mono: Font
+
 
 ## Take an editor that has already been set up and build the palette for it.
 func attach(target: NativeChunkEditor) -> void:
@@ -130,11 +170,14 @@ func sky_row(key: String) -> Dictionary:
 func category() -> String:
 	return _category
 
-## True while the strip shows everything it holds inside the bar, with nothing
-## left below the fold. Every tool's controls are meant to read at a glance.
+## True when the expanded settings need no vertical scrolling.
 func strip_fits() -> bool:
 	var inner: Control = _scroll.get_child(0)
 	return inner.get_combined_minimum_size().y <= _scroll.size.y+0.5
+
+## The detached settings panel also shields the terrain from pointer input.
+func contains_pointer(point: Vector2) -> bool:
+	return _bar.visible or _launcher.get_global_rect().has_point(point) or _tune.get_global_rect().has_point(point) or (_details.visible and _details.get_global_rect().has_point(point))
 
 ## True while a tile is being dragged towards the world.
 func dragging() -> bool:
@@ -148,80 +191,427 @@ func ghost() -> Node3D:
 
 func _build() -> void:
 	name = "BuildPalette"
-	mouse_filter = Control.MOUSE_FILTER_PASS
-	custom_minimum_size = Vector2(0,BAR_HEIGHT)
-	# Pinned across the bottom of the viewport, whatever the window becomes.
-	anchor_left = 0.0
-	anchor_top = 1.0
-	anchor_right = 1.0
-	anchor_bottom = 1.0
-	offset_left = 0.0
-	offset_right = 0.0
-	offset_top = -BAR_HEIGHT
-	offset_bottom = 0.0
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.055,0.075,0.085,0.92)
-	style.set_corner_radius_all(12)
-	style.content_margin_left = 14
-	style.content_margin_right = 14
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	_bar.add_theme_stylebox_override("panel",style)
-	_bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_bar)
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation",6)
-	_bar.add_child(column)
-	_tabs.add_theme_constant_override("separation",4)
-	column.add_child(_tabs)
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation",12)
-	column.add_child(body)
-	_deck.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_deck.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(_deck)
-	body.add_child(VSeparator.new())
-	body.add_child(_build_strip())
-	for entry: Array in editor.tool_groups():
-		_build_group(entry[0],entry[1])
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_install_theme()
+	_library.visible = false
+	add_child(_library)
+	# Existing tile/control factories retain their ownership under the library.
+	_library.add_child(_hint)
+	_scrim.color = Color.WHITE
+	var veil_material := ShaderMaterial.new()
+	veil_material.shader = load("res://shaders/palette_veil.gdshader")
+	_scrim.material = veil_material
+	_scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_scrim.mouse_filter = Control.MOUSE_FILTER_STOP
+	var backdrop_copy := BackBufferCopy.new()
+	backdrop_copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	add_child(backdrop_copy)
+	add_child(_scrim)
+	add_child(_fit_wrapper)
+	_fit_wrapper.add_child(_bar)
+	_bar.custom_minimum_size = Vector2(880,540)
+	_bar.size = Vector2(880,540)
+	var panel_style := _stone_style(Color(0,0,0,0),26)
+	panel_style.set_content_margin_all(0)
+	panel_style.set_border_width_all(1)
+	panel_style.border_color = Color(0.85,0.70,0.44,0.45)
+	panel_style.shadow_size = 40
+	panel_style.shadow_offset = Vector2(0,25)
+	panel_style.shadow_color = Color(0.047,0.031,0.047,0.55)
+	_bar.add_theme_stylebox_override("panel",panel_style)
+	var surface := Control.new()
+	surface.custom_minimum_size = Vector2(880,540)
+	_bar.add_child(surface)
+	var glass := ColorRect.new()
+	glass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glass.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var glass_material := ShaderMaterial.new()
+	glass_material.shader = load("res://shaders/palette_panel.gdshader")
+	glass.material = glass_material
+	surface.add_child(glass)
+	var diamond := Label.new()
+	diamond.text = "◆"
+	diamond.position = Vector2(22,22)
+	diamond.add_theme_color_override("font_color",Color("d8b26f"))
+	surface.add_child(diamond)
+	_search.position = Vector2(45,14)
+	_search.size = Vector2(672,40)
+	_search.placeholder_text = "Place, summon, or shape…"
+	_search.add_theme_font_size_override("font_size",21)
+	_search.add_theme_stylebox_override("normal",StyleBoxEmpty.new())
+	_search.add_theme_stylebox_override("focus",StyleBoxEmpty.new())
+	_search.add_theme_color_override("font_placeholder_color",Color(0.97,0.94,0.89,0.55))
+	_search.text_changed.connect(func(_text: String) -> void: _refresh_results())
+	_search.text_submitted.connect(func(_text: String) -> void: _activate_result())
+	surface.add_child(_search)
+	_page_label.position = Vector2(744,27)
+	_page_label.size = Vector2(112,20)
+	_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_page_label.add_theme_font_override("font",_mono)
+	_page_label.add_theme_font_size_override("font_size",11)
+	_page_label.modulate.a = 0.5
+	surface.add_child(_page_label)
+	_tabs.position = Vector2(22,78)
+	_tabs.add_theme_constant_override("separation",7)
+	surface.add_child(_tabs)
+	for category_name: String in CATEGORIES: _add_category(category_name,category_name)
+	for entry: Array in editor.tool_groups(): _build_group(entry[0],entry[1])
 	_build_sky_group()
-	# The hint closes the tab row, so everything below it is controls.
-	_tabs.add_child(_build_hint())
+	for id: String in _tiles:
+		var group := "Terrain"
+		var old_group := _category_of(_tiles[id].get_meta("tool"))
+		if old_group == "Water": group = "Water"
+		elif id in FOLIAGE or old_group == "Cover": group = "Flora"
+		elif id == "bigfoot_tree": group = "Creatures"
+		_entries[id] = {"button":_tiles[id],"group":group,"title":_title(id),"blurb":editor.TOOL_TEXT.get(_tiles[id].get_meta("tool"),"A small detail for your world")}
+	for id: String in _sky_tiles:
+		_entries[id] = {"button":_sky_tiles[id],"group":"Weather","title":_sky_tiles[id].tooltip_text.get_slice("\n",0),"blurb":"Settle the whole scene into a new atmosphere"}
+	for entry: Array in [["undo","Undo",editor.undo],["redo","Redo",editor.redo],
+		["save","Save garden",editor.save_garden],["open","Open garden",editor.open_garden],
+		["inspect","Leave build mode",func() -> void: editor.set_active(false)],
+		["sky_settings","Sky settings",func() -> void: _show_category(SKY_TAB); _details.visible = true; _tune.set_pressed_no_signal(true)],
+		["tool_settings","Tool settings",func() -> void: _details.visible = true; _tune.set_pressed_no_signal(true)]]:
+		var button := Button.new()
+		button.pressed.connect(func() -> void: close_palette(); entry[2].call())
+		_library.add_child(button)
+		_entries["command_"+entry[0]] = {"button":button,"group":"Scene","title":entry[1],"blurb":"Care for your diorama"}
+	for entry: Array in [["bigfoot","Bigfoot","Creatures","A curious visitor. Set him down and watch him settle."], ["wind_gust","Wind gust","Weather","Send a passing gust through the diorama."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."]]:
+		var button := Button.new()
+		_library.add_child(button)
+		button.pressed.connect(_take_special.bind(entry[0]))
+		_entries[entry[0]] = {"button":button,"group":entry[2],"title":entry[1],"blurb":entry[3]}
+	# Use truthful descriptions of the currently available tools.
+	for id: String in {"tree":"Pine", "raise":"Rolling hill", "rock":"Boulder", "meadow":"Wildflowers", "range":"Mountain ridge"}:
+		_entries[id].title = {"tree":"Pine", "raise":"Rolling hill", "rock":"Boulder", "meadow":"Wildflowers", "range":"Mountain ridge"}[id]
+	_result_scroll.position = Vector2(12,128)
+	_result_scroll.size = Vector2(481,398)
+	_result_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_result_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	surface.add_child(_result_scroll)
+	_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_results.add_theme_constant_override("separation",2)
+	_result_scroll.add_child(_results)
+	_empty.text = "Nothing by that name\nTry “tree”, “water”, “wind”, or “bigfoot”."
+	_empty.position = Vector2(24,160)
+	_empty.size = Vector2(460,70)
+	_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	surface.add_child(_empty)
+	_build_preview(surface)
+	for line: Rect2 in [Rect2(0,65,880,1),Rect2(0,117,880,1),Rect2(505,118,1,422)]:
+		var rule := ColorRect.new()
+		rule.position = line.position
+		rule.size = line.size
+		rule.color = Color(0.85,0.70,0.44,0.18)
+		rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		surface.add_child(rule)
+	var hud := Label.new()
+	hud.text = "Z E N S C A P E"
+	hud.position = Vector2(24,22)
+	hud.add_theme_font_size_override("font_size",15)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(hud)
+	move_child(hud,1)
+	_hud_count.position = Vector2(24,45)
+	_hud_count.add_theme_font_override("font",_mono)
+	_hud_count.add_theme_font_size_override("font_size",11)
+	_hud_count.modulate.a = 0.7
+	_hud_count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_hud_count)
+	move_child(_hud_count,2)
+	_placing_banner.add_theme_stylebox_override("normal",_stone_style(Color(0.14,0.16,0.13,0.9),24))
+	_placing_banner.add_theme_font_size_override("font_size",14)
+	_placing_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_placing_banner.visible = false
+	add_child(_placing_banner)
+	_details.name = "ToolDetails"
+	_details.add_theme_stylebox_override("panel",_stone_style(Color(0.16,0.14,0.18,0.97),12))
+	_details.visible = false
+	add_child(_details)
+	_details.add_child(_build_strip())
+	_launcher.pressed.connect(open_palette)
+	_launcher.custom_minimum_size = Vector2(190,30)
+	var pill := _stone_style(Color(0.24,0.18,0.23,0.86),24)
+	pill.set_border_width_all(1)
+	pill.border_color = Color(0.85,0.70,0.44,0.4)
+	_launcher.add_theme_stylebox_override("normal",pill)
+	_launcher.add_theme_font_size_override("font_size",14)
+	add_child(_launcher)
+	_tune.icon = _line_icon("tune")
+	_tune.tooltip_text = "Current tool settings"
+	_tune.toggle_mode = true
+	_tune.toggled.connect(func(open: bool) -> void: _details.visible = open)
+	add_child(_tune)
 	_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cursor.size = Vector2(TILE,TILE)
 	_cursor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_cursor.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_cursor.size = Vector2(TILE,TILE)
-	_cursor.pivot_offset = Vector2(TILE,TILE)*0.5
-	_cursor.top_level = true
 	_cursor.visible = false
-	_cursor.modulate = Color(1,1,1,0.9)
 	add_child(_cursor)
-	_show_category(_category_of(editor.mode))
+	add_child(_hand)
+	get_viewport().size_changed.connect(_fit_dock)
+	_fit_dock()
 	_on_tool_changed(editor.mode)
+	close_palette()
 
-## One line beside the tabs. It never wraps, so the row keeps its height.
-func _build_hint() -> Control:
-	_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hint.clip_text = true
-	_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_hint.add_theme_font_size_override("font_size",12)
-	_hint.add_theme_color_override("font_color",Color("aab8ad"))
-	_on_status_changed(editor.status)
-	return _hint
+func _add_category(id: String, title: String) -> void:
+	var tab := Button.new()
+	tab.text = title
+	tab.add_theme_font_size_override("font_size",13)
+	for state: String in ["normal","hover","pressed","hover_pressed"]:
+		var selected := state in ["pressed","hover_pressed"]
+		var chip := _stone_style(Color("d8b26f") if selected else Color(0.97,0.94,0.89,0.08),20)
+		chip.shadow_size = 0
+		chip.content_margin_left = 13
+		chip.content_margin_right = 13
+		chip.content_margin_top = 6
+		chip.content_margin_bottom = 6
+		tab.add_theme_stylebox_override(state,chip)
+	tab.add_theme_color_override("font_pressed_color",Color("2b2126"))
+	tab.add_theme_color_override("font_hover_pressed_color",Color("2b2126"))
+	tab.toggle_mode = true
+	tab.button_group = _tab_group
+	tab.focus_mode = Control.FOCUS_NONE
+	tab.pressed.connect(_browse.bind(id))
+	_tabs.add_child(tab)
+	_tabs_by_name[id] = tab
+
+func _browse(id: String) -> void:
+	if id in [SKY_TAB,"Weather"]: _show_category(SKY_TAB)
+	id = {"Cover":"Flora","Place":"Terrain","Sky":"Weather"}.get(id,id)
+	_search_category = id
+	_page = 0
+	_refresh_results()
+
+func open_palette() -> void:
+	if not editor.active: return
+	if not _placing.is_empty(): _finish_placing()
+	_hand.hide_pointer()
+	_bar.visible = true
+	_scrim.visible = true
+	_launcher.visible = false
+	_placing = ""
+	_placing_banner.visible = false
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	_tune.visible = false
+	_details.visible = false
+	_tune.set_pressed_no_signal(false)
+	_search.text = ""
+	_search_category = "All"
+	_page = 0
+	_refresh_results()
+	_search.grab_focus()
+	if _entrance: _entrance.kill()
+	_bar.modulate.a = 0.0
+	_bar.position.y = 14
+	_entrance = create_tween().set_parallel(true)
+	_entrance.tween_property(_bar,"modulate:a",1.0,0.24)
+	_entrance.tween_property(_bar,"position:y",0.0,0.24).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+func close_palette() -> void:
+	_bar.visible = false
+	_scrim.visible = false
+	_launcher.visible = _placing.is_empty()
+	_tune.visible = false
+	_search.release_focus()
+
+func _refresh_results() -> void:
+	if _entries.is_empty(): return
+	for child in _results.get_children():
+		_results.remove_child(child)
+		child.queue_free()
+	_row_buttons.clear()
+	_matches.clear()
+	var query := _search.text.strip_edges().to_lower()
+	for group: String in CATEGORIES.slice(1):
+		if _search_category != "All" and _search_category != group: continue
+		var heading_added := false
+		var ordered: Array = _entries.keys()
+		var featured := ["range","mountain","raise","rock","pond","waterfall","tree","broadleaf","meadow","flower","bigfoot","fireflies"]
+		ordered.sort_custom(func(a: String,b: String) -> bool:
+			var ai := featured.find(a)
+			var bi := featured.find(b)
+			return (ai if ai >= 0 else 100) < (bi if bi >= 0 else 100))
+		for id: String in ordered:
+			var entry: Dictionary = _entries[id]
+			if entry.group != group: continue
+			var words: String = (entry.title+" "+id.replace("_"," ")+" "+entry.blurb).to_lower()
+			if not query.is_empty() and not words.contains(query): continue
+			if not heading_added:
+				var heading := Label.new()
+				heading.text = "  "+group.to_upper()
+				heading.custom_minimum_size.y = 30
+				heading.add_theme_font_override("font",_mono)
+				heading.add_theme_font_size_override("font_size",11)
+				heading.add_theme_color_override("font_color",Color("e6c07c"))
+				_results.add_child(heading)
+				heading_added = true
+			_matches.append(id)
+			var row := _make_result_row(id)
+			_results.add_child(row)
+			_row_buttons[id] = row
+	_empty.visible = _matches.is_empty()
+	_page_label.text = "%d results" % _matches.size()
+	for id: String in _tabs_by_name: _tabs_by_name[id].set_pressed_no_signal(id == _search_category)
+	_focus_index = 0
+	_result_scroll.scroll_vertical = 0
+	_mark_result()
+
+func _make_result_row(id: String) -> Button:
+	var entry: Dictionary = _entries[id]
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(0,55)
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(func() -> void: entry.button.pressed.emit())
+	if _tiles.has(id): button.gui_input.connect(_on_tile_input.bind(id))
+	button.mouse_entered.connect(func() -> void: _focus_index = _matches.find(id); _mark_result(false))
+	var icon := TextureRect.new()
+	icon.position = Vector2(10,12)
+	icon.size = Vector2(30,30)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture = _thumbs.get(id,entry.button.icon)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(icon)
+	var title := Label.new()
+	title.text = entry.title
+	title.position = Vector2(52,6)
+	title.size = Vector2(325,22)
+	title.clip_text = true
+	title.add_theme_font_size_override("font_size",15)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(title)
+	var blurb := Label.new()
+	blurb.text = entry.blurb.get_slice("\n",0)
+	blurb.position = Vector2(52,29)
+	blurb.size = Vector2(330,18)
+	blurb.clip_text = true
+	blurb.add_theme_font_size_override("font_size",12)
+	blurb.modulate.a = 0.72
+	blurb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(blurb)
+	var badge := Label.new()
+	badge.text = _verb(id)
+	badge.position = Vector2(394,18)
+	badge.size = Vector2(68,18)
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	badge.add_theme_font_override("font",_mono)
+	badge.add_theme_font_size_override("font_size",11)
+	badge.add_theme_color_override("font_color",Color("e6c07c"))
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(badge)
+	return button
+
+func _verb(id: String) -> String:
+	if id == "range": return "scene"
+	if id == "wind_gust": return "aim"
+	if id.begins_with("command_") or _entries[id].group == "Weather" or id == "fireflies": return "scene"
+	if _placeable(id): return "click"
+	if id == "bigfoot": return "hero"
+	if id == "wind_gust": return "aim"
+	return "shape" if _entries[id].group == "Terrain" else "brush"
+
+func _build_preview(surface: Control) -> void:
+	var preview_frame := Panel.new()
+	preview_frame.position = Vector2(526,136)
+	preview_frame.size = Vector2(334,132)
+	var style := _stone_style(Color(0.85,0.70,0.44,0.06),14)
+	style.set_border_width_all(1)
+	style.border_color = Color(0.85,0.70,0.44,0.22)
+	preview_frame.add_theme_stylebox_override("panel",style)
+	surface.add_child(preview_frame)
+	_detail_preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_detail_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_detail_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	preview_frame.add_child(_detail_preview)
+	_detail_name.position = Vector2(526,284)
+	_detail_name.size = Vector2(334,26)
+	_detail_name.add_theme_font_size_override("font_size",17)
+	surface.add_child(_detail_name)
+	_detail_description.position = Vector2(526,316)
+	_detail_description.size = Vector2(334,72)
+	_detail_description.max_lines_visible = 3
+	_detail_description.clip_text = true
+	_detail_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_description.add_theme_font_size_override("font_size",14)
+	_detail_description.modulate.a = 0.82
+	surface.add_child(_detail_description)
+	_meta_table.position = Vector2(526,398)
+	_meta_table.size = Vector2(334,114)
+	_meta_table.add_theme_constant_override("separation",1)
+	surface.add_child(_meta_table)
+
+func _turn_page(direction: int) -> void:
+	if _matches.is_empty(): return
+	_focus_index = posmod(_focus_index+direction,_matches.size())
+	_mark_result()
+
+func _mark_result(scroll_to_selection := true) -> void:
+	for i in range(_matches.size()):
+		var button: Button = _row_buttons[_matches[i]]
+		var style := _stone_style(Color(0.72,0.52,0.42,0.24 if i == _focus_index else 0.0),12)
+		style.shadow_size = 0
+		style.set_border_width_all(1 if i == _focus_index else 0)
+		style.border_color = Color(0.94,0.84,0.64,0.55)
+		for state: String in ["normal","hover","pressed"]: button.add_theme_stylebox_override(state,style)
+	for child in _meta_table.get_children():
+		_meta_table.remove_child(child)
+		child.queue_free()
+	_detail_preview.texture = null
+	_detail_name.text = "—"
+	_detail_description.text = "Search the catalog to see how a piece behaves once it is in the world."
+	if _matches.is_empty(): return
+	var id := _matches[_focus_index]
+	var entry: Dictionary = _entries[id]
+	_detail_preview.texture = _thumbs.get(id,entry.button.icon)
+	_detail_name.text = entry.title
+	_detail_description.text = entry.blurb.get_slice("\n",0)
+	for pair: Array in [["CATEGORY",entry.group],["INTERACTION",_verb(id).capitalize()],["PLACEMENT","In the world" if _verb(id) != "scene" else "Whole scene"]]:
+		var row := PanelContainer.new()
+		var style := _stone_style(Color(0.97,0.94,0.89,0.07),4)
+		style.shadow_size = 0
+		style.set_content_margin_all(9)
+		row.add_theme_stylebox_override("panel",style)
+		var box := HBoxContainer.new()
+		row.add_child(box)
+		var key := Label.new()
+		key.text = pair[0]
+		key.add_theme_font_override("font",_mono)
+		key.add_theme_font_size_override("font_size",11)
+		key.add_theme_color_override("font_color",Color("e6c07c"))
+		key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		box.add_child(key)
+		var value := Label.new()
+		value.text = pair[1]
+		value.add_theme_font_size_override("font_size",13)
+		box.add_child(value)
+		_meta_table.add_child(row)
+	if scroll_to_selection: _reveal_selection.call_deferred()
+
+func _reveal_selection() -> void:
+	if _matches.is_empty(): return
+	var row: Button = _row_buttons[_matches[_focus_index]]
+	if row.position.y-44 < _result_scroll.scroll_vertical:
+		_result_scroll.scroll_vertical = maxi(0,int(row.position.y-44))
+	elif row.position.y+row.size.y+12 > _result_scroll.scroll_vertical+_result_scroll.size.y:
+		_result_scroll.scroll_vertical = int(row.position.y+row.size.y+12-_result_scroll.size.y)
+
+func _activate_result() -> void:
+	if _matches.is_empty(): return
+	_entries[_matches[_focus_index]].button.pressed.emit()
 
 func _build_strip() -> Control:
 	_strip.custom_minimum_size = Vector2(352,0)
 	_strip.add_theme_constant_override("separation",4)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_strip.add_child(_scroll)
 	var stack := VBoxContainer.new()
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stack.add_theme_constant_override("separation",4)
 	_scroll.add_child(stack)
+	stack.minimum_size_changed.connect(_fit_details.call_deferred)
 	_grid.columns = 3
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grid.add_theme_constant_override("h_separation",8)
@@ -229,33 +619,33 @@ func _build_strip() -> Control:
 	_actions.add_theme_constant_override("h_separation",4)
 	_actions.add_theme_constant_override("v_separation",3)
 	stack.add_child(_actions)
+	_setting_pages.add_theme_constant_override("separation",8)
+	_setting_page_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_setting_pages.add_child(_setting_page_label)
+	for direction: int in [-1,1]:
+		var button := Button.new()
+		button.text = "Previous" if direction < 0 else "Next"
+		button.pressed.connect(func() -> void:
+			_setting_page = posmod(_setting_page+direction,maxi(1,ceili(_grid.get_child_count()/6.0)))
+			_paginate_settings())
+		_setting_pages.add_child(button)
+	stack.add_child(_setting_pages)
 	return _strip
 
+func _paginate_settings() -> void:
+	var count := _grid.get_child_count()
+	for i in range(count): _grid.get_child(i).visible = i/6 == _setting_page
+	_setting_pages.visible = count > 6
+	_setting_page_label.text = "%d / %d" % [_setting_page+1,maxi(1,ceili(count/6.0))]
+	_fit_details.call_deferred()
+
 func _build_group(title: String, tools: Array) -> void:
-	var tab := Button.new()
-	tab.text = title
-	tab.toggle_mode = true
-	tab.button_group = _tab_group
-	tab.focus_mode = Control.FOCUS_NONE
-	tab.pressed.connect(_show_category.bind(title))
-	_tabs.add_child(tab)
-	_tabs_by_name[title] = tab
-	var scroll := ScrollContainer.new()
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.visible = false
-	_deck.add_child(scroll)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation",8)
-	scroll.add_child(row)
-	_rows[title] = scroll
+
 	for tool: String in tools:
 		if tool == "assets":
-			for piece: String in NativeAssetCatalog.PARTS:
-				row.add_child(_tile(piece,"assets",piece))
-			continue
-		row.add_child(_tile(tool,tool,""))
+			for piece: String in NativeAssetCatalog.PARTS: _library.add_child(_tile(piece,"assets",piece))
+		else:
+			_library.add_child(_tile(tool,tool,""))
 
 func _tile(id: String, tool: String, piece: String) -> Button:
 	var button := Button.new()
@@ -264,10 +654,17 @@ func _tile(id: String, tool: String, piece: String) -> Button:
 	button.button_group = _tile_group
 	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(TILE,TILE)
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	button.tooltip_text = "%s\n%s" % [_title(id),editor.TOOL_TEXT.get(tool,"")]
 	button.set_meta("tool",tool)
 	button.set_meta("piece",piece)
 	button.expand_icon = true
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if _portrait(id):
+		for state: String in ["normal","hover","pressed","hover_pressed"]:
+			var style: StyleBoxFlat = theme.get_stylebox(state,"Button").duplicate()
+			style.content_margin_bottom = 18
+			button.add_theme_stylebox_override(state,style)
 	if _portrait(id):
 		button.add_child(_caption(id))
 	else:
@@ -294,7 +691,7 @@ func _caption_text(text: String) -> Label:
 	label.text = text
 	label.clip_text = true
 	label.add_theme_font_size_override("font_size",9)
-	label.add_theme_color_override("font_color",Color("d5e2d6"))
+	label.add_theme_color_override("font_color",Color("b9b1bc"))
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE,Control.PRESET_MODE_MINSIZE)
@@ -322,6 +719,8 @@ func _draggable(id: String) -> bool:
 	return _placeable(id) or id == "mountain"
 
 func _category_of(tool: String) -> String:
+	if tool in FOLIAGE or tool == "assets" and editor.catalog_asset in FOLIAGE:
+		return "Cover"
 	for entry: Array in editor.tool_groups():
 		if tool in entry[1]:
 			return entry[0]
@@ -331,10 +730,118 @@ func _category_of(tool: String) -> String:
 ## the sky tab shapes the scene's weather while the same brush waits below it.
 func _show_category(title: String) -> void:
 	_category = title
-	for name: String in _rows:
-		_rows[name].visible = name == title
-		_tabs_by_name[name].set_pressed_no_signal(name == title)
 	_rebuild_strip()
+	_on_status_changed(editor.status)
+
+func _fit_dock() -> void:
+	var screen := get_viewport_rect().size
+	var fit := clampf(minf(1.0,minf((screen.y-48)/540.0,(screen.x-48)/880.0)),0.45,1.0)
+	_fit_wrapper.scale = Vector2.ONE*fit
+	_fit_wrapper.position = (screen-Vector2(880,540)*fit)*0.5
+	_launcher.position = Vector2((screen.x-220.0)*0.5,screen.y-72.0)
+	_launcher.size = Vector2(220,44)
+	_placing_banner.position = Vector2((screen.x-480.0)*0.5,screen.y-72.0)
+	_placing_banner.size = Vector2(480,44)
+	_fit_details.call_deferred()
+
+func _fit_details() -> void:
+	if _scroll.get_child_count() == 0: return
+	var content: Control = _scroll.get_child(0)
+	var screen := get_viewport_rect().size
+	var available := maxf(64.0,screen.y-BAR_HEIGHT-42.0)
+	var height := clampf(content.get_combined_minimum_size().y+24.0,64.0,available)
+	_details.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_details.position = Vector2(screen.x-400.0,screen.y-BAR_HEIGHT-28.0-height)
+	_details.size = Vector2(384,height)
+
+## Small antialiased vector icons avoid platform-dependent Unicode glyphs.
+func _line_icon(kind: String) -> Texture2D:
+	var path := ""
+	match kind:
+		"undo": path = '<path d="M8 5 L3 10 L8 15 M3 10 H13 A6 6 0 0 1 13 22"/>'
+		"redo": path = '<path d="M16 5 L21 10 L16 15 M21 10 H11 A6 6 0 0 0 11 22"/>'
+		"close": path = '<path d="M6 6 L18 18 M18 6 L6 18"/>'
+		"menu": path = '<path d="M5 7 H19 M5 12 H19 M5 17 H19"/>'
+		"tune": path = '<path d="M5 7 H19 M5 17 H19"/><circle cx="9" cy="7" r="2.5" fill="#26232b"/><circle cx="15" cy="17" r="2.5" fill="#26232b"/>'
+	var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="#c8c1cc" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">'+path+'</g></svg>'
+	var image := Image.new()
+	image.load_svg_from_string(svg)
+	return ImageTexture.create_from_image(image)
+
+func _stone_style(color: Color, radius: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.set_corner_radius_all(radius)
+	style.set_border_width_all(0)
+	style.border_color = Color(0.85,0.73,0.77,0.16)
+	style.set_content_margin_all(12)
+	style.shadow_color = Color(0.06,0.04,0.08,0.12)
+	style.shadow_size = 5
+	style.shadow_offset = Vector2(0,4)
+	return style
+
+func _install_theme() -> void:
+	var look := Theme.new()
+	look.default_font_size = 11
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Inter","Helvetica Neue","Arial"])
+	var nunito := FontVariation.new()
+	nunito.base_font = load("res://assets/fonts/Nunito.ttf")
+	nunito.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"):600.0}
+	look.default_font = nunito
+	_mono = load("res://assets/fonts/IBMPlexMono-Regular.ttf")
+	look.set_icon("clear","LineEdit",_line_icon("close"))
+	for state: String in ["normal","hover","pressed","hover_pressed","disabled","focus"]:
+		var color := Color(0.58,0.45,0.52,0.0)
+		if state == "hover": color.a = 0.20
+		if state in ["pressed","hover_pressed"]: color = Color(0.64,0.58,0.69,0.12)
+		var style := _stone_style(color,8)
+		style.shadow_size = 0
+		style.set_content_margin_all(4)
+		style.border_color.a = 0.0
+		look.set_stylebox(state,"Button",style)
+	look.set_color("font_color","Button",Color("e4d9d5"))
+	look.set_color("font_hover_color","Button",Color("fff0e3"))
+	look.set_color("font_pressed_color","Button",Color("fff0e3"))
+	look.set_color("font_color","Label",Color("e4d9d5"))
+	for state: String in ["normal","focus","read_only"]:
+		var field := _stone_style(Color(0.55,0.51,0.60,0.08),6)
+		field.shadow_size = 0
+		field.set_content_margin_all(6)
+		look.set_stylebox(state,"LineEdit",field)
+	for state: String in ["scroll","grabber","grabber_highlight","grabber_pressed"]:
+		var rail := StyleBoxFlat.new()
+		rail.bg_color = Color(0.75,0.62,0.68,0.10 if state == "scroll" else 0.38)
+		rail.set_corner_radius_all(3)
+		rail.content_margin_top = 2
+		rail.content_margin_bottom = 2
+		look.set_stylebox(state,"HScrollBar",rail)
+		var vertical: StyleBoxFlat = rail.duplicate()
+		vertical.content_margin_top = 0
+		vertical.content_margin_bottom = 0
+		vertical.content_margin_left = 1
+		vertical.content_margin_right = 1
+		look.set_stylebox(state,"VScrollBar",vertical)
+	theme = look
+
+## Only the visible slice of the current shelf renders, at 24 Hz. Hidden and
+## horizontally clipped thumbnails keep their last texture, without 3D work.
+func _animate_portraits(delta: float) -> void:
+	if not is_visible_in_tree() or not miniatures_animate:
+		return
+	_portrait_clock += delta
+	if _portrait_clock < 1.0/24.0:
+		return
+	var step := _portrait_clock
+	_portrait_clock = 0.0
+	for id: String in _portraits:
+		if not _bar.visible or (not id in _matches):
+			continue
+		var selected := not _matches.is_empty() and _matches[_focus_index] == id
+		if not selected and (not _row_buttons.has(id) or not _row_buttons[id].get_global_rect().intersects(_result_scroll.get_global_rect())): continue
+		var portrait: Dictionary = _portraits[id]
+		portrait.pivot.rotation.y += step*0.28
+		portrait.viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 # --- the sky tab -------------------------------------------------------------
 
@@ -346,40 +853,15 @@ func _sky_ready() -> bool:
 ## Swatches for the three moods on one row and every weather preset on the next,
 ## so a whole sky is one click while the tool in hand waits untouched.
 func _build_sky_group() -> void:
-	if not _sky_ready():
-		return
-	var tab := Button.new()
-	tab.text = SKY_TAB
-	tab.toggle_mode = true
-	tab.button_group = _tab_group
-	tab.focus_mode = Control.FOCUS_NONE
-	tab.pressed.connect(_show_category.bind(SKY_TAB))
-	_tabs.add_child(tab)
-	_tabs_by_name[SKY_TAB] = tab
-	var scroll := ScrollContainer.new()
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.visible = false
-	_deck.add_child(scroll)
-	_rows[SKY_TAB] = scroll
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation",6)
-	scroll.add_child(rows)
-	var moods := HBoxContainer.new()
-	moods.add_theme_constant_override("separation",8)
-	rows.add_child(moods)
+	if not _sky_ready(): return
+
 	for i in range(MOODS.size()):
 		var mood: Dictionary = MOODS[i]
-		moods.add_child(_sky_tile("mood_%d" % i,mood.title,"A whole sky at once",mood,_apply_mood.bind(i)))
-	var weather := HBoxContainer.new()
-	weather.add_theme_constant_override("separation",8)
-	rows.add_child(weather)
+		_library.add_child(_sky_tile("mood_%d" % i,mood.title,"A whole sky at once",mood,_apply_mood.bind(i)))
 	var names: Array = editor.scene._precipitation.PRESET_NAMES
 	for i in range(names.size()):
 		var key: String = names[i]
-		var look: Dictionary = SKIES.get(key,SKIES.clear)
-		weather.add_child(_sky_tile("weather_"+key,_title(key),"Weather preset",look,_choose_weather.bind(i)))
+		_library.add_child(_sky_tile("weather_"+key,_title(key),"Weather preset",SKIES.get(key,SKIES.clear),_choose_weather.bind(i)))
 
 func _sky_tile(id: String, title: String, hint: String, look: Dictionary, apply: Callable) -> Button:
 	var button := Button.new()
@@ -397,7 +879,7 @@ func _sky_tile(id: String, title: String, hint: String, look: Dictionary, apply:
 	swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(swatch)
 	button.add_child(_caption_text(title))
-	button.pressed.connect(apply)
+	button.pressed.connect(func() -> void: apply.call(); close_palette())
 	button.mouse_entered.connect(func() -> void:
 		_scale_tile(button,HOVER_SCALE)
 		_on_status_changed("%s · %s" % [title,hint]))
@@ -421,7 +903,8 @@ func _choose_weather(index: int) -> void:
 func _on_sky_toggle_requested() -> void:
 	if not _sky_ready():
 		return
-	_show_category(_category_of(editor.mode) if _category == SKY_TAB else SKY_TAB)
+	open_palette()
+	_browse(SKY_TAB)
 
 ## Every dial the scene's own study offers for its light, air and weather.
 func _fill_sky_strip() -> void:
@@ -518,8 +1001,8 @@ func _sync_sky() -> void:
 
 # --- thumbnails -------------------------------------------------------------
 
-## Render every placeable once into its own transparent viewport. Kept alive so
-## the tiles can keep using the viewport textures as their icons.
+## Seed each portrait once. Visible tiles subsequently turn in their own small
+## transparent viewport; clipped and hidden tiles retain the last rendered pose.
 func ensure_thumbnails() -> void:
 	if not _thumbs.is_empty():
 		return
@@ -529,8 +1012,30 @@ func ensure_thumbnails() -> void:
 		var model := build_model(id)
 		if model == null:
 			continue
-		_thumbs[id] = _render(model)
+		_thumbs[id] = _render(model,id)
 		_tiles[id].icon = _thumbs[id]
+	var bigfoot_model: Node3D = load("res://assets/models/zenscape-bigfoot-interactions.glb").instantiate()
+	_style_bigfoot(bigfoot_model)
+	_thumbs["bigfoot"] = _render(bigfoot_model,"bigfoot")
+	for id: String in _entries:
+		if _thumbs.has(id): continue
+		var symbol := ToolGlyph.new()
+		symbol.kind = GLYPHS.get(id,"disc")
+		if id in ["wind_gust","fog_bank"]: symbol.kind = "wave"
+		_thumbs[id] = _render_symbol(symbol)
+	if _bar.visible: _refresh_results()
+
+func _render_symbol(symbol: Control) -> Texture2D:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(ICON,ICON)
+	viewport.transparent_bg = true
+	viewport.disable_3d = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(viewport)
+	_viewports.append(viewport)
+	viewport.add_child(symbol)
+	symbol.size = Vector2(ICON,ICON)
+	return viewport.get_texture()
 
 ## The real meshes and materials for a placeable, in the local frame the garden
 ## renders its record in. Both the thumbnails and the drag ghost use this.
@@ -665,7 +1170,7 @@ func _landform_material() -> StandardMaterial3D:
 	material.roughness = 1.0
 	return material
 
-func _render(model: Node3D) -> Texture2D:
+func _render(model: Node3D, id: String) -> Texture2D:
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(ICON,ICON)
 	viewport.transparent_bg = true
@@ -693,6 +1198,10 @@ func _render(model: Node3D) -> Texture2D:
 		bounds = box if first else bounds.merge(box)
 		first = false
 	var center := bounds.get_center()
+	var pivot := Node3D.new()
+	viewport.add_child(pivot)
+	pivot.position = center
+	model.reparent(pivot)
 	var radius := maxf(bounds.size.length()*0.5,0.05)
 	var camera := Camera3D.new()
 	camera.fov = 32.0
@@ -701,6 +1210,7 @@ func _render(model: Node3D) -> Texture2D:
 	viewport.add_child(camera)
 	var away := Vector3(0.62,0.46,1.0).normalized()*(radius/tan(deg_to_rad(camera.fov*0.5))*1.06)
 	camera.look_at_from_position(center+away,center,Vector3.UP)
+	_portraits[id] = {"viewport":viewport,"pivot":pivot}
 	return viewport.get_texture()
 
 # --- selection and feel -----------------------------------------------------
@@ -710,12 +1220,64 @@ func _choose(id: String) -> void:
 	if button.get_meta("piece") != "":
 		editor.catalog_asset = button.get_meta("piece")
 	editor.select_tool(button.get_meta("tool"))
+	close_palette()
+	if id == "range": editor.form_range(); editor.select_tool("select")
+	elif id != "select": _start_placing(id)
+
+func _start_placing(id: String) -> void:
+	_hand.take()
+	_placing = id
+	_launcher.visible = false
+	_placing_banner.text = "●  Placing %s — click the diorama     esc to cancel" % _entries[id].title
+	_placing_banner.visible = true
+	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+
+func _finish_placing(placed := false) -> void:
+	_hand.release(placed)
+	_placing = ""
+	_placing_banner.visible = false
+	_launcher.visible = true
+	editor.finish_stroke()
+	editor.select_tool("select")
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+func _style_bigfoot(model: Node3D) -> void:
+	var coat := StandardMaterial3D.new()
+	coat.vertex_color_use_as_albedo = true
+	coat.roughness = 0.9
+	for mesh: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
+		if "_n7_" not in mesh.name and "_n8_" not in mesh.name: mesh.material_override = coat
+
+func _take_special(id: String) -> void:
+	close_palette()
+	match id:
+		"fireflies": editor.scene._fireflies.called = true
+		"fog_bank": editor.scene._atmosphere.set_fog(0.65)
+		_: _start_placing(id)
+
+func _place_special(point: Vector2) -> bool:
+	var hit: Variant = editor.pick(point)
+	if hit == null: return false
+	var world: Vector3 = editor.terrain.to_global(hit)
+	if _placing == "wind_gust":
+		editor.scene._atmosphere.send_gust(world)
+	elif _placing == "bigfoot":
+		if not is_instance_valid(_inhabitant):
+			_inhabitant = CreatureActor.new()
+			editor.scene.add_child(_inhabitant)
+			_inhabitant.setup("res://assets/models/zenscape-bigfoot-interactions.glb")
+			_style_bigfoot(_inhabitant.actor)
+		_inhabitant.reset_at(world)
+	return true
 
 func _scale_tile(button: Button, factor: float) -> void:
 	if not is_instance_valid(button):
 		return
 	button.pivot_offset = button.size*0.5
+	if button.has_meta("hover_tween"):
+		button.get_meta("hover_tween").kill()
 	var tween := create_tween()
+	button.set_meta("hover_tween",tween)
 	tween.tween_property(button,"scale",Vector2.ONE*factor,TWEEN_TIME).set_trans(Tween.TRANS_SINE)
 
 func _on_tile_hover(id: String, entered: bool) -> void:
@@ -727,10 +1289,15 @@ func _on_tile_hover(id: String, entered: bool) -> void:
 	_on_status_changed("%s · %s" % [_title(id),editor.TOOL_TEXT.get(tool,"")])
 
 func _on_tool_changed(tool: String) -> void:
+	if not _placing.is_empty() and _tiles.has(_placing) and _tiles[_placing].get_meta("tool") != tool:
+		_placing = ""
+		_placing_banner.visible = false
+		_launcher.visible = not _bar.visible
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 	var chosen := tile_for(tool)
 	for id: String in _tiles:
 		_tiles[id].set_pressed_no_signal(_tiles[id] == chosen)
-		_tiles[id].modulate = Color.WHITE if _tiles[id] == chosen else Color(0.82,0.86,0.83)
+		_tiles[id].modulate = Color.WHITE
 	_show_category(_category_of(tool))
 
 func _on_setting_changed(property: String, value: float) -> void:
@@ -740,8 +1307,9 @@ func _on_setting_changed(property: String, value: float) -> void:
 	NativeSettingRow.show_value(_strip_rows[property],value)
 
 func _on_status_changed(text: String) -> void:
-	_hint.text = text.replace("\n"," · ")
+	_hint.text = "Sky & atmosphere" if _category == SKY_TAB else _title(editor.catalog_asset if editor.mode == "assets" else editor.mode)
 	_hint.tooltip_text = text
+	_launcher.text = ("⌘K" if OS.get_name() == "macOS" else "Ctrl K")+"    place something"
 
 func _on_active_changed(enabled: bool) -> void:
 	visible = enabled
@@ -750,9 +1318,10 @@ func _on_active_changed(enabled: bool) -> void:
 	else:
 		_cancel_drag()
 
-## The sliders for the tool in hand, then its one-shot actions and colours,
-## beside the tiles. Every tool's whole set of controls lives here.
+## The tool's sliders, actions and colors live in the expandable Tune panel.
 func _rebuild_strip() -> void:
+	_setting_page = 0
+	_paginate_settings.call_deferred()
 	for child in _grid.get_children():
 		_grid.remove_child(child)
 		child.queue_free()
@@ -825,7 +1394,9 @@ func _picker(id: String, colour: Color, apply: Callable) -> ColorPickerButton:
 func _on_tile_input(event: InputEvent, id: String) -> void:
 	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
 		return
-	_choose(id)
+	var button: Button = _tiles[id]
+	if button.get_meta("piece") != "": editor.catalog_asset = button.get_meta("piece")
+	editor.select_tool(button.get_meta("tool"))
 	if not _draggable(id):
 		return
 	_drag_id = id
@@ -833,6 +1404,54 @@ func _on_tile_input(event: InputEvent, id: String) -> void:
 	_press_at = event.global_position
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K and (event.ctrl_pressed or event.meta_pressed):
+		if not editor.active: editor.set_active(true)
+		editor.scene._ui.visible = true
+		if _bar.visible: close_palette()
+		else: open_palette()
+		get_viewport().set_input_as_handled()
+		return
+	if not is_visible_in_tree(): return
+	if _dragging and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_cancel_drag()
+		_finish_placing(false)
+		get_viewport().set_input_as_handled()
+		return
+	if not _placing.is_empty():
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			_finish_placing()
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not contains_pointer(event.position):
+			var placed := _place_special(event.position) if _placing in ["bigfoot","wind_gust"] else editor.place_at(event.position)
+			if placed and (editor.mode != "waterfall" or editor._fall_start == null): _finish_placing(true)
+			get_viewport().set_input_as_handled()
+			return
+	if event is InputEventKey and event.pressed and not event.echo:
+		if _bar.visible and event.keycode == KEY_ESCAPE:
+			close_palette()
+			get_viewport().set_input_as_handled()
+			return
+		if _bar.visible and event.keycode in [KEY_UP,KEY_DOWN]:
+			_focus_index = posmod(_focus_index+(-1 if event.keycode == KEY_UP else 1),maxi(1,_matches.size()))
+			_mark_result()
+			get_viewport().set_input_as_handled()
+			return
+		if _bar.visible and event.keycode == KEY_TAB:
+			if not _matches.is_empty():
+				var group: String = _entries[_matches[_focus_index]].group
+				for offset in range(1,_matches.size()+1):
+					var index := posmod(_focus_index+offset,_matches.size())
+					if _entries[_matches[index]].group != group or index == 0:
+						_focus_index = index
+						break
+				_mark_result()
+			get_viewport().set_input_as_handled()
+			return
+		if _bar.visible and event.keycode in [KEY_PAGEUP,KEY_PAGEDOWN]:
+			_turn_page(-1 if event.keycode == KEY_PAGEUP else 1)
+			get_viewport().set_input_as_handled()
+			return
 	if not _pressed:
 		return
 	if event is InputEventMouseMotion:
@@ -850,11 +1469,12 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _begin_drag() -> void:
+	close_palette()
 	_dragging = true
 	_bob = 0.0
 	_cursor.texture = _thumbs.get(_drag_id)
 	_cursor.scale = Vector2.ONE
-	_cursor.visible = true
+	_cursor.visible = false
 	_clear_ghost()
 	var model := build_model(_drag_id)
 	if model == null:
@@ -969,6 +1589,7 @@ func _drop(mouse: Vector2) -> void:
 			_cursor.visible = false
 			_cursor.scale = Vector2.ONE
 		)
+	_finish_placing(placed)
 	drag_finished.emit(placed)
 
 func _cancel_drag() -> void:
@@ -986,6 +1607,16 @@ func _clear_ghost() -> void:
 	_ghost = null
 
 func _process(delta: float) -> void:
+	_animate_portraits(delta)
+	var pointer := get_global_mouse_position()
+	var world_hover := is_visible_in_tree() and editor.active and get_window().has_focus() and get_viewport_rect().has_point(pointer) and not _bar.visible and editor.pointer_in_world(pointer)
+	if world_hover and Input.mouse_mode in [Input.MOUSE_MODE_VISIBLE,Input.MOUSE_MODE_HIDDEN]:
+		_hand.show_at(pointer,not _placing.is_empty() or _dragging or editor._selection_drag,delta)
+	else:
+		_hand.hide_pointer()
+	if editor != null:
+		_hud_count.text = "meadow-01 · %d objects" % (editor.data.objects.size()+(1 if is_instance_valid(_inhabitant) else 0))
+		_launcher.modulate.a = 1.0 if _launcher.is_hovered() else 0.775+0.225*sin(Time.get_ticks_msec()*TAU/4000.0)
 	if _category == SKY_TAB and not _sky_rows.is_empty() and is_visible_in_tree():
 		_sync_sky()
 	if not _dragging or _ghost == null or not _ghost.visible or _landform(_drag_id):
@@ -1001,8 +1632,8 @@ class ToolGlyph:
 
 	func _draw() -> void:
 		var middle := size*Vector2(0.5,0.44)
-		var span := minf(size.x,size.y)*0.26
-		var color := Color("cfe0cd")
+		var span := minf(size.x,size.y)*0.19
+		var color := Color("bdb7c4")
 		match kind:
 			"up","down":
 				var way := -1.0 if kind == "up" else 1.0

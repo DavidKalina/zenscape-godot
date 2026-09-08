@@ -559,6 +559,9 @@ func _build_ui() -> void:
 	_build_palette = NativeBuildPalette.new()
 	_ui.add_child(_build_palette)
 	_build_palette.attach(_chunk_editor)
+	# Build keeps the landscape open; global controls remain one click away.
+	_chunk_editor.active_changed.connect(func(active: bool) -> void: panel.visible = not active)
+	_build_palette.scene_controls_requested.connect(func() -> void: panel.visible = not panel.visible)
 	var selection_panel := preload("res://scripts/native_selection_panel.gd").new()
 	_ui.add_child(selection_panel)
 	selection_panel.attach(_chunk_editor)

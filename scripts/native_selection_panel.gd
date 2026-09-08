@@ -10,6 +10,7 @@ var _stack := VBoxContainer.new()
 var _scroll := ScrollContainer.new()
 var _fit_queued := false
 var _details := GridContainer.new()
+var _basics := GridContainer.new()
 var _more := Button.new()
 var _tint := ColorPickerButton.new()
 var _tint_row := HBoxContainer.new()
@@ -21,37 +22,26 @@ var _spin_editing := false
 func attach(target: NativeChunkEditor) -> void:
 	editor = target
 	name = "SelectionPanel"
-	custom_minimum_size.x = 332.0
-	anchor_left = 1.0
-	anchor_right = 1.0
-	anchor_top = 1.0
-	anchor_bottom = 1.0
-	offset_left = -344.0
-	offset_right = -12.0
-	offset_top = -490.0
-	offset_bottom = -210.0
-	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	custom_minimum_size.x = 246.0
+	set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.055,0.075,0.085,0.97)
-	style.set_corner_radius_all(12)
-	style.set_content_margin_all(12)
-	add_theme_stylebox_override("panel",style)
+	theme = editor.scene._build_palette.theme
+	add_theme_stylebox_override("panel",editor.scene._build_palette._stone_style(Color(0.16,0.14,0.18,0.97),12))
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(_scroll)
 	_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stack.add_theme_constant_override("separation",8)
 	_scroll.add_child(_stack)
 	_stack.minimum_size_changed.connect(_fit)
 	get_viewport().size_changed.connect(_fit)
-	_title.add_theme_font_size_override("font_size",18)
+	_title.add_theme_font_size_override("font_size",13)
 	_stack.add_child(_title)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.add_theme_color_override("font_color",Color("b8c7bd"))
 	_stack.add_child(_hint)
 	_stack.add_child(_body)
-	var basics := GridContainer.new()
+	var basics := _basics
 	basics.columns = 2
 	basics.add_theme_constant_override("h_separation",8)
 	_body.add_child(basics)
@@ -81,10 +71,12 @@ func attach(target: NativeChunkEditor) -> void:
 	_more.toggle_mode = true
 	_more.toggled.connect(func(open: bool) -> void:
 		_details.visible = open
-		_more.text = "Shape & elevation ▾" if open else "Shape & elevation ▸"
+		_basics.visible = not open
+		_tint_row.visible = not open
+		_more.text = "Back to size & color" if open else "Shape & elevation ▸"
 		_fit())
 	_body.add_child(_more)
-	_details.columns = 2
+	_details.columns = 3
 	_details.add_theme_constant_override("h_separation",8)
 	_details.visible = false
 	_body.add_child(_details)
@@ -158,6 +150,8 @@ func _selection_changed(_id: int) -> void:
 func _refresh() -> void:
 	visible = editor.active and editor.mode == "select"
 	var item: Dictionary = editor.selected_object()
+	visible = visible and not item.is_empty()
+	_hint.visible = false
 	_syncing = true
 	_body.visible = not item.is_empty()
 	_title.text = "Select a piece" if item.is_empty() else str(item.asset).replace("_"," ").capitalize()
@@ -178,7 +172,8 @@ func _refresh() -> void:
 		var supports_pose: bool = item.asset not in ["arch","bigfoot_tree","waterfall"]
 		_more.visible = supports_pose
 		_details.visible = supports_pose and _more.button_pressed
-		_tint_row.visible = supports_pose
+		_tint_row.visible = supports_pose and not _details.visible
+		_basics.visible = not _details.visible
 		_tint.color = Pose.decode_tint(item.tint).linear_to_srgb() if item.has("tint") else Color.WHITE
 	_syncing = false
 	_fit()
@@ -192,16 +187,26 @@ func _fit() -> void:
 func _apply_fit() -> void:
 	_fit_queued = false
 	if not is_inside_tree(): return
-	var parent_height := get_viewport_rect().size.y
-	if get_parent() is Control:
-		parent_height = get_parent().size.y
-	var bottom := -NativeBuildPalette.BAR_HEIGHT-12.0
-	var available := maxf(24.0,parent_height+bottom-12.0)
-	var content_height := _stack.get_combined_minimum_size().y+24.0
-	# Never let minimum-size changes push the panel into the palette. Advanced
-	# controls scroll on shorter windows, keeping actions reachable.
-	offset_bottom = bottom
-	offset_top = bottom-minf(content_height,available)
+	var screen := get_viewport_rect().size
+	var available := maxf(64.0,screen.y-NativeBuildPalette.BAR_HEIGHT-48.0)
+	var height := minf(_stack.get_combined_minimum_size().y+24.0,available)
+	size = Vector2(246,height)
+	_position_near_selection()
+
+func _process(_delta: float) -> void:
+	visible = editor.active and editor.mode == "select" and not editor.selected_object().is_empty() and not editor.scene._build_palette._bar.visible
+	if visible: _position_near_selection()
+
+func _position_near_selection() -> void:
+	var item := editor.selected_object()
+	if item.is_empty(): return
+	var camera: Camera3D = editor.scene.camera
+	var world: Vector3 = editor.terrain.to_global(editor.data.object_position(item))
+	var screen := get_viewport_rect().size
+	var point := camera.unproject_position(world) if not camera.is_position_behind(world) else screen*0.5
+	var x := point.x+28.0
+	if x+size.x > screen.x-16.0: x = point.x-size.x-28.0
+	position = Vector2(clampf(x,106.0,maxf(106.0,screen.x-size.x-16.0)),clampf(point.y-size.y*0.45,16.0,maxf(16.0,screen.y-NativeBuildPalette.BAR_HEIGHT-32.0-size.y)))
 
 func _value_changed(value: float, key: String) -> void:
 	if _syncing: return

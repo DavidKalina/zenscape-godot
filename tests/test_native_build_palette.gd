@@ -39,7 +39,11 @@ func move(point: Vector2) -> void:
 	root.push_input(event)
 
 func tile_point(palette: NativeBuildPalette, id: String) -> Vector2:
-	return palette.tile_for(id).get_global_rect().get_center()
+	palette.open_palette()
+	palette._search.text = palette._title(id)
+	palette._refresh_results()
+	for i in range(3): await process_frame
+	return palette._row_buttons[id].get_global_rect().get_center()
 
 func _run() -> void:
 	var scene: Node3D = load("res://studies/fidelity.tscn").instantiate()
@@ -84,8 +88,9 @@ func _run() -> void:
 	palette._show_category("Place")
 	for i in range(2):
 		await process_frame
-	press(tile_point(palette,"rock"),true)
-	press(tile_point(palette,"rock"),false)
+	var rock_tile := await tile_point(palette,"rock")
+	press(rock_tile,true)
+	press(rock_tile,false)
 	check(editor.mode == "rock","Clicking a tile selects its tool")
 	check(palette.tile_for("rock").button_pressed,"The clicked tile lights up")
 	var key := InputEventKey.new()
@@ -146,7 +151,7 @@ func _run() -> void:
 	# Drag the tree tile into the world.
 	for i in range(2):
 		await process_frame
-	var start := tile_point(palette,"tree")
+	var start := await tile_point(palette,"tree")
 	press(start,true)
 	move(start+Vector2(30,-30))
 	move(target)
@@ -181,12 +186,12 @@ func _run() -> void:
 	editor.undo()
 	check(editor.data.objects.is_empty(),"Undo removes the dropped tree")
 	# A release away from the terrain places nothing.
-	start = tile_point(palette,"tree")
+	start = await tile_point(palette,"tree")
 	press(start,true)
 	move(start+Vector2(30,-30))
 	move(target)
-	move(palette.get_global_rect().get_center())
-	press(palette.get_global_rect().get_center(),false)
+	move(Vector2(-10,-10))
+	press(Vector2(-10,-10),false)
 	check(editor.data.objects.is_empty(),"Releasing off the world places nothing")
 	check(palette.ghost() == null and editor.content.find_child("PaletteGhost",true,false) == null,"A cancelled drag leaves no ghost")
 	check(editor.data.to_document() == saved,"A cancelled drag changes no record")
@@ -195,16 +200,21 @@ func _run() -> void:
 	editor.select_tool("tree")
 	for i in range(2):
 		await process_frame
-	check(palette.strip_fits(),"The tree strip shows every control without scrolling")
+	check(not palette._details.visible,"Tool details start folded away")
+	palette._tune.button_pressed = true
+	for i in range(2):
+		await process_frame
+	check(palette._details.visible and palette.strip_fits(),"Tune reveals the whole tree strip without scrolling")
+	check(not editor.pointer_in_world(palette._details.get_global_rect().get_center()),"The floating settings panel blocks terrain input")
 	var custom: CheckBox = palette.find_child("CustomColor",true,false)
-	check(custom != null and palette.get_global_rect().encloses(custom.get_global_rect()),"Custom color sits inside the bar for the tree tool")
+	check(custom != null and palette._details.get_global_rect().encloses(custom.get_global_rect()),"Custom color sits inside the details panel for the tree tool")
 	var weathers: Array = scene._precipitation.PRESET_NAMES
-	check(palette._tabs_by_name.has("Sky"),"The palette offers a Sky tab")
+	check(palette._tabs_by_name.has("Weather"),"The palette offers a Sky tab")
 	for i in range(3):
 		check(palette.sky_tile_for("mood_%d" % i) != null,"The sky deck carries mood swatch %d" % i)
 	for preset: String in weathers:
 		check(palette.sky_tile_for("weather_"+preset) != null,"The sky deck carries a %s swatch" % preset)
-	palette._tabs_by_name["Sky"].pressed.emit()
+	palette._tabs_by_name["Weather"].pressed.emit()
 	for i in range(2):
 		await process_frame
 	check(palette.category() == "Sky","The Sky tab shows the sky deck")
@@ -232,7 +242,7 @@ func _run() -> void:
 	sky_key.keycode = KEY_K
 	sky_key.pressed = true
 	editor.handle_input(sky_key)
-	check(palette.category() != "Sky" and editor.mode == "tree","K folds the sky away without changing the tool")
+	check(palette._bar.visible and palette._search_category == "Weather" and editor.mode == "tree","K opens weather search without changing an idle tool")
 	editor.handle_input(sky_key)
 	check(palette.category() == "Sky","K opens the sky again")
 	editor.select_tool("rock")
@@ -244,10 +254,11 @@ func _run() -> void:
 	editor.set_setting("mountain_peak",6.0)
 	for i in range(2):
 		await process_frame
+	palette.close_palette()
 	var ground: Variant = editor.pick(target)
 	check(ground != null,"The drop point is still open terrain")
 	var flat := editor.data.heights.duplicate()
-	start = tile_point(palette,"mountain")
+	start = await tile_point(palette,"mountain")
 	press(start,true)
 	move(start+Vector2(30,-30))
 	move(target)
