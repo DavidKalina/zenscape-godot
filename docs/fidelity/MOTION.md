@@ -66,6 +66,7 @@ resume behavior, quality switching, and camera panning/release behavior.
 ```sh
 godot --path . --rendering-method forward_plus --script tools/check_import.gd
 godot --path . --rendering-method forward_plus --script tests/test_fidelity.gd
+godot --headless --path . --script tests/test_camera_feedback.gd
 godot --headless --path . --script tests/test_landscape.gd
 godot --path . --rendering-method forward_plus --script tests/test_scene.gd
 ```
@@ -84,8 +85,13 @@ weather, water-detail, growth and wildlife behavior are still incomplete.
 The source camera is stock OrbitControls with damping: pointer deltas pool and
 5 % of the pool is applied per frame, so the view glides and settles. The
 fidelity scene now pools orbit and pan deltas (`_orbit_delta`, `_pan_delta`) and
-eases them in `_ease_camera` with a frame-rate-independent form of the same
-constant; rotation is `TAU` per viewport height and pan follows the source's
+eases them in `_ease_camera` by the same 5 % per displayed frame as the source's
+`OrbitControls.update()` call. This removes elapsed-time modulation of the
+fraction consumed per frame; it also makes settling time depend on frame rate,
+as in the source. The replay test establishes that response contract, not
+input-to-photon smoothness. F7 in the comparison launcher toggles the prior
+time-based response so the user can judge the change directly.
+Rotation is `TAU` per viewport height and pan follows the source's
 `2 * distance * tan(fov / 2) / height` per pixel. Wheel zoom uses the source's
 0.95 per 100 px (Godot's precise factor is 0.03 per px), trackpad momentum
 arrives as `InputEventPanGesture` and pinch as `InputEventMagnifyGesture`, the

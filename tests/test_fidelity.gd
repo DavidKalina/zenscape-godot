@@ -154,8 +154,10 @@ func _check_scene() -> void:
 	_check(scene.target.is_equal_approx(target), "Pan pools until the frame eases it")
 	scene._process(1.0 / 60.0)
 	_check(not scene.target.is_equal_approx(target), "Middle drag pans the scene")
-	scene._process(1.0)
-	_check(scene._pan_delta.length() < 1.0, "Pan settles to under 5 % within a second")
+	# Per-frame damping must be exercised with actual frame steps, not one
+	# synthetic one-second frame (which represents a stall).
+	for frame in range(60): scene._process(1.0 / 60.0)
+	_check(scene._pan_delta.length() < 1.0, "Pan settles to under 5 % after sixty 60 Hz frames")
 	button.pressed = false
 	scene._input(button)
 	_check(not scene._panning, "Releasing over UI ends pan")

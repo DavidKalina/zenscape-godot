@@ -18,8 +18,10 @@ var _status: Label
 var _source: Dictionary
 var _orbiting := false
 ## Source OrbitControls damping: pointer deltas pool here and 5 % of the pool
-## is applied per 60 Hz frame, so the camera glides and settles.
+## is applied per rendered frame, so the camera glides and settles.
 const CAMERA_DAMPING := 0.05
+## Comparison-only escape hatch for evaluating the previous response.
+var camera_time_based_damping := false
 const ZOOM_STEP := 0.95
 var _orbit_delta := Vector2.ZERO
 var _pan_delta := Vector2.ZERO
@@ -390,8 +392,12 @@ func _zoom(amount: float) -> void:
 	_update_camera()
 
 func _ease_camera(delta: float) -> void:
-	var retain := pow(1.0 - CAMERA_DAMPING, delta * 60.0)
-	var apply := 1.0 - retain
+	# OrbitControls.update() is called without deltaTime in the source, so its
+	# damping is a fixed fraction per displayed frame. Scaling this by measured
+	# frame time changes the fraction consumed per frame. Keep the prior
+	# response available in the comparison tool for a direct feel check.
+	var apply := 1.0 - pow(1.0 - CAMERA_DAMPING, delta * 60.0) if camera_time_based_damping else CAMERA_DAMPING
+	var retain := 1.0 - apply
 	var height := maxf(get_viewport().get_visible_rect().size.y, 1.0)
 	if _orbit_delta != Vector2.ZERO:
 		var step := _orbit_delta * apply
