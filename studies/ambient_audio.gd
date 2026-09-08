@@ -8,10 +8,11 @@ var water_player: AudioStreamPlayer3D
 var gains := Vector3.ZERO
 
 func loop(name: String) -> AudioStreamWAV:
-	var stream := AudioStreamWAV.load_from_file("res://assets/audio/"+name+"-bed.wav")
+	var stream := (load("res://assets/audio/"+name+"-bed.wav") as AudioStreamWAV).duplicate() as AudioStreamWAV
 	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	stream.loop_begin = 0
-	stream.loop_end = stream.data.size() / (4 if stream.stereo else 2)
+	# Imported audio may be compressed; byte count is not a sample count.
+	stream.loop_end = roundi(stream.get_length() * stream.mix_rate)
 	return stream
 
 func _ready() -> void:
