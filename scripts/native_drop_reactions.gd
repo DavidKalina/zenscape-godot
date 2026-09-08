@@ -7,26 +7,71 @@ extends Node3D
 ##
 ## Plants sprout out of the ground with the source's easeOutBack overshoot
 ## (foliage.js GROW_GLSL, c1 = 1.70158), scaled about the record's origin the
-## way the source scales about the instance matrix origin. Stones and the arch
-## fall from a little above the ground, squash on landing and kick up dust.
+## way the source scales about the instance matrix origin. Everything else
+## falls the last little way onto the ground and kicks up dust.
+##
+## Only a fresh placement reacts. A redo, a load and every other rebuild that
+## re-renders an existing record restore it silently: `play` is handed the id
+## the placement just minted, and refuses any record that is not it.
 ##
 ## Refresh policy: a reaction is dropped the moment a full rebuild replaces the
 ## batches (`GardenView.revision` changes) or its instance disappears. The
 ## rebuild has already written the committed transform, so dropping leaves the
 ## finished state rather than a partial one; `finished` still fires.
-const PLANTS := ["tree","flower","bigfoot_tree","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","mushroom"]
-const DROPS := ["rock","arch","log","stump","snag","boulder_1","boulder_2","boulder_3","boulder_4"]
-const SPROUT_DURATION := 0.5
-const DROP_DURATION := 0.6
+
+## How each placeable asset arrives. Living things grow, so they sprout; the
+## Bigfoot tree sprouts and thumps the ground. Dead wood is set down rather
+## than grown, so a stump or a snag settles: a short low fall and a small puff,
+## no squash, because a dead trunk has no give in it. A log lands and rocks to
+## rest on its round side. Loose stone and the arch fall far enough to squash
+## and throw real dust. Every id in NativeTerrainData.ASSETS but "waterfall"
+## appears here; anything missing simply does not react.
+const REACTIONS := {
+	"tree":"sprout",
+	"flower":"sprout",
+	"broadleaf":"sprout",
+	"shrub":"sprout",
+	"reeds":"sprout",
+	"bank_grass":"sprout",
+	"grass_tuft":"sprout",
+	"button_flower":"sprout",
+	"spike_flower":"sprout",
+	"umbel_flower":"sprout",
+	"daisy_flower":"sprout",
+	"mushroom":"sprout",
+	"bigfoot_tree":"thump",
+	"rock":"drop",
+	"arch":"drop",
+	"boulder_1":"drop",
+	"boulder_2":"drop",
+	"boulder_3":"drop",
+	"boulder_4":"drop",
+	"stump":"settle",
+	"snag":"settle",
+	"log":"roll",
+}
+const SPROUT_DURATION := 0.4
+const DROP_DURATION := 0.46
+const SETTLE_DURATION := 0.34
+const ROLL_DURATION := 0.46
 const BIGFOOT_DURATION := 0.7
+## The share of a falling reaction spent in the air; the rest is the landing.
+const FALL_FRACTION := 0.5
+## Each style, in one row: how long it runs, how much of that is the fall, how
+## far above the ground it starts in record scales, how hard it squashes, how
+## far it rocks in radians and how big its dust puff is against a rock's. The
+## two grow styles use the easeOutBack curve and none of the falling columns.
+const STYLES := {
+	"sprout":{"grow":true,"duration":SPROUT_DURATION,"fall":0.0,"height":0.0,"squash":0.0,"rock":0.0,"dust":0.0},
+	"thump":{"grow":true,"duration":BIGFOOT_DURATION,"fall":0.0,"height":0.0,"squash":0.0,"rock":0.0,"dust":0.0},
+	"drop":{"grow":false,"duration":DROP_DURATION,"fall":FALL_FRACTION,"height":1.1,"squash":0.26,"rock":0.0,"dust":1.0},
+	"settle":{"grow":false,"duration":SETTLE_DURATION,"fall":0.72,"height":0.34,"squash":0.0,"rock":0.0,"dust":0.55},
+	"roll":{"grow":false,"duration":ROLL_DURATION,"fall":0.55,"height":0.55,"squash":0.0,"rock":0.22,"dust":0.7},
+}
 ## Source easeOutBack: 1 + c3 b^3 + c1 b^2, exactly 0 at t=0 and 1 at t=1.
 const BACK_C1 := 1.70158
 const BACK_C3 := 2.70158
-const FALL_FRACTION := 0.5
-const DROP_HEIGHT := 1.1
-const SQUASH := 0.26
 const DUST_COUNT := 7
-const DUST_LIFE := 0.42
 const THUMP := 0.22
 
 signal finished(kind: String, record: Dictionary)
@@ -45,18 +90,29 @@ func record_pose(record: Dictionary) -> Transform3D:
 	var basis := preload("res://scripts/native_object_pose.gd").decode_basis(record.pose) if record.has("pose") else Basis(Vector3.UP,record.angle).scaled(Vector3.ONE*record.scale)
 	return Transform3D(basis,_editor.data.object_position(record))
 
-## Start a reaction for a record the editor has already committed and drawn.
-func play(kind: String, pose: Transform3D, record: Dictionary) -> bool:
-	if not enabled or _editor == null or (kind not in PLANTS and kind not in DROPS):
+## Start a reaction for a record the editor has just committed and drawn.
+## `fresh` is the id `NativeTerrainData.place` minted for this very click. A
+## reaction runs only for that record, so every path that re-renders a record
+## that already exists — redo, a load, a rebuild — restores it silently: those
+## paths have no minted id to hand over and cannot ask for a reaction.
+func play(kind: String, pose: Transform3D, record: Dictionary, fresh: int) -> bool:
+	if not enabled or _editor == null or not REACTIONS.has(kind):
 		return false
+	if fresh < 1 or int(record.get("id",-1)) != fresh:
+		return false
+	var style: Dictionary = STYLES[REACTIONS[kind]]
+	var angle := float(record.get("angle",0.0))
 	var reaction := {
 		"kind":kind,
+		"style":REACTIONS[kind],
 		"record":record,
 		"anchor":pose.origin,
 		"size":float(record.get("scale",1.0)),
+		# The horizontal axis a log tips over, taken from the record's own yaw.
+		"axis":Vector3(-sin(angle),0.0,cos(angle)),
 		"elapsed":0.0,
-		"duration":BIGFOOT_DURATION if kind == "bigfoot_tree" else (SPROUT_DURATION if kind in PLANTS else DROP_DURATION),
-		"sprout":kind in PLANTS,
+		"duration":float(style.duration),
+		"sprout":bool(style.grow),
 		"revision":_editor.content.revision,
 		"targets":_targets(record),
 		"node":_editor.landmarks.get_node_or_null("%s_%d" % [kind,record.id]),
@@ -145,12 +201,21 @@ func _stale(reaction: Dictionary) -> bool:
 			return true
 	return reaction.node != null and not is_instance_valid(reaction.node)
 
-## A scale about the record's ground origin plus a vertical lift. Identity when
-## the scale is one and the lift is zero, so the last frame writes the record's
-## committed transform back untouched.
-static func offset(anchor: Vector3, size: Vector3, lift: float) -> Transform3D:
-	var basis := Basis.IDENTITY.scaled(size)
+## A basis applied about the record's ground origin plus a vertical lift.
+## Identity when the basis is identity and the lift is zero, so the last frame
+## writes the record's committed transform back untouched.
+static func about(anchor: Vector3, basis: Basis, lift: float) -> Transform3D:
 	return Transform3D(basis,anchor-basis*anchor+Vector3.UP*lift)
+
+## The same, for the common case of a pure scale about the anchor.
+static func offset(anchor: Vector3, size: Vector3, lift: float) -> Transform3D:
+	return about(anchor,Basis.IDENTITY.scaled(size),lift)
+
+## How far through the landing a falling reaction is, 0 the moment it touches
+## down and exactly 1 on its last frame. Dust and squash both ride this, so a
+## puff always finishes fading at the same instant the reaction ends.
+static func landing(style: Dictionary, t: float) -> float:
+	return clampf((t-float(style.fall))/maxf(1.0-float(style.fall),0.0001),0.0,1.0)
 
 ## The reaction's visual offset at normalised time, identity at t = 1.
 func shape(reaction: Dictionary, t: float) -> Transform3D:
@@ -160,12 +225,19 @@ func shape(reaction: Dictionary, t: float) -> Transform3D:
 		var b := t-1.0
 		var s := maxf(1.0+BACK_C3*b*b*b+BACK_C1*b*b,0.0001)
 		return offset(reaction.anchor,Vector3.ONE*s,0.0)
-	if t < FALL_FRACTION:
-		var f := t/FALL_FRACTION
-		return offset(reaction.anchor,Vector3.ONE,DROP_HEIGHT*reaction.size*(1.0-f)*(1.0-f))
-	var u := (t-FALL_FRACTION)/(1.0-FALL_FRACTION)
-	var q := SQUASH*exp(-4.0*u)*cos(TAU*0.75*u)
-	return offset(reaction.anchor,Vector3(1.0+q*0.5,1.0-q,1.0+q*0.5),0.0)
+	var style: Dictionary = STYLES[reaction.style]
+	if t < float(style.fall):
+		var f: float = t/float(style.fall)
+		return offset(reaction.anchor,Vector3.ONE,float(style.height)*reaction.size*(1.0-f)*(1.0-f))
+	# One damped swing shared by the squash and the log's rock, so both die out
+	# together and reach exactly zero on the last frame.
+	var u := landing(style,t)
+	var swing := exp(-4.0*u)*cos(TAU*0.75*u)*(1.0-u)
+	var q: float = float(style.squash)*swing
+	var basis := Basis.IDENTITY.scaled(Vector3(1.0+q*0.5,1.0-q,1.0+q*0.5))
+	if float(style.rock) != 0.0:
+		basis = Basis(reaction.axis,float(style.rock)*swing)*basis
+	return about(reaction.anchor,basis,0.0)
 
 func _apply(reaction: Dictionary, t: float) -> void:
 	var shift := shape(reaction,t)
@@ -176,12 +248,13 @@ func _apply(reaction: Dictionary, t: float) -> void:
 		target.batch.multimesh.set_instance_transform(target.index,committed if t >= 1.0 else shift*committed)
 	if reaction.node != null:
 		reaction.node.transform = reaction.rest if t >= 1.0 else shift*reaction.rest
-	if not reaction.sprout:
-		if t >= FALL_FRACTION and reaction.dust == null and t < 1.0:
+	var style: Dictionary = STYLES[reaction.style]
+	if float(style.dust) > 0.0:
+		if t >= float(style.fall) and reaction.dust == null and t < 1.0:
 			reaction.dust = _spawn_dust(reaction)
 		if reaction.dust != null:
-			_shape_dust(reaction,(t-FALL_FRACTION)*float(reaction.duration)/DUST_LIFE)
-	elif reaction.kind == "bigfoot_tree" and not reaction.thumped and t >= 0.6:
+			_shape_dust(reaction,landing(style,t))
+	if reaction.kind == "bigfoot_tree" and not reaction.thumped and t >= 0.6:
 		reaction.thumped = true
 		if _editor.scene._bigfoot != null and _editor.scene._bigfoot.rig != null:
 			_editor.scene._tremor.add(THUMP)
@@ -225,10 +298,14 @@ func _spawn_dust(reaction: Dictionary) -> MultiMeshInstance3D:
 	add_child(node)
 	return node
 
+## The puff at `u` through the landing. It rides the record's own scale and the
+## style's dust weight, so a small flower-sized boulder throws a small puff and
+## a stump only a wisp, and its alpha reaches exactly zero at u = 1, the frame
+## the reaction ends and frees the node.
 func _shape_dust(reaction: Dictionary, u: float) -> void:
 	var node: MultiMeshInstance3D = reaction.dust
 	u = clampf(u,0.0,1.0)
-	var size: float = reaction.size
+	var size: float = reaction.size*float(STYLES[reaction.style].dust)
 	for i in range(DUST_COUNT):
 		var angle := float(i)*TAU/float(DUST_COUNT)+float(int(reaction.record.id)%7)*0.41
 		var reach := (0.30+1.05*u)*size

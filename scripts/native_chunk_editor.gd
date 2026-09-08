@@ -368,8 +368,12 @@ func place_at(mouse: Vector2) -> bool:
 		if data.end_stroke():
 			refresh()
 			if placed > 0 and reactions_enabled:
+				# `placed` is the id this click just minted, and only a click
+				# reaches here. Handing it to the reaction is what keeps a redo
+				# or a load — which re-render records that already exist — from
+				# replaying the sprout or the drop.
 				var record: Dictionary = data.objects.back()
-				reactions.play(record.asset,reactions.record_pose(record),record)
+				reactions.play(record.asset,reactions.record_pose(record),record,placed)
 	else:
 		_painting = true
 		dab(_last_point,strength/30.0)
