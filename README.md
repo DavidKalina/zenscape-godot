@@ -94,6 +94,10 @@ weather foldout.
 - **Meadow:** brush grass and wildflowers onto the earth; slower strokes add density.
 - **Tree / Rock / Flower:** click to place individual objects. Set Object size before
   placing; zoom closely to position a single daisy. Objects follow sculpted ground.
+  Each placement plays a short reaction sized to the object: living things sprout
+  out of the ground, a stump or snag settles onto it with a wisp of dust, a log
+  lands and rocks to rest, and stone falls, squashes and throws a puff. Only a
+  fresh placement reacts — Redo and reopening a save restore objects silently.
 - **Pond:** dig a closed hollow, set Water level (default −0.1), then click its bed.
   Water fills connected ground below that level. Levels that spill off the plot
   are refused. Raising the bed can shrink or remove the visible pond; Undo restores it.

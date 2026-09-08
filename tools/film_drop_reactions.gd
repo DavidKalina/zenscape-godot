@@ -1,6 +1,10 @@
 extends SceneTree
-## Three seconds of placement reactions: a tree sprouts, a rock drops and the
-## Bigfoot tree sprouts with its thump. Frames land in /tmp for ffmpeg.
+## Three seconds of placement reactions, one per class: a tree sprouts, a rock
+## drops and squashes, a log lands and rocks to rest, a stump settles with a
+## wisp of dust and the Bigfoot tree sprouts with its thump. Frames land in
+## /tmp for ffmpeg:
+## ffmpeg -y -framerate 30 -i /private/tmp/drop-reaction-frames/%04d.jpg \
+##   -c:v libx264 -pix_fmt yuv420p -crf 23 docs/garden/drop-reactions.mp4
 const FPS := 30.0
 const FRAMES := 90
 
@@ -43,7 +47,7 @@ func run() -> void:
 	var directory := "/private/tmp/drop-reaction-frames"
 	DirAccess.make_dir_recursive_absolute(directory)
 	var rest := camera.transform
-	var cues := {6:["tree",Vector2(-2.4,0.0),1.3],30:["rock",Vector2(0.6,1.2),1.1],52:["bigfoot_tree",Vector2(6.0,-4.0),0.4]}
+	var cues := {4:["tree",Vector2(-3.2,0.4),1.3],22:["rock",Vector2(-0.8,1.4),1.1],38:["log",Vector2(1.4,0.8),1.0],52:["stump",Vector2(3.2,-0.2),1.0],64:["bigfoot_tree",Vector2(6.0,-4.0),0.4]}
 	for i in range(FRAMES):
 		if cues.has(i):
 			var cue: Array = cues[i]

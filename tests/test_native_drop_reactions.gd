@@ -52,6 +52,17 @@ func dust_nodes(editor: NativeChunkEditor) -> int:
 			count += 1
 	return count
 
+## The name of one part the record renders through, so a catalog piece can be
+## followed without hard-coding the reference's node names.
+func any_part(editor: NativeChunkEditor, record: Dictionary) -> String:
+	var parts: Array = editor.reactions.targets_of(record).keys()
+	return parts[0] if not parts.is_empty() else ""
+
+func place(editor: NativeChunkEditor, kind: String, point: Vector2) -> Dictionary:
+	editor.mode = kind
+	click(editor,point)
+	return editor.data.objects.back()
+
 func run(editor: NativeChunkEditor, seconds: float) -> void:
 	var step := 1.0/60.0
 	for i in range(int(ceil(seconds/step))):
@@ -67,6 +78,22 @@ func _run() -> void:
 	scene._reset_camera()
 	editor.reactions.set_process(false)
 	check(editor.reactions_enabled,"Reactions are on by default")
+	var baseline := editor.reactions.get_child_count()
+
+	# The classification table covers the whole placeable catalog and says what
+	# each thing does: living things grow, dead wood settles, a log rolls.
+	var styles: Dictionary = NativeDropReactions.REACTIONS
+	var placeable := NativeTerrainData.ASSETS.filter(func(id: String) -> bool: return id != "waterfall")
+	check(placeable.all(func(id: String) -> bool: return styles.has(id)),"Every placeable asset has a classified reaction")
+	check(styles.keys().all(func(id: String) -> bool: return id in placeable),"The table classifies nothing that cannot be placed")
+	check(styles.values().all(func(style: String) -> bool: return NativeDropReactions.STYLES.has(style)),"Every classified style is defined")
+	check(styles.tree == "sprout" and styles.mushroom == "sprout" and styles.daisy_flower == "sprout","Living things sprout")
+	check(styles.bigfoot_tree == "thump","The Bigfoot tree keeps its own thumping sprout")
+	check(styles.stump == "settle" and styles.snag == "settle","A stump and a snag are dead wood and settle rather than sprouting")
+	check(styles.log == "roll","A log rolls to rest")
+	check(styles.rock == "drop" and styles.arch == "drop" and styles.boulder_3 == "drop","Loose stone and the arch fall and squash")
+	var lengths: Array = NativeDropReactions.STYLES.keys().filter(func(id: String) -> bool: return id != "thump")
+	check(lengths.all(func(id: String) -> bool: return float(NativeDropReactions.STYLES[id].duration) <= 0.6),"Every reaction but the Bigfoot tree's is over inside 0.6 s")
 
 	# A tree sprouts from nothing and lands on the committed instance transform.
 	editor.mode = "tree"
@@ -157,6 +184,59 @@ func _run() -> void:
 	run(editor,NativeDropReactions.BIGFOOT_DURATION)
 	check(big.transform == big_rest and editor.reactions.active_count() == 0,"The Bigfoot tree resolves to its rebuilt transform")
 
+	# Dead wood settles: a lower fall than a stone, no squash and a small puff.
+	var stump := place(editor,"stump",Vector2(-3,2))
+	var stump_part := any_part(editor,stump)
+	var stump_rest := committed_of(editor,stump_part,stump)
+	editor.reactions.advance(1.0/60.0)
+	var stump_lift: float = instance_of(editor,stump_part,stump).origin.y-stump_rest.origin.y
+	check(stump_lift > 0.01 and stump_lift < NativeDropReactions.STYLES.drop.height*0.5,"A stump settles in from a lower start than a stone falls from")
+	run(editor,NativeDropReactions.SETTLE_DURATION*float(NativeDropReactions.STYLES.settle.fall))
+	check(dust_nodes(editor) == 1,"A settling stump still raises a little dust")
+	var settled: Transform3D = instance_of(editor,stump_part,stump)
+	check(is_equal_approx(settled.basis.y.length(),stump_rest.basis.y.length()),"Dead wood does not squash on landing")
+	run(editor,NativeDropReactions.SETTLE_DURATION)
+	check(editor.reactions.active_count() == 0 and dust_nodes(editor) == 0,"The settle ends and frees its dust")
+	check(instance_of(editor,stump_part,stump) == stump_rest,"The stump resolves to exactly its committed pose")
+
+	# A log lands and rocks about its own yaw axis instead of squashing.
+	editor.object_angle = 0.7
+	var log_record := place(editor,"log",Vector2(-3,-2))
+	editor.object_angle = 0.0
+	var log_part := any_part(editor,log_record)
+	var log_rest := committed_of(editor,log_part,log_record)
+	run(editor,NativeDropReactions.ROLL_DURATION*float(NativeDropReactions.STYLES.roll.fall))
+	var rocked: Transform3D = instance_of(editor,log_part,log_record)
+	check(rocked.basis.y.angle_to(log_rest.basis.y) > 0.05,"A landing log rocks off vertical")
+	check(is_equal_approx(rocked.basis.y.length(),log_rest.basis.y.length()),"The rocking log keeps its size")
+	run(editor,NativeDropReactions.ROLL_DURATION)
+	check(instance_of(editor,log_part,log_record) == log_rest,"The log rocks to rest on exactly its committed pose")
+
+	# Redo restores a placement silently: only a fresh click reacts.
+	var redone := place(editor,"rock",Vector2(3,2))
+	run(editor,NativeDropReactions.DROP_DURATION)
+	var redone_rest: Transform3D = instance_of(editor,"rock",redone)
+	editor.undo()
+	editor.redo()
+	check(editor.data.objects.back().id == redone.id,"Redo restores the same record")
+	check(editor.reactions.active_count() == 0 and dust_nodes(editor) == 0,"Redo of a placement plays no reaction")
+	check(instance_of(editor,"rock",redone) == redone_rest,"A redone rock is rendered straight onto its resting pose")
+	editor.undo()
+	var interrupted := place(editor,"tree",Vector2(2,-3))
+	run(editor,0.1)
+	editor.undo()
+	editor.redo()
+	editor.reactions.advance(1.0/60.0)
+	check(editor.reactions.active_count() == 0,"Redo after an interrupted placement stays silent too")
+	check(instance_of(editor,"trunk",interrupted) == editor.reactions.record_pose(interrupted),"The redone tree is rendered at full size")
+
+	# Reopening a save re-renders every record without a single reaction.
+	var document: Dictionary = editor.data.to_document()
+	check(editor.data.load_document(JSON.parse_string(JSON.stringify(document,"",true,true))),"The garden reopens")
+	editor.refresh()
+	editor.reactions.advance(1.0/60.0)
+	check(editor.reactions.active_count() == 0 and dust_nodes(editor) == 0,"Loading a save plays no reactions")
+
 	# With reactions off the placement is byte-identical to a resolved one.
 	editor.mode = "tree"
 	editor.reactions_enabled = false
@@ -182,6 +262,10 @@ func _run() -> void:
 	editor.reactions.advance(1.0/60.0)
 	check(editor.reactions.active_count() == 0,"A rebuild drops the running reaction")
 	check(instance_of(editor,"trunk",pending) == editor.reactions.record_pose(pending),"The rebuild leaves the committed transform, not a partial one")
+
+	# Nothing is left behind: every dust puff this whole run spawned is gone.
+	check(editor.reactions.get_child_count() == baseline,"The reaction node is back to its baseline child count")
+	check(editor.reactions.active_count() == 0,"No reaction is still live at the end")
 
 	print("Native drop reactions: ",failures," failures")
 	quit(1 if failures else 0)

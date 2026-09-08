@@ -768,3 +768,36 @@ Result at 3024x1706, maximized, all measured in one process: one march copy
 day advances, against an 8.3 ms budget for 120 Hz. The 3D pass at 4.9 ms is
 now the frame. Incremental sky radiance measured within the noise unpaused and
 was left alone. The 75-test suite passes.
+
+## Placement reactions (2026-09-07)
+
+`scripts/native_drop_reactions.gd` classifies every placeable id explicitly at
+the top of the file, in one table, rather than by two membership lists. Living
+things (`tree`, `flower`, `mushroom`, the catalog's foliage) sprout on the
+source's easeOutBack curve. The Bigfoot tree sprouts and thumps. Loose stone
+and the arch drop from 1.1 record scales, squash on landing and throw dust. The
+three dead-wood pieces were previously lumped in with the stones and squashed
+like rubber: a `stump` and a `snag` now settle instead — a low 0.34-scale fall
+with a wisp of dust and no squash, since a dead trunk has no give in it — and a
+`log` lands and rocks to rest about the horizontal axis of its own yaw. A test
+asserts the table covers `NativeTerrainData.ASSETS` exactly, minus `waterfall`.
+
+Timings were cut for a builder that should feel like Mario Maker: sprout 0.5 to
+0.4 s, drop 0.6 to 0.46 s, with settle at 0.34 s and roll at 0.46 s. The
+Bigfoot tree keeps its 0.7 s because the thump lands at 0.6 of it. A test
+asserts every style but the thump finishes inside 0.6 s.
+
+Dust used to fade on its own `DUST_LIFE` clock, which did not line up with the
+reaction's end, so a puff was still at a few percent alpha when its node was
+freed. Dust and squash now both ride `landing()`, the share of the landing
+phase elapsed, which is exactly 1 on the reaction's last frame: the puff
+reaches zero alpha the frame it is freed. Its reach, size and the settle's
+weaker puff all scale with the record's own scale.
+
+Only a fresh placement reacts. `play` now takes the id `NativeTerrainData.place`
+minted for that click and refuses any record that is not it, so redo, reopening
+a save and every other rebuild that re-renders an existing record restore it
+silently — they have no minted id to hand over. Tests cover redo after a
+finished placement, redo after one interrupted mid-reaction, and a save
+round-trip, plus a whole-run check that the reaction node is back to its
+baseline child count with no dust left behind.
