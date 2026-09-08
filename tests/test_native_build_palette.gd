@@ -43,7 +43,7 @@ func tile_point(palette: NativeBuildPalette, id: String) -> Vector2:
 	palette._search.text = palette._title(id)
 	palette._refresh_results()
 	for i in range(3): await process_frame
-	return palette.tile_for(id).get_global_rect().get_center()
+	return palette._row_buttons[id].get_global_rect().get_center()
 
 func _run() -> void:
 	var scene: Node3D = load("res://studies/fidelity.tscn").instantiate()
@@ -209,12 +209,12 @@ func _run() -> void:
 	var custom: CheckBox = palette.find_child("CustomColor",true,false)
 	check(custom != null and palette._details.get_global_rect().encloses(custom.get_global_rect()),"Custom color sits inside the details panel for the tree tool")
 	var weathers: Array = scene._precipitation.PRESET_NAMES
-	check(palette._tabs_by_name.has("Sky"),"The palette offers a Sky tab")
+	check(palette._tabs_by_name.has("Weather"),"The palette offers a Sky tab")
 	for i in range(3):
 		check(palette.sky_tile_for("mood_%d" % i) != null,"The sky deck carries mood swatch %d" % i)
 	for preset: String in weathers:
 		check(palette.sky_tile_for("weather_"+preset) != null,"The sky deck carries a %s swatch" % preset)
-	palette._tabs_by_name["Sky"].pressed.emit()
+	palette._tabs_by_name["Weather"].pressed.emit()
 	for i in range(2):
 		await process_frame
 	check(palette.category() == "Sky","The Sky tab shows the sky deck")
@@ -242,7 +242,7 @@ func _run() -> void:
 	sky_key.keycode = KEY_K
 	sky_key.pressed = true
 	editor.handle_input(sky_key)
-	check(palette._bar.visible and palette._search_category == "Sky" and editor.mode == "tree","K opens sky search without changing the tool")
+	check(palette._bar.visible and palette._search_category == "Weather" and editor.mode == "tree","K opens weather search without changing an idle tool")
 	editor.handle_input(sky_key)
 	check(palette.category() == "Sky","K opens the sky again")
 	editor.select_tool("rock")

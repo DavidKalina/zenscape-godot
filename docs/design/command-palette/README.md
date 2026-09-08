@@ -1,26 +1,25 @@
-# Quick create: command palette
+# Command palette design implementation
 
-Launch `./run-nursery.command` in this worktree. The diorama starts clear, with a small current-tool / shortcut button at the bottom.
+Recreates the supplied `design_handoff_zenscape_command_palette` reference with native Godot Controls over the live scene. Run `run-nursery.command` from this worktree.
 
-- **Command K / Control K:** open or dismiss focused search, including from Inspect.
-- **All, Shape, Land, Plant, Miniatures, Water, Sky, Actions:** browse categories.
-- **Type:** filter tools, actual low-poly miniature assets, weather presets and actions. “Pine” finds Tree.
-- **Up / Down, Enter:** highlight and choose a result. Choosing closes the palette.
-- **Escape or click outside:** dismiss without changing the current tool.
-- **Previous / Next, Page Up / Page Down:** browse results. Eight cards per page, six in the minimum window. No scrollbars.
-- **Drag a miniature:** the palette folds away and the existing terrain ghost carries the asset into the scene. Release to place; release outside the window to cancel.
-- **Settings icon beside the launcher:** current tool controls and actions, paginated when needed. Sky settings is searchable under Actions.
+- Fixed 880 × 540 reference panel, uniformly scaled to fit; plum surface, gold hairline, blurred veil, 240 ms entrance.
+- Bundled OFL Nunito and IBM Plex Mono fonts.
+- All / Terrain / Water / Flora / Creatures / Weather / Scene categories; grouped results, substring search, shared hover and keyboard selection, detail preview and three metadata rows.
+- Cmd/Ctrl K opens or closes; arrows wrap; Tab jumps groups; Enter chooses; Escape dismisses or cancels. Veil clicks block the world without dismissing.
+- Lists scroll with no visible scrollbars. Keyboard navigation keeps the chosen row visible. No pagination footer.
+- Real assets rotate in 256-pixel preview viewports, updated only while visible or selected. Tools without object meshes use symbolic previews.
+- Taking a piece into hand shows the placement banner. Clicking or dragging places once and returns to selection. Waterfalls retain their existing two-point placement. Mountain Ridge runs the existing whole-chunk generation command.
+- Existing tools and settings remain available, including Tool settings and Sky settings under Scene.
 
-Selected-object controls appear near the object. Advanced shape controls replace the basic page rather than extending a scrolling inspector. They hide while search is open. The existing placement, selection, undo and save implementations are reused.
+## Scope differences from the supplied catalog
 
-The persistent sidebar and bottom asset tray were replaced by this palette following the user's revised direction. The other Bigfoot prototype and the original Electron Grow choreography remain separate work. No merge into main.
+The reference's visual structure is implemented; its sample catalog is adapted to the existing game rather than presented as unsupported behavior. The full existing catalog is retained. Crow, terrain wind occlusion, object tipping, a grove brush, and other proposed physics are not introduced here. Save garden remains the existing garden-document operation, not the proposed 2048px screenshot export.
 
-## Evidence and verification
+Bigfoot uses the existing animated `CreatureActor`, can be placed/repositioned as a single visitor, and is session-only: it is not part of garden persistence or undo. This preview does not incorporate the other agent's newer gust-playground work. Gust, mist, and fireflies use the existing atmosphere/scene methods. Metadata describes the actual interaction rather than the reference's proposed physics values.
 
-`landscape.png` shows the closed UI. `plants.png`, `objects.png`, `all.png`, `search.png`, and `compact.png` are real Godot captures. `command-palette.mp4` shows opening, browsing, searching, choosing and placing.
+## Verification
 
-- `tests/test_command_palette.gd`: open/dismiss, focused search, alias filtering, keyboard selection, all results reachable through pages, empty search, modal input exclusion, minimum-window bounds, and paginated settings without scrollbars.
-- `tests/test_native_build_palette.gd`: existing tile selection, rendered portraits, drag placement, ghosts, cancellation, undo/save, mountain stamps, colors/actions and sky controls.
-- `tests/test_native_selection.gd`: picking, moving, transformations, colors, duplication, undo/save and contextual settings bounds.
-
-Capture with `Godot --path . --script res://tools/capture_command_palette.gd -- --film`. Frames are written to `/private/tmp/command-palette-frames` for encoding at 24 fps. Tests/captures run on Godot 4.7.2 / Metal / Forward+.
+- `tests/test_command_palette.gd`: 0 failures. Covers filtering, empty state, group navigation, wrapping, veil clicks, one-shot placement, cancellation, fit scaling, hidden scrollbars, and Bigfoot placement.
+- `tests/test_native_build_palette.gd`: 0 assertions failed. Existing native asset, drag, terrain, settings, weather, and save/undo coverage. This suite still emits existing Godot renderer null-material diagnostics during resource replacement; the focused palette run and capture do not.
+- `tests/test_native_selection.gd`: 0 failures.
+- `tools/capture_command_palette.gd -- --film`: screenshots and six-second interaction clip in this folder, captured from the real scene. Film demonstrates opening, filtering, selection, and placement.

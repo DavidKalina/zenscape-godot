@@ -2,71 +2,86 @@ extends SceneTree
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
-	if not ok: failures += 1; push_error(message)
+ if not ok: failures += 1; push_error(message)
 func settle() -> void:
-	for i in range(4): await process_frame
+ await create_timer(0.3).timeout
 func key(code: Key, command := false) -> void:
-	var event := InputEventKey.new()
-	event.keycode = code
-	event.pressed = true
-	event.ctrl_pressed = command
-	root.push_input(event)
+ var event := InputEventKey.new()
+ event.keycode = code
+ event.pressed = true
+ event.ctrl_pressed = command
+ root.push_input(event)
+func click(point: Vector2) -> void:
+ for down in [true,false]:
+  var event := InputEventMouseButton.new()
+  event.button_index = MOUSE_BUTTON_LEFT
+  event.pressed = down
+  event.position = root.get_final_transform()*point
+  event.global_position = event.position
+  root.push_input(event)
 func run() -> void:
-	root.size = Vector2i(1440,960)
-	var scene: Node3D = load("res://studies/nursery_preview.tscn").instantiate()
-	root.add_child(scene)
-	var palette: NativeBuildPalette = scene._build_palette
-	var editor: NativeChunkEditor = scene._chunk_editor
-	await settle()
-	check(not palette._bar.visible,"The scene starts without an open palette")
-	check(not palette.contains_pointer(root.get_visible_rect().size*0.5),"Closed palette leaves the diorama interactive")
-	key(KEY_K,true)
-	await settle()
-	check(palette._bar.visible and palette._search.has_focus(),"Ctrl/Cmd K opens focused search")
-	check(not palette._launcher.visible,"The launcher disappears while search is open")
-	check(palette.contains_pointer(Vector2(10,10)),"Open palette blocks editing behind the modal")
-	var seen := {}
-	while true:
-		for child in palette._results.get_children(): seen[child] = true
-		if palette._next_page.disabled: break
-		palette._turn_page(1)
-	check(seen.size() == palette._entries.size(),"Every tool, asset, sky preset and action is reachable through pages")
-	palette._browse("Cover")
-	check(palette._matches.has("tree") and not palette._matches.has("rock"),"Plant tab separates foliage from finished objects")
-	palette._search.text = "pine"
-	palette._search.text_changed.emit("pine")
-	await settle()
-	check(palette._matches == ["tree"],"Search finds the pine alias")
-	key(KEY_ENTER)
-	await settle()
-	check(editor.mode == "tree" and not palette._bar.visible,"Enter chooses the result and returns to the scene")
-	key(KEY_K,true)
-	palette._search.text = "zzzzzzzz"
-	palette._search.text_changed.emit("zzzzzzzz")
-	await settle()
-	check(palette._empty.visible and palette._results.get_child_count() == 0,"Empty search is explicit")
-	key(KEY_ESCAPE)
-	check(not palette._bar.visible and editor.mode == "tree","Escape dismisses without changing the tool")
-	root.size = Vector2i(960,640)
-	palette.open_palette()
-	await settle()
-	check(root.get_visible_rect().encloses(palette._bar.get_global_rect()),"Palette fits the minimum window: "+str(palette._bar.get_global_rect())+" in "+str(root.get_visible_rect()))
-	check(palette._results.get_child_count() <= 6,"Small windows page six results")
-	for scroll in palette.find_children("*","ScrollBar",true,false):
-		check(not scroll.is_visible_in_tree(),"No scrollbar is exposed in search")
-	palette.close_palette()
-	editor.select_tool("tree")
-	palette._tune.button_pressed = true
-	await settle()
-	check(palette.strip_fits(),"Tool settings fit without scrolling")
-	check(palette._setting_pages.visible,"Long settings offer pages")
-	var first: Control = palette._grid.get_child(0)
-	palette._setting_page = 1
-	palette._paginate_settings()
-	await settle()
-	check(not first.visible and palette._grid.get_child(6).visible,"Settings pages reveal remaining controls")
-	check(root.get_visible_rect().encloses(palette._details.get_global_rect()),"Settings stay inside the small window")
-	print("Command palette: ",failures," failures")
-	scene.queue_free()
-	await process_frame
-	quit(1 if failures else 0)
+ root.size = Vector2i(1800,1200)
+ var scene: Node3D = load("res://studies/nursery_preview.tscn").instantiate()
+ root.add_child(scene)
+ var palette: NativeBuildPalette = scene._build_palette
+ var editor: NativeChunkEditor = scene._chunk_editor
+ editor.reactions_enabled = false
+ await settle()
+ check(not palette._bar.visible,"The landscape starts clear")
+ key(KEY_K,true)
+ await settle()
+ check(palette._bar.visible and palette._search.has_focus(),"Command K opens focused search")
+ check(palette._matches.size() == palette._entries.size(),"Every catalog item is reachable")
+ check(palette._tabs.get_child_count() == 7,"Seven fixed categories")
+ click(Vector2(5,5))
+ check(palette._bar.visible,"Veil clicks do not dismiss")
+ key(KEY_UP)
+ check(palette._focus_index == palette._matches.size()-1,"Up wraps to the final result")
+ key(KEY_DOWN)
+ check(palette._focus_index == 0,"Down wraps to the first result")
+ key(KEY_TAB)
+ check(palette._entries[palette._matches[palette._focus_index]].group == "Water","Tab jumps to the next group")
+ palette._browse("Flora")
+ palette._search.text = "pine"
+ palette._search.text_changed.emit("pine")
+ await settle()
+ check(palette._matches == ["tree"],"Substring search and category filtering compose")
+ check(palette._detail_preview.texture != null,"The selected miniature has a live preview")
+ key(KEY_ENTER)
+ check(palette._placing == "tree" and not palette._launcher.visible,"Enter takes the miniature into hand")
+ var before := editor.data.objects.size()
+ var point: Vector2 = scene.camera.unproject_position(editor.terrain.to_global(Vector3(0,editor.data.height_at(0,0),0)))
+ click(point)
+ check(editor.data.objects.size() == before+1,"World click places exactly one tree")
+ check(palette._placing.is_empty() and editor.mode == "select","Placement returns to selection")
+ click(point)
+ check(editor.data.objects.size() == before+1,"A second click does not place another tree")
+ palette.open_palette()
+ palette._choose("tree")
+ key(KEY_ESCAPE)
+ check(palette._placing.is_empty() and editor.data.objects.size() == before+1,"Escape cancels without placement")
+ palette.open_palette()
+ palette._search.text = "zzzzzz"
+ palette._refresh_results()
+ check(palette._empty.visible and palette._matches.is_empty(),"Empty search has an explicit state")
+ key(KEY_ENTER)
+ check(palette._bar.visible,"Enter on empty results does nothing")
+ key(KEY_ESCAPE)
+ root.size = Vector2i(960,640)
+ palette.open_palette()
+ await settle()
+ check(palette._bar.size == Vector2(880,540),"The panel keeps fixed proportions on small screens")
+ check(is_equal_approx(palette._fit_wrapper.scale.x,palette._fit_wrapper.scale.y),"Fit scaling is uniform")
+ check(root.get_visible_rect().encloses(palette._bar.get_global_rect()),"The panel fits the small window")
+ for scroll in palette.find_children("*","ScrollBar",true,false):
+  check(not scroll.is_visible_in_tree(),"No visible scrollbars")
+ palette._browse("Creatures")
+ palette._take_special("bigfoot")
+ point = scene.camera.unproject_position(editor.terrain.to_global(Vector3(0,editor.data.height_at(0,0),0)))
+ check(palette._place_special(point),"Bigfoot can be set down in the world")
+ palette._finish_placing()
+ check(is_instance_valid(palette._inhabitant),"Bigfoot uses the existing animated actor")
+ print("Command palette: ",failures," failures")
+ scene.queue_free()
+ await process_frame
+ quit(1 if failures else 0)

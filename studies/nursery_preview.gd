@@ -4,4 +4,4 @@ func _ready() -> void:
 	super._ready()
 	get_window().title = "ZenScape · Quick create"
 	_chunk_editor.set_active(true)
-	_chunk_editor.select_tool("arch")
+	_chunk_editor.select_tool("select")
