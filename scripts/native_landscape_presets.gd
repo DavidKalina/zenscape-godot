@@ -1,5 +1,5 @@
 extends RefCounted
-## Curated composition + biome, independent of SceneLook. All generated ground,
+## Curated worlds pair editable composition and biome with an authored mood. All ground,
 ## planting and water use the ordinary editable, undoable garden records.
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const PRESETS := {
@@ -12,6 +12,35 @@ const PRESETS := {
 	"canyon":{"title":"Sunstone canyon","family":"canyon","biome":"arid","palette":"Desert","description":"Stepped cliffs around a slender ribbon of water."},
 	"terraced_pools":{"title":"Jade terraces","family":"terraced_pools","biome":"wetland","palette":"Meadow","description":"Three water gardens stepping through lush banks."}
 }
+# The same authored moods are used by gallery captures and player selection.
+const MOODS := {
+	"redwood_grove":"golden_meadow", "valley":"golden_meadow",
+	"plateau":"alpine_morning", "cone":"rosewater_dusk",
+	"ridgeback":"enchanted_forest", "horn":"alpine_morning",
+	"canyon":"golden_meadow", "terraced_pools":"after_the_rain"
+}
+# Per-world atmosphere: preserve the successful redwood treatment, while each
+# other composition gets its own light, weather and restrained fog profile.
+const ATMOSPHERES := {
+	"redwood_grove":{"mist":0.45,"rays":1.0},
+	"valley":{"phase":0.34,"mist":0.22,"haze":0.10,"clouds":0.10,"wind":0.28,"rays":0.25,"summit_mist":0.10,
+		"colors":{"sky":"82aaba","horizon":"a1afa3","glow":"f1d0a2","ambient":"a5c2d4"}},
+	"plateau":{"phase":0.42,"mist":0.18,"haze":0.13,"clouds":0.20,"wind":0.48,"rays":0.40,"summit_mist":0.20,"ambient_energy":1.25,
+		"colors":{"sky":"7faac5","horizon":"90b2bf","glow":"dbe3d6","water":"579fa7"}},
+	"cone":{"phase":0.66,"mist":0.08,"haze":0.12,"clouds":0.12,"wind":0.22,"rays":0.15,"summit_mist":0.05,"ambient_energy":1.65,"exposure":1.10,
+		"colors":{"sky":"8a83ad","horizon":"a28d9d","glow":"efb398","sun":"ffd1ac","rock":"a8949e","ambient":"a6b1d0"}},
+	"ridgeback":{"phase":0.36,"weather":"fair","mist":0.40,"haze":0.13,"clouds":0.32,"wind":0.30,"rays":1.0,"summit_mist":0.35,"ambient_energy":1.55,"sun_energy":1.10,"exposure":1.10,
+		"colors":{"sky":"83a6ae","horizon":"729893","glow":"ded8b4","sun":"f5ddb1","ambient":"a5c4bd","foliage":"598b66","grass":"7aa285"}},
+	"horn":{"phase":0.315,"weather":"clear","mist":0.14,"haze":0.07,"clouds":0.06,"wind":0.12,"rays":0.30,"summit_mist":0.0,"ambient_energy":1.40,"exposure":1.08,
+		"colors":{"sky":"869dbd","horizon":"a3afc0","glow":"efc6b3","sun":"ffdbc2","ambient":"9cbbda","rock":"9da6b4","water":"6a9fb5"}},
+	"canyon":{"palette":"Desert","phase":0.63,"mist":0.03,"haze":0.17,"clouds":0.04,"wind":0.35,"rays":0.12,"summit_mist":0.0,"ambient_energy":1.40,"strength":0.80,
+		"colors":{"sky":"998fa7","horizon":"b29b90","glow":"edb184","sun":"ffd2a1","ambient":"b6a6be","rock":"b68e70","earth":"ab785e","water":"639e9b","grass":"a69b57","foliage":"8b8750"}},
+	"terraced_pools":{"phase":0.38,"mist":0.30,"haze":0.12,"clouds":0.34,"wind":0.22,"rays":0.65,"summit_mist":0.15,"wet":0.62,"humidity":0.65,"rainbow":0.0,"ambient_energy":1.40,"exposure":1.08,
+		"colors":{"sky":"8aafb6","horizon":"8faaa0","glow":"e7dfc2","water":"61aaa0","foliage":"5b8e73","ambient":"b3c9c4"}}
+}
+static func apply_mood(scene: Node3D, id: String) -> void:
+	preload("res://scripts/scene_look_presets.gd").apply(scene,MOODS[id],ATMOSPHERES[id])
+
 static func recipe(id: String,biome := "",variation := 37,water := "connected") -> Dictionary:
 	var p: Dictionary = PRESETS[id]
 	return {"kind":"formation","water":water,"family":p.family,"biome":p.biome if biome.is_empty() else biome,"height":1.0,"width":1.0,"heading":0.0,"variation":variation}

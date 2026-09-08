@@ -53,13 +53,15 @@ func advance(delta: float) -> bool:
 	if not active.is_empty():
 		_elapsed += dt
 		if _phase == "approach":
+			while _approach_index < _approach_path.size() and scene.creature.position.distance_squared_to(_approach_path[_approach_index])<0.000001:
+				_approach_index += 1
 			if not _target_exists() or _elapsed > 30.0:
 				cancel("target changed or approach timeout")
 			elif _approach_index >= _approach_path.size():
 				_start_performance()
 			else:
 				var destination := _approach_path[_approach_index]
-				if not scene.navigation.segment_safe(scene.creature.position,destination):
+				if not scene.navigation.motion_safe(scene.creature.position,destination,0.85*dt):
 					scene.navigation.reject_segment(_approach_path[maxi(0,_approach_index-1)],destination)
 					_approach_path = scene.navigation.path(scene.creature.position,_approach_path[-1])
 					_approach_index = 0
@@ -79,6 +81,7 @@ func advance(delta: float) -> bool:
 			_effects(dt)
 			return true
 	if _clock < _next_action or not scene.creature.can_roam(): return false
+	if not scene.brain.ready_for_activity(dt): return false
 	var kind: String = ORDER[_choice%ORDER.size()]
 	_choice += 1
 	if kind == "sleep" and _choice%10 == 0: kind = "hibernate"

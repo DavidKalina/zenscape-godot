@@ -40,11 +40,11 @@ func _ready() -> void:
 	for mesh: MeshInstance3D in creature.actor.find_children("*","MeshInstance3D",true,false):
 		if "_n7_" not in mesh.name and "_n8_" not in mesh.name: mesh.material_override = coat
 	add_child(brain)
-	brain.rest_min = 0.5
-	brain.rest_max = 1.2
-	brain.inspection_duration = 1.2
+	brain.rest_min = 4.0
+	brain.rest_max = 8.0
+	brain.inspection_duration = 4.5
 	brain.scenery_chance = 0.35
-	brain.react_immediately = true
+	brain.react_immediately = false
 	brain.setup(creature,navigation,func() -> Array: return habitat.interests)
 	creature.add_child(_reaction)
 	_reaction.position.y = 3.3

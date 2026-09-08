@@ -1093,9 +1093,9 @@ func _notify_play_geometry() -> void:
 		_play_geometry_signature = signature
 		play_geometry_changed.emit()
 
-## A complete curated landscape is one terrain transaction. Palette/lighting
-## live outside this transaction and are never changed by its undo or redo.
-func form_landscape(id: String,biome := "",live := true,variation := 37,water := "connected") -> void:
+## Preset selection restores a complete world mood; variations preserve customization.
+## Reuse the scene-aware favorite history so one Undo restores both terrain and mood.
+func form_landscape(id: String,biome := "",live := true,variation := 37,water := "connected",apply_mood := true) -> void:
 	if forming or not preload("res://scripts/native_landscape_presets.gd").PRESETS.has(id): return
 	if not NativeTerrainRecipe.valid(preload("res://scripts/native_landscape_presets.gd").recipe(id,biome,variation,water)): return
 	finish_stroke()
@@ -1105,9 +1105,11 @@ func form_landscape(id: String,biome := "",live := true,variation := 37,water :=
 	formation_started.emit()
 	_set_status("Forming "+preload("res://scripts/native_landscape_presets.gd").PRESETS[id].title+"…")
 	data.begin_stroke()
+	if apply_mood: data._before["favorite_scene"] = NativeGardenStore.capture(scene)
 	await preload("res://scripts/native_landscape_presets.gd").form(data,id,biome,get_tree() if live else null,variation,water)
 	data.end_stroke()
 	await refresh(get_tree() if live else null)
+	if apply_mood: preload("res://scripts/native_landscape_presets.gd").apply_mood(scene,id)
 	forming = false
 	_set_status("Landscape ready · Change its biome or colors, or sculpt it further. Undo restores your previous landscape.")
 
@@ -1128,9 +1130,9 @@ func another_landscape(live := true) -> void:
 	if forming or data._recipe_settings.get("kind") != "formation": return
 	var current: Dictionary = data._recipe_settings
 	# A full-period sequence visits all 1,000 variants before repeating.
-	await form_landscape(current.family,current.biome,live,(int(current.variation)+137)%1000,current.get("water","connected"))
+	await form_landscape(current.family,current.biome,live,(int(current.variation)+137)%1000,current.get("water","connected"),false)
 
 func change_landscape_water(water: String,live := true) -> void:
 	if forming or data._recipe_settings.get("kind") != "formation": return
 	var current: Dictionary = data._recipe_settings
-	await form_landscape(current.family,current.biome,live,int(current.variation),water)
+	await form_landscape(current.family,current.biome,live,int(current.variation),water,false)

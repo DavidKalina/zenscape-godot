@@ -8,6 +8,14 @@ void light() {
 	if (!flowing && lake_display_lighting) energy = vec3(0.0);
 #endif
 	DIFFUSE_LIGHT += energy * nl / PI * (1.0 - metalness_value);
+#ifdef ZS_FOLIAGE_TRANSMISSION
+	// Thin-sheet backscatter uses the same shadow attenuation as direct light.
+	// Keep it broad across a facet and strongest when looking toward the light.
+	float backlight = max(-dot(NORMAL, LIGHT), 0.0);
+	float forward_scatter = pow(max(dot(-LIGHT, VIEW), 0.0), 3.0);
+	DIFFUSE_LIGHT += energy * foliage_transmission * backlight
+		* (0.35 + 0.65 * forward_scatter) * vec3(0.82, 1.0, 0.58) / PI;
+#endif
 	vec3 half_vector = normalize(LIGHT + VIEW);
 	float nv = max(dot(NORMAL, VIEW), 0.0001);
 	float nh = max(dot(NORMAL, half_vector), 0.0);
