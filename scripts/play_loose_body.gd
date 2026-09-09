@@ -80,13 +80,13 @@ func grab() -> void:
 	angular_velocity = Vector3.ZERO
 	launched = false
 
-func release(velocity: Vector3) -> void:
+func release(velocity: Vector3, strength := 1.0) -> void:
 	parked = false
 	held = false
 	freeze = paused
 	collision_layer = 1
 	sleeping = false
-	linear_velocity = velocity.limit_length({"stone":17.0,"log":11.0,"boulder":6.0}[kind])
+	linear_velocity = velocity.limit_length({"stone":17.0,"log":11.0,"boulder":6.0}[kind]*clampf(strength,1.0,2.0))
 	angular_velocity = Vector3(0.4,0.7,-linear_velocity.x)*0.7
 	launched = true
 	age_since_release = 0.0

@@ -12,6 +12,7 @@ var water_level := 0.0
 var water_exit := Vector3.ZERO
 var _paddle_time := 0.0
 var hand_targets := {}
+var action_tempo := 1.0
 var _pending_tremor := 0.0
 var _stumble_strength := 0.0
 var _stumble_duration := 0.0
@@ -392,6 +393,7 @@ func advance(delta: float) -> void:
 	if _pending_tremor>0.0:
 		_start_stumble(_pending_tremor)
 		_pending_tremor = 0.0
+	if state == State.ACTION: dt *= action_tempo
 	_age += dt
 	if state == State.STUMBLING and _age>=_stumble_duration:
 		_state(State.ALERT)

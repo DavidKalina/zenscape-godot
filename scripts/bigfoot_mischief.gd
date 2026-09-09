@@ -52,6 +52,9 @@ func setup(playground: Node) -> void:
 	library.add_animation("StoneHeave",stone_player.get_animation("StoneHeave").duplicate())
 	stone_source.free()
 
+func furious() -> bool:
+	return is_instance_valid(scene.temper) and scene.temper.enraged
+
 func busy() -> bool: return not active.is_empty()
 
 func invite() -> bool:
@@ -89,7 +92,7 @@ func request(kind: String, chosen: Node3D = null) -> bool:
 		scene.brain.reset_behavior()
 		scene.brain.enabled = false
 		scene.creature.notice(item.global_position)
-		scene._show_reaction("?","He has an idea of his own.")
+		scene._show_reaction("!!" if furious() else "?","He needs to let off some steam." if furious() else "He has an idea of his own.")
 		return true
 	return false
 
@@ -117,10 +120,10 @@ func advance(delta: float) -> void:
 	_cooldown = maxf(0.0,_cooldown-delta)
 	if tree_protected and not _owns_tree and scene.spring_tree.bend.length()<0.05 and scene.spring_tree.velocity.length()<0.1: tree_protected = false
 	if not busy():
-		if autonomous and _cooldown<=0.0 and _available() and scene._attention_time<=0.0 and scene.brain.ready_for_activity(delta):
+		if autonomous and _cooldown<=0.0 and _available() and (furious() or (scene._attention_time<=0.0 and scene.brain.ready_for_activity(delta))):
 			var kind: String = ["stone","log","tree"][_choice%3]
 			_choice += 1
-			_cooldown = 5.0 # Bound failed route searches as well as successful play.
+			_cooldown = 1.2 if furious() else 5.0 # Bound failed route searches as well as successful play.
 			request(kind)
 		return
 	if not _available() or not is_instance_valid(target):
@@ -136,10 +139,10 @@ func advance(delta: float) -> void:
 			phase = "turn"
 			scene.creature.stop_walking()
 			return
-		if not scene.navigation.motion_safe(scene.creature.global_position,_route[_waypoint],0.85*delta):
+		if not scene.navigation.motion_safe(scene.creature.global_position,_route[_waypoint],(1.65 if furious() else 0.85)*delta):
 			cancel("approach obstructed")
 			return
-		if scene.creature.walk_step(_route[_waypoint],0.85,delta): _waypoint += 1
+		if scene.creature.walk_step(_route[_waypoint],1.65 if furious() else 0.85,delta): _waypoint += 1
 		return
 	if phase == "turn":
 		if not scene.creature.can_roam() or target.global_position.distance_to(_target_start)>0.25:
@@ -206,7 +209,7 @@ func _perform_throw(t: float) -> void:
 		scene._show_reaction("!","He can throw things too.")
 
 func _release_prop(velocity: Vector3) -> void:
-	held.release(velocity)
+	held.release(velocity*(2.8 if furious() else 1.0),2.0 if furious() else 1.0)
 	held.hit_cooldown = 0.8
 	held = null
 	_released = true
@@ -316,10 +319,10 @@ func _carry_log(delta: float) -> void:
 	var finished := _carry_route.is_empty() or _elapsed>5.0
 	if not finished:
 		var next: Vector3 = _carry_route[_carry_index]
-		if not scene.navigation.motion_safe(scene.creature.global_position,next,0.65*delta): finished = true
+		if not scene.navigation.motion_safe(scene.creature.global_position,next,(1.15 if furious() else 0.65)*delta): finished = true
 		else:
 			var before: Vector3 = scene.creature.global_position
-			finished = scene.creature.walk_step(next,0.65,delta,"LogCarry")
+			finished = scene.creature.walk_step(next,1.15 if furious() else 0.65,delta,"LogCarry")
 			_carry_distance += before.distance_to(scene.creature.global_position)
 	held.global_transform = _shoulder_pose()
 	_log_hands(held.global_transform,1.0,0.0)
@@ -377,7 +380,7 @@ func _finish() -> void:
 	active = ""
 	phase = ""
 	target = null
-	_cooldown = 12.0
+	_cooldown = 1.0 if furious() else 12.0
 	scene.brain.reset_behavior()
 	history.append(kind)
 	completed.emit(kind)

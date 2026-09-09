@@ -1,6 +1,7 @@
 extends "res://studies/bigfoot_life.gd"
 ## A tactile, preset-first playground. The tree owns elasticity and contact;
 ## this scene owns gestures and the resident's response to player interference.
+var temper: Node3D
 var mischief: Node
 var loose_props: Node3D
 var water_play: Node3D
@@ -79,6 +80,14 @@ func _ready() -> void:
 	mischief = preload("res://scripts/bigfoot_mischief.gd").new()
 	add_child(mischief)
 	mischief.setup(self)
+	temper = preload("res://scripts/bigfoot_temper.gd").new()
+	add_child(temper)
+	temper.setup(self)
+	var rile := Button.new()
+	rile.text = "Rile him up"
+	rile.focus_mode = Control.FOCUS_NONE
+	rile.pressed.connect(func() -> void: temper.provoke(1.0))
+	column.add_child(rile)
 	var play_button := Button.new()
 	play_button.text = "Let him play"
 	play_button.focus_mode = Control.FOCUS_NONE
@@ -160,6 +169,7 @@ func _process(delta: float) -> void:
 			_braced = true
 
 func _physics_process(delta: float) -> void:
+	if is_instance_valid(temper): temper.advance(delta)
 	if is_instance_valid(mischief):
 		mischief.advance(delta)
 		if mischief.busy(): brain.enabled = false
@@ -277,6 +287,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_creature_state(value: CreatureActor.State) -> void:
 	super._on_creature_state(value)
+	if is_instance_valid(temper) and value in [CreatureActor.State.STUMBLING,CreatureActor.State.WIND,CreatureActor.State.SWIMMING]:
+		temper.provoke(0.45)
 	if value == CreatureActor.State.SWIMMING:
 		_water_reaction = true
 		_show_reaction("!", "An entirely unplanned bath.")
@@ -295,6 +307,7 @@ func _on_creature_state(value: CreatureActor.State) -> void:
 		_show_reaction("…", "He's fairly sure you had something to do with that.")
 
 func reset_creature() -> void:
+	if is_instance_valid(temper): temper.reset()
 	if is_instance_valid(mischief): mischief.reset()
 	if is_instance_valid(loose_props): loose_props.reset()
 	cancel_tree_drag()
