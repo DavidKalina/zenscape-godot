@@ -52,6 +52,7 @@ func setup(playground: Node) -> void:
 	var stone_player: AnimationPlayer = stone_source.find_child("AnimationPlayer",true,false)
 	library.add_animation("StoneHeave",stone_player.get_animation("StoneHeave").duplicate())
 	stone_source.free()
+	scene.creature.install_action_personality()
 
 func furious() -> bool:
 	return is_instance_valid(scene.temper) and scene.temper.enraged
@@ -206,6 +207,10 @@ func _perform_throw(t: float) -> void:
 	var point := _grip_start.lerp(chest,smoothstep(1.05,1.85,t))
 	if t>1.85: point = chest.lerp(cocked,smoothstep(1.85,2.55,t))
 	if t>2.55: point = cocked.lerp(release,smoothstep(2.55,2.95,t))
+	if actor.personality_active:
+		# Hold the load, then accelerate through release instead of braking to zero.
+		if t>2.55: point = cocked
+		if t>2.65: point = cocked.lerp(release,pow(clampf((t-2.65)/0.30,0,1),2.0))
 	held.global_position = point
 	_stone_hand(point,1.0)
 	if t>=2.95:
@@ -263,7 +268,11 @@ func _perform_log(t: float) -> void:
 		# Drive the shouldered log forward along its length, keeping its heading.
 		var forward := Transform3D(_toss_pose.basis,_toss_pose.origin+scene.creature.global_basis*Vector3(0,0.2,1.05))
 		var pose := _toss_pose.interpolate_with(forward,smoothstep(0.15,0.78,t))
-		if _forceful:
+		if scene.creature.personality_active:
+			var load := Transform3D(_toss_pose.basis,_toss_pose.origin+scene.creature.global_basis*Vector3(0,-0.10,-0.22))
+			pose = _toss_pose.interpolate_with(load,smoothstep(0.0,0.4,t))
+			if t>0.48: pose = load.interpolate_with(forward,pow(clampf((t-0.48)/0.30,0,1),2.0))
+		if _forceful and not scene.creature.personality_active:
 			var loaded := Transform3D(_toss_pose.basis,_toss_pose.origin+scene.creature.global_basis*Vector3(0,-0.08,-0.22))
 			pose = _toss_pose.interpolate_with(loaded,smoothstep(0.0,0.3,t))
 			if t>0.3: pose = loaded.interpolate_with(forward,smoothstep(0.34,0.78,t))
@@ -287,15 +296,17 @@ func _perform_log(t: float) -> void:
 		held.grab()
 	var cradle: Transform3D = scene.creature.global_transform*Transform3D(Basis(Vector3.UP,PI if _log_grip_sign<0.0 else 0.0),Vector3(0,1.25,0.9))
 	var pose := _log_grasp_pose.interpolate_with(cradle,smoothstep(1.3,2.35,t))
+	if scene.creature.personality_active:
+		pose = _log_grasp_pose.interpolate_with(cradle,smoothstep(1.43,2.25,t))
 	# Lift in front first; only swing the long axis across his head once clear.
 	# A direct cradle-to-shoulder blend sweeps the trunk through his face.
 	var overhead := cradle
-	overhead.origin = scene.creature.to_global(Vector3(0,3.65,0.9))
+	overhead.origin = scene.creature.to_global(Vector3(0,3.15,0.55) if scene.creature.personality_active else Vector3(0,3.65,0.9))
 	var above_shoulder := _shoulder_pose()
 	above_shoulder.origin.y = overhead.origin.y
 	if t>2.35: pose = cradle.interpolate_with(overhead,smoothstep(2.35,3.05,t))
 	if t>3.05: pose = overhead.interpolate_with(above_shoulder,smoothstep(3.05,3.6,t))
-	if t>3.6: pose = above_shoulder.interpolate_with(_shoulder_pose(),smoothstep(3.6,4.55,t))
+	if t>3.6: pose = above_shoulder.interpolate_with(_shoulder_pose(),smoothstep(3.6,4.25 if scene.creature.personality_active else 4.55,t))
 	held.global_transform = pose
 	_log_hands(pose,1.0,1.0-smoothstep(3.05,3.55,t))
 	if t>=4.7:
@@ -352,7 +363,10 @@ func _perform_tree(t: float) -> void:
 		tree_protected = true
 	if _owns_tree:
 		# Draw the trunk toward his chest, then let the same spring recoil.
-		tree.drag_to(-_direction*(5.0 if _forceful else 2.8)*smoothstep(0.7,2.5,t))
+		var pull := smoothstep(0.7,2.5,t)
+		if scene.creature.personality_active:
+			pull = 0.35*smoothstep(0.7,1.35,t)+0.65*smoothstep(1.35,2.35,t)
+		tree.drag_to(-_direction*(5.0 if _forceful else 2.8)*pull)
 		for side in ["R","L"]:
 			var sign := -1.0 if side == "R" else 1.0
 			scene.creature.reach_hand(tree.center(2.1)+scene.creature.global_basis.x*sign*0.16, smoothstep(0.4,0.9,t),side)

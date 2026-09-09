@@ -1,0 +1,107 @@
+{
+  "PersonalityWalk": {
+    "seconds": 3.6,
+    "stance_slip": 3.55116900359758e-06,
+    "floor": -0.0051761711947619915,
+    "seam": 0.0,
+    "head_range": 0.09964513778686523
+  },
+  "PersonalityIdle": {
+    "seconds": 15.6,
+    "stance_slip": 1.7500460667453748e-06,
+    "floor": -2.7262667572358623e-06,
+    "seam": 0.0,
+    "head_range": 0.028278827667236328
+  },
+  "PersonalityHeld": {
+    "seconds": 7.2,
+    "stance_slip": 0,
+    "floor": 0.08680690824985504,
+    "seam": 0.0,
+    "head_range": 9.5367431640625e-07
+  },
+  "Tremor": {
+    "seconds": 2.3,
+    "stance_slip": 0,
+    "floor": -4.97634300700156e-06,
+    "seam": 0.0,
+    "head_range": 0.20120811462402344
+  },
+  "SitDown": {
+    "seconds": 1.4,
+    "stance_slip": 0,
+    "floor": -5.040432426994812e-08,
+    "seam": 1.4411084353923798,
+    "head_range": 0.8390254974365234
+  },
+  "Sit": {
+    "seconds": 8.0,
+    "stance_slip": 0,
+    "floor": 0.014990843832492828,
+    "seam": 0.0,
+    "head_range": 0.022913813591003418
+  },
+  "StandUp": {
+    "seconds": 1.5,
+    "stance_slip": 0,
+    "floor": -5.040432426994812e-08,
+    "seam": 1.4411084353923798,
+    "head_range": 0.847148060798645
+  },
+  "Sleep": {
+    "seconds": 6.0,
+    "stance_slip": 0,
+    "floor": 0.014990843832492828,
+    "seam": 0.0,
+    "head_range": 0.028415679931640625
+  },
+  "StoneHeave": {
+    "seconds": 4.2,
+    "stance_slip": 0,
+    "floor": -3.410811041248962e-05,
+    "seam": 0.0,
+    "head_range": 0.7743573188781738
+  },
+  "StoneThrow": {
+    "seconds": 4.2,
+    "stance_slip": 0,
+    "floor": -3.410811041248962e-05,
+    "seam": 0.0,
+    "head_range": 0.7743573188781738
+  },
+  "LogLift": {
+    "seconds": 4.7,
+    "stance_slip": 0,
+    "floor": -0.00010582739923847839,
+    "seam": 1.1597242951393127,
+    "head_range": 0.8794254064559937
+  },
+  "LogCarry": {
+    "seconds": 3.6,
+    "stance_slip": 0,
+    "floor": -0.0051761711947619915,
+    "seam": 0.0,
+    "head_range": 0.09920263290405273
+  },
+  "LogToss": {
+    "seconds": 1.8,
+    "stance_slip": 0,
+    "floor": -5.17005810252158e-06,
+    "seam": 1.1971748769283295,
+    "head_range": 0.20224499702453613
+  },
+  "LogSlam": {
+    "seconds": 1.8,
+    "stance_slip": 0,
+    "floor": -5.9151161622139625e-06,
+    "seam": 1.1971748769283295,
+    "head_range": 0.24010229110717773
+  },
+  "TreeShake": {
+    "seconds": 4.2,
+    "stance_slip": 0,
+    "floor": -4.901837201032322e-06,
+    "seam": 0.0,
+    "head_range": 0.1703941822052002
+  }
+}

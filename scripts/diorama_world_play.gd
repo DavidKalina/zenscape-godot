@@ -42,6 +42,7 @@ var _habitat_blocked: bool:
 	get: return not owner_scene.resident_enabled or owner_scene._habitat_blocked or owner_scene._habitat_changed or navigation.rebuilding
 
 func setup(target: Node3D) -> void:
+	add_child(preload("res://scripts/tree_motion_tuner.gd").new())
 	owner_scene = target
 	creature = target.creature
 	brain = target.brain
@@ -71,6 +72,8 @@ func setup(target: Node3D) -> void:
 			mischief.cancel())
 
 func _over_controls(mouse: Vector2) -> bool:
+	for tuner in get_tree().get_nodes_in_group("tree_motion_tuner"):
+		if tuner.contains(mouse): return true
 	return not _chunk_editor.pointer_in_world(mouse)
 
 func _probe_ground(point: Vector3) -> Variant:

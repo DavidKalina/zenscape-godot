@@ -369,7 +369,7 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 		return
 	if clip == "SitDown":
 		scene.creature.clear_hand_targets()
-		scene.creature.perform_action("Sleep" if active in ["sleep","hibernate"] else "Sit",60.0 if active == "hibernate" else 18.0 if active == "sleep" else 4.0)
+		scene.creature.perform_action("Sleep" if active in ["sleep","hibernate"] else "Sit",60.0 if active == "hibernate" else 18.0 if active == "sleep" else 8.0 if scene.creature.personality_active else 4.0)
 	elif clip in ["Sit","Sleep"]:
 		for label in _sleep_marks: label.visible = false
 		scene.creature.perform_action("StandUp")

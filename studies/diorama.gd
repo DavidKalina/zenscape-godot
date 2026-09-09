@@ -507,6 +507,9 @@ func send_scene_gust(center: Vector3, direction := Vector3.ZERO) -> void:
 	_resident_wind.send(center,direction)
 
 func handle_resident_input(event: InputEvent) -> bool:
+	if event is InputEventMouseButton and event.pressed:
+		for tuner in get_tree().get_nodes_in_group("tree_motion_tuner"):
+			if tuner.contains(event.position): return false
 	if _resident_play.scene == null or _menu.visible or _file_dialog.visible or _settings.visible: return false
 	if world_play.owner_scene != null and (world_play._tree_drag or world_play.loose_props.grabbed != null) and world_play.handle(event):
 		get_viewport().set_input_as_handled()

@@ -49,7 +49,7 @@ func run() -> void:
 		if play.held != null:
 			if play.phase=="perform" and scene.creature._age>=3.05 and scene.creature._age<=3.6:
 				overhead_seen = true
-				check(scene.creature.to_local(play.held.global_position).y>3.6,"Log stays overhead while rotating toward shoulder")
+				check(scene.creature.to_local(play.held.global_position).y>(3.1 if scene.creature.personality_active else 3.6),"Log stays overhead while rotating toward shoulder")
 			if previous_pose != null:
 				max_prop_step = maxf(max_prop_step,previous_pose.distance_to(play.held.global_position))
 				max_prop_turn = maxf(max_prop_turn,previous_rotation.angle_to(play.held.global_basis.get_rotation_quaternion()))

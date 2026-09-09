@@ -95,6 +95,7 @@ func _ready() -> void:
 		if not _paused and not mischief.busy():
 			if not mischief.invite(): _show_reaction("?","Nothing within reach just now."))
 	column.add_child(play_button)
+	add_child(preload("res://scripts/tree_motion_tuner.gd").new())
 	_play_ready = true
 
 func _enrich_clearing() -> void:
@@ -401,3 +402,8 @@ func _probe_safe(point: Vector3) -> Variant:
 	# Use current clearance when choosing recovery, not the last static home.
 	var nearby: Variant = navigation.nearest_safe(point)
 	return nearby if nearby != null and valid_landing(nearby) else null
+
+func _over_controls(mouse: Vector2) -> bool:
+	for tuner in get_tree().get_nodes_in_group("tree_motion_tuner"):
+		if tuner.contains(mouse): return true
+	return super._over_controls(mouse)

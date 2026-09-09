@@ -6,6 +6,10 @@ enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUM
 signal state_changed(value: State)
 signal landed()
 signal action_finished(clip: String, cancelled: bool)
+const PERSONALITY = preload("res://scripts/bigfoot_personality.gd")
+var personality_active := false
+var _original_clips := {}
+var _personality_clips := {}
 const HAND_REACH = preload("res://scripts/creature_hand_reach.gd")
 signal water_splash(point: Vector3, strength: float)
 var water_level := 0.0
@@ -157,9 +161,11 @@ func _start_stumble(strength: float) -> void:
 	_stumble_duration = 1.1+_stumble_strength*1.2
 	_gaze_weight = 0.0
 	_state(State.STUMBLING)
-	_play("Land")
+	_play("Tremor" if personality_active else "Land")
+	if personality_active: player.speed_scale = 2.3/_stumble_duration
 
 func _pose_stumble() -> void:
+	if personality_active: return
 	var fade := smoothstep(0.0,0.12,_age)*(1.0-smoothstep(_stumble_duration-0.6,_stumble_duration,_age))
 	var response := fade*_stumble_strength
 	var spine := skeleton.find_bone("Spine")
@@ -203,7 +209,7 @@ func _start_physical_tumble() -> void:
 	_settled_time = 0.0
 	_visual.transform = Transform3D.IDENTITY
 	_state(State.WIND)
-	_play("Held")
+	_play("Airborne")
 
 func _physics_process(delta: float) -> void:
 	if wind_body == null or not is_instance_valid(_wind_field): return
@@ -240,6 +246,18 @@ func setup(asset_path: String) -> void:
 	var rigs := actor.find_children("*","Skeleton3D",true,false)
 	assert(player != null and rigs.size() == 1,"An inhabitant needs an animation player and one skeleton")
 	skeleton = rigs[0]
+	add_to_group("personality_actors")
+	# Keep each actor's library private: profile changes must not mutate imports.
+	var library := player.get_animation_library("").duplicate() as AnimationLibrary
+	player.remove_animation_library("")
+	player.add_animation_library("",library)
+	for clip in ["Walk","Idle","Held"]:
+		_original_clips[clip] = library.get_animation(clip).duplicate()
+		_original_clips[clip].loop_mode = Animation.LOOP_LINEAR
+	library.add_animation("Airborne",_original_clips["Held"].duplicate())
+	_personality_clips = PERSONALITY.clips_for(player,skeleton)
+	library.add_animation("Tremor",_personality_clips["Tremor"])
+	install_action_personality()
 	_head = skeleton.find_bone("Head")
 	_mouth = actor.find_child("BreathOrigin",true,false) as Node3D
 	if _mouth != null:
@@ -258,6 +276,30 @@ func setup(asset_path: String) -> void:
 	_safe_position = global_position
 	land_position = _safe_position
 	_play("Idle")
+
+func install_action_personality() -> void:
+	var library := player.get_animation_library("")
+	for clip in PERSONALITY.ACTIONS:
+		if library.has_animation(clip) and not _original_clips.has(clip):
+			_original_clips[clip] = library.get_animation(clip).duplicate()
+	set_personality(PERSONALITY.enabled)
+
+func set_personality(enabled: bool) -> void:
+	if _original_clips.is_empty(): return
+	var current := player.current_animation
+	var position := player.current_animation_position if not current.is_empty() else 0.0
+	var tempo := player.speed_scale
+	var replacing := _original_clips.has(current)
+	if replacing: player.stop()
+	var library := player.get_animation_library("")
+	for clip in _original_clips:
+		library.remove_animation(clip)
+		library.add_animation(clip,_personality_clips[clip] if enabled else _original_clips[clip])
+	personality_active = enabled
+	if replacing:
+		player.play(current,0.15)
+		player.seek(fposmod(position,player.get_animation(current).length),true)
+		player.speed_scale = tempo
 
 func _process(delta: float) -> void:
 	advance(delta)
@@ -357,7 +399,7 @@ func enter_water(level: float, shore: Vector3) -> bool:
 	_sway = Vector2.ZERO
 	_visual.transform = Transform3D.IDENTITY
 	_state(State.SWIMMING)
-	_play("Held")
+	_play("Airborne")
 	water_splash.emit(Vector3(global_position.x,level,global_position.z),1.0)
 	return true
 
@@ -474,7 +516,8 @@ func advance(delta: float) -> void:
 	if _breath != null:
 		skeleton.force_update_all_bone_transforms()
 		var idle := state==State.IDLE and player.current_animation=="Idle"
-		var phase := player.current_animation_position/player.get_animation("Idle").length if idle else 0.0
+		var breath_duration := 5.2 if personality_active else player.get_animation("Idle").length
+		var phase := fposmod(player.current_animation_position,breath_duration)/breath_duration if idle else 0.0
 		var wind := Vector3.ZERO
 		var mouth := skeleton.global_transform*skeleton.get_bone_global_pose(_head)*_mouth_offset
 		if is_instance_valid(_wind_field): wind = _wind_field.sample(mouth.origin)

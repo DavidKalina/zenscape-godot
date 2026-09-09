@@ -29,7 +29,11 @@ func configure(parts: Array, root_position: Vector3) -> void:
 	for material in _materials: material.set_shader_parameter("play_height",tree_height)
 
 func _sync() -> void:
-	for material in _materials: material.set_shader_parameter("play_bend",bend)
+	var offsets := _offsets(bend,crown,tip)
+	for material in _materials:
+		material.set_shader_parameter("play_bend",bend)
+		material.set_shader_parameter("play_crown_offset",offsets[0])
+		material.set_shader_parameter("play_tip_offset",offsets[1])
 
 func pick(camera: Camera3D, mouse: Vector2, max_distance := INF) -> bool:
 	var origin := camera.project_ray_origin(mouse)
