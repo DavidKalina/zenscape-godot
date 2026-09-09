@@ -1,6 +1,7 @@
 extends "res://studies/bigfoot_life.gd"
 ## A tactile, preset-first playground. The tree owns elasticity and contact;
 ## this scene owns gestures and the resident's response to player interference.
+var mischief: Node
 var loose_props: Node3D
 var water_play: Node3D
 var _wet_hold := false
@@ -75,6 +76,16 @@ func _ready() -> void:
 	loose_props = preload("res://scripts/play_loose_props.gd").new()
 	add_child(loose_props)
 	loose_props.setup(self)
+	mischief = preload("res://scripts/bigfoot_mischief.gd").new()
+	add_child(mischief)
+	mischief.setup(self)
+	var play_button := Button.new()
+	play_button.text = "Let him play"
+	play_button.focus_mode = Control.FOCUS_NONE
+	play_button.pressed.connect(func() -> void:
+		if not _paused and not mischief.busy():
+			if not mischief.invite(): _show_reaction("?","Nothing within reach just now."))
+	column.add_child(play_button)
 	_play_ready = true
 
 func _enrich_clearing() -> void:
@@ -97,13 +108,14 @@ func _enrich_clearing() -> void:
 	_geometry_changed()
 
 func _tool_changed() -> void:
+	if is_instance_valid(mischief): mischief.cancel()
 	cancel_tree_drag()
 	if is_instance_valid(loose_props): loose_props.cancel()
 	if _carrying: _cancel_water_carry()
 	_tool_button.text = "Wind · switch to hands" if gust_tool else "Hands · switch to wind"
 
 func _investigate_interest() -> void:
-	if not _paused: brain.investigate(spring_tree.global_position,false,"spring-tree")
+	if not _paused and is_instance_valid(mischief): mischief.request("tree")
 
 func _interests() -> Array[Dictionary]:
 	var interests := super._interests()
@@ -138,7 +150,7 @@ func _process(delta: float) -> void:
 		var gaze: Variant = gaze_plane.intersects_ray(camera.project_ray_origin(mouse),camera.project_ray_normal(mouse))
 		creature.track_gaze(gaze if gaze != null else camera.global_position)
 	_attention_time = maxf(0,_attention_time-delta)
-	brain.enabled = not loose_props.busy() and not _tree_drag and _attention_time <= 0 and creature.state not in [CreatureActor.State.SWIMMING,CreatureActor.State.SHAKING]
+	brain.enabled = not mischief.busy() and not loose_props.busy() and not _tree_drag and _attention_time <= 0 and creature.state not in [CreatureActor.State.SWIMMING,CreatureActor.State.SHAKING]
 	if _tree_drag and creature.can_roam():
 		creature.stop_walking()
 		creature.track_gaze(spring_tree.center(3.0))
@@ -148,6 +160,9 @@ func _process(delta: float) -> void:
 			_braced = true
 
 func _physics_process(delta: float) -> void:
+	if is_instance_valid(mischief):
+		mischief.advance(delta)
+		if mischief.busy(): brain.enabled = false
 	if is_instance_valid(loose_props): loose_props.advance(delta)
 	super._physics_process(delta)
 	if not _play_ready or _paused: return
@@ -163,7 +178,8 @@ func _physics_process(delta: float) -> void:
 				brain.enabled = false
 	var previous := spring_tree.bend
 	spring_tree.advance(delta)
-	var contact := spring_tree.sweep_contact(previous,creature.global_position+Vector3.UP*1.6,delta)
+	mischief.tree_sweep(previous,delta)
+	var contact := Vector3.ZERO if mischief.tree_protected else spring_tree.sweep_contact(previous,creature.global_position+Vector3.UP*1.6,delta)
 	if contact.length() > 0.0 and creature.receive_impulse((contact*23.0+Vector3.UP*65.0).limit_length(240.0)):
 		_tree_hit = true
 		_attention_time = 4.0
@@ -177,6 +193,9 @@ func _pick_tree(mouse: Vector2) -> bool:
 
 func begin_tree_drag(mouse: Vector2) -> void:
 	if _paused or gust_tool or _carrying: return
+	if is_instance_valid(mischief):
+		mischief.cancel()
+		mischief.tree_protected = false
 	_tree_drag = true
 	_braced = false
 	_drag_plane = Plane(camera.global_basis.z,spring_tree.center(3.0))
@@ -206,7 +225,7 @@ func release_tree_drag() -> void:
 		_show_reaction("?", "Just a little tickle.")
 
 func cancel_tree_drag() -> void:
-	if not is_instance_valid(spring_tree): return
+	if not is_instance_valid(spring_tree) or not _tree_drag: return
 	_tree_drag = false
 	spring_tree.cancel()
 	_attention_time = 0
@@ -276,6 +295,7 @@ func _on_creature_state(value: CreatureActor.State) -> void:
 		_show_reaction("…", "He's fairly sure you had something to do with that.")
 
 func reset_creature() -> void:
+	if is_instance_valid(mischief): mischief.reset()
 	if is_instance_valid(loose_props): loose_props.reset()
 	cancel_tree_drag()
 	if is_instance_valid(spring_tree): spring_tree.reset()
@@ -289,6 +309,7 @@ func reset_creature() -> void:
 
 func _begin_carry(mouse: Vector2) -> void:
 	if _paused: return
+	if is_instance_valid(mischief): mischief.cancel()
 	if is_instance_valid(loose_props): loose_props.cancel()
 	_water_reaction = false
 	_offended_time = 0.0
@@ -345,11 +366,14 @@ func _carry_from_tray() -> void:
 	super._carry_from_tray()
 
 func _call_creature() -> void:
-	if not _paused: super._call_creature()
+	if not _paused:
+		if is_instance_valid(mischief): mischief.cancel()
+		super._call_creature()
 
 func _notification(what: int) -> void:
 	super._notification(what)
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		if is_instance_valid(mischief): mischief.cancel()
 		if is_instance_valid(loose_props): loose_props.cancel()
 		cancel_tree_drag()
 		_cancel_water_carry()

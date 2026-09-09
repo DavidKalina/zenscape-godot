@@ -119,7 +119,7 @@ func pick(camera: Camera3D, mouse: Vector2, max_distance := INF) -> bool:
 
 ## Returns actual branch sweep velocity only when the released crown crosses
 ## the resident's torso. One impulse per release; held trees never cause damage.
-func sweep_contact(previous: Vector2, torso: Vector3, delta: float) -> Vector3:
+func sweep_contact(previous: Vector2, torso: Vector3, delta: float, consume := true) -> Vector3:
 	if not armed or held or delta <= 0: return Vector3.ZERO
 	for height in [1.5,2.1,2.7,3.3,3.9]:
 		var before := center(height,previous)
@@ -128,6 +128,6 @@ func sweep_contact(previous: Vector2, torso: Vector3, delta: float) -> Vector3:
 		var nearest := Geometry3D.get_closest_point_to_segment(torso,before,after)
 		var radius := 0.65 if height < 2.0 else 1.25
 		if nearest.distance_to(torso) < radius and movement.length()/delta > 1.4:
-			armed = false
+			if consume: armed = false
 			return movement/delta
 	return Vector3.ZERO

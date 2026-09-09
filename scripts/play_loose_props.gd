@@ -63,6 +63,7 @@ func hover(mouse: Vector2) -> void:
 
 func begin_grab(body: RigidBody3D, mouse: Vector2) -> void:
 	if body not in bodies or scene._paused or scene.gust_tool or scene._carrying: return
+	if is_instance_valid(scene.mischief): scene.mischief.cancel()
 	cancel()
 	grabbed = body
 	_grab_pose = body.global_transform
@@ -152,7 +153,7 @@ func advance(delta: float) -> void:
 				continue
 			if body.kind == "boulder" and body.linear_velocity.length()>1.1: _anticipate(body)
 			_contact(body,before)
-			if body.launched and body.age_since_release>1.4 and body.linear_velocity.length()<0.3 and not _investigated.has(body) and scene.creature.can_roam() and not busy() and grabbed == null and not scene._tree_drag and scene._attention_time<=0.0:
+			if body.launched and body.age_since_release>1.4 and body.linear_velocity.length()<0.3 and not _investigated.has(body) and scene.creature.can_roam() and not busy() and grabbed == null and not scene._tree_drag and scene._attention_time<=0.0 and (not is_instance_valid(scene.mischief) or not scene.mischief.busy()):
 				# An unreachable release must not trigger an expensive route search every tick.
 				_investigated[body] = true
 				if scene.brain.investigate(body.global_position,false,"loose:%d" % body.get_instance_id()):
