@@ -1,0 +1,61 @@
+{
+	"gpu": "Apple M5 Pro (Apple9)",
+	"rows": [
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 14.466,
+			"open_cpu_ms": 0.202,
+			"panel": "build_first"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 14.272,
+			"open_cpu_ms": 0.17,
+			"panel": "build_repeat"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 14.244,
+			"open_cpu_ms": 3.286,
+			"panel": "palette_first"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 19.411,
+			"open_cpu_ms": 0.089,
+			"panel": "landscape_first"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 17.897,
+			"open_cpu_ms": 0.233,
+			"panel": "appearance_first"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 14.377,
+			"open_cpu_ms": 3.149,
+			"panel": "palette_repeat"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 14.666,
+			"open_cpu_ms": 0.095,
+			"panel": "landscape_repeat"
+		},
+		{
+			"canvas_compilations": 0.0,
+			"draw_compilations": 0.0,
+			"max_frame_ms": 16.314,
+			"open_cpu_ms": 0.265,
+			"panel": "appearance_repeat"
+		}
+	]
+}

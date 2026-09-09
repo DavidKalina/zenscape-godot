@@ -1018,17 +1018,21 @@ func _update_scene_look() -> void:
 
 func edit_scene_look() -> void:
 	if _landscape_editor != null: _landscape_editor.hide()
+	_ensure_scene_look_editor()
+	_look_editor.show()
+	_look_editor.sync()
+	_sync_authoring_chrome()
+
+func _ensure_scene_look_editor() -> void:
 	if _look_editor == null:
 		var layer := CanvasLayer.new()
 		layer.layer = 25
 		add_child(layer)
 		_look_editor = preload("res://scripts/scene_look_editor.gd").new()
+		_look_editor.hide()
 		layer.add_child(_look_editor)
 		_look_editor.setup(self)
 		_look_editor.visibility_changed.connect(_sync_authoring_chrome)
-	_look_editor.show()
-	_look_editor.sync()
-	_sync_authoring_chrome()
 
 func apply_scene_mood(title: String) -> void:
 	var recipes: Dictionary = preload("res://scripts/scene_look.gd").MOODS
@@ -1053,17 +1057,34 @@ func apply_scene_mood(title: String) -> void:
 func edit_landscape_presets() -> void:
 	if _look_editor != null: _look_editor.hide()
 	_build_palette.close_palette()
+	_ensure_landscape_editor()
+	_landscape_editor.show()
+	_landscape_editor.sync()
+	_sync_authoring_chrome()
+
+func _ensure_landscape_editor() -> void:
 	if _landscape_editor == null:
 		var layer := CanvasLayer.new()
 		layer.layer = 25
 		add_child(layer)
 		_landscape_editor = preload("res://scripts/landscape_preset_editor.gd").new()
+		_landscape_editor.hide()
 		layer.add_child(_landscape_editor)
 		_landscape_editor.setup(self)
 		_landscape_editor.visibility_changed.connect(_sync_authoring_chrome)
-	_landscape_editor.show()
-	_landscape_editor.sync()
-	_sync_authoring_chrome()
+
+## Build first-use controls while the product scene is loading. Study scenes
+## retain lazy construction through the normal editor entry points.
+func prepare_authoring_ui() -> void:
+	_ensure_scene_look_editor()
+	_ensure_landscape_editor()
+	_build_palette.ensure_thumbnails()
+	_build_palette._refresh_results()
+	if get_node_or_null("AuthoringShaderWarmup") == null:
+		var warmup := preload("res://scripts/ui_shader_warmup.gd").new()
+		warmup.name = "AuthoringShaderWarmup"
+		add_child(warmup)
+		warmup.prepare(_build_palette)
 
 func _sync_authoring_chrome() -> void:
 	if _landscape_editor != null and _landscape_editor.get("_saving") == true: return

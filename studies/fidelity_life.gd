@@ -160,7 +160,10 @@ func _refresh_habitat(budgeted := false) -> void:
 	_habitat_blocked = safe == null
 	if routine != null: routine.habits.preferred()
 	if _habitat_blocked: return
-	if not navigation.is_safe(creature.global_position): creature.reset_at(safe)
+	if creature.is_held():
+		var fallback: Variant = navigation.nearest_safe(creature._safe_position)
+		creature._safe_position = fallback if fallback != null else safe
+	elif not navigation.is_safe(creature.global_position): creature.reset_at(safe)
 	brain.world_changed()
 	var shown := _nav_view.visible
 	_nav_view.mesh = null

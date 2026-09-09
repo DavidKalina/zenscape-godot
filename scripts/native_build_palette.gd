@@ -119,6 +119,8 @@ const CATEGORIES := ["All", "Terrain", "Water", "Flora", "Creatures", "Weather",
 var _fit_wrapper := Control.new()
 var _result_scroll := ScrollContainer.new()
 var _row_buttons := {}
+var _result_rows := {}
+var _result_headings := {}
 var _detail_preview := TextureRect.new()
 var _detail_name := Label.new()
 var _detail_description := Label.new()
@@ -280,7 +282,7 @@ func _build() -> void:
 		button.pressed.connect(func() -> void: close_palette(); entry[2].call())
 		_library.add_child(button)
 		_entries["command_"+entry[0]] = {"button":button,"group":"Scene","title":entry[1],"blurb":"Care for your diorama"}
-	for entry: Array in [["bigfoot","Bigfoot","Creatures","A curious visitor. Set him down and watch him settle."], ["wind_gust","Wind gust","Weather","Send a passing gust through the diorama."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."]]:
+	for entry: Array in [["bigfoot","Bigfoot","Creatures","A curious visitor. Set him down and watch him settle."], ["wind_gust","Wind gust","Weather","Drag the ground to aim a gust. Release to send it."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."]]:
 		var button := Button.new()
 		_library.add_child(button)
 		button.pressed.connect(_take_special.bind(entry[0]))
@@ -436,8 +438,7 @@ func _search_rank(id: String, query: String) -> int:
 func _refresh_results() -> void:
 	if _entries.is_empty(): return
 	for child in _results.get_children():
-		_results.remove_child(child)
-		child.queue_free()
+		child.hide()
 	_row_buttons.clear()
 	_matches.clear()
 	var query := _search.text.strip_edges().to_lower()
@@ -460,6 +461,7 @@ func _refresh_results() -> void:
 			rank[group] = mini(rank[group],_search_rank(id,query))
 		groups.sort_custom(func(a: String,b: String) -> bool:
 			return rank[a] < rank[b] if rank[a] != rank[b] else CATEGORIES.find(a) < CATEGORIES.find(b))
+	var result_index := 0
 	for group: String in groups:
 		if _search_category != "All" and _search_category != group: continue
 		var heading_added := false
@@ -469,17 +471,28 @@ func _refresh_results() -> void:
 			var words: String = (entry.title+" "+id.replace("_"," ")+" "+entry.blurb).to_lower()
 			if not query.is_empty() and not words.contains(query): continue
 			if not heading_added:
-				var heading := Label.new()
-				heading.text = "  "+group.to_upper()
-				heading.custom_minimum_size.y = 30
-				heading.add_theme_font_override("font",_mono)
-				heading.add_theme_font_size_override("font_size",11)
-				heading.add_theme_color_override("font_color",Color("e6c07c"))
-				_results.add_child(heading)
+				if not _result_headings.has(group):
+					var heading := Label.new()
+					heading.text = "  "+group.to_upper()
+					heading.custom_minimum_size.y = 30
+					heading.add_theme_font_override("font",_mono)
+					heading.add_theme_font_size_override("font_size",11)
+					heading.add_theme_color_override("font_color",Color("e6c07c"))
+					_results.add_child(heading)
+					_result_headings[group] = heading
+				_result_headings[group].show()
+				_results.move_child(_result_headings[group],result_index)
+				result_index += 1
 				heading_added = true
 			_matches.append(id)
-			var row := _make_result_row(id)
-			_results.add_child(row)
+			if not _result_rows.has(id):
+				_result_rows[id] = _make_result_row(id)
+				_results.add_child(_result_rows[id])
+			var row: Button = _result_rows[id]
+			row.get_child(0).texture = _thumbs.get(id,entry.button.icon)
+			row.show()
+			_results.move_child(row,result_index)
+			result_index += 1
 			_row_buttons[id] = row
 	_empty.visible = _matches.is_empty()
 	_page_label.text = "%d results" % _matches.size()
@@ -1290,6 +1303,9 @@ func _choose(id: String) -> void:
 	elif id != "select": _start_placing(id)
 
 func _start_placing(id: String) -> void:
+	if id == "wind_gust" and editor.scene.has_method("activate_gust_tool"):
+		editor.scene.activate_gust_tool()
+		return
 	_hand.take()
 	_placing = id
 	_launcher.visible = false
@@ -1324,7 +1340,8 @@ func _place_special(point: Vector2) -> bool:
 	if hit == null: return false
 	var world: Vector3 = editor.terrain.to_global(hit)
 	if _placing == "wind_gust":
-		editor.scene._atmosphere.send_gust(world)
+		if editor.scene.has_method("send_scene_gust"): editor.scene.send_scene_gust(world)
+		else: editor.scene._atmosphere.send_gust(world)
 	elif _placing == "bigfoot":
 		if editor.scene.has_method("invite_bigfoot"):
 			return editor.scene.invite_bigfoot(world)
@@ -1476,6 +1493,7 @@ func _on_tile_input(event: InputEvent, id: String) -> void:
 	_press_at = event.global_position
 
 func _input(event: InputEvent) -> void:
+	if editor.scene.has_method("handle_resident_input") and editor.scene.handle_resident_input(event): return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		editor.finish_stroke()
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K and (event.ctrl_pressed or event.meta_pressed):
@@ -1694,6 +1712,7 @@ func _process(delta: float) -> void:
 	_animate_portraits(delta)
 	var pointer := get_global_mouse_position()
 	var world_hover := is_visible_in_tree() and editor.active and get_window().has_focus() and get_viewport_rect().has_point(pointer) and not _bar.visible and editor.pointer_in_world(pointer)
+	if editor.scene.get("_resident_play") != null and editor.scene._resident_play.owns_pointer(): world_hover = false
 	if world_hover and Input.mouse_mode in [Input.MOUSE_MODE_VISIBLE,Input.MOUSE_MODE_HIDDEN]:
 		_hand.show_at(pointer,not _placing.is_empty() or _dragging or editor._selection_drag,delta)
 	else:

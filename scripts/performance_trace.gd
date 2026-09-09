@@ -45,7 +45,9 @@ func _sample() -> void:
 		"preset":data._recipe_settings.get("family",""),"tool":scene._chunk_editor.mode,
 		"bigfoot":scene.resident_enabled,"navigation_rebuilding":scene.navigation.rebuilding,
 		"forming":scene._chunk_editor.forming,"paused":scene._paused,
-		"camera":[scene.yaw,scene.polar,scene.distance]}
+		"camera":[scene.yaw,scene.polar,scene.distance],
+		"camera_target":[scene.target.x,scene.target.y,scene.target.z],
+		"orbiting":scene._orbiting,"panning":scene._panning}
 	for key in _monitors: row[key] = Performance.get_monitor(_monitors[key])
 	samples.append(row)
 	_previous = now

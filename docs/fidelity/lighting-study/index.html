@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZenScape · Lighting study</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#161c20;color:#e6e9e7;font:16px/1.5 system-ui,sans-serif}main{max-width:1440px;margin:auto;padding:28px}h1{font-size:30px;margin:0}p{max-width:900px;color:#bac5c8}label{display:inline-flex;flex-direction:column;gap:5px;margin:0 20px 16px 0;font-size:13px}select,button{font:inherit;padding:9px;background:#283438;color:#fff;border:1px solid #627779;border-radius:6px}.stage{position:relative;max-width:100%;margin:auto;background:#111;line-height:0}.stage canvas{display:block;width:100%;height:auto}.stage #right{position:absolute;inset:0;clip-path:inset(0 0 0 50%)}.bar{display:flex;align-items:center;gap:15px;margin:16px 0}.bar input{flex:1}a{color:#a8dfcc}.note{padding:14px 18px;background:#253034;border-radius:8px}video{width:100%;max-width:1200px}small{color:#bac5c8}#state{font-size:14px;min-height:42px}.legend{display:flex;justify-content:space-between;margin-bottom:8px}details{margin-top:24px}button{cursor:pointer}#error{color:#ffbdab}
+</style>
+<main><h1>Does lighting give the scene more depth?</h1>
+<p>Actual Godot Forward+ renders, 1920 × 1200. Geometry, colors, camera, time and atmosphere are held fixed within each view. Production defaults are unchanged.</p>
+<p class="note">The tested changes are subtle. Reducing fill mostly darkens existing shadows. Routing hemisphere light through ambient irradiance makes contact shading work, but SSAO plus screen-space indirect light does not substantially change the overall scene.</p>
+<label>View<select id="view"><option value="wide">Whole scene</option><option value="close">Close camera</option><option value="tree">Tree contact · native crop</option><option value="rock">Rock contact · native crop</option></select></label>
+<label>Left image<select id="a"></select></label><label>Right image<select id="b"></select></label>
+<button id="isolate">Isolate each added effect</button>
+<p id="state"></p><div class="legend"><span id="alabel"></span><span id="blabel"></span></div>
+<div class="stage" id="stage"><canvas id="left"></canvas><canvas id="right"></canvas></div>
+<div class="bar"><span>Left</span><input id="wipe" aria-label="Comparison divider" type="range" min="0" max="100" value="50"><span>Right</span></div>
+<p id="error"></p><p><a id="afile">Open left at full resolution</a> · <a id="bfile">Open right at full resolution</a> · <a href="README.md">Study notes</a></p>
+<details><summary>Matched camera sweep</summary><p>Ambient + SSAO + indirect light LEFT; unchanged control RIGHT. Three seconds at 30 recorded frames per second. Offline visual evidence; this is not a performance benchmark.</p><video controls preload="none" src="comparison.mp4"></video></details>
+<p><small>SSAO = screen-space ambient occlusion. SSIL = screen-space indirect lighting. Both depend on visible screen geometry. No VoxelGI, SDFGI or hardware ray tracing was used.</small></p>
+</main>
+<script>
+const variants={control:['Control','Original emission-based hemisphere fill; SSAO and SSIL off.'], 'less-fill':['Less fill','Original material path; hemisphere energy reduced to 55%.'],contact:['Less fill + SSAO','Same reduced fill, SSAO radius 0.65 / intensity 0.7. This produces no pixel change.'],indirect:['Less fill + SSAO + SSIL','Same reduced fill with SSIL radius 3 / intensity 0.5.'],'ambient-path':['Ambient path only','Original fill energy and color routed through IRRADIANCE instead of EMISSION; post effects off.'],'ambient-contact':['Ambient path + SSAO','Original fill energy through IRRADIANCE, with SSAO.'],'ambient-indirect':['Ambient path + SSAO + SSIL','Same ambient path and SSAO, plus SSIL.'],'control-repeat':['Repeated control','Control rendered again after the experiments; pixel-identical in the close view.']};
+const $=id=>document.getElementById(id); for(const id of ['a','b'])for(const [key,[title]]of Object.entries(variants))$(id).add(new Option(title,key));$('b').value='ambient-indirect';
+const regions={wide:['wide',0,0,1920,1200],close:['close',0,0,1920,1200],tree:['close',1010,610,300,300],rock:['close',280,475,270,260]};let sequence=0;
+async function render(){const ticket=++sequence;const [pose,x,y,w,h]=regions[$('view').value];$('stage').style.maxWidth=w+'px';$('error').textContent='';await Promise.all(['a','b'].map(async(id)=>{const key=$(id).value;const path=pose+'-'+key+'.png';const im=new Image();im.src=path;try{await im.decode();}catch(e){$('error').textContent='Image unavailable: '+path;return;}if(ticket!==sequence)return;const c=$(id==='a'?'left':'right');c.width=w;c.height=h;c.getContext('2d').drawImage(im,x,y,w,h,0,0,w,h);$(id+'file').href=path;$(id+'label').textContent=variants[key][0];}));$('state').textContent=variants[$('b').value][1];}
+for(const id of ['view','a','b'])$(id).onchange=render;$('wipe').oninput=()=>{$('right').style.clipPath=`inset(0 0 0 ${$('wipe').value}%)`;};
+const steps=[['control','less-fill'],['less-fill','contact'],['contact','indirect'],['control','ambient-path'],['ambient-path','ambient-contact'],['ambient-contact','ambient-indirect'],['control','control-repeat']];let step=0;$('isolate').onclick=()=>{[$('a').value,$('b').value]=steps[step++%steps.length];render();};render();
+</script></html>

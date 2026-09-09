@@ -3,6 +3,7 @@ extends Node3D
 ## A shared height texture clips wind-carried particles to terrain and water.
 
 const HALF := 16.0
+const SKY_CLEARANCE := 32.0
 const COUNT := [6000, 3500, 1600]
 signal weather_selected(profile: Dictionary, instant: bool)
 const PRESET_NAMES := ["clear", "rain", "storm", "snow", "fair", "overcast", "mist", "autumn"]
@@ -93,7 +94,7 @@ func setup(geometry: Node3D, terrain: RefCounted) -> void:
 		var material := ShaderMaterial.new()
 		material.shader = preload("res://shaders/reference_precipitation.gdshader")
 		material.set_shader_parameter("kind", kind)
-		material.set_shader_parameter("top", highest + 5.0)
+		material.set_shader_parameter("top", highest + SKY_CLEARANCE)
 		material.set_shader_parameter("ground_map", height_texture)
 		material.set_shader_parameter("stream_map", stream_texture)
 		material.set_shader_parameter("ground_half", HALF)
@@ -125,7 +126,7 @@ func setup(geometry: Node3D, terrain: RefCounted) -> void:
 		node.name = ["Rain", "Snow", "RainCrowns"][kind]
 		node.multimesh = instances
 		node.material_override = material
-		node.custom_aabb = AABB(Vector3(-HALF * 2, -2, -HALF * 2), Vector3(HALF * 4, highest + 8, HALF * 4))
+		node.custom_aabb = AABB(Vector3(-HALF * 2, -2, -HALF * 2), Vector3(HALF * 4, highest + SKY_CLEARANCE + 3.0, HALF * 4))
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(node)
 
@@ -165,4 +166,10 @@ func advance(delta: float, paused: bool, celestial: RefCounted) -> void:
 
 func set_ceiling(height: float) -> void:
 	for material in _materials:
-		material.set_shader_parameter("top",height)
+		material.set_shader_parameter("top", height)
+	# Shader motion extends beyond the instance meshes, including after edits.
+	for particle_name in ["Rain", "Snow", "RainCrowns"]:
+		var particles := get_node(NodePath(particle_name)) as MultiMeshInstance3D
+		var bounds := particles.custom_aabb
+		bounds.size.y = height + 1.0 - bounds.position.y
+		particles.custom_aabb = bounds

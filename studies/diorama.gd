@@ -16,6 +16,9 @@ var _settings: AcceptDialog
 var _before_menu_paused := false
 var _defaults := {}
 var _world_menu := MenuButton.new()
+var _resident_play = preload("res://scripts/resident_interaction.gd").new()
+var _gust_button: Button
+var _resident_wind = preload("res://scripts/resident_wind.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
 
 func _choose_inhabited_shore() -> void:
@@ -52,6 +55,10 @@ func _ready() -> void:
 	_chunk_editor.form_landscape("plateau","",false)
 	_frame_diorama()
 	_make_shell()
+	_resident_play.setup(self)
+	add_child(_resident_wind)
+	_resident_wind.setup(self)
+	prepare_authoring_ui()
 	add_child(_performance_trace)
 	_performance_trace.saved.connect(func(path: String) -> void:
 		_notice.text = "Performance capture saved: "+path if not path.is_empty() else "Could not save performance capture."
@@ -63,6 +70,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	var trace_started := Time.get_ticks_usec() if _performance_trace.active else 0
 	super._process(delta)
+	if _resident_play.scene != null: _resident_play.update(delta)
 	if _home_button != null:
 		_home_button.disabled = not resident_enabled or routine.habits.home == null
 		_home_button.tooltip_text = "Find his sheltered home" if routine.habits.sheltered_home else "Find his resting spot"
@@ -170,6 +178,10 @@ func _make_shell() -> void:
 		if not action.disabled: action.pressed.emit())
 	_world_menu.about_to_popup.connect(func() -> void:
 		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled))
+	_gust_button = _button(_toolbar,"Wind gust",_resident_play.toggle_gust)
+	_gust_button.toggle_mode = true
+	_gust_button.tooltip_text = "Drag the ground to aim wind; release to send · G"
+	preload("res://scripts/tactile_editor_style.gd").button(_gust_button)
 	_notice = Label.new()
 	_notice.add_theme_font_size_override("font_size",13)
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -256,6 +268,8 @@ func set_building(enabled: bool) -> void:
 
 func show_menu() -> void:
 	if _menu == null or _chunk_editor.forming: return
+	if _resident_play.scene != null: _resident_play.cancel()
+	if _resident_wind.scene != null: _resident_wind.clear()
 	_chunk_editor.finish_stroke()
 	if _look_editor != null: _look_editor.hide()
 	if _landscape_editor != null: _landscape_editor.hide()
@@ -418,7 +432,21 @@ func _input(event: InputEvent) -> void:
 			close_menu()
 			get_viewport().set_input_as_handled()
 		return
+	if handle_resident_input(event): return
 	super._input(event)
+
+func activate_gust_tool() -> void:
+	if not _resident_play.gust: _resident_play.toggle_gust()
+
+func send_scene_gust(center: Vector3, direction := Vector3.ZERO) -> void:
+	_resident_wind.send(center,direction)
+
+func handle_resident_input(event: InputEvent) -> bool:
+	if _resident_play.scene == null or _menu.visible or _file_dialog.visible or _settings.visible: return false
+	if _resident_play.handle(event):
+		get_viewport().set_input_as_handled()
+		return true
+	return false
 
 func blocks_world_input(point: Vector2) -> bool:
 	if _menu == null: return false
@@ -451,6 +479,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE and _chunk_editor.mode == "select":
 			show_menu()
 			return
+		if event.keycode == KEY_G:
+			activate_gust_tool()
+			get_viewport().set_input_as_handled()
+			return
 		if event.keycode == KEY_R:
 			_frame_diorama()
 			return
@@ -458,6 +490,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	_build_button.text = "Enjoy" if _chunk_editor.active else "Build"
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _resident_play.scene != null: _resident_play.cancel()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and _menu != null: _quit_safely()
 
 func _quit_safely() -> void:

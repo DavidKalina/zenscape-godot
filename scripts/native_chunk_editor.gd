@@ -666,7 +666,7 @@ func refresh(frame_tree: SceneTree = null) -> void:
 	scene._bigfoot.set_authored_tree(encounter_pose)
 	scene._bird_flight.ground = _original_bird_ground if original else data
 	scene._atmosphere.update_ground_bounds(terrain,original)
-	scene._precipitation.set_ceiling(_original_precip_top if original else scene._atmosphere._summit.y+5.0)
+	scene._precipitation.set_ceiling(_original_precip_top if original else scene._atmosphere._summit.y + scene._precipitation.SKY_CLEARANCE)
 	if scene._display_fog != null:
 		scene._display_fog.update_view()
 	if selection != null:
