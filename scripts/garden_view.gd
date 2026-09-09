@@ -18,6 +18,12 @@ var pond_vertices := PackedVector3Array()
 var _catalog_parts := {}
 var _catalog_poses := {}
 var _sources := {}
+## Fire state per record, id -> Vector2(char, burn), written by FireLook into
+## INSTANCE_CUSTOM.rg. Kept here rather than on the batches so a charred snag
+## survives a rebuild without anyone pushing it again.
+var _object_fire := {}
+## id -> [{batch, index}] for every part instance of that record.
+var _fire_parts := {}
 ## Bumped by every full rebuild, so consumers of the rendered ponds and streams
 ## can tell whether those meshes are the ones they last read.
 var revision := 0
@@ -292,6 +298,10 @@ func _rebuild_instances() -> void:
 		batch.multimesh = MultiMesh.new()
 		batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 		batch.multimesh.use_colors = true
+		# Fire writes char/burn per instance. Format flags must be set before
+		# `instance_count`; every instance starts at (0,0,0,0), which the char
+		# shader treats as "not burnt" and skips entirely.
+		batch.multimesh.use_custom_data = true
 		batch.multimesh.mesh = _meshes[key]
 		batch.multimesh.instance_count = placements.size()
 		for i in range(placements.size()):
@@ -299,9 +309,57 @@ func _rebuild_instances() -> void:
 			var color: Color = instance_tints[key][i] if i < instance_tints[key].size() else _tints.get(key, Color.WHITE)
 			_sources[key][i]["color"] = color
 			batch.multimesh.set_instance_color(i,color)
+			batch.multimesh.set_instance_custom_data(i,Color(0.0,0.0,0.0,0.0))
 		batch.material_override = _materials[key]
 		add_child(batch)
 		_batches.append(batch)
+	_index_fire_parts()
+
+## Map every record to its part instances and re-apply the fire state the last
+## push left, so a rebuild in the middle of a burn (or the snag swap at the end
+## of one) comes back charred instead of freshly cut.
+func _index_fire_parts() -> void:
+	_fire_parts = {}
+	for batch in _batches:
+		var recipes: Array = _sources.get(batch.get_meta("part"),[])
+		for i in range(recipes.size()):
+			var item: Variant = recipes[i].item
+			if item == null:
+				continue
+			var id := int(item.id)
+			if not _fire_parts.has(id):
+				_fire_parts[id] = []
+			_fire_parts[id].append({"batch":batch,"index":i})
+	for id: int in _object_fire.keys():
+		if _fire_parts.has(id):
+			var fire: Vector2 = _object_fire[id]
+			_write_fire(id,fire.x,fire.y)
+		else:
+			# The record is gone - burnt away, deleted or undone.
+			_object_fire.erase(id)
+
+## Per-instance fire for one record without a rebuild: `char` 0..1 browns then
+## skeletonises the foliage, `burn` 0..1 is live flame heat for the ember glow.
+## (0, 0) is the untouched look and renders exactly as it did before fire.
+func set_object_fire(id: int, char: float, burn: float) -> void:
+	var value := Vector2(clampf(char,0.0,1.0),clampf(burn,0.0,1.0))
+	if _object_fire.get(id,Vector2(-1.0,-1.0)) == value:
+		return
+	if value.is_zero_approx():
+		_object_fire.erase(id)
+	else:
+		_object_fire[id] = value
+	_write_fire(id,value.x,value.y)
+
+## Fire state for one record, (0, 0) when it never burnt.
+func object_fire(id: int) -> Vector2:
+	return _object_fire.get(id,Vector2.ZERO)
+
+func _write_fire(id: int, char: float, burn: float) -> void:
+	for part: Dictionary in _fire_parts.get(id,[]):
+		var batch: MultiMeshInstance3D = part.batch
+		if is_instance_valid(batch) and batch.multimesh != null and batch.multimesh.use_custom_data:
+			batch.multimesh.set_instance_custom_data(part.index,Color(char,burn,0.0,0.0))
 
 func discard_cache() -> void:
 	_view_ready = false
