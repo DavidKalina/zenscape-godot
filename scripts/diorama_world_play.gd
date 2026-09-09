@@ -331,7 +331,7 @@ func advance(delta: float) -> void:
 	water_play.advance(delta)
 	if not _habitat_blocked:
 		temper.advance(delta)
-		mischief.advance(delta)
+		if owner_scene.environment_life == null or not owner_scene.environment_life.busy(): mischief.advance(delta)
 	else:
 		mischief.cancel()
 		temper.reset()

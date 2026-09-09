@@ -78,3 +78,6 @@ global uniform vec3 zs_key_direction;
 global uniform vec3 zs_key_irradiance;
 global uniform vec3 zs_rim_direction;
 global uniform vec3 zs_rim_irradiance;
+
+global uniform vec4 zs_meteor_head;
+global uniform vec3 zs_meteor_tail;

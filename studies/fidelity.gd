@@ -514,6 +514,7 @@ func _process(delta: float) -> void:
 	if not _paused:
 		_motion_time += delta
 		RenderingServer.global_shader_parameter_set("zs_motion_time", _motion_time)
+	_celestial.sample_sky_motion(_motion_time)
 	_bird_flight.growth = minf(_growth.foliage, _growth.water) if _growth.terrain >= 0.995 else 0.0
 	_fireflies.update_conditions(_celestial.state.get("zs_daylight",1.0), _precipitation.state.x, _precipitation.surface_weather.cold, _bird_flight.growth)
 	if _chunk_editor.data.blank:
