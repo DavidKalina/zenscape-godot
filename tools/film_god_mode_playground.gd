@@ -7,7 +7,9 @@ var states: Array[int] = []
 var peak := 0.0
 func _initialize() -> void: _run.call_deferred()
 func _run() -> void:
-	root.unfocusable = true
+	# macOS can reuse the last framebuffer when a movie window is obscured.
+	root.unfocusable = false
+	root.always_on_top = true
 	root.size = Vector2i(1440,960)
 	scene = load("res://studies/god_mode_playground.tscn").instantiate()
 	root.add_child(scene)
@@ -19,6 +21,7 @@ func _run() -> void:
 		await physics_frame
 		if not scene._world_dirty and scene._refresh_phase == 0: break
 	assert(not scene._world_dirty and scene._refresh_phase == 0,"Capture needs settled navigation")
+	root.grab_focus()
 	scene.brain.enabled = false
 	scene._attention_time = 30.0
 	physics_frame.connect(_frame)
@@ -42,5 +45,6 @@ func _frame() -> void:
 		await process_frame
 		quit(0 if CreatureActor.State.WIND in states and CreatureActor.State.RECOVERING in states else 1)
 func _capture(at: int) -> void:
+	if not OS.get_cmdline_user_args().has("--screenshots"): return
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("res://docs/god-mode-playground/frame-%03d.png" % at)

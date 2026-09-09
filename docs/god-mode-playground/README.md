@@ -50,7 +50,14 @@ controls remain available without entering the editor.
 - `tools/film_god_mode_playground.gd`: repeatable pull/release sequence and
   selected rendered frames, with the interface hidden for the recording. Run
   with Forward+ and `--fixed-fps 60`; add
-  `--write-movie /tmp/god-mode.avi` to capture a movie.
+  `--write-movie /tmp/god-mode.avi` to capture a movie. The capture window stays
+  visible and on top to prevent macOS from recording repeated, occluded frames.
+  Add `-- --screenshots` for optional PNG saves (which add capture overhead).
+- `python3 tools/check_god_mode_video.py <video>` checks decoded frame pacing
+  for this continuously animated ten-second sequence. The original clip failed
+  with 41 repeated frames; the replacement passes with zero. Live profiling
+  found no distinct tumble/recovery spike; this does not establish foreground
+  gameplay FPS. See `validation/tumble-diagnosis.json` for measurements.
 - `validation/results.json`: full-suite results, with per-test logs alongside.
 
 The complete suite plus focused rechecks finished at **135/144 passing** on
