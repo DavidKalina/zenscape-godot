@@ -626,6 +626,11 @@ func advance(delta: float) -> void:
 		if is_instance_valid(_wind_field): wind = _wind_field.sample(mouth.origin)
 		_breath.advance(dt,mouth,phase,idle,wind)
 
+## Sagittal (knee/hip) bend on the bone's own axis, additive on the animation.
+func _bend_leg(bone: int, angle: float) -> void:
+	if bone<0: return
+	skeleton.set_bone_pose_rotation(bone,skeleton.get_bone_pose_rotation(bone)*Quaternion(Vector3.RIGHT,angle))
+
 ## Additive torso performance on the current authored pose, never the root/feet.
 func _pose_environment() -> void:
 	if environment_pose.is_empty() or state != State.ACTION: return
@@ -647,8 +652,32 @@ func _pose_environment() -> void:
 		var offset: Vector3 = environment_motion.get("body_offset",Vector3.ZERO)
 		tree_peek.offset_upper_body(self,global_basis*offset)
 		return
+	if environment_pose == "fire_warm" and not environment_motion.is_empty():
+		# A real crouch, not a compressed torso: the hip flexes, the knee
+		# counter-flexes twice as far and the ankle returns the difference, so
+		# the sole stays flat. The rest leg is not a straight two-link chain, so
+		# the pelvis drop is measured from where the folded leg actually put the
+		# foot rather than computed from segment lengths.
+		var bend := float(environment_motion.get("bend",0.0))
+		var pelvis := skeleton.find_bone("Pelvis")
+		var sole := skeleton.find_bone("Foot_L")
+		if bend>0.0 and pelvis>=0 and sole>=0:
+			var planted := skeleton.get_bone_global_pose(sole).origin.y
+			for side in ["L","R"]:
+				_bend_leg(skeleton.find_bone("Thigh_"+side),-bend)
+				_bend_leg(skeleton.find_bone("Calf_"+side),2.0*bend)
+				_bend_leg(skeleton.find_bone("Foot_"+side),-bend)
+			skeleton.force_update_all_bone_transforms()
+			var seat := skeleton.get_bone_pose_position(pelvis)
+			seat.y += planted-skeleton.get_bone_global_pose(sole).origin.y
+			skeleton.set_bone_pose_position(pelvis,seat)
+		if _head>=0:
+			skeleton.set_bone_pose_rotation(_head,skeleton.get_bone_pose_rotation(_head)*Quaternion.from_euler(environment_motion.get("head",Vector3.ZERO)))
+		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(environment_motion.get("spine",Vector3.ZERO)))
+		return
 	match environment_pose:
 		"shock": pose = Vector3(-0.12,sin(_age*62.0)*0.07,sin(_age*75.0)*0.09)
+		"fire_watch": pose = Vector3(-0.075,0,sin(_age*0.9)*0.014)
 		"startle": pose = Vector3(0.22,0,sin(_age*7.0)*0.025)*exp(-_age*0.7)
 		"dry": pose = Vector3(0.04,sin(_age*18.0)*0.15,sin(_age*18.0+0.7)*0.055)
 		"rain": pose = Vector3(0.08,0,-0.035)
