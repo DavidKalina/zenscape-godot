@@ -137,6 +137,7 @@ func _process(delta: float) -> void:
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
+		creature.wet_coat.rain = _precipitation.state.x
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
 		_reaction.visible = _reaction_time > 0.0

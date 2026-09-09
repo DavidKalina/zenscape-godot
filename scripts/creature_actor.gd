@@ -33,6 +33,7 @@ var grasp_height := 2.70
 var _safe_position := Vector3.ZERO
 var _visual := Node3D.new()
 var _head := -1
+var wet_coat: Node3D
 var _breath: Node3D
 var _mouth: Node3D
 var _mouth_offset := Transform3D.IDENTITY
@@ -271,6 +272,9 @@ func setup(asset_path: String) -> void:
 	var rigs := actor.find_children("*","Skeleton3D",true,false)
 	assert(player != null and rigs.size() == 1,"An inhabitant needs an animation player and one skeleton")
 	skeleton = rigs[0]
+	wet_coat = preload("res://scripts/bigfoot_wetness.gd").new()
+	add_child(wet_coat)
+	wet_coat.setup(actor,skeleton)
 	add_to_group("personality_actors")
 	# Keep each actor's library private: profile changes must not mutate imports.
 	var library := player.get_animation_library("").duplicate() as AnimationLibrary
@@ -403,6 +407,7 @@ func reset_at(point: Vector3) -> void:
 	if not point.is_finite(): return
 	blast_airborne = false
 	if _breath != null: _breath.clear()
+	if wet_coat != null: wet_coat.clear_drops()
 	if wind_body != null:
 		wind_body.stop()
 		global_basis = _standing_basis
@@ -550,6 +555,8 @@ func advance(delta: float) -> void:
 			var contact: Dictionary = hand_targets[side]
 			HAND_REACH.apply(skeleton,contact.point,contact.weight,side,contact.get("elbow"),contact.get("basis"))
 
+	skeleton.force_update_all_bone_transforms()
+	wet_coat.advance(minf(delta,0.05))
 	if _breath != null:
 		skeleton.force_update_all_bone_transforms()
 		var idle := state==State.IDLE and player.current_animation=="Idle"

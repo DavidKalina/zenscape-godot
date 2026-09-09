@@ -18,6 +18,8 @@ uniform vec4 brush_color : source_color = vec4(1.0, 0.91, 0.61, 1.0);
 uniform vec4 base_color : source_color = vec4(1.0);
 uniform vec3 emissive_color = vec3(0.0);
 uniform float roughness_value = 1.0;
+// Per-resident moisture; independent of ground wetness and weather changes.
+uniform float coat_wetness : hint_range(0.0, 1.0) = 0.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
 uniform bool conifer_sway = false;
@@ -156,12 +158,14 @@ void fragment() {
 		float fill = (1.0 - smoothstep(0.0, brush_radius, distance_to_brush)) * 0.13;
 		tint = mix(tint, brush_color.rgb, max(ring * 0.9, fill));
 	}
+	tint *= mix(1.0, 0.56, coat_wetness);
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
+	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);
 	METALLIC = metalness_value;
 	// The source scene has no environment map; sky reflection would lift and
 	// desaturate every shaded facet.
-	SPECULAR = 0.0;
+	SPECULAR = 0.35 * coat_wetness;
 	// Three.js RE_IndirectDiffuse_Physical applies BRDF_Lambert (albedo / PI)
 	// to hemisphere irradiance. Emission bypasses Godot's BRDF, so include it here.
 	EMISSION = emissive_color + tint * mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
