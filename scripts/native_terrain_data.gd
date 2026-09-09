@@ -17,6 +17,7 @@ var streams: Array[Dictionary] = []
 var landscape_waterfall := false
 var next_id := 1
 var blank := false
+var source_replacements: Array = []
 var source_mesh: ArrayMesh
 var heights := PackedFloat32Array()
 var original_heights := PackedFloat32Array()
@@ -640,6 +641,7 @@ func form_foundation(elevation := 0.0, relief := 1.0, frame_tree: SceneTree = nu
 func reset_flat() -> void:
 	_set_recipe({})
 	blank = true
+	source_replacements.clear()
 	heights.fill(0.0)
 	blades.fill(0.0)
 	grass.fill(0.0)
@@ -653,13 +655,14 @@ func reset_flat() -> void:
 	next_id = 1
 
 func _snapshot() -> Dictionary:
-	return {"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
+	return {"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
 	_set_recipe(state.get("terrain_recipe",{}))
 	landscape_waterfall=state.get("landscape_waterfall",false)
 	heights = state.heights.duplicate()
 	blank = state.blank
+	source_replacements = state.get("source_replacements",[]).duplicate()
 	meadow = state.meadow.duplicate()
 	grass = state.grass.duplicate()
 	blades = state.blades.duplicate()
@@ -894,7 +897,7 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	return {"version":9,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	return {"source_replacements":source_replacements.duplicate(),"version":9,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
 
 func _template_id() -> String:
 	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
@@ -907,7 +910,8 @@ func load_document(document: Variant) -> bool:
 		return false
 	var enabled: Variant=document.get("landscape_waterfall") if document.version>=8 else false
 	if not enabled is bool or (enabled and recipe.get("kind")!="range"): return false
-	var loaded := {"terrain_recipe":recipe,"landscape_waterfall":enabled}
+	if not preload("res://scripts/world_reference_props.gd").valid(document.get("source_replacements",[])): return false
+	var loaded := {"source_replacements":document.get("source_replacements",[]),"terrain_recipe":recipe,"landscape_waterfall":enabled}
 	for field: String in ["heights","meadow","grass","blades"]:
 		var values: Variant = document.get(field)
 		if (field == "grass" and document.version == 3) or (field == "blades" and document.version < 5):

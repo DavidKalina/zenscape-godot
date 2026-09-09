@@ -22,6 +22,7 @@ var _world_menu := MenuButton.new()
 var _resident_play = preload("res://scripts/resident_interaction.gd").new()
 var _gust_button: Button
 var _resident_wind = preload("res://scripts/resident_wind.gd").new()
+var world_play = preload("res://scripts/diorama_world_play.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
 
 func _choose_inhabited_shore() -> void:
@@ -64,6 +65,8 @@ func _ready() -> void:
 	_resident_play.setup(self)
 	add_child(_resident_wind)
 	_resident_wind.setup(self)
+	add_child(world_play)
+	world_play.setup(self)
 	prepare_authoring_ui()
 	add_child(_performance_trace)
 	_performance_trace.saved.connect(func(path: String) -> void:
@@ -90,6 +93,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	var trace_started := Time.get_ticks_usec() if _performance_trace.active else 0
+	if world_play.owner_scene != null: world_play.advance(delta)
 	super._process(delta)
 	if title_loaded and not _has_world and title_recipe.has("terrain_recipe") and title_recipe.family == "valley":
 		# A shallow sweep along the open valley avoids orbiting into its cliff walls.
@@ -314,9 +318,11 @@ func _layout_shell() -> void:
 
 func set_building(enabled: bool) -> void:
 	if not _has_world: return
+	if enabled: flush_world_play()
 	if not enabled and _look_editor != null: _look_editor.hide()
 	if not enabled and _landscape_editor != null: _landscape_editor.hide()
 	_chunk_editor.set_active(enabled)
+	if not enabled: world_play.prepare()
 	_ui.visible = enabled
 	# The study header is replaced by this shell; keep its palette only.
 	for child in _ui.get_children():
@@ -325,6 +331,7 @@ func set_building(enabled: bool) -> void:
 
 func show_menu() -> void:
 	if _menu == null or _chunk_editor.forming: return
+	if world_play.owner_scene != null: world_play.cancel()
 	if _resident_play.scene != null: _resident_play.cancel()
 	if _resident_wind.scene != null: _resident_wind.clear()
 	_chunk_editor.finish_stroke()
@@ -501,10 +508,22 @@ func send_scene_gust(center: Vector3, direction := Vector3.ZERO) -> void:
 
 func handle_resident_input(event: InputEvent) -> bool:
 	if _resident_play.scene == null or _menu.visible or _file_dialog.visible or _settings.visible: return false
+	if world_play.owner_scene != null and (world_play._tree_drag or world_play.loose_props.grabbed != null) and world_play.handle(event):
+		get_viewport().set_input_as_handled()
+		return true
 	if _resident_play.handle(event):
 		get_viewport().set_input_as_handled()
 		return true
+	if world_play.owner_scene != null and world_play.handle(event):
+		get_viewport().set_input_as_handled()
+		return true
 	return false
+
+func flush_world_play() -> void:
+	world_play.flush()
+
+func resident_activity_owned() -> bool:
+	return world_play.owner_scene != null and world_play.owns_resident()
 
 func blocks_world_input(point: Vector2) -> bool:
 	if _menu == null: return false
@@ -548,7 +567,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	_build_button.text = "Enjoy" if _chunk_editor.active else "Build"
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _resident_play.scene != null: _resident_play.cancel()
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _resident_play.scene != null and not has_meta("movie_capture"):
+		_resident_play.cancel()
+		world_play.cancel()
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and _menu != null: _quit_safely()
 
 func _quit_safely() -> void:

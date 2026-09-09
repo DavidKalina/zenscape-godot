@@ -11,6 +11,7 @@ var _grid_step := STEP
 var _slope_rise := MAX_RISE
 var _data: RefCounted
 var _clearance: Callable
+var dynamic_clearance: Callable
 var _nodes := PackedVector3Array()
 var _cells := {}
 var _edges := {}
@@ -112,6 +113,7 @@ func _safe_grounded(point: Vector3) -> bool:
 		var height: Variant = _data.ground_height(Vector2(point.x,point.z)+offset)
 		if height == null or absf(height-point.y) > _slope_rise: return false
 	if _wet(point): return false
+	if dynamic_clearance.is_valid() and not dynamic_clearance.call(point): return false
 	return not _clearance.is_valid() or bool(_clearance.call(point))
 
 func segment_safe(a: Vector3,b: Vector3) -> bool:

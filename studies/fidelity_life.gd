@@ -130,7 +130,8 @@ func _process(delta: float) -> void:
 	var stopped := _paused or not creature.visible
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
-			if routine == null or not routine.advance(delta): brain.advance(delta)
+			if not (has_method("resident_activity_owned") and call("resident_activity_owned")):
+				if routine == null or not routine.advance(delta): brain.advance(delta)
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)

@@ -89,6 +89,7 @@ func advance(delta: float) -> bool:
 	return not active.is_empty()
 
 func request(kind: String, chosen: Dictionary = {}) -> bool:
+	if kind in ["stone","tree"] and scene.has_method("resident_activity_owned"): return false
 	if not active.is_empty() or not scene.creature.can_roam(): return false
 	if kind in ["sit","sleep","hibernate"]:
 		var spots: Array = [scene.creature.position]

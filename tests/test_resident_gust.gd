@@ -11,6 +11,7 @@ func run() -> void:
 	scene.library_path = "/private/tmp/zenscape-gust-test"
 	scene.recent_file = scene.library_path+"/recent.cfg"
 	root.add_child(scene)
+	while not scene.title_loaded: await process_frame
 	scene.new_diorama()
 	scene.invite_bigfoot(Vector3.ZERO)
 	scene._focus_bigfoot()

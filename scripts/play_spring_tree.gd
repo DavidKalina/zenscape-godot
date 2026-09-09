@@ -2,6 +2,7 @@ class_name PlaySpringTree
 extends Node3D
 ## One elastic tree. Rendering, picking and swept contact share this centerline.
 const HEIGHT := 5.0
+var tree_height := HEIGHT
 const MAX_BEND := 1.65
 var bend := Vector2.ZERO
 var velocity := Vector2.ZERO
@@ -55,9 +56,9 @@ func _ready() -> void:
 func center(height: float, pose := bend) -> Vector3:
 	var amount := pose.length()
 	if amount < 0.0001: return global_position+Vector3.UP*height
-	var theta := amount*height/HEIGHT
+	var theta := amount*height/tree_height
 	var direction := Vector3(pose.x,0,pose.y)/amount
-	return global_position + (direction*(1.0-cos(theta))+Vector3.UP*sin(theta))*HEIGHT/amount
+	return global_position + (direction*(1.0-cos(theta))+Vector3.UP*sin(theta))*tree_height/amount
 
 func set_highlight(value: bool) -> void:
 	_halo.visible = value or held

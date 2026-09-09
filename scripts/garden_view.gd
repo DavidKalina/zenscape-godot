@@ -288,7 +288,9 @@ func _rebuild_instances() -> void:
 		batch.multimesh.instance_count = placements.size()
 		for i in range(placements.size()):
 			batch.multimesh.set_instance_transform(i, placements[i])
-			batch.multimesh.set_instance_color(i, instance_tints[key][i] if i < instance_tints[key].size() else _tints.get(key, Color.WHITE))
+			var color: Color = instance_tints[key][i] if i < instance_tints[key].size() else _tints.get(key, Color.WHITE)
+			_sources[key][i]["color"] = color
+			batch.multimesh.set_instance_color(i,color)
 		batch.material_override = _materials[key]
 		add_child(batch)
 		_batches.append(batch)

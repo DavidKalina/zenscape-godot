@@ -1,4 +1,5 @@
 shader_type spatial;
+#include "res://shaders/world_play_bend.gdshaderinc"
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
@@ -111,6 +112,7 @@ void vertex() {
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
 	}
+	play_deform(VERTEX, NORMAL);
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 }

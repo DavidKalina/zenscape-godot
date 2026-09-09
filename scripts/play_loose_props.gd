@@ -148,14 +148,14 @@ func advance(delta: float) -> void:
 	for body in bodies:
 		var before: Vector3 = _previous.get(body,body.global_position)
 		if not body.held:
-			if body.global_position.y < -12.0 or Vector2(body.position.x,body.position.z).length()>22.0:
+			if scene.prop_out_of_bounds(body.global_position) if scene.has_method("prop_out_of_bounds") else (body.global_position.y < -12.0 or Vector2(body.position.x,body.position.z).length()>22.0):
 				body.parked = body.kind == "boulder"
 				body.restore(body.home)
 				_previous[body] = body.global_position
 				continue
 			if body.kind == "boulder" and body.linear_velocity.length()>1.1: _anticipate(body)
 			_contact(body,before)
-			if body.launched and body.age_since_release>1.4 and body.linear_velocity.length()<0.3 and not _investigated.has(body) and scene.creature.can_roam() and not busy() and grabbed == null and not scene._tree_drag and scene._attention_time<=0.0 and (not is_instance_valid(scene.mischief) or not scene.mischief.busy()):
+			if body.launched and body.age_since_release>1.4 and body.linear_velocity.length()<0.3 and not _investigated.has(body) and scene.creature.visible and scene.creature.can_roam() and not busy() and grabbed == null and not scene._tree_drag and scene._attention_time<=0.0 and (not is_instance_valid(scene.mischief) or not scene.mischief.busy()):
 				# An unreachable release must not trigger an expensive route search every tick.
 				_investigated[body] = true
 				if scene.brain.investigate(body.global_position,false,"loose:%d" % body.get_instance_id()):

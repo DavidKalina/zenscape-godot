@@ -11,6 +11,7 @@ func run() -> void:
 	scene.library_path = "/private/tmp/zenscape-interaction-test"
 	scene.recent_file = scene.library_path+"/recent.cfg"
 	root.add_child(scene)
+	while not scene.title_loaded: await process_frame
 	scene.new_diorama()
 	check(scene.invite_bigfoot(Vector3.ZERO),"Can invite Bigfoot")
 	scene._focus_bigfoot()

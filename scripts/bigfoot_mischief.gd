@@ -72,6 +72,7 @@ func request(kind: String, chosen: Node3D = null) -> bool:
 	if kind not in ["stone","log","tree"] or busy() or not _available() or not scene.creature.can_roam(): return false
 	var candidates: Array[Node3D] = []
 	if chosen != null: candidates.append(chosen)
+	elif scene.has_method("mischief_candidates"): candidates.assign(scene.mischief_candidates(kind))
 	elif kind == "tree": candidates.append(scene.spring_tree)
 	else:
 		for body in scene.loose_props.bodies:
@@ -79,7 +80,7 @@ func request(kind: String, chosen: Node3D = null) -> bool:
 	candidates.sort_custom(func(a: Node3D,b: Node3D): return scene.creature.global_position.distance_squared_to(a.global_position)<scene.creature.global_position.distance_squared_to(b.global_position))
 	for item in candidates:
 		if kind == "tree":
-			if item != scene.spring_tree or item.held or item.bend.length()>0.08: continue
+			if item.held or item.bend.length()>0.08: continue
 		elif item not in scene.loose_props.bodies or item.kind != kind or item.held or item.linear_velocity.length()>0.4: continue
 		if scene.water_play.surface_at(item.global_position) != null: continue
 		if not _plan(item,kind): continue
@@ -90,6 +91,7 @@ func request(kind: String, chosen: Node3D = null) -> bool:
 		phase = "approach"
 		_elapsed = 0.0
 		_released = false
+		if kind == "tree": scene.spring_tree = item
 		scene.brain.reset_behavior()
 		scene.brain.enabled = false
 		scene.creature.notice(item.global_position)

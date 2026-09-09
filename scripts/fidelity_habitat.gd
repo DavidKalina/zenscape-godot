@@ -35,8 +35,10 @@ func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
 		var node: Node3D = geometry.get_node(key)
 		if node is MultiMeshInstance3D:
 			for i in range(node.multimesh.instance_count):
+				if data != null and "%s:%d" % [key,i] in data.source_replacements: continue
 				_add_solid(node.transform*node.multimesh.get_instance_transform(i),node.multimesh.mesh,str(key)+":"+str(i))
 		elif node is MeshInstance3D:
+			if data != null and key+":0" in data.source_replacements: continue
 			_add_solid(node.transform,node.mesh,key)
 
 	if data != null: _add_authored(data)

@@ -9,6 +9,7 @@ var press_at := Vector2.ZERO
 var hold_plane := Plane(Vector3.UP,3.0)
 var hint := Label.new()
 var _cursor_owned := false
+var _wet_hold := false
 var aim_start: Variant = null
 var aim_end := Vector3.ZERO
 
@@ -91,6 +92,7 @@ func handle(event: InputEvent) -> bool:
 		return true
 	if event is InputEventMouseMotion and pressed:
 		if not carrying and event.position.distance_to(press_at) >= 5.0:
+			if scene.get("world_play") != null: scene.world_play.cancel()
 			scene.routine.cancel("picked up")
 			carrying = scene.creature.pick_up()
 			hold_plane = Plane(Vector3.UP,scene.creature.global_position.y+scene.creature.grasp_height+0.9)
@@ -115,6 +117,18 @@ func handle(event: InputEvent) -> bool:
 	return false
 
 func release(mouse: Vector2) -> void:
+	if scene.get("world_play") != null and scene._chunk_editor.pointer_in_world(mouse):
+		var play: Node = scene.world_play
+		var water: Variant = play.water_play.pick(mouse)
+		if water != null:
+			play.ensure_collision()
+			var shore: Variant = play.water_play.shore_from(scene.creature.global_position)
+			if shore != null and scene.creature.enter_water(water.y,shore):
+				play.water_play.splash(water,1.0)
+				carrying = false
+				pressed = false
+				_wet_hold = false
+				return
 	var destination: Variant = null
 	if scene._chunk_editor.pointer_in_world(mouse) and not scene._habitat_changed and not scene.navigation.rebuilding:
 		var p: Vector3 = scene.creature.global_position
@@ -125,6 +139,7 @@ func release(mouse: Vector2) -> void:
 	scene.creature.release_at(destination)
 	carrying = false
 	pressed = false
+	_wet_hold = false
 
 func update(delta: float) -> void:
 	var mouse: Vector2 = scene.get_viewport().get_mouse_position()
@@ -135,7 +150,26 @@ func update(delta: float) -> void:
 		var at: Variant = hold_plane.intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
 		if at != null:
 			var destination: Vector3 = at-Vector3.UP*scene.creature.grasp_height
-			scene.creature.move_held(scene.creature.global_position.lerp(destination,1.0-exp(-22.0*delta)),delta)
+			var terrain_hit: Variant = scene._chunk_editor.pick(mouse)
+			if terrain_hit != null:
+				destination = scene._chunk_editor.terrain.to_global(terrain_hit)+Vector3.UP*0.9
+			var over_water := false
+			if scene.get("world_play") != null:
+				var water: Variant = scene.world_play.water_play.pick(mouse)
+				if water != null:
+					over_water = true
+					var ground: Variant = scene.world_play._probe_ground(water)
+					if ground != null: destination = Vector3(water.x,maxf(ground.y,water.y-1.65),water.z)
+					if scene.creature.global_position.y<water.y-0.6 and not _wet_hold:
+						scene.world_play.water_play.splash(water,1.0)
+						_wet_hold = true
+				else: _wet_hold = false
+			var position: Vector3 = scene.creature.global_position.lerp(destination,1.0-exp(-22.0*delta))
+			# Smoothing can cut through a slope even when its endpoint is above it.
+			var floor_height: Variant = scene.habitat.ground_height(Vector2(position.x,position.z))
+			if floor_height != null:
+				position.y = maxf(position.y,float(floor_height)+(0.0 if over_water else 0.9))
+			scene.creature.move_held(position,delta)
 	hint.visible = available and owns_pointer()
 	hint.text = "Release to set down · Esc to return" if carrying else ("Release to send wind · Esc to cancel" if aim_start != null else ("Bigfoot · Drag to pick up" if hovered else "Wind gust · Drag the ground to aim · Esc to finish"))
 	hint.position = (mouse+Vector2(18,22)).clamp(Vector2.ZERO,scene.get_viewport().get_visible_rect().size-hint.size)

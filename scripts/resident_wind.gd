@@ -54,6 +54,9 @@ func _physics_process(delta: float) -> void:
 	field.advance(delta)
 
 func _rebuild_collision() -> void:
+	if scene.get("world_play") != null and scene.world_play.owner_scene != null:
+		scene.world_play.ensure_collision()
+		return
 	for child in collision_root.get_children():
 		child.collision_layer = 0
 		collision_root.remove_child(child)

@@ -606,6 +606,7 @@ func restore_landscape_favorite(library: RefCounted,id: String,live := true) -> 
 	return true
 
 func refresh(frame_tree: SceneTree = null) -> void:
+	preload("res://scripts/world_reference_props.gd").before_refresh(self)
 	pond_preview.clear()
 	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	if not forming: _set_status("Garden changed · Save to keep your work.")
@@ -908,6 +909,7 @@ func dab(point: Vector2, amount: float) -> void:
 func save_garden() -> bool:
 	if forming: return false
 	finish_stroke()
+	if scene.has_method("flush_world_play"): scene.flush_world_play()
 	var document := data.to_document()
 	document.scene_state = NativeGardenStore.capture(scene)
 	var temporary := save_path+".tmp"
@@ -951,6 +953,7 @@ func open_garden() -> bool:
 	return true
 
 func sync_visibility() -> void:
+	preload("res://scripts/world_reference_props.gd").hide_replaced(self)
 	if data.blank:
 		for node: VisualInstance3D in _source_visibility:
 			node.visible = false
