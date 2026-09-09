@@ -1,0 +1,25 @@
+{
+  "clips": {
+    "LogLift": {
+      "duration": 4.7,
+      "frames": 142
+    },
+    "LogCarry": {
+      "duration": 3.6,
+      "frames": 109
+    },
+    "LogToss": {
+      "duration": 1.8,
+      "frames": 55
+    },
+    "LogSlam": {
+      "duration": 1.8,
+      "frames": 55
+    }
+  },
+  "events": {
+    "grasp": 1.15,
+    "shoulder": 4.55,
+    "release_in_toss": 0.78
+  }
+}

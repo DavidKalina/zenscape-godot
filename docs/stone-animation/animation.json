@@ -1,0 +1,12 @@
+{
+  "clips": {
+    "StoneHeave": {
+      "duration": 4.2,
+      "frames": 127
+    }
+  },
+  "events": {
+    "grasp": 1.05,
+    "release": 2.95
+  }
+}

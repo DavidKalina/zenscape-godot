@@ -1,0 +1,15 @@
+{
+  "walking": {
+    "cooled_ratio": 1.0,
+    "failures": 0,
+    "travel_ratio": 2.0
+  },
+  "rage_regression": {
+    "eyes": 2,
+    "failures": 0,
+    "log_speed": 18.6416282653809,
+    "puff_pool": 16,
+    "stone_speed": 20.6689205169678,
+    "tree_tension": 0.999924052845348
+  }
+}

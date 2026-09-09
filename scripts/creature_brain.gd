@@ -153,7 +153,7 @@ func _move(delta: float) -> void:
 			reaction.emit("?","Taking a closer look.")
 		return
 	var destination := _route[_waypoint]
-	if not navigation.motion_safe(actor.global_position,destination,speed*minf(delta,0.05)):
+	if not navigation.motion_safe(actor.global_position,destination,actor.walking_speed(speed)*minf(delta,0.05)):
 		_blocked()
 		return
 	if actor.walk_step(destination,speed,delta): _waypoint += 1

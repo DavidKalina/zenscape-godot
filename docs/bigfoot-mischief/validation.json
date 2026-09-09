@@ -1,0 +1,58 @@
+{
+  "targeted": {
+    "test_bigfoot_mischief.gd": true,
+    "test_god_mode_playground.gd": true,
+    "test_loose_props.gd": true,
+    "test_play_spring_tree.gd": true,
+    "test_water_mischief.gd": true
+  },
+  "final_mischief_check": {
+    "actions": {
+      "log": {
+        "cancel": "",
+        "grasped": true,
+        "launched": true,
+        "peak": 3.81219029426575
+      },
+      "stone": {
+        "cancel": "",
+        "grasped": true,
+        "launched": true,
+        "peak": 8.46296119689941
+      },
+      "tree": {
+        "cancel": "",
+        "grasped": false,
+        "launched": false,
+        "peak": 0.559997522469723
+      }
+    },
+    "failures": 0,
+    "history": [
+      "stone",
+      "log",
+      "tree"
+    ]
+  },
+  "capture": {
+    "history": [
+      "stone",
+      "log",
+      "tree"
+    ],
+    "max_render_delta": 0.0166666666666667,
+    "physics_frames": 1856,
+    "rendered_frames": 1865
+  },
+  "headless_suite": {
+    "passed": 100,
+    "total": 147,
+    "limitation": "Full headless suite is not clean; includes tests requiring real rendered images and legacy assertion failures. Do not interpret every failure as a gameplay regression or claim a clean full suite. Selected baseline comparisons recorded separately."
+  },
+  "review": {
+    "spec_findings": 0,
+    "standards_hard_violations": 0,
+    "optional_suggestion_addressed": "Moved tree-to-prop contact into loose prop physics."
+  },
+  "known_shutdown_warnings": "Existing scene resource/RID cleanup warnings remain. Sandbox also denies macOS certificate access and global editor-settings writes."
+}
