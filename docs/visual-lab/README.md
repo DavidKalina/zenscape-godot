@@ -21,3 +21,5 @@ This is a long-lived experimental worktree on `codex/deliberate-pond`. Keep main
 Preserve useful comparisons and short findings. Promote reviewed changes deliberately; retire superseded prototype code. Do not infer real-world meters from engine coordinates before choosing a scale model. Navigation, interaction reach, movement speed, camera behavior, water, shadows, and saved worlds need separate review before any scale change becomes production behavior.
 
 - Nahanni-inspired valleys: `./run-nahanni-valley.command`. Open valley, canyon, and valley-to-gorge compositions with independent floor width and wall height. [Notes](nahanni-valley/README.md).
+
+- Valley palettes: `./run-valley-palettes.command`. The same valley with nine existing moods and live hour, mist, and cloud-altitude controls. [Notes](valley-palettes/README.md).
