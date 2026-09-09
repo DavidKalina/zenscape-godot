@@ -11,6 +11,10 @@
     "LogToss": {
       "duration": 1.8,
       "frames": 55
+    },
+    "LogSlam": {
+      "duration": 1.8,
+      "frames": 55
     }
   },
   "events": {

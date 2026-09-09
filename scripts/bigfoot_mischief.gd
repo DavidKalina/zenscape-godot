@@ -28,6 +28,7 @@ var _log_grasp_pose := Transform3D.IDENTITY
 var _carry_route := PackedVector3Array()
 var _carry_index := 0
 var _carry_distance := 0.0
+var _forceful := false
 var _toss_pose := Transform3D.IDENTITY
 
 
@@ -43,7 +44,7 @@ func setup(playground: Node) -> void:
 	source.free()
 	var log_source := preload("res://assets/models/zenscape-bigfoot-log.glb").instantiate()
 	var log_player: AnimationPlayer = log_source.find_child("AnimationPlayer",true,false)
-	for clip in ["LogLift","LogCarry","LogToss"]:
+	for clip in ["LogLift","LogCarry","LogToss","LogSlam"]:
 		if not library.has_animation(clip): library.add_animation(clip,log_player.get_animation(clip).duplicate())
 	library.get_animation("LogCarry").loop_mode = Animation.LOOP_LINEAR
 	log_source.free()
@@ -165,6 +166,7 @@ func advance(delta: float) -> void:
 	else: _perform_throw(t)
 
 func _start() -> void:
+	_forceful = furious()
 	scene.creature.stop_walking()
 	_direction = scene.creature.global_basis.z
 	if active == "log":
@@ -259,11 +261,15 @@ func _perform_log(t: float) -> void:
 		# Drive the shouldered log forward along its length, keeping its heading.
 		var forward := Transform3D(_toss_pose.basis,_toss_pose.origin+scene.creature.global_basis*Vector3(0,0.2,1.05))
 		var pose := _toss_pose.interpolate_with(forward,smoothstep(0.15,0.78,t))
+		if _forceful:
+			var loaded := Transform3D(_toss_pose.basis,_toss_pose.origin+scene.creature.global_basis*Vector3(0,-0.08,-0.22))
+			pose = _toss_pose.interpolate_with(loaded,smoothstep(0.0,0.3,t))
+			if t>0.3: pose = loaded.interpolate_with(forward,smoothstep(0.34,0.78,t))
 		if not _released:
 			held.global_transform = pose
 			_log_hands(pose,1.0,0.0)
 			if t>=0.78:
-				_release_prop(scene.creature.global_basis.z*4.5+Vector3.UP*2.5)
+				_release_prop(scene.creature.global_basis.z*(6.0 if _forceful else 4.5)+Vector3.UP*(3.0 if _forceful else 2.5))
 				scene._show_reaction("!","That should go over there.")
 		else:
 			_log_hands(forward,1.0-smoothstep(0.9,1.65,t),0.0)
@@ -330,7 +336,7 @@ func _carry_log(delta: float) -> void:
 		_toss_pose = held.global_transform
 		scene.creature.stop_walking()
 		phase = "toss"
-		if not scene.creature.perform_action("LogToss",1.85): cancel("toss interrupted")
+		if not scene.creature.perform_action("LogSlam" if _forceful else "LogToss",1.85): cancel("toss interrupted")
 
 func _perform_tree(t: float) -> void:
 	if _released: return
@@ -344,7 +350,7 @@ func _perform_tree(t: float) -> void:
 		tree_protected = true
 	if _owns_tree:
 		# Draw the trunk toward his chest, then let the same spring recoil.
-		tree.drag_to(-_direction*2.8*smoothstep(0.7,2.5,t))
+		tree.drag_to(-_direction*(5.0 if _forceful else 2.8)*smoothstep(0.7,2.5,t))
 		for side in ["R","L"]:
 			var sign := -1.0 if side == "R" else 1.0
 			scene.creature.reach_hand(tree.center(2.1)+scene.creature.global_basis.x*sign*0.16, smoothstep(0.4,0.9,t),side)

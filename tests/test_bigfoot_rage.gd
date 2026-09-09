@@ -54,6 +54,17 @@ func run() -> void:
 			break
 	check(log_speed>13.0,"Enraged log throw is stronger too")
 	scene.mischief.cancel()
+	scene.reset_creature()
+	scene._attention_time = 1000.0
+	await ticks(120)
+	temper.provoke(1.0)
+	check(scene.mischief.request("tree"),"Enraged Bigfoot can pull the tree")
+	var peak_tension := 0.0
+	for i in range(1600):
+		await physics_frame
+		peak_tension = maxf(peak_tension,scene.spring_tree.tension)
+		if not scene.mischief.busy(): break
+	check(peak_tension>0.98,"Enraged pull reaches the existing maximum bend")
 	temper.remaining = 0.02
 	await ticks(4)
 	check(not temper.enraged and scene.creature.action_tempo==1.0,"Rage cools back to ordinary tempo")
@@ -61,7 +72,7 @@ func run() -> void:
 	temper.provoke(1.0)
 	scene.reset_creature()
 	check(not temper.enraged and temper.heat==0.0,"Reset clears temper")
-	print("BIGFOOT RAGE ",JSON.stringify({"failures":failures,"stone_speed":speed,"log_speed":log_speed,"eyes":temper._eyes.size(),"puff_pool":temper._puffs.size()}))
+	print("BIGFOOT RAGE ",JSON.stringify({"failures":failures,"stone_speed":speed,"log_speed":log_speed,"tree_tension":peak_tension,"eyes":temper._eyes.size(),"puff_pool":temper._puffs.size()}))
 	scene.queue_free()
 	await process_frame
 	quit(1 if failures else 0)

@@ -61,8 +61,9 @@ def pose(name,t):
         load=envelope(t,0,.30,.40,.8)
         send=envelope(t,.38,.72,.9,1.65)
         settle=smooth(t/1.8)
-        translation('Pelvis',(0,.07*send,-.026-.07*load))
-        rotate('Spine',(1,0,0),-.055*(1-settle)-.1*load+.18*send)
+        power=1.8 if name=='LogSlam' else 1.0
+        translation('Pelvis',(0,.07*send*power,-.026-.07*load*power))
+        rotate('Spine',(1,0,0),-.055*(1-settle)-.1*load*power+.18*send*power)
         rotate('Spine',(0,1,0),.045*(1-settle))
         rotate('Head',(1,0,0),-.07*(1-settle)+.03*send)
         for side in ['R','L']:
@@ -82,7 +83,7 @@ for frame in range(round(walk_duration*30)+1):
     rig.animation_data.action=walk
     scene.frame_set(round(walk.frame_range[0])+frame)
     walk_samples.append({p.name:(p.location.copy(),p.rotation_quaternion.copy(),p.rotation_euler.copy(),p.rotation_mode) for p in rig.pose.bones})
-clips={'LogLift':4.7,'LogCarry':walk_duration,'LogToss':1.8}
+clips={'LogLift':4.7,'LogCarry':walk_duration,'LogToss':1.8,'LogSlam':1.8}
 report={'clips':{},'events':{'grasp':1.15,'shoulder':4.55,'release_in_toss':.78}}
 for name,duration in clips.items():
     action=bpy.data.actions.new(name)
