@@ -33,8 +33,38 @@ func run() -> void:
 		root.get_texture().get_image().save_png(output.path_join(composition+".png"))
 		records.append(scene.genome.duplicate(true))
 		print("INLAND CAPTURE ",composition)
+	if "--watercheck" not in OS.get_cmdline_user_args():
+		var cases: Array = []
+		for archetype in scene.Genome.ARCHETYPES:
+			cases.append({"name":"original-"+archetype,"choices":{"composition":"mountain","archetype":archetype,"landform":"original"}})
+		for form in ["sawtooth-ridge","tall-massif","volcanic-crown","glacial-valley"]:
+			cases.append({"name":form,"choices":{"composition":"valley" if form=="glacial-valley" else "mountain","landform":form}})
+		for habitat in ["redwood","woodland","meadow","arid"]:
+			cases.append({"name":"habitat-"+habitat,"choices":{"composition":"valley","landform":"glacial-valley","habitat":habitat}})
+		cases.append({"name":"relief-low","choices":{"composition":"mountain","landform":"tall-massif","relief":0.5,"breadth":1.25}})
+		cases.append({"name":"relief-high","choices":{"composition":"mountain","landform":"tall-massif","relief":1.6,"breadth":0.65}})
+		var valley_heights := PackedFloat32Array()
+		var valley_water := PackedByteArray()
+		for entry in cases:
+			scene.choices = entry.choices
+			scene.set_scale_variant(0)
+			scene.apply_mood(0)
+			if str(entry.name).begins_with("habitat-"):
+				if valley_heights.is_empty():
+					valley_heights = scene._chunk_editor.data.heights.duplicate()
+					valley_water = var_to_bytes(scene._chunk_editor.data.streams)
+				assert(valley_heights == scene._chunk_editor.data.heights,"Habitat changed rendered terrain")
+				assert(valley_water == var_to_bytes(scene._chunk_editor.data.streams),"Habitat changed rendered water")
+			await settle()
+			root.get_texture().get_image().save_png(output.path_join(entry.name+".png"))
+			records.append({"file":entry.name+".png","genome":scene.genome.duplicate(true)})
+			print("INLAND CASE ",entry.name)
 	scene.choices = {"composition":"valley","landform":"glacial-valley"}
 	scene.set_scale_variant(0)
+	var initial = var_to_bytes(scene._chunk_editor.data._snapshot())
+	for mood in range(9):
+		scene.apply_mood(mood)
+		assert(initial == var_to_bytes(scene._chunk_editor.data._snapshot()),"Mood changed native records")
 	scene.apply_mood(0)
 	scene.lab_ui.show()
 	await settle()

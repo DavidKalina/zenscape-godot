@@ -2,6 +2,15 @@ extends SceneTree
 const Genome = preload("res://scripts/prototype_inland_genome.gd")
 func _initialize() -> void:
 	var samples := 0
+	var legacy = preload("res://scripts/prototype_inland_genome_v1.gd")
+	for seed_value in range(40):
+		assert(var_to_bytes(Genome.sample(seed_value,{},1)) == var_to_bytes(legacy.sample(seed_value)))
+	var types := {}
+	for seed_value in range(200):
+		var g: Dictionary = Genome.sample(seed_value)
+		types[g.archetype] = true
+	assert(types.size() == 4)
+
 	for seed_value in range(40):
 		for composition in Genome.COMPOSITIONS:
 			var g: Dictionary = Genome.sample(seed_value,{"composition":composition})
@@ -16,6 +25,7 @@ func _initialize() -> void:
 					assert(is_finite(h) and h>=0.0 and h<40.0)
 					assert(h==Genome.height(alternative,Vector2(x,z),n),"Habitat changed terrain")
 			assert(g.water_phase==alternative.water_phase and g.river_width==alternative.river_width)
+			assert(var_to_bytes(g.wetland)==var_to_bytes(alternative.wetland))
 			samples += 1
 	print("PASS ",samples," deterministic genomes; finite heights; habitat-independent terrain/water")
 	quit()

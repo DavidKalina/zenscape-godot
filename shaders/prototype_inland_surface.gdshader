@@ -9,6 +9,7 @@ shader_type spatial;
 #include "res://shaders/reference_inversion.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
+uniform float inland_snowline = 99.0;
 uniform float inland_rock_amount = 1.0;
 uniform int rock_treatment = 0;
 uniform float rock_detail_strength = 0.65;
@@ -163,6 +164,8 @@ void fragment() {
 		surface_wet *= 1.0 - smoothstep(0.55, 0.8, min(tint.r, min(tint.g, tint.b)));
 		tint *= 1.0 - surface_wet * mix(0.20, 0.40, mineral);
 	}
+	float altitude_snow = smoothstep(inland_snowline-1.0,inland_snowline+1.5,world_position.y+(grain-0.5)*2.0)*smoothstep(0.2,0.65,face_normal.y);
+	tint = mix(tint,vec3(0.84,0.88,0.92),altitude_snow);
 	if (!bird_wings && zs_snow > 0.004) {
 		float noise = zs_noise(world_position.xz * 0.85);
 		float line = mix(zs_summit.y + 2.0, 0.15 - 2.5, pow(zs_snow, 0.7));

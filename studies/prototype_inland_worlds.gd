@@ -39,12 +39,36 @@ func set_scale_variant(_index: int) -> void:
 		water._add(anchors,genome.river_width,false,false)
 		data.streams.assign(water.routes.duplicate(true))
 	elif genome.composition == "marsh":
-		for p in [Vector2(-4,-3),Vector2(3,-2),Vector2(0,5)]:
-			data.ponds.append({"x":p.x,"z":p.y,"level":1.45,"basin":[3.4,2.7]})
+		for pool in genome.wetland:
+			data.ponds.append({"x":pool.x,"z":pool.z,"level":pool.level})
 	elif genome.composition in ["basin","mountain","massif","foothills"]:
 		var p := Vector2(0,0) if genome.composition == "basin" else Vector2(2.5,6.0)
-		data.ponds.append({"x":p.x,"z":p.y,"level":1.7,"basin":[3.4,2.8]})
+		var radius: float = genome.lake.radius if genome.composition == "basin" else 3.4
+		if genome.composition == "basin": p = Vector2(genome.lake.x,genome.lake.z)
+		data.ponds.append({"x":p.x,"z":p.y,"level":1.7,"basin":[radius,radius*float(genome.lake.stretch)]})
 	var recipe = preload("res://scripts/prototype_inland_recipe.gd").new(genome,data.ponds,water)
+	# Local headwater and tributary courses use the same monotone level plan as the original formation water.
+	if genome.composition in ["mountain","massif"] and not data.ponds.is_empty():
+		var pool: Dictionary = data.ponds[0]
+		var start := Vector2(-0.5,-2.0)
+		var end := Vector2(pool.x,pool.z)
+		var level: float = maxf(pool.level,recipe.height(start.x,start.y)+0.06)
+		var anchors: Array = []
+		for i in range(17):
+			var t := float(i)/16.0
+			var point := start.lerp(end,t)+Vector2(sin(t*PI)*0.7,0.0)
+			level = maxf(pool.level,minf(level,recipe.height(point.x,point.y)+0.06))
+			anchors.append([point.x,point.y,level])
+		anchors[-1][2] = pool.level
+		water._add(anchors,0.85,true,false)
+	elif genome.composition == "valley":
+		var z := -5.5
+		var receiving := 1.12+(11.0-z)*0.009
+		var x: float = Genome.channel(genome,z)
+		var head := Vector2(x-4.5,z-2.0)
+		var level := maxf(receiving+0.6,recipe.height(head.x,head.y)+0.06)
+		water._add([[head.x,head.y,level],[x-2.0,z-0.7,receiving+0.25],[x,z,receiving]],0.65,true,false)
+	data.streams.assign(water.routes.duplicate(true))
 	data._recipe = recipe
 	data._recipe_height_cache.clear()
 	data._water_grid_h.clear()
@@ -60,13 +84,32 @@ func set_scale_variant(_index: int) -> void:
 		var z: float = data._face_z[i]
 		data._recipe_gradients.append(Vector2((recipe.height(x+0.25,z)-recipe.height(x-0.25,z))/0.5,(recipe.height(x,z+0.25)-recipe.height(x,z-0.25))/0.5))
 	data.discard_cache()
+	if genome.composition == "marsh":
+		# Flood each connected component once: joined pools must not draw coplanar water twice.
+		var masks: Array = []
+		var unique: Array[Dictionary] = []
+		for pond in data.ponds:
+			var field: Dictionary = NativeRecipeWater.field(data,pond)
+			if field.is_empty(): continue
+			var duplicate := false
+			for mask in masks:
+				if mask == field.wet: duplicate = true; break
+			if not duplicate:
+				masks.append(field.wet)
+				unique.append(pond)
+		data.ponds = unique
+
 	# Independent planting stream; habitat changes cannot alter terrain or water.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = genome.plant_seed
-	var budget: int = {"alpine":70,"woodland":115,"meadow":25,"wetland":15,"arid":12,"redwood":70}[genome.habitat]
+	var budget: int = {"alpine":int(genome.tree_count),"woodland":int(genome.tree_count)+int(genome.broadleaf_count),"meadow":0 if genome.composition == "meadow" else 15,"wetland":0,"arid":12,"redwood":70}[genome.habitat]
 	budget = int(budget*float(genome.tree_density))
 	var planted := 0
-	for i in range(1000):
+	var occupied: Array[Vector2] = []
+	var habitat_noise := FastNoiseLite.new()
+	habitat_noise.seed = genome.plant_seed
+	habitat_noise.frequency = 0.22
+	for i in range(1600 if budget>0 else 0):
 		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
 		var angle := rng.randf()*TAU
 		var size := rng.randf_range(0.6,1.05)
@@ -74,21 +117,35 @@ func set_scale_variant(_index: int) -> void:
 		var h: float = data.ground_height(p)
 		if p.distance_to(actor_point)<1.4 or _is_wet(p): continue
 		if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.85: continue
-		var treeline := 5.0 if genome.habitat == "alpine" else 9.0
+		var treeline := float(genome.treeline) if genome.habitat == "alpine" else 10.0
 		if h>treeline: continue
+		if habitat_noise.get_noise_2d(p.x,p.y)<-0.15: continue
+		var crowded := false
+		for other in occupied:
+			if other.distance_squared_to(p)<1.2: crowded = true; break
+		if crowded: continue
 		var kind: String = "tree"
 		if genome.habitat == "woodland": kind = "broadleaf" if pick<0.6 else "tree"
 		elif genome.habitat == "redwood": kind = "redwood"
 		elif genome.habitat == "arid": kind = "shrub"
 		elif genome.habitat == "wetland": kind = "reeds"
-		if data.place(kind,p,angle,size)>=0: planted += 1
+		if data.place(kind,p,angle,size)>=0:
+			planted += 1
+			occupied.append(p)
 		if planted>=budget: break
 	# Low cover gives marsh/meadow their own habitat beyond a palette swap.
-	for i in range(25 if genome.habitat == "arid" else 150):
+	for i in range(25 if genome.habitat == "arid" else 620 if genome.habitat == "wetland" else 250):
 		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
-		if _is_wet(p) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
+		if (_is_wet(p) and not (genome.habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
-		var kind := "reeds" if genome.habitat == "wetland" else "daisy_flower" if genome.habitat == "meadow" else "shrub" if genome.habitat == "arid" else "grass_tuft"
+		var kind: String = "reeds" if genome.habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if genome.habitat == "meadow" else "shrub" if genome.habitat == "arid" else "grass_tuft"
+		if genome.habitat in ["woodland","redwood"]:
+			if i%29 == 0: kind = "log"
+			elif i%31 == 0: kind = "stump"
+			elif i%37 == 0: kind = "snag"
+			elif i%11 == 0: kind = "fern"
+			elif i%13 == 0: kind = "mushroom"
+		if genome.habitat == "wetland" and float(data.ground_height(p))>1.65: kind = "bank_grass"
 		data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.9))
 	data.objects_revision += 1
 	_chunk_editor.refresh()
@@ -98,14 +155,21 @@ func set_scale_variant(_index: int) -> void:
 	print("INLAND seed=",world_seed," ",genome.composition," / ",genome.landform," / ",genome.habitat)
 
 func _is_wet(p: Vector2) -> bool:
-	if genome.composition == "valley" and absf(p.x-Genome.channel(genome,p.y))<genome.river_width*0.6+0.5: return true
+	for route in _chunk_editor.data.streams:
+		for point in route.pts:
+			if p.distance_squared_to(Vector2(point.x,point.z))<pow(float(route.width)*0.6+0.4,2.0): return true
 	for pool: Dictionary in _chunk_editor.data.ponds:
-		if Vector2((p.x-pool.x)/pool.basin[0],(p.y-pool.z)/pool.basin[1]).length()<1.05: return true
+		if genome.composition == "marsh":
+			if float(_chunk_editor.data.ground_height(p))<float(pool.level)+0.08: return true
+		elif Vector2((p.x-pool.x)/pool.basin[0],(p.y-pool.z)/pool.basin[1]).length()<1.05: return true
 	return false
 
 func _sync_rock_habitat() -> void:
 	# Dune crests are sand, even when tall. Other terrain retains exposed rock.
 	mountain_material.set_shader_parameter("inland_rock_amount",0.0 if genome.composition == "dunes" else 1.0)
+	var snowline: float = genome.snowline*float(genome.relief) if genome.habitat == "alpine" else 99.0
+	if genome.landform in ["tall-massif","volcanic-crown"] and genome.habitat == "alpine": snowline = peak*0.68
+	mountain_material.set_shader_parameter("inland_snowline",snowline)
 
 func _update_world_label() -> void:
 	for key in choice_controls:
