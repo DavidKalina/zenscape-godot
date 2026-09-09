@@ -22,6 +22,13 @@ var _released := false
 var _owns_tree := false
 var _grip_start := Vector3.ZERO
 var _direction := Vector3.FORWARD
+var _log_grip_sign := 1.0
+var _log_grasp_pose := Transform3D.IDENTITY
+var _carry_route := PackedVector3Array()
+var _carry_index := 0
+var _carry_distance := 0.0
+var _toss_pose := Transform3D.IDENTITY
+
 
 func setup(playground: Node) -> void:
 	scene = playground
@@ -33,6 +40,12 @@ func setup(playground: Node) -> void:
 	for clip in ["StoneThrow","TreeShake"]:
 		if not library.has_animation(clip): library.add_animation(clip,player.get_animation(clip).duplicate())
 	source.free()
+	var log_source := preload("res://assets/models/zenscape-bigfoot-log.glb").instantiate()
+	var log_player: AnimationPlayer = log_source.find_child("AnimationPlayer",true,false)
+	for clip in ["LogLift","LogCarry","LogToss"]:
+		if not library.has_animation(clip): library.add_animation(clip,log_player.get_animation(clip).duplicate())
+	library.get_animation("LogCarry").loop_mode = Animation.LOOP_LINEAR
+	log_source.free()
 
 func busy() -> bool: return not active.is_empty()
 
@@ -115,12 +128,21 @@ func advance(delta: float) -> void:
 			return
 		while _waypoint<_route.size() and scene.creature.global_position.distance_to(_route[_waypoint])<0.025: _waypoint += 1
 		if _waypoint>=_route.size():
-			_start()
+			phase = "turn"
+			scene.creature.stop_walking()
 			return
 		if not scene.navigation.motion_safe(scene.creature.global_position,_route[_waypoint],0.85*delta):
 			cancel("approach obstructed")
 			return
 		if scene.creature.walk_step(_route[_waypoint],0.85,delta): _waypoint += 1
+		return
+	if phase == "turn":
+		if not scene.creature.can_roam() or target.global_position.distance_to(_target_start)>0.25:
+			cancel("interrupted turn")
+		elif scene.creature.turn_step(_facing,delta): _start()
+		return
+	if active == "log" and phase == "carry":
+		_carry_log(delta)
 		return
 	if scene.creature.state != CreatureActor.State.ACTION:
 		if _released and scene.creature.can_roam(): _finish()
@@ -131,33 +153,22 @@ func advance(delta: float) -> void:
 		return
 	var t: float = scene.creature._age
 	if active == "tree": _perform_tree(t)
+	elif active == "log": _perform_log(t)
 	else: _perform_throw(t)
 
 func _start() -> void:
 	scene.creature.stop_walking()
-	scene.creature.global_rotation.y = _facing
 	_direction = scene.creature.global_basis.z
+	if active == "log": _log_grip_sign = 1.0 if target.global_basis.x.dot(scene.creature.global_basis.x)>=0.0 else -1.0
 	phase = "perform"
 	_elapsed = 0.0
-	if not scene.creature.perform_action("TreeShake" if active == "tree" else "StoneThrow",4.6):
+	if not scene.creature.perform_action("LogLift" if active == "log" else "TreeShake" if active == "tree" else "StoneThrow",4.6 if active != "log" else 5.0):
 		cancel("animation unavailable")
 
 func _perform_throw(t: float) -> void:
-	if _released:
-		if active == "log":
-			# Carry the two-handed shove through release before blending back
-			# into the authored recovery, rather than snapping to one throwing arm.
-			var weight := 1.0-smoothstep(3.2,3.8,t)
-			for side in ["R","L"]:
-				var sign := -1.0 if side == "R" else 1.0
-				var point: Vector3 = scene.creature.to_global(Vector3(sign*0.55,1.65,1.35))
-				scene.creature.reach_hand(point,weight,side)
-		return
+	if _released: return
 	if t<1.05:
-		var weight := smoothstep(0.25,0.9,t)
-		scene.creature.reach_hand(target.global_position,weight)
-		if active == "log":
-			scene.creature.reach_hand(target.global_position+target.global_basis.x*0.55,weight,"L")
+		scene.creature.reach_hand(target.global_position,smoothstep(0.25,0.9,t))
 		return
 	if held == null:
 		if target.held or target.linear_velocity.length()>0.5:
@@ -166,35 +177,104 @@ func _perform_throw(t: float) -> void:
 		held = target
 		_grip_start = held.global_position
 		held.grab()
-		# Moving the existing body preserves identity, buoyancy and collision.
-		if active == "log": held.global_basis = scene.creature.global_basis
-	if active == "stone":
-		# Blend the last inches into the authored palm to avoid a grasp pop.
-		held.global_position = _grip_start.lerp(scene.creature.hand_position(),smoothstep(1.05,1.3,t))
-		scene.creature.clear_hand_targets()
-	else:
-		# Two hands lift a heavy log, draw it back, then shove it outward.
-		var local := Vector3(0,1.35,0.85)
-		if t>1.9: local = local.lerp(Vector3(0,1.85,0.45),smoothstep(1.9,2.55,t))
-		if t>2.55: local = Vector3(0,1.85,0.45).lerp(Vector3(0,1.65,1.35),smoothstep(2.55,2.95,t))
-		var grip: Vector3 = scene.creature.global_position+scene.creature.global_basis*local
-		held.global_position = _grip_start.lerp(grip,smoothstep(1.05,1.85,t))
-		for side in ["R","L"]:
-			var sign := -1.0 if side == "R" else 1.0
-			scene.creature.reach_hand(held.global_position+held.global_basis.x*sign*0.55,1.0,side)
+	held.global_position = _grip_start.lerp(scene.creature.hand_position(),smoothstep(1.05,1.3,t))
+	scene.creature.clear_hand_targets()
 	if t>=2.95:
-		# Clear the thrower's collision envelope before enabling flight. This is
-		# a launch clearance check, not a scripted trajectory after release.
 		var launch: Vector3 = held.global_position
 		var ahead: float = (launch-scene.creature.global_position).dot(_direction)
 		if ahead<1.05: launch += _direction*(1.05-ahead)
 		held.global_position = launch
-		held.release(_direction*(6.8 if active == "stone" else 4.5)+Vector3.UP*(3.0 if active == "stone" else 2.5))
-		held.hit_cooldown = 0.8
-		held = null
-		_released = true
-		if active == "stone": scene.creature.clear_hand_targets()
-		scene._show_reaction("!","He can throw things too." if active == "stone" else "A little redecorating.")
+		_release_prop(_direction*6.8+Vector3.UP*3.0)
+		scene.creature.clear_hand_targets()
+		scene._show_reaction("!","He can throw things too.")
+
+func _release_prop(velocity: Vector3) -> void:
+	held.release(velocity)
+	held.hit_cooldown = 0.8
+	held = null
+	_released = true
+
+func _log_hands(pose: Transform3D, right_weight := 1.0, left_weight := 1.0) -> void:
+	for side in ["R","L"]:
+		var sign := -1.0 if side == "R" else 1.0
+		scene.creature.reach_hand(pose.origin+pose.basis.x*sign*_log_grip_sign*0.55,right_weight if side == "R" else left_weight,side)
+
+func _shoulder_pose() -> Transform3D:
+	var actor: CreatureActor = scene.creature
+	var shoulder := actor.skeleton.find_bone("UpperArm_R")
+	var anchor: Vector3 = actor.skeleton.to_global(actor.skeleton.get_bone_global_pose(shoulder).origin)
+	var basis: Basis = actor.global_basis*Basis(Vector3.UP,PI*0.5)*Basis(Vector3.FORWARD,-0.12)
+	if _log_grip_sign<0.0: basis *= Basis(Vector3.UP,PI)
+	return Transform3D(basis,anchor+actor.global_basis*Vector3(-0.02,0.34,-0.22))
+
+func _perform_log(t: float) -> void:
+	if phase == "toss":
+		var forward: Transform3D = scene.creature.global_transform*Transform3D(Basis(Vector3.UP,PI if _log_grip_sign<0.0 else 0.0),Vector3(-0.15,1.85,1.25))
+		var pose := _toss_pose.interpolate_with(forward,smoothstep(0.15,0.78,t))
+		if not _released:
+			held.global_transform = pose
+			_log_hands(pose,1.0,smoothstep(0.0,0.3,t))
+			if t>=0.78:
+				_release_prop(scene.creature.global_basis.z*4.5+Vector3.UP*2.5)
+				scene._show_reaction("!","That should go over there.")
+		else:
+			_log_hands(forward,1.0-smoothstep(0.9,1.65,t),1.0-smoothstep(0.9,1.65,t))
+		return
+	if held == null:
+		_log_hands(target.global_transform,smoothstep(0.25,1.0,t),smoothstep(0.4,1.1,t))
+		if t<1.15: return
+		if target.held or target.linear_velocity.length()>0.5:
+			cancel("log moved before grasp")
+			return
+		held = target
+		_log_grasp_pose = held.global_transform
+		held.grab()
+	var cradle: Transform3D = scene.creature.global_transform*Transform3D(Basis(Vector3.UP,PI if _log_grip_sign<0.0 else 0.0),Vector3(0,1.25,0.9))
+	var pose := _log_grasp_pose.interpolate_with(cradle,smoothstep(1.3,2.55,t))
+	if t>2.65: pose = cradle.interpolate_with(_shoulder_pose(),smoothstep(2.65,3.95,t))
+	held.global_transform = pose
+	_log_hands(pose,1.0,1.0-smoothstep(3.55,4.15,t))
+	if t>=4.2:
+		scene.creature.cancel_action()
+		_plan_carry()
+		phase = "carry"
+		_elapsed = 0.0
+		_carry_distance = 0.0
+		scene._show_reaction("…","He has somewhere to put this.")
+
+func _plan_carry() -> void:
+	_carry_route.clear()
+	_carry_index = 0
+	var actor: CreatureActor = scene.creature
+	# Stay close and favor the direction he's already facing. Never walk a
+	# loaded actor across unchecked water, steep edges or a newly moved prop.
+	for angle in [0.0,0.5,-0.5,1.0,-1.0]:
+		var direction := Basis(Vector3.UP,angle)*actor.global_basis.z
+		var ground: Variant = scene._probe_ground(actor.global_position+direction*2.2)
+		if ground == null or not scene.valid_landing(ground): continue
+		if not scene.navigation.segment_safe(actor.global_position,ground): continue
+		_carry_route = PackedVector3Array([ground])
+		return
+
+func _carry_log(delta: float) -> void:
+	if not scene.creature.can_roam():
+		cancel("carry interrupted")
+		return
+	var finished := _carry_route.is_empty() or _elapsed>5.0
+	if not finished:
+		var next: Vector3 = _carry_route[_carry_index]
+		if not scene.navigation.motion_safe(scene.creature.global_position,next,0.65*delta): finished = true
+		else:
+			var before: Vector3 = scene.creature.global_position
+			finished = scene.creature.walk_step(next,0.65,delta,"LogCarry")
+			_carry_distance += before.distance_to(scene.creature.global_position)
+	held.global_transform = _shoulder_pose()
+	_log_hands(held.global_transform,1.0,0.0)
+	if finished:
+		_toss_pose = held.global_transform
+		scene.creature.stop_walking()
+		phase = "toss"
+		if not scene.creature.perform_action("LogToss",1.85): cancel("toss interrupted")
 
 func _perform_tree(t: float) -> void:
 	if _released: return

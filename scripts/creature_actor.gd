@@ -57,7 +57,7 @@ func can_roam() -> bool:
 ## True means this waypoint was reached; keep the stride continuous until the
 ## controller calls stop_walking at the final destination. False means progressing
 ## or rejected by can_roam/input.
-func walk_step(destination: Vector3, speed: float, delta: float) -> bool:
+func walk_step(destination: Vector3, speed: float, delta: float, gait := "Walk") -> bool:
 	if not can_roam() or not destination.is_finite() or not is_finite(speed) or not is_finite(delta) or speed <= 0.0 or delta <= 0.0:
 		return false
 	var offset := destination-global_position
@@ -78,7 +78,7 @@ func walk_step(destination: Vector3, speed: float, delta: float) -> bool:
 		return true
 	if state != State.WALKING:
 		_state(State.WALKING)
-		_play("Walk")
+		_play(gait)
 	var yaw := atan2(offset.x,offset.z)
 	var facing := global_rotation.y
 	global_basis = Basis(Vector3.UP,lerp_angle(facing,yaw,1.0-exp(-7.0*dt)))
@@ -89,6 +89,21 @@ func walk_step(destination: Vector3, speed: float, delta: float) -> bool:
 	player.speed_scale = speed/WALK_SPEED_MPS
 	if distance >= horizontal:
 		return true
+	return false
+
+## Small planted stepping turn, used before reaching for a nearby object.
+func turn_step(yaw: float, delta: float) -> bool:
+	if not can_roam(): return false
+	var error := angle_difference(global_rotation.y,yaw)
+	if absf(error)<0.015:
+		stop_walking()
+		return true
+	if state != State.WALKING:
+		_state(State.WALKING)
+		_play("Walk")
+	player.speed_scale = 0.6
+	global_rotation.y += clampf(error,-1.2*delta,1.2*delta)
+	_standing_basis = global_basis
 	return false
 
 ## An authored one-shot or timed loop owns motion until completion/interruption.
@@ -441,7 +456,7 @@ func advance(delta: float) -> void:
 			var phase := _age*6.0+(0.0 if side == "R" else PI)
 			HAND_REACH.apply(skeleton,to_global(Vector3(0.85 if side == "R" else -0.85,1.6+sin(phase)*0.25,0.5+cos(phase)*0.45)),0.85,side)
 	if state == State.STUMBLING: _pose_stumble()
-	if state == State.ACTION:
+	if state in [State.ACTION,State.WALKING]:
 		for side: String in hand_targets:
 			var contact: Dictionary = hand_targets[side]
 			HAND_REACH.apply(skeleton,contact.point,contact.weight,side)
