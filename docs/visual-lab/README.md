@@ -25,3 +25,5 @@ Preserve useful comparisons and short findings. Promote reviewed changes deliber
 - Valley palettes: `./run-valley-palettes.command`. The same valley with nine existing moods and live hour, mist, and cloud-altitude controls. [Notes](valley-palettes/README.md).
 
 - Rock faces: `./run-valley-rock.command`. Clean, lightly layered, and weathered treatments with adjustable strength and a cliff camera. [Notes](valley-rock/README.md).
+
+- Inland genome integration: `./run-inland-worlds.command`. Seeded compositions, archetypes, landforms and habitats with the existing moods and rock controls. [Parity and limitations](inland-worlds/README.md).

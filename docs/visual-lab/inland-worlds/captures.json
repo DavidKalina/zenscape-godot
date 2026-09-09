@@ -1,0 +1,464 @@
+[
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "mountain",
+		"floor_width": 3.49135255813599,
+		"habitat": "alpine",
+		"height": 13.2232446670532,
+		"landform": "tall-massif",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -5.72732895612717,
+				"height": 0.787684082984924,
+				"width": 4.78321647644043
+			},
+			{
+				"at": -2.01813614368439,
+				"height": 0.854335188865662,
+				"width": 3.40946459770203
+			},
+			{
+				"at": 2.25685507059097,
+				"height": 0.81017541885376,
+				"width": 4.78718566894531
+			},
+			{
+				"at": 5.57374486327171,
+				"height": 0.831859946250916,
+				"width": 3.81109499931335
+			}
+		],
+		"phase": 3.56325236378637,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.352684944868088,
+		"wall_spacing": 5.99186611175537,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "massif",
+		"floor_width": 3.49135255813599,
+		"habitat": "alpine",
+		"height": 13.2232446670532,
+		"landform": "tall-massif",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -5.72732895612717,
+				"height": 0.787684082984924,
+				"width": 4.78321647644043
+			},
+			{
+				"at": -2.01813614368439,
+				"height": 0.854335188865662,
+				"width": 3.40946459770203
+			},
+			{
+				"at": 2.25685507059097,
+				"height": 0.81017541885376,
+				"width": 4.78718566894531
+			},
+			{
+				"at": 5.57374486327171,
+				"height": 0.831859946250916,
+				"width": 3.81109499931335
+			}
+		],
+		"phase": 3.56325236378637,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.352684944868088,
+		"wall_spacing": 5.99186611175537,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "valley",
+		"floor_width": 3.49135255813599,
+		"habitat": "woodland",
+		"height": 13.2232446670532,
+		"landform": "buttressed-canyon",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -5.72732895612717,
+				"height": 0.787684082984924,
+				"width": 4.78321647644043
+			},
+			{
+				"at": -2.01813614368439,
+				"height": 0.854335188865662,
+				"width": 3.40946459770203
+			},
+			{
+				"at": 2.25685507059097,
+				"height": 0.81017541885376,
+				"width": 4.78718566894531
+			},
+			{
+				"at": 5.57374486327171,
+				"height": 0.831859946250916,
+				"width": 3.81109499931335
+			}
+		],
+		"phase": 3.56325236378637,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.352684944868088,
+		"wall_spacing": 5.99186611175537,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "basin",
+		"floor_width": 3.49135255813599,
+		"habitat": "woodland",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "foothills",
+		"floor_width": 3.49135255813599,
+		"habitat": "meadow",
+		"height": 13.2232446670532,
+		"landform": "rolling-uplands",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 1.00467753410339,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "plateau",
+		"floor_width": 3.49135255813599,
+		"habitat": "woodland",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "meadow",
+		"floor_width": 3.49135255813599,
+		"habitat": "meadow",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 1.00467753410339,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "marsh",
+		"floor_width": 3.49135255813599,
+		"habitat": "wetland",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "dunes",
+		"floor_width": 3.49135255813599,
+		"habitat": "arid",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "tablelands",
+		"floor_width": 3.49135255813599,
+		"habitat": "arid",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	},
+	{
+		"archetype": "range",
+		"breadth": 1.0,
+		"composition": "buttes",
+		"floor_width": 3.49135255813599,
+		"habitat": "arid",
+		"height": 13.2232446670532,
+		"landform": "original",
+		"noise_seed": 56176,
+		"peaks": [
+			{
+				"at": -6.42375415563583,
+				"height": 0.910491704940796,
+				"width": 3.84801125526428
+			},
+			{
+				"at": -1.68709272146225,
+				"height": 0.999615430831909,
+				"width": 3.75532674789429
+			},
+			{
+				"at": 1.90521058440208,
+				"height": 0.838039994239807,
+				"width": 3.62591052055359
+			},
+			{
+				"at": 5.80848577618599,
+				"height": 0.749500751495361,
+				"width": 4.02914428710938
+			}
+		],
+		"phase": 0.396424958496448,
+		"plant_seed": 56064,
+		"relief": 1.0,
+		"river_width": 1.7829966545105,
+		"seed": 7,
+		"tree_density": 0.88925313949585,
+		"version": 1,
+		"wall_relief": 0.281872719526291,
+		"wall_spacing": 5.37046051025391,
+		"water_phase": 1.64999763489871
+	}
+]
