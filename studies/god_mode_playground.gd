@@ -1,6 +1,10 @@
 extends "res://studies/bigfoot_life.gd"
 ## A tactile, preset-first playground. The tree owns elasticity and contact;
 ## this scene owns gestures and the resident's response to player interference.
+var water_play: Node3D
+var _wet_hold := false
+var _water_reaction := false
+var _offended_time := 0.0
 var spring_tree: PlaySpringTree
 var _tree_drag := false
 var _drag_plane := Plane()
@@ -36,7 +40,7 @@ func _ready() -> void:
 	_update_camera()
 	var column := _play_panel.get_child(0)
 	column.get_child(0).text = "A little mischief"
-	column.get_child(1).text = "Pull the glowing tree. Let go. See what he thinks.\nDrag Bigfoot to carry · Right drag to orbit · Scroll to zoom"
+	column.get_child(1).text = "Drag Bigfoot over the pool to dunk him. Release to watch him paddle out.\nPull the tree · Right drag to orbit · Scroll to zoom"
 	_message.text = "A quiet afternoon. For now."
 	_mode_button.hide()
 	_tool_button.text = "Hands · switch to wind"
@@ -63,11 +67,19 @@ func _ready() -> void:
 		_celestial.set_phase([0.46,0.64,0.71][index])
 		_celestial.update_rig())
 	_wind_panel.get_child(0).add_child(light)
+	water_play = preload("res://scripts/play_water_mischief.gd").new()
+	add_child(water_play)
+	water_play.setup(self)
+	creature.water_splash.connect(water_play.splash)
 	_play_ready = true
 
 func _enrich_clearing() -> void:
 	var data := _chunk_editor.data
 	data.begin_stroke()
+	# A deep center and gentle shore keep his head above water while paddling.
+	for i in range(data.points.size()):
+		var radial: float = data.points[i].distance_to(Vector2(3,0))
+		data.heights[i] -= 1.5*(1.0-smoothstep(0.0,2.3,radial))
 	for entry in [[-6,-5,1.2],[-3,-6,1.15],[0,-5.5,1.0],[2.5,-6,1.35],[5.7,-5.2,1.1],[7.4,-2.5,1.2],[-5,5.5,0.85],[6.8,4.8,0.8]]:
 		data.place("broadleaf",Vector2(entry[0],entry[1]),float(entry[0])*0.7,float(entry[2]),{},NativeObjectPose.encode_tint(Color(0.10,0.25,0.16)))
 	for i in range(22):
@@ -82,6 +94,7 @@ func _enrich_clearing() -> void:
 
 func _tool_changed() -> void:
 	cancel_tree_drag()
+	if _carrying: _cancel_water_carry()
 	_tool_button.text = "Wind · switch to hands" if gust_tool else "Hands · switch to wind"
 
 func _investigate_interest() -> void:
@@ -101,13 +114,19 @@ func _process(delta: float) -> void:
 	spring_tree.set_highlight(_hover_tree or _tree_drag)
 	Input.set_default_cursor_shape(Input.CURSOR_DRAG if _tree_drag else (Input.CURSOR_POINTING_HAND if _hover_tree else Input.CURSOR_ARROW))
 	_cursor_hint.position = mouse+Vector2(20,20)
-	_cursor_hint.text = "Release · Esc to forgive" if _tree_drag else ("Pull me" if _hover_tree else "")
+	_cursor_hint.text = "Release · Esc to forgive" if _tree_drag else ("Release to let him paddle" if _wet_hold else ("Pull me" if _hover_tree else ""))
 	_tension_bar.visible = _tree_drag
 	_tension_bar.value = spring_tree.tension
-	_wind_hint.text = "Paused · P to resume" if _paused else ("Drag ground to aim wind · P pause" if gust_tool else "Pull a tree · P pause · R reset")
+	_wind_hint.text = "Paused · P to resume" if _paused else ("Drag ground to aim wind · P pause" if gust_tool else "Dunk him in the pool · Pull a tree · P pause · R reset")
 	if _paused: return
+	water_play.advance(delta)
+	if _offended_time > 0.0:
+		_offended_time = maxf(0.0,_offended_time-delta)
+		var gaze_plane := Plane(camera.global_basis.z,creature.global_position+Vector3.UP*2.2)
+		var gaze: Variant = gaze_plane.intersects_ray(camera.project_ray_origin(mouse),camera.project_ray_normal(mouse))
+		creature.track_gaze(gaze if gaze != null else camera.global_position)
 	_attention_time = maxf(0,_attention_time-delta)
-	brain.enabled = not _tree_drag and _attention_time <= 0
+	brain.enabled = not _tree_drag and _attention_time <= 0 and creature.state not in [CreatureActor.State.SWIMMING,CreatureActor.State.SHAKING]
 	if _tree_drag and creature.can_roam():
 		creature.stop_walking()
 		creature.track_gaze(spring_tree.center(3.0))
@@ -200,6 +219,17 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_creature_state(value: CreatureActor.State) -> void:
 	super._on_creature_state(value)
+	if value == CreatureActor.State.SWIMMING:
+		_water_reaction = true
+		_show_reaction("!", "An entirely unplanned bath.")
+	elif value == CreatureActor.State.SHAKING:
+		_show_reaction("…", "Stand back. He is sharing the water.")
+	elif _water_reaction and value == CreatureActor.State.ALERT:
+		_water_reaction = false
+		_offended_time = 3.0
+		_attention_time = 3.0
+		creature.notice(camera.global_position)
+		_show_reaction("…", "He knows exactly who did that.")
 	if _tree_hit and value == CreatureActor.State.ALERT:
 		_tree_hit = false
 		_attention_time = 2.0
@@ -210,14 +240,63 @@ func reset_creature() -> void:
 	cancel_tree_drag()
 	if is_instance_valid(spring_tree): spring_tree.reset()
 	_tree_hit = false
+	_water_reaction = false
+	_offended_time = 0.0
+	_wet_hold = false
+	if is_instance_valid(water_play): water_play.clear()
 	_mischief_count = 0
 	super.reset_creature()
 
 func _begin_carry(mouse: Vector2) -> void:
-	if not _paused: super._begin_carry(mouse)
+	if _paused: return
+	_water_reaction = false
+	_offended_time = 0.0
+	_wet_hold = false
+	super._begin_carry(mouse)
 
 func _update_carry(mouse: Vector2, delta: float) -> void:
-	if not _paused: super._update_carry(mouse,delta)
+	if _paused: return
+	var pool: Variant = water_play.pick(mouse) if is_instance_valid(water_play) else null
+	if pool == null:
+		_wet_hold = false
+		super._update_carry(mouse,delta)
+		return
+	var ground: Variant = _probe_ground(pool)
+	if ground == null: return
+	var destination: Vector3 = pool-Vector3.UP*1.65
+	destination.y = maxf(destination.y,ground.y)
+	creature.move_held(creature.global_position.lerp(destination,1.0-exp(-12.0*delta)),delta)
+	_landing_marker.visible = true
+	_landing_marker.position = pool+Vector3.UP*0.04
+	_landing_material.albedo_color = Color(0.4,0.9,1.0,0.65)
+	_cursor_hint.text = "Splish splash · release to let him paddle"
+	if creature.global_position.y < pool.y-0.6 and not _wet_hold:
+		_wet_hold = true
+		water_play.splash(pool,1.0)
+		_show_reaction("!", "He did not pack a swimsuit.")
+
+func _drop(mouse: Vector2) -> void:
+	if _paused: return
+	if is_instance_valid(water_play) and not _world_dirty and _refresh_phase == 0 and water_play.pick(mouse) != null:
+		var surface: Variant = water_play.surface_at(creature.global_position)
+		var shore: Variant = water_play.shore_from(creature.global_position) if surface != null else null
+		if shore != null and creature.enter_water(surface.y,shore):
+			_carrying = false
+			_pressed_creature = false
+			_wet_hold = false
+			_landing_marker.visible = false
+			brain.enabled = false
+			return
+	super._drop(mouse)
+
+func _cancel_water_carry() -> void:
+	if creature != null and _carrying:
+		creature.release_at(null)
+		_carrying = false
+		_pressed_creature = false
+		_wet_hold = false
+		_landing_marker.visible = false
+
 
 func _carry_from_tray() -> void:
 	if _paused: return
@@ -229,7 +308,9 @@ func _call_creature() -> void:
 
 func _notification(what: int) -> void:
 	super._notification(what)
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT: cancel_tree_drag()
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		cancel_tree_drag()
+		_cancel_water_carry()
 
 func _exit_tree() -> void:
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)

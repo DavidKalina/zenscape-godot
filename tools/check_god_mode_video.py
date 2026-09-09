@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the continuously animated ten-second God Mode capture for held frames."""
+"""Check continuously animated God Mode captures (at least ten seconds) for held frames."""
 import argparse
 import json
 import shutil

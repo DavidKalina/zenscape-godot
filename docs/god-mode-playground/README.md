@@ -89,3 +89,9 @@ limb physics; limbs may intersect scenery while he tumbles. Bigfoot's reactions
 are a small set of performances rather than persistent learned preferences.
 Play state is transient. Rain/lightning powers, rock throwing, mountain
 destruction and camper integration are future work.
+
+## Water mischief
+
+The same launcher now includes cursor dunking, paddling to shore, shake-off,
+and an offended look. See [water mischief](../water-mischief/README.md) for
+controls, implementation, and verification.
