@@ -21,6 +21,6 @@ Bigfoot uses props that fit his current hand choreography; the player can grab a
 
 Apple M5 Pro, Metal Forward+, 1440×960 window, redwood preset with 346 objects, no Bigfoot, 240 frames per phase after warmup. Median frame interval was 8.34 ms (~120 FPS) with interactions disabled, idle, bending, and recoiling; p95 stayed below 8.5 ms. First-tree activation fell from 22.5 ms to 0.2 ms after preparing collision on entering Enjoy. This is a measured scene, not a guarantee for all resolutions or environments. The renderer reported GPU duration as zero, so no GPU timing claim is made.
 
-A subsequent resident-enabled comparison retained an ~8.33 ms median and revealed an occasional ~52 ms scene callback with the new interactions disabled (baseline AI/navigation behavior). That intermittent resident hitch remains; it is separate from the fixed promotion cost and capture overhead.
+A subsequent resident-enabled comparison retained an ~8.33 ms median and revealed an occasional ~52 ms scene callback with the new interactions disabled (baseline AI/navigation behavior). That decision hitch is now addressed by [budgeted roaming decisions](../ai-planning/README.md); it was separate from promotion cost and capture overhead.
 
 The earlier movie recorder wrote full-resolution PNGs every frame and distorted perceived performance; it is not used for gameplay timing.

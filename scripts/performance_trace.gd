@@ -48,6 +48,9 @@ func _sample() -> void:
 		"camera":[scene.yaw,scene.polar,scene.distance],
 		"camera_target":[scene.target.x,scene.target.y,scene.target.z],
 		"orbiting":scene._orbiting,"panning":scene._panning}
+	row["ai_planning"] = scene.brain.choosing
+	row["ai_last_choice_peak_ms"] = scene.brain.last_choice_slice_usec/1000.0
+	row["ai_last_choice_slices"] = scene.brain.last_choice_slices
 	for key in _monitors: row[key] = Performance.get_monitor(_monitors[key])
 	samples.append(row)
 	_previous = now
