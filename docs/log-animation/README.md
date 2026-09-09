@@ -1,7 +1,7 @@
 # Log animation — first pass
 
 Bigfoot now steps into his facing before reaching. He grips the existing log
-without snapping its transform, heaves it into a cradle, and rolls it onto his
+without snapping its transform, heaves it into a cradle, and lifts it above his head, turns it, and lowers it onto his
 right shoulder. He takes a short checked walk with the load, then swings it
 forward into a physical toss. If there is no clear short route, he tosses from
 where he stands.
@@ -41,3 +41,35 @@ and previously recorded legacy failures.
 This is a reviewable first iteration. The local `log-animation.mp4` is the
 artifact for judging the timing, weight and silhouette in the next feedback
 round, not evidence that the whole animation library is finished.
+
+## Arm correction iteration
+
+The follow-up addresses elbow reversal, crossed support and hand penetration.
+Log grips now provide a stable elbow pole and explicit palm orientation. Palm
+positions intersect the cached visible log triangles, rather than using its
+centerline or its oversized collision capsule. The supporting hand fades out
+during shoulder transfer. Other interactions retain the original two-pass hand
+solve; the new oriented grips use a third wrist correction pass.
+
+Tests additionally measure log angular continuity, continuous carry grip error,
+elbow bend side, and interruption during the pre-release toss. A numeric pass
+is not a substitute for judging the motion; the final movie is retained for
+further visual feedback.
+
+Capture-only metadata prevents app focus changes from aborting the automated
+performance. Normal gameplay still cancels on focus loss.
+
+## Overhead transfer
+
+The log rises in front of him before its long axis rotates across the head.
+It stays at 3.65 m during the turn, then lowers onto the animated shoulder.
+The supporting hand stays engaged through the rise and releases during the turn.
+The focused test checks this overhead interval in addition to continuity,
+elbows, carry contact and interruption behavior.
+
+The full suite recorded 99/147 passes under fixed timing. The only difference
+from the previous 100/147 baseline was the wall-clock performance-trace test;
+it passes when rerun without fixed FPS. The other 47 existing failures remain.
+
+The final capture contains 1,214 frames with zero consecutive duplicates.
+The capture harness explicitly draws each frame to avoid stale desktop frames.

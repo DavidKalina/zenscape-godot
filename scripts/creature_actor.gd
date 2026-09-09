@@ -56,7 +56,8 @@ func can_roam() -> bool:
 
 ## True means this waypoint was reached; keep the stride continuous until the
 ## controller calls stop_walking at the final destination. False means progressing
-## or rejected by can_roam/input.
+## or rejected by can_roam/input. Gait is selected when entering WALKING;
+## stop_walking before changing it during a journey.
 func walk_step(destination: Vector3, speed: float, delta: float, gait := "Walk") -> bool:
 	if not can_roam() or not destination.is_finite() or not is_finite(speed) or not is_finite(delta) or speed <= 0.0 or delta <= 0.0:
 		return false
@@ -125,8 +126,8 @@ func cancel_action() -> void:
 func hand_position(side := "R") -> Vector3:
 	return HAND_REACH.palm(skeleton,side)
 
-func reach_hand(point: Vector3, weight: float, side := "R") -> void:
-	hand_targets[side] = {"point":point,"weight":weight}
+func reach_hand(point: Vector3, weight: float, side := "R", elbow: Variant = null, palm_basis: Variant = null) -> void:
+	hand_targets[side] = {"point":point,"weight":weight,"elbow":elbow,"basis":palm_basis}
 
 func clear_hand_targets() -> void:
 	hand_targets.clear()
@@ -459,7 +460,7 @@ func advance(delta: float) -> void:
 	if state in [State.ACTION,State.WALKING]:
 		for side: String in hand_targets:
 			var contact: Dictionary = hand_targets[side]
-			HAND_REACH.apply(skeleton,contact.point,contact.weight,side)
+			HAND_REACH.apply(skeleton,contact.point,contact.weight,side,contact.get("elbow"),contact.get("basis"))
 
 	if _breath != null:
 		skeleton.force_update_all_bone_transforms()

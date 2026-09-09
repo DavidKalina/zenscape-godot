@@ -372,7 +372,7 @@ func _call_creature() -> void:
 
 func _notification(what: int) -> void:
 	super._notification(what)
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and not bool(get_meta("movie_capture",false)):
 		if is_instance_valid(mischief): mischief.cancel()
 		if is_instance_valid(loose_props): loose_props.cancel()
 		cancel_tree_drag()

@@ -22,6 +22,7 @@ var _released := false
 var _owns_tree := false
 var _grip_start := Vector3.ZERO
 var _direction := Vector3.FORWARD
+var _log_faces := PackedVector3Array()
 var _log_grip_sign := 1.0
 var _log_grasp_pose := Transform3D.IDENTITY
 var _carry_route := PackedVector3Array()
@@ -159,7 +160,9 @@ func advance(delta: float) -> void:
 func _start() -> void:
 	scene.creature.stop_walking()
 	_direction = scene.creature.global_basis.z
-	if active == "log": _log_grip_sign = 1.0 if target.global_basis.x.dot(scene.creature.global_basis.x)>=0.0 else -1.0
+	if active == "log":
+		_log_grip_sign = 1.0 if target.global_basis.x.dot(scene.creature.global_basis.x)>=0.0 else -1.0
+		_log_faces = target.visual.transform*target.visual.mesh.get_faces()
 	phase = "perform"
 	_elapsed = 0.0
 	if not scene.creature.perform_action("LogLift" if active == "log" else "TreeShake" if active == "tree" else "StoneThrow",4.6 if active != "log" else 5.0):
@@ -195,9 +198,35 @@ func _release_prop(velocity: Vector3) -> void:
 	_released = true
 
 func _log_hands(pose: Transform3D, right_weight := 1.0, left_weight := 1.0) -> void:
+	var actor: CreatureActor = scene.creature
+	var axis := pose.basis.x*_log_grip_sign
+	# Approach the near surface instead of putting palm centers on the log's
+	# centerline. Under the shoulder, that near surface becomes the underside.
+	var toward_body: Vector3 = -actor.global_basis.z+Vector3.DOWN*0.5
+	var outward := (toward_body-axis*toward_body.dot(axis)).normalized()
+	var normal := -outward
+	var palm_basis := Basis(axis,normal.cross(axis).normalized(),normal).orthonormalized()
 	for side in ["R","L"]:
 		var sign := -1.0 if side == "R" else 1.0
-		scene.creature.reach_hand(pose.origin+pose.basis.x*sign*_log_grip_sign*0.55,right_weight if side == "R" else left_weight,side)
+		var center := pose.origin+axis*sign*0.55
+		var point := _log_surface(pose,center,outward)
+		var elbow: Vector3 = actor.to_global(Vector3(sign*0.9,1.2,0.35))
+		actor.reach_hand(point,right_weight if side == "R" else left_weight,side,elbow,palm_basis)
+
+func _log_surface(pose: Transform3D, center: Vector3, outward: Vector3) -> Vector3:
+	# The visible trunk is slimmer than its capsule (which includes branches).
+	# Cache its triangles once, then fit each palm to the actual near surface.
+	var inverse := pose.affine_inverse()
+	var start: Vector3 = inverse*(center+outward*0.8)
+	var end: Vector3 = inverse*(center-outward*0.5)
+	var nearest: Variant = null
+	var distance := INF
+	for i in range(0,_log_faces.size(),3):
+		var hit: Variant = Geometry3D.segment_intersects_triangle(start,end,_log_faces[i],_log_faces[i+1],_log_faces[i+2])
+		if hit != null and start.distance_squared_to(hit)<distance:
+			nearest = hit
+			distance = start.distance_squared_to(hit)
+	return pose*nearest+outward*0.015 if nearest != null else center+outward*0.3
 
 func _shoulder_pose() -> Transform3D:
 	var actor: CreatureActor = scene.creature
@@ -230,10 +259,18 @@ func _perform_log(t: float) -> void:
 		_log_grasp_pose = held.global_transform
 		held.grab()
 	var cradle: Transform3D = scene.creature.global_transform*Transform3D(Basis(Vector3.UP,PI if _log_grip_sign<0.0 else 0.0),Vector3(0,1.25,0.9))
-	var pose := _log_grasp_pose.interpolate_with(cradle,smoothstep(1.3,2.55,t))
-	if t>2.65: pose = cradle.interpolate_with(_shoulder_pose(),smoothstep(2.65,3.95,t))
+	var pose := _log_grasp_pose.interpolate_with(cradle,smoothstep(1.3,2.35,t))
+	# Lift in front first; only swing the long axis across his head once clear.
+	# A direct cradle-to-shoulder blend sweeps the trunk through his face.
+	var overhead := cradle
+	overhead.origin = scene.creature.to_global(Vector3(0,3.65,0.9))
+	var above_shoulder := _shoulder_pose()
+	above_shoulder.origin.y = overhead.origin.y
+	if t>2.35: pose = cradle.interpolate_with(overhead,smoothstep(2.35,3.05,t))
+	if t>3.05: pose = overhead.interpolate_with(above_shoulder,smoothstep(3.05,3.6,t))
+	if t>3.6: pose = above_shoulder.interpolate_with(_shoulder_pose(),smoothstep(3.6,4.15,t))
 	held.global_transform = pose
-	_log_hands(pose,1.0,1.0-smoothstep(3.55,4.15,t))
+	_log_hands(pose,1.0,1.0-smoothstep(3.05,3.55,t))
 	if t>=4.2:
 		scene.creature.cancel_action()
 		_plan_carry()
