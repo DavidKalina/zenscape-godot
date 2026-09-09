@@ -137,3 +137,13 @@ looks and soft breathing; Sleep adds a small droop and recovery to its breath lo
 Source actions with these names are removed before export to avoid stale clips.
 Tremor and routine actor checks pass. F8 comparison controls start hidden in the
 main game. The temporary worktree application/user-data name is not shipped.
+
+
+### Integration validation
+
+Merged main's audio and navigation/grab work, plus the checkout's audio-shutdown
+startup-test fix. Nature audio tests confirm alternating footsteps and cadence
+with the new gait. Combined tremor, routine actor/pause, personality, held, tree,
+and main-world interaction checks pass. Headless scene teardown still reports
+existing resource cleanup warnings. Final rest/tremor comparison was rendered
+and visually inspected; source assets and F8 comparison controls are retained.
