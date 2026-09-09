@@ -33,6 +33,7 @@ const TOOL_TEXT := {
 	"assets":"Pick a piece below, then click to place it.",
 	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
+	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -647,7 +648,12 @@ func _history_step(forward: bool) -> void:
 	if history.is_empty(): return
 	var saved_scene: Dictionary = history.back().get("favorite_scene",{})
 	var inverse := NativeGardenStore.capture(scene) if not saved_scene.is_empty() else {}
+	# A fire is a running simulation, not a record. Undoing the step that holds
+	# it has to put the field back to the world it just restored.
+	var burnt: bool = history.back().get("fire",false) or history.back().get("explosion",false)
 	if data.redo() if forward else data.undo():
+		var field: Variant = scene.get("_fire_field")
+		if burnt and field != null: field.restore({})
 		if not saved_scene.is_empty():
 			var other: Array = data._undo if forward else data._redo
 			other.back()["favorite_scene"] = inverse

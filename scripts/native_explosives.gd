@@ -26,6 +26,9 @@ var _syncing := false
 var _elapsed := 0.0
 var collapse_count := 0
 var _resident_before: Variant = null
+## Charges the fire has cooked off. The field never detonates anything itself;
+## it names the charge and this queue sends it through the ordinary path.
+var fire_queue: Array[int] = []
 
 func setup(target: NativeChunkEditor) -> void:
 	editor = target
@@ -175,6 +178,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func request_detonation() -> void:
 	if not _blocked(): requested = true
 
+## `FireField.explosive_triggered` lands here. One charge per physics frame, so
+## a chain of cook-offs reads as a chain rather than a single flash.
+func ignite_charge(id: int) -> void:
+	if id not in fire_queue: fire_queue.append(id)
+
 func can_restore() -> bool:
 	return not editor.data._undo.is_empty() and editor.data._undo.back().get("explosion",false)
 
@@ -203,6 +211,14 @@ func _physics_process(delta: float) -> void:
 	if requested:
 		requested = false
 		if not _blocked(): detonate()
+	elif not fire_queue.is_empty() and not _blocked():
+		var cooked: int = fire_queue.pop_front()
+		if not editor.data.object_by_id(cooked).is_empty():
+			var aimed := target_id
+			target_id = cooked
+			detonate()
+			if editor.data.object_by_id(aimed).is_empty(): aimed = 0
+			target_id = aimed
 	if not _blocked(): _elapsed += delta
 	for i in range(bodies.size()-1,-1,-1):
 		var body := bodies[i]
@@ -321,6 +337,17 @@ func detonate() -> void:
 	firing = false
 	collapse_count = collapses.size()
 	_sync_list()
+	# A blast leaves fire behind. Wet ground, snow or rain still smother it, so
+	# the field decides whether anything actually catches.
+	#
+	# `carve_native` zeroes cover inside the blast radius, so the crater has no
+	# fuel of its own and only the ring outside it can catch. The design's
+	# radius * 1.2 at full strength lands that ring below the ignition
+	# threshold; 1.6 at 1.5 puts a cell-wide band of grass over it.
+	var field: Variant = editor.scene.get("_fire_field")
+	if field != null:
+		for i in range(salvo.size()):
+			field.ignite(editor.terrain.to_local(origins[i]),salvo[i].blast_radius*1.6,1.5)
 	editor._set_status(("Mountain collapse · " if collapse_count > 0 else "Detonated %d charge(s) · " % salvo.size())+"Undo last blast restores the landscape.")
 
 func _launch_collapse(collapse: Dictionary) -> void:

@@ -69,6 +69,8 @@ global uniform float zs_water_growth;
 global uniform float zs_ice;
 global uniform float zs_snow;
 global uniform float zs_autumn;
+// Total burning intensity, 0..1, from FireField.total_intensity().
+global uniform float zs_fire;
 global uniform float zs_ground_wet;
 global uniform float zs_foliage_wet;
 global uniform float zs_flow_time;

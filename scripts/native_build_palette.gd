@@ -37,6 +37,7 @@ const GLYPHS := {
 	"ground":"bar","range":"peak","mountain":"peak",
 	"grass":"tuft","blades":"tuft","meadow":"tuft","paint":"disc","erase":"ring",
 	"pond":"disc","waterfall":"down","assets":"ring",
+	"ember":"flame",
 }
 ## The sky tab is not a tool: choosing it leaves the tool in hand alone and
 ## swaps the strip for the scene's own weather, light and air.
@@ -282,7 +283,7 @@ func _build() -> void:
 		button.pressed.connect(func() -> void: close_palette(); entry[2].call())
 		_library.add_child(button)
 		_entries["command_"+entry[0]] = {"button":button,"group":"Scene","title":entry[1],"blurb":"Care for your diorama"}
-	for entry: Array in [["bigfoot","Bigfoot","Creatures","A curious visitor. Set him down and watch him settle."], ["wind_gust","Wind gust","Weather","Drag the ground to aim a gust. Release to send it."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."]]:
+	for entry: Array in [["bigfoot","Bigfoot","Creatures","A curious visitor. Set him down and watch him settle."], ["wind_gust","Wind gust","Weather","Drag the ground to aim a gust. Release to send it."], ["fireflies","Fireflies","Creatures","Invite little lights, even in daylight."], ["fog_bank","Fog bank","Weather","Wrap the landscape in a soft bank of mist."], ["ember","Ember","Weather","Drop a live ember. Dry grass catches; wet ground and snow smother it."]]:
 		var button := Button.new()
 		_library.add_child(button)
 		button.pressed.connect(_take_special.bind(entry[0]))
@@ -1097,6 +1098,7 @@ func ensure_thumbnails() -> void:
 		var symbol := ToolGlyph.new()
 		symbol.kind = GLYPHS.get(id,"disc")
 		if id in ["wind_gust","fog_bank"]: symbol.kind = "wave"
+		if id == "ember": symbol.kind = "flame"
 		_thumbs[id] = _render_symbol(symbol)
 	if _bar.visible: _refresh_results()
 	if _tool_rail != null: _tool_rail.sync()
@@ -1328,7 +1330,7 @@ func _style_bigfoot(model: Node3D) -> void:
 		if "_n7_" not in mesh.name and "_n8_" not in mesh.name: mesh.material_override = coat
 
 func _take_special(id: String) -> void:
-	if id in ["bigfoot","wind_gust"]: editor.select_tool("select")
+	if id in ["bigfoot","wind_gust","ember"]: editor.select_tool("select")
 	close_palette()
 	match id:
 		"fireflies": editor.scene._fireflies.called = true
@@ -1342,6 +1344,12 @@ func _place_special(point: Vector2) -> bool:
 	if _placing == "wind_gust":
 		if editor.scene.has_method("send_scene_gust"): editor.scene.send_scene_gust(world)
 		else: editor.scene._atmosphere.send_gust(world)
+	elif _placing == "ember":
+		# No record is kept. The ember is a match, not an object: the fire field
+		# takes the heat and the world remembers only what burns.
+		var field: Variant = editor.scene.get("_fire_field")
+		if field == null: return false
+		field.ignite(hit as Vector3,0.6,1.0)
 	elif _placing == "bigfoot":
 		if editor.scene.has_method("invite_bigfoot"):
 			return editor.scene.invite_bigfoot(world)
@@ -1519,10 +1527,10 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _bar.visible and editor.pointer_in_world(event.position):
-			var placed := _place_special(event.position) if _placing in ["bigfoot","wind_gust"] else editor.place_at(event.position)
+			var placed := _place_special(event.position) if _placing in ["bigfoot","wind_gust","ember"] else editor.place_at(event.position)
 			if placed:
 				_hand.release(true)
-				if _placing in ["bigfoot","wind_gust"]: _finish_placing(true)
+				if _placing in ["bigfoot","wind_gust","ember"]: _finish_placing(true)
 			get_viewport().set_input_as_handled()
 			return
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1766,6 +1774,14 @@ class ToolGlyph:
 					draw_line(root,root+Vector2((float(i)-2.0)*span*0.2,-span*1.5),color,2.5)
 			"ring":
 				draw_arc(middle,span,0.0,TAU,28,color,3.0)
+			"flame":
+				var body := PackedVector2Array()
+				for i in range(25):
+					var t := float(i)/24.0*TAU
+					# A teardrop: wide and round at the base, drawn to a tip.
+					var lick := 1.0-0.42*cos(t)
+					body.append(middle+Vector2(sin(t)*span*0.78*lick,-cos(t)*span*1.15+span*0.2))
+				draw_colored_polygon(body,color)
 			_:
 				draw_circle(middle,span,color)
 

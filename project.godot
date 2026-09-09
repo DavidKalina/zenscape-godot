@@ -82,6 +82,10 @@ zs_autumn={
 "type": "float",
 "value": 0.0
 }
+zs_fire={
+"type": "float",
+"value": 0.0
+}
 zs_motion_time={
 "type": "float",
 "value": 0.0
