@@ -160,6 +160,21 @@ func enable_wind(field: Node, ground_probe: Callable, safe_landing: Callable) ->
 		wind_body.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_ON
 	wind_body.field = field
 
+## Environmental contact enters the same physical tumble/recovery as wind.
+func receive_impulse(impulse: Vector3) -> bool:
+	if wind_body == null or not impulse.is_finite() or impulse.length() < 0.1:
+		return false
+	if state in [State.HELD, State.LANDING, State.RECOVERING]: return false
+	if state != State.WIND:
+		_standing_basis = global_basis.orthonormalized()
+		wind_body.start(global_transform)
+		_settled_time = 0.0
+		_visual.transform = Transform3D.IDENTITY
+		_state(State.WIND)
+		_play("Held")
+	wind_body.apply_impulse(impulse.limit_length(300.0), Vector3.UP*0.65)
+	return true
+
 func _physics_process(delta: float) -> void:
 	if wind_body == null or not is_instance_valid(_wind_field): return
 	if state == State.HELD or state == State.LANDING: return
