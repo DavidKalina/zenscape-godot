@@ -10,6 +10,9 @@ var fog_panel: PanelContainer
 func _ready() -> void:
 	choices = {"composition":"valley","landform":"glacial-valley"}
 	super._ready()
+	# The parent mountain study freezes the shared clock for still comparisons.
+	# This atmosphere demo needs live wind integration and gusts.
+	_paused = false
 	living_material = ShaderMaterial.new()
 	living_material.shader = preload("res://shaders/prototype_living_fog.gdshader")
 	living_volume = FogVolume.new()

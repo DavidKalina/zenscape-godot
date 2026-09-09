@@ -18,11 +18,19 @@ func run() -> void:
 	root.content_scale_factor = 1.0
 	scene.cloud_drift = false
 	var snapshot := var_to_bytes(scene._chunk_editor.data._snapshot())
-	scene._process(0)
+	var start_travel: Vector2 = scene._atmosphere._travel
+	for i in range(30): scene._process(1.0/30.0)
+	if scene._atmosphere._travel.distance_to(start_travel)<0.1:
+		push_error("FAIL living fog: demo startup leaves shared wind frozen")
+		quit(1)
+		return
 	await settle()
 	root.get_texture().get_image().save_png(output.path_join("rolling-calm.png"))
+	var calm_travel: float = scene._atmosphere._travel.distance_to(start_travel)
+	var fast_start: Vector2 = scene._atmosphere._travel
 	scene._atmosphere.strength = 3.0
 	for i in range(360): scene._process(1.0/30.0)
+	assert(scene._atmosphere._travel.distance_to(fast_start)/12.0>calm_travel*1.5,"Wind control failed to accelerate shared air")
 	await settle()
 	root.get_texture().get_image().save_png(output.path_join("rolling-wind.png"))
 	assert(snapshot==var_to_bytes(scene._chunk_editor.data._snapshot()),"Atmosphere changed terrain records")
@@ -31,6 +39,6 @@ func run() -> void:
 	scene._process(0)
 	await settle()
 	root.get_texture().get_image().save_png(output.path_join("interactive.png"))
-	print("PASS native fog: calm and wind captures; terrain unchanged")
+	print("PASS native fog: startup wind advances; strong wind accelerates; terrain unchanged")
 	scene.free()
 	quit()
