@@ -170,7 +170,7 @@ def tremor(t):
     rotate('Head',(0,1,0),-.65*wobble)
     rotate('Head',(1,0,0),-.17*shock)
     for side,sign in [('R',-1),('L',1)]:
-        rotate('UpperArm_'+side,(0,1,0),sign*(.65*recover+.22*shock))
+        rotate('UpperArm_'+side,(0,1,0),-sign*(.65*recover+.22*shock))
         rotate('UpperArm_'+side,(1,0,0),-.25*recover+sign*.3*wobble)
         rotate('Forearm_'+side,(1,0,0),-.15-.55*recover-sign*.4*wobble)
         rotate('Hand_'+side,(1,0,0),.22*shock+sign*.3*wobble)
