@@ -1,6 +1,7 @@
 extends "res://studies/bigfoot_life.gd"
 ## A tactile, preset-first playground. The tree owns elasticity and contact;
 ## this scene owns gestures and the resident's response to player interference.
+var loose_props: Node3D
 var water_play: Node3D
 var _wet_hold := false
 var _water_reaction := false
@@ -40,7 +41,7 @@ func _ready() -> void:
 	_update_camera()
 	var column := _play_panel.get_child(0)
 	column.get_child(0).text = "A little mischief"
-	column.get_child(1).text = "Drag Bigfoot over the pool to dunk him. Release to watch him paddle out.\nPull the tree · Right drag to orbit · Scroll to zoom"
+	column.get_child(1).text = "Grab loose stones, logs or boulders. Swing and release to throw.\nDunk Bigfoot in the pool · Pull the tree\nRight drag to orbit · Scroll to zoom"
 	_message.text = "A quiet afternoon. For now."
 	_mode_button.hide()
 	_tool_button.text = "Hands · switch to wind"
@@ -71,6 +72,9 @@ func _ready() -> void:
 	add_child(water_play)
 	water_play.setup(self)
 	creature.water_splash.connect(water_play.splash)
+	loose_props = preload("res://scripts/play_loose_props.gd").new()
+	add_child(loose_props)
+	loose_props.setup(self)
 	_play_ready = true
 
 func _enrich_clearing() -> void:
@@ -94,6 +98,7 @@ func _enrich_clearing() -> void:
 
 func _tool_changed() -> void:
 	cancel_tree_drag()
+	if is_instance_valid(loose_props): loose_props.cancel()
 	if _carrying: _cancel_water_carry()
 	_tool_button.text = "Wind · switch to hands" if gust_tool else "Hands · switch to wind"
 
@@ -110,11 +115,18 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if not _play_ready: return
 	var mouse := get_viewport().get_mouse_position()
-	_hover_tree = not _paused and not gust_tool and not _carrying and not _over_controls(mouse) and _pick_tree(mouse)
+	loose_props.hover(mouse)
+	_hover_tree = not _paused and not gust_tool and not _carrying and loose_props.grabbed == null and loose_props.hovered == null and not _over_controls(mouse) and _pick_tree(mouse)
 	spring_tree.set_highlight(_hover_tree or _tree_drag)
 	Input.set_default_cursor_shape(Input.CURSOR_DRAG if _tree_drag else (Input.CURSOR_POINTING_HAND if _hover_tree else Input.CURSOR_ARROW))
 	_cursor_hint.position = mouse+Vector2(20,20)
 	_cursor_hint.text = "Release · Esc to forgive" if _tree_drag else ("Release to let him paddle" if _wet_hold else ("Pull me" if _hover_tree else ""))
+	if loose_props.grabbed != null:
+		_cursor_hint.text = "Swing and release · Esc to put it back"
+		Input.set_default_cursor_shape(Input.CURSOR_DRAG)
+	elif loose_props.hovered != null:
+		_cursor_hint.text = "Grab " + loose_props.hovered.kind
+		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 	_tension_bar.visible = _tree_drag
 	_tension_bar.value = spring_tree.tension
 	_wind_hint.text = "Paused · P to resume" if _paused else ("Drag ground to aim wind · P pause" if gust_tool else "Dunk him in the pool · Pull a tree · P pause · R reset")
@@ -126,7 +138,7 @@ func _process(delta: float) -> void:
 		var gaze: Variant = gaze_plane.intersects_ray(camera.project_ray_origin(mouse),camera.project_ray_normal(mouse))
 		creature.track_gaze(gaze if gaze != null else camera.global_position)
 	_attention_time = maxf(0,_attention_time-delta)
-	brain.enabled = not _tree_drag and _attention_time <= 0 and creature.state not in [CreatureActor.State.SWIMMING,CreatureActor.State.SHAKING]
+	brain.enabled = not loose_props.busy() and not _tree_drag and _attention_time <= 0 and creature.state not in [CreatureActor.State.SWIMMING,CreatureActor.State.SHAKING]
 	if _tree_drag and creature.can_roam():
 		creature.stop_walking()
 		creature.track_gaze(spring_tree.center(3.0))
@@ -136,8 +148,19 @@ func _process(delta: float) -> void:
 			_braced = true
 
 func _physics_process(delta: float) -> void:
+	if is_instance_valid(loose_props): loose_props.advance(delta)
 	super._physics_process(delta)
 	if not _play_ready or _paused: return
+	if creature.state == CreatureActor.State.WIND:
+		var body_point: Vector3 = creature.wind_body.global_position
+		var surface: Variant = water_play.surface_at(body_point)
+		if surface != null and body_point.y<surface.y+0.25:
+			var shore: Variant = water_play.shore_from(body_point)
+			if shore != null:
+				creature.pick_up()
+				creature.global_position = surface-Vector3.UP*1.65
+				creature.enter_water(surface.y,shore)
+				brain.enabled = false
 	var previous := spring_tree.bend
 	spring_tree.advance(delta)
 	var contact := spring_tree.sweep_contact(previous,creature.global_position+Vector3.UP*1.6,delta)
@@ -191,6 +214,17 @@ func cancel_tree_drag() -> void:
 	_cursor_hint.text = ""
 
 func _input(event: InputEvent) -> void:
+	if is_instance_valid(loose_props) and loose_props.grabbed != null:
+		if event is InputEventMouseMotion:
+			loose_props.move_grab(event.position)
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			if _paused or _over_controls(event.position) or not get_viewport().get_visible_rect().has_point(event.position): loose_props.cancel()
+			else: loose_props.release()
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE,KEY_P,KEY_R]: loose_props.cancel()
 	if _tree_drag:
 		if event is InputEventMouseMotion:
 			move_tree_drag(event.position)
@@ -209,6 +243,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		super._unhandled_input(event)
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not _paused and not gust_tool and not _carrying and not _over_controls(event.position):
+		var loose: RigidBody3D = loose_props.pick(event.position)
+		if loose != null and not pick_creature(event.position):
+			loose_props.begin_grab(loose,event.position)
+			get_viewport().set_input_as_handled()
+			return
 		if not pick_creature(event.position) and _pick_tree(event.position):
 			begin_tree_drag(event.position)
 			get_viewport().set_input_as_handled()
@@ -237,6 +276,7 @@ func _on_creature_state(value: CreatureActor.State) -> void:
 		_show_reaction("…", "He's fairly sure you had something to do with that.")
 
 func reset_creature() -> void:
+	if is_instance_valid(loose_props): loose_props.reset()
 	cancel_tree_drag()
 	if is_instance_valid(spring_tree): spring_tree.reset()
 	_tree_hit = false
@@ -249,6 +289,7 @@ func reset_creature() -> void:
 
 func _begin_carry(mouse: Vector2) -> void:
 	if _paused: return
+	if is_instance_valid(loose_props): loose_props.cancel()
 	_water_reaction = false
 	_offended_time = 0.0
 	_wet_hold = false
@@ -309,8 +350,17 @@ func _call_creature() -> void:
 func _notification(what: int) -> void:
 	super._notification(what)
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		if is_instance_valid(loose_props): loose_props.cancel()
 		cancel_tree_drag()
 		_cancel_water_carry()
 
 func _exit_tree() -> void:
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+func _probe_safe(point: Vector3) -> Variant:
+	var safe: Variant = super._probe_safe(point)
+	if safe != null or not is_instance_valid(loose_props): return safe
+	# A rolling prop can occupy the old landing point without a terrain edit.
+	# Use current clearance when choosing recovery, not the last static home.
+	var nearby: Variant = navigation.nearest_safe(point)
+	return nearby if nearby != null and valid_landing(nearby) else null

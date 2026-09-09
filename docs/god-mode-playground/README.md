@@ -95,3 +95,9 @@ destruction and camper integration are future work.
 The same launcher now includes cursor dunking, paddling to shore, shake-off,
 and an offended look. See [water mischief](../water-mischief/README.md) for
 controls, implementation, and verification.
+
+## Loose-object mischief
+
+The same launcher also includes throwable stones, tumbling/floating logs, and
+selected heavy boulders. See [loose-object mischief](../loose-mischief/README.md)
+for controls, behavior, and verification.

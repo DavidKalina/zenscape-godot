@@ -60,7 +60,8 @@ Godot input and visual inspection, not a hands-on player feel assessment.
 
 ## Limits
 
-This milestone targets the playground's pond. Rivers, waterfalls, and wind or
-tree impacts that send him into water do not yet initiate swimming. Carrying
+This milestone targets the playground's pond. Rivers and waterfall streams
+do not initiate swimming. The loose-object update also connects physical
+tumbles into the pond to swimming and shore recovery. Carrying
 over the pool automatically dunks him; independent vertical cursor control,
 water powers, wet-fur shading, and dedicated splash sounds are future work.
