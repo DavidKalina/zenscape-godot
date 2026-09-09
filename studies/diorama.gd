@@ -3,6 +3,9 @@ extends "res://studies/fidelity_life.gd"
 var library_path := "user://dioramas"
 var recent_file := "user://diorama-recent.cfg"
 var _has_world := false
+var title_loaded := false
+var title_seed := -1
+var title_recipe := {}
 var _menu: Control
 var _save_copy: Button
 var _menu_orbit := false
@@ -30,6 +33,11 @@ func _seed_loose_stones() -> void:
 	pass
 
 func _ready() -> void:
+	set_process(false)
+	var loading := preload("res://scripts/title_loading.gd").new()
+	add_child(loading)
+	await get_tree().process_frame
+	await get_tree().process_frame
 	resident_enabled = false
 	super._ready()
 	get_window().title = "ZenScape"
@@ -52,8 +60,6 @@ func _ready() -> void:
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
 	# The cover is disposable; New restores the blank-world defaults above.
-	_chunk_editor.form_landscape("horn","woodland",false)
-	_frame_title()
 	_make_shell()
 	_resident_play.setup(self)
 	add_child(_resident_wind)
@@ -65,6 +71,18 @@ func _ready() -> void:
 		if not path.is_empty() and DisplayServer.get_name() != "headless": OS.shell_show_in_file_manager(path))
 	_chunk_editor.status_changed.connect(func(text: String) -> void:
 		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
+	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
+	_toolbar.hide()
+	_menu.hide()
+	loading.stage("Raising the land · growing the forest")
+	await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
+	loading.stage("Gathering light")
+	_frame_title()
+	await get_tree().process_frame
+	loading.queue_free()
+	_notice.text = ""
+	title_loaded = true
+	set_process(true)
 	show_menu()
 
 func _process(delta: float) -> void:
@@ -86,10 +104,11 @@ func _frame_title() -> void:
 	polar = acos(offset.y/distance)
 	yaw = atan2(offset.x,offset.z)
 	_auto_orbit_speed = TAU/60.0*0.22
-	SceneLookPresets.apply(self,"alpine_morning",{
-		"phase":0.68,"weather":"fair","clouds":0.38,"mist":0.10,"haze":0.20,"wind":0.9,
-		"summit_mist":0.20,"rays":0.35,
-		"colors":{"sky":"777582","horizon":"a69a93","glow":"efd1ab","sun":"ffdfac"}})
+	if title_recipe.family in ["valley","canyon"]:
+		target.y = 2.0
+		distance = 24.0
+		polar = 1.12
+	SceneLookPresets.apply(self,title_recipe.look,title_recipe.overrides)
 	_update_camera()
 
 func _frame_diorama() -> void:

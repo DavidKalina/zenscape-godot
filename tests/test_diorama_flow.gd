@@ -19,10 +19,12 @@ func _run() -> void:
 	early_key.pressed = true
 	scene._unhandled_input(early_key)
 	var folder := "/private/tmp/zenscape-diorama-test-"+str(Time.get_ticks_usec())
+	scene.title_seed = 37
 	scene.library_path = folder
 	scene.recent_file = folder+"/recent.cfg"
 	root.size = Vector2i(1440,960)
 	root.add_child(scene)
+	while not scene.title_loaded: await process_frame
 	await process_frame
 	check(scene._menu.visible and not scene._has_world,"Startup offers a menu without creating a world")
 	check(not scene._paused and scene._auto_orbit,"Cover landscape is alive and gently rotating")
