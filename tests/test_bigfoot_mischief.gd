@@ -28,9 +28,26 @@ func _run() -> void:
 		var peak := 0.0
 		var body: Node3D = play.target
 		var origin: Vector3 = body.global_position if body != null else Vector3.ZERO
+		var previous_stone: Variant = null
+		var stone_step := 0.0
+		var stone_grip_error := 0.0
+		var stone_windup := false
 		for i in range(2100):
 			await physics_frame
 			if play.held != null: grasped = true
+			if kind=="stone" and play.held!=null:
+				if previous_stone!=null: stone_step = maxf(stone_step,previous_stone.distance_to(body.global_position))
+				previous_stone = body.global_position
+				if scene.creature._age>1.2 and scene.creature.hand_targets.has("R"):
+					var error: float = scene.creature.hand_position().distance_to(scene.creature.hand_targets.R.point)
+					if error>stone_grip_error:
+						stone_grip_error = error
+				if scene.creature._age>2.45 and scene.creature._age<2.55:
+					var local: Vector3 = scene.creature.to_local(body.global_position)
+					stone_windup = local.y>2.4 and local.z<0.1
+			elif kind=="stone" and previous_stone!=null and body.launched:
+				stone_step = maxf(stone_step,previous_stone.distance_to(body.global_position))
+				previous_stone = null
 			if kind == "log" and play.phase == "perform" and scene.creature._age>2.4 and scene.creature._age<2.42:
 				for side in ["R","L"]:
 					check(scene.creature.hand_position(side).distance_to(scene.creature.hand_targets[side].point)<0.15,"Both palms contact the lifted log")
@@ -43,11 +60,15 @@ func _run() -> void:
 			if not play.busy(): break
 		await ticks(120)
 		if kind != "tree" and body != null: peak = maxf(peak,body.global_position.distance_to(origin))
+		if kind=="stone":
+			check(stone_windup,"Rock winds up beside the shoulder")
+			check(stone_step<0.2,"Rock pickup and release stay continuous")
+			check(stone_grip_error<0.2,"Rock stays in the throwing palm")
 		check(kind in play.history,"Completes "+kind+" ("+play.last_cancel+")")
 		if kind == "tree": check(peak>0.4,"Bigfoot visibly tensions the real spring")
 		else: check(grasped and launched and peak>2.0,"Same "+kind+" is grasped and flies under physics")
 		check(scene.creature.can_roam(),"Resumes life after "+kind)
-		results[kind] = {"grasped":grasped,"launched":launched,"peak":peak,"cancel":play.last_cancel}
+		results[kind] = {"grasped":grasped,"launched":launched,"peak":peak,"cancel":play.last_cancel,"stone_step":stone_step,"stone_grip_error":stone_grip_error}
 
 	# Pause preserves the resident's ownership and exact physical pose.
 	await prepare("log")

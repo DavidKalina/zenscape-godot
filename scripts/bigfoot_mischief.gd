@@ -47,6 +47,10 @@ func setup(playground: Node) -> void:
 		if not library.has_animation(clip): library.add_animation(clip,log_player.get_animation(clip).duplicate())
 	library.get_animation("LogCarry").loop_mode = Animation.LOOP_LINEAR
 	log_source.free()
+	var stone_source := preload("res://assets/models/zenscape-bigfoot-stone.glb").instantiate()
+	var stone_player: AnimationPlayer = stone_source.find_child("AnimationPlayer",true,false)
+	library.add_animation("StoneHeave",stone_player.get_animation("StoneHeave").duplicate())
+	stone_source.free()
 
 func busy() -> bool: return not active.is_empty()
 
@@ -165,30 +169,40 @@ func _start() -> void:
 		_log_faces = target.visual.transform*target.visual.mesh.get_faces()
 	phase = "perform"
 	_elapsed = 0.0
-	if not scene.creature.perform_action("LogLift" if active == "log" else "TreeShake" if active == "tree" else "StoneThrow",4.6 if active != "log" else 5.0):
+	if not scene.creature.perform_action("LogLift" if active == "log" else "TreeShake" if active == "tree" else "StoneHeave",4.6 if active != "log" else 5.0):
 		cancel("animation unavailable")
 
+func _stone_hand(point: Vector3, weight: float) -> void:
+	var actor: CreatureActor = scene.creature
+	var right := actor.global_basis.x
+	var palm_basis := Basis(right,Vector3.UP.cross(right),Vector3.UP)
+	actor.reach_hand(point-Vector3.UP*target.radius*0.75,weight,"R",actor.to_global(Vector3(-0.95,1.85,0.1)),palm_basis)
+
 func _perform_throw(t: float) -> void:
-	if _released: return
-	if t<1.05:
-		scene.creature.reach_hand(target.global_position,smoothstep(0.25,0.9,t))
+	var actor: CreatureActor = scene.creature
+	var chest: Vector3 = actor.to_global(Vector3(-0.55,1.8,0.65))
+	var cocked: Vector3 = actor.to_global(Vector3(-0.65,2.55,-0.15))
+	var release: Vector3 = actor.to_global(Vector3(-0.55,2.3,1.25))
+	if _released:
+		var follow: Vector3 = actor.to_global(Vector3(-0.25,1.7,1.1))
+		_stone_hand(release.lerp(follow,smoothstep(2.95,3.35,t)),1.0-smoothstep(3.2,4.15,t))
 		return
 	if held == null:
+		_stone_hand(target.global_position,smoothstep(0.25,0.95,t))
+		if t<1.05: return
 		if target.held or target.linear_velocity.length()>0.5:
 			cancel("prop no longer available")
 			return
 		held = target
 		_grip_start = held.global_position
 		held.grab()
-	held.global_position = _grip_start.lerp(scene.creature.hand_position(),smoothstep(1.05,1.3,t))
-	scene.creature.clear_hand_targets()
+	var point := _grip_start.lerp(chest,smoothstep(1.05,1.85,t))
+	if t>1.85: point = chest.lerp(cocked,smoothstep(1.85,2.55,t))
+	if t>2.55: point = cocked.lerp(release,smoothstep(2.55,2.95,t))
+	held.global_position = point
+	_stone_hand(point,1.0)
 	if t>=2.95:
-		var launch: Vector3 = held.global_position
-		var ahead: float = (launch-scene.creature.global_position).dot(_direction)
-		if ahead<1.05: launch += _direction*(1.05-ahead)
-		held.global_position = launch
 		_release_prop(_direction*6.8+Vector3.UP*3.0)
-		scene.creature.clear_hand_targets()
 		scene._show_reaction("!","He can throw things too.")
 
 func _release_prop(velocity: Vector3) -> void:

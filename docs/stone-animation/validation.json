@@ -1,0 +1,45 @@
+{
+  "regression": {
+    "actions": {
+      "log": {
+        "cancel": "",
+        "grasped": true,
+        "launched": true,
+        "peak": 6.15519237518311,
+        "stone_grip_error": 0.0,
+        "stone_step": 0.0
+      },
+      "stone": {
+        "cancel": "",
+        "grasped": true,
+        "launched": true,
+        "peak": 14.4328813552856,
+        "stone_grip_error": 1.13874511953327e-06,
+        "stone_step": 0.122345097362995
+      },
+      "tree": {
+        "cancel": "",
+        "grasped": false,
+        "launched": false,
+        "peak": 0.559996113632665,
+        "stone_grip_error": 0.0,
+        "stone_step": 0.0
+      }
+    },
+    "failures": 0,
+    "history": [
+      "stone",
+      "log",
+      "tree"
+    ]
+  },
+  "video": {
+    "frames": 607,
+    "duplicate_frames": 0,
+    "duplicate_fraction": 0.0,
+    "longest_identical_run": 1,
+    "passed": true
+  },
+  "visual_review": "Pickup, bent-elbow windup and follow-through inspected in rendered frames.",
+  "full_suite": "Not rerun for this scoped pass; preceding baseline is documented in docs/log-animation."
+}
