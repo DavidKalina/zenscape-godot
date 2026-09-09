@@ -34,6 +34,42 @@ func run() -> void:
 	ambience.muted = false
 	ambience.update_state(0.1,false,2,1,0,0,1,1)
 	check(not ambience.water_player.stream_paused,"Unmuting resumes ambience")
+	# Exercise the production scene wiring, then remove all water through the editor.
+	ambience.water_layout.refresh_in = 0.0
+	ambience.update_world(0.05,false,scene)
+	check(ambience.water_layout.points.has("fall"),"Imported waterfall is found in rendered geometry")
+	check(ambience.water_player.global_position == ambience.water_layout.points.get("fall"),"Waterfall sound follows its actual surface")
+	scene._chunk_editor.start_flat()
+	ambience.water_layout.refresh_in = 0.0
+	ambience.update_world(1.0,false,scene)
+	check(ambience.water_layout.points.is_empty(),"Deleting water removes every water emitter")
+	check(ambience.nature.beds.stream.volume_db <= -79 and ambience.nature.beds.shore.volume_db <= -79,"Dry land does not play stream or shore noise")
+	var editor = scene._chunk_editor
+	editor.data.begin_stroke()
+	editor.data.mountain(Vector2(-5,0),7.0,10.0)
+	editor.data.brush(Vector2(3,0),3.0,1.0,"lower",0.0)
+	editor.data.end_stroke()
+	check(editor.data.add_pond(Vector2(3,0),-0.2),"Create authored pond for sound")
+	editor.refresh()
+	ambience.water_layout.refresh_in = 0.0
+	ambience.update_world(0.05,false,scene)
+	check(ambience.water_layout.points.has("shore"),"Authored pond receives a shore emitter")
+	editor.start_flat()
+	for i in range(editor.data.points.size()):
+		editor.data.heights[i] = 2.5-editor.data.points[i].x*0.3
+	check(editor.data.add_waterfall(Vector2(-4,0),Vector2(4,0),0.5),"Create authored fall for sound")
+	editor.refresh()
+	ambience.water_layout.refresh_in = 0.0
+	ambience.update_world(0.05,false,scene)
+	check(ambience.water_layout.points.has("fall"),"Authored waterfall receives an emitter")
+	editor.start_flat()
+	editor.form_range()
+	editor.fill_landscape_streams()
+	ambience.water_layout.refresh_in = 0.0
+	ambience.update_world(0.05,false,scene)
+	check(ambience.water_layout.points.has("stream"),"Authored landscape stream receives its own emitter")
+	ambience.update_world(0.05,true,scene)
+	for player in ambience.nature.beds.values(): check(player.stream_paused,"Scene pause reaches new sound beds")
 	scene.queue_free()
 	await process_frame
 	print("PASS: ambience weather, growth, loops, pause and mute" if failures == 0 else "FAIL: ambience")

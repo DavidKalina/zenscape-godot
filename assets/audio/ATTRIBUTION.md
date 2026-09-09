@@ -1,8 +1,29 @@
-# Thunder recordings
+# Audio attribution
 
-thunder-1.mp3, thunder-2.mp3, thunder-3.mp3 are the original ZenScape edits of
-“Thunderstorm after hot summer day”, by stephan, public domain.
-Source: https://commons.wikimedia.org/wiki/File:Thunderstorm_after_hot_summer_day_17_minutes_02_of_04.ogg
+Wildlife recordings from Wikimedia Commons, processed (mono, trimmed,
+loudness-normalized) for ZenScape. CC BY-SA clips require this credit to
+ship with the game; the NPS public-domain clips are credited as a courtesy.
 
-Copied from ZenScape public/audio with its attribution. The source project's
-mine-thunder.py documents the 13-second excerpt selection and fades.
+| file | license | author | source |
+|---|---|---|---|
+| chickadee.mp3 | CC BY-SA 4.0 | Matthias Sirch | https://commons.wikimedia.org/wiki/File%3APoecile_gambeli_-_Mountain_Chickadee_XC395088.mp3 |
+| jay-1.mp3 | CC BY-SA 3.0 | Jonathon Jongsma | https://commons.wikimedia.org/wiki/File%3ACyanocitta_stelleri_-_Steller%27s_Jay_XC109654.mp3 |
+| jay-2.mp3 | CC BY-SA 3.0 | Jonathon Jongsma | https://commons.wikimedia.org/wiki/File%3ACyanocitta_stelleri_-_Steller%27s_Jay_XC110259.mp3 |
+| nutcracker.mp3 | Public domain | NPS / Shan Burson | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_Clark%E2%80%99s_Nutcracker_-_001.mp3 |
+| hermit-thrush.mp3 | CC BY-SA 4.0 | Leonardo Guzman Hernandez | https://commons.wikimedia.org/wiki/File%3ACatharus_guttatus_-_Hermit_Thrush_XC389885.mp3 |
+| kinglet.mp3 | CC BY-SA 4.0 | Jonathon Jongsma | https://commons.wikimedia.org/wiki/File%3ARegulus_calendula_-_Ruby-crowned_Kinglet_XC175095.mp3 |
+| owl.mp3 | CC BY-SA 4.0 | Michael & Katie LaTour | https://commons.wikimedia.org/wiki/File%3ABubo_virginianus_-_Great_Horned_Owl_XC450919.mp3 |
+| raven.mp3 | Public domain | NPS/David Restivo | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_Common_Raven_-_001.mp3 |
+| bluebird.mp3 | Public domain | NPS & MSU Acoustic Atlas/Jennifer Jerrett | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_Mountain_Bluebird_-_001.mp3 |
+| robin.mp3 | Public domain | NPS & MSU Acoustic Atlas/Jennifer Jerrett | https://commons.wikimedia.org/wiki/File%3AYellowstone_sound_library_-_American_Robin_-_001.mp3 |
+| thunder-1.mp3 | Public domain | stephan | https://commons.wikimedia.org/wiki/File:Thunderstorm_after_hot_summer_day_17_minutes_02_of_04.ogg |
+| thunder-2.mp3 | Public domain | stephan | https://commons.wikimedia.org/wiki/File:Thunderstorm_after_hot_summer_day_17_minutes_02_of_04.ogg |
+| thunder-3.mp3 | Public domain | stephan | https://commons.wikimedia.org/wiki/File:Thunderstorm_after_hot_summer_day_17_minutes_02_of_04.ogg |
+
+Wildlife and thunder edits copied unchanged from the Electron ZenScape project.
+CC BY-SA license texts: https://creativecommons.org/licenses/by-sa/3.0/ and
+https://creativecommons.org/licenses/by-sa/4.0/.
+
+Procedural stream, shore, cricket, frog and footstep WAVs are baked native
+adaptations of ZenScape audio.js. Regenerate with tools/generate_nature_audio.py.
+Existing wind, rain and waterfall beds are procedural ZenScape audio.

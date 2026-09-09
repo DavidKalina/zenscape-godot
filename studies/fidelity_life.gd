@@ -32,6 +32,7 @@ func _ready() -> void:
 	add_child(creature)
 	creature.position = spawn
 	creature.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
+	creature.footstep.connect(_ambient_audio.nature.footstep)
 	_tremor.shaken.connect(creature.queue_tremor)
 	creature.set_process(false)
 	creature._ground_probe = navigation._ground

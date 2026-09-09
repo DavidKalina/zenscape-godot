@@ -1,11 +1,13 @@
 extends Node
-## Quiet procedural beds driven by the same weather and growth as the image.
+## Weather beds plus the original wildlife and positional water soundscape.
 var volume := 0.55
 var muted := false
 var wind_player: AudioStreamPlayer
 var rain_player: AudioStreamPlayer
 var water_player: AudioStreamPlayer3D
 var gains := Vector3.ZERO
+var nature: Node
+var water_layout = preload("res://studies/water_audio_layout.gd").new()
 
 func loop(name: String) -> AudioStreamWAV:
 	var stream := (load("res://assets/audio/"+name+"-bed.wav") as AudioStreamWAV).duplicate() as AudioStreamWAV
@@ -29,6 +31,17 @@ func _ready() -> void:
 		add_child(player)
 		player.volume_db = -80.0
 		player.play()
+
+	nature = preload("res://studies/nature_audio.gd").new()
+	add_child(nature)
+
+func update_world(delta: float, paused: bool, scene: Node) -> void:
+	var points: Dictionary = water_layout.update(delta,scene)
+	if points.has("fall"): water_player.global_position = points.fall
+	var weather = scene._precipitation.surface_weather
+	var grown: float = scene._growth.water if scene._growth.terrain >= 0.995 else 0.0
+	update_state(delta,paused,scene._atmosphere._air_strength*scene._atmosphere.gust_at(scene._atmosphere._wind_time),scene._precipitation.state.x,weather.snow_phase,weather.ice,scene._growth.terrain,grown if points.has("fall") else 0.0)
+	nature.update_state(delta,paused,muted,volume,scene._celestial.state.get("zs_daylight",1.0),weather.cold,scene._precipitation.state.x,scene._atmosphere._air_strength,weather.ice,1.0 if scene._growth.terrain >= 0.995 else 0.0,grown,scene.camera.global_position,points)
 
 static func target_gains(wind: float, rain: float, snow_phase: float, ice: float, terrain: float, water: float) -> Vector3:
 	var air := pow(clampf(wind/3.0,0.0,1.0),1.5)*0.4
