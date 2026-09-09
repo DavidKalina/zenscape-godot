@@ -41,7 +41,10 @@ func set_fog_mode(index: int) -> void:
 
 func _sync_living_fog() -> void:
 	living_volume.visible = fog_mode>0
-	if fog_mode>0: _environment.volumetric_fog_enabled = true
+	if fog_mode>0:
+		_environment.volumetric_fog_enabled = true
+		# Biome mist resets this to 65 each frame, clipping the far third at our overview camera.
+		_environment.volumetric_fog_length = maxf(125.0,distance+40.0)
 	living_material.set_shader_parameter("ground_map",_precipitation.ground_texture)
 	living_material.set_shader_parameter("stream_map",_precipitation.stream_texture)
 	living_material.set_shader_parameter("bank_density",bank_density)

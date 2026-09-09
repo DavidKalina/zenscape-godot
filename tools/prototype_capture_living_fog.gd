@@ -24,6 +24,7 @@ func run() -> void:
 		push_error("FAIL living fog: demo startup leaves shared wind frozen")
 		quit(1)
 		return
+	assert(scene._environment.volumetric_fog_length>=scene.distance+30.0,"Fog view distance clips the far valley")
 	await settle()
 	root.get_texture().get_image().save_png(output.path_join("rolling-calm.png"))
 	var calm_travel: float = scene._atmosphere._travel.distance_to(start_travel)
