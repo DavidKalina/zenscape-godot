@@ -32,6 +32,7 @@ func _ready() -> void:
 	add_child(creature)
 	creature.position = spawn
 	creature.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
+	creature.footstep.connect(_ambient_audio.nature.footstep)
 	_tremor.shaken.connect(creature.queue_tremor)
 	creature.set_process(false)
 	creature._ground_probe = navigation._ground
@@ -46,6 +47,7 @@ func _ready() -> void:
 	brain.scenery_chance = 0.35
 	brain.react_immediately = false
 	brain.setup(creature,navigation,func() -> Array: return habitat.interests)
+	brain.planning_allowed = func() -> bool: return not _paused and resident_enabled and not _habitat_changed
 	creature.add_child(_reaction)
 	_reaction.position.y = 3.3
 	_reaction.billboard = BaseMaterial3D.BILLBOARD_ENABLED

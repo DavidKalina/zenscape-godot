@@ -20,6 +20,7 @@ var _courses: Array[Dictionary] = []
 var _impacts: Array[Dictionary] = []
 var last_rebuild_usec := 0
 var rebuilding := false
+var generation := 0
 var _rebuild_cell := 0
 var _rebuild_side := 0
 var _use_shortcuts := true
@@ -34,6 +35,7 @@ func rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_ris
 ## Live editors spread the grid scan over frames. Callers suspend route planning
 ## until completion; a newer edit restarts the scan against the latest world.
 func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE) -> void:
+	generation += 1
 	_slope_rise = slope_rise
 	_grid_step = clampf(grid_step,0.35,1.0)
 	var began := Time.get_ticks_usec()
@@ -151,18 +153,22 @@ func nearest_safe(point: Vector3) -> Variant:
 
 func _connect(point: Vector3) -> int:
 	var closest := -1
-	var distance := INF
-	for i in range(_nodes.size()):
+	var cell := Vector2i(roundi((point.x+14.0)/_grid_step),roundi((point.z+14.0)/_grid_step))
+	var nearby: Array[int] = []
+	for z in range(cell.y-2,cell.y+3):
+		for x in range(cell.x-2,cell.x+3):
+			var index: int = _cells.get(Vector2i(x,z),-1)
+			if index>=0: nearby.append(index)
+	nearby.sort_custom(func(a: int,b: int) -> bool: return _nodes[a].distance_squared_to(point)<_nodes[b].distance_squared_to(point))
+	for i in nearby:
 		var score := _nodes[i].distance_squared_to(point)
+		if score>=_grid_step*_grid_step*3.0: break
 		var rejected := false
 		for connection in _rejected_connections:
 			if connection.node==i and point.distance_squared_to(connection.point)<0.0001:
 				rejected = true
 				break
-		if rejected: continue
-		if score < distance and score < _grid_step*_grid_step*3.0 and segment_safe(point,_nodes[i]):
-			closest = i
-			distance = score
+		if not rejected and segment_safe(point,_nodes[i]): return i
 	return closest
 
 func path(from: Vector3,to: Vector3) -> PackedVector3Array:
@@ -194,10 +200,14 @@ func _straighten(route: PackedVector3Array) -> PackedVector3Array:
 	var start := 0
 	while start < route.size()-1:
 		var next := start+1
-		for candidate in range(route.size()-1,start+1,-1):
-			if segment_safe(route[start],route[candidate]):
-				next = candidate
-				break
+		# Search only a bounded neighborhood, retaining tested clear shortcuts.
+		# A blocked long chord does not invalidate the underlying safe grid path.
+		var high := mini(route.size()-1,start+8)
+		var candidate := high
+		while candidate>next:
+			if segment_safe(route[start],route[candidate]): next = candidate
+			else: high = candidate-1
+			candidate = (next+high+1)/2
 		result.append(route[next])
 		start = next
 	return result

@@ -12,6 +12,7 @@ func run() -> void:
 	root.size = Vector2i(1440,900)
 	var scene = load("res://studies/diorama.tscn").instantiate()
 	root.add_child(scene)
+	while not scene.title_loaded: await process_frame
 	var trace: Node = scene._performance_trace
 	trace.output_directory = "/tmp/zenscape-trace-test-%d" % OS.get_process_id()
 	var paths: Array[String] = []
@@ -29,6 +30,7 @@ func run() -> void:
 	if paths.size() == 1 and not paths[0].is_empty():
 		var report: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(paths[0]))
 		check(report.metadata.has("gpu") and report.metadata.has("driver"),"Capture identifies the GPU and graphics backend")
+		check(report.samples[0].has("ai_planning") and report.samples[0].has("ai_last_choice_peak_ms"),"Capture includes budgeted AI planning diagnostics")
 		check(report.samples.size() >= 3,"Capture contains real process-frame intervals")
 		check(report.samples[0].has("scene_ms") and report.samples[0].has("PIPELINE_COMPILATIONS_DRAW"),"Capture includes script work and pipeline counters")
 		check(report.samples[0].camera_target == [2.0,3.0,4.0] and report.samples[0].panning and not report.samples[0].orbiting,"Capture identifies camera pan position and gesture")

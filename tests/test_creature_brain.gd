@@ -45,6 +45,7 @@ func _run() -> void:
 	check(actor.global_position==held_position and actor.is_held(),"Roaming does not fight a held actor")
 	actor.release_at(Vector3.ZERO)
 	for i in range(500):
+		await process_frame # Allow budgeted route work to resume, as in live play.
 		actor.advance(1.0/60.0)
 		brain.advance(1.0/60.0)
 	check(actor.global_position.distance_to(Vector3.ZERO)>0.3,"Roaming resumes after safe drop")

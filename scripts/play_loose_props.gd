@@ -73,7 +73,8 @@ func begin_grab(body: RigidBody3D, mouse: Vector2) -> void:
 	_plane = Plane(Vector3.UP,body.global_position.y+lift)
 	var at: Variant = _plane.intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
 	_origin = at if at != null else body.global_position
-	_target = body.global_position+Vector3.UP*lift
+	# Center the lifted prop on the cursor ray, including off-center pickups.
+	_target = _origin
 	_samples = [{"point":body.global_position,"time":_clock}]
 	_investigated.erase(body)
 	body.grab()
@@ -84,7 +85,7 @@ func move_grab(mouse: Vector2) -> void:
 	var point: Variant = _plane.intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
 	if point == null: return
 	var offset: Vector3 = (point-_origin).limit_length(13.0)
-	_target = _grab_pose.origin+offset
+	_target = _origin+offset
 	_target.y = _plane.d
 	var ground: Variant = scene._probe_ground(_target)
 	if ground != null: _target.y = maxf(_target.y,ground.y+grabbed.radius+0.1)

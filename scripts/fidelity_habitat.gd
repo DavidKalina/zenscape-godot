@@ -10,6 +10,8 @@ var streams: Array[Dictionary] = []
 var objects: Array[Dictionary] = []
 var waters: Array[RefCounted] = []
 var solids: Array[AABB] = []
+const SOLID_CELL := 2.0
+var _solid_cells := {}
 var interests: Array[Dictionary] = []
 
 func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
@@ -23,6 +25,7 @@ func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
 	if data == null: ground.setup(geometry.get_node("terrain"))
 	if data != null and data.blank:
 		_add_authored(data)
+		_index_solids()
 		return
 	for node in geometry.get_children():
 		if node is MeshInstance3D and node.visible:
@@ -42,6 +45,7 @@ func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
 			_add_solid(node.transform,node.mesh,key)
 
 	if data != null: _add_authored(data)
+	_index_solids()
 
 func _add_solid(pose: Transform3D, mesh: Mesh, id: String) -> void:
 	var box: AABB = pose*mesh.get_aabb()
@@ -86,8 +90,18 @@ func clear_at(point: Vector3) -> bool:
 		for water in waters:
 			var height: Variant = water.height_at(point.x+offset.x,point.z+offset.y)
 			if height != null and height >= point.y-0.15: return false
-	for box in solids:
+	for box: AABB in _solid_cells.get(Vector2i(floori(point.x/SOLID_CELL),floori(point.z/SOLID_CELL)),[]):
 		if point.y+2.8 < box.position.y or point.y > box.end.y: continue
 		var footprint := Rect2(Vector2(box.position.x,box.position.z),Vector2(box.size.x,box.size.z)).grow(0.5)
 		if footprint.has_point(Vector2(point.x,point.z)): return false
 	return true
+
+func _index_solids() -> void:
+	_solid_cells.clear()
+	for box in solids:
+		var footprint := Rect2(Vector2(box.position.x,box.position.z),Vector2(box.size.x,box.size.z)).grow(0.5)
+		for z in range(floori(footprint.position.y/SOLID_CELL),floori(footprint.end.y/SOLID_CELL)+1):
+			for x in range(floori(footprint.position.x/SOLID_CELL),floori(footprint.end.x/SOLID_CELL)+1):
+				var cell := Vector2i(x,z)
+				if not _solid_cells.has(cell): _solid_cells[cell] = []
+				_solid_cells[cell].append(box)

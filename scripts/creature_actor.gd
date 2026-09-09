@@ -5,6 +5,7 @@ extends Node3D
 enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUMBLING, SWIMMING, SHAKING }
 signal state_changed(value: State)
 signal landed()
+signal footstep(point: Vector3)
 signal action_finished(clip: String, cancelled: bool)
 const PERSONALITY = preload("res://scripts/bigfoot_personality.gd")
 var personality_active := false
@@ -485,7 +486,16 @@ func advance(delta: float) -> void:
 		_state(State.IDLE)
 		_play("Idle")
 	if state in [State.SWIMMING,State.SHAKING]: _advance_water(dt)
+	var walk_before := player.current_animation_position if state == State.WALKING else -1.0
 	player.advance(dt)
+	if walk_before >= 0.0 and state == State.WALKING:
+		var length := player.current_animation_length
+		var after := walk_before+dt*player.speed_scale
+		# Exported Walk and carrying gaits plant L halfway through, R at wrap.
+		for contact in [length*0.5,length]:
+			if walk_before < contact and after >= contact:
+				var bone := skeleton.find_bone("Foot_L" if contact < length else "Foot_R")
+				footstep.emit(skeleton.to_global(skeleton.get_bone_global_pose(bone).origin) if bone >= 0 else global_position)
 	var response := 1.0-exp(-10.0*dt)
 	var goal := _sway if state == State.HELD else (_brace if state == State.IDLE or state == State.ALERT else Vector2.ZERO)
 	_visual.rotation.x = lerpf(_visual.rotation.x,goal.x,response)

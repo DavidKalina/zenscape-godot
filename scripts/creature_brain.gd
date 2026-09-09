@@ -31,6 +31,11 @@ var _known: Dictionary = {}
 var _pending_interest: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _interrupted := false
+var choosing := false
+var planning_allowed: Callable
+var last_choice_slice_usec := 0
+var last_choice_slices := 0
+var _choice_serial := 0
 var _blocked_cooldown := 0.0
 
 func setup(inhabitant: Node3D, routes: RefCounted, interests: Callable) -> void:
@@ -62,6 +67,7 @@ func advance(delta: float) -> void:
 		var interest := _pending_interest
 		_pending_interest = {}
 		if investigate(interest.position,true,str(interest.id)): return
+	if choosing: return
 	if phase == Phase.MOVE:
 		_move(dt)
 		return
@@ -76,6 +82,7 @@ func advance(delta: float) -> void:
 			_choose_next()
 
 func investigate(point: Vector3, excited := false, id := "", minimum_travel := 0.0) -> bool:
+	_cancel_choice()
 	if actor == null or not actor.can_roam() or not point.is_finite(): return false
 	var route := _approach_route(point)
 	if route.is_empty() or actor.global_position.distance_to(route[-1])<minimum_travel: return false
@@ -107,36 +114,82 @@ func _approach_route(point: Vector3) -> PackedVector3Array:
 		return route
 	return PackedVector3Array()
 
+func _cancel_choice() -> void:
+	_choice_serial += 1
+	choosing = false
+
 func _choose_next() -> void:
+	if choosing or not actor.can_roam() or not is_inside_tree(): return
+	choosing = true
+	_choice_serial += 1
+	var serial := _choice_serial
+	var origin: Vector3 = actor.global_position
+	var query := preload("res://scripts/creature_route_query.gd").new()
+	query.setup(navigation,get_tree(),func() -> bool:
+		return is_inside_tree() and choosing and serial == _choice_serial and enabled and (not planning_allowed.is_valid() or planning_allowed.call()) and actor.can_roam() and actor.global_position.distance_squared_to(origin)<0.0001)
+	_run_choice(query,serial,origin)
+
+func _run_choice(query: RefCounted, serial: int, origin: Vector3) -> void:
+	await _choose_route(query,origin)
+	query.finish_slice()
+	if serial == _choice_serial:
+		last_choice_slice_usec = query.peak_slice_usec
+		last_choice_slices = query.slices
+		choosing = false
+
+func _choose_route(query: RefCounted, origin: Vector3) -> void:
 	var interests := _interests()
-	# Rotate selection with a local seeded generator, without affecting scenery RNG.
 	if not interests.is_empty() and _rng.randf()<scenery_chance:
 		var start := _rng.randi_range(0,interests.size()-1)
 		for n in range(interests.size()):
+			if not await query.checkpoint(): return
 			var interest: Dictionary = interests[(start+n)%interests.size()]
 			var id := str(interest.id)
 			if float(_cooldowns.get(id,0.0))>_clock: continue
-			var distance := actor.global_position.distance_to(interest.position)
+			var distance := origin.distance_to(interest.position)
 			if distance<5.5 or distance>12.0: continue
-			if investigate(interest.position,false,id,4.0): return
+			var toward := Vector2(origin.x-interest.position.x,origin.z-interest.position.z)
+			for i in range(8):
+				var offset := Vector2.from_angle(toward.angle()+i*TAU/8.0)*1.6
+				var point: Variant = await query.nearest(interest.position+Vector3(offset.x,0,offset.y))
+				if point == null or Vector2(point.x-interest.position.x,point.z-interest.position.z).length()>3.0: continue
+				var route: PackedVector3Array = await query.path(origin,point)
+				if not query.current(): return
+				if route.is_empty(): continue
+				if origin.distance_to(route[-1])<4.0: break
+				actor.stop_walking()
+				_route = route
+				_waypoint = 0
+				_destination = route[-1]
+				_look_at = interest.position
+				_interest_id = id
+				_tracks_object = _known.has(id)
+				speed = CURIOUS_SPEED
+				phase = Phase.NOTICE
+				_wait = 1.1
+				actor.notice(interest.position+Vector3.UP*0.8)
+				reaction.emit("?","What's over there?")
+				_cooldowns[id] = _clock+25.0
+				return
 	for attempt in range(16):
-		# Prefer continuing ahead; widen the search if terrain closes that direction.
+		if not await query.checkpoint(): return
 		var angle := actor.global_rotation.y+_rng.randf_range(-0.8,0.8) if attempt<4 else _rng.randf()*TAU
-		var confined := attempt >= 8
+		var confined := attempt>=8
 		var radius := _rng.randf_range(2.0,4.5) if confined else _rng.randf_range(6.0,10.0)
-		var candidate: Variant = navigation.nearest_safe(actor.global_position+Vector3(sin(angle)*radius,0,cos(angle)*radius))
-		if candidate == null or actor.global_position.distance_to(candidate)<(1.0 if confined else 5.0): continue
-		var route: PackedVector3Array = navigation.path(actor.global_position,candidate)
+		var candidate: Variant = await query.nearest(origin+Vector3(sin(angle)*radius,0,cos(angle)*radius))
+		if candidate == null or origin.distance_to(candidate)<(1.0 if confined else 5.0): continue
+		var route: PackedVector3Array = await query.path(origin,candidate)
+		if not query.current(): return
 		if route.is_empty(): continue
 		_route = route
 		_waypoint = 0
-		_destination = route[route.size()-1]
+		_destination = route[-1]
 		_interest_id = ""
 		_tracks_object = false
 		speed = WANDER_SPEED
 		phase = Phase.MOVE
 		return
-	_blocked()
+	if query.current(): _blocked()
 
 func _move(delta: float) -> void:
 	# Paths include the start point; it requires no movement or swept check.
@@ -167,9 +220,10 @@ func _rest(duration: float) -> void:
 
 ## Automatic activities wait for a completed journey and its observation pause.
 func ready_for_activity(delta := 0.0) -> bool:
-	return phase == Phase.REST and _wait <= minf(delta,0.1)
+	return not choosing and phase == Phase.REST and _wait <= minf(delta,0.1)
 
 func reset_behavior() -> void:
+	_cancel_choice()
 	_pending_interest.clear()
 	_interrupted = false
 	_interest_id = ""
@@ -187,6 +241,7 @@ func _blocked() -> void:
 		_blocked_cooldown = 8.0
 
 func world_changed() -> void:
+	_cancel_choice()
 	# Keep only current IDs; a newly placed nearby object can become a discovery.
 	var current := {}
 	for interest: Dictionary in _interests():

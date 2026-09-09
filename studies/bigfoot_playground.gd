@@ -38,6 +38,7 @@ func _ready() -> void:
 	creature.name = "Bigfoot"
 	add_child(creature)
 	creature.setup("res://assets/models/zenscape-bigfoot-interactions.glb")
+	creature.footstep.connect(_ambient_audio.nature.footstep)
 	_tremor.shaken.connect(creature.queue_tremor)
 	# Reuse the game's lighting so the authored coat belongs to the landscape.
 	var coat := ShaderMaterial.new()
