@@ -71,5 +71,16 @@ The full suite recorded 99/147 passes under fixed timing. The only difference
 from the previous 100/147 baseline was the wall-clock performance-trace test;
 it passes when rerun without fixed FPS. The other 47 existing failures remain.
 
-The final capture contains 1,214 frames with zero consecutive duplicates.
+The overhead iteration capture contains 1,214 frames with zero consecutive duplicates.
 The capture harness explicitly draws each frame to avoid stale desktop frames.
+
+## Shoulder catch and lengthwise toss
+
+LogLift now lasts 4.7 seconds. The shoulder descent takes 0.95 seconds, with
+a 13 cm pelvis dip and a small torso response as the load arrives. The elbow
+pole rises during the catch and returns to the carry position. The toss keeps
+the carried basis until release and pushes the log forward along its length,
+without regripping it crosswise. Its flight remains a rigid-body simulation.
+A focused regression checks that the held toss never changes the log heading.
+
+Latest preview: `log-catch.mp4` (1,244 frames, no consecutive duplicates).

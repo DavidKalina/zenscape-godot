@@ -40,8 +40,9 @@ def pose(name,t):
         crouch=envelope(t,0.1,1.0,1.5,2.7)
         effort=envelope(t,1.1,1.6,2.1,3.1)
         shoulder=smooth((t-2.3)/1.5)
-        translation('Pelvis',(0,.055*crouch,-.026-.24*crouch-.025*effort))
-        rotate('Spine',(1,0,0),.40*crouch-.08*effort-.055*shoulder)
+        receive=envelope(t,3.6,4.1,4.15,4.7)
+        translation('Pelvis',(0,.055*crouch,-.026-.24*crouch-.025*effort-.13*receive))
+        rotate('Spine',(1,0,0),.40*crouch-.08*effort-.055*shoulder+.09*receive)
         rotate('Spine',(0,1,0),.045*shoulder)
         rotate('Head',(1,0,0),.12*crouch-.07*shoulder)
         for side,sign in [('R',-1),('L',1)]:
@@ -81,8 +82,8 @@ for frame in range(round(walk_duration*30)+1):
     rig.animation_data.action=walk
     scene.frame_set(round(walk.frame_range[0])+frame)
     walk_samples.append({p.name:(p.location.copy(),p.rotation_quaternion.copy(),p.rotation_euler.copy(),p.rotation_mode) for p in rig.pose.bones})
-clips={'LogLift':4.2,'LogCarry':walk_duration,'LogToss':1.8}
-report={'clips':{},'events':{'grasp':1.15,'shoulder':3.8,'release_in_toss':.78}}
+clips={'LogLift':4.7,'LogCarry':walk_duration,'LogToss':1.8}
+report={'clips':{},'events':{'grasp':1.15,'shoulder':4.55,'release_in_toss':.78}}
 for name,duration in clips.items():
     action=bpy.data.actions.new(name)
     action.use_fake_user=True
@@ -108,7 +109,7 @@ for name,duration in clips.items():
     report['clips'][name]={'duration':duration,'frames':round(duration*30)+1}
 rig.animation_data.action=bpy.data.actions['LogLift']
 scene.frame_start=1
-scene.frame_end=127
+scene.frame_end=142
 scene.frame_set(1)
 bpy.ops.object.select_all(action='DESELECT')
 rig.select_set(True)

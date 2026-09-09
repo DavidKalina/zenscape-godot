@@ -40,6 +40,7 @@ func run() -> void:
 	var max_carry_grip_error := 0.0
 	var reversed_elbows := 0
 	var overhead_seen := false
+	var toss_heading_error := 0.0
 	for i in range(2400):
 		await physics_frame
 		if play.phase=="turn" or previous_phase=="turn":
@@ -67,6 +68,8 @@ func run() -> void:
 				if bend.length()>0.02 and expected.length()>0.02 and bend.dot(expected)<0.0: reversed_elbows += 1
 			previous_pose = play.held.global_position
 		else: previous_pose = null
+		if play.phase=="toss" and play.held!=null:
+			toss_heading_error = maxf(toss_heading_error,play.held.global_basis.get_rotation_quaternion().angle_to(play._toss_pose.basis.get_rotation_quaternion()))
 		if play.phase=="carry":
 			carried = true
 			if play._elapsed>0.1:
@@ -75,6 +78,7 @@ func run() -> void:
 		previous_phase = play.phase
 		previous_yaw = scene.creature.rotation.y
 		if not play.busy(): break
+	check(toss_heading_error<0.01,"Toss preserves the carried log heading until release")
 	check(overhead_seen,"Shoulder transfer includes an overhead rotation")
 	check(turn_seen and max_turn<0.04,"Facing changes gradually before grasp")
 	check(reversed_elbows==0,"Elbows stay on the intended bend side through the performance")

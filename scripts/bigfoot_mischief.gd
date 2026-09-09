@@ -210,7 +210,8 @@ func _log_hands(pose: Transform3D, right_weight := 1.0, left_weight := 1.0) -> v
 		var sign := -1.0 if side == "R" else 1.0
 		var center := pose.origin+axis*sign*0.55
 		var point := _log_surface(pose,center,outward)
-		var elbow: Vector3 = actor.to_global(Vector3(sign*0.9,1.2,0.35))
+		var receive := smoothstep(3.3,3.8,actor._age)*(1.0-smoothstep(4.15,4.65,actor._age)) if phase=="perform" else 0.0
+		var elbow: Vector3 = actor.to_global(Vector3(sign*0.9,1.2+0.7*receive,0.35+0.25*receive))
 		actor.reach_hand(point,right_weight if side == "R" else left_weight,side,elbow,palm_basis)
 
 func _log_surface(pose: Transform3D, center: Vector3, outward: Vector3) -> Vector3:
@@ -238,16 +239,17 @@ func _shoulder_pose() -> Transform3D:
 
 func _perform_log(t: float) -> void:
 	if phase == "toss":
-		var forward: Transform3D = scene.creature.global_transform*Transform3D(Basis(Vector3.UP,PI if _log_grip_sign<0.0 else 0.0),Vector3(-0.15,1.85,1.25))
+		# Drive the shouldered log forward along its length, keeping its heading.
+		var forward := Transform3D(_toss_pose.basis,_toss_pose.origin+scene.creature.global_basis*Vector3(0,0.2,1.05))
 		var pose := _toss_pose.interpolate_with(forward,smoothstep(0.15,0.78,t))
 		if not _released:
 			held.global_transform = pose
-			_log_hands(pose,1.0,smoothstep(0.0,0.3,t))
+			_log_hands(pose,1.0,0.0)
 			if t>=0.78:
 				_release_prop(scene.creature.global_basis.z*4.5+Vector3.UP*2.5)
 				scene._show_reaction("!","That should go over there.")
 		else:
-			_log_hands(forward,1.0-smoothstep(0.9,1.65,t),1.0-smoothstep(0.9,1.65,t))
+			_log_hands(forward,1.0-smoothstep(0.9,1.65,t),0.0)
 		return
 	if held == null:
 		_log_hands(target.global_transform,smoothstep(0.25,1.0,t),smoothstep(0.4,1.1,t))
@@ -268,10 +270,10 @@ func _perform_log(t: float) -> void:
 	above_shoulder.origin.y = overhead.origin.y
 	if t>2.35: pose = cradle.interpolate_with(overhead,smoothstep(2.35,3.05,t))
 	if t>3.05: pose = overhead.interpolate_with(above_shoulder,smoothstep(3.05,3.6,t))
-	if t>3.6: pose = above_shoulder.interpolate_with(_shoulder_pose(),smoothstep(3.6,4.15,t))
+	if t>3.6: pose = above_shoulder.interpolate_with(_shoulder_pose(),smoothstep(3.6,4.55,t))
 	held.global_transform = pose
 	_log_hands(pose,1.0,1.0-smoothstep(3.05,3.55,t))
-	if t>=4.2:
+	if t>=4.7:
 		scene.creature.cancel_action()
 		_plan_carry()
 		phase = "carry"

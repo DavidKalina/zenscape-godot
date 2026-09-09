@@ -1,7 +1,7 @@
 {
   "log": {
     "carry_distance": 2.19999852881301,
-    "carry_grip_error": 1.12461816570431e-06,
+    "carry_grip_error": 1.28392332499061e-06,
     "failures": 0,
     "max_prop_step": 0.0856494903564453,
     "max_prop_turn": 0.0715397074818611,
@@ -14,7 +14,7 @@
         "cancel": "",
         "grasped": true,
         "launched": true,
-        "peak": 6.99951076507568
+        "peak": 6.15519237518311
       },
       "stone": {
         "cancel": "",
@@ -43,11 +43,14 @@
     "unchanged_prior_failures": 47
   },
   "video": {
-    "frames": 1214,
+    "frames": 1244,
     "duplicate_frames": 0,
     "duplicate_fraction": 0.0,
     "longest_identical_run": 1,
     "passed": true
   },
-  "visual_review": "Overhead rotation and shoulder lowering inspected in rendered frames. Capture force_draw eliminates held frames from an occluded desktop window."
+  "visual_review": "Rendered shoulder catch shows elbow flexion and body dip. Forward toss inspected after release.",
+  "iteration": "Weighted shoulder catch and lengthwise toss",
+  "toss_heading_check": "passed: held orientation error below 0.01 radians",
+  "video_file": "log-catch.mp4"
 }
