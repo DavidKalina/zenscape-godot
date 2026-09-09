@@ -13,6 +13,7 @@ var water_exit := Vector3.ZERO
 var _paddle_time := 0.0
 var hand_targets := {}
 var action_tempo := 1.0
+var locomotion_tempo := 1.0
 var _pending_tremor := 0.0
 var _stumble_strength := 0.0
 var _stumble_duration := 0.0
@@ -50,6 +51,10 @@ var _standing_basis := Basis.IDENTITY
 const WALK_SPEED_MPS := 0.54/(0.62*3.6)
 const WIND_BODY = preload("res://scripts/creature_wind_body.gd")
 
+## Navigation uses the same effective speed as the walking step.
+func walking_speed(base_speed: float) -> float:
+	return base_speed*locomotion_tempo
+
 ## Navigation supplies a nearby, already validated point. Animation owns the
 ## stride while this actor owns facing, locomotion and its latest safe feet.
 func can_roam() -> bool:
@@ -58,10 +63,12 @@ func can_roam() -> bool:
 ## True means this waypoint was reached; keep the stride continuous until the
 ## controller calls stop_walking at the final destination. False means progressing
 ## or rejected by can_roam/input. Gait is selected when entering WALKING;
-## stop_walking before changing it during a journey.
+## stop_walking before changing it during a journey. Speed is the calm baseline;
+## temper scales both displacement and animation cadence here.
 func walk_step(destination: Vector3, speed: float, delta: float, gait := "Walk") -> bool:
 	if not can_roam() or not destination.is_finite() or not is_finite(speed) or not is_finite(delta) or speed <= 0.0 or delta <= 0.0:
 		return false
+	speed = walking_speed(speed)
 	var offset := destination-global_position
 	var horizontal := Vector2(offset.x,offset.z).length()
 	var dt := minf(delta,0.05)

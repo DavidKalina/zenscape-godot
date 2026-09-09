@@ -140,10 +140,10 @@ func advance(delta: float) -> void:
 			phase = "turn"
 			scene.creature.stop_walking()
 			return
-		if not scene.navigation.motion_safe(scene.creature.global_position,_route[_waypoint],(1.65 if furious() else 0.85)*delta):
+		if not scene.navigation.motion_safe(scene.creature.global_position,_route[_waypoint],scene.creature.walking_speed(0.85)*minf(delta,0.05)):
 			cancel("approach obstructed")
 			return
-		if scene.creature.walk_step(_route[_waypoint],1.65 if furious() else 0.85,delta): _waypoint += 1
+		if scene.creature.walk_step(_route[_waypoint],0.85,delta): _waypoint += 1
 		return
 	if phase == "turn":
 		if not scene.creature.can_roam() or target.global_position.distance_to(_target_start)>0.25:
@@ -325,10 +325,10 @@ func _carry_log(delta: float) -> void:
 	var finished := _carry_route.is_empty() or _elapsed>5.0
 	if not finished:
 		var next: Vector3 = _carry_route[_carry_index]
-		if not scene.navigation.motion_safe(scene.creature.global_position,next,(1.15 if furious() else 0.65)*delta): finished = true
+		if not scene.navigation.motion_safe(scene.creature.global_position,next,scene.creature.walking_speed(0.65)*minf(delta,0.05)): finished = true
 		else:
 			var before: Vector3 = scene.creature.global_position
-			finished = scene.creature.walk_step(next,1.15 if furious() else 0.65,delta,"LogCarry")
+			finished = scene.creature.walk_step(next,0.65,delta,"LogCarry")
 			_carry_distance += before.distance_to(scene.creature.global_position)
 	held.global_transform = _shoulder_pose()
 	_log_hands(held.global_transform,1.0,0.0)

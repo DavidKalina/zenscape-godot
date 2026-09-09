@@ -57,6 +57,7 @@ func provoke(amount: float = 0.4) -> void:
 	if heat>=1.0:
 		remaining = 24.0
 		scene.creature.action_tempo = 1.4
+		scene.creature.locomotion_tempo = 2.0
 		for eye in _eyes: eye.material_override = _red
 		scene.mischief._cooldown = 0.0
 		scene._show_reaction("!!","That's it. He's steaming.")
@@ -93,7 +94,9 @@ func advance(delta: float) -> void:
 func reset() -> void:
 	heat = 0.0
 	remaining = 0.0
-	if scene!=null: scene.creature.action_tempo = 1.0
+	if scene!=null:
+		scene.creature.action_tempo = 1.0
+		scene.creature.locomotion_tempo = 1.0
 	for i in range(_eyes.size()): _eyes[i].material_override = _originals[i]
 	for puff in _puffs: puff.visible = false
 	for i in range(_ages.size()): _ages[i] = 2.0

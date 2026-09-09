@@ -134,7 +134,7 @@ func advance(delta: float) -> void:
 		while _samples.size()>2 and _samples[0].time<_clock-0.12: _samples.pop_front()
 	if _evade_to != null:
 		_evade_time -= delta
-		if not scene.creature.can_roam() or _evade_time<=0.0 or not scene.navigation.motion_safe(scene.creature.global_position,_evade_to,2.8*delta):
+		if not scene.creature.can_roam() or _evade_time<=0.0 or not scene.navigation.motion_safe(scene.creature.global_position,_evade_to,scene.creature.walking_speed(2.8)*minf(delta,0.05)):
 			_evade_to = null
 		elif scene.creature.walk_step(_evade_to,2.8,delta):
 			_evade_to = null
