@@ -158,6 +158,11 @@ func rebuild() -> void:
 
 # ------------------------------------------------------------------ queries
 
+## True while any cell still carries ash or remembered cover, so regrowth
+## keeps needing ground refreshes after the last flame dies.
+func recovering() -> bool:
+	return not _memory.is_empty()
+
 func active() -> bool:
 	return not _burning.is_empty() or not objects_state.is_empty()
 
@@ -511,7 +516,7 @@ func _flush_ground() -> void:
 	if not _dirty_cover:
 		return
 	_dirty_cover = false
-	var scorch := Color(0.290,0.275,0.263).srgb_to_linear()
+	var scorch := Color(0.165,0.160,0.165).srgb_to_linear()
 	for index: int in _memory:
 		var memory: PackedFloat32Array = _memory[index]
 		var alive := 1.0-clampf(ash[index],0.0,1.0)

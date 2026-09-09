@@ -92,6 +92,7 @@ var _fire_effects = null
 ## and flora batches only follow a `refresh()`. Rebuilding that often is wasted
 ## work, so a burning world refreshes on this cadence instead.
 const FIRE_REFRESH := 0.5
+const FIRE_REGROW_REFRESH := 4.0
 var _fire_refresh := 0.0
 var _fire_rebuilding := false
 var _fire_stroke := false
@@ -590,6 +591,8 @@ func _setup_fire() -> void:
 		_fire_look = load("res://scripts/fire_look.gd").new()
 		if _fire_look != null and _fire_look.has_method("setup"):
 			_fire_look.setup(_fire_field,_chunk_editor.content)
+			if "ground_refresh" in _fire_look:
+				_fire_look.ground_refresh = false
 	if ResourceLoader.exists("res://scripts/fire_effects.gd"):
 		_fire_effects = load("res://scripts/fire_effects.gd").new()
 		if _fire_effects is Node:
@@ -648,10 +651,10 @@ func _advance_fire(delta: float) -> void:
 		_fire_look.advance(delta,_paused)
 	if _fire_effects != null and _fire_effects.has_method("advance"):
 		_fire_effects.advance(delta,_paused)
-	if not burning or _paused:
+	if _paused or not (burning or _fire_field.recovering()):
 		return
 	_fire_refresh += delta
-	if _fire_refresh >= FIRE_REFRESH:
+	if _fire_refresh >= (FIRE_REFRESH if burning else FIRE_REGROW_REFRESH):
 		_fire_refresh = 0.0
 		_refresh_fire_ground()
 
