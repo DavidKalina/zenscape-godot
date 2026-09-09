@@ -52,7 +52,7 @@ func run() -> void:
 	editor.refresh()
 	var before := editor.data.to_document()
 	editor.explosives.request_detonation()
-	await physics_frame
+	while editor.explosives.requested or editor.explosives.firing: await physics_frame
 	await physics_frame
 	check(editor.data.object_by_id(id).is_empty(),"Shared remote detonates in the original fidelity scene")
 	check(editor.explosives.collisions.get_child_count()>0,"Scenes without world play receive crater collision")

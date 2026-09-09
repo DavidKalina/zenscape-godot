@@ -8,7 +8,9 @@ const PASSES := 32
 const MAX_VERTICES := 2400
 const MAX_CHUNKS := 32
 
-static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, origin: Vector3, radius: float, surface_colors := PackedColorArray()) -> Dictionary:
+## A null tree keeps this synchronous. The live remote passes the scene tree so
+## the relaxation passes spread across a few frames under the blast flash.
+static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, origin: Vector3, radius: float, surface_colors := PackedColorArray(), frame_tree: SceneTree = null) -> Dictionary:
 	var center := Vector2(origin.x,origin.z)
 	var reach := clampf(radius*3.4,6.0,16.0)
 	var low := INF
@@ -54,7 +56,9 @@ static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, 
 			edges.append(edge)
 	var areas := control_areas(data)
 	var height := PackedFloat64Array(Array(initial))
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	for pass_index in range(PASSES):
+		if frame_tree != null and pass_index % 8 == 0: await budget.checkpoint()
 		for step in range(edges.size()):
 			var edge := edges[step if pass_index%2 == 0 else edges.size()-1-step]
 			var a := edge.x if height[edge.x] > height[edge.y] else edge.y

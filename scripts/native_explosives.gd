@@ -5,6 +5,10 @@ const Blast = preload("res://scripts/terrain_blast.gd")
 const InternalBlast = preload("res://scripts/internal_blast.gd")
 const Collapse = preload("res://scripts/mountain_collapse.gd")
 const MAX_BODIES := 100
+## Debris slower or smaller than this passes harmlessly; anything above it
+## knocks the resident down and unseats authored props it strikes.
+const STRIKE_SPEED := 4.0
+const STRIKE_RADIUS := 0.25
 const SOLIDS := ["tree","layered_tree","redwood","broadleaf","snag","bigfoot_tree","rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
 var editor: NativeChunkEditor
 var effects = preload("res://scripts/explosion_effects.gd").new()
@@ -26,6 +30,9 @@ var _syncing := false
 var _elapsed := 0.0
 var collapse_count := 0
 var _resident_before: Variant = null
+## Bumped by clear_effects so a detonation resolving across frames can tell
+## its world was replaced or reset underneath it and stop before launching.
+var _salvo_serial := 0
 
 func setup(target: NativeChunkEditor) -> void:
 	editor = target
@@ -173,7 +180,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func request_detonation() -> void:
-	if not _blocked(): requested = true
+	if not _blocked() and not firing: requested = true
 
 func can_restore() -> bool:
 	return not editor.data._undo.is_empty() and editor.data._undo.back().get("explosion",false)
@@ -188,6 +195,7 @@ func clear_effects() -> void:
 	_resident_before = null
 	requested = false
 	collapse_count = 0
+	_salvo_serial += 1
 	for body in bodies:
 		body.collision_layer = 0
 		body.collision_mask = 0
@@ -200,9 +208,9 @@ func clear_effects() -> void:
 
 func _physics_process(delta: float) -> void:
 	if editor == null: return
-	if requested:
+	if requested and not firing:
 		requested = false
-		if not _blocked(): detonate()
+		if not _blocked(): detonate(get_tree())
 	if not _blocked(): _elapsed += delta
 	for i in range(bodies.size()-1,-1,-1):
 		var body := bodies[i]
@@ -219,8 +227,15 @@ func _physics_process(delta: float) -> void:
 				body.angular_velocity = Vector3(rng.randf_range(-1,1),rng.randf_range(-1,1),rng.randf_range(-1,1))
 				body.remove_meta("collapse_velocity")
 				effects.emit_rockfall(body.global_position,0.8)
+	if not _blocked():
+		_strike_resident()
+		_splash_debris()
 
-func detonate() -> void:
+## A null tree keeps the synchronous path used by tests and offline tools. The
+## live remote passes the scene tree: the flash and rumble land on the request
+## frame, then the terrain refresh spreads across the following frames under
+## the flash instead of stalling the frame the charge goes off.
+func detonate(frame_tree: SceneTree = null) -> void:
 	var salvo: Array[Dictionary] = []
 	for item in charges():
 		if target_id <= 0 or item.id == target_id: salvo.append(item.duplicate(true))
@@ -228,6 +243,7 @@ func detonate() -> void:
 	editor.finish_stroke()
 	if editor.scene.has_method("flush_world_play"): editor.scene.flush_world_play()
 	clear_effects()
+	var serial := _salvo_serial
 	firing = true
 	# Legacy scenery becomes ordinary records before taking visible mesh copies.
 	editor.data.begin_stroke()
@@ -250,8 +266,12 @@ func detonate() -> void:
 			var kick := Blast.impulse(origin,world,charge.blast_radius)
 			if kick.length_squared() > 0.01:
 				affected[item.id] = {"item":item.duplicate(true),"kick":kick + affected.get(item.id,{}).get("kick",Vector3.ZERO)}
+	# The blast is visible and audible before any of the heavy terrain work.
+	for i in range(salvo.size()): effects.emit_blast(origins[i],salvo[i].blast_radius)
 	# Reuse the visible terrain colors instead of rebuilding a temporary crater mesh.
-	var surface_colors: PackedColorArray = editor.data.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	var visible := editor.terrain.mesh as ArrayMesh
+	var color_source: ArrayMesh = visible if visible != null and editor.data.tunnels.is_empty() else editor.data.build_mesh()
+	var surface_colors: PackedColorArray = color_source.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 	var collapses: Array[Dictionary] = []
 	for charge in salvo:
 		var point := editor.data.object_position(charge)
@@ -259,7 +279,10 @@ func detonate() -> void:
 		var collapse := InternalBlast.rupture(editor.data,point,charge.blast_radius,surface_colors)
 		if collapse.is_empty() and not InternalBlast.confined(editor.data,point,charge.blast_radius):
 			Blast.carve_native(editor.data,point,charge.blast_radius)
-			collapse = Collapse.collapse(editor.data,initial_heights,point,charge.blast_radius,surface_colors)
+			collapse = await Collapse.collapse(editor.data,initial_heights,point,charge.blast_radius,surface_colors,frame_tree)
+			if serial != _salvo_serial:
+				firing = false
+				return
 		if not collapse.is_empty(): collapses.append(collapse)
 		editor.data.remove_object(charge.id)
 	# Scenery farther downhill joins the slide if its supporting ground moved,
@@ -288,7 +311,10 @@ func detonate() -> void:
 	for id in affected: editor.data.remove_object(id)
 	editor.data.end_stroke()
 	editor.data._undo.back()["explosion"] = true
-	editor.refresh()
+	await editor.refresh(frame_tree)
+	if serial != _salvo_serial:
+		firing = false
+		return
 	var world_play: Variant = editor.scene.get("world_play")
 	if world_play != null:
 		# The resident and thrown props share these colliders. Refresh them now,
@@ -313,10 +339,7 @@ func detonate() -> void:
 	for id in launch_order:
 		if not parts.has(id) or bodies.size() >= MAX_BODIES: continue
 		_launch_parts(parts[id],affected[id].kick)
-	for i in range(salvo.size()):
-		var charge := salvo[i]
-		effects.emit_blast(origins[i],charge.blast_radius)
-		_eject_dirt(origins[i],charge.blast_radius)
+	for i in range(salvo.size()): _eject_dirt(origins[i],salvo[i].blast_radius)
 	_elapsed = 0.0
 	firing = false
 	collapse_count = collapses.size()
@@ -385,8 +408,18 @@ func _launch_parts(parts: Array, kick: Vector3) -> void:
 	for part in parts: bounds = bounds.merge(part.transform * part.mesh.get_aabb())
 	var body := RigidBody3D.new()
 	body.collision_layer = 4
-	body.collision_mask = 1
+	# Terrain and props, plus the resident's tumble proxy on layer 2.
+	body.collision_mask = 1|2
 	body.continuous_cd = true
+	# Rock-like density so a slab shoves Bigfoot and a pebble does not. Kicks
+	# below are scaled by mass, so launch speeds are unchanged.
+	body.mass = clampf(bounds.get_volume()*400.0,0.5,400.0)
+	body.set_meta("radius",bounds.size.length()*0.5)
+	# Only pieces big enough to strike pay for contact reporting.
+	if float(body.get_meta("radius")) >= STRIKE_RADIUS:
+		body.contact_monitor = true
+		body.max_contacts_reported = 4
+		body.body_entered.connect(_debris_contact.bind(body))
 	body.linear_damp = 0.15
 	body.angular_damp = 0.2
 	add_child(body)
@@ -402,9 +435,60 @@ func _launch_parts(parts: Array, kick: Vector3) -> void:
 	shape.size = bounds.size.max(Vector3.ONE*0.08)
 	collider.shape = shape
 	body.add_child(collider)
-	body.apply_central_impulse(kick.limit_length(45))
-	body.apply_torque_impulse(Vector3(rng.randf_range(-2,2),rng.randf_range(-2,2),rng.randf_range(-2,2)))
+	body.apply_central_impulse(kick.limit_length(45)*body.mass)
+	body.apply_torque_impulse(Vector3(rng.randf_range(-2,2),rng.randf_range(-2,2),rng.randf_range(-2,2))*body.mass)
 	bodies.append(body)
+
+## Debris that reaches a pond splashes it once, then wallows instead of
+## skating across the surface as if it were ground.
+func _splash_debris() -> void:
+	var world_play: Variant = editor.scene.get("world_play")
+	if world_play == null: return
+	var water: Node = world_play.water_play
+	for body in bodies:
+		if body.freeze or body.has_meta("wet"): continue
+		var surface: Variant = water.surface_at(body.global_position)
+		if surface == null or body.global_position.y-float(body.get_meta("radius",0.1)) > surface.y: continue
+		body.set_meta("wet",true)
+		water.splash(surface,clampf(body.mass/60.0,0.3,1.0))
+		body.linear_velocity *= 0.35
+		body.linear_damp = 2.5
+		body.angular_damp = 2.0
+
+func _strikes(body: RigidBody3D) -> bool:
+	return not body.freeze and body.linear_velocity.length() >= STRIKE_SPEED and float(body.get_meta("radius",0.0)) >= STRIKE_RADIUS
+
+## Flying debris knocks a standing resident into the same physical tumble a
+## blast does. Once airborne, the solver handles further hits directly.
+func _strike_resident() -> void:
+	var resident := editor.scene.get("creature") as CreatureActor
+	if resident == null or editor.scene.get("resident_enabled") != true: return
+	if resident.blast_airborne or resident.is_held() or (resident.wind_body != null and resident.wind_body.active): return
+	var feet := resident.global_position
+	for body in bodies:
+		if not _strikes(body): continue
+		var point := body.global_position
+		var axis := feet+Vector3.UP*clampf(point.y-feet.y,0.0,2.3)
+		if point.distance_to(axis) > float(body.get_meta("radius"))+0.55: continue
+		var kick := body.linear_velocity*clampf(body.mass/32.0,0.25,1.0)
+		if kick.length() < 5.0: kick = kick.normalized()*5.0
+		kick += Vector3.UP*2.0
+		var before := resident.global_position
+		if resident.receive_blast(kick):
+			if not _resident_before is Vector3: _resident_before = before
+			body.linear_velocity *= 0.55
+		return
+
+## A static authored prop struck by fast debris joins the solver and takes the
+## hit, so rockfall clears whatever stands in its path.
+func _debris_contact(other: Node, body: RigidBody3D) -> void:
+	if not other is StaticBody3D or not other.name.begins_with("Prop_") or not _strikes(body): return
+	var world_play: Variant = editor.scene.get("world_play")
+	if world_play == null: return
+	var target: Node3D = world_play.promote(int(other.name.trim_prefix("Prop_")))
+	if not target is RigidBody3D: return
+	target.release(body.linear_velocity*clampf(body.mass/target.mass,0.2,1.0)+Vector3.UP*1.0,1.0)
+	body.linear_velocity *= 0.6
 
 func _eject_dirt(origin: Vector3, radius: float) -> void:
 	for i in range(12):

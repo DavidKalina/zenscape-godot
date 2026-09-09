@@ -79,9 +79,32 @@ from about 706–751 ms to 220 ms for the first blast and 130–134 ms on repeat
 This substantially reduces the hitch; it does not eliminate all terrain refresh
 cost. GPU timings reported zero and are unavailable in this run.
 
-An experiment spreading terrain updates across frames reduced peak stalls further,
-but changed the timing of destruction relative to the charge. That scheduling
-change was removed to retain the immediate blast behavior.
+The live remote now fires the flash and rumble on the request frame, then runs
+the collapse relaxation and the terrain refresh on their frame-budgeted paths
+while the flash covers the ground. Debris launches once the crater collision
+exists, a few frames later. Face probes for sculpted colouring are built during
+formation instead of on the first sculpt or blast, and chunk colours come from
+the visible terrain mesh. On the same benchmark the worst frame fell from about
+217 ms (first blast) and 133 ms (repeats) to 55-58 ms on every blast, with the
+work completing about 330 ms after the request. Jolt Physics saves a further
+2 ms per blast on the collision rebuild and is now the project physics engine.
+Tests and offline tools that call `detonate()` or `MountainCollapse.collapse()`
+without a scene tree keep the synchronous path; tests that use the remote wait
+on `requested`/`firing` instead of a fixed frame count.
+
+## Debris strikes
+
+Debris carries rock-like mass (about 400 kg/m³ of its bounds, clamped to
+0.5–400 kg) and collides with the resident's tumble proxy. A body moving at
+4 m/s or faster with a bounding radius of at least 0.25 m knocks a standing
+Bigfoot into the same physical tumble a blast does, scaled by its mass, and
+loses about half its speed doing so; small dirt and slow slabs pass harmlessly.
+Once airborne he keeps colliding with the rockfall through the solver. The same
+debris unseats authored props it hits: the prop is promoted to a loose body and
+takes the hit, so saving after a slide records where knocked rocks came to rest.
+Undo last blast still restores Bigfoot's pre-blast position. Debris that reaches
+a pond splashes it once and then wallows under heavy damping instead of skating
+across the surface. `tests/test_debris_strikes.gd` covers all of this.
 
 ## Mountain tunnels
 

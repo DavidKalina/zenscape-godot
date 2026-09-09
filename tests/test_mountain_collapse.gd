@@ -28,16 +28,16 @@ func run() -> void:
 	var original := data.heights.duplicate()
 	Blast.carve_native(data,Vector3(0,2,0),3.5)
 	var crater := data.heights.duplicate()
-	check(Collapse.collapse(data,original,Vector3(0,2,0),3.5).is_empty() and data.heights == crater,"Flat terrain receives a crater without a mountain collapse")
+	check((await Collapse.collapse(data,original,Vector3(0,2,0),3.5)).is_empty() and data.heights == crater,"Flat terrain receives a crater without a mountain collapse")
 	for family in ["cone","horn","plateau","ridgeback"]:
 		await Presets.form(data,family)
 		var top := summit(data)
 		original = data.heights.duplicate()
-		check(Collapse.collapse(data,original,top,3.5).is_empty(),family+": intact mountain does not collapse spontaneously")
+		check((await Collapse.collapse(data,original,top,3.5)).is_empty(),family+": intact mountain does not collapse spontaneously")
 		data.begin_stroke()
 		var before := data._snapshot()
 		Blast.carve_native(data,top,3.5)
-		var result := Collapse.collapse(data,original,top,3.5)
+		var result := await Collapse.collapse(data,original,top,3.5)
 		check(not result.is_empty(),family+": summit explosion triggers a slide")
 		if result.is_empty(): continue
 		check(absf(result.removed_volume-result.deposited_volume)<0.001,family+": displaced rock volume is deposited downhill")
@@ -61,7 +61,7 @@ func run() -> void:
 		var shoulder_origin := Vector3(shoulder.x,data.ground_height(shoulder),shoulder.y)
 		original = data.heights.duplicate()
 		Blast.carve_native(data,shoulder_origin,3.5)
-		check(not Collapse.collapse(data,original,shoulder_origin,3.5).is_empty(),family+": a blast beside the summit also triggers collapse")
+		check(not (await Collapse.collapse(data,original,shoulder_origin,3.5)).is_empty(),family+": a blast beside the summit also triggers collapse")
 	await _main_game()
 	print("Mountain collapse: ",failures," failures")
 	quit(1 if failures else 0)
@@ -83,7 +83,7 @@ func _main_game() -> void:
 	var pristine := editor.data._snapshot()
 	var original := editor.data.heights.duplicate()
 	Blast.carve_native(editor.data,top,3.5)
-	var preview := Collapse.collapse(editor.data,original,top,3.5)
+	var preview := await Collapse.collapse(editor.data,original,top,3.5)
 	var victim_point: Variant = null
 	for i in range(editor.data.points.size()):
 		var p := editor.data.points[i]
@@ -102,7 +102,7 @@ func _main_game() -> void:
 	var remote = editor.explosives
 	remote.target_id = id
 	remote.request_detonation()
-	await physics_frame
+	while remote.requested or remote.firing: await physics_frame
 	await physics_frame
 	check(remote.collapse_count == 1,"Main-game remote triggers a summit collapse")
 	check(victim>0 and editor.data.object_by_id(victim).is_empty(),"Downhill scenery joins the collapse outside the direct blast radius")
@@ -123,8 +123,10 @@ func _main_game() -> void:
 		if chunks[i].global_position.y < starts[i].y-0.3: fallen += 1
 	check(fallen>chunks.size()/3,"Detached mountain sections actually fall downhill under gravity")
 	check(remote.bodies.size()<=remote.MAX_BODIES,"Collapse shares the existing debris budget")
-	var damaged := editor.data.to_document()
 	check(scene.save_current(),"Collapsed mountain saves in the ordinary world format")
+	# Saving flushes props the rockfall knocked loose into the document, so the
+	# redo target is the saved state.
+	var damaged := editor.data.to_document()
 	remote.restore_button.pressed.emit()
 	await process_frame
 	check(editor.data.to_document() == before and remote.bodies.is_empty(),"Undo restores the exact original peak and clears all falling rock")

@@ -86,7 +86,7 @@ func run() -> void:
 	check(not remote.requested,"Paused scenes do not arm a pending detonation")
 	scene._paused = false
 	remote.request_detonation()
-	await physics_frame
+	while remote.requested or remote.firing: await physics_frame
 	await physics_frame
 	check(editor.data.object_by_id(charge.id).is_empty(),"Remote detonation consumes the buried charge in Enjoy mode")
 	check(not editor.data.object_by_id(other_charge).is_empty(),"Targeted remote leaves other charges armed")
@@ -115,6 +115,7 @@ func run() -> void:
 	key.pressed = true
 	root.push_input(key)
 	await physics_frame
+	while remote.requested or remote.firing: await physics_frame
 	await physics_frame
 	check(remote.charges().is_empty(),"X hotkey fires the all-charges salvo through the actual input route")
 	check(remote.bodies.size() <= remote.MAX_BODIES,"Live debris stays bounded")

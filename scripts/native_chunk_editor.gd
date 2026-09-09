@@ -639,7 +639,7 @@ func redo() -> void:
 	_history_step(true)
 
 func _history_step(forward: bool) -> void:
-	if forming: return
+	if forming or explosives.firing: return
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
@@ -687,6 +687,7 @@ func refresh(frame_tree: SceneTree = null) -> void:
 	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	if not forming: _set_status("Garden changed · Save to keep your work.")
 	terrain.mesh = data.play_mesh(await data.build_mesh_budgeted(false,frame_tree))
+	if frame_tree != null and data._recipe != null: await data.ensure_face_probes(frame_tree)
 	var original := data.heights == data.original_heights
 	for entry in _anchors:
 		if data.blank:

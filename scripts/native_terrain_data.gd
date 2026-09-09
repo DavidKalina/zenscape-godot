@@ -37,6 +37,7 @@ var _recipe: RefCounted
 var _recipe_heights := PackedFloat32Array()
 var _recipe_gradients: Array[Vector2] = []
 var _locate_cache := {}
+var _locate_generation := 0
 var _locate_face := PackedInt32Array()
 var _locate_u := PackedFloat64Array()
 var _locate_v := PackedFloat64Array()
@@ -157,6 +158,7 @@ func sample(point: Vector2, values: PackedFloat32Array) -> Variant:
 	var slot: int = _locate_cache.get(point,-1)
 	if slot < 0:
 		if _locate_cache.size() >= 262144:
+			_locate_generation += 1
 			_locate_cache.clear()
 			_locate_face.clear()
 			_locate_u.clear()
@@ -653,6 +655,27 @@ func _ensure_face_probes() -> void:
 				_locate_cache[point] = slot
 				_locate(point)
 			_face_probe.append(slot)
+
+## Probe slots depend only on the fixed triangulation. Live formation pays for
+## them here across frames so the first sculpt or blast does not stall on them.
+func ensure_face_probes(frame_tree: SceneTree) -> void:
+	if _face_probe.size() == _face_center.size()*4: return
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
+	var generation := _locate_generation
+	var probes := PackedInt32Array()
+	for face in range(_face_center.size()):
+		if face % 128 == 0: await budget.checkpoint()
+		for offset: Vector2 in [Vector2(0.25,0),Vector2(-0.25,0),Vector2(0,0.25),Vector2(0,-0.25)]:
+			var point := (_face_center[face]+offset).clamp(Vector2(-14,-14),Vector2(14,14))
+			var slot: int = _locate_cache.get(point,-1)
+			if slot < 0:
+				slot = _locate_face.size()
+				_locate_cache[point] = slot
+				_locate(point)
+			probes.append(slot)
+	# A cache eviction during a wait invalidated these slots; the synchronous
+	# builder recomputes them on the next sculpt instead.
+	if generation == _locate_generation: _face_probe = probes
 
 func _probe_delta(slot: int) -> float:
 	var i: int = _locate_face[slot]
