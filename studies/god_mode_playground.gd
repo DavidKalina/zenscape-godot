@@ -43,11 +43,7 @@ func _ready() -> void:
 	_tool_button.pressed.connect(_tool_changed)
 	_wind_hint.text = "Hands · P pause · R reset"
 	# The life scene's extra investigation button makes a useful tree invitation.
-	var invitation: Button = column.get_child(column.get_child_count()-1)
-	for connection in invitation.pressed.get_connections(): invitation.pressed.disconnect(connection.callable)
-	invitation.text = "Show him the tree"
-	invitation.pressed.connect(func() -> void:
-		if not _paused: brain.investigate(spring_tree.global_position,false,"spring-tree"))
+	_curious_button.text = "Show him the tree"
 	_tension_bar.custom_minimum_size = Vector2(190,5)
 	_tension_bar.max_value = 1.0
 	_tension_bar.show_percentage = false
@@ -88,6 +84,9 @@ func _tool_changed() -> void:
 	cancel_tree_drag()
 	_tool_button.text = "Wind · switch to hands" if gust_tool else "Hands · switch to wind"
 
+func _investigate_interest() -> void:
+	if not _paused: brain.investigate(spring_tree.global_position,false,"spring-tree")
+
 func _interests() -> Array[Dictionary]:
 	var interests := super._interests()
 	if is_instance_valid(spring_tree):
@@ -111,7 +110,7 @@ func _process(delta: float) -> void:
 	brain.enabled = not _tree_drag and _attention_time <= 0
 	if _tree_drag and creature.can_roam():
 		creature.stop_walking()
-		creature.notice(spring_tree.center(3.0))
+		creature.track_gaze(spring_tree.center(3.0))
 		# Watchful on the first pull; arms spread to brace after repeated teasing.
 		if spring_tree.tension > 0.45 and _mischief_count > 0 and not _braced:
 			creature.queue_tremor(0.25)

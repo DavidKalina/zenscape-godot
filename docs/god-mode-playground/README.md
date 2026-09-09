@@ -48,11 +48,31 @@ controls remain available without entering the editor.
   displacement, recovery, cancellation, focus loss, pause, reset and existing
   gust/carry behavior.
 - `tools/film_god_mode_playground.gd`: repeatable pull/release sequence and
-  selected rendered frames. Run with Forward+ and `--fixed-fps 60`; add
+  selected rendered frames, with the interface hidden for the recording. Run
+  with Forward+ and `--fixed-fps 60`; add
   `--write-movie /tmp/god-mode.avi` to capture a movie.
 - `validation/results.json`: full-suite results, with per-test logs alongside.
 
-Visual review and full regression results are recorded after final verification.
+The complete suite plus focused rechecks finished at **135/144 passing** on
+Metal / Forward+. Both new tests and all five targeted shared-creature checks
+pass. All nine remaining failures also reproduce on the untouched starting
+commit `07f2335`; `validation/summary.json` names them and `rechecks.json`
+contains the paired baseline results. The first run was 131/144: correcting the
+new test's Retina viewport setup and rechecking three unstable graphics tests
+accounts for the difference. Existing shutdown resource warnings remain in
+scene logs. This was a shared desktop, not an isolated performance benchmark.
+
+Visual inspection covered the bent trunk/crown, branch strike, flailing and
+standing recovery. The deterministic recording moves Bigfoot about 2.15 metres;
+the pointer integration test measures roughly 2.1–2.4 metres across verified
+runs and also confirms that
+he resumes exploring. `tree-mischief.mp4` shows the sequence. It is a local
+capture (ignored by Git); the capture script is committed for reproduction.
+Input verification uses Godot input events and scene controls. A human feel
+assessment is still useful; no claim of hands-on player testing is made.
+
+Independent Standards and Spec review findings were addressed and rechecked;
+see `REVIEW.md`.
 
 ## Limits
 

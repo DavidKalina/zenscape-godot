@@ -12,6 +12,7 @@ var _waiting_for_ground := false
 var _navigation_ready := false
 var _reset_pending := false
 var last_collision_rebuild_usec := 0
+var _curious_button := Button.new()
 
 func _ready() -> void:
 	super._ready()
@@ -31,20 +32,21 @@ func _ready() -> void:
 	var column := _play_panel.get_child(0)
 	column.get_child(0).text = "A little life"
 	column.get_child(1).text = "Bigfoot explores while you build. Grab his head or call him over.\nRight drag to orbit · Scroll to zoom · P pause"
-	var curious := Button.new()
-	curious.text = "Something interesting?"
-	curious.focus_mode = Control.FOCUS_NONE
-	curious.pressed.connect(func() -> void:
-		var interests := _interests()
-		if not interests.is_empty():
-			var interest: Dictionary = interests[0]
-			brain.investigate(interest.position, false, interest.id))
-	column.add_child(curious)
+	_curious_button.text = "Something interesting?"
+	_curious_button.focus_mode = Control.FOCUS_NONE
+	_curious_button.pressed.connect(_investigate_interest)
+	column.add_child(_curious_button)
 	_message.text = "He has a whole little world to explore."
 	_mode_button.text = "Build while he explores"
 	_wind_hint.custom_minimum_size.x = 200
 	_wind_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_geometry_changed()
+
+func _investigate_interest() -> void:
+	var interests := _interests()
+	if not interests.is_empty():
+		var interest: Dictionary = interests[0]
+		brain.investigate(interest.position, false, interest.id)
 
 func toggle_build() -> void:
 	_aim_start = null

@@ -165,15 +165,17 @@ func receive_impulse(impulse: Vector3) -> bool:
 	if wind_body == null or not impulse.is_finite() or impulse.length() < 0.1:
 		return false
 	if state in [State.HELD, State.LANDING, State.RECOVERING]: return false
-	if state != State.WIND:
-		_standing_basis = global_basis.orthonormalized()
-		wind_body.start(global_transform)
-		_settled_time = 0.0
-		_visual.transform = Transform3D.IDENTITY
-		_state(State.WIND)
-		_play("Held")
+	if state != State.WIND: _start_physical_tumble()
 	wind_body.apply_impulse(impulse.limit_length(300.0), Vector3.UP*0.65)
 	return true
+
+func _start_physical_tumble() -> void:
+	if state != State.RECOVERING: _standing_basis = global_basis.orthonormalized()
+	wind_body.start(global_transform)
+	_settled_time = 0.0
+	_visual.transform = Transform3D.IDENTITY
+	_state(State.WIND)
+	_play("Held")
 
 func _physics_process(delta: float) -> void:
 	if wind_body == null or not is_instance_valid(_wind_field): return
@@ -182,12 +184,7 @@ func _physics_process(delta: float) -> void:
 	var strength := wind.length()
 	_brace = Vector2(clampf(wind.z*0.016,-0.14,0.14),clampf(-wind.x*0.016,-0.14,0.14))
 	if state != State.WIND and strength >= 7.0:
-		if state != State.RECOVERING: _standing_basis = global_basis.orthonormalized()
-		wind_body.start(global_transform)
-		_settled_time = 0.0
-		_visual.transform = Transform3D.IDENTITY
-		_state(State.WIND)
-		_play("Held")
+		_start_physical_tumble()
 	if state == State.WIND:
 		var quiet: bool = strength < 4.0 and wind_body.get_contact_count() > 0 and wind_body.linear_velocity.length() < 0.65 and wind_body.angular_velocity.length() < 0.85
 		_settled_time = _settled_time+delta if quiet else 0.0
@@ -293,11 +290,15 @@ func release_at(point: Variant) -> bool:
 	_state(State.LANDING)
 	return valid
 
-func notice(point: Vector3) -> void:
-	if not point.is_finite():
-		return
+## Sustained attention updates gaze without restarting an authored reaction.
+func track_gaze(point: Vector3) -> void:
+	if not point.is_finite(): return
 	_gaze = point
 	_gaze_weight = 1.0
+
+func notice(point: Vector3) -> void:
+	if not point.is_finite(): return
+	track_gaze(point)
 	if state == State.IDLE or state == State.ALERT:
 		_state(State.ALERT)
 		_play("Alert")

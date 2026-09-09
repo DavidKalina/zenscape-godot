@@ -1,0 +1,1062 @@
+[
+  {
+    "test": "test_alpenglow.gd",
+    "exit_code": 0,
+    "seconds": 1.67,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_ambient_audio.gd",
+    "exit_code": 0,
+    "seconds": 1.63,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_authoring_preparation.gd",
+    "exit_code": 0,
+    "seconds": 3.36,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_autumn.gd",
+    "exit_code": 0,
+    "seconds": 1.86,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bear_walk.gd",
+    "exit_code": 0,
+    "seconds": 0.45,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot.gd",
+    "exit_code": 0,
+    "seconds": 0.42,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_breathing.gd",
+    "exit_code": 0,
+    "seconds": 0.47,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_habits.gd",
+    "exit_code": 0,
+    "seconds": 48.32,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_home.gd",
+    "exit_code": 0,
+    "seconds": 4.37,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_life_editor.gd",
+    "exit_code": 0,
+    "seconds": 2.92,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_life_interruptions.gd",
+    "exit_code": 0,
+    "seconds": 11.2,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_lifecycle.gd",
+    "exit_code": 0,
+    "seconds": 1.74,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_playground.gd",
+    "exit_code": 0,
+    "seconds": 1.78,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_routine_actor.gd",
+    "exit_code": 0,
+    "seconds": 0.43,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_routine_day.gd",
+    "exit_code": 0,
+    "seconds": 54.61,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_routine_ownership.gd",
+    "exit_code": 0,
+    "seconds": 8.86,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_routine_pause.gd",
+    "exit_code": 0,
+    "seconds": 10.25,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_routine_world.gd",
+    "exit_code": 0,
+    "seconds": 10.56,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bigfoot_walk.gd",
+    "exit_code": 0,
+    "seconds": 0.47,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_bird_flight.gd",
+    "exit_code": 0,
+    "seconds": 0.97,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_camera_exploration.gd",
+    "exit_code": 0,
+    "seconds": 1.75,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_camera_feedback.gd",
+    "exit_code": 0,
+    "seconds": 1.66,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_command_palette.gd",
+    "exit_code": 0,
+    "seconds": 2.76,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_conifer_wind.gd",
+    "exit_code": 0,
+    "seconds": 0.54,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_connected_formation_water.gd",
+    "exit_code": 1,
+    "seconds": 4.78,
+    "errors": [
+      "ERROR: Steep sections render animated cascade geometry: redwood_grove",
+      "ERROR: Connected courses exist: redwood_grove",
+      "ERROR: Faceted mesh keeps most of each course visible: redwood_grove"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_creature_actor.gd",
+    "exit_code": 0,
+    "seconds": 0.48,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_brain.gd",
+    "exit_code": 0,
+    "seconds": 0.72,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_deliberation.gd",
+    "exit_code": 0,
+    "seconds": 4.13,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_hand_reach.gd",
+    "exit_code": 0,
+    "seconds": 0.48,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_navigation.gd",
+    "exit_code": 0,
+    "seconds": 0.88,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_tremor.gd",
+    "exit_code": 0,
+    "seconds": 0.49,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_walk.gd",
+    "exit_code": 0,
+    "seconds": 0.43,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_creature_wind.gd",
+    "exit_code": 0,
+    "seconds": 2.46,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_curated_looks.gd",
+    "exit_code": 0,
+    "seconds": 1.87,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_diorama_flow.gd",
+    "exit_code": 0,
+    "seconds": 3.94,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_display_fog.gd",
+    "exit_code": 0,
+    "seconds": 4.61,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_editor_coherence.gd",
+    "exit_code": 0,
+    "seconds": 4.89,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_export_entry.gd",
+    "exit_code": 0,
+    "seconds": 3.61,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_fall_foam.gd",
+    "exit_code": 0,
+    "seconds": 0.47,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_fall_mist.gd",
+    "exit_code": 1,
+    "seconds": 0.7,
+    "errors": [
+      "ERROR: Mist alpha differs: 0.0 expected 0.027",
+      "ERROR: Mist alpha differs: 0.0 expected 0.054",
+      "ERROR: Mist alpha differs: 0.0 expected 0.15",
+      "ERROR: Mist alpha differs: 0.0 expected 0.3",
+      "ERROR: Mist alpha differs: 0.0 expected 0.0297",
+      "ERROR: Mist alpha differs: 0.0 expected 0.0825",
+      "ERROR: Mist alpha differs: 0.0 expected 0.165",
+      "ERROR: Mist alpha differs: 0.0 expected 0.03",
+      "ERROR: Mist does not respect opaque scene depth"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_fidelity.gd",
+    "exit_code": 0,
+    "seconds": 1.77,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_fidelity_life.gd",
+    "exit_code": 1,
+    "seconds": 14.83,
+    "errors": [
+      "ERROR: Active rhythm covers substantially more ground than the original baseline",
+      "ERROR: Default rhythm spends a substantial part of the minute moving",
+      "ERROR: New boulder immediately catches his attention",
+      "ERROR: Discovery prompts an excited approach"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_fidelity_tremor.gd",
+    "exit_code": 0,
+    "seconds": 10.83,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_fireflies.gd",
+    "exit_code": 0,
+    "seconds": 1.65,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_fog_color.gd",
+    "exit_code": 1,
+    "seconds": 1.17,
+    "errors": [],
+    "passed": false
+  },
+  {
+    "test": "test_formation_responsiveness.gd",
+    "exit_code": 1,
+    "seconds": 12.17,
+    "errors": [
+      "ERROR: Formation must not block the main thread for 50 ms"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_frog_motion.gd",
+    "exit_code": 0,
+    "seconds": 1.67,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_garden.gd",
+    "exit_code": 0,
+    "seconds": 0.61,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_garden_look.gd",
+    "exit_code": 0,
+    "seconds": 0.85,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_garden_scene.gd",
+    "exit_code": 0,
+    "seconds": 1.27,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_god_mode_playground.gd",
+    "exit_code": 1,
+    "seconds": 16.12,
+    "errors": [
+      "ERROR: Pointer press starts tree gesture",
+      "ERROR: Camera drag creates substantial bend",
+      "ERROR: Tree release physically strikes Bigfoot",
+      "ERROR: Impact visibly displaces Bigfoot",
+      "ERROR: Bigfoot recovers after impact"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_growth.gd",
+    "exit_code": 0,
+    "seconds": 1.76,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_ice_highlight.gd",
+    "exit_code": 1,
+    "seconds": 0.99,
+    "errors": [
+      "ERROR: Ice highlight differs from source: (0.0, 0.0, 0.0, 1.0) expected (0.080849, 0.060637, 0.040424)"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_inversion.gd",
+    "exit_code": 0,
+    "seconds": 1.69,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_inversion_surface.gd",
+    "exit_code": 0,
+    "seconds": 2.12,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_algae.gd",
+    "exit_code": 0,
+    "seconds": 0.9,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_chop.gd",
+    "exit_code": 0,
+    "seconds": 0.8,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_complete_lighting.gd",
+    "exit_code": 0,
+    "seconds": 1.42,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_display_composite.gd",
+    "exit_code": 0,
+    "seconds": 1.62,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_fetch.gd",
+    "exit_code": 0,
+    "seconds": 0.53,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_flash.gd",
+    "exit_code": 0,
+    "seconds": 2.0,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_glints.gd",
+    "exit_code": 0,
+    "seconds": 0.58,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lake_material.gd",
+    "exit_code": 0,
+    "seconds": 0.57,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_landscape.gd",
+    "exit_code": 0,
+    "seconds": 0.44,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_landscape_favorites.gd",
+    "exit_code": 0,
+    "seconds": 3.57,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_landscape_presets.gd",
+    "exit_code": 0,
+    "seconds": 8.09,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_landscape_variations.gd",
+    "exit_code": 0,
+    "seconds": 2.88,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_leaves.gd",
+    "exit_code": 0,
+    "seconds": 1.74,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_lightning.gd",
+    "exit_code": 0,
+    "seconds": 1.65,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_live_edit_navigation.gd",
+    "exit_code": 0,
+    "seconds": 8.1,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_local_wind_field.gd",
+    "exit_code": 0,
+    "seconds": 0.7,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_local_wind_foliage.gd",
+    "exit_code": 0,
+    "seconds": 1.04,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_local_wind_water.gd",
+    "exit_code": 0,
+    "seconds": 0.72,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_asset_catalog.gd",
+    "exit_code": 124,
+    "seconds": 150.02,
+    "errors": [
+      "ERROR: The palette exposes all seventeen added source assets",
+      "ERROR: Node not found: \"redwood-trunk\" (relative to \"ZenScapeReference\").",
+      "ERROR: Node not found: \"redwood-trunk\" (relative to \"ZenScapeReference\").",
+      "SCRIPT ERROR: Invalid access to property or key 'mesh' on a base object of type 'null instance'."
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_native_build_palette.gd",
+    "exit_code": 0,
+    "seconds": 5.43,
+    "errors": [
+      "ERROR: Parameter \"material\" is null.",
+      "ERROR: Parameter \"material\" is null.",
+      "ERROR: Parameter \"material\" is null.",
+      "ERROR: Parameter \"material\" is null."
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_native_build_tools.gd",
+    "exit_code": 124,
+    "seconds": 150.02,
+    "errors": [
+      "SCRIPT ERROR: Invalid access to property or key 'control' on a base object of type 'Dictionary'."
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_native_chunk_editor.gd",
+    "exit_code": 0,
+    "seconds": 4.21,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_drop_reactions.gd",
+    "exit_code": 1,
+    "seconds": 3.11,
+    "errors": [
+      "ERROR: A paused reaction stays live"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_native_editor_hotkeys.gd",
+    "exit_code": 1,
+    "seconds": 2.71,
+    "errors": [
+      "ERROR: A flower previews a smaller footprint"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_native_fall_course.gd",
+    "exit_code": 0,
+    "seconds": 0.78,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_fall_editor.gd",
+    "exit_code": 0,
+    "seconds": 4.67,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_fall_foam.gd",
+    "exit_code": 0,
+    "seconds": 3.4,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_fall_mist.gd",
+    "exit_code": 0,
+    "seconds": 4.12,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_fall_renderer.gd",
+    "exit_code": 0,
+    "seconds": 0.83,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_fall_reuse.gd",
+    "exit_code": 0,
+    "seconds": 1.17,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_fall_strand.gd",
+    "exit_code": 0,
+    "seconds": 0.6,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_falls.gd",
+    "exit_code": 0,
+    "seconds": 4.34,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_flora.gd",
+    "exit_code": 0,
+    "seconds": 10.18,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_landmarks.gd",
+    "exit_code": 0,
+    "seconds": 2.94,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_mountain_shape.gd",
+    "exit_code": 0,
+    "seconds": 0.61,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_object_editing.gd",
+    "exit_code": 0,
+    "seconds": 7.5,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_object_pose.gd",
+    "exit_code": 0,
+    "seconds": 1.83,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_object_tint.gd",
+    "exit_code": 0,
+    "seconds": 1.8,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_paint.gd",
+    "exit_code": 0,
+    "seconds": 7.08,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_palette.gd",
+    "exit_code": 0,
+    "seconds": 3.05,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_play_collisions.gd",
+    "exit_code": 0,
+    "seconds": 0.66,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_pond_attributes.gd",
+    "exit_code": 0,
+    "seconds": 0.7,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_pond_cache.gd",
+    "exit_code": 0,
+    "seconds": 1.0,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_pond_preview.gd",
+    "exit_code": 0,
+    "seconds": 0.59,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_range.gd",
+    "exit_code": 0,
+    "seconds": 9.05,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_recipe_water.gd",
+    "exit_code": 0,
+    "seconds": 4.09,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_refresh_incremental.gd",
+    "exit_code": 0,
+    "seconds": 8.31,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_selection.gd",
+    "exit_code": 0,
+    "seconds": 2.08,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_shoreline.gd",
+    "exit_code": 0,
+    "seconds": 3.27,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_stream_editor.gd",
+    "exit_code": 0,
+    "seconds": 3.1,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_stream_geometry.gd",
+    "exit_code": 0,
+    "seconds": 0.55,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_stream_surface_map.gd",
+    "exit_code": 0,
+    "seconds": 3.35,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_native_turf.gd",
+    "exit_code": 0,
+    "seconds": 2.36,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_navigation_budget.gd",
+    "exit_code": 0,
+    "seconds": 0.46,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_night_fill.gd",
+    "exit_code": 0,
+    "seconds": 1.57,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_paused_lighting.gd",
+    "exit_code": 0,
+    "seconds": 1.66,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_paused_reveal.gd",
+    "exit_code": 0,
+    "seconds": 1.65,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_performance_trace.gd",
+    "exit_code": 0,
+    "seconds": 3.87,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_play_spring_tree.gd",
+    "exit_code": 0,
+    "seconds": 0.51,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_playable_visuals.gd",
+    "exit_code": 0,
+    "seconds": 4.28,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_pond_habitat.gd",
+    "exit_code": 0,
+    "seconds": 1.66,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_precipitation_height.gd",
+    "exit_code": 0,
+    "seconds": 0.43,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_puffs.gd",
+    "exit_code": 0,
+    "seconds": 0.42,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_rain_rings.gd",
+    "exit_code": 0,
+    "seconds": 0.67,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_rainbow_weather.gd",
+    "exit_code": 0,
+    "seconds": 1.63,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_redwood_cover_cache.gd",
+    "exit_code": 0,
+    "seconds": 0.56,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_redwood_forest.gd",
+    "exit_code": 0,
+    "seconds": 0.5,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_redwood_grove.gd",
+    "exit_code": 0,
+    "seconds": 4.04,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_resident_gust.gd",
+    "exit_code": 0,
+    "seconds": 4.74,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_resident_interaction.gd",
+    "exit_code": 6,
+    "seconds": 3.66,
+    "errors": [
+      "ERROR: Dragging hovered Bigfoot picks him up in Build mode",
+      "ERROR: Carrying has dedicated feedback",
+      "ERROR: Escape returns Bigfoot safely before opening the menu",
+      "ERROR: Drag release queues a gust",
+      "ERROR: Bigfoot pickup takes priority while gust tool is active",
+      "ERROR: Pickup works in Enjoy mode too"
+    ],
+    "passed": false
+  },
+  {
+    "test": "test_scene.gd",
+    "exit_code": 0,
+    "seconds": 0.81,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_scene_look.gd",
+    "exit_code": 0,
+    "seconds": 1.93,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_scene_look_render.gd",
+    "exit_code": 0,
+    "seconds": 2.81,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_scene_wind_direction.gd",
+    "exit_code": 0,
+    "seconds": 0.48,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_shroud_weather.gd",
+    "exit_code": 0,
+    "seconds": 1.61,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_source_terrain.gd",
+    "exit_code": 0,
+    "seconds": 1.15,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_surface_haze.gd",
+    "exit_code": 0,
+    "seconds": 1.97,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_surface_weather.gd",
+    "exit_code": 0,
+    "seconds": 0.45,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_thunder_audio.gd",
+    "exit_code": 0,
+    "seconds": 0.41,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_title_resolution.gd",
+    "exit_code": 0,
+    "seconds": 0.5,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_water_growth.gd",
+    "exit_code": 0,
+    "seconds": 1.64,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_waterfall_drips.gd",
+    "exit_code": 0,
+    "seconds": 0.46,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_weather_profiles.gd",
+    "exit_code": 0,
+    "seconds": 1.62,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_weather_wind_trails.gd",
+    "exit_code": 0,
+    "seconds": 0.7,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_wind.gd",
+    "exit_code": 0,
+    "seconds": 0.45,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_wind_demo_landscape.gd",
+    "exit_code": 0,
+    "seconds": 1.83,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_wind_gust_visuals.gd",
+    "exit_code": 0,
+    "seconds": 0.48,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_wind_leaf_litter.gd",
+    "exit_code": 0,
+    "seconds": 0.46,
+    "errors": [],
+    "passed": true
+  },
+  {
+    "test": "test_wind_playground.gd",
+    "exit_code": 0,
+    "seconds": 3.41,
+    "errors": [],
+    "passed": true
+  }
+]

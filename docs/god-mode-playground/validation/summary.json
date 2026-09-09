@@ -1,0 +1,48 @@
+{
+  "recorded_utc": "2026-09-09T00:56:53.301447+00:00",
+  "renderer": "Metal / Forward+",
+  "baseline_commit": "07f23358aacb842961d7f598290be8d3d9f1cdd7",
+  "total": 144,
+  "initial_passed": 131,
+  "final_passed": 135,
+  "remaining_failures_reproduced_on_baseline": [
+    "test_connected_formation_water.gd",
+    "test_fidelity_life.gd",
+    "test_formation_responsiveness.gd",
+    "test_native_asset_catalog.gd",
+    "test_native_build_palette.gd",
+    "test_native_build_tools.gd",
+    "test_native_drop_reactions.gd",
+    "test_native_editor_hotkeys.gd",
+    "test_resident_interaction.gd"
+  ],
+  "new_feature_tests_passed": true,
+  "shared_creature_rechecks_passed": true,
+  "notes": [
+    "Final results combine the complete suite and focused rechecks.",
+    "Existing shutdown resource warnings are retained in logs but do not fail tests; other engine and script errors do.",
+    "Timing results were collected on a shared desktop with other Godot processes active."
+  ],
+  "final_integration_check": {
+    "passed": true,
+    "log": "test_god_mode_playground-final.log",
+    "displacement_metres": 2.10334777832031,
+    "covers": [
+      "orbit",
+      "zoom",
+      "tree input",
+      "anticipation",
+      "impact",
+      "recovery",
+      "autonomy",
+      "repeat brace",
+      "UI cancellation",
+      "focus loss",
+      "pause",
+      "reset",
+      "tool switch",
+      "gust",
+      "carry"
+    ]
+  }
+}
