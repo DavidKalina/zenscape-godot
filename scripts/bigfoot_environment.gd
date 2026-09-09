@@ -3,6 +3,10 @@ extends Node
 ## scenery bounds; physical interruptions always take precedence.
 const TREES := ["tree","layered_tree","broadleaf","redwood","bigfoot_tree"]
 const TREE_HUG = preload("res://scripts/bigfoot_tree_hug.gd")
+const FIRE = preload("res://scripts/bigfoot_fire.gd")
+## Fire sits just below lightning: it cancels everything else, but a strike
+## still gets its own frame first. Inert until the scene owns a `_fire_field`.
+var fire: Node
 var _hug_variant := {}
 var _hug_start := {}
 var _hug_elbows := {}
@@ -48,6 +52,9 @@ func setup(world: Node) -> void:
 	_sparks.material_override = material
 	add_child(_sparks)
 	_sparks.hide()
+	fire = FIRE.new()
+	add_child(fire)
+	fire.setup(scene,self)
 
 func _on_strike(point: Vector3) -> void:
 	if not scene.resident_enabled: return
@@ -72,6 +79,14 @@ func advance(delta: float) -> bool:
 			if scene.routine != null: scene.routine.cancel("lightning")
 			if actor.can_roam():
 				_begin("shock" if distance<1.8 else "startle",_strike+Vector3.UP*4.0,3.8 if distance<1.8 else 2.8)
+	if fire != null:
+		# Fire outranks every quiet activity below it. While it owns the actor
+		# this controller is silent; while it merely walks him to the ash it
+		# reports "not observing" so the brain keeps driving the journey.
+		var burning: bool = fire.advance(dt,owned)
+		if burning or fire.busy():
+			if busy(): cancel()
+			return burning
 	if owned or (not actor.can_roam() and actor.state != CreatureActor.State.ACTION):
 		cancel()
 		return false
@@ -385,3 +400,4 @@ func _clear() -> void:
 func world_changed() -> void:
 	cancel()
 	_pending_strike = false
+	if fire != null: fire.world_changed()
