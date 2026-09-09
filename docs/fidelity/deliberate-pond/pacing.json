@@ -1,0 +1,35 @@
+[
+	{
+		"fps_cap": 0,
+		"frames": 534,
+		"max_ms": 51.56,
+		"median_ms": 6.917,
+		"over_16_67ms": 49,
+		"p99_ms": 31.195,
+		"size": "(1600, 1000)",
+		"variant": 0,
+		"vsync": 1
+	},
+	{
+		"fps_cap": 0,
+		"frames": 193,
+		"max_ms": 55.386,
+		"median_ms": 23.921,
+		"over_16_67ms": 191,
+		"p99_ms": 50.168,
+		"size": "(1600, 1000)",
+		"variant": 2,
+		"vsync": 1
+	},
+	{
+		"fps_cap": 0,
+		"frames": 153,
+		"max_ms": 39.136,
+		"median_ms": 34.482,
+		"over_16_67ms": 153,
+		"p99_ms": 38.789,
+		"size": "(1600, 1000)",
+		"variant": 0,
+		"vsync": 1
+	}
+]
