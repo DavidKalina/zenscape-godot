@@ -49,6 +49,7 @@ var _wind_field: Node
 var _ground_probe: Callable
 var _safe_landing: Callable
 var _settled_time := 0.0
+var blast_airborne := false
 var _recover_from := Transform3D.IDENTITY
 var _recover_to := Transform3D.IDENTITY
 var _brace := Vector2.ZERO
@@ -204,6 +205,20 @@ func receive_impulse(impulse: Vector3) -> bool:
 	wind_body.apply_impulse(impulse.limit_length(300.0), Vector3.UP*0.65)
 	return true
 
+## Blast strength is a velocity change, independent of the resident's mass.
+func receive_blast(velocity: Vector3) -> bool:
+	if wind_body == null or not velocity.is_finite() or velocity.length() < 0.1 or is_held(): return false
+	if state != State.WIND: _start_physical_tumble()
+	blast_airborne = true
+	_age = 0.0
+	_settled_time = 0.0
+	_pending_tremor = 0.0
+	wind_body.blast_flight = true
+	wind_body.linear_damp = 0.15
+	wind_body.linear_velocity = (wind_body.linear_velocity+velocity).limit_length(40.0)
+	wind_body.angular_velocity = Vector3(velocity.z,0,-velocity.x).limit_length(2.5)
+	return true
+
 func _start_physical_tumble() -> void:
 	if state != State.RECOVERING: _standing_basis = global_basis.orthonormalized()
 	wind_body.start(global_transform)
@@ -223,7 +238,16 @@ func _physics_process(delta: float) -> void:
 	if state == State.WIND:
 		var quiet: bool = strength < 4.0 and wind_body.get_contact_count() > 0 and wind_body.linear_velocity.length() < 0.65 and wind_body.angular_velocity.length() < 0.85
 		_settled_time = _settled_time+delta if quiet else 0.0
-		if (_age > 1.0 and _settled_time > 0.55) or wind_body.global_position.y < _safe_position.y-12.0:
+		if blast_airborne:
+			# Let a mountain fall reach lower ground; an off-island fall respawns.
+			var ground: Variant = _ground_probe.call(wind_body.global_position) if _ground_probe.is_valid() else null
+			if wind_body.global_position.y < -18.0 or (_age > 12.0 and ground == null):
+				var center: Variant = _safe_landing.call(Vector3.ZERO) if _safe_landing.is_valid() else null
+				if center is Vector3 and center.is_finite(): reset_at(center)
+				else: reset_at(_safe_position)
+			elif (_age > 1.0 and _settled_time > 0.55) or _age > 12.0:
+				_begin_recovery()
+		elif (_age > 1.0 and _settled_time > 0.55) or wind_body.global_position.y < _safe_position.y-12.0:
 			_begin_recovery()
 
 func _begin_recovery() -> void:
@@ -326,6 +350,7 @@ func is_held() -> bool:
 func pick_up() -> bool:
 	if state == State.HELD or player == null:
 		return false
+	blast_airborne = false
 	if wind_body != null:
 		if state == State.WIND: global_transform = wind_body.feet_transform()
 		var head_world := to_global(Vector3(0,grasp_height,0.04))
@@ -376,6 +401,7 @@ func notice(point: Vector3) -> void:
 
 func reset_at(point: Vector3) -> void:
 	if not point.is_finite(): return
+	blast_airborne = false
 	if _breath != null: _breath.clear()
 	if wind_body != null:
 		wind_body.stop()
@@ -464,6 +490,7 @@ func advance(delta: float) -> void:
 		if progress >= 1.0:
 			_safe_position = global_position
 			land_position = global_position
+			blast_airborne = false
 			_state(State.ALERT)
 			_play("Alert")
 	elif state == State.LANDING:

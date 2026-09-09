@@ -3,12 +3,12 @@ extends Control
 const Style = preload("res://scripts/tactile_editor_style.gd")
 const FAMILIES := {
 	"Select":["select"],
-	"Sculpt":["raise","lower","smooth","flatten","mountain","ground","range"],
+	"Sculpt":["raise","lower","tunnel","smooth","flatten","mountain","ground","range"],
 	"Paint":["meadow","grass","blades","paint","erase"],
-	"Place":["tree","rock","flower","arch","bigfoot_tree","assets"],
+	"Place":["explosive","tree","rock","flower","arch","bigfoot_tree","assets"],
 	"Water":["pond","waterfall"],
 }
-const SHELF := ["tree","broadleaf","rock","flower"]
+const SHELF := ["explosive","tree","broadleaf","rock","flower"]
 var palette: NativeBuildPalette
 var editor: NativeChunkEditor
 var buttons := {}
@@ -27,6 +27,7 @@ var portrait := TextureRect.new()
 var shelf := HBoxContainer.new()
 var miniatures := {}
 var quick := VBoxContainer.new()
+var tunnel_actions := VBoxContainer.new()
 var quick_row := {}
 var _shown_id := ""
 var _card_tween: Tween
@@ -148,6 +149,15 @@ func setup(owner_palette: NativeBuildPalette) -> void:
 	choices.item_selected.connect(func(index: int) -> void: palette._choose(FAMILIES[family][index]))
 	context.add_child(choices)
 	context.add_child(quick)
+	context.add_child(tunnel_actions)
+	for spec in [["Plant charge inside","plant_tunnel_charge"],["Seal last tunnel","seal_tunnel"],["Reopen last tunnel","reopen_tunnel"]]:
+		var button := Button.new()
+		button.text = spec[0]
+		button.name = spec[1]
+		Style.button(button)
+		button.pressed.connect(Callable(editor,spec[1]))
+		tunnel_actions.add_child(button)
+	editor.play_geometry_changed.connect(_sync_tunnels)
 	trail.text = "Paint a trail"
 	trail.add_theme_font_size_override("font_size",13)
 	trail.tooltip_text = "Drag to place a trail. One stroke, one undo."
@@ -237,10 +247,13 @@ func sync() -> void:
 	trail.visible = editor.trail_available() and id != "bigfoot"
 	trail.set_pressed_no_signal(editor.placement_trail)
 	dig.visible = id == "pond"
+	tunnel_actions.visible = id == "tunnel"
+	_sync_tunnels()
 	if id == "bigfoot": hint.text = "Find him a little place to call home."
 	elif editor.trail_available(): hint.text = "Drag to plant a trail · Esc to put away" if editor.placement_trail else "Click to place · Esc to put away"
 	elif id == "pond": hint.text = "Hover over a hollow to see the shoreline."
 	elif id in ["ground","range"]: hint.text = "Open Adjust to shape the landscape."
+	elif id == "tunnel": hint.text = "Click into a steep slope · Plant, seal, then X"
 	elif family in ["Sculpt","Paint"]: hint.text = "Drag to brush · Right drag to orbit"
 	else: hint.text = "Click to place · Esc to put away"
 	context.get_node("Actions/Settings").visible = editor.mode != "select" and id != "bigfoot"
@@ -258,6 +271,14 @@ func sync() -> void:
 	card.size = Vector2(236,0)
 	fit.call_deferred()
 
+func _sync_tunnels() -> void:
+	if tunnel_actions.get_child_count()==0: return
+	var available := not editor.data.tunnels.is_empty()
+	var sealed: bool = available and editor.data.tunnels.back().sealed
+	tunnel_actions.get_node("plant_tunnel_charge").disabled = not available or sealed or editor.data.explosive_count()>=editor.data.MAX_EXPLOSIVES
+	tunnel_actions.get_node("seal_tunnel").disabled = not available or sealed
+	tunnel_actions.get_node("reopen_tunnel").disabled = not available or not sealed
+
 func _build_quick(id: String) -> void:
 	for child in quick.get_children():
 		quick.remove_child(child)
@@ -265,6 +286,8 @@ func _build_quick(id: String) -> void:
 	quick_row.clear()
 	if id == "bigfoot" or family == "Select": return
 	var property := "object_scale" if family == "Place" else "radius"
+	if id == "explosive": property = "blast_radius"
+	if id == "tunnel": property = "tunnel_width"
 	if id == "mountain": property = "mountain_radius"
 	if id == "pond": property = "pond_level"
 	if not editor.settings_for(editor.mode).any(func(spec: Dictionary) -> bool: return spec.property == property): return

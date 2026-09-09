@@ -3,13 +3,15 @@ extends Node
 ## Build tools attached to the live fidelity scene. Entering Build never swaps
 ## the chunk, camera, environment or shader; only the controls become active.
 const GROUPS := [
-	["Sculpt",["raise","lower","smooth","flatten"]],
+	["Sculpt",["raise","lower","tunnel","smooth","flatten"]],
 	["Landscape",["ground","range","mountain"]],
 	["Cover",["grass","blades","meadow","paint","erase"]],
-	["Place",["select","tree","rock","flower","arch","bigfoot_tree","assets"]],
+	["Place",["select","explosive","tree","rock","flower","arch","bigfoot_tree","assets"]],
 	["Water",["pond","waterfall"]],
 ]
 const TOOL_TEXT := {
+	"tunnel":"Aim at a mountainside and click to bore inward. Plant a charge inside, then seal the tunnel.",
+	"explosive":"Plant a remote charge. Cover it with leaves or raise dirt over it, then detonate from a distance.",
 	"select":"Click a placed object to edit it · Drag to move · V Select · Delete removes",
 	"raise":"Build hills with slow, gentle strokes.",
 	"lower":"Press valleys and hollows into the land.",
@@ -34,6 +36,9 @@ const TOOL_TEXT := {
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
+	{"property":"tunnel_width","title":"Tunnel width","low":1.5,"high":4.0,"step":0.25,"unit":"m","whole":false,"modes":["tunnel"]},
+	{"property":"tunnel_depth","title":"Tunnel depth","low":2.0,"high":10.0,"step":0.5,"unit":"m","whole":false,"modes":["tunnel"]},
+	{"property":"blast_radius","title":"Blast radius","low":1.0,"high":6.0,"step":0.1,"unit":"m","whole":false,"modes":["explosive"]},
 	{"property":"ground_elevation","title":"Ground elevation","low":-1.0,"high":8.0,"step":0.1,"unit":"","whole":false,"modes":["ground"]},
 	{"property":"ground_relief","title":"Ground relief","low":0.0,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["ground"]},
 	{"property":"radius","title":"Brush size","low":0.4,"high":5.0,"step":0.05,"unit":"","whole":false,"modes":["raise","lower","smooth","flatten","grass","blades","meadow","paint","erase"]},
@@ -63,6 +68,11 @@ const POSE_TOOLS := ["tree","flower","rock","assets"]
 ## The one-shot commands a tool offers beside its sliders. The name is the node
 ## name a shell should give the button, so scripts and tests can find it.
 const ACTIONS := [
+	{"tool":"tunnel","name":"PlantTunnelCharge","title":"Plant charge inside","method":"plant_tunnel_charge"},
+	{"tool":"tunnel","name":"SealTunnel","title":"Seal last tunnel","method":"seal_tunnel"},
+	{"tool":"tunnel","name":"ReopenTunnel","title":"Reopen last tunnel","method":"reopen_tunnel"},
+	{"tool":"explosive","name":"ToggleExplosiveLeaves","title":"Toggle leaf camouflage","method":"toggle_explosive_leaves"},
+	{"tool":"explosive","name":"DetonateExplosives","title":"Detonate all charges","method":"detonate_explosives"},
 	{"tool":"ground","name":"FormGroundFoundation","title":"Form ground foundation","method":"form_foundation"},
 	{"tool":"range","name":"FormMountainLandscape","title":"Form mountain landscape","method":"form_range"},
 	{"tool":"range","name":"FillLandscapeStreams","title":"Fill landscape streams","method":"fill_landscape_streams"},
@@ -100,6 +110,11 @@ var reactions: NativeDropReactions
 var reactions_enabled := true
 var _fall_start: Variant = null
 var pond_preview = preload("res://scripts/native_pond_preview.gd").new()
+var explosives: Node3D
+var blast_radius := 2.6
+var tunnel_width := 2.5
+var tunnel_depth := 5.0
+var explosive_leaf_cover := false
 var catalog_asset := "broadleaf"
 var object_heading := 0.0
 var pond_level := -0.15
@@ -214,6 +229,10 @@ func setup(owner_scene: Node3D) -> void:
 	selection.name = "ObjectSelection"
 	scene.add_child(selection)
 	selection.setup(self)
+	explosives = preload("res://scripts/native_explosives.gd").new()
+	explosives.name = "RemoteExplosives"
+	scene.add_child(explosives)
+	explosives.setup(self)
 
 ## The tools a shell may offer, grouped as the build panel lays them out.
 func tool_groups() -> Array:
@@ -287,6 +306,8 @@ func select_tool(tool: String) -> void:
 
 ## Radius the terrain shader should draw for the tool in hand.
 func preview_radius() -> float:
+	if mode == "explosive": return blast_radius
+	if mode == "tunnel": return tunnel_width/2
 	if mode == "mountain":
 		return mountain_radius
 	if mode == "flower":
@@ -300,6 +321,41 @@ func preview_wanted() -> bool:
 	if mode in ["assets","select","pond"]:
 		return false
 	return mode != "waterfall" or _fall_start == null
+
+func seal_tunnel() -> void:
+	_set_tunnel_sealed(true)
+
+func reopen_tunnel() -> void:
+	_set_tunnel_sealed(false)
+
+func _set_tunnel_sealed(sealed: bool) -> void:
+	if forming or data.tunnels.is_empty(): return
+	finish_stroke()
+	data.begin_stroke()
+	data.tunnels.back().sealed = sealed
+	data.end_stroke()
+	refresh()
+	_set_status("Tunnel sealed · Charges stay buried · X to detonate." if sealed else "Tunnel open · Click inside with Explosive to place a charge.")
+
+func plant_tunnel_charge() -> void:
+	if forming or data.tunnels.is_empty() or data.tunnels.back().sealed: return
+	finish_stroke()
+	data.begin_stroke()
+	var id := data.plant_underground(preload("res://scripts/native_tunnels.gd").charge_point(data.tunnels.back()),blast_radius)
+	data.end_stroke()
+	refresh()
+	if id>0:
+		explosives.target_id = id
+		explosives._sync_list()
+		_set_status("Charge planted inside · Seal last tunnel, then X to detonate.")
+
+func detonate_explosives() -> void:
+	explosives.request_detonation()
+
+func toggle_explosive_leaves() -> void:
+	explosive_leaf_cover = not explosive_leaf_cover
+	explosives._sync_settings()
+	_set_status("New charges: " + ("hidden under leaves" if explosive_leaf_cover else "uncovered"))
 
 func cover_grass() -> void:
 	finish_stroke()
@@ -399,11 +455,24 @@ func handle_input(event: InputEvent) -> bool:
 ## palette's drag-and-drop commits through here so a dropped object takes the
 ## same record, pose and reaction a click would have given it.
 func place_at(mouse: Vector2) -> bool:
-	if not active or mode in ["select","ground","range"]:
+	if forming or not active or mode in ["select","ground","range"]:
 		return false
 	var hit: Variant = pick(mouse)
 	if hit == null:
 		return false
+	if mode == "tunnel":
+		finish_stroke()
+		var direction: Vector3 = terrain.global_basis.inverse()*scene.camera.project_ray_normal(mouse)
+		var tunnel := preload("res://scripts/native_tunnels.gd").plan(data,hit,direction,tunnel_width,tunnel_depth)
+		if tunnel.is_empty():
+			_set_status("Aim into a steep mountainside with enough rock behind it. Keep tunnels separate; up to six per world.")
+			return false
+		data.begin_stroke()
+		data.tunnels.append(tunnel)
+		data.end_stroke()
+		refresh()
+		_set_status("Tunnel open · Plant a charge inside, then seal it.")
+		return true
 	if mode == "waterfall":
 		var point := Vector2(hit.x,hit.z)
 		if _fall_start == null:
@@ -439,13 +508,18 @@ func place_at(mouse: Vector2) -> bool:
 			elif data.add_pond(_last_point,pond_level): pond_filled = true
 			else: _set_status("This diorama has reached its pond limit. Remove a pond before adding another.")
 		else:
-			placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
+			if mode == "explosive" and hit.y < data.ground_height(_last_point)-0.1:
+				placed = data.plant_underground(hit,blast_radius)
+			else:
+				placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
+			if placed > 0 and mode == "explosive":
+				data.update_object(placed,{"blast_radius":blast_radius,"leaf_cover":explosive_leaf_cover})
 			if placed < 0:
-				_set_status("This garden has reached its object limit.")
+				_set_status("Up to 32 charges can be armed at once. Detonate or remove one first." if mode == "explosive" else "This garden has reached its object limit.")
 		if data.end_stroke():
 			refresh()
 			if pond_filled: _set_status("Pond filled. Dig a hollow to shape its banks; Undo removes the water.")
-			if placed > 0 and reactions_enabled:
+			if placed > 0 and reactions_enabled and mode != "explosive":
 				# `placed` is the id this click just minted, and only a click
 				# reaches here. Handing it to the reaction is what keeps a redo
 				# or a load — which re-render records that already exist — from
@@ -488,6 +562,7 @@ func trail_dab(point: Vector2) -> void:
 		data.place(catalog_asset if mode == "assets" else mode,point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint else "")
 
 func pointer_in_world(mouse: Vector2) -> bool:
+	if explosives != null and explosives.contains(mouse): return false
 	if scene._landscape_editor != null and scene._landscape_editor.is_visible_in_tree() and scene._landscape_editor.get_global_rect().has_point(mouse): return false
 	if scene._look_editor != null and scene._look_editor.is_visible_in_tree() and scene._look_editor.get_global_rect().has_point(mouse): return false
 	if scene._growth.terrain < 0.995 or not scene.get_viewport().get_visible_rect().has_point(mouse):
@@ -565,6 +640,7 @@ func redo() -> void:
 
 func _history_step(forward: bool) -> void:
 	if forming: return
+	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
 	var history: Array = data._redo if forward else data._undo
@@ -610,7 +686,7 @@ func refresh(frame_tree: SceneTree = null) -> void:
 	pond_preview.clear()
 	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	if not forming: _set_status("Garden changed · Save to keep your work.")
-	terrain.mesh = await data.build_mesh_budgeted(false,frame_tree)
+	terrain.mesh = data.play_mesh(await data.build_mesh_budgeted(false,frame_tree))
 	var original := data.heights == data.original_heights
 	for entry in _anchors:
 		if data.blank:
@@ -1095,7 +1171,7 @@ func _notify_play_geometry() -> void:
 		if placements[i].has("tint"):
 			placements[i] = placements[i].duplicate()
 			placements[i].erase("tint")
-	var signature := var_to_bytes([data.heights, placements, data.ponds, data.streams, data.landscape_waterfall])
+	var signature := var_to_bytes([data.tunnels,data.heights, placements, data.ponds, data.streams, data.landscape_waterfall])
 	if signature != _play_geometry_signature:
 		_play_geometry_signature = signature
 		play_geometry_changed.emit()

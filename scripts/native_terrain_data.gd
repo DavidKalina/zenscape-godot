@@ -4,7 +4,8 @@ extends RefCounted
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 64.0
-const ASSETS := ["cactus","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
+const MAX_EXPLOSIVES := 32
+const ASSETS := ["explosive","cactus","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -199,7 +200,46 @@ func delta_at(point: Vector2) -> float:
 	var original: Variant = sample(point, original_heights)
 	return float(current)-float(original) if current != null and original != null else 0.0
 
+var tunnels: Array[Dictionary] = []
+var _tunnel_source: ArrayMesh
+var _tunnel_signature := PackedByteArray()
+var _tunnel_mesh: ArrayMesh
+var _tunnel_faces := PackedVector3Array()
+
+func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
+	if source == null: source = build_mesh()
+	if tunnels.is_empty(): return source
+	var signature := var_to_bytes(tunnels)
+	if source != _tunnel_source or signature != _tunnel_signature:
+		_tunnel_mesh = preload("res://scripts/native_tunnels.gd").build(source,tunnels)
+		_tunnel_faces = _tunnel_mesh.get_faces()
+		_tunnel_source = source
+		_tunnel_signature = signature
+	return _tunnel_mesh
+
+func plant_underground(point: Vector3, blast_radius := 2.6) -> int:
+	var allowed := false
+	for tunnel in tunnels:
+		if not tunnel.sealed and preload("res://scripts/native_tunnels.gd").inside(tunnel,point): allowed = true
+	if not allowed or not point.is_finite(): return -1
+	var id := place("explosive",Vector2(point.x,point.z))
+	if id>0:
+		objects.back().anchor_y = point.y
+		objects.back().blast_radius = clampf(blast_radius,1,6)
+	return id
+
 func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
+	if tunnels.any(func(item: Dictionary) -> bool: return not item.sealed):
+		play_mesh()
+		var faces := _tunnel_faces
+		var closest: Variant = null
+		var best := INF
+		for i in range(0,faces.size(),3):
+			var hit: Variant = Geometry3D.ray_intersects_triangle(origin,direction,faces[i],faces[i+1],faces[i+2])
+			if hit != null and origin.distance_squared_to(hit)<best:
+				closest = hit
+				best = origin.distance_squared_to(hit)
+		return closest
 	var nearest: Variant = null
 	var distance := INF
 	for i in range(0, vertex_ids.size(), 3):
@@ -639,6 +679,7 @@ func form_foundation(elevation := 0.0, relief := 1.0, frame_tree: SceneTree = nu
 	heights = _recipe_heights.duplicate()
 
 func reset_flat() -> void:
+	tunnels.clear()
 	_set_recipe({})
 	blank = true
 	source_replacements.clear()
@@ -655,9 +696,10 @@ func reset_flat() -> void:
 	next_id = 1
 
 func _snapshot() -> Dictionary:
-	return {"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
+	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
+	tunnels.assign(state.get("tunnels",[]).duplicate(true))
 	_set_recipe(state.get("terrain_recipe",{}))
 	landscape_waterfall=state.get("landscape_waterfall",false)
 	heights = state.heights.duplicate()
@@ -736,6 +778,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 				meadow[index] = clampf(meadow[index]+amount*(1.0-smoothstep(0.0,radius,distance)),0.0,1.0)
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictionary = {}, tint := "") -> int:
+	if kind == "explosive" and explosive_count() >= MAX_EXPLOSIVES: return -1
 	if kind == "waterfall" or kind not in ASSETS or ground_height(point) == null or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
@@ -749,6 +792,8 @@ func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictio
 	objects.append({"id":id,"asset":kind,"x":point.x,"z":point.y,"angle":angle,"scale":size})
 	if not pose.is_empty(): objects.back()["pose"] = pose.duplicate(true)
 	if not tint.is_empty(): objects.back()["tint"] = tint
+	if kind == "explosive":
+		objects.back().merge({"anchor_y":float(ground_height(point)),"blast_radius":2.6,"leaf_cover":false})
 	objects_revision += 1
 	return id
 
@@ -772,7 +817,7 @@ func update_object(id: int, changes: Dictionary) -> bool:
 		return false
 	var candidate := objects[index].duplicate(true)
 	for key in changes:
-		if key not in ["x","z","angle","scale","pose","tint"]:
+		if key not in ["x","z","angle","scale","pose","tint"] and not (candidate.asset == "explosive" and key in ["blast_radius","leaf_cover"]):
 			return false
 		var value: Variant = changes[key]
 		if key == "pose" and (value == null or (value is Dictionary and value.is_empty())):
@@ -791,6 +836,10 @@ func update_object(id: int, changes: Dictionary) -> bool:
 		return false
 	if candidate.has("tint") and (candidate.asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(candidate.tint)):
 		return false
+	if candidate.asset == "explosive":
+		if not valid_explosive(candidate): return false
+		if candidate.x != objects[index].x or candidate.z != objects[index].z:
+			candidate.anchor_y = float(ground_height(Vector2(candidate.x,candidate.z)))
 	if candidate == objects[index]:
 		return false
 	# Once customized, a generated piece belongs to the user. Refilling the
@@ -804,6 +853,7 @@ func duplicate_object(id: int) -> int:
 	var index := _object_index(id)
 	if index < 0 or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
+	if objects[index].asset == "explosive" and explosive_count() >= MAX_EXPLOSIVES: return -1
 	var copy := objects[index].duplicate(true)
 	copy.id = next_id
 	copy.erase("landscape")
@@ -835,7 +885,16 @@ func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
 	return true
 
 func object_position(item: Dictionary) -> Vector3:
-	return Vector3(item.x,height_at(item.x,item.z)+(preload("res://scripts/native_object_pose.gd").decode_offset(item.pose) if item.has("pose") else 0.0),item.z)
+	return Vector3(item.x,(float(item.anchor_y) if item.asset == "explosive" else height_at(item.x,item.z))+(preload("res://scripts/native_object_pose.gd").decode_offset(item.pose) if item.has("pose") else 0.0),item.z)
+
+static func valid_explosive(item: Dictionary) -> bool:
+	return GardenData._number(item.get("anchor_y"),MIN_HEIGHT,MAX_HEIGHT) and GardenData._number(item.get("blast_radius"),1.0,6.0) and item.get("leaf_cover") is bool
+
+func explosive_count() -> int:
+	var count := 0
+	for item in objects:
+		if item.asset == "explosive": count += 1
+	return count
 
 func erase_objects(point: Vector2, radius: float) -> void:
 	objects = objects.filter(func(item: Dictionary) -> bool: return Vector2(item.x,item.z).distance_to(point) > radius)
@@ -897,13 +956,13 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	return {"source_replacements":source_replacements.duplicate(),"version":9,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
 
 func _template_id() -> String:
 	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
 
 func load_document(document: Variant) -> bool:
-	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9) or document.get("template") != _template_id() or not document.get("blank") is bool:
+	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9 and document.get("version") != 10) or document.get("template") != _template_id() or not document.get("blank") is bool:
 		return false
 	var recipe: Variant = preload("res://scripts/native_terrain_recipe.gd").decode(document.get("terrain_recipe",{})) if document.version >= 6 else {}
 	if not preload("res://scripts/native_terrain_recipe.gd").valid(recipe):
@@ -977,6 +1036,9 @@ func load_document(document: Variant) -> bool:
 				if item.has("tint"):
 					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
 					record.tint = item.tint
+				if item.asset == "explosive":
+					if not valid_explosive(item): return false
+					record.merge({"anchor_y":float(item.anchor_y),"blast_radius":float(item.blast_radius),"leaf_cover":item.leaf_cover})
 				if item.has("landscape"):
 					if not item.landscape is bool: return false
 					record.landscape = item.landscape
@@ -990,6 +1052,9 @@ func load_document(document: Variant) -> bool:
 						if not GardenData._number(radius,0.1,14.0): return false
 					record.basin = item.basin.duplicate()
 			loaded[field].append(record)
+	if loaded.objects.filter(func(item: Dictionary) -> bool: return item.asset == "explosive").size() > MAX_EXPLOSIVES: return false
+	if not preload("res://scripts/native_tunnels.gd").valid(document.get("tunnels",[])): return false
+	loaded.tunnels = document.get("tunnels",[]).duplicate(true)
 	_restore(loaded)
 	_undo.clear()
 	_redo.clear()

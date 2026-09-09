@@ -4,6 +4,7 @@ extends RigidBody3D
 ## Applying above the centre of mass produces real torque through the solver.
 var field: Node
 var active := false
+var blast_flight := false
 const CENTER_HEIGHT := 1.15
 
 func _ready() -> void:
@@ -37,6 +38,8 @@ func start(feet: Transform3D) -> void:
 	reset_physics_interpolation()
 
 func stop() -> void:
+	blast_flight = false
+	linear_damp = 1.1
 	active = false
 	freeze = true
 	collision_layer = 0
@@ -53,5 +56,5 @@ func _integrate_forces(body_state: PhysicsDirectBodyState3D) -> void:
 	var wind: Vector3 = field.sample(body_state.transform.origin)
 	var relative := wind-body_state.linear_velocity
 	# Quadratic aerodynamic drag. Clamp extreme input without limiting normal gusts.
-	var force := (relative*relative.length()*2.0).limit_length(2600.0)
+	var force := (relative*relative.length()*(0.12 if blast_flight else 2.0)).limit_length(2600.0)
 	body_state.apply_force(force,body_state.transform.basis*Vector3.UP*0.70)

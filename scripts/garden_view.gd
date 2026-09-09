@@ -76,6 +76,13 @@ func _ready() -> void:
 	_catalog_poses["leaf_bed"] = Transform3D.IDENTITY
 	_meshes["leaf_bed"] = preload("res://scripts/bigfoot_leaf_bed.gd").mesh()
 	_materials["leaf_bed"] = rock_material.duplicate()
+	_catalog_parts["explosive"] = ["explosive"]
+	_catalog_poses["explosive"] = Transform3D.IDENTITY
+	_meshes["explosive"] = preload("res://scripts/explosive_asset.gd").mesh()
+	_materials["explosive"] = rock_material.duplicate()
+	_meshes["explosive_leaves"] = _meshes["leaf_bed"]
+	_materials["explosive_leaves"] = rock_material.duplicate()
+	_catalog_poses["explosive_leaves"] = Transform3D.IDENTITY
 	for key in _materials:
 		_materials[key].set_shader_parameter("palette_role",preload("res://scripts/scene_look.gd").part_role(key))
 	_water = MeshInstance3D.new()
@@ -208,7 +215,7 @@ func _rebuild_instances() -> void:
 		batch.free()
 	_batches.clear()
 	_sources.clear()
-	var transforms := {"trunk": [], "canopy": [], "grass": [], "stem": [], "petal": [], "rock": []}
+	var transforms := {"trunk": [], "canopy": [], "grass": [], "stem": [], "petal": [], "rock": [], "explosive_leaves": []}
 	for kind in _catalog_parts:
 		for key in _catalog_parts[kind]:
 			transforms[key] = []
@@ -223,7 +230,8 @@ func _rebuild_instances() -> void:
 		var transform := Transform3D(basis, position)
 		var anchor := {"x":item.x,"z":item.z,"basis":basis,"item":item,"pose":null,"lift":0.0}
 		if _catalog_parts.has(item.asset):
-			for key in _catalog_parts[item.asset]:
+			for source_key in _catalog_parts[item.asset]:
+				var key: String = "explosive_leaves" if item.asset == "explosive" and item.leaf_cover else source_key
 				transforms[key].append(transform*_catalog_poses[key])
 				var part := anchor.duplicate()
 				part.pose = _catalog_poses[key]

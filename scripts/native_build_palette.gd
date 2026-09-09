@@ -15,7 +15,7 @@ const DRAG_SLOP := 6.0
 const HOVER_SCALE := 1.08
 const PRESS_SCALE := 0.94
 const TWEEN_TIME := 0.09
-const LANDMARKS := ["tree","rock","flower","arch","bigfoot_tree"]
+const LANDMARKS := ["explosive","tree","rock","flower","arch","bigfoot_tree"]
 ## Landscape tools whose stamp is a shape, so the tile can portrait the real
 ## heightfield instead of a drawn glyph. Only Mountain stamps at a point, so
 ## only Mountain drags; Range forms the whole chunk from its strip button.
@@ -33,7 +33,7 @@ const GHOST_ALPHA := 0.55
 ## Simple drawn glyphs stand in for the tools that have no object to render.
 const GLYPHS := {
 	"select":"ring",
-	"raise":"up","lower":"down","smooth":"wave","flatten":"bar",
+	"raise":"up","lower":"down","tunnel":"ring","smooth":"wave","flatten":"bar",
 	"ground":"bar","range":"peak","mountain":"peak",
 	"grass":"tuft","blades":"tuft","meadow":"tuft","paint":"disc","erase":"ring",
 	"pond":"disc","waterfall":"down","assets":"ring",
@@ -271,7 +271,7 @@ func _build() -> void:
 		_entries[id] = {"button":_tiles[id],"group":group,"title":_title(id),"blurb":editor.TOOL_TEXT.get(_tiles[id].get_meta("tool"),"A small detail for your world")}
 	for id: String in _sky_tiles:
 		_entries[id] = {"button":_sky_tiles[id],"group":"Weather","title":_sky_tiles[id].tooltip_text.get_slice("\n",0),"blurb":"Settle the whole scene into a new atmosphere"}
-	for entry: Array in [["undo","Undo",editor.undo],["redo","Redo",editor.redo],
+	for entry: Array in [["detonate","Detonate all explosives",editor.detonate_explosives],["undo","Undo",editor.undo],["redo","Redo",editor.redo],
 		["save","Save garden",editor.scene.save_current if editor.scene.has_method("save_current") else editor.save_garden],["open","Open garden",editor.scene.show_open if editor.scene.has_method("show_open") else editor.open_garden],
 		["inspect","Leave build mode",func() -> void: editor.set_active(false)],
 		["landscapes","Landscapes · formation families and biomes",editor.scene.edit_landscape_presets],

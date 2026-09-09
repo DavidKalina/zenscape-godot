@@ -19,7 +19,7 @@ func rebuild(data: NativeTerrainData) -> void:
 		remove_child(old)
 		old.queue_free()
 	if _bounds.is_empty(): _load_bounds()
-	var terrain := data.build_mesh().create_trimesh_shape()
+	var terrain := data.play_mesh().create_trimesh_shape()
 	terrain.backface_collision = true
 	_terrain_body = _add_shape("Terrain",terrain)
 	for item: Dictionary in data.objects:
