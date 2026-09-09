@@ -79,8 +79,10 @@ func run() -> void:
 	slab = null
 	for body in remote.bodies:
 		if float(body.get_meta("radius",0.0)) >= remote.STRIKE_RADIUS and (slab == null or body.mass > slab.mass): slab = body
-	slab.global_position = rock_point+Vector3(-1.4,0.6,0)
-	slab.linear_velocity = Vector3(14,0,0)
+	# A level throw that cannot graze the ground and shed speed on the way.
+	slab.gravity_scale = 0.0
+	slab.global_position = rock_point+Vector3(-1.1,0.8,0)
+	slab.linear_velocity = Vector3(16,0,0)
 	var struck := false
 	for i in range(40):
 		await physics_frame

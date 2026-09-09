@@ -79,18 +79,30 @@ from about 706–751 ms to 220 ms for the first blast and 130–134 ms on repeat
 This substantially reduces the hitch; it does not eliminate all terrain refresh
 cost. GPU timings reported zero and are unavailable in this run.
 
-The live remote now fires the flash and rumble on the request frame, then runs
-the collapse relaxation and the terrain refresh on their frame-budgeted paths
-while the flash covers the ground. Debris launches once the crater collision
-exists, a few frames later. Face probes for sculpted colouring are built during
-formation instead of on the first sculpt or blast, and chunk colours come from
-the visible terrain mesh. On the same benchmark the worst frame fell from about
-217 ms (first blast) and 133 ms (repeats) to 55-58 ms on every blast, with the
-work completing about 330 ms after the request. Jolt Physics saves a further
-2 ms per blast on the collision rebuild and is now the project physics engine.
-Tests and offline tools that call `detonate()` or `MountainCollapse.collapse()`
-without a scene tree keep the synchronous path; tests that use the remote wait
-on `requested`/`firing` instead of a fixed frame count.
+The live remote fires the flash and rumble on the request frame, before any
+heavy work, including the one-time legacy scenery migration and the flush of
+thrown props, both of which now refresh on the frame-budgeted path. The order
+after the flash is: carve and collapse relaxation (yielding between passes),
+one frame for capture, crater mesh and collision rebuild, the crater shown as
+soon as its mesh exists, then debris launched in batches of 16 chunks and 24
+props per frame with each authored source hidden in the same frame its flying
+copy appears, and finally the visual refresh (batches, surface maps, fog)
+spread across the following frames. Face probes for sculpted colouring are
+built during formation instead of on the first sculpt or blast, and chunk
+colours come from the visible terrain mesh. Flash and dust meshes no longer
+cast shadows; they used to darken the whole hillside for the life of the
+cloud.
+
+Filmed with `tools/film_detonation.gd` (frames to /private/tmp/detonation-film)
+the flash is on screen within one frame, the crater and first debris inside
+about 200 ms, and the visual refresh completes around 450 ms. The remaining
+hitch is the frame where the scenery batches rebuild and 100 new bodies first
+draw, roughly 60–70 ms on the M5 Pro benchmark, against 217 ms for the whole
+freeze before. Jolt Physics saves a further 2 ms per blast on the collision
+rebuild and is now the project physics engine. Tests and offline tools that
+call `detonate()` or `MountainCollapse.collapse()` without a scene tree keep
+the synchronous path; tests that use the remote wait on `requested`/`firing`
+instead of a fixed frame count.
 
 ## Debris strikes
 

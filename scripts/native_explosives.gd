@@ -241,23 +241,35 @@ func detonate(frame_tree: SceneTree = null) -> void:
 		if target_id <= 0 or item.id == target_id: salvo.append(item.duplicate(true))
 	if salvo.is_empty(): return
 	editor.finish_stroke()
-	if editor.scene.has_method("flush_world_play"): editor.scene.flush_world_play()
 	clear_effects()
 	var serial := _salvo_serial
 	firing = true
-	# Legacy scenery becomes ordinary records before taking visible mesh copies.
+	var origins: Array[Vector3] = []
+	for charge in salvo: origins.append(editor.terrain.to_global(editor.data.object_position(charge)))
+	# The blast is visible and audible before any of the heavy work.
+	for i in range(salvo.size()): effects.emit_blast(origins[i],salvo[i].blast_radius)
+	# Thrown props return to records and legacy scenery becomes ordinary records
+	# before taking visible mesh copies. Both refreshes spread across frames
+	# under the flash; a world needing neither pays nothing here.
+	if editor.scene.has_method("flush_world_play_budgeted"): await editor.scene.flush_world_play_budgeted(frame_tree)
+	elif editor.scene.has_method("flush_world_play"): editor.scene.flush_world_play()
+	if serial != _salvo_serial:
+		firing = false
+		return
 	editor.data.begin_stroke()
-	if preload("res://scripts/world_reference_props.gd").migrate(editor): editor.refresh()
+	if preload("res://scripts/world_reference_props.gd").migrate(editor):
+		await editor.refresh(frame_tree)
+		if serial != _salvo_serial:
+			firing = false
+			return
 	editor.reactions.finish_all()
 	var affected := {}
-	var origins: Array[Vector3] = []
 	var resident := editor.scene.get("creature") as CreatureActor
 	var resident_enabled: bool = resident != null and editor.scene.get("resident_enabled") == true
 	var resident_kick := Vector3.ZERO
-	for charge in salvo:
-		var local := editor.data.object_position(charge)
-		var origin := editor.terrain.to_global(local)
-		origins.append(origin)
+	for i in range(salvo.size()):
+		var charge := salvo[i]
+		var origin := origins[i]
 		if resident_enabled:
 			resident_kick += Blast.impulse(origin,resident.global_position+Vector3.UP*0.9,charge.blast_radius)*0.8
 		for item in editor.data.objects:
@@ -266,8 +278,6 @@ func detonate(frame_tree: SceneTree = null) -> void:
 			var kick := Blast.impulse(origin,world,charge.blast_radius)
 			if kick.length_squared() > 0.01:
 				affected[item.id] = {"item":item.duplicate(true),"kick":kick + affected.get(item.id,{}).get("kick",Vector3.ZERO)}
-	# The blast is visible and audible before any of the heavy terrain work.
-	for i in range(salvo.size()): effects.emit_blast(origins[i],salvo[i].blast_radius)
 	# Reuse the visible terrain colors instead of rebuilding a temporary crater mesh.
 	var visible := editor.terrain.mesh as ArrayMesh
 	var color_source: ArrayMesh = visible if visible != null and editor.data.tunnels.is_empty() else editor.data.build_mesh()
@@ -306,28 +316,38 @@ func detonate(frame_tree: SceneTree = null) -> void:
 		if surface == null or absf(feet.y-surface)>2.0: continue
 		var kick: Vector3 = ((feet-collapse.origin).normalized()+Vector3.UP*0.25).normalized()*collapse.radius*2.5
 		if kick.length()>resident_kick.length(): resident_kick = editor.terrain.global_basis*kick
+	if frame_tree != null: await frame_tree.process_frame
+	if serial != _salvo_serial:
+		firing = false
+		return
 	# The live instance transforms still describe the unbroken mountainside.
 	var parts := _capture_parts(affected)
 	for id in affected: editor.data.remove_object(id)
 	editor.data.end_stroke()
 	editor.data._undo.back()["explosion"] = true
-	await editor.refresh(frame_tree)
-	if serial != _salvo_serial:
-		firing = false
-		return
+	# Physics first: the crater collision is cheap, so debris can fly on the
+	# blast frame. The visual refresh then spreads out under the flash.
 	var world_play: Variant = editor.scene.get("world_play")
 	if world_play != null:
-		# The resident and thrown props share these colliders. Refresh them now,
-		# before debris can encounter the pre-blast ground on the next tick.
-		world_play.ensure_collision()
+		world_play.ensure_collision(true)
 	else:
 		collisions.rebuild(editor.data)
 		collisions.global_transform = editor.terrain.global_transform
+	# The collision rebuild already built the crater mesh; show it now rather
+	# than when the visual refresh reaches it.
+	editor.terrain.mesh = editor.data.play_mesh()
+	if frame_tree != null: await frame_tree.process_frame
+	if serial != _salvo_serial:
+		firing = false
+		return
 	if resident_kick.length() > 0.1:
 		var before := resident.global_position
 		if resident.receive_blast(resident_kick): _resident_before = before
 	for collapse in collapses:
-		_launch_collapse(collapse)
+		await _launch_collapse(collapse,frame_tree,serial)
+		if serial != _salvo_serial:
+			firing = false
+			return
 		if collapse.get("internal",false):
 			# Surface breakouts make the buried blast visible around the cap.
 			for i in range(mini(8,collapse.chunks.size())):
@@ -336,25 +356,44 @@ func detonate(frame_tree: SceneTree = null) -> void:
 	# Preserve the big readable silhouettes when a dense flower patch exceeds
 	# the debris budget; small plants still disappear into the dust.
 	launch_order.sort_custom(func(a: int,b: int) -> bool: return int(affected[a].item.asset in SOLIDS) > int(affected[b].item.asset in SOLIDS))
+	var launched := 0
 	for id in launch_order:
 		if not parts.has(id) or bodies.size() >= MAX_BODIES: continue
+		_hide_sources(parts[id])
 		_launch_parts(parts[id],affected[id].kick)
+		launched += 1
+		# Convex hulls and material copies for a dense grove spread over frames.
+		if frame_tree != null and launched % 24 == 0:
+			await frame_tree.process_frame
+			if serial != _salvo_serial:
+				firing = false
+				return
 	for i in range(salvo.size()): _eject_dirt(origins[i],salvo[i].blast_radius)
 	_elapsed = 0.0
-	firing = false
 	collapse_count = collapses.size()
+	await editor.refresh(frame_tree)
+	if serial != _salvo_serial:
+		firing = false
+		return
+	if world_play != null: world_play.ensure_collision()
+	firing = false
 	_sync_list()
 	editor._set_status(("Mountain collapse · " if collapse_count > 0 else "Detonated %d charge(s) · " % salvo.size())+"Undo last blast restores the landscape.")
 
-func _launch_collapse(collapse: Dictionary) -> void:
+func _launch_collapse(collapse: Dictionary, frame_tree: SceneTree = null, serial := -1) -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/reference_surface.gdshader")
 	material.set_shader_parameter("flat_faces",true)
 	material.set_shader_parameter("palette_role",3)
 	material.set_shader_parameter("wet_ground",true)
+	var launched := 0
 	for chunk: Dictionary in collapse.chunks:
 		# Reserve some of the common budget for trees, scenery and blast dirt.
 		if bodies.size() >= 48: return
+		if frame_tree != null and launched > 0 and launched % 16 == 0:
+			await frame_tree.process_frame
+			if serial != _salvo_serial: return
+		launched += 1
 		var transform: Transform3D = editor.terrain.global_transform*Transform3D(Basis.IDENTITY,chunk.center)
 		_launch_parts([{"mesh":chunk.mesh,"material":material,"transform":transform}],Vector3.ZERO)
 		var body: RigidBody3D = bodies.back()
@@ -381,7 +420,7 @@ func _capture_parts(affected: Dictionary) -> Dictionary:
 			if not result.has(item.id): result[item.id] = []
 			var material: Material = batch.material_override if batch.material_override != null else batch.multimesh.mesh.surface_get_material(0)
 			var tint: Color = batch.multimesh.get_instance_color(i) if batch.multimesh.use_colors else Color.WHITE
-			result[item.id].append({"mesh":batch.multimesh.mesh,"transform":batch.global_transform*batch.multimesh.get_instance_transform(i),"material":_material(material,tint)})
+			result[item.id].append({"mesh":batch.multimesh.mesh,"transform":batch.global_transform*batch.multimesh.get_instance_transform(i),"material":_material(material,tint),"batch":batch,"index":i})
 	for id in affected:
 		var item: Dictionary = affected[id].item
 		if item.asset not in NativeGardenLandmarks.KINDS: continue
@@ -389,8 +428,16 @@ func _capture_parts(affected: Dictionary) -> Dictionary:
 		if node == null: continue
 		result[id] = []
 		for visual: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
-			result[id].append({"mesh":visual.mesh,"transform":visual.global_transform,"material":_material(visual.get_active_material(0),Color.WHITE)})
+			result[id].append({"mesh":visual.mesh,"transform":visual.global_transform,"material":_material(visual.get_active_material(0),Color.WHITE),"node":node})
 	return result
+
+## The flying copy replaces its authored source in the same frame, so nothing
+## is ever missing or doubled while the visual refresh catches up.
+func _hide_sources(parts: Array) -> void:
+	for part in parts:
+		if part.has("batch") and is_instance_valid(part.batch):
+			part.batch.multimesh.set_instance_transform(part.index,Transform3D(Basis.from_scale(Vector3.ZERO),Vector3.ZERO))
+		elif part.has("node") and is_instance_valid(part.node): part.node.hide()
 
 func _material(source: Material, tint: Color) -> Material:
 	if source == null: return null
@@ -482,7 +529,8 @@ func _strike_resident() -> void:
 ## A static authored prop struck by fast debris joins the solver and takes the
 ## hit, so rockfall clears whatever stands in its path.
 func _debris_contact(other: Node, body: RigidBody3D) -> void:
-	if not other is StaticBody3D or not other.name.begins_with("Prop_") or not _strikes(body): return
+	# The prop registry is rebuilt by the refresh still in flight while firing.
+	if firing or not other is StaticBody3D or not other.name.begins_with("Prop_") or not _strikes(body): return
 	var world_play: Variant = editor.scene.get("world_play")
 	if world_play == null: return
 	var target: Node3D = world_play.promote(int(other.name.trim_prefix("Prop_")))
