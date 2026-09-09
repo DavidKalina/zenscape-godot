@@ -22,6 +22,7 @@ static func capture(scene: Node3D) -> Dictionary:
 		result[group] = values
 	if scene.has_method("capture_life_state"): result["bigfoot_habits"] = scene.capture_life_state()
 	if scene.has_method("capture_diorama_state"): result["diorama"] = scene.capture_diorama_state()
+	result["world_visuals"] = scene._world_visuals.document()
 	return result
 
 static func valid(scene: Node3D, state: Variant) -> bool:
@@ -53,6 +54,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 		return false
 	for value: Variant in state._growth.values():
 		if not GardenData._number(_float(value),0,1): return false
+	if state.has("world_visuals") and not preload("res://scripts/world_visuals.gd").valid(state.world_visuals): return false
 	if state.has("look") and not preload("res://scripts/scene_look.gd").valid(state.look): return false
 	if state.has("bigfoot_habits") and not preload("res://scripts/bigfoot_habits.gd").valid(state.bigfoot_habits): return false
 	if state.has("diorama"):
@@ -64,6 +66,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 	return true
 
 static func restore(scene: Node3D, state: Dictionary) -> void:
+	scene._world_visuals.restore(state.get("world_visuals",{}))
 	scene._celestial.look.restore(state.get("look",preload("res://scripts/scene_look.gd").new().document()))
 	for group: String in FIELDS:
 		var object := _object(scene,group)

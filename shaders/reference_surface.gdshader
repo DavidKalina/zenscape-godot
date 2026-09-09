@@ -38,6 +38,8 @@ varying float inversion_transmit;
 varying vec3 world_normal;
 varying vec3 world_position;
 
+#include "res://shaders/terrain_geology.gdshaderinc"
+
 void vertex() {
 	foliage_gust = 0.0;
 	if (terrain_growth) {
@@ -121,6 +123,7 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
+	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
 	zs_autumn_paint(tint, world_position, zs_autumn);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
 	float surface_wet = 0.0;

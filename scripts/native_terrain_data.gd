@@ -3,8 +3,8 @@ extends RefCounted
 ## Edit the imported chunk's own welded vertices, retaining every material/UV
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
-const MAX_HEIGHT := 24.0
-const ASSETS := ["redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
+const MAX_HEIGHT := 64.0
+const ASSETS := ["cactus","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()

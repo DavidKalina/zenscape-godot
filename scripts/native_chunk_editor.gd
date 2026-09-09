@@ -46,7 +46,7 @@ const SETTINGS := [
 	{"property":"range_heading","title":"Range rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["range"]},
 	{"property":"range_variation","title":"Range variation","low":0.0,"high":999.0,"step":1.0,"unit":"","whole":true,"modes":["range"]},
 	{"property":"mountain_radius","title":"Base radius","low":1.0,"high":12.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
-	{"property":"mountain_peak","title":"Peak height","low":0.5,"high":24.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
+	{"property":"mountain_peak","title":"Peak height","low":0.5,"high":64.0,"step":0.5,"unit":"","whole":false,"modes":["mountain"]},
 	{"property":"mountain_variation","title":"Variation","low":1.0,"high":999.0,"step":1.0,"unit":"","whole":true,"modes":["mountain"]},
 	{"property":"mountain_heading","title":"Ridge rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["mountain"]},
 	{"property":"pond_level","title":"Water level","low":-1.4,"high":12.0,"step":0.05,"unit":"","whole":false,"modes":["pond"]},
@@ -1113,7 +1113,9 @@ func form_landscape(id: String,biome := "",live := true,variation := 37,water :=
 	await preload("res://scripts/native_landscape_presets.gd").form(data,id,biome,get_tree() if live else null,variation,water)
 	data.end_stroke()
 	await refresh(get_tree() if live else null)
-	if apply_mood: preload("res://scripts/native_landscape_presets.gd").apply_mood(scene,id)
+	if apply_mood:
+		scene._world_visuals.restore()
+		preload("res://scripts/native_landscape_presets.gd").apply_mood(scene,id)
 	forming = false
 	_set_status("Landscape ready · Change its biome or colors, or sculpt it further. Undo restores your previous landscape.")
 
@@ -1140,3 +1142,26 @@ func change_landscape_water(water: String,live := true) -> void:
 	if forming or data._recipe_settings.get("kind") != "formation": return
 	var current: Dictionary = data._recipe_settings
 	await form_landscape(current.family,current.biome,live,int(current.variation),water,false)
+
+func form_inland(settings: Dictionary,live := true,apply_mood := true) -> void:
+	if forming or settings.get("kind") != "inland" or not NativeTerrainRecipe.valid(settings): return
+	finish_stroke()
+	selected_object_id = -1
+	forming = true
+	formation_started.emit()
+	_set_status("Forming your landscape…")
+	data.begin_stroke()
+	data._before["favorite_scene"] = NativeGardenStore.capture(scene)
+	await preload("res://scripts/inland_landscape.gd").new().form(data,settings,get_tree() if live else null)
+	data.end_stroke()
+	await refresh(get_tree() if live else null)
+	if apply_mood:
+		var desert: bool = settings.composition in preload("res://scripts/desert_landscape.gd").KINDS
+		SceneLookPresets.apply(scene,"golden_meadow" if desert else "alpine_morning",{"palette":"Desert"} if desert else {})
+		scene._world_visuals.restore()
+		scene._world_visuals.rock_style = 1
+		scene._world_visuals.fog_density = 0.65 if settings.composition == "valley" else 0.0
+		scene._world_visuals.peak_density = 0.28 if settings.composition in ["mountain","massif"] else 0.0
+		scene._world_visuals.peak_altitude = clampf(Array(data.heights).max()*0.6,2.0,24.0)
+	forming = false
+	_set_status("Landscape ready")

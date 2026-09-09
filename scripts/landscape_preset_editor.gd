@@ -133,6 +133,9 @@ func setup(owner_scene: Node3D) -> void:
 		scene.edit_scene_look()
 		scene._look_editor.tabs.current_tab = 1)
 	_build_favorites()
+	var inland := preload("res://scripts/inland_landscape_controls.gd").new()
+	tabs.add_child(inland)
+	inland.setup(scene)
 	tabs.tab_changed.connect(func(index: int) -> void:
 		create_options.visible = index == 0
 		help.visible = index == 0

@@ -2,6 +2,8 @@ class_name NativeAssetCatalog
 extends RefCounted
 ## Compound placeable assets assembled from the reference's original meshes.
 const PARTS := {
+	"cactus":["desert-cactus"],
+	"layered_tree":["layered-trunk","layered-canopies"],
 	"redwood":["redwood-trunk","redwood-canopies"],
 	"fern":["redwood-fern"],
 	"broadleaf":["mesh-11","broadleaf-canopies"],
@@ -32,7 +34,7 @@ static var _pivots := {}
 static func part_pose(key: String, original: Node3D, mesh: Mesh) -> Transform3D:
 	if STEM_SCALE.has(key):
 		return Transform3D(Basis.from_scale(Vector3(1.0,STEM_SCALE[key],1.0)),Vector3.ZERO)
-	if original is MultiMeshInstance3D or original.name.begins_with("redwood-"):
+	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-"):
 		return Transform3D.IDENTITY
 	var pose := Transform3D(original.basis,Vector3.ZERO)
 	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
@@ -56,6 +58,28 @@ static func pivots() -> Dictionary:
 
 static func source_node(source: Node3D, node_name: String) -> Node3D:
 	if source.has_node(node_name): return source.get_node(node_name)
+	if node_name == "desert-cactus":
+		var cactus := MeshInstance3D.new()
+		cactus.name = node_name
+		cactus.mesh = preload("res://scripts/desert_assets.gd").new()._cactus(2)
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://shaders/reference_surface.gdshader")
+		material.set_shader_parameter("base_color",Color("5e7d4a"))
+		material.set_shader_parameter("flat_faces",true)
+		cactus.mesh.surface_set_material(0,material)
+		source.add_child(cactus)
+		return cactus
+	if node_name.begins_with("layered-"):
+		var tree := preload("res://scripts/layered_tree.gd").new()
+		tree._ready()
+		for pair in [["Branchwork","layered-trunk"],["Crown","layered-canopies"]]:
+			var part: MeshInstance3D = tree.get_node(pair[0])
+			tree.remove_child(part)
+			part.name = pair[1]
+			part.mesh.surface_set_material(0,part.material_override)
+			source.add_child(part)
+		tree.free()
+		return source.get_node(node_name)
 	assert(node_name.begins_with("redwood-"))
 	var node := MeshInstance3D.new()
 	node.name = node_name

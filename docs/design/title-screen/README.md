@@ -38,3 +38,9 @@ No cover is saved to the player library. `title_seed` allows reproducible QA;
 
 Validation: 500 seeded selections pass native recipe validation and reach all
 six families; the native diorama lifecycle and title resolution tests pass.
+
+The production world-variety integration expands this pool to 39 terrain/mood
+pairings across 13 curated entries (11 distinct families), including inland
+massifs, twin peaks, glacial/buttressed valleys, monuments, salt basins and desert
+mountains. These use the same saved recipes and shared fog/cloud/rock controls
+as the editor. See [shared world variety](../world-variety/README.md).

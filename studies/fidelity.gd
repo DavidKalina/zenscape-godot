@@ -7,6 +7,7 @@ var _build_panel: NativeBuildPanel
 var _build_palette: NativeBuildPalette
 var _saved_setting_controls: Array[Dictionary] = []
 var _planar_water = preload("res://scripts/planar_water.gd").new()
+var _world_visuals = preload("res://scripts/world_visuals.gd").new()
 var _redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
 var _leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
 var _waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
@@ -152,6 +153,7 @@ func _ready() -> void:
 	add_child(_leaf_litter)
 	add_child(_planar_water)
 	add_child(_redwood_mist)
+	add_child(_world_visuals)
 	add_child(_waterfall_drips)
 	_atmosphere.setup_wind_trails(_chunk_editor.data.ground_height)
 	_build_ui()
@@ -537,6 +539,7 @@ func _process(delta: float) -> void:
 		_display_fog.material.set_shader_parameter("fog_display", _celestial.fog_display)
 		_display_fog.update_view()
 	_redwood_mist.sync(self)
+	_world_visuals.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
 	_chunk_editor.sync_visibility()
 	_planar_water.sync(self)

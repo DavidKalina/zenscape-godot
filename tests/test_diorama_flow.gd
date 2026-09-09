@@ -28,7 +28,7 @@ func _run() -> void:
 	await process_frame
 	check(scene._menu.visible and not scene._has_world,"Startup offers a menu without creating a world")
 	check(not scene._paused and scene._auto_orbit,"Cover landscape is alive and gently rotating")
-	check(not scene._chunk_editor.data.ponds.is_empty() and not scene._chunk_editor.data.objects.is_empty(),"Title has a landscape without creating a saved world")
+	check(not scene._chunk_editor.data._recipe_settings.is_empty() and Array(scene._chunk_editor.data.heights).max()>1.0,"Title has a landscape without creating a saved world")
 	check(scene._menu.buttons[1].has_focus() and not scene._continue.visible,"First launch selects New and hides unavailable Continue")
 	check(not scene._save_copy.visible,"Cover does not offer Save a copy")
 	var down := InputEventKey.new()

@@ -12,7 +12,7 @@ static func valid(value: Variant) -> bool:
 		var p: Variant=points[i]
 		if not p is Dictionary or p.size()!=3: return false
 		for key in ["x","z","h"]:
-			if not GardenData._number(p.get(key),-14.0 if key!="h" else -1.5,14.0 if key!="h" else 26.0): return false
+			if not GardenData._number(p.get(key),-14.0 if key!="h" else -1.5,14.0 if key!="h" else 66.0): return false
 		if i>0 and (p.h>points[i-1].h+0.00001 or preload("res://scripts/native_stream_geometry.gd").distance(p,points[i-1])<0.00001): return false
 	return true
 static func encode(value: Dictionary) -> Dictionary:

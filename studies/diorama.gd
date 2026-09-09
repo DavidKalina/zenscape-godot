@@ -75,7 +75,10 @@ func _ready() -> void:
 	_toolbar.hide()
 	_menu.hide()
 	loading.stage("Raising the land · growing the forest")
-	await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
+	if title_recipe.has("terrain_recipe"):
+		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
+	else:
+		await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
 	loading.stage("Gathering light")
 	_frame_title()
 	await get_tree().process_frame
@@ -88,6 +91,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	var trace_started := Time.get_ticks_usec() if _performance_trace.active else 0
 	super._process(delta)
+	if title_loaded and not _has_world and title_recipe.has("terrain_recipe") and title_recipe.family == "valley":
+		# A shallow sweep along the open valley avoids orbiting into its cliff walls.
+		yaw = sin(_motion_time*0.023)*0.16
+		_update_camera()
 	if _resident_play.scene != null: _resident_play.update(delta)
 	if _home_button != null:
 		_home_button.disabled = not resident_enabled or routine.habits.home == null
@@ -108,7 +115,21 @@ func _frame_title() -> void:
 		target.y = 2.0
 		distance = 24.0
 		polar = 1.12
+	if title_recipe.has("terrain_recipe"):
+		var peak: float = Array(_chunk_editor.data.heights).max()
+		target.y = clampf(peak*0.28,2.0,8.0)
+		distance = maxf(distance,peak*1.35)
+	if title_recipe.has("terrain_recipe") and title_recipe.family == "valley":
+		target.y = 3.5
+		distance = 32.0
+		polar = 1.18
+		yaw = 0.0
+		_auto_orbit_speed = 0.0
 	SceneLookPresets.apply(self,title_recipe.look,title_recipe.overrides)
+	_world_visuals.fog_density = 0.65 if title_recipe.family == "valley" else 0.0
+	_world_visuals.peak_density = 0.28 if title_recipe.family in ["massif","mountain","horn","cone"] else 0.0
+	_world_visuals.peak_altitude = clampf(Array(_chunk_editor.data.heights).max()*0.6,2.0,24.0)
+	_world_visuals.rock_style = 1 if title_recipe.has("terrain_recipe") else 0
 	_update_camera()
 
 func _frame_diorama() -> void:

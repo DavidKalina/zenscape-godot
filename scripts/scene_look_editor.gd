@@ -3,6 +3,7 @@ extends PanelContainer
 const Presets = preload("res://scripts/scene_look_presets.gd")
 const Look = preload("res://scripts/scene_look.gd")
 const EDIT_FIELDS := {
+	"_world_visuals":["fog_density","fog_height","peak_density","peak_altitude","rock_style","rock_detail"],
 	"_celestial":["phase","cycling","night_fill","aurora_strength","rainbow_strength","_rainbow_growth","_target"],
 	"_atmosphere":["strength","direction_angle","_fog_target","_haze_target","summit_mist","shroud","loosen","ray_strength"],
 	"_precipitation":["preset_index","cloud_override","cold_override","state","target"],
@@ -21,6 +22,7 @@ var pickers := {}
 var sliders := {}
 var checks := {}
 var weather_choice := OptionButton.new()
+var rock_choice := OptionButton.new()
 var undo_button := Button.new()
 var redo_button := Button.new()
 var _before := {}
@@ -124,6 +126,15 @@ func setup(owner_scene: Node3D) -> void:
 	_slider(air,"wind_direction","Wind direction",0,360,1,func() -> float: return scene._atmosphere.direction_angle,func(v: float) -> void:
 		scene._atmosphere.direction_angle = v
 		scene._atmosphere._air_angle = deg_to_rad(v))
+	_slider(air,"fog_density","Living fog",0,1.8,0.05,func() -> float: return scene._world_visuals.fog_density,func(v: float) -> void: scene._world_visuals.fog_density = v)
+	_slider(air,"fog_height","Fog bank height",1.5,14,0.5,func() -> float: return scene._world_visuals.fog_height,func(v: float) -> void: scene._world_visuals.fog_height = v)
+	_slider(air,"peak_density","Peak clouds",0,0.7,0.01,func() -> float: return scene._world_visuals.peak_density,func(v: float) -> void: scene._world_visuals.peak_density = v)
+	_slider(air,"peak_altitude","Peak cloud altitude",2,24,0.5,func() -> float: return scene._world_visuals.peak_altitude,func(v: float) -> void: scene._world_visuals.peak_altitude = v)
+	_label(air,"Rock faces")
+	for rock_title in ["Clean","Lightly layered","Weathered"]: rock_choice.add_item(rock_title)
+	rock_choice.item_selected.connect(func(index: int) -> void: _edit(func() -> void: scene._world_visuals.rock_style = index))
+	air.add_child(rock_choice)
+	_slider(air,"rock_detail","Rock detail",0,1,0.05,func() -> float: return scene._world_visuals.rock_detail,func(v: float) -> void: scene._world_visuals.rock_detail = v)
 	_slider(air,"summit","Summit mist",0,1.5,0.01,func() -> float: return scene._atmosphere.summit_mist,func(v: float) -> void: scene._atmosphere.summit_mist = v)
 	_slider(air,"cold","Cold",0,1,0.01,func() -> float: return scene._precipitation.surface_weather.target_cold,func(v: float) -> void:
 		scene._precipitation.cold_override = v
@@ -286,6 +297,7 @@ func sync() -> void:
 		if not pickers[key].get_popup().visible: pickers[key].color = look.colors[key]
 	_sync_presets()
 	weather_choice.select(scene._precipitation.preset_index)
+	rock_choice.select(scene._world_visuals.rock_style)
 	for key in sliders:
 		var row: Dictionary = sliders[key]
 		var value: float = row.read.call()

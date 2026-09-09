@@ -1,5 +1,8 @@
 # ZenScape visual lab
 
+Production promotion: see [shared world variety](../design/world-variety/README.md).
+The notes below record the original experiments; their isolation status is historical.
+
 This is a long-lived experimental worktree on `codex/deliberate-pond`. Keep main separate. Use it to compare world appearance, scale, terrain families, mountains, vegetation, and atmosphere until the direction is clear. Long-lived workspace does not mean every experiment becomes production code.
 
 ## Decisions so far
