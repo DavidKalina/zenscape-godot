@@ -849,6 +849,31 @@ func update_object(id: int, changes: Dictionary) -> bool:
 	objects_revision += 1
 	return true
 
+## Swap the asset a record renders as, keeping placement, pose, scale and the
+## `landscape` marker. Fire uses this to leave a burnt tree standing as a snag;
+## `update_object` deliberately refuses asset changes and drops `landscape`.
+func replace_object_asset(id: int, asset: String, tint := "") -> bool:
+	var index := _object_index(id)
+	if index < 0 or asset not in ASSETS or asset in ["waterfall","explosive"]:
+		return false
+	if objects[index].asset in ["waterfall","explosive"]:
+		return false
+	if not tint.is_empty() and (asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(tint)):
+		return false
+	var candidate := objects[index].duplicate(true)
+	candidate.asset = asset
+	if candidate.has("pose") and asset in ["arch","bigfoot_tree"]:
+		candidate.erase("pose")
+	if tint.is_empty():
+		candidate.erase("tint")
+	else:
+		candidate.tint = tint
+	if candidate == objects[index]:
+		return false
+	objects[index] = candidate
+	objects_revision += 1
+	return true
+
 func duplicate_object(id: int) -> int:
 	var index := _object_index(id)
 	if index < 0 or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
