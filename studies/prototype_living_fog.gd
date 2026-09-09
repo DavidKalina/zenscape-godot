@@ -13,6 +13,11 @@ func _ready() -> void:
 	# The parent mountain study freezes the shared clock for still comparisons.
 	# This atmosphere demo needs live wind integration and gusts.
 	_paused = false
+	# Start the air along the valley, rather than into its side walls.
+	_atmosphere.direction_angle = 90.0
+	_atmosphere._air_angle = PI/2.0
+	_atmosphere.strength = 1.2
+	_atmosphere._air_strength = 1.2
 	living_material = ShaderMaterial.new()
 	living_material.shader = preload("res://shaders/prototype_living_fog.gdshader")
 	living_volume = FogVolume.new()
@@ -68,3 +73,5 @@ func _make_fog_controls() -> void:
 	depth_slider.value_changed.connect(func(v: float) -> void: bank_height=v)
 	var wind_slider := _knob(column,"Wind",0.0,3.5,0.05,_atmosphere.strength)
 	wind_slider.value_changed.connect(func(v: float) -> void: _atmosphere.strength=v)
+	var direction_slider := _knob(column,"Wind direction",0.0,360.0,5.0,_atmosphere.direction_angle)
+	direction_slider.value_changed.connect(func(v: float) -> void: _atmosphere.direction_angle=v)
