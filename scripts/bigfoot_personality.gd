@@ -11,6 +11,12 @@ static func clips_for(player: AnimationPlayer, skeleton: Skeleton3D) -> Dictiona
 		for name in ["Walk","Idle","Held"]+ACTIONS:
 			_clips[name] = author.get_animation("Personality"+name if name not in ACTIONS else name).duplicate()
 		source.free()
+		var walking := preload("res://assets/models/zenscape-bigfoot-heavy-walk.glb").instantiate()
+		var walk_author: AnimationPlayer = walking.find_child("AnimationPlayer",true,false)
+		_clips["Walk"] = walk_author.get_animation("HeavyWalk").duplicate()
+		_clips["Walk"].set_meta("ground_speed_mps",0.85)
+		_clips["Walk"].set_meta("steps_per_loop",4)
+		walking.free()
 	var result := {}
 	var path := str(player.get_node(player.root_node).get_path_to(skeleton))
 	for name in _clips:
