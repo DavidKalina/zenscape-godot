@@ -14,7 +14,15 @@ func _run() -> void:
 	scene.recent_file = folder.path_join("recent.cfg")
 	root.size = Vector2i(1440,960)
 	root.add_child(scene)
-	await process_frame
+	# The title generates its landscape asynchronously before showing the menu.
+	# A single frame (or the scene's ready signal) does not mean it is usable.
+	var deadline := Time.get_ticks_msec() + 120_000
+	while not scene.title_loaded:
+		if Time.get_ticks_msec() >= deadline:
+			push_error("FAIL: title loading did not finish within 120 seconds")
+			quit(1)
+			return
+		await process_frame
 	print("Menu visible: ", scene._menu.visible if scene._menu != null else "MISSING")
 	if scene._menu == null or not scene._menu.visible:
 		push_error("FAIL: main menu is missing")
