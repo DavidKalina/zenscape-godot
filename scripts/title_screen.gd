@@ -9,6 +9,7 @@ var _frame := Control.new()
 var _legend: Label
 var _detail: Label
 var _stem := ColorRect.new()
+var _veil := ColorRect.new()
 var _elapsed := 0.0
 var _entrance: Tween
 var _selected := 0
@@ -28,6 +29,7 @@ func _ready() -> void:
 	_frame.size = Vector2(1180,613)
 	var inscription := FontVariation.new()
 	inscription.base_font = DISPLAY
+	inscription.variation_opentype = {"wght":500.0}
 	inscription.spacing_glyph = 15
 	var mark := _label("ZENSCAPE",inscription,58,Color("e3d7bd"),Vector2(0,77),Vector2(1180,80))
 	mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -48,6 +50,11 @@ func _ready() -> void:
 	_frame.add_child(_stem)
 	_legend = _label("↑ ↓  choose     ·     enter  select",MONO,11,Color("a8b4bebf"),Vector2(0,582),Vector2(1180,20))
 	_legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_veil.color = Color("0b0e12")
+	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_veil.hide()
+	add_child(_veil)
+	_veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	resized.connect(_layout)
 	_layout()
 
@@ -60,7 +67,7 @@ func _label(text: String, font: Font, font_size: int, color: Color, at: Vector2,
 	label.add_theme_font_override("font",font)
 	label.add_theme_font_size_override("font_size",font_size)
 	label.add_theme_color_override("font_color",color)
-	label.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+	label.add_theme_color_override("font_shadow_color",Color(0,0,0,0.25))
 	label.add_theme_constant_override("shadow_offset_y",1)
 	_frame.add_child(label)
 	_track_layout(label, at, extent, font_size)
@@ -124,12 +131,19 @@ func present(cover: bool) -> void:
 	if _entrance: _entrance.kill()
 	modulate.a = 1.0
 	_frame.modulate.a = 1.0
+	_veil.hide()
+	for control in _frame.get_children(): control.modulate.a = 1.0
 	if cover:
-		modulate.a = 0.0
-		_frame.modulate.a = 0.0
-		_entrance = create_tween()
-		_entrance.tween_property(self,"modulate:a",1.0,1.1)
-		_entrance.parallel().tween_property(_frame,"modulate:a",1.0,2.2).set_delay(0.35)
+		_veil.show()
+		_veil.modulate.a = 1.0
+		_entrance = create_tween().set_parallel(true)
+		_entrance.tween_property(_veil,"modulate:a",0.0,1.4)
+		for control in _frame.get_children():
+			control.modulate.a = 0.0
+			var at: Vector2 = control.get_meta("design_position",Vector2(0,222))
+			var delay := 1.3 if control == _legend else 0.95 if at.y >= 222 else 0.0
+			_entrance.tween_property(control,"modulate:a",1.0,1.2 if delay > 0 else 2.2).set_delay(delay)
+		_entrance.chain().tween_callback(_veil.hide)
 
 func _track_layout(control: Control, at: Vector2, extent: Vector2, font_size := 0) -> void:
 	control.set_meta("design_position", at)
@@ -146,7 +160,7 @@ func _layout() -> void:
 	# Control instead magnifies its cached glyphs, even on a native-pixel window.
 	_frame.scale = Vector2.ONE
 	_frame.size = (Vector2(1180,613)*_layout_factor).round()
-	_frame.position = ((size-_frame.size)*0.5).round()
+	_frame.position = Vector2(roundf((size.x-_frame.size.x)*0.5),0)
 	for control in _frame.get_children():
 		if not control.has_meta("design_position"): continue
 		control.position = (control.get_meta("design_position") * _layout_factor).round()
@@ -158,6 +172,8 @@ func _layout() -> void:
 		control.size = (control.get_meta("design_size") * _layout_factor).round().max(Vector2.ONE)
 		if control.material is ShaderMaterial:
 			control.material.set_shader_parameter("glyph_scale", _layout_factor)
+	# The inscription is anchored from the top; the key legend hugs the window foot.
+	_legend.position.y = size.y - 38.0*_layout_factor
 	_update_stem()
 
 func _process(delta: float) -> void:

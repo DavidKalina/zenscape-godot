@@ -32,6 +32,7 @@ const ZOOM_STEP := 0.95
 var _orbit_delta := Vector2.ZERO
 var _pan_delta := Vector2.ZERO
 var _auto_orbit := false
+var _auto_orbit_speed := 0.055
 var _elapsed := 0.0
 var _capture := ""
 var _capture_done := false
@@ -522,7 +523,7 @@ func _process(delta: float) -> void:
 	var minutes: int = int(_celestial.phase * 1440.0)
 	_time_label.text = "Time of day · %02d:%02d" % [minutes / 60, minutes % 60]
 	if _auto_orbit:
-		yaw += delta * 0.055
+		yaw += delta * _auto_orbit_speed
 	_ease_camera(delta)
 	_tremor.advance(delta, _paused)
 	_update_camera()

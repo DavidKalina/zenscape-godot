@@ -52,8 +52,8 @@ func _ready() -> void:
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
 	# The cover is disposable; New restores the blank-world defaults above.
-	_chunk_editor.form_landscape("plateau","",false)
-	_frame_diorama()
+	_chunk_editor.form_landscape("horn","woodland",false)
+	_frame_title()
 	_make_shell()
 	_resident_play.setup(self)
 	add_child(_resident_wind)
@@ -76,7 +76,24 @@ func _process(delta: float) -> void:
 		_home_button.tooltip_text = "Find his sheltered home" if routine.habits.sheltered_home else "Find his resting spot"
 	if trace_started > 0: _performance_trace.last_scene_usec = Time.get_ticks_usec()-trace_started
 
+func _frame_title() -> void:
+	# Electron titleView: 72% of the chunk camera radius, with a raised target.
+	var radius := Vector3(19,12,22).length()*0.72
+	var eye := Vector3(sin(1.10)*sin(atan2(19.0,22.0)),cos(1.10),sin(1.10)*cos(atan2(19.0,22.0)))*radius
+	target = Vector3(0,4,0)
+	var offset := eye-target
+	distance = offset.length()
+	polar = acos(offset.y/distance)
+	yaw = atan2(offset.x,offset.z)
+	_auto_orbit_speed = TAU/60.0*0.22
+	SceneLookPresets.apply(self,"alpine_morning",{
+		"phase":0.68,"weather":"fair","clouds":0.38,"mist":0.10,"haze":0.20,"wind":0.9,
+		"summit_mist":0.20,"rays":0.35,
+		"colors":{"sky":"777582","horizon":"a69a93","glow":"efd1ab","sun":"ffdfac"}})
+	_update_camera()
+
 func _frame_diorama() -> void:
+	_auto_orbit_speed = 0.055
 	target = Vector3(0,-1.0,0)
 	distance = 40.0
 	yaw = 0.35
@@ -288,6 +305,7 @@ func show_menu() -> void:
 	_menu.present(not _has_world)
 
 func close_menu() -> void:
+	_auto_orbit_speed = 0.055
 	_menu.hide()
 	_auto_orbit = _menu_orbit
 	_toolbar.show()
