@@ -23,3 +23,5 @@ Preserve useful comparisons and short findings. Promote reviewed changes deliber
 - Nahanni-inspired valleys: `./run-nahanni-valley.command`. Open valley, canyon, and valley-to-gorge compositions with independent floor width and wall height. [Notes](nahanni-valley/README.md).
 
 - Valley palettes: `./run-valley-palettes.command`. The same valley with nine existing moods and live hour, mist, and cloud-altitude controls. [Notes](valley-palettes/README.md).
+
+- Rock faces: `./run-valley-rock.command`. Clean, lightly layered, and weathered treatments with adjustable strength and a cliff camera. [Notes](valley-rock/README.md).
