@@ -1,0 +1,32 @@
+[
+  {
+    "test": "test_bigfoot_playground.gd",
+    "exit_code": 1,
+    "passed": false,
+    "basis": "c814ab0 modules with shared unchanged assets and import cache"
+  },
+  {
+    "test": "test_bigfoot_routine_ownership.gd",
+    "exit_code": 1,
+    "passed": false,
+    "basis": "c814ab0 modules with shared unchanged assets and import cache"
+  },
+  {
+    "test": "test_autumn.gd",
+    "exit_code": -15,
+    "passed": false,
+    "basis": "c814ab0 modules with shared unchanged assets and import cache"
+  },
+  {
+    "test": "test_fidelity_life.gd",
+    "exit_code": 0,
+    "passed": true,
+    "basis": "c814ab0 modules with shared unchanged assets and import cache"
+  },
+  {
+    "test": "test_native_build_tools.gd",
+    "exit_code": -15,
+    "passed": false,
+    "basis": "c814ab0 modules with shared unchanged assets and import cache"
+  }
+]

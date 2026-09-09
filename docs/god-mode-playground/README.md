@@ -101,3 +101,7 @@ controls, implementation, and verification.
 The same launcher also includes throwable stones, tumbling/floating logs, and
 selected heavy boulders. See [loose-object mischief](../loose-mischief/README.md)
 for controls, behavior, and verification.
+
+Bigfoot can now pick up and physically toss loose stones/logs and pull the spring
+tree himself. See [Bigfoot’s own mischief](../bigfoot-mischief/README.md) for
+invitations, autonomous behavior and validation.

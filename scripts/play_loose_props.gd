@@ -14,6 +14,7 @@ var _samples: Array[Dictionary] = []
 var _clock := 0.0
 var _previous := {}
 var _investigated := {}
+var _tree_contacts := {}
 var _evade_to: Variant = null
 var _evade_time := 0.0
 var _evade_cooldown := 0.0
@@ -114,6 +115,7 @@ func reset() -> void:
 	_evade_time = 0.0
 	_glare_pending = false
 	_investigated.clear()
+	_tree_contacts.clear()
 	for body in bodies:
 		body.parked = body.kind == "boulder"
 		body.restore(body.home)
@@ -208,3 +210,15 @@ func _contact(body: RigidBody3D, before: Vector3) -> void:
 		scene.creature.receive_impulse((body.linear_velocity*body.mass*1.8+Vector3.UP*65.0).limit_length(230.0))
 		scene._show_reaction("!","That was not a stepping stone." if body.kind == "boulder" else "A log has rearranged his afternoon.")
 	body.linear_velocity *= -0.25 if body.kind == "stone" else 0.45
+
+func tree_sweep(previous: Vector2, delta: float) -> void:
+	# Player and resident releases can both bat loose objects with the crown.
+	if scene.spring_tree.held:
+		_tree_contacts.clear()
+		return
+	for body in bodies:
+		if body.held or _tree_contacts.has(body): continue
+		var speed: Vector3 = scene.spring_tree.sweep_contact(previous,body.global_position,delta,false)
+		if speed.length()<1.4: continue
+		_tree_contacts[body] = true
+		body.release((body.linear_velocity+speed*0.55+Vector3.UP*1.0).limit_length(8.0))

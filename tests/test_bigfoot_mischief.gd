@@ -34,6 +34,8 @@ func _run() -> void:
 			if kind == "log" and play.phase == "perform" and scene.creature._age>2.4 and scene.creature._age<2.42:
 				for side in ["R","L"]:
 					check(scene.creature.hand_position(side).distance_to(scene.creature.hand_targets[side].point)<0.15,"Both palms contact the lifted log")
+			if kind == "log" and play.phase == "perform" and scene.creature._age>=2.95 and scene.creature._age<3.1:
+				check(scene.creature.hand_targets.has("R") and scene.creature.hand_targets.has("L"),"Both arms continue the shove through release")
 			if kind == "tree": peak = maxf(peak,scene.spring_tree.tension)
 			elif body != null and body.launched:
 				launched = true

@@ -4,7 +4,13 @@ var kind_index := 0
 var waiting := 0
 var requested := false
 var shots := {}
+var rendered := 0
+var max_render_delta := 0.0
 func _run() -> void:
+	Engine.max_physics_steps_per_frame = 1
+	process_frame.connect(func() -> void:
+		rendered += 1
+		if is_instance_valid(scene): max_render_delta = maxf(max_render_delta,scene.get_process_delta_time()))
 	await super._run()
 	scene.mischief.autonomous = false
 	var layer := CanvasLayer.new()
@@ -48,7 +54,7 @@ func _frame() -> void:
 			waiting = 0
 			requested = false
 			if kind_index>=3:
-				print("BIGFOOT MISCHIEF FILM ",scene.mischief.history)
+				print("BIGFOOT MISCHIEF FILM ",JSON.stringify({"history":scene.mischief.history,"physics_frames":frame,"rendered_frames":rendered,"max_render_delta":max_render_delta}))
 				physics_frame.disconnect(_frame)
 				scene.queue_free()
 				await process_frame

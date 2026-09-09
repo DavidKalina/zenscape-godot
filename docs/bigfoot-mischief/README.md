@@ -44,3 +44,18 @@ It repositions Bigfoot between demonstrations for framing, but does not script
 the grasp or flight. The local `bigfoot-mischief.mp4` is generated and ignored by
 Git. Capture frame-pacing results are recorded separately; capture speed is not
 a measurement of foreground gameplay performance.
+
+Final focused checks: **5/5 pass**, including the earlier loose-object, water,
+and spring-tree regressions. The new action test reports zero failures, 8.46m
+stone travel, 3.81m log travel, and 0.56 peak normalized tree tension.
+
+The full **headless** run is **100/147 passing**. Twenty-five nonpassing checks
+raise script errors in this environment, including null rendered images; other
+legacy assertions also fail. Selected comparisons against the starting revision
+are in `baseline-checks.json`. This milestone does not claim a clean full suite.
+Existing renderer/resource shutdown warnings remain.
+
+The final movie contains **1,866 frames with zero duplicates**. The capture
+harness limits physics to one step per rendered frame; its maximum process delta
+was 1/60 second. This prevents catch-up steps from speeding up recorded actions
+when other desktop work makes rendering slow. It is a capture setting only.

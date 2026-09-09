@@ -1,0 +1,884 @@
+[
+  {
+    "test": "test_alpenglow.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.31
+  },
+  {
+    "test": "test_ambient_audio.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.31
+  },
+  {
+    "test": "test_authoring_preparation.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 3.44
+  },
+  {
+    "test": "test_autumn.gd",
+    "passed": false,
+    "exit_code": 124,
+    "seconds": 100.01
+  },
+  {
+    "test": "test_bear_walk.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.14
+  },
+  {
+    "test": "test_bigfoot.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.14
+  },
+  {
+    "test": "test_bigfoot_breathing.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.14
+  },
+  {
+    "test": "test_bigfoot_habits.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 58.51
+  },
+  {
+    "test": "test_bigfoot_home.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 10.57
+  },
+  {
+    "test": "test_bigfoot_life_editor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.91
+  },
+  {
+    "test": "test_bigfoot_life_interruptions.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.66
+  },
+  {
+    "test": "test_bigfoot_lifecycle.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.3
+  },
+  {
+    "test": "test_bigfoot_mischief.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 11.37
+  },
+  {
+    "test": "test_bigfoot_playground.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 1.52
+  },
+  {
+    "test": "test_bigfoot_routine_actor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.14
+  },
+  {
+    "test": "test_bigfoot_routine_day.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 65.55
+  },
+  {
+    "test": "test_bigfoot_routine_ownership.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 28.43
+  },
+  {
+    "test": "test_bigfoot_routine_pause.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 30.27
+  },
+  {
+    "test": "test_bigfoot_routine_world.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 29.32
+  },
+  {
+    "test": "test_bigfoot_walk.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.15
+  },
+  {
+    "test": "test_bird_flight.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.72
+  },
+  {
+    "test": "test_camera_exploration.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.41
+  },
+  {
+    "test": "test_camera_feedback.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.41
+  },
+  {
+    "test": "test_command_palette.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 2.06
+  },
+  {
+    "test": "test_conifer_wind.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_connected_formation_water.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 4.51
+  },
+  {
+    "test": "test_creature_actor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_creature_brain.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_creature_deliberation.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.72
+  },
+  {
+    "test": "test_creature_hand_reach.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_creature_navigation.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.82
+  },
+  {
+    "test": "test_creature_tremor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_creature_walk.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_creature_wind.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_curated_looks.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.64
+  },
+  {
+    "test": "test_diorama_flow.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.51
+  },
+  {
+    "test": "test_display_fog.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 1.65
+  },
+  {
+    "test": "test_editor_coherence.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.51
+  },
+  {
+    "test": "test_export_entry.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.09
+  },
+  {
+    "test": "test_fall_foam.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_fall_mist.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_fidelity.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_fidelity_life.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 35.86
+  },
+  {
+    "test": "test_fidelity_tremor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 37.53
+  },
+  {
+    "test": "test_fireflies.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.05
+  },
+  {
+    "test": "test_fog_color.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_formation_responsiveness.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 17.85
+  },
+  {
+    "test": "test_frog_motion.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.05
+  },
+  {
+    "test": "test_garden.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_garden_look.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 0.82
+  },
+  {
+    "test": "test_garden_scene.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 1.03
+  },
+  {
+    "test": "test_god_mode_playground.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.75
+  },
+  {
+    "test": "test_growth.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.47
+  },
+  {
+    "test": "test_ice_highlight.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_inversion.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.26
+  },
+  {
+    "test": "test_inversion_surface.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 2.47
+  },
+  {
+    "test": "test_lake_algae.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.42
+  },
+  {
+    "test": "test_lake_chop.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_lake_complete_lighting.gd",
+    "passed": false,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_lake_display_composite.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_lake_fetch.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 1.05
+  },
+  {
+    "test": "test_lake_flash.gd",
+    "passed": false,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_lake_glints.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_lake_material.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_landscape.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_landscape_favorites.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.95
+  },
+  {
+    "test": "test_landscape_presets.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 15.16
+  },
+  {
+    "test": "test_landscape_variations.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.33
+  },
+  {
+    "test": "test_leaves.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 2.67
+  },
+  {
+    "test": "test_lightning.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.87
+  },
+  {
+    "test": "test_live_edit_navigation.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 17.02
+  },
+  {
+    "test": "test_local_wind_field.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_local_wind_foliage.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_local_wind_water.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_loose_props.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 11.48
+  },
+  {
+    "test": "test_native_asset_catalog.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 3.08
+  },
+  {
+    "test": "test_native_build_palette.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 2.89
+  },
+  {
+    "test": "test_native_build_tools.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 3.09
+  },
+  {
+    "test": "test_native_chunk_editor.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 5.33
+  },
+  {
+    "test": "test_native_drop_reactions.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 3.28
+  },
+  {
+    "test": "test_native_editor_hotkeys.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 3.08
+  },
+  {
+    "test": "test_native_fall_course.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_native_fall_editor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.74
+  },
+  {
+    "test": "test_native_fall_foam.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.31
+  },
+  {
+    "test": "test_native_fall_mist.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 5.75
+  },
+  {
+    "test": "test_native_fall_renderer.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_native_fall_reuse.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.03
+  },
+  {
+    "test": "test_native_fall_strand.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_native_falls.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 3.29
+  },
+  {
+    "test": "test_native_flora.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 19.68
+  },
+  {
+    "test": "test_native_landmarks.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 3.09
+  },
+  {
+    "test": "test_native_mountain_shape.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_native_object_editing.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 15.8
+  },
+  {
+    "test": "test_native_object_pose.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 3.08
+  },
+  {
+    "test": "test_native_object_tint.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 3.08
+  },
+  {
+    "test": "test_native_paint.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 14.95
+  },
+  {
+    "test": "test_native_palette.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.95
+  },
+  {
+    "test": "test_native_play_collisions.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_native_pond_attributes.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.82
+  },
+  {
+    "test": "test_native_pond_cache.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.65
+  },
+  {
+    "test": "test_native_pond_preview.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_native_range.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 17.42
+  },
+  {
+    "test": "test_native_recipe_water.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 7.78
+  },
+  {
+    "test": "test_native_refresh_incremental.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 14.76
+  },
+  {
+    "test": "test_native_selection.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.67
+  },
+  {
+    "test": "test_native_shoreline.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 6.15
+  },
+  {
+    "test": "test_native_stream_editor.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.94
+  },
+  {
+    "test": "test_native_stream_geometry.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_native_stream_surface_map.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 6.35
+  },
+  {
+    "test": "test_native_turf.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.11
+  },
+  {
+    "test": "test_navigation_budget.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_night_fill.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.66
+  },
+  {
+    "test": "test_paused_lighting.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.67
+  },
+  {
+    "test": "test_paused_reveal.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.66
+  },
+  {
+    "test": "test_performance_trace.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 7.39
+  },
+  {
+    "test": "test_play_spring_tree.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_playable_visuals.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 8.82
+  },
+  {
+    "test": "test_pond_habitat.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.67
+  },
+  {
+    "test": "test_precipitation_height.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_puffs.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_rain_rings.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_rainbow_weather.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.25
+  },
+  {
+    "test": "test_redwood_cover_cache.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_redwood_forest.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_redwood_grove.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 7.18
+  },
+  {
+    "test": "test_resident_gust.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 6.77
+  },
+  {
+    "test": "test_resident_interaction.gd",
+    "passed": false,
+    "exit_code": 6,
+    "seconds": 8.21
+  },
+  {
+    "test": "test_scene.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 0.62
+  },
+  {
+    "test": "test_scene_look.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.46
+  },
+  {
+    "test": "test_scene_look_render.gd",
+    "passed": false,
+    "exit_code": 2,
+    "seconds": 5.74
+  },
+  {
+    "test": "test_scene_wind_direction.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_shroud_weather.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.94
+  },
+  {
+    "test": "test_source_terrain.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 3.9
+  },
+  {
+    "test": "test_surface_haze.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 3.91
+  },
+  {
+    "test": "test_surface_weather.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.41
+  },
+  {
+    "test": "test_thunder_audio.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.42
+  },
+  {
+    "test": "test_title_resolution.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.42
+  },
+  {
+    "test": "test_water_growth.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.87
+  },
+  {
+    "test": "test_water_mischief.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 7.46
+  },
+  {
+    "test": "test_waterfall_drips.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_weather_profiles.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.87
+  },
+  {
+    "test": "test_weather_wind_trails.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.42
+  },
+  {
+    "test": "test_wind.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_wind_demo_landscape.gd",
+    "passed": false,
+    "exit_code": -15,
+    "seconds": 2.94
+  },
+  {
+    "test": "test_wind_gust_visuals.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_wind_leaf_litter.gd",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "test": "test_wind_playground.gd",
+    "passed": false,
+    "exit_code": 1,
+    "seconds": 3.15
+  }
+]

@@ -178,7 +178,7 @@ func _physics_process(delta: float) -> void:
 				brain.enabled = false
 	var previous := spring_tree.bend
 	spring_tree.advance(delta)
-	mischief.tree_sweep(previous,delta)
+	loose_props.tree_sweep(previous,delta)
 	var contact := Vector3.ZERO if mischief.tree_protected else spring_tree.sweep_contact(previous,creature.global_position+Vector3.UP*1.6,delta)
 	if contact.length() > 0.0 and creature.receive_impulse((contact*23.0+Vector3.UP*65.0).limit_length(240.0)):
 		_tree_hit = true

@@ -11,7 +11,6 @@ var held: RigidBody3D
 var history: Array[String] = []
 var last_cancel := ""
 var tree_protected := false
-var _tree_contacts := {}
 var _route := PackedVector3Array()
 var _waypoint := 0
 var _target_start := Vector3.ZERO
@@ -144,7 +143,16 @@ func _start() -> void:
 		cancel("animation unavailable")
 
 func _perform_throw(t: float) -> void:
-	if _released: return
+	if _released:
+		if active == "log":
+			# Carry the two-handed shove through release before blending back
+			# into the authored recovery, rather than snapping to one throwing arm.
+			var weight := 1.0-smoothstep(3.2,3.8,t)
+			for side in ["R","L"]:
+				var sign := -1.0 if side == "R" else 1.0
+				var point: Vector3 = scene.creature.to_global(Vector3(sign*0.55,1.65,1.35))
+				scene.creature.reach_hand(point,weight,side)
+		return
 	if t<1.05:
 		var weight := smoothstep(0.25,0.9,t)
 		scene.creature.reach_hand(target.global_position,weight)
@@ -185,7 +193,7 @@ func _perform_throw(t: float) -> void:
 		held.hit_cooldown = 0.8
 		held = null
 		_released = true
-		scene.creature.clear_hand_targets()
+		if active == "stone": scene.creature.clear_hand_targets()
 		scene._show_reaction("!","He can throw things too." if active == "stone" else "A little redecorating.")
 
 func _perform_tree(t: float) -> void:
@@ -198,7 +206,6 @@ func _perform_tree(t: float) -> void:
 		tree.begin_grab()
 		_owns_tree = true
 		tree_protected = true
-		_tree_contacts.clear()
 	if _owns_tree:
 		# Draw the trunk toward his chest, then let the same spring recoil.
 		tree.drag_to(-_direction*2.8*smoothstep(0.7,2.5,t))
@@ -211,18 +218,6 @@ func _perform_tree(t: float) -> void:
 		_released = true
 		scene.creature.clear_hand_targets()
 		scene._show_reaction("!","He has been paying attention.")
-
-func tree_sweep(previous: Vector2, delta: float) -> void:
-	# Player and resident releases can both bat loose objects with the crown.
-	if scene.spring_tree.held:
-		_tree_contacts.clear()
-		return
-	for body in scene.loose_props.bodies:
-		if body.held or _tree_contacts.has(body): continue
-		var speed: Vector3 = scene.spring_tree.sweep_contact(previous,body.global_position,delta,false)
-		if speed.length()<1.4: continue
-		_tree_contacts[body] = true
-		body.release((body.linear_velocity+speed*0.55+Vector3.UP*1.0).limit_length(8.0))
 
 func cancel(reason := "player interruption") -> void:
 	if not busy(): return
@@ -257,6 +252,5 @@ func _finish() -> void:
 func reset() -> void:
 	cancel("reset")
 	tree_protected = false
-	_tree_contacts.clear()
 	_cooldown = 9.0
 	_choice = 0
