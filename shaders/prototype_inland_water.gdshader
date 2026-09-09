@@ -5,6 +5,7 @@ render_mode unshaded, cull_back, fog_disabled;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_water_gust.gdshaderinc"
 #include "res://shaders/pool_caustics.gdshaderinc"
+uniform bool salt_pool = false;
 uniform bool hide_pool_surface = false;
 uniform sampler2D planar_reflection : filter_linear, repeat_disable;
 uniform mat4 reflection_matrix;
@@ -42,7 +43,8 @@ void fragment() {
     vec3 body = lit_bed * absorption + vec3(0.012,0.075,0.068)*(1.0-absorption);
     float grazing = 1.0 - max(dot(normal,normalize(CAMERA_POSITION_WORLD-p)),0.0);
     float fresnel = 0.16 + 0.72*pow(grazing,3.0);
-    float shore = smoothstep(0.0,0.16,water_depth);
+    float shore = smoothstep(0.0,salt_pool ? 0.025 : 0.16,water_depth);
+    if (salt_pool) { body = lit_bed; fresnel = 0.60+0.28*pow(grazing,3.0); }
     ALBEDO = mix(bed,mix(body,reflected,fresnel * reflection_strength),shore);
     ALPHA = 1.0;
 }

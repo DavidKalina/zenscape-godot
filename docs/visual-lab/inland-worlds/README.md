@@ -8,11 +8,11 @@ This is a **integrated visual experiment, not complete Electron genome parity**.
 
 ## Implemented separation
 
-- Eleven compositions: mountain, massif, valley, basin, foothills, plateau, meadow, marsh, dunes, tablelands, buttes.
+- Fifteen compositions: mountain, massif, valley, basin, foothills, plateau, meadow, marsh, dunes, tablelands, buttes, desert, monuments, salt-basin, desert-mountains.
 - Four original-inspired mountain archetypes: ridgeback, cone, range, horn.
 - Original profiles plus twin summits, sawtooth ridge, buttressed canyon, glacial valley, rolling uplands, tall massif, and volcanic crown.
 - Six existing habitats; habitat controls planting and terrain coloration independently from mood.
-- Independent RNG streams for composition, mountain parameters, landforms, habitat, water, planting, and surface noise. Version 2 identifies the expanded sampling rules, with the v1 sampler retained for replay. Neither version claims identical output to Electron generation 21.
+- Independent RNG streams for composition, mountain parameters, landforms, habitat, water, planting, and surface noise. Version 3 adds source desert formulas, with the v1 and v2 samplers retained for replay. No version claims full identity with Electron generation 21.
 - One analytic terrain sampler drives mesh vertices, gradients, placement, and native pond flooding. Rivers carve the same terrain they cross. Palette changes do not regenerate terrain.
 - Dune crests remain sand rather than acquiring rock solely because of elevation. Reflected pond surfaces use the existing visual benchmark's water shading adapted to the live planar-water helper.
 
@@ -30,7 +30,7 @@ Adapted from the sibling checkout's `genome.js` composition/archetype separation
 | Full original trait ranges, weighted probabilities, ecological interactions | Original archetype weights/ranges, treelines, and counts integrated; full ecology and original seed identity remain partial |
 | Text/expression-driven generation | Not ported |
 | Legacy generator version replay / archive migration | Not ported |
-| Salt flats and desert monuments | Further inland parity work |
+| Salt flats and desert monuments | Adapted source formulas, sandstone, salt crust, shallow pools; see [desert study](../desert-parity/README.md) |
 | Saving/reloading the new genome through production editor | Not enabled; runtime adapter is experimental |
 
 The native record arrays remain the rendering output, but the temporary analytic recipe must not be serialized as an ordinary production recipe. Production integration needs an explicit validated genome document and save/reload path before exposing it in the editor. Rebuilds are synchronous in this disposable lab; production needs the existing frame-budgeted generation path.
@@ -51,3 +51,7 @@ Further production work: validated genome persistence, frame-budgeted rebuilds, 
 - Reproducibility: sampler version and seed are recorded with captures; independent streams and native record invariants are checked by the probe/capture tools.
 - Visual verification: native overview captures plus explicit original-archetype, landform, habitat, and control-extreme comparisons are in the gallery.
 - Exclusions and limitations: cave/island/ocean systems are absent; regional generation and production save integration are listed above as remaining work.
+
+## Desert follow-up
+
+The [desert parity experiment](../desert-parity/README.md) replaces the simplified desert shapes in sampler v3 with source formulas and explicit sand/rock/salt materials. The older captures on this page document v2; the desert study has the current renders. Use `run-desert-worlds.command` to start there.

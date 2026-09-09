@@ -1,9 +1,11 @@
 extends RefCounted
-## Inland lab genome v2. Independent feature streams; no saved-world schema changes.
+## Inland lab genome v3. Independent feature streams; no saved-world schema changes.
 ## Compositions/archetypes and crest/wall profiles adapted from zenscape/genome.js and landforms.js.
-const VERSION := 2
+const VERSION := 3
+const Previous = preload("res://scripts/prototype_inland_genome_v2.gd")
+const Desert = preload("res://scripts/prototype_desert_landscape.gd")
 const Legacy = preload("res://scripts/prototype_inland_genome_v1.gd")
-const COMPOSITIONS := ["mountain","massif","valley","basin","foothills","plateau","meadow","marsh","dunes","tablelands","buttes"]
+const COMPOSITIONS := ["mountain","massif","valley","basin","foothills","plateau","meadow","marsh","dunes","tablelands","buttes","desert","monuments","salt-basin","desert-mountains"]
 const ARCHETYPES := ["ridgeback","cone","range","horn"]
 const LANDFORMS := ["original","twin-summits","sawtooth-ridge","buttressed-canyon","glacial-valley","rolling-uplands","tall-massif","volcanic-crown"]
 const HABITATS := ["alpine","woodland","meadow","wetland","arid","redwood"]
@@ -27,6 +29,7 @@ static func weighted(rng: RandomNumberGenerator,names: Array,weights: Array) -> 
 	return names[-1]
 static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION) -> Dictionary:
 	if version == 1: return Legacy.sample(seed_value,overrides)
+	if version == 2: return Previous.sample(seed_value,overrides)
 	assert(version == VERSION,"Unsupported inland genome version")
 	var rc := stream(seed_value,101)
 	var ra := stream(seed_value,211)
@@ -36,7 +39,7 @@ static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION
 	var composition := weighted(rc,["valley","basin","foothills","mountain","plateau","massif"],[0.13,0.10,0.17,0.32,0.14,0.14])
 	# Preserve the original distribution within mountain country; additional inland families get their own draw.
 	var re := stream(seed_value,853)
-	if re.randf()<0.30: composition = ["meadow","marsh","dunes","tablelands","buttes"][re.randi_range(0,4)]
+	if re.randf()<0.30: composition = ["meadow","marsh","dunes","tablelands","buttes","desert","monuments","salt-basin","desert-mountains"][re.randi_range(0,8)]
 	composition = overrides.get("composition",composition)
 	var archetype := weighted(ra,ARCHETYPES,[0.20,0.15,0.45,0.20])
 	archetype = overrides.get("archetype",archetype)
@@ -50,7 +53,7 @@ static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION
 	landform = overrides.get("landform",landform)
 	var habitat_roll := rh.randf()
 	var habitat := "alpine"
-	if composition in ["dunes","tablelands","buttes"]: habitat = "arid"
+	if composition in Desert.KINDS: habitat = "arid"
 	elif composition == "marsh": habitat = "wetland"
 	elif composition in ["meadow","foothills"]: habitat = "meadow" if habitat_roll<0.65 else "woodland"
 	elif composition in ["valley","basin","plateau"] or archetype == "ridgeback": habitat = "woodland"
@@ -81,6 +84,10 @@ static func channel(g: Dictionary,z: float) -> float:
 	return sin(z*0.23+g.water_phase)*1.4
 static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 	if int(g.version) == 1: return Legacy.height(g,p,noise)
+	if int(g.version) == 2: return Previous.height(g,p,noise)
+	if g.composition in Desert.KINDS:
+		var value := Desert.field(g,p).x
+		return lerpf(value,0.8,smoothstep(12.5,14.0,maxf(absf(p.x),absf(p.y))))
 	var q := p/float(g.breadth)
 	var n := noise.get_noise_2d(q.x,q.y)
 	var ground := 1.62+n*0.05 if g.composition == "marsh" else 1.45+n*0.22

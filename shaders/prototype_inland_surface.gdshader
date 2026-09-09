@@ -9,6 +9,17 @@ shader_type spatial;
 #include "res://shaders/reference_inversion.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
+uniform bool desert_enabled = false;
+uniform bool desert_has_map = false;
+uniform sampler2D desert_geology : filter_linear, repeat_disable;
+uniform float desert_band_height = 0.85;
+uniform vec4 desert_sand_a : source_color = vec4(0.8784,0.7020,0.4353,1.0);
+uniform vec4 desert_sand_b : source_color = vec4(0.8118,0.6157,0.3451,1.0);
+uniform vec4 desert_band_a : source_color = vec4(0.6471,0.3137,0.1843,1.0);
+uniform vec4 desert_band_b : source_color = vec4(0.5608,0.2471,0.1647,1.0);
+uniform vec4 desert_band_c : source_color = vec4(0.7882,0.5294,0.3529,1.0);
+uniform vec4 desert_varnish : source_color = vec4(0.4902,0.2275,0.1490,1.0);
+uniform vec4 desert_salt : source_color = vec4(0.9059,0.8745,0.7882,1.0);
 uniform float inland_snowline = 99.0;
 uniform float inland_rock_amount = 1.0;
 uniform int rock_treatment = 0;
@@ -117,6 +128,17 @@ void vertex() {
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 }
 
+float salt_cells(vec2 p) {
+	vec2 cell=floor(p), f=fract(p);
+	float a=10.0, b=10.0;
+	for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++) {
+		vec2 o=vec2(float(x),float(y)), q=cell+o;
+		vec2 jitter=fract(sin(vec2(dot(q,vec2(127.1,311.7)),dot(q,vec2(269.5,183.3))))*43758.5453);
+		float d=length(o+jitter*0.7+0.15-f);
+		if(d<a){b=a;a=d;} else {b=min(b,d);}
+	}
+	return b-a;
+}
 void fragment() {
 	vec3 face_normal = world_normal;
 	if (flat_faces) {
@@ -129,6 +151,19 @@ void fragment() {
 	float rock_height = smoothstep(3.5,6.5,world_position.y)*inland_rock_amount;
 	float grain = zs_noise(world_position.xz*0.55);
 	tint = mix(tint,vec3(0.24,0.265,0.29)*zs_palette_rock*(0.82+0.3*grain),rock_height);
+	if (desert_enabled) {
+		vec2 geology = desert_has_map ? texture(desert_geology,(world_position.xz+14.0)/28.0).rg : vec2(rock_height,0.0);
+		rock_height = geology.r;
+		vec3 sand = mix(desert_sand_b.rgb,desert_sand_a.rgb,smoothstep(0.35,0.65,grain));
+		float band = mod(floor((world_position.y-0.8)/desert_band_height),3.0);
+		vec3 stone = band<1.0 ? desert_band_a.rgb : band<2.0 ? desert_band_b.rgb : desert_band_c.rgb;
+		stone = mix(stone,desert_varnish.rgb,smoothstep(0.78,0.90,abs(face_normal.y))*smoothstep(3.8,4.2,world_position.y));
+		tint = mix(sand,stone,geology.r);
+		tint = mix(tint,desert_salt.rgb,smoothstep(0.08,0.9,geology.g));
+		float cracks = 1.0-smoothstep(0.012,0.052+fwidth(world_position.x)*0.1,salt_cells(world_position.xz*2.8));
+		tint *= 1.0-cracks*0.20*smoothstep(0.35,0.85,geology.g);
+		tint *= 0.97+0.06*zs_noise(world_position.xz*32.0);
+	}
 	// Broad world-space strata keep their scale across facets and camera distance.
 	if (rock_treatment > 0) {
 		vec3 p = world_position;

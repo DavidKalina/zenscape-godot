@@ -5,6 +5,9 @@ func _initialize() -> void:
 	var legacy = preload("res://scripts/prototype_inland_genome_v1.gd")
 	for seed_value in range(40):
 		assert(var_to_bytes(Genome.sample(seed_value,{},1)) == var_to_bytes(legacy.sample(seed_value)))
+	var previous = preload("res://scripts/prototype_inland_genome_v2.gd")
+	for seed_value in range(40):
+		assert(var_to_bytes(Genome.sample(seed_value,{},2)) == var_to_bytes(previous.sample(seed_value)))
 	var types := {}
 	for seed_value in range(200):
 		var g: Dictionary = Genome.sample(seed_value)

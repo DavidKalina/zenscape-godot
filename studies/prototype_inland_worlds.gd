@@ -1,5 +1,8 @@
 extends "res://studies/prototype_valley_rock.gd"
 ## Integration lab. Writes ordinary editable terrain records, not a new save format.
+const Desert = preload("res://scripts/prototype_desert_landscape.gd")
+var desert_map: ImageTexture
+var desert_details: Node3D
 const Genome = preload("res://scripts/prototype_inland_genome.gd")
 var genome: Dictionary = {}
 var world_seed := 7
@@ -9,6 +12,7 @@ var world_ready := false
 var choice_controls: Dictionary = {}
 
 func _ready() -> void:
+	if "--desert" in OS.get_cmdline_user_args(): choices = {"composition":"salt-basin"}
 	super._ready()
 	mountain_material.shader = preload("res://shaders/prototype_inland_surface.gdshader")
 	set_rock_style(0)
@@ -17,6 +21,7 @@ func _ready() -> void:
 	_planar_water.revision = -1
 	world_ready = true
 	_sync_rock_habitat()
+	if genome.composition in Desert.KINDS: set_scale_variant(0)
 	get_window().title = "ZenScape visual lab · Inland genome"
 
 func set_scale_variant(_index: int) -> void:
@@ -38,6 +43,13 @@ func set_scale_variant(_index: int) -> void:
 			anchors.append([Genome.channel(genome,z),z,1.12+(11.0-z)*0.009])
 		water._add(anchors,genome.river_width,false,false)
 		data.streams.assign(water.routes.duplicate(true))
+	elif genome.composition == "salt-basin":
+		var level := 0.8+0.99*0.65*float(genome.relief)
+		for z in range(-10,12,2):
+			for x in range(-10,12,2):
+				var f := Desert.field(genome,Vector2(x,z))
+				if f.z>0.85 and f.x<level:
+					data.ponds.append({"x":float(x),"z":float(z),"level":level})
 	elif genome.composition == "marsh":
 		for pool in genome.wetland:
 			data.ponds.append({"x":pool.x,"z":pool.z,"level":pool.level})
@@ -84,7 +96,7 @@ func set_scale_variant(_index: int) -> void:
 		var z: float = data._face_z[i]
 		data._recipe_gradients.append(Vector2((recipe.height(x+0.25,z)-recipe.height(x-0.25,z))/0.5,(recipe.height(x,z+0.25)-recipe.height(x,z-0.25))/0.5))
 	data.discard_cache()
-	if genome.composition == "marsh":
+	if genome.composition in ["marsh","salt-basin"]:
 		# Flood each connected component once: joined pools must not draw coplanar water twice.
 		var masks: Array = []
 		var unique: Array[Dictionary] = []
@@ -115,7 +127,7 @@ func set_scale_variant(_index: int) -> void:
 		var size := rng.randf_range(0.6,1.05)
 		var pick := rng.randf()
 		var h: float = data.ground_height(p)
-		if p.distance_to(actor_point)<1.4 or _is_wet(p): continue
+		if p.distance_to(actor_point)<1.4 or _is_wet(p) or _is_salt(p): continue
 		if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.85: continue
 		var treeline := float(genome.treeline) if genome.habitat == "alpine" else 10.0
 		if h>treeline: continue
@@ -136,6 +148,7 @@ func set_scale_variant(_index: int) -> void:
 	# Low cover gives marsh/meadow their own habitat beyond a palette swap.
 	for i in range(25 if genome.habitat == "arid" else 620 if genome.habitat == "wetland" else 250):
 		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
+		if _is_salt(p): continue
 		if (_is_wet(p) and not (genome.habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
 		var kind: String = "reeds" if genome.habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if genome.habitat == "meadow" else "shrub" if genome.habitat == "arid" else "grass_tuft"
@@ -147,11 +160,19 @@ func set_scale_variant(_index: int) -> void:
 			elif i%13 == 0: kind = "mushroom"
 		if genome.habitat == "wetland" and float(data.ground_height(p))>1.65: kind = "bank_grass"
 		data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.9))
+	_build_desert_map()
 	data.objects_revision += 1
 	_chunk_editor.refresh()
 	actor.position = Vector3(actor_point.x,float(data.ground_height(actor_point)),actor_point.y)
 	_update_world_label()
 	if world_ready: _sync_rock_habitat()
+	if desert_details != null:
+		desert_details.free()
+		desert_details = null
+	if genome.composition in Desert.KINDS and world_ready:
+		desert_details = preload("res://scripts/prototype_desert_details.gd").new()
+		add_child(desert_details)
+		desert_details.build(genome,recipe,mountain_material)
 	print("INLAND seed=",world_seed," ",genome.composition," / ",genome.landform," / ",genome.habitat)
 
 func _is_wet(p: Vector2) -> bool:
@@ -159,12 +180,32 @@ func _is_wet(p: Vector2) -> bool:
 		for point in route.pts:
 			if p.distance_squared_to(Vector2(point.x,point.z))<pow(float(route.width)*0.6+0.4,2.0): return true
 	for pool: Dictionary in _chunk_editor.data.ponds:
-		if genome.composition == "marsh":
+		if genome.composition in ["marsh","salt-basin"]:
 			if float(_chunk_editor.data.ground_height(p))<float(pool.level)+0.08: return true
 		elif Vector2((p.x-pool.x)/pool.basin[0],(p.y-pool.z)/pool.basin[1]).length()<1.05: return true
 	return false
 
+func _is_salt(p: Vector2) -> bool:
+	return genome.composition == "salt-basin" and Desert.field(genome,p).z>0.25
+
+func _build_desert_map() -> void:
+	if genome.composition not in Desert.KINDS:
+		desert_map = null
+		return
+	var image := Image.create(192,192,false,Image.FORMAT_RGBA8)
+	for z in range(192):
+		for x in range(192):
+			var p := Vector2(-14.0+(x+0.5)*28.0/192.0,-14.0+(z+0.5)*28.0/192.0)
+			var f := Desert.field(genome,p)
+			image.set_pixel(x,z,Color(f.y,f.z,0,1))
+	desert_map = ImageTexture.create_from_image(image)
+
 func _sync_rock_habitat() -> void:
+	mountain_material.set_shader_parameter("desert_enabled",genome.composition in Desert.KINDS or genome.habitat=="arid")
+	mountain_material.set_shader_parameter("desert_has_map",desert_map!=null)
+	mountain_material.set_shader_parameter("desert_geology",desert_map)
+	mountain_material.set_shader_parameter("desert_band_height",0.85*float(genome.relief)*(0.65 if genome.composition in ["monuments","salt-basin","desert-mountains"] else 1.0))
+	_chunk_editor.content._water_material.set_shader_parameter("salt_pool",genome.composition=="salt-basin")
 	# Dune crests are sand, even when tall. Other terrain retains exposed rock.
 	mountain_material.set_shader_parameter("inland_rock_amount",0.0 if genome.composition == "dunes" else 1.0)
 	var snowline: float = genome.snowline*float(genome.relief) if genome.habitat == "alpine" else 99.0

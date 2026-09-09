@@ -25,6 +25,7 @@ func height(x: float,z: float) -> float:
 			var r := d.length()/radius
 			if r<1.5: h = minf(h,pool.level-pool.depth+(pool.depth+0.16)*r*r)
 		return h
+	if genome.composition == "salt-basin": return h
 	for pool: Dictionary in pools:
 		var r := Vector2((x-pool.x)/pool.basin[0],(z-pool.z)/pool.basin[1]).length()
 		if r<1.4:
