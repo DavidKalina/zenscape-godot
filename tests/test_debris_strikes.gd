@@ -36,7 +36,9 @@ func run() -> void:
 	editor.data.place("log",Vector2(-9.8,0.6),0,0.7)
 	editor.refresh()
 	remote.target_id = charge
-	remote.detonate()
+	remote.request_detonation()
+	while remote.requested or remote.firing: await physics_frame
+	await physics_frame
 	check(not actor.blast_airborne,"A distant charge leaves Bigfoot standing")
 	var slab: RigidBody3D = null
 	for body in remote.bodies:
@@ -116,6 +118,23 @@ func run() -> void:
 			break
 	check(splashed and slab.has_meta("wet"),"Debris splashes the pond it falls into")
 	check(slab.linear_damp > 1.0,"Wet debris wallows instead of skating")
+	# Staging must preserve the same launch velocity after adding rock mass.
+	remote.clear_effects()
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3.ONE
+	remote._staging = true
+	remote._launch_parts([{"mesh":mesh,"material":null,"transform":Transform3D(Basis.IDENTITY,Vector3(12,20,12))}],Vector3(12,3,0))
+	var staged: RigidBody3D = remote.bodies.back()
+	staged.gravity_scale = 0.0
+	staged.linear_damp = 0.0
+	check(staged.freeze and staged.collision_layer == 0 and staged.collision_mask == 0,"Prepared heavy debris stays frozen and non-colliding")
+	remote._staging = false
+	await ticks(3)
+	check(staged.collision_layer == 4 and staged.collision_mask == 3,"Staged release restores terrain and resident collisions")
+	check(staged.linear_velocity.distance_to(Vector3(12,3,0)) < 0.15,"Staged heavy debris preserves its requested launch velocity")
+	var released := staged.linear_velocity
+	await ticks(3)
+	check(staged.linear_velocity.distance_to(released) < 0.15,"Staged launch impulse is applied exactly once")
 	scene.queue_free()
 	await process_frame
 	print("Debris strikes: ",failures," failures")

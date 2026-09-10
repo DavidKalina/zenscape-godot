@@ -171,8 +171,8 @@ func rebuild_registry() -> void:
 	water_play.refresh()
 	_world_dirty = false
 
-func ensure_collision(force := false) -> void:
-	if not _collision_dirty and not force: return
+func ensure_collision() -> void:
+	if not _collision_dirty: return
 	play_collisions.rebuild(_chunk_editor.data)
 	play_collisions.global_transform = _chunk_editor.terrain.global_transform
 	for id in _active:

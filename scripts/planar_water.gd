@@ -5,6 +5,7 @@ var views: Array[Dictionary] = []
 var source_water: MeshInstance3D
 var camera: Camera3D
 var _shader_cache := {}
+var _used_shaders := {}
 var _bindings: Array[Dictionary] = []
 var _material_bindings := {}
 var _used_material_bindings := {}
@@ -12,20 +13,51 @@ var revision := -1
 var objects_revision := -1
 var enabled := true
 var _scene: Node3D
+var _setup_busy := false
+var _setup_generation := 0
+var _initial_ready := false
+signal setup_frame
 
-func sync(scene: Node3D) -> void:
+func _ready() -> void:
+	get_tree().process_frame.connect(_advance_setup_frame)
+
+func _advance_setup_frame() -> void:
+	# Waiting on this node's signal makes pending setup disappear with its
+	# owner. The tree's longer-lived signal must not resume a freed node.
+	setup_frame.emit()
+
+func sync(scene: Node3D, frame_tree: SceneTree = null) -> void:
 	_scene = scene
+	if _setup_busy:
+		if frame_tree != null: return
+		# Explicit synchronous callers supersede pending initial preparation.
+		clear(true)
+		revision = -1
 	if not enabled:
 		clear()
 		revision = -1
 		return
 	var content: GardenView = scene._chunk_editor.content
 	if revision != content.revision:
-		clear()
+		# Geometry changes retain compiled clip shaders for surviving pond levels.
+		clear(true)
 		revision = content.revision
 		objects_revision = scene._chunk_editor.data.objects_revision
 		if content._water.mesh != null and not scene._chunk_editor.data.ponds.is_empty():
-			setup(scene, content._water)
+			# Only first-time setup needs to compile clipping programs. Keep the
+			# original water visible while preparing all reflected levels.
+			var initial_tree: SceneTree = frame_tree if not _initial_ready else null
+			var generation := _setup_generation
+			_setup_busy = true
+			var accepted := await setup(scene,content._water,initial_tree)
+			if generation != _setup_generation: return
+			_setup_busy = false
+			if not accepted or not enabled or revision != content.revision or objects_revision != scene._chunk_editor.data.objects_revision:
+				clear(true)
+				revision = -1
+				return
+			_initial_ready = true
+		_prune_shaders()
 	elif objects_revision != scene._chunk_editor.data.objects_revision:
 		objects_revision = scene._chunk_editor.data.objects_revision
 		_refresh_geometry(scene)
@@ -41,12 +73,18 @@ func _refresh_geometry(scene: Node3D) -> void:
 		if is_instance_valid(binding.copy): binding.copy.free()
 	_bindings.clear()
 	_used_material_bindings.clear()
+	_used_shaders.clear()
 	for view in views:
 		_copy_geometry(scene,view.viewport,view.level)
 	for key in _material_bindings.keys():
 		if not str(key).begins_with("pond:") and not _used_material_bindings.has(key): _material_bindings.erase(key)
+	_prune_shaders()
 
-func clear() -> void:
+func clear(keep_shaders := false) -> void:
+	_setup_generation += 1
+	_setup_busy = false
+	revision = -1
+	objects_revision = -1
 	if is_instance_valid(source_water):
 		source_water.material_override.set_shader_parameter("hide_pool_surface", false)
 	for child in get_children():
@@ -56,23 +94,39 @@ func clear() -> void:
 	_bindings.clear()
 	_material_bindings.clear()
 	_used_material_bindings.clear()
-	_shader_cache.clear()
+	_used_shaders.clear()
+	if not keep_shaders:
+		_shader_cache.clear()
+		_initial_ready = false
+
+func _prune_shaders() -> void:
+	for key in _shader_cache.keys():
+		if not _used_shaders.has(key): _shader_cache.erase(key)
 
 func _exit_tree() -> void:
 	if is_instance_valid(source_water):
 		source_water.material_override.set_shader_parameter("hide_pool_surface", false)
 
 
-func setup(scene: Node3D, water_node: MeshInstance3D) -> void:
+func setup(scene: Node3D, water_node: MeshInstance3D, frame_tree: SceneTree = null) -> bool:
 	_scene = scene
 	camera = scene.camera
 	source_water = water_node
+	var generation := _setup_generation
+	var content_revision: int = scene._chunk_editor.content.revision
+	var props_revision: int = scene._chunk_editor.data.objects_revision
+	# Begin after the caller's first weather/audio/scene initialization frame.
+	if frame_tree != null:
+		await setup_frame
+		if not _setup_current(generation,content_revision,props_revision): return false
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree,setup_frame)
+	var source_mesh: ArrayMesh = water_node.mesh
 	var levels := {}
 	for pond in scene._chunk_editor.data.ponds:
 		if levels.has(pond.level): continue
 		levels[pond.level] = true
-		var level: float = pond.level
-		var pool := _pool_mesh(water_node.mesh, level)
+	for level: float in levels:
+		var pool := _pool_mesh(source_mesh, level)
 		if pool == null: continue
 		var viewport := SubViewport.new()
 		viewport.size = Vector2i(512,320)
@@ -80,14 +134,15 @@ func setup(scene: Node3D, water_node: MeshInstance3D) -> void:
 		# Godot tracks one MSAA level for pipeline precompilation. Mixed levels
 		# make newly visible/placed geometry fall back to compiling while drawn.
 		viewport.msaa_3d = scene.get_viewport().msaa_3d
-		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 		add_child(viewport)
 		var environment := WorldEnvironment.new()
 		environment.environment = scene._environment.duplicate()
 		environment.environment.volumetric_fog_enabled = false
 		environment.environment.ssr_enabled = false
 		viewport.add_child(environment)
-		_copy_geometry(scene, viewport, level)
+		if not await _copy_geometry(scene,viewport,level,frame_tree): return false
+		if not _setup_current(generation,content_revision,props_revision): return false
 		for light in scene._lights:
 			var copy := DirectionalLight3D.new()
 			copy.transform = light.global_transform
@@ -102,6 +157,7 @@ func setup(scene: Node3D, water_node: MeshInstance3D) -> void:
 		viewport.add_child(mirror)
 		mirror.current = true
 		var surface := MeshInstance3D.new()
+		surface.visible = false
 		surface.mesh = pool
 		surface.transform = water_node.global_transform
 		surface.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -117,10 +173,32 @@ func setup(scene: Node3D, water_node: MeshInstance3D) -> void:
 		surface.material_override = material
 		add_child(surface)
 		views.append({"viewport":viewport,"camera":mirror,"material":material,"level":level,"surface":surface,"environment":environment.environment,"lights":viewport.get_children().filter(func(n): return n is DirectionalLight3D)})
+		await budget.checkpoint()
+		if not _setup_current(generation,content_revision,props_revision): return false
+	for view in views: view.surface.visible = true
 	update_views()
+	return true
 
-func _copy_geometry(node: Node, parent: Node, level: float) -> void:
-	if node == self: return
+func _setup_current(generation: int, content_revision: int, props_revision: int) -> bool:
+	if generation != _setup_generation or not enabled or not is_instance_valid(_scene) or not is_instance_valid(source_water): return false
+	return source_water.mesh != null and _scene._chunk_editor.content.revision==content_revision and _scene._chunk_editor.data.objects_revision==props_revision
+
+func _copy_geometry(node: Node, parent: Node, level: float, frame_tree: SceneTree = null) -> bool:
+	var generation := _setup_generation
+	var pending: Array[Node] = [node]
+	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree,setup_frame)
+	while not pending.is_empty():
+		var current: Variant = pending.pop_back()
+		if not is_instance_valid(current) or current == self: continue
+		_copy_visual(current,parent,level)
+		var children: Array[Node] = current.get_children()
+		children.reverse()
+		pending.append_array(children)
+		await budget.checkpoint()
+		if generation != _setup_generation: return false
+	return true
+
+func _copy_visual(node: Node, parent: Node, level: float) -> void:
 	if node is GeometryInstance3D and node != source_water:
 		var copy: GeometryInstance3D
 		var mesh: Mesh
@@ -137,10 +215,12 @@ func _copy_geometry(node: Node, parent: Node, level: float) -> void:
 			if original is ShaderMaterial and original.shader != null and "world_position" in original.shader.code:
 				var code: String = original.shader.code
 				if "void fragment()" in code:
-					var key: String = original.shader.resource_path + str(level)
-					if not _shader_cache.has(key):
+					var key := str(original.shader.get_instance_id()) + ":" + str(level)
+					_used_shaders[key] = true
+					if not _shader_cache.has(key) or _shader_cache[key].get_meta("source_code","") != code:
 						var shader := Shader.new()
 						shader.code = code.replace("void fragment() {", "void fragment() {\n if (world_position.y < %.5f) discard;" % (level+0.015))
+						shader.set_meta("source_code",code)
 						_shader_cache[key] = shader
 					var material_key := str(original.get_instance_id()) + ":" + str(level)
 					_used_material_bindings[material_key] = true
@@ -149,6 +229,7 @@ func _copy_geometry(node: Node, parent: Node, level: float) -> void:
 						target.shader = _shader_cache[key]
 						_material_bindings[material_key] = {"material":original,"target":target,"parameters":original.shader.get_shader_uniform_list(),"values":{}}
 					var material: ShaderMaterial = _material_bindings[material_key].target
+					if material.shader != _shader_cache[key]: material.shader = _shader_cache[key]
 					copy.material_override = material
 					copy.transform = node.global_transform
 					copy.extra_cull_margin = 2.0
@@ -156,7 +237,6 @@ func _copy_geometry(node: Node, parent: Node, level: float) -> void:
 					_bindings.append({"source":node,"copy":copy})
 				else: copy.free()
 			else: copy.free()
-	for child in node.get_children(): _copy_geometry(child,parent,level)
 
 func _pool_mesh(source: ArrayMesh, level: float) -> ArrayMesh:
 	var arrays := source.surface_get_arrays(0)

@@ -181,6 +181,10 @@ var _map_water_region: Variant = null
 var _map_blank := false
 var _map_original := false
 var _map_ready := false
+var _map_generation := 0
+var _map_busy := false
+var surface_workers := 4
+var last_surface_profile := {}
 var _bigfoot_mesh: Mesh
 ## Standalone creature scenes provide their own physical ground.
 var update_encounter_ground := true
@@ -639,7 +643,7 @@ func redo() -> void:
 	_history_step(true)
 
 func _history_step(forward: bool) -> void:
-	if forming or explosives.firing: return
+	if forming: return
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
@@ -681,13 +685,40 @@ func restore_landscape_favorite(library: RefCounted,id: String,live := true) -> 
 	_set_status("Favorite restored · Undo restores your previous landscape and look.")
 	return true
 
-func refresh(frame_tree: SceneTree = null) -> void:
+var last_refresh_usec := {}
+var refresh_stage := ""
+var _refresh_generation := 0
+
+## Optional publication hook runs before yielding, as each visual source swaps.
+## Destruction uses it to reveal already prepared debris in the same frame.
+## False means a stage was rejected or superseded. Earlier stages can already
+## be visible; callers requiring a complete transaction must retry or abandon it.
+func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) -> bool:
+	_refresh_generation += 1
+	var generation := _refresh_generation
+	# Invalidate older downstream work before this request waits on its mesh.
+	content.cancel_rebuild()
+	_map_generation += 1
+	last_refresh_usec.clear()
+	refresh_stage = "mesh"
+	var stage_start := Time.get_ticks_usec()
 	preload("res://scripts/world_reference_props.gd").before_refresh(self)
 	pond_preview.clear()
 	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	if not forming: _set_status("Garden changed · Save to keep your work.")
-	terrain.mesh = data.play_mesh(await data.build_mesh_budgeted(false,frame_tree))
-	if frame_tree != null and data._recipe != null: await data.ensure_face_probes(frame_tree)
+	var target_data := data
+	var snapshot_start := Time.get_ticks_usec()
+	var inputs: Dictionary = data._snapshot() if frame_tree != null else {}
+	last_refresh_usec.input_snapshot = Time.get_ticks_usec()-snapshot_start
+	var current := _refresh_current.bind(generation,target_data,inputs)
+	var prepared_mesh: ArrayMesh = await target_data.build_mesh_budgeted(false,frame_tree)
+	if prepared_mesh == null or not current.call(): return false
+	terrain.mesh = data.play_mesh(prepared_mesh)
+	if on_publish.is_valid(): on_publish.call("terrain")
+	if not current.call(): return false
+	last_refresh_usec["mesh_elapsed"] = Time.get_ticks_usec()-stage_start
+	refresh_stage = "anchors"
+	stage_start = Time.get_ticks_usec()
 	var original := data.heights == data.original_heights
 	for entry in _anchors:
 		if data.blank:
@@ -715,16 +746,37 @@ func refresh(frame_tree: SceneTree = null) -> void:
 	landmark.origin.y += data.delta_at(Vector2(landmark.origin.x, landmark.origin.z))
 	scene._growth._landmark.transform = landmark
 	scene._growth.publish()
-	if frame_tree != null: await budget.checkpoint()
+	if frame_tree != null:
+		await budget.checkpoint()
+		if not current.call(): return false
 	sync_visibility()
 	_rebuild_skirt()
-	if frame_tree != null: await budget.checkpoint()
-	content.rebuild()
-	if frame_tree != null: await budget.checkpoint()
+	if frame_tree != null:
+		await budget.checkpoint()
+		if not current.call(): return false
+	last_refresh_usec["anchors_elapsed"] = Time.get_ticks_usec()-stage_start
+	refresh_stage = "content"
+	stage_start = Time.get_ticks_usec()
+	if not await content.rebuild(false,frame_tree) or not current.call(): return false
+	if on_publish.is_valid(): on_publish.call("content")
+	if not current.call(): return false
+	if frame_tree != null:
+		await budget.checkpoint()
+		if not current.call(): return false
+	last_refresh_usec["content_elapsed"] = Time.get_ticks_usec()-stage_start
+	refresh_stage = "landmarks"
+	stage_start = Time.get_ticks_usec()
 	_settle_bedding_cover()
 	landmarks.rebuild(data)
 	falls.rebuild(data)
-	if frame_tree != null: await budget.checkpoint()
+	if on_publish.is_valid(): on_publish.call("landmarks")
+	if not current.call(): return false
+	if frame_tree != null:
+		await budget.checkpoint()
+		if not current.call(): return false
+	last_refresh_usec["landmarks_elapsed"] = Time.get_ticks_usec()-stage_start
+	refresh_stage = "maps"
+	stage_start = Time.get_ticks_usec()
 	var fall_count := 0
 	for item: Dictionary in data.objects:
 		if item.asset == "waterfall":
@@ -732,7 +784,10 @@ func refresh(frame_tree: SceneTree = null) -> void:
 	if falls.get_child_count()/2 < fall_count:
 		_set_status("A waterfall is blocked or submerged. Lower the obstruction or undo.")
 	# Existing habitat/rain/fog consumers keep the same texture object.
-	await _update_surface_maps(original,frame_tree)
+	if not await _update_surface_maps(original,frame_tree) or not current.call(): return false
+	last_refresh_usec["maps_elapsed"] = Time.get_ticks_usec()-stage_start
+	refresh_stage = "post_maps"
+	stage_start = Time.get_ticks_usec()
 	if update_encounter_ground and terrain.mesh != _bigfoot_mesh:
 		_bigfoot_mesh = terrain.mesh
 		scene._bigfoot.ground.setup(terrain)
@@ -752,8 +807,30 @@ func refresh(frame_tree: SceneTree = null) -> void:
 			selected_object_id = -1
 		selection.update_marker(selected_object_id)
 		selection_changed.emit(selected_object_id)
+	if not current.call(): return false
+	last_refresh_usec["post_maps_elapsed"] = Time.get_ticks_usec()-stage_start
+	stage_start = Time.get_ticks_usec()
 
 	_notify_play_geometry()
+	if not current.call(): return false
+	refresh_stage = ""
+
+	return true
+
+func _refresh_current(generation: int, target: NativeTerrainData, inputs: Dictionary) -> bool:
+	if generation != _refresh_generation or data != target: return false
+	var began := Time.get_ticks_usec()
+	var matches := true
+	for field in inputs:
+		var value: Variant = data._recipe_settings if field == "terrain_recipe" else data.get(field)
+		if value != inputs[field]:
+			matches = false
+			break
+	# Direct edits need not bump object revisions. Even if content was already
+	# published, the next ordinary refresh must rebuild it from current inputs.
+	if not matches: content.discard_cache()
+	last_refresh_usec.input_validation = last_refresh_usec.get("input_validation",0)+Time.get_ticks_usec()-began
+	return matches
 
 ## Rebuild everything from the records, ignoring every incremental cache. The
 ## incremental path must land on exactly this result; the regression test drives
@@ -798,8 +875,17 @@ func force_refresh() -> void:
 ## Resample only the map pixels the edit can reach. The height pass is kept in
 ## `_map_base`; both overlays are per-pixel functions of that base, so repainting
 ## the changed rectangle over the previous finished maps reproduces them exactly.
-func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> void:
-	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
+## Large live edits use private worker images; fewer than 256 pixels finish
+## synchronously so a tiny patch cannot yield while mutating the live cache.
+func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
+	_map_generation += 1
+	var generation := _map_generation
+	var target := data
+	if frame_tree != null:
+		while _map_busy:
+			await frame_tree.process_frame
+			if generation != _map_generation or data != target: return false
+	last_surface_profile = {}
 	var size := _original_ground_map.get_width()
 	var reusable: bool = _map_ready and _map_blank == data.blank and _map_original == original
 	var water_changed: bool = not _map_ready or _map_revision != content.revision
@@ -812,43 +898,59 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> void:
 	if region is bool and reusable:
 		_map_revision = content.revision
 		_map_water_region = water_region
-		return
+		return true
 	var clip := Rect2i(0,0,size,size)
 	if region != null:
 		var low: Vector2 = (region.position+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
 		var high: Vector2 = (region.end+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
 		clip = Rect2i(Vector2i(clampi(floori(low.x),0,size),clampi(floori(low.y),0,size)),Vector2i.ZERO)
 		clip = clip.expand(Vector2i(clampi(ceili(high.x)+1,0,size),clampi(ceili(high.y)+1,0,size)))
-	else:
-		_map_base = _original_ground_map.duplicate()
-	for z in range(clip.position.y,clip.end.y):
-		if frame_tree != null: await budget.checkpoint()
-		for x in range(clip.position.x,clip.end.x):
-			if original and not data.blank:
-				continue
-			var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*32.0-Vector2.ONE*16.0
-			var height: Variant = data.height_at(point.x,point.y)
-			var value := Color(-1000,-1000,-1000,-1000) if data.blank else _original_ground_map.get_pixel(x,z)
-			value.g = float(height) if height != null else -1000.0
-			value.r = maxf(value.g,value.a)
-			_map_base.set_pixel(x,z,value)
 	var image: Image
 	var streams: Image
-	if region == null:
-		image = _map_base.duplicate()
-		streams = _original_stream_map.duplicate()
-		if data.blank:
-			streams.fill(Color(0,0,0,0))
+	if frame_tree != null and clip.get_area() >= 256:
+		_map_busy = true
+		var sampled_heights := data.heights.duplicate()
+		var sampled_revision := content.revision
+		var sampled_blank := data.blank
+		var base: Image = _original_ground_map.duplicate() if region == null else _map_base
+		var previous_ground: Image = base if region == null else _map_ground
+		var previous_stream: Image = _original_stream_map if region == null else _map_stream
+		var samples := GardenSurfaceMap.stream_samples(content._stream_nodes)
+		var prepared: Dictionary = await preload("res://scripts/native_surface_samples.gd").build_parallel(data,original,_original_ground_map,_original_stream_map,base,previous_ground,previous_stream,content.pond_vertices,samples,clip,frame_tree,surface_workers)
+		_map_busy = false
+		if generation != _map_generation or data != target: return false
+		if data.heights != sampled_heights or content.revision != sampled_revision or data.blank != sampled_blank: return false
+		_map_base = prepared.base
+		image = prepared.ground
+		streams = prepared.stream
+		last_surface_profile = {"workers":prepared.workers,"worker":prepared.worker,"submit_usec":prepared.submit_usec,"worker_usec":prepared.worker_usec}
 	else:
-		image = _map_ground
-		streams = _map_stream
+		if region == null:
+			_map_base = _original_ground_map.duplicate()
 		for z in range(clip.position.y,clip.end.y):
-			if frame_tree != null: await budget.checkpoint()
 			for x in range(clip.position.x,clip.end.x):
-				image.set_pixel(x,z,_map_base.get_pixel(x,z))
-				streams.set_pixel(x,z,Color(0,0,0,0) if data.blank else _original_stream_map.get_pixel(x,z))
-	GardenSurfaceMap.paint_water(image,content.pond_vertices,clip)
-	GardenSurfaceMap.paint_streams(image,streams,content._stream_nodes,clip)
+				if original and not data.blank:
+					continue
+				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*32.0-Vector2.ONE*16.0
+				var height: Variant = data.height_at(point.x,point.y)
+				var value := Color(-1000,-1000,-1000,-1000) if data.blank else _original_ground_map.get_pixel(x,z)
+				value.g = float(height) if height != null else -1000.0
+				value.r = maxf(value.g,value.a)
+				_map_base.set_pixel(x,z,value)
+		if region == null:
+			image = _map_base.duplicate()
+			streams = _original_stream_map.duplicate()
+			if data.blank:
+				streams.fill(Color(0,0,0,0))
+		else:
+			image = _map_ground
+			streams = _map_stream
+			for z in range(clip.position.y,clip.end.y):
+				for x in range(clip.position.x,clip.end.x):
+					image.set_pixel(x,z,_map_base.get_pixel(x,z))
+					streams.set_pixel(x,z,Color(0,0,0,0) if data.blank else _original_stream_map.get_pixel(x,z))
+		GardenSurfaceMap.paint_water(image,content.pond_vertices,clip)
+		GardenSurfaceMap.paint_streams(image,streams,content._stream_nodes,clip)
 	scene._precipitation.ground_texture.update(image)
 	scene._precipitation.stream_texture.update(streams)
 	_map_ground = image
@@ -859,6 +961,8 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> void:
 	_map_blank = data.blank
 	_map_original = original
 	_map_ready = true
+
+	return true
 
 ## Bounds use the same coordinates as GardenSurfaceMap's triangle samplers.
 ## false is an empty overlay; null requests the conservative full-map fallback.

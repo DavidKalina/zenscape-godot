@@ -1,5 +1,10 @@
 # Wanderer: Blender rig and walk
 
+Current selected locomotion: **Heavy with loose arms**, authored in
+`zenscape-bigfoot-heavy-walk.blend`, action `HeavyWalk`. It is a three-second,
+four-step loop at 0.85 m/s. The game retargets its animation onto the existing
+Bigfoot model. See `docs/bigfoot-heavy-walk.md` for calibration and checks.
+
 Current idle source: `zenscape-bigfoot-breathing.blend`, exported as `assets/models/zenscape-bigfoot-breathing.glb`. See `docs/bigfoot-breathing/README.md` for breathing animation and mist validation. The woodland source below remains the base design.
 
 ## Current Godot diorama: woodland model revision

@@ -8,9 +8,7 @@ const PASSES := 32
 const MAX_VERTICES := 2400
 const MAX_CHUNKS := 32
 
-## A null tree keeps this synchronous. The live remote passes the scene tree so
-## the relaxation passes spread across a few frames under the blast flash.
-static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, origin: Vector3, radius: float, surface_colors := PackedColorArray(), frame_tree: SceneTree = null) -> Dictionary:
+static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, origin: Vector3, radius: float, surface_colors := PackedColorArray(), arrays_only := false) -> Dictionary:
 	var center := Vector2(origin.x,origin.z)
 	var reach := clampf(radius*3.4,6.0,16.0)
 	var low := INF
@@ -56,9 +54,7 @@ static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, 
 			edges.append(edge)
 	var areas := control_areas(data)
 	var height := PackedFloat64Array(Array(initial))
-	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
 	for pass_index in range(PASSES):
-		if frame_tree != null and pass_index % 8 == 0: await budget.checkpoint()
 		for step in range(edges.size()):
 			var edge := edges[step if pass_index%2 == 0 else edges.size()-1-step]
 			var a := edge.x if height[edge.x] > height[edge.y] else edge.y
@@ -86,7 +82,7 @@ static func collapse(data: NativeTerrainData, before_blast: PackedFloat32Array, 
 		changed = changed.expand(data.points[i]) if has_region else Rect2(data.points[i],Vector2.ZERO)
 		has_region = true
 	if removed < 0.6 or not has_region: return {}
-	var chunks := _chunks(data,initial,final,origin,radius,surface_colors)
+	var chunks := _chunks(data,initial,final,origin,radius,surface_colors,false,arrays_only)
 	data.heights = final
 	_strip_cover(data,initial,final,changed)
 	return {"before":initial,"after":final,"region":changed,"removed_volume":removed,"deposited_volume":deposited,"chunks":chunks}
@@ -121,7 +117,7 @@ static func _strip_cover(data: NativeTerrainData, initial: PackedFloat32Array, f
 			data.meadow[id] = 0
 			data.blades[id] = 0
 
-static func _chunks(data: NativeTerrainData, initial: PackedFloat32Array, final: PackedFloat32Array, origin: Vector3, radius: float, surface_colors: PackedColorArray, radial := false) -> Array[Dictionary]:
+static func _chunks(data: NativeTerrainData, initial: PackedFloat32Array, final: PackedFloat32Array, origin: Vector3, radius: float, surface_colors: PackedColorArray, radial := false, arrays_only := false) -> Array[Dictionary]:
 	var groups := {}
 	var colors: PackedColorArray = surface_colors if not surface_colors.is_empty() else data.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 	var cell := maxf(1.1,radius*0.48)
@@ -174,7 +170,11 @@ static func _chunks(data: NativeTerrainData, initial: PackedFloat32Array, final:
 		var gradient := _gradient(data,initial,Vector2(center.x,center.z))
 		var downhill := Vector3(-gradient.x,0,-gradient.y).normalized()
 		if downhill.length_squared() < 0.1: downhill = Vector3(center.x-origin.x,0,center.z-origin.z).normalized()
-		chunks.append({"mesh":surface.commit(),"center":center,"velocity":downhill*minf(7,2+gradient.length()*2)+Vector3(0,-1,0),"delay":0.12+minf(0.65,center.distance_to(origin)*0.045)})
+		var chunk := {"center":center,"velocity":downhill*minf(7,2+gradient.length()*2)+Vector3(0,-1,0),"delay":0.12+minf(0.65,center.distance_to(origin)*0.045)}
+		# SurfaceTool owns CPU arrays. Workers never commit a rendering resource.
+		if arrays_only: chunk.arrays = surface.commit_to_arrays()
+		else: chunk.mesh = surface.commit()
+		chunks.append(chunk)
 	return chunks
 
 static func _gradient(data: NativeTerrainData, heights: PackedFloat32Array, point: Vector2) -> Vector2:

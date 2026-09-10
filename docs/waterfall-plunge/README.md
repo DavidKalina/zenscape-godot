@@ -22,5 +22,6 @@ holds the spray and the animation. The receiving pond's splash pool now holds
 Not done yet: the spray does not lean with the wind field, and the imported
 reference waterfall in the fidelity scene keeps its original mist only.
 
-Validation: `tests/test_waterfall_plunge.gd`; debris splashes are in
+Validation: run `tests/test_waterfall_plunge.gd` graphically with Forward+
+(the headless renderer does not retain animated MultiMesh transforms); debris splashes are in
 `tests/test_debris_strikes.gd`.

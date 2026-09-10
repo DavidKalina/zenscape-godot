@@ -1,5 +1,6 @@
 extends SceneTree
 ## An authored fall lands with spray, bobbing foam, and rings on its pond.
+## Run graphically: the headless renderer does not retain MultiMesh transforms.
 var failures := 0
 func _initialize() -> void: _run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -16,6 +17,7 @@ func click(editor: NativeChunkEditor, point: Vector2) -> void:
 	event.pressed = false
 	editor.handle_input(event)
 func _run() -> void:
+	root.size = Vector2i(1440,900)
 	var scene: Node3D = load("res://studies/fidelity.tscn").instantiate()
 	root.add_child(scene)
 	scene._ui.visible = false
@@ -64,7 +66,7 @@ func _run() -> void:
 	editor.refresh()
 	if editor.falls._entries.has(data.objects[0].id):
 		var dry = editor.falls._entries[data.objects[0].id].plunge
-		check(not dry.in_pool and dry.rings.multimesh == null,"Dry landing skips ripple rings")
+		check(not dry.in_pool and dry.rings == null,"Dry landing skips ripple rings")
 	editor.undo()
 	check(editor.falls.get_child_count() == 2 and editor.falls._entries[data.objects[0].id].plunge.in_pool,"Undo restores the pond plunge")
 	scene.free()

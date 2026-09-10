@@ -8,7 +8,7 @@ const RINGS := 4
 const RING_PERIOD := 1.15
 var spray := GPUParticles3D.new()
 var foam := MultiMeshInstance3D.new()
-var rings := MultiMeshInstance3D.new()
+var rings: MultiMeshInstance3D
 var base := Vector3.ZERO
 var flow := 0.5
 var in_pool := false
@@ -92,6 +92,7 @@ func _build_foam(scale: float) -> void:
 	add_child(foam)
 
 func _build_rings() -> void:
+	rings = MultiMeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(2,2)
 	var material := ShaderMaterial.new()
