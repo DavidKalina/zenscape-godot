@@ -525,6 +525,9 @@ func handle_resident_input(event: InputEvent) -> bool:
 func flush_world_play() -> void:
 	world_play.flush()
 
+func flush_world_play_budgeted(frame_tree: SceneTree) -> void:
+	await world_play.flush_budgeted(frame_tree)
+
 func resident_activity_owned() -> bool:
 	return world_play.owner_scene != null and world_play.owns_resident()
 

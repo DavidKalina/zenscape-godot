@@ -105,7 +105,10 @@ func _describe(data: NativeTerrainData,item: Dictionary) -> Dictionary:
 		widths[i] = Vector4(across.x,across.y,across.z,NativeWaterCourse.half_width(data,point,across,item.scale*(0.28+0.18*t)))
 		thicknesses[i] = Vector4(outward.x,outward.y,outward.z,item.scale*0.07)
 		aeration[i] = Vector2(clampf(-tangent.y,0.0,1.0)*0.75,clampf(-tangent.y,0.0,1.0))
-	return {"ends":ends,"centers":centers,"widths":widths,"thicknesses":thicknesses,"aeration":aeration,"scale":item.scale}
+	var in_pool := false
+	for pond: Dictionary in data.ponds:
+		if GardenWater.covers(data.pond_surface(pond),Vector2(item.end_x,item.end_z)): in_pool = true
+	return {"ends":ends,"centers":centers,"widths":widths,"thicknesses":thicknesses,"aeration":aeration,"scale":item.scale,"in_pool":in_pool}
 
 func _create(item: Dictionary,description: Dictionary) -> Dictionary:
 	var ends: PackedVector3Array = description.ends
@@ -144,6 +147,11 @@ func _create(item: Dictionary,description: Dictionary) -> Dictionary:
 	mesh.material_override = material
 	mesh.extra_cull_margin = 0.5
 	add_child(mesh)
+	# The plunge lives under the fall mesh so the falls node keeps one mesh and
+	# one spray child per waterfall, and both are freed together.
+	var plunge := preload("res://scripts/waterfall_plunge.gd").new()
+	mesh.add_child(plunge)
+	plunge.setup(ends[1],float(item.scale),bool(description.get("in_pool",false)))
 
 	var spray := preload("res://studies/fall_mist.gd").new()
 	var recipe := _mist_recipe.duplicate(true)
@@ -159,12 +167,18 @@ func _create(item: Dictionary,description: Dictionary) -> Dictionary:
 		recipe.positions[i*3+2] = point.z
 	add_child(spray)
 	spray.setup(recipe)
-	return {"mesh":mesh,"spray":spray}
+	return {"mesh":mesh,"spray":spray,"plunge":plunge}
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var scene := get_parent()
 	if _sprays.is_empty():
 		return
+	var paused: bool = scene.get("_paused") == true
+	for entry in _entries.values():
+		if not entry.has("plunge"): continue
+		entry.plunge.visible = scene._growth.terrain >= 0.995 and scene._growth.water >= 0.5
+		entry.plunge.set_paused(paused)
+		if not paused: entry.plunge.advance(delta)
 	var depth: CompositorEffect
 	if scene._display_fog != null:
 		depth = scene._display_fog.depth

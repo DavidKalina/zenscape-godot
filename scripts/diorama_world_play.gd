@@ -358,6 +358,17 @@ func advance(delta: float) -> void:
 
 func flush() -> void:
 	if owner_scene == null or _active.is_empty(): return
+	_store_active_poses()
+	_chunk_editor.refresh()
+
+## The blast remote flushes under its flash, so the refresh spreads across
+## frames instead of stalling the frame the charge goes off.
+func flush_budgeted(frame_tree: SceneTree) -> void:
+	if owner_scene == null or _active.is_empty(): return
+	_store_active_poses()
+	await _chunk_editor.refresh(frame_tree)
+
+func _store_active_poses() -> void:
 	cancel()
 	_flushing = true
 	for id in _active:
@@ -370,7 +381,6 @@ func flush() -> void:
 		_chunk_editor.data.update_object(id,{"x":pose.origin.x,"z":pose.origin.z,"pose":stored})
 	_flushing = false
 	invalidate()
-	_chunk_editor.refresh()
 
 func dynamic_clearance(feet: Vector3) -> bool:
 	for body in loose_props.bodies:

@@ -31,7 +31,9 @@ func start(feet: Transform3D) -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	collision_layer = 2
-	collision_mask = 1
+	# Terrain and props, plus flying blast debris (layer 4) so a tumbling
+	# resident keeps getting hit instead of passing through the rockfall.
+	collision_mask = 1|4
 	freeze = false
 	sleeping = false
 	active = true

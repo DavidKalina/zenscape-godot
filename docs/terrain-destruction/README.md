@@ -63,25 +63,60 @@ wind and recovery behavior.
 
 ### Explosion performance
 
-Detonation remains one synchronous change: the flash, crater, collapsed terrain,
-and physical launches are published together. Only debris motion, dust, and the
-staggered release of mountain slabs continue over time.
+The live remote publishes flash and rumble before loose-prop flushing or legacy
+scenery migration. Those preparatory refreshes use the same frame budget as the
+rest of the editor. Carving, internal rupture, and mountain relaxation run on a
+detached terrain snapshot in a worker; they retain their original ordered math.
 
-The main stall was `Mesh.create_convex_shape(true, true)` simplifying every rock
-hull at detonation. Keeping convex hull generation but disabling simplification
-reduced this stage from roughly 485–535 ms to about 2 ms in the fixed-seed horn
-benchmark. Chunks also reuse the visible terrain's face colors instead of building
-a temporary crater mesh just to retrieve colors.
+The main thread uploads prepared chunks and builds cleaned convex hulls from
+retained CPU vertices. Bodies remain hidden, frozen, and non-colliding while
+staged. Each debris group becomes visible when its matching terrain, scenery,
+or landmark source is replaced. Physics releases only after the complete
+refresh and crater collision are ready. A rejected refresh is retried; clearing
+the world invalidates the pending blast. Heavy debris carries mass-scaled
+impulses that are applied exactly once on release.
 
-`tools/profile_explosions.gd` runs three summit blasts through the actual remote
-with 100 debris bodies. On this Apple M5 Pro / Metal run, the worst frame dropped
-from about 706–751 ms to 220 ms for the first blast and 130–134 ms on repeat blasts.
-This substantially reduces the hitch; it does not eliminate all terrain refresh
-cost. GPU timings reported zero and are unavailable in this run.
+Jolt Physics is the project physics engine. The worker collapse, detached face
+probes, native mesh-shading default, and CPU collision/hull optimizations from
+PR #7 remain in place. Flash and dust no longer cast opaque shadows. Tests and
+offline tools can call `detonate()` synchronously; the remote uses
+`detonate(true)` and waits on `requested`/`firing` across frames.
 
-An experiment spreading terrain updates across frames reduced peak stalls further,
-but changed the timing of destruction relative to the charge. That scheduling
-change was removed to retain the immediate blast behavior.
+`tools/profile_explosions.gd` runs three fixed-seed horn blasts through the live
+remote at 1440×900, with a 100-body cap. Use its `--capture` mode to inspect the
+source/debris transition separately from timing; image readback changes frame
+costs. Historical optimization measurements and their limits are recorded in
+[the performance acceptance report](../performance/threading-acceptance.md).
+
+After integrating Jolt and debris interactions onto PR #7, three native-enabled
+Balanced runs on Apple M5 Pro / Forward+ Metal at 1440×900 completed in
+307.5 / 291.0 / 281.0 ms, with worst frames 47.2 / 46.0 / 48.3 ms and p95
+25.0 / 23.0 / 22.6 ms. This remains close to the preceding 45–47 ms worst-frame
+range; it does not reach a steady 16.7 ms frame budget. GPU timings remain
+unavailable (the engine reports zero). These are local measurements, not a
+cross-platform Jolt speedup claim.
+
+## Debris strikes
+
+Debris carries rock-like mass (about 400 kg/m³ of its bounds, clamped to
+0.5–400 kg) and collides with the resident's tumble proxy. A body moving at
+4 m/s or faster with a bounding radius of at least 0.25 m knocks a standing
+Bigfoot into the same physical tumble a blast does, scaled by its mass, and
+loses about half its speed doing so; small dirt and slow slabs pass harmlessly.
+Once airborne he keeps colliding with the rockfall through the solver. The same
+debris unseats authored props it hits: the prop is promoted to a loose body and
+takes the hit, so saving after a slide records where knocked rocks came to rest.
+Undo last blast still restores Bigfoot's pre-blast position. Debris that reaches
+a pond splashes it once and then wallows under heavy damping instead of skating
+across the surface. `tests/test_debris_strikes.gd` covers these interactions through
+the live remote, plus frozen/non-colliding staging, restored collision masks,
+mass-independent launch velocity, and exactly-once impulse application.
+
+The integrated branch passes graphical Forward+/Metal suites for debris strikes,
+waterfall plunge, native explosives, mountain collapse, internal blast, tunnels,
+Bigfoot explosions, creature wind, threaded refresh and lifecycle, world play,
+water mischief, and all explosive landscapes. Native explosives also passes with
+`--gdscript-kernels` to force the unbuilt-checkout fallback.
 
 ## Mountain tunnels
 
