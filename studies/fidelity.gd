@@ -59,6 +59,9 @@ var _atmosphere: Node3D
 var _landscape_editor: PanelContainer
 var _look_editor: PanelContainer
 var _celestial: RefCounted
+## World time, owned by the scene and shared with every system that cares what
+## hour it is. `scene.get("world_clock")` is the supported way to reach it.
+var world_clock: WorldClock = null
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
 var _cycle_toggle: CheckBox
@@ -138,6 +141,8 @@ func _ready() -> void:
 	_setup_environment()
 	_celestial = preload("res://studies/celestial.gd").new()
 	_celestial.setup(_lights)
+	world_clock = WorldClock.new()
+	_celestial.attach_clock(world_clock)
 	_celestial.look.changed.connect(_update_scene_look)
 	_atmosphere = preload("res://studies/atmosphere.gd").new()
 	add_child(_atmosphere)
@@ -514,6 +519,9 @@ func _process(delta: float) -> void:
 		_processed_film_frame = _recorded_frames
 		delta = 1.0 / _film_fps
 	_elapsed += delta
+	# Time first: every system that asks what hour it is this frame reads the
+	# same answer, and the celestial rig just renders the clock's phase.
+	world_clock.advance(delta, _paused)
 	_growth.advance(delta, _paused, _tremor)
 	if _atmosphere.wind_trails != null: _atmosphere.wind_trails.visible = _growth.terrain>=0.995
 	_terrain_slider.set_value_no_signal(_growth.terrain)
@@ -556,8 +564,7 @@ func _process(delta: float) -> void:
 	_bird_flight.advance(delta, _paused, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle),sin(_atmosphere._air_angle)))
 	_time_slider.set_value_no_signal(_celestial.phase)
 	_fall_foam.advance(_motion_time, _paused, _precipitation.surface_weather.ice, smoothstep(0.0,0.5,_growth.water), _growth.terrain >= 0.995)
-	var minutes: int = int(_celestial.phase * 1440.0)
-	_time_label.text = "Time of day · %02d:%02d" % [minutes / 60, minutes % 60]
+	_time_label.text = "Time of day · " + world_clock.label()
 	if _auto_orbit:
 		yaw += delta * _auto_orbit_speed
 	_ease_camera(delta)

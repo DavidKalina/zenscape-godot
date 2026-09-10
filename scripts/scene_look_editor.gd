@@ -22,6 +22,10 @@ var pickers := {}
 var sliders := {}
 var checks := {}
 var weather_choice := OptionButton.new()
+## World clock: how fast the day runs, and what day/hour it is now.
+const SPEEDS := [1.0,4.0,12.0]
+var clock_choice := OptionButton.new()
+var clock_readout := Label.new()
 var rock_choice := OptionButton.new()
 var undo_button := Button.new()
 var redo_button := Button.new()
@@ -113,6 +117,19 @@ func setup(owner_scene: Node3D) -> void:
 	air.add_child(weather_choice)
 	_slider(air,"time","Time of day",0,1,0.001,func() -> float: return scene._celestial.phase,scene._celestial.set_phase)
 	_check(air,"cycling","Let the day cycle",scene._celestial,"cycling")
+	var clock: WorldClock = scene.get("world_clock")
+	if clock != null:
+		var pace := HBoxContainer.new()
+		_label(pace,"Day pace").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		clock_choice.name = "ClockSpeed"
+		for multiplier: float in SPEEDS: clock_choice.add_item("%dx" % int(multiplier))
+		clock_choice.item_selected.connect(func(index: int) -> void: clock.speed = SPEEDS[index])
+		pace.add_child(clock_choice)
+		air.add_child(pace)
+		clock_readout.name = "ClockReadout"
+		clock_readout.modulate = Color("bdc9c6")
+		clock_readout.add_theme_font_size_override("font_size",11)
+		air.add_child(clock_readout)
 	_slider(air,"clouds","Cloud cover",0,1,0.01,func() -> float: return scene._celestial.cloud if scene._precipitation.cloud_override < 0 else scene._precipitation.cloud_override,func(v: float) -> void: scene._precipitation.cloud_override = v)
 	_slider(air,"mist","Valley mist",0,1,0.01,func() -> float: return scene._atmosphere._fog_target,func(v: float) -> void:
 		scene._atmosphere.set_fog(v)
@@ -297,6 +314,11 @@ func sync() -> void:
 		if not pickers[key].get_popup().visible: pickers[key].color = look.colors[key]
 	_sync_presets()
 	weather_choice.select(scene._precipitation.preset_index)
+	var clock: WorldClock = scene.get("world_clock")
+	if clock != null:
+		clock_readout.text = clock.label()
+		var pace := SPEEDS.find(clock.speed)
+		if pace >= 0: clock_choice.select(pace)
 	rock_choice.select(scene._world_visuals.rock_style)
 	for key in sliders:
 		var row: Dictionary = sliders[key]
