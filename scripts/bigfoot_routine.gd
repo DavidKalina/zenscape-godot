@@ -4,6 +4,7 @@ extends Node
 var cave = preload("res://scripts/bigfoot_cave.gd").new()
 var habits = preload("res://scripts/bigfoot_habits.gd").new()
 var foraging = preload("res://scripts/bigfoot_lair_foraging.gd").new()
+var living = preload("res://scripts/bigfoot_living_world.gd").new()
 var _tended := false
 var _tending := false
 var scene: Node
@@ -38,6 +39,7 @@ func setup(owner_scene: Node) -> void:
 	habits.setup(scene)
 	cave.setup(scene)
 	foraging.setup(self)
+	living.setup(self)
 	scene.creature.action_finished.connect(_action_finished)
 	scene.creature.state_changed.connect(func(state: CreatureActor.State) -> void:
 		if state == CreatureActor.State.STUMBLING and not active.is_empty(): cancel("ground tremor"))
@@ -52,10 +54,12 @@ func setup(owner_scene: Node) -> void:
 
 ## Returns true while an authored action owns the actor.
 func advance(delta: float) -> bool:
+	scene.brain.interest_choices_enabled = not living.enabled
 	var dt := minf(delta,0.05)
 	_clock += dt
 	_advance_projectiles(dt)
 	foraging.advance(dt)
+	if living.advance(dt): return true
 	if cave.advance(dt): return true
 	if not active.is_empty():
 		_elapsed += dt
@@ -89,6 +93,9 @@ func advance(delta: float) -> bool:
 			return true
 	if _clock < _next_action or not scene.creature.can_roam(): return false
 	if not scene.brain.ready_for_activity(dt): return false
+	if living.enabled:
+		if not living.choose(): _next_action = _clock+3.0
+		return not living.current.is_empty()
 	var kind: String = ORDER[_choice%ORDER.size()]
 	_choice += 1
 	if kind == "sleep" and _choice%10 == 0: kind = "hibernate"
@@ -413,6 +420,7 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 		_finish()
 
 func cancel(reason := "world edit or explicit cancellation") -> void:
+	living.cancel()
 	cave.cancel()
 	foraging.cancel()
 	last_cancel = reason
@@ -445,6 +453,7 @@ func _finish() -> void:
 
 func world_changed() -> void:
 	if habits.writing: return
+	living.cancel()
 	cave.cancel()
 	habits.world_changed()
 	# Undo may restore a taken record: remove its transient representation first.

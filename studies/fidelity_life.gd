@@ -144,6 +144,10 @@ func _process(delta: float) -> void:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
 			if not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
+			elif routine != null and not routine.living.current.is_empty():
+				# Player carrying/physical reactions can own the main-game resident
+				# before his routine gets a tick. Release its old journey explicitly.
+				routine.cancel("player interaction interrupted activity")
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
@@ -285,7 +289,17 @@ func restore_cave_state(state: Dictionary) -> void:
 	lair.position = Vector3(0,-11,0)
 	add_child(lair)
 	lair.restore_stash(state.stash)
+	lair.restore_living(state.get("living",{"bed_stage":0,"play_stage":0}))
 	routine.cave.rest_anchor = lair.bed
+
+func capture_living_state() -> Dictionary:
+	return routine.living.capture()
+
+func remap_living_interest(old_id: String, new_id: String) -> void:
+	if routine != null: routine.living.mind.remap_observation(old_id,new_id)
+
+func restore_living_state(state: Dictionary) -> void:
+	routine.living.restore(state)
 
 func capture_fish_state() -> Dictionary:
 	return fish.capture_state() if fish != null else {"version":1,"stored_ids":[]}

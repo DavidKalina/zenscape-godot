@@ -51,6 +51,15 @@ choices and quick control. **Adjust** replaces that popover with detailed
 settings. **Browse** or **Cmd/Ctrl K** opens the full catalog. Overview frames
 the terrain and its base above the tray. See [the tactile editor pass](docs/design/tactile-editor/README.md).
 
+## Bigfoot makes a home
+
+Run **`run-bigfoot-living-world.command`** for the cave-based living-world
+experiment: consequential bedding, stored meals, curiosity, favorite places,
+observed disturbances, and a little stone arrangement. The **Activities** menu
+can invite a behavior; otherwise his needs choose. **His thoughts** explains the
+current scores. Worlds saved from the study can reopen in the main diorama.
+See [behavior, controls, and validation](docs/bigfoot-living-world/README.md).
+
 ## ZenScape fidelity study
 
 Double-click **`run-fidelity.command`** to explore a real ZenScape scene rendered

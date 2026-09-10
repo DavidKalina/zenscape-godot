@@ -40,6 +40,8 @@ static func migrate(editor: NativeChunkEditor) -> bool:
 				tint = NativeObjectPose.encode_tint(color_node.multimesh.get_instance_color(i))
 			var id := editor.data.place(kind,point,0.0,clampf(record_pose.basis.get_scale().x,0.1,5.0),pose,tint)
 			if id < 0: continue
+			if editor.scene.has_method("remap_living_interest"):
+				editor.scene.remap_living_interest("%s:%d" % [names[0],i],"object:%d" % id)
 			for name in names: editor.data.source_replacements.append("%s:%d" % [name,i])
 			changed = true
 	return changed

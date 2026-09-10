@@ -1,6 +1,9 @@
 extends Node3D
 ## Full-footprint lower story: thick rock walls with permanent viewing openings.
 ## Seed changes dressing, never the dry bed or puddle footprint.
+signal supplies_changed
+
+const MAX_LIVING_STAGE := 3
 const LAYER := 4
 const HALF_WIDTH := 14.2
 const CEILING := 8.3
@@ -14,6 +17,10 @@ var drips := preload("res://scripts/waterfall_drips.gd").new()
 var dressing := Node3D.new()
 var palette := preload("res://scripts/native_terrain_palette.gd").new()
 var seed_value := 37
+var bed_stage := 0
+var play_stage := 0
+var bedding := Node3D.new()
+var play_stones := Node3D.new()
 
 func _ready() -> void:
 	layout = Genome.sample(genome)
@@ -28,6 +35,8 @@ func _ready() -> void:
 	_build_walls()
 	_build_puddle()
 	_build_bed()
+	_draw_play_stones()
+	_draw_stockpile()
 	redress(seed_value)
 	for spec in [[bed_point+Vector3.UP*4.5,Genome.PALETTES[genome.palette].light,2.6],[pool_point+Vector3.UP*4,Genome.PALETTES[genome.palette].light,0.8],[Vector3(0,5,-6),Genome.PALETTES[genome.palette].light,0.45]]:
 		var light := OmniLight3D.new()
@@ -47,6 +56,17 @@ func _ready() -> void:
 		fill.light_color = Color("b9bdc7")
 		fill.light_cull_mask = LAYER
 		add_child(fill)
+	# Window bounce reaches the seated face and hands, making small home
+	# performances readable without brightening the entire underground story.
+	var bed_fill := OmniLight3D.new()
+	bed_fill.name = "BedWindowBounce"
+	bed_fill.position = bed_point+Vector3(0,2.6,3.2)
+	bed_fill.light_color = Genome.PALETTES[genome.palette].light
+	bed_fill.light_energy = 1.8
+	bed_fill.omni_range = 7.0
+	bed_fill.light_cull_mask = LAYER | 1
+	bed_fill.shadow_enabled = true
+	add_child(bed_fill)
 	_layers(self)
 
 func _layers(root: Node) -> void:
@@ -200,23 +220,88 @@ func _build_puddle() -> void:
 	drips.add_emitter(Vector3(center.x+0.5,ceiling_height(Vector2(center.x+0.5,center.z-0.3))-1.1,center.z-0.3),center+Vector3(0.5,0.025,-0.3))
 
 func _build_bed() -> void:
+	if bedding.get_parent()==null:
+		bedding.name = "Bedding"
+		add_child(bedding)
+	_clear_visuals(bedding)
+	bedding.set_meta("stage",bed_stage)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 91
-	for i in range(40):
+	# A sparse starting bed becomes visibly deeper and greener as he tends it.
+	for i in range(12+bed_stage*16):
 		var leaf := MeshInstance3D.new()
+		leaf.name = "BedLeaf%d" % i
 		var shape := SphereMesh.new()
 		shape.radial_segments = 5
 		shape.rings = 2
 		shape.radius = 0.4
 		shape.height = 0.8
 		leaf.mesh = shape
-		leaf.position = bed.position+Vector3(rng.randf_range(-1.2,1.2),-0.01,rng.randf_range(-0.75,0.75))
-		leaf.scale = Vector3(1,0.12,0.5)
+		leaf.position = bed_point+Vector3(rng.randf_range(-1.2,1.2),0.025+float(i/16)*0.055,rng.randf_range(-0.75,0.75))
+		leaf.scale = Vector3(1,0.12+bed_stage*0.035,0.5)
 		leaf.rotation.y = rng.randf_range(0,TAU)
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color("776944").lightened(rng.randf_range(-0.12,0.12))
+		mat.albedo_color = Color("776944").lerp(Color("7c854d"),bed_stage/3.0).lightened(rng.randf_range(-0.12,0.12))
+		mat.roughness = 0.95
 		leaf.material_override = mat
-		add_child(leaf)
+		leaf.layers = LAYER
+		bedding.add_child(leaf)
+	for i in range(bed_stage*3):
+		var twig := MeshInstance3D.new()
+		twig.name = "BedRim%d" % i
+		var shape := CylinderMesh.new()
+		shape.radial_segments = 5
+		shape.top_radius = 0.045
+		shape.bottom_radius = 0.065
+		shape.height = 0.9
+		twig.mesh = shape
+		var angle := TAU*i/9.0
+		twig.position = bed_point+Vector3(cos(angle)*1.35,0.07,sin(angle)*0.9)
+		twig.rotation = Vector3(PI*0.5,-angle,0)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color("67513a")
+		twig.material_override = mat
+		twig.layers = LAYER
+		bedding.add_child(twig)
+
+func _clear_visuals(parent: Node) -> void:
+	for child in parent.get_children():
+		parent.remove_child(child)
+		child.queue_free()
+
+func _draw_play_stones() -> void:
+	if play_stones.get_parent()==null:
+		play_stones.name = "PlayStones"
+		add_child(play_stones)
+	_clear_visuals(play_stones)
+	play_stones.set_meta("stage",play_stage)
+	# Selected pebbles from the cave floor form a small, carefully balanced cairn.
+	var point := _play_origin()
+	var height := point.y
+	for i in range(MAX_LIVING_STAGE):
+		var stone := MeshInstance3D.new()
+		stone.name = ("BalancedStone%d" if i<play_stage else "LooseStone%d") % i
+		var shape := SphereMesh.new()
+		shape.radial_segments = 6
+		shape.rings = 3
+		shape.radius = 0.36-i*0.055
+		shape.height = shape.radius*2.0
+		stone.mesh = shape
+		stone.scale = Vector3(1.15,0.5,0.85)
+		if i<play_stage:
+			stone.position = Vector3(point.x+sin(i*2.0)*0.045,height+shape.radius*0.5,point.z)
+			height += shape.radius
+		else:
+			var loose := point+Vector3(-0.7+i*0.6,0,0.65+sin(i*1.8)*0.25)
+			loose.y = (floor_height(loose.x,loose.z) if not layout.is_empty() else bed_point.y)+shape.radius*0.5
+			stone.position = loose
+		stone.rotation.y = i*1.7
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color("7b8581").lightened(i*0.055)
+		mat.roughness = 0.85
+		stone.material_override = mat
+		stone.layers = LAYER
+		play_stones.add_child(stone)
 
 func _spike(point: Vector3, length: float, radius: float, hanging: bool) -> void:
 	var mesh := CylinderMesh.new()
@@ -293,22 +378,101 @@ func receive_item(kind: String) -> bool:
 	if not can_receive_item(kind): return false
 	stash.append(kind)
 	_draw_stockpile()
+	supplies_changed.emit()
 	return true
 
 func restore_stash(items: Array) -> void:
 	stash = items.duplicate()
 	_draw_stockpile()
+	supplies_changed.emit()
+
+func food_count() -> int:
+	return stash.count("fruit")+stash.count("fish")
+
+func material_count() -> int:
+	return stash.count("leaves")+stash.count("branch")
+
+func comfort() -> float:
+	return float(bed_stage)/MAX_LIVING_STAGE
+
+func tend_bed() -> bool:
+	if bed_stage>=MAX_LIVING_STAGE or material_count()==0: return false
+	stash.erase("leaves" if stash.has("leaves") else "branch")
+	bed_stage += 1
+	_build_bed()
+	_draw_stockpile()
+	supplies_changed.emit()
+	return true
+
+func eat_food() -> String:
+	var kind := "fruit" if stash.has("fruit") else "fish" if stash.has("fish") else ""
+	if kind.is_empty(): return ""
+	stash.erase(kind)
+	_draw_stockpile()
+	supplies_changed.emit()
+	return kind
+
+func arrange_stone() -> bool:
+	if play_stage>=MAX_LIVING_STAGE: return false
+	play_stage += 1
+	_draw_play_stones()
+	return true
+
+## Interaction locations are local to this room; callers use room.to_global().
+func play_point() -> Vector3:
+	return _play_origin()+Vector3.UP*0.2
+
+func _play_origin() -> Vector3:
+	# Keep the working collection within the seated resident's actual arm span.
+	var point := bed_point+Vector3(-0.75,0,0.85)
+	point.y = floor_height(point.x,point.z) if not layout.is_empty() else bed_point.y
+	return point
+
+func supply_point() -> Vector3:
+	var point := bed_point+Vector3(2.35,0,-0.4)
+	point.y = (floor_height(point.x,point.z) if not layout.is_empty() else bed_point.y)+0.2
+	return point
+
+func disturb_bed() -> bool:
+	if bed_stage==0: return false
+	bed_stage -= 1
+	_build_bed()
+	return true
+
+func remove_one_supply() -> String:
+	if stash.is_empty(): return ""
+	var kind: String = stash.pop_back()
+	_draw_stockpile()
+	supplies_changed.emit()
+	return kind
+
+func capture_living() -> Dictionary:
+	return {"bed_stage":bed_stage,"play_stage":play_stage}
+
+func restore_living(state: Dictionary) -> void:
+	if not valid_living(state): return
+	bed_stage = int(state.bed_stage)
+	play_stage = int(state.play_stage)
+	_build_bed()
+	_draw_play_stones()
+
+static func valid_living(state: Variant) -> bool:
+	if not state is Dictionary: return false
+	for key in ["bed_stage","play_stage"]:
+		var value: Variant = state.get(key)
+		if not (value is int or value is float): return false
+		if not is_finite(float(value)) or float(value)!=floorf(float(value)): return false
+		if value<0 or value>MAX_LIVING_STAGE: return false
+	return true
 
 func document() -> Dictionary:
-	return {"genome":genome.duplicate(true),"stash":stash.duplicate()}
+	return {"genome":genome.duplicate(true),"stash":stash.duplicate(),"living":capture_living()}
 
 func _draw_stockpile() -> void:
 	if stockpile.get_parent()==null:
 		stockpile.name = "Stockpile"
 		add_child(stockpile)
-	for child in stockpile.get_children():
-		stockpile.remove_child(child)
-		child.queue_free()
+	_clear_visuals(stockpile)
 	var center := Vector2(bed_point.x+1.9,bed_point.z-0.7)
 	for i in range(stash.size()):
 		var kind: String = stash[i]
@@ -333,7 +497,8 @@ func _draw_stockpile() -> void:
 			node.scale = Vector3(1.8,0.5,0.7) if kind=="fish" else Vector3(1,0.2,1) if kind=="leaves" else Vector3.ONE
 			mat.albedo_color = Color("7eabb2") if kind=="fish" else Color("827a45") if kind=="leaves" else Color("a36349")
 		var point := center+Vector2((i%4)*0.35,(i/4%3)*0.3)
-		node.position = Vector3(point.x,floor_height(point.x,point.y)+0.13+float(i/12)*0.18,point.y)
+		var height := floor_height(point.x,point.y) if not layout.is_empty() else bed_point.y
+		node.position = Vector3(point.x,height+0.13+float(i/12)*0.18,point.y)
 		node.material_override = mat
 		node.layers = LAYER
 		stockpile.add_child(node)
