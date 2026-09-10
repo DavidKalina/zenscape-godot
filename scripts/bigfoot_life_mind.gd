@@ -1,14 +1,27 @@
 extends RefCounted
 ## Decisions and remembered experiences, independent of movement and world edits.
 ## Callers supply perceived opportunities and commit only successfully performed actions.
-const ACTIONS := ["sleep", "gather", "eat", "fish", "investigate", "ritual", "check_home", "play"]
+const ACTIONS := ["sleep", "gather", "eat", "fish", "investigate", "ritual", "check_home", "play", "hibernate"]
 const MAX_MEMORIES := 24
 const MAX_FAVORITES := 8
 const MAX_DELTA := 1.0
 const LIMIT := 1000000000.0
+## The long drive of the year. `torpor` is the one need that keeps world time
+## rather than watched seconds: it chases the winter cold, filling over about a
+## world day once the chill sets in and draining over two as the year turns, so
+## it peaks a little after deep winter and is still heavy in early spring.
+const TORPOR_FILL_HOURS := 40.0    ## World hours to close ~63% of a rising gap: the cold arrives with the quarter, the drive follows over days.
+const TORPOR_DRAIN_HOURS := 48.0   ## Slower the other way: a thaw takes days.
+const TORPOR_THRESHOLD := 0.50     ## Below this the long sleep is not on offer.
+const MAX_DRIFT_HOURS := 24.0      ## A skipped day must not close the whole gap.
+## The outing between two long sleeps, in the seconds the cooldowns keep: short
+## in the deep cold, longer as the year thaws.
+const OUTING_DEEP := 10.0
+const OUTING_THAW := 28.0
 var hunger := 0.28
 var fatigue := 0.30
 var enrichment := 0.35
+var torpor := 0.0
 var curiosity := 0.65
 var caution := 0.40
 var elapsed := 0.0
@@ -31,8 +44,21 @@ func advance(delta: float, resting := false, comfort := 0.0, daylight := 1.0) ->
 		cooldowns[kind] = maxf(0.0, float(cooldowns[kind]) - step)
 		if cooldowns[kind] <= 0.0: cooldowns.erase(kind)
 
-## Time of day bends the scores; it never dictates the action. A hungry or
-## exhausted Bigfoot still overrides the rhythm. See docs/bigfoot-living-world.
+## The year's own pull, kept on world hours so it is the calendar and not the
+## watched frame rate that decides how long a winter feels. Callers pass the
+## season's cold (0..1) and the world hours since they last called. A scene with
+## no clock never calls this, or calls it with a cold of 0 forever, and `torpor`
+## stays at 0 — where it adds nothing to any score.
+func drift(cold: float, world_hours: float) -> void:
+	if not is_finite(world_hours) or world_hours <= 0.0: return
+	var pull := _season_amount(cold)
+	var hours := minf(world_hours, MAX_DRIFT_HOURS)
+	var tau := TORPOR_FILL_HOURS if pull > torpor else TORPOR_DRAIN_HOURS
+	torpor = clampf(lerpf(torpor, pull, 1.0 - exp(-hours / tau)), 0.0, 1.0)
+
+## Time of day, the weather and the season bend the scores; they never dictate
+## the action.
+## A hungry or exhausted Bigfoot still overrides both. See docs/bigfoot-living-world.
 func ranked(context: Dictionary) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var home := _available(context.get("home"))
@@ -44,24 +70,67 @@ func ranked(context: Dictionary) -> Array[Dictionary]:
 	# A smooth bump around the light/dark crossover, the hours when fish rise.
 	var twilight := clampf(1.0 - absf(daylight - 0.5) / 0.25, 0.0, 1.0)
 	var wary := dark * (1.0 + caution)
-	if home and fatigue >= 0.30 - dark * 0.12:
-		_candidate(result, "sleep", 0.05 + fatigue * 1.20 + dark * 0.45, "Night has come; returning to a familiar bed" if note == "night" else "Tired; returning to a familiar bed")
+	# Falling weather discourages outdoor errands wherever he is; only weather he
+	# is actually standing in pulls him back toward the cave.
+	var storm := _storm(context.get("weather", "clear"))
+	var wet := _wetness(context.get("wet", 0.0))
+	var exposed := 0.0 if bool(context.get("sheltered", false)) else storm
+	# The year bends two errands and nothing else: a cold season makes the bed
+	# and its roof worth a little more, and the gold of autumn is the time to lay
+	# bedding in. Both curves are zero through spring and summer and absent from
+	# a scene with no clock, so those score exactly as they always have.
+	var cold := _season_amount(context.get("cold", 0.0))
+	var harvest := _season_amount(context.get("harvest", 0.0))
+	# The larder: how short his stores are of what a winter wants, and how close
+	# the year is to spending them. Autumn's gold and winter's chill both count,
+	# so the errands that stock a home are worth more from the first gold leaf
+	# until the thaw. A scene with no calendar reports neither curve, and a scene
+	# that reports no stores at all reads as ready, so both add exactly nothing.
+	var ready := _amount(context.get("winter_ready", 1.0), 1.0)
+	var larder := (1.0 - ready) * clampf(harvest + cold, 0.0, 1.0)
+	# The long sleep is a candidate like any other: it never preempts, it simply
+	# outweighs. Everything else fades by degrees first, which is what a watcher
+	# sees as him growing slow over the turn of the year.
+	if home and torpor >= TORPOR_THRESHOLD:
+		var torpor_reason := "The year has gone cold; time to sleep it out"
+		if ready < 0.6: torpor_reason = "Cold, and the stores are thin; sleeping light"
+		elif torpor < 0.7: torpor_reason = "The cold is settling in; growing slow"
+		_candidate(result, "hibernate", 0.25 + torpor * 1.15 + fatigue * 0.25 - hunger * 0.30 - (1.0 - ready) * 1.00, torpor_reason)
+	if home and fatigue >= 0.30 - dark * 0.12 - exposed * 0.12 - cold * 0.05:
+		var bed_reason := "Night has come; returning to a familiar bed" if note == "night" else "Tired; returning to a familiar bed"
+		if cold > 0.5: bed_reason = "The cold is in; a warm bed is worth the walk"
+		if exposed > 0.5: bed_reason = "Taking shelter from the storm"
+		_candidate(result, "sleep", 0.05 + fatigue * 1.20 + dark * 0.45 + exposed * 0.50 + cold * 0.12, bed_reason)
+	# Wood already on the ground is a small invitation, smaller than anything else
+	# on this action: fallen branches make the errand easier, never necessary. An
+	# absent count adds nothing, so every score predating dead wood is unchanged.
+	var wood: Variant = context.get("branches_nearby", 0)
+	var fallen := clampf(float(wood) / 3.0, 0.0, 1.0) if (wood is int or wood is float) and is_finite(float(wood)) else 0.0
 	if home and context.get("material_needed", false) and context.get("can_gather", false):
-		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12 - wary * 0.14, "The bed could be more comfortable")
+		var gather_reason := "The leaves are down; good bedding is lying about" if harvest > 0.5 else ("Branches are down under the trees" if fallen > 0.0 else "The bed could be more comfortable")
+		if larder > 0.35: gather_reason = "Winter is coming; the bed must be deep"
+		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 + fallen * 0.08 - fatigue * 0.12 - wary * 0.14 - storm * 0.22 + harvest * 0.10 + larder * 0.30 - torpor * 0.18, gather_reason)
 	if food > 0 and hunger >= 0.20:
 		_candidate(result, "eat", hunger * 1.50, "Hungry; food is stored at home")
+	# A well-stocked pond is worth the walk, by less than any other term here: a
+	# full pond must never outweigh an uncomfortable bed. An absent count adds
+	# nothing, so every score predating restocking is unchanged.
+	var pool: Variant = context.get("fish_available", 0)
+	var plenty := clampf(float(pool) / 3.0, 0.0, 1.0) if (pool is int or pool is float) and is_finite(float(pool)) else 0.0
 	if home and context.get("can_fish", false) and food < 3:
-		_candidate(result, "fish", 0.30 + hunger * 0.60 + (0.16 if food == 0 else 0.0) + twilight * 0.28, ("The fish bite at %s" % note) if twilight > 0.5 and note in ["dawn", "dusk"] else "Bring food home for later")
+		var fish_reason := ("The fish bite at %s" % note) if twilight > 0.5 and note in ["dawn", "dusk"] else "Bring food home for later"
+		if larder > 0.35: fish_reason = "Winter is coming; the stash is too thin for it"
+		_candidate(result, "fish", 0.30 + hunger * 0.60 + (0.16 if food == 0 else 0.0) + twilight * 0.28 + plenty * 0.05 - storm * 0.25 + larder * 0.45 - torpor * 0.12, fish_reason)
 	if _available(context.get("curiosity_target")):
 		var familiar := familiarity(str(context.get("target_id", "")))
-		_candidate(result, "investigate", 0.22 + curiosity * 0.60 - caution * 0.16 - familiar * 0.38 - hunger * 0.12 - wary * 0.26, "An unfamiliar thing deserves a closer look" if familiar < 0.5 else "Checking something familiar")
+		_candidate(result, "investigate", 0.22 + curiosity * 0.60 - caution * 0.16 - familiar * 0.38 - hunger * 0.12 - wary * 0.26 - storm * 0.30 - torpor * 0.30, "An unfamiliar thing deserves a closer look" if familiar < 0.5 else "Checking something familiar")
 	if _available(context.get("ritual_target")):
-		_candidate(result, "ritual", 0.22 + enrichment * 0.34 + fatigue * 0.12 + (twilight * 0.12 if note == "dusk" else 0.0), "A quiet evening ritual at a favorite place" if note == "dusk" else "Visit a favorite place for a quiet ritual")
+		_candidate(result, "ritual", 0.22 + enrichment * 0.34 + fatigue * 0.12 + (twilight * 0.12 if note == "dusk" else 0.0) - storm * 0.30 - wet * 0.15 - torpor * 0.20, "A quiet evening ritual at a favorite place" if note == "dusk" else "Visit a favorite place for a quiet ritual")
 	var observed_change := disturbance_position != null or bool(context.get("disturbance", false))
 	if home and (observed_change or context.get("home_check_due", false)):
 		_candidate(result, "check_home", 0.85 + caution * 0.20, "Something observed near home has changed" if observed_change else "Time to visit home and check his belongings")
 	if home and context.get("can_play", false) and hunger < 0.65 and fatigue < 0.70:
-		_candidate(result, "play", 0.12 + enrichment * 0.72 - hunger * 0.25 - fatigue * 0.20 - wary * 0.20, "Fed enough to spend time arranging stones")
+		_candidate(result, "play", 0.12 + enrichment * 0.72 - hunger * 0.25 - fatigue * 0.20 - wary * 0.20 - storm * 0.25 - torpor * 0.35, "Fed enough to spend time arranging stones")
 	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.score > b.score)
 	return result
 
@@ -71,6 +140,28 @@ func time_note(hour: float, daylight: float) -> String:
 	if light < 0.35: return "night"
 	if light > 0.85: return "day"
 	return "dawn" if _hour(hour) < 12.0 else "dusk"
+
+## Only falling water counts. Every other sky, and an unknown one, reads as calm
+## so a scene without weather ranks exactly as it did before weather existed.
+static func _storm(value: Variant) -> float:
+	if not value is String: return 0.0
+	if value == "storm": return 1.0
+	return 0.5 if value == "rain" else 0.0
+
+## A season curve from the context: the winter cold or the autumn gold, 0..1.
+## A missing or broken value reads as 0, the value spring and summer carry, so
+## every score that predates the calendar is untouched.
+static func _season_amount(value: Variant) -> float:
+	return _amount(value, 0.0)
+
+## The same reading, for context values whose neutral setting is not zero.
+static func _amount(value: Variant, fallback: float) -> float:
+	if not (value is float or value is int) or not is_finite(float(value)): return fallback
+	return clampf(float(value), 0.0, 1.0)
+
+static func _wetness(value: Variant) -> float:
+	if not (value is float or value is int) or not is_finite(float(value)): return 0.0
+	return clampf(float(value), 0.0, 1.0)
 
 static func _darkness(daylight: Variant) -> float:
 	return 1.0 - _daylight(daylight)
@@ -124,6 +215,11 @@ func completed(kind: String, context: Dictionary = {}) -> void:
 		"play":
 			enrichment = maxf(0.0, enrichment - 0.60)
 			cooldowns[kind] = 55.0
+		"hibernate":
+			fatigue = maxf(0.0, fatigue - 0.60)
+			# What follows a long sleep is not another one. This cooldown is the
+			# outing itself, and the deeper the cold the shorter it is.
+			cooldowns[kind] = lerpf(OUTING_THAW, OUTING_DEEP, _season_amount(context.get("cold", 0.0)))
 
 func observe(id: String, position: Vector3, category := "object") -> bool:
 	if id.is_empty() or id.length() > 96 or category.is_empty() or category.length() > 48 or not _valid_vector(position): return false
@@ -186,13 +282,14 @@ func favorite_position(ritual: String) -> Variant:
 	return null if best.is_empty() else _vector(best.position)
 
 func capture() -> Dictionary:
-	return {"version": 1, "hunger": hunger, "fatigue": fatigue, "enrichment": enrichment, "curiosity": curiosity, "caution": caution, "elapsed": elapsed, "cooldowns": cooldowns.duplicate(true), "memories": memories.duplicate(true), "favorites": favorites.duplicate(true), "disturbance": [] if disturbance_position == null else _point(disturbance_position)}
+	return {"version": 1, "hunger": hunger, "fatigue": fatigue, "enrichment": enrichment, "torpor": torpor, "curiosity": curiosity, "caution": caution, "elapsed": elapsed, "cooldowns": cooldowns.duplicate(true), "memories": memories.duplicate(true), "favorites": favorites.duplicate(true), "disturbance": [] if disturbance_position == null else _point(disturbance_position)}
 
 func restore(value: Dictionary) -> bool:
 	if value.is_empty():
 		hunger = 0.28
 		fatigue = 0.30
 		enrichment = 0.35
+		torpor = 0.0
 		curiosity = 0.65
 		caution = 0.40
 		elapsed = 0.0
@@ -203,6 +300,7 @@ func restore(value: Dictionary) -> bool:
 		return true
 	if not valid(value): return false
 	for key in ["hunger", "fatigue", "enrichment", "curiosity", "caution", "elapsed"]: set(key, float(value[key]))
+	torpor = _amount(value.get("torpor", 0.0), 0.0)
 	cooldowns = value.cooldowns.duplicate(true)
 	memories.clear()
 	for memory: Dictionary in value.memories: memories.append(memory.duplicate(true))
@@ -215,9 +313,14 @@ func restore(value: Dictionary) -> bool:
 	return true
 
 static func valid(value: Variant) -> bool:
-	if not value is Dictionary or value.get("version") != 1 or value.size() != 11: return false
+	# Documents written before the year had a long drive carry no `torpor`. They
+	# load with a waking slate rather than being rejected, the way the storm
+	# accumulator one layer up does.
+	if not value is Dictionary or value.get("version") != 1 or value.size() < 11 or value.size() > 12: return false
+	if value.size() == 12 and not value.has("torpor"): return false
 	for key in ["hunger", "fatigue", "enrichment", "curiosity", "caution"]:
 		if not _number(value.get(key), 0.0, 1.0): return false
+	if not _number(value.get("torpor", 0.0), 0.0, 1.0): return false
 	if not _number(value.get("elapsed"), 0.0, LIMIT): return false
 	if not value.get("cooldowns") is Dictionary or value.cooldowns.size() > ACTIONS.size(): return false
 	for key in value.cooldowns:

@@ -46,7 +46,8 @@ const MAX_CATCH_UP := 24
 const HISTORY_LIMIT := 32
 
 var seed: int = 0
-var enabled := true
+## Off until someone asks for drift: a garden's sky stays where it was put.
+var enabled := false
 var current := "clear"
 var next_change_hour := 0.0
 var season := 0.0
@@ -65,6 +66,36 @@ func _init(p_seed := 0, p_current := "clear", p_start_hour := 0.0) -> void:
 ## Index into studies/precipitation.gd PRESET_NAMES; -1 when unknown.
 static func preset_index(name: String) -> int:
 	return PRESET_NAMES.find(name)
+
+## How much gold and how much cold the season alone adds to the ground, on top
+## of whatever the current preset asks for. Each is a plateau on the 0..1 year
+## aligned to its calendar quarter: it rises over the first days of the season,
+## holds, and falls away over the last. The cold reaches zero before the year
+## wraps, so day 0 of a fresh garden is the neutral scene it has always been and
+## the new year arrives without a step.
+## [rise start, rise end, fall start, fall end, strength]; see docs/world-clock/README.md.
+const SEASON_AUTUMN := [0.50, 0.56, 0.72, 0.80, 0.9]  ## Gold through the autumn quarter, gone by early winter.
+const SEASON_COLD := [0.72, 0.80, 0.94, 1.00, 0.9]    ## Cold from the first winter days, thawing in the last.
+
+static func season_autumn(season: float) -> float:
+	return _season_plateau(season, SEASON_AUTUMN)
+
+static func season_cold(season: float) -> float:
+	return _season_plateau(season, SEASON_COLD)
+
+## A symmetric bump, [centre, half width, strength]; the weather mix's quarter
+## weights still use it.
+static func _season_bump(season: float, shape: Array) -> float:
+	if not is_finite(season): return 0.0
+	var gap := absf(fposmod(season, 1.0) - float(shape[0]))
+	return float(shape[2]) * (1.0 - smoothstep(0.0, float(shape[1]), minf(gap, 1.0 - gap)))
+
+static func _season_plateau(season: float, shape: Array) -> float:
+	if not is_finite(season): return 0.0
+	var year := fposmod(season, 1.0)
+	var rise := smoothstep(float(shape[0]), float(shape[1]), year)
+	var fall := 1.0 - smoothstep(float(shape[2]), float(shape[3]), year)
+	return float(shape[4]) * minf(rise, fall)
 
 ## Advance world time. Returns the preset names that became current since the
 ## last call, oldest first. Calling twice with the same hour returns [] the
@@ -169,24 +200,54 @@ func _pick(from: String, hour_of_day: float) -> String:
 			return str(names[i])
 	return str(names[names.size() - 1])
 
-## Season 0 reproduces the neutral table exactly: every factor here is 1.0 at
-## season 0 except the gated cold/season presets, which are 0.
+## Quarter bumps used to give each season its own weather: zero at every season
+## boundary, one at the middle of its own quarter. Because they vanish at the
+## boundaries, season 0 reproduces the neutral table exactly (every factor here
+## is 1.0 at season 0 except the gated cold/season presets, which are 0), and
+## the year wraps without a step.
+const QUARTER_SPRING := [0.125, 0.125, 1.0]
+const QUARTER_SUMMER := [0.375, 0.125, 1.0]
+const QUARTER_AUTUMN := [0.625, 0.125, 1.0]
+const QUARTER_WINTER := [0.875, 0.125, 1.0]
+
+## The mix each quarter wears, on top of the neutral table:
+##
+## | quarter | what the sky does |
+## | spring 0.00–0.25 | showers and dawn mist: rain ×1.8, mist ×1.9 at peak |
+## | summer 0.25–0.50 | bright, with afternoon thunder: clear/fair ×1.55, storm ×2.2 |
+## | autumn 0.50–0.75 | gold and grey: the autumn preset unlocks, rain ×1.5, overcast climbs, clear/fair fade |
+## | winter 0.75–1.00 | snow ×3 and overcast ×2.5; rain halves and storms nearly stop |
 func _season_factor(name: String, from: String) -> float:
+	var spring := _season_bump(season, QUARTER_SPRING)
+	var summer := _season_bump(season, QUARTER_SUMMER)
+	var autumn := _season_bump(season, QUARTER_AUTUMN)
+	var winter := _season_bump(season, QUARTER_WINTER)
 	if name in COLD_PRESETS:
-		var cold := clampf((season - 0.6) / 0.25, 0.0, 1.0)
+		# Snow belongs to winter: nothing before the last days of autumn.
+		var cold := clampf((season - 0.7) / 0.15, 0.0, 1.0)
 		# Snow never follows itself, so "still wintry" means the sky we are
 		# leaving came straight off snow: a marginal season can flurry back.
 		if _came_from_snow():
 			cold = maxf(cold, 0.5)
 		return cold * 3.0
 	if name in SEASON_PRESETS:
-		return clampf((season - 0.55) / 0.25, 0.0, 1.0) * 2.0
+		# The gold sky arrives with autumn and thins once deep winter is in.
+		var turning := clampf((season - 0.45) / 0.15, 0.0, 1.0)
+		return 2.2 * turning * (1.0 - 0.75 * clampf((season - 0.8) / 0.15, 0.0, 1.0))
 	if name == "overcast":
 		return 1.0 + 1.5 * clampf((season - 0.6) / 0.4, 0.0, 1.0)
 	if name == "clear" or name == "fair":
-		# High season damps the bright presets, so season < 0.3 is where
-		# clear/fair dominate. Exactly 1.0 at season 0.
-		return 1.0 - 0.5 * clampf((season - 0.3) / 0.7, 0.0, 1.0)
+		# Summer is the bright quarter; the second half of the year damps them,
+		# so clear/fair peak in midsummer and bottom out in winter.
+		return 1.0 + 0.55 * summer - 0.45 * clampf((season - 0.5) / 0.25, 0.0, 1.0)
+	if name == "rain":
+		# Spring showers, a wet autumn, and a winter that snows instead.
+		return 1.0 + 0.8 * spring + 0.2 * summer + 0.9 * autumn - 0.5 * winter
+	if name == "storm":
+		# Summer rains rarely, so its thunder has to be worth a lot when it does.
+		return 1.0 + 3.0 * summer - 0.7 * winter
+	if name == "mist":
+		return 1.0 + 0.9 * spring + 0.4 * autumn
 	return 1.0
 
 ## Time-of-day shaping: afternoon storms, dawn mist after rain, evening clearing.

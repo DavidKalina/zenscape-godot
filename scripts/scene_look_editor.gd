@@ -24,8 +24,18 @@ var checks := {}
 var weather_choice := OptionButton.new()
 ## World clock: how fast the day runs, and what day/hour it is now.
 const SPEEDS := [1.0,4.0,12.0]
+## World years the "Day" scrubber reaches: two, enough to walk the seasons
+## twice, whatever length of year the clock is keeping.
+const DAY_RANGE_YEARS := 2
 var clock_choice := OptionButton.new()
 var clock_readout := Label.new()
+var force_weather_choice := OptionButton.new()
+## Ticked, the year comes from the day count; unticked, the Season slider pins it.
+var season_follows := true:
+	set(value):
+		season_follows = value
+		var clock: WorldClock = scene.get("world_clock") if scene != null else null
+		if clock != null: clock.season_override = -1.0 if value else clock.season
 var rock_choice := OptionButton.new()
 var undo_button := Button.new()
 var redo_button := Button.new()
@@ -132,6 +142,18 @@ func setup(owner_scene: Node3D) -> void:
 		clock_readout.modulate = Color("bdc9c6")
 		clock_readout.add_theme_font_size_override("font_size",11)
 		air.add_child(clock_readout)
+		# Scrub tooling: jump to a day, pin a season, force a sky. Nothing here
+		# is part of the garden's own state; it is how a season gets watched.
+		_slider(air,"day","Day",0,float(clock.year_days*DAY_RANGE_YEARS),1,func() -> float: return float(clock.day),func(v: float) -> void: clock.set_time(int(round(v)),clock.hour))
+		_slider(air,"season","Season",0,1,0.01,func() -> float: return clock.season,func(v: float) -> void:
+			season_follows = false
+			clock.season_override = v)
+		_check(air,"season_follows","Follow the calendar",self,"season_follows")
+		_label(air,"Force weather")
+		force_weather_choice.name = "ForceWeather"
+		for weather_name in WeatherScheduler.PRESET_NAMES: force_weather_choice.add_item(String(weather_name).capitalize())
+		force_weather_choice.item_selected.connect(func(index: int) -> void: _edit(func() -> void: scene._precipitation.set_weather(index)))
+		air.add_child(force_weather_choice)
 	_slider(air,"clouds","Cloud cover",0,1,0.01,func() -> float: return scene._celestial.cloud if scene._precipitation.cloud_override < 0 else scene._precipitation.cloud_override,func(v: float) -> void: scene._precipitation.cloud_override = v)
 	_slider(air,"mist","Valley mist",0,1,0.01,func() -> float: return scene._atmosphere._fog_target,func(v: float) -> void:
 		scene._atmosphere.set_fog(v)
@@ -318,9 +340,18 @@ func sync() -> void:
 	weather_choice.select(scene._precipitation.preset_index)
 	var clock: WorldClock = scene.get("world_clock")
 	if clock != null:
-		clock_readout.text = clock.label()
+		# The readout is where the Season slider is watched from, so it names the
+		# quarter and, once the resident has a long drive filling, shows it: pin
+		# the slider to deep winter and this is the number that climbs before he
+		# walks home for the season.
+		clock_readout.text = clock.label()+" · "+clock.season_name()
+		var living: Variant = _resident_life()
+		if living != null and float(living.mind.torpor) > 0.01: clock_readout.text += " · torpor %.2f" % float(living.mind.torpor)
 		var pace := SPEEDS.find(clock.speed)
 		if pace >= 0: clock_choice.select(pace)
+		force_weather_choice.select(scene._precipitation.preset_index)
+		var following := clock.season_override < 0.0
+		if season_follows != following: season_follows = following
 	rock_choice.select(scene._world_visuals.rock_style)
 	for key in sliders:
 		var row: Dictionary = sliders[key]
@@ -404,6 +435,14 @@ func _build_presets() -> void:
 			description.size.x = button.size.x-18)
 		_preset_grid.add_child(button)
 		preset_buttons[id] = button
+
+## The resident's living world, when this scene has one. Most scenes the editor
+## opens have no routine at all, so every step of the walk is optional.
+func _resident_life() -> Variant:
+	var owner_routine: Variant = scene.get("routine") if scene != null else null
+	if owner_routine == null or not is_instance_valid(owner_routine): return null
+	var living: Variant = owner_routine.get("living")
+	return living if living != null and living.get("mind") != null else null
 
 func _sync_presets() -> void:
 	if tabs.current_tab != 0: return

@@ -69,7 +69,9 @@ func _choose_inhabited_shore() -> void:
 	# Replace the source pond's inhabitants with fish in this authored pond.
 	for item in fish.population: item.node.free()
 	fish.population.clear()
+	var homes: Array[Vector3] = []
 	for p in [Vector2(4,-3),Vector2(6,-3),Vector2(5,-1.7)]:
-		fish._add_fish(Vector3(p.x,0.04,p.y))
+		homes.append(Vector3(p.x,0.04,p.y))
+	fish.seed_homes(homes)
 	data._undo.clear()
 	data._redo.clear()

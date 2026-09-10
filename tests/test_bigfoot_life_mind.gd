@@ -105,6 +105,8 @@ func _run() -> void:
 		mind.completed("ritual", {"ritual": "spot_%d" % index, "position": Vector3(index, 0, 0)})
 	check(mind.memories.size() == Mind.MAX_MEMORIES and mind.favorites.size() == Mind.MAX_FAVORITES, "Memory remains bounded in a changing garden")
 	_time_of_day(all)
+	_weather_of_the_day(all)
+	_year_of_the_day(all)
 	mind.mark_disturbance(Vector3(3, 0, 4))
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(mind.capture(), "", true, true))
 	var restored = Mind.new()
@@ -197,6 +199,105 @@ func _time_of_day(all: Dictionary) -> void:
 	var unspecified = Mind.new()
 	unspecified.advance(1.0, false, 0.0)
 	check(unspecified.capture() == lit.capture(), "An unspecified daylight keeps the original bright-day need timing")
+## Falling weather bends the same scores the clock does. A clear, dry sky, or a
+## world with no weather at all, leaves every number exactly where it was.
+func _weather_of_the_day(all: Dictionary) -> void:
+	var quiet = Mind.new()
+	quiet.hunger = 0.5
+	quiet.fatigue = 0.4
+	var calm := all.duplicate()
+	calm.hour = 12.0
+	calm.daylight = 1.0
+	var fair := calm.duplicate()
+	fair.weather = "clear"
+	fair.wet = 0.0
+	fair.sheltered = false
+	check(quiet.ranked(calm) == quiet.ranked(fair), "A clear, dry sky ranks exactly like a world without weather")
+	var mist := calm.duplicate()
+	mist.weather = "mist"
+	check(quiet.ranked(calm) == quiet.ranked(mist), "A sky with no falling water leaves the scores alone")
+	var nonsense := calm.duplicate()
+	nonsense.weather = 7
+	nonsense.wet = NAN
+	check(quiet.ranked(calm) == quiet.ranked(nonsense), "Nonsense weather readings fall back to a calm, dry sky")
+	var storm := calm.duplicate()
+	storm.weather = "storm"
+	var soaked: Array[Dictionary] = quiet.ranked(storm)
+	var dry: Array[Dictionary] = quiet.ranked(calm)
+	check(soaked[0].kind == "sleep", "A storm outdoors turns a moderately tired Bigfoot toward his bed")
+	check(_score(soaked, "sleep") > _score(soaked, "gather") and _score(soaked, "sleep") > _score(soaked, "play") and _score(soaked, "sleep") > _score(soaked, "investigate"), "Shelter outranks the outdoor errands while it storms")
+	check(_reason(soaked, "sleep") == "Taking shelter from the storm", "The storm names itself as the reason he heads home")
+	check(is_equal_approx(_score(soaked, "sleep"), _score(dry, "sleep") + 0.50), "A storm he stands in adds a fixed pull toward shelter")
+	for kind in ["gather", "play", "investigate", "fish", "ritual"]:
+		check(_score(soaked, kind) < _score(dry, kind), "A storm discourages starting the outdoor errand %s" % kind)
+	var rain := calm.duplicate()
+	rain.weather = "rain"
+	var wet: Array[Dictionary] = quiet.ranked(rain)
+	check(_score(wet, "sleep") > _score(dry, "sleep") and _score(wet, "sleep") < _score(soaked, "sleep"), "Rain pulls him home, less than a storm does")
+	check(_reason(wet, "sleep") == "Tired; returning to a familiar bed", "Rain is not a storm in his own words")
+	var inside := storm.duplicate()
+	inside.sheltered = true
+	check(is_equal_approx(_score(quiet.ranked(inside), "sleep"), _score(dry, "sleep")), "Already in the cave, the storm adds no further pull toward bed")
+	check(_score(quiet.ranked(inside), "gather") < _score(dry, "gather"), "Even from shelter, a storm is a poor time to set out gathering")
+	var drowsy = Mind.new()
+	drowsy.fatigue = 0.22
+	check(not _has(drowsy.ranked(calm), "sleep") and _has(drowsy.ranked(storm), "sleep"), "A storm lowers the tiredness needed before shelter is worth considering")
+	var damp := calm.duplicate()
+	damp.wet = 1.0
+	check(_score(quiet.ranked(damp), "ritual") < _score(dry, "ritual") and is_equal_approx(_score(quiet.ranked(damp), "gather"), _score(dry, "gather")), "Soaked ground spoils sitting outdoors without discouraging his errands")
+	var starving = Mind.new()
+	starving.hunger = 0.9
+	starving.fatigue = 0.5
+	check(starving.ranked(storm)[0].kind == "eat", "Real hunger still overrides the storm's pull toward shelter")
+	var exhausted = Mind.new()
+	exhausted.hunger = 0.1
+	exhausted.fatigue = 0.95
+	check(exhausted.ranked(calm)[0].kind == "sleep", "Real exhaustion still chooses sleep under a clear noon sky")
+## The season bends two errands and no others. Spring and summer — and a world
+## with no calendar at all — leave every number exactly where it was.
+func _year_of_the_day(all: Dictionary) -> void:
+	var quiet = Mind.new()
+	quiet.hunger = 0.5
+	quiet.fatigue = 0.4
+	var calm := all.duplicate()
+	calm.hour = 12.0
+	calm.daylight = 1.0
+	var base: Array[Dictionary] = quiet.ranked(calm)
+	var spring := calm.duplicate()
+	spring.season = 0.1
+	spring.season_name = "spring"
+	spring.cold = 0.0
+	spring.harvest = 0.0
+	check(quiet.ranked(spring) == base, "Spring ranks exactly like a world with no calendar")
+	var nonsense := calm.duplicate()
+	nonsense.cold = NAN
+	nonsense.harvest = "gold"
+	check(quiet.ranked(nonsense) == base, "A broken season reading falls back to spring")
+	var winter := calm.duplicate()
+	winter.cold = 0.9
+	winter.season_name = "winter"
+	var chilled: Array[Dictionary] = quiet.ranked(winter)
+	check(_score(chilled, "sleep") > _score(base, "sleep"), "The cold makes a warm bed worth a little more")
+	check(_score(chilled, "sleep") - _score(base, "sleep") < 0.15, "The cold nudges sleep by much less than a storm does")
+	check(_reason(chilled, "sleep") == "The cold is in; a warm bed is worth the walk", "The cold names itself as the reason he heads home")
+	for kind in ["gather", "fish", "play", "investigate", "ritual"]:
+		check(is_equal_approx(_score(chilled, kind), _score(base, kind)), "The cold leaves %s where it was" % kind)
+	var autumn := calm.duplicate()
+	autumn.harvest = 0.9
+	autumn.season_name = "autumn"
+	var gold: Array[Dictionary] = quiet.ranked(autumn)
+	var lift := _score(gold, "gather") - _score(base, "gather")
+	check(lift > 0.0 and lift < 0.12, "Autumn nudges gathering, modestly: %.3f" % lift)
+	check(_reason(gold, "gather") == "The leaves are down; good bedding is lying about", "Autumn names itself as the reason to gather")
+	check(is_equal_approx(_score(gold, "sleep"), _score(base, "sleep")), "The gold leaves sleep alone")
+	var drowsy = Mind.new()
+	drowsy.fatigue = 0.27
+	check(not _has(drowsy.ranked(calm), "sleep") and _has(drowsy.ranked(winter), "sleep"), "A cold season lowers the tiredness needed before bed is worth considering")
+	var starving = Mind.new()
+	starving.hunger = 0.9
+	starving.fatigue = 0.5
+	check(starving.ranked(winter)[0].kind == "eat", "Real hunger still overrides the cold")
+
 func _reason(actions: Array[Dictionary], kind: String) -> String:
 	for action in actions:
 		if action.kind == kind: return str(action.reason)

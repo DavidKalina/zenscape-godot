@@ -10,6 +10,7 @@ func _initialize() -> void:
 	var season := float(args[1]) if args.size() > 1 else 0.0
 	var days := int(args[2]) if args.size() > 2 else 7
 	var scheduler := Scheduler.new(seed)
+	scheduler.enabled = true  # Drift is off by default; this tool exists to watch it.
 	scheduler.season = season
 	print("seed=%d season=%.2f days=%d" % [seed, season, days])
 	print("day 1  00:00  %s (start, next change at %.2f h)" % [scheduler.current, scheduler.next_change_hour])

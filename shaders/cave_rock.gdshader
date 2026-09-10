@@ -1,10 +1,16 @@
 shader_type spatial;
+#include "res://shaders/cave_cutaway.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert;
 uniform bool floor_surface = false;
 uniform vec2 bed_center;
 uniform vec2 pool_center;
 uniform float moisture = 0.75;
 uniform vec4 rock_tint : source_color = vec4(0.4,0.5,0.45,1.0);
+// Walls only: outward normal of this side and how far its middle has dissolved.
+uniform vec3 cutaway_normal = vec3(0.0);
+uniform float cutaway_half_width = 14.2;
+uniform float cutaway_ceiling = 8.3;
+uniform float cutaway_reveal = 0.0;
 varying vec3 stone;
 float grain(vec2 p) {
 	return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);
@@ -17,6 +23,7 @@ float patch(vec2 p) {
 }
 void vertex() { stone = VERTEX; }
 void fragment() {
+	if (cutaway_reveal > 0.0 && cave_cutaway(stone, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	float damp;
 	if (floor_surface) {
 		float dry_bed = smoothstep(1.8,3.0,distance(stone.xz,bed_center));

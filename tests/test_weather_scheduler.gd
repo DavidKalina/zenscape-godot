@@ -14,6 +14,13 @@ func check(ok: bool, message: String) -> void:
 	if not ok:
 		failures += 1
 
+## A scheduler that is allowed to drift. Drift is off by default (a garden's sky
+## stays where it was put), so every test about transitions asks for it.
+func drifting(seed: int) -> Scheduler:
+	var scheduler := Scheduler.new(seed)
+	scheduler.enabled = true
+	return scheduler
+
 ## Steps a scheduler forward in quarter-hour beats and returns every preset it chose.
 func simulate(scheduler: Scheduler, days: int, start := 0.0) -> Array[String]:
 	var seen: Array[String] = []
@@ -25,6 +32,7 @@ func simulate(scheduler: Scheduler, days: int, start := 0.0) -> Array[String]:
 
 func run() -> void:
 	test_matches_precipitation_constant()
+	test_off_by_default()
 	test_determinism()
 	test_idempotent()
 	test_capture_restore()
@@ -35,6 +43,7 @@ func run() -> void:
 	test_cold_season()
 	test_dwell_bounds()
 	test_catch_up_cap()
+	test_season_curves()
 	print("Failures: ", failures)
 	quit(1 if failures else 0)
 
@@ -48,19 +57,24 @@ func test_matches_precipitation_constant() -> void:
 			ok = false
 	check(ok and Scheduler.preset_index("nonsense") == -1, "preset_index resolves every preset and rejects unknown names")
 
+func test_off_by_default() -> void:
+	var s := Scheduler.new(11)
+	check(not s.enabled, "A fresh scheduler is not drifting yet")
+	check(simulate(s, 10).is_empty(), "and a fresh scheduler changes nothing on its own")
+
 func test_determinism() -> void:
-	var a := Scheduler.new(4242)
-	var b := Scheduler.new(4242)
+	var a := drifting(4242)
+	var b := drifting(4242)
 	var seen_a := simulate(a, 14)
 	var seen_b := simulate(b, 14)
 	check(seen_a.size() > 10, "A fortnight of weather produces a stream of transitions (%d)" % seen_a.size())
 	check(seen_a == seen_b, "Two schedulers with the same seed fire identical transitions")
 	check(a.current == b.current and is_equal_approx(a.next_change_hour, b.next_change_hour), "Same-seed schedulers end in the same state")
-	var c := Scheduler.new(99)
+	var c := drifting(99)
 	check(simulate(c, 14) != seen_a, "A different seed produces a different fortnight")
 
 func test_idempotent() -> void:
-	var s := Scheduler.new(7)
+	var s := drifting(7)
 	var repeats_clean := true
 	for i in range(24 * 40):
 		var hour := float(i) * 0.5
@@ -72,7 +86,7 @@ func test_idempotent() -> void:
 	check(repeats_clean, "advance() is idempotent at a repeated hour and ignores backwards time")
 
 func test_capture_restore() -> void:
-	var a := Scheduler.new(1234)
+	var a := drifting(1234)
 	simulate(a, 5)
 	var saved := a.capture()
 	var rest_a := simulate(a, 9, 120.0)
@@ -119,7 +133,7 @@ func test_neutral_season() -> void:
 	var found_snow := false
 	var kinds := {}
 	for seed in [1, 2, 3, 11]:
-		var s := Scheduler.new(seed)
+		var s := drifting(seed)
 		for name in simulate(s, 30):
 			kinds[name] = true
 			if name == "autumn":
@@ -132,7 +146,7 @@ func test_neutral_season() -> void:
 func test_cold_season() -> void:
 	var kinds := {}
 	for seed in [1, 2, 3, 11]:
-		var s := Scheduler.new(seed)
+		var s := drifting(seed)
 		s.season = 1.0
 		for name in simulate(s, 30):
 			kinds[name] = true
@@ -144,7 +158,7 @@ func test_dwell_bounds() -> void:
 	var ok := true
 	var report := ""
 	for seed in [3, 21, 404]:
-		var s := Scheduler.new(seed)
+		var s := drifting(seed)
 		s.season = 0.8
 		simulate(s, 20)
 		for i in range(s.history.size() - 1):
@@ -158,16 +172,44 @@ func test_dwell_bounds() -> void:
 	check(float(Scheduler.DWELL["storm"][1]) <= 3.0 and float(Scheduler.DWELL["fair"][1]) >= 18.0, "Storms are short and fair spells are long")
 
 func test_catch_up_cap() -> void:
-	var s := Scheduler.new(64)
+	var s := drifting(64)
 	var jumped := s.advance(10000.0)
 	check(jumped.size() <= Scheduler.MAX_CATCH_UP, "A huge fast-forward fires at most %d transitions (%d)" % [Scheduler.MAX_CATCH_UP, jumped.size()])
 	check(jumped.size() == Scheduler.MAX_CATCH_UP, "A huge fast-forward does catch up to the cap")
 	check(s.next_change_hour > 10000.0, "After the cap the schedule is re-anchored ahead of the requested hour")
 	check(s.advance(10000.0).is_empty(), "A repeated fast-forward hour fires nothing more")
-	var small := Scheduler.new(64)
+	var small := drifting(64)
 	var creep: Array[String] = []
 	for i in range(400):
 		for name in small.advance(float(i) * 0.25):
 			creep.append(name)
-	var leap := Scheduler.new(64)
+	var leap := drifting(64)
 	check(leap.advance(99.75).size() == creep.size(), "A single leap fires the same count as the same span walked step by step")
+
+## The season lift the ground wears: gold through autumn, cold through winter.
+func test_season_curves() -> void:
+	check(is_zero_approx(Scheduler.season_autumn(0.0)) and is_zero_approx(Scheduler.season_cold(0.0)),
+		"A fresh calendar (season 0) adds no gold and no cold")
+	check(is_zero_approx(Scheduler.season_autumn(0.3)) and is_zero_approx(Scheduler.season_cold(0.3)),
+		"Spring and summer stay neutral")
+	check(Scheduler.season_autumn(0.675) > 0.85 and Scheduler.season_autumn(0.675) <= 1.0, "Gold peaks in mid autumn")
+	check(Scheduler.season_autumn(0.6) > 0.4 and Scheduler.season_autumn(0.75) > 0.4, "Gold covers the whole autumn quarter")
+	check(Scheduler.season_cold(0.875) > 0.85 and Scheduler.season_cold(0.875) <= 1.0, "Cold peaks in deep winter")
+	check(Scheduler.season_cold(0.8) > 0.3 and Scheduler.season_cold(0.95) > 0.3, "Cold covers the winter quarter")
+	check(is_zero_approx(Scheduler.season_cold(0.6)) and is_zero_approx(Scheduler.season_autumn(0.9)),
+		"Neither lift spills into the far side of the year")
+	check(Scheduler.season_cold(0.78) > 0.5, "Cold arrives with the first winter days, not mid quarter")
+	check(is_zero_approx(Scheduler.season_autumn(0.82)) and Scheduler.season_cold(0.82) > 0.85,
+		"By the second winter week the gold is gone and the cold is full")
+	check(Scheduler.season_autumn(0.55) > 0.5, "Gold arrives with the first autumn days")
+	var smooth := true
+	var previous_autumn := Scheduler.season_autumn(-0.02)
+	var previous_cold := Scheduler.season_cold(-0.02)
+	for i in range(1, 201):
+		var season := -0.02 + float(i) * 0.0002
+		var gold := Scheduler.season_autumn(season)
+		var chill := Scheduler.season_cold(season)
+		if absf(gold - previous_autumn) > 0.02 or absf(chill - previous_cold) > 0.02: smooth = false
+		previous_autumn = gold
+		previous_cold = chill
+	check(smooth, "The year wraps without a step in either curve")

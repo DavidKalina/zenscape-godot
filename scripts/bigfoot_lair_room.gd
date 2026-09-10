@@ -1,12 +1,23 @@
 extends Node3D
-## Full-footprint lower story: thick rock walls with permanent viewing openings.
-## Seed changes dressing, never the dry bed or puddle footprint.
+## Full-footprint lower story: four closed rock walls that dissolve one at a
+## time when inspected. Seed changes dressing, never the dry bed or puddle footprint.
 signal supplies_changed
 
 const MAX_LIVING_STAGE := 3
 const LAYER := 4
 const HALF_WIDTH := 14.2
 const CEILING := 8.3
+const WALL_THICKNESS := 1.45
+const CUTAWAY_SPEED := 0.9
+## Wall sides: 0 faces +z, 1 +x, 2 -z, 3 -x.
+var walls: Array[MeshInstance3D] = []
+var earth_walls: Array[MeshInstance3D] = []
+## Outer faces continue the chunk's skirt: its material (copied) and its strata
+## (soil, middle, low; linear). Callers set both before adding the room.
+var earth_material: ShaderMaterial
+var strata: Array[Color] = default_strata()
+var wall_reveal: Array[float] = [0.0,0.0,0.0,0.0]
+var open_side := -1
 const Genome = preload("res://scripts/cave_genome.gd")
 var genome := preload("res://scripts/inland_genome.gd").cave(37)
 var layout: Dictionary
@@ -70,7 +81,8 @@ func _ready() -> void:
 	_layers(self)
 
 func _layers(root: Node) -> void:
-	if root is GeometryInstance3D: root.layers = LAYER
+	# Earth faces are lit like the skirt they continue, not by the room's lights.
+	if root is GeometryInstance3D: root.layers = 1 if root.name=="Earth" else LAYER
 	for child in root.get_children(): _layers(child)
 
 func _mesh(surface: SurfaceTool, parent: Node = self) -> MeshInstance3D:
@@ -154,38 +166,69 @@ func _build_floor() -> void:
 	_mesh(base).name = "LowerStoryBase"
 
 func _build_walls() -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# Two broad irregular windows per side. Their reveals are real rock depth,
-	# so the openings remain legible while orbiting, without visibility tricks.
+	# The room reads as solid ground until inspected: each side is its own closed
+	# slab so one wall can dissolve (see open_wall) while the others stay put.
+	# Outside it is the chunk's own earth; inside it is cave rock.
+	var wall_root := Node3D.new()
+	wall_root.name = "RockWalls"
+	add_child(wall_root)
+	var rows: Array[float] = []
+	for r in range(11): rows.append(lerpf(-0.2,CEILING+0.9,r/10.0))
+	var columns := 14
 	for side in range(4):
 		var turn := Basis(Vector3.UP,side*PI/2.0)
-		for bay in range(2):
-			var split := sin(side*1.9+0.4)*1.2
-			var left := -HALF_WIDTH if bay==0 else split
-			var right := split if bay==0 else HALF_WIDTH
-			var middle := (left+right)*0.5
-			var outer := [Vector2(left,0),Vector2(left,4),Vector2(left,CEILING+0.9),Vector2(middle,CEILING+0.9),Vector2(right,CEILING+0.9),Vector2(right,4),Vector2(right,0),Vector2(middle,0)]
-			var inner := [Vector2(left+2.0,0.9),Vector2(left+1.35,3.8),Vector2(left+2.2,6.9),Vector2(middle,7.5),Vector2(right-2.0,6.7),Vector2(right-1.5,3.5),Vector2(right-2.3,0.85),Vector2(middle,0.65)]
-			for i in range(8):
-				inner[i] += Vector2(sin(i*2.7+side*3.1+bay)*0.3,cos(i*1.9+side+bay*2.3)*0.25)
-			for i in range(8):
-				var j := (i+1)%8
-				var a: Vector3 = turn*Vector3(outer[i].x,outer[i].y,HALF_WIDTH)
-				var b: Vector3 = turn*Vector3(outer[j].x,outer[j].y,HALF_WIDTH)
-				var c: Vector3 = turn*Vector3(inner[i].x,inner[i].y,HALF_WIDTH)
-				var d: Vector3 = turn*Vector3(inner[j].x,inner[j].y,HALF_WIDTH)
-				var inward := turn*Vector3(0,0,-1.45)
-				var color := palette.rock_at(Vector2(i+side*4,bay))*Color(0.82,0.75,0.65)
-				_triangle(st,a,c,b,color)
-				_triangle(st,b,c,d,color.lightened(0.016))
-				_triangle(st,a+inward,b+inward,c+inward,color.darkened(0.12))
-				_triangle(st,b+inward,d+inward,c+inward,color.darkened(0.08))
-				_triangle(st,c,c+inward,d,color.darkened(0.18))
-				_triangle(st,d,c+inward,d+inward,color.darkened(0.15))
-	var walls := _mesh(st)
-	walls.name = "WindowedRockWalls"
-	walls.material_override = _damp_material()
+		# Even sides span the corners; odd sides stop inside them so no faces overlap.
+		var reach := HALF_WIDTH if side%2==0 else HALF_WIDTH-WALL_THICKNESS
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var earth := SurfaceTool.new()
+		earth.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for face in range(2):
+			var depth := HALF_WIDTH if face==0 else HALF_WIDTH-WALL_THICKNESS
+			var bulge := 1.0 if face==0 else -1.0
+			for c in range(columns):
+				for r in range(rows.size()-1):
+					var corners: Array[Vector3] = []
+					for offset in [Vector2i(0,0),Vector2i(1,0),Vector2i(1,1),Vector2i(0,1)]:
+						var ci: int = c+offset.x
+						var ri: int = r+offset.y
+						var along := lerpf(-reach,reach,float(ci)/columns)
+						var height: float = rows[ri]
+						var relief := 0.0
+						# Border vertices stay on the grid so corners and caps meet cleanly.
+						if ci>0 and ci<columns and ri>0 and ri<rows.size()-1:
+							relief = palette.noise.hash_at(along*1.3+side*17,height*1.1+face*5)*0.32
+							var shift := Vector2(palette.noise.hash_at(height+side,along),palette.noise.hash_at(along-side,height+3))-Vector2.ONE*0.5
+							along += shift.x*0.5
+							height += shift.y*0.6
+						corners.append(turn*Vector3(along,height,depth+relief*bulge))
+					if face==0:
+						_earth_triangle(earth,corners[0],corners[2],corners[1])
+						_earth_triangle(earth,corners[0],corners[3],corners[2])
+					else:
+						var color := palette.rock_at(Vector2(c+side*columns,r))*Color(0.66,0.6,0.52)
+						_triangle(st,corners[0],corners[2],corners[1],color)
+						_triangle(st,corners[0],corners[3],corners[2],color.lightened(0.016))
+		for end in [-reach,reach]:
+			for r in range(rows.size()-1):
+				var outer_low := turn*Vector3(end,rows[r],HALF_WIDTH)
+				var outer_high := turn*Vector3(end,rows[r+1],HALF_WIDTH)
+				var inner_low := turn*Vector3(end,rows[r],HALF_WIDTH-WALL_THICKNESS)
+				var inner_high := turn*Vector3(end,rows[r+1],HALF_WIDTH-WALL_THICKNESS)
+				_earth_triangle(earth,outer_low,outer_high,inner_low)
+				_earth_triangle(earth,inner_low,outer_high,inner_high)
+		var normal := turn*Vector3(0,0,1)
+		var wall := _mesh(st,wall_root)
+		wall.name = "RockWall%d" % side
+		wall.material_override = _cutaway_material(_damp_material(),normal)
+		walls.append(wall)
+		var earth_node := _mesh(earth,wall)
+		earth_node.name = "Earth"
+		var surface := _cutaway_material(earth_material.duplicate() if earth_material != null else _fallback_earth(),normal)
+		surface.set_shader_parameter("palette_role",4)
+		surface.set_shader_parameter("cutaway_origin",global_position)
+		earth_node.material_override = surface
+		earth_walls.append(earth_node)
 	# The upstairs chunk is the ceiling; this underside overlaps its skirt.
 	var roof := SurfaceTool.new()
 	roof.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -199,6 +242,62 @@ func _build_walls() -> void:
 			_triangle(roof,a,b,c,color)
 			_triangle(roof,b,d,c,color)
 	_mesh(roof).name = "UpperStoryUnderside"
+
+func _cutaway_material(material: ShaderMaterial, normal: Vector3) -> ShaderMaterial:
+	material.set_shader_parameter("cutaway_normal",normal)
+	material.set_shader_parameter("cutaway_half_width",HALF_WIDTH)
+	material.set_shader_parameter("cutaway_ceiling",CEILING)
+	material.set_shader_parameter("cutaway_reveal",0.0)
+	return material
+
+func _fallback_earth() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/reference_surface.gdshader")
+	material.set_shader_parameter("flat_faces",true)
+	return material
+
+## Flat strata facets with the source skirt's ±0.04 per-face shimmer.
+func _earth_triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+	var middle := (a+b+c)/3.0
+	var shimmer := (palette.noise.hash_at(middle.x*7.7,middle.z*7.7)-0.5)*0.08
+	var color := stratum(middle.y)
+	_triangle(st,a,b,c,Color(color.r+shimmer,color.g+shimmer,color.b+shimmer))
+
+## Beds continue the skirt's own sequence down the wall: the low bed it ends
+## on, then soil, middle and low again.
+func stratum(height: float) -> Color:
+	var bed := fposmod(CEILING+0.9-height,5.2)
+	return strata[2] if bed<2.0 else strata[0] if bed<4.1 else strata[1]
+
+## The source skirt's default strata (terrain.js buildIslandBase), linear.
+static func default_strata() -> Array[Color]:
+	return [Color("6b5844").srgb_to_linear(),Color("5c564b").srgb_to_linear(),Color("4b463c").srgb_to_linear()]
+
+## Averages a skirt's soil, middle and low bands from its vertex colours,
+## measured down from its top as the source paints them (-2.1 and -3.2).
+static func strata_from(mesh: Mesh) -> Array[Color]:
+	var result := default_strata()
+	if mesh == null or mesh.get_surface_count()==0: return result
+	var arrays := mesh.surface_get_arrays(0)
+	var colors: Variant = arrays[Mesh.ARRAY_COLOR]
+	if colors == null or colors.is_empty(): return result
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var indices: Variant = arrays[Mesh.ARRAY_INDEX]
+	var count: int = indices.size() if indices != null else vertices.size()
+	var top := mesh.get_aabb().end.y
+	var sums := [Color(0,0,0,0),Color(0,0,0,0),Color(0,0,0,0)]
+	var counts := [0,0,0]
+	for i in range(0,count-2,3):
+		var ids := [indices[i],indices[i+1],indices[i+2]] if indices != null else [i,i+1,i+2]
+		var depth: float = (vertices[ids[0]].y+vertices[ids[1]].y+vertices[ids[2]].y)/3.0-top
+		var band := 0 if depth>-2.1 else 1 if depth>-3.2 else 2
+		sums[band] += colors[ids[0]]
+		counts[band] += 1
+	for band in range(3):
+		if counts[band]>0:
+			var mean: Color = sums[band]/float(counts[band])
+			result[band] = Color(mean.r,mean.g,mean.b)
+	return result
 
 func _build_puddle() -> void:
 	var st := SurfaceTool.new()
@@ -506,3 +605,36 @@ func _draw_stockpile() -> void:
 
 func ceiling_height(_point: Vector2) -> float:
 	return CEILING
+
+## The wall a global ray enters through, or -1 when it misses the room or comes
+## down through the ceiling (the surface chunk sits on top of it).
+func side_under_ray(origin: Vector3, direction: Vector3) -> int:
+	var inverse := global_transform.affine_inverse()
+	var box := AABB(Vector3(-HALF_WIDTH,-1.6,-HALF_WIDTH),Vector3(HALF_WIDTH*2.0,CEILING+1.6,HALF_WIDTH*2.0))
+	var hit: Variant = box.intersects_ray(inverse*origin,(inverse.basis*direction).normalized())
+	if hit == null or hit.y>CEILING-0.05 or hit.y<-1.55: return -1
+	return _side_of(hit)
+
+## The wall nearest a global viewpoint, for framed inspections without a pointer.
+func side_facing(point: Vector3) -> int:
+	return _side_of(to_local(point))
+
+## A wall's outward normal in room space.
+func wall_normal(side: int) -> Vector3:
+	return Basis(Vector3.UP,side*PI/2.0)*Vector3(0,0,1)
+
+func _side_of(local: Vector3) -> int:
+	if absf(local.x)>absf(local.z): return 1 if local.x>0 else 3
+	return 0 if local.z>0 else 2
+
+## Dissolves one wall at a time; -1 closes them all. advance_cutaway animates.
+func open_wall(side: int) -> void:
+	open_side = side
+
+func advance_cutaway(delta: float) -> void:
+	for side in range(walls.size()):
+		var value := move_toward(wall_reveal[side],1.0 if side==open_side else 0.0,delta*CUTAWAY_SPEED)
+		if value==wall_reveal[side]: continue
+		wall_reveal[side] = value
+		for node in [walls[side],earth_walls[side]]:
+			node.material_override.set_shader_parameter("cutaway_reveal",smoothstep(0.0,1.0,value))

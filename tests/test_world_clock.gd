@@ -61,6 +61,7 @@ func _initialize() -> void:
 	# --------------------------------------------------------------- skip_to
 	clock = WorldClock.new()
 	clock.day_length = 480.0
+	clock.running = false
 	clock.set_time(3, 22.0)
 	clock.skip_to(6.0)
 	for i in range(400): clock.advance(1.0 / 60.0, false)
@@ -115,7 +116,7 @@ func _initialize() -> void:
 	check(absf(copy.phase - first.phase) < 1e-9 and absf(copy.daylight - first.daylight) < 1e-9, "Restore rebuilds phase and daylight")
 	var empty := WorldClock.new()
 	empty.restore({})
-	check(empty.day == 0 and empty.speed == 1.0 and is_equal_approx(empty.day_length, WorldClock.DEFAULT_DAY_LENGTH) and not empty.running,
+	check(empty.day == 0 and empty.speed == 1.0 and is_equal_approx(empty.day_length, WorldClock.DEFAULT_DAY_LENGTH) and empty.running,
 		"An empty document restores a fresh clock")
 	for broken in [null, [], {"day": "soon"}, {"day": 0, "hour": 99.0}, {"day": 0, "hour": 1.0, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": 1}]:
 		check(not WorldClock.valid_state(broken), "Rejected clock document: " + str(broken))
@@ -126,6 +127,104 @@ func _initialize() -> void:
 	authored.set_time(5, 0.0)
 	authored.set_phase(0.62)
 	check(authored.day == 5 and absf(authored.phase - 0.62) < 0.001, "set_phase keeps the day and lands on the authored hour")
+
+	# ----------------------------------------------------------------- season
+	var year := WorldClock.new()
+	year.set_time(0, 0.0)
+	check(is_zero_approx(year.season), "The calendar opens at season 0")
+	var quarters := true
+	for step in [[7, 0.25], [14, 0.5], [21, 0.75]]:
+		year.set_time(int(step[0]), 0.0)
+		if absf(year.season - float(step[1])) > 1e-9: quarters = false
+	check(quarters, "Each seven-day season is a quarter of the year")
+	year.set_time(3, 12.0)
+	check(absf(year.season - 3.5 / float(WorldClock.YEAR_DAYS)) < 1e-9, "The hour moves the season within the day")
+	var climbing := true
+	var last_season := -1.0
+	for whole_day in range(WorldClock.YEAR_DAYS):
+		year.set_time(whole_day, 0.0)
+		if year.season <= last_season: climbing = false
+		last_season = year.season
+	check(climbing, "The season climbs with every day of the year")
+	year.set_time(WorldClock.YEAR_DAYS, 0.0)
+	check(is_zero_approx(year.season), "The year wraps back to season 0 after YEAR_DAYS")
+	year.set_time(WorldClock.YEAR_DAYS * 3 + 7, 0.0)
+	check(absf(year.season - 0.25) < 1e-9, "Later years repeat the same calendar")
+	year.set_time(5, 6.0)
+	var natural := year.season
+	year.season_override = 0.8
+	check(is_equal_approx(year.season, 0.8), "An override wins over the calendar")
+	check(absf(year.calendar_season() - natural) < 1e-9, "The calendar underneath is untouched")
+	year.running = true
+	year.day_length = 24.0
+	for i in range(60): year.advance(1.0, false)
+	check(is_equal_approx(year.season, 0.8) and year.day > 5, "The override holds while the days pass")
+	year.season_override = -1.0
+	check(absf(year.season - year.calendar_season()) < 1e-9, "Clearing the override hands the year back to the calendar")
+	year.season_override = 3.0
+	check(is_equal_approx(year.season, 1.0), "A silly override still reads inside 0..1")
+	year.season_override = 0.42
+	var held := WorldClock.new()
+	var year_saved := year.capture()
+	check(WorldClock.valid_state(year_saved), "A clock with an override validates")
+	held.restore(JSON.parse_string(JSON.stringify(year_saved)))
+	check(is_equal_approx(held.season_override, 0.42) and is_equal_approx(held.season, 0.42), "Capture and restore round-trip the override")
+	held.restore({"day": 2, "hour": 3.0, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": false})
+	check(held.season_override < 0.0, "A document without an override follows the calendar")
+	check(WorldClock.valid_state({"day": 4, "hour": 6.5, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": true, "season_override": 0.5}),
+		"A hand-written document may carry an override")
+	check(not WorldClock.valid_state({"day": 4, "hour": 6.5, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": true, "season_override": "autumn"}),
+		"A broken override is rejected")
+
+	# ------------------------------------------------------------- year length
+	var short_year := WorldClock.new()
+	short_year.year_days = 8
+	short_year.set_time(2, 0.0)
+	check(absf(short_year.season - 0.25) < 1e-9, "A shorter year still has four quarters")
+	short_year.set_time(8, 0.0)
+	check(is_zero_approx(short_year.season), "A shorter year wraps at its own length")
+	short_year.year_days = 0
+	check(short_year.year_days == WorldClock.MIN_YEAR_DAYS, "A zero-day year is clamped, never divided by")
+	short_year.year_days = 12
+	var kept := WorldClock.new()
+	kept.restore(JSON.parse_string(JSON.stringify(short_year.capture())))
+	check(kept.year_days == 12, "The year length rides along in a save")
+	kept.restore({"day": 2, "hour": 3.0, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": false})
+	check(kept.year_days == WorldClock.YEAR_DAYS, "A document written before the knob keeps the 28-day year")
+	check(not WorldClock.valid_state({"day": 4, "hour": 6.5, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": true, "year_days": 0}),
+		"A zero-day year is rejected by the store")
+
+	# ------------------------------------------------- the seasonal rate shape
+	var shape := [1.0, 1.0, 0.6, 0.25]
+	check(is_equal_approx(WorldClock.season_factor(0.0, shape), 1.0), "Season 0 is exactly the spring number, so a clockless world is unchanged")
+	check(is_equal_approx(WorldClock.season_factor(0.125, shape), 1.0), "The first half of a season is a plateau")
+	check(is_equal_approx(WorldClock.season_factor(0.375, shape), 1.0), "Summer runs at the full spring rate")
+	check(is_equal_approx(WorldClock.season_factor(0.5, shape), 0.6), "The taper begins the day autumn opens")
+	check(is_equal_approx(WorldClock.season_factor(0.625, shape), 0.6), "Autumn plateaus at its own number")
+	check(is_equal_approx(WorldClock.season_factor(0.875, shape), 0.25), "Deep winter is the slowest the year gets")
+	check(is_equal_approx(WorldClock.season_factor(1.0, shape), 1.0) and is_equal_approx(WorldClock.season_factor(-0.001, shape), WorldClock.season_factor(0.999, shape)),
+		"Winter has climbed back to spring before the year wraps")
+	var shoulder := WorldClock.season_factor(0.70, shape)
+	check(shoulder > 0.25 and shoulder < 0.6, "The shoulder into winter tapers rather than steps: %.3f" % shoulder)
+	var lowest := 2.0
+	var jumpy := false
+	var last_rate := WorldClock.season_factor(-0.01, shape)
+	for i in range(1, 1011):
+		var at := -0.01 + float(i) * 0.001
+		var value := WorldClock.season_factor(at, shape)
+		if absf(value - last_rate) > 0.02: jumpy = true
+		last_rate = value
+		lowest = minf(lowest, value)
+	check(not jumpy, "The rate walks the year without a step")
+	check(lowest >= 0.25 - 1e-6 and lowest > 0.0, "The rate never reaches zero, so no loop closes for a season")
+	check(is_equal_approx(WorldClock.season_factor(0.55, [2.0, 2.0, 2.0, 2.0]), 2.0), "A flat shape is flat all year")
+	check(is_equal_approx(WorldClock.season_factor(0.3, [1.0, 1.0]), 1.0) and is_equal_approx(WorldClock.season_factor(0.3, [1.0, 1.0, "warm", 1.0]), 1.0),
+		"A malformed shape reads as the neutral rate")
+	check(WorldClock.name_for_season(0.0) == "spring" and WorldClock.name_for_season(0.3) == "summer" and WorldClock.name_for_season(0.6) == "autumn" and WorldClock.name_for_season(0.99) == "winter",
+		"Each quarter has a name")
+	var named := WorldClock.new()
+	named.season_override = 0.8
+	check(named.season_name() == "winter", "The clock names its own season")
 
 	print("PASS: world clock rollover, speed, pause, skip, determinism and persistence" if failures == 0 else "FAIL: world clock")
 	print("Failures: ", failures)

@@ -18,8 +18,11 @@ func advance(delta: float, paused: bool, rain: float, cloud: float, wind: float)
 		cold = lerpf(cold, target_cold, 1.0 - exp(-delta * 0.55))
 		snow_phase = smoothstep(0.35, 0.7, cold)
 		var snowing := minf(1.0, rain * 1.2) * snow_phase
+		# Sustained cold frosts the ground on its own, slowly, so a deep winter
+		# whitens even under a sky that never drops snow; falling snow is faster.
+		var frost := snow_phase * snow_phase * 0.02
 		var melt := maxf(0.0, 0.55 - cold) * 1.8
-		snow_cover = clampf(snow_cover + (snowing * 0.16 * (1.0 - snow_cover) - melt * 0.09 * snow_cover) * delta, 0.0, 1.0)
+		snow_cover = clampf(snow_cover + ((snowing * 0.16 + frost) * (1.0 - snow_cover) - melt * 0.09 * snow_cover) * delta, 0.0, 1.0)
 		ice = lerpf(ice, snow_phase, 1.0 - exp(-delta * 0.12))
 		ground_wet = wet_after(ground_wet, rain, cold, cloud, wind, delta)
 		var raining := minf(1.0, rain * 1.5) * (1.0 - snow_phase)

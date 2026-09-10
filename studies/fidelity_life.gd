@@ -13,6 +13,7 @@ var _cave_original_ready := false
 var _cave_underside_layers := 1
 var environment_life: Node
 var fish: Node
+var dead_wood: Node
 var spawn_options: Array = []
 var _nav_view := MeshInstance3D.new()
 var _life_status := Label.new()
@@ -86,6 +87,9 @@ func _ready() -> void:
 	fish = preload("res://scripts/fidelity_fish.gd").new()
 	add_child(fish)
 	fish.setup(self)
+	dead_wood = preload("res://scripts/dead_wood.gd").new()
+	add_child(dead_wood)
+	dead_wood.setup(self)
 	_choose_inhabited_shore()
 	_seed_loose_stones()
 	_focus_bigfoot()
@@ -158,6 +162,7 @@ func _process(delta: float) -> void:
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
+		if dead_wood != null: dead_wood.advance(delta)
 		creature.wet_coat.rain = 0.0 if routine.cave.sheltered() else _precipitation.state.x
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
@@ -193,6 +198,9 @@ func _refresh_habitat(budgeted := false) -> void:
 		creature._safe_position = fallback if fallback != null else safe
 	elif not creature.blast_airborne and not navigation.is_safe(creature.global_position): creature.reset_at(safe)
 	brain.world_changed()
+	# New trees, new places for the wind to drop wood. Branches already lying on
+	# the ground keep the spot they fell on.
+	if dead_wood != null: dead_wood.rebuild_sites()
 	var shown := _nav_view.visible
 	_nav_view.mesh = null
 	_nav_view.visible = false
@@ -296,6 +304,9 @@ func restore_cave_state(state: Dictionary) -> void:
 	lair = preload("res://scripts/bigfoot_lair_room.gd").new()
 	lair.genome = state.genome.duplicate(true)
 	lair.position = Vector3(0,-11,0)
+	# The lower story's outer walls continue this chunk's own earth.
+	lair.earth_material = skirt.mesh.surface_get_material(0) as ShaderMaterial
+	lair.strata = lair.strata_from(skirt.mesh)
 	add_child(lair)
 	lair.restore_stash(state.stash)
 	lair.restore_living(state.get("living",{"bed_stage":0,"play_stage":0}))
@@ -315,3 +326,9 @@ func capture_fish_state() -> Dictionary:
 
 func restore_fish_state(state: Dictionary) -> void:
 	if fish != null: fish.restore_state(state)
+
+func capture_wood_state() -> Dictionary:
+	return dead_wood.capture_state() if dead_wood != null else {"version":1,"branches":[]}
+
+func restore_wood_state(state: Dictionary) -> void:
+	if dead_wood != null: dead_wood.restore_state(state)

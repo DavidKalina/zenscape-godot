@@ -2,6 +2,15 @@ extends RefCounted
 ## Needs choose an activity; existing routines retain ownership of locomotion,
 ## source-backed gathering and cave thresholds. Only observed changes enter memory.
 const Mind = preload("res://scripts/bigfoot_life_mind.gd")
+## Two world hours of storm, or four of rain, cost the bed one stage. The
+## accumulator never banks more than one pending stage plus change.
+const STORM_HOURS_PER_STAGE := 2.0
+const MAX_STORM_HOURS := 4.0
+const MAX_WEATHER_STEP := 1.0
+## What a winter wants laid in: four meals in the stash and a finished bed. The
+## food half weighs more because the bed can be topped up from inside the door.
+const WINTER_FOOD := 4
+const WINTER_FOOD_SHARE := 0.6
 var mind = Mind.new()
 var routine: Node
 var scene: Node
@@ -26,6 +35,9 @@ var _gesture := ""
 var _food_visual: MeshInstance3D
 var _failed_until := {}
 var _home_check_due := 65.0
+var _storm_hours := 0.0
+var _weather_hour := -1.0
+var _torpor_hour := -1.0
 
 func setup(owner_routine: Node) -> void:
 	routine = owner_routine
@@ -46,6 +58,8 @@ func advance_needs(delta: float) -> void:
 	var dt := clampf(delta,0.0,0.05)
 	mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0,_daylight())
 	_home_check_due = maxf(0.0,_home_check_due-dt)
+	_weather_wears_the_bed()
+	_winter_pulls()
 
 ## Called only by the unpaused, visible resident clock. Surface activities own
 ## this tick; interior gestures share it with the existing cave clock.
@@ -69,7 +83,7 @@ func advance(delta: float) -> bool:
 		_advance_surface(dt)
 		return not current.is_empty()
 	if phase == "collect":
-		if scene.creature.can_roam() and routine.foraging.collect_tree_material(_target): phase = "journey"
+		if scene.creature.can_roam() and _collect_material(): phase = "journey"
 		else: cancel()
 	if phase == "surface_perform":
 		if current=="gather" and scene.creature.action_clip=="Sit":
@@ -97,13 +111,46 @@ func choose() -> bool:
 
 func _context() -> Dictionary:
 	var has_home: bool = available() and not scene._chunk_editor.data.tunnels.is_empty()
+	var fish_targets: Array = scene.fish.available_targets()
 	return {"home":has_home,"material_needed":_observed_bed<3,"food_count":_food_count(),
 		"can_gather":has_home and (_material_count()>0 or (_observed_stash.size()<24 and not _material_targets().is_empty())),
-		"can_fish":has_home and _observed_stash.size()<24 and not scene.fish.available_targets().is_empty(),
+		"can_fish":has_home and _observed_stash.size()<24 and not fish_targets.is_empty(),
+		"fish_available":fish_targets.size(),
 		"curiosity_target":not _curiosity.is_empty(),"target_id":str(_curiosity.get("id","")),
 		"ritual_target":true,"home_check_due":_home_check_due<=0.0 or not _observed_home,
 		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0,
-		"hour":_hour(),"daylight":_daylight()}
+		"hour":_hour(),"daylight":_daylight(),"weather":_weather(),"wet":_wetness(),
+		"sheltered":sheltered(),"branches_nearby":_branches_nearby(),
+		"season":_season(),"season_name":WorldClock.name_for_season(_season()),
+		"cold":_cold(),"harvest":WeatherScheduler.season_autumn(_season()),
+		"winter_ready":_winter_ready(),"torpor":mind.torpor}
+
+## The winter's chill, 0..1, the same curve the ground wears.
+func _cold() -> float:
+	return WeatherScheduler.season_cold(_season())
+
+## How ready his home is for a winter, 0..1: what he believes is in the stash
+## against WINTER_FOOD, and what he believes the bed is against its last stage.
+## His belief, not the room's truth, like every other thing he decides on. A
+## scene without a lair never reaches this; one with an empty stash and no bed
+## reads 0, which is what makes autumn's errands worth more.
+func _winter_ready() -> float:
+	var fed := clampf(float(_food_count())/float(WINTER_FOOD),0.0,1.0)
+	var bedded := float(clampi(_observed_bed,0,3))/3.0
+	return clampf(fed*WINTER_FOOD_SHARE+bedded*(1.0-WINTER_FOOD_SHARE),0.0,1.0)
+
+## The long drive of the year runs on world hours, like the pond and the dead
+## wood, so a fast-forwarded or reopened garden feels exactly as much winter as
+## it lived through. A scene with no clock never advances it at all.
+func _winter_pulls() -> void:
+	var now := _world_hour()
+	if now<0.0:
+		_torpor_hour = -1.0
+		return
+	var previous := _torpor_hour
+	_torpor_hour = now
+	if previous<0.0 or now<=previous: return
+	mind.drift(_cold(),now-previous)
 
 ## The world clock is optional; without it he lives in a permanent bright noon.
 func _clock() -> Variant:
@@ -121,6 +168,74 @@ func _daylight() -> float:
 	var value: Variant = clock.get("daylight")
 	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 1.0
 
+## The year, 0..1, and the two curves drawn off it: `cold` is the winter chill
+## and `harvest` the autumn gold, the same bumps the ground wears. A scene with
+## no clock reads season 0 — the opening of spring — where both curves are zero,
+## so it ranks exactly as it did before the calendar existed.
+func _season() -> float:
+	var clock: Variant = _clock()
+	if clock == null: return 0.0
+	var value: Variant = clock.get("season")
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
+
+## Weather is optional in the same way the clock is: a study without a sky lives
+## in permanent clear, dry conditions and scores exactly as it always did.
+func _precipitation() -> Variant:
+	return scene.get("_precipitation") if scene != null else null
+
+func _weather() -> String:
+	var sky: Variant = _precipitation()
+	if sky == null: return "clear"
+	var index: Variant = sky.get("preset_index")
+	if not (index is int or index is float) or not is_finite(float(index)): return "clear"
+	var slot := int(index)
+	var names: Array = WeatherScheduler.PRESET_NAMES
+	return str(names[slot]) if slot>=0 and slot<names.size() else "clear"
+
+func _wetness() -> float:
+	var sky: Variant = _precipitation()
+	if sky == null: return 0.0
+	var surface: Variant = sky.get("surface_weather")
+	if surface == null: return 0.0
+	var value: Variant = surface.get("ground_wet")
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
+
+## Standing in his cave, not merely owning one.
+func sheltered() -> bool:
+	return routine != null and routine.cave != null and routine.cave.sheltered()
+
+## Absolute world hours, so a saved and reopened garden keeps counting weather
+## in world time rather than in the engine seconds the player happened to watch.
+func _world_hour() -> float:
+	var clock: Variant = _clock()
+	if clock == null: return -1.0
+	var day: Variant = clock.get("day")
+	var hour: Variant = clock.get("hour")
+	if not (day is int or day is float) or not (hour is float or hour is int): return -1.0
+	if not is_finite(float(day)) or not is_finite(float(hour)): return -1.0
+	return float(day)*24.0+float(hour)
+
+## Rain and storms work the bedding loose while he is out. He is not told: the
+## room simply changes, and he discovers it on his next observe_home().
+func _weather_wears_the_bed() -> void:
+	var now := _world_hour()
+	if now<0.0:
+		_weather_hour = -1.0
+		return
+	var previous := _weather_hour
+	_weather_hour = now
+	if previous<0.0 or now<=previous: return
+	var span := minf(now-previous,MAX_WEATHER_STEP)
+	if sheltered() or not available(): return
+	var falling := 1.0 if _weather()=="storm" else (0.5 if _weather()=="rain" else 0.0)
+	if falling<=0.0: return
+	_storm_hours = minf(_storm_hours+span*falling,MAX_STORM_HOURS)
+	while _storm_hours>=STORM_HOURS_PER_STAGE:
+		_storm_hours -= STORM_HOURS_PER_STAGE
+		if not scene.lair.disturb_bed():
+			_storm_hours = 0.0
+			return
+
 ## Explicit invitations and autonomous choices cross this same ownership seam.
 func request(kind: String, target: Dictionary = {}) -> bool:
 	if not current.is_empty() or not routine.active.is_empty() or not routine.cave.phase.is_empty() or not scene.creature.can_roam(): return false
@@ -131,6 +246,9 @@ func request(kind: String, target: Dictionary = {}) -> bool:
 		"gather": accepted = available() and _request_gather(target)
 		"fish": accepted = available() and routine.request("fish",target,true)
 		"sleep": accepted = routine.cave.request("sleep")
+		# The long sleep is the cave's own hibernate visit: the same walk in, the
+		# same breathing rest pose, twice as long behind the black mouth.
+		"hibernate": accepted = routine.cave.request("hibernate")
 		"tend","eat","check_home","play":
 			if not available(): return false
 			if kind=="tend" and (scene.lair.material_count()==0 or scene.lair.comfort()>=1.0): return false
@@ -145,10 +263,26 @@ func request(kind: String, target: Dictionary = {}) -> bool:
 	_committed = false
 	_target = target.duplicate(true) if kind not in ["investigate","ritual","gather"] else _target
 	scene.brain.reset_behavior()
-	reason = {"gather":"Gathering material for his bed","fish":"Finding a meal to bring home","sleep":"Returning home to rest","tend":"Making his bed comfortable","eat":"Having a meal at home","check_home":"Checking his familiar belongings","play":"Arranging his little stone collection","ritual":"Returning to a quiet spot","investigate":"Taking a cautious closer look"}.get(kind,kind)
+	reason = {"gather":"Gathering material for his bed","fish":"Finding a meal to bring home","sleep":"Returning home to rest","hibernate":"Going home to sleep the winter out","tend":"Making his bed comfortable","eat":"Having a meal at home","check_home":"Checking his familiar belongings","play":"Arranging his little stone collection","ritual":"Returning to a quiet spot","investigate":"Taking a cautious closer look"}.get(kind,kind)
 	return true
 
+## Dead wood is optional in the same way the clock and the sky are: a study
+## without it, and a garden whose wind has not dropped anything yet, still works
+## a tree for its bedding the way it always did.
+func _dead_wood() -> Variant:
+	var wood: Variant = scene.get("dead_wood") if scene != null else null
+	return wood if wood != null and is_instance_valid(wood) else null
+
+func _branches_nearby() -> int:
+	var wood: Variant = _dead_wood()
+	if wood == null or not is_instance_valid(scene.get("creature")): return 0
+	return int(wood.nearby(scene.creature.position))
+
+## Branches on the ground are the gather source. Only when none of them lie
+## within his reach does he fall back to breaking one out of a tree.
 func _material_targets() -> Array[Dictionary]:
+	var wood: Variant = _dead_wood()
+	if wood != null and _branches_nearby()>0: return wood.targets()
 	var result: Array[Dictionary] = []
 	for item: Dictionary in scene.habitat.interests:
 		if str(item.id).begins_with("mesh-8:") or str(item.id).begins_with("mesh-11:") or item.get("kind","") in ["tree","broadleaf","redwood","bigfoot_tree","layered_tree"]:
@@ -162,10 +296,27 @@ func _request_gather(target: Dictionary) -> bool:
 		if scene.creature.position.distance_to(item.position)>11.0: continue
 		# Imported trees retain the authored shake. Editable trees have a distinct
 		# render/physics owner, so gather fallen material beside them instead.
-		if not scene.has_method("resident_activity_owned") and not str(item.id).begins_with("object:"):
+		# A branch already lying on the ground is always the second kind: he walks
+		# to where it fell and picks it up, one at a time.
+		if str(item.id).begins_with("branch:"):
+			if _start_surface("gather",item): return true
+		elif not scene.has_method("resident_activity_owned") and not str(item.id).begins_with("object:"):
 			if routine.request("tree",item): return true
 		elif _start_surface("gather",item): return true
 	return false
+
+## The branch he sat down beside is the one he lifts, and the ground loses it.
+## Nothing on the ground means the old tree shortcut instead.
+func _collect_material() -> bool:
+	var wood: Variant = _dead_wood()
+	var id := str(_target.get("id",""))
+	if wood != null and id.begins_with("branch:"):
+		var carry: Dictionary = wood.take_for_carry(id)
+		if carry.is_empty(): return false
+		if routine.foraging.begin("branch",id,carry.node,carry.release,carry.commit): return true
+		carry.release.call()
+		return false
+	return routine.foraging.collect_tree_material(_target)
 
 func _start_surface(kind: String, target: Dictionary) -> bool:
 	var point: Variant = target.get("position")
@@ -214,10 +365,14 @@ func _advance_surface(dt: float) -> void:
 		_elapsed = 0.0
 		scene.brain.reaction.emit("?" if current=="investigate" else "…",reason)
 		return
-	if not scene.navigation.motion_safe(scene.creature.position,_path[_index],scene.creature.walking_speed(0.65)*dt):
+	# The visible tell of the long drive: the deeper the torpor the slower the
+	# errand, so a watcher sees him wandering at two thirds pace for days before
+	# he beds in at all. At torpor 0 this is exactly the walk it always was.
+	var pace := 0.65-0.20*clampf(mind.torpor,0.0,1.0)
+	if not scene.navigation.motion_safe(scene.creature.position,_path[_index],scene.creature.walking_speed(pace)*dt):
 		cancel()
 		return
-	if scene.creature.walk_step(_path[_index],0.65,dt): _index += 1
+	if scene.creature.walk_step(_path[_index],pace,dt): _index += 1
 
 func perceive() -> void:
 	if routine.cave._inside: return
@@ -364,11 +519,12 @@ func _delivered(kind: String, _id: String) -> void:
 
 func _returned(why: String) -> void:
 	if not enabled and current.is_empty(): return
-	if why in ["sleep","rain","snow","hibernate"]: _complete("sleep")
+	if why=="hibernate": _complete("hibernate")
+	elif why in ["sleep","rain","snow"]: _complete("sleep")
 	_clear()
 
 func _complete(kind: String) -> void:
-	var context := {"target_id":str(_target.get("id","")),"position":_target.get("position",scene.creature.position),"ritual":"rest"}
+	var context := {"target_id":str(_target.get("id","")),"position":_target.get("position",scene.creature.position),"ritual":"rest","cold":_cold()}
 	mind.completed("gather" if kind=="tend" else kind,context)
 	completed_actions.append(kind)
 	if completed_actions.size()>40: completed_actions.pop_front()
@@ -409,7 +565,7 @@ func _material_count() -> int:
 	return _observed_stash.count("branch")+_observed_stash.count("leaves")
 
 func capture() -> Dictionary:
-	return {"version":1,"enabled":enabled,"mind":mind.capture(),"observed_home":_observed_home,"stash":_observed_stash.duplicate(),"bed":_observed_bed,"play":_observed_play,"check_in":_home_check_due}
+	return {"version":1,"enabled":enabled,"mind":mind.capture(),"observed_home":_observed_home,"stash":_observed_stash.duplicate(),"bed":_observed_bed,"play":_observed_play,"check_in":_home_check_due,"storm_hours":_storm_hours}
 
 static func valid(value: Variant) -> bool:
 	if not value is Dictionary: return false
@@ -420,6 +576,9 @@ static func valid(value: Variant) -> bool:
 		if item not in ["branch","leaves","fish","fruit"]: return false
 	for key in ["bed","play"]:
 		if not GardenData._integer(value.get(key)) or not GardenData._number(value[key],0,3): return false
+	# Documents written before the weather could touch the bed carry no
+	# accumulator; they resume with a dry slate rather than being rejected.
+	if not GardenData._number(value.get("storm_hours",0.0),0,MAX_STORM_HOURS): return false
 	return GardenData._number(value.get("check_in"),0,90)
 
 func restore(value: Dictionary) -> void:
@@ -432,6 +591,9 @@ func restore(value: Dictionary) -> void:
 	_observed_bed = int(value.get("bed",0))
 	_observed_play = int(value.get("play",0))
 	_home_check_due = float(value.get("check_in",65.0))
+	_storm_hours = float(value.get("storm_hours",0.0))
+	_weather_hour = -1.0
+	_torpor_hour = -1.0
 	_curiosity.clear()
 	_failed_until.clear()
 	completed_actions.clear()

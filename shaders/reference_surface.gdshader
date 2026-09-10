@@ -9,6 +9,7 @@ shader_type spatial;
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
+#include "res://shaders/cave_cutaway.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -42,6 +43,13 @@ varying float inversion_transmit;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
 uniform bool instance_fire_enabled = false;
 uniform vec2 object_fire = vec2(0.0);
+// Cave earth walls only (BigfootLairRoom): the room's unrotated world origin,
+// the wall's outward normal, and how far its middle has dissolved.
+uniform vec3 cutaway_origin = vec3(0.0);
+uniform vec3 cutaway_normal = vec3(0.0);
+uniform float cutaway_half_width = 14.2;
+uniform float cutaway_ceiling = 8.3;
+uniform float cutaway_reveal = 0.0;
 varying vec2 char_state;
 varying flat float char_clump;
 varying float char_seed;
@@ -131,6 +139,7 @@ void vertex() {
 }
 
 void fragment() {
+	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	vec3 face_normal = world_normal;
 	if (flat_faces) {
 		face_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));

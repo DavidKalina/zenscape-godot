@@ -17,6 +17,7 @@ func run() -> void:
 	scene._growth.replaying = false
 	scene._growth.publish()
 	scene._precipitation.set_weather(0,true)
+	scene.cave_hover = false
 	var resident = scene.creature
 	check(scene.routine.cave.request("hibernate"),"Resident can begin a lair visit")
 	for frame in range(2400):
@@ -28,19 +29,49 @@ func run() -> void:
 	scene._process(0)
 	var shared_mask: int = scene.camera.cull_mask
 	check(resident.visible and shared_mask&5==5,"Both stories and the sleeping resident share the main view")
-	var room_bounds: AABB = scene.lair.global_transform*scene.lair.get_node("WindowedRockWalls").mesh.get_aabb()
+	var walls: Array = scene.lair.get_node("RockWalls").get_children()
+	var room_bounds: AABB = scene.lair.global_transform*walls[0].mesh.get_aabb()
+	for wall in walls:
+		room_bounds = room_bounds.merge(scene.lair.global_transform*wall.mesh.get_aabb())
+		room_bounds = room_bounds.merge(scene.lair.global_transform*wall.get_node("Earth").mesh.get_aabb())
 	var surface_bounds: AABB = scene.get_node("Reference/skirt").global_transform*scene.get_node("Reference/skirt").mesh.get_aabb()
 	check(scene.get_node("Reference").find_child("mesh-3",true,false).layers==0,"Old suspended underside is replaced rather than hanging inside the room")
 	check(room_bounds.size.x>=28 and room_bounds.size.z>=28 and room_bounds.size.y>8,"Lower story spans the full chunk footprint with substantial height")
 	check(room_bounds.end.y>=surface_bounds.position.y and room_bounds.position.y<surface_bounds.position.y,"Lower story meets the original chunk without a vertical gap")
+	var skirt_mesh: Mesh = scene.get_node("Reference/skirt").mesh
+	var earth_material: ShaderMaterial = walls[0].get_node("Earth").material_override
+	check(earth_material.shader==skirt_mesh.surface_get_material(0).shader and earth_material.get_shader_parameter("flat_faces")==true and scene.lair.strata[0].is_equal_approx(scene.lair.strata_from(skirt_mesh)[0]),"Cave walls continue the chunk's own earth material and strata")
 	scene._focus_lair()
 	check(scene.camera.cull_mask==shared_mask and scene.get_node("Reference").visible,"Window inspection preserves the surface and the shared camera mask")
+	for frame in range(80): scene._process(1.0/60.0)
+	var opened: Array = scene.lair.wall_reveal.filter(func(value: float) -> bool: return value>0.0)
+	check(opened.size()==1 and opened[0]==1.0,"Lair inspection dissolves exactly the facing wall")
 	scene._focus_cave()
 	check(scene.camera.cull_mask==shared_mask,"Cave focus never hides the lower story")
 	scene._focus_bigfoot()
 	check(scene.camera.cull_mask==shared_mask,"Find Bigfoot preserves both stories")
 	scene._reset_camera()
 	check(scene.camera.cull_mask==shared_mask,"Reset returns to the combined diorama")
+	scene.cave_hover = true
+	scene._focus_stack()
+	var home := Vector3(scene.yaw,scene.polar,scene.distance)
+	var side: int = scene.lair.side_facing(scene.camera.global_position)
+	var aim_at: Vector3 = scene.lair.to_global(scene.lair.wall_normal(side)*scene.lair.HALF_WIDTH+Vector3.UP*4.0)
+	scene.cave_pointer = scene.camera.unproject_position(aim_at)
+	for frame in range(260): scene._process(1.0/60.0)
+	check(scene._inspect_side==side and scene.distance<home.z-5.0 and scene.lair.wall_reveal[side]==1.0,"Hovering a wall glides the camera in, then opens that wall")
+	scene.cave_pointer = Vector2(4,4)
+	for frame in range(200): scene._process(1.0/60.0)
+	check(Vector3(scene.yaw,scene.polar,scene.distance).distance_to(home)<0.001 and scene.lair.wall_reveal.max()==0.0,"Moving off the cave glides back to the previous view and closes it")
+	scene.cave_pointer = scene.camera.unproject_position(aim_at)
+	for frame in range(60): scene._process(1.0/60.0)
+	scene.distance += 3.0
+	var taken: float = scene.distance
+	scene.cave_pointer = Vector2(4,4)
+	for frame in range(120): scene._process(1.0/60.0)
+	check(scene._inspect_home.is_empty() and is_equal_approx(scene.distance,taken),"Zooming during an inspection keeps the viewer's camera")
+	scene.cave_hover = false
+	scene.cave_pointer = null
 	scene._growth.terrain = 0.5
 	scene._process(0)
 	check(not resident.visible,"The stacked view respects terrain growth visibility")

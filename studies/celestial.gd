@@ -24,7 +24,7 @@ var daylight := 1.0
 var cloud := 0.06
 var storm := 0.0
 var shroud := 0.0
-var _cycling := false
+var _cycling := true
 var cycling: bool:
 	set(value):
 		_cycling = value
