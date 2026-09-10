@@ -7,12 +7,30 @@ var look := preload("res://scripts/scene_look.gd").new()
 var fog_display := Vector3.ZERO
 var surface_fog_color := Vector3.ZERO
 var aerial_sun_color := Vector3.ZERO
-var phase := 0.35
+## World time. When a WorldClock is attached it owns `phase` and `cycling`
+## outright: both become aliases of the clock, so presets, the store, the look
+## editor and the day/night checkbox all keep writing the same names and reach
+## the clock instead. Without a clock (studies that never build one) the old
+## self-integrating behaviour is used unchanged.
+var clock: WorldClock = null
+var _phase := 0.35
+var phase: float:
+	set(value):
+		if clock != null: clock.set_phase(value)
+		else: _phase = fposmod(value, 1.0)
+	get:
+		return clock.phase if clock != null else _phase
 var daylight := 1.0
 var cloud := 0.06
 var storm := 0.0
 var shroud := 0.0
-var cycling := false
+var _cycling := false
+var cycling: bool:
+	set(value):
+		_cycling = value
+		if clock != null: clock.running = value
+	get:
+		return clock.running if clock != null else _cycling
 var aurora_strength := 0.65
 var rainbow_strength := 0.0
 var weather_bow := 0.0
@@ -38,12 +56,33 @@ func setup(lights: Array[DirectionalLight3D]) -> void:
 	_tilt = PI / 2.0 - clampf(elevation + 0.32, 0.7, 1.08)
 	update_rig()
 
-func set_phase(value: float) -> void:
-	phase = fposmod(value, 1.0)
+## Hand time over to the world clock, seeding it with the hour this rig is
+## already showing so nothing jumps at startup.
+func attach_clock(value: WorldClock) -> void:
+	clock = value
+	clock.set_phase(_phase)
+	clock.running = _cycling
 	_target = -1.0
 	update_rig()
 
+func set_phase(value: float) -> void:
+	phase = fposmod(value, 1.0)
+	_target = -1.0
+	if clock != null: clock.target_hour = -1.0
+	update_rig()
+
 func next_hour() -> void:
+	if clock != null:
+		var from: float = clock.target_hour if clock.target_hour >= 0.0 else clock.hour
+		var closest := INF
+		var choice := -1.0
+		for quarter in [6.0, 12.0, 18.0, 0.0]:
+			var step := fposmod(quarter - from, 24.0)
+			if step > 0.72 and step < closest:
+				closest = step
+				choice = quarter
+		if choice >= 0.0: clock.skip_to(choice)
+		return
 	var current := _target if _target >= 0.0 else phase
 	var nearest := INF
 	for quarter in [0.25, 0.5, 0.75, 0.0]:
@@ -57,7 +96,11 @@ func advance(delta: float, paused: bool) -> void:
 		# Freeze the clock, not explicit cloud/aurora/material edits.
 		update_rig()
 		return
-	if _target >= 0.0:
+	if clock != null:
+		# The clock already advanced this frame; phase is read from it, linger
+		# and all. Nothing here integrates time.
+		pass
+	elif _target >= 0.0:
 		var gap := fposmod(_target - phase, 1.0)
 		if gap < 0.001:
 			phase = _target

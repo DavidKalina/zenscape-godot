@@ -31,6 +31,46 @@ scores and reasons alongside his current needs.
 - **Play:** when fed and rested, he arranges three existing loose stones beside
   his bed into a small cairn. The arrangement persists.
 
+## Time of day
+
+The world clock (`scene.world_clock`, optional) contributes `hour` and
+`daylight` to the decision context. Time only *bends* the utility scores; it
+never schedules or forces an action, and a real need still overrides the
+rhythm. With no clock the mind uses `hour = 12`, `daylight = 1`, and every score
+is bit-for-bit what it was before time existed.
+
+Two derived quantities drive everything:
+
+- `darkness = 1 - daylight`
+- `twilight = clamp(1 - |daylight - 0.5| / 0.25, 0, 1)` — a smooth bump peaking
+  at the light/dark crossover and reaching zero outside `daylight` 0.25..0.75,
+  roughly a ±1.5 h window around sunrise and sunset.
+- `wary = darkness * (1 + caution)` — a cautious Bigfoot fears the dark more.
+
+| Action | Modifier | Magnitude at full night (`daylight = 0`, `caution = 0.40`) |
+| --- | --- | --- |
+| `sleep` | `+ darkness * 0.45`, and the consideration threshold drops from `fatigue >= 0.30` to `fatigue >= 0.30 - darkness * 0.12` | `+0.45`; threshold `0.18` |
+| `fish` | `+ twilight * 0.28` | `0` at night, `+0.28` at the crossover |
+| `investigate` | `- wary * 0.26` | `-0.364` |
+| `play` | `- wary * 0.20` | `-0.280` |
+| `gather` | `- wary * 0.14` | `-0.196` |
+| `ritual` | `+ twilight * 0.12`, dusk only | `+0.12` at dusk, `0` at dawn |
+| `eat` | none | — |
+| `check_home` | none | — |
+
+`mind.time_note(hour, daylight)` names the light for the player: `night`
+(`daylight < 0.35`), `day` (`daylight > 0.85`), otherwise `dawn` before hour 12
+and `dusk` after. Three reasons change with it: sleep becomes "Night has come;
+returning to a familiar bed", fishing becomes "The fish bite at dawn/dusk" when
+`twilight > 0.5`, and ritual becomes "A quiet evening ritual at a favorite
+place" at dusk.
+
+`mind.advance(delta, resting, comfort, daylight)` also feels the dark: fatigue
+grows `1 + darkness * 0.30` times as fast when he is *not* resting, and
+enrichment grows `1 - darkness * 0.25` times as fast. Both stay inside 30% so
+the established need-timing expectations still hold, and resting recovery is
+untouched — a bed restores the same amount at any hour.
+
 ## Study controls
 
 Compact **View**, **Activities**, and **Experiment** menus keep the landscape
@@ -71,7 +111,8 @@ and gaze targets. The character model and body scale are unchanged.
 ## Verification
 
 - `test_bigfoot_life_mind.gd`: competing needs, fulfillment, cooldowns, familiarity,
-  favorite places, bounded memory, corruption rejection and JSON round trips.
+  favorite places, bounded memory, corruption rejection and JSON round trips, plus
+  the time-of-day modifiers, their need overrides and the no-clock defaults.
 - `test_bigfoot_lair_supplies.gd`: material/food consumption, visible bedding,
   persistent stone positions, capacity and source transactions.
 - `test_bigfoot_living_world.gd`: real actor/cave performances, observations,

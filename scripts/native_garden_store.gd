@@ -26,6 +26,10 @@ static func capture(scene: Node3D) -> Dictionary:
 	if scene.has_method("capture_cave_state"): result["cave_system"] = scene.capture_cave_state()
 	if scene.has_method("capture_fish_state"): result["fish_state"] = scene.capture_fish_state()
 	result["world_visuals"] = scene._world_visuals.document()
+	# Optional: gardens saved before the world clock existed still load, and are
+	# given a day 0 clock derived from the celestial phase they stored.
+	if scene.get("world_clock") != null: result["world_clock"] = scene.world_clock.capture()
+	if scene.get("weather_scheduler") != null: result["weather_scheduler"] = scene.weather_scheduler.capture()
 	# Optional, and empty whenever nothing is alight, so a garden that has never
 	# burned costs no bytes and a save written before fire existed still loads.
 	if scene.get("_fire_field") != null: result["fire"] = scene._fire_field.document()
@@ -62,6 +66,8 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 		if not GardenData._number(_float(value),0,1): return false
 	if state.has("world_visuals") and not preload("res://scripts/world_visuals.gd").valid(state.world_visuals): return false
 	if state.has("fire") and not FireField.valid(state.fire): return false
+	if state.has("world_clock") and not WorldClock.valid_state(state.world_clock): return false
+	if state.has("weather_scheduler") and not state.weather_scheduler is Dictionary: return false
 	if state.has("look") and not preload("res://scripts/scene_look.gd").valid(state.look): return false
 	if state.has("bigfoot_habits") and not preload("res://scripts/bigfoot_habits.gd").valid(state.bigfoot_habits): return false
 	if state.has("bigfoot_living") and not preload("res://scripts/bigfoot_living_world.gd").valid(state.bigfoot_living): return false
@@ -91,6 +97,15 @@ static func restore(scene: Node3D, state: Dictionary) -> void:
 				TYPE_INT: value = int(value)
 				TYPE_FLOAT: value = _float(value)
 			object.set(field,value)
+	# The `_celestial` group above already handed the restored phase and cycling
+	# flag to the clock, which is all a legacy save carries. A save that knows
+	# about the clock replaces that with its own day, hour and speed.
+	var clock: WorldClock = scene.get("world_clock")
+	if clock != null:
+		if state.has("world_clock"): clock.restore(state.world_clock)
+		else: clock.set_time(0,WorldClock.hour_for_phase(scene._celestial.phase))
+	if scene.get("weather_scheduler") != null and state.has("weather_scheduler"):
+		scene.weather_scheduler.restore(state.weather_scheduler)
 	scene._atmosphere.set_rays(scene._atmosphere.ray_strength)
 	scene._growth.replaying = false
 	scene._growth.publish()

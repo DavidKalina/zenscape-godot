@@ -17,41 +17,71 @@ var memories: Array[Dictionary] = []
 var favorites: Array[Dictionary] = []
 var disturbance_position: Variant = null
 
-func advance(delta: float, resting := false, comfort := 0.0) -> void:
+## Darkness tires him a little faster and offers a little less to enjoy. Both
+## effects stay within 30% so the existing need-timing expectations still hold.
+func advance(delta: float, resting := false, comfort := 0.0, daylight := 1.0) -> void:
 	if not is_finite(delta) or delta <= 0.0: return
 	var step := minf(delta, MAX_DELTA)
+	var dark := _darkness(daylight)
 	elapsed = minf(elapsed + step, LIMIT)
 	hunger = clampf(hunger + step * 0.0030, 0.0, 1.0)
-	fatigue = clampf(fatigue + step * (-0.020 * (0.5 + clampf(comfort, 0.0, 1.0)) if resting else 0.0020), 0.0, 1.0)
-	enrichment = clampf(enrichment + step * 0.0035, 0.0, 1.0)
+	fatigue = clampf(fatigue + step * (-0.020 * (0.5 + clampf(comfort, 0.0, 1.0)) if resting else 0.0020 * (1.0 + dark * 0.30)), 0.0, 1.0)
+	enrichment = clampf(enrichment + step * 0.0035 * (1.0 - dark * 0.25), 0.0, 1.0)
 	for kind in cooldowns.keys():
 		cooldowns[kind] = maxf(0.0, float(cooldowns[kind]) - step)
 		if cooldowns[kind] <= 0.0: cooldowns.erase(kind)
 
+## Time of day bends the scores; it never dictates the action. A hungry or
+## exhausted Bigfoot still overrides the rhythm. See docs/bigfoot-living-world.
 func ranked(context: Dictionary) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var home := _available(context.get("home"))
 	var food := maxi(0, int(context.get("food_count", 0)))
-	if home and fatigue >= 0.30:
-		_candidate(result, "sleep", 0.05 + fatigue * 1.20, "Tired; returning to a familiar bed")
+	var hour := _hour(context.get("hour", 12.0))
+	var daylight := _daylight(context.get("daylight", 1.0))
+	var dark := _darkness(daylight)
+	var note := time_note(hour, daylight)
+	# A smooth bump around the light/dark crossover, the hours when fish rise.
+	var twilight := clampf(1.0 - absf(daylight - 0.5) / 0.25, 0.0, 1.0)
+	var wary := dark * (1.0 + caution)
+	if home and fatigue >= 0.30 - dark * 0.12:
+		_candidate(result, "sleep", 0.05 + fatigue * 1.20 + dark * 0.45, "Night has come; returning to a familiar bed" if note == "night" else "Tired; returning to a familiar bed")
 	if home and context.get("material_needed", false) and context.get("can_gather", false):
-		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12, "The bed could be more comfortable")
+		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12 - wary * 0.14, "The bed could be more comfortable")
 	if food > 0 and hunger >= 0.20:
 		_candidate(result, "eat", hunger * 1.50, "Hungry; food is stored at home")
 	if home and context.get("can_fish", false) and food < 3:
-		_candidate(result, "fish", 0.30 + hunger * 0.60 + (0.16 if food == 0 else 0.0), "Bring food home for later")
+		_candidate(result, "fish", 0.30 + hunger * 0.60 + (0.16 if food == 0 else 0.0) + twilight * 0.28, ("The fish bite at %s" % note) if twilight > 0.5 and note in ["dawn", "dusk"] else "Bring food home for later")
 	if _available(context.get("curiosity_target")):
 		var familiar := familiarity(str(context.get("target_id", "")))
-		_candidate(result, "investigate", 0.22 + curiosity * 0.60 - caution * 0.16 - familiar * 0.38 - hunger * 0.12, "An unfamiliar thing deserves a closer look" if familiar < 0.5 else "Checking something familiar")
+		_candidate(result, "investigate", 0.22 + curiosity * 0.60 - caution * 0.16 - familiar * 0.38 - hunger * 0.12 - wary * 0.26, "An unfamiliar thing deserves a closer look" if familiar < 0.5 else "Checking something familiar")
 	if _available(context.get("ritual_target")):
-		_candidate(result, "ritual", 0.22 + enrichment * 0.34 + fatigue * 0.12, "Visit a favorite place for a quiet ritual")
+		_candidate(result, "ritual", 0.22 + enrichment * 0.34 + fatigue * 0.12 + (twilight * 0.12 if note == "dusk" else 0.0), "A quiet evening ritual at a favorite place" if note == "dusk" else "Visit a favorite place for a quiet ritual")
 	var observed_change := disturbance_position != null or bool(context.get("disturbance", false))
 	if home and (observed_change or context.get("home_check_due", false)):
 		_candidate(result, "check_home", 0.85 + caution * 0.20, "Something observed near home has changed" if observed_change else "Time to visit home and check his belongings")
 	if home and context.get("can_play", false) and hunger < 0.65 and fatigue < 0.70:
-		_candidate(result, "play", 0.12 + enrichment * 0.72 - hunger * 0.25 - fatigue * 0.20, "Fed enough to spend time arranging stones")
+		_candidate(result, "play", 0.12 + enrichment * 0.72 - hunger * 0.25 - fatigue * 0.20 - wary * 0.20, "Fed enough to spend time arranging stones")
 	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.score > b.score)
 	return result
+
+## A watcher-facing name for the current light. Callers may show it in reasons.
+func time_note(hour: float, daylight: float) -> String:
+	var light := _daylight(daylight)
+	if light < 0.35: return "night"
+	if light > 0.85: return "day"
+	return "dawn" if _hour(hour) < 12.0 else "dusk"
+
+static func _darkness(daylight: Variant) -> float:
+	return 1.0 - _daylight(daylight)
+
+static func _daylight(value: Variant) -> float:
+	if not (value is float or value is int) or not is_finite(float(value)): return 1.0
+	return clampf(float(value), 0.0, 1.0)
+
+static func _hour(value: Variant) -> float:
+	if not (value is float or value is int) or not is_finite(float(value)): return 12.0
+	return fposmod(float(value), 24.0)
 
 func _candidate(result: Array[Dictionary], kind: String, score: float, reason: String) -> void:
 	if cooldowns.get(kind, 0.0) > 0.0: return
