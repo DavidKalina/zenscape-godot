@@ -6,11 +6,11 @@ var _chunk_editor: NativeChunkEditor
 var _build_panel: NativeBuildPanel
 var _build_palette: NativeBuildPalette
 var _saved_setting_controls: Array[Dictionary] = []
-var _planar_water = preload("res://scripts/planar_water.gd").new()
-var _world_visuals = preload("res://scripts/world_visuals.gd").new()
-var _redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
-var _leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
-var _waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
+var _planar_water: Node3D
+var _world_visuals: Node3D
+var _redwood_mist: FogVolume
+var _leaf_litter: MultiMeshInstance3D
+var _waterfall_drips: Node3D
 var _leaf_revision := -1
 var _leaf_objects_revision := -1
 var _display_fog: CanvasLayer
@@ -84,6 +84,14 @@ var _tremor := preload("res://scripts/reference_tremor.gd").new()
 
 func _ready() -> void:
 	set_process(false)
+	# Inherited PackedScenes replace the base script during instantiation.
+	# Construct node helpers only after that replacement, when this scene can
+	# parent and own them; member initializers would strand the first copies.
+	_planar_water = preload("res://scripts/planar_water.gd").new()
+	_world_visuals = preload("res://scripts/world_visuals.gd").new()
+	_redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
+	_leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
+	_waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
 	var engine_args := OS.get_cmdline_args()
 	var fps_index := engine_args.find("--fixed-fps")
 	if fps_index >= 0 and fps_index + 1 < engine_args.size():
@@ -542,7 +550,7 @@ func _process(delta: float) -> void:
 	_world_visuals.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
 	_chunk_editor.sync_visibility()
-	_planar_water.sync(self)
+	_planar_water.sync(self,get_tree())
 	if not _capture.is_empty() and not _capture_done and _elapsed > 1.0:
 		_capture_done = true
 		_capture_frame.call_deferred()

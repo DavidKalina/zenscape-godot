@@ -47,7 +47,7 @@ static func recipe(id: String,biome := "",variation := 37,water := "connected") 
 
 static func form(data: NativeTerrainData,id: String,biome := "",tree: SceneTree = null,variation := 37,water := "connected") -> void:
 	data.reset_flat()
-	await data._set_recipe(recipe(id,biome,variation,water),tree)
+	if not await data._set_recipe(recipe(id,biome,variation,water),tree): return
 	data.heights = data._recipe_heights.duplicate()
 	var shape: RefCounted = data._recipe.formation
 	for pool: Dictionary in shape.pool_specs:
@@ -60,7 +60,7 @@ static func change_biome(data: NativeTerrainData,id: String,tree: SceneTree = nu
 	if data._recipe_settings.get("kind") != "formation" or not Shape.BIOMES.has(id): return
 	var settings: Dictionary = data._recipe_settings.duplicate(true)
 	settings.biome = id
-	await data._set_recipe(settings,tree)
+	if not await data._set_recipe(settings,tree): return
 	# _set_recipe prepares samplers; it does not replace sculpted vertex heights.
 	await dress(data,tree)
 

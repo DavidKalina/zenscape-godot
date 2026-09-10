@@ -85,16 +85,36 @@ func run() -> void:
 	remote.request_detonation()
 	check(not remote.requested,"Paused scenes do not arm a pending detonation")
 	scene._paused = false
+	var original_mesh: Mesh = editor.terrain.mesh
+	var staged_frames := 0
+	var transition_valid := true
 	remote.request_detonation()
-	await physics_frame
-	await physics_frame
+	while remote.requested or remote.firing:
+		await process_frame
+		if not remote.firing: continue
+		for body in remote.bodies:
+			staged_frames += 1
+			transition_valid = transition_valid and body.freeze and body.collision_layer==0 and body.collision_mask==0
+			if body.get_meta("mountain_chunk",false):
+				transition_valid = transition_valid and body.visible==(editor.terrain.mesh!=original_mesh)
+	check(staged_frames>0 and transition_valid,"Prepared debris stays frozen and collision-free; mountain chunks appear with the terrain swap")
 	check(editor.data.object_by_id(charge.id).is_empty(),"Remote detonation consumes the buried charge in Enjoy mode")
 	check(not editor.data.object_by_id(other_charge).is_empty(),"Targeted remote leaves other charges armed")
 	check(editor.data.ground_height(Vector2(fixed.x,fixed.z)) < pre_height-0.5,"Buried blast excavates covering dirt")
 	check(editor.data.object_by_id(rock).is_empty() and editor.data.object_by_id(tree).is_empty(),"Explosion releases nearby real scenery from authored batches")
 	check(not editor.data.object_by_id(far).is_empty(),"Distant scenery survives")
 	check(remote.bodies.size() >= 2,"Explosion launches physical copies and dirt")
+	var launch_positions: Array[Vector3] = []
+	for body in remote.bodies: launch_positions.append(body.global_position)
+	# Publication can finish between physics ticks. Deferred impulses apply at
+	# the next eligible boundary; the signal itself precedes node processing.
+	await physics_frame
+	await physics_frame
 	check(remote.bodies.any(func(body: RigidBody3D) -> bool: return body.linear_velocity.length()>1),"Launched scenery really moves in the physics world")
+	var moved := false
+	for i in range(remote.bodies.size()):
+		if remote.bodies[i].global_position.distance_to(launch_positions[i])>0.01: moved = true
+	check(moved,"Published debris advances in the actual physics simulation")
 	var origin := editor.terrain.to_global(fixed)
 	var query := PhysicsRayQueryParameters3D.create(origin+Vector3.UP*15,origin+Vector3.DOWN*15,1)
 	var hit: Dictionary = scene.get_world_3d().direct_space_state.intersect_ray(query)
@@ -114,14 +134,26 @@ func run() -> void:
 	key.keycode = KEY_X
 	key.pressed = true
 	root.push_input(key)
-	await physics_frame
-	await physics_frame
+	while remote.requested or remote.firing: await process_frame
 	check(remote.charges().is_empty(),"X hotkey fires the all-charges salvo through the actual input route")
 	check(remote.bodies.size() <= remote.MAX_BODIES,"Live debris stays bounded")
 	remote._elapsed = 19.0
 	await physics_frame
 	await physics_frame
 	check(remote.bodies.is_empty(),"Expired wreckage releases its physics bodies")
+	var cancelled_id := editor.data.place("explosive",Vector2.ZERO)
+	remote.target_id = cancelled_id
+	var cancel_before := editor.data.to_document()
+	remote.detonate(true)
+	check(remote.firing and editor.forming,"Pending preparation excludes competing edits")
+	editor.undo()
+	check(editor.data.to_document() == cancel_before,"Undo cannot interrupt a pending blast transaction")
+	remote.request_detonation()
+	check(not remote.requested,"A firing transaction does not queue repeated remote requests")
+	remote.clear_effects()
+	while remote.firing: await process_frame
+	check(editor.data.to_document() == cancel_before and remote.bodies.is_empty(),"Cleared worker results cannot publish damage or debris")
+	check(not editor.forming,"Cancelled preparation releases the edit exclusion")
 	scene.new_diorama()
 	await process_frame
 	check(remote.charges().is_empty() and remote.bodies.is_empty(),"Changing worlds clears explosives and blast bodies")

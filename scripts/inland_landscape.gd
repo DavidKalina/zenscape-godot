@@ -5,7 +5,7 @@ var genome: Dictionary
 func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null) -> void:
 	data = terrain
 	data.reset_flat()
-	await data._set_recipe(settings,tree)
+	if not await data._set_recipe(settings,tree): return
 	genome = data._recipe.inland.genome
 	data.grass.fill(preload("res://scripts/native_formation_shape.gd").BIOMES[genome.habitat].grass)
 	data.heights = data._recipe_heights.duplicate()
