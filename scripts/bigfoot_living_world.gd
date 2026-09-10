@@ -77,7 +77,7 @@ func advance(delta: float) -> bool:
 		_advance_surface(dt)
 		return not current.is_empty()
 	if phase == "collect":
-		if scene.creature.can_roam() and routine.foraging.collect_tree_material(_target): phase = "journey"
+		if scene.creature.can_roam() and _collect_material(): phase = "journey"
 		else: cancel()
 	if phase == "surface_perform":
 		if current=="gather" and scene.creature.action_clip=="Sit":
@@ -114,7 +114,7 @@ func _context() -> Dictionary:
 		"ritual_target":true,"home_check_due":_home_check_due<=0.0 or not _observed_home,
 		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0,
 		"hour":_hour(),"daylight":_daylight(),"weather":_weather(),"wet":_wetness(),
-		"sheltered":sheltered(),
+		"sheltered":sheltered(),"branches_nearby":_branches_nearby(),
 		"season":_season(),"season_name":WorldClock.name_for_season(_season()),
 		"cold":WeatherScheduler.season_cold(_season()),"harvest":WeatherScheduler.season_autumn(_season())}
 
@@ -229,7 +229,23 @@ func request(kind: String, target: Dictionary = {}) -> bool:
 	reason = {"gather":"Gathering material for his bed","fish":"Finding a meal to bring home","sleep":"Returning home to rest","tend":"Making his bed comfortable","eat":"Having a meal at home","check_home":"Checking his familiar belongings","play":"Arranging his little stone collection","ritual":"Returning to a quiet spot","investigate":"Taking a cautious closer look"}.get(kind,kind)
 	return true
 
+## Dead wood is optional in the same way the clock and the sky are: a study
+## without it, and a garden whose wind has not dropped anything yet, still works
+## a tree for its bedding the way it always did.
+func _dead_wood() -> Variant:
+	var wood: Variant = scene.get("dead_wood") if scene != null else null
+	return wood if wood != null and is_instance_valid(wood) else null
+
+func _branches_nearby() -> int:
+	var wood: Variant = _dead_wood()
+	if wood == null or not is_instance_valid(scene.get("creature")): return 0
+	return int(wood.nearby(scene.creature.position))
+
+## Branches on the ground are the gather source. Only when none of them lie
+## within his reach does he fall back to breaking one out of a tree.
 func _material_targets() -> Array[Dictionary]:
+	var wood: Variant = _dead_wood()
+	if wood != null and _branches_nearby()>0: return wood.targets()
 	var result: Array[Dictionary] = []
 	for item: Dictionary in scene.habitat.interests:
 		if str(item.id).begins_with("mesh-8:") or str(item.id).begins_with("mesh-11:") or item.get("kind","") in ["tree","broadleaf","redwood","bigfoot_tree","layered_tree"]:
@@ -243,10 +259,27 @@ func _request_gather(target: Dictionary) -> bool:
 		if scene.creature.position.distance_to(item.position)>11.0: continue
 		# Imported trees retain the authored shake. Editable trees have a distinct
 		# render/physics owner, so gather fallen material beside them instead.
-		if not scene.has_method("resident_activity_owned") and not str(item.id).begins_with("object:"):
+		# A branch already lying on the ground is always the second kind: he walks
+		# to where it fell and picks it up, one at a time.
+		if str(item.id).begins_with("branch:"):
+			if _start_surface("gather",item): return true
+		elif not scene.has_method("resident_activity_owned") and not str(item.id).begins_with("object:"):
 			if routine.request("tree",item): return true
 		elif _start_surface("gather",item): return true
 	return false
+
+## The branch he sat down beside is the one he lifts, and the ground loses it.
+## Nothing on the ground means the old tree shortcut instead.
+func _collect_material() -> bool:
+	var wood: Variant = _dead_wood()
+	var id := str(_target.get("id",""))
+	if wood != null and id.begins_with("branch:"):
+		var carry: Dictionary = wood.take_for_carry(id)
+		if carry.is_empty(): return false
+		if routine.foraging.begin("branch",id,carry.node,carry.release,carry.commit): return true
+		carry.release.call()
+		return false
+	return routine.foraging.collect_tree_material(_target)
 
 func _start_surface(kind: String, target: Dictionary) -> bool:
 	var point: Variant = target.get("position")
