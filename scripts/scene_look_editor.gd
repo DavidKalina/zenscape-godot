@@ -340,7 +340,13 @@ func sync() -> void:
 	weather_choice.select(scene._precipitation.preset_index)
 	var clock: WorldClock = scene.get("world_clock")
 	if clock != null:
-		clock_readout.text = clock.label()
+		# The readout is where the Season slider is watched from, so it names the
+		# quarter and, once the resident has a long drive filling, shows it: pin
+		# the slider to deep winter and this is the number that climbs before he
+		# walks home for the season.
+		clock_readout.text = clock.label()+" · "+clock.season_name()
+		var living: Variant = _resident_life()
+		if living != null and float(living.mind.torpor) > 0.01: clock_readout.text += " · torpor %.2f" % float(living.mind.torpor)
 		var pace := SPEEDS.find(clock.speed)
 		if pace >= 0: clock_choice.select(pace)
 		force_weather_choice.select(scene._precipitation.preset_index)
@@ -429,6 +435,14 @@ func _build_presets() -> void:
 			description.size.x = button.size.x-18)
 		_preset_grid.add_child(button)
 		preset_buttons[id] = button
+
+## The resident's living world, when this scene has one. Most scenes the editor
+## opens have no routine at all, so every step of the walk is optional.
+func _resident_life() -> Variant:
+	var owner_routine: Variant = scene.get("routine") if scene != null else null
+	if owner_routine == null or not is_instance_valid(owner_routine): return null
+	var living: Variant = owner_routine.get("living")
+	return living if living != null and living.get("mind") != null else null
 
 func _sync_presets() -> void:
 	if tabs.current_tab != 0: return

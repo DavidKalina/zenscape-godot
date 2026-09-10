@@ -7,6 +7,10 @@ const Mind = preload("res://scripts/bigfoot_life_mind.gd")
 const STORM_HOURS_PER_STAGE := 2.0
 const MAX_STORM_HOURS := 4.0
 const MAX_WEATHER_STEP := 1.0
+## What a winter wants laid in: four meals in the stash and a finished bed. The
+## food half weighs more because the bed can be topped up from inside the door.
+const WINTER_FOOD := 4
+const WINTER_FOOD_SHARE := 0.6
 var mind = Mind.new()
 var routine: Node
 var scene: Node
@@ -33,6 +37,7 @@ var _failed_until := {}
 var _home_check_due := 65.0
 var _storm_hours := 0.0
 var _weather_hour := -1.0
+var _torpor_hour := -1.0
 
 func setup(owner_routine: Node) -> void:
 	routine = owner_routine
@@ -54,6 +59,7 @@ func advance_needs(delta: float) -> void:
 	mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0,_daylight())
 	_home_check_due = maxf(0.0,_home_check_due-dt)
 	_weather_wears_the_bed()
+	_winter_pulls()
 
 ## Called only by the unpaused, visible resident clock. Surface activities own
 ## this tick; interior gestures share it with the existing cave clock.
@@ -116,7 +122,35 @@ func _context() -> Dictionary:
 		"hour":_hour(),"daylight":_daylight(),"weather":_weather(),"wet":_wetness(),
 		"sheltered":sheltered(),"branches_nearby":_branches_nearby(),
 		"season":_season(),"season_name":WorldClock.name_for_season(_season()),
-		"cold":WeatherScheduler.season_cold(_season()),"harvest":WeatherScheduler.season_autumn(_season())}
+		"cold":_cold(),"harvest":WeatherScheduler.season_autumn(_season()),
+		"winter_ready":_winter_ready(),"torpor":mind.torpor}
+
+## The winter's chill, 0..1, the same curve the ground wears.
+func _cold() -> float:
+	return WeatherScheduler.season_cold(_season())
+
+## How ready his home is for a winter, 0..1: what he believes is in the stash
+## against WINTER_FOOD, and what he believes the bed is against its last stage.
+## His belief, not the room's truth, like every other thing he decides on. A
+## scene without a lair never reaches this; one with an empty stash and no bed
+## reads 0, which is what makes autumn's errands worth more.
+func _winter_ready() -> float:
+	var fed := clampf(float(_food_count())/float(WINTER_FOOD),0.0,1.0)
+	var bedded := float(clampi(_observed_bed,0,3))/3.0
+	return clampf(fed*WINTER_FOOD_SHARE+bedded*(1.0-WINTER_FOOD_SHARE),0.0,1.0)
+
+## The long drive of the year runs on world hours, like the pond and the dead
+## wood, so a fast-forwarded or reopened garden feels exactly as much winter as
+## it lived through. A scene with no clock never advances it at all.
+func _winter_pulls() -> void:
+	var now := _world_hour()
+	if now<0.0:
+		_torpor_hour = -1.0
+		return
+	var previous := _torpor_hour
+	_torpor_hour = now
+	if previous<0.0 or now<=previous: return
+	mind.drift(_cold(),now-previous)
 
 ## The world clock is optional; without it he lives in a permanent bright noon.
 func _clock() -> Variant:
@@ -212,6 +246,9 @@ func request(kind: String, target: Dictionary = {}) -> bool:
 		"gather": accepted = available() and _request_gather(target)
 		"fish": accepted = available() and routine.request("fish",target,true)
 		"sleep": accepted = routine.cave.request("sleep")
+		# The long sleep is the cave's own hibernate visit: the same walk in, the
+		# same breathing rest pose, twice as long behind the black mouth.
+		"hibernate": accepted = routine.cave.request("hibernate")
 		"tend","eat","check_home","play":
 			if not available(): return false
 			if kind=="tend" and (scene.lair.material_count()==0 or scene.lair.comfort()>=1.0): return false
@@ -226,7 +263,7 @@ func request(kind: String, target: Dictionary = {}) -> bool:
 	_committed = false
 	_target = target.duplicate(true) if kind not in ["investigate","ritual","gather"] else _target
 	scene.brain.reset_behavior()
-	reason = {"gather":"Gathering material for his bed","fish":"Finding a meal to bring home","sleep":"Returning home to rest","tend":"Making his bed comfortable","eat":"Having a meal at home","check_home":"Checking his familiar belongings","play":"Arranging his little stone collection","ritual":"Returning to a quiet spot","investigate":"Taking a cautious closer look"}.get(kind,kind)
+	reason = {"gather":"Gathering material for his bed","fish":"Finding a meal to bring home","sleep":"Returning home to rest","hibernate":"Going home to sleep the winter out","tend":"Making his bed comfortable","eat":"Having a meal at home","check_home":"Checking his familiar belongings","play":"Arranging his little stone collection","ritual":"Returning to a quiet spot","investigate":"Taking a cautious closer look"}.get(kind,kind)
 	return true
 
 ## Dead wood is optional in the same way the clock and the sky are: a study
@@ -328,10 +365,14 @@ func _advance_surface(dt: float) -> void:
 		_elapsed = 0.0
 		scene.brain.reaction.emit("?" if current=="investigate" else "…",reason)
 		return
-	if not scene.navigation.motion_safe(scene.creature.position,_path[_index],scene.creature.walking_speed(0.65)*dt):
+	# The visible tell of the long drive: the deeper the torpor the slower the
+	# errand, so a watcher sees him wandering at two thirds pace for days before
+	# he beds in at all. At torpor 0 this is exactly the walk it always was.
+	var pace := 0.65-0.20*clampf(mind.torpor,0.0,1.0)
+	if not scene.navigation.motion_safe(scene.creature.position,_path[_index],scene.creature.walking_speed(pace)*dt):
 		cancel()
 		return
-	if scene.creature.walk_step(_path[_index],0.65,dt): _index += 1
+	if scene.creature.walk_step(_path[_index],pace,dt): _index += 1
 
 func perceive() -> void:
 	if routine.cave._inside: return
@@ -478,11 +519,12 @@ func _delivered(kind: String, _id: String) -> void:
 
 func _returned(why: String) -> void:
 	if not enabled and current.is_empty(): return
-	if why in ["sleep","rain","snow","hibernate"]: _complete("sleep")
+	if why=="hibernate": _complete("hibernate")
+	elif why in ["sleep","rain","snow"]: _complete("sleep")
 	_clear()
 
 func _complete(kind: String) -> void:
-	var context := {"target_id":str(_target.get("id","")),"position":_target.get("position",scene.creature.position),"ritual":"rest"}
+	var context := {"target_id":str(_target.get("id","")),"position":_target.get("position",scene.creature.position),"ritual":"rest","cold":_cold()}
 	mind.completed("gather" if kind=="tend" else kind,context)
 	completed_actions.append(kind)
 	if completed_actions.size()>40: completed_actions.pop_front()
@@ -551,6 +593,7 @@ func restore(value: Dictionary) -> void:
 	_home_check_due = float(value.get("check_in",65.0))
 	_storm_hours = float(value.get("storm_hours",0.0))
 	_weather_hour = -1.0
+	_torpor_hour = -1.0
 	_curiosity.clear()
 	_failed_until.clear()
 	completed_actions.clear()

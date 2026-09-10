@@ -115,6 +115,12 @@ Slices 0 and 4 of the world-progression plan wire five consumers:
   `cold` and `harvest` reach his decisions.
 - `scripts/bigfoot_life_mind.gd` `ranked()` — the cold nudges `sleep`, the
   autumn gold nudges `gather`. Both are small; needs still win.
+- `scripts/bigfoot_life_mind.gd` `drift()` (slice 5) — the cold is also the pull
+  of the long winter drive, `torpor`, the one need kept on **world hours**
+  instead of watched seconds: it chases `cold` with an 18-hour rise and a
+  48-hour fall, so a garden that is fast-forwarded or reopened feels exactly as
+  much winter as it lived through. It lifts a `hibernate` action and lowers his
+  leisure; see docs/bigfoot-living-world/README.md.
 
 The preset is the base and the season is a **lift added on top**, clamped to
 0..1, so a snowy sky is still fully cold in midsummer and a clear day in late
@@ -144,7 +150,11 @@ all keep their hold until the weather changes again.
 
 The scene-look editor's Atmosphere tab carries the scrub tooling: a **Season**
 slider (writes `season_override`), a **Follow the calendar** check (clears it), a
-**Day** slider (`set_time(day, hour)`) and a **Force weather** picker.
+**Day** slider (`set_time(day, hour)`) and a **Force weather** picker. The clock
+readout beside them names the quarter, and in a scene with a resident it shows
+his winter drive while it is filling ("Day 3 · 09:12 · winter · torpor 0.62"),
+which is how the Season slider is watched: pin it to 0.875 and he beds in within
+a couple of world days.
 
 ### Seasonal rates: `season_factor`
 

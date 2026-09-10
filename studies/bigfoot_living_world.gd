@@ -121,7 +121,11 @@ func _process(delta: float) -> void:
 	_mind_timer -= delta
 	if _mind_timer>0.0 or not _mind_panel.visible: return
 	_mind_timer = 0.25
-	var lines := PackedStringArray(["Hunger %d%%   Tiredness %d%%" % [roundi(life.mind.hunger*100),roundi(life.mind.fatigue*100)],"Bed %d/3   Food %d   Stones %d/3" % [lair.capture_living().bed_stage,lair.food_count(),lair.capture_living().play_stage],"Choosing: "+life.current])
+	# The winter drive only appears once the year is filling it, so a summer
+	# panel reads exactly as it always did.
+	var needs := "Hunger %d%%   Tiredness %d%%" % [roundi(life.mind.hunger*100),roundi(life.mind.fatigue*100)]
+	if life.mind.torpor>0.01: needs += "   Winter %d%%" % roundi(life.mind.torpor*100)
+	var lines := PackedStringArray([needs,"Bed %d/3   Food %d   Stones %d/3" % [lair.capture_living().bed_stage,lair.food_count(),lair.capture_living().play_stage],"Choosing: "+life.current])
 	for option: Dictionary in life.scores.slice(0,4):
 		lines.append("%s  %.2f — %s" % [option.kind,option.score,option.reason])
 	_mind_panel.text = "\n".join(lines)
