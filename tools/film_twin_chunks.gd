@@ -5,10 +5,13 @@ extends SceneTree
 ##
 ## `--stills=<dir>` writes `wide.png` (the startup framing, both islands and the
 ## chasm), `bridge.png` (the study's `B` framing, back along the whole span),
-## `chasm.png` (its `N` framing, stood on the deck looking into the drop) and
-## `far_island.png` (the copy's own centre at 30 m, from the side) at 1600x1000.
+## `chasm.png` (its `N` framing, stood on the deck sighting the far bridgehead),
+## `void.png` (its `M` framing, held beside the mid-deck over the drop) and
+## `far_island.png` (the copy's own centre at 30 m, from the side). `--size=WxH`
+## sets the frame; stills default to 1600x1000 and a long walk is worth
+## dropping to 1280x800 to keep the encode small.
 ##
-## `--walk=<dir> --frames=240` carries the camera target along the sagging deck
+## `--walk=<dir> --frames=480` carries the camera target along the sagging deck
 ## itself -- `deck_point()`, not the straight chord, so it never floats off the
 ## planks at midspan -- at `WALK_HEIGHT` above the boards, low polar, yaw down
 ## the deck, as numbered PNGs; it prints the ffmpeg line to encode them.
@@ -21,30 +24,32 @@ extends SceneTree
 ## how to run
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tools/film_twin_chunks.gd \
-##     -- --stills=/private/tmp/twin-chunks-wide
+##     -- --stills=/private/tmp/twin-chunks-100
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tools/film_twin_chunks.gd \
-##     -- --walk=/private/tmp/twin-chunks-wide/walk --frames=240
+##     -- --walk=/private/tmp/twin-chunks-100/walk --frames=480 --size=1280x800
 ##
 ## Never --headless: the fidelity scene hangs there. Never await
 ## `RenderingServer.frame_post_draw` either -- it never returns when the window
 ## is occluded -- so every capture forces its own draw.
 const FRAME_SIZE := Vector2i(1600, 1000)
+const WALK_SECONDS := 16.0    ## How long the crossing should take to watch.
 const DT := 1.0 / 60.0
 const FAR_DISTANCE := 30.0    ## Close enough that the copy reads as a whole island.
 const FAR_POLAR := 1.15
-const WALK_FRAMES := 240      ## 8 s at 30 fps: long enough that 22 m feels far.
+const WALK_FRAMES := 480      ## 16 s at 30 fps: 100 m should feel like 100 m.
 const WALK_HEIGHT := 1.6      ## Eye height over the deck.
 const WALK_DISTANCE := 3.6    ## A following shot, not a first-person one.
 const WALK_POLAR := 1.48      ## Nearly level with the deck.
 const WALK_FPS := 30
 ## A little run-up and run-out past the anchors, so the clip starts and ends on
-## solid ground rather than snapping onto the deck. Smaller than it was: at 22 m
-## the span carries the clip on its own and the forest run-up only wastes frames.
-const WALK_OVERSHOOT := 0.08
+## solid ground rather than snapping onto the deck. Small, because at 100 m the
+## span carries the clip on its own and a forest run-up only wastes frames.
+const WALK_OVERSHOOT := 0.025
 const SETTLE_FRAMES := 6      ## Driven steps after a pose so grass and sky agree.
 const SHOT_HOUR := 11.0       ## Late morning: the sun clears both islands' peaks.
 var scene: Node3D
+var frame_size := FRAME_SIZE
 var stills_dir := ""
 var walk_dir := ""
 var walk_frames := WALK_FRAMES
@@ -59,6 +64,9 @@ func run() -> void:
 		if argument.begins_with("--stills="): stills_dir = argument.trim_prefix("--stills=")
 		elif argument.begins_with("--walk="): walk_dir = argument.trim_prefix("--walk=")
 		elif argument.begins_with("--frames="): walk_frames = maxi(2, int(argument.trim_prefix("--frames=")))
+		elif argument.begins_with("--size="):
+			var parts := argument.trim_prefix("--size=").split("x")
+			frame_size = Vector2i(int(parts[0]), int(parts[1]))
 	if stills_dir.is_empty() and walk_dir.is_empty():
 		print("FILM TWIN CHUNKS: pass --stills=<dir> or --walk=<dir>")
 		quit(1)
@@ -100,6 +108,8 @@ func _stills() -> void:
 	await _grab(stills_dir.path_join("bridge.png"), "bridge")
 	scene.frame_chasm()
 	await _grab(stills_dir.path_join("chasm.png"), "chasm")
+	scene.frame_void()
+	await _grab(stills_dir.path_join("void.png"), "void")
 	# The copy from the side, at its own centre, lifted to roughly its skyline.
 	scene.target = scene.second_chunk_centre() + Vector3.UP * 2.0
 	scene.distance = FAR_DISTANCE
@@ -153,6 +163,6 @@ func _grab(path: String, label: String) -> void:
 ## The project opens maximized and the window manager re-applies that a few
 ## frames after the window appears, which would resize images mid-shoot.
 func _hold_frame_size() -> void:
-	if root.size == FRAME_SIZE: return
+	if root.size == frame_size: return
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-	root.size = FRAME_SIZE
+	root.size = frame_size

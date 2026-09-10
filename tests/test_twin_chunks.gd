@@ -1,7 +1,7 @@
 extends SceneTree
 ## The twin-chunk prototype really builds a second island and a crossing: the
 ## copy carries the terrain, the skirt and the chunk's plants, the two anchors
-## face each other across a chasm a bridge can span, they stand on ground rather
+## face each other across a 100 m chasm a bridge can span, they stand on ground rather
 ## than in the air, and a sagging plank deck joins them.
 ##
 ## Instantiates the study, so it needs a real window and the native kernels.
@@ -11,9 +11,9 @@ extends SceneTree
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tests/test_twin_chunks.gd
 const MIN_VISUALS := 10      ## A copied chunk is terrain, skirt and its plants.
-const MIN_SPAN := 20.0       ## The chasm is 22 m; anchors sit 0.5 m inside each rim.
-const MAX_SPAN := 24.0
-const MAX_STEP := 4.0        ## A descent onto the far island, not a cliff.
+const MIN_SPAN := 95.0       ## The chasm is 100 m; anchors sit 0.5 m inside each rim.
+const MAX_SPAN := 105.0
+const MAX_STEP := 2.0        ## Level islands: only the two rims' own ground.
 const GROUND_TOLERANCE := 0.1
 var failures := 0
 var scene: Node3D
@@ -47,6 +47,10 @@ func run() -> void:
 	# ------------------------------------------------------------- the copy
 	var copy: Node3D = scene.second_chunk
 	check(copy != null and copy.get_parent() == scene, "SecondChunk hangs off the study root")
+	# The seam a generated island will land on: the study asks the node, not the copy.
+	check(copy.has_method("ground_height_at"), "The second island answers for its own ground")
+	check(scene.ground_y_at(Vector2(scene.second_chunk_centre().x, scene.second_chunk_centre().z), true) != null, "It answers at its own centre")
+	check(scene.ground_y_at(Vector2(scene.second_chunk_centre().x, scene.second_chunk_centre().z), false) == null, "Chunk one declines to answer for ground it does not own")
 	check(copy.get_node_or_null("Twin_terrain") != null, "The copy carries the terrain mesh")
 	check(copy.get_node_or_null("Twin_skirt") != null, "The copy carries the earth skirt")
 	var visuals: int = scene.visual_instance_count()
@@ -66,8 +70,8 @@ func run() -> void:
 		check(span > MIN_SPAN and span < MAX_SPAN, "The anchors stand %.2f m apart horizontally" % span)
 		var step := absf(a.y - b.y)
 		check(step < MAX_STEP, "The crossing steps %.2f m, under %.1f m" % [step, MAX_STEP])
-		var near_ground: Variant = scene.ground_y_at(a, false)
-		var far_ground: Variant = scene.ground_y_at(b, true)
+		var near_ground: Variant = scene.ground_y_at(Vector2(a.x, a.z), false)
+		var far_ground: Variant = scene.ground_y_at(Vector2(b.x, b.z), true)
 		check(near_ground != null and far_ground != null, "Both anchors sit over their own chunk's ground")
 		if near_ground != null and far_ground != null:
 			check(a.y >= float(near_ground) - GROUND_TOLERANCE, "The near anchor is on the ground, not under it: %.3f vs %.3f" % [a.y, float(near_ground)])
@@ -79,7 +83,7 @@ func run() -> void:
 	# ----------------------------------------------------------- the bridge
 	check(scene.bridge != null and scene.bridge.get_parent() == scene, "A bridge joins the two islands")
 	var slats: int = scene.bridge.find_children("Plank*", "MeshInstance3D", true, false).size()
-	check(slats >= 20, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
+	check(slats >= 80, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
 	check(scene.bridge.find_children("Rope*", "MeshInstance3D", true, false).size() == slats * 2, "Every plank has a rope either side")
 	# The whole point of a rope bridge: midspan hangs below the straight chord.
 	if anchors.size() == 2:
