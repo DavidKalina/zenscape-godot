@@ -47,17 +47,30 @@ included. The repository is private; draft releases require signing in with repo
 write access (the repository owner can download them).
 
 The workflow pins **Godot 4.7.2**, downloads the official editor and templates,
-verifies their SHA-512 checksums, and caches the desktop tools. Linux exports
-both platforms. Before offering downloads, the workflow opens the Windows PCK
-and checks that the diorama menu appears and New diorama opens the current editor
-tool tray. Separate Windows and Mac jobs launch the actual exports to check for
-startup errors. No signing secrets or paid developer accounts are needed.
+and verifies their SHA-512 checksums. Windows and Mac runners compile our C++
+terrain kernel with pinned godot-cpp bindings and SCons 4.8.1, then export their
+respective platform. Mac libraries include both Apple Silicon and Intel slices.
+
+Before uploading each download, CI launches its actual release executable from
+outside the source checkout. It requires the packaged native kernel, compares its
+mesh results with GDScript, and checks that the diorama menu appears and New
+diorama opens the editor tool tray. A missing kernel fails the build rather than
+silently using the fallback. The draft release is created before builds start;
+assets appear only after that platform's checks pass. Check both jobs before
+treating the entire run as successful. No signing secrets or paid developer
+accounts are needed.
 
 `export_presets.cfg` includes JSON data read through `FileAccess`, alongside
 Godot resources, and excludes documentation, test tools, and source art. Mac
 builds are archived by Godot before upload so executable permissions survive.
 
 ## Export locally
+
+Build the matching native debug and release libraries first, following
+[Native terrain kernels](../native/terrain_kernels/README.md). For universal Mac
+exports, pass `--arch universal` for both builds. Without native libraries, a
+clean local checkout still exports the GDScript fallback; the CI pipeline always
+requires native libraries.
 
 Install the standard **4.7.2** editor and matching export templates from
 **Editor → Manage Export Templates**, then run from the project directory:

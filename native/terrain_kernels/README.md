@@ -44,11 +44,20 @@ fails if explicitly required with `--native-kernels` and unavailable, rather tha
 benchmarking fallback code. `NativeTerrainData.native_mesh_enabled = false` selects the reference for
 an individual data owner even in a native run.
 
-Only the macOS arm64 debug-template build is validated so far. Descriptor entries
-and host selection for other platforms are build scaffolding, not verification.
-Desktop exports currently use the GDScript fallback unless matching native
-libraries are built and included; native packaging is not part of this change. Linux/Windows toolchains,
-release builds, and their output equivalence remain unmeasured.
+The desktop workflow builds debug and release libraries on Windows x64 and
+macOS, using the pinned bindings above and SCons 4.8.1. Mac builds use
+`--arch universal` to include both arm64 and x86_64 in one library. The helper
+generates matching universal descriptor entries for that option.
+
+CI requires native mesh equivalence in the editor, then checks imported, foundation and
+sculpted meshes with synchronous and 0/1/2/4/8-worker release dispatch, plus the
+menu/editor, through the actual exported executable. Release templates prohibit
+script/path overrides, so CI launches normally with `-- --native-kernels
+--verify-desktop-build`. The in-package self-check requires the kernel and runs
+outside the checkout; a missing library cannot silently pass via GDScript. Only verified packages are uploaded.
+Mac packaging verifies both architecture slices; execution checks cover the
+runner's architecture. Linux native exports are not covered by this workflow.
+Local exports still require matching libraries to be built before exporting.
 
 ## Interpretation
 
