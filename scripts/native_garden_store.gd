@@ -60,6 +60,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 	if state.has("diorama"):
 		var extra: Variant = state.diorama
 		if not extra is Dictionary or not extra.get("resident") is bool: return false
+		if extra.has("resident_scale") and not GardenData._number(extra.resident_scale,0.5,1.5): return false
 		if not extra.get("position") is Array or extra.position.size() != 3: return false
 		for number in extra.position:
 			if not GardenData._number(number,-1000,1000): return false

@@ -131,7 +131,8 @@ func _finish(completed := true) -> void:
 
 ## Only prepared cave sites are homes; ordinary mining tunnels are unchanged.
 func plan(item: Dictionary) -> Dictionary:
-	if not item.get("cave",false) or item.sealed or item.width<6.4 or item.height<4.8 or item.length<7.2: return {}
+	var size: float = item.get("cave_scale",1.0)
+	if not item.get("cave",false) or item.sealed or item.width<6.4*size-0.0001 or item.height<4.8*size-0.0001 or item.length<7.2*size-0.0001: return {}
 	var pose := preload("res://scripts/bigfoot_cave_site.gd").pose(item)
 	var outside := pose*Vector3(0,0,1.3)
 	var safe: Variant = scene.navigation.nearest_safe(outside)

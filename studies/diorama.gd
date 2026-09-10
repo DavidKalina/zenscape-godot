@@ -464,7 +464,7 @@ func _summon_bigfoot(_fog := false) -> void:
 
 func capture_diorama_state() -> Dictionary:
 	var point: Vector3 = routine.cave.entrance if routine.cave._inside else creature.position
-	return {"resident":resident_enabled,"position":[point.x,point.y,point.z]}
+	return {"resident":resident_enabled,"resident_scale":creature.body_scale,"position":[point.x,point.y,point.z]}
 
 func restore_life_state(state: Dictionary) -> void:
 	# Physical props from the previous world cannot survive a world switch.
@@ -475,6 +475,7 @@ func restore_life_state(state: Dictionary) -> void:
 	super.restore_life_state(state)
 
 func restore_diorama_state(state: Dictionary) -> void:
+	creature.set_body_scale(float(state.get("resident_scale",1.0)))
 	resident_enabled = bool(state.get("resident",false))
 	if resident_enabled:
 		var p: Array = state.position

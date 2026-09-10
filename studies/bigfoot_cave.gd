@@ -2,11 +2,12 @@ extends "res://studies/fidelity_life.gd"
 ## Fidelity's southern hill, fitted with the approved Blender cave.
 func _ready() -> void:
 	super._ready()
+	creature.set_body_scale(0.75)
 	_refresh_habitat()
-	get_window().title = "ZenScape · Bigfoot's cave"
+	get_window().title = "ZenScape · Bigfoot's cave · 75% scale"
 	var data: NativeTerrainData = _chunk_editor.data
 	data.begin_stroke()
-	var site := {"start":[3.79,1.5159,-10.09],"heading":-PI/4.0,"width":6.4,"height":4.8,"length":7.2,"sealed":false,"cave":true}
+	var site := {"start":[3.79,1.5159,-10.09],"heading":-PI/4.0,"width":4.8,"height":3.6,"length":5.4,"sealed":false,"cave":true,"cave_scale":0.75}
 	data.tunnels.append(site)
 	var bounds := preload("res://scripts/bigfoot_cave_site.gd").bounds(site)
 	var groups: Dictionary = preload("res://scripts/world_reference_props.gd").GROUPS
@@ -50,4 +51,4 @@ func _focus_cave() -> void:
 
 func capture_diorama_state() -> Dictionary:
 	var point: Vector3 = routine.cave.entrance if routine.cave._inside else creature.position
-	return {"resident":resident_enabled,"position":[point.x,point.y,point.z]}
+	return {"resident":resident_enabled,"resident_scale":creature.body_scale,"position":[point.x,point.y,point.z]}

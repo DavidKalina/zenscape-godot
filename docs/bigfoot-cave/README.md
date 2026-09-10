@@ -34,7 +34,10 @@ modified. The asset floor is raised 2.5 cm above the subtraction floor to avoid
 coplanar rendering artifacts.
 
 The floor, shell and pose are a fixed authored design: a saved cave marker
-requires a bore at least 6.4 m wide, 4.8 m high and 7.2 m deep. This is a prepared
+requires a bore at least 6.4 m wide, 4.8 m high and 7.2 m deep at full size.
+The prepared world now uses 75% size for both the cave and Bigfoot (a 25%
+reduction); the bore and threshold route scale with the cave. Resident size
+survives saving, and walking speed follows the shorter stride. This is a prepared
 world, not a general cave-placement tool. Cave visit progress is transient;
 saving does not freeze an action mid-animation. The normal save restores an
 exterior resident position.

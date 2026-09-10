@@ -173,6 +173,7 @@ func _rest_stance(point: Vector3) -> bool:
 func _plan_approach(item: Dictionary, kind: String, require_route := true) -> bool:
 	# Match the authored contact instead of stopping at a generic viewing radius.
 	var contact := Vector3(0,0,1.55) if kind == "tree" else Vector3(-0.457,0,1.35) if kind == "fish" else Vector3(-0.457,0,0.864)
+	contact *= scene.creature.body_scale
 	var toward: Vector3 = item.position-scene.creature.position
 	var initial := atan2(toward.x,toward.z)-atan2(contact.x,contact.z)
 	for i in range(32):
