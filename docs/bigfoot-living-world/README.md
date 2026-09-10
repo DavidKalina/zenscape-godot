@@ -204,10 +204,11 @@ Winter adds the first need that is longer than a day. `torpor` (0..1) is a field
 of the mind like hunger and fatigue, but it is the only one kept on **world
 hours**: `mind.drift(cold, world_hours)`, called from `advance_needs()` off the
 same absolute world hour the storm accumulator uses, chases the season's `cold`
-with a time constant of `TORPOR_FILL_HOURS = 18` rising and
-`TORPOR_DRAIN_HOURS = 48` falling. Over a default 28-day year that fills it past
-`TORPOR_THRESHOLD = 0.50` about two days into winter, peaks at ~0.82 just after
-deep winter, and drains back under 0.02 by the end of spring. A scene with no
+with a time constant of `TORPOR_FILL_HOURS = 40` rising and
+`TORPOR_DRAIN_HOURS = 48` falling. Over a default 28-day year the cold arrives
+with the winter quarter and the drive follows over days: it fills past
+`TORPOR_THRESHOLD = 0.50` about 2 days into winter, peaks at ~0.86 in the last
+winter week, and drains back under 0.02 by the end of spring. A scene with no
 clock never advances it, so it stays at 0 and adds nothing anywhere.
 
 Two more context keys ride along: `torpor` (a readout of the same field, for the

@@ -10,7 +10,7 @@ const LIMIT := 1000000000.0
 ## rather than watched seconds: it chases the winter cold, filling over about a
 ## world day once the chill sets in and draining over two as the year turns, so
 ## it peaks a little after deep winter and is still heavy in early spring.
-const TORPOR_FILL_HOURS := 18.0    ## World hours to close ~63% of a rising gap.
+const TORPOR_FILL_HOURS := 40.0    ## World hours to close ~63% of a rising gap: the cold arrives with the quarter, the drive follows over days.
 const TORPOR_DRAIN_HOURS := 48.0   ## Slower the other way: a thaw takes days.
 const TORPOR_THRESHOLD := 0.50     ## Below this the long sleep is not on offer.
 const MAX_DRIFT_HOURS := 24.0      ## A skipped day must not close the whole gap.
