@@ -1,4 +1,5 @@
 bin/
 *.gdextension
+*.gdextension.uid
 .sconsign*
 *.os
