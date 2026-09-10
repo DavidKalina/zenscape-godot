@@ -31,6 +31,7 @@ func _run() -> void:
 	check(not scene._chunk_editor.data.blank and scene.resident_enabled,"Startup retains the original world and Bigfoot")
 	check(scene.habitat.solids.size()>100 and scene.habitat.waters.size()>0,"Fidelity retains its scenery and water")
 	check(not scene.fish.population.is_empty(),"Fidelity has its pond fish")
+	check(scene._chunk_editor.data.tunnels.size()==1 and scene.cave_sites.get_child_count()==1,"Startup includes Bigfoot's prepared cave")
 	for tuner in get_nodes_in_group("tree_motion_tuner"):
 		check(not tuner.visible,"Startup keeps the motion tuning panel hidden")
 	scene.show_menu()
@@ -84,10 +85,13 @@ func _run() -> void:
 	check(editor.save_path != first and FileAccess.file_exists(first),"Launching Fidelity preserves the previous world's save")
 	check(editor.data._undo.is_empty() and editor.data._redo.is_empty(),"Fidelity cannot undo into the previous world")
 	check(not scene.fish.population.is_empty(),"Relaunch restores pond fish")
+	check(editor.data.tunnels.size()==1 and scene.cave_sites.get_child_count()==1,"Fidelity menu action restores the cave")
+	scene.fish.population[0].stored = true
 	check(scene.save_current(),"Fidelity saves successfully")
 	var fidelity_path: String = editor.save_path
 	scene.new_diorama()
 	check(scene.open_path(fidelity_path) and scene.resident_enabled and not editor.data.blank,"Saved Fidelity can be reopened")
+	check(scene.fish.population[0].stored,"Reopening preserves stored fish")
 	scene.show_menu()
 	for size in [Vector2i(480,320),Vector2i(960,640),Vector2i(1440,900)]:
 		root.size = size

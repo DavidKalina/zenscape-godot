@@ -1,4 +1,4 @@
-extends "res://studies/fidelity_life.gd"
+extends "res://studies/bigfoot_cave.gd"
 ## Product entry point. Study scenes remain available through their launchers.
 var library_path := "user://dioramas"
 var recent_file := "user://diorama-recent.cfg"
@@ -391,20 +391,14 @@ func launch_fidelity() -> void:
 	_chunk_editor.select_tool("select")
 	_chunk_editor.refresh()
 	NativeGardenStore.restore(self,_fidelity_state)
-	_reset_fish()
 	_chunk_editor.save_path = library_path+"/Fidelity-"+Time.get_datetime_string_from_system().replace(":","-")+"-"+str(Time.get_ticks_usec())+".json"
 	_has_world = true
 	_before_menu_paused = false
 	_menu_orbit = false
 	close_menu()
 	set_building(false)
-	_frame_diorama()
+	_focus_cave()
 	_notice.text = "Fidelity world · Bigfoot is home."
-
-func _reset_fish() -> void:
-	for item in fish.population: item.node.free()
-	fish.population.clear()
-	if resident_enabled: fish.setup(self)
 
 func new_diorama() -> void:
 	if _chunk_editor.forming or not save_current(): return
@@ -419,7 +413,6 @@ func new_diorama() -> void:
 	_chunk_editor.selected_object_id = -1
 	_chunk_editor.select_tool("select")
 	NativeGardenStore.restore(self,_defaults)
-	_reset_fish()
 	_chunk_editor.save_path = library_path+"/Diorama-"+Time.get_datetime_string_from_system().replace(":","-")+"-"+str(Time.get_ticks_msec())+".json"
 	_has_world = true
 	_before_menu_paused = false
@@ -464,7 +457,6 @@ func open_path(path: String) -> bool:
 		_chunk_editor.save_path = previous
 		_notice.text = "Could not open that diorama. Your current world is unchanged."
 		return false
-	_reset_fish()
 	_has_world = true
 	_before_menu_paused = _paused
 	_remember()
