@@ -104,6 +104,7 @@ func _run() -> void:
 		mind.observe("object_%d" % index, Vector3(index, 0, 0))
 		mind.completed("ritual", {"ritual": "spot_%d" % index, "position": Vector3(index, 0, 0)})
 	check(mind.memories.size() == Mind.MAX_MEMORIES and mind.favorites.size() == Mind.MAX_FAVORITES, "Memory remains bounded in a changing garden")
+	_time_of_day(all)
 	mind.mark_disturbance(Vector3(3, 0, 4))
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(mind.capture(), "", true, true))
 	var restored = Mind.new()
@@ -138,6 +139,68 @@ func _run() -> void:
 	check(restored.restore({}) and restored.capture() == Mind.new().capture(), "A legacy document without life state starts with fresh needs")
 	print("BIGFOOT LIFE MIND failures=", failures)
 	quit(1 if failures else 0)
+## Time of day bends the same scores it always produced. Without a clock, or at
+## noon under full daylight, every number matches the original formulas exactly.
+func _time_of_day(all: Dictionary) -> void:
+	var noon := all.duplicate()
+	noon.hour = 12.0
+	noon.daylight = 1.0
+	var quiet = Mind.new()
+	quiet.hunger = 0.5
+	quiet.fatigue = 0.4
+	var timeless: Array[Dictionary] = quiet.ranked(all)
+	check(timeless == quiet.ranked(noon), "A world without a clock ranks exactly like bright noon")
+	var original := {"sleep": 0.53, "gather": 0.692, "eat": 0.75, "fish": 0.60, "investigate": 0.486, "ritual": 0.387, "play": 0.167}
+	for kind: String in original:
+		check(absf(_score(timeless, kind) - float(original[kind])) < 0.0005, "Absent time keys leave the %s score at its original value" % kind)
+	var night := all.duplicate()
+	night.hour = 23.0
+	night.daylight = 0.0
+	var dark: Array[Dictionary] = quiet.ranked(night)
+	check(is_equal_approx(_score(dark, "sleep"), _score(timeless, "sleep") + 0.45), "Darkness raises the pull of a familiar bed")
+	check(_reason(dark, "sleep") == "Night has come; returning to a familiar bed", "The night sleep reason names the night")
+	check(_score(dark, "investigate") < _score(timeless, "investigate") and _score(dark, "play") < _score(timeless, "play") and _score(dark, "gather") < _score(timeless, "gather"), "Curiosity, play and gathering grow cautious in the dark")
+	check(is_equal_approx(_score(dark, "check_home"), _score(timeless, "check_home")), "Checking home is indifferent to the hour")
+	var wary = Mind.new()
+	wary.caution = 1.0
+	var bold = Mind.new()
+	bold.caution = 0.0
+	check(_score(bold.ranked(noon), "investigate") - _score(bold.ranked(night), "investigate") < _score(wary.ranked(noon), "investigate") - _score(wary.ranked(night), "investigate"), "Caution amplifies the night penalty on curiosity")
+	var drowsy = Mind.new()
+	drowsy.fatigue = 0.22
+	check(not _has(drowsy.ranked(noon), "sleep") and _has(drowsy.ranked(night), "sleep"), "Night lowers the tiredness needed before bed is worth considering")
+	var dawn := all.duplicate()
+	dawn.hour = 6.0
+	dawn.daylight = 0.5
+	var dusk := all.duplicate()
+	dusk.hour = 18.0
+	dusk.daylight = 0.5
+	check(is_equal_approx(_score(quiet.ranked(dawn), "fish"), _score(timeless, "fish") + 0.28), "Fish are worth more at the daylight crossover")
+	check(_reason(quiet.ranked(dawn), "fish") == "The fish bite at dawn" and _reason(quiet.ranked(dusk), "fish") == "The fish bite at dusk", "The crossover fishing reason names dawn or dusk")
+	check(is_equal_approx(_score(quiet.ranked(dusk), "ritual"), _score(timeless, "ritual") + 0.12) and is_equal_approx(_score(quiet.ranked(dawn), "ritual"), _score(timeless, "ritual")), "A quiet ritual is an evening habit, not a morning one")
+	check(quiet.time_note(2.0, 0.0) == "night" and quiet.time_note(6.0, 0.5) == "dawn" and quiet.time_note(13.0, 1.0) == "day" and quiet.time_note(18.0, 0.5) == "dusk", "The light has a name a watcher can read")
+	check(quiet.time_note(NAN, NAN) == "day" and quiet.time_note(30.0, 0.5) == "dawn", "Nonsense clock readings fall back to plain daylight")
+	var starving = Mind.new()
+	starving.hunger = 0.9
+	starving.fatigue = 0.5
+	check(starving.ranked(night)[0].kind == "eat", "Real hunger still overrides the night's pull toward bed")
+	var exhausted = Mind.new()
+	exhausted.hunger = 0.1
+	exhausted.fatigue = 0.95
+	check(exhausted.ranked(noon)[0].kind == "sleep", "Real exhaustion still chooses sleep in broad daylight")
+	var lit = Mind.new()
+	var unlit = Mind.new()
+	lit.advance(1.0, false, 0.0, 1.0)
+	unlit.advance(1.0, false, 0.0, 0.0)
+	check(unlit.fatigue > lit.fatigue and unlit.fatigue - Mind.new().fatigue < (lit.fatigue - Mind.new().fatigue) * 1.31, "Darkness tires him faster by a bounded amount")
+	check(unlit.enrichment < lit.enrichment and unlit.enrichment - Mind.new().enrichment > (lit.enrichment - Mind.new().enrichment) * 0.70, "The dark offers slightly less to enjoy, by a bounded amount")
+	var unspecified = Mind.new()
+	unspecified.advance(1.0, false, 0.0)
+	check(unspecified.capture() == lit.capture(), "An unspecified daylight keeps the original bright-day need timing")
+func _reason(actions: Array[Dictionary], kind: String) -> String:
+	for action in actions:
+		if action.kind == kind: return str(action.reason)
+	return ""
 func _has(actions: Array[Dictionary], kind: String) -> bool:
 	for action in actions:
 		if action.kind == kind: return true
