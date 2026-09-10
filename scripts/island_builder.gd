@@ -143,6 +143,14 @@ func flooded_at(local_xz: Vector2) -> bool:
 			return true
 	return false
 
+## The flooded test in world XZ, the form the twin-chunk anchor search asks.
+func in_water_at(world_xz: Vector2) -> bool:
+	if data == null:
+		return false
+	var pose := global_transform if is_inside_tree() else transform
+	var local := pose.affine_inverse() * Vector3(world_xz.x, 0.0, world_xz.y)
+	return flooded_at(Vector2(local.x, local.z))
+
 ## A one-line description of the landscape this island actually grew, for stills
 ## captions, test output and window titles.
 func describe() -> String:

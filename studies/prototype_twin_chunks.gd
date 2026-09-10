@@ -113,6 +113,10 @@ var bridge: Node3D
 var second_chunk_ready := false
 ## Clear air between the rims. `CHASM_GAP` unless `--gap=` says otherwise.
 var chasm_gap := CHASM_GAP
+## The far island grows from the chunk pipeline with these settings; an empty
+## dictionary falls back to the mirrored stand-in copy of chunk one.
+const ISLAND_SEED := 11
+var island_settings: Dictionary = {"preset": "valley", "seed": ISLAND_SEED}
 ## Terrain-local -> study-root pose for chunk one and for its copy.
 var _base := Transform3D.IDENTITY
 var _mirror := Transform3D.IDENTITY
@@ -127,6 +131,10 @@ func _ready() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--gap="):
 			chasm_gap = maxf(2.0, float(argument.trim_prefix("--gap=")))
+		if argument.begins_with("--island="):
+			# `--island=<preset>:<seed>`; `--island=copy` keeps the mirrored stand-in.
+			var parts := argument.trim_prefix("--island=").split(":")
+			island_settings = {} if parts[0] == "copy" else {"preset": parts[0], "seed": int(parts[1]) if parts.size() > 1 else ISLAND_SEED}
 	print("TWIN CHUNKS chasm gap %.1f m, centres %.1f m apart" % [chasm_gap, chunk_spacing()])
 	_base = global_transform.affine_inverse() * _chunk_editor.terrain.global_transform
 	var centre := _base.origin
@@ -167,7 +175,7 @@ func rebuild_second_chunk() -> void:
 	if second_chunk != null:
 		remove_child(second_chunk)
 		second_chunk.queue_free()
-	second_chunk = _build_second_chunk()
+	second_chunk = await _build_second_chunk()
 	add_child(second_chunk)
 	_anchors.clear()  ## A new island means a new rim to look for anchors on.
 	_place_bridge()
@@ -211,6 +219,14 @@ class DuplicateIsland extends Node3D:
 func _build_second_chunk() -> Node3D:
 	_copied.clear()
 	_skipped.clear()
+	if not island_settings.is_empty():
+		var settings := island_settings.duplicate()
+		settings["name"] = "SecondChunk"
+		var grown: Node3D = await IslandBuilder.build(self, settings)
+		grown.set_meta("prototype_scenery", true)
+		grown.transform = _placement
+		print("TWIN CHUNKS grew the far island: %s" % grown.describe())
+		return grown
 	var island := DuplicateIsland.new()
 	island.name = "SecondChunk"
 	island.placement = _mirror
