@@ -33,6 +33,7 @@ const TOOL_TEXT := {
 	"assets":"Pick a piece below, then click to place it.",
 	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
+	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -647,13 +648,21 @@ func _history_step(forward: bool) -> void:
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
+	if scene.has_method("_finish_fire_stroke"): scene._finish_fire_stroke()
 	var history: Array = data._redo if forward else data._undo
 	if history.is_empty(): return
+	var operation := {}
+	for key in ["fire","explosion"]:
+		if history.back().get(key,false): operation[key] = true
 	var saved_scene: Dictionary = history.back().get("favorite_scene",{})
 	var inverse := NativeGardenStore.capture(scene) if not saved_scene.is_empty() else {}
 	if data.redo() if forward else data.undo():
+		var other: Array = data._undo if forward else data._redo
+		other.back().merge(operation)
+		if forward and operation.get("explosion",false) and scene.has_method("_continue_blast_fire"):
+			var field: FireField = scene._fire_field
+			if field.active(): scene._continue_blast_fire()
 		if not saved_scene.is_empty():
-			var other: Array = data._undo if forward else data._redo
 			other.back()["favorite_scene"] = inverse
 		refresh()
 		if not saved_scene.is_empty(): _restore_favorite_scene(saved_scene)
@@ -693,7 +702,9 @@ var _refresh_generation := 0
 ## Destruction uses it to reveal already prepared debris in the same frame.
 ## False means a stage was rejected or superseded. Earlier stages can already
 ## be visible; callers requiring a complete transaction must retry or abandon it.
+var refresh_pending := 0
 func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) -> bool:
+	refresh_pending += 1
 	_refresh_generation += 1
 	var generation := _refresh_generation
 	# Invalidate older downstream work before this request waits on its mesh.
@@ -712,10 +723,10 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	last_refresh_usec.input_snapshot = Time.get_ticks_usec()-snapshot_start
 	var current := _refresh_current.bind(generation,target_data,inputs)
 	var prepared_mesh: ArrayMesh = await target_data.build_mesh_budgeted(false,frame_tree)
-	if prepared_mesh == null or not current.call(): return false
+	if prepared_mesh == null or not current.call(): return _finish_refresh(false)
 	terrain.mesh = data.play_mesh(prepared_mesh)
 	if on_publish.is_valid(): on_publish.call("terrain")
-	if not current.call(): return false
+	if not current.call(): return _finish_refresh(false)
 	last_refresh_usec["mesh_elapsed"] = Time.get_ticks_usec()-stage_start
 	refresh_stage = "anchors"
 	stage_start = Time.get_ticks_usec()
@@ -748,21 +759,21 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	scene._growth.publish()
 	if frame_tree != null:
 		await budget.checkpoint()
-		if not current.call(): return false
+		if not current.call(): return _finish_refresh(false)
 	sync_visibility()
 	_rebuild_skirt()
 	if frame_tree != null:
 		await budget.checkpoint()
-		if not current.call(): return false
+		if not current.call(): return _finish_refresh(false)
 	last_refresh_usec["anchors_elapsed"] = Time.get_ticks_usec()-stage_start
 	refresh_stage = "content"
 	stage_start = Time.get_ticks_usec()
-	if not await content.rebuild(false,frame_tree) or not current.call(): return false
+	if not await content.rebuild(false,frame_tree) or not current.call(): return _finish_refresh(false)
 	if on_publish.is_valid(): on_publish.call("content")
-	if not current.call(): return false
+	if not current.call(): return _finish_refresh(false)
 	if frame_tree != null:
 		await budget.checkpoint()
-		if not current.call(): return false
+		if not current.call(): return _finish_refresh(false)
 	last_refresh_usec["content_elapsed"] = Time.get_ticks_usec()-stage_start
 	refresh_stage = "landmarks"
 	stage_start = Time.get_ticks_usec()
@@ -770,10 +781,10 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	landmarks.rebuild(data)
 	falls.rebuild(data)
 	if on_publish.is_valid(): on_publish.call("landmarks")
-	if not current.call(): return false
+	if not current.call(): return _finish_refresh(false)
 	if frame_tree != null:
 		await budget.checkpoint()
-		if not current.call(): return false
+		if not current.call(): return _finish_refresh(false)
 	last_refresh_usec["landmarks_elapsed"] = Time.get_ticks_usec()-stage_start
 	refresh_stage = "maps"
 	stage_start = Time.get_ticks_usec()
@@ -784,7 +795,7 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	if falls.get_child_count()/2 < fall_count:
 		_set_status("A waterfall is blocked or submerged. Lower the obstruction or undo.")
 	# Existing habitat/rain/fog consumers keep the same texture object.
-	if not await _update_surface_maps(original,frame_tree) or not current.call(): return false
+	if not await _update_surface_maps(original,frame_tree) or not current.call(): return _finish_refresh(false)
 	last_refresh_usec["maps_elapsed"] = Time.get_ticks_usec()-stage_start
 	refresh_stage = "post_maps"
 	stage_start = Time.get_ticks_usec()
@@ -807,15 +818,19 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 			selected_object_id = -1
 		selection.update_marker(selected_object_id)
 		selection_changed.emit(selected_object_id)
-	if not current.call(): return false
+	if not current.call(): return _finish_refresh(false)
 	last_refresh_usec["post_maps_elapsed"] = Time.get_ticks_usec()-stage_start
 	stage_start = Time.get_ticks_usec()
 
 	_notify_play_geometry()
-	if not current.call(): return false
+	if not current.call(): return _finish_refresh(false)
 	refresh_stage = ""
 
-	return true
+	return _finish_refresh(true)
+
+func _finish_refresh(published: bool) -> bool:
+	refresh_pending -= 1
+	return published
 
 func _refresh_current(generation: int, target: NativeTerrainData, inputs: Dictionary) -> bool:
 	if generation != _refresh_generation or data != target: return false

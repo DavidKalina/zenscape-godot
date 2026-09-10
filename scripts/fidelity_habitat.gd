@@ -59,7 +59,7 @@ func _add_solid(pose: Transform3D, mesh: Mesh, id: String) -> void:
 	var center := box.get_center()
 	var height: Variant = ground_height(Vector2(center.x,center.z))
 	if height != null:
-		interests.append({"id":id,"position":Vector3(center.x,height,center.z),"bounds":box})
+		interests.append({"id":id,"position":Vector3(center.x,height,center.z),"bounds":box,"kind":"tree" if id.begins_with("mesh-8:") or id.begins_with("mesh-11:") else "scenery"})
 
 func ground_height(point: Vector2) -> Variant:
 	return native_data.ground_height(point) if native_data != null else ground.height_at(point.x,point.y)
@@ -88,7 +88,9 @@ func _add_authored(data: NativeTerrainData) -> void:
 		if not _prop_bounds.has(item.asset): continue
 		var basis := NativeObjectPose.decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP,float(item.angle)).scaled(Vector3.ONE*float(item.scale))
 		if item.asset == "rock": location.y += 0.24*float(item.scale)
-		solids.append(Transform3D(basis,location)*_prop_bounds[item.asset])
+		var box: AABB = Transform3D(basis,location)*_prop_bounds[item.asset]
+		solids.append(box)
+		interests[-1]["bounds"] = box
 
 func clear_at(point: Vector3, ignore_caves := false) -> bool:
 	if not ignore_caves:

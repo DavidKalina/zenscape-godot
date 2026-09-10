@@ -50,6 +50,9 @@ func setup(target: Node3D) -> void:
 	navigation.dynamic_clearance = dynamic_clearance
 	camera = target.camera
 	_chunk_editor = target._chunk_editor
+	_chunk_editor.content.object_fire_changed.connect(_update_object_fire)
+	_chunk_editor.content.instances_published.connect(_instances_published)
+	_chunk_editor.landmarks.instances_published.connect(_instances_published)
 	for node in [loose_props,water_play,mischief,temper,play_collisions]: add_child(node)
 	loose_props.setup(self)
 	water_play.setup(self)
@@ -143,7 +146,19 @@ func _material(source: Material, tint: Color) -> Material:
 		result.albedo_color *= tint
 	return result
 
-func rebuild_registry() -> void:
+func _instances_published() -> void:
+	# Cover/tint refreshes replace batches even when placements do not change.
+	# Keep physical props alive and hide their newly published authored copies.
+	rebuild_registry(false)
+	for id in _active: _hide_authored(id)
+
+func _hide_authored(id: int) -> void:
+	for part in _parts.get(id,[]):
+		if part.has("batch"):
+			part.batch.multimesh.set_instance_transform(part.index,Transform3D(Basis.from_scale(Vector3.ZERO),Vector3.ZERO))
+		else: part.node.hide()
+
+func rebuild_registry(refresh_water := true) -> void:
 	_parts.clear()
 	_records.clear()
 	for record in _chunk_editor.data.objects: _records[int(record.id)] = record
@@ -165,10 +180,11 @@ func rebuild_registry() -> void:
 		_parts[int(item.id)] = []
 		for mesh: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
 			_parts[int(item.id)].append({"node":mesh,"mesh":mesh.mesh,"transform":mesh.global_transform,"source_material":mesh.get_active_material(0),"tint":Color.WHITE})
-	water_play.ponds.clear()
-	for pond in _chunk_editor.data.ponds:
-		water_play.ponds.append({"level":float(pond.level),"vertices":_chunk_editor.data.pond_surface(pond)})
-	water_play.refresh()
+	if refresh_water:
+		water_play.ponds.clear()
+		for pond in _chunk_editor.data.ponds:
+			water_play.ponds.append({"level":float(pond.level),"vertices":_chunk_editor.data.pond_surface(pond)})
+		water_play.refresh()
 	_world_dirty = false
 
 func ensure_collision() -> void:
@@ -219,7 +235,9 @@ func promote(id: int) -> Node3D:
 	ensure_collision()
 	var item: Dictionary = _records.get(id,{})
 	var parts: Array = _parts[id]
-	for part in parts: part.material = _material(part.source_material,part.tint)
+	for part in parts:
+		part.material = _material(part.source_material,part.tint)
+		FireMaterial.apply(part.material,_chunk_editor.content.object_fire(id))
 	var basis := NativeObjectPose.decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP,float(item.angle)).scaled(Vector3.ONE*float(item.scale))
 	var pose: Transform3D = _chunk_editor.terrain.global_transform*Transform3D(basis,_chunk_editor.data.object_position(item))
 	var node: Node3D
@@ -236,10 +254,10 @@ func promote(id: int) -> Node3D:
 		_disable_source_collision(id)
 	node.object_id = id
 	_active[id] = node
-	for part in parts:
-		if part.has("batch"):
-			part.batch.multimesh.set_instance_transform(part.index,Transform3D(Basis.from_scale(Vector3.ZERO),Vector3.ZERO))
-		else: part.node.hide()
+	var fire_materials: Array[Material] = []
+	for part in parts: fire_materials.append(part.material)
+	node.set_meta("fire_materials",fire_materials)
+	_hide_authored(id)
 	return node
 
 func mischief_candidates(kind: String) -> Array:
@@ -331,7 +349,7 @@ func advance(delta: float) -> void:
 	water_play.advance(delta)
 	if not _habitat_blocked:
 		temper.advance(delta)
-		mischief.advance(delta)
+		if owner_scene.environment_life == null or not owner_scene.environment_life.busy(): mischief.advance(delta)
 	else:
 		mischief.cancel()
 		temper.reset()
@@ -358,6 +376,17 @@ func advance(delta: float) -> void:
 
 func flush() -> void:
 	if owner_scene == null or _active.is_empty(): return
+	_store_active_poses()
+	_chunk_editor.refresh()
+
+## The blast remote flushes under its flash, so the refresh spreads across
+## frames instead of stalling the frame the charge goes off.
+func flush_budgeted(frame_tree: SceneTree) -> void:
+	if owner_scene == null or _active.is_empty(): return
+	_store_active_poses()
+	await _chunk_editor.refresh(frame_tree)
+
+func _store_active_poses() -> void:
 	cancel()
 	_flushing = true
 	for id in _active:
@@ -370,7 +399,6 @@ func flush() -> void:
 		_chunk_editor.data.update_object(id,{"x":pose.origin.x,"z":pose.origin.z,"pose":stored})
 	_flushing = false
 	invalidate()
-	_chunk_editor.refresh()
 
 func dynamic_clearance(feet: Vector3) -> bool:
 	for body in loose_props.bodies:
@@ -409,3 +437,8 @@ func prepare() -> void:
 		if preload("res://scripts/world_reference_props.gd").migrate(_chunk_editor): _chunk_editor.refresh()
 		rebuild_registry()
 	ensure_collision()
+
+func _update_object_fire(id: int, value: Vector2) -> void:
+	var node: Node3D = _active.get(id)
+	if not is_instance_valid(node): return
+	for material: Material in node.get_meta("fire_materials",[]): FireMaterial.apply(material,value)

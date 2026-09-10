@@ -11,6 +11,7 @@ var lair: Node3D
 var _cave_skirt_original: Transform3D
 var _cave_original_ready := false
 var _cave_underside_layers := 1
+var environment_life: Node
 var fish: Node
 var spawn_options: Array = []
 var _nav_view := MeshInstance3D.new()
@@ -79,6 +80,9 @@ func _ready() -> void:
 	cave_sites = preload("res://scripts/bigfoot_cave_site.gd").new()
 	add_child(cave_sites)
 	cave_sites.rebuild(_chunk_editor.data)
+	environment_life = preload("res://scripts/bigfoot_environment.gd").new()
+	add_child(environment_life)
+	environment_life.setup(self)
 	fish = preload("res://scripts/fidelity_fish.gd").new()
 	add_child(fish)
 	fish.setup(self)
@@ -142,12 +146,15 @@ func _process(delta: float) -> void:
 	var stopped := _paused or not present
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
-			if not (has_method("resident_activity_owned") and call("resident_activity_owned")):
+			var observing: bool = environment_life != null and environment_life.advance(delta)
+			if not observing and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
-			elif routine != null and not routine.living.current.is_empty():
-				# Player carrying/physical reactions can own the main-game resident
-				# before his routine gets a tick. Release its old journey explicitly.
-				routine.cancel("player interaction interrupted activity")
+			elif routine != null:
+				# Environmental reactions and player interactions take ownership
+				# before the routine ticks; release its journey but keep props moving.
+				if not routine.living.current.is_empty(): routine.cancel("resident activity interrupted routine")
+				routine.living.advance_needs(delta)
+				routine._advance_projectiles(minf(delta,0.05))
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
@@ -164,6 +171,7 @@ func _process(delta: float) -> void:
 func _geometry_changed() -> void:
 	_habitat_changed = true
 	if creature != null: creature.stop_walking()
+	if environment_life != null: environment_life.world_changed()
 	if routine != null: routine.world_changed()
 
 func _refresh_habitat(budgeted := false) -> void:
@@ -255,6 +263,7 @@ func capture_life_state() -> Dictionary:
 	return routine.habits.capture()
 
 func restore_life_state(state: Dictionary) -> void:
+	if environment_life != null: environment_life.world_changed()
 	routine.cancel("garden opened")
 	_refresh_habitat()
 	routine.habits.restore(state)

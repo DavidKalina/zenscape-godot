@@ -27,6 +27,10 @@ window/vsync/vsync_mode=0
 window/size/min_width=960
 window/size/min_height=640
 
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
 [rendering]
 
 textures/vram_compression/import_s3tc_bptc=true
@@ -40,6 +44,15 @@ environment/volumetric_fog/volume_depth=256
 environment/defaults/default_clear_color=Color(0.84, 0.87, 0.82, 1)
 
 [shader_globals]
+
+zs_meteor_head={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_meteor_tail={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
 
 zs_palette_grass={
 "type": "vec3",
@@ -70,6 +83,10 @@ zs_gust_speed={
 "value": 2.36
 }
 zs_autumn={
+"type": "float",
+"value": 0.0
+}
+zs_fire={
 "type": "float",
 "value": 0.0
 }

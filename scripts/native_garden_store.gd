@@ -26,6 +26,9 @@ static func capture(scene: Node3D) -> Dictionary:
 	if scene.has_method("capture_cave_state"): result["cave_system"] = scene.capture_cave_state()
 	if scene.has_method("capture_fish_state"): result["fish_state"] = scene.capture_fish_state()
 	result["world_visuals"] = scene._world_visuals.document()
+	# Optional, and empty whenever nothing is alight, so a garden that has never
+	# burned costs no bytes and a save written before fire existed still loads.
+	if scene.get("_fire_field") != null: result["fire"] = scene._fire_field.document()
 	return result
 
 static func valid(scene: Node3D, state: Variant) -> bool:
@@ -58,6 +61,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 	for value: Variant in state._growth.values():
 		if not GardenData._number(_float(value),0,1): return false
 	if state.has("world_visuals") and not preload("res://scripts/world_visuals.gd").valid(state.world_visuals): return false
+	if state.has("fire") and not FireField.valid(state.fire): return false
 	if state.has("look") and not preload("res://scripts/scene_look.gd").valid(state.look): return false
 	if state.has("bigfoot_habits") and not preload("res://scripts/bigfoot_habits.gd").valid(state.bigfoot_habits): return false
 	if state.has("bigfoot_living") and not preload("res://scripts/bigfoot_living_world.gd").valid(state.bigfoot_living): return false
@@ -74,6 +78,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 
 static func restore(scene: Node3D, state: Dictionary) -> void:
 	scene._world_visuals.restore(state.get("world_visuals",{}))
+	if scene.get("_fire_field") != null: scene._fire_field.restore(state.get("fire",{}))
 	scene._celestial.look.restore(state.get("look",preload("res://scripts/scene_look.gd").new().document()))
 	for group: String in FIELDS:
 		var object := _object(scene,group)

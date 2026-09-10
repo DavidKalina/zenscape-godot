@@ -122,8 +122,9 @@ func _main_game() -> void:
 		if chunks[i].global_position.y < starts[i].y-0.3: fallen += 1
 	check(fallen>chunks.size()/3,"Detached mountain sections actually fall downhill under gravity")
 	check(remote.bodies.size()<=remote.MAX_BODIES,"Collapse shares the existing debris budget")
-	var damaged := editor.data.to_document()
 	check(scene.save_current(),"Collapsed mountain saves in the ordinary world format")
+	# Saving flushes props knocked loose by debris; redo restores that saved state.
+	var damaged := editor.data.to_document()
 	remote.restore_button.pressed.emit()
 	await process_frame
 	check(editor.data.to_document() == before and remote.bodies.is_empty(),"Undo restores the exact original peak and clears all falling rock")

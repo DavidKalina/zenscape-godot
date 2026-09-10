@@ -39,15 +39,21 @@ func setup(owner_routine: Node) -> void:
 func available() -> bool:
 	return is_instance_valid(scene.get("lair"))
 
+## Needs keep time while another resident behavior owns movement or animation.
+## The scene calls this only when it skips the routine's ordinary advance.
+func advance_needs(delta: float) -> void:
+	if not enabled or not is_finite(delta) or delta<=0.0: return
+	var dt := clampf(delta,0.0,0.05)
+	mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0)
+	_home_check_due = maxf(0.0,_home_check_due-dt)
+
 ## Called only by the unpaused, visible resident clock. Surface activities own
 ## this tick; interior gestures share it with the existing cave clock.
 func advance(delta: float) -> bool:
 	if not is_finite(delta) or delta<=0.0: return not current.is_empty() and phase in ["approach","notice","surface_perform","collect"]
 	if not enabled and current.is_empty(): return false
 	var dt := clampf(delta,0.0,0.05)
-	if enabled:
-		mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0)
-		_home_check_due = maxf(0.0,_home_check_due-dt)
+	advance_needs(dt)
 	if not current.is_empty() and scene.creature.state in [CreatureActor.State.HELD,CreatureActor.State.STUMBLING,CreatureActor.State.WIND,CreatureActor.State.SWIMMING,CreatureActor.State.SHAKING]:
 		cancel()
 		return false
@@ -101,6 +107,8 @@ func _context() -> Dictionary:
 ## Explicit invitations and autonomous choices cross this same ownership seam.
 func request(kind: String, target: Dictionary = {}) -> bool:
 	if not current.is_empty() or not routine.active.is_empty() or not routine.cave.phase.is_empty() or not scene.creature.can_roam(): return false
+	var environment: Variant = scene.get("environment_life")
+	if environment != null and (environment.busy() or (environment.fire != null and environment.fire.busy())): return false
 	var accepted := false
 	match kind:
 		"gather": accepted = available() and _request_gather(target)

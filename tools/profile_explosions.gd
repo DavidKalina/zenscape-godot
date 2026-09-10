@@ -67,10 +67,10 @@ func run() -> void:
 	scene.set_building(false)
 	# macOS can restore a previous maximized window after scene startup. Apply
 	# the benchmark dimensions after loading, and verify them after warmup.
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	root.mode = Window.MODE_WINDOWED
 	# Window-mode changes are asynchronous on macOS; let the restored size
 	# arrive before assigning the benchmark size.
-	for _frame in range(3): await process_frame
+	await create_timer(0.5).timeout
 	root.size = Vector2i(1440,900)
 	for argument in OS.get_cmdline_user_args():
 		if argument == "--quality=beauty": scene._set_quality(0)
@@ -84,6 +84,11 @@ func run() -> void:
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(),true)
 	for trial in range(3):
 		for i in range(90): await process_frame
+		for attempt in range(120):
+			if root.size == Vector2i(1440,900): break
+			root.mode = Window.MODE_WINDOWED
+			root.size = Vector2i(1440,900)
+			await create_timer(0.05).timeout
 		if root.size != Vector2i(1440,900):
 			push_error("Explosion viewport mismatch: "+str(root.size))
 			scene.free()

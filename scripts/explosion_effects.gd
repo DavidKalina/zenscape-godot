@@ -65,6 +65,8 @@ func _mesh(parent: Node3D, shape: Mesh, color: Color, offset := Vector3.ZERO) ->
 	var visual := MeshInstance3D.new()
 	visual.mesh = shape
 	visual.material_override = _material(color)
+	# Translucent flash and dust must not throw opaque shadows over the hillside.
+	visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	visual.position = offset
 	parent.add_child(visual)
 	return visual

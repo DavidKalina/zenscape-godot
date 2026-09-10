@@ -68,9 +68,12 @@ func finish() -> Variant:
 func run(action: Callable, tree: SceneTree = null) -> Variant:
 	assert(not active(), "A background job cannot be reused while running")
 	if tree == null: return action.call()
-	start(action)
-	while not completed(): await tree.process_frame
-	return finish()
+	# Keep this finite job alive through its own await even if the scene that
+	# requested it is freed. The local releases it immediately after joining.
+	var work := self
+	work.start(action)
+	while not work.completed(): await tree.process_frame
+	return work.finish()
 
 func run_group(actions: Array[Callable], tree: SceneTree, workers: int) -> Array:
 	assert(not active(), "A background job cannot be reused while running")
@@ -80,9 +83,10 @@ func run_group(actions: Array[Callable], tree: SceneTree, workers: int) -> Array
 		var result := []
 		for action in actions: result.append(action.call())
 		return result
-	start_group(actions,workers)
-	while not completed(): await tree.process_frame
-	return finish()
+	var work := self
+	work.start_group(actions,workers)
+	while not work.completed(): await tree.process_frame
+	return work.finish()
 
 func _join() -> void:
 	if _group: WorkerThreadPool.wait_for_group_task_completion(_task)

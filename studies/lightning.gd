@@ -1,6 +1,7 @@
 extends Node3D
 ## Source weather.js strike timing and wind.js downburst, native tube/light rendering.
 signal thunder(distance: float, energy: float)
+signal struck(point: Vector3)
 var clock := 0.0
 var next_strike := 6.0
 var flash := 0.0
@@ -64,6 +65,7 @@ func strike(at: Vector2, camera_position: Vector3) -> void:
 	_clap_at = clock + 0.5
 	_foot = at
 	strike_count += 1
+	struck.emit(Vector3(at.x,gy,at.y))
 	_update_flash()
 
 func advance(dt: float, paused: bool, storm: float, wind: float, direction: Vector2, camera_position: Vector3) -> void:

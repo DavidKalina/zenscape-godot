@@ -81,6 +81,29 @@ var _water_slider: HSlider
 var _autumn_slider: HSlider
 var _cold_slider: HSlider
 var _tremor := preload("res://scripts/reference_tremor.gd").new()
+## Fire. The field is the simulation and the only piece this scene requires;
+## the look and effects layers are optional companions loaded through a guarded
+## `load()` so a build without them still runs. Everything reaches the world
+## through `FireField.ignite` and the field's signals.
+var _fire_field: FireField = null
+var _fire_look = null
+var _fire_effects = null
+## Ground cover and tint change on the field's 8 Hz tick, but the terrain mesh
+## and flora batches only follow a `refresh()`. Rebuilding that often is wasted
+## work, so a burning world refreshes on this cadence instead.
+const FIRE_REFRESH := 0.5
+const FIRE_REGROW_REFRESH := 4.0
+var _fire_refresh := 0.0
+var _fire_stroke := false
+var _fire_opening := false
+var _fire_history_before := {}
+var _fire_blast_history := {}
+var _fire_wait_time := 0.0
+## The value last published to the `zs_fire` global. `global_shader_parameter_get`
+## is editor-only, so the scene keeps its own record for tests and tools.
+var _fire_intensity := 0.0
+var _fire_water_map: Image = null
+var _fire_water_age := 1e9
 
 func _ready() -> void:
 	set_process(false)
@@ -164,6 +187,7 @@ func _ready() -> void:
 	add_child(_world_visuals)
 	add_child(_waterfall_drips)
 	_atmosphere.setup_wind_trails(_chunk_editor.data.ground_height)
+	_setup_fire()
 	_build_ui()
 	if not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":
 		_enable_display_fog()
@@ -513,6 +537,7 @@ func _process(delta: float) -> void:
 	_atmosphere.rain = maxf(_precipitation.state.x, _precipitation.state.y)
 	_thunder_audio.update_state(_paused)
 	_lightning.advance(delta, _paused, _precipitation.state.w, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle), sin(_atmosphere._air_angle)), camera.global_position)
+	_advance_fire(delta)
 	_atmosphere.advance(delta, _paused)
 	_update_leaf_litter(delta)
 	_ambient_audio.update_world(delta,_paused,self)
@@ -522,6 +547,7 @@ func _process(delta: float) -> void:
 	if not _paused:
 		_motion_time += delta
 		RenderingServer.global_shader_parameter_set("zs_motion_time", _motion_time)
+	_celestial.sample_sky_motion(_motion_time)
 	_bird_flight.growth = minf(_growth.foliage, _growth.water) if _growth.terrain >= 0.995 else 0.0
 	_fireflies.update_conditions(_celestial.state.get("zs_daylight",1.0), _precipitation.state.x, _precipitation.surface_weather.cold, _bird_flight.growth)
 	if _chunk_editor.data.blank:
@@ -554,6 +580,176 @@ func _process(delta: float) -> void:
 	if not _capture.is_empty() and not _capture_done and _elapsed > 1.0:
 		_capture_done = true
 		_capture_frame.call_deferred()
+
+# ------------------------------------------------------------------------ fire
+
+## The field is created once the editor's terrain data exists, and is wired to
+## everything that can start a fire. `_resident_wind` belongs to the product
+## subclass, so the wind sampler looks it up per call and falls back to the
+## scene's prevailing air.
+func _setup_fire() -> void:
+	_fire_field = FireField.new()
+	_refresh_fire_water()
+	_fire_field.setup(_chunk_editor.data,_fire_wind,_fire_weather,_fire_water,0x5B1A2E)
+	_lightning.struck.connect(func(point: Vector3) -> void: _fire_field.ignite(point,0.8,1.0))
+	_chunk_editor.data.stroke_starting.connect(_before_terrain_stroke)
+	_chunk_editor.data.history_captured.connect(_capture_fire_history)
+	_chunk_editor.data.state_restored.connect(_restore_fire_history)
+	_fire_field.state_restored.connect(_fire_restored)
+	_fire_field.stroke_started.connect(_fire_stroke_started)
+	_fire_field.stroke_ended.connect(_fire_stroke_ended)
+	_fire_field.explosive_triggered.connect(func(id: int,_position: Vector3) -> void:
+		_chunk_editor.explosives.ignite_charge(id))
+	# The burnt look and the flames are built in parallel; a worktree without
+	# them still simulates, saves and undoes fire.
+	if ResourceLoader.exists("res://scripts/fire_look.gd"):
+		_fire_look = load("res://scripts/fire_look.gd").new()
+		if _fire_look != null and _fire_look.has_method("setup"):
+			_fire_look.setup(_fire_field,_chunk_editor.content)
+			if "ground_refresh" in _fire_look:
+				_fire_look.ground_refresh = false
+	if ResourceLoader.exists("res://scripts/fire_effects.gd"):
+		_fire_effects = load("res://scripts/fire_effects.gd").new()
+		if _fire_effects is Node:
+			add_child(_fire_effects)
+		if _fire_effects != null and _fire_effects.has_method("setup"):
+			_fire_effects.setup(_fire_field,self)
+
+func _fire_wind(position: Vector3) -> Vector3:
+	var resident: Variant = get("_resident_wind")
+	if resident != null and resident.field != null:
+		return resident.field.sample(position)
+	return Vector3(cos(_atmosphere._air_angle),0.0,sin(_atmosphere._air_angle))*_atmosphere._air_strength
+
+func _fire_weather() -> Dictionary:
+	var weather = _precipitation.surface_weather
+	return {"ground_wet":weather.ground_wet,"snow_cover":weather.snow_cover,"rain":_precipitation.state.x}
+
+## The surface map already carries the water level in alpha and the ground
+## height in green, so a cell is under water wherever alpha stands above it.
+## The editor keeps that image on the CPU; only a scene without one pays for a
+## texture read, and never more than once every two seconds.
+func _fire_water(position: Vector3) -> bool:
+	if _fire_water_map == null:
+		return false
+	var size := _fire_water_map.get_width()
+	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+	var x := clampi(roundi(pixel.x),0,size-1)
+	var z := clampi(roundi(pixel.y),0,size-1)
+	var value := _fire_water_map.get_pixel(x,z)
+	return value.a > value.g+0.02
+
+func _refresh_fire_water() -> void:
+	_fire_water_age = 0.0
+	var before := _fire_water_map
+	var cached: Variant = _chunk_editor.get("_map_ground")
+	if cached is Image:
+		_fire_water_map = cached
+	elif _precipitation.ground_texture != null:
+		_fire_water_map = _precipitation.ground_texture.get_image()
+	# The water mask is read once per rebuild, not per tick, so the first map to
+	# arrive (and any later replacement) has to re-seed it.
+	if _fire_field != null and _fire_water_map != before:
+		_fire_field.rebuild()
+
+func _advance_fire(delta: float) -> void:
+	if _fire_field == null:
+		return
+	_fire_water_age += delta
+	if _fire_water_age > 2.0:
+		_refresh_fire_water()
+	var burning := _fire_field.active()
+	var transaction: bool = _chunk_editor.forming or (not _chunk_editor.data._before.is_empty() and not _fire_stroke)
+	var publishing: bool = _chunk_editor.refresh_pending > 0
+	if publishing and not _paused and not transaction:
+		_fire_wait_time = minf(_fire_wait_time+delta,1.0)
+	if not _paused and not transaction and not publishing:
+		if burning and not _fire_stroke: _fire_stroke_started(false)
+		_fire_field.advance(delta+_fire_wait_time,false)
+		_fire_wait_time = 0.0
+		if not _fire_field.active() and not _fire_field.ignition_pending(): _fire_blast_history = {}
+	_fire_intensity = _fire_field.total_intensity()
+	RenderingServer.global_shader_parameter_set("zs_fire",_fire_intensity)
+	if _fire_look != null and _fire_look.has_method("advance"):
+		_fire_look.advance(delta,_paused)
+	if _fire_effects != null and _fire_effects.has_method("advance"):
+		_fire_effects.advance(delta,_paused)
+	if _paused or not (burning or _fire_field.recovering()):
+		return
+	_fire_refresh += delta
+	if _fire_refresh >= (FIRE_REFRESH if burning else FIRE_REGROW_REFRESH):
+		_fire_refresh = 0.0
+		_refresh_fire_ground()
+
+## The field writes cover and tint straight into the terrain data. Only a
+## refresh turns those into mesh colours and flora batches, and its incremental
+## path already spots a repainted cell, so no cache needs discarding here.
+func _refresh_fire_ground() -> void:
+	if _chunk_editor == null or _chunk_editor.forming or _chunk_editor.refresh_pending > 0:
+		return
+	# No awaiting wrapper: destruction can discard this refresh at any stage
+	# without keeping a suspended method on the deleted scene alive.
+	_chunk_editor.refresh(get_tree())
+
+## One fire is one undo step, like one salvo of charges. The bracket opens on
+## the first cell to catch and closes when the last one dies.
+func _fire_stroke_started(new_fire := true) -> void:
+	if _chunk_editor == null or _fire_stroke or not _chunk_editor.data._before.is_empty(): return
+	_fire_history_before = _fire_field.history_before_fire if new_fire else _fire_field.document()
+	_fire_opening = true
+	_chunk_editor.data.begin_stroke()
+	_fire_opening = false
+	_fire_stroke = true
+
+func _finish_fire_stroke() -> void:
+	if _chunk_editor == null or not _fire_stroke: return
+	_fire_stroke = false
+	var data := _chunk_editor.data
+	if data.end_stroke() and not data._undo.is_empty():
+		# Only coalesce with the exact adjacent blast entry. An ordinary edit
+		# clears the association, so Undo never jumps across user work.
+		if data._undo.size() >= 2 and is_same(data._undo[-2],_fire_blast_history):
+			data._undo.pop_back()
+		data._undo.back()["fire"] = true
+	_fire_blast_history = {}
+
+func _begin_blast_stroke() -> void:
+	# Physics may admit another cook-off before a process frame reopens fire.
+	var history := _chunk_editor.data._undo
+	if not _fire_stroke and not history.is_empty() and is_same(history.back(),_fire_blast_history):
+		_fire_stroke_started(false)
+	if not _fire_stroke: _chunk_editor.data.begin_stroke()
+
+func _end_blast_stroke() -> void:
+	if _fire_stroke: _finish_fire_stroke()
+	else: _chunk_editor.data.end_stroke()
+
+func _continue_blast_fire() -> void:
+	_fire_blast_history = _chunk_editor.data._undo.back()
+
+func _fire_stroke_ended() -> void:
+	_finish_fire_stroke()
+	_refresh_fire_ground()
+
+func _before_terrain_stroke() -> void:
+	if not _fire_opening:
+		_finish_fire_stroke()
+		_fire_blast_history = {}
+
+func _capture_fire_history(state: Dictionary) -> void:
+	state["fire_state"] = _fire_history_before.duplicate(true) if _fire_opening else _fire_field.document()
+
+func _restore_fire_history(state: Dictionary) -> void:
+	_fire_field.restore(state.get("fire_state",{}))
+
+func _fire_restored() -> void:
+	_fire_stroke = false
+	_fire_blast_history = {}
+	_fire_wait_time = 0.0
+	_fire_refresh = 0.0
+	_chunk_editor.explosives.fire_queue.clear()
+	_fire_intensity = _fire_field.total_intensity()
+	RenderingServer.global_shader_parameter_set("zs_fire",_fire_intensity)
 
 func _capture_frame() -> void:
 	# Offscreen captures must also complete when macOS occludes the window.

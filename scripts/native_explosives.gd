@@ -5,12 +5,16 @@ const Blast = preload("res://scripts/terrain_blast.gd")
 const InternalBlast = preload("res://scripts/internal_blast.gd")
 const Collapse = preload("res://scripts/mountain_collapse.gd")
 const MAX_BODIES := 100
+## Only fast, substantial debris knocks down the resident or unseats props.
+const STRIKE_SPEED := 4.0
+const STRIKE_RADIUS := 0.25
 const SOLIDS := ["tree","layered_tree","redwood","broadleaf","snag","bigfoot_tree","rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
 var editor: NativeChunkEditor
 var effects = preload("res://scripts/explosion_effects.gd").new()
 var collisions := NativePlayCollisions.new()
 var bodies: Array[RigidBody3D] = []
 var requested := false
+var fire_queue: Array[int] = []
 var firing := false
 var _staging := false
 var _blast_generation := 0
@@ -180,14 +184,20 @@ func _unhandled_input(event: InputEvent) -> void:
 func request_detonation() -> void:
 	if not _blocked(): requested = true
 
+## `FireField.explosive_triggered` lands here. One live transaction at a time, so
+## a chain of cook-offs reads as a chain rather than a single flash.
+func ignite_charge(id: int) -> void:
+	if id not in fire_queue: fire_queue.append(id)
+
 func can_restore() -> bool:
 	return not editor.data._undo.is_empty() and editor.data._undo.back().get("explosion",false)
 
 func _geometry_changed() -> void:
-	if not firing: clear_effects()
+	if not firing: clear_effects(false)
 	_sync_list()
 
-func clear_effects() -> void:
+func clear_effects(clear_pending := true) -> void:
+	if clear_pending: fire_queue.clear()
 	_blast_generation += 1
 	if _resident_before is Vector3 and editor != null:
 		editor.scene.creature.reset_at(_resident_before)
@@ -209,6 +219,9 @@ func _physics_process(delta: float) -> void:
 	if requested:
 		requested = false
 		if not _blocked() and not firing: detonate(true)
+	elif not fire_queue.is_empty() and not _blocked() and not firing:
+		var cooked: int = fire_queue.pop_front()
+		if editor.data.object_by_id(cooked).get("asset") == "explosive": detonate(true,cooked)
 	if not _blocked(): _elapsed += delta
 	for i in range(bodies.size()-1,-1,-1):
 		var body := bodies[i]
@@ -222,7 +235,7 @@ func _physics_process(delta: float) -> void:
 			body.freeze = _blocked() or waiting
 			if not _staging and body.collision_layer == 0:
 				body.collision_layer = 4
-				body.collision_mask = 1
+				body.collision_mask = 1|2
 			if not body.freeze and body.has_meta("blast_impulse"):
 				var impulse: Array = body.get_meta("blast_impulse")
 				body.apply_central_impulse(impulse[0])
@@ -233,43 +246,59 @@ func _physics_process(delta: float) -> void:
 				body.angular_velocity = Vector3(rng.randf_range(-1,1),rng.randf_range(-1,1),rng.randf_range(-1,1))
 				body.remove_meta("collapse_velocity")
 				effects.emit_rockfall(body.global_position,0.8)
+	if not _blocked():
+		_strike_resident()
+		_splash_debris()
 
-func detonate(live := false) -> void:
+func detonate(live := false, only_id := -1) -> void:
 	if firing or editor.forming: return
 	var frame_tree: SceneTree = get_tree() if live else null
 	phase = "preparation"
 	last_stage_usec.clear()
 	var stage_start := Time.get_ticks_usec()
 	var salvo: Array[Dictionary] = []
+	var selected := only_id if only_id > 0 else target_id
 	for item in charges():
-		if target_id <= 0 or item.id == target_id: salvo.append(item.duplicate(true))
+		if selected <= 0 or item.id == selected: salvo.append(item.duplicate(true))
 	if salvo.is_empty(): return
 	editor.finish_stroke()
-	if editor.scene.has_method("flush_world_play"): editor.scene.flush_world_play()
-	clear_effects()
+	clear_effects(false)
 	firing = true
 	_staging = live
 	_elapsed = 0.0
 	var generation := _blast_generation
 	var target_data := editor.data
 	editor.forming = true
+	var origins: Array[Vector3] = []
+	for charge in salvo:
+		origins.append(editor.terrain.to_global(editor.data.object_position(charge)))
+	# Publish the live flash before flushing loose props or migrating scenery.
+	if live:
+		for i in range(salvo.size()): effects.emit_blast(origins[i],salvo[i].blast_radius)
+	if editor.scene.has_method("flush_world_play_budgeted"):
+		await editor.scene.flush_world_play_budgeted(frame_tree)
+	elif editor.scene.has_method("flush_world_play"):
+		editor.scene.flush_world_play()
+	if _aborted(generation,target_data): return
 	# Legacy scenery becomes ordinary records before taking visible mesh copies.
-	editor.data.begin_stroke()
-	if preload("res://scripts/world_reference_props.gd").migrate(editor): editor.refresh()
+	if editor.scene.has_method("_begin_blast_stroke"): editor.scene._begin_blast_stroke()
+	else: editor.data.begin_stroke()
+	if preload("res://scripts/world_reference_props.gd").migrate(editor):
+		while not await editor.refresh(frame_tree):
+			if _aborted(generation,target_data): return
+			if frame_tree != null: await frame_tree.process_frame
+		if _aborted(generation,target_data): return
 	editor.reactions.finish_all()
 	last_stage_usec["preparation"] = Time.get_ticks_usec()-stage_start
 	phase = "affected"
 	stage_start = Time.get_ticks_usec()
 	var affected := {}
-	var origins: Array[Vector3] = []
 	var resident := editor.scene.get("creature") as CreatureActor
 	var resident_enabled: bool = resident != null and editor.scene.get("resident_enabled") == true
 	var resident_kick := Vector3.ZERO
-	for charge in salvo:
-		var local := editor.data.object_position(charge)
-		var origin := editor.terrain.to_global(local)
-		origins.append(origin)
-		if live: effects.emit_blast(origin,charge.blast_radius)
+	for i in range(salvo.size()):
+		var charge := salvo[i]
+		var origin := origins[i]
 		if resident_enabled:
 			resident_kick += Blast.impulse(origin,resident.global_position+Vector3.UP*0.9,charge.blast_radius)*0.8
 		for item in editor.data.objects:
@@ -279,7 +308,9 @@ func detonate(live := false) -> void:
 			if kick.length_squared() > 0.01:
 				affected[item.id] = {"item":item.duplicate(true),"kick":kick + affected.get(item.id,{}).get("kick",Vector3.ZERO)}
 	# Reuse the visible terrain colors instead of rebuilding a temporary crater mesh.
-	var surface_colors: PackedColorArray = editor.data.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	var visible := editor.terrain.mesh as ArrayMesh
+	var color_source: ArrayMesh = visible if visible != null and editor.data.tunnels.is_empty() else editor.data.build_mesh()
+	var surface_colors: PackedColorArray = color_source.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 	last_stage_usec["affected_and_colors"] = Time.get_ticks_usec()-stage_start
 	phase = "worker"
 	stage_start = Time.get_ticks_usec()
@@ -354,7 +385,8 @@ func detonate(live := false) -> void:
 	phase = "refresh"
 	stage_start = Time.get_ticks_usec()
 	for id in affected: editor.data.remove_object(id)
-	editor.data.end_stroke()
+	if editor.scene.has_method("_end_blast_stroke"): editor.scene._end_blast_stroke()
+	else: editor.data.end_stroke()
 	editor.data._undo.back()["explosion"] = true
 	# A rejected stage has not published its matching visuals/maps. Keep all
 	# bodies staged until a complete refresh succeeds or this blast is aborted.
@@ -398,6 +430,20 @@ func detonate(live := false) -> void:
 	phase = "idle"
 	collapse_count = collapses.size()
 	_sync_list()
+	# A blast leaves fire behind. Wet ground, snow or rain still smother it, so
+	# the field decides whether anything actually catches.
+	#
+	# `carve_native` zeroes cover inside the blast radius, so the crater has no
+	# fuel of its own and only the ring outside it can catch. The design's
+	# radius * 1.2 at full strength lands that ring below the ignition
+	# threshold; 1.6 at 1.5 puts a cell-wide band of grass over it.
+	var field: Variant = editor.scene.get("_fire_field")
+	if field != null:
+		var ignited: bool = field.active()
+		for i in range(salvo.size()):
+			ignited = field.ignite(editor.terrain.to_local(origins[i]),salvo[i].blast_radius*1.6,1.5) or ignited
+		if ignited and editor.scene.has_method("_continue_blast_fire"):
+			editor.scene._continue_blast_fire()
 	editor._set_status(("Mountain collapse · " if collapse_count > 0 else "Detonated %d charge(s) · " % salvo.size())+"Undo last blast restores the landscape.")
 	last_stage_usec["finish"] = Time.get_ticks_usec()-stage_start
 
@@ -477,7 +523,7 @@ func _capture_parts(affected: Dictionary) -> Dictionary:
 			if not result.has(item.id): result[item.id] = []
 			var material: Material = batch.material_override if batch.material_override != null else batch.multimesh.mesh.surface_get_material(0)
 			var tint: Color = batch.multimesh.get_instance_color(i) if batch.multimesh.use_colors else Color.WHITE
-			result[item.id].append({"mesh":batch.multimesh.mesh,"transform":batch.global_transform*batch.multimesh.get_instance_transform(i),"material":_material(material,tint)})
+			result[item.id].append({"mesh":batch.multimesh.mesh,"transform":batch.global_transform*batch.multimesh.get_instance_transform(i),"material":_material(material,tint,editor.content.object_fire(int(item.id)))})
 	for id in affected:
 		var item: Dictionary = affected[id].item
 		if item.asset not in NativeGardenLandmarks.KINDS: continue
@@ -485,10 +531,10 @@ func _capture_parts(affected: Dictionary) -> Dictionary:
 		if node == null: continue
 		result[id] = []
 		for visual: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
-			result[id].append({"mesh":visual.mesh,"transform":visual.global_transform,"material":_material(visual.get_active_material(0),Color.WHITE)})
+			result[id].append({"mesh":visual.mesh,"transform":visual.global_transform,"material":_material(visual.get_active_material(0),Color.WHITE,editor.content.object_fire(id))})
 	return result
 
-func _material(source: Material, tint: Color) -> Material:
+func _material(source: Material, tint: Color, fire := Vector2.ZERO) -> Material:
 	if source == null: return null
 	var material := source.duplicate() as Material
 	if material is ShaderMaterial:
@@ -496,6 +542,7 @@ func _material(source: Material, tint: Color) -> Material:
 		material.set_shader_parameter("base_color",(base if base is Color else Color.WHITE)*tint)
 		for flag in ["terrain_growth","plant_growth","sway_enabled","conifer_sway"]: material.set_shader_parameter(flag,false)
 	elif material is StandardMaterial3D: material.albedo_color *= tint
+	FireMaterial.apply(material,fire)
 	return material
 
 func _launch_parts(parts: Array, kick: Vector3) -> void:
@@ -504,8 +551,17 @@ func _launch_parts(parts: Array, kick: Vector3) -> void:
 	for part in parts: bounds = bounds.merge(part.transform * part.mesh.get_aabb())
 	var body := RigidBody3D.new()
 	body.collision_layer = 0 if _staging else 4
-	body.collision_mask = 0 if _staging else 1
+	body.collision_mask = 0 if _staging else 1|2
 	body.continuous_cd = true
+	# Rock-like density so a slab shoves Bigfoot and a pebble does not. Kicks
+	# below are scaled by mass, so launch speeds are unchanged.
+	body.mass = clampf(bounds.get_volume()*400.0,0.5,400.0)
+	body.set_meta("radius",bounds.size.length()*0.5)
+	# Only pieces big enough to strike pay for contact reporting.
+	if float(body.get_meta("radius")) >= STRIKE_RADIUS:
+		body.contact_monitor = true
+		body.max_contacts_reported = 4
+		body.body_entered.connect(_debris_contact.bind(body))
 	body.linear_damp = 0.15
 	body.angular_damp = 0.2
 	body.freeze = _staging
@@ -525,16 +581,68 @@ func _launch_parts(parts: Array, kick: Vector3) -> void:
 	body.add_child(collider)
 	var torque := Vector3(rng.randf_range(-2,2),rng.randf_range(-2,2),rng.randf_range(-2,2))
 	if _staging:
-		body.set_meta("blast_impulse",[kick.limit_length(45),torque])
+		body.set_meta("blast_impulse",[kick.limit_length(45)*body.mass,torque*body.mass])
 	else:
-		body.apply_central_impulse(kick.limit_length(45))
-		body.apply_torque_impulse(torque)
+		body.apply_central_impulse(kick.limit_length(45)*body.mass)
+		body.apply_torque_impulse(torque*body.mass)
 	bodies.append(body)
 
 func _publish_staged(kind: String, generation: int, target_data: NativeTerrainData) -> void:
 	if generation != _blast_generation or editor.data != target_data: return
 	for body in bodies:
 		if body.get_meta("visual_source","") == kind: body.visible = true
+
+## Debris that reaches a pond splashes it once, then wallows instead of
+## skating across the surface as if it were ground.
+func _splash_debris() -> void:
+	var world_play: Variant = editor.scene.get("world_play")
+	if world_play == null: return
+	var water: Node = world_play.water_play
+	for body in bodies:
+		if body.freeze or body.has_meta("wet"): continue
+		var surface: Variant = water.surface_at(body.global_position)
+		if surface == null or body.global_position.y-float(body.get_meta("radius",0.1)) > surface.y: continue
+		body.set_meta("wet",true)
+		water.splash(surface,clampf(body.mass/60.0,0.3,1.0))
+		body.linear_velocity *= 0.35
+		body.linear_damp = 2.5
+		body.angular_damp = 2.0
+
+func _strikes(body: RigidBody3D) -> bool:
+	return not body.freeze and body.linear_velocity.length() >= STRIKE_SPEED and float(body.get_meta("radius",0.0)) >= STRIKE_RADIUS
+
+## Flying debris knocks a standing resident into the same physical tumble a
+## blast does. Once airborne, the solver handles further hits directly.
+func _strike_resident() -> void:
+	var resident := editor.scene.get("creature") as CreatureActor
+	if resident == null or editor.scene.get("resident_enabled") != true: return
+	if resident.blast_airborne or resident.is_held() or (resident.wind_body != null and resident.wind_body.active): return
+	var feet := resident.global_position
+	for body in bodies:
+		if not _strikes(body): continue
+		var point := body.global_position
+		var axis := feet+Vector3.UP*clampf(point.y-feet.y,0.0,2.3)
+		if point.distance_to(axis) > float(body.get_meta("radius"))+0.55: continue
+		var kick := body.linear_velocity*clampf(body.mass/32.0,0.25,1.0)
+		if kick.length() < 5.0: kick = kick.normalized()*5.0
+		kick += Vector3.UP*2.0
+		var before := resident.global_position
+		if resident.receive_blast(kick):
+			if not _resident_before is Vector3: _resident_before = before
+			body.linear_velocity *= 0.55
+		return
+
+## A static authored prop struck by fast debris joins the solver and takes the
+## hit, so rockfall clears whatever stands in its path.
+func _debris_contact(other: Node, body: RigidBody3D) -> void:
+	# The prop registry is rebuilt by the refresh still in flight while firing.
+	if firing or not other is StaticBody3D or not other.name.begins_with("Prop_") or not _strikes(body): return
+	var world_play: Variant = editor.scene.get("world_play")
+	if world_play == null: return
+	var target: Node3D = world_play.promote(int(other.name.trim_prefix("Prop_")))
+	if not target is RigidBody3D: return
+	target.release(body.linear_velocity*clampf(body.mass/target.mass,0.2,1.0)+Vector3.UP*1.0,1.0)
+	body.linear_velocity *= 0.6
 
 func _eject_dirt(origin: Vector3, radius: float) -> void:
 	for i in range(12):

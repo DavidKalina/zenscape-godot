@@ -14,7 +14,9 @@ resumes the current world, or opens the last successfully saved/opened file.
 
 The top bar offers **Build / Enjoy**, **Save**, and **World**. World contains
 **Landscapes**, **Colors & sky**, **Bigfoot**, **Overview**, and **His spot**. Invite Bigfoot by choosing his button and clicking dry, open
-terrain; his presence and resting habits are saved with the diorama. **H** hides
+terrain; his presence and resting habits are saved with the diorama. He also embraces trees,
+visits overlooks, watches rainbows and shooting stars, and reacts to rain, snow
+and lightning. See [Bigfoot’s environmental life](docs/bigfoot-environment/README.md). **H** hides
 or restores the controls, **R** frames the whole chunk, and **Cmd/Ctrl S** saves.
 **Escape** returns to Select first, then opens the menu. Settings offers visual
 quality and nature/thunder sound controls. World files retain these settings;
@@ -59,6 +61,12 @@ observed disturbances, and a little stone arrangement. The **Activities** menu
 can invite a behavior; otherwise his needs choose. **His thoughts** explains the
 current scores. Worlds saved from the study can reopen in the main diorama.
 See [behavior, controls, and validation](docs/bigfoot-living-world/README.md).
+
+## Isolated Bigfoot animation study
+
+Open **`run-bigfoot-tree-hug.command`** to watch and refine one complete tree hug.
+Space pauses, **R** replays, and the timeline or arrow keys scrub the motion.
+See [the tree-hug study](docs/bigfoot-tree-hug/README.md).
 
 ## ZenScape fidelity study
 
