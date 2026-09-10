@@ -153,3 +153,7 @@ static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 		if comp == "massif": mass *= 1.15
 	var edge := 1.0-smoothstep(11.4,14.0,maxf(absf(p.x),absf(p.y)))
 	return 0.8+(ground+mass*float(g.relief)-0.8)*edge
+
+## Optional companion genome. Existing surface versions and RNG streams are unchanged.
+static func cave(seed_value: int, palette_name := "mossy shale", moisture := 0.75) -> Dictionary:
+	return preload("res://scripts/cave_genome.gd").recipe(seed_value,palette_name,moisture)

@@ -1,6 +1,8 @@
 extends RefCounted
 ## Walk through the approved cave threshold, disappear during rest, and return.
 ## Surface navigation hands over only for the short path behind the black mouth.
+signal entry_completed(reason: String)
+signal cancelled(reason: String)
 var scene: Node
 var phase := ""
 var reason := ""
@@ -57,17 +59,18 @@ func advance(dt: float) -> bool:
 				phase = "resting"
 				if is_instance_valid(rest_anchor):
 					scene.creature.global_position = rest_anchor.global_position
-					scene.creature.perform_action("Sleep",INF)
+					if reason != "forage": scene.creature.perform_action("Sleep",INF)
+				entry_completed.emit(reason)
 			else: _finish()
 		else:
 			var next := _path[_index]
 			if phase == "approach" and not scene.navigation.motion_safe(scene.creature.position,next,scene.creature.walking_speed(0.85)*dt):
 				cancel()
-			elif scene.creature.walk_step(next,0.85,dt): _index += 1
+			elif scene.creature.walk_step(next,0.85,dt,"LogCarry" if reason == "forage" and phase != "leaving" else "Walk"): _index += 1
 	elif phase == "resting":
 		_away += dt
 		_clear_time = 0.0 if wet else _clear_time+dt
-		var done := _away>=45.0
+		var done := _away>=2.0 if reason == "forage" else _away>=45.0
 		if reason == "rain": done = _away>=20.0 and _clear_time>=6.0
 		if reason in ["snow","hibernate"]: done = _away>=100.0
 		if done and concealed:
@@ -76,7 +79,8 @@ func advance(dt: float) -> bool:
 	return not phase.is_empty()
 
 func request(why := "sleep") -> bool:
-	if not phase.is_empty() or not scene.creature.can_roam() or not scene.routine.active.is_empty(): return false
+	var forage_owner: bool = why == "forage" and scene.routine.active == "forage"
+	if not phase.is_empty() or not scene.creature.can_roam() or (not scene.routine.active.is_empty() and not forage_owner): return false
 	for item: Dictionary in scene._chunk_editor.data.tunnels:
 		var route := plan(item)
 		if route.is_empty(): continue
@@ -113,6 +117,7 @@ func _leave() -> void:
 func cancel() -> void:
 	if phase.is_empty(): return
 	var was_inside := _inside
+	var cancelled_reason := reason
 	# Clear ownership before cancelling the actor (which emits callbacks).
 	phase = ""
 	if scene.creature.state == CreatureActor.State.ACTION: scene.creature.cancel_action()
@@ -120,6 +125,7 @@ func cancel() -> void:
 		var safe: Variant = scene.navigation.nearest_safe(entrance)
 		if safe != null: scene.creature.reset_at(safe)
 	_finish(false)
+	cancelled.emit(cancelled_reason)
 
 func _finish(completed := true) -> void:
 	if _inside: scene.creature._ground_probe = _old_probe
@@ -135,7 +141,7 @@ func _finish(completed := true) -> void:
 	scene.routine._next_action = scene.routine._clock+9.0
 	if completed:
 		visits += 1
-		scene.routine.history.append("hibernate" if reason in ["snow","hibernate"] else "sleep")
+		if reason != "forage": scene.routine.history.append("hibernate" if reason in ["snow","hibernate"] else "sleep")
 
 ## Only prepared cave sites are homes; ordinary mining tunnels are unchanged.
 func plan(item: Dictionary) -> Dictionary:

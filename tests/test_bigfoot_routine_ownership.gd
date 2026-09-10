@@ -78,13 +78,23 @@ func _run() -> void:
 		for i in range(60): fish.advance(1.0/60.0)
 		check(fish.population.size()==original_count and not entry.held and not entry.returning,"Return preserves population and resumes swimming")
 		entry.available = false
-		check(fish.catch_fish(entry.id)==null,"An unavailable fish cannot be conjured")
+		check(fish.catch_for_carry(entry.id).is_empty(),"An unavailable fish cannot produce a carry payload")
 		# Drying/removing water immediately invalidates catch and return, even
 		# before the normal availability refresh has run.
 		entry.available = true
 		entry.node.position = entry.home
-		check(fish.catch_fish(entry.id)==entry.node,"Fish can be caught again after returning")
-		fish.release_fish(entry.id)
+		var payload: Dictionary = fish.catch_for_carry(entry.id)
+		check(payload.get("kind") == "fish" and payload.get("source_id") == entry.id and payload.get("node") == entry.node,"A real catch supplies the generic carry payload")
+		check(payload.get("release",Callable()).is_valid(),"Fish payload supplies cancellation ownership")
+		check(payload.get("commit",Callable()).is_valid(),"Fish payload supplies deposit ownership")
+		payload.commit.call()
+		check(entry.stored and not entry.available and not entry.node.visible,"Deposit depletes the caught identity from the pond")
+		check(fish.available_targets().all(func(item: Dictionary) -> bool: return item.id != entry.id),"Stored fish cannot be reserved again")
+		var saved: Dictionary = fish.capture_state()
+		fish.restore_state({"version":1,"stored_ids":[]})
+		check(not entry.stored and entry.node.visible,"Restoring an empty stockpile returns the same fish identity")
+		fish.restore_state(saved)
+		check(entry.stored and not entry.node.visible,"Stored fish depletion survives state restoration")
 		scene.habitat.waters.clear()
 		scene.habitat.ponds.clear()
 		fish.advance(1.0/60.0)

@@ -1,22 +1,12 @@
 extends "res://studies/bigfoot_cave.gd"
 ## Two visible stories in the same world; inspection only changes camera framing.
-var lair: Node3D
+
 
 func _ready() -> void:
 	super._ready()
 	get_window().title = "ZenScape · Two-story Bigfoot diorama"
-	# Replace the old suspended underside with the inhabited lower story.
-	var old_underside := get_node("Reference").find_child("mesh-3",true,false)
-	if old_underside != null: old_underside.layers = 0
-	var skirt: MeshInstance3D = get_node("Reference/skirt")
-	var top: float = (skirt.transform*skirt.mesh.get_aabb()).end.y
-	skirt.scale.y *= 0.61
-	skirt.position.y = top-(top-skirt.position.y)*0.61
-	lair = preload("res://scripts/bigfoot_lair_room.gd").new()
-	lair.position = Vector3(0,-11,0)
-	add_child(lair)
-	routine.cave.rest_anchor = lair.bed
-	for entry in [["See both stories",_focus_stack],["Look through lair windows",_focus_lair],["Another rock arrangement",_redress]]:
+	restore_cave_state({"genome":preload("res://scripts/inland_genome.gd").cave(37),"stash":[]})
+	for entry in [["See both stories",_focus_stack],["Look through lair windows",_focus_lair],["Generate another cave",_regenerate],["Change cave palette",_change_palette],["Another rock arrangement",_redress],["Gather a branch",_gather_branch],["Bring home a fish",_bring_fish]]:
 		var button := Button.new()
 		button.text = entry[0]
 		button.pressed.connect(entry[1])
@@ -49,11 +39,10 @@ func _focus_lair() -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	if lair == null: return
-	lair.drips.advance(delta,_paused)
 	# Underground occupancy is visible through real openings, from every view.
 	creature.visible = resident_enabled and not _habitat_blocked and _growth.terrain>=0.995
 	if routine.cave.concealed:
-		_life_status.text = "Bigfoot · sleeping downstairs · P pause" if not _paused else "Bigfoot · paused · P pause"
+		_life_status.text = ("Bigfoot · storing supplies downstairs · P pause" if routine.cave.reason=="forage" else "Bigfoot · sleeping downstairs · P pause") if not _paused else "Bigfoot · paused · P pause"
 
 func _focus_bigfoot() -> void:
 	if routine != null and routine.cave.concealed and lair != null:
@@ -64,3 +53,22 @@ func _focus_bigfoot() -> void:
 func _reset_camera(reference_pose := false) -> void:
 	if lair != null: _focus_stack()
 	else: super._reset_camera(reference_pose)
+
+func _regenerate() -> void:
+	var state := capture_cave_state()
+	state.genome.seed = (int(state.genome.seed)+1)%1000000
+	restore_cave_state(state)
+
+func _change_palette() -> void:
+	var state := capture_cave_state()
+	var names: Array = preload("res://scripts/cave_genome.gd").PALETTES.keys()
+	state.genome.palette = names[(names.find(state.genome.palette)+1)%names.size()]
+	restore_cave_state(state)
+
+func _gather_branch() -> void:
+	routine.cancel("gathering invited")
+	if not routine.request("tree"): _life_status.text = "Bigfoot · no nearby reachable tree"
+
+func _bring_fish() -> void:
+	routine.cancel("fishing invited")
+	if not routine.request("fish"): _life_status.text = "Bigfoot · no nearby reachable fishing spot"

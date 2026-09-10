@@ -45,8 +45,6 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false
 	_life_status.get_parent().hide()
 	_ui.hide()
-	for item in fish.population: item.node.free()
-	fish.population.clear()
 	_celestial.cycling = false
 	_celestial.set_phase(0.48)
 	_atmosphere.strength = 0.35

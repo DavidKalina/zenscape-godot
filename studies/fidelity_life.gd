@@ -7,6 +7,10 @@ var creature: CreatureActor
 var resident_enabled := true
 var routine: Node
 var cave_sites: Node3D
+var lair: Node3D
+var _cave_skirt_original: Transform3D
+var _cave_original_ready := false
+var _cave_underside_layers := 1
 var fish: Node
 var spawn_options: Array = []
 var _nav_view := MeshInstance3D.new()
@@ -127,13 +131,14 @@ func _seed_loose_stones() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	if lair != null: lair.drips.advance(delta,_paused)
 	if creature == null: return
 	if not resident_enabled:
 		creature.visible = false
 		return
 	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	var present := not _habitat_blocked and _growth.terrain >= 0.995
-	creature.visible = present and not routine.cave.concealed
+	creature.visible = present and (not routine.cave.concealed or lair != null)
 	var stopped := _paused or not present
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
@@ -146,7 +151,7 @@ func _process(delta: float) -> void:
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
 		_reaction.visible = _reaction_time > 0.0
-	creature.visible = present and not routine.cave.concealed
+	creature.visible = present and (not routine.cave.concealed or lair != null)
 	if creature.state == CreatureActor.State.STUMBLING and not stopped:
 		_life_status.text = "Bigfoot · finding his balance · P pause"
 		return
@@ -249,3 +254,41 @@ func restore_life_state(state: Dictionary) -> void:
 	routine.cancel("garden opened")
 	_refresh_habitat()
 	routine.habits.restore(state)
+
+func capture_cave_state() -> Dictionary:
+	return lair.document() if is_instance_valid(lair) else {}
+
+func restore_cave_state(state: Dictionary) -> void:
+	if not preload("res://scripts/cave_genome.gd").valid_state(state): return
+	if state.is_empty() and lair==null: return
+	if routine != null: routine.cancel("cave system changed")
+	var skirt: MeshInstance3D = get_node("Reference/skirt")
+	var old_underside := get_node("Reference").find_child("mesh-3",true,false)
+	if not _cave_original_ready:
+		_cave_skirt_original = skirt.transform
+		if old_underside != null: _cave_underside_layers = old_underside.layers
+		_cave_original_ready = true
+	if is_instance_valid(lair):
+		remove_child(lair)
+		lair.queue_free()
+		lair = null
+	routine.cave.rest_anchor = null
+	skirt.transform = _cave_skirt_original
+	if old_underside != null: old_underside.layers = _cave_underside_layers
+	if state.is_empty(): return
+	if old_underside != null: old_underside.layers = 0
+	var top: float = (skirt.transform*skirt.mesh.get_aabb()).end.y
+	skirt.scale.y *= 0.61
+	skirt.position.y = top-(top-skirt.position.y)*0.61
+	lair = preload("res://scripts/bigfoot_lair_room.gd").new()
+	lair.genome = state.genome.duplicate(true)
+	lair.position = Vector3(0,-11,0)
+	add_child(lair)
+	lair.restore_stash(state.stash)
+	routine.cave.rest_anchor = lair.bed
+
+func capture_fish_state() -> Dictionary:
+	return fish.capture_state() if fish != null else {"version":1,"stored_ids":[]}
+
+func restore_fish_state(state: Dictionary) -> void:
+	if fish != null: fish.restore_state(state)
