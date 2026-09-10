@@ -24,8 +24,17 @@ var checks := {}
 var weather_choice := OptionButton.new()
 ## World clock: how fast the day runs, and what day/hour it is now.
 const SPEEDS := [1.0,4.0,12.0]
+## Days the "Day" scrubber reaches: two world years, enough to walk the seasons.
+const DAY_RANGE := 56
 var clock_choice := OptionButton.new()
 var clock_readout := Label.new()
+var force_weather_choice := OptionButton.new()
+## Ticked, the year comes from the day count; unticked, the Season slider pins it.
+var season_follows := true:
+	set(value):
+		season_follows = value
+		var clock: WorldClock = scene.get("world_clock") if scene != null else null
+		if clock != null: clock.season_override = -1.0 if value else clock.season
 var rock_choice := OptionButton.new()
 var undo_button := Button.new()
 var redo_button := Button.new()
@@ -132,6 +141,18 @@ func setup(owner_scene: Node3D) -> void:
 		clock_readout.modulate = Color("bdc9c6")
 		clock_readout.add_theme_font_size_override("font_size",11)
 		air.add_child(clock_readout)
+		# Scrub tooling: jump to a day, pin a season, force a sky. Nothing here
+		# is part of the garden's own state; it is how a season gets watched.
+		_slider(air,"day","Day",0,DAY_RANGE,1,func() -> float: return float(clock.day),func(v: float) -> void: clock.set_time(int(round(v)),clock.hour))
+		_slider(air,"season","Season",0,1,0.01,func() -> float: return clock.season,func(v: float) -> void:
+			season_follows = false
+			clock.season_override = v)
+		_check(air,"season_follows","Follow the calendar",self,"season_follows")
+		_label(air,"Force weather")
+		force_weather_choice.name = "ForceWeather"
+		for weather_name in WeatherScheduler.PRESET_NAMES: force_weather_choice.add_item(String(weather_name).capitalize())
+		force_weather_choice.item_selected.connect(func(index: int) -> void: _edit(func() -> void: scene._precipitation.set_weather(index)))
+		air.add_child(force_weather_choice)
 	_slider(air,"clouds","Cloud cover",0,1,0.01,func() -> float: return scene._celestial.cloud if scene._precipitation.cloud_override < 0 else scene._precipitation.cloud_override,func(v: float) -> void: scene._precipitation.cloud_override = v)
 	_slider(air,"mist","Valley mist",0,1,0.01,func() -> float: return scene._atmosphere._fog_target,func(v: float) -> void:
 		scene._atmosphere.set_fog(v)
@@ -321,6 +342,9 @@ func sync() -> void:
 		clock_readout.text = clock.label()
 		var pace := SPEEDS.find(clock.speed)
 		if pace >= 0: clock_choice.select(pace)
+		force_weather_choice.select(scene._precipitation.preset_index)
+		var following := clock.season_override < 0.0
+		if season_follows != following: season_follows = following
 	rock_choice.select(scene._world_visuals.rock_style)
 	for key in sliders:
 		var row: Dictionary = sliders[key]

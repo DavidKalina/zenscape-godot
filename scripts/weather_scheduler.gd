@@ -46,7 +46,8 @@ const MAX_CATCH_UP := 24
 const HISTORY_LIMIT := 32
 
 var seed: int = 0
-var enabled := true
+## Off until someone asks for drift: a garden's sky stays where it was put.
+var enabled := false
 var current := "clear"
 var next_change_hour := 0.0
 var season := 0.0
@@ -65,6 +66,25 @@ func _init(p_seed := 0, p_current := "clear", p_start_hour := 0.0) -> void:
 ## Index into studies/precipitation.gd PRESET_NAMES; -1 when unknown.
 static func preset_index(name: String) -> int:
 	return PRESET_NAMES.find(name)
+
+## How much gold and how much cold the season alone adds to the ground, on top
+## of whatever the current preset asks for. Both are smooth bumps on the 0..1
+## year, both reach zero before the year wraps, so day 0 of a fresh garden is
+## the neutral scene it has always been and the new year arrives without a step.
+## [centre, half width, strength]; see docs/world-clock/README.md.
+const SEASON_AUTUMN := [0.675, 0.175, 0.9]  ## Gold over the autumn quarter, peaking mid-season.
+const SEASON_COLD := [0.875, 0.125, 0.9]    ## Cold over the winter quarter, peaking at deep winter.
+
+static func season_autumn(season: float) -> float:
+	return _season_bump(season, SEASON_AUTUMN)
+
+static func season_cold(season: float) -> float:
+	return _season_bump(season, SEASON_COLD)
+
+static func _season_bump(season: float, shape: Array) -> float:
+	if not is_finite(season): return 0.0
+	var gap := absf(fposmod(season, 1.0) - float(shape[0]))
+	return float(shape[2]) * (1.0 - smoothstep(0.0, float(shape[1]), minf(gap, 1.0 - gap)))
 
 ## Advance world time. Returns the preset names that became current since the
 ## last call, oldest first. Calling twice with the same hour returns [] the

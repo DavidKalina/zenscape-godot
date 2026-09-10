@@ -87,8 +87,18 @@ exactly** — every factor below is 1.0 at season 0.
 | clear, fair | `1.0 - 0.5 * clamp((season - 0.3) / 0.7, 0, 1)` |
 
 So season > 0.6 favours autumn/overcast/snow, and season < 0.3 leaves clear/fair at full strength
-(they are only damped as the season climbs). Season is not captured from the clock yet; the
-orchestrator can leave it at 0 until a calendar exists.
+(they are only damped as the season climbs).
+
+`studies/fidelity.gd` now feeds `season` from `world_clock.season` every frame (four seven-day
+seasons in a 28-day year; see docs/world-clock/README.md), so a garden left running reaches the
+autumn and snow rows on its own. Season is not captured: it is pushed in from the clock, whose
+own `season_override` is the thing a save carries.
+
+The scheduler also owns the two curves that say how much gold and cold the **ground** wears for a
+given season, `season_autumn(season)` and `season_cold(season)`. They are smooth bumps on the year
+(autumn centred on 0.675, cold on 0.875) that fall to zero before it wraps, and the scene adds them
+on top of the current preset's own values. The transition table above decides which sky is rolled;
+these two decide how the ground underneath it looks.
 
 ## Determinism and catch-up
 
@@ -107,9 +117,10 @@ orchestrator can leave it at 0 until a calendar exists.
 ## Wiring (as shipped in `studies/fidelity.gd`)
 
 The scene owns `weather_scheduler: WeatherScheduler` next to `world_clock`, seeded with
-`randi()` at startup and **disabled by default**, so a garden's sky stays where the player put
-it until they tick "Let the weather drift" in the scene-look editor (next to "Let the day
-cycle").
+`randi()` at startup. `enabled` is **false by default** in the scheduler itself, so a garden's
+sky stays where the player put it until they tick "Let the weather drift" in the scene-look
+editor (next to "Let the day cycle"). Anything that wants drift — the scene once the box is
+ticked, `tools/simulate_weather.gd`, a test — asks for it.
 
 Each frame, `_advance_weather_drift()` runs right after `world_clock.advance()`:
 

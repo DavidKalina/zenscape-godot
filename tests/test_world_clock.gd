@@ -127,6 +127,54 @@ func _initialize() -> void:
 	authored.set_phase(0.62)
 	check(authored.day == 5 and absf(authored.phase - 0.62) < 0.001, "set_phase keeps the day and lands on the authored hour")
 
+	# ----------------------------------------------------------------- season
+	var year := WorldClock.new()
+	year.set_time(0, 0.0)
+	check(is_zero_approx(year.season), "The calendar opens at season 0")
+	var quarters := true
+	for step in [[7, 0.25], [14, 0.5], [21, 0.75]]:
+		year.set_time(int(step[0]), 0.0)
+		if absf(year.season - float(step[1])) > 1e-9: quarters = false
+	check(quarters, "Each seven-day season is a quarter of the year")
+	year.set_time(3, 12.0)
+	check(absf(year.season - 3.5 / float(WorldClock.YEAR_DAYS)) < 1e-9, "The hour moves the season within the day")
+	var climbing := true
+	var last_season := -1.0
+	for whole_day in range(WorldClock.YEAR_DAYS):
+		year.set_time(whole_day, 0.0)
+		if year.season <= last_season: climbing = false
+		last_season = year.season
+	check(climbing, "The season climbs with every day of the year")
+	year.set_time(WorldClock.YEAR_DAYS, 0.0)
+	check(is_zero_approx(year.season), "The year wraps back to season 0 after YEAR_DAYS")
+	year.set_time(WorldClock.YEAR_DAYS * 3 + 7, 0.0)
+	check(absf(year.season - 0.25) < 1e-9, "Later years repeat the same calendar")
+	year.set_time(5, 6.0)
+	var natural := year.season
+	year.season_override = 0.8
+	check(is_equal_approx(year.season, 0.8), "An override wins over the calendar")
+	check(absf(year.calendar_season() - natural) < 1e-9, "The calendar underneath is untouched")
+	year.running = true
+	year.day_length = 24.0
+	for i in range(60): year.advance(1.0, false)
+	check(is_equal_approx(year.season, 0.8) and year.day > 5, "The override holds while the days pass")
+	year.season_override = -1.0
+	check(absf(year.season - year.calendar_season()) < 1e-9, "Clearing the override hands the year back to the calendar")
+	year.season_override = 3.0
+	check(is_equal_approx(year.season, 1.0), "A silly override still reads inside 0..1")
+	year.season_override = 0.42
+	var held := WorldClock.new()
+	var year_saved := year.capture()
+	check(WorldClock.valid_state(year_saved), "A clock with an override validates")
+	held.restore(JSON.parse_string(JSON.stringify(year_saved)))
+	check(is_equal_approx(held.season_override, 0.42) and is_equal_approx(held.season, 0.42), "Capture and restore round-trip the override")
+	held.restore({"day": 2, "hour": 3.0, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": false})
+	check(held.season_override < 0.0, "A document without an override follows the calendar")
+	check(WorldClock.valid_state({"day": 4, "hour": 6.5, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": true, "season_override": 0.5}),
+		"A hand-written document may carry an override")
+	check(not WorldClock.valid_state({"day": 4, "hour": 6.5, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": true, "season_override": "autumn"}),
+		"A broken override is rejected")
+
 	print("PASS: world clock rollover, speed, pause, skip, determinism and persistence" if failures == 0 else "FAIL: world clock")
 	print("Failures: ", failures)
 	quit(1 if failures else 0)

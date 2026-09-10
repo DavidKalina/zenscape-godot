@@ -65,6 +65,10 @@ var world_clock: WorldClock = null
 ## Seeded weather drift over world hours. Off by default: a garden's sky stays
 ## where the player put it until they let the weather drift.
 var weather_scheduler: WeatherScheduler = null
+## [autumn, cold]: what the season last wrote into the surface targets, and
+## whether a command-line flag has taken that channel away from the calendar.
+var _season_wrote := [-1.0, -1.0]
+var _season_held := [false, false]
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
 var _cycle_toggle: CheckBox
@@ -215,9 +219,11 @@ func _ready() -> void:
 		if argument.begins_with("--autumn="):
 			_precipitation.surface_weather.autumn = clampf(float(argument.trim_prefix("--autumn=")), 0.0, 1.0)
 			_precipitation.surface_weather.target_autumn = _precipitation.surface_weather.autumn
+			_season_held[0] = true  # A flagged autumn outranks the calendar.
 		if argument.begins_with("--cold="):
 			_precipitation.cold_override = float(argument.trim_prefix("--cold="))
 			_precipitation.surface_weather.cold = _precipitation.cold_override
+			_season_held[1] = true  # Likewise a flagged cold.
 		if argument.begins_with("--ice="):
 			_precipitation.surface_weather.ice = float(argument.trim_prefix("--ice="))
 		if argument.begins_with("--snow-cover="):
@@ -531,6 +537,33 @@ func _advance_weather_drift() -> void:
 		_precipitation.cold_override = -1.0
 		_precipitation.set_weather(WeatherScheduler.preset_index(name))
 
+## The calendar reaches the weather. The scheduler leans on the season when it
+## rolls the next sky, and the ground wears the year on top of the preset: the
+## preset profile is the base, the season adds a lift (gold through autumn,
+## cold through winter), clamped 0..1. Recomputed from the profile every frame,
+## so nothing accumulates.
+##
+## It never fights a hand-set value. The season only rewrites a target that is
+## still the one it wrote last frame, or the bare preset value a fresh
+## set_weather just installed; a slider, a look preset, a restored garden or a
+## --autumn=/--cold= flag therefore keeps its hold until the weather changes
+## again. See docs/world-clock/README.md.
+func _apply_season() -> void:
+	if world_clock == null: return
+	var season := world_clock.season
+	if weather_scheduler != null: weather_scheduler.season = season
+	var profile: Dictionary = _precipitation.profiles[_precipitation.PRESET_NAMES[_precipitation.preset_index]]
+	var surface: RefCounted = _precipitation.surface_weather
+	surface.target_autumn = _season_target(surface.target_autumn, float(profile.autumn), WeatherScheduler.season_autumn(season), 0)
+	surface.target_cold = _season_target(surface.target_cold, float(profile.cold), WeatherScheduler.season_cold(season), 1)
+
+func _season_target(current: float, base: float, lift: float, slot: int) -> float:
+	if _season_held[slot]: return current
+	var wanted := clampf(base + lift, 0.0, 1.0)
+	if not (is_equal_approx(current, _season_wrote[slot]) or is_equal_approx(current, base)): return current
+	_season_wrote[slot] = wanted
+	return wanted
+
 func _process(delta: float) -> void:
 	# An occluded macOS movie window may update without drawing. Advance once
 	# per recorded frame so offscreen stalls cannot fast-forward the evidence.
@@ -544,6 +577,7 @@ func _process(delta: float) -> void:
 	# same answer, and the celestial rig just renders the clock's phase.
 	world_clock.advance(delta, _paused)
 	_advance_weather_drift()
+	_apply_season()
 	_growth.advance(delta, _paused, _tremor)
 	if _atmosphere.wind_trails != null: _atmosphere.wind_trails.visible = _growth.terrain>=0.995
 	_terrain_slider.set_value_no_signal(_growth.terrain)

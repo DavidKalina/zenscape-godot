@@ -19,6 +19,7 @@ const DEFAULT_DAY_LENGTH := 480.0  ## Real seconds per world day at speed 1.0.
 const HOURS_PER_DAY := 24.0
 const SECONDS_PER_DAY := 86400.0
 const MAX_DAY := 1000000
+const YEAR_DAYS := 28              ## Four seven-day seasons make a world year.
 const SKIP_RESPONSE := 1.6         ## Easing rate of skip_to, from celestial.next_hour.
 const SKIP_SNAP := 0.024           ## Hours; the old 0.001-of-a-turn snap.
 const LINGER_WIDTH := 0.09         ## Elevation sigma of the horizon linger.
@@ -34,6 +35,14 @@ var running := false  ## false freezes time (this is celestial's old `cycling`).
 var day_length := DEFAULT_DAY_LENGTH
 var elapsed := 0.0    ## Total world seconds, day * 86400 + hour * 3600.
 var target_hour := -1.0  ## Smooth skip destination; < 0 when idle.
+## Pins the season for scrubbing and tests. Any value >= 0 wins over the
+## calendar; -1 (the default) hands the year back to `day`.
+var season_override := -1.0
+
+## Where the world stands in its year, 0..1. 0 opens the calendar, 0.25/0.5/0.75
+## are the season boundaries. Read-only: move `day` or set `season_override`.
+var season: float:
+	get: return clampf(season_override, 0.0, 1.0) if season_override >= 0.0 else calendar_season()
 
 func _init(starting_phase := 0.35) -> void:
 	set_phase(starting_phase)
@@ -73,6 +82,10 @@ func skip_to(new_hour: float) -> void:
 func set_phase(value: float) -> void:
 	set_time(day, hour_for_phase(value))
 
+## The season the calendar alone says it is, ignoring any override.
+func calendar_season() -> float:
+	return fposmod(float(day) + hour / HOURS_PER_DAY, float(YEAR_DAYS)) / float(YEAR_DAYS)
+
 func label() -> String:
 	return "Day %d · %02d:%02d" % [day, int(hour) % 24, int(hour * 60.0) % 60]
 
@@ -86,6 +99,7 @@ func capture() -> Dictionary:
 		"running": running,
 		"day_length": day_length,
 		"target": target_hour,
+		"season_override": season_override,
 	}
 
 func restore(value: Dictionary) -> void:
@@ -93,6 +107,7 @@ func restore(value: Dictionary) -> void:
 	speed = _number(value.get("speed"), 1.0, 0.0, 10000.0)
 	day_length = maxf(0.0, _number(value.get("day_length"), DEFAULT_DAY_LENGTH, 0.0, 1e9))
 	running = bool(value.get("running", false))
+	season_override = _number(value.get("season_override"), -1.0, -1.0, 1.0)
 	var wanted: float = _number(value.get("target"), -1.0, -1.0, HOURS_PER_DAY)
 	set_time(int(_number(value.get("day"), 0.0, 0.0, float(MAX_DAY))), _number(value.get("hour"), 0.0, 0.0, HOURS_PER_DAY))
 	if wanted >= 0.0: target_hour = fposmod(wanted, HOURS_PER_DAY)
@@ -104,6 +119,8 @@ static func valid_state(value: Variant) -> bool:
 	if not _finite(value.get("speed"), 0.0, 10000.0): return false
 	if not _finite(value.get("day_length"), 0.0, 1e9): return false
 	if not _finite(value.get("target"), -1.0, HOURS_PER_DAY): return false
+	# Written by later saves only: a document without one simply follows the calendar.
+	if not _finite(value.get("season_override", -1.0), -1.0, 1.0): return false
 	return value.get("running") is bool
 
 # ------------------------------------------------------------- phase mapping

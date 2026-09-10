@@ -25,6 +25,8 @@ var speed: float      # multiplier, 1.0 = default day length; 0 allowed
 var running: bool     # false = time frozen (this is celestial's old `cycling`)
 var day_length: float # real seconds per world day at speed 1.0 (default 480.0)
 var elapsed: float    # total world seconds, day * 86400 + hour * 3600
+var season: float     # 0..1 position in the year, read-only (see below)
+var season_override: float # >= 0 pins the season; -1.0 follows the calendar
 
 func advance(delta: float, paused: bool) -> void
 func set_time(day: int, hour: float) -> void
@@ -33,7 +35,8 @@ func capture() -> Dictionary
 func restore(value: Dictionary) -> void
 ```
 
-Supporting helpers: `set_phase(phase)` (jump to the hour that renders as this
+Supporting helpers: `calendar_season()` (the season the day count alone says it
+is, ignoring the override), `set_phase(phase)` (jump to the hour that renders as this
 phase, keeping the day), `label()` ("Day 3 · 17:30"), `target_hour` (the pending
 `skip_to` destination, `-1.0` when idle), the static `valid_state(value)` used by
 the garden store, and the static mapping functions `phase_for_hour`,
@@ -68,6 +71,58 @@ proportional to `linger(phase)`, so sunrise and sunset still dwell. Two notes:
   turn. `day_length = 480.0` now means 480 s exactly, so a default day is about
   7% quicker than before with the same shape. Set `day_length = 516.0` for the
   old wall-clock pace.
+
+## The year
+
+`YEAR_DAYS = 28`: four seven-day seasons. `season` is where the world stands in
+that year, `fposmod(day + hour / 24, YEAR_DAYS) / YEAR_DAYS`, so day 0 opens at
+0.0 and the quarters fall on days 0, 7, 14 and 21:
+
+| season | 0.0 – 0.25 | 0.25 – 0.5 | 0.5 – 0.75 | 0.75 – 1.0 |
+| --- | --- | --- | --- | --- |
+| days | 0–6 | 7–13 | 14–20 | 21–27 |
+| | spring | summer | autumn | winter |
+
+`season` is read-only and derived, like `phase`: move `day` (`set_time`) or pin
+it with `season_override`. Any override `>= 0` wins and is clamped into 0..1;
+`-1.0` (the default) hands the year back to the calendar. The override is part
+of `capture()`/`restore()`/`valid_state`, and a document written before the
+calendar existed simply has no key and follows the days.
+
+### What the season does today
+
+Slice 0 of the world-progression plan wires three consumers, no new ecology:
+
+- `WeatherScheduler.season` — the transition table already leans on it (autumn,
+  snow and overcast get likelier as it climbs; see the weather-scheduler docs).
+- `surface_weather.target_autumn` and `target_cold` — the ground's gold and its
+  cold.
+
+The preset is the base and the season is a **lift added on top**, clamped to
+0..1, so a snowy sky is still fully cold in midsummer and a clear day in late
+autumn is still gold. Both lifts are smooth bumps on the year
+(`WeatherScheduler.season_autumn` / `season_cold`, `[centre, half width,
+strength]`):
+
+| lift | centre | half width | strength | nonzero over |
+| --- | --- | --- | --- | --- |
+| autumn | 0.675 | 0.175 | 0.9 | 0.50 – 0.85 (the autumn quarter, spilling into early winter) |
+| cold | 0.875 | 0.125 | 0.9 | 0.75 – 1.00 (the winter quarter exactly) |
+
+Both fall to zero *before* the year wraps, so day 0 of a fresh garden is the
+neutral scene it has always been and the new year arrives with no step. Spring
+and summer add nothing at all.
+
+`studies/fidelity.gd` `_apply_season()` recomputes both targets from the current
+preset profile every frame, so nothing accumulates, and it never fights a
+hand-set value: it only rewrites a target that is still the one it wrote last
+frame, or the bare preset value a fresh `set_weather` just installed. A slider,
+a look preset, a restored garden and the `--autumn=` / `--cold=` flags therefore
+all keep their hold until the weather changes again.
+
+The scene-look editor's Atmosphere tab carries the scrub tooling: a **Season**
+slider (writes `season_override`), a **Follow the calendar** check (clears it), a
+**Day** slider (`set_time(day, hour)`) and a **Force weather** picker.
 
 ## How the rest of the world integrates
 
@@ -122,11 +177,15 @@ world's time.
 ## Tests
 
 - `tests/test_world_clock.gd` — pure: rollover, speed, pause, delta clamping,
-  determinism, capture/restore (through JSON), `skip_to`, phase mapping.
+  determinism, capture/restore (through JSON), `skip_to`, phase mapping, and
+  the year: quarters, wrap, the override winning and surviving a save.
 - `tests/test_world_clock_scene.gd` — loads `studies/fidelity.tscn`, advances
   `_process` with fixed deltas and checks that the rig tracks the clock, that
   KEY_N's `next_hour` still snaps, that presets move the clock, and that the
   garden store round-trips it (including legacy saves).
+- `tests/test_season_scene.gd` — loads the scene and checks the season reaches
+  `weather_scheduler.season` and both surface targets, that a hand-set autumn
+  is not fought, and that the editor's Season/Day/Force-weather controls work.
 
 Run one at a time, never headless:
 
