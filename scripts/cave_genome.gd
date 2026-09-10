@@ -72,7 +72,12 @@ static func passage_distance(layout: Dictionary, point: Vector2) -> float:
 static func valid_state(value: Variant) -> bool:
 	if not value is Dictionary: return false
 	if value.is_empty(): return true
-	if value.size()!=2 or not valid(value.get("genome")) or value.genome.is_empty(): return false
+	if value.size() not in [2,3] or not valid(value.get("genome")) or value.genome.is_empty(): return false
+	if value.has("living"):
+		if not value.living is Dictionary: return false
+		for key in ["bed_stage","play_stage"]:
+			if not GardenData._integer(value.living.get(key)) or not GardenData._number(value.living[key],0,3): return false
+	if value.size()==3 and not value.has("living"): return false
 	if not value.get("stash") is Array or value.stash.size()>24: return false
 	for item in value.stash:
 		if item not in ["branch","leaves","fish","fruit"]: return false

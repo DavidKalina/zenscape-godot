@@ -1,4 +1,5 @@
 extends RefCounted
+signal delivered(kind: String, source_id: String)
 ## Owns one gathered object from grasp through the cave threshold. The source
 ## remains responsible for restoring an uncommitted object on cancellation.
 var routine: Node
@@ -106,6 +107,7 @@ func _cave_entry_completed(reason: String) -> void:
 			_reparent_preserving_transform(held,scene)
 		elif is_instance_valid(held): held.queue_free()
 		routine.history.append(kind)
+		delivered.emit(kind,source_id)
 		_clear()
 		routine.active = ""
 		routine.target = {}

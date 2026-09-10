@@ -17,6 +17,8 @@ var actor: Node3D
 var navigation: RefCounted
 var interest_provider: Callable
 var enabled := true
+## A needs controller can own investigation while this brain supplies wandering.
+var interest_choices_enabled := true
 var speed := WANDER_SPEED
 var _route := PackedVector3Array()
 var _waypoint := 0
@@ -63,7 +65,7 @@ func advance(delta: float) -> void:
 		_interrupted = false
 		actor.stop_walking()
 		_wait = 1.5
-	if not _pending_interest.is_empty() and (phase == Phase.REST or react_immediately):
+	if interest_choices_enabled and not _pending_interest.is_empty() and (phase == Phase.REST or react_immediately):
 		var interest := _pending_interest
 		_pending_interest = {}
 		if investigate(interest.position,true,str(interest.id)): return
@@ -139,7 +141,7 @@ func _run_choice(query: RefCounted, serial: int, origin: Vector3) -> void:
 
 func _choose_route(query: RefCounted, origin: Vector3) -> void:
 	var interests := _interests()
-	if not interests.is_empty() and _rng.randf()<scenery_chance:
+	if interest_choices_enabled and not interests.is_empty() and _rng.randf()<scenery_chance:
 		var start := _rng.randi_range(0,interests.size()-1)
 		for n in range(interests.size()):
 			if not await query.checkpoint(): return
@@ -247,7 +249,7 @@ func world_changed() -> void:
 	for interest: Dictionary in _interests():
 		var id := str(interest.id)
 		current[id] = interest
-		if not _known.has(id) and float(_cooldowns.get(id,0.0))<=_clock and actor.global_position.distance_to(interest.position)<9.0:
+		if interest_choices_enabled and not _known.has(id) and float(_cooldowns.get(id,0.0))<=_clock and actor.global_position.distance_to(interest.position)<9.0:
 			_pending_interest = interest.duplicate()
 	if not _pending_interest.is_empty():
 		_pending_interest = current.get(str(_pending_interest.id),{}).duplicate()
