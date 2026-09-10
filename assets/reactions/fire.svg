@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+<defs><linearGradient id="flame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7c65a" stop-opacity="1"/><stop offset="0.55" stop-color="#ef8a3c" stop-opacity="1"/><stop offset="1" stop-color="#cf4a35" stop-opacity="1"/></linearGradient><linearGradient id="core" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff0b8" stop-opacity="1"/><stop offset="1" stop-color="#f7c65a" stop-opacity="1"/></linearGradient></defs>
+<g stroke="#3f3228" stroke-width="3.5" stroke-linejoin="round"><rect x="26" y="100" width="76" height="14" rx="7" fill="#7a4d2c" transform="rotate(-10 64 107)"/><rect x="26" y="100" width="76" height="14" rx="7" fill="#8c5a33" transform="rotate(12 64 107)"/></g>
+<path d="M 64 16 C 78 40 98 52 94 80 C 92 98 78 108 64 108 C 48 108 34 98 34 80 C 34 62 50 56 52 40 C 58 50 60 56 64 60 C 68 46 66 32 64 16 Z" fill="url(#flame)" stroke="#3f3228" stroke-width="3.5" stroke-linejoin="round"/>
+<path d="M 64 56 C 72 70 80 78 78 90 C 76 100 70 104 64 104 C 56 104 50 98 50 90 C 50 80 58 74 64 56 Z" fill="url(#core)"/>
+<path d="M 44 76 C 44 66 50 60 54 52" fill="none" stroke="#fff2c8" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+</svg>

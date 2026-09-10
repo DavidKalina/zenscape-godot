@@ -60,6 +60,7 @@ func begin(item_kind: String, item_id: String, visual: Node3D, release: Callable
 		routine._phase = previous_phase
 		return false
 	scene.brain.reset_behavior()
+	scene.brain.reaction.emit("stick" if kind == "branch" else "home","Taking it home.")
 	return true
 
 func collect_tree_material(tree: Dictionary) -> bool:

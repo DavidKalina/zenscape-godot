@@ -254,7 +254,9 @@ func _perform() -> void:
 		cancel()
 		return
 	scene.creature.environment_pose = active
-	scene.brain.reaction.emit("!" if active in ["shock","startle"] else "",active.replace("_"," "))
+	# Quiet moments (horizon, drying off) stay wordless; the rest get a bubble.
+	var mood: String = {"shock":"bolt","startle":"!","meteor":"meteor","rainbow":"rainbow","rain":"rain","snow":"snow","tree_hug":"heart"}.get(active,"")
+	scene.brain.reaction.emit(mood,active.replace("_"," "))
 
 func _target_valid() -> bool:
 	if scene.has_method("resident_activity_owned") and str(target.id).begins_with("object:"):

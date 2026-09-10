@@ -94,8 +94,7 @@ func prop_out_of_bounds(point: Vector3) -> bool:
 
 func _show_reaction(symbol: String, message: String) -> void:
 	if owner_scene.resident_enabled:
-		owner_scene._reaction.text = symbol
-		owner_scene._reaction_time = 2.0
+		owner_scene._reaction.show_reaction(symbol)
 	owner_scene._notice.text = message
 
 func owns_resident() -> bool:

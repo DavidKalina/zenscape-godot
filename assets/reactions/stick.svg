@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+<defs><linearGradient id="wood" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a0703f" stop-opacity="1"/><stop offset="1" stop-color="#5e3c22" stop-opacity="1"/></linearGradient><linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a6cc6e" stop-opacity="1"/><stop offset="1" stop-color="#4f8a45" stop-opacity="1"/></linearGradient></defs>
+<path d="M 22 102 C 46 82 72 58 106 28 M 66 66 C 74 50 76 40 73 24" fill="none" stroke="#3f3228" stroke-width="17" stroke-linecap="round"/>
+<path d="M 22 102 C 46 82 72 58 106 28 M 66 66 C 74 50 76 40 73 24" fill="none" stroke="url(#wood)" stroke-width="10" stroke-linecap="round"/>
+<path d="M 30 92 C 48 78 64 62 84 46" fill="none" stroke="#e2b98a" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+<path d="M 44 86 l 6 -2 M 80 52 l 5 -1 M 94 40 l 4 0" stroke="#3f3228" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+<path d="M 73 26 C 80 10 98 6 112 10 C 106 24 92 32 73 26 Z" fill="url(#leaf)" stroke="#3f3228" stroke-width="3" stroke-linejoin="round"/>
+<path d="M 76 25 C 88 18 98 14 108 12" fill="none" stroke="#3f3228" stroke-width="1.5" opacity="0.5"/>
+</svg>
