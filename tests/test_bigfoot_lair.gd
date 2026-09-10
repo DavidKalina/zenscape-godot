@@ -24,21 +24,32 @@ func run() -> void:
 		if scene.routine.cave.concealed: break
 	check(scene.routine.cave.concealed and resident.global_position.distance_to(scene.lair.bed.global_position)<0.01,"The same resident occupies the underground bed")
 	check(resident.action_clip=="Sleep" and resident.state==CreatureActor.State.ACTION,"Underground rest plays the sleep animation")
-	scene._toggle_lair()
+	scene._focus_stack()
 	scene._process(0)
-	check(resident.visible and scene.camera.cull_mask==4,"Inspection reveals the occupied room")
+	var shared_mask: int = scene.camera.cull_mask
+	check(resident.visible and shared_mask&5==5,"Both stories and the sleeping resident share the main view")
+	var room_bounds: AABB = scene.lair.global_transform*scene.lair.get_node("WindowedRockWalls").mesh.get_aabb()
+	var surface_bounds: AABB = scene.get_node("Reference/skirt").global_transform*scene.get_node("Reference/skirt").mesh.get_aabb()
+	check(scene.get_node("Reference").find_child("mesh-3",true,false).layers==0,"Old suspended underside is replaced rather than hanging inside the room")
+	check(room_bounds.size.x>=28 and room_bounds.size.z>=28 and room_bounds.size.y>8,"Lower story spans the full chunk footprint with substantial height")
+	check(room_bounds.end.y>=surface_bounds.position.y and room_bounds.position.y<surface_bounds.position.y,"Lower story meets the original chunk without a vertical gap")
+	scene._focus_lair()
+	check(scene.camera.cull_mask==shared_mask and scene.get_node("Reference").visible,"Window inspection preserves the surface and the shared camera mask")
 	scene._focus_cave()
-	check(not scene.inspecting and scene.camera.cull_mask==1,"Cave focus returns to the visible surface")
+	check(scene.camera.cull_mask==shared_mask,"Cave focus never hides the lower story")
 	scene._focus_bigfoot()
-	check(scene.inspecting and scene.camera.cull_mask==4,"Find Bigfoot reveals his underground room")
+	check(scene.camera.cull_mask==shared_mask,"Find Bigfoot preserves both stories")
 	scene._reset_camera()
-	check(not scene.inspecting and scene.camera.cull_mask==1,"Camera reset exits inspection coherently")
-	scene._toggle_lair()
+	check(scene.camera.cull_mask==shared_mask,"Reset returns to the combined diorama")
 	scene._growth.terrain = 0.5
 	scene._process(0)
-	check(not resident.visible,"Inspection respects terrain growth visibility")
+	check(not resident.visible,"The stacked view respects terrain growth visibility")
 	scene._growth.terrain = 1.0
 	scene._process(0)
+	var lights_isolated := true
+	for light in scene.lair.find_children("*","Light3D",true,false):
+		if light.light_cull_mask&1 and not light.shadow_enabled: lights_isolated = false
+	check(lights_isolated,"Room lights illuminate the underground resident without leaking upstairs")
 	var saved: Dictionary = scene.capture_diorama_state()
 	check(saved.position[1]>0,"Saving underground retains a surface exit position")
 	var room_clock: float = scene.lair.drips.clock
@@ -55,14 +66,14 @@ func run() -> void:
 	await process_frame
 	RenderingServer.force_draw(false)
 	root.get_texture().get_image().save_png("/private/tmp/bigfoot-lair.png")
-	scene._toggle_lair()
+	scene._focus_stack()
 	scene._process(0)
-	check(not resident.visible and scene.camera.cull_mask==1,"Surface view conceals the underground resident")
+	check(resident.visible and scene.camera.cull_mask==shared_mask,"The sleeping resident stays visible when viewing the whole stack")
 	for frame in range(7200):
 		scene._process(1.0/60.0)
 		if scene.routine.cave.phase.is_empty(): break
 	check(scene.routine.cave.phase.is_empty() and scene.navigation.is_safe(resident.position),"Rest completes and resident returns to safe surface ground")
-	check(resident.visible and resident==scene.creature,"Surface return restores the same visible resident")
+	check(resident.visible and resident==scene.creature,"Surface return restores the same visible resident and surface lighting")
 	scene.routine.cancel()
 	resident.reset_at(scene.routine.cave.entrance)
 	check(scene.routine.cave.request(),"A second visit can begin")
@@ -72,6 +83,10 @@ func run() -> void:
 	scene.routine.cave.cancel()
 	scene._process(0)
 	check(not scene.routine.cave.concealed and scene.navigation.is_safe(resident.position),"Cancelling an occupied room restores the resident safely")
-	scene.free()
+	# Flush batched visibility/light changes before removing their geometry.
+	await process_frame
+	RenderingServer.force_draw(false)
+	scene.queue_free()
+	await process_frame
 	print("BIGFOOT LAIR: failures=",failures)
 	quit(1 if failures else 0)

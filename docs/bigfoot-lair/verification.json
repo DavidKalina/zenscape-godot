@@ -1,0 +1,19 @@
+{
+  "goal": "One orbitable two-story Bigfoot diorama",
+  "requirements": {
+    "forest_and_approved_cave_upstairs": "Original prepared cave scene inherited; front/side/rear captures inspected.",
+    "substantial_connected_lower_story": "28.4 m square walls, 9.2 m wall height, thick floor/base; old suspended underside excluded and skirt compressed at its fixed top.",
+    "physical_viewing_windows": "Eight polygonal openings with 1.45 m deep stone reveals; inspected from all four capture views.",
+    "both_stories_together": "All camera shortcuts retain shared culling; combined view assertions pass.",
+    "interior_dressing": "Dry bed, irregular puddle, two existing drip emitters, seeded stalactites/stalagmites; occupied window capture inspected.",
+    "resident_lifecycle": "Actual resident walks through surface mouth, sleeps below, returns outside; pause, cancellation, exterior save position verified."
+  },
+  "test": {
+    "script": "tests/test_bigfoot_lair.gd",
+    "passed_assertions": 21,
+    "failures": 0,
+    "result": "BIGFOOT LAIR: failures=0"
+  },
+  "known_engine_output": "Godot 4.7.2 logs two renderer light-unpair errors during scene teardown after all assertions pass. No script errors or runtime lifecycle failures observed. This is not a claim of an error-free engine log.",
+  "review": "Spec review passed. Standards lighting finding addressed with shadowed interior lights and isolated exterior fill."
+}

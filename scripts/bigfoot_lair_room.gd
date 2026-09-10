@@ -1,7 +1,11 @@
 extends Node3D
-## A cutaway chamber using Fidelity's rock palette and existing water effects.
+## Full-footprint lower story: thick rock walls with permanent viewing openings.
 ## Seed changes dressing, never the dry bed or puddle footprint.
 const LAYER := 4
+const HALF_WIDTH := 14.2
+const CEILING := 8.3
+const BED_POINT := Vector3(-6.0,0.15,8.0)
+const POOL_POINT := Vector3(5.0,-0.13,7.5)
 var bed := Marker3D.new()
 var drips := preload("res://scripts/waterfall_drips.gd").new()
 var dressing := Node3D.new()
@@ -10,7 +14,7 @@ var seed_value := 37
 
 func _ready() -> void:
 	add_child(bed)
-	bed.position = Vector3(-2.2,0.15,-0.6)
+	bed.position = BED_POINT
 	add_child(dressing)
 	add_child(drips)
 	_build_floor()
@@ -18,18 +22,28 @@ func _ready() -> void:
 	_build_puddle()
 	_build_bed()
 	redress(seed_value)
-	for spec in [[Vector3(-3,5,4),Color("e8c695"),2.0],[Vector3(3,3,-2),Color("78a9b6"),1.4]]:
+	for spec in [[Vector3(-6,5,8),Color("e8c695"),2.5],[Vector3(5,4,7),Color("78a9b6"),1.8],[Vector3(0,5,-6),Color("d6c5a6"),1.6]]:
 		var light := OmniLight3D.new()
 		light.position = spec[0]
 		light.light_color = spec[1]
 		light.light_energy = spec[2]
 		light.omni_range = 14.0
-		light.light_cull_mask = LAYER
+		light.light_cull_mask = LAYER | 1
+		light.shadow_enabled = true
 		add_child(light)
+	# Gentle exterior bounce keeps the rock reveals readable below the canopy.
+	for point in [Vector3(0,4,23),Vector3(-23,4,0),Vector3(23,4,0),Vector3(0,4,-23)]:
+		var fill := OmniLight3D.new()
+		fill.position = point
+		fill.omni_range = 35
+		fill.light_energy = 3.0
+		fill.light_color = Color("b9bdc7")
+		fill.light_cull_mask = LAYER
+		add_child(fill)
 	_layers(self)
 
 func _layers(root: Node) -> void:
-	if root is VisualInstance3D: root.layers = LAYER
+	if root is GeometryInstance3D: root.layers = LAYER
 	for child in root.get_children(): _layers(child)
 
 func _mesh(surface: SurfaceTool, parent: Node = self) -> MeshInstance3D:
@@ -47,64 +61,95 @@ func _mesh(surface: SurfaceTool, parent: Node = self) -> MeshInstance3D:
 
 func _triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, color: Color) -> void:
 	st.set_color(color)
-	for point in [a,b,c]: st.add_vertex(point)
+	st.set_smooth_group(-1)
+	# Godot front faces use clockwise winding; keep each rock facet flat.
+	for point in [a,c,b]: st.add_vertex(point)
 
 func floor_height(x: float, z: float) -> float:
-	var basin := Vector2(x-2.7,z-0.8).length()
+	var basin := Vector2(x-POOL_POINT.x,z-POOL_POINT.z).length()
 	if basin<1.8: return -0.42*(1.0-smoothstep(0.8,1.8,basin))
-	if Vector2(x+2.2,z+0.6).length()<1.7: return 0.1
+	if Vector2(x-BED_POINT.x,z-BED_POINT.z).length()<1.7: return 0.1
 	return (palette.noise.fbm(x*0.8,z*0.8)-0.5)*0.16
 
 func _build_floor() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for x in range(-6,6):
-		for z in range(-4,4):
+	for x in range(-14,14):
+		for z in range(-14,14):
 			var corners: Array[Vector3] = []
 			for offset in [Vector2(0,0),Vector2(1,0),Vector2(1,1),Vector2(0,1)]:
 				var point: Vector2 = Vector2(x,z)+offset
+				if absf(point.x)<14 and absf(point.y)<14:
+					var jitter := Vector2(palette.noise.hash_at(point.x,point.y),palette.noise.hash_at(point.y+43,point.x-17))-Vector2.ONE*0.5
+					point += jitter*0.65
 				corners.append(Vector3(point.x,floor_height(point.x,point.y),point.y))
 			var color := palette.rock_at(Vector2(x,z))*Color(0.75,0.72,0.68)
 			_triangle(st,corners[0],corners[2],corners[1],color)
-			_triangle(st,corners[0],corners[3],corners[2],color.lightened(0.025))
-	# A thick exposed geological edge makes the room read as a diorama slice.
-	for x in range(-6,6):
-		var a := Vector3(x,floor_height(x,4),4)
-		var b := Vector3(x+1,floor_height(x+1,4),4)
-		_triangle(st,a,b,Vector3(x,-0.9,4),Color("514738"))
-		_triangle(st,b,Vector3(x+1,-0.9,4),Vector3(x,-0.9,4),Color("514738"))
-	_mesh(st)
+			_triangle(st,corners[0],corners[3],corners[2],color.lightened(0.012))
+	_mesh(st).name = "LowerStoryFloor"
+	# Solid geological base, with a tapered bottom and faceted strata.
+	var base := SurfaceTool.new()
+	base.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for side in range(4):
+		var turn := Basis(Vector3.UP,side*PI/2.0)
+		for x in range(-14,14,2):
+			var a := turn*Vector3(x,0,14)
+			var b := turn*Vector3(x+2,0,14)
+			var c := turn*Vector3(x*0.96,-1.6,13.44)
+			var d := turn*Vector3((x+2)*0.96,-1.6,13.44)
+			var color := palette.rock_at(Vector2(x,side))*Color(0.6,0.53,0.45)
+			_triangle(base,a,c,b,color)
+			_triangle(base,b,c,d,color.darkened(0.08))
+	_triangle(base,Vector3(-13.44,-1.6,-13.44),Vector3(13.44,-1.6,13.44),Vector3(13.44,-1.6,-13.44),Color("292820"))
+	_triangle(base,Vector3(-13.44,-1.6,-13.44),Vector3(-13.44,-1.6,13.44),Vector3(13.44,-1.6,13.44),Color("292820"))
+	_mesh(base).name = "LowerStoryBase"
 
 func _build_walls() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in range(18):
-		var a := PI+PI*float(i)/18.0
-		var b := PI+PI*float(i+1)/18.0
-		var low_a := Vector3(cos(a)*6,0,sin(a)*4)
-		var low_b := Vector3(cos(b)*6,0,sin(b)*4)
-		var mid_a := low_a*0.98+Vector3.UP*(2.1+sin(i*2.1)*0.2)
-		var mid_b := low_b*0.98+Vector3.UP*(2.1+sin((i+1)*2.1)*0.2)
-		var top_a := low_a*0.82+Vector3.UP*(4.5+sin(i*1.7)*0.25)
-		var top_b := low_b*0.82+Vector3.UP*(4.5+sin((i+1)*1.7)*0.25)
-		var color := palette.rock_at(Vector2(i,9))*Color(0.65,0.68,0.7)
-		for points in [[low_a,low_b,mid_a],[low_b,mid_b,mid_a],[mid_a,mid_b,top_a],[mid_b,top_b,top_a]]:
-			_triangle(st,points[0],points[1],points[2],color.lightened(0.015*(i%3)))
-		# A short roof lip leaves the front cut away for inspection.
-		_triangle(st,top_a,top_b,top_a+Vector3(0,-0.18,0.85),color.darkened(0.15))
-		_triangle(st,top_b,top_b+Vector3(0,-0.18,0.85),top_a+Vector3(0,-0.18,0.85),color)
-	var roof_color := palette.rock_at(Vector2(9,9))*Color(0.65,0.68,0.7)
-	var roof_back := Vector3(2.2,4.3,-2.8)
-	var roof_left := Vector3(2.3,4.2,1.15)
-	var roof_right := Vector3(3.65,4.2,0.9)
-	_triangle(st,roof_back,roof_left,roof_right,roof_color)
-	_triangle(st,roof_back,roof_right,Vector3(4.0,4.4,-2.0),roof_color.lightened(0.035))
-	_mesh(st)
+	# Two broad irregular windows per side. Their reveals are real rock depth,
+	# so the openings remain legible while orbiting, without visibility tricks.
+	for side in range(4):
+		var turn := Basis(Vector3.UP,side*PI/2.0)
+		for bay in range(2):
+			var left := -HALF_WIDTH+bay*HALF_WIDTH
+			var right := left+HALF_WIDTH
+			var middle := (left+right)*0.5
+			var outer := [Vector2(left,0),Vector2(left,4),Vector2(left,CEILING+0.9),Vector2(middle,CEILING+0.9),Vector2(right,CEILING+0.9),Vector2(right,4),Vector2(right,0),Vector2(middle,0)]
+			var inner := [Vector2(left+2.0,0.9),Vector2(left+1.35,3.8),Vector2(left+2.2,6.9),Vector2(middle,7.5),Vector2(right-2.0,6.7),Vector2(right-1.5,3.5),Vector2(right-2.3,0.85),Vector2(middle,0.65)]
+			for i in range(8):
+				var j := (i+1)%8
+				var a: Vector3 = turn*Vector3(outer[i].x,outer[i].y,HALF_WIDTH)
+				var b: Vector3 = turn*Vector3(outer[j].x,outer[j].y,HALF_WIDTH)
+				var c: Vector3 = turn*Vector3(inner[i].x,inner[i].y,HALF_WIDTH)
+				var d: Vector3 = turn*Vector3(inner[j].x,inner[j].y,HALF_WIDTH)
+				var inward := turn*Vector3(0,0,-1.45)
+				var color := palette.rock_at(Vector2(i+side*4,bay))*Color(0.82,0.75,0.65)
+				_triangle(st,a,c,b,color)
+				_triangle(st,b,c,d,color.lightened(0.016))
+				_triangle(st,a+inward,b+inward,c+inward,color.darkened(0.12))
+				_triangle(st,b+inward,d+inward,c+inward,color.darkened(0.08))
+				_triangle(st,c,c+inward,d,color.darkened(0.18))
+				_triangle(st,d,c+inward,d+inward,color.darkened(0.15))
+	_mesh(st).name = "WindowedRockWalls"
+	# The upstairs chunk is the ceiling; this underside overlaps its skirt.
+	var roof := SurfaceTool.new()
+	roof.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for x in range(-14,14,2):
+		for z in range(-14,14,2):
+			var a := Vector3(x,CEILING,z)
+			var b := Vector3(x+2,CEILING,z)
+			var c := Vector3(x,CEILING,z+2)
+			var d := Vector3(x+2,CEILING,z+2)
+			var color := palette.rock_at(Vector2(x,z))*Color(0.6,0.58,0.53)
+			_triangle(roof,a,b,c,color)
+			_triangle(roof,b,d,c,color)
+	_mesh(roof).name = "UpperStoryUnderside"
 
 func _build_puddle() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var center := Vector3(2.7,-0.13,0.8)
+	var center := POOL_POINT
 	for i in range(28):
 		var a := TAU*i/28.0
 		var b := TAU*(i+1)/28.0
@@ -116,8 +161,8 @@ func _build_puddle() -> void:
 	var water := ShaderMaterial.new()
 	water.shader = preload("res://shaders/garden_water.gdshader")
 	node.material_override = water
-	drips.add_emitter(Vector3(2.7,3.5,0.8),center+Vector3.UP*0.025)
-	drips.add_emitter(Vector3(3.2,3.7,0.5),Vector3(3.2,-0.105,0.5))
+	drips.add_emitter(Vector3(center.x,CEILING-1.4,center.z),center+Vector3.UP*0.025)
+	drips.add_emitter(Vector3(center.x+0.5,CEILING-1.1,center.z-0.3),center+Vector3(0.5,0.025,-0.3))
 
 func _build_bed() -> void:
 	var rng := RandomNumberGenerator.new()
@@ -162,13 +207,12 @@ func redress(value: int) -> void:
 		child.queue_free()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = value
-	for i in range(24):
-		var angle := rng.randf_range(PI+0.12,TAU-0.12)
-		var point := Vector3(cos(angle)*4.9,4.2,sin(angle)*3.3+0.25)
-		_spike(point,rng.randf_range(0.45,1.6),rng.randf_range(0.16,0.35),true)
-	for i in range(10):
-		var angle := rng.randf_range(PI+0.1,TAU-0.1)
-		_spike(Vector3(cos(angle)*5.2,0,sin(angle)*3.4),rng.randf_range(0.3,0.9),0.25,false)
-	# Fixed drip sources belong to the fixed puddle, not randomized decoration.
-	_spike(Vector3(2.7,4.2,0.8),0.7,0.25,true)
-	_spike(Vector3(3.2,4.2,0.5),0.5,0.18,true)
+	for i in range(42):
+		var point := Vector3(rng.randf_range(-12.0,12.0),CEILING,rng.randf_range(-12.0,12.0))
+		_spike(point,rng.randf_range(0.45,1.8),rng.randf_range(0.16,0.45),true)
+	for i in range(16):
+		var point := Vector3(rng.randf_range(-11.5,11.5),0,rng.randf_range(-11.5,3.0))
+		if Vector2(point.x-BED_POINT.x,point.z-BED_POINT.z).length()<2: continue
+		_spike(point,rng.randf_range(0.3,1.3),rng.randf_range(0.2,0.4),false)
+	_spike(Vector3(POOL_POINT.x,CEILING,POOL_POINT.z),1.4,0.3,true)
+	_spike(Vector3(POOL_POINT.x+0.5,CEILING,POOL_POINT.z-0.3),1.1,0.22,true)
