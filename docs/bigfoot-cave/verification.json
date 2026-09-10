@@ -49,5 +49,11 @@
     "native_capture": "entry, concealed rest and exit captured successfully",
     "lifecycle": "test_bigfoot_cave.gd: zero failures",
     "save_reload": "test_bigfoot_cave_store.gd: zero failures, including both saved scales"
+  },
+  {
+    "change": "Original scale restored; cave moved to northeastern woodland corner",
+    "native_capture": "entry, concealed rest and exit captured successfully",
+    "lifecycle": "test_bigfoot_cave.gd: zero failures",
+    "save_reload": "test_bigfoot_cave_store.gd: zero failures, including original resident and cave scales"
   }
 ]

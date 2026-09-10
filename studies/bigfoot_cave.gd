@@ -1,15 +1,19 @@
 extends "res://studies/fidelity_life.gd"
-## Fidelity's southern hill, fitted with the approved Blender cave.
+## Fidelity's northeastern corner, fitted with the approved Blender cave.
 func _ready() -> void:
 	super._ready()
-	creature.set_body_scale(0.75)
+	creature.set_body_scale(1.0)
 	_refresh_habitat()
-	get_window().title = "ZenScape · Bigfoot's cave · 75% scale"
+	get_window().title = "ZenScape · Bigfoot's cave · woodland corner"
 	var data: NativeTerrainData = _chunk_editor.data
 	data.begin_stroke()
-	var site := {"start":[3.79,1.5159,-10.09],"heading":-PI/4.0,"width":4.8,"height":3.6,"length":5.4,"sealed":false,"cave":true,"cave_scale":0.75}
+	var site := {"start":[3.0,1.7,7.0],"heading":PI/2.0,"width":6.4,"height":4.8,"length":7.2,"sealed":false,"cave":true,"cave_scale":1.0}
+	# A gentle earthen seat supports the den in its own woodland corner.
+	data.brush(Vector2(7.2,7.0),6.8,128.0,"flatten",1.7)
 	data.tunnels.append(site)
+	var site_pose := preload("res://scripts/bigfoot_cave_site.gd").pose(site)
 	var bounds := preload("res://scripts/bigfoot_cave_site.gd").bounds(site)
+	bounds = bounds.merge(site_pose*AABB(Vector3(-1.5,0,0),Vector3(3,4,4)))
 	var groups: Dictionary = preload("res://scripts/world_reference_props.gd").GROUPS
 	for interest: Dictionary in habitat.interests:
 		var box: AABB = interest.get("bounds",AABB(interest.position-Vector3.ONE*0.6,Vector3.ONE*1.2))
@@ -26,6 +30,8 @@ func _ready() -> void:
 	data.end_stroke()
 	_chunk_editor.refresh()
 	_refresh_habitat()
+	var arrival: Variant = navigation.nearest_safe(site_pose*Vector3(0,0,2.5))
+	if arrival != null: creature.reset_at(arrival)
 	for entry in [["Find his cave",_focus_cave],["Visit the cave",_visit_cave]]:
 		var button := Button.new()
 		button.text = entry[0]
@@ -41,12 +47,11 @@ func _visit_cave() -> void:
 
 func _focus_cave() -> void:
 	if _chunk_editor.data.tunnels.is_empty(): return
-	var opening := preload("res://scripts/native_tunnels.gd").pose(_chunk_editor.data.tunnels[0])
 	_auto_orbit = false
-	target = opening.origin+opening.basis*Vector3(0,2.0,2.0)
-	distance = 20.0
-	yaw = 2.15
-	polar = 1.08
+	target = Vector3(2.0,2.0,2.0)
+	distance = 32.0
+	yaw = -0.75
+	polar = 0.9
 	_update_camera()
 
 func capture_diorama_state() -> Dictionary:

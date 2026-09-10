@@ -17,7 +17,8 @@ func wait_phase(wanted: String, seconds := 50.0) -> bool:
 	return false
 func reset_visit() -> void:
 	scene.routine.cancel()
-	scene.creature.reset_at(scene.navigation.nearest_safe(Vector3(5.6,0.54,-7.7)))
+	var pose := preload("res://scripts/bigfoot_cave_site.gd").pose(scene._chunk_editor.data.tunnels[0])
+	scene.creature.reset_at(scene.navigation.nearest_safe(pose*Vector3(0,0,2.5)))
 	scene.brain.reset_behavior()
 	scene.routine._next_action = scene.routine._clock+1000.0
 func run() -> void:

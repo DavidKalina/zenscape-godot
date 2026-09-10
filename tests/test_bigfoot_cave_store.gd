@@ -19,7 +19,7 @@ func run() -> void:
 	scene.set_process(false)
 	check(scene._chunk_editor.data.tunnels.size()==1 and scene.cave_sites.get_child_count()==1,"Saved cave restores its terrain cut and approved model")
 	check(scene.resident_enabled and scene.creature.visible,"Saved world restores a visible exterior resident")
-	check(is_equal_approx(scene.creature.body_scale,0.75) and is_equal_approx(float(scene._chunk_editor.data.tunnels[0].get("cave_scale",1.0)),0.75),"Resident and cave retain the reduced size after opening")
+	check(is_equal_approx(scene.creature.body_scale,1.0) and is_equal_approx(float(scene._chunk_editor.data.tunnels[0].get("cave_scale",1.0)),1.0),"Resident and cave retain the original size after opening")
 	check(scene.routine.cave.request(),"Main-game resident can use the restored cave")
 	for frame in range(1200):
 		scene._process(1.0/60.0)

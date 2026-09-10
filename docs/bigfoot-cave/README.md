@@ -1,7 +1,7 @@
 # Bigfoot's cave in Fidelity
 
-The approved Blender cave is fitted to the southern hillside of the original
-Fidelity diorama, beside the water. Run `run-bigfoot-cave.command` in this
+The approved Blender cave is fitted to the northeastern woodland corner of the original
+Fidelity diorama, on a level earthen seat with a cleared approach. Run `run-bigfoot-cave.command` in this
 worktree. **Find his cave** frames the entrance; **Visit the cave** invites a
 normal approach, rest and departure. Ordinary scheduled sleeps also use it.
 
@@ -35,9 +35,10 @@ coplanar rendering artifacts.
 
 The floor, shell and pose are a fixed authored design: a saved cave marker
 requires a bore at least 6.4 m wide, 4.8 m high and 7.2 m deep at full size.
-The prepared world now uses 75% size for both the cave and Bigfoot (a 25%
-reduction); the bore and threshold route scale with the cave. Resident size
-survives saving, and walking speed follows the shorter stride. This is a prepared
+The prepared world uses the original full size for both the cave and Bigfoot.
+The entrance faces the clearing, with the cave extending into its own corner.
+Resident size survives saving; optional scaling also adjusts the threshold route
+and walking stride. This is a prepared
 world, not a general cave-placement tool. Cave visit progress is transient;
 saving does not freeze an action mid-animation. The normal save restores an
 exterior resident position.

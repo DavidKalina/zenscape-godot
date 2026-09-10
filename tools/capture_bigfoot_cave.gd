@@ -40,7 +40,7 @@ func run() -> void:
 	# Openable in the main product as a populated world.
 	var document: Dictionary = scene._chunk_editor.data.to_document()
 	document.scene_state = NativeGardenStore.capture(scene)
-	var exterior: Vector3 = scene.navigation.nearest_safe(Vector3(5.6,0.543902,-7.7))
+	var exterior: Vector3 = scene.routine.cave.entrance
 	document.scene_state.diorama = {"resident":true,"resident_scale":scene.creature.body_scale,"position":[exterior.x,exterior.y,exterior.z]}
 	var file := FileAccess.open(scene._chunk_editor.save_path,FileAccess.WRITE)
 	file.store_string(JSON.stringify(document,"",true,true))
