@@ -34,6 +34,11 @@ func _seed_loose_stones() -> void:
 	pass
 
 func _ready() -> void:
+	if "--verify-desktop-build" in OS.get_cmdline_user_args():
+		get_tree().root.size = Vector2i(1440,960)
+		library_path = OS.get_temp_dir().path_join("zenscape-export-menu-"+str(Time.get_ticks_usec()))
+		recent_file = library_path.path_join("recent.cfg")
+		title_seed = 42
 	set_process(false)
 	var loading := preload("res://scripts/title_loading.gd").new()
 	add_child(loading)
@@ -90,6 +95,8 @@ func _ready() -> void:
 	title_loaded = true
 	set_process(true)
 	show_menu()
+	if "--verify-desktop-build" in OS.get_cmdline_user_args():
+		preload("res://scripts/desktop_build_check.gd").run.call_deferred(self)
 
 func _process(delta: float) -> void:
 	var trace_started := Time.get_ticks_usec() if _performance_trace.active else 0

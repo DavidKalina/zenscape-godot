@@ -49,10 +49,12 @@ macOS, using the pinned bindings above and SCons 4.8.1. Mac builds use
 `--arch universal` to include both arm64 and x86_64 in one library. The helper
 generates matching universal descriptor entries for that option.
 
-CI requires native mesh equivalence in the editor, then runs the same suite and
-the menu/editor check through the actual exported release executable. Tests run
-outside the checkout and require `--native-kernels`, so a missing library cannot
-silently pass via the GDScript fallback. Only verified packages are uploaded.
+CI requires native mesh equivalence in the editor, then checks imported, foundation and
+sculpted meshes with synchronous and 0/1/2/4/8-worker release dispatch, plus the
+menu/editor, through the actual exported executable. Release templates prohibit
+script/path overrides, so CI launches normally with `-- --native-kernels
+--verify-desktop-build`. The in-package self-check requires the kernel and runs
+outside the checkout; a missing library cannot silently pass via GDScript. Only verified packages are uploaded.
 Mac packaging verifies both architecture slices; execution checks cover the
 runner's architecture. Linux native exports are not covered by this workflow.
 Local exports still require matching libraries to be built before exporting.
