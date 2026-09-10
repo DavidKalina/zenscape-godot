@@ -57,6 +57,10 @@ func dry_meadow() -> void:
 	editor.refresh()
 	field.rebuild()
 
+func explosions_settled() -> void:
+	while editor.explosives.requested or editor.explosives.firing:
+		await physics_frame
+
 func run() -> void:
 	create_timer(300).timeout.connect(func() -> void:
 		print("FIRE INTEGRATION: timed out")
@@ -108,8 +112,7 @@ func run() -> void:
 	editor.refresh()
 	editor.explosives.target_id = charge
 	editor.explosives.request_detonation()
-	await physics_frame
-	await physics_frame
+	await explosions_settled()
 	check(editor.data.object_by_id(charge).is_empty(),"The charge detonated")
 	await advance(1.5)
 	check(field.active(),"An explosion sets the meadow alight")
@@ -126,6 +129,7 @@ func run() -> void:
 			gone = true
 			break
 	check(gone,"An explosive standing in a fire detonates itself")
+	await explosions_settled()
 
 	# (e) A torched tree becomes a snag, and undo brings the tree back.
 	wet = 0.0

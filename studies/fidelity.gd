@@ -6,11 +6,11 @@ var _chunk_editor: NativeChunkEditor
 var _build_panel: NativeBuildPanel
 var _build_palette: NativeBuildPalette
 var _saved_setting_controls: Array[Dictionary] = []
-var _planar_water = preload("res://scripts/planar_water.gd").new()
-var _world_visuals = preload("res://scripts/world_visuals.gd").new()
-var _redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
-var _leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
-var _waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
+var _planar_water: Node3D
+var _world_visuals: Node3D
+var _redwood_mist: FogVolume
+var _leaf_litter: MultiMeshInstance3D
+var _waterfall_drips: Node3D
 var _leaf_revision := -1
 var _leaf_objects_revision := -1
 var _display_fog: CanvasLayer
@@ -94,8 +94,11 @@ var _fire_effects = null
 const FIRE_REFRESH := 0.5
 const FIRE_REGROW_REFRESH := 4.0
 var _fire_refresh := 0.0
-var _fire_rebuilding := false
 var _fire_stroke := false
+var _fire_opening := false
+var _fire_history_before := {}
+var _fire_blast_history := {}
+var _fire_wait_time := 0.0
 ## The value last published to the `zs_fire` global. `global_shader_parameter_get`
 ## is editor-only, so the scene keeps its own record for tests and tools.
 var _fire_intensity := 0.0
@@ -104,6 +107,14 @@ var _fire_water_age := 1e9
 
 func _ready() -> void:
 	set_process(false)
+	# Inherited PackedScenes replace the base script during instantiation.
+	# Construct node helpers only after that replacement, when this scene can
+	# parent and own them; member initializers would strand the first copies.
+	_planar_water = preload("res://scripts/planar_water.gd").new()
+	_world_visuals = preload("res://scripts/world_visuals.gd").new()
+	_redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
+	_leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
+	_waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
 	var engine_args := OS.get_cmdline_args()
 	var fps_index := engine_args.find("--fixed-fps")
 	if fps_index >= 0 and fps_index + 1 < engine_args.size():
@@ -565,7 +576,7 @@ func _process(delta: float) -> void:
 	_world_visuals.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
 	_chunk_editor.sync_visibility()
-	_planar_water.sync(self)
+	_planar_water.sync(self,get_tree())
 	if not _capture.is_empty() and not _capture_done and _elapsed > 1.0:
 		_capture_done = true
 		_capture_frame.call_deferred()
@@ -581,6 +592,10 @@ func _setup_fire() -> void:
 	_refresh_fire_water()
 	_fire_field.setup(_chunk_editor.data,_fire_wind,_fire_weather,_fire_water,0x5B1A2E)
 	_lightning.struck.connect(func(point: Vector3) -> void: _fire_field.ignite(point,0.8,1.0))
+	_chunk_editor.data.stroke_starting.connect(_before_terrain_stroke)
+	_chunk_editor.data.history_captured.connect(_capture_fire_history)
+	_chunk_editor.data.state_restored.connect(_restore_fire_history)
+	_fire_field.state_restored.connect(_fire_restored)
 	_fire_field.stroke_started.connect(_fire_stroke_started)
 	_fire_field.stroke_ended.connect(_fire_stroke_ended)
 	_fire_field.explosive_triggered.connect(func(id: int,_position: Vector3) -> void:
@@ -634,7 +649,7 @@ func _refresh_fire_water() -> void:
 		_fire_water_map = _precipitation.ground_texture.get_image()
 	# The water mask is read once per rebuild, not per tick, so the first map to
 	# arrive (and any later replacement) has to re-seed it.
-	if _fire_field != null and _fire_water_map != before and not _fire_field.active():
+	if _fire_field != null and _fire_water_map != before:
 		_fire_field.rebuild()
 
 func _advance_fire(delta: float) -> void:
@@ -644,7 +659,15 @@ func _advance_fire(delta: float) -> void:
 	if _fire_water_age > 2.0:
 		_refresh_fire_water()
 	var burning := _fire_field.active()
-	_fire_field.advance(delta,_paused)
+	var transaction: bool = _chunk_editor.forming or (not _chunk_editor.data._before.is_empty() and not _fire_stroke)
+	var publishing: bool = _chunk_editor.refresh_pending > 0
+	if publishing and not _paused and not transaction:
+		_fire_wait_time = minf(_fire_wait_time+delta,1.0)
+	if not _paused and not transaction and not publishing:
+		if burning and not _fire_stroke: _fire_stroke_started(false)
+		_fire_field.advance(delta+_fire_wait_time,false)
+		_fire_wait_time = 0.0
+		if not _fire_field.active() and not _fire_field.ignition_pending(): _fire_blast_history = {}
 	_fire_intensity = _fire_field.total_intensity()
 	RenderingServer.global_shader_parameter_set("zs_fire",_fire_intensity)
 	if _fire_look != null and _fire_look.has_method("advance"):
@@ -662,28 +685,71 @@ func _advance_fire(delta: float) -> void:
 ## refresh turns those into mesh colours and flora batches, and its incremental
 ## path already spots a repainted cell, so no cache needs discarding here.
 func _refresh_fire_ground() -> void:
-	if _fire_rebuilding or _chunk_editor == null or _chunk_editor.forming:
+	if _chunk_editor == null or _chunk_editor.forming or _chunk_editor.refresh_pending > 0:
 		return
-	_fire_rebuilding = true
-	await _chunk_editor.refresh(get_tree())
-	_fire_rebuilding = false
+	# No awaiting wrapper: destruction can discard this refresh at any stage
+	# without keeping a suspended method on the deleted scene alive.
+	_chunk_editor.refresh(get_tree())
 
 ## One fire is one undo step, like one salvo of charges. The bracket opens on
 ## the first cell to catch and closes when the last one dies.
-func _fire_stroke_started() -> void:
-	if _chunk_editor == null:
-		return
-	_chunk_editor.finish_stroke()
+func _fire_stroke_started(new_fire := true) -> void:
+	if _chunk_editor == null or _fire_stroke or not _chunk_editor.data._before.is_empty(): return
+	_fire_history_before = _fire_field.history_before_fire if new_fire else _fire_field.document()
+	_fire_opening = true
 	_chunk_editor.data.begin_stroke()
+	_fire_opening = false
 	_fire_stroke = true
 
-func _fire_stroke_ended() -> void:
-	if _chunk_editor == null or not _fire_stroke:
-		return
+func _finish_fire_stroke() -> void:
+	if _chunk_editor == null or not _fire_stroke: return
 	_fire_stroke = false
-	if _chunk_editor.data.end_stroke() and not _chunk_editor.data._undo.is_empty():
-		_chunk_editor.data._undo.back()["fire"] = true
+	var data := _chunk_editor.data
+	if data.end_stroke() and not data._undo.is_empty():
+		# Only coalesce with the exact adjacent blast entry. An ordinary edit
+		# clears the association, so Undo never jumps across user work.
+		if data._undo.size() >= 2 and is_same(data._undo[-2],_fire_blast_history):
+			data._undo.pop_back()
+		data._undo.back()["fire"] = true
+	_fire_blast_history = {}
+
+func _begin_blast_stroke() -> void:
+	# Physics may admit another cook-off before a process frame reopens fire.
+	var history := _chunk_editor.data._undo
+	if not _fire_stroke and not history.is_empty() and is_same(history.back(),_fire_blast_history):
+		_fire_stroke_started(false)
+	if not _fire_stroke: _chunk_editor.data.begin_stroke()
+
+func _end_blast_stroke() -> void:
+	if _fire_stroke: _finish_fire_stroke()
+	else: _chunk_editor.data.end_stroke()
+
+func _continue_blast_fire() -> void:
+	_fire_blast_history = _chunk_editor.data._undo.back()
+
+func _fire_stroke_ended() -> void:
+	_finish_fire_stroke()
 	_refresh_fire_ground()
+
+func _before_terrain_stroke() -> void:
+	if not _fire_opening:
+		_finish_fire_stroke()
+		_fire_blast_history = {}
+
+func _capture_fire_history(state: Dictionary) -> void:
+	state["fire_state"] = _fire_history_before.duplicate(true) if _fire_opening else _fire_field.document()
+
+func _restore_fire_history(state: Dictionary) -> void:
+	_fire_field.restore(state.get("fire_state",{}))
+
+func _fire_restored() -> void:
+	_fire_stroke = false
+	_fire_blast_history = {}
+	_fire_wait_time = 0.0
+	_fire_refresh = 0.0
+	_chunk_editor.explosives.fire_queue.clear()
+	_fire_intensity = _fire_field.total_intensity()
+	RenderingServer.global_shader_parameter_set("zs_fire",_fire_intensity)
 
 func _capture_frame() -> void:
 	# Offscreen captures must also complete when macOS occludes the window.

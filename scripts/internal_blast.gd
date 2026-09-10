@@ -7,7 +7,7 @@ static func confined(data: NativeTerrainData, origin: Vector3, radius: float) ->
 	var roof: Variant = data.ground_height(Vector2(origin.x,origin.z))
 	return roof != null and roof-origin.y >= maxf(1.0,radius*0.35)
 
-static func rupture(data: NativeTerrainData, origin: Vector3, radius: float, colors: PackedColorArray) -> Dictionary:
+static func rupture(data: NativeTerrainData, origin: Vector3, radius: float, colors: PackedColorArray, arrays_only := false) -> Dictionary:
 	if not confined(data,origin,radius): return {}
 	var before := data.heights.duplicate()
 	var after := before.duplicate()
@@ -37,7 +37,7 @@ static func rupture(data: NativeTerrainData, origin: Vector3, radius: float, col
 	var capacity := pow(radius,3)*1.5
 	if volume>capacity:
 		for i in range(before.size()): after[i] = lerpf(before[i],after[i],capacity/volume)
-	var chunks := Collapse._chunks(data,before,after,origin,radius,colors,true)
+	var chunks := Collapse._chunks(data,before,after,origin,radius,colors,true,arrays_only)
 	if chunks.is_empty(): return {}
 	for chunk: Dictionary in chunks:
 		var offset: Vector3 = chunk.center-origin

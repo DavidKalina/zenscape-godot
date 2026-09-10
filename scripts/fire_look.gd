@@ -10,10 +10,8 @@ extends RefCounted
 ## tint arrays, but those writes bump no revision, so somebody has to ask the
 ## terrain and the flora batches to look again; this does it on a timer.
 ##
-## The look owns no state the field does not, except one thing: the char of
-## records that have finished burning. The field forgets a snag the moment it
-## swaps the record, and without that memory the snag would rebuild looking
-## freshly cut.
+## The field owns char after extinction too; this view only remembers what it
+## last published so removed/restored objects can be cleared.
 
 var field: FireField = null
 var view: GardenView = null
@@ -40,21 +38,17 @@ func setup(field_: FireField, view_: GardenView) -> void:
 		return
 	for pair in [["object_ignited",_on_ignited],["object_charring",_on_charring],
 			["object_burned_out",_on_burned_out],["cell_ignited",_on_cell_ignited],
-			["cell_burned_out",_on_cell_burned_out],["fire_extinguished",_on_extinguished]]:
+			["cell_burned_out",_on_cell_burned_out],["fire_extinguished",_on_extinguished],["state_restored",_on_restored]]:
 		if not field.is_connected(pair[0],pair[1]):
 			field.connect(pair[0],pair[1])
 
 func advance(delta: float, paused := false) -> void:
 	if field == null or view == null or not is_instance_valid(view):
 		return
-	if not paused:
-		var burning: Dictionary = field.burning_objects()
-		for id: int in burning:
-			var entry: Dictionary = burning[id]
-			_state[id] = Vector2(float(entry["char"]),float(entry.burn))
-	# Push every frame, paused included. `set_object_fire` early-outs when the
-	# value has not moved, so a still world costs one comparison per burnt thing
-	# and a rebuild mid-burn comes back charred on the next call regardless.
+	var current := field.appearance()
+	for id: int in _state:
+		if not current.has(id): view.set_object_fire(id,0.0,0.0)
+	_state = current
 	for id: int in _state:
 		var value: Vector2 = _state[id]
 		view.set_object_fire(id,value.x,value.y)
@@ -143,3 +137,11 @@ func _on_cell_burned_out(_index: int) -> void:
 func _on_extinguished() -> void:
 	_dirty = true
 	_clock = ground_interval
+
+func _on_restored() -> void:
+	if view == null or not is_instance_valid(view): return
+	for id: int in view._object_fire.keys(): view.set_object_fire(id,0.0,0.0)
+	_state.clear()
+	_dirty = false
+	_clock = 0.0
+	advance(0.0,true)

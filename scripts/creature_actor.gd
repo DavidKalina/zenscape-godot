@@ -65,6 +65,13 @@ const WIND_BODY = preload("res://scripts/creature_wind_body.gd")
 func walking_speed(base_speed: float) -> float:
 	return base_speed*locomotion_tempo
 
+## Imported gaits declare their stride calibration; legacy Walk/LogCarry keep theirs.
+func gait_reference_speed(clip := "Walk") -> float:
+	return float(player.get_animation(clip).get_meta("ground_speed_mps",WALK_SPEED_MPS))
+
+func gait_step_count(clip := "Walk") -> int:
+	return int(player.get_animation(clip).get_meta("steps_per_loop",2))
+
 ## Navigation supplies a nearby, already validated point. Animation owns the
 ## stride while this actor owns facing, locomotion and its latest safe feet.
 func can_roam() -> bool:
@@ -105,7 +112,7 @@ func walk_step(destination: Vector3, speed: float, delta: float, gait := "Walk")
 	global_position = next_feet
 	_safe_position = global_position
 	land_position = global_position
-	player.speed_scale = speed/WALK_SPEED_MPS
+	player.speed_scale = speed/gait_reference_speed(player.current_animation)
 	if distance >= horizontal:
 		return true
 	return false
@@ -120,7 +127,7 @@ func turn_step(yaw: float, delta: float) -> bool:
 	if state != State.WALKING:
 		_state(State.WALKING)
 		_play("Walk")
-	player.speed_scale = 0.6
+	player.speed_scale = 0.6*player.current_animation_length/3.6*2.0/gait_step_count("Walk")
 	global_rotation.y += clampf(error,-1.2*delta,1.2*delta)
 	_standing_basis = global_basis
 	return false
@@ -351,6 +358,9 @@ func set_personality(enabled: bool) -> void:
 	var current := player.current_animation
 	var position := player.current_animation_position if not current.is_empty() else 0.0
 	var tempo := player.speed_scale
+	var old_duration := player.get_animation(current).length if not current.is_empty() else 1.0
+	var old_stride := gait_reference_speed(current) if current=="Walk" else 1.0
+	var old_steps := gait_step_count(current) if current=="Walk" else 2
 	var replacing := _original_clips.has(current)
 	if replacing: player.stop()
 	var library := player.get_animation_library("")
@@ -360,8 +370,10 @@ func set_personality(enabled: bool) -> void:
 	personality_active = enabled
 	if replacing:
 		player.play(current,0.15)
-		player.seek(fposmod(position,player.get_animation(current).length),true)
-		player.speed_scale = tempo
+		var new_duration := player.get_animation(current).length
+		var phase_position := position/old_duration*old_steps*new_duration/gait_step_count(current) if current=="Walk" else position
+		player.seek(fposmod(phase_position,new_duration),true)
+		player.speed_scale = tempo*old_stride/gait_reference_speed(current) if current=="Walk" else tempo
 
 func _process(delta: float) -> void:
 	advance(delta)
@@ -557,11 +569,11 @@ func advance(delta: float) -> void:
 	if walk_before >= 0.0 and state == State.WALKING:
 		var length := player.current_animation_length
 		var after := walk_before+dt*player.speed_scale
-		# Exported Walk and carrying gaits plant L halfway through, R at wrap.
-		for contact in [length*0.5,length]:
-			if walk_before < contact and after >= contact:
-				var bone := skeleton.find_bone("Foot_L" if contact < length else "Foot_R")
-				footstep.emit(skeleton.to_global(skeleton.get_bone_global_pose(bone).origin) if bone >= 0 else global_position)
+		# Heavy Walk has four contacts; legacy Walk and LogCarry have two.
+		var interval := length/gait_step_count(player.current_animation)
+		for step in range(floori(walk_before/interval)+1,floori(after/interval)+1):
+			var bone := skeleton.find_bone("Foot_L" if step%2==1 else "Foot_R")
+			footstep.emit(skeleton.to_global(skeleton.get_bone_global_pose(bone).origin) if bone >= 0 else global_position)
 	var response := 1.0-exp(-10.0*dt)
 	var goal := _sway if state == State.HELD else (_brace if state == State.IDLE or state == State.ALERT else Vector2.ZERO)
 	_visual.rotation.x = lerpf(_visual.rotation.x,goal.x,response)

@@ -245,9 +245,10 @@ func _persistence() -> void:
 	check(field.burning_cells() == burning,"Restore reinstates the burning cells")
 	check(field.burning_objects().size() == objects.size(),"Restore reinstates object fire state")
 	check(field.document() == document,"document/restore round-trips exactly")
+	var ground_before_reset := data._snapshot()
 	field.restore({})
 	check(not field.active() and field.document().is_empty(),"Restoring an empty sub-document yields an inert field")
-	check(data.grass[field.cell_at(Vector3.ZERO)] > 0.0,"Restoring empty gives the ground its cover back")
+	check(data._snapshot() == ground_before_reset,"Resetting simulation state never overwrites terrain owned by the editor")
 
 # -------------------------------------------------------------------- pause
 

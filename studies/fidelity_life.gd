@@ -163,7 +163,7 @@ func _refresh_habitat(budgeted := false) -> void:
 	if _habitat_changed or not budgeted:
 		_habitat_changed = false
 		habitat.setup($Reference,_chunk_editor.data)
-		navigation.begin_rebuild(habitat,habitat.clear_at,0.35,0.3)
+		navigation.begin_rebuild(habitat,habitat.clear_at,0.35,0.3,budgeted)
 	if budgeted:
 		if not navigation.advance_rebuild(2000): return
 	else:

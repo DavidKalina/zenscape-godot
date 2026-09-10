@@ -21,6 +21,7 @@ signal fire_extinguished()
 ## Undo bracket for the integration layer: one fire is one undoable step.
 signal stroke_started()
 signal stroke_ended()
+signal state_restored()
 
 const TICK := 0.125
 const MEMORY_STRIDE := 7
@@ -62,6 +63,10 @@ var burn := PackedFloat32Array()
 var ash := PackedFloat32Array()
 ## id -> {burn, char, kind, position, elapsed}
 var objects_state := {}
+## Settled/partially quenched char belongs to the simulation and survives saves.
+var object_char := {}
+var history_before_fire := {}
+var _ignition_pending := false
 
 var _data: NativeTerrainData = null
 var _wind: Callable = Callable()
@@ -114,9 +119,12 @@ func setup(data: NativeTerrainData, wind_sampler := Callable(), weather_sampler 
 	_burning = PackedInt32Array()
 	_memory.clear()
 	objects_state.clear()
+	object_char.clear()
 	_object_cell.clear()
 	_clock = 0.0
 	_lit = false
+	_ignition_pending = false
+	history_before_fire = {}
 	_revision = -1
 	rebuild()
 
@@ -163,6 +171,9 @@ func rebuild() -> void:
 func recovering() -> bool:
 	return not _memory.is_empty()
 
+func ignition_pending() -> bool:
+	return _ignition_pending
+
 func active() -> bool:
 	return not _burning.is_empty() or not objects_state.is_empty()
 
@@ -170,6 +181,14 @@ func burning_cells() -> PackedInt32Array:
 	return _burning
 
 ## id -> {burn, char, kind, position}
+func appearance() -> Dictionary:
+	var result := {}
+	for id: int in object_char:
+		if not _data.object_by_id(id).is_empty(): result[id] = Vector2(object_char[id],0.0)
+	for id: int in objects_state:
+		if not _data.object_by_id(id).is_empty(): result[id] = Vector2(objects_state[id]["char"],objects_state[id].burn)
+	return result
+
 func burning_objects() -> Dictionary:
 	var result := {}
 	for id: int in objects_state:
@@ -205,17 +224,23 @@ func ash_center() -> Vector3:
 
 ## The single entry point. Lightning, explosives, the ember tool and tests all
 ## call this and nothing else.
-func ignite(position: Vector3, radius := 0.6, strength := 1.0) -> void:
+func _remember_ignition() -> void:
+	if not _lit and not _ignition_pending:
+		history_before_fire = document()
+		_ignition_pending = true
+
+func ignite(position: Vector3, radius := 0.6, strength := 1.0) -> bool:
 	if _data == null or radius <= 0.0 or strength <= 0.0:
-		return
+		return false
 	var gate := clampf(_suppression(_conditions())*2.0,0.0,1.0)
 	if gate <= 0.0:
-		return
+		return false
 	var center := Vector2(position.x,position.z)
 	var span := int(ceil(radius/_step))+1
 	var origin := _cell_of(center)
 	if origin < 0:
-		return
+		return false
+	var heated := false
 	var ox := origin%_cells
 	var oz := origin/_cells
 	for dz in range(-span,span+1):
@@ -233,8 +258,11 @@ func ignite(position: Vector3, radius := 0.6, strength := 1.0) -> void:
 			# Flat core, soft rim: the struck cell always catches, however the
 			# point sits inside it, and the rim thins out to nothing.
 			var falloff := 1.0 if index == origin else 1.0-smoothstep(radius*0.5,radius,distance)
+			_remember_ignition()
+			heated = true
 			heat[index] = clampf(heat[index]+strength*gate*falloff,0.0,2.0)
 			_touch(index)
+	return heated
 
 # ------------------------------------------------------------------ advance
 
@@ -373,8 +401,19 @@ func _tick(dt: float) -> void:
 	_refresh_burning()
 	if _lit and _burning.is_empty() and objects_state.is_empty():
 		_lit = false
+		_ignition_pending = false
 		fire_extinguished.emit()
 		stroke_ended.emit()
+
+	if not _lit and _ignition_pending:
+		var ignition_heat := false
+		for index in _active:
+			if heat[index] > 0.0:
+				ignition_heat = true
+				break
+		if not ignition_heat:
+			_ignition_pending = false
+			history_before_fire = {}
 
 func _refresh_burning() -> void:
 	var list := PackedInt32Array()
@@ -429,6 +468,7 @@ func _ignite_object(id: int) -> void:
 	var group := FireField.group_of(item.asset)
 	if group == "inert":
 		return
+	_remember_ignition()
 	var position := _data.object_position(item)
 	objects_state[id] = {"burn":1.0,"char":0.0,"kind":item.asset,"position":position,"elapsed":0.0}
 	if not _lit:
@@ -445,6 +485,10 @@ func _advance_objects(dt: float, weather: Dictionary) -> void:
 	var torched := []
 	for id: int in objects_state:
 		var state: Dictionary = objects_state[id]
+		if _data.object_by_id(id).is_empty():
+			finished.append(id)
+			object_char.erase(id)
+			continue
 		var group := FireField.group_of(state.kind)
 		if group == "explosive":
 			state.burn = minf(1.0,state.burn+dt)
@@ -455,6 +499,7 @@ func _advance_objects(dt: float, weather: Dictionary) -> void:
 		if rain > 0.0:
 			state.burn = maxf(0.0,state.burn-rain*rain_quench*dt)
 			if state.burn <= 0.0:
+				object_char[id] = float(state["char"])
 				finished.append(id)
 				continue
 		state.elapsed += dt*state.burn
@@ -462,6 +507,7 @@ func _advance_objects(dt: float, weather: Dictionary) -> void:
 		var progress := clampf(state.elapsed/seconds,0.0,1.0)
 		if absf(progress-state["char"]) > 0.02 or progress >= 1.0:
 			state["char"] = progress
+			object_char[id] = progress
 			object_charring.emit(id,progress)
 		if progress >= 1.0:
 			torched.append(id)
@@ -479,6 +525,7 @@ func _advance_objects(dt: float, weather: Dictionary) -> void:
 			pass
 		else:
 			_data.remove_object(id)
+			object_char.erase(id)
 		object_burned_out.emit(id,state.kind,state.position)
 		finished.append(id)
 	for id: int in finished:
@@ -568,10 +615,10 @@ func _world(index: int, center: Vector2) -> Vector3:
 # -------------------------------------------------------------- persistence
 
 ## Optional `"fire"` sub-document. Sparse: only cells the fire has touched and
-## the objects currently alight. An inert field documents as `{}`, so old saves
+## objects currently alight and settled char. An inert field documents as `{}`, so old saves
 ## with no `"fire"` key restore to exactly the same state.
 func document() -> Dictionary:
-	if _active.is_empty() and objects_state.is_empty() and _memory.is_empty():
+	if _active.is_empty() and objects_state.is_empty() and _memory.is_empty() and object_char.is_empty():
 		return {}
 	var state := PackedFloat32Array()
 	for index in _active:
@@ -588,6 +635,11 @@ func document() -> Dictionary:
 			"id":id,"kind":item.kind,
 			"values":PackedFloat64Array([item.burn,item["char"],item.elapsed,item.position.x,item.position.y,item.position.z]).to_byte_array().hex_encode()})
 	items.sort_custom(func(a,b): return a.id < b.id)
+	var charred := []
+	for id: int in object_char:
+		if not _data.object_by_id(id).is_empty() and object_char[id] > 0.0:
+			charred.append({"id":id,"char":object_char[id]})
+	charred.sort_custom(func(a,b): return a.id < b.id)
 	return {
 		"clock":PackedFloat64Array([_clock]).to_byte_array().hex_encode(),
 		"lit":_lit,
@@ -596,6 +648,7 @@ func document() -> Dictionary:
 		"memory_cells":memory_cells.to_byte_array().hex_encode(),
 		"memory":memory.to_byte_array().hex_encode(),
 		"objects":items,
+		"charred":charred,
 	}
 
 static func valid(value: Variant) -> bool:
@@ -622,6 +675,9 @@ static func valid(value: Variant) -> bool:
 			return false
 		if not _hex(item.get("values"),96):
 			return false
+	if not value.get("charred",[]) is Array: return false
+	for item: Variant in value.get("charred",[]):
+		if not item is Dictionary or not GardenData._integer(item.get("id")) or not GardenData._number(item.get("char"),0,1): return false
 	return true
 
 static func _hex(value: Variant, length: int) -> bool:
@@ -635,8 +691,8 @@ static func _hex(value: Variant, length: int) -> bool:
 func restore(value: Dictionary = {}) -> void:
 	if _data == null:
 		return
-	for index in _active.duplicate():
-		_restore_cell(index)
+	# Terrain has already been restored by the editor/store. Discard old memory
+	# without ever writing it into that destination world.
 	fuel.fill(0.0)
 	heat.fill(0.0)
 	burn.fill(0.0)
@@ -646,12 +702,18 @@ func restore(value: Dictionary = {}) -> void:
 	_burning = PackedInt32Array()
 	_memory.clear()
 	objects_state.clear()
+	object_char.clear()
 	_clock = 0.0
 	_lit = false
+	_ignition_pending = false
+	history_before_fire = {}
 	_rng.seed = _seed
 	rebuild()
 	if value.is_empty() or not FireField.valid(value):
+		state_restored.emit()
 		return
+	for item: Dictionary in value.get("charred",[]):
+		object_char[int(item.id)] = float(item["char"])
 	var cells: PackedInt32Array = value.cells.hex_decode().to_int32_array()
 	var state: PackedFloat32Array = value.state.hex_decode().to_float32_array()
 	for i in range(cells.size()):
@@ -672,6 +734,7 @@ func restore(value: Dictionary = {}) -> void:
 		_memory[index] = memory.slice(i*MEMORY_STRIDE,(i+1)*MEMORY_STRIDE)
 	for item: Dictionary in value.objects:
 		var numbers: PackedFloat64Array = item.values.hex_decode().to_float64_array()
+		object_char[int(item.id)] = numbers[1]
 		objects_state[int(item.id)] = {"burn":numbers[0],"char":numbers[1],"kind":item.kind,
 			"position":Vector3(numbers[3],numbers[4],numbers[5]),"elapsed":numbers[2]}
 	_clock = value.clock.hex_decode().to_float64_array()[0]
@@ -679,3 +742,4 @@ func restore(value: Dictionary = {}) -> void:
 	_refresh_burning()
 	_dirty_cover = true
 	_flush_ground()
+	state_restored.emit()

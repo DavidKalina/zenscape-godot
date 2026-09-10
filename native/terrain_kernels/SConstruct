@@ -1,0 +1,9 @@
+import os
+godot_cpp = ARGUMENTS.get('godot_cpp')
+if not godot_cpp:
+    print('Pass godot_cpp=/absolute/path/to/godot-cpp, or use tools/build_native_kernels.py')
+    Exit(1)
+env = SConscript(os.path.join(godot_cpp, 'SConstruct'))
+env.Append(CXXFLAGS=['/fp:strict'] if env.get('is_msvc', False) else ['-ffp-contract=off'])
+library = env.SharedLibrary('bin/zenscape_kernels' + env['suffix'] + ('.dylib' if env['platform'] == 'macos' else env['SHLIBSUFFIX']), source=['kernels.cpp'])
+Default(library)

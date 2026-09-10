@@ -88,7 +88,7 @@ func run() -> void:
 	check(data.tunnels[0].sealed,"Undo reverses reopening")
 	scene.set_building(false)
 	editor.explosives.target_id = charge.id
-	editor.explosives.detonate()
+	await editor.explosives.detonate(true)
 	check(data.object_by_id(charge.id).is_empty() and data.heights != PackedFloat32Array(sealed.heights),"Buried charge detonates and breaks the mountain")
 	var fragments: Array = editor.explosives.bodies.filter(func(body: RigidBody3D) -> bool: return body.get_meta("internal_blast",false))
 	check(fragments.size()>3,"Sealed tunnel charge launches the original surrounding rock as pressure fragments")

@@ -58,6 +58,11 @@ static func paint_water(image: Image, water: PackedVector3Array, clip := Rect2i(
 ## height and growth coordinates, including its fitted banks and tapered ends.
 static func paint_streams(ground_image: Image,stream_image: Image,nodes: Array[MeshInstance3D],clip := Rect2i(0,0,SIZE,SIZE)) -> void:
 	if nodes.is_empty(): return
+	paint_stream_samples(ground_image,stream_image,stream_samples(nodes),clip)
+
+## Import render resources on the main thread once. The returned triangle
+## samplers can then be copied into data-only worker inputs.
+static func stream_samples(nodes: Array[MeshInstance3D]) -> Dictionary:
 	var surfaces: Array[RefCounted]=[]
 	# Outside a stream's own bounds every sampler misses, so the scan is kept to
 	# the pixels the rendered streams actually cover.
@@ -71,7 +76,11 @@ static func paint_streams(ground_image: Image,stream_image: Image,nodes: Array[M
 		var high := (Vector2(box.end.x,box.end.z)+Vector2.ONE*SPAN*0.5)*SIZE/SPAN
 		var reach := Rect2i(Vector2i(floori(low.x),floori(low.y)),Vector2i.ZERO).expand(Vector2i(ceili(high.x)+1,ceili(high.y)+1))
 		span = reach if span.size == Vector2i.ZERO else span.merge(reach)
-	span = span.intersection(clip)
+	return {"surfaces":surfaces,"span":span}
+
+static func paint_stream_samples(ground_image: Image,stream_image: Image,samples: Dictionary,clip: Rect2i) -> void:
+	var surfaces: Array[RefCounted] = samples.surfaces
+	var span: Rect2i = samples.span.intersection(clip)
 	for z in range(span.position.y,span.end.y):
 		for x in range(span.position.x,span.end.x):
 			var point:=_point(x,z)

@@ -56,11 +56,15 @@ func sync(scene: Node3D) -> void:
 		_genome = data._recipe.inland.genome if data._recipe != null and data._recipe_settings.get("kind") == "inland" else {}
 		_geology = null
 		if not _genome.is_empty() and _genome.composition in preload("res://scripts/desert_landscape.gd").KINDS:
-			var image := Image.create(128,128,false,Image.FORMAT_RGBA8)
-			for z in range(128):
-				for x in range(128):
-					var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-14.0+(x+0.5)*28.0/128.0,-14.0+(z+0.5)*28.0/128.0))
-					image.set_pixel(x,z,Color(field.y,field.z,0,1))
+			var image: Image = data._recipe_geology if data._recipe_geology_signature == signature else null
+			# Canonical recipe preparation publishes this CPU image with its
+			# height tables. Retain the old loop for hand-constructed providers.
+			if image == null:
+				image = Image.create(128,128,false,Image.FORMAT_RGBA8)
+				for z in range(128):
+					for x in range(128):
+						var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-14.0+(x+0.5)*28.0/128.0,-14.0+(z+0.5)*28.0/128.0))
+						image.set_pixel(x,z,Color(field.y,field.z,0,1))
 			_geology = ImageTexture.create_from_image(image)
 	var material: ShaderMaterial = scene._chunk_editor.terrain.get_active_material(0)
 	if material != null and material.shader.resource_path == "res://shaders/reference_surface.gdshader":

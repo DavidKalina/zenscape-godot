@@ -40,6 +40,8 @@ uniform bool source_bird_flight = false;
 varying float foliage_gust;
 varying float inversion_transmit;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
+uniform bool instance_fire_enabled = false;
+uniform vec2 object_fire = vec2(0.0);
 varying vec2 char_state;
 varying flat float char_clump;
 varying float char_seed;
@@ -50,7 +52,7 @@ varying vec3 world_position;
 
 void vertex() {
 	foliage_gust = 0.0;
-	char_state = INSTANCE_CUSTOM.rg;
+	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 	char_clump = zs_char_clump(VERTEX);
 	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
 	if (terrain_growth) {

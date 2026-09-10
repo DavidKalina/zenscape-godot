@@ -34,7 +34,7 @@ func setup(playground: Node) -> void:
 	ripple.outer_radius = 1.0
 	ripple.rings = 32
 	ripple.ring_segments = 6
-	for i in range(8):
+	for i in range(16):
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = ripple
 		mesh.material_override = material

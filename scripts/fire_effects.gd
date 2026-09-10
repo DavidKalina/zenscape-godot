@@ -2,8 +2,7 @@ class_name FireEffects
 extends Node3D
 ## Flames, smoke, embers, firelight and crackle for `FireField`.
 ##
-## Everything here is MultiMesh quads plus a shader, because the project has no
-## GPUParticles: one add-blended flame batch, one depth-writing smoke batch, one
+## Fire effects use MultiMesh quads plus shaders: one add-blended flame batch, one depth-writing smoke batch, one
 ## add-blended ember batch, a pool of four `OmniLight3D` and a pool of
 ## `AudioStreamPlayer3D` voices playing a synthesized crackle. The field owns the
 ## simulation; this node only reads `burning_cells()`, `burning_objects()` and a
@@ -98,6 +97,7 @@ func setup(field: FireField, scene: Node) -> void:
 		if editor != null and editor.get("data") != null:
 			_data = editor.data
 	if field != null:
+		_connect(field.state_restored,clear)
 		_connect(field.cell_burned_out,_on_cell_burned_out)
 		_connect(field.object_ignited,_on_object_ignited)
 		_connect(field.object_burned_out,_on_object_burned_out)

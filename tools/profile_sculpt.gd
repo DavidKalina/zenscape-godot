@@ -30,7 +30,6 @@ func _run() -> void:
 		if arg.begins_with("--size="):
 			var pieces := arg.trim_prefix("--size=").split("x")
 			size = Vector2i(int(pieces[0]),int(pieces[1]))
-	DisplayServer.window_set_size(size)
 	scene = load("res://studies/bigfoot_life.tscn" if life else "res://studies/wind_playground.tscn").instantiate()
 	root.add_child(scene)
 	scene._auto_orbit = false
@@ -44,6 +43,17 @@ func _run() -> void:
 	scene.set_process_input(false)
 	scene.set_process_unhandled_input(false)
 	await create_timer(3.0).timeout
+	# Study startup can finish by maximizing the window. Apply the fixture size
+	# only after that initialization, then allow the native window to settle.
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	for _frame in range(3): await process_frame
+	root.size = size
+	for _frame in range(90): await process_frame
+	if root.size != size:
+		push_error("Sculpt viewport mismatch: "+str(root.size))
+		scene.free()
+		quit(1)
+		return
 	previous = Time.get_ticks_usec()
 	idle_started = previous
 	process_frame.connect(_frame)
@@ -78,10 +88,11 @@ func _frame() -> void:
 	var before_refresh := Time.get_ticks_usec()
 	editor.refresh()
 	var finished := Time.get_ticks_usec()
-	var record := {"index":index,"mode":editor.mode,"point":[point.x,point.y],"dab_ms":float(before_refresh-before_dab)/1000.0,"refresh_ms":float(finished-before_refresh)/1000.0,"elapsed_ms":float(finished-started)/1000.0,"stages":editor.get_meta("last_refresh_profile",{}).duplicate(true)}
+	var record := {"index":index,"mode":editor.mode,"point":[point.x,point.y],"dab_ms":float(before_refresh-before_dab)/1000.0,"refresh_ms":float(finished-before_refresh)/1000.0,"elapsed_ms":float(finished-started)/1000.0,"stages_usec":editor.last_refresh_usec.duplicate(true)}
 	if life:
 		record["last_navigation_ms"] = scene.navigation.last_rebuild_usec/1000.0
 		record["last_collision_ms"] = scene.last_collision_rebuild_usec/1000.0
+		record["collision_stages_usec"] = scene.play_collisions.last_rebuild_usec.duplicate()
 	records.append(record)
 	next_dab = now+33333
 	if records.size() >= dab_count:
@@ -95,10 +106,12 @@ func stats(values: Array[float]) -> Dictionary:
 	sorted.sort()
 	var total := 0.0
 	var slow := 0
+	var over_budget := 0
 	for value in values:
 		total += value
 		if value > 33.333: slow += 1
-	return {"samples":sorted.size(),"mean_ms":total/sorted.size(),"median_ms":sorted[sorted.size()/2],"p95_ms":sorted[mini(sorted.size()-1,int(sorted.size()*0.95))],"max_ms":sorted.back(),"over_33_ms":slow}
+		if value > 16.667: over_budget += 1
+	return {"samples":sorted.size(),"mean_ms":total/sorted.size(),"median_ms":sorted[sorted.size()/2],"p95_ms":sorted[mini(sorted.size()-1,int(sorted.size()*0.95))],"p99_ms":sorted[mini(sorted.size()-1,int(sorted.size()*0.99))],"max_ms":sorted.back(),"over_33_ms":slow,"over_16_67_ms":over_budget}
 
 func _finish() -> void:
 	process_frame.disconnect(_frame)
@@ -117,4 +130,10 @@ func _finish() -> void:
 		return
 	file.store_string(JSON.stringify(report,"\t")+"\n")
 	print("SCULPT ",JSON.stringify({"output":output,"refresh":refresh_stats,"frames":stats(gaps),"idle":stats(idle_gaps)}))
+	# Release the scene and join its finite navigation work before shutting down
+	# the renderer; quitting directly can strand deferred rendering resources.
+	scene.free()
+	scene = null
+	editor = null
+	for _frame in range(3): await process_frame
 	quit()

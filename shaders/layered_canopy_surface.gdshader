@@ -45,13 +45,15 @@ varying vec3 world_position;
 varying vec3 crown_position;
 varying float leaf_thinness;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
+uniform bool instance_fire_enabled = false;
+uniform vec2 object_fire = vec2(0.0);
 varying vec2 char_state;
 varying flat float char_clump;
 varying float char_seed;
 
 void vertex() {
 	crown_position = VERTEX;
-	char_state = INSTANCE_CUSTOM.rg;
+	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 	char_clump = zs_char_clump(VERTEX);
 	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
 	// The skeleton phase runs through the canopy's own thinness channel rather

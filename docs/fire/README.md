@@ -16,13 +16,13 @@ Ash is temporary. Once the neighbourhood is cold, cover grows back and the scorc
 
 ## Undo and saving
 
-One fire is one undo step, exactly like one salvo of charges. The bracket opens when the first cell catches and closes when the last one dies, so a single Undo puts back the cover, the tint and the tree records the fire swapped for snags — and puts the simulation itself back to cold, since a half-burnt field restored under a running fire would be neither state. A detonation during a fire folds into that same step.
+One fire is one undo step, exactly like one salvo of charges. The bracket opens when the first cell catches and closes when the last one dies, so a single Undo puts back the cover, the tint and the tree records the fire swapped for snags — and puts the simulation itself back to cold, since a half-burnt field restored under a running fire would be neither state. A detonation during a fire folds into that same step, and fire started by a blast belongs to that blast. Ordinary terrain edits close the current fire step first; subsequent burning opens a new step so Undo never skips across a user edit. Redo restores the corresponding simulation state, including pre-existing char and recovering ash.
 
-Fire is saved as an optional `"fire"` sub-document inside the garden's scene state, and it is sparse: only cells the fire has touched, the values they had before they burned, and the objects currently alight. A garden that has never burned writes nothing, and a garden saved before fire existed loads unchanged.
+Fire is saved as an optional `"fire"` sub-document inside the garden's scene state, and it is sparse: only cells the fire has touched, the values they had before they burned, the objects currently alight, and settled partial char. A garden that has never burned writes nothing, and a garden saved before fire existed loads unchanged.
 
 ## Implementation
 
-`scripts/fire_field.gd` (`FireField`) is the simulation and the whole contract. It is a plain object owned by `studies/fidelity.gd`, created once the chunk editor's `NativeTerrainData` exists and advanced from `_process` immediately after `_lightning.advance`, so a strike is consumed on the frame it lands. It freezes on pause and still republishes.
+`scripts/fire_field.gd` (`FireField`) is the simulation and the whole contract. It is a plain object owned by `studies/fidelity.gd`, created once the chunk editor's `NativeTerrainData` exists and advanced from `_process` immediately after `_lightning.advance`, so a strike is consumed on the frame it lands. It freezes on pause and while an edit, blast worker, or refresh owns the terrain, and still republishes its appearance. A short refresh delay is caught up after publication.
 
 Wiring lives in `studies/fidelity.gd::_setup_fire`. The field's three samplers are injected rather than looked up: wind comes from `_resident_wind.field.sample` when the product subclass provides it and falls back to the scene's prevailing air angle and strength otherwise; weather comes from `_precipitation.surface_weather.ground_wet` / `snow_cover` and `_precipitation.state.x`; water comes from the editor's own copy of the surface map image, where alpha above green means standing water. The water mask is read on rebuild, never per tick, and the cached image is refreshed at most every two seconds.
 
@@ -30,11 +30,15 @@ Wiring lives in `studies/fidelity.gd::_setup_fire`. The field's three samplers a
 
 The field writes cover and tint straight into the terrain data on its 8 Hz tick. Only a `refresh()` turns those into mesh colours and flora batches, so a burning world refreshes twice a second from `_refresh_fire_ground`; the editor's incremental mesh path already spots a repainted cell, so no cache is discarded and only the changed region is rebuilt.
 
-`scripts/native_explosives.gd` ignites at the end of `detonate` and exposes `ignite_charge(id)`, which `FireField.explosive_triggered` calls; queued charges cook off one per physics frame through the normal `detonate` path, so undo, debris and collision behave exactly as they do for a hand-fired salvo. One deviation from the design: `carve_native` zeroes cover inside the blast radius, so the crater has no fuel of its own and only the ring outside it can catch. The design's `radius * 1.2` at strength 1.0 puts that ring below the ignition threshold; `radius * 1.6` at strength 1.5 lays a cell-wide band of grass over it.
+`scripts/native_explosives.gd` ignites at the end of `detonate` and exposes `ignite_charge(id)`, which `FireField.explosive_triggered` calls; queued charges cook off one live transaction at a time through the same worker preparation and staged publication as the remote, so undo, debris and collision behave exactly as they do for a hand-fired salvo. One deviation from the design: `carve_native` zeroes cover inside the blast radius, so the crater has no fuel of its own and only the ring outside it can catch. The design's `radius * 1.2` at strength 1.0 puts that ring below the ignition threshold; `radius * 1.6` at strength 1.5 lays a cell-wide band of grass over it.
 
-`scripts/native_build_palette.gd` adds `ember` beside `fireflies` and `fog_bank` as a Weather special with a drawn flame glyph, routed through `_take_special` / `_place_special`; dropping it calls `ignite(point, 0.6, 1.0)` and records nothing. `scripts/native_chunk_editor.gd` carries its hint text and, in `_history_step`, resets the field whenever the step being undone or redone is tagged `fire` or `explosion`. `scripts/native_garden_store.gd` carries the optional sub-document through `document()` / `valid()` / `restore()`, following the `world_visuals` pattern.
+`scripts/native_build_palette.gd` adds `ember` beside `fireflies` and `fog_bank` as a Weather special with a drawn flame glyph, routed through `_take_special` / `_place_special`; dropping it calls `ignite(point, 0.6, 1.0)` and records nothing. `scripts/native_chunk_editor.gd` carries its hint text and closes active fire before stepping history. `NativeTerrainData` captures an optional fire companion state for history only; worker snapshots remain terrain-only. Restoring terrain resets the field to that companion state, never replays the previous world’s saved cover onto newly loaded terrain. Fire reset also clears pending cook-offs, render caches, and transient effects. `scripts/native_garden_store.gd` carries the optional sub-document through `document()` / `valid()` / `restore()`, following the `world_visuals` pattern.
+
+`FireField.object_char` owns settled charring; `FireLook` publishes it without maintaining a second simulation. The optional `charred` save array preserves partial char after rain. Batch and landmark publication refresh physical-play source references immediately; promoted objects keep their bodies and their replacement authored copies stay hidden. Authored batches explicitly opt into custom fire channels, leaving bird flap/phase data alone. Physical props and blast debris receive the same char/heat through owned material uniforms.
 
 ## Verification
+
+See [integration validation](integration-validation.md) for the current main integration, regression coverage, and native/fallback frame timings.
 
 Run with the local Godot binary from this worktree.
 
@@ -53,6 +57,8 @@ Regressions run alongside, all with a renderer, all 0 failures:
 - `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_native_explosives.gd`
 - `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_command_palette.gd`
 - `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_diorama_flow.gd`
+
+Additional transaction and physical-appearance regressions are in `tests/test_fire_transactions.gd` and `tests/test_fire_visual_state.gd`. `tools/profile_fire.gd` measures idle and active fire at Balanced 1440×900 (launch with `--windowed --resolution 1440x900`), with optional `--gdscript-kernels` for the fallback; it performs no image readback during timing.
 
 The other sub-projects carry their own checks: `tests/test_fire_look.gd` for per-instance char and the burnt shader path, `tests/test_fire_effects.gd` for flames, smoke, embers and lights, and `tests/test_bigfoot_fire.gd` for the flee, watch and warm-hands behaviour.
 

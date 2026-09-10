@@ -107,3 +107,13 @@ func _index_solids() -> void:
 				var cell := Vector2i(x,z)
 				if not _solid_cells.has(cell): _solid_cells[cell] = []
 				_solid_cells[cell].append(box)
+
+## Explicit data-only provider for background navigation. Static clearance uses
+## copied bounds and water triangles, with no scene nodes or rendering queries.
+func navigation_snapshot() -> RefCounted:
+	var result = get_script().new()
+	result.native_data = preload("res://scripts/native_terrain_snapshot.gd").for_queries(native_data) if native_data != null else null
+	result.ground = ground.query_snapshot()
+	for water in waters: result.waters.append(water.query_snapshot())
+	result._solid_cells = _solid_cells.duplicate(true)
+	return result
