@@ -2,6 +2,11 @@ extends RefCounted
 ## Needs choose an activity; existing routines retain ownership of locomotion,
 ## source-backed gathering and cave thresholds. Only observed changes enter memory.
 const Mind = preload("res://scripts/bigfoot_life_mind.gd")
+## Two world hours of storm, or four of rain, cost the bed one stage. The
+## accumulator never banks more than one pending stage plus change.
+const STORM_HOURS_PER_STAGE := 2.0
+const MAX_STORM_HOURS := 4.0
+const MAX_WEATHER_STEP := 1.0
 var mind = Mind.new()
 var routine: Node
 var scene: Node
@@ -26,6 +31,8 @@ var _gesture := ""
 var _food_visual: MeshInstance3D
 var _failed_until := {}
 var _home_check_due := 65.0
+var _storm_hours := 0.0
+var _weather_hour := -1.0
 
 func setup(owner_routine: Node) -> void:
 	routine = owner_routine
@@ -46,6 +53,7 @@ func advance_needs(delta: float) -> void:
 	var dt := clampf(delta,0.0,0.05)
 	mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0,_daylight())
 	_home_check_due = maxf(0.0,_home_check_due-dt)
+	_weather_wears_the_bed()
 
 ## Called only by the unpaused, visible resident clock. Surface activities own
 ## this tick; interior gestures share it with the existing cave clock.
@@ -103,7 +111,8 @@ func _context() -> Dictionary:
 		"curiosity_target":not _curiosity.is_empty(),"target_id":str(_curiosity.get("id","")),
 		"ritual_target":true,"home_check_due":_home_check_due<=0.0 or not _observed_home,
 		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0,
-		"hour":_hour(),"daylight":_daylight()}
+		"hour":_hour(),"daylight":_daylight(),"weather":_weather(),"wet":_wetness(),
+		"sheltered":sheltered()}
 
 ## The world clock is optional; without it he lives in a permanent bright noon.
 func _clock() -> Variant:
@@ -120,6 +129,64 @@ func _daylight() -> float:
 	if clock == null: return 1.0
 	var value: Variant = clock.get("daylight")
 	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 1.0
+
+## Weather is optional in the same way the clock is: a study without a sky lives
+## in permanent clear, dry conditions and scores exactly as it always did.
+func _precipitation() -> Variant:
+	return scene.get("_precipitation") if scene != null else null
+
+func _weather() -> String:
+	var sky: Variant = _precipitation()
+	if sky == null: return "clear"
+	var index: Variant = sky.get("preset_index")
+	if not (index is int or index is float) or not is_finite(float(index)): return "clear"
+	var slot := int(index)
+	var names: Array = WeatherScheduler.PRESET_NAMES
+	return str(names[slot]) if slot>=0 and slot<names.size() else "clear"
+
+func _wetness() -> float:
+	var sky: Variant = _precipitation()
+	if sky == null: return 0.0
+	var surface: Variant = sky.get("surface_weather")
+	if surface == null: return 0.0
+	var value: Variant = surface.get("ground_wet")
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
+
+## Standing in his cave, not merely owning one.
+func sheltered() -> bool:
+	return routine != null and routine.cave != null and routine.cave.sheltered()
+
+## Absolute world hours, so a saved and reopened garden keeps counting weather
+## in world time rather than in the engine seconds the player happened to watch.
+func _world_hour() -> float:
+	var clock: Variant = _clock()
+	if clock == null: return -1.0
+	var day: Variant = clock.get("day")
+	var hour: Variant = clock.get("hour")
+	if not (day is int or day is float) or not (hour is float or hour is int): return -1.0
+	if not is_finite(float(day)) or not is_finite(float(hour)): return -1.0
+	return float(day)*24.0+float(hour)
+
+## Rain and storms work the bedding loose while he is out. He is not told: the
+## room simply changes, and he discovers it on his next observe_home().
+func _weather_wears_the_bed() -> void:
+	var now := _world_hour()
+	if now<0.0:
+		_weather_hour = -1.0
+		return
+	var previous := _weather_hour
+	_weather_hour = now
+	if previous<0.0 or now<=previous: return
+	var span := minf(now-previous,MAX_WEATHER_STEP)
+	if sheltered() or not available(): return
+	var falling := 1.0 if _weather()=="storm" else (0.5 if _weather()=="rain" else 0.0)
+	if falling<=0.0: return
+	_storm_hours = minf(_storm_hours+span*falling,MAX_STORM_HOURS)
+	while _storm_hours>=STORM_HOURS_PER_STAGE:
+		_storm_hours -= STORM_HOURS_PER_STAGE
+		if not scene.lair.disturb_bed():
+			_storm_hours = 0.0
+			return
 
 ## Explicit invitations and autonomous choices cross this same ownership seam.
 func request(kind: String, target: Dictionary = {}) -> bool:
@@ -409,7 +476,7 @@ func _material_count() -> int:
 	return _observed_stash.count("branch")+_observed_stash.count("leaves")
 
 func capture() -> Dictionary:
-	return {"version":1,"enabled":enabled,"mind":mind.capture(),"observed_home":_observed_home,"stash":_observed_stash.duplicate(),"bed":_observed_bed,"play":_observed_play,"check_in":_home_check_due}
+	return {"version":1,"enabled":enabled,"mind":mind.capture(),"observed_home":_observed_home,"stash":_observed_stash.duplicate(),"bed":_observed_bed,"play":_observed_play,"check_in":_home_check_due,"storm_hours":_storm_hours}
 
 static func valid(value: Variant) -> bool:
 	if not value is Dictionary: return false
@@ -420,6 +487,9 @@ static func valid(value: Variant) -> bool:
 		if item not in ["branch","leaves","fish","fruit"]: return false
 	for key in ["bed","play"]:
 		if not GardenData._integer(value.get(key)) or not GardenData._number(value[key],0,3): return false
+	# Documents written before the weather could touch the bed carry no
+	# accumulator; they resume with a dry slate rather than being rejected.
+	if not GardenData._number(value.get("storm_hours",0.0),0,MAX_STORM_HOURS): return false
 	return GardenData._number(value.get("check_in"),0,90)
 
 func restore(value: Dictionary) -> void:
@@ -432,6 +502,8 @@ func restore(value: Dictionary) -> void:
 	_observed_bed = int(value.get("bed",0))
 	_observed_play = int(value.get("play",0))
 	_home_check_due = float(value.get("check_in",65.0))
+	_storm_hours = float(value.get("storm_hours",0.0))
+	_weather_hour = -1.0
 	_curiosity.clear()
 	_failed_until.clear()
 	completed_actions.clear()
