@@ -81,7 +81,7 @@ exactly** — every factor below is 1.0 at season 0.
 
 | target | factor |
 | --- | --- |
-| snow | `3.0 * clamp((season - 0.6) / 0.25, 0, 1)`, floored at ×1.5 while the current preset is `snow` |
+| snow | `3.0 * clamp((season - 0.6) / 0.25, 0, 1)`, floored at ×1.5 when the current preset was reached straight from `snow` (snow never follows itself, so this is what "still wintry" means; a manual snow pick at season 0 can therefore flurry back once) |
 | autumn | `2.0 * clamp((season - 0.55) / 0.25, 0, 1)` |
 | overcast | `1.0 + 1.5 * clamp((season - 0.6) / 0.4, 0, 1)` |
 | clear, fair | `1.0 - 0.5 * clamp((season - 0.3) / 0.7, 0, 1)` |
@@ -98,6 +98,9 @@ orchestrator can leave it at 0 until a calendar exists.
 - A big jump (fast-forward, a long pause, a loaded save) catches up transition by transition, capped
   at `MAX_CATCH_UP = 24` per call. When the cap is hit, the schedule is re-anchored to
   `world_hour_abs + dwell(current)` so the scheduler cannot fall permanently behind.
+- While `enabled` is false, `advance()` fires nothing but keeps `next_change_hour` ahead of the
+  clock (re-rolling a dwell whenever it falls behind), so enabling drift after days off starts a
+  fresh drift from now instead of bursting through every change it missed.
 - `history` keeps the last 32 entries, `{"hour": float, "from": String, "to": String}`; player
   overrides via `set_current()` are recorded too.
 
@@ -113,8 +116,8 @@ Each frame, `_advance_weather_drift()` runs right after `world_clock.advance()`:
 1. If the precipitation preset differs from `scheduler.current`, the player picked something
    (dropdown, mood, look editor, `--weather=` flag all end in `set_weather`), so the scheduler
    is re-anchored with `set_current`. No picker needs to know the scheduler exists.
-2. If the scene is paused or drift is disabled, stop there.
-3. Otherwise `advance(day * 24 + hour)` and apply each fired preset with `set_weather`
+2. `advance(day * 24 + hour)` unconditionally (a paused clock does not move, and a disabled
+   scheduler only slides its schedule forward) and apply each fired preset with `set_weather`
    (clearing the cloud/cold overrides so a mood's pinned sky doesn't fight the drift).
 
 `NativeGardenStore` saves `capture()` under `"weather_scheduler"`, rejects a non-dictionary

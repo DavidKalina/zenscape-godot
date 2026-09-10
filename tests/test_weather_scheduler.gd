@@ -29,6 +29,8 @@ func run() -> void:
 	test_idempotent()
 	test_capture_restore()
 	test_disabled()
+	test_enable_after_idle()
+	test_snow_floor()
 	test_neutral_season()
 	test_cold_season()
 	test_dwell_bounds()
@@ -91,6 +93,26 @@ func test_disabled() -> void:
 	s.set_current("rain", 0.0)
 	var seen := simulate(s, 30)
 	check(seen.is_empty() and s.current == "rain" and s.history.size() == 1, "A disabled scheduler never changes the weather")
+
+func test_enable_after_idle() -> void:
+	var s := Scheduler.new(7)
+	s.enabled = false
+	simulate(s, 5)
+	check(s.next_change_hour >= 120.0 - 0.25, "A disabled scheduler keeps its schedule ahead of the clock")
+	s.enabled = true
+	check(s.advance(120.0).is_empty(), "Enabling drift after five idle days fires nothing at once")
+	var later := simulate(s, 2, 120.0)
+	check(not later.is_empty() and later.size() < 12, "Enabled drift then resumes at a normal pace (%d in two days)" % later.size())
+
+func test_snow_floor() -> void:
+	var s := Scheduler.new(3)
+	s.season = 0.5
+	check(is_zero_approx(s._season_factor("snow", "overcast")), "Below the cold season snow has no weight")
+	s.set_current("snow", 0.0)
+	s.set_current("overcast", 4.0)
+	check(is_equal_approx(s._season_factor("snow", "overcast"), 1.5), "Straight off snow the cold floor makes snow reachable")
+	s.set_current("fair", 8.0)
+	check(is_zero_approx(s._season_factor("snow", "fair")), "One preset later the floor has lifted")
 
 func test_neutral_season() -> void:
 	var found_autumn := false

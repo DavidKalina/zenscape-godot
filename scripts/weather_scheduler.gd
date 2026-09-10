@@ -72,7 +72,11 @@ static func preset_index(name: String) -> int:
 func advance(world_hour_abs: float) -> Array[String]:
 	var fired: Array[String] = []
 	if not enabled:
+		# Keep the schedule ahead of the clock so enabling later drifts from
+		# now instead of replaying every change missed while off.
 		_last_hour = maxf(_last_hour, world_hour_abs)
+		if next_change_hour < _last_hour:
+			next_change_hour = _last_hour + _roll_dwell(current)
 		return fired
 	var now := maxf(world_hour_abs, _last_hour)
 	_last_hour = now
@@ -134,6 +138,10 @@ func restore(value: Dictionary) -> void:
 			"to": str(entry.get("to", "")),
 		})
 
+## True when the current preset was reached directly from snow.
+func _came_from_snow() -> bool:
+	return not history.is_empty() and str(history.back().get("from", "")) == "snow"
+
 func _roll_dwell(name: String) -> float:
 	var span: Array = DWELL.get(name, [4.0, 8.0])
 	return _rng.randf_range(float(span[0]), float(span[1]))
@@ -166,7 +174,9 @@ func _pick(from: String, hour_of_day: float) -> String:
 func _season_factor(name: String, from: String) -> float:
 	if name in COLD_PRESETS:
 		var cold := clampf((season - 0.6) / 0.25, 0.0, 1.0)
-		if from == "snow" or current == "snow":
+		# Snow never follows itself, so "still wintry" means the sky we are
+		# leaving came straight off snow: a marginal season can flurry back.
+		if _came_from_snow():
 			cold = maxf(cold, 0.5)
 		return cold * 3.0
 	if name in SEASON_PRESETS:

@@ -524,7 +524,8 @@ func _advance_weather_drift() -> void:
 	var picked: String = _precipitation.PRESET_NAMES[_precipitation.preset_index]
 	if picked != weather_scheduler.current:
 		weather_scheduler.set_current(picked, abs_hour)
-	if _paused or not weather_scheduler.enabled: return
+	# Always advance: while disabled the scheduler only slides its schedule
+	# forward, so enabling drift later never bursts through missed changes.
 	for name in weather_scheduler.advance(abs_hour):
 		_precipitation.cloud_override = -1.0
 		_precipitation.cold_override = -1.0
