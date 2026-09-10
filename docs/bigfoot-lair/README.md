@@ -2,12 +2,20 @@
 
 Run `run-bigfoot-lair.command`. The forest and approved cave remain upstairs;
 a full-width rocky lower story extends directly beneath the original chunk.
-Eight broad openings and thick stone reveals preserve the open cutaway layout.
-Both stories share one camera. The interior has rolling terrain, a darker damp
+Four thick, closed walls make it read as ordinary ground until inspected. Their
+outer faces continue the chunk's own skirt (a copy of its material, and its soil,
+middle and low strata repeated down the wall); inside they are cave rock.
+Resting the pointer on a wall for a moment glides the camera in to face it, then
+dissolves that wall; moving off the cave glides back to the previous view. A
+drag, zoom or camera preset during the glide keeps the viewer's camera instead.
+The opening leaves about a metre of rock frame (a dithered cutout that
+keeps depth, leaving a ragged rock frame), and only one wall opens at a time.
+Pointing from above never opens it. Both stories share one camera. The interior has rolling terrain, a darker damp
 rock palette, a puddle, droplets, and seeded stalactites and stalagmites.
 
 **See both stories** frames the stack. **Look through lair windows** lowers the
-viewing angle while retaining the forest above. **Find Bigfoot** uses that view
+viewing angle while retaining the forest above, and holds the facing wall open
+until the camera moves. **Find Bigfoot** uses that view
 when he is downstairs. **Visit the cave** invites the existing cave routine.
 P pauses the resident and droplets.
 

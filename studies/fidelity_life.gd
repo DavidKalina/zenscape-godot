@@ -304,6 +304,9 @@ func restore_cave_state(state: Dictionary) -> void:
 	lair = preload("res://scripts/bigfoot_lair_room.gd").new()
 	lair.genome = state.genome.duplicate(true)
 	lair.position = Vector3(0,-11,0)
+	# The lower story's outer walls continue this chunk's own earth.
+	lair.earth_material = skirt.mesh.surface_get_material(0) as ShaderMaterial
+	lair.strata = lair.strata_from(skirt.mesh)
 	add_child(lair)
 	lair.restore_stash(state.stash)
 	lair.restore_living(state.get("living",{"bed_stage":0,"play_stage":0}))
