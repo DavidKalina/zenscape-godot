@@ -53,8 +53,13 @@ func ranked(context: Dictionary) -> Array[Dictionary]:
 		var bed_reason := "Night has come; returning to a familiar bed" if note == "night" else "Tired; returning to a familiar bed"
 		if exposed > 0.5: bed_reason = "Taking shelter from the storm"
 		_candidate(result, "sleep", 0.05 + fatigue * 1.20 + dark * 0.45 + exposed * 0.50, bed_reason)
+	# Wood already on the ground is a small invitation, smaller than anything else
+	# on this action: fallen branches make the errand easier, never necessary. An
+	# absent count adds nothing, so every score predating dead wood is unchanged.
+	var wood: Variant = context.get("branches_nearby", 0)
+	var fallen := clampf(float(wood) / 3.0, 0.0, 1.0) if (wood is int or wood is float) and is_finite(float(wood)) else 0.0
 	if home and context.get("material_needed", false) and context.get("can_gather", false):
-		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12 - wary * 0.14 - storm * 0.22, "The bed could be more comfortable")
+		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 + fallen * 0.08 - fatigue * 0.12 - wary * 0.14 - storm * 0.22, "Branches are down under the trees" if fallen > 0.0 else "The bed could be more comfortable")
 	if food > 0 and hunger >= 0.20:
 		_candidate(result, "eat", hunger * 1.50, "Hungry; food is stored at home")
 	# A well-stocked pond is worth the walk, by less than any other term here: a

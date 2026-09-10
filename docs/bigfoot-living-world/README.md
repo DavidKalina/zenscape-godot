@@ -12,7 +12,14 @@ scores and reasons alongside his current needs.
 
 ## What to watch
 
-- **Home comfort:** tree gathering carries a branch through the cave threshold.
+- **Dead wood:** wind and storms tear branches out of the canopy and leave them
+  on the walkable ground under the trees (`scripts/dead_wood.gd`). They are
+  visible traces — a stick with a fork on the forest floor — that grey and settle
+  as they age and are gone about four world days after they fell. While wood is
+  lying within his reach it *is* the gather source: he walks to one branch, sits,
+  picks it up and carries that one home, and the ground loses it. Watch a windy
+  night, then the morning: branches under the trees, cleared one at a time.
+- **Home comfort:** gathering carries a branch through the cave threshold.
   He sits and tends his bedding; one stored branch or leaf supply is consumed.
   The bed becomes visibly fuller through three stages. Once comfortable, it
   stops motivating further material trips.
@@ -76,6 +83,15 @@ makes fishing slightly more tempting, and must never outweigh the gather term's
 own comfort spread of `0.22`, or he stops improving his bed. A context without
 `fish_available` scores exactly as it did before restocking existed.
 
+The gather term carries the other non-time modifier,
+`fallen = clamp(branches_nearby / 3, 0, 1)`, from the count of branches lying
+within his 11 m gather reach: `+ fallen * 0.08`, and the reason becomes
+"Branches are down under the trees". Like `plenty` it is deliberately small —
+wood on the ground makes the errand easier, never necessary, and it stays well
+inside the `0.22` comfort spread so a nearly finished bed still loses to a bare
+one. A context without `branches_nearby` scores exactly as it did before dead
+wood existed.
+
 `mind.time_note(hour, daylight)` names the light for the player: `night`
 (`daylight < 0.35`), `day` (`daylight > 0.85`), otherwise `dawn` before hour 12
 and `dusk` after. Three reasons change with it: sleep becomes "Night has come;
@@ -138,6 +154,26 @@ untouched: he discovers the loose bedding on his next `observe_home()`, which is
 what turns `material_needed` back on and makes gathering attractive again. That
 is the loop the slice adds — storm, damage, discovery, gather.
 
+**The wind drops branches.** `scripts/dead_wood.gd` keeps a list of drop sites:
+one walkable point under each tree the habitat reports, found with
+`navigation.nearest_safe` and rebuilt whenever the habitat is. Every tick it
+credits world days from `scene.world_clock.elapsed` (never engine seconds, and
+at most `MAX_STEP_DAYS` = 1 per call, so a load or a fast-forward cannot bury the
+forest) and adds `days * _drop_rate()` branches to an accumulator: 6.0 a day
+under `storm`, 2.0 under `rain`, 0.35 otherwise, each multiplied by
+`0.4 + 0.6 * (wind / 0.4)` from the precipitation study's own wind, capped at
+twice the still-air rate. Whole branches fall onto a free site, at most
+`MAX_BRANCHES` (12) at a time and never two within 1.1 m. Each one ages, greys
+and settles from `WEATHERED_DAYS` (2.5) and is removed at `ROT_DAYS` (4.0).
+
+`_material_targets()` returns those branches whenever at least one lies within
+his gather reach; only when the floor near him is bare does it fall back to the
+old tree list, so studies with no dead wood, and the first calm hours of a fresh
+garden, gather exactly as they did before. A branch target always takes the
+walk-and-sit path rather than the authored tree shake: `take_for_carry()` hands
+the branch's own node to the carry, a cancelled trip puts it back where it lay
+at the age it had, and a delivery removes it from the world for good.
+
 ## Study controls
 
 Compact **View**, **Activities**, and **Experiment** menus keep the landscape
@@ -183,13 +219,22 @@ saved world reseeds one fish per slot and then restores the stored ones, so the
 exact live count of a long session is not reproduced; the pool level is, which
 is all the food loop depends on.
 
+The forest floor saves as its own versioned `wood_state`: every branch's id,
+place and age, plus the drop accumulator. It is validated key by key, so a
+garden written before the wind dropped anything — carrying no `wood_state` at
+all — loads onto a bare floor rather than being rejected, and a later slice may
+add a key without invalidating today's documents. A branch in his hands when the
+garden is saved is saved as a branch on the ground where it lay.
+
 This is a bounded slice: play has three placements and food does not spoil.
 Fish are no longer finite — the pond restocks (see Food) — but only while world
 time is moving: the day cycle is on by default, but with it switched off (or a mood pinning the sky) the clock is frozen and so is
 the pond. No new fruit flora or resource regrowth is simulated. Home
 observation happens on entering the room, not through a general vision system
-inside it. Existing tree interactions supply branches; a depletion model for
-branch-producing trees is not yet implemented. The existing cave threshold still
+inside it. Branches now come off the weather rather than out of a tree on
+demand, but the trees themselves are not depleted by losing them, and the drop
+and rot rates do not yet follow the season (slice 4 multiplies `_drop_rate()`
+and `rot_days()` in `scripts/dead_wood.gd`). The existing cave threshold still
 transfers the actor to the downstairs room behind the entrance.
 
 The new gestures reuse the authored SitDown/Sit/StandUp and carry clips with hand
@@ -208,6 +253,16 @@ and gaze targets. The character model and body scale are unchanged.
   night and post-rain multipliers and the rain's memory, the capacity ceiling,
   carried and reserved fish holding their slots, the saved accumulator's round
   trip, legacy documents, and the size of the `plenty` term.
+- `test_dead_wood.gd`: pure, with a stub scene — the storm/rain/calm drop rates
+  and the wind factor, the frozen clock, the one-day step guard, rotting, a
+  simulated week whose branch count rises and falls, the carry's take/release/
+  commit, the saved document and its legacy and junk cases, and the size of the
+  `fallen` term.
+- `test_dead_wood_scene.gd` (scene, Forward+): a storm over the real Fidelity
+  world leaves visible branches on its terrain, `branches_nearby` counts the ones
+  in reach, the branch replaces the trees as the gather source, and a real
+  gather walks to one, carries it through the cave threshold and clears it from
+  the ground.
 - `test_bigfoot_lair_supplies.gd`: material/food consumption, visible bedding,
   persistent stone positions, capacity and source transactions.
 - `test_bigfoot_living_world.gd`: real actor/cave performances, observations,
