@@ -1,6 +1,7 @@
 extends Node
 ## Daily activities own their approaches and authored performances; CreatureBrain
 ## supplies curiosity and wandering between activities.
+var cave = preload("res://scripts/bigfoot_cave.gd").new()
 var habits = preload("res://scripts/bigfoot_habits.gd").new()
 var _tended := false
 var _tending := false
@@ -33,6 +34,7 @@ const ORDER := ["stone","tree","sit","fish","sleep"]
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
 	habits.setup(scene)
+	cave.setup(scene)
 	scene.creature.action_finished.connect(_action_finished)
 	scene.creature.state_changed.connect(func(state: CreatureActor.State) -> void:
 		if state == CreatureActor.State.STUMBLING and not active.is_empty(): cancel("ground tremor"))
@@ -50,6 +52,7 @@ func advance(delta: float) -> bool:
 	var dt := minf(delta,0.05)
 	_clock += dt
 	_advance_projectiles(dt)
+	if cave.advance(dt): return true
 	if not active.is_empty():
 		_elapsed += dt
 		if _phase == "approach":
@@ -86,9 +89,11 @@ func advance(delta: float) -> bool:
 	_choice += 1
 	if kind == "sleep" and _choice%10 == 0: kind = "hibernate"
 	if not request(kind): _next_action = _clock+3.0
-	return not active.is_empty()
+	return not active.is_empty() or not cave.phase.is_empty()
 
 func request(kind: String, chosen: Dictionary = {}) -> bool:
+	if not cave.phase.is_empty(): return false
+	if kind in ["sleep","hibernate"] and cave.request(kind): return true
 	if kind in ["stone","tree"] and scene.has_method("resident_activity_owned"): return false
 	if not active.is_empty() or not scene.creature.can_roam(): return false
 	if kind in ["sit","sleep","hibernate"]:
@@ -379,6 +384,7 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 		_finish()
 
 func cancel(reason := "world edit or explicit cancellation") -> void:
+	cave.cancel()
 	last_cancel = reason
 	if scene.creature.state == CreatureActor.State.ACTION: scene.creature.cancel_action()
 	_finish()
@@ -405,6 +411,7 @@ func _finish() -> void:
 
 func world_changed() -> void:
 	if habits.writing: return
+	cave.cancel()
 	habits.world_changed()
 	# Undo may restore a taken record: remove its transient representation first.
 	for record: Dictionary in scene._chunk_editor.data.objects:

@@ -10,6 +10,7 @@ var streams: Array[Dictionary] = []
 var objects: Array[Dictionary] = []
 var waters: Array[RefCounted] = []
 var solids: Array[AABB] = []
+var cave_poses: Array[Transform3D] = []
 const SOLID_CELL := 2.0
 var _solid_cells := {}
 var interests: Array[Dictionary] = []
@@ -18,6 +19,10 @@ func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
 	native_data = data
 	waters.clear()
 	solids.clear()
+	cave_poses.clear()
+	if data != null:
+		for item: Dictionary in data.tunnels:
+			if item.get("cave",false) and not item.sealed: cave_poses.append(preload("res://scripts/bigfoot_cave_site.gd").pose(item))
 	interests.clear()
 	ponds.assign(data.ponds if data != null else [])
 	streams.assign(data.streams if data != null else [])
@@ -54,7 +59,7 @@ func _add_solid(pose: Transform3D, mesh: Mesh, id: String) -> void:
 	var center := box.get_center()
 	var height: Variant = ground_height(Vector2(center.x,center.z))
 	if height != null:
-		interests.append({"id":id,"position":Vector3(center.x,height,center.z)})
+		interests.append({"id":id,"position":Vector3(center.x,height,center.z),"bounds":box})
 
 func ground_height(point: Vector2) -> Variant:
 	return native_data.ground_height(point) if native_data != null else ground.height_at(point.x,point.y)
@@ -85,7 +90,11 @@ func _add_authored(data: NativeTerrainData) -> void:
 		if item.asset == "rock": location.y += 0.24*float(item.scale)
 		solids.append(Transform3D(basis,location)*_prop_bounds[item.asset])
 
-func clear_at(point: Vector3) -> bool:
+func clear_at(point: Vector3, ignore_caves := false) -> bool:
+	if not ignore_caves:
+		for cave_pose in cave_poses:
+			var local: Vector3 = cave_pose.affine_inverse()*(point+Vector3.UP)
+			if preload("res://scripts/bigfoot_cave_site.gd").LOCAL_BOUNDS.grow(0.5).has_point(local): return false
 	for offset in [Vector2.ZERO,Vector2(0.5,0),Vector2(-0.5,0),Vector2(0,0.5),Vector2(0,-0.5),Vector2(0.35,0.35),Vector2(-0.35,0.35),Vector2(0.35,-0.35),Vector2(-0.35,-0.35)]:
 		for water in waters:
 			var height: Variant = water.height_at(point.x+offset.x,point.z+offset.y)
@@ -113,5 +122,6 @@ func navigation_snapshot() -> RefCounted:
 	result.native_data = preload("res://scripts/native_terrain_snapshot.gd").for_queries(native_data) if native_data != null else null
 	result.ground = ground.query_snapshot()
 	for water in waters: result.waters.append(water.query_snapshot())
+	result.cave_poses = cave_poses.duplicate()
 	result._solid_cells = _solid_cells.duplicate(true)
 	return result

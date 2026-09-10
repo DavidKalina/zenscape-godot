@@ -14,6 +14,8 @@ static func valid(records: Variant) -> bool:
 		for key in ["heading","width","height","length"]:
 			if not GardenData._number(item.get(key),-TAU if key=="heading" else 1.0,TAU if key=="heading" else 18.0): return false
 		if not item.get("sealed") is bool: return false
+		if item.has("cave") and not item.cave is bool: return false
+		if item.get("cave",false) and (item.width<6.4 or item.height<4.8 or item.length<7.2): return false
 	return true
 
 static func pose(item: Dictionary) -> Transform3D:

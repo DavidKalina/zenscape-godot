@@ -1,0 +1,47 @@
+[
+  {
+    "test": "test_bigfoot_cave.gd",
+    "exit": 0,
+    "script_errors": false,
+    "seconds": 5.46,
+    "note": "Rechecked after foliage refresh and resident-state fixes; zero failures."
+  },
+  {
+    "test": "test_bigfoot_routine_pause.gd",
+    "exit": 0,
+    "script_errors": false,
+    "seconds": 5.56
+  },
+  {
+    "test": "test_bigfoot_routine_ownership.gd",
+    "exit": 0,
+    "script_errors": false,
+    "seconds": 4.87
+  },
+  {
+    "test": "test_bigfoot_routine_world.gd",
+    "exit": 1,
+    "script_errors": false,
+    "seconds": 5.16,
+    "baseline": "Same three sit/sleep assertions fail with HEAD versions of the scene, routine and habitat."
+  },
+  {
+    "test": "test_bigfoot_home.gd",
+    "exit": 0,
+    "script_errors": true,
+    "seconds": 50.36,
+    "baseline": "Same nil editor errors occur with HEAD scene scripts; test calls new_diorama before asynchronous startup completes."
+  },
+  {
+    "test": "test_native_tunnels.gd",
+    "exit": 0,
+    "script_errors": false,
+    "seconds": 4.8
+  },
+  {
+    "test": "test_bigfoot_cave_store.gd",
+    "exit": 0,
+    "script_errors": false,
+    "note": "Main game open, concealed entry, save while concealed, reopen and safe exterior restore all pass."
+  }
+]

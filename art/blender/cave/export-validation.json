@@ -1,0 +1,9 @@
+{
+  "asset": "assets/models/zenscape-cave.glb",
+  "meshes": 35,
+  "bytes": 92860,
+  "studio_and_character_excluded": true,
+  "interior_included": true,
+  "animations": 0,
+  "pivot": "entrance floor; Godot +Z faces outward"
+}
