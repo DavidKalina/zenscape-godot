@@ -198,6 +198,49 @@ The season also reaches him indirectly, through the world rather than the
 scorer: the weather mix he lives under, the gold and cold on the ground, and how
 fast the pond restocks (`fidelity_fish.SEASON_RATE`).
 
+## Winter and the long drive
+
+Winter adds the first need that is longer than a day. `torpor` (0..1) is a field
+of the mind like hunger and fatigue, but it is the only one kept on **world
+hours**: `mind.drift(cold, world_hours)`, called from `advance_needs()` off the
+same absolute world hour the storm accumulator uses, chases the season's `cold`
+with a time constant of `TORPOR_FILL_HOURS = 18` rising and
+`TORPOR_DRAIN_HOURS = 48` falling. Over a default 28-day year that fills it past
+`TORPOR_THRESHOLD = 0.50` about two days into winter, peaks at ~0.82 just after
+deep winter, and drains back under 0.02 by the end of spring. A scene with no
+clock never advances it, so it stays at 0 and adds nothing anywhere.
+
+Two more context keys ride along: `torpor` (a readout of the same field, for the
+editor and for tests) and `winter_ready` (0..1) — what he believes he has laid
+in, `WINTER_FOOD = 4` meals weighted `0.6` against a finished bed weighted `0.4`.
+Their shortfall is the `larder` term, `(1 - winter_ready) * clamp(harvest + cold)`,
+so a thin stash is worth something from the first gold leaf of autumn until the
+thaw.
+
+| Action | Modifier | Magnitude |
+| --- | --- | --- |
+| `hibernate` (new) | offered only above `torpor >= 0.50`; `0.25 + torpor * 1.15 + fatigue * 0.25 - hunger * 0.30 - (1 - winter_ready) * 1.00` | ~1.24 stocked in deep winter; ~0.64 with an empty stash |
+| `fish` | `+ larder * 0.45 - torpor * 0.12` | `+0.24` with a half-empty larder in autumn |
+| `gather` | `+ larder * 0.30 - torpor * 0.18` | `+0.27` with nothing laid in |
+| `investigate` / `play` / `ritual` | `- torpor * 0.30 / 0.35 / 0.20` | the leisure of the year fades first |
+
+Nothing here preempts: `hibernate` is a candidate in `ranked()` like every other
+action, so a hungry Bigfoot still eats from the stash first, and a stash that has
+run out in deep winter lets `fish` outscore the long sleep — the terrarium never
+starves him, it sends him out. `mind.completed("hibernate")` takes 0.60 off
+fatigue and sets a cooldown that *is* the waking outing:
+`lerp(OUTING_THAW = 28s, OUTING_DEEP = 10s, cold)`, so the deeper the cold the
+sooner he goes back under and the shorter the stage stands empty.
+
+The visible tells are the reason line ("The year has gone cold; time to sleep it
+out", "Cold, and the stores are thin; sleeping light", "Winter is coming; the
+stash is too thin for it"), the surface walking pace, which drops from 0.65 to
+0.45 as the drive fills, and the cave's own `hibernate` visit — the same walk
+through the black mouth and the same breathing Sleep pose as a nap, held for
+twice as long. `scene_look_editor`'s clock readout names the quarter and shows
+the drive while it is filling, so the Season slider is watchable: pin it to 0.875
+and he beds in within a couple of world days.
+
 ## Study controls
 
 Compact **View**, **Activities**, and **Experiment** menus keep the landscape
@@ -219,7 +262,9 @@ The existing world document saves room comfort/stone stages under the cave
 state, plus a separate versioned `bigfoot_living` state for needs, familiarity,
 favorites, remembered supplies and the storm-hour accumulator (`storm_hours`;
 a document written before storms could reach the bed resumes with a dry
-accumulator rather than being rejected). Main-game loading restores that
+accumulator rather than being rejected). The mind's `torpor` saves with the
+other needs the same way: a document written before winter had a drive carries
+no `torpor` key and loads wide awake. Main-game loading restores that
 controller. Imported scenery keeps its learned
 familiarity when upgraded into editable objects. Editable trees offer fallen
 material collection without borrowing their physics or rendering ownership.

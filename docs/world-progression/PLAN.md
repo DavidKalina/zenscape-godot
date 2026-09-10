@@ -87,6 +87,57 @@ A hibernation need that fills over the cold season, a stockpile that matters
 before it, and a torpor with occasional outings so the stage is not empty.
 This is where a second inhabitant is decided, not before.
 
+Shipped, Bigfoot only: the mind gains `torpor`, the first need kept on world
+hours rather than watched seconds. `mind.drift(cold, world_hours)` chases the
+season's cold with an 18-hour rise and a 48-hour fall, so over a 28-day year it
+crosses the `TORPOR_THRESHOLD = 0.50` two days into winter, peaks at ~0.82 just
+after deep winter, and is gone by the end of spring. It lifts a new `hibernate`
+action (the cave's existing long visit, which already had a name and a rest pose)
+and lowers `investigate`, `play`, `ritual` and `gather` by degrees first, so the
+watcher sees him grow slow — including a surface walking pace that falls from
+0.65 to 0.45 — before he beds in. The stockpile is `winter_ready`: four stashed
+meals weighted 0.6 against a finished bed weighted 0.4, whose shortfall
+(`larder`) adds up to +0.45 to `fish` and +0.30 to `gather` from the first gold
+leaf of autumn. Because the same shortfall subtracts up to 1.00 from `hibernate`,
+an empty stash in deep winter sends him out to fish instead of under: nothing
+starves here. The completion cooldown on `hibernate` *is* the waking outing, 28
+seconds thawing down to 10 in the deep cold, so the stage is never empty for
+long. A second inhabitant was not added; see below.
+
+## Second inhabitant
+
+Deliberately not built in slice 5 — this note is what it would take, for the
+user to decide on.
+
+`bigfoot_life_mind.gd` is already the right shape to be shared: it is a pure
+`RefCounted` with no node references, and every world fact reaches it through
+one `Dictionary` in `ranked()`. What is Bigfoot-specific about it is not the
+class, it is three things: the constant `ACTIONS` list, the fixed coefficients
+inside `ranked()`, and the fixed need-fill rates in `advance()`. A camper or a
+bear reusing it would need those three lifted into a **drive profile**: a small
+data object (weights per action term, need-fill rates, thresholds, and which
+actions the creature may consider at all) that `_init` takes and `ranked()`
+multiplies through. Bigfoot's profile would be exactly today's numbers, so his
+behaviour is bit-for-bit unchanged and every existing test still holds — that is
+the migration's success criterion.
+
+The living world needs more than the mind does. `bigfoot_living_world.gd`
+currently owns one creature, one lair, one cave and one routine by direct
+reference (`scene.creature`, `scene.lair`, `routine.cave`), and the save document
+is a single `bigfoot_living` blob. A second inhabitant means: an instance per
+resident with its own remembered home, its own `_failed_until` and its own saved
+state under a key; the shared ingredients (the pond, the dead wood, the branches)
+becoming reservations rather than first-come grabs, since two residents walking
+to the same fish is the first bug this arc would produce; and a rule for what
+happens when they meet, which is a new action on both minds (avoid, watch,
+follow) and the first thing in this world that is neither weather nor supply.
+
+The cheapest honest first step, if the user wants one, is a bear that only
+appears in autumn and only takes fish: it shares the mind class with a profile
+that has three actions, needs no lair, no bed and no memory of home, and it gives
+Bigfoot's `larder` term a rival — which is the point of a second inhabitant in a
+terrarium, and the only reason to pay for one.
+
 ## Cadence
 
 Slices 0, 1 and 2 run in parallel off `main` on their own branches. Slice 3
