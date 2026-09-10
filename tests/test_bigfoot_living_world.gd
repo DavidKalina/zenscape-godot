@@ -235,6 +235,13 @@ func run() -> void:
 	scene.restore_living_state({})
 	living.enabled = true
 	scene.routine._next_action = scene.routine._clock
+	# The clock runs by default, and five minutes here is fifteen world hours:
+	# left alone, night falls ninety seconds in and "Night has come" sleep
+	# outranks the bed work this stretch asserts. Hold a bright morning instead.
+	var day_clock: WorldClock = scene.get("world_clock")
+	if day_clock != null:
+		day_clock.set_time(0, 9.0)
+		day_clock.running = false
 	Engine.max_fps = 0
 	for frame in range(20 * 300):
 		scene._process(0.05)
