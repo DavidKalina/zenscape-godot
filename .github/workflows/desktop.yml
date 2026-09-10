@@ -21,147 +21,107 @@ concurrency:
 
 env:
   GODOT_VERSION: 4.7.2
+  GODOT_CPP_REVISION: 6cceaf6a5f8b0d78ac5d71c139fd7fabba43b918
 
 jobs:
-  export:
-    name: Export Windows and macOS
+  downloads:
+    name: Prepare private draft downloads
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
     permissions:
-      contents: write # Private draft build downloads; PR runs only export.
+      contents: write
     outputs:
-      release-tag: ${{ steps.downloads.outputs.tag }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cache Godot editor and desktop templates
-        id: godot-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local/bin/godot
-            ~/.local/share/godot/export_templates
-          key: godot-desktop-linux-${{ env.GODOT_VERSION }}-v1
-
-      - name: Install official Godot editor and export templates
-        if: steps.godot-cache.outputs.cache-hit != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          download="$RUNNER_TEMP/godot-download"
-          mkdir -p "$download" "$HOME/.local/bin"
-          editor="Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          templates="Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
-          gh release download "${GODOT_VERSION}-stable" --repo godotengine/godot-builds \
-            --pattern "$editor" --pattern "$templates" --pattern SHA512-SUMS.txt \
-            --dir "$download"
-          cd "$download"
-          # Check both archives against the official release's checksums.
-          grep -F -e "$editor" -e "$templates" SHA512-SUMS.txt > desktop-checksums.txt
-          test "$(wc -l < desktop-checksums.txt)" -eq 2
-          sha512sum --check desktop-checksums.txt
-          unzip -q "$editor"
-          install -m 755 "${editor%.zip}" "$HOME/.local/bin/godot"
-          template_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
-          mkdir -p "$template_dir"
-          unzip -j -q "$templates" templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe \
-            templates/macos.zip templates/version.txt -d "$template_dir"
-
-      - name: Import project assets
-        run: |
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/godot" --version
-          "$HOME/.local/bin/godot" --headless --path . --import 2>&1 | tee import.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' import.log; then exit 1; fi
-
-      - name: Export release builds
-        run: |
-          mkdir -p builds/windows
-          godot --headless --path . --export-release Windows 2>&1 | tee windows-export.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' windows-export.log; then exit 1; fi
-          godot --headless --path . --export-release macOS 2>&1 | tee mac-export.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' mac-export.log; then exit 1; fi
-          test -s builds/windows/ZenScape.exe
-          test -s builds/windows/ZenScape.pck
-          test -s builds/ZenScape-mac-universal.zip
-          cp docs/desktop-builds.md builds/windows/README.md
-          printf 'Commit: %s\nGodot: %s\n' "$GITHUB_SHA" "$GODOT_VERSION" > builds/windows/BUILD.txt
-          (cd builds/windows && zip -r "../ZenScape-windows-x64-${GITHUB_SHA:0:7}.zip" .)
-          mv builds/ZenScape-mac-universal.zip "builds/ZenScape-mac-universal-${GITHUB_SHA:0:7}.zip"
-
-      - name: Verify the packaged main menu and editor
-        run: |
-          godot --headless --main-pack "$PWD/builds/windows/ZenScape.pck" \
-            --script "$PWD/tests/test_export_entry.gd" 2>&1 | tee entry-check.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' entry-check.log; then exit 1; fi
-
-      - name: Create private draft build downloads
-        id: downloads
+      - name: Create draft release
+        id: release
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="desktop-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          url="$(gh release create "$tag" builds/ZenScape-windows-x64-*.zip builds/ZenScape-mac-universal-*.zip \
-            --draft --target "$GITHUB_SHA" --title "Godot desktop · ${GITHUB_REF_NAME} · ${GITHUB_SHA:0:7}" \
-            --notes-file docs/desktop-builds.md)"
+          gh release create "$tag" --draft --target "$GITHUB_SHA" \
+            --title "Godot desktop · ${GITHUB_REF_NAME} · ${GITHUB_SHA:0:7}" \
+            --notes-file docs/desktop-builds.md
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          printf '## Godot desktop downloads\n\n[Download Windows and Mac builds](%s)\n\nCommit: `%s`\n\n' "$url" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
-          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          - **Windows:** extract `ZenScape-windows-x64-<commit>.zip` and open `ZenScape.exe`. Keep its `.pck` and DLLs beside it.
-          - **Mac (Apple Silicon or Intel):** extract `ZenScape-mac-universal-<commit>.zip`, move `ZenScape.app` to Applications, and open it.
 
-          Sign into GitHub with repository write access to view these draft downloads.
-          Native startup checks below must pass before treating these builds as verified.
-          These are personal test builds without publisher certificates; see the release notes for first-launch instructions.
-          EOF
-
-  smoke:
-    name: Startup check (${{ matrix.platform }})
-    needs: export
+  export:
+    name: Build and verify (${{ matrix.platform }})
+    needs: downloads
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     permissions:
-      contents: write # GitHub only exposes draft releases to writers.
-    if: github.event_name != 'pull_request'
+      contents: write # Verified downloads use drafts, avoiding artifact-storage quotas.
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: Windows
             os: windows-latest
-            artifact: ZenScape-windows-x64
+            arch: x86_64
           - platform: macOS
-            os: macos-latest
-            artifact: ZenScape-mac-universal
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+            os: macos-14
+            arch: universal
     steps:
-      - name: Download exported game
-        shell: bash
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official editor and export templates
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_TAG: ${{ needs.export.outputs.release-tag }}
-          ARCHIVE_NAME: ${{ matrix.artifact }}-*.zip
+        run: python tools/install_desktop_ci.py
+      - name: Check out pinned Godot C++ bindings
+        uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot-cpp
+          ref: ${{ env.GODOT_CPP_REVISION }}
+          path: builds/godot-cpp
+      - name: Compile debug and release native kernels
         run: |
-          mkdir -p build
-          gh release download "$BUILD_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ARCHIVE_NAME" --dir build
-
-      - name: Launch Windows export
+          python -c "from pathlib import Path; Path('builds/.gdignore').touch()"
+          python -m pip install scons==4.8.1
+          for target in template_debug template_release; do
+            python tools/build_native_kernels.py --godot "$GODOT" \
+              --godot-cpp builds/godot-cpp --target "$target" --arch "${{ matrix.arch }}"
+          done
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            lipo native/terrain_kernels/bin/libzenscape_kernels.macos.template_release.universal.dylib -verify_arch arm64 x86_64
+          fi
+      - name: Import project assets
+        run: |
+          "$GODOT" --headless --path . --import 2>&1 | tee import.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' import.log; then exit 1; fi
+      - name: Verify native kernel matches GDScript
+        run: |
+          "$GODOT" --headless --path . --script res://tests/test_threaded_mesh.gd -- --native-kernels 2>&1 | tee native-test.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' native-test.log; then exit 1; fi
+      - name: Export release build
+        run: |
+          mkdir -p builds/windows
+          "$GODOT" --headless --path . --export-release "${{ matrix.platform }}" 2>&1 | tee export.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' export.log; then exit 1; fi
+      - name: Verify shipped release kernel and menu
+        run: python tools/verify_desktop_export.py
+      - name: Package Windows download
         if: runner.os == 'Windows'
-        shell: pwsh
         run: |
-          Expand-Archive (Get-ChildItem build/ZenScape-windows-x64-*.zip).FullName -DestinationPath build/game
-          $process = Start-Process -FilePath "$PWD/build/game/ZenScape.exe" -ArgumentList '--headless', '--quit-after', '120', '--log-file', "$PWD/startup.log" -Wait -PassThru
-          Get-Content startup.log
-          if ($process.ExitCode -ne 0) { throw "Startup failed: $($process.ExitCode)" }
-          if (Select-String -Path startup.log -Pattern 'SCRIPT ERROR:|ERROR:') { throw 'Godot reported startup errors' }
-
-      - name: Launch Mac export
-        if: runner.os == 'macOS'
+          cp docs/desktop-builds.md builds/windows/README.md
+          printf 'Commit: %s\nGodot: %s\nNative terrain kernel: required and verified\n' "$GITHUB_SHA" "$GODOT_VERSION" > builds/windows/BUILD.txt
+          python -c "import shutil; shutil.make_archive('builds/ZenScape-windows-x64', 'zip', 'builds/windows')"
+      - name: Upload verified download
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.downloads.outputs.tag }}
         run: |
-          ditto -x -k build/ZenScape-mac-universal-*.zip build/game
-          executable="$(find build/game -path '*/Contents/MacOS/*' -type f | head -n 1)"
-          test -n "$executable"
-          "$executable" --headless --quit-after 120 --log-file "$PWD/startup.log"
-          cat startup.log
-          if grep -E 'SCRIPT ERROR:|ERROR:' startup.log; then exit 1; fi
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            archive=ZenScape-windows-x64
+          else
+            archive=ZenScape-mac-universal
+          fi
+          mv "builds/$archive.zip" "builds/$archive-${GITHUB_SHA:0:7}.zip"
+          gh release upload "$BUILD_TAG" "builds/$archive-${GITHUB_SHA:0:7}.zip"
+          url="$(gh release view "$BUILD_TAG" --json url --jq .url)"
+          printf '## Verified %s build\n\n[Download build](%s)\n\nCommit: `%s`\n\nNative release kernel and packaged menu/editor checks passed.\n' \
+            '${{ matrix.platform }}' "$url" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

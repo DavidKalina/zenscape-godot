@@ -3,6 +3,13 @@ extends SceneTree
 func _initialize() -> void:
 	_run.call_deferred()
 func _run() -> void:
+	if "--native-kernels" in OS.get_cmdline_user_args():
+		var kernel = preload("res://scripts/native_terrain_kernels.gd").get_kernel()
+		if kernel == null or not kernel.has_method("shade"):
+			push_error("FAIL: packaged native terrain kernel is unavailable")
+			quit(1)
+			return
+		print("PASS: packaged native terrain kernel loaded")
 	var entry = ProjectSettings.get_setting("application/run/main_scene", "")
 	if entry != "res://studies/diorama.tscn":
 		push_error("FAIL: package opens the old study instead of the diorama menu: " + str(entry))
