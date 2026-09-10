@@ -51,7 +51,6 @@ zs_meteor_tail={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
 }
-
 zs_palette_grass={
 "type": "vec3",
 "value": Vector3(1, 1, 1)

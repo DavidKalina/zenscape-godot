@@ -60,6 +60,9 @@ func _ready() -> void:
 	_defaults = NativeGardenStore.capture(self)
 	_defaults.diorama.resident = false
 	_defaults.cave_system = {}
+	# The title holds its sky still, but a new world's day should turn.
+	_defaults._celestial.cycling = true
+	if _defaults.has("world_clock"): _defaults.world_clock.running = true
 	# New uses neutral lighting; Fidelity keeps its original atmosphere.
 	_make_shell()
 	_resident_play.setup(self)

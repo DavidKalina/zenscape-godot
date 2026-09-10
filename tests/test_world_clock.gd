@@ -61,6 +61,7 @@ func _initialize() -> void:
 	# --------------------------------------------------------------- skip_to
 	clock = WorldClock.new()
 	clock.day_length = 480.0
+	clock.running = false
 	clock.set_time(3, 22.0)
 	clock.skip_to(6.0)
 	for i in range(400): clock.advance(1.0 / 60.0, false)
@@ -115,7 +116,7 @@ func _initialize() -> void:
 	check(absf(copy.phase - first.phase) < 1e-9 and absf(copy.daylight - first.daylight) < 1e-9, "Restore rebuilds phase and daylight")
 	var empty := WorldClock.new()
 	empty.restore({})
-	check(empty.day == 0 and empty.speed == 1.0 and is_equal_approx(empty.day_length, WorldClock.DEFAULT_DAY_LENGTH) and not empty.running,
+	check(empty.day == 0 and empty.speed == 1.0 and is_equal_approx(empty.day_length, WorldClock.DEFAULT_DAY_LENGTH) and empty.running,
 		"An empty document restores a fresh clock")
 	for broken in [null, [], {"day": "soon"}, {"day": 0, "hour": 99.0}, {"day": 0, "hour": 1.0, "speed": 1.0, "day_length": 480.0, "target": -1.0, "running": 1}]:
 		check(not WorldClock.valid_state(broken), "Rejected clock document: " + str(broken))

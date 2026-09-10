@@ -22,7 +22,7 @@ var hour: float       # 0.0 ..< 24.0, fractional
 var phase: float      # 0..1, the celestial rig's phase for this hour
 var daylight: float   # 0..1, mirrors what celestial publishes as zs_daylight
 var speed: float      # multiplier, 1.0 = default day length; 0 allowed
-var running: bool     # false = time frozen (this is celestial's old `cycling`)
+var running: bool     # false = time frozen (this is celestial's old `cycling`); true by default
 var day_length: float # real seconds per world day at speed 1.0 (default 480.0)
 var elapsed: float    # total world seconds, day * 86400 + hour * 3600
 var season: float     # 0..1 position in the year, read-only (see below)

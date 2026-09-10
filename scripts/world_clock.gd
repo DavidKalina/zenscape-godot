@@ -31,7 +31,7 @@ var hour := 0.0       ## 0.0 ..< 24.0, fractional.
 var phase := 0.0      ## 0..1, the celestial rig's phase for this hour.
 var daylight := 1.0   ## 0..1, mirrors what celestial publishes as zs_daylight.
 var speed := 1.0      ## Multiplier; 0 is allowed and simply stops the hands.
-var running := false  ## false freezes time (this is celestial's old `cycling`).
+var running := true   ## false freezes time (this is celestial's old `cycling`). On by default: the pond, the weather and the bed all live on world time.
 var day_length := DEFAULT_DAY_LENGTH
 var elapsed := 0.0    ## Total world seconds, day * 86400 + hour * 3600.
 var target_hour := -1.0  ## Smooth skip destination; < 0 when idle.
@@ -106,7 +106,7 @@ func restore(value: Dictionary) -> void:
 	if value == null: return
 	speed = _number(value.get("speed"), 1.0, 0.0, 10000.0)
 	day_length = maxf(0.0, _number(value.get("day_length"), DEFAULT_DAY_LENGTH, 0.0, 1e9))
-	running = bool(value.get("running", false))
+	running = bool(value.get("running", true))
 	season_override = _number(value.get("season_override"), -1.0, -1.0, 1.0)
 	var wanted: float = _number(value.get("target"), -1.0, -1.0, HOURS_PER_DAY)
 	set_time(int(_number(value.get("day"), 0.0, 0.0, float(MAX_DAY))), _number(value.get("hour"), 0.0, 0.0, HOURS_PER_DAY))

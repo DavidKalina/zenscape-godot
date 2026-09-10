@@ -185,7 +185,7 @@ is all the food loop depends on.
 
 This is a bounded slice: play has three placements and food does not spoil.
 Fish are no longer finite — the pond restocks (see Food) — but only while world
-time is moving: with the day cycle switched off the clock is frozen and so is
+time is moving: the day cycle is on by default, but with it switched off (or a mood pinning the sky) the clock is frozen and so is
 the pond. No new fruit flora or resource regrowth is simulated. Home
 observation happens on entering the room, not through a general vision system
 inside it. Existing tree interactions supply branches; a depletion model for

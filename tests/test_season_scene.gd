@@ -78,7 +78,8 @@ func run() -> void:
 	check(clock.season_override < 0.0 and is_equal_approx(drift.season, clock.calendar_season()), "Following the calendar releases the pin")
 	panel.sliders.day.control.value_changed.emit(21.0)
 	step(scene, 4)
-	check(clock.day == 21 and is_equal_approx(drift.season, 0.75), "The Day slider walks the calendar into winter")
+	# The clock runs by default, so a few frames nudge the season past 0.75.
+	check(clock.day == 21 and absf(drift.season - 0.75) < 0.001, "The Day slider walks the calendar into winter")
 	var stormy := WeatherScheduler.preset_index("storm")
 	panel.force_weather_choice.item_selected.emit(stormy)
 	step(scene, 4)
