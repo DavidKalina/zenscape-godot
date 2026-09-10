@@ -42,8 +42,8 @@ var _habitat_blocked: bool:
 	get: return not owner_scene.resident_enabled or owner_scene._habitat_blocked or owner_scene._habitat_changed or navigation.rebuilding
 
 func setup(target: Node3D) -> void:
-	add_child(preload("res://scripts/tree_motion_tuner.gd").new())
 	owner_scene = target
+	add_child(preload("res://scripts/tree_motion_tuner.gd").new())
 	creature = target.creature
 	brain = target.brain
 	navigation = target.navigation

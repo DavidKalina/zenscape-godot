@@ -12,7 +12,7 @@ func _run() -> void:
 		print("PASS: packaged native terrain kernel loaded")
 	var entry = ProjectSettings.get_setting("application/run/main_scene", "")
 	if entry != "res://studies/diorama.tscn":
-		push_error("FAIL: package opens the old study instead of the diorama menu: " + str(entry))
+		push_error("FAIL: package opens the old study instead of the product shell: " + str(entry))
 		quit(1)
 		return
 	var scene = load(entry).instantiate()
@@ -21,7 +21,7 @@ func _run() -> void:
 	scene.recent_file = folder.path_join("recent.cfg")
 	root.size = Vector2i(1440,960)
 	root.add_child(scene)
-	# The title generates its landscape asynchronously before showing the menu.
+	# Startup loads Fidelity before exposing the shell.
 	# A single frame (or the scene's ready signal) does not mean it is usable.
 	var deadline := Time.get_ticks_msec() + 120_000
 	while not scene.title_loaded:
@@ -30,6 +30,11 @@ func _run() -> void:
 			quit(1)
 			return
 		await process_frame
+	if not scene._has_world or not scene.resident_enabled or scene._chunk_editor.data.blank:
+		push_error("FAIL: startup did not enter inhabited Fidelity")
+		quit(1)
+		return
+	scene.show_menu()
 	print("Menu visible: ", scene._menu.visible if scene._menu != null else "MISSING")
 	if scene._menu == null or not scene._menu.visible:
 		push_error("FAIL: main menu is missing")
