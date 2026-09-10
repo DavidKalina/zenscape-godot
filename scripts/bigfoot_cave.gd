@@ -19,6 +19,8 @@ var _old_probe: Callable
 var _interior_path := PackedVector3Array()
 var concealed := false
 var _inside := false
+## Optional inspectable room; ordinary cave sites keep concealed threshold rests.
+var rest_anchor: Node3D
 
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
@@ -53,6 +55,9 @@ func advance(dt: float) -> bool:
 			elif phase == "entering":
 				concealed = true
 				phase = "resting"
+				if is_instance_valid(rest_anchor):
+					scene.creature.global_position = rest_anchor.global_position
+					scene.creature.perform_action("Sleep",INF)
 			else: _finish()
 		else:
 			var next := _path[_index]
@@ -97,6 +102,9 @@ func _begin_path(next_phase: String, path: PackedVector3Array) -> void:
 	_elapsed = 0.0
 
 func _leave() -> void:
+	if is_instance_valid(rest_anchor):
+		scene.creature.cancel_action()
+		scene.creature.position = chamber
 	var reverse := _interior_path.duplicate()
 	reverse.reverse()
 	reverse.append(entrance)
