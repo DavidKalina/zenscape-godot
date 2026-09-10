@@ -11,7 +11,7 @@ extends SceneTree
 ## sets the frame; stills default to 1600x1000 and a long walk is worth
 ## dropping to 1280x800 to keep the encode small.
 ##
-## `--walk=<dir> --frames=480` carries the camera target along the sagging deck
+## `--walk=<dir> --frames=360` carries the camera target along the sagging deck
 ## itself -- `deck_point()`, not the straight chord, so it never floats off the
 ## planks at midspan -- at `WALK_HEIGHT` above the boards, low polar, yaw down
 ## the deck, as numbered PNGs; it prints the ffmpeg line to encode them.
@@ -19,15 +19,16 @@ extends SceneTree
 ## The study builds its copy inside `_ready()`, but authored content and
 ## landmarks publish asynchronously, so this waits for `_chunk_editor.forming`
 ## and `refresh_pending` to drain and calls `rebuild_second_chunk()` before
-## shooting -- the same wait `tools/film_dead_wood.gd` does.
+## shooting -- the same wait `tools/film_dead_wood.gd` does. `--gap=` is read by
+## the study itself, so it works on either command line.
 ##
 ## how to run
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tools/film_twin_chunks.gd \
-##     -- --stills=/private/tmp/twin-chunks-100
+##     -- --stills=/private/tmp/twin-chunks-45
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tools/film_twin_chunks.gd \
-##     -- --walk=/private/tmp/twin-chunks-100/walk --frames=480 --size=1280x800
+##     -- --walk=/private/tmp/twin-chunks-45/walk --frames=360 --size=1280x800
 ##
 ## Never --headless: the fidelity scene hangs there. Never await
 ## `RenderingServer.frame_post_draw` either -- it never returns when the window
@@ -37,7 +38,7 @@ const WALK_SECONDS := 16.0    ## How long the crossing should take to watch.
 const DT := 1.0 / 60.0
 const FAR_DISTANCE := 30.0    ## Close enough that the copy reads as a whole island.
 const FAR_POLAR := 1.15
-const WALK_FRAMES := 480      ## 16 s at 30 fps: 100 m should feel like 100 m.
+const WALK_FRAMES := 360      ## 12 s at 30 fps, so the crossing has some length.
 const WALK_HEIGHT := 1.6      ## Eye height over the deck.
 const WALK_DISTANCE := 3.6    ## A following shot, not a first-person one.
 const WALK_POLAR := 1.48      ## Nearly level with the deck.

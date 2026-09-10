@@ -1,7 +1,7 @@
 extends SceneTree
 ## The twin-chunk prototype really builds a second island and a crossing: the
 ## copy carries the terrain, the skirt and the chunk's plants, the two anchors
-## face each other across a 100 m chasm a bridge can span, they stand on ground rather
+## face each other across the chasm a bridge can span, they stand on ground rather
 ## than in the air, and a sagging plank deck joins them.
 ##
 ## Instantiates the study, so it needs a real window and the native kernels.
@@ -11,8 +11,8 @@ extends SceneTree
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tests/test_twin_chunks.gd
 const MIN_VISUALS := 10      ## A copied chunk is terrain, skirt and its plants.
-const MIN_SPAN := 95.0       ## The chasm is 100 m; anchors sit 0.5 m inside each rim.
-const MAX_SPAN := 105.0
+const MIN_SPAN := 40.0       ## The chasm is 45 m; anchors sit 0.5 m inside each rim.
+const MAX_SPAN := 50.0
 const MAX_STEP := 2.0        ## Level islands: only the two rims' own ground.
 const GROUND_TOLERANCE := 0.1
 var failures := 0
@@ -83,7 +83,7 @@ func run() -> void:
 	# ----------------------------------------------------------- the bridge
 	check(scene.bridge != null and scene.bridge.get_parent() == scene, "A bridge joins the two islands")
 	var slats: int = scene.bridge.find_children("Plank*", "MeshInstance3D", true, false).size()
-	check(slats >= 80, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
+	check(slats >= 40, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
 	check(scene.bridge.find_children("Rope*", "MeshInstance3D", true, false).size() == slats * 2, "Every plank has a rope either side")
 	# The whole point of a rope bridge: midspan hangs below the straight chord.
 	if anchors.size() == 2:

@@ -2,10 +2,12 @@ extends "res://studies/fidelity.gd"
 ## Throwaway prototype: does a second island across a chasm read as a world?
 ##
 ## The playable world is one 28 m chunk. This study leaves that chunk exactly as
-## it is and hangs a purely visual copy of it 128 m along +X -- a 100 m
-## rim-to-rim chasm -- turned 180 degrees about its own centre so it does not
-## read as a mirror. Both islands float at the same height, so the deck is level
-## anchor to anchor apart from whatever the two rims' own ground does.
+## it is and hangs a purely visual copy of it `CHASM_GAP` metres clear of its
+## rim, turned 180 degrees about its own centre so it does not read as a mirror.
+## Both islands float at the same height, so the deck is level anchor to anchor
+## apart from whatever the two rims' own ground does. The gap is the one dial:
+## every camera, the deck's length and its sag all follow it, so trying another
+## distance is one constant or `--gap=50` on the command line.
 ##
 ## A rope bridge joins the two facing rims: a sagging run of short plank boxes on
 ## a catenary with `DECK_SAG` of the span in sag, so the establishing shot reads
@@ -31,9 +33,11 @@ extends "res://studies/fidelity.gd"
 ##     --rendering-method forward_plus res://studies/prototype_twin_chunks.tscn
 ## Stills and a walk clip come from `tools/film_twin_chunks.gd`.
 
-## Centre-to-centre spacing of the two chunks along +X. The chunk is 28 m across,
-## so 128 leaves the 100 m chasm the bridge spans.
-const CHUNK_SPACING := 128.0
+## THE dial. Rim-to-rim clear air between the two islands, in metres. Everything
+## downstream is derived from it -- the island's placement, the establishing
+## camera, the deck's sag and length, the vertigo camera's stand-off -- so trying
+## 40 or 50 instead is this one number, or `--gap=50` on the command line.
+const CHASM_GAP := 45.0
 ## The chunk's half extent in terrain-local XZ. Hard-coded throughout the engine
 ## scripts too (native_terrain_data.gd clamps to +/-14).
 const CHUNK_HALF := 14.0
@@ -68,42 +72,47 @@ const DECK_PLANK_STRIDE := 0.9
 ## close they are what distinguishes a rope bridge from a plank, and they let the
 ## drop show through the deck from the `N` camera.
 const DECK_PLANK_FILL := 0.78
-## The establishing shot: both islands and the chasm, from the side. Sized by
-## looking at it -- the pair is 156 m wide, and 152 m fills the frame's width
-## with a margin at either rim. Slack above and below is unavoidable: a 156 m
-## strip on a 16:10 frame leaves the sky empty however far back the camera goes.
-const WIDE_DISTANCE := 152.0
+## The establishing shot pulls back roughly as far as the pair is wide. Checked
+## by eye at three gaps -- 22 m, 45 m and 100 m -- and this one factor framed all
+## three with a margin at either rim. Slack above and below is unavoidable: a
+## strip four times wider than it is tall leaves sky empty at any distance.
+const WIDE_FIT := 0.99
 const WIDE_POLAR := 1.12
-## Chosen by looking at it. Far enough back to see the deck leave the island and
-## fall away, close enough that the island is not a speck -- 115 m framed the
-## whole span but shrank the world to a postage stamp, which answers nothing.
-const BRIDGE_DISTANCE := 60.0
+## `B` stands back about two thirds of the span beyond the far anchor: enough to
+## watch the deck leave the island and fall away, close enough that the island is
+## not a speck. Framing the *whole* span shrank the world to a postage stamp,
+## which answers nothing.
+const BRIDGE_FIT := 0.7
 const BRIDGE_POLAR := 1.24
 ## Standing on the deck: eye height over the planks. `N` sights straight at the
 ## far bridgehead rather than at a fixed pitch, because from the sagging midspan
 ## the deck *rises* toward both ends -- any downward tilt looks into the boards.
 const CHASM_EYE := 2.0
 const CHASM_REACH := 40.0
-## Sun shadow range, pushed past the far island's far corner as seen from the
-## establishing camera (about 184 m). See `_reach_shadows()`.
-const SHADOW_REACH := 260.0
+## Sun shadow range as a multiple of the layout's width, which puts it past the
+## far island's far corner as seen from the establishing camera. See
+## `_reach_shadows()` for why the shared 130 m default is not enough here.
+const SHADOW_FIT := 1.8
 ## `M`, the vertigo shot. The geometry rules out the literal version: at midspan
-## the deck hangs 13 m below both rims, so the far island's skirt sits *above*
-## this camera, and a 38-degree lens cannot hold something 7 degrees up and
-## something 40 degrees down in one frame. A straight-down look gets empty air
-## and a plank edge -- both earlier attempts proved it.
+## the deck hangs a full sag-depth below both rims, so the far island's skirt
+## sits *above* this camera, and a 38-degree lens cannot hold something a few
+## degrees up and something forty degrees down in one frame. A straight-down look
+## gets empty air and a plank edge -- both earlier attempts proved it.
 ##
 ## So the shot stands off and above the mid-deck and sights a point four fifths
 ## of the way across. The deck then sweeps up out of the drop toward the far
 ## island's underside in the top of frame, and the bottom half is the void, which
-## is what the drop is supposed to feel like.
-const VOID_EYE := 10.0
-const VOID_OFFSET := 8.0
+## is what the drop is supposed to feel like. Both stand-offs are fractions of
+## the sag, so the shot holds its shape as the gap changes.
+const VOID_EYE := 0.75
+const VOID_OFFSET := 0.6
 const VOID_SIGHT := 0.82
 
 var second_chunk: Node3D
 var bridge: Node3D
 var second_chunk_ready := false
+## Clear air between the rims. `CHASM_GAP` unless `--gap=` says otherwise.
+var chasm_gap := CHASM_GAP
 ## Terrain-local -> study-root pose for chunk one and for its copy.
 var _base := Transform3D.IDENTITY
 var _mirror := Transform3D.IDENTITY
@@ -115,10 +124,14 @@ var _skipped: Array[String] = []
 
 func _ready() -> void:
 	super._ready()
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--gap="):
+			chasm_gap = maxf(2.0, float(argument.trim_prefix("--gap=")))
+	print("TWIN CHUNKS chasm gap %.1f m, centres %.1f m apart" % [chasm_gap, chunk_spacing()])
 	_base = global_transform.affine_inverse() * _chunk_editor.terrain.global_transform
 	var centre := _base.origin
 	var rotation := Basis(Vector3.UP, PI)
-	var offset := Vector3(CHUNK_SPACING, SECOND_CHUNK_LIFT, 0.0)
+	var offset := Vector3(chunk_spacing(), SECOND_CHUNK_LIFT, 0.0)
 	# Turn about the chunk's own centre, then carry it across the gap.
 	_placement = Transform3D(rotation, centre + offset - rotation * centre)
 	_mirror = _placement * _base
@@ -128,16 +141,24 @@ func _ready() -> void:
 	second_chunk_ready = true
 	get_window().title = "ZenScape prototype · Twin chunks"
 
+## Centre to centre along +X: the clear air plus one whole chunk of rim.
+func chunk_spacing() -> float:
+	return chasm_gap + CHUNK_HALF * 2.0
+
+## How wide the pair is, rim to rim, which is what the establishing shot frames.
+func layout_width() -> float:
+	return chasm_gap + CHUNK_HALF * 4.0
+
 ## `landscape_lighting.gd` sets the sun's shadow range to 130 m, which is the
 ## right number for a world 28 m across: at the one-chunk framing everything is
-## well inside it. Two islands 128 m apart are not -- from the establishing
-## camera most of both of them fall past 130 m and lose their shadows entirely,
+## well inside it. Two islands with a chasm between them are not -- from the
+## establishing camera much of both falls past 130 m and loses its shadows,
 ## which is why the wide shot came back flat. Pushed out here, in the study, on
 ## the live lights; the shared default is left alone because it is correct for
 ## the game. The cost is shadow resolution spread over four times the range.
 func _reach_shadows() -> void:
 	for light: DirectionalLight3D in _lights:
-		light.directional_shadow_max_distance = SHADOW_REACH
+		light.directional_shadow_max_distance = maxf(130.0, layout_width() * SHADOW_FIT)
 
 ## Rebuild the copy. Worth a second call once `_chunk_editor.refresh_pending`
 ## has drained, because authored content and landmarks publish asynchronously
@@ -475,8 +496,8 @@ func _slab(slab_name: String, size: Vector3, origin: Vector3, basis: Basis, mate
 ## Both islands and the chasm, from the side so they spread across the frame.
 func _frame_wide() -> void:
 	var centre := _base.origin
-	target = centre + Vector3(CHUNK_SPACING, SECOND_CHUNK_LIFT, 0.0) * 0.5
-	distance = WIDE_DISTANCE
+	target = centre + Vector3(chunk_spacing(), SECOND_CHUNK_LIFT, 0.0) * 0.5
+	distance = layout_width() * WIDE_FIT
 	polar = WIDE_POLAR
 	yaw = 0.0
 	_auto_orbit = false
@@ -494,7 +515,7 @@ func frame_bridge() -> void:
 	var b := anchors[1].origin
 	var direction := (b - a).normalized()
 	target = a + Vector3.UP * 1.0
-	distance = BRIDGE_DISTANCE
+	distance = a.distance_to(b) * BRIDGE_FIT
 	polar = BRIDGE_POLAR
 	yaw = atan2(direction.x, direction.z)
 	_auto_orbit = false
@@ -519,7 +540,8 @@ func frame_void() -> void:
 	var anchors := bridge_anchors()
 	if anchors.size() != 2:
 		return
-	var stand := deck_point(0.5) + Vector3.UP * VOID_EYE + anchors[0].basis.x * VOID_OFFSET
+	var sag := anchors[0].origin.distance_to(anchors[1].origin) * DECK_SAG
+	var stand := deck_point(0.5) + Vector3.UP * sag * VOID_EYE + anchors[0].basis.x * sag * VOID_OFFSET
 	_look_from(stand, (deck_point(VOID_SIGHT) - stand).normalized(), CHASM_REACH)
 
 ## `_update_camera` derives the camera from `target`, so a shot that wants the
