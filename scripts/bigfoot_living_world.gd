@@ -44,7 +44,7 @@ func available() -> bool:
 func advance_needs(delta: float) -> void:
 	if not enabled or not is_finite(delta) or delta<=0.0: return
 	var dt := clampf(delta,0.0,0.05)
-	mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0)
+	mind.advance(dt,routine.cave.concealed and routine.cave.reason in ["sleep","rain","snow","hibernate"],float(_observed_bed)/3.0,_daylight())
 	_home_check_due = maxf(0.0,_home_check_due-dt)
 
 ## Called only by the unpaused, visible resident clock. Surface activities own
@@ -102,7 +102,24 @@ func _context() -> Dictionary:
 		"can_fish":has_home and _observed_stash.size()<24 and not scene.fish.available_targets().is_empty(),
 		"curiosity_target":not _curiosity.is_empty(),"target_id":str(_curiosity.get("id","")),
 		"ritual_target":true,"home_check_due":_home_check_due<=0.0 or not _observed_home,
-		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0}
+		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0,
+		"hour":_hour(),"daylight":_daylight()}
+
+## The world clock is optional; without it he lives in a permanent bright noon.
+func _clock() -> Variant:
+	return scene.get("world_clock") if scene != null else null
+
+func _hour() -> float:
+	var clock: Variant = _clock()
+	if clock == null: return 12.0
+	var value: Variant = clock.get("hour")
+	return fposmod(float(value),24.0) if (value is float or value is int) and is_finite(float(value)) else 12.0
+
+func _daylight() -> float:
+	var clock: Variant = _clock()
+	if clock == null: return 1.0
+	var value: Variant = clock.get("daylight")
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 1.0
 
 ## Explicit invitations and autonomous choices cross this same ownership seam.
 func request(kind: String, target: Dictionary = {}) -> bool:
