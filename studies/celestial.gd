@@ -200,3 +200,41 @@ static func source_display_fog(color: Vector3, exposure: float) -> Vector3:
 	var mapped := Vector3(Vector3(1.60475, -0.53108, -0.07367).dot(v), Vector3(-0.10208, 1.10813, -0.00605).dot(v), Vector3(-0.00327, -0.07276, 1.07602).dot(v)).clamp(Vector3.ZERO, Vector3.ONE)
 	var srgb := Color(mapped.x, mapped.y, mapped.z).linear_to_srgb()
 	return Vector3(srgb.r, srgb.g, srgb.b)
+
+## CPU-owned trajectory shared with the sky shader and resident attention.
+var meteor := {}
+var _meteor_window := -1
+var _meteor_start := Vector3.ZERO
+var _meteor_tangent := Vector3.ZERO
+var _meteor_fires := false
+func sample_sky_motion(time: float) -> void:
+	var window := floori(time/5.0)
+	if window != _meteor_window:
+		_meteor_window = window
+		var rng := RandomNumberGenerator.new()
+		rng.seed = window*7919+19237
+		_meteor_fires = rng.randf()>0.45
+		_meteor_start = Vector3(rng.randf()-0.5,rng.randf_range(-0.35,0.5),rng.randf()-0.5).normalized()
+		_meteor_tangent = _meteor_start.cross(Vector3(rng.randf()-0.5,rng.randf()-0.5,rng.randf()-0.5)).normalized()
+	var progress := (time-window*5.0)/0.9
+	meteor = {}
+	var head := Vector3.ZERO
+	var tail := Vector3.ZERO
+	var envelope := 0.0
+	if _meteor_fires and progress<1.0:
+		head = (_meteor_start+_meteor_tangent*progress*0.45).normalized()
+		tail = (_meteor_start+_meteor_tangent*maxf(progress-0.22,0.0)*0.45).normalized()
+		envelope = smoothstep(0.0,0.1,progress)*(1.0-smoothstep(0.7,1.0,progress))
+		if float(state.get("zs_night",0.0))*float(state.get("zs_celestial_clear",0.0))*envelope>0.08:
+			meteor = {"window":window,"head":head,"tail":tail}
+	RenderingServer.global_shader_parameter_set("zs_meteor_head",Vector4(head.x,head.y,head.z,envelope))
+	RenderingServer.global_shader_parameter_set("zs_meteor_tail",tail)
+
+func rainbow_direction() -> Vector3:
+	var axis: Vector3 = -state.get("zs_sun_direction",Vector3.UP)
+	var reference := Vector3.FORWARD if absf(axis.y)>0.999 else Vector3.UP
+	var up := (reference-axis*reference.dot(axis)).normalized()
+	# Follow the visible portion of the growing ring, then settle at its crown.
+	var phi := minf(0.0,(_rainbow_growth-0.08)*TAU-PI)
+	var rim := up*cos(phi)+axis.cross(up)*sin(phi)
+	return (axis*cos(deg_to_rad(41.45))+rim*sin(deg_to_rad(41.45))).normalized()

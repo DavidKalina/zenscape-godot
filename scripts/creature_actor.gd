@@ -17,6 +17,9 @@ var water_level := 0.0
 var water_exit := Vector3.ZERO
 var _paddle_time := 0.0
 var hand_targets := {}
+var environment_pose := ""
+var environment_motion := {}
+var tree_peek = preload("res://scripts/creature_tree_peek.gd").new()
 var action_tempo := 1.0
 var locomotion_tempo := 1.0
 var _pending_tremor := 0.0
@@ -148,8 +151,8 @@ func cancel_action() -> void:
 func hand_position(side := "R") -> Vector3:
 	return HAND_REACH.palm(skeleton,side)
 
-func reach_hand(point: Vector3, weight: float, side := "R", elbow: Variant = null, palm_basis: Variant = null) -> void:
-	hand_targets[side] = {"point":point,"weight":weight,"elbow":elbow,"basis":palm_basis}
+func reach_hand(point: Vector3, weight: float, side := "R", elbow: Variant = null, palm_basis: Variant = null, palm_weight := 1.0) -> void:
+	hand_targets[side] = {"point":point,"weight":weight,"elbow":elbow,"basis":palm_basis,"palm_weight":palm_weight}
 
 func clear_hand_targets() -> void:
 	hand_targets.clear()
@@ -292,6 +295,18 @@ func setup(asset_path: String) -> void:
 		_original_clips[clip].loop_mode = Animation.LOOP_LINEAR
 	library.add_animation("Airborne",_original_clips["Held"].duplicate())
 	_personality_clips = PERSONALITY.clips_for(player,skeleton)
+	# A hug owns its acting. Freeze the neutral authored stance so Idle's
+	# independent glances and weight shifts cannot fight the embrace.
+	var hug_base := Animation.new()
+	hug_base.length = 5.2
+	hug_base.loop_mode = Animation.LOOP_LINEAR
+	var idle_base: Animation = _personality_clips["Idle"]
+	for track in range(idle_base.get_track_count()):
+		if idle_base.track_get_key_count(track) == 0: continue
+		var index := hug_base.add_track(idle_base.track_get_type(track))
+		hug_base.track_set_path(index,idle_base.track_get_path(track))
+		hug_base.track_insert_key(index,0.0,idle_base.track_get_key_value(track,0))
+	library.add_animation("TreeHugBase",hug_base)
 	library.add_animation("Tremor",_personality_clips["Tremor"])
 	install_action_personality()
 	_head = skeleton.find_bone("Head")
@@ -319,6 +334,24 @@ func install_action_personality() -> void:
 		if library.has_animation(clip) and not _original_clips.has(clip):
 			_original_clips[clip] = library.get_animation(clip).duplicate()
 	set_personality(PERSONALITY.enabled)
+
+## Preserve the settled feet of this arrival rather than blending the legs
+## back to an unrelated frame of Idle. Upper-body acting stays neutral.
+func prepare_tree_hug_base() -> void:
+	var base: Animation = player.get_animation("TreeHugBase")
+	var spine := skeleton.find_bone("Spine")
+	for track in range(base.get_track_count()):
+		var path := base.track_get_path(track)
+		if path.get_subname_count() == 0: continue
+		var bone := skeleton.find_bone(str(path.get_subname(0)))
+		if bone<0: continue
+		var ancestor := bone
+		while ancestor>=0 and ancestor != spine: ancestor = skeleton.get_bone_parent(ancestor)
+		if ancestor == spine: continue
+		match base.track_get_type(track):
+			Animation.TYPE_POSITION_3D: base.track_set_key_value(track,0,skeleton.get_bone_pose_position(bone))
+			Animation.TYPE_ROTATION_3D: base.track_set_key_value(track,0,skeleton.get_bone_pose_rotation(bone))
+			Animation.TYPE_SCALE_3D: base.track_set_key_value(track,0,skeleton.get_bone_pose_scale(bone))
 
 func set_personality(enabled: bool) -> void:
 	if _original_clips.is_empty(): return
@@ -532,6 +565,7 @@ func advance(delta: float) -> void:
 	if state in [State.SWIMMING,State.SHAKING]: _advance_water(dt)
 	var walk_before := player.current_animation_position if state == State.WALKING else -1.0
 	player.advance(dt)
+	_pose_environment()
 	if walk_before >= 0.0 and state == State.WALKING:
 		var length := player.current_animation_length
 		var after := walk_before+dt*player.speed_scale
@@ -553,10 +587,12 @@ func advance(delta: float) -> void:
 		var local := to_local(_gaze)-Vector3.UP*2.15
 		var weight := _gaze_weight if state != State.HELD else 0.0
 		_gaze_yaw = lerpf(_gaze_yaw,clampf(atan2(local.x,local.z),-0.45,0.45)*weight,response)
-		_gaze_pitch = lerpf(_gaze_pitch,clampf(-atan2(local.y,maxf(Vector2(local.x,local.z).length(),0.1)),-0.18,0.18)*weight,response)
+		var pitch_limit := 0.5 if not environment_pose.is_empty() else 0.18
+		_gaze_pitch = lerpf(_gaze_pitch,clampf(-atan2(local.y,maxf(Vector2(local.x,local.z).length(),0.1)),-pitch_limit,pitch_limit)*weight,response)
 		var base := skeleton.get_bone_pose_rotation(_head)
 		skeleton.set_bone_pose_rotation(_head,base*Quaternion.from_euler(Vector3(_gaze_pitch,_gaze_yaw,0)))
 	_gaze_weight = maxf(0.0,_gaze_weight-dt*0.18)
+	if environment_pose == "tree_hug": tree_peek.correct_head_clearance(self,environment_motion)
 	if state == State.SWIMMING:
 		for side in ["R","L"]:
 			var phase := _age*6.0+(0.0 if side == "R" else PI)
@@ -565,16 +601,98 @@ func advance(delta: float) -> void:
 	if state in [State.ACTION,State.WALKING]:
 		for side: String in hand_targets:
 			var contact: Dictionary = hand_targets[side]
-			HAND_REACH.apply(skeleton,contact.point,contact.weight,side,contact.get("elbow"),contact.get("basis"))
+			var resting_arm := {}
+			var release := 0.0
+			if environment_pose == "tree_hug":
+				release = float(environment_motion.get("hands",{}).get(side,{}).get("release",0.0))
+				for part in ["UpperArm_","Forearm_","Hand_"]:
+					var bone := skeleton.find_bone(part+side)
+					resting_arm[bone] = skeleton.get_bone_pose_rotation(bone)
+			var palm: Variant = contact.get("basis")
+			var palm_weight := clampf(float(contact.get("palm_weight",1.0)),0.0,1.0)
+			if palm != null and palm_weight<0.999:
+				# First let the authored local wrist follow this frame's arm.
+				# Then turn toward the surface, without feeding back last frame's
+				# solved wrist or pinning a relaxed hand to a world orientation.
+				HAND_REACH.apply(skeleton,contact.point,contact.weight,side,contact.get("elbow"))
+				var natural := (skeleton.global_basis*skeleton.get_bone_global_pose(skeleton.find_bone("Hand_"+side)).basis).orthonormalized()
+				palm = natural.slerp(palm,palm_weight)
+			HAND_REACH.apply(skeleton,contact.point,contact.weight,side,contact.get("elbow"),palm)
+			# Finish in the authored joint pose before a nearly straight arm
+			# makes the IK elbow plane unstable. The shoulder settles first;
+			# the forearm follows, with the wrist staying relative to it.
+			for bone: int in resting_arm:
+				var start := 0.55 if skeleton.get_bone_name(bone).begins_with("UpperArm_") else 0.65
+				var settle := smoothstep(start,1.0,release)
+				skeleton.set_bone_pose_rotation(bone,skeleton.get_bone_pose_rotation(bone).slerp(resting_arm[bone],settle))
 
 	skeleton.force_update_all_bone_transforms()
 	wet_coat.advance(minf(delta,0.05))
 	if _breath != null:
 		skeleton.force_update_all_bone_transforms()
-		var idle := state==State.IDLE and player.current_animation=="Idle"
+		var idle := (state==State.IDLE or not environment_pose.is_empty()) and player.current_animation in ["Idle","TreeHugBase"]
 		var breath_duration := 5.2 if personality_active else player.get_animation("Idle").length
 		var phase := fposmod(player.current_animation_position,breath_duration)/breath_duration if idle else 0.0
 		var wind := Vector3.ZERO
 		var mouth := skeleton.global_transform*skeleton.get_bone_global_pose(_head)*_mouth_offset
 		if is_instance_valid(_wind_field): wind = _wind_field.sample(mouth.origin)
 		_breath.advance(dt,mouth,phase,idle,wind)
+
+## Sagittal (knee/hip) bend on the bone's own axis, additive on the animation.
+func _bend_leg(bone: int, angle: float) -> void:
+	if bone<0: return
+	skeleton.set_bone_pose_rotation(bone,skeleton.get_bone_pose_rotation(bone)*Quaternion(Vector3.RIGHT,angle))
+
+## Additive torso performance on the current authored pose, never the root/feet.
+func _pose_environment() -> void:
+	if environment_pose.is_empty() or state != State.ACTION: return
+	var spine := skeleton.find_bone("Spine")
+	if spine<0: return
+	var weight := smoothstep(0.0,0.3,_age)*(1.0-smoothstep(_action_duration-1.0,_action_duration,_age))
+	var pose := Vector3.ZERO
+	if environment_pose == "tree_hug" and not environment_motion.is_empty():
+		# Small chest compression and tilt provide weight with planted feet.
+		# Pelvis/root are untouched; hand IK runs after this body performance.
+		pose = environment_motion.get("spine",Vector3.ZERO)
+		var position := skeleton.get_bone_pose_position(spine)
+		position.y -= float(environment_motion.get("compression",0.0))
+		skeleton.set_bone_pose_position(spine,position)
+		var head_pose: Vector3 = environment_motion.get("head",Vector3.ZERO)
+		if _head>=0:
+			skeleton.set_bone_pose_rotation(_head,skeleton.get_bone_pose_rotation(_head)*Quaternion.from_euler(head_pose))
+		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(pose))
+		var offset: Vector3 = environment_motion.get("body_offset",Vector3.ZERO)
+		tree_peek.offset_upper_body(self,global_basis*offset)
+		return
+	if environment_pose == "fire_warm" and not environment_motion.is_empty():
+		# A real crouch, not a compressed torso: the hip flexes, the knee
+		# counter-flexes twice as far and the ankle returns the difference, so
+		# the sole stays flat. The rest leg is not a straight two-link chain, so
+		# the pelvis drop is measured from where the folded leg actually put the
+		# foot rather than computed from segment lengths.
+		var bend := float(environment_motion.get("bend",0.0))
+		var pelvis := skeleton.find_bone("Pelvis")
+		var sole := skeleton.find_bone("Foot_L")
+		if bend>0.0 and pelvis>=0 and sole>=0:
+			var planted := skeleton.get_bone_global_pose(sole).origin.y
+			for side in ["L","R"]:
+				_bend_leg(skeleton.find_bone("Thigh_"+side),-bend)
+				_bend_leg(skeleton.find_bone("Calf_"+side),2.0*bend)
+				_bend_leg(skeleton.find_bone("Foot_"+side),-bend)
+			skeleton.force_update_all_bone_transforms()
+			var seat := skeleton.get_bone_pose_position(pelvis)
+			seat.y += planted-skeleton.get_bone_global_pose(sole).origin.y
+			skeleton.set_bone_pose_position(pelvis,seat)
+		if _head>=0:
+			skeleton.set_bone_pose_rotation(_head,skeleton.get_bone_pose_rotation(_head)*Quaternion.from_euler(environment_motion.get("head",Vector3.ZERO)))
+		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(environment_motion.get("spine",Vector3.ZERO)))
+		return
+	match environment_pose:
+		"shock": pose = Vector3(-0.12,sin(_age*62.0)*0.07,sin(_age*75.0)*0.09)
+		"fire_watch": pose = Vector3(-0.075,0,sin(_age*0.9)*0.014)
+		"startle": pose = Vector3(0.22,0,sin(_age*7.0)*0.025)*exp(-_age*0.7)
+		"dry": pose = Vector3(0.04,sin(_age*18.0)*0.15,sin(_age*18.0+0.7)*0.055)
+		"rain": pose = Vector3(0.08,0,-0.035)
+		"tree_hug": pose = Vector3(0.035,0,sin(_age*1.1)*0.012)
+	var base := skeleton.get_bone_pose_rotation(spine)
+	skeleton.set_bone_pose_rotation(spine,base*Quaternion.from_euler(pose*weight))

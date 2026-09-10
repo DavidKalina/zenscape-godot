@@ -1,5 +1,6 @@
 class_name NativeGardenLandmarks
 extends Node3D
+signal instances_published()
 ## Place the demo's source landmarks with a ground-centered pivot.
 const KINDS := ["arch", "bigfoot_tree"]
 var _arch_mesh: Mesh
@@ -48,3 +49,4 @@ func rebuild(data: NativeTerrainData) -> void:
 				material.set_shader_parameter("base_color",original.albedo_color)
 				material.set_shader_parameter("palette_role",4)
 				mesh.material_override = material
+	instances_published.emit()

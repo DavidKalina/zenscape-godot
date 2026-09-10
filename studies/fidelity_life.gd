@@ -6,6 +6,7 @@ var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
 var resident_enabled := true
 var routine: Node
+var environment_life: Node
 var fish: Node
 var spawn_options: Array = []
 var _nav_view := MeshInstance3D.new()
@@ -71,6 +72,9 @@ func _ready() -> void:
 	routine = preload("res://scripts/bigfoot_routine.gd").new()
 	add_child(routine)
 	routine.setup(self)
+	environment_life = preload("res://scripts/bigfoot_environment.gd").new()
+	add_child(environment_life)
+	environment_life.setup(self)
 	fish = preload("res://scripts/fidelity_fish.gd").new()
 	add_child(fish)
 	fish.setup(self)
@@ -132,8 +136,11 @@ func _process(delta: float) -> void:
 	var stopped := _paused or not creature.visible
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
-			if not (has_method("resident_activity_owned") and call("resident_activity_owned")):
+			var observing: bool = environment_life != null and environment_life.advance(delta)
+			if not observing and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
+			elif routine != null:
+				routine._advance_projectiles(minf(delta,0.05))
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
@@ -149,6 +156,7 @@ func _process(delta: float) -> void:
 func _geometry_changed() -> void:
 	_habitat_changed = true
 	if creature != null: creature.stop_walking()
+	if environment_life != null: environment_life.world_changed()
 	if routine != null: routine.world_changed()
 
 func _refresh_habitat(budgeted := false) -> void:
@@ -239,6 +247,7 @@ func capture_life_state() -> Dictionary:
 	return routine.habits.capture()
 
 func restore_life_state(state: Dictionary) -> void:
+	if environment_life != null: environment_life.world_changed()
 	routine.cancel("garden opened")
 	_refresh_habitat()
 	routine.habits.restore(state)

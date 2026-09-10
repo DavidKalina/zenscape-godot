@@ -81,36 +81,16 @@ shader_type sky;
               * step(mix(0.62, 0.42, mwBand), h2);
             col += vec3(0.7, 0.78, 1.0) * dust * dust * (0.12 + 0.3 * h2) * starK;
 
-            // The occasional meteor: zs_motion_time is diced into windows, each window
-            // hashes into "fires or doesn't" plus a start point and a heading,
-            // and for under a second the head slides along a short arc with a
-            // gaussian streak decaying behind it. Pure function of zs_motion_time — no
-            // state, no uniforms, no cost outside this branch.
-            // Cadence: a candidate every 5s window, ~55% fire, but the arc is
-            // random on the sphere and the camera sees only a sliver of it, so
-            // a streak actually CROSSES the frame about once a minute — an
-            // event you catch out of the corner of your eye, not a light show.
-            float mwin = floor(zs_motion_time / 5.0);
-            float mfire = hash(vec3(mwin, 1.7, 9.2));
-            float mlt = (zs_motion_time - mwin * 5.0) / 0.9;
-            if (mfire > 0.45 && mlt < 1.0) {
-              // spawn anywhere the camera can actually see sky: the visible
-              // dome around a floating diorama is mostly BELOW y=0
-              vec3 mA = normalize(vec3(hash(vec3(mwin, 3.0, 7.0)) - 0.5,
-                                       -0.35 + 0.85 * hash(vec3(mwin, 5.0, 11.0)),
-                                       hash(vec3(mwin, 9.0, 2.0)) - 0.5));
-              vec3 mT = normalize(cross(mA,
-                vec3(hash(vec3(mwin, 4.0, 8.0)) - 0.5,
-                     hash(vec3(mwin, 6.0, 1.0)) - 0.5,
-                     hash(vec3(mwin, 2.0, 5.0)) - 0.5)));
-              vec3 mHead = normalize(mA + mT * (mlt * 0.45));
-              vec3 mTail = normalize(mA + mT * (max(mlt - 0.22, 0.0) * 0.45));
+            // The resident follows this same CPU-owned head position.
+            if (zs_meteor_head.w > 0.0) {
+              vec3 mHead = zs_meteor_head.xyz;
+              vec3 mTail = zs_meteor_tail;
               vec3 seg = mHead - mTail;
               float u = clamp(dot(dir - mTail, seg) / (dot(seg, seg) + 1e-6), 0.0, 1.0);
               vec3 cp = mTail + seg * u;
               float dd = length(dir - cp);
               float streak = exp(-dd * dd / 2.0e-5);
-              float env = smoothstep(0.0, 0.1, mlt) * smoothstep(1.0, 0.7, mlt);
+              float env = zs_meteor_head.w;
               col += vec3(0.9, 0.95, 1.0) * streak * mix(0.08, 1.0, u) * env * 1.5 * starK;
             }
           }

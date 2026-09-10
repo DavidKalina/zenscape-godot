@@ -4,6 +4,7 @@ shader_type spatial;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
+#include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
@@ -43,10 +44,21 @@ varying vec3 world_normal;
 varying vec3 world_position;
 varying vec3 crown_position;
 varying float leaf_thinness;
+// Fire, written per instance by GardenView.set_object_fire: (char, burn).
+uniform bool instance_fire_enabled = false;
+uniform vec2 object_fire = vec2(0.0);
+varying vec2 char_state;
+varying flat float char_clump;
+varying float char_seed;
 
 void vertex() {
 	crown_position = VERTEX;
-	leaf_thinness = COLOR.a;
+	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
+	char_clump = zs_char_clump(VERTEX);
+	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
+	// The skeleton phase runs through the canopy's own thinness channel rather
+	// than an alpha scissor: the tiers keep their silhouette and go sheer.
+	leaf_thinness = mix(COLOR.a, 1.0, smoothstep(0.5, 1.0, char_state.x));
 	foliage_gust = 0.0;
 	if (terrain_growth) {
 		float grown = max(smoothstep(UV.x, UV.x + 0.3, zs_growth.x), UV.y);
@@ -116,6 +128,7 @@ void vertex() {
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
 	}
+	zs_char_curl(VERTEX, char_state.x, char_clump, palette_role != 3 && palette_role != 4);
 	play_deform(VERTEX, NORMAL);
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
@@ -132,6 +145,12 @@ void fragment() {
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
 	zs_autumn_paint(tint, world_position, zs_autumn);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
+	// Order is palette -> autumn -> char -> wet -> snow.
+	float char_scorch = 0.0;
+	vec3 char_ember = vec3(0.0);
+	if (char_state.x > 0.004 || char_state.y > 0.004) {
+		zs_char_paint(tint, char_scorch, char_ember, world_position, face_normal, char_state.x, char_state.y, char_seed, TIME);
+	}
 	float surface_wet = 0.0;
 	float mineral = 0.0;
 	if (wet_ground && zs_ground_wet > 0.001) {
@@ -183,6 +202,7 @@ void fragment() {
 	if (palette_role == 3) ROUGHNESS = mix(ROUGHNESS, mix(0.78, 0.29, bank), tactile);
 	if (palette_role == 1) ROUGHNESS = mix(ROUGHNESS, mix(0.98, 0.48, bank), tactile);
 	if (palette_role == 2) ROUGHNESS = mix(ROUGHNESS, 0.82, tactile);
+	ROUGHNESS = mix(ROUGHNESS, 1.0, char_scorch);
 	METALLIC = metalness_value;
 	// The source scene has no environment map; sky reflection would lift and
 	// desaturate every shaded facet.
@@ -198,7 +218,7 @@ void fragment() {
 	IRRADIANCE = vec4(hemisphere * tactile, 1.0);
 	vec3 alpen_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (dot(alpen_normal, face_normal) < 0.0) alpen_normal = -alpen_normal;
-	EMISSION += zs_afterglow(world_position, alpen_normal, tint);
+	EMISSION += zs_afterglow(world_position, alpen_normal, tint) + char_ember;
 	inversion_transmit = zs_inversion_paint(world_position, EMISSION);
 }
 

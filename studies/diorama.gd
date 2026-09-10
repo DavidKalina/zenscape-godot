@@ -453,6 +453,7 @@ func invite_bigfoot(point: Vector3) -> bool:
 	if safe == null:
 		_notice.text = "Bigfoot needs a dry, open place to stand."
 		return false
+	if environment_life != null: environment_life.world_changed()
 	routine.cancel("Bigfoot invited")
 	creature.reset_at(safe)
 	brain.reset_behavior()

@@ -1,5 +1,6 @@
 class_name GardenView
 extends Node3D
+signal instances_published()
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
 var data: RefCounted:
 	set(value):
@@ -21,6 +22,9 @@ var pond_vertices := PackedVector3Array()
 var _catalog_parts := {}
 var _catalog_poses := {}
 var _sources := {}
+var _object_fire := {}
+var _fire_parts := {}
+signal object_fire_changed(id: int, value: Vector2)
 ## Bumped by every full rebuild, so consumers of the rendered ponds and streams
 ## can tell whether those meshes are the ones they last read.
 var revision := 0
@@ -91,6 +95,7 @@ func _ready() -> void:
 	_materials["explosive_leaves"] = rock_material.duplicate()
 	_catalog_poses["explosive_leaves"] = Transform3D.IDENTITY
 	for key in _materials:
+		FireMaterial.enable_instances(_materials[key])
 		_materials[key].set_shader_parameter("palette_role",preload("res://scripts/scene_look.gd").part_role(key))
 	_water = MeshInstance3D.new()
 	_water.name = "Ponds"
@@ -288,6 +293,7 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 		batch.multimesh = MultiMesh.new()
 		batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 		batch.multimesh.use_colors = true
+		batch.multimesh.use_custom_data = true
 		batch.multimesh.mesh = _meshes[key]
 		batch.multimesh.instance_count = placements.size()
 		for i in range(placements.size()):
@@ -322,6 +328,8 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 		staging.remove_child(batch)
 		add_child(batch)
 	staging.free()
+	_index_fire_parts()
+	instances_published.emit()
 	last_instance_usec.swap = Time.get_ticks_usec()-stage_start
 	return true
 
@@ -333,6 +341,53 @@ func _instance_inputs_current(generation: int, provider: RefCounted, input: RefC
 	# scene intact, but ensure the next ordinary rebuild repairs it.
 	_view_ready = false
 	return false
+
+## Map every record to its part instances and re-apply the fire state the last
+## push left, so a rebuild in the middle of a burn (or the snag swap at the end
+## of one) comes back charred instead of freshly cut.
+func _index_fire_parts() -> void:
+	_fire_parts = {}
+	for batch in _batches:
+		var recipes: Array = _sources.get(batch.get_meta("part"),[])
+		for i in range(recipes.size()):
+			var item: Variant = recipes[i].item
+			if item == null:
+				continue
+			var id := int(item.id)
+			if not _fire_parts.has(id):
+				_fire_parts[id] = []
+			_fire_parts[id].append({"batch":batch,"index":i})
+	for id: int in _object_fire.keys():
+		if _fire_parts.has(id):
+			var fire: Vector2 = _object_fire[id]
+			_write_fire(id,fire.x,fire.y)
+		else:
+			# The record is gone - burnt away, deleted or undone.
+			_object_fire.erase(id)
+
+## Per-instance fire for one record without a rebuild: `char` 0..1 browns then
+## skeletonises the foliage, `burn` 0..1 is live flame heat for the ember glow.
+## (0, 0) is the untouched look and renders exactly as it did before fire.
+func set_object_fire(id: int, char: float, burn: float) -> void:
+	var value := Vector2(clampf(char,0.0,1.0),clampf(burn,0.0,1.0))
+	if _object_fire.get(id,Vector2(-1.0,-1.0)) == value:
+		return
+	if value.is_zero_approx():
+		_object_fire.erase(id)
+	else:
+		_object_fire[id] = value
+	_write_fire(id,value.x,value.y)
+	object_fire_changed.emit(id,value)
+
+## Fire state for one record, (0, 0) when it never burnt.
+func object_fire(id: int) -> Vector2:
+	return _object_fire.get(id,Vector2.ZERO)
+
+func _write_fire(id: int, char: float, burn: float) -> void:
+	for part: Dictionary in _fire_parts.get(id,[]):
+		var batch: MultiMeshInstance3D = part.batch
+		if is_instance_valid(batch) and batch.multimesh != null and batch.multimesh.use_custom_data:
+			batch.multimesh.set_instance_custom_data(part.index,Color(char,burn,0.0,0.0))
 
 func discard_cache() -> void:
 	cancel_rebuild()

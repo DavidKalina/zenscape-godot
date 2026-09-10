@@ -1,5 +1,9 @@
 class_name NativeTerrainData
 extends RefCounted
+## History-only companion state never enters terrain worker snapshots.
+signal stroke_starting
+signal history_captured(state: Dictionary)
+signal state_restored(state: Dictionary)
 ## Edit the imported chunk's own welded vertices, retaining every material/UV
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
@@ -290,14 +294,20 @@ func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
 func _vertex(id: int) -> Vector3:
 	return Vector3(points[id].x, heights[id], points[id].y)
 
+func _history_snapshot() -> Dictionary:
+	var state := _snapshot()
+	history_captured.emit(state)
+	return state
+
 func begin_stroke() -> void:
+	stroke_starting.emit()
 	if _before.is_empty():
-		_before = _snapshot()
+		_before = _history_snapshot()
 
 func end_stroke() -> bool:
 	if _before.is_empty():
 		return false
-	var changed := _snapshot() != _before
+	var changed := _history_snapshot() != _before
 	if changed:
 		_undo.append(_before)
 		if _undo.size() > 50:
@@ -331,7 +341,7 @@ func undo() -> bool:
 	end_stroke()
 	if _undo.is_empty():
 		return false
-	_redo.append(_snapshot())
+	_redo.append(_history_snapshot())
 	_restore(_undo.pop_back())
 	return true
 
@@ -339,7 +349,7 @@ func redo() -> bool:
 	end_stroke()
 	if _redo.is_empty():
 		return false
-	_undo.append(_snapshot())
+	_undo.append(_history_snapshot())
 	_restore(_redo.pop_back())
 	return true
 
@@ -849,6 +859,7 @@ func reset_flat() -> void:
 	streams.clear()
 	landscape_waterfall=false
 	next_id = 1
+	state_restored.emit({})
 
 func _snapshot() -> Dictionary:
 	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
@@ -872,6 +883,7 @@ func _restore(state: Dictionary) -> void:
 	ponds.assign(state.ponds.duplicate(true))
 	streams.assign(state.get("streams",[]).duplicate(true))
 	next_id = state.next_id
+	state_restored.emit(state)
 
 func meadow_side() -> int:
 	return MEADOW_CELLS
@@ -1001,6 +1013,31 @@ func update_object(id: int, changes: Dictionary) -> bool:
 	# landscape must only replace untouched generated flora.
 	candidate.erase("landscape")
 	objects[index] = candidate.duplicate(true)
+	objects_revision += 1
+	return true
+
+## Swap the asset a record renders as, keeping placement, pose, scale and the
+## `landscape` marker. Fire uses this to leave a burnt tree standing as a snag;
+## `update_object` deliberately refuses asset changes and drops `landscape`.
+func replace_object_asset(id: int, asset: String, tint := "") -> bool:
+	var index := _object_index(id)
+	if index < 0 or asset not in ASSETS or asset in ["waterfall","explosive"]:
+		return false
+	if objects[index].asset in ["waterfall","explosive"]:
+		return false
+	if not tint.is_empty() and (asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(tint)):
+		return false
+	var candidate := objects[index].duplicate(true)
+	candidate.asset = asset
+	if candidate.has("pose") and asset in ["arch","bigfoot_tree"]:
+		candidate.erase("pose")
+	if tint.is_empty():
+		candidate.erase("tint")
+	else:
+		candidate.tint = tint
+	if candidate == objects[index]:
+		return false
+	objects[index] = candidate
 	objects_revision += 1
 	return true
 

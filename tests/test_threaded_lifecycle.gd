@@ -148,6 +148,16 @@ func run() -> void:
 	abandoned = null
 	check(weak.get_ref()==null,"An abandoned navigation owner is not retained by its worker callable")
 	await drained("navigation-owner")
+	# The async convenience helper must own its finite job until the join,
+	# independently of a scene dropping the last external reference.
+	var finite = Work.new()
+	var finite_ref: WeakRef = weakref(finite)
+	finite.run(func(): OS.delay_msec(30); return 42,self)
+	finite = null
+	check(finite_ref.get_ref()!=null,"An awaiting finite job survives loss of its caller's reference")
+	await drained("finite-helper")
+	await process_frame
+	check(finite_ref.get_ref()==null,"A completed finite helper releases itself after joining")
 	source.free()
 	for phase in ["recipe","mesh","maps","instances","blast","reflections"]: await teardown(phase)
 	print("Threaded lifecycle: ",failures," failures")

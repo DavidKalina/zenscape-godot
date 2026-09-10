@@ -14,6 +14,7 @@ var effects = preload("res://scripts/explosion_effects.gd").new()
 var collisions := NativePlayCollisions.new()
 var bodies: Array[RigidBody3D] = []
 var requested := false
+var fire_queue: Array[int] = []
 var firing := false
 var _staging := false
 var _blast_generation := 0
@@ -183,14 +184,20 @@ func _unhandled_input(event: InputEvent) -> void:
 func request_detonation() -> void:
 	if not _blocked(): requested = true
 
+## `FireField.explosive_triggered` lands here. One live transaction at a time, so
+## a chain of cook-offs reads as a chain rather than a single flash.
+func ignite_charge(id: int) -> void:
+	if id not in fire_queue: fire_queue.append(id)
+
 func can_restore() -> bool:
 	return not editor.data._undo.is_empty() and editor.data._undo.back().get("explosion",false)
 
 func _geometry_changed() -> void:
-	if not firing: clear_effects()
+	if not firing: clear_effects(false)
 	_sync_list()
 
-func clear_effects() -> void:
+func clear_effects(clear_pending := true) -> void:
+	if clear_pending: fire_queue.clear()
 	_blast_generation += 1
 	if _resident_before is Vector3 and editor != null:
 		editor.scene.creature.reset_at(_resident_before)
@@ -212,6 +219,9 @@ func _physics_process(delta: float) -> void:
 	if requested:
 		requested = false
 		if not _blocked() and not firing: detonate(true)
+	elif not fire_queue.is_empty() and not _blocked() and not firing:
+		var cooked: int = fire_queue.pop_front()
+		if editor.data.object_by_id(cooked).get("asset") == "explosive": detonate(true,cooked)
 	if not _blocked(): _elapsed += delta
 	for i in range(bodies.size()-1,-1,-1):
 		var body := bodies[i]
@@ -240,18 +250,19 @@ func _physics_process(delta: float) -> void:
 		_strike_resident()
 		_splash_debris()
 
-func detonate(live := false) -> void:
+func detonate(live := false, only_id := -1) -> void:
 	if firing or editor.forming: return
 	var frame_tree: SceneTree = get_tree() if live else null
 	phase = "preparation"
 	last_stage_usec.clear()
 	var stage_start := Time.get_ticks_usec()
 	var salvo: Array[Dictionary] = []
+	var selected := only_id if only_id > 0 else target_id
 	for item in charges():
-		if target_id <= 0 or item.id == target_id: salvo.append(item.duplicate(true))
+		if selected <= 0 or item.id == selected: salvo.append(item.duplicate(true))
 	if salvo.is_empty(): return
 	editor.finish_stroke()
-	clear_effects()
+	clear_effects(false)
 	firing = true
 	_staging = live
 	_elapsed = 0.0
@@ -270,7 +281,8 @@ func detonate(live := false) -> void:
 		editor.scene.flush_world_play()
 	if _aborted(generation,target_data): return
 	# Legacy scenery becomes ordinary records before taking visible mesh copies.
-	editor.data.begin_stroke()
+	if editor.scene.has_method("_begin_blast_stroke"): editor.scene._begin_blast_stroke()
+	else: editor.data.begin_stroke()
 	if preload("res://scripts/world_reference_props.gd").migrate(editor):
 		while not await editor.refresh(frame_tree):
 			if _aborted(generation,target_data): return
@@ -373,7 +385,8 @@ func detonate(live := false) -> void:
 	phase = "refresh"
 	stage_start = Time.get_ticks_usec()
 	for id in affected: editor.data.remove_object(id)
-	editor.data.end_stroke()
+	if editor.scene.has_method("_end_blast_stroke"): editor.scene._end_blast_stroke()
+	else: editor.data.end_stroke()
 	editor.data._undo.back()["explosion"] = true
 	# A rejected stage has not published its matching visuals/maps. Keep all
 	# bodies staged until a complete refresh succeeds or this blast is aborted.
@@ -417,6 +430,20 @@ func detonate(live := false) -> void:
 	phase = "idle"
 	collapse_count = collapses.size()
 	_sync_list()
+	# A blast leaves fire behind. Wet ground, snow or rain still smother it, so
+	# the field decides whether anything actually catches.
+	#
+	# `carve_native` zeroes cover inside the blast radius, so the crater has no
+	# fuel of its own and only the ring outside it can catch. The design's
+	# radius * 1.2 at full strength lands that ring below the ignition
+	# threshold; 1.6 at 1.5 puts a cell-wide band of grass over it.
+	var field: Variant = editor.scene.get("_fire_field")
+	if field != null:
+		var ignited: bool = field.active()
+		for i in range(salvo.size()):
+			ignited = field.ignite(editor.terrain.to_local(origins[i]),salvo[i].blast_radius*1.6,1.5) or ignited
+		if ignited and editor.scene.has_method("_continue_blast_fire"):
+			editor.scene._continue_blast_fire()
 	editor._set_status(("Mountain collapse · " if collapse_count > 0 else "Detonated %d charge(s) · " % salvo.size())+"Undo last blast restores the landscape.")
 	last_stage_usec["finish"] = Time.get_ticks_usec()-stage_start
 
@@ -496,7 +523,7 @@ func _capture_parts(affected: Dictionary) -> Dictionary:
 			if not result.has(item.id): result[item.id] = []
 			var material: Material = batch.material_override if batch.material_override != null else batch.multimesh.mesh.surface_get_material(0)
 			var tint: Color = batch.multimesh.get_instance_color(i) if batch.multimesh.use_colors else Color.WHITE
-			result[item.id].append({"mesh":batch.multimesh.mesh,"transform":batch.global_transform*batch.multimesh.get_instance_transform(i),"material":_material(material,tint)})
+			result[item.id].append({"mesh":batch.multimesh.mesh,"transform":batch.global_transform*batch.multimesh.get_instance_transform(i),"material":_material(material,tint,editor.content.object_fire(int(item.id)))})
 	for id in affected:
 		var item: Dictionary = affected[id].item
 		if item.asset not in NativeGardenLandmarks.KINDS: continue
@@ -504,10 +531,10 @@ func _capture_parts(affected: Dictionary) -> Dictionary:
 		if node == null: continue
 		result[id] = []
 		for visual: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
-			result[id].append({"mesh":visual.mesh,"transform":visual.global_transform,"material":_material(visual.get_active_material(0),Color.WHITE)})
+			result[id].append({"mesh":visual.mesh,"transform":visual.global_transform,"material":_material(visual.get_active_material(0),Color.WHITE,editor.content.object_fire(id))})
 	return result
 
-func _material(source: Material, tint: Color) -> Material:
+func _material(source: Material, tint: Color, fire := Vector2.ZERO) -> Material:
 	if source == null: return null
 	var material := source.duplicate() as Material
 	if material is ShaderMaterial:
@@ -515,6 +542,7 @@ func _material(source: Material, tint: Color) -> Material:
 		material.set_shader_parameter("base_color",(base if base is Color else Color.WHITE)*tint)
 		for flag in ["terrain_growth","plant_growth","sway_enabled","conifer_sway"]: material.set_shader_parameter(flag,false)
 	elif material is StandardMaterial3D: material.albedo_color *= tint
+	FireMaterial.apply(material,fire)
 	return material
 
 func _launch_parts(parts: Array, kick: Vector3) -> void:
