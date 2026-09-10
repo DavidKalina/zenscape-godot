@@ -1,0 +1,87 @@
+extends SceneTree
+## The twin-chunk prototype really builds a second island and a crossing: the
+## copy carries the terrain, the skirt and the chunk's plants, the two anchors
+## face each other across a gap a bridge can span, they stand on ground rather
+## than in the air, and a deck joins them.
+##
+## Instantiates the study, so it needs a real window and the native kernels.
+## Never --headless: the fidelity scene hangs there.
+##
+## how to run
+##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
+##     --rendering-method forward_plus --script res://tests/test_twin_chunks.gd
+const MIN_VISUALS := 10      ## A copied chunk is terrain, skirt and its plants.
+const MIN_SPAN := 7.0        ## The rim gap is 8 m; anchors sit 0.5 m inside each.
+const MAX_SPAN := 10.0
+const MAX_STEP := 2.0        ## A crossing, not a cliff.
+const GROUND_TOLERANCE := 0.1
+var failures := 0
+var scene: Node3D
+
+func _initialize() -> void: run.call_deferred()
+
+func check(ok: bool, message: String) -> void:
+	print("PASS: " if ok else "FAIL: ", message)
+	if not ok:
+		failures += 1
+		push_error(message)
+
+func run() -> void:
+	create_timer(55).timeout.connect(func() -> void:
+		print("FAIL: the study never finished forming")
+		print("Failures: 1")
+		quit(1))
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	root.size = Vector2i(960, 600)
+	scene = load("res://studies/prototype_twin_chunks.tscn").instantiate()
+	root.add_child(scene)
+	scene._ui.visible = false
+	check(scene.second_chunk_ready, "The study instantiates and builds its copy inside _ready")
+	# Authored content and landmarks publish asynchronously; let them land, then
+	# rebuild so the copy is measured against a settled world.
+	var editor: Node = scene._chunk_editor
+	while editor.forming or editor.refresh_pending > 0:
+		await process_frame
+	scene.rebuild_second_chunk()
+
+	# ------------------------------------------------------------- the copy
+	var copy: Node3D = scene.second_chunk
+	check(copy != null and copy.get_parent() == scene, "SecondChunk hangs off the study root")
+	check(copy.get_node_or_null("Twin_terrain") != null, "The copy carries the terrain mesh")
+	check(copy.get_node_or_null("Twin_skirt") != null, "The copy carries the earth skirt")
+	var visuals: int = scene.visual_instance_count()
+	check(visuals >= MIN_VISUALS, "The copy carries at least %d visual instances: %d" % [MIN_VISUALS, visuals])
+	var terrain_copy: MeshInstance3D = copy.get_node("Twin_terrain")
+	check(terrain_copy.mesh == editor.terrain.mesh, "The copied terrain shares the original mesh resource")
+	check(copy.find_children("*", "CollisionObject3D", true, false).is_empty(), "Nothing in the copy can be hit by a ray")
+	check(editor.terrain.get_parent() == scene.get_node("Reference"), "The editor still owns only the first chunk's terrain")
+
+	# ---------------------------------------------------------- the anchors
+	var anchors: Array[Transform3D] = scene.bridge_anchors()
+	check(anchors.size() == 2, "bridge_anchors returns two poses")
+	if anchors.size() == 2:
+		var a := anchors[0].origin
+		var b := anchors[1].origin
+		var span := Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z))
+		check(span > MIN_SPAN and span < MAX_SPAN, "The anchors stand %.2f m apart horizontally" % span)
+		var step := absf(a.y - b.y)
+		check(step < MAX_STEP, "The crossing steps %.2f m, under %.1f m" % [step, MAX_STEP])
+		var near_ground: Variant = scene.ground_y_at(a, false)
+		var far_ground: Variant = scene.ground_y_at(b, true)
+		check(near_ground != null and far_ground != null, "Both anchors sit over their own chunk's ground")
+		if near_ground != null and far_ground != null:
+			check(a.y >= float(near_ground) - GROUND_TOLERANCE, "The near anchor is on the ground, not under it: %.3f vs %.3f" % [a.y, float(near_ground)])
+			check(b.y >= float(far_ground) - GROUND_TOLERANCE, "The far anchor is on the ground, not under it: %.3f vs %.3f" % [b.y, float(far_ground)])
+		var across := (b - a).normalized()
+		check(anchors[0].basis.z.dot(across) > 0.9, "The near anchor's +Z points across the gap")
+		check(anchors[1].basis.z.dot(-across) > 0.9, "The far anchor's +Z points back")
+
+	# ----------------------------------------------------------- the bridge
+	check(scene.bridge != null and scene.bridge.get_parent() == scene, "A bridge joins the two islands")
+	check(scene.bridge.find_children("*", "MeshInstance3D", true, false).size() >= 3, "The placeholder is a deck and two rails")
+
+	scene.queue_free()
+	await process_frame
+	print("PASS: two islands and a crossing" if failures == 0 else "FAIL: twin chunks")
+	print("Failures: ", failures)
+	quit(1 if failures else 0)
