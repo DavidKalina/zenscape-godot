@@ -6,6 +6,11 @@ var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
 var resident_enabled := true
 var routine: Node
+var cave_sites: Node3D
+var lair: Node3D
+var _cave_skirt_original: Transform3D
+var _cave_original_ready := false
+var _cave_underside_layers := 1
 var environment_life: Node
 var fish: Node
 var spawn_options: Array = []
@@ -72,6 +77,9 @@ func _ready() -> void:
 	routine = preload("res://scripts/bigfoot_routine.gd").new()
 	add_child(routine)
 	routine.setup(self)
+	cave_sites = preload("res://scripts/bigfoot_cave_site.gd").new()
+	add_child(cave_sites)
+	cave_sites.rebuild(_chunk_editor.data)
 	environment_life = preload("res://scripts/bigfoot_environment.gd").new()
 	add_child(environment_life)
 	environment_life.setup(self)
@@ -127,31 +135,38 @@ func _seed_loose_stones() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	if lair != null: lair.drips.advance(delta,_paused)
 	if creature == null: return
 	if not resident_enabled:
 		creature.visible = false
 		return
 	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
-	creature.visible = not _habitat_blocked and _growth.terrain >= 0.995
-	var stopped := _paused or not creature.visible
+	var present := not _habitat_blocked and _growth.terrain >= 0.995
+	creature.visible = present and (not routine.cave.concealed or lair != null)
+	var stopped := _paused or not present
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
 			var observing: bool = environment_life != null and environment_life.advance(delta)
 			if not observing and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
 			elif routine != null:
+				# Environmental reactions and player interactions take ownership
+				# before the routine ticks; release its journey but keep props moving.
+				if not routine.living.current.is_empty(): routine.cancel("resident activity interrupted routine")
+				routine.living.advance_needs(delta)
 				routine._advance_projectiles(minf(delta,0.05))
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
 		if fish != null: fish.advance(delta)
-		creature.wet_coat.rain = _precipitation.state.x
+		creature.wet_coat.rain = 0.0 if routine.cave.sheltered() else _precipitation.state.x
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
 		_reaction.visible = _reaction_time > 0.0
+	creature.visible = present and (not routine.cave.concealed or lair != null)
 	if creature.state == CreatureActor.State.STUMBLING and not stopped:
 		_life_status.text = "Bigfoot · finding his balance · P pause"
 		return
-	_life_status.text = "Bigfoot · %s · P pause" % ["needs a clearing" if _habitat_blocked else ("paused" if stopped else (routine.active if routine != null and not routine.active.is_empty() else CreatureBrain.Phase.keys()[brain.phase].to_lower()))]
+	_life_status.text = "Bigfoot · %s · P pause" % ["needs a clearing" if _habitat_blocked else ("paused" if stopped else ("in his cave" if routine != null and routine.cave.sheltered() else ("cave · "+routine.cave.phase if routine != null and not routine.cave.phase.is_empty() else (routine.active if routine != null and not routine.active.is_empty() else CreatureBrain.Phase.keys()[brain.phase].to_lower()))))]
 
 func _geometry_changed() -> void:
 	_habitat_changed = true
@@ -162,6 +177,7 @@ func _geometry_changed() -> void:
 func _refresh_habitat(budgeted := false) -> void:
 	if _habitat_changed or not budgeted:
 		_habitat_changed = false
+		if cave_sites != null: cave_sites.rebuild(_chunk_editor.data)
 		habitat.setup($Reference,_chunk_editor.data)
 		navigation.begin_rebuild(habitat,habitat.clear_at,0.35,0.3,budgeted)
 	if budgeted:
@@ -251,3 +267,51 @@ func restore_life_state(state: Dictionary) -> void:
 	routine.cancel("garden opened")
 	_refresh_habitat()
 	routine.habits.restore(state)
+
+func capture_cave_state() -> Dictionary:
+	return lair.document() if is_instance_valid(lair) else {}
+
+func restore_cave_state(state: Dictionary) -> void:
+	if not preload("res://scripts/cave_genome.gd").valid_state(state): return
+	if state.is_empty() and lair==null: return
+	if routine != null: routine.cancel("cave system changed")
+	var skirt: MeshInstance3D = get_node("Reference/skirt")
+	var old_underside := get_node("Reference").find_child("mesh-3",true,false)
+	if not _cave_original_ready:
+		_cave_skirt_original = skirt.transform
+		if old_underside != null: _cave_underside_layers = old_underside.layers
+		_cave_original_ready = true
+	if is_instance_valid(lair):
+		remove_child(lair)
+		lair.queue_free()
+		lair = null
+	routine.cave.rest_anchor = null
+	skirt.transform = _cave_skirt_original
+	if old_underside != null: old_underside.layers = _cave_underside_layers
+	if state.is_empty(): return
+	if old_underside != null: old_underside.layers = 0
+	var top: float = (skirt.transform*skirt.mesh.get_aabb()).end.y
+	skirt.scale.y *= 0.61
+	skirt.position.y = top-(top-skirt.position.y)*0.61
+	lair = preload("res://scripts/bigfoot_lair_room.gd").new()
+	lair.genome = state.genome.duplicate(true)
+	lair.position = Vector3(0,-11,0)
+	add_child(lair)
+	lair.restore_stash(state.stash)
+	lair.restore_living(state.get("living",{"bed_stage":0,"play_stage":0}))
+	routine.cave.rest_anchor = lair.bed
+
+func capture_living_state() -> Dictionary:
+	return routine.living.capture()
+
+func remap_living_interest(old_id: String, new_id: String) -> void:
+	if routine != null: routine.living.mind.remap_observation(old_id,new_id)
+
+func restore_living_state(state: Dictionary) -> void:
+	routine.living.restore(state)
+
+func capture_fish_state() -> Dictionary:
+	return fish.capture_state() if fish != null else {"version":1,"stored_ids":[]}
+
+func restore_fish_state(state: Dictionary) -> void:
+	if fish != null: fish.restore_state(state)

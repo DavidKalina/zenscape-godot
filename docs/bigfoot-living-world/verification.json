@@ -1,0 +1,90 @@
+{
+  "base_commit": "a15b607",
+  "branch": "codex/bigfoot-living-world",
+  "renderer": "Metal Forward+",
+  "targeted_tests": {
+    "test_bigfoot_life_mind.gd": "passed",
+    "test_bigfoot_lair_supplies.gd": "passed",
+    "test_bigfoot_living_world.gd": "passed",
+    "test_bigfoot_living_store.gd": "passed"
+  },
+  "autonomous_observation": {
+    "simulated_seconds": 300,
+    "completed": [
+      "check_home",
+      "gather",
+      "tend",
+      "fish",
+      "eat",
+      "sleep",
+      "play"
+    ],
+    "invitations_during_run": false
+  },
+  "explicit_scene_checks": [
+    "investigation and familiarity",
+    "favorite resting place",
+    "pause",
+    "surface and interior pickup before contact",
+    "terrain interruption",
+    "observed home disturbance",
+    "full-stash tending",
+    "retry backoff",
+    "actual main-game save/reopen",
+    "editable-tree gathering",
+    "source-ID familiarity migration",
+    "idle cancellation preserves another activity owner"
+  ],
+  "visual_checks": {
+    "controls_fit": true,
+    "thoughts_readable": true,
+    "meal_bedding_and_stones_visible": true,
+    "captures_are_staged_performances": true,
+    "shadow_isolation_rechecked": true
+  },
+  "known_engine_messages": [
+    "Godot light-unpair messages during native scene teardown",
+    "macOS certificate warning in sandboxed headless tests",
+    "Sandboxed editor import cannot save user-wide Godot editor preferences"
+  ],
+  "full_suite": {
+    "status": "completed_with_failures",
+    "counts": {
+      "passed": 165,
+      "pass_with_known_engine_error": 5,
+      "failed": 26,
+      "timeout": 1
+    },
+    "tests": 197,
+    "report": "regression-results.json",
+    "audit": "regression-baseline-audit.md",
+    "follow_up": "All five post-fix checks passed. Twenty-one baseline comparisons and six focused reruns completed; see audit for existing and unstable checks."
+  },
+  "post_fix_tests": {
+    "test_bigfoot_lair.gd": "pass_with_known_engine_error",
+    "test_bigfoot_lair_foraging.gd": "pass_with_known_engine_error",
+    "test_bigfoot_living_store.gd": "pass_with_known_engine_error",
+    "test_bigfoot_living_world.gd": "pass_with_known_engine_error",
+    "test_bigfoot_routine_actor.gd": "passed"
+  },
+  "fixed_regressions": [
+    "Cave window light casts shadows to avoid illuminating the surface",
+    "Idle living cancellation preserves legacy actor/hand/schedule ownership"
+  ],
+  "baseline_comparison": {
+    "tests": 21,
+    "failed": 19,
+    "passed": 2
+  },
+  "resident_input_diagnostic": {
+    "current": "passed",
+    "baseline": "passed",
+    "limitation": "Native fullscreen and live-pointer state make the legacy synthetic-input check unstable; original raw failures are retained."
+  },
+  "editor_import": {
+    "assets_and_script_uids": "completed",
+    "limitations": [
+      "Sandbox prevented saving user-wide editor preferences; no source/import failure"
+    ]
+  }
+}

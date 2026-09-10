@@ -117,7 +117,7 @@ func advance(delta: float) -> bool:
 			if _arrive_left<=0.0: _perform()
 		elif phase == "perform": _pose(dt)
 		return busy()
-	if not autonomous or not actor.can_roam() or not scene.routine.active.is_empty(): return false
+	if not autonomous or not actor.can_roam() or _routine_busy(): return false
 	var rain: float = scene._precipitation.state.x
 	var snow: float = scene._precipitation.state.y
 	if rain>0.2: _wet = true
@@ -149,9 +149,17 @@ func advance(delta: float) -> bool:
 func _ready_for(kind: String) -> bool:
 	return _clock>=float(_cooldowns.get(kind,0.0))
 
+## Cave visits and needs-driven surface actions can own him without setting
+## the legacy routine's active verb. Emergencies above still take precedence.
+func _routine_busy() -> bool:
+	if not scene.routine.active.is_empty(): return true
+	var living: Variant = scene.routine.get("living")
+	var cave: Variant = scene.routine.get("cave")
+	return (living != null and not living.current.is_empty()) or (cave != null and not cave.phase.is_empty())
+
 ## Also used by the repeatable visual study; never teleports to a contact.
 func request(kind: String) -> bool:
-	if busy() or scene._paused or not scene.creature.can_roam() or not scene.routine.active.is_empty(): return false
+	if busy() or scene._paused or not scene.creature.can_roam() or _routine_busy(): return false
 	if scene.has_method("resident_activity_owned") and scene.resident_activity_owned(): return false
 	if kind not in ["tree_hug","tree_touch","horizon"]: return false
 	if kind == "horizon": return _viewpoint()

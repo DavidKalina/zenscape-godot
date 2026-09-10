@@ -1,0 +1,73 @@
+{
+  "pr": 10,
+  "pr_head_before_merge": "45b231d4faaac40c749cede09b2313340f0a54e0",
+  "merged_main": "eb3458a",
+  "renderer": "Native Metal Forward+",
+  "passed": true,
+  "unique_tests": 12,
+  "clean_passes": 8,
+  "passes_with_known_renderer_diagnostics": 4,
+  "initial_finding": "The autonomous test caught needs-clock drift while environment owned the actor. Fixed and all affected tests rerun.",
+  "tests": [
+    {
+      "test": "tests/test_bigfoot_cave.gd",
+      "status": "passed",
+      "seconds": 5.944
+    },
+    {
+      "test": "tests/test_bigfoot_environment.gd",
+      "status": "passed",
+      "seconds": 1.243
+    },
+    {
+      "test": "tests/test_bigfoot_fire.gd",
+      "status": "passed",
+      "seconds": 1.458
+    },
+    {
+      "test": "tests/test_bigfoot_lair_fishing.gd",
+      "status": "pass_with_known_engine_error",
+      "seconds": 6.127
+    },
+    {
+      "test": "tests/test_bigfoot_living_store.gd",
+      "status": "pass_with_known_engine_error",
+      "seconds": 9.679
+    },
+    {
+      "test": "tests/test_bigfoot_living_world.gd",
+      "status": "pass_with_known_engine_error",
+      "seconds": 102.711
+    },
+    {
+      "test": "tests/test_bigfoot_tree_hug.gd",
+      "status": "passed",
+      "seconds": 1.652
+    },
+    {
+      "test": "tests/test_diorama_environment.gd",
+      "status": "passed",
+      "seconds": 4.151
+    },
+    {
+      "test": "tests/test_export_entry.gd",
+      "status": "passed",
+      "seconds": 5.175
+    },
+    {
+      "test": "tests/test_fire_integration.gd",
+      "status": "passed",
+      "seconds": 7.139
+    },
+    {
+      "test": "tests/test_fire_transactions.gd",
+      "status": "passed",
+      "seconds": 3.648
+    },
+    {
+      "test": "tests/test_bigfoot_living_environment.gd",
+      "status": "pass_with_known_engine_error",
+      "seconds": 5.337
+    }
+  ]
+}

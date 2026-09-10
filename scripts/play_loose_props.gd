@@ -156,7 +156,7 @@ func advance(delta: float) -> void:
 				continue
 			if body.kind == "boulder" and body.linear_velocity.length()>1.1: _anticipate(body)
 			_contact(body,before)
-			if body.launched and body.age_since_release>1.4 and body.linear_velocity.length()<0.3 and not _investigated.has(body) and scene.creature.visible and scene.creature.can_roam() and not busy() and grabbed == null and not scene._tree_drag and scene._attention_time<=0.0 and (not is_instance_valid(scene.mischief) or not scene.mischief.busy()):
+			if scene.brain.interest_choices_enabled and body.launched and body.age_since_release>1.4 and body.linear_velocity.length()<0.3 and not _investigated.has(body) and scene.creature.visible and scene.creature.can_roam() and not busy() and grabbed == null and not scene._tree_drag and scene._attention_time<=0.0 and (not is_instance_valid(scene.mischief) or not scene.mischief.busy()):
 				# An unreachable release must not trigger an expensive route search every tick.
 				_investigated[body] = true
 				if scene.brain.investigate(body.global_position,false,"loose:%d" % body.get_instance_id()):

@@ -50,8 +50,6 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false
 	_life_status.get_parent().hide()
 	_ui.hide()
-	for item in fish.population: item.node.free()
-	fish.population.clear()
 	_celestial.cycling = false
 	_celestial.set_phase(0.48)
 	_atmosphere.strength = 0.35
@@ -471,7 +469,8 @@ func _summon_bigfoot(_fog := false) -> void:
 	if resident_enabled: _focus_bigfoot()
 
 func capture_diorama_state() -> Dictionary:
-	return {"resident":resident_enabled,"position":[creature.position.x,creature.position.y,creature.position.z]}
+	var point: Vector3 = routine.cave.entrance if routine.cave._inside else creature.position
+	return {"resident":resident_enabled,"resident_scale":creature.body_scale,"position":[point.x,point.y,point.z]}
 
 func restore_life_state(state: Dictionary) -> void:
 	# Physical props from the previous world cannot survive a world switch.
@@ -482,6 +481,7 @@ func restore_life_state(state: Dictionary) -> void:
 	super.restore_life_state(state)
 
 func restore_diorama_state(state: Dictionary) -> void:
+	creature.set_body_scale(float(state.get("resident_scale",1.0)))
 	resident_enabled = bool(state.get("resident",false))
 	if resident_enabled:
 		var p: Array = state.position

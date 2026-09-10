@@ -261,7 +261,7 @@ func promote(id: int) -> Node3D:
 	return node
 
 func mischief_candidates(kind: String) -> Array:
-	if _habitat_blocked or not owner_scene.routine.active.is_empty(): return []
+	if _habitat_blocked or owner_scene.routine.living.enabled or not owner_scene.routine.active.is_empty() or not owner_scene.routine.living.current.is_empty() or not owner_scene.routine.cave.phase.is_empty(): return []
 	if _world_dirty: rebuild_registry()
 	var ids: Array = _parts.keys()
 	ids.sort_custom(func(a: int,b: int) -> bool:

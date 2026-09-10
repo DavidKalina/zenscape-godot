@@ -22,6 +22,7 @@ var environment_motion := {}
 var tree_peek = preload("res://scripts/creature_tree_peek.gd").new()
 var action_tempo := 1.0
 var locomotion_tempo := 1.0
+var body_scale := 1.0
 var _pending_tremor := 0.0
 var _stumble_strength := 0.0
 var _stumble_duration := 0.0
@@ -61,13 +62,22 @@ var _standing_basis := Basis.IDENTITY
 const WALK_SPEED_MPS := 0.54/(0.62*3.6)
 const WIND_BODY = preload("res://scripts/creature_wind_body.gd")
 
+## Scale the visual rig and its grasp height without scaling the navigation root.
+## Stride calibration below preserves the same cadence at the shorter size.
+func set_body_scale(value: float) -> void:
+	if actor == null or not is_finite(value) or value<0.5 or value>1.5: return
+	var ratio := value/body_scale
+	actor.scale *= ratio
+	grasp_height *= ratio
+	body_scale = value
+
 ## Navigation uses the same effective speed as the walking step.
 func walking_speed(base_speed: float) -> float:
-	return base_speed*locomotion_tempo
+	return base_speed*locomotion_tempo*body_scale
 
 ## Imported gaits declare their stride calibration; legacy Walk/LogCarry keep theirs.
 func gait_reference_speed(clip := "Walk") -> float:
-	return float(player.get_animation(clip).get_meta("ground_speed_mps",WALK_SPEED_MPS))
+	return float(player.get_animation(clip).get_meta("ground_speed_mps",WALK_SPEED_MPS))*body_scale
 
 func gait_step_count(clip := "Walk") -> int:
 	return int(player.get_animation(clip).get_meta("steps_per_loop",2))

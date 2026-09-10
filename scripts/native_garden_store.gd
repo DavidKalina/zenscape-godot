@@ -21,7 +21,10 @@ static func capture(scene: Node3D) -> Dictionary:
 			values[field] = _encode(object.get(field))
 		result[group] = values
 	if scene.has_method("capture_life_state"): result["bigfoot_habits"] = scene.capture_life_state()
+	if scene.has_method("capture_living_state"): result["bigfoot_living"] = scene.capture_living_state()
 	if scene.has_method("capture_diorama_state"): result["diorama"] = scene.capture_diorama_state()
+	if scene.has_method("capture_cave_state"): result["cave_system"] = scene.capture_cave_state()
+	if scene.has_method("capture_fish_state"): result["fish_state"] = scene.capture_fish_state()
 	result["world_visuals"] = scene._world_visuals.document()
 	# Optional, and empty whenever nothing is alight, so a garden that has never
 	# burned costs no bytes and a save written before fire existed still loads.
@@ -61,9 +64,13 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 	if state.has("fire") and not FireField.valid(state.fire): return false
 	if state.has("look") and not preload("res://scripts/scene_look.gd").valid(state.look): return false
 	if state.has("bigfoot_habits") and not preload("res://scripts/bigfoot_habits.gd").valid(state.bigfoot_habits): return false
+	if state.has("bigfoot_living") and not preload("res://scripts/bigfoot_living_world.gd").valid(state.bigfoot_living): return false
+	if state.has("fish_state") and not preload("res://scripts/fidelity_fish.gd").valid_state(state.fish_state): return false
+	if state.has("cave_system") and not preload("res://scripts/cave_genome.gd").valid_state(state.cave_system): return false
 	if state.has("diorama"):
 		var extra: Variant = state.diorama
 		if not extra is Dictionary or not extra.get("resident") is bool: return false
+		if extra.has("resident_scale") and not GardenData._number(extra.resident_scale,0.5,1.5): return false
 		if not extra.get("position") is Array or extra.position.size() != 3: return false
 		for number in extra.position:
 			if not GardenData._number(number,-1000,1000): return false
@@ -92,7 +99,10 @@ static func restore(scene: Node3D, state: Dictionary) -> void:
 	scene._celestial.update_rig()
 	RenderingServer.global_shader_parameter_set("zs_motion_time",scene._motion_time)
 	if scene.has_method("restore_life_state"): scene.restore_life_state(state.get("bigfoot_habits",{}))
+	if scene.has_method("restore_cave_state"): scene.restore_cave_state(state.get("cave_system",{}))
 	if scene.has_method("restore_diorama_state"): scene.restore_diorama_state(state.get("diorama",{}))
+	if scene.has_method("restore_living_state"): scene.restore_living_state(state.get("bigfoot_living",{}))
+	if scene.has_method("restore_fish_state"): scene.restore_fish_state(state.get("fish_state",{}))
 	scene._process(0.0)
 	scene._sync_saved_controls()
 	if scene._landscape_editor != null: scene._landscape_editor.hide()

@@ -60,7 +60,7 @@ func _add_fish(home: Vector3) -> void:
 	tail.position.z = -0.25
 	tail.material_override = material
 	fish.add_child(tail)
-	population.append({"id":"fish:%d" % population.size(),"node":fish,"home":home,"held":false,"reserved":false,"returning":false,"return_age":0.0,"return_from":home,"available":true,"tail":tail})
+	population.append({"id":"fish:%d" % population.size(),"node":fish,"home":home,"spawn_home":home,"held":false,"reserved":false,"returning":false,"return_age":0.0,"return_from":home,"available":true,"stored":false,"tail":tail})
 
 func _wet(point: Vector3) -> bool:
 	var height: Variant = scene.habitat.ground_height(Vector2(point.x,point.z))
@@ -76,6 +76,10 @@ func advance(delta: float) -> void:
 	_time += minf(delta,0.05)
 	for i in range(population.size()):
 		var fish: Dictionary = population[i]
+		if fish.get("stored",false):
+			fish.available = false
+			fish.node.visible = false
+			continue
 		if fish.held: continue
 		if fish.returning:
 			fish.available = _wet(fish.home)
@@ -98,20 +102,71 @@ func advance(delta: float) -> void:
 func available_targets() -> Array:
 	var result: Array = []
 	for fish in population:
-		if fish.available and not fish.held and not fish.returning and _wet(fish.home):
+		if not fish.get("stored",false) and fish.available and not fish.held and not fish.returning and _wet(fish.home):
 			result.append({"id":fish.id,"position":fish.home})
 	return result
 
 func catch_fish(id: String) -> Node3D:
 	for fish in population:
-		if fish.id == id and fish.available and not fish.held and not fish.returning and fish.node.position.distance_to(fish.home)<0.08 and _wet(fish.home):
+		if fish.id == id and not fish.get("stored",false) and fish.available and not fish.held and not fish.returning and fish.node.position.distance_to(fish.home)<0.08 and _wet(fish.home):
 			fish.held = true
 			return fish.node
 	return null
 
+## Adapt a successful catch to the routine's generic carry contract. The
+## callback keeps this population authoritative if the trip home is cancelled;
+## a rejected catch never produces a payload or a decorative stand-in.
+func catch_for_carry(id: String) -> Dictionary:
+	var caught := catch_fish(id)
+	if caught == null: return {}
+	return {
+		"kind":"fish",
+		"source_id":id,
+		"node":caught,
+		"release":func() -> void: release_fish(id),
+		"commit":func() -> bool: return store_fish(id)
+	}
+
+## Commit a held identity to the lair. Keeping its node hidden allows an
+## in-place save restore to reactivate the same fish without manufacturing one.
+func store_fish(id: String) -> bool:
+	for fish in population:
+		if fish.id != id or not fish.held or fish.get("stored",false): continue
+		fish.held = false
+		fish.reserved = false
+		fish.returning = false
+		fish.available = false
+		fish.stored = true
+		fish.node.visible = false
+		return true
+	return false
+
+func capture_state() -> Dictionary:
+	var stored_ids: Array[String] = []
+	var homes := {}
+	for fish in population:
+		if fish.get("stored",false): stored_ids.append(fish.id)
+		homes[fish.id] = [fish.home.x,fish.home.y,fish.home.z]
+	return {"version":1,"stored_ids":stored_ids,"homes":homes}
+
+func restore_state(state: Dictionary) -> void:
+	var stored_ids: Array = state.get("stored_ids",[]) if int(state.get("version",0)) == 1 else []
+	for fish in population:
+		var home: Variant = state.get("homes",{}).get(fish.id)
+		fish.home = Vector3(home[0],home[1],home[2]) if home is Array else fish.spawn_home
+		var stored: bool = fish.id in stored_ids
+		fish.stored = stored
+		fish.held = false
+		fish.reserved = false
+		fish.returning = false
+		fish.return_age = 0.0
+		fish.node.position = fish.home
+		fish.available = not stored and _wet(fish.home)
+		fish.node.visible = fish.available
+
 func release_fish(id: String) -> void:
 	for fish in population:
-		if fish.id == id:
+		if fish.id == id and not fish.get("stored",false):
 			fish.held = false
 			fish.reserved = false
 			fish.returning = true
@@ -122,4 +177,21 @@ func release_fish(id: String) -> void:
 
 func reserve_target(id: String, reserved := true) -> void:
 	for fish in population:
-		if fish.id == id: fish.reserved = reserved
+		if fish.id == id and not fish.get("stored",false): fish.reserved = reserved
+
+static func valid_state(value: Variant) -> bool:
+	if not value is Dictionary or value.size()!=(3 if value.has("homes") else 2) or value.get("version")!=1: return false
+	if not value.get("stored_ids") is Array or value.stored_ids.size()>128: return false
+	var seen := {}
+	for id in value.stored_ids:
+		if not id is String or id.is_empty() or id.length()>64 or seen.has(id): return false
+		seen[id] = true
+	if value.has("homes"):
+		if not value.homes is Dictionary or value.homes.size()>128: return false
+		for id in value.homes:
+			if not id is String or id.is_empty() or id.length()>64: return false
+			var point: Variant = value.homes[id]
+			if not point is Array or point.size()!=3: return false
+			for coordinate in point:
+				if not GardenData._number(coordinate,-64,64): return false
+	return true
