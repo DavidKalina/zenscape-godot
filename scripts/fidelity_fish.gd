@@ -1,9 +1,31 @@
 extends Node3D
 ## A small explicit fish population. Every fish has a persistent identity while
 ## alive in this scene; catching borrows that same node and returning releases it.
+##
+## The pond also restocks. Every seeded home is a slot; a slot emptied by a fish
+## carried home fills again after a while, so the food loop never closes. The
+## clock that drives it is world time (`scene.world_clock.elapsed`), never engine
+## seconds, so a paused or slowed world holds the fish where they are and a fast
+## one breeds them at the same visible pace. Scenes with no clock fall back to a
+## world day of `WorldClock.DEFAULT_DAY_LENGTH` real seconds.
+
+const RESTOCK_DAYS := 2.0    ## World days for an empty pond to refill completely.
+const NIGHT_DAYLIGHT := 0.35 ## The mind's own definition of night.
+const NIGHT_FACTOR := 2.0    ## Fish rise in the dark.
+const RAIN_FACTOR := 2.0     ## Run-off feeds the pond.
+const RAIN_WET := 0.35       ## ground_wet at or above this counts as rain.
+const RAIN_MEMORY := 0.5     ## World days the rain bonus lingers after it dries.
+const MAX_STEP_DAYS := 1.0   ## A skipped or restored day must not dump a season of fish.
+const MAX_FISH := 512        ## Document limit; a restocking pond outlives the old 128.
+
 var scene: Node
 var population: Array[Dictionary] = []
+var home_slots: Array[Vector3] = []  ## The seeded homes; one live fish each.
+var capacity := 0                    ## Live fish the pond carries, set by seeding.
+var restock := 0.0                   ## Fish-fractions banked toward the next spawn, 0..1.
+var rain_memory := 0.0               ## World days of lingering rain bonus left.
 var _time := 0.0
+var _clock_elapsed := -1.0           ## Last world-second reading; negative until first sampled.
 
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
@@ -32,8 +54,14 @@ func setup(owner_scene: Node) -> void:
 				if home.distance_to(other)<2.0: spaced = false
 			if not spaced: continue
 			homes.append(home)
-			_add_fish(home)
 			break
+	seed_homes(homes)
+
+## One fish per authored home, and those same homes become the restock slots.
+func seed_homes(homes: Array[Vector3]) -> void:
+	home_slots = homes.duplicate()
+	capacity = homes.size()
+	for home in homes: _add_fish(home)
 
 func _add_fish(home: Vector3) -> void:
 	var fish := Node3D.new()
@@ -72,7 +100,72 @@ func _wet(point: Vector3) -> bool:
 		if float(pond.level)>point.y and GardenWater.covers(scene.habitat.pond_surface(pond),Vector2(point.x,point.z)): return true
 	return false
 
+## Live identities, whatever they are doing. A fish in his hands still holds its
+## slot, so restocking never doubles up on a catch that is only half made.
+func live_count() -> int:
+	var count := 0
+	for fish in population:
+		if not fish.get("stored",false): count += 1
+	return count
+
+## World days since the last tick, from the clock when the scene has one.
+func _world_days(delta: float) -> float:
+	var clock: Variant = scene.get("world_clock") if scene != null else null
+	var now: Variant = clock.get("elapsed") if clock != null else null
+	if (now is float or now is int) and is_finite(float(now)):
+		var value := float(now)
+		var previous := _clock_elapsed
+		_clock_elapsed = value
+		if previous < 0.0: return 0.0
+		return clampf((value-previous)/WorldClock.SECONDS_PER_DAY,0.0,MAX_STEP_DAYS)
+	if not is_finite(delta) or delta <= 0.0: return 0.0
+	return minf(delta,1.0)/WorldClock.DEFAULT_DAY_LENGTH
+
+func _daylight() -> float:
+	var clock: Variant = scene.get("world_clock") if scene != null else null
+	var value: Variant = clock.get("daylight") if clock != null else null
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 1.0
+
+## Rain is read through the scene's precipitation study when it has one; a scene
+## without weather is simply always dry.
+func _ground_wet() -> float:
+	var precipitation: Variant = scene.get("_precipitation") if scene != null else null
+	var weather: Variant = precipitation.get("surface_weather") if precipitation != null else null
+	var value: Variant = weather.get("ground_wet") if weather != null else null
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
+
+## An empty pond refills over RESTOCK_DAYS, twice as fast overnight and again
+## while the ground is still wet from rain. The pond never passes its capacity.
+func _restock(delta: float) -> void:
+	var days := _world_days(delta)
+	if days <= 0.0 or capacity <= 0: return
+	rain_memory = RAIN_MEMORY if _ground_wet() >= RAIN_WET else maxf(0.0,rain_memory-days)
+	if live_count() >= capacity:
+		restock = 0.0
+		return
+	var rate := float(capacity)/RESTOCK_DAYS
+	if _daylight() < NIGHT_DAYLIGHT: rate *= NIGHT_FACTOR
+	if rain_memory > 0.0: rate *= RAIN_FACTOR
+	restock += days*rate
+	while restock >= 1.0 and live_count() < capacity:
+		if not _restock_one(): break
+		restock -= 1.0
+	restock = clampf(restock,0.0,1.0)
+
+## Fill the first free slot that is under water right now. A drained pond banks
+## its progress instead of dropping a fish onto dry ground.
+func _restock_one() -> bool:
+	for slot in home_slots:
+		var taken := false
+		for fish in population:
+			if not fish.get("stored",false) and fish.spawn_home.distance_to(slot) < 0.01: taken = true
+		if taken or not _wet(slot): continue
+		_add_fish(slot)
+		return true
+	return false
+
 func advance(delta: float) -> void:
+	_restock(delta)
 	_time += minf(delta,0.05)
 	for i in range(population.size()):
 		var fish: Dictionary = population[i]
@@ -147,10 +240,15 @@ func capture_state() -> Dictionary:
 	for fish in population:
 		if fish.get("stored",false): stored_ids.append(fish.id)
 		homes[fish.id] = [fish.home.x,fish.home.y,fish.home.z]
-	return {"version":1,"stored_ids":stored_ids,"homes":homes}
+	return {"version":1,"stored_ids":stored_ids,"homes":homes,"restock":restock,"capacity":capacity}
 
+## Documents written before the pond restocked carry neither key; they keep the
+## capacity this scene seeded and start their next fish from nothing.
 func restore_state(state: Dictionary) -> void:
 	var stored_ids: Array = state.get("stored_ids",[]) if int(state.get("version",0)) == 1 else []
+	restock = clampf(float(state.get("restock",0.0)),0.0,1.0) if _is_number(state.get("restock")) else 0.0
+	rain_memory = 0.0
+	if _is_number(state.get("capacity")): capacity = clampi(int(state.capacity),0,home_slots.size() if not home_slots.is_empty() else MAX_FISH)
 	for fish in population:
 		var home: Variant = state.get("homes",{}).get(fish.id)
 		fish.home = Vector3(home[0],home[1],home[2]) if home is Array else fish.spawn_home
@@ -179,15 +277,24 @@ func reserve_target(id: String, reserved := true) -> void:
 	for fish in population:
 		if fish.id == id and not fish.get("stored",false): fish.reserved = reserved
 
+static func _is_number(value: Variant) -> bool:
+	return (value is float or value is int) and is_finite(float(value))
+
+## Restocking makes both lists open-ended, so the shape is checked by key rather
+## than by size, and older documents that lack the restock keys still load.
 static func valid_state(value: Variant) -> bool:
-	if not value is Dictionary or value.size()!=(3 if value.has("homes") else 2) or value.get("version")!=1: return false
-	if not value.get("stored_ids") is Array or value.stored_ids.size()>128: return false
+	if not value is Dictionary or value.get("version")!=1: return false
+	for key in value:
+		if key not in ["version","stored_ids","homes","restock","capacity"]: return false
+	if not value.get("stored_ids") is Array or value.stored_ids.size()>MAX_FISH: return false
+	if value.has("restock") and not GardenData._number(value.restock,0.0,1.0): return false
+	if value.has("capacity") and (not GardenData._number(value.capacity,0,MAX_FISH) or floor(float(value.capacity))!=float(value.capacity)): return false
 	var seen := {}
 	for id in value.stored_ids:
 		if not id is String or id.is_empty() or id.length()>64 or seen.has(id): return false
 		seen[id] = true
 	if value.has("homes"):
-		if not value.homes is Dictionary or value.homes.size()>128: return false
+		if not value.homes is Dictionary or value.homes.size()>MAX_FISH: return false
 		for id in value.homes:
 			if not id is String or id.is_empty() or id.length()>64: return false
 			var point: Variant = value.homes[id]

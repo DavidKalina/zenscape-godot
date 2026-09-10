@@ -57,8 +57,13 @@ func ranked(context: Dictionary) -> Array[Dictionary]:
 		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12 - wary * 0.14 - storm * 0.22, "The bed could be more comfortable")
 	if food > 0 and hunger >= 0.20:
 		_candidate(result, "eat", hunger * 1.50, "Hungry; food is stored at home")
+	# A well-stocked pond is worth the walk, by less than any other term here: a
+	# full pond must never outweigh an uncomfortable bed. An absent count adds
+	# nothing, so every score predating restocking is unchanged.
+	var pool: Variant = context.get("fish_available", 0)
+	var plenty := clampf(float(pool) / 3.0, 0.0, 1.0) if (pool is int or pool is float) and is_finite(float(pool)) else 0.0
 	if home and context.get("can_fish", false) and food < 3:
-		_candidate(result, "fish", 0.30 + hunger * 0.60 + (0.16 if food == 0 else 0.0) + twilight * 0.28 - storm * 0.25, ("The fish bite at %s" % note) if twilight > 0.5 and note in ["dawn", "dusk"] else "Bring food home for later")
+		_candidate(result, "fish", 0.30 + hunger * 0.60 + (0.16 if food == 0 else 0.0) + twilight * 0.28 + plenty * 0.05 - storm * 0.25, ("The fish bite at %s" % note) if twilight > 0.5 and note in ["dawn", "dusk"] else "Bring food home for later")
 	if _available(context.get("curiosity_target")):
 		var familiar := familiarity(str(context.get("target_id", "")))
 		_candidate(result, "investigate", 0.22 + curiosity * 0.60 - caution * 0.16 - familiar * 0.38 - hunger * 0.12 - wary * 0.26 - storm * 0.30, "An unfamiliar thing deserves a closer look" if familiar < 0.5 else "Checking something familiar")

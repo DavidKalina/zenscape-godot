@@ -42,6 +42,8 @@ func _ready() -> void:
 			fish.population[0].home = home
 			fish.population[0].spawn_home = home
 			fish.population[0].node.position = home
+			# The slot moves with him, so a restocked fish returns to this bank.
+			if not fish.home_slots.is_empty(): fish.home_slots[0] = home
 	for entry in [["Find his cave",_focus_cave],["Visit the cave",_visit_cave]]:
 		var button := Button.new()
 		button.text = entry[0]

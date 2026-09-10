@@ -105,9 +105,11 @@ func choose() -> bool:
 
 func _context() -> Dictionary:
 	var has_home: bool = available() and not scene._chunk_editor.data.tunnels.is_empty()
+	var fish_targets: Array = scene.fish.available_targets()
 	return {"home":has_home,"material_needed":_observed_bed<3,"food_count":_food_count(),
 		"can_gather":has_home and (_material_count()>0 or (_observed_stash.size()<24 and not _material_targets().is_empty())),
-		"can_fish":has_home and _observed_stash.size()<24 and not scene.fish.available_targets().is_empty(),
+		"can_fish":has_home and _observed_stash.size()<24 and not fish_targets.is_empty(),
+		"fish_available":fish_targets.size(),
 		"curiosity_target":not _curiosity.is_empty(),"target_id":str(_curiosity.get("id","")),
 		"ritual_target":true,"home_check_due":_home_check_due<=0.0 or not _observed_home,
 		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0,

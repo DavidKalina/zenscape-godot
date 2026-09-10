@@ -12,7 +12,8 @@ which is exactly what the arc is meant to fix.
 | Ingredient | Lifecycle | Context keys exposed | Actions that read them |
 | --- | --- | --- | --- |
 | Home (a dug tunnel) | None. Dug once, then permanent. | `home` | Gates `sleep`, `gather`, `eat`, `fish`, `check_home`, `play` |
-| Food stash | Drains only. `fish` adds, `eat` removes; nothing restocks the pool. | `food_count`, `can_fish` | `eat` (needs food), `fish` (only below 3 fish) |
+| Food stash | `fish` adds, `eat` removes. | `food_count` | `eat` (needs food), `fish` (only below 3 fish) |
+| **Fish** (slice 1) | Renewable: seeded slots refill toward capacity over ~2 world days, ×2 at night, ×2 for half a day after rain; frozen while world time is. | `can_fish`, `fish_available` | `fish` (a full pond adds a little), `eat` downstream |
 | Bed comfort | Fills to stage 3; storm hours erode it while he is out (slice 2). He only learns on his next visit home. | `material_needed`, `can_gather`, `comfort` | `gather` (a poorer bed scores higher), `sleep` (comfort speeds recovery) |
 | Play stones | Three placements, then done. | `can_play` | `play` |
 | Curiosity targets | Renew as the world changes, but familiarity only ever grows. | `curiosity_target`, `target_id` | `investigate` (familiar things score lower) |
