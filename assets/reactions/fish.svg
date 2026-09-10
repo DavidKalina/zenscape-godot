@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+<defs><linearGradient id="fish" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f7f8c" stop-opacity="1"/><stop offset="0.45" stop-color="#86bab7" stop-opacity="1"/><stop offset="1" stop-color="#ece4c8" stop-opacity="1"/></linearGradient></defs>
+<path d="M 46 45 C 54 29 70 28 78 42" fill="#3f7c86" stroke="#3f3228" stroke-width="3.5" stroke-linejoin="round"/>
+<path d="M 50 80 C 54 94 64 96 70 84" fill="#6fa3a4" stroke="#3f3228" stroke-width="3" stroke-linejoin="round"/>
+<path d="M 16 64 C 28 37 66 30 88 50 L 111 31 C 105 48 105 79 111 97 L 88 78 C 66 99 28 91 16 64 Z" fill="url(#fish)" stroke="#3f3228" stroke-width="4" stroke-linejoin="round"/>
+<path d="M 96 50 L 104 42 M 96 78 L 104 86" stroke="#3f3228" stroke-width="2" opacity="0.35" stroke-linecap="round"/>
+<path d="M 40 51 C 47 59 47 70 40 78" fill="none" stroke="#3f3228" stroke-width="3" opacity="0.7" stroke-linecap="round"/>
+<path d="M 56 52 q 5 5 0 10" fill="none" stroke="#2f5f66" stroke-width="2" opacity="0.35"/><path d="M 66 50 q 5 5 0 10" fill="none" stroke="#2f5f66" stroke-width="2" opacity="0.35"/><path d="M 76 54 q 5 5 0 10" fill="none" stroke="#2f5f66" stroke-width="2" opacity="0.35"/><path d="M 60 64 q 5 5 0 10" fill="none" stroke="#2f5f66" stroke-width="2" opacity="0.35"/><path d="M 70 64 q 5 5 0 10" fill="none" stroke="#2f5f66" stroke-width="2" opacity="0.35"/><path d="M 80 64 q 5 5 0 10" fill="none" stroke="#2f5f66" stroke-width="2" opacity="0.35"/>
+<path d="M 32 49 C 46 40 64 39 78 46" fill="none" stroke="#fffaf0" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+<circle cx="29" cy="58" r="5.5" fill="#fffaf0" stroke="#3f3228" stroke-width="2"/><circle cx="30" cy="58" r="2.8" fill="#3f3228"/>
+<circle cx="28.5" cy="56.5" r="1" fill="#fff"/>
+</svg>

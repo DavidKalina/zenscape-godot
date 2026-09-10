@@ -166,8 +166,7 @@ func _on_creature_state(value: CreatureActor.State) -> void:
 		CreatureActor.State.RECOVERING: _message.text = "Give him a moment to find his feet."
 
 func _show_reaction(symbol: String, text: String) -> void:
-	_reaction.text = symbol
-	_reaction.modulate.a = 1.0
+	_reaction.show_reaction(symbol)
 	_message.text = text
 
 func _call_creature() -> void:

@@ -219,7 +219,7 @@ func _flee(actor: CreatureActor) -> void:
 	actor.notice(_look)
 	if actor.perform_action("Idle",STARTLE):
 		actor.environment_pose = "startle"
-	_react("😨","Fire!")
+	_react("fire_fright","Fire!")
 
 func _curiosity(actor: CreatureActor) -> bool:
 	var center: Vector3 = _field.ash_center()
@@ -323,7 +323,7 @@ func _run_watch(actor: CreatureActor, dt: float) -> bool:
 				_finish("watch")
 				return false
 			actor.environment_pose = "fire_watch"
-			_react("😮","Watching the fire.")
+			_react("fire_watch","Watching the fire.")
 		return true
 	# Reuse the horizon watch: head tracks the flame, one hand shades the eyes.
 	var t := actor._age+minf(dt,0.05)*actor.action_tempo
@@ -373,7 +373,7 @@ func _run_warm(actor: CreatureActor, dt: float) -> bool:
 				_finish("warm")
 				return false
 			actor.environment_pose = "fire_warm"
-			_react("🔥","Still warm.")
+			_react("fire_warm","Still warm.")
 		return true
 	if actor.state != CreatureActor.State.ACTION:
 		_warm_cooldown = WARM_COOLDOWN

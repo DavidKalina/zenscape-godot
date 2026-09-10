@@ -18,8 +18,7 @@ var _nav_view := MeshInstance3D.new()
 var _life_status := Label.new()
 var _habitat_changed := false
 var _habitat_blocked := false
-var _reaction := Label3D.new()
-var _reaction_time := 0.0
+var _reaction = preload("res://scripts/reaction_bubble.gd").new()
 
 func _ready() -> void:
 	super._ready()
@@ -56,11 +55,7 @@ func _ready() -> void:
 	brain.planning_allowed = func() -> bool: return not _paused and resident_enabled and not _habitat_changed
 	creature.add_child(_reaction)
 	_reaction.position.y = 3.3
-	_reaction.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_reaction.font_size = 64
-	brain.reaction.connect(func(symbol: String, _text: String) -> void:
-		_reaction.text = symbol
-		_reaction_time = 2.0)
+	brain.reaction.connect(func(symbol: String, _text: String) -> void: _reaction.show_reaction(symbol))
 	var overlay := CanvasLayer.new()
 	add_child(overlay)
 	var panel := VBoxContainer.new()
@@ -144,6 +139,7 @@ func _process(delta: float) -> void:
 	var present := not _habitat_blocked and _growth.terrain >= 0.995
 	creature.visible = present and (not routine.cave.concealed or lair != null)
 	var stopped := _paused or not present
+	_reaction.frozen = stopped
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
 			var observing: bool = environment_life != null and environment_life.advance(delta)
@@ -160,8 +156,6 @@ func _process(delta: float) -> void:
 		if fish != null: fish.advance(delta)
 		creature.wet_coat.rain = 0.0 if routine.cave.sheltered() else _precipitation.state.x
 		creature.advance(delta)
-		_reaction_time = maxf(0.0,_reaction_time-delta)
-		_reaction.visible = _reaction_time > 0.0
 	creature.visible = present and (not routine.cave.concealed or lair != null)
 	if creature.state == CreatureActor.State.STUMBLING and not stopped:
 		_life_status.text = "Bigfoot · finding his balance · P pause"

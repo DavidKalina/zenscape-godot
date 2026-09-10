@@ -150,6 +150,7 @@ func request(kind: String, chosen: Dictionary = {}, invited := false) -> bool:
 		active = kind
 		if kind == "fish": scene.fish.reserve_target(item.id)
 		target = item
+		scene.brain.reaction.emit(kind,{"fish":"Fancies a fish.","stone":"That stone wants throwing.","tree":"That tree needs a good shake."}.get(kind,""))
 		_phase = "approach"
 		_elapsed = 0.0
 		return true

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="400" viewBox="0 0 240 200">
+<defs><linearGradient id="shout" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff4d8" stop-opacity="1"/><stop offset="0.6" stop-color="#fbe3b0" stop-opacity="1"/><stop offset="1" stop-color="#f2c98a" stop-opacity="1"/></linearGradient></defs>
+<path d="M 130.0 12.0 L 147.9 32.3 L 173.2 25.0 L 181.9 42.6 L 205.0 47.7 L 202.2 65.7 L 225.1 77.5 L 201.8 92.5 L 226.7 113.1 L 185.3 114.3 L 202.0 146.2 L 160.5 129.0 L 155.7 163.2 L 130.0 136.8 L 105.9 158.5 L 95.5 134.6 L 40.0 194.0 L 65.7 118.8 L 44.9 109.9 L 53.0 92.9 L 35.7 77.5 L 61.8 66.9 L 45.6 42.9 L 85.1 48.5 L 79.7 15.0 L 114.3 38.9 Z" transform="translate(5 6)" fill="#34261a" fill-opacity="0.22"/>
+<path d="M 130.0 12.0 L 147.9 32.3 L 173.2 25.0 L 181.9 42.6 L 205.0 47.7 L 202.2 65.7 L 225.1 77.5 L 201.8 92.5 L 226.7 113.1 L 185.3 114.3 L 202.0 146.2 L 160.5 129.0 L 155.7 163.2 L 130.0 136.8 L 105.9 158.5 L 95.5 134.6 L 40.0 194.0 L 65.7 118.8 L 44.9 109.9 L 53.0 92.9 L 35.7 77.5 L 61.8 66.9 L 45.6 42.9 L 85.1 48.5 L 79.7 15.0 L 114.3 38.9 Z" fill="url(#shout)" stroke="#3f3228" stroke-width="5" stroke-linejoin="round"/>
+<path d="M 58 70 C 66 52 84 42 106 38" fill="none" stroke="#fffaf0" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+<defs><radialGradient id="puff" cx="0.4" cy="0.3" r="0.9"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ddd6ca"/></radialGradient></defs>
+<path d="M 17.5 98 A 46.5 46.5 0 0 1 110.5 98" fill="none" stroke="#3f3228" stroke-width="50"/>
+<path d="M 17.5 98 A 46.5 46.5 0 0 1 110.5 98" fill="none" stroke="#fbf3e2" stroke-width="44"/>
+<path d="M 14 98 A 50 50 0 0 1 114 98" fill="none" stroke="#d8674f" stroke-width="7.5"/>
+<path d="M 21 98 A 43 43 0 0 1 107 98" fill="none" stroke="#e89a4f" stroke-width="7.5"/>
+<path d="M 28 98 A 36 36 0 0 1 100 98" fill="none" stroke="#eccb62" stroke-width="7.5"/>
+<path d="M 35 98 A 29 29 0 0 1 93 98" fill="none" stroke="#8dbb62" stroke-width="7.5"/>
+<path d="M 42 98 A 22 22 0 0 1 86 98" fill="none" stroke="#5f9cc4" stroke-width="7.5"/>
+<path d="M 49 98 A 15 15 0 0 1 79 98" fill="none" stroke="#8a76b8" stroke-width="7.5"/>
+<path d="M 26 70 C 36 50 52 40 70 38" fill="none" stroke="#fffaf0" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+<circle cx="12" cy="100" r="11" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="24" cy="96" r="13" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="36" cy="102" r="9" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="22" cy="106" r="9" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="12" cy="100" r="11" fill="url(#puff)"/>
+<circle cx="24" cy="96" r="13" fill="url(#puff)"/>
+<circle cx="36" cy="102" r="9" fill="url(#puff)"/>
+<circle cx="22" cy="106" r="9" fill="url(#puff)"/>
+<circle cx="104" cy="100" r="11" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="116" cy="98" r="12" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="94" cy="104" r="9" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="110" cy="107" r="9" fill="#3f3228" stroke="#3f3228" stroke-width="6"/>
+<circle cx="104" cy="100" r="11" fill="url(#puff)"/>
+<circle cx="116" cy="98" r="12" fill="url(#puff)"/>
+<circle cx="94" cy="104" r="9" fill="url(#puff)"/>
+<circle cx="110" cy="107" r="9" fill="url(#puff)"/>
+</svg>

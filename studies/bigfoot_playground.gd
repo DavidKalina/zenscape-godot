@@ -5,7 +5,7 @@ var creature: CreatureActor
 var _play_ui := CanvasLayer.new()
 var _play_panel := PanelContainer.new()
 var _message := Label.new()
-var _reaction := Label3D.new()
+var _reaction = preload("res://scripts/reaction_bubble.gd").new()
 var _pressed_creature := false
 var _carrying := false
 var _press_at := Vector2.ZERO
@@ -47,15 +47,9 @@ func _ready() -> void:
 		if "_n7_" not in mesh.name and "_n8_" not in mesh.name:
 			mesh.material_override = coat
 	creature.state_changed.connect(_on_creature_state)
-	creature.landed.connect(func() -> void:
-		_reaction.text = "!"
-		_reaction.modulate.a = 1.0)
+	creature.landed.connect(func() -> void: _reaction.show_reaction("!"))
 	creature.add_child(_reaction)
 	_reaction.position.y = 3.15
-	_reaction.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_reaction.font_size = 72
-	_reaction.pixel_size = 0.006
-	_reaction.modulate = Color(1.0,0.92,0.65,0.0)
 	_build_play_ui()
 	var disc := CylinderMesh.new()
 	disc.top_radius = 0.42
@@ -115,8 +109,7 @@ func _on_creature_state(value: CreatureActor.State) -> void:
 		CreatureActor.State.LANDING: _message.text = "Finding his feet…"
 		CreatureActor.State.ALERT:
 			_message.text = "You have his attention."
-			_reaction.text = "?"
-			_reaction.modulate.a = 1.0
+			_reaction.show_reaction("?")
 		CreatureActor.State.IDLE: _message.text = "He seems curious about this place."
 
 func reset_creature() -> void:
@@ -233,7 +226,7 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	_bigfoot.visible = false
 	if creature == null: return
-	_reaction.modulate.a = maxf(0.0,_reaction.modulate.a-delta*0.65)
+	_reaction.frozen = _paused
 	if _carrying:
 		_update_carry(get_viewport().get_mouse_position(),minf(delta,0.05))
 	else:
