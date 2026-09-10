@@ -1,4 +1,4 @@
-extends "res://studies/bigfoot_cave.gd"
+extends "res://studies/bigfoot_lair.gd"
 ## Product entry point. Study scenes remain available through their launchers.
 var library_path := "user://dioramas"
 var recent_file := "user://diorama-recent.cfg"
@@ -59,6 +59,7 @@ func _ready() -> void:
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
 	_defaults.diorama.resident = false
+	_defaults.cave_system = {}
 	# New uses neutral lighting; Fidelity keeps its original atmosphere.
 	_make_shell()
 	_resident_play.setup(self)
@@ -128,6 +129,10 @@ func _frame_title() -> void:
 	_world_visuals.peak_altitude = clampf(Array(_chunk_editor.data.heights).max()*0.6,2.0,24.0)
 	_world_visuals.rock_style = 1 if title_recipe.has("terrain_recipe") else 0
 	_update_camera()
+
+func _overview() -> void:
+	if lair != null: _focus_stack()
+	else: _frame_diorama()
 
 func _frame_diorama() -> void:
 	_auto_orbit_speed = 0.055
@@ -210,7 +215,7 @@ func _make_shell() -> void:
 		else:
 			set_building(true)
 			_build_palette._start_placing("bigfoot"))
-	_button(_toolbar,"Overview",_frame_diorama)
+	_button(_toolbar,"Overview",_overview)
 	_home_button = _button(_toolbar,"His spot",_focus_resting_spot)
 	_home_button.disabled = true
 	# The everyday shell shares the dock's warm, quiet controls.
@@ -227,11 +232,24 @@ func _make_shell() -> void:
 		var action: Button = _toolbar.get_child(index)
 		action.hide()
 		_world_menu.get_popup().add_item(action.text,index)
+	_world_menu.get_popup().add_separator()
+	_world_menu.get_popup().add_item("See both stories",100)
+	_world_menu.get_popup().add_item("Look through lair windows",101)
+	_world_menu.get_popup().add_item("Find cave entrance",102)
 	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
+		if id >= 100:
+			if lair == null: return
+			match id:
+				100: _focus_stack()
+				101: _focus_lair()
+				102: _focus_cave()
+			return
 		var action: Button = _toolbar.get_child(id)
 		if not action.disabled: action.pressed.emit())
 	_world_menu.about_to_popup.connect(func() -> void:
-		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled))
+		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled)
+		for id in [100,101,102]:
+			_world_menu.get_popup().set_item_disabled(_world_menu.get_popup().get_item_index(id),lair == null))
 	_gust_button = _button(_toolbar,"Wind gust",_resident_play.toggle_gust)
 	_gust_button.toggle_mode = true
 	_gust_button.tooltip_text = "Drag the ground to aim wind; release to send · G"
@@ -397,8 +415,8 @@ func launch_fidelity() -> void:
 	_menu_orbit = false
 	close_menu()
 	set_building(false)
-	_focus_cave()
-	_notice.text = "Fidelity world · Bigfoot is home."
+	_focus_stack()
+	_notice.text = "Fidelity world · World menu explores both stories."
 
 func new_diorama() -> void:
 	if _chunk_editor.forming or not save_current(): return
@@ -589,7 +607,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_R:
-			_frame_diorama()
+			_overview()
 			return
 	super._unhandled_input(event)
 	_build_button.text = "Enjoy" if _chunk_editor.active else "Build"

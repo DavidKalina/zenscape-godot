@@ -32,6 +32,11 @@ func _run() -> void:
 	check(scene.habitat.solids.size()>100 and scene.habitat.waters.size()>0,"Fidelity retains its scenery and water")
 	check(not scene.fish.population.is_empty(),"Fidelity has its pond fish")
 	check(scene._chunk_editor.data.tunnels.size()==1 and scene.cave_sites.get_child_count()==1,"Startup includes Bigfoot's prepared cave")
+	check(scene.lair != null and scene.lair.position.y < 0,"Startup includes the underground story")
+	scene._world_menu.get_popup().id_pressed.emit(101)
+	check(is_equal_approx(scene.polar,1.63),"World menu inspects the lower story")
+	scene._world_menu.get_popup().id_pressed.emit(100)
+	check(is_equal_approx(scene.distance,64.0) and is_equal_approx(scene.polar,1.3),"World menu frames both stories")
 	for tuner in get_nodes_in_group("tree_motion_tuner"):
 		check(not tuner.visible,"Startup keeps the motion tuning panel hidden")
 	scene.show_menu()
@@ -47,6 +52,9 @@ func _run() -> void:
 	var first: String = editor.save_path
 	check(editor.data.blank and editor.data.objects.is_empty() and editor.data.ponds.is_empty() and editor.data.streams.is_empty(),"New world is truly blank")
 	check(not scene.resident_enabled and editor.active,"New world opens in Build without Bigfoot")
+	check(scene.lair == null,"New diorama has no inherited lower story")
+	scene._world_menu.about_to_popup.emit()
+	check(scene._world_menu.get_popup().is_item_disabled(scene._world_menu.get_popup().get_item_index(101)),"Lair inspection is unavailable in a blank world")
 	check(editor.data._undo.is_empty(),"Undo cannot bring the previous world into a new one")
 	var id: int = editor.data.place("rock",Vector2(4,3),0.0,0.4)
 	editor.refresh()
@@ -86,12 +94,14 @@ func _run() -> void:
 	check(editor.data._undo.is_empty() and editor.data._redo.is_empty(),"Fidelity cannot undo into the previous world")
 	check(not scene.fish.population.is_empty(),"Relaunch restores pond fish")
 	check(editor.data.tunnels.size()==1 and scene.cave_sites.get_child_count()==1,"Fidelity menu action restores the cave")
+	check(scene.lair != null,"Fidelity relaunch restores the lower story")
 	scene.fish.population[0].stored = true
 	check(scene.save_current(),"Fidelity saves successfully")
 	var fidelity_path: String = editor.save_path
 	scene.new_diorama()
 	check(scene.open_path(fidelity_path) and scene.resident_enabled and not editor.data.blank,"Saved Fidelity can be reopened")
 	check(scene.fish.population[0].stored,"Reopening preserves stored fish")
+	check(scene.lair != null,"Save and reopen preserve the lower story")
 	scene.show_menu()
 	for size in [Vector2i(480,320),Vector2i(960,640),Vector2i(1440,900)]:
 		root.size = size

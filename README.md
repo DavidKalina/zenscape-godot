@@ -7,13 +7,17 @@ editable diorama: shape a place with a brush, then gradually bring it to life.
 
 Launch **`run-diorama.command`**, or press **F5** in Godot, to enter the inhabited
 **Fidelity world**. Choose **Menu → Fidelity world** anytime to start a fresh
-copy of that world, including Bigfoot, his cave, and the original scenery. Your current
+copy of that world, including Bigfoot, his two-story cave, and the original scenery. Your current
 world is saved before switching. **Menu** also offers New, Open, and Settings.
 **New diorama** opens a bare, flat chunk in Build mode. Each new diorama gets
 its own JSON file under Godot's `user://dioramas` folder. The current world is
 saved before New, Open, or Quit; a failed save prevents switching. **Continue**
 resumes the current world, or opens the last successfully saved/opened file.
 **Open diorama** chooses a file; **Save a copy** gives it a name and location.
+
+**World → See both stories** frames the forest and underground lair together.
+**Look through lair windows** inspects downstairs; **Find cave entrance** returns
+to the surface entrance. **Overview** and **R** also frame both stories when present.
 
 The top bar offers **Build / Enjoy**, **Save**, and **World**. World contains
 **Landscapes**, **Colors & sky**, **Bigfoot**, **Overview**, and **His spot**. Invite Bigfoot by choosing his button and clicking dry, open
