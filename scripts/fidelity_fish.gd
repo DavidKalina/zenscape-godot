@@ -60,7 +60,7 @@ func _add_fish(home: Vector3) -> void:
 	tail.position.z = -0.25
 	tail.material_override = material
 	fish.add_child(tail)
-	population.append({"id":"fish:%d" % population.size(),"node":fish,"home":home,"held":false,"reserved":false,"returning":false,"return_age":0.0,"return_from":home,"available":true,"stored":false,"tail":tail})
+	population.append({"id":"fish:%d" % population.size(),"node":fish,"home":home,"spawn_home":home,"held":false,"reserved":false,"returning":false,"return_age":0.0,"return_from":home,"available":true,"stored":false,"tail":tail})
 
 func _wet(point: Vector3) -> bool:
 	var height: Variant = scene.habitat.ground_height(Vector2(point.x,point.z))
@@ -143,13 +143,17 @@ func store_fish(id: String) -> bool:
 
 func capture_state() -> Dictionary:
 	var stored_ids: Array[String] = []
+	var homes := {}
 	for fish in population:
 		if fish.get("stored",false): stored_ids.append(fish.id)
-	return {"version":1,"stored_ids":stored_ids}
+		homes[fish.id] = [fish.home.x,fish.home.y,fish.home.z]
+	return {"version":1,"stored_ids":stored_ids,"homes":homes}
 
 func restore_state(state: Dictionary) -> void:
 	var stored_ids: Array = state.get("stored_ids",[]) if int(state.get("version",0)) == 1 else []
 	for fish in population:
+		var home: Variant = state.get("homes",{}).get(fish.id)
+		fish.home = Vector3(home[0],home[1],home[2]) if home is Array else fish.spawn_home
 		var stored: bool = fish.id in stored_ids
 		fish.stored = stored
 		fish.held = false
@@ -176,10 +180,18 @@ func reserve_target(id: String, reserved := true) -> void:
 		if fish.id == id and not fish.get("stored",false): fish.reserved = reserved
 
 static func valid_state(value: Variant) -> bool:
-	if not value is Dictionary or value.size()!=2 or value.get("version")!=1: return false
+	if not value is Dictionary or value.size()!=(3 if value.has("homes") else 2) or value.get("version")!=1: return false
 	if not value.get("stored_ids") is Array or value.stored_ids.size()>128: return false
 	var seen := {}
 	for id in value.stored_ids:
 		if not id is String or id.is_empty() or id.length()>64 or seen.has(id): return false
 		seen[id] = true
+	if value.has("homes"):
+		if not value.homes is Dictionary or value.homes.size()>128: return false
+		for id in value.homes:
+			if not id is String or id.is_empty() or id.length()>64: return false
+			var point: Variant = value.homes[id]
+			if not point is Array or point.size()!=3: return false
+			for coordinate in point:
+				if not GardenData._number(coordinate,-64,64): return false
 	return true

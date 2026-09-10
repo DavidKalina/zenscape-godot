@@ -21,7 +21,7 @@ survive each of these changes.
 
 **Gather a branch** requests an existing nearby tree interaction: Bigfoot shakes
 the tree, carries a loose branch home, and adds it to a visible stockpile.
-**Bring home a fish** requires a reachable nearby fishing spot. A successful
+**Bring home a fish** searches the chunk for a reachable fishing spot. A successful
 catch carries the actual fish identity home; cancellation releases it, while a
 completed delivery removes it from the available population. The stockpile holds
 24 items. Fruit gathering remains future work; no fruit-producing trees are
@@ -43,6 +43,10 @@ connectivity, palette independence, schemas, and unchanged surface generation.
 fish depletion, regeneration, and legacy surface restoration.
 `tests/test_bigfoot_lair_foraging.gd` and `test_bigfoot_lair_fishing.gd` exercise
 collection, carry, deposit, cancellation, capacity, and source ownership.
+`tests/test_bigfoot_fish_invitation.gd` exercises the actual fishing button from
+the untouched cave spawn through delivery. Run these scene checks with Metal
+Forward+ rather than `--headless`: the dummy renderer produces a different
+imported-world navigation layout and does not validate the visible game's route.
 `tests/test_bigfoot_lair.gd` checks the cave lifecycle, shared visibility, geometry,
 pause, redressing, and safe return. Existing cave and cave-store checks also pass.
 `tools/capture_bigfoot_stack.gd` renders front, side, back, and lower views to

@@ -8,8 +8,9 @@
     "interior_dressing": "Open cutaway preserved. Seeded floor hills and level routes, palette/moisture materials, bed, puddle, droplets, stalactites and stalagmites. Final front capture inspected.",
     "resident_lifecycle": "Actual resident walks through surface mouth, sleeps below, returns outside; pause, cancellation, exterior save position verified.",
     "generation": "Version 1 companion cave genome; 100-seed replay and connectivity checks pass without changing surface genome output. Layout guides open terrain rather than enclosing chambers.",
-    "persistence": "Actual main-game save/reopen preserves cave seed, palette, stash and depleted fish identities; 12 assertions pass.",
-    "foraging": "Tree shake, visible branch carry and deposit pass; cancellation, full stash, failed commit and exact-once release covered."
+    "persistence": "Actual main-game save/reopen preserves cave seed, palette, stash, depleted fish identities and authored fish homes; 13 assertions pass.",
+    "foraging": "Tree shake, visible branch carry and deposit pass; cancellation, full stash, failed commit and exact-once release covered.",
+    "fishing_access": "Cave shifted farther into its corner; graded seat and dry bank connect it around the mountain shoulder to a real pond fish. No global navigation safety limits relaxed."
   },
   "test": {
     "script": "tests/test_bigfoot_lair.gd",
@@ -21,12 +22,13 @@
   "review": "Spec review passed. Standards lighting finding addressed with shadowed interior lights and isolated exterior fill.",
   "additional_tests": {
     "cave_genome": "9 assertions passed across 100 seeds",
-    "cave_system_store": "12 assertions passed",
+    "cave_system_store": "13 assertions passed, including authored fish homes across main-game save/reopen.",
     "bigfoot_cave": "26 assertions passed",
     "bigfoot_cave_store": "9 assertions passed",
     "bigfoot_lair_foraging": "failures=0",
     "bigfoot_routine_ownership": "failures=0",
-    "bigfoot_lair_fishing": "16 assertions passed, including actual catch, connected shore-to-cave route, cancellation, deposit and depletion restore"
+    "bigfoot_lair_fishing": "Metal Forward+ on corrected world: actual catch, cancellation, full delivery, safe exit and source depletion checked. Earlier headless evidence was insufficient for the visible world.",
+    "fish_invitation": "Metal Forward+ from untouched cave spawn: 4 assertions passed, actual request/catch/delivery/source depletion and persistent rejection feedback."
   },
   "limitations": [
     "Underground transition remains hidden, not a walked connecting route.",

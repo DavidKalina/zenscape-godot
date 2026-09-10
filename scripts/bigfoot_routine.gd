@@ -95,7 +95,7 @@ func advance(delta: float) -> bool:
 	if not request(kind): _next_action = _clock+3.0
 	return not active.is_empty() or not cave.phase.is_empty()
 
-func request(kind: String, chosen: Dictionary = {}) -> bool:
+func request(kind: String, chosen: Dictionary = {}, invited := false) -> bool:
 	if not cave.phase.is_empty(): return false
 	if kind in ["sleep","hibernate"] and cave.request(kind): return true
 	if kind in ["stone","tree"] and scene.has_method("resident_activity_owned"): return false
@@ -133,8 +133,10 @@ func request(kind: String, chosen: Dictionary = {}) -> bool:
 	var candidates := _targets(kind) if chosen.is_empty() else [chosen]
 	candidates.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return scene.creature.position.distance_squared_to(a.position)<scene.creature.position.distance_squared_to(b.position))
 	for item: Dictionary in candidates:
-		if _clock < float(_cooldowns.get(item.id,0.0)): continue
-		if scene.creature.position.distance_to(item.position) > 11.0: continue
+		# A player invitation may send him across the chunk; autonomous choices
+		# stay local and respect the ordinary repeat cooldown.
+		if not invited and _clock < float(_cooldowns.get(item.id,0.0)): continue
+		if not invited and scene.creature.position.distance_to(item.position) > 11.0: continue
 		if not _plan_approach(item,kind): continue
 		scene.brain.reset_behavior()
 		scene.creature.notice(item.position)

@@ -7,9 +7,12 @@ func _ready() -> void:
 	get_window().title = "ZenScape · Bigfoot's cave · woodland corner"
 	var data: NativeTerrainData = _chunk_editor.data
 	data.begin_stroke()
-	var site := {"start":[3.0,1.7,7.0],"heading":PI/2.0,"width":6.4,"height":4.8,"length":7.2,"sealed":false,"cave":true,"cave_scale":1.0}
-	# A gentle earthen seat supports the den in its own woodland corner.
-	data.brush(Vector2(7.2,7.0),6.8,128.0,"flatten",1.7)
+	var site := {"start":[4.5,1.7,7.6],"heading":PI/2.0,"width":6.4,"height":4.8,"length":7.2,"sealed":false,"cave":true,"cave_scale":1.0}
+	# An exact earthen seat supports the den, then eases back into the original
+	# woodland over a broad apron. A saturated flatten stroke left nearly all of
+	# its falloff in one grid cell and isolated the entrance on a plateau.
+	_grade_cave_seat(data,Vector2(7.2,7.0),7.0,10.0,1.7)
+	_grade_fishing_path(data)
 	data.tunnels.append(site)
 	var site_pose := preload("res://scripts/bigfoot_cave_site.gd").pose(site)
 	var bounds := preload("res://scripts/bigfoot_cave_site.gd").bounds(site)
@@ -32,6 +35,13 @@ func _ready() -> void:
 	_refresh_habitat()
 	var arrival: Variant = navigation.nearest_safe(site_pose*Vector3(0,0,2.5))
 	if arrival != null: creature.reset_at(arrival)
+	# Author the first fish beside the finished bank, after the cave earthwork.
+	if not fish.population.is_empty():
+		var home := Vector3(4.25,0.3,-2.75)
+		if fish._wet(home):
+			fish.population[0].home = home
+			fish.population[0].spawn_home = home
+			fish.population[0].node.position = home
 	for entry in [["Find his cave",_focus_cave],["Visit the cave",_visit_cave]]:
 		var button := Button.new()
 		button.text = entry[0]
@@ -39,6 +49,32 @@ func _ready() -> void:
 		_life_status.get_parent().add_child(button)
 	_focus_cave()
 	if "--visit-cave" in OS.get_cmdline_user_args(): _visit_cave()
+
+func _grade_cave_seat(data: NativeTerrainData, center: Vector2, inner_radius: float, outer_radius: float, level: float) -> void:
+	var original := data.heights.duplicate()
+	for i in range(data.points.size()):
+		var distance: float = data.points[i].distance_to(center)
+		if distance >= outer_radius: continue
+		var blend := smoothstep(inner_radius,outer_radius,distance)
+		data.heights[i] = lerpf(level,float(original[i]),blend)
+
+func _grade_fishing_path(data: NativeTerrainData) -> void:
+	# A short dry bank bends around the cave and the mountain's steep shoulder.
+	# Keep the original pond and foliage; soften the path's edges into the ground.
+	var route := PackedVector3Array([Vector3(3.5,1.7,2.0),Vector3(3.5,1.55,0.25),Vector3(5.5,1.15,-0.5)])
+	for i in range(data.points.size()):
+		var distance := INF
+		var level := 0.0
+		for j in range(1,route.size()):
+			var a := Vector2(route[j-1].x,route[j-1].z)
+			var b := Vector2(route[j].x,route[j].z)
+			var t := clampf((data.points[i]-a).dot(b-a)/a.distance_squared_to(b),0.0,1.0)
+			var d := data.points[i].distance_to(a.lerp(b,t))
+			if d<distance:
+				distance=d
+				level=lerpf(route[j-1].y,route[j].y,t)
+		if distance<1.6:
+			data.heights[i]=lerpf(level,float(data.heights[i]),smoothstep(0.85,1.6,distance))
 
 func _visit_cave() -> void:
 	if not routine.cave.phase.is_empty(): return

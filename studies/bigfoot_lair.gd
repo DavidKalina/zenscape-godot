@@ -1,5 +1,7 @@
 extends "res://studies/bigfoot_cave.gd"
 ## Two visible stories in the same world; inspection only changes camera framing.
+var _invitation_notice := ""
+var _invitation_notice_time := 0.0
 
 
 func _ready() -> void:
@@ -43,6 +45,9 @@ func _process(delta: float) -> void:
 	creature.visible = resident_enabled and not _habitat_blocked and _growth.terrain>=0.995
 	if routine.cave.concealed:
 		_life_status.text = ("Bigfoot · storing supplies downstairs · P pause" if routine.cave.reason=="forage" else "Bigfoot · sleeping downstairs · P pause") if not _paused else "Bigfoot · paused · P pause"
+	if _invitation_notice_time>0.0:
+		_invitation_notice_time = maxf(0.0,_invitation_notice_time-delta)
+		_life_status.text = _invitation_notice
 
 func _focus_bigfoot() -> void:
 	if routine != null and routine.cave.concealed and lair != null:
@@ -71,4 +76,8 @@ func _gather_branch() -> void:
 
 func _bring_fish() -> void:
 	routine.cancel("fishing invited")
-	if not routine.request("fish"): _life_status.text = "Bigfoot · no nearby reachable fishing spot"
+	_invitation_notice_time = 0.0
+	if not routine.request("fish",{},true):
+		_invitation_notice = "Bigfoot · no reachable fishing spot · try another shore or clear a path"
+		_invitation_notice_time = 6.0
+		_life_status.text = _invitation_notice

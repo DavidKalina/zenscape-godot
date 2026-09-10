@@ -20,6 +20,8 @@ func run() -> void:
 	scene.restore_cave_state({"genome":settings,"stash":[]})
 	check(not scene.fish.population.is_empty(),"Main game retains fish identities")
 	var fish_id: String = scene.fish.population[0].id
+	var fish_home: Vector3 = scene.fish.population[0].home+Vector3(0.125,0,0)
+	scene.fish.population[0].home = fish_home
 	scene.fish.population[0].held = true
 	check(scene.lair.receive_item("branch") and scene.lair.receive_item_checked("fish",func() -> bool: return scene.fish.store_fish(fish_id)),"Generated cave accepts resources after source commitment")
 	check(scene.lair.stockpile.get_child_count()==2,"Stockpile draws one object per stored resource")
@@ -31,6 +33,7 @@ func run() -> void:
 	scene.set_process(false)
 	check(scene.lair.genome.seed==52 and scene.lair.genome.palette=="blue slate" and scene.lair.stash==["branch","fish"],"Layout seed, palette and stash survive actual save/reopen")
 	check(fish_id in scene.fish.capture_state().stored_ids and scene.fish.population[0].stored,"Delivered fish stays depleted after actual save/reopen")
+	check(scene.fish.population[0].home.is_equal_approx(fish_home),"Authored fish starting positions survive actual save/reopen")
 	var first: PackedByteArray = var_to_bytes(scene.lair.layout)
 	var replacement: Dictionary = scene.capture_cave_state()
 	replacement.genome.seed = 53
