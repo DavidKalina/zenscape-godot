@@ -62,6 +62,9 @@ var _celestial: RefCounted
 ## World time, owned by the scene and shared with every system that cares what
 ## hour it is. `scene.get("world_clock")` is the supported way to reach it.
 var world_clock: WorldClock = null
+## Seeded weather drift over world hours. Off by default: a garden's sky stays
+## where the player put it until they let the weather drift.
+var weather_scheduler: WeatherScheduler = null
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
 var _cycle_toggle: CheckBox
@@ -143,6 +146,8 @@ func _ready() -> void:
 	_celestial.setup(_lights)
 	world_clock = WorldClock.new()
 	_celestial.attach_clock(world_clock)
+	weather_scheduler = WeatherScheduler.new(randi())
+	weather_scheduler.enabled = false
 	_celestial.look.changed.connect(_update_scene_look)
 	_atmosphere = preload("res://studies/atmosphere.gd").new()
 	add_child(_atmosphere)
@@ -510,6 +515,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Y: _growth.replay()
 			KEY_ESCAPE: _chunk_editor.set_active(false)
 
+## The scheduler follows whatever the player last picked (dropdown, mood, look
+## editor or command line all end in set_weather), then drifts from there once
+## enabled. Reconciling here means no picker needs to know the scheduler exists.
+func _advance_weather_drift() -> void:
+	if weather_scheduler == null: return
+	var abs_hour := world_clock.day * 24.0 + world_clock.hour
+	var picked: String = _precipitation.PRESET_NAMES[_precipitation.preset_index]
+	if picked != weather_scheduler.current:
+		weather_scheduler.set_current(picked, abs_hour)
+	if _paused or not weather_scheduler.enabled: return
+	for name in weather_scheduler.advance(abs_hour):
+		_precipitation.cloud_override = -1.0
+		_precipitation.cold_override = -1.0
+		_precipitation.set_weather(WeatherScheduler.preset_index(name))
+
 func _process(delta: float) -> void:
 	# An occluded macOS movie window may update without drawing. Advance once
 	# per recorded frame so offscreen stalls cannot fast-forward the evidence.
@@ -522,6 +542,7 @@ func _process(delta: float) -> void:
 	# Time first: every system that asks what hour it is this frame reads the
 	# same answer, and the celestial rig just renders the clock's phase.
 	world_clock.advance(delta, _paused)
+	_advance_weather_drift()
 	_growth.advance(delta, _paused, _tremor)
 	if _atmosphere.wind_trails != null: _atmosphere.wind_trails.visible = _growth.terrain>=0.995
 	_terrain_slider.set_value_no_signal(_growth.terrain)

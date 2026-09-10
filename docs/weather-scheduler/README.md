@@ -101,24 +101,25 @@ orchestrator can leave it at 0 until a calendar exists.
 - `history` keeps the last 32 entries, `{"hour": float, "from": String, "to": String}`; player
   overrides via `set_current()` are recorded too.
 
-## Wiring (for the orchestrator, in `studies/fidelity.gd`)
+## Wiring (as shipped in `studies/fidelity.gd`)
 
-```gdscript
-var _weather_scheduler := WeatherScheduler.new(weather_seed)               # _ready, after _precipitation
-# in _process(delta), after the clock ticks:
-var abs_hour := _world_clock.day * 24.0 + _world_clock.hour
-for name in _weather_scheduler.advance(abs_hour):
-	_precipitation.set_weather(WeatherScheduler.preset_index(name))
-# dropdown handler:
-func _on_weather_selected(index: int) -> void:
-	_precipitation.set_weather(index)
-	_weather_scheduler.set_current(WeatherScheduler.PRESET_NAMES[index], _world_clock.day * 24.0 + _world_clock.hour)
-```
+The scene owns `weather_scheduler: WeatherScheduler` next to `world_clock`, seeded with
+`randi()` at startup and **disabled by default**, so a garden's sky stays where the player put
+it until they tick "Let the weather drift" in the scene-look editor (next to "Let the day
+cycle").
 
-Save/load: store `_weather_scheduler.capture()` under the key `"weather_scheduler"` and, on load,
-call `_weather_scheduler.restore(data.get("weather_scheduler", {}))` **before** the first `advance()`,
-then apply `_precipitation.set_weather(WeatherScheduler.preset_index(_weather_scheduler.current), true)`
-so the restored sky snaps rather than lerps.
+Each frame, `_advance_weather_drift()` runs right after `world_clock.advance()`:
+
+1. If the precipitation preset differs from `scheduler.current`, the player picked something
+   (dropdown, mood, look editor, `--weather=` flag all end in `set_weather`), so the scheduler
+   is re-anchored with `set_current`. No picker needs to know the scheduler exists.
+2. If the scene is paused or drift is disabled, stop there.
+3. Otherwise `advance(day * 24 + hour)` and apply each fired preset with `set_weather`
+   (clearing the cloud/cold overrides so a mood's pinned sky doesn't fight the drift).
+
+`NativeGardenStore` saves `capture()` under `"weather_scheduler"`, rejects a non-dictionary
+entry, and restores it after the clock. Gardens saved before drift existed load unchanged.
+`tests/test_weather_drift.gd` covers all of this against the real scene.
 
 ## Sample timeline
 

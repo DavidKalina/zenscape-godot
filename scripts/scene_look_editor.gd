@@ -117,6 +117,8 @@ func setup(owner_scene: Node3D) -> void:
 	air.add_child(weather_choice)
 	_slider(air,"time","Time of day",0,1,0.001,func() -> float: return scene._celestial.phase,scene._celestial.set_phase)
 	_check(air,"cycling","Let the day cycle",scene._celestial,"cycling")
+	if scene.get("weather_scheduler") != null:
+		_check(air,"weather_drift","Let the weather drift",scene.weather_scheduler,"enabled")
 	var clock: WorldClock = scene.get("world_clock")
 	if clock != null:
 		var pace := HBoxContainer.new()
