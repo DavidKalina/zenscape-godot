@@ -1,4 +1,4 @@
-extends "res://studies/fidelity_life.gd"
+extends "res://studies/bigfoot_cave.gd"
 ## Product entry point. Study scenes remain available through their launchers.
 var library_path := "user://dioramas"
 var recent_file := "user://diorama-recent.cfg"
@@ -18,20 +18,14 @@ var _file_dialog: FileDialog
 var _settings: AcceptDialog
 var _before_menu_paused := false
 var _defaults := {}
+var _fidelity_document := {}
+var _fidelity_state := {}
 var _world_menu := MenuButton.new()
 var _resident_play = preload("res://scripts/resident_interaction.gd").new()
 var _gust_button: Button
 var _resident_wind = preload("res://scripts/resident_wind.gd").new()
 var world_play = preload("res://scripts/diorama_world_play.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
-
-func _choose_inhabited_shore() -> void:
-	_chunk_editor.data.reset_flat()
-	_chunk_editor.refresh()
-	_refresh_habitat()
-
-func _seed_loose_stones() -> void:
-	pass
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -44,8 +38,9 @@ func _ready() -> void:
 	add_child(loading)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	resident_enabled = false
 	super._ready()
+	_fidelity_document = _chunk_editor.data.to_document()
+	_fidelity_state = NativeGardenStore.capture(self)
 	get_window().title = "ZenScape"
 	get_tree().auto_accept_quit = false
 	_life_status.get_parent().hide()
@@ -63,7 +58,8 @@ func _ready() -> void:
 	_frame_diorama()
 	_celestial.update_rig()
 	_defaults = NativeGardenStore.capture(self)
-	# The cover is disposable; New restores the blank-world defaults above.
+	_defaults.diorama.resident = false
+	# New uses neutral lighting; Fidelity keeps its original atmosphere.
 	_make_shell()
 	_resident_play.setup(self)
 	add_child(_resident_wind)
@@ -77,22 +73,14 @@ func _ready() -> void:
 		if not path.is_empty() and DisplayServer.get_name() != "headless": OS.shell_show_in_file_manager(path))
 	_chunk_editor.status_changed.connect(func(text: String) -> void:
 		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
-	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
 	_toolbar.hide()
 	_menu.hide()
-	loading.stage("Raising the land · growing the forest")
-	if title_recipe.has("terrain_recipe"):
-		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
-	else:
-		await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
-	loading.stage("Gathering light")
-	_frame_title()
+	loading.stage("Opening Fidelity · welcoming Bigfoot")
+	launch_fidelity()
 	await get_tree().process_frame
 	loading.queue_free()
-	_notice.text = ""
 	title_loaded = true
 	set_process(true)
-	show_menu()
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
 		preload("res://scripts/desktop_build_check.gd").run.call_deferred(self)
 
@@ -258,6 +246,7 @@ func _make_shell() -> void:
 	_menu = preload("res://scripts/title_screen.gd").new()
 	root.add_child(_menu)
 	_continue = _menu.add_action("Continue your diorama","A little wilderness, waiting for you.",continue_world)
+	_menu.add_action("Fidelity world","",launch_fidelity)
 	_menu.add_action("New diorama","",new_diorama)
 	_menu.add_action("Open diorama…","",show_open)
 	_save_copy = _menu.add_action("Save a copy…","",show_save_copy)
@@ -385,6 +374,31 @@ func save_current() -> bool:
 	_notice.text = "Saved · "+_chunk_editor.save_path.get_file() if saved else "Could not save. Your diorama is still open."
 	if saved: _remember()
 	return saved
+
+func launch_fidelity() -> void:
+	if _chunk_editor.forming or not save_current(): return
+	if DirAccess.make_dir_recursive_absolute(library_path) != OK:
+		_notice.text = "Could not create the diorama folder."
+		show_menu()
+		return
+	show_menu()
+	routine.cancel("Fidelity world")
+	_chunk_editor._fall_start = null
+	if not _chunk_editor.data.load_document(_fidelity_document):
+		_notice.text = "Could not open Fidelity. Your current world is unchanged."
+		return
+	_chunk_editor.selected_object_id = -1
+	_chunk_editor.select_tool("select")
+	_chunk_editor.refresh()
+	NativeGardenStore.restore(self,_fidelity_state)
+	_chunk_editor.save_path = library_path+"/Fidelity-"+Time.get_datetime_string_from_system().replace(":","-")+"-"+str(Time.get_ticks_usec())+".json"
+	_has_world = true
+	_before_menu_paused = false
+	_menu_orbit = false
+	close_menu()
+	set_building(false)
+	_focus_cave()
+	_notice.text = "Fidelity world · Bigfoot is home."
 
 func new_diorama() -> void:
 	if _chunk_editor.forming or not save_current(): return

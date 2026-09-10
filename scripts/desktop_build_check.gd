@@ -36,7 +36,12 @@ static func run(scene: Node) -> void:
 				tree.quit(1)
 				return
 	print("PASS: packaged native mesh equivalence")
-	if not scene.title_loaded or scene._menu == null or not scene._menu.visible:
+	if not scene.title_loaded or not scene._has_world or not scene.resident_enabled or scene._chunk_editor.data.blank:
+		push_error("FAIL: packaged startup did not enter inhabited Fidelity")
+		tree.quit(1)
+		return
+	scene.show_menu()
+	if scene._menu == null or not scene._menu.visible:
 		push_error("FAIL: packaged main menu is missing")
 		tree.quit(1)
 		return

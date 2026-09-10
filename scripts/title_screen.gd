@@ -155,11 +155,12 @@ func _track_layout(control: Control, at: Vector2, extent: Vector2, font_size := 
 			control.set_meta("design_tracking", font.spacing_glyph)
 
 func _layout() -> void:
-	_layout_factor = minf(minf(size.x/1180.0,size.y/613.0),1.75)
+	var design_height := 613.0+maxi(0,buttons.size()-6)*49.0
+	_layout_factor = minf(minf(size.x/1180.0,size.y/design_height),1.75)
 	# Resize geometry and rasterize fonts at the final layout size. Scaling a
 	# Control instead magnifies its cached glyphs, even on a native-pixel window.
 	_frame.scale = Vector2.ONE
-	_frame.size = (Vector2(1180,613)*_layout_factor).round()
+	_frame.size = (Vector2(1180,design_height)*_layout_factor).round()
 	_frame.position = Vector2(roundf((size.x-_frame.size.x)*0.5),0)
 	for control in _frame.get_children():
 		if not control.has_meta("design_position"): continue
