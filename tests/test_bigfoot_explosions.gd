@@ -32,7 +32,7 @@ func run() -> void:
 	editor.data.update_object(charge,{"blast_radius":2.0})
 	editor.refresh()
 	remote.target_id = charge
-	remote.detonate()
+	await remote.detonate(true)
 	check(actor.blast_airborne and actor.wind_body.active,"Actual remote launches Bigfoot")
 	var small_speed := actor.wind_body.linear_velocity.length()
 	await ticks(20)
@@ -51,7 +51,7 @@ func run() -> void:
 	editor.data.update_object(charge,{"blast_radius":6.0})
 	editor.refresh()
 	remote.target_id = charge
-	remote.detonate()
+	await remote.detonate(true)
 	check(actor.wind_body.linear_velocity.length()>small_speed*2.0,"Larger explosives produce a stronger launch")
 	# Force the edge crossing to make the off-island recovery deterministic.
 	actor.wind_body.global_position = Vector3(40,-19,0)
@@ -61,13 +61,13 @@ func run() -> void:
 	editor.undo()
 	actor.reset_at(Vector3(12,2,12))
 	remote.target_id = charge
-	remote.detonate()
+	await remote.detonate(true)
 	check(not actor.blast_airborne,"Distant Bigfoot is unaffected")
 	editor.undo()
 	actor.reset_at(before)
 	actor.pick_up()
 	remote.target_id = charge
-	remote.detonate()
+	await remote.detonate(true)
 	check(actor.is_held(),"A carried Bigfoot remains in the player's hand")
 	scene.queue_free()
 	await process_frame

@@ -87,7 +87,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if _refresh_phase == 1:
 		# Physics sees replacement shapes on this next boundary, before clearance.
-		navigation.begin_rebuild(_chunk_editor.data, play_collisions.can_stand)
+		navigation.begin_rebuild(_chunk_editor.data,play_collisions.can_stand,CreatureNavigation.STEP,CreatureNavigation.MAX_RISE,true)
 		_refresh_phase = 2
 	if _refresh_phase == 2:
 		if not navigation.advance_rebuild(2000): return

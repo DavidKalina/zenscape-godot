@@ -25,6 +25,24 @@ var _rebuild_cell := 0
 var _rebuild_side := 0
 var _use_shortcuts := true
 var _rejected_connections: Array[Dictionary] = []
+## Poll at the caller's existing update boundary. At most one finite group is
+## active; repeated edits only replace the generation waiting to be submitted.
+var thread_workers := 4
+var last_worker_count := 0
+var last_worker_usec := 0
+var last_submit_usec := 0
+var last_validation_usec := 0
+var last_worker_executed := false
+var _threaded := false
+var _work = preload("res://scripts/background_work.gd").new()
+var _work_generation := -1
+var _worker_checks_clearance := false
+var _candidate_parts: Array = []
+var _candidate_part := 0
+var _candidate_cell := 0
+var _replacement_nodes := PackedVector3Array()
+var _replacement_cells := {}
+
 
 ## Terrain provider: ground_height, ponds/pond_surface, streams, objects,
 ## waterfall_impacts. Fidelity supplies imported ground and clearance instead.
@@ -34,15 +52,27 @@ func rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_ris
 
 ## Live editors spread the grid scan over frames. Callers suspend route planning
 ## until completion; a newer edit restarts the scan against the latest world.
-func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE) -> void:
+func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slope_rise := MAX_RISE, threaded := false) -> void:
 	generation += 1
 	_slope_rise = slope_rise
 	_grid_step = clampf(grid_step,0.35,1.0)
 	var began := Time.get_ticks_usec()
 	_data = data
 	_clearance = clearance
-	_nodes.clear()
-	_cells.clear()
+	_threaded = threaded and data.has_method("navigation_snapshot")
+	_candidate_parts = []
+	_candidate_part = 0
+	_candidate_cell = 0
+	_replacement_nodes = PackedVector3Array()
+	_replacement_cells = {}
+	last_worker_count = 0
+	last_worker_usec = 0
+	last_submit_usec = 0
+	last_validation_usec = 0
+	last_worker_executed = false
+	if not _threaded:
+		_nodes.clear()
+		_cells.clear()
 	_edges.clear()
 	_use_shortcuts = true
 	_rejected_connections.clear()
@@ -72,6 +102,12 @@ func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slo
 
 func advance_rebuild(budget_usec := 2000) -> bool:
 	if not rebuilding: return true
+	if _threaded: return _advance_threaded(budget_usec)
+	# Synchronous callers retain their API. Reclaim a superseded finite task
+	# before finishing this rebuild, so completed pool resources cannot linger.
+	if _work.active():
+		if not _work.completed(): return false
+		_work.finish()
 	var began := Time.get_ticks_usec()
 	while _rebuild_cell < _rebuild_side*_rebuild_side:
 		var x := _rebuild_cell % _rebuild_side
@@ -86,6 +122,99 @@ func advance_rebuild(budget_usec := 2000) -> bool:
 	last_rebuild_usec += Time.get_ticks_usec()-began
 	rebuilding = _rebuild_cell < _rebuild_side*_rebuild_side
 	return not rebuilding
+
+func _submit_scan() -> void:
+	var began := Time.get_ticks_usec()
+	var count := clampi(thread_workers,1,mini(8,maxi(1,OS.get_processor_count()-2)))
+	var total := _rebuild_side*_rebuild_side
+	var actions: Array[Callable] = []
+	_worker_checks_clearance = false
+	for i in range(count):
+		var snapshot: RefCounted = _data.navigation_snapshot()
+		var scan := CreatureNavigation.new()
+		scan._data = snapshot
+		scan._grid_step = _grid_step
+		scan._slope_rise = _slope_rise
+		scan._rebuild_side = _rebuild_side
+		scan._ponds.assign(_ponds.duplicate(true))
+		scan._courses.assign(_courses.duplicate(true))
+		scan._impacts.assign(_impacts.duplicate(true))
+		# Only the explicit snapshot provider's pure static clearance is allowed
+		# on workers. Arbitrary callbacks and moving-body clearance stay live.
+		if snapshot.has_method("clear_at") and _clearance.get_object() == _data and _clearance.get_method() == &"clear_at":
+			scan._clearance = Callable(snapshot,"clear_at")
+			_worker_checks_clearance = true
+		actions.append(_sample_partition.bind(scan,total*i/count,total*(i+1)/count))
+	_work.start_group(actions,count)
+	_work_generation = generation
+	last_worker_count = count
+	last_submit_usec = Time.get_ticks_usec()-began
+	last_rebuild_usec += last_submit_usec
+
+## A bound RefCounted argument owns the scanner until completion. A method
+## Callable alone does not keep its object alive after submission returns.
+static func _sample_partition(scan: CreatureNavigation, begin: int, end: int) -> Dictionary:
+	return scan._sample_cells(begin,end)
+
+## Executed only on private providers. Contiguous partitions preserve scan order.
+func _sample_cells(begin: int, end: int) -> Dictionary:
+	var began := Time.get_ticks_usec()
+	var nodes := PackedVector3Array()
+	var cells: Array[Vector2i] = []
+	for index in range(begin,end):
+		var x := index % _rebuild_side
+		var z := index / _rebuild_side
+		var grounded: Variant = _ground(Vector3(-14.0+x*_grid_step,0,-14.0+z*_grid_step))
+		if grounded != null and _safe_grounded(grounded):
+			nodes.append(grounded)
+			cells.append(Vector2i(x,z))
+	return {"nodes":nodes,"cells":cells,"usec":Time.get_ticks_usec()-began,"worker":WorkerThreadPool.get_caller_group_id() >= 0}
+
+func _advance_threaded(budget_usec: int) -> bool:
+	if _work.active():
+		if not _work.completed(): return false
+		var result: Array = _work.finish()
+		if _work_generation == generation:
+			_candidate_parts = result
+			last_worker_executed = true
+			for part: Dictionary in result:
+				last_worker_usec += int(part.usec)
+				last_worker_executed = last_worker_executed and part.worker
+			last_rebuild_usec += last_worker_usec
+	# Do not submit superseded requests. The latest generation is the only one
+	# that follows an old task once it has joined, bounding the pool queue.
+	if _work_generation != generation:
+		_submit_scan()
+		return false
+	var began := Time.get_ticks_usec()
+	while _candidate_part < _candidate_parts.size():
+		var part: Dictionary = _candidate_parts[_candidate_part]
+		if _candidate_cell >= part.nodes.size():
+			_candidate_part += 1
+			_candidate_cell = 0
+			continue
+		var point: Vector3 = part.nodes[_candidate_cell]
+		var safe := not dynamic_clearance.is_valid() or bool(dynamic_clearance.call(point))
+		if safe and not _worker_checks_clearance and _clearance.is_valid():
+			safe = bool(_clearance.call(point))
+		if safe:
+			_replacement_cells[part.cells[_candidate_cell]] = _replacement_nodes.size()
+			_replacement_nodes.append(point)
+		_candidate_cell += 1
+		if Time.get_ticks_usec()-began >= budget_usec: break
+	var spent := Time.get_ticks_usec()-began
+	last_validation_usec += spent
+	last_rebuild_usec += spent
+	if _candidate_part < _candidate_parts.size(): return false
+	# No partial candidate map escapes. Physics callbacks above run only at the
+	# main-thread boundary where the caller invokes advance_rebuild.
+	_nodes = _replacement_nodes
+	_cells = _replacement_cells
+	_replacement_nodes = PackedVector3Array()
+	_replacement_cells = {}
+	_candidate_parts = []
+	rebuilding = false
+	return true
 
 func _ground(point: Vector3) -> Variant:
 	if _data == null or not point.is_finite(): return null

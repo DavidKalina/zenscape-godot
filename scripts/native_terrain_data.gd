@@ -33,9 +33,20 @@ var _undo: Array[Dictionary] = []
 var _redo: Array[Dictionary] = []
 var _before := {}
 var _recipe_settings := {}
+var _recipe_generation := 0
+var _recipe_busy := false
+## Four partitions won the local latency sweep; keep two logical CPUs available
+## and allow fixtures to compare concurrency without changing engine settings.
+## Zero selects the measured per-recipe default; positive values are overrides.
+var recipe_workers := 0
+var last_recipe_workers := 0
 var _recipe: RefCounted
 var _recipe_heights := PackedFloat32Array()
 var _recipe_gradients: Array[Vector2] = []
+var _recipe_geology: Image
+var _recipe_geology_signature := PackedByteArray()
+var last_geology_usec := 0
+var last_geology_worker := false
 var _locate_cache := {}
 var _locate_face := PackedInt32Array()
 var _locate_u := PackedFloat64Array()
@@ -46,6 +57,13 @@ var _recipe_height_count := 0
 var _face_margin := 0.0
 var _mesh_arrays: Array = []
 var _mesh_result: ArrayMesh
+var _mesh_generation := 0
+var _mesh_busy := false
+## Automatic uses two GDScript workers, or a sub-millisecond inline native
+## shading pass. Positive values retain explicit worker-count experiments.
+var mesh_workers := 0
+var native_mesh_enabled := true
+var last_mesh_profile := {}
 var _mesh_heights := PackedFloat32Array()
 var _mesh_grass := PackedFloat32Array()
 var _mesh_meadow := PackedFloat32Array()
@@ -205,6 +223,8 @@ var _tunnel_source: ArrayMesh
 var _tunnel_signature := PackedByteArray()
 var _tunnel_mesh: ArrayMesh
 var _tunnel_faces := PackedVector3Array()
+var _collision_source: ArrayMesh
+var _collision_faces := PackedVector3Array()
 
 func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
 	if source == null: source = build_mesh()
@@ -216,6 +236,24 @@ func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
 		_tunnel_source = source
 		_tunnel_signature = signature
 	return _tunnel_mesh
+
+## The renderer already received these CPU arrays. Avoid reading that upload
+## back just to build physics geometry. Match TriangleMesh::create's snapping
+## exactly; returning raw unsnapped vertices would subtly change collisions.
+func play_collision_faces() -> PackedVector3Array:
+	var mesh := play_mesh()
+	if not tunnels.is_empty(): return _tunnel_faces.duplicate()
+	if mesh == _collision_source: return _collision_faces.duplicate()
+	var arrays: Array = _arrays if mesh == source_mesh else _mesh_arrays
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	var faces := PackedVector3Array()
+	faces.resize(indices.size() if not indices.is_empty() else vertices.size())
+	for i in range(faces.size()):
+		faces[i] = vertices[indices[i] if not indices.is_empty() else i].snappedf(0.0001)
+	_collision_source = mesh
+	_collision_faces = faces
+	return faces.duplicate()
 
 func plant_underground(point: Vector3, blast_radius := 2.6) -> int:
 	var allowed := false
@@ -332,7 +370,9 @@ func build_mesh(force := false) -> ArrayMesh:
 	return call("build_mesh_budgeted",force,null)
 
 func build_mesh_budgeted(force := false, frame_tree: SceneTree = null) -> ArrayMesh:
-	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
+	_mesh_generation += 1
+	if frame_tree != null:
+		return await _build_mesh_threaded(force,frame_tree,_mesh_generation)
 	if force:
 		_mesh_result = null
 		_shore_ready = false
@@ -362,63 +402,70 @@ func build_mesh_budgeted(force := false, frame_tree: SceneTree = null) -> ArrayM
 	var snowline: float = biome.get("snowline",_palette.snowline)
 	var rock_slope: float = biome.get("rock_slope",_palette.rock_slope)
 	var faces: PackedInt32Array = _faces_in(region) if region != null else _all_faces()
-	for i in faces:
-		if frame_tree != null and i%96 == 0: await budget.checkpoint()
-		for j in range(3):
-			vertices[i+j].y = heights[vertex_ids[i+j]]
-			if paints_uv2:
-				uv2[i+j].y = vertices[i+j].y # The existing growth shader reads target height here.
-		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
-		var center := (vertices[i]+vertices[i+1]+vertices[i+2])/3.0
-		var point := Vector2(center.x,center.z)
-		var face := i/3
-		var face_x: float = _face_x[face]
-		var face_z: float = _face_z[face]
-		var cell := meadow_cell(point)
-		var coverage: float = maxf(grass[cell],meadow[cell]) if blank else grass[cell]
-		var face_color := _ground_tint.lerp(_face_grass[face],coverage)
-		var snowed := false
-		if blank:
-			var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
-			if _recipe != null:
-				var gradient: Vector2 = _recipe_gradients[face]
-				if sculpted:
-					var probe := face*4
-					gradient += Vector2((_probe_delta(_face_probe[probe])-_probe_delta(_face_probe[probe+1]))/0.5,(_probe_delta(_face_probe[probe+2])-_probe_delta(_face_probe[probe+3]))/0.5)
-				slope = gradient.length()
-			# The sealed cut is not a geological cliff. Source colorAt samples
-			# the continuous ground before its border is lowered to the rim.
-			var cut_rim := _face_rim[face] == 1
-			if center.y > snowline-1.8 or (slope > rock_slope and (not cut_rim or _recipe != null)):
-				face_color = _face_rock[face]
-			if center.y > snowline and slope < 2.4:
-				face_color = _face_snow[face]
-				snowed = true
-			if not water_field.is_empty():
-				var shore:=preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.shore,face_x,face_z)
-				var running: bool=preload("res://scripts/native_recipe_water.gd").kind_at(water_field,face_x,face_z)==2
-				if running and shore<1.7 and center.y<snowline-1.8:
-					face_color=_face_grass[face]
-				if shore < 0.75 and slope<2.2:
-					var bank: Color = _palette.gravel if running else _palette.sand
-					if shore < -0.05:
-						bank *= 0.78-0.16*minf(1.0,preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.depth,face_x,face_z))
-					var shimmer: float = _face_shimmer[face]
-					face_color = Color(bank.r+shimmer,bank.g+shimmer,bank.b+shimmer)
-		if not blank:
-			face_color = source_colors[i].lerp(_face_grass[face],coverage)
-		# Snow settles over whatever was painted, so alpine caps keep covering it.
-		var painted: float = 0.0 if snowed else NativeTerrainTint.weight_at(tint,cell)
-		if painted > 0.0:
-			face_color = NativeTerrainTint.blend(face_color,tint,cell,_face_shimmer[face])
-		for j in range(3):
-			normals[i+j] = normal
-			if blank or coverage > 0.0 or painted > 0.0:
-				colors[i+j] = face_color
-			else:
-				# Uncovered faces keep the authored colour a full rebuild would
-				# have restored by duplicating the source arrays.
-				colors[i+j] = source_colors[i+j]
+	var kernel := preload("res://scripts/native_terrain_kernels.gd").get_kernel() if native_mesh_enabled else null
+	if kernel != null:
+		var shaded := preload("res://scripts/native_terrain_kernels.gd").shade(kernel,self,arrays,faces,water_field,sculpted,_recipe != null,0,vertices.size())
+		vertices = shaded.vertices
+		normals = shaded.normals
+		uv2 = shaded.uv2
+		colors = shaded.colors
+	else:
+		for i in faces:
+			for j in range(3):
+				vertices[i+j].y = heights[vertex_ids[i+j]]
+				if paints_uv2:
+					uv2[i+j].y = vertices[i+j].y # The existing growth shader reads target height here.
+			var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
+			var center := (vertices[i]+vertices[i+1]+vertices[i+2])/3.0
+			var point := Vector2(center.x,center.z)
+			var face := i/3
+			var face_x: float = _face_x[face]
+			var face_z: float = _face_z[face]
+			var cell := meadow_cell(point)
+			var coverage: float = maxf(grass[cell],meadow[cell]) if blank else grass[cell]
+			var face_color := _ground_tint.lerp(_face_grass[face],coverage)
+			var snowed := false
+			if blank:
+				var slope := sqrt(maxf(0.0,1.0-normal.y*normal.y))/maxf(normal.y,0.001)
+				if _recipe != null:
+					var gradient: Vector2 = _recipe_gradients[face]
+					if sculpted:
+						var probe := face*4
+						gradient += Vector2((_probe_delta(_face_probe[probe])-_probe_delta(_face_probe[probe+1]))/0.5,(_probe_delta(_face_probe[probe+2])-_probe_delta(_face_probe[probe+3]))/0.5)
+					slope = gradient.length()
+				# The sealed cut is not a geological cliff. Source colorAt samples
+				# the continuous ground before its border is lowered to the rim.
+				var cut_rim := _face_rim[face] == 1
+				if center.y > snowline-1.8 or (slope > rock_slope and (not cut_rim or _recipe != null)):
+					face_color = _face_rock[face]
+				if center.y > snowline and slope < 2.4:
+					face_color = _face_snow[face]
+					snowed = true
+				if not water_field.is_empty():
+					var shore:=preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.shore,face_x,face_z)
+					var running: bool=preload("res://scripts/native_recipe_water.gd").kind_at(water_field,face_x,face_z)==2
+					if running and shore<1.7 and center.y<snowline-1.8:
+						face_color=_face_grass[face]
+					if shore < 0.75 and slope<2.2:
+						var bank: Color = _palette.gravel if running else _palette.sand
+						if shore < -0.05:
+							bank *= 0.78-0.16*minf(1.0,preload("res://scripts/native_recipe_water.gd").sample_grid(water_field.depth,face_x,face_z))
+						var shimmer: float = _face_shimmer[face]
+						face_color = Color(bank.r+shimmer,bank.g+shimmer,bank.b+shimmer)
+			if not blank:
+				face_color = source_colors[i].lerp(_face_grass[face],coverage)
+			# Snow settles over whatever was painted, so alpine caps keep covering it.
+			var painted: float = 0.0 if snowed else NativeTerrainTint.weight_at(tint,cell)
+			if painted > 0.0:
+				face_color = NativeTerrainTint.blend(face_color,tint,cell,_face_shimmer[face])
+			for j in range(3):
+				normals[i+j] = normal
+				if blank or coverage > 0.0 or painted > 0.0:
+					colors[i+j] = face_color
+				else:
+					# Uncovered faces keep the authored colour a full rebuild would
+					# have restored by duplicating the source arrays.
+					colors[i+j] = source_colors[i+j]
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_NORMAL] = normals
@@ -437,6 +484,74 @@ func build_mesh_budgeted(force := false, frame_tree: SceneTree = null) -> ArrayM
 	_mesh_signature = signature
 	_mesh_result = result
 	return result
+
+## A live build owns one finite pipeline. Superseded callers return no mesh, so
+## their scene must not assign an obsolete resource after the await boundary.
+func _build_mesh_threaded(force: bool, tree: SceneTree, generation: int) -> ArrayMesh:
+	while _mesh_busy:
+		await tree.process_frame
+		if generation != _mesh_generation: return null
+	if force:
+		_mesh_result = null
+		_shore_ready = false
+	if heights == original_heights and not blank and grass.count(0.0) == grass.size() and NativeTerrainTint.empty(tint): return source_mesh
+	var signature := var_to_bytes([_recipe_settings,ponds,streams,landscape_waterfall])
+	var has_recipe := _recipe != null
+	var sculpted := has_recipe and heights != _recipe_heights
+	var reusable := _mesh_result != null and _mesh_blank == blank and _mesh_sculpted == sculpted and _mesh_signature == signature
+	var region: Variant = _mesh_region() if reusable else null
+	if region is bool: return _mesh_result
+	_mesh_busy = true
+	if sculpted:
+		await _prepare_face_probes(tree)
+		if generation != _mesh_generation:
+			_mesh_busy = false
+			return null
+	var samples = preload("res://scripts/native_mesh_samples.gd")
+	var began := Time.get_ticks_usec()
+	var detached: NativeTerrainData = samples.snapshot(self)
+	var snapshot_usec := Time.get_ticks_usec()-began
+	var job = preload("res://scripts/background_work.gd").new()
+	var prepared: Dictionary
+	if blank and has_recipe and (not ponds.is_empty() or not streams.is_empty()):
+		prepared = await job.run(samples.prepare.bind(detached,region,sculpted),tree)
+	else:
+		# No flood/distance work exists in this case. Avoid an empty worker
+		# round trip before submitting the actual face shading.
+		prepared = {"water":detached._shoreline_field(region) if blank else {},"usec":0,"worker":false}
+	if generation != _mesh_generation or not _mesh_inputs_match(detached,signature):
+		_mesh_busy = false
+		return null
+	if blank and detached._shore_changed: region = null
+	var arrays: Array = _mesh_arrays if region != null else _arrays
+	var faces := _faces_in(region) if region != null else _all_faces()
+	var shaded: Dictionary = await samples.build_parallel(detached,arrays,faces,prepared.water,sculpted,has_recipe,tree,mesh_workers,native_mesh_enabled)
+	_mesh_busy = false
+	if generation != _mesh_generation or not _mesh_inputs_match(detached,signature): return null
+	began = Time.get_ticks_usec()
+	var result := ArrayMesh.new()
+	var flags := source_mesh.surface_get_format(0) & (Mesh.ARRAY_FORMAT_CUSTOM_MASK << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,shaded.arrays,[],{},flags)
+	result.surface_set_material(0,source_mesh.surface_get_material(0))
+	_mesh_arrays = shaded.arrays
+	_mesh_heights = detached.heights
+	_mesh_grass = detached.grass
+	_mesh_meadow = detached.meadow
+	_mesh_tint = detached.tint
+	_mesh_blank = blank
+	_mesh_sculpted = sculpted
+	_mesh_signature = signature
+	_mesh_result = result
+	_shore_ready = detached._shore_ready
+	_shore_changed = detached._shore_changed
+	_shore_field = detached._shore_field
+	_shore_mask = detached._shore_mask
+	_water_grid_h = detached._water_grid_h
+	last_mesh_profile = {"snapshot_usec":snapshot_usec,"prepare_usec":prepared.usec,"prepare_worker":prepared.worker,"shade_usec":shaded.usec,"shade_snapshot_usec":shaded.snapshot_usec,"merge_usec":shaded.merge_usec,"shade_worker":shaded.worker,"workers":shaded.workers,"publish_usec":Time.get_ticks_usec()-began}
+	return result
+
+func _mesh_inputs_match(detached: NativeTerrainData, signature: PackedByteArray) -> bool:
+	return heights == detached.heights and grass == detached.grass and meadow == detached.meadow and tint == detached.tint and blank == detached.blank and signature == var_to_bytes([_recipe_settings,ponds,streams,landscape_waterfall])
 
 ## The XZ rectangle holding every vertex whose height differs from `snapshot`,
 ## grown so it also covers everything those vertices can shade or be sampled
@@ -601,45 +716,85 @@ func _shoreline_mask(field: Dictionary) -> PackedByteArray:
 ## Recipes are pure functions of their settings, so restoring the same recipe -
 ## which is what every sculpt undo/redo does - can keep the sampled height and
 ## gradient tables instead of re-evaluating the source noise ~19,000 times.
-func _set_recipe(settings: Dictionary, frame_tree: SceneTree = null) -> void:
+func _set_recipe(settings: Dictionary, frame_tree: SceneTree = null) -> bool:
+	_recipe_generation += 1
+	var generation := _recipe_generation
 	if var_to_bytes(_recipe_settings) == var_to_bytes(settings) and (_recipe == null) == settings.is_empty():
-		return
-	# Prepare locally: live ground queries keep seeing the complete old recipe
-	# until both sample tables are ready to publish together.
-	var recipe = null if settings.is_empty() else preload("res://scripts/native_terrain_recipe.gd").new(settings)
-	var sampled_heights := PackedFloat32Array()
-	var sampled_gradients: Array[Vector2] = []
-	var sampled_water := PackedFloat64Array()
-	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
-	if recipe != null:
-		for i in range(points.size()):
-			var point := points[i]
-			sampled_heights.append(0.6 if maxf(absf(point.x),absf(point.y)) > 13.9999 else recipe.height(point.x,point.y))
-			if frame_tree != null and i%16 == 0: await budget.checkpoint()
-		for i in range(_face_x.size()):
-			var x: float = _face_x[i]
-			var z: float = _face_z[i]
-			sampled_gradients.append(Vector2((recipe.height(x+0.25,z)-recipe.height(x-0.25,z))/0.5,(recipe.height(x,z+0.25)-recipe.height(x,z-0.25))/0.5))
-			if frame_tree != null and i%8 == 0: await budget.checkpoint()
-		# Pond shading would otherwise lazily sample this entire grid during the
-		# mesh rebuild. Prepare its exact double-precision values in slices too.
-		if frame_tree != null and not ponds.is_empty():
-			for z in range(NativeRecipeWater.W):
-				for x in range(NativeRecipeWater.W):
-					sampled_water.append(recipe.height(-14.0+x*NativeRecipeWater.CELL,-14.0+z*NativeRecipeWater.CELL))
-					if x%8 == 0: await budget.checkpoint()
-	_recipe_settings = settings.duplicate(true)
-	_recipe = recipe
-	_recipe_heights = sampled_heights
-	_recipe_gradients = sampled_gradients
-	_water_grid_h = sampled_water
+		return true
+	var snapshot := settings.duplicate(true)
+	# At most one finite pool job/group per terrain owner. Superseded waiters
+	# leave before submission; the latest generation runs after the active join.
+	var owns_slot := frame_tree != null and not settings.is_empty()
+	if owns_slot:
+		while _recipe_busy:
+			await frame_tree.process_frame
+			if generation != _recipe_generation: return false
+		_recipe_busy = true
+	# Snapshot before yielding. The worker creates its own recipe and only sees
+	# detached arrays; live ground queries continue to read the previous tables.
+	var action := preload("res://scripts/native_recipe_samples.gd").build.bind(snapshot,points.duplicate(),_face_x.duplicate(),_face_z.duplicate(),frame_tree != null and not ponds.is_empty())
+	var job = preload("res://scripts/background_work.gd").new()
+	var sampled: Dictionary
+	var has_geology: bool = snapshot.get("kind") == "inland" and snapshot.get("composition") in preload("res://scripts/desert_landscape.gd").KINDS
+	# Foundation's small latency gain from four workers comes with worse cold
+	# frame tails. Keep capacity for renderer startup; heavier recipes scale well.
+	var workers := recipe_workers if recipe_workers > 0 else (1 if snapshot.get("kind") == "foundation" else 4)
+	workers = clampi(workers,1,mini(8,maxi(1,OS.get_processor_count()-2)))
+	if frame_tree != null and not settings.is_empty() and workers > 1 and (points.size()+_face_x.size() >= 1024 or has_geology):
+		sampled = await preload("res://scripts/native_recipe_samples.gd").build_parallel(snapshot,points.duplicate(),_face_x.duplicate(),_face_z.duplicate(),not ponds.is_empty(),frame_tree,workers)
+	else:
+		workers = 1 if frame_tree != null and not settings.is_empty() else 0
+		sampled = await job.run(action,frame_tree if not settings.is_empty() else null)
+	if generation != _recipe_generation:
+		if owns_slot: _recipe_busy = false
+		return false
+	if frame_tree != null and not settings.is_empty():
+		await _prepare_face_probes(frame_tree)
+		if generation != _recipe_generation:
+			if owns_slot: _recipe_busy = false
+			return false
+	if owns_slot: _recipe_busy = false
+	_recipe_settings = snapshot
+	last_recipe_workers = workers
+	_recipe = sampled.recipe
+	_recipe_heights = sampled.heights
+	_recipe_gradients = sampled.gradients
+	_recipe_geology = sampled.geology
+	_recipe_geology_signature = var_to_bytes(snapshot) if sampled.geology != null else PackedByteArray()
+	last_geology_usec = sampled.geology_usec
+	last_geology_worker = sampled.geology != null and sampled.geology_worker
+	_water_grid_h = sampled.water
 	_recipe_height_cache.clear()
 	_recipe_height_count = 0
 	_strands_ready = false
+	return true
 
 ## Each face reads the sculpt delta at four fixed offsets from its centroid, so
 ## the triangle those offsets land in is resolved once and then evaluated with
 ## the same expression `_sculpt_delta` uses.
+## Topology is immutable after setup. Resolve probes on a detached data object;
+## publish only indices/weights, never replace the live sampling cache.
+func _prepare_face_probes(frame_tree: SceneTree) -> void:
+	if _face_probe.size() == _face_center.size()*4:
+		return
+	var detached := NativeTerrainData.new()
+	detached.points = points.duplicate()
+	detached.vertex_ids = vertex_ids.duplicate()
+	detached._buckets = _buckets.duplicate(true)
+	detached._face_center = _face_center.duplicate()
+	var job = preload("res://scripts/background_work.gd").new()
+	await job.run(detached._ensure_face_probes,frame_tree)
+	# A concurrent preparation may already have published this fixed topology.
+	if _face_probe.size() == _face_center.size()*4:
+		return
+	var offset := _locate_face.size()
+	_locate_face.append_array(detached._locate_face)
+	_locate_u.append_array(detached._locate_u)
+	_locate_v.append_array(detached._locate_v)
+	var probes := detached._face_probe
+	for i in range(probes.size()): probes[i] += offset
+	_face_probe = probes
+
 func _ensure_face_probes() -> void:
 	if _face_probe.size() == _face_center.size()*4:
 		return
@@ -670,11 +825,11 @@ func _sculpt_delta(point: Vector2) -> float:
 	return float(sample(point,heights))-float(sample(point,_recipe_heights))
 
 func form_range(height_scale := 1.0, width_scale := 1.0, heading := 0.0, variation := 0, frame_tree: SceneTree = null) -> void:
-	await _set_recipe({"kind":"range","height":height_scale,"width":width_scale,"heading":heading,"variation":variation},frame_tree)
+	if not await _set_recipe({"kind":"range","height":height_scale,"width":width_scale,"heading":heading,"variation":variation},frame_tree): return
 	heights = _recipe_heights.duplicate()
 
 func form_foundation(elevation := 0.0, relief := 1.0, frame_tree: SceneTree = null) -> void:
-	await _set_recipe({"kind":"foundation","elevation":elevation,"relief":relief},frame_tree)
+	if not await _set_recipe({"kind":"foundation","elevation":elevation,"relief":relief},frame_tree): return
 	landscape_waterfall=false
 	heights = _recipe_heights.duplicate()
 
@@ -1205,3 +1360,8 @@ func fill_landscape_flora() -> bool:
 		objects.back()["landscape"]=true
 		objects_revision += 1
 	return not placements.is_empty()
+
+## Navigation only needs triangle-height queries; water polygons are captured
+## separately by the navigation owner before it submits the scan.
+func navigation_snapshot() -> RefCounted:
+	return preload("res://scripts/native_terrain_snapshot.gd").for_queries(self)

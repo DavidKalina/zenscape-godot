@@ -102,8 +102,7 @@ func _main_game() -> void:
 	var remote = editor.explosives
 	remote.target_id = id
 	remote.request_detonation()
-	await physics_frame
-	await physics_frame
+	while remote.requested or remote.firing: await process_frame
 	check(remote.collapse_count == 1,"Main-game remote triggers a summit collapse")
 	check(victim>0 and editor.data.object_by_id(victim).is_empty(),"Downhill scenery joins the collapse outside the direct blast radius")
 	var chunks: Array = remote.bodies.filter(func(body: RigidBody3D) -> bool: return body.has_meta("mountain_chunk"))

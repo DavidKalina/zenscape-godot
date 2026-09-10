@@ -8,8 +8,10 @@ var _bounds := {}
 var _arch_faces := PackedVector3Array()
 var _terrain_body: StaticBody3D
 var _standing_query: PhysicsShapeQueryParameters3D
+var last_rebuild_usec := {}
 
 func rebuild(data: NativeTerrainData) -> void:
+	var began := Time.get_ticks_usec()
 	# Disable old bodies immediately, before their deferred deletion, so a rebuild
 	# cannot leave a frame of duplicate colliders in the physics world.
 	for old in get_children():
@@ -19,7 +21,12 @@ func rebuild(data: NativeTerrainData) -> void:
 		remove_child(old)
 		old.queue_free()
 	if _bounds.is_empty(): _load_bounds()
-	var terrain := data.play_mesh().create_trimesh_shape()
+	var prepared := Time.get_ticks_usec()
+	var faces := data.play_collision_faces()
+	var mesh_ready := Time.get_ticks_usec()
+	var terrain := ConcavePolygonShape3D.new()
+	terrain.set_faces(faces)
+	var shape_ready := Time.get_ticks_usec()
 	terrain.backface_collision = true
 	_terrain_body = _add_shape("Terrain",terrain)
 	for item: Dictionary in data.objects:
@@ -41,6 +48,7 @@ func rebuild(data: NativeTerrainData) -> void:
 			var shape := ConvexPolygonShape3D.new()
 			shape.points = corners
 			_add_shape("Prop_%d" % item.id,shape)
+	last_rebuild_usec = {"retire_and_bounds":prepared-began,"mesh":mesh_ready-prepared,"terrain_shape":shape_ready-mesh_ready,"publish_and_props":Time.get_ticks_usec()-shape_ready}
 
 ## Feet are world coordinates. Ignore terrain contact here: the caller checks
 ## ground validity/slope, while this rejects intersecting authored solid props.

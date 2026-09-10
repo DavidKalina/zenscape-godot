@@ -70,3 +70,11 @@ func stream_at(x: float, z: float) -> Vector4:
 			var value := values[0] * u + values[1] * v + values[2] * (1.0 - u - v)
 			result = Vector4(value.x, absf(value.y), value.z, 1.0)
 	return result
+
+## Snapshot the already imported triangles; workers never read a Mesh resource.
+func query_snapshot() -> RefCounted:
+	var result = get_script().new()
+	result._triangles.assign(_triangles.duplicate(true))
+	result._buckets = _buckets.duplicate(true)
+	result._stream_channels.assign(_stream_channels.duplicate(true))
+	return result
