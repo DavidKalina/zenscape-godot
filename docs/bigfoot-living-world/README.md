@@ -138,6 +138,30 @@ untouched: he discovers the loose bedding on his next `observe_home()`, which is
 what turns `material_needed` back on and makes gathering attractive again. That
 is the loop the slice adds — storm, damage, discovery, gather.
 
+## The season
+
+The world clock's year (`clock.season`, 0..1; see docs/world-clock/README.md)
+contributes four more keys: `season`, `season_name`
+("spring"/"summer"/"autumn"/"winter"), `cold` (the winter chill curve,
+`WeatherScheduler.season_cold`) and `harvest` (the autumn gold curve,
+`WeatherScheduler.season_autumn`). Both curves are **zero through spring and
+summer** and zero for a scene with no clock, which is why a study without a
+calendar ranks bit-for-bit as it always did.
+
+| Action | Modifier | Magnitude at the peak of the season |
+| --- | --- | --- |
+| `sleep` | `+ cold * 0.12`, and the consideration threshold drops a further `cold * 0.05` | `+0.11`; threshold `0.255` at noon in deep winter |
+| `gather` | `+ harvest * 0.10` | `+0.09` in mid autumn |
+
+Both are deliberately smaller than the weather's terms: a storm outranks the
+season, and a need outranks both. The reasons name the year when it is the
+loudest thing in the score — "The cold is in; a warm bed is worth the walk", and
+"The leaves are down; good bedding is lying about".
+
+The season also reaches him indirectly, through the world rather than the
+scorer: the weather mix he lives under, the gold and cold on the ground, and how
+fast the pond restocks (`fidelity_fish.SEASON_RATE`).
+
 ## Study controls
 
 Compact **View**, **Activities**, and **Experiment** menus keep the landscape

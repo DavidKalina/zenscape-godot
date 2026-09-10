@@ -69,6 +69,18 @@ Year length and the weather table follow season, autumn and cold visuals track
 it, and fish and branch rates take a seasonal factor. Seasons earn their
 visuals here because three consumers exist.
 
+Shipped: `year_days` is a saved knob on the clock; the transition table gives
+each quarter its own mix (spring showers and mist, a bright thundery summer, a
+gold and wet autumn, a grey snowy winter); `WorldClock.season_factor(season,
+shape)` is the one seasonal rate curve, used by the pond
+(`SEASON_RATE = [1.0, 1.0, 0.6, 0.25]`) and waiting for dead wood; and the
+context carries `season`, `season_name`, `cold` and `harvest`, with the cold
+nudging `sleep` and the gold nudging `gather`.
+
+Success: the four quarters produce measurably different weather and ground, the
+pond keeps restocking in winter at a quarter of the summer rate, and a scene
+with no clock ranks exactly as it did before the calendar existed.
+
 ## Slice 5: winter and a long-horizon drive
 
 A hibernation need that fills over the cold season, a stockpile that matters

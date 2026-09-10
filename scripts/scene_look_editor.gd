@@ -24,8 +24,9 @@ var checks := {}
 var weather_choice := OptionButton.new()
 ## World clock: how fast the day runs, and what day/hour it is now.
 const SPEEDS := [1.0,4.0,12.0]
-## Days the "Day" scrubber reaches: two world years, enough to walk the seasons.
-const DAY_RANGE := 56
+## World years the "Day" scrubber reaches: two, enough to walk the seasons
+## twice, whatever length of year the clock is keeping.
+const DAY_RANGE_YEARS := 2
 var clock_choice := OptionButton.new()
 var clock_readout := Label.new()
 var force_weather_choice := OptionButton.new()
@@ -143,7 +144,7 @@ func setup(owner_scene: Node3D) -> void:
 		air.add_child(clock_readout)
 		# Scrub tooling: jump to a day, pin a season, force a sky. Nothing here
 		# is part of the garden's own state; it is how a season gets watched.
-		_slider(air,"day","Day",0,DAY_RANGE,1,func() -> float: return float(clock.day),func(v: float) -> void: clock.set_time(int(round(v)),clock.hour))
+		_slider(air,"day","Day",0,float(clock.year_days*DAY_RANGE_YEARS),1,func() -> float: return float(clock.day),func(v: float) -> void: clock.set_time(int(round(v)),clock.hour))
 		_slider(air,"season","Season",0,1,0.01,func() -> float: return clock.season,func(v: float) -> void:
 			season_follows = false
 			clock.season_override = v)

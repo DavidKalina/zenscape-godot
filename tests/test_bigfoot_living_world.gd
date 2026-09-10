@@ -53,6 +53,22 @@ func run() -> void:
 	scene._growth.publish()
 	scene._precipitation.set_weather(0, true)
 	living = scene.routine.living
+
+	# The year reaches his decisions. Pinned, checked, and handed straight back
+	# so the rest of this fixture lives in the neutral opening of the calendar.
+	var year: WorldClock = scene.get("world_clock")
+	if year != null:
+		year.season_override = 0.875
+		var winter_context: Dictionary = living._context()
+		check(is_equal_approx(float(winter_context.get("season", -1.0)), 0.875) and str(winter_context.get("season_name", "")) == "winter", "The decision context carries the year and names it")
+		check(float(winter_context.get("cold", 0.0)) > 0.5 and is_zero_approx(float(winter_context.get("harvest", 1.0))), "Deep winter reaches him as cold, not as gold")
+		year.season_override = 0.625
+		var autumn_context: Dictionary = living._context()
+		check(float(autumn_context.get("harvest", 0.0)) > 0.5 and is_zero_approx(float(autumn_context.get("cold", 1.0))), "Autumn reaches him as gold, not as cold")
+		year.season_override = 0.125
+		var spring_context: Dictionary = living._context()
+		check(is_zero_approx(float(spring_context.get("cold", 1.0))) and is_zero_approx(float(spring_context.get("harvest", 1.0))) and str(spring_context.get("season_name", "")) == "spring", "Spring names itself and bends nothing")
+		year.season_override = -1.0
 	var original_fish: Dictionary = scene.capture_fish_state()
 	check(living.enabled, "Living-world study enables needs-based choices")
 	living.enabled = false

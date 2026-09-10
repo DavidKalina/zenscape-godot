@@ -31,7 +31,8 @@ func advance(delta: float, resting := false, comfort := 0.0, daylight := 1.0) ->
 		cooldowns[kind] = maxf(0.0, float(cooldowns[kind]) - step)
 		if cooldowns[kind] <= 0.0: cooldowns.erase(kind)
 
-## Time of day and the weather bend the scores; they never dictate the action.
+## Time of day, the weather and the season bend the scores; they never dictate
+## the action.
 ## A hungry or exhausted Bigfoot still overrides both. See docs/bigfoot-living-world.
 func ranked(context: Dictionary) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -49,12 +50,19 @@ func ranked(context: Dictionary) -> Array[Dictionary]:
 	var storm := _storm(context.get("weather", "clear"))
 	var wet := _wetness(context.get("wet", 0.0))
 	var exposed := 0.0 if bool(context.get("sheltered", false)) else storm
-	if home and fatigue >= 0.30 - dark * 0.12 - exposed * 0.12:
+	# The year bends two errands and nothing else: a cold season makes the bed
+	# and its roof worth a little more, and the gold of autumn is the time to lay
+	# bedding in. Both curves are zero through spring and summer and absent from
+	# a scene with no clock, so those score exactly as they always have.
+	var cold := _season_amount(context.get("cold", 0.0))
+	var harvest := _season_amount(context.get("harvest", 0.0))
+	if home and fatigue >= 0.30 - dark * 0.12 - exposed * 0.12 - cold * 0.05:
 		var bed_reason := "Night has come; returning to a familiar bed" if note == "night" else "Tired; returning to a familiar bed"
+		if cold > 0.5: bed_reason = "The cold is in; a warm bed is worth the walk"
 		if exposed > 0.5: bed_reason = "Taking shelter from the storm"
-		_candidate(result, "sleep", 0.05 + fatigue * 1.20 + dark * 0.45 + exposed * 0.50, bed_reason)
+		_candidate(result, "sleep", 0.05 + fatigue * 1.20 + dark * 0.45 + exposed * 0.50 + cold * 0.12, bed_reason)
 	if home and context.get("material_needed", false) and context.get("can_gather", false):
-		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12 - wary * 0.14 - storm * 0.22, "The bed could be more comfortable")
+		_candidate(result, "gather", 0.52 + (1.0 - clampf(float(context.get("comfort", 0.0)), 0.0, 1.0)) * 0.22 - fatigue * 0.12 - wary * 0.14 - storm * 0.22 + harvest * 0.10, "The leaves are down; good bedding is lying about" if harvest > 0.5 else "The bed could be more comfortable")
 	if food > 0 and hunger >= 0.20:
 		_candidate(result, "eat", hunger * 1.50, "Hungry; food is stored at home")
 	# A well-stocked pond is worth the walk, by less than any other term here: a
@@ -90,6 +98,13 @@ static func _storm(value: Variant) -> float:
 	if not value is String: return 0.0
 	if value == "storm": return 1.0
 	return 0.5 if value == "rain" else 0.0
+
+## A season curve from the context: the winter cold or the autumn gold, 0..1.
+## A missing or broken value reads as 0, the value spring and summer carry, so
+## every score that predates the calendar is untouched.
+static func _season_amount(value: Variant) -> float:
+	if not (value is float or value is int) or not is_finite(float(value)): return 0.0
+	return clampf(float(value), 0.0, 1.0)
 
 static func _wetness(value: Variant) -> float:
 	if not (value is float or value is int) or not is_finite(float(value)): return 0.0

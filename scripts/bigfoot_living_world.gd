@@ -114,7 +114,9 @@ func _context() -> Dictionary:
 		"ritual_target":true,"home_check_due":_home_check_due<=0.0 or not _observed_home,
 		"can_play":has_home and _observed_play<3,"comfort":float(_observed_bed)/3.0,
 		"hour":_hour(),"daylight":_daylight(),"weather":_weather(),"wet":_wetness(),
-		"sheltered":sheltered()}
+		"sheltered":sheltered(),
+		"season":_season(),"season_name":WorldClock.name_for_season(_season()),
+		"cold":WeatherScheduler.season_cold(_season()),"harvest":WeatherScheduler.season_autumn(_season())}
 
 ## The world clock is optional; without it he lives in a permanent bright noon.
 func _clock() -> Variant:
@@ -131,6 +133,16 @@ func _daylight() -> float:
 	if clock == null: return 1.0
 	var value: Variant = clock.get("daylight")
 	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 1.0
+
+## The year, 0..1, and the two curves drawn off it: `cold` is the winter chill
+## and `harvest` the autumn gold, the same bumps the ground wears. A scene with
+## no clock reads season 0 — the opening of spring — where both curves are zero,
+## so it ranks exactly as it did before the calendar existed.
+func _season() -> float:
+	var clock: Variant = _clock()
+	if clock == null: return 0.0
+	var value: Variant = clock.get("season")
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
 
 ## Weather is optional in the same way the clock is: a study without a sky lives
 ## in permanent clear, dry conditions and scores exactly as it always did.

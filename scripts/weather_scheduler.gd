@@ -189,24 +189,54 @@ func _pick(from: String, hour_of_day: float) -> String:
 			return str(names[i])
 	return str(names[names.size() - 1])
 
-## Season 0 reproduces the neutral table exactly: every factor here is 1.0 at
-## season 0 except the gated cold/season presets, which are 0.
+## Quarter bumps used to give each season its own weather: zero at every season
+## boundary, one at the middle of its own quarter. Because they vanish at the
+## boundaries, season 0 reproduces the neutral table exactly (every factor here
+## is 1.0 at season 0 except the gated cold/season presets, which are 0), and
+## the year wraps without a step.
+const QUARTER_SPRING := [0.125, 0.125, 1.0]
+const QUARTER_SUMMER := [0.375, 0.125, 1.0]
+const QUARTER_AUTUMN := [0.625, 0.125, 1.0]
+const QUARTER_WINTER := [0.875, 0.125, 1.0]
+
+## The mix each quarter wears, on top of the neutral table:
+##
+## | quarter | what the sky does |
+## | spring 0.00–0.25 | showers and dawn mist: rain ×1.8, mist ×1.9 at peak |
+## | summer 0.25–0.50 | bright, with afternoon thunder: clear/fair ×1.55, storm ×2.2 |
+## | autumn 0.50–0.75 | gold and grey: the autumn preset unlocks, rain ×1.5, overcast climbs, clear/fair fade |
+## | winter 0.75–1.00 | snow ×3 and overcast ×2.5; rain halves and storms nearly stop |
 func _season_factor(name: String, from: String) -> float:
+	var spring := _season_bump(season, QUARTER_SPRING)
+	var summer := _season_bump(season, QUARTER_SUMMER)
+	var autumn := _season_bump(season, QUARTER_AUTUMN)
+	var winter := _season_bump(season, QUARTER_WINTER)
 	if name in COLD_PRESETS:
-		var cold := clampf((season - 0.6) / 0.25, 0.0, 1.0)
+		# Snow belongs to winter: nothing before the last days of autumn.
+		var cold := clampf((season - 0.7) / 0.15, 0.0, 1.0)
 		# Snow never follows itself, so "still wintry" means the sky we are
 		# leaving came straight off snow: a marginal season can flurry back.
 		if _came_from_snow():
 			cold = maxf(cold, 0.5)
 		return cold * 3.0
 	if name in SEASON_PRESETS:
-		return clampf((season - 0.55) / 0.25, 0.0, 1.0) * 2.0
+		# The gold sky arrives with autumn and thins once deep winter is in.
+		var turning := clampf((season - 0.45) / 0.15, 0.0, 1.0)
+		return 2.2 * turning * (1.0 - 0.75 * clampf((season - 0.8) / 0.15, 0.0, 1.0))
 	if name == "overcast":
 		return 1.0 + 1.5 * clampf((season - 0.6) / 0.4, 0.0, 1.0)
 	if name == "clear" or name == "fair":
-		# High season damps the bright presets, so season < 0.3 is where
-		# clear/fair dominate. Exactly 1.0 at season 0.
-		return 1.0 - 0.5 * clampf((season - 0.3) / 0.7, 0.0, 1.0)
+		# Summer is the bright quarter; the second half of the year damps them,
+		# so clear/fair peak in midsummer and bottom out in winter.
+		return 1.0 + 0.55 * summer - 0.45 * clampf((season - 0.5) / 0.25, 0.0, 1.0)
+	if name == "rain":
+		# Spring showers, a wet autumn, and a winter that snows instead.
+		return 1.0 + 0.8 * spring + 0.2 * summer + 0.9 * autumn - 0.5 * winter
+	if name == "storm":
+		# Summer rains rarely, so its thunder has to be worth a lot when it does.
+		return 1.0 + 3.0 * summer - 0.7 * winter
+	if name == "mist":
+		return 1.0 + 0.9 * spring + 0.4 * autumn
 	return 1.0
 
 ## Time-of-day shaping: afternoon storms, dawn mist after rain, evening clearing.

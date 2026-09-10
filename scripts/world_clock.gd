@@ -19,7 +19,10 @@ const DEFAULT_DAY_LENGTH := 480.0  ## Real seconds per world day at speed 1.0.
 const HOURS_PER_DAY := 24.0
 const SECONDS_PER_DAY := 86400.0
 const MAX_DAY := 1000000
-const YEAR_DAYS := 28              ## Four seven-day seasons make a world year.
+const YEAR_DAYS := 28              ## Default year: four seven-day seasons.
+const MIN_YEAR_DAYS := 1           ## A one-day year is silly but legal; zero is not.
+const MAX_YEAR_DAYS := 100000
+const SEASON_NAMES := ["spring", "summer", "autumn", "winter"]
 const SKIP_RESPONSE := 1.6         ## Easing rate of skip_to, from celestial.next_hour.
 const SKIP_SNAP := 0.024           ## Hours; the old 0.001-of-a-turn snap.
 const LINGER_WIDTH := 0.09         ## Elevation sigma of the horizon linger.
@@ -38,6 +41,13 @@ var target_hour := -1.0  ## Smooth skip destination; < 0 when idle.
 ## Pins the season for scrubbing and tests. Any value >= 0 wins over the
 ## calendar; -1 (the default) hands the year back to `day`.
 var season_override := -1.0
+## How many world days a year lasts. A knob, not a constant, so a garden can run
+## a long calendar or a test can walk a year in a handful of days; it rides along
+## in `capture()`. Everything that draws a year — the season scalar, the editor's
+## Day scrubber — reads this, never YEAR_DAYS.
+var year_days := YEAR_DAYS:
+	set(value):
+		year_days = clampi(value, MIN_YEAR_DAYS, MAX_YEAR_DAYS)
 
 ## Where the world stands in its year, 0..1. 0 opens the calendar, 0.25/0.5/0.75
 ## are the season boundaries. Read-only: move `day` or set `season_override`.
@@ -84,7 +94,41 @@ func set_phase(value: float) -> void:
 
 ## The season the calendar alone says it is, ignoring any override.
 func calendar_season() -> float:
-	return fposmod(float(day) + hour / HOURS_PER_DAY, float(YEAR_DAYS)) / float(YEAR_DAYS)
+	var length := float(clampi(year_days, MIN_YEAR_DAYS, MAX_YEAR_DAYS))
+	return fposmod(float(day) + hour / HOURS_PER_DAY, length) / length
+
+## Which quarter of the year it is, as a watcher would name it.
+func season_name() -> String:
+	return name_for_season(season)
+
+static func name_for_season(value: float) -> String:
+	if not is_finite(value): return SEASON_NAMES[0]
+	return str(SEASON_NAMES[clampi(int(fposmod(value, 1.0) * 4.0), 0, 3)])
+
+## A rate multiplier for the time of year: [spring, summer, autumn, winter].
+##
+## Each number is the multiplier at the *opening* of its season. The value holds
+## flat through the first half of that season and then eases into the next over
+## the second half, so the year has four recognisable plateaus joined by smooth
+## shoulders and — the point of the arrangement — season 0.0 is exactly
+## `shape[0]`. Winter has climbed all the way back before the year wraps, the
+## same convention the ground's gold and cold bumps follow, so day 0 of a fresh
+## garden behaves exactly as it did before there was a calendar and no consumer
+## sees a step at new year.
+##
+## Pure and static: the fish restock rate calls it, and dead wood can call it
+## with its own four numbers. A malformed shape reads as 1.0, so a caller that
+## loses its constants keeps the neutral rate.
+static func season_factor(value: float, shape: Array) -> float:
+	if shape.size() != 4 or not is_finite(value): return 1.0
+	var year := fposmod(value, 1.0)
+	var quarter := clampi(int(year * 4.0), 0, 3)
+	var within := year * 4.0 - float(quarter)          ## 0..1 inside this season.
+	var from: Variant = shape[quarter]
+	var to: Variant = shape[(quarter + 1) % 4]
+	if not (from is float or from is int) or not (to is float or to is int): return 1.0
+	if not is_finite(float(from)) or not is_finite(float(to)): return 1.0
+	return lerpf(float(from), float(to), smoothstep(0.5, 1.0, within))
 
 func label() -> String:
 	return "Day %d · %02d:%02d" % [day, int(hour) % 24, int(hour * 60.0) % 60]
@@ -100,6 +144,7 @@ func capture() -> Dictionary:
 		"day_length": day_length,
 		"target": target_hour,
 		"season_override": season_override,
+		"year_days": year_days,
 	}
 
 func restore(value: Dictionary) -> void:
@@ -108,6 +153,7 @@ func restore(value: Dictionary) -> void:
 	day_length = maxf(0.0, _number(value.get("day_length"), DEFAULT_DAY_LENGTH, 0.0, 1e9))
 	running = bool(value.get("running", true))
 	season_override = _number(value.get("season_override"), -1.0, -1.0, 1.0)
+	year_days = int(_number(value.get("year_days"), float(YEAR_DAYS), float(MIN_YEAR_DAYS), float(MAX_YEAR_DAYS)))
 	var wanted: float = _number(value.get("target"), -1.0, -1.0, HOURS_PER_DAY)
 	set_time(int(_number(value.get("day"), 0.0, 0.0, float(MAX_DAY))), _number(value.get("hour"), 0.0, 0.0, HOURS_PER_DAY))
 	if wanted >= 0.0: target_hour = fposmod(wanted, HOURS_PER_DAY)
@@ -121,6 +167,7 @@ static func valid_state(value: Variant) -> bool:
 	if not _finite(value.get("target"), -1.0, HOURS_PER_DAY): return false
 	# Written by later saves only: a document without one simply follows the calendar.
 	if not _finite(value.get("season_override", -1.0), -1.0, 1.0): return false
+	if not _finite(value.get("year_days", YEAR_DAYS), float(MIN_YEAR_DAYS), float(MAX_YEAR_DAYS)): return false
 	return value.get("running") is bool
 
 # ------------------------------------------------------------- phase mapping

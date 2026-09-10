@@ -77,6 +77,27 @@ func _initialize() -> void:
 	check(rained.live_count() == 3, "Rain doubles the rate for half a world day afterwards")
 	check(rained.rain_memory == 0.0, "The rain bonus expires")
 
+	# ------------------------------------------------- the year sets the pace
+	var caught := {}
+	for quarter: Array in [["spring", 0.125], ["summer", 0.375], ["autumn", 0.625], ["winter", 0.875]]:
+		var year_clock := WorldClock.new()
+		year_clock.season_override = float(quarter[1])
+		var year_pond := _pond(year_clock)
+		_empty(year_pond)
+		_run_world_days(year_pond, year_clock, 12.0, 1)
+		caught[str(quarter[0])] = year_pond.live_count()
+	check(caught.spring == 2 and caught.summer == 2, "Spring and summer breed at the full two-day rate")
+	check(caught.autumn == 1, "Autumn tapers to a little over half the rate")
+	check(caught.winter == 0, "A single winter day is too slow to land a whole fish")
+	var winter_clock := WorldClock.new()
+	winter_clock.season_override = 0.875
+	var winter_pond := _pond(winter_clock)
+	_empty(winter_pond)
+	_run_world_days(winter_pond, winter_clock, 12.0, 8)
+	check(winter_pond.live_count() == 4, "A winter pond still fills completely, in about eight world days")
+	check(WorldClock.season_factor(0.875, Fish.SEASON_RATE) > 0.0, "The slowest week of the year is still not a closed loop")
+	check(is_equal_approx(WorldClock.season_factor(0.0, Fish.SEASON_RATE), 1.0), "Season 0 is the rate the pond has always run at")
+
 	# --------------------------------------- a carried fish still holds a slot
 	var busy_clock := WorldClock.new()
 	var busy := _pond(busy_clock)

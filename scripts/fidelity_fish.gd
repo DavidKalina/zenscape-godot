@@ -3,7 +3,8 @@ extends Node3D
 ## alive in this scene; catching borrows that same node and returning releases it.
 ##
 ## The pond also restocks. Every seeded home is a slot; a slot emptied by a fish
-## carried home fills again after a while, so the food loop never closes. The
+## carried home fills again after a while, so the food loop never closes — slowly
+## in a cold year, quickly in a warm one, but never not at all. The
 ## clock that drives it is world time (`scene.world_clock.elapsed`), never engine
 ## seconds, so a paused or slowed world holds the fish where they are and a fast
 ## one breeds them at the same visible pace. Scenes with no clock fall back to a
@@ -15,6 +16,11 @@ const NIGHT_FACTOR := 2.0    ## Fish rise in the dark.
 const RAIN_FACTOR := 2.0     ## Run-off feeds the pond.
 const RAIN_WET := 0.35       ## ground_wet at or above this counts as rain.
 const RAIN_MEMORY := 0.5     ## World days the rain bonus lingers after it dries.
+## The pond's year, as [spring, summer, autumn, winter] multipliers on the
+## restock rate, read through WorldClock.season_factor. Spring and summer breed
+## at the full two-day rate, autumn tapers, and a winter pond is slow — eight
+## world days to refill — but never frozen, so the food loop never closes.
+const SEASON_RATE := [1.0, 1.0, 0.6, 0.25]
 const MAX_STEP_DAYS := 1.0   ## A skipped or restored day must not dump a season of fish.
 const MAX_FISH := 512        ## Document limit; a restocking pond outlives the old 128.
 
@@ -126,6 +132,13 @@ func _daylight() -> float:
 	var value: Variant = clock.get("daylight") if clock != null else null
 	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 1.0
 
+## Where the world stands in its year. A scene without a clock sits at season 0,
+## the opening of spring, which is the full rate the pond has always run at.
+func _season() -> float:
+	var clock: Variant = scene.get("world_clock") if scene != null else null
+	var value: Variant = clock.get("season") if clock != null else null
+	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
+
 ## Rain is read through the scene's precipitation study when it has one; a scene
 ## without weather is simply always dry.
 func _ground_wet() -> float:
@@ -135,7 +148,8 @@ func _ground_wet() -> float:
 	return clampf(float(value),0.0,1.0) if (value is float or value is int) and is_finite(float(value)) else 0.0
 
 ## An empty pond refills over RESTOCK_DAYS, twice as fast overnight and again
-## while the ground is still wet from rain. The pond never passes its capacity.
+## while the ground is still wet from rain, and slower as the year turns cold
+## (SEASON_RATE). The pond never passes its capacity.
 func _restock(delta: float) -> void:
 	var days := _world_days(delta)
 	if days <= 0.0 or capacity <= 0: return
@@ -143,7 +157,7 @@ func _restock(delta: float) -> void:
 	if live_count() >= capacity:
 		restock = 0.0
 		return
-	var rate := float(capacity)/RESTOCK_DAYS
+	var rate := float(capacity)/RESTOCK_DAYS*WorldClock.season_factor(_season(),SEASON_RATE)
 	if _daylight() < NIGHT_DAYLIGHT: rate *= NIGHT_FACTOR
 	if rain_memory > 0.0: rate *= RAIN_FACTOR
 	restock += days*rate

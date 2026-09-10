@@ -76,29 +76,50 @@ Everything else is ×1.0.
 
 ## Season hooks
 
-`season` is a 0..1 knob reserved for a later calendar. **Season 0 reproduces the neutral table
-exactly** — every factor below is 1.0 at season 0.
+`season` is a 0..1 walk through the year the world clock keeps (four quarters:
+spring, summer, autumn, winter — see docs/world-clock/README.md). **Season 0
+reproduces the neutral table exactly** — every factor below is 1.0 at season 0,
+and the four quarter bumps (`QUARTER_SPRING`/`SUMMER`/`AUTUMN`/`WINTER`,
+`[centre, half width, strength]`, centred on 0.125/0.375/0.625/0.875 with a half
+width of 0.125) are zero at every season boundary, so the year also wraps
+without a step.
 
 | target | factor |
 | --- | --- |
-| snow | `3.0 * clamp((season - 0.6) / 0.25, 0, 1)`, floored at ×1.5 when the current preset was reached straight from `snow` (snow never follows itself, so this is what "still wintry" means; a manual snow pick at season 0 can therefore flurry back once) |
-| autumn | `2.0 * clamp((season - 0.55) / 0.25, 0, 1)` |
+| snow | `3.0 * clamp((season - 0.7) / 0.15, 0, 1)`, floored at ×1.5 when the current preset was reached straight from `snow` (snow never follows itself, so this is what "still wintry" means; a manual snow pick at season 0 can therefore flurry back once) |
+| autumn | `2.2 * clamp((season - 0.45) / 0.15, 0, 1) * (1 - 0.75 * clamp((season - 0.8) / 0.15, 0, 1))` — arrives with autumn, thins once deep winter is in |
 | overcast | `1.0 + 1.5 * clamp((season - 0.6) / 0.4, 0, 1)` |
-| clear, fair | `1.0 - 0.5 * clamp((season - 0.3) / 0.7, 0, 1)` |
+| clear, fair | `1.0 + 0.55 * summer - 0.45 * clamp((season - 0.5) / 0.25, 0, 1)` |
+| rain | `1.0 + 0.8 * spring + 0.2 * summer + 0.9 * autumn - 0.5 * winter` |
+| storm | `1.0 + 3.0 * summer - 0.7 * winter` (storms only follow rain, and summer is dry, so its thunder has to be worth a lot when the rain does come) |
+| mist | `1.0 + 0.9 * spring + 0.4 * autumn` |
 
-So season > 0.6 favours autumn/overcast/snow, and season < 0.3 leaves clear/fair at full strength
-(they are only damped as the season climbs).
+### The mix, quarter by quarter
 
-`studies/fidelity.gd` now feeds `season` from `world_clock.season` every frame (four seven-day
-seasons in a 28-day year; see docs/world-clock/README.md), so a garden left running reaches the
-autumn and snow rows on its own. Season is not captured: it is pushed in from the clock, whose
-own `season_override` is the thing a save carries.
+Share of world hours spent in each preset, measured over 4 seeds × 60 days with
+the season pinned at the middle of each quarter (`tests/test_season_scene.gd`
+prints these numbers and asserts the shape of them):
 
-The scheduler also owns the two curves that say how much gold and cold the **ground** wears for a
-given season, `season_autumn(season)` and `season_cold(season)`. They are smooth bumps on the year
-(autumn centred on 0.675, cold on 0.875) that fall to zero before it wraps, and the scene adds them
-on top of the current preset's own values. The transition table above decides which sky is rolled;
-these two decide how the ground underneath it looks.
+| quarter | the sky |
+| --- | --- |
+| **spring** (0.00–0.25) | fair 35%, overcast 28%, clear 17%, **rain 15%**, mist 3%, storm 2% — the showery, misty quarter |
+| **summer** (0.25–0.50) | **fair 45%, clear 24%** (the brightest quarter), overcast 19%, rain 8%, storm 2% — dry, but the rain it gets thunders twice as readily |
+| **autumn** (0.50–0.75) | fair 27%, overcast 26%, **autumn 20%**, rain 12%, clear 11%, storm 2%, mist 2% — gold and grey, and wet |
+| **winter** (0.75–1.00) | **overcast 40%, snow 19%**, autumn 14%, fair 14%, clear 8%, rain 3%, storm ~0% — grey and cold, and it snows rather than rains |
+
+`studies/fidelity.gd` feeds `season` from `world_clock.season` every frame, so a
+garden left running walks that whole table on its own. Season is not captured:
+it is pushed in from the clock, whose own `season_override` and `year_days` are
+the things a save carries.
+
+The scheduler also owns the two curves that say how much gold and how much cold
+the **ground** wears for a given season, `season_autumn(season)` and
+`season_cold(season)`. They are smooth bumps on the year (autumn centred on
+0.675, cold on 0.875) that fall to zero before it wraps, and the scene adds them
+on top of the current preset's own values. The transition table above decides
+which sky is rolled; these two decide how the ground underneath it looks. The
+*rate* curve ecology reads — the pond, and dead wood after it — is a third
+thing, and lives on the clock: `WorldClock.season_factor`.
 
 ## Determinism and catch-up
 

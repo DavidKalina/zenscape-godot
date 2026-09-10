@@ -85,10 +85,76 @@ func run() -> void:
 	step(scene, 4)
 	check(scene._precipitation.preset_index == stormy and drift.current == "storm", "The weather picker forces a sky and the scheduler follows")
 
+	# The four quarters, each with its own ground and its own sky.
+	clock.season_override = -1.0
+	scene._precipitation.set_weather(WeatherScheduler.preset_index("clear"), true)
+	for quarter: Array in [["spring", 0.125], ["summer", 0.375], ["autumn", 0.625], ["winter", 0.875]]:
+		var name := str(quarter[0])
+		var at := float(quarter[1])
+		clock.season_override = at
+		scene._precipitation.set_weather(WeatherScheduler.preset_index("clear"), true)
+		step(scene, 4)
+		var gold: float = surface.target_autumn
+		var chill: float = surface.target_cold
+		match name:
+			"spring", "summer":
+				check(is_zero_approx(gold) and is_zero_approx(chill), "Mid %s leaves the ground neutral" % name)
+			"autumn":
+				check(gold > 0.5 and is_zero_approx(chill), "Mid autumn golds the ground and does not chill it: %.2f" % gold)
+			"winter":
+				check(chill > 0.5, "Deep winter chills the ground: %.2f" % chill)
+	check(clock.season_name() == "winter", "The clock names the quarter it is standing in")
+	_weather_mix()
+
 	scene.free()
 	print("PASS: the season reaches the scheduler and the ground" if failures == 0 else "FAIL: season wiring")
 	print("Failures: ", failures)
 	quit(1 if failures else 0)
+
+## Four simulated years of drift, one per quarter, pinned so the mix is the
+## season's alone. Each quarter has to look like itself.
+func _weather_mix() -> void:
+	var hours := {}
+	for quarter: Array in [["spring", 0.125], ["summer", 0.375], ["autumn", 0.625], ["winter", 0.875]]:
+		hours[str(quarter[0])] = _hours_by_preset(float(quarter[1]))
+	for name in hours:
+		print("  %s: %s" % [name, hours[name]])
+	var spring: Dictionary = hours.spring
+	var summer: Dictionary = hours.summer
+	var autumn: Dictionary = hours.autumn
+	var winter: Dictionary = hours.winter
+	check(not spring.has("snow") and not spring.has("autumn") and not summer.has("snow") and not summer.has("autumn"),
+		"Neither spring nor summer rolls snow or the autumn sky")
+	check(float(spring.get("rain", 0.0)) > float(summer.get("rain", 0.0)), "Spring is showerier than summer")
+	check(float(spring.get("mist", 0.0)) > float(summer.get("mist", 0.0)), "Spring holds more mist than summer")
+	# Storms only follow rain, and summer is dry, so the honest measure is how
+	# often the rain it does get turns to thunder.
+	var thunder := func(mix: Dictionary) -> float: return float(mix.get("storm", 0.0)) / maxf(1.0, float(mix.get("rain", 0.0)))
+	check(thunder.call(summer) > thunder.call(spring) * 1.5, "Summer rain turns to thunder far more readily than spring rain")
+	check(thunder.call(winter) < thunder.call(spring), "Winter rain hardly ever thunders")
+	var bright := func(mix: Dictionary) -> float: return float(mix.get("clear", 0.0)) + float(mix.get("fair", 0.0))
+	check(bright.call(summer) > bright.call(spring), "Summer is the brightest quarter")
+	check(bright.call(autumn) < bright.call(summer) and bright.call(winter) < bright.call(autumn), "The bright skies fade as the year turns")
+	check(float(autumn.get("autumn", 0.0)) > 0.0, "Autumn reaches the autumn sky")
+	check(float(autumn.get("rain", 0.0)) > float(summer.get("rain", 0.0)), "Autumn is wetter than summer")
+	check(float(winter.get("snow", 0.0)) > 0.0, "Winter snows")
+	check(float(winter.get("overcast", 0.0)) > float(spring.get("overcast", 0.0)), "Winter is the greyest quarter")
+	check(float(winter.get("storm", 0.0)) < float(summer.get("storm", 0.0)), "Winter storms far less than summer")
+	check(float(winter.get("rain", 0.0)) < float(autumn.get("rain", 0.0)), "Winter rains less than autumn; it snows instead")
+
+## World hours spent in each preset over 4 seeds x 60 days at a pinned season.
+func _hours_by_preset(season: float) -> Dictionary:
+	var totals := {}
+	for drift_seed in [1, 7, 42, 404]:
+		var drift := WeatherScheduler.new(drift_seed, "fair", 0.0)
+		drift.enabled = true
+		drift.season = season
+		var hour := 0.0
+		while hour < 60.0 * 24.0:
+			hour += 1.0
+			drift.advance(hour)
+			totals[drift.current] = float(totals.get(drift.current, 0.0)) + 1.0
+	return totals
 
 func step(scene: Node, frames: int) -> void:
 	for i in range(frames): scene._process(1.0 / 30.0)

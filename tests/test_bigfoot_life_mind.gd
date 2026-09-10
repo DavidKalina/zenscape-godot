@@ -106,6 +106,7 @@ func _run() -> void:
 	check(mind.memories.size() == Mind.MAX_MEMORIES and mind.favorites.size() == Mind.MAX_FAVORITES, "Memory remains bounded in a changing garden")
 	_time_of_day(all)
 	_weather_of_the_day(all)
+	_year_of_the_day(all)
 	mind.mark_disturbance(Vector3(3, 0, 4))
 	var saved: Dictionary = JSON.parse_string(JSON.stringify(mind.capture(), "", true, true))
 	var restored = Mind.new()
@@ -252,6 +253,51 @@ func _weather_of_the_day(all: Dictionary) -> void:
 	exhausted.hunger = 0.1
 	exhausted.fatigue = 0.95
 	check(exhausted.ranked(calm)[0].kind == "sleep", "Real exhaustion still chooses sleep under a clear noon sky")
+## The season bends two errands and no others. Spring and summer — and a world
+## with no calendar at all — leave every number exactly where it was.
+func _year_of_the_day(all: Dictionary) -> void:
+	var quiet = Mind.new()
+	quiet.hunger = 0.5
+	quiet.fatigue = 0.4
+	var calm := all.duplicate()
+	calm.hour = 12.0
+	calm.daylight = 1.0
+	var base: Array[Dictionary] = quiet.ranked(calm)
+	var spring := calm.duplicate()
+	spring.season = 0.1
+	spring.season_name = "spring"
+	spring.cold = 0.0
+	spring.harvest = 0.0
+	check(quiet.ranked(spring) == base, "Spring ranks exactly like a world with no calendar")
+	var nonsense := calm.duplicate()
+	nonsense.cold = NAN
+	nonsense.harvest = "gold"
+	check(quiet.ranked(nonsense) == base, "A broken season reading falls back to spring")
+	var winter := calm.duplicate()
+	winter.cold = 0.9
+	winter.season_name = "winter"
+	var chilled: Array[Dictionary] = quiet.ranked(winter)
+	check(_score(chilled, "sleep") > _score(base, "sleep"), "The cold makes a warm bed worth a little more")
+	check(_score(chilled, "sleep") - _score(base, "sleep") < 0.15, "The cold nudges sleep by much less than a storm does")
+	check(_reason(chilled, "sleep") == "The cold is in; a warm bed is worth the walk", "The cold names itself as the reason he heads home")
+	for kind in ["gather", "fish", "play", "investigate", "ritual"]:
+		check(is_equal_approx(_score(chilled, kind), _score(base, kind)), "The cold leaves %s where it was" % kind)
+	var autumn := calm.duplicate()
+	autumn.harvest = 0.9
+	autumn.season_name = "autumn"
+	var gold: Array[Dictionary] = quiet.ranked(autumn)
+	var lift := _score(gold, "gather") - _score(base, "gather")
+	check(lift > 0.0 and lift < 0.12, "Autumn nudges gathering, modestly: %.3f" % lift)
+	check(_reason(gold, "gather") == "The leaves are down; good bedding is lying about", "Autumn names itself as the reason to gather")
+	check(is_equal_approx(_score(gold, "sleep"), _score(base, "sleep")), "The gold leaves sleep alone")
+	var drowsy = Mind.new()
+	drowsy.fatigue = 0.27
+	check(not _has(drowsy.ranked(calm), "sleep") and _has(drowsy.ranked(winter), "sleep"), "A cold season lowers the tiredness needed before bed is worth considering")
+	var starving = Mind.new()
+	starving.hunger = 0.9
+	starving.fatigue = 0.5
+	check(starving.ranked(winter)[0].kind == "eat", "Real hunger still overrides the cold")
+
 func _reason(actions: Array[Dictionary], kind: String) -> String:
 	for action in actions:
 		if action.kind == kind: return str(action.reason)
