@@ -79,6 +79,7 @@ func run() -> void:
 	# and ease the camera between a pose and its capture.
 	scene.set_process(false)
 	scene._ui.visible = false
+	if "_study_ui" in scene: scene._study_ui.visible = false  # The living world's study panel.
 	var editor: Node = scene._chunk_editor
 	while editor.forming or editor.refresh_pending > 0:
 		await process_frame

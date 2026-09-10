@@ -1,4 +1,4 @@
-extends "res://studies/fidelity.gd"
+extends "res://studies/bigfoot_living_world.gd"
 ## Throwaway prototype: does a second island across a chasm read as a world?
 ##
 ## The playable world is one 28 m chunk. This study leaves that chunk exactly as
