@@ -35,13 +35,13 @@ rotation_degrees = Vector3(-47, -34, 0)
 light_color = Color(1, 0.96, 0.89, 1)
 light_energy = 1.1
 shadow_enabled = true
-directional_shadow_max_distance = 60.0
+directional_shadow_max_distance = 180.0
 
 [node name="CameraPivot" type="Node3D" parent="."]
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot"]
-position = Vector3(0, 0, 13.5)
+position = Vector3(0, 0, 70)
 fov = 48.0
 near = 0.05
-far = 300.0
+far = 900.0
 current = true
