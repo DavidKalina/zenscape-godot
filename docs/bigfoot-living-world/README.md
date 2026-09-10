@@ -71,6 +71,55 @@ enrichment grows `1 - darkness * 0.25` times as fast. Both stay inside 30% so
 the established need-timing expectations still hold, and resting recovery is
 untouched — a bed restores the same amount at any hour.
 
+## Weather
+
+The sky (`scene._precipitation`, optional) contributes three more keys to the
+decision context: `weather` (the current preset name, `"clear"` when there is no
+weather), `wet` (`surface_weather.ground_wet`, 0..1, `0.0` when unknown) and
+`sheltered` (true only while he is actually standing in his cave, i.e.
+`routine.cave.sheltered()`). Like the clock, weather only *bends* the scores.
+Without a sky, under a clear one, or on dry ground, every number is bit-for-bit
+what it was before weather existed.
+
+Two derived quantities drive everything:
+
+- `storm = 1.0` for `storm`, `0.5` for `rain`, `0` for every other preset —
+  only falling water counts, so `mist`, `overcast` and `autumn` change nothing.
+- `exposed = storm` while he is outdoors, `0` while `sheltered` — weather he is
+  standing in is the only weather that pulls him home.
+
+| Action | Modifier | Magnitude in a storm he is out in |
+| --- | --- | --- |
+| `sleep` | `+ exposed * 0.50`, and the consideration threshold drops from `fatigue >= 0.30 - darkness * 0.12` by a further `exposed * 0.12` | `+0.50`; threshold `0.18` at noon |
+| `investigate` | `- storm * 0.30` | `-0.30` |
+| `ritual` | `- storm * 0.30 - wet * 0.15` | `-0.30`, and up to `-0.15` more on soaked ground |
+| `play` | `- storm * 0.25` | `-0.25` |
+| `fish` | `- storm * 0.25` | `-0.25` |
+| `gather` | `- storm * 0.22` | `-0.22` |
+| `eat` | none | — |
+| `check_home` | none | — |
+
+The errand penalties use `storm`, not `exposed`: setting out into the rain is a
+poor idea whether he is currently dry or not. The shelter bonus uses `exposed`,
+so a Bigfoot already in his cave gets no extra nudge toward bed. When
+`exposed > 0.5` — a real storm, outdoors — the sleep reason becomes "Taking
+shelter from the storm"; rain keeps the ordinary tired/night wording.
+
+A need still wins: hunger 0.9 eats through a storm, and fatigue 0.95 sleeps
+through a bright clear noon.
+
+**Storms disturb the bed.** While he is outside, `bigfoot_living_world.advance`
+accumulates storm hours from the world clock (`day * 24 + hour`, never engine
+seconds, so a pause or a load cannot conjure weather). Every
+`STORM_HOURS_PER_STAGE` (2.0) accumulated hours — a storm counts full, rain at
+half, so about 2 storm hours or 4 rain hours — the room loses one `bed_stage`
+through the same `lair.disturb_bed()` the study's **Disturb the bedding** button
+uses, down to a floor of 0. The accumulator is capped at 4 banked hours and
+catch-up is capped at one world hour per call. His remembered `_observed_bed` is
+untouched: he discovers the loose bedding on his next `observe_home()`, which is
+what turns `material_needed` back on and makes gathering attractive again. That
+is the loop the slice adds — storm, damage, discovery, gather.
+
 ## Study controls
 
 Compact **View**, **Activities**, and **Experiment** menus keep the landscape
@@ -90,7 +139,10 @@ needs, movement and cave performances together.
 
 The existing world document saves room comfort/stone stages under the cave
 state, plus a separate versioned `bigfoot_living` state for needs, familiarity,
-favorites and remembered supplies. Main-game loading restores that controller. Imported scenery keeps its learned
+favorites, remembered supplies and the storm-hour accumulator (`storm_hours`;
+a document written before storms could reach the bed resumes with a dry
+accumulator rather than being rejected). Main-game loading restores that
+controller. Imported scenery keeps its learned
 familiarity when upgraded into editable objects. Editable trees offer fallen
 material collection without borrowing their physics or rendering ownership.
 Legacy documents start with the original routine and fresh living memory.
@@ -98,7 +150,12 @@ Unfinished activities resume safely idle; already committed consumption remains
 committed, and unfinished source-backed fish carries retain the existing rollback.
 Cave regeneration preserves room progression and supplies.
 
-This is a bounded first slice: fish are finite, play has three placements, and
+The bed is the one belonging that can now degrade on its own: rain and storms
+undo comfort stages while he is away, so bedding is no longer a one-way ratchet
+to stage three. Nothing else decays — food does not spoil, the cairn stays
+arranged, and the weather never damages the room itself.
+
+This is a still-bounded slice: fish are finite, play has three placements, and
 food does not spoil. No new fruit flora or resource regrowth is simulated. Home
 observation happens on entering the room, not through a general vision system
 inside it. Existing tree interactions supply branches; a depletion model for
@@ -112,7 +169,11 @@ and gaze targets. The character model and body scale are unchanged.
 
 - `test_bigfoot_life_mind.gd`: competing needs, fulfillment, cooldowns, familiarity,
   favorite places, bounded memory, corruption rejection and JSON round trips, plus
-  the time-of-day modifiers, their need overrides and the no-clock defaults.
+  the time-of-day modifiers, their need overrides and the no-clock defaults, and
+  the weather modifiers, the shelter exemption and the clear/absent-sky defaults.
+- `test_weather_bed.gd` (scene, Forward+): a storm he is out in loosens the real
+  bedding on world time, his remembered bed does not change until he walks in,
+  the discovery re-opens gathering, and the accumulator survives a save.
 - `test_bigfoot_lair_supplies.gd`: material/food consumption, visible bedding,
   persistent stone positions, capacity and source transactions.
 - `test_bigfoot_living_world.gd`: real actor/cave performances, observations,
