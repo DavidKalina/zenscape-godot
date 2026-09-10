@@ -1,13 +1,17 @@
 extends "res://studies/fidelity.gd"
-## Throwaway prototype: does a second island across a gap read as a world?
+## Throwaway prototype: does a second island across a chasm read as a world?
 ##
 ## The playable world is one 28 m chunk. This study leaves that chunk exactly as
-## it is and hangs a purely visual copy of it 36 m along +X -- an 8 m rim-to-rim
-## gap -- turned 180 degrees about its own centre so it does not read as a mirror
-## and dropped `SECOND_CHUNK_LIFT` metres so the crossing is not perfectly level.
-## A placeholder plank bridge joins the two facing rims so the pair reads as
-## connected today; the moment `res://scripts/suspension_bridge.gd` exists this
-## study instantiates that instead and calls `setup(a, b)` with the same anchors.
+## it is and hangs a purely visual copy of it 50 m along +X -- a 22 m rim-to-rim
+## chasm -- turned 180 degrees about its own centre so it does not read as a
+## mirror and dropped `SECOND_CHUNK_LIFT` metres, so the crossing runs downhill
+## into a real drop rather than stepping across a ditch.
+##
+## A rope bridge joins the two facing rims: a sagging run of short plank boxes on
+## a catenary with `DECK_SAG` of the span in sag, so the establishing shot reads
+## as rope and slats rather than as a beam. It is only a placeholder -- the
+## moment `res://scripts/suspension_bridge.gd` exists this study instantiates
+## that instead and calls `setup(a, b, {"sag": DECK_SAG})` with the same anchors.
 ##
 ## The copy is scenery and nothing else. It is not registered with the chunk
 ## editor, owns no terrain document, no collision and no picking, so brush and
@@ -16,8 +20,10 @@ extends "res://studies/fidelity.gd"
 ## still believe in one chunk, which is the point: this answers a feel question
 ## and is meant to be deleted.
 ##
-## Keys: `B` re-frames onto the bridge (it overrides the base study's "summon
-## Bigfoot"), `R` returns to the establishing two-island shot.
+## Keys, all of which override bindings in the base study:
+##   `B`  from beyond the far anchor, looking back along the whole span
+##   `N`  standing on the middle of the deck, looking down into the chasm
+##   `R`  back to the establishing shot of both islands
 ##
 ## how to run
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
@@ -25,18 +31,20 @@ extends "res://studies/fidelity.gd"
 ## Stills and a walk clip come from `tools/film_twin_chunks.gd`.
 
 ## Centre-to-centre spacing of the two chunks along +X. The chunk is 28 m across,
-## so 36 leaves the 8 m gap the bridge spans.
-const CHUNK_SPACING := 36.0
+## so 50 leaves the 22 m chasm the bridge spans.
+const CHUNK_SPACING := 50.0
 ## The chunk's half extent in terrain-local XZ. Hard-coded throughout the engine
 ## scripts too (native_terrain_data.gd clamps to +/-14).
 const CHUNK_HALF := 14.0
 ## How far inside each rim an anchor stands.
 const ANCHOR_INSET := 0.5
-## The second island sits this much lower, so the deck slopes. Within +/-1.5.
-const SECOND_CHUNK_LIFT := -0.9
-## Candidate Z offsets for the anchor pair. Chunk two is turned 180 degrees, so a
-## candidate `z` on chunk one sits directly across from `-z` on chunk two.
-const ANCHOR_CANDIDATES: Array[float] = [-6.0, -4.5, -3.0, -1.5, 0.0, 1.5, 3.0, 4.5, 6.0]
+## The second island sits this much lower, so the crossing is a descent.
+const SECOND_CHUNK_LIFT := -2.75
+## The anchor search walks the whole facing rim at this spacing. Chunk two is
+## turned 180 degrees, so a candidate `z` on chunk one sits directly across from
+## `-z` on chunk two, which is what keeps the pair square to the chasm.
+const ANCHOR_SEARCH_REACH := 12.0
+const ANCHOR_SEARCH_STEP := 1.0
 ## Ground spread tolerated across a 1 m cross at an anchor before it counts as
 ## too steep to stand a bridge head on.
 const ANCHOR_FLATNESS := 0.45
@@ -46,11 +54,31 @@ const RAIL_SIDE := 0.07
 const RAIL_HEIGHT := 0.55
 const DECK_COLOR := Color("6b4f32")   ## Oiled wood.
 const RAIL_COLOR := Color("a8915f")   ## Hemp rope.
-## The establishing shot: both islands and the gap between them, from the side.
-const WIDE_DISTANCE := 64.0
+## Midspan sag as a fraction of the span. The real bridge script gets this too.
+const DECK_SAG := 0.12
+## Shape of the hanging curve. Higher is more sharply hooked at the ends; 2.0 is
+## a rope under its own weight rather than a slack chain.
+const CATENARY_K := 2.0
+## Slats in the deck. 23 m over 44 gives half-metre planks.
+const DECK_PLANKS := 44
+## How much of each slat's stride is board rather than gap. Real gaps matter: up
+## close they are what distinguishes a rope bridge from a plank, and they let the
+## drop show through the deck from the `N` camera.
+const DECK_PLANK_FILL := 0.78
+## The establishing shot: both islands and the chasm, from the side. Sized by
+## looking at it -- 78 m fills the frame's width with a margin at either rim.
+const WIDE_DISTANCE := 78.0
 const WIDE_POLAR := 1.12
-const BRIDGE_DISTANCE := 12.0
+## Far enough back down the deck line that the whole 22 m span is in frame.
+const BRIDGE_DISTANCE := 26.0
 const BRIDGE_POLAR := 1.24
+## Standing on the deck: eye height over the planks, and how far the look tilts
+## below horizontal into the drop. The tilt is shallow on purpose -- 2 m over the
+## boards, anything steeper than about 20 degrees puts the sight line into the
+## deck a couple of metres ahead and the shot is nothing but planks.
+const CHASM_EYE := 2.0
+const CHASM_PITCH := 0.30
+const CHASM_REACH := 20.0
 
 var second_chunk: Node3D
 var bridge: Node3D
@@ -186,7 +214,8 @@ func bridge_anchors() -> Array[Transform3D]:
 	# Three passes, each dropping one requirement, so a world whose whole rim is
 	# steep or flooded still yields a crossing rather than nothing.
 	for relaxation in range(3):
-		for z: float in ANCHOR_CANDIDATES:
+		for step_index in range(int(ANCHOR_SEARCH_REACH * 2.0 / ANCHOR_SEARCH_STEP) + 1):
+			var z := -ANCHOR_SEARCH_REACH + float(step_index) * ANCHOR_SEARCH_STEP
 			var near := Vector2(inset, z)
 			var far := Vector2(inset, -z)
 			var near_y: Variant = _chunk_editor.data.ground_height(near)
@@ -200,9 +229,11 @@ func bridge_anchors() -> Array[Transform3D]:
 				continue
 			var a := _base * Vector3(inset, float(near_y), z)
 			var b := _mirror * Vector3(inset, float(far_y), -z)
-			var step := absf(a.y - b.y)
-			if best.is_empty() or step < float(best.step):
-				best = {"a": a, "b": b, "z": z, "step": step, "roughness": roughness}
+			# The copy sits SECOND_CHUNK_LIFT lower, so this can never reach zero;
+			# the smallest it gets is the gentlest descent the two rims allow.
+			var drop := absf(a.y - b.y)
+			if best.is_empty() or drop < float(best.step):
+				best = {"a": a, "b": b, "z": z, "step": drop, "roughness": roughness}
 		if not best.is_empty():
 			print("TWIN CHUNKS anchor search settled at relaxation %d" % relaxation)
 			break
@@ -216,6 +247,22 @@ func bridge_anchors() -> Array[Transform3D]:
 		float(best.z), a.x, a.y, a.z, b.x, b.y, b.z, a.distance_to(b),
 		Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z)), float(best.step), float(best.roughness)])
 	return _anchors
+
+## A point on the hanging deck, `t` from the near anchor to the far one. The
+## planks, the rails and the walking shot all read the same curve, so nothing
+## can drift off the boards.
+func deck_point(t: float) -> Vector3:
+	var anchors := bridge_anchors()
+	if anchors.size() != 2:
+		return Vector3.ZERO
+	var a := anchors[0].origin
+	var b := anchors[1].origin
+	return a.lerp(b, t) - Vector3.UP * a.distance_to(b) * DECK_SAG * _sag_profile(t)
+
+## A catenary segment scaled to 0 at both anchors and 1 at midspan.
+func _sag_profile(t: float) -> float:
+	var ends := cosh(CATENARY_K)
+	return (cosh(CATENARY_K * (2.0 * t - 1.0)) - ends) / (1.0 - ends)
 
 ## +Z down `direction`, which is what a bridge head faces.
 func _facing(direction: Vector3) -> Basis:
@@ -276,44 +323,61 @@ func _place_bridge() -> void:
 		bridge = load(REAL).new()
 		bridge.name = "Bridge"
 		add_child(bridge)
-		bridge.setup(anchors[0], anchors[1])
-		print("TWIN CHUNKS bridge: %s" % REAL)
+		bridge.setup(anchors[0], anchors[1], {"sag": DECK_SAG})
+		print("TWIN CHUNKS bridge: %s, sag %.2f" % [REAL, DECK_SAG])
 		return
-	bridge = _placeholder_bridge(anchors[0].origin, anchors[1].origin)
+	bridge = _placeholder_bridge()
 	add_child(bridge)
-	print("TWIN CHUNKS bridge: placeholder deck, %.2f m long (no %s yet)" % [
-		anchors[0].origin.distance_to(anchors[1].origin), REAL])
+	var span := anchors[0].origin.distance_to(anchors[1].origin)
+	print("TWIN CHUNKS bridge: placeholder rope deck, %.2f m span, %d planks, %.2f m of sag (no %s yet)" % [
+		span, DECK_PLANKS, span * DECK_SAG, REAL])
 
-## A deck and two rails, enough that the eye reads the pair as joined.
-func _placeholder_bridge(a: Vector3, b: Vector3) -> Node3D:
+## A rope bridge in the crudest possible terms: short plank boxes laid end to
+## end down the hanging curve, with a rope box either side following the same
+## curve a rail's height up. Slats and sag are the whole point -- one long beam
+## at this span reads as a girder, and the question being asked is whether the
+## crossing feels like a crossing.
+func _placeholder_bridge() -> Node3D:
 	var node := Node3D.new()
 	node.name = "Bridge"
-	var span := a.distance_to(b)
-	node.transform = Transform3D(_facing(b - a), (a + b) * 0.5)
-	node.add_child(_slab("Deck", Vector3(DECK_WIDTH, DECK_THICKNESS, span), Vector3(0.0, -DECK_THICKNESS * 0.5, 0.0), DECK_COLOR))
-	for side: float in [-1.0, 1.0]:
-		var rail := _slab("Rail%s" % ("L" if side < 0.0 else "R"),
-			Vector3(RAIL_SIDE, RAIL_SIDE, span),
-			Vector3(side * DECK_WIDTH * 0.5, RAIL_HEIGHT, 0.0), RAIL_COLOR)
-		node.add_child(rail)
+	var deck := _material(DECK_COLOR)
+	var rope := _material(RAIL_COLOR)
+	var previous := deck_point(0.0)
+	for plank in range(DECK_PLANKS):
+		var next := deck_point(float(plank + 1) / float(DECK_PLANKS))
+		var stride := previous.distance_to(next)
+		var pose := Transform3D(_facing(next - previous), (previous + next) * 0.5)
+		node.add_child(_slab("Plank%02d" % plank,
+			Vector3(DECK_WIDTH, DECK_THICKNESS, stride * DECK_PLANK_FILL),
+			pose * Vector3(0.0, -DECK_THICKNESS * 0.5, 0.0), pose.basis, deck))
+		# The ropes overlap into the next segment so the two handlines read as
+		# continuous cable where the curve bends hardest, at the two ends.
+		for side: float in [-1.0, 1.0]:
+			node.add_child(_slab("Rope%s%02d" % ["L" if side < 0.0 else "R", plank],
+				Vector3(RAIL_SIDE, RAIL_SIDE, stride * 1.06),
+				pose * Vector3(side * DECK_WIDTH * 0.5, RAIL_HEIGHT, 0.0), pose.basis, rope))
+		previous = next
 	return node
 
-func _slab(slab_name: String, size: Vector3, offset: Vector3, color: Color) -> MeshInstance3D:
+func _material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.85
+	return material
+
+func _slab(slab_name: String, size: Vector3, origin: Vector3, basis: Basis, material: StandardMaterial3D) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.name = slab_name
 	var box := BoxMesh.new()
 	box.size = size
 	node.mesh = box
-	node.position = offset
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.85
+	node.transform = Transform3D(basis, origin)
 	node.material_override = material
 	return node
 
 # -------------------------------------------------------------- the camera
 
-## Both islands and the gap, looked at from the side so they spread across frame.
+## Both islands and the chasm, from the side so they spread across the frame.
 func _frame_wide() -> void:
 	var centre := _base.origin
 	target = centre + Vector3(CHUNK_SPACING, SECOND_CHUNK_LIFT, 0.0) * 0.5
@@ -341,6 +405,26 @@ func frame_bridge() -> void:
 	_auto_orbit = false
 	_update_camera()
 
+## Standing on the middle of the deck, looking down the span into the drop.
+## `_update_camera` derives the camera from `target`, so the pose is expressed
+## backwards: pick where the camera must stand and which way it must look, then
+## put the target out along that look direction.
+func frame_chasm() -> void:
+	var anchors := bridge_anchors()
+	if anchors.size() != 2:
+		return
+	var stand := deck_point(0.5) + Vector3.UP * CHASM_EYE
+	var along := anchors[0].basis.z
+	along.y = 0.0
+	# Down the deck toward the far island, tilted into the chasm.
+	var look := (along.normalized() * cos(CHASM_PITCH) + Vector3.DOWN * sin(CHASM_PITCH)).normalized()
+	distance = CHASM_REACH
+	polar = acos(clampf(-look.y, -1.0, 1.0))
+	yaw = atan2(-look.x, -look.z)
+	target = stand + look * distance
+	_auto_orbit = false
+	_update_camera()
+
 ## Centre of the copy, for a shot that shows it is a whole island.
 func second_chunk_centre() -> Vector3:
 	return _mirror.origin
@@ -354,9 +438,15 @@ func _reset_camera(reference_pose := false) -> void:
 	_frame_wide()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
-		# Overrides the base study's summon-Bigfoot binding on purpose.
-		frame_bridge()
-		get_viewport().set_input_as_handled()
-		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		# Both of these override base-study bindings on purpose: `B` summoned
+		# Bigfoot and `N` stepped the hour.
+		if event.keycode == KEY_B:
+			frame_bridge()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_N:
+			frame_chasm()
+			get_viewport().set_input_as_handled()
+			return
 	super._unhandled_input(event)

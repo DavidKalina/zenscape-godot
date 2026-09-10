@@ -4,11 +4,13 @@ extends SceneTree
 ## because the question is about motion as much as composition.
 ##
 ## `--stills=<dir>` writes `wide.png` (the startup framing, both islands and the
-## gap), `bridge.png` (the study's `B` framing, low and down the deck) and
+## chasm), `bridge.png` (the study's `B` framing, back along the whole span),
+## `chasm.png` (its `N` framing, stood on the deck looking into the drop) and
 ## `far_island.png` (the copy's own centre at 30 m, from the side) at 1600x1000.
 ##
-## `--walk=<dir> --frames=120` slides the camera target along the straight line
-## between the two anchors at `WALK_HEIGHT` above the deck, low polar, yaw down
+## `--walk=<dir> --frames=240` carries the camera target along the sagging deck
+## itself -- `deck_point()`, not the straight chord, so it never floats off the
+## planks at midspan -- at `WALK_HEIGHT` above the boards, low polar, yaw down
 ## the deck, as numbered PNGs; it prints the ffmpeg line to encode them.
 ##
 ## The study builds its copy inside `_ready()`, but authored content and
@@ -19,10 +21,10 @@ extends SceneTree
 ## how to run
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tools/film_twin_chunks.gd \
-##     -- --stills=/private/tmp/twin-chunks
+##     -- --stills=/private/tmp/twin-chunks-wide
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tools/film_twin_chunks.gd \
-##     -- --walk=/private/tmp/twin-chunks/walk --frames=120
+##     -- --walk=/private/tmp/twin-chunks-wide/walk --frames=240
 ##
 ## Never --headless: the fidelity scene hangs there. Never await
 ## `RenderingServer.frame_post_draw` either -- it never returns when the window
@@ -31,14 +33,15 @@ const FRAME_SIZE := Vector2i(1600, 1000)
 const DT := 1.0 / 60.0
 const FAR_DISTANCE := 30.0    ## Close enough that the copy reads as a whole island.
 const FAR_POLAR := 1.15
-const WALK_FRAMES := 120
+const WALK_FRAMES := 240      ## 8 s at 30 fps: long enough that 22 m feels far.
 const WALK_HEIGHT := 1.6      ## Eye height over the deck.
-const WALK_DISTANCE := 3.2    ## A following shot, not a first-person one.
+const WALK_DISTANCE := 3.6    ## A following shot, not a first-person one.
 const WALK_POLAR := 1.48      ## Nearly level with the deck.
 const WALK_FPS := 30
 ## A little run-up and run-out past the anchors, so the clip starts and ends on
-## solid ground rather than snapping onto the deck.
-const WALK_OVERSHOOT := 0.18
+## solid ground rather than snapping onto the deck. Smaller than it was: at 22 m
+## the span carries the clip on its own and the forest run-up only wastes frames.
+const WALK_OVERSHOOT := 0.08
 const SETTLE_FRAMES := 6      ## Driven steps after a pose so grass and sky agree.
 const SHOT_HOUR := 11.0       ## Late morning: the sun clears both islands' peaks.
 var scene: Node3D
@@ -49,7 +52,7 @@ var walk_frames := WALK_FRAMES
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:
-	create_timer(240).timeout.connect(func() -> void:
+	create_timer(900).timeout.connect(func() -> void:
 		print("FILM TWIN CHUNKS: timed out")
 		quit(2))
 	for argument in OS.get_cmdline_user_args():
@@ -95,6 +98,8 @@ func _stills() -> void:
 	await _grab(stills_dir.path_join("wide.png"), "wide")
 	scene.frame_bridge()
 	await _grab(stills_dir.path_join("bridge.png"), "bridge")
+	scene.frame_chasm()
+	await _grab(stills_dir.path_join("chasm.png"), "chasm")
 	# The copy from the side, at its own centre, lifted to roughly its skyline.
 	scene.target = scene.second_chunk_centre() + Vector3.UP * 2.0
 	scene.distance = FAR_DISTANCE
@@ -111,15 +116,15 @@ func _walk() -> void:
 	if anchors.size() != 2:
 		print("FILM TWIN CHUNKS: no anchors to walk between")
 		return
-	var a := anchors[0].origin
-	var b := anchors[1].origin
-	var direction := (b - a).normalized()
+	var direction := (anchors[1].origin - anchors[0].origin).normalized()
 	scene.distance = WALK_DISTANCE
 	scene.polar = WALK_POLAR
 	scene.yaw = atan2(-direction.x, -direction.z)
 	for frame in range(walk_frames):
 		var along := lerpf(-WALK_OVERSHOOT, 1.0 + WALK_OVERSHOOT, float(frame) / float(walk_frames - 1))
-		scene.target = a.lerp(b, along) + Vector3.UP * WALK_HEIGHT
+		# `deck_point` extrapolates sensibly past either end, so the run-up and
+		# run-out stay on the line the deck arrives at.
+		scene.target = scene.deck_point(along) + Vector3.UP * WALK_HEIGHT
 		scene._update_camera()
 		await _grab(walk_dir.path_join("%04d.png" % frame), "")
 	print("FILM TWIN CHUNKS walk: %d frames in %s" % [walk_frames, walk_dir])

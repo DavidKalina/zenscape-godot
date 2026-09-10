@@ -1,8 +1,8 @@
 extends SceneTree
 ## The twin-chunk prototype really builds a second island and a crossing: the
 ## copy carries the terrain, the skirt and the chunk's plants, the two anchors
-## face each other across a gap a bridge can span, they stand on ground rather
-## than in the air, and a deck joins them.
+## face each other across a chasm a bridge can span, they stand on ground rather
+## than in the air, and a sagging plank deck joins them.
 ##
 ## Instantiates the study, so it needs a real window and the native kernels.
 ## Never --headless: the fidelity scene hangs there.
@@ -11,9 +11,9 @@ extends SceneTree
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tests/test_twin_chunks.gd
 const MIN_VISUALS := 10      ## A copied chunk is terrain, skirt and its plants.
-const MIN_SPAN := 7.0        ## The rim gap is 8 m; anchors sit 0.5 m inside each.
-const MAX_SPAN := 10.0
-const MAX_STEP := 2.0        ## A crossing, not a cliff.
+const MIN_SPAN := 20.0       ## The chasm is 22 m; anchors sit 0.5 m inside each rim.
+const MAX_SPAN := 24.0
+const MAX_STEP := 4.0        ## A descent onto the far island, not a cliff.
 const GROUND_TOLERANCE := 0.1
 var failures := 0
 var scene: Node3D
@@ -78,7 +78,17 @@ func run() -> void:
 
 	# ----------------------------------------------------------- the bridge
 	check(scene.bridge != null and scene.bridge.get_parent() == scene, "A bridge joins the two islands")
-	check(scene.bridge.find_children("*", "MeshInstance3D", true, false).size() >= 3, "The placeholder is a deck and two rails")
+	var slats: int = scene.bridge.find_children("Plank*", "MeshInstance3D", true, false).size()
+	check(slats >= 20, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
+	check(scene.bridge.find_children("Rope*", "MeshInstance3D", true, false).size() == slats * 2, "Every plank has a rope either side")
+	# The whole point of a rope bridge: midspan hangs below the straight chord.
+	if anchors.size() == 2:
+		var chord := anchors[0].origin.lerp(anchors[1].origin, 0.5)
+		var middle: Vector3 = scene.deck_point(0.5)
+		var sag := chord.y - middle.y
+		var span := anchors[0].origin.distance_to(anchors[1].origin)
+		check(sag > span * 0.08 and sag < span * 0.16, "The deck sags %.2f m over a %.2f m span" % [sag, span])
+		check(scene.deck_point(0.0).is_equal_approx(anchors[0].origin), "The curve starts on the near anchor")
 
 	scene.queue_free()
 	await process_frame
