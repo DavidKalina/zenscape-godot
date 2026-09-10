@@ -197,7 +197,11 @@ func test_season_curves() -> void:
 	check(Scheduler.season_cold(0.875) > 0.85 and Scheduler.season_cold(0.875) <= 1.0, "Cold peaks in deep winter")
 	check(Scheduler.season_cold(0.8) > 0.3 and Scheduler.season_cold(0.95) > 0.3, "Cold covers the winter quarter")
 	check(is_zero_approx(Scheduler.season_cold(0.6)) and is_zero_approx(Scheduler.season_autumn(0.9)),
-		"Neither bump spills into the far side of the year")
+		"Neither lift spills into the far side of the year")
+	check(Scheduler.season_cold(0.78) > 0.5, "Cold arrives with the first winter days, not mid quarter")
+	check(is_zero_approx(Scheduler.season_autumn(0.82)) and Scheduler.season_cold(0.82) > 0.85,
+		"By the second winter week the gold is gone and the cold is full")
+	check(Scheduler.season_autumn(0.55) > 0.5, "Gold arrives with the first autumn days")
 	var smooth := true
 	var previous_autumn := Scheduler.season_autumn(-0.02)
 	var previous_cold := Scheduler.season_cold(-0.02)

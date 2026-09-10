@@ -16,7 +16,7 @@ func _initialize() -> void:
 	var pack: float = c.snow_cover
 	for i in range(50):
 		c.advance(0.1, false, 0.0, 0.1, 0.4)
-	check(c.snow_cover == pack, "Cold clear weather retains snowpack")
+	check(c.snow_cover >= pack, "Cold clear weather retains snowpack and frosts it deeper")
 	c.ice = 1.0
 	var clock: float = c.flow_time
 	c.advance(1.0, false, 0.0, 0.1, 0.4)

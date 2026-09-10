@@ -68,23 +68,34 @@ static func preset_index(name: String) -> int:
 	return PRESET_NAMES.find(name)
 
 ## How much gold and how much cold the season alone adds to the ground, on top
-## of whatever the current preset asks for. Both are smooth bumps on the 0..1
-## year, both reach zero before the year wraps, so day 0 of a fresh garden is
-## the neutral scene it has always been and the new year arrives without a step.
-## [centre, half width, strength]; see docs/world-clock/README.md.
-const SEASON_AUTUMN := [0.675, 0.175, 0.9]  ## Gold over the autumn quarter, peaking mid-season.
-const SEASON_COLD := [0.875, 0.125, 0.9]    ## Cold over the winter quarter, peaking at deep winter.
+## of whatever the current preset asks for. Each is a plateau on the 0..1 year
+## aligned to its calendar quarter: it rises over the first days of the season,
+## holds, and falls away over the last. The cold reaches zero before the year
+## wraps, so day 0 of a fresh garden is the neutral scene it has always been and
+## the new year arrives without a step.
+## [rise start, rise end, fall start, fall end, strength]; see docs/world-clock/README.md.
+const SEASON_AUTUMN := [0.50, 0.56, 0.72, 0.80, 0.9]  ## Gold through the autumn quarter, gone by early winter.
+const SEASON_COLD := [0.72, 0.80, 0.94, 1.00, 0.9]    ## Cold from the first winter days, thawing in the last.
 
 static func season_autumn(season: float) -> float:
-	return _season_bump(season, SEASON_AUTUMN)
+	return _season_plateau(season, SEASON_AUTUMN)
 
 static func season_cold(season: float) -> float:
-	return _season_bump(season, SEASON_COLD)
+	return _season_plateau(season, SEASON_COLD)
 
+## A symmetric bump, [centre, half width, strength]; the weather mix's quarter
+## weights still use it.
 static func _season_bump(season: float, shape: Array) -> float:
 	if not is_finite(season): return 0.0
 	var gap := absf(fposmod(season, 1.0) - float(shape[0]))
 	return float(shape[2]) * (1.0 - smoothstep(0.0, float(shape[1]), minf(gap, 1.0 - gap)))
+
+static func _season_plateau(season: float, shape: Array) -> float:
+	if not is_finite(season): return 0.0
+	var year := fposmod(season, 1.0)
+	var rise := smoothstep(float(shape[0]), float(shape[1]), year)
+	var fall := 1.0 - smoothstep(float(shape[2]), float(shape[3]), year)
+	return float(shape[4]) * minf(rise, fall)
 
 ## Advance world time. Returns the preset names that became current since the
 ## last call, oldest first. Calling twice with the same hour returns [] the

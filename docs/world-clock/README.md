@@ -118,14 +118,18 @@ Slices 0 and 4 of the world-progression plan wire five consumers:
 
 The preset is the base and the season is a **lift added on top**, clamped to
 0..1, so a snowy sky is still fully cold in midsummer and a clear day in late
-autumn is still gold. Both lifts are smooth bumps on the year
-(`WeatherScheduler.season_autumn` / `season_cold`, `[centre, half width,
-strength]`):
+autumn is still gold. Both lifts are plateaus on the year aligned to their
+calendar quarter (`WeatherScheduler.season_autumn` / `season_cold`,
+`[rise start, rise end, fall start, fall end, strength]`):
 
-| lift | centre | half width | strength | nonzero over |
-| --- | --- | --- | --- | --- |
-| autumn | 0.675 | 0.175 | 0.9 | 0.50 – 0.85 (the autumn quarter, spilling into early winter) |
-| cold | 0.875 | 0.125 | 0.9 | 0.75 – 1.00 (the winter quarter exactly) |
+| lift | rises | holds | falls | strength | nonzero over |
+| --- | --- | --- | --- | --- | --- |
+| autumn | 0.50 – 0.56 | 0.56 – 0.72 | 0.72 – 0.80 | 0.9 | the autumn quarter, gone by the second winter week |
+| cold | 0.72 – 0.80 | 0.80 – 0.94 | 0.94 – 1.00 | 0.9 | the winter quarter, thawing over its last days |
+
+Sustained cold also frosts the ground on its own (`surface_weather.gd`, a slow
+`frost` term next to falling snow), so a deep winter whitens even when the
+weather never drops snow; letting the weather drift adds real snowfall on top.
 
 Both fall to zero *before* the year wraps, so day 0 of a fresh garden is the
 neutral scene it has always been and the new year arrives with no step. Spring
