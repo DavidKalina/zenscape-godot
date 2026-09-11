@@ -219,6 +219,41 @@ night runs in real time, and a session is a day or two. This is close to the
 existing 480 second cycle with a paused midday, so the clock does not need to
 change, only to stop while you plan.
 
+### Cameras
+
+Two kinds, and the difference is a progression step. **Trail cams** record a
+short burst on motion; someone has to walk out, pull the card and bring it
+home, so the early game finds out at dawn. **Live cams** stream to base,
+drain batteries, need line of sight, and arrive on a later supply run; once
+you have one, the night watch is a Five Nights at Freddy's screen, flipping
+between grey feeds from the tent. From inside a feed you can flip, pan a
+little, and use the radio. Nothing else.
+
+The look is fixed framing: infrared greyscale with eyeshine, a timestamp and
+battery readout at night; colour with flare and a swaying branch by day; rain
+on the lens. He is half in frame, too close, or blurred, because that is what
+trail cam footage of anything looks like, and one clean frame is a prize. Once
+in a while he stops and looks down the lens. Feeds fail by battery, fog, a
+knock that leaves you staring at the ground, or a last frame that is a hand.
+
+Technically a camera is a transform with a SubViewport: a burst at postcard
+resolution when an actor crosses the cone, or a continuous low-res render only
+while you sit in it. Grading is a predicate on the burst: how much of him,
+how lit, how blurred, facing or not. Infrared and grain are one shader on the
+captured image.
+
+### Wildlife
+
+Most clips must be nothing: deer, a raccoon at the bait, a bear at the pool.
+Wildlife does four jobs. It is the false positive that makes the real clip
+land. It is ambiguity: the producer's first request is "prove it is not a
+bear," and the player learns what a bear looks like on infrared before they
+can know what he does. It is the food web already planned (the autumn bear
+that takes fish now also eats the bait, trips the cameras, and competes with
+him for the pool). And it is data: animal counts on the pool camera prove the
+fish decline, and deer leaving a trail the week he moved in is evidence by
+absence.
+
 ### The economy
 
 No shop. A producer funds the crew: footage you send earns the next supply
