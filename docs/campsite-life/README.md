@@ -141,6 +141,85 @@ leg, and maps the ground each shore refuses.
 `tools/film_bridge_crossing.gd --frames=<dir>` follows him over the deck and
 writes `crossing.png` plus the clip and its ffmpeg line.
 
+## Built over time
+
+The bridge is not scenery that was always there. `SuspensionBridge` can be set
+up unfinished -- `setup(a, b, {"laid": 0})` -- which stands the posts and
+strings the ropes and lays no boards at all. The rope chain is the physics, so
+an unbuilt crossing hangs, sways, takes the weather and can be walked out along
+as far as it is planked; the missing boards are simply not drawn, their
+MultiMesh slots folded to nothing exactly as the ones a cut takes. A bridge set
+up without a `laid` option is the finished, weathered deck the module always
+made, holes and all.
+
+| Call | What |
+| --- | --- |
+| `lay_next_plank()` | nail the next board down, outward from the building end |
+| `set_laid(n)` | jump the build to `n` boards (backwards allowed; for tests and scrubbing) |
+| `laid_count()`, `plank_count()` | boards down, and slots there are to fill |
+| `is_complete()` | every slot reached; the only state in which the bridge is a crossing |
+| `built_extent()` | the frontier as `deck_point`'s `t`; moves away from the building end and never back |
+| `drawn_plank_count()` | boards actually painted last repaint (lower on a weathered deck: a rotted slot is laid and still shows a hole) |
+
+Crossability is gated on completion. `CrossingRoute.link()` takes an
+`open_when` callable; while it says no, `plan()` returns nothing, which is what
+every caller already handles -- the camper motive, Bigfoot's unattended-tent
+visit and the study's `X` and `V` all refuse, with a printed reason. The link
+itself still exists, because the built prefix is somewhere a builder walks:
+`plan_to_deck(world, at, t)` and `plan_from_deck(t, world, at)` are ungated and
+go no further than the `t` they are handed.
+
+`scripts/bridge_construction.gd` is the pacing and nothing else. It turns the
+world clock into planks at `rate` planks per world hour and lays them. When a
+`builder` callable is set it is asked first: `campsite_life.take_plank()`
+answers yes when a camper is free and the tent's wood pile is not empty, spends
+one wood, and sends them out along the built extent with a board
+(`_advance_builder`) to nail it on and walk home. When the answer is no -- no
+camper, no wood, no route -- the driver lays the plank on the timer anyway, and
+if a camper who took a board has not laid it within `grace` seconds the timer
+lays it regardless. The pacing is the knob; the camper is the picture.
+
+Construction speaks up once at the first board, at each quarter, and on
+completion, through `BridgeConstruction.on_event` -- the study prints it and
+feeds it to `campsite_life`'s `events` list, and `readout()` is the progress
+line in the study's status panel.
+
+### Knobs
+
+| Where | What |
+| --- | --- |
+| `bridge_construction.gd` `DEFAULT_RATE`, or `--build-rate=` | planks per world hour. **Placeholder.** At the 480 s world day that is a world hour every 20 real seconds, so the study's ~108-slot span takes about nine world hours, three real minutes |
+| `bridge_construction.gd` `DEFAULT_GRACE` | seconds a hand-carried board may be in transit before the timer lays it anyway |
+| `bridge_construction.gd` `MAX_STEP` | most world hours one `advance` may spend, so a skipped day is not a finished bridge in one frame |
+| `suspension_bridge.gd` `setup` `build_from` | which anchor the planking starts from; `"b"`, the island, because that is where the campers live |
+| `suspension_bridge.gd` `setup` `missing` | fraction of slots with no board. Defaults to zero the moment `laid` is named: a bridge being built now has not been rained on for thirty years yet |
+| `campsite_life.gd` `PLANK_WOOD` | wood spent per board |
+| `campsite_life.gd` `PLANK_WORK` | seconds a camper stands at the frontier nailing |
+| `prototype_twin_chunks.gd` `--bridge=built\|unbuilt` | which end state the study opens in; `unbuilt` by default, and every still, film and older test that wants the finished deck calls `set_bridge_built(true)` |
+
+### Deliberately not decided
+
+- **Where the wood comes from.** One plank costs one wood off the tent pile,
+  which is capped at eight and refilled by fetching fallen branches, of which
+  there are three within reach on the island. So the pile is a trickle and the
+  timer does most of the laying. Whether the campers should have to fell trees,
+  whether a plank should cost more than one branch, whether the supply should
+  gate the build at all: open. Nothing downstream assumes an answer -- if the
+  pile runs dry, the bridge still finishes on time.
+- **The rate.** Twelve planks a world hour is chosen so a study session shows
+  the deck grow, not because a bridge takes nine hours to build. It is one
+  number, on the command line, read once.
+- **Whether it can be un-built.** `set_laid` goes backwards and `cut()` still
+  works on a partial deck, but nothing wears boards out or takes them back.
+
+### Watching it
+
+In the study, `Q` lays one more plank and `E` finishes the bridge instantly;
+the status panel carries a percentage and a plank count.
+`tools/film_bridge_construction.gd --stills=<dir>` writes the same framing at
+0, 25, 50 and 100 per cent, a still of a walker on the finished deck, and
+numbered frames of the growth with its ffmpeg line.
+
 ## Verification
 
 - `test_campsite_life.gd`: placement/preview, wood collection and delivery,
@@ -150,6 +229,12 @@ writes `crossing.png` plus the clip and its ffmpeg line.
 - `test_campsite_consequences.gd`: two independent residents, record validation,
   successful photo, occlusion at shutter time, exactly one stolen snack,
   player ownership, tent relocation, and persistent food/photo counts.
+- `test_bridge_construction.gd`: an unbuilt rope hangs, settles and draws no
+  planks; boards lay one at a time from the building end and the built extent
+  only moves one way; a cut on a half-built deck parts it without crashing; the
+  driver lays at its rate over simulated world hours and speaks at the quarters;
+  and in the study the crossing refuses to exist until the last board is down,
+  while a plank-layer can still walk out to the frontier. Run it alone.
 - `test_bridge_crossing.gd`: the twin-chunk study; the route stays on the boards
   and passes within a metre of both bridgeheads, a camper crosses to chunk one
   and stands on its ground, and Bigfoot crosses the other way, is a resident of
