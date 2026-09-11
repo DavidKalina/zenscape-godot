@@ -169,7 +169,7 @@ func _refresh() -> void:
 		_fields.pitch.set_value_no_signal(rad_to_deg(euler.x))
 		_fields.roll.set_value_no_signal(rad_to_deg(euler.z))
 		_fields.offset.set_value_no_signal(Pose.decode_offset(pose) if not pose.is_empty() else 0.0)
-		var supports_pose: bool = item.asset not in ["arch","bigfoot_tree","waterfall"]
+		var supports_pose: bool = item.asset not in ["campsite","fallen_branch","arch","bigfoot_tree","waterfall"]
 		_more.visible = supports_pose
 		_details.visible = supports_pose and _more.button_pressed
 		_tint_row.visible = supports_pose and not _details.visible

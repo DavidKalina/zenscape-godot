@@ -1,0 +1,59 @@
+{
+  "camper-photographer": {
+    "meshes": 39,
+    "triangles": 1292,
+    "bounds_m": [
+      [
+        -0.388,
+        0.388
+      ],
+      [
+        -0.365,
+        0.22
+      ],
+      [
+        0.0,
+        2.0
+      ]
+    ],
+    "materials_present": true
+  },
+  "camper-backpacker": {
+    "meshes": 39,
+    "triangles": 1292,
+    "bounds_m": [
+      [
+        -0.443,
+        0.443
+      ],
+      [
+        -0.257,
+        0.446
+      ],
+      [
+        0.0,
+        1.755
+      ]
+    ],
+    "materials_present": true
+  },
+  "tent-ochre": {
+    "meshes": 21,
+    "triangles": 349,
+    "bounds_m": [
+      [
+        -1.608,
+        1.608
+      ],
+      [
+        -1.371,
+        1.371
+      ],
+      [
+        0.007,
+        1.528
+      ]
+    ],
+    "materials_present": true
+  }
+}

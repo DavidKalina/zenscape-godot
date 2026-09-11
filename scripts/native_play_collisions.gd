@@ -98,4 +98,5 @@ func _load_bounds() -> void:
 	source.free()
 	# The encounter tree uses a deliberately forgiving trunk proxy: branches and
 	# its hollow remain visual. Other authored proportions are applied above.
+	_bounds.campsite = AABB(Vector3(-1.15,0,-1.18),Vector3(2.3,1.55,2.36))
 	_bounds.bigfoot_tree = AABB(Vector3(-0.6,0,-0.6),Vector3(1.2,5.0,1.2))

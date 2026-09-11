@@ -15,6 +15,8 @@ var _leaf_revision := -1
 var _leaf_objects_revision := -1
 var _display_fog: CanvasLayer
 var camera: Camera3D
+## Arrow-key pan speed, in target metres per second per metre of camera distance.
+const KEY_PAN_PACE := 0.35
 var target := Vector3.ZERO
 var distance := 43.0
 var yaw := 1.8893
@@ -477,6 +479,29 @@ func _ease_camera(delta: float) -> void:
 		var reach := 2.0 * distance * tan(deg_to_rad(camera.fov) * 0.5) / height
 		target += (-camera.global_basis.x * step.x + camera.global_basis.y * step.y) * reach
 		_pan_delta *= retain
+	_key_pan(delta)
+
+## Arrow keys slide the orbit target over the ground in the camera's own yaw
+## frame, at a pace that scales with how far out the camera sits, so a nudge
+## reads the same at 5 m as at 50. Shift is four times faster; Page Up and
+## Page Down lift and lower the target. Polled, not event-driven, so a held key
+## keeps moving. Ignored while a text field has focus.
+func _key_pan(delta: float) -> void:
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit or focus is SpinBox: return
+	var slide := Vector3.ZERO
+	if Input.is_key_pressed(KEY_UP): slide.z -= 1.0
+	if Input.is_key_pressed(KEY_DOWN): slide.z += 1.0
+	if Input.is_key_pressed(KEY_LEFT): slide.x -= 1.0
+	if Input.is_key_pressed(KEY_RIGHT): slide.x += 1.0
+	if Input.is_key_pressed(KEY_PAGEUP): slide.y += 1.0
+	if Input.is_key_pressed(KEY_PAGEDOWN): slide.y -= 1.0
+	if slide == Vector3.ZERO: return
+	var pace := KEY_PAN_PACE * maxf(4.0, distance) * (4.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+	var forward := Vector3(-sin(yaw), 0.0, -cos(yaw))
+	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
+	target += (forward * slide.z + right * slide.x + Vector3.UP * slide.y).normalized() * pace * delta
+	_auto_orbit = false
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and _landscape_editor != null and _landscape_editor.visible:

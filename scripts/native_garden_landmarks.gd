@@ -2,7 +2,7 @@ class_name NativeGardenLandmarks
 extends Node3D
 signal instances_published()
 ## Place the demo's source landmarks with a ground-centered pivot.
-const KINDS := ["arch", "bigfoot_tree"]
+const KINDS := ["arch", "bigfoot_tree", "campsite", "fallen_branch"]
 var _arch_mesh: Mesh
 var _arch_material: Material
 var _arch_offset := Vector3.ZERO
@@ -32,7 +32,11 @@ func rebuild(data: NativeTerrainData) -> void:
 		landmark.position = data.object_position(item)
 		landmark.rotation.y = item.angle
 		landmark.scale = Vector3.ONE*item.scale
-		if item.asset == "arch":
+		if item.asset == "campsite":
+			landmark.add_child(preload("res://scripts/campsite_model.gd").tent(int(item.get("wood",0)),int(item.get("food",3))))
+		elif item.asset == "fallen_branch":
+			landmark.add_child(preload("res://scripts/campsite_model.gd").branch())
+		elif item.asset == "arch":
 			var mesh := MeshInstance3D.new()
 			mesh.mesh = _arch_mesh
 			mesh.material_override = _arch_material

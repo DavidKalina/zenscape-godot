@@ -5,6 +5,7 @@ var navigation = preload("res://scripts/creature_navigation.gd").new()
 var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
 var resident_enabled := true
+var camps: Node
 var routine: Node
 var cave_sites: Node3D
 var lair: Node3D
@@ -84,6 +85,9 @@ func _ready() -> void:
 	environment_life = preload("res://scripts/bigfoot_environment.gd").new()
 	add_child(environment_life)
 	environment_life.setup(self)
+	camps = preload("res://scripts/campsite_life.gd").new()
+	add_child(camps)
+	camps.setup(self)
 	fish = preload("res://scripts/fidelity_fish.gd").new()
 	add_child(fish)
 	fish.setup(self)
@@ -141,17 +145,18 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if lair != null: lair.drips.advance(delta,_paused)
 	if creature == null: return
+	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
+	var camp_owns_bigfoot: bool = camps.advance(delta) if camps != null else false
 	if not resident_enabled:
 		creature.visible = false
 		return
-	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	var present := not _habitat_blocked and _growth.terrain >= 0.995
 	creature.visible = present and (not routine.cave.concealed or lair != null)
 	var stopped := _paused or not present
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
 			var observing: bool = environment_life != null and environment_life.advance(delta)
-			if not observing and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
+			if not observing and not camp_owns_bigfoot and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
 			elif routine != null:
 				# Environmental reactions and player interactions take ownership
@@ -197,6 +202,7 @@ func _refresh_habitat(budgeted := false) -> void:
 		var fallback: Variant = navigation.nearest_safe(creature._safe_position)
 		creature._safe_position = fallback if fallback != null else safe
 	elif not creature.blast_airborne and not navigation.is_safe(creature.global_position): creature.reset_at(safe)
+	if camps != null: camps.dirty = true
 	brain.world_changed()
 	# New trees, new places for the wind to drop wood. Branches already lying on
 	# the ground keep the spot they fell on.
@@ -272,6 +278,7 @@ func capture_life_state() -> Dictionary:
 
 func restore_life_state(state: Dictionary) -> void:
 	if environment_life != null: environment_life.world_changed()
+	if camps != null: camps.reset()
 	routine.cancel("garden opened")
 	_refresh_habitat()
 	routine.habits.restore(state)
