@@ -6,6 +6,9 @@ extends Node3D
 ## same controller runs on the editor's chunk (`setup`) and on a generated
 ## island (`bind` with `CampsiteWorld.for_island`). Camper positions are in
 ## the world's document-local frame; parent this node so that frame is its own.
+##
+## One thing reaches off this ground: `crossing`, a `CrossingRoute` to a shore
+## across a bridge. See "the crossing" at the foot of the file.
 signal story_event(message: String)
 const Model = preload("res://scripts/campsite_model.gd")
 var world: CampsiteWorld
@@ -28,6 +31,46 @@ var stolen_food := 0
 var photographs := 0
 var scares := 0
 
+# ------------------------------------------------------------- the crossing
+## How fast the deck is walked, in metres per second. Quicker than a camp
+## stroll (0.7) and slower than a flight (1.8): a rope deck over a fifty metre
+## drop is not somewhere to dawdle, and a minute of it is already a long shot.
+const CROSS_SPEED := 1.1
+const BIGFOOT_CROSS_SPEED := 0.95
+## Seconds a visitor stays on the far shore before turning round.
+const CAMPER_STAY := 12.0
+const BIGFOOT_STAY := 6.0
+## Nobody sets out again inside this many seconds of a crossing ending.
+const CROSS_COOLDOWN := 30.0
+## Frames of no progress on the deck before the crossing is given up, in
+## seconds. A walker whose next board has been blown out of reach would
+## otherwise stand there forever.
+const CROSS_STALL := 8.0
+
+## The link to the other shore, when a bridge makes one; null means this ground
+## is the whole world, which is every other study and the old behaviour exactly.
+var crossing: CrossingRoute
+## A camp across the link has Bigfoot's legs. `fidelity_life` asks only the
+## controller on the ground he lives on whether a camp owns him, so that one has
+## to be told when a camp he does not live on takes him.
+var borrowed := false
+## Bigfoot part-way across, and the shore he set out from. `bigfoot_home` stays
+## set for as long as he is a visitor here: it is what keeps his own ground's
+## brain off his legs and what puts him back on the bridge afterwards.
+var bigfoot_walk: CrossingWalk
+var bigfoot_home: CampsiteWorld
+var bigfoot_scene: Node
+var bigfoot_probe := Callable()
+var bigfoot_return := Vector3.ZERO
+## True for the one stride between the bridgehead and the first grid node, which
+## is off the navigation grid by construction (the rim is where `_safe_grounded`
+## starts refusing points) and must not be motion-checked against it.
+var bigfoot_offgrid := false
+var bigfoot_stall := 0.0
+var stay_left := 0.0
+var crossings := 0
+var camper_crossings := 0
+
 ## The playable chunk: the fidelity scene's editor, navigation and resident.
 func setup(owner_scene: Node) -> void:
 	bind(CampsiteWorld.for_scene(owner_scene))
@@ -40,6 +83,7 @@ func bind(camp_world: CampsiteWorld) -> void:
 	dirty = true
 
 func reset() -> void:
+	if bigfoot_walk != null or bigfoot_home != null: _abandon_crossing()
 	for entry in camps.values(): entry.actor.free(); entry.glow.free()
 	camps.clear()
 	_cancel_bigfoot()
@@ -70,6 +114,9 @@ func _sync() -> void:
 		entry.glow.position = pose*Vector3(1.55*float(record.scale),0.6,1.15*float(record.scale))
 		entry.actor.visible = entrance != null
 		if entrance == null: continue
+		# A camper on the deck or on the far shore is nowhere near this grid.
+		# Their absence from it is not a reason to send them home.
+		if _away(entry): continue
 		if not entry.initialized or not world.navigation.is_safe(entry.actor.position):
 			entry.actor.position = entrance
 			entry.initialized = true
@@ -88,7 +135,7 @@ func _sync() -> void:
 		camps.erase(id)
 		if bigfoot_camp == id: _cancel_bigfoot()
 	if not bigfoot_activity.is_empty() and not bigfoot_route.is_empty():
-		bigfoot_route = world.navigation.path(world.resident.creature.position,bigfoot_route[-1])
+		bigfoot_route = world.navigation.path(world.resident_point(),bigfoot_route[-1])
 		bigfoot_waypoint = 1
 		if bigfoot_route.is_empty(): _cancel_bigfoot()
 	if camps.is_empty():
@@ -132,7 +179,7 @@ func _create(id: int, pose: Transform3D, variant: String) -> Dictionary:
 	glow.light_color = Color("ffbf7d")
 	glow.light_energy = 1.3
 	glow.omni_range = 4
-	return {"actor":actor,"flash":flash,"flash_time":0.0,"photo_view":0.0,"last_photo":-1,"last_scare":-1,"variant":variant,"lamp":lamp,"mark":mark,"carried":carried,"glow":glow,"pose":pose,"size":0.0,"initialized":false,"home":null,"record":{},"state":"rest","wait":2.0,"route":PackedVector3Array(),"waypoint":1,"branch":-1,"suspicion":0.0,"search":0.0,"last_seen":Vector3.ZERO,"outings":0,"visible":0.0,"latched":false,"last_visit":-1,"last_search":-1}
+	return {"actor":actor,"flash":flash,"flash_time":0.0,"photo_view":0.0,"last_photo":-1,"last_scare":-1,"variant":variant,"lamp":lamp,"mark":mark,"carried":carried,"glow":glow,"pose":pose,"size":0.0,"initialized":false,"home":null,"record":{},"state":"rest","wait":2.0,"route":PackedVector3Array(),"waypoint":1,"branch":-1,"suspicion":0.0,"search":0.0,"last_seen":Vector3.ZERO,"outings":0,"visible":0.0,"latched":false,"last_visit":-1,"last_search":-1,"walk":null,"shore":null,"away":0.0,"last_cross":-1}
 
 func _route(entry: Dictionary, destination: Vector3, state: String) -> bool:
 	var path: PackedVector3Array = world.navigation.path(entry.actor.position,destination)
@@ -157,6 +204,11 @@ func _outing(entry: Dictionary) -> void:
 				entry.branch = int(item.id)
 				_event("camper leaves to gather wood")
 				return
+	# The pile is full and every branch within reach is on it: there is nothing
+	# left to fetch and the far shore is the only thing left to look at. The
+	# bridge is a reason to go somewhere, so it earns an outing of its own.
+	if crossing != null and int(entry.record.get("wood",0))>=8 and entry.last_cross != entry.outings and entry.outings%3 == 0 and _begin_camper_crossing(entry):
+		return
 	var angle := float(entry.outings)*2.4+float(entry.record.id)
 	for attempt in range(8):
 		var point: Variant = world.navigation.nearest_safe(entry.home+Vector3(sin(angle+attempt),0,cos(angle+attempt))*6)
@@ -212,6 +264,9 @@ func _walk(entry: Dictionary, dt: float) -> bool:
 
 func _advance_camper(entry: Dictionary,dt: float, sense: bool) -> void:
 	if entry.home == null: return
+	if _away(entry):
+		_advance_visitor(entry,dt)
+		return
 	entry.flash_time = maxf(0,entry.flash_time-dt)
 	entry.flash.visible = entry.flash_time>0
 	entry.actor.pose(dt,not entry.route.is_empty(),entry.state,entry.record.get("carrying",false),1.8 if entry.state == "flee" else 0.7)
@@ -221,13 +276,13 @@ func _advance_camper(entry: Dictionary,dt: float, sense: bool) -> void:
 	entry.search = maxf(0,entry.search-dt)
 	if not world.resident_active(): entry.visible = 0.0
 	if sense and world.resident_active():
-		entry.visible = sight.exposure(entry.lamp,world.resident.creature.position,2.8*world.resident.creature.actor.scale.y,true,world.night.call())
+		entry.visible = sight.exposure(entry.lamp,world.resident_point(),2.8*world.resident.creature.actor.scale.y,true,world.night.call())
 	entry.suspicion = clampf(entry.suspicion+dt*(entry.visible*1.6 if entry.visible>0 else -0.7),0,1)
 	if entry.suspicion<0.1: entry.latched = false
 	if entry.state not in ["photo","flee"] and entry.suspicion>=1 and entry.search<=0 and not entry.latched and entry.last_search != entry.outings:
 		entry.last_search = entry.outings
 		entry.latched = true
-		entry.last_seen = world.resident.creature.position
+		entry.last_seen = world.resident_point()
 		entry.search = 9.0
 		entry.route = PackedVector3Array()
 		entry.state = "search"
@@ -242,7 +297,7 @@ func _advance_camper(entry: Dictionary,dt: float, sense: bool) -> void:
 		entry.state = "photo"
 		entry.wait = 0.65
 		_event("camper raises the camera")
-	if entry.visible>0 and world.resident_active() and entry.state != "photo" and entry.last_scare != entry.outings and entry.actor.position.distance_to(world.resident.creature.position)<2.6:
+	if entry.visible>0 and world.resident_active() and entry.state != "photo" and entry.last_scare != entry.outings and entry.actor.position.distance_to(world.resident_point())<2.6:
 		entry.last_scare = entry.outings
 		entry.search = 6.0
 		if _route(entry,entry.home,"flee"):
@@ -263,7 +318,7 @@ func _advance_camper(entry: Dictionary,dt: float, sense: bool) -> void:
 	match entry.state:
 		"photo":
 			# Recheck line of sight at shutter time, not only when the camera rises.
-			var visible_now: float = sight.exposure(entry.lamp,world.resident.creature.position,2.8*world.resident.creature.actor.scale.y,true,world.night.call()) if world.resident_active() else 0.0
+			var visible_now: float = sight.exposure(entry.lamp,world.resident_point(),2.8*world.resident.creature.actor.scale.y,true,world.night.call()) if world.resident_active() else 0.0
 			if visible_now>=0.66:
 				var photos := mini(999,int(entry.record.get("photos",0))+1)
 				_update_inventory(entry,{"photos":photos})
@@ -305,12 +360,25 @@ func _take_bigfoot(path: PackedVector3Array, activity: String, camp_id: int) -> 
 	_event("Bigfoot "+activity)
 
 func _bigfoot(dt: float,sense: bool) -> bool:
+	# Another camp across the link has him. Nothing here may issue a walk.
+	if borrowed:
+		if not bigfoot_activity.is_empty(): _cancel_bigfoot()
+		return false
+	if bigfoot_walk != null: return _cross_step(dt)
+	# No resident of its own, but the bridge reaches one.
+	if world.resident == null: return _consider_crossing(dt)
 	if not world.resident_active(): _cancel_bigfoot(); return false
 	# Player ownership wins even when a carried/thrown resident briefly becomes
 	# idle. Camps must never issue walk commands alongside world-play handling.
 	if world.resident_owned():
-		_cancel_bigfoot()
+		if bigfoot_home != null: _abandon_crossing()
+		else: _cancel_bigfoot()
 		return false
+	# A visitor with nothing left to do here goes back the way he came.
+	if bigfoot_home != null and bigfoot_activity.is_empty():
+		stay_left -= dt
+		if stay_left <= 0.0: return _begin_return()
+		return true
 	visit_in -= dt
 	react_in = maxf(0,react_in-dt)
 	if sense and react_in<=0 and world.resident.creature.can_roam() and bigfoot_activity != "hiding":
@@ -323,25 +391,32 @@ func _bigfoot(dt: float,sense: bool) -> bool:
 					var point: Variant = world.navigation._ground(Vector3(x,0,z))
 					if point == null or not world.navigation.is_safe(point) or sight.exposure(entry.lamp,point,2.8*world.resident.creature.actor.scale.y,false)>0: continue
 					best.append(point)
-			best.sort_custom(func(a: Vector3,b: Vector3) -> bool: return a.distance_squared_to(world.resident.creature.position)<b.distance_squared_to(world.resident.creature.position))
+			best.sort_custom(func(a: Vector3,b: Vector3) -> bool: return a.distance_squared_to(world.resident_point())<b.distance_squared_to(world.resident_point()))
 			for point in best.slice(0,5):
-				var path: PackedVector3Array = world.navigation.path(world.resident.creature.position,point)
+				var path: PackedVector3Array = world.navigation.path(world.resident_point(),point)
 				if not path.is_empty(): _take_bigfoot(path,"hiding",id); break
 			break
 	if not bigfoot_activity.is_empty():
 		if not world.resident.creature.can_roam(): _cancel_bigfoot(); return false
 		if bigfoot_waypoint<bigfoot_route.size():
-			if not world.navigation.motion_safe(world.resident.creature.position,bigfoot_route[bigfoot_waypoint],world.resident.creature.walking_speed(1.35)*dt):
+			if not bigfoot_offgrid and not world.navigation.motion_safe(world.resident_point(),bigfoot_route[bigfoot_waypoint],world.resident.creature.walking_speed(1.35)*dt):
 				_cancel_bigfoot()
 				return false
-			if world.resident.creature.walk_step(bigfoot_route[bigfoot_waypoint],1.35 if bigfoot_activity == "hiding" else 0.75,dt): bigfoot_waypoint += 1
+			if world.resident.creature.walk_step(world.to_world(bigfoot_route[bigfoot_waypoint]),1.35 if bigfoot_activity == "hiding" else 0.75,dt):
+				bigfoot_waypoint += 1
+				bigfoot_offgrid = false
 		else:
 			world.resident.creature.stop_walking()
 			bigfoot_wait += dt
-			if camps.has(bigfoot_camp): world.resident.creature.notice(camps[bigfoot_camp].pose.origin+Vector3.UP)
+			if camps.has(bigfoot_camp): world.resident.creature.notice(world.to_world(camps[bigfoot_camp].pose.origin+Vector3.UP))
 			if bigfoot_activity == "visiting camp" and camps.has(bigfoot_camp):
 				var entry: Dictionary = camps[bigfoot_camp]
-				if entry.actor.position.distance_to(entry.home)<3:
+				# The camper came home; the tent is not unattended any more, so the
+				# visit is off -- unless he walked a bridge to get here. A
+				# hundred metres of rope deck is too far to come to be put off by
+				# somebody sitting outside, and the encounter is the interesting
+				# half of the crossing anyway.
+				if entry.actor.position.distance_to(entry.home)<3 and bigfoot_home == null:
 					_cancel_bigfoot()
 					visit_in = 8
 					return false
@@ -358,6 +433,8 @@ func _bigfoot(dt: float,sense: bool) -> bool:
 							_event("Bigfoot steals a snack from camp")
 				_cancel_bigfoot()
 				visit_in = 18
+				# A visitor has what he came for; the bridge is the way back.
+				if bigfoot_home != null: stay_left = BIGFOOT_STAY
 		return true
 	if visit_in>0 or not world.resident.creature.can_roam() or not world.resident.routine.active.is_empty(): return false
 	visit_in = 8
@@ -366,7 +443,7 @@ func _bigfoot(dt: float,sense: bool) -> bool:
 		if entry.home == null or entry.actor.position.distance_to(entry.home)<3: continue
 		# Alternate opportunities instead of commandeering every outing.
 		if int(entry.outings)%2 == 0 or entry.last_visit == entry.outings: continue
-		var path: PackedVector3Array = world.navigation.path(world.resident.creature.position,entry.home)
+		var path: PackedVector3Array = world.navigation.path(world.resident_point(),entry.home)
 		if path.is_empty(): continue
 		entry.last_visit = entry.outings
 		visits += 1
@@ -374,16 +451,281 @@ func _bigfoot(dt: float,sense: bool) -> bool:
 		return true
 	return false
 
-## One frame. True while a camp outing owns Bigfoot's legs.
+## True while this controller -- an outing or a crossing -- owns Bigfoot's legs.
+func owns_bigfoot() -> bool:
+	return bigfoot_walk != null or bigfoot_home != null or not bigfoot_activity.is_empty()
+
+## One frame. True while Bigfoot's legs are spoken for: by this camp, or by a
+## camp across the link that borrowed him through this one.
 func advance(delta: float) -> bool:
-	if world == null or world.paused.call(): return not bigfoot_activity.is_empty()
-	if world.busy.call(): return not bigfoot_activity.is_empty()
+	if world == null or world.paused.call(): return owns_bigfoot() or borrowed
+	if world.busy.call(): return owns_bigfoot() or borrowed
 	if dirty: _sync()
 	var dt := minf(delta,0.05)
-	if dt<=0: return not bigfoot_activity.is_empty()
+	if dt<=0: return owns_bigfoot() or borrowed
 	clock += dt
 	sense_in -= dt
 	var sense := sense_in<=0
 	if sense: sense_in = 0.15
 	for entry in camps.values(): _advance_camper(entry,dt,sense)
-	return not bigfoot_activity.is_empty() if dirty else _bigfoot(dt,sense)
+	if not dirty: _bigfoot(dt,sense)
+	return owns_bigfoot() or borrowed
+
+# ============================================================== the crossing
+## A camp on an island is a camp with a horizon. When a bridge joins its ground
+## to another (`crossing_route.gd`), three things become possible that were not:
+## a camper can go and look at the other side, Bigfoot can come over from a
+## ground he does not live on, and while he is here this world has a resident,
+## so every encounter, photograph and scare works with no further change.
+##
+## Nothing below is scheduled. The motive for the crossing is the same one the
+## camp already had -- an unattended tent is worth a look, a full wood pile
+## leaves a camper with nothing to fetch -- and when the reason is absent the
+## bridge stands empty.
+
+## True while this camper is on the deck or standing on the other shore.
+func _away(entry: Dictionary) -> bool:
+	return entry.walk != null or (entry.shore != null and entry.shore != world)
+
+# ------------------------------------------------------------- the campers
+
+## Send a camper over the link. Public for the study's key and for tests;
+## `_outing` calls it on its own once the pile is full.
+func send_camper_across(camp_id := -1) -> bool:
+	if crossing == null: return false
+	for id in camps:
+		if camp_id >= 0 and id != camp_id: continue
+		var entry: Dictionary = camps[id]
+		if entry.home == null or _away(entry): continue
+		if _begin_camper_crossing(entry): return true
+	return false
+
+## Somewhere to stand on the far side: the far bridgehead's own ground, which is
+## as far as a sightseer with a camp to keep is willing to go.
+func _begin_camper_crossing(entry: Dictionary) -> bool:
+	var shore := crossing.other(world) if crossing != null else null
+	if shore == null: return false
+	var head: Variant = shore.navigation.nearest_safe(shore.to_local(crossing.anchor_on(shore)))
+	if not head is Vector3: return false
+	var walk := CrossingWalk.along(crossing,crossing.plan(world,entry.actor.global_position,shore,shore.to_world(head)))
+	if walk == null: return false
+	entry.route = PackedVector3Array()
+	entry.walk = walk
+	entry.state = "cross"
+	entry.last_cross = entry.outings
+	_event("camper sets out across the bridge")
+	return true
+
+func _cross_camper_home(entry: Dictionary) -> bool:
+	var walk: CrossingWalk = null
+	if crossing != null and entry.shore != null:
+		walk = CrossingWalk.along(crossing,crossing.plan(entry.shore,entry.actor.global_position,world,world.to_world(entry.home)))
+	if walk == null:
+		entry.away = 4.0  ## The deck is gone or the grid moved; try again shortly.
+		return false
+	entry.walk = walk
+	entry.state = "cross"
+	_event("the camper starts back across the bridge")
+	return true
+
+## A camper who is not on their own ground. There is no wood of theirs over
+## there and no tent of theirs to keep, so a visitor walks, looks, and comes
+## back; that is the whole of it, deliberately.
+func _advance_visitor(entry: Dictionary, dt: float) -> void:
+	entry.lamp.visible = world.night.call()
+	entry.glow.visible = entry.lamp.visible
+	entry.carried.visible = false
+	entry.mark.text = ""
+	if entry.walk != null:
+		var at: Vector3 = entry.actor.global_position
+		var moved: Vector3 = entry.walk.carry(at,CROSS_SPEED,dt)
+		var stride := moved-at
+		entry.actor.global_position = moved
+		if Vector2(stride.x,stride.z).length()>0.0001:
+			entry.actor.global_rotation.y = lerp_angle(entry.actor.global_rotation.y,atan2(stride.x,stride.z),1-exp(-6*dt))
+		entry.actor.pose(dt,true,"cross",false,CROSS_SPEED)
+		if entry.walk.finished(): _land_camper(entry)
+		return
+	entry.actor.pose(dt,false,"look",false,CROSS_SPEED)
+	entry.away -= dt
+	if entry.away<=0: _cross_camper_home(entry)
+
+## Stepping off the boards is where one frame stops being enough. The model
+## keeps its parent -- and so its document-local frame -- for the whole
+## crossing, and only its world position moves; here the shore it has arrived on
+## is asked, in its own frame, for the nearest foothold, and the model is put
+## there through both `global_transform`s at once.
+func _land_camper(entry: Dictionary) -> void:
+	var arrived: CampsiteWorld = entry.walk.destination_shore()
+	entry.walk = null
+	if arrived != null:
+		var safe: Variant = arrived.navigation.nearest_safe(arrived.to_local(entry.actor.global_position))
+		if safe is Vector3: entry.actor.global_position = arrived.to_world(safe)
+	entry.shore = arrived
+	camper_crossings += 1
+	if arrived == world:
+		entry.route = PackedVector3Array()
+		entry.state = "return"
+		entry.wait = 1.0
+		_event("the camper is home from the far shore")
+		return
+	entry.away = CAMPER_STAY
+	_event("the camper crosses the bridge and looks around")
+
+# -------------------------------------------------------------- Bigfoot
+
+## No Bigfoot lives on this ground, but the bridge reaches one. The motive is
+## the camp's own and unchanged: an unattended tent is worth the walk. The only
+## new thing is how long the walk is.
+func _consider_crossing(dt: float) -> bool:
+	visit_in -= dt
+	if crossing == null or visit_in>0: return false
+	visit_in = 8.0
+	for id in camps:
+		var entry: Dictionary = camps[id]
+		if entry.home == null or _away(entry): continue
+		if entry.actor.position.distance_to(entry.home)<3: continue
+		if entry.last_visit == entry.outings: continue
+		if not _send_bigfoot(id): continue
+		entry.last_visit = entry.outings
+		return true
+	return false
+
+## Fetch Bigfoot from across the link, bound for `camp_id`'s tent. Public for
+## the study's key and for tests; `_consider_crossing` calls it on its own.
+func send_bigfoot_across(camp_id := -1) -> bool:
+	if camp_id<0:
+		for id in camps:
+			camp_id = id
+			break
+	return _send_bigfoot(camp_id)
+
+func _send_bigfoot(camp_id: int) -> bool:
+	if crossing == null or world.resident != null or not camps.has(camp_id): return false
+	var home := crossing.other(world)
+	if home == null or not home.resident_active() or home.resident_owned(): return false
+	var scene: Node = home.resident
+	if scene.creature == null or not scene.creature.can_roam(): return false
+	if scene.routine != null and not scene.routine.active.is_empty(): return false
+	var entry: Dictionary = camps[camp_id]
+	if entry.home == null: return false
+	var from_at: Vector3 = scene.creature.global_position
+	var walk := CrossingWalk.along(crossing,crossing.plan(home,from_at,world,world.to_world(entry.home)))
+	if walk == null: return false
+	if scene.routine != null: scene.routine.cancel("crossing the bridge")
+	if scene.brain != null: scene.brain.reset_behavior()
+	scene.creature.stop_walking()
+	bigfoot_scene = scene
+	bigfoot_home = home
+	bigfoot_probe = scene.creature._ground_probe
+	bigfoot_return = from_at
+	bigfoot_walk = walk
+	bigfoot_stall = 0.0
+	bigfoot_camp = camp_id
+	visits += 1
+	_event("Bigfoot starts across the bridge")
+	return true
+
+## One frame on the deck. The boards move under him, so both the place he is
+## walking to and the ground beneath his feet are re-read every frame --
+## `crossing_walk.gd` owns that -- and the probe swap is the same one
+## `bigfoot_cave.gd` makes when he steps into the cave.
+func _cross_step(dt: float) -> bool:
+	if bigfoot_scene == null or not is_instance_valid(bigfoot_scene) or bigfoot_scene.creature == null:
+		_abandon_crossing()
+		return false
+	var creature = bigfoot_scene.creature
+	if not creature.can_roam():
+		# A stumble, a splash, an animation that owns him for a moment: wait,
+		# rather than stranding him on the boards. The stall timer still decides.
+		bigfoot_stall += dt
+		if bigfoot_stall>CROSS_STALL: _abandon_crossing()
+		return true
+	var before: Vector3 = creature.global_position
+	creature._ground_probe = bigfoot_walk.probe()
+	if creature.walk_step(bigfoot_walk.target(),BIGFOOT_CROSS_SPEED,dt):
+		if bigfoot_walk.advance():
+			_land_bigfoot()
+			return true
+	# Progress is measured in metres, not in waypoints: a straightened grid leg
+	# can be twenty metres long and a deck board is two.
+	bigfoot_stall = 0.0 if creature.global_position.distance_to(before)>0.001 else bigfoot_stall+dt
+	if bigfoot_stall>CROSS_STALL: _abandon_crossing()
+	return true
+
+## He steps off the boards. Arriving here, this ground has a resident for as
+## long as he stays, which is all `resident_active()` needs for the campers to
+## start seeing him: the encounters, the photograph and the scare are unchanged.
+func _land_bigfoot() -> void:
+	var arrived: CampsiteWorld = bigfoot_walk.destination_shore()
+	bigfoot_walk = null
+	bigfoot_stall = 0.0
+	var creature = bigfoot_scene.creature
+	creature.stop_walking()
+	if arrived != world:
+		world.resident = null
+		if bigfoot_probe.is_valid(): creature._ground_probe = bigfoot_probe
+		bigfoot_home = null
+		bigfoot_camp = -1
+		visit_in = CROSS_COOLDOWN
+		crossings += 1
+		_event("Bigfoot is back across the bridge")
+		return
+	world.resident = bigfoot_scene
+	creature._ground_probe = world.ground_probe()
+	crossings += 1
+	dirty = true
+	stay_left = BIGFOOT_STAY
+	_event("Bigfoot steps off the bridge onto the far shore")
+	if not camps.has(bigfoot_camp): return
+	# The bridgehead is at the rim, off the end of the grid by construction, so
+	# the first stride is his own and the route starts where he is standing.
+	var landing: Variant = world.navigation.nearest_safe(world.resident_point())
+	if not landing is Vector3: return
+	var path: PackedVector3Array = world.navigation.path(landing,camps[bigfoot_camp].home)
+	if path.is_empty(): return
+	var route := PackedVector3Array([world.resident_point()])
+	route.append_array(path)
+	_take_bigfoot(route,"visiting camp",bigfoot_camp)
+	bigfoot_offgrid = true
+
+## Home again: the same link, the other way, back to where he set out from.
+func _begin_return() -> bool:
+	if crossing == null or bigfoot_home == null or bigfoot_scene == null or bigfoot_scene.creature == null:
+		_abandon_crossing()
+		return false
+	_cancel_bigfoot()
+	var walk := CrossingWalk.along(crossing,crossing.plan(world,bigfoot_scene.creature.global_position,bigfoot_home,bigfoot_return))
+	if walk == null:
+		_abandon_crossing()
+		return false
+	bigfoot_walk = walk
+	bigfoot_stall = 0.0
+	_event("Bigfoot heads back across the bridge")
+	return true
+
+## The crossing cannot go on: he was picked up, stopped, or the ground moved
+## under the plan. He is given back to whichever shore he is standing on -- there
+## is no honest teleport home from the middle of a rope bridge.
+func _abandon_crossing() -> void:
+	var where := "before it began"
+	if bigfoot_walk != null:
+		var at: Vector3 = bigfoot_scene.creature.global_position if bigfoot_scene != null and is_instance_valid(bigfoot_scene) and bigfoot_scene.creature != null else Vector3.ZERO
+		where = "%d%% across, on the %s, %.2f m off his waypoint%s" % [
+			roundi(bigfoot_walk.progress() * 100.0), "deck" if bigfoot_walk.on_deck() else "ground",
+			at.distance_to(bigfoot_walk.target()), "" if bigfoot_walk.probe().call(at) is Vector3 else ", no ground under him"]
+		if bigfoot_scene != null and is_instance_valid(bigfoot_scene) and bigfoot_scene.creature != null:
+			where += " (state %d, roam %s)" % [bigfoot_scene.creature.state, bigfoot_scene.creature.can_roam()]
+	if bigfoot_scene != null and is_instance_valid(bigfoot_scene) and bigfoot_scene.creature != null:
+		if bigfoot_probe.is_valid(): bigfoot_scene.creature._ground_probe = bigfoot_probe
+		bigfoot_scene.creature.stop_walking()
+	bigfoot_walk = null
+	bigfoot_home = null
+	bigfoot_offgrid = false
+	bigfoot_stall = 0.0
+	world.resident = null
+	bigfoot_camp = -1
+	bigfoot_activity = ""
+	bigfoot_route.clear()
+	visit_in = CROSS_COOLDOWN
+	_event("Bigfoot gives up the crossing %s" % where)

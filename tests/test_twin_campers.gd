@@ -2,8 +2,9 @@ extends SceneTree
 ## Campers live on the far island of the twin-chunk study, on that island's own
 ## ground: the tent and its fallen branches are records in the island's
 ## document, the resident stands over the island and never over chunk one or
-## the chasm, goes out for wood and brings it home, and Bigfoot -- who cannot
-## cross yet -- is never taken by the far camp.
+## the chasm, goes out for wood and brings it home, and Bigfoot is never taken by the
+## far camp except by way of the bridge -- `tests/test_bridge_crossing.gd` owns
+## the crossing itself.
 ##
 ## Instantiates the study, so it needs a real window and the native kernels.
 ## Never --headless: the fidelity scene hangs there.
@@ -114,7 +115,8 @@ func run() -> void:
 	drawn = island.landmarks.get_node_or_null("campsite_%d" % scene.camp_id)
 	var parts_after: int = drawn.find_children("*", "MeshInstance3D", true, false).size() if drawn != null else 0
 	check(parts_after > parts_before, "The island redraws the tent with wood on the pile (%d -> %d parts)" % [parts_before, parts_after])
-	check(camps.bigfoot_activity.is_empty() and camps.visits == 0, "The far camp never takes Bigfoot, who cannot cross")
+	check(camps.bigfoot_activity.is_empty() or camps.bigfoot_home != null, "The far camp only ever takes Bigfoot by way of the bridge")
+	check(camps.bigfoot_home == null, "and does not fetch him across during one outing")
 	him = scene.global_transform.affine_inverse() * scene.creature.global_position
 	check(scene.ground_y_at(Vector2(him.x, him.z), false) != null, "Bigfoot is still on chunk one")
 	print("TWIN CAMPERS events: ", camps.events)
