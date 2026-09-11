@@ -30,6 +30,9 @@ extends "res://studies/bigfoot_living_world.gd"
 ##   `T`  throws a loose rock onto the middle of the deck
 ##   `G`  drops three at once, to watch the deck take a load
 ##   `C`  the camp on the far island, from the chasm side
+##   `J`  cuts the rope at mid-span; both halves swing down off their anchors
+##   `shift+J` cuts it two links off the near bridgehead, so the long far half
+##        swings back against the far cliff. One cut only, either way.
 ##
 ## The far island has campers. A tent, its resident and a few fallen branches
 ## go into the grown island's own document, and `campsite_life.gd` runs them
@@ -831,6 +834,15 @@ func _strike_near_deck(point: Vector3) -> void:
 
 # --------------------------------------------------------------- the props
 
+## Severs the rope at `t`, once. Both halves stay tied to their own anchors and
+## swing down; after this the deck is gone and `deck_surface` answers the free
+## ends rather than a path across -- see `SuspensionBridge.deck_gap`.
+func cut_bridge(t: float) -> bool:
+	if bridge == null or not bridge.has_method("cut_near_t"): return false
+	var cut: bool = bridge.cut_near_t(t)
+	print("TWIN CHUNKS bridge cut at t %.2f: %s" % [t, "the deck parts" if cut else "already cut"])
+	return cut
+
 ## Where the deck's walking surface really is at `t`: the bridge's own answer
 ## when there is a real one, and the study's stand-in catenary otherwise.
 func deck_surface(t: float) -> Vector3:
@@ -1202,6 +1214,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_C:
 			frame_camp()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_J:
+			# `J` was unbound. Shift cuts near the near bridgehead instead of the
+			# middle, which is the shot where the far half is long enough to swing
+			# all the way back and slap the cliff it is tied to.
+			cut_bridge(0.08 if event.shift_pressed else 0.5)
 			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)

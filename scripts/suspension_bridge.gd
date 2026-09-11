@@ -26,6 +26,13 @@ class_name SuspensionBridge extends Node3D
 ## happen to know. Only `apply_weather`'s damping touches the solver, and it
 ## only scales the damping the caller already chose.
 ##
+## The rope can be severed. `cut(point)` drops the joint nearest that point and
+## the chain parts there: each half stays tied to its own anchor and swings down
+## under gravity, Jolt doing all of it. Planks and ropes follow the break -- the
+## gap is drawn as a gap, not bridged -- and `deck_point` stops pretending there
+## is deck in it; see `deck_gap` for what it answers instead. One cut only: a
+## second call returns false.
+##
 ## A creature standing here later wants friction 0.9 and a mass well under the
 ## segment's own: the slabs are `DECK_DENSITY` kilograms per metre, so a two
 ## metre segment weighs about as much as a large dog and a Bigfoot leaning on
@@ -82,9 +89,25 @@ const ICE_DAMPING := 2.4
 ## A lightning hit, in metres per second of delta-v on the nearest slab. Three
 ## is a visible snap that runs off down the deck and dies in a second or two.
 const JOLT_IMPULSE := 3.0
+## The snap at a cut, in metres per second of delta-v on the two new free ends:
+## enough that they whip clear of each other before gravity takes them, not so
+## much that the halves are thrown. Down and toward their own anchor, which is
+## the way a cut rope end actually goes.
+const CUT_WHIP := 2.2
 
 var segments: Array[RigidBody3D] = []
 var anchors: Array[StaticBody3D] = []
+## Every link in the chain, anchor to anchor: `_joints[j]` ties lane node j to
+## lane node j + 1, so there is one more joint than there are segments.
+var _joints: Array[Generic6DOFJoint3D] = []
+## Which joint was cut, as an index into `_joints`, or -1 while the rope is
+## whole. The cut interval is lane nodes `_cut_joint` and `_cut_joint + 1`.
+var _cut_joint := -1
+var _cut_lo := -1.0
+var _cut_hi := -1.0
+## How far below the anchors the visuals are allowed to reach, as a fraction of
+## the span. A hanging half is half the span long, so a cut widens it.
+var _drop_reach := 0.4
 var planks: Array[Dictionary] = []
 var segment_length := 1.6
 var segment_mass := 0.0
@@ -222,11 +245,19 @@ func apply_weather(wet: float, cover: float, ice: float) -> void:
 
 ## A world-space point on the walking surface, t from the first anchor to the
 ## second. The anchor mouths cap the rope so t=0 and t=1 land on solid ground.
+##
+## After a cut there is no deck across `deck_gap()`, and this never claims there
+## is: any `t` inside the gap returns the hanging free end of whichever half `t`
+## is nearer -- the last place a foot can go on that side, which for a half that
+## has swung down is metres below and behind where the deck used to be. It is
+## therefore not a straight line across the break, and it is not continuous at
+## the gap. A walker must ask `is_cut()` and `deck_gap()` rather than reading a
+## sequence of `deck_point`s and trusting them to be a path.
 func deck_point(t: float) -> Vector3:
 	if _lane.is_empty(): return global_transform * _a.lerp(_b, clampf(t, 0.0, 1.0))
-	var slide := clampf(t, 0.0, 1.0) * float(_lane.size() - 1)
-	var first := clampi(int(slide), 0, _lane.size() - 2)
-	var here := _lane[first].lerp(_lane[first + 1], slide - float(first))
+	var at := _lane_at(t)
+	var first := int(at.x)
+	var here := _lane[first].lerp(_lane[first + 1], at.y)
 	return global_transform * (here + Vector3.UP * DECK_THICKNESS * 0.5)
 
 ## A hit on the rope near `point`: lightning, a falling branch, a thrown rock
@@ -253,6 +284,50 @@ func jolt(point: Vector3, energy := 1.0) -> bool:
 		body.sleeping = false
 		body.apply_central_impulse(kick * body.mass * (1.0 if offset == 0 else 0.45))
 	return true
+
+## Severs the rope at the link nearest `point`, world space. The joint is freed,
+## so the two halves are no longer connected to each other -- each is still tied
+## to its own anchor, and Jolt swings it down on its own. The two new free ends
+## take a `CUT_WHIP` snap scaled by `energy`.
+##
+## False if the rope has not been built yet, or if it has already been cut: a
+## deck that has parted once cannot part again.
+func cut(point: Vector3, energy := 1.0) -> bool:
+	if _joints.is_empty() or _cut_joint >= 0: return false
+	var local := global_transform.affine_inverse() * point
+	var nearest := 0
+	var closest := INF
+	for j in range(_joints.size()):
+		# The live midpoint of the link, not the pose it was built at: a deck in
+		# a gale is metres from where it was laid.
+		var gap := _lane_node(j).lerp(_lane_node(j + 1), 0.5).distance_squared_to(local)
+		if gap < closest:
+			closest = gap
+			nearest = j
+	return _sever(nearest, energy)
+
+## The same cut, addressed the way a walker knows the deck: `t` from the first
+## anchor to the second. The nearest link to that point on the deck goes.
+func cut_near_t(t: float, energy := 1.0) -> bool:
+	if _joints.is_empty() or _cut_joint >= 0: return false
+	var links := float(_joints.size() - 1)
+	return _sever(clampi(int(round(clampf(t, 0.0, 1.0) * links)), 0, _joints.size() - 1), energy)
+
+## Has the deck parted?
+func is_cut() -> bool:
+	return _cut_joint >= 0
+
+## Where it parted, as the `t` of the middle of the gap. -1 while the rope is
+## whole.
+func cut_at() -> float:
+	return -1.0 if _cut_joint < 0 else (_cut_lo + _cut_hi) * 0.5
+
+## The stretch of `t` with no deck under it, as (from, to). Both zero while the
+## rope is whole, so `t >= from and t <= to` is only ever true after a cut --
+## and it is true at the two free ends themselves, which are the last standable
+## points on each half.
+func deck_gap() -> Vector2:
+	return Vector2.ZERO if _cut_joint < 0 else Vector2(_cut_lo, _cut_hi)
 
 ## Widest lateral swing away from the line the rope was laid on, in metres:
 ## the bow a wind puts in the deck. Zero in still air.
@@ -380,6 +455,82 @@ func _join(first: PhysicsBody3D, second: PhysicsBody3D, at: Vector3) -> void:
 		axes[i].call(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.0)
 		axes[i].call(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, -travel[i])
 		axes[i].call(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, travel[i])
+	_joints.append(joint)
+
+## Drops one link and lets go. The joint is freed rather than loosened: a
+## Generic6DOF with its limits opened still carries the erp pull between two
+## bodies, and the point of a cut is that nothing at all crosses it.
+##
+## The lateral rail spring in `_physics_process` is left alone on both halves.
+## It pulls only along `_lateral` -- horizontally, across the span -- and a half
+## swinging down about its own anchor travels in the vertical plane the span
+## lies in, so the drift it measures stays near zero all the way down. What is
+## left of the handrail on each half is still tied to its own anchor and still
+## resists a gust, which is what the spring is there for.
+func _sever(index: int, energy: float) -> bool:
+	if index < 0 or index >= _joints.size(): return false
+	var joint := _joints[index]
+	_joints[index] = null
+	joint.queue_free()
+	_cut_joint = index
+	var links := float(_lane.size() - 1) if _lane.size() > 1 else float(segments.size() + 1)
+	_cut_lo = float(index) / links
+	_cut_hi = float(index + 1) / links
+	# Down and each toward its own anchor: the way a cut rope end goes.
+	var whip := maxf(0.0, energy) * CUT_WHIP
+	_whip(index - 1, (Vector3.DOWN * 0.82 - _forward * 0.35).normalized() * whip)
+	_whip(index, (Vector3.DOWN * 0.82 + _forward * 0.35).normalized() * whip)
+	for body in segments: body.sleeping = false
+	_widen_reach()
+	_refresh_lane()
+	if repaint_stride <= 0: _rebuild_visuals()
+	return true
+
+func _whip(index: int, kick: Vector3) -> void:
+	if index < 0 or index >= segments.size(): return
+	segments[index].apply_central_impulse(kick * segments[index].mass)
+
+## The cull box the deck can swing through has to grow when the deck stops being
+## a deck: a severed half is half the span long and ends up hanging straight
+## down from its anchor, far below anything the laid curve reached.
+func _widen_reach() -> void:
+	_drop_reach = 1.1
+	var box := _reach()
+	for layer in _layers: layer.custom_aabb = box
+	if _snow_deck != null: _snow_deck.custom_aabb = box
+	if _ropes != null: _ropes.custom_aabb = box
+	if _drips != null: _drips.visibility_aabb = box
+
+## Is there deck at `t`? False everywhere while the rope is whole. The two free
+## ends themselves count as deck: the gap is what is strictly between them.
+func _in_gap(t: float) -> bool:
+	return _cut_joint >= 0 and t > _cut_lo and t < _cut_hi
+
+func _lane_node(index: int) -> Vector3:
+	if _lane.is_empty(): return _a.lerp(_b, clampf(float(index) / maxf(1.0, float(segments.size() + 1)), 0.0, 1.0))
+	return _lane[clampi(index, 0, _lane.size() - 1)]
+
+## Which lane link `t` falls on and how far along it, as (first, blend). A `t`
+## inside the gap is pulled back onto the nearer half's last real link, so
+## everything downstream -- the walking point, the plank frames, the rope tubes
+## -- reads a pose that exists instead of one interpolated across the break.
+func _lane_at(t: float) -> Vector2:
+	var slide := clampf(t, 0.0, 1.0) * float(_lane.size() - 1)
+	var first := clampi(int(slide), 0, _lane.size() - 2)
+	var blend := slide - float(first)
+	if _cut_joint >= 0 and first == _cut_joint:
+		if blend < 0.5:
+			if first > 0:
+				first -= 1
+				blend = 1.0
+			else:
+				blend = 0.0  # Cut at the first anchor: the near half is the mouth.
+		elif first + 1 <= _lane.size() - 2:
+			first += 1
+			blend = 0.0
+		else:
+			blend = 1.0  # Cut at the last anchor: the far half is the mouth.
+	return Vector2(float(first), blend)
 
 ## Poses of the rope, anchors capping both ends, resampled each tick. Planks,
 ## ropes and `deck_point` all read this and nothing else.
@@ -397,9 +548,9 @@ func _refresh_lane() -> void:
 
 ## Position and orientation on the deck at t, in our own space.
 func _deck_pose(t: float) -> Transform3D:
-	var slide := clampf(t, 0.0, 1.0) * float(_lane.size() - 1)
-	var first := clampi(int(slide), 0, _lane.size() - 2)
-	var blend := slide - float(first)
+	var at := _lane_at(t)
+	var first := int(at.x)
+	var blend := at.y
 	# Lerped up vectors rather than a quaternion slerp: the joints allow five
 	# hundredths of a radian of twist, so nothing here is worth a slerp, and
 	# this runs two hundred and some times a tick.
@@ -500,8 +651,8 @@ func _plank_layer(count: int, tone: Color) -> MultiMeshInstance3D:
 
 ## The box the deck can swing through, so nothing is culled mid-sway.
 func _reach() -> AABB:
-	var low := Vector3(minf(_a.x, _b.x), minf(_a.y, _b.y) - _span * 0.4, minf(_a.z, _b.z)) - Vector3.ONE * (plank_width + 2.0)
-	var size := Vector3(absf(_b.x - _a.x), absf(_b.y - _a.y) + _span * 0.4 + rail_height, absf(_b.z - _a.z)) + Vector3.ONE * (plank_width + 2.0) * 2.0
+	var low := Vector3(minf(_a.x, _b.x), minf(_a.y, _b.y) - _span * _drop_reach, minf(_a.z, _b.z)) - Vector3.ONE * (plank_width + 2.0)
+	var size := Vector3(absf(_b.x - _a.x), absf(_b.y - _a.y) + _span * _drop_reach + rail_height, absf(_b.z - _a.z)) + Vector3.ONE * (plank_width + 2.0) * 2.0
 	return AABB(low, size)
 
 func _rebuild_visuals() -> void:
@@ -510,9 +661,13 @@ func _rebuild_visuals() -> void:
 	var capping := snow > 0.01
 	for plank: Dictionary in planks:
 		if plank.gone: continue
+		var lay := float(plank.t) + float(plank.slide) / _span
+		# A board over the break went into the chasm with the rope it was lashed
+		# to. Its slot in the batch is folded away below with the others.
+		if _in_gap(lay): continue
 		var tone: int = plank.tone
 		var batch := _layers[tone].multimesh
-		var pose := _deck_pose(float(plank.t) + float(plank.slide) / _span)
+		var pose := _deck_pose(lay)
 		pose.origin += pose.basis.y * (DECK_THICKNESS * 0.5 + PLANK_THICKNESS * 0.5 + float(plank.lift))
 		if plank.crack:
 			var halves: Array[Basis] = plank.halves
@@ -525,6 +680,11 @@ func _rebuild_visuals() -> void:
 			batch.set_instance_transform(_cursor[tone], Transform3D(pose.basis * plank.frame, pose.origin))
 			_cursor[tone] += 1
 			if capping: _cap_plank(pose.basis * plank.frame, pose.origin, pose.basis.y)
+	# Boards that went with the cut leave their slots behind; scale them to
+	# nothing rather than leave last tick's pose hanging in the air.
+	for tone in range(_cursor.size()):
+		var batch := _layers[tone].multimesh
+		for i in range(_cursor[tone], batch.instance_count): batch.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
 	if _snow_deck != null:
 		var snow_batch := _snow_deck.multimesh
 		for i in range(_snow_cursor, snow_batch.instance_count): snow_batch.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
@@ -547,35 +707,43 @@ func _rebuild_ropes() -> void:
 	_strands = 0
 	# Both sides come off one pose per sample: the deck is read a hundred times
 	# a tick as it is, and reading it twice for a mirror image is waste.
-	var rails := [PackedVector3Array([_anchor_rail(0, -1.0)]), PackedVector3Array([_anchor_rail(0, 1.0)])]
+	#
+	# Each side is a list of runs rather than one path. Whole, there is one run
+	# from anchor to anchor; cut, `_lay` starts a second at the break, so no
+	# strand is ever drawn across the gap.
+	var rails := [_path(_anchor_rail(0, -1.0)), _path(_anchor_rail(0, 1.0))]
 	for i in range(_stays.size()):
 		var at: float = _stays[i]
+		if _in_gap(at): continue
 		var pose := _deck_pose(at)
 		var next: float = _stays[i + 1] if i + 1 < _stays.size() else 1.0
-		var between := _deck_pose((at + next) * 0.5)
+		var midway := (at + next) * 0.5
+		var between := _deck_pose(midway)
 		for s in range(2):
 			var side := -1.0 if s == 0 else 1.0
 			var edge := pose.origin + pose.basis.z * side * plank_width * 0.46
 			var top := edge + pose.basis.y * rail_height
-			rails[s].append(top)
+			_lay(rails[s], at, top)
 			_strand(edge, top, STAY_RADIUS)
 			# Rope tied at the stays hangs slack in between; that slack is most
 			# of what tells a rope bridge from a boardwalk.
-			rails[s].append(between.origin + between.basis.z * side * plank_width * 0.46 + between.basis.y * rail_height - Vector3.UP * rail_height * 0.17)
-	var cables := [PackedVector3Array([_anchor_cable(0, -1.0)]), PackedVector3Array([_anchor_cable(0, 1.0)])]
+			_lay(rails[s], midway, between.origin + between.basis.z * side * plank_width * 0.46 + between.basis.y * rail_height - Vector3.UP * rail_height * 0.17)
+	var cables := [_path(_anchor_cable(0, -1.0)), _path(_anchor_cable(0, 1.0))]
 	for i in range(_lane.size()):
-		var pose := _deck_pose(float(i) / float(_lane.size() - 1))
+		var at := float(i) / float(_lane.size() - 1)
+		var pose := _deck_pose(at)
 		var under := pose.basis.y * (DECK_THICKNESS * 0.5 + 0.09)
 		for s in range(2):
-			cables[s].append(pose.origin + pose.basis.z * (-1.0 if s == 0 else 1.0) * plank_width * 0.44 - under)
+			_lay(cables[s], at, pose.origin + pose.basis.z * (-1.0 if s == 0 else 1.0) * plank_width * 0.44 - under)
 	for s in range(2):
 		var side := -1.0 if s == 0 else 1.0
-		rails[s].append(_anchor_rail(1, side))
-		cables[s].append(_anchor_cable(1, side))
-		_run(_smoothed(rails[s]), RAIL_RADIUS)
-		_run(_smoothed(cables[s]), CABLE_RADIUS)
+		_lay(rails[s], 1.0, _anchor_rail(1, side))
+		_lay(cables[s], 1.0, _anchor_cable(1, side))
+		_draw(rails[s], RAIL_RADIUS)
+		_draw(cables[s], CABLE_RADIUS)
 	for fray: Dictionary in _frays:
 		# Frayed ends, left where a rope was cut or gave way.
+		if _in_gap(float(fray.t)): continue
 		var top := _cable_point(float(fray.t), float(fray.side))
 		var tail := top - Vector3.UP * float(fray.drop) + _lateral * float(fray.kink) * float(fray.side)
 		var knee := top.lerp(tail, 0.55) + _lateral * 0.12 * float(fray.side)
@@ -584,6 +752,22 @@ func _rebuild_ropes() -> void:
 	# Whatever this rope did not need this tick is folded away to nothing.
 	var batch := _ropes.multimesh
 	for i in range(_strands, batch.instance_count): batch.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+
+## One rope path, as the list of runs it may have to become.
+func _path(start: Vector3) -> Array[PackedVector3Array]:
+	var runs: Array[PackedVector3Array] = [PackedVector3Array([start])]
+	return runs
+
+## Adds a point to a rope path at deck position `t`. Points inside the gap are
+## dropped, and the first point past the break opens a second run.
+func _lay(runs: Array[PackedVector3Array], t: float, point: Vector3) -> void:
+	if _cut_joint >= 0:
+		if _in_gap(t): return
+		if t >= _cut_hi and runs.size() == 1: runs.append(PackedVector3Array())
+	runs[runs.size() - 1].append(point)
+
+func _draw(runs: Array[PackedVector3Array], radius: float) -> void:
+	for run in runs: _run(_smoothed(run), radius)
 
 func _run(points: PackedVector3Array, radius: float) -> void:
 	for i in range(points.size() - 1): _strand(points[i], points[i + 1], radius)
