@@ -46,6 +46,24 @@ animation is still to come. Campers do not yet have player pickup or ragdoll
 physics, tent cloth simulation, or an actual photo gallery. Visibility uses
 static authored triangles and terrain samples; moving foliage is approximate.
 
+## Any ground at all
+
+The controller reaches its ground only through `CampsiteWorld`
+(`scripts/campsite_world.gd`): the terrain document the records live in, a
+navigation grid, the planted content and landmarks for sightlines, and, where
+he lives, the resident Bigfoot. `CampsiteWorld.for_scene` is the playable
+chunk; `CampsiteWorld.for_island` binds the same controller to a generated
+island (`scripts/island_builder.gd`), building a navigation grid over the
+island's own document with the tent as a solid. Camper positions are in the
+document's frame, so the controller node is parented under the island.
+
+The twin-chunk study (`studies/prototype_twin_chunks.gd`, `_settle_camp`) uses
+that to put a tent, its resident and a few fallen branches on the far island,
+across the bridge from Bigfoot. He cannot cross yet, so on that island there is
+nobody to glimpse: the campers gather wood, stack it and explore.
+`tests/test_twin_campers.gd` holds it, and `tools/probe_island_camp.gd` maps
+where on a grown island a tent could stand.
+
 ## Verification
 
 - `test_campsite_life.gd`: placement/preview, wood collection and delivery,

@@ -7,7 +7,8 @@ extends SceneTree
 ## chasm), `bridge.png` (the study's `B` framing, back along the whole span),
 ## `chasm.png` (its `N` framing, stood on the deck sighting the far bridgehead),
 ## `void.png` (its `M` framing, held beside the mid-deck over the drop) and
-## `far_island.png` (the copy's own centre at 30 m, from the side). `--size=WxH`
+## `far_island.png` (the copy's own centre at 30 m, from the side) and
+## `camp.png` (the tent on the far island, the study's `C`). `--size=WxH`
 ## sets the frame; stills default to 1600x1000 and a long walk is worth
 ## dropping to 1280x800 to keep the encode small.
 ##
@@ -119,6 +120,10 @@ func _stills() -> void:
 	scene.yaw = 0.0
 	scene._update_camera()
 	await _grab(stills_dir.path_join("far_island.png"), "far_island")
+	# The camp on the far island, from the chasm side (the study's `C`).
+	if scene.island_camps != null:
+		scene.frame_camp()
+		await _grab(stills_dir.path_join("camp.png"), "camp")
 
 ## The crossing on foot: the target slides from anchor to anchor while the camera
 ## trails it down the deck line.

@@ -17,11 +17,13 @@
 		"114.8 camper leaves to gather wood",
 		"126.6 Bigfoot visiting camp",
 		"131.6 camper picks up a fallen branch",
-		"138.9 Bigfoot hiding",
-		"146.6 camper adds wood to the camp pile"
+		"138.7 Bigfoot hiding",
+		"139.0 camper investigates a glimpse",
+		"139.6 camper raises the camera",
+		"140.2 camper photographs Bigfoot"
 	],
 	"failures": 0,
 	"outings": 3,
 	"visits": 2,
-	"wood": 2
+	"wood": 1
 }

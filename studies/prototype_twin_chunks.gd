@@ -29,6 +29,14 @@ extends "res://studies/bigfoot_living_world.gd"
 ##   `R`  back to the establishing shot of both islands
 ##   `T`  throws a loose rock onto the middle of the deck
 ##   `G`  drops three at once, to watch the deck take a load
+##   `C`  the camp on the far island, from the chasm side
+##
+## The far island has campers. A tent, its resident and a few fallen branches
+## go into the grown island's own document, and `campsite_life.gd` runs them
+## over a navigation grid built on that island (`CampsiteWorld.for_island`).
+## Bigfoot stays on chunk one -- he cannot cross the bridge yet -- so nobody
+## on the far island ever glimpses him; the campers gather wood, stack it by
+## the tent and explore. See `_settle_camp`.
 ##
 ## The crossing is wired to the study's live sky, which is the other half of the
 ## question: a bridge that ignores the weather reads as scenery. Every physics
@@ -255,11 +263,15 @@ func _reach_shadows() -> void:
 ## has drained, because authored content and landmarks publish asynchronously
 ## and are empty in a freshly opened study.
 func rebuild_second_chunk() -> void:
+	island_camps = null  ## Goes with the island it hangs off.
+	camp_id = -1
 	if second_chunk != null:
 		remove_child(second_chunk)
 		second_chunk.queue_free()
 	second_chunk = await _build_second_chunk()
 	add_child(second_chunk)
+	# Before the anchor search: the tent is an obstacle a bridgehead avoids.
+	_settle_camp(second_chunk)
 	_anchors.clear()  ## A new island means a new rim to look for anchors on.
 	_obstacle_cache.clear()
 	_place_bridge()
@@ -857,6 +869,232 @@ func throw_rock(t: float, sideways := 0.0) -> RigidBody3D:
 		if is_instance_valid(oldest): oldest.queue_free()
 	return rock
 
+# ----------------------------------------------------------------- the camp
+
+## Where the tent would like to stand, island-local. The far island is turned
+## 180 degrees, so its local +X is the rim facing the chasm: the camp sits on
+## that half, a little off centre, so the crossing looks across at a lit tent.
+const CAMP_NEAR := Vector2(2.0, 0.0)
+## Where a tent may stand at all, island-local. Its far edge stops short of
+## the bridgehead's approach, which comes in from the +X rim at 14, so the
+## anchor search never has to clear the camp away.
+const CAMP_SEARCH := Rect2(-6.0, -10.0, 12.0, 20.0)
+const CAMP_STEP := 1.0
+## Ground spread across the pegs, the door and the first stride out of it,
+## with the door turned whichever of four ways lies flattest. On the valley
+## island the floor is a strip along Z: a door up the wall fails, a door along
+## the strip is a hand's breadth of rise.
+const CAMP_FLATNESS := 0.4
+## Which way the door faces when the ground gives no reason to prefer one:
+## +X, toward the chasm, so the crossing looks straight into the camp.
+const CAMP_DOOR := PI * 0.5
+const CAMP_HEADINGS := [PI * 0.5, 0.0, PI, -PI * 0.5]
+## The tent's own half extents (`native_play_collisions.gd`), so a footprint is
+## measured where the pegs really go.
+const TENT_HALF := Vector2(1.15, 1.18)
+## No trunk or boulder edge this close to the tent's centre: the half width
+## and a stride of margin. Flowers, ferns and grass do not count; a tent goes
+## down on top of those. Measured on the valley island: at 2.6 m no spot on
+## the floor is clear, at 1.6 m several are.
+const CAMP_CLEARANCE := 1.6
+const CAMP_SOFT := ["flower", "fern", "leaf_bed", "bank_grass", "button_flower", "spike_flower", "umbel_flower", "daisy_flower", "grass_tuft", "mushroom", "reeds"]
+## Fallen branches for the resident to go out for: how many, how far from the
+## door, how far from one another, and the longest walk the grid may route to
+## one. Candidates on three rings round the door, the shortest walks first --
+## inside the 11 m the camper will go, and the walk cap keeps a branch four
+## metres away from being a thirty-metre detour round the tent and the
+## boulders, which is what the valley floor first produced.
+const CAMP_BRANCHES := 4
+const BRANCH_RINGS := [3.0, 4.5, 6.0, 7.5]
+const BRANCH_SPACING := 2.5
+const BRANCH_WALK := 18.0
+## A branch is a small prop: it lies this close to a trunk or boulder edge,
+## and its ring point may be nudged this far onto walkable ground.
+const BRANCH_CLEARANCE := 0.8
+const BRANCH_NUDGE := 1.0
+## The camp shot: from this far, preferring the chasm side and a low eye, but
+## searched round the tent for a line the valley walls do not cut -- the
+## first try at a fixed angle from the chasm put the camera inside the hill.
+const CAMP_DISTANCE := 11.0
+const CAMP_YAW := -PI * 0.5 + 0.55
+const CAMP_POLARS := [1.1, 0.9, 0.7]
+const CAMP_YAW_STEPS := 16
+const CAMP_CANOPY := 6.0    ## How high a tree stands in the way of the shot.
+## The camp on the far island, or null when the island is the stand-in copy or
+## no clearing was found. Child of the island, so camper positions are in the
+## island's own frame.
+var island_camps: Node
+var camp_id := -1
+
+## A tent, its resident and a few branches on a freshly grown island. The
+## stand-in copy shares chunk one's document and gets nothing.
+func _settle_camp(island: Node3D) -> void:
+	island_camps = null
+	camp_id = -1
+	if not island is IslandBuilder:
+		return
+	var data: NativeTerrainData = island.data
+	var pitch := _camp_spot(island)
+	if pitch.is_empty():
+		push_warning("twin chunks: no flat, dry clearing for a tent on the far island")
+		return
+	var spot: Vector2 = pitch.spot
+	var heading: float = pitch.heading
+	camp_id = data.place("campsite", spot, heading)
+	if camp_id < 0:
+		push_warning("twin chunks: the island's document refused the tent")
+		return
+	island_camps = preload("res://scripts/campsite_life.gd").new()
+	island_camps.name = "Campers"
+	island.add_child(island_camps)
+	# The grid is built with the tent already in the document, so it is solid.
+	var world := CampsiteWorld.for_island(island, self)
+	var doorway := Vector2(sin(heading), cos(heading)) * 2.25
+	var door: Variant = world.navigation.nearest_safe(Vector3(spot.x + doorway.x, 0.0, spot.y + doorway.y))
+	var branches := 0
+	if door == null:
+		push_warning("twin chunks: the tent door opens onto nothing walkable")
+	else:
+		var candidates: Array[Dictionary] = []
+		var refused := {"off the grid": 0, "wet": 0, "against a trunk": 0, "too far to walk": 0}
+		for radius: float in BRANCH_RINGS:
+			for step in range(12):
+				var bearing := float(step) * TAU / 12.0 + radius
+				var wanted: Vector3 = door + Vector3(sin(bearing), 0.0, cos(bearing)) * radius
+				var foot: Variant = world.navigation.nearest_safe(wanted)
+				if foot == null or foot.distance_to(wanted) > BRANCH_NUDGE:
+					refused["off the grid"] += 1
+					continue
+				var xz := Vector2(foot.x, foot.z)
+				if island.flooded_at(xz):
+					refused["wet"] += 1
+					continue
+				if not _clear_of_records(data, xz, BRANCH_CLEARANCE):
+					refused["against a trunk"] += 1
+					continue
+				var walk := _walk_length(world.navigation.path(door, foot))
+				if walk > BRANCH_WALK:
+					refused["too far to walk"] += 1
+					continue
+				candidates.append({"foot": foot, "bearing": bearing, "walk": walk})
+		print("TWIN CHUNKS branch spots: %d fine, refused %s" % [candidates.size(), refused])
+		candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.walk) < float(b.walk))
+		var placed: Array[Vector3] = []
+		for candidate in candidates:
+			if placed.size() >= CAMP_BRANCHES:
+				break
+			var foot: Vector3 = candidate.foot
+			var crowded := false
+			for other in placed:
+				if other.distance_to(foot) < BRANCH_SPACING:
+					crowded = true
+			if crowded or data.place("fallen_branch", Vector2(foot.x, foot.z), float(candidate.bearing)) < 0:
+				continue
+			placed.append(foot)
+		branches = placed.size()
+	island.landmarks.rebuild(data)
+	island_camps.bind(world)
+	print("TWIN CHUNKS camp on the far island at (%.1f, %.1f) island-local, door at %.0f degrees, %d branches to gather" % [spot.x, spot.y, rad_to_deg(heading), branches])
+
+## The flattest dry clearing nearest `CAMP_NEAR`, as `{spot, heading}`; empty
+## when the island offers none.
+func _camp_spot(island: IslandBuilder) -> Dictionary:
+	var best := {}
+	var best_cost := INF
+	var x := CAMP_SEARCH.position.x
+	while x <= CAMP_SEARCH.end.x + 0.001:
+		var z := CAMP_SEARCH.position.y
+		while z <= CAMP_SEARCH.end.y + 0.001:
+			var point := Vector2(x, z)
+			if _clear_of_records(island.data, point, CAMP_CLEARANCE):
+				for heading: float in CAMP_HEADINGS:
+					var spread := _camp_spread(island, point, heading)
+					if spread > CAMP_FLATNESS:
+						continue
+					# A metre of distance is worth a hand's breadth of rise; the
+					# chasm-facing door wins a tie.
+					var cost := point.distance_to(CAMP_NEAR) + spread * 4.0 + (0.0 if heading == CAMP_DOOR else 0.1)
+					if cost < best_cost:
+						best_cost = cost
+						best = {"spot": point, "heading": heading}
+			z += CAMP_STEP
+		x += CAMP_STEP
+	return best
+
+## Ground spread across the pegs, the door and the first stride out of it, or
+## INF where any of those is off the island or under water.
+func _camp_spread(island: IslandBuilder, point: Vector2, heading: float) -> float:
+	var door := Vector2(sin(heading), cos(heading))
+	var low := INF
+	var high := -INF
+	for offset: Vector2 in [Vector2.ZERO, TENT_HALF, -TENT_HALF, Vector2(TENT_HALF.x, -TENT_HALF.y), Vector2(-TENT_HALF.x, TENT_HALF.y), door * 2.3, door * 3.3]:
+		var at := point + offset
+		var height: Variant = island.data.ground_height(at)
+		if height == null or island.flooded_at(at):
+			return INF
+		low = minf(low, float(height))
+		high = maxf(high, float(height))
+	return high - low
+
+## Metres along a route; INF for no route at all.
+func _walk_length(route: PackedVector3Array) -> float:
+	if route.is_empty():
+		return INF
+	var length := 0.0
+	for i in range(1, route.size()):
+		length += route[i - 1].distance_to(route[i])
+	return length
+
+func _clear_of_records(data: NativeTerrainData, point: Vector2, reach: float) -> bool:
+	for item: Dictionary in data.objects:
+		if item.asset in CAMP_SOFT:
+			continue
+		if Vector2(float(item.x), float(item.z)).distance_to(point) < reach + 0.5 * float(item.scale):
+			return false
+	return true
+
+## The tent, from the clearest angle nearest the chasm side.
+func frame_camp() -> void:
+	if island_camps == null or camp_id < 0:
+		return
+	var record: Dictionary = second_chunk.data.object_by_id(camp_id)
+	if record.is_empty():
+		return
+	var tent: Vector3 = global_transform.affine_inverse() * second_chunk.global_transform * second_chunk.data.object_position(record)
+	target = tent + Vector3.UP * 0.9
+	distance = CAMP_DISTANCE
+	var trees: Array[Dictionary] = _obstacles(true)
+	var best := INF
+	for elevation: float in CAMP_POLARS:
+		for i in range(CAMP_YAW_STEPS):
+			var angle: float = CAMP_YAW + float(i) * TAU / float(CAMP_YAW_STEPS)
+			var view := target + Vector3(sin(elevation) * sin(angle), cos(elevation), sin(elevation) * cos(angle)) * distance
+			var score := 0.0
+			# Every sample from the tent out to the eye must clear the ground,
+			# and should not pass through a trunk or its canopy either.
+			for sample in range(1, 25):
+				var point := target.lerp(view, float(sample) / 24.0)
+				var ground: Variant = ground_y_at(Vector2(point.x, point.z), true)
+				if ground != null and float(ground) > point.y - 0.4:
+					score += 10.0
+				if ground != null and point.y < float(ground) + CAMP_CANOPY:
+					for tree in trees:
+						if Vector2(point.x, point.z).distance_to(tree.xz) < float(tree.radius) + 0.5:
+							score += 3.0
+							break
+			score += absf(angle_difference(CAMP_YAW, angle)) * 0.5 + (1.1 - elevation)
+			if score < best:
+				best = score
+				yaw = angle
+				polar = elevation
+	_auto_orbit = false
+	_update_camera()
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if island_camps != null and is_instance_valid(island_camps):
+		island_camps.advance(delta)
+
 # -------------------------------------------------------------- the camera
 
 ## Both islands and the chasm, from the side so they spread across the frame.
@@ -960,6 +1198,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_G:
 			for i in range(3):
 				throw_rock(0.42 + 0.08 * float(i), (float(i) - 1.0) * THROW_SPREAD)
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_C:
+			frame_camp()
 			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)
