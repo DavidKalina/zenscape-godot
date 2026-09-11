@@ -43,6 +43,11 @@ const CHASM_GAP := 45.0
 const CHUNK_HALF := 14.0
 ## How far inside each rim an anchor stands.
 const ANCHOR_INSET := 0.5
+## When the rim itself is a wall, the bridgehead may sit this far inland, on top
+## of it, so long as the ground between it and the edge stays below the deck.
+const ANCHOR_MAX_INSET := 5.5
+const ANCHOR_INSET_STEP := 1.0
+const ANCHOR_LIP_CLEARANCE := 0.2
 ## Height difference between the islands. Zero: the crossing is level, and the
 ## only rise or fall in the deck is the two rims' own ground.
 const SECOND_CHUNK_LIFT := 0.0
@@ -54,6 +59,20 @@ const ANCHOR_SEARCH_STEP := 1.0
 ## Ground spread tolerated across a 1 m cross at an anchor before it counts as
 ## too steep to stand a bridge head on.
 const ANCHOR_FLATNESS := 0.45
+## A bridgehead is clear when no tree, rock, plant or prop stands within this
+## lateral distance of the walker's path: the step-off and the walkable heading.
+const ANCHOR_CLEARANCE := 1.2
+const ANCHOR_APPROACH := 6.0
+## The steepest rise over `ANCHOR_WALK_STEP` metres a walker can take inland from
+## the bridgehead; beyond it a mountain wall or a cliff blocks the crossing.
+const ANCHOR_WALK_STEP := 0.5
+## The straight stretch inland a walker needs before they can turn.
+const ANCHOR_STEP_OFF := 1.5
+const ANCHOR_WALK_RISE := 0.35
+## Names of visual nodes that are ground, water or ground cover a foot walks
+## through, never an obstacle. `mesh-10` is the reference chunk's grass tufts.
+const NOT_OBSTACLES := ["terrain", "skirt", "sides", "earth", "water", "pond", "stream", "strand", "mist", "foam", "spray", "mesh-41", "bridge", "birds",
+	"grass", "tuft", "mesh-10", "stem", "petal", "flower", "fungus", "mushroom", "daisy", "umbel", "spike", "button"]
 const DECK_WIDTH := 1.0
 const DECK_THICKNESS := 0.1
 const RAIL_SIDE := 0.07
@@ -124,6 +143,7 @@ var _mirror := Transform3D.IDENTITY
 var _placement := Transform3D.IDENTITY
 var _anchors: Array[Transform3D] = []
 var _copied: Array[String] = []
+var _obstacle_cache := {}
 var _skipped: Array[String] = []
 
 func _ready() -> void:
@@ -178,6 +198,7 @@ func rebuild_second_chunk() -> void:
 	second_chunk = await _build_second_chunk()
 	add_child(second_chunk)
 	_anchors.clear()  ## A new island means a new rim to look for anchors on.
+	_obstacle_cache.clear()
 	_place_bridge()
 
 # ------------------------------------------------------------- the island
@@ -320,38 +341,67 @@ func visual_instance_count() -> int:
 func bridge_anchors() -> Array[Transform3D]:
 	if not _anchors.is_empty():
 		return _anchors
-	var near_x := _base.origin.x + CHUNK_HALF - ANCHOR_INSET
-	var far_x := second_chunk_centre().x - CHUNK_HALF + ANCHOR_INSET
 	var best := {}
-	# Three passes, each dropping one requirement, so a world whose whole rim is
-	# steep or flooded still yields a crossing rather than nothing.
-	for relaxation in range(3):
+	# Five passes, each dropping one requirement, so a world whose whole rim is
+	# steep, flooded or overgrown still yields a crossing rather than nothing.
+	# Clearance goes late (when nothing is clear, the chosen bridgehead is
+	# cleared) and walkability last: a bridge nobody can walk off is the failure
+	# this search exists to avoid.
+	for relaxation in range(6):
 		for step_index in range(int(ANCHOR_SEARCH_REACH * 2.0 / ANCHOR_SEARCH_STEP) + 1):
 			var z := _base.origin.z - ANCHOR_SEARCH_REACH + float(step_index) * ANCHOR_SEARCH_STEP
-			var near := Vector2(near_x, z)
-			var far := Vector2(far_x, z)
-			var near_y: Variant = ground_y_at(near, false)
-			var far_y: Variant = ground_y_at(far, true)
-			if near_y == null or far_y == null:
+			var head_a := _bridgehead(z, false)
+			var head_b := _bridgehead(z, true)
+			if head_a.is_empty() or head_b.is_empty():
 				continue
+			var near: Vector2 = head_a.xz
+			var far: Vector2 = head_b.xz
 			if relaxation < 2 and (_in_water(near, false) or _in_water(far, true)):
 				continue
 			var roughness := maxf(_roughness(near, false), _roughness(far, true))
 			if relaxation < 1 and roughness > ANCHOR_FLATNESS:
 				continue
-			var a := Vector3(near.x, float(near_y), near.y)
-			var b := Vector3(far.x, float(far_y), far.y)
+			if relaxation < 4 and not (head_a.walkable and head_b.walkable):
+				continue
+			var blockers := _blockers(head_a, false) + _blockers(head_b, true)
+			var fixed := 0
+			for obstacle in blockers:
+				if obstacle.fixed:
+					fixed += 1
+			# The cave and the lair are never cleared for a bridge.
+			if relaxation < 5 and fixed > 0:
+				continue
+			if relaxation < 3 and not blockers.is_empty():
+				continue
+			var a := Vector3(near.x, float(head_a.y), near.y)
+			var b := Vector3(far.x, float(head_b.y), far.y)
 			var step_up := absf(a.y - b.y)
-			if best.is_empty() or step_up < float(best.step):
-				best = {"a": a, "b": b, "z": z, "step": step_up, "roughness": roughness}
+			# Fewer things to clear outranks a smaller step.
+			var cost := float(blockers.size()) * 10.0 + step_up
+			if best.is_empty() or cost < float(best.cost):
+				best = {"a": a, "b": b, "z": z, "step": step_up, "roughness": roughness, "cost": cost, "blockers": blockers}
 		if not best.is_empty():
-			print("TWIN CHUNKS anchor search settled at relaxation %d" % relaxation)
+			print("TWIN CHUNKS anchor search settled at relaxation %d (walkable rim spots: %d near, %d far)" % [relaxation, _walkable_count(false), _walkable_count(true)])
+			if relaxation >= 4:
+				push_warning("twin chunks: no walkable bridgehead pair on the facing rims; the crossing may dead-end")
+			if relaxation >= 5:
+				push_warning("twin chunks: the only bridgehead runs into the cave or the lair")
 			break
 	if best.is_empty():
 		push_error("twin chunks: no anchor pair on the facing rims")
 		return _anchors
 	var a: Vector3 = best.a
 	var b: Vector3 = best.b
+	if not best.blockers.is_empty():
+		var movable: Array[Dictionary] = []
+		for obstacle in best.blockers:
+			if not obstacle.fixed:
+				movable.append(obstacle)
+		_clear_obstacles(movable)
+		var tally := {}
+		for obstacle in best.blockers:
+			tally[obstacle.node.name] = int(tally.get(obstacle.node.name, 0)) + 1
+		print("TWIN CHUNKS no clear bridgehead on the rims; cleared %d obstacles at the chosen one: %s" % [best.blockers.size(), tally])
 	_anchors = [Transform3D(_facing(b - a), a), Transform3D(_facing(a - b), b)]
 	print("TWIN CHUNKS anchors at world z %+.1f: A (%.2f, %.2f, %.2f) -> B (%.2f, %.2f, %.2f); span %.2f m, horizontal %.2f m, step %.2f m, roughness %.2f" % [
 		float(best.z), a.x, a.y, a.z, b.x, b.y, b.z, a.distance_to(b),
@@ -417,6 +467,162 @@ func _roughness(world_xz: Vector2, second: bool) -> float:
 		low = minf(low, float(height))
 		high = maxf(high, float(height))
 	return 0.0 if low > high else high - low
+
+## Everything standing on an island, as world XZ points with a footprint radius:
+## each MultiMesh instance and each single mesh under the island's visual root,
+## minus ground and water. Read once per island and cached until it is rebuilt.
+func _obstacles(second: bool) -> Array[Dictionary]:
+	var key := 1 if second else 0
+	if _obstacle_cache.has(key):
+		return _obstacle_cache[key]
+	var found: Array[Dictionary] = []
+	var roots: Array[Node] = []
+	roots.append(second_chunk if second else $Reference)
+	if not second:
+		# The living world adds the cave dome and the lair beside the reference geometry.
+		for field in ["cave_sites", "lair"]:
+			if field in self and get(field) is Node:
+				roots.append(get(field))
+	for root in roots:
+		if root == null:
+			continue
+		var fixed := root != $Reference and root != second_chunk
+		for node in root.find_children("*", "VisualInstance3D", true, false):
+			if _not_obstacle(node):
+				continue
+			if node is GeometryInstance3D:
+				# Anything wholly below the ground (the lair's lower story) is no obstacle to a walker.
+				var box: AABB = node.global_transform * node.get_aabb()
+				var ground: Variant = ground_y_at(Vector2(box.get_center().x, box.get_center().z), second)
+				if ground != null and box.end.y < float(ground) + 0.3:
+					continue
+			if node is MultiMeshInstance3D and node.multimesh != null:
+				var mm: MultiMesh = node.multimesh
+				var extent: Vector3 = mm.mesh.get_aabb().size if mm.mesh != null else Vector3.ONE
+				for i in range(mm.visible_instance_count if mm.visible_instance_count >= 0 else mm.instance_count):
+					var pose: Transform3D = node.global_transform * mm.get_instance_transform(i)
+					var radius := minf(1.5, maxf(extent.x, extent.z) * pose.basis.get_scale().x * 0.5)
+					found.append({"node": node, "index": i, "xz": Vector2(pose.origin.x, pose.origin.z), "radius": radius, "fixed": fixed})
+			elif node is MeshInstance3D and node.mesh != null:
+				var box: AABB = node.global_transform * node.mesh.get_aabb()
+				var centre := box.get_center()
+				found.append({"node": node, "index": -1, "xz": Vector2(centre.x, centre.z), "radius": minf(3.0, maxf(box.size.x, box.size.z) * 0.5), "fixed": fixed})
+	_obstacle_cache[key] = found
+	return found
+
+func _not_obstacle(node: Node) -> bool:
+	var name := node.name.to_lower()
+	for word in NOT_OBSTACLES:
+		if name.contains(word):
+			return true
+	var parent := node.get_parent()
+	return parent != null and parent != $Reference and parent != second_chunk and _not_obstacle(parent) and parent is not Node3D
+
+## Where on this rim, at this Z, a bridgehead stands: the first inset from the
+## edge whose approach is walkable and whose lip stays below the deck, else the
+## rim edge itself flagged unwalkable. Empty when there is no ground at all.
+func _bridgehead(z: float, second: bool) -> Dictionary:
+	var edge_x := (second_chunk_centre().x - CHUNK_HALF) if second else (_base.origin.x + CHUNK_HALF)
+	var inland := 1.0 if second else -1.0
+	var fallback := {}
+	var inset := ANCHOR_INSET
+	while inset <= ANCHOR_MAX_INSET + 0.001:
+		var xz := Vector2(edge_x + inland * inset, z)
+		var y: Variant = ground_y_at(xz, second)
+		if y != null:
+			var head := {"xz": xz, "y": float(y), "inset": inset, "walkable": false}
+			if fallback.is_empty():
+				fallback = head
+			var heading: Variant = _walkable_heading(xz, second)
+			if heading != null and _lip_clear(xz, float(y), inset, second):
+				head.walkable = true
+				head.heading = heading
+				return head
+		inset += ANCHOR_INSET_STEP
+	return fallback
+
+## Between the bridgehead and the rim edge the ground must stay under the deck.
+func _lip_clear(xz: Vector2, y: float, inset: float, second: bool) -> bool:
+	var outward := Vector2(-1.0 if second else 1.0, 0.0)
+	var along := ANCHOR_WALK_STEP
+	while along < inset:
+		var height: Variant = ground_y_at(xz + outward * along, second)
+		if height != null and float(height) > y + ANCHOR_LIP_CLEARANCE:
+			return false
+		along += ANCHOR_WALK_STEP
+	return true
+
+## Can a walker step off this bridgehead and keep going? The first stretch
+## straight inland must be walkable (that is where the deck lands them), and
+## from there at least one heading -- inland, quartering, or along the rim --
+## must run `ANCHOR_APPROACH` metres without a step steeper than a walker takes.
+## (The resident's navigation grid was tried here and rejected flat open grass,
+## so slope and the obstacle sweep are the whole test on both islands.)
+func _approach_walkable(world_xz: Vector2, second: bool) -> bool:
+	return _walkable_heading(world_xz, second) != null
+
+## The first walkable heading off this bridgehead, or null when there is none.
+func _walkable_heading(world_xz: Vector2, second: bool) -> Variant:
+	var inland := Vector2(1.0 if second else -1.0, 0.0)
+	if not _ray_walkable(world_xz, inland, ANCHOR_STEP_OFF, second):
+		return null
+	for turn in [0.0, PI * 0.25, -PI * 0.25, PI * 0.5, -PI * 0.5]:
+		if _ray_walkable(world_xz, inland.rotated(turn), ANCHOR_APPROACH, second):
+			return inland.rotated(turn)
+	return null
+
+## Ground exists the whole way and never rises or falls faster than a step.
+func _ray_walkable(from: Vector2, direction: Vector2, length: float, second: bool) -> bool:
+	var previous: Variant = null
+	var along := 0.0
+	while along <= length + 0.001:
+		var height: Variant = ground_y_at(from + direction * along, second)
+		if height == null:
+			return false
+		if previous != null and absf(float(height) - float(previous)) > ANCHOR_WALK_RISE:
+			return false
+		previous = height
+		along += ANCHOR_WALK_STEP
+	return true
+
+## How many rim candidates a walker could step off; diagnostic only.
+func _walkable_count(second: bool) -> int:
+	var count := 0
+	for step_index in range(int(ANCHOR_SEARCH_REACH * 2.0 / ANCHOR_SEARCH_STEP) + 1):
+		var z := _base.origin.z - ANCHOR_SEARCH_REACH + float(step_index) * ANCHOR_SEARCH_STEP
+		var head := _bridgehead(z, second)
+		if not head.is_empty() and head.walkable:
+			count += 1
+	return count
+
+## The obstacles that stand on a bridgehead or its approach.
+func _blockers(head: Dictionary, second: bool) -> Array[Dictionary]:
+	var start: Vector2 = head.xz
+	var inland := Vector2(1.0 if second else -1.0, 0.0)
+	var heading: Vector2 = head.get("heading", inland)
+	var corner := start + inland * ANCHOR_STEP_OFF
+	var hits: Array[Dictionary] = []
+	for obstacle in _obstacles(second):
+		var xz: Vector2 = obstacle.xz
+		var reach: float = ANCHOR_CLEARANCE + float(obstacle.radius) * 0.5
+		var on_step := start + inland * clampf((xz - start).dot(inland), 0.0, ANCHOR_STEP_OFF)
+		var on_way := corner + heading * clampf((xz - corner).dot(heading), 0.0, ANCHOR_APPROACH)
+		if xz.distance_to(on_step) < reach or xz.distance_to(on_way) < reach:
+			hits.append(obstacle)
+	return hits
+
+## Fold the blockers away: a MultiMesh instance shrinks to nothing in place, a
+## single mesh hides. Scenery only; no terrain document changes.
+func _clear_obstacles(blockers: Array[Dictionary]) -> void:
+	for obstacle in blockers:
+		var node: Node = obstacle.node
+		if int(obstacle.index) >= 0:
+			var mm: MultiMesh = node.multimesh
+			var pose := mm.get_instance_transform(int(obstacle.index))
+			mm.set_instance_transform(int(obstacle.index), Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 0.001), pose.origin))
+		else:
+			node.visible = false
+	_obstacle_cache.clear()
 
 ## The repo has no single water predicate; on chunk one this is the idiom the
 ## water course, the falls and the navigation all use. The second island answers

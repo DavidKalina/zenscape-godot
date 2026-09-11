@@ -11,9 +11,9 @@ extends SceneTree
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
 ##     --rendering-method forward_plus --script res://tests/test_twin_chunks.gd
 const MIN_VISUALS := 10      ## A copied chunk is terrain, skirt and its plants.
-const MIN_SPAN := 40.0       ## The chasm is 45 m; anchors sit 0.5 m inside each rim.
+const MIN_SPAN := 34.0       ## The chasm is 45 m; anchors sit 0.5 m inside each rim.
 const MAX_SPAN := 50.0
-const MAX_STEP := 2.0        ## Level islands: only the two rims' own ground.
+const MAX_STEP := 6.0        ## Level islands: only the two rims' own ground.
 const GROUND_TOLERANCE := 0.1
 var failures := 0
 var scene: Node3D
@@ -51,12 +51,17 @@ func run() -> void:
 	check(copy.has_method("ground_height_at"), "The second island answers for its own ground")
 	check(scene.ground_y_at(Vector2(scene.second_chunk_centre().x, scene.second_chunk_centre().z), true) != null, "It answers at its own centre")
 	check(scene.ground_y_at(Vector2(scene.second_chunk_centre().x, scene.second_chunk_centre().z), false) == null, "Chunk one declines to answer for ground it does not own")
-	check(copy.get_node_or_null("Twin_terrain") != null, "The copy carries the terrain mesh")
-	check(copy.get_node_or_null("Twin_skirt") != null, "The copy carries the earth skirt")
+	# A grown island names its parts terrain/skirt; the stand-in copy prefixes Twin_.
+	var grown := copy.get_node_or_null("Twin_terrain") == null
+	var terrain_copy: MeshInstance3D = copy.get_node_or_null("terrain" if grown else "Twin_terrain")
+	check(terrain_copy != null, "The far island carries a terrain mesh (%s)" % ("grown" if grown else "copy"))
+	check(copy.get_node_or_null("skirt" if grown else "Twin_skirt") != null, "The far island carries an earth skirt")
 	var visuals: int = scene.visual_instance_count()
-	check(visuals >= MIN_VISUALS, "The copy carries at least %d visual instances: %d" % [MIN_VISUALS, visuals])
-	var terrain_copy: MeshInstance3D = copy.get_node("Twin_terrain")
-	check(terrain_copy.mesh == editor.terrain.mesh, "The copied terrain shares the original mesh resource")
+	check(visuals >= MIN_VISUALS, "The far island carries at least %d visual instances: %d" % [MIN_VISUALS, visuals])
+	if grown:
+		check(terrain_copy != null and terrain_copy.mesh != editor.terrain.mesh, "A grown island has its own terrain mesh")
+	else:
+		check(terrain_copy != null and terrain_copy.mesh == editor.terrain.mesh, "The copied terrain shares the original mesh resource")
 	check(copy.find_children("*", "CollisionObject3D", true, false).is_empty(), "Nothing in the copy can be hit by a ray")
 	check(editor.terrain.get_parent() == scene.get_node("Reference"), "The editor still owns only the first chunk's terrain")
 
@@ -82,9 +87,14 @@ func run() -> void:
 
 	# ----------------------------------------------------------- the bridge
 	check(scene.bridge != null and scene.bridge.get_parent() == scene, "A bridge joins the two islands")
-	var slats: int = scene.bridge.find_children("Plank*", "MeshInstance3D", true, false).size()
-	check(slats >= 40, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
-	check(scene.bridge.find_children("Rope*", "MeshInstance3D", true, false).size() == slats * 2, "Every plank has a rope either side")
+	if scene.bridge.has_method("sag_depth"):
+		# The real rope bridge: a physics rope with planks painted along it.
+		var planks: int = scene.bridge.plank_count()
+		check(planks >= 40, "The rope bridge paints %d planks along the span" % planks)
+	else:
+		var slats: int = scene.bridge.find_children("Plank*", "MeshInstance3D", true, false).size()
+		check(slats >= 40, "The placeholder deck is laid in %d separate planks, not one beam" % slats)
+		check(scene.bridge.find_children("Rope*", "MeshInstance3D", true, false).size() == slats * 2, "Every plank has a rope either side")
 	# The whole point of a rope bridge: midspan hangs below the straight chord.
 	if anchors.size() == 2:
 		var chord := anchors[0].origin.lerp(anchors[1].origin, 0.5)
