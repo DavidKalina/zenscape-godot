@@ -144,6 +144,83 @@ review screen is where his behaviour becomes legible without it.
 - Standalone games from the same stack: Lead the Beast (Lemmings with one
   thinker), The Forest Fights Back (loggers, really chunk three), Raise One.
 
+## Playing it: the day, the crew, the kit
+
+You are on the campers' side and you never walk as one of them. That would
+turn the diorama into a third-person game, triple the scope, and lose the best
+joke in the design: watching someone you cannot steer walk toward a noise. The
+shape is prepare, then let it run (Darkest Dungeon, Majesty, FTL).
+
+### The day
+
+The world clock sets the rhythm and the interface follows it.
+
+1. **Dawn, review.** A full-screen clip screen. Last night's cameras, scrubbable,
+   mostly deer and wind. Tagging a clip is how objectives get ticked.
+2. **Midday, plan.** Time slow or paused. Each camper gets one job and a place:
+   set a camera here, swap that card, bait the rock, cast the print by the
+   pool. Where is a click on the terrain; the route is theirs.
+3. **Dusk, deploy.** Time runs. They walk out with their own minds and nerves.
+4. **Night, home.** Night is where it goes wrong in most games, and here too.
+   The whole day was exploration; the night is about getting everyone back
+   with the evidence. One of them is still in his cave, and he is walking
+   home. That scene is the game.
+
+### Where you can send them
+
+Click the terrain, as the editor already allows. The map opens as fog of war:
+places become clickable as the crew and the cameras see them. Cameras are the
+crew's eyes when nobody is out. A camper is a destination, never a route.
+
+### Three levels of influence
+
+- **Before they go, everything.** Who goes, where, and what they carry.
+- **While they're out, a little.** A short radio budget per night: come home,
+  hold, go on. Plus hands on the world: bait to pull him elsewhere, fog, rain
+  to cover a retreat. These cost the world nothing, so the radio budget is
+  their cost.
+- **Never, movement.** If she drops the card and runs, that was your plan
+  meeting her nerves.
+
+### Crew and kit
+
+A small crew, each a drive profile on the shared mind class with a trait that
+matters in the field: brave and careless, careful and jumpy, the fish person.
+The wrong camper for a job is a choice you made.
+
+Kit is the answer to Phasmophobia's loadout screen. Each camper has a few
+slots, and what fills them is the plan: one carries three cameras, one carries
+the casting kit and bait, one carries the deterrent. Gear is finite in the
+field. Lost gear stays in the world where he left it and can be recovered.
+
+Open question, recorded below: whether any of that kit can hurt him.
+
+### The economy
+
+No shop. A producer funds the crew: footage you send earns the next supply
+run, and the supply run is where new gear arrives (better cameras, more
+batteries, later a hydrophone). The producer's requests are the objectives
+in the top right, three or four at a time, and the producer's messages are
+the tutorial and the game's voice.
+
+Objective types that show the sim is the content:
+
+- **Traces:** a footprint cast, a claw mark on a tree, the torn bed.
+- **Data:** "prove the fish are declining," a count from the pool camera over
+  a week drawn as a small graph. Evidence that is not a picture, straight from
+  the context keys.
+- **Sightings:** blur, night shot, daylight, a behaviour, a sequence.
+- **Whims:** him in snow, him at the cairn. The charming ones.
+
+### Screen
+
+- **Top right:** objectives.
+- **Bottom:** crew cards: name, kit, one mood icon from the mind, destination.
+  Click to follow.
+- **Center:** the diorama, cameras as icons with view cones, click to sit in
+  one.
+- **Dawn:** the review screen replaces everything.
+
 ## First two spikes
 
 Both are small, both are yes-or-no, both gate everything above.
