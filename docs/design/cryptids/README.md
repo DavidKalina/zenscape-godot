@@ -205,12 +205,47 @@ they carried; he takes it home. They stumble back at first light, shaken, and
 the card is now in his cave to recover. Losing a person is never on the
 table; losing a night, a camera and a week of footage is.
 
-### Fog of war
+### Fog of war and what the player sees
 
-Ground stays revealed once a camper or a camera has seen it, and the map grows
-with the year. Live view exists only where someone or something is looking:
-a camper in the field, or a camera. When nobody is out, the cameras are the
-crew's eyes.
+Ground is revealed by exploring; living things are only drawn where someone
+is looking. Every spot on the map is in one of three states:
+
+- **Unexplored.** Rendered in the real weather fog, thick, so the diorama
+  stays beautiful instead of going black. You can orbit over it and see the
+  shape of the land and the far island's silhouette, but not click it.
+- **Explored, unwatched.** Fog gone for good. Terrain, trees, water, weather
+  and light are live. No creature is drawn here, not him, not the bear, not
+  deer. Consequences are: a branch drops, a tree springs back, a stash
+  appears by the rock overnight. Something did that; nobody saw who.
+- **Watched.** A camper stands there or a camera cone covers it. Creatures
+  are drawn live in that pool of sight and nowhere else.
+
+The god view is never the truth; it is the crew's collective knowledge. Even
+in year two, with no camera on the pool, you see ripples, not him. This is
+what keeps the reveal alive after the first hour and what makes cameras the
+game.
+
+A walking camper clears fog in a terrain-cut radius (the cursor picking's
+line-of-sight logic), generous by day and a flashlight cone by night, which
+is why "home before dark" is a deadline and not a rule. A placed camera clears
+its cone once and keeps it watched while it has battery. The far island is
+fully fogged until someone crosses; the first camper over the bridge is a pool
+of light in the grey.
+
+The player camera stays the diorama camera: orbit and zoom over the island,
+down to about camper height, no first person except inside a feed. Hovering a
+fogged spot lets you drop a marker ("the cave is somewhere here"), which is
+knowledge, not sight.
+
+Traces bridge the states. Anything he does off-view leaves an object: the
+print, the stash, the torn bed, the moved log. Those are drawn once the
+ground is explored because they are part of the ground. The unwatched world is
+full of evidence and empty of the thing itself.
+
+Technically: a reveal mask per chunk driving fog density, a visibility flag
+per actor set by line-of-sight checks from campers and camera cones, and
+traces as ordinary placed props. The fog, the occlusion tests and the props
+already exist.
 
 ### Pace
 
