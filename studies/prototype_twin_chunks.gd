@@ -30,13 +30,21 @@ extends "res://studies/bigfoot_living_world.gd"
 ##   `T`  throws a loose rock onto the middle of the deck
 ##   `G`  drops three at once, to watch the deck take a load
 ##   `C`  the camp on the far island, from the chasm side
+##   `X`  sends Bigfoot across the bridge to the far camp, now
+##   `V`  sends a camper across the bridge to chunk one, now
 ##
 ## The far island has campers. A tent, its resident and a few fallen branches
 ## go into the grown island's own document, and `campsite_life.gd` runs them
 ## over a navigation grid built on that island (`CampsiteWorld.for_island`).
-## Bigfoot stays on chunk one -- he cannot cross the bridge yet -- so nobody
-## on the far island ever glimpses him; the campers gather wood, stack it by
-## the tent and explore. See `_settle_camp`.
+## The campers gather wood, stack it by the tent and explore. See `_settle_camp`.
+##
+## The two grounds are joined by a `CrossingRoute` (`scripts/crossing_route.gd`),
+## built here from the two bridgeheads and the live deck, and handed to the far
+## camp. Through it Bigfoot walks over to raid an unattended tent and walks back,
+## and a camper with a full wood pile goes to look at chunk one. While he is on
+## the island the island's `CampsiteWorld.resident` is him, so the campers see,
+## flee from and photograph him with no further change. See `_wire_crossing` and
+## `docs/campsite-life/README.md`.
 ##
 ## The crossing is wired to the study's live sky, which is the other half of the
 ## question: a bridge that ignores the weather reads as scenery. Every physics
@@ -211,6 +219,9 @@ var _rocks: Array[RigidBody3D] = []
 var _anchors: Array[Transform3D] = []
 var _copied: Array[String] = []
 var _obstacle_cache := {}
+## `_reachable_head` answers, keyed by rim spot. The search asks each candidate
+## up to six times and every answer is two A* queries.
+var _reach_cache := {}
 var _skipped: Array[String] = []
 
 func _ready() -> void:
@@ -274,7 +285,13 @@ func rebuild_second_chunk() -> void:
 	_settle_camp(second_chunk)
 	_anchors.clear()  ## A new island means a new rim to look for anchors on.
 	_obstacle_cache.clear()
+	_reach_cache.clear()
 	_place_bridge()
+	if _cleared_for_bridge:
+		_cleared_for_bridge = false
+		_refresh_habitat(false)
+	_clear_trail()
+	_wire_crossing()
 
 # ------------------------------------------------------------- the island
 
@@ -438,6 +455,11 @@ func bridge_anchors() -> Array[Transform3D]:
 				continue
 			if relaxation < 4 and not (head_a.walkable and head_b.walkable):
 				continue
+			# A bridgehead the creatures' own grid cannot reach is a bridge
+			# nobody walks. Dropped at the same relaxation as walkability: past
+			# that point the search is already settling for a crossing that may
+			# dead-end, and this is the same complaint in stronger terms.
+			var reachable := _reachable_head(near, false) and _reachable_head(far, true)
 			var blockers := _blockers(head_a, false) + _blockers(head_b, true)
 			var fixed := 0
 			for obstacle in blockers:
@@ -452,9 +474,9 @@ func bridge_anchors() -> Array[Transform3D]:
 			var b := Vector3(far.x, float(head_b.y), far.y)
 			var step_up := absf(a.y - b.y)
 			# Fewer things to clear outranks a smaller step.
-			var cost := float(blockers.size()) * 10.0 + step_up
+			var cost := float(blockers.size()) * 10.0 + step_up + (0.0 if reachable else 100.0)
 			if best.is_empty() or cost < float(best.cost):
-				best = {"a": a, "b": b, "z": z, "step": step_up, "roughness": roughness, "cost": cost, "blockers": blockers}
+				best = {"a": a, "b": b, "z": z, "step": step_up, "roughness": roughness, "cost": cost, "blockers": blockers, "reachable": reachable}
 		if not best.is_empty():
 			print("TWIN CHUNKS anchor search settled at relaxation %d (walkable rim spots: %d near, %d far)" % [relaxation, _walkable_count(false), _walkable_count(true)])
 			if relaxation >= 4:
@@ -473,6 +495,12 @@ func bridge_anchors() -> Array[Transform3D]:
 			if not obstacle.fixed:
 				movable.append(obstacle)
 		_clear_obstacles(movable)
+		# `fidelity_habitat.gd` reads exactly this geometry, so until chunk one's
+		# habitat is read again its grid still walls off the step-off and no
+		# walker can reach the deck at all. Raised here, acted on in
+		# `rebuild_second_chunk` -- this runs inside the anchor search, which is
+		# called from half a dozen places and must stay cheap and idempotent.
+		_cleared_for_bridge = not movable.is_empty()
 		var tally := {}
 		for obstacle in best.blockers:
 			tally[obstacle.node.name] = int(tally.get(obstacle.node.name, 0)) + 1
@@ -670,6 +698,42 @@ func _walkable_count(second: bool) -> int:
 			count += 1
 	return count
 
+## How near the bridgehead the grid's nearest safe node has to be before the two
+## count as the same place, in metres.
+const ANCHOR_GRID_REACH := 1.5
+
+## Can a walker already living on this island get to this bridgehead? The
+## anchor search's own walkability test is a pair of ground rays down the
+## approach; this is the question the creatures actually answer at every step --
+## `creature_navigation.gd`, with its clearance, its slope limit and its water --
+## and it is the one that decides whether the crossing is ever used. Cached per
+## rim spot: A* over two grids for every candidate is the expensive part of the
+## search.
+func _reachable_head(world_xz: Vector2, second: bool) -> bool:
+	var world: CampsiteWorld = island_world if second else (camps.world if camps != null else null)
+	if world == null or world.navigation == null or world.navigation.rebuilding:
+		return true  ## No grid to ask; the ray test is the only opinion available.
+	var key := "%s:%.1f" % ["far" if second else "near", world_xz.y]
+	if _reach_cache.has(key):
+		return bool(_reach_cache[key])
+	var wanted: Vector3 = world.to_local(Vector3(world_xz.x, 0.0, world_xz.y))
+	var heart: Variant = _grid_heart(world, second)
+	var head: Variant = world.navigation.nearest_safe(wanted)
+	var reachable := false
+	if heart is Vector3 and head is Vector3 and Vector2(head.x - wanted.x, head.z - wanted.z).length() < ANCHOR_GRID_REACH:
+		reachable = not world.navigation.path(heart, head).is_empty()
+	_reach_cache[key] = reachable
+	return reachable
+
+## Somewhere a walker already stands on this ground, to path from: Bigfoot on
+## chunk one, the tent door on the island.
+func _grid_heart(world: CampsiteWorld, second: bool) -> Variant:
+	if not second:
+		return world.navigation.nearest_safe(world.to_local(creature.global_position)) if creature != null else null
+	if island_camps != null and island_camps.camps.has(camp_id) and island_camps.camps[camp_id].home != null:
+		return island_camps.camps[camp_id].home
+	return world.navigation.nearest_safe(Vector3.ZERO)
+
 ## The obstacles that stand on a bridgehead or its approach.
 func _blockers(head: Dictionary, second: bool) -> Array[Dictionary]:
 	var start: Vector2 = head.xz
@@ -698,6 +762,92 @@ func _clear_obstacles(blockers: Array[Dictionary]) -> void:
 		else:
 			node.visible = false
 	_obstacle_cache.clear()
+
+## How wide a trail to the bridge is cleared, in metres, and how many rounds of
+## clearing-then-reading-the-habitat it is worth.
+const TRAIL_WIDTH := 1.4
+const TRAIL_ROUNDS := 3
+## Near enough. The last stride onto the boards is off the grid anyway -- the
+## rim is where `_safe_grounded` stops answering -- so a trail that gets the
+## walkers this close to the bridgehead has done its job, and clearing more
+## scenery to satisfy the grid would take the forest with it.
+const TRAIL_DONE := 4.0
+## Grid nodes near the bridgehead tested for a way home before the trail gives
+## up. Each is an A* query over about fifteen hundred nodes, and the pocket a
+## walled-off bridgehead sits in is a few hundred of them at 0.35 m spacing.
+const TRAIL_PROBES := 600
+
+## A bridge has a path to it.
+##
+## The bridgehead search clears whatever stands on the step-off and the first
+## `ANCHOR_APPROACH` metres inland, but chunk one is dense forest and the
+## creatures' own grid can still be walled off a stride or two further in. That
+## is the failure the anchor search exists to avoid, stated in the only terms
+## that matter once a navigation grid exists: on the default world the rim spot
+## it picks is safe ground in a pocket of trees, and every walker on the island
+## is on the far side of them.
+##
+## So: find the ground the walkers can already reach that lies nearest the
+## bridgehead, fold away the scenery standing between it and the deck, read the
+## habitat again, and repeat while it helps. Scenery only, no terrain document
+## changes -- the same clearing `_clear_obstacles` does, along a line instead of
+## around a point. True when the bridgehead is reachable at the end of it.
+func _clear_trail() -> bool:
+	var world: CampsiteWorld = camps.world if camps != null else null
+	if world == null or world.navigation == null or creature == null:
+		return false
+	var anchors := bridge_anchors()
+	if anchors.size() != 2:
+		return false
+	var head_at: Vector3 = world.to_local(anchors[0].origin)
+	for attempt in range(TRAIL_ROUNDS):
+		var navigation: RefCounted = world.navigation
+		var heart: Variant = navigation.nearest_safe(world.to_local(creature.global_position))
+		var head: Variant = navigation.nearest_safe(head_at)
+		if not heart is Vector3 or not head is Vector3:
+			push_warning("twin chunks: no safe ground at the bridgehead to make a trail to")
+			return false
+		var reached: Variant = _nearest_reached(navigation, heart, head)
+		if not reached is Vector3:
+			push_warning("twin chunks: nothing the creatures can reach lies anywhere near the bridgehead")
+			return false
+		var gap: float = reached.distance_to(head)
+		if gap <= TRAIL_DONE:
+			print("TWIN CHUNKS trail: the walkers reach within %.1f m of the bridgehead after %d clearing(s)" % [gap, attempt])
+			return true
+		var from_at: Vector3 = world.to_world(reached)
+		var trail := _trail_blockers(Vector2(from_at.x, from_at.z), Vector2(anchors[0].origin.x, anchors[0].origin.z))
+		if trail.is_empty():
+			push_warning("twin chunks: the way to the bridgehead is ground, not scenery; no trail to clear")
+			return false
+		_clear_obstacles(trail)
+		print("TWIN CHUNKS trail: %.1f m short; cleared %d things between local (%.1f, %.1f) and the bridgehead" % [gap, trail.size(), reached.x, reached.z])
+		_refresh_habitat(false)
+	push_warning("twin chunks: the bridgehead stays walled off after %d clearings" % TRAIL_ROUNDS)
+	return false
+
+## The nearest node to the bridgehead that a walker at `heart` can actually get
+## to. Null when the pocket round the bridgehead is bigger than `TRAIL_PROBES`.
+func _nearest_reached(navigation: RefCounted, heart: Vector3, head: Vector3) -> Variant:
+	var nodes: Array[Vector3] = []
+	for node in navigation._nodes:
+		nodes.append(node)
+	nodes.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.distance_squared_to(head) < b.distance_squared_to(head))
+	for i in range(mini(TRAIL_PROBES, nodes.size())):
+		if not navigation.path(heart, nodes[i]).is_empty():
+			return nodes[i]
+	return null
+
+## Scenery standing on the line between the reachable ground and the bridgehead.
+func _trail_blockers(from_xz: Vector2, to_xz: Vector2) -> Array[Dictionary]:
+	var hits: Array[Dictionary] = []
+	for obstacle in _obstacles(false):
+		if obstacle.fixed:
+			continue
+		var xz: Vector2 = obstacle.xz
+		if xz.distance_to(Geometry2D.get_closest_point_to_segment(xz, from_xz, to_xz)) < TRAIL_WIDTH + float(obstacle.radius) * 0.5:
+			hits.append(obstacle)
+	return hits
 
 ## The repo has no single water predicate; on chunk one this is the idiom the
 ## water course, the falls and the navigation all use. The second island answers
@@ -925,11 +1075,25 @@ const CAMP_CANOPY := 6.0    ## How high a tree stands in the way of the shot.
 ## island's own frame.
 var island_camps: Node
 var camp_id := -1
+## Chunk one's ground, as the camps see it, and the far island's. Kept so the
+## link has two stable ends: identity matters, `CrossingRoute.other()` compares
+## the objects themselves.
+var chunk_world: CampsiteWorld
+var island_world: CampsiteWorld
+## The bridge as a walkable link, or null while there is no camp to cross to.
+var crossing: CrossingRoute
+## The far camp has Bigfoot's legs. Read by `_refresh_habitat` and passed to
+## chunk one's own camps controller, which is the one `fidelity_life` asks.
+var _far_owns_bigfoot := false
+## The anchor search folded scenery away at a bridgehead; chunk one's habitat
+## has not been read since.
+var _cleared_for_bridge := false
 
 ## A tent, its resident and a few branches on a freshly grown island. The
 ## stand-in copy shares chunk one's document and gets nothing.
 func _settle_camp(island: Node3D) -> void:
 	island_camps = null
+	island_world = null
 	camp_id = -1
 	if not island is IslandBuilder:
 		return
@@ -993,6 +1157,7 @@ func _settle_camp(island: Node3D) -> void:
 			placed.append(foot)
 		branches = placed.size()
 	island.landmarks.rebuild(data)
+	island_world = world
 	island_camps.bind(world)
 	print("TWIN CHUNKS camp on the far island at (%.1f, %.1f) island-local, door at %.0f degrees, %d branches to gather" % [spot.x, spot.y, rad_to_deg(heading), branches])
 
@@ -1053,6 +1218,37 @@ func _clear_of_records(data: NativeTerrainData, point: Vector2, reach: float) ->
 			return false
 	return true
 
+# ------------------------------------------------------------ the crossing
+
+## Join the two grounds. Chunk one's end is the `CampsiteWorld` its own camps
+## controller already holds, not a fresh copy: `CrossingRoute.other()` compares
+## the objects, so there has to be exactly one of each.
+func _wire_crossing() -> void:
+	crossing = null
+	chunk_world = camps.world if camps != null else null
+	if island_camps == null or island_world == null or chunk_world == null: return
+	crossing = CrossingRoute.link(chunk_world, island_world, bridge_anchors(), deck_surface)
+	island_camps.crossing = crossing
+	if camps != null: camps.crossing = crossing
+	if crossing == null:
+		push_warning("twin chunks: no bridge to cross")
+		return
+	print("TWIN CHUNKS crossing: %.1f m of deck joins chunk one to the island camp" % crossing.span())
+
+## `X`: Bigfoot goes now, whatever the tent is doing.
+func send_bigfoot_across() -> bool:
+	if island_camps == null: return false
+	var sent: bool = island_camps.send_bigfoot_across()
+	print("TWIN CHUNKS Bigfoot crossing: %s" % ("on his way" if sent else "no route, or he is busy"))
+	return sent
+
+## `V`: a camper goes now.
+func send_camper_across() -> bool:
+	if island_camps == null: return false
+	var sent: bool = island_camps.send_camper_across()
+	print("TWIN CHUNKS camper crossing: %s" % ("on the way" if sent else "no route, or already away"))
+	return sent
+
 ## The tent, from the clearest angle nearest the chasm side.
 func frame_camp() -> void:
 	if island_camps == null or camp_id < 0:
@@ -1091,9 +1287,30 @@ func frame_camp() -> void:
 	_update_camera()
 
 func _process(delta: float) -> void:
-	super._process(delta)
+	# Before the base study's tick, not after: `fidelity_life._process` asks
+	# chunk one's camps controller whether a camp owns Bigfoot, and on a frame
+	# where the far camp has him walking the deck the answer has to be in
+	# already -- otherwise the brain drives him off the bridge and the crossing
+	# drives him back on, in the same frame.
 	if island_camps != null and is_instance_valid(island_camps):
-		island_camps.advance(delta)
+		_far_owns_bigfoot = island_camps.advance(delta)
+	else:
+		_far_owns_bigfoot = false
+	if camps != null: camps.borrowed = _far_owns_bigfoot
+	super._process(delta)
+
+## Chunk one's grid calls his feet unsafe the moment he is on the deck or the
+## far island, and a rebuild would snatch him home. `blast_airborne` is the
+## existing "he is not standing on this ground right now" flag, so the rebuild
+## happens and the walker is left alone.
+func _refresh_habitat(budgeted := false) -> void:
+	if not _far_owns_bigfoot or creature == null:
+		super._refresh_habitat(budgeted)
+		return
+	var grounded := creature.blast_airborne
+	creature.blast_airborne = true
+	super._refresh_habitat(budgeted)
+	creature.blast_airborne = grounded
 
 # -------------------------------------------------------------- the camera
 
@@ -1202,6 +1419,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_C:
 			frame_camp()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_X:
+			send_bigfoot_across()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_V:
+			send_camper_across()
 			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)

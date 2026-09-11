@@ -88,6 +88,32 @@ func rebuild_navigation() -> void:
 	habitat.setup(null, data)
 	navigation.rebuild(habitat, habitat.clear_at, 0.35, 0.3)
 
+## ------------------------------------------------------------- the frame
+## Everything the controller handles is document-local; everything shared with
+## another ground -- a bridge, a creature that walks off this one -- is world
+## space. These two are the only conversion in the seam.
+func to_world(point: Vector3) -> Vector3:
+	return frame * point
+
+func to_local(point: Vector3) -> Vector3:
+	return frame.affine_inverse() * point
+
+## The heightfield of this ground, asked and answered in world space, which is
+## the shape `creature_actor.gd` wants for `_ground_probe`. Height only: safety
+## is the navigation grid's business and a walker stepping off a bridge is
+## already on ground the anchor search proved.
+func ground_probe() -> Callable:
+	return func(at: Vector3) -> Variant:
+		if navigation == null: return null
+		var grounded: Variant = navigation._ground(to_local(at))
+		return to_world(grounded) if grounded is Vector3 else null
+
+## Where Bigfoot stands, in this ground's own frame. He may be standing on a
+## different island from the one that is asking, so his own `position` -- which
+## is whatever his scene's frame says -- is never the answer.
+func resident_point() -> Vector3:
+	return to_local(resident.creature.global_position) if resident != null and resident.creature != null else Vector3.ZERO
+
 func resident_active() -> bool:
 	return resident != null and resident.resident_enabled
 
