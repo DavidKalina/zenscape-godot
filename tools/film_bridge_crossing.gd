@@ -65,6 +65,8 @@ func run() -> void:
 	while editor.forming or editor.refresh_pending > 0:
 		await process_frame
 	await scene.rebuild_second_chunk()
+	# The study now opens with the bridge unbuilt; these want the finished deck.
+	scene.set_bridge_built(true)
 	_daylight()
 	var camps: Node = scene.island_camps
 	if camps == null or scene.crossing == null:

@@ -179,7 +179,7 @@ func _create(id: int, pose: Transform3D, variant: String) -> Dictionary:
 	glow.light_color = Color("ffbf7d")
 	glow.light_energy = 1.3
 	glow.omni_range = 4
-	return {"actor":actor,"flash":flash,"flash_time":0.0,"photo_view":0.0,"last_photo":-1,"last_scare":-1,"variant":variant,"lamp":lamp,"mark":mark,"carried":carried,"glow":glow,"pose":pose,"size":0.0,"initialized":false,"home":null,"record":{},"state":"rest","wait":2.0,"route":PackedVector3Array(),"waypoint":1,"branch":-1,"suspicion":0.0,"search":0.0,"last_seen":Vector3.ZERO,"outings":0,"visible":0.0,"latched":false,"last_visit":-1,"last_search":-1,"walk":null,"shore":null,"away":0.0,"last_cross":-1}
+	return {"actor":actor,"flash":flash,"flash_time":0.0,"photo_view":0.0,"last_photo":-1,"last_scare":-1,"variant":variant,"lamp":lamp,"mark":mark,"carried":carried,"glow":glow,"pose":pose,"size":0.0,"initialized":false,"home":null,"record":{},"state":"rest","wait":2.0,"route":PackedVector3Array(),"waypoint":1,"branch":-1,"suspicion":0.0,"search":0.0,"last_seen":Vector3.ZERO,"outings":0,"visible":0.0,"latched":false,"last_visit":-1,"last_search":-1,"walk":null,"shore":null,"away":0.0,"last_cross":-1,"job":""}
 
 func _route(entry: Dictionary, destination: Vector3, state: String) -> bool:
 	var path: PackedVector3Array = world.navigation.path(entry.actor.position,destination)
@@ -207,7 +207,7 @@ func _outing(entry: Dictionary) -> void:
 	# The pile is full and every branch within reach is on it: there is nothing
 	# left to fetch and the far shore is the only thing left to look at. The
 	# bridge is a reason to go somewhere, so it earns an outing of its own.
-	if crossing != null and int(entry.record.get("wood",0))>=8 and entry.last_cross != entry.outings and entry.outings%3 == 0 and _begin_camper_crossing(entry):
+	if _crossable() and int(entry.record.get("wood",0))>=8 and entry.last_cross != entry.outings and entry.outings%3 == 0 and _begin_camper_crossing(entry):
 		return
 	var angle := float(entry.outings)*2.4+float(entry.record.id)
 	for attempt in range(8):
@@ -264,6 +264,9 @@ func _walk(entry: Dictionary, dt: float) -> bool:
 
 func _advance_camper(entry: Dictionary,dt: float, sense: bool) -> void:
 	if entry.home == null: return
+	if entry.job != "":
+		_advance_builder(entry,dt)
+		return
 	if _away(entry):
 		_advance_visitor(entry,dt)
 		return
@@ -485,14 +488,34 @@ func advance(delta: float) -> bool:
 
 ## True while this camper is on the deck or standing on the other shore.
 func _away(entry: Dictionary) -> bool:
-	return entry.walk != null or (entry.shore != null and entry.shore != world)
+	return entry.walk != null or entry.job != "" or (entry.shore != null and entry.shore != world)
+
+## Is there a way over today? A link whose bridge is still being planked is a
+## link, and the campers can walk out onto what there is of it, but it is not a
+## crossing and nothing here may plan one.
+func _crossable() -> bool:
+	if crossing == null: return false
+	if not crossing.crossable(): return false
+	_last_refusal = ""
+	return true
+
+## Say, once, why nobody went. Only on the explicit calls -- the motives ask
+## every few seconds and would fill the log.
+func _refuse() -> void:
+	if crossing == null: return
+	var reason: String = crossing.closed_reason
+	if _last_refusal != reason:
+		_last_refusal = reason
+		_event("nobody crosses: %s" % reason)
 
 # ------------------------------------------------------------- the campers
 
 ## Send a camper over the link. Public for the study's key and for tests;
 ## `_outing` calls it on its own once the pile is full.
 func send_camper_across(camp_id := -1) -> bool:
-	if crossing == null: return false
+	if not _crossable():
+		_refuse()
+		return false
 	for id in camps:
 		if camp_id >= 0 and id != camp_id: continue
 		var entry: Dictionary = camps[id]
@@ -572,6 +595,96 @@ func _land_camper(entry: Dictionary) -> void:
 	entry.away = CAMPER_STAY
 	_event("the camper crosses the bridge and looks around")
 
+# ------------------------------------------------------- laying the planks
+
+## The bridge is built by the people who live beside it. `BridgeConstruction`
+## owns the pacing and asks here for a pair of hands; this answers yes only when
+## there is a camper free, a board's worth of wood on the pile, and a walk out
+## to the frontier that can actually be planned. Anything else is a no, and the
+## driver lays the plank on its own time -- the pacing is the knob, the camper
+## is the picture.
+##
+## One plank costs one wood. What refills the pile, and whether it should have
+## to, is not decided: see "Built over time" in `docs/campsite-life/README.md`.
+const PLANK_WOOD := 1
+## Seconds a camper stands at the frontier nailing the board down.
+const PLANK_WORK := 1.6
+
+## The build this camp is working on, or null. Set by whoever owns both.
+var construction: BridgeConstruction
+var planks_laid := 0
+var _last_refusal := ""
+
+## `BridgeConstruction.builder`. True means a camper has it in hand.
+func take_plank() -> bool:
+	if construction == null or crossing == null or world == null: return false
+	var bridge: SuspensionBridge = construction.bridge
+	if bridge == null or bridge.is_complete(): return false
+	for id in camps:
+		var entry: Dictionary = camps[id]
+		if entry.home == null or _away(entry) or not entry.route.is_empty(): continue
+		if entry.state not in ["rest","look","return"]: continue
+		if int(entry.record.get("wood",0))<PLANK_WOOD: continue
+		var plan := crossing.plan_to_deck(world,entry.actor.global_position,bridge.built_extent())
+		var walk := CrossingWalk.along(crossing,plan)
+		if walk == null: continue
+		_update_inventory(entry,{"wood":maxi(0,int(entry.record.get("wood",0))-PLANK_WOOD)})
+		dirty = true
+		entry.route = PackedVector3Array()
+		entry.walk = walk
+		entry.job = "out"
+		entry.state = "build"
+		_event("camper carries a plank out to the bridge")
+		return true
+	return false
+
+## A camper part way through a board. Their own little state machine: out along
+## what is built, a moment's work at the end of it, and back to the tent.
+func _advance_builder(entry: Dictionary, dt: float) -> void:
+	entry.lamp.visible = world.night.call()
+	entry.glow.visible = entry.lamp.visible
+	entry.carried.visible = entry.job == "out"
+	entry.mark.text = ""
+	if entry.walk != null:
+		var at: Vector3 = entry.actor.global_position
+		var moved: Vector3 = entry.walk.carry(at,CROSS_SPEED,dt)
+		var stride := moved-at
+		entry.actor.global_position = moved
+		if Vector2(stride.x,stride.z).length()>0.0001:
+			entry.actor.global_rotation.y = lerp_angle(entry.actor.global_rotation.y,atan2(stride.x,stride.z),1-exp(-6*dt))
+		entry.actor.pose(dt,true,"cross",entry.job == "out",CROSS_SPEED)
+		if entry.walk.finished():
+			entry.walk = null
+			entry.wait = PLANK_WORK if entry.job == "out" else 0.0
+		return
+	entry.wait -= dt
+	if entry.wait>0:
+		# "collect" is the leaning-over pose; nailing a board is that shape.
+		entry.actor.pose(dt,false,"collect",entry.job == "out",CROSS_SPEED)
+		return
+	if entry.job == "out":
+		# The board goes down where the deck ran out. If the driver has given up
+		# on this camper in the meantime the plank is already there; either way
+		# the walk home is the same.
+		if construction != null and construction.lay(): planks_laid += 1
+		_event("camper nails a plank onto the bridge")
+		entry.job = "back"
+		var home: Vector3 = world.to_world(entry.home) if entry.home != null else entry.actor.global_position
+		var back := crossing.plan_from_deck(crossing.edge_of(world),world,home) if crossing != null else ([] as Array[Dictionary])
+		entry.walk = CrossingWalk.along(crossing,back)
+		if entry.walk == null: _end_build(entry)
+		return
+	_end_build(entry)
+
+func _end_build(entry: Dictionary) -> void:
+	entry.walk = null
+	entry.job = ""
+	var safe: Variant = world.navigation.nearest_safe(world.to_local(entry.actor.global_position))
+	if safe is Vector3: entry.actor.global_position = world.to_world(safe)
+	entry.route = PackedVector3Array()
+	entry.state = "rest"
+	entry.wait = 2.0
+
 # -------------------------------------------------------------- Bigfoot
 
 ## No Bigfoot lives on this ground, but the bridge reaches one. The motive is
@@ -579,7 +692,7 @@ func _land_camper(entry: Dictionary) -> void:
 ## new thing is how long the walk is.
 func _consider_crossing(dt: float) -> bool:
 	visit_in -= dt
-	if crossing == null or visit_in>0: return false
+	if not _crossable() or visit_in>0: return false
 	visit_in = 8.0
 	for id in camps:
 		var entry: Dictionary = camps[id]
@@ -594,6 +707,9 @@ func _consider_crossing(dt: float) -> bool:
 ## Fetch Bigfoot from across the link, bound for `camp_id`'s tent. Public for
 ## the study's key and for tests; `_consider_crossing` calls it on its own.
 func send_bigfoot_across(camp_id := -1) -> bool:
+	if not _crossable():
+		_refuse()
+		return false
 	if camp_id<0:
 		for id in camps:
 			camp_id = id
@@ -601,7 +717,10 @@ func send_bigfoot_across(camp_id := -1) -> bool:
 	return _send_bigfoot(camp_id)
 
 func _send_bigfoot(camp_id: int) -> bool:
-	if crossing == null or world.resident != null or not camps.has(camp_id): return false
+	if not _crossable():
+		_refuse()
+		return false
+	if world.resident != null or not camps.has(camp_id): return false
 	var home := crossing.other(world)
 	if home == null or not home.resident_active() or home.resident_owned(): return false
 	var scene: Node = home.resident

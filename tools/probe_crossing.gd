@@ -27,6 +27,8 @@ func run() -> void:
 	while editor.forming or editor.refresh_pending > 0:
 		await process_frame
 	await scene.rebuild_second_chunk()
+	# The study now opens with the bridge unbuilt; these want the finished deck.
+	scene.set_bridge_built(true)
 	scene.set_process(false)
 	scene._process(1.0 / 60.0)
 	var crossing: CrossingRoute = scene.crossing

@@ -88,6 +88,8 @@ func run() -> void:
 	while editor.forming or editor.refresh_pending > 0:
 		await process_frame
 	scene.rebuild_second_chunk()
+	# The study now opens with the bridge unbuilt; these want the finished deck.
+	scene.set_bridge_built(true)
 	_daylight()
 	_aim()
 	print("FILM BRIDGE CUT shot: %s cut, camera (%.1f, %.1f, %.1f) on target (%.1f, %.1f, %.1f)" % [

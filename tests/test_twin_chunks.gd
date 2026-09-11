@@ -43,6 +43,8 @@ func run() -> void:
 	while editor.forming or editor.refresh_pending > 0:
 		await process_frame
 	scene.rebuild_second_chunk()
+	# The study now opens with the bridge unbuilt; these want the finished deck.
+	scene.set_bridge_built(true)
 
 	# ------------------------------------------------------------- the copy
 	var copy: Node3D = scene.second_chunk
