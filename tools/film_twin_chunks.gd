@@ -85,6 +85,8 @@ func run() -> void:
 	while editor.forming or editor.refresh_pending > 0:
 		await process_frame
 	scene.rebuild_second_chunk()
+	# The study now opens with the bridge unbuilt; these want the finished deck.
+	scene.set_bridge_built(true)
 	_daylight()
 	print("FILM TWIN CHUNKS world formed: %d visual instances on the copy" % scene.visual_instance_count())
 	if not stills_dir.is_empty(): await _stills()

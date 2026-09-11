@@ -35,6 +35,8 @@ extends "res://studies/bigfoot_living_world.gd"
 ##        swings back against the far cliff. One cut only, either way.
 ##   `X`  sends Bigfoot across the bridge to the far camp, now
 ##   `V`  sends a camper across the bridge to chunk one, now
+##   `Q`  lays one more plank on the bridge
+##   `E`  finishes the bridge instantly
 ##
 ## The far island has campers. A tent, its resident and a few fallen branches
 ## go into the grown island's own document, and `campsite_life.gd` runs them
@@ -48,6 +50,15 @@ extends "res://studies/bigfoot_living_world.gd"
 ## the island the island's `CampsiteWorld.resident` is him, so the campers see,
 ## flee from and photograph him with no further change. See `_wire_crossing` and
 ## `docs/campsite-life/README.md`.
+##
+## The bridge is built rather than found. It opens with the ropes strung and no
+## boards on them (`--bridge=built` for the old finished deck, which is what the
+## stills and the older tests want) and `scripts/bridge_construction.gd` lays
+## planks on world time at `--build-rate=` planks per world hour, from the island
+## end back toward chunk one. Nobody may cross until the last board is down. When
+## a camper is free and the tent's wood pile is not empty the board is carried
+## out and nailed on by hand; otherwise it appears on the timer, because the
+## pacing is the knob and the camper is the picture. See `_wire_crossing`.
 ##
 ## The crossing is wired to the study's live sky, which is the other half of the
 ## question: a bridge that ignores the weather reads as scenery. Every physics
@@ -226,12 +237,22 @@ var _obstacle_cache := {}
 ## up to six times and every answer is two A* queries.
 var _reach_cache := {}
 var _skipped: Array[String] = []
+## The build. Owned here; `island_camps` borrows it for the camper's hands.
+var construction: BridgeConstruction
+## How the bridge starts: false lays no planks at all, true is the finished deck
+## every still and every older test expects. `--bridge=built|unbuilt`.
+var bridge_built := false
+var build_rate := BridgeConstruction.DEFAULT_RATE
 
 func _ready() -> void:
 	super._ready()
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--gap="):
 			chasm_gap = maxf(2.0, float(argument.trim_prefix("--gap=")))
+		if argument.begins_with("--bridge="):
+			bridge_built = argument.trim_prefix("--bridge=") == "built"
+		if argument.begins_with("--build-rate="):
+			build_rate = maxf(0.0, float(argument.trim_prefix("--build-rate=")))
 		if argument.begins_with("--island="):
 			# `--island=<preset>:<seed>`; `--island=copy` keeps the mirrored stand-in.
 			var parts := argument.trim_prefix("--island=").split(":")
@@ -881,8 +902,12 @@ func _place_bridge() -> void:
 		bridge = load(REAL).new()
 		bridge.name = "Bridge"
 		add_child(bridge)
-		bridge.setup(anchors[0], anchors[1], {"sag": DECK_SAG, "kerb": DECK_KERB})
-		print("TWIN CHUNKS bridge: %s, sag %.2f, kerb %.2f" % [REAL, DECK_SAG, DECK_KERB])
+		# `laid` names the construction path at all: with it the deck opens with
+		# no holes in it, because it has not been rained on for thirty years yet.
+		var slots := {"sag": DECK_SAG, "kerb": DECK_KERB, "build_from": "b"}
+		if not bridge_built: slots["laid"] = 0
+		bridge.setup(anchors[0], anchors[1], slots)
+		print("TWIN CHUNKS bridge: %s, sag %.2f, kerb %.2f, %d of %d planks laid" % [REAL, DECK_SAG, DECK_KERB, bridge.laid_count(), bridge.plank_count()])
 		return
 	bridge = _placeholder_bridge()
 	add_child(bridge)
@@ -1239,17 +1264,67 @@ func _wire_crossing() -> void:
 	crossing = null
 	chunk_world = camps.world if camps != null else null
 	if island_camps == null or island_world == null or chunk_world == null: return
-	crossing = CrossingRoute.link(chunk_world, island_world, bridge_anchors(), deck_surface)
+	crossing = CrossingRoute.link(chunk_world, island_world, bridge_anchors(), deck_surface, bridge_finished)
 	island_camps.crossing = crossing
 	if camps != null: camps.crossing = crossing
 	if crossing == null:
 		push_warning("twin chunks: no bridge to cross")
 		return
-	print("TWIN CHUNKS crossing: %.1f m of deck joins chunk one to the island camp" % crossing.span())
+	_wire_construction()
+	print("TWIN CHUNKS crossing: %.1f m of deck joins chunk one to the island camp%s" % [
+		crossing.span(), "" if bridge_finished() else ", once it is planked"])
+
+# ------------------------------------------------------- building the bridge
+
+## The driver, the hands and the gate. The camp on the island does the planking:
+## it is the ground the builders live on and the end the deck grows from.
+func _wire_construction() -> void:
+	construction = null
+	if bridge == null or not bridge.has_method("is_complete"): return
+	construction = BridgeConstruction.new()
+	construction.rate = build_rate
+	construction.on_event = func(message: String) -> void:
+		print("TWIN CHUNKS build: ", message)
+		if island_camps != null and is_instance_valid(island_camps): island_camps._event(message)
+	construction.bind(bridge, _build_hour())
+	if island_camps != null:
+		island_camps.construction = construction
+		construction.builder = island_camps.take_plank
+	print("TWIN CHUNKS build: %s, %.1f planks per world hour" % [construction.readout(), build_rate])
+
+## Is the way across finished? `CrossingRoute.open_when`; also the honest answer
+## when there is no real bridge script at all, in which case the placeholder
+## deck has always been complete.
+func bridge_finished() -> bool:
+	if bridge == null: return false
+	if not bridge.has_method("is_complete"): return true
+	return bridge.is_complete()
+
+func _build_hour() -> float:
+	return float(world_clock.day) * 24.0 + world_clock.hour if world_clock != null else 0.0
+
+## `Q`: one more board.
+func build_planks(count := 1) -> int:
+	if construction == null: return 0
+	var laid: int = construction.advance_by(count)
+	print("TWIN CHUNKS build: %s" % construction.readout())
+	return laid
+
+## `E`, and the film tool's and the tests' way of forcing either end state.
+func set_bridge_built(built: bool) -> void:
+	if construction == null or bridge == null: return
+	if built: construction.complete()
+	else:
+		bridge.set_laid(0)
+		construction.bind(bridge, _build_hour())
+	print("TWIN CHUNKS build: %s" % construction.readout())
 
 ## `X`: Bigfoot goes now, whatever the tent is doing.
 func send_bigfoot_across() -> bool:
 	if island_camps == null: return false
+	if not bridge_finished():
+		print("TWIN CHUNKS Bigfoot crossing: refused, %s (%s)" % [crossing.closed_reason if crossing != null else "no bridge", construction.readout() if construction != null else "-"])
+		return false
 	var sent: bool = island_camps.send_bigfoot_across()
 	print("TWIN CHUNKS Bigfoot crossing: %s" % ("on his way" if sent else "no route, or he is busy"))
 	return sent
@@ -1257,6 +1332,9 @@ func send_bigfoot_across() -> bool:
 ## `V`: a camper goes now.
 func send_camper_across() -> bool:
 	if island_camps == null: return false
+	if not bridge_finished():
+		print("TWIN CHUNKS camper crossing: refused, %s (%s)" % [crossing.closed_reason if crossing != null else "no bridge", construction.readout() if construction != null else "-"])
+		return false
 	var sent: bool = island_camps.send_camper_across()
 	print("TWIN CHUNKS camper crossing: %s" % ("on the way" if sent else "no route, or already away"))
 	return sent
@@ -1310,6 +1388,13 @@ func _process(delta: float) -> void:
 		_far_owns_bigfoot = false
 	if camps != null: camps.borrowed = _far_owns_bigfoot
 	super._process(delta)
+	if construction != null and not construction.is_complete():
+		construction.advance(_build_hour(), delta)
+		# The base study rewrites this label only on some frames, so the build
+		# line is rebuilt from the first line rather than appended to whatever
+		# was there last frame.
+		if is_instance_valid(_life_status):
+			_life_status.text = _life_status.text.split("\n")[0] + "\n" + construction.readout()
 
 ## Chunk one's grid calls his feet unsafe the moment he is on the deck or the
 ## far island, and a rebuild would snatch him home. `blast_airborne` is the
@@ -1438,6 +1523,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			# middle, which is the shot where the far half is long enough to swing
 			# all the way back and slap the cliff it is tied to.
 			cut_bridge(0.08 if event.shift_pressed else 0.5)
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_Q:
+			build_planks(1)
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_E:
+			set_bridge_built(true)
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_X:

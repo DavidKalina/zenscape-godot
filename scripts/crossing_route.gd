@@ -22,6 +22,13 @@ extends RefCounted
 ## through `point_of()` every frame rather than trusting the stored one. That is
 ## what `crossing_walk.gd` does, and why it exists.
 ##
+## A link can exist before it is usable. `open_when` is the gate: while it says
+## no -- a bridge still being planked -- `plan()` answers with nothing, which is
+## the honest answer and the one every caller already handles. The link itself
+## stays, because the half-built deck is still somewhere a builder walks out
+## along; `plan_to_deck` and `plan_from_deck` are ungated for exactly that, and
+## go no further than the caller's `t`.
+##
 ## Vocabulary from `docs/world-progression/LINKS.md`: a link is a real edge
 ## between two things that already exist, not prose about one. This edge is the
 ## only reason a walker on one island can have a destination on the other.
@@ -65,11 +72,16 @@ var anchor_near := Vector3.ZERO
 var anchor_far := Vector3.ZERO
 ## `t` -> the live walking surface, world space. The study's `deck_surface()`.
 var deck: Callable
+## `-> bool`: is the way across finished? Unset means yes, which is what every
+## caller that never heard of construction gets.
+var open_when := Callable()
+## Why not, when `crossable()` says no. For a study to print.
+var closed_reason := "the bridge is unfinished"
 ## `_reachable_near` answers, per shore.
 var _approach_cache := {}
 
 ## The link, or null when there is no bridge to make one out of.
-static func link(near_world: CampsiteWorld, far_world: CampsiteWorld, anchors: Array[Transform3D], deck_at: Callable) -> CrossingRoute:
+static func link(near_world: CampsiteWorld, far_world: CampsiteWorld, anchors: Array[Transform3D], deck_at: Callable, open_when := Callable()) -> CrossingRoute:
 	if near_world == null or far_world == null or anchors.size() != 2 or not deck_at.is_valid():
 		return null
 	if near_world.navigation == null or far_world.navigation == null:
@@ -80,7 +92,12 @@ static func link(near_world: CampsiteWorld, far_world: CampsiteWorld, anchors: A
 	route.anchor_near = anchors[0].origin
 	route.anchor_far = anchors[1].origin
 	route.deck = deck_at
+	route.open_when = open_when
 	return route
+
+## Is there a way across today? False while the deck is still being laid.
+func crossable() -> bool:
+	return not open_when.is_valid() or bool(open_when.call())
 
 ## The other end of the link from `world`, or null when `world` is not on it.
 func other(world: CampsiteWorld) -> CampsiteWorld:
@@ -168,6 +185,7 @@ func _flat_gap(point: Vector3, t: float) -> float:
 func plan(from_world: CampsiteWorld, from_at: Vector3, to_world: CampsiteWorld, to_at: Vector3) -> Array[Dictionary]:
 	var empty: Array[Dictionary] = []
 	if from_world == null or to_world == null or other(from_world) != to_world: return empty
+	if not crossable(): return empty
 	var lead := _leg_to_anchor(from_world, from_at)
 	if lead.is_empty(): return empty
 	var tail := _leg_from_anchor(to_world, to_at)
@@ -175,6 +193,30 @@ func plan(from_world: CampsiteWorld, from_at: Vector3, to_world: CampsiteWorld, 
 	var steps: Array[Dictionary] = []
 	steps.append_array(lead)
 	steps.append_array(_deck_leg(edge_of(from_world), edge_of(to_world)))
+	steps.append_array(tail)
+	return steps
+
+## Out of `from_world` and along the deck as far as `to_t`, and no further: the
+## walk a plank-layer takes to the end of what is built. Ungated -- the built
+## prefix is real deck whether or not the crossing is finished -- and the
+## caller is responsible for `to_t` being inside `built_extent()`.
+func plan_to_deck(from_world: CampsiteWorld, from_at: Vector3, to_t: float) -> Array[Dictionary]:
+	var empty: Array[Dictionary] = []
+	if from_world == null or not joins(from_world): return empty
+	var lead := _leg_to_anchor(from_world, from_at)
+	if lead.is_empty(): return empty
+	var steps: Array[Dictionary] = []
+	steps.append_array(lead)
+	steps.append_array(_deck_leg(edge_of(from_world), clampf(to_t, 0.0, 1.0)))
+	return steps
+
+## The mirror: back off the boards at `from_t` and inland to `to_at`.
+func plan_from_deck(from_t: float, to_world: CampsiteWorld, to_at: Vector3) -> Array[Dictionary]:
+	var empty: Array[Dictionary] = []
+	if to_world == null or not joins(to_world): return empty
+	var tail := _leg_from_anchor(to_world, to_at)
+	if tail.is_empty(): return empty
+	var steps := _deck_leg(clampf(from_t, 0.0, 1.0), edge_of(to_world))
 	steps.append_array(tail)
 	return steps
 
@@ -262,7 +304,7 @@ func _step_off(world: CampsiteWorld, from_at: Vector3, to_at: Vector3) -> Array[
 	return steps
 
 func _deck_leg(from_t: float, to_t: float) -> Array[Dictionary]:
-	var count := maxi(2, int(ceil(span() / DECK_STRIDE)))
+	var count := maxi(2, int(ceil(span() * absf(to_t - from_t) / DECK_STRIDE)))
 	var steps: Array[Dictionary] = []
 	for i in range(count + 1):
 		var t := lerpf(from_t, to_t, float(i) / float(count))

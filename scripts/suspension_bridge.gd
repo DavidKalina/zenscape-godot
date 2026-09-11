@@ -26,6 +26,15 @@ class_name SuspensionBridge extends Node3D
 ## happen to know. Only `apply_weather`'s damping touches the solver, and it
 ## only scales the damping the caller already chose.
 ##
+## A bridge can also be *unfinished*. `setup` with `{"laid": 0}` strings the
+## ropes and stands the posts with no boards on them at all; `lay_next_plank()`
+## nails one more down, working outward from `build_from` (the B anchor by
+## default, which is the shore the builders live on). Only laid planks are
+## drawn -- the MultiMesh slots of the rest are folded to nothing, exactly as
+## the ones a cut took -- and `built_extent()` says how far the deck has got.
+## The physics never changes: the rope is the collision, so an unbuilt crossing
+## hangs, sways and can be walked out along as far as it is boarded.
+##
 ## The rope can be severed. `cut(point)` drops the joint nearest that point and
 ## the chain parts there: each half stays tied to its own anchor and swings down
 ## under gravity, Jolt doing all of it. Planks and ropes follow the break -- the
@@ -94,6 +103,8 @@ const JOLT_IMPULSE := 3.0
 ## much that the halves are thrown. Down and toward their own anchor, which is
 ## the way a cut rope end actually goes.
 const CUT_WHIP := 2.2
+## How many of a finished, weathered deck's slots have lost their board.
+const MISSING_PLANKS := 0.12
 
 var segments: Array[RigidBody3D] = []
 var anchors: Array[StaticBody3D] = []
@@ -109,6 +120,15 @@ var _cut_hi := -1.0
 ## the span. A hanging half is half the span long, so a cut widens it.
 var _drop_reach := 0.4
 var planks: Array[Dictionary] = []
+## Which end the planking starts from: "a" (t = 0) or "b" (t = 1, the default).
+var build_from := "b"
+## How many planks are nailed down, counted from the building end. Slots past
+## this many are drawn as nothing; `_rank` says where each slot falls in the
+## laying order.
+var _laid := 0
+var _rank := PackedInt32Array()
+## Planks actually placed in a MultiMesh last repaint, for tests and readouts.
+var _drawn := 0
 var segment_length := 1.6
 var segment_mass := 0.0
 var plank_spacing := 0.45
@@ -153,6 +173,7 @@ var _post_skin: StandardMaterial3D = null
 var _rock_skin: StandardMaterial3D = null
 var _rope_skin: StandardMaterial3D = null
 var _strands := 0
+var _missing := MISSING_PLANKS
 ## Visual rebuild cadence, in physics ticks: 1 every tick, 2 every other, 0 to
 ## stop painting at all. Tests run at 0; a bridge far off screen could too.
 ## `setup` steps it up every sixty plank slots, to three at most: a full
@@ -171,6 +192,13 @@ func setup(a: Transform3D, b: Transform3D, options: Dictionary = {}) -> void:
 	sag = clampf(float(options.get("sag", sag)), 0.02, 0.35)
 	damping = maxf(0.0, float(options.get("damping", damping)))
 	kerb = maxf(0.0, float(options.get("kerb", kerb)))
+	build_from = "a" if str(options.get("build_from", build_from)) == "a" else "b"
+	# A bridge nobody asked to build is the bridge this module always made: every
+	# slot filled, and one in eight of them rotted away. One that is being built
+	# now has no holes in it yet, so the missing-plank chance defaults off the
+	# moment `laid` is named.
+	var building: bool = options.has("laid")
+	_missing = clampf(float(options.get("missing", 0.0 if building else MISSING_PLANKS)), 0.0, 1.0)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(options.get("seed", 7))
 
@@ -201,6 +229,7 @@ func setup(a: Transform3D, b: Transform3D, options: Dictionary = {}) -> void:
 	_join(segments[count - 1], anchors[1], _layout(1.0 - 0.5 / float(count)).lerp(_b, 0.5))
 
 	_plan_deck(rng)
+	set_laid(int(options.get("laid", planks.size())))
 	_drips = _build_drips()
 	# Measured at about six microseconds a plank slot, ropes included, so past
 	# sixty slots a full repaint every tick would cost more than the frame can
@@ -215,6 +244,57 @@ func setup(a: Transform3D, b: Transform3D, options: Dictionary = {}) -> void:
 ## the spacing asked for, not the count still nailed down.
 func plank_count() -> int:
 	return planks.size()
+
+# ----------------------------------------------------------- under construction
+
+## Planks nailed down so far, counted from `build_from`'s end.
+func laid_count() -> int:
+	return _laid
+
+## Every slot has been reached. A crossing is only a crossing when this is true.
+func is_complete() -> bool:
+	return _laid >= planks.size()
+
+## Planks actually drawn last repaint. Lower than `laid_count()` on a weathered
+## deck (a rotted slot is laid and still shows a hole) and after a cut.
+func drawn_plank_count() -> int:
+	return _drawn
+
+## How far the deck has got, as `deck_point`'s `t`: the frontier plank's own `t`,
+## or the building end itself while nothing is laid. It moves away from the
+## building end and never back, so it falls from 1 toward 0 when building from B
+## and rises from 0 toward 1 when building from A.
+func built_extent() -> float:
+	if planks.is_empty(): return 1.0 if build_from == "b" else 0.0
+	if _laid <= 0: return 1.0 if build_from == "b" else 0.0
+	return float(planks[_slot(_laid - 1)].t)
+
+## Nail the next board down. False when there is none left to nail.
+func lay_next_plank() -> bool:
+	if is_complete(): return false
+	set_laid(_laid + 1)
+	return true
+
+## Jump the build to `count` planks. Backwards is allowed -- a study scrubbing
+## through the build, a test setting up a case -- and is the only way the count
+## ever falls.
+func set_laid(count: int) -> void:
+	var wanted := clampi(count, 0, planks.size())
+	if wanted == _laid and not _rank.is_empty(): return
+	_laid = wanted
+	if _rank.size() != planks.size():
+		_rank.resize(planks.size())
+		for i in range(planks.size()):
+			_rank[i] = (planks.size() - 1 - i) if build_from == "b" else i
+	if not _layers.is_empty(): _rebuild_visuals()
+
+## Which plank slot is the `order`-th one laid.
+func _slot(order: int) -> int:
+	return (planks.size() - 1 - order) if build_from == "b" else order
+
+## Is this slot's board down yet?
+func _is_laid(index: int) -> bool:
+	return index < _rank.size() and _rank[index] < _laid
 
 ## A gentle lateral shove held until it is changed. Strength is metres per
 ## second squared; three is a stiff breeze on a hundred metre rope.
@@ -572,7 +652,7 @@ func _plan_deck(rng: RandomNumberGenerator) -> void:
 	for i in range(slots):
 		var plank := {
 			"t": float(i + 1) / float(slots + 1),
-			"gone": rng.randf() < 0.12,
+			"gone": rng.randf() < _missing,
 			"crack": false,
 			"yaw": 0.0,
 			"slide": 0.0,
@@ -659,8 +739,12 @@ func _rebuild_visuals() -> void:
 	for tone in range(_cursor.size()): _cursor[tone] = 0
 	_snow_cursor = 0
 	var capping := snow > 0.01
-	for plank: Dictionary in planks:
+	_drawn = 0
+	for index in range(planks.size()):
+		var plank: Dictionary = planks[index]
 		if plank.gone: continue
+		# Not nailed down yet. Its slot folds away below with the cut ones.
+		if not _is_laid(index): continue
 		var lay := float(plank.t) + float(plank.slide) / _span
 		# A board over the break went into the chasm with the rope it was lashed
 		# to. Its slot in the batch is folded away below with the others.
@@ -676,9 +760,11 @@ func _rebuild_visuals() -> void:
 				batch.set_instance_transform(_cursor[tone], Transform3D(pose.basis * halves[half], pose.origin + pose.basis * offsets[half]))
 				_cursor[tone] += 1
 				if capping: _cap_plank(pose.basis * halves[half], pose.origin + pose.basis * offsets[half], pose.basis.y)
+			_drawn += 1
 		else:
 			batch.set_instance_transform(_cursor[tone], Transform3D(pose.basis * plank.frame, pose.origin))
 			_cursor[tone] += 1
+			_drawn += 1
 			if capping: _cap_plank(pose.basis * plank.frame, pose.origin, pose.basis.y)
 	# Boards that went with the cut leave their slots behind; scale them to
 	# nothing rather than leave last tick's pose hanging in the air.
