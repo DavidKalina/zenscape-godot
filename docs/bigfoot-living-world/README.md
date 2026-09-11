@@ -256,6 +256,8 @@ removes a supply. Both leave his remembered state untouched until he observes
 home again. **His thoughts** opens the developer inspector; H hides the study controls.
 **Build / Enjoy** opens the existing terrain tools. P pauses
 needs, movement and cave performances together.
+Arrow keys slide the camera target over the ground (Shift for four times the pace),
+Page Up and Page Down lift and lower it; left-drag orbits and the wheel zooms.
 
 ## Persistence and limits
 
