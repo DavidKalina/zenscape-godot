@@ -19,6 +19,13 @@ class_name SuspensionBridge extends Node3D
 ## the deck's own weight, so `setup` lays the chain shallower by a measured
 ## fraction of the span and lets it fall to the number that was asked for.
 ##
+## The weather arrives from outside: `apply_wind` for the air, `apply_weather`
+## for wet, snow and frost, `jolt` for a lightning hit. The module holds no
+## opinion about where any of it comes from and never reads the sky itself, so
+## a study, the game or a test can each drive the same rope from whatever they
+## happen to know. Only `apply_weather`'s damping touches the solver, and it
+## only scales the damping the caller already chose.
+##
 ## A creature standing here later wants friction 0.9 and a mass well under the
 ## segment's own: the slabs are `DECK_DENSITY` kilograms per metre, so a two
 ## metre segment weighs about as much as a large dog and a Bigfoot leaning on
@@ -54,6 +61,27 @@ const STAY_RADIUS := 0.035
 ## is a no-op in this engine build — it reads straight back black — and six
 ## batches is cheaper than a custom shader to work around it.
 const WOOD_TONES := [Color(0.55, 0.44, 0.30), Color(0.47, 0.36, 0.24), Color(0.38, 0.28, 0.19), Color(0.50, 0.41, 0.29), Color(0.32, 0.24, 0.17), Color(0.58, 0.48, 0.35)]
+## Soaked wood. Rain takes about a third off a bare board and puts a sheen on
+## it, which is most of what tells wet timber from dry at any distance. Not the
+## half it looks like in daylight: the same rain that wets the wood closes the
+## sky over it, and at half the albedo under full storm cloud the crossing goes
+## to a silhouette and stops reading as wood at all.
+const WET_DARKEN := 0.36
+const WET_ROUGHNESS := 0.42
+## Snow on the boards: a second slab laid on each plank top, this deep at full
+## cover. Thin, because a rope deck a hand-width deep in snow would be a roof.
+const SNOW_DEPTH := 0.06
+const SNOW_TONE := Color(0.91, 0.93, 0.97)
+## Rope. Hemp, soaked hemp, and hemp with frost in it.
+const ROPE_TONE := Color(0.68, 0.57, 0.39)
+const ROPE_WET := Color(0.31, 0.25, 0.17)
+const ROPE_COLD := Color(0.70, 0.74, 0.78)
+## Frost stiffens the crossing: damping rises this far at full ice, so a frozen
+## deck answers a gust with a shudder instead of a swing.
+const ICE_DAMPING := 2.4
+## A lightning hit, in metres per second of delta-v on the nearest slab. Three
+## is a visible snap that runs off down the deck and dies in a second or two.
+const JOLT_IMPULSE := 3.0
 
 var segments: Array[RigidBody3D] = []
 var anchors: Array[StaticBody3D] = []
@@ -65,6 +93,17 @@ var plank_width := 1.15
 var rail_height := 1.05
 var sag := 0.135
 var damping := 0.8
+## Lip along each edge of the walking surface, in metres: the side cable the
+## planks are lashed over, as collision. Zero is a smooth box, and a ball left
+## on a smooth box rolls off it -- the deck tilts a degree or two in any breeze,
+## and downwind is downhill. A tenth of a metre is a step a creature does not
+## notice and a stone cannot climb at a walk. Off by default: a bridge nothing is
+## ever put down on does not need two more shapes a segment.
+var kerb := 0.0
+## Weather, as last told. Read-only from outside: go through `apply_weather`.
+var wetness := 0.0
+var snow := 0.0
+var frost := 0.0
 
 var _forward := Vector3.FORWARD
 var _lateral := Vector3.RIGHT
@@ -82,6 +121,14 @@ var _lashings: Array[PackedVector3Array] = []
 var _layers: Array[MultiMeshInstance3D] = []
 var _cursor := PackedInt32Array()
 var _ropes: MultiMeshInstance3D = null
+var _snow_deck: MultiMeshInstance3D = null
+var _snow_cursor := 0
+var _caps: Array[Dictionary] = []
+var _drips: GPUParticles3D = null
+var _wood_skins: Array[StandardMaterial3D] = []
+var _post_skin: StandardMaterial3D = null
+var _rock_skin: StandardMaterial3D = null
+var _rope_skin: StandardMaterial3D = null
 var _strands := 0
 ## Visual rebuild cadence, in physics ticks: 1 every tick, 2 every other, 0 to
 ## stop painting at all. Tests run at 0; a bridge far off screen could too.
@@ -100,6 +147,7 @@ func setup(a: Transform3D, b: Transform3D, options: Dictionary = {}) -> void:
 	rail_height = maxf(0.2, float(options.get("rail_height", rail_height)))
 	sag = clampf(float(options.get("sag", sag)), 0.02, 0.35)
 	damping = maxf(0.0, float(options.get("damping", damping)))
+	kerb = maxf(0.0, float(options.get("kerb", kerb)))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(options.get("seed", 7))
 
@@ -130,12 +178,14 @@ func setup(a: Transform3D, b: Transform3D, options: Dictionary = {}) -> void:
 	_join(segments[count - 1], anchors[1], _layout(1.0 - 0.5 / float(count)).lerp(_b, 0.5))
 
 	_plan_deck(rng)
+	_drips = _build_drips()
 	# Measured at about six microseconds a plank slot, ropes included, so past
 	# sixty slots a full repaint every tick would cost more than the frame can
 	# spare. A rope this slow loses nothing at thirty.
 	repaint_stride = int(options.get("repaint_stride", clampi(1 + planks.size() / 60, 1, 3)))
 	_refresh_lane()
 	_build_visuals()
+	_repaint_weather()
 	_rebuild_visuals()
 
 ## Plank slots along the deck, missing ones included: the count the span and
@@ -149,6 +199,27 @@ func apply_wind(direction: Vector3, strength: float) -> void:
 	_wind = direction.normalized() * strength if direction.length() > 0.001 else Vector3.ZERO
 	for body in segments: body.sleeping = false
 
+## Wet, snow and frost, each 0 to 1, held until they are changed. Wet darkens
+## the boards and the rope, snow grows a cap on every plank top and every
+## anchor beam, and frost cools the rope and stiffens the whole crossing.
+##
+## Costs nothing when nothing moved, so a caller may hand this the weather every
+## tick; the repaint only happens on a change worth seeing.
+func apply_weather(wet: float, cover: float, ice: float) -> void:
+	wet = clampf(wet, 0.0, 1.0)
+	cover = clampf(cover, 0.0, 1.0)
+	ice = clampf(ice, 0.0, 1.0)
+	if absf(wet - wetness) + absf(cover - snow) + absf(ice - frost) < 0.004: return
+	var was_snow := snow
+	wetness = wet
+	snow = cover
+	frost = ice
+	_repaint_weather()
+	# Snow rides on the plank poses, so it lands with the next repaint -- unless
+	# the caller has switched repainting off, in which case it needs a nudge.
+	if repaint_stride <= 0 and absf(snow - was_snow) > 0.004 and not segments.is_empty():
+		_rebuild_visuals()
+
 ## A world-space point on the walking surface, t from the first anchor to the
 ## second. The anchor mouths cap the rope so t=0 and t=1 land on solid ground.
 func deck_point(t: float) -> Vector3:
@@ -157,6 +228,39 @@ func deck_point(t: float) -> Vector3:
 	var first := clampi(int(slide), 0, _lane.size() - 2)
 	var here := _lane[first].lerp(_lane[first + 1], slide - float(first))
 	return global_transform * (here + Vector3.UP * DECK_THICKNESS * 0.5)
+
+## A hit on the rope near `point`: lightning, a falling branch, a thrown rock
+## that missed. The nearest slab takes `energy` times `JOLT_IMPULSE` metres per
+## second of delta-v, its neighbours a little less, and the wave runs off down
+## the deck on its own. False if the rope has not been built yet.
+func jolt(point: Vector3, energy := 1.0) -> bool:
+	if segments.is_empty(): return false
+	var local := global_transform.affine_inverse() * point
+	var nearest := 0
+	var closest := INF
+	for i in range(segments.size()):
+		var gap := segments[i].position.distance_squared_to(local)
+		if gap < closest:
+			closest = gap
+			nearest = i
+	# Up and sideways: a rope snapped downward only stretches the joints, while
+	# a kick across the span is the flick that travels.
+	var kick := (Vector3.UP * 0.7 + _lateral * (1.0 if nearest % 2 == 0 else -1.0)).normalized() * JOLT_IMPULSE * maxf(0.0, energy)
+	for offset in [-1, 0, 1]:
+		var i: int = nearest + offset
+		if i < 0 or i >= segments.size(): continue
+		var body := segments[i]
+		body.sleeping = false
+		body.apply_central_impulse(kick * body.mass * (1.0 if offset == 0 else 0.45))
+	return true
+
+## Widest lateral swing away from the line the rope was laid on, in metres:
+## the bow a wind puts in the deck. Zero in still air.
+func deck_bow() -> float:
+	var widest := 0.0
+	for i in range(segments.size()):
+		widest = maxf(widest, absf((segments[i].position - _rest[i]).dot(_lateral)))
+	return widest
 
 ## Deepest drop below the straight line between the anchors, in metres.
 func sag_depth() -> float:
@@ -248,6 +352,16 @@ func _build_segment(u: float) -> RigidBody3D:
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	body.add_child(collision)
+	if kerb > 0.0:
+		# The side cable, as the lip it really is. Drawn already -- the under-cable
+		# tubes run along these edges -- so this adds collision and nothing else.
+		for side: float in [-1.0, 1.0]:
+			var lip := BoxShape3D.new()
+			lip.size = Vector3(segment_length * 0.98, DECK_THICKNESS + kerb, 0.07)
+			var rail := CollisionShape3D.new()
+			rail.shape = lip
+			rail.position = Vector3(0.0, kerb * 0.5, side * (plank_width * 0.5 - 0.035))
+			body.add_child(rail)
 	add_child(body)
 	return body
 
@@ -358,7 +472,15 @@ func _build_visuals() -> void:
 		if plank.gone: continue
 		tally[int(plank.tone)] += 2 if plank.crack else 1
 	_cursor.resize(WOOD_TONES.size())
-	for tone in range(WOOD_TONES.size()): _layers.append(_plank_layer(tally[tone], WOOD_TONES[tone]))
+	var total := 0
+	for tone in range(WOOD_TONES.size()):
+		_layers.append(_plank_layer(tally[tone], WOOD_TONES[tone]))
+		total += tally[tone]
+	# One white batch for the whole deck's snow: the cap is the same slab on
+	# every board, so there is nothing to separate it into tones over.
+	_snow_deck = _plank_layer(total, SNOW_TONE)
+	_snow_deck.material_override = _snow_material()
+	_snow_deck.visible = false
 	_ropes = _strand_layer(_stays.size() * 6 + _lane.size() * 2 + _frays.size() * 2 + 24)
 	_lash_mesh()
 
@@ -384,6 +506,8 @@ func _reach() -> AABB:
 
 func _rebuild_visuals() -> void:
 	for tone in range(_cursor.size()): _cursor[tone] = 0
+	_snow_cursor = 0
+	var capping := snow > 0.01
 	for plank: Dictionary in planks:
 		if plank.gone: continue
 		var tone: int = plank.tone
@@ -396,10 +520,25 @@ func _rebuild_visuals() -> void:
 			for half in range(2):
 				batch.set_instance_transform(_cursor[tone], Transform3D(pose.basis * halves[half], pose.origin + pose.basis * offsets[half]))
 				_cursor[tone] += 1
+				if capping: _cap_plank(pose.basis * halves[half], pose.origin + pose.basis * offsets[half], pose.basis.y)
 		else:
 			batch.set_instance_transform(_cursor[tone], Transform3D(pose.basis * plank.frame, pose.origin))
 			_cursor[tone] += 1
+			if capping: _cap_plank(pose.basis * plank.frame, pose.origin, pose.basis.y)
+	if _snow_deck != null:
+		var snow_batch := _snow_deck.multimesh
+		for i in range(_snow_cursor, snow_batch.instance_count): snow_batch.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
 	_rebuild_ropes()
+
+## A lid on one board, in the board's own frame: the plank basis already carries
+## the cut size and the crookedness, so the cap is that basis flattened in its
+## own up axis and lifted clear of the wood.
+func _cap_plank(frame: Basis, at: Vector3, up: Vector3) -> void:
+	var batch := _snow_deck.multimesh
+	if _snow_cursor >= batch.instance_count: return
+	var deep := SNOW_DEPTH * snow
+	batch.set_instance_transform(_snow_cursor, Transform3D(frame * Basis().scaled(Vector3(1.0, deep / PLANK_THICKNESS, 1.0)), at + up * (PLANK_THICKNESS * 0.5 + deep * 0.5)))
+	_snow_cursor += 1
 
 # ------------------------------------------------------------------ the ropes
 
@@ -535,9 +674,16 @@ func _build_anchor(at: Vector3, facing: float, rng: RandomNumberGenerator) -> vo
 		for wedge in range(2):
 			var pose := Transform3D(Basis.from_euler(Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.0, 3.1), rng.randf_range(-0.2, 0.2))), Vector3(rng.randf_range(-0.35, 0.35), -0.16, side * (reach + rng.randf_range(-0.3, 0.3))))
 			_add_block(body, pose, Vector3(0.44, 0.34, 0.5) * rng.randf_range(0.7, 1.25), _rock_material())
-	_add_block(body, Transform3D(Basis(), Vector3(0.0, bar, 0.0)), Vector3(0.24, 0.22, (reach + 0.28) * 2.0), _post_material())
+	var bar_at := Vector3(0.0, bar, 0.0)
+	var bar_size := Vector3(0.24, 0.22, (reach + 0.28) * 2.0)
+	_add_block(body, Transform3D(Basis(), bar_at), bar_size, _post_material())
 	# A sill the deck can be stepped onto rather than stepped over.
-	_add_block(body, Transform3D(Basis(), Vector3(-0.3, -0.06, 0.0)), Vector3(0.6, 0.14, plank_width + 0.3), _post_material())
+	var sill_at := Vector3(-0.3, -0.06, 0.0)
+	var sill_size := Vector3(0.6, 0.14, plank_width + 0.3)
+	_add_block(body, Transform3D(Basis(), sill_at), sill_size, _post_material())
+	# Snow settles on whatever lies flat: the cross-bar and the sill.
+	_cap(body, bar_at, bar_size)
+	_cap(body, sill_at, sill_size)
 	add_child(body)
 	anchors.append(body)
 	_lash(at, facing, reach, bar)
@@ -572,30 +718,134 @@ func _add_block(body: StaticBody3D, pose: Transform3D, size: Vector3, skin: Mate
 
 # --------------------------------------------------------------- the palette
 
+## Every skin is one shared material per kind, not one per block: the weather
+## repaints by setting three or four albedos, and a hundred posts sharing a
+## material is a hundred fewer uniform buffers either way.
 func _wood_material(tone: Color) -> Material:
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = tone
-	wood.roughness = 1.0
-	wood.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	var wood := _flat(tone)
+	_wood_skins.append(wood)
 	return wood
 
 func _post_material() -> Material:
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.29, 0.21, 0.15)
-	wood.roughness = 1.0
-	wood.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	return wood
+	if _post_skin == null: _post_skin = _flat(Color(0.29, 0.21, 0.15))
+	return _post_skin
 
 func _rock_material() -> Material:
-	var rock := StandardMaterial3D.new()
-	rock.albedo_color = Color(0.42, 0.41, 0.39)
-	rock.roughness = 1.0
-	rock.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	return rock
+	if _rock_skin == null: _rock_skin = _flat(Color(0.42, 0.41, 0.39))
+	return _rock_skin
 
 func _rope_material() -> Material:
-	var hemp := StandardMaterial3D.new()
-	hemp.albedo_color = Color(0.68, 0.57, 0.39)
-	hemp.roughness = 1.0
-	hemp.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	return hemp
+	if _rope_skin == null: _rope_skin = _flat(ROPE_TONE)
+	return _rope_skin
+
+func _flat(tone: Color) -> StandardMaterial3D:
+	var skin := StandardMaterial3D.new()
+	skin.albedo_color = tone
+	skin.roughness = 1.0
+	skin.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	return skin
+
+# ---------------------------------------------------------------- the weather
+
+## Wet, snow and frost, painted onto the shared skins and pushed into the
+## solver's damping. `set_instance_color` reads back black in this engine build,
+## so the boards are tinted a MultiMesh at a time -- which is why the tones are
+## separate batches in the first place.
+func _repaint_weather() -> void:
+	for i in range(_wood_skins.size()):
+		_dress(_wood_skins[i], WOOD_TONES[i % WOOD_TONES.size()])
+	if _post_skin != null: _dress(_post_skin, Color(0.29, 0.21, 0.15))
+	if _rock_skin != null: _dress(_rock_skin, Color(0.42, 0.41, 0.39))
+	if _rope_skin != null:
+		# Hemp goes nearly black soaked, and greys toward frost in the cold.
+		_rope_skin.albedo_color = ROPE_TONE.lerp(ROPE_WET, wetness).lerp(ROPE_COLD, frost * 0.35)
+		_rope_skin.roughness = lerpf(1.0, WET_ROUGHNESS, wetness)
+		_rope_skin.specular_mode = BaseMaterial3D.SPECULAR_DISABLED if wetness < 0.08 else BaseMaterial3D.SPECULAR_SCHLICK_GGX
+	if _snow_deck != null: _snow_deck.visible = snow > 0.01
+	for cap: Dictionary in _caps: _lay_cap(cap)
+	if _drips != null:
+		_drips.emitting = wetness > 0.12
+		_drips.amount_ratio = clampf(wetness, 0.0, 1.0)
+	# Frost stiffens the rope rather than freezing it: the same swing, slower in
+	# and slower out, which is what a cold bridge looks like.
+	var stiffen := 1.0 + ICE_DAMPING * frost
+	for body in segments:
+		body.linear_damp = damping * stiffen
+		body.angular_damp = damping * 1.6 * stiffen
+
+## One skin, wet and frosted. Wet wood is darker and shinier; frost lifts it a
+## little toward white without pretending to be the snow cap.
+func _dress(skin: StandardMaterial3D, tone: Color) -> void:
+	skin.albedo_color = tone.lerp(tone * (1.0 - WET_DARKEN), wetness).lerp(Color(0.72, 0.75, 0.78), frost * 0.12)
+	skin.roughness = lerpf(1.0, WET_ROUGHNESS, wetness)
+	skin.specular_mode = BaseMaterial3D.SPECULAR_DISABLED if wetness < 0.08 else BaseMaterial3D.SPECULAR_SCHLICK_GGX
+
+## Snow on a static beam: a slab of the beam's own footprint, scaled out of
+## existence at no cover and up to `SNOW_DEPTH` at full.
+func _lay_cap(cap: Dictionary) -> void:
+	var node: MeshInstance3D = cap.node
+	node.visible = snow > 0.01
+	if not node.visible: return
+	var deep := SNOW_DEPTH * snow
+	node.scale = Vector3(1.0, maxf(0.001, deep / SNOW_DEPTH), 1.0)
+	var at: Vector3 = cap.at
+	node.position = Vector3(at.x, float(cap.top) + deep * 0.5, at.z)
+
+## A white slab sitting on top of a beam, for the anchors. The deck's own snow
+## rides the plank poses instead; see `_rebuild_visuals`.
+func _cap(body: StaticBody3D, at: Vector3, size: Vector3) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(size.x * 1.02, SNOW_DEPTH, size.z * 1.02)
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = _snow_material()
+	body.add_child(node)
+	var cap := {"node": node, "at": at, "top": at.y + size.y * 0.5}
+	_caps.append(cap)
+	_lay_cap(cap)
+
+func _snow_material() -> Material:
+	var snow_skin := _flat(SNOW_TONE)
+	snow_skin.roughness = 0.85
+	return snow_skin
+
+## Water coming off the under-cables. One emitter over the whole span rather
+## than one per cable: at this distance a drip is two pixels, and the point is
+## that the crossing is shedding water, not which rope it came off.
+func _build_drips() -> GPUParticles3D:
+	var drip := GPUParticles3D.new()
+	drip.name = "Drips"
+	drip.amount = 48
+	# Short-lived on purpose: a two second drip falls twenty-five metres into the
+	# chasm and the shot fills with falling confetti. A drip wants to be seen
+	# leaving the rope, not arriving anywhere.
+	drip.lifetime = 0.9
+	drip.emitting = false
+	drip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var behaviour := ParticleProcessMaterial.new()
+	behaviour.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	behaviour.emission_box_extents = Vector3(maxf(1.0, absf(_b.x - _a.x) * 0.42) + 0.3, 0.12, maxf(0.3, absf(_b.z - _a.z) * 0.42) + plank_width * 0.5)
+	behaviour.direction = Vector3.DOWN
+	behaviour.spread = 6.0
+	behaviour.initial_velocity_min = 0.2
+	behaviour.initial_velocity_max = 0.7
+	behaviour.gravity = Vector3(0.0, -9.8, 0.0)
+	behaviour.scale_min = 0.5
+	behaviour.scale_max = 1.1
+	behaviour.color = Color(0.66, 0.74, 0.82, 0.5)
+	drip.process_material = behaviour
+	var bead := QuadMesh.new()
+	bead.size = Vector2(0.016, 0.09)
+	drip.draw_pass_1 = bead
+	var skin := StandardMaterial3D.new()
+	skin.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	skin.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	skin.vertex_color_use_as_albedo = true
+	skin.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	skin.albedo_color = Color(0.7, 0.78, 0.88, 0.55)
+	drip.material_override = skin
+	# Under the hanging deck, not under the chord: most of the span is down there.
+	drip.position = _a.lerp(_b, 0.5) - Vector3.UP * (sag * _span * 0.72 + 0.25)
+	drip.visibility_aabb = _reach()
+	add_child(drip)
+	return drip

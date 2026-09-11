@@ -27,6 +27,15 @@ extends "res://studies/bigfoot_living_world.gd"
 ##   `N`  standing on the middle of the deck, sighted along it at the far island
 ##   `M`  off the edge of the mid-deck, looking down into the void
 ##   `R`  back to the establishing shot of both islands
+##   `T`  throws a loose rock onto the middle of the deck
+##   `G`  drops three at once, to watch the deck take a load
+##
+## The crossing is wired to the study's live sky, which is the other half of the
+## question: a bridge that ignores the weather reads as scenery. Every physics
+## tick the wind dial, the wet ground, the snow cover and the ice go into the
+## bridge, and a lightning strike inside `STRIKE_REACH` of the deck snaps the
+## nearest rope segment. Nothing is stored here that the sky does not already
+## own -- see `_physics_process`.
 ##
 ## how to run
 ##   "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . \
@@ -73,6 +82,52 @@ const ANCHOR_WALK_RISE := 0.35
 ## through, never an obstacle. `mesh-10` is the reference chunk's grass tufts.
 const NOT_OBSTACLES := ["terrain", "skirt", "sides", "earth", "water", "pond", "stream", "strand", "mist", "foam", "spray", "mesh-41", "bridge", "birds",
 	"grass", "tuft", "mesh-10", "stem", "petal", "flower", "fungus", "mushroom", "daisy", "umbel", "spike", "button"]
+## ------------------------------------------------------------- the weather
+## The wind dial the storm preset carries, which is the top of the map; every
+## other preset is a fraction of it. `clear` is 0.5, `rain` 1.6, `storm` 2.5.
+const WIND_FULL := 2.5
+## Lateral acceleration, in metres per second squared, the deck feels at a full
+## storm before gusting. The rail spring pulls each slab back at about 2.8 m/s^2
+## per metre of drift over a 46 m span, so this is roughly a metre and a half of
+## steady bow with the wind square on -- and the sky's wind sits at 19 degrees
+## off the span, so only a third of it pushes across the deck at all. Measured
+## at the study's 49 m crossing: 0.02 m of bow under `clear`, 0.42 m under
+## `rain`, 1.10 m under `storm`, which `tests/test_bridge_weather.gd` holds to.
+const WIND_ACCEL := 13.5
+## Wind bites harder than it blows: squared-and-a-bit, so a breeze barely
+## registers and the storm lurches. Two and a bit is what put the three presets
+## in the three bands the crossing is meant to read in at once.
+const WIND_EXPONENT := 2.3
+## The felt wind follows the sky's dial at this rate, per second. Presets switch
+## instantly; a bridge that snapped with them would read as a cut.
+const WIND_RESPONSE := 0.55
+## Gusting. One seeded noise channel walked at `GUST_RATE` cycles a second, worth
+## this much of the base either way in fair weather and this much more in a
+## storm, so the same breeze that breathes becomes a thing that shoves.
+const GUST_DEPTH := 0.45
+const GUST_STORM := 1.0
+const GUST_RATE := 0.3
+## How near a strike has to land to be felt in the rope, in metres.
+const STRIKE_REACH := 15.0
+## A rock thrown at the deck: where it starts, and how hard it is sent down.
+## Deliberately gentle. The deck's collision slab is 13 cm thick, so a stone
+## arriving faster than about 7 m/s covers more than that in a tick and Jolt's
+## linear cast does not always catch it -- a rock lobbed onto the planks lands,
+## a rock fired at them from the sky sometimes goes through.
+const THROW_HEIGHT := 1.3
+const THROW_SPEED := 0.8
+const THROW_SPREAD := 0.9      ## How far apart the three of `G` land, in metres.
+## The lip along the deck edges the bridge is asked for, in metres. Without it
+## nothing stays on the crossing: the deck leans a degree or two downwind and a
+## stone rolls off the open side inside two seconds. Measured at 0.10 m -- a
+## stone stays, and it is a step rather than a wall.
+const DECK_KERB := 0.1
+## Rolling resistance for a rock left on the boards: see `throw_rock`.
+const ROCK_ROLL_DAMP := 3.2
+const ROCK_SLIDE_DAMP := 0.8
+## How many thrown rocks the study keeps. Past this the oldest goes, so leaning
+## on `T` cannot quietly hang a hundred bodies off one constraint island.
+const ROCK_LIMIT := 12
 const DECK_WIDTH := 1.0
 const DECK_THICKNESS := 0.1
 const RAIL_SIDE := 0.07
@@ -141,6 +196,10 @@ var _base := Transform3D.IDENTITY
 var _mirror := Transform3D.IDENTITY
 ## Placement of the copy relative to the original, about the original's centre.
 var _placement := Transform3D.IDENTITY
+var _felt_wind := 0.0
+var _gust_clock := 0.0
+var _gusts := FastNoiseLite.new()
+var _rocks: Array[RigidBody3D] = []
 var _anchors: Array[Transform3D] = []
 var _copied: Array[String] = []
 var _obstacle_cache := {}
@@ -163,7 +222,11 @@ func _ready() -> void:
 	# Turn about the chunk's own centre, then carry it across the gap.
 	_placement = Transform3D(rotation, centre + offset - rotation * centre)
 	_mirror = _placement * _base
+	_gusts.seed = 7
+	_gusts.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_gusts.frequency = 1.0
 	rebuild_second_chunk()
+	_lightning.struck.connect(_strike_near_deck)
 	_reach_shadows()
 	_frame_wide()
 	second_chunk_ready = true
@@ -653,8 +716,8 @@ func _place_bridge() -> void:
 		bridge = load(REAL).new()
 		bridge.name = "Bridge"
 		add_child(bridge)
-		bridge.setup(anchors[0], anchors[1], {"sag": DECK_SAG})
-		print("TWIN CHUNKS bridge: %s, sag %.2f" % [REAL, DECK_SAG])
+		bridge.setup(anchors[0], anchors[1], {"sag": DECK_SAG, "kerb": DECK_KERB})
+		print("TWIN CHUNKS bridge: %s, sag %.2f, kerb %.2f" % [REAL, DECK_SAG, DECK_KERB])
 		return
 	bridge = _placeholder_bridge()
 	add_child(bridge)
@@ -712,6 +775,87 @@ func _slab(slab_name: String, size: Vector3, origin: Vector3, basis: Basis, mate
 	node.transform = Transform3D(basis, origin)
 	node.material_override = material
 	return node
+
+# ------------------------------------------------------------- the weather
+
+## The sky, every physics tick, turned into the four things the crossing can
+## answer: a wind vector, wet boards, snow cover and frost. Read straight off
+## the live `_precipitation`, so the bridge needs no weather state of its own and
+## this study stores nothing the sky does not already own.
+func _physics_process(delta: float) -> void:
+	if bridge == null or not bridge.has_method("apply_wind"): return
+	var sky := _precipitation
+	var weather: RefCounted = sky.surface_weather
+	# The storm dial deepens the gusting as well as raising the mean: the
+	# difference between a breeze and a squall is mostly in the variance.
+	var storm: float = clampf(sky.state.w, 0.0, 1.0)
+	var dial: float = clampf(float(sky.wind), 0.0, WIND_FULL * 1.4)
+	_felt_wind = lerpf(_felt_wind, dial, 1.0 - exp(-delta * WIND_RESPONSE))
+	_gust_clock += delta
+	var gust := 1.0 + (GUST_DEPTH + GUST_STORM * storm) * _gusts.get_noise_1d(_gust_clock * GUST_RATE)
+	var accel := WIND_ACCEL * pow(_felt_wind / WIND_FULL, WIND_EXPONENT) * maxf(0.0, gust)
+	# The sky's own air angle. Only the part of it across the span bows the deck;
+	# the rest pulls along a rope with its linear axes locked and does nothing.
+	var angle: float = _atmosphere._air_angle
+	bridge.apply_wind(Vector3(cos(angle), 0.0, sin(angle)), accel)
+	bridge.apply_weather(maxf(weather.ground_wet, sky.state.x) * (1.0 - weather.snow_phase), weather.snow_cover, weather.ice)
+
+## A strike close enough to be felt in the rope. Lightning already lights the
+## whole world, so all this adds is the flick that runs off down the deck.
+func _strike_near_deck(point: Vector3) -> void:
+	if bridge == null or not bridge.has_method("jolt"): return
+	var nearest := INF
+	var at := point
+	for step in range(11):
+		var on_deck: Vector3 = bridge.deck_point(float(step) / 10.0)
+		var gap := on_deck.distance_to(point)
+		if gap < nearest:
+			nearest = gap
+			at = on_deck
+	if nearest > STRIKE_REACH: return
+	# A near miss is a shove; a hit on the deck itself is a crack.
+	bridge.jolt(at, 1.0 - 0.6 * nearest / STRIKE_REACH)
+	print("TWIN CHUNKS lightning %.1f m from the deck: the rope takes it" % nearest)
+
+# --------------------------------------------------------------- the props
+
+## Where the deck's walking surface really is at `t`: the bridge's own answer
+## when there is a real one, and the study's stand-in catenary otherwise.
+func deck_surface(t: float) -> Vector3:
+	if bridge != null and bridge.has_method("deck_point"): return bridge.deck_point(t)
+	return deck_point(t)
+
+## A rock thrown at the deck at `t`, the same prop the player can pick up and
+## throw anywhere else in the world. It is meant to land, roll with the sway and
+## slide toward the middle, so nothing here holds it in place.
+func throw_rock(t: float, sideways := 0.0) -> RigidBody3D:
+	var rock: RigidBody3D = preload("res://scripts/play_loose_body.gd").new()
+	var ball := SphereMesh.new()
+	ball.radius = 0.2
+	ball.height = 0.4
+	ball.radial_segments = 8
+	ball.rings = 4
+	var skin := StandardMaterial3D.new()
+	skin.albedo_color = Color(0.44, 0.42, 0.39)
+	skin.roughness = 1.0
+	add_child(rock)
+	rock.setup("stone", ball, skin)
+	var lateral := bridge_anchors()[0].basis.x if bridge_anchors().size() == 2 else Vector3.RIGHT
+	rock.global_position = deck_surface(t) + Vector3.UP * THROW_HEIGHT + lateral * sideways
+	rock.linear_velocity = Vector3.DOWN * THROW_SPEED
+	# A plank deck is ruts, gaps and proud nail heads, and the collision slab
+	# under it is a smooth box: a ball left on that box rolls off the open side
+	# inside two seconds. The roughness the planks would give it goes in as
+	# rolling resistance on the rock, here in the study rather than in the
+	# bridge, because it is a property of what is being dropped.
+	rock.angular_damp = ROCK_ROLL_DAMP
+	rock.linear_damp = ROCK_SLIDE_DAMP
+	rock.sleeping = false
+	_rocks.append(rock)
+	while _rocks.size() > ROCK_LIMIT:
+		var oldest: RigidBody3D = _rocks.pop_front()
+		if is_instance_valid(oldest): oldest.queue_free()
+	return rock
 
 # -------------------------------------------------------------- the camera
 
@@ -794,7 +938,9 @@ func _reset_camera(reference_pose := false) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		# These override base-study bindings on purpose: `B` summoned Bigfoot and
-		# `N` stepped the hour. `M` was unbound.
+		# `N` stepped the hour, `T` shook the ground and `G` sent a wind puff --
+		# and in a study whose wind comes from the preset every tick, a decorative
+		# puff is worth less than a rock on the deck. `M` was unbound.
 		if event.keycode == KEY_B:
 			frame_bridge()
 			get_viewport().set_input_as_handled()
@@ -805,6 +951,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_M:
 			frame_void()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_T:
+			throw_rock(0.5)
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_G:
+			for i in range(3):
+				throw_rock(0.42 + 0.08 * float(i), (float(i) - 1.0) * THROW_SPREAD)
 			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)

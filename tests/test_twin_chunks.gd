@@ -103,6 +103,10 @@ func run() -> void:
 		var span := anchors[0].origin.distance_to(anchors[1].origin)
 		check(sag > span * 0.08 and sag < span * 0.16, "The deck sags %.2f m over a %.2f m span" % [sag, span])
 		check(scene.deck_point(0.0).is_equal_approx(anchors[0].origin), "The curve starts on the near anchor")
+		if scene.bridge.has_method("sag_depth"):
+			# And the rope that was actually built hangs where it was asked to.
+			var hung: float = scene.bridge.sag_depth()
+			check(hung > span * 0.08 and hung < span * 0.18, "The built rope hangs %.2f m below the chord" % hung)
 
 	scene.queue_free()
 	await process_frame
