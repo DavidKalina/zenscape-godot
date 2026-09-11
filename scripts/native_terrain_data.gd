@@ -4,7 +4,7 @@ extends RefCounted
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 64.0
-const ASSETS := ["cactus","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
+const ASSETS := ["campsite","fallen_branch","cactus","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -740,9 +740,9 @@ func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictio
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
-	if not pose.is_empty() and (kind in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid(pose)):
+	if not pose.is_empty() and (kind in ["campsite","fallen_branch","arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid(pose)):
 		return -1
-	if not tint.is_empty() and (kind in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(tint)):
+	if not tint.is_empty() and (kind in ["campsite","fallen_branch","arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(tint)):
 		return -1
 	var id := next_id
 	next_id += 1
@@ -772,7 +772,7 @@ func update_object(id: int, changes: Dictionary) -> bool:
 		return false
 	var candidate := objects[index].duplicate(true)
 	for key in changes:
-		if key not in ["x","z","angle","scale","pose","tint"]:
+		if key not in ["x","z","angle","scale","pose","tint","wood","carrying","food","photos","camper"]:
 			return false
 		var value: Variant = changes[key]
 		if key == "pose" and (value == null or (value is Dictionary and value.is_empty())):
@@ -787,10 +787,11 @@ func update_object(id: int, changes: Dictionary) -> bool:
 		return false
 	if not GardenData._number(candidate.angle,-TAU*100,TAU*100) or not GardenData._number(candidate.scale,0.1,5.0):
 		return false
-	if candidate.has("pose") and (candidate.asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid(candidate.pose)):
+	if candidate.has("pose") and (candidate.asset in ["campsite","fallen_branch","arch","bigfoot_tree"] or not NativeObjectPose.valid(candidate.pose)):
 		return false
-	if candidate.has("tint") and (candidate.asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(candidate.tint)):
+	if candidate.has("tint") and (candidate.asset in ["campsite","fallen_branch","arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(candidate.tint)):
 		return false
+	if not preload("res://scripts/campsite_record.gd").valid(candidate): return false
 	if candidate == objects[index]:
 		return false
 	# Once customized, a generated piece belongs to the user. Refilling the
@@ -972,10 +973,13 @@ func load_document(document: Variant) -> bool:
 				ids[item.id] = true
 				record.merge({"id":int(item.id),"asset":item.asset,"angle":float(item.angle),"scale":float(item.scale)})
 				if item.has("pose"):
-					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid(item.pose): return false
+					if item.asset in ["campsite","fallen_branch","arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid(item.pose): return false
 					record.pose = item.pose.duplicate(true)
+				if not preload("res://scripts/campsite_record.gd").valid(item): return false
+				for key in ["wood","carrying","food","photos","camper"]:
+					if item.has(key): record[key] = item[key]
 				if item.has("tint"):
-					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
+					if item.asset in ["campsite","fallen_branch","arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
 					record.tint = item.tint
 				if item.has("landscape"):
 					if not item.landscape is bool: return false

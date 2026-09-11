@@ -5,6 +5,7 @@ var navigation = preload("res://scripts/creature_navigation.gd").new()
 var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
 var resident_enabled := true
+var camps: Node
 var routine: Node
 var fish: Node
 var spawn_options: Array = []
@@ -71,6 +72,9 @@ func _ready() -> void:
 	routine = preload("res://scripts/bigfoot_routine.gd").new()
 	add_child(routine)
 	routine.setup(self)
+	camps = preload("res://scripts/campsite_life.gd").new()
+	add_child(camps)
+	camps.setup(self)
 	fish = preload("res://scripts/fidelity_fish.gd").new()
 	add_child(fish)
 	fish.setup(self)
@@ -124,15 +128,16 @@ func _seed_loose_stones() -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	if creature == null: return
+	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
+	var camp_owns_bigfoot: bool = camps.advance(delta) if camps != null else false
 	if not resident_enabled:
 		creature.visible = false
 		return
-	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	creature.visible = not _habitat_blocked and _growth.terrain >= 0.995
 	var stopped := _paused or not creature.visible
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
-			if not (has_method("resident_activity_owned") and call("resident_activity_owned")):
+			if not camp_owns_bigfoot and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
 		elif routine != null:
 			routine._advance_projectiles(minf(delta,0.05))
@@ -167,6 +172,7 @@ func _refresh_habitat(budgeted := false) -> void:
 		var fallback: Variant = navigation.nearest_safe(creature._safe_position)
 		creature._safe_position = fallback if fallback != null else safe
 	elif not navigation.is_safe(creature.global_position): creature.reset_at(safe)
+	if camps != null: camps.dirty = true
 	brain.world_changed()
 	var shown := _nav_view.visible
 	_nav_view.mesh = null
@@ -238,6 +244,7 @@ func capture_life_state() -> Dictionary:
 	return routine.habits.capture()
 
 func restore_life_state(state: Dictionary) -> void:
+	if camps != null: camps.reset()
 	routine.cancel("garden opened")
 	_refresh_habitat()
 	routine.habits.restore(state)

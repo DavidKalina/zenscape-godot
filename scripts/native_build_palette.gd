@@ -15,7 +15,7 @@ const DRAG_SLOP := 6.0
 const HOVER_SCALE := 1.08
 const PRESS_SCALE := 0.94
 const TWEEN_TIME := 0.09
-const LANDMARKS := ["tree","rock","flower","arch","bigfoot_tree"]
+const LANDMARKS := ["tree","rock","flower","arch","bigfoot_tree","campsite","fallen_branch"]
 ## Landscape tools whose stamp is a shape, so the tile can portrait the real
 ## heightfield instead of a drawn glyph. Only Mountain stamps at a point, so
 ## only Mountain drags; Range forms the whole chunk from its strip button.
@@ -267,7 +267,7 @@ func _build() -> void:
 		var old_group := _category_of(_tiles[id].get_meta("tool"))
 		if old_group == "Water": group = "Water"
 		elif id in FOLIAGE or old_group == "Cover": group = "Flora"
-		elif id == "bigfoot_tree": group = "Creatures"
+		elif id in ["bigfoot_tree","campsite"]: group = "Creatures"
 		_entries[id] = {"button":_tiles[id],"group":group,"title":_title(id),"blurb":editor.TOOL_TEXT.get(_tiles[id].get_meta("tool"),"A small detail for your world")}
 	for id: String in _sky_tiles:
 		_entries[id] = {"button":_sky_tiles[id],"group":"Weather","title":_sky_tiles[id].tooltip_text.get_slice("\n",0),"blurb":"Settle the whole scene into a new atmosphere"}
@@ -1128,6 +1128,10 @@ func build_model(id: String) -> Node3D:
 			_part(root,view._meshes.petal,view._materials.petal,view._tints.petal,Transform3D.IDENTITY)
 		"rock":
 			_part(root,view._meshes.rock,view._materials.rock,Color.WHITE,Transform3D(Basis(),Vector3(0,0.24,0)))
+		"campsite":
+			root.add_child(preload("res://scripts/campsite_model.gd").tent())
+		"fallen_branch":
+			root.add_child(preload("res://scripts/campsite_model.gd").branch())
 		"arch":
 			_part(root,editor.landmarks._arch_mesh,editor.landmarks._arch_material,Color.WHITE,Transform3D(Basis(),editor.landmarks._arch_offset))
 		"bigfoot_tree":

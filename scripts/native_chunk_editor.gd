@@ -6,10 +6,12 @@ const GROUPS := [
 	["Sculpt",["raise","lower","smooth","flatten"]],
 	["Landscape",["ground","range","mountain"]],
 	["Cover",["grass","blades","meadow","paint","erase"]],
-	["Place",["select","tree","rock","flower","arch","bigfoot_tree","assets"]],
+	["Place",["select","tree","rock","flower","arch","bigfoot_tree","campsite","fallen_branch","assets"]],
 	["Water",["pond","waterfall"]],
 ]
 const TOOL_TEXT := {
+	"campsite":"Place a tent and camper. They gather wood and investigate Bigfoot.",
+	"fallen_branch":"Place loose wood a camper can gather.",
 	"select":"Click a placed object to edit it · Drag to move · V Select · Delete removes",
 	"raise":"Build hills with slow, gentle strokes.",
 	"lower":"Press valleys and hollows into the land.",
@@ -51,7 +53,7 @@ const SETTINGS := [
 	{"property":"mountain_heading","title":"Ridge rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["mountain"]},
 	{"property":"pond_level","title":"Water level","low":-1.4,"high":12.0,"step":0.05,"unit":"","whole":false,"modes":["pond"]},
 	{"property":"object_scale","title":"Object size","low":0.1,"high":5.0,"step":0.1,"unit":"","whole":false,"modes":NativeTerrainData.ASSETS+["assets"]},
-	{"property":"object_heading","title":"Rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["tree","rock","flower","arch","bigfoot_tree","assets"]},
+	{"property":"object_heading","title":"Rotation","low":-180.0,"high":180.0,"step":5.0,"unit":"°","whole":false,"modes":["tree","rock","flower","arch","bigfoot_tree","campsite","fallen_branch","assets"]},
 	{"property":"object_width","title":"Width","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":POSE_TOOLS},
 	{"property":"object_height","title":"Height","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":POSE_TOOLS},
 	{"property":"object_depth","title":"Depth","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":POSE_TOOLS},
