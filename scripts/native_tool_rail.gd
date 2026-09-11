@@ -5,7 +5,7 @@ const FAMILIES := {
 	"Select":["select"],
 	"Sculpt":["raise","lower","tunnel","smooth","flatten","mountain","ground","range"],
 	"Paint":["meadow","grass","blades","paint","erase"],
-	"Place":["explosive","tree","rock","flower","arch","bigfoot_tree","assets"],
+	"Place":["explosive","tree","rock","flower","arch","bigfoot_tree","campsite","fallen_branch","assets"],
 	"Water":["pond","waterfall"],
 }
 const SHELF := ["explosive","tree","broadleaf","rock","flower"]

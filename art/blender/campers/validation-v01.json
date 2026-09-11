@@ -1,0 +1,17 @@
+{
+  "camper-photographer": {
+    "mesh_objects": 39,
+    "faces": 692,
+    "triangles": 1292
+  },
+  "camper-backpacker": {
+    "mesh_objects": 39,
+    "faces": 692,
+    "triangles": 1292
+  },
+  "tent-ochre": {
+    "mesh_objects": 21,
+    "faces": 177,
+    "triangles": 349
+  }
+}
