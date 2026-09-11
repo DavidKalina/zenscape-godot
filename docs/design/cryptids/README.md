@@ -193,7 +193,31 @@ slots, and what fills them is the plan: one carries three cameras, one carries
 the casting kit and bait, one carries the deterrent. Gear is finite in the
 field. Lost gear stays in the world where he left it and can be recovered.
 
-Open question, recorded below: whether any of that kit can hurt him.
+Nothing in the kit can hurt him. Deterrents only: a flare, an air horn, bear
+spray, a big light. They buy a camper time to run and nothing more. A knife or
+a gun would make this a hunt with a cozy skin, and the hunt is somebody else's
+game.
+
+### Caught out at night
+
+Nobody dies. A camper he reaches in the dark is bowled over and loses what
+they carried; he takes it home. They stumble back at first light, shaken, and
+the card is now in his cave to recover. Losing a person is never on the
+table; losing a night, a camera and a week of footage is.
+
+### Fog of war
+
+Ground stays revealed once a camper or a camera has seen it, and the map grows
+with the year. Live view exists only where someone or something is looking:
+a camper in the field, or a camera. When nobody is out, the cameras are the
+crew's eyes.
+
+### Pace
+
+One in-game day is ten to fifteen real minutes. The plan phase is paused, the
+night runs in real time, and a session is a day or two. This is close to the
+existing 480 second cycle with a paused midday, so the clock does not need to
+change, only to stop while you plan.
 
 ### The economy
 
