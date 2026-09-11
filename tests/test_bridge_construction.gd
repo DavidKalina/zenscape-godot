@@ -17,6 +17,8 @@ extends SceneTree
 const DT := 1.0 / 60.0
 ## One world hour of the driver's rate, in the units `advance` takes.
 const HOUR := 1.0
+## A walk out to the frontier and back is a shore walk plus a little deck.
+const CROSS_FRAMES := 9000
 var failures := 0
 var scene: Node3D
 
@@ -206,6 +208,47 @@ func _crossing() -> void:
 	check(beyond == 0, "And never a step past it: %d" % beyond)
 	check(not crossing.crossable(), "A part-built bridge is still not a crossing")
 
+	# --------------------------------------------------- a camper lays a plank
+	# The visible act: wood off the pile, a walk out along what is built, a
+	# board nailed on, a walk home. The driver's fallback is switched off here
+	# so what is measured is the camper and not the timer.
+	scene.set_bridge_built(false)
+	var driver: BridgeConstruction = scene.construction
+	# The timer is switched off entirely here, so every plank that appears is
+	# one a camper carried out.
+	driver.rate = 0.0
+	driver.grace = 1e9
+	camps.dirty = true
+	camps.advance(DT)
+	var tent: Dictionary = camps.camps[scene.camp_id]
+	camps.world.data.update_object(int(tent.record.id), {"wood": 4})
+	camps.world.refresh.call()
+	camps.dirty = true
+	camps.advance(DT)
+	var wood_before := int(camps.camps[scene.camp_id].record.get("wood", 0))
+	check(wood_before >= 1, "The tent has %d wood to spend on boards" % wood_before)
+	var took: bool = camps.take_plank()
+	check(took, "A camper takes a plank in hand")
+	if took:
+		var nailed := false
+		for frame in range(CROSS_FRAMES):
+			scene._process(DT)
+			if frame % 120 == 0: await process_frame
+			if camps.planks_laid >= 1:
+				nailed = true
+				break
+		check(nailed, "and walks out and nails it on: %d laid, deck at %d planks" % [camps.planks_laid, bridge.laid_count()])
+		check(bridge.laid_count() == 1, "The board is on the bridge: %d" % bridge.laid_count())
+		check(int(camps.camps[scene.camp_id].record.get("wood", 0)) < wood_before, "And one wood came off the pile")
+		var home := false
+		for frame in range(CROSS_FRAMES):
+			scene._process(DT)
+			if frame % 120 == 0: await process_frame
+			if camps.camps[scene.camp_id].job == "":
+				home = true
+				break
+		check(home, "Then walks back to the tent")
+
 	# Finished, everything the crossing branch already does works unchanged.
 	scene.set_bridge_built(true)
 	check(bridge.is_complete(), "Completing the bridge fills every slot")
@@ -213,6 +256,7 @@ func _crossing() -> void:
 	var open: Array[Dictionary] = crossing.plan(scene.chunk_world, scene.creature.global_position, scene.island_world, scene.island_world.to_world(entry.home))
 	check(not open.is_empty(), "A route runs from chunk one to the island tent: %d steps" % open.size())
 	check(scene.send_camper_across(), "And a camper can be sent over it")
+
 
 func _bridge(host: Node3D, options: Dictionary) -> SuspensionBridge:
 	var bridge := SuspensionBridge.new()

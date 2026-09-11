@@ -28,6 +28,9 @@ const DT := 1.0 / 60.0
 const FRAME_SIZE := Vector2i(1600, 1000)
 const SHOT_HOUR := 11.0        ## Late morning: the sun clears both islands' peaks.
 const SETTLE_FRAMES := 6
+## Driven steps for the sky to catch up with a jumped hour. The rig eases; one
+## second of them is not enough from a dusk start.
+const DAYLIGHT_STEPS := 240
 const BUILD_STEPS := 60        ## Growth frames; 2 s at 30 fps.
 const CAPTURE_FPS := 30
 ## Simulated frames between growth captures, so the rope settles onto each new
@@ -35,6 +38,7 @@ const CAPTURE_FPS := 30
 const GROWTH_SETTLE := 10
 const CROSS_FRAMES := 20000    ## A crossing is ~50 m at about a metre a second.
 const CROSS_AT := 0.5          ## Where along the deck the crossing still is taken.
+const CROSS_TRIES := 15        ## Asks, two simulated seconds apart, before giving up.
 var scene: Node3D
 var frame_size := FRAME_SIZE
 var stills_dir := "/private/tmp/bridge-construction-stills"
@@ -77,18 +81,22 @@ func run() -> void:
 		return
 	var slots: int = bridge.plank_count()
 	print("FILM BRIDGE CONSTRUCTION: %d plank slots over %.1f m" % [slots, scene.crossing.span() if scene.crossing != null else 0.0])
-	scene.frame_bridge()
-
 	# ------------------------------------------------------------ the stills
 	for share: int in [0, 25, 50, 100]:
 		scene.set_bridge_built(false)
 		bridge.set_laid(int(round(float(slots) * float(share) / 100.0)))
 		await _settle(0.8)
+		# The framing and the hour are re-applied per shot: a settle is a second
+		# of the study's own process, which eases the camera and turns the sky.
+		_daylight()
+		scene.frame_bridge()
 		await _grab(stills_dir.path_join("built_%03d.png" % share), "%d%% (%d/%d planks, extent t %.3f)" % [share, bridge.laid_count(), slots, bridge.built_extent()])
 
 	# ------------------------------------------------------- the growth frames
 	scene.set_bridge_built(false)
 	await _settle(0.6)
+	_daylight()
+	scene.frame_bridge()
 	for step in range(steps):
 		bridge.set_laid(int(round(float(slots) * float(step + 1) / float(steps))))
 		for tick in range(GROWTH_SETTLE):
@@ -104,7 +112,14 @@ func run() -> void:
 	# filmed is the feature: before the last plank this call refuses.
 	scene.set_bridge_built(true)
 	await _settle(1.0)
-	if not scene.send_bigfoot_across():
+	# He may be part way through something of his own; ask again for a while
+	# rather than declaring the crossing unfilmable on the first no.
+	var sent := false
+	for attempt in range(CROSS_TRIES):
+		sent = scene.send_bigfoot_across()
+		if sent: break
+		await _settle(2.0)
+	if not sent:
 		print("FILM BRIDGE CONSTRUCTION: nobody would cross the finished bridge")
 	else:
 		var camps: Node = scene.island_camps
@@ -131,7 +146,7 @@ func run() -> void:
 func _daylight() -> void:
 	scene._celestial.cycling = true
 	scene.world_clock.set_time(0, SHOT_HOUR)
-	for step in range(60):
+	for step in range(DAYLIGHT_STEPS):
 		scene._process(DT)
 
 ## Let the rope hang onto its new load before the shutter.

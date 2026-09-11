@@ -121,6 +121,16 @@ func advance_by(planks: int) -> int:
 func complete() -> int:
 	return _place(total() - laid())
 
+## A builder taking a board of its own accord -- a study key, a test, a camper
+## asked through `builder` -- rather than waiting to be handed one. False when
+## somebody already has one out, or there is nothing left to lay. Whoever gets
+## a true owes a `lay()` or a `release()`.
+func claim() -> bool:
+	if bridge == null or is_complete() or _claimed: return false
+	_claimed = true
+	_waited = 0.0
+	return true
+
 ## A builder reporting that the board it took is down. False when nobody had
 ## taken one, or the timer already gave up on it.
 func lay() -> bool:

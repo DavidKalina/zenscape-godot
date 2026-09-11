@@ -179,7 +179,7 @@ func _create(id: int, pose: Transform3D, variant: String) -> Dictionary:
 	glow.light_color = Color("ffbf7d")
 	glow.light_energy = 1.3
 	glow.omni_range = 4
-	return {"actor":actor,"flash":flash,"flash_time":0.0,"photo_view":0.0,"last_photo":-1,"last_scare":-1,"variant":variant,"lamp":lamp,"mark":mark,"carried":carried,"glow":glow,"pose":pose,"size":0.0,"initialized":false,"home":null,"record":{},"state":"rest","wait":2.0,"route":PackedVector3Array(),"waypoint":1,"branch":-1,"suspicion":0.0,"search":0.0,"last_seen":Vector3.ZERO,"outings":0,"visible":0.0,"latched":false,"last_visit":-1,"last_search":-1,"walk":null,"shore":null,"away":0.0,"last_cross":-1,"job":""}
+	return {"actor":actor,"flash":flash,"flash_time":0.0,"photo_view":0.0,"last_photo":-1,"last_scare":-1,"variant":variant,"lamp":lamp,"mark":mark,"carried":carried,"glow":glow,"pose":pose,"size":0.0,"initialized":false,"home":null,"record":{},"state":"rest","wait":2.0,"route":PackedVector3Array(),"waypoint":1,"branch":-1,"suspicion":0.0,"search":0.0,"last_seen":Vector3.ZERO,"outings":0,"visible":0.0,"latched":false,"last_visit":-1,"last_search":-1,"walk":null,"shore":null,"away":0.0,"last_cross":-1,"job":"","build_t":0.0}
 
 func _route(entry: Dictionary, destination: Vector3, state: String) -> bool:
 	var path: PackedVector3Array = world.navigation.path(entry.actor.position,destination)
@@ -628,11 +628,15 @@ func take_plank() -> bool:
 		var plan := crossing.plan_to_deck(world,entry.actor.global_position,bridge.built_extent())
 		var walk := CrossingWalk.along(crossing,plan)
 		if walk == null: continue
+		# Last, because it is the only step that cannot be undone: from here the
+		# camper owes the driver a `lay()`, and `_advance_builder` always pays.
+		if not construction.claim(): return false
 		_update_inventory(entry,{"wood":maxi(0,int(entry.record.get("wood",0))-PLANK_WOOD)})
 		dirty = true
 		entry.route = PackedVector3Array()
 		entry.walk = walk
 		entry.job = "out"
+		entry.build_t = bridge.built_extent()
 		entry.state = "build"
 		_event("camper carries a plank out to the bridge")
 		return true
@@ -670,7 +674,9 @@ func _advance_builder(entry: Dictionary, dt: float) -> void:
 		_event("camper nails a plank onto the bridge")
 		entry.job = "back"
 		var home: Vector3 = world.to_world(entry.home) if entry.home != null else entry.actor.global_position
-		var back := crossing.plan_from_deck(crossing.edge_of(world),world,home) if crossing != null else ([] as Array[Dictionary])
+		# From where they are standing, not from the bridgehead: the walk home
+		# is back down the boards they came out on.
+		var back := crossing.plan_from_deck(float(entry.build_t),world,home) if crossing != null else ([] as Array[Dictionary])
 		entry.walk = CrossingWalk.along(crossing,back)
 		if entry.walk == null: _end_build(entry)
 		return
