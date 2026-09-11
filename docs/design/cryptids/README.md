@@ -336,3 +336,94 @@ Both are small, both are yes-or-no, both gate everything above.
 To be written before the spikes are judged: print, stash, cleared branch,
 night blur, first contact. It is the spec for the trail cam and the thing to
 hand a stranger.
+
+## Alternative to explore: the bridge as the opening
+
+Added after discussing the pitch. This is an optional opening to test, not a
+replacement for the reveal, map, or first-hour direction above. The bridge may
+not belong in the first version at all. In particular, this could bring close
+footage earlier than the proposed hour without seeing him; neither timing is
+settled.
+
+### Why a bridge
+
+A physics-based suspension bridge connects the crew's island to Bigfoot's.
+Building it changes access in both directions: we build it to reach him, then
+discover we have given him a way into camp. "We finally connected the islands.
+Last night he came across." That consequence could justify the bridge even
+without cutting it or elaborate destruction.
+
+The crossing also concentrates tension in a visible place: a camper carrying
+valuable footage creeps over the swaying planks, and something heavy steps
+onto the other end. Physics should help the player read the situation.
+
+### Construction and timing
+
+Try completing the bridge around day three, roughly 20–30 minutes into the
+opening. This is a pacing hypothesis, not a conversion from the normal
+ten-to-fifteen-minute days: introductory days would need to be shorter or
+construction would finish later in real time. Prototype a compressed opening
+of about fifteen minutes before deciding whether to extend it.
+
+Construction advances visibly while other work happens: ropes span the gap,
+planks appear, a camper works farther out over the water. Assigning someone to
+build means they cannot retrieve a card or investigate a print. Start with
+that crew-time tradeoff before adding a construction resource economy.
+
+One possibility is to make finishing the crossing an explicit assignment.
+The crew reports it ready for the final section, and the player chooses when
+to open access. That gives later footprints on our shore a consequence the
+player can trace back to their own decision.
+
+### An opening that is already the camera game
+
+The bridge should not be a wait before the game starts. The near shore needs
+useful camera placements and discoveries that make crossing desirable.
+
+- **Day one: catch something ordinary.** Arrive with two cameras and a
+  producer request for a wildlife shot to check the equipment. Choose a water
+  edge or animal trail. The first review rewards the placement with an animal
+  clip, perhaps a deer looking across the gap and bolting. The far shore is
+  still mostly fog and trees, but now there is a reason to look there.
+- **Day two: form a hunch.** Aim a camera across the gap at a disturbed bank
+  or promising rock. One camper starts the bridge while another improves the
+  camera's vantage point. A distant shape carrying something away might be
+  enough to make the player want a camera beside that rock.
+- **Day three: follow the hunch.** Finish the crossing and send a camper with
+  a camera to the location chosen from the evidence. They may find remains of
+  what was carried, place the camera, and return before dark. The next review
+  can deliver close footage earned by the player's observation.
+
+These are opportunities to arrange, not mandatory scripted incidents. Nearby
+wildlife and a distant Bigfoot routine should generate the clues and clips.
+Withhold certainty while providing frequent discoveries: useful animal
+footage, an intriguing trace, or a result that changes tomorrow's plan.
+
+### Emergency possibilities, still hypothetical
+
+A knife could be a utility item that lets a camper cut the bridge to escape;
+this would be an exception to the current no-knife kit direction, not a
+settled change. It must not become a weapon for hunting him. Cutting a bridge
+also needs geography and timing that make escape plausible within the
+no-death tone.
+
+If a camper can destroy days of construction autonomously, their reasoning
+needs to be visible: notice pursuit, panic, hesitate at the ropes. A brief
+radio opportunity could let the player intervene, with personality deciding
+what happens otherwise. Surprise should still leave the player understanding
+why it happened. Damage, repairs, and emergency cutting can wait until an
+ordinary crossing produces an interesting expedition.
+
+### What to prove first
+
+Alongside the existing image and day-seven spikes, test the smallest complete
+observation loop: notice a clue, choose a camera location, send a camper to
+place it, retrieve the card, and learn something that changes the next
+placement. One camper, one camera, one Bigfoot routine, and a wildlife
+distraction may be enough.
+
+For the bridge itself, start with a completed crossing both sides can use and
+one footage-retrieval expedition. Add gradual construction after establishing
+what it builds anticipation for. The opening is working when a stranger can
+explain their placement and says, "Finish the bridge—I know where I want that
+camera."
