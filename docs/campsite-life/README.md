@@ -179,6 +179,11 @@ camper, no wood, no route -- the driver lays the plank on the timer anyway, and
 if a camper who took a board has not laid it within `grace` seconds the timer
 lays it regardless. The pacing is the knob; the camper is the picture.
 
+A board is a thing somebody holds. `claim()` takes one -- the driver's hook, a
+study key and a test all go through the same door -- and whoever gets a true
+owes a `lay()` or a `release()`; `grace` is what stops a lost claim from
+stalling the deck forever.
+
 Construction speaks up once at the first board, at each quarter, and on
 completion, through `BridgeConstruction.on_event` -- the study prints it and
 feeds it to `campsite_life`'s `events` list, and `readout()` is the progress
@@ -218,7 +223,9 @@ In the study, `Q` lays one more plank and `E` finishes the bridge instantly;
 the status panel carries a percentage and a plank count.
 `tools/film_bridge_construction.gd --stills=<dir>` writes the same framing at
 0, 25, 50 and 100 per cent, a still of a walker on the finished deck, and
-numbered frames of the growth with its ffmpeg line.
+numbered frames of the growth with its ffmpeg line. The build shots are side
+on to the whole span rather than the study's `B` framing: `B` sights along the
+deck, which foreshortens it and hides the end the planking starts from.
 
 ## Verification
 

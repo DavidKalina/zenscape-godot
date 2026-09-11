@@ -4,10 +4,12 @@ extends SceneTree
 ## thing, plus numbered frames of the build so the growth can be watched
 ## rather than inferred.
 ##
-## The point of shooting all five from one camera is that the only thing that
-## changes between them is the deck. `frame_bridge()` is the study's own `B`
-## framing, back along the whole span from beyond the far anchor, so the ropes
-## fill the frame whether or not there are boards on them.
+## The point of shooting all four build stills from one camera is that the only
+## thing that changes between them is the deck. The framing is side on to the
+## whole span from out over the chasm, not the study's `B` shot: `B` sights
+## along the deck, which foreshortens it to a line and hides the end the
+## planking starts from off the bottom of the frame. Side on, all fifty metres
+## are in shot and the boards march visibly from one rim toward the other.
 ##
 ## `--stills=<dir>` writes `built_000.png`, `built_025.png`, `built_050.png`,
 ## `built_100.png` and `crossing.png`; defaults to
@@ -33,11 +35,19 @@ const SETTLE_FRAMES := 6
 const DAYLIGHT_STEPS := 240
 const BUILD_STEPS := 60        ## Growth frames; 2 s at 30 fps.
 const CAPTURE_FPS := 30
+## The side-on span shot: how much wider than the span the camera stands back,
+## how far above the deck it looks, and how near level it is.
+const SPAN_FIT := 0.95
+const SPAN_LIFT := 1.5
+const SPAN_POLAR := 1.47
 ## Simulated frames between growth captures, so the rope settles onto each new
 ## load rather than snapping between poses.
 const GROWTH_SETTLE := 10
 const CROSS_FRAMES := 20000    ## A crossing is ~50 m at about a metre a second.
 const CROSS_AT := 0.5          ## Where along the deck the crossing still is taken.
+const FOLLOW_DISTANCE := 8.0   ## Far enough back that the ropes and the drop fit.
+const FOLLOW_POLAR := 1.40
+const FOLLOW_HEIGHT := 1.9
 const CROSS_TRIES := 15        ## Asks, two simulated seconds apart, before giving up.
 var scene: Node3D
 var frame_size := FRAME_SIZE
@@ -79,6 +89,9 @@ func run() -> void:
 		print("FILM BRIDGE CONSTRUCTION: the study has no buildable bridge")
 		quit(1)
 		return
+	# The tool owns the deck too: every `_process` step below is world time, and
+	# the study's own driver would lay planks between the shot and the shutter.
+	if scene.construction != null: scene.construction.rate = 0.0
 	var slots: int = bridge.plank_count()
 	print("FILM BRIDGE CONSTRUCTION: %d plank slots over %.1f m" % [slots, scene.crossing.span() if scene.crossing != null else 0.0])
 	# ------------------------------------------------------------ the stills
@@ -89,14 +102,14 @@ func run() -> void:
 		# The framing and the hour are re-applied per shot: a settle is a second
 		# of the study's own process, which eases the camera and turns the sky.
 		_daylight()
-		scene.frame_bridge()
+		_frame_span()
 		await _grab(stills_dir.path_join("built_%03d.png" % share), "%d%% (%d/%d planks, extent t %.3f)" % [share, bridge.laid_count(), slots, bridge.built_extent()])
 
 	# ------------------------------------------------------- the growth frames
 	scene.set_bridge_built(false)
 	await _settle(0.6)
 	_daylight()
-	scene.frame_bridge()
+	_frame_span()
 	for step in range(steps):
 		bridge.set_laid(int(round(float(slots) * float(step + 1) / float(steps))))
 		for tick in range(GROWTH_SETTLE):
@@ -134,6 +147,7 @@ func run() -> void:
 			if not walk.on_deck(): continue
 			if absf(scene.crossing.deck_t_at(scene.creature.global_position) - CROSS_AT) > 0.04: continue
 			taken = true
+			_aim(camps)
 			await _grab(stills_dir.path_join("crossing.png"), "a walker on the finished deck")
 			break
 		if not taken: print("FILM BRIDGE CONSTRUCTION: he never reached midspan")
@@ -141,6 +155,36 @@ func run() -> void:
 	scene.queue_free()
 	await process_frame
 	quit(0)
+
+## The whole crossing broadside, from out over the chasm at deck height. The
+## deck's own midpoint rather than the chord's, so the sag is centred.
+func _frame_span() -> void:
+	var anchors: Array[Transform3D] = scene.bridge_anchors()
+	if anchors.size() != 2: return
+	var a: Vector3 = anchors[0].origin
+	var b: Vector3 = anchors[1].origin
+	var along := (b - a).normalized()
+	var side := along.cross(Vector3.UP).normalized()
+	scene.target = scene.deck_surface(0.5).lerp(a.lerp(b, 0.5), 0.5) + Vector3.UP * SPAN_LIFT
+	scene.distance = a.distance_to(b) * SPAN_FIT
+	scene.polar = SPAN_POLAR
+	scene.yaw = atan2(side.x, side.z)
+	scene._auto_orbit = false
+	scene._update_camera()
+
+## Over the walker's shoulder, down the span: the fixed span framing puts him a
+## few pixels tall, and the point of the last still is that somebody is on it.
+func _aim(camps: Node) -> void:
+	var anchors: Array[Transform3D] = scene.bridge_anchors()
+	var walk: CrossingWalk = camps.bigfoot_walk
+	var heading: Vector3 = (walk.target() - scene.creature.global_position) if walk != null else (anchors[1].origin - anchors[0].origin)
+	if heading.length() < 0.01: heading = anchors[1].origin - anchors[0].origin
+	heading = heading.normalized()
+	scene.target = scene.creature.global_position + Vector3.UP * FOLLOW_HEIGHT
+	scene.distance = FOLLOW_DISTANCE
+	scene.polar = FOLLOW_POLAR
+	scene.yaw = atan2(-heading.x, -heading.z)
+	scene._update_camera()
 
 ## The study opens near dusk, where a still of two dark islands says nothing.
 func _daylight() -> void:
