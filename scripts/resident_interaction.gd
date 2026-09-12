@@ -27,6 +27,7 @@ func setup(owner_scene: Node3D) -> void:
 
 func pick(mouse: Vector2) -> bool:
 	if scene.creature == null or not scene.resident_enabled or not scene.creature.visible or scene._paused or not scene._chunk_editor.pointer_in_world(mouse): return false
+	if scene.get("world_play") != null and scene.world_play.owner_scene != null and scene.world_play.loose_props.held_at(mouse): return false
 	var ray: Vector3 = scene.camera.project_ray_origin(mouse)
 	var direction: Vector3 = scene.camera.project_ray_normal(mouse)
 	var inverse: Transform3D = scene.creature.global_transform.affine_inverse()
