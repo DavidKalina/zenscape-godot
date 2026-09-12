@@ -61,7 +61,7 @@ func sync(scene: Node3D, frame_tree: SceneTree = null) -> void:
 	elif objects_revision != scene._chunk_editor.data.objects_revision:
 		objects_revision = scene._chunk_editor.data.objects_revision
 		_refresh_geometry(scene)
-	var active: bool = enabled and RenderingServer.get_current_rendering_method() == "forward_plus" and scene._growth.terrain >= 0.995 and scene._growth.water >= 0.995
+	var active: bool = enabled and RenderingServer.get_current_rendering_method() == "forward_plus" and scene._growth.terrain >= 0.995 and scene._growth.water >= 0.995 and scene.can_process()
 	set_enabled(active)
 	if active: update_views()
 
@@ -159,7 +159,8 @@ func setup(scene: Node3D, water_node: MeshInstance3D, frame_tree: SceneTree = nu
 		var surface := MeshInstance3D.new()
 		surface.visible = false
 		surface.mesh = pool
-		surface.transform = water_node.global_transform
+		# The reflected surface lives under this node, including in parked chunks.
+		surface.transform = global_transform.affine_inverse()*water_node.global_transform
 		surface.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var material: ShaderMaterial = water_node.material_override.duplicate()
 		material.set_shader_parameter("hide_pool_surface", false)

@@ -82,11 +82,19 @@ float cloudAt(vec3 p) {
   // of noise reads as weather rather than as smoke.
   float prof = smoothstep(0.0, 0.10, h) * smoothstep(1.0, 0.45, h);
   vec3 q = p * 0.019 + zs_cloud_drift;
-  float base = wxFbm(q);
+  // The remaining two octaves add at most .1875. Empty parcels can skip
+  // those octaves and edge erosion without changing the visible field.
+  float lift = 0.20 * orogDeck(p);
+  float threshold = mix(0.74, 0.24, zs_cloud.x);
+  float base = wxFbm2(q);
+  if (base + 0.1875 + lift <= threshold) return 0.0;
+  vec3 fine = q * 2.07 * 2.07;
+  base += 0.125 * wxNoise(fine);
+  base += 0.0625 * wxNoise(fine * 2.07);
   // Coverage is a THRESHOLD on the field, not an opacity. That matters: at
   // low coverage you get separated puffs with sky between them (and therefore
   // shafts); fading a full sky out would just give you thin overcast.
-  float d = base - mix(0.74, 0.24, zs_cloud.x) + 0.20 * orogDeck(p);
+  float d = base - threshold + lift;
   // erode the edges with a faster octave so they fray instead of cutting
   d -= (0.13 + 0.22 * zs_cloud.y) * wxFbm(q * 4.3 + 7.0) * (1.0 - h * 0.4);
   return max(d, 0.0) * (5.5 + 3.0 * zs_cloud.y) * prof;

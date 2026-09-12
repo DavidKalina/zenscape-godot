@@ -111,7 +111,15 @@ func advance(delta: float, paused: bool, tremor: RefCounted) -> void:
 		if foliage > 0.9999:
 			foliage = 1.0
 			replaying = false
-	var rise := terrain - before
+	formation_feedback(terrain-before,delta,tremor)
+	publish()
+
+## Shared with the cozy transition, which drives the growth channels directly.
+func reset_feedback() -> void:
+	_debt = 0.0
+	_rise_rate = 0.0
+
+func formation_feedback(rise: float, delta: float, tremor: RefCounted) -> void:
 	var velocity := rise / delta if delta > 0.0 else 0.0
 	_rise_rate = lerpf(_rise_rate, smoothstep(0.002, 0.03, velocity), 1.0 - exp(-delta * 2.5))
 	_debt += rise
@@ -119,7 +127,6 @@ func advance(delta: float, paused: bool, tremor: RefCounted) -> void:
 		_debt -= 0.035
 		var magnitude := minf(1.0, (0.3 + 0.5 * _rise_rate) * (0.55 + 0.65 * terrain))
 		tremor.add(magnitude * 0.8)
-	publish()
 
 func publish() -> void:
 	# Keep life and water on solid ground during a backwards terrain scrub.

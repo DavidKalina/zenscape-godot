@@ -25,6 +25,7 @@ func _ready() -> void:
 	crown.mesh = leaves.commit()
 	leaf_material = ShaderMaterial.new()
 	leaf_material.shader = preload("res://shaders/layered_canopy_surface.gdshader")
+	leaf_material.set_shader_parameter("plant_growth",true)
 	leaf_material.set_shader_parameter("palette_role",2)
 	leaf_material.set_shader_parameter("roughness_value",0.9)
 	leaf_material.set_shader_parameter("foliage_transmission",0.3)
@@ -49,6 +50,7 @@ func _ready() -> void:
 	trunk.mesh = wood.commit()
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/layered_tree_wood.gdshader")
+	material.set_shader_parameter("plant_growth",true)
 	material.set_shader_parameter("palette_role",4)
 	material.set_shader_parameter("tactile",1.0)
 	trunk.material_override = material

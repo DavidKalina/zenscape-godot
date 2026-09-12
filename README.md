@@ -3,9 +3,28 @@
 A new Godot project exploring a cozy landscape sculpting toy. One continuous,
 editable diorama: shape a place with a brush, then gradually bring it to life.
 
+## Cozy Bigfoot worlds
+
+Run **`run-cozy-flow.command`**, or press **F5** in Godot, to enter the cozy flow
+with the full native terrain, scenery, water, lighting, atmosphere, and living
+Bigfoot. **Regrow landscape** folds plants, water and terrain back to bare earth,
+then grows a procedural world with new terrain, a custom palette, atmosphere,
+time of day and weather in the same place. Carrying Bigfoot to either screen
+edge triggers the same transition. Release during growth and he lands once the
+new ground is ready. Terrain recedes and rises with the original tremor feedback.
+Regeneration keeps the landscape's ordinary atmosphere, without an extra fog
+blanket. Rebuilding and walkable-ground preparation run across frames and workers.
+
+Use **World → Landscapes** to choose a landscape family, **Build** to craft it,
+and **World → Colors & sky** for its mood. **Undo** restores the previous terrain;
+**Save** preserves the resulting place. See [native world details](docs/cozy-flow/REAL-WORLDS.md).
+Character selection remains deferred. The original lightweight study is still
+available by running `studies/cozy_flow_prototype.tscn` with F6; its
+[prototype notes](docs/cozy-flow/NOTES.md) describe that session-only version.
+
 ## Create a diorama
 
-Launch **`run-diorama.command`**, or press **F5** in Godot, to enter the inhabited
+Launch **`run-diorama.command`** to enter the inhabited
 **Fidelity world**. Choose **Menu → Fidelity world** anytime to start a fresh
 copy of that world, including Bigfoot, his two-story cave, and the original scenery. Your current
 world is saved before switching. **Menu** also offers New, Open, and Settings.
