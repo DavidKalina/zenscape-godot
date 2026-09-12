@@ -15,7 +15,33 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var dry: bool = g.composition in Desert.KINDS
 	var biome: String = g.habitat
 	if biome=="woodland" and rng.randf()<0.28: biome = "redwood"
-	var recipe := {"kind":"inland","version":3,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
+	var recipe := {"kind":"inland","version":4,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
+	# Retry within the chosen family, with progressively gentler relief.
+	# A meadow fallback bounds work without publishing an underfilled world.
+	var best_recipe := recipe.duplicate(true)
+	var best_score := -1.0
+	for attempt in range(8):
+		var field = preload("res://scripts/inland_world.gd").new(recipe).sampler
+		var quality: Dictionary = preload("res://scripts/inland_places.gd").quality(field)
+		var score: float = minf(quality.usable/0.28,quality.connected/0.18)
+		if quality.places<3: score = 0.0
+		if score>best_score:
+			best_score = score
+			best_recipe = recipe.duplicate(true)
+		if score>=1.0 or attempt==7: break
+		recipe.seed = rng.randi_range(0,999999)
+		while recipe.seed==previous.get("seed",-1): recipe.seed = rng.randi_range(0,999999)
+		recipe.relief = clampf(lerpf(1.0,0.53,float(attempt)/6.0)+rng.randf_range(-0.025,0.025),0.5,1.3)
+		recipe.breadth = clampf(lerpf(1.0,1.47,float(attempt)/6.0)+rng.randf_range(-0.025,0.025),0.72,1.5)
+	recipe = best_recipe
+	if best_score<1.0:
+		recipe.composition = "foothills" if previous.get("composition")=="meadow" else "meadow"
+		recipe.archetype = "ridgeback"
+		recipe.landform = "original"
+		recipe.biome = "meadow"
+		recipe.relief = 0.65
+		recipe.breadth = 1.0
+	dry = recipe.composition in Desert.KINDS
 	var hours := [Vector2(.27,.34),Vector2(.36,.57),Vector2(.62,.72),Vector2(.015,.08)]
 	var hour: int = rng.randi_range(0,3)
 	var phase := rng.randf_range(hours[hour].x,hours[hour].y)
@@ -59,6 +85,15 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 		"rock_style":1,"rock_detail":.65
 	}
 	return {"seed":seed_value,"terrain":recipe,"mood":mood,"visuals":visuals}
+
+## Candidate scoring is CPU work; keep it off the regrowth animation's thread.
+static func sample_async(seed_value: int,previous: Dictionary,tree: SceneTree) -> Dictionary:
+	var result: Array[Dictionary] = []
+	var snapshot := previous.duplicate(true)
+	var task := WorkerThreadPool.add_task(func(): result.append(sample(seed_value,snapshot)))
+	while not WorkerThreadPool.is_task_completed(task): await tree.process_frame
+	WorkerThreadPool.wait_for_task_completion(task)
+	return result[0]
 
 static func apply_mood(scene: Node3D, world: Dictionary) -> void:
 	# The existing applicator resets all weather/season controls. Every color

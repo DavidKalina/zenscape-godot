@@ -307,7 +307,7 @@ func handle(event: InputEvent) -> bool:
 			return true
 		if _tree_drag:
 			if _over_controls(event.position): spring_tree.cancel()
-			else: spring_tree.release()
+			else: release_player_tree()
 			_tree_drag = false
 			return true
 		return false
@@ -334,6 +334,13 @@ func handle(event: InputEvent) -> bool:
 	var at: Variant = _tree_plane.intersects_ray(camera.project_ray_origin(event.position),camera.project_ray_normal(event.position))
 	_tree_origin = at if at != null else tree.global_position
 	return true
+
+func release_player_tree() -> void:
+	if not is_instance_valid(spring_tree): return
+	var strength := spring_tree.tension
+	spring_tree.release()
+	if not _habitat_blocked and owner_scene.environment_life != null:
+		owner_scene.environment_life.notice_tree_release(spring_tree,strength)
 
 func advance(delta: float) -> void:
 	if owner_scene == null: return

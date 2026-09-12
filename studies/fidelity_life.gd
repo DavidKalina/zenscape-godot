@@ -21,6 +21,7 @@ var _habitat_changed := false
 var _habitat_blocked := false
 var _reaction := Label3D.new()
 var _reaction_time := 0.0
+var foliage_tread: Node
 
 func _ready() -> void:
 	super._ready()
@@ -43,6 +44,18 @@ func _ready() -> void:
 	_tremor.shaken.connect(creature.queue_tremor)
 	creature.set_process(false)
 	creature._ground_probe = navigation._ground
+	foliage_tread = preload("res://scripts/foliage_tread.gd").new()
+	add_child(foliage_tread)
+	for pair in [["mesh-8",4.26],["mesh-9",4.26],["mesh-11",1.82],["broadleaf-canopies",1.82]]:
+		var tree_part := $Reference.get_node_or_null(NodePath(pair[0])) as GeometryInstance3D
+		if tree_part == null: continue
+		var tree_mesh: Mesh = tree_part.multimesh.mesh if tree_part is MultiMeshInstance3D else tree_part.mesh
+		var original: Material = tree_part.material_override if tree_part.material_override != null else tree_mesh.surface_get_material(0)
+		if original is ShaderMaterial:
+			var material := original.duplicate() as ShaderMaterial
+			material.set_shader_parameter("tree_tread",true)
+			material.set_shader_parameter("tree_tread_height",pair[1])
+			tree_part.material_override = material
 	var coat := ShaderMaterial.new()
 	coat.shader = preload("res://shaders/reference_surface.gdshader")
 	for mesh: MeshInstance3D in creature.actor.find_children("*","MeshInstance3D",true,false):
@@ -142,11 +155,15 @@ func _process(delta: float) -> void:
 	if lair != null: lair.drips.advance(delta,_paused)
 	if creature == null: return
 	if not resident_enabled:
+		if foliage_tread != null: foliage_tread.tick(null,delta)
 		creature.visible = false
 		return
 	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	var present := not _habitat_blocked and _growth.terrain >= 0.995
 	creature.visible = present and (not routine.cave.concealed or lair != null)
+	if foliage_tread != null:
+		var on_ground: bool = present and not routine.cave.concealed and creature.state in [CreatureActor.State.IDLE,CreatureActor.State.ALERT,CreatureActor.State.WALKING,CreatureActor.State.ACTION]
+		foliage_tread.tick(creature.global_position if on_ground else null,delta,_paused)
 	var stopped := _paused or not present
 	if not stopped:
 		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
@@ -181,6 +198,7 @@ func _geometry_changed() -> void:
 
 func _refresh_habitat(budgeted := false) -> void:
 	if _habitat_changed or not budgeted:
+		if foliage_tread != null: foliage_tread.clear()
 		_habitat_changed = false
 		if cave_sites != null: cave_sites.rebuild(_chunk_editor.data)
 		habitat.setup($Reference,_chunk_editor.data)

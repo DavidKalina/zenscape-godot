@@ -3,6 +3,7 @@ shader_type spatial;
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
+#include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
@@ -25,6 +26,8 @@ uniform float coat_wetness : hint_range(0.0, 1.0) = 0.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
 uniform bool conifer_sway = false;
+uniform bool tree_tread = false;
+uniform float tree_tread_height = 4.26;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -112,6 +115,18 @@ void vertex() {
 		float arm = max(VERTEX.y - sway_shape.x, 0.25);
 		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7);
 		foliage_gust = clamp(gust * zs_wind_strength * bend * 0.5, 0.0, 1.0);
+		// A walker's tread (shaders/foliage_tread.gdshaderinc): stems inside a
+		// tread lean away from it and lie over, and whatever is under the
+		// foot itself is pressed flat. World-space like the wind above.
+		if (zs_tread_0.w > 0.0 && !tree_tread) {
+			float press = 0.0;
+			vec2 shove = zs_tread_push(root, press) * (arm * ZS_TREAD_REACH * bend);
+			if (press > 0.0) {
+				VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(shove.x, 0.0, shove.y) * instance_scale;
+				float lean_sq = min(dot(shove, shove), arm * arm * 0.96);
+				VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
+			}
+		}
 		VERTEX.y -= zs_foliage_wet * bend * wet_droop;
 		// Local gusts have a true world direction, even for rotated/scaled assets.
 		// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.
@@ -127,6 +142,7 @@ void vertex() {
 		}
 
 	}
+	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
 	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth.x);
 	if (plant_growth) {
 		float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);

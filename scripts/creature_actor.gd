@@ -660,6 +660,12 @@ func _pose_environment() -> void:
 	if spine<0: return
 	var weight := smoothstep(0.0,0.3,_age)*(1.0-smoothstep(_action_duration-1.0,_action_duration,_age))
 	var pose := Vector3.ZERO
+	if environment_pose == "tree_touch" and not environment_motion.is_empty():
+		pose = environment_motion.spine
+		if _head>=0:
+			skeleton.set_bone_pose_rotation(_head,skeleton.get_bone_pose_rotation(_head)*Quaternion.from_euler(environment_motion.head))
+		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(pose))
+		return
 	if environment_pose == "tree_hug" and not environment_motion.is_empty():
 		# Small chest compression and tilt provide weight with planted feet.
 		# Pelvis/root are untouched; hand IK runs after this body performance.
@@ -698,6 +704,8 @@ func _pose_environment() -> void:
 		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(environment_motion.get("spine",Vector3.ZERO)))
 		return
 	match environment_pose:
+		"tree_curious": pose = Vector3(-0.10,0,0.045)*sin(clampf(_age/_action_duration,0.0,1.0)*PI)
+		"tree_startle": pose = Vector3(0.30*exp(-_age*3.0)-0.055*smoothstep(0.8,1.8,_age),0,0.025*sin(_age*3.0)*exp(-_age))
 		"shock": pose = Vector3(-0.12,sin(_age*62.0)*0.07,sin(_age*75.0)*0.09)
 		"fire_watch": pose = Vector3(-0.075,0,sin(_age*0.9)*0.014)
 		"startle": pose = Vector3(0.22,0,sin(_age*7.0)*0.025)*exp(-_age*0.7)

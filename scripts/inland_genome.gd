@@ -1,7 +1,7 @@
 extends RefCounted
 ## Versioned inland genome. Independent feature streams; replayed by NativeTerrainRecipe.
 ## Compositions/archetypes and crest/wall profiles adapted from zenscape/genome.js and landforms.js.
-const VERSION := 3
+const VERSION := 4
 const Previous = preload("res://scripts/inland_genome_v2.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
 const Legacy = preload("res://scripts/inland_genome_v1.gd")
@@ -30,7 +30,7 @@ static func weighted(rng: RandomNumberGenerator,names: Array,weights: Array) -> 
 static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION) -> Dictionary:
 	if version == 1: return Legacy.sample(seed_value,overrides)
 	if version == 2: return Previous.sample(seed_value,overrides)
-	assert(version == VERSION,"Unsupported inland genome version")
+	assert(version in [3,4],"Unsupported inland genome version")
 	var rc := stream(seed_value,101)
 	var ra := stream(seed_value,211)
 	var rl := stream(seed_value,307)
@@ -60,7 +60,7 @@ static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION
 	habitat = overrides.get("habitat",habitat)
 	var peaks: Array = []
 	for i in range(4): peaks.append({"at":(i-1.5)*4.0+rl.randf_range(-0.5,0.5),"height":rl.randf_range(0.72,1.0),"width":rl.randf_range(3.4,4.8)})
-	var g := {"version":VERSION,"seed":seed_value,"composition":composition,"archetype":archetype,"landform":landform,"habitat":habitat,
+	var g := {"version":version,"seed":seed_value,"composition":composition,"archetype":archetype,"landform":landform,"habitat":habitat,
 		"relief":overrides.get("relief",1.0),"breadth":overrides.get("breadth",1.0),"height":draw(ra,traits.base),"phase":rl.randf()*TAU,"peaks":peaks,
 		"wall_spacing":rl.randf_range(5.0,8.0),"wall_relief":rl.randf_range(0.25,0.42),"floor_width":rc.randf_range(3.2,5.4),
 		"river_width":rw.randf_range(1.2,2.0),"water_phase":rw.randf()*TAU,"plant_seed":seed_value*7919+631,"noise_seed":seed_value*7919+743,
@@ -151,6 +151,9 @@ static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 			var r := Vector2(q.x,z).length()/float(g.ridge_falloff)
 			mass = h*pow(maxf(0.0,1.0-r),1.45 if g.archetype == "horn" else 0.9)
 		if comp == "massif": mass *= 1.15
+	# Inhabited worlds keep the peak behind gentler, lower foreground slopes.
+	if int(g.version)>=4 and comp in ["mountain","massif"]:
+		mass *= lerpf(0.72,0.30,smoothstep(-2.0,7.0,q.y))
 	var edge := 1.0-smoothstep(11.4,14.0,maxf(absf(p.x),absf(p.y)))
 	return 0.8+(ground+mass*float(g.relief)-0.8)*edge
 

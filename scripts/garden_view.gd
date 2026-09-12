@@ -62,6 +62,13 @@ func _ready() -> void:
 				_tints[key] = original.multimesh.get_instance_color(0)
 	_water_material = source.get_node("mesh-30").mesh.surface_get_material(0).duplicate()
 	_stream_material=source.get_node("mesh-38").mesh.surface_get_material(0).duplicate()
+	# Trunk and crown share a height so the restored wake bends them together.
+	for keys in [["trunk","canopy"],["broadleaf:mesh-11","broadleaf:broadleaf-canopies"],["layered_tree:layered-trunk","layered_tree:layered-canopies"],["redwood:redwood-trunk","redwood:redwood-canopies"]]:
+		var height := 0.1
+		for key in keys: height = maxf(height,_meshes[key].get_aabb().end.y)
+		for key in keys:
+			_materials[key].set_shader_parameter("tree_tread",true)
+			_materials[key].set_shader_parameter("tree_tread_height",height)
 	_foam_template=source.get_node("mesh-31").mesh
 	source.free()
 	# A faceted stone in the same muted palette as the ground.

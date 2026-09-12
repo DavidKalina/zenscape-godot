@@ -10,6 +10,13 @@ var streams: Array[Dictionary] = []
 var objects: Array[Dictionary] = []
 var waters: Array[RefCounted] = []
 var solids: Array[AABB] = []
+const PARTING_TREES := ["tree","layered_tree","redwood","broadleaf"]
+
+## Restored from the stitched world's foliage wake: keep a solid trunk core.
+static func trunk_core(box: AABB) -> AABB:
+	var center := box.get_center()
+	var half := clampf(minf(box.size.x,box.size.z)*0.25,0.05,0.30)
+	return AABB(Vector3(center.x-half,box.position.y,center.z-half),Vector3(half*2.0,box.size.y,half*2.0))
 var cave_poses: Array[Transform3D] = []
 const SOLID_CELL := 2.0
 var _solid_cells := {}
@@ -55,7 +62,7 @@ func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
 func _add_solid(pose: Transform3D, mesh: Mesh, id: String) -> void:
 	var box: AABB = pose*mesh.get_aabb()
 	if box.size.length() < 0.01: return
-	solids.append(box)
+	solids.append(trunk_core(box) if id.begins_with("mesh-8:") or id.begins_with("mesh-11:") else box)
 	var center := box.get_center()
 	var height: Variant = ground_height(Vector2(center.x,center.z))
 	if height != null:
@@ -89,7 +96,7 @@ func _add_authored(data: NativeTerrainData) -> void:
 		var basis := NativeObjectPose.decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP,float(item.angle)).scaled(Vector3.ONE*float(item.scale))
 		if item.asset == "rock": location.y += 0.24*float(item.scale)
 		var box: AABB = Transform3D(basis,location)*_prop_bounds[item.asset]
-		solids.append(box)
+		solids.append(trunk_core(box) if item.asset in PARTING_TREES else box)
 		interests[-1]["bounds"] = box
 
 func clear_at(point: Vector3, ignore_caves := false) -> bool:

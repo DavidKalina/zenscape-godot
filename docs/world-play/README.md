@@ -2,6 +2,14 @@
 
 The normal `studies/diorama.tscn` entry point now uses authored scenery for play. In Enjoy mode, drag trees to bend and release them; swing and release rocks, boulders, logs, and stumps to throw them. Bigfoot can choose reachable stones, logs, and trees, using the shared animations and rage behavior. Dragging him over water and releasing lets him paddle to a checked shore.
 
+Releasing a tree within eight meters can catch an idle or wandering Bigfoot's
+attention. Gentle pulls invite a curious lean; stronger pulls trigger a brief
+recoil and cautious look. His gaze follows the actual tree as it sways, then he
+relaxes and resumes ordinary life. Tiny pulls are ignored, and a nine-second
+cooldown prevents repeated releases from continually interrupting him. Existing
+activities retain priority. Regrabbing or removing the watched tree cancels the
+response; pause freezes it. He does not reach into the moving branches.
+
 Build retains placement/edit gestures. Saving or returning to Build writes moved prop positions and orientations into their existing records, restores batching, and resets temporary tree bends. Legacy reference scenery is converted to authored records with validated source suppression saved alongside the world, avoiding duplicate scenery on reopening.
 
 ## Implementation

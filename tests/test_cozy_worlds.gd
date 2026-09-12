@@ -52,6 +52,9 @@ func run() -> void:
 	var path := "/private/tmp/cozy-regrowth-test-%d/places.json" % Time.get_ticks_usec()
 	var primary := await open_world(path)
 	var flow: Node = primary.places
+	primary._process(0.01)
+	check(primary.foliage_tread.records()[0].w>0.0,"The cozy resident publishes the restored foliage wake")
+	check(primary._chunk_editor.content._materials.trunk.get_shader_parameter("tree_tread") and primary._chunk_editor.content._materials.canopy.get_shader_parameter("tree_tread"),"Native trunks and crowns both respond to the wake")
 	check(primary._chunk_editor.data.objects.size()>100,"Full native landscape is ready")
 	check(root.find_children("*","Node3D",false,false).size()==1,"Only one full world is loaded")
 	var data: NativeTerrainData = primary._chunk_editor.data
@@ -63,6 +66,7 @@ func run() -> void:
 	var wind_time: float = primary._atmosphere._wind_time
 	var sky: Dictionary = primary._celestial.look.document()
 	grab(flow)
+	check(primary.foliage_tread.records()[0] == Vector4.ZERO,"Picking Bigfoot up clears the old wake")
 	var size: Vector2 = root.get_visible_rect().size
 	motion(size*Vector2(.97,.5))
 	while not flow.busy: await process_frame
@@ -92,6 +96,7 @@ func run() -> void:
 	check(primary._atmosphere._wind_time>wind_time,"Normal atmosphere keeps moving during held-world pause")
 	check(primary._atmosphere.shroud==0 and primary._atmosphere.loosen==0.5,"Completion retains the new landscape atmosphere")
 	check(flow.generation==1 and not flow.holding,"One regeneration finishes and releases Bigfoot")
+	check(primary.environment_life.arrival_pending,"Regrowth landing queues an introduction to the new place")
 	check(data._recipe_settings.kind=="inland" and data.heights!=heights,"Regeneration builds a genuinely new native terrain variation")
 	check(data._recipe_settings.composition!=initial.family,"Regeneration chooses a different landscape family")
 	check(primary._growth.terrain==1 and primary._growth.water==1 and primary._growth.foliage==1,"Forward growth restores exact finished channels")

@@ -176,6 +176,8 @@ func begin_carry() -> void:
 	scene._chunk_editor.finish_stroke()
 	scene.world_play.cancel()
 	scene.routine.cancel("carried through the landscape")
+	scene.environment_life.cancel()
+	if scene.foliage_tread != null: scene.foliage_tread.clear()
 	scene._resident_play.cancel()
 	holding = true
 	scene._paused = true
@@ -243,7 +245,7 @@ func regrow(world_seed := -1) -> void:
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
-	generated_world = Generator.sample(randi() if world_seed<0 else world_seed,scene._chunk_editor.data._recipe_settings)
+	generated_world = await Generator.sample_async(randi() if world_seed<0 else world_seed,scene._chunk_editor.data._recipe_settings,get_tree())
 	scene._notice.text = "Shaping a new wilderness…"
 	await scene._chunk_editor.form_inland(generated_world.terrain,true,false)
 	# form_inland captures its snapshot while the old world is folded down.
@@ -395,6 +397,7 @@ func drop_at(mouse: Vector2) -> void:
 	scene.creature.pick_up()
 	scene.creature.position = point+Vector3.UP*0.9
 	scene.creature.release_at(point)
+	scene.environment_life.welcome_arrival()
 	scene._notice.text = "A little place to linger."
 
 func cancel_carry() -> void:
