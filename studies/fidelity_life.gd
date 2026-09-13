@@ -166,7 +166,8 @@ func _process(delta: float) -> void:
 		foliage_tread.tick(creature.global_position if on_ground else null,delta,_paused)
 	var stopped := _paused or not present
 	if not stopped:
-		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
+		try_void_fall()
+		if creature.state != CreatureActor.State.FALLING and not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
 			var observing: bool = environment_life != null and environment_life.advance(delta)
 			if not observing and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
@@ -192,6 +193,39 @@ func _process(delta: float) -> void:
 		return
 	_life_status.text = "Bigfoot · %s · P pause" % ["needs a clearing" if _habitat_blocked else ("paused" if stopped else ("in his cave" if routine != null and routine.cave.sheltered() else ("cave · "+routine.cave.phase if routine != null and not routine.cave.phase.is_empty() else (routine.active if routine != null and not routine.active.is_empty() else CreatureBrain.Phase.keys()[brain.phase].to_lower()))))]
 
+## Only an actual missing terrain face triggers a void fall. A qualifying log
+## can still supply support there, and a held resident falls only on release.
+func try_void_fall(released := false) -> bool:
+	if creature == null or _chunk_editor.data.void_faces.is_empty(): return false
+	if creature.state == CreatureActor.State.FALLING: return true
+	if creature.is_held() and not released: return false
+	if routine != null and routine.cave.concealed: return false
+	var p := Vector2(creature.global_position.x,creature.global_position.z)
+	var data: NativeTerrainData = _chunk_editor.data
+	if not data.is_void(p): return false
+	var deck: Variant = habitat.navigation_height(p)
+	if deck != null and creature.global_position.y>=float(deck)-0.12: return false
+	if navigation.rebuilding: return false
+	var safe: Variant = nearest_safe_bank(creature.global_position)
+	if safe == null: return false
+	creature.begin_void_fall(safe,nearest_safe_bank)
+	if environment_life != null: environment_life.cancel()
+	if routine != null: routine.cancel("fell into the chasm")
+	brain.reset_behavior()
+	return true
+
+func nearest_safe_bank(point: Vector3) -> Variant:
+	var best: Variant = null
+	var distance := INF
+	for candidate: Vector3 in navigation._nodes:
+		var score := candidate.distance_squared_to(point)
+		if score>=distance: continue
+		var h: Variant = habitat.ground_height(Vector2(candidate.x,candidate.z))
+		if h == null or absf(h-candidate.y)>0.02 or not navigation.is_safe(candidate): continue
+		best = candidate
+		distance = score
+	return best
+
 func _geometry_changed() -> void:
 	_habitat_changed = true
 	if creature != null: creature.stop_walking()
@@ -216,6 +250,7 @@ func _refresh_habitat(budgeted := false) -> void:
 	if creature.is_held():
 		var fallback: Variant = navigation.nearest_safe(creature._safe_position)
 		creature._safe_position = fallback if fallback != null else safe
+	elif creature.state == CreatureActor.State.FALLING or try_void_fall(): pass
 	elif not creature.blast_airborne and not navigation.is_safe(creature.global_position): creature.reset_at(safe)
 	brain.world_changed()
 	# New trees, new places for the wind to drop wood. Branches already lying on

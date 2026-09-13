@@ -18,4 +18,5 @@ static func for_height(source: NativeTerrainData) -> NativeTerrainData:
 	data.vertex_ids = source.vertex_ids.duplicate()
 	data._buckets = source._buckets.duplicate(true)
 	data.heights = source.heights.duplicate()
+	data.void_faces = source.void_faces.duplicate()
 	return data

@@ -10,7 +10,7 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	name = "Wild landscapes"
 	var help := Label.new()
-	help.text = "Tall peaks, broad valleys and desert country.\nGenerate a new landscape, then sculpt and save it."
+	help.text = "Tall peaks, broad valleys, chasms and desert country.\nGenerate a new landscape, then sculpt and save it."
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(help)
 	for pair in [["composition",Genome.COMPOSITIONS],["archetype",Genome.ARCHETYPES],["landform",Genome.LANDFORMS],["biome",Genome.HABITATS]]:
@@ -49,7 +49,7 @@ func setup(owner_scene: Node3D) -> void:
 	add_child(another)
 	visibility_changed.connect(sync_from_world)
 func recipe() -> Dictionary:
-	var result := {"kind":"inland","version":3,"seed":int(seed_box.value),"relief":relief.value,"breadth":breadth.value}
+	var result := {"kind":"inland","version":Genome.VERSION,"seed":int(seed_box.value),"relief":relief.value,"breadth":breadth.value}
 	for key in choices: result[key] = choices[key].values[choices[key].control.selected]
 	return result
 func _process(_delta: float) -> void:

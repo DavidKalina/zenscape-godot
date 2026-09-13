@@ -32,7 +32,8 @@ static func valid(value: Variant) -> bool:
 	if value.is_empty(): return true
 	if value.get("kind") == "inland":
 		var genome = preload("res://scripts/inland_genome.gd")
-		if value.size() != 9 or (value.get("version") != 3 and value.get("version") != 4): return false
+		if value.size() != 9 or (value.get("version") != 3 and value.get("version") != 4 and value.get("version") != 5): return false
+		if value.get("composition") == "chasm" and value.get("version") != 5: return false
 		if value.get("composition") not in genome.COMPOSITIONS or value.get("archetype") not in genome.ARCHETYPES or value.get("landform") not in genome.LANDFORMS or value.get("biome") not in genome.HABITATS: return false
 		return GardenData._integer(value.get("seed")) and GardenData._number(value.seed,0,999999) and GardenData._number(value.get("relief"),0.5,1.8) and GardenData._number(value.get("breadth"),0.6,1.5)
 	var limits: Dictionary

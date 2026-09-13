@@ -15,7 +15,7 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var dry: bool = g.composition in Desert.KINDS
 	var biome: String = g.habitat
 	if biome=="woodland" and rng.randf()<0.28: biome = "redwood"
-	var recipe := {"kind":"inland","version":4,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
+	var recipe := {"kind":"inland","version":Genome.VERSION,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
 	# Retry within the chosen family, with progressively gentler relief.
 	# A meadow fallback bounds work without publishing an underfilled world.
 	var best_recipe := recipe.duplicate(true)

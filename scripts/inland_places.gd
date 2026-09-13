@@ -11,7 +11,7 @@ static func plan(field: RefCounted) -> Array[Dictionary]:
 		for i in range(90):
 			var p := Vector2(rng.randf_range(-8.5,8.5),rng.randf_range(-7.5,8.5))
 			var h: float = field.original_height(p.x,p.y)
-			if field.wet(p,0.9): continue
+			if not field.has_ground(p,3.0) or field.wet(p,0.9): continue
 			var separated := true
 			for place in result:
 				if p.distance_to(place.center)<5.0: separated = false
@@ -37,7 +37,7 @@ static func quality(field: RefCounted) -> Dictionary:
 	for z in range(-10,11):
 		for x in range(-10,11):
 			var p := Vector2(x,z)
-			if field.wet(p): continue
+			if not field.has_ground(p,0.6) or field.wet(p): continue
 			var slope := Vector2(field.height(x+0.25,z)-field.height(x-0.25,z),field.height(x,z+0.25)-field.height(x,z-0.25)).length()*2.0
 			if slope<=0.65: usable[Vector2i(x,z)] = true
 	var remaining := usable.duplicate()

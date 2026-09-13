@@ -388,6 +388,23 @@ func drop_at(mouse: Vector2) -> void:
 	if busy:
 		pending_drop = true
 		return
+	# The carry portrait has no world position. Project its release onto the
+	# original bank's plane so a missing triangle remains a deliberate drop.
+	if scene._chunk_editor.pointer_in_world(mouse) and not scene._chunk_editor.data.void_faces.is_empty():
+		var hit: Variant = Plane(Vector3.UP,origin_feet.y).intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
+		if hit is Vector3:
+			var p := Vector2(hit.x,hit.z)
+			var data: NativeTerrainData = scene._chunk_editor.data
+			if data.is_void(p):
+				var support: Variant = scene.navigation._ground(hit)
+				if support == null and not scene.navigation.rebuilding and scene.nearest_safe_bank(hit) != null:
+					_end_hold()
+					scene.creature.reset_at(hit+Vector3.UP*0.9)
+					if scene.try_void_fall(true): return
+				elif support != null and scene.navigation.is_safe(support):
+					_end_hold()
+					scene.creature.reset_at(support)
+					return
 	_update_landing(mouse)
 	if landing==null: landing = scene.navigation.nearest_safe(origin_feet)
 	if landing==null: cancel_carry(); return

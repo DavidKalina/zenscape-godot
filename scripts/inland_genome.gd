@@ -1,11 +1,11 @@
 extends RefCounted
 ## Versioned inland genome. Independent feature streams; replayed by NativeTerrainRecipe.
 ## Compositions/archetypes and crest/wall profiles adapted from zenscape/genome.js and landforms.js.
-const VERSION := 4
+const VERSION := 5
 const Previous = preload("res://scripts/inland_genome_v2.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
 const Legacy = preload("res://scripts/inland_genome_v1.gd")
-const COMPOSITIONS := ["mountain","massif","valley","basin","foothills","plateau","meadow","marsh","dunes","tablelands","buttes","desert","monuments","salt-basin","desert-mountains"]
+const COMPOSITIONS := ["mountain","massif","valley","basin","foothills","plateau","meadow","marsh","dunes","tablelands","buttes","desert","monuments","salt-basin","desert-mountains","chasm"]
 const ARCHETYPES := ["ridgeback","cone","range","horn"]
 const LANDFORMS := ["original","twin-summits","sawtooth-ridge","buttressed-canyon","glacial-valley","rolling-uplands","tall-massif","volcanic-crown"]
 const HABITATS := ["alpine","woodland","meadow","wetland","arid","redwood"]
@@ -30,7 +30,7 @@ static func weighted(rng: RandomNumberGenerator,names: Array,weights: Array) -> 
 static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION) -> Dictionary:
 	if version == 1: return Legacy.sample(seed_value,overrides)
 	if version == 2: return Previous.sample(seed_value,overrides)
-	assert(version in [3,4],"Unsupported inland genome version")
+	assert(version in [3,4,5],"Unsupported inland genome version")
 	var rc := stream(seed_value,101)
 	var ra := stream(seed_value,211)
 	var rl := stream(seed_value,307)
@@ -40,6 +40,7 @@ static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION
 	# Preserve the original distribution within mountain country; additional inland families get their own draw.
 	var re := stream(seed_value,853)
 	if re.randf()<0.30: composition = ["meadow","marsh","dunes","tablelands","buttes","desert","monuments","salt-basin","desert-mountains"][re.randi_range(0,8)]
+	if version >= 5 and stream(seed_value,1091).randf()<0.12: composition = "chasm"
 	composition = overrides.get("composition",composition)
 	var archetype := weighted(ra,ARCHETYPES,[0.20,0.15,0.45,0.20])
 	archetype = overrides.get("archetype",archetype)
@@ -55,7 +56,7 @@ static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION
 	var habitat := "alpine"
 	if composition in Desert.KINDS: habitat = "arid"
 	elif composition == "marsh": habitat = "wetland"
-	elif composition in ["meadow","foothills"]: habitat = "meadow" if habitat_roll<0.65 else "woodland"
+	elif composition in ["meadow","foothills","chasm"]: habitat = "meadow" if habitat_roll<0.65 else "woodland"
 	elif composition in ["valley","basin","plateau"] or archetype == "ridgeback": habitat = "woodland"
 	habitat = overrides.get("habitat",habitat)
 	var peaks: Array = []
@@ -79,7 +80,20 @@ static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION
 		wetland.append({"x":center.x,"z":center.y,"radius":spec.z+rw.randf_range(-0.4,0.4),"stretch":rw.randf_range(1.05,1.60),"angle":turn+rw.randf()*PI,"phase":rw.randf()*TAU,"depth":rw.randf_range(0.43,0.56),"level":1.42})
 	g.wetland = wetland
 	g.lake = {"x":rw.randf_range(-1.0,1.0),"z":rw.randf_range(-0.5,0.5),"radius":rw.randf_range(3.8,5.5),"stretch":rw.randf_range(0.7,0.95)}
+	if version >= 5:
+		var gap := stream(seed_value,1103)
+		g.chasm = {"width":gap.randf_range(1.3,1.9),"bend":gap.randf_range(0.3,0.9),"phase":gap.randf()*TAU,"angle":gap.randf_range(-0.25,0.25)}
 	return g
+
+## Signed distance across a continuous, edge-to-edge fissure. Height stays finite
+## for sculpting; terrain topology decides which triangles actually exist.
+static func chasm_distance(g: Dictionary,p: Vector2) -> float:
+	var q := p.rotated(-float(g.chasm.angle))
+	return q.x-sin(q.y*0.2+float(g.chasm.phase))*float(g.chasm.bend)
+
+static func has_ground(g: Dictionary,p: Vector2,margin := 0.0) -> bool:
+	return g.composition != "chasm" or absf(chasm_distance(g,p))>float(g.chasm.width)*0.5+margin
+
 static func channel(g: Dictionary,z: float) -> float:
 	return sin(z*0.23+g.water_phase)*1.4
 static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
@@ -103,7 +117,7 @@ static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 		var toe := 0.32 if g.landform == "glacial-valley" else 0.12
 		var face := 0.12*smoothstep(0.0,toe,u)+0.88*smoothstep(toe,1.0,u)
 		mass = float(g.valley_height)*(1.0-g.wall_relief*(1.0-buttress))*face
-	elif comp in ["meadow","marsh"]:
+	elif comp in ["meadow","marsh","chasm"]:
 		mass = 0.03*(n+1.0)
 		if comp == "meadow":
 			mass += float(g.hill_amp)*(noise.get_noise_2d(q.x*0.5,q.y*0.5)+1.0)*0.4

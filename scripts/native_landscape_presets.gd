@@ -134,7 +134,12 @@ static func dress(data: NativeTerrainData,tree: SceneTree = null) -> void:
 	data.objects_revision += 1
 
 static func _slope(data: NativeTerrainData,p: Vector2) -> float:
-	return Vector2(data.ground_height(p+Vector2(0.25,0))-data.ground_height(p-Vector2(0.25,0)),data.ground_height(p+Vector2(0,0.25))-data.ground_height(p-Vector2(0,0.25))).length()/0.5
+	var samples := []
+	for offset in [Vector2(0.25,0),Vector2(-0.25,0),Vector2(0,0.25),Vector2(0,-0.25)]:
+		var h: Variant = data.ground_height(p+offset)
+		if h == null: return INF
+		samples.append(h)
+	return Vector2(samples[0]-samples[1],samples[2]-samples[3]).length()/0.5
 
 static func _wet(data: NativeTerrainData,p: Vector2) -> bool:
 	for pool: Dictionary in data.ponds:

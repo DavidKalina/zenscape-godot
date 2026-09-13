@@ -41,6 +41,9 @@ func _water_height(x: float,z: float,base: float) -> float:
 			h = lerpf(bowl,h,smoothstep(1.0,1.4,r))
 	return h
 
+func has_ground(p: Vector2,margin := 0.0) -> bool:
+	return Genome.has_ground(genome,p,margin)
+
 func wet(p: Vector2,margin := 0.0) -> bool:
 	var h := height(p.x,p.y)
 	for pool: Dictionary in pools:

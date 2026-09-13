@@ -10,6 +10,8 @@ static func surface(data: NativeTerrainData, pond: Dictionary) -> PackedVector3A
 static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 	var h := PackedFloat32Array()
 	var xy := PackedVector2Array()
+	var missing := PackedByteArray()
+	var has_void := not data.void_faces.is_empty()
 	var edited: bool = data.heights != data._recipe_heights
 	# The unsculpted recipe height at each grid node only depends on the recipe,
 	# so it is sampled once per recipe and kept in doubles. Adding the sculpt
@@ -26,7 +28,9 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 			var pz: float=-14.0+z*CELL
 			var height: float=base[z*W+x]
 			if edited: height+=data._sculpt_delta(Vector2(px,pz))
-			h.append(height)
+			var absent := has_void and data.is_void(Vector2(px,pz))
+			missing.append(1 if absent else 0)
+			h.append(NativeTerrainData.MAX_HEIGHT+1.0 if absent else height)
 			xy.append(Vector2(px,pz))
 	var seed := -1
 	var lowest := INF
@@ -52,6 +56,8 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 			var nz: int=z+direction.y
 			if nx<0 or nz<0 or nx>=W or nz>=W: continue
 			var next:=nz*W+nx
+			# A pond reaching an open cliff drains; it cannot flood empty space.
+			if missing[next]: return {}
 			if wet[next] or h[next]>=pond.level: continue
 			if pond.has("basin"):
 				var radius := Vector2((float(xy[next].x)-pond.x)/pond.basin[0],(float(xy[next].y)-pond.z)/pond.basin[1])

@@ -130,10 +130,15 @@ func release(mouse: Vector2) -> void:
 				pressed = false
 				_wet_hold = false
 				return
+	if scene._chunk_editor.pointer_in_world(mouse) and scene.try_void_fall(true):
+		carrying = false
+		pressed = false
+		_wet_hold = false
+		return
 	var destination: Variant = null
 	if scene._chunk_editor.pointer_in_world(mouse) and not scene._habitat_changed and not scene.navigation.rebuilding:
 		var p: Vector3 = scene.creature.global_position
-		var ground: Variant = scene.habitat.ground_height(Vector2(p.x,p.z))
+		var ground: Variant = scene.habitat.navigation_height(Vector2(p.x,p.z))
 		if ground != null:
 			p.y = ground
 			if scene.navigation.is_safe(p): destination = p

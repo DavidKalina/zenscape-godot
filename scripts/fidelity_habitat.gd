@@ -75,8 +75,8 @@ func ground_height(point: Vector2) -> Variant:
 
 func navigation_height(point: Vector2) -> Variant:
 	var terrain: Variant = ground_height(point)
-	if terrain == null: return null
 	var deck: Dictionary = walkways.at(point)
+	if terrain == null: return float(deck.height)+0.015 if not deck.is_empty() else null
 	return maxf(terrain,float(deck.height)+0.015) if not deck.is_empty() else terrain
 
 func narrow_support(point: Vector3) -> bool:

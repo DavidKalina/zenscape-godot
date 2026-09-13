@@ -82,7 +82,7 @@ func new_diorama() -> void:
 		invite_bigfoot(Vector3(0,0,5))
 		save_current()
 
-func open_crossing_glade() -> void:
+func open_crossing_glade(chasm := false) -> void:
 	if places == null or places.busy or places.holding or not save_current(): return
 	# Regrowth normally saves over its active slot. Keep an ordinary Open-able
 	# world before starting this separate activity, rather than replacing it.
@@ -93,4 +93,4 @@ func open_crossing_glade() -> void:
 	if not saved:
 		_notice.text = "Could not save the current place. Your world is still open."
 		return
-	super.open_crossing_glade()
+	super.open_crossing_glade(chasm)

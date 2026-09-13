@@ -70,6 +70,11 @@ static func _vertex(arrays: Array, id: int) -> Array:
 
 static func _cut(source: ArrayMesh, item: Dictionary) -> ArrayMesh:
 	var arrays := source.surface_get_arrays(0)
+	if arrays[Mesh.ARRAY_INDEX] != null and not arrays[Mesh.ARRAY_INDEX].is_empty():
+		var expanded := SurfaceTool.new()
+		expanded.create_from(source,0)
+		expanded.deindex()
+		arrays = expanded.commit_to_arrays()
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var transform := pose(item)
 	var w: float = item.width/2
@@ -130,6 +135,10 @@ static func _cut(source: ArrayMesh, item: Dictionary) -> ArrayMesh:
 			_emit(surface,inner)
 	var result := surface.commit()
 	result.surface_set_material(0,source.surface_get_material(0))
+	# Preserve separately shaded outer banks when the terrain has a chasm.
+	for i in range(1,source.get_surface_count()):
+		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,source.surface_get_arrays(i))
+		result.surface_set_material(i,source.surface_get_material(i))
 	return result
 
 static func _clip(polygon: Array, plane: Plane, negative: bool) -> Array:

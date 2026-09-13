@@ -107,7 +107,7 @@ func _prepare(discover: bool) -> void:
 				_marker.position = destination+Vector3.UP*0.65
 				_marker.show()
 				scene.creature.notice(destination)
-				scene.brain.reaction.emit("Over there…","A quiet spot across the water")
+				scene.brain.reaction.emit("Over there…","A quiet spot on the other bank")
 				_noticing = 2.5
 		else:
 			var plan := {"points":route,"hops":{}} if not route.is_empty() else {}
@@ -129,7 +129,7 @@ func _valid_spot(point: Vector3) -> bool:
 func _discover(query: RefCounted) -> Variant:
 	var scene: Node = routine.scene
 	var origin: Vector3 = scene.creature.position
-	if not scene.navigation._courses.any(func(course: Dictionary) -> bool: return course.radius<=1.4 and is_finite(course.level)): return null
+	if scene._chunk_editor.data.void_faces.is_empty() and not scene.navigation._courses.any(func(course: Dictionary) -> bool: return course.radius<=1.4 and is_finite(course.level)): return null
 	var best: Variant = null
 	var score := INF
 	# First rank cheap geometric candidates, then test a bounded shortlist for
@@ -146,7 +146,7 @@ func _discover(query: RefCounted) -> Variant:
 	for point: Vector3 in scene.navigation._nodes:
 		if not await query.checkpoint(): return null
 		var distance := origin.distance_to(point)
-		if distance<3.0 or distance>7.0 or not _across_stream(origin,point): continue
+		if distance<3.0 or distance>7.0 or not _across_gap(origin,point): continue
 		var scenery := INF
 		for interest: Dictionary in nearby:
 			scenery = minf(scenery,point.distance_to(interest.position))
@@ -160,7 +160,14 @@ func _discover(query: RefCounted) -> Variant:
 			score = item.score
 	return best
 
-func _across_stream(a: Vector3, b: Vector3) -> bool:
+func _across_gap(a: Vector3, b: Vector3) -> bool:
+	var data: NativeTerrainData = routine.scene._chunk_editor.data
+	if not data.void_faces.is_empty():
+		var genome: Dictionary = data._recipe.inland.genome
+		var shape = preload("res://scripts/inland_genome.gd")
+		var da: float = shape.chasm_distance(genome,Vector2(a.x,a.z))
+		var db: float = shape.chasm_distance(genome,Vector2(b.x,b.z))
+		if da*db<0.0 and absf(db)>float(genome.chasm.width)*0.5+1.75: return true
 	for course: Dictionary in routine.scene.navigation._courses:
 		if course.radius>1.4 or not is_finite(course.level): continue
 		var bank := Vector2(b.x,b.z)

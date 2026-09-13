@@ -39,6 +39,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		var angle := rng.randf()*TAU
 		var size := rng.randf_range(0.6,1.05)
 		var pick := rng.randf()
+		if data.ground_height(p) == null: continue
 		var h: float = data.ground_height(p)
 		if _is_wet(p) or _is_salt(p) or _clearing(p): continue
 		if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.85: continue
@@ -62,7 +63,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	for i in range(25 if genome.habitat == "arid" else 620 if genome.habitat == "wetland" else 250):
 		if i%16 == 0: await work.checkpoint()
 		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
-		if _is_salt(p): continue
+		if data.ground_height(p) == null or _is_salt(p): continue
 		if (_is_wet(p) and not (genome.habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
 		var kind: String = "reeds" if genome.habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if genome.habitat == "meadow" else "shrub" if genome.habitat == "arid" else "grass_tuft"
@@ -79,6 +80,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	data.discard_cache()
 
 func _is_wet(p: Vector2) -> bool:
+	if data.ground_height(p) == null: return true
 	if int(genome.version)>=4: return data._recipe.inland.sampler.wet(p)
 	for route in data.streams:
 		for point in route.pts:

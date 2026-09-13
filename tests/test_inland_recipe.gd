@@ -5,7 +5,7 @@ func _initialize() -> void:
 	for kind in genome.COMPOSITIONS:
 		for seed_value in [7,37,901]:
 			var sampled: Dictionary = genome.sample(seed_value,{"composition":kind})
-			var settings := {"kind":"inland","version":3,"seed":seed_value,"composition":kind,"archetype":sampled.archetype,"landform":sampled.landform,"biome":sampled.habitat,"relief":1.8,"breadth":1.0}
+			var settings := {"kind":"inland","version":5 if kind == "chasm" else 3,"seed":seed_value,"composition":kind,"archetype":sampled.archetype,"landform":sampled.landform,"biome":sampled.habitat,"relief":1.8,"breadth":1.0}
 			assert(NativeTerrainRecipe.valid(settings))
 			var decoded: Variant = NativeTerrainRecipe.decode(JSON.parse_string(JSON.stringify(NativeTerrainRecipe.encode(settings))))
 			assert(decoded == settings,"Recipe round trip")
