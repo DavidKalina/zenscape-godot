@@ -115,6 +115,7 @@ func cancel() -> void:
 
 func invalidate() -> void:
 	if _flushing: return
+	owner_scene.habitat.walkways.disabled.clear()
 	cancel()
 	for id in _active:
 		for part in _parts.get(id,[]):
@@ -258,6 +259,12 @@ func promote(id: int) -> Node3D:
 		_disable_source_collision(id)
 	node.object_id = id
 	_active[id] = node
+	if item.asset == "log":
+		owner_scene.habitat.walkways.disabled[id] = true
+		# Small carryable logs never supplied footing. Invalidating their world
+		# here would reject the very interaction that just promoted the prop.
+		if owner_scene.habitat.walkways.surfaces.any(func(surface: Dictionary) -> bool: return int(surface.id)==id):
+			owner_scene._geometry_changed()
 	var fire_materials: Array[Material] = []
 	for part in parts: fire_materials.append(part.material)
 	node.set_meta("fire_materials",fire_materials)
@@ -418,6 +425,10 @@ func _store_active_poses() -> void:
 	invalidate()
 
 func dynamic_clearance(feet: Vector3) -> bool:
+	# A grabbed/thrown log no longer supports its saved position. Its next
+	# committed placement can qualify again after the normal habitat rebuild.
+	var deck: Dictionary = owner_scene.habitat.walkways.at(Vector2(feet.x,feet.z))
+	if not deck.is_empty() and _active.has(int(deck.id)): return false
 	for body in loose_props.bodies:
 		if body.held or body.parked: continue
 		var box: AABB = body.visual.global_transform*body.visual.mesh.get_aabb()

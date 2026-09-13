@@ -14,8 +14,9 @@ func run() -> void:
 	var folder := "/private/tmp/home-test-"+str(Time.get_ticks_usec())
 	scene.library_path = folder
 	scene.recent_file = folder+"/recent.cfg"
+	root.size = Vector2i(1440,960)
 	root.add_child(scene)
-	await process_frame
+	while not scene.title_loaded: await process_frame
 	scene.new_diorama()
 	scene.set_process(false)
 	var editor: NativeChunkEditor = scene._chunk_editor

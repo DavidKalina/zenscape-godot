@@ -2,7 +2,7 @@ class_name CreatureActor
 extends Node3D
 ## A small interaction contract shared by animated inhabitants. Asset clips own
 ## performance; this node owns carrying, safe placement and attention.
-enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUMBLING, SWIMMING, SHAKING }
+enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUMBLING, SWIMMING, SHAKING, HOPPING }
 signal state_changed(value: State)
 signal landed()
 signal footstep(point: Vector3)
@@ -18,6 +18,11 @@ var water_exit := Vector3.ZERO
 var _paddle_time := 0.0
 var hand_targets := {}
 var environment_pose := ""
+var balancing := false
+var _hop_from := Vector3.ZERO
+var _hop_to := Vector3.ZERO
+var _hop_duration := 0.7
+
 var environment_motion := {}
 var tree_peek = preload("res://scripts/creature_tree_peek.gd").new()
 var action_tempo := 1.0
@@ -86,6 +91,16 @@ func gait_step_count(clip := "Walk") -> int:
 ## stride while this actor owns facing, locomotion and its latest safe feet.
 func can_roam() -> bool:
 	return player != null and state in [State.IDLE,State.ALERT,State.WALKING]
+
+func begin_hop(destination: Vector3) -> bool:
+	if not can_roam() or not destination.is_finite(): return false
+	_hop_from = global_position
+	_hop_to = destination
+	global_rotation.y = atan2(destination.x-position.x,destination.z-position.z)
+	_standing_basis = global_basis
+	_state(State.HOPPING)
+	_play("Airborne")
+	return true
 
 ## True means this waypoint was reached; keep the stride continuous until the
 ## controller calls stop_walking at the final destination. False means progressing
@@ -541,7 +556,18 @@ func advance(delta: float) -> void:
 		_state(State.IDLE)
 		_play("Idle")
 		action_finished.emit(finished,false)
-	if state == State.WIND:
+	if state == State.HOPPING:
+		var progress := clampf(_age/_hop_duration,0.0,1.0)
+		global_position = preload("res://scripts/stepping_route.gd").arc_point(_hop_from,_hop_to,progress)
+		if progress>=1.0:
+			global_position = _hop_to
+			_safe_position = _hop_to
+			land_position = _hop_to
+			_touchdown = true
+			_state(State.LANDING)
+			_play("Land")
+			landed.emit()
+	elif state == State.WIND:
 		global_transform = wind_body.feet_transform()
 	elif state == State.RECOVERING:
 		var progress := clampf(_age/1.15,0.0,1.0)
@@ -576,6 +602,7 @@ func advance(delta: float) -> void:
 	var walk_before := player.current_animation_position if state == State.WALKING else -1.0
 	player.advance(dt)
 	_pose_environment()
+	if balancing and state == State.WALKING: _pose_balance()
 	if walk_before >= 0.0 and state == State.WALKING:
 		var length := player.current_animation_length
 		var after := walk_before+dt*player.speed_scale
@@ -654,6 +681,16 @@ func _bend_leg(bone: int, angle: float) -> void:
 	skeleton.set_bone_pose_rotation(bone,skeleton.get_bone_pose_rotation(bone)*Quaternion(Vector3.RIGHT,angle))
 
 ## Additive torso performance on the current authored pose, never the root/feet.
+func _pose_balance() -> void:
+	# Keep root/feet on the checked route; the upper body supplies the wobble.
+	var spine := skeleton.find_bone("Spine")
+	if spine>=0:
+		HAND_REACH._rotate(skeleton,spine,Vector3.UP,Basis(Vector3.FORWARD,sin(_age*3.2)*0.055)*Vector3.UP,1.0)
+	for side in ["R","L"]:
+		if hand_targets.has(side): continue
+		var sign := -1.0 if side=="R" else 1.0
+		HAND_REACH.apply(skeleton,to_global(Vector3(sign*1.35,1.65,0.15)),0.85,side,to_global(Vector3(sign,1.5,-0.2)))
+
 func _pose_environment() -> void:
 	if environment_pose.is_empty() or state != State.ACTION: return
 	var spine := skeleton.find_bone("Spine")

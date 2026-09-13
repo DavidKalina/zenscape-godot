@@ -218,8 +218,11 @@ func _advance_threaded(budget_usec: int) -> bool:
 
 func _ground(point: Vector3) -> Variant:
 	if _data == null or not point.is_finite(): return null
-	var height: Variant = _data.ground_height(Vector2(point.x,point.z))
+	var height: Variant = _height(Vector2(point.x,point.z))
 	return Vector3(point.x,height,point.z) if height != null else null
+
+func _height(point: Vector2) -> Variant:
+	return _data.navigation_height(point) if _data.has_method("navigation_height") else _data.ground_height(point)
 
 func _wet(point: Vector3) -> bool:
 	var p := Vector2(point.x,point.z)
@@ -240,9 +243,12 @@ func is_safe(point: Vector3) -> bool:
 
 func _safe_grounded(point: Vector3) -> bool:
 	if absf(point.x) > 14.0-RADIUS or absf(point.z) > 14.0-RADIUS: return false
-	for offset in [Vector2(SLOPE_PROBE,0),Vector2(-SLOPE_PROBE,0),Vector2(0,SLOPE_PROBE),Vector2(0,-SLOPE_PROBE)]:
-		var height: Variant = _data.ground_height(Vector2(point.x,point.z)+offset)
-		if height == null or absf(height-point.y) > _slope_rise: return false
+	# A log supplies its own checked, narrower balancing footprint. Applying
+	# the ordinary terrain stencil again would require two overlapping feet.
+	if not _data.has_method("narrow_support") or not _data.narrow_support(point):
+		for offset in [Vector2(SLOPE_PROBE,0),Vector2(-SLOPE_PROBE,0),Vector2(0,SLOPE_PROBE),Vector2(0,-SLOPE_PROBE)]:
+			var height: Variant = _height(Vector2(point.x,point.z)+offset)
+			if height == null or absf(height-point.y) > _slope_rise: return false
 	if _wet(point): return false
 	if dynamic_clearance.is_valid() and not dynamic_clearance.call(point): return false
 	return not _clearance.is_valid() or bool(_clearance.call(point))

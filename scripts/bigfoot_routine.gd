@@ -3,6 +3,7 @@ extends Node
 ## supplies curiosity and wandering between activities.
 var cave = preload("res://scripts/bigfoot_cave.gd").new()
 var habits = preload("res://scripts/bigfoot_habits.gd").new()
+var crossing_wish = preload("res://scripts/bigfoot_crossing_wish.gd").new()
 var foraging = preload("res://scripts/bigfoot_lair_foraging.gd").new()
 var living = preload("res://scripts/bigfoot_living_world.gd").new()
 var _tended := false
@@ -17,6 +18,8 @@ var _choice := 0
 var _elapsed := 0.0
 var _approach_path := PackedVector3Array()
 var _approach_index := 0
+var _approach_hops := {}
+var _hop_pending := false
 var _held: Node3D
 var _catch_payload := {}
 var _released := false
@@ -37,6 +40,8 @@ const ORDER := ["stone","tree","sit","fish","sleep"]
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
 	habits.setup(scene)
+	add_child(crossing_wish)
+	crossing_wish.setup(self)
 	cave.setup(scene)
 	foraging.setup(self)
 	living.setup(self)
@@ -64,8 +69,26 @@ func advance(delta: float) -> bool:
 	if not active.is_empty():
 		_elapsed += dt
 		if _phase == "approach":
+			if _approach_hops.has(_approach_index):
+				var actor: CreatureActor = scene.creature
+				var from: Vector3 = _approach_path[_approach_index-1]
+				var to: Vector3 = _approach_path[_approach_index]
+				if not preload("res://scripts/stepping_route.gd").hop_safe(scene.navigation,from,to):
+					cancel("stepping stone changed")
+					return false
+				if _hop_pending:
+					if actor.state in [CreatureActor.State.HOPPING,CreatureActor.State.LANDING]: return true
+					if not actor.can_roam() or actor.position.distance_to(to)>0.05:
+						cancel("hop interrupted")
+						return false
+					_hop_pending = false
+					_approach_index += 1
+				else:
+					_hop_pending = actor.begin_hop(to)
+					return _hop_pending
 			while _approach_index < _approach_path.size() and scene.creature.position.distance_squared_to(_approach_path[_approach_index])<0.000001:
 				_approach_index += 1
+			if _approach_hops.has(_approach_index): return true
 			if not _target_exists() or _elapsed > 30.0:
 				cancel("target changed or approach timeout")
 			elif _approach_index >= _approach_path.size():
@@ -75,6 +98,7 @@ func advance(delta: float) -> bool:
 				if not scene.navigation.motion_safe(scene.creature.position,destination,scene.creature.walking_speed(0.85)*dt):
 					scene.navigation.reject_segment(_approach_path[maxi(0,_approach_index-1)],destination)
 					_approach_path = scene.navigation.path(scene.creature.position,_approach_path[-1])
+					_approach_hops.clear()
 					_approach_index = 0
 					if _approach_path.is_empty(): cancel("no safe approach after terrain edge rejection")
 				elif scene.creature.walk_step(destination,0.85,dt): _approach_index += 1
@@ -91,6 +115,7 @@ func advance(delta: float) -> bool:
 		if _phase == "perform":
 			_effects(dt)
 			return true
+	if crossing_wish.advance(dt): return true
 	if _clock < _next_action or not scene.creature.can_roam(): return false
 	if not scene.brain.ready_for_activity(dt): return false
 	if living.enabled:
@@ -108,6 +133,21 @@ func request(kind: String, chosen: Dictionary = {}, invited := false) -> bool:
 	if kind in ["stone","tree"] and scene.has_method("resident_activity_owned"): return false
 	if not active.is_empty() or not scene.creature.can_roam(): return false
 	if kind in ["sit","sleep","hibernate"]:
+		if chosen.has("rest_point"):
+			var point: Vector3 = chosen.rest_point
+			if not _rest_stance(point): return false
+			var route: PackedVector3Array = chosen.get("stepping",{}).get("points",PackedVector3Array())
+			if route.is_empty(): route = scene.navigation.path(scene.creature.position,point)
+			if route.is_empty(): return false
+			_approach_hops = chosen.get("stepping",{}).get("hops",{}).duplicate()
+			active = kind
+			target = {}
+			scene.brain.reset_behavior()
+			_approach_path = route
+			_approach_index = 0
+			_phase = "approach"
+			_elapsed = 0.0
+			return true
 		var spots: Array = [scene.creature.position]
 		for point in scene.navigation._nodes:
 			if point.distance_to(scene.creature.position)<8.0: spots.append(point)
@@ -415,7 +455,9 @@ func _action_finished(clip: String, cancelled: bool) -> void:
 			if (_catch_payload.get("release",Callable()) as Callable).is_valid(): _catch_payload.release.call()
 			_held = null
 			_catch_payload = {}
-		if active in ["sit","sleep","hibernate"]: habits.rested(scene.creature.position)
+		if active in ["sit","sleep","hibernate"]:
+			habits.rested(scene.creature.position)
+			crossing_wish.rested(scene.creature.position)
 		history.append(active)
 		_finish()
 
@@ -428,6 +470,12 @@ func cancel(reason := "world edit or explicit cancellation") -> void:
 	_finish()
 
 func _finish() -> void:
+	if scene.creature.state == CreatureActor.State.HOPPING or (_hop_pending and scene.creature.state == CreatureActor.State.STUMBLING):
+		var safe: Variant = scene.navigation.nearest_safe(scene.creature._safe_position)
+		if safe != null: scene.creature.reset_at(safe)
+	_hop_pending = false
+	_approach_hops.clear()
+	if crossing_wish.travelling or crossing_wish._planning or not crossing_wish._planned.is_empty(): crossing_wish.interrupted()
 	if active == "forage" and foraging.carrying(): foraging.cancel()
 	if active in ["sit","sleep","hibernate"] and _phase == "perform": scene.creature.basis = _rest_upright
 	if active == "fish" and not target.is_empty(): scene.fish.reserve_target(target.id,false)

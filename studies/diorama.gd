@@ -239,7 +239,12 @@ func _make_shell() -> void:
 	_world_menu.get_popup().add_item("See both stories",100)
 	_world_menu.get_popup().add_item("Look through lair windows",101)
 	_world_menu.get_popup().add_item("Find cave entrance",102)
+	_world_menu.get_popup().add_separator()
+	_world_menu.get_popup().add_item("New crossing glade",110)
 	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
+		if id == 110:
+			open_crossing_glade()
+			return
 		if id >= 100:
 			if lair == null: return
 			match id:
@@ -442,6 +447,28 @@ func new_diorama() -> void:
 	_frame_diorama()
 	save_current()
 	_notice.text = "Your blank diorama · Choose Landscapes for a curated starting point, or sculpt your own."
+
+func open_crossing_glade() -> void:
+	var previous := _chunk_editor.save_path
+	new_diorama()
+	if _chunk_editor.save_path == previous: return
+	preload("res://scripts/crossing_glade.gd").populate(_chunk_editor.data)
+	_chunk_editor.refresh()
+	_refresh_habitat()
+	invite_bigfoot(Vector3(-3,0,2))
+	apply_scene_mood("Meadow morning")
+	environment_life.cancel()
+	environment_life.arrival_pending = false
+	routine.crossing_wish._next = routine._clock+3.0
+	routine._next_action = routine._clock+12.0
+	target = Vector3(0,0.5,0)
+	distance = 15.0
+	yaw = 0.0
+	polar = 0.85
+	_update_camera()
+	_chunk_editor.select_object(-1)
+	save_current()
+	_notice.text = "He has his eye on the other bank. Move the long log across the stream, or shape a way over."
 
 func continue_world() -> void:
 	if _has_world: close_menu()

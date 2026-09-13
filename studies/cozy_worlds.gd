@@ -81,3 +81,16 @@ func new_diorama() -> void:
 		_refresh_habitat()
 		invite_bigfoot(Vector3(0,0,5))
 		save_current()
+
+func open_crossing_glade() -> void:
+	if places == null or places.busy or places.holding or not save_current(): return
+	# Regrowth normally saves over its active slot. Keep an ordinary Open-able
+	# world before starting this separate activity, rather than replacing it.
+	var previous := _chunk_editor.save_path
+	_chunk_editor.save_path = library_path.path_join("Before-crossing-"+str(Time.get_unix_time_from_system())+".json")
+	var saved := _chunk_editor.save_garden()
+	_chunk_editor.save_path = previous
+	if not saved:
+		_notice.text = "Could not save the current place. Your world is still open."
+		return
+	super.open_crossing_glade()

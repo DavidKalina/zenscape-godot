@@ -181,6 +181,8 @@ func _process(delta: float) -> void:
 		if fish != null: fish.advance(delta)
 		if dead_wood != null: dead_wood.advance(delta)
 		creature.wet_coat.rain = 0.0 if routine.cave.sheltered() else _precipitation.state.x
+		var deck: Dictionary = habitat.walkways.at(Vector2(creature.position.x,creature.position.z))
+		creature.balancing = not deck.is_empty() and creature.position.y>=float(deck.height)
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
 		_reaction.visible = _reaction_time > 0.0
@@ -289,6 +291,7 @@ func capture_life_state() -> Dictionary:
 	return routine.habits.capture()
 
 func restore_life_state(state: Dictionary) -> void:
+	routine.crossing_wish.reset()
 	if environment_life != null: environment_life.world_changed()
 	routine.cancel("garden opened")
 	_refresh_habitat()

@@ -5,6 +5,7 @@ const Ground = preload("res://scripts/reference_ground.gd")
 var ground = Ground.new()
 var native_data: NativeTerrainData
 var _prop_bounds := {}
+var walkways = preload("res://scripts/log_walkways.gd").new()
 var ponds: Array[Dictionary] = []
 var streams: Array[Dictionary] = []
 var objects: Array[Dictionary] = []
@@ -26,6 +27,7 @@ func setup(geometry: Node3D, data: NativeTerrainData = null) -> void:
 	native_data = data
 	waters.clear()
 	solids.clear()
+	walkways.surfaces.clear()
 	cave_poses.clear()
 	if data != null:
 		for item: Dictionary in data.tunnels:
@@ -71,6 +73,16 @@ func _add_solid(pose: Transform3D, mesh: Mesh, id: String) -> void:
 func ground_height(point: Vector2) -> Variant:
 	return native_data.ground_height(point) if native_data != null else ground.height_at(point.x,point.y)
 
+func navigation_height(point: Vector2) -> Variant:
+	var terrain: Variant = ground_height(point)
+	if terrain == null: return null
+	var deck: Dictionary = walkways.at(point)
+	return maxf(terrain,float(deck.height)+0.015) if not deck.is_empty() else terrain
+
+func narrow_support(point: Vector3) -> bool:
+	var deck: Dictionary = walkways.at(Vector2(point.x,point.z))
+	return not deck.is_empty() and absf(point.y-float(deck.height)-0.015)<0.02
+
 func pond_surface(pond: Dictionary) -> PackedVector3Array:
 	return native_data.pond_surface(pond)
 
@@ -96,10 +108,12 @@ func _add_authored(data: NativeTerrainData) -> void:
 		var basis := NativeObjectPose.decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP,float(item.angle)).scaled(Vector3.ONE*float(item.scale))
 		if item.asset == "rock": location.y += 0.24*float(item.scale)
 		var box: AABB = Transform3D(basis,location)*_prop_bounds[item.asset]
+		if item.asset == "log": walkways.add(int(item.id),Transform3D(basis,location),box,ground_height)
 		solids.append(trunk_core(box) if item.asset in PARTING_TREES else box)
 		interests[-1]["bounds"] = box
 
 func clear_at(point: Vector3, ignore_caves := false) -> bool:
+	var deck: Dictionary = walkways.at(Vector2(point.x,point.z))
 	if not ignore_caves:
 		for cave_pose in cave_poses:
 			var local: Vector3 = cave_pose.affine_inverse()*(point+Vector3.UP)
@@ -109,6 +123,13 @@ func clear_at(point: Vector3, ignore_caves := false) -> bool:
 			var height: Variant = water.height_at(point.x+offset.x,point.z+offset.y)
 			if height != null and height >= point.y-0.15: return false
 	for box: AABB in _solid_cells.get(Vector2i(floori(point.x/SOLID_CELL),floori(point.z/SOLID_CELL)),[]):
+		if not deck.is_empty() and deck.bounds == box and point.y>=float(deck.height): continue
+		var low_step := false
+		for surface in walkways.surfaces:
+			if surface.bounds == box and walkways.low_edge(surface,point):
+				low_step = true
+				break
+		if low_step: continue
 		if point.y+2.8 < box.position.y or point.y > box.end.y: continue
 		var footprint := Rect2(Vector2(box.position.x,box.position.z),Vector2(box.size.x,box.size.z)).grow(0.5)
 		if footprint.has_point(Vector2(point.x,point.z)): return false
@@ -133,4 +154,6 @@ func navigation_snapshot() -> RefCounted:
 	for water in waters: result.waters.append(water.query_snapshot())
 	result.cave_poses = cave_poses.duplicate()
 	result._solid_cells = _solid_cells.duplicate(true)
+	result.walkways.surfaces.assign(walkways.surfaces.duplicate(true))
+	result.walkways.disabled = walkways.disabled.duplicate()
 	return result

@@ -11,6 +11,21 @@ var writing := false
 var _cover: Array[AABB] = []
 var shelter = preload("res://scripts/bigfoot_shelter.gd").new()
 var sheltered_home := false
+var outing: Variant = null
+var outing_visits := 0
+
+func preferred_outing() -> Variant:
+	if outing == null: return null
+	var ground: Variant = scene.navigation._ground(outing)
+	if ground == null or ground.distance_to(outing)>0.18 or not scene.routine._rest_stance(ground):
+		outing = null
+		outing_visits = 0
+	return outing
+
+func remember_outing(point: Vector3) -> void:
+	if outing == null or outing.distance_to(point)>0.2: outing_visits = 0
+	outing = point
+	outing_visits = mini(outing_visits+1,1000000)
 
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
@@ -125,11 +140,17 @@ func tend(point: Vector3, normal: Vector3, yaw: float) -> void:
 	writing = false
 
 func capture() -> Dictionary:
-	return {"version":2,"sheltered_home":sheltered_home,"home":[] if home == null else [home.x,home.y,home.z],"visits":visits,"stage":stage,"bed":bed.duplicate(true),"avoided":avoided.map(func(p: Vector2) -> Array: return [p.x,p.y])}
+	return {"version":3,"outing":[] if outing == null else [outing.x,outing.y,outing.z],"outing_visits":outing_visits,"sheltered_home":sheltered_home,"home":[] if home == null else [home.x,home.y,home.z],"visits":visits,"stage":stage,"bed":bed.duplicate(true),"avoided":avoided.map(func(p: Vector2) -> Array: return [p.x,p.y])}
 
 static func valid(value: Variant) -> bool:
-	if not value is Dictionary or (value.get("version") != 1 and value.get("version") != 2): return false
-	if value.version == 2 and not value.get("sheltered_home") is bool: return false
+	if not value is Dictionary or (value.get("version") != 1 and value.get("version") != 2 and value.get("version") != 3): return false
+	if value.version >= 2 and not value.get("sheltered_home") is bool: return false
+	if value.version == 3:
+		if not value.get("outing") is Array or value.outing.size() not in [0,3]: return false
+		for number in value.outing:
+			if not GardenData._number(number,-1000,1000): return false
+		if not GardenData._integer(value.get("outing_visits")) or not GardenData._number(value.outing_visits,0,1000000): return false
+		if value.outing.is_empty() != (value.outing_visits==0): return false
 	if not value.get("home") is Array or value.home.size() not in [0,3]: return false
 	for number in value.home:
 		if not GardenData._number(number,-1000,1000): return false
@@ -151,6 +172,8 @@ static func valid(value: Variant) -> bool:
 	return true
 
 func restore(value: Dictionary) -> void:
+	outing = null
+	outing_visits = 0
 	home = null
 	sheltered_home = false
 	visits = 0
@@ -158,6 +181,9 @@ func restore(value: Dictionary) -> void:
 	bed = {}
 	avoided.clear()
 	if value.is_empty(): return
+	if value.get("version",1)>=3 and not value.outing.is_empty():
+		outing = Vector3(value.outing[0],value.outing[1],value.outing[2])
+		outing_visits = int(value.outing_visits)
 	if not value.home.is_empty(): home = Vector3(value.home[0],value.home[1],value.home[2])
 	sheltered_home = bool(value.get("sheltered_home",false))
 	visits = int(value.visits)
@@ -166,3 +192,4 @@ func restore(value: Dictionary) -> void:
 	for point in value.avoided: avoided.append(Vector2(point[0],point[1]))
 	world_changed()
 	preferred()
+	preferred_outing()

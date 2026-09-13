@@ -30,8 +30,7 @@ func send(center: Vector3, direction := Vector3.ZERO) -> void:
 	_pending.append({"center":center,"direction":direction.normalized()})
 
 func ground(point: Vector3) -> Variant:
-	var height: Variant = scene.habitat.ground_height(Vector2(point.x,point.z))
-	return Vector3(point.x,height,point.z) if height != null else null
+	return scene.navigation._ground(point)
 
 func safe_ground(point: Vector3) -> Variant:
 	return scene.navigation.nearest_safe(point)

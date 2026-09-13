@@ -22,6 +22,11 @@ Character selection remains deferred. The original lightweight study is still
 available by running `studies/cozy_flow_prototype.tscn` with F6; its
 [prototype notes](docs/cozy-flow/NOTES.md) describe that session-only version.
 
+**World → New crossing glade** opens a small stream-side activity. Move the long
+log across the water or sculpt stepping stones so Bigfoot can reach the quiet
+bank. He balances or hops across, rests, and remembers the place for later visits.
+See [crossing glade](docs/crossing-glade/README.md) for controls and validation.
+
 ## Create a diorama
 
 Launch **`run-diorama.command`** to enter the inhabited
