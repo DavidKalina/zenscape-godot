@@ -29,6 +29,8 @@ Run focused headless checks with:
 python3 tools/check_bigfoot_living_regressions.py --tests test_chasm_terrain.gd --tests test_creature_void_fall.gd --output /private/tmp/chasm-focused
 ```
 
-The full headless suite is attempted through the same tool without `--tests`. Headless cannot verify GPU readback or MultiMesh rendering; those checks remain unverified where the dummy renderer prevents them. Detailed results, earlier completed native checks, and the interrupted graphical-suite comparison are recorded in `validation.json`.
+The full headless suite is attempted through the same tool without `--tests`. Headless cannot verify GPU readback or MultiMesh rendering; those checks remain unverified where the dummy renderer prevents them. Detailed results, earlier completed native checks, and the interrupted graphical-suite comparison are recorded in [validation.json](validation.json).
+
+Final focused run: **6/6 pass**, with the sandbox’s known macOS certificate diagnostic retained. The full bounded headless attempt covered **240 tests: 150 passed with that diagnostic, 50 failed and 40 timed out**. These broader failures and renderer limitations are not a clean full-suite validation. The earlier native run completed 74 tests with no newly failing test relative to the previous native run before the headless-only instruction was discovered.
 
 Only when a graphical capture is explicitly requested, run `tests/test_bigfoot_chasm.gd` with native rendering and `-- --capture`; it writes `/private/tmp/chasm-crossing.png`, `/private/tmp/chasm-fall.png` and `/private/tmp/chasm-glade.png`. Captures are deliberately not versioned.

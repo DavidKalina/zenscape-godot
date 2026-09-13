@@ -137,7 +137,8 @@ static func _cut(source: ArrayMesh, item: Dictionary) -> ArrayMesh:
 	result.surface_set_material(0,source.surface_get_material(0))
 	# Preserve separately shaded outer banks when the terrain has a chasm.
 	for i in range(1,source.get_surface_count()):
-		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,source.surface_get_arrays(i))
+		var flags := source.surface_get_format(i) & (Mesh.ARRAY_FORMAT_CUSTOM_MASK << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,source.surface_get_arrays(i),[],{},flags)
 		result.surface_set_material(i,source.surface_get_material(i))
 	return result
 
