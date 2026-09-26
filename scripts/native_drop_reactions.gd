@@ -33,6 +33,7 @@ const REACTIONS := {
 	"fern":"sprout",
 	"flower":"sprout",
 	"broadleaf":"sprout",
+	"joshua":"sprout",
 	"shrub":"sprout",
 	"reeds":"sprout",
 	"bank_grass":"sprout",

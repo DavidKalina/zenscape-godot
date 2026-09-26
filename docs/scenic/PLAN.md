@@ -93,6 +93,11 @@ Next up.
    - Score candidates on silhouette drama, a focal point, water, palette harmony and composition from the default camera.
 2. **Erosion plus ridged, domain-warped noise** in the native C++ terrain kernels (`native/terrain_kernels`). Today there is one noise octave and no erosion.
 3. **Seeded tree and rock variants.** `layered_tree.gd` has no seed, the catalog has 22 fixed assets, and each habitat cycles its props with `i%4`.
+   - **Blender trees, in progress on `feature/hero-trees`.** Scripts in `tools/blender_trees/` (plus `tools/build_hero_oak.py`) build faceted trees in Blender and export them to `assets/models/`. Run one with `blender -b --factory-startup --python <script>`.
+   - `scripts/hero_trees.gd` swaps the geometry behind the existing catalog parts and keeps each part's material, wind and tint. The oak replaces the broadleaf and the redwood replaces the redwood.
+   - Pines grow as a six-variant spruce family. `garden_instance_samples.gd` picks the variant per tree with a stable weighted hash.
+   - Arid worlds plant Joshua trees (a new `joshua` asset) for about half of their cactus slots.
+   - `--classic-trees` restores the source meshes for comparison. Not yet checked on screen.
 4. **Blend two or three biomes per world** from moisture, altitude and slope direction, instead of one habitat string. Geology colours should come from the palette. The desert band colours are hard-coded in the shader today.
 5. **Curated palette families.** Start from the landscape experiment's chalk, copper, moss and lavender (on branch `wip/parked-2026-09-26`).
 6. **Weather and seasons that change while you watch.**

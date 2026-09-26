@@ -53,7 +53,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		var kind: String = "tree"
 		if genome.habitat == "woodland": kind = "layered_tree" if pick<0.15 else "broadleaf" if pick<0.6 else "tree"
 		elif genome.habitat == "redwood": kind = "redwood"
-		elif genome.habitat == "arid": kind = "cactus"
+		elif genome.habitat == "arid": kind = "joshua" if pick<0.55 else "cactus"
 		elif genome.habitat == "wetland": kind = "reeds"
 		if data.place(kind,p,angle,size)>=0:
 			planted += 1

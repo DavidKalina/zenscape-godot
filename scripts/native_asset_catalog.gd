@@ -3,6 +3,7 @@ extends RefCounted
 ## Compound placeable assets assembled from the reference's original meshes.
 const PARTS := {
 	"cactus":["desert-cactus"],
+	"joshua":["joshua-bark","joshua-thatch","joshua-blades"],
 	"layered_tree":["layered-trunk","layered-canopies"],
 	"redwood":["redwood-trunk","redwood-canopies"],
 	"fern":["redwood-fern"],
@@ -34,7 +35,7 @@ static var _pivots := {}
 static func part_pose(key: String, original: Node3D, mesh: Mesh) -> Transform3D:
 	if STEM_SCALE.has(key):
 		return Transform3D(Basis.from_scale(Vector3(1.0,STEM_SCALE[key],1.0)),Vector3.ZERO)
-	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-"):
+	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-") or original.name.begins_with("joshua-"):
 		return Transform3D.IDENTITY
 	var pose := Transform3D(original.basis,Vector3.ZERO)
 	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
@@ -69,6 +70,12 @@ static func source_node(source: Node3D, node_name: String) -> Node3D:
 		cactus.mesh.surface_set_material(0,material)
 		source.add_child(cactus)
 		return cactus
+	if node_name.begins_with("joshua-"):
+		var joshua := MeshInstance3D.new()
+		joshua.name = node_name
+		joshua.mesh = preload("res://scripts/hero_trees.gd").joshua_mesh(node_name)
+		source.add_child(joshua)
+		return joshua
 	if node_name.begins_with("layered-"):
 		var tree := preload("res://scripts/layered_tree.gd").new()
 		tree._ready()
