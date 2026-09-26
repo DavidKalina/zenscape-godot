@@ -13,6 +13,20 @@ explicit positive worker counts use the worker pipeline. The compiler disables
 floating-point contraction to retain the reference's
 operation ordering. Test exact output on each new compiler/architecture.
 
+## Terrain erosion
+
+`erode` builds inland genome version 7 terrain: ridged, domain-warped detail on
+slopes, then stream-power erosion down a drainage tree with sediment settling
+where the flow slackens. It runs on a 41x41 grid and returns a height delta.
+`scripts/terrain_erosion.gd` samples the grid, calls the kernel and caches the
+result; its `erode_reference` is an exact GDScript mirror, so an unbuilt
+checkout, or a stale library without `erode`, grows the same world. Unlike the
+shading kernel this output is saved-world state: both sides use only
+`+ - * / sqrt floor` on doubles and 64-bit integer hashing, and any change to
+one must be made to the other. Check with
+`tools/probe_terrain_erosion.gd -- 400 --reference 400`, which must report 0
+mismatches. The kernel takes under 1 ms per world; the mirror takes about 70 ms.
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the

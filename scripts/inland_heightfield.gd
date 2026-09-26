@@ -2,17 +2,24 @@ extends RefCounted
 ## One continuous surface for mesh, habitat placement, and native water flooding.
 const Genome = preload("res://scripts/inland_genome.gd")
 const Places = preload("res://scripts/inland_places.gd")
+const Erosion = preload("res://scripts/terrain_erosion.gd")
 var places: Array[Dictionary] = []
 var genome: Dictionary
 var pools: Array
 var courses: RefCounted
 var noise := FastNoiseLite.new()
-func _init(g: Dictionary,ponds: Array,water_plan: RefCounted) -> void:
+## Version 7 erosion and ridged detail (scripts/terrain_erosion.gd); empty
+## for older versions, uneroded families and preview fields.
+var erosion := PackedFloat64Array()
+## A preview skips erosion. The generator scores candidates on previews and
+## only the kept world is ever eroded, when its terrain is built.
+func _init(g: Dictionary,ponds: Array,water_plan: RefCounted,preview := false) -> void:
 	genome = g.duplicate(true)
 	pools = ponds.duplicate(true)
 	courses = water_plan
 	noise.seed = genome.noise_seed
 	noise.frequency = 0.13
+	if not preview: erosion = Erosion.delta(genome,noise)
 	if int(genome.version)>=4: places = Places.plan(self)
 func height(x: float,z: float) -> float:
 	var p := Vector2(x,z)
@@ -21,7 +28,9 @@ func height(x: float,z: float) -> float:
 	return _water_height(x,z,Places.shape(places,p,Genome.height(genome,p,noise)))
 
 func original_height(x: float,z: float) -> float:
-	return _water_height(x,z,Genome.height(genome,Vector2(x,z),noise))
+	var base := Genome.height(genome,Vector2(x,z),noise)
+	if not erosion.is_empty(): base += Erosion.sample(erosion,x,z)
+	return _water_height(x,z,base)
 
 func _water_height(x: float,z: float,base: float) -> float:
 	var h: float = courses.carve(x,z,base)

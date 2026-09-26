@@ -20,7 +20,8 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	if biome=="woodland" and rng.randf()<0.28: biome = "redwood"
 	var recipe := {"kind":"inland","version":Genome.VERSION,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
 	# Draw several candidates within the chosen family and keep the one that
-	# looks best from the overview camera (scripts/world_beauty.gd).
+	# looks best from the overview camera (scripts/world_beauty.gd). Candidates
+	# are scored uneroded; erosion only reshapes the kept world when it is built.
 	var best_recipe := recipe.duplicate(true)
 	var best_score := -1.0
 	for attempt in range(CANDIDATES):
@@ -29,7 +30,7 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 			while recipe.seed==previous.get("seed",-1): recipe.seed = rng.randi_range(0,999999)
 			recipe.relief = rng.randf_range(0.65,1.3)
 			recipe.breadth = rng.randf_range(0.72,1.3)
-		var field = preload("res://scripts/inland_world.gd").new(recipe).sampler
+		var field = preload("res://scripts/inland_world.gd").new(recipe,true).sampler
 		var score: float = Beauty.score(field).total
 		if score>best_score:
 			best_score = score

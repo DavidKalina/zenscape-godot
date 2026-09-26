@@ -12,6 +12,8 @@
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 using namespace godot;
 
@@ -22,6 +24,182 @@ class ZenScapeTerrainKernels : public RefCounted {
 protected:
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("shade", "inputs", "arrays", "faces", "water", "first", "last"), &ZenScapeTerrainKernels::shade);
+        ClassDB::bind_method(D_METHOD("erode", "heights", "fixed", "params"), &ZenScapeTerrainKernels::erode);
+    }
+    // Terrain erosion mirrors scripts/terrain_erosion.gd `erode_reference` op for
+    // op: doubles, int64 hashing, only + - * / sqrt floor. No transcendental
+    // functions, so saved worlds reproduce on every platform and in GDScript.
+    static int64_t hash2(int64_t x, int64_t z, int64_t seed) {
+        int64_t h = ((x*73856093) ^ (z*19349663) ^ seed) & 0xffffffffLL;
+        h = ((h ^ (h >> 16))*0x45d9f3bLL) & 0xffffffffLL;
+        h = ((h ^ (h >> 16))*0x45d9f3bLL) & 0xffffffffLL;
+        return h ^ (h >> 16);
+    }
+    static double corner(int64_t ix, int64_t iz, double dx, double dz, int64_t seed) {
+        static const double gx[8] = {1.0, -1.0, 0.0, 0.0, 0.7071067811865476, -0.7071067811865476, 0.7071067811865476, -0.7071067811865476};
+        static const double gz[8] = {0.0, 0.0, 1.0, -1.0, 0.7071067811865476, 0.7071067811865476, -0.7071067811865476, -0.7071067811865476};
+        const int64_t g = hash2(ix, iz, seed) & 7;
+        return gx[g]*dx+gz[g]*dz;
+    }
+    static double gradient(double x, double z, int64_t seed) {
+        const double fx = std::floor(x), fz = std::floor(z);
+        const int64_t ix = int64_t(fx), iz = int64_t(fz);
+        const double tx = x-fx, tz = z-fz;
+        const double u = tx*tx*tx*(tx*(tx*6.0-15.0)+10.0);
+        const double v = tz*tz*tz*(tz*(tz*6.0-15.0)+10.0);
+        const double a = corner(ix, iz, tx, tz, seed);
+        const double b = corner(ix+1, iz, tx-1.0, tz, seed);
+        const double c = corner(ix, iz+1, tx, tz-1.0, seed);
+        const double d = corner(ix+1, iz+1, tx-1.0, tz-1.0, seed);
+        const double top = a+(b-a)*u;
+        const double bottom = c+(d-c)*u;
+        return top+(bottom-top)*v;
+    }
+    static double ridged(double x, double z, int64_t seed) {
+        double sum = 0.0, amp = 0.5, weight = 1.0, f = 1.0;
+        for (int64_t o = 0; o < 3; ++o) {
+            double r = 1.0-std::fabs(gradient(x*f, z*f, (seed+o*1013) & 0xffffffffLL))*1.35;
+            if (r < 0.0) r = 0.0;
+            r = r*r*weight;
+            weight = r*2.0;
+            if (weight > 1.0) weight = 1.0;
+            sum += r*amp;
+            amp *= 0.5;
+            f *= 2.03;
+        }
+        return sum/0.875;
+    }
+    static double ramp(double value, double low, double high) {
+        double t = (value-low)/(high-low);
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        return t*t*(3.0-2.0*t);
+    }
+    PackedFloat64Array erode(const PackedFloat64Array &base, const PackedByteArray &fixed, const Dictionary &p) const {
+        const int64_t n = int64_t(p["size"]), seed = int64_t(p["seed"]) & 0xffffffffLL, iterations = int64_t(p["iterations"]);
+        const double cell = p["cell"], origin = p["origin"], detail = p["detail"], frequency = p["frequency"], warp = p["warp"];
+        const double slope_ref = p["slope_ref"], k = p["k"], max_cut = p["max_cut"], deposit = p["deposit"];
+        const double channel_area = p["channel_area"], jitter_amp = p["jitter"];
+        const double deposit_slope = p["deposit_slope"], deposit_cap = p["deposit_cap"], edge_inner = p["edge_inner"], edge_outer = p["edge_outer"];
+        const int64_t count = n*n;
+        PackedFloat64Array out;
+        if (n < 3 || base.size() != count || fixed.size() != count) return out;
+        const double *b = base.ptr();
+        const uint8_t *locked = fixed.ptr();
+        std::vector<double> h(count), top(count), weight(count), before(count), eroded(count), area(count), sediment(count), distance(count), lowest(count), change(count), jitter(count*8);
+        std::vector<int64_t> receiver(count), donors(count), donor(count*8), stack(count), todo(count);
+        // 1. Ridged, domain-warped detail on the slopes; flats and the rim keep their shape.
+        for (int64_t j = 0; j < n; ++j) for (int64_t i = 0; i < n; ++i) {
+            const int64_t c = j*n+i;
+            const double x = origin+double(i)*cell, z = origin+double(j)*cell;
+            const double reach = std::max(std::fabs(x), std::fabs(z));
+            double w = 1.0-ramp(reach, edge_inner, edge_outer);
+            if (locked[c] != 0) w = 0.0;
+            weight[c] = w;
+            const int64_t l = i > 0 ? c-1 : c, r = i < n-1 ? c+1 : c, u = j > 0 ? c-n : c, d = j < n-1 ? c+n : c;
+            const double sx = (b[r]-b[l])/(double(r-l)*cell), sz = (b[d]-b[u])/(double((d-u)/n)*cell);
+            double s = std::sqrt(sx*sx+sz*sz)/slope_ref;
+            if (s > 1.0) s = 1.0;
+            const double fx = x*frequency, fz = z*frequency;
+            const double qx = fx+warp*gradient(fx*0.5+3.1, fz*0.5+7.7, (seed+17) & 0xffffffffLL);
+            const double qz = fz+warp*gradient(fx*0.5+11.3, fz*0.5+5.9, (seed+29) & 0xffffffffLL);
+            h[c] = b[c]+detail*w*s*((ridged(qx, qz, seed)-0.575)*2.0);
+            // Fixed random weights per direction let flow wander off the eight
+            // grid axes and merge into branching gullies.
+            for (int64_t m = 0; m < 8; ++m) jitter[c*8+m] = 1.0+(double(hash2(i*8+m, j, (seed+41) & 0xffffffffLL) & 65535)/65535.0-0.5)*jitter_amp;
+            top[c] = h[c];
+        }
+        static const int64_t ox[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        static const int64_t oz[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+        const double diagonal = cell*1.4142135623730951;
+        // 2. Stream power, solved implicitly down the drainage tree, then the
+        // carried sediment settles where the flow slackens.
+        for (int64_t t = 0; t < iterations; ++t) {
+            for (int64_t c = 0; c < count; ++c) {
+                receiver[c] = c;
+                distance[c] = cell;
+                donors[c] = 0;
+                lowest[c] = h[c];
+                const int64_t i = c%n, j = c/n;
+                if (locked[c] != 0 || i == 0 || j == 0 || i == n-1 || j == n-1) continue;
+                double best = 0.0;
+                lowest[c] = 1e30;
+                for (int64_t m = 0; m < 8; ++m) {
+                    const int64_t other = (j+oz[m])*n+i+ox[m];
+                    const double d = (ox[m] != 0 && oz[m] != 0) ? diagonal : cell;
+                    const double s = (h[c]-h[other])/d*jitter[c*8+m];
+                    if (h[other] < lowest[c]) lowest[c] = h[other];
+                    if (s > best) { best = s; receiver[c] = other; distance[c] = d; }
+                }
+            }
+            for (int64_t c = 0; c < count; ++c) {
+                const int64_t r = receiver[c];
+                if (r != c) { donor[r*8+donors[r]] = c; donors[r] += 1; }
+            }
+            int64_t size = 0;
+            for (int64_t c = 0; c < count; ++c) {
+                if (receiver[c] != c) continue;
+                int64_t pending = 0;
+                todo[pending++] = c;
+                while (pending > 0) {
+                    const int64_t node = todo[--pending];
+                    stack[size++] = node;
+                    for (int64_t m = 0; m < donors[node]; ++m) todo[pending++] = donor[node*8+m];
+                }
+            }
+            for (int64_t c = 0; c < count; ++c) { area[c] = 1.0; before[c] = h[c]; sediment[c] = 0.0; }
+            for (int64_t s = count-1; s >= 0; --s) {
+                const int64_t node = stack[s], r = receiver[node];
+                if (r != node) area[r] += area[node];
+            }
+            for (int64_t s = 0; s < count; ++s) {
+                const int64_t node = stack[s], r = receiver[node];
+                if (r == node) continue;
+                double drained = area[node]-channel_area;
+                if (drained < 0.0) drained = 0.0;
+                const double f = k*weight[node]*drained/distance[node];
+                double next = (h[node]+f*h[r])/(1.0+f);
+                const double floor = top[node]-max_cut;
+                if (next < floor) next = floor;
+                if (next < h[node]) h[node] = next;
+            }
+            for (int64_t c = 0; c < count; ++c) eroded[c] = before[c]-h[c];
+            for (int64_t s = count-1; s >= 0; --s) {
+                const int64_t node = stack[s], r = receiver[node];
+                const double load = sediment[node]+eroded[node];
+                double slack = 1.0;
+                if (r != node) {
+                    slack = 1.0-((h[node]-h[r])/distance[node])/deposit_slope;
+                    if (slack < 0.0) slack = 0.0;
+                }
+                double keep = load*deposit*slack*weight[node];
+                if (keep > deposit_cap) keep = deposit_cap;
+                // Settle without burying the cells that drain here, and fill
+                // a pit no higher than its lowest rim, so no mounds grow.
+                double limit = r == node ? lowest[node] : 1e30;
+                for (int64_t m = 0; m < donors[node]; ++m) limit = std::min(limit, h[donor[node*8+m]]);
+                double room = limit-h[node];
+                if (room < 0.0) room = 0.0;
+                if (keep > room) keep = room;
+                h[node] += keep;
+                if (r != node) sediment[r] += load-keep;
+            }
+        }
+        out.resize(count);
+        double *delta = out.ptrw();
+        // 3. A 1-2-1 blur widens single-cell channels to read on the ~0.7 m
+        // mesh. The ridged detail stays sharp.
+        for (int64_t c = 0; c < count; ++c) change[c] = h[c]-top[c];
+        for (int64_t c = 0; c < count; ++c) {
+            const int64_t i = c%n;
+            delta[c] = (change[i > 0 ? c-1 : c]+change[c]*2.0+change[i < n-1 ? c+1 : c])*0.25;
+        }
+        for (int64_t c = 0; c < count; ++c) change[c] = delta[c];
+        for (int64_t c = 0; c < count; ++c) {
+            const int64_t j = c/n;
+            delta[c] = (top[c]-b[c])+(change[j > 0 ? c-n : c]+change[c]*2.0+change[j < n-1 ? c+n : c])*0.25;
+        }
+        return out;
     }
 public:
     Dictionary shade(const Dictionary &p, const Array &arrays, const PackedInt32Array &faces,
