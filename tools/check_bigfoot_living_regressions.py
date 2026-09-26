@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Run every Godot test sequentially with native Forward+ and retain evidence.
+"""Run Godot tests sequentially, headless by default, and retain evidence.
 
 Examples:
   python3 tools/check_bigfoot_living_regressions.py --list
   python3 tools/check_bigfoot_living_regressions.py --output /tmp/living-full-suite
   python3 tools/check_bigfoot_living_regressions.py --tests 'test_bigfoot_*.gd'
 
-Dummy/headless rendering is deliberately unsupported: several existing tests
-require real GPU image readback or MultiMesh transforms. A classified renderer
+Use --rendered only for an intentional graphical run: it opens Godot windows
+and may steal focus. Tests requiring GPU image readback or MultiMesh transforms
+may fail or time out headless; they are never retried graphically or counted as
+passing merely because rendering is unavailable. A classified renderer
 issue is recorded as pass_with_known_engine_error, never as a clean pass. All
 other engine errors, script errors, assertion failures and timeouts fail a test.
 """
@@ -76,10 +78,11 @@ def run_one(test: Path, args: argparse.Namespace, output_dir: Path) -> dict:
     name = test.stem
     stdout_path = output_dir / f"{name}.stdout.log"
     engine_path = output_dir / f"{name}.godot.log"
-    command = [args.godot, "--path", str(ROOT), "--rendering-method", "forward_plus",
+    display_args = ["--rendering-method", "forward_plus"] if args.rendered else ["--headless"]
+    command = [args.godot, *display_args, "--path", str(ROOT),
                "--resolution", "640x480", "--log-file", str(engine_path),
                "--script", str(test.relative_to(ROOT))]
-    if test.name == "test_bigfoot_living_world.gd":
+    if args.rendered and test.name == "test_bigfoot_living_world.gd":
         # This test force-draws only at teardown; a GPU remains available for
         # imported MultiMesh buffers without rendering each synthetic tick.
         command.extend(["--disable-render-loop", "--disable-vsync"])
@@ -115,6 +118,7 @@ def run_one(test: Path, args: argparse.Namespace, output_dir: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--godot", default=DEFAULT_GODOT)
+    parser.add_argument("--rendered", action="store_true", help="Use native Forward+; opens windows and may steal focus")
     parser.add_argument("--timeout", type=float, default=120.0, help="Wall-clock seconds per test (default: 120)")
     parser.add_argument("--tests", action="append", default=[], help="Glob under tests/; repeat for multiple patterns")
     parser.add_argument("--output", type=Path, default=Path("/tmp") / ("bigfoot-living-regressions-" + datetime.now().strftime("%Y%m%d-%H%M%S")))
@@ -129,7 +133,7 @@ def main() -> int:
     if args.list:
         for test in tests:
             print(test.relative_to(ROOT))
-        print(f"{len(tests)} native Forward+ test scripts")
+        print(f"{len(tests)} {'native Forward+' if args.rendered else 'headless'} test scripts")
         return 0
     if not Path(args.godot).is_file():
         parser.error(f"Godot executable does not exist: {args.godot}")
@@ -139,7 +143,8 @@ def main() -> int:
     if report_path.exists():
         parser.error(f"Output already contains results; select a fresh --output: {output_dir}")
     report = dict(started_at=datetime.now(timezone.utc).isoformat(), project=str(ROOT),
-                  renderer="forward_plus", headless=False, resolution="640x480", timeout_seconds=args.timeout,
+                  renderer="forward_plus" if args.rendered else "dummy", headless=not args.rendered,
+                  resolution="640x480", timeout_seconds=args.timeout,
                   minimum_test_timeouts=MINIMUM_TEST_TIMEOUTS,
                   expected_tests=len(tests), complete=False, passed=False, results=[])
     write_report(report_path, report)
