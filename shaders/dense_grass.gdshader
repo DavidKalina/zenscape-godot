@@ -10,6 +10,7 @@ shader_type spatial;
 // it in long waves, and a few tufts carry a seed head or a small flower.
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_season.gdshaderinc"
@@ -35,9 +36,8 @@ uniform float fade_start = 22.0;
 uniform float fade_end = 58.0;
 uniform float far_blades = 3.0;
 uniform float metalness_value = 0.0;
-// Shifts every world-scale noise so each seed has its own tussocks, dry
-// patches and flower drifts (set from the recipe seed by dense_grass.gd).
-uniform vec2 world_offset = vec2(0.0);
+// Every world-scale noise below is shifted by zs_grass_offset (grass_look),
+// so each seed has its own tussocks, dry patches and flower drifts.
 
 // Tussocks: a noise of this frequency (per metre) gathers tufts into clumps;
 // tuft_contrast is how bare the gaps between them go (0 even, 1 bare), and
@@ -120,13 +120,6 @@ float wet_texel(ivec2 texel) {
 	return step(-100.0, t.a) * step(t.g, t.a);
 }
 
-// Sunlight through the thin tips, called from light() under
-// ZS_GRASS_TRANSLUCENCY with the scene's own shadowed light energy.
-vec3 zs_grass_translucency(vec3 to_light, vec3 to_view, vec3 albedo, float along) {
-	float toward = pow(max(dot(-to_light, to_view), 0.0), 4.0);
-	return albedo * vec3(1.0, 1.12, 0.62) * tip_translucency * along * along * (0.2 + 0.8 * toward) / PI;
-}
-
 void vertex() {
 	vec2 cell = vec2(float(INSTANCE_ID % grid_side), float(INSTANCE_ID / grid_side));
 	vec2 seed = tile_origin * 3.17 + cell;
@@ -146,7 +139,7 @@ void vertex() {
 	vec4 mask = texture(grass_mask, (root + 16.0) / 32.0);
 	float n = zs_noise(root * 0.85 + 3.1);
 	// Tussocks and the bare gaps between them.
-	float tussock = smoothstep(0.28, 0.72, zs_noise(root * tuft_scale + world_offset) * 0.75 + n * 0.25);
+	float tussock = smoothstep(0.28, 0.72, zs_noise(root * tuft_scale + zs_grass_offset) * 0.75 + n * 0.25);
 	float keep = mask.a * density * (0.45 + 0.55 * n) * mix(1.0, tussock, tuft_contrast)
 		* (1.0 - smoothstep(0.55, 0.95, length(gradient)))
 		* step(-100.0, low) * step(water, ground - 0.04);
@@ -166,13 +159,13 @@ void vertex() {
 	float kept_blades = mix(16.0, far_blades, smoothstep(fade_start, fade_end, distance_to_eye));
 	// Accents: flowers gather in drifts of one kind, spring adds more and
 	// winter takes them; seed heads stand where the grass is drier.
-	dry = smoothstep(0.5, 0.78, zs_noise(root * dry_scale + world_offset * 0.73 + 5.0)) * dry_amount * (1.0 - near_water);
-	float drift = smoothstep(0.42, 0.78, zs_noise(root * 0.42 + world_offset * 1.3 + 7.0));
+	dry = zs_grass_dry(root, dry_scale, zs_grass_offset) * dry_amount * (1.0 - near_water);
+	float drift = smoothstep(0.42, 0.78, zs_noise(root * 0.42 + zs_grass_offset * 1.3 + 7.0));
 	float flower_share = (flower_amount + spring_flowers * zs_season.x) * (1.0 - zs_season.z) * drift * 2.0;
 	float seed_share = seed_amount * (0.6 + dry * 2.0);
 	accent_kind = 0.0;
 	if (flower_pick < flower_share) {
-		float kind = fract(flower_pick * 97.0 + zs_noise(root * 0.21 + world_offset) * 1.3);
+		float kind = fract(flower_pick * 97.0 + zs_noise(root * 0.21 + zs_grass_offset) * 1.3);
 		accent_kind = 2.0 + min(floor(kind * 4.0), 3.0);
 	} else if (flower_pick > 1.0 - seed_share) {
 		accent_kind = 1.0;
@@ -203,11 +196,7 @@ void vertex() {
 		vec2 bow = turn * CUSTOM0.xy * blade_lean * arc * blade_h;
 		// Wind: long waves rolling downwind, bent a little by noise so the
 		// crests wander, carried by the scene's gusts; a light flutter over it.
-		float along = dot(root, zs_wind_direction);
-		float side = dot(root, vec2(-zs_wind_direction.y, zs_wind_direction.x));
-		float wander = zs_noise(vec2(side * 0.16, along * 0.05) + world_offset) * 3.0;
-		float crest = 0.5 + 0.5 * sin((along - zs_gust_distance * wave_speed) * TAU / wave_length + wander);
-		crest *= crest;
+		float crest = zs_grass_crest(root, wave_length, wave_speed, zs_grass_offset);
 		float gust = 0.22 + 1.15 * zs_gust_field(root);
 		float wind = min(zs_wind_strength, 1.5);
 		float sway = (wind * wind * 0.35 + wind * wave_strength * crest) * gust;
@@ -225,7 +214,7 @@ void vertex() {
 		float lift = blade_t * blade_h;
 		lift -= min(dot(lean, lean) / (2.0 * max(blade_h, 0.01)), lift * 0.7) + lift * press * ZS_TREAD_FLATTEN;
 		lift -= zs_foliage_wet * bend * blade_h * 0.2;
-		vec3 local = vec3(offset.x + across.x + lean.x, lift, offset.y + across.y + lean.y);
+		vec3 placed = vec3(offset.x + across.x + lean.x, lift, offset.y + across.y + lean.y);
 		vec3 ground_normal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
 		vec3 facing = vec3(-sin(yaw), 0.0, cos(yaw));
 		if (part > 1.5) {
@@ -233,22 +222,20 @@ void vertex() {
 			if (UV.x < 0.5) {
 				head_r = length(VERTEX.xz);
 				float petal = accent_kind > 1.5 ? flower_size : 0.0;
-				local += vec3(turn * VERTEX.xz * petal, 0.0).xzy;
+				placed += vec3(turn * VERTEX.xz * petal, 0.0).xzy;
 			} else {
 				vec2 spike = accent_kind > 1.5 ? seed_head_size * vec2(0.6, 0.35) : seed_head_size;
-				local += vec3(turn * VERTEX.xz * spike.x, 0.0).xzy + vec3(0.0, VERTEX.y * spike.y, 0.0);
+				placed += vec3(turn * VERTEX.xz * spike.x, 0.0).xzy + vec3(0.0, VERTEX.y * spike.y, 0.0);
 			}
-			local.y += blade_h * 0.02;
+			placed.y += blade_h * 0.02;
 		}
-		VERTEX = vec3(root.x + local.x, ground - 0.03 + local.y, root.y + local.z);
+		VERTEX = vec3(root.x + placed.x, ground - 0.03 + placed.y, root.y + placed.z);
 		world_position = VERTEX;
 		// Shade as a soft mass: the ground's normal, domed outward over each
 		// tuft toward its tips and tipped downwind as the blades bow, with a
 		// little of the blade's own facing left for texture.
-		vec2 out_dir = offset + bow;
-		vec3 dome = ground_normal + vec3(out_dir.x, 0.0, out_dir.y) / max(length(out_dir), 0.02) * tuft_round * blade_t
-			+ vec3(motion.x, 0.0, motion.y) / max(blade_h, 0.01) * 0.6;
-		blade_normal = normalize(mix(facing, normalize(dome), mass_shading));
+		vec3 dome = zs_grass_mass_normal(ground_normal, offset + bow, blade_t, tuft_round, motion / max(blade_h, 0.01) * 0.6);
+		blade_normal = normalize(mix(facing, dome, mass_shading));
 		if (part > 1.5 && UV.x < 0.5) blade_normal = ground_normal;
 		ground_color = mask.rgb;
 	}
@@ -260,9 +247,7 @@ void fragment() {
 	vec3 tint = scene_palette(ground_color);
 	// Patches gone to straw, then dark at the root where the blades crowd
 	// and sunlit toward the tip, each tuft a shade apart.
-	float lum = dot(tint, vec3(0.30, 0.55, 0.15));
-	tint = mix(tint, lum * straw_tint, clamp(dry, 0.0, 1.0));
-	tint *= mix(root_shade, tip_lift, pow(clamp(blade_t, 0.0, 1.0), tip_curve)) * tuft_shade;
+	tint = zs_grass_paint(tint, blade_t, dry, straw_tint, root_shade, tip_lift, tip_curve) * tuft_shade;
 	// Blades bowed by a passing wave catch more sky and read paler.
 	tint *= 1.0 + wave_sheen * wind_bow * blade_t;
 	zs_autumn_paint(tint, world_position, zs_autumn);
@@ -297,4 +282,6 @@ void fragment() {
 }
 
 #define ZS_GRASS_TRANSLUCENCY
+#define ZS_GRASS_ALONG blade_t
+#define ZS_GRASS_GLOW tip_translucency
 #include "res://shaders/reference_direct_light.gdshaderinc"

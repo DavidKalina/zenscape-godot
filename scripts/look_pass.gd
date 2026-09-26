@@ -22,8 +22,11 @@ var _scene: Node3D
 var _grade_layer := CanvasLayer.new()
 var _grade := ShaderMaterial.new()
 var _water_map: Texture2D
-## Dense meadow grass, Ultra only.
+## Dense meadow grass: full on Ultra, and at reduced density on Beauty when
+## `beauty_grass` is on (`--beauty-grass` at launch). Off by default until
+## it is timed on the 4070 Super; see docs/scenic/grass-look.md.
 var grass = preload("res://scripts/dense_grass.gd").new()
+var beauty_grass := "--beauty-grass" in OS.get_cmdline_user_args() or "--beauty-grass" in OS.get_cmdline_args()
 var _last_update := 0
 
 func setup(scene: Node3D) -> void:
@@ -73,7 +76,8 @@ func update(camera: Camera3D, celestial) -> void:
 	RenderingServer.global_shader_parameter_set("zs_look_rim", rim * on)
 	_update_ridges(on)
 	var now := Time.get_ticks_usec()
-	grass.update(enabled and tier == 2, 0.0 if _last_update == 0 else (now - _last_update) / 1000000.0)
+	grass.set_reduced(tier != 2)
+	grass.update(enabled and (tier == 2 or (tier == 0 and beauty_grass)), 0.0 if _last_update == 0 else (now - _last_update) / 1000000.0)
 	_last_update = now
 	RenderingServer.global_shader_parameter_set("zs_look_shore", shore * on)
 	# The chunk editor updates this texture in place; a regrow may replace it.

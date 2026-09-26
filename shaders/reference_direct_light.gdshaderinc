@@ -17,9 +17,10 @@ void light() {
 		* (0.35 + 0.65 * forward_scatter) * vec3(0.82, 1.0, 0.58) / PI;
 #endif
 #ifdef ZS_GRASS_TRANSLUCENCY
-	// Dense grass lights as a mass, so the sheet backscatter above never
-	// sees a back face; its tips glow toward the sun instead.
-	DIFFUSE_LIGHT += energy * zs_grass_translucency(LIGHT, VIEW, ALBEDO, blade_t);
+	// Grass lights as a mass (shaders/grass_look.gdshaderinc), so the sheet
+	// backscatter above never sees a back face; its tips glow toward the sun
+	// instead. The shader names its tip fraction and strength.
+	if (ZS_GRASS_GLOW > 0.0) DIFFUSE_LIGHT += energy * zs_grass_translucency(LIGHT, VIEW, ALBEDO, ZS_GRASS_ALONG, ZS_GRASS_GLOW);
 #endif
 	vec3 half_vector = normalize(LIGHT + VIEW);
 	float nv = max(dot(NORMAL, VIEW), 0.0001);

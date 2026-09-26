@@ -2,6 +2,7 @@ shader_type spatial;
 #include "res://shaders/world_play_bend.gdshaderinc"
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
@@ -43,6 +44,14 @@ uniform bool cozy_prop_growth = false;
 #define ZS_FOLIAGE_TRANSMISSION
 uniform float foliage_transmission : hint_range(0.0, 1.0) = 0.0;
 uniform bool bird_wings = false;
+// The painterly grass tuft (scripts/grass_tuft_mesh.gd): UV.y runs root to
+// tip. Mass normals, the rolling wind wave, straw patches and tip glow from
+// shaders/grass_look.gdshaderinc, as the dense meadow has them. How round a
+// tuft lights, how much of it goes to straw, and how its tips glow.
+uniform bool grass_blades = false;
+uniform float grass_round = 0.55;
+uniform float grass_dry = 0.45;
+uniform float grass_tip_glow = 0.55;
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -51,6 +60,8 @@ uniform vec4 leaf_season = vec4(1.0, 0.0, 0.0, 0.0);
 varying vec3 leaf_local;
 varying vec2 plant_root;
 varying float foliage_gust;
+varying float grass_along;
+varying float grass_bow;
 varying float inversion_transmit;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
 uniform bool instance_fire_enabled = false;
@@ -81,6 +92,9 @@ void vertex() {
 	plant_root = MODEL_MATRIX[3].xz;
 	if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
 	foliage_gust = 0.0;
+	grass_along = grass_blades ? clamp(UV.y, 0.0, 1.0) : 0.0;
+	grass_bow = 0.0;
+	vec2 grass_tilt = vec2(0.0);
 	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 	char_clump = zs_char_clump(VERTEX);
 	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
@@ -126,6 +140,15 @@ void vertex() {
 		vec2 side = vec2(-zs_wind_direction.y, zs_wind_direction.x)
 			* ((sin(zs_motion_time * sway_frequency.y * 1.7 + phase * 2.1) + shiver) * bend * sway_shape.w * zs_wind_strength);
 		vec2 motion = lean + flap + side;
+		if (grass_blades) {
+			// The long wind waves the dense meadow rolls with (grass_look).
+			float crest = zs_grass_crest(root, ZS_GRASS_WAVE_LENGTH, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
+			float grass_air = min(zs_wind_strength, 1.5);
+			float blade_arm = max(VERTEX.y, 0.0) * length(MODEL_MATRIX[1].xyz);
+			motion += zs_wind_direction * min(grass_air * ZS_GRASS_WAVE_STRENGTH * crest * gust, 0.95) * grass_along * blade_arm;
+			grass_bow = crest * min(grass_air, 1.0) * gust;
+			grass_tilt = motion * 1.7;
+		}
 		float instance_scale = length(MODEL_MATRIX[1].xyz);
 		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y) * instance_scale;
 		float arm = max(VERTEX.y - sway_shape.x, 0.25);
@@ -171,6 +194,18 @@ void vertex() {
 	play_deform(VERTEX, NORMAL);
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	if (grass_blades) {
+		// Light the tuft as part of the field's soft mass: the ground's
+		// normal from the height map, domed outward toward the tips.
+		ivec2 texel = clamp(ivec2(floor((plant_root + 16.0) * 4.0)), ivec2(0), ivec2(126));
+		float h00 = texelFetch(zs_water_map, texel, 0).g;
+		float h10 = texelFetch(zs_water_map, texel + ivec2(1, 0), 0).g;
+		float h01 = texelFetch(zs_water_map, texel + ivec2(0, 1), 0).g;
+		vec2 slope = min(h00, min(h10, h01)) > -100.0 ? vec2(h10 - h00, h01 - h00) * 4.0 : vec2(0.0);
+		vec3 ground_normal = normalize(vec3(-slope.x, 1.0, -slope.y));
+		vec2 out_dir = (mat3(MODEL_MATRIX) * vec3(leaf_local.x, 0.0, leaf_local.z)).xz;
+		world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round, grass_tilt), 0.9));
+	}
 	contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 }
 
@@ -178,13 +213,24 @@ void fragment() {
 	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
 	vec3 face_normal = world_normal;
-	if (flat_faces) {
+	if (grass_blades) {
+		face_normal = normalize(face_normal);
+		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
+	}
+	if (flat_faces && !grass_blades) {
 		face_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 		// Three.js flat DoubleSide surfaces shade the face toward the viewer.
 		if (dot(face_normal, zs_camera_position - world_position) < 0.0) face_normal = -face_normal;
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
+	if (grass_blades) {
+		// The mesh carries the source's root-to-tip colours; add the shared
+		// straw patches and the paling of blades a passing wave bows.
+		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
+		tint = zs_grass_paint(tint, grass_along, dry, ZS_GRASS_STRAW, vec3(1.0), vec3(1.0), 1.0);
+		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
+	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
 	zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
 	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
@@ -275,4 +321,7 @@ void fragment() {
 	inversion_transmit = zs_inversion_paint(world_position, EMISSION);
 }
 
+#define ZS_GRASS_TRANSLUCENCY
+#define ZS_GRASS_ALONG grass_along
+#define ZS_GRASS_GLOW (grass_blades ? grass_tip_glow : 0.0)
 #include "res://shaders/reference_direct_light.gdshaderinc"

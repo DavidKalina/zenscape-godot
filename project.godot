@@ -223,6 +223,10 @@ zs_look_shore={
 "type": "float",
 "value": 0.0
 }
+zs_grass_offset={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
 zs_water_map={
 "type": "sampler2D",
 "value": ""

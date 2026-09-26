@@ -32,6 +32,10 @@ const STEM_HALF_WIDTH := 0.004
 ## Petals round a flower's face.
 const PETALS := 5
 const REBAKE_SECONDS := 0.5
+## Reduced cover for the Beauty tier (look_pass.gd `beauty_grass`): share of
+## tufts kept, blades a far tuft keeps, and where the fade starts.
+const REDUCED := {"density": 0.55, "far_blades": 2.0, "fade_start": 16.0}
+const FULL := {"density": 1.0, "far_blades": 3.0, "fade_start": 22.0}
 var material := ShaderMaterial.new()
 var mask := ImageTexture.new()
 var _scene: Node3D
@@ -40,6 +44,8 @@ var _baked_mesh: Mesh
 var _baked := false
 var _bake_busy := false
 var _since_change := 0.0
+var _offset_seed := -1
+var _reduced := false
 
 func setup(scene: Node3D) -> void:
 	_scene = scene
@@ -76,11 +82,25 @@ func setup(scene: Node3D) -> void:
 			_tiles.append(tile)
 	scene.add_child(self)
 
-## Show on Ultra with the look pass on, once a mask exists; rebake the mask a
+## Full cover on Ultra, the reduced set when Beauty opts in.
+func set_reduced(reduced: bool) -> void:
+	if reduced == _reduced: return
+	_reduced = reduced
+	var settings: Dictionary = REDUCED if reduced else FULL
+	for key in settings: material.set_shader_parameter(key, settings[key])
+
+## Show when the look pass wants it, once a mask exists; rebake the mask a
 ## moment after the terrain mesh last changed, never while one is in flight.
+## The world's grass noise offset is published on every tier, since the
+## dressed tufts read it too.
 func update(wanted: bool, delta: float) -> void:
 	var editor = _scene.get("_chunk_editor")
 	var terrain: MeshInstance3D = editor.terrain if editor != null else null
+	if editor != null and editor.data != null:
+		var seed_value := int(editor.data._recipe_settings.get("seed", 0))
+		if seed_value != _offset_seed:
+			_offset_seed = seed_value
+			RenderingServer.global_shader_parameter_set("zs_grass_offset", world_offset(seed_value))
 	visible = wanted and _baked and terrain != null
 	if not wanted or terrain == null or terrain.mesh == null: return
 	if terrain.mesh == _baked_mesh or _bake_busy:
@@ -111,7 +131,6 @@ func _bake(mesh: Mesh, data: NativeTerrainData) -> void:
 	if _baked: mask.update(image)
 	else: mask.set_image(image)
 	material.set_shader_parameter("grass_mask", mask)
-	material.set_shader_parameter("world_offset", world_offset(int(data._recipe_settings.get("seed", 0))))
 	_baked = true
 
 ## Shifts the shader's world-scale noise per seed, so each world has its own

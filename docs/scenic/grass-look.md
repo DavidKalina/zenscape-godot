@@ -2,9 +2,22 @@
 
 Phase 3, branch `feature/grass-look`. The user said the grass "looks like stubble… it doesn't look artistic enough". The direction is a painterly meadow in the spirit of Ghibli and Tiny Glade. It keeps the existing look and palette families, so this is an upgrade, not a restyle.
 
-Scope: the dense GPU grass drawn on Ultra (`scripts/dense_grass.gd`, `shaders/dense_grass.gdshader`). The dressed `grass_tuft` and `bank_grass` meshes from `native_flora.gd`, which every tier draws, are unchanged. So are the grass masks in `NativeTerrainData` and the mask bake.
+Scope: every tier's grass.
 
-## Why it read as stubble
+- The dense GPU grass, drawn on Ultra and, with `--beauty-grass`, at reduced density on Beauty (`scripts/dense_grass.gd`, `shaders/dense_grass.gdshader`).
+- The dressed grass tufts every tier draws: the `grass_tuft` catalog part and the painted blades, both the source's `mesh-10` (`scripts/grass_tuft_mesh.gd`, and `reference_surface.gdshader` with `grass_blades`).
+- Both share `shaders/grass_look.gdshaderinc`: the wind wave, straw patches, mass normal, tip glow, and the per-world noise offset `zs_grass_offset`.
+
+`bank_grass`, the grass masks in `NativeTerrainData` and the mask bake are unchanged.
+
+## Why the default tier's tufts read as stubble
+
+- A world has about 1,650 tufts spread across it. Each tuft is six flat single triangles with no curve.
+- `flat_faces` shaded every triangle as its own facet, so each tuft was a cluster of lit and dark shards.
+- The root-to-tip colour (#38663a to #93c05f) was there, but faceting broke it up.
+- The wind was the generic plant sway, so nothing rolled across the field.
+
+## Why the dense grass read as stubble
 
 Measured from the code on `main` at 8ac595c:
 
@@ -31,6 +44,26 @@ Measured from the code on `main` at 8ac595c:
 - **Level of detail:** past `fade_start` the tufts drop to `far_blades` blades, as well as thinning and widening as before.
 
 The season response (`zs_season_grass`, the winter shortening), autumn paint, snow, wet droop, the tread wake, cloud shade and the grow-in line are all kept. The grow-in line (`zs_growth.y`) and the lines either side of it are byte-for-byte unchanged, so the local growth wave from `feature/stroke-feel` merges cleanly.
+
+## Default tiers: the dressed tufts
+
+- **Mesh** (`scripts/grass_tuft_mesh.gd`): 7 blades per tuft, fanned out using the source's root ring, heights and lean. Each blade is a tapered strip that arcs outward (`LEAN_CURVE`) and has a pointed tip. The mesh copies its root and tip colours from `mesh-10`, so it keeps the source gradient. It has 49 vertices and 35 triangles, where the source had 18 and 6. `--classic-grass` keeps the source tuft.
+- **Material** (`GardenView`): `grass_blades` is on and `flat_faces` is off. The shader:
+  - lights the tuft with the height-map ground normal, domed outward (`grass_round`);
+  - adds the shared rolling wave and its paling, on top of the source sway;
+  - adds straw patches (`grass_dry`) in the same places as the dense grass;
+  - makes the tips glow when backlit (`grass_tip_glow`).
+- **Cost:** about 1,650 tufts per world, so roughly 58k triangles, up from 10k. Each vertex adds three height-map taps and a noise. This is well under 0.1 ms on any tier.
+
+## Dense grass on Beauty
+
+`--beauty-grass` (`look_pass.gd` `beauty_grass`) shows the dense grass on Beauty at reduced cover (`DenseGrass.REDUCED`):
+
+- density 0.55;
+- 2 blades per far tuft;
+- the fade starts at 16 m.
+
+It is off by default, and the default tier is unchanged. The estimate on the 4070 Super at 1440p is about 0.6–1.4 ms on top of Beauty's glow, 24-tap god rays and 2× MSAA. Beauty lacks Ultra's 4× MSAA, SSAO, 0.75-scale fog and 768 px reflections, which cost more than this. The recommendation is to time it on the 4070 Super and turn it on by default for Beauty if it holds, but keep it off on the Mac.
 
 ## Tunables
 
