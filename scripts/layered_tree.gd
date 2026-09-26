@@ -1,6 +1,15 @@
 extends Node3D
 ## Additional layered broadleaf asset. All vertices share one tree-local wind field.
+## `tree_seed` 0 is the original tree. Any other seed grows a deterministic
+## sibling: taller or broader, leaning, with its leaf masses moved, resized
+## and sometimes one side mass dropped. Set it before the node is ready.
 var leaf_material: ShaderMaterial
+var tree_seed := 0
+## Variant seeds shared by the renderer (garden_view); index 0 is the original.
+const VARIANT_SEEDS := [0, 5, 12]
+var _height := 1.0
+var _spread := 1.0
+var _lean := Vector3.ZERO
 
 func _ready() -> void:
 	name = "LayeredPondTree"
@@ -17,6 +26,7 @@ func _ready() -> void:
 		[Vector3(1.92,3.88,0.48),Vector3(0.8,0.5,0.68),0.5],
 		[Vector3(0.9,4.8,-0.95),Vector3(0.85,0.65,0.78),3.7],
 	]
+	if tree_seed != 0: clusters = _seeded(clusters)
 	for index in range(clusters.size()):
 		var entry: Array = clusters[index]
 		_cluster(leaves, entry[0], entry[1], entry[2], index)
@@ -37,11 +47,11 @@ func _ready() -> void:
 	add_child(crown)
 	var wood := SurfaceTool.new()
 	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_branch(wood,Vector3(0,0,0),Vector3(0.12,1.65,0.05),0.23,0.17)
-	_branch(wood,Vector3(0.12,1.65,0.05),Vector3(-0.1,3.3,0),0.17,0.09)
-	_branch(wood,Vector3(-0.1,3.3,0),Vector3(-0.2,4.8,-0.1),0.09,0.025)
+	_branch(wood,_shape(Vector3(0,0,0)),_shape(Vector3(0.12,1.65,0.05)),0.23,0.17)
+	_branch(wood,_shape(Vector3(0.12,1.65,0.05)),_shape(Vector3(-0.1,3.3,0)),0.17,0.09)
+	_branch(wood,_shape(Vector3(-0.1,3.3,0)),_shape(Vector3(-0.2,4.8,-0.1)),0.09,0.025)
 	for tip in [Vector3(-1.7,3.9,0.65),Vector3(1.6,4.1,0.35),Vector3(0.6,3.7,1.4),Vector3(-0.6,4.2,-1.2)]:
-		_branch(wood,Vector3(0,2.65,0),tip,0.095,0.02)
+		_branch(wood,_shape(Vector3(0,2.65,0)),_shape(tip),0.095,0.02)
 	# A small root flare seats the trunk in the sloping bank.
 	for tip in [Vector3(-0.55,-0.08,0.2),Vector3(0.5,-0.05,0.15),Vector3(0,-0.06,-0.5)]:
 		_branch(wood,Vector3(0,0.3,0),tip,0.13,0.035)
@@ -55,6 +65,32 @@ func _ready() -> void:
 	material.set_shader_parameter("tactile",1.0)
 	trunk.material_override = material
 	add_child(trunk)
+
+## Crown and branch points of a seeded sibling. Seed 0 never comes here.
+func _seeded(clusters: Array) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = tree_seed
+	_height = rng.randf_range(0.86,1.16)
+	_spread = rng.randf_range(0.84,1.18)
+	var bearing := rng.randf()*TAU
+	_lean = Vector3(cos(bearing),0.0,sin(bearing))*rng.randf_range(0.08,0.32)
+	# Drop one low side mass on some siblings for a lopsided outline.
+	var dropped := 5+rng.randi_range(0,1) if rng.randf() < 0.6 else -1
+	var out := []
+	for index in range(clusters.size()):
+		var entry: Array = clusters[index]
+		# Keep the draw order fixed whether or not a mass is dropped.
+		var jitter := Vector3(rng.randf_range(-0.28,0.28),rng.randf_range(-0.18,0.22),rng.randf_range(-0.28,0.28))
+		var size := Vector3(rng.randf_range(0.82,1.2),rng.randf_range(0.85,1.2),rng.randf_range(0.82,1.2))
+		var turn := rng.randf_range(-0.8,0.8)
+		if index == dropped: continue
+		out.append([_shape(entry[0]+jitter),entry[1]*size*Vector3(_spread,_height,_spread).clamp(Vector3.ONE*0.9,Vector3.ONE*1.12),float(entry[2])+turn])
+	return out
+
+## Seed 0 returns the point unchanged.
+func _shape(p: Vector3) -> Vector3:
+	if tree_seed == 0: return p
+	return Vector3(p.x*_spread,p.y*_height,p.z*_spread)+_lean*(p.y/4.8)
 
 func _cluster(tool: SurfaceTool, center: Vector3, shape: Vector3, angle: float, seed: int) -> void:
 	var phi := (1.0+sqrt(5.0))/2.0
@@ -137,3 +173,16 @@ func _branch(tool: SurfaceTool, base: Vector3, tip: Vector3, radius: float, end_
 		tool.set_normal(rotation*normals[index])
 		tool.set_color(Color("746049").srgb_to_linear())
 		tool.add_vertex((base+tip)*0.5 + rotation*vertices[index])
+
+## [branchwork, crown] meshes of one seeded tree, each carrying its material.
+static func variant_meshes(seed_value: int) -> Array:
+	var tree = load("res://scripts/layered_tree.gd").new()
+	tree.tree_seed = seed_value
+	tree._ready()
+	var out := []
+	for part_name in ["Branchwork","Crown"]:
+		var part: MeshInstance3D = tree.get_node(part_name)
+		part.mesh.surface_set_material(0,part.material_override)
+		out.append(part.mesh)
+	tree.free()
+	return out

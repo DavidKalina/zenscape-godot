@@ -1,7 +1,11 @@
 extends RefCounted
 ## Worker-owned instance recipes. RNG order, coordinates, transforms and tints
 ## are the same as the sequential GardenView builder. No scene resources.
-static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Dictionary, tints: Dictionary) -> Dictionary:
+## `world` is SeededVariety.world for the recipe: which rock and layered-tree
+## variants this world leans on. Variants are picked per record by stable hash.
+static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Dictionary, tints: Dictionary, world: Dictionary = {}) -> Dictionary:
+	const Stones = preload("res://scripts/rock_variants.gd")
+	const Variety = preload("res://scripts/seeded_variety.gd")
 	var sources := {}
 	var transforms := {"trunk": [], "canopy": [], "grass": [], "stem": [], "petal": [], "rock": [], "explosive_leaves": []}
 	for kind in catalog_parts:
@@ -17,12 +21,28 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 		var basis := preload("res://scripts/native_object_pose.gd").decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP, item.angle).scaled(Vector3.ONE * item.scale)
 		var transform := Transform3D(basis, position)
 		var anchor := {"x":item.x,"z":item.z,"basis":basis,"item":item.duplicate(true),"pose":null,"lift":0.0}
+		# Rocks and boulders draw from the seeded stone family.
+		if catalog_parts.has("rock_variants") and Stones.is_stone(item.asset):
+			var stone: String = catalog_parts.rock_variants[Stones.index(item,world)]
+			var shape := Stones.pose(item,world)
+			transforms[stone].append(transform*shape)
+			var placed := anchor.duplicate()
+			placed.pose = shape
+			sources[stone].append(placed)
+			instance_tints[stone].append(Stones.color(item,tint,world))
+			continue
 		if catalog_parts.has(item.asset):
-			for source_key in catalog_parts[item.asset]:
+			var part_keys: Array = catalog_parts[item.asset]
+			var shaping := Transform3D.IDENTITY
+			if item.asset == "layered_tree" and catalog_parts.has("layered_variants"):
+				var form := 2*Variety.layered_index(item,world)
+				part_keys = catalog_parts.layered_variants.slice(form,form+2)
+				shaping = Variety.layered_shape(item,world)
+			for source_key in part_keys:
 				var key: String = "explosive_leaves" if item.asset == "explosive" and item.leaf_cover else source_key
-				transforms[key].append(transform*catalog_poses[key])
+				transforms[key].append(transform*catalog_poses[key]*shaping)
 				var part := anchor.duplicate()
-				part.pose = catalog_poses[key]
+				part.pose = catalog_poses[key]*shaping
 				sources[key].append(part)
 				var colored: bool = catalog_parts[item.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 				instance_tints[key].append(tint if tint != null and colored else tints.get(key,Color.WHITE))

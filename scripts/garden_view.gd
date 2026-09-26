@@ -2,6 +2,8 @@ class_name GardenView
 extends Node3D
 signal instances_published()
 const HeroTrees := preload("res://scripts/hero_trees.gd")
+const RockVariants := preload("res://scripts/rock_variants.gd")
+const Variety := preload("res://scripts/seeded_variety.gd")
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
 var data: RefCounted:
 	set(value):
@@ -22,6 +24,8 @@ var _stream_nodes: Array[MeshInstance3D]=[]
 var pond_vertices := PackedVector3Array()
 var _catalog_parts := {}
 var _catalog_poses := {}
+## This world's variant leanings (SeededVariety.world), set per rebuild.
+var _variety := {}
 var _sources := {}
 var _object_fire := {}
 var _fire_parts := {}
@@ -74,6 +78,20 @@ func _ready() -> void:
 				_tints[key] = _tints.canopy if part == 1 else Color.WHITE
 				_catalog_parts["tree_variants"].append(key)
 			tread_pairs.append(spruce[i])
+		# Layered broadleaves grow as seeded siblings of the original tree.
+		var layered: Array = ["layered_tree:layered-trunk","layered_tree:layered-canopies"]
+		var seeds: Array = preload("res://scripts/layered_tree.gd").VARIANT_SEEDS
+		for i in range(1,seeds.size()):
+			var meshes: Array = preload("res://scripts/layered_tree.gd").variant_meshes(seeds[i])
+			var pair := ["layered_tree:layered-v%d-trunk" % i,"layered_tree:layered-v%d-canopies" % i]
+			for part in range(2):
+				_meshes[pair[part]] = meshes[part]
+				_materials[pair[part]] = meshes[part].surface_get_material(0).duplicate()
+				_catalog_poses[pair[part]] = Transform3D.IDENTITY
+				_tints[pair[part]] = _tints[layered[part]]
+			layered.append_array(pair)
+			tread_pairs.append(pair)
+		_catalog_parts["layered_variants"] = layered
 	_water_material = source.get_node("mesh-30").mesh.surface_get_material(0).duplicate()
 	_stream_material=source.get_node("mesh-38").mesh.surface_get_material(0).duplicate()
 	# Trunk and crown share a height so the restored wake bends them together.
@@ -104,6 +122,16 @@ func _ready() -> void:
 	rock_material.set_shader_parameter("flat_faces", true)
 	rock_material.set_shader_parameter("wet_ground", true)
 	_materials["rock"] = rock_material
+	# Rocks and boulders share one family of seeded faceted stones, one
+	# batch per shape, all on the boulders' material.
+	if RockVariants.enabled():
+		var stone_material: Material = _materials["boulder_1:mesh-4"].duplicate()
+		var stones := RockVariants.keys()
+		for i in range(stones.size()):
+			_meshes[stones[i]] = RockVariants.mesh(i,stone_material)
+			_materials[stones[i]] = stone_material
+			_tints[stones[i]] = Color.WHITE
+		_catalog_parts["rock_variants"] = stones
 	_catalog_parts["leaf_bed"] = ["leaf_bed"]
 	_catalog_poses["leaf_bed"] = Transform3D.IDENTITY
 	_meshes["leaf_bed"] = preload("res://scripts/bigfoot_leaf_bed.gd").mesh()
@@ -287,7 +315,8 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	var tints := _tints.duplicate(true)
 	var environment := _environment_signature() if frame_tree != null and data is NativeTerrainData else PackedByteArray()
 	var current := _instance_inputs_current.bind(generation,provider,input,parts,poses,tints,environment)
-	var action := preload("res://scripts/garden_instance_samples.gd").build.bind(input,parts,poses,tints)
+	_variety = Variety.world(data._recipe_settings if data is NativeTerrainData else {})
+	var action := preload("res://scripts/garden_instance_samples.gd").build.bind(input,parts,poses,tints,_variety.duplicate(true))
 	var job = preload("res://scripts/background_work.gd").new()
 	last_instance_usec.snapshot = Time.get_ticks_usec()-stage_start
 	stage_start = Time.get_ticks_usec()
@@ -503,6 +532,9 @@ func update_object_preview(record: Dictionary) -> void:
 			if record.asset == "rock":
 				source.lift = 0.24*record.scale
 			batch.multimesh.set_instance_transform(i,_instance_transform(source))
+			if key.begins_with("boulder_stone:"):
+				batch.multimesh.set_instance_color(i,RockVariants.color(record,tint,_variety))
+				continue
 			var colored := key in ["canopy","petal","rock"] or (key.begins_with("tree:") and "canopies" in key)
 			if _catalog_parts.has(record.asset):
 				colored = _catalog_parts[record.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key

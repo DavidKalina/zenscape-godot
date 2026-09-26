@@ -150,7 +150,7 @@ static func source_roles(geometry: Node3D) -> void:
 static func part_role(key: String) -> int:
 	if key.begins_with("fern:"): return 5
 	if key.begins_with("joshua:"): return preload("res://scripts/hero_trees.gd").JOSHUA[key.get_slice(":",1)][1]
-	if key in ["redwood:redwood-trunk","layered_tree:layered-trunk"]: return 4
+	if key in ["redwood:redwood-trunk","layered_tree:layered-trunk"] or (key.begins_with("layered_tree:") and key.ends_with("-trunk")): return 4
 	if key in ["grass","stem"] or "flower-stems" in key or "grass" in key: return 5
 	if key == "rock" or key.begins_with("boulder_"): return 3
 	if key == "trunk" or (key.begins_with("tree:") and key.ends_with("-trunk")) or key == "leaf_bed" or key.begins_with("log:") or key.begins_with("snag:") or key.begins_with("stump:") or key == "broadleaf:mesh-11": return 4
