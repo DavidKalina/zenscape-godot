@@ -45,7 +45,7 @@ The code items are done and merged to `main`. The settings items are waiting on 
 
 ## Phase 1: better look, same look
 
-The first round is on `feature/look-pass`. It looks good on the Mac, and the strengths still need tuning.
+Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is happy with it. The strengths and the grass settings still need tuning on the 4070 Super.
 
 **Done, in `scripts/look_pass.gd`. F6 toggles the whole pass; `--no-look-pass` starts with it off:**
 - **Contact ambient occlusion in the material.**
@@ -59,7 +59,7 @@ The first round is on `feature/look-pass`. It looks good on the Mac, and the str
   - Balanced: occlusion, rim, grade and vignette.
   - Beauty: adds glow and god rays.
   - Ultra: adds 4× MSAA, fog at 0.75 scale, SSAO and 768 px pond reflections.
-- **Round two, not yet seen on screen:**
+- **Round two:**
   - Beauty is the default quality. Saves from before the look pass stored Balanced as a default rather than a choice, so they reopen on Beauty. New saves record that the quality was chosen.
   - Biomes that use native volumetric fog, such as the redwood and woodland mist, get the grade and vignette from a standalone pass (`shaders/look_grade.gdshader`). Their god rays come from the native fog itself.
   - Three hazed ridge layers ring the horizon in `shaders/reference_sky.gdshader`. The terrain seed shapes the skyline and the relief sets its height. The sun and moon set behind them.
@@ -77,14 +77,16 @@ The first round is on `feature/look-pass`. It looks good on the Mac, and the str
   - `--seed N` regrows to a seed at launch.
   - A seed now always reproduces the same world, whichever landscape you start from.
 
-**Next:**
+**Left for later. None of it blocks Phase 2:**
 1. Tune the strengths against the showcase seeds. The defaults are occlusion 0.8, rim 0.35, grade 0.55, saturation 1.06, vignette 0.16, rays 0.22, ridges 0.85 and shore 1.0, all in `scripts/look_pass.gd`.
-2. Tune the grass on the 4070 Super: density, blade height 0.26 m, and whether shadows are worth casting.
-3. Desert families might suit flat-topped mesa ridges better than peaks.
+2. Tune the grass on the 4070 Super: density, blade height 0.26 m, and whether shadows are worth casting. Do it together with the Phase 0 settings items.
+3. Desert families might suit flat-topped mesa ridges better than peaks. This fits Phase 2's per-biome work.
 
 **Dropped:** contact-hardening soft shadows. They cost the most and pay off the least.
 
 ## Phase 2: variety where every result looks good
+
+Next up.
 
 1. **Replace the generator's "usable, connected ground" gate with a beauty score.**
    - The current gate is `cozy_world_generator.gd:30-46`, and `inland_places.gd` flattens three terraces for Bigfoot. Both push terrain toward gentle ground.
