@@ -2,6 +2,7 @@ class_name GardenView
 extends Node3D
 signal instances_published()
 const HeroTrees := preload("res://scripts/hero_trees.gd")
+const GrassTuft := preload("res://scripts/grass_tuft_mesh.gd")
 const RockVariants := preload("res://scripts/rock_variants.gd")
 const Variety := preload("res://scripts/seeded_variety.gd")
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
@@ -48,8 +49,9 @@ func _ready() -> void:
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	for pair: Array in [["trunk", "mesh-8"], ["canopy", "mesh-9"], ["grass", "mesh-10"], ["stem", "flower-stems"], ["petal", "flowers-daisy"]]:
 		var original: MultiMeshInstance3D = source.get_node(pair[1])
-		_meshes[pair[0]] = original.multimesh.mesh
+		_meshes[pair[0]] = GrassTuft.swap(pair[1], original.multimesh.mesh)
 		_materials[pair[0]] = original.multimesh.mesh.surface_get_material(0).duplicate()
+		if _meshes[pair[0]] != original.multimesh.mesh: GrassTuft.dress(_materials[pair[0]])
 		if pair[0] in ["trunk", "canopy"]:
 			_materials[pair[0]].set_shader_parameter("conifer_sway", true)
 	for kind in preload("res://scripts/native_asset_catalog.gd").PARTS:
@@ -58,9 +60,11 @@ func _ready() -> void:
 			var original: Node3D = NativeAssetCatalog.source_node(source,node_name)
 			var key: String = kind+":"+node_name
 			_catalog_parts[kind].append(key)
-			var mesh: Mesh = HeroTrees.swap(node_name,original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh)
+			var source_mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
+			var mesh: Mesh = GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh))
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
+			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key])
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = Color.WHITE
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
