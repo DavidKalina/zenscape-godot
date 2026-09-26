@@ -63,6 +63,9 @@ varying vec3 world_position;
 // Height above the object's own origin: props and plants sit on theirs, so
 // low parts are nearer the ground and see less of the sky.
 varying float contact_height;
+// The precipitation height map: 128 texels over the 32 m plate, alpha the
+// water surface height (-1000 where dry). Read for wet banks only.
+global uniform sampler2D zs_water_map;
 
 #include "res://shaders/terrain_geology.gdshaderinc"
 
@@ -193,6 +196,23 @@ void fragment() {
 		mineral = 1.0 - smoothstep(0.015, 0.10, green);
 		surface_wet *= 1.0 - smoothstep(0.55, 0.8, min(tint.r, min(tint.g, tint.b)));
 		tint *= 1.0 - surface_wet * mix(0.20, 0.40, mineral);
+	}
+	if (wet_ground && zs_look_shore > 0.0) {
+		// Look pass: ground just above a pond or stream reads damp. The nearest
+		// water within half a metre sets the line; a little noise breaks it.
+		float water = -1000.0;
+		for (int i = 0; i < 5; i++) {
+			vec2 offset = i == 0 ? vec2(0.0) : vec2(cos(float(i) * 1.5708), sin(float(i) * 1.5708)) * 0.45;
+			ivec2 texel = ivec2(floor((world_position.xz + offset + 16.0) * 4.0));
+			if (all(greaterThanEqual(texel, ivec2(0))) && all(lessThan(texel, ivec2(128))))
+				water = max(water, texelFetch(zs_water_map, texel, 0).a);
+		}
+		float above = world_position.y - water;
+		float line = 0.16 + 0.10 * zs_noise(world_position.xz * 1.7);
+		float bank = water > -100.0 ? (1.0 - smoothstep(line * 0.4, line, above)) * step(-0.3, above) : 0.0;
+		bank *= smoothstep(-0.2, 0.3, face_normal.y) * zs_look_shore * (1.0 - zs_ice);
+		surface_wet = max(surface_wet, bank);
+		tint *= 1.0 - bank * 0.32;
 	}
 	if (!bird_wings && zs_snow > 0.004) {
 		float noise = zs_noise(world_position.xz * 0.85);

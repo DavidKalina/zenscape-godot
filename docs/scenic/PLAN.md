@@ -59,6 +59,18 @@ The first round is on `feature/look-pass`. It looks good on the Mac, and the str
   - Balanced: occlusion, rim, grade and vignette.
   - Beauty: adds glow and god rays.
   - Ultra: adds 4× MSAA, fog at 0.75 scale, SSAO and 768 px pond reflections.
+- **Round two, not yet seen on screen:**
+  - Beauty is the default quality. Saves from before the look pass stored Balanced as a default rather than a choice, so they reopen on Beauty. New saves record that the quality was chosen.
+  - Biomes that use native volumetric fog, such as the redwood and woodland mist, get the grade and vignette from a standalone pass (`shaders/look_grade.gdshader`). Their god rays come from the native fog itself.
+  - Three hazed ridge layers ring the horizon in `shaders/reference_sky.gdshader`. The terrain seed shapes the skyline and the relief sets its height. The sun and moon set behind them.
+  - Sky radiance updates incrementally instead of every frame (`--realtime-sky` restores it). Only the wet sheen reads it.
+  - A broken, lapping foam line where still water meets the bank, and darker damp ground just above ponds and streams. The ground reads water height through the `zs_water_map` global.
+  - Dense GPU grass on Ultra (`scripts/dense_grass.gd`, `shaders/dense_grass.gdshader`).
+    - One MultiMesh of three-blade clumps is shared by an 8×8 grid of tiles, 1,024 clumps per tile, about 11 cm apart, so up to 196,000 blades.
+    - The shader places every clump. Height comes from the ground map, and colour and density come from a 128² mask baked from the terrain mesh on a worker. The bake takes 8–14 ms.
+    - Blades grow only where the ground passes the palette's green test, so there is none on deserts, rock, snow, sand or under water. It also thins on steep slopes.
+    - Blades sway with the scene's wind and gusts, part for the tread field, droop when wet, shrink under snow, turn with autumn and grow in with the foliage.
+    - Past 22 m, clumps thin and widen to keep the cover. The blades cast no shadows.
 - **Seed controls:**
   - The badge shows the seed.
   - `]` and `[` step through the showcase seeds.
@@ -66,12 +78,9 @@ The first round is on `feature/look-pass`. It looks good on the Mac, and the str
   - A seed now always reproduces the same world, whichever landscape you start from.
 
 **Next:**
-1. Tune the round-one strengths against the showcase seeds. The defaults are occlusion 0.8, rim 0.35, grade 0.55, saturation 1.06, vignette 0.16 and rays 0.22.
-2. Biomes that use native volumetric fog instead of display fog get no grade or god rays yet, e.g. the redwood mist (`scripts/redwood_biome_mist.gd`).
-3. Paint two or three hazed ridge silhouettes on the horizon in `shaders/reference_sky.gdshader`. Also move the sky off realtime radiance.
-4. Shoreline foam band and wet-bank darkening (`shaders/reference_water_body.gdshaderinc`).
-5. Dense GPU grass for Ultra, with wind and distance fade. Grass today is sparse tufts (`scripts/native_flora.gd`).
-6. Make Beauty the default for new worlds. Saved worlds currently reopen on Balanced, which has no glow or rays.
+1. Tune the strengths against the showcase seeds. The defaults are occlusion 0.8, rim 0.35, grade 0.55, saturation 1.06, vignette 0.16, rays 0.22, ridges 0.85 and shore 1.0, all in `scripts/look_pass.gd`.
+2. Tune the grass on the 4070 Super: density, blade height 0.26 m, and whether shadows are worth casting.
+3. Desert families might suit flat-topped mesa ridges better than peaks.
 
 **Dropped:** contact-hardening soft shadows. They cost the most and pay off the least.
 

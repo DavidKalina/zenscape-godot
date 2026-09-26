@@ -1182,11 +1182,9 @@ func _build_ui() -> void:
 	quality.tooltip_text = "Use run-fidelity.command for Forward+ ambient occlusion and glow." if quality.disabled else ""
 	quality.item_selected.connect(_set_quality)
 	study.add_child(quality)
-	# Balanced by default: on this scene ambient occlusion and glow change no
-	# pixel at any hour (the reference materials take no ambient light and
-	# nothing crosses the glow threshold) yet cost about 3 ms a frame at
-	# native resolution. Beauty stays selectable for scenes that use them.
-	_set_quality(1)
+	# Beauty by default: the look pass gives glow something to catch and adds
+	# light shafts. --balanced keeps the lighter tier for slower machines.
+	_set_quality(0)
 	# The panel hugs its controls and stops short of the palette, so the column
 	# never overlaps the bar and inspecting leaves no empty column behind.
 	var fit_column := func() -> void:

@@ -1,14 +1,10 @@
 shader_type canvas_item;
 render_mode unshaded;
 #include "res://shaders/reference_surface_haze.gdshaderinc"
+#include "res://shaders/look_grade.gdshaderinc"
 uniform sampler2D scene_color : hint_screen_texture, repeat_disable, filter_nearest;
 uniform sampler2D air_color : repeat_disable, filter_linear;
-// Look pass (scripts/look_pass.gd). All zero leaves the composite untouched.
-uniform float grade_strength = 0.0;
-uniform vec3 grade_shadow = vec3(1.0);
-uniform vec3 grade_highlight = vec3(1.0);
-uniform float grade_saturation = 1.0;
-uniform float vignette = 0.0;
+// Look pass light shafts (scripts/look_pass.gd). Zero leaves the composite untouched.
 uniform float rays_strength = 0.0;
 // xy: sun position in screen UV; z: shaft strength from sun height and cloud.
 uniform vec3 rays_sun = vec3(0.5, 0.5, 0.0);
@@ -39,15 +35,6 @@ void fragment() {
 			color += rays_color * open * falloff * falloff * rays_strength * rays_sun.z * (1.0 - air.a * 0.6);
 		}
 	}
-	if (grade_strength > 0.0) {
-		float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-		vec3 toned = color * mix(grade_shadow, grade_highlight, smoothstep(0.05, 0.85, luma));
-		toned = mix(vec3(dot(toned, vec3(0.2126, 0.7152, 0.0722))), toned, grade_saturation);
-		color = mix(color, toned, grade_strength);
-	}
-	if (vignette > 0.0) {
-		vec2 centered = (SCREEN_UV - 0.5) * vec2(SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x, 1.0);
-		color *= 1.0 - vignette * smoothstep(0.35, 1.0, length(centered) * 1.4);
-	}
+	color = zs_look_grade(color, SCREEN_UV, SCREEN_PIXEL_SIZE);
 	COLOR = vec4(color, 1.0);
 }

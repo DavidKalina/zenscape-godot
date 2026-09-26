@@ -92,6 +92,9 @@ void fragment() {
 	// Source vertex colors already contain the depth palette; retain it.
 	vec3 body = COLOR.rgb * zs_palette_water;
 	vec3 reflection = scene_linear_for_display(clamp(zsSkyGradient(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98)));
+	// Depth for the shoreline foam: the mesh's own, or where the planar path
+	// reads the bed behind each pixel, the true per-pixel depth.
+	float shore_depth = water_depth;
 	if (planar_enabled && cut_face < 0.5) {
 		fresnel = 0.16 + 0.72 * pow(1.0 - max(dot(eye, wave_normal), 0.0), 3.0);
 		vec4 projected = reflection_matrix * vec4(world_position, 1.0);
@@ -107,6 +110,7 @@ void fragment() {
 		vec3 bed = textureLod(pond_screen, SCREEN_UV, 0.0).rgb * (1.0 + vec3(0.95, 0.90, 0.65) * caustics);
 		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth);
 		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
+		shore_depth = min(shore_depth, max(submerged, 0.0));
 	}
 	float glint = smoothstep(0.75, 1.0, zs_water_growth) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
@@ -114,6 +118,14 @@ void fragment() {
 		float streak = sin(UV.x * 7.0 - zs_flow_time * 5.0 + sin(UV.y * 18.0) * 1.5);
 		float broken = 0.5 + 0.5 * sin(UV.x * 2.3 - zs_flow_time * 1.4 + UV.y * 31.0);
 		foam = smoothstep(0.65, 1.0, streak) * broken * 0.25 * smoothstep(0.01, 0.12, water_depth);
+	}
+	if (!flowing && cut_face < 0.5 && zs_look_shore > 0.0) {
+		// Look pass: a thin broken foam line where still water meets the bank,
+		// lapping in and out slowly with the wind.
+		float lap = 0.035 + 0.02 * sin(zs_flow_time * 0.9 + zs_noise(world_position.xz * 0.6) * 6.2832) * (0.4 + min(zs_wind_strength, 1.0) * 0.6);
+		float band = 1.0 - smoothstep(lap * 0.5, lap, shore_depth);
+		float broken = smoothstep(0.35, 0.7, zs_noise(world_position.xz * 3.1 + vec2(zs_flow_time * 0.05, 0.0)));
+		foam = max(foam, band * mix(0.35, 0.8, broken) * zs_look_shore);
 	}
 	body = mix(body, vec3(0.65, 0.80, 0.79), foam * (1.0 - zs_ice));
 	float absorption = 1.0 - exp(-water_depth / 0.45);

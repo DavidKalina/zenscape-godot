@@ -200,7 +200,9 @@ func _copy_geometry(node: Node, parent: Node, level: float, frame_tree: SceneTre
 	return true
 
 func _copy_visual(node: Node, parent: Node, level: float) -> void:
-	if node is GeometryInstance3D and node != source_water:
+	# Geometry can opt out, e.g. dense grass, whose per-tile instance
+	# parameters a copy would not carry and which would double its cost.
+	if node is GeometryInstance3D and node != source_water and not node.has_meta("skip_reflection"):
 		var copy: GeometryInstance3D
 		var mesh: Mesh
 		if node is MeshInstance3D and node.mesh != null:

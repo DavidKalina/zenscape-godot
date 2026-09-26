@@ -50,9 +50,11 @@ global uniform vec3 zs_sky_down;
 global uniform vec3 zs_sky_up;
 global uniform vec3 zs_sky_glow;
 global uniform vec3 zs_sun_direction;
-// Look pass (scripts/look_pass.gd): contact occlusion and silhouette rim strengths.
+// Look pass (scripts/look_pass.gd): contact occlusion, silhouette rim and shore strengths.
 global uniform float zs_look_ao;
 global uniform float zs_look_rim;
+// Shoreline foam on water and wet-bank darkening on the ground beside it.
+global uniform float zs_look_shore;
 global uniform vec3 zs_moon_direction;
 global uniform vec3 zs_moon_shadow_direction;
 global uniform float zs_dusk_direction;
