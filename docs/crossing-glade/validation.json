@@ -1,0 +1,2871 @@
+{
+  "baseline_commit": "f19b2f50a74c66dac855f851805309ee1ded006d",
+  "full_native_sweep": {
+    "started_at": "2026-09-12T23:53:18.674106+00:00",
+    "finished_at": "2026-09-13T00:30:24.665414+00:00",
+    "renderer": "forward_plus",
+    "expected_tests": 237,
+    "complete": true,
+    "summary": {
+      "passed": 177,
+      "pass_with_known_engine_error": 25,
+      "failed": 30,
+      "timeout": 5
+    },
+    "tests": [
+      {
+        "test": "tests/test_ai_decision_budget.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 10.243,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_alpenglow.gd",
+        "status": "passed",
+        "seconds": 2.063,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_ambient_audio.gd",
+        "status": "passed",
+        "seconds": 2.946,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_authoring_preparation.gd",
+        "status": "timeout",
+        "seconds": 120.031,
+        "errors": [
+          "ERROR: Authoring panels are prepared before interaction\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "SCRIPT ERROR: Invalid access to property or key '_thumbs' on a base object of type 'Nil'.\n          at: run (res://tests/test_authoring_preparation.gd:13)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_autumn.gd",
+        "status": "passed",
+        "seconds": 3.748,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bear_walk.gd",
+        "status": "passed",
+        "seconds": 0.667,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot.gd",
+        "status": "passed",
+        "seconds": 0.665,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_breathing.gd",
+        "status": "passed",
+        "seconds": 0.674,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_cave.gd",
+        "status": "passed",
+        "seconds": 7.624,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_cave_store.gd",
+        "status": "failed",
+        "seconds": 9.474,
+        "errors": [],
+        "assertion_failures": [
+          "FAIL: Main-game resident can use the restored cave",
+          "FAIL: Main-game resident disappears through the saved black entrance",
+          "CAVE STORE: failures=2"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_crossing.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 24.494,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_environment.gd",
+        "status": "passed",
+        "seconds": 2.599,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_explosions.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 20.942,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBigfoot explosions: 0 failures"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_fire.gd",
+        "status": "passed",
+        "seconds": 2.089,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_fish_invitation.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 8.951,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nFISH INVITATION: failures=0"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_habits.gd",
+        "status": "failed",
+        "seconds": 42.924,
+        "errors": [
+          "ERROR: Ordinary play develops all three bed stages\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: He returns to the remembered place across repeated rests\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Repeated visits improve one bed, without littering the garden\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: A bed flattens a private copy of soft bank cover\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Bed mesh participates in actual editor selection\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_heavy_walk.gd",
+        "status": "passed",
+        "seconds": 0.671,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_held_personality.gd",
+        "status": "passed",
+        "seconds": 0.719,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_home.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 8.992,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_lair.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 10.121,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBIGFOOT LAIR: failures=0"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_lair_cutaway.gd",
+        "status": "passed",
+        "seconds": 0.671,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_lair_fishing.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 7.838,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBIGFOOT LAIR FISHING: failures=0"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_lair_foraging.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 7.611,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBIGFOOT LAIR FORAGING: failures=0"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_lair_supplies.gd",
+        "status": "passed",
+        "seconds": 0.727,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_life_editor.gd",
+        "status": "passed",
+        "seconds": 3.161,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_life_interruptions.gd",
+        "status": "passed",
+        "seconds": 17.789,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_life_mind.gd",
+        "status": "passed",
+        "seconds": 0.572,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_lifecycle.gd",
+        "status": "passed",
+        "seconds": 2.184,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_living_environment.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 6.534,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_living_store.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 15.903,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBigfoot clearing: (8.5, 1.671918, -11.5)"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBIGFOOT LIVING STORE: failures=0"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_living_world.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 123.987,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nBIGFOOT LIVING WORLD: failures=0"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_mischief.gd",
+        "status": "failed",
+        "seconds": 89.142,
+        "errors": [
+          "ERROR: Rock pickup and release stay continuous\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_motion_controls.gd",
+        "status": "passed",
+        "seconds": 12.797,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_object_exchange.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 25.347,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_personality.gd",
+        "status": "passed",
+        "seconds": 0.678,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_playground.gd",
+        "status": "passed",
+        "seconds": 2.293,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_rage.gd",
+        "status": "failed",
+        "seconds": 42.699,
+        "errors": [
+          "ERROR: Enraged log throw is stronger too\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_routine_actor.gd",
+        "status": "passed",
+        "seconds": 0.615,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_routine_day.gd",
+        "status": "failed",
+        "seconds": 41.625,
+        "errors": [
+          "ERROR: Autonomous routine completes fish\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Autonomous routine completes sleep\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Autonomous routine completes hibernate\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: He keeps exploring between activities\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "ROUTINE DAY: distance=4.88928649388254 unsafe=0 history=[\"stone\", \"tree\", \"sit\"] failures=4"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_routine_ownership.gd",
+        "status": "passed",
+        "seconds": 6.139,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_routine_pause.gd",
+        "status": "passed",
+        "seconds": 7.301,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_routine_world.gd",
+        "status": "failed",
+        "seconds": 6.578,
+        "errors": [
+          "ERROR: Sit sequence includes standing back up\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Settles into the sleeping loop\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Sleeping emits visible Zs\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "ROUTINE WORLD failures=3"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_tree_hug.gd",
+        "status": "passed",
+        "seconds": 1.638,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_tree_peek.gd",
+        "status": "passed",
+        "seconds": 1.865,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_walk.gd",
+        "status": "passed",
+        "seconds": 0.627,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_wetness.gd",
+        "status": "failed",
+        "seconds": 0.731,
+        "errors": [
+          "ERROR: Shared source material remains dry\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "BIGFOOT WETNESS failures=1"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bird_flight.gd",
+        "status": "passed",
+        "seconds": 1.206,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_camera_exploration.gd",
+        "status": "failed",
+        "seconds": 2.236,
+        "errors": [
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frame includes the whole exposed base\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: camera exploration"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_camera_feedback.gd",
+        "status": "passed",
+        "seconds": 2.07,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cave_genome.gd",
+        "status": "passed",
+        "seconds": 0.942,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cave_system_store.gd",
+        "status": "passed",
+        "seconds": 8.27,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cloud_view_from_above.gd",
+        "status": "passed",
+        "seconds": 2.891,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_command_palette.gd",
+        "status": "passed",
+        "seconds": 3.676,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_conifer_wind.gd",
+        "status": "passed",
+        "seconds": 0.987,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_connected_formation_water.gd",
+        "status": "failed",
+        "seconds": 4.507,
+        "errors": [
+          "ERROR: Steep sections render animated cascade geometry: redwood_grove\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Connected courses exist: redwood_grove\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Faceted mesh keeps most of each course visible: redwood_grove\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "CONNECTED WATER failures=3"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cozy_atmosphere.gd",
+        "status": "passed",
+        "seconds": 18.509,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cozy_edge_input.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 24.17,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cozy_world_generator.gd",
+        "status": "passed",
+        "seconds": 10.64,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_cozy_worlds.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 105.577,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_actor.gd",
+        "status": "passed",
+        "seconds": 0.627,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_brain.gd",
+        "status": "passed",
+        "seconds": 5.344,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_deliberation.gd",
+        "status": "timeout",
+        "seconds": 120.043,
+        "errors": [
+          "SCRIPT ERROR: Invalid access to property or key 'forming' on a base object of type 'Nil'.\n          at: new_diorama (res://studies/diorama.gd:430)\n          GDScript backtrace (most recent call first):",
+          "ERROR: Flat world admits Bigfoot\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "SCRIPT ERROR: Invalid call. Nonexistent function 'advance' in base 'Nil'.\n          at: run (res://tests/test_creature_deliberation.gd:28)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_hand_reach.gd",
+        "status": "passed",
+        "seconds": 1.209,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_navigation.gd",
+        "status": "passed",
+        "seconds": 1.965,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_tremor.gd",
+        "status": "passed",
+        "seconds": 0.78,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_walk.gd",
+        "status": "passed",
+        "seconds": 0.62,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_creature_wind.gd",
+        "status": "passed",
+        "seconds": 16.289,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_curated_looks.gd",
+        "status": "failed",
+        "seconds": 2.302,
+        "errors": [
+          "ERROR: One undo restores the complete previous look: alpine_morning\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Saved preset remains selected after restore: first_snow\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: One undo restores the complete previous look: nordic_night\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "CURATED LOOKS: failures=3"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_dead_wood.gd",
+        "status": "passed",
+        "seconds": 0.557,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_dead_wood_scene.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 7.433,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nPASS: dead wood falls, shows and is gathered in the real world"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_debris_strikes.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 10.584,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nDebris strikes: 0 failures"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_diorama_environment.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 7.563,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_diorama_flow.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 8.79,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_diorama_world_play.gd",
+        "status": "failed",
+        "seconds": 30.671,
+        "errors": [
+          "ERROR: Bigfoot plans physical world log\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Bigfoot completes physical world log ()\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_display_fog.gd",
+        "status": "failed",
+        "seconds": 8.82,
+        "errors": [
+          "ERROR: Camera round trip restores the same world-space air\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Restored terrain restores the fog field\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: display fog"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_editor_coherence.gd",
+        "status": "failed",
+        "seconds": 97.028,
+        "errors": [
+          "SCRIPT ERROR: Invalid access to property or key 'forming' on a base object of type 'Nil'.\n          at: new_diorama (res://studies/diorama.gd:430)\n          GDScript backtrace (most recent call first):",
+          "SCRIPT ERROR: Invalid call. Nonexistent function '_choose' in base 'Nil'.\n          at: run (res://tests/test_editor_coherence.gd:28)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_explosive_landscapes.gd",
+        "status": "passed",
+        "seconds": 4.55,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_export_entry.gd",
+        "status": "failed",
+        "seconds": 1.051,
+        "errors": [
+          "ERROR: FAIL: package opens the old study instead of the product shell: res://studies/cozy_worlds.tscn\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fall_foam.gd",
+        "status": "passed",
+        "seconds": 0.571,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fall_mist.gd",
+        "status": "passed",
+        "seconds": 1.212,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fidelity.gd",
+        "status": "failed",
+        "seconds": 2.25,
+        "errors": [
+          "ERROR: Advance sun selects the nearest forward quarter\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Repeated advance progresses to dusk\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Advance sun wraps through midnight\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: 3 fidelity checks"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fidelity_life.gd",
+        "status": "failed",
+        "seconds": 6.913,
+        "errors": [
+          "ERROR: Active rhythm covers substantially more ground than the original baseline\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Default rhythm spends a substantial part of the minute moving\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FIDELITY LIFE: nodes=1646 solids=143 water=2 traveled=0.20 moving_frames=9 spawn=(5.6, 0.543902, -7.7) failures=2",
+          "FIDELITY LIVE EDITS: failures=2"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fidelity_tremor.gd",
+        "status": "passed",
+        "seconds": 7.837,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fire_effects.gd",
+        "status": "passed",
+        "seconds": 2.309,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fire_field.gd",
+        "status": "passed",
+        "seconds": 3.057,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fire_integration.gd",
+        "status": "passed",
+        "seconds": 8.18,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fire_look.gd",
+        "status": "passed",
+        "seconds": 3.493,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fire_transactions.gd",
+        "status": "passed",
+        "seconds": 3.54,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fire_visual_state.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 7.511,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fireflies.gd",
+        "status": "passed",
+        "seconds": 2.153,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fish_restock.gd",
+        "status": "passed",
+        "seconds": 0.677,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_fish_week.gd",
+        "status": "passed",
+        "seconds": 3.28,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": [
+          "WARNING: 2 ObjectDB instances were leaked at exit (run with `--verbose` for details)."
+        ]
+      },
+      {
+        "test": "tests/test_fog_color.gd",
+        "status": "passed",
+        "seconds": 1.321,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_foliage_tread.gd",
+        "status": "passed",
+        "seconds": 2.986,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_formation_responsiveness.gd",
+        "status": "failed",
+        "seconds": 11.005,
+        "errors": [
+          "ERROR: Formation must not block the main thread for 50 ms\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FORMATION form_foundation failures=1 frames=12 maximum_gap_ms=834.079 elapsed_ms=1411.094",
+          "FORMATION form_range failures=1 frames=62 maximum_gap_ms=12.296 elapsed_ms=520.098"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_frog_motion.gd",
+        "status": "passed",
+        "seconds": 2.085,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_garden.gd",
+        "status": "passed",
+        "seconds": 0.729,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_garden_look.gd",
+        "status": "passed",
+        "seconds": 1.271,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_garden_scene.gd",
+        "status": "passed",
+        "seconds": 1.877,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_god_mode_playground.gd",
+        "status": "passed",
+        "seconds": 16.022,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_growth.gd",
+        "status": "passed",
+        "seconds": 2.085,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_ice_highlight.gd",
+        "status": "passed",
+        "seconds": 1.483,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_inherited_scene_lifecycle.gd",
+        "status": "passed",
+        "seconds": 9.304,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_inland_places.gd",
+        "status": "passed",
+        "seconds": 11.963,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_inland_recipe.gd",
+        "status": "passed",
+        "seconds": 1.114,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_internal_blast.gd",
+        "status": "passed",
+        "seconds": 0.99,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_inversion.gd",
+        "status": "passed",
+        "seconds": 2.04,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_inversion_surface.gd",
+        "status": "failed",
+        "seconds": 2.417,
+        "errors": [
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Inversion mixes over the hazed display pixel: actual (0.0, 0.0, 0.0, 1.0) expected (0.155508, 0.544277, 0.660908) before (0.0, 0.0, 0.0, 1.0)\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: inversion surface"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_algae.gd",
+        "status": "passed",
+        "seconds": 1.095,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_chop.gd",
+        "status": "passed",
+        "seconds": 0.889,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_complete_lighting.gd",
+        "status": "passed",
+        "seconds": 1.655,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_display_composite.gd",
+        "status": "passed",
+        "seconds": 1.863,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_fetch.gd",
+        "status": "passed",
+        "seconds": 0.62,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_flash.gd",
+        "status": "passed",
+        "seconds": 2.406,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_glints.gd",
+        "status": "passed",
+        "seconds": 0.68,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lake_material.gd",
+        "status": "passed",
+        "seconds": 0.734,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_landscape.gd",
+        "status": "passed",
+        "seconds": 0.57,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_landscape_favorites.gd",
+        "status": "passed",
+        "seconds": 4.391,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_landscape_presets.gd",
+        "status": "passed",
+        "seconds": 7.731,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_landscape_variations.gd",
+        "status": "passed",
+        "seconds": 3.091,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_leaves.gd",
+        "status": "passed",
+        "seconds": 2.047,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_lightning.gd",
+        "status": "passed",
+        "seconds": 1.984,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_live_edit_navigation.gd",
+        "status": "passed",
+        "seconds": 8.22,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_local_wind_field.gd",
+        "status": "passed",
+        "seconds": 0.885,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_local_wind_foliage.gd",
+        "status": "passed",
+        "seconds": 0.686,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_local_wind_water.gd",
+        "status": "passed",
+        "seconds": 1.323,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_log_animation.gd",
+        "status": "passed",
+        "seconds": 66.928,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_log_walkways.gd",
+        "status": "passed",
+        "seconds": 1.219,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_loose_prop_cursor.gd",
+        "status": "passed",
+        "seconds": 0.686,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_loose_props.gd",
+        "status": "passed",
+        "seconds": 28.148,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_mountain_collapse.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 12.989,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_asset_catalog.gd",
+        "status": "timeout",
+        "seconds": 120.022,
+        "errors": [
+          "ERROR: The palette exposes all seventeen added source assets\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Node not found: \"desert-cactus\" (relative to \"ZenScapeReference\").\n   at: get_node (scene/main/node.cpp:1976)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Node not found: \"desert-cactus\" (relative to \"ZenScapeReference\").\n   at: get_node (scene/main/node.cpp:1976)\n   GDScript backtrace (most recent call first):",
+          "SCRIPT ERROR: Invalid access to property or key 'mesh' on a base object of type 'null instance'.\n          at: _run (res://tests/test_native_asset_catalog.gd:44)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_build_palette.gd",
+        "status": "failed",
+        "seconds": 2.793,
+        "errors": [
+          "ERROR: Parameter \"material\" is null.\n   at: material_casts_shadows (servers/rendering/renderer_rd/storage_rd/material_storage.cpp:2610)\nERROR: Parameter \"material\" is null.",
+          "ERROR: Parameter \"material\" is null.\n   at: material_is_animated (servers/rendering/renderer_rd/storage_rd/material_storage.cpp:2597)\nERROR: Parameter \"material\" is null.",
+          "ERROR: Parameter \"material\" is null.\n   at: material_get_instance_shader_parameters (servers/rendering/renderer_rd/storage_rd/material_storage.cpp:2641)\nERROR: Parameter \"material\" is null.",
+          "ERROR: Parameter \"material\" is null.\n   at: material_update_dependency (servers/rendering/renderer_rd/storage_rd/material_storage.cpp:2653)\nNative build palette: 0 failures"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_build_tools.gd",
+        "status": "timeout",
+        "seconds": 120.017,
+        "errors": [
+          "SCRIPT ERROR: Invalid access to property or key 'control' on a base object of type 'Dictionary'.\n          at: _run (res://tests/test_native_build_tools.gd:111)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_chunk_editor.gd",
+        "status": "failed",
+        "seconds": 3.657,
+        "errors": [
+          "ERROR: Reopened camera and native atmosphere state match exactly\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Reopening and saving produces the same file bytes\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_collision_faces.gd",
+        "status": "passed",
+        "seconds": 1.204,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_drop_reactions.gd",
+        "status": "failed",
+        "seconds": 2.473,
+        "errors": [
+          "ERROR: Every placeable asset has a classified reaction\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: A paused reaction stays live\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_editor_hotkeys.gd",
+        "status": "failed",
+        "seconds": 2.193,
+        "errors": [
+          "ERROR: A flower previews a smaller footprint\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_explosives.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 8.239,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_course.gd",
+        "status": "passed",
+        "seconds": 0.567,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_editor.gd",
+        "status": "passed",
+        "seconds": 3.508,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_foam.gd",
+        "status": "passed",
+        "seconds": 2.807,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_mist.gd",
+        "status": "passed",
+        "seconds": 3.408,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_renderer.gd",
+        "status": "passed",
+        "seconds": 1.045,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_reuse.gd",
+        "status": "passed",
+        "seconds": 1.222,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_fall_strand.gd",
+        "status": "passed",
+        "seconds": 0.561,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_falls.gd",
+        "status": "passed",
+        "seconds": 3.624,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_flora.gd",
+        "status": "passed",
+        "seconds": 10.197,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_landmarks.gd",
+        "status": "passed",
+        "seconds": 3.434,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_mountain_shape.gd",
+        "status": "failed",
+        "seconds": 1.105,
+        "errors": [
+          "ERROR: Peak respects editing height limit\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_object_editing.gd",
+        "status": "passed",
+        "seconds": 8.1,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_object_pose.gd",
+        "status": "passed",
+        "seconds": 2.255,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_object_tint.gd",
+        "status": "passed",
+        "seconds": 2.258,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_paint.gd",
+        "status": "passed",
+        "seconds": 7.451,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_palette.gd",
+        "status": "passed",
+        "seconds": 3.501,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_play_collisions.gd",
+        "status": "passed",
+        "seconds": 1.051,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_pond_attributes.gd",
+        "status": "passed",
+        "seconds": 1.163,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_pond_cache.gd",
+        "status": "passed",
+        "seconds": 1.383,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_pond_preview.gd",
+        "status": "passed",
+        "seconds": 1.059,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_range.gd",
+        "status": "passed",
+        "seconds": 8.949,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_recipe_water.gd",
+        "status": "passed",
+        "seconds": 4.54,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_refresh_incremental.gd",
+        "status": "passed",
+        "seconds": 8.886,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_selection.gd",
+        "status": "passed",
+        "seconds": 2.506,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_shoreline.gd",
+        "status": "passed",
+        "seconds": 3.718,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_stream_editor.gd",
+        "status": "passed",
+        "seconds": 3.503,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_stream_geometry.gd",
+        "status": "passed",
+        "seconds": 1.0,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_stream_surface_map.gd",
+        "status": "passed",
+        "seconds": 3.732,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_tunnels.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 8.492,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nNative tunnels: 0 failures"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_native_turf.gd",
+        "status": "passed",
+        "seconds": 2.786,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_nature_audio.gd",
+        "status": "failed",
+        "seconds": 0.718,
+        "errors": [
+          "ERROR: Two alternating foot contacts per authored walk cycle, including loop wrap\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Idle emits no footsteps\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Footstep cadence follows walking speed\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Frozen actor emits no footsteps\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: nature audio"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_navigation_budget.gd",
+        "status": "passed",
+        "seconds": 0.571,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_night_fill.gd",
+        "status": "passed",
+        "seconds": 2.084,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_paused_lighting.gd",
+        "status": "passed",
+        "seconds": 2.034,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_paused_reveal.gd",
+        "status": "passed",
+        "seconds": 2.044,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_performance_trace.gd",
+        "status": "failed",
+        "seconds": 7.423,
+        "errors": [
+          "ERROR: Capture stops and saves automatically\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "PERFORMANCE TRACE failures=1"
+        ],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_play_spring_tree.gd",
+        "status": "passed",
+        "seconds": 0.621,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_playable_visuals.gd",
+        "status": "passed",
+        "seconds": 14.572,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_pond_habitat.gd",
+        "status": "passed",
+        "seconds": 2.197,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_precipitation_height.gd",
+        "status": "passed",
+        "seconds": 0.62,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_puffs.gd",
+        "status": "passed",
+        "seconds": 0.615,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_rage_walk.gd",
+        "status": "passed",
+        "seconds": 2.576,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_rain_rings.gd",
+        "status": "passed",
+        "seconds": 0.943,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_rainbow_weather.gd",
+        "status": "passed",
+        "seconds": 2.071,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_redwood_cover_cache.gd",
+        "status": "passed",
+        "seconds": 1.046,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_redwood_forest.gd",
+        "status": "passed",
+        "seconds": 0.722,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_redwood_grove.gd",
+        "status": "timeout",
+        "seconds": 120.042,
+        "errors": [
+          "SCRIPT ERROR: Invalid access to property or key 'data' on a base object of type 'Nil'.\n          at: run (res://tests/test_redwood_grove.gd:15)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_resident_carry_terrain.gd",
+        "status": "passed",
+        "seconds": 1.449,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_resident_gust.gd",
+        "status": "failed",
+        "seconds": 12.51,
+        "errors": [
+          "SCRIPT ERROR: Invalid access to property or key 'active' on a base object of type 'Nil'.\n          at: _unhandled_input (res://studies/diorama.gd:643)\n          GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_resident_interaction.gd",
+        "status": "failed",
+        "seconds": 7.785,
+        "errors": [
+          "ERROR: Carrying has dedicated feedback\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "RESIDENT INTERACTION failures=1"
+        ],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_route_query.gd",
+        "status": "passed",
+        "seconds": 1.485,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_scene.gd",
+        "status": "passed",
+        "seconds": 1.277,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_scene_look.gd",
+        "status": "passed",
+        "seconds": 2.354,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_scene_look_render.gd",
+        "status": "failed",
+        "seconds": 3.285,
+        "errors": [
+          "ERROR: Reset does not return to the original rendered look\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "SCENE LOOK RENDER: failures=1"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_scene_wind_direction.gd",
+        "status": "passed",
+        "seconds": 0.616,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_season_scene.gd",
+        "status": "passed",
+        "seconds": 2.355,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_shroud_weather.gd",
+        "status": "passed",
+        "seconds": 2.072,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_source_terrain.gd",
+        "status": "passed",
+        "seconds": 1.27,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_stepping_route.gd",
+        "status": "passed",
+        "seconds": 0.892,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_storm_week.gd",
+        "status": "failed",
+        "seconds": 3.844,
+        "errors": [
+          "ERROR: seed 2: he is inside for most storm hours (46%)\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: seed 2: he is inside for most storm hours (46%)",
+          "FAIL: storm week"
+        ],
+        "known_engine_errors": [],
+        "warnings": [
+          "WARNING: 2 ObjectDB instances were leaked at exit (run with `--verbose` for details)."
+        ]
+      },
+      {
+        "test": "tests/test_surface_haze.gd",
+        "status": "failed",
+        "seconds": 3.395,
+        "errors": [
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Index p_x = 720 is out of bounds (width = 640).\n   at: get_pixel (core/io/image.cpp:3689)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Haze blends after tone mapping using source exponential view depth\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FAIL: surface haze"
+        ],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_surface_weather.gd",
+        "status": "passed",
+        "seconds": 0.564,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_terrain_destruction.gd",
+        "status": "passed",
+        "seconds": 1.204,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_destruction.gd",
+        "status": "passed",
+        "seconds": 1.809,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_geology.gd",
+        "status": "passed",
+        "seconds": 18.219,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_instances.gd",
+        "status": "passed",
+        "seconds": 5.41,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_lifecycle.gd",
+        "status": "passed",
+        "seconds": 9.679,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_mesh.gd",
+        "status": "passed",
+        "seconds": 1.811,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_navigation.gd",
+        "status": "passed",
+        "seconds": 2.398,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_recipe.gd",
+        "status": "passed",
+        "seconds": 4.752,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_threaded_refresh.gd",
+        "status": "passed",
+        "seconds": 3.601,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": [
+          "WARNING: 14 ObjectDB instances were leaked at exit (run with `--verbose` for details)."
+        ]
+      },
+      {
+        "test": "tests/test_threaded_surface_maps.gd",
+        "status": "passed",
+        "seconds": 6.572,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_thunder_audio.gd",
+        "status": "passed",
+        "seconds": 0.619,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_title_resolution.gd",
+        "status": "passed",
+        "seconds": 0.627,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_title_showcase.gd",
+        "status": "passed",
+        "seconds": 1.058,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_tree_degrowth.gd",
+        "status": "passed",
+        "seconds": 7.935,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_tree_personality.gd",
+        "status": "passed",
+        "seconds": 0.666,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_water_audio_positions.gd",
+        "status": "passed",
+        "seconds": 7.687,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_water_growth.gd",
+        "status": "passed",
+        "seconds": 2.123,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_water_mischief.gd",
+        "status": "passed",
+        "seconds": 22.085,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_waterfall_drips.gd",
+        "status": "passed",
+        "seconds": 0.844,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_waterfall_plunge.gd",
+        "status": "passed",
+        "seconds": 2.776,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_weather_bed.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 7.001,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nPASS: the weather reaches Bigfoot's bedding"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_weather_drift.gd",
+        "status": "passed",
+        "seconds": 4.22,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_weather_profiles.gd",
+        "status": "passed",
+        "seconds": 2.079,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_weather_scheduler.gd",
+        "status": "passed",
+        "seconds": 0.566,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_weather_wind_trails.gd",
+        "status": "passed",
+        "seconds": 0.946,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_wind.gd",
+        "status": "passed",
+        "seconds": 0.719,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_wind_demo_landscape.gd",
+        "status": "passed",
+        "seconds": 2.47,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_wind_gust_visuals.gd",
+        "status": "passed",
+        "seconds": 0.626,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_wind_leaf_litter.gd",
+        "status": "passed",
+        "seconds": 0.573,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_wind_playground.gd",
+        "status": "passed",
+        "seconds": 4.438,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_winter_scene.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 6.878,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\nPASS: winter reaches the resident"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_winter_torpor.gd",
+        "status": "passed",
+        "seconds": 0.563,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_world_clock.gd",
+        "status": "passed",
+        "seconds": 0.616,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_world_clock_scene.gd",
+        "status": "passed",
+        "seconds": 3.223,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_world_integration.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 14.301,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_world_reference_play.gd",
+        "status": "passed",
+        "seconds": 8.056,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      }
+    ]
+  },
+  "final_targeted": {
+    "started_at": "2026-09-13T00:33:16.211040+00:00",
+    "finished_at": "2026-09-13T00:34:34.570628+00:00",
+    "renderer": "forward_plus",
+    "expected_tests": 6,
+    "complete": true,
+    "summary": {
+      "passed": 2,
+      "pass_with_known_engine_error": 4,
+      "failed": 0,
+      "timeout": 0
+    },
+    "tests": [
+      {
+        "test": "tests/test_ai_decision_budget.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 10.148,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_crossing.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 16.725,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_bigfoot_home.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 8.458,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_diorama_world_play.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 40.82,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\nERROR: BUG, indexing did not unpair geometries from light."
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)"
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_log_walkways.gd",
+        "status": "passed",
+        "seconds": 1.266,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      },
+      {
+        "test": "tests/test_stepping_route.gd",
+        "status": "passed",
+        "seconds": 0.938,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [],
+        "warnings": []
+      }
+    ]
+  },
+  "main_game_captures": {
+    "log": {
+      "native_scene": "studies/cozy_worlds.tscn",
+      "screenshots": [
+        "notice",
+        "crossing",
+        "favorite"
+      ],
+      "previous_world_backup_matches": true,
+      "restart_preserves_favorite": true,
+      "profiles": [
+        "CROSSING PROFILE populated world peak_slice_ms=1.566 slices=71 total_wall_ms=1396.595",
+        "CROSSING PROFILE crossing glade peak_slice_ms=1.546 slices=29 total_wall_ms=423.975"
+      ],
+      "completion": [
+        "CROSSING RENDER: [\"notice\", \"crossing\", \"favorite\"] scene=/private/tmp/crossing-render-1187520"
+      ],
+      "known_renderer_teardown_error": "renderer_light_unpair"
+    },
+    "stones": {
+      "native_scene": "studies/cozy_worlds.tscn",
+      "screenshots": [
+        "notice",
+        "crossing",
+        "favorite"
+      ],
+      "previous_world_backup_matches": true,
+      "restart_preserves_favorite": true,
+      "profiles": [
+        "CROSSING PROFILE populated world peak_slice_ms=1.6 slices=71 total_wall_ms=1391.415",
+        "CROSSING PROFILE crossing glade peak_slice_ms=1.52 slices=27 total_wall_ms=392.487"
+      ],
+      "completion": [
+        "CROSSING RENDER: [\"notice\", \"crossing\", \"favorite\"] scene=/private/tmp/crossing-render-1169979 actor=(2.8, 0.0, 2.45) destination=<null> active= cancel=Bigfoot invited query_slices=300"
+      ],
+      "known_renderer_teardown_error": "renderer_light_unpair"
+    }
+  },
+  "baseline_comparison": {
+    "started_at": "2026-09-13T00:38:33.828586+00:00",
+    "finished_at": "2026-09-13T00:40:46.416730+00:00",
+    "renderer": "forward_plus",
+    "expected_tests": 5,
+    "complete": true,
+    "summary": {
+      "passed": 0,
+      "pass_with_known_engine_error": 0,
+      "failed": 5,
+      "timeout": 0
+    },
+    "tests": [
+      {
+        "test": "tests/test_bigfoot_cave_store.gd",
+        "status": "failed",
+        "seconds": 7.952,
+        "errors": [],
+        "assertion_failures": [
+          "FAIL: Main-game resident can use the restored cave",
+          "FAIL: Main-game resident disappears through the saved black entrance",
+          "CAVE STORE: failures=2"
+        ],
+        "same_error_and_assertion_signatures_as_current": true
+      },
+      {
+        "test": "tests/test_bigfoot_habits.gd",
+        "status": "failed",
+        "seconds": 34.982,
+        "errors": [
+          "ERROR: Ordinary play develops all three bed stages\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: He returns to the remembered place across repeated rests\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Repeated visits improve one bed, without littering the garden\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: A bed flattens a private copy of soft bank cover\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Bed mesh participates in actual editor selection\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "same_error_and_assertion_signatures_as_current": true
+      },
+      {
+        "test": "tests/test_bigfoot_rage.gd",
+        "status": "failed",
+        "seconds": 42.344,
+        "errors": [
+          "ERROR: Enraged log throw is stronger too\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [],
+        "same_error_and_assertion_signatures_as_current": true
+      },
+      {
+        "test": "tests/test_bigfoot_routine_day.gd",
+        "status": "failed",
+        "seconds": 40.461,
+        "errors": [
+          "ERROR: Autonomous routine completes fish\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Autonomous routine completes sleep\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Autonomous routine completes hibernate\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: He keeps exploring between activities\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "ROUTINE DAY: distance=4.88928649388254 unsafe=0 history=[\"stone\", \"tree\", \"sit\"] failures=4"
+        ],
+        "same_error_and_assertion_signatures_as_current": true
+      },
+      {
+        "test": "tests/test_fidelity_life.gd",
+        "status": "failed",
+        "seconds": 6.823,
+        "errors": [
+          "ERROR: Active rhythm covers substantially more ground than the original baseline\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):",
+          "ERROR: Default rhythm spends a substantial part of the minute moving\n   at: push_error (core/variant/variant_utility.cpp:1023)\n   GDScript backtrace (most recent call first):"
+        ],
+        "assertion_failures": [
+          "FIDELITY LIFE: nodes=1646 solids=143 water=2 traveled=0.20 moving_frames=9 spawn=(5.6, 0.543902, -7.7) failures=2",
+          "FIDELITY LIVE EDITS: failures=2"
+        ],
+        "same_error_and_assertion_signatures_as_current": true
+      }
+    ]
+  },
+  "final_detour_checks": {
+    "started_at": "2026-09-13T00:41:19.909157+00:00",
+    "finished_at": "2026-09-13T00:41:40.526957+00:00",
+    "renderer": "forward_plus",
+    "expected_tests": 2,
+    "complete": true,
+    "summary": {
+      "passed": 1,
+      "pass_with_known_engine_error": 1,
+      "failed": 0,
+      "timeout": 0
+    },
+    "tests": [
+      {
+        "test": "tests/test_bigfoot_crossing.gd",
+        "status": "pass_with_known_engine_error",
+        "seconds": 18.867,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": [
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_scenario (servers/rendering/renderer_scene_cull.cpp:844)\n   GDScript backtrace (most recent call first):"
+          },
+          {
+            "kind": "renderer_light_unpair",
+            "diagnostic": "ERROR: BUG, indexing did not unpair geometries from light.\n   at: instance_set_base (servers/rendering/renderer_scene_cull.cpp:616)\n   GDScript backtrace (most recent call first):"
+          }
+        ]
+      },
+      {
+        "test": "tests/test_stepping_route.gd",
+        "status": "passed",
+        "seconds": 1.748,
+        "errors": [],
+        "assertion_failures": [],
+        "known_engine_errors": []
+      }
+    ]
+  }
+}

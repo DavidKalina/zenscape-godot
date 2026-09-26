@@ -13,7 +13,7 @@ const FIELDS := {
 }
 
 static func capture(scene: Node3D) -> Dictionary:
-	var result := {"quality":scene._quality.selected,"look":scene._celestial.look.document()}
+	var result := {"quality":scene._quality.selected,"quality_chosen":true,"look":scene._celestial.look.document()}
 	for group: String in FIELDS:
 		var object: Object = _object(scene,group)
 		var values := {}
@@ -37,7 +37,7 @@ static func capture(scene: Node3D) -> Dictionary:
 	return result
 
 static func valid(scene: Node3D, state: Variant) -> bool:
-	if not state is Dictionary or not GardenData._integer(state.get("quality")) or int(state.quality) not in [0,1]:
+	if not state is Dictionary or not GardenData._integer(state.get("quality")) or int(state.quality) not in [0,1,2]:
 		return false
 	for group: String in FIELDS:
 		if not state.get(group) is Dictionary:
@@ -112,8 +112,12 @@ static func restore(scene: Node3D, state: Dictionary) -> void:
 	scene._atmosphere.set_rays(scene._atmosphere.ray_strength)
 	scene._growth.replaying = false
 	scene._growth.publish()
-	scene._set_quality(int(state.quality))
-	scene._quality.select(int(state.quality))
+	# Saves from before the look pass stored the old Balanced default, not a
+	# choice, so they reopen on Beauty like a new world.
+	var quality := int(state.quality)
+	if quality == 1 and not state.get("quality_chosen",false): quality = 0
+	scene._set_quality(quality)
+	scene._quality.select(quality)
 	scene._celestial.update_rig()
 	RenderingServer.global_shader_parameter_set("zs_motion_time",scene._motion_time)
 	if scene.has_method("restore_life_state"): scene.restore_life_state(state.get("bigfoot_habits",{}))

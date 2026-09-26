@@ -97,6 +97,7 @@ var selected_object_id := -1
 var selection: NativeObjectSelection
 var _selection_edit := false
 var _selection_drag := false
+var _selection_plane_y := 0.0
 var _selection_press := Vector2.ZERO
 var _selection_offset := Vector2.ZERO
 var scene: Node3D
@@ -443,6 +444,10 @@ func handle_input(event: InputEvent) -> bool:
 				_selection_press = event.position
 				var ground: Variant = pick(event.position)
 				var item := selected_object()
+				_selection_plane_y = terrain.to_global(Vector3(item.x,data.sample(Vector2(item.x,item.z),data.heights),item.z)).y
+				if item.asset == "log" and not data.void_faces.is_empty():
+					var plane_point: Variant = Plane(Vector3.UP,_selection_plane_y).intersects_ray(scene.camera.project_ray_origin(event.position),scene.camera.project_ray_normal(event.position))
+					ground = terrain.to_local(plane_point) if plane_point != null else null
 				if ground == null:
 					var camera: Camera3D = scene.camera
 					var anchor := terrain.to_global(data.object_position(item))
@@ -513,7 +518,7 @@ func place_at(mouse: Vector2) -> bool:
 			elif data.add_pond(_last_point,pond_level): pond_filled = true
 			else: _set_status("This diorama has reached its pond limit. Remove a pond before adding another.")
 		else:
-			if mode == "explosive" and hit.y < data.ground_height(_last_point)-0.1:
+			if mode == "explosive" and data.ground_height(_last_point) != null and hit.y < data.ground_height(_last_point)-0.1:
 				placed = data.plant_underground(hit,blast_radius)
 			else:
 				placed = data.place(catalog_asset if mode == "assets" else mode,_last_point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint and mode in ["tree","flower","rock","assets"] else "")
@@ -1056,6 +1061,8 @@ func start_flat() -> void:
 	refresh()
 
 func _rebuild_skirt() -> void:
+	_skirt.visible = data.void_faces.is_empty()
+	if not _skirt.visible: return
 	var rim_unchanged := true
 	for i in range(data.points.size()):
 		var point := data.points[i]
@@ -1237,6 +1244,9 @@ func move_selection_pointer(mouse: Vector2) -> void:
 	if not _selection_drag or mouse.distance_to(_selection_press) < 5.0 and not _selection_edit:
 		return
 	var ground: Variant = pick(mouse)
+	if selected_object().get("asset") == "log" and not data.void_faces.is_empty():
+		var hit: Variant = Plane(Vector3.UP,_selection_plane_y).intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
+		ground = terrain.to_local(hit) if hit != null else null
 	if ground == null:
 		return
 	begin_selection_edit()

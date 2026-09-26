@@ -155,6 +155,46 @@ zs_puff_5={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_tread_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_6={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tread_7={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tree_tread_weights_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_tree_tread_weights_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_sky_down={
 "type": "vec3",
 "value": Vector3(0.055, 0.07, 0.1)
@@ -166,6 +206,22 @@ zs_sky_up={
 zs_sky_glow={
 "type": "vec3",
 "value": Vector3(0.3, 0.18, 0.14)
+}
+zs_look_ao={
+"type": "float",
+"value": 0.0
+}
+zs_look_rim={
+"type": "float",
+"value": 0.0
+}
+zs_look_shore={
+"type": "float",
+"value": 0.0
+}
+zs_water_map={
+"type": "sampler2D",
+"value": ""
 }
 zs_sun_direction={
 "type": "vec3",

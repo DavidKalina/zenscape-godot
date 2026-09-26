@@ -12,6 +12,7 @@ var _chunk_editor: NativeChunkEditor
 var loose_props = preload("res://scripts/world_loose_props.gd").new()
 var water_play = preload("res://scripts/world_water_play.gd").new()
 var mischief = preload("res://scripts/bigfoot_mischief.gd").new()
+var exchange = preload("res://scripts/bigfoot_object_exchange.gd").new()
 var temper = preload("res://scripts/bigfoot_temper.gd").new()
 var play_collisions := NativePlayCollisions.new()
 var spring_tree: PlaySpringTree
@@ -53,10 +54,11 @@ func setup(target: Node3D) -> void:
 	_chunk_editor.content.object_fire_changed.connect(_update_object_fire)
 	_chunk_editor.content.instances_published.connect(_instances_published)
 	_chunk_editor.landmarks.instances_published.connect(_instances_published)
-	for node in [loose_props,water_play,mischief,temper,play_collisions]: add_child(node)
+	for node in [loose_props,water_play,mischief,exchange,temper,play_collisions]: add_child(node)
 	loose_props.setup(self)
 	water_play.setup(self)
 	mischief.setup(self)
+	exchange.setup(self)
 	temper.setup(self)
 	var overlay := CanvasLayer.new()
 	add_child(overlay)
@@ -72,7 +74,8 @@ func setup(target: Node3D) -> void:
 	creature.state_changed.connect(func(state: CreatureActor.State) -> void:
 		if state in [CreatureActor.State.STUMBLING,CreatureActor.State.WIND,CreatureActor.State.SWIMMING]:
 			temper.provoke(0.42)
-			mischief.cancel())
+			mischief.cancel()
+			exchange.cancel("actor interrupted"))
 
 func _over_controls(mouse: Vector2) -> bool:
 	for tuner in get_tree().get_nodes_in_group("tree_motion_tuner"):
@@ -99,10 +102,11 @@ func _show_reaction(symbol: String, message: String) -> void:
 	owner_scene._notice.text = message
 
 func owns_resident() -> bool:
-	return mischief.busy() or loose_props.busy() or _carrying
+	return exchange.busy() or mischief.busy() or loose_props.busy() or _carrying
 
 func cancel() -> void:
 	if owner_scene == null: return
+	exchange.cancel()
 	mischief.cancel()
 	loose_props.cancel()
 	if _tree_drag and is_instance_valid(spring_tree): spring_tree.cancel()
@@ -111,6 +115,7 @@ func cancel() -> void:
 
 func invalidate() -> void:
 	if _flushing: return
+	owner_scene.habitat.walkways.disabled.clear()
 	cancel()
 	for id in _active:
 		for part in _parts.get(id,[]):
@@ -254,6 +259,12 @@ func promote(id: int) -> Node3D:
 		_disable_source_collision(id)
 	node.object_id = id
 	_active[id] = node
+	if item.asset == "log":
+		owner_scene.habitat.walkways.disabled[id] = true
+		# Small carryable logs never supplied footing. Invalidating their world
+		# here would reject the very interaction that just promoted the prop.
+		if owner_scene.habitat.walkways.surfaces.any(func(surface: Dictionary) -> bool: return int(surface.id)==id):
+			owner_scene._geometry_changed()
 	var fire_materials: Array[Material] = []
 	for part in parts: fire_materials.append(part.material)
 	node.set_meta("fire_materials",fire_materials)
@@ -281,6 +292,9 @@ func mischief_candidates(kind: String) -> Array:
 
 func handle(event: InputEvent) -> bool:
 	if _paused: return false
+	if event is InputEventMouseButton and event.pressed and loose_props.grabbed != null and event.button_index in [MOUSE_BUTTON_WHEEL_UP,MOUSE_BUTTON_WHEEL_DOWN]:
+		loose_props.adjust_height(0.18 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -0.18,event.position)
+		return true
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and (_tree_drag or loose_props.grabbed != null):
 		cancel()
 		return true
@@ -300,7 +314,7 @@ func handle(event: InputEvent) -> bool:
 			return true
 		if _tree_drag:
 			if _over_controls(event.position): spring_tree.cancel()
-			else: spring_tree.release()
+			else: release_player_tree()
 			_tree_drag = false
 			return true
 		return false
@@ -318,6 +332,7 @@ func handle(event: InputEvent) -> bool:
 	if tree == null:
 		if picked_id > 0: tree = promote(picked_id) as PlaySpringTree
 	if tree == null: return false
+	exchange.cancel()
 	mischief.cancel()
 	spring_tree = tree
 	_tree_drag = true
@@ -326,6 +341,13 @@ func handle(event: InputEvent) -> bool:
 	var at: Variant = _tree_plane.intersects_ray(camera.project_ray_origin(event.position),camera.project_ray_normal(event.position))
 	_tree_origin = at if at != null else tree.global_position
 	return true
+
+func release_player_tree() -> void:
+	if not is_instance_valid(spring_tree): return
+	var strength := spring_tree.tension
+	spring_tree.release()
+	if not _habitat_blocked and owner_scene.environment_life != null:
+		owner_scene.environment_life.notice_tree_release(spring_tree,strength)
 
 func advance(delta: float) -> void:
 	if owner_scene == null: return
@@ -349,8 +371,10 @@ func advance(delta: float) -> void:
 	water_play.advance(delta)
 	if not _habitat_blocked:
 		temper.advance(delta)
-		if owner_scene.environment_life == null or not owner_scene.environment_life.busy(): mischief.advance(delta)
+		exchange.advance(delta)
+		if not exchange.busy() and (owner_scene.environment_life == null or not owner_scene.environment_life.busy()): mischief.advance(delta)
 	else:
+		exchange.cancel("habitat changed")
 		mischief.cancel()
 		temper.reset()
 	for id in _active:
@@ -370,8 +394,8 @@ func advance(delta: float) -> void:
 	if _hover_clock <= 0.0:
 		_hover_clock = 0.16
 		var mouse := get_viewport().get_mouse_position()
-		_hint.visible = not gust_tool and not _carrying and not owner_scene._resident_play.hovered and not _over_controls(mouse) and (loose_props.grabbed != null or _tree_drag or pick_object(mouse)>0)
-		_hint.text = "Swing and release to throw · Esc to return" if loose_props.grabbed != null else "Pull and release to fling · Esc to cancel" if _tree_drag else "Drag a tree to bend · Drag a rock or log to throw"
+		_hint.visible = not gust_tool and not _carrying and (not owner_scene._resident_play.hovered or loose_props.grabbed != null) and not _over_controls(mouse) and (loose_props.grabbed != null or _tree_drag or pick_object(mouse)>0)
+		_hint.text = "Hold near Bigfoot to offer · Scroll height · Release to throw" if exchange.accepts(loose_props.grabbed) else "Swing and release to throw · Esc to return" if loose_props.grabbed != null else "Pull and release to fling · Esc to cancel" if _tree_drag else "Drag a tree to bend · Drag a rock or log to throw"
 		_hint.position = mouse+Vector2(18,22)
 
 func flush() -> void:
@@ -401,6 +425,10 @@ func _store_active_poses() -> void:
 	invalidate()
 
 func dynamic_clearance(feet: Vector3) -> bool:
+	# A grabbed/thrown log no longer supports its saved position. Its next
+	# committed placement can qualify again after the normal habitat rebuild.
+	var deck: Dictionary = owner_scene.habitat.walkways.at(Vector2(feet.x,feet.z))
+	if not deck.is_empty() and _active.has(int(deck.id)): return false
 	for body in loose_props.bodies:
 		if body.held or body.parked: continue
 		var box: AABB = body.visual.global_transform*body.visual.mesh.get_aabb()

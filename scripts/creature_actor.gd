@@ -2,7 +2,7 @@ class_name CreatureActor
 extends Node3D
 ## A small interaction contract shared by animated inhabitants. Asset clips own
 ## performance; this node owns carrying, safe placement and attention.
-enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUMBLING, SWIMMING, SHAKING }
+enum State { IDLE, HELD, LANDING, ALERT, WIND, RECOVERING, WALKING, ACTION, STUMBLING, SWIMMING, SHAKING, HOPPING, FALLING }
 signal state_changed(value: State)
 signal landed()
 signal footstep(point: Vector3)
@@ -18,6 +18,12 @@ var water_exit := Vector3.ZERO
 var _paddle_time := 0.0
 var hand_targets := {}
 var environment_pose := ""
+var balancing := false
+var _hop_from := Vector3.ZERO
+var _hop_to := Vector3.ZERO
+var _hop_duration := 0.7
+var _void_recovery := Callable()
+
 var environment_motion := {}
 var tree_peek = preload("res://scripts/creature_tree_peek.gd").new()
 var action_tempo := 1.0
@@ -86,6 +92,30 @@ func gait_step_count(clip := "Walk") -> int:
 ## stride while this actor owns facing, locomotion and its latest safe feet.
 func can_roam() -> bool:
 	return player != null and state in [State.IDLE,State.ALERT,State.WALKING]
+
+func begin_void_fall(recovery: Vector3, safe_bank := Callable()) -> void:
+	if state == State.FALLING: return
+	if wind_body != null:
+		if state == State.WIND: global_transform = wind_body.feet_transform()
+		wind_body.stop()
+	blast_airborne = false
+	land_position = recovery
+	_void_recovery = safe_bank
+	_vertical_speed = 0.0
+	_pending_tremor = 0.0
+	balancing = false
+	_state(State.FALLING)
+	_play("Airborne")
+
+func begin_hop(destination: Vector3) -> bool:
+	if not can_roam() or not destination.is_finite(): return false
+	_hop_from = global_position
+	_hop_to = destination
+	global_rotation.y = atan2(destination.x-position.x,destination.z-position.z)
+	_standing_basis = global_basis
+	_state(State.HOPPING)
+	_play("Airborne")
+	return true
 
 ## True means this waypoint was reached; keep the stride continuous until the
 ## controller calls stop_walking at the final destination. False means progressing
@@ -221,7 +251,7 @@ func enable_wind(field: Node, ground_probe: Callable, safe_landing: Callable) ->
 func receive_impulse(impulse: Vector3) -> bool:
 	if wind_body == null or not impulse.is_finite() or impulse.length() < 0.1:
 		return false
-	if state in [State.HELD, State.LANDING, State.RECOVERING, State.SWIMMING, State.SHAKING]: return false
+	if state in [State.HELD, State.LANDING, State.RECOVERING, State.SWIMMING, State.SHAKING, State.FALLING]: return false
 	if state != State.WIND: _start_physical_tumble()
 	wind_body.apply_impulse(impulse.limit_length(300.0), Vector3.UP*0.65)
 	return true
@@ -250,7 +280,7 @@ func _start_physical_tumble() -> void:
 
 func _physics_process(delta: float) -> void:
 	if wind_body == null or not is_instance_valid(_wind_field): return
-	if state in [State.HELD, State.LANDING, State.SWIMMING, State.SHAKING]: return
+	if state in [State.HELD, State.LANDING, State.SWIMMING, State.SHAKING, State.FALLING]: return
 	var wind: Vector3 = _wind_field.sample(global_position+Vector3.UP*1.4)
 	var strength := wind.length()
 	_brace = Vector2(clampf(wind.z*0.016,-0.14,0.14),clampf(-wind.x*0.016,-0.14,0.14))
@@ -541,7 +571,29 @@ func advance(delta: float) -> void:
 		_state(State.IDLE)
 		_play("Idle")
 		action_finished.emit(finished,false)
-	if state == State.WIND:
+	if state == State.FALLING:
+		_vertical_speed += 12.0*dt
+		global_position.y -= _vertical_speed*dt
+		if global_position.y < -10.0 or _age>2.5:
+			var safe: Variant = _void_recovery.call(land_position) if _void_recovery.is_valid() else land_position
+			if safe is Vector3:
+				reset_at(safe)
+				_state(State.LANDING)
+				_touchdown = true
+				_play("Land")
+				landed.emit()
+	elif state == State.HOPPING:
+		var progress := clampf(_age/_hop_duration,0.0,1.0)
+		global_position = preload("res://scripts/stepping_route.gd").arc_point(_hop_from,_hop_to,progress)
+		if progress>=1.0:
+			global_position = _hop_to
+			_safe_position = _hop_to
+			land_position = _hop_to
+			_touchdown = true
+			_state(State.LANDING)
+			_play("Land")
+			landed.emit()
+	elif state == State.WIND:
 		global_transform = wind_body.feet_transform()
 	elif state == State.RECOVERING:
 		var progress := clampf(_age/1.15,0.0,1.0)
@@ -576,6 +628,7 @@ func advance(delta: float) -> void:
 	var walk_before := player.current_animation_position if state == State.WALKING else -1.0
 	player.advance(dt)
 	_pose_environment()
+	if balancing and state == State.WALKING: _pose_balance()
 	if walk_before >= 0.0 and state == State.WALKING:
 		var length := player.current_animation_length
 		var after := walk_before+dt*player.speed_scale
@@ -654,12 +707,28 @@ func _bend_leg(bone: int, angle: float) -> void:
 	skeleton.set_bone_pose_rotation(bone,skeleton.get_bone_pose_rotation(bone)*Quaternion(Vector3.RIGHT,angle))
 
 ## Additive torso performance on the current authored pose, never the root/feet.
+func _pose_balance() -> void:
+	# Keep root/feet on the checked route; the upper body supplies the wobble.
+	var spine := skeleton.find_bone("Spine")
+	if spine>=0:
+		HAND_REACH._rotate(skeleton,spine,Vector3.UP,Basis(Vector3.FORWARD,sin(_age*3.2)*0.055)*Vector3.UP,1.0)
+	for side in ["R","L"]:
+		if hand_targets.has(side): continue
+		var sign := -1.0 if side=="R" else 1.0
+		HAND_REACH.apply(skeleton,to_global(Vector3(sign*1.35,1.65,0.15)),0.85,side,to_global(Vector3(sign,1.5,-0.2)))
+
 func _pose_environment() -> void:
 	if environment_pose.is_empty() or state != State.ACTION: return
 	var spine := skeleton.find_bone("Spine")
 	if spine<0: return
 	var weight := smoothstep(0.0,0.3,_age)*(1.0-smoothstep(_action_duration-1.0,_action_duration,_age))
 	var pose := Vector3.ZERO
+	if environment_pose == "tree_touch" and not environment_motion.is_empty():
+		pose = environment_motion.spine
+		if _head>=0:
+			skeleton.set_bone_pose_rotation(_head,skeleton.get_bone_pose_rotation(_head)*Quaternion.from_euler(environment_motion.head))
+		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(pose))
+		return
 	if environment_pose == "tree_hug" and not environment_motion.is_empty():
 		# Small chest compression and tilt provide weight with planted feet.
 		# Pelvis/root are untouched; hand IK runs after this body performance.
@@ -698,6 +767,8 @@ func _pose_environment() -> void:
 		skeleton.set_bone_pose_rotation(spine,skeleton.get_bone_pose_rotation(spine)*Quaternion.from_euler(environment_motion.get("spine",Vector3.ZERO)))
 		return
 	match environment_pose:
+		"tree_curious": pose = Vector3(-0.10,0,0.045)*sin(clampf(_age/_action_duration,0.0,1.0)*PI)
+		"tree_startle": pose = Vector3(0.30*exp(-_age*3.0)-0.055*smoothstep(0.8,1.8,_age),0,0.025*sin(_age*3.0)*exp(-_age))
 		"shock": pose = Vector3(-0.12,sin(_age*62.0)*0.07,sin(_age*75.0)*0.09)
 		"fire_watch": pose = Vector3(-0.075,0,sin(_age*0.9)*0.014)
 		"startle": pose = Vector3(0.22,0,sin(_age*7.0)*0.025)*exp(-_age*0.7)

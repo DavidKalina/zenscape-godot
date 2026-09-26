@@ -28,12 +28,18 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 				instance_tints[key].append(tint if tint != null and colored else tints.get(key,Color.WHITE))
 		match item.asset:
 			"tree":
-				transforms.trunk.append(transform)
-				sources.trunk.append(anchor)
-				instance_tints.trunk.append(Color.WHITE)
-				transforms.canopy.append(transform)
-				sources.canopy.append(anchor)
-				instance_tints.canopy.append(tint if tint != null else tints.canopy)
+				var trunk_key := "trunk"
+				var canopy_key := "canopy"
+				if catalog_parts.has("tree_variants"):
+					var index := 2*preload("res://scripts/hero_trees.gd").spruce_index(item)
+					trunk_key = catalog_parts.tree_variants[index]
+					canopy_key = catalog_parts.tree_variants[index+1]
+				transforms[trunk_key].append(transform)
+				sources[trunk_key].append(anchor)
+				instance_tints[trunk_key].append(Color.WHITE)
+				transforms[canopy_key].append(transform)
+				sources[canopy_key].append(anchor)
+				instance_tints[canopy_key].append(tint if tint != null else tints.canopy)
 			"flower":
 				transforms.stem.append(transform)
 				sources.stem.append(anchor)

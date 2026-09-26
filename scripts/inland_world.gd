@@ -53,6 +53,10 @@ func _init(settings: Dictionary) -> void:
 		var level := maxf(receiving+0.6,recipe.height(head.x,head.y)+0.06)
 		water._add([[head.x,head.y,level],[x-2.0,z-0.7,receiving+0.25],[x,z,receiving]],0.65,true,false)
 	streams.assign(water.routes.duplicate(true))
+	if int(genome.version)>=4:
+		# The final routes must also stay outside the inhabited clearings.
+		recipe.places.clear()
+		recipe.places = preload("res://scripts/inland_places.gd").plan(recipe)
 	sampler = recipe
 
 func height(x: float,z: float) -> float:

@@ -3,6 +3,7 @@ shader_type spatial;
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
+#include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
@@ -25,6 +26,8 @@ uniform float coat_wetness : hint_range(0.0, 1.0) = 0.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
 uniform bool conifer_sway = false;
+uniform bool tree_tread = false;
+uniform float tree_tread_height = 4.26;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -57,6 +60,12 @@ varying flat float char_clump;
 varying float char_seed;
 varying vec3 world_normal;
 varying vec3 world_position;
+// Height above the object's own origin: props and plants sit on theirs, so
+// low parts are nearer the ground and see less of the sky.
+varying float contact_height;
+// The precipitation height map: 128 texels over the 32 m plate, alpha the
+// water surface height (-1000 where dry). Read for wet banks only.
+global uniform sampler2D zs_water_map;
 
 #include "res://shaders/terrain_geology.gdshaderinc"
 
@@ -112,6 +121,18 @@ void vertex() {
 		float arm = max(VERTEX.y - sway_shape.x, 0.25);
 		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7);
 		foliage_gust = clamp(gust * zs_wind_strength * bend * 0.5, 0.0, 1.0);
+		// A walker's tread (shaders/foliage_tread.gdshaderinc): stems inside a
+		// tread lean away from it and lie over, and whatever is under the
+		// foot itself is pressed flat. World-space like the wind above.
+		if (zs_tread_0.w > 0.0 && !tree_tread) {
+			float press = 0.0;
+			vec2 shove = zs_tread_push(root, press) * (arm * ZS_TREAD_REACH * bend);
+			if (press > 0.0) {
+				VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(shove.x, 0.0, shove.y) * instance_scale;
+				float lean_sq = min(dot(shove, shove), arm * arm * 0.96);
+				VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
+			}
+		}
 		VERTEX.y -= zs_foliage_wet * bend * wet_droop;
 		// Local gusts have a true world direction, even for rotated/scaled assets.
 		// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.
@@ -127,6 +148,7 @@ void vertex() {
 		}
 
 	}
+	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
 	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth.x);
 	if (plant_growth) {
 		float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
@@ -139,6 +161,7 @@ void vertex() {
 	play_deform(VERTEX, NORMAL);
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 }
 
 void fragment() {
@@ -174,6 +197,23 @@ void fragment() {
 		surface_wet *= 1.0 - smoothstep(0.55, 0.8, min(tint.r, min(tint.g, tint.b)));
 		tint *= 1.0 - surface_wet * mix(0.20, 0.40, mineral);
 	}
+	if (wet_ground && zs_look_shore > 0.0) {
+		// Look pass: ground just above a pond or stream reads damp. The nearest
+		// water within half a metre sets the line; a little noise breaks it.
+		float water = -1000.0;
+		for (int i = 0; i < 5; i++) {
+			vec2 offset = i == 0 ? vec2(0.0) : vec2(cos(float(i) * 1.5708), sin(float(i) * 1.5708)) * 0.45;
+			ivec2 texel = ivec2(floor((world_position.xz + offset + 16.0) * 4.0));
+			if (all(greaterThanEqual(texel, ivec2(0))) && all(lessThan(texel, ivec2(128))))
+				water = max(water, texelFetch(zs_water_map, texel, 0).a);
+		}
+		float above = world_position.y - water;
+		float line = 0.16 + 0.10 * zs_noise(world_position.xz * 1.7);
+		float bank = water > -100.0 ? (1.0 - smoothstep(line * 0.4, line, above)) * step(-0.3, above) : 0.0;
+		bank *= smoothstep(-0.2, 0.3, face_normal.y) * zs_look_shore * (1.0 - zs_ice);
+		surface_wet = max(surface_wet, bank);
+		tint *= 1.0 - bank * 0.32;
+	}
 	if (!bird_wings && zs_snow > 0.004) {
 		float noise = zs_noise(world_position.xz * 0.85);
 		float line = mix(zs_summit.y + 2.0, 0.15 - 2.5, pow(zs_snow, 0.7));
@@ -202,7 +242,20 @@ void fragment() {
 	SPECULAR = 0.35 * coat_wetness;
 	// Three.js RE_IndirectDiffuse_Physical applies BRDF_Lambert (albedo / PI)
 	// to hemisphere irradiance. Emission bypasses Godot's BRDF, so include it here.
-	EMISSION = emissive_color + tint * mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	// Look pass: ambient-only contact occlusion. Emission bypasses Godot's SSAO,
+	// so the hemisphere term is where grounding has to happen.
+	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	EMISSION = emissive_color + tint * hemi * contact;
+	if (zs_look_rim > 0.0) {
+		// Sky sheen on silhouettes, stronger against the sun; ground-facing
+		// and flat-lying faces stay out so meadows do not glaze over.
+		vec3 view_dir = normalize(zs_camera_position - world_position);
+		float edge = pow(1.0 - abs(dot(face_normal, view_dir)), 4.0);
+		float backlit = 0.5 + 0.5 * max(dot(-view_dir, zs_sun_direction), 0.0);
+		float upright = 1.0 - smoothstep(0.6, 0.9, face_normal.y);
+		EMISSION += mix(tint, vec3(0.5), 0.35) * zs_hemi_sky * zs_hemi_energy * edge * backlit * upright * contact * zs_look_rim;
+	}
 	vec3 alpen_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (dot(alpen_normal, face_normal) < 0.0) alpen_normal = -alpen_normal;
 	EMISSION += zs_afterglow(world_position, alpen_normal, tint) + char_ember;

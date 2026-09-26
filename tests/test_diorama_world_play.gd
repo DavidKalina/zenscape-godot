@@ -91,6 +91,15 @@ func run() -> void:
 		for i in range(120): await physics_frame
 		play.rebuild_registry()
 		var node: Node3D = play.promote(id)
+		if kind == "tree":
+			scene.environment_life.cancel()
+			play.spring_tree = node
+			node.begin_grab()
+			node.bend = Vector2(0.3,0)
+			play.release_player_tree()
+			check(scene.environment_life.active == "tree_curious","Player tree release reaches Bigfoot's environmental response")
+			scene.environment_life.cancel()
+			node.reset()
 		var accepted: bool = play.mischief.request(kind,node)
 		check(accepted,"Bigfoot plans physical world "+kind)
 		var completed := false

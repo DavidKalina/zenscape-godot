@@ -27,6 +27,7 @@ func setup(owner_scene: Node3D) -> void:
 
 func pick(mouse: Vector2) -> bool:
 	if scene.creature == null or not scene.resident_enabled or not scene.creature.visible or scene._paused or not scene._chunk_editor.pointer_in_world(mouse): return false
+	if scene.get("world_play") != null and scene.world_play.owner_scene != null and scene.world_play.loose_props.held_at(mouse): return false
 	var ray: Vector3 = scene.camera.project_ray_origin(mouse)
 	var direction: Vector3 = scene.camera.project_ray_normal(mouse)
 	var inverse: Transform3D = scene.creature.global_transform.affine_inverse()
@@ -129,10 +130,15 @@ func release(mouse: Vector2) -> void:
 				pressed = false
 				_wet_hold = false
 				return
+	if scene._chunk_editor.pointer_in_world(mouse) and scene.try_void_fall(true):
+		carrying = false
+		pressed = false
+		_wet_hold = false
+		return
 	var destination: Variant = null
 	if scene._chunk_editor.pointer_in_world(mouse) and not scene._habitat_changed and not scene.navigation.rebuilding:
 		var p: Vector3 = scene.creature.global_position
-		var ground: Variant = scene.habitat.ground_height(Vector2(p.x,p.z))
+		var ground: Variant = scene.habitat.navigation_height(Vector2(p.x,p.z))
 		if ground != null:
 			p.y = ground
 			if scene.navigation.is_safe(p): destination = p

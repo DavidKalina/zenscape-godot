@@ -26,6 +26,26 @@ shader_type sky;
                 mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
             f.z);
         }
+        // Look pass (scripts/look_pass.gd): hazed ridges ringing the horizon,
+        // so the plate sits in a landscape instead of an empty band of sky.
+        // Zero strength paints nothing; the seed and relief follow the world.
+        uniform float horizon_ridges = 0.0;
+        uniform float horizon_seed = 0.0;
+        uniform float horizon_relief = 1.0;
+        // Ridged value noise round the circle of azimuths, so the line wraps
+        // with no seam. Nearer layers are busier and lower.
+        float ridge_line(vec2 around, float layer) {
+          float freq = 2.2 + layer * 1.6;
+          float amp = 0.5;
+          float h = 0.0;
+          for (int o = 0; o < 3; o++) {
+            vec3 p = vec3(around * freq, 0.0) + vec3(horizon_seed * 0.137 + layer * 17.3, layer * 5.1, horizon_seed * 0.071 + float(o) * 3.7);
+            h += (1.0 - abs(vnoise(p) * 2.0 - 1.0)) * amp;
+            freq *= 2.1;
+            amp *= 0.45;
+          }
+          return h;
+        }
         void sky() {
           // Re-normalize per fragment: the dome's facets span ~15 degrees, and
           // the interpolated varying shrinks to ~0.991 mid-facet — under the
@@ -113,6 +133,23 @@ shader_type sky;
           float moonVis = zs_celestial_clear * smoothstep(-0.04, 0.03, zs_moon_direction.y) * mix(0.15, 1.0, zs_night);
           col += vec3(0.86, 0.92, 1.0) * moon * (1.0 - 0.72 * bite) * 1.6 * moonVis;
           col += vec3(0.5, 0.6, 0.8) * 0.06 * pow(max(md, 0.0), 160.0) * moonVis * zs_night;
+
+          // Horizon ridges, far to near, each a step deeper into the haze and
+          // pale at its feet where valley mist would lie. Painted over the sun
+          // and moon so they set behind the hills; faded out below the horizon
+          // so the void under the floating plate stays sky.
+          if (horizon_ridges > 0.0 && y > -0.14 && y < 0.12) {
+            vec2 around = normalize(dir.xz + 1e-5);
+            vec3 horizon = zsSkyGradient(normalize(vec3(around.x, 0.0, around.y)));
+            float below = smoothstep(-0.14, -0.04, y);
+            for (int k = 0; k < 3; k++) {
+              float layer = float(k);
+              float top = mix(0.012, -0.015, layer * 0.5) + ridge_line(around, layer) * mix(0.07, 0.04, layer * 0.5) * horizon_relief;
+              float cover = smoothstep(top + 0.0015, top - 0.0015, y) * below;
+              float haze = mix(0.28, 0.62, layer * 0.5) * mix(0.55, 1.0, smoothstep(top - 0.05, top, y));
+              col = mix(col, mix(horizon, horizon * vec3(0.58, 0.64, 0.76), haze), cover * horizon_ridges);
+            }
+          }
 
           vec4 cloud = zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
           col = col * (1.0 - cloud.a) + cloud.rgb;

@@ -8,7 +8,11 @@ func setup(source: Dictionary) -> void:
 	environment = Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
-	sky.process_mode = Sky.PROCESS_MODE_REALTIME
+	# Only wet sheen reads the radiance map (ambient light is disabled), so it
+	# can refresh over several frames instead of re-marching the clouds into a
+	# cubemap every frame. --realtime-sky restores the old mode to compare.
+	var realtime := "--realtime-sky" in OS.get_cmdline_user_args()
+	sky.process_mode = Sky.PROCESS_MODE_REALTIME if realtime else Sky.PROCESS_MODE_INCREMENTAL
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/reference_sky.gdshader")

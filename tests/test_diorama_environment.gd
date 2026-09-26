@@ -7,6 +7,7 @@ func check(ok: bool, message: String) -> void:
 		push_error(message)
 	else: print("PASS: ",message)
 func run() -> void:
+	root.size = Vector2i(1440,900)
 	create_timer(100).timeout.connect(func() -> void: quit(2))
 	var scene = load("res://studies/diorama.tscn").instantiate()
 	scene.title_seed = 37

@@ -39,6 +39,13 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if places != null and places.holding: creature.hide()
 
+func _unhandled_input(event: InputEvent) -> void:
+	if places != null and places.initialized and event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]:
+		places.step_showcase(1 if event.keycode == KEY_BRACKETRIGHT else -1)
+		get_viewport().set_input_as_handled()
+		return
+	super._unhandled_input(event)
+
 func handle_resident_input(event: InputEvent) -> bool:
 	# The build palette forwards resident gestures before the scene's _input.
 	# Claim the gesture at their shared entry point so the legacy carry handler
@@ -81,3 +88,16 @@ func new_diorama() -> void:
 		_refresh_habitat()
 		invite_bigfoot(Vector3(0,0,5))
 		save_current()
+
+func open_crossing_glade(chasm := false) -> void:
+	if places == null or places.busy or places.holding or not save_current(): return
+	# Regrowth normally saves over its active slot. Keep an ordinary Open-able
+	# world before starting this separate activity, rather than replacing it.
+	var previous := _chunk_editor.save_path
+	_chunk_editor.save_path = library_path.path_join("Before-crossing-"+str(Time.get_unix_time_from_system())+".json")
+	var saved := _chunk_editor.save_garden()
+	_chunk_editor.save_path = previous
+	if not saved:
+		_notice.text = "Could not save the current place. Your world is still open."
+		return
+	super.open_crossing_glade(chasm)

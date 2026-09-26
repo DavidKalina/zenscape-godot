@@ -1,6 +1,7 @@
 class_name GardenView
 extends Node3D
 signal instances_published()
+const HeroTrees := preload("res://scripts/hero_trees.gd")
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
 var data: RefCounted:
 	set(value):
@@ -53,15 +54,35 @@ func _ready() -> void:
 			var original: Node3D = NativeAssetCatalog.source_node(source,node_name)
 			var key: String = kind+":"+node_name
 			_catalog_parts[kind].append(key)
-			var mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
+			var mesh: Mesh = HeroTrees.swap(node_name,original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh)
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = Color.WHITE
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
 				_tints[key] = original.multimesh.get_instance_color(0)
+	# Pines grow as the Blender spruce family: one batch pair per variant.
+	var tread_pairs := [["trunk","canopy"],["broadleaf:mesh-11","broadleaf:broadleaf-canopies"],["layered_tree:layered-trunk","layered_tree:layered-canopies"],["redwood:redwood-trunk","redwood:redwood-canopies"]]
+	if HeroTrees.enabled():
+		_catalog_parts["tree_variants"] = []
+		var spruce := HeroTrees.spruce_keys()
+		for i in range(spruce.size()):
+			for part in range(2):
+				var key: String = spruce[i][part]
+				_meshes[key] = HeroTrees.spruce_mesh(i,part == 1,_materials["canopy" if part == 1 else "trunk"])
+				_materials[key] = _meshes[key].surface_get_material(0)
+				_tints[key] = _tints.canopy if part == 1 else Color.WHITE
+				_catalog_parts["tree_variants"].append(key)
+			tread_pairs.append(spruce[i])
 	_water_material = source.get_node("mesh-30").mesh.surface_get_material(0).duplicate()
 	_stream_material=source.get_node("mesh-38").mesh.surface_get_material(0).duplicate()
+	# Trunk and crown share a height so the restored wake bends them together.
+	for keys in tread_pairs:
+		var height := 0.1
+		for key in keys: height = maxf(height,_meshes[key].get_aabb().end.y)
+		for key in keys:
+			_materials[key].set_shader_parameter("tree_tread",true)
+			_materials[key].set_shader_parameter("tree_tread_height",height)
 	_foam_template=source.get_node("mesh-31").mesh
 	source.free()
 	# A faceted stone in the same muted palette as the ground.
@@ -482,7 +503,7 @@ func update_object_preview(record: Dictionary) -> void:
 			if record.asset == "rock":
 				source.lift = 0.24*record.scale
 			batch.multimesh.set_instance_transform(i,_instance_transform(source))
-			var colored := key in ["canopy","petal","rock"]
+			var colored := key in ["canopy","petal","rock"] or (key.begins_with("tree:") and "canopies" in key)
 			if _catalog_parts.has(record.asset):
 				colored = _catalog_parts[record.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 			batch.multimesh.set_instance_color(i,tint if tint != null and colored else _tints.get(key,Color.WHITE))

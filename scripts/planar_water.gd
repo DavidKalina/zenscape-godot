@@ -200,7 +200,9 @@ func _copy_geometry(node: Node, parent: Node, level: float, frame_tree: SceneTre
 	return true
 
 func _copy_visual(node: Node, parent: Node, level: float) -> void:
-	if node is GeometryInstance3D and node != source_water:
+	# Geometry can opt out, e.g. dense grass, whose per-tile instance
+	# parameters a copy would not carry and which would double its cost.
+	if node is GeometryInstance3D and node != source_water and not node.has_meta("skip_reflection"):
 		var copy: GeometryInstance3D
 		var mesh: Mesh
 		if node is MeshInstance3D and node.mesh != null:
@@ -295,7 +297,8 @@ func update_views() -> void:
 			view.lights[i].light_color = _scene._lights[i].light_color
 			view.lights[i].light_energy = _scene._lights[i].light_energy
 		var aspect := camera.get_viewport().get_visible_rect().size.aspect()
-		view.viewport.size = Vector2i(384 if _scene._quality.selected == 1 else 512, maxi(1, roundi((384.0 if _scene._quality.selected == 1 else 512.0) / aspect)))
+		var reflection_width: float = [512.0, 384.0, 768.0][clampi(_scene._quality.selected, 0, 2)]
+		view.viewport.size = Vector2i(int(reflection_width), maxi(1, roundi(reflection_width / aspect)))
 		var mirror: Camera3D = view.camera
 		mirror.fov = camera.fov
 		mirror.near = camera.near

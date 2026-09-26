@@ -26,6 +26,9 @@ var _gust_button: Button
 var _resident_wind = preload("res://scripts/resident_wind.gd").new()
 var world_play = preload("res://scripts/diorama_world_play.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
+## Scenery mode keeps the resident Bigfoot built but never lets him out, so the
+## product is a landscape diorama. Launch with --bigfoot to bring him back.
+var scenery_mode := "--bigfoot" not in OS.get_cmdline_user_args()
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -38,6 +41,7 @@ func _ready() -> void:
 	add_child(loading)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	ambient_without_resident = scenery_mode
 	super._ready()
 	_fidelity_document = _chunk_editor.data.to_document()
 	_fidelity_state = NativeGardenStore.capture(self)
@@ -79,7 +83,7 @@ func _ready() -> void:
 		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
 	_toolbar.hide()
 	_menu.hide()
-	loading.stage("Opening Fidelity · welcoming Bigfoot")
+	loading.stage("Opening Fidelity" if scenery_mode else "Opening Fidelity · welcoming Bigfoot")
 	launch_fidelity()
 	await get_tree().process_frame
 	loading.queue_free()
@@ -234,12 +238,20 @@ func _make_shell() -> void:
 	for index in range(3,8):
 		var action: Button = _toolbar.get_child(index)
 		action.hide()
+		if scenery_mode and action in [_toolbar.get_child(5),_home_button]: continue
 		_world_menu.get_popup().add_item(action.text,index)
-	_world_menu.get_popup().add_separator()
-	_world_menu.get_popup().add_item("See both stories",100)
-	_world_menu.get_popup().add_item("Look through lair windows",101)
-	_world_menu.get_popup().add_item("Find cave entrance",102)
+	if not scenery_mode:
+		_world_menu.get_popup().add_separator()
+		_world_menu.get_popup().add_item("See both stories",100)
+		_world_menu.get_popup().add_item("Look through lair windows",101)
+		_world_menu.get_popup().add_item("Find cave entrance",102)
+		_world_menu.get_popup().add_separator()
+		_world_menu.get_popup().add_item("New crossing glade",110)
+		_world_menu.get_popup().add_item("New chasm glade",111)
 	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
+		if id in [110,111]:
+			open_crossing_glade(id == 111)
+			return
 		if id >= 100:
 			if lair == null: return
 			match id:
@@ -250,6 +262,7 @@ func _make_shell() -> void:
 		var action: Button = _toolbar.get_child(id)
 		if not action.disabled: action.pressed.emit())
 	_world_menu.about_to_popup.connect(func() -> void:
+		if scenery_mode: return
 		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled)
 		for id in [100,101,102]:
 			_world_menu.get_popup().set_item_disabled(_world_menu.get_popup().get_item_index(id),lair == null))
@@ -292,6 +305,7 @@ func _make_shell() -> void:
 	var quality := OptionButton.new()
 	quality.add_item("Beauty")
 	quality.add_item("Balanced")
+	quality.add_item("Ultra")
 	quality.select(_quality.selected)
 	quality.item_selected.connect(func(index: int) -> void:
 		_quality.select(index)
@@ -443,6 +457,29 @@ func new_diorama() -> void:
 	save_current()
 	_notice.text = "Your blank diorama · Choose Landscapes for a curated starting point, or sculpt your own."
 
+func open_crossing_glade(chasm := false) -> void:
+	var previous := _chunk_editor.save_path
+	new_diorama()
+	if _chunk_editor.save_path == previous: return
+	if chasm: preload("res://scripts/chasm_glade.gd").populate(_chunk_editor.data)
+	else: preload("res://scripts/crossing_glade.gd").populate(_chunk_editor.data)
+	_chunk_editor.refresh()
+	_refresh_habitat()
+	invite_bigfoot(Vector3(-3,0,2))
+	apply_scene_mood("Meadow morning")
+	environment_life.cancel()
+	environment_life.arrival_pending = false
+	routine.crossing_wish._next = routine._clock+3.0
+	routine._next_action = routine._clock+12.0
+	target = Vector3(0,0.5,0)
+	distance = 15.0
+	yaw = 0.0
+	polar = 0.85
+	_update_camera()
+	_chunk_editor.select_object(-1)
+	save_current()
+	_notice.text = "A real gap between the banks. Move the long log across to give him a way over." if chasm else "He has his eye on the other bank. Move the long log across the stream, or shape a way over."
+
 func continue_world() -> void:
 	if _has_world: close_menu()
 	else: open_path(_recent_path())
@@ -487,7 +524,7 @@ func open_path(path: String) -> bool:
 	return true
 
 func invite_bigfoot(point: Vector3) -> bool:
-	if not _has_world: return false
+	if scenery_mode or not _has_world: return false
 	_refresh_habitat()
 	var safe: Variant = navigation.nearest_safe(point)
 	if safe == null:
@@ -517,7 +554,7 @@ func restore_life_state(state: Dictionary) -> void:
 
 func restore_diorama_state(state: Dictionary) -> void:
 	creature.set_body_scale(float(state.get("resident_scale",1.0)))
-	resident_enabled = bool(state.get("resident",false))
+	resident_enabled = not scenery_mode and bool(state.get("resident",false))
 	if resident_enabled:
 		var p: Array = state.position
 		var safe: Variant = navigation.nearest_safe(Vector3(p[0],p[1],p[2]))

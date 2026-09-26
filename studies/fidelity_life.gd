@@ -5,6 +5,8 @@ var navigation = preload("res://scripts/creature_navigation.gd").new()
 var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
 var resident_enabled := true
+## Fish and falling wood keep living while the resident is away.
+var ambient_without_resident := false
 var routine: Node
 var cave_sites: Node3D
 var lair: Node3D
@@ -21,6 +23,7 @@ var _habitat_changed := false
 var _habitat_blocked := false
 var _reaction := Label3D.new()
 var _reaction_time := 0.0
+var foliage_tread: Node
 
 func _ready() -> void:
 	super._ready()
@@ -43,6 +46,18 @@ func _ready() -> void:
 	_tremor.shaken.connect(creature.queue_tremor)
 	creature.set_process(false)
 	creature._ground_probe = navigation._ground
+	foliage_tread = preload("res://scripts/foliage_tread.gd").new()
+	add_child(foliage_tread)
+	for pair in [["mesh-8",4.26],["mesh-9",4.26],["mesh-11",1.82],["broadleaf-canopies",1.82]]:
+		var tree_part := $Reference.get_node_or_null(NodePath(pair[0])) as GeometryInstance3D
+		if tree_part == null: continue
+		var tree_mesh: Mesh = tree_part.multimesh.mesh if tree_part is MultiMeshInstance3D else tree_part.mesh
+		var original: Material = tree_part.material_override if tree_part.material_override != null else tree_mesh.surface_get_material(0)
+		if original is ShaderMaterial:
+			var material := original.duplicate() as ShaderMaterial
+			material.set_shader_parameter("tree_tread",true)
+			material.set_shader_parameter("tree_tread_height",pair[1])
+			tree_part.material_override = material
 	var coat := ShaderMaterial.new()
 	coat.shader = preload("res://shaders/reference_surface.gdshader")
 	for mesh: MeshInstance3D in creature.actor.find_children("*","MeshInstance3D",true,false):
@@ -142,14 +157,22 @@ func _process(delta: float) -> void:
 	if lair != null: lair.drips.advance(delta,_paused)
 	if creature == null: return
 	if not resident_enabled:
+		if foliage_tread != null: foliage_tread.tick(null,delta)
 		creature.visible = false
+		if ambient_without_resident and not _paused:
+			if fish != null: fish.advance(delta)
+			if dead_wood != null: dead_wood.advance(delta)
 		return
 	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	var present := not _habitat_blocked and _growth.terrain >= 0.995
 	creature.visible = present and (not routine.cave.concealed or lair != null)
+	if foliage_tread != null:
+		var on_ground: bool = present and not routine.cave.concealed and creature.state in [CreatureActor.State.IDLE,CreatureActor.State.ALERT,CreatureActor.State.WALKING,CreatureActor.State.ACTION]
+		foliage_tread.tick(creature.global_position if on_ground else null,delta,_paused)
 	var stopped := _paused or not present
 	if not stopped:
-		if not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
+		try_void_fall()
+		if creature.state != CreatureActor.State.FALLING and not _habitat_changed and not navigation.rebuilding and not _chunk_editor.forming:
 			var observing: bool = environment_life != null and environment_life.advance(delta)
 			if not observing and not (has_method("resident_activity_owned") and call("resident_activity_owned")):
 				if routine == null or not routine.advance(delta): brain.advance(delta)
@@ -164,6 +187,8 @@ func _process(delta: float) -> void:
 		if fish != null: fish.advance(delta)
 		if dead_wood != null: dead_wood.advance(delta)
 		creature.wet_coat.rain = 0.0 if routine.cave.sheltered() else _precipitation.state.x
+		var deck: Dictionary = habitat.walkways.at(Vector2(creature.position.x,creature.position.z))
+		creature.balancing = not deck.is_empty() and creature.position.y>=float(deck.height)
 		creature.advance(delta)
 		_reaction_time = maxf(0.0,_reaction_time-delta)
 		_reaction.visible = _reaction_time > 0.0
@@ -173,6 +198,39 @@ func _process(delta: float) -> void:
 		return
 	_life_status.text = "Bigfoot · %s · P pause" % ["needs a clearing" if _habitat_blocked else ("paused" if stopped else ("in his cave" if routine != null and routine.cave.sheltered() else ("cave · "+routine.cave.phase if routine != null and not routine.cave.phase.is_empty() else (routine.active if routine != null and not routine.active.is_empty() else CreatureBrain.Phase.keys()[brain.phase].to_lower()))))]
 
+## Only an actual missing terrain face triggers a void fall. A qualifying log
+## can still supply support there, and a held resident falls only on release.
+func try_void_fall(released := false) -> bool:
+	if creature == null or _chunk_editor.data.void_faces.is_empty(): return false
+	if creature.state == CreatureActor.State.FALLING: return true
+	if creature.is_held() and not released: return false
+	if routine != null and routine.cave.concealed: return false
+	var p := Vector2(creature.global_position.x,creature.global_position.z)
+	var data: NativeTerrainData = _chunk_editor.data
+	if not data.is_void(p): return false
+	var deck: Variant = habitat.navigation_height(p)
+	if deck != null and creature.global_position.y>=float(deck)-0.12: return false
+	if navigation.rebuilding: return false
+	var safe: Variant = nearest_safe_bank(creature.global_position)
+	if safe == null: return false
+	creature.begin_void_fall(safe,nearest_safe_bank)
+	if environment_life != null: environment_life.cancel()
+	if routine != null: routine.cancel("fell into the chasm")
+	brain.reset_behavior()
+	return true
+
+func nearest_safe_bank(point: Vector3) -> Variant:
+	var best: Variant = null
+	var distance := INF
+	for candidate: Vector3 in navigation._nodes:
+		var score := candidate.distance_squared_to(point)
+		if score>=distance: continue
+		var h: Variant = habitat.ground_height(Vector2(candidate.x,candidate.z))
+		if h == null or absf(h-candidate.y)>0.02 or not navigation.is_safe(candidate): continue
+		best = candidate
+		distance = score
+	return best
+
 func _geometry_changed() -> void:
 	_habitat_changed = true
 	if creature != null: creature.stop_walking()
@@ -181,6 +239,7 @@ func _geometry_changed() -> void:
 
 func _refresh_habitat(budgeted := false) -> void:
 	if _habitat_changed or not budgeted:
+		if foliage_tread != null: foliage_tread.clear()
 		_habitat_changed = false
 		if cave_sites != null: cave_sites.rebuild(_chunk_editor.data)
 		habitat.setup($Reference,_chunk_editor.data)
@@ -196,6 +255,7 @@ func _refresh_habitat(budgeted := false) -> void:
 	if creature.is_held():
 		var fallback: Variant = navigation.nearest_safe(creature._safe_position)
 		creature._safe_position = fallback if fallback != null else safe
+	elif creature.state == CreatureActor.State.FALLING or try_void_fall(): pass
 	elif not creature.blast_airborne and not navigation.is_safe(creature.global_position): creature.reset_at(safe)
 	brain.world_changed()
 	# New trees, new places for the wind to drop wood. Branches already lying on
@@ -271,6 +331,7 @@ func capture_life_state() -> Dictionary:
 	return routine.habits.capture()
 
 func restore_life_state(state: Dictionary) -> void:
+	routine.crossing_wish.reset()
 	if environment_life != null: environment_life.world_changed()
 	routine.cancel("garden opened")
 	_refresh_habitat()

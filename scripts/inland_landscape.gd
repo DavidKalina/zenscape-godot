@@ -39,8 +39,9 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		var angle := rng.randf()*TAU
 		var size := rng.randf_range(0.6,1.05)
 		var pick := rng.randf()
+		if data.ground_height(p) == null: continue
 		var h: float = data.ground_height(p)
-		if _is_wet(p) or _is_salt(p): continue
+		if _is_wet(p) or _is_salt(p) or _clearing(p): continue
 		if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.85: continue
 		var treeline := float(genome.treeline) if genome.habitat == "alpine" else 10.0
 		if h>treeline: continue
@@ -52,7 +53,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		var kind: String = "tree"
 		if genome.habitat == "woodland": kind = "layered_tree" if pick<0.15 else "broadleaf" if pick<0.6 else "tree"
 		elif genome.habitat == "redwood": kind = "redwood"
-		elif genome.habitat == "arid": kind = "cactus"
+		elif genome.habitat == "arid": kind = "joshua" if pick<0.55 else "cactus"
 		elif genome.habitat == "wetland": kind = "reeds"
 		if data.place(kind,p,angle,size)>=0:
 			planted += 1
@@ -62,7 +63,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	for i in range(25 if genome.habitat == "arid" else 620 if genome.habitat == "wetland" else 250):
 		if i%16 == 0: await work.checkpoint()
 		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
-		if _is_salt(p): continue
+		if data.ground_height(p) == null or _is_salt(p): continue
 		if (_is_wet(p) and not (genome.habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
 		var kind: String = "reeds" if genome.habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if genome.habitat == "meadow" else "shrub" if genome.habitat == "arid" else "grass_tuft"
@@ -74,10 +75,13 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 			elif i%13 == 0: kind = "mushroom"
 		if genome.habitat == "wetland" and float(data.ground_height(p))>1.65: kind = "bank_grass"
 		data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.9))
+	if int(genome.version)>=4: await _dress_places(work)
 	data.objects_revision += 1
 	data.discard_cache()
 
 func _is_wet(p: Vector2) -> bool:
+	if data.ground_height(p) == null: return true
+	if int(genome.version)>=4: return data._recipe.inland.sampler.wet(p)
 	for route in data.streams:
 		for point in route.pts:
 			if p.distance_squared_to(Vector2(point.x,point.z))<pow(float(route.width)*0.6+0.4,2.0): return true
@@ -90,3 +94,51 @@ func _is_wet(p: Vector2) -> bool:
 func _is_salt(p: Vector2) -> bool:
 	return genome.composition == "salt-basin" and Desert.field(genome,p).z>0.25
 
+
+func _clearing(p: Vector2) -> bool:
+	for place: Dictionary in data._recipe.inland.sampler.places:
+		if p.distance_to(place.center)<1.15: return true
+	return false
+
+func _dress_places(work: RefCounted) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(genome.plant_seed)+967
+	var habitat: String = genome.habitat
+	var palettes := {
+		"woodland":["fern","mushroom","grass_tuft","fern"],
+		"redwood":["fern","fern","mushroom","grass_tuft"],
+		"alpine":["grass_tuft","rock","grass_tuft","grass_tuft"],
+		"meadow":["daisy_flower","button_flower","spike_flower","grass_tuft"],
+		"wetland":["bank_grass","reeds","rock","grass_tuft"],
+		"arid":["rock","shrub","shrub","grass_tuft"]}
+	# Fine ground cover binds the small props into patches instead of isolated dots.
+	if habitat!="arid":
+		for z in range(data.MEADOW_CELLS):
+			if z%4==0: await work.checkpoint()
+			for x in range(data.MEADOW_CELLS):
+				var p := data.meadow_position(x,z)+Vector2.ONE*0.25
+				if maxf(absf(p.x),absf(p.y))>11.0 or _is_wet(p): continue
+				var near := false
+				for place: Dictionary in data._recipe.inland.sampler.places:
+					if p.distance_to(place.center)<float(place.radius)+1.8: near = true
+				if not near or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.65: continue
+				data.blades[z*data.MEADOW_CELLS+x] = 0.35
+				if habitat=="meadow": data.meadow[z*data.MEADOW_CELLS+x] = 0.16
+	for place: Dictionary in data._recipe.inland.sampler.places:
+		# A log, rock grouping or flower patch gives each clearing an edge;
+		# the middle stays available for Bigfoot and the player's own objects.
+		var cluster := Vector2.from_angle(rng.randf()*TAU)
+		var anchor: Vector2 = place.center+cluster*1.45
+		var focal := "log" if habitat in ["woodland","redwood"] and int(place.kind)==0 else "boulder_"+str(1+int(place.kind))
+		if not _is_wet(anchor) and not _is_salt(anchor):
+			data.place(focal,anchor,rng.randf()*TAU,0.55)
+		var planted := 0
+		for attempt in range(160):
+			if attempt%16==0: await work.checkpoint()
+			var p: Vector2 = anchor+Vector2.from_angle(rng.randf()*TAU)*sqrt(rng.randf())*1.8
+			if p.distance_to(place.center)<0.95 or _is_wet(p) or _is_salt(p): continue
+			if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.65: continue
+			var choices: Array = palettes[habitat]
+			var kind: String = choices[(planted+int(place.kind))%choices.size()]
+			if data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.85))>=0: planted += 1
+			if planted>=28: break

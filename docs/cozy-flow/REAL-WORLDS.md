@@ -8,6 +8,13 @@ across frames, then the new world grows over 5 seconds. Releasing early queues a
 to choose where Bigfoot lands yourself. The transition adds no fog blanket;
 each world's normal mist and weather remain intact.
 
+After a drop, Bigfoot finishes landing, takes a quiet beat, and surveys his
+surroundings for four seconds before approaching a suitable nearby tree for a
+gentle touch. Existing trunk bounds and safe routes decide whether contact is
+possible; without a suitable tree he resumes ordinary life. Pause freezes this
+introduction. Picking him up, replacing the world, or an urgent environmental
+reaction cancels it. Canceling a carry returns him without replaying arrival.
+
 ## What changes
 
 Regrowth now uses the native inland genome instead of cycling the eight curated

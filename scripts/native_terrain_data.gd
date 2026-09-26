@@ -9,7 +9,7 @@ signal state_restored(state: Dictionary)
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 64.0
 const MAX_EXPLOSIVES := 32
-const ASSETS := ["explosive","cactus","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
+const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -92,6 +92,12 @@ var _strands_probe := {}
 var _strands_seen := {}
 var _strands_ready := false
 var _face_center := PackedVector2Array()
+## Removed top faces, derived from the versioned terrain recipe.
+var void_faces := PackedByteArray()
+var _chasm_source: ArrayMesh
+var _chasm_mesh: ArrayMesh
+var _chasm_faces := PackedVector3Array()
+var _chasm_signature := PackedByteArray()
 var _face_probe := PackedInt32Array()
 var _ground_tint := Color("b49d78").srgb_to_linear()
 ## Bumped whenever the object records change. Serialising 3,000 records to
@@ -167,8 +173,16 @@ func setup(mesh: ArrayMesh) -> void:
 	# face whose shading could have moved.
 	_face_margin += 0.25+MEADOW_STEP
 
+func is_void(point: Vector2) -> bool:
+	return not void_faces.is_empty() and height_at(point.x,point.y) == null and sample(point,heights) != null
+
 func height_at(x: float, z: float) -> Variant:
-	return sample(Vector2(x,z), heights)
+	var p := Vector2(x,z)
+	var h: Variant = sample(p, heights)
+	if h != null and not void_faces.is_empty():
+		var face: int = _locate_face[_locate_cache[p]]
+		if void_faces[face/3] != 0: return null
+	return h
 
 ## The triangulation never changes after setup, so the barycentric solution for a
 ## given XZ point is fixed. Editing only moves vertices vertically. Memoising the
@@ -232,6 +246,13 @@ var _collision_faces := PackedVector3Array()
 
 func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
 	if source == null: source = build_mesh()
+	if not void_faces.is_empty():
+		if source != _chasm_source or void_faces != _chasm_signature:
+			_chasm_mesh = preload("res://scripts/native_chasm_mesh.gd").build(source,void_faces,vertex_ids)
+			_chasm_faces = _chasm_mesh.get_faces()
+			_chasm_source = source
+			_chasm_signature = void_faces.duplicate()
+		source = _chasm_mesh
 	if tunnels.is_empty(): return source
 	var signature := var_to_bytes(tunnels)
 	if source != _tunnel_source or signature != _tunnel_signature:
@@ -247,6 +268,7 @@ func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
 func play_collision_faces() -> PackedVector3Array:
 	var mesh := play_mesh()
 	if not tunnels.is_empty(): return _tunnel_faces.duplicate()
+	if not void_faces.is_empty(): return _chasm_faces.duplicate()
 	if mesh == _collision_source: return _collision_faces.duplicate()
 	var arrays: Array = _arrays if mesh == source_mesh else _mesh_arrays
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -271,9 +293,9 @@ func plant_underground(point: Vector3, blast_radius := 2.6) -> int:
 	return id
 
 func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
-	if tunnels.any(func(item: Dictionary) -> bool: return not item.sealed):
+	if not void_faces.is_empty() or tunnels.any(func(item: Dictionary) -> bool: return not item.sealed):
 		play_mesh()
-		var faces := _tunnel_faces
+		var faces := _tunnel_faces if not tunnels.is_empty() else _chasm_faces
 		var closest: Variant = null
 		var best := INF
 		for i in range(0,faces.size(),3):
@@ -767,6 +789,7 @@ func _set_recipe(settings: Dictionary, frame_tree: SceneTree = null) -> bool:
 	_recipe_settings = snapshot
 	last_recipe_workers = workers
 	_recipe = sampled.recipe
+	void_faces = preload("res://scripts/native_chasm_mesh.gd").mask(points,vertex_ids,_recipe.inland.genome) if snapshot.get("composition") == "chasm" else PackedByteArray()
 	_recipe_heights = sampled.heights
 	_recipe_gradients = sampled.gradients
 	_recipe_geology = sampled.geology
@@ -946,7 +969,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictionary = {}, tint := "") -> int:
 	if kind == "explosive" and explosive_count() >= MAX_EXPLOSIVES: return -1
-	if kind == "waterfall" or kind not in ASSETS or ground_height(point) == null or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+	if kind == "waterfall" or kind not in ASSETS or sample(point,heights) == null or (kind != "log" and ground_height(point) == null) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
@@ -995,7 +1018,7 @@ func update_object(id: int, changes: Dictionary) -> bool:
 			candidate[key] = value
 	if not GardenData._number(candidate.x,-14,14) or not GardenData._number(candidate.z,-14,14):
 		return false
-	if ground_height(Vector2(candidate.x,candidate.z)) == null:
+	if sample(Vector2(candidate.x,candidate.z),heights) == null or (candidate.asset != "log" and ground_height(Vector2(candidate.x,candidate.z)) == null):
 		return false
 	if not GardenData._number(candidate.angle,-TAU*100,TAU*100) or not GardenData._number(candidate.scale,0.1,5.0):
 		return false
@@ -1077,7 +1100,7 @@ func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
 	return true
 
 func object_position(item: Dictionary) -> Vector3:
-	return Vector3(item.x,(float(item.anchor_y) if item.asset == "explosive" else height_at(item.x,item.z))+(preload("res://scripts/native_object_pose.gd").decode_offset(item.pose) if item.has("pose") else 0.0),item.z)
+	return Vector3(item.x,(float(item.anchor_y) if item.asset == "explosive" else sample(Vector2(item.x,item.z),heights))+(preload("res://scripts/native_object_pose.gd").decode_offset(item.pose) if item.has("pose") else 0.0),item.z)
 
 static func valid_explosive(item: Dictionary) -> bool:
 	return GardenData._number(item.get("anchor_y"),MIN_HEIGHT,MAX_HEIGHT) and GardenData._number(item.get("blast_radius"),1.0,6.0) and item.get("leaf_cover") is bool
@@ -1205,7 +1228,7 @@ func load_document(document: Variant) -> bool:
 			if not item is Dictionary or not GardenData._number(item.get("x"),-14,14) or not GardenData._number(item.get("z"),-14,14):
 				return false
 			var point := Vector2(item.x,item.z)
-			if ground_height(point) == null:
+			if sample(point,heights) == null:
 				return false
 			var record := {"x":point.x,"z":point.y}
 			if field == "objects":
@@ -1217,7 +1240,7 @@ func load_document(document: Variant) -> bool:
 					if not GardenData._number(item.get("end_x"),-14,14) or not GardenData._number(item.get("end_z"),-14,14):
 						return false
 					var endpoint := Vector2(item.end_x,item.end_z)
-					if ground_height(endpoint) == null or endpoint.distance_to(point) < 0.5:
+					if sample(endpoint,heights) == null or endpoint.distance_to(point) < 0.5:
 						return false
 					record.merge({"end_x":endpoint.x,"end_z":endpoint.y})
 				ids[item.id] = true

@@ -288,6 +288,12 @@ func _build() -> void:
 		_library.add_child(button)
 		button.pressed.connect(_take_special.bind(entry[0]))
 		_entries[entry[0]] = {"button":button,"group":entry[2],"title":entry[1],"blurb":entry[3]}
+	if editor.scene.get("scenery_mode"):
+		# Scenery mode: the resident and his tree stay out of the palette.
+		for id: String in ["bigfoot","bigfoot_tree"]:
+			if not _entries.has(id): continue
+			_entries[id].button.hide()
+			_entries.erase(id)
 	# Use truthful descriptions of the currently available tools.
 	for id: String in {"tree":"Pine", "raise":"Rolling hill", "rock":"Boulder", "meadow":"Wildflowers", "range":"Mountain ridge"}:
 		_entries[id].title = {"tree":"Pine", "raise":"Rolling hill", "rock":"Boulder", "meadow":"Wildflowers", "range":"Mountain ridge"}[id]
@@ -299,7 +305,7 @@ func _build() -> void:
 	_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_results.add_theme_constant_override("separation",2)
 	_result_scroll.add_child(_results)
-	_empty.text = "Nothing by that name\nTry “tree”, “water”, “wind”, or “bigfoot”."
+	_empty.text = "Nothing by that name\nTry “tree”, “water”, “wind”, or “fog”."
 	_empty.position = Vector2(24,160)
 	_empty.size = Vector2(460,70)
 	_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

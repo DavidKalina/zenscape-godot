@@ -1,8 +1,13 @@
 extends Node
 ## Cozy prototype: reverse the source growth channels, regenerate in place,
 ## then replay them forward. One native world; the camera and Bigfoot stay put.
+## In scenery mode there is no Bigfoot to carry: regrow folds and replays the
+## land directly.
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
+## The best-scoring seeds per landform family (tools/probe_world_beauty.gd),
+## plus a few weathers. Step through them with [ and ] to check look changes.
+const SHOWCASE := [184,105,147,193,276,79,240,363,176,33,102,353,58,177,198,134,45,126,248,250,28,364]
 const DEGROW_SECONDS := 3.4
 const GROW_SECONDS := 5.0
 var scene: Node3D
@@ -20,6 +25,9 @@ var edge_time := 0.0
 var pending_drop := false
 var phase := "ready"
 var generation := 0
+## The seed the current landscape grew from; -1 for saved or preset places.
+var world_seed := -1
+var showcase_index := -1
 var generated_world := {}
 var previous_look := {}
 var next_look := {}
@@ -70,12 +78,36 @@ func setup(owner_scene: Node3D) -> void:
 	scene.set_building(false)
 	_set_growth(1.0)
 	scene._paused = false
-	scene.resident_enabled = true
+	scene.resident_enabled = not _scenery()
 	_build_overlay()
 	initialized = true
 	busy = false
 	_update_badge()
-	scene._notice.text = "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--seed")
+	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): regrow.call_deferred(int(args[at+1]))
+
+## Regrow the next or previous showcase seed.
+func step_showcase(direction: int) -> void:
+	if busy: return
+	showcase_index = posmod(showcase_index+direction,SHOWCASE.size())
+	regrow(SHOWCASE[showcase_index])
+
+## A random seed whose landform family differs from the current one. The
+## family is the first genome draw, so this stays cheap and the seed alone
+## reproduces the world.
+func _fresh_seed() -> int:
+	var current: String = scene._chunk_editor.data._recipe_settings.get("composition",scene._chunk_editor.data._recipe_settings.get("family",""))
+	for attempt in range(32):
+		var candidate := randi() % 1000000
+		var rng := RandomNumberGenerator.new()
+		rng.seed = candidate
+		if preload("res://scripts/inland_genome.gd").sample(rng.randi_range(0,999999)).composition != current: return candidate
+	return randi() % 1000000
+
+func _scenery() -> bool:
+	return bool(scene.get("scenery_mode"))
 
 func _build_overlay() -> void:
 	cover.layer = 60
@@ -135,7 +167,7 @@ func _build_overlay() -> void:
 func _label(world: Node3D) -> String:
 	var recipe: Dictionary = world._chunk_editor.data._recipe_settings
 	if recipe.get("kind")=="inland":
-		return recipe.biome.capitalize()+" · "+recipe.composition.replace("-"," ").capitalize()
+		return recipe.biome.capitalize()+" · "+recipe.composition.replace("-"," ").capitalize()+(" · seed %d" % world_seed if world_seed>=0 else "")
 	var family: String = world._chunk_editor.data._recipe_settings.get("family","")
 	return Presets.PRESETS[family].title if Presets.PRESETS.has(family) else "Your clearing"
 
@@ -147,6 +179,7 @@ func blocks(point: Vector2) -> bool:
 
 func handle(event: InputEvent) -> bool:
 	if not initialized: return true
+	if _scenery(): return busy
 	if event is InputEventKey and event.pressed and event.keycode==KEY_ESCAPE and holding:
 		cancel_carry()
 		return true
@@ -176,6 +209,8 @@ func begin_carry() -> void:
 	scene._chunk_editor.finish_stroke()
 	scene.world_play.cancel()
 	scene.routine.cancel("carried through the landscape")
+	scene.environment_life.cancel()
+	if scene.foliage_tread != null: scene.foliage_tread.clear()
 	scene._resident_play.cancel()
 	holding = true
 	scene._paused = true
@@ -219,7 +254,7 @@ func _process(delta: float) -> void:
 			armed = false
 			regrow()
 
-func regrow(world_seed := -1) -> void:
+func regrow(requested_seed := -1) -> void:
 	if busy or not initialized or scene._chunk_editor.forming: return
 	var before_state := NativeGardenStore.capture(scene)
 	if holding:
@@ -230,7 +265,12 @@ func regrow(world_seed := -1) -> void:
 	previous_hour = scene._celestial.phase
 	previous_distance = scene.distance
 	next_look = {}
-	if not holding:
+	if _scenery():
+		old_paused = scene._paused
+		scene._chunk_editor.finish_stroke()
+		scene.world_play.cancel()
+		scene._paused = true
+	elif not holding:
 		last_mouse = scene.camera.unproject_position(scene.creature.global_position+Vector3.UP*2.0)
 		begin_carry()
 		pending_drop = true
@@ -243,7 +283,9 @@ func regrow(world_seed := -1) -> void:
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
-	generated_world = Generator.sample(randi() if world_seed<0 else world_seed,scene._chunk_editor.data._recipe_settings)
+	var chosen := _fresh_seed() if requested_seed<0 else requested_seed
+	generated_world = await Generator.sample_async(chosen,{},get_tree())
+	world_seed = chosen
 	scene._notice.text = "Shaping a new wilderness…"
 	await scene._chunk_editor.form_inland(generated_world.terrain,true,false)
 	# form_inland captures its snapshot while the old world is folded down.
@@ -260,25 +302,31 @@ func regrow(world_seed := -1) -> void:
 	next_distance = await _fit_distance(get_tree())
 	_set_growth(0.0)
 	# Navigation is prepared before Bigfoot can be released onto the new ground.
+	# Scenery mode has nobody to walk it; the habitat rebuilds lazily if he returns.
 	await get_tree().process_frame
-	var nav_workers: int = scene.navigation.thread_workers
-	# Two snapshots leave room for rendering; four copies cost a frame by
-	# themselves on dense forests. Poll and merge within the native 2 ms budget.
-	scene.navigation.thread_workers = 2
-	scene._refresh_habitat(true)
-	while scene.navigation.rebuilding:
-		await get_tree().process_frame
+	if not _scenery():
+		var nav_workers: int = scene.navigation.thread_workers
+		# Two snapshots leave room for rendering; four copies cost a frame by
+		# themselves on dense forests. Poll and merge within the native 2 ms budget.
+		scene.navigation.thread_workers = 2
 		scene._refresh_habitat(true)
-	scene.navigation.thread_workers = nav_workers
-	await get_tree().process_frame
+		while scene.navigation.rebuilding:
+			await get_tree().process_frame
+			scene._refresh_habitat(true)
+		scene.navigation.thread_workers = nav_workers
+		await get_tree().process_frame
 	scene._growth.reset_feedback()
 	phase = "growing"
-	scene._notice.text = "A new little wilderness, growing around him…"
+	scene._notice.text = "A new little wilderness, growing…" if _scenery() else "A new little wilderness, growing around him…"
 	await _animate_growth(true,GROW_SECONDS)
 	generation += 1
 	phase = "ready"
 	busy = false
 	_update_badge()
+	if _scenery():
+		scene._paused = old_paused
+		scene._notice.text = ""
+		return
 	# The original pickup ground no longer exists after regeneration.
 	var safe: Variant = scene.navigation.nearest_safe(origin_feet)
 	if safe!=null: origin_feet = safe
@@ -386,6 +434,23 @@ func drop_at(mouse: Vector2) -> void:
 	if busy:
 		pending_drop = true
 		return
+	# The carry portrait has no world position. Project its release onto the
+	# original bank's plane so a missing triangle remains a deliberate drop.
+	if scene._chunk_editor.pointer_in_world(mouse) and not scene._chunk_editor.data.void_faces.is_empty():
+		var hit: Variant = Plane(Vector3.UP,origin_feet.y).intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
+		if hit is Vector3:
+			var p := Vector2(hit.x,hit.z)
+			var data: NativeTerrainData = scene._chunk_editor.data
+			if data.is_void(p):
+				var support: Variant = scene.navigation._ground(hit)
+				if support == null and not scene.navigation.rebuilding and scene.nearest_safe_bank(hit) != null:
+					_end_hold()
+					scene.creature.reset_at(hit+Vector3.UP*0.9)
+					if scene.try_void_fall(true): return
+				elif support != null and scene.navigation.is_safe(support):
+					_end_hold()
+					scene.creature.reset_at(support)
+					return
 	_update_landing(mouse)
 	if landing==null: landing = scene.navigation.nearest_safe(origin_feet)
 	if landing==null: cancel_carry(); return
@@ -395,6 +460,7 @@ func drop_at(mouse: Vector2) -> void:
 	scene.creature.pick_up()
 	scene.creature.position = point+Vector3.UP*0.9
 	scene.creature.release_at(point)
+	scene.environment_life.welcome_arrival()
 	scene._notice.text = "A little place to linger."
 
 func cancel_carry() -> void:
@@ -424,7 +490,7 @@ func save_places() -> bool:
 	scene.flush_world_play()
 	var state := NativeGardenStore.capture(scene)
 	state.scene._paused = false
-	state.diorama.resident = true
+	state.diorama.resident = not _scenery()
 	slots[active] = {"label":_label(scene),"document":scene._chunk_editor.data.to_document(),"state":state}
 	var temporary: String = primary.places_path+".tmp"
 	var file := FileAccess.open(temporary,FileAccess.WRITE)

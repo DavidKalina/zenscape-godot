@@ -29,6 +29,16 @@ global uniform vec4 zs_puff_2;
 global uniform vec4 zs_puff_3;
 global uniform vec4 zs_puff_4;
 global uniform vec4 zs_puff_5;
+global uniform vec4 zs_tread_0;
+global uniform vec4 zs_tread_1;
+global uniform vec4 zs_tread_2;
+global uniform vec4 zs_tread_3;
+global uniform vec4 zs_tread_4;
+global uniform vec4 zs_tread_5;
+global uniform vec4 zs_tread_6;
+global uniform vec4 zs_tread_7;
+global uniform vec4 zs_tree_tread_weights_0;
+global uniform vec4 zs_tree_tread_weights_1;
 global uniform vec4 zs_flash;
 global uniform vec3 zs_alpen;
 global uniform bool zs_surface_post;
@@ -40,6 +50,11 @@ global uniform vec3 zs_sky_down;
 global uniform vec3 zs_sky_up;
 global uniform vec3 zs_sky_glow;
 global uniform vec3 zs_sun_direction;
+// Look pass (scripts/look_pass.gd): contact occlusion, silhouette rim and shore strengths.
+global uniform float zs_look_ao;
+global uniform float zs_look_rim;
+// Shoreline foam on water and wet-bank darkening on the ground beside it.
+global uniform float zs_look_shore;
 global uniform vec3 zs_moon_direction;
 global uniform vec3 zs_moon_shadow_direction;
 global uniform float zs_dusk_direction;

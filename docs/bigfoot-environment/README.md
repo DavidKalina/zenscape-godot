@@ -20,6 +20,16 @@ routines. Resting and physical interactions take precedence over quiet scenery
 watching. Navigation checks every approach; edits and carrying release contact.
 Pausing freezes the behavior clock and defers queued lightning.
 
+The one-handed tree touch now takes 8.2 seconds after approaching and planting
+his feet. He pauses before reaching, holds his palm against the trunk while
+tilting his head and leaning gently, glances toward the clearing, then looks
+back as he peels his hand away and settles. The arrival invitation uses this
+same performance. `bigfoot_tree_touch.gd` samples the motion from action time;
+the palm follows a cached start/contact/release path, with no root translation.
+The environmental test checks the linger, anchored palm, planted feet, farewell
+gaze and pickup interruption. The stages and a close contact view were rendered
+for visual inspection.
+
 ## Implementation
 
 `bigfoot_environment.gd` owns approaches and short performances; CreatureActor

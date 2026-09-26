@@ -30,7 +30,7 @@ const MEMORY_STRIDE := 7
 ## signal is the asset name, which is what the record carries.
 const FAST_ASSETS := ["grass_tuft","flower","button_flower","spike_flower","umbel_flower","daisy_flower","fern","reeds","bank_grass","mushroom"]
 const SHRUB_ASSETS := ["shrub","cactus","leaf_bed"]
-const TREE_ASSETS := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree"]
+const TREE_ASSETS := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree","joshua"]
 const DEAD_ASSETS := ["log","stump","snag"]
 const BURN_SECONDS := {"fast":4.0,"shrub":12.0,"tree":40.0,"deadwood":25.0}
 const CANOPY_FUEL := {"fast":0.15,"shrub":0.5,"tree":1.0,"deadwood":0.6}

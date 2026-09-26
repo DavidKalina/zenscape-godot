@@ -25,10 +25,12 @@ var _status: Label
 var _source: Dictionary
 var _orbiting := false
 ## Source OrbitControls damping: pointer deltas pool here and 5 % of the pool
-## is applied per rendered frame, so the camera glides and settles.
+## is applied per 60 Hz frame, so the camera glides and settles.
 const CAMERA_DAMPING := 0.05
-## Comparison-only escape hatch for evaluating the previous response.
-var camera_time_based_damping := false
+## Time-based by default so the glide is the same at 60, 144 or 240 Hz and
+## frame-time jitter does not become speed jitter. False restores the source's
+## fixed per-frame fraction for comparison.
+var camera_time_based_damping := true
 const ZOOM_STEP := 0.95
 var _orbit_delta := Vector2.ZERO
 var _pan_delta := Vector2.ZERO
@@ -55,6 +57,7 @@ var _wind := 0.4
 var _environment: Environment
 var _panning := false
 var _quality: OptionButton
+var look_pass = preload("res://scripts/look_pass.gd").new()
 var _atmosphere: Node3D
 var _landscape_editor: PanelContainer
 var _look_editor: PanelContainer
@@ -367,6 +370,7 @@ func _setup_environment() -> void:
 	add_child(lighting)
 	lighting.setup(_source)
 	_environment = lighting.environment
+	look_pass.setup(self)
 	_lights.assign(lighting.lights)
 
 func _reset_camera(reference_pose := false) -> void:
@@ -461,9 +465,9 @@ func _zoom(amount: float) -> void:
 
 func _ease_camera(delta: float) -> void:
 	# OrbitControls.update() is called without deltaTime in the source, so its
-	# damping is a fixed fraction per displayed frame. Scaling this by measured
-	# frame time changes the fraction consumed per frame. Keep the prior
-	# response available in the comparison tool for a direct feel check.
+	# damping is a fixed fraction per displayed frame. That ties the feel to the
+	# refresh rate; the product scales it to a 60 Hz frame instead. The source
+	# response stays available in the comparison tool for a direct feel check.
 	var apply := 1.0 - pow(1.0 - CAMERA_DAMPING, delta * 60.0) if camera_time_based_damping else CAMERA_DAMPING
 	var retain := 1.0 - apply
 	var height := maxf(get_viewport().get_visible_rect().size.y, 1.0)
@@ -516,6 +520,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: _frog_motion.startle()
 			KEY_N: _celestial.next_hour()
 			KEY_B: _summon_bigfoot()
+			KEY_F6:
+				look_pass.toggle()
+				var note: Label = get("_notice") if get("_notice") != null else _status
+				note.text = "Look pass on · F6" if look_pass.enabled else "Look pass off · F6"
 			KEY_T: _tremor.add(0.7)
 			KEY_L: _lightning.strike(Vector2(target.x, target.z), camera.global_position)
 			KEY_Y: _growth.replay()
@@ -635,6 +643,7 @@ func _process(delta: float) -> void:
 		_display_fog.blend.set_shader_parameter("aerial_sun_color", _celestial.aerial_sun_color)
 		_display_fog.material.set_shader_parameter("fog_display", _celestial.fog_display)
 		_display_fog.update_view()
+	look_pass.update(camera, _celestial)
 	_redwood_mist.sync(self)
 	_world_visuals.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
@@ -1165,18 +1174,17 @@ func _build_ui() -> void:
 	study.add_child(encounter)
 	var quality := OptionButton.new()
 	_quality = quality
-	quality.add_item("Beauty · ambient occlusion and glow")
+	quality.add_item("Beauty · glow and light shafts")
 	quality.add_item("Balanced · lighter post-processing")
+	quality.add_item("Ultra · 4x MSAA, finer fog, ambient occlusion")
 	quality.focus_mode = Control.FOCUS_NONE
 	quality.disabled = RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	quality.tooltip_text = "Use run-fidelity.command for Forward+ ambient occlusion and glow." if quality.disabled else ""
 	quality.item_selected.connect(_set_quality)
 	study.add_child(quality)
-	# Balanced by default: on this scene ambient occlusion and glow change no
-	# pixel at any hour (the reference materials take no ambient light and
-	# nothing crosses the glow threshold) yet cost about 3 ms a frame at
-	# native resolution. Beauty stays selectable for scenes that use them.
-	_set_quality(1)
+	# Beauty by default: the look pass gives glow something to catch and adds
+	# light shafts. --balanced keeps the lighter tier for slower machines.
+	_set_quality(0)
 	# The panel hugs its controls and stops short of the palette, so the column
 	# never overlaps the bar and inspecting leaves no empty column behind.
 	var fit_column := func() -> void:
@@ -1196,8 +1204,7 @@ func _set_wind(value: float) -> void:
 
 func _set_quality(index: int) -> void:
 	_quality.select(index)
-	_environment.ssao_enabled = index == 0
-	_environment.glow_enabled = index == 0
+	look_pass.apply_tier(index)
 
 func _vector(values: Array) -> Vector3:
 	return Vector3(values[0], values[1], values[2])

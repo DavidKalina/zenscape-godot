@@ -146,7 +146,7 @@ func setup(owner_palette: NativeBuildPalette) -> void:
 	choices.custom_minimum_size.x = 208
 	choices.add_theme_font_size_override("font_size",13)
 	Style.button(choices)
-	choices.item_selected.connect(func(index: int) -> void: palette._choose(FAMILIES[family][index]))
+	choices.item_selected.connect(func(index: int) -> void: palette._choose(_family_tools(family)[index]))
 	context.add_child(choices)
 	context.add_child(quick)
 	context.add_child(tunnel_actions)
@@ -241,8 +241,8 @@ func sync() -> void:
 		miniatures[piece].set_pressed_no_signal(piece == id)
 	choices.clear()
 	choices.visible = family in ["Sculpt","Paint","Water"]
-	for tool: String in FAMILIES[family]: choices.add_item(palette._title(tool))
-	var index: int = FAMILIES[family].find(editor.mode)
+	for tool: String in _family_tools(family): choices.add_item(palette._title(tool))
+	var index: int = _family_tools(family).find(editor.mode)
 	if index >= 0: choices.select(index)
 	trail.visible = editor.trail_available() and id != "bigfoot"
 	trail.set_pressed_no_signal(editor.placement_trail)
@@ -336,3 +336,9 @@ func fit() -> void:
 	var card_left := clampf(held.get_global_rect().position.x,16.0,screen.x-card.size.x*factor-16.0)
 	card.position = (Vector2(card_left,screen.y-(card.size.y+size.y)*factor-28)-position)/factor
 	palette._fit_details.call_deferred()
+
+## Scenery mode leaves the resident's tree out of the Place choices.
+func _family_tools(key: String) -> Array:
+	var tools: Array = FAMILIES[key]
+	if editor.scene.get("scenery_mode"): tools = tools.filter(func(tool: String) -> bool: return tool != "bigfoot_tree")
+	return tools

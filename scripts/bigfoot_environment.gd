@@ -3,6 +3,8 @@ extends Node
 ## scenery bounds; physical interruptions always take precedence.
 const TREES := ["tree","layered_tree","broadleaf","redwood","bigfoot_tree"]
 const TREE_HUG = preload("res://scripts/bigfoot_tree_hug.gd")
+const TREE_TOUCH = preload("res://scripts/bigfoot_tree_touch.gd")
+var _touch_start := Vector3.ZERO
 const FIRE = preload("res://scripts/bigfoot_fire.gd")
 ## Fire sits just below lightning: it cancels everything else, but a strike
 ## still gets its own frame first. Inert until the scene owns a `_fire_field`.
@@ -20,6 +22,11 @@ var phase := ""
 var target := {}
 var history: Array[String] = []
 var autonomous := true
+var arrival_pending := false
+var arrival_elapsed := 0.0
+var _arrival_facing := Basis.IDENTITY
+var _watched_tree: PlaySpringTree
+var _tree_response_after := 0.0
 var _clock := 0.0
 var _elapsed := 0.0
 var _next := 14.0
@@ -65,6 +72,50 @@ func _on_strike(point: Vector3) -> void:
 
 func busy() -> bool: return not active.is_empty()
 
+## Only deliberate player releases invite this response; ordinary wind does not.
+func notice_tree_release(tree: PlaySpringTree, strength: float) -> bool:
+	if not is_instance_valid(tree) or not is_finite(strength) or strength<0.04: return false
+	if scene._paused or not scene.resident_enabled or _clock<_tree_response_after: return false
+	if scene.has_method("resident_activity_owned") and scene.resident_activity_owned(): return false
+	if busy() or _routine_busy() or not scene.creature.can_roam(): return false
+	if scene.creature.global_position.distance_to(tree.global_position)>8.0: return false
+	arrival_pending = false
+	_watched_tree = tree
+	_tree_response_after = _clock+9.0
+	var look := tree.center(minf(tree.tree_height*0.6,3.0))
+	_begin("tree_startle" if strength>=0.55 else "tree_curious",look,4.2)
+	return true
+
+## Placement offers a short, interruptible introduction before normal choices.
+## Landing keeps its authored motion; surveying begins only on solid ground.
+func welcome_arrival() -> void:
+	cancel()
+	scene.routine.cancel("arriving in a place")
+	scene.brain.reset_behavior()
+	arrival_pending = true
+	arrival_elapsed = 0.0
+	_arrival_facing = scene.creature.basis
+
+func _advance_arrival(dt: float) -> bool:
+	var actor: CreatureActor = scene.creature
+	if actor.state == CreatureActor.State.LANDING: return true
+	if not actor.can_roam():
+		arrival_pending = false
+		return false
+	arrival_elapsed += dt
+	# A quiet beat lets the landing finish before his attention moves outward.
+	if arrival_elapsed > 0.8:
+		var sweep := sin(clampf((arrival_elapsed-0.8)/3.2,0.0,1.0)*TAU)*0.42
+		var direction := _arrival_facing*Vector3(sin(sweep),0.08,cos(sweep))
+		actor.track_gaze(actor.position+Vector3.UP*1.9+direction*5.0)
+	if arrival_elapsed < 4.0: return true
+	arrival_pending = false
+	# Existing contact selection owns bounds, reachability and the approach.
+	if request("tree_touch"): return true
+	_next = _clock+8.0
+	scene.brain.reset_behavior()
+	return false
+
 func advance(delta: float) -> bool:
 	if delta<=0.0 or scene._paused: return busy()
 	var dt := minf(delta,0.05)
@@ -85,12 +136,20 @@ func advance(delta: float) -> bool:
 		# reports "not observing" so the brain keeps driving the journey.
 		var burning: bool = fire.advance(dt,owned)
 		if burning or fire.busy():
-			if busy(): cancel()
+			if busy() or arrival_pending: cancel()
 			return burning
 	if owned or (not actor.can_roam() and actor.state != CreatureActor.State.ACTION):
+		if arrival_pending and not owned and actor.state == CreatureActor.State.LANDING:
+			return true
 		cancel()
 		return false
+	if arrival_pending: return _advance_arrival(dt)
 	if busy():
+		if active in ["tree_curious","tree_startle"]:
+			if not is_instance_valid(_watched_tree) or _watched_tree.held:
+				cancel()
+				return false
+			_look = _watched_tree.center(minf(_watched_tree.tree_height*0.6,3.0))
 		_elapsed += dt
 		if _elapsed>35.0 or (not target.is_empty() and not _target_valid()):
 			cancel()
@@ -105,7 +164,7 @@ func advance(delta: float) -> bool:
 		elif phase == "turn":
 			actor.track_gaze(Vector3(_look.x,actor.global_position.y+2.15,_look.z) if active == "tree_hug" else _look)
 			if actor.turn_step(_facing,dt):
-				if active == "tree_hug":
+				if active in ["tree_hug","tree_touch"]:
 					phase = "plant"
 					_arrive_left = 0.35
 				else: _perform()
@@ -187,7 +246,7 @@ func request(kind: String) -> bool:
 			target.center = center
 			target.radius = radius
 			target.contact_height = clampf(box.end.y-center.y-0.22,1.0,1.75)
-			_travel(kind,route,center+Vector3.UP*1.9,7.5 if kind == "tree_hug" else 4.8)
+			_travel(kind,route,center+Vector3.UP*1.9,7.5 if kind == "tree_hug" else TREE_TOUCH.DURATION)
 			return true
 	return false
 
@@ -231,12 +290,13 @@ func _begin(kind: String, look: Vector3, duration: float) -> void:
 	var offset: Vector3 = look-scene.creature.position
 	_facing = atan2(offset.x,offset.z)
 	phase = "turn"
-	if kind in ["shock","startle","meteor"]: _perform()
+	if kind in ["shock","startle","meteor","tree_startle"]: _perform()
 
 func _perform() -> void:
 	phase = "perform"
 	_elapsed = 0.0
 	var clip := "Idle"
+	if active == "tree_touch": _touch_start = scene.creature.hand_position("R")
 	if active == "tree_hug":
 		_hug_count += 1
 		_hug_variant = TREE_HUG.make_variant(_hug_count*4707+str(target.get("id","")).hash())
@@ -285,15 +345,20 @@ func _pose(delta := 0.0) -> void:
 	if active == "tree_hug":
 		_pose_tree_hug(actor,t)
 	elif active == "tree_touch":
+		var motion: Dictionary = TREE_TOUCH.sample(t)
+		actor.environment_motion = motion
 		var radius: float = target.radius
-		for side in (["R","L"] if active == "tree_hug" else ["R"]):
-			var sign := -1.0 if side == "R" else 1.0
-			var center: Vector3 = target.center+Vector3.UP*(float(target.get("contact_height",1.75))+(-0.1 if side == "R" else 0.07))
-			# Reach round opposite sides, elbows outside the trunk, hands along
-			# its far quarter. A soft approach avoids hands crossing the wood.
-			var point := center+actor.basis.x*sign*radius*0.94+actor.basis.z*radius*0.34
-			var elbow := center+actor.basis.x*sign*(radius+0.48)-actor.basis.z*0.32
-			actor.reach_hand(point,weight,side,elbow)
+		var center: Vector3 = target.center+Vector3.UP*(float(target.get("contact_height",1.75))-0.1)
+		var contact := center-actor.basis.x*radius*0.94+actor.basis.z*radius*0.34
+		var point := _touch_start.lerp(contact,float(motion.reach))
+		point -= actor.basis.x*float(motion.arc)*0.18
+		# Peel down and outward, then return to the resting palm before releasing IK.
+		var release: float = motion.release
+		point = point.lerp(_touch_start,release)
+		point -= Vector3.UP*sin(release*PI)*0.12
+		var elbow := center-actor.basis.x*(radius+0.48)-actor.basis.z*0.32
+		actor.reach_hand(point,float(motion.weight),"R",elbow)
+		actor.track_gaze(_look.lerp(actor.position+actor.basis.x*3.0+actor.basis.z*3.0+Vector3.UP*2.1,float(motion.glance_away)))
 	elif active in ["horizon","rainbow"]:
 		actor.reach_hand(actor.to_global(Vector3(-0.32,2.65,0.4)),weight*0.95,"R",actor.to_global(Vector3(-1.0,2.1,0.2)),Basis(-actor.basis.z,actor.basis.x,-actor.basis.y))
 	elif active in ["rain","snow"]:
@@ -383,11 +448,13 @@ func _finished(_clip: String, cancelled: bool) -> void:
 	_clear()
 
 func cancel() -> void:
+	arrival_pending = false
 	var performing := busy() and phase == "perform"
 	_clear()
 	if performing and scene.creature.state == CreatureActor.State.ACTION: scene.creature.cancel_action()
 
 func _clear() -> void:
+	_watched_tree = null
 	if not active.is_empty():
 		_cooldowns[active] = _clock+45.0
 		if active == "snow": _cooldowns.rain = _clock+45.0

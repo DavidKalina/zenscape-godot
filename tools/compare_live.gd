@@ -37,7 +37,7 @@ class ResetView extends Node:
 			scene._update_camera()
 			get_viewport().set_input_as_handled()
 	func _refresh_title() -> void:
-		DisplayServer.window_set_title("Godot · camera: %s · shadows: %s · pacing: %s · air: %s" % ["previous" if scene.camera_time_based_damping else "revised", "previous" if old_shadows else "filtered", "display sync" if display_synced else "120 timer", ["normal", "no history", "hidden"][atmosphere_test]])
+		DisplayServer.window_set_title("Godot · camera: %s · shadows: %s · pacing: %s · air: %s" % ["time-based" if scene.camera_time_based_damping else "per-frame", "previous" if old_shadows else "filtered", "display sync" if display_synced else "120 timer", ["normal", "no history", "hidden"][atmosphere_test]])
 	func _set_atmosphere_test() -> void:
 		var fog: CanvasLayer = scene._display_fog
 		if fog == null: return

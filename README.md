@@ -22,6 +22,11 @@ Character selection remains deferred. The original lightweight study is still
 available by running `studies/cozy_flow_prototype.tscn` with F6; its
 [prototype notes](docs/cozy-flow/NOTES.md) describe that session-only version.
 
+**World → New crossing glade** opens a small stream-side activity. Move the long
+log across the water or sculpt stepping stones so Bigfoot can reach the quiet
+bank. He balances or hops across, rests, and remembers the place for later visits.
+See [crossing glade](docs/crossing-glade/README.md) for controls and validation.
+
 ## Create a diorama
 
 Launch **`run-diorama.command`** to enter the inhabited
@@ -257,9 +262,24 @@ justify local mesh rebuilds; tiles should remain invisible to the player.
 godot --headless --editor --path . --import
 godot --headless --path . --script tests/test_landscape.gd
 godot --headless --path . --script tests/test_garden.gd
-godot --path . --script tests/test_scene.gd
-godot --path . --script tests/test_garden_scene.gd
+godot --headless --path . --script tests/test_world_clock.gd
 ```
+
+The Python runners also default to headless, so automated checks do not open
+windows or take focus. To run selected tests with retained logs and a JSON report:
+
+```sh
+python3 tools/check_bigfoot_living_regressions.py --tests test_world_clock.gd
+```
+
+Use `--godot /path/to/Godot` to override the executable. Repeat `--tests` to select
+multiple scripts, or omit it to attempt all tests headless.
+
+Headless uses Godot's dummy renderer. Some integration tests require GPU pixel
+readback or MultiMesh transform storage and can fail or time out in this mode;
+a headless run does not replace those visual checks. Both Python runners accept
+`--rendered` for an explicitly requested Forward+ run, which opens windows and
+may take focus. They never automatically fall back to graphical execution.
 
 ## Direction
 
