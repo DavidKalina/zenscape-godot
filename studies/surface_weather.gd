@@ -11,19 +11,29 @@ var air_wet := 0.0
 var foliage_wet := 0.0
 var flow_time := 0.0
 var snow_phase := 0.0
+## Living weather (scripts/living_weather.gd) slows the gold, cold, ice and
+## snow cover so a drifting sky changes the ground gently. 1.0 is the source.
+var pace := 1.0
+## Sustained cold frosts the ground only up to here, and snowfall above it
+## settles back slowly once the snow stops, so a long winter keeps the world's
+## snow line instead of whitening everything. 1.0 is the source behaviour.
+var frost_limit := 1.0
 
 func advance(delta: float, paused: bool, rain: float, cloud: float, wind: float) -> void:
 	if not paused:
-		autumn = lerpf(autumn, target_autumn, 1.0 - exp(-delta * 0.55))
-		cold = lerpf(cold, target_cold, 1.0 - exp(-delta * 0.55))
+		var step := delta * pace
+		autumn = lerpf(autumn, target_autumn, 1.0 - exp(-step * 0.55))
+		cold = lerpf(cold, target_cold, 1.0 - exp(-step * 0.55))
 		snow_phase = smoothstep(0.35, 0.7, cold)
 		var snowing := minf(1.0, rain * 1.2) * snow_phase
 		# Sustained cold frosts the ground on its own, slowly, so a deep winter
 		# whitens even under a sky that never drops snow; falling snow is faster.
-		var frost := snow_phase * snow_phase * 0.02
+		var frost := snow_phase * snow_phase * 0.02 if snow_cover < frost_limit else 0.0
 		var melt := maxf(0.0, 0.55 - cold) * 1.8
-		snow_cover = clampf(snow_cover + ((snowing * 0.16 + frost) * (1.0 - snow_cover) - melt * 0.09 * snow_cover) * delta, 0.0, 1.0)
-		ice = lerpf(ice, snow_phase, 1.0 - exp(-delta * 0.12))
+		snow_cover = clampf(snow_cover + ((snowing * 0.16 + frost) * (1.0 - snow_cover) - melt * 0.09 * snow_cover) * step, 0.0, 1.0)
+		if frost_limit < 1.0 and snow_cover > frost_limit and snowing < 0.05:
+			snow_cover = lerpf(snow_cover, frost_limit, 1.0 - exp(-step * 0.012))
+		ice = lerpf(ice, snow_phase, 1.0 - exp(-step * 0.12))
 		ground_wet = wet_after(ground_wet, rain, cold, cloud, wind, delta)
 		var raining := minf(1.0, rain * 1.5) * (1.0 - snow_phase)
 		air_wet = lerpf(air_wet, raining if raining > air_wet else 0.0, 1.0 - exp(-delta * (0.35 if raining > air_wet else 0.04)))

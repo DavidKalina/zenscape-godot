@@ -16,6 +16,9 @@ var summit_mist := 1.0
 var ray_strength := 1.0
 var inversion_amount := 0.0
 var _fog_target := 0.45
+## How fast wind, fog and haze ease toward a new weather profile, per second.
+## Living weather (scripts/living_weather.gd) slows it for gentle drift.
+var weather_response := 0.55
 var haze_amount := 0.15
 var _haze_target := 0.15
 var _air_strength := 0.4
@@ -68,7 +71,7 @@ func advance(delta: float, paused: bool) -> void:
 		_publish_wind()
 		return
 	# Integrating travel avoids the noise pattern jumping when the dial changes.
-	var response := 1.0 - exp(-delta * 0.55)
+	var response := 1.0 - exp(-delta * weather_response)
 	_air_strength = lerpf(_air_strength, strength, response)
 	fog_amount = lerpf(fog_amount, _fog_target, response)
 	haze_amount = lerpf(haze_amount, _haze_target, response)

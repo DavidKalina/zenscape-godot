@@ -47,7 +47,23 @@ const HISTORY_LIMIT := 32
 
 var seed: int = 0
 ## Off until someone asks for drift: a garden's sky stays where it was put.
+## The product diorama turns it on (scripts/living_weather.gd).
 var enabled := false
+## Climate mode, used by the product's living weather: preset -> share of the
+## time the sky should spend in it. Empty means the seasonal TABLE above. When
+## set, the next sky is drawn from weights solved so that, over a long watch,
+## the time in each preset matches these shares. See `set_climate`.
+var climate := {}
+## Dwell overrides per preset, in the scheduler's hours, [min, max]. Empty
+## means DWELL.
+var dwell := {}
+## The weather the world was generated with, and the air it was drawn with
+## (numbers keyed "wind", "cloud", "mist", "haze"), so drift can keep the
+## world's own character. Living weather reads these; the scheduler only
+## stores them. An empty origin means unknown.
+var origin := ""
+var origin_mood := {}
+var _climate_weights := {}
 var current := "clear"
 var next_change_hour := 0.0
 var season := 0.0
@@ -62,6 +78,53 @@ func _init(p_seed := 0, p_current := "clear", p_start_hour := 0.0) -> void:
 	current = p_current if TABLE.has(p_current) else "clear"
 	_last_hour = p_start_hour
 	next_change_hour = p_start_hour + _roll_dwell(current)
+
+## Where this scheduler's clock stands, in its own hours.
+func now_hour() -> float:
+	return _last_hour
+
+## Switch to climate mode (see `climate`). Weights are solved once here, not
+## per draw. An empty dictionary returns to the seasonal TABLE.
+func set_climate(shares: Dictionary, dwell_hours: Dictionary = {}) -> void:
+	climate = shares.duplicate()
+	dwell = dwell_hours.duplicate(true)
+	_climate_weights = climate_weights(climate, dwell)
+
+## Draw weights for climate mode. The next sky is drawn over every preset but
+## the current one, in proportion to its weight w. That chain is reversible and
+## visits preset i in proportion to w_i * (1 - w_i), so the share of time spent
+## there is proportional to w_i * (1 - w_i) * mean_dwell_i. Solve
+## w_i * (1 - w_i) = k * share_i / mean_dwell_i with the weights summing to
+## one, bisecting on k.
+static func climate_weights(shares: Dictionary, dwell_hours: Dictionary = {}) -> Dictionary:
+	var need := {}
+	var total_share := 0.0
+	for name in shares:
+		if TABLE.has(name) and float(shares[name]) > 0.0: total_share += float(shares[name])
+	if total_share <= 0.0: return {}
+	for name in shares:
+		if not TABLE.has(name) or float(shares[name]) <= 0.0: continue
+		var span: Array = dwell_hours.get(name, DWELL.get(name, [4.0, 8.0]))
+		need[name] = float(shares[name]) / total_share / maxf(0.01, (float(span[0]) + float(span[1])) * 0.5)
+	if need.size() == 1:
+		return {need.keys()[0]: 1.0}
+	var high := INF
+	for name in need: high = minf(high, 0.25 / float(need[name]))
+	var low := 0.0
+	var weights := {}
+	for step in range(60):
+		var k := (low + high) * 0.5
+		var sum := 0.0
+		for name in need:
+			var w := 0.5 * (1.0 - sqrt(maxf(0.0, 1.0 - 4.0 * k * float(need[name]))))
+			weights[name] = w
+			sum += w
+		if sum > 1.0: high = k
+		else: low = k
+	var sum_final := 0.0
+	for name in weights: sum_final += float(weights[name])
+	for name in weights: weights[name] = float(weights[name]) / maxf(sum_final, 1e-6)
+	return weights
 
 ## Index into studies/precipitation.gd PRESET_NAMES; -1 when unknown.
 static func preset_index(name: String) -> int:
@@ -82,6 +145,16 @@ static func season_autumn(season: float) -> float:
 
 static func season_cold(season: float) -> float:
 	return _season_plateau(season, SEASON_COLD)
+
+## What the season does to plants, same plateau shape. Every one is zero at
+## season 0 and back to zero before the year wraps, like the gold and cold.
+const SEASON_BLOOM := [0.02, 0.08, 0.18, 0.25, 1.0]    ## Spring blossom and meadow flowers.
+const SEASON_BARE := [0.70, 0.79, 0.93, 0.99, 1.0]     ## Deciduous leaves fall as the gold fades, bud again at the year's end.
+const SEASON_DORMANT := [0.73, 0.82, 0.93, 0.99, 1.0]  ## Grass goes to straw and flowers die back.
+
+## The plants' season as the `zs_season` shader global: (bloom, bare, dormant, 0).
+static func season_plants(season: float) -> Vector4:
+	return Vector4(_season_plateau(season, SEASON_BLOOM), _season_plateau(season, SEASON_BARE), _season_plateau(season, SEASON_DORMANT), 0.0)
 
 ## A symmetric bump, [centre, half width, strength]; the weather mix's quarter
 ## weights still use it.
@@ -140,8 +213,13 @@ func set_current(name: String, world_hour_abs: float) -> void:
 
 func capture() -> Dictionary:
 	return {
+		## Version 2 records `enabled` as a choice. Older saves stored the
+		## default (off), so restore keeps the scene's own default for them.
+		"version": 2,
 		"seed": seed,
 		"enabled": enabled,
+		"origin": origin,
+		"origin_mood": origin_mood.duplicate(),
 		"current": current,
 		"next_change_hour": next_change_hour,
 		"season": season,
@@ -153,7 +231,17 @@ func capture() -> Dictionary:
 func restore(value: Dictionary) -> void:
 	seed = int(value.get("seed", seed))
 	_rng.seed = seed
-	enabled = bool(value.get("enabled", enabled))
+	if int(value.get("version", 1)) >= 2:
+		enabled = bool(value.get("enabled", enabled))
+	var from := str(value.get("origin", ""))
+	origin = from if TABLE.has(from) else ""
+	origin_mood = {}
+	var air: Variant = value.get("origin_mood", {})
+	if air is Dictionary:
+		for key in ["wind", "cloud", "mist", "haze"]:
+			var number: Variant = air.get(key)
+			if (number is float or number is int) and is_finite(float(number)):
+				origin_mood[key] = clampf(float(number), -1.0, 4.0)
 	var name := str(value.get("current", current))
 	current = name if TABLE.has(name) else current
 	next_change_hour = float(value.get("next_change_hour", next_change_hour))
@@ -174,12 +262,14 @@ func _came_from_snow() -> bool:
 	return not history.is_empty() and str(history.back().get("from", "")) == "snow"
 
 func _roll_dwell(name: String) -> float:
-	var span: Array = DWELL.get(name, [4.0, 8.0])
+	var span: Array = dwell.get(name, DWELL.get(name, [4.0, 8.0]))
 	return _rng.randf_range(float(span[0]), float(span[1]))
 
 ## Weighted draw over the table row for [param from], shaped by hour of day and
 ## season. Always returns a valid preset name.
 func _pick(from: String, hour_of_day: float) -> String:
+	if not _climate_weights.is_empty():
+		return _pick_climate(from)
 	var row: Dictionary = TABLE.get(from, TABLE["clear"])
 	var names: Array = []
 	var weights: Array = []
@@ -199,6 +289,34 @@ func _pick(from: String, hour_of_day: float) -> String:
 		if roll <= 0.0:
 			return str(names[i])
 	return str(names[names.size() - 1])
+
+## Climate mode: any preset but the current one, by its solved weight.
+func _pick_climate(from: String) -> String:
+	var total := 0.0
+	for name in _climate_weights:
+		if name != from: total += float(_climate_weights[name])
+	if total <= 0.0:
+		return from
+	var roll := _rng.randf() * total
+	var last := from
+	for name in _climate_weights:
+		if name == from: continue
+		last = name
+		roll -= float(_climate_weights[name])
+		if roll <= 0.0: return name
+	return last
+
+## Skip the rest of this dwell: draw the next sky now, as a drift would.
+## Returns the new preset.
+func force_next(world_hour_abs: float) -> String:
+	_last_hour = maxf(_last_hour, world_hour_abs)
+	var chosen := _pick(current, fposmod(_last_hour, 24.0))
+	history.append({"hour": _last_hour, "from": current, "to": chosen})
+	while history.size() > HISTORY_LIMIT:
+		history.remove_at(0)
+	current = chosen
+	next_change_hour = _last_hour + _roll_dwell(chosen)
+	return chosen
 
 ## Quarter bumps used to give each season its own weather: zero at every season
 ## boundary, one at the middle of its own quarter. Because they vanish at the

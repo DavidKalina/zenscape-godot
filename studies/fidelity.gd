@@ -72,6 +72,16 @@ var weather_scheduler: WeatherScheduler = null
 ## whether a command-line flag has taken that channel away from the calendar.
 var _season_wrote := [-1.0, -1.0]
 var _season_held := [false, false]
+## The product's living weather and pinned seasons (scripts/living_weather.gd).
+## Null in the studies, which keep the clock-driven drift below.
+var living_weather: RefCounted = null
+## When on, the season the scene shows glides forward to the clock's season
+## (a quarter per SEASON_GLIDE_SECONDS) instead of jumping to it.
+var season_glide := false
+const SEASON_GLIDE_SECONDS := 30.0
+var _season_shown := -1.0
+var _season_plants := Vector4(-1.0, -1.0, -1.0, -1.0)
+var _season_claim_pending := false
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
 var _cycle_toggle: CheckBox
@@ -532,8 +542,12 @@ func _unhandled_input(event: InputEvent) -> void:
 ## The scheduler follows whatever the player last picked (dropdown, mood, look
 ## editor or command line all end in set_weather), then drifts from there once
 ## enabled. Reconciling here means no picker needs to know the scheduler exists.
-func _advance_weather_drift() -> void:
+func _advance_weather_drift(delta := 0.0) -> void:
 	if weather_scheduler == null: return
+	# The product's weather keeps its own clock (the hour of day is held).
+	if living_weather != null:
+		living_weather.advance(delta, _paused)
+		return
 	var abs_hour := world_clock.day * 24.0 + world_clock.hour
 	var picked: String = _precipitation.PRESET_NAMES[_precipitation.preset_index]
 	if picked != weather_scheduler.current:
@@ -556,14 +570,63 @@ func _advance_weather_drift() -> void:
 ## set_weather just installed; a slider, a look preset, a restored garden or a
 ## --autumn=/--cold= flag therefore keeps its hold until the weather changes
 ## again. See docs/world-clock/README.md.
-func _apply_season() -> void:
+##
+## Plants read the same season through the `zs_season` global (bloom, leaf
+## fall, dormancy; WeatherScheduler.season_plants), set only when it changes.
+## With living weather the season owns the leaves' gold outright: the weather
+## preset adds none, so a snow shower does not turn a summer wood orange.
+func _apply_season(delta := 0.0) -> void:
 	if world_clock == null: return
-	var season := world_clock.season
+	var season := _shown_season(0.0 if _paused else delta)
 	if weather_scheduler != null: weather_scheduler.season = season
 	var profile: Dictionary = _precipitation.profiles[_precipitation.PRESET_NAMES[_precipitation.preset_index]]
 	var surface: RefCounted = _precipitation.surface_weather
-	surface.target_autumn = _season_target(surface.target_autumn, float(profile.autumn), WeatherScheduler.season_autumn(season), 0)
+	if _season_claim_pending:
+		_season_claim_pending = false
+		claim_season()
+	var base_autumn := 0.0 if living_weather != null else float(profile.autumn)
+	surface.target_autumn = _season_target(surface.target_autumn, base_autumn, WeatherScheduler.season_autumn(season), 0)
 	surface.target_cold = _season_target(surface.target_cold, float(profile.cold), WeatherScheduler.season_cold(season), 1)
+	var plants := WeatherScheduler.season_plants(season)
+	if plants != _season_plants:
+		_season_plants = plants
+		RenderingServer.global_shader_parameter_set("zs_season", plants)
+
+## The season on screen. Without a glide it is the clock's. With one it moves
+## forward through the year toward the clock's season, so pressing E walks the
+## plants through the leaf fall or the blossom instead of cutting to them. A
+## small step backwards, or a snap request, jumps.
+func _shown_season(delta: float) -> float:
+	var season := world_clock.season
+	if not season_glide or _season_shown < 0.0:
+		_season_shown = season
+		return season
+	var gap := fposmod(season - _season_shown, 1.0)
+	if gap < 1e-6 or gap > 0.75:
+		_season_shown = season
+	else:
+		_season_shown = fposmod(_season_shown + minf(gap, maxf(delta, 0.0) * 0.25 / SEASON_GLIDE_SECONDS), 1.0)
+	return _season_shown
+
+## Adopt the surface's current gold and cold as the season's own, so the
+## season keeps steering them (a new world's mood, a restored save, a drift).
+func claim_season() -> void:
+	var surface: RefCounted = _precipitation.surface_weather
+	_season_wrote = [surface.target_autumn, surface.target_cold]
+
+## A generated world is about to take its mood (cozy_world_generator.gd).
+func establish_world_weather(world: Dictionary) -> void:
+	if living_weather == null: return
+	living_weather.establish(world)
+	_season_shown = -1.0
+	_season_claim_pending = true
+
+## NativeGardenStore.restore, just before the scene's settling step.
+func restore_season_state(_state: Dictionary) -> void:
+	if living_weather == null: return
+	living_weather.restored()
+	_season_shown = -1.0
+	_season_claim_pending = true
 
 func _season_target(current: float, base: float, lift: float, slot: int) -> float:
 	if _season_held[slot]: return current
@@ -584,8 +647,8 @@ func _process(delta: float) -> void:
 	# Time first: every system that asks what hour it is this frame reads the
 	# same answer, and the celestial rig just renders the clock's phase.
 	world_clock.advance(delta, _paused)
-	_advance_weather_drift()
-	_apply_season()
+	_advance_weather_drift(delta)
+	_apply_season(delta)
 	_growth.advance(delta, _paused, _tremor)
 	if _atmosphere.wind_trails != null: _atmosphere.wind_trails.visible = _growth.terrain>=0.995
 	_terrain_slider.set_value_no_signal(_growth.terrain)

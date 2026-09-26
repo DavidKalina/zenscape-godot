@@ -146,6 +146,29 @@ static func source_roles(geometry: Node3D) -> void:
 		var material := mesh.surface_get_material(0) as ShaderMaterial
 		if material != null and material.shader.resource_path.ends_with("reference_surface.gdshader"):
 			material.set_shader_parameter("palette_role",roles[name])
+			material.set_shader_parameter("leaf_season",leaf_season(SOURCE_SEASON_KEYS.get(name,"")))
+
+## Source nodes named by the part key whose seasons they share.
+const SOURCE_SEASON_KEYS := {"mesh-8":"trunk","mesh-9":"canopy","mesh-10":"grass","broadleaf-canopies":"broadleaf:broadleaf-canopies","mesh-13":"shrub:mesh-13","flower-stems":"stem"}
+
+## How a part follows the seasons: the `leaf_season` uniform on
+## reference_surface and layered_canopy_surface, read against the `zs_season`
+## global (shaders/reference_season.gdshaderinc).
+## x: turns gold in autumn and fresh in spring; 0 keeps evergreens green.
+## y: share of the crown that falls in winter.
+## z: share of these plants that blossom in spring.
+## w: how far the plant dies back in winter.
+## Material parameters only, so new tree and prop variants that reuse these
+## keys follow along.
+static func leaf_season(key: String) -> Vector4:
+	if key in ["canopy","trunk"] or key.begins_with("tree:spruce-") or key.begins_with("redwood:") or key.begins_with("joshua:") or key.begins_with("cactus:"):
+		return Vector4.ZERO
+	if key in ["broadleaf:broadleaf-canopies","layered_tree:layered-canopies"]: return Vector4(1.0,1.0,0.45,0.0)
+	if key.begins_with("shrub:"): return Vector4(1.0,0.55,0.3,0.0)
+	if key.begins_with("fern:"): return Vector4(1.0,0.0,0.0,0.6)
+	if key in ["petal","stem"] or "flower" in key: return Vector4(1.0,0.0,0.0,1.0)
+	if key == "grass" or key.begins_with("grass_tuft:") or key.begins_with("bank_grass:"): return Vector4(1.0,0.0,0.0,0.35)
+	return Vector4(1.0,0.0,0.0,0.0)
 
 static func part_role(key: String) -> int:
 	if key.begins_with("fern:"): return 5

@@ -10,6 +10,11 @@ var rock_detail := 0.65
 ## Desert geology colours as hex, from the world palette. Empty means the
 ## shader's defaults (scripts/geology_palette.gd DEFAULTS).
 var geology := {}
+## Living weather's scale on the saved fog bank and peak clouds: the saved
+## values belong to the weather the world was drawn with, and a drifting sky
+## thickens or thins them from there. Runtime only, never saved.
+var weather_fog := 1.0
+var weather_peaks := 1.0
 var _geology_material: ShaderMaterial
 var _geology_dirty := true
 var _fog: FogVolume
@@ -58,10 +63,10 @@ func sync(scene: Node3D) -> void:
 		scene._environment.volumetric_fog_enabled = true
 		scene._environment.volumetric_fog_length = maxf(125.0,scene.distance+40.0)
 	var color: Color = scene._celestial.look.colors.fog.srgb_to_linear().lerp(Color(0.85,0.89,0.94).srgb_to_linear(),0.65)
-	var fog_values := {"ground_map":scene._precipitation.ground_texture,"stream_map":scene._precipitation.stream_texture,"bank_density":fog_density,"bank_height":fog_height,"activity":clampf(scene._atmosphere._air_strength/3.5,0,1),"bank_clock":scene._motion_time,"bank_color":Vector3(color.r,color.g,color.b)}
+	var fog_values := {"ground_map":scene._precipitation.ground_texture,"stream_map":scene._precipitation.stream_texture,"bank_density":minf(fog_density*weather_fog,LIMITS.fog_density[1]),"bank_height":fog_height,"activity":clampf(scene._atmosphere._air_strength/3.5,0,1),"bank_clock":scene._motion_time,"bank_color":Vector3(color.r,color.g,color.b)}
 	for key in fog_values: _fog.material.set_shader_parameter(key,fog_values[key])
 	_peaks.material.set_shader_parameter("cloud_time",scene._motion_time)
-	_peaks.material.set_shader_parameter("cloud_density",peak_density)
+	_peaks.material.set_shader_parameter("cloud_density",minf(peak_density*weather_peaks,LIMITS.peak_density[1]))
 	var data: NativeTerrainData = scene._chunk_editor.data
 	# Terrain data replaces its settings dictionary rather than editing it, so
 	# the same instance means the same settings and skips re-serializing.
