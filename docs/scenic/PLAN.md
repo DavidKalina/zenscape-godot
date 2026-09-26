@@ -86,7 +86,7 @@ Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is 
 
 ## Phase 2: variety where every result looks good
 
-In progress. Items 2, 4 and 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
+In progress. Items 2, 3, 4 and 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
 
 1. **Replace the generator's "usable, connected ground" gate with a beauty score.** Done in PR #19 (`feature/beauty-score`). Not yet seen on screen.
    - `scripts/world_beauty.gd` scores a candidate from the overview camera: drama (rise over the plate's far edge, land hidden behind nearer ridges, skyline movement, peaks), relief, a focal summit or water, water share, and composition (summit near a third, balanced weight, walls not hiding the land).
@@ -107,13 +107,27 @@ In progress. Items 2, 4 and 7 are done. Item 1 and the Blender trees from item 3
    - Beauty scores barely move: the mean over 400 seeds goes from 0.700 to 0.701. Family minimums shift by 0.04 at most. Valley drops from 0.90 to 0.86, and tablelands rises from 0.58 to 0.61.
    - Every showcase seed keeps its family. Seed 147 (volcanic crown) drops from 0.85 to 0.82 and 193 (sawtooth) from 0.86 to 0.84. The rest change by 0.01 or less.
    - `--hillshade DIR` on the probe writes uneroded, eroded and change maps per seed. Headless runs cannot check the shaded look. Launch `./run-cozy-flow.command` and judge whether the gullies read at the overview distance or need more strength.
-3. **Seeded tree and rock variants.** `layered_tree.gd` has no seed, the catalog has 22 fixed assets, and each habitat cycles its props with `i%4`.
+3. **Seeded tree and rock variants.** Done on `feature/seeded-variants`, apart from the Blender trees in PR #19. Not yet seen on screen.
    - **Blender trees, committed as `a2eec16` and in PR #19.** Scripts in `tools/blender_trees/` (plus `tools/build_hero_oak.py`) build faceted trees in Blender and export them to `assets/models/`. Run one with `blender -b --factory-startup --python <script>`.
    - `scripts/hero_trees.gd` swaps the geometry behind the existing catalog parts and keeps each part's material, wind and tint. The oak replaces the broadleaf and the redwood replaces the redwood.
    - Pines grow as a six-variant spruce family. `garden_instance_samples.gd` picks the variant per tree with a stable weighted hash.
    - Arid worlds plant Joshua trees (a new `joshua` asset) for about half of their cactus slots.
    - `--classic-trees` restores the source meshes for comparison. Not yet checked on screen.
-   - Still to do: seeded rocks, a seed for `layered_tree.gd`, and replacing the per-habitat `i%4` prop cycle.
+   - **Rocks.** `scripts/rock_variants.gd` builds eight faceted stones in Godot from fixed seeds: rounded, lumpy, blocky, tabular, slab, flag, shard and column. Each is an 80-face icosphere with lumps, sliced by random planes into big facets, tapered and given a flat base. Weathering is baked as greyscale light and shade: bleached tops, a damp stain near the ground, and a value per facet. The family builds in about 1 ms at startup.
+   - `rock` and `boulder_1..4` both draw from the family, one MultiMesh batch per shape on the boulders' material. `rock` instances carry their old grey over that base, and user tints are converted, so colours and the palette role are unchanged. Records are unchanged too: the shape is picked at render time, like the spruce family.
+   - Per world, `scripts/seeded_variety.gd` picks a rock character from the recipe seed: granite, slate, basalt or sandstone (deserts draw sandstone, basalt or granite). The character weights the shapes, with a fifth of the weight spread evenly. Per stone, a stable integer hash of the world and the record id picks the shape, proportions (±18% across, ±22% in height), a tilt of up to 8° and a value shift of −10% to +8%. Each kind keeps its old footprint (rock 1.2 m, boulders 1.45–1.9 m), so collisions and Bigfoot's cover still fit.
+   - `--classic-rocks` restores the sphere and icosahedra for comparison.
+   - **Layered trees.** `layered_tree.gd` has a `tree_seed`. Seed 0 is the original tree, unchanged. Other seeds grow a sibling: taller or broader, leaning, with the leaf masses moved and resized, and sometimes one low side mass dropped. Forms 0, 5 and 12 are in `VARIANT_SEEDS`. Each world favours one form (weight 3 against 1), and each tree gets ±8% width and −10% to +12% height, shared by trunk and crown. The trunk and crown keys keep their material, wind, tread and tint rules. `--classic-trees` also turns this off.
+   - **Props.** Generated worlds now carry `"variety": 1` in the terrain recipe. With it, `inland_landscape.gd` drops its fixed cycles:
+     - Meadow flowers follow a low-frequency drift, so each species gathers into patches. Each world leans its own mix of daisy, button, spike and a few umbel flowers, and its own share of grass tufts.
+     - Woodland and redwood logs, stumps, snags, ferns and mushrooms keep their old average rates, but each world leans each rate by ×0.5 to ×1.6, and a position hash picks, not `i%29`-style counters.
+     - Alpine cover gets some rocks (5–16%). Arid cover gets rocks and tufts among the shrubs.
+     - Clearing palettes are weighted picks, leaned per world, instead of cycling. A focal boulder gets one to three small stones beside it.
+     - None of it draws from the planting stream, so trees and prop positions stay where they were. Only the kinds change, plus the added stones.
+   - Saves: recipes without `variety` dress byte-for-byte as before (object, grass and meadow digests match `main` for eight showcase seeds). Rock and layered-tree shapes change for every world, old saves included, because they are chosen at render time. The recipe codec and `valid` accept `variety` (only the value 1).
+   - Cost: dressing time is unchanged within noise. A world draws up to eight stone batches (it was up to five: rock plus four boulders) and up to six layered-tree batches (it was two). A meadow with umbels adds two small flower batches. The two extra layered forms cost about 7 ms once at startup.
+   - Probe: `tools/probe_seeded_variants.gd -- [old] [view] [meshes] seeds` prints each world's rock character, stones per shape, layered forms, kinds, a save round trip, and with `view` the real batches. `old` prints the digest without `variety`, to compare with `tools/probe_biome_dressing.gd` on `main`.
+   - To check on screen: rocks on 105 (slate, 43 stones), 134 and 364 (sandstone), 45 (basalt), 184 (granite); layered forms on 33, 177 and 102; meadow drifts on 177, 58 and 198. Headless runs do not compile shaders, so the facets and weathering are unverified. Judge whether the shard and flag shapes read as stones or need taming.
 4. **Blend two or three biomes per world** from moisture, altitude and slope direction, instead of one habitat string. Done on `feature/biome-blend`. Not yet seen on screen.
    - `scripts/biome_blend.gd`. The recipe's `biome` stays the dominant habitat. Generated worlds add an optional `blend` of one or two more habitats, and each one claims ground by a single rule: moist (near water and low ground), high, low, or facing a direction. Edges are soft smoothsteps broken up by noise.
    - The generator draws the blend from the terrain seed on its own random stream, so every other draw, and the showcase seeds' terrain and mood, are unchanged. Thresholds are quantiles of the world's own land, so each habitat gets its intended share.
