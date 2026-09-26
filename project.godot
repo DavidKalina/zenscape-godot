@@ -207,6 +207,14 @@ zs_sky_glow={
 "type": "vec3",
 "value": Vector3(0.3, 0.18, 0.14)
 }
+zs_look_ao={
+"type": "float",
+"value": 0.0
+}
+zs_look_rim={
+"type": "float",
+"value": 0.0
+}
 zs_sun_direction={
 "type": "vec3",
 "value": Vector3(0.744849, 0.445679, -0.496558)

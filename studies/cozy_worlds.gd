@@ -39,6 +39,13 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if places != null and places.holding: creature.hide()
 
+func _unhandled_input(event: InputEvent) -> void:
+	if places != null and places.initialized and event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]:
+		places.step_showcase(1 if event.keycode == KEY_BRACKETRIGHT else -1)
+		get_viewport().set_input_as_handled()
+		return
+	super._unhandled_input(event)
+
 func handle_resident_input(event: InputEvent) -> bool:
 	# The build palette forwards resident gestures before the scene's _input.
 	# Claim the gesture at their shared entry point so the legacy carry handler

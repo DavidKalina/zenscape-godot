@@ -37,7 +37,7 @@ static func capture(scene: Node3D) -> Dictionary:
 	return result
 
 static func valid(scene: Node3D, state: Variant) -> bool:
-	if not state is Dictionary or not GardenData._integer(state.get("quality")) or int(state.quality) not in [0,1]:
+	if not state is Dictionary or not GardenData._integer(state.get("quality")) or int(state.quality) not in [0,1,2]:
 		return false
 	for group: String in FIELDS:
 		if not state.get(group) is Dictionary:

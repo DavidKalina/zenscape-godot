@@ -57,6 +57,7 @@ var _wind := 0.4
 var _environment: Environment
 var _panning := false
 var _quality: OptionButton
+var look_pass = preload("res://scripts/look_pass.gd").new()
 var _atmosphere: Node3D
 var _landscape_editor: PanelContainer
 var _look_editor: PanelContainer
@@ -369,6 +370,7 @@ func _setup_environment() -> void:
 	add_child(lighting)
 	lighting.setup(_source)
 	_environment = lighting.environment
+	look_pass.setup(self)
 	_lights.assign(lighting.lights)
 
 func _reset_camera(reference_pose := false) -> void:
@@ -518,6 +520,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: _frog_motion.startle()
 			KEY_N: _celestial.next_hour()
 			KEY_B: _summon_bigfoot()
+			KEY_F6:
+				look_pass.toggle()
+				var note: Label = get("_notice") if get("_notice") != null else _status
+				note.text = "Look pass on · F6" if look_pass.enabled else "Look pass off · F6"
 			KEY_T: _tremor.add(0.7)
 			KEY_L: _lightning.strike(Vector2(target.x, target.z), camera.global_position)
 			KEY_Y: _growth.replay()
@@ -637,6 +643,7 @@ func _process(delta: float) -> void:
 		_display_fog.blend.set_shader_parameter("aerial_sun_color", _celestial.aerial_sun_color)
 		_display_fog.material.set_shader_parameter("fog_display", _celestial.fog_display)
 		_display_fog.update_view()
+	look_pass.update(camera, _celestial)
 	_redwood_mist.sync(self)
 	_world_visuals.sync(self)
 	$WaterfallSpray.update_view(camera, _display_fog.depth if _display_fog != null else null)
@@ -1167,8 +1174,9 @@ func _build_ui() -> void:
 	study.add_child(encounter)
 	var quality := OptionButton.new()
 	_quality = quality
-	quality.add_item("Beauty · ambient occlusion and glow")
+	quality.add_item("Beauty · glow and light shafts")
 	quality.add_item("Balanced · lighter post-processing")
+	quality.add_item("Ultra · 4x MSAA, finer fog, ambient occlusion")
 	quality.focus_mode = Control.FOCUS_NONE
 	quality.disabled = RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	quality.tooltip_text = "Use run-fidelity.command for Forward+ ambient occlusion and glow." if quality.disabled else ""
@@ -1198,8 +1206,7 @@ func _set_wind(value: float) -> void:
 
 func _set_quality(index: int) -> void:
 	_quality.select(index)
-	_environment.ssao_enabled = index == 0
-	_environment.glow_enabled = index == 0
+	look_pass.apply_tier(index)
 
 func _vector(values: Array) -> Vector3:
 	return Vector3(values[0], values[1], values[2])

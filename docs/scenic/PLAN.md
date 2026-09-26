@@ -1,0 +1,142 @@
+# Scenic diorama plan
+
+Started 2026-09-26. This replaces the Bigfoot and cryptid game direction.
+
+## The product
+
+- **A beautiful, interactable, inspectable diorama.** Physics, wind, fog, weather, lighting and shadows.
+- **Regenerate for a new piece.** There should be a great deal of variety, and every result should look good.
+- **Craft your own world, in the spirit of Tiny Glade.** Simple and hand-held, with the tools steering towards good results, but still with a skill to it.
+- **Keep the current stylised look and make it better.** This is not a restyle.
+- **Target good PCs.** The reference machine is an RTX 4070 Super, aiming for high frame rates. The Mac is secondary.
+- **Keep some ambient life:** birds, fireflies, fish and weather. Bigfoot and the gameplay are hidden, not deleted.
+
+### Engine decision
+
+Stay on Godot 4.7 Forward+.
+
+- Godot has no built-in hardware ray tracing and no built-in DLSS.
+- The look is stylised. PC headroom goes to density, fog resolution and frame rate.
+- Avoid temporal upscalers and TAA for now. They fight the display fog's own temporal resolve and smear swaying foliage.
+- The display-fog compositor needs Forward+.
+
+## Phase 0: scenery mode and motion feel
+
+The code items are done and merged to `main`. The settings items are waiting on the 4070 Super.
+
+**Done:**
+- Scenery mode is on by default in the product scene (`studies/diorama.gd`).
+  - Bigfoot is still built but never enabled; `--bigfoot` restores him.
+  - The World menu, build palette and tool rail no longer offer anything Bigfoot-related.
+  - Saves record no resident.
+- Regrow folds and replays the land with no carry, and skips rebuilding Bigfoot's navigation (`scripts/cozy_regrowth.gd`).
+- Fish and falling wood keep living without the resident (`studies/fidelity_life.gd`).
+- Camera damping is time-based, so the glide is the same at any refresh rate (`studies/fidelity.gd`). F7 in `tools/compare_live.gd` restores the per-frame response.
+- `world_visuals` no longer re-serialises the recipe settings every frame.
+- The headless Python test runners and `AGENTS.md` are in place.
+
+**Still to do. Each needs eyes on screen and numbers from the 4070 Super:**
+- Vsync. It is currently off with a 120 fps cap (`project.godot`).
+- The volumetric fog grid is 256×256, which is 64× Godot's default. Try 128 or lower, and compare captures.
+- Pond planar reflections redraw the scene every frame, which doubles frame time in the pacing benchmark (`scripts/planar_water.gd`). Try half-rate updates or fewer copies.
+- Physics interpolation. Turning it on project-wide also interpolates the camera and anything moved in `_process`, so those nodes have to opt out.
+- The tread wake has no source now that Bigfoot is gone. Drive it from the camera or cursor, or from wind.
+- Remaining per-frame work: the study sliders are set every frame, and the redwood mist toggles volumetric fog on and off.
+
+## Phase 1: better look, same look
+
+The first round is on `feature/look-pass`. It looks good on the Mac, and the strengths still need tuning.
+
+**Done, in `scripts/look_pass.gd`. F6 toggles the whole pass; `--no-look-pass` starts with it off:**
+- **Contact ambient occlusion in the material.**
+  - Ambient light is written as `EMISSION`, which Godot's SSAO never touches. That is why the old Beauty SSAO changed nothing.
+  - Objects darken toward their own base (`shaders/reference_surface.gdshader`).
+- **Silhouette rim light:** a sky sheen, stronger when backlit. Flat ground is excluded.
+- **Per-hour grade and a light vignette** in `shaders/reference_air_blend.gdshader`. Highlights lean toward the hour's sun colour and shadows toward its sky colour.
+- **God rays:** a 24-tap screen-space gather of open sky toward the sun. They fade as the sun sinks or cloud covers it.
+- **Glow:** the threshold drops from 1.8 to 1.0, intensity rises to 0.3, and it uses glow levels 3–5.
+- **Quality presets:**
+  - Balanced: occlusion, rim, grade and vignette.
+  - Beauty: adds glow and god rays.
+  - Ultra: adds 4× MSAA, fog at 0.75 scale, SSAO and 768 px pond reflections.
+- **Seed controls:**
+  - The badge shows the seed.
+  - `]` and `[` step through the showcase seeds.
+  - `--seed N` regrows to a seed at launch.
+  - A seed now always reproduces the same world, whichever landscape you start from.
+
+**Next:**
+1. Tune the round-one strengths against the showcase seeds. The defaults are occlusion 0.8, rim 0.35, grade 0.55, saturation 1.06, vignette 0.16 and rays 0.22.
+2. Biomes that use native volumetric fog instead of display fog get no grade or god rays yet, e.g. the redwood mist (`scripts/redwood_biome_mist.gd`).
+3. Paint two or three hazed ridge silhouettes on the horizon in `shaders/reference_sky.gdshader`. Also move the sky off realtime radiance.
+4. Shoreline foam band and wet-bank darkening (`shaders/reference_water_body.gdshaderinc`).
+5. Dense GPU grass for Ultra, with wind and distance fade. Grass today is sparse tufts (`scripts/native_flora.gd`).
+6. Make Beauty the default for new worlds. Saved worlds currently reopen on Balanced, which has no glow or rays.
+
+**Dropped:** contact-hardening soft shadows. They cost the most and pay off the least.
+
+## Phase 2: variety where every result looks good
+
+1. **Replace the generator's "usable, connected ground" gate with a beauty score.**
+   - The current gate is `cozy_world_generator.gd:30-46`, and `inland_places.gd` flattens three terraces for Bigfoot. Both push terrain toward gentle ground.
+   - Score candidates on silhouette drama, a focal point, water, palette harmony and composition from the default camera.
+2. **Erosion plus ridged, domain-warped noise** in the native C++ terrain kernels (`native/terrain_kernels`). Today there is one noise octave and no erosion.
+3. **Seeded tree and rock variants.** `layered_tree.gd` has no seed, the catalog has 22 fixed assets, and each habitat cycles its props with `i%4`.
+4. **Blend two or three biomes per world** from moisture, altitude and slope direction, instead of one habitat string. Geology colours should come from the palette. The desert band colours are hard-coded in the shader today.
+5. **Curated palette families.** Start from the landscape experiment's chalk, copper, moss and lavender (on branch `wip/parked-2026-09-26`).
+6. **Weather and seasons that change while you watch.**
+   - The weather scheduler is off by default.
+   - Seasons do not yet drive plants: no spring bloom, no bare winter trees.
+7. **Rebalance the weather odds.** Across 300 seeds, overcast is the most common weather at 24%, and rain and snow add another 27%. That makes half of random regrows grey or wet, and overcast turns off god rays.
+8. **Later: horizons beyond one 28 m plate.** Stitched multi-chunk terrain exists on `feature/stitched-terrain`.
+
+## Phase 3: crafting in the spirit of Tiny Glade
+
+- **Brushes that decorate for you:**
+  - Painting a path gives it grassy, stony edges.
+  - Painting a forest gives it a natural edge.
+  - Water settles in the low ground.
+- **The skill is composing,** not placing every tree by hand.
+- **Rebuild the UI around this:**
+  - Replace the top toolbar that hides buttons by moving them into the World menu by position (`diorama.gd`).
+  - Check the maker-editor look on screen. It was parked, never seen.
+  - Add an inspect and photo mode.
+
+## Phase 4: presentation
+
+- A shader warm-up pass, plus the shader baker in export presets.
+- Visibility ranges with fade on props, trees and MultiMesh batches. There are none today.
+- HDR output, new in Godot 4.7.
+- Movie Maker mode (`--write-movie`) for trailer footage.
+- Threaded resource loading for places.
+
+## Showcase seeds
+
+These are `SHOWCASE` in `scripts/cozy_regrowth.gd`.
+
+| Family | Seeds |
+|---|---|
+| Mountain | 2 (clear evening), 66 (sawtooth, clear morning), 68 (autumn) |
+| Massif | 224 (volcanic crown, clear) |
+| Valley | 79, 165 (redwood glacial), 29 (misty redwood canyon) |
+| Basin | 43 (mist) |
+| Plateau | 33 (autumn mist), 24 (redwood in snow) |
+| Chasm | 8 (rain evening) |
+| Foothills | 40 |
+| Meadow | 41 (rain) |
+| Marsh | 161 |
+| Desert | 9 |
+| Desert mountains | 45 |
+| Buttes | 49 |
+| Tablelands | 104 |
+| Dunes | 52 |
+| Salt basin | 28 (night) |
+| Monuments | 22 (clear evening) |
+
+## Working agreements
+
+- Run tests only when the user brings them back. Until then, check scripts with `--check-only` and have the user look at the result.
+- `tests/test_scenery_mode.gd` is drafted and has never been run. Existing Bigfoot tests are expected to fail against the product scene.
+- Use `--rendered` Godot runs only when the user asks. Headless Godot does not compile shaders, so shader changes are unverified until the user launches.
+- Launch with `./run-cozy-flow.command`. `godot` is not on PATH; the binary is `~/Applications/Godot.app/Contents/MacOS/Godot`.
+- The uncommitted work from before the pivot is parked on `wip/parked-2026-09-26`. It holds the beach ball, perching bird, maker editor and the landscape experiment.

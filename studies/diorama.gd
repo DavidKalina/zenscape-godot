@@ -305,6 +305,7 @@ func _make_shell() -> void:
 	var quality := OptionButton.new()
 	quality.add_item("Beauty")
 	quality.add_item("Balanced")
+	quality.add_item("Ultra")
 	quality.select(_quality.selected)
 	quality.item_selected.connect(func(index: int) -> void:
 		_quality.select(index)

@@ -5,6 +5,9 @@ extends Node
 ## land directly.
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
+## One seed per landform family, leaning to clear low sun, plus a few
+## weathers. Step through them with [ and ] to check look changes.
+const SHOWCASE := [2,66,68,224,79,165,29,43,33,24,8,40,41,161,9,45,49,104,52,28,22]
 const DEGROW_SECONDS := 3.4
 const GROW_SECONDS := 5.0
 var scene: Node3D
@@ -22,6 +25,9 @@ var edge_time := 0.0
 var pending_drop := false
 var phase := "ready"
 var generation := 0
+## The seed the current landscape grew from; -1 for saved or preset places.
+var world_seed := -1
+var showcase_index := -1
 var generated_world := {}
 var previous_look := {}
 var next_look := {}
@@ -78,6 +84,27 @@ func setup(owner_scene: Node3D) -> void:
 	busy = false
 	_update_badge()
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--seed")
+	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): regrow.call_deferred(int(args[at+1]))
+
+## Regrow the next or previous showcase seed.
+func step_showcase(direction: int) -> void:
+	if busy: return
+	showcase_index = posmod(showcase_index+direction,SHOWCASE.size())
+	regrow(SHOWCASE[showcase_index])
+
+## A random seed whose landform family differs from the current one. The
+## family is the first genome draw, so this stays cheap and the seed alone
+## reproduces the world.
+func _fresh_seed() -> int:
+	var current: String = scene._chunk_editor.data._recipe_settings.get("composition",scene._chunk_editor.data._recipe_settings.get("family",""))
+	for attempt in range(32):
+		var candidate := randi() % 1000000
+		var rng := RandomNumberGenerator.new()
+		rng.seed = candidate
+		if preload("res://scripts/inland_genome.gd").sample(rng.randi_range(0,999999)).composition != current: return candidate
+	return randi() % 1000000
 
 func _scenery() -> bool:
 	return bool(scene.get("scenery_mode"))
@@ -140,7 +167,7 @@ func _build_overlay() -> void:
 func _label(world: Node3D) -> String:
 	var recipe: Dictionary = world._chunk_editor.data._recipe_settings
 	if recipe.get("kind")=="inland":
-		return recipe.biome.capitalize()+" · "+recipe.composition.replace("-"," ").capitalize()
+		return recipe.biome.capitalize()+" · "+recipe.composition.replace("-"," ").capitalize()+(" · seed %d" % world_seed if world_seed>=0 else "")
 	var family: String = world._chunk_editor.data._recipe_settings.get("family","")
 	return Presets.PRESETS[family].title if Presets.PRESETS.has(family) else "Your clearing"
 
@@ -227,7 +254,7 @@ func _process(delta: float) -> void:
 			armed = false
 			regrow()
 
-func regrow(world_seed := -1) -> void:
+func regrow(requested_seed := -1) -> void:
 	if busy or not initialized or scene._chunk_editor.forming: return
 	var before_state := NativeGardenStore.capture(scene)
 	if holding:
@@ -256,7 +283,9 @@ func regrow(world_seed := -1) -> void:
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
-	generated_world = await Generator.sample_async(randi() if world_seed<0 else world_seed,scene._chunk_editor.data._recipe_settings,get_tree())
+	var chosen := _fresh_seed() if requested_seed<0 else requested_seed
+	generated_world = await Generator.sample_async(chosen,{},get_tree())
+	world_seed = chosen
 	scene._notice.text = "Shaping a new wilderness…"
 	await scene._chunk_editor.form_inland(generated_world.terrain,true,false)
 	# form_inland captures its snapshot while the old world is folded down.

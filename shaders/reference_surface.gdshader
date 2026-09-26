@@ -60,6 +60,9 @@ varying flat float char_clump;
 varying float char_seed;
 varying vec3 world_normal;
 varying vec3 world_position;
+// Height above the object's own origin: props and plants sit on theirs, so
+// low parts are nearer the ground and see less of the sky.
+varying float contact_height;
 
 #include "res://shaders/terrain_geology.gdshaderinc"
 
@@ -155,6 +158,7 @@ void vertex() {
 	play_deform(VERTEX, NORMAL);
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 }
 
 void fragment() {
@@ -218,7 +222,20 @@ void fragment() {
 	SPECULAR = 0.35 * coat_wetness;
 	// Three.js RE_IndirectDiffuse_Physical applies BRDF_Lambert (albedo / PI)
 	// to hemisphere irradiance. Emission bypasses Godot's BRDF, so include it here.
-	EMISSION = emissive_color + tint * mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	// Look pass: ambient-only contact occlusion. Emission bypasses Godot's SSAO,
+	// so the hemisphere term is where grounding has to happen.
+	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	EMISSION = emissive_color + tint * hemi * contact;
+	if (zs_look_rim > 0.0) {
+		// Sky sheen on silhouettes, stronger against the sun; ground-facing
+		// and flat-lying faces stay out so meadows do not glaze over.
+		vec3 view_dir = normalize(zs_camera_position - world_position);
+		float edge = pow(1.0 - abs(dot(face_normal, view_dir)), 4.0);
+		float backlit = 0.5 + 0.5 * max(dot(-view_dir, zs_sun_direction), 0.0);
+		float upright = 1.0 - smoothstep(0.6, 0.9, face_normal.y);
+		EMISSION += mix(tint, vec3(0.5), 0.35) * zs_hemi_sky * zs_hemi_energy * edge * backlit * upright * contact * zs_look_rim;
+	}
 	vec3 alpen_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (dot(alpen_normal, face_normal) < 0.0) alpen_normal = -alpen_normal;
 	EMISSION += zs_afterglow(world_position, alpen_normal, tint) + char_ember;
