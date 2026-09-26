@@ -641,6 +641,7 @@ func finish_stroke() -> void:
 	_elapsed = 0.0
 	_last_point = null
 	data.end_stroke()
+	_settle_stroke()
 
 func undo() -> void:
 	_history_step(false)
@@ -709,6 +710,8 @@ var _refresh_generation := 0
 ## be visible; callers requiring a complete transaction must retry or abandon it.
 var refresh_pending := 0
 func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) -> bool:
+	if frame_tree == null and not on_publish.is_valid() and _light_refresh_ready():
+		return await _refresh_light()
 	refresh_pending += 1
 	_refresh_generation += 1
 	var generation := _refresh_generation
@@ -736,32 +739,7 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	refresh_stage = "anchors"
 	stage_start = Time.get_ticks_usec()
 	var original := data.heights == data.original_heights
-	for entry in _anchors:
-		if data.blank:
-			continue
-		var node: MultiMeshInstance3D = entry.node
-		if original:
-			node.multimesh = entry.source
-			continue
-		if node.multimesh == entry.source:
-			node.multimesh = entry.source.duplicate()
-		for i in range(entry.transforms.size()):
-			var transform: Transform3D = entry.transforms[i]
-			var world := node.to_global(transform.origin)
-			var local := terrain.to_local(world)
-			world.y += data.delta_at(Vector2(local.x,local.z))
-			transform.origin = node.to_local(world)
-			node.multimesh.set_instance_transform(i,transform)
-	for node: VisualInstance3D in _source_visibility:
-		node.visible = _source_visibility[node]
-	for i in range(_boulder_anchors.size()):
-		var rest := _boulder_anchors[i]
-		rest.origin.y += data.delta_at(Vector2(rest.origin.x, rest.origin.z))
-		scene._growth._boulders[i].rest = rest
-	var landmark := _landmark_pose
-	landmark.origin.y += data.delta_at(Vector2(landmark.origin.x, landmark.origin.z))
-	scene._growth._landmark.transform = landmark
-	scene._growth.publish()
+	_lift_anchors(original)
 	if frame_tree != null:
 		await budget.checkpoint()
 		if not current.call(): return _finish_refresh(false)
@@ -835,7 +813,103 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
+	if published:
+		_settle_pending = false
+		_settled_objects_revision = data.objects_revision
+		_settled_blades = data.blades.duplicate()
+		_settled_meadow = data.meadow.duplicate()
 	return published
+
+## The source chunk's own plants, boulders and landmark ride the sculpted ground.
+func _lift_anchors(original: bool) -> void:
+	for entry in _anchors:
+		if data.blank:
+			continue
+		var node: MultiMeshInstance3D = entry.node
+		if original:
+			node.multimesh = entry.source
+			continue
+		if node.multimesh == entry.source:
+			node.multimesh = entry.source.duplicate()
+		for i in range(entry.transforms.size()):
+			var transform: Transform3D = entry.transforms[i]
+			var world := node.to_global(transform.origin)
+			var local := terrain.to_local(world)
+			world.y += data.delta_at(Vector2(local.x,local.z))
+			transform.origin = node.to_local(world)
+			node.multimesh.set_instance_transform(i,transform)
+	for node: VisualInstance3D in _source_visibility:
+		node.visible = _source_visibility[node]
+	for i in range(_boulder_anchors.size()):
+		var rest := _boulder_anchors[i]
+		rest.origin.y += data.delta_at(Vector2(rest.origin.x, rest.origin.z))
+		scene._growth._boulders[i].rest = rest
+	var landmark := _landmark_pose
+	landmark.origin.y += data.delta_at(Vector2(landmark.origin.x, landmark.origin.z))
+	scene._growth._landmark.transform = landmark
+	scene._growth.publish()
+
+## A held brush publishes only what it visibly moves: terrain faces, and the
+## plants, props and landmarks standing on them. The water flood and surfaces,
+## surface maps, atmosphere bounds, collision and navigation wait for the full
+## refresh `finish_stroke` starts. That refresh diffs every cache against the
+## last full one, so it settles on exactly what a full refresh per dab leaves.
+## Painted cover shows on the terrain faces and fills in with plants at release.
+## Edits only instances can show - object records, standing blades, or meadow
+## on the source chunk, whose faces ignore it - keep the full path per dab.
+var _settle_pending := false
+var _settled_objects_revision := -1
+var _settled_blades := PackedFloat32Array()
+var _settled_meadow := PackedFloat32Array()
+
+func _light_refresh_ready() -> bool:
+	if not _painting or forming or not content._view_ready: return false
+	return data.objects_revision == _settled_objects_revision and data.blades == _settled_blades and (data.blank or data.meadow == _settled_meadow)
+
+func _refresh_light() -> bool:
+	refresh_pending += 1
+	_refresh_generation += 1
+	# Supersede a settle still yielding from an earlier stroke. It re-runs at
+	# this stroke's end over the union of both.
+	content.cancel_rebuild()
+	_map_generation += 1
+	last_refresh_usec.clear()
+	var stage_start := Time.get_ticks_usec()
+	preload("res://scripts/world_reference_props.gd").before_refresh(self)
+	pond_preview.clear()
+	_set_status("Garden changed · Save to keep your work.")
+	data.defer_shoreline = true
+	terrain.mesh = data.play_mesh(data.build_mesh())
+	data.defer_shoreline = false
+	last_refresh_usec["mesh_elapsed"] = Time.get_ticks_usec()-stage_start
+	stage_start = Time.get_ticks_usec()
+	_lift_anchors(data.heights == data.original_heights)
+	sync_visibility()
+	_rebuild_skirt()
+	last_refresh_usec["anchors_elapsed"] = Time.get_ticks_usec()-stage_start
+	stage_start = Time.get_ticks_usec()
+	if not content.lift_instances():
+		# The lift cannot be localised; rebuild the view from the records.
+		content.discard_cache()
+		refresh_pending -= 1
+		return await refresh()
+	_settle_bedding_cover()
+	landmarks.lift(data)
+	last_refresh_usec["content_elapsed"] = Time.get_ticks_usec()-stage_start
+	# Tell play systems once, on the stroke's first dab, so carried props and
+	# walking routes let go before the ground moves under them; they hear
+	# again when the stroke settles.
+	stage_start = Time.get_ticks_usec()
+	if not _settle_pending:
+		_settle_pending = true
+		_notify_play_geometry()
+	last_refresh_usec["notify_elapsed"] = Time.get_ticks_usec()-stage_start
+	refresh_pending -= 1
+	return true
+
+func _settle_stroke() -> void:
+	if _settle_pending and not forming:
+		refresh(get_tree())
 
 func _refresh_current(generation: int, target: NativeTerrainData, inputs: Dictionary) -> bool:
 	if generation != _refresh_generation or data != target: return false

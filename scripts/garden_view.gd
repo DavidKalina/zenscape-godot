@@ -43,6 +43,7 @@ var _view_signature := PackedByteArray()
 var _water_signature := PackedByteArray()
 var _stream_probe := {}
 var _cascade_probe := {}
+var _lift_heights := PackedFloat32Array()
 
 func _ready() -> void:
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
@@ -160,6 +161,7 @@ func _ready() -> void:
 func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 	# Reuse and in-place lifts supersede pending preparation too.
 	_instance_generation += 1
+	_lift_heights = PackedFloat32Array()
 	if not force and _reuse():
 		return true
 	# Object commits do not alter shorelines, streams or waterfall geometry.
@@ -177,6 +179,16 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 		_move_instances(instance_region)
 	last_water_usec.clear()
 	var water_began := Time.get_ticks_usec()
+	# A yielding rebuild floods recipe ponds on a private copy first, before any
+	# water node changes, so a superseded rebuild leaves the old water whole.
+	var recipe_water: Array = []
+	if frame_tree != null and data is NativeTerrainData and data._recipe != null and not data.ponds.is_empty() and data._water_grid_h.size() == NativeRecipeWater.W*NativeRecipeWater.W:
+		var generation := _instance_generation
+		var sampled := {"heights":data.heights.duplicate(),"ponds":data.ponds.duplicate(true),"streams":data.streams.duplicate(true),"waterfall":data.landscape_waterfall}
+		recipe_water = await _sample_recipe_water(frame_tree)
+		if generation != _instance_generation or data.heights != sampled.heights or data.ponds != sampled.ponds or data.streams != sampled.streams or data.landscape_waterfall != sampled.waterfall: return false
+		last_water_usec["pond_worker"] = Time.get_ticks_usec()-water_began
+		water_began = Time.get_ticks_usec()
 	for node in _stream_nodes: node.free()
 	_stream_nodes.clear()
 	_stream_probe = {}
@@ -238,9 +250,10 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 	# Adjacent triangles share vertices. Shore-distance sampling is identical at
 	# those points within this rebuild, regardless of which triangle owns them.
 	var fetch_by_vertex := {}
-	for pond: Dictionary in data.ponds:
+	for pond_index in range(data.ponds.size()):
+		var pond: Dictionary = data.ponds[pond_index]
 		if data is NativeTerrainData and data._recipe != null:
-			var water: Dictionary=preload("res://scripts/native_recipe_water.gd").build(data,pond)
+			var water: Dictionary=recipe_water[pond_index] if not recipe_water.is_empty() else preload("res://scripts/native_recipe_water.gd").build(data,pond)
 			pond_vertices.append_array(water.vertices)
 			pond_depths.append_array(water.depths)
 			pond_colors.append_array(water.colors)
@@ -285,6 +298,22 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 		_view_ready = true
 
 	return true
+
+## Every recipe pond's surface, built from a detached height copy on a worker.
+## The impacts and colour ramp read the live recipe, so they are taken here.
+func _sample_recipe_water(frame_tree: SceneTree) -> Array:
+	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+	detached._recipe_heights = data._recipe_heights.duplicate()
+	detached._water_grid_h = data._water_grid_h.duplicate()
+	detached.streams.assign(data.streams.duplicate(true))
+	var ponds: Array = data.ponds.duplicate(true)
+	var prepared := {"impacts":data.waterfall_impacts(),"ramp":NativeRecipeWater.water_ramp(data._recipe.source.g.get("water",{}))}
+	var job = preload("res://scripts/background_work.gd").new()
+	return await job.run(func() -> Array:
+		var built := []
+		for pond: Dictionary in ponds:
+			built.append(NativeRecipeWater.build(detached,pond,prepared))
+		return built,frame_tree)
 
 func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	last_instance_usec.clear()
@@ -473,6 +502,18 @@ func _reuse() -> bool:
 		return false
 	_move_instances(region)
 	_view_heights = data.heights.duplicate()
+	return true
+
+## A held brush lifts plants and props under each dab and leaves everything
+## else - water, cover batches and the cached view state - for the rebuild at
+## stroke end. That rebuild still diffs from the heights of the last full one,
+## so it repeats these lifts over the whole stroke and lands where it would have.
+func lift_instances() -> bool:
+	if not _view_ready or not data is NativeTerrainData: return false
+	var region: Variant = data.moved_region(_lift_heights if _lift_heights.size() == data.heights.size() else _view_heights)
+	if region is Rect2: _move_instances(region)
+	elif region == null: return false
+	_lift_heights = data.heights.duplicate()
 	return true
 
 func _move_instances(region: Rect2) -> void:
