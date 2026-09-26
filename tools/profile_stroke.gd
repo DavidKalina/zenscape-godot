@@ -4,7 +4,7 @@ extends SceneTree
 ## one refresh), releases through finish_stroke and waits for the world to
 ## settle. Frame gaps are main-loop intervals under the dummy renderer: they
 ## include scripts, physics and navigation, never GPU work or presentation.
-##   -- --mode=raise|lower|smooth|meadow|grass|paint --dabs=30
+##   -- --mode=raise|lower|smooth|meadow|grass|paint|land --dabs=30
 ##      --from=-4,-2.5 --to=3,2 --then=undo|restroke --label=name
 ## Dab amounts are fixed per tick, so the settled world is deterministic and the
 ## printed fingerprint can be compared between builds. The dummy renderer keeps
@@ -17,6 +17,9 @@ var label := "stroke"
 var from_point := Vector2(-4.0,-2.5)
 var to_point := Vector2(3.0,2.0)
 var then := ""
+## Extra seconds to keep timing after release, with the editor processing again
+## so emergence ticks.
+var watch := 0.0
 var _tick_end := 0
 var after_tick: Array[float] = []
 
@@ -99,7 +102,9 @@ func stroke(a: Vector2, b: Vector2, count: int, frames: Array[float], ticks: Arr
 		var tick := Time.get_ticks_usec()
 		var steps := maxi(1,ceili(from.distance_to(center)/(editor.radius*0.15)))
 		for i in range(1,steps+1):
-			editor.dab(from.lerp(center,float(i)/steps),editor.strength/30.0/steps)
+			var point := from.lerp(center,float(i)/steps)
+			if mode == "land": editor.land_dab(point,editor.land_strength/30.0/steps)
+			else: editor.dab(point,editor.strength/30.0/steps)
 		editor.refresh()
 		_tick_end = Time.get_ticks_usec()
 		ticks.append((_tick_end-tick)/1000.0)
@@ -115,6 +120,7 @@ func run() -> void:
 		if arg.begins_with("--from="): from_point = _point(arg.trim_prefix("--from="))
 		if arg.begins_with("--to="): to_point = _point(arg.trim_prefix("--to="))
 		if arg.begins_with("--then="): then = arg.trim_prefix("--then=")
+		if arg.begins_with("--watch="): watch = float(arg.trim_prefix("--watch="))
 	create_timer(150).timeout.connect(func() -> void: push_error("Stroke profile timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
@@ -168,8 +174,9 @@ func run() -> void:
 	var settle: Array[float] = []
 	var settle_stages := []
 	var settle_frames := 0
+	if watch > 0.0: editor.set_process(true)
 	previous = Time.get_ticks_usec()
-	while settle_frames < 90 or editor.refresh_pending > 0:
+	while settle_frames < maxi(90,int(watch*120.0)) or editor.refresh_pending > 0:
 		var stage := editor.refresh_stage
 		await process_frame
 		var now := Time.get_ticks_usec()
