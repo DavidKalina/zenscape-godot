@@ -41,37 +41,75 @@ var _water_distance := PackedFloat32Array()
 var _facing := PackedVector2Array()
 var _jitter := PackedFloat32Array()
 var _weights: Array[PackedFloat32Array] = []
+var _heights := PackedFloat32Array()
+var _wet := PackedByteArray()
+var _genome: Dictionary
+var _sampler: RefCounted
+var _noise: FastNoiseLite
 
-## Reads the terrain once. `sampler` is the inland heightfield (height, wet).
+## Reads the terrain once. `sampler` is the inland heightfield (height, wet),
+## or a `LiveGround` over the edited terrain (see `live`).
 func _init(genome: Dictionary,sampler: RefCounted) -> void:
 	var count := CELLS*CELLS
-	var heights := PackedFloat32Array()
-	heights.resize(count)
+	_genome = genome
+	_sampler = sampler
+	_heights.resize(count)
 	_land.resize(count)
 	_jitter.resize(count)
+	_wet.resize(count)
 	_water_distance.resize(count)
-	var noise := FastNoiseLite.new()
-	noise.seed = int(genome.plant_seed)+3301
-	noise.frequency = 0.16
+	_altitude.resize(count)
+	_moist.resize(count)
+	_facing.resize(count)
+	_noise = FastNoiseLite.new()
+	_noise.seed = int(genome.plant_seed)+3301
+	_noise.frequency = 0.16
+	for i in range(count): _read(i)
+	_derive()
+
+## A blend over the terrain as it stands now: live heights, ponds and streams.
+## Worlds without an inland recipe read as one woodland habitat.
+static func live(data: NativeTerrainData) -> RefCounted:
+	var inland: bool = data._recipe != null and data._recipe.get("inland") != null
+	var genome: Dictionary = data._recipe.inland.genome if inland else {"plant_seed":0,"composition":"","habitat":"woodland","treeline":float(Shape.BIOMES.woodland.treeline)}
+	var field = new(genome,LiveGround.new(data))
+	field.apply(str(genome.habitat),data._recipe_settings.get("blend",[]) if inland else [])
+	return field
+
+## Re-read the cells under `rect` (plate metres) after an edit. Sampling is
+## the only per-cell cost; altitude, water distance and weights are rederived
+## across the 28×28 grid, which is cheap and keeps the chamfer exact.
+func refresh_rect(rect: Rect2) -> void:
+	if _sampler.has_method("refresh"): _sampler.refresh()
+	var area := rect.grow(1.0)
+	for z in range(clampi(int(floor(area.position.y+14.0)),0,CELLS),clampi(int(ceil(area.end.y+14.0)),0,CELLS)):
+		for x in range(clampi(int(floor(area.position.x+14.0)),0,CELLS),clampi(int(ceil(area.end.x+14.0)),0,CELLS)):
+			_read(z*CELLS+x)
+	_derive()
+	if not biomes.is_empty(): apply(biomes[0],layers)
+
+func _read(i: int) -> void:
+	var p := _center(i%CELLS,i/CELLS)
+	_heights[i] = _sampler.height(p.x,p.y)
+	_land[i] = 1 if maxf(absf(p.x),absf(p.y))<12.5 and Genome.has_ground(_genome,p) else 0
+	_jitter[i] = _noise.get_noise_2d(p.x,p.y)*JITTER
+	_wet[i] = 1 if _sampler.wet(p) else 0
+
+func _derive() -> void:
+	var count := CELLS*CELLS
+	has_water = false
 	var land_heights := PackedFloat32Array()
-	for z in range(CELLS):
-		for x in range(CELLS):
-			var i := z*CELLS+x
-			var p := _center(x,z)
-			heights[i] = sampler.height(p.x,p.y)
-			var inside := maxf(absf(p.x),absf(p.y))<12.5 and Genome.has_ground(genome,p)
-			_land[i] = 1 if inside else 0
-			_jitter[i] = noise.get_noise_2d(p.x,p.y)*JITTER
-			var wet: bool = sampler.wet(p)
-			_water_distance[i] = 0.0 if wet else 1e6
-			if inside:
-				land_heights.append(heights[i])
-				if wet: has_water = true
+	for i in range(count):
+		_water_distance[i] = 0.0 if _wet[i]==1 else 1e6
+		if _land[i]==1:
+			land_heights.append(_heights[i])
+			if _wet[i]==1: has_water = true
 	land_heights.sort()
 	if land_heights.is_empty(): land_heights.append(0.0)
 	low = land_heights[int((land_heights.size()-1)*0.03)]
 	top = land_heights[-1]
 	var span := maxf(top-low,0.5)
+	var heights := _heights
 	# Two-pass chamfer distance to the nearest wet cell, in metres.
 	for pass_index in range(2):
 		var order := range(count) if pass_index==0 else range(count-1,-1,-1)
@@ -86,9 +124,6 @@ func _init(genome: Dictionary,sampler: RefCounted) -> void:
 				if nx<0 or nz<0 or nx>=CELLS or nz>=CELLS: continue
 				d = minf(d,_water_distance[nz*CELLS+nx]+offset.z)
 			_water_distance[i] = d
-	_altitude.resize(count)
-	_moist.resize(count)
-	_facing.resize(count)
 	for z in range(CELLS):
 		for x in range(CELLS):
 			var i := z*CELLS+x
@@ -177,6 +212,12 @@ func cover(p: Vector2) -> float:
 
 func water_distance(p: Vector2) -> float:
 	return _bilinear(_water_distance,p)
+
+func moisture(p: Vector2) -> float:
+	return _bilinear(_moist,p)
+
+func altitude(p: Vector2) -> float:
+	return _bilinear(_altitude,p)
 
 func share(biome: String) -> float:
 	var index := biomes.find(biome)
@@ -282,3 +323,42 @@ static func title(settings: Dictionary) -> String:
 	for layer: Dictionary in settings.get("blend",[]): names.append(str(layer.biome))
 	if names.size()==1: return names[0]
 	return ", ".join(names.slice(0,-1))+" and "+names[-1]
+
+## The edited terrain as a blend sampler: height from the live mesh, wet where
+## a pond's flooded surface or a stream's bed covers the point. Pond surfaces
+## are rasterised once per refresh onto a 0.25 m lattice rather than tested
+## triangle by triangle for every cell.
+class LiveGround extends RefCounted:
+	const STEP := 0.25
+	const SIDE := 112
+	var data: NativeTerrainData
+	var _water := PackedByteArray()
+	func _init(terrain: NativeTerrainData) -> void:
+		data = terrain
+		refresh()
+	func refresh() -> void:
+		_water.resize(SIDE*SIDE)
+		_water.fill(0)
+		for pond in data.ponds:
+			var surface := data.pond_surface(pond)
+			for t in range(0,surface.size(),3):
+				var a := Vector2(surface[t].x,surface[t].z)
+				var b := Vector2(surface[t+1].x,surface[t+1].z)
+				var c := Vector2(surface[t+2].x,surface[t+2].z)
+				var lo := (a.min(b).min(c)+Vector2(14,14))/STEP
+				var hi := (a.max(b).max(c)+Vector2(14,14))/STEP
+				for z in range(clampi(int(floor(lo.y)),0,SIDE),clampi(int(ceil(hi.y))+1,0,SIDE)):
+					for x in range(clampi(int(floor(lo.x)),0,SIDE),clampi(int(ceil(hi.x))+1,0,SIDE)):
+						if Geometry2D.point_is_inside_triangle(Vector2(x,z)*STEP-Vector2(14,14),a,b,c): _water[z*SIDE+x] = 1
+	func height(x: float,z: float) -> float:
+		var h: Variant = data.height_at(x,z)
+		return float(h) if h != null else 0.0
+	func wet(p: Vector2) -> bool:
+		var g := ((p+Vector2(14,14))/STEP).round()
+		var x := clampi(int(g.x),0,SIDE-1)
+		var z := clampi(int(g.y),0,SIDE-1)
+		if _water[z*SIDE+x]==1: return true
+		for route in data.streams:
+			for point in route.pts:
+				if p.distance_squared_to(Vector2(point.x,point.z))<pow(float(route.width)*0.5+0.2,2.0): return true
+		return false
