@@ -183,7 +183,7 @@ In progress. Items 2 to 7 are done. Item 1 and the Blender trees from item 3 are
 
 ## Phase 3: creation, in the spirit of Genesis
 
-Talked through with the user on 2026-09-26. Not started.
+Talked through with the user on 2026-09-26. Mapped and started the same day; see "Slice 1" below.
 
 ### The idea
 
@@ -223,12 +223,78 @@ Nothing may hitch while you paint. Frame pacing during a stroke matters more tha
 - The regrow grow-in animation, the ambient birds, fireflies and fish, and the living weather and seasons from Phase 2 item 6.
 - The beauty score can stay invisible and quietly guide variant choice, water settling and edges.
 
+### Decisions (2026-09-26)
+
+- **Start canvas: both.** The game launches onto a quiet, misty blank plain. Regenerate still gives a finished world that you can paint over.
+- **Pushback: gentle physics.** Intent is honoured where it makes sense: water painted on a hill runs downhill and pools, and forests thin out on steep rock.
+- **First slice: one brush with the full feel.** The land brush alone, with tremor, fog reveal, grass creeping in and no hitches, before the other brushes.
+
 ### Open questions
 
-- Does creation start from a blank plain, a generated world, or both?
-- How much does the world push back? For example, does water painted on a hilltop run downhill?
 - Is there a finished moment? Photo mode could be where you compose and then capture.
 - Rare "and it was good" moments when a place becomes rich: a heron lands, a deer at dawn, a rainbow after rain. A glimpse of Bigfoot at the forest edge could be the rarest.
+
+### What the survey found (2026-09-26)
+
+- **A stroke rebuilds the world.** `NativeChunkEditor._process` runs about 30 dabs a second, and each dab calls `refresh()` synchronously with no frame tree (`scripts/native_chunk_editor.gd:598-628`, `:711-834`).
+  - `brush()` loops over every vertex and duplicates the heights on each dab.
+  - The whole `ArrayMesh` and the surface-map textures are uploaded again.
+  - Fog and atmosphere bounds are updated.
+  - `_notify_play_geometry` serialises heights and objects.
+  - Navigation restarts.
+  - Measured 30-dab sculpt: 67-94 ms worst frame (`docs/performance/threading-acceptance.md`).
+- **Mask paint rebuilds every instance.** `GardenView`'s signatures include grass, blades and meadow (`scripts/garden_view.gd:452-455`), so each meadow or forest dab rebuilds every MultiMesh and the stream, waterfall and pond meshes.
+- **Feedback pieces exist but have no stroke signal to hang on:**
+  - tremor: `scripts/reference_tremor.gd`
+  - fog-thinning gust puffs: `atmosphere.send_gust`, `studies/wind_puffs.gd`
+  - local wind: `scripts/local_wind_field.gd`
+  - wind strength globals in `studies/atmosphere.gd`
+- **Grow-in is global.** It is driven by two uniforms, `zs_growth` and `zs_water_growth`, with a hash stagger per plant. It needs a spatial form (brush centre/radius/time, or per-instance birth time) to reveal locally.
+- **Emergence gaps:**
+  - The biome blend reads the recipe sampler, not live `data.heights` or added ponds.
+  - Scatter is one whole-plate ordered seed stream (`inland_landscape.gd:form`).
+  - There is no pinned or hand-placed flag, only `"landscape": true` on generated flora.
+  - There is no succession timeline.
+  - Nothing finds a basin's spill level.
+  - Fauna use fixed reference positions.
+  - The beauty score is whole-plate and terrain-only.
+
+### Slice 1: the land brush, with the full feel
+
+Four parallel branches, merged in this order:
+
+1. **`feature/stroke-pipeline`: no hitches mid-stroke.**
+   - Keep a dirty-rect accumulator; loop the brush and the masks over the brush bounding box only.
+   - Split the mid-stroke refresh (mesh region and instance lift only) from the settle work run once at stroke end (surface maps, shoreline, play geometry, navigation, fog bounds).
+   - Keep heights-only edits off the full instance rebuild.
+   - Target: no frame over about 16 ms during a 30-dab land stroke on the Mac.
+2. **`feature/stroke-feel`: the stroke reads as cause and effect.**
+   - Add `stroke_started`, `stroke_moved` and `stroke_finished` signals on the chunk editor.
+   - Tremor scales with how fast land rises.
+   - Fog parts around the brush, starting from gust puffs, with a dedicated reveal hole if puffs are not enough.
+   - Wind swells during the stroke and eases after it.
+   - Local grow-in: a brush-centred growth wave in the terrain, foliage and grass shaders.
+3. **`feature/emergence-core`: grass creeps in from the land you made.**
+   - A provenance or pin layer (hand, painted or emerged) on cells and objects.
+   - Biome rules re-read from live heights and water per dirty rect.
+   - A position-hash regional scatter.
+   - A succession clock: grass first, then shrubs and trees after a delay.
+   - Emerged content never overwrites hand or pinned work.
+4. **`feature/genesis-canvas`: launch into creation.**
+   - A blank misty plain as the default start; regenerate still available.
+   - A land brush that raises soft, natural forms and weathers them with a local native `erode` pass at stroke end.
+   - Creation mode as the default tool state, with the craft rail tucked away.
+
+**Also in slice 1, running alongside:** `feature/grass-look`, painterly meadow grass. The user said the grass reads as stubble. The target is Ghibli / Tiny Glade tufts: clumped, longer and curved, shaded as one mass, with root-to-tip colour, rolling wind waves and a few flowers.
+
+**Later slices:**
+- water brush (spill-level fill plus downhill trace)
+- meadow, forest and path brushes
+- habitat-driven fauna
+- regional beauty guidance
+- the creation UI rebuild
+- stroke sounds
+- inspect and photo mode
 
 ### Also in this phase
 
