@@ -71,7 +71,7 @@ void vertex() {
 		* step(-100.0, low) * step(water, ground - 0.04);
 	float distance_to_eye = length(vec3(root.x, ground, root.y) - zs_camera_position);
 	float thin = 1.0 - 0.6 * smoothstep(fade_start, fade_end, distance_to_eye);
-	float grown = smoothstep(grass_hash(seed + 7.7) * 0.6, grass_hash(seed + 7.7) * 0.6 + 0.4, zs_growth.y);
+	float grown = smoothstep(grass_hash(seed + 7.7) * 0.6, grass_hash(seed + 7.7) * 0.6 + 0.4, min(zs_growth.y, zs_growth_wave_at(root)));
 	float height = blade_height * (0.55 + 0.9 * zs_noise(root * 0.37 + 11.0)) * (0.7 + 0.3 * mask.a)
 		* (0.8 + 0.4 * grass_hash(seed + 2.9)) * grown * (1.0 - 0.75 * smoothstep(0.1, 0.7, zs_snow))
 		* (1.0 - 0.3 * zs_season.z);

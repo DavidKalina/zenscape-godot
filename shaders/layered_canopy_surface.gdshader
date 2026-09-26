@@ -129,7 +129,7 @@ void vertex() {
 	}
 	if (plant_growth) {
 		float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-		float t = clamp((zs_growth.y - seed * 0.72) / 0.28, 0.0, 1.0);
+		float t = clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0);
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
 	}

@@ -335,6 +335,34 @@ zs_water_growth={
 "type": "float",
 "value": 1.0
 }
+zs_reveal={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_growth_wave_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
 zs_ice={
 "type": "float",
 "value": 0.0
