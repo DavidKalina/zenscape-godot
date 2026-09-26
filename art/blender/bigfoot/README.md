@@ -1,3 +1,43 @@
+# Ambient Bigfoot (scenic direction)
+
+For the scenic diorama Bigfoot is an atmospheric prop, not an agent. This model
+was rebuilt from scratch in `zenscape-bigfoot-ambient.blend` by
+`tools/blender_bigfoot/build_ambient_bigfoot.py`:
+
+```sh
+blender -b --python tools/blender_bigfoot/build_ambient_bigfoot.py -- [--no-render] [--no-anim]
+```
+
+- **Look:** one continuous skinned mesh (a metaball body decimated into facets)
+  leaning toward the classic design (see `bigfoot-classic.png`): a big round helmet
+  dome whose back melts into the shoulder hump, a sharp brow visor jutting forward
+  like a cap brim, a recessed face with a broad wedge nose, full cheeks and a square
+  jaw, and an even dark-brown coat. A peaked crest reads as a bird or a gnome hat.
+  Deliberately low-poly and obscure: the body is decimated to about 800 large
+  facets, so it reads as fur on its own, with only a few flat plates on the crown
+  and mantle (more plates, or raised ones, read as spikes). The face is mostly
+  shadow with small dark eye glints under high-resting lids. A touch of moss and a
+  few leaves are caught in the coat. About 1,800 faces, 2.25 m tall,
+  one vertex-coloured coat material and one eye material.
+- **Skinning:** only the lid meshes follow `Lid_L`/`Lid_R`. Heat weighting would
+  let the lid bones claim the brow and cheeks, so every blink dragged the face.
+  The script hands those weights to `Head`. Breathing uses rotation only: a scaled
+  `Chest` would pass non-uniform scale to the head and arms.
+- **Rig:** 27 deform bones (spine, neck, head, blinking lids, clavicles, arms,
+  one finger-curl and one thumb bone per hand, legs, feet, toes) plus Root and
+  foot IK/pole controls that are baked on export.
+- **Clips** (30 fps, all seamless loops, in place): `Idle` 8 s (breath, weight
+  drift, two blinks), `Look` 10 s (turns head then shoulders, curious tilt, turns
+  back), `Walk` 3.33 s (slow, heavy bent-knee amble). Move the actor along local
+  Godot +Z at `walk_speed_mps` (0.336 m/s, stored on the rig as an extra) at
+  playback speed 1. Godot imports clips non-looping; set `loop_mode` when wiring.
+- Export: `assets/models/zenscape-bigfoot-ambient.glb`. Previews:
+  `ambient-hero.png`, `ambient-face.png`, `ambient-walk.png` (`ambient-turnaround.png`
+  predates the classic pass).
+  The script regenerates the .blend, so make hand edits in a copy.
+
+The sections below describe the earlier gameplay Bigfoot.
+
 # Wanderer: Blender rig and walk
 
 Current selected locomotion: **Heavy with loose arms**, authored in
