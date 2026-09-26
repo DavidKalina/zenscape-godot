@@ -34,6 +34,7 @@ const TOOL_TEXT := {
 	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
 	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
+	"land":"Drag to raise land · Shift or right drag lowers · [ ] brush size",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -64,6 +65,9 @@ const SETTINGS := [
 	{"property":"object_pitch","title":"Tilt forward","low":-90.0,"high":90.0,"step":5.0,"unit":"°","whole":false,"modes":POSE_TOOLS},
 	{"property":"object_roll","title":"Tilt sideways","low":-90.0,"high":90.0,"step":5.0,"unit":"°","whole":false,"modes":POSE_TOOLS},
 	{"property":"object_elevation","title":"Vertical offset","low":-5.0,"high":10.0,"step":0.05,"unit":"","whole":false,"modes":POSE_TOOLS},
+	{"property":"land_radius","title":"Brush size","low":1.5,"high":9.0,"step":0.25,"unit":"","whole":false,"modes":["land"]},
+	{"property":"land_strength","title":"Strength","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["land"]},
+	{"property":"land_ceiling","title":"Highest land","low":2.0,"high":24.0,"step":0.5,"unit":"m","whole":false,"modes":["land"]},
 ]
 const POSE_TOOLS := ["tree","flower","rock","assets"]
 ## The one-shot commands a tool offers beside its sliders. The name is the node
@@ -190,6 +194,19 @@ var last_surface_profile := {}
 var _bigfoot_mesh: Mesh
 ## Standalone creature scenes provide their own physical ground.
 var update_encounter_ground := true
+## The creation brush (scripts/land_brush.gd): broad, noisy natural landforms,
+## weathered by a local erosion pass when the stroke ends.
+var land_brush = preload("res://scripts/land_brush.gd").new()
+var land_radius := 4.5
+var land_strength := 1.0
+var land_ceiling := 10.0
+## Seeds the brush's ridge field; the owning scene sets it per world.
+var land_seed := 0
+## Emitted after a land stroke's erosion pass settles into the heights.
+signal land_weathered(bounds: Rect2)
+var _land_lower := false
+## The button holding the current land stroke; every other stroke is a left drag.
+var _stroke_button := MOUSE_BUTTON_LEFT
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -313,6 +330,7 @@ func select_tool(tool: String) -> void:
 ## Radius the terrain shader should draw for the tool in hand.
 func preview_radius() -> float:
 	if mode == "explosive": return blast_radius
+	if mode == "land": return land_radius
 	if mode == "tunnel": return tunnel_width/2
 	if mode == "mountain":
 		return mountain_radius
@@ -426,6 +444,7 @@ func handle_input(event: InputEvent) -> bool:
 		if event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]:
 			var step := 0.25 if event.keycode == KEY_BRACKETRIGHT else -0.25
 			var property := "strength" if event.shift_pressed else "radius"
+			if mode == "land": property = "land_strength" if event.shift_pressed else "land_radius"
 			set_setting(property,get(property)+step)
 			return true
 		if event.keycode == KEY_K and not event.echo and sky_toggle_requested.has_connections():
@@ -434,6 +453,8 @@ func handle_input(event: InputEvent) -> bool:
 	if mode == "select" and event is InputEventMouseMotion and _selection_drag:
 		move_selection_pointer(event.position)
 		return true
+	if mode == "land" and event is InputEventMouseButton and event.button_index in [MOUSE_BUTTON_LEFT,MOUSE_BUTTON_RIGHT]:
+		return _land_press(event)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
 			finish_stroke()
@@ -599,7 +620,7 @@ func _process(delta: float) -> void:
 	if forming or not active:
 		pond_preview.clear()
 		return
-	if (_painting or _selection_drag) and (not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995):
+	if (_painting or _selection_drag) and (not Input.is_mouse_button_pressed(_stroke_button) or scene._growth.terrain < 0.995):
 		finish_stroke()
 	var hit: Variant = pick(scene.get_viewport().get_mouse_position()) if not scene._orbiting and not scene._panning else null
 	if mode == "pond":
@@ -612,6 +633,8 @@ func _process(delta: float) -> void:
 		_material.set_shader_parameter("brush_radius",preview_radius())
 		if _painting and placement_trail and trail_available():
 			continue_trail(center)
+		elif _painting and mode == "land":
+			_land_step(center,delta)
 		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
@@ -640,7 +663,10 @@ func finish_stroke() -> void:
 	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
+	var weathered := _weather_land()
+	_stroke_button = MOUSE_BUTTON_LEFT
 	data.end_stroke()
+	if weathered: refresh()
 
 func undo() -> void:
 	_history_step(false)
@@ -1374,3 +1400,52 @@ func form_inland(settings: Dictionary,live := true,apply_mood := true) -> void:
 		scene._world_visuals.peak_altitude = clampf(Array(data.heights).max()*0.6,2.0,24.0)
 	forming = false
 	_set_status("Landscape ready")
+
+# --- Creation brush ------------------------------------------------------------
+## A left press raises and a right press lowers (Shift lowers either way).
+## A press that misses the land, or holds Alt, falls through to the camera, so
+## the sky still orbits with either button.
+func _land_press(event: InputEventMouseButton) -> bool:
+	if not event.pressed:
+		if _painting and event.button_index == _stroke_button: finish_stroke()
+		return _painting or event.button_index == MOUSE_BUTTON_LEFT
+	if _painting or event.alt_pressed: return _painting
+	var hit: Variant = pick(event.position)
+	if hit == null: return false
+	_stroke_button = event.button_index
+	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT
+	land_brush.prepare(data,land_seed)
+	land_brush.begin()
+	data.begin_stroke()
+	_painting = true
+	_elapsed = 0.0
+	_last_point = Vector2(hit.x,hit.z)
+	land_dab(_last_point,land_strength/30.0)
+	refresh()
+	return true
+
+func land_dab(point: Vector2, amount: float) -> void:
+	var lower := _land_lower or Input.is_key_pressed(KEY_SHIFT)
+	land_brush.dab(data,point,land_radius,amount,lower,land_ceiling)
+
+## Dabs along the pointer's path at a fifth of the brush size, at most one
+## refresh per 1/30 s. The rate is independent of how far the pointer moved.
+func _land_step(center: Vector2, delta: float) -> void:
+	_elapsed += minf(delta,0.05)
+	if _elapsed < 1.0/30.0: return
+	var previous: Vector2 = _last_point if _last_point != null else center
+	var dabs := clampi(ceili(previous.distance_to(center)/(land_radius*0.2)),1,24)
+	for i in range(1,dabs+1):
+		land_dab(previous.lerp(center,float(i)/dabs),land_strength*_elapsed/dabs)
+	refresh()
+	_elapsed = 0.0
+	_last_point = center
+
+## Runs inside the stroke's transaction, so one undo removes the land and its
+## weathering together.
+func _weather_land() -> bool:
+	if mode != "land" or not land_brush.has_bounds: return false
+	var region: Rect2 = land_brush.bounds
+	if not land_brush.weather(data): return false
+	land_weathered.emit(region)
+	return true
