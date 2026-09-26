@@ -6,6 +6,10 @@ const Desert = preload("res://scripts/desert_landscape.gd")
 const Beauty = preload("res://scripts/world_beauty.gd")
 const CANDIDATES := 6
 const PALETTE_DRAWS := 4
+## Weather odds for a regrow. Mostly bright skies: overcast dims the sun and
+## switches off god rays, so grey and wet worlds stay the occasional mood.
+const WET_WEATHER := {"clear":30,"fair":34,"mist":14,"rain":9,"overcast":7,"snow":6}
+const DRY_WEATHER := {"clear":45,"fair":45,"overcast":10}
 
 static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
@@ -39,8 +43,7 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var hours := [Vector2(.27,.34),Vector2(.36,.57),Vector2(.62,.72),Vector2(.015,.08)]
 	var hour: int = rng.randi_range(0,3)
 	var phase := rng.randf_range(hours[hour].x,hours[hour].y)
-	var weathers := ["clear","fair","overcast"] if dry else ["clear","fair","mist","rain","overcast","snow"]
-	var weather: String = weathers[rng.randi_range(0,weathers.size()-1)]
+	var weather := _pick_weather(rng,DRY_WEATHER if dry else WET_WEATHER)
 	var snowy := weather=="snow"
 	var rainy := weather=="rain"
 	var autumn := not dry and not snowy and rng.randf()<0.28
@@ -86,6 +89,15 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 		"rock_style":1,"rock_detail":.65
 	}
 	return {"seed":seed_value,"terrain":recipe,"mood":mood,"visuals":visuals}
+
+static func _pick_weather(rng: RandomNumberGenerator, odds: Dictionary) -> String:
+	var total := 0.0
+	for weight in odds.values(): total += weight
+	var roll := rng.randf()*total
+	for weather in odds:
+		roll -= odds[weather]
+		if roll<0.0: return weather
+	return odds.keys()[-1]
 
 ## Candidate scoring is CPU work; keep it off the regrowth animation's thread.
 static func sample_async(seed_value: int,previous: Dictionary,tree: SceneTree) -> Dictionary:

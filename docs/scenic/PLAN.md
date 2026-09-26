@@ -86,7 +86,7 @@ Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is 
 
 ## Phase 2: variety where every result looks good
 
-In progress. Item 1 and the Blender trees from item 3 are in PR #19. Neither has been seen on screen together yet.
+In progress. Item 1 and the Blender trees from item 3 are in PR #19. Item 7 is done. Neither has been seen on screen together yet.
 
 1. **Replace the generator's "usable, connected ground" gate with a beauty score.** Done in PR #19 (`feature/beauty-score`). Not yet seen on screen.
    - `scripts/world_beauty.gd` scores a candidate from the overview camera: drama (rise over the plate's far edge, land hidden behind nearer ridges, skyline movement, peaks), relief, a focal summit or water, water share, and composition (summit near a third, balanced weight, walls not hiding the land).
@@ -108,7 +108,7 @@ In progress. Item 1 and the Blender trees from item 3 are in PR #19. Neither has
 6. **Weather and seasons that change while you watch.**
    - The weather scheduler is off by default.
    - Seasons do not yet drive plants: no spring bloom, no bare winter trees.
-7. **Rebalance the weather odds.** Across 300 seeds, overcast is the most common weather at 24%, and rain and snow add another 27%. That makes half of random regrows grey or wet, and overcast turns off god rays.
+7. **Rebalance the weather odds.** Done on 2026-09-26. Regrows used to pick weather uniformly, which made overcast 24% of 400 seeds and grey or wet skies 49%. `WET_WEATHER` and `DRY_WEATHER` in `scripts/cozy_world_generator.gd` now weight it: clear 30, fair 34, mist 14, rain 9, overcast 7, snow 6 (dry: clear 45, fair 45, overcast 10). Over seeds 0–399, overcast is 10% and grey or wet is 22%. Terrain and scores are unchanged, but most seeds roll different weather, so the showcase seeds were re-checked.
 8. **Later: horizons beyond one 28 m plate.** Stitched multi-chunk terrain exists on `feature/stitched-terrain`.
 
 ## Phase 3: crafting in the spirit of Tiny Glade
@@ -133,25 +133,25 @@ In progress. Item 1 and the Blender trees from item 3 are in PR #19. Neither has
 
 ## Showcase seeds
 
-These are `SHOWCASE` in `scripts/cozy_regrowth.gd`, re-picked on 2026-09-26 after the beauty score. They are the top scorers per family in seeds 0–399 of `tools/probe_world_beauty.gd`. They have not been looked at on screen yet.
+These are `SHOWCASE` in `scripts/cozy_regrowth.gd`. They were picked on 2026-09-26 as the top scorers per family in seeds 0–399 of `tools/probe_world_beauty.gd`, then re-checked after the weather rebalance the same day. Five seeds that had turned overcast were swapped for the next-best seed in their family: 276→303, 240→328, 363→301 (kept as the snow showcase), 126→309 and 28→278.
 
 | Family | Seeds |
 |---|---|
-| Mountain | 184 (clear), 105 (tall massif, fair), 147 (volcanic crown, rain) |
-| Massif | 193 (sawtooth, clear), 276 (tall massif, snow) |
-| Valley | 79 (glacial, fair), 240 (mist), 363 (buttressed canyon, fair) |
-| Basin | 176 (clear) |
-| Plateau | 33 (fair), 102 (mist) |
-| Chasm | 353 (clear) |
+| Mountain | 184 (fair), 105 (tall massif, clear), 147 (volcanic crown, mist) |
+| Massif | 193 (sawtooth, fair), 303 (tall massif, fair) |
+| Valley | 79 (glacial, mist), 328 (buttressed canyon, clear), 301 (glacial, snow) |
+| Basin | 176 (fair) |
+| Plateau | 33 (fair), 102 (clear) |
+| Chasm | 353 (fair) |
 | Foothills | 58 (rolling uplands, fair) |
-| Meadow | 177 (fair) |
-| Marsh | 198 (clear) |
+| Meadow | 177 (rain) |
+| Marsh | 198 (fair) |
 | Desert | 134 (fair) |
-| Desert mountains | 45 (fair) |
-| Buttes | 126 (clear) |
+| Desert mountains | 45 (clear) |
+| Buttes | 309 (clear) |
 | Tablelands | 248 (fair) |
-| Dunes | 250 (clear) |
-| Salt basin | 28 (fair) |
+| Dunes | 250 (fair) |
+| Salt basin | 278 (fair) |
 | Monuments | 364 (fair) |
 
 ## Working agreements
