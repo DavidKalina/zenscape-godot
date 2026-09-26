@@ -26,6 +26,9 @@ var _gust_button: Button
 var _resident_wind = preload("res://scripts/resident_wind.gd").new()
 var world_play = preload("res://scripts/diorama_world_play.gd").new()
 var _performance_trace = preload("res://scripts/performance_trace.gd").new()
+## Scenery mode keeps the resident Bigfoot built but never lets him out, so the
+## product is a landscape diorama. Launch with --bigfoot to bring him back.
+var scenery_mode := "--bigfoot" not in OS.get_cmdline_user_args()
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -38,6 +41,7 @@ func _ready() -> void:
 	add_child(loading)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	ambient_without_resident = scenery_mode
 	super._ready()
 	_fidelity_document = _chunk_editor.data.to_document()
 	_fidelity_state = NativeGardenStore.capture(self)
@@ -79,7 +83,7 @@ func _ready() -> void:
 		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
 	_toolbar.hide()
 	_menu.hide()
-	loading.stage("Opening Fidelity · welcoming Bigfoot")
+	loading.stage("Opening Fidelity" if scenery_mode else "Opening Fidelity · welcoming Bigfoot")
 	launch_fidelity()
 	await get_tree().process_frame
 	loading.queue_free()
@@ -234,14 +238,16 @@ func _make_shell() -> void:
 	for index in range(3,8):
 		var action: Button = _toolbar.get_child(index)
 		action.hide()
+		if scenery_mode and action in [_toolbar.get_child(5),_home_button]: continue
 		_world_menu.get_popup().add_item(action.text,index)
-	_world_menu.get_popup().add_separator()
-	_world_menu.get_popup().add_item("See both stories",100)
-	_world_menu.get_popup().add_item("Look through lair windows",101)
-	_world_menu.get_popup().add_item("Find cave entrance",102)
-	_world_menu.get_popup().add_separator()
-	_world_menu.get_popup().add_item("New crossing glade",110)
-	_world_menu.get_popup().add_item("New chasm glade",111)
+	if not scenery_mode:
+		_world_menu.get_popup().add_separator()
+		_world_menu.get_popup().add_item("See both stories",100)
+		_world_menu.get_popup().add_item("Look through lair windows",101)
+		_world_menu.get_popup().add_item("Find cave entrance",102)
+		_world_menu.get_popup().add_separator()
+		_world_menu.get_popup().add_item("New crossing glade",110)
+		_world_menu.get_popup().add_item("New chasm glade",111)
 	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
 		if id in [110,111]:
 			open_crossing_glade(id == 111)
@@ -256,6 +262,7 @@ func _make_shell() -> void:
 		var action: Button = _toolbar.get_child(id)
 		if not action.disabled: action.pressed.emit())
 	_world_menu.about_to_popup.connect(func() -> void:
+		if scenery_mode: return
 		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled)
 		for id in [100,101,102]:
 			_world_menu.get_popup().set_item_disabled(_world_menu.get_popup().get_item_index(id),lair == null))
@@ -516,7 +523,7 @@ func open_path(path: String) -> bool:
 	return true
 
 func invite_bigfoot(point: Vector3) -> bool:
-	if not _has_world: return false
+	if scenery_mode or not _has_world: return false
 	_refresh_habitat()
 	var safe: Variant = navigation.nearest_safe(point)
 	if safe == null:
@@ -546,7 +553,7 @@ func restore_life_state(state: Dictionary) -> void:
 
 func restore_diorama_state(state: Dictionary) -> void:
 	creature.set_body_scale(float(state.get("resident_scale",1.0)))
-	resident_enabled = bool(state.get("resident",false))
+	resident_enabled = not scenery_mode and bool(state.get("resident",false))
 	if resident_enabled:
 		var p: Array = state.position
 		var safe: Variant = navigation.nearest_safe(Vector3(p[0],p[1],p[2]))

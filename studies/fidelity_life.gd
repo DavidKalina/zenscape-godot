@@ -5,6 +5,8 @@ var navigation = preload("res://scripts/creature_navigation.gd").new()
 var brain = preload("res://scripts/creature_brain.gd").new()
 var creature: CreatureActor
 var resident_enabled := true
+## Fish and falling wood keep living while the resident is away.
+var ambient_without_resident := false
 var routine: Node
 var cave_sites: Node3D
 var lair: Node3D
@@ -157,6 +159,9 @@ func _process(delta: float) -> void:
 	if not resident_enabled:
 		if foliage_tread != null: foliage_tread.tick(null,delta)
 		creature.visible = false
+		if ambient_without_resident and not _paused:
+			if fish != null: fish.advance(delta)
+			if dead_wood != null: dead_wood.advance(delta)
 		return
 	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)
 	var present := not _habitat_blocked and _growth.terrain >= 0.995

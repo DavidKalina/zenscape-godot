@@ -1,6 +1,8 @@
 extends Node
 ## Cozy prototype: reverse the source growth channels, regenerate in place,
 ## then replay them forward. One native world; the camera and Bigfoot stay put.
+## In scenery mode there is no Bigfoot to carry: regrow folds and replays the
+## land directly.
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const DEGROW_SECONDS := 3.4
@@ -70,12 +72,15 @@ func setup(owner_scene: Node3D) -> void:
 	scene.set_building(false)
 	_set_growth(1.0)
 	scene._paused = false
-	scene.resident_enabled = true
+	scene.resident_enabled = not _scenery()
 	_build_overlay()
 	initialized = true
 	busy = false
 	_update_badge()
-	scene._notice.text = "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+
+func _scenery() -> bool:
+	return bool(scene.get("scenery_mode"))
 
 func _build_overlay() -> void:
 	cover.layer = 60
@@ -147,6 +152,7 @@ func blocks(point: Vector2) -> bool:
 
 func handle(event: InputEvent) -> bool:
 	if not initialized: return true
+	if _scenery(): return busy
 	if event is InputEventKey and event.pressed and event.keycode==KEY_ESCAPE and holding:
 		cancel_carry()
 		return true
@@ -232,7 +238,12 @@ func regrow(world_seed := -1) -> void:
 	previous_hour = scene._celestial.phase
 	previous_distance = scene.distance
 	next_look = {}
-	if not holding:
+	if _scenery():
+		old_paused = scene._paused
+		scene._chunk_editor.finish_stroke()
+		scene.world_play.cancel()
+		scene._paused = true
+	elif not holding:
 		last_mouse = scene.camera.unproject_position(scene.creature.global_position+Vector3.UP*2.0)
 		begin_carry()
 		pending_drop = true
@@ -262,25 +273,31 @@ func regrow(world_seed := -1) -> void:
 	next_distance = await _fit_distance(get_tree())
 	_set_growth(0.0)
 	# Navigation is prepared before Bigfoot can be released onto the new ground.
+	# Scenery mode has nobody to walk it; the habitat rebuilds lazily if he returns.
 	await get_tree().process_frame
-	var nav_workers: int = scene.navigation.thread_workers
-	# Two snapshots leave room for rendering; four copies cost a frame by
-	# themselves on dense forests. Poll and merge within the native 2 ms budget.
-	scene.navigation.thread_workers = 2
-	scene._refresh_habitat(true)
-	while scene.navigation.rebuilding:
-		await get_tree().process_frame
+	if not _scenery():
+		var nav_workers: int = scene.navigation.thread_workers
+		# Two snapshots leave room for rendering; four copies cost a frame by
+		# themselves on dense forests. Poll and merge within the native 2 ms budget.
+		scene.navigation.thread_workers = 2
 		scene._refresh_habitat(true)
-	scene.navigation.thread_workers = nav_workers
-	await get_tree().process_frame
+		while scene.navigation.rebuilding:
+			await get_tree().process_frame
+			scene._refresh_habitat(true)
+		scene.navigation.thread_workers = nav_workers
+		await get_tree().process_frame
 	scene._growth.reset_feedback()
 	phase = "growing"
-	scene._notice.text = "A new little wilderness, growing around him…"
+	scene._notice.text = "A new little wilderness, growing…" if _scenery() else "A new little wilderness, growing around him…"
 	await _animate_growth(true,GROW_SECONDS)
 	generation += 1
 	phase = "ready"
 	busy = false
 	_update_badge()
+	if _scenery():
+		scene._paused = old_paused
+		scene._notice.text = ""
+		return
 	# The original pickup ground no longer exists after regeneration.
 	var safe: Variant = scene.navigation.nearest_safe(origin_feet)
 	if safe!=null: origin_feet = safe
@@ -444,7 +461,7 @@ func save_places() -> bool:
 	scene.flush_world_play()
 	var state := NativeGardenStore.capture(scene)
 	state.scene._paused = false
-	state.diorama.resident = true
+	state.diorama.resident = not _scenery()
 	slots[active] = {"label":_label(scene),"document":scene._chunk_editor.data.to_document(),"state":state}
 	var temporary: String = primary.places_path+".tmp"
 	var file := FileAccess.open(temporary,FileAccess.WRITE)

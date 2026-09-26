@@ -10,6 +10,7 @@ var rock_detail := 0.65
 var _fog: FogVolume
 var _peaks: FogVolume
 var _signature := PackedByteArray()
+var _settings_ref: Dictionary
 var _geology: ImageTexture
 var _genome := {}
 var _water_shader: Shader
@@ -50,7 +51,11 @@ func sync(scene: Node3D) -> void:
 	_peaks.material.set_shader_parameter("cloud_time",scene._motion_time)
 	_peaks.material.set_shader_parameter("cloud_density",peak_density)
 	var data: NativeTerrainData = scene._chunk_editor.data
-	var signature := var_to_bytes(data._recipe_settings)
+	# Terrain data replaces its settings dictionary rather than editing it, so
+	# the same instance means the same settings and skips re-serializing.
+	var settings_changed := not is_same(data._recipe_settings,_settings_ref)
+	var signature: PackedByteArray = var_to_bytes(data._recipe_settings) if settings_changed else _signature
+	_settings_ref = data._recipe_settings
 	if signature != _signature:
 		_signature = signature
 		_genome = data._recipe.inland.genome if data._recipe != null and data._recipe_settings.get("kind") == "inland" else {}
