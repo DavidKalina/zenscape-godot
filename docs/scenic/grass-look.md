@@ -40,7 +40,7 @@ Measured from the code on `main` at 8ac595c:
   - Flowers come in drifts of one kind: white daisy, buttercup, violet and clover. Their colours lean toward the palette's earth (`flower_palette_pull`).
   - Spring adds more flowers (`spring_flowers`) and winter takes them.
   - Seed heads stand where the grass is drier (`seed_amount`).
-- **Per-world variety:** `world_offset` comes from the recipe seed, so each world has its own tussocks, dry patches and drifts.
+- **Per-world variety:** the global `zs_grass_offset` comes from the recipe seed, so each world has its own tussocks, dry patches and drifts.
 - **Level of detail:** past `fade_start` the tufts drop to `far_blades` blades, as well as thinning and widening as before.
 
 The season response (`zs_season_grass`, the winter shortening), autumn paint, snow, wet droop, the tread wake, cloud shade and the grow-in line are all kept. The grow-in line (`zs_growth.y`) and the lines either side of it are byte-for-byte unchanged, so the local growth wave from `feature/stroke-feel` merges cleanly.
