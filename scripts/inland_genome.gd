@@ -1,7 +1,7 @@
 extends RefCounted
 ## Versioned inland genome. Independent feature streams; replayed by NativeTerrainRecipe.
 ## Compositions/archetypes and crest/wall profiles adapted from zenscape/genome.js and landforms.js.
-const VERSION := 6
+const VERSION := 7
 const Previous = preload("res://scripts/inland_genome_v2.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
 const Legacy = preload("res://scripts/inland_genome_v1.gd")
@@ -30,7 +30,7 @@ static func weighted(rng: RandomNumberGenerator,names: Array,weights: Array) -> 
 static func sample(seed_value: int,overrides: Dictionary = {},version := VERSION) -> Dictionary:
 	if version == 1: return Legacy.sample(seed_value,overrides)
 	if version == 2: return Previous.sample(seed_value,overrides)
-	assert(version in [3,4,5,6],"Unsupported inland genome version")
+	assert(version in [3,4,5,6,7],"Unsupported inland genome version")
 	var rc := stream(seed_value,101)
 	var ra := stream(seed_value,211)
 	var rl := stream(seed_value,307)

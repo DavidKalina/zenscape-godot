@@ -26,26 +26,25 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	if biome=="woodland" and rng.randf()<0.28: biome = "redwood"
 	var recipe := {"kind":"inland","version":Genome.VERSION,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
 	# Draw several candidates within the chosen family and keep the one that
-	# looks best from the overview camera (scripts/world_beauty.gd).
+	# looks best from the overview camera (scripts/world_beauty.gd). Candidates
+	# are scored uneroded; erosion only reshapes the kept world when it is built.
 	var best_recipe := recipe.duplicate(true)
 	var best_score := -1.0
-	var best_world: RefCounted
 	for attempt in range(CANDIDATES):
 		if attempt>0:
 			recipe.seed = rng.randi_range(0,999999)
 			while recipe.seed==previous.get("seed",-1): recipe.seed = rng.randi_range(0,999999)
 			recipe.relief = rng.randf_range(0.65,1.3)
 			recipe.breadth = rng.randf_range(0.72,1.3)
-		var world = preload("res://scripts/inland_world.gd").new(recipe)
-		var score: float = Beauty.score(world.sampler).total
+		var score: float = Beauty.score(preload("res://scripts/inland_world.gd").new(recipe,true).sampler).total
 		if score>best_score:
 			best_score = score
 			best_recipe = recipe.duplicate(true)
-			best_world = world
 	recipe = best_recipe
 	# Two or three habitats by moisture, altitude and slope direction. The
-	# plan has its own random stream, so the draws below are unchanged.
-	var blend: Array = BiomeBlend.plan(recipe,best_world)
+	# plan has its own random stream, so the draws below are unchanged. It
+	# reads the eroded land, so its shares match the world that gets built.
+	var blend: Array = BiomeBlend.plan(recipe,preload("res://scripts/inland_world.gd").new(recipe))
 	if not blend.is_empty(): recipe["blend"] = blend
 	dry = recipe.composition in Desert.KINDS
 	var hours := [Vector2(.27,.34),Vector2(.36,.57),Vector2(.62,.72),Vector2(.015,.08)]

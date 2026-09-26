@@ -5,7 +5,8 @@ var genome: Dictionary
 var ponds: Array[Dictionary] = []
 var streams: Array[Dictionary] = []
 var sampler: RefCounted
-func _init(settings: Dictionary) -> void:
+## `preview` builds the uneroded field the generator scores candidates on.
+func _init(settings: Dictionary,preview := false) -> void:
 	genome = Genome.sample(int(settings.seed),{"composition":settings.composition,"archetype":settings.archetype,"landform":settings.landform,"habitat":settings.biome,"relief":settings.relief,"breadth":settings.breadth},int(settings.version))
 	var water = preload("res://scripts/native_formation_water.gd").new()
 	if genome.composition == "valley":
@@ -30,7 +31,7 @@ func _init(settings: Dictionary) -> void:
 		var radius: float = genome.lake.radius if genome.composition == "basin" else 3.4
 		if genome.composition == "basin": p = Vector2(genome.lake.x,genome.lake.z)
 		ponds.append({"x":p.x,"z":p.y,"level":1.7,"basin":[radius,radius*float(genome.lake.stretch)]})
-	var recipe = preload("res://scripts/inland_heightfield.gd").new(genome,ponds,water)
+	var recipe = preload("res://scripts/inland_heightfield.gd").new(genome,ponds,water,preview)
 	# Local headwater and tributary courses use the same monotone level plan as the original formation water.
 	if genome.composition in ["mountain","massif"] and not ponds.is_empty():
 		var pool: Dictionary = ponds[0]

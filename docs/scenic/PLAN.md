@@ -86,7 +86,7 @@ Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is 
 
 ## Phase 2: variety where every result looks good
 
-In progress. Items 4 and 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
+In progress. Items 2, 4 and 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
 
 1. **Replace the generator's "usable, connected ground" gate with a beauty score.** Done in PR #19 (`feature/beauty-score`). Not yet seen on screen.
    - `scripts/world_beauty.gd` scores a candidate from the overview camera: drama (rise over the plate's far edge, land hidden behind nearer ridges, skyline movement, peaks), relief, a focal summit or water, water share, and composition (summit near a third, balanced weight, walls not hiding the land).
@@ -95,7 +95,18 @@ In progress. Items 4 and 7 are done. Item 1 and the Blender trees from item 3 ar
    - Over 150 seeds the mean score rises from 0.64 to 0.71 and every family's worst world improves. Palettes scoring under 0.6 drop from 79 to 12.
    - Known gaps: the score is blind to what makes a chasm or a marsh good, so those families only compare among themselves. Scores are not comparable across families. `inland_places.quality` is now only used by the deferred tests, and `test_inland_places.gd` will fail its usable-ground floor.
    - Tune the weights (`WEIGHTS` in `world_beauty.gd`) against captures. `tools/probe_world_beauty.gd` sweeps scores and timings headless; `tools/capture_seed_stills.gd` renders stills or orbit frames per seed.
-2. **Erosion plus ridged, domain-warped noise** in the native C++ terrain kernels (`native/terrain_kernels`). Today there is one noise octave and no erosion.
+2. **Erosion plus ridged, domain-warped noise** in the native C++ terrain kernels (`native/terrain_kernels`). Done on `feature/terrain-erosion`. Not yet seen on screen.
+   - Genome version 7 adds a height delta from `scripts/terrain_erosion.gd` to the inland field before water is carved. It uses a 41×41 grid of 0.7 m cells, about the mesh spacing.
+   - Ridged, domain-warped noise (three octaves) is laid on slopes only, so flats, mesa tops and the plate rim keep their shape.
+   - Then 20 passes of stream-power erosion down a drainage tree. Only cells draining more than four cells cut, and jittered flow directions let gullies branch instead of following the grid. Sediment settles where the flow slackens, without burying the cells upstream or mounding pits.
+   - The kernel's `erode` takes under 1 ms per world. `erode_reference` in GDScript mirrors it exactly, so a seed grows the same world without the library, in about 70 ms. Both use only `+ - * / sqrt floor`, so no platform's maths library can change a seed. `tools/probe_terrain_erosion.gd -- 400 --reference 400` must report 0 mismatches.
+   - Per-family strengths are in `FAMILIES`. Dunes, marsh and salt basins are not eroded, since wind shapes dunes and the pools sit on exact levels. Chasms, meadows, buttes and tablelands get only a light touch. Mountains and massifs get cuts of about 1 m, and valleys and desert mountains about 0.8 m.
+   - Saved worlds from versions 3 to 6 build exactly their old terrain.
+   - The generator scores its six candidates uneroded and only the kept world is eroded, so a world still takes the same time to draw (128 ms in both runs on the day). Over 368 eroded worlds, the uneroded pick is also the best eroded candidate 322 times. The mean loss is 0.0015 and the worst is 0.058.
+   - Building the terrain costs more: recipe sampling on one thread rises from 180 to 203 ms per world. It is split across four workers.
+   - Beauty scores barely move: the mean over 400 seeds goes from 0.700 to 0.701. Family minimums shift by 0.04 at most. Valley drops from 0.90 to 0.86, and tablelands rises from 0.58 to 0.61.
+   - Every showcase seed keeps its family. Seed 147 (volcanic crown) drops from 0.85 to 0.82 and 193 (sawtooth) from 0.86 to 0.84. The rest change by 0.01 or less.
+   - `--hillshade DIR` on the probe writes uneroded, eroded and change maps per seed. Headless runs cannot check the shaded look. Launch `./run-cozy-flow.command` and judge whether the gullies read at the overview distance or need more strength.
 3. **Seeded tree and rock variants.** `layered_tree.gd` has no seed, the catalog has 22 fixed assets, and each habitat cycles its props with `i%4`.
    - **Blender trees, committed as `a2eec16` and in PR #19.** Scripts in `tools/blender_trees/` (plus `tools/build_hero_oak.py`) build faceted trees in Blender and export them to `assets/models/`. Run one with `blender -b --factory-startup --python <script>`.
    - `scripts/hero_trees.gd` swaps the geometry behind the existing catalog parts and keeps each part's material, wind and tint. The oak replaces the broadleaf and the redwood replaces the redwood.
