@@ -34,7 +34,7 @@ static func shade(kernel: RefCounted, data: NativeTerrainData, arrays: Array, fa
 	for key in ["heights","vertex_ids","grass","meadow","tint","_recipe_heights","_face_probe","_locate_face","_locate_u","_locate_v","_face_x","_face_z","_face_shimmer","_face_grass","_face_rock","_face_snow","_face_rim","_recipe_gradients","blank","_ground_tint"]:
 		inputs[key] = data.get(key)
 	var biome: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
-	inputs.snowline = biome.get("snowline",data._palette.snowline)
+	inputs.snowline = preload("res://scripts/biome_blend.gd").snowline(data._recipe_settings,data._palette.snowline)
 	inputs.rock_slope = biome.get("rock_slope",data._palette.rock_slope)
 	inputs.sand = data._palette.sand
 	inputs.gravel = data._palette.gravel

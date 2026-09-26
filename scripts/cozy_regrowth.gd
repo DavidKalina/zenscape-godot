@@ -167,7 +167,7 @@ func _build_overlay() -> void:
 func _label(world: Node3D) -> String:
 	var recipe: Dictionary = world._chunk_editor.data._recipe_settings
 	if recipe.get("kind")=="inland":
-		return recipe.biome.capitalize()+" · "+recipe.composition.replace("-"," ").capitalize()+(" · seed %d" % world_seed if world_seed>=0 else "")
+		return preload("res://scripts/biome_blend.gd").title(recipe)+" · "+recipe.composition.replace("-"," ").capitalize()+(" · seed %d" % world_seed if world_seed>=0 else "")
 	var family: String = world._chunk_editor.data._recipe_settings.get("family","")
 	return Presets.PRESETS[family].title if Presets.PRESETS.has(family) else "Your clearing"
 

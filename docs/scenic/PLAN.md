@@ -86,7 +86,7 @@ Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is 
 
 ## Phase 2: variety where every result looks good
 
-In progress. Item 1 and the Blender trees from item 3 are in PR #19. Item 7 is done. Neither has been seen on screen together yet.
+In progress. Items 4 and 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
 
 1. **Replace the generator's "usable, connected ground" gate with a beauty score.** Done in PR #19 (`feature/beauty-score`). Not yet seen on screen.
    - `scripts/world_beauty.gd` scores a candidate from the overview camera: drama (rise over the plate's far edge, land hidden behind nearer ridges, skyline movement, peaks), relief, a focal summit or water, water share, and composition (summit near a third, balanced weight, walls not hiding the land).
@@ -103,7 +103,19 @@ In progress. Item 1 and the Blender trees from item 3 are in PR #19. Item 7 is d
    - Arid worlds plant Joshua trees (a new `joshua` asset) for about half of their cactus slots.
    - `--classic-trees` restores the source meshes for comparison. Not yet checked on screen.
    - Still to do: seeded rocks, a seed for `layered_tree.gd`, and replacing the per-habitat `i%4` prop cycle.
-4. **Blend two or three biomes per world** from moisture, altitude and slope direction, instead of one habitat string. Geology colours should come from the palette. The desert band colours are hard-coded in the shader today.
+4. **Blend two or three biomes per world** from moisture, altitude and slope direction, instead of one habitat string. Done on `feature/biome-blend`. Not yet seen on screen.
+   - `scripts/biome_blend.gd`. The recipe's `biome` stays the dominant habitat. Generated worlds add an optional `blend` of one or two more habitats, and each one claims ground by a single rule: moist (near water and low ground), high, low, or facing a direction. Edges are soft smoothsteps broken up by noise.
+   - The generator draws the blend from the terrain seed on its own random stream, so every other draw, and the showcase seeds' terrain and mood, are unchanged. Thresholds are quantiles of the world's own land, so each habitat gets its intended share.
+   - Mixes by dominant habitat: alpine gets woodland on low ground and sometimes a wet meadow; woodland gets a meadow floor plus alpine tops above about 8 m, or a wet corner; redwood gets woodland on one aspect and a meadow; meadow gets woodland on one aspect or high ground, and wetland by water; marsh gets meadow and woodland on its rises. Deserts keep one habitat.
+   - Over 200 seeds every non-desert world gets two or three habitats. The plan costs about 7 ms, so a world takes about 130 ms on the worker. Dressing a world costs up to 35 ms more, on the main thread with the existing frame budget. There is no per-frame work.
+   - Placement: trees, low cover and clearing props follow the habitat at each point. Each habitat plants its own density on its share of the land. Thinning uses a position hash, so the planting stream is not disturbed.
+   - Ground: the grass cover grid follows the habitats, so the mesh colour and the dense grass mask grade between them. Alpine ground thins toward the summit. An alpine layer brings the alpine snowline, so woodland valleys get snow and rock tops. Woodland stays below 5.5 m under alpine ground.
+   - The badge names the mix, for example "Woodland, meadow and alpine · Valley".
+   - Saves: recipes without `blend` dress byte-for-byte as before (object, grass and meadow digests match `main` for five seeds). A blend is stored as integers, so it survives JSON exactly.
+   - Fixed on the way: JSON reads the recipe's `version` as a float, and `NativeTerrainRecipe.decode` rejected it, so saved inland worlds failed to reload. Decode now restores integer fields before validating.
+   - **Geology colours come from the palette.** `scripts/geology_palette.gd` holds the old shader colours as defaults. Generated deserts lean each one toward the palette's rock or earth hue (strata 40%, sand 35%, salt 15%) with small saturation and value jitter, and save them in `world_visuals.geology`. Worlds without their own geology get the old colours exactly. The uniforms are set only when the world changes.
+   - Probes: `tools/probe_biome_blend.gd -- showcase` (mix, shares and save round trip per seed) and `tools/probe_biome_dressing.gd -- [single] seeds` (what each habitat plants, reload check).
+   - To check on screen: the treeline and meadow edges on 79 and 105; the alpine valley tops of 79 and 301; redwood on one side and woodland on the other of 328; the wet corner of 58; desert strata on 134, 309 and 364 against the old colours. The desert ground has no blend because the desert shader paints over the vertex colours.
 5. **Curated palette families.** Start from the landscape experiment's chalk, copper, moss and lavender (on branch `wip/parked-2026-09-26`).
 6. **Weather and seasons that change while you watch.**
    - The weather scheduler is off by default.

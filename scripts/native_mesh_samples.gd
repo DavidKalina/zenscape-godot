@@ -108,7 +108,7 @@ static func shade(data: NativeTerrainData, arrays: Array, faces: PackedInt32Arra
 	var source_colors: PackedColorArray = _arrays[Mesh.ARRAY_COLOR]
 	var paints_uv2 := uv2.size() == vertices.size()
 	var biome: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(_recipe_settings.get("biome",""),{})
-	var snowline: float = biome.get("snowline",_palette.snowline)
+	var snowline: float = preload("res://scripts/biome_blend.gd").snowline(_recipe_settings,_palette.snowline)
 	var rock_slope: float = biome.get("rock_slope",_palette.rock_slope)
 	for i in faces:
 		if i < first or i >= last: continue

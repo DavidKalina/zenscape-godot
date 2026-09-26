@@ -1,7 +1,12 @@
 extends RefCounted
 const Desert = preload("res://scripts/desert_landscape.gd")
+## Low-cover candidates per habitat; any other habitat draws 250.
+const COVER := {"arid":25,"wetland":620}
 var data: NativeTerrainData
 var genome: Dictionary
+## Present only for recipes with a biome blend (scripts/biome_blend.gd).
+## Without one, every habitat choice below is the genome's single habitat.
+var blend: RefCounted
 func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null) -> void:
 	data = terrain
 	data.reset_flat()
@@ -12,6 +17,15 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	data.ponds.assign(data._recipe.inland.ponds.duplicate(true))
 	data.streams.assign(data._recipe.inland.streams.duplicate(true))
 	var work = preload("res://scripts/frame_work_budget.gd").new(tree)
+	if settings.has("blend"):
+		blend = preload("res://scripts/biome_blend.gd").new(genome,data._recipe.inland.sampler)
+		blend.apply(genome.habitat,settings.blend)
+		await work.checkpoint()
+		# Ground cover follows the habitats, so the mesh colour and the dense
+		# grass mask grade between them too.
+		for z in range(data.MEADOW_CELLS):
+			for x in range(data.MEADOW_CELLS):
+				data.grass[z*data.MEADOW_CELLS+x] = blend.cover(data.meadow_position(x,z)+Vector2.ONE*0.25)
 	# Flood connected pools once, including salt pans.
 	if genome.composition in ["marsh","salt-basin"]:
 		var masks: Array = []
@@ -26,7 +40,16 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	# Independent planting stream; habitat changes cannot alter terrain or water.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = genome.plant_seed
-	var budget: int = {"alpine":int(genome.tree_count),"woodland":int(genome.tree_count)+int(genome.broadleaf_count),"meadow":0 if genome.composition == "meadow" else 15,"wetland":0,"arid":12,"redwood":70}[genome.habitat]
+	var budget: int = _tree_budget(genome.habitat)
+	# A blend plants each habitat's own density on its share of the ground.
+	# Thinning uses a position hash, so the planting stream is not disturbed.
+	var densest := 1.0
+	if blend != null:
+		var total := 0.0
+		for b: String in blend.biomes:
+			total += blend.share(b)*_tree_budget(b)
+			densest = maxf(densest,_tree_budget(b))
+		budget = int(total)
 	budget = int(budget*float(genome.tree_density))
 	var planted := 0
 	var occupied: Array[Vector2] = []
@@ -43,41 +66,65 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		var h: float = data.ground_height(p)
 		if _is_wet(p) or _is_salt(p) or _clearing(p): continue
 		if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.85: continue
-		var treeline := float(genome.treeline) if genome.habitat == "alpine" else 10.0
+		var habitat := _habitat(p)
+		var treeline := float(genome.treeline) if habitat == "alpine" else 10.0
 		if h>treeline: continue
 		if habitat_noise.get_noise_2d(p.x,p.y)<-0.15: continue
+		if blend != null and _hash(p)*densest>=_tree_budget(habitat): continue
 		var crowded := false
 		for other in occupied:
 			if other.distance_squared_to(p)<1.2: crowded = true; break
 		if crowded: continue
 		var kind: String = "tree"
-		if genome.habitat == "woodland": kind = "layered_tree" if pick<0.15 else "broadleaf" if pick<0.6 else "tree"
-		elif genome.habitat == "redwood": kind = "redwood"
-		elif genome.habitat == "arid": kind = "joshua" if pick<0.55 else "cactus"
-		elif genome.habitat == "wetland": kind = "reeds"
+		if habitat == "woodland": kind = "layered_tree" if pick<0.15 else "broadleaf" if pick<0.6 else "tree"
+		elif habitat == "redwood": kind = "redwood"
+		elif habitat == "arid": kind = "joshua" if pick<0.55 else "cactus"
+		elif habitat == "wetland": kind = "reeds"
 		if data.place(kind,p,angle,size)>=0:
 			planted += 1
 			occupied.append(p)
 		if planted>=budget: break
 	# Low cover gives marsh/meadow their own habitat beyond a palette swap.
-	for i in range(25 if genome.habitat == "arid" else 620 if genome.habitat == "wetland" else 250):
+	# A blend draws enough candidates for its densest habitat and thins the
+	# rest to their own density.
+	var cover_count: int = COVER.get(genome.habitat,250)
+	if blend != null:
+		for b: String in blend.biomes: cover_count = maxi(cover_count,COVER.get(b,250))
+	for i in range(cover_count):
 		if i%16 == 0: await work.checkpoint()
 		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
 		if data.ground_height(p) == null or _is_salt(p): continue
-		if (_is_wet(p) and not (genome.habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
+		var habitat := _habitat(p)
+		if blend != null and _hash(p+Vector2(0.71,0.29))*cover_count>=COVER.get(habitat,250): continue
+		if (_is_wet(p) and not (habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
-		var kind: String = "reeds" if genome.habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if genome.habitat == "meadow" else "shrub" if genome.habitat == "arid" else "grass_tuft"
-		if genome.habitat in ["woodland","redwood"]:
+		var kind: String = "reeds" if habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if habitat == "meadow" else "shrub" if habitat == "arid" else "grass_tuft"
+		if habitat in ["woodland","redwood"]:
 			if i%29 == 0: kind = "log"
 			elif i%31 == 0: kind = "stump"
 			elif i%37 == 0: kind = "snag"
 			elif i%11 == 0: kind = "fern"
 			elif i%13 == 0: kind = "mushroom"
-		if genome.habitat == "wetland" and float(data.ground_height(p))>1.65: kind = "bank_grass"
+		if habitat == "wetland":
+			# Marsh worlds sit at one water level. A wet corner of another world
+			# keeps reeds at the water's edge and bank grass behind them.
+			if blend == null or genome.habitat == "wetland":
+				if float(data.ground_height(p))>1.65: kind = "bank_grass"
+			elif blend.water_distance(p)>1.6: kind = "bank_grass"
 		data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.9))
 	if int(genome.version)>=4: await _dress_places(work)
 	data.objects_revision += 1
 	data.discard_cache()
+
+func _habitat(p: Vector2) -> String:
+	return genome.habitat if blend == null else blend.pick(p)
+
+func _tree_budget(habitat: String) -> int:
+	return {"alpine":int(genome.tree_count),"woodland":int(genome.tree_count)+int(genome.broadleaf_count),"meadow":0 if genome.composition == "meadow" else 15,"wetland":0,"arid":12,"redwood":70}[habitat]
+
+## A stable 0..1 value per position, so thinning a blend consumes no draws.
+static func _hash(p: Vector2) -> float:
+	return fposmod(sin(p.x*39.3468+p.y*11.1353)*24634.6345,1.0)
 
 func _is_wet(p: Vector2) -> bool:
 	if data.ground_height(p) == null: return true
@@ -103,7 +150,6 @@ func _clearing(p: Vector2) -> bool:
 func _dress_places(work: RefCounted) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(genome.plant_seed)+967
-	var habitat: String = genome.habitat
 	var palettes := {
 		"woodland":["fern","mushroom","grass_tuft","fern"],
 		"redwood":["fern","fern","mushroom","grass_tuft"],
@@ -112,7 +158,7 @@ func _dress_places(work: RefCounted) -> void:
 		"wetland":["bank_grass","reeds","rock","grass_tuft"],
 		"arid":["rock","shrub","shrub","grass_tuft"]}
 	# Fine ground cover binds the small props into patches instead of isolated dots.
-	if habitat!="arid":
+	if genome.habitat!="arid":
 		for z in range(data.MEADOW_CELLS):
 			if z%4==0: await work.checkpoint()
 			for x in range(data.MEADOW_CELLS):
@@ -123,10 +169,12 @@ func _dress_places(work: RefCounted) -> void:
 					if p.distance_to(place.center)<float(place.radius)+1.8: near = true
 				if not near or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.65: continue
 				data.blades[z*data.MEADOW_CELLS+x] = 0.35
-				if habitat=="meadow": data.meadow[z*data.MEADOW_CELLS+x] = 0.16
+				if _habitat(p)=="meadow": data.meadow[z*data.MEADOW_CELLS+x] = 0.16
 	for place: Dictionary in data._recipe.inland.sampler.places:
 		# A log, rock grouping or flower patch gives each clearing an edge;
 		# the middle stays available for Bigfoot and the player's own objects.
+		# In a blend, each clearing is dressed for the habitat it sits in.
+		var habitat := _habitat(place.center)
 		var cluster := Vector2.from_angle(rng.randf()*TAU)
 		var anchor: Vector2 = place.center+cluster*1.45
 		var focal := "log" if habitat in ["woodland","redwood"] and int(place.kind)==0 else "boulder_"+str(1+int(place.kind))

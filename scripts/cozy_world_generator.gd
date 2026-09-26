@@ -4,6 +4,8 @@ extends RefCounted
 const Genome = preload("res://scripts/inland_genome.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
 const Beauty = preload("res://scripts/world_beauty.gd")
+const BiomeBlend = preload("res://scripts/biome_blend.gd")
+const Geology = preload("res://scripts/geology_palette.gd")
 const CANDIDATES := 6
 const PALETTE_DRAWS := 4
 ## Weather odds for a regrow. Mostly bright skies: overcast dims the sun and
@@ -27,18 +29,24 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	# looks best from the overview camera (scripts/world_beauty.gd).
 	var best_recipe := recipe.duplicate(true)
 	var best_score := -1.0
+	var best_world: RefCounted
 	for attempt in range(CANDIDATES):
 		if attempt>0:
 			recipe.seed = rng.randi_range(0,999999)
 			while recipe.seed==previous.get("seed",-1): recipe.seed = rng.randi_range(0,999999)
 			recipe.relief = rng.randf_range(0.65,1.3)
 			recipe.breadth = rng.randf_range(0.72,1.3)
-		var field = preload("res://scripts/inland_world.gd").new(recipe).sampler
-		var score: float = Beauty.score(field).total
+		var world = preload("res://scripts/inland_world.gd").new(recipe)
+		var score: float = Beauty.score(world.sampler).total
 		if score>best_score:
 			best_score = score
 			best_recipe = recipe.duplicate(true)
+			best_world = world
 	recipe = best_recipe
+	# Two or three habitats by moisture, altitude and slope direction. The
+	# plan has its own random stream, so the draws below are unchanged.
+	var blend: Array = BiomeBlend.plan(recipe,best_world)
+	if not blend.is_empty(): recipe["blend"] = blend
 	dry = recipe.composition in Desert.KINDS
 	var hours := [Vector2(.27,.34),Vector2(.36,.57),Vector2(.62,.72),Vector2(.015,.08)]
 	var hour: int = rng.randi_range(0,3)
@@ -75,6 +83,8 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	colors.fog = colors.horizon.lerp(Color("eef2ed"),.60)
 	var encoded := {}
 	for key in colors: encoded[key] = colors[key].to_html(false)
+	# Desert strata and sand come from this palette too (own random stream).
+	var geology: Dictionary = Geology.derive(colors,seed_value) if dry else {}
 	var mist := rng.randf_range(.45,.72) if weather=="mist" else rng.randf_range(.15,.35) if cloudy else rng.randf_range(.015,.09) if dry else rng.randf_range(.06,.26)
 	var mood := {"colors":encoded,"phase":phase,"weather":weather,"wind":rng.randf_range(.15,.65) if not rainy else rng.randf_range(.55,1.15),"wind_direction":rng.randf_range(0,360),"clouds":rng.randf_range(.52,.78) if cloudy else rng.randf_range(.05,.32),"mist":mist,"haze":rng.randf_range(.10,.28),"rays":rng.randf_range(.25,.9),"summit_mist":rng.randf_range(.08,.40),"strength":rng.randf_range(.68,.88),"exposure":rng.randf_range(1.05,1.16),"ambient_energy":rng.randf_range(1.35,1.75),"sun_energy":rng.randf_range(.8,1.15),"night_fill":1.45,"cold":.92 if snowy else 0.0,"snow":rng.randf_range(.25,.65) if snowy else 0.0,"ice":rng.randf_range(.1,.35) if snowy else 0.0,"wet":rng.randf_range(.4,.7) if rainy else 0.0,"humidity":.8 if rainy or weather=="mist" else .3,"autumn":rng.randf_range(.4,.8) if autumn else 0.0,"aurora":rng.randf_range(.2,.7) if hour==3 and not cloudy else 0.0,"rainbow":0.0}
 	# The cloud field thresholds coverage into real puffs. Values below .3
@@ -88,6 +98,7 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 		"peak_altitude":rng.randf_range(4.0,7.0),
 		"rock_style":1,"rock_detail":.65
 	}
+	if not geology.is_empty(): visuals["geology"] = geology
 	return {"seed":seed_value,"terrain":recipe,"mood":mood,"visuals":visuals}
 
 static func _pick_weather(rng: RandomNumberGenerator, odds: Dictionary) -> String:
