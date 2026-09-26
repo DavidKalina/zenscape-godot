@@ -156,6 +156,27 @@ Each frame, `_advance_weather_drift()` runs right after `world_clock.advance()`:
 entry, and restores it after the clock. Gardens saved before drift existed load unchanged.
 `tests/test_weather_drift.gd` covers all of this against the real scene.
 
+## Climate mode (the product diorama)
+
+The product scene does not use the table above. `scripts/living_weather.gd` calls
+`set_climate(shares, dwell)` with the generator's `WET_WEATHER` or `DRY_WEATHER` odds and its own
+dwell times, and `_pick` then draws any preset but the current one by a solved weight. The chain is
+reversible and visits preset *i* in proportion to *w_i (1 − w_i)*, so the time share is
+*w_i (1 − w_i) · mean dwell_i*. `climate_weights` solves for the weights once, by bisection, so
+that the share matches the odds. Season and hour factors are not applied in climate mode.
+
+Living weather feeds the scheduler its own hours (`now_hour()` plus real seconds / 20) instead of
+the world clock, because generated worlds hold their hour of day. `force_next` draws the next sky
+immediately (the W key). `capture()` is version 2: it adds `origin` and `origin_mood`, the weather
+and air the world was generated with, and `restore()` only reads `enabled` from version 2 saves,
+since older saves stored the default rather than a choice.
+
+`season_plants(season)` is the plants' side of the year, published as the `zs_season` shader
+global: spring bloom, deciduous leaf fall and winter dormancy, plateaus shaped like the gold and
+cold curves and zero at season 0. See docs/scenic/PLAN.md, Phase 2 item 6.
+
+`tools/probe_living_weather.gd` prints shares, dwell times and a timeline for climate mode.
+
 ## Sample timeline
 
 `tools/simulate_weather.gd -- 4242 0.0 7`:
