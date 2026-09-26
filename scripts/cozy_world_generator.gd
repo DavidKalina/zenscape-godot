@@ -3,6 +3,9 @@ extends RefCounted
 ## climate/color draw. No gallery landscape or gallery look is selected.
 const Genome = preload("res://scripts/inland_genome.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
+const Beauty = preload("res://scripts/world_beauty.gd")
+const CANDIDATES := 6
+const PALETTE_DRAWS := 4
 
 static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
@@ -16,31 +19,22 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var biome: String = g.habitat
 	if biome=="woodland" and rng.randf()<0.28: biome = "redwood"
 	var recipe := {"kind":"inland","version":Genome.VERSION,"seed":terrain_seed,"composition":g.composition,"archetype":g.archetype,"landform":g.landform,"biome":biome,"relief":rng.randf_range(0.65,1.3),"breadth":rng.randf_range(0.72,1.3)}
-	# Retry within the chosen family, with progressively gentler relief.
-	# A meadow fallback bounds work without publishing an underfilled world.
+	# Draw several candidates within the chosen family and keep the one that
+	# looks best from the overview camera (scripts/world_beauty.gd).
 	var best_recipe := recipe.duplicate(true)
 	var best_score := -1.0
-	for attempt in range(8):
+	for attempt in range(CANDIDATES):
+		if attempt>0:
+			recipe.seed = rng.randi_range(0,999999)
+			while recipe.seed==previous.get("seed",-1): recipe.seed = rng.randi_range(0,999999)
+			recipe.relief = rng.randf_range(0.65,1.3)
+			recipe.breadth = rng.randf_range(0.72,1.3)
 		var field = preload("res://scripts/inland_world.gd").new(recipe).sampler
-		var quality: Dictionary = preload("res://scripts/inland_places.gd").quality(field)
-		var score: float = minf(quality.usable/0.28,quality.connected/0.18)
-		if quality.places<3: score = 0.0
+		var score: float = Beauty.score(field).total
 		if score>best_score:
 			best_score = score
 			best_recipe = recipe.duplicate(true)
-		if score>=1.0 or attempt==7: break
-		recipe.seed = rng.randi_range(0,999999)
-		while recipe.seed==previous.get("seed",-1): recipe.seed = rng.randi_range(0,999999)
-		recipe.relief = clampf(lerpf(1.0,0.53,float(attempt)/6.0)+rng.randf_range(-0.025,0.025),0.5,1.3)
-		recipe.breadth = clampf(lerpf(1.0,1.47,float(attempt)/6.0)+rng.randf_range(-0.025,0.025),0.72,1.5)
 	recipe = best_recipe
-	if best_score<1.0:
-		recipe.composition = "foothills" if previous.get("composition")=="meadow" else "meadow"
-		recipe.archetype = "ridgeback"
-		recipe.landform = "original"
-		recipe.biome = "meadow"
-		recipe.relief = 0.65
-		recipe.breadth = 1.0
 	dry = recipe.composition in Desert.KINDS
 	var hours := [Vector2(.27,.34),Vector2(.36,.57),Vector2(.62,.72),Vector2(.015,.08)]
 	var hour: int = rng.randi_range(0,3)
@@ -54,17 +48,24 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	var stone_hue := rng.randf_range(0.045,0.12) if dry else rng.randf_range(0.06,0.16)
 	var sky_hue := rng.randf_range(.56,.64) if hour==1 or hour==3 else rng.randf_range(.60,.77)
 	var cloudy := weather in ["rain","snow","overcast"]
-	var colors := {
-		"sky":Color.from_hsv(sky_hue,rng.randf_range(.20,.38),rng.randf_range(.42,.58) if hour==3 else rng.randf_range(.62,.79)),
-		"horizon":Color.from_hsv(sky_hue-.03,rng.randf_range(.12,.28),rng.randf_range(.45,.62) if hour==3 else rng.randf_range(.61,.78)),
-		"glow":Color.from_hsv(rng.randf_range(.04,.12) if hour!=3 else .61,rng.randf_range(.13,.32),rng.randf_range(.76,.96)),
-		"grass":Color.from_hsv(foliage_hue-.025,rng.randf_range(.20,.45),rng.randf_range(.52,.70)),
-		"foliage":Color.from_hsv(foliage_hue,rng.randf_range(.27,.52),rng.randf_range(.40,.60)),
-		"rock":Color.from_hsv(stone_hue,rng.randf_range(.22,.40) if dry else rng.randf_range(.08,.22),rng.randf_range(.53,.70)),
-		"earth":Color.from_hsv(stone_hue-.02,rng.randf_range(.23,.43),rng.randf_range(.36,.53)),
-		"water":Color.from_hsv(rng.randf_range(.46,.60),rng.randf_range(.22,.48),rng.randf_range(.48,.69)),
-		"sun":Color.from_hsv(.60 if hour==3 else rng.randf_range(.07,.13),.13 if hour==3 else rng.randf_range(.12,.30),.98)
-	}
+	var colors := {}
+	var best_harmony := -1.0
+	for attempt in range(PALETTE_DRAWS):
+		var draw := {
+			"sky":Color.from_hsv(sky_hue,rng.randf_range(.20,.38),rng.randf_range(.42,.58) if hour==3 else rng.randf_range(.62,.79)),
+			"horizon":Color.from_hsv(sky_hue-.03,rng.randf_range(.12,.28),rng.randf_range(.45,.62) if hour==3 else rng.randf_range(.61,.78)),
+			"glow":Color.from_hsv(rng.randf_range(.04,.12) if hour!=3 else .61,rng.randf_range(.13,.32),rng.randf_range(.76,.96)),
+			"grass":Color.from_hsv(foliage_hue-.025,rng.randf_range(.20,.45),rng.randf_range(.52,.70)),
+			"foliage":Color.from_hsv(foliage_hue,rng.randf_range(.27,.52),rng.randf_range(.40,.60)),
+			"rock":Color.from_hsv(stone_hue,rng.randf_range(.22,.40) if dry else rng.randf_range(.08,.22),rng.randf_range(.53,.70)),
+			"earth":Color.from_hsv(stone_hue-.02,rng.randf_range(.23,.43),rng.randf_range(.36,.53)),
+			"water":Color.from_hsv(rng.randf_range(.46,.60),rng.randf_range(.22,.48),rng.randf_range(.48,.69)),
+			"sun":Color.from_hsv(.60 if hour==3 else rng.randf_range(.07,.13),.13 if hour==3 else rng.randf_range(.12,.30),.98)
+		}
+		var harmony := Beauty.palette(draw,hour==3)
+		if harmony>best_harmony:
+			best_harmony = harmony
+			colors = draw
 	colors.ambient = colors.sky.lerp(Color("d3dce6"),.50)
 	colors.bounce = colors.earth.darkened(.20)
 	colors.rim = colors.sky.lerp(Color("d2dce7"),.50)

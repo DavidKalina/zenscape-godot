@@ -16,6 +16,8 @@ func _init(g: Dictionary,ponds: Array,water_plan: RefCounted) -> void:
 	if int(genome.version)>=4: places = Places.plan(self)
 func height(x: float,z: float) -> float:
 	var p := Vector2(x,z)
+	# From version 6 the clearings are only dressed; the land keeps its shape.
+	if int(genome.version)>=6: return original_height(x,z)
 	return _water_height(x,z,Places.shape(places,p,Genome.height(genome,p,noise)))
 
 func original_height(x: float,z: float) -> float:
