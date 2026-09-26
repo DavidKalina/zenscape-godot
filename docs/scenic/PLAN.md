@@ -134,17 +134,61 @@ In progress. Items 2, 4 and 7 are done. Item 1 and the Blender trees from item 3
 7. **Rebalance the weather odds.** Done on 2026-09-26. Regrows used to pick weather uniformly, which made overcast 24% of 400 seeds and grey or wet skies 49%. `WET_WEATHER` and `DRY_WEATHER` in `scripts/cozy_world_generator.gd` now weight it: clear 30, fair 34, mist 14, rain 9, overcast 7, snow 6 (dry: clear 45, fair 45, overcast 10). Over seeds 0–399, overcast is 10% and grey or wet is 22%. Terrain and scores are unchanged, but most seeds roll different weather, so the showcase seeds were re-checked.
 8. **Later: horizons beyond one 28 m plate.** Stitched multi-chunk terrain exists on `feature/stitched-terrain`.
 
-## Phase 3: crafting in the spirit of Tiny Glade
+## Phase 3: creation, in the spirit of Genesis
 
-- **Brushes that decorate for you:**
-  - Painting a path gives it grassy, stony edges.
-  - Painting a forest gives it a natural edge.
-  - Water settles in the low ground.
-- **The skill is composing,** not placing every tree by hand.
-- **Rebuild the UI around this:**
-  - Replace the top toolbar that hides buttons by moving them into the World menu by position (`diorama.gd`).
-  - Check the maker-editor look on screen. It was parked, never seen.
-  - Add an inspect and photo mode.
+Talked through with the user on 2026-09-26. Not started.
+
+### The idea
+
+- **The default experience is creation, not construction.** You feel like you are painting a world into being. You create the conditions and the world answers in its own time. You do not control the outcome.
+- **Life is breathed in after the land.** Water finds the low ground, grass creeps out from it, then shrubs and trees. Fish, frogspawn, birds and wildlife arrive because of what you made. The sun, the moon and the weather carry on without you.
+- **Low floor, high ceiling.** Dragging the mouse across the plain always reveals something legible, attractive and unique. A careful, artistic player gets higher highs by understanding the world: learning what frogs or herons need and composing for it.
+- **Variety comes from the systems.** Two players painting the same strokes on different land get different worlds and different life.
+
+### The feel is the product
+
+Painting has to feel so smooth and satisfying that it is almost mind-blowing: a premium, polished, seamless experience. A stroke should set off a visible chain of cause and effect:
+
+- The ground tremors as land rises.
+- The fog and volumetric fog drift aside to reveal what you made.
+- Water fills a basin; it does not appear in it.
+- The wind picks up, and the trees you just grew start to sway.
+- Sound effects for every stage. None exist yet.
+
+Nothing may hitch while you paint. Frame pacing during a stroke matters more than anywhere else in the game (see Phase 0 and Phase 4).
+
+### Two layers over one world
+
+1. **Creation mode, the default and what the game launches into.** Broad brushes (land, water, meadow, forest, path) write intent; the world chooses the details.
+   - Brushes that decorate for you: a path gets grassy, stony edges; a forest gets a natural edge; water settles in the low ground.
+   - The reveal can reuse the regrow grow-in animation locally under the brush.
+2. **Craft mode, later and opt-in.** Very fine-grained control for players who want it: spawn a mountain and sculpt it, paint the rock face, choose where grass blades grow, rotate individual trees. The current Sculpt, Paint and Place rail (`scripts/native_tool_rail.gd`) is roughly this layer already.
+
+**Rules that keep the layers from fighting:**
+- Both layers edit the same data: heights, material and grass masks, and instance transforms. Craft mode then only adds controls; it is not a second editor.
+- Hand edits win. Emergence and later strokes leave pinned or hand-placed work alone.
+- Life arrives from conditions plus a delay and is never placed directly. It answers careful craft-mode work the same way it answers broad strokes.
+
+### Building blocks that already exist
+
+- The biome blend's wet, high, low and facing rules (`scripts/biome_blend.gd`) are "the land brings forth plants".
+- Native erosion (`erode` in `native/terrain_kernels`, under 1 ms per world) can become a brush that weathers what you raise.
+- The regrow grow-in animation, the ambient birds, fireflies and fish, and the living weather and seasons from Phase 2 item 6.
+- The beauty score can stay invisible and quietly guide variant choice, water settling and edges.
+
+### Open questions
+
+- Does creation start from a blank plain, a generated world, or both?
+- How much does the world push back? For example, does water painted on a hilltop run downhill?
+- Is there a finished moment? Photo mode could be where you compose and then capture.
+- Rare "and it was good" moments when a place becomes rich: a heron lands, a deer at dawn, a rainbow after rain. A glimpse of Bigfoot at the forest edge could be the rarest.
+
+### Also in this phase
+
+- **Rebuild the UI around creation:**
+  - Replace the top toolbar, which hides buttons by moving them into the World menu by position (`diorama.gd`).
+  - Check the maker-editor look on screen. It is parked on `wip/parked-2026-09-26` and has never been seen.
+- **Add an inspect and photo mode.**
 
 ## Phase 4: presentation
 
