@@ -86,6 +86,12 @@ var _shore_field := {}
 var _shore_ready := false
 var _shore_mask := PackedByteArray()
 var _shore_changed := false
+## A held brush may skip the water flood. Its faces shade against the last
+## field while `_shore_debt` collects where the flood was not re-run; the next
+## build that runs it covers the debt as well, and reshades every face if the
+## field moved, so the settled mesh matches a build that never deferred.
+var defer_shoreline := false
+var _shore_debt: Variant = null
 var _probe := {}
 var _probing := false
 var _face_x := PackedFloat64Array()
@@ -424,10 +430,19 @@ func build_mesh_budgeted(force := false, frame_tree: SceneTree = null) -> ArrayM
 	if sculpted:
 		_ensure_face_probes()
 	var reusable: bool = _mesh_result != null and _mesh_blank == blank and _mesh_sculpted == sculpted and _mesh_signature == signature
-	var region: Variant = _mesh_region() if reusable else null
+	var region: Variant = _with_shore_debt(_mesh_region() if reusable else null,defer_shoreline)
 	if region is bool:
 		return _mesh_result
-	var water_field := _shoreline_field(region) if blank else {}
+	var water_field := {}
+	if blank and defer_shoreline and _shore_ready:
+		water_field = _shore_field
+		_shore_changed = false
+		# A full rebuild, such as a recipe's first sculpt, owes the whole chunk.
+		var owed: Rect2 = region if region != null else Rect2(-16,-16,32,32)
+		_shore_debt = owed if _shore_debt == null else _shore_debt.merge(owed)
+	else:
+		water_field = _shoreline_field(region) if blank else {}
+		_shore_debt = null
 	if blank and _shore_changed:
 		region = null
 	var arrays: Array = _mesh_arrays if region != null else _arrays.duplicate(true)
@@ -540,7 +555,7 @@ func _build_mesh_threaded(force: bool, tree: SceneTree, generation: int) -> Arra
 	var has_recipe := _recipe != null
 	var sculpted := has_recipe and heights != _recipe_heights
 	var reusable := _mesh_result != null and _mesh_blank == blank and _mesh_sculpted == sculpted and _mesh_signature == signature
-	var region: Variant = _mesh_region() if reusable else null
+	var region: Variant = _with_shore_debt(_mesh_region() if reusable else null)
 	if region is bool: return _mesh_result
 	_mesh_busy = true
 	if sculpted:
@@ -585,11 +600,18 @@ func _build_mesh_threaded(force: bool, tree: SceneTree, generation: int) -> Arra
 	_mesh_result = result
 	_shore_ready = detached._shore_ready
 	_shore_changed = detached._shore_changed
+	_shore_debt = null
 	_shore_field = detached._shore_field
 	_shore_mask = detached._shore_mask
 	_water_grid_h = detached._water_grid_h
 	last_mesh_profile = {"snapshot_usec":snapshot_usec,"prepare_usec":prepared.usec,"prepare_worker":prepared.worker,"shade_usec":shaded.usec,"shade_snapshot_usec":shaded.snapshot_usec,"merge_usec":shaded.merge_usec,"shade_worker":shaded.worker,"workers":shaded.workers,"publish_usec":Time.get_ticks_usec()-began}
 	return result
+
+## Grow a build's region by the faces a deferred flood still owes. A cached
+## build with debt reshades just those faces; a full build pays it anyway.
+func _with_shore_debt(region: Variant, deferring := false) -> Variant:
+	if _shore_debt == null or deferring or region == null: return region
+	return _shore_debt if region is bool else region.merge(_shore_debt)
 
 func _mesh_inputs_match(detached: NativeTerrainData, signature: PackedByteArray) -> bool:
 	return heights == detached.heights and grass == detached.grass and meadow == detached.meadow and tint == detached.tint and blank == detached.blank and signature == var_to_bytes([_recipe_settings,ponds,streams,landscape_waterfall])
@@ -622,6 +644,7 @@ func discard_cache() -> void:
 	_clear_pond_cache()
 	_mesh_result = null
 	_shore_ready = false
+	_shore_debt = null
 	_strands_ready = false
 
 func water_reaches(region: Rect2) -> bool:
@@ -1174,8 +1197,11 @@ func explosive_count() -> int:
 	return count
 
 func erase_objects(point: Vector2, radius: float) -> void:
+	var count := objects.size()
 	objects = objects.filter(func(item: Dictionary) -> bool: return Vector2(item.x,item.z).distance_to(point) > radius)
-	objects_revision += 1
+	# An erase dab that misses every record leaves them unchanged; keep the
+	# revision so a held eraser does not force full instance rebuilds.
+	if objects.size() != count: objects_revision += 1
 
 func pond_surface(pond: Dictionary) -> PackedVector3Array:
 	# Probe callers need the terrain reads as well as the result. Let the native
