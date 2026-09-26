@@ -86,7 +86,7 @@ Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is 
 
 ## Phase 2: variety where every result looks good
 
-In progress. Items 2, 3, 4, 6 and 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
+In progress. Items 2 to 7 are done. Item 1 and the Blender trees from item 3 are in PR #19. None of it has been seen on screen together yet.
 
 1. **Replace the generator's "usable, connected ground" gate with a beauty score.** Done in PR #19 (`feature/beauty-score`). Not yet seen on screen.
    - `scripts/world_beauty.gd` scores a candidate from the overview camera: drama (rise over the plate's far edge, land hidden behind nearer ridges, skyline movement, peaks), relief, a focal summit or water, water share, and composition (summit near a third, balanced weight, walls not hiding the land).
@@ -141,7 +141,22 @@ In progress. Items 2, 3, 4, 6 and 7 are done. Item 1 and the Blender trees from 
    - **Geology colours come from the palette.** `scripts/geology_palette.gd` holds the old shader colours as defaults. Generated deserts lean each one toward the palette's rock or earth hue (strata 40%, sand 35%, salt 15%) with small saturation and value jitter, and save them in `world_visuals.geology`. Worlds without their own geology get the old colours exactly. The uniforms are set only when the world changes.
    - Probes: `tools/probe_biome_blend.gd -- showcase` (mix, shares and save round trip per seed) and `tools/probe_biome_dressing.gd -- [single] seeds` (what each habitat plants, reload check).
    - To check on screen: the treeline and meadow edges on 79 and 105; the alpine valley tops of 79 and 301; redwood on one side and woodland on the other of 328; the wet corner of 58; desert strata on 134, 309 and 364 against the old colours. The desert ground has no blend because the desert shader paints over the vertex colours.
-5. **Curated palette families.** Start from the landscape experiment's chalk, copper, moss and lavender (on branch `wip/parked-2026-09-26`).
+5. **Curated palette families.** Done on `feature/palette-families`. Not yet seen on screen.
+   - `scripts/palette_families.gd` holds twelve art-directed families. Each one sets the land (grass, foliage, rock, earth, water) and a daytime sky (sky, horizon, glow, sun). Ambient, bounce, rim and fog are derived as before.
+     - From the landscape experiment: chalk & turquoise, copper & sage, slate & moss (lifted so its woods do not go to silhouette) and lavender & gold.
+     - New for wet land: spring meadow, pine & granite, fern & cedar, frost & slate, and ember & plum for dusk.
+     - Deserts: sandstone & sky, bone & sage (pale limestone) and rust & violet. Chalk, copper and lavender also dress deserts.
+   - A world picks its family by weight: land (wet or desert), then the dominant habitat or the desert kind, the hour and the weather. For example, redwood leans to fern and moss, alpine to granite and chalk, salt basins and dunes to bone, buttes and monuments to sandstone, dusk to ember, lavender and rust, and snow almost always to frost.
+   - Inside the family it draws four variations and keeps the most harmonious. Each variation has one small hue, saturation and value shift shared by the whole land, plus a little per colour. So no two worlds match, and the scheme holds together.
+   - The hour reshapes the family's sky within the ranges the renderer was tuned for. Dawn gets a bluer-violet sky and a rose glow, dusk a violet sky and a deeper amber glow, and night the old moonlit ranges tinted by the family. Autumn warms the foliage toward amber and the grass toward straw.
+   - Habitats in a blend stay distinct within one palette. Every family keeps its foliage darker than its grass, its rock at least 0.1 luminance from the grass, and its water darker than the bank.
+   - Desert families can carry their own geology bases (bone has pale strata, rust has deep red bands). `geology_palette.gd` leans those toward the palette's rock and earth as before. Deserts without bases keep the old shader colours as the base.
+   - The family and its variation come from their own random stream, seeded from the world seed. The old HSV draw still runs on the main stream, so every later draw keeps its value. Over seeds 0–399, every world is identical to `main` apart from its colours and desert geology: terrain, blend, hour, weather, wind, mist, clouds and fog.
+   - Harmony over 400 seeds rises from a mean of 0.73 to 0.95. The worst world goes from 0.42 to 0.65, and worlds under 0.7 drop from 149 to 1. Pine & granite is the weakest family (mean 0.85), because grey rock against green woods spreads the saturation.
+   - Saves are unchanged. Colours are stored encoded in the look, so old worlds reload with their old colours. The generated world also records its `palette` family. `tools/probe_world_beauty.gd` prints it per seed.
+   - `--classic-palette` restores the old independent HSV draw for comparison.
+   - Showcase families: 184, 303 and 278 chalk; 105 and 176 granite; 147 and 301 frost; 193, 328 and 198 lavender; 79, 102, 58 and 177 spring; 33 moss; 353 ember; 134 and 45 bone; 309 and 248 rust; 250 copper; 364 sandstone.
+   - To check on screen: whether each family reads as its name, especially granite on 105 and 176, and whether frost on 147 (mist, not snow) is too cold. Also check lavender dusk on 328 and 193 against the renderer's own dusk grading, and bone and rust strata on 134 and 309 against `--classic-palette`.
 6. **Weather and seasons that change while you watch.** Done on `feature/living-weather`. Not yet seen on screen, and the shader changes are not compiled until the user launches.
    - **Live weather** is on in the product scene (`scripts/living_weather.gd`, set up in `studies/diorama.gd`). `--still-weather` keeps each world on its own weather.
      - The drift starts from the world's generated weather and runs `WeatherScheduler` in a new climate mode. Its draw weights are solved so the time spent in each sky matches `WET_WEATHER` and `DRY_WEATHER`. Over 20,000 simulated hours a wet world spends clear 30%, fair 34%, mist 14%, rain 9%, overcast 7% and snow 6%, so overcast, rain and snow are 22%. Dry worlds get clear 45%, fair 45% and overcast 10%, and never rain or snow.
