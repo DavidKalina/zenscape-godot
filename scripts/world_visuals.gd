@@ -7,6 +7,11 @@ var peak_density := 0.0
 var peak_altitude := 8.0
 var rock_style := 0
 var rock_detail := 0.65
+## Desert geology colours as hex, from the world palette. Empty means the
+## shader's defaults (scripts/geology_palette.gd DEFAULTS).
+var geology := {}
+var _geology_material: ShaderMaterial
+var _geology_dirty := true
 var _fog: FogVolume
 var _peaks: FogVolume
 var _signature := PackedByteArray()
@@ -18,15 +23,22 @@ var _water_managed := false
 func document() -> Dictionary:
 	var result := {}
 	for key in LIMITS: result[key] = get(key)
+	if not geology.is_empty(): result["geology"] = geology.duplicate()
 	return result
 static func valid(value: Variant) -> bool:
-	if not value is Dictionary or value.size() != LIMITS.size(): return false
+	if not value is Dictionary: return false
+	# Saves before palette geology have no `geology` entry.
+	if value.has("geology") and not preload("res://scripts/geology_palette.gd").valid(value.geology): return false
+	if value.size() != LIMITS.size()+(1 if value.has("geology") else 0): return false
 	for key in LIMITS:
 		if not GardenData._number(value.get(key),LIMITS[key][0],LIMITS[key][1]): return false
 	return GardenData._integer(value.rock_style)
 func restore(value: Dictionary = {}) -> void:
 	var defaults := {"fog_density":0.0,"fog_height":6.0,"peak_density":0.0,"peak_altitude":8.0,"rock_style":0,"rock_detail":0.65}
 	for key in LIMITS: set(key,value.get(key,defaults[key]))
+	var colors: Variant = value.get("geology",{})
+	geology = colors.duplicate() if preload("res://scripts/geology_palette.gd").valid(colors) else {}
+	_geology_dirty = true
 func _volume(shader: Shader, extent: Vector3) -> FogVolume:
 	var volume := FogVolume.new()
 	volume.size = extent
@@ -80,6 +92,13 @@ func sync(scene: Node3D) -> void:
 		material.set_shader_parameter("desert_has_map",_geology != null)
 		material.set_shader_parameter("desert_geology",_geology)
 		material.set_shader_parameter("desert_band_height",0.85*float(_genome.get("relief",1.0)))
+		# Colours change only with the world, not per frame.
+		if _geology_dirty or material != _geology_material:
+			_geology_dirty = false
+			_geology_material = material
+			var defaults: Dictionary = preload("res://scripts/geology_palette.gd").DEFAULTS
+			for key: String in defaults:
+				material.set_shader_parameter("desert_"+key,Color(geology.get(key,defaults[key])))
 	var water: ShaderMaterial = scene._chunk_editor.content._water_material
 	if _genome.get("composition") == "salt-basin":
 		if not _water_managed: _water_shader = water.shader

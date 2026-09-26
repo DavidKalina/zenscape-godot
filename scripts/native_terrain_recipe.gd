@@ -31,6 +31,12 @@ static func valid(value: Variant) -> bool:
 	if not value is Dictionary: return false
 	if value.is_empty(): return true
 	if value.get("kind") == "inland":
+		# A generated world may add a biome blend on top of its dominant biome.
+		if value.has("blend"):
+			if not preload("res://scripts/biome_blend.gd").valid(value.blend,value.get("biome")): return false
+			var single: Dictionary = value.duplicate()
+			single.erase("blend")
+			return valid(single)
 		var genome = preload("res://scripts/inland_genome.gd")
 		if value.size() != 9 or value.get("version") not in [3,4,5,6]: return false
 		if value.get("composition") == "chasm" and value.get("version") not in [5,6]: return false
@@ -53,7 +59,7 @@ static func valid(value: Variant) -> bool:
 static func encode(value: Dictionary) -> Dictionary:
 	var record := value.duplicate(true)
 	for key in record:
-		if key not in ["kind","variation","family","biome","water","version","seed","composition","archetype","landform"]:
+		if key not in ["kind","variation","family","biome","blend","water","version","seed","composition","archetype","landform"]:
 			record[key] = PackedFloat64Array([float(record[key])]).to_byte_array().hex_encode()
 	return record
 
@@ -61,13 +67,17 @@ static func decode(record: Variant) -> Variant:
 	if not record is Dictionary: return null
 	var result: Dictionary = record.duplicate(true)
 	for key in result:
-		if key in ["kind","variation","family","biome","water","version","seed","composition","archetype","landform"]: continue
+		if key in ["kind","variation","family","biome","blend","water","version","seed","composition","archetype","landform"]: continue
 		var value: Variant = result[key]
 		if not value is String or value.length() != 16: return null
 		for character in value:
 			if character not in "0123456789abcdef": return null
 		result[key] = value.hex_decode().decode_double(0)
+	# JSON parses every number as a float; the version check matches integers.
+	for key in ["variation","version","seed"]:
+		if result.has(key) and GardenData._integer(result[key]): result[key] = int(result[key])
 	if not valid(result): return null
 	for key in ["variation","version","seed"]:
 		if result.has(key): result[key] = int(result[key])
+	if result.has("blend"): result.blend = preload("res://scripts/biome_blend.gd").normalized(result.blend)
 	return result
