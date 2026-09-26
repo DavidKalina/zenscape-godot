@@ -5,9 +5,9 @@ extends Node
 ## land directly.
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
-## One seed per landform family, leaning to clear low sun, plus a few
-## weathers. Step through them with [ and ] to check look changes.
-const SHOWCASE := [2,66,68,224,79,165,29,43,33,24,8,40,41,161,9,45,49,104,52,28,22]
+## The best-scoring seeds per landform family (tools/probe_world_beauty.gd),
+## plus a few weathers. Step through them with [ and ] to check look changes.
+const SHOWCASE := [184,105,147,193,276,79,240,363,176,33,102,353,58,177,198,134,45,126,248,250,28,364]
 const DEGROW_SECONDS := 3.4
 const GROW_SECONDS := 5.0
 var scene: Node3D

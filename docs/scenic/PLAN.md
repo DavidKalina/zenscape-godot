@@ -86,18 +86,23 @@ Done and merged to `main` on 2026-09-26. The user has seen it on the Mac and is 
 
 ## Phase 2: variety where every result looks good
 
-Next up.
+In progress. Item 1 and the Blender trees from item 3 are in PR #19. Neither has been seen on screen together yet.
 
-1. **Replace the generator's "usable, connected ground" gate with a beauty score.**
-   - The current gate is `cozy_world_generator.gd:30-46`, and `inland_places.gd` flattens three terraces for Bigfoot. Both push terrain toward gentle ground.
-   - Score candidates on silhouette drama, a focal point, water, palette harmony and composition from the default camera.
+1. **Replace the generator's "usable, connected ground" gate with a beauty score.** Done in PR #19 (`feature/beauty-score`). Not yet seen on screen.
+   - `scripts/world_beauty.gd` scores a candidate from the overview camera: drama (rise over the plate's far edge, land hidden behind nearer ridges, skyline movement, peaks), relief, a focal summit or water, water share, and composition (summit near a third, balanced weight, walls not hiding the land).
+   - The generator keeps the family it draws, builds six candidates and keeps the best. It also draws four palettes and keeps the most harmonious. A world takes about 124 ms on the worker.
+   - Genome version 6 keeps the three clearings for dressing but no longer flattens them. Saved version 5 worlds keep their terraces. The meadow fallback is gone.
+   - Over 150 seeds the mean score rises from 0.64 to 0.71 and every family's worst world improves. Palettes scoring under 0.6 drop from 79 to 12.
+   - Known gaps: the score is blind to what makes a chasm or a marsh good, so those families only compare among themselves. Scores are not comparable across families. `inland_places.quality` is now only used by the deferred tests, and `test_inland_places.gd` will fail its usable-ground floor.
+   - Tune the weights (`WEIGHTS` in `world_beauty.gd`) against captures. `tools/probe_world_beauty.gd` sweeps scores and timings headless; `tools/capture_seed_stills.gd` renders stills or orbit frames per seed.
 2. **Erosion plus ridged, domain-warped noise** in the native C++ terrain kernels (`native/terrain_kernels`). Today there is one noise octave and no erosion.
 3. **Seeded tree and rock variants.** `layered_tree.gd` has no seed, the catalog has 22 fixed assets, and each habitat cycles its props with `i%4`.
-   - **Blender trees, in progress on `feature/hero-trees`.** Scripts in `tools/blender_trees/` (plus `tools/build_hero_oak.py`) build faceted trees in Blender and export them to `assets/models/`. Run one with `blender -b --factory-startup --python <script>`.
+   - **Blender trees, committed as `a2eec16` and in PR #19.** Scripts in `tools/blender_trees/` (plus `tools/build_hero_oak.py`) build faceted trees in Blender and export them to `assets/models/`. Run one with `blender -b --factory-startup --python <script>`.
    - `scripts/hero_trees.gd` swaps the geometry behind the existing catalog parts and keeps each part's material, wind and tint. The oak replaces the broadleaf and the redwood replaces the redwood.
    - Pines grow as a six-variant spruce family. `garden_instance_samples.gd` picks the variant per tree with a stable weighted hash.
    - Arid worlds plant Joshua trees (a new `joshua` asset) for about half of their cactus slots.
    - `--classic-trees` restores the source meshes for comparison. Not yet checked on screen.
+   - Still to do: seeded rocks, a seed for `layered_tree.gd`, and replacing the per-habitat `i%4` prop cycle.
 4. **Blend two or three biomes per world** from moisture, altitude and slope direction, instead of one habitat string. Geology colours should come from the palette. The desert band colours are hard-coded in the shader today.
 5. **Curated palette families.** Start from the landscape experiment's chalk, copper, moss and lavender (on branch `wip/parked-2026-09-26`).
 6. **Weather and seasons that change while you watch.**
@@ -128,26 +133,26 @@ Next up.
 
 ## Showcase seeds
 
-These are `SHOWCASE` in `scripts/cozy_regrowth.gd`.
+These are `SHOWCASE` in `scripts/cozy_regrowth.gd`, re-picked on 2026-09-26 after the beauty score. They are the top scorers per family in seeds 0–399 of `tools/probe_world_beauty.gd`. They have not been looked at on screen yet.
 
 | Family | Seeds |
 |---|---|
-| Mountain | 2 (clear evening), 66 (sawtooth, clear morning), 68 (autumn) |
-| Massif | 224 (volcanic crown, clear) |
-| Valley | 79, 165 (redwood glacial), 29 (misty redwood canyon) |
-| Basin | 43 (mist) |
-| Plateau | 33 (autumn mist), 24 (redwood in snow) |
-| Chasm | 8 (rain evening) |
-| Foothills | 40 |
-| Meadow | 41 (rain) |
-| Marsh | 161 |
-| Desert | 9 |
-| Desert mountains | 45 |
-| Buttes | 49 |
-| Tablelands | 104 |
-| Dunes | 52 |
-| Salt basin | 28 (night) |
-| Monuments | 22 (clear evening) |
+| Mountain | 184 (clear), 105 (tall massif, fair), 147 (volcanic crown, rain) |
+| Massif | 193 (sawtooth, clear), 276 (tall massif, snow) |
+| Valley | 79 (glacial, fair), 240 (mist), 363 (buttressed canyon, fair) |
+| Basin | 176 (clear) |
+| Plateau | 33 (fair), 102 (mist) |
+| Chasm | 353 (clear) |
+| Foothills | 58 (rolling uplands, fair) |
+| Meadow | 177 (fair) |
+| Marsh | 198 (clear) |
+| Desert | 134 (fair) |
+| Desert mountains | 45 (fair) |
+| Buttes | 126 (clear) |
+| Tablelands | 248 (fair) |
+| Dunes | 250 (clear) |
+| Salt basin | 28 (fair) |
+| Monuments | 364 (fair) |
 
 ## Working agreements
 
