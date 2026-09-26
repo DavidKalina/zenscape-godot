@@ -126,6 +126,9 @@ static func restore(scene: Node3D, state: Dictionary) -> void:
 	if scene.has_method("restore_living_state"): scene.restore_living_state(state.get("bigfoot_living",{}))
 	if scene.has_method("restore_fish_state"): scene.restore_fish_state(state.get("fish_state",{}))
 	if scene.has_method("restore_wood_state"): scene.restore_wood_state(state.get("wood_state",{}))
+	# Living weather reads the restored sky and clock; saves from before it
+	# have no weather origin or pinned season and get them from what they show.
+	if scene.has_method("restore_season_state"): scene.restore_season_state(state)
 	scene._process(0.0)
 	scene._sync_saved_controls()
 	if scene._landscape_editor != null: scene._landscape_editor.hide()

@@ -171,8 +171,13 @@ func _label(world: Node3D) -> String:
 	var family: String = world._chunk_editor.data._recipe_settings.get("family","")
 	return Presets.PRESETS[family].title if Presets.PRESETS.has(family) else "Your clearing"
 
+## The badge adds a second line with living weather: the season and the sky.
+func _badge_text() -> String:
+	var living: RefCounted = scene.get("living_weather")
+	return _label(scene)+("\n"+living.label() if living != null else "")
+
 func _update_badge() -> void:
-	badge.text = _label(scene)
+	badge.text = _badge_text()
 
 func blocks(point: Vector2) -> bool:
 	return busy or badge.get_global_rect().has_point(point)
@@ -238,7 +243,7 @@ func _process(delta: float) -> void:
 		carry_actor.advance(minf(delta,0.05))
 		carry_image.position = (last_mouse-carry_offset).clamp(Vector2.ZERO,scene.get_viewport().get_visible_rect().size-carry_image.size)
 	if busy: return
-	if badge.text!=_label(scene): _update_badge()
+	if badge.text!=_badge_text(): _update_badge()
 	if not holding: return
 	_update_landing(last_mouse)
 	var size: Vector2 = scene.get_viewport().get_visible_rect().size

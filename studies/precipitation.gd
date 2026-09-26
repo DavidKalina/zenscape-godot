@@ -15,6 +15,13 @@ var stream_texture: Texture2D
 var cloud_override := -1.0
 var cold_override := -1.0
 var wind := 0.4
+## How fast rain, cloud and storm ease toward a new preset, per second. Living
+## weather (scripts/living_weather.gd) slows it so a drifting sky changes over
+## half a minute instead of a few seconds.
+var response := 0.55
+## Living weather: rain and storm wait for the cloud to build, and stop as it
+## thins, so a clear sky never rains before it has clouded over.
+var gather := false
 var leaves: MultiMeshInstance3D
 var surface_weather := preload("res://studies/surface_weather.gd").new()
 var state := Vector4(0, 0, 0.06, 0)
@@ -147,7 +154,12 @@ func set_weather(index: int, instant := false) -> void:
 
 func advance(delta: float, paused: bool, celestial: RefCounted) -> void:
 	if not paused:
-		state = state.lerp(target, 1.0 - exp(-delta * 0.55))
+		var aim := target
+		if gather:
+			var covered := smoothstep(0.35, 0.7, state.z)
+			aim.x *= covered
+			aim.w *= covered
+		state = state.lerp(aim, 1.0 - exp(-delta * response))
 	surface_weather.target_cold = cold_override if cold_override >= 0.0 else surface_weather.target_cold
 	var cloud_now := cloud_override if cloud_override >= 0.0 else state.z
 	surface_weather.advance(delta, paused, minf(1.0, state.x + state.y), cloud_now, wind)

@@ -43,6 +43,11 @@ func _ready() -> void:
 	await get_tree().process_frame
 	ambient_without_resident = scenery_mode
 	super._ready()
+	# Weather drifts and seasons hold per world; --still-weather keeps the sky
+	# on each world's own weather. Before the snapshots below, so new and
+	# Fidelity worlds drift too.
+	living_weather = preload("res://scripts/living_weather.gd").new()
+	living_weather.setup(self)
 	_fidelity_document = _chunk_editor.data.to_document()
 	_fidelity_state = NativeGardenStore.capture(self)
 	get_window().title = "ZenScape"
@@ -648,6 +653,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_R:
 			_overview()
+			return
+		if event.keycode == KEY_W and living_weather != null:
+			if event.shift_pressed:
+				_notice.text = "Weather drifting · Shift+W holds it" if living_weather.toggle_drift() else "Weather held · Shift+W lets it drift"
+			else:
+				_notice.text = "Weather turning to %s · W" % living_weather.next_weather()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_E and living_weather != null:
+			_notice.text = "Turning toward %s · E" % living_weather.next_season()
+			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)
 	_build_button.text = "Enjoy" if _chunk_editor.active else "Build"

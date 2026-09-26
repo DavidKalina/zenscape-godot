@@ -8,6 +8,7 @@ shader_type spatial;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
+#include "res://shaders/reference_season.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
@@ -35,6 +36,8 @@ varying vec3 world_position;
 varying vec3 blade_normal;
 varying vec3 ground_color;
 varying float blade_t;
+// Per clump: a spring wildflower when below the bloom's share, and its colour.
+varying float flower_pick;
 varying float inversion_transmit;
 
 float grass_hash(vec2 p) {
@@ -70,7 +73,9 @@ void vertex() {
 	float thin = 1.0 - 0.6 * smoothstep(fade_start, fade_end, distance_to_eye);
 	float grown = smoothstep(grass_hash(seed + 7.7) * 0.6, grass_hash(seed + 7.7) * 0.6 + 0.4, zs_growth.y);
 	float height = blade_height * (0.55 + 0.9 * zs_noise(root * 0.37 + 11.0)) * (0.7 + 0.3 * mask.a)
-		* (0.8 + 0.4 * grass_hash(seed + 2.9)) * grown * (1.0 - 0.75 * smoothstep(0.1, 0.7, zs_snow));
+		* (0.8 + 0.4 * grass_hash(seed + 2.9)) * grown * (1.0 - 0.75 * smoothstep(0.1, 0.7, zs_snow))
+		* (1.0 - 0.3 * zs_season.z);
+	flower_pick = grass_hash(seed + 23.7);
 	if (grass_hash(seed + 5.1) > keep * thin || height < 0.01) {
 		VERTEX = vec3(0.0, -1000.0, 0.0);
 		blade_t = 0.0;
@@ -114,6 +119,13 @@ void fragment() {
 	// Dark at the root where the blades crowd, sun-bleached toward the tip.
 	tint *= mix(vec3(0.62), vec3(1.12, 1.14, 0.92), blade_t);
 	zs_autumn_paint(tint, world_position, zs_autumn);
+	// Fresh in spring, straw through winter, and a scatter of wildflowers
+	// opening at the tips as the spring bloom rises.
+	zs_season_grass(tint, 1.0);
+	if (zs_season.x > 0.004 && flower_pick < 0.07 * zs_season.x && blade_t > 0.78) {
+		float kind = fract(flower_pick * 97.0);
+		tint = kind < 0.45 ? vec3(0.66, 0.64, 0.57) : (kind < 0.8 ? vec3(0.68, 0.50, 0.10) : vec3(0.40, 0.29, 0.58));
+	}
 	tint *= mix(1.0, 0.72, zs_foliage_wet);
 	tint = mix(tint, vec3(0.88, 0.91, 0.95), smoothstep(0.3, 0.9, zs_snow) * blade_t * 0.6);
 	float cloud_shade = cloudShadeAt(vec3(world_position.x, 0.6, world_position.z), zs_cloud_direction);

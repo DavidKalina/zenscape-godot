@@ -5,6 +5,7 @@ shader_type spatial;
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
+#include "res://shaders/reference_season.gdshaderinc"
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
@@ -43,6 +44,12 @@ uniform bool cozy_prop_growth = false;
 uniform float foliage_transmission : hint_range(0.0, 1.0) = 0.0;
 uniform bool bird_wings = false;
 uniform bool source_bird_flight = false;
+// How this part follows the seasons (scripts/scene_look.gd leaf_season): x
+// autumn gold and spring freshness, y winter leaf fall, z spring blossom
+// share, w winter die-back. The default keeps the source's autumn only.
+uniform vec4 leaf_season = vec4(1.0, 0.0, 0.0, 0.0);
+varying vec3 leaf_local;
+varying vec2 plant_root;
 varying float foliage_gust;
 varying float inversion_transmit;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
@@ -70,6 +77,9 @@ global uniform sampler2D zs_water_map;
 #include "res://shaders/terrain_geology.gdshaderinc"
 
 void vertex() {
+	leaf_local = VERTEX;
+	plant_root = MODEL_MATRIX[3].xz;
+	if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
 	foliage_gust = 0.0;
 	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 	char_clump = zs_char_clump(VERTEX);
@@ -166,6 +176,7 @@ void vertex() {
 
 void fragment() {
 	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
+	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
 	vec3 face_normal = world_normal;
 	if (flat_faces) {
 		face_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
@@ -175,9 +186,11 @@ void fragment() {
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
-	zs_autumn_paint(tint, world_position, zs_autumn);
+	zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
+	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
+	else if (palette_role == 1 || palette_role == 5) zs_season_grass(tint, leaf_season.x);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
-	// Order is palette -> autumn -> char -> wet -> snow: rain still darkens a
+	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;
 	vec3 char_ember = vec3(0.0);

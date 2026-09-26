@@ -4,6 +4,7 @@ shader_type spatial;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
+#include "res://shaders/reference_season.gdshaderinc"
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
@@ -43,6 +44,9 @@ varying float inversion_transmit;
 varying vec3 world_normal;
 varying vec3 world_position;
 varying vec3 crown_position;
+// Seasons, as on reference_surface: (turn, leaf fall, blossom, die-back).
+uniform vec4 leaf_season = vec4(1.0, 0.0, 0.0, 0.0);
+varying vec2 plant_root;
 varying float leaf_thinness;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
 uniform bool instance_fire_enabled = false;
@@ -53,6 +57,7 @@ varying float char_seed;
 
 void vertex() {
 	crown_position = VERTEX;
+	plant_root = MODEL_MATRIX[3].xz;
 	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
 	char_clump = zs_char_clump(VERTEX);
 	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
@@ -135,6 +140,7 @@ void vertex() {
 }
 
 void fragment() {
+	if (leaf_season.y > 0.0 && zs_leaf_fallen(crown_position, plant_root, leaf_season.y)) discard;
 	vec3 face_normal = world_normal;
 	if (flat_faces) {
 		face_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
@@ -143,9 +149,10 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
-	zs_autumn_paint(tint, world_position, zs_autumn);
+	zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
+	zs_season_leaves(tint, crown_position, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
-	// Order is palette -> autumn -> char -> wet -> snow.
+	// Order is palette -> autumn -> season -> char -> wet -> snow.
 	float char_scorch = 0.0;
 	vec3 char_ember = vec3(0.0);
 	if (char_state.x > 0.004 || char_state.y > 0.004) {

@@ -118,6 +118,8 @@ func _ready() -> void:
 	for key in _materials:
 		FireMaterial.enable_instances(_materials[key])
 		_materials[key].set_shader_parameter("palette_role",preload("res://scripts/scene_look.gd").part_role(key))
+		# Evergreens hold their colour; broadleaves blossom, turn and fall.
+		_materials[key].set_shader_parameter("leaf_season",preload("res://scripts/scene_look.gd").leaf_season(key))
 	_water = MeshInstance3D.new()
 	_water.name = "Ponds"
 	_water.material_override = _water_material

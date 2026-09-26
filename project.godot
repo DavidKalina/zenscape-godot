@@ -83,6 +83,10 @@ zs_autumn={
 "type": "float",
 "value": 0.0
 }
+zs_season={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_fire={
 "type": "float",
 "value": 0.0

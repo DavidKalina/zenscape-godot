@@ -119,6 +119,9 @@ static func sample_async(seed_value: int,previous: Dictionary,tree: SceneTree) -
 	return result[0]
 
 static func apply_mood(scene: Node3D, world: Dictionary) -> void:
+	# Living weather (scripts/living_weather.gd) restarts its drift from this
+	# world's own sky and pins the season the mood was drawn for.
+	if scene.has_method("establish_world_weather"): scene.establish_world_weather(world)
 	# The existing applicator resets all weather/season controls. Every color
 	# and environmental choice is supplied by our generated recipe.
 	SceneLookPresets.apply(scene,"golden_meadow",world.mood)
