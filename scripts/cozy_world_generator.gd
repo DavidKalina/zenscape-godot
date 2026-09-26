@@ -46,6 +46,9 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	# reads the eroded land, so its shares match the world that gets built.
 	var blend: Array = BiomeBlend.plan(recipe,preload("res://scripts/inland_world.gd").new(recipe))
 	if not blend.is_empty(): recipe["blend"] = blend
+	# Seeded prop variety (scripts/seeded_variety.gd). Older recipes lack the
+	# mark and keep their fixed prop cycles. It takes no draw from `rng`.
+	recipe["variety"] = 1
 	dry = recipe.composition in Desert.KINDS
 	var hours := [Vector2(.27,.34),Vector2(.36,.57),Vector2(.62,.72),Vector2(.015,.08)]
 	var hour: int = rng.randi_range(0,3)

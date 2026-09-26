@@ -1,5 +1,6 @@
 extends RefCounted
 const Desert = preload("res://scripts/desert_landscape.gd")
+const Variety = preload("res://scripts/seeded_variety.gd")
 ## Low-cover candidates per habitat; any other habitat draws 250.
 const COVER := {"arid":25,"wetland":620}
 var data: NativeTerrainData
@@ -7,11 +8,23 @@ var genome: Dictionary
 ## Present only for recipes with a biome blend (scripts/biome_blend.gd).
 ## Without one, every habitat choice below is the genome's single habitat.
 var blend: RefCounted
+## 1 when the recipe asks for seeded prop variety (generated worlds since the
+## seeded-variants work). 0 keeps the old fixed cycles, so older saves dress
+## exactly as before.
+var variety := 0
+## This world's key for variety hashes, from the planting seed.
+var salt := 0
+var _drift: FastNoiseLite
 func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null) -> void:
 	data = terrain
 	data.reset_flat()
 	if not await data._set_recipe(settings,tree): return
 	genome = data._recipe.inland.genome
+	variety = int(settings.get("variety",0))
+	salt = Variety.mix([int(genome.plant_seed),7])
+	_drift = FastNoiseLite.new()
+	_drift.seed = int(genome.plant_seed)+53
+	_drift.frequency = 0.3
 	data.grass.fill(preload("res://scripts/native_formation_shape.gd").BIOMES[genome.habitat].grass)
 	data.heights = data._recipe_heights.duplicate()
 	data.ponds.assign(data._recipe.inland.ponds.duplicate(true))
@@ -98,13 +111,16 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		if blend != null and _hash(p+Vector2(0.71,0.29))*cover_count>=COVER.get(habitat,250): continue
 		if (_is_wet(p) and not (habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
-		var kind: String = "reeds" if habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if habitat == "meadow" else "shrub" if habitat == "arid" else "grass_tuft"
-		if habitat in ["woodland","redwood"]:
-			if i%29 == 0: kind = "log"
-			elif i%31 == 0: kind = "stump"
-			elif i%37 == 0: kind = "snag"
-			elif i%11 == 0: kind = "fern"
-			elif i%13 == 0: kind = "mushroom"
+		var kind: String
+		if variety >= 1: kind = _cover_kind(habitat,p)
+		else:
+			kind = "reeds" if habitat == "wetland" else ["daisy_flower","button_flower","spike_flower","grass_tuft"][i%4] if habitat == "meadow" else "shrub" if habitat == "arid" else "grass_tuft"
+			if habitat in ["woodland","redwood"]:
+				if i%29 == 0: kind = "log"
+				elif i%31 == 0: kind = "stump"
+				elif i%37 == 0: kind = "snag"
+				elif i%11 == 0: kind = "fern"
+				elif i%13 == 0: kind = "mushroom"
 		if habitat == "wetland":
 			# Marsh worlds sit at one water level. A wet corner of another world
 			# keeps reeds at the water's edge and bank grass behind them.
@@ -170,7 +186,9 @@ func _dress_places(work: RefCounted) -> void:
 				if not near or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.65: continue
 				data.blades[z*data.MEADOW_CELLS+x] = 0.35
 				if _habitat(p)=="meadow": data.meadow[z*data.MEADOW_CELLS+x] = 0.16
+	var place_index := -1
 	for place: Dictionary in data._recipe.inland.sampler.places:
+		place_index += 1
 		# A log, rock grouping or flower patch gives each clearing an edge;
 		# the middle stays available for Bigfoot and the player's own objects.
 		# In a blend, each clearing is dressed for the habitat it sits in.
@@ -180,6 +198,7 @@ func _dress_places(work: RefCounted) -> void:
 		var focal := "log" if habitat in ["woodland","redwood"] and int(place.kind)==0 else "boulder_"+str(1+int(place.kind))
 		if not _is_wet(anchor) and not _is_salt(anchor):
 			data.place(focal,anchor,rng.randf()*TAU,0.55)
+			if variety >= 1 and focal.begins_with("boulder_"): _satellites(anchor,place_index)
 		var planted := 0
 		for attempt in range(160):
 			if attempt%16==0: await work.checkpoint()
@@ -187,6 +206,58 @@ func _dress_places(work: RefCounted) -> void:
 			if p.distance_to(place.center)<0.95 or _is_wet(p) or _is_salt(p): continue
 			if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.65: continue
 			var choices: Array = palettes[habitat]
-			var kind: String = choices[(planted+int(place.kind))%choices.size()]
+			var kind: String = choices[(planted+int(place.kind))%choices.size()] if variety < 1 else _place_kind(choices,place_index,attempt)
 			if data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.85))>=0: planted += 1
 			if planted>=28: break
+
+## Seeded low cover. Rates and flower mixes lean per world, and a position
+## hash picks the kind, so neither the planting stream nor a fixed cycle
+## shows. Meadow flowers follow a low-frequency drift, so each species
+## gathers into its own patches instead of alternating plant by plant.
+func _cover_kind(habitat: String, p: Vector2) -> String:
+	var roll := Variety.unit([salt,31]+Variety.cell(p))
+	match habitat:
+		"wetland": return "reeds"
+		"meadow":
+			if roll < clampf(0.25*Variety.lean(salt,"tuft"),0.12,0.4): return "grass_tuft"
+			var flowers := ["daisy_flower","button_flower","spike_flower","umbel_flower"]
+			var weights := []
+			for f: String in flowers: weights.append((0.4 if f == "umbel_flower" else 1.0)*Variety.lean(salt,f))
+			var drift := clampf(_drift.get_noise_2d(p.x,p.y)*0.6+0.5+(Variety.unit([salt,32]+Variety.cell(p))-0.5)*0.3,0.0,0.999)
+			return flowers[Variety.weighted(weights,drift)]
+		"woodland","redwood":
+			var fern := 1.5 if habitat == "redwood" else 1.0
+			for entry in [["log",1.0/29.0],["stump",1.0/31.0],["snag",1.0/37.0],["fern",fern/11.0],["mushroom",1.0/13.0]]:
+				roll -= float(entry[1])*Variety.lean(salt,entry[0])
+				if roll < 0.0: return entry[0]
+			return "grass_tuft"
+		"alpine": return "rock" if roll < 0.1*Variety.lean(salt,"rock") else "grass_tuft"
+		"arid":
+			var stones := 0.16*Variety.lean(salt,"rock")
+			if roll < stones: return "rock"
+			return "grass_tuft" if roll < stones+0.1*Variety.lean(salt,"tuft") else "shrub"
+	return "grass_tuft"
+
+## A clearing prop from the habitat's palette, weighted by how often the
+## palette lists it and leaned per world.
+func _place_kind(choices: Array, place_index: int, attempt: int) -> String:
+	var kinds := []
+	var weights := []
+	for kind: String in choices:
+		var at := kinds.find(kind)
+		if at < 0:
+			kinds.append(kind)
+			weights.append(0.0)
+			at = kinds.size()-1
+		weights[at] += Variety.lean(salt,kind)
+	return kinds[Variety.weighted(weights,Variety.unit([salt,41,place_index,attempt]))]
+
+## One to three small stones around a clearing's focal boulder, so it reads
+## as a weathered group rather than a single rock.
+func _satellites(anchor: Vector2, place_index: int) -> void:
+	var count := 1+Variety.mix([salt,43,place_index])%3
+	for n in range(count):
+		var key := [salt,44,place_index,n]
+		var q := anchor+Vector2.from_angle(Variety.unit(key+[1])*TAU)*lerpf(0.55,0.95,Variety.unit(key+[2]))
+		if _is_wet(q) or _is_salt(q) or preload("res://scripts/native_landscape_presets.gd")._slope(data,q)>0.65: continue
+		data.place("rock",q,Variety.unit(key+[3])*TAU,lerpf(0.26,0.45,Variety.unit(key+[4])))
