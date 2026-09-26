@@ -92,6 +92,14 @@ signal sky_toggle_requested()
 signal selection_changed(id: int)
 ## Emitted after rendered geometry changes, including live selected-object drags.
 signal play_geometry_changed()
+## A painted stroke's life, for feedback that answers the hand (tremor, fog,
+## wind, local grow-in). `center` is world space, `radius` world units, `mode`
+## the tool; `amount` is the brush strength spent by that batch of dabs.
+signal stroke_started(center: Vector3, radius: float, mode: String)
+signal stroke_moved(center: Vector3, radius: float, mode: String, amount: float)
+signal stroke_finished(center: Vector3, radius: float, mode: String)
+var _stroke_center := Vector3.ZERO
+var _stroke_radius := 0.0
 var _play_geometry_signature := PackedByteArray()
 var selected_object_id := -1
 var selection: NativeObjectSelection
@@ -504,6 +512,7 @@ func place_at(mouse: Vector2) -> bool:
 		_trail_point = Vector2(hit.x,hit.z)
 		trail_dab(_trail_point)
 		refresh()
+		_emit_stroke(0,hit,preview_radius(),0.0)
 		return true
 	_level = hit.y
 	_last_point = Vector2(hit.x,hit.z)
@@ -512,6 +521,8 @@ func place_at(mouse: Vector2) -> bool:
 	if mode in NativeTerrainData.ASSETS or mode in ["pond","mountain","assets"]:
 		if mode == "mountain":
 			data.mountain(_last_point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
+			_emit_stroke(0,hit,mountain_radius,0.0)
+			_emit_stroke(2,hit,mountain_radius,0.0)
 		elif mode == "pond":
 			var plan: Dictionary = pond_preview.evaluate(data,_last_point,pond_level)
 			if plan.vertices.is_empty(): _set_status(plan.message)
@@ -540,6 +551,8 @@ func place_at(mouse: Vector2) -> bool:
 		_painting = true
 		dab(_last_point,strength/30.0)
 		refresh()
+		_emit_stroke(0,hit,radius,0.0)
+		_emit_stroke(1,hit,radius,strength/30.0)
 	return true
 
 ## Trails share the normal stroke transaction: one drag is one undo step.
@@ -612,6 +625,7 @@ func _process(delta: float) -> void:
 		_material.set_shader_parameter("brush_radius",preview_radius())
 		if _painting and placement_trail and trail_available():
 			continue_trail(center)
+			_emit_stroke(1,hit,preview_radius(),delta)
 		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
@@ -620,6 +634,7 @@ func _process(delta: float) -> void:
 				for i in range(1,dabs+1):
 					dab(previous.lerp(center,float(i)/dabs),strength*_elapsed/dabs)
 				refresh()
+				_emit_stroke(1,hit,radius,strength*_elapsed)
 				_elapsed = 0.0
 				_last_point = center
 	else:
@@ -641,6 +656,16 @@ func finish_stroke() -> void:
 	_elapsed = 0.0
 	_last_point = null
 	data.end_stroke()
+	stroke_finished.emit(_stroke_center,_stroke_radius,mode)
+
+## `phase` 0 starts, 1 moves, 2 finishes; `hit` is terrain-local.
+func _emit_stroke(phase: int, hit: Vector3, size: float, amount: float) -> void:
+	_stroke_center = terrain.to_global(hit)
+	_stroke_radius = size*terrain.global_basis.get_scale().x
+	match phase:
+		0: stroke_started.emit(_stroke_center,_stroke_radius,mode)
+		1: stroke_moved.emit(_stroke_center,_stroke_radius,mode,amount)
+		_: stroke_finished.emit(_stroke_center,_stroke_radius,mode)
 
 func undo() -> void:
 	_history_step(false)

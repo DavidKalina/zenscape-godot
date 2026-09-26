@@ -32,7 +32,7 @@ void fog() {
 	float body = (1.0-smoothstep(top-1.4,top+1.3,p.y))*smoothstep(ground-0.1,ground+0.4,p.y);
 	float edge = (1.0-smoothstep(12.0,16.0+expansion,abs(p.x)))*(1.0-smoothstep(12.0,16.0+expansion,abs(p.z)));
 	float boundary = 1.0-smoothstep(-0.8,0.0,SDF);
-	DENSITY = ground < -100.0 ? 0.0 : bank_density*keep*body*edge*boundary;
+	DENSITY = ground < -100.0 ? 0.0 : bank_density*keep*body*edge*boundary*zs_reveal_keep(p.xz);
 	ALBEDO = bank_color;
 	EMISSION = bank_color*0.20;
 }
