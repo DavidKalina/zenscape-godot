@@ -25,7 +25,7 @@ func _initialize() -> void:
 		if not totals.has(world.terrain.composition): totals[world.terrain.composition] = []
 		totals[world.terrain.composition].append(s.total)
 		var harmony := Beauty.palette(_colors(world.mood.colors),world.mood.phase<0.1)
-		print("harmony %.2f " % harmony,"seed %3d %-17s %-16s rel %.2f  total %.2f  drama %.2f focal %.2f water %.2f comp %.2f relief %.2f  %s" % [i,world.terrain.composition,world.terrain.landform,world.terrain.relief,s.total,s.drama,s.focal,s.water,s.composition,s.relief,world.mood.weather])
+		print("harmony %.2f " % harmony,"seed %3d %-17s %-16s rel %.2f  total %.2f  drama %.2f focal %.2f water %.2f comp %.2f relief %.2f  %s  %s" % [i,world.terrain.composition,world.terrain.landform,world.terrain.relief,s.total,s.drama,s.focal,s.water,s.composition,s.relief,world.mood.weather,world.get("palette","")])
 	var all := 0.0
 	for family in totals:
 		var list: Array = totals[family]
