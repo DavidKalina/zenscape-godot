@@ -111,6 +111,11 @@ var _selection_offset := Vector2.ZERO
 var scene: Node3D
 var terrain: MeshInstance3D
 var data := NativeTerrainData.new()
+## Life that follows finished strokes (scripts/emergence.gd).
+var emergence: RefCounted = preload("res://scripts/emergence.gd").new(data)
+var emergence_enabled := true
+var _stroke_rect := Rect2()
+var _stroke_first_id := 0
 var content: GardenView
 var landmarks: NativeGardenLandmarks
 var falls: NativeGardenFalls
@@ -507,6 +512,8 @@ func place_at(mouse: Vector2) -> bool:
 				_set_status("Choose a lower landing with no ridge blocking the drop.")
 		return true
 	data.begin_stroke()
+	_stroke_first_id = data.next_id
+	_stroke_rect = Rect2()
 	if placement_trail and trail_available():
 		_painting = true
 		_trail_point = Vector2(hit.x,hit.z)
@@ -537,7 +544,12 @@ func place_at(mouse: Vector2) -> bool:
 				data.update_object(placed,{"blast_radius":blast_radius,"leaf_cover":explosive_leaf_cover})
 			if placed < 0:
 				_set_status("Up to 32 charges can be armed at once. Detonate or remove one first." if mode == "explosive" else "This garden has reached its object limit.")
+		data.mark_objects_hand(_stroke_first_id)
+		if mode == "mountain": _touch(_last_point,mountain_radius)
+		elif pond_filled: _touch(_last_point,7.0)
 		if data.end_stroke():
+			_stroke_ended()
+			_stroke_rect = Rect2()
 			refresh()
 			if pond_filled: _set_status("Pond filled. Dig a hollow to shape its banks; Undo removes the water.")
 			if placed > 0 and reactions_enabled and mode != "explosive":
@@ -581,6 +593,7 @@ func continue_trail(center: Vector2) -> void:
 func trail_dab(point: Vector2) -> void:
 	if mode == "mountain":
 		data.mountain(point,mountain_radius,mountain_peak,mountain_variation,deg_to_rad(mountain_heading))
+		_touch(point,mountain_radius)
 	else:
 		data.place(catalog_asset if mode == "assets" else mode,point,object_angle,object_scale,_placement_pose(),preload("res://scripts/native_object_pose.gd").encode_tint(object_tint.srgb_to_linear()) if custom_tint else "")
 
@@ -609,6 +622,8 @@ func pick(mouse: Vector2) -> Variant:
 	return data.ray_hit(origin,direction.normalized())
 
 func _process(delta: float) -> void:
+	if not forming and emergence.advance(delta):
+		refresh()
 	if forming or not active:
 		pond_preview.clear()
 		return
@@ -655,8 +670,20 @@ func finish_stroke() -> void:
 	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
-	data.end_stroke()
+	data.mark_objects_hand(_stroke_first_id)
+	if data.end_stroke(): _stroke_ended()
+	_stroke_rect = Rect2()
 	stroke_finished.emit(_stroke_center,_stroke_radius,mode)
+
+## Hand a finished stroke's ground to emergence. Kept as one call so the
+## stroke_finished signal can take it over.
+func _stroke_ended() -> void:
+	if emergence_enabled and _stroke_rect.has_area():
+		emergence.on_region_changed(_stroke_rect)
+
+func _touch(point: Vector2, reach: float) -> void:
+	var area := Rect2(point-Vector2.ONE*reach,Vector2.ONE*reach*2.0)
+	_stroke_rect = _stroke_rect.merge(area) if _stroke_rect.has_area() else area
 
 ## `phase` 0 starts, 1 moves, 2 finishes; `hit` is terrain-local.
 func _emit_stroke(phase: int, hit: Vector3, size: float, amount: float) -> void:
@@ -1121,6 +1148,8 @@ func _rebuild_skirt() -> void:
 	_skirt.mesh = mesh
 
 func dab(point: Vector2, amount: float) -> void:
+	if mode in ["grass","blades","meadow","paint","erase"]: data.mark_hand(point,radius)
+	else: _touch(point,radius)
 	match mode:
 		"grass": data.paint_grass(point,radius,grass_amount)
 		"blades": data.paint_blades(point,radius,blade_amount)
