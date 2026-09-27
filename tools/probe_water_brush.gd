@@ -27,7 +27,7 @@ func pour(label: String, points: Array, seconds: float) -> void:
 		streams.append({"points":pts.size(),"from":[snappedf(pts[0].x,0.1),snappedf(pts[0].z,0.1),snappedf(pts[0].h,0.01)],"to":[snappedf(pts[-1].x,0.1),snappedf(pts[-1].z,0.1),snappedf(pts[-1].h,0.01)],"width":snappedf(entry.record.width,0.01),"delay":snappedf(entry.delay,0.01),"seconds":snappedf(entry.seconds,0.01)})
 	var poured := 0.0
 	for d in dabs: poured += d.z
-	print("POUR ",JSON.stringify({"label":label,"dabs":dabs.size(),"poured_m3":snappedf(poured,0.01),"plan_ms":snappedf(plan.usec/1000.0,0.1),"ponds_total":plan.ponds.size(),"new_ponds":ponds,"new_streams":streams,"rect":str(plan.rect),"scoops":plan.scoops}))
+	var summary := {"label":label,"dabs":dabs.size(),"poured_m3":snappedf(poured,0.01),"plan_ms":snappedf(plan.usec/1000.0,0.1),"ponds_total":plan.ponds.size(),"new_ponds":ponds,"new_streams":streams,"rect":str(plan.rect),"scoops":plan.scoops,"lips":plan.get("lips",0),"beds":plan.get("beds",false)}
 	# Apply as the editor does, so the next pour sees this water.
 	if plan.changed:
 		editor.data.begin_stroke()
@@ -35,6 +35,8 @@ func pour(label: String, points: Array, seconds: float) -> void:
 		editor.data.ponds.assign(plan.ponds)
 		editor.data.streams.assign(plan.streams)
 		editor.data.end_stroke()
+	summary["level_at_pour"] = snappedf(_level_over(points[0]),0.001)
+	print("POUR ",JSON.stringify(summary))
 
 func run() -> void:
 	create_timer(120).timeout.connect(func() -> void: push_error("Water probe timed out"); quit(2))
@@ -69,6 +71,27 @@ func run() -> void:
 	pour("hilltop",[editor.data.points[high]],seconds)
 	pour("long pour in the hollow",[editor.data.points[low]],seconds*4.0)
 	pour("stroke across",[Vector2(-4,-2.5),Vector2(-1,-1),Vector2(3,2)],seconds)
+	# The pond nearest the plate's rim, poured into until it brims there: it
+	# should raise a lip at the rim and rise, not only deepen.
+	var rim_pond: Dictionary = {}
+	for pond: Dictionary in editor.data.ponds:
+		if rim_pond.is_empty() or maxf(absf(pond.x),absf(pond.z)) > maxf(absf(rim_pond.x),absf(rim_pond.z)): rim_pond = pond
+	if not rim_pond.is_empty():
+		var before_level: float = rim_pond.level
+		pour("into the rim pond",[Vector2(rim_pond.x,rim_pond.z)],seconds*4.0)
+		pour("into the rim pond again",[Vector2(rim_pond.x,rim_pond.z)],seconds*4.0)
+		print("RIM ",JSON.stringify({"at":[rim_pond.x,rim_pond.z],"level_before":snappedf(before_level,0.001),"level_after":snappedf(_level_over(Vector2(rim_pond.x,rim_pond.z)),0.001)}))
+
 	scene.queue_free()
 	for _frame in range(3): await process_frame
 	quit()
+
+## The level of the pond whose drawn surface covers `point`, or -1 if none.
+func _level_over(point: Vector2) -> float:
+	var level := -1.0
+	for pond: Dictionary in editor.data.ponds:
+		for v in NativeGardenWater.surface(editor.data,pond):
+			if Vector2(v.x,v.z).distance_to(point) < 0.8:
+				level = maxf(level,float(pond.level))
+				break
+	return level

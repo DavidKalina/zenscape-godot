@@ -32,6 +32,25 @@ var _busy_kind := ""
 ## Copies a live geometry refresh replaces, dropped once the new ones stand.
 var _old_bindings: Array[Dictionary] = []
 signal setup_frame
+## Copied materials follow their sources without re-reading every parameter
+## each frame (that was about 4.6 ms with ponds on the plain). Parameters
+## seen to change are re-read every frame; the rest are checked a rolling
+## DISCOVERY_READS at a time (about 20 frames round the plain's 84 sources),
+## so a parameter's first change shows a moment late and later ones at once.
+## Copies of one source share one record (`_material_groups`).
+const DISCOVERY_READS := 300
+var _material_groups: Array[Dictionary] = []
+var _groups_dirty := true
+## Group key -> {"values", "live", "cursor"}, kept across regroupings.
+var _group_state := {}
+var _discover_group := 0
+## Source shader instance id -> whether copies of it clip (it has a fragment
+## function reading world_position). Shader code does not change at runtime.
+var _clips := {}
+## Clip shaders compile ahead, in idle frames once the scene has grown, so the
+## session's first pour does not pay 4-7 ms a shader while it settles.
+var _warm_started := false
+var warm_ready := false
 
 func _ready() -> void:
 	get_tree().process_frame.connect(_advance_setup_frame)
@@ -99,6 +118,9 @@ func sync(scene: Node3D, frame_tree: SceneTree = null) -> void:
 		if frame_tree != null and live_resetup and not views.is_empty():
 			if not await _refresh_geometry_live(scene,frame_tree): return
 		else: _refresh_geometry(scene)
+	if not _warm_started and enabled and scene._growth.terrain >= 0.995:
+		_warm_started = true
+		_warm_shaders(scene)
 	var active: bool = enabled and RenderingServer.get_current_rendering_method() == "forward_plus" and scene._growth.terrain >= 0.995 and scene._growth.water >= 0.995 and scene.can_process()
 	set_enabled(active)
 	if active: update_views()
@@ -127,6 +149,7 @@ func _refresh_geometry_live(scene: Node3D, frame_tree: SceneTree) -> bool:
 	_old_bindings = []
 	for key in _material_bindings.keys():
 		if not str(key).begins_with("pond:") and not _used_material_bindings.has(key): _material_bindings.erase(key)
+	_groups_dirty = true
 	_prune_shaders()
 	return true
 
@@ -156,6 +179,7 @@ func _refresh_geometry(scene: Node3D) -> void:
 		_copy_geometry(scene,view.viewport,view.level)
 	for key in _material_bindings.keys():
 		if not str(key).begins_with("pond:") and not _used_material_bindings.has(key): _material_bindings.erase(key)
+	_groups_dirty = true
 	_prune_shaders()
 
 ## Set the current views aside, still rendering, for a re-setup to replace.
@@ -195,13 +219,20 @@ func clear(keep_shaders := false) -> void:
 	_material_bindings.clear()
 	_used_material_bindings.clear()
 	_used_shaders.clear()
+	_groups_dirty = true
 	if not keep_shaders:
 		_shader_cache.clear()
 		_initial_ready = false
+		_warm_started = false
+		warm_ready = false
 
+## Compiled clip shaders stay while their source shader lives, so a pond that
+## drains and fills again, or a stream that comes back, compiles nothing.
 func _prune_shaders() -> void:
 	for key in _shader_cache.keys():
-		if not _used_shaders.has(key): _shader_cache.erase(key)
+		if not _used_shaders.has(key) and not is_instance_id_valid(int(key)): _shader_cache.erase(key)
+	for key in _clips.keys():
+		if not is_instance_id_valid(key): _clips.erase(key)
 
 func _exit_tree() -> void:
 	if is_instance_valid(source_water):
@@ -264,10 +295,10 @@ func setup(scene: Node3D, water_node: MeshInstance3D, frame_tree: SceneTree = nu
 		material.set_shader_parameter("planar_enabled", true)
 		material.set_shader_parameter("caustics_strength", 0.45)
 		material.set_shader_parameter("planar_reflection", viewport.get_texture())
-		_material_bindings["pond:" + str(level)] = {
-			"material":water_node.material_override,"target":material,"values":{},
-			"parameters":water_node.material_override.shader.get_shader_uniform_list().filter(func(parameter):
-				return not parameter.name in ["hide_pool_surface","planar_enabled","planar_reflection","reflection_matrix","caustics_strength"])}
+		var names := PackedStringArray()
+		for parameter in water_node.material_override.shader.get_shader_uniform_list():
+			if not parameter.name in ["hide_pool_surface","planar_enabled","planar_reflection","reflection_matrix","caustics_strength"]: names.append(parameter.name)
+		_bind_material("pond:" + str(level),"pond:" + str(water_node.material_override.get_instance_id()),water_node.material_override,material,names)
 		surface.material_override = material
 		add_child(surface)
 		views.append({"viewport":viewport,"camera":mirror,"material":material,"level":level,"surface":surface,"environment":environment.environment,"lights":viewport.get_children().filter(func(n): return n is DirectionalLight3D)})
@@ -317,36 +348,141 @@ func _copy_visual(node: Node, parent: Node, level: float) -> void:
 			mesh = node.multimesh.mesh
 		if copy != null and mesh != null:
 			var original = node.material_override if node.material_override != null else mesh.surface_get_material(0)
-			if original is ShaderMaterial and original.shader != null and "world_position" in original.shader.code:
-				var code: String = original.shader.code
-				if "void fragment()" in code:
-					# One clip shader per source shader, its level a uniform: a new
-					# pond level only duplicates materials, never parses a shader.
-					var key := str(original.shader.get_instance_id())
-					_used_shaders[key] = true
-					if not _shader_cache.has(key) or _shader_cache[key].get_meta("source_code","") != code:
-						var shader := Shader.new()
-						shader.code = code.replace("void fragment() {", "uniform float zs_clip_level = -1000000.0;\nvoid fragment() {\n if (world_position.y < zs_clip_level) discard;")
-						shader.set_meta("source_code",code)
-						_shader_cache[key] = shader
-					var material_key := str(original.get_instance_id()) + ":" + str(level)
-					_used_material_bindings[material_key] = true
-					if not _material_bindings.has(material_key):
-						var target: ShaderMaterial = original.duplicate()
-						target.shader = _shader_cache[key]
-						target.set_shader_parameter("zs_clip_level",level+0.015)
-						_material_bindings[material_key] = {"material":original,"target":target,"parameters":original.shader.get_shader_uniform_list(),"values":{}}
-					var material: ShaderMaterial = _material_bindings[material_key].target
-					if material.shader != _shader_cache[key]:
-						material.shader = _shader_cache[key]
-						material.set_shader_parameter("zs_clip_level",level+0.015)
-					copy.material_override = material
-					copy.transform = node.global_transform
-					copy.extra_cull_margin = 2.0
-					parent.add_child(copy)
-					_bindings.append({"source":node,"copy":copy})
-				else: copy.free()
+			if _clipped(original):
+				# One clip shader per source shader, its level a uniform: a new
+				# pond level only duplicates materials, never parses a shader.
+				var key := str(original.shader.get_instance_id())
+				_used_shaders[key] = true
+				var shader := _clip_shader(original.shader)
+				var material_key := str(original.get_instance_id()) + ":" + str(level)
+				_used_material_bindings[material_key] = true
+				if not _material_bindings.has(material_key):
+					var target: ShaderMaterial = original.duplicate()
+					target.shader = shader
+					target.set_shader_parameter("zs_clip_level",level+0.015)
+					var names := PackedStringArray()
+					for parameter in original.shader.get_shader_uniform_list(): names.append(parameter.name)
+					_bind_material(material_key,str(original.get_instance_id()),original,target,names)
+				var material: ShaderMaterial = _material_bindings[material_key].target
+				if material.shader != shader:
+					material.shader = shader
+					material.set_shader_parameter("zs_clip_level",level+0.015)
+				copy.material_override = material
+				copy.transform = node.global_transform
+				copy.extra_cull_margin = 2.0
+				parent.add_child(copy)
+				_bindings.append({"source":node,"copy":copy})
 			else: copy.free()
+
+## Whether a copy of geometry drawn with `original` gets a clip shader.
+func _clipped(original: Variant) -> bool:
+	if not (original is ShaderMaterial) or original.shader == null: return false
+	var id: int = original.shader.get_instance_id()
+	if not _clips.has(id):
+		var code: String = original.shader.code
+		_clips[id] = "world_position" in code and "void fragment()" in code
+	return _clips[id]
+
+## The clip variant of `source`, made and compiled once per session. Asking
+## for its RID parses it now rather than when a material first takes it.
+func _clip_shader(source: Shader) -> Shader:
+	var key := str(source.get_instance_id())
+	if not _shader_cache.has(key):
+		var shader := Shader.new()
+		shader.code = source.code.replace("void fragment() {", "uniform float zs_clip_level = -1000000.0;\nvoid fragment() {\n if (world_position.y < zs_clip_level) discard;")
+		shader.get_rid()
+		_shader_cache[key] = shader
+	return _shader_cache[key]
+
+## Walk the scene in small slices for the shaders its copies would clip, then
+## compile one clip shader per idle frame. Frames while the hand paints, the
+## world forms or a setup runs are skipped; a setup compiles what it needs.
+func _warm_shaders(scene: Node3D) -> void:
+	var sources := {}
+	var pending: Array[Node] = [scene]
+	var started := Time.get_ticks_usec()
+	while not pending.is_empty():
+		var node: Variant = pending.pop_back()
+		if not is_instance_valid(node) or node == self: continue
+		if node is GeometryInstance3D and node != source_water and not node.has_meta("skip_reflection"):
+			var mesh: Mesh = null
+			if node is MeshInstance3D: mesh = node.mesh
+			elif node is MultiMeshInstance3D and node.multimesh != null: mesh = node.multimesh.mesh
+			if mesh != null and mesh.get_surface_count() > 0:
+				var original = node.material_override if node.material_override != null else mesh.surface_get_material(0)
+				if _clipped(original): sources[original.shader.get_instance_id()] = original.shader
+		pending.append_array(node.get_children())
+		if Time.get_ticks_usec()-started > 1000:
+			await setup_frame
+			if not _warm_started or not is_instance_valid(scene): return
+			started = Time.get_ticks_usec()
+	for id: int in sources:
+		while _warm_blocked(scene):
+			await setup_frame
+			if not _warm_started or not is_instance_valid(scene): return
+		if is_instance_id_valid(id) and not _shader_cache.has(str(id)): _clip_shader(sources[id])
+		await setup_frame
+		if not _warm_started or not is_instance_valid(scene): return
+	warm_ready = true
+
+func _warm_blocked(scene: Node3D) -> bool:
+	var editor: Node = scene._chunk_editor
+	return _setup_busy or editor.forming or editor._painting or editor.refresh_pending > 0
+
+## Record a copied material and snapshot its source's parameters: a fresh
+## duplicate already matches them, so nothing is pushed until one changes.
+func _bind_material(key: String, group: String, source: ShaderMaterial, target: ShaderMaterial, names: PackedStringArray) -> void:
+	_material_bindings[key] = {"material":source,"target":target,"names":names,"group":group}
+	_groups_dirty = true
+	if not _group_state.has(group):
+		var values := {}
+		for name in names: values[name] = source.get_shader_parameter(name)
+		_group_state[group] = {"values":values,"live":{},"cursor":0}
+
+func _regroup() -> void:
+	_groups_dirty = false
+	var by_key := {}
+	_material_groups.clear()
+	for binding: Dictionary in _material_bindings.values():
+		var key: String = binding.group
+		if not by_key.has(key):
+			var state: Dictionary = _group_state[key]
+			by_key[key] = {"material":binding.material,"names":binding.names,"targets":[],"values":state.values,"live":state.live,"state":state}
+			_material_groups.append(by_key[key])
+		by_key[key].targets.append(binding.target)
+	for key in _group_state.keys():
+		if not by_key.has(key): _group_state.erase(key)
+	_discover_group = 0
+func _sync_materials() -> void:
+	if _groups_dirty: _regroup()
+	if _material_groups.is_empty(): return
+	for group: Dictionary in _material_groups:
+		if not is_instance_valid(group.material): continue
+		for name: String in group.live: _sync_parameter(group,name)
+	var reads := DISCOVERY_READS
+	var visited := 0
+	while reads > 0 and visited <= _material_groups.size():
+		_discover_group %= _material_groups.size()
+		var group: Dictionary = _material_groups[_discover_group]
+		var state: Dictionary = group.state
+		var names: PackedStringArray = group.names
+		if is_instance_valid(group.material):
+			while state.cursor < names.size() and reads > 0:
+				_sync_parameter(group,names[state.cursor])
+				state.cursor += 1
+				reads -= 1
+		if state.cursor >= names.size() or not is_instance_valid(group.material):
+			state.cursor = 0
+			_discover_group += 1
+			visited += 1
+
+func _sync_parameter(group: Dictionary, name: String) -> void:
+	var value: Variant = group.material.get_shader_parameter(name)
+	var values: Dictionary = group.values
+	if values.has(name) and typeof(values[name]) == typeof(value) and values[name] == value: return
+	values[name] = value
+	group.live[name] = true
+	for target: ShaderMaterial in group.targets: target.set_shader_parameter(name,value)
 
 func _pool_mesh(source: ArrayMesh, level: float) -> ArrayMesh:
 	var arrays := source.surface_get_arrays(0)
@@ -400,16 +536,18 @@ func _update_view_list(view_list: Array, binding_list: Array) -> void:
 		if not is_instance_valid(binding.source):
 			binding.copy.visible = false
 			continue
-		binding.copy.visible = binding.source.is_visible_in_tree()
-		binding.copy.transform = binding.source.global_transform
-		if binding.source is MultiMeshInstance3D: binding.copy.multimesh = binding.source.multimesh
-		elif binding.source is MeshInstance3D: binding.copy.mesh = binding.source.mesh
-	for binding in _material_bindings.values():
-		for parameter in binding.parameters:
-			var value = binding.material.get_shader_parameter(parameter.name)
-			if not binding.values.has(parameter.name) or binding.values[parameter.name] != value:
-				binding.target.set_shader_parameter(parameter.name, value)
-				binding.values[parameter.name] = value
+		# Most copies stand still; only write what moved or was swapped.
+		var copy: GeometryInstance3D = binding.copy
+		var source: GeometryInstance3D = binding.source
+		var shown := source.is_visible_in_tree()
+		if copy.visible != shown: copy.visible = shown
+		var placed := source.global_transform
+		if copy.transform != placed: copy.transform = placed
+		if source is MultiMeshInstance3D:
+			if copy.multimesh != source.multimesh: copy.multimesh = source.multimesh
+		elif source is MeshInstance3D:
+			if copy.mesh != source.mesh: copy.mesh = source.mesh
+	_sync_materials()
 	for view in view_list:
 		if view.viewport.msaa_3d != _scene.get_viewport().msaa_3d:
 			view.viewport.msaa_3d = _scene.get_viewport().msaa_3d
