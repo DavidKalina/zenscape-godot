@@ -374,6 +374,24 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 - ~~**A sculpt drops a planning pour.**~~ Changed on `feature/live-water`: water now arrives while the hand pours (the user: "nothing's happening until I release"). The pour is replanned every 0.2 s against the ground from its start and its latest plan shows inside its one undo step. A sculpt, a new pour or an undo while its last plan is still on the worker closes it on what is showing instead of dropping it. See "Live pour" in `docs/scenic/water-brush.md`.
 - **Exit-time leak lines.** `--verify-desktop-build` prints the same resource leak lines at exit as on `main`, and `tools/verify_desktop_export.py` fails on any `ERROR:`. Track them down.
 
+### Playtest round (2026-09-27)
+
+Integrated on `feature/playtest-round` (from `main`, with `main`'s fish and frog kinds merged in last) for a playtest. Five features:
+- **Regeneration rumble and pour fog** (`feature/regen-polish`): a held, rolling rumble and a heavy fog that pours across the plate and drains while a world regenerates (`scripts/world_rumble.gd`, `docs/scenic/stroke-feel.md`).
+- **Mountain forms** (`feature/mountain-brush`): the land brush raises whole Alpine peaks, ridges, mesas, volcanoes and tors; **1** again and **Shift+1** step through the forms (`scripts/mountain_forms.gd`, `docs/scenic/brushes.md`). A rising mountain holds the world rumble (live after the merge; the stroke tremor is zeroed, so it is not doubled).
+- **Live water** (`feature/live-water`): water appears while the hand pours, replanned every 0.2 s inside one undo step (`docs/scenic/water-brush.md`, "Live pour").
+- **Moods** (`feature/mood-look`): **M** or **Mood** cross-fades between nine authored looks, with pinned season, time, weather, rock and colours (`docs/scenic/mood.md`).
+- **Camera controls** (`feature/camera-controls`): right drag orbits, double-click glides to a thing and circles or follows it, pinch, swipe and Backspace (`docs/scenic/camera.md`). A double-click's first click is taken back even when it was a pour or a mountain still open in its undo step (`NativeChunkEditor.retract_click`).
+
+Fixes made on the integration branch:
+- **a. Right drag.** Everywhere in the shell, right drag orbits and Shift-drag works the other way (lowers land, drains water, lifts a meadow, clears forest, grows back a path). The mountain branch's Hill hint and docs, and the brush headers, no longer say right drag lowers. The README controls table has the land forms and one orbit row.
+- **b. Moods and the turning day.** On a world whose day turns (the plain), a mood sets its hour and the day carries on from it, so the deer still find dawn. Nordic night, Rosewater dusk and Halloween hollow hold their hour. A pinned Time of day still holds.
+- **c. W and E.** They pin the weather and season they turn to, as a Customise choice would, so the drawer is never stale; Shift+W letting the weather drift unpins it.
+- **d. Emerged plants on mountain rock.** Emergence holds plants to the gentler of the habitat's rock slope and the painted terrain's (0.93 on the plain), so nothing emerges on painted rock. Three probe runs found 0 plants on steep ground (2 of 4 before). Generated worlds' planting is unchanged.
+- Mood changes stay off the undo stack (known).
+
+Checked headless only: parse checks, each branch's probe on the integrated branch (`probe_regen_envelope`, `probe_mountain_forms`, `profile_stroke --mode=water` and `--then=undo`, `probe_craft_tools` 26/26, `probe_mood_look`, `probe_camera_focus`, `probe_land_life`), and a 20 s launch smoke run. Unverified on screen: how the rumble, the pour fog and a rising mountain feel together; live water's look (ponds rising, stream fronts, the ground moving first); the mood fades, chips and drawer; the camera's glides, follow and trackpad gestures on a real Mac; a mood's hour carrying on into the plain's day; the W/E pins in the drawer. The UI restyle is chosen (Lantern Maker, `docs/ui/DIRECTIONS.md` on `feature/ui-mockups`) but not built.
+
 ### Slices 2-8
 
 2. **Water brush, and the plain in Fidelity's colours.**
