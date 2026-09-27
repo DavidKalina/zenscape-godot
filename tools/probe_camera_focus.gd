@@ -263,6 +263,60 @@ func run() -> void:
 	await path("focus pond")
 	check("pond framed",rig.focus.get("kind","") == "pond",rig.focus.get("title",""))
 
+	# Double-click with water in hand. A pour shows while held and keeps its
+	# undo step open until it settles, so the first click's pour must still be
+	# taken back, just after release and once it is showing. The
+	# first click is held for half a second (through Input, so the editor's
+	# paint loop sees it held) so it pours enough to show; a last pour with
+	# no double-click checks that it does. (A quick still click lays too
+	# little water to show at all.)
+	scene.select_brush("water")
+	await frames(3)
+	for trial: String in ["just released","settling","no double-click"]:
+		var spot := basin+Vector2(0.5,-7.5)
+		var spot_point := screen_of(editor.terrain.to_global(Vector3(spot.x,float(data.ground_height(spot)),spot.y)))
+		editor.pointer_override = spot_point
+		var ground0: PackedFloat32Array = data.heights.duplicate()
+		var ponds0: Array = data.ponds.duplicate(true)
+		var streams0: Array = data.streams.duplicate(true)
+		var undo0: int = data._undo.size()
+		var hold := InputEventMouseButton.new()
+		hold.button_index = MOUSE_BUTTON_LEFT
+		hold.position = spot_point
+		hold.global_position = spot_point
+		hold.pressed = true
+		hold.button_mask = MOUSE_BUTTON_MASK_LEFT
+		Input.parse_input_event(hold)
+		await frames(30)
+		var lift: InputEventMouseButton = hold.duplicate()
+		lift.pressed = false
+		lift.button_mask = 0
+		Input.parse_input_event(lift)
+		await frames(1)
+		if trial == "settling":
+			for _i in range(180):
+				if editor._pour.is_empty() or editor._pour.get("open",false): break
+				await process_frame
+		var started: bool = not editor._pour.is_empty()
+		var shown: bool = editor._pour.get("open",false)
+		if trial == "no double-click":
+			for _i in range(600):
+				if editor._pour.is_empty() and editor.refresh_pending == 0: break
+				await process_frame
+			check("a held water click pours",(data.ponds != ponds0 or data.streams != streams0) and data._undo.size() == undo0+1,{"ponds":[ponds0.size(),data.ponds.size()],"streams":[streams0.size(),data.streams.size()],"undo":[undo0,data._undo.size()]})
+			editor.undo()
+			await frames(10)
+			continue
+		click(spot_point,MOUSE_BUTTON_LEFT,true)
+		click(spot_point,MOUSE_BUTTON_LEFT,false,false)
+		await path("focus after a pour, "+trial)
+		await frames(20)
+		check("water double-click takes its pour back, "+trial,started and editor._pour.is_empty() and not editor.water_settling and data.heights == ground0 and data.ponds == ponds0 and data.streams == streams0 and data._undo.size() == undo0 and (trial != "settling" or shown),
+			{"started":started,"shown":shown,"undo":[undo0,data._undo.size()],"redo":data._redo.size(),"ponds":[ponds0.size(),data.ponds.size()],"streams":[streams0.size(),data.streams.size()]})
+	editor.pointer_override = null
+	scene.select_brush("land")
+	await frames(3)
+
 	# Follow: a stand-in deer walks away at a deer's walk; the pivot keeps up
 	# smoothly, an orbit keeps following and a pan lets go.
 	var deer := Node3D.new()

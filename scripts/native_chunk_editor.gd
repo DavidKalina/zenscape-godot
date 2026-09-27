@@ -1965,6 +1965,21 @@ func _commit_pour() -> void:
 			water_settled.emit(pour.rect)
 	_hold_reflections()
 
+## Take back what a still click just laid (a double-click's first click,
+## scripts/camera_rig.gd `_retract_click`): a pour or a rising mountain it
+## started closes first, since both keep their undo step open after release
+## (a pour that has not shown yet is simply dropped). Then the step it left,
+## if any, is undone and kept off redo. `last` is the newest undo step before
+## the click. True when a step was taken back.
+func retract_click(last: Variant) -> bool:
+	if forming: return false
+	if not _pour.is_empty(): _commit_pour()
+	if mountain.active: _mountain_interrupted()
+	if data._undo.is_empty() or is_same(data._undo.back(),last): return false
+	undo()
+	if not data._redo.is_empty(): data._redo.pop_back()
+	return true
+
 func _drop_pour(pour: Dictionary) -> void:
 	if is_same(_pour,pour): _pour = {}
 	water_settling = false

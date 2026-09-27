@@ -611,14 +611,13 @@ func handle(event: InputEvent) -> bool:
 	return false
 
 ## A double-click's first click, with a brush in hand, laid a dab: take it
-## back when it was a still click that left its own undo step.
+## back when it was a still click. A pour or a rising mountain keeps its undo
+## step open after release, so the editor closes it first
+## (NativeChunkEditor.retract_click).
 func _retract_click(point: Vector2) -> void:
 	if _press.is_empty() or not bool(_press.creating) or float(_press.get("moved",0.0)) > 6.0 or point.distance_to(_press.at) > 8.0: return
 	if Time.get_ticks_msec()-int(_press.time) > 700: return
-	var history: Array = editor.data._undo
-	if history.is_empty() or is_same(history.back(),_press.undo): return
-	editor.undo()
-	if not editor.data._redo.is_empty(): editor.data._redo.pop_back()
+	editor.retract_click(_press.undo)
 	_press = {}
 
 func _unhandled_key_input(event: InputEvent) -> void:

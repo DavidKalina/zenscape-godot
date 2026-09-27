@@ -26,8 +26,10 @@ Why this mapping:
   both. With a brush in hand, the double-click's first click has already laid
   a dab. If that still click left its own undo step, the camera takes the step
   back out (and drops it from redo), so going somewhere never changes the land.
-  The water brush settles after release, so its first click opens no undo step
-  yet. That tiny pour stays. **F** does the same without a click.
+  A pour and a rising mountain keep their undo step open after release, so
+  the editor closes the click's pour or mountain first and then takes it back
+  (`NativeChunkEditor.retract_click`); a pour that has not shown yet is
+  dropped. **F** does the same without a click.
 - **Right drag orbits, always.** Orbiting was the missing always-available
   move. Right drag used to work the brush the other way, which Shift-drag
   already did, so right drags now belong to the camera
