@@ -23,7 +23,15 @@ you made in their own time ([brushes](docs/scenic/brushes.md),
 the night in a few seconds, so dawn and dusk come round within a session.
 
 **Tab** (or **Look**) puts the brush away so drags orbit the camera; Tab again
-picks it back up. **H** hides the controls and looks. **Craft** at the top right
+picks it back up. **H** hides the controls and looks. **P** (or **Photo**)
+opens photo mode: the controls hide and the world keeps living. Drag orbits,
+right-drag pans and scroll dollies, all gliding to rest; **G** walks the ground
+at eye height (arrows or right-drag walk); **`[ ]`** changes the lens and
+**Shift+`[ ]`** the exposure; **F** turns on depth of field and a click focuses
+there and names the creature or plant under it; **H** hides the hints.
+**Space** saves a full-resolution PNG with no UI to **~/Pictures/ZenScape**
+(Show in Finder is on the "Saved" note). **P** or **Esc** goes back to where
+you were. **Craft** at the top right
 opens the fine sculpt, paint and place tools; **Create** returns to the brushes.
 The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
 place away and grow a procedural world with its own terrain, palette,

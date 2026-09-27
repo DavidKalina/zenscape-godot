@@ -3,7 +3,9 @@ extends SceneTree
 ## orbit and one from the ground eye with depth of field on a clicked tree,
 ## then go back. Writes the photos and three raw stills (strip showing, the
 ## inspect label, the shell after leaving) and prints main-thread timings and
-## the worst frames around entering, capturing and leaving. Rendered only when
+## the worst frames around entering, capturing and leaving. The shell's first
+## Look is timed on its own first: parking the editor the first time costs
+## one ~26 ms frame on the Mac, whichever of Tab or P does it. Rendered only when
 ## asked for; keep runs short:
 ##   Godot --path . --windowed --resolution 1280x800 --script res://tools/capture_photo_mode.gd \
 ##     -- --seed 184 --photo-dir=/private/tmp/zs-photo/out
@@ -26,6 +28,16 @@ func frames(count: int) -> float:
 		if _last > 0: worst = maxf(worst,(now-_last)/1000.0)
 		_last = now
 	return worst
+
+## Each frame's time over `count` frames, in milliseconds.
+func frame_list(count: int) -> Array:
+	var times := []
+	for i in range(count):
+		await process_frame
+		var now := Time.get_ticks_usec()
+		if _last > 0: times.append(snappedf((now-_last)/1000.0,0.1))
+		_last = now
+	return times
 
 func still(name: String) -> void:
 	await RenderingServer.frame_post_draw
@@ -75,6 +87,19 @@ func run() -> void:
 	photo = scene.photo
 	print("PHOTO viewport ",root.get_texture().get_size()," window ",root.size)
 	await frames(150)
+	# Enter and leave once first, and time each frame, to tell a first-time
+	# cost from a per-entry one.
+	await frames(5)
+	# Look (Tab) first, so its own first-time cost is not counted as photo mode's.
+	scene.set_looking(true)
+	print("PHOTO first Look frames ",await frame_list(8))
+	scene.select_brush(scene.brush)
+	print("PHOTO brush again frames ",await frame_list(8))
+	scene.creation_palette.photo_button.pressed.emit()
+	print("PHOTO first entry frames ",await frame_list(8))
+	photo.leave()
+	print("PHOTO first leave frames ",await frame_list(8))
+	await frames(60)
 	var before := await frames(30)
 	scene.creation_palette.photo_button.pressed.emit()
 	if not photo.active:
@@ -82,6 +107,7 @@ func run() -> void:
 		quit(1)
 		return
 	var entering := await frames(10)
+	print("PHOTO second entry done")
 	print("PHOTO enter main-thread %.2f ms (Look %.2f ms of it); worst frame before %.1f ms, entering %.1f ms" % [photo.timings.enter/1000.0,photo.timings.look/1000.0,before,entering])
 	print("PHOTO pose target %s yaw %.2f polar %.2f distance %.1f fov %.1f" % [scene.target,scene.yaw,scene.polar,scene.distance,scene.camera.fov])
 	# Orbit a little lower and closer, as a player composing would.

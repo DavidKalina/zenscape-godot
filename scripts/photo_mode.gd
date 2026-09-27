@@ -66,6 +66,7 @@ var clean := false
 var _before := {}
 var _hidden: Array[CanvasLayer] = []
 var _attributes := CameraAttributesPractical.new()
+var _attributes_on := false
 # The eased pose and its goal. Orbit: pivot/yaw/polar/distance. Ground: eye/yaw/polar.
 var _pivot := Vector3.ZERO
 var _eye := Vector3.ZERO
@@ -404,9 +405,10 @@ func enter() -> void:
 	_blur = 0.0
 	_focus = _distance
 	_focus_goal = _focus
+	# Camera attributes go on only when exposure or focus is first touched, so
+	# entering changes nothing the renderer has to prepare.
 	_attributes = CameraAttributesPractical.new() if _before.attributes == null else (_before.attributes as CameraAttributes).duplicate()
-	camera.attributes = _attributes
-	_apply_attributes()
+	_attributes_on = false
 	_hide_chrome()
 	layer.visible = true
 	_strip_alpha = 1.0
@@ -425,6 +427,8 @@ func leave() -> void:
 	var started := Time.get_ticks_usec()
 	active = false
 	_drag = ""
+	scene._orbiting = false
+	scene._panning = false
 	layer.visible = false
 	_label_box.hide()
 	_show_chrome()
@@ -482,11 +486,13 @@ func step_lens(step: int) -> void:
 
 func step_exposure(step: int) -> void:
 	_ev = clampf(_ev+step*EXPOSURE_STEP,-EXPOSURE_RANGE,EXPOSURE_RANGE)
+	_use_attributes()
 	_sync_strip()
 
 func set_focus(enabled: bool) -> void:
 	focus_on = enabled
 	if enabled:
+		_use_attributes()
 		# Start on what the centre of the frame rests on.
 		var hit: Variant = _ground_hit(scene.get_viewport().get_visible_rect().size*0.5)
 		_focus_goal = camera.global_position.distance_to(hit) if hit != null else _distance
@@ -622,7 +628,13 @@ func _advance_return(delta: float) -> void:
 		camera.fov = float(_before.fov)
 		camera.attributes = _before.attributes
 
+func _use_attributes() -> void:
+	if _attributes_on: return
+	_attributes_on = true
+	camera.attributes = _attributes
+
 func _apply_attributes() -> void:
+	if not _attributes_on: return
 	_attributes.exposure_multiplier = _exposure
 	var blur := _blur > 0.001
 	_attributes.dof_blur_far_enabled = blur
@@ -861,8 +873,13 @@ func _creatures() -> Array[Dictionary]:
 ## "arrived at dawn" when this session saw it come, otherwise a quiet fallback.
 func _creature_story(found: Dictionary) -> String:
 	var heard := _heard_near(str(found.kind),found.p,3.0 if found.kind in ["fish","frog","spawn"] else 8.0)
-	if not heard.is_empty(): return ("landed at " if found.kind == "heron" else "stepped out at " if found.kind == "deer" else "arrived at ")+part_of_day(float(heard.hour))
+	if not heard.is_empty(): return ("landed " if found.kind == "heron" else "stepped out " if found.kind == "deer" else "arrived ")+_when(float(heard.hour))
 	return {"heron":"fishing the shallows","deer":"at the forest edge"}.get(found.kind,"settled here")
+
+## "at dawn", "in the morning", "at night".
+static func _when(hour: float) -> String:
+	var part := part_of_day(hour)
+	return ("in the " if part in ["morning","afternoon","evening"] else "at ")+part
 
 func _heard_near(kind: String, p: Vector3, reach: float) -> Dictionary:
 	var best := {}
@@ -879,7 +896,7 @@ func _plant_story(item: Dictionary) -> String:
 	match str(item.get("source","")):
 		"emerged":
 			var heard := _heard_near("plant",Vector3(float(item.x),0.0,float(item.z)),0.05)
-			return "took root at "+part_of_day(float(heard.hour)) if not heard.is_empty() else "grew here on its own"
+			return "took root "+_when(float(heard.hour)) if not heard.is_empty() else "grew here on its own"
 		"hand": return "placed by hand"
 	return "part of the land"
 
