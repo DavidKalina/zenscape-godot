@@ -244,6 +244,9 @@ func setup(owner_scene: Node3D) -> void:
 	terrain = scene.get_node("Reference/terrain")
 	terrain.add_child(pond_preview)
 	data.setup(terrain.mesh)
+	data.stroke_starting.connect(_join_weathering)
+	# Plans run on a worker; the editor's frames must not wait for them.
+	emergence.plan_on_worker = true
 	_original_ground_map = scene._precipitation.ground_texture.get_image()
 	_original_stream_map = scene._precipitation.stream_texture.get_image()
 	_original_bird_ground = scene._bird_flight.ground
@@ -742,13 +745,17 @@ func finish_stroke() -> void:
 	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
+	# The land brush weathers on a worker; the settle waits for it to land.
+	var region: Rect2 = land_brush.bounds
+	var weathering: Callable = land_brush.weather_job(data) if mode == "land" and brush_id == "land" else Callable()
 	var weathered := _weather_land()
 	_stroke_button = MOUSE_BUTTON_LEFT
 	data.mark_objects_hand(_stroke_first_id)
 	var changed := data.end_stroke()
 	# Weathering lands after the last light dab, so the settle refresh pays it.
 	if weathered: _settle_pending = true
-	_settle_stroke()
+	if changed and weathering.is_valid(): _weather_async(weathering,region)
+	else: _settle_stroke()
 	if changed: _stroke_ended()
 	_stroke_rect = Rect2()
 	stroke_finished.emit(_stroke_center,_stroke_radius,stroke_mode())
@@ -784,9 +791,11 @@ func _history_step(forward: bool) -> void:
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
-	# A water stroke still settling belongs to the world being left.
+	# A water stroke still settling belongs to the world being left, and so
+	# does a land stroke's weathering.
 	_water_generation += 1
 	water_settling = false
+	_drop_weathering()
 	if scene.has_method("_finish_fire_stroke"): scene._finish_fire_stroke()
 	var history: Array = data._redo if forward else data._undo
 	if history.is_empty(): return
@@ -917,7 +926,8 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	stage_start = Time.get_ticks_usec()
 	if update_encounter_ground and terrain.mesh != _bigfoot_mesh:
 		_bigfoot_mesh = terrain.mesh
-		scene._bigfoot.ground.setup(terrain)
+		if frame_tree != null: _setup_encounter_ground(terrain.mesh)
+		else: scene._bigfoot.ground.setup(terrain)
 	var encounter_pose: Variant = null
 	for item: Dictionary in data.objects:
 		if item.asset == "bigfoot_tree":
@@ -943,6 +953,16 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	refresh_stage = ""
 
 	return _finish_refresh(true)
+
+## A yielding refresh buckets the encounter ground's triangles on a worker
+## (about 3-4 ms on the main thread) and adopts them a frame or two later,
+## unless a newer terrain mesh has been published meanwhile.
+func _setup_encounter_ground(mesh: Mesh) -> void:
+	var ground = scene._bigfoot.ground
+	var prepared: Dictionary = ground.prepare(terrain)
+	var job = preload("res://scripts/background_work.gd").new()
+	var built: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/reference_ground.gd").build(prepared),get_tree())
+	if _bigfoot_mesh == mesh and is_instance_valid(scene) and scene._bigfoot.ground == ground: ground.adopt(built)
 
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
@@ -1732,20 +1752,69 @@ func _settle_water() -> void:
 	water_settled.emit(plan.rect)
 	refresh(get_tree())
 
-## Runs inside the stroke's transaction, so one undo removes the land and its
-## weathering together. Other brushes do their release work here too (stones
-## along a path, clearing a forest) and say which ground emergence answers.
-## True when the settle refresh must publish it.
+## Release work for the creation brushes other than land, inside the stroke's
+## transaction: stones along a path, clearing a forest. It says which ground
+## emergence answers. True when the settle refresh must publish it. Land
+## weathers on a worker instead (`_weather_async`).
 func _weather_land() -> bool:
-	if mode != "land": return false
-	if brush_id != "land":
-		var brush = creation_brush()
-		# A settling brush (water) has nothing to finish here; it settles after.
-		if brush.settles or not brush.has_bounds: return false
-		_stroke_rect = brush.finish(data)
-		return true
-	if not land_brush.has_bounds: return false
-	var region: Rect2 = land_brush.bounds
-	if not land_brush.weather(data): return false
-	land_weathered.emit(region)
+	if mode != "land" or brush_id == "land": return false
+	var brush = creation_brush()
+	# A settling brush (water) has nothing to finish here; it settles after.
+	if brush.settles or not brush.has_bounds: return false
+	_stroke_rect = brush.finish(data)
 	return true
+
+## A land stroke's weathering (land_brush.gd `weather_job`) runs on a worker
+## from the heights at release, and the stroke's settle refresh starts when it
+## lands, a few frames on. It lands after `end_stroke`, outside the undo step,
+## which still holds the ground from before the stroke, so one undo removes
+## the land and its weathering together. Anything that opens a new transaction
+## first joins it (`data.stroke_starting`), so a quick second stroke starts
+## from weathered ground. Undo, a regrow or any other height change drops it.
+var land_settling := false
+var _weather_job: RefCounted
+var _weather_generation := 0
+var _weather_heights := PackedFloat32Array()
+var _weather_region := Rect2()
+
+func _weather_async(job: Callable, region: Rect2) -> void:
+	_drop_weathering()
+	_weather_generation += 1
+	var generation := _weather_generation
+	_weather_heights = data.heights
+	_weather_region = region
+	var work: RefCounted = preload("res://scripts/background_work.gd").new()
+	work.start(job)
+	_weather_job = work
+	land_settling = true
+	emergence.ground_settling = true
+	# Dropped or joined work still runs out here, so it never blocks a frame.
+	while generation == _weather_generation and not work.completed():
+		await get_tree().process_frame
+	if generation == _weather_generation: _land_weathering(true)
+	while work.active() and not work.completed():
+		await get_tree().process_frame
+	if work.active(): work.finish()
+
+## Publish finished (or, joining, finishing) weathering. `settle` starts the
+## stroke's settle refresh; a joining stroke leaves that to its own release.
+func _land_weathering(settle: bool) -> void:
+	var job: RefCounted = _weather_job
+	_drop_weathering()
+	if job == null: return
+	var result: Dictionary = job.finish()
+	land_brush.last_weather_usec = result.usec
+	if result.moved and not forming and data.heights == _weather_heights:
+		data.heights = result.heights
+		land_weathered.emit(_weather_region)
+	_settle_pending = true
+	if settle: _settle_stroke()
+
+func _drop_weathering() -> void:
+	_weather_generation += 1
+	_weather_job = null
+	land_settling = false
+	emergence.ground_settling = false
+
+func _join_weathering() -> void:
+	if _weather_job != null: _land_weathering(false)

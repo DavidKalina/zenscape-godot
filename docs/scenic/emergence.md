@@ -55,7 +55,7 @@ Every arrival grows in with the regrow pop: it rises from the ground and oversho
 
 - `advance(delta)` runs in steps of 0.75 s. It returns true at most once per step, and the editor then calls `refresh(get_tree())` once. This is the yielding path a stroke's settle takes: instances are sampled on a worker and the rest is spread by the frame budget.
 - **Measured** with `tools/profile_stroke.gd -- --mode=land --watch=40`, headless, on the cozy world. The profiler's land mode now prepares the brush and grows the stroke rect, as the pointer does; before that fix it never raised land, so it never started emergence. With the old synchronous `refresh()`, every step cost 15–27 ms on one frame. With the yielding refresh, the settle frames were median 8.3 ms, p95 9.1 ms, and 5 of 4800 over 16.7 ms: four at 16–19 ms in the content stage, and the one-time first plan (below) at 48 ms. The birth stamping adds 0.2–3.8 ms to a step's `advance`.
-- **Planning.** A stroke's plan runs on the first step after release, never on release itself. It costs about 10 ms on a warm blend. The first plan on a world also builds the live blend, about 35 ms, most of it pond flooding.
+- **Planning.** A stroke's plan starts on the first step after release, never on release itself, and waits while the stroke's weathering is still on its worker. In the editor it runs on a worker over a detached copy of the ground (`_plan_async`, `plan_on_worker`): a planner Emergence builds or refreshes a copy of the live blend, pond flooding included, and plans every queued region. The main thread pays 0.4–1 ms to take the copy and about 0.1 ms to install the regions a few frames later. The worker takes 20–53 ms for a first plan. Probes that call `advance` in a tight loop plan synchronously, as before: about 10 ms on a warm blend and 25–54 ms for a first plan.
 - **Step cost.** The steps themselves cost under 1 ms, not counting the refresh.
 - **Pausing.** Emergence pauses while a stroke or selection edit is open, so emerged changes never fold into the player's undo step. Undo, load and new worlds clear pending work (`state_restored`).
 - **Not saved.** Pending succession is not saved. Anything already grown is saved.
@@ -67,7 +67,6 @@ Every arrival grows in with the regrow pop: it rises from the ground and oversho
 ## Open
 
 - Hook `_stroke_ended` to `stroke_finished` from `feature/stroke-feel` once that branch lands.
-- The first plan on a world, mostly the live blend's pond flooding, still costs one frame of about 35–48 ms. Moving it onto a worker would need a snapshot of the ponds and recipe.
 - Dense grass only checks `prior` against the current grass, not the real keep mask. So when emergence thickens cover that was already partial, a few tufts that were standing may regrow.
 - Should world time or season scale the pace?
 - Water-first creep (grass from new ponds even without sculpting) needs pond fills to report their rect, which they do today only through the editor's pond click.

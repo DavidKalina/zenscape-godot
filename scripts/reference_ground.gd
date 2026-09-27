@@ -7,35 +7,53 @@ var _buckets: Dictionary = {}
 var _stream_channels: Array[PackedVector3Array] = []
 
 func setup(mesh_node: MeshInstance3D) -> void:
-	_triangles.clear()
-	_buckets.clear()
-	_stream_channels.clear()
-	var arrays := mesh_node.mesh.surface_get_arrays(0)
+	adopt(build(prepare(mesh_node)))
+
+## What `build` reads from the node, taken on the main thread. The rest of a
+## setup is pure data, so a caller may run `build` on a worker and `adopt`
+## its result on a later frame.
+static func prepare(mesh_node: MeshInstance3D) -> Dictionary:
 	var material := mesh_node.get_active_material(0) as ShaderMaterial
-	var is_stream: bool = material != null and material.get_shader_parameter("flowing") == true
-	var vertices: PackedVector3Array = mesh_node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	return {"arrays":mesh_node.mesh.surface_get_arrays(0),"transform":mesh_node.transform,
+		"stream":material != null and material.get_shader_parameter("flowing") == true,
+		"position_y":mesh_node.position.y}
+
+func adopt(built: Dictionary) -> void:
+	_triangles = built.triangles
+	_buckets = built.buckets
+	_stream_channels = built.channels
+
+static func build(prepared: Dictionary) -> Dictionary:
+	var triangles: Array[PackedVector3Array] = []
+	var buckets := {}
+	var channels_out: Array[PackedVector3Array] = []
+	var arrays: Array = prepared.arrays
+	var transform: Transform3D = prepared.transform
+	var is_stream: bool = prepared.stream
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	for i in range(0, vertices.size(), 3):
-		var triangle := PackedVector3Array([mesh_node.transform * vertices[i], mesh_node.transform * vertices[i + 1], mesh_node.transform * vertices[i + 2]])
+		var triangle := PackedVector3Array([transform * vertices[i], transform * vertices[i + 1], transform * vertices[i + 2]])
 		var a := triangle[0]
 		var b := triangle[1]
 		var c := triangle[2]
 		if absf((b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z)) < 0.000001:
 			continue
-		var index := _triangles.size()
-		_triangles.append(triangle)
+		var index := triangles.size()
+		triangles.append(triangle)
 		if is_stream:
 			var custom: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
 			var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
 			var channels := PackedVector3Array()
 			for j in range(3):
-				channels.append(Vector3(custom[(i + j) * 4 + 3], uv[i + j].y, custom[(i + j) * 4 + 1] + mesh_node.position.y))
-			_stream_channels.append(channels)
+				channels.append(Vector3(custom[(i + j) * 4 + 3], uv[i + j].y, custom[(i + j) * 4 + 1] + float(prepared.position_y)))
+			channels_out.append(channels)
 		for x in range(floori(minf(a.x, minf(b.x, c.x)) / CELL), floori(maxf(a.x, maxf(b.x, c.x)) / CELL) + 1):
 			for z in range(floori(minf(a.z, minf(b.z, c.z)) / CELL), floori(maxf(a.z, maxf(b.z, c.z)) / CELL) + 1):
 				var key := Vector2i(x, z)
-				if not _buckets.has(key):
-					_buckets[key] = []
-				_buckets[key].append(index)
+				if not buckets.has(key):
+					buckets[key] = []
+				buckets[key].append(index)
+	return {"triangles":triangles,"buckets":buckets,"channels":channels_out}
 
 func height_at(x: float, z: float) -> Variant:
 	var height := -INF
