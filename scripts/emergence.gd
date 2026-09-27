@@ -21,6 +21,10 @@ const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const LandIntent = preload("res://scripts/land_intent.gd")
 
+## An emerged tree was placed at plate point `p`; it grows in from `born` on
+## `time` over TREE_RISE. Stroke feedback sends a little gust to settle it.
+signal tree_arrived(p: Vector2, born: float)
+
 ## Seconds after a stroke before the first grass shows.
 const GRASS_DELAY := 1.5
 ## Metres per second the grass front creeps out from the wettest ground.
@@ -372,6 +376,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	data.objects.back()["source"] = "emerged"
 	data.objects.back()["born"] = born
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
+	if kind in TREES: tree_arrived.emit(p,born)
 	return true
 
 ## The forest wish at a candidate, frayed by its own scatter and slow lobes,

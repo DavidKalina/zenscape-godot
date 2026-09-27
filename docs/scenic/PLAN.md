@@ -353,13 +353,13 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 - **Tree scale.** Some broadleaf trees are very large next to the deer. Check the scale ranges of emerged trees against the creatures.
 - **Frame spikes at release.** A land stroke's settle has a frame of about 42 ms and a water pour's settle one of about 35 ms, both headless. Emergence's first plan is about 36 ms. Its live biome blend floods ponds on the main thread.
 - **Reflections.** Planar reflections cost about 4.6 ms of CPU per frame while ponds exist, and the session's first reflection setup still parses clip shaders in 5-9 ms slices.
-- **Things not saved:** the forest wish (`land_intent.gd`) and life. A loaded world starts settled.
+- ~~**Things not saved.**~~ Done on `feature/world-continuity`: the forest wish is saved in the terrain document (`intent_forest`, `docs/scenic/brushes.md`), and life in the scene state (`land_life`, `docs/scenic/life.md`). A loaded world resumes its life; saves without it still start settled. Moments are not saved. `tools/probe_world_continuity.gd` checks the round trip, an old save, the plain's day and the arrival puffs headless.
 - **Water gaps:** stream beds are not carved, and the scooped hollow lands with the water instead of animating. A pond full at the plate's rim can't be raised.
-- **Deer need dawn.** A plain launched at full day never turns its clock, so deer never come.
-- **Forest wind.** Its wind swell eases about 0.8 s after release, before the trees arrive. A small gust when trees arrive would help.
+- ~~**Deer need dawn.**~~ Done on `feature/world-continuity`. In creation mode the plain's day turns at 1200 s per 24 hours, and the night (phase 0.8 to 0.2) passes in a few seconds, eased like N. A full turning day would spend minutes in a night that hides the land, which the plain was chosen to avoid. A held day never brings dawn. Dawn and dusk are kept whole, so life's DAWN and DUSK windows each last about three minutes. From full day, dawn comes within six to eight minutes. Generated worlds still hold their hour. Still to judge on screen: whether the sun's pace reads as calm, and how the eased night looks.
+- ~~**Forest wind.**~~ Done on `feature/world-continuity`: each batch of emerged trees gets a light local puff as it is born, which reaches the trees as they finish rising (`docs/scenic/stroke-feel.md`). Still to judge on screen.
 - **Not yet exercised:** Shift strokes (forest clearing, path grow-back) haven't been run by the profiler. Nobody has looked at the glass blur's frame cost or at the palette on screen outside the film.
 - **Film tool:** its layout depends on emergence timing and varies run to run. It forces the heron and deer with `--force-moments` and speeds up the life clock.
-- **Tests:** `test_bigfoot_home`, `test_editor_coherence` and `test_diorama_flow` reference the old toolbar and menu. Update them when tests come back. The README's cozy-flow section still describes the old toolbar.
+- **Tests:** `test_bigfoot_home`, `test_editor_coherence` and `test_diorama_flow` reference the old toolbar and menu. Update them when tests come back. The README's cozy-flow section now describes the creation shell.
 
 ### Remaining slices
 

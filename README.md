@@ -6,18 +6,33 @@ editable diorama: shape a place with a brush, then gradually bring it to life.
 ## Cozy Bigfoot worlds
 
 Run **`run-cozy-flow.command`**, or press **F5** in Godot, to enter the cozy flow
-with the full native terrain, scenery, water, lighting, atmosphere, and living
-Bigfoot. **Regrow landscape** folds plants, water and terrain back to bare earth,
-then grows a procedural world with new terrain, a custom palette, atmosphere,
-time of day and weather in the same place. Carrying Bigfoot to either screen
-edge triggers the same transition. Release during growth and he lands once the
-new ground is ready. Terrain recedes and rises with the original tremor feedback.
-Regeneration keeps the landscape's ordinary atmosphere, without an extra fog
-blanket. Rebuilding and walkable-ground preparation run across frames and workers.
+with the full native terrain, scenery, water, lighting, atmosphere and life. It
+opens on a quiet **Genesis plain** with a brush already in hand
+([the creation plan](docs/scenic/PLAN.md), Phase 3). `--resume` opens the last
+saved place instead, and `--generated` or `--seed N` a generated world.
 
-Use **World → Landscapes** to choose a landscape family, **Build** to craft it,
-and **World → Colors & sky** for its mood. **Undo** restores the previous terrain;
-**Save** preserves the resulting place. See [native world details](docs/cozy-flow/REAL-WORLDS.md).
+The **creation palette** is the glass strip along the bottom: the brushes, the
+size and strength of the one in hand, and **Look**. Keys pick the brushes:
+**1** Land, **2** Water, **3** Meadow, **4** Forest and **5** Path. **Drag**
+paints; **Shift-drag** or **right-drag** works the other way (land lowers, water
+drains, a meadow lifts, forest clears, a path grows back). **`[ ]`** sizes the
+brush and **Shift+`[ ]`** sets its strength. Nothing is placed under the
+pointer: grass, shrubs, trees, fish, frogs, birds and deer arrive on the land
+you made in their own time ([brushes](docs/scenic/brushes.md),
+[life](docs/scenic/life.md)). The plain's day turns slowly and passes through
+the night in a few seconds, so dawn and dusk come round within a session.
+
+**Tab** (or **Look**) puts the brush away so drags orbit the camera; Tab again
+picks it back up. **H** hides the controls and looks. **Craft** at the top right
+opens the fine sculpt, paint and place tools; **Create** returns to the brushes.
+The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
+place away and grow a procedural world with its own terrain, palette,
+atmosphere, time of day and weather), **Return to previous place**, **Save now**,
+**Colors & sky**, **Overview** and **Main menu**. **Esc** opens the menu,
+**Cmd/Ctrl Z** undoes a stroke and **Cmd/Ctrl S** saves. Quitting saves the
+place, with its forest wishes and the life that has arrived, and the next
+launch keeps one earlier place to return to. `--classic-build` restores the old
+Build/Enjoy toolbar. See [native world details](docs/cozy-flow/REAL-WORLDS.md).
 Character selection remains deferred. The original lightweight study is still
 available by running `studies/cozy_flow_prototype.tscn` with F6; its
 [prototype notes](docs/cozy-flow/NOTES.md) describe that session-only version.

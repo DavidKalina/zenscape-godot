@@ -31,6 +31,11 @@ static func capture(scene: Node3D) -> Dictionary:
 	# given a day 0 clock derived from the celestial phase they stored.
 	if scene.get("world_clock") != null: result["world_clock"] = scene.world_clock.capture()
 	if scene.get("weather_scheduler") != null: result["weather_scheduler"] = scene.weather_scheduler.capture()
+	# Optional: the life a blank world has drawn (scripts/land_life.gd). Saves
+	# without it start their life settled on load.
+	if scene.get("land_life") != null:
+		var life: Dictionary = scene.land_life.document()
+		if not life.is_empty(): result["land_life"] = life
 	# Optional, and empty whenever nothing is alight, so a garden that has never
 	# burned costs no bytes and a save written before fire existed still loads.
 	if scene.get("_fire_field") != null: result["fire"] = scene._fire_field.document()
@@ -69,6 +74,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 	if state.has("fire") and not FireField.valid(state.fire): return false
 	if state.has("world_clock") and not WorldClock.valid_state(state.world_clock): return false
 	if state.has("weather_scheduler") and not state.weather_scheduler is Dictionary: return false
+	if state.has("land_life") and not preload("res://scripts/land_life.gd").valid_document(state.land_life): return false
 	if state.has("look") and not preload("res://scripts/scene_look.gd").valid(state.look): return false
 	if state.has("bigfoot_habits") and not preload("res://scripts/bigfoot_habits.gd").valid(state.bigfoot_habits): return false
 	if state.has("bigfoot_living") and not preload("res://scripts/bigfoot_living_world.gd").valid(state.bigfoot_living): return false
@@ -126,6 +132,7 @@ static func restore(scene: Node3D, state: Dictionary) -> void:
 	if scene.has_method("restore_living_state"): scene.restore_living_state(state.get("bigfoot_living",{}))
 	if scene.has_method("restore_fish_state"): scene.restore_fish_state(state.get("fish_state",{}))
 	if scene.has_method("restore_wood_state"): scene.restore_wood_state(state.get("wood_state",{}))
+	if scene.get("land_life") != null: scene.land_life.restore_document(state.get("land_life",{}))
 	# Living weather reads the restored sky and clock; saves from before it
 	# have no weather origin or pinned season and get them from what they show.
 	if scene.has_method("restore_season_state"): scene.restore_season_state(state)
