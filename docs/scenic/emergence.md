@@ -23,6 +23,9 @@ These are the same rules the generator uses: the habitat and its cover come from
 - Nothing grows on water, on bare rock (slope above the habitat's `rock_slope`), or within 1.8 m of the snowline.
 - Trees stop at the treeline (the genome's treeline in alpine ground, 10 m elsewhere). They thin out as the slope climbs from 0.45 to `rock_slope`, so forests on steep ground are sparse.
 - Shrubs need a slope under 0.6.
+- Emerged grass fades to bare ground between `BARE_SLOPE` (0.9–1.15) of the habitat's rock slope, so gentle hills stay green.
+- **Sizes.** Trees draw their record scale from `TREE_SIZE` (0.65–1.0) and undergrowth from `SHRUB_SIZE` (0.5–0.9). `KIND_SIZE` then brings the models into proportion with each other and with the creatures (a deer stands about 1.2 m): the layered broadleaf ×0.55 (5.9 m tall at scale 1, so 2.1–3.2 m), the hero oak ×1.45 (1.9 m, so 1.8–2.8 m), the redwood ×0.6 and the fern ×0.6 (1.6 m across at scale 1). Spruces keep 1.6–4.5 m. Generated worlds are unchanged.
+- **Ferns** take `FERN_WEIGHT` (0.3, it was 1.0) in emerged woodland undergrowth: from above they read as dark spiders. The fern mesh (`scripts/redwood_assets.gd`) now has nine fuller fronds in a fresher green, so the ones that come read as leafy rosettes.
 - Crowding: tree to tree 1.1 m, tree to anything else 0.6 m, shrub to shrub 0.45 m. Existing objects of every source count.
 - Cover target: grass follows the blend's `cover(p)`, fading to nothing on rock and near snow. Blades follow grass, are thickest toward water, and are absent on steep ground.
 

@@ -25,6 +25,11 @@ vec4 zs_air_sample(vec3 p) {
 	float ground = groundAt(p.xz);
 	float over = p.y - ground;
 	float pool = exp(-max(over, 0.0) * 0.55) * exp(-max(p.y - mix(0.6, 0.15, smoothstep(0.13, 0.43, zs_growth.x)), 0.0) * 0.085);
+	// Ground mist thins over open water, so ponds read clear rather than milky.
+	if (max(abs(p.x), abs(p.z)) < 16.0) {
+		vec2 uv = (p.xz + 16.0) / 32.0;
+		pool *= 1.0 - 0.75 * zs_open_water(texture(ground_map, uv), texture(stream_map, uv));
+	}
 	vec3 q = p * vec3(0.22, 0.42, 0.22) + vec3(zs_cloud_drift.x * 3.0, zs_motion_time * 0.012, zs_cloud_drift.z * 3.0)
 		- vec3(zs_wind_direction.x, 0.0, zs_wind_direction.y) * zs_gust_distance * (0.03 + 0.19 * loosen);
 	float noise = 0.55 + 0.75 * wxFbm(q);
