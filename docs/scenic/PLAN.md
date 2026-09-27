@@ -337,7 +337,7 @@ Four parallel branches, merged in this order:
 
 Slices 1-5 are on `main`. Slice 1 is 7978080. Slices 2-5 were built in parallel and merged as `feature/phase3-slices-2-5`, described under "Slices 2-5 integrated" below.
 - **What you can do:** launch onto a plain in Fidelity's colours and paint with five brushes: land, water, meadow, forest and path.
-- **How the world answers:** water settles into basins and streams, plants and forest emerge, and fish, frogspawn, frogs, birds, a heron, deer and a rare Bigfoot glimpse arrive from conditions.
+- **How the world answers:** water settles into basins and streams, plants and forest emerge, and fish, frogspawn, frogs, birds, a heron, deer and, rarest, the ambient Bigfoot arrive from conditions.
 - **The interface:** a glass creation palette, with Look, Craft and World behind it.
 
 The user watched the slices 2-5 film (`captures/phase3-slices-2-5.mp4`) and said it looks "just like God creating something". Slices 6-8 are still open, along with the outstanding items below.
@@ -355,7 +355,8 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 - **Reflections.** Planar reflections cost about 4.6 ms of CPU per frame while ponds exist, and the session's first reflection setup still parses clip shaders in 5-9 ms slices.
 - **Things not saved:** the forest wish (`land_intent.gd`) and life. A loaded world starts settled.
 - **Water gaps:** stream beds are not carved, and the scooped hollow lands with the water instead of animating. A pond full at the plate's rim can't be raised.
-- **Deer need dawn.** A plain launched at full day never turns its clock, so deer never come.
+- **Deer need dawn.** A plain launched at full day never turns its clock, so deer never come. Bigfoot needs dawn, dusk, night or mist the same way.
+- **Bigfoot sighting (`feature/bigfoot-sighting`):** the silhouette is replaced by the ambient model (`scripts/life_bigfoot.gd`). He steps out of a mature wood to watch or listen, or crosses along its edge in the Patterson stride, and leaves if the camera rushes him or the player paints near. He comes about once per 20-40 minutes of a rich, quiet world: a 10-minute settle, then chance 0.006 × light × weather per 2 s check, and a 20-minute cooldown. The rules and their reasoning are in `docs/scenic/life.md`, "Bigfoot". `--force-bigfoot[=watch|listen|stride]` brings him for filming; the probe is `tools/probe_bigfoot_sighting.gd`. Peeks wait for trunks thick enough (hero trees).
 - **Forest wind.** Its wind swell eases about 0.8 s after release, before the trees arrive. A small gust when trees arrive would help.
 - **Not yet exercised:** Shift strokes (forest clearing, path grow-back) haven't been run by the profiler. Nobody has looked at the glass blur's frame cost or at the palette on screen outside the film.
 - **Film tool:** its layout depends on emergence timing and varies run to run. It forces the heron and deer with `--force-moments` and speeds up the life clock.
@@ -407,8 +408,8 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
    - **What landed (`feature/life-answers`):**
      - `scripts/land_life.gd` re-reads the live world when the editor reports a change (settle, stroke end, undo, load). It reads heights, the drawn pond surface, stream beds and every plant, in 1.2 ms slices a frame (`scripts/life_survey.gd`), never per frame.
      - Fish, frogspawn, frogs (after spawn), gulls and fireflies arrive at their places after emergence-style delays keyed to position hashes, and leave when their water or cover goes.
-     - Rare moments with chances and cooldowns (`scripts/life_moments.gd`): a heron lands to fish, deer step out at dawn, a rainbow follows rain over a rich place (`celestial.moment_bow`), and a distant Bigfoot silhouette appears in scenery mode only.
-     - New faceted meshes: fish, frogspawn, heron, deer and the silhouette (`scripts/life_models.gd`).
+     - Rare moments with chances and cooldowns (`scripts/life_moments.gd`): a heron lands to fish, deer step out at dawn, a rainbow follows rain over a rich place (`celestial.moment_bow`), and, in scenery mode only, the ambient Bigfoot model (first a silhouette; replaced on `feature/bigfoot-sighting`, see `docs/scenic/life.md`).
+     - New faceted meshes: fish, frogspawn, heron and deer (`scripts/life_models.gd`).
      - Blank worlds only; the Fidelity world keeps its authored life. `--no-life` turns it off.
      - LandLife costs p95 0.1-0.2 ms a frame headless, with no stroke or settle change measured against `--no-life`.
      - Rules and tunables: `docs/scenic/life.md`. Probe: `tools/probe_land_life.gd`.
