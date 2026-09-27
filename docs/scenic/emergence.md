@@ -39,7 +39,7 @@ The recipe path is unchanged. `probe_biome_dressing.gd` gives identical digests 
 
 - **Cover cells.** `NativeTerrainData.provenance` is a 56×56 byte grid aligned with the masks: 0 generated, 1 emerged, 2 hand. The editor's paint and erase brushes call `mark_hand` for every dab. Blasts, fire and the generators write masks without claiming cells. Emergence never touches a hand cell, and it only thickens generated cover (it never thins it). Emerged cover follows its target in both directions. Erasing a patch claims it too, so cleared ground stays clear.
 - **Objects.** `"source": "hand"` or `"emerged"`, plus an optional `"pinned": true`. A record without a source reads as generated; this covers the generator's objects and everything saved before provenance existed. `NativeTerrainData.object_source(item)` resolves the source, and pinned counts as hand. The editor tags every object minted during a placement stroke as hand (`mark_objects_hand`). `update_object` also makes the edited object hand, the same way it drops `landscape`.
-- **Emergence only adds.** The one exception: when a new stroke covers them, emerged objects whose ground has turned to water, rock or snow are withdrawn.
+- **Emergence only adds.** The one exception: when a new stroke covers them, emerged objects whose ground has turned to water, rock or snow are withdrawn. A pour also withdraws the emerged plants its new ponds and streams cover as it lands, inside its undo step (`drown`), and arrivals read those fresh ponds as water until a plan that saw them replaces the blend's pond raster.
 - **Saving.** The save stays at version 10, with `provenance` as an optional hex string. Older saves load with every cell generated. Undo history carries the grid.
 
 ## Growing in
