@@ -21,6 +21,11 @@ var survey
 var data
 var scene
 var rings := []
+var editor := EditorStub.new()
+class EditorStub extends Node:
+	signal stroke_started(center: Vector3, radius: float, mode: String)
+	signal stroke_moved(center: Vector3, radius: float, mode: String, amount: float)
+	signal stroke_finished(center: Vector3, radius: float, mode: String)
 func ripple(point: Vector3, size: float) -> void:
 	rings.append([clock, point, size])
 """
