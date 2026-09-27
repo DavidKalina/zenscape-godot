@@ -114,6 +114,14 @@ func dab(_data: NativeTerrainData, center: Vector2, radius: float, amount: float
 			return
 	dabs.append(Vector3(center.x,center.y,volume))
 
+## A water ball's landing (scripts/water_ball.gd): all its water at one point,
+## as one dab. The pour it starts settles exactly as a poured stroke does.
+func drop(center: Vector2, volume: float) -> void:
+	begin()
+	if volume <= 0.0: return
+	_grow_bounds(center,maxf(radius,pow(volume,1.0/3.0)))
+	dabs.append(Vector3(center.x,center.y,volume))
+
 # --- Planning (pure data, runs on a worker) -----------------------------------
 
 class Heap:

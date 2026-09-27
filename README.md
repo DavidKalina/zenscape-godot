@@ -23,6 +23,7 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | **1**–**5** | Land, Water, Meadow, Forest, Path (or click a palette brush) |
 | **1** again / **Shift+1** (land in hand) | Next / previous land form: Hill, Alpine, Ridge, Mesa, Volcano, Tors ([mountain forms](docs/scenic/brushes.md#mountain-forms)) |
 | Left drag | Paint with the brush in hand (with a mountain form: press where the peak goes, drag out to grow it) |
+| Left press and hold (water in hand) | Gather a ball of water with fish in it; it grows while held and follows the pointer. Release to drop it, and the land decides: a pond, a lake, a stream, or a waterfall off a steep drop ([water ball](docs/scenic/water-brush.md#water-ball-featurewater-ball-2026-09-27)). `--pour-water` brings back drag-to-pour |
 | Shift-drag | Work the other way: land lowers, water drains, a meadow lifts, forest clears, a path grows back |
 | **`[ ]`** / **Shift+`[ ]`** | Brush size / strength |
 | Right drag, Ctrl-drag, Alt-drag, a drag off the land, or a two-finger swipe | Orbit, with the brush still in hand |
