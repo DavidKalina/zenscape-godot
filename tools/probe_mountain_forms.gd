@@ -236,7 +236,7 @@ func emergence_check() -> Dictionary:
 	await create_timer(watch).timeout
 	editor.set_process(false)
 	var rock_slope: float = data._palette.rock_slope
-	var counts := {"on_mountain":0,"on_gentle":0,"on_steep":0,"above_snowline_less_1":0,"kinds":{}}
+	var counts := {"on_mountain":0,"on_gentle":0,"on_steep":0,"above_snowline_less_1":0,"kinds":{},"slope_max":0.0,"rock_slope":snappedf(rock_slope,0.01)}
 	for item in data.objects:
 		if NativeTerrainData.object_source(item) != "emerged": continue
 		var p := Vector2(item.x,item.z)
@@ -247,6 +247,7 @@ func emergence_check() -> Dictionary:
 		var e := float(data.sample(p+Vector2(0.3,0),data.heights))-float(data.sample(p-Vector2(0.3,0),data.heights))
 		var n := float(data.sample(p+Vector2(0,0.3),data.heights))-float(data.sample(p-Vector2(0,0.3),data.heights))
 		var slope := Vector2(e,n).length()/0.6
+		counts.slope_max = snappedf(maxf(float(counts.slope_max),slope),0.01)
 		if slope > rock_slope: counts.on_steep += 1
 		else: counts.on_gentle += 1
 		if float(data.sample(p,data.heights)) > data._palette.snowline-1.0: counts.above_snowline_less_1 += 1

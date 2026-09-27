@@ -268,6 +268,14 @@ It needs no replanning of pours, and raising only ever deepens a basin's rim.
 **Emergence.** The landed footprint goes to emergence as a `"land"` region.
 The usual rules apply: grass stays off steeps, trees thin toward the rock
 slope, and emerged plants that end up on rock or near snow are withdrawn.
+Nothing emerges on ground steeper than the rock slope the terrain is painted
+with (`Emergence._rock_slope`: the habitat's rock slope, or the mesh's when
+that is gentler, 0.93 on the plain), and a plant is withdrawn past 1.1 times
+it. Before the playtest round emergence used the habitat's slope alone (1.3
+for a meadow), so plants could stand on a peak's painted rock; the probe's
+`--watch` found 2 of 4 plants on one Alpine peak doing so. After it, three
+`--watch` runs found 0 of 2, 4 and 6 (the steepest 0.78). Generated worlds
+plant through their own generator and are unchanged.
 
 **Feel.** `NativeChunkEditor._mountain_feel` is the single call site, marked
 `REGEN-POLISH SWAP`.
