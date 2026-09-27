@@ -21,7 +21,7 @@ Side +1 is the heron's left (+X).
 import bpy, math
 from mathutils import Vector, Quaternion, Matrix
 
-from ambient_clips import quat, local, set_rot, add_loc, put, clamp, smooth, settle, beats, spline, pulses, breath, drift, blink
+from ambient_clips import quat, local, set_rot, add_loc, put, clamp, smooth, beats, spline, pulses, breath, drift, blink
 
 FPS = 30
 SIDES = ((1, 'L'), (-1, 'R'))
@@ -162,10 +162,6 @@ def key_all(rig, frame):
 
 def mix(a, b, t):
 	return a + (b - a) * t
-
-
-def rest_head(rig, name):
-	return rig.data.bones[name].head_local.copy()
 
 
 # ---------------------------------------------------------------- wings
@@ -333,10 +329,6 @@ def lids(rig, closed):
 
 
 # ---------------------------------------------------------------- legs
-
-def carried_rest(rig, bone, rest_point):
-	return carried(rig, bone, rest_point)
-
 
 def plant(rig, suffix, offset=(0, 0, 0), lift=0.0, toes=1.0, heel=0.0):
 	"""Put a foot's IK control at its standing place plus an offset, raised by lift. toes

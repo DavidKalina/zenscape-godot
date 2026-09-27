@@ -347,7 +347,7 @@ def build_wings(part):
 			for f in faces:
 				c = f.calc_center_median()
 				if bone == 'Forewing' and (c - sided(WRIST, s)).length < 0.09 and c.y < sided(WRIST, s).y:
-					part.colours[f] = jitter(WHITE, 0.03)
+					part.colours[f] = jitter(mix(WHITE, GREY_LIGHT, 0.45), 0.03)
 			part.bind(part.new_verts(mark), {f'{bone}_{suffix}': 1.0})
 
 
