@@ -7,7 +7,7 @@ extends SceneTree
 ##   -- --mode=raise|lower|smooth|meadow|grass|paint|land|water --dabs=30
 ##      --brush=land|water|meadow|forest|path (with --mode=land; a creation
 ##      brush; --mode=water is --mode=land --brush=water)
-##      --from=-4,-2.5 --to=3,2 --then=undo|restroke|shift --label=name --sync-water --shift-passes=1
+##      --from=-4,-2.5 --to=3,2 --then=undo|restroke|shift --label=name --sync-water --sync-streams --shift-passes=1
 ##      --shift (the stroke works the other way, as Shift or a right drag does:
 ##      land lowers, forest clears, a path grows back) --salt=N (fixed emergence
 ##      salt, so emerged records compare between runs) --sync-plan (emergence
@@ -244,6 +244,8 @@ func run() -> void:
 	if "--sync-water" in OS.get_cmdline_user_args():
 		editor.content.plain_water_worker = false
 		scene._planar_water.live_resetup = false
+	# --sync-streams: a recipe world's streams laid on the main thread (the old path).
+	if "--sync-streams" in OS.get_cmdline_user_args(): editor.content.recipe_stream_worker = false
 	if mode == "land": editor.select_brush(brush)
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--salt="):
@@ -297,7 +299,7 @@ func run() -> void:
 		if settle.back() > 12.0: settle_stages.append([settle.size()-1,stage])
 		previous = now
 		settle_frames += 1
-	var report := {"label":label,"mode":mode,"brush":brush if mode == "land" else "","objects":editor.data.objects.size(),"sources":_sources(),"then":then,"dabs":ticks.size(),"stroke_ms":snappedf((release-began)/1000.0,0.1),"idle_frames":stats(idle),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"after_dab":stats(after_tick),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":settle_stages,"water_usec":editor.content.last_water_usec,"dab_stage_median":_medians(),"refusals":editor.emergence.refusals,"wish":_wish(),"prepare_ms":snappedf(prepare_ms,0.01),"begin_ms":snappedf(begin_ms,0.01),"first_tick_ms":snappedf(ticks[0],0.01) if not ticks.is_empty() else 0.0,"first_after_ms":snappedf(after_tick[0],0.01) if not after_tick.is_empty() else 0.0,"water_plan_usec":editor.water_brush.last_plan_usec,"weather_usec":editor.land_brush.last_weather_usec,"emergence_plan_usec":editor.emergence.get("last_plan_usec"),"ponds":editor.data.ponds.size(),"streams":editor.data.streams.size(),"pond_vertices":editor.content.pond_vertices.size()}
+	var report := {"label":label,"mode":mode,"brush":brush if mode == "land" else "","objects":editor.data.objects.size(),"sources":_sources(),"then":then,"dabs":ticks.size(),"stroke_ms":snappedf((release-began)/1000.0,0.1),"idle_frames":stats(idle),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"after_dab":stats(after_tick),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":settle_stages,"water_usec":editor.content.last_water_usec,"dab_stage_median":_medians(),"refusals":editor.emergence.refusals,"wish":_wish(),"prepare_ms":snappedf(prepare_ms,0.01),"begin_ms":snappedf(begin_ms,0.01),"first_tick_ms":snappedf(ticks[0],0.01) if not ticks.is_empty() else 0.0,"first_after_ms":snappedf(after_tick[0],0.01) if not after_tick.is_empty() else 0.0,"water_plan_usec":editor.water_brush.last_plan_usec,"weather_usec":editor.land_brush.last_weather_usec,"emergence_plan_usec":editor.emergence.get("last_plan_usec"),"ponds":editor.data.ponds.size(),"pond_at":editor.data.ponds.map(func(p: Dictionary) -> Array: return [snappedf(p.x,0.1),snappedf(p.z,0.1),snappedf(p.level,0.01)]),"streams":editor.data.streams.size(),"pond_vertices":editor.content.pond_vertices.size()}
 	print("STROKE ",JSON.stringify(report))
 	print("FINGERPRINT ",JSON.stringify(fingerprint()))
 	if then == "shift":
