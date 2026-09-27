@@ -85,11 +85,18 @@ func run() -> void:
 	editor = scene._chunk_editor
 	while scene._growth.terrain < 0.995:
 		await process_frame
+	# A clean frame: no toolbar, notices, hint line or world badge.
 	for child in scene._ui.get_children():
 		if child is Control: child.visible = false
+	scene._toolbar.visible = false
+	scene._notice.visible = false
+	if scene._creation_hint != null: scene._creation_hint.visible = false
+	if scene.places.get("cover") != null: scene.places.cover.visible = false
+	# Gentle enough that the land reads as hills, well under the ceiling.
+	editor.land_strength = 0.6
 	scene.target = editor.terrain.to_global(Vector3(0.0,0.8,0.0))
-	scene.distance = 26.0
-	scene.polar = deg_to_rad(58.0)
+	scene.distance = 34.0
+	scene.polar = deg_to_rad(54.0)
 	scene.yaw = deg_to_rad(-20.0)
 	scene._update_camera()
 	pointer.size = Vector2(12,12)
@@ -103,9 +110,8 @@ func run() -> void:
 	cursor = root.get_visible_rect().size*Vector2(0.5,0.3)
 	await hold(1.0)
 	look("plain")
-	# A long ridge swept across the back, then worked over again for height.
+	# A long ridge swept across the back.
 	await stroke([Vector2(-7.0,-3.0),Vector2(-2.0,-5.0),Vector2(3.0,-4.5),Vector2(7.0,-2.0)],3.2)
-	await stroke([Vector2(-4.0,-4.0),Vector2(0.5,-5.0),Vector2(4.5,-3.5)],2.4)
 	await hold(2.0)
 	look("ridge")
 	# A rounded hill in front, built with a slow circling motion.
