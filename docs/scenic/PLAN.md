@@ -351,10 +351,10 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 - **Path is plain.** It reads as a flat tan strip with small stones. It could use softer edges and more character.
 - **Ferns look like spiders.** From above, the ferns read as dark spiders. Change their colour or silhouette, or thin them in emerged undergrowth.
 - **Tree scale.** Some broadleaf trees are very large next to the deer. Check the scale ranges of emerged trees against the creatures.
-- **Frame spikes at release.** A water pour's settle has a frame of about 35 ms, headless. *Update (`feature/settle-hitches`):* the land stroke's release weathering, emergence's plan (live blend and pond flood included) and the encounter ground now run on workers. On the plain a land stroke's release frame went from 19–26 ms to about 1 ms, and its worst settle frame from 30–42 ms to 14–16 ms. On seed 184 the first plan's 54 ms frame is gone. One 18–21 ms frame remains when a stroke crosses a pond on a recipe world: the planar reflection re-setup's first slice (12–15 ms, `planar_water.gd`). Numbers are in `docs/performance/stroke-pipeline.md`.
-- **Reflections.** Planar reflections cost about 4.6 ms of CPU per frame while ponds exist, and the session's first reflection setup still parses clip shaders in 5-9 ms slices.
+- **Frame spikes at release.** *Update (`feature/settle-hitches`):* the land stroke's release weathering, emergence's plan (live blend and pond flood included) and the encounter ground now run on workers. On the plain a land stroke's release frame went from 19–26 ms to about 1 ms, and its worst settle frame from 30–42 ms to 14–16 ms. On seed 184 the first plan's 54 ms frame is gone. *Water polish (`feature/water-polish`):* a pour's own settle frames are now at most 13–14 ms; the 35–47 ms first plan that followed a pour is the one the settle-hitches work moved to a worker. One 18–21 ms frame remains when a stroke crosses a pond on a recipe world: the planar reflection re-setup's first slice (12–15 ms, `planar_water.gd`). Numbers are in `docs/performance/stroke-pipeline.md` and `docs/scenic/water-brush.md`.
+- **Reflections.** *Done on `feature/water-polish`.* Planar reflections cost 0.58 ms of CPU per frame while ponds exist, down from 4.79 ms. Materials now sync by change. Clip shaders compile ahead in idle frames after the scene grows, so a pour's first setup compiles none. The GPU pipeline cost of those shaders is unmeasured.
 - **Things not saved:** the forest wish (`land_intent.gd`) and life. A loaded world starts settled.
-- **Water gaps:** stream beds are not carved, and the scooped hollow lands with the water instead of animating. A pond full at the plate's rim can't be raised.
+- **Water gaps.** *Done on `feature/water-polish`; the look is unverified.* New streams carve shallow beds. Ground a pour reshapes (a hollow, beds, a rim lip) moves into place over 0.7 s before the water fills, inside the pour's undo step. Pouring into a pond that brims at the plate's rim raises a soft lip there, so the pond rises by up to 0.5 m a pour.
 - **Deer need dawn.** A plain launched at full day never turns its clock, so deer never come.
 - **Forest wind.** Its wind swell eases about 0.8 s after release, before the trees arrive. A small gust when trees arrive would help.
 - **Not yet exercised:** Nobody has looked at the glass blur's frame cost, or at the palette on screen outside the film. Shift strokes are now profiled (`profile_stroke --then=shift`): forest clearing and path grow-back settle under 10 ms. One Shift pass over a young forest does not withdraw anything; a second pass does.
@@ -394,8 +394,8 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
      - **The plain in Fidelity's colours.** The plain now uses Fidelity's ground, foliage, rock, earth and water, a clear day sky, fair weather and thin ground mist. The badge reads "Fidelity green", and generated worlds still draw from the palette families.
      - **Still open.**
        - Emergence's first plan (about 36 ms) remains.
-       - Stream beds are not carved.
-       - Planar reflections cost about 4.6 ms of CPU per frame while ponds exist.
+       - Stream beds are not carved. *Now carved (`feature/water-polish`).*
+       - Planar reflections cost about 4.6 ms of CPU per frame while ponds exist. *Now 0.58 ms (`feature/water-polish`).*
 3. **Life answers the land.**
    - Fish settle in new water.
    - Frogspawn appears in shallow edges.

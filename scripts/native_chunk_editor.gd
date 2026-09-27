@@ -788,6 +788,8 @@ func redo() -> void:
 
 func _history_step(forward: bool) -> void:
 	if forming: return
+	# A pour still shaping its ground lands, so undo takes it back whole.
+	_finish_water_shape()
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
@@ -1015,8 +1017,8 @@ var _settled_objects_revision := -1
 var _settled_blades := PackedFloat32Array()
 var _settled_meadow := PackedFloat32Array()
 
-func _light_refresh_ready() -> bool:
-	if not _painting or forming or not content._view_ready: return false
+func _light_refresh_ready(shaping := false) -> bool:
+	if not (_painting or shaping) or forming or not content._view_ready: return false
 	return data.objects_revision == _settled_objects_revision and data.blades == _settled_blades and (data.blank or data.meadow == _settled_meadow)
 
 func _refresh_light() -> bool:
@@ -1714,10 +1716,22 @@ func _land_step(center: Vector2, delta: float) -> void:
 ## snapshots. A later stroke, undo or world change supersedes the plan.
 func _settle_water() -> void:
 	if water_brush.dabs.is_empty() or forming: return
+	# A pour still shaping its ground lands first, so this one plans on it.
+	_finish_water_shape()
 	_water_generation += 1
 	var generation := _water_generation
 	var dabs: PackedVector3Array = water_brush.dabs
 	water_brush.begin()
+	water_settling = true
+	# A land stroke's weathering still in flight (`_weather_async`) lands
+	# first, so the pour plans on the weathered ground instead of finding the
+	# land changed under it. Undo or a newer pour supersedes the wait.
+	while _weather_job != null:
+		await get_tree().process_frame
+		if generation != _water_generation: return
+	if forming:
+		water_settling = false
+		return
 	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
 	var target := data
 	var heights := data.heights.duplicate()
@@ -1728,13 +1742,83 @@ func _settle_water() -> void:
 	var job = preload("res://scripts/background_work.gd").new()
 	var plan: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/water_brush.gd").plan(detached,ponds,streams,dabs,validate),get_tree())
 	if generation != _water_generation: return
-	water_settling = false
 	water_brush.last_plan_usec = plan.usec
-	if not plan.changed: return
+	if not plan.changed:
+		water_settling = false
+		return
 	if forming or data != target or data.heights != heights or data.ponds != ponds or data.streams != streams or not data._before.is_empty():
+		water_settling = false
 		_set_status("The land changed while the water settled. Pour again.")
 		return
 	data.begin_stroke()
+	# The pour reshaped the ground (a scooped hollow, stream beds, a lip at
+	# the rim): it sinks or rises into place first, then the water arrives.
+	if plan.has("heights") and _light_refresh_ready(true):
+		_water_shape = {"plan":plan,"target":data,"from":data.heights.duplicate()}
+		data.stroke_starting.connect(_finish_water_shape)
+		await _shape_water_ground()
+		return
+	_land_water(plan)
+
+## Seconds a pour's reshaped ground takes to move into place before its
+## water starts to fill. Ticks at the paint loop's 30 Hz with light refreshes.
+const WATER_SHAPE_SECONDS := 0.7
+## The pour whose ground is moving: {"plan", "target", "from"}.
+var _water_shape := {}
+
+func _shape_water_ground() -> void:
+	var shape := _water_shape
+	var final: PackedFloat32Array = shape.plan.heights
+	var from: PackedFloat32Array = shape.from
+	var moved := PackedInt32Array()
+	for i in range(mini(final.size(),from.size())):
+		if absf(final[i]-from[i]) > 0.0005: moved.append(i)
+	var elapsed := 0.0
+	var since_tick := 0.0
+	var last := Time.get_ticks_usec()
+	while elapsed < WATER_SHAPE_SECONDS and not moved.is_empty():
+		await get_tree().process_frame
+		# Landed early (another stroke, an undo, a newer pour) or abandoned.
+		if not is_same(_water_shape,shape): return
+		if data != shape.target or forming:
+			_abandon_water_shape()
+			return
+		var now := Time.get_ticks_usec()
+		var step := minf((now-last)/1000000.0,0.05)
+		last = now
+		elapsed += step
+		since_tick += step
+		if since_tick < 1.0/30.0: continue
+		since_tick = 0.0
+		if not _light_refresh_ready(true): break
+		var t := smoothstep(0.0,1.0,clampf(elapsed/WATER_SHAPE_SECONDS,0.0,1.0))
+		var heights := data.heights
+		for i in moved: heights[i] = lerpf(from[i],final[i],t)
+		data.heights = heights
+		_refresh_light()
+	if is_same(_water_shape,shape): _finish_water_shape()
+
+## Land a shaping pour at once: its final ground, then its water.
+func _finish_water_shape() -> void:
+	if _water_shape.is_empty(): return
+	var shape := _water_shape
+	_water_shape = {}
+	if shape.target.stroke_starting.is_connected(_finish_water_shape): shape.target.stroke_starting.disconnect(_finish_water_shape)
+	if data != shape.target:
+		water_settling = false
+		return
+	_land_water(shape.plan)
+
+func _abandon_water_shape() -> void:
+	var shape := _water_shape
+	_water_shape = {}
+	if is_instance_valid(shape.target) and shape.target.stroke_starting.is_connected(_finish_water_shape): shape.target.stroke_starting.disconnect(_finish_water_shape)
+	water_settling = false
+
+## Apply a settled pour inside its open stroke: ground, ponds and streams as
+## one undo step, then fill births and the yielding settle refresh.
+func _land_water(plan: Dictionary) -> void:
+	water_settling = false
 	# Lost water scooped a hollow to pool in (water_brush.gd `_scoop`).
 	if plan.has("heights"): data.heights = plan.heights
 	data.ponds.assign(plan.ponds)

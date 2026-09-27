@@ -93,6 +93,10 @@ transforms, so the instance hash is computed from batch sources, not read back.
   over several frames, double-buffered, and a rebuild that leaves the water
   inputs alone no longer bumps `content.revision`. The plain's water is built
   on a worker too. See `docs/scenic/water-brush.md` for the numbers.
+  *Update, water polish (`feature/water-polish`):* clip shaders compile in
+  idle frames ahead of the first pour, and reflected materials sync by change
+  (0.58 ms a frame, down from 4.79 ms). A pour's worst settle frame is now
+  13–14 ms headless. Emergence's first plan is the one frame left over 16.7 ms.
 - Cover plants (meadow, grass) appear at release. A coalesced background
   instance rebuild during the stroke would show them sooner. Erase and Blades
   still pay a full refresh per dab.
