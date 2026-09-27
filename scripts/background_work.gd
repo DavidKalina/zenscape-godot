@@ -59,6 +59,16 @@ func completed() -> bool:
 
 func finish() -> Variant:
 	assert(active() and completed(), "Poll completion before publishing results")
+	return _take()
+
+## Block until the job is done and take its result. Only for a join that must
+## publish now, such as a new undo step opening on ground still settling
+## (native_chunk_editor.gd `_join_weathering`); everything else polls.
+func wait() -> Variant:
+	assert(active(), "Nothing to wait for")
+	return _take()
+
+func _take() -> Variant:
 	_join()
 	var result: Variant = _results if _group else _results[0]
 	_results = []

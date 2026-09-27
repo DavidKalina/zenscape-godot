@@ -1888,7 +1888,9 @@ func _land_weathering(settle: bool) -> void:
 	var job: RefCounted = _weather_job
 	_drop_weathering()
 	if job == null: return
-	var result: Dictionary = job.finish()
+	# A stroke that opens while the worker still runs waits for it here, so
+	# it starts from weathered ground rather than dropping the weathering.
+	var result: Dictionary = job.finish() if job.completed() else job.wait()
 	land_brush.last_weather_usec = result.usec
 	if result.moved and not forming and data.heights == _weather_heights:
 		data.heights = result.heights
