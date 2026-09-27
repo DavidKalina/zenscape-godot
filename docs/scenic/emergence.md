@@ -28,6 +28,7 @@ These are the same rules the generator uses: the habitat and its cover come from
 - **Ferns** take `FERN_WEIGHT` (0.3, it was 1.0) in emerged woodland undergrowth: from above they read as dark spiders. The fern mesh (`scripts/redwood_assets.gd`) now has nine fuller fronds in a fresher green, so the ones that come read as leafy rosettes.
 - Crowding: tree to tree 1.1 m, tree to anything else 0.6 m, shrub to shrub 0.45 m. Existing objects of every source count.
 - Cover target: grass follows the blend's `cover(p)`, fading to nothing on rock and near snow. Blades follow grass, are thickest toward water, and are absent on steep ground.
+- **Quiet guidance** (slice 8, `docs/scenic/guidance.md`). Each plan also scores its region and keeps the fields its nudges read. Where the forest wish's edge reads as a ruled line, candidates read the wish a little way off, so the edge wanders. Lone trees in ordinary spots, trees in front of water outside a forest's core, and crowded undergrowth usually do not take. Sizes lean larger on knolls, shores and thirds of the view, and smaller in front of water. `--no-guidance` turns it off; with it off, emergence is exactly as before.
 
 ## Live biome
 

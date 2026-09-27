@@ -1,6 +1,10 @@
 extends Node3D
-## Dense meadow grass for the Ultra tier, and at reduced cover for Beauty
-## (on by default, look_pass.gd `beauty_grass`). One MultiMesh of blade tufts is
+## Dense meadow grass, retired unless requested: it draws only with
+## `--beauty-grass` (look_pass.gd `beauty_grass`), full cover on Ultra and
+## reduced on Beauty. Its render is unfixed (tufts drew metres wide and lying
+## flat on the Genesis plain), and the user does not want blades by default.
+## Until it is first wanted nothing is built: no tiles, no tuft mesh, no
+## material in the scene, so off costs nothing. One MultiMesh of blade tufts is
 ## shared by an 8x8 grid of tiles, so each tile culls on its own. The GPU
 ## does the placing (shaders/dense_grass.gdshader): heights come from the
 ## precipitation ground map the chunk editor already keeps current, and colour
@@ -33,8 +37,7 @@ const STEM_HALF_WIDTH := 0.004
 ## Petals round a flower's face.
 const PETALS := 5
 const REBAKE_SECONDS := 0.5
-## Reduced cover for the Beauty tier (look_pass.gd `beauty_grass`, on by
-## default): share of tufts kept, blades a far tuft keeps, and where the fade
+## Reduced cover for the Beauty tier (look_pass.gd `beauty_grass`): share of tufts kept, blades a far tuft keeps, and where the fade
 ## starts. Enough that the plain reads as meadow from the diorama camera.
 const REDUCED := {"density": 0.7, "far_blades": 2.0, "fade_start": 18.0}
 const FULL := {"density": 1.0, "far_blades": 3.0, "fade_start": 22.0}
@@ -57,6 +60,13 @@ func setup(scene: Node3D) -> void:
 	_scene = scene
 	name = "DenseGrass"
 	visible = false
+	scene.add_child(self)
+
+## Build the tiles, the tuft mesh and the material, the first time the grass
+## is wanted (about 5 ms, which a default launch never pays).
+var _built := false
+func _build() -> void:
+	_built = true
 	material.shader = preload("res://shaders/dense_grass.gdshader")
 	material.set_shader_parameter("palette_role", 1)
 	material.set_shader_parameter("grid_side", SIDE)
@@ -89,7 +99,8 @@ func setup(scene: Node3D) -> void:
 			tile.set_meta("skip_reflection", true)
 			add_child(tile)
 			_tiles.append(tile)
-	scene.add_child(self)
+	var settings: Dictionary = REDUCED if _reduced else FULL
+	for key in settings: material.set_shader_parameter(key, settings[key])
 
 ## Full cover on Ultra, the reduced set when Beauty opts in.
 func set_reduced(reduced: bool) -> void:
@@ -112,6 +123,7 @@ func update(wanted: bool, delta: float) -> void:
 			RenderingServer.global_shader_parameter_set("zs_grass_offset", world_offset(seed_value))
 	visible = wanted and _baked and terrain != null
 	if not wanted or terrain == null or terrain.mesh == null: return
+	if not _built: _build()
 	if editor.data != null: _publish_births(editor.data)
 	if terrain.mesh == _baked_mesh or _bake_busy:
 		_since_change = 0.0

@@ -74,7 +74,7 @@ What each creature looks like and does:
 
 ## Moments
 
-Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a delay after those first hold, a chance per check and a cooldown, so it stays rare. Every moment is logged in `moments.history` and emitted as `LandLife.moment(kind, position)`, which is ready for sound (slice 6).
+Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a delay after those first hold, a chance per check and a cooldown, so it stays rare. Every moment is logged in `moments.history` and emitted as `LandLife.moment(kind, position)`, which Genesis sound answers (`docs/scenic/sound.md`).
 
 | Moment | Conditions | Chance per check | Cooldown (s) |
 |---|---|---|---|
@@ -339,5 +339,5 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 - Fish live in ponds only, not streams.
 - Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
-- Sound hooks: `LandLife.arrived` and `LandLife.moment` are emitted but nothing listens yet.
+- Sound: `scripts/genesis_audio.gd` listens to `LandLife.arrived` and `LandLife.moment` and reads the survey for its beds (`docs/scenic/sound.md`).
 - `fidelity_fish.gd`, Bigfoot's catchable fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish and only matters with `--bigfoot`.

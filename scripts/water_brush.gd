@@ -79,6 +79,8 @@ const LIP_RISE := 0.5
 const LIP_FREEBOARD := 0.1
 const LIP_PASSES := 3
 
+const Guidance = preload("res://scripts/quiet_guidance.gd")
+
 ## x, z and volume (m³) of each dab; negative volume drains.
 var dabs := PackedVector3Array()
 var last_plan_usec := 0
@@ -219,7 +221,7 @@ static func plan(data: NativeTerrainData, ponds: Array, streams: Array, dabs_in:
 		data.heights = unlipped.heights
 		grid.h = unlipped.h
 		grid.erase("before")
-	var sites := _scoop_sites(grid,result.lost)
+	var sites := _scoop_sites(grid,result.lost,result.ponds)
 	if not sites.is_empty():
 		# Ponds keep their water, not their level: the hollow may deepen them.
 		if not grid.has("before"): grid["before"] = grid.h.duplicate()
@@ -242,6 +244,10 @@ static func plan(data: NativeTerrainData, ponds: Array, streams: Array, dabs_in:
 	result.erase("lost")
 	result.erase("rims")
 	result["scoops"] = sites.size()
+	# What quiet guidance changed, for probes: levels trimmed (m) and hollows
+	# moved (m) or shaped into ovals.
+	result["guided"] = {"trims":result.get("trims",[]),"moved":sites.map(func(site: Dictionary) -> float: return snappedf(float(site.get("moved",0.0)),0.01)),"ovals":sites.filter(func(site: Dictionary) -> bool: return float(site.get("stretch",1.0)) > 1.0).size()}
+	result.erase("trims")
 	result["lips"] = lips
 	result["beds"] = carved.has_area()
 	result["usec"] = Time.get_ticks_usec()-began
@@ -392,6 +398,7 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 	roots.sort_custom(func(a: int, b: int) -> bool: return h[a] > h[b])
 	var ponds_out: Array = kept_ponds.duplicate(true)
 	var surfaces := {}
+	var trims: Array = []
 	for root: int in roots:
 		var result: Dictionary = results[root]
 		var region: PackedInt32Array = result.region
@@ -422,6 +429,12 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		if level-h[deepest] < MIN_DEPTH or added.size() >= MAX_PONDS:
 			lost.append({"volume":held,"start":deepest})
 			continue
+		# Quiet guidance: a few centimetres lower when that trims a thin
+		# fringe of water; what it gives up soaks in.
+		if Guidance.enabled and Guidance.water_enabled:
+			var trimmed := Guidance.pond_level(h,deepest,level,maxf(previous+0.006,h[deepest]+MIN_DEPTH),SIDE)
+			if trimmed < level: trims.append(snappedf(level-trimmed,0.001))
+			level = trimmed
 		var seed := position_of(deepest)
 		var record := {"x":seed.x,"z":seed.y,"level":level}
 		if validate:
@@ -502,12 +515,14 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		entry["delay"] = float(ready.get(entry.root,START_DELAY))
 		entry.erase("root")
 	return {"ponds":ponds_out,"streams":streams_out,"added":added,"added_streams":stream_records,
-		"rect":changed if any_change else Rect2(),"changed":any_change,"lost":lost,"rims":rims}
+		"rect":changed if any_change else Rect2(),"changed":any_change,"lost":lost,"rims":rims,"trims":trims}
 
 ## Where lost water comes to rest: down its steepest path from where it last
 ## stood, the lowest point far enough from the rim to hold a hollow. Nearby
-## losses share one hollow; the largest few are kept.
-static func _scoop_sites(grid: Dictionary, lost: Array) -> Array:
+## losses share one hollow; the largest few are kept. With quiet guidance a
+## hollow may sit a little way off, clear of thin land between it and the
+## `ponds`, and takes an oval along the contour (`_guide_sites`).
+static func _scoop_sites(grid: Dictionary, lost: Array, ponds: Array = []) -> Array:
 	var h: PackedFloat32Array = grid.h
 	var sites: Array = []
 	for chunk: Dictionary in lost:
@@ -538,7 +553,53 @@ static func _scoop_sites(grid: Dictionary, lost: Array) -> Array:
 	sites = sites.filter(func(site: Dictionary) -> bool: return float(site.volume) >= SCOOP_MIN)
 	sites.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.volume > b.volume)
 	sites.resize(mini(sites.size(),MAX_SCOOPS))
+	if Guidance.enabled and Guidance.water_enabled and not sites.is_empty(): _guide_sites(grid,sites,ponds)
 	return sites
+
+## Quiet guidance for hollows: among ground within SITE_SLACK of the chosen
+## low and SITE_REACH cells of it, the site that leaves no sliver of land
+## between the new pond and the others (Guidance.site); then an oval along
+## the contour, kept inside the rim.
+static func _guide_sites(grid: Dictionary, sites: Array, ponds: Array) -> void:
+	var h: PackedFloat32Array = grid.h
+	var drain_cell: PackedByteArray = grid.drain
+	var owner := PackedInt32Array()
+	owner.resize(SIDE*SIDE)
+	owner.fill(-1)
+	var water := PackedVector2Array()
+	for index in range(ponds.size()):
+		for k in _flood_below(h,cell_of(Vector2(ponds[index].x,ponds[index].z)),float(ponds[index].level),owner,index):
+			water.append(position_of(k))
+	for site: Dictionary in sites:
+		var radius := _scoop_radius(float(site.volume))
+		var origin: int = site.cell
+		var cells := PackedInt32Array([origin])
+		var points := PackedVector2Array([position_of(origin)])
+		var heights := PackedFloat32Array([h[origin]])
+		var i := origin%SIDE
+		var j := origin/SIDE
+		for reach in range(1,Guidance.SITE_REACH+1):
+			for offset in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1),Vector2i(1,1),Vector2i(-1,1),Vector2i(1,-1),Vector2i(-1,-1)]:
+				var ni: int = i+offset.x*reach
+				var nj: int = j+offset.y*reach
+				if ni < 0 or nj < 0 or ni >= SIDE or nj >= SIDE: continue
+				var k: int = nj*SIDE+ni
+				if drain_cell[k] or h[k] > h[origin]+Guidance.SITE_SLACK or _rim_distance(k) < radius+SCOOP_RIM: continue
+				cells.append(k)
+				points.append(position_of(k))
+				heights.append(h[k])
+		# Only water near enough to leave a sliver matters.
+		var near := PackedVector2Array()
+		var span := radius+Guidance.SLIVER_GAP+Guidance.SITE_REACH*GRID+GRID
+		for w in water:
+			if absf(w.x-points[0].x) < span and absf(w.y-points[0].y) < span: near.append(w)
+		var chosen: int = cells[Guidance.site(points,heights,near,radius,origin)]
+		site.cell = chosen
+		site["moved"] = position_of(chosen).distance_to(position_of(origin))
+		var ci := chosen%SIDE
+		var cj := chosen/SIDE
+		var gradient := Vector2(h[cj*SIDE+mini(ci+2,SIDE-1)]-h[cj*SIDE+maxi(ci-2,0)],h[mini(cj+2,SIDE-1)*SIDE+ci]-h[maxi(cj-2,0)*SIDE+ci])/(4.0*GRID)
+		site.merge(Guidance.oval(chosen,gradient,_rim_distance(chosen)-SCOOP_RIM),true)
 
 static func _scoop_radius(volume: float) -> float:
 	return clampf(1.4+sqrt(volume)*0.9,SCOOP_RADIUS.x,SCOOP_RADIUS.y)
@@ -552,18 +613,26 @@ static func _rim_distance(k: int) -> float:
 static func _scoop(data: NativeTerrainData, heights: PackedFloat32Array, grid: Dictionary, site: Dictionary) -> Rect2:
 	var volume: float = site.volume
 	var radius := _scoop_radius(volume)
-	# The bowl holds pi r² d / 3; a little over, so the pond has a bank.
-	var depth := clampf(3.0*volume/(PI*radius*radius)+0.05,SCOOP_DEPTH.x,SCOOP_DEPTH.y)
+	# An oval (quiet guidance): long by √stretch, wide by 1/√stretch, the long
+	# radius kept within the site's `room` from the rim.
+	var stretch := sqrt(float(site.get("stretch",1.0)))
+	var along := Vector2.from_angle(float(site.get("angle",0.0)))
+	var long_radius := minf(radius*stretch,maxf(float(site.get("room",INF)),radius))
+	var short_radius := radius/stretch
+	# The bowl holds pi a b d / 3; a little over, so the pond has a bank.
+	var depth := clampf(3.0*volume/(PI*long_radius*short_radius)+0.05,SCOOP_DEPTH.x,SCOOP_DEPTH.y)
 	var center := position_of(site.cell)
 	for i in range(data.points.size()):
-		var t := data.points[i].distance_to(center)/radius
+		var offset := data.points[i]-center
+		if absf(offset.x) >= long_radius or absf(offset.y) >= long_radius: continue
+		var t := offset.length()/radius if stretch == 1.0 else Vector2(offset.dot(along)/long_radius,offset.dot(along.orthogonal())/short_radius).length()
 		if t >= 1.0: continue
 		var w := (1.0-t*t)*(1.0-t*t)
 		heights[i] = maxf(NativeTerrainData.MIN_HEIGHT,heights[i]-depth*w)
 	data.heights = heights
 	var h: PackedFloat32Array = grid.h
 	var drain_cell: PackedByteArray = grid.drain
-	var rect := Rect2(center-Vector2.ONE*(radius+GRID),Vector2.ONE*(radius+GRID)*2.0)
+	var rect := Rect2(center-Vector2.ONE*(long_radius+GRID),Vector2.ONE*(long_radius+GRID)*2.0)
 	for k in range(SIDE*SIDE):
 		if drain_cell[k] and h[k] <= -1000.0: continue
 		if not rect.has_point(position_of(k)): continue

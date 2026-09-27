@@ -21,6 +21,7 @@ const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const LandIntent = preload("res://scripts/land_intent.gd")
 const WaterBrush = preload("res://scripts/water_brush.gd")
+const Guidance = preload("res://scripts/quiet_guidance.gd")
 
 ## An emerged tree was placed at plate point `p`; it grows in from `born` on
 ## `time` over TREE_RISE. Stroke feedback sends a little gust to settle it.
@@ -139,6 +140,16 @@ var last_plan_usec := {}
 ## replaces the blend's pond raster: {"level", "cells", "rect", "record",
 ## "stamp"}. Until then `_wet` reads them too, so nothing arrives in them.
 var _fresh_ponds: Array[Dictionary] = []
+## Quiet guidance (scripts/quiet_guidance.gd): each plan reads its region's
+## score and steers edges, lone trees, sightlines, sizes and spacing a
+## little. Off with --no-guidance. `guided_usec` is the last plan's guide
+## time, and `guided_sizes` how many sizes leaned up or down, for probes.
+var guided: bool = Guidance.enabled
+var guided_usec := 0
+var guided_sizes := {"up":0,"down":0}
+## A planner's plants near its rects (Guidance.plants), taken on the main
+## thread; null on the main Emergence, which reads `data.objects`.
+var _guide_plants: Variant = null
 
 func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 	data = terrain
@@ -224,6 +235,11 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 	var previous: RefCounted = _blend
 	var planner = get_script().new(ground,salt)
 	planner.intent.forest = intent.forest.duplicate()
+	planner.guided = guided
+	if guided:
+		var reach: Rect2 = queued[0].rect
+		for item: Dictionary in queued: reach = reach.merge(item.rect)
+		planner._guide_plants = Guidance.plants(data.objects,reach,TREES)
 	var fixed := _fixed_salt
 	var jobs := queued.duplicate(true)
 	_plan_generation += 1
@@ -243,7 +259,7 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 			for rect: Rect2 in rects: planner._blend.refresh_rect(rect)
 		var regions := []
 		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source","")))
-		return {"blend":planner._blend,"salt":planner.salt,"regions":regions,"usec":Time.get_ticks_usec()-worker_began})
+		return {"blend":planner._blend,"salt":planner.salt,"regions":regions,"usec":Time.get_ticks_usec()-worker_began,"guide_usec":planner.guided_usec})
 	last_plan_usec = {"start":Time.get_ticks_usec()-began}
 	# A superseded job still runs out here, so dropping it never blocks a frame.
 	while not job.completed():
@@ -264,6 +280,8 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 		_install(jobs[i].rect,jobs[i].get("source",""),planned.regions[i])
 	last_plan_usec.worker = planned.usec
 	last_plan_usec.install = Time.get_ticks_usec()-began
+	last_plan_usec.guide = planned.guide_usec
+	guided_usec = planned.guide_usec
 
 ## The succession for one stroke's rect: cover cells with their fronts and
 ## targets, and the shrub and tree candidates in arrival order. Reads only
@@ -271,6 +289,14 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 	var forest := source == "forest"
 	var region := {"rect":rect,"born":born,"cells":PackedInt32Array(),"fronts":PackedFloat32Array(),"targets":PackedVector2Array(),"plants":[],"next":0}
+	# Quiet guidance: the region's score and the fields its nudges read.
+	var guide: RefCounted = null
+	var known := PackedVector4Array()
+	if guided:
+		known = _guide_plants if _guide_plants != null else Guidance.plants(data.objects,rect,TREES)
+		guide = Guidance.plan(self,rect,known)
+		guided_usec = guide.usec
+		region["score"] = guide.score
 	var origin := _origin(rect)
 	var side := data.MEADOW_CELLS
 	for z in range(side if not forest else 0):
@@ -288,15 +314,17 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 			region.targets.append(target)
 			region.fronts.append(GRASS_DELAY+p.distance_to(origin)/GRASS_SPEED+Variety.unit([salt,11,index])*0.6)
 	var reach := maxf(rect.size.length()*0.5,1.0)
+	# A guided forest's edge may bulge past the stroke's own bounds.
+	var span := rect.grow(Guidance.WARP) if forest and guide != null else rect
 	for layer in [["shrub",SHRUB_LATTICE,SHRUB_DELAY,SHRUB_SPREAD],["tree",TREE_LATTICE,TREE_DELAY,TREE_SPREAD]]:
 		var lattice: float = layer[1]
-		for j in range(floori(rect.position.y/lattice),ceili(rect.end.y/lattice)):
-			for i in range(floori(rect.position.x/lattice),ceili(rect.end.x/lattice)):
+		for j in range(floori(span.position.y/lattice),ceili(span.end.y/lattice)):
+			for i in range(floori(span.position.x/lattice),ceili(span.end.x/lattice)):
 				var key := [salt,layer[0].hash(),i,j]
 				var p := (Vector2(i,j)+Vector2(Variety.unit(key+[1]),Variety.unit(key+[2])))*lattice
-				if not rect.has_point(p) or maxf(absf(p.x),absf(p.y)) > PLATE:
+				if not span.has_point(p) or maxf(absf(p.x),absf(p.y)) > PLATE:
 					continue
-				var wish: float = intent.forest_at(p)
+				var wish := _wish_at(p,guide)
 				if forest and _frayed(p,key,wish) <= FOREST_MARGIN.x:
 					continue
 				var at: float = layer[2]+layer[3]*(0.55*clampf(p.distance_to(origin)/reach,0.0,1.0)+0.45*Variety.unit(key+[3]))
@@ -304,7 +332,8 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 					# Wished-for forest comes sooner, its core first.
 					var tree: bool = layer[0] == "tree"
 					at = (FOREST_TREE_DELAY if tree else FOREST_SHRUB_DELAY)+(FOREST_TREE_SPREAD if tree else FOREST_SHRUB_SPREAD)*(0.6*(1.0-wish)+0.4*Variety.unit(key+[3]))
-				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest})
+				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide})
+	if guide != null: _count_mates(region.plants,known)
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
 	return region
 
@@ -455,24 +484,29 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	var key: Array = plant.key
 	var roll := Variety.unit(key+[4])
 	var kind := ""
-	var wish: float = intent.forest_at(p)
+	# Quiet guidance for this candidate's region, or null (--no-guidance).
+	var guide: RefCounted = plant.get("guide")
+	var wish := _wish_at(p,guide)
 	var frayed := _frayed(p,key,wish)
 	var only_wish: bool = plant.get("forest",false)
 	if plant.layer == "tree":
 		if float(h) > _treeline(habitat):
 			return _refuse("treeline")
-		var chance := float(biome.trees)/PLANTED_AREA*TREE_LATTICE*TREE_LATTICE*_tree_density()
-		if habitat == "wetland": chance *= 0.3
-		if wish > 0.0:
-			# A dense core, thinning to scattered trees at the frayed edge.
-			var wished := 0.0 if frayed < FOREST_EDGE.x else lerpf(FOREST_EDGE_CHANCE,FOREST_CORE_CHANCE,smoothstep(FOREST_EDGE.x,FOREST_EDGE.y,frayed))
-			chance = wished if only_wish else maxf(chance,wished)
-		elif wish < 0.0:
-			chance *= 1.0+wish
-		# Forests thin out as the ground steepens toward rock.
-		chance *= 1.0-smoothstep(0.45,float(biome.rock_slope),slope)
+		var chance := _tree_chance(habitat,slope,wish,frayed,only_wish)
+		if guide != null and (wish <= 0.0 or frayed < FOREST_EDGE.y):
+			# Outside a forest's core, fewer trees stand in front of water.
+			var kept: float = chance*guide.sight_keep(p)
+			if roll >= minf(kept,0.85) and roll < minf(chance,0.85):
+				return _refuse("sightline")
+			chance = kept
 		if roll >= minf(chance,0.85):
 			return _refuse("thinned")
+		# A tree alone in an ordinary spot reads as a stray; one on a knoll,
+		# a shore or a third of the view reads as a feature and stays.
+		if guide != null and wish <= 0.05 and not only_wish and int(plant.get("mates",1)) == 0 \
+				and _near(p,Guidance.LONE_RADIUS,true) == 0 and guide.at(guide.feature,p) < Guidance.FEATURE_KEEP \
+				and Variety.unit(key+[20]) < Guidance.LONE_DROP*float(guide.gain.lone):
+			return _refuse("lone")
 		kind = _tree_kind(habitat,Variety.unit(key+[5]))
 	else:
 		if slope > 0.6 or float(h) > _treeline(habitat)+1.5:
@@ -488,11 +522,22 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 			chance *= 1.0+wish
 		if roll >= chance:
 			return _refuse("thinned")
+		# Undergrowth already crowded by its neighbours reads as noise.
+		if guide != null and _near(p,Guidance.CLUTTER_RADIUS,false) >= Guidance.CLUTTER_MAX \
+				and Variety.unit(key+[21]) < Guidance.CLUTTER_DROP*float(guide.gain.clutter):
+			return _refuse("clutter")
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
 	if _crowded(p,plant.layer == "tree"):
 		return _refuse("crowded")
 	var span := TREE_SIZE if plant.layer == "tree" else SHRUB_SIZE
-	var size := lerpf(span.x,span.y,Variety.unit(key+[6]))*float(KIND_SIZE.get(kind,1.0))
+	var draw := Variety.unit(key+[6])
+	if guide != null:
+		# Larger on a feature spot, smaller in front of water.
+		var leaned: float = guide.size_draw(p,draw,Variety.unit(key+[19]),plant.layer == "tree")
+		if leaned > draw+0.001: guided_sizes.up += 1
+		elif leaned < draw-0.001: guided_sizes.down += 1
+		draw = leaned
+	var size := lerpf(span.x,span.y,draw)*float(KIND_SIZE.get(kind,1.0))
 	var id := data.place(kind,p,Variety.unit(key+[7])*TAU,size)
 	if id < 0:
 		return false
@@ -501,6 +546,13 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
 	if kind in TREES: tree_arrived.emit(p,born)
 	return true
+
+## The forest wish a candidate reads. With a guide, the wish is sampled a
+## little way off where its edge reads as a ruled line (Guide.warp), so the
+## edge wanders into bays and bulges both ways.
+func _wish_at(p: Vector2, guide: RefCounted) -> float:
+	if guide == null: return intent.forest_at(p)
+	return intent.forest_at((p+guide.warp(p)).clamp(Vector2(-13.99,-13.99),Vector2(13.99,13.99)))
 
 ## The forest wish at a candidate, frayed by its own scatter and slow lobes,
 ## so the forest's outline is ragged and its edge trees stand apart.
@@ -514,6 +566,68 @@ func _frayed(p: Vector2, key: Array, wish: float) -> float:
 		_lobes.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 		_lobes.frequency = FOREST_LOBE_FREQUENCY
 	return wish+(Variety.unit(key+[8])-0.5)*FOREST_RAGGED+_lobes.get_noise_2d(p.x,p.y)*FOREST_LOBES
+
+## A tree candidate's chance before the roll: the habitat's density, the
+## forest wish (a dense core thinning to scattered trees at the frayed edge,
+## or a cleared wish), and thinning on steep ground.
+func _tree_chance(habitat: String, slope: float, wish: float, frayed: float, only_wish: bool) -> float:
+	var biome: Dictionary = Shape.BIOMES[habitat]
+	var chance := float(biome.trees)/PLANTED_AREA*TREE_LATTICE*TREE_LATTICE*_tree_density()
+	if habitat == "wetland": chance *= 0.3
+	if wish > 0.0:
+		var wished := 0.0 if frayed < FOREST_EDGE.x else lerpf(FOREST_EDGE_CHANCE,FOREST_CORE_CHANCE,smoothstep(FOREST_EDGE.x,FOREST_EDGE.y,frayed))
+		chance = wished if only_wish else maxf(chance,wished)
+	elif wish < 0.0:
+		chance *= 1.0+wish
+	# Forests thin out as the ground steepens toward rock.
+	return chance*(1.0-smoothstep(0.45,float(biome.rock_slope),slope))
+
+## Guidance, on the planner: for each tree candidate, how many other trees
+## are likely within LONE_RADIUS — candidates whose roll would pass on the
+## ground as planned, and trees already standing (`known`). A tree with none
+## would stand alone (`_arrive`).
+func _count_mates(plants: Array, known: PackedVector4Array) -> void:
+	var likely := {}
+	var trees: Array[Dictionary] = []
+	for plant: Dictionary in plants:
+		if plant.layer != "tree": continue
+		trees.append(plant)
+		var p: Vector2 = plant.p
+		var h: Variant = data.ground_height(p)
+		if h == null or _wet(p): continue
+		var habitat: String = _blend.pick(p)
+		var slope := _slope(p)
+		if slope > float(Shape.BIOMES[habitat].rock_slope) or float(h) > minf(_snowline()-1.8,_treeline(habitat)): continue
+		var wish := _wish_at(p,plant.guide)
+		var chance := _tree_chance(habitat,slope,wish,_frayed(p,plant.key,wish),plant.forest)
+		if Variety.unit(plant.key+[4]) < minf(chance,0.85):
+			likely.get_or_add(Vector2i(p.floor()),[]).append(p)
+	for item in known:
+		if item.z > 0.5: likely.get_or_add(Vector2i(floori(item.x),floori(item.y)),[]).append(Vector2(item.x,item.y))
+	var reach := ceili(Guidance.LONE_RADIUS)
+	var limit := Guidance.LONE_RADIUS*Guidance.LONE_RADIUS
+	for plant in trees:
+		var p: Vector2 = plant.p
+		var base := Vector2i(p.floor())
+		var mates := 0
+		for dz in range(-reach,reach+1):
+			for dx in range(-reach,reach+1):
+				for other: Vector2 in likely.get(base+Vector2i(dx,dz),[]):
+					if other != p and p.distance_squared_to(other) < limit: mates += 1
+		plant["mates"] = mates
+
+## Plants standing within `radius` of `p`, trees only or all.
+func _near(p: Vector2, radius: float, trees_only: bool) -> int:
+	_build_crowd()
+	var count := 0
+	var reach := ceili(radius)
+	var base := Vector2i(p.floor())
+	for dz in range(-reach,reach+1):
+		for dx in range(-reach,reach+1):
+			for other: Vector3 in _crowd.get(base+Vector2i(dx,dz),[]):
+				if trees_only and other.z < 0.5: continue
+				if p.distance_squared_to(Vector2(other.x,other.y)) < radius*radius: count += 1
+	return count
 
 func _refuse(reason: String) -> bool:
 	refusals[reason] = refusals.get(reason,0)+1
@@ -543,12 +657,15 @@ func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:
 		"arid": return "shrub" if pick < 0.8 else "grass_tuft"
 	return "grass_tuft"
 
+func _build_crowd() -> void:
+	if _crowd_built: return
+	_crowd_built = true
+	for item in data.objects:
+		if item.asset == "waterfall": continue
+		_crowd.get_or_add(Vector2i(floori(item.x),floori(item.z)),[]).append(Vector3(item.x,item.z,1.0 if item.asset in TREES else 0.0))
+
 func _crowded(p: Vector2, tree: bool) -> bool:
-	if not _crowd_built:
-		_crowd_built = true
-		for item in data.objects:
-			if item.asset == "waterfall": continue
-			_crowd.get_or_add(Vector2i(floori(item.x),floori(item.z)),[]).append(Vector3(item.x,item.z,1.0 if item.asset in TREES else 0.0))
+	_build_crowd()
 	var base := Vector2i(p.floor())
 	for dz in range(-2,3):
 		for dx in range(-2,3):

@@ -19,10 +19,22 @@ const FLOOR_WEIGHT := 0.42
 const FLOOR_SHIFT := Vector3(0.015,-0.04,-0.07)
 ## Emerged plants go when a clearing stroke leaves their cell below this wish.
 const CLEAR_BELOW := -0.25
+## A firm clearing pass is cleared outright at release, so one deliberate
+## Shift pass over a young forest clears it. A cell is firmly cleared when the
+## stroke pushed its wish down by at least FIRM_PASS (the sum of its dabs
+## there, before clamping), or by at least FIRM_MIN and left it at FIRM_EMPTY
+## or less: the pass took the wish away. At strength 1 a steady pass pushes
+## about 1 at its centre, which undoes one planting pass. A light pass (low
+## strength, a quick flick, the brush's soft shoulder over a denser wish)
+## only thins the wish and leaves what emerged.
+const FIRM_PASS := 0.7
+const FIRM_MIN := 0.3
+const FIRM_EMPTY := 0.1
 
 var _floor := Color()
 var _clearing := false
 var _planting := false
+## Cover cell -> wish this clearing stroke pushed down there.
 var _cleared := {}
 
 func _init() -> void:
@@ -55,7 +67,7 @@ func dab(data: NativeTerrainData, center: Vector2, reach: float, amount: float, 
 		var weight := pow(1.0-t*t,1.5)
 		var before := wish[cell]
 		wish[cell] = move_toward(before,goal,amount*RATE*weight)
-		if lower: _cleared[cell] = true
+		if lower: _cleared[cell] = _cleared.get(cell,0.0)+amount*RATE*weight
 		if data.provenance[cell] == NativeTerrainData.SOURCE_HAND: continue
 		_tint_toward(tint,cell,_floor,FLOOR_WEIGHT*maxf(wish[cell],0.0),absf(wish[cell]-before)*FLOOR_WEIGHT+0.0001)
 	intent.forest = wish
@@ -68,9 +80,26 @@ func finish(data: NativeTerrainData) -> Rect2:
 	if not has_bounds: return Rect2()
 	has_bounds = false
 	if not _clearing: return bounds
+	_settle_clearing()
 	_clear_objects(data,_in_clearing.bind(data),func(_asset: String) -> bool: return false)
 	_cleared.clear()
 	return bounds if _planting else Rect2()
+
+## A firm pass holds its ground clear: its cells drop to CLEAR_BELOW at least,
+## inside the stroke's undo step, so their emerged plants go now and the
+## biome's own chance there is thinned as any clearing's is.
+func _settle_clearing() -> void:
+	var intent: RefCounted = editor.emergence.intent
+	var wish: PackedFloat32Array = intent.forest
+	var changed := false
+	for cell: int in _cleared:
+		var push: float = _cleared[cell]
+		if wish[cell] > CLEAR_BELOW and (push >= FIRM_PASS or (push >= FIRM_MIN and wish[cell] <= FIRM_EMPTY)):
+			wish[cell] = CLEAR_BELOW
+			changed = true
+	if not changed: return
+	intent.forest = wish
+	intent.revision += 1
 
 func _in_clearing(p: Vector2, data: NativeTerrainData) -> bool:
 	var cell := data.meadow_cell(p)

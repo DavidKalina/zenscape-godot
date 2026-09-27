@@ -1,5 +1,7 @@
 # Grass look: painterly meadow
 
+> **Retired unless requested (2026-09-27, `feature/phase3-polish`).** The dense GPU grass draws only with `--beauty-grass`, on Beauty and Ultra alike, and builds nothing until first wanted. Its first render drew tufts metres wide and lying flat, and the user does not want blades by default, so the render is not fixed. The sections below describe it as it stood before; `--no-beauty-grass` and `--classic-grass` still force it off.
+
 Phase 3, branch `feature/grass-look`. The user said the grass "looks like stubble… it doesn't look artistic enough". The direction is a painterly meadow in the spirit of Ghibli and Tiny Glade. It keeps the existing look and palette families, so this is an upgrade, not a restyle.
 
 Scope: every tier's grass.

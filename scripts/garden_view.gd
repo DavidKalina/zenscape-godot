@@ -200,12 +200,16 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 	var water_began := Time.get_ticks_usec()
 	# A yielding rebuild floods recipe ponds on a private copy first, before any
 	# water node changes, so a superseded rebuild leaves the old water whole.
+	# Its streams are laid on the same worker, against a private recipe.
 	var recipe_water: Array = []
-	if frame_tree != null and data is NativeTerrainData and data._recipe != null and not data.ponds.is_empty() and data._water_grid_h.size() == NativeRecipeWater.W*NativeRecipeWater.W:
+	var recipe_streams := {}
+	if frame_tree != null and data is NativeTerrainData and data._recipe != null and ((not data.ponds.is_empty() and data._water_grid_h.size() == NativeRecipeWater.W*NativeRecipeWater.W) or (recipe_stream_worker and not data.streams.is_empty())):
 		var generation := _instance_generation
 		var sampled := {"heights":data.heights.duplicate(),"ponds":data.ponds.duplicate(true),"streams":data.streams.duplicate(true),"waterfall":data.landscape_waterfall}
-		recipe_water = await _sample_recipe_water(frame_tree)
+		var built: Dictionary = await _sample_recipe_water(frame_tree)
 		if generation != _instance_generation or data.heights != sampled.heights or data.ponds != sampled.ponds or data.streams != sampled.streams or data.landscape_waterfall != sampled.waterfall: return false
+		recipe_water = built.ponds
+		if built.has("streams"): recipe_streams = built
 		last_water_usec["pond_worker"] = Time.get_ticks_usec()-water_began
 		water_began = Time.get_ticks_usec()
 	# A yielding rebuild of a world without a recipe (the Genesis plain) floods
@@ -222,8 +226,9 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 	_stream_nodes.clear()
 	_stream_probe = {}
 	if data is NativeTerrainData:
-		var geometries: Array = plain_water.get("streams",[])
-		if plain_water.is_empty():
+		var worker_streams: Dictionary = plain_water if not plain_water.is_empty() else recipe_streams
+		var geometries: Array = worker_streams.get("streams",[])
+		if worker_streams.is_empty():
 			var gene: Dictionary=data._palette.noise.g.water
 			var ramp:=preload("res://scripts/native_recipe_water.gd").water_ramp(gene)
 			data.begin_probe()
@@ -231,7 +236,7 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 				geometries.append(preload("res://scripts/native_stream_geometry.gd").build(course,data.stream_ground_height,ramp))
 			_stream_probe = data.end_probe()
 		else:
-			_stream_probe = plain_water.probe
+			_stream_probe = worker_streams.probe
 		for i in range(geometries.size()):
 			var geometry: Dictionary = geometries[i]
 			_stamp_stream_birth(geometry,data.streams[i])
@@ -313,6 +318,10 @@ const WaterBrush := preload("res://scripts/water_brush.gd")
 var water_births := {}
 ## False keeps a plain world's water on the main thread, for profiling.
 var plain_water_worker := true
+## False lays a recipe world's streams on the main thread again (the old path).
+var recipe_stream_worker := true
+var _worker_recipe: RefCounted
+var _worker_recipe_key := PackedByteArray()
 
 static func water_key(record: Dictionary) -> String:
 	return var_to_bytes(record).hex_encode().md5_text()
@@ -449,19 +458,51 @@ func _sample_plain_water(frame_tree: SceneTree) -> Dictionary:
 
 ## Every recipe pond's surface, built from a detached height copy on a worker.
 ## The impacts and colour ramp read the live recipe, so they are taken here.
-func _sample_recipe_water(frame_tree: SceneTree) -> Array:
+## The streams are laid there too (they were 4.2 ms on the main thread), against
+## a private recipe: recipes are pure functions of their settings, so its
+## heights are the live recipe's to the bit, and the stream probe records the
+## same vertex reads a main-thread build would. Returns {"ponds"} and, when
+## streams were laid, {"streams", "probe"}.
+func _sample_recipe_water(frame_tree: SceneTree) -> Dictionary:
 	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
 	detached._recipe_heights = data._recipe_heights.duplicate()
 	detached._water_grid_h = data._water_grid_h.duplicate()
 	detached.streams.assign(data.streams.duplicate(true))
-	var ponds: Array = data.ponds.duplicate(true)
+	var ponds: Array = data.ponds.duplicate(true) if data._water_grid_h.size() == NativeRecipeWater.W*NativeRecipeWater.W else []
 	var prepared := {"impacts":data.waterfall_impacts(),"ramp":NativeRecipeWater.water_ramp(data._recipe.source.g.get("water",{}))}
+	var settings: Dictionary = data._recipe_settings.duplicate(true)
+	var key := var_to_bytes(settings)
+	var lay_streams := recipe_stream_worker and not detached.streams.is_empty()
+	# One private recipe is kept between rebuilds; a job checks it out, so two
+	# overlapping jobs never share one (a second builds its own).
+	var recipe: RefCounted = null
+	if lay_streams and _worker_recipe_key == key:
+		recipe = _worker_recipe
+		_worker_recipe = null
+	var stream_ramp := NativeRecipeWater.water_ramp(data._palette.noise.g.water)
 	var job = preload("res://scripts/background_work.gd").new()
-	return await job.run(func() -> Array:
+	var result: Dictionary = await job.run(func() -> Dictionary:
 		var built := []
 		for pond: Dictionary in ponds:
 			built.append(NativeRecipeWater.build(detached,pond,prepared))
-		return built,frame_tree)
+		var found := {"ponds":built}
+		if lay_streams:
+			detached._recipe = recipe if recipe != null else preload("res://scripts/native_terrain_recipe.gd").new(settings)
+			var geometries := []
+			detached.begin_probe()
+			for course: Dictionary in detached.streams:
+				geometries.append(preload("res://scripts/native_stream_geometry.gd").build(course,detached.stream_ground_height,stream_ramp))
+			found.streams = geometries
+			found.probe = detached.end_probe()
+			found.recipe = detached._recipe
+		return found,frame_tree)
+	if result.has("recipe"):
+		# Check the private recipe back in while it still matches this world.
+		if data is NativeTerrainData and var_to_bytes(data._recipe_settings) == key:
+			_worker_recipe = result.recipe
+			_worker_recipe_key = key
+		result.erase("recipe")
+	return result
 
 func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	last_instance_usec.clear()
