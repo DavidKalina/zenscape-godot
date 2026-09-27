@@ -98,6 +98,16 @@ func run() -> void:
 	await settle(again)
 	check(again.atlas.atlas.slots.size() == 2 and again.atlas.views.size() == 1,"relaunch restores both chunks, one drawn frozen")
 	check(seam(again) < 1e-3,"relaunched seam %.6f" % seam(again))
+	# A real key press, through the viewport, not a direct move().
+	var key := InputEventKey.new()
+	key.keycode = KEY_RIGHT
+	key.pressed = true
+	var expected: Vector2i = again.atlas.atlas.live+again.atlas.camera_direction(Vector2(1,0))
+	Input.parse_input_event(key)
+	for i in range(240):
+		await process_frame
+		if again.atlas.atlas.live == expected and not again.atlas.busy: break
+	check(again.atlas.atlas.live == expected,"a plain right arrow steps to %s, got %s" % [expected,again.atlas.atlas.live])
 	again.queue_free()
 	await process_frame
 	print("probe_chunk_atlas: %s" % ("PASS" if failures == 0 else "FAIL (%d)" % failures))

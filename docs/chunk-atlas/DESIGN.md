@@ -68,7 +68,7 @@ following Electron's live-at-origin model:
   - the authored earth block, lifted to its rim, with walls only on outer
     borders;
   - a `GardenView` for its trees, props and ponds.
-- **Stepping.** Ctrl or Cmd plus an arrow, relative to the camera, stores the
+- **Stepping.** A plain arrow key (macOS keeps Ctrl+arrows for Spaces), relative to the camera, stores the
   live chunk and moves the live slot. The scene shifts under the camera, which
   then glides onto the new chunk (`GLIDE_S` 1.15).
   - An empty square gets a fresh plain.
@@ -118,7 +118,7 @@ following Electron's live-at-origin model:
   across the seam, walk back, relaunch.
 
 Launch: `./run-cozy-flow.command -- --atlas` (or `godot --path .
-res://studies/cozy_worlds.tscn -- --atlas`). Ctrl or Cmd plus the arrows steps
+res://studies/cozy_worlds.tscn -- --atlas`). The arrow keys steps
 chunks. The camera's existing pan (middle drag) and zoom (up to 150 m) already
 cover a 3x3 ring.
 

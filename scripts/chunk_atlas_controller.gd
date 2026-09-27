@@ -1,7 +1,7 @@
 extends Node
 ## `--atlas`: Genesis chunks stitched into one world (docs/chunk-atlas/DESIGN.md).
 ## The live chunk is the editor's own at the origin; its stored neighbours are
-## drawn around it by scripts/chunk_atlas_view.gd. Ctrl or Cmd plus an arrow
+## drawn around it by scripts/chunk_atlas_view.gd. A plain arrow key
 ## steps to the chunk that way, relative to the camera, growing a fresh plain
 ## pinned to its neighbours if the square is empty.
 
@@ -53,7 +53,7 @@ func setup(owner_scene: Node3D) -> void:
 	_hint()
 
 func _hint() -> void:
-	scene._notice.text = "Chunk %s · Ctrl or Cmd + arrows walks to the next chunk, or grows one there." % [atlas.live]
+	scene._notice.text = "Chunk %s · the arrow keys walk to the next chunk, or grows one there." % [atlas.live]
 
 func _attach_live() -> void:
 	var editor: NativeChunkEditor = scene._chunk_editor
@@ -154,9 +154,13 @@ func _process(delta: float) -> void:
 	scene._update_camera()
 	if _glide_time >= GLIDE_S: _glide_time = -1.0
 
-func _unhandled_input(event: InputEvent) -> void:
+## Plain arrows: macOS takes Ctrl+arrows for Spaces, and focused UI would
+## eat them as focus moves, so this reads them before the GUI does.
+func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo): return
-	if not (event.ctrl_pressed or event.meta_pressed): return
+	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed or event.shift_pressed: return
+	if scene.photo != null and scene.photo.active: return
+	if get_viewport().gui_get_focus_owner() is LineEdit: return
 	var screen := {KEY_UP:Vector2(0,-1),KEY_DOWN:Vector2(0,1),KEY_LEFT:Vector2(-1,0),KEY_RIGHT:Vector2(1,0)}
 	if not screen.has(event.keycode): return
 	get_viewport().set_input_as_handled()
