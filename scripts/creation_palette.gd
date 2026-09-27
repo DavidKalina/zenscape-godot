@@ -17,6 +17,8 @@ var buttons := {}
 var look_button: Button
 ## Photo mode (scripts/photo_mode.gd), beside Look.
 var photo_button: Button
+## Moods (scripts/mood_panel.gd), after Photo.
+var mood_button: Button
 var frame := Control.new()
 var glass: Panel
 var row := HBoxContainer.new()
@@ -102,6 +104,10 @@ func setup(owner_scene: Node3D) -> void:
 	photo_button.tooltip_text = "Compose and take a photo, with no UI · P"
 	photo_button.pressed.connect(func() -> void: scene.enter_photo())
 	row.add_child(photo_button)
+	mood_button = _tool_button("Mood",preload("res://scripts/mood_panel.gd").glyph(22))
+	mood_button.tooltip_text = "Moods: sky, light, weather, season and colours · M"
+	mood_button.pressed.connect(func() -> void: scene.toggle_mood())
+	row.add_child(mood_button)
 	hint.add_theme_font_size_override("font_size",13)
 	hint.add_theme_color_override("font_color",Color(Glass.INK,0.72))
 	hint.add_theme_color_override("font_shadow_color",Color("182628",0.8))
@@ -174,6 +180,7 @@ func sync() -> void:
 	for id: String in buttons:
 		buttons[id].set_pressed_no_signal(id == holding)
 	look_button.set_pressed_no_signal(scene.looking)
+	if scene.has_method("mood_open"): mood_button.set_pressed_no_signal(scene.mood_open())
 	meters.modulate.a = 1.0 if not holding.is_empty() else 0.35
 	_sync_meters()
 	var state := "look" if scene.looking else holding

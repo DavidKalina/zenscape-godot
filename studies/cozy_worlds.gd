@@ -27,6 +27,10 @@ var brush: String = brush_ids[0] if not brush_ids.is_empty() else "land"
 var creation_palette: Control
 ## Photo mode: compose, then capture (scripts/photo_mode.gd). P or the palette's camera.
 var photo: Node
+## Moods and their pins (scripts/mood_look.gd), saved with the place, and the
+## panel that picks them (scripts/mood_panel.gd). M or the palette's Mood.
+var mood_look: Node
+var mood_panel: Control
 ## True once the shell is built and the first world is open.
 var shell_ready := false
 var _craft_before_menu := false
@@ -41,6 +45,11 @@ func _ready() -> void:
 		DirAccess.make_dir_recursive_absolute(places_path.get_base_dir())
 	library_path = places_path.get_base_dir()
 	recent_file = library_path.path_join("recent.cfg")
+	# Before the first restore, which reads and writes its document.
+	mood_look = preload("res://scripts/mood_look.gd").new()
+	mood_look.name = "MoodLook"
+	add_child(mood_look)
+	mood_look.setup(self)
 	await super._ready()
 	places = preload("res://scripts/cozy_regrowth.gd").new()
 	add_child(places)
@@ -108,6 +117,10 @@ func _setup_creation() -> void:
 	photo = preload("res://scripts/photo_mode.gd").new()
 	add_child(photo)
 	photo.setup(self)
+	mood_panel = preload("res://scripts/mood_panel.gd").new()
+	_toolbar.get_parent().add_child(mood_panel)
+	_toolbar.get_parent().move_child(mood_panel,creation_palette.get_index())
+	mood_panel.setup(self)
 	_layout_shell()
 	_sync_creation_ui()
 
@@ -174,6 +187,19 @@ func set_looking(enabled: bool) -> void:
 ## Photo mode from the shell: the brush goes away and the chrome hides.
 func enter_photo() -> void:
 	if photo != null: photo.enter()
+
+## The mood panel over the palette: open or close it.
+func toggle_mood() -> void:
+	if mood_panel != null: mood_panel.toggle()
+	_sync_creation_ui()
+
+func mood_open() -> bool:
+	return mood_panel != null and mood_panel.open
+
+## A new world opens on its own look with nothing pinned.
+func establish_world_weather(world: Dictionary) -> void:
+	super.establish_world_weather(world)
+	if mood_look != null: mood_look.reset()
 
 ## Pick up a registered creation brush; this also ends Look and Craft.
 func select_brush(id: String) -> void:
@@ -263,7 +289,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Keys while creating or looking: Tab looks, 1-9 pick brushes in palette
 ## order, H hides the chrome and puts the brush away with it, P opens photo
-## mode, Esc opens the menu. Returns true when the key was used.
+## mode, M the moods, Esc closes the moods or opens the menu. Returns true when the key was used.
 func _creation_key(event: InputEventKey) -> bool:
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
 	if event.keycode == KEY_TAB:
@@ -279,6 +305,12 @@ func _creation_key(event: InputEventKey) -> bool:
 		_sync_creation_ui()
 		return true
 	if not (_creating() or looking): return false
+	if event.keycode == KEY_M:
+		toggle_mood()
+		return true
+	if event.keycode == KEY_ESCAPE and mood_open():
+		toggle_mood()
+		return true
 	if event.keycode == KEY_ESCAPE:
 		show_menu()
 		return true
@@ -307,6 +339,7 @@ func blocks_world_input(point: Vector2) -> bool:
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
 	if photo != null and photo.contains_pointer(point): return true
+	if mood_panel != null and mood_panel.contains_pointer(point): return true
 	if _toolbar_glass != null and _toolbar_glass.is_visible_in_tree() and _toolbar_glass.get_global_rect().has_point(point): return true
 	return super.blocks_world_input(point)
 
