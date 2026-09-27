@@ -35,6 +35,7 @@ const TOOL_TEXT := {
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
 	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
 	"land":"Drag to raise land · Shift or right drag lowers · [ ] brush size",
+	"water":"Drag to pour water · It runs downhill and pools · Shift or right drag drains",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -68,6 +69,8 @@ const SETTINGS := [
 	{"property":"land_radius","title":"Brush size","low":1.5,"high":9.0,"step":0.25,"unit":"","whole":false,"modes":["land"]},
 	{"property":"land_strength","title":"Strength","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["land"]},
 	{"property":"land_ceiling","title":"Highest land","low":2.0,"high":24.0,"step":0.5,"unit":"m","whole":false,"modes":["land"]},
+	{"property":"water_radius","title":"Brush size","low":1.0,"high":8.0,"step":0.25,"unit":"","whole":false,"modes":["water"]},
+	{"property":"water_strength","title":"Flow","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["water"]},
 ]
 const POSE_TOOLS := ["tree","flower","rock","assets"]
 ## The one-shot commands a tool offers beside its sliders. The name is the node
@@ -220,6 +223,16 @@ signal land_weathered(bounds: Rect2)
 var _land_lower := false
 ## The button holding the current land stroke; every other stroke is a left drag.
 var _stroke_button := MOUSE_BUTTON_LEFT
+## The water brush (scripts/water_brush.gd): poured water settles on a worker
+## after release, then lands as one undoable edit.
+var water_brush = preload("res://scripts/water_brush.gd").new()
+var water_radius := 3.0
+var water_strength := 1.0
+## True while a released water stroke is being settled on a worker.
+var water_settling := false
+var _water_generation := 0
+## Emitted when settled water lands in the world; `bounds` in plate metres.
+signal water_settled(bounds: Rect2)
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -344,6 +357,7 @@ func select_tool(tool: String) -> void:
 func preview_radius() -> float:
 	if mode == "explosive": return blast_radius
 	if mode == "land": return land_radius
+	if mode == "water": return water_radius
 	if mode == "tunnel": return tunnel_width/2
 	if mode == "mountain":
 		return mountain_radius
@@ -458,6 +472,7 @@ func handle_input(event: InputEvent) -> bool:
 			var step := 0.25 if event.keycode == KEY_BRACKETRIGHT else -0.25
 			var property := "strength" if event.shift_pressed else "radius"
 			if mode == "land": property = "land_strength" if event.shift_pressed else "land_radius"
+			if mode == "water": property = "water_strength" if event.shift_pressed else "water_radius"
 			set_setting(property,get(property)+step)
 			return true
 		if event.keycode == KEY_K and not event.echo and sky_toggle_requested.has_connections():
@@ -466,7 +481,7 @@ func handle_input(event: InputEvent) -> bool:
 	if mode == "select" and event is InputEventMouseMotion and _selection_drag:
 		move_selection_pointer(event.position)
 		return true
-	if mode == "land" and event is InputEventMouseButton and event.button_index in [MOUSE_BUTTON_LEFT,MOUSE_BUTTON_RIGHT]:
+	if mode in ["land","water"] and event is InputEventMouseButton and event.button_index in [MOUSE_BUTTON_LEFT,MOUSE_BUTTON_RIGHT]:
 		return _land_press(event)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
@@ -664,9 +679,9 @@ func _process(delta: float) -> void:
 		if _painting and placement_trail and trail_available():
 			continue_trail(center)
 			_emit_stroke(1,hit,preview_radius(),delta)
-		elif _painting and mode == "land":
+		elif _painting and mode in ["land","water"]:
 			_land_step(center,delta)
-			_emit_stroke(1,hit,land_radius,land_strength*delta)
+			_emit_stroke(1,hit,preview_radius(),(water_strength if mode == "water" else land_strength)*delta)
 		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
@@ -706,6 +721,7 @@ func finish_stroke() -> void:
 	if changed: _stroke_ended()
 	_stroke_rect = Rect2()
 	stroke_finished.emit(_stroke_center,_stroke_radius,mode)
+	if mode == "water": _settle_water()
 
 ## Hand a finished stroke's ground to emergence. Kept as one call so the
 ## stroke_finished signal can take it over.
@@ -737,6 +753,9 @@ func _history_step(forward: bool) -> void:
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
+	# A water stroke still settling belongs to the world being left.
+	_water_generation += 1
+	water_settling = false
 	if scene.has_method("_finish_fire_stroke"): scene._finish_fire_stroke()
 	var history: Array = data._redo if forward else data._undo
 	if history.is_empty(): return
@@ -1547,19 +1566,30 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	if hit == null: return false
 	_stroke_button = event.button_index
 	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT
-	land_brush.prepare(data,land_seed)
-	land_brush.begin()
-	data.begin_stroke()
 	_painting = true
 	_elapsed = 0.0
 	_last_point = Vector2(hit.x,hit.z)
+	if mode == "water":
+		# Poured water changes nothing until it settles after release.
+		water_brush.begin()
+		water_dab(_last_point,water_strength/30.0)
+		_emit_stroke(0,hit,water_radius,0.0)
+		return true
+	land_brush.prepare(data,land_seed)
+	land_brush.begin()
+	data.begin_stroke()
 	land_dab(_last_point,land_strength/30.0)
 	refresh()
+	_emit_stroke(0,hit,land_radius,0.0)
 	return true
 
 func land_dab(point: Vector2, amount: float) -> void:
 	var lower := _land_lower or Input.is_key_pressed(KEY_SHIFT)
 	land_brush.dab(data,point,land_radius,amount,lower,land_ceiling)
+
+func water_dab(point: Vector2, amount: float) -> void:
+	var drain := _land_lower or Input.is_key_pressed(KEY_SHIFT)
+	water_brush.dab(point,water_radius,amount,drain)
 
 ## Dabs along the pointer's path at a fifth of the brush size, at most one
 ## refresh per 1/30 s. The rate is independent of how far the pointer moved.
@@ -1567,14 +1597,63 @@ func _land_step(center: Vector2, delta: float) -> void:
 	_elapsed += minf(delta,0.05)
 	if _elapsed < 1.0/30.0: return
 	var previous: Vector2 = _last_point if _last_point != null else center
-	var dabs := clampi(ceili(previous.distance_to(center)/(land_radius*0.2)),1,24)
+	var water := mode == "water"
+	var size := water_radius if water else land_radius
+	var dabs := clampi(ceili(previous.distance_to(center)/(size*0.2)),1,24)
 	for i in range(1,dabs+1):
 		var point := previous.lerp(center,float(i)/dabs)
+		if water:
+			water_dab(point,water_strength*_elapsed/dabs)
+			continue
 		land_dab(point,land_strength*_elapsed/dabs)
 		_touch(point,land_radius)
-	refresh()
+	if not water: refresh()
 	_elapsed = 0.0
 	_last_point = center
+
+## Settle a released water stroke: plan on a worker from a detached height
+## copy, then apply the ponds and streams as one undoable edit, stamp their
+## fill births and refresh with the yielding settle. The release frame only
+## snapshots. A later stroke, undo or world change supersedes the plan.
+func _settle_water() -> void:
+	if water_brush.dabs.is_empty() or forming: return
+	_water_generation += 1
+	var generation := _water_generation
+	var dabs: PackedVector3Array = water_brush.dabs
+	water_brush.begin()
+	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+	var target := data
+	var heights := data.heights.duplicate()
+	var ponds: Array = data.ponds.duplicate(true)
+	var streams: Array = data.streams.duplicate(true)
+	var validate: bool = data._recipe == null
+	water_settling = true
+	var job = preload("res://scripts/background_work.gd").new()
+	var plan: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/water_brush.gd").plan(detached,ponds,streams,dabs,validate),get_tree())
+	if generation != _water_generation: return
+	water_settling = false
+	water_brush.last_plan_usec = plan.usec
+	if not plan.changed: return
+	if forming or data != target or data.heights != heights or data.ponds != ponds or data.streams != streams or not data._before.is_empty():
+		_set_status("The land changed while the water settled. Pour again.")
+		return
+	data.begin_stroke()
+	# Lost water scooped a hollow to pool in (water_brush.gd `_scoop`).
+	if plan.has("heights"): data.heights = plan.heights
+	data.ponds.assign(plan.ponds)
+	data.streams.assign(plan.streams)
+	if not data.end_stroke(): return
+	var now: float = preload("res://scripts/emergence.gd").time
+	for entry: Dictionary in plan.added:
+		content.water_births[GardenView.water_key(entry.record)] = {"born":now+float(entry.delay),"drop":float(entry.drop)}
+	for entry: Dictionary in plan.added_streams:
+		content.water_births[GardenView.water_key(entry.record)] = {"born":now+float(entry.delay),"seconds":float(entry.seconds)}
+	# Grass creeps out from new shores (scripts/emergence.gd).
+	_stroke_rect = plan.rect
+	_stroke_ended()
+	_stroke_rect = Rect2()
+	water_settled.emit(plan.rect)
+	refresh(get_tree())
 
 ## Runs inside the stroke's transaction, so one undo removes the land and its
 ## weathering together.

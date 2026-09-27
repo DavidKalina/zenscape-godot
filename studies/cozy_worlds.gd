@@ -11,6 +11,9 @@ var crafting := false
 var craft_tool := "raise"
 var _craft_before_menu := false
 var _creation_hint: Label
+## The creation brush in hand (scripts/genesis_canvas.gd BRUSHES); Create returns to it.
+var creation_brush := "land"
+const Genesis = preload("res://scripts/genesis_canvas.gd")
 
 func _ready() -> void:
 	library_path = places_path.get_base_dir()
@@ -56,7 +59,7 @@ func _place_creation_hint() -> void:
 
 ## The land brush is in hand and the craft palette is away.
 func _creating() -> bool:
-	return creation_mode and _has_world and _chunk_editor.active and not crafting and _chunk_editor.mode == "land"
+	return creation_mode and _has_world and _chunk_editor.active and not crafting and _chunk_editor.mode in Genesis.brush_ids()
 
 func set_building(enabled: bool) -> void:
 	if not creation_mode or not _has_world:
@@ -65,7 +68,7 @@ func set_building(enabled: bool) -> void:
 	if enabled:
 		super.set_building(true)
 		crafting = true
-		if _chunk_editor.mode == "land": _chunk_editor.select_tool(craft_tool)
+		if _chunk_editor.mode in Genesis.brush_ids(): _chunk_editor.select_tool(craft_tool)
 	else:
 		_enter_creation()
 	_sync_creation_ui()
@@ -75,10 +78,10 @@ func _enter_creation() -> void:
 	if _landscape_editor != null: _landscape_editor.hide()
 	_build_palette.close_palette()
 	crafting = false
-	if _chunk_editor.mode != "land": craft_tool = _chunk_editor.mode
+	if _chunk_editor.mode not in Genesis.brush_ids(): craft_tool = _chunk_editor.mode
 	flush_world_play()
 	_chunk_editor.set_active(true)
-	if _chunk_editor.active and _chunk_editor.mode != "land": _chunk_editor.select_tool("land")
+	if _chunk_editor.active and _chunk_editor.mode != creation_brush: _chunk_editor.select_tool(creation_brush)
 	_ui.visible = false
 
 ## Regrowth folds the world away with no tool in hand, then gives the brush back.
@@ -96,6 +99,7 @@ func _sync_creation_ui() -> void:
 	_build_button.text = "Create" if crafting else "Craft"
 	if not crafting and _chunk_editor.active and not _menu.visible: _ui.visible = false
 	if _creation_hint != null:
+		if _creating(): _creation_hint.text = Genesis.brush_hint(_chunk_editor.mode)
 		_creation_hint.visible = _creating() and _toolbar.visible and not _menu.visible
 		_place_creation_hint()
 
@@ -136,7 +140,7 @@ func _process(delta: float) -> void:
 	# Cmd/Ctrl K opens the palette directly; treat that as entering Craft.
 	if creation_mode and not crafting and _ui.visible and _chunk_editor.active and _menu != null and not _menu.visible:
 		crafting = true
-		if _chunk_editor.mode == "land": _chunk_editor.select_tool(craft_tool)
+		if _chunk_editor.mode in Genesis.brush_ids(): _chunk_editor.select_tool(craft_tool)
 		_sync_creation_ui()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -150,9 +154,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			show_menu()
 			get_viewport().set_input_as_handled()
 			return
-		# Number keys and V pick craft tools; they wait for the Craft palette.
-		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_V] and not (event.ctrl_pressed or event.meta_pressed):
+		# Number keys pick creation brushes (1 land, 2 water, ...); V and the
+		# rest wait for the Craft palette.
+		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_V] and not (event.ctrl_pressed or event.meta_pressed):
+			var brush := Genesis.brush_for_key(event.keycode)
+			if not brush.is_empty() and brush != _chunk_editor.mode:
+				creation_brush = brush
+				_chunk_editor.select_tool(brush)
 			get_viewport().set_input_as_handled()
+			_sync_creation_ui()
 			return
 	super._unhandled_input(event)
 	_sync_creation_ui()

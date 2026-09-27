@@ -7,6 +7,27 @@ extends RefCounted
 const Families = preload("res://scripts/palette_families.gd")
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 
+## Creation brushes in key order: 1 land, 2 water, then meadow, forest and
+## path as they arrive. Each script exposes `brush_id` (also the chunk
+## editor mode that paints it), `title` and `HINT`.
+const BRUSHES := [
+	preload("res://scripts/land_brush.gd"),
+	preload("res://scripts/water_brush.gd"),
+]
+
+static func brush_ids() -> Array:
+	return BRUSHES.map(func(brush: GDScript) -> String: return brush.brush_id)
+
+## The brush a number key picks (KEY_1 is the first), or "" for none.
+static func brush_for_key(keycode: int) -> String:
+	var index := keycode-KEY_1
+	return BRUSHES[index].brush_id if index >= 0 and index < BRUSHES.size() else ""
+
+static func brush_hint(id: String) -> String:
+	for brush: GDScript in BRUSHES:
+		if brush.brush_id == id: return brush.HINT
+	return ""
+
 ## A seeded misty morning or soft day over a meadow palette.
 static func world(seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()

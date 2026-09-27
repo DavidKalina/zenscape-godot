@@ -4,8 +4,8 @@ extends SceneTree
 ## one refresh), releases through finish_stroke and waits for the world to
 ## settle. Frame gaps are main-loop intervals under the dummy renderer: they
 ## include scripts, physics and navigation, never GPU work or presentation.
-##   -- --mode=raise|lower|smooth|meadow|grass|paint|land --dabs=30
-##      --from=-4,-2.5 --to=3,2 --then=undo|restroke --label=name
+##   -- --mode=raise|lower|smooth|meadow|grass|paint|land|water --dabs=30
+##      --from=-4,-2.5 --to=3,2 --then=undo|restroke --label=name --sync-water
 ## Dab amounts are fixed per tick, so the settled world is deterministic and the
 ## printed fingerprint can be compared between builds. The dummy renderer keeps
 ## no MultiMesh transforms, so the instance hash covers batch sources only.
@@ -22,6 +22,11 @@ var then := ""
 var watch := 0.0
 var _tick_end := 0
 var after_tick: Array[float] = []
+## The land brush's ridge-field preparation on the stroke's press, the first
+## on this world (the first-dab hitch when it runs on the press frame).
+var prepare_ms := -1.0
+## Opening the stroke's undo transaction (history snapshot and its listeners).
+var begin_ms := -1.0
 
 func _initialize() -> void: run.call_deferred()
 
@@ -87,10 +92,16 @@ func stroke(a: Vector2, b: Vector2, count: int, frames: Array[float], ticks: Arr
 	var dabs := 0
 	var last_point: Variant = null
 	editor._level = 0.0
-	editor.data.begin_stroke()
+	# A water stroke changes nothing until it settles after release.
+	var begin_began := Time.get_ticks_usec()
+	if mode == "water": editor.water_brush.begin()
+	else: editor.data.begin_stroke()
+	if begin_ms < 0.0: begin_ms = (Time.get_ticks_usec()-begin_began)/1000.0
 	if mode == "land":
 		# As the pointer press does: without the ridge field a dab is a no-op.
+		var prepare_began := Time.get_ticks_usec()
 		editor.land_brush.prepare(editor.data,editor.land_seed)
+		if prepare_ms < 0.0: prepare_ms = (Time.get_ticks_usec()-prepare_began)/1000.0
 		editor.land_brush.begin()
 	editor._painting = true
 	var previous := Time.get_ticks_usec()
@@ -107,12 +118,14 @@ func stroke(a: Vector2, b: Vector2, count: int, frames: Array[float], ticks: Arr
 		var steps := maxi(1,ceili(from.distance_to(center)/(editor.radius*0.15)))
 		for i in range(1,steps+1):
 			var point := from.lerp(center,float(i)/steps)
-			if mode == "land":
+			if mode == "water":
+				editor.water_dab(point,editor.water_strength/30.0/steps)
+			elif mode == "land":
 				editor.land_dab(point,editor.land_strength/30.0/steps)
 				# As _land_step does, so the release hands its rect to emergence.
 				editor._touch(point,editor.land_radius)
 			else: editor.dab(point,editor.strength/30.0/steps)
-		editor.refresh()
+		if mode != "water": editor.refresh()
 		_tick_end = Time.get_ticks_usec()
 		ticks.append((_tick_end-tick)/1000.0)
 		elapsed = 0.0
@@ -144,6 +157,10 @@ func run() -> void:
 	scene.set_process_input(false)
 	scene.set_process_unhandled_input(false)
 	editor.select_tool(mode)
+	# --sync-water: the water settle's old main-thread path, for comparison.
+	if "--sync-water" in OS.get_cmdline_user_args():
+		editor.content.plain_water_worker = false
+		scene._planar_water.live_resetup = false
 	editor.radius = 2.2
 	editor.strength = 2.0
 	var probe := Node.new()
@@ -183,7 +200,7 @@ func run() -> void:
 	var settle_frames := 0
 	if watch > 0.0: editor.set_process(true)
 	previous = Time.get_ticks_usec()
-	while settle_frames < maxi(90,int(watch*120.0)) or editor.refresh_pending > 0:
+	while settle_frames < maxi(90,int(watch*120.0)) or editor.refresh_pending > 0 or editor.water_settling:
 		var stage := editor.refresh_stage
 		await process_frame
 		var now := Time.get_ticks_usec()
@@ -191,7 +208,7 @@ func run() -> void:
 		if settle.back() > 12.0: settle_stages.append([settle.size()-1,stage])
 		previous = now
 		settle_frames += 1
-	var report := {"label":label,"mode":mode,"then":then,"dabs":ticks.size(),"stroke_ms":snappedf((release-began)/1000.0,0.1),"idle_frames":stats(idle),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"after_dab":stats(after_tick),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":settle_stages,"water_usec":editor.content.last_water_usec}
+	var report := {"label":label,"mode":mode,"then":then,"dabs":ticks.size(),"stroke_ms":snappedf((release-began)/1000.0,0.1),"idle_frames":stats(idle),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"after_dab":stats(after_tick),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":settle_stages,"water_usec":editor.content.last_water_usec,"prepare_ms":snappedf(prepare_ms,0.01),"begin_ms":snappedf(begin_ms,0.01),"first_tick_ms":snappedf(ticks[0],0.01) if not ticks.is_empty() else 0.0,"first_after_ms":snappedf(after_tick[0],0.01) if not after_tick.is_empty() else 0.0,"water_plan_usec":editor.water_brush.last_plan_usec,"ponds":editor.data.ponds.size(),"streams":editor.data.streams.size(),"pond_vertices":editor.content.pond_vertices.size()}
 	print("STROKE ",JSON.stringify(report))
 	print("FINGERPRINT ",JSON.stringify(fingerprint()))
 	scene.queue_free()
