@@ -343,6 +343,14 @@ zs_reveal={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_pour={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_pour_area={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_growth_wave_0={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 1)

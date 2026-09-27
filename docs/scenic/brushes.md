@@ -15,8 +15,13 @@ included: `NativeChunkEditor.brush_id`, `select_brush(id)`, `held_brush()`,
 and the `brush_changed` signal for a shell to follow. Stroke signals carry the
 brush id as their mode.
 
-- **Drag** paints. **Shift-drag** or **right-drag** works the other way:
-  land lowers, a meadow lifts, forest clears, and a path grows back.
+- **1 again** with land in hand steps through its forms (Hill, Alpine,
+  Ridge, Mesa, Volcano, Tors); **Shift+1** steps back. See "Mountain forms".
+- **Drag** paints. **Shift-drag** works the other way: land lowers, a meadow
+  lifts, forest clears, and a path grows back. Right drags belong to the
+  camera in the creation shell ([camera](camera.md));
+  `NativeChunkEditor.right_works_other_way` keeps the old right-drag lowering
+  for the classic build.
 - **`[ ]`** sets the size of the brush in hand, and **Shift+`[ ]`** sets its
   strength. Land keeps `land_radius` and `land_strength` as editor settings.
   The others, water included, keep `radius` and `strength` on the brush and
@@ -175,6 +180,139 @@ leaves the cover.
 | `SINK_RATE`, `MAX_SINK`, `SMOOTH` | 0.3 m/s, 0.07 m, 4 /s |
 | `STONE_SPACING`, `STONE_CHANCE`, `STONE_SIZE`, `STONE_CAP` | 0.32 m, 0.34, 0.1–0.22, 80 |
 | `radius` | 1.1 (0.5–3) |
+
+## Mountain forms
+
+`feature/mountain-brush`. The land brush holds a row of forms
+(`scripts/mountain_forms.gd` `FORMS`). **Hill** is the everyday brush
+(`land_brush.gd`, unchanged, still capped at its dome) and the default. The
+others raise one whole mountain per press.
+
+**In hand.** When land is in hand, the palette shows a plain row of form
+buttons above its strip. `FORMS` is data only (`id`, `title`, `glyph`, `hint`)
+and the glyphs are `form_*` entries in `glass_chrome.gd` `GLYPHS`, so a
+restyle only touches `creation_palette.gd` `_form_button`. The row and
+**1 / Shift+1** (`studies/cozy_worlds.gd` `_creation_key`) both call
+`NativeChunkEditor.select_land_form(id)` or `cycle_land_form(step)`. The
+editor keeps `land_form` and emits `land_form_changed`. The hint line shows
+the form's hint.
+
+**Gesture.**
+
+- Press where the summit goes.
+- Drag out to grow it. The spread is the brush size (times the form's start
+  share) plus the drag distance. The height is the spread times the form's
+  `aspect`, scaled a little by strength (Shift+`[ ]`).
+- A Ridge is centred on the press and runs along the drag, which sets its
+  half-length. A click lays it across the view.
+- The drag is read on the press's ground plane, not the terrain, so the
+  rising flank under the pointer never shrinks it.
+- The form rises live while the button is held (`RISE_SECONDS` 2.2 s, eased)
+  and reshapes as you drag. After release it finishes rising, then lands.
+- Shift-drag still lowers, with the Hill brush, whichever form is in hand. Right drags orbit in the creation shell.
+
+**Landing, undo and weathering.** Landing closes the mountain's undo step at
+full height (`_land_mountain`). Weathering and rock colour then run on a
+worker through `_weather_async`, as a land stroke's do, and publish together.
+So one undo takes the whole mountain, its weathering and its colour, and redo
+brings them back.
+
+Anything that opens a new transaction while a mountain is still rising lands
+it first, weathered: a second press, a craft tool, undo, or a regrow
+(`_mountain_interrupted` on `data.stroke_starting`). The weathering worker is
+joined on the main thread in that case, 20-45 ms, as a quick land restroke
+already is.
+
+Weathering is a native `erode` pass. It unlocks only the grid cells the form
+lifted by more than 8 cm, so the plain around it and any water keep their
+shape. The erosion settings are per form (`SHAPES[form].erode` over
+`STROKE_EROSION`), and `detail` scales with height.
+
+**Shapes.** The per-vertex noise is built once per world. A tick only scales
+the stored lift; the lift is recomputed only when the drag moves it.
+
+| Form | Rock | Shape | Weathering |
+|---|---|---|---|
+| Alpine | granite | Horn: concave faces to a sharp summit. Three to five arêtes stand proud between hollowed cirques, with crags on the flanks. Tall ones pass the snowline (6.55 m on the plain) and take a snow dusting on their gentler top faces. | Strong: detail 0.55, k 0.013, cut up to 1.2 m. |
+| Ridge | granite | Knife-edge crest, serrated by ridged noise, with one flank steeper. It tapers at both ends and has a high point off-centre. | detail 0.45, k 0.012, cut 1.0 m. |
+| Mesa | sandstone | The cap and cliffs stand level on the press's ground. From the flat cap: a caprock cliff, a bench, a lower cliff, then a talus apron. The outline wanders. | Gentle, so the cap stays flat: detail 0.1, k 0.006, cut 0.45 m, deposit 0.65. |
+| Volcano | basalt | Concave cone, ribbed, with a lipped crater. Tall cones take snow on their upper slopes. | detail 0.2, k 0.012, cut 0.8 m (radial gullies). |
+| Tors | slate | Four to six blocky stacks on a low swell, with tops tilted along the bedding. | Light: detail 0.12, k 0.005, cut 0.35 m. |
+
+**Rock type is regional.** The terrain has no per-region rock type. The
+mesh builder paints rock from one palette on slope and height, and a world's
+rock style (`seeded_variety.gd`) only picks stone meshes. The regional channel
+that does exist is the painted-ground tint layer (`data.tint`, per 0.5 m
+cell, saved and undoable).
+
+- **Where it paints.** The weathering job paints the form's rock (`ROCKS`)
+  on its steeps (gradient `ROCK_SLOPE` 0.45-0.9) and on its upper share
+  (`SUMMIT`). Colours are picked per cell. The gentle green foot is left as it
+  is.
+- **Sandstone** bands by height (`BAND` 0.55 m).
+- **Basalt** reddens toward the crater.
+- **A mesa's cap** takes pale sandstone at `CAP_WEIGHT`.
+- **Snow** still settles over the tint, as it does over any painted ground.
+- **Mixed plates.** Two forms of different types on one plate keep their own
+  colours.
+
+**Water: the form refuses to bury it.** The lift fades to nothing within
+`WATER_GAP` (1.0-2.6 m) of any pond surface or stream course, so a flank parts
+around the water and a pond keeps its surface. The erosion also stays locked
+there. The plate's last metres (`EDGE`) fade the lift too, so a form never
+walls the rim.
+
+We chose this over re-settling the water because it is predictable and cheap.
+It needs no replanning of pours, and raising only ever deepens a basin's rim.
+
+**Emergence.** The landed footprint goes to emergence as a `"land"` region.
+The usual rules apply: grass stays off steeps, trees thin toward the rock
+slope, and emerged plants that end up on rock or near snow are withdrawn.
+Nothing emerges on ground steeper than the rock slope the terrain is painted
+with (`Emergence._rock_slope`: the habitat's rock slope, or the mesh's when
+that is gentler, 0.93 on the plain), and a plant is withdrawn past 1.1 times
+it. Before the playtest round emergence used the habitat's slope alone (1.3
+for a meadow), so plants could stand on a peak's painted rock; the probe's
+`--watch` found 2 of 4 plants on one Alpine peak doing so. After it, three
+`--watch` runs found 0 of 2, 4 and 6 (the steepest 0.78). Generated worlds
+plant through their own generator and are unchanged.
+
+**Feel.** `NativeChunkEditor._mountain_feel` is the single call site, marked
+`REGEN-POLISH SWAP`.
+
+- **Stroke signals.** Mountains always send them as mode `"mountain"`:
+  StrokeFeedback's thump, fog reveal, swell and gusts, and GenesisAudio's
+  thump and rumble voice. They are sent at press, on every rising tick, and
+  at landing, so the rumble lasts through the rise after release.
+- **With WorldRumble** (`scene.world_rumble`, `feature/regen-polish`), the
+  call site holds `hold(&"mountain")` (0.45-1 by rise speed, weighted by
+  height), pours fog over the flanks (`pour_fog`, re-poured if the drag
+  outgrows it) and releases at landing. The signals' rumble rate is zeroed
+  then, so the tremor is not doubled.
+- **Without it,** the signals' rate drives StrokeFeedback's tremor.
+
+**Cost** (`tools/probe_mountain_forms.gd`, headless, CPU main loop; idle
+frames are about 8.3 ms):
+
+- **Rise tick:** a median of 0.4 ms, and 3-5 ms at worst, including its
+  light refresh. A reshape is under 1.5 ms.
+- **Frames:** none over 16.7 ms from press through landing, weathering and
+  the settle.
+- **Weathering:** 20-45 ms on a worker.
+- **Undo and redo** restore the heights and tint exactly.
+- **A pond beside an Alpine peak** keeps its surface (the same triangle
+  count). The ground under it moves at most 3 cm.
+
+Run it with:
+`godot --headless --path . -s res://tools/probe_mountain_forms.gd -- [--forms=alpine,ridge] [--hold=1] [--drag=2.5] [--watch=45]`.
+
+**Unverified.** Headless runs compile no shaders, so the look has not been
+checked in a window:
+
+- the rock colours on the faceted ground and under each palette family;
+- the snow dusting;
+- how the fog pour reads on the flanks;
+- the picker's layout beside the Mood drawer.
 
 ## Feel
 

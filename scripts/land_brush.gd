@@ -1,6 +1,6 @@
 extends RefCounted
-## The creation brush: dragging raises soft, natural land; Shift or a right
-## drag lowers it. Each dab has a broad smooth falloff with a quicker core, and
+## The creation brush: dragging raises soft, natural land; Shift-drag (or a right drag outside the creation shell)
+## lowers it. Each dab has a broad smooth falloff with a quicker core, and
 ## a ridged, domain-warped noise field seeded per world shapes how much each
 ## vertex rises, so repeated strokes grow crests and spurs instead of blobs.
 ## Rising slows toward a dome over the dab's rim (so held dabs round off into

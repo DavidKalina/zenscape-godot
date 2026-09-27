@@ -1,5 +1,5 @@
 extends "res://scripts/creation_brush.gd"
-## The forest brush: drag to wish for forest, Shift or a right drag to keep
+## The forest brush: drag to wish for forest, Shift-drag (or a right drag outside the creation shell) to keep
 ## ground clear. It plants no trees itself. Each dab raises the forest wish in
 ## the land intent layer (scripts/land_intent.gd) with a soft falloff, and
 ## darkens the floor a little under it so the stroke reads at once. When the

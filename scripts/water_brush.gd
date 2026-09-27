@@ -1,6 +1,6 @@
 extends "res://scripts/creation_brush.gd"
-## The water brush (docs/scenic/water-brush.md). Dragging pours water; when
-## the hand lifts, the water settles with gentle physics:
+## The water brush (docs/scenic/water-brush.md). Dragging pours water, and it
+## settles as it pours, with gentle physics:
 ## - each dab's water runs down the land to the low ground it drains to;
 ## - a basin fills from its lowest point with the water poured into it, on top
 ##   of any pond already there, up to its spill level;
@@ -8,15 +8,16 @@ extends "res://scripts/creation_brush.gd"
 ##   as a stream to the next basin, or off the edge of the diorama; basins
 ##   that overflow into each other become one lake;
 ## - water poured well above where it pools runs down to it as a stream.
-## Shift or a right drag drains instead: ponds and streams under the brush go.
+## Shift-drag (or a right drag outside the creation shell) drains instead: ponds and streams under the brush go.
 ##
 ## `plan` is pure data on a detached height copy, so the editor runs it on a
 ## worker and the release frame only records the dabs. The result carries a
 ## delay per pond and stream, so a stream reaches its pond before the pond
 ## fills, and an overflow leaves only once its pond is nearly full.
 ## It is a creation brush (scripts/creation_brush.gd) that settles: dabs only
-## record, nothing changes while the button is down, and the editor plans and
-## applies the pour after release (NativeChunkEditor `_settle_water`).
+## record, and the editor plans them again every few tenths of a second while
+## the button is down, showing the latest plan, and once more at release
+## (NativeChunkEditor `_pour_live`).
 
 ## The planning grid: 0.5 m cells over the 28 m plate.
 const GRID := 0.5
@@ -100,7 +101,7 @@ func begin() -> void:
 	dabs = PackedVector3Array()
 
 ## One dab. `amount` is seconds of brushing times strength; `drain` removes
-## water. Only records: the land is untouched until the pour settles.
+## water. Only records: the editor's next plan of the pour takes it up.
 func dab(_data: NativeTerrainData, center: Vector2, radius: float, amount: float, drain: bool) -> void:
 	if radius <= 0.0 or amount <= 0.0: return
 	_grow_bounds(center,radius)

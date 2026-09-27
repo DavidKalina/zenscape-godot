@@ -124,8 +124,8 @@ var _tasks: Array[int] = []
 ## Main-thread timings of the last enter, leave and capture, in microseconds.
 ## "look" is the part of entering spent in the shell's own Look.
 var timings := {"enter":0,"look":0,"leave":0,"hide":0,"readback":0,"capture":0}
-# Arrivals heard while the session ran: {kind, p (global), hour}.
-var _heard: Array[Dictionary] = []
+## Names what a click lands on; the camera shares it (scene_inspector.gd).
+var inspector := preload("res://scripts/scene_inspector.gd").new()
 var _roots := {}
 
 const GLYPHS := {
@@ -164,14 +164,7 @@ static func folder() -> String:
 
 ## The world's hour as a word: dawn, morning, midday, afternoon, dusk, evening or night.
 static func part_of_day(hour: float) -> String:
-	var h := fposmod(hour,24.0)
-	if h >= 4.5 and h < 7.5: return "dawn"
-	if h < 11.0 and h >= 7.5: return "morning"
-	if h < 14.0 and h >= 11.0: return "midday"
-	if h < 17.0 and h >= 14.0: return "afternoon"
-	if h < 20.0 and h >= 17.0: return "dusk"
-	if h < 22.5 and h >= 20.0: return "evening"
-	return "night"
+	return preload("res://scripts/scene_inspector.gd").part_of_day(hour)
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -182,17 +175,7 @@ func setup(owner_scene: Node3D) -> void:
 	process_priority = -10
 	set_process(false)
 	_build_chrome()
-	var life: Node = scene.get("land_life")
-	if life != null:
-		life.arrived.connect(func(kind: String, p: Vector3) -> void: _hear(kind,p))
-		life.moment.connect(func(kind: String, p: Vector3) -> void: _hear(kind,p))
-	if editor.get("emergence") != null and editor.emergence.has_signal("tree_arrived"):
-		editor.emergence.tree_arrived.connect(func(p: Vector2, _born: float) -> void: _hear("plant",Vector3(p.x,0.0,p.y)))
-
-func _hear(kind: String, p: Vector3) -> void:
-	var clock: WorldClock = scene.get("world_clock")
-	_heard.append({"kind":kind,"p":p,"hour":clock.hour if clock != null else 12.0})
-	if _heard.size() > 600: _heard = _heard.slice(-400)
+	inspector.setup(scene)
 
 # --- Chrome -------------------------------------------------------------------
 
@@ -811,103 +794,10 @@ func click(point: Vector2) -> void:
 	_label_box.show()
 	fit()
 
-## What is under a screen point: {title, detail, point, kind} or {}.
-## Creatures come from LandLife's present sites and its moments, plants and
-## stones from the object picker; the nearer one wins.
+## What is under a screen point: {title, detail, point, kind, ...} or {}
+## (scripts/scene_inspector.gd, shared with the camera).
 func inspect(point: Vector2) -> Dictionary:
-	var origin := camera.project_ray_origin(point)
-	var direction := camera.project_ray_normal(point)
-	var ground_hit: Variant = _ground_hit(point)
-	var limit := origin.distance_to(ground_hit)+0.6 if ground_hit != null else INF
-	var best := {}
-	var best_t := limit
-	for candidate: Dictionary in _creatures():
-		var v: Vector3 = candidate.p-origin
-		var t := v.dot(direction)
-		if t < 0.3 or t > best_t: continue
-		if (v-direction*t).length() > float(candidate.r)+t*0.01: continue
-		best_t = t
-		best = candidate
-	var id := editor.pick_object(point)
-	if id > 0:
-		var item := editor.data.object_by_id(id)
-		if not item.is_empty():
-			var h: Variant = editor.data.ground_height(Vector2(float(item.x),float(item.z)))
-			var p := editor.terrain.to_global(Vector3(float(item.x),float(h) if h != null else 0.0,float(item.z)))
-			var t := origin.distance_to(p)
-			if best.is_empty() or t < best_t:
-				best = {"kind":"plant","title":_plant_name(str(item.asset)),"detail":_plant_story(item),"p":p+Vector3.UP*0.6}
-	if best.is_empty(): return {}
-	if not best.has("detail"): best.detail = _creature_story(best)
-	best.point = best.p
-	return best
-
-func _creatures() -> Array[Dictionary]:
-	var found: Array[Dictionary] = []
-	var life: Node = scene.get("land_life")
-	if life == null or not life.get("active"): return found
-	var names := {"fish":"Fish","spawn":"Frogspawn","frog":"Frog","bird":"Bird"}
-	var radius := {"fish":0.35,"spawn":0.45,"frog":0.35,"bird":0.6}
-	for kind: String in names:
-		for site: Dictionary in life.present(kind):
-			var p: Vector3 = site.get("p",Vector3.ZERO)
-			if kind == "bird" and life.get("_birds") != null and int(site.get("slot",-1)) >= 0:
-				var bird: Dictionary = life._birds.birds[int(site.slot)]
-				p = life._bird_node.to_global(Vector3(float(bird.x),float(bird.y),float(bird.z)))
-			else:
-				p = life.to_global(p)
-			found.append({"kind":kind,"title":names[kind],"p":p,"r":radius[kind]})
-	var moments: Node = life.get("moments")
-	if moments == null: return found
-	var heron: Node3D = moments.get("_heron")
-	if heron != null and heron.visible:
-		found.append({"kind":"heron","title":"Grey heron","p":heron.global_position+Vector3.UP*0.55,"r":0.7})
-	for deer: Dictionary in moments.get("_deer"):
-		var root: Node3D = deer.root
-		if root.visible: found.append({"kind":"deer","title":"Deer","p":root.global_position+Vector3.UP*0.8,"r":0.8})
-	var bigfoot: Node3D = moments.get("bigfoot")
-	if bigfoot != null and bigfoot.showing():
-		found.append({"kind":"bigfoot","title":"Something tall","p":bigfoot.global_position+Vector3.UP*1.2,"r":1.0,"detail":"gone if you look too long"})
-	return found
-
-## "arrived at dawn" when this session saw it come, otherwise a quiet fallback.
-func _creature_story(found: Dictionary) -> String:
-	var heard := _heard_near(str(found.kind),found.p,3.0 if found.kind in ["fish","frog","spawn"] else 8.0)
-	if not heard.is_empty(): return ("landed " if found.kind == "heron" else "stepped out " if found.kind == "deer" else "arrived ")+_when(float(heard.hour))
-	return {"heron":"fishing the shallows","deer":"at the forest edge"}.get(found.kind,"settled here")
-
-## "at dawn", "in the morning", "at night".
-static func _when(hour: float) -> String:
-	var part := part_of_day(hour)
-	return ("in the " if part in ["morning","afternoon","evening"] else "at ")+part
-
-func _heard_near(kind: String, p: Vector3, reach: float) -> Dictionary:
-	var best := {}
-	var best_d := reach
-	for entry: Dictionary in _heard:
-		if entry.kind != kind: continue
-		var d: float = entry.p.distance_to(p) if kind != "plant" else Vector2(entry.p.x,entry.p.z).distance_to(Vector2(p.x,p.z))
-		if d <= best_d:
-			best_d = d
-			best = entry
-	return best
-
-func _plant_story(item: Dictionary) -> String:
-	match str(item.get("source","")):
-		"emerged":
-			var heard := _heard_near("plant",Vector3(float(item.x),0.0,float(item.z)),0.05)
-			return "took root "+_when(float(heard.hour)) if not heard.is_empty() else "grew here on its own"
-		"hand": return "placed by hand"
-	return "part of the land"
-
-func _plant_name(asset: String) -> String:
-	const NAMES := {"tree":"Tree","layered_tree":"Pine","broadleaf":"Broadleaf","redwood":"Redwood","joshua":"Joshua tree",
-		"cactus":"Cactus","fern":"Fern","bush":"Bush","shrub":"Shrub","rock":"Rock","stone":"Stone","boulder":"Boulder",
-		"log":"Fallen log","stump":"Stump","flower":"Flowers","mushroom":"Mushrooms","reed":"Reeds"}
-	if NAMES.has(asset): return NAMES[asset]
-	for key: String in NAMES:
-		if asset.ends_with("_"+key): return asset.trim_suffix("_"+key).capitalize()+" "+str(NAMES[key]).to_lower()
-	return asset.replace("_"," ").capitalize()
+	return inspector.inspect(point)
 
 # --- Capture ----------------------------------------------------------------------
 

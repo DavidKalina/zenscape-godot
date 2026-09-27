@@ -659,17 +659,28 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.keycode == KEY_W and living_weather != null:
 			if event.shift_pressed:
-				_notice.text = "Weather drifting · Shift+W holds it" if living_weather.toggle_drift() else "Weather held · Shift+W lets it drift"
+				var drifting: bool = living_weather.toggle_drift()
+				_notice.text = "Weather drifting · Shift+W holds it" if drifting else "Weather held · Shift+W lets it drift"
+				_weather_keyed("drift","on" if drifting else "off")
 			else:
-				_notice.text = "Weather turning to %s · W" % living_weather.next_weather()
+				var weather: String = living_weather.next_weather()
+				_notice.text = "Weather turning to %s · W" % weather
+				_weather_keyed("weather",weather)
 			get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_E and living_weather != null:
-			_notice.text = "Turning toward %s · E" % living_weather.next_season()
+			var season: String = living_weather.next_season()
+			_notice.text = "Turning toward %s · E" % season
+			_weather_keyed("season",season)
 			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)
 	_build_button.text = "Enjoy" if _chunk_editor.active else "Build"
+
+## W, Shift+W or E just moved the world: `control` is "weather" or "season"
+## with the choice, or "drift" with "on" / "off". A shell with moods follows it.
+func _weather_keyed(_control: String, _value: String) -> void:
+	pass
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _resident_play.scene != null and not has_meta("movie_capture"):

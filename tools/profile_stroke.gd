@@ -46,6 +46,12 @@ var prepare_ms := -1.0
 var begin_ms := -1.0
 ## Per-dab refresh stages (NativeChunkEditor.last_refresh_usec), in ms.
 var dab_stages := {}
+## A pour shows while the hand pours: ms from the press to the first frame
+## its water was published, and how many times it was published mid-stroke.
+var first_water_ms := -1.0
+var stroke_publishes := 0
+## The refresh stage in flight over each stroke frame above 12 ms.
+var stroke_stages := []
 
 func _initialize() -> void: run.call_deferred()
 
@@ -156,10 +162,20 @@ func stroke(a: Vector2, b: Vector2, count: int, frames: Array[float], ticks: Arr
 		editor.creation_brush().begin()
 	editor._painting = true
 	var previous := Time.get_ticks_usec()
+	var pressed := previous
+	var water_at_press: Array = [editor.data.ponds.duplicate(true),editor.data.streams.duplicate(true)]
+	var revision: int = editor.content.revision
 	while dabs < count:
+		var pour_state: Variant = editor.get("_pour")
+		var in_flight := editor.refresh_stage+(" shaping" if pour_state is Dictionary and pour_state.get("shaping",false) else "")
 		await process_frame
 		var now := Time.get_ticks_usec()
 		frames.append((now-previous)/1000.0)
+		if frames.back() > 12.0: stroke_stages.append([frames.size()-1,in_flight])
+		if settles and editor.content.revision != revision:
+			revision = editor.content.revision
+			stroke_publishes += 1
+			if first_water_ms < 0.0 and [editor.data.ponds,editor.data.streams] != water_at_press: first_water_ms = (now-pressed)/1000.0
 		elapsed += minf((now-previous)/1000000.0,0.05)
 		previous = now
 		if elapsed < 1.0/30.0 and dabs > 0: continue
@@ -310,7 +326,7 @@ func run() -> void:
 		if settle.back() > 12.0: settle_stages.append([settle.size()-1,stage])
 		previous = now
 		settle_frames += 1
-	var report := {"label":label,"mode":mode,"brush":brush if mode == "land" else "","objects":editor.data.objects.size(),"sources":_sources(),"then":then,"dabs":ticks.size(),"stroke_ms":snappedf((release-began)/1000.0,0.1),"idle_frames":stats(idle),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"after_dab":stats(after_tick),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":settle_stages,"water_usec":editor.content.last_water_usec,"dab_stage_median":_medians(),"refusals":editor.emergence.refusals,"wish":_wish(),"prepare_ms":snappedf(prepare_ms,0.01),"begin_ms":snappedf(begin_ms,0.01),"first_tick_ms":snappedf(ticks[0],0.01) if not ticks.is_empty() else 0.0,"first_after_ms":snappedf(after_tick[0],0.01) if not after_tick.is_empty() else 0.0,"water_plan_usec":editor.water_brush.last_plan_usec,"weather_usec":editor.land_brush.last_weather_usec,"emergence_plan_usec":editor.emergence.get("last_plan_usec"),"ponds":editor.data.ponds.size(),"pond_at":editor.data.ponds.map(func(p: Dictionary) -> Array: return [snappedf(p.x,0.1),snappedf(p.z,0.1),snappedf(p.level,0.01)]),"streams":editor.data.streams.size(),"pond_vertices":editor.content.pond_vertices.size()}
+	var report := {"label":label,"mode":mode,"brush":brush if mode == "land" else "","objects":editor.data.objects.size(),"sources":_sources(),"then":then,"dabs":ticks.size(),"stroke_ms":snappedf((release-began)/1000.0,0.1),"idle_frames":stats(idle),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"after_dab":stats(after_tick),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":settle_stages,"water_usec":editor.content.last_water_usec,"dab_stage_median":_medians(),"refusals":editor.emergence.refusals,"wish":_wish(),"prepare_ms":snappedf(prepare_ms,0.01),"begin_ms":snappedf(begin_ms,0.01),"first_tick_ms":snappedf(ticks[0],0.01) if not ticks.is_empty() else 0.0,"first_after_ms":snappedf(after_tick[0],0.01) if not after_tick.is_empty() else 0.0,"water_plan_usec":editor.water_brush.last_plan_usec,"weather_usec":editor.land_brush.last_weather_usec,"emergence_plan_usec":editor.emergence.get("last_plan_usec"),"ponds":editor.data.ponds.size(),"pond_at":editor.data.ponds.map(func(p: Dictionary) -> Array: return [snappedf(p.x,0.1),snappedf(p.z,0.1),snappedf(p.level,0.01)]),"streams":editor.data.streams.size(),"pond_vertices":editor.content.pond_vertices.size(),"first_water_ms":snappedf(first_water_ms,0.1),"stroke_publishes":stroke_publishes,"slow_stroke_stages":stroke_stages}
 	print("STROKE ",JSON.stringify(report))
 	print("FINGERPRINT ",JSON.stringify(fingerprint()))
 	if then == "shift":

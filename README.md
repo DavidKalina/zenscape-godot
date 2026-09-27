@@ -21,27 +21,33 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | Control | While creating |
 | --- | --- |
 | **1**–**5** | Land, Water, Meadow, Forest, Path (or click a palette brush) |
-| Left drag | Paint with the brush in hand |
-| Shift-drag or right drag | Work the other way: land lowers, water drains, a meadow lifts, forest clears, a path grows back |
+| **1** again / **Shift+1** (land in hand) | Next / previous land form: Hill, Alpine, Ridge, Mesa, Volcano, Tors ([mountain forms](docs/scenic/brushes.md#mountain-forms)) |
+| Left drag | Paint with the brush in hand (with a mountain form: press where the peak goes, drag out to grow it) |
+| Shift-drag | Work the other way: land lowers, water drains, a meadow lifts, forest clears, a path grows back |
 | **`[ ]`** / **Shift+`[ ]`** | Brush size / strength |
-| **Tab** (or **Look**) | Put the brush away, so drags orbit the camera; Tab again picks it up |
-| Alt-drag, or a drag off the land | Orbit without putting the brush away |
-| Middle drag / scroll | Pan / zoom |
+| Right drag, Ctrl-drag, Alt-drag, a drag off the land, or a two-finger swipe | Orbit, with the brush still in hand |
+| Middle drag, Shift + two-finger swipe, arrows | Pan (Shift+arrows turn and tilt) |
+| Scroll / pinch | Zoom toward the pointer |
+| **Double-click** (or point and press **F**) | Glide to a creature, tree, rock or pond and circle it; creatures are followed. On bare ground the view moves there. The first click's dab or pour is taken back |
+| **Backspace** or **Home** | Glide back to the view before |
+| **Tab** (or **Look**) | Put the brush away, so a left drag orbits too and pointing names things |
 | **R** | Overview |
 | **H** | Hide the controls (and the brush); H again restores both |
 | **P** (or **Photo**) | Photo mode (below) |
-| **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season |
+| **M** (or **Mood**) | Moods: nine authored looks that cross-fade the sky, light, weather, season and colours; **Customise** sets season, time, weather, rock and colours, which stay through mood changes ([moods](docs/scenic/mood.md)). Esc closes |
+| **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season. W and E pin their choice in the moods, as Customise would; letting the weather drift unpins it |
 | **Alt+`[ ]`** | Step through the showcase seeds |
 | **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
 | **Cmd/Ctrl S** | Save now |
-| **Esc** | Menu |
+| **Esc** | Close the moods, otherwise open the menu |
 
 **Craft** at the top right opens the fine sculpt, paint and place tools (the
 Build palette below; there **1**–**4** pick raise, lower, smooth and flatten and
 **V** selects); it reads **Create** while open and returns to the brushes.
 
 **Photo mode.** **P** (or **Photo**) hides the controls while the world keeps
-living. Camera moves glide to rest.
+living. Camera moves glide to rest. The creation camera, and why its
+controls are mapped as they are, is in [camera](docs/scenic/camera.md).
 
 | Control | In photo mode |
 | --- | --- |
@@ -56,7 +62,7 @@ living. Camera moves glide to rest.
 The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
 place away and grow a procedural world with its own terrain, palette,
 atmosphere, time of day and weather), **Return to previous place**, **Save now**,
-**Colors & sky**, **Overview**, **Sound** (mute, Master and the creation volume for
+**Colors & sky** (the full look editor; **M** is the quick way), **Overview**, **Sound** (mute, Master and the creation volume for
 stroke voices, ambient beds and life) and **Main menu**. Quitting saves the place, with
 its forest wishes and the life that has arrived, and the next launch keeps one
 earlier place to return to. `--classic-build` restores the old Build/Enjoy

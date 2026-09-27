@@ -142,6 +142,36 @@ float zs_reveal_keep(vec2 p) {
 	if (zs_reveal.w <= 0.0) return 1.0;
 	return 1.0 - zs_reveal.w * (1.0 - smoothstep(zs_reveal.z * 0.45, zs_reveal.z, distance(p, zs_reveal.xy)));
 }
+
+// Fog pour (scripts/world_rumble.gd). zs_pour: amount, lid depth above the
+// plate floor (m), front 0..1, flow clock. zs_pour_area: xz centre and radius
+// of a local pour; radius 0 pours over the whole plate from upwind.
+global uniform vec4 zs_pour;
+global uniform vec4 zs_pour_area;
+
+// Pour density at p over `ground`, on a plate floored at `floor_y`. `churn` is
+// a 0..1 noise the caller advects with zs_pour.w. The fog fills the low ground
+// up to a churning lid, so it follows the drawn terrain as it forms and peaks
+// rise out of it; a thin skin clings to the slopes above.
+float zs_pour_at(vec3 p, float ground, float floor_y, float churn) {
+	if (zs_pour.x <= 0.0 || ground < -100.0) return 0.0;
+	float wave = churn - 0.5;
+	float reach;
+	if (zs_pour_area.z > 0.0) {
+		float d = distance(p.xz, zs_pour_area.xy) / zs_pour_area.z;
+		reach = (1.0 - smoothstep(zs_pour.z - 0.3, zs_pour.z + 0.05, d + wave * 0.35)) * (1.0 - smoothstep(0.8, 1.0, d));
+	} else {
+		float along = dot(p.xz, zs_wind_direction) / 14.0;
+		float at = mix(-1.5, 1.5, zs_pour.z);
+		reach = 1.0 - smoothstep(at - 0.4, at + 0.05, along + wave * 0.5);
+	}
+	if (reach <= 0.0) return 0.0;
+	float over = p.y - ground;
+	float lid = floor_y + zs_pour.y + wave * 0.9;
+	float body = 1.0 - smoothstep(lid - 0.6, lid + 0.5, p.y);
+	float skin = 0.35 * exp(-max(over, 0.0) * 2.5) * smoothstep(0.0, 0.6, zs_pour.y);
+	return zs_pour.x * reach * max(body, skin) * smoothstep(-0.3, 0.2, over) * (0.55 + 0.9 * churn);
+}
 #endif
 
 global uniform vec3 zs_key_direction;

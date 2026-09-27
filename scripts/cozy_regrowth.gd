@@ -11,6 +11,13 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const SHOWCASE := [184,105,147,193,303,79,328,301,176,33,102,353,58,177,198,134,45,309,248,250,278,364]
 const DEGROW_SECONDS := 3.4
 const GROW_SECONDS := 5.0
+## The held rumble (scripts/world_rumble.gd) through each phase: it builds as
+## the old land sinks, rolls on while the new one is made, peaks as it rises,
+## and eases as the plants arrive. The pour drains once the land has formed.
+const RUMBLE_SINK := Vector2(0.55,0.85)
+const RUMBLE_MAKING := 0.8
+const RUMBLE_GROW := Vector2(1.0,0.6)
+const DRAIN_AT := 0.45
 ## The plain's day (creation mode only). Its world clock turns at a gentle
 ## PLAIN_DAY_LENGTH real seconds per 24 hours (the default day is 480 s), so
 ## dawn and dusk come round within a session and the deer can find the dawn.
@@ -126,7 +133,7 @@ func setup(owner_scene: Node3D) -> void:
 	busy = false
 	_update_badge()
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
-	if plain: scene._notice.text = "Drag across the plain to raise land. Shift or right drag lowers it."
+	if plain: scene._notice.text = "Drag across the plain to raise land. Shift-drag lowers it."
 	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--seed")
@@ -363,6 +370,12 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	busy = true
 	armed = false
 	marker.hide()
+	var rumble: Node = scene.get("world_rumble")
+	if rumble != null:
+		rumble.hold(&"regrow",RUMBLE_SINK.x)
+		# In the chunk atlas the fog pools over the live chunk only (its
+		# radius reaches about 16 m, fading out by the seams), not the ring.
+		rumble.pour_fog(Rect2(-10.0,-10.0,20.0,20.0) if scene.get("atlas") != null else Rect2())
 	if scene.has_method("suspend_creation"): scene.suspend_creation()
 	else: scene.set_building(false)
 	scene._growth.reset_feedback()
@@ -370,6 +383,7 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
+	if rumble != null: rumble.hold(&"regrow",RUMBLE_MAKING)
 	# Chunk atlas (scripts/chunk_atlas_controller.gd): only the live chunk
 	# regrows, from what its neighbours are, under the one world sky.
 	var atlas: Node = scene.get("atlas")
@@ -425,12 +439,13 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	await _animate_growth(true,GROW_SECONDS)
 	generation += 1
 	phase = "ready"
+	if rumble != null: rumble.release(&"regrow")
 	busy = false
 	_update_badge()
 	if scene.has_method("resume_creation"): scene.resume_creation()
 	if _scenery():
 		scene._paused = old_paused
-		scene._notice.text = "Drag across the plain to raise land. Shift or right drag lowers it." if plain else ""
+		scene._notice.text = "Drag across the plain to raise land. Shift-drag lowers it." if plain else ""
 		return
 	# The original pickup ground no longer exists after regeneration.
 	var safe: Variant = scene.navigation.nearest_safe(origin_feet)
@@ -472,6 +487,7 @@ func _fit_distance(frame_tree: SceneTree = null) -> float:
 	return distance
 
 func _animate_growth(forward: bool, duration: float) -> void:
+	var rumble: Node = scene.get("world_rumble")
 	var elapsed := 0.0
 	while elapsed<duration:
 		await get_tree().process_frame
@@ -481,6 +497,12 @@ func _animate_growth(forward: bool, duration: float) -> void:
 		var before: float = scene._growth.terrain
 		_set_growth(progress if forward else 1.0-progress)
 		scene._growth.formation_feedback(absf(scene._growth.terrain-before),step,scene._tremor)
+		if rumble == null: continue
+		if forward:
+			rumble.hold(&"regrow",lerpf(RUMBLE_GROW.x,RUMBLE_GROW.y,smoothstep(0.45,1.0,progress)))
+			if progress >= DRAIN_AT and rumble.pouring: rumble.drain_fog()
+		else:
+			rumble.hold(&"regrow",lerpf(RUMBLE_SINK.x,RUMBLE_SINK.y,progress))
 	_set_growth(1.0 if forward else 0.0)
 
 func _set_growth(progress: float) -> void:

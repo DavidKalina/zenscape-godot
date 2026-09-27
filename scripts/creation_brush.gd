@@ -21,9 +21,9 @@ const CELL := 2.0
 ## The brush's id in scripts/genesis_canvas.gd `BRUSHES`, which also holds
 ## its palette title and how-to hint.
 var brush_id := ""
-## True for a brush whose dabs only record and whose stroke settles after
-## release (water): the editor opens no undo step while it is held and hands
-## the stroke to NativeChunkEditor `_settle_water` instead of `finish`.
+## True for a brush whose dabs only record and whose stroke settles by plan
+## (water): the editor hands the stroke to NativeChunkEditor `_pour_live`,
+## which opens the undo step when a plan first shows, instead of `finish`.
 var settles := false
 ## World-space brush radius and strength, adjusted with [ ] and Shift [ ].
 var radius := 3.0

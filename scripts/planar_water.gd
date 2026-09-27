@@ -80,6 +80,9 @@ func sync(scene: Node3D, frame_tree: SceneTree = null) -> void:
 		clear()
 		revision = -1
 		return
+	if revision != content.revision and scene._chunk_editor.water_pouring:
+		_hold(data)
+		return
 	if revision != content.revision:
 		# Geometry changes retain compiled clip shaders for surviving pond levels.
 		# A live re-setup keeps the old views showing until the new ones are
@@ -152,6 +155,22 @@ func _refresh_geometry_live(scene: Node3D, frame_tree: SceneTree) -> bool:
 	_groups_dirty = true
 	_prune_shaders()
 	return true
+
+## While a pour shows (NativeChunkEditor.water_pouring) its ponds change every
+## replan, and a re-setup each time would never finish. The views keep the
+## levels still standing; a pond whose level moved shows the ordinary surface
+## until the pour closes and the views re-setup once.
+func _hold(data: NativeTerrainData) -> void:
+	var list: Array = views if not views.is_empty() else _retired.get("views",[])
+	var marks := Vector2(-1000000.0,-1000000.0)
+	for i in range(list.size()):
+		var standing := false
+		for pond: Dictionary in data.ponds: standing = standing or float(pond.level) == float(list[i].level)
+		if list[i].surface.visible != standing: list[i].surface.visible = standing
+		list[i].viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if standing and visible else SubViewport.UPDATE_DISABLED
+		if standing and i < 2: marks[i] = list[i].level
+	if is_instance_valid(source_water): source_water.material_override.set_shader_parameter("planar_levels",marks)
+	if visible: _update_view_list(list,_bindings if is_same(list,views) else _retired.get("bindings",[]))
 
 ## Free a superseded re-setup's half-built views, keeping the retired ones.
 func _drop_partial() -> void:

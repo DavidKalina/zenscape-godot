@@ -1,5 +1,5 @@
 extends "res://scripts/creation_brush.gd"
-## The path brush: drag to wear a path; Shift or a right drag lets it grow
+## The path brush: drag to wear a path; Shift-drag (or a right drag outside the creation shell) lets it grow
 ## back. The tread wears to packed earth with a little green left at its
 ## shoulders, and settles a few centimetres into the ground, smoothing across
 ## so it follows the land gently instead of every bump. Its margins turn

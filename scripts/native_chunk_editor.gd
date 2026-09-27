@@ -34,7 +34,7 @@ const TOOL_TEXT := {
 	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
 	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
-	"land":"Drag to raise land · Shift or right drag lowers · [ ] brush size",
+	"land":"Drag to raise land · Shift-drag lowers · [ ] brush size",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -223,9 +223,17 @@ var land_ceiling := 10.0
 var land_seed := 0
 ## Emitted after a land stroke's erosion pass settles into the heights.
 signal land_weathered(bounds: Rect2)
+## The land brush's form (scripts/mountain_forms.gd FORMS): "hill" paints with
+## `land_brush`; the others raise one whole mountain per press (`mountain`).
+var land_form := "hill"
+signal land_form_changed(id: String)
+var mountain = preload("res://scripts/mountain_forms.gd").new()
 var _land_lower := false
 ## The button holding the current land stroke; every other stroke is a left drag.
 var _stroke_button := MOUSE_BUTTON_LEFT
+## A right press works the brush the other way; false leaves right drags to
+## the camera (the creation shell), and Shift-drag alone lowers.
+var right_works_other_way := true
 ## Every creation brush by id (scripts/genesis_canvas.gd `BRUSHES`). The
 ## "land" tool paints with whichever is in hand: land, water, meadow, forest
 ## or path. `land_brush` and `water_brush` are the "land" and "water" entries.
@@ -236,12 +244,11 @@ signal brush_changed(id: String)
 ## Films drive strokes with synthetic events; in a rendered window the
 ## viewport's mouse position is the real cursor, which they must not move.
 var pointer_override: Variant = null
-## The water brush (scripts/water_brush.gd): poured water settles on a worker
-## after release, then lands as one undoable edit.
+## The water brush (scripts/water_brush.gd): poured water is planned on a
+## worker and shows while the hand pours (`_pour_live`), one undoable edit.
 var water_brush = preload("res://scripts/water_brush.gd").new()
-## True while a released water stroke is being settled on a worker.
+## True from a pour's release until it closes.
 var water_settling := false
-var _water_generation := 0
 ## Emitted when settled water lands in the world; `bounds` in plate metres.
 signal water_settled(bounds: Rect2)
 
@@ -251,6 +258,7 @@ func setup(owner_scene: Node3D) -> void:
 	terrain.add_child(pond_preview)
 	data.setup(terrain.mesh)
 	data.stroke_starting.connect(_join_weathering)
+	data.stroke_starting.connect(_mountain_interrupted)
 	# Plans run on a worker; the editor's frames must not wait for them.
 	emergence.plan_on_worker = true
 	_original_ground_map = scene._precipitation.ground_texture.get_image()
@@ -379,7 +387,7 @@ func select_tool(tool: String) -> void:
 ## Radius the terrain shader should draw for the tool in hand.
 func preview_radius() -> float:
 	if mode == "explosive": return blast_radius
-	if mode == "land": return brush_radius()
+	if mode == "land": return mountain_preview_radius() if mountain_in_hand() else brush_radius()
 	if mode == "tunnel": return tunnel_width/2
 	if mode == "mountain":
 		return mountain_radius
@@ -702,6 +710,7 @@ func _process(delta: float) -> void:
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
 	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
+	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
@@ -710,8 +719,10 @@ func _process(delta: float) -> void:
 			continue_trail(center)
 			_emit_stroke(1,hit,preview_radius(),delta)
 		elif _painting and mode == "land":
-			_land_step(center,delta)
-			_emit_stroke(1,hit,brush_radius(),brush_strength()*delta)
+			# A held mountain steps above, even off the terrain.
+			if not _mountain_holding:
+				_land_step(center,delta)
+				_emit_stroke(1,hit,brush_radius(),brush_strength()*delta)
 		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
@@ -751,13 +762,20 @@ func finish_stroke() -> void:
 	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
+	if _mountain_holding:
+		_mountain_holding = false
+		_stroke_button = MOUSE_BUTTON_LEFT
+		_mountain_rise()
+		return
 	# The land brush weathers on a worker; the settle waits for it to land.
 	var region: Rect2 = land_brush.bounds
 	var weathering: Callable = land_brush.weather_job(data) if mode == "land" and brush_id == "land" else Callable()
 	var weathered := _weather_land()
 	_stroke_button = MOUSE_BUTTON_LEFT
 	data.mark_objects_hand(_stroke_first_id)
-	var changed := data.end_stroke()
+	# A pour keeps its undo step open until its last plan lands.
+	var pouring: bool = mode == "land" and creation_brush().settles
+	var changed := data.end_stroke() if not pouring else false
 	# Weathering lands after the last light dab, so the settle refresh pays it.
 	if weathered: _settle_pending = true
 	if changed and weathering.is_valid(): _weather_async(weathering,region)
@@ -765,7 +783,7 @@ func finish_stroke() -> void:
 	if changed: _stroke_ended()
 	_stroke_rect = Rect2()
 	stroke_finished.emit(_stroke_center,_stroke_radius,stroke_mode())
-	if mode == "land" and creation_brush().settles: _settle_water()
+	if pouring: _release_pour()
 
 ## Hand a finished stroke's ground to emergence. Kept as one call so the
 ## stroke_finished signal can take it over.
@@ -794,15 +812,13 @@ func redo() -> void:
 
 func _history_step(forward: bool) -> void:
 	if forming: return
-	# A pour still shaping its ground lands, so undo takes it back whole.
-	_finish_water_shape()
+	# A pour closes on what is showing, so undo takes it back whole.
+	_commit_pour()
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
-	# A water stroke still settling belongs to the world being left, and so
-	# does a land stroke's weathering.
-	_water_generation += 1
-	water_settling = false
+	_land_mountain()
+	# A land stroke's weathering belongs to the world being left.
 	_drop_weathering()
 	if scene.has_method("_finish_fire_stroke"): scene._finish_fire_stroke()
 	var history: Array = data._redo if forward else data._undo
@@ -1665,10 +1681,13 @@ func _step_brush_setting(strength_step: bool, direction: float) -> void:
 
 ## The mode stroke signals carry: the brush id while a creation brush paints.
 func stroke_mode() -> String:
+	if mountain.active: return "mountain"
 	return brush_id if mode == "land" else mode
 
-## A left press paints and a right press works the other way (Shift either
-## way): land rises and lowers, forest grows and clears, and so on.
+## A left press paints and Shift-drag works the other way: land rises and
+## lowers, forest grows and clears, and so on. A right press works the other
+## way too only while `right_works_other_way` is on (the classic build); the
+## creation shell turns it off, so right drags orbit there.
 ## A press that misses the land, or holds Alt, falls through to the camera, so
 ## the sky still orbits with either button.
 func _land_press(event: InputEventMouseButton) -> bool:
@@ -1676,19 +1695,25 @@ func _land_press(event: InputEventMouseButton) -> bool:
 		if _painting and event.button_index == _stroke_button: finish_stroke()
 		return _painting or event.button_index == MOUSE_BUTTON_LEFT
 	if _painting or event.alt_pressed: return _painting
+	if event.button_index == MOUSE_BUTTON_RIGHT and not right_works_other_way: return false
 	var hit: Variant = pick(event.position)
 	if hit == null: return false
+	# A mountain still rising lands before anything else is painted.
+	_land_mountain()
 	_stroke_button = event.button_index
 	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT
 	var brush = creation_brush()
+	if mountain_in_hand() and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
+		_mountain_press(hit)
+		return true
 	brush.prepare(data,land_seed)
 	brush.begin()
 	_stroke_first_id = data.next_id
 	_painting = true
 	_elapsed = 0.0
 	_last_point = Vector2(hit.x,hit.z)
-	# A settling brush (water) changes nothing until it settles after release,
-	# so it opens no undo step and needs no refresh while it is held.
+	# A settling brush (water) opens its undo step and refreshes when its
+	# first plan shows (`_pour_live`), not per dab.
 	if not brush.settles: data.begin_stroke()
 	land_dab(_last_point,brush_strength()/30.0)
 	if not brush.settles: refresh()
@@ -1699,6 +1724,8 @@ func land_dab(point: Vector2, amount: float) -> void:
 	var lower := _land_lower or Input.is_key_pressed(KEY_SHIFT)
 	if brush_id == "land": land_brush.dab(data,point,land_radius,amount,lower,land_ceiling)
 	else: creation_brush().dab(data,point,brush_radius(),amount,lower)
+	# A pour shows while the hand pours.
+	if creation_brush().settles and (_pour.is_empty() or _pour.released) and not forming: _pour_live()
 
 ## Dabs along the pointer's path at a fifth of the brush size, at most one
 ## refresh per 1/30 s. The rate is independent of how far the pointer moved.
@@ -1717,79 +1744,133 @@ func _land_step(center: Vector2, delta: float) -> void:
 	_elapsed = 0.0
 	_last_point = center
 
-## Settle a released water stroke: plan on a worker from a detached height
-## copy, then apply the ponds and streams as one undoable edit, stamp their
-## fill births and refresh with the yielding settle. The release frame only
-## snapshots. A later stroke, undo or world change supersedes the plan.
-func _settle_water() -> void:
-	if water_brush.dabs.is_empty() or forming: return
-	# A pour still shaping its ground lands first, so this one plans on it.
-	_finish_water_shape()
-	_water_generation += 1
-	var generation := _water_generation
-	var dabs: PackedVector3Array = water_brush.dabs
-	water_brush.begin()
-	water_settling = true
+## A pour (scripts/water_brush.gd) arrives while the hand pours. Every
+## POUR_REPLAN seconds, once the last plan has landed, the dabs so far are
+## planned again on a worker against the heights from the pour's start, and
+## the latest plan shows inside the pour's one undo step: the ground moves
+## first (a hollow, beds, a lip), then the water, rising on from where it
+## stands. Release plans the last dabs and closes the step. A new stroke, an
+## undo or a world change closes it at once on what is showing.
+const POUR_REPLAN := 0.2
+## Seconds a replan's reshaped ground takes to move while the hand pours; the
+## release's last plan takes WATER_SHAPE_SECONDS.
+const POUR_SHAPE_SECONDS := 0.3
+## Seconds a pour's reshaped ground takes to move into place after release
+## before its water starts to fill. Ticks at 30 Hz with light refreshes.
+const WATER_SHAPE_SECONDS := 0.7
+## The pour in progress: {"target", "heights", "ponds", "streams" (the world
+## at its start), "shown" (the plan showing), "planned" (its dabs),
+## "released", "dabs" (all of them, at release), "open", "rect", "landing"
+## (a plan whose ground is moving), "shaping"}.
+var _pour := {}
+## True from a pour's first shown water until the refresh after it closes:
+## planar reflections hold their views rather than re-setup every replan.
+var water_pouring := false
+var _pour_serial := 0
+
+## The first dab of a pour starts it; a pour still settling closes first.
+func _pour_live() -> void:
+	_commit_pour()
+	var pour := {"target":data,"released":false,"open":false,"shown":{},"planned":PackedVector3Array(),"rect":Rect2(),"shaping":false}
+	_pour = pour
 	# A land stroke's weathering still in flight (`_weather_async`) lands
-	# first, so the pour plans on the weathered ground instead of finding the
-	# land changed under it. Undo or a newer pour supersedes the wait.
+	# first, so the pour plans on the weathered ground.
 	while _weather_job != null:
 		await get_tree().process_frame
-		if generation != _water_generation: return
-	if forming:
-		water_settling = false
+		if not is_same(_pour,pour): return
+	if forming or data != pour.target:
+		_drop_pour(pour)
 		return
-	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
-	var target := data
-	var heights := data.heights.duplicate()
-	var ponds: Array = data.ponds.duplicate(true)
-	var streams: Array = data.streams.duplicate(true)
-	var validate: bool = data._recipe == null
+	pour.heights = data.heights.duplicate()
+	pour.ponds = data.ponds.duplicate(true)
+	pour.streams = data.streams.duplicate(true)
+	pour.validate = data._recipe == null
+	var started := -1000000
+	while is_same(_pour,pour):
+		var released: bool = pour.released
+		var dabs: PackedVector3Array = pour.dabs if released else water_brush.dabs
+		if dabs == pour.planned:
+			if released: break
+			await get_tree().process_frame
+			continue
+		if not released and Time.get_ticks_usec()-started < int(POUR_REPLAN*1000000.0):
+			await get_tree().process_frame
+			continue
+		started = Time.get_ticks_usec()
+		var planned := dabs.duplicate()
+		var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+		detached.heights = pour.heights.duplicate()
+		var ponds: Array = pour.ponds
+		var streams: Array = pour.streams
+		var validate: bool = pour.validate
+		var job = preload("res://scripts/background_work.gd").new()
+		var plan: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/water_brush.gd").plan(detached,ponds,streams,planned,validate),get_tree())
+		if not is_same(_pour,pour): return
+		pour.planned = planned
+		water_brush.last_plan_usec = plan.usec
+		if forming or data != pour.target:
+			_commit_pour()
+			return
+		# Something else moved the land or the water under the pour.
+		if data.heights != pour.get("ground",pour.heights) or data.ponds != pour.get("shown_ponds",pour.ponds) or data.streams != pour.get("shown_streams",pour.streams):
+			_commit_pour()
+			_set_status("The land changed while the water settled. Pour again.")
+			return
+		if not plan.changed and not pour.open: continue
+		var last: bool = pour.released and pour.dabs == planned
+		if not await _show_pour(pour,plan,WATER_SHAPE_SECONDS if last else POUR_SHAPE_SECONDS): return
+	if is_same(_pour,pour): _commit_pour()
+
+## The hand lifts: the pour plans its last dabs, then closes.
+func _release_pour() -> void:
+	if _pour.is_empty() or _pour.released:
+		if water_brush.dabs.is_empty() or forming: return
+		_pour_live()
+		if _pour.is_empty(): return
+	_pour.released = true
+	_pour.dabs = water_brush.dabs.duplicate()
+	water_brush.begin()
 	water_settling = true
-	var job = preload("res://scripts/background_work.gd").new()
-	var plan: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/water_brush.gd").plan(detached,ponds,streams,dabs,validate),get_tree())
-	if generation != _water_generation: return
-	water_brush.last_plan_usec = plan.usec
-	if not plan.changed:
-		water_settling = false
-		return
-	if forming or data != target or data.heights != heights or data.ponds != ponds or data.streams != streams or not data._before.is_empty():
-		water_settling = false
-		_set_status("The land changed while the water settled. Pour again.")
-		return
-	data.begin_stroke()
-	# The pour reshaped the ground (a scooped hollow, stream beds, a lip at
-	# the rim): it sinks or rises into place first, then the water arrives.
-	if plan.has("heights") and _light_refresh_ready(true):
-		_water_shape = {"plan":plan,"target":data,"from":data.heights.duplicate()}
-		data.stroke_starting.connect(_finish_water_shape)
-		await _shape_water_ground()
-		return
-	_land_water(plan)
 
-## Seconds a pour's reshaped ground takes to move into place before its
-## water starts to fill. Ticks at the paint loop's 30 Hz with light refreshes.
-const WATER_SHAPE_SECONDS := 0.7
-## The pour whose ground is moving: {"plan", "target", "from"}.
-var _water_shape := {}
+## Show `plan` inside the pour's open undo step: the ground moves first, then
+## the water lands and the yielding refresh publishes it. False when the pour
+## closed meanwhile.
+func _show_pour(pour: Dictionary, plan: Dictionary, seconds: float) -> bool:
+	if not pour.open:
+		data.begin_stroke()
+		data.stroke_starting.connect(_commit_pour)
+		pour.open = true
+		pour.objects = data.objects.duplicate(true)
+		_pour_serial += 1
+		water_pouring = true
+	var ground: PackedFloat32Array = plan.get("heights",pour.heights)
+	if data.heights != ground:
+		pour.landing = plan
+		if not await _shape_pour(pour,ground,seconds): return false
+		pour.erase("landing")
+	_set_pour_water(pour,plan)
+	await refresh(get_tree())
+	return is_same(_pour,pour)
 
-func _shape_water_ground() -> void:
-	var shape := _water_shape
-	var final: PackedFloat32Array = shape.plan.heights
-	var from: PackedFloat32Array = shape.from
+## Move the ground toward `final` with light refreshes at 30 Hz.
+func _shape_pour(pour: Dictionary, final: PackedFloat32Array, seconds: float) -> bool:
+	var from := data.heights.duplicate()
 	var moved := PackedInt32Array()
 	for i in range(mini(final.size(),from.size())):
 		if absf(final[i]-from[i]) > 0.0005: moved.append(i)
+	# A recipe world's first sculpt shades its whole mesh (about 40 ms on the
+	# main thread in a light refresh); the yielding refresh does it on workers.
+	if data._recipe != null and not data._mesh_sculpted: moved.clear()
 	var elapsed := 0.0
 	var since_tick := 0.0
 	var last := Time.get_ticks_usec()
-	while elapsed < WATER_SHAPE_SECONDS and not moved.is_empty():
+	pour.shaping = true
+	while elapsed < seconds and not moved.is_empty():
 		await get_tree().process_frame
-		# Landed early (another stroke, an undo, a newer pour) or abandoned.
-		if not is_same(_water_shape,shape): return
-		if data != shape.target or forming:
-			_abandon_water_shape()
-			return
+		if not is_same(_pour,pour): return false
+		if data != pour.target or forming:
+			_commit_pour()
+			return false
 		var now := Time.get_ticks_usec()
 		var step := minf((now-last)/1000000.0,0.05)
 		last = now
@@ -1798,52 +1879,128 @@ func _shape_water_ground() -> void:
 		if since_tick < 1.0/30.0: continue
 		since_tick = 0.0
 		if not _light_refresh_ready(true): break
-		var t := smoothstep(0.0,1.0,clampf(elapsed/WATER_SHAPE_SECONDS,0.0,1.0))
+		var t := smoothstep(0.0,1.0,clampf(elapsed/seconds,0.0,1.0))
 		var heights := data.heights
 		for i in moved: heights[i] = lerpf(from[i],final[i],t)
 		data.heights = heights
+		pour.ground = heights
 		_refresh_light()
-	if is_same(_water_shape,shape): _finish_water_shape()
+	pour.shaping = false
+	return true
 
-## Land a shaping pour at once: its final ground, then its water.
-func _finish_water_shape() -> void:
-	if _water_shape.is_empty(): return
-	var shape := _water_shape
-	_water_shape = {}
-	if shape.target.stroke_starting.is_connected(_finish_water_shape): shape.target.stroke_starting.disconnect(_finish_water_shape)
-	if data != shape.target:
-		water_settling = false
-		return
-	_land_water(shape.plan)
-
-func _abandon_water_shape() -> void:
-	var shape := _water_shape
-	_water_shape = {}
-	if is_instance_valid(shape.target) and shape.target.stroke_starting.is_connected(_finish_water_shape): shape.target.stroke_starting.disconnect(_finish_water_shape)
-	water_settling = false
-
-## Apply a settled pour inside its open stroke: ground, ponds and streams as
-## one undo step, then fill births and the yielding settle refresh.
-func _land_water(plan: Dictionary) -> void:
-	water_settling = false
-	# Lost water scooped a hollow to pool in (water_brush.gd `_scoop`).
-	if plan.has("heights"): data.heights = plan.heights
+## Put a plan's ground, ponds and streams in the data and withdraw the plants
+## its water covers (only those: plants an earlier plan covered come back),
+## with fill births that carry on from the water already showing.
+func _set_pour_water(pour: Dictionary, plan: Dictionary) -> void:
+	_pour_births(pour,plan)
+	data.heights = plan.get("heights",pour.heights)
 	data.ponds.assign(plan.ponds)
 	data.streams.assign(plan.streams)
-	# Emerged plants the new water covers go with the pour, in its undo step.
-	emergence.drown(plan.added,plan.added_streams)
-	if not data.end_stroke(): return
+	if pour.get("drowned",false):
+		data.objects.assign(pour.objects.duplicate(true))
+		data.objects_revision += 1
+	pour.drowned = emergence.drown(plan.added,plan.added_streams)
+	pour.shown = plan
+	pour.ground = data.heights
+	pour.shown_ponds = data.ponds.duplicate(true)
+	pour.shown_streams = data.streams.duplicate(true)
+	if plan.changed: pour.rect = pour.rect.merge(plan.rect) if pour.rect.has_area() else plan.rect
+
+## A pond the pour already raised rises on from the level showing, as fast as
+## it was rising (the shader lowers it drop·(1-f)², f over FILL_SECONDS). A
+## stream the pour already runs keeps its front. New water waits its delay.
+func _pour_births(pour: Dictionary, plan: Dictionary) -> void:
+	const WaterBrush := preload("res://scripts/water_brush.gd")
+	var fill: float = WaterBrush.FILL_SECONDS
 	var now: float = preload("res://scripts/emergence.gd").time
+	var births: Dictionary = content.water_births
+	var shown: Dictionary = pour.shown
+	var stamped := {}
 	for entry: Dictionary in plan.added:
-		content.water_births[GardenView.water_key(entry.record)] = {"born":now+float(entry.delay),"drop":float(entry.drop)}
+		var key := GardenView.water_key(entry.record)
+		var level := float(entry.record.level)
+		var birth := {"born":now+float(entry.delay),"drop":float(entry.drop)}
+		var seed := WaterBrush.cell_of(Vector2(entry.record.x,entry.record.z))
+		for before: Dictionary in shown.get("added",[]):
+			if not (entry.cells.has(WaterBrush.cell_of(Vector2(before.record.x,before.record.z))) or before.cells.has(seed)): continue
+			var was: Dictionary = births.get(GardenView.water_key(before.record),{})
+			if not was.has("drop"): continue
+			if GardenView.water_key(before.record) == key:
+				birth = was
+				break
+			var at := maxf(now,float(was.born))
+			var f := clampf((at-float(was.born))/fill,0.0,1.0)
+			var remaining := float(was.drop)*(1.0-f)*(1.0-f)
+			var rise := level-(float(before.record.level)-remaining)
+			if rise <= 0.0:
+				birth = {"born":at,"drop":0.0}
+				break
+			# As fast as it was rising, or faster when the new rise needs it.
+			var g := 1.0 if f <= 0.0 or remaining < 0.0001 else minf(1.0,(1.0-f)*rise/remaining)
+			birth = {"born":at-(1.0-g)*fill,"drop":rise/(g*g)}
+			break
+		stamped[key] = birth
 	for entry: Dictionary in plan.added_streams:
-		content.water_births[GardenView.water_key(entry.record)] = {"born":now+float(entry.delay),"seconds":float(entry.seconds)}
-	# Grass creeps out from new shores (scripts/emergence.gd).
-	_stroke_rect = plan.rect
-	_stroke_ended("water")
-	_stroke_rect = Rect2()
-	water_settled.emit(plan.rect)
-	refresh(get_tree())
+		var key := GardenView.water_key(entry.record)
+		var birth := {"born":now+float(entry.delay),"seconds":float(entry.seconds)}
+		var head := Vector2(entry.record.pts[0].x,entry.record.pts[0].z)
+		for before: Dictionary in shown.get("added_streams",[]):
+			var was: Dictionary = births.get(GardenView.water_key(before.record),{})
+			if not was.has("seconds") or Vector2(before.record.pts[0].x,before.record.pts[0].z).distance_to(head) > 1.2: continue
+			birth.born = minf(float(birth.born),float(was.born))
+			break
+		stamped[key] = birth
+	births.merge(stamped,true)
+
+## Close the pour's undo step on what is showing (landing a plan whose ground
+## is still moving), hand its ground to emergence and settle.
+func _commit_pour() -> void:
+	var pour := _pour
+	if pour.is_empty(): return
+	_drop_pour(pour)
+	# Closed while the hand still pours (an undo, another stroke): the rest of
+	# the stroke starts a new pour.
+	if not pour.released: water_brush.begin()
+	if not pour.open: return
+	if data == pour.target:
+		if pour.has("landing"):
+			_set_pour_water(pour,pour.landing)
+			refresh(get_tree())
+		if data.end_stroke() and pour.rect.has_area():
+			# Grass creeps out from new shores (scripts/emergence.gd).
+			_stroke_rect = pour.rect
+			_stroke_ended("water")
+			_stroke_rect = Rect2()
+			water_settled.emit(pour.rect)
+	_hold_reflections()
+
+## Take back what a still click just laid (a double-click's first click,
+## scripts/camera_rig.gd `_retract_click`): a pour or a rising mountain it
+## started closes first, since both keep their undo step open after release
+## (a pour that has not shown yet is simply dropped). Then the step it left,
+## if any, is undone and kept off redo. `last` is the newest undo step before
+## the click. True when a step was taken back.
+func retract_click(last: Variant) -> bool:
+	if forming: return false
+	if not _pour.is_empty(): _commit_pour()
+	if mountain.active: _mountain_interrupted()
+	if data._undo.is_empty() or is_same(data._undo.back(),last): return false
+	undo()
+	if not data._redo.is_empty(): data._redo.pop_back()
+	return true
+
+func _drop_pour(pour: Dictionary) -> void:
+	if is_same(_pour,pour): _pour = {}
+	water_settling = false
+	if is_instance_valid(pour.target) and pour.target.stroke_starting.is_connected(_commit_pour): pour.target.stroke_starting.disconnect(_commit_pour)
+
+## Reflections re-setup once, when the pour's last refresh has published.
+func _hold_reflections() -> void:
+	var serial := _pour_serial
+	while refresh_pending > 0:
+		await get_tree().process_frame
+		if serial != _pour_serial: return
+	if serial == _pour_serial: water_pouring = false
 
 ## Release work for the creation brushes other than land, inside the stroke's
 ## transaction: stones along a path, clearing a forest. It says which ground
@@ -1852,7 +2009,7 @@ func _land_water(plan: Dictionary) -> void:
 func _weather_land() -> bool:
 	if mode != "land" or brush_id == "land": return false
 	var brush = creation_brush()
-	# A settling brush (water) has nothing to finish here; it settles after.
+	# A settling brush (water) has nothing to finish here; its pour closes it.
 	if brush.settles or not brush.has_bounds: return false
 	_stroke_rect = brush.finish(data)
 	return true
@@ -1902,6 +2059,10 @@ func _land_weathering(settle: bool) -> void:
 	if result.moved and not forming and data.heights == _weather_heights:
 		data.heights = result.heights
 		land_weathered.emit(_weather_region)
+		# A mountain's rock colour (scripts/mountain_forms.gd) comes with it.
+		if result.has("tint"): data.tint = result.tint
+	elif result.has("tint") and not forming and data.heights == _weather_heights:
+		data.tint = result.tint
 	_settle_pending = true
 	if settle: _settle_stroke()
 
@@ -1913,3 +2074,157 @@ func _drop_weathering() -> void:
 
 func _join_weathering() -> void:
 	if _weather_job != null: _land_weathering(false)
+
+# --- Mountain forms ---------------------------------------------------------------
+## A land press with a mountain form in hand raises one whole mountain
+## (scripts/mountain_forms.gd): the drag sets its spread and height, it rises
+## while held and finishes rising after release (`_mountain_rise`), then lands
+## (`_land_mountain`): its undo step closes and its weathering and rock
+## colour run on a worker through `_weather_async`, as a land stroke's do.
+## Anything that opens a new transaction lands a rising mountain first, so
+## one undo always takes a whole mountain.
+var _mountain_holding := false
+var _mountain_generation := 0
+var _mountain_plane := 0.0
+var _mountain_poured := Rect2()
+var _mountain_elapsed := 0.0
+
+func mountain_in_hand() -> bool:
+	return mode == "land" and brush_id == "land" and land_form != "hill"
+
+func select_land_form(id: String) -> bool:
+	if not id in mountain.form_ids(): return false
+	if id != land_form:
+		finish_stroke()
+		land_form = id
+		land_form_changed.emit(id)
+	if brush_id == "land" and mode == "land": _set_status(str(mountain.form_entry(id).hint))
+	return true
+
+## Step through the land forms (1 again in the creation shell).
+func cycle_land_form(step := 1) -> void:
+	select_land_form(mountain.cycled(land_form,step))
+
+## The circle the terrain shader draws: the spread a press would start from,
+## or the rising mountain's.
+func mountain_preview_radius() -> float:
+	if _mountain_holding: return mountain.spread
+	var shape: Dictionary = mountain.SHAPES[land_form]
+	return clampf(land_radius*shape.spread.z,shape.spread.x,shape.spread.y)
+
+func _mountain_press(hit: Vector3) -> void:
+	_land_mountain()
+	mountain.prepare(data,land_seed)
+	_mountain_generation += 1
+	_stroke_first_id = data.next_id
+	_painting = true
+	_mountain_holding = true
+	_mountain_elapsed = 0.0
+	_last_point = Vector2(hit.x,hit.z)
+	_mountain_plane = hit.y
+	data.begin_stroke()
+	var right: Vector3 = terrain.global_basis.inverse()*scene.camera.global_basis.x
+	mountain.begin(data,land_form,_last_point,land_radius,land_strength,Vector2(right.x,right.z))
+	_mountain_feel(0)
+
+## The pointer on the press's ground plane, so the rising flank under it never
+## shrinks the drag. Null when the ray misses the plane.
+func _mountain_aim(pointer: Vector2) -> Variant:
+	var camera: Camera3D = scene.camera
+	var origin := terrain.to_local(camera.project_ray_origin(pointer))
+	var direction := (terrain.global_basis.inverse()*camera.project_ray_normal(pointer)).normalized()
+	var hit: Variant = Plane(Vector3.UP,_mountain_plane).intersects_ray(origin,direction)
+	return Vector2(hit.x,hit.z) if hit != null else null
+
+func _mountain_step(pointer: Vector2, delta: float) -> void:
+	var aim: Variant = _mountain_aim(pointer)
+	if aim != null: mountain.aim(data,aim)
+	_mountain_tick(delta)
+
+## Rise at the paint loop's 30 Hz, each tick one light refresh.
+func _mountain_tick(delta: float) -> bool:
+	_mountain_elapsed += minf(delta,0.05)
+	if _mountain_elapsed < 1.0/30.0: return false
+	var speed: float = mountain.advance(data,_mountain_elapsed)
+	if _painting: refresh()
+	elif _light_refresh_ready(true): _refresh_light()
+	else: return true
+	_mountain_feel(1,speed,_mountain_elapsed)
+	_mountain_elapsed = 0.0
+	return false
+
+## After release: finish rising, then land.
+func _mountain_rise() -> void:
+	var generation := _mountain_generation
+	var last := Time.get_ticks_usec()
+	while mountain.active and not mountain.risen():
+		await get_tree().process_frame
+		if generation != _mountain_generation or not mountain.active: return
+		var now := Time.get_ticks_usec()
+		# The view cannot take a light refresh (it is rebuilding): land now.
+		if _mountain_tick((now-last)/1000000.0): break
+		last = now
+	if generation == _mountain_generation: _land_mountain()
+
+## Close the rising mountain's undo step at its full height, and hand its
+## weathering to a worker and its ground to emergence.
+func _land_mountain() -> void:
+	if not mountain.active: return
+	_mountain_generation += 1
+	if _mountain_holding:
+		_mountain_holding = false
+		_painting = false
+		_stroke_button = MOUSE_BUTTON_LEFT
+	mountain.settle(data)
+	var region: Rect2 = mountain.bounds
+	var weathering: Callable = mountain.weather_job(data)
+	data.mark_objects_hand(_stroke_first_id)
+	var changed := data.end_stroke()
+	_mountain_elapsed = 0.0
+	_stroke_rect = region.grow(1.0)
+	if changed and weathering.is_valid(): _weather_async(weathering,region)
+	else: _settle_stroke()
+	if changed: _stroke_ended("land")
+	_stroke_rect = Rect2()
+	_mountain_feel(2)
+	mountain.active = false
+
+## Another transaction is opening while a mountain rises: land it, weathered.
+func _mountain_interrupted() -> void:
+	if not mountain.active: return
+	_land_mountain()
+	_join_weathering()
+
+## REGEN-POLISH SWAP: the one place a mountain's rumble and fog are driven.
+## `phase` 0 press, 1 a rising tick (`speed` 0..1 of its quickest, over
+## `seconds`), 2 landed. With WorldRumble (feature/regen-polish,
+## scripts/world_rumble.gd, `scene.world_rumble`) it holds a heavy rolling
+## rumble for the whole rise and pours fog off the flanks; without it the
+## stroke signals' rate drives StrokeFeedback's tremor instead. The stroke
+## signals go out either way (as "mountain": fog reveal, swell, gusts, the
+## thump and GenesisAudio's rumble voice).
+func _mountain_feel(phase: int, speed := 0.0, seconds := 0.0) -> void:
+	var rumble: Node = scene.get("world_rumble") as Node
+	var at := Vector3(mountain.center.x,mountain.ground,mountain.center.y)
+	var heft := clampf(mountain.height/10.0,0.4,1.0)
+	var flank := Rect2(mountain.center-Vector2.ONE*mountain.spread*1.3,Vector2.ONE*mountain.spread*2.6)
+	match phase:
+		0:
+			_emit_stroke(0,at,mountain.spread,0.0)
+			if rumble != null:
+				rumble.hold(&"mountain",0.5*heft)
+				rumble.pour_fog(flank,RISE_FOG_SECONDS)
+				_mountain_poured = flank
+		1:
+			if rumble != null:
+				rumble.hold(&"mountain",clampf((0.45+0.55*speed)*heft,0.0,1.0))
+				# A drag that outgrew the pour spreads it again.
+				if not _mountain_poured.encloses(flank.grow(-1.0)):
+					rumble.pour_fog(flank,RISE_FOG_SECONDS)
+					_mountain_poured = flank
+			_emit_stroke(1,at,mountain.spread,0.0 if rumble != null else 2.0*seconds*maxf(speed,0.35)*heft)
+		_:
+			if rumble != null: rumble.release(&"mountain")
+			_emit_stroke(2,at,mountain.spread,0.0)
+## Seconds the poured fog holds before draining, from press or regrowth.
+const RISE_FOG_SECONDS := 4.0

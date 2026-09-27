@@ -4,8 +4,8 @@ Phase 3, slice 2 (branch `feature/water-brush`, 2026-09-26). Press `2` while cre
 
 ## What it does
 
-- **Drag to pour.** Nothing changes while the button is down except the stroke feedback. The dabs are recorded, and nearby ones merge.
-- **Release and the water settles** (`scripts/water_brush.gd`, `plan`), with gentle physics:
+- **Drag to pour, and the water arrives under the hand** (`feature/live-water`, see "Live pour" below). The dabs are recorded, and nearby ones merge. Every 0.2 s while the button is down the pour so far is planned again, and the latest plan shows: ponds rise on from where they stand, streams run on, and ground a pour reshapes moves first. Release plans the last dabs and closes the pour.
+- **The water settles** (`scripts/water_brush.gd`, `plan`), with gentle physics:
   - Each dab's water runs down the land by steepest descent to the low ground it drains to.
   - Each basin fills from its lowest point with the water poured into it. A pond already there counts as water already held, so pouring into a pond raises it.
   - Water past a basin's spill level runs over the lowest saddle, down the far side as a stream, into the next basin. Two basins that spill into each other become one lake above the saddle.
@@ -13,9 +13,9 @@ Phase 3, slice 2 (branch `feature/water-brush`, 2026-09-26). Press `2` while cre
   - Lost water is water that would run off the plate's edge, or would spread too thin for a pond. It scoops a soft hollow where it last came to rest: the lowest point on its way down that is clear of the rim. The hollow is sized to hold it, and the water settles again. A pour on open ground therefore always leaves a pond. This is intent honoured by the land; hand-shaped land elsewhere is not touched.
   - **A pond at the rim rises.** Water poured into a pond that already brims at the plate's rim raises a soft lip on the rim beside it (`_lip`), and the pond rises, up to `LIP_RISE` per pour. The lip grows over up to three settles as the rising pond reaches more of the rim. A lip that raises no pond is dropped. Water the lip cannot hold scoops a hollow as before. New water that runs off the edge still scoops a hollow; it does not build a lip.
   - **Streams carve shallow beds** (`_carve_beds`). Each new stream lowers a soft (1 − t²)² trough under its course, `BED_DEPTH` deep and at least `BED_HALF_WIDTH` to either side, and its surface drops into the bed. Ground at or above a nearby pond's level is never cut below that level, so a bed cannot open a pond's bank. If a bed would still break a new pond's surface, the pour keeps its uncarved ground.
-- **The ground moves first.** When a pour reshapes the land (a scooped hollow, stream beds, a rim lip), the ground sinks or rises into place over `WATER_SHAPE_SECONDS` (0.7 s), and then the water starts to fill (`NativeChunkEditor._shape_water_ground`). The ground moves with the light refresh a paint stroke uses, at 30 Hz. Another stroke, an undo or a new pour lands the shaping pour at once first.
-- **Shift-drag or right-drag drains.** Ponds and streams under the brush are removed.
-- **One undo** removes the whole pour: the ponds, the streams, any hollow, beds and lip.
+- **The ground moves first.** When a pour reshapes the land (a scooped hollow, stream beds, a rim lip), the ground sinks or rises into place, and then the water lands (`NativeChunkEditor._shape_pour`). While the hand pours a replan's ground moves over `POUR_SHAPE_SECONDS` (0.3 s); the plan at release takes `WATER_SHAPE_SECONDS` (0.7 s). The ground moves with the light refresh a paint stroke uses, at 30 Hz. On a recipe world's first sculpt it lands at once with the yielding refresh instead, because a light refresh would shade the whole mesh on the main thread (about 40 ms). Another stroke, an undo or a new pour lands the shaping plan at once first.
+- **Shift-drag drains.** Ponds and streams under the brush are removed. Right drags belong to the camera in the creation shell.
+- **One undo** removes the whole pour: the ponds, the streams, any hollow, beds and lip, however many plans showed while it poured.
 - **Water fills; it never appears.**
   - A pond rises from its bed over `FILL_SECONDS`.
   - A stream's front runs down its course at `FLOW_SPEED`.
@@ -51,7 +51,9 @@ All tunables are constants at the top of `scripts/water_brush.gd`.
 | `LIP_WIDTH` | 2.2 m | How far in from the plate's edge a rim lip reaches. |
 | `LIP_RISE`, `LIP_FREEBOARD` | 0.5 m, 0.1 m | The most a rim pond rises in one pour, and how far the lip stands above the water it holds. |
 | `LIP_PASSES` | 3 | Settles a lip may grow over. |
-| `WATER_SHAPE_SECONDS` | 0.7 s | How long reshaped ground takes to move into place before the water fills (in `native_chunk_editor.gd`). |
+| `WATER_SHAPE_SECONDS` | 0.7 s | How long the release plan's reshaped ground takes to move into place before the water fills (in `native_chunk_editor.gd`). |
+| `POUR_REPLAN` | 0.2 s | Least time between plans while the hand pours (in `native_chunk_editor.gd`). A plan also waits for the last one to show. |
+| `POUR_SHAPE_SECONDS` | 0.3 s | How long a replan's reshaped ground takes to move while the hand pours (in `native_chunk_editor.gd`). |
 | `FILL_SECONDS` | 3.2 s | Pond rise time. The shader reads it as `pond_fill_seconds`. |
 | `FLOW_SPEED` | 2.4 m/s | Stream front speed. |
 | `OVERFLOW_AT` | 0.8 | The share of its fill a pond reaches before its overflow leaves. |
@@ -60,22 +62,24 @@ Brush size (`radius`, 1–8 m, default 3) and flow (`strength`, 0.25–3) live o
 
 ## Pipeline
 
-Nothing heavy runs on the main thread when a pour settles.
+Nothing heavy runs on the main thread while a pour shows or settles.
 
-1. **Release.** `finish_stroke` snapshots the heights and hands the dabs to a worker. This takes about 1 ms.
-2. **Plan.** `WaterBrush.plan` runs on the worker against a detached height copy. It samples a 57×57 grid, fills basins, validates each pond with the same mesh flood the renderer uses, and traces streams (`NativeWaterCourse.trace`, falling back to the grid path). Then it raises rim lips, scoops hollows and carves stream beds, settling again after each lip and hollow. It takes 25–70 ms, and up to about 135 ms when a rim lip needs three settles.
-3. **Apply.** The plan applies as one undoable edit. If the land, the ponds or the streams changed while the worker ran, the plan is dropped and the status line asks for another pour. When the plan reshaped the ground, the edit's stroke stays open while the ground moves into place over `WATER_SHAPE_SECONDS`. Each 30 Hz tick is a light refresh of 1.5–3.8 ms. Then the ponds and streams land and the stroke closes.
-4. **Settle.** The yielding refresh runs.
+1. **Pour.** The first dab starts the pour (`NativeChunkEditor._pour_live`). It snapshots the heights, ponds and streams, after any land weathering still in flight has landed. No undo step opens yet.
+2. **Plan.** At most every `POUR_REPLAN`, and only once the last plan has shown, the dabs so far go to a worker. `WaterBrush.plan` runs there against a detached copy of the snapshot's heights, so every plan is the whole pour from its start, never a pour on top of a pour. It samples a 57×57 grid, fills basins, validates each pond with the same mesh flood the renderer uses, and traces streams (`NativeWaterCourse.trace`, falling back to the grid path). Then it raises rim lips, scoops hollows and carves stream beds, settling again after each lip and hollow. It takes 25–70 ms, and up to about 135 ms when a rim lip needs three settles.
+3. **Show.** The first plan that changes anything opens the pour's undo step (`data.begin_stroke`). Each plan's ground moves toward its heights with 30 Hz light refreshes (1.5–3.8 ms each on the plain), then its ponds and streams go into the data with fill births that carry on from what is showing (below), and the yielding refresh publishes them. Plants an earlier plan's water withdrew come back before the new plan's water withdraws its own, so only plants under the water showing are gone. If the land, the ponds or the streams changed under the pour, it closes on what is showing and the status line asks for another pour.
+4. **Release.** `finish_stroke` hands over the dabs (about 1–2 ms); the undo step stays open. The last plan runs, shows with `WATER_SHAPE_SECONDS` of ground movement, and the step closes (`_commit_pour`): one undo removes the pour, emergence hears its rect, and `water_settled` fires. A new stroke, an undo or a world change while that last plan is on the worker closes the pour at once on the plan showing, without the last 0.2 s of dabs.
+5. **Settle.** The yielding refresh runs.
    - On a world without a recipe (the plain), `GardenView` floods the ponds, samples depth and shore fetch, lays the streams and assembles the pond arrays on a worker (`_sample_plain_water`).
    - Recipe worlds already flood their ponds on a worker. Since `feature/phase3-polish` they lay their streams there too, against a private copy of the recipe (4.3 ms to 0.4 ms on the main thread on seed 184).
-5. **Reflections.** `planar_water.gd` no longer re-creates its views synchronously when water changes.
+6. **Reflections.** `planar_water.gd` no longer re-creates its views synchronously when water changes.
    - A live re-setup is spread over frames, and the previous views keep rendering until the new set is ready.
    - Prop and plant changes recopy geometry the same way.
+   - **While a pour shows they hold** (`NativeChunkEditor.water_pouring`, `planar_water.gd` `_hold`). Re-setting up every replan would never finish. Views whose level still stands keep rendering; a view whose pond level moved is hidden and its level unmarked, so that pond draws the ordinary surface. The views re-set up once, after the refresh that closes the pour.
    - The clip shader's level is now a uniform, so a new pond level only duplicates materials; it never parses a shader.
    - Only the two largest pond levels get a reflection view (`MAX_VIEWS`), because each view renders the scene again. The other ponds keep the ordinary surface (`planar_levels`).
    - **Clip shaders compile ahead.** Once the scene has grown, `_warm_shaders` walks it in 1 ms slices for the shaders its copies would clip. It compiles one clip shader per idle frame (`Shader.get_rid()` parses it). Frames while the hand paints, the world forms or a refresh runs are skipped. On the plain, four shaders compile in 3–7 ms each, on the first frames after the scene grows. Before this, each one cost 4–7 ms when a pour's first reflection setup handed it to a material. Compiled clip shaders now stay while their source shader lives, so water that drains and comes back compiles nothing.
    - **Materials sync by change.** Copies of one source material share one record. Each frame re-reads only the parameters seen to change (on the plain, only `planar_levels`) and checks a rolling 300 of the rest (`DISCOVERY_READS`, about 20 frames around the plain's 84 sources). A new copy snapshots its source, so nothing is pushed until a value changes. Copies' visibility, transform and mesh are written only when they differ.
-6. **No-op rebuilds.** A rebuild that changes no water input, such as cover creeping in, keeps the water nodes and `GardenView.revision`, so nothing downstream re-derives from unchanged water.
+7. **No-op rebuilds.** A rebuild that changes no water input, such as cover creeping in, keeps the water nodes and `GardenView.revision`, so nothing downstream re-derives from unchanged water.
 
 ## Measured
 
@@ -119,6 +123,34 @@ Probe (`tools/probe_water_brush.gd -- --plain-seed 7`, then with `--land`). A ne
 
 `tools/probe_water_brush.gd -- --plain-seed 7 [--land]` prints each plan: a hollow, a hilltop, a long pour, a stroke across the plain, and two pours into the rim pond. For each it lists scoops, lips, beds, and the level over the pour point.
 
+### Live pour (`feature/live-water`, 2026-09-27)
+
+The user: "You have to release for the water to appear. I'm instinctively feeling like I'm painting, but as I'm dragging, nothing's happening until I release." Water now arrives while the button is held.
+
+- **Continuity.** Every plan replans the whole pour from its start, so a pond's record changes as the pour grows. Its fill birth carries on from the level showing rather than rising from its bed again (`_pour_births`). The shader lowers a pond by drop·(1 − f)², f over `FILL_SECONDS`; a pond an earlier plan raised (its seed lies in the new region, or the new seed in its region) gets a birth that starts at the level showing now and rises as fast as it was rising, or faster when the new rise needs it. An unchanged record keeps its birth. A stream whose head is within 1.2 m of one already running keeps its birth, so its front runs on. New water waits its plan's delay as before.
+- **What the hand sees.** On the plain the ground starts to sink about 0.25 s after the press, and the first water is published about 0.5 s after it (0.27–0.5 s in the runs below), then rises over `FILL_SECONDS`. A 3 s pour publishes about 8 plans.
+- **Audio.** `genesis_audio.gd` `_on_water_settled` now counts births still moving, not only births from the last 0.05 s, so ponds a pour started while held still sound their fill after release.
+- **Fire.** `fidelity.gd` `_advance_fire` re-seeds the fire field's water mask when the surface map changes, polled every 2 s. That rebuild costs 19–25 ms on seed 184, and every replan republishes the map, so it now waits until the pour closes. It is not new: `main` pays it once, about 1 s after a pour settles on a recipe world (21.8 ms with `--watch=4`). It is outside the plain's budget and still to move off the main thread.
+
+Headless CPU main-loop intervals (`tools/profile_stroke.gd -- --mode=water --plain-seed 7`, 2.2 m brush, strength 2), before (`main` 772dc3c) and after, on the same machine the same day, shared with other agents' runs. The profiler now also prints `first_water_ms` (press to the first frame with the pour's water published), `stroke_publishes` and `slow_stroke_stages`.
+
+| Case | Before | After |
+|---|---|---|
+| 3 s pour (`--dabs=90`): water while held | none until release | first at 0.49 s, 8 publishes |
+| 3 s pour: worst frame while held | 10.3 ms | 13.5 ms (light refreshes while the ground moves) |
+| 3 s pour: worst settle frame | 13.9 ms | 13.6 ms |
+| 1 s pour (default 30 dabs): worst held / settle frame | 10.2 / 14.2 ms | 11.9 / 14.1 ms |
+| 3 s pour, `--then=restroke` (second pour 3 frames after release) | – | 14.3 ms held, 12.4 ms settle; 2 undo steps |
+| 3 s pour, `--watch=20` | – | 0 frames over 16.7 ms; worst 15.0 ms (emergence, `content`) |
+| 2 s pour, `--then=undo` | – | 13.0 ms held, 10.1 ms settle; the undo takes the whole pour |
+| 2 s pour, `--then=shift` (a drain back over it) | – | 12.6 ms held, 13.9 ms settle; the drain 12.1 / 10.6 ms |
+| Seed 184 (recipe world), 3 s pour | 10.0 ms held, 12.1 ms settle; 21.8 ms fire re-seed about 1 s later | 13.3 ms held, first water at 0.14 s; the fire re-seed (25.0 ms) lands in the settle once the pour closes |
+| Release frame | 0.4–1.3 ms | 0.03–2.3 ms |
+
+Before the recipe-world gates, a pour on seed 184 had a 29–42 ms frame (a light refresh shading the first sculpt's whole mesh) and a 19–21 ms frame (the fire re-seed) while held.
+
+The final plan is the same as `main`'s for the same dabs and start: seed 184 settles to the same ponds and streams. The plain at `--plain-seed 7` differs between runs on both builds, because its start heights differ from run to run. `tools/probe_craft_tools.gd -- --plain-seed 7` passes all 26 checks, including a sculpt landing a shaping pour first and one undo taking the pour whole.
+
 ## Unverified
 
 Only headless checks were run: parse checks, the profiles above, the probe, and a launch check. The launch check drove key `2`, a press, the settle, undo, key `1`, and Craft and Create. Nothing was rendered, so all of the following are unverified:
@@ -132,10 +164,17 @@ Only headless checks were run: parse checks, the profiles above, the probe, and 
 - Whether warming clip shaders ahead also warms the GPU pipelines. Only the shader parse was moved. Pipeline compilation under the Forward+ renderer was not measured.
 - How the double-buffered reflections behave, and whether the brief window after a pour, while the new reflection views are prepared, reads. During that window a new pond shows the ordinary water surface.
 - Whether the Fidelity palette and clearer sky on the plain match the reference.
+- The live pour (`feature/live-water`) was only run headless, where the emergence clock stands still under the profiler, so the fill continuity was checked by its arithmetic, not seen. Still to judge on screen:
+  - whether ponds rise smoothly across replans, or pulse every 0.3–0.5 s;
+  - whether a hollow that grows and shifts as the pour goes on reads as the land making room;
+  - whether a pond's level stepping down a few centimetres reads badly. As a pour grows, its hollow widens and the planned level can fall, about 7 cm over a 4 s pour on the plain. The fill cannot sink water, so a pond that already stood above the new level drops to it at once.
+  - whether ponds whose reflections are held show the ordinary surface for the length of the pour.
 
 ## Later
 
 - ~~Emergence's first plan (35–47 ms headless) is the last frame over 16.7 ms after a pour.~~ It runs on a worker since `feature/settle-hitches`.
-- A sculpt or new stroke that lands while a pour is still planning (25–135 ms after release) drops the pour and asks for another. Replanning against the new ground would keep it.
+- ~~A sculpt or new stroke that lands while a pour is still planning drops the pour.~~ Since `feature/live-water` it closes the pour on the plan showing. That plan misses at most the last 0.2 s of dabs.
+- A live pour plans only after the last plan has shown, so the worker sits idle while the ground moves and the refresh publishes. Planning the next one alongside would publish about twice as often.
+- The fire field's water re-seed (19–25 ms on recipe worlds) runs on the main thread.
 - A pond whose spill is an inland saddle cannot be raised by more water; the overflow runs on as a stream. A pour could also dam the saddle, but none does.
 - The streams' carve is not animated separately from the stream front. The whole bed forms in the 0.7 s before the water runs.
