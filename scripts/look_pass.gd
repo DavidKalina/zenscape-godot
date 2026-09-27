@@ -23,12 +23,12 @@ var _grade_layer := CanvasLayer.new()
 var _grade := ShaderMaterial.new()
 var _water_map: Texture2D
 ## Dense meadow grass: full on Ultra, and at reduced density on Beauty while
-## `beauty_grass` is on. On by default for the good-PC target (RTX 4070
-## Super); `--no-beauty-grass` turns it off, and so does `--classic-grass`
-## so that A/B shows the old default look. Balanced never draws it, so the
-## Mac keeps a cheap tier. See docs/scenic/grass-look.md.
+## `beauty_grass` is on. Off by default until its first render is fixed: on
+## 2026-09-26 its tufts and flower faces drew metres wide and lying flat
+## across the Genesis plain. `--beauty-grass` turns it on. Balanced never
+## draws it, so the Mac keeps a cheap tier. See docs/scenic/grass-look.md.
 var grass = preload("res://scripts/dense_grass.gd").new()
-var beauty_grass := not (_flag("--no-beauty-grass") or _flag("--classic-grass")) or _flag("--beauty-grass")
+var beauty_grass := _flag("--beauty-grass") and not (_flag("--no-beauty-grass") or _flag("--classic-grass"))
 var _last_update := 0
 ## The grass setup last logged, so the log line prints once at startup and
 ## again only when the tier or the dense grass changes.
@@ -127,8 +127,8 @@ func _log_grass(dense: bool) -> void:
 	if state == _grass_logged: return
 	_grass_logged = state
 	var cover := "off"
-	if dense: cover = "full cover" if tier == 2 else "reduced cover (--no-beauty-grass to turn off)"
-	elif tier == 0: cover = "off (--no-beauty-grass or --classic-grass)"
+	if dense: cover = "full cover" if tier == 2 else "reduced cover (--beauty-grass)"
+	elif tier == 0: cover = "off (--beauty-grass turns it on)"
 	elif tier == 1: cover = "off on Balanced"
 	var line := "Grass: tier %s, dense meadow %s, tufts %s" % [["Beauty","Balanced","Ultra"][clampi(tier,0,2)], cover, preload("res://scripts/grass_tuft_mesh.gd").describe()]
 	print(line)
