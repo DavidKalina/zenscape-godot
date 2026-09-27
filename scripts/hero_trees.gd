@@ -28,6 +28,21 @@ const JOSHUA_GLB := "res://assets/models/zenscape-hero-joshua.glb"
 const JOSHUA := {"joshua-bark":["Bark",4], "joshua-thatch":["Thatch",4], "joshua-blades":["Blades",2]}
 const JOSHUA_SCALE := Vector3(0.85, 0.85, 0.85)
 
+## Birch, willow and juniper are their own asset kinds too: part node -> [glb
+## mesh, palette role, colour mode]. Crowns are TINT, so the per-tree tint gives
+## the species colour (emergence.gd TREE_COLOURS) and `tint` stands in when a
+## record has none. Scales bring them to `height` metres at record scale 1,
+## which is also the whole-tree wind bend height (stiffer when above it).
+const SPECIES := {
+	"birch":{"glb":"res://assets/models/zenscape-hero-birch.glb","scale":0.44,"height":3.4,"tint":"86a24c","autumn_yellow":1.0,
+		"parts":{"birch-trunk":["Bark",4,OWN],"birch-canopies":["Crown",2,TINT]}},
+	"willow":{"glb":"res://assets/models/zenscape-hero-willow.glb","scale":0.44,"height":2.7,"tint":"86a050",
+		"parts":{"willow-trunk":["Bark",4,OWN],"willow-canopies":["Crown",2,TINT]}},
+	# Stiff and wind-shaped: bends as if twice its height.
+	"juniper":{"glb":"res://assets/models/zenscape-hero-juniper.glb","scale":0.5,"height":3.2,"tint":"527d5e",
+		"parts":{"juniper-trunk":["Bark",4,OWN],"juniper-deadwood":["Deadwood",4,OWN],"juniper-canopies":["Crown",2,TINT]}},
+}
+
 static var _scenes := {}
 
 static func enabled() -> bool:
@@ -60,6 +75,36 @@ static func joshua_mesh(node_name: String) -> Mesh:
 	material.set_shader_parameter("conifer_sway",true)
 	material.set_shader_parameter("conifer_height",7.0)
 	return _build(JOSHUA_GLB,JOSHUA[node_name][0],JOSHUA_SCALE,OWN,material)
+
+## The species a part node belongs to, or "".
+static func species_of(node_name: String) -> String:
+	var kind := node_name.get_slice("-",0)
+	return kind if SPECIES.has(kind) and SPECIES[kind].parts.has(node_name) else ""
+
+static func species_mesh(node_name: String) -> Mesh:
+	var entry: Dictionary = SPECIES[species_of(node_name)]
+	var part: Array = entry.parts[node_name]
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/reference_surface.gdshader")
+	material.set_shader_parameter("flat_faces",true)
+	material.set_shader_parameter("plant_growth",true)
+	# Trunk and crown bend as one tree, so the crown never slides off its limbs.
+	material.set_shader_parameter("conifer_sway",true)
+	material.set_shader_parameter("conifer_height",float(entry.height))
+	if part[2] == TINT: material.set_shader_parameter("autumn_yellow",float(entry.get("autumn_yellow",0.0)))
+	return _build(entry.glb,part[0],Vector3.ONE*float(entry.scale),part[2],material)
+
+## A species part's palette role, or -1 when the key is not one.
+static func species_role(key: String) -> int:
+	var node_name := key.get_slice(":",1)
+	var kind := species_of(node_name)
+	return SPECIES[kind].parts[node_name][1] if kind != "" and key.get_slice(":",0) == kind else -1
+
+## The crown colour a species part shows when its record carries no tint.
+static func species_tint(node_name: String, fallback: Color) -> Color:
+	var kind := species_of(node_name)
+	if kind == "" or SPECIES[kind].parts[node_name][2] != TINT: return fallback
+	return Color(SPECIES[kind].tint).srgb_to_linear()
 
 ## Stable weighted choice per tree record, so a tree keeps its variant across rebuilds.
 static func spruce_index(item: Dictionary) -> int:

@@ -23,7 +23,10 @@ const PARTS := {
 	"boulder_1":["mesh-4"],
 	"boulder_2":["mesh-5"],
 	"boulder_3":["mesh-6"],
-	"boulder_4":["mesh-7"]
+	"boulder_4":["mesh-7"],
+	"birch":["birch-trunk","birch-canopies"],
+	"willow":["willow-trunk","willow-canopies"],
+	"juniper":["juniper-trunk","juniper-deadwood","juniper-canopies"]
 }
 ## Source stems stretch per form to meet the head geometry (foliage.js `stem`).
 const STEM_SCALE := {"spike_flower:flower-stems":2.1,"daisy_flower:flower-stems":1.15}
@@ -35,7 +38,7 @@ static var _pivots := {}
 static func part_pose(key: String, original: Node3D, mesh: Mesh) -> Transform3D:
 	if STEM_SCALE.has(key):
 		return Transform3D(Basis.from_scale(Vector3(1.0,STEM_SCALE[key],1.0)),Vector3.ZERO)
-	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-") or original.name.begins_with("joshua-"):
+	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-") or original.name.begins_with("joshua-") or preload("res://scripts/hero_trees.gd").species_of(original.name) != "":
 		return Transform3D.IDENTITY
 	var pose := Transform3D(original.basis,Vector3.ZERO)
 	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
@@ -76,6 +79,12 @@ static func source_node(source: Node3D, node_name: String) -> Node3D:
 		joshua.mesh = preload("res://scripts/hero_trees.gd").joshua_mesh(node_name)
 		source.add_child(joshua)
 		return joshua
+	if preload("res://scripts/hero_trees.gd").species_of(node_name) != "":
+		var species := MeshInstance3D.new()
+		species.name = node_name
+		species.mesh = preload("res://scripts/hero_trees.gd").species_mesh(node_name)
+		source.add_child(species)
+		return species
 	if node_name.begins_with("layered-"):
 		var tree := preload("res://scripts/layered_tree.gd").new()
 		tree._ready()

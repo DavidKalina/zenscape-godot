@@ -138,7 +138,7 @@ func _discover(query: RefCounted) -> Variant:
 	var nearby: Array[Dictionary] = []
 	for interest: Dictionary in scene.habitat.interests:
 		if not await query.checkpoint(): return null
-		if interest.kind in ["tree","broadleaf","layered_tree","redwood","shrub","boulder_1","boulder_2","boulder_3","boulder_4","log"] and origin.distance_to(interest.position)<10.0:
+		if interest.kind in ["tree","broadleaf","layered_tree","redwood","birch","willow","juniper","shrub","boulder_1","boulder_2","boulder_3","boulder_4","log"] and origin.distance_to(interest.position)<10.0:
 			nearby.append(interest)
 	if nearby.is_empty(): return null
 	nearby.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return origin.distance_squared_to(a.position)<origin.distance_squared_to(b.position))

@@ -77,11 +77,11 @@ func _ready() -> void:
 			_materials[key] = mesh.surface_get_material(0).duplicate()
 			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
-			_tints[key] = Color.WHITE
+			_tints[key] = HeroTrees.species_tint(node_name,Color.WHITE)
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
 				_tints[key] = original.multimesh.get_instance_color(0)
 	# Pines grow as the Blender spruce family: one batch pair per variant.
-	var tread_pairs := [["trunk","canopy"],["broadleaf:mesh-11","broadleaf:broadleaf-canopies"],["layered_tree:layered-trunk","layered_tree:layered-canopies"],["redwood:redwood-trunk","redwood:redwood-canopies"]]
+	var tread_pairs := [["trunk","canopy"],["broadleaf:mesh-11","broadleaf:broadleaf-canopies"],["layered_tree:layered-trunk","layered_tree:layered-canopies"],["redwood:redwood-trunk","redwood:redwood-canopies"],["birch:birch-trunk","birch:birch-canopies"],["willow:willow-trunk","willow:willow-canopies"],["juniper:juniper-trunk","juniper:juniper-deadwood","juniper:juniper-canopies"]]
 	if HeroTrees.enabled():
 		_catalog_parts["tree_variants"] = []
 		var spruce := HeroTrees.spruce_keys()

@@ -285,7 +285,7 @@ func _material_targets() -> Array[Dictionary]:
 	if wood != null and _branches_nearby()>0: return wood.targets()
 	var result: Array[Dictionary] = []
 	for item: Dictionary in scene.habitat.interests:
-		if str(item.id).begins_with("mesh-8:") or str(item.id).begins_with("mesh-11:") or item.get("kind","") in ["tree","broadleaf","redwood","bigfoot_tree","layered_tree"]:
+		if str(item.id).begins_with("mesh-8:") or str(item.id).begins_with("mesh-11:") or item.get("kind","") in ["tree","broadleaf","redwood","bigfoot_tree","layered_tree","birch","willow","juniper"]:
 			result.append(item)
 	return result
 

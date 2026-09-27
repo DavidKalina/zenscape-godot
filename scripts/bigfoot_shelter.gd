@@ -18,7 +18,7 @@ func refresh(scene: Node) -> void:
 		var record: Dictionary = scene._chunk_editor.data.object_by_id(int(part.id))
 		var kind: String = record.get("asset","")
 		var box: AABB = part.transform*part.mesh.get_aabb()
-		if kind in ["tree","broadleaf","bigfoot_tree"]: canopies.append(box)
+		if kind in ["tree","broadleaf","bigfoot_tree","birch","willow","juniper"]: canopies.append(box)
 		elif kind in ["shrub","rock","boulder_1","boulder_2","boulder_3","boulder_4","log"]: screens.append(box)
 
 func shade(point: Vector3) -> float:

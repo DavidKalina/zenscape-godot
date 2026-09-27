@@ -1,7 +1,7 @@
 extends Node3D
 ## Bridges the main world's authored objects to the shared physical play systems.
 ## Untouched objects stay batched. Promotion keeps their record identity for saving.
-const TREES := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree","snag"]
+const TREES := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree","snag","birch","willow","juniper"]
 const PROPS := ["rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
 var owner_scene: Node3D
 var creature: CreatureActor

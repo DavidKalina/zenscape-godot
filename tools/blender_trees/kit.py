@@ -121,8 +121,9 @@ def to_object(bm, name, collection):
 	return obj
 
 
-def merge_shell(obj, weld=0.04):
-	"""Union overlapping clumps into one watertight shell with no hidden interior faces."""
+def merge_shell(obj, weld=0.04, planar=0.0):
+	"""Union overlapping clumps into one watertight shell with no hidden interior faces.
+	planar (degrees) re-merges the coplanar slivers the union cuts, keeping the budget."""
 	bpy.context.view_layer.objects.active = obj
 	mod = obj.modifiers.new('Union', 'BOOLEAN')
 	mod.operation = 'UNION'
@@ -134,6 +135,8 @@ def merge_shell(obj, weld=0.04):
 	bm.from_mesh(obj.data)
 	bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=weld)
 	bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=0.02)
+	if planar > 0.0:
+		bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(planar), verts=bm.verts, edges=bm.edges)
 	bmesh.ops.triangulate(bm, faces=bm.faces)
 	bm.to_mesh(obj.data)
 	boundary = sum(1 for e in bm.edges if e.is_boundary)

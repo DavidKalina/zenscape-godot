@@ -27,7 +27,7 @@ const GATHER_RANGE := 11.0     ## Matches the living world's own gather reach.
 const SITE_SPACING := 1.1      ## Two branches never land on the same spot.
 const SEASON_DROP := [1.0, 0.8, 1.6, 0.6]  ## Drop multiplier at the opening of spring, summer, autumn, winter.
 const SEASON_ROT := [1.0, 0.75, 1.0, 1.5]   ## Rot-time multiplier: summer rots fast, winter keeps wood.
-const TREE_KINDS := ["tree", "broadleaf", "redwood", "bigfoot_tree", "layered_tree"]
+const TREE_KINDS := ["tree", "broadleaf", "redwood", "bigfoot_tree", "layered_tree", "birch", "willow", "juniper"]
 
 var scene: Node
 var branches: Array[Dictionary] = []  ## {id, position, age, carried, node, wood}
