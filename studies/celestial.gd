@@ -34,6 +34,8 @@ var cycling: bool:
 var aurora_strength := 0.65
 var rainbow_strength := 0.0
 var weather_bow := 0.0
+## A rainbow that life calls after rain over a rich place (scripts/life_moments.gd).
+var moment_bow := 0.0
 var alpen_enabled := true
 var inversion_enabled := true
 var wind := 0.4
@@ -111,7 +113,7 @@ func advance(delta: float, paused: bool) -> void:
 		var elevation := sin((phase - 0.25) * TAU) * cos(_tilt)
 		var linger := 1.0 - 0.5 * exp(-elevation * elevation / (2.0 * 0.09 * 0.09))
 		phase = fposmod(phase + delta / 480.0 * linger, 1.0)
-	_rainbow_growth = move_toward(_rainbow_growth, 1.0 if maxf(rainbow_strength, weather_bow) > 0.04 else 0.0, delta / 6.0)
+	_rainbow_growth = move_toward(_rainbow_growth, 1.0 if maxf(maxf(rainbow_strength, weather_bow), moment_bow) > 0.04 else 0.0, delta / 6.0)
 	update_rig()
 
 func update_rig() -> void:
@@ -213,7 +215,7 @@ func update_rig() -> void:
 	_publish("zs_dusk_direction", warmth * 0.9)
 	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)))
 	_publish("zs_aurora", Vector4(aurora_strength, 1.0, 0.15, -1.2))
-	_publish("zs_bow", maxf(rainbow_strength, weather_bow) * smoothstep(-0.03, 0.1, e))
+	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
 	_publish("zs_bow_shape", Vector2.ONE)
 

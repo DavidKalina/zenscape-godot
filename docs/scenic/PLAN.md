@@ -352,6 +352,15 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
    - Birds, fireflies and frogs read the live world instead of fixed reference positions.
    - Arrivals follow conditions plus a delay, like plant emergence.
    - Add the rare "and it was good" moments: a heron landing, deer at dawn, a rainbow after rain, perhaps a glimpse of Bigfoot at the forest edge.
+   - **What landed (`feature/life-answers`, not merged):**
+     - `scripts/land_life.gd` re-reads the live world when the editor reports a change (settle, stroke end, undo, load). It reads heights, the drawn pond surface, stream beds and every plant, in 1.2 ms slices a frame (`scripts/life_survey.gd`), never per frame.
+     - Fish, frogspawn, frogs (after spawn), gulls and fireflies arrive at their places after emergence-style delays keyed to position hashes, and leave when their water or cover goes.
+     - Rare moments with chances and cooldowns (`scripts/life_moments.gd`): a heron lands to fish, deer step out at dawn, a rainbow follows rain over a rich place (`celestial.moment_bow`), and a distant Bigfoot silhouette appears in scenery mode only.
+     - New faceted meshes: fish, frogspawn, heron, deer and the silhouette (`scripts/life_models.gd`).
+     - Blank worlds only; the Fidelity world keeps its authored life. `--no-life` turns it off.
+     - LandLife costs p95 0.1-0.2 ms a frame headless, with no stroke or settle change measured against `--no-life`.
+     - Rules and tunables: `docs/scenic/life.md`. Probe: `tools/probe_land_life.gd`.
+     - The look is unverified until the user launches it.
 4. **Meadow, forest and path brushes.**
    - These write intent, and the world picks the details.
    - A forest brush plants a natural edge and thins on steep rock.
