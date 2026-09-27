@@ -394,7 +394,12 @@ func advance(delta: float) -> void:
 	if _hover_clock <= 0.0:
 		_hover_clock = 0.16
 		var mouse := get_viewport().get_mouse_position()
-		_hint.visible = not gust_tool and not _carrying and (not owner_scene._resident_play.hovered or loose_props.grabbed != null) and not _over_controls(mouse) and (loose_props.grabbed != null or _tree_drag or pick_object(mouse)>0)
+		# The creation shell's Look keeps its own calm hint line
+		# (creation_palette.gd `LOOK_HINT`); hovering a tree or rock there
+		# shows no play prompt. A grab or bend already under way still says
+		# how to finish it.
+		var hovering: bool = owner_scene.get("creation_mode") != true and pick_object(mouse)>0
+		_hint.visible = not gust_tool and not _carrying and (not owner_scene._resident_play.hovered or loose_props.grabbed != null) and not _over_controls(mouse) and (loose_props.grabbed != null or _tree_drag or hovering)
 		_hint.text = "Hold near Bigfoot to offer · Scroll height · Release to throw" if exchange.accepts(loose_props.grabbed) else "Swing and release to throw · Esc to return" if loose_props.grabbed != null else "Pull and release to fling · Esc to cancel" if _tree_drag else "Drag a tree to bend · Drag a rock or log to throw"
 		_hint.position = mouse+Vector2(18,22)
 
