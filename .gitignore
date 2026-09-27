@@ -34,3 +34,6 @@ docs/wind-playground/test-logs/
 
 # Do not ignore assets/, *.blend, or Godot *.uid / asset *.import files:
 # those are game content, editable source art, and resource/import settings.
+
+# Local film and still captures
+captures/
