@@ -96,6 +96,7 @@ func _sync_creation_ui() -> void:
 	_build_button.text = "Create" if crafting else "Craft"
 	if not crafting and _chunk_editor.active and not _menu.visible: _ui.visible = false
 	if _creation_hint != null:
+		_creation_hint.text = _chunk_editor.creation_brush().hint+"  ·  1 land  3 meadow  4 forest  5 path  ·  drag the sky to orbit"
 		_creation_hint.visible = _creating() and _toolbar.visible and not _menu.visible
 		_place_creation_hint()
 
@@ -150,8 +151,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			show_menu()
 			get_viewport().set_input_as_handled()
 			return
-		# Number keys and V pick craft tools; they wait for the Craft palette.
-		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_V] and not (event.ctrl_pressed or event.meta_pressed):
+		# V picks a craft tool; it waits for the Craft palette. Number keys go
+		# on to the editor, which picks creation brushes with them.
+		if event.keycode == KEY_V and not (event.ctrl_pressed or event.meta_pressed):
 			get_viewport().set_input_as_handled()
 			return
 	super._unhandled_input(event)

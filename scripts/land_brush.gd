@@ -22,6 +22,9 @@ const FLOOR := -1.2
 const WEATHER := {"detail":0.0,"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterations":20,"k":0.012,
 	"channel_area":2.5,"jitter":0.6,"max_cut":0.7,"deposit":0.5,"deposit_slope":0.35,"deposit_cap":0.05,
 	"edge_inner":11.6,"edge_outer":13.4}
+var brush_id := "land"
+var title := "Land"
+var hint := "Drag to raise land · Shift or right drag lowers · [ ] brush size"
 var seed_value := -1
 var _ridge := PackedFloat32Array()
 var _cells := {}
@@ -56,6 +59,13 @@ func prepare(data: NativeTerrainData, world_seed: int) -> void:
 		var key := Vector2i(floori(p.x/CELL),floori(p.y/CELL))
 		if not _cells.has(key): _cells[key] = PackedInt32Array()
 		_cells[key].append(i)
+
+## Land keeps its size and strength on the editor (land_radius, land_strength).
+func activate(_owner: Node) -> void:
+	pass
+
+func deactivate(_owner: Node) -> void:
+	pass
 
 func begin() -> void:
 	has_bounds = false

@@ -19,6 +19,7 @@ extends RefCounted
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
+const LandIntent = preload("res://scripts/land_intent.gd")
 
 ## Seconds after a stroke before the first grass shows.
 const GRASS_DELAY := 1.5
@@ -55,12 +56,37 @@ const PLATE := 11.0
 ## Metres² the generator's per-habitat tree counts are spread over.
 const PLANTED_AREA := 462.0
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus"]
+## Forest intent (scripts/forest_brush.gd, docs/scenic/brushes.md). Where the
+## forest brush wished for forest, shrubs and trees come sooner and the core
+## fills first; a forest stroke plans only candidates inside its wish.
+const FOREST_SHRUB_DELAY := 9.0
+const FOREST_SHRUB_SPREAD := 14.0
+const FOREST_TREE_DELAY := 5.0
+const FOREST_TREE_SPREAD := 18.0
+## Tree chance from the frayed edge of the wish to its core, and where along
+## the frayed wish the edge starts and the core is reached.
+const FOREST_EDGE_CHANCE := 0.1
+const FOREST_CORE_CHANCE := 0.9
+const FOREST_EDGE := Vector2(0.1,0.6)
+## How far the edge frays, in wish units: per-candidate scatter and slow lobes
+## (FOREST_LOBE_FREQUENCY, 1/m), so the outline is ragged rather than round.
+const FOREST_RAGGED := 0.45
+const FOREST_LOBES := 0.35
+const FOREST_LOBE_FREQUENCY := 0.28
+## Shrub chance along the margin (a band of the frayed wish), and under canopy.
+const FOREST_MARGIN := Vector4(0.02,0.25,0.5,0.8)
+const FOREST_MARGIN_SHRUBS := 0.45
+const FOREST_UNDER_SHRUBS := 0.12
 
 ## The clock births are stamped on, published as `zs_emergence_time`. Shared
 ## and never reset, so a birth can never sit in a later world's future.
 static var time := 0.0
 
 var data: NativeTerrainData
+## What the creation brushes asked of the ground (scripts/land_intent.gd).
+var intent: RefCounted
+var _lobes: FastNoiseLite
+var _lobes_salt := 0
 ## World key for every hash. Two worlds with the same strokes differ by it.
 var salt := 0
 var _fixed_salt := false
@@ -82,6 +108,7 @@ func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 	data = terrain
 	_fixed_salt = world_salt >= 0
 	salt = world_salt if _fixed_salt else randi()
+	intent = LandIntent.new(data)
 	# Undo, load and new worlds replace the ground the plan was made for.
 	data.state_restored.connect(func(_state: Dictionary) -> void: clear())
 
@@ -95,15 +122,17 @@ func clear() -> void:
 	_blend = null
 	_pending_refresh = false
 
-## Entry point for a finished stroke. `rect` is in plate metres.
-func on_region_changed(rect: Rect2) -> void:
+## Entry point for a finished stroke. `rect` is in plate metres. `source`
+## "forest" is a forest brush stroke: it plans only what its wish asks for,
+## leaves cover alone and does not replan other strokes' work.
+func on_region_changed(rect: Rect2, source := "") -> void:
 	if not enabled:
 		return
 	rect = rect.intersection(Rect2(-14,-14,28,28))
 	if rect.size.x > 0.0 and rect.size.y > 0.0:
-		_queued.append({"rect":rect,"born":_clock})
+		_queued.append({"rect":rect,"born":_clock,"source":source})
 
-func _plan(rect: Rect2, born: float) -> void:
+func _plan(rect: Rect2, born: float, source := "") -> void:
 	if _blend == null:
 		_blend = BiomeBlend.live(data)
 		# A generated world keys its life to its planting seed; a blank plain
@@ -112,14 +141,17 @@ func _plan(rect: Rect2, born: float) -> void:
 			salt = Variety.mix([int(_blend._genome.plant_seed),97])
 	else:
 		_blend.refresh_rect(rect)
-	# A newer stroke replans the ground it covers.
-	for region in _regions:
-		_forget(region,rect)
+	var forest := source == "forest"
+	# A newer stroke replans the ground it covers. A forest stroke only adds:
+	# a candidate planned twice lands once, the second is crowded out.
+	if not forest:
+		for region in _regions:
+			_forget(region,rect)
 	_withdraw(rect)
 	var region := {"rect":rect,"born":born,"cells":PackedInt32Array(),"fronts":PackedFloat32Array(),"targets":PackedVector2Array(),"plants":[],"next":0}
 	var origin := _origin(rect)
 	var side := data.MEADOW_CELLS
-	for z in range(side):
+	for z in range(side if not forest else 0):
 		for x in range(side):
 			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5
 			if not rect.has_point(p):
@@ -142,9 +174,15 @@ func _plan(rect: Rect2, born: float) -> void:
 				var p := (Vector2(i,j)+Vector2(Variety.unit(key+[1]),Variety.unit(key+[2])))*lattice
 				if not rect.has_point(p) or maxf(absf(p.x),absf(p.y)) > PLATE:
 					continue
-				var near := clampf(p.distance_to(origin)/reach,0.0,1.0)
-				var at: float = layer[2]+layer[3]*(0.55*near+0.45*Variety.unit(key+[3]))
-				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key})
+				var wish: float = intent.forest_at(p)
+				if forest and _frayed(p,key,wish) <= FOREST_MARGIN.x:
+					continue
+				var at: float = layer[2]+layer[3]*(0.55*clampf(p.distance_to(origin)/reach,0.0,1.0)+0.45*Variety.unit(key+[3]))
+				if wish > 0.05:
+					# Wished-for forest comes sooner, its core first.
+					var tree: bool = layer[0] == "tree"
+					at = (FOREST_TREE_DELAY if tree else FOREST_SHRUB_DELAY)+(FOREST_TREE_SPREAD if tree else FOREST_SHRUB_SPREAD)*(0.6*(1.0-wish)+0.4*Variety.unit(key+[3]))
+				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest})
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
 	_regions.append(region)
 
@@ -172,7 +210,7 @@ func advance(seconds: float) -> bool:
 	_crowd.clear()
 	_crowd_built = false
 	for queued in _queued:
-		_plan(queued.rect,queued.born)
+		_plan(queued.rect,queued.born,queued.get("source",""))
 	_queued.clear()
 	for r in range(_regions.size()-1,-1,-1):
 		var region: Dictionary = _regions[r]
@@ -291,11 +329,20 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	var key: Array = plant.key
 	var roll := Variety.unit(key+[4])
 	var kind := ""
+	var wish: float = intent.forest_at(p)
+	var frayed := _frayed(p,key,wish)
+	var only_wish: bool = plant.get("forest",false)
 	if plant.layer == "tree":
 		if float(h) > _treeline(habitat):
 			return _refuse("treeline")
 		var chance := float(biome.trees)/PLANTED_AREA*TREE_LATTICE*TREE_LATTICE*_tree_density()
 		if habitat == "wetland": chance *= 0.3
+		if wish > 0.0:
+			# A dense core, thinning to scattered trees at the frayed edge.
+			var wished := 0.0 if frayed < FOREST_EDGE.x else lerpf(FOREST_EDGE_CHANCE,FOREST_CORE_CHANCE,smoothstep(FOREST_EDGE.x,FOREST_EDGE.y,frayed))
+			chance = wished if only_wish else maxf(chance,wished)
+		elif wish < 0.0:
+			chance *= 1.0+wish
 		# Forests thin out as the ground steepens toward rock.
 		chance *= 1.0-smoothstep(0.45,float(biome.rock_slope),slope)
 		if roll >= minf(chance,0.85):
@@ -304,7 +351,16 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	else:
 		if slope > 0.6 or float(h) > _treeline(habitat)+1.5:
 			return _refuse("steep or high")
-		if roll >= {"meadow":0.35,"woodland":0.22,"redwood":0.3,"alpine":0.14,"arid":0.1,"wetland":0.45}.get(habitat,0.2):
+		var chance: float = {"meadow":0.35,"woodland":0.22,"redwood":0.3,"alpine":0.14,"arid":0.1,"wetland":0.45}.get(habitat,0.2)
+		if wish > 0.0:
+			# Shrubs gather along the forest's margin, a few under its canopy.
+			var margin := smoothstep(FOREST_MARGIN.x,FOREST_MARGIN.y,frayed)*(1.0-smoothstep(FOREST_MARGIN.z,FOREST_MARGIN.w,frayed))
+			var wished := FOREST_MARGIN_SHRUBS*margin+FOREST_UNDER_SHRUBS*smoothstep(FOREST_MARGIN.z,FOREST_MARGIN.w,frayed)
+			chance = wished if only_wish else maxf(chance,wished)
+			if habitat == "meadow": habitat = "woodland"
+		elif wish < 0.0:
+			chance *= 1.0+wish
+		if roll >= chance:
 			return _refuse("thinned")
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
 	if _crowded(p,plant.layer == "tree"):
@@ -317,6 +373,19 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	data.objects.back()["born"] = born
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
 	return true
+
+## The forest wish at a candidate, frayed by its own scatter and slow lobes,
+## so the forest's outline is ragged and its edge trees stand apart.
+func _frayed(p: Vector2, key: Array, wish: float) -> float:
+	if wish <= 0.0:
+		return wish
+	if _lobes == null or _lobes_salt != salt:
+		_lobes_salt = salt
+		_lobes = FastNoiseLite.new()
+		_lobes.seed = salt
+		_lobes.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_lobes.frequency = FOREST_LOBE_FREQUENCY
+	return wish+(Variety.unit(key+[8])-0.5)*FOREST_RAGGED+_lobes.get_noise_2d(p.x,p.y)*FOREST_LOBES
 
 func _refuse(reason: String) -> bool:
 	refusals[reason] = refusals.get(reason,0)+1

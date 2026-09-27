@@ -6,6 +6,17 @@ extends RefCounted
 ## mood, visuals, palette), so `CozyWorldGenerator.apply_mood` dresses it.
 const Families = preload("res://scripts/palette_families.gd")
 const Generator = preload("res://scripts/cozy_world_generator.gd")
+## The creation brushes, in key order (1 land, 2 water, 3 meadow, 4 forest,
+## 5 path). Each script exposes `brush_id`, `title`, `hint`, activate and
+## deactivate, and the stroke calls land_brush.gd has (scripts/
+## creation_brush.gd). NativeChunkEditor holds one of each; its "land" tool is
+## whichever brush is in hand.
+const BRUSHES := [
+	{"id":"land","key":KEY_1,"script":"res://scripts/land_brush.gd"},
+	{"id":"meadow","key":KEY_3,"script":"res://scripts/meadow_brush.gd"},
+	{"id":"forest","key":KEY_4,"script":"res://scripts/forest_brush.gd"},
+	{"id":"path","key":KEY_5,"script":"res://scripts/path_brush.gd"},
+]
 
 ## A seeded misty morning or soft day over a meadow palette.
 static func world(seed_value: int) -> Dictionary:
