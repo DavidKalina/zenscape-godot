@@ -322,6 +322,7 @@ func blocks_world_input(point: Vector2) -> bool:
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
 	if photo != null and photo.contains_pointer(point): return true
+	if atlas != null and atlas.contains_pointer(point): return true
 	if _toolbar_glass != null and _toolbar_glass.is_visible_in_tree() and _toolbar_glass.get_global_rect().has_point(point): return true
 	return super.blocks_world_input(point)
 

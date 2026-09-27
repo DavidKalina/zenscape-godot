@@ -108,6 +108,15 @@ func run() -> void:
 		await process_frame
 		if again.atlas.atlas.live == expected and not again.atlas.busy: break
 	check(again.atlas.atlas.live == expected,"a plain right arrow steps to %s, got %s" % [expected,again.atlas.atlas.live])
+	# The on-screen pad: its left button steps back.
+	var pad_left: Button = again.atlas._pad_buttons[Vector2(-1,0)]
+	var back: Vector2i = again.atlas.atlas.live+again.atlas.camera_direction(Vector2(-1,0))
+	check("visit" in pad_left.text or "new" in pad_left.text,"pad button reads %s" % pad_left.text.replace("\n"," "))
+	pad_left.pressed.emit()
+	for i in range(240):
+		await process_frame
+		if again.atlas.atlas.live == back and not again.atlas.busy: break
+	check(again.atlas.atlas.live == back,"the pad's left button steps to %s, got %s" % [back,again.atlas.atlas.live])
 	again.queue_free()
 	await process_frame
 	print("probe_chunk_atlas: %s" % ("PASS" if failures == 0 else "FAIL (%d)" % failures))

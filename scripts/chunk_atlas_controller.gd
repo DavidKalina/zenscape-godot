@@ -23,8 +23,10 @@ var last_build_usec := 0
 var _glide_from := Vector3.ZERO
 var _glide_time := -1.0
 
+## Accepts `--atlas` before or after Godot's `--` separator; launchers pass
+## their extra arguments straight through without one.
 static func enabled() -> bool:
-	return "--atlas" in OS.get_cmdline_user_args()
+	return "--atlas" in OS.get_cmdline_user_args() or "--atlas" in OS.get_cmdline_args()
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -47,6 +49,7 @@ func setup(owner_scene: Node3D) -> void:
 		atlas.live = Vector2i.ZERO
 		_attach_live()
 	_build_views()
+	_build_pad()
 	if views.size() > 0: scene.distance = maxf(scene.distance,62.0)
 	scene._update_camera()
 	busy = false
@@ -146,7 +149,89 @@ func move(direction: Vector2i) -> bool:
 	if grown: scene._notice.text = "A new plain at %s, joined to its neighbours. Drag to raise land." % [target]
 	return true
 
+## On-screen pad: four arrows round the chunk's name, each marked "new" or
+## "visit" for the square it points at from the current camera.
+var _pad: PanelContainer
+var _pad_buttons := {}
+var _pad_label: Label
+const PAD_ARROWS := {Vector2(0,-1):"▲",Vector2(-1,0):"◀",Vector2(1,0):"▶",Vector2(0,1):"▼"}
+
+func _build_pad() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	_pad = PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06,0.07,0.08,0.62)
+	style.set_corner_radius_all(14)
+	style.set_content_margin_all(10)
+	_pad.add_theme_stylebox_override("panel",style)
+	_pad.anchor_left = 1.0
+	_pad.anchor_right = 1.0
+	_pad.anchor_top = 1.0
+	_pad.anchor_bottom = 1.0
+	_pad.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_pad.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_pad.offset_right = -24.0
+	_pad.offset_bottom = -110.0
+	layer.add_child(_pad)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation",6)
+	_pad.add_child(column)
+	var title := Label.new()
+	title.text = "WORLD"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size",11)
+	title.modulate = Color(1,1,1,0.6)
+	column.add_child(title)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation",4)
+	grid.add_theme_constant_override("v_separation",4)
+	column.add_child(grid)
+	for cell in [Vector2(-1,-1),Vector2(0,-1),Vector2(1,-1),Vector2(-1,0),Vector2.ZERO,Vector2(1,0),Vector2(-1,1),Vector2(0,1),Vector2(1,1)]:
+		if PAD_ARROWS.has(cell):
+			var button := Button.new()
+			button.focus_mode = Control.FOCUS_NONE
+			button.custom_minimum_size = Vector2(64,44)
+			button.add_theme_font_size_override("font_size",13)
+			button.pressed.connect(func(): if can_move(): move(camera_direction(cell)))
+			grid.add_child(button)
+			_pad_buttons[cell] = button
+		elif cell == Vector2.ZERO:
+			_pad_label = Label.new()
+			_pad_label.custom_minimum_size = Vector2(64,44)
+			_pad_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_pad_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			_pad_label.add_theme_font_size_override("font_size",12)
+			grid.add_child(_pad_label)
+		else:
+			var gap := Control.new()
+			gap.custom_minimum_size = Vector2(64,44)
+			grid.add_child(gap)
+	var legend := Label.new()
+	legend.text = "or the arrow keys"
+	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	legend.add_theme_font_size_override("font_size",11)
+	legend.modulate = Color(1,1,1,0.5)
+	column.add_child(legend)
+	_refresh_pad()
+
+func _refresh_pad() -> void:
+	if _pad == null: return
+	_pad_label.text = "%d, %d\n%d chunk%s" % [atlas.live.x,atlas.live.y,maxi(atlas.slots.size(),1),"" if maxi(atlas.slots.size(),1) == 1 else "s"]
+	var ready := can_move()
+	for cell in _pad_buttons:
+		var button: Button = _pad_buttons[cell]
+		var target: Vector2i = atlas.live+camera_direction(cell)
+		button.text = "%s\n%s" % [PAD_ARROWS[cell],"visit" if atlas.has(target) else "+ new"]
+		button.disabled = not ready
+
+func contains_pointer(point: Vector2) -> bool:
+	return _pad != null and _pad.is_visible_in_tree() and _pad.get_global_rect().has_point(point)
+
 func _process(delta: float) -> void:
+	_refresh_pad()
 	if _glide_time < 0.0: return
 	_glide_time += delta
 	var t := smoothstep(0.0,1.0,minf(_glide_time/GLIDE_S,1.0))
