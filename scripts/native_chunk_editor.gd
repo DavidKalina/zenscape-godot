@@ -737,7 +737,8 @@ func _process(delta: float) -> void:
 	if mode == "pond":
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
-	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
+	# A held water ball shows where it will land with its own shadow.
+	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted() and (ball == null or ball.state == "idle"))
 	if _ball_holding:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
 		else: _ball_step(hit,delta)
