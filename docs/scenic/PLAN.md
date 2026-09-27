@@ -344,6 +344,34 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
    - Move the water flood and shoreline off the main thread, or into C++. That also removes the roughly 40 ms release frame when a stroke changes water.
    - Default the blank plain to Fidelity's palette and a clearer sky; other families stay for generated worlds.
    - Done when a film shows water filling a painted hollow and a stream finding its way down, with no visible hitch.
+   - **What landed** (`feature/water-brush`, 2026-09-26; the film and a look on screen are still owed). Details and tunables are in `docs/scenic/water-brush.md`.
+     - **The brush.**
+       - Press `2` for the water brush (`scripts/water_brush.gd`) and `1` for land.
+       - Poured water runs downhill and fills its basin up to the spill level. Overflow runs on as a stream to the next basin, and basins that spill into each other merge into one lake.
+       - Water poured on a hill runs down to its pool as a stream.
+       - Water that would run off the edge, or spread too thin, scoops a soft hollow and pools there.
+       - Shift-drag drains. One undo removes the whole pour.
+     - **Fill animation.**
+       - Ponds rise from their beds and stream fronts run down their courses, on the emergence clock (per-vertex births in the water shader). Nothing appears at once.
+       - Grass creeps out from the new shores.
+     - **Brush list.**
+       - `scripts/genesis_canvas.gd` keeps the ordered list `BRUSHES` (1 land, 2 water, then meadow, forest and path). Each brush exposes `brush_id`, `title` and `HINT`.
+       - The creation hint follows the brush in hand.
+     - **Stroke feel.**
+       - The land brush now emits `stroke_started` and is in the feedback's land modes. Slice 1 had left its tremor, fog reveal and swell unwired.
+       - A pour parts the fog and swells the air softly, with no tremor.
+     - **Off the main thread.**
+       - The pour plans on a worker.
+       - The plain's pond flood, shore fetch and stream geometry are built on a worker.
+       - Reflection views re-set up over several frames, double-buffered, with the clip level as a uniform, and are capped at the two largest pond levels.
+       - Rebuilds that leave the water inputs alone keep the water and its revision.
+       - Headless, a pour's worst settle frame went from 54 ms to 18.5 ms (13.6 ms after the session's first reflection setup). The recurring 25 ms frames during emergence with ponds present are gone.
+       - The first-dab hitch did not reproduce: the press path measured 3.4 ms.
+     - **The plain in Fidelity's colours.** The plain now uses Fidelity's ground, foliage, rock, earth and water, a clear day sky, fair weather and thin ground mist. The badge reads "Fidelity green", and generated worlds still draw from the palette families.
+     - **Still open.**
+       - Emergence's first plan (about 36 ms) remains.
+       - Stream beds are not carved.
+       - Planar reflections cost about 4.6 ms of CPU per frame while ponds exist.
 3. **Life answers the land.**
    - Fish settle in new water.
    - Frogspawn appears in shallow edges.

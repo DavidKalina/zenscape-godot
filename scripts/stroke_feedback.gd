@@ -3,13 +3,16 @@ extends Node
 ## signals and drives four cheap, time-damped responses:
 ## - tremor: the camera rumbles while land rises, scaled by how fast it rises;
 ## - fog: a reveal hole (global `zs_reveal`) parts the fog over the stroke;
+##   Pouring water does not rumble; it swells the air more softly.
 ## - wind: `atmosphere.swell` eases up during a stroke and down after it, and
 ##   fog-parting puffs ride the air across the brush;
 ## - growth: `zs_growth_wave_N` slots replay the plant grow-in pop locally, so
 ##   plants the brush passes shrink and pop back while the rest stays grown.
 ## Nothing here allocates per frame; globals are only written while they move.
 
-const LAND_MODES := ["raise", "lower", "flatten", "smooth", "mountain"]
+const LAND_MODES := ["raise", "lower", "flatten", "smooth", "mountain", "land"]
+## Pouring water: no rumble, a softer swell, and the fog parts over the pour.
+const WATER_MODES := ["water"]
 const GROWTH_MODES := ["grass", "blades", "meadow", "flower", "assets"]
 
 # Tremor. Kicks stay under the creature's 0.2 stumble threshold; a mountain thump does not.
@@ -17,13 +20,14 @@ const RUMBLE_MAX := 0.42
 const RUMBLE_KICK := 0.15
 ## Brush strength spent per second that reads as a full-speed rise.
 const RUMBLE_FULL_RATE := 2.0
-const RUMBLE_MODE := {"raise": 1.0, "mountain": 1.3, "lower": 0.7, "flatten": 0.35, "smooth": 0.25}
+const RUMBLE_MODE := {"raise": 1.0, "mountain": 1.3, "lower": 0.7, "flatten": 0.35, "smooth": 0.25, "land": 1.0}
 const RATE_RESPONSE := 6.0
 const MOUNTAIN_THUMP := 0.5
 
 # Wind swell, added to the eased wind dial (dial units, 0.4 is a normal breeze).
 const SWELL_LAND := 0.45
 const SWELL_GROWTH := 0.2
+const SWELL_WATER := 0.28
 const SWELL_RISE := 1.4
 const SWELL_FALL := 0.4
 const SWELL_HOLD := 0.8
@@ -58,6 +62,7 @@ var _tremor: RefCounted
 var _stroking := false
 var _land := false
 var _growth := false
+var _water := false
 var _mode := ""
 var _brush := Vector2.ZERO
 var _brush_radius := 0.0
@@ -93,7 +98,8 @@ func _on_stroke_started(center: Vector3, radius: float, mode: String) -> void:
 	_mode = mode
 	_land = mode in LAND_MODES
 	_growth = mode in GROWTH_MODES
-	if not _land and not _growth:
+	_water = mode in WATER_MODES
+	if not _land and not _growth and not _water:
 		return
 	_stroking = true
 	_after = 0.0
@@ -102,8 +108,8 @@ func _on_stroke_started(center: Vector3, radius: float, mode: String) -> void:
 	_bounds_min = _brush
 	_bounds_max = _brush
 	_gust_timer = 0.0
-	_drop_wave()
-	if _land and _reveal_strength < 0.02:
+	if not _water: _drop_wave()
+	if (_land or _water) and _reveal_strength < 0.02:
 		_reveal_center = _brush
 		_reveal_radius = maxf(REVEAL_MIN_RADIUS, radius * REVEAL_MARGIN)
 	if mode == "mountain" and not _scene._paused:
@@ -119,7 +125,7 @@ func _on_stroke_moved(center: Vector3, radius: float, _mode_name: String, amount
 	_bounds_min = _bounds_min.min(_brush)
 	_bounds_max = _bounds_max.max(_brush)
 	var newest := _waves[_newest] if _newest >= 0 else Vector4.ZERO
-	if newest.z <= 0.0 or _brush.distance_to(Vector2(newest.x, newest.y)) > radius * WAVE_SPACING:
+	if not _water and (newest.z <= 0.0 or _brush.distance_to(Vector2(newest.x, newest.y)) > radius * WAVE_SPACING):
 		_drop_wave()
 
 func _on_stroke_finished(_center: Vector3, _radius: float, _mode_name: String) -> void:
@@ -157,7 +163,7 @@ func _process(delta: float) -> void:
 			_tremor.add(minf(RUMBLE_KICK, target - _tremor.trauma))
 
 	# Wind: swell up while painting, settle after.
-	var swell_target := (SWELL_LAND if _land else SWELL_GROWTH) if live and (_land or _growth) else 0.0
+	var swell_target := (SWELL_LAND if _land else SWELL_WATER if _water else SWELL_GROWTH) if live and (_land or _growth or _water) else 0.0
 	var response := SWELL_RISE if swell_target > _swell else SWELL_FALL
 	_swell = lerpf(_swell, swell_target, 1.0 - exp(-delta * response))
 	if _swell < 0.001 and swell_target == 0.0:
@@ -170,7 +176,7 @@ func _process(delta: float) -> void:
 			_atmosphere.send_gust(Vector3(_brush.x, 0.0, _brush.y))
 
 	# Fog: part over the stroke's bounds, hold, then close slowly.
-	var revealing := _land and (_stroking or _after < REVEAL_HOLD)
+	var revealing := (_land or _water) and (_stroking or _after < REVEAL_HOLD)
 	if revealing:
 		var goal_center := (_bounds_min + _bounds_max) * 0.5
 		var goal_radius := clampf(_bounds_min.distance_to(_bounds_max) * 0.5 + _brush_radius * REVEAL_MARGIN, REVEAL_MIN_RADIUS, REVEAL_MAX_RADIUS)

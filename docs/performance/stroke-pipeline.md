@@ -89,6 +89,10 @@ transforms, so the instance hash is computed from batch sources, not read back.
   (a synchronous re-setup of the reflection views) and `_update_leaf_litter`
   (a reseed) each take 7–18 ms in the same frame, reacting to
   `content.revision`. They are the next targets. Both live outside the refresh.
+  *Update, slice 2 (`feature/water-brush`):* reflection views now re-set up
+  over several frames, double-buffered, and a rebuild that leaves the water
+  inputs alone no longer bumps `content.revision`. The plain's water is built
+  on a worker too. See `docs/scenic/water-brush.md` for the numbers.
 - Cover plants (meadow, grass) appear at release. A coalesced background
   instance rebuild during the stroke would show them sooner. Erase and Blades
   still pay a full refresh per dab.

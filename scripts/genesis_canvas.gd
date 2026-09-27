@@ -7,29 +7,69 @@ extends RefCounted
 const Families = preload("res://scripts/palette_families.gd")
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 
-## A seeded misty morning or soft day over a meadow palette.
+## Creation brushes in key order: 1 land, 2 water, then meadow, forest and
+## path as they arrive. Each script exposes `brush_id` (also the chunk
+## editor mode that paints it), `title` and `HINT`.
+const BRUSHES := [
+	preload("res://scripts/land_brush.gd"),
+	preload("res://scripts/water_brush.gd"),
+]
+
+static func brush_ids() -> Array:
+	return BRUSHES.map(func(brush: GDScript) -> String: return brush.brush_id)
+
+## The brush a number key picks (KEY_1 is the first), or "" for none.
+static func brush_for_key(keycode: int) -> String:
+	var index := keycode-KEY_1
+	return BRUSHES[index].brush_id if index >= 0 and index < BRUSHES.size() else ""
+
+static func brush_hint(id: String) -> String:
+	for brush: GDScript in BRUSHES:
+		if brush.brush_id == id: return brush.HINT
+	return ""
+
+## The plain's colours: the original Fidelity scene's painted green ground,
+## earth and bare grey-brown rock (SceneLook.DEFAULT_COLORS), under a clear
+## blue day sky. Generated worlds keep drawing from the palette families.
+const FIDELITY := {"grass":"5d9e53","foliage":"47764a","rock":"8d8577","earth":"6a503e","water":"397d79",
+	"sky":"78aacb","horizon":"b3cad3","glow":"f3dfba","sun":"ffcf8f"}
+const FIDELITY_LIGHT := {"ambient":"8fb3d9","bounce":"4a5240","rim":"7fa8c9"}
+const FIDELITY_TITLE := "Fidelity green"
+
+## A seeded fair morning or day in Fidelity's colours, with a clear sky and a
+## little low mist.
 static func world(seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(["genesis",seed_value])
-	# Dawn or full day: low light reads well through mist; dusk and night hide the land.
-	var hour := 0 if rng.randf() < 0.5 else 1
-	var phase := rng.randf_range(0.28,0.34) if hour == 0 else rng.randf_range(0.38,0.52)
-	var drawn: Dictionary = Families.draw(seed_value,false,"meadow",hour,"mist",false)
+	# Morning or full day: dusk and night hide the land.
+	var hour := 0 if rng.randf() < 0.35 else 1
+	var phase := rng.randf_range(0.31,0.35) if hour == 0 else rng.randf_range(0.38,0.5)
+	var colors := fidelity_colors(rng,hour)
 	var encoded := {}
-	for key in drawn.colors: encoded[key] = drawn.colors[key].to_html(false)
-	var mood := {"colors":encoded,"phase":phase,"weather":"mist","wind":rng.randf_range(.1,.3),"wind_direction":rng.randf_range(0,360),
-		"clouds":rng.randf_range(.46,.6),"mist":rng.randf_range(.4,.56),"haze":rng.randf_range(.16,.26),"rays":rng.randf_range(.45,.85),
-		"summit_mist":rng.randf_range(.2,.34),"strength":rng.randf_range(.72,.84),"exposure":rng.randf_range(1.08,1.14),
-		"ambient_energy":rng.randf_range(1.45,1.7),"sun_energy":rng.randf_range(.85,1.05),"night_fill":1.45,"cold":0.0,"snow":0.0,
-		"ice":0.0,"wet":0.0,"humidity":.8,"autumn":0.0,"aurora":0.0,"rainbow":0.0}
-	# Ground mist, kept thinner than a generated misty world so strokes stay legible.
-	var visuals := {"fog_density":rng.randf_range(.3,.44),"fog_height":rng.randf_range(3.0,4.5),
-		"peak_density":rng.randf_range(.12,.2),"peak_altitude":rng.randf_range(3.5,5.5),"rock_style":1,"rock_detail":.65}
-	return {"seed":seed_value,"terrain":{},"mood":mood,"visuals":visuals,"palette":drawn.family,"genesis":true}
+	for key in colors: encoded[key] = colors[key].to_html(false)
+	var mood := {"colors":encoded,"phase":phase,"weather":"fair","wind":rng.randf_range(.15,.35),"wind_direction":rng.randf_range(0,360),
+		"clouds":rng.randf_range(.12,.26),"mist":rng.randf_range(.16,.26),"haze":rng.randf_range(.1,.16),"rays":rng.randf_range(.45,.8),
+		"summit_mist":rng.randf_range(.12,.22),"strength":rng.randf_range(.72,.84),"exposure":rng.randf_range(1.04,1.1),
+		"ambient_energy":rng.randf_range(1.35,1.6),"sun_energy":rng.randf_range(.95,1.1),"night_fill":1.45,"cold":0.0,"snow":0.0,
+		"ice":0.0,"wet":0.0,"humidity":.45,"autumn":0.0,"aurora":0.0,"rainbow":0.0}
+	# A thin ground mist that strokes part, well short of a misty world's.
+	var visuals := {"fog_density":rng.randf_range(.12,.2),"fog_height":rng.randf_range(2.5,3.5),
+		"peak_density":rng.randf_range(.08,.14),"peak_altitude":rng.randf_range(3.5,5.5),"rock_style":1,"rock_detail":.65}
+	return {"seed":seed_value,"terrain":{},"mood":mood,"visuals":visuals,"palette":"fidelity","genesis":true}
 
-## "Spring meadow" for the badge.
+## Fidelity's land exactly, and its sky drawn for the hour like a family's.
+static func fidelity_colors(rng: RandomNumberGenerator, hour: int) -> Dictionary:
+	var colors := Families.vary(rng,FIDELITY,hour,false)
+	for key in Families.LAND: colors[key] = Color(FIDELITY[key])
+	Families.derive(colors)
+	for key in FIDELITY_LIGHT: colors[key] = Color(FIDELITY_LIGHT[key])
+	return colors
+
+## "Fidelity green" for the badge; older plains name their family.
 static func palette_title(world_value: Dictionary) -> String:
-	var family: Dictionary = Families.FAMILIES.get(str(world_value.get("palette","")),{})
+	var palette := str(world_value.get("palette",""))
+	if palette == "fidelity": return FIDELITY_TITLE
+	var family: Dictionary = Families.FAMILIES.get(palette,{})
 	return str(family.get("title","Open plain"))
 
 ## Standing-blade cover on the plain (`data.blades`, eight tufts a cell at

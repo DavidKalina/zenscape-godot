@@ -10,6 +10,10 @@ extends RefCounted
 ## outside is locked through the `fixed` mask, so fresh land gets gullies and
 ## aprons while the rest of the world stays exactly as it was.
 const Erosion = preload("res://scripts/terrain_erosion.gd")
+## The creation brush list (scripts/genesis_canvas.gd) reads these.
+const brush_id := "land"
+const title := "Land"
+const HINT := "Drag to raise land  ·  Shift or right drag lowers  ·  [ ] brush size  ·  drag the sky to orbit"
 ## Bucket size for the per-vertex lookup, in metres.
 const CELL := 2.0
 ## Peak rise in metres per second at the stroke centre, at strength 1.
