@@ -3,7 +3,8 @@ extends RefCounted
 ## drag lowers it. Each dab has a broad smooth falloff with a quicker core, and
 ## a ridged, domain-warped noise field seeded per world shapes how much each
 ## vertex rises, so repeated strokes grow crests and spurs instead of blobs.
-## Rising slows toward a ceiling; lowering slows toward a shallow floor.
+## Rising slows toward a dome over the dab's rim (so held dabs round off into
+## hills, not spikes) and toward a ceiling; lowering slows toward a shallow floor.
 ##
 ## When a stroke ends, `weather` runs the native stream-power erosion
 ## (scripts/terrain_erosion.gd) over the stroke's bounds only; every grid cell
@@ -16,6 +17,21 @@ const CELL := 2.0
 const RATE := 2.4
 ## Lowering never digs below this floor (NativeTerrainData.MIN_HEIGHT is -1.5).
 const FLOOR := -1.2
+## Rounded hills: one dab never lifts land above a dome over the ground at its
+## rim, `DOME` metres high per metre of radius, shaped (1-t²)² and scaled by
+## the ridge field (`DOME_RIDGE`). Its steepest flank is about 1.54·DOME·ridge,
+## under the plain's rock slope (0.93), so held dabs round off into green
+## hills instead of stacking a bare spike; the rim keeps rising slowly, so
+## repeated strokes still grow a mountain. RIM is the ring (in radii) that
+## sets the dome's base, and EASE the share of the dome's height over which
+## rising slows as it nears the dome.
+const DOME := 0.4
+const DOME_RIDGE := Vector2(0.8,1.25)
+const RIM := 0.8
+const EASE := 0.35
+## Share of the rise in the quicker core under the pointer (the rest is the
+## broad shoulders). A strong core stacks into a spike on a held dab.
+const CORE := 0.18
 ## Stroke erosion: gentler than a generated world's families, since the same
 ## place may be weathered after every stroke. No detail term: it would add the
 ## same ridged pattern again on each pass.
@@ -84,6 +100,9 @@ func dab(data: NativeTerrainData, center: Vector2, radius: float, amount: float,
 	var band := maxf(ceiling*0.4,1.0)
 	# Write through a local copy: one copy-on-write per dab, not one per vertex.
 	var heights := data.heights
+	var inside := PackedInt32Array()
+	var rim_total := 0.0
+	var rim_count := 0
 	for cz in range(low.y,high.y+1):
 		for cx in range(low.x,high.x+1):
 			var cell: Variant = _cells.get(Vector2i(cx,cz))
@@ -91,22 +110,35 @@ func dab(data: NativeTerrainData, center: Vector2, radius: float, amount: float,
 			for i: int in cell:
 				var t := data.points[i].distance_to(center)*inverse
 				if t >= 1.0: continue
-				var broad := 1.0-t*t
-				# Broad smooth shoulders, plus a quicker core under the pointer.
-				var weight := broad*broad*0.62+exp(-t*t*9.0)*0.38
-				var n: float = _ridge[i]
-				var h: float = heights[i]
-				if lower:
-					# Hollows follow the noise troughs, easing out near the floor.
-					var room := clampf((h-FLOOR)/1.6,0.0,1.0)
-					h -= amount*RATE*weight*(0.55+(1.0-n)*0.8)*room
-					heights[i] = maxf(h,minf(FLOOR,heights[i]))
-				else:
-					# Crests follow the ridges; rising slows toward the ceiling and
-					# never lifts land that already stands above it.
-					var headroom := clampf((ceiling-h)/band,0.0,1.0)
-					h += amount*RATE*weight*(0.4+n*1.2)*headroom
-					heights[i] = minf(h,maxf(ceiling,heights[i]))
+				inside.append(i)
+				if t >= RIM:
+					rim_total += heights[i]
+					rim_count += 1
+	# The dome stands on the ground around the dab (the lowest point under it
+	# when the rim is off the mesh).
+	var rim := rim_total/rim_count if rim_count > 0 else INF
+	if rim_count == 0:
+		for i in inside: rim = minf(rim,heights[i])
+	var dome := radius*DOME
+	for i in inside:
+		var t := data.points[i].distance_to(center)*inverse
+		var broad := 1.0-t*t
+		# Broad smooth shoulders, plus a gentle quicker core under the pointer.
+		var weight := broad*broad*(1.0-CORE)+exp(-t*t*9.0)*CORE
+		var n: float = _ridge[i]
+		var h: float = heights[i]
+		if lower:
+			# Hollows follow the noise troughs, easing out near the floor.
+			var room := clampf((h-FLOOR)/1.6,0.0,1.0)
+			h -= amount*RATE*weight*(0.55+(1.0-n)*0.8)*room
+			heights[i] = maxf(h,minf(FLOOR,heights[i]))
+		else:
+			# Crests follow the ridges; rising slows toward the dome over the
+			# rim and toward the ceiling, and never lowers land already above.
+			var cap := minf(ceiling,rim+dome*broad*broad*lerpf(DOME_RIDGE.x,DOME_RIDGE.y,n))
+			var headroom := clampf((ceiling-h)/band,0.0,1.0)*clampf((cap-h)/maxf(dome*EASE,0.05),0.0,1.0)
+			h += amount*RATE*weight*(0.4+n*1.2)*headroom
+			heights[i] = minf(h,maxf(cap,heights[i]))
 	data.heights = heights
 
 ## Weather the finished stroke: erode its bounds, lock everything else.

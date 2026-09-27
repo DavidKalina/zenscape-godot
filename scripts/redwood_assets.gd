@@ -37,8 +37,10 @@ static func mesh(part: String) -> ArrayMesh:
 					st.add_vertex(p)
 	else:
 		# Compound serrated fronds, sized to mix with the existing grass tufts.
-		for frond in range(7):
-			var angle := frond*TAU/7
+		# Nine full fronds in a fresh green: from above the clump reads as a
+		# leafy rosette, where seven thin dark ones read as a spider.
+		for frond in range(9):
+			var angle := frond*TAU/9+rng.randf_range(-0.12,0.12)
 			var direction := Vector3(cos(angle),0,sin(angle))
 			var across := Vector3(-direction.z,0,direction.x)
 			for segment in range(6):
@@ -46,8 +48,8 @@ static func mesh(part: String) -> ArrayMesh:
 				var center := direction*t*0.85+Vector3.UP*sin(t*PI*0.85)*0.55
 				var tip := direction*(t+0.13)*0.85+Vector3.UP*sin((t+0.13)*PI*0.85)*0.55
 				for sign in [-1.0,1.0]:
-					for p in [center,center+across*sign*(1.0-t)*0.25-direction*0.07,tip]:
-						st.set_color(Color("5a7f41").darkened(rng.randf()*0.18).srgb_to_linear())
+					for p in [center,center+across*sign*(1.0-t)*0.34-direction*0.07,tip]:
+						st.set_color(Color("6c9a4a").darkened(rng.randf()*0.14).srgb_to_linear())
 						st.add_vertex(p)
 	st.generate_normals()
 	var result := st.commit()

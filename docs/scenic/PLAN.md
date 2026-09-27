@@ -345,12 +345,13 @@ The user watched the slices 2-5 film (`captures/phase3-slices-2-5.mp4`) and said
 ### Outstanding from the slices 2-5 film
 
 Seen in the stills of the first rendered film. Each needs a fix and another look on screen.
-- **Land brush peaks.** A few hill strokes built a sharp bare-rock peak instead of a soft hill. Soften the land brush's profile or cap its stacking, and check the rock/grass slope threshold on raised land.
-- **Mist over ponds.** Heavy milky mist sits over the pond, so the water reads murky grey-green. Thin the plain's ground mist over water, or lift it where water is.
-- **Meadow barely shows.** The meadow tint is hard to see, and its flower faces read as pale blue/white shards. Make the tint stronger and warmer, and choose flower colours that read as flowers.
-- **Path is plain.** It reads as a flat tan strip with small stones. It could use softer edges and more character.
-- **Ferns look like spiders.** From above, the ferns read as dark spiders. Change their colour or silhouette, or thin them in emerged undergrowth.
-- **Tree scale.** Some broadleaf trees are very large next to the deer. Check the scale ranges of emerged trees against the creatures.
+- ~~**Land brush peaks.**~~ Fixed on `feature/genesis-look-fixes`: a dab caps at a dome over its rim (`land_brush.gd` `DOME`), the core is gentler, and emerged grass holds to 0.9 of the rock slope. The film's hill now rounds off green. Mountains still come from wider or repeated strokes and go rocky above about 4.75 m.
+- ~~**Mist over ponds.**~~ Fixed on `feature/genesis-look-fixes`: the living fog, the display-space ground pool and the Beauty mist thin over open water (`zs_open_water`). The milky patch is gone. The water still reads grey-green from its own surface (reflections and tint), which belongs to the water work.
+- ~~**Meadow barely shows.**~~ Fixed on `feature/genesis-look-fixes`: a lusher, warmer green at a higher weight, and flowers as warm one-colour drifts (no blues or whites). The drifts show as warm faces in the stills. Seen through the plain's mist they are still soft.
+- **Path is plain.** Improved on `feature/genesis-look-fixes`: wandering, frayed edges, a darker worn centre, dusty shoulders with tufts of green, and per-cell earth variation. From the overview it reads as a trail. Up close under the ground mist it is still faint; it needs a look on screen.
+- ~~**Ferns look like spiders.**~~ Fixed on `feature/genesis-look-fixes`: emerged woodland takes a third as many ferns at 0.6 scale, and the fern mesh has nine fuller, fresher fronds.
+- ~~**Tree scale.**~~ Fixed on `feature/genesis-look-fixes`: emergence scales each kind (`KIND_SIZE`). Layered broadleaves are now 2.1–3.2 m (they were up to 6 m), hero oaks 1.8–2.8 m and spruces 1.6–4.5 m, against a 1.2 m deer.
+- **Tree in the pond.** In one run a spruce planned on the hollow before the pour grew in the middle of the pond. Emergence checks water only when a plant arrives, and a pour does not withdraw what it covers.
 - **Frame spikes at release.** A land stroke's settle has a frame of about 42 ms and a water pour's settle one of about 35 ms, both headless. Emergence's first plan is about 36 ms. Its live biome blend floods ponds on the main thread.
 - **Reflections.** Planar reflections cost about 4.6 ms of CPU per frame while ponds exist, and the session's first reflection setup still parses clip shaders in 5-9 ms slices.
 - **Things not saved:** the forest wish (`land_intent.gd`) and life. A loaded world starts settled.

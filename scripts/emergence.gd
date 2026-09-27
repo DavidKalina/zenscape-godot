@@ -51,6 +51,21 @@ const SHRUB_LATTICE := 0.9
 const TREE_LATTICE := 1.3
 const TREE_GAP := 1.1
 const SHRUB_GAP := 0.45
+## Where emerged grass gives way to bare ground, in shares of the habitat's
+## rock slope: full grass below .x, none above .y. Gentle hills stay green;
+## only real steeps go bare (the plain's rock slope is 0.93).
+const BARE_SLOPE := Vector2(0.9,1.15)
+## Emerged plant sizes (record scale): trees and undergrowth draw from these
+## ranges, and a kind's own factor brings the models into proportion with each
+## other and with the creatures (scripts/life_models.gd: a deer stands about
+## 1.2 m, a heron about 1.1 m). At scale 1 the layered broadleaf is 5.9 m tall
+## and as wide, the spruce family 2.5-4.5 m, the hero oak 1.9 m, and the fern
+## 1.6 m across.
+const TREE_SIZE := Vector2(0.65,1.0)
+const SHRUB_SIZE := Vector2(0.5,0.9)
+const KIND_SIZE := {"layered_tree":0.55,"broadleaf":1.45,"redwood":0.6,"fern":0.6}
+## Ferns read as dark spiders from above; woodland undergrowth takes few.
+const FERN_WEIGHT := 0.3
 ## Plants stay inside the band the generator plants.
 const PLATE := 11.0
 ## Metres² the generator's per-habitat tree counts are spread over.
@@ -306,7 +321,7 @@ func _cover_target(p: Vector2) -> Vector2:
 		return Vector2(-1,-1)
 	var biome: Dictionary = Shape.BIOMES[_blend.pick(p)]
 	var snow := _snowline()
-	var bare := smoothstep(float(biome.rock_slope)*0.75,float(biome.rock_slope)*1.1,_slope(p))
+	var bare := smoothstep(float(biome.rock_slope)*BARE_SLOPE.x,float(biome.rock_slope)*BARE_SLOPE.y,_slope(p))
 	var grass: float = _blend.cover(p)*(1.0-bare)*(1.0-smoothstep(snow-1.8,snow,float(h)))
 	# Emerged cover is painted ground only, never standing blades: the
 	# faceted green reads as the diorama's grass (user choice, 2026-09-26).
@@ -365,7 +380,8 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
 	if _crowded(p,plant.layer == "tree"):
 		return _refuse("crowded")
-	var size := lerpf(0.6,1.05,Variety.unit(key+[6])) if plant.layer == "tree" else lerpf(0.5,0.9,Variety.unit(key+[6]))
+	var span := TREE_SIZE if plant.layer == "tree" else SHRUB_SIZE
+	var size := lerpf(span.x,span.y,Variety.unit(key+[6]))*float(KIND_SIZE.get(kind,1.0))
 	var id := data.place(kind,p,Variety.unit(key+[7])*TAU,size)
 	if id < 0:
 		return false
@@ -409,7 +425,7 @@ func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:
 			return flowers[Variety.weighted(weights,pick)]
 		"woodland","redwood":
 			var kinds := ["fern","shrub","grass_tuft","mushroom"]
-			var weights := [1.5 if habitat == "redwood" else 1.0,0.8,0.8,0.25]
+			var weights := [1.5 if habitat == "redwood" else FERN_WEIGHT,0.8,0.8,0.25]
 			for n in range(kinds.size()): weights[n] *= Variety.lean(salt,kinds[n])
 			return kinds[Variety.weighted(weights,pick)]
 		"arid": return "shrub" if pick < 0.8 else "grass_tuft"

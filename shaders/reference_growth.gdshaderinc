@@ -25,3 +25,10 @@ float zs_surface_height(vec4 data, vec4 stream) {
 	}
 	return max(ground, water);
 }
+
+// 1 where a grown pond or stream stands over the ground, 0 on dry land. Ground
+// mists thin over it so water reads clear and reflective.
+float zs_open_water(vec4 data, vec4 stream) {
+	if (data.a < -100.0) return 0.0;
+	return smoothstep(0.02, 0.12, zs_surface_height(data, stream) - zs_drawn_ground(data.g));
+}
