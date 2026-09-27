@@ -5,22 +5,32 @@ world picks the details. None of them places a plant under the pointer.
 
 ## In hand
 
-`scripts/genesis_canvas.gd` keeps the ordered brush list (`BRUSHES`). The keys
-are 1 land, 2 water (slice 2), 3 meadow, 4 forest and 5 path. The editor's
-`"land"` tool paints with whichever brush is in hand: `NativeChunkEditor.brush_id`,
-`select_brush(id)`, and the `brush_changed` signal for a shell to follow.
+`scripts/genesis_canvas.gd` keeps the ordered brush list (`BRUSHES`): one
+entry per brush with its `brush_id`, palette `title`, how-to `hint` and
+`script`. The keys are 1 land, 2 water (slice 2), 3 meadow, 4 forest and 5
+path; the creation shell (`studies/cozy_worlds.gd`, `_creation_key`) is the one
+handler for them, and the palette (`scripts/creation_palette.gd`) shows the same
+list. The editor's `"land"` tool paints with whichever brush is in hand, water
+included: `NativeChunkEditor.brush_id`, `select_brush(id)`, `held_brush()`,
+and the `brush_changed` signal for a shell to follow. Stroke signals carry the
+brush id as their mode.
 
 - **Drag** paints. **Shift-drag** or **right-drag** works the other way:
   land lowers, a meadow lifts, forest clears, and a path grows back.
 - **`[ ]`** sets the size of the brush in hand, and **Shift+`[ ]`** sets its
   strength. Land keeps `land_radius` and `land_strength` as editor settings.
-  The others keep `radius` and `strength` on the brush and report changes as
-  `setting_changed("brush_radius" | "brush_strength", value)`.
+  The others, water included, keep `radius` and `strength` on the brush and
+  report changes as `setting_changed("brush_radius" | "brush_strength", value)`.
+  `NativeChunkEditor.brush_setting(id, "size" | "strength")` gives a shell the
+  value and range for its meters.
 
 Each brush is its own script and extends `scripts/creation_brush.gd`. That
 script documents the interface the editor drives: `activate`, `deactivate`,
 `prepare`, `begin`, `dab`, and `finish`, which returns the rect that emergence
-should answer.
+should answer. The water brush extends it too, as a **settling** brush
+(`settles = true`): its dabs only record, the editor opens no undo step while
+it is held, and the pour is planned and applied after release
+(`docs/scenic/water-brush.md`).
 
 ## Provenance
 
@@ -151,6 +161,7 @@ fog reveal, gust interval and grow-in wave:
 | Meadow | none | 0.28 | yes | 1.2 s | yes |
 | Forest | 0.15 | 0.62 | yes | 0.55 s | yes |
 | Path | none | 0.1 | yes | none | no |
+| Water | none | 0.28 | yes | none | no |
 
 The craft Meadow tool shares the meadow brush's feel. The land brush never
 emitted `stroke_started` on `main` (slice 1 wired its press separately), so it

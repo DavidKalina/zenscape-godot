@@ -1,6 +1,6 @@
 # The water brush
 
-Phase 3, slice 2 (branch `feature/water-brush`, 2026-09-26). Press `2` while creating to take the water brush; `1` returns to the land brush.
+Phase 3, slice 2 (branch `feature/water-brush`, 2026-09-26). Press `2` while creating (or pick Water on the creation palette) to take the water brush; `1` returns to the land brush. Water is one of the creation brushes in `scripts/genesis_canvas.gd` `BRUSHES`: it extends `scripts/creation_brush.gd` as a settling brush, and the editor's "land" tool holds it like the others (`docs/scenic/brushes.md`).
 
 ## What it does
 
@@ -45,7 +45,7 @@ All tunables are constants at the top of `scripts/water_brush.gd`.
 | `FLOW_SPEED` | 2.4 m/s | Stream front speed. |
 | `OVERFLOW_AT` | 0.8 | The share of its fill a pond reaches before its overflow leaves. |
 
-Brush size (`water_radius`, 1–8 m) and flow (`water_strength`, 0.25–3) are editor settings. `[` and `]` set the size, and Shift with `[` or `]` sets the flow.
+Brush size (`radius`, 1–8 m, default 3) and flow (`strength`, 0.25–3) live on the brush, as the meadow, forest and path brushes keep theirs. `[` and `]` set the size, and Shift with `[` or `]` sets the flow.
 
 ## Pipeline
 
@@ -66,7 +66,7 @@ Nothing heavy runs on the main thread when a pour settles.
 
 ## Measured
 
-These are headless CPU main-loop intervals (`tools/profile_stroke.gd -- --mode=water --plain-seed 7`). `--sync-water` restores the old main-thread water path and synchronous reflection setup for comparison.
+These are headless CPU main-loop intervals (`tools/profile_stroke.gd -- --mode=water --plain-seed 7`; `--mode=water` is short for `--mode=land --brush=water`). `--sync-water` restores the old main-thread water path and synchronous reflection setup for comparison.
 
 | Case | Before (`--sync-water`) | After |
 |---|---|---|

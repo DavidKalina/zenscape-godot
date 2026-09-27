@@ -328,8 +328,8 @@ Four parallel branches, merged in this order:
 
 **Follow-ups from slice 1:**
 - The plain's ground reads greyer and more mauve than Fidelity's green. It picks a random palette family (for example Chalk & turquoise) under mist. Offered: default the plain to Fidelity's palette and a clearer sky.
-- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H). Slice 5 covers it.
-- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch. Slice 5 covers it.
+- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H). Slice 5 adds Look (Tab), and H now puts the brush away.
+- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch. Slice 5 rewrote it for the creation shell.
 - The dense-grass render, the first-dab and first-plan hitches, and the water release frame are in the remaining slices below.
 - A plain launch copies `places.json` to `places-previous.json` before it is overwritten.
 
@@ -355,7 +355,7 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
        - Ponds rise from their beds and stream fronts run down their courses, on the emergence clock (per-vertex births in the water shader). Nothing appears at once.
        - Grass creeps out from the new shores.
      - **Brush list.**
-       - `scripts/genesis_canvas.gd` keeps the ordered list `BRUSHES` (1 land, 2 water, then meadow, forest and path). Each brush exposes `brush_id`, `title` and `HINT`.
+       - `scripts/genesis_canvas.gd` keeps the ordered list `BRUSHES` (1 land, 2 water, then meadow, forest and path). Since the integration its entries are `brush_id`, `title`, `hint` and `script` (see "Slices 2-5 integrated" below).
        - The creation hint follows the brush in hand.
      - **Stroke feel.**
        - The land brush now emits `stroke_started` and is in the feedback's land modes. Slice 1 had left its tremor, fog reveal and swell unwired.
@@ -396,7 +396,7 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
    - A meadow brush paints softer painted cover and flowers as ground colour, not blades.
    - All three respect provenance, so hand work always wins.
    - **What landed** (`feature/land-brushes`, 2026-09-26; `docs/scenic/brushes.md`):
-     - **Scripts and keys.** Each brush is its own script: `scripts/meadow_brush.gd`, `scripts/forest_brush.gd` and `scripts/path_brush.gd`. They share `scripts/creation_brush.gd`. `genesis_canvas.gd` keeps the ordered brush list (`BRUSHES`). Keys are 1 land, 3 meadow, 4 forest and 5 path; 2 is left for water. The editor's "land" tool paints with the brush in hand (`select_brush`, `brush_changed`).
+     - **Scripts and keys.** Each brush is its own script: `scripts/meadow_brush.gd`, `scripts/forest_brush.gd` and `scripts/path_brush.gd`. They share `scripts/creation_brush.gd`. `genesis_canvas.gd` keeps the ordered brush list (`BRUSHES`). Keys are 1 land, 2 water, 3 meadow, 4 forest and 5 path. The editor's "land" tool paints with the brush in hand (`select_brush`, `brush_changed`).
      - **Forest.** The brush writes a forest wish, from -1 to 1, into a new intent layer (`scripts/land_intent.gd`). The wish is part of the undo step but is not saved. Emergence grows it over the succession clock: shrubs from about 9 s, trees from about 5 s, the core first. It gives a dense core, a frayed and lobed edge, and shrubs at the margin. Trees still thin on steep rock, and nothing grows on water or snow. Shift-drag clears ground and withdraws what emerged there.
      - **Meadow.** A lighter, warmer green is painted as ground tint, with flower-coloured faces in drifts. There are no blades.
      - **Path.** Worn earth with gravel margin faces. The tread sinks and smooths by up to 7 cm. At release the path lays small stones along its edges, and clears emerged plants and generated undergrowth from the tread.
@@ -415,11 +415,24 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
 
        A 40 s forest watch grew 16 trees and 23 shrubs, with one 21 ms frame at the first plan. On generated seed 58 the stroke maximum is about 10 ms for every brush. The path's settle there has two frames of 17–27 ms, from the water rebuild when a stroke crosses a pond; that frame was already carried from slice 1.
      - **Unverified.** How the new ground colours read on each palette family, the stones, the forest's outline, and the feel. All of it needs a look on screen.
-5. **The creation interface.**
-   - Replace the top toolbar and the World-menu index hack (`diorama.gd`) with a creation-first shell.
-   - Check the parked maker-editor look (`wip/parked-2026-09-26`) on screen, and reuse its glass chrome if it fits.
-   - Add a "just look" state where the brush is put away.
-   - Make `--verify-desktop-build` pass again.
+5. **The creation interface.** Landed on `feature/creation-shell` (2026-09-26, not merged; the look is unverified on screen).
+   - **Palette:** a glass strip at the bottom centre lists every brush in `Genesis.BRUSHES` (`scripts/genesis_canvas.gd`), in order, keys 1-9. It shows the size and strength of the brush in hand as two thin meters, and ends with **Look**. A one-line how-to sits beneath and fades after the first stroke (`scripts/creation_palette.gd`).
+   - **Look (Tab):** puts the brush away. The camera roams, there is no brush ring and nothing paints. A brush button or its number picks it back up. **H** hides the chrome and puts the brush away with it; H again restores both.
+   - **Top right:** only **Craft** (the old rail; it reads **Create** while open) and **World**: New open plain, Regenerate landscape, Return to previous place (swaps with `places-previous.json`), Save now, Colors & sky, Overview, Main menu. Alt+`[ ]` still steps the showcase seeds.
+   - **Chrome:** the parked maker-editor glass (dark translucent tint over a blurred frame, transparent buttons with a thin selected outline) is reused in `scripts/glass_chrome.gd` and `shaders/editor_glass.gdshader`. Its pixel-stepped colour sprites stay parked; the shell uses thin line glyphs instead.
+   - **World menu:** `diorama.gd` builds it from explicit actions (`add_world_action`) instead of pressing hidden toolbar buttons by index. The ids are unchanged. `_home_button` is gone; His spot greys itself out.
+   - **`--verify-desktop-build`:** now walks the shell (plain, palette lists the registered brushes, first brush in hand, Look stops painting and a press orbits instead, Craft and Create, menu round trip). It passes headless from the source tree. The run uses a temporary places folder so it never touches the player's saves.
+   - **Still open:** confirm the look on screen, the glass blur's frame cost, and the exit-time resource leak lines. Those lines appear before and after this change, and `tools/verify_desktop_export.py` fails on any `ERROR:`.
+
+### Slices 2-5 integrated (`feature/phase3-slices-2-5`, 2026-09-26)
+
+Merged in order: water brush, land brushes, life answers, creation shell. Not on `main`, not pushed.
+
+- **One brush list.** `Genesis.BRUSHES` holds land, water, meadow, forest and path (keys 1-5) as `brush_id`/`title`/`hint`/`script` entries. The editor instantiates one brush per entry, the shell's `_creation_key` is the only number-key handler, and the palette lists the same entries.
+- **One paint path.** The editor's "land" tool paints with the brush in hand, water included. Water extends `creation_brush.gd` as a settling brush: dabs only record, and the pour plans on a worker after release. The shell picks brushes with `NativeChunkEditor.select_brush` rather than `select_tool(brush_id)`, because a `"meadow"` mode already means the craft Meadow tool. `[ ]` size the brush in hand; the palette's meters read `brush_setting`.
+- **Feel.** Water is a `StrokeFeedback.BRUSH_FEEL` entry (fog reveal, soft swell, no rumble, puffs or wave).
+- **Life.** LandLife also re-reads the world when a pour settles (`water_settled`) and waits for a settling pour before it surveys.
+- **Checks.** `--verify-desktop-build` also picks every registered brush from its palette button. A Movie Maker film of all five brushes and the life that follows is `tools/film_genesis.gd`.
 6. **Sound.**
    - Stroke sounds: rumble as land rises, water filling, wind swelling.
    - World beds that follow what exists (water, birds, forest).

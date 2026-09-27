@@ -10,7 +10,6 @@ var _menu: Control
 var _save_copy: Button
 var _menu_orbit := false
 var _toolbar: HBoxContainer
-var _home_button: Button
 var _notice: Label
 var _continue: Button
 var _build_button: Button
@@ -21,6 +20,8 @@ var _defaults := {}
 var _fidelity_document := {}
 var _fidelity_state := {}
 var _world_menu := MenuButton.new()
+## World menu entries by id: the action and an optional availability check.
+var _world_actions := {}
 var _resident_play = preload("res://scripts/resident_interaction.gd").new()
 var _gust_button: Button
 var _resident_wind = preload("res://scripts/resident_wind.gd").new()
@@ -106,9 +107,6 @@ func _process(delta: float) -> void:
 		yaw = sin(_motion_time*0.023)*0.16
 		_update_camera()
 	if _resident_play.scene != null: _resident_play.update(delta)
-	if _home_button != null:
-		_home_button.disabled = not resident_enabled or routine.habits.home == null
-		_home_button.tooltip_text = "Find his sheltered home" if routine.habits.sheltered_home else "Find his resting spot"
 	if trace_started > 0: _performance_trace.last_scene_usec = Time.get_ticks_usec()-trace_started
 
 func _frame_title() -> void:
@@ -215,21 +213,6 @@ func _make_shell() -> void:
 	_button(_toolbar,"Menu",show_menu)
 	_build_button = _button(_toolbar,"Build",func() -> void: set_building(not _chunk_editor.active))
 	_button(_toolbar,"Save",save_current)
-	_button(_toolbar,"Landscapes",func() -> void:
-		set_building(true)
-		edit_landscape_presets())
-	_button(_toolbar,"Colors & sky",func() -> void:
-		set_building(true)
-		_build_palette.close_palette()
-		edit_scene_look())
-	_button(_toolbar,"Bigfoot",func() -> void:
-		if resident_enabled: _focus_bigfoot()
-		else:
-			set_building(true)
-			_build_palette._start_placing("bigfoot"))
-	_button(_toolbar,"Overview",_overview)
-	_home_button = _button(_toolbar,"His spot",_focus_resting_spot)
-	_home_button.disabled = true
 	# The everyday shell shares the dock's warm, quiet controls.
 	for control: Button in _toolbar.get_children():
 		preload("res://scripts/tactile_editor_style.gd").button(control)
@@ -240,37 +223,14 @@ func _make_shell() -> void:
 	_world_menu.add_theme_font_size_override("font_size",14)
 	preload("res://scripts/tactile_editor_style.gd").button(_world_menu)
 	_toolbar.add_child(_world_menu)
-	for index in range(3,8):
-		var action: Button = _toolbar.get_child(index)
-		action.hide()
-		if scenery_mode and action in [_toolbar.get_child(5),_home_button]: continue
-		_world_menu.get_popup().add_item(action.text,index)
-	if not scenery_mode:
-		_world_menu.get_popup().add_separator()
-		_world_menu.get_popup().add_item("See both stories",100)
-		_world_menu.get_popup().add_item("Look through lair windows",101)
-		_world_menu.get_popup().add_item("Find cave entrance",102)
-		_world_menu.get_popup().add_separator()
-		_world_menu.get_popup().add_item("New crossing glade",110)
-		_world_menu.get_popup().add_item("New chasm glade",111)
 	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
-		if id in [110,111]:
-			open_crossing_glade(id == 111)
-			return
-		if id >= 100:
-			if lair == null: return
-			match id:
-				100: _focus_stack()
-				101: _focus_lair()
-				102: _focus_cave()
-			return
-		var action: Button = _toolbar.get_child(id)
-		if not action.disabled: action.pressed.emit())
+		var entry: Dictionary = _world_actions.get(id,{})
+		if not entry.is_empty() and _world_action_available(entry): entry.action.call())
 	_world_menu.about_to_popup.connect(func() -> void:
-		if scenery_mode: return
-		_world_menu.get_popup().set_item_disabled(4,_home_button.disabled)
-		for id in [100,101,102]:
-			_world_menu.get_popup().set_item_disabled(_world_menu.get_popup().get_item_index(id),lair == null))
+		var popup := _world_menu.get_popup()
+		for id: int in _world_actions:
+			popup.set_item_disabled(popup.get_item_index(id),not _world_action_available(_world_actions[id])))
+	_fill_world_menu()
 	_gust_button = _button(_toolbar,"Wind gust",_resident_play.toggle_gust)
 	_gust_button.toggle_mode = true
 	_gust_button.tooltip_text = "Drag the ground to aim wind; release to send · G"
@@ -337,6 +297,42 @@ func _make_shell() -> void:
 		options.add_child(volume)
 	get_viewport().size_changed.connect(_layout_shell)
 	_layout_shell.call_deferred()
+
+## The World menu's entries. Ids stay stable for scripts that drive the menu.
+func _fill_world_menu() -> void:
+	add_world_action("Landscapes",func() -> void:
+		set_building(true)
+		edit_landscape_presets(),3)
+	add_world_action("Colors & sky",func() -> void:
+		set_building(true)
+		_build_palette.close_palette()
+		edit_scene_look(),4)
+	if not scenery_mode:
+		add_world_action("Bigfoot",func() -> void:
+			if resident_enabled: _focus_bigfoot()
+			else:
+				set_building(true)
+				_build_palette._start_placing("bigfoot"),5)
+	add_world_action("Overview",_overview,6)
+	if scenery_mode: return
+	add_world_action("His spot",_focus_resting_spot,7,func() -> bool: return resident_enabled and routine.habits.home != null)
+	var has_lair := func() -> bool: return lair != null
+	_world_menu.get_popup().add_separator()
+	add_world_action("See both stories",_focus_stack,100,has_lair)
+	add_world_action("Look through lair windows",_focus_lair,101,has_lair)
+	add_world_action("Find cave entrance",_focus_cave,102,has_lair)
+	_world_menu.get_popup().add_separator()
+	add_world_action("New crossing glade",open_crossing_glade.bind(false),110)
+	add_world_action("New chasm glade",open_crossing_glade.bind(true),111)
+
+## One World menu entry: `action` runs when chosen, and `available`, when
+## given, greys the entry out whenever it returns false.
+func add_world_action(title: String, action: Callable, id: int, available := Callable()) -> void:
+	_world_menu.get_popup().add_item(title,id)
+	_world_actions[id] = {"action":action,"available":available}
+
+func _world_action_available(entry: Dictionary) -> bool:
+	return not entry.available.is_valid() or bool(entry.available.call())
 
 func _layout_shell() -> void:
 	if _menu == null: return
