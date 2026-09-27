@@ -44,6 +44,12 @@ uniform bool cozy_prop_growth = false;
 #define ZS_FOLIAGE_TRANSMISSION
 uniform float foliage_transmission : hint_range(0.0, 1.0) = 0.0;
 uniform bool bird_wings = false;
+// The pond fish's tail beat (scripts/land_life.gd, after the source's
+// fish.js): a travelling wave down the body, rigid from the nose to x and
+// swinging fully by y (model z), z metres across at the tail, w radians of
+// wave per metre of body.
+uniform bool fish_swim = false;
+uniform vec4 fish_wave = vec4(0.07, -0.21, 0.042, 11.0);
 // The painterly grass tuft (scripts/grass_tuft_mesh.gd): UV.y runs root to
 // tip. Mass normals, the rolling wind wave, straw patches and tip glow from
 // shaders/grass_look.gdshaderinc, as the dense meadow has them. How round a
@@ -135,6 +141,11 @@ void vertex() {
 		float angle = sin(zs_motion_time * 7.5 + phase) * 0.40 * flap * wing;
 		VERTEX.y += abs(VERTEX.x) * sin(angle);
 		VERTEX.x *= cos(angle);
+	}
+	if (fish_swim) {
+		float phase = MODEL_MATRIX[3].x * 2.3 + MODEL_MATRIX[3].z * 1.7;
+		float whip = smoothstep(fish_wave.x, fish_wave.y, VERTEX.z);
+		VERTEX.x += sin(zs_motion_time * 9.0 + phase + VERTEX.z * fish_wave.w) * whip * fish_wave.z;
 	}
 	if (conifer_sway) {
 		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);

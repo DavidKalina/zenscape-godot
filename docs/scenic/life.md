@@ -6,11 +6,12 @@ Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fir
 - `scripts/life_survey.gd`: what the land offers, read from the live world.
 - `scripts/life_moments.gd`: the rare moments, and when Bigfoot may come.
 - `scripts/life_bigfoot.gd`: the Bigfoot sighting: where he stands, what he does, when he leaves.
-- `scripts/life_models.gd`: low-poly procedural meshes for the fish and frogspawn, and the classic heron and deer (`--classic-life`).
+- `scripts/life_models.gd`: low-poly procedural meshes for the fish, frogs and frogspawn, and the classic heron and deer (`--classic-life`). Fish and frogs come in kinds, one table entry each (`FISH_KINDS`, `FROG_KINDS`).
 - `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
 - `scripts/life_snakes.gd`: the grass snake, built and moved in code.
 - `tools/probe_land_life.gd` and `tools/probe_bigfoot_sighting.gd`: the headless probes.
 - `tools/probe_snake.gd` and `tools/render_snake_probe.py`: the snake's headless probe and a Blender renderer for what it dumps.
+- `tools/dump_life_models.gd` and `tools/render_life_models.py`: every fish and frog kind dumped headless and rendered in Blender (`-b`) as a contact sheet, or as a koi pond and a wild pond (`--pond`), for judging the designs without opening the game.
 
 `studies/fidelity_life.gd` builds `LandLife` after the fish and dead wood. It runs only on blank worlds: the Genesis plain and generated worlds. The Fidelity reference world keeps its authored birds, frogs and fireflies. `--no-life` turns the whole system off, for A/B timing.
 
@@ -64,11 +65,13 @@ Each kind keeps sites keyed by survey cell. This works like emergence's candidat
 | Birds | shores and woods | 6 + 24 | one per 14 bank cells + one per 10 trees + one for a stream, at most 8 |
 | Fireflies | damp undergrowth | 12 + 22 | up to 64, 0.7 m apart |
 
+Each look (a fish kind and its markings; a frog kind, markings and pose) is its own MultiMesh batch, built the first time a creature of that look arrives (well under a millisecond). A kind's slots are shared across its batches, and each batch draws only up to the highest slot it has shown. Photo mode names the kind ("Kohaku koi", "Common toad").
+
 What each creature looks like and does:
 
-- **Fish:** low-poly koi (orange, gold, silver, cream) circle their home and never swim out of wet cells. Now and then one rises and leaves a ring, more often in low light.
+- **Fish:** each pond keeps one company (`FISH_PONDS`, by a hash of the pond's first cell): a koi pond of kohaku, sanke, showa, yamabuki ogon, asagi and chagoi, or a wild pond of rudd, perch, common carp, tench and the odd escaped goldfish. Each kind is a lofted body (length, depth, width, a perch's hump), a forked or round tail, dorsal (a perch's split and spiny), pectoral, pelvic and anal fins with clear rims, and eyes. The paint is baked: countershading, then koi patches (three layouts per patterned kind, mirrored on half the fish), an ogon's bright ridge, a carp's scale net, an asagi's net and red belly, or a perch's bars. They swim just under the surface with the dorsal fin clear of it (`Models.fish_top`), circle their home and never swim out of wet cells. The tail beats in `reference_surface` (`fish_swim`, `fish_wave`): the source's travelling wave, rigid at the nose and swinging at the tail, fitted to each kind's length. Each look draws with its own copy of the shared material, so nothing new compiles. Now and then one rises and leaves a ring, more often in low light.
 - **Frogspawn:** clumps of pale beads with dark eggs, floating flat at the water level and following the level if it changes.
-- **Frogs:** the Fidelity frog mesh and its pond loop. They sit on the bank, leap into the nearest water, paddle and hop back.
+- **Frogs:** code-built, in four kinds: common frog (brown, spotted, dark mask behind the eye), pool frog (green, pale stripe down the back), leopard frog (grey-green, rimmed spots) and common toad (warty, broad, copper eyes, glands behind the eyes, short low hops). A pond's frogs are mostly one kind (`FROG_PONDS`). Each has bulging gold eyes with dark pupils, eardrums, folds down the back, barred legs, and webbed hind feet. It sits propped on its arms with the hind legs folded. It flies in a second, leaping pose, arms back and legs thrown out, from just after it pushes off until just before it lands, crouching and squashing at either end. It swims in the leaping pose, low in the water with only its eyes and back above it, and comes round toward its bank late in the swim. Back on the bank it turns to face the water, as frogs sit. The pond loop is the Fidelity one: sit on the bank, leap into the nearest water, paddle and hop back. The Fidelity reference world keeps its own frogs.
 - **Birds:** the Fidelity gulls with their thermal flight model (`studies/bird_flight.gd`). They fly in from beyond the plate over three thermals, which rise above the two biggest waters and the highest ground.
 - **Fireflies:** the scene's own 90 fireflies. On a blank world every one starts absent. `INSTANCE_CUSTOM.w` in `reference_fireflies.gdshader` is now absence, and each firefly fades in at its place. They glow at dusk as before. Leaving a blank world restores the Fidelity positions.
 

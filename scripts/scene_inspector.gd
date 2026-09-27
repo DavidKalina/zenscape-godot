@@ -183,7 +183,7 @@ func creatures() -> Array[Dictionary]:
 				p = life._bird_node.to_global(Vector3(float(bird.x),float(bird.y),float(bird.z)))
 			else:
 				p = life.to_global(p)
-			found.append({"kind":kind,"title":names[kind],"p":p,"r":radius[kind],"site":site})
+			found.append({"kind":kind,"title":str(site.get("title",names[kind])),"p":p,"r":radius[kind],"site":site})
 	var snakes: Node3D = life.get("snakes")
 	if snakes != null and snakes.visible and not str(snakes.showing()).is_empty():
 		found.append({"kind":"snake","title":"Grass snake","p":snakes.to_global(snakes._head_pos)+Vector3.UP*0.08,"r":0.45,"node":snakes})
