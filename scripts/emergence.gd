@@ -22,6 +22,7 @@ const Shape = preload("res://scripts/native_formation_shape.gd")
 const LandIntent = preload("res://scripts/land_intent.gd")
 const WaterBrush = preload("res://scripts/water_brush.gd")
 const Guidance = preload("res://scripts/quiet_guidance.gd")
+const HeroTrees = preload("res://scripts/hero_trees.gd")
 
 ## An emerged tree was placed at plate point `p`; it grows in from `born` on
 ## `time` over TREE_RISE. Stroke feedback sends a little gust to settle it.
@@ -146,6 +147,36 @@ const FOREST_LOBE_FREQUENCY := 0.28
 const FOREST_MARGIN := Vector4(0.02,0.25,0.5,0.8)
 const FOREST_MARGIN_SHRUBS := 0.45
 const FOREST_UNDER_SHRUBS := 0.12
+## Dead wood: a standing snag, a fallen log or a stump now and then takes a
+## tree's place, so a wood reads old and lived-in. It goes by stand: DEAD_OLD
+## of stands are old (more on high, dry ground), and a tree there comes up
+## dead at DEAD_SHARE.y, a young stand's at DEAD_SHARE.x. Dry, high and steep
+## ground lean it up to DEAD_HARSH times, a forest's dense core by DEAD_CORE;
+## open meadow grows none. Pieces keep DEAD_GAP apart so none reads as a
+## woodpile, and one without room stays a living tree.
+const DEAD_KINDS := ["snag","log","stump"]
+const DEAD_OLD := Vector2(0.25,0.55)
+const DEAD_SHARE := Vector2(0.02,0.15)
+const DEAD_HARSH := Vector2(0.6,1.7)
+const DEAD_CORE := 0.6
+const DEAD_HABITAT := {"meadow":0.0,"wetland":0.4,"arid":0.25,"alpine":1.2}
+const DEAD_GAP := 2.6
+## Snag height and width, log length and girth, stump size (record scale);
+## the emerged woods stand at about two thirds of the source's.
+const SNAG_SIZE := Vector4(1.7,2.8,1.0,1.35)
+const LOG_SIZE := Vector4(1.1,1.9,0.75,1.0)
+const STUMP_SIZE := Vector2(0.6,0.95)
+## Weathered wood: gentle multipliers over the models' own browns (sRGB, so
+## near white; a tint can only darken). Less red and green greys the brown
+## toward bleached silver, or leaves it grey-brown; never a fire's near-black.
+const DEAD_COLOURS := {
+	"snag":[["e2edff",1.0],["eef0f2",0.7],["f6f0e8",0.4]],
+	"log":[["e8eef6",1.0],["f4ede4",0.8]],
+	"stump":[["f4ede4",1.0],["e6ebf2",0.7]],
+}
+## Old and high stands let the spruce family's dead-top variant lean up to
+## this share of their spruces (it is otherwise a 1 in 23 accent).
+const DEAD_TOPS := 0.3
 
 ## The clock births are stamped on, published as `zs_emergence_time`. Shared
 ## and never reset, so a birth can never sit in a later world's future.
@@ -387,7 +418,7 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 
 ## Seconds an emerged record of `asset` takes to grow in.
 static func rise_seconds(asset: String) -> float:
-	return TREE_RISE if asset in TREES else SHRUB_RISE
+	return TREE_RISE if asset in TREES or asset == "snag" else SHRUB_RISE
 
 ## Move world time on. True means cover or objects changed: refresh once.
 ## The clock runs even when idle, so the last arrivals finish growing.
@@ -577,6 +608,9 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
 	if _crowded(p,plant.layer == "tree"):
 		return _refuse("crowded")
+	if plant.layer == "tree" and _dead_wood(habitat,p,slope,wish,frayed,key,born):
+		return true
+	if kind == "tree": p = _dead_top(p,key)
 	var span := TREE_SIZE if plant.layer == "tree" else SHRUB_SIZE
 	var draw := Variety.unit(key+[6])
 	if guide != null:
@@ -595,6 +629,102 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
 	if kind in TREES: tree_arrived.emit(p,born)
 	return true
+
+## A tree candidate that comes up as dead wood instead: true when a snag, log
+## or stump was placed. With no room for one, the living tree stands.
+func _dead_wood(habitat: String, p: Vector2, slope: float, wish: float, frayed: float, key: Array, born: float) -> bool:
+	var stand := _stand(p)
+	var core := smoothstep(FOREST_EDGE.y,1.2,frayed) if wish > 0.0 else 0.0
+	if Variety.unit(key+[40]) >= _dead_share(habitat,stand,slope,wish,core) or _near(p,DEAD_GAP,false,true) > 0:
+		return false
+	var harsh := _harsh(stand,slope)
+	# Snags stand on exposed ground, logs lie in the dense core, stumps at the edge.
+	var weights := [0.6+0.9*harsh,0.4+1.0*core,0.3+0.5*(1.0-core)]
+	for n in range(weights.size()): weights[n] *= Variety.lean(salt,"dead:"+DEAD_KINDS[n])
+	var kind: String = DEAD_KINDS[Variety.weighted(weights,Variety.unit(key+[41]))]
+	var yaw := Variety.unit(key+[7])*TAU
+	var a := Variety.unit(key+[42])
+	var b := Variety.unit(key+[43])
+	var pose := {}
+	var size := lerpf(STUMP_SIZE.x,STUMP_SIZE.y,a)
+	var footprint := PackedVector2Array([p])
+	match kind:
+		"snag":
+			# Stunted where it is exposed, and leaning a little.
+			size = lerpf(SNAG_SIZE.z,SNAG_SIZE.w,b)
+			var basis := Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,Variety.unit(key+[44])*0.12)*Basis.from_scale(Vector3(size,lerpf(SNAG_SIZE.x,SNAG_SIZE.y,a)*(1.0-0.3*harsh),size))
+			pose = NativeObjectPose.make(basis,-0.05)
+		"log":
+			# Lies along the ground clear of trunks, pitched to its slope, sunk
+			# a little as the source's logs are (native_flora.gd).
+			var length := lerpf(LOG_SIZE.x,LOG_SIZE.y,a)
+			size = lerpf(LOG_SIZE.z,LOG_SIZE.w,b)
+			var along := Vector2(cos(yaw),-sin(yaw))*length
+			footprint = _log_points(p,along)
+			for q in footprint:
+				if data.ground_height(q) == null or _wet(q) or _near(q,0.8,true) > 0: return false
+			var h1: float = data.sample(p-along*0.5,data.heights)
+			var h2: float = data.sample(p+along*0.5,data.heights)
+			for t in [-0.3,-0.15,0.15,0.3]:
+				var off: float = (h1+h2)*0.5+(h2-h1)*t-float(data.sample(p+along*t,data.heights))
+				if off > 0.06*size or off < -0.11*size: return false
+			var basis := Basis(Vector3.UP,yaw)*Basis(Vector3.BACK,atan2(h2-h1,length))*Basis.from_scale(Vector3(length,size,size))
+			pose = NativeObjectPose.make(basis,(h1+h2)*0.5-float(data.sample(p,data.heights))+0.09*size)
+	var id := data.place(kind,p,yaw,size,pose,_dead_tint(kind,stand,key))
+	if id < 0:
+		return false
+	data.objects.back()["source"] = "emerged"
+	data.objects.back()["born"] = born
+	for q in footprint: _crowd.get_or_add(Vector2i(q.floor()),[]).append(Vector3(q.x,q.y,2.0))
+	return true
+
+## An old stand, drawn once per stand and likelier on high, dry ground.
+func old_stand(stand: Dictionary) -> bool:
+	return Variety.unit(stand.key+[40]) < lerpf(DEAD_OLD.x,DEAD_OLD.y,_harsh(stand,0.0))
+
+## How hard the ground is on trees, 0-1: the stand's height and dryness, and
+## the steepness where it stands.
+func _harsh(stand: Dictionary, slope: float) -> float:
+	return clampf(0.45*float(stand.altitude)+0.4*(1.0-float(stand.moisture))+0.3*smoothstep(0.3,0.8,slope),0.0,1.0)
+
+## Points along a log centred on `p` whose axis spans `along`, for crowding.
+static func _log_points(p: Vector2, along: Vector2) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for t in [-0.5,-0.25,0.0,0.25,0.5]: points.append(p+along*t)
+	return points
+
+## Weathered wood: one colour per kind and stand, with a little brightness play.
+func _dead_tint(kind: String, stand: Dictionary, key: Array) -> String:
+	var options: Array = DEAD_COLOURS[kind]
+	var weights := []
+	for option: Array in options: weights.append(float(option[1]))
+	var color := Color(options[Variety.weighted(weights,Variety.unit(stand.key+[7,kind.hash()]))][0]).srgb_to_linear()*lerpf(0.9,1.0,Variety.unit(key+[22]))
+	return NativeObjectPose.encode_tint(Color(minf(color.r,1.0),minf(color.g,1.0),minf(color.b,1.0)))
+
+## In an old or high stand a spruce may grow the family's dead top. The variant
+## is a hash of the record's id and centimetre position (hero_trees.gd
+## spruce_index), so such a tree moves a few centimetres to a spot that draws
+## it; saved worlds read back the same variant.
+func _dead_top(p: Vector2, key: Array) -> Vector2:
+	var stand := _stand(p)
+	var lean := DEAD_TOPS*maxf(1.0 if old_stand(stand) else 0.0,smoothstep(0.55,0.9,float(stand.altitude)))
+	if Variety.unit(key+[45]) >= lean:
+		return p
+	var dead_top := -1
+	for n in range(HeroTrees.SPRUCE.size()):
+		if HeroTrees.SPRUCE[n][0] == "dead-top": dead_top = n
+	var base := (p*100.0).round()
+	for n in range(49):
+		var q := (base+Vector2(n%7-3,n/7-3))/100.0
+		if HeroTrees.spruce_index({"id":data.next_id,"x":q.x,"z":q.y}) == dead_top: return q
+	return p
+
+## The share of a stand's tree candidates that come up dead.
+func _dead_share(habitat: String, stand: Dictionary, slope: float, wish: float, core: float) -> float:
+	if wish < 0.0: return 0.0
+	# A painted forest on meadow ground is woodland; open meadow grows none.
+	var base: float = 1.0 if wish > 0.05 and habitat == "meadow" else DEAD_HABITAT.get(habitat,1.0)
+	return base*(DEAD_SHARE.y if old_stand(stand) else DEAD_SHARE.x)*lerpf(DEAD_HARSH.x,DEAD_HARSH.y,_harsh(stand,slope))*(1.0+DEAD_CORE*core)
 
 ## The forest wish a candidate reads. With a guide, the wish is sampled a
 ## little way off where its edge reads as a ruled line (Guide.warp), so the
@@ -665,8 +795,9 @@ func _count_mates(plants: Array, known: PackedVector4Array) -> void:
 					if other != p and p.distance_squared_to(other) < limit: mates += 1
 		plant["mates"] = mates
 
-## Plants standing within `radius` of `p`, trees only or all.
-func _near(p: Vector2, radius: float, trees_only: bool) -> int:
+## Plants standing within `radius` of `p`: all, trees (with dead wood) only,
+## or dead wood only.
+func _near(p: Vector2, radius: float, trees_only: bool, dead_only := false) -> int:
 	_build_crowd()
 	var count := 0
 	var reach := ceili(radius)
@@ -674,7 +805,7 @@ func _near(p: Vector2, radius: float, trees_only: bool) -> int:
 	for dz in range(-reach,reach+1):
 		for dx in range(-reach,reach+1):
 			for other: Vector3 in _crowd.get(base+Vector2i(dx,dz),[]):
-				if trees_only and other.z < 0.5: continue
+				if (trees_only and other.z < 0.5) or (dead_only and other.z < 1.5): continue
 				if p.distance_squared_to(Vector2(other.x,other.y)) < radius*radius: count += 1
 	return count
 
@@ -808,7 +939,13 @@ func _build_crowd() -> void:
 	_crowd_built = true
 	for item in data.objects:
 		if item.asset == "waterfall": continue
-		_crowd.get_or_add(Vector2i(floori(item.x),floori(item.z)),[]).append(Vector3(item.x,item.z,1.0 if item.asset in TREES else 0.0))
+		# Trees are 1, dead wood 2; a log crowds its whole length.
+		var z := 2.0 if item.asset in DEAD_KINDS else 1.0 if item.asset in TREES else 0.0
+		var points := PackedVector2Array([Vector2(item.x,item.z)])
+		if item.asset == "log":
+			var basis := NativeObjectPose.decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP,float(item.angle)).scaled(Vector3.ONE*float(item.scale))
+			points = _log_points(points[0],Vector2(basis.x.x,basis.x.z))
+		for q in points: _crowd.get_or_add(Vector2i(q.floor()),[]).append(Vector3(q.x,q.y,z))
 
 func _crowded(p: Vector2, tree: bool) -> bool:
 	_build_crowd()
