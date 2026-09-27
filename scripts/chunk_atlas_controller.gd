@@ -8,6 +8,7 @@ extends Node
 const Atlas = preload("res://scripts/chunk_atlas.gd")
 const AtlasView = preload("res://scripts/chunk_atlas_view.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
+const Genes = preload("res://scripts/chunk_atlas_genes.gd")
 ## Chebyshev rings drawn around the live chunk (main.js NEAR_RINGS).
 const NEAR_RINGS := 1
 ## Seconds the camera takes to glide onto the new live chunk (visit.js GLIDE_S).
@@ -47,8 +48,10 @@ func setup(owner_scene: Node3D) -> void:
 		atlas = Atlas.new()
 		atlas.seed_value = int(scene.places.world_seed)
 		atlas.live = Vector2i.ZERO
+		# The first plain sits at (0, 0), where the world field and the
+		# plain's own field coincide, so later plains already continue it.
 		_attach_live()
-	_build_views()
+	await _build_views()
 	_build_pad()
 	if views.size() > 0: scene.distance = maxf(scene.distance,62.0)
 	scene._update_camera()
@@ -60,9 +63,36 @@ func _hint() -> void:
 
 func _attach_live() -> void:
 	var editor: NativeChunkEditor = scene._chunk_editor
+	editor.data.set_world_offset(Atlas.world_origin(atlas.live))
 	editor.border_pin = atlas.pin_for(atlas.live,editor.data.points)
 	editor.open_sides = atlas.shared_sides(atlas.live)
 	editor._rebuild_skirt()
+	# Shared borders hold their height while the live chunk folds and grows.
+	var sides: Dictionary = editor.open_sides
+	var hold := Vector4(float(sides.has("n")),float(sides.has("e")),float(sides.has("s")),float(sides.has("w")))
+	for material in [editor.terrain.material_override,editor._previous_override,editor._material,editor.terrain.get_active_material(0)]:
+		if material is ShaderMaterial: material.set_shader_parameter("atlas_hold",hold)
+
+## Chunks in the world, the live one included even before it is first stored.
+func chunk_count() -> int:
+	return atlas.slots.size()+(0 if atlas.slots.has(atlas.live) else 1)
+
+func live_origin() -> Vector2:
+	return Atlas.world_origin(atlas.live)
+
+## Regenerate: a world whose terrain continues the stored neighbours
+## (scripts/chunk_atlas_genes.gd).
+func sample_world(seed_value: int) -> Dictionary:
+	return await Genes.sample_near_async(seed_value,Genes.neighbours(atlas,atlas.live),{},get_tree())
+
+## After the live chunk is formed afresh: carry the neighbours' relief and
+## cover in, then redraw.
+func carry_in_live() -> void:
+	var editor: NativeChunkEditor = scene._chunk_editor
+	last_carry = atlas.carry_in(atlas.live,editor.data)
+	await editor.refresh(get_tree())
+
+var last_carry := 0.0
 
 func _terrain_material() -> Material:
 	var editor: NativeChunkEditor = scene._chunk_editor
@@ -79,7 +109,7 @@ func _build_views() -> void:
 		if maxi(absi(slot.x-atlas.live.x),absi(slot.y-atlas.live.y)) > NEAR_RINGS: continue
 		wanted[slot] = true
 	for slot: Vector2i in views.keys():
-		var stale: bool = not wanted.has(slot) or views[slot].document_hash != hash(atlas.slots[slot].document.get("heights"))
+		var stale: bool = not wanted.has(slot) or views[slot].revision != atlas.slots[slot].get("revision",0)
 		if stale:
 			views[slot].queue_free()
 			views.erase(slot)
@@ -89,8 +119,9 @@ func _build_views() -> void:
 			var view := AtlasView.new()
 			view.name = "Chunk_%d_%d" % [slot.x,slot.y]
 			view.slot = slot
+			view.revision = atlas.slots[slot].get("revision",0)
 			root.add_child(view)
-			if not view.build(atlas.slots[slot].document,editor.data.source_mesh,_terrain_material(),editor._skirt_mesh,editor._skirt.position,sides):
+			if not await view.build(atlas.slots[slot].document,editor.data.source_mesh,_terrain_material(),editor._skirt_mesh,editor._skirt.position,sides):
 				push_warning("Chunk atlas: could not draw %s" % slot)
 				view.queue_free()
 				continue
@@ -120,6 +151,7 @@ func can_move() -> bool:
 func move(direction: Vector2i) -> bool:
 	if not can_move(): return false
 	busy = true
+	last_carry = 0.0
 	var editor: NativeChunkEditor = scene._chunk_editor
 	editor.finish_stroke()
 	_store_live()
@@ -134,13 +166,14 @@ func move(direction: Vector2i) -> bool:
 	editor.data._undo.clear()
 	editor.data._redo.clear()
 	_attach_live()
+	if grown: last_carry = atlas.carry_in(target,editor.data)
 	editor.border_pin.apply(editor.data)
 	# The world slides under the camera: keep the view where it was, then
 	# glide onto the new chunk.
 	scene.target -= shift
 	_glide_from = scene.target
 	_glide_time = 0.0
-	_build_views()
+	await _build_views()
 	await editor.refresh(get_tree())
 	scene._refresh_habitat()
 	atlas.save(path)
@@ -219,7 +252,8 @@ func _build_pad() -> void:
 
 func _refresh_pad() -> void:
 	if _pad == null: return
-	_pad_label.text = "%d, %d\n%d chunk%s" % [atlas.live.x,atlas.live.y,maxi(atlas.slots.size(),1),"" if maxi(atlas.slots.size(),1) == 1 else "s"]
+	var count := chunk_count()
+	_pad_label.text = "%d, %d\n%d chunk%s" % [atlas.live.x,atlas.live.y,count,"" if count == 1 else "s"]
 	var ready := can_move()
 	for cell in _pad_buttons:
 		var button: Button = _pad_buttons[cell]

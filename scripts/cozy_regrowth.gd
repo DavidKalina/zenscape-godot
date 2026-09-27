@@ -370,18 +370,24 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
+	# Chunk atlas (scripts/chunk_atlas_controller.gd): only the live chunk
+	# regrows, from what its neighbours are, under the one world sky.
+	var atlas: Node = scene.get("atlas")
 	if to_plain:
 		var plain_seed := randi() % 1000000 if requested_seed<0 else requested_seed
+		if atlas != null: plain_seed = atlas.atlas.seed_value
 		generated_world = Genesis.world(plain_seed)
 		world_seed = plain_seed
 		scene._notice.text = "Laying down a quiet plain…"
-		await Genesis.form(scene._chunk_editor,generated_world,true)
+		await Genesis.form(scene._chunk_editor,generated_world,true,atlas.live_origin() if atlas != null else Vector2.ZERO)
 	else:
 		var chosen := _fresh_seed() if requested_seed<0 else requested_seed
-		generated_world = await Generator.sample_async(chosen,{},get_tree())
+		if atlas != null: generated_world = await atlas.sample_world(chosen)
+		else: generated_world = await Generator.sample_async(chosen,{},get_tree())
 		world_seed = chosen
-		scene._notice.text = "Shaping a new wilderness…"
+		scene._notice.text = "Shaping a new wilderness…" if atlas == null else "Shaping this chunk from the land around it…"
 		await scene._chunk_editor.form_inland(generated_world.terrain,true,false)
+	if atlas != null: await atlas.carry_in_live()
 	plain = to_plain
 	scene._chunk_editor.land_seed = world_seed
 	# form_inland captures its snapshot while the old world is folded down.
@@ -390,13 +396,14 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 		scene._chunk_editor.data._undo.back()["favorite_scene"] = before_state
 	# Publication, atmosphere, framing and navigation each get a fresh frame.
 	await get_tree().process_frame
-	Generator.apply_mood(scene,generated_world)
+	if atlas == null: Generator.apply_mood(scene,generated_world)
 	_sync_plain_day(true)
 	next_look = scene._celestial.look.document()
 	next_hour = scene._celestial.phase
 	_set_growth(0.0)
 	await get_tree().process_frame
-	next_distance = await _fit_distance(get_tree())
+	# The atlas frames its whole ring, not the one chunk.
+	next_distance = await _fit_distance(get_tree()) if atlas == null else previous_distance
 	_set_growth(0.0)
 	# Navigation is prepared before Bigfoot can be released onto the new ground.
 	# Scenery mode has nobody to walk it; the habitat rebuilds lazily if he returns.

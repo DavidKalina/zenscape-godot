@@ -18,6 +18,14 @@ const SAMPLES := 45
 const QUANTUM := 1e-4
 ## Width of the correction band as a fraction of SIZE (about 5 m).
 const BAND_FRAC := 0.18
+## Colour and cover blend toward a neighbour over this fraction of SIZE
+## (about 8.4 m, dress.js BLEND_FRAC).
+const BLEND_FRAC := 0.3
+## A made or regenerated chunk carries its neighbours' relief inward over a
+## band that widens with that relief, up to this fraction of SIZE (16.8 m).
+const CARRY_MAX_FRAC := 0.6
+## Masks blended across a seam, as the document names them.
+const BLEND_MASKS := ["grass","blades","meadow"]
 const PATH := "user://cozy-worlds/atlas.json"
 const VERSION := 1
 ## Direction to the neighbour across each side, and the side it shows back.
@@ -42,8 +50,11 @@ static func world_origin(slot: Vector2i) -> Vector2:
 func has(slot: Vector2i) -> bool:
 	return slots.has(slot)
 
+## Every store bumps the slot's revision, which is how a frozen view knows
+## its drawing is stale.
 func store(slot: Vector2i, document: Dictionary) -> void:
-	slots[slot] = {"document":document}
+	var revision: int = slots[slot].get("revision",0)+1 if slots.has(slot) else 1
+	slots[slot] = {"document":document,"revision":revision}
 
 ## Free squares orthogonally next to a chunk, the live one included.
 ## Diagonal-only squares are not offered (slots.js).
@@ -144,11 +155,14 @@ class Pin extends RefCounted:
 	var _band_weights := {}
 	var _band_t := {}
 
-	func _init(points: PackedVector2Array, pinned: Dictionary) -> void:
+	## `bands` overrides the band width per side, in metres. `wobble`, sampled
+	## at `origin` plus each point, stretches the band by up to 30 % so a wide
+	## carried band does not end on a ruler line.
+	func _init(points: PackedVector2Array, pinned: Dictionary, bands := {}, wobble: FastNoiseLite = null, origin := Vector2.ZERO) -> void:
 		strips = pinned
 		_edges = preload("res://scripts/chunk_atlas.gd").edge_ids(points)
 		if strips.is_empty(): return
-		var band: float = preload("res://scripts/chunk_atlas.gd").BAND_FRAC*preload("res://scripts/chunk_atlas.gd").SIZE
+		var default_band: float = preload("res://scripts/chunk_atlas.gd").BAND_FRAC*preload("res://scripts/chunk_atlas.gd").SIZE
 		var half: float = preload("res://scripts/chunk_atlas.gd").HALF
 		for side in strips:
 			_band_weights[side] = PackedFloat32Array()
@@ -157,7 +171,10 @@ class Pin extends RefCounted:
 			var p := points[id]
 			var near := false
 			var weights := {}
+			var stretch := 1.0
+			if wobble != null: stretch += 0.3*wobble.get_noise_2d(p.x+origin.x,p.y+origin.y)
 			for side in strips:
+				var band: float = bands.get(side,default_band)*stretch
 				var distance: float = {"n":p.y+half,"s":half-p.y,"e":half-p.x,"w":p.x+half}[side]
 				weights[side] = 1.0-smoothstep(0.0,band,distance)
 				near = near or weights[side] > 0.0
@@ -213,6 +230,96 @@ class Pin extends RefCounted:
 		data.heights = heights
 		return worst
 
+## Once, when a chunk is made or regenerated: carry every stored neighbour's
+## border relief inward, over a band that widens with that relief (a ridge
+## meeting the seam runs on as a spur instead of ending in a 5 m ramp), then
+## blend cover and paint toward the neighbour over BLEND_FRAC. The ordinary
+## pin keeps the seam exact from then on. Returns the widest band used.
+func carry_in(slot: Vector2i, data: NativeTerrainData) -> float:
+	var strips := strips_for(slot,data.points)
+	if strips.is_empty(): return 0.0
+	var edges := edge_ids(data.points)
+	var bands := {}
+	var widest := 0.0
+	for side in strips:
+		var strip_values: PackedFloat32Array = strips[side]
+		var low := INF
+		var high := -INF
+		var offset := 0.0
+		for i in range(SAMPLES):
+			low = minf(low,strip_values[i])
+			high = maxf(high,strip_values[i])
+			offset = maxf(offset,absf(strip_values[i]-data.heights[edges[side][i]]))
+		bands[side] = clampf(BAND_FRAC*SIZE+2.5*(high-low)+0.5*offset,BAND_FRAC*SIZE,CARRY_MAX_FRAC*SIZE)
+		widest = maxf(widest,bands[side])
+	var wobble := FastNoiseLite.new()
+	wobble.seed = seed_value+17
+	wobble.frequency = 0.06
+	Pin.new(data.points,strips,bands,wobble,world_origin(slot)).apply(data)
+	blend_cover(slot,data)
+	return widest
+
+## Cover masks and paint on `slot` lean toward each stored neighbour's border
+## cells over BLEND_FRAC, reaching the neighbour's value at the seam. Where two
+## neighbours overlap (a corner) their pulls share the weight.
+func blend_cover(slot: Vector2i, data: NativeTerrainData) -> void:
+	var cells: int = data.MEADOW_CELLS
+	var step: float = data.MEADOW_STEP
+	var band := BLEND_FRAC*SIZE
+	var sources := {}
+	for side in SIDES:
+		var next: Vector2i = slot+SIDES[side]
+		if next == live and slot != live or not slots.has(next): continue
+		sources[side] = slots[next].document
+	if sources.is_empty(): return
+	var layers := {}
+	for key in BLEND_MASKS: layers[key] = data.get(key)
+	var tint: PackedFloat32Array = data.tint
+	for z in range(cells):
+		for x in range(cells):
+			var center := Vector2((x+0.5)*step-HALF,(z+0.5)*step-HALF)
+			var pulls := {}
+			var total := 0.0
+			for side in sources:
+				var distance: float = {"n":center.y+HALF,"s":HALF-center.y,"e":HALF-center.x,"w":center.x+HALF}[side]-step*0.5
+				var weight := 1.0-smoothstep(0.0,band,distance)
+				if weight <= 0.0: continue
+				# The neighbour's cell across the seam, on the same row or column.
+				var across: int = {"n":(cells-1)*cells+x,"s":x,"e":z*cells,"w":z*cells+cells-1}[side]
+				pulls[side] = [weight,across]
+				total += weight
+			if pulls.is_empty(): continue
+			var keep := 1.0-minf(total,1.0)
+			var scale := minf(total,1.0)/total
+			var cell := z*cells+x
+			for key in BLEND_MASKS:
+				var mixed: float = layers[key][cell]*keep
+				for side in pulls:
+					var values: Variant = sources[side].get(key)
+					var theirs: float = float(values[pulls[side][1]]) if values is Array and values.size() == cells*cells else layers[key][cell]
+					mixed += theirs*pulls[side][0]*scale
+				layers[key][cell] = mixed
+			# Paint mixes premultiplied by its weight, so an unpainted neighbour
+			# thins the coat instead of darkening it.
+			var k := cell*NativeTerrainTint.STRIDE
+			var coat := Color(tint[k],tint[k+1],tint[k+2])*tint[k+3]*keep
+			var weight_sum: float = tint[k+3]*keep
+			for side in pulls:
+				var values: Variant = sources[side].get("tint")
+				var j: int = pulls[side][1]*NativeTerrainTint.STRIDE
+				var theirs := Color(tint[k],tint[k+1],tint[k+2],tint[k+3])
+				if values is Array and values.size() == tint.size(): theirs = Color(float(values[j]),float(values[j+1]),float(values[j+2]),float(values[j+3]))
+				var share: float = pulls[side][0]*scale
+				coat += Color(theirs.r,theirs.g,theirs.b)*theirs.a*share
+				weight_sum += theirs.a*share
+			if weight_sum > 1e-6:
+				tint[k] = coat.r/weight_sum
+				tint[k+1] = coat.g/weight_sum
+				tint[k+2] = coat.b/weight_sum
+			tint[k+3] = weight_sum
+	for key in BLEND_MASKS: data.set(key,layers[key])
+	data.tint = tint
+
 func to_json() -> Dictionary:
 	var saved := []
 	for slot: Vector2i in slots:
@@ -226,7 +333,7 @@ func from_json(value: Variant) -> bool:
 	var loaded := {}
 	for item: Variant in value.slots:
 		if not item is Dictionary or not item.get("document") is Dictionary: return false
-		loaded[Vector2i(int(item.get("u",0)),int(item.get("v",0)))] = {"document":item.document}
+		loaded[Vector2i(int(item.get("u",0)),int(item.get("v",0)))] = {"document":item.document,"revision":1}
 	slots = loaded
 	live = Vector2i(int(live_value[0]),int(live_value[1]))
 	seed_value = int(value.get("seed",0))

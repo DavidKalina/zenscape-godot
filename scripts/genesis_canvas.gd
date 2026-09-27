@@ -139,7 +139,7 @@ static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZE
 
 ## Form the plain as one undoable operation that also restores the previous
 ## scene look, as `form_inland` does for generated worlds.
-static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true) -> void:
+static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true, origin := Vector2.ZERO) -> void:
 	if editor.forming: return
 	editor.finish_stroke()
 	editor.selected_object_id = -1
@@ -147,7 +147,7 @@ static func form(editor: NativeChunkEditor, world_value: Dictionary, live := tru
 	editor.formation_started.emit()
 	editor.data.begin_stroke()
 	editor.data._before["favorite_scene"] = NativeGardenStore.capture(editor.scene)
-	shape(editor.data,int(world_value.seed))
+	shape(editor.data,int(world_value.seed),origin)
 	editor.data.end_stroke()
 	await editor.refresh(editor.get_tree() if live else null)
 	editor.land_seed = int(world_value.seed)

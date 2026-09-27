@@ -116,5 +116,47 @@ func run() -> void:
 	check(loaded.seam_delta(Vector2i(1,0),PackedFloat32Array(loaded.slots[Vector2i(1,0)].document.heights),points) < SEAM,"a loaded chunk still meets its neighbours")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
+	check_carry_and_cover(atlas)
+	check_genes()
 	print("test_chunk_atlas: %s" % ("PASS" if failures == 0 else "FAIL (%d)" % failures))
 	quit(1 if failures > 0 else 0)
+
+## A fresh chunk beside a hill carries it further in than the 5 m pin would,
+## and its cover reaches the neighbour's at the seam.
+func check_carry_and_cover(atlas) -> void:
+	var west := chunk(atlas,Vector2i(5,0))
+	stroke(west,null,Vector2(9,-10),Vector2(13.5,10))
+	var grass := west.grass
+	for z in range(west.MEADOW_CELLS): grass[z*west.MEADOW_CELLS+west.MEADOW_CELLS-1] = 0.25
+	west.grass = grass
+	Atlas.quantize_edges(west)
+	atlas.live = Vector2i(6,0)
+	atlas.store(Vector2i(5,0),west.to_document())
+	var fresh := chunk(atlas,Vector2i(6,0))
+	var plain_heights := fresh.heights.duplicate()
+	var widest: float = atlas.carry_in(Vector2i(6,0),fresh)
+	check(widest > Atlas.BAND_FRAC*Atlas.SIZE,"a hill widens the carried band (%.1f m)" % widest)
+	var raised := 0.0
+	for id in range(fresh.points.size()):
+		if absf(fresh.points[id].x-(-14.0+7.0)) < 0.7: raised = maxf(raised,fresh.heights[id]-plain_heights[id])
+	print("carry band %.1f m, raised 7 m in by %.2f m" % [widest,raised])
+	check(raised > 0.15,"the hill runs 7 m into the new chunk, past the 5 m pin band (%.2f m)" % raised)
+	check(atlas.seam_delta(Vector2i(6,0),fresh.heights,fresh.points) < SEAM,"carry-in leaves the seam shut")
+	var cells: int = fresh.MEADOW_CELLS
+	var edge_grass: float = fresh.grass[10*cells]
+	var inner_grass: float = fresh.grass[10*cells+cells-1]
+	check(absf(edge_grass-0.25) < 0.05,"cover at the seam takes the neighbour's (%.3f)" % edge_grass)
+	check(absf(inner_grass-0.25) > 0.05,"cover past the blend band is the chunk's own (%.3f)" % inner_grass)
+
+## Neighbour votes: ringed by mountains, a regenerated chunk is mostly mountain.
+func check_genes() -> void:
+	var Genes = preload("res://scripts/chunk_atlas_genes.gd")
+	var mountain := {"kind":"inland","version":7,"seed":11,"composition":"mountain","archetype":"range","landform":"original","biome":"alpine","relief":1.2,"breadth":1.0}
+	var near: Array = [{"slot":Vector2i(1,0),"weight":1.0,"recipe":mountain},{"slot":Vector2i(0,1),"weight":1.0,"recipe":mountain}]
+	var mountains := 0
+	for seed_value in range(8):
+		var world: Dictionary = Genes.sample_near(seed_value*37+5,near)
+		if world.terrain.composition == "mountain": mountains += 1
+		check(NativeTerrainRecipe.valid(world.terrain),"seed %d gives a valid recipe" % seed_value)
+	print("mountain neighbours -> %d of 8 regenerated chunks are mountain" % mountains)
+	check(mountains >= 5,"mountain country carries on (%d of 8)" % mountains)
