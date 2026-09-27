@@ -217,6 +217,11 @@ var land_ceiling := 10.0
 var land_seed := 0
 ## Emitted after a land stroke's erosion pass settles into the heights.
 signal land_weathered(bounds: Rect2)
+## The land brush's form (scripts/mountain_forms.gd FORMS): "hill" paints with
+## `land_brush`; the others raise one whole mountain per press (`mountain`).
+var land_form := "hill"
+signal land_form_changed(id: String)
+var mountain = preload("res://scripts/mountain_forms.gd").new()
 var _land_lower := false
 ## The button holding the current land stroke; every other stroke is a left drag.
 var _stroke_button := MOUSE_BUTTON_LEFT
@@ -245,6 +250,7 @@ func setup(owner_scene: Node3D) -> void:
 	terrain.add_child(pond_preview)
 	data.setup(terrain.mesh)
 	data.stroke_starting.connect(_join_weathering)
+	data.stroke_starting.connect(_mountain_interrupted)
 	# Plans run on a worker; the editor's frames must not wait for them.
 	emergence.plan_on_worker = true
 	_original_ground_map = scene._precipitation.ground_texture.get_image()
@@ -373,7 +379,7 @@ func select_tool(tool: String) -> void:
 ## Radius the terrain shader should draw for the tool in hand.
 func preview_radius() -> float:
 	if mode == "explosive": return blast_radius
-	if mode == "land": return brush_radius()
+	if mode == "land": return mountain_preview_radius() if mountain_in_hand() else brush_radius()
 	if mode == "tunnel": return tunnel_width/2
 	if mode == "mountain":
 		return mountain_radius
@@ -696,6 +702,7 @@ func _process(delta: float) -> void:
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
 	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
+	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
@@ -703,7 +710,7 @@ func _process(delta: float) -> void:
 		if _painting and placement_trail and trail_available():
 			continue_trail(center)
 			_emit_stroke(1,hit,preview_radius(),delta)
-		elif _painting and mode == "land":
+		elif _painting and mode == "land" and not _mountain_holding:
 			_land_step(center,delta)
 			_emit_stroke(1,hit,brush_radius(),brush_strength()*delta)
 		elif _painting:
@@ -745,6 +752,11 @@ func finish_stroke() -> void:
 	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
+	if _mountain_holding:
+		_mountain_holding = false
+		_stroke_button = MOUSE_BUTTON_LEFT
+		_mountain_rise()
+		return
 	# The land brush weathers on a worker; the settle waits for it to land.
 	var region: Rect2 = land_brush.bounds
 	var weathering: Callable = land_brush.weather_job(data) if mode == "land" and brush_id == "land" else Callable()
@@ -793,6 +805,7 @@ func _history_step(forward: bool) -> void:
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
+	_land_mountain()
 	# A water stroke still settling belongs to the world being left, and so
 	# does a land stroke's weathering.
 	_water_generation += 1
@@ -1658,6 +1671,7 @@ func _step_brush_setting(strength_step: bool, direction: float) -> void:
 
 ## The mode stroke signals carry: the brush id while a creation brush paints.
 func stroke_mode() -> String:
+	if mountain.active: return "mountain"
 	return brush_id if mode == "land" else mode
 
 ## A left press paints and a right press works the other way (Shift either
@@ -1671,9 +1685,14 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	if _painting or event.alt_pressed: return _painting
 	var hit: Variant = pick(event.position)
 	if hit == null: return false
+	# A mountain still rising lands before anything else is painted.
+	_land_mountain()
 	_stroke_button = event.button_index
 	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT
 	var brush = creation_brush()
+	if mountain_in_hand() and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
+		_mountain_press(hit)
+		return true
 	brush.prepare(data,land_seed)
 	brush.begin()
 	_stroke_first_id = data.next_id
@@ -1895,6 +1914,10 @@ func _land_weathering(settle: bool) -> void:
 	if result.moved and not forming and data.heights == _weather_heights:
 		data.heights = result.heights
 		land_weathered.emit(_weather_region)
+		# A mountain's rock colour (scripts/mountain_forms.gd) comes with it.
+		if result.has("tint"): data.tint = result.tint
+	elif result.has("tint") and not forming and data.heights == _weather_heights:
+		data.tint = result.tint
 	_settle_pending = true
 	if settle: _settle_stroke()
 
@@ -1906,3 +1929,157 @@ func _drop_weathering() -> void:
 
 func _join_weathering() -> void:
 	if _weather_job != null: _land_weathering(false)
+
+# --- Mountain forms ---------------------------------------------------------------
+## A land press with a mountain form in hand raises one whole mountain
+## (scripts/mountain_forms.gd): the drag sets its spread and height, it rises
+## while held and finishes rising after release (`_mountain_rise`), then lands
+## (`_land_mountain`): its undo step closes and its weathering and rock
+## colour run on a worker through `_weather_async`, as a land stroke's do.
+## Anything that opens a new transaction lands a rising mountain first, so
+## one undo always takes a whole mountain.
+var _mountain_holding := false
+var _mountain_generation := 0
+var _mountain_plane := 0.0
+var _mountain_poured := Rect2()
+var _mountain_elapsed := 0.0
+
+func mountain_in_hand() -> bool:
+	return mode == "land" and brush_id == "land" and land_form != "hill"
+
+func select_land_form(id: String) -> bool:
+	if not id in mountain.form_ids(): return false
+	if id != land_form:
+		finish_stroke()
+		land_form = id
+		land_form_changed.emit(id)
+	if brush_id == "land" and mode == "land": _set_status(str(mountain.form_entry(id).hint))
+	return true
+
+## Step through the land forms (1 again in the creation shell).
+func cycle_land_form(step := 1) -> void:
+	select_land_form(mountain.cycled(land_form,step))
+
+## The circle the terrain shader draws: the spread a press would start from,
+## or the rising mountain's.
+func mountain_preview_radius() -> float:
+	if _mountain_holding: return mountain.spread
+	var shape: Dictionary = mountain.SHAPES[land_form]
+	return clampf(land_radius*shape.spread.z,shape.spread.x,shape.spread.y)
+
+func _mountain_press(hit: Vector3) -> void:
+	_land_mountain()
+	mountain.prepare(data,land_seed)
+	_mountain_generation += 1
+	_stroke_first_id = data.next_id
+	_painting = true
+	_mountain_holding = true
+	_mountain_elapsed = 0.0
+	_last_point = Vector2(hit.x,hit.z)
+	_mountain_plane = hit.y
+	data.begin_stroke()
+	var right: Vector3 = terrain.global_basis.inverse()*scene.camera.global_basis.x
+	mountain.begin(data,land_form,_last_point,land_radius,land_strength,Vector2(right.x,right.z))
+	_mountain_feel(0)
+
+## The pointer on the press's ground plane, so the rising flank under it never
+## shrinks the drag. Null when the ray misses the plane.
+func _mountain_aim(pointer: Vector2) -> Variant:
+	var camera: Camera3D = scene.camera
+	var origin := terrain.to_local(camera.project_ray_origin(pointer))
+	var direction := (terrain.global_basis.inverse()*camera.project_ray_normal(pointer)).normalized()
+	var hit: Variant = Plane(Vector3.UP,_mountain_plane).intersects_ray(origin,direction)
+	return Vector2(hit.x,hit.z) if hit != null else null
+
+func _mountain_step(pointer: Vector2, delta: float) -> void:
+	var aim: Variant = _mountain_aim(pointer)
+	if aim != null: mountain.aim(data,aim)
+	_mountain_tick(delta)
+
+## Rise at the paint loop's 30 Hz, each tick one light refresh.
+func _mountain_tick(delta: float) -> bool:
+	_mountain_elapsed += minf(delta,0.05)
+	if _mountain_elapsed < 1.0/30.0: return false
+	var speed: float = mountain.advance(data,_mountain_elapsed)
+	if _painting: refresh()
+	elif _light_refresh_ready(true): _refresh_light()
+	else: return true
+	_mountain_feel(1,speed,_mountain_elapsed)
+	_mountain_elapsed = 0.0
+	return false
+
+## After release: finish rising, then land.
+func _mountain_rise() -> void:
+	var generation := _mountain_generation
+	var last := Time.get_ticks_usec()
+	while mountain.active and not mountain.risen():
+		await get_tree().process_frame
+		if generation != _mountain_generation or not mountain.active: return
+		var now := Time.get_ticks_usec()
+		# The view cannot take a light refresh (it is rebuilding): land now.
+		if _mountain_tick((now-last)/1000000.0): break
+		last = now
+	if generation == _mountain_generation: _land_mountain()
+
+## Close the rising mountain's undo step at its full height, and hand its
+## weathering to a worker and its ground to emergence.
+func _land_mountain() -> void:
+	if not mountain.active: return
+	_mountain_generation += 1
+	if _mountain_holding:
+		_mountain_holding = false
+		_painting = false
+		_stroke_button = MOUSE_BUTTON_LEFT
+	mountain.settle(data)
+	var region: Rect2 = mountain.bounds
+	var weathering: Callable = mountain.weather_job(data)
+	data.mark_objects_hand(_stroke_first_id)
+	var changed := data.end_stroke()
+	_mountain_elapsed = 0.0
+	_stroke_rect = region.grow(1.0)
+	if changed and weathering.is_valid(): _weather_async(weathering,region)
+	else: _settle_stroke()
+	if changed: _stroke_ended("land")
+	_stroke_rect = Rect2()
+	_mountain_feel(2)
+	mountain.active = false
+
+## Another transaction is opening while a mountain rises: land it, weathered.
+func _mountain_interrupted() -> void:
+	if not mountain.active: return
+	_land_mountain()
+	_join_weathering()
+
+## REGEN-POLISH SWAP: the one place a mountain's rumble and fog are driven.
+## `phase` 0 press, 1 a rising tick (`speed` 0..1 of its quickest, over
+## `seconds`), 2 landed. With WorldRumble (feature/regen-polish,
+## scripts/world_rumble.gd, `scene.world_rumble`) it holds a heavy rolling
+## rumble for the whole rise and pours fog off the flanks; without it the
+## stroke signals' rate drives StrokeFeedback's tremor instead. The stroke
+## signals go out either way (as "mountain": fog reveal, swell, gusts, the
+## thump and GenesisAudio's rumble voice).
+func _mountain_feel(phase: int, speed := 0.0, seconds := 0.0) -> void:
+	var rumble: Node = scene.get("world_rumble") as Node
+	var at := Vector3(mountain.center.x,mountain.ground,mountain.center.y)
+	var heft := clampf(mountain.height/10.0,0.4,1.0)
+	var flank := Rect2(mountain.center-Vector2.ONE*mountain.spread*1.3,Vector2.ONE*mountain.spread*2.6)
+	match phase:
+		0:
+			_emit_stroke(0,at,mountain.spread,0.0)
+			if rumble != null:
+				rumble.hold(&"mountain",0.5*heft)
+				rumble.pour_fog(flank,RISE_FOG_SECONDS)
+				_mountain_poured = flank
+		1:
+			if rumble != null:
+				rumble.hold(&"mountain",clampf((0.45+0.55*speed)*heft,0.0,1.0))
+				# A drag that outgrew the pour spreads it again.
+				if not _mountain_poured.encloses(flank.grow(-1.0)):
+					rumble.pour_fog(flank,RISE_FOG_SECONDS)
+					_mountain_poured = flank
+			_emit_stroke(1,at,mountain.spread,0.0 if rumble != null else 2.0*seconds*maxf(speed,0.35)*heft)
+		_:
+			if rumble != null: rumble.release(&"mountain")
+			_emit_stroke(2,at,mountain.spread,0.0)
+## Seconds the poured fog holds before draining, from press or regrowth.
+const RISE_FOG_SECONDS := 4.0

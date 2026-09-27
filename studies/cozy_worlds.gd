@@ -288,7 +288,11 @@ func _creation_key(event: InputEventKey) -> bool:
 	# Number keys pick brushes; V and unused numbers wait for the Craft palette.
 	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		var index: int = event.keycode-KEY_1
-		if index < brush_ids.size(): select_brush(brush_ids[index])
+		# The land key again, with land in hand, steps through its forms
+		# (scripts/mountain_forms.gd); Shift steps back.
+		if index < brush_ids.size() and brush_ids[index] == "land" and brush == "land" and _creating():
+			_chunk_editor.cycle_land_form(-1 if event.shift_pressed else 1)
+		elif index < brush_ids.size(): select_brush(brush_ids[index])
 		return true
 	if event.keycode == KEY_V: return true
 	# Looking holds no brush: size keys have nothing to size.
