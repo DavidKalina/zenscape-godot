@@ -84,14 +84,18 @@ def font_faces():
 def extract_frames():
     """Two real frames from the Phase 3 film, cropped above the old palette."""
     ensure_dirs(BUILD)
-    frames = {"forest": 62, "island": 44}
+    # 16:10 frames for 1440x900, and a 16:9 one for 1920x1080 (the film is
+    # 1600x900 with the old palette in its bottom 155 px and the old Craft and World
+    # buttons past x=1440, so both crop clear of them).
+    frames = {"forest": (62, "crop=1192:745:204:0,scale=1440:900"), "island": (44, "crop=1192:745:204:0,scale=1440:900"),
+              "forest1080": (62, "crop=1324:745:110:0,scale=1920:1080")}
     out = {}
-    for key, t in frames.items():
+    for key, (t, vf) in frames.items():
         path = os.path.join(BUILD, f"bg-{key}.png")
         if not os.path.exists(path):
             subprocess.run(
                 ["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", VIDEO, "-frames:v", "1",
-                 "-vf", "crop=1192:745:204:0,scale=1440:900:flags=lanczos", path],
+                 "-vf", vf + ":flags=lanczos", path],
                 check=True,
             )
         out[key] = path

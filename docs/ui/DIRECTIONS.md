@@ -2,6 +2,8 @@
 
 Branch `feature/ui-mockups`, 2026-09-27. These are design mockups, not an implementation.
 
+> **Decision (round 2):** the user picked Lantern's look, laid out like Super Mario Maker 2's editor. That direction is **B2 · Lantern Maker**, at the end of this file. The round-one recommendation below is kept for the record.
+
 The brief, in the user's words: the current glass UI is "clean" and "pretty minimalistic, but it just feels like a web UI overlaid on a game. It doesn't feel like a video game UI." It needs more glyphs and a more attractive look.
 
 Each direction covers the same pieces:
@@ -294,3 +296,140 @@ If the user finds C too toy-like, **A** is the fallback. It is equally legible a
 - **Hint placement.** Should the hint ride beside the cursor (C) or sit in a bottom line? And should it disappear for good after the first few strokes?
 - **Forms row.** Should it open automatically when Land is picked, or only on a second press of 1 or on hover?
 - **Sound.** Each direction implies its own set: pencil and paper for A, chimes for B, wooden "tok" for C. Is it worth a pass?
+
+---
+
+## B2 · Lantern Maker (round 2, the chosen direction)
+
+The user's words: "Lantern aesthetic is what I'm going for, but with more of a Mario Maker layout. Layout is a bit rough in the mockups. But I like this."
+
+B2 keeps Lantern's visual language:
+
+- Thin luminous line glyphs.
+- Halos tinted to the brush.
+- Dotted threads.
+- The ring-of-light cursor.
+- Cormorant small caps.
+
+It rebuilds the layout on Super Mario Maker 2's editor: parts along the top, hand tools down the left, the world down the right, and one big "play" button, which here is Photo.
+
+**Files** (`docs/ui/mockups/lantern-maker/`):
+
+| File | Shows |
+|---|---|
+| `lantern-maker-create.png` | Main view, 1440×900: Land in hand with the forms wheel open |
+| `lantern-maker-create-1080.png` | The same view at 1920×1080 (UI scale 1.2) |
+| `lantern-maker-mood.png` | Mood open: orbs pour out of the right column, with the customise veil beside the chosen orb |
+| `lantern-maker-paint.png` | Painting: the UI recedes while you drag |
+| `lantern-maker-snowtest.png` | Main view over a washed-out, near-white frame, standing in for First snow in fog |
+| `lantern-maker-sheet.png` | Glyph set, slot states over grass and over snow, the Undo wisp's three frames, the forms wheel, cursor sizes, hand modes, mood orbs, the veil, Photo, and the scrubber and hint |
+
+The glyphs are in `docs/ui/glyphs/lantern-maker/`. The set is the Lantern set plus:
+
+- `paint`, `lower`, `grab` and `undo` (the wisp).
+- `slot-empty`, for future brushes.
+- `underglow`, the legibility plate, drawn as stepped circles with no gradient.
+
+All 27 glyphs load in headless Godot 4.7.2 through `Image.load_svg_from_string`, and none import as black. They use no `rgba()`, gradients, filters or dash arrays.
+
+### Layout
+
+All numbers below are design units at 1440×900.
+
+- **Grid.** The base unit is 8. Every slot is 56 (the hit target, above 44), with a 16 gap, so slots sit on a 72 pitch. The screen margin is 24.
+- **Groups.** Each group is anchored to an edge. The whole UI scales by `min(W/1440, H/900)`: 1.0 at 1440×900 and 1.2 at 1920×1080.
+
+```
+ +------------------------------------------------------------------------------+
+ |              .---------------------------------------------.                 |  top-centre, y 20
+ |              | (LAND)  water  meadow  forest  path   o  o  o |  parts bar     |  slots 56, pitch 72
+ |              '--+------------------------------------------'                 |  o = future slots
+ |          hill \ | / volcanic cone                                            |
+ |       (ALPINE)  ridge  mesa         <- forms wheel: arc under the held part    |
+ | .---.                                                               .---.    |
+ | |PNT|  paint                                                        |MOO|    |  mood
+ | |OTH|  other way               centre stays clear                   |WLD|    |  world
+ | |LOK|  look / grab                                                  |CRF|    |  craft
+ | |---|                         . ring cursor .                       '---'    |  right-middle
+ | |UND|  undo (the wisp)                                                        |
+ | '---'  left-middle                                                  .----.   |
+ |                    --*----*----(o)----*----*--   season scrubber     |PHOT|   |  Photo, 84
+ |            DRAG raise land . RIGHT DRAG other way . [ ] size         '----'   |  bottom-right
+ +------------------------------------------------------------------------------+
+                   bottom-centre: scrubber (y -58) + hint (y -24)
+```
+
+- **Parts bar** (top centre).
+  - Five brushes and three empty dotted slots for future brushes, on a 600 × 80 plate whose top edge is 20 from the screen top.
+  - The brush in hand has a tinted halo and a double ring.
+  - Land also carries a small badge showing the form in hand, the way Mario Maker shows a part's variant.
+  - **Forms wheel.** Holding Land, or clicking it again while it is in hand, swings the five forms down on an arc (radius 146, from 150° to 30°), joined to Land by dotted threads. Release over a form to pick it, as with Mario Maker's parts wheel.
+- **Hand modes** (left middle).
+  - Paint, Other way (lower or erase), Look (grab and orbit), then a hairline divider and Undo.
+  - An 80-wide pill plate, vertically centred.
+  - Labels appear to the right on hover or for the mode in hand.
+- **The Undo wisp.** A small lantern spirit whose tail curls into an undo arrow. It is Undodog's counterpart:
+  - It bobs and blinks at idle.
+  - On press it hops and its tail whips round.
+  - When the undo lands it spins back and sheds sparks.
+  - Redo is Shift-click, and the wisp spins the other way.
+- **World column** (right middle).
+  - Mood, World and Craft, on the same grid and plate as the left column, so the two columns mirror each other.
+  - **Mood** pours nine orbs down a crescent that bows toward the screen centre. The chosen orb sends a thread to the customise veil, which is titled with the mood's name and holds the season glyphs plus the grass, rock and water chips.
+- **Photo** (bottom right). The big 84 button with a double ring and a warm halo, in the spot Mario Maker gives Play.
+- **Bottom centre.**
+  - A slim season scrubber: a 360-wide line with the four season glyphs and a glowing handle, like Mario Maker's course-scroll strip.
+  - One hint line under it.
+  - Nothing else sits in the lower centre.
+- **Size and strength live on the cursor.** The ring's size is the brush size, and five motes on its front arc light in the brush colour for strength. The form in hand floats on the beam.
+  - This reads better than a meter in the bar, because your eyes are on the cursor while you paint.
+  - The bar only shows which brush and form are in hand.
+
+### Legibility (the white-on-fog fix)
+
+Three layers keep the glyphs readable over bright fog and snow.
+
+1. **Plates.** Every group sits on a soft dark plate (`#081218` at 40%) whose edge fades out through a matching shadow. In Godot this is a `StyleBoxFlat` with `bg_color` and `shadow_color` at the same colour, `shadow_size` about 12 and full corner radius.
+2. **Under-glow.** Every slot has its own dark under-glow disc at 1.6× the slot size (`underglow.svg`).
+3. **Dark rim.** Each glyph gets a 1.5 px dark rim before its light glow. In the mockup this is stacked CSS `drop-shadow`s. In Godot, draw the glyph twice, first dark and slightly grown, or use a small outline shader, then the additive glow copy on top.
+
+Small-caps labels use the same dark-then-light text shadow (Godot `Label` `font_outline_color` dark at 2–3 px, plus a light `font_shadow_color`).
+
+`lantern-maker-snowtest.png` and the "over snow" slot states on the sheet show the result on a near-white frame. All three layers hold up there. This is a filtered stand-in for First snow, not a real capture of that mood.
+
+### Motion
+
+The round-one Lantern motion carries over (idle drift, a halo that swells on selection, dots that light in turn). The layout adds:
+
+- **Forms wheel.** It opens with the forms swinging out from behind Land, each 25 ms after the last (0.28 s, ease-out back). It closes by folding back to Land.
+- **Painting.**
+  - On stroke start the parts bar lifts off the top edge (0.2 s). Only the held brush stays, at 44, at the top centre.
+  - The side columns slide 14 px outward and fade to 16%. Photo fades too.
+  - The scrubber and hint hide.
+  - Everything returns 0.5 s after release.
+  - Each dab puffs the cursor's motes outward and sends a mote up the beam.
+- **Mood.** The orbs pour down the crescent from the Mood slot, 30 ms apart. The veil fades in beside the chosen orb. Hovering an orb tints the screen toward its sky.
+- **Scrubber.** Dragging the handle scrubs the season live, and the handle glows in the season's light.
+
+### Godot mapping
+
+The root is a full-rect `Control` under a `CanvasLayer`. Set the project's stretch mode to `canvas_items` with aspect `expand` and base size 1440×900. That gives the 1.2 scale at 1080p with no per-node maths. Each group is a child of the root, anchored with a preset.
+
+| Group | Node and anchors |
+|---|---|
+| Parts bar | `PanelContainer` (plate `StyleBoxFlat`) → `HBoxContainer`, `separation` 16. Anchor preset `CENTER_TOP`, `offset_top` 20, grow both ways horizontally. Children are `TextureButton`s at `custom_minimum_size` 56×56. Empty slots are disabled buttons |
+| Forms wheel | A `Control` added under the bar, positioned from the Land button's `global_position`. Children are placed on the arc (a small `RadialContainer` script: radius, start and end angle). Threads are `Line2D`s with a dotted texture |
+| Hand modes | `PanelContainer` → `VBoxContainer`, `separation` 16. Anchor preset `CENTER_LEFT`, `offset_left` 24. Undo is a separate `Control` holding an `AnimatedSprite2D`, or tweened `TextureRect`s, for the wisp's three moves |
+| World column | Mirror of the hand modes: preset `CENTER_RIGHT`, `offset_right` −24. The mood crescent is a sibling `Control` anchored to the same edge, and the veil is the existing `editor_glass` panel |
+| Photo | `TextureButton` 84×84, preset `BOTTOM_RIGHT`, offsets −24, with a halo `TextureRect` behind it |
+| Scrubber and hint | `VBoxContainer`, preset `CENTER_BOTTOM`, `offset_bottom` −16. The scrubber is an `HSlider` with a custom grabber icon (glowing dot), a tick texture and a season-glyph overlay. The hint is a `RichTextLabel`; key caps are inline images or a `[bgcolor]` span |
+| Cursor | Stays in 3D: a ground ring shader (dot ring, front-arc strength dots, inner ring) plus an additive beam quad, with a `Sprite3D` billboard for the form. The editor's `setting_changed` drives the ring radius and the lit dots |
+| Glow | Each lit glyph is a second `TextureRect` of the same SVG, scaled 1.1, blurred (import at 2× and scale down) or given a soft-glow shader, with `CanvasItemMaterial` blend `ADD`. Tint the halo with `modulate` |
+
+Hit targets are 56 everywhere except the forms (52) and Photo (84), so all are at least 44 at the 1440×900 base. At smaller windows the stretch keeps the proportions; below about 1100 px wide, drop the empty future slots.
+
+### Open questions (round 2)
+
+- **Opening the wheel.** Should it open on hold only (Mario Maker), or on a second click as well? The mockup text assumes both.
+- **Other way.** Is it a mode on the left, as mocked up, or only right-drag or Shift? Keeping both costs nothing.
+- **Scrubber.** Should it scrub the season, the time of day, or both (two handles)? The mockup shows the season.

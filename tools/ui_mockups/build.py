@@ -1,6 +1,6 @@
 """Build the UI direction mockups headlessly (no windows open).
 
-    python3 tools/ui_mockups/build.py [field-journal|lantern|toy-box ...]
+    python3 tools/ui_mockups/build.py [field-journal|lantern|toy-box|lantern-maker ...] [--job ...]
 
 Writes glyph SVGs to docs/ui/glyphs/<direction>/ and PNGs to
 docs/ui/mockups/<direction>/: <direction>-create.png and <direction>-mood.png
@@ -16,14 +16,15 @@ import common  # noqa: E402
 import field_journal  # noqa: E402
 import lantern  # noqa: E402
 import toy_box  # noqa: E402
+import lantern_maker  # noqa: E402
 
-DIRECTIONS = {m.NAME: m for m in (field_journal, lantern, toy_box)}
+DIRECTIONS = {m.NAME: m for m in (field_journal, lantern, toy_box, lantern_maker)}
 
 
 def build(mod, bgs, only=None):
     common.write_glyphs(mod.NAME, mod.glyphs())
     out = os.path.join(common.MOCK_ROOT, mod.NAME)
-    jobs = {"create": (mod.create_frame, 1440, 900), "mood": (mod.mood_frame, 1440, 900), "sheet": (mod.sheet, 1440, None)}
+    jobs = getattr(mod, "JOBS", None) or {"create": (mod.create_frame, 1440, 900), "mood": (mod.mood_frame, 1440, 900), "sheet": (mod.sheet, 1440, None)}
     for key, (fn, w, h) in jobs.items():
         if only and key not in only:
             continue
