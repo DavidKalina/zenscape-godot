@@ -90,6 +90,65 @@ following Electron's live-at-origin model:
   (`Genesis.shape(data, seed, origin)`), so fresh plains already roll into
   each other before the pin.
 
+### Frozen chunks are frozen (round 2)
+
+The first playtest found that regenerating one chunk regrew them all. Growth
+(`zs_growth`, `zs_water_growth`), stroke waves (`zs_growth_wave_*`) and the
+emergence clock (`zs_emergence_time`) are shader globals. On top of that,
+every frozen view drew with the live editor's own terrain material. So the
+regrow's fold-down and grow-back, and every re-emergence, played on every
+chunk at once.
+
+- **Own materials.** `AtlasView.freeze()` copies every ShaderMaterial a
+  frozen chunk draws with (terrain, skirt, plants, props, water; multimesh
+  surfaces get a copied mesh) and sets `zs_atlas_frozen`.
+- **Frozen reads.** In `reference_globals.gdshaderinc`, `zs_growth_now()`,
+  `zs_water_growth_now()`, `zs_emergence_now()`, `zs_growth_wave_at()` and
+  `zs_birth_growth()` read a frozen material as fully grown and settled. Every
+  object, terrain and water shader reads growth through them; the air and
+  fog volumes still read the globals.
+- **Seam hold.** Shared borders of the live terrain keep their pinned height
+  while it folds and grows (`atlas_hold`, 3.2 m, the source's `SEAM_HOLD`),
+  so a seam never gapes mid-regenerate.
+- **One ground pattern.** `NativeTerrainData.world_offset` samples the
+  palette's grass, rock and shimmer noise in world metres, so the pattern runs
+  on across seams instead of every chunk repeating the origin's.
+
+### Neighbours shape the live chunk (round 2)
+
+In atlas mode, Regenerate and New plain touch only the live chunk. The
+result continues what is around it:
+
+- **One sky.** No new mood, look, hour or framing is applied
+  (`cozy_regrowth.regrow` checks `scene.atlas`). Sky, time and weather carry
+  straight on.
+- **Country votes** (`scripts/chunk_atlas_genes.gd`, after grid.js
+  `countryOf`).
+  - Each stored neighbour's terrain recipe votes: orthogonal neighbours count
+    1, diagonal ones 0.5, and a plain votes gentle meadow.
+  - One vote is drawn as the parent. The new chunk takes its composition, and
+    its habitat 80 % of the time.
+  - Relief and breadth are the weighted mean, ±0.12.
+  - 18 % of regenerations are a surprise that ignores the neighbours.
+  - Four candidates are scored by `world_beauty` and the best is kept, as
+    `Generator.sample` does. It runs on a worker.
+- **Carry-in** (`ChunkAtlas.carry_in`). Runs once, when a chunk is grown,
+  regenerated or re-planed.
+  - Each stored neighbour's border relief is carried inward. The band widens
+    with the strip's relief: 5.04 m + 2.5 × relief + 0.5 × offset, capped at
+    16.8 m, wobbled ±30 % by world noise.
+  - So a ridge meeting a seam runs on as a spur instead of a 5 m ramp.
+    Headless: a 3.4 m ridge carries 14.9 m and still stands 2.5 m high 7 m
+    in.
+  - Cover (`grass`, `blades`, `meadow`) and paint (`tint`, premultiplied by
+    its weight) then blend toward the neighbour's border cells over
+    `BLEND_FRAC` (8.4 m). They reach the neighbour's value at the seam, and
+    corners share the weight.
+  - After that the ordinary 5 m pin keeps the seam exact while you paint.
+    Cover is not re-blended, so painting near a seam sticks.
+- **New plains** form on the world field at the chunk's origin, so a fresh
+  plain already meets plain neighbours before the pin.
+
 ### Save format
 
 `user://cozy-worlds/atlas.json`:
@@ -106,46 +165,71 @@ following Electron's live-at-origin model:
 
 ### In this slice
 
-- `scripts/chunk_atlas.gd`: slots, frontier, strips, the pin, and save/load.
-- `scripts/chunk_atlas_view.gd`: the frozen chunk and the skirt cut.
-- `scripts/chunk_atlas_controller.gd`: `--atlas` wiring, stepping, the glide
-  and the 3x3 ring.
-- The pin and open-sides hooks in `native_chunk_editor.gd`, and the world
-  origin in `genesis_canvas.gd`.
-- `tests/test_chunk_atlas.gd`, a data-only test: seams after strokes, band
-  locality, idempotence, corner agreement, frontier, and save/load.
-- `tools/probe_chunk_atlas.gd`, a headless launch check: grow east, stroke
-  across the seam, walk back, relaunch.
+- `scripts/chunk_atlas.gd`: slots with revisions, frontier, strips, the pin
+  (per-side bands and wobble), carry-in, cover blend, and save/load.
+- `scripts/chunk_atlas_view.gd`: the frozen chunk, its frozen materials and
+  the skirt cut.
+- `scripts/chunk_atlas_controller.gd`: `--atlas` wiring, stepping, the glide,
+  the 3x3 ring, the pad, and the regrow hooks (`sample_world`,
+  `carry_in_live`).
+- `scripts/chunk_atlas_genes.gd`: neighbour votes for Regenerate.
+- Hooks elsewhere:
+  - the pin and open sides in `native_chunk_editor.gd`;
+  - `world_offset` in `native_terrain_data.gd`;
+  - the world origin in `genesis_canvas.gd`;
+  - the atlas branch in `cozy_regrowth.regrow`;
+  - the frozen reads in the shaders.
+- Checks, all headless:
+  - `tests/test_chunk_atlas.gd`: seams after strokes, band locality,
+    idempotence, corners, frontier, save/load, carry-in reach, cover at the
+    seam, and mountain votes giving mountains.
+  - `tools/probe_chunk_atlas.gd`: grow east, stroke across the seam, walk
+    back, relaunch, arrow key and pad.
+  - `tools/probe_chunk_atlas_tour.gd`: five chunks, a ridge carried over a
+    seam, regenerate, new plain, a walk round the ring, save and relaunch.
+    After each step it checks that neighbours are untouched, seams stay shut,
+    no material is shared, the frozen flag holds, the sky doesn't jump, and
+    the pad is ready.
+  - `tools/check_shaders.gd`: parses every shader, since the dummy renderer
+    still reports shader errors.
 
-Launch: `./run-cozy-flow.command -- --atlas` (or `godot --path .
-res://studies/cozy_worlds.tscn -- --atlas`). The arrow keys steps
-chunks. The camera's existing pan (middle drag) and zoom (up to 150 m) already
-cover a 3x3 ring.
+Launch: `./run-cozy-flow.command --atlas`, or with `-- --atlas`; both work.
+Arrow keys or the WORLD pad (bottom right) step between chunks. Regenerate
+and New plain in the world menu reshape only the live chunk.
 
 ### Out of this slice (known gaps)
 
-- **Look across seams.**
-  - Face colour and cover do not blend yet. The palette's grass and rock
-    noise is sampled in chunk-local coordinates, so tint may step at a seam.
-    The fix is Electron's `BLEND_FRAC` mix, or world-space palette
-    coordinates.
-  - Frozen chunks use the live terrain material. Its shader samples
-    `(xz+14)/28` for geology, so neighbours repeat the live chunk's pattern.
+- **Ground colour across a seam.** Cover, paint and the palette pattern now
+  run on. The terrain's own colour can still step where one chunk has a
+  generated biome (its snowline, rock slope and authored colours) and the
+  other is a plain. Blending face colour needs the neighbour's built colours
+  at the border, not just its masks.
+- **Palette per chunk.** The atlas keeps one sky and one palette, as the
+  shaders' `zs_palette_*` ratios are global. A chunk cannot yet be autumn
+  beside a green one; per-chunk ground paint (tint) is the available lever.
+- **Plants at the seam.** Forest density does not thin toward a neighbour's
+  (foliage.js 808-829). A generated chunk's trees were placed before carry-in
+  reshaped its band. The garden lifts them onto the new ground, but a tree may
+  now stand on a slope it would not have been planted on. This is unverified
+  on screen.
+- **Water.** Generated rivers and ponds are planned for the chunk alone. A
+  river that meets a pinned border ends against it, and no pond level is
+  inherited across a seam (see the tea lake section).
 - **The air stays on the live chunk.** The fog volume, air march box, display
   fog, precipitation and wind trails are sized ±14 around the origin, so
   neighbours sit outside the mist. Electron draws a fog bank over the
-  frontier instead. The `stitched_air.gd` work on `feature/stitched-terrain`
-  (`ground_half`/`air_half` uniforms) is the port candidate.
+  frontier instead. The port candidate is the `stitched_air.gd` work on
+  `feature/stitched-terrain` (`ground_half`/`air_half` uniforms).
 - **Frozen chunks are still life.** They have no emergence, birds, fish,
-  sound or water motion. Their GardenView does not process.
-- **Only generated plains.** Recipe worlds (`--seed`, regrow) have no
-  world-space seed. Regrowing inside an atlas replaces the live chunk with an
-  unpinned recipe until the next refresh pins its border.
+  sound, wind sway reach or water motion; their GardenView does not process.
 - **Only orthogonal neighbours constrain.** A diagonal-only neighbour can meet
   at a corner point with a small step.
-- **Stepping is synchronous.** Headless: a grow is about 270 ms and a step
-  onto a stored chunk about 140 ms, of which drawing the ring is about 47 ms.
-  Worker-built views and a staggered refresh would hide it.
+- **Stepping is synchronous.** Headless:
+  - Growing a chunk takes about 300 ms and stepping onto a stored one about
+    170-200 ms, of which drawing the ring is 50-75 ms.
+  - A regenerate runs about 9 s including its fold and grow animation.
+  - Worker-built views and a staggered refresh would hide the stepping
+    hitch.
 
 ## Open questions
 
