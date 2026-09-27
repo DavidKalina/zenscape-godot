@@ -725,7 +725,7 @@ func _forget(region: Dictionary, rect: Rect2) -> void:
 func _wet(p: Vector2) -> bool:
 	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p))
 
-## A pour settled (native_chunk_editor.gd `_land_water`), inside its open
+## A pour showed (native_chunk_editor.gd `_set_pour_water`), inside its open
 ## stroke so one undo brings the plants back with the ground. Withdraw the
 ## emerged plants whose base its new ponds and streams now cover, and refuse
 ## that water to arrivals until a plan that saw it takes over. `ponds` and

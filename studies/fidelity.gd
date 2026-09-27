@@ -797,7 +797,8 @@ func _advance_fire(delta: float) -> void:
 	if _fire_field == null:
 		return
 	_fire_water_age += delta
-	if _fire_water_age > 2.0:
+	# A pour republishes the water maps every replan; re-seed once it closes.
+	if _fire_water_age > 2.0 and not _chunk_editor.water_pouring:
 		_refresh_fire_water()
 	var burning := _fire_field.active()
 	var transaction: bool = _chunk_editor.forming or (not _chunk_editor.data._before.is_empty() and not _fire_stroke)

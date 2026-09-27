@@ -319,7 +319,8 @@ func _on_water_settled(bounds: Rect2) -> void:
 	_run = Vector2(INF,-INF)
 	for birth: Dictionary in editor.content.water_births.values():
 		var born := float(birth.born)
-		if born < now-0.05: continue
+		# A pour's water starts while the hand pours; only water still moving.
+		if born+(float(birth.seconds) if birth.has("seconds") else WaterBrush.FILL_SECONDS) < now: continue
 		if birth.has("seconds"):
 			_run = Vector2(minf(_run.x,born),maxf(_run.y,born+float(birth.seconds)))
 		else:
