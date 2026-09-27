@@ -29,7 +29,7 @@ func settle(limit := 20.0) -> bool:
 	var quiet := 0
 	while Time.get_ticks_usec() < until:
 		await process_frame
-		var busy: bool = editor.refresh_pending > 0 or editor.water_settling or editor.land_settling or not editor._water_shape.is_empty()
+		var busy: bool = editor.refresh_pending > 0 or editor.water_settling or editor.land_settling or not editor._pour.is_empty()
 		quiet = 0 if busy else quiet+1
 		if quiet >= 6: return true
 	return false
@@ -169,8 +169,8 @@ func run() -> void:
 	var water_before := _hash([data.ponds,data.streams])
 	await brush_stroke("water",Vector2(5,5),Vector2(6,6),false,30)
 	var until := Time.get_ticks_usec()+15000000
-	while editor._water_shape.is_empty() and editor.water_settling and Time.get_ticks_usec() < until: await process_frame
-	var shaping: bool = not editor._water_shape.is_empty()
+	while not editor._pour.get("shaping",false) and editor.water_settling and Time.get_ticks_usec() < until: await process_frame
+	var shaping: bool = editor._pour.get("shaping",false)
 	await craft_stroke("raise",Vector2(-8,8),Vector2(-6,9),6)
 	await settle()
 	var pour_ponds := data.ponds.size()
@@ -184,10 +184,10 @@ func run() -> void:
 	await settle()
 	check("second undo takes the pour whole",_hash([data.ponds,data.streams]) == water_before and state().heights == initial.heights,{"ponds":data.ponds.size()})
 
-	# 3. A craft sculpt while a pour plans on its worker. The plan sees the
-	# land moved under it; the pour is dropped with a status line.
+	# 3. A craft sculpt while a pour plans its last dabs on a worker. The
+	# pour closes on what is showing, then the sculpt opens its own step.
 	await brush_stroke("water",Vector2(5,5),Vector2(6,6),false,30)
-	var planning: bool = editor.water_settling and editor._water_shape.is_empty()
+	var planning: bool = editor.water_settling and not editor._pour.get("shaping",false)
 	await craft_stroke("lower",Vector2(-8,-8),Vector2(-7,-7),4)
 	await settle()
 	check("sculpt during a pour's plan leaves one consistent step",data._undo.size() in [undo_base+1,undo_base+2],{"planning_at_press":planning,"ponds":data.ponds.size()-ponds_before,"undo":data._undo.size()-undo_base,"status":editor.status})
