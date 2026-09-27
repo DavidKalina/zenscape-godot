@@ -30,7 +30,15 @@ void fog() {
 	float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / 14.0);
 	float stream = 0.72 + 0.56 * zs_gust_field(p.xz);
 	float reveal = zs_reveal_keep(p.xz);
-	float d = (density * pool * noise * 0.36 * stream + haze * 0.026) * fade * reveal;
+	float poured = 0.0;
+	if (zs_pour.x > 0.0) {
+		// A regeneration pour (scripts/world_rumble.gd): heavy fog churning downwind.
+		vec3 c = p * vec3(0.26, 0.5, 0.26) - vec3(zs_wind_direction.x, -0.25, zs_wind_direction.y) * zs_pour.w * 0.6;
+		float churn = clamp(wxFbm2(c) * 1.33, 0.0, 1.0);
+		float floor_y = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
+		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / 14.0));
+	}
+	float d = (density * pool * noise * 0.36 * stream + haze * 0.026) * fade * reveal + poured;
 	if (over < -0.4 || ground < -100.0) d = 0.0;
 	float open_sky = cloudShadeAt(p, zs_cloud_direction);
 	float ag_band = max(0.8, 0.08 * (zs_summit.y - 0.15));

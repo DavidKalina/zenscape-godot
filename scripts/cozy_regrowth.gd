@@ -11,6 +11,13 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const SHOWCASE := [184,105,147,193,303,79,328,301,176,33,102,353,58,177,198,134,45,309,248,250,278,364]
 const DEGROW_SECONDS := 3.4
 const GROW_SECONDS := 5.0
+## The held rumble (scripts/world_rumble.gd) through each phase: it builds as
+## the old land sinks, rolls on while the new one is made, peaks as it rises,
+## and eases as the plants arrive. The pour drains once the land has formed.
+const RUMBLE_SINK := Vector2(0.55,0.85)
+const RUMBLE_MAKING := 0.8
+const RUMBLE_GROW := Vector2(1.0,0.6)
+const DRAIN_AT := 0.45
 ## The plain's day (creation mode only). Its world clock turns at a gentle
 ## PLAIN_DAY_LENGTH real seconds per 24 hours (the default day is 480 s), so
 ## dawn and dusk come round within a session and the deer can find the dawn.
@@ -363,6 +370,10 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	busy = true
 	armed = false
 	marker.hide()
+	var rumble: Node = scene.get("world_rumble")
+	if rumble != null:
+		rumble.hold(&"regrow",RUMBLE_SINK.x)
+		rumble.pour_fog()
 	if scene.has_method("suspend_creation"): scene.suspend_creation()
 	else: scene.set_building(false)
 	scene._growth.reset_feedback()
@@ -370,6 +381,7 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
+	if rumble != null: rumble.hold(&"regrow",RUMBLE_MAKING)
 	if to_plain:
 		var plain_seed := randi() % 1000000 if requested_seed<0 else requested_seed
 		generated_world = Genesis.world(plain_seed)
@@ -418,6 +430,7 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	await _animate_growth(true,GROW_SECONDS)
 	generation += 1
 	phase = "ready"
+	if rumble != null: rumble.release(&"regrow")
 	busy = false
 	_update_badge()
 	if scene.has_method("resume_creation"): scene.resume_creation()
@@ -465,6 +478,7 @@ func _fit_distance(frame_tree: SceneTree = null) -> float:
 	return distance
 
 func _animate_growth(forward: bool, duration: float) -> void:
+	var rumble: Node = scene.get("world_rumble")
 	var elapsed := 0.0
 	while elapsed<duration:
 		await get_tree().process_frame
@@ -474,6 +488,12 @@ func _animate_growth(forward: bool, duration: float) -> void:
 		var before: float = scene._growth.terrain
 		_set_growth(progress if forward else 1.0-progress)
 		scene._growth.formation_feedback(absf(scene._growth.terrain-before),step,scene._tremor)
+		if rumble == null: continue
+		if forward:
+			rumble.hold(&"regrow",lerpf(RUMBLE_GROW.x,RUMBLE_GROW.y,smoothstep(0.45,1.0,progress)))
+			if progress >= DRAIN_AT and rumble.pouring: rumble.drain_fog()
+		else:
+			rumble.hold(&"regrow",lerpf(RUMBLE_SINK.x,RUMBLE_SINK.y,progress))
 	_set_growth(1.0 if forward else 0.0)
 
 func _set_growth(progress: float) -> void:

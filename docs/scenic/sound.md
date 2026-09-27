@@ -26,6 +26,8 @@ Each voice is one looping player that is always loaded. Its gain eases toward a 
 | Meadow (and craft growth tools) | `genesis-meadow`: soft swish, odd stem tick | brush speed | 0.16 |
 | Path | `genesis-path`: gravel crunch over a dry scuff | brush speed | 0.2 |
 
+The held world rumble (`scripts/world_rumble.gd`, regeneration and long world changes) also plays `genesis-rumble`: up to 85% of its peak, deeper (pitch 0.78–0.95), swelling with the camera rumble, and through a paused world clock. See `stroke-feel.md`, Rumble and pour.
+
 Voices sit at the brush (the pour's glugs at the pour's middle). Attenuation is off and panning is gentle (`panning_strength` 0.6), so they are heard at the level set here wherever the camera is.
 
 ### Creation beds
