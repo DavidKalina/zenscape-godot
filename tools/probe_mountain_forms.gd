@@ -253,6 +253,57 @@ func emergence_check() -> Dictionary:
 	counts["objects"] = data.objects.size()
 	return counts
 
+## The real input path: a mouse press through handle_input, the editor's own
+## _process following a moving pointer (pointer_override), then a release.
+func live_check() -> Dictionary:
+	var data := editor.data
+	var base := data.heights.duplicate()
+	var camera: Camera3D = scene.camera
+	var from := Vector2(0.5,-1.0)
+	var to := from+Vector2(2.5,0.0)
+	var start := camera.unproject_position(editor.terrain.to_global(Vector3(from.x,float(data.sample(from,data.heights)),from.y)))
+	var finish := camera.unproject_position(editor.terrain.to_global(Vector3(to.x,float(data.sample(to,data.heights)),to.y)))
+	editor.select_land_form("alpine")
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = start
+	Input.parse_input_event(press)
+	Input.flush_buffered_events()
+	editor.pointer_override = start
+	var took := editor.handle_input(press)
+	var holding: bool = editor._mountain_holding
+	editor.set_process(true)
+	for frame in range(50):
+		await process_frame
+		editor.pointer_override = start.lerp(finish,minf(1.0,frame/40.0))
+	var rise_held: float = editor.mountain.rise
+	var spread_held: float = editor.mountain.spread
+	var still_holding: bool = editor._mountain_holding
+	var button_down := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = finish
+	Input.parse_input_event(release)
+	editor.handle_input(release)
+	editor.pointer_override = null
+	await wait_settled([])
+	editor.set_process(false)
+	var reach: Rect2 = editor.mountain.bounds.grow(1.5)
+	var outside_moved := 0.0
+	var peak := 0.0
+	for i in range(base.size()):
+		peak = maxf(peak,data.heights[i]-base[i])
+		if not reach.has_point(data.points[i]): outside_moved = maxf(outside_moved,absf(data.heights[i]-base[i]))
+	var report := {"press_taken":took,"holding_after_press":holding,"still_holding":still_holding,"button_down":button_down,"rise_while_held":snappedf(rise_held,0.01),"spread_while_held":snappedf(spread_held,0.01),
+		"lift":snappedf(peak,0.01),"moved_outside_footprint":snappedf(outside_moved,0.001),"landed":not editor.mountain.active}
+	editor.undo()
+	await wait_settled([])
+	report["undo_restores"] = data.heights == base
+	editor.select_land_form("hill")
+	return report
+
 func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--forms="): forms = Array(arg.trim_prefix("--forms=").split(","))
@@ -289,6 +340,7 @@ func run() -> void:
 	for form: String in forms:
 		var report := await raise(form,at,at+Vector2(1.0,0.35).normalized()*drag)
 		print("FORM ",JSON.stringify(report))
+	print("LIVE ",JSON.stringify(await live_check()))
 	print("INTERRUPT ",JSON.stringify(await interrupt_check()))
 	print("POND ",JSON.stringify(await pond_check()))
 	if watch > 0.0: print("EMERGENCE ",JSON.stringify(await emergence_check()))

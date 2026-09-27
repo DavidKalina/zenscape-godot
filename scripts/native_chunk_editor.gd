@@ -710,9 +710,11 @@ func _process(delta: float) -> void:
 		if _painting and placement_trail and trail_available():
 			continue_trail(center)
 			_emit_stroke(1,hit,preview_radius(),delta)
-		elif _painting and mode == "land" and not _mountain_holding:
-			_land_step(center,delta)
-			_emit_stroke(1,hit,brush_radius(),brush_strength()*delta)
+		elif _painting and mode == "land":
+			# A held mountain steps above, even off the terrain.
+			if not _mountain_holding:
+				_land_step(center,delta)
+				_emit_stroke(1,hit,brush_radius(),brush_strength()*delta)
 		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
