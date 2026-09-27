@@ -52,7 +52,7 @@ func _ready() -> void:
 		var original: MultiMeshInstance3D = source.get_node(pair[1])
 		_meshes[pair[0]] = GrassTuft.swap(pair[1], original.multimesh.mesh)
 		_materials[pair[0]] = original.multimesh.mesh.surface_get_material(0).duplicate()
-		if _meshes[pair[0]] != original.multimesh.mesh: GrassTuft.dress(_materials[pair[0]])
+		if _meshes[pair[0]] != original.multimesh.mesh: GrassTuft.dress(_materials[pair[0]], _meshes[pair[0]])
 		if pair[0] in ["trunk", "canopy"]:
 			_materials[pair[0]].set_shader_parameter("conifer_sway", true)
 	for kind in preload("res://scripts/native_asset_catalog.gd").PARTS:
@@ -65,7 +65,7 @@ func _ready() -> void:
 			var mesh: Mesh = GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh))
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
-			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key])
+			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = Color.WHITE
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
@@ -392,6 +392,9 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 					staging.free()
 					return false
 		batch.material_override = _materials[key]
+		# The painted meadow tufts are many and small; their shadows would not
+		# resolve, so they skip the shadow pass, as the dense grass does.
+		if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		replacement.append(batch)
 		if frame_tree != null:
 			await budget.checkpoint()

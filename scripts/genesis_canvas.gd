@@ -32,7 +32,15 @@ static func palette_title(world_value: Dictionary) -> String:
 	var family: Dictionary = Families.FAMILIES.get(str(world_value.get("palette","")),{})
 	return str(family.get("title","Open plain"))
 
-## Heights, grass and a few patches of standing blades for a blank plain.
+## Standing-blade cover on the plain: the carpet everywhere, and how much
+## the tussocks add on top (`data.blades`, eight tufts a cell at 1.0).
+const GENESIS_BLADES := Vector2(0.22,0.3)
+## Flower-drift cover (`data.meadow`): each of its tufts in four carries a
+## flower, so 0.13 gives one flower a cell inside a drift.
+const GENESIS_FLOWERS := 0.13
+
+## Heights, grass, a carpet of standing blades and a few flower drifts for a
+## blank plain.
 ## Everything else (objects, water, recipe) is cleared.
 static func shape(data: NativeTerrainData, seed_value: int) -> void:
 	data.reset_flat()
@@ -53,15 +61,26 @@ static func shape(data: NativeTerrainData, seed_value: int) -> void:
 		heights[i] = 0.35+swell.get_noise_2d(p.x,p.y)*0.55+ripple.get_noise_2d(p.x,p.y)*0.12
 	data.heights = heights
 	data.grass.fill(1.0)
+	# A meadow carpet of standing tufts (about seven a square metre, see
+	# GardenInstanceSamples) that thickens into tussocks (up to about
+	# sixteen), with small drifts of flowers. A few patches only read as bare
+	# stubble from the diorama camera, so the whole plain carries tufts.
 	var tufts := FastNoiseLite.new()
 	tufts.seed = seed_value+31
 	tufts.frequency = 0.18
+	var drifts := FastNoiseLite.new()
+	drifts.seed = seed_value+47
+	drifts.frequency = 0.11
 	var blades := data.blades
+	var meadow := data.meadow
 	for z in range(data.MEADOW_CELLS):
 		for x in range(data.MEADOW_CELLS):
 			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5
-			blades[z*data.MEADOW_CELLS+x] = smoothstep(0.38,0.7,tufts.get_noise_2d(p.x,p.y))*0.4
+			var index := z*data.MEADOW_CELLS+x
+			blades[index] = GENESIS_BLADES.x+GENESIS_BLADES.y*smoothstep(-0.05,0.4,tufts.get_noise_2d(p.x,p.y))
+			meadow[index] = GENESIS_FLOWERS*smoothstep(0.2,0.4,drifts.get_noise_2d(p.x,p.y))
 	data.blades = blades
+	data.meadow = meadow
 
 ## Form the plain as one undoable operation that also restores the previous
 ## scene look, as `form_inland` does for generated worlds.

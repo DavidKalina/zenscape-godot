@@ -78,7 +78,10 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 	for z in range(cells):
 		for x in range(cells):
 			var index := z * cells + x
-			var count := int(data.grass_density(index) * 8.0)
+			# Up to eight tufts a cell. A golden-ratio dither per cell rounds the
+			# fraction up in its share of cells, so light cover (0.14 is 1.1
+			# tufts) is not truncated away and cover thickens smoothly.
+			var count := int(data.grass_density(index) * 8.0 + fposmod(float(index) * 0.618034, 1.0))
 			var rng := RandomNumberGenerator.new()
 			rng.seed = index * 7919 + 17041
 			for i in range(count):
