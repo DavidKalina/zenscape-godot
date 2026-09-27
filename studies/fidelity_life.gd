@@ -10,6 +10,7 @@ var ambient_without_resident := false
 var routine: Node
 var cave_sites: Node3D
 var lair: Node3D
+var _unbuilt_cave_state := {}
 var _cave_skirt_original: Transform3D
 var _cave_original_ready := false
 var _cave_underside_layers := 1
@@ -94,6 +95,7 @@ func _ready() -> void:
 	add_child(routine)
 	routine.setup(self)
 	cave_sites = preload("res://scripts/bigfoot_cave_site.gd").new()
+	cave_sites.hidden = _cave_hidden()
 	add_child(cave_sites)
 	cave_sites.rebuild(_chunk_editor.data)
 	environment_life = preload("res://scripts/bigfoot_environment.gd").new()
@@ -338,10 +340,19 @@ func restore_life_state(state: Dictionary) -> void:
 	routine.habits.restore(state)
 
 func capture_cave_state() -> Dictionary:
+	if _cave_hidden(): return _unbuilt_cave_state.duplicate(true)
 	return lair.document() if is_instance_valid(lair) else {}
+
+## Scenery mode (diorama.gd) keeps Bigfoot's cave and lair out of the world.
+func _cave_hidden() -> bool:
+	return bool(get("scenery_mode"))
 
 func restore_cave_state(state: Dictionary) -> void:
 	if not preload("res://scripts/cave_genome.gd").valid_state(state): return
+	# A lair saved with --bigfoot is kept for the next save but not built here.
+	if _cave_hidden():
+		_unbuilt_cave_state = state.duplicate(true)
+		state = {}
 	if state.is_empty() and lair==null: return
 	if routine != null: routine.cancel("cave system changed")
 	var skirt: MeshInstance3D = get_node("Reference/skirt")

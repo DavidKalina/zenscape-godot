@@ -438,7 +438,7 @@ func launch_fidelity() -> void:
 	close_menu()
 	set_building(false)
 	_focus_stack()
-	_notice.text = "Fidelity world · World menu explores both stories."
+	_notice.text = "Fidelity world" if scenery_mode else "Fidelity world · World menu explores both stories."
 
 func new_diorama() -> void:
 	if _chunk_editor.forming or not save_current(): return

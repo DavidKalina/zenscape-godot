@@ -24,6 +24,10 @@ var _away_time := 0.0
 func _ready() -> void:
 	super._ready()
 	get_window().title = "ZenScape · Two-story Bigfoot diorama"
+	# Scenery mode builds no lower story; --bigfoot restores it.
+	if _cave_hidden():
+		_focus_stack()
+		return
 	restore_cave_state({"genome":preload("res://scripts/inland_genome.gd").cave(37),"stash":[]})
 	for entry in [["See both stories",_focus_stack],["Look through lair windows",_focus_lair],["Generate another cave",_regenerate],["Change cave palette",_change_palette],["Another rock arrangement",_redress],["Gather a branch",_gather_branch],["Bring home a fish",_bring_fish]]:
 		var button := Button.new()
