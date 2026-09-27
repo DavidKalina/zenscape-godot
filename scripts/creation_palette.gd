@@ -27,6 +27,14 @@ var hint := Label.new()
 var _hint_tween: Tween
 var _painted := false
 var _last_state := ""
+## The land brush's forms (scripts/mountain_forms.gd FORMS), in a plain row
+## over the strip while land is in hand. Built from the list, so a restyle
+## only needs `_form_button`.
+const Forms = preload("res://scripts/mountain_forms.gd")
+var form_frame := Control.new()
+var form_glass: Panel
+var form_row := HBoxContainer.new()
+var form_buttons := {}
 
 ## One registry entry (genesis_canvas.gd `BRUSHES`) as the palette shows it.
 ## Returns {} for an entry without an id.
@@ -109,6 +117,7 @@ func setup(owner_scene: Node3D) -> void:
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(hint)
+	_build_forms()
 	editor.setting_changed.connect(func(_property: String, _value: float) -> void: _sync_meters())
 	editor.tool_changed.connect(func(_tool: String) -> void: sync())
 	editor.brush_changed.connect(func(_id: String) -> void: sync())
@@ -176,13 +185,15 @@ func sync() -> void:
 	look_button.set_pressed_no_signal(scene.looking)
 	meters.modulate.a = 1.0 if not holding.is_empty() else 0.35
 	_sync_meters()
-	var state := "look" if scene.looking else holding
+	_sync_forms(holding)
+	var state := "look" if scene.looking else holding+("/"+editor.land_form if holding == "land" else "")
 	if state == _last_state: return
 	_last_state = state
 	var text := LOOK_HINT
 	if not scene.looking:
 		var brush := info_for(holding)
 		text = str(brush.get("hint",""))
+		if holding == "land": text = str(Forms.form_entry(editor.land_form).get("hint",text))+"  ·  1 for forms"
 		text = ("" if text.is_empty() else text+"  ·  ")+"[ ] size  ·  Tab to just look"
 	hint.text = text
 	hint.modulate.a = 1.0
@@ -215,8 +226,41 @@ func fit() -> void:
 	frame.scale = Vector2.ONE*factor
 	var hint_room := 34.0*factor
 	frame.position = Vector2((screen.x-frame.size.x*factor)*0.5,screen.y-frame.size.y*factor-hint_room-14.0)
+	form_row.size = form_row.get_combined_minimum_size()
+	form_glass.size = form_row.size+PAD*2.0
+	form_frame.size = form_glass.size
+	form_frame.scale = Vector2.ONE*factor
+	form_frame.position = Vector2((screen.x-form_frame.size.x*factor)*0.5,frame.position.y-(form_frame.size.y+6.0)*factor)
 	hint.size = Vector2(screen.x,hint.get_minimum_size().y)
 	hint.position = Vector2(0,screen.y-hint.size.y-14.0)
 
 func contains_pointer(point: Vector2) -> bool:
+	if form_frame.visible and is_visible_in_tree() and Rect2(form_frame.global_position,form_frame.size*form_frame.scale).has_point(point): return true
 	return is_visible_in_tree() and Rect2(frame.global_position,frame.size*frame.scale).has_point(point)
+
+func _build_forms() -> void:
+	form_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(form_frame)
+	form_glass = Glass.surface(12)
+	form_frame.add_child(form_glass)
+	form_row.add_theme_constant_override("separation",2)
+	form_row.position = PAD
+	form_frame.add_child(form_row)
+	for entry: Dictionary in Forms.FORMS:
+		var button := _form_button(entry)
+		button.pressed.connect(func() -> void: editor.select_land_form(entry.id))
+		form_buttons[entry.id] = button
+		form_row.add_child(button)
+	editor.land_form_changed.connect(func(_id: String) -> void: sync())
+
+func _form_button(entry: Dictionary) -> Button:
+	var button := _tool_button(entry.title,Glass.glyph(entry.glyph,18))
+	button.custom_minimum_size = Vector2(52,44)
+	button.add_theme_font_size_override("font_size",11)
+	button.tooltip_text = entry.title+" · 1 steps through the forms"
+	return button
+
+func _sync_forms(holding: String) -> void:
+	form_frame.visible = holding == "land"
+	for id: String in form_buttons:
+		form_buttons[id].set_pressed_no_signal(id == editor.land_form)

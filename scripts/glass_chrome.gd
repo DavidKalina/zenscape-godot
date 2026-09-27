@@ -82,6 +82,12 @@ const GLYPHS := {
 	"craft":'<path d="M14.5 4.5 L19.5 9.5 L9 20 H4 V15 Z"/><path d="M12.5 6.5 L17.5 11.5"/>',
 	"world":'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12 H21"/>',
 	"dot":'<circle cx="12" cy="12" r="4"/>',
+	# Land forms (scripts/mountain_forms.gd FORMS).
+	"form_alpine":'<path d="M2 20 L9 11 L12 3 L15 10 L22 20 Z"/><path d="M10.4 7.5 L12 3 L13.6 7 L12 8.2 Z"/>',
+	"form_ridge":'<path d="M2 18 L6 12 L8.5 14 L12 8 L14.5 11 L17 7 L22 18"/><path d="M2 18 H22"/>',
+	"form_mesa":'<path d="M2 20 L5 16 L6 11 L7 8 H17 L18 11 L19 16 L22 20 Z"/><path d="M6.4 11 H17.6 M5.6 14 H18.4" stroke-opacity="0.5"/>',
+	"form_volcano":'<path d="M2 20 L9.5 7 H14.5 L22 20 Z"/><path d="M9.5 7 C10.5 8.5 13.5 8.5 14.5 7"/><path d="M11 4.5 C11 3 13 3 13 1.5" stroke-opacity="0.6"/>',
+	"form_tors":'<path d="M2 20 H22"/><path d="M4 20 V13 H8 V20 M9.5 20 V8 H14.5 V20 M16 20 V11 H20 V20"/>',
 }
 
 ## Unknown kinds get a quiet dot. Not cached: a shell draws only a handful.
