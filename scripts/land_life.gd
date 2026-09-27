@@ -23,6 +23,7 @@ signal moment(kind: String, position: Vector3)
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Moments = preload("res://scripts/life_moments.gd")
+const Snakes = preload("res://scripts/life_snakes.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BirdFlight = preload("res://studies/bird_flight.gd")
 
@@ -104,6 +105,7 @@ var worst_usec := 0
 ## The longest single survey step over every survey so far.
 var survey_worst_usec := 0
 var moments: Node3D
+var snakes: Node3D
 var material: Material
 
 var _tick := 0.0
@@ -150,6 +152,9 @@ func setup(owner_scene: Node3D) -> void:
 	moments = Moments.new()
 	add_child(moments)
 	moments.setup(self)
+	snakes = Snakes.new()
+	add_child(snakes)
+	snakes.setup(self)
 	editor.play_geometry_changed.connect(_changed)
 	editor.stroke_finished.connect(func(_center: Vector3, _radius: float, _mode: String) -> void: _changed(true))
 	# A pour lands after its stroke has finished, once it settles on a worker.
@@ -226,6 +231,7 @@ func clear() -> void:
 		for key in sites[kind].keys(): _release(kind,sites[kind][key])
 		sites[kind].clear()
 	if moments != null: moments.clear()
+	if snakes != null: snakes.clear()
 	_reading = null
 	_planning.clear()
 	survey = null
@@ -248,6 +254,7 @@ func _process(delta: float) -> void:
 			_arrive_due()
 		_animate(step)
 		moments.advance(step,minf(delta,0.1))
+		snakes.advance(step)
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
@@ -700,6 +707,10 @@ func _fade_fireflies() -> void:
 			var presence := clampf((clock-float(site.born))/FIREFLY_FADE,0.0,1.0)
 			_fly_presence(slot,presence)
 			if presence >= 1.0: _fading_flies.erase(slot)
+
+## Probes only: start a moment or a snake now (see LifeMoments.force).
+func force(kind: String) -> bool:
+	return snakes.force() if kind == "snake" else moments.force(kind)
 
 # --- World ------------------------------------------------------------------
 
