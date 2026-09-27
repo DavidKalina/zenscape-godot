@@ -5,6 +5,27 @@ func _ready() -> void:
 	creature.set_body_scale(1.0)
 	_refresh_habitat()
 	get_window().title = "ZenScape · Bigfoot's cave · woodland corner"
+	# Scenery mode leaves the woodland corner as it was: no den, earthwork or path.
+	if not _cave_hidden(): _install_cave()
+	# Author the first fish beside the bank, after any cave earthwork.
+	if not fish.population.is_empty():
+		var home := Vector3(4.25,0.3,-2.75)
+		if fish._wet(home):
+			fish.population[0].home = home
+			fish.population[0].spawn_home = home
+			fish.population[0].node.position = home
+			# The slot moves with him, so a restocked fish returns to this bank.
+			if not fish.home_slots.is_empty(): fish.home_slots[0] = home
+	if _cave_hidden(): return
+	for entry in [["Find his cave",_focus_cave],["Visit the cave",_visit_cave]]:
+		var button := Button.new()
+		button.text = entry[0]
+		button.pressed.connect(entry[1])
+		_life_status.get_parent().add_child(button)
+	_focus_cave()
+	if "--visit-cave" in OS.get_cmdline_user_args(): _visit_cave()
+
+func _install_cave() -> void:
 	var data: NativeTerrainData = _chunk_editor.data
 	data.begin_stroke()
 	var site := {"start":[4.5,1.7,7.6],"heading":PI/2.0,"width":6.4,"height":4.8,"length":7.2,"sealed":false,"cave":true,"cave_scale":1.0}
@@ -35,22 +56,6 @@ func _ready() -> void:
 	_refresh_habitat()
 	var arrival: Variant = navigation.nearest_safe(site_pose*Vector3(0,0,2.5))
 	if arrival != null: creature.reset_at(arrival)
-	# Author the first fish beside the finished bank, after the cave earthwork.
-	if not fish.population.is_empty():
-		var home := Vector3(4.25,0.3,-2.75)
-		if fish._wet(home):
-			fish.population[0].home = home
-			fish.population[0].spawn_home = home
-			fish.population[0].node.position = home
-			# The slot moves with him, so a restocked fish returns to this bank.
-			if not fish.home_slots.is_empty(): fish.home_slots[0] = home
-	for entry in [["Find his cave",_focus_cave],["Visit the cave",_visit_cave]]:
-		var button := Button.new()
-		button.text = entry[0]
-		button.pressed.connect(entry[1])
-		_life_status.get_parent().add_child(button)
-	_focus_cave()
-	if "--visit-cave" in OS.get_cmdline_user_args(): _visit_cave()
 
 func _grade_cave_seat(data: NativeTerrainData, center: Vector2, inner_radius: float, outer_radius: float, level: float) -> void:
 	var original := data.heights.duplicate()

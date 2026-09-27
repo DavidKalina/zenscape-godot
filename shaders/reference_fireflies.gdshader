@@ -13,7 +13,9 @@ void vertex() {
 	center.z += cos(t*0.7+phase*12.0)*amplitude;
 	center.y += sin(t*1.3+phase*20.0)*amplitude*0.5;
 	float cycle = fract(zs_motion_time/(2.8+rate*2.6)+phase);
-	glow = smoothstep(0.0,0.05,cycle)*(1.0-smoothstep(0.09,0.17,cycle))*activity;
+	// INSTANCE_CUSTOM.w is absence: a firefly that has not arrived yet, or has
+	// left (scripts/land_life.gd). The Fidelity set keeps 0.
+	glow = smoothstep(0.0,0.05,cycle)*(1.0-smoothstep(0.09,0.17,cycle))*activity*(1.0-INSTANCE_CUSTOM.w);
 	MODELVIEW_MATRIX = VIEW_MATRIX*mat4(INV_VIEW_MATRIX[0],INV_VIEW_MATRIX[1],INV_VIEW_MATRIX[2],center);
 	VERTEX *= (2.5+glow*4.5)*60.0/(VIEWPORT_SIZE.y*PROJECTION_MATRIX[1][1]);
 }

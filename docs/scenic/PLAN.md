@@ -183,7 +183,7 @@ In progress. Items 2 to 7 are done. Item 1 and the Blender trees from item 3 are
 
 ## Phase 3: creation, in the spirit of Genesis
 
-Talked through with the user on 2026-09-26. Not started.
+Talked through with the user on 2026-09-26. Mapped the same day; slice 1 landed on `main` the same evening (see "Slice 1"). The later slices are still open.
 
 ### The idea
 
@@ -223,19 +223,256 @@ Nothing may hitch while you paint. Frame pacing during a stroke matters more tha
 - The regrow grow-in animation, the ambient birds, fireflies and fish, and the living weather and seasons from Phase 2 item 6.
 - The beauty score can stay invisible and quietly guide variant choice, water settling and edges.
 
+### Decisions (2026-09-26)
+
+- **Start canvas: both.** The game launches onto a quiet, misty blank plain. Regenerate still gives a finished world that you can paint over.
+- **Pushback: gentle physics.** Intent is honoured where it makes sense: water painted on a hill runs downhill and pools, and forests thin out on steep rock.
+- **First slice: one brush with the full feel.** The land brush alone, with tremor, fog reveal, grass creeping in and no hitches, before the other brushes.
+
 ### Open questions
 
-- Does creation start from a blank plain, a generated world, or both?
-- How much does the world push back? For example, does water painted on a hilltop run downhill?
 - Is there a finished moment? Photo mode could be where you compose and then capture.
 - Rare "and it was good" moments when a place becomes rich: a heron lands, a deer at dawn, a rainbow after rain. A glimpse of Bigfoot at the forest edge could be the rarest.
 
-### Also in this phase
+### What the survey found (2026-09-26)
 
-- **Rebuild the UI around creation:**
-  - Replace the top toolbar, which hides buttons by moving them into the World menu by position (`diorama.gd`).
-  - Check the maker-editor look on screen. It is parked on `wip/parked-2026-09-26` and has never been seen.
-- **Add an inspect and photo mode.**
+- **A stroke rebuilds the world.** `NativeChunkEditor._process` runs about 30 dabs a second, and each dab calls `refresh()` synchronously with no frame tree (`scripts/native_chunk_editor.gd:598-628`, `:711-834`).
+  - `brush()` loops over every vertex and duplicates the heights on each dab.
+  - The whole `ArrayMesh` and the surface-map textures are uploaded again.
+  - Fog and atmosphere bounds are updated.
+  - `_notify_play_geometry` serialises heights and objects.
+  - Navigation restarts.
+  - Measured 30-dab sculpt: 67-94 ms worst frame (`docs/performance/threading-acceptance.md`).
+- **Mask paint rebuilds every instance.** `GardenView`'s signatures include grass, blades and meadow (`scripts/garden_view.gd:452-455`), so each meadow or forest dab rebuilds every MultiMesh and the stream, waterfall and pond meshes.
+- **Feedback pieces exist but have no stroke signal to hang on:**
+  - tremor: `scripts/reference_tremor.gd`
+  - fog-thinning gust puffs: `atmosphere.send_gust`, `studies/wind_puffs.gd`
+  - local wind: `scripts/local_wind_field.gd`
+  - wind strength globals in `studies/atmosphere.gd`
+- **Grow-in is global.** It is driven by two uniforms, `zs_growth` and `zs_water_growth`, with a hash stagger per plant. It needs a spatial form (brush centre/radius/time, or per-instance birth time) to reveal locally.
+- **Emergence gaps:**
+  - The biome blend reads the recipe sampler, not live `data.heights` or added ponds.
+  - Scatter is one whole-plate ordered seed stream (`inland_landscape.gd:form`).
+  - There is no pinned or hand-placed flag, only `"landscape": true` on generated flora.
+  - There is no succession timeline.
+  - Nothing finds a basin's spill level.
+  - Fauna use fixed reference positions.
+  - The beauty score is whole-plate and terrain-only.
+
+### Slice 1: the land brush, with the full feel (done 2026-09-26)
+
+Four parallel branches, merged in this order:
+
+1. **`feature/stroke-pipeline`: no hitches mid-stroke.**
+   - Keep a dirty-rect accumulator; loop the brush and the masks over the brush bounding box only.
+   - Split the mid-stroke refresh (mesh region and instance lift only) from the settle work run once at stroke end (surface maps, shoreline, play geometry, navigation, fog bounds).
+   - Keep heights-only edits off the full instance rebuild.
+   - Target: no frame over about 16 ms during a 30-dab land stroke on the Mac.
+2. **`feature/stroke-feel`: the stroke reads as cause and effect.**
+   - Add `stroke_started`, `stroke_moved` and `stroke_finished` signals on the chunk editor.
+   - Tremor scales with how fast land rises.
+   - Fog parts around the brush, starting from gust puffs, with a dedicated reveal hole if puffs are not enough.
+   - Wind swells during the stroke and eases after it.
+   - Local grow-in: a brush-centred growth wave in the terrain, foliage and grass shaders.
+3. **`feature/emergence-core`: grass creeps in from the land you made.**
+   - A provenance or pin layer (hand, painted or emerged) on cells and objects.
+   - Biome rules re-read from live heights and water per dirty rect.
+   - A position-hash regional scatter.
+   - A succession clock: grass first, then shrubs and trees after a delay.
+   - Emerged content never overwrites hand or pinned work.
+4. **`feature/genesis-canvas`: launch into creation.**
+   - A blank misty plain as the default start; regenerate still available.
+   - A land brush that raises soft, natural forms and weathers them with a local native `erode` pass at stroke end.
+   - Creation mode as the default tool state, with the craft rail tucked away.
+
+**Also in slice 1:** grass. The user said the old grass read as stubble. Two passes built painterly tufts and a lush carpet (`feature/grass-look`, `feature/grass-lush`). After seeing them rendered, the user rejected standing grass entirely: it did not fit the art style and "feels like a chia pet", especially on mountains.
+- **The look reference is the original Fidelity scene:** faceted low-poly ground painted green, with bare rock on the mountains.
+- The plain and emergence write painted cover only, never blades.
+- Generated worlds keep the original source tuft at its original density.
+- The blade work is kept but opt-in: `--painterly-grass` for the tuft, `--beauty-grass` for dense grass.
+- Dense grass rendered metres wide and lying flat on its first real render. It is off by default until that is fixed.
+
+#### What landed (merged as `feature/genesis-slice1`)
+
+- **Launch:**
+  - The game opens on a misty blank plain with the land brush in hand (`scripts/genesis_canvas.gd`, `scripts/land_brush.gd`).
+  - Drag raises land; Shift-drag or right-drag lowers it; `[ ]` sets size and Shift+`[ ]` sets strength.
+  - Release weathers the stroke with a local native `erode`, and one undo removes both.
+  - **Craft** opens the old tools; **Create** returns to the brush.
+  - Flags:
+    - `--generated`, `--seed N` or `--resume` for the old launch.
+    - `--plain-seed N` for a repeatable plain.
+    - `--classic-build` for the old Build/Enjoy toggle.
+- **Stroke feel:**
+  - `stroke_started`, `stroke_moved` and `stroke_finished` signals on the chunk editor drive tremor, a fog reveal hole (`zs_reveal`), a wind swell and a local grow-in wave (`scripts/stroke_feedback.gd`).
+  - Tunables are in `docs/scenic/stroke-feel.md`.
+- **No hitches mid-stroke:**
+  - While painting, a light refresh rebuilds only the dirty region and lifts content in place; a yielding settle refresh runs at release.
+  - Pond flooding moved to a worker (`docs/performance/stroke-pipeline.md`).
+  - Headless, a raise stroke across a pond went from 68 ms p95 / 112 ms max to about 9 ms.
+- **Emergence** (`scripts/emergence.gd`, `docs/scenic/emergence.md`):
+  - Painted cover creeps out from raised land.
+  - Shrubs arrive at about 9-21 s and trees at about 18-38 s, following live biome rules: nothing on water, steep rock or snow.
+  - Provenance (generated / emerged / hand) keeps hand work safe and survives saves.
+  - Each emerged plant grows in at its own birth time through `INSTANCE_CUSTOM` and `zs_emergence_time`, instead of popping.
+- **Bigfoot's cave, lair and earthwork are not built in scenery mode.** `--bigfoot` restores them.
+- **Tools:**
+  - `tools/film_genesis.gd` records a Movie Maker film of a stroke and the world answering. The user asked for this visual capture.
+  - `tools/profile_stroke.gd -- --mode=land --watch=40` times strokes and emergence headless.
+
+**Measured after the merge** (headless CPU, `profile_stroke --mode=land --watch=40`):
+- Stroke frames p95 10.2 ms. The first dab is 28 ms.
+- Release is 15 ms.
+- One 36 ms frame when emergence first plans a world, otherwise p95 8.6 ms over 40 s.
+- Strokes that change water still spend about 40 ms in one release frame, in `_planar_water.sync`, `_update_leaf_litter` and streams.
+
+**Follow-ups from slice 1:**
+- The plain's ground reads greyer and more mauve than Fidelity's green. It picks a random palette family (for example Chalk & turquoise) under mist. Offered: default the plain to Fidelity's palette and a clearer sky.
+- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H). Slice 5 adds Look (Tab), and H now puts the brush away.
+- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch. Slice 5 rewrote it for the creation shell.
+- The dense-grass render, the first-dab and first-plan hitches, and the water release frame are in the remaining slices below.
+- A plain launch copies `places.json` to `places-previous.json` before it is overwritten.
+
+### Where Phase 3 stands (2026-09-26, evening)
+
+Slices 1-5 are on `main`. Slice 1 is 7978080. Slices 2-5 were built in parallel and merged as `feature/phase3-slices-2-5`, described under "Slices 2-5 integrated" below.
+- **What you can do:** launch onto a plain in Fidelity's colours and paint with five brushes: land, water, meadow, forest and path.
+- **How the world answers:** water settles into basins and streams, plants and forest emerge, and fish, frogspawn, frogs, birds, a heron, deer and a rare Bigfoot glimpse arrive from conditions.
+- **The interface:** a glass creation palette, with Look, Craft and World behind it.
+
+The user watched the slices 2-5 film (`captures/phase3-slices-2-5.mp4`) and said it looks "just like God creating something". Slices 6-8 are still open, along with the outstanding items below.
+
+### Outstanding from the slices 2-5 film
+
+Seen in the stills of the first rendered film. Each needs a fix and another look on screen.
+- **Land brush peaks.** A few hill strokes built a sharp bare-rock peak instead of a soft hill. Soften the land brush's profile or cap its stacking, and check the rock/grass slope threshold on raised land.
+- **Mist over ponds.** Heavy milky mist sits over the pond, so the water reads murky grey-green. Thin the plain's ground mist over water, or lift it where water is.
+- **Meadow barely shows.** The meadow tint is hard to see, and its flower faces read as pale blue/white shards. Make the tint stronger and warmer, and choose flower colours that read as flowers.
+- **Path is plain.** It reads as a flat tan strip with small stones. It could use softer edges and more character.
+- **Ferns look like spiders.** From above, the ferns read as dark spiders. Change their colour or silhouette, or thin them in emerged undergrowth.
+- **Tree scale.** Some broadleaf trees are very large next to the deer. Check the scale ranges of emerged trees against the creatures.
+- **Frame spikes at release.** A land stroke's settle has a frame of about 42 ms and a water pour's settle one of about 35 ms, both headless. Emergence's first plan is about 36 ms. Its live biome blend floods ponds on the main thread.
+- **Reflections.** Planar reflections cost about 4.6 ms of CPU per frame while ponds exist, and the session's first reflection setup still parses clip shaders in 5-9 ms slices.
+- **Things not saved:** the forest wish (`land_intent.gd`) and life. A loaded world starts settled.
+- **Water gaps:** stream beds are not carved, and the scooped hollow lands with the water instead of animating. A pond full at the plate's rim can't be raised.
+- **Deer need dawn.** A plain launched at full day never turns its clock, so deer never come.
+- **Forest wind.** Its wind swell eases about 0.8 s after release, before the trees arrive. A small gust when trees arrive would help.
+- **Not yet exercised:** Shift strokes (forest clearing, path grow-back) haven't been run by the profiler. Nobody has looked at the glass blur's frame cost or at the palette on screen outside the film.
+- **Film tool:** its layout depends on emergence timing and varies run to run. It forces the heron and deer with `--force-moments` and speeds up the life clock.
+- **Tests:** `test_bigfoot_home`, `test_editor_coherence` and `test_diorama_flow` reference the old toolbar and menu. Update them when tests come back. The README's cozy-flow section still describes the old toolbar.
+
+### Remaining slices
+
+2. **Water brush, and the plain in Fidelity's colours.**
+   - Paint water and it settles: find the basin's spill level, fill it with the existing fill animation, and trace overflow downhill (`NativeWaterCourse.trace`) as a stream. Water painted on a hilltop runs down and pools.
+   - Move the water flood and shoreline off the main thread, or into C++. That also removes the roughly 40 ms release frame when a stroke changes water.
+   - Default the blank plain to Fidelity's palette and a clearer sky; other families stay for generated worlds.
+   - Done when a film shows water filling a painted hollow and a stream finding its way down, with no visible hitch.
+   - **What landed** (`feature/water-brush`, 2026-09-26; the film and a look on screen are still owed). Details and tunables are in `docs/scenic/water-brush.md`.
+     - **The brush.**
+       - Press `2` for the water brush (`scripts/water_brush.gd`) and `1` for land.
+       - Poured water runs downhill and fills its basin up to the spill level. Overflow runs on as a stream to the next basin, and basins that spill into each other merge into one lake.
+       - Water poured on a hill runs down to its pool as a stream.
+       - Water that would run off the edge, or spread too thin, scoops a soft hollow and pools there.
+       - Shift-drag drains. One undo removes the whole pour.
+     - **Fill animation.**
+       - Ponds rise from their beds and stream fronts run down their courses, on the emergence clock (per-vertex births in the water shader). Nothing appears at once.
+       - Grass creeps out from the new shores.
+     - **Brush list.**
+       - `scripts/genesis_canvas.gd` keeps the ordered list `BRUSHES` (1 land, 2 water, then meadow, forest and path). Since the integration its entries are `brush_id`, `title`, `hint` and `script` (see "Slices 2-5 integrated" below).
+       - The creation hint follows the brush in hand.
+     - **Stroke feel.**
+       - The land brush now emits `stroke_started` and is in the feedback's land modes. Slice 1 had left its tremor, fog reveal and swell unwired.
+       - A pour parts the fog and swells the air softly, with no tremor.
+     - **Off the main thread.**
+       - The pour plans on a worker.
+       - The plain's pond flood, shore fetch and stream geometry are built on a worker.
+       - Reflection views re-set up over several frames, double-buffered, with the clip level as a uniform, and are capped at the two largest pond levels.
+       - Rebuilds that leave the water inputs alone keep the water and its revision.
+       - Headless, a pour's worst settle frame went from 54 ms to 18.5 ms (13.6 ms after the session's first reflection setup). The recurring 25 ms frames during emergence with ponds present are gone.
+       - The first-dab hitch did not reproduce: the press path measured 3.4 ms.
+     - **The plain in Fidelity's colours.** The plain now uses Fidelity's ground, foliage, rock, earth and water, a clear day sky, fair weather and thin ground mist. The badge reads "Fidelity green", and generated worlds still draw from the palette families.
+     - **Still open.**
+       - Emergence's first plan (about 36 ms) remains.
+       - Stream beds are not carved.
+       - Planar reflections cost about 4.6 ms of CPU per frame while ponds exist.
+3. **Life answers the land.**
+   - Fish settle in new water.
+   - Frogspawn appears in shallow edges.
+   - Birds and herons come to shores.
+   - Deer come to forest edges at dawn.
+   - Birds, fireflies and frogs read the live world instead of fixed reference positions.
+   - Arrivals follow conditions plus a delay, like plant emergence.
+   - Add the rare "and it was good" moments: a heron landing, deer at dawn, a rainbow after rain, perhaps a glimpse of Bigfoot at the forest edge.
+   - **What landed (`feature/life-answers`):**
+     - `scripts/land_life.gd` re-reads the live world when the editor reports a change (settle, stroke end, undo, load). It reads heights, the drawn pond surface, stream beds and every plant, in 1.2 ms slices a frame (`scripts/life_survey.gd`), never per frame.
+     - Fish, frogspawn, frogs (after spawn), gulls and fireflies arrive at their places after emergence-style delays keyed to position hashes, and leave when their water or cover goes.
+     - Rare moments with chances and cooldowns (`scripts/life_moments.gd`): a heron lands to fish, deer step out at dawn, a rainbow follows rain over a rich place (`celestial.moment_bow`), and a distant Bigfoot silhouette appears in scenery mode only.
+     - New faceted meshes: fish, frogspawn, heron, deer and the silhouette (`scripts/life_models.gd`).
+     - Blank worlds only; the Fidelity world keeps its authored life. `--no-life` turns it off.
+     - LandLife costs p95 0.1-0.2 ms a frame headless, with no stroke or settle change measured against `--no-life`.
+     - Rules and tunables: `docs/scenic/life.md`. Probe: `tools/probe_land_life.gd`.
+     - The look is unverified until the user launches it.
+4. **Meadow, forest and path brushes.**
+   - These write intent, and the world picks the details.
+   - A forest brush plants a natural edge and thins on steep rock.
+   - A path brush leaves worn ground with stony edges.
+   - A meadow brush paints softer painted cover and flowers as ground colour, not blades.
+   - All three respect provenance, so hand work always wins.
+   - **What landed** (`feature/land-brushes`, 2026-09-26; `docs/scenic/brushes.md`):
+     - **Scripts and keys.** Each brush is its own script: `scripts/meadow_brush.gd`, `scripts/forest_brush.gd` and `scripts/path_brush.gd`. They share `scripts/creation_brush.gd`. `genesis_canvas.gd` keeps the ordered brush list (`BRUSHES`). Keys are 1 land, 2 water, 3 meadow, 4 forest and 5 path. The editor's "land" tool paints with the brush in hand (`select_brush`, `brush_changed`).
+     - **Forest.** The brush writes a forest wish, from -1 to 1, into a new intent layer (`scripts/land_intent.gd`). The wish is part of the undo step but is not saved. Emergence grows it over the succession clock: shrubs from about 9 s, trees from about 5 s, the core first. It gives a dense core, a frayed and lobed edge, and shrubs at the margin. Trees still thin on steep rock, and nothing grows on water or snow. Shift-drag clears ground and withdraws what emerged there.
+     - **Meadow.** A lighter, warmer green is painted as ground tint, with flower-coloured faces in drifts. There are no blades.
+     - **Path.** Worn earth with gravel margin faces. The tread sinks and smooths by up to 7 cm. At release the path lays small stones along its edges, and clears emerged plants and generated undergrowth from the tread.
+     - **Provenance.** Meadow and path cells are marked hand. Hand-placed and pinned records are never touched.
+     - **Feel.** Per-brush feel is set in `StrokeFeedback.BRUSH_FEEL`; the forest brush has the strongest wind swell. The land brush now emits `stroke_started`. On `main` it never did, so it had no tremor, fog reveal or grow-in wave.
+     - **Pipeline.** `GardenView` no longer rebuilds every MultiMesh, and the water, for a cover-only change. The grass mask is out of the instance signature, and all cover masks are out of the water signature. This also removes the rebuild that emergence's cover steps paid.
+     - **Carried polish, first-dab hitch.** On recipe worlds the per-face slope probes are now kept warm on a worker. The first sculpting dab there went from about 75 ms to 2 ms.
+     - **Measured** headless on the plain (`profile_stroke --mode=land --brush=…`), 30-dab stroke, machine shared with other agents:
+
+       | Brush | Stroke frames p95 / max | Dab median | Release | Frames over 16.7 ms |
+       |---|---|---|---|---|
+       | Land | 11.6 / 12.1 ms | 3.1 ms | 22 ms | 0 |
+       | Meadow | 11.6 / 11.9 ms | 4.5 ms | 2.7 ms | 0 |
+       | Forest | 11.5 / 12.0 ms | 4.0 ms | 2.2 ms | 0 |
+       | Path | 11.3 / 11.7 ms | 4.4 ms | 3.9 ms | 0 |
+
+       A 40 s forest watch grew 16 trees and 23 shrubs, with one 21 ms frame at the first plan. On generated seed 58 the stroke maximum is about 10 ms for every brush. The path's settle there has two frames of 17–27 ms, from the water rebuild when a stroke crosses a pond; that frame was already carried from slice 1.
+     - **Unverified.** How the new ground colours read on each palette family, the stones, the forest's outline, and the feel. All of it needs a look on screen.
+5. **The creation interface.** Landed on `feature/creation-shell` (2026-09-26); the look was first seen in the slices 2-5 film.
+   - **Palette:** a glass strip at the bottom centre lists every brush in `Genesis.BRUSHES` (`scripts/genesis_canvas.gd`), in order, keys 1-9. It shows the size and strength of the brush in hand as two thin meters, and ends with **Look**. A one-line how-to sits beneath and fades after the first stroke (`scripts/creation_palette.gd`).
+   - **Look (Tab):** puts the brush away. The camera roams, there is no brush ring and nothing paints. A brush button or its number picks it back up. **H** hides the chrome and puts the brush away with it; H again restores both.
+   - **Top right:** only **Craft** (the old rail; it reads **Create** while open) and **World**: New open plain, Regenerate landscape, Return to previous place (swaps with `places-previous.json`), Save now, Colors & sky, Overview, Main menu. Alt+`[ ]` still steps the showcase seeds.
+   - **Chrome:** the parked maker-editor glass (dark translucent tint over a blurred frame, transparent buttons with a thin selected outline) is reused in `scripts/glass_chrome.gd` and `shaders/editor_glass.gdshader`. Its pixel-stepped colour sprites stay parked; the shell uses thin line glyphs instead.
+   - **World menu:** `diorama.gd` builds it from explicit actions (`add_world_action`) instead of pressing hidden toolbar buttons by index. The ids are unchanged. `_home_button` is gone; His spot greys itself out.
+   - **`--verify-desktop-build`:** now walks the shell (plain, palette lists the registered brushes, first brush in hand, Look stops painting and a press orbits instead, Craft and Create, menu round trip). It passes headless from the source tree. The run uses a temporary places folder so it never touches the player's saves.
+   - **Still open:** confirm the look on screen, the glass blur's frame cost, and the exit-time resource leak lines. Those lines appear before and after this change, and `tools/verify_desktop_export.py` fails on any `ERROR:`.
+
+6. **Sound.**
+   - Stroke sounds: rumble as land rises, water filling, wind swelling.
+   - World beds that follow what exists (water, birds, forest).
+   - None exist today; `tools/generate_nature_audio.py` can synthesise them.
+7. **Inspect and photo mode.**
+   - A composed camera, UI off, and capture.
+   - This may be the "finished moment" that the open questions ask about.
+8. **Quiet guidance.**
+   - A regional beauty score that nudges water levels, edges and variant choice without the player seeing it.
+
+### Slices 2-5 integrated (`feature/phase3-slices-2-5`, 2026-09-26)
+
+Merged in order: water brush, land brushes, life answers, creation shell, then merged to `main` on 2026-09-26.
+
+- **One brush list.** `Genesis.BRUSHES` holds land, water, meadow, forest and path (keys 1-5) as `brush_id`/`title`/`hint`/`script` entries. The editor instantiates one brush per entry, the shell's `_creation_key` is the only number-key handler, and the palette lists the same entries.
+- **One paint path.** The editor's "land" tool paints with the brush in hand, water included. Water extends `creation_brush.gd` as a settling brush: dabs only record, and the pour plans on a worker after release. The shell picks brushes with `NativeChunkEditor.select_brush` rather than `select_tool(brush_id)`, because a `"meadow"` mode already means the craft Meadow tool. `[ ]` size the brush in hand; the palette's meters read `brush_setting`.
+- **Feel.** Water is a `StrokeFeedback.BRUSH_FEEL` entry (fog reveal, soft swell, no rumble, puffs or wave).
+- **Life.** LandLife also re-reads the world when a pour settles (`water_settled`) and waits for a settling pour before it surveys.
+- **Checks.** `--verify-desktop-build` also picks every registered brush from its palette button. A Movie Maker film of all five brushes and the life that follows is `tools/film_genesis.gd` (rendered 2026-09-26 to `captures/phase3-slices-2-5.mp4`, not committed; with `--force-moments` it starts a deer or heron near the end if none came on its own).
+
+**Carried polish, fold into whichever slice touches it:**
+- The first-dab hitch no longer reproduces on the plain (3.4 ms), and on recipe worlds it dropped from about 75 ms to 2 ms. Emergence's first plan (about 36 ms) is listed above.
+- Dense grass: fix its render or retire it. It is opt-in with `--beauty-grass`, and the user does not want blades by default.
+- Craft mode's fine tools against the new provenance and pipeline: check that they still behave.
+- Bring tests back only when the user asks.
 
 ## Phase 4: presentation
 

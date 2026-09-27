@@ -23,6 +23,9 @@ var haze_amount := 0.15
 var _haze_target := 0.15
 var _air_strength := 0.4
 var _air_angle := deg_to_rad(19.290046)
+## Short-lived extra air the painting hand stirs up (scripts/stroke_feedback.gd).
+## Added on top of the eased dial for what the scenery shows, never saved.
+var swell := 0.0
 var _travel := Vector2.ZERO
 var _gust_distance := 0.0
 var _wind_time := 0.0
@@ -106,7 +109,7 @@ func _publish_wind() -> void:
 	RenderingServer.global_shader_parameter_set("zs_summit", Vector4(_summit.x, _summit.y, _summit.z, orographic))
 	RenderingServer.global_shader_parameter_set("zs_condensation", _summit.y + 1.5 - 6.0 * smoothstep(0.3, 1.0, humidity))
 	RenderingServer.global_shader_parameter_set("zs_cloud_drift", _cloud_drift)
-	RenderingServer.global_shader_parameter_set("zs_wind_strength", _air_strength * gust_at(_wind_time))
+	RenderingServer.global_shader_parameter_set("zs_wind_strength", (_air_strength + swell) * gust_at(_wind_time))
 	RenderingServer.global_shader_parameter_set("zs_wind_direction", Vector2(cos(_air_angle), sin(_air_angle)))
 	RenderingServer.global_shader_parameter_set("zs_wind_offset", _travel)
 	RenderingServer.global_shader_parameter_set("zs_gust_distance", _gust_distance)

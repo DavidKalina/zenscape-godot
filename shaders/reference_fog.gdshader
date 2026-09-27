@@ -29,7 +29,8 @@ void fog() {
 	float noise = 0.55 + 0.75 * wxFbm(q);
 	float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / 14.0);
 	float stream = 0.72 + 0.56 * zs_gust_field(p.xz);
-	float d = (density * pool * noise * 0.36 * stream + haze * 0.026) * fade;
+	float reveal = zs_reveal_keep(p.xz);
+	float d = (density * pool * noise * 0.36 * stream + haze * 0.026) * fade * reveal;
 	if (over < -0.4 || ground < -100.0) d = 0.0;
 	float open_sky = cloudShadeAt(p, zs_cloud_direction);
 	float ag_band = max(0.8, 0.08 * (zs_summit.y - 0.15));
@@ -49,7 +50,7 @@ void fog() {
 		vec3 cap_light = zs_cloud_sun * open_sky * sun_amount * min(cap_phase, 1.7) * 0.42 + zs_cloud_sky * 0.7;
 		lit = (lit * d + cap_light * cap) / (d + cap);
 	}
-	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p);
+	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * reveal;
 	if (inversion > 0.0) {
 		lit = (lit * (d + cap) + zs_inversion_color * mix(0.8, 1.0, open_sky) * inversion) / max(d + cap + inversion, 0.0001);
 	}

@@ -17,6 +17,10 @@
 global uniform vec3 zs_palette_water;
 #include "res://shaders/pool_caustics.gdshaderinc"
 uniform bool hide_pool_surface = false;
+// Levels (object space) that a planar reflection view draws instead; ponds
+// at other levels keep the ordinary surface (scripts/planar_water.gd).
+uniform vec2 planar_levels = vec2(-1000000.0);
+varying float rest_height;
 uniform bool planar_enabled = false;
 uniform sampler2D planar_reflection : filter_linear, repeat_disable;
 uniform mat4 reflection_matrix;
@@ -33,6 +37,8 @@ uniform bool flowing = false;
 uniform bool rain_rings_enabled = true;
 uniform bool lake_wind_enabled = true;
 uniform float level_drop = 0.0;
+// Seconds a water-brush pond takes to rise to its level.
+uniform float pond_fill_seconds = 3.2;
 varying vec3 world_position;
 varying float water_depth;
 varying vec3 lake_state;
@@ -41,6 +47,7 @@ varying float cut_face;
 
 
 void vertex() {
+	rest_height = VERTEX.y;
 	lake_local = VERTEX.xz;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	water_depth = max(UV2.x - level_drop, 0.0);
@@ -52,8 +59,22 @@ void vertex() {
 	vec2 across = vec2(-direction.y, direction.x);
 	float wave = sin(dot(p, direction) * 2.0 - zs_flow_time * 1.6)
 		+ 0.45 * sin(dot(p, direction + across) * 1.8 - zs_flow_time * 2.1);
+	// Water brush fills (scripts/water_brush.gd), on the emergence clock. A pond
+	// carries its birth and rise in UV and comes up from below its level; a
+	// stream carries its birth and run time in CUSTOM1.zw and its front runs
+	// down the course. Water without a birth reads zero and stands full.
+	if (!flowing && UV.y > 0.0) {
+		float filled = clamp((zs_emergence_time - UV.x) / max(pond_fill_seconds, 0.01), 0.0, 1.0);
+		float below = UV.y * (1.0 - filled * (2.0 - filled));
+		VERTEX.y -= below;
+		water_depth = max(water_depth - below, 0.0);
+	}
+	float stream_front = 1.0;
+	if (flowing && CUSTOM1.w > 0.0) {
+		stream_front = clamp((zs_emergence_time - CUSTOM1.z) / CUSTOM1.w, 0.0, 1.0) * 1.14;
+	}
 	if (flowing) {
-		float arrived = smoothstep(CUSTOM0.w, CUSTOM0.w + 0.14, smoothstep(0.1, 0.7, zs_water_growth));
+		float arrived = smoothstep(CUSTOM0.w, CUSTOM0.w + 0.14, min(smoothstep(0.1, 0.7, zs_water_growth), stream_front));
 		VERTEX = mix(CUSTOM0.xyz, VERTEX, arrived);
 		shore *= arrived;
 		wave = sin(UV.x * 5.0 - zs_flow_time * 3.4 + UV.y * 2.0);
@@ -73,7 +94,7 @@ void vertex() {
 }
 
 void fragment() {
-	if (hide_pool_surface && !flowing && cut_face < 0.5) discard;
+	if (hide_pool_surface && !flowing && cut_face < 0.5 && min(abs(rest_height - planar_levels.x), abs(rest_height - planar_levels.y)) < 0.02) discard;
 	// A moving faceted surface catches light through its actual deformed faces.
 	vec3 wave_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (wave_normal.y < 0.0) { wave_normal = -wave_normal; }

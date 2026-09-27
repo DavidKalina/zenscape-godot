@@ -20,6 +20,16 @@ func _ready() -> void:
 	_arch_offset = -Vector3(bounds.get_center().x,bounds.position.y,bounds.get_center().z)
 	source.free()
 
+## Move the placed landmarks onto the current ground without re-instancing
+## them; a held brush uses this between full rebuilds.
+func lift(data: NativeTerrainData) -> void:
+	for item: Dictionary in data.objects:
+		if item.asset not in KINDS:
+			continue
+		var landmark := get_node_or_null(NodePath("%s_%d" % [item.asset,item.id])) as Node3D
+		if landmark != null:
+			landmark.position = data.object_position(item)
+
 func rebuild(data: NativeTerrainData) -> void:
 	for child in get_children():
 		child.free()

@@ -104,6 +104,8 @@ var _water_slider: HSlider
 var _autumn_slider: HSlider
 var _cold_slider: HSlider
 var _tremor := preload("res://scripts/reference_tremor.gd").new()
+## Tremor, fog reveal, wind swell and local grow-in answering each brush stroke.
+var _stroke_feedback: Node
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -208,6 +210,10 @@ func _ready() -> void:
 	_chunk_editor = NativeChunkEditor.new()
 	add_child(_chunk_editor)
 	_chunk_editor.setup(self)
+	_stroke_feedback = preload("res://scripts/stroke_feedback.gd").new()
+	_stroke_feedback.name = "StrokeFeedback"
+	add_child(_stroke_feedback)
+	_stroke_feedback.setup(self)
 	add_child(_leaf_litter)
 	add_child(_planar_water)
 	add_child(_redwood_mist)

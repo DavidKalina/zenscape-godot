@@ -223,6 +223,10 @@ zs_look_shore={
 "type": "float",
 "value": 0.0
 }
+zs_grass_offset={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
 zs_water_map={
 "type": "sampler2D",
 "value": ""
@@ -334,6 +338,38 @@ zs_growth={
 zs_water_growth={
 "type": "float",
 "value": 1.0
+}
+zs_reveal={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_growth_wave_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_growth_wave_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}
+zs_emergence_time={
+"type": "float",
+"value": 0.0
 }
 zs_ice={
 "type": "float",
