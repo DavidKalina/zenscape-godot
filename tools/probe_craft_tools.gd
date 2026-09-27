@@ -270,6 +270,32 @@ func run() -> void:
 		await settle()
 		check("erase removes an emerged plant",data.object_by_id(int(erase_at.id)).is_empty(),{})
 
+	# 6b. The rest of the rail: smooth, flatten, grass, meadow and blades
+	# strokes, a flower trail and a mountain click, each one undo step, with
+	# records minted by hand.
+	for tool: String in ["smooth","flatten","grass","meadow","blades"]:
+		var steps_before: int = data._undo.size()
+		var looked: Dictionary = state()
+		await craft_stroke(tool,Vector2(6,-9),Vector2(9,-8),6)
+		await settle()
+		check("%s stroke is one step" % tool,data._undo.size() == steps_before+1 or state() == looked,{"undo":data._undo.size()-steps_before})
+	var first_id: int = data.next_id
+	editor.select_tool("flower")
+	var trail_ok := await click("flower",Vector2(-10,-2))
+	var minted := 0
+	var by_hand := 0
+	for item in data.objects:
+		if int(item.id) >= first_id:
+			minted += 1
+			if NativeTerrainData.object_source(item) == "hand": by_hand += 1
+	check("flower click is hand work",trail_ok and minted > 0 and by_hand == minted,{"minted":minted,"hand":by_hand})
+	var peak_before: int = data._undo.size()
+	editor.mountain_peak = 3.0
+	editor.mountain_radius = 3.0
+	var peaked := await click("mountain",Vector2(10,8))
+	await settle()
+	check("mountain click is one step",peaked and data._undo.size() == peak_before+1,{"undo":data._undo.size()-peak_before})
+
 	# 7. Craft pond on the plain: the plain's water worker builds it and one
 	# undo takes it back.
 	await craft_stroke("lower",Vector2(-9,9),Vector2(-8,9.5),16)
