@@ -48,8 +48,10 @@ var _sampler: RefCounted
 var _noise: FastNoiseLite
 
 ## Reads the terrain once. `sampler` is the inland heightfield (height, wet),
-## or a `LiveGround` over the edited terrain (see `live`).
-func _init(genome: Dictionary,sampler: RefCounted) -> void:
+## or a `LiveGround` over the edited terrain (see `live`). Without a sampler
+## the blend is left empty for `copy_onto` to fill.
+func _init(genome: Dictionary = {},sampler: RefCounted = null) -> void:
+	if sampler == null: return
 	var count := CELLS*CELLS
 	_genome = genome
 	_sampler = sampler
@@ -70,11 +72,48 @@ func _init(genome: Dictionary,sampler: RefCounted) -> void:
 ## A blend over the terrain as it stands now: live heights, ponds and streams.
 ## Worlds without an inland recipe read as one woodland habitat.
 static func live(data: NativeTerrainData) -> RefCounted:
+	return live_on(live_settings(data),data)
+
+## What `live` reads from the world's recipe, taken on the main thread so a
+## worker can build the blend over a detached copy (`live_on`).
+static func live_settings(data: NativeTerrainData) -> Dictionary:
 	var inland: bool = data._recipe != null and data._recipe.get("inland") != null
 	var genome: Dictionary = data._recipe.inland.genome if inland else {"plant_seed":0,"composition":"","habitat":"woodland","treeline":float(Shape.BIOMES.woodland.treeline)}
-	var field = new(genome,LiveGround.new(data))
-	field.apply(str(genome.habitat),data._recipe_settings.get("blend",[]) if inland else [])
+	return {"genome":genome.duplicate(true),"blend":(data._recipe_settings.get("blend",[]) if inland else []).duplicate(true)}
+
+## The live blend over `ground`, from `live_settings`. `recipe_water` is the
+## precomputed impacts and ramp a recipe world's pond flood needs off the main
+## thread (see LiveGround).
+static func live_on(settings: Dictionary,ground: NativeTerrainData,recipe_water := {}) -> RefCounted:
+	var field = new(settings.genome,LiveGround.new(ground,recipe_water))
+	field.apply(str(settings.genome.habitat),settings.blend)
 	return field
+
+## A copy that reads through `sampler`, for refreshing off the main thread
+## while this blend stays in use.
+func copy_onto(sampler: RefCounted) -> RefCounted:
+	var copy = new()
+	copy.biomes = biomes.duplicate()
+	copy.layers = layers.duplicate(true)
+	copy.shares = shares.duplicate()
+	copy.has_water = has_water
+	copy.low = low
+	copy.top = top
+	copy._land = _land.duplicate()
+	copy._altitude = _altitude.duplicate()
+	copy._moist = _moist.duplicate()
+	copy._water_distance = _water_distance.duplicate()
+	copy._facing = _facing.duplicate()
+	copy._jitter = _jitter.duplicate()
+	for values in _weights: copy._weights.append(values.duplicate())
+	copy._heights = _heights.duplicate()
+	copy._wet = _wet.duplicate()
+	copy._genome = _genome.duplicate(true)
+	copy._sampler = sampler
+	copy._noise = FastNoiseLite.new()
+	copy._noise.seed = _noise.seed
+	copy._noise.frequency = _noise.frequency
+	return copy
 
 ## Re-read the cells under `rect` (plate metres) after an edit. Sampling is
 ## the only per-cell cost; altitude, water distance and weights are rederived
@@ -332,15 +371,19 @@ class LiveGround extends RefCounted:
 	const STEP := 0.25
 	const SIDE := 112
 	var data: NativeTerrainData
+	## A recipe world's pond impacts and colour ramp, when `data` is a detached
+	## copy without the recipe (NativeRecipeWater.build's `prepared`).
+	var recipe_water := {}
 	var _water := PackedByteArray()
-	func _init(terrain: NativeTerrainData) -> void:
+	func _init(terrain: NativeTerrainData,prepared := {},rasterise := true) -> void:
 		data = terrain
-		refresh()
+		recipe_water = prepared
+		if rasterise: refresh()
 	func refresh() -> void:
 		_water.resize(SIDE*SIDE)
 		_water.fill(0)
 		for pond in data.ponds:
-			var surface := data.pond_surface(pond)
+			var surface: PackedVector3Array = NativeRecipeWater.build(data,pond,recipe_water).vertices if not recipe_water.is_empty() else data.pond_surface(pond)
 			for t in range(0,surface.size(),3):
 				var a := Vector2(surface[t].x,surface[t].z)
 				var b := Vector2(surface[t+1].x,surface[t+1].z)

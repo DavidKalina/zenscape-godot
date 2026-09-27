@@ -101,5 +101,77 @@ transforms, so the instance hash is computed from batch sources, not read back.
 - The terrain mesh is still a new `ArrayMesh` per dab. The upload is small in
   this world, but a regional `mesh_surface_update_*_region` path is unmeasured.
 
+## Settle hitches (`feature/settle-hitches`, 2026-09-26)
+
+Headless, same machine, shared with other agents. Before is `main` at 53bf016;
+after is this branch. Plain runs use `--plain-seed 7 --salt=12345`, so emerged
+records compare between runs. Every after-run's fingerprint (heights, cover,
+mesh, instances, water, undo) matched its before-run.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Land stroke, plain, release frame | 19.4–26.0 ms | 0.3–1.3 ms |
+| Land stroke, plain, worst settle frame (20 s watch) | 30.2–40.5 ms, 1–2 over 16.7 | 14.4–16.2 ms, 0 over |
+| Emergence first plan, plain (no ponds) | 25 ms on one frame | worker, 31–45 ms off-thread; main thread 0.4–1.0 ms to snapshot, 0.02 ms to install |
+| Land stroke, seed 184 (a pond), release | 9.4 ms | 0.5 ms |
+| Land stroke, seed 184, worst settle frame | 54.3 ms (first plan, pond flood) | 19.0–20.5 ms, 1 over |
+| Raise across the pond, seed 184, worst settle frame | 18.2 ms | 18.6 ms (see below) |
+| Meadow, plain, worst settle frame | 14.1 ms | 12.6 ms |
+| Forest, plain, worst settle frame (35 s watch) | 16.1 ms | 16.3 ms |
+| Path, plain, worst settle frame | 13.3 ms | 14.4 ms |
+| Forest Shift (clear), 2 passes, settle max | not measured | 9.4 / 9.8 ms; release 4.0–4.4 ms |
+| Path Shift (grow back), settle max | 11.4 ms | 9.5 ms; release 2.4 ms |
+
+What moved:
+
+- **Land weathering on a worker.** The land brush's release erosion
+  (`land_brush.gd`, `weather_job`) ran on the release frame: 9–25 ms, most of
+  it the GDScript sampling around the native erode. It now runs on a detached
+  height copy. The stroke's settle refresh starts when it lands, a few frames
+  later (`NativeChunkEditor._weather_async`). It lands after `end_stroke`, so
+  the undo step still holds the ground from before the stroke, and one undo
+  removes both. Anything that opens a transaction first joins it
+  (`data.stroke_starting`), so a quick second stroke starts from weathered
+  ground. Undo, a regrow or any other height change drops it. A stroke that
+  changed nothing is no longer weathered.
+- **Emergence plans on a worker.** `emergence.gd` `_plan_async` gives a second
+  Emergence (the planner) a detached copy of the ground: heights, provenance,
+  ponds, streams, recipe settings and the forest wish. The planner builds the
+  live blend, or refreshes a copy of it (`BiomeBlend.copy_onto`), and plans
+  every queued region. Pond flooding for the blend runs there too; recipe
+  worlds get their impacts and ramp taken up front (`BiomeBlend.live_settings`,
+  `LiveGround.recipe_water`). The regions, blend and salt come back and are
+  installed on the main thread (`_install`: forget, withdraw, append). Plans
+  wait while weathering is in flight (`ground_settling`). Probes that drive
+  `advance` in a tight loop keep the synchronous path (`plan_on_worker` is off
+  unless the editor turns it on; `--sync-plan` in the profiler).
+- **Encounter ground on a worker.** A yielding refresh used to rebuild the
+  Bigfoot encounter ground's triangle buckets (`reference_ground.gd`) on the
+  main thread: 3.2–3.7 ms in the post-maps stage. `prepare`/`build`/`adopt`
+  split it. The worker result is adopted a frame or two later unless a newer
+  terrain mesh has been published.
+
+Still over budget (headless):
+
+- **Seed 184, raise or land across the pond: one frame of 18–21 ms.** It comes
+  three frames after the settle refresh publishes: a 12–15 ms slice of
+  `planar_water.gd` re-setting up its reflection views. It runs in the
+  `process_frame` signal through `_advance_setup_frame`, and its first slice
+  (SubViewport, environment copy, lights, material duplicates) is not
+  budgeted. This is water's area. The settle's other frames are 12–14 ms: the
+  main-thread stream geometry (4.2 ms) in the content stage on recipe worlds,
+  and the maps texture update.
+- The plain land settle's worst frame is now 14–16 ms, with no single cause
+  over 5 ms. Frames at 12–15 ms during a watch are emergence steps' yielding
+  refreshes (content stage).
+
+Profiler additions: `--shift` (the stroke works the other way), `--then=shift`
+with `--shift-passes=N` (Shift strokes back over the first stroke's path, each
+printed as a SHIFT line), `--salt=N` and `--sync-plan`. One Shift pass over a
+young forest takes its wish only to about 0, above
+`forest_brush.CLEAR_BELOW` (-0.25), so nothing is withdrawn. The second pass
+withdraws 25 of 38 emerged plants. Whether one pass should be enough is a feel
+question.
+
 Run: `godot --headless --path . --script res://tools/profile_stroke.gd -- --mode=raise`
 (add `--from=x,z --to=x,z`, `--then=undo|restroke`).

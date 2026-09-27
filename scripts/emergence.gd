@@ -103,6 +103,18 @@ var _crowd := {}
 var _crowd_built := false
 ## Why candidates did not take, by reason; for probes and tuning.
 var refusals := {}
+## Plan queued strokes on a worker, over a detached copy of the ground, and
+## take the regions in on a later frame. The editor turns this on; probes that
+## drive `advance` in a tight loop plan on the calling thread.
+var plan_on_worker := false
+## The editor sets this while a finished stroke's ground is still settling
+## (land weathering on a worker); planning waits for it.
+var ground_settling := false
+var _plan_job: RefCounted
+var _plan_generation := 0
+## Main-thread planning time of the last plan (install only, when on a worker)
+## and the worker's time, for profiles.
+var last_plan_usec := {}
 
 func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 	data = terrain
@@ -114,13 +126,16 @@ func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 
 ## Planned work still to come, for probes and UI.
 func busy() -> bool:
-	return not _regions.is_empty() or not _queued.is_empty() or _pending_refresh
+	return not _regions.is_empty() or not _queued.is_empty() or _pending_refresh or _plan_job != null
 
 func clear() -> void:
 	_regions.clear()
 	_queued.clear()
 	_blend = null
 	_pending_refresh = false
+	# A plan still on its worker was made for the ground being left.
+	_plan_generation += 1
+	_plan_job = null
 
 ## Entry point for a finished stroke. `rect` is in plate metres. `source`
 ## "forest" is a forest brush stroke: it plans only what its wish asks for,
@@ -133,21 +148,99 @@ func on_region_changed(rect: Rect2, source := "") -> void:
 		_queued.append({"rect":rect,"born":_clock,"source":source})
 
 func _plan(rect: Rect2, born: float, source := "") -> void:
+	_refresh_blend([rect])
+	_install(rect,source,_plan_region(rect,born,source))
+
+## Build the live blend, or re-read it under `rects`. The first build sets the
+## salt: a generated world keys its life to its planting seed; a blank plain
+## keeps the session's draw.
+func _refresh_blend(rects: Array) -> void:
 	if _blend == null:
 		_blend = BiomeBlend.live(data)
-		# A generated world keys its life to its planting seed; a blank plain
-		# keeps the session's draw.
 		if not _fixed_salt and int(_blend._genome.plant_seed) != 0:
 			salt = Variety.mix([int(_blend._genome.plant_seed),97])
-	else:
-		_blend.refresh_rect(rect)
-	var forest := source == "forest"
-	# A newer stroke replans the ground it covers. A forest stroke only adds:
-	# a candidate planned twice lands once, the second is crowded out.
-	if not forest:
-		for region in _regions:
-			_forget(region,rect)
+		return
+	for rect: Rect2 in rects: _blend.refresh_rect(rect)
+
+## Take a planned region in. A newer stroke replans the ground it covers. A
+## forest stroke only adds: a candidate planned twice lands once, the second
+## is crowded out.
+func _install(rect: Rect2, source: String, region: Dictionary) -> void:
+	if source != "forest":
+		for other in _regions:
+			_forget(other,rect)
 	_withdraw(rect)
+	_regions.append(region)
+
+## Plan every queued stroke on a worker. The planner is a second Emergence
+## over a detached copy of the ground: heights, provenance, water, the recipe
+## settings and the forest wish as they stand now. It builds or refreshes a
+## copy of the blend, so the live one stays readable here meanwhile. The
+## regions, the blend and the salt come back together; `_install` runs here.
+func _plan_async(queued: Array[Dictionary]) -> void:
+	var began := Time.get_ticks_usec()
+	var ground: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+	ground.provenance = data.provenance.duplicate()
+	ground.ponds.assign(data.ponds.duplicate(true))
+	ground.streams.assign(data.streams.duplicate(true))
+	ground.landscape_waterfall = data.landscape_waterfall
+	ground._recipe_settings = data._recipe_settings.duplicate(true)
+	ground._recipe_heights = data._recipe_heights.duplicate()
+	ground._water_grid_h = data._water_grid_h.duplicate()
+	ground._palette = data._palette
+	# A recipe world's pond flood reads its impacts and ramp from the live
+	# recipe; take them here, as GardenView's worker flood does.
+	var recipe_water := {}
+	if data._recipe != null and not data.ponds.is_empty():
+		recipe_water = {"impacts":data.waterfall_impacts(),"ramp":NativeRecipeWater.water_ramp(data._recipe.source.g.get("water",{}))}
+	var settings: Dictionary = BiomeBlend.live_settings(data) if _blend == null else {}
+	var previous: RefCounted = _blend
+	var planner = get_script().new(ground,salt)
+	planner.intent.forest = intent.forest.duplicate()
+	var fixed := _fixed_salt
+	var jobs := queued.duplicate(true)
+	_plan_generation += 1
+	var generation := _plan_generation
+	var job = preload("res://scripts/background_work.gd").new()
+	_plan_job = job
+	job.start(func() -> Dictionary:
+		var worker_began := Time.get_ticks_usec()
+		var rects := []
+		for item: Dictionary in jobs: rects.append(item.rect)
+		if previous == null:
+			planner._blend = BiomeBlend.live_on(settings,ground,recipe_water)
+			if not fixed and int(planner._blend._genome.plant_seed) != 0:
+				planner.salt = Variety.mix([int(planner._blend._genome.plant_seed),97])
+		else:
+			planner._blend = previous.copy_onto(BiomeBlend.LiveGround.new(ground,recipe_water,false))
+			for rect: Rect2 in rects: planner._blend.refresh_rect(rect)
+		var regions := []
+		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source","")))
+		return {"blend":planner._blend,"salt":planner.salt,"regions":regions,"usec":Time.get_ticks_usec()-worker_began})
+	last_plan_usec = {"start":Time.get_ticks_usec()-began}
+	# A superseded job still runs out here, so dropping it never blocks a frame.
+	while not job.completed():
+		await Engine.get_main_loop().process_frame
+	began = Time.get_ticks_usec()
+	var planned: Dictionary = job.finish()
+	if generation != _plan_generation: return
+	_plan_job = null
+	_blend = planned.blend
+	# The blend reads the live ground from here on; its pond raster stays the
+	# one planned against until the next refresh, as before.
+	_blend._sampler.data = data
+	_blend._sampler.recipe_water = {}
+	salt = planned.salt
+	for i in range(jobs.size()):
+		_install(jobs[i].rect,jobs[i].get("source",""),planned.regions[i])
+	last_plan_usec.worker = planned.usec
+	last_plan_usec.install = Time.get_ticks_usec()-began
+
+## The succession for one stroke's rect: cover cells with their fronts and
+## targets, and the shrub and tree candidates in arrival order. Reads only
+## `data`, the blend, the forest wish and the salt, so it runs on a planner.
+func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
+	var forest := source == "forest"
 	var region := {"rect":rect,"born":born,"cells":PackedInt32Array(),"fronts":PackedFloat32Array(),"targets":PackedVector2Array(),"plants":[],"next":0}
 	var origin := _origin(rect)
 	var side := data.MEADOW_CELLS
@@ -184,7 +277,7 @@ func _plan(rect: Rect2, born: float, source := "") -> void:
 					at = (FOREST_TREE_DELAY if tree else FOREST_SHRUB_DELAY)+(FOREST_TREE_SPREAD if tree else FOREST_SHRUB_SPREAD)*(0.6*(1.0-wish)+0.4*Variety.unit(key+[3]))
 				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest})
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
-	_regions.append(region)
+	return region
 
 ## Seconds an emerged record of `asset` takes to grow in.
 static func rise_seconds(asset: String) -> float:
@@ -209,9 +302,13 @@ func advance(seconds: float) -> bool:
 	_pending_refresh = false
 	_crowd.clear()
 	_crowd_built = false
-	for queued in _queued:
-		_plan(queued.rect,queued.born,queued.get("source",""))
-	_queued.clear()
+	# Plans wait while the ground settles, and one plan runs at a time.
+	if not _queued.is_empty() and not ground_settling and _plan_job == null:
+		if plan_on_worker: _plan_async(_queued.duplicate())
+		else:
+			for queued in _queued:
+				_plan(queued.rect,queued.born,queued.get("source",""))
+		_queued.clear()
 	for r in range(_regions.size()-1,-1,-1):
 		var region: Dictionary = _regions[r]
 		var age: float = _clock-region.born

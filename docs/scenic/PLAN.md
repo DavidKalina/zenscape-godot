@@ -351,13 +351,13 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 - **Path is plain.** It reads as a flat tan strip with small stones. It could use softer edges and more character.
 - **Ferns look like spiders.** From above, the ferns read as dark spiders. Change their colour or silhouette, or thin them in emerged undergrowth.
 - **Tree scale.** Some broadleaf trees are very large next to the deer. Check the scale ranges of emerged trees against the creatures.
-- **Frame spikes at release.** A land stroke's settle has a frame of about 42 ms and a water pour's settle one of about 35 ms, both headless. Emergence's first plan is about 36 ms. Its live biome blend floods ponds on the main thread.
+- **Frame spikes at release.** A water pour's settle has a frame of about 35 ms, headless. *Update (`feature/settle-hitches`):* the land stroke's release weathering, emergence's plan (live blend and pond flood included) and the encounter ground now run on workers. On the plain a land stroke's release frame went from 19–26 ms to about 1 ms, and its worst settle frame from 30–42 ms to 14–16 ms. On seed 184 the first plan's 54 ms frame is gone. One 18–21 ms frame remains when a stroke crosses a pond on a recipe world: the planar reflection re-setup's first slice (12–15 ms, `planar_water.gd`). Numbers are in `docs/performance/stroke-pipeline.md`.
 - **Reflections.** Planar reflections cost about 4.6 ms of CPU per frame while ponds exist, and the session's first reflection setup still parses clip shaders in 5-9 ms slices.
 - **Things not saved:** the forest wish (`land_intent.gd`) and life. A loaded world starts settled.
 - **Water gaps:** stream beds are not carved, and the scooped hollow lands with the water instead of animating. A pond full at the plate's rim can't be raised.
 - **Deer need dawn.** A plain launched at full day never turns its clock, so deer never come.
 - **Forest wind.** Its wind swell eases about 0.8 s after release, before the trees arrive. A small gust when trees arrive would help.
-- **Not yet exercised:** Shift strokes (forest clearing, path grow-back) haven't been run by the profiler. Nobody has looked at the glass blur's frame cost or at the palette on screen outside the film.
+- **Not yet exercised:** Nobody has looked at the glass blur's frame cost, or at the palette on screen outside the film. Shift strokes are now profiled (`profile_stroke --then=shift`): forest clearing and path grow-back settle under 10 ms. One Shift pass over a young forest does not withdraw anything; a second pass does.
 - **Film tool:** its layout depends on emergence timing and varies run to run. It forces the heron and deer with `--force-moments` and speeds up the life clock.
 - **Tests:** `test_bigfoot_home`, `test_editor_coherence` and `test_diorama_flow` reference the old toolbar and menu. Update them when tests come back. The README's cozy-flow section still describes the old toolbar.
 
@@ -469,7 +469,7 @@ Merged in order: water brush, land brushes, life answers, creation shell, then m
 - **Checks.** `--verify-desktop-build` also picks every registered brush from its palette button. A Movie Maker film of all five brushes and the life that follows is `tools/film_genesis.gd` (rendered 2026-09-26 to `captures/phase3-slices-2-5.mp4`, not committed; with `--force-moments` it starts a deer or heron near the end if none came on its own).
 
 **Carried polish, fold into whichever slice touches it:**
-- The first-dab hitch no longer reproduces on the plain (3.4 ms), and on recipe worlds it dropped from about 75 ms to 2 ms. Emergence's first plan (about 36 ms) is listed above.
+- The first-dab hitch no longer reproduces on the plain (3.4 ms), and on recipe worlds it dropped from about 75 ms to 2 ms. Emergence's first plan now runs on a worker (see "Frame spikes at release" above).
 - Dense grass: fix its render or retire it. It is opt-in with `--beauty-grass`, and the user does not want blades by default.
 - Craft mode's fine tools against the new provenance and pipeline: check that they still behave.
 - Bring tests back only when the user asks.

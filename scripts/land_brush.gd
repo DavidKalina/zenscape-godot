@@ -110,13 +110,39 @@ func dab(data: NativeTerrainData, center: Vector2, radius: float, amount: float,
 	data.heights = heights
 
 ## Weather the finished stroke: erode its bounds, lock everything else.
-## Returns true when heights moved.
+## Returns true when heights moved. Runs on the calling thread; the editor
+## runs the same work on a worker through `weather_job`.
 func weather(data: NativeTerrainData) -> bool:
-	if not has_bounds: return false
-	var started := Time.get_ticks_usec()
-	var region := bounds.grow(Erosion.CELL*2.0).intersection(Rect2(-14,-14,28,28))
+	var job := weather_job(data)
+	if not job.is_valid(): return false
+	var result: Dictionary = job.call()
+	last_weather_usec = result.usec
+	if not result.moved: return false
+	data.heights = result.heights
+	return true
+
+## The finished stroke's weathering as a pure-data callable over a detached
+## height copy taken now. It returns {"moved","heights","usec"}; the caller
+## publishes `heights` only while the terrain still holds the heights it was
+## taken from. Empty when the stroke has no bounds. Clears the bounds.
+func weather_job(data: NativeTerrainData) -> Callable:
+	if not has_bounds: return Callable()
 	has_bounds = false
-	if region.size.x <= 0.0 or region.size.y <= 0.0: return false
+	var region := bounds.grow(Erosion.CELL*2.0).intersection(Rect2(-14,-14,28,28))
+	if region.size.x <= 0.0 or region.size.y <= 0.0: return Callable()
+	# The native kernel loads on the main thread, before a worker needs it.
+	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
+	var ground: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+	var settings := WEATHER.duplicate()
+	settings.merge({"size":Erosion.SIZE,"cell":Erosion.CELL,"origin":Erosion.ORIGIN,"seed":(seed_value+7919)&0xffffffff})
+	return func() -> Dictionary: return _weathered(ground,region,settings)
+
+## `data` is a detached copy. Vertices are walked in index order rather than
+## through the brush's buckets (which a new press may rebuild); each vertex's
+## change depends only on its own position, so the result is the same.
+static func _weathered(data: NativeTerrainData, region: Rect2, settings: Dictionary) -> Dictionary:
+	var started := Time.get_ticks_usec()
+	var result := {"moved":false,"heights":PackedFloat32Array(),"usec":0}
 	var size: int = Erosion.SIZE
 	var base := PackedFloat64Array()
 	var fixed := PackedByteArray()
@@ -132,25 +158,18 @@ func weather(data: NativeTerrainData) -> bool:
 			var inside := h != null and region.has_point(p) and not data.is_void(p)
 			fixed[c] = 0 if inside else 1
 			any = any or inside
-	if not any: return false
-	var settings := WEATHER.duplicate()
-	settings.merge({"size":size,"cell":Erosion.CELL,"origin":Erosion.ORIGIN,"seed":(seed_value+7919)&0xffffffff})
+	if not any: return result
 	var delta := Erosion.erode(base,fixed,settings)
-	if delta.size() != size*size: return false
-	var moved := false
+	if delta.size() != size*size: return result
 	var heights := data.heights
 	var reach := region.grow(Erosion.CELL)
-	for cz in range(floori(reach.position.y/CELL),floori(reach.end.y/CELL)+1):
-		for cx in range(floori(reach.position.x/CELL),floori(reach.end.x/CELL)+1):
-			var cell: Variant = _cells.get(Vector2i(cx,cz))
-			if cell == null: continue
-			for i: int in cell:
-				var p: Vector2 = data.points[i]
-				if not reach.has_point(p): continue
-				var change := Erosion.sample(delta,p.x,p.y)
-				if absf(change) < 0.0005: continue
-				heights[i] = clampf(heights[i]+change,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
-				moved = true
-	data.heights = heights
-	last_weather_usec = Time.get_ticks_usec()-started
-	return moved
+	for i in range(data.points.size()):
+		var p: Vector2 = data.points[i]
+		if not reach.has_point(p): continue
+		var change := Erosion.sample(delta,p.x,p.y)
+		if absf(change) < 0.0005: continue
+		heights[i] = clampf(heights[i]+change,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
+		result.moved = true
+	result.heights = heights
+	result.usec = Time.get_ticks_usec()-started
+	return result
