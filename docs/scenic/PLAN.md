@@ -358,6 +358,26 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
    - A path brush leaves worn ground with stony edges.
    - A meadow brush paints softer painted cover and flowers as ground colour, not blades.
    - All three respect provenance, so hand work always wins.
+   - **What landed** (`feature/land-brushes`, 2026-09-26; `docs/scenic/brushes.md`):
+     - **Scripts and keys.** Each brush is its own script: `scripts/meadow_brush.gd`, `scripts/forest_brush.gd` and `scripts/path_brush.gd`. They share `scripts/creation_brush.gd`. `genesis_canvas.gd` keeps the ordered brush list (`BRUSHES`). Keys are 1 land, 3 meadow, 4 forest and 5 path; 2 is left for water. The editor's "land" tool paints with the brush in hand (`select_brush`, `brush_changed`).
+     - **Forest.** The brush writes a forest wish, from -1 to 1, into a new intent layer (`scripts/land_intent.gd`). The wish is part of the undo step but is not saved. Emergence grows it over the succession clock: shrubs from about 9 s, trees from about 5 s, the core first. It gives a dense core, a frayed and lobed edge, and shrubs at the margin. Trees still thin on steep rock, and nothing grows on water or snow. Shift-drag clears ground and withdraws what emerged there.
+     - **Meadow.** A lighter, warmer green is painted as ground tint, with flower-coloured faces in drifts. There are no blades.
+     - **Path.** Worn earth with gravel margin faces. The tread sinks and smooths by up to 7 cm. At release the path lays small stones along its edges, and clears emerged plants and generated undergrowth from the tread.
+     - **Provenance.** Meadow and path cells are marked hand. Hand-placed and pinned records are never touched.
+     - **Feel.** Per-brush feel is set in `StrokeFeedback.BRUSH_FEEL`; the forest brush has the strongest wind swell. The land brush now emits `stroke_started`. On `main` it never did, so it had no tremor, fog reveal or grow-in wave.
+     - **Pipeline.** `GardenView` no longer rebuilds every MultiMesh, and the water, for a cover-only change. The grass mask is out of the instance signature, and all cover masks are out of the water signature. This also removes the rebuild that emergence's cover steps paid.
+     - **Carried polish, first-dab hitch.** On recipe worlds the per-face slope probes are now kept warm on a worker. The first sculpting dab there went from about 75 ms to 2 ms.
+     - **Measured** headless on the plain (`profile_stroke --mode=land --brush=…`), 30-dab stroke, machine shared with other agents:
+
+       | Brush | Stroke frames p95 / max | Dab median | Release | Frames over 16.7 ms |
+       |---|---|---|---|---|
+       | Land | 11.6 / 12.1 ms | 3.1 ms | 22 ms | 0 |
+       | Meadow | 11.6 / 11.9 ms | 4.5 ms | 2.7 ms | 0 |
+       | Forest | 11.5 / 12.0 ms | 4.0 ms | 2.2 ms | 0 |
+       | Path | 11.3 / 11.7 ms | 4.4 ms | 3.9 ms | 0 |
+
+       A 40 s forest watch grew 16 trees and 23 shrubs, with one 21 ms frame at the first plan. On generated seed 58 the stroke maximum is about 10 ms for every brush. The path's settle there has two frames of 17–27 ms, from the water rebuild when a stroke crosses a pond; that frame was already carried from slice 1.
+     - **Unverified.** How the new ground colours read on each palette family, the stones, the forest's outline, and the feel. All of it needs a look on screen.
 5. **The creation interface.**
    - Replace the top toolbar and the World-menu index hack (`diorama.gd`) with a creation-first shell.
    - Check the parked maker-editor look (`wip/parked-2026-09-26`) on screen, and reuse its glass chrome if it fits.
