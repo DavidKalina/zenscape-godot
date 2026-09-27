@@ -116,6 +116,37 @@ def beats(t, keys, period=None, over=0.0, anti=0.0):
 	return val(keys[-1][1])
 
 
+def spline(x, keys, start=None, end=None, periodic=False):
+	"""Value at x through (x, value) keys on a smooth cubic that does not stop at them,
+	unlike beats(): for cyclic motion such as a gait. start and end fix the slopes (value per
+	unit x) at the ends; periodic wraps x on the last key and blends the slopes across."""
+	xs = [k[0] for k in keys]
+	vs = [k[1] for k in keys]
+	n = len(keys)
+	if periodic:
+		x = xs[0] + (x - xs[0]) % (xs[-1] - xs[0])
+
+	def slope(i):
+		if 0 < i < n - 1:
+			return (vs[i + 1] - vs[i - 1]) / (xs[i + 1] - xs[i - 1])
+		if periodic:
+			return (vs[1] - vs[-2]) / (xs[1] - xs[0] + xs[-1] - xs[-2])
+		given = start if i == 0 else end
+		if given is not None:
+			return given
+		return (vs[1] - vs[0]) / (xs[1] - xs[0]) if i == 0 else (vs[-1] - vs[-2]) / (xs[-1] - xs[-2])
+
+	if x <= xs[0]:
+		return vs[0]
+	for i in range(n - 1):
+		if x <= xs[i + 1]:
+			h = xs[i + 1] - xs[i]
+			u = (x - xs[i]) / h
+			return ((2 * u ** 3 - 3 * u ** 2 + 1) * vs[i] + (u ** 3 - 2 * u ** 2 + u) * h * slope(i)
+				+ (-2 * u ** 3 + 3 * u ** 2) * vs[i + 1] + (u ** 3 - u ** 2) * h * slope(i + 1))
+	return vs[-1]
+
+
 def pulses(t, starts, length=8):
 	"""Sum of soft bumps (0..1) starting at the given frames: sniffs, taps."""
 	v = 0.0
@@ -323,9 +354,10 @@ def sample(rig):
 	return out
 
 
-def follow_through(rig, frames, pose, loops=3):
+def follow_through(rig, frames, pose, loops=3, stiffness=1.0):
 	"""Per-frame (upper arm, forearm, hand) angle offsets for both arms, from springs driven
-	by the posed body over several loops. The last loop is periodic, so clips stay seamless."""
+	by the posed body over several loops. The last loop is periodic, so clips stay seamless.
+	stiffness scales the spring frequencies."""
 	samples = []
 	for f in range(frames):
 		reset(rig)
@@ -335,7 +367,8 @@ def follow_through(rig, frames, pose, loops=3):
 	dt = 1 / FPS
 	out = [dict() for _ in range(frames)]
 	for s, suffix in SIDES:
-		upper, fore, hand = Spring(0.75, 0.32), Spring(1.15, 0.38), Spring(1.8, 0.45)
+		k = stiffness
+		upper, fore, hand = Spring(0.75 * k, 0.32), Spring(1.15 * k, 0.38), Spring(1.8 * k, 0.45)
 		first = samples[0][suffix]['angles']
 		upper.x, fore.x, hand.x = first[0].copy(), first[1].copy(), first[2].copy()
 		for loop in range(loops):
@@ -390,7 +423,7 @@ def bake_clip(rig, name, frames, pose):
 	# (carried) update the depsgraph, which would otherwise re-apply the action's keys.
 	rig.animation_data_create()
 	rig.animation_data.action = None
-	offsets = follow_through(rig, frames, pose)
+	offsets = follow_through(rig, frames, pose, stiffness=SPRING_STIFFNESS.get(name, 1.0))
 	snaps = []
 	for f in range(frames):
 		reset(rig)
@@ -626,18 +659,21 @@ def walk(rig, t, blinks=(30,), clock=None):
 	height = beats(step, [(0, -0.045), (0.14, -0.07), (0.42, -0.035), (0.64, -0.03), (0.84, -0.038), (1, -0.045)])
 	sway = math.sin(w)
 	add_loc(rig, 'Pelvis', (0.028 * sway, 0.0, height))
-	set_rot(rig, 'Pelvis', ((0, 0, 1), 6 * math.cos(w)), ((0, 1, 0), 3.2 * sway), ((1, 0, 0), 3))
-	set_rot(rig, 'Spine', ((0, 0, 1), -4 * math.cos(w - 0.3)), ((1, 0, 0), 6 + 1.2 * math.cos(2 * w - 0.8)), ((0, 1, 0), -2.2 * sway))
-	set_rot(rig, 'Chest', ((0, 0, 1), -4.5 * math.cos(w - 0.45)), ((1, 0, 0), 4), ((0, 1, 0), -1.4 * math.sin(w - 0.4)))
+	# The hips twist forward with the reaching leg and the chest answers the other way, so
+	# each arm swings against its own leg.
+	set_rot(rig, 'Pelvis', ((0, 0, 1), -6 * math.cos(w)), ((0, 1, 0), 3.2 * sway), ((1, 0, 0), 3))
+	set_rot(rig, 'Spine', ((0, 0, 1), 4 * math.cos(w - 0.3)), ((1, 0, 0), 6 + 1.2 * math.cos(2 * w - 0.8)), ((0, 1, 0), -2.2 * sway))
+	set_rot(rig, 'Chest', ((0, 0, 1), 4.5 * math.cos(w - 0.45)), ((1, 0, 0), 4), ((0, 1, 0), -1.4 * math.sin(w - 0.4)))
 	# Undo the twist and bob at the neck: the eyes stay on the path.
-	twist = 6 * math.cos(w) - 4 * math.cos(w - 0.3) - 4.5 * math.cos(w - 0.45)
+	twist = -6 * math.cos(w) + 4 * math.cos(w - 0.3) + 4.5 * math.cos(w - 0.45)
 	set_rot(rig, 'Neck', ((1, 0, 0), -5), ((0, 0, 1), -0.6 * twist), ((0, 1, 0), 1.5 * sway))
 	set_rot(rig, 'Head', ((1, 0, 0), -1 - 1.2 * math.cos(2 * w - 0.8)), ((0, 0, 1), -0.4 * twist), ((0, 1, 0), 1.2 * sway))
 	for s, suffix in SIDES:
-		swing = math.cos(w + (0 if s < 0 else math.pi))
-		set_rot(rig, f'Shoulder_{suffix}', ((0, 0, 1), -s * 2.5 * swing))
+		# + swings the arm back: back while its own foot is forward.
+		swing = math.cos(w + (0 if s > 0 else math.pi))
+		set_rot(rig, f'Shoulder_{suffix}', ((0, 0, 1), s * 2.5 * swing))
 		set_rot(rig, f'UpperArm_{suffix}', ((1, 0, 0), -3 + 11 * swing), ((0, 1, 0), -s * 5))
-		set_rot(rig, f'Forearm_{suffix}', ((1, 0, 0), -15 + 6 * math.cos(w + (0 if s < 0 else math.pi) - 0.9)))
+		set_rot(rig, f'Forearm_{suffix}', ((1, 0, 0), -15 + 6 * math.cos(w + (0 if s > 0 else math.pi) - 0.9)))
 		set_rot(rig, f'Hand_{suffix}', ((1, 0, 0), -6))
 		curl(rig, suffix, 14)
 		set_rot(rig, f'Lid_{suffix}', ((1, 0, 0), -70 * max(0.2, blink(clock, blinks))))
@@ -653,6 +689,102 @@ def walk_glance(rig, t):
 	gaze(rig, t, look, chain=(('Spine', 0.14, 0.0, 14), ('Chest', 0.24, 0.05, 8), ('Neck', 0.26, 0.3, 3)))
 
 
+STRIDE_FRAMES = 42
+STRIDE_STEP = 0.68  # metres per step
+STRIDE_SPEED = 2 * STRIDE_STEP / (STRIDE_FRAMES / FPS)
+
+
+def stride(rig, t, blinks=(), clock=None):
+	"""The classic film stride, seen from the side: long compliant steps on knees that never
+	lock, so the hips glide rather than bob; the foot rolls off its ball and kicks up behind
+	to show its sole; the long arms swing in wide, loose arcs, the back arm almost straight,
+	the front one bent. Leans into it from the hips. In place; move the root forward at
+	STRIDE_SPEED. Left heel strike at t = 0."""
+	period = STRIDE_FRAMES
+	clock = t if clock is None else clock
+	w = math.tau * t / period
+	stance = 0.6
+	travel = STRIDE_SPEED * stance * period / FPS
+	h = travel / 2
+	# Stance rates in swing units, so the swing leaves and meets the ground without a kink:
+	# the foot lands already moving back at ground speed.
+	ground = travel * (1 - stance) / stance
+	peel = -30 * 2 / 0.4 * (1 - stance) / stance
+	for s, suffix, offset in ((1, 'L', 0.0), (-1, 'R', 0.5)):
+		p = (t / period + offset) % 1.0
+		if p < stance:
+			q = p / stance
+			y = -h + travel * q
+			lift = 0.0
+			# Lands nearly flat, rolls down onto the whole foot, and late in stance the heel
+			# peels up over the ball.
+			pitch = 9 * (1 - smooth(q / 0.2)) - 30 * clamp((q - 0.6) / 0.4) ** 2
+		else:
+			q = (p - stance) / (1 - stance)
+			# The ball leaves last and the foot kicks up behind, sole showing, before it
+			# swings through low, reaches out and draws back a touch to land.
+			y = spline(q, [(0, h), (0.24, h - 0.02), (0.6, -0.5 * h), (0.88, -h - 0.012), (1, -h)], ground, ground)
+			lift = spline(q, [(0, 0), (0.3, 0.12), (0.62, 0.07), (0.88, 0.028), (1, 0)], None, 0)
+			pitch = spline(q, [(0, -30), (0.3, -62), (0.62, -14), (0.88, 10), (1, 9)], peel, 0)
+		# pitch > 0 lifts the toe (a heel strike), < 0 the heel (push-off).
+		put(rig, f'FootIK_{suffix}', rig.data.bones[f'FootIK_{suffix}'].head_local + Vector((0.0, y, lift)))
+		roll(rig, suffix, -pitch)
+		# The toes bend at push-off and trail in the kick.
+		bend = max(0.0, -pitch) if p < stance else 30 * (1 - smooth(q / 0.5))
+		set_rot(rig, f'Toes_{suffix}', ((1, 0, 0), -bend))
+	# Compliant: the knees soak up each landing, so the hips stay low and level. The weight
+	# rolls over the stance foot with the hip dropping on the swing side.
+	step = (2 * t / period) % 1.0
+	height = spline(step, [(0, -0.07), (0.14, -0.077), (0.55, -0.047), (0.86, -0.058), (1, -0.07)], periodic=True)
+	sway = math.sin(w - 0.4)
+	add_loc(rig, 'Pelvis', (0.03 * sway, 0.0, height))
+	# Hips twist forward with the reaching leg; the shoulders answer the other way.
+	hips = math.cos(w)
+	set_rot(rig, 'Pelvis', ((0, 0, 1), -11 * hips), ((0, 1, 0), 3.5 * sway), ((1, 0, 0), 3))
+	set_rot(rig, 'Spine', ((0, 0, 1), 6 * math.cos(w - 0.25)), ((1, 0, 0), 5 + 1.0 * math.cos(2 * w - 0.9)), ((0, 1, 0), -2.4 * sway))
+	set_rot(rig, 'Chest', ((0, 0, 1), 8 * math.cos(w - 0.4)), ((1, 0, 0), 3), ((0, 1, 0), -1.6 * math.sin(w - 0.8)))
+	# The head rides low in the shoulders and eyes the way ahead.
+	twist = -11 * hips + 6 * math.cos(w - 0.25) + 8 * math.cos(w - 0.4)
+	set_rot(rig, 'Neck', ((1, 0, 0), -9), ((0, 0, 1), -0.5 * twist), ((0, 1, 0), 1.6 * sway))
+	set_rot(rig, 'Head', ((1, 0, 0), -3 - 1.0 * math.cos(2 * w - 0.9)), ((0, 0, 1), -0.35 * twist), ((0, 1, 0), 1.2 * sway))
+	for s, suffix in SIDES:
+		# + swings the arm back. It is back when its own foot reaches forward, a little late.
+		arm = math.cos(w - 0.35 + (0 if s > 0 else math.pi))
+		set_rot(rig, f'Shoulder_{suffix}', ((0, 0, 1), s * 5 * arm), ((1, 0, 0), 2 * arm))
+		# It swings further back than forward, from the hang of a long, heavy arm.
+		set_rot(rig, f'UpperArm_{suffix}', ((1, 0, 0), 7 + 17 * arm), ((0, 1, 0), -s * (6 + 2 * arm)))
+		# The elbow opens on the backswing and folds as the arm comes through, the hand
+		# trailing it, never leading.
+		fold = 0.5 - 0.5 * math.cos(w - 1.1 + (0 if s > 0 else math.pi))
+		set_rot(rig, f'Forearm_{suffix}', ((1, 0, 0), -6 - 15 * fold))
+		set_rot(rig, f'Hand_{suffix}', ((1, 0, 0), -4 + 10 * fold), ((0, 1, 0), -s * 4))
+		curl(rig, suffix, 16 + 6 * fold)
+		set_rot(rig, f'Lid_{suffix}', ((1, 0, 0), -70 * max(0.2, blink(clock, blinks))))
+
+
+def stride_look(rig, t, side=1):
+	"""The famous look: mid-stride, without breaking step, he turns to look straight at you,
+	head and shoulders coming round together as one heavy mass, since he has next to no
+	neck. He holds the look for a couple of strides, then turns back to the path. side +1
+	looks over his left shoulder, toward a viewer on his left."""
+	T = 5 * STRIDE_FRAMES
+	s = side
+	# A blink rides each big turn.
+	stride(rig, t % STRIDE_FRAMES, blinks=(48, 128), clock=t)
+	look = lambda u: beats(u, [(0, (0, 0, 0)), (46, (0, 0, 0)), (76, (s * 82, 1, s * 2), 0.06), (126, (s * 82, 1, s * 2)),
+		(162, (0, 0, 0), 0.03), (210, (0, 0, 0))], T)
+	# Shares spread the turn through the trunk with only a few frames between joints.
+	gaze(rig, t, look, chain=(('Spine', 0.16, 0.0, 6), ('Chest', 0.3, 0.1, 3), ('Neck', 0.24, 0.3, 1)), arc=1.2)
+
+
+def stride_look_left(rig, t):
+	stride_look(rig, t, 1)
+
+
+def stride_look_right(rig, t):
+	stride_look(rig, t, -1)
+
+
 CLIPS = {
 	'Idle': (480, idle),
 	'Watch': (420, watch),
@@ -662,4 +794,10 @@ CLIPS = {
 	'Forage': (450, forage),
 	'Walk': (WALK_FRAMES, walk),
 	'WalkGlance': (3 * WALK_FRAMES, walk_glance),
+	'Stride': (STRIDE_FRAMES, stride),
+	'StrideLookL': (5 * STRIDE_FRAMES, stride_look_left),
+	'StrideLookR': (5 * STRIDE_FRAMES, stride_look_right),
 }
+# Follow-through springs are tuned for slow moves. A brisk stride would drive them near
+# resonance, so it stiffens them and the arcs stay as keyed.
+SPRING_STIFFNESS = {'Stride': 2.2, 'StrideLookL': 2.2, 'StrideLookR': 2.2}

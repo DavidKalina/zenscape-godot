@@ -79,7 +79,7 @@ for name in names:
 		feet = [bone_pose(f'Foot_{s}').translation.copy() for s in 'LR']
 		if feet0 is None:
 			feet0 = feet
-		if not name.startswith('Walk'):
+		if not name.startswith(('Walk', 'Stride')):
 			drift = max(drift, max((a - b).length for a, b in zip(feet, feet0)))
 		if peek:
 			deepest, where = 0.0, None
