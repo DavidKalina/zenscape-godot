@@ -97,14 +97,22 @@ const TREE_POOLS := {
 	"alpine":{"tree":1.0,"broadleaf":0.1,"layered_tree":0.05},
 	"arid":{"joshua":1.0,"cactus":0.8,"broadleaf":0.0},
 }
-## Crown tints (sRGB) for the trees whose canopies are baked grey, as the
-## landscape presets plant them (native_landscape_presets.gd). Without one an
+## Crown colours by species (sRGB), as [colour, weight, lean]. The broadleaf,
+## spruce and redwood crowns are baked grey and take the colour whole, as the
+## landscape presets plant them (native_landscape_presets.gd); without one an
 ## emerged tree took the reference scene's first instance colour, a blossom
-## pale that made every emerged broadleaf lavender. A stand shares a small hue
-## and saturation shift; each tree its own brightness.
-const TREE_TINTS := {"broadleaf":"6f9c46","tree":"3e7a44","redwood":"b1c2a5"}
-const STAND_HUE := 0.05
-const STAND_SATURATION := Vector2(0.88,1.12)
+## pale. The layered tree's crown carries its own greens, so its entries are
+## gentle multipliers. Each stand picks one colour per species, leaned by its
+## ground ("wet", "high", "low") and the world's taste; TREE_STRAY of its trees
+## take another. The mood's Leaves colour then moves every crown together
+## (palette_role 2), so the species stay in one key.
+const TREE_COLOURS := {
+	"broadleaf":[["6f9c46",1.0,""],["7d9143",0.7,""],["4f8040",0.7,"wet"],["8fa843",0.35,"low"],["86a07a",0.3,"wet"],["8a5a3c",0.05,""]],
+	"tree":[["3e7a44",1.0,""],["2f6440",0.7,""],["44756a",0.4,"high"],["56733f",0.3,"low"]],
+	"redwood":[["b1c2a5",1.0,""],["bcc29a",0.5,""],["a3bca9",0.5,"wet"]],
+	"layered_tree":[["ffffff",1.0,""],["f0ffd6",0.5,"low"],["ffecc8",0.4,""],["dcf0ea",0.4,"wet"]],
+}
+const TREE_STRAY := 0.12
 const TREE_BRIGHTNESS := Vector2(0.82,1.08)
 ## Forest intent (scripts/forest_brush.gd, docs/scenic/brushes.md). Where the
 ## forest brush wished for forest, shrubs and trees come sooner and the core
@@ -695,13 +703,24 @@ func _tree_kind(habitat: String, p: Vector2, pick: float) -> String:
 
 ## An emerged tree's crown tint, or "" to keep the catalog colour.
 func _tree_tint(kind: String, p: Vector2, key: Array) -> String:
-	if not TREE_TINTS.has(kind):
+	if not TREE_COLOURS.has(kind):
 		return ""
 	var stand := _stand(p)
-	var color := Color(TREE_TINTS[kind])
-	color.h = fposmod(color.h+(Variety.unit(stand.key+[4])-0.5)*STAND_HUE,1.0)
-	color.s = clampf(color.s*lerpf(STAND_SATURATION.x,STAND_SATURATION.y,Variety.unit(stand.key+[5])),0.0,1.0)
-	return NativeObjectPose.encode_tint(color.srgb_to_linear()*lerpf(TREE_BRIGHTNESS.x,TREE_BRIGHTNESS.y,Variety.unit(key+[22])))
+	var options: Array = TREE_COLOURS[kind]
+	var weights := []
+	for n in range(options.size()):
+		var lean := 1.0
+		match options[n][2]:
+			"wet": lean = lerpf(0.4,1.8,stand.moisture)
+			"high": lean = lerpf(0.5,1.7,stand.altitude)
+			"low": lean = lerpf(1.4,0.6,stand.altitude)
+		weights.append(float(options[n][1])*lean*Variety.lean(salt,"tint:%s:%d" % [kind,n]))
+	var pick := Variety.weighted(weights,Variety.unit(stand.key+[6,kind.hash()]))
+	if Variety.unit(key+[23]) < TREE_STRAY:
+		pick = Variety.weighted(weights,Variety.unit(key+[24]))
+	var color := Color(options[pick][0]).srgb_to_linear()*lerpf(TREE_BRIGHTNESS.x,TREE_BRIGHTNESS.y,Variety.unit(key+[22]))
+	# Tints above 1 are refused (NativeObjectPose.valid_tint), and the tree with them.
+	return NativeObjectPose.encode_tint(Color(minf(color.r,1.0),minf(color.g,1.0),minf(color.b,1.0)))
 
 ## The stand a point belongs to: the nearest of the jittered stand seeds in
 ## the cells around it, with the seed's key and its moisture and altitude, so
