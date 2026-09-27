@@ -10,7 +10,8 @@ extends RefCounted
 ## (shaders/grass_look.gdshaderinc), which colours it from the palette
 ## family's living green; the vertex colours are the source's (#38663a to
 ## #93c05f) and only carry each blade's jitter and any instance tint. UV.y
-## is the height fraction up the blade. `--classic-grass` keeps the source
+## is the height fraction up the blade. Off by default: the user prefers the source's faceted look (2026-09-26);
+## `--painterly-grass` turns it on. Otherwise the source
 ## tuft.
 const BLADES := 10
 const ROWS := [0.0, 0.4, 0.75]
@@ -27,10 +28,10 @@ const HALF_WIDTH := 0.042
 const TIP_JITTER := 0.04
 
 static func enabled() -> bool:
-	return not ("--classic-grass" in OS.get_cmdline_user_args() or "--classic-grass" in OS.get_cmdline_args())
+	return "--painterly-grass" in OS.get_cmdline_user_args() or "--painterly-grass" in OS.get_cmdline_args()
 
 ## The replacement for `mesh-10`, carrying the original's material and root
-## and tip colours; any other mesh, or with `--classic-grass`, the original.
+## and tip colours; any other mesh, or without `--painterly-grass`, the original.
 static func swap(node_name: String, original: Mesh) -> Mesh:
 	if node_name != "mesh-10" or not enabled(): return original
 	var arrays := original.surface_get_arrays(0)
@@ -70,7 +71,7 @@ static func dress(material: Material, mesh: Mesh = null) -> void:
 
 ## One line naming the tuft in use, for the startup grass log.
 static func describe() -> String:
-	return "painterly tuft (%d blades, scripts/grass_tuft_mesh.gd)" % BLADES if enabled() else "classic source tuft (--classic-grass)"
+	return "painterly tuft (%d blades, scripts/grass_tuft_mesh.gd)" % BLADES if enabled() else "classic source tuft (--painterly-grass for the blade tuft)"
 
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()

@@ -32,12 +32,13 @@ static func palette_title(world_value: Dictionary) -> String:
 	var family: Dictionary = Families.FAMILIES.get(str(world_value.get("palette","")),{})
 	return str(family.get("title","Open plain"))
 
-## Standing-blade cover on the plain: the carpet everywhere, and how much
-## the tussocks add on top (`data.blades`, eight tufts a cell at 1.0).
-const GENESIS_BLADES := Vector2(0.22,0.3)
+## Standing-blade cover on the plain (`data.blades`, eight tufts a cell at
+## 1.0): the base, and how much tussocks add. None: the plain's grass is the
+## faceted painted ground, as in Fidelity (user choice, 2026-09-26).
+const GENESIS_BLADES := Vector2(0.0,0.0)
 ## Flower-drift cover (`data.meadow`): each of its tufts in four carries a
-## flower, so 0.13 gives one flower a cell inside a drift.
-const GENESIS_FLOWERS := 0.13
+## flower. None, for the same reason.
+const GENESIS_FLOWERS := 0.0
 
 ## Heights, grass, a carpet of standing blades and a few flower drifts for a
 ## blank plain.
