@@ -257,7 +257,7 @@ Nothing may hitch while you paint. Frame pacing during a stroke matters more tha
   - There is no succession timeline.
   - Nothing finds a basin's spill level.
   - Fauna use fixed reference positions.
-  - The beauty score is whole-plate and terrain-only.
+  - The beauty score is whole-plate and terrain-only. *Slice 8 adds a regional score (`docs/scenic/guidance.md`).*
 
 ### Slice 1: the land brush, with the full feel (done 2026-09-26)
 
@@ -465,6 +465,28 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
    - This may be the "finished moment" that the open questions ask about.
 8. **Quiet guidance.**
    - A regional beauty score that nudges water levels, edges and variant choice without the player seeing it.
+   - **What landed** (`feature/quiet-guidance`, 2026-09-27; headless only, the look is unverified). Details, tunables and numbers are in `docs/scenic/guidance.md`.
+     - **The score.** `scripts/quiet_guidance.gd` scores a rect on the 1 m blend grid. Its terms are relief, water (presence and shore: no one-cell tongues or strips of land), forest edges (the canopy outline's straightness, and lone trees), openness against clutter, cover variety, and framing (water seen past trees from the overview camera, and big trees on feature spots). Each emergence plan scores its region on the worker and keeps it as `region.score`. The terms set how hard the lone-tree, sightline and clutter nudges lean.
+     - **Water nudges** (on the pour's worker):
+       - A new pond sits up to 5 cm lower when that trims a thin fringe.
+       - A scooped hollow moves up to 1.5 m when that avoids a sliver of land beside other water.
+       - Hollows are ovals along the contour, not circles.
+     - **Edge nudges.** Where a forest wish's edge reads as a ruled line, candidates read the wish up to 3 m off along slow noise, so the edge wanders into bays and bulges. Lone trees in ordinary spots usually do not take. Knolls, shores and thirds of the view count as feature spots and keep their tree.
+     - **Variant choice.**
+       - Sizes lean between two hash draws: larger on feature spots, smaller in front of water.
+       - Outside a forest's core, trees in front of water thin, so clearings keep the view.
+       - Rotation and kind are left alone.
+     - **Spacing.** Undergrowth already crowded by three neighbours usually yields.
+     - **Rules.** Everything comes from position hashes and the salt, so the same strokes give the same world. Only emerged plants and new water are nudged. `--no-guidance` restores the old path exactly: the emergence and water probes print the same results as `main`.
+     - **A/B** (`tools/probe_guidance.gd`, plain seed 7, salt 12345, a standard stroke set):
+       - With the ground held the same, the plate scores 0.756 guided against 0.749 unguided, and the forest band 0.662 against 0.645, mostly from openness. 33 plants change size, 13 undergrowth yield to clutter and 8 trees to sightlines.
+       - With the water nudges on as well, the plate reads 0.750. One oval hollow sent a later pour into the existing pond instead of a new one.
+       - No level trim or hollow move fired on the plain. The made-up cases show both working.
+     - **Frames.** Stroke and settle frames are unchanged within noise. The plan's guide costs 1.8–2.8 ms on the worker, and arrival steps cost p95 0.27 ms against 0.15 ms.
+     - **Still open.**
+       - Judge on screen whether bays, ovals, thinned sightlines and bigger feature trees read as taste.
+       - On the plain's dense woodland, lone trees never came up.
+       - The edges term says emerged forest edges already break up at the tree scale.
 
 ### Slices 2-5 integrated (`feature/phase3-slices-2-5`, 2026-09-26)
 
