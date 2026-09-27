@@ -324,7 +324,17 @@ func _copy_geometry(node: Node, parent: Node, level: float, frame_tree: SceneTre
 	while not pending.is_empty():
 		var current: Variant = pending.pop_back()
 		if not is_instance_valid(current) or current == self: continue
-		_copy_visual(current,parent,level)
+		# A clip shader the warm-up has not reached (a kind of plant or prop
+		# that appeared after it) parses in 3-7 ms. Give it a frame of its own
+		# rather than stacking it on a slice that has already spent its budget.
+		if frame_tree != null and _uncompiled(current):
+			await setup_frame
+			if generation != _setup_generation or not is_instance_valid(current): return false
+			_copy_visual(current,parent,level)
+			await setup_frame
+			if generation != _setup_generation: return false
+			budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree,setup_frame)
+		else: _copy_visual(current,parent,level)
 		var children: Array[Node] = current.get_children()
 		children.reverse()
 		pending.append_array(children)
@@ -373,6 +383,16 @@ func _copy_visual(node: Node, parent: Node, level: float) -> void:
 				parent.add_child(copy)
 				_bindings.append({"source":node,"copy":copy})
 			else: copy.free()
+
+## Whether copying `node` would parse a clip shader this session has not made.
+func _uncompiled(node: Node) -> bool:
+	if not (node is GeometryInstance3D) or node == source_water or node.has_meta("skip_reflection"): return false
+	var mesh: Mesh = null
+	if node is MeshInstance3D: mesh = node.mesh
+	elif node is MultiMeshInstance3D and node.multimesh != null: mesh = node.multimesh.mesh
+	if mesh == null or mesh.get_surface_count() == 0: return false
+	var original = node.material_override if node.material_override != null else mesh.surface_get_material(0)
+	return _clipped(original) and not _shader_cache.has(str(original.shader.get_instance_id()))
 
 ## Whether a copy of geometry drawn with `original` gets a clip shader.
 func _clipped(original: Variant) -> bool:

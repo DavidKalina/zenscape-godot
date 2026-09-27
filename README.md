@@ -12,27 +12,41 @@ opens on a quiet **Genesis plain** with a brush already in hand
 saved place instead, and `--generated` or `--seed N` a generated world.
 
 The **creation palette** is the glass strip along the bottom: the brushes, the
-size and strength of the one in hand, and **Look**. Keys pick the brushes:
-**1** Land, **2** Water, **3** Meadow, **4** Forest and **5** Path. **Drag**
-paints; **Shift-drag** or **right-drag** works the other way (land lowers, water
-drains, a meadow lifts, forest clears, a path grows back). **`[ ]`** sizes the
-brush and **Shift+`[ ]`** sets its strength. Nothing is placed under the
+size and strength of the one in hand, and **Look**. Nothing is placed under the
 pointer: grass, shrubs, trees, fish, frogs, birds and deer arrive on the land
 you made in their own time ([brushes](docs/scenic/brushes.md),
 [life](docs/scenic/life.md)). The plain's day turns slowly and passes through
 the night in a few seconds, so dawn and dusk come round within a session.
 
-**Tab** (or **Look**) puts the brush away so drags orbit the camera; Tab again
-picks it back up. **H** hides the controls and looks. **Craft** at the top right
-opens the fine sculpt, paint and place tools; **Create** returns to the brushes.
+| Control | While creating |
+| --- | --- |
+| **1**–**5** | Land, Water, Meadow, Forest, Path (or click a palette brush) |
+| Left drag | Paint with the brush in hand |
+| Shift-drag or right drag | Work the other way: land lowers, water drains, a meadow lifts, forest clears, a path grows back |
+| **`[ ]`** / **Shift+`[ ]`** | Brush size / strength |
+| **Tab** (or **Look**) | Put the brush away, so drags orbit the camera; Tab again picks it up |
+| Alt-drag, or a drag off the land | Orbit without putting the brush away |
+| Middle drag / scroll | Pan / zoom |
+| **R** | Overview |
+| **H** | Hide the controls (and the brush); H again restores both |
+| **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season |
+| **Alt+`[ ]`** | Step through the showcase seeds |
+| **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
+| **Cmd/Ctrl S** | Save now |
+| **Esc** | Menu |
+
+**Craft** at the top right opens the fine sculpt, paint and place tools (the
+Build palette below; there **1**–**4** pick raise, lower, smooth and flatten and
+**V** selects); it reads **Create** while open and returns to the brushes.
 The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
 place away and grow a procedural world with its own terrain, palette,
 atmosphere, time of day and weather), **Return to previous place**, **Save now**,
-**Colors & sky**, **Overview** and **Main menu**. **Esc** opens the menu,
-**Cmd/Ctrl Z** undoes a stroke and **Cmd/Ctrl S** saves. Quitting saves the
-place, with its forest wishes and the life that has arrived, and the next
-launch keeps one earlier place to return to. `--classic-build` restores the old
-Build/Enjoy toolbar. See [native world details](docs/cozy-flow/REAL-WORLDS.md).
+**Colors & sky**, **Overview** and **Main menu**. Quitting saves the place, with
+its forest wishes and the life that has arrived, and the next launch keeps one
+earlier place to return to. `--classic-build` restores the old Build/Enjoy
+toolbar, and `--beauty-grass` brings back the retired dense GPU grass. See
+[native world details](docs/cozy-flow/REAL-WORLDS.md).
+
 Character selection remains deferred. The original lightweight study is still
 available by running `studies/cozy_flow_prototype.tscn` with F6; its
 [prototype notes](docs/cozy-flow/NOTES.md) describe that session-only version.
