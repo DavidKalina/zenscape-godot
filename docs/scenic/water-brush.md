@@ -66,7 +66,7 @@ Nothing heavy runs on the main thread when a pour settles.
 3. **Apply.** The plan applies as one undoable edit. If the land, the ponds or the streams changed while the worker ran, the plan is dropped and the status line asks for another pour. When the plan reshaped the ground, the edit's stroke stays open while the ground moves into place over `WATER_SHAPE_SECONDS`. Each 30 Hz tick is a light refresh of 1.5–3.8 ms. Then the ponds and streams land and the stroke closes.
 4. **Settle.** The yielding refresh runs.
    - On a world without a recipe (the plain), `GardenView` floods the ponds, samples depth and shore fetch, lays the streams and assembles the pond arrays on a worker (`_sample_plain_water`).
-   - Recipe worlds already flood their ponds on a worker.
+   - Recipe worlds already flood their ponds on a worker. Since `feature/phase3-polish` they lay their streams there too, against a private copy of the recipe (4.3 ms to 0.4 ms on the main thread on seed 184).
 5. **Reflections.** `planar_water.gd` no longer re-creates its views synchronously when water changes.
    - A live re-setup is spread over frames, and the previous views keep rendering until the new set is ready.
    - Prop and plant changes recopy geometry the same way.
@@ -134,6 +134,7 @@ Only headless checks were run: parse checks, the profiles above, the probe, and 
 
 ## Later
 
-- Emergence's first plan (35–47 ms headless) is the last frame over 16.7 ms after a pour. It builds `BiomeBlend.live` and floods every pond on the main thread.
+- ~~Emergence's first plan (35–47 ms headless) is the last frame over 16.7 ms after a pour.~~ It runs on a worker since `feature/settle-hitches`.
+- A sculpt or new stroke that lands while a pour is still planning (25–135 ms after release) drops the pour and asks for another. Replanning against the new ground would keep it.
 - A pond whose spill is an inland saddle cannot be raised by more water; the overflow runs on as a stream. A pour could also dam the saddle, but none does.
 - The streams' carve is not animated separately from the stream front. The whole bed forms in the 0.7 s before the water runs.

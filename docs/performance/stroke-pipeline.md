@@ -165,6 +165,8 @@ Still over budget (headless):
   budgeted. This is water's area. The settle's other frames are 12–14 ms: the
   main-thread stream geometry (4.2 ms) in the content stage on recipe worlds,
   and the maps texture update.
+  *Update (`feature/phase3-polish`):* no longer reproduces on `main`, and the
+  stream geometry now runs on a worker; see "Phase 3 polish" below.
 - The plain land settle's worst frame is now 14–16 ms, with no single cause
   over 5 ms. Frames at 12–15 ms during a watch are emergence steps' yielding
   refreshes (content stage).
@@ -175,7 +177,47 @@ printed as a SHIFT line), `--salt=N` and `--sync-plan`. One Shift pass over a
 young forest takes its wish only to about 0, above
 `forest_brush.CLEAR_BELOW` (-0.25), so nothing is withdrawn. The second pass
 withdraws 25 of 38 emerged plants. Whether one pass should be enough is a feel
-question.
+question. *Update (`feature/phase3-polish`):* one firm pass now clears it
+(`forest_brush.gd` `FIRM_PASS`); see "Phase 3 polish" below.
 
 Run: `godot --headless --path . --script res://tools/profile_stroke.gd -- --mode=raise`
 (add `--from=x,z --to=x,z`, `--then=undo|restroke`).
+
+## Phase 3 polish (`feature/phase3-polish`, 2026-09-27)
+
+Headless, same machine, shared with other agents. Before is `main` at 9ec4875.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Seed 184, raise across the pond (`--from=-1,4 --to=6,8`), reflection re-setup slices | 2.0–2.3 ms each (the 12–15 ms first slice no longer reproduces) | unchanged |
+| Seed 184, land stroke across the pond, stream geometry on the main thread | 4.3 ms | 0.4 ms (mesh publication only) |
+| Seed 184, land stroke across the pond, worst settle frame | 14.1 ms, in `content` | 11.7 ms |
+| Seed 184, raise across the pond, worst settle frame | 11.1–13.5 ms | 11.6 ms |
+| Seed 184, pour then restroke, worst settle frame | not measured | 9.4 ms |
+| Clip shader the warm-up missed, parsed during a re-setup | 5.3–6.9 ms slice (parse on a spent slice) | 5.2–5.6 ms (the parse alone, its own frame) |
+| Forest Shift, 1 pass at strength 1, settle max | 13.7 ms, withdrew 0 of 37 | 9.8 ms, withdrew 22 of 37 |
+
+- **The remaining frame.** The settle-hitches branch measured it before water
+  polish landed. On `main` the first slice of the reflection re-setup is the
+  environment copy, one pool mesh and the first 2 ms of geometry copies. The
+  profiler's default path (-4,-2.5 to 3,2) misses seed 184's pond at (2.5, 6);
+  the report now prints `pond_at`. The one slow slice left is a clip-shader
+  parse for geometry that appeared after the warm-up. It now yields before and
+  after the parse (`planar_water.gd` `_uncompiled`), so it never stacks on work.
+- **Recipe streams on a worker.** `GardenView._sample_recipe_water` lays the
+  streams beside the pond flood, against a private `NativeTerrainRecipe` built
+  from the world's settings. Recipes are pure functions of their settings, so
+  its heights match the live recipe to the bit, and the stream probe records
+  the same vertex reads. The private recipe is kept between rebuilds and checked
+  out per job, so two jobs never share one. The worker's time went from 13.8 to
+  21 ms on the first rebuild (it builds the recipe). Fingerprints (heights,
+  mesh, instances, water, maps) matched with and without `--sync-streams`.
+- **Weathering joins wait.** A stroke that opens while the last land stroke is
+  still weathering joins it (`_join_weathering`). The join called
+  `BackgroundWork.finish` on an unfinished job; in debug runs the assert
+  failed and the weathering was lost. It now waits (`BackgroundWork.wait`), so
+  a stroke started within a few frames of the last one can pay up to the
+  weathering's remaining 9–25 ms on its press.
+
+Profiler additions: `--sync-streams`, `--shift-strength=S`, `pond_at`, and the
+wish report counts cleared cells.
