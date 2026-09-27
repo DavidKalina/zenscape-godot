@@ -8,6 +8,7 @@ extends SceneTree
 ##      --brush=land|water|meadow|forest|path (with --mode=land; a creation
 ##      brush; --mode=water is --mode=land --brush=water)
 ##      --from=-4,-2.5 --to=3,2 --then=undo|restroke|shift --label=name --sync-water --sync-streams --shift-passes=1
+##      --shift-strength=S
 ##      --shift (the stroke works the other way, as Shift or a right drag does:
 ##      land lowers, forest clears, a path grows back) --salt=N (fixed emergence
 ##      salt, so emerged records compare between runs) --sync-plan (emergence
@@ -30,6 +31,9 @@ var shift := false
 ## Shift strokes after the first (--shift-passes=N): one pass over a young
 ## forest thins its wish but may not clear it past forest_brush.CLEAR_BELOW.
 var shift_passes := 1
+## Brush strength for the Shift strokes (--shift-strength=S), so a light pass
+## can be told from a firm one; the brush's own strength when unset.
+var shift_strength := -1.0
 ## Extra seconds to keep timing after release, with the editor processing again
 ## so emergence ticks.
 var watch := 0.0
@@ -97,15 +101,18 @@ func fingerprint() -> Dictionary:
 		"summit":str(scene._atmosphere._summit),
 	}
 
-## Forest wish over the plate: cells above a quarter, a half and 0.8, and the most.
+## Forest wish over the plate: cells above a quarter, a half and 0.8, and the
+## most; cells a clearing holds (at or below forest_brush.CLEAR_BELOW), and the least.
 func _wish() -> Dictionary:
 	var forest: PackedFloat32Array = editor.emergence.intent.forest
-	var counts := {"quarter":0,"half":0,"core":0,"max":0.0}
+	var counts := {"quarter":0,"half":0,"core":0,"max":0.0,"cleared":0,"min":0.0}
 	for value in forest:
 		if value > 0.25: counts.quarter += 1
 		if value > 0.5: counts.half += 1
 		if value > 0.8: counts.core += 1
+		if value <= preload("res://scripts/forest_brush.gd").CLEAR_BELOW: counts.cleared += 1
 		counts.max = maxf(counts.max,value)
+		counts.min = minf(counts.min,value)
 	return counts
 
 func _medians() -> Dictionary:
@@ -185,7 +192,10 @@ func shift_stroke() -> void:
 	var ticks: Array[float] = []
 	# The editor's own loop would end a stroke no button holds.
 	editor.set_process(false)
+	var held: float = editor.creation_brush().strength
+	if shift_strength > 0.0: editor.creation_brush().strength = shift_strength
 	await stroke(to_point,from_point,dab_count,frames,ticks)
+	editor.creation_brush().strength = held
 	var release := Time.get_ticks_usec()
 	editor.finish_stroke()
 	var release_ms := (Time.get_ticks_usec()-release)/1000.0
@@ -200,7 +210,7 @@ func shift_stroke() -> void:
 		settle.append((now-previous)/1000.0)
 		if settle.back() > 12.0: stages.append([settle.size()-1,stage])
 		previous = now
-	print("SHIFT ",JSON.stringify({"brush":brush,"sources_before":before,"sources_after":_sources(),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":stages,"wish":_wish()}))
+	print("SHIFT ",JSON.stringify({"brush":brush,"strength":editor.creation_brush().strength if shift_strength <= 0.0 else shift_strength,"sources_before":before,"sources_after":_sources(),"stroke_frames":stats(frames),"dab_ticks":stats(ticks),"release_ms":snappedf(release_ms,0.01),"settle_frames":stats(settle),"slow_stroke_frames":slow(frames),"slow_settle_frames":slow(settle),"slow_settle_stages":stages,"wish":_wish()}))
 
 func run() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -215,6 +225,7 @@ func run() -> void:
 	shift = "--shift" in OS.get_cmdline_user_args()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shift-passes="): shift_passes = maxi(1,int(arg.trim_prefix("--shift-passes=")))
+		if arg.begins_with("--shift-strength="): shift_strength = float(arg.trim_prefix("--shift-strength="))
 	# Water is a creation brush the "land" tool holds.
 	if mode == "water":
 		mode = "land"
