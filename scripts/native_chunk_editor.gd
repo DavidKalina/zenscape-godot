@@ -210,6 +210,12 @@ var update_encounter_ground := true
 ## The creation brush (scripts/land_brush.gd): broad, noisy natural landforms,
 ## weathered by a local erosion pass when the stroke ends.
 var land_brush = preload("res://scripts/land_brush.gd").new()
+## Chunk atlas (scripts/chunk_atlas.gd): the live chunk's border pin, applied
+## before every refresh so no edit can open a seam, and the borders that face
+## a neighbour, whose earth-block walls are cut away.
+var border_pin: RefCounted = null
+const AtlasView = preload("res://scripts/chunk_atlas_view.gd")
+var open_sides := {}
 var land_radius := 4.5
 var land_strength := 1.0
 var land_ceiling := 10.0
@@ -854,6 +860,7 @@ var _refresh_generation := 0
 ## be visible; callers requiring a complete transaction must retry or abandon it.
 var refresh_pending := 0
 func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) -> bool:
+	if border_pin != null: border_pin.apply(data)
 	if frame_tree == null and not on_publish.is_valid() and _light_refresh_ready():
 		return await _refresh_light()
 	refresh_pending += 1
@@ -1299,7 +1306,7 @@ func _rebuild_skirt() -> void:
 			rim_unchanged = false
 			break
 	if rim_unchanged:
-		_skirt.mesh = _skirt_mesh
+		_skirt.mesh = _skirt_mesh if open_sides.is_empty() else AtlasView.cut_sides(_skirt_mesh,_skirt.position,open_sides)
 		return
 	# Deform the original faceted earth sides, keeping their base and material.
 	# The captured rim extends 0.2 units beyond the terrain's outer edge.
@@ -1322,7 +1329,7 @@ func _rebuild_skirt() -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_skirt_mesh.surface_get_material(0))
-	_skirt.mesh = mesh
+	_skirt.mesh = mesh if open_sides.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
 
 func dab(point: Vector2, amount: float) -> void:
 	if mode in ["grass","blades","meadow","paint","erase"]: data.mark_hand(point,radius)

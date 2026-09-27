@@ -33,11 +33,19 @@ var _craft_before_menu := false
 var _look_before_hide := false
 var _toolbar_glass: Panel
 var _glyphs := {}
+## --atlas: Genesis chunks stitched into one world (scripts/chunk_atlas_controller.gd).
+var atlas: Node
+var atlas_path := "user://cozy-worlds/atlas.json"
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
 		# The packaged self-check must never touch the player's saved places.
 		places_path = OS.get_temp_dir().path_join("zenscape-export-places-"+str(Time.get_ticks_usec())).path_join("places.json")
+		DirAccess.make_dir_recursive_absolute(places_path.get_base_dir())
+	elif preload("res://scripts/chunk_atlas_controller.gd").enabled() and places_path == "user://cozy-worlds/places.json":
+		# The atlas keeps its live chunk's regrowth save apart from the
+		# player's places; the chunks themselves live in atlas.json.
+		places_path = "user://cozy-worlds/atlas-live/places.json"
 		DirAccess.make_dir_recursive_absolute(places_path.get_base_dir())
 	library_path = places_path.get_base_dir()
 	recent_file = library_path.path_join("recent.cfg")
@@ -47,6 +55,13 @@ func _ready() -> void:
 	await places.setup(self)
 	places_ready = places.initialized
 	get_window().title = "ZenScape · Gentle regrowth"
+	if preload("res://scripts/chunk_atlas_controller.gd").enabled():
+		atlas = preload("res://scripts/chunk_atlas_controller.gd").new()
+		atlas.name = "ChunkAtlasController"
+		atlas.path = atlas_path
+		add_child(atlas)
+		await atlas.setup(self)
+		get_window().title = "ZenScape · Chunk atlas"
 	_setup_creation()
 	shell_ready = true
 
@@ -316,6 +331,9 @@ func save_current() -> bool:
 	if not places.save_places():
 		_notice.text = "Could not save this place. Please try Save again."
 		return false
+	if atlas != null and not atlas.save():
+		_notice.text = "Could not save the atlas. Please try Save again."
+		return false
 	return true
 
 func _notification(what: int) -> void:
@@ -330,6 +348,7 @@ func _quit_safely() -> void:
 	if places != null and places.holding:
 		await places.cancel_carry()
 		while places.busy or places.holding: await get_tree().process_frame
+	if atlas != null: atlas.save()
 	if places != null and places.save_places(): get_tree().quit()
 
 func new_diorama() -> void:

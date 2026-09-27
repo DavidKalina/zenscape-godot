@@ -94,8 +94,10 @@ const GENESIS_FLOWERS := 0.0
 
 ## Heights, grass, a carpet of standing blades and a few flower drifts for a
 ## blank plain.
-## Everything else (objects, water, recipe) is cleared.
-static func shape(data: NativeTerrainData, seed_value: int) -> void:
+## Everything else (objects, water, recipe) is cleared. `origin` is the
+## chunk's centre in world metres: atlas chunks (scripts/chunk_atlas.gd) sample
+## one field, so neighbouring plains roll into each other.
+static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZERO) -> void:
 	data.reset_flat()
 	var swell := FastNoiseLite.new()
 	swell.seed = seed_value
@@ -109,7 +111,7 @@ static func shape(data: NativeTerrainData, seed_value: int) -> void:
 	ripple.fractal_octaves = 2
 	var heights := data.heights
 	for i in range(data.points.size()):
-		var p: Vector2 = data.points[i]
+		var p: Vector2 = data.points[i]+origin
 		# Broad swells about a metre tall, with a faint ripple over them.
 		heights[i] = 0.35+swell.get_noise_2d(p.x,p.y)*0.55+ripple.get_noise_2d(p.x,p.y)*0.12
 	data.heights = heights
@@ -128,7 +130,7 @@ static func shape(data: NativeTerrainData, seed_value: int) -> void:
 	var meadow := data.meadow
 	for z in range(data.MEADOW_CELLS):
 		for x in range(data.MEADOW_CELLS):
-			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5
+			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5+origin
 			var index := z*data.MEADOW_CELLS+x
 			blades[index] = GENESIS_BLADES.x+GENESIS_BLADES.y*smoothstep(-0.05,0.4,tufts.get_noise_2d(p.x,p.y))
 			meadow[index] = GENESIS_FLOWERS*smoothstep(0.2,0.4,drifts.get_noise_2d(p.x,p.y))
