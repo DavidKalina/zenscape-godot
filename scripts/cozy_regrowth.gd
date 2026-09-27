@@ -203,7 +203,7 @@ func _build_overlay() -> void:
 
 func _label(world: Node3D) -> String:
 	var recipe: Dictionary = world._chunk_editor.data._recipe_settings
-	if plain and recipe.is_empty(): return "Open plain · "+Genesis.palette_title(generated_world)
+	if plain and recipe.is_empty(): return "Open plain"+(" · "+Genesis.palette_title(generated_world) if generated_world.has("palette") else "")
 	if recipe.get("kind")=="inland":
 		return preload("res://scripts/biome_blend.gd").title(recipe)+" · "+recipe.composition.replace("-"," ").capitalize()+(" · seed %d" % world_seed if world_seed>=0 else "")
 	var family: String = world._chunk_editor.data._recipe_settings.get("family","")
@@ -559,9 +559,50 @@ func save_places() -> bool:
 	file.close()
 	return result==OK and DirAccess.rename_absolute(temporary,primary.places_path)==OK
 
-func _read_saved() -> Dictionary:
-	if not FileAccess.file_exists(primary.places_path): return {}
-	var file := FileAccess.open(primary.places_path,FileAccess.READ)
+## The place a plain launch set aside before the plain replaced it.
+func previous_path() -> String:
+	return primary.places_path.get_basename()+"-previous.json"
+
+func has_previous() -> bool:
+	return FileAccess.file_exists(previous_path())
+
+## Swap this place with the one set aside: this place is saved and set aside in
+## turn, so choosing it again swaps back. Undo history starts over.
+func resume_previous() -> bool:
+	if busy or holding or not initialized or scene._chunk_editor.forming: return false
+	var previous := _read_saved(previous_path())
+	if previous.is_empty():
+		scene._notice.text = "There is no earlier place to return to."
+		return false
+	if not save_places() or DirAccess.copy_absolute(primary.places_path,previous_path()) != OK:
+		scene._notice.text = "Could not set this place aside. It is still open."
+		return false
+	busy = true
+	if scene.has_method("suspend_creation"): scene.suspend_creation()
+	else: scene.set_building(false)
+	slots = previous.slots
+	active = int(previous.active)
+	scene._chunk_editor.data.load_document(slots[active].document)
+	scene._chunk_editor.data._undo.clear()
+	scene._chunk_editor.data._redo.clear()
+	await scene._chunk_editor.refresh(get_tree())
+	NativeGardenStore.restore(scene,slots[active].state)
+	scene._refresh_habitat()
+	plain = scene._chunk_editor.data.blank and scene._chunk_editor.data._recipe_settings.is_empty()
+	generated_world = {}
+	world_seed = -1
+	_set_growth(1.0)
+	busy = false
+	_update_badge()
+	if scene.has_method("resume_creation"): scene.resume_creation()
+	save_places()
+	scene._notice.text = "Back to "+_label(scene)
+	return true
+
+func _read_saved(path := "") -> Dictionary:
+	var source: String = primary.places_path if path.is_empty() else path
+	if not FileAccess.file_exists(source): return {}
+	var file := FileAccess.open(source,FileAccess.READ)
 	if file==null or file.get_length()>40000000: return {}
 	var saved: Variant = JSON.parse_string(file.get_as_text())
 	if not saved is Dictionary or saved.get("version")!=1 or not saved.get("slots") is Array: return {}

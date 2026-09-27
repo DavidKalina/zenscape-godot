@@ -1,18 +1,41 @@
 extends "res://studies/diorama.gd"
 ## The full diorama renderer/editor, with reversible growth for regenerating the current place.
+const Palette = preload("res://scripts/creation_palette.gd")
+const Glass = preload("res://scripts/glass_chrome.gd")
 var places: Node
 var places_ready := false
 var places_path := "user://cozy-worlds/places.json"
-## Creation is the default tool state: the land brush is in hand without the
-## build palette. Craft opens the palette's fine tools; Create returns to the
-## brush. --classic-build keeps the old Build/Enjoy toggle.
+## The creation shell: the game opens with a brush in hand and a quiet palette
+## of brushes (scripts/creation_palette.gd). Craft opens the build palette's
+## fine sculpt, paint and place tools; Create returns to the brush. Look (Tab) puts
+## the brush away so the camera roams and nothing paints. --classic-build keeps
+## the old Build/Enjoy toggle.
 var creation_mode := "--classic-build" not in OS.get_cmdline_user_args()
+## Emitted when a different creation brush is picked, and when Look puts the
+## brush away or picks it back up.
+signal brush_changed(brush_id: String)
+signal looking_changed(looking: bool)
 var crafting := false
 var craft_tool := "raise"
+## Just look: the brush is put away, the camera roams, nothing paints.
+var looking := false
+## Every registered creation brush in palette order (scripts/genesis_canvas.gd).
+var brush_ids: Array = Palette.registered().map(func(info: Dictionary) -> String: return info.brush_id)
+## The creation brush last in hand; Look and Craft return to it.
+var brush: String = brush_ids[0] if not brush_ids.is_empty() else "land"
+var creation_palette: Control
+## True once the shell is built and the first world is open.
+var shell_ready := false
 var _craft_before_menu := false
-var _creation_hint: Label
+var _look_before_hide := false
+var _toolbar_glass: Panel
+var _glyphs := {}
 
 func _ready() -> void:
+	if "--verify-desktop-build" in OS.get_cmdline_user_args():
+		# The packaged self-check must never touch the player's saved places.
+		places_path = OS.get_temp_dir().path_join("zenscape-export-places-"+str(Time.get_ticks_usec())).path_join("places.json")
+		DirAccess.make_dir_recursive_absolute(places_path.get_base_dir())
 	library_path = places_path.get_base_dir()
 	recent_file = library_path.path_join("recent.cfg")
 	await super._ready()
@@ -22,64 +45,132 @@ func _ready() -> void:
 	places_ready = places.initialized
 	get_window().title = "ZenScape · Gentle regrowth"
 	_setup_creation()
+	shell_ready = true
+
+func _fill_world_menu() -> void:
+	if not creation_mode:
+		super._fill_world_menu()
+		_world_menu.get_popup().add_separator()
+		add_world_action("New open plain",func() -> void: places.new_plain(),120,_places_idle)
+		return
+	# World actions for the creation shell; the fine tools live behind Craft.
+	add_world_action("New open plain",func() -> void: places.new_plain(),120,_places_idle)
+	add_world_action("Regenerate landscape",func() -> void: places.regrow(),121,_places_idle)
+	add_world_action("Return to previous place",func() -> void: places.resume_previous(),122,
+		func() -> bool: return _places_idle() and places.has_previous())
+	_world_menu.get_popup().add_separator()
+	add_world_action("Save now",func() -> void:
+		if save_current(): _notice.text = "Saved",123,_places_idle)
+	add_world_action("Colors & sky",func() -> void:
+		set_building(true)
+		_build_palette.close_palette()
+		edit_scene_look(),4)
+	add_world_action("Overview",_overview,6)
+	_world_menu.get_popup().add_separator()
+	add_world_action("Main menu",show_menu,124)
+
+func _places_idle() -> bool:
+	return places != null and places.initialized and not places.busy and not places.holding and not _chunk_editor.forming
 
 func _setup_creation() -> void:
-	_world_menu.get_popup().add_separator()
-	_world_menu.get_popup().add_item("New open plain",120)
-	_world_menu.get_popup().id_pressed.connect(func(id: int) -> void:
-		if id == 120 and places != null and not places.busy: places.new_plain())
 	_chunk_editor.status_changed.connect(func(text: String) -> void:
-		# Every stroke refreshes; the creation hint already says how to keep going.
+		# Every stroke refreshes; the palette's hint already says how to keep going.
 		if _creating() and text.begins_with("Garden changed"): _notice.text = "")
 	if not creation_mode: return
 	for connection: Dictionary in _build_button.pressed.get_connections():
 		_build_button.pressed.disconnect(connection.callable)
 	_build_button.pressed.connect(func() -> void: set_building(not crafting))
-	_build_button.tooltip_text = "Craft opens the fine sculpt, paint and place tools · Create returns to the land brush"
-	_creation_hint = Label.new()
-	_creation_hint.text = "Drag to raise land  ·  Shift or right drag lowers  ·  [ ] brush size  ·  drag the sky to orbit"
-	_creation_hint.add_theme_font_size_override("font_size",13)
-	_creation_hint.add_theme_color_override("font_color",Color("eee7db",0.78))
-	_creation_hint.add_theme_color_override("font_shadow_color",Color("182628",0.8))
-	_creation_hint.add_theme_constant_override("shadow_offset_y",1)
-	_creation_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_notice.get_parent().add_child(_creation_hint)
-	get_viewport().size_changed.connect(_place_creation_hint)
-	_place_creation_hint()
+	# The top right keeps only Craft and World; Esc opens the main menu, Cmd S saves.
+	for control: Control in _toolbar.get_children():
+		control.visible = control in [_build_button,_world_menu]
+	for control: Button in [_build_button,_world_menu]:
+		Glass.button(control)
+		control.add_theme_font_size_override("font_size",13)
+		control.add_theme_constant_override("h_separation",6)
+		control.custom_minimum_size = Vector2(0,34)
+		control.focus_mode = Control.FOCUS_NONE
+	_world_menu.icon = _glyph("world")
+	_world_menu.tooltip_text = "New plain, regenerate, save and the main menu"
+	Glass.popup(_world_menu.get_popup())
+	_toolbar.add_theme_constant_override("separation",2)
+	_toolbar_glass = Glass.surface(12)
+	_toolbar.get_parent().add_child(_toolbar_glass)
+	_toolbar.get_parent().move_child(_toolbar_glass,_toolbar.get_index())
+	_toolbar.visibility_changed.connect(func() -> void: _toolbar_glass.visible = _toolbar.visible)
+	creation_palette = Palette.new()
+	_toolbar.get_parent().add_child(creation_palette)
+	_toolbar.get_parent().move_child(creation_palette,_toolbar_glass.get_index())
+	creation_palette.setup(self)
+	_layout_shell()
 	_sync_creation_ui()
 
-func _place_creation_hint() -> void:
-	if _creation_hint == null: return
-	var screen := get_viewport().get_visible_rect().size
-	_creation_hint.size = _creation_hint.get_minimum_size()
-	_creation_hint.position = Vector2((screen.x-_creation_hint.size.x)*0.5,screen.y-_creation_hint.size.y-18.0)
+func _layout_shell() -> void:
+	super._layout_shell()
+	if _toolbar_glass == null: return
+	var pad := Vector2(6,5)*_toolbar.scale.x
+	_toolbar_glass.position = _toolbar.position-pad
+	_toolbar_glass.size = _toolbar.size*_toolbar.scale+pad*2.0
 
-## The land brush is in hand and the craft palette is away.
+## A creation brush is in hand and the craft palette is away.
 func _creating() -> bool:
-	return creation_mode and _has_world and _chunk_editor.active and not crafting and _chunk_editor.mode == "land"
+	return creation_mode and _has_world and _chunk_editor.active and not crafting and not looking and _chunk_editor.mode in brush_ids
 
 func set_building(enabled: bool) -> void:
 	if not creation_mode or not _has_world:
 		super.set_building(enabled)
 		return
 	if enabled:
+		_set_looking_state(false)
 		super.set_building(true)
 		crafting = true
-		if _chunk_editor.mode == "land": _chunk_editor.select_tool(craft_tool)
+		if _chunk_editor.mode in brush_ids: _chunk_editor.select_tool(craft_tool)
+	elif looking:
+		_put_brush_away()
 	else:
 		_enter_creation()
 	_sync_creation_ui()
 
 func _enter_creation() -> void:
+	_close_craft_panels()
+	crafting = false
+	if _chunk_editor.mode not in brush_ids: craft_tool = _chunk_editor.mode
+	flush_world_play()
+	_chunk_editor.set_active(true)
+	if _chunk_editor.active and _chunk_editor.mode != brush: _chunk_editor.select_tool(brush)
+	_ui.visible = false
+
+## Look: no tool in hand, so drags orbit the camera and there is no brush ring.
+func _put_brush_away() -> void:
+	_close_craft_panels()
+	if crafting and _chunk_editor.mode not in brush_ids: craft_tool = _chunk_editor.mode
+	crafting = false
+	super.set_building(false)
+
+func _close_craft_panels() -> void:
 	if _look_editor != null: _look_editor.hide()
 	if _landscape_editor != null: _landscape_editor.hide()
 	_build_palette.close_palette()
-	crafting = false
-	if _chunk_editor.mode != "land": craft_tool = _chunk_editor.mode
-	flush_world_play()
-	_chunk_editor.set_active(true)
-	if _chunk_editor.active and _chunk_editor.mode != "land": _chunk_editor.select_tool("land")
-	_ui.visible = false
+
+func _set_looking_state(enabled: bool) -> void:
+	if looking == enabled: return
+	looking = enabled
+	looking_changed.emit(looking)
+
+## Put the brush away (true) or pick the last one back up (false).
+func set_looking(enabled: bool) -> void:
+	if not creation_mode or not _has_world or (places != null and places.busy): return
+	if enabled == looking and not crafting: return
+	_set_looking_state(enabled)
+	set_building(false)
+
+## Pick up a registered creation brush; this also ends Look and Craft.
+func select_brush(id: String) -> void:
+	if not creation_mode or not _has_world or id not in brush_ids or (places != null and places.busy): return
+	var changed := id != brush
+	brush = id
+	_set_looking_state(false)
+	set_building(false)
+	if changed: brush_changed.emit(id)
 
 ## Regrowth folds the world away with no tool in hand, then gives the brush back.
 func suspend_creation() -> void:
@@ -91,13 +182,19 @@ func suspend_creation() -> void:
 func resume_creation() -> void:
 	if creation_mode: set_building(false)
 
+func _glyph(kind: String) -> Texture2D:
+	if not _glyphs.has(kind): _glyphs[kind] = Glass.glyph(kind,18)
+	return _glyphs[kind]
+
 func _sync_creation_ui() -> void:
 	if not creation_mode or _build_button == null: return
 	_build_button.text = "Create" if crafting else "Craft"
+	_build_button.icon = _glyph(brush if crafting else "craft")
+	_build_button.tooltip_text = "Back to the brushes" if crafting else "Fine sculpt, paint and place tools"
 	if not crafting and _chunk_editor.active and not _menu.visible: _ui.visible = false
-	if _creation_hint != null:
-		_creation_hint.visible = _creating() and _toolbar.visible and not _menu.visible
-		_place_creation_hint()
+	if creation_palette != null:
+		creation_palette.visible = _has_world and not crafting and _toolbar.visible and not _menu.visible
+		creation_palette.sync()
 
 func show_menu() -> void:
 	if _menu != null and not _menu.visible: _craft_before_menu = crafting
@@ -136,26 +233,51 @@ func _process(delta: float) -> void:
 	# Cmd/Ctrl K opens the palette directly; treat that as entering Craft.
 	if creation_mode and not crafting and _ui.visible and _chunk_editor.active and _menu != null and not _menu.visible:
 		crafting = true
-		if _chunk_editor.mode == "land": _chunk_editor.select_tool(craft_tool)
+		if _chunk_editor.mode in brush_ids: _chunk_editor.select_tool(craft_tool)
 		_sync_creation_ui()
 
 func _unhandled_input(event: InputEvent) -> void:
-	# While creating, [ ] size the brush; Alt [ ] still steps the showcase seeds.
-	if places != null and places.initialized and event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT] and (not _creating() or event.alt_pressed):
+	var key: bool = event is InputEventKey and event.pressed and not event.echo
+	# Alt [ ] steps the showcase seeds; plain [ ] sizes the brush in hand.
+	if places != null and places.initialized and key and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT] and (event.alt_pressed or not creation_mode):
 		places.step_showcase(1 if event.keycode == KEY_BRACKETRIGHT else -1)
 		get_viewport().set_input_as_handled()
 		return
-	if _creating() and event is InputEventKey and event.pressed and not event.echo and not (_menu.visible or _file_dialog.visible or _settings.visible):
-		if event.keycode == KEY_ESCAPE:
-			show_menu()
-			get_viewport().set_input_as_handled()
-			return
-		# Number keys and V pick craft tools; they wait for the Craft palette.
-		if event.keycode in [KEY_1,KEY_2,KEY_3,KEY_4,KEY_V] and not (event.ctrl_pressed or event.meta_pressed):
-			get_viewport().set_input_as_handled()
-			return
+	if key and creation_mode and _has_world and not crafting and not (_menu.visible or _file_dialog.visible or _settings.visible) and _creation_key(event):
+		get_viewport().set_input_as_handled()
+		return
 	super._unhandled_input(event)
 	_sync_creation_ui()
+
+## Keys while creating or looking: Tab looks, 1-9 pick brushes in palette
+## order, H hides the chrome and puts the brush away with it, Esc opens the
+## menu. Returns true when the key was used.
+func _creation_key(event: InputEventKey) -> bool:
+	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
+	if event.keycode == KEY_TAB:
+		set_looking(not looking)
+		return true
+	if event.keycode == KEY_H:
+		var hiding := _toolbar.visible
+		if hiding:
+			_look_before_hide = looking
+			set_looking(true)
+		super._unhandled_input(event)
+		if not hiding: set_looking(_look_before_hide)
+		_sync_creation_ui()
+		return true
+	if not (_creating() or looking): return false
+	if event.keycode == KEY_ESCAPE:
+		show_menu()
+		return true
+	# Number keys pick brushes; V and unused numbers wait for the Craft palette.
+	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
+		var index: int = event.keycode-KEY_1
+		if index < brush_ids.size(): select_brush(brush_ids[index])
+		return true
+	if event.keycode == KEY_V: return true
+	# Looking holds no brush: size keys have nothing to size.
+	return looking and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]
 
 func handle_resident_input(event: InputEvent) -> bool:
 	# The build palette forwards resident gestures before the scene's _input.
@@ -168,6 +290,8 @@ func handle_resident_input(event: InputEvent) -> bool:
 
 func blocks_world_input(point: Vector2) -> bool:
 	if places != null and places.blocks(point): return true
+	if creation_palette != null and creation_palette.contains_pointer(point): return true
+	if _toolbar_glass != null and _toolbar_glass.is_visible_in_tree() and _toolbar_glass.get_global_rect().has_point(point): return true
 	return super.blocks_world_input(point)
 
 func save_current() -> bool:

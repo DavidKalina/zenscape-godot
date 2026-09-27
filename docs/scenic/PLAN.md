@@ -328,8 +328,8 @@ Four parallel branches, merged in this order:
 
 **Follow-ups from slice 1:**
 - The plain's ground reads greyer and more mauve than Fidelity's green. It picks a random palette family (for example Chalk & turquoise) under mist. Offered: default the plain to Fidelity's palette and a clearer sky.
-- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H). Slice 5 covers it.
-- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch. Slice 5 covers it.
+- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H). Slice 5 adds Look (Tab), and H now puts the brush away.
+- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch. Slice 5 rewrote it for the creation shell.
 - The dense-grass render, the first-dab and first-plan hitches, and the water release frame are in the remaining slices below.
 - A plain launch copies `places.json` to `places-previous.json` before it is overwritten.
 
@@ -358,11 +358,14 @@ Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto 
    - A path brush leaves worn ground with stony edges.
    - A meadow brush paints softer painted cover and flowers as ground colour, not blades.
    - All three respect provenance, so hand work always wins.
-5. **The creation interface.**
-   - Replace the top toolbar and the World-menu index hack (`diorama.gd`) with a creation-first shell.
-   - Check the parked maker-editor look (`wip/parked-2026-09-26`) on screen, and reuse its glass chrome if it fits.
-   - Add a "just look" state where the brush is put away.
-   - Make `--verify-desktop-build` pass again.
+5. **The creation interface.** Landed on `feature/creation-shell` (2026-09-26, not merged; the look is unverified on screen).
+   - **Palette:** a glass strip at the bottom centre lists every brush in `Genesis.BRUSHES` (`scripts/genesis_canvas.gd`), in order, keys 1-9. It shows the size and strength of the brush in hand as two thin meters, and ends with **Look**. A one-line how-to sits beneath and fades after the first stroke (`scripts/creation_palette.gd`).
+   - **Look (Tab):** puts the brush away. The camera roams, there is no brush ring and nothing paints. A brush button or its number picks it back up. **H** hides the chrome and puts the brush away with it; H again restores both.
+   - **Top right:** only **Craft** (the old rail; it reads **Create** while open) and **World**: New open plain, Regenerate landscape, Return to previous place (swaps with `places-previous.json`), Save now, Colors & sky, Overview, Main menu. Alt+`[ ]` still steps the showcase seeds.
+   - **Chrome:** the parked maker-editor glass (dark translucent tint over a blurred frame, transparent buttons with a thin selected outline) is reused in `scripts/glass_chrome.gd` and `shaders/editor_glass.gdshader`. Its pixel-stepped colour sprites stay parked; the shell uses thin line glyphs instead.
+   - **World menu:** `diorama.gd` builds it from explicit actions (`add_world_action`) instead of pressing hidden toolbar buttons by index. The ids are unchanged. `_home_button` is gone; His spot greys itself out.
+   - **`--verify-desktop-build`:** now walks the shell (plain, palette lists the registered brushes, first brush in hand, Look stops painting and a press orbits instead, Craft and Create, menu round trip). It passes headless from the source tree. The run uses a temporary places folder so it never touches the player's saves.
+   - **Still open:** confirm the look on screen, the glass blur's frame cost, and the exit-time resource leak lines. Those lines appear before and after this change, and `tools/verify_desktop_export.py` fails on any `ERROR:`.
 6. **Sound.**
    - Stroke sounds: rumble as land rises, water filling, wind swelling.
    - World beds that follow what exists (water, birds, forest).

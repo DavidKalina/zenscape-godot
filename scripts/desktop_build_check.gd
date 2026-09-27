@@ -36,36 +36,88 @@ static func run(scene: Node) -> void:
 				tree.quit(1)
 				return
 	print("PASS: packaged native mesh equivalence")
-	if not scene.title_loaded or not scene._has_world or not scene.resident_enabled or scene._chunk_editor.data.blank:
-		push_error("FAIL: packaged startup did not enter inhabited Fidelity")
+	# The product opens on the Genesis plain with a creation brush in hand.
+	var deadline := Time.get_ticks_msec()+120_000
+	while not bool(scene.get("shell_ready")):
+		if Time.get_ticks_msec() >= deadline or scene.get("shell_ready") == null:
+			push_error("FAIL: packaged startup did not reach the creation shell")
+			tree.quit(1)
+			return
+		await tree.process_frame
+	var failure := _check_creation_shell(scene)
+	if not failure.is_empty():
+		push_error("FAIL: packaged "+failure)
 		tree.quit(1)
 		return
-	scene.show_menu()
-	if scene._menu == null or not scene._menu.visible:
-		push_error("FAIL: packaged main menu is missing")
-		tree.quit(1)
-		return
-	scene.new_diorama()
-	var rail = scene._build_palette.get("_tool_rail")
-	if not scene._chunk_editor.active or rail == null or not rail.visible:
-		push_error("FAIL: packaged New diorama editor is missing")
-		tree.quit(1)
-		return
-	var folder: String = scene.library_path
+	var folders: Array[String] = [scene.library_path,scene.places_path.get_base_dir()]
 	var audio_streams: Array[WeakRef] = []
 	for kind in ["AudioStreamPlayer","AudioStreamPlayer3D"]:
 		for player in scene.find_children("*",kind,true,false):
 			if player.stream != null: audio_streams.append(weakref(player.stream))
 	scene.free()
-	var deadline := Time.get_ticks_msec()+2000
+	var release_deadline := Time.get_ticks_msec()+2000
 	while audio_streams.any(func(stream: WeakRef) -> bool: return stream.get_ref() != null):
-		if Time.get_ticks_msec() >= deadline:
+		if Time.get_ticks_msec() >= release_deadline:
 			push_error("FAIL: packaged audio streams retained after shutdown")
 			tree.quit(1)
 			return
 		await tree.process_frame
-	for name in DirAccess.get_files_at(folder):
-		DirAccess.remove_absolute(folder.path_join(name))
-	DirAccess.remove_absolute(folder)
-	print("PASS: packaged main menu and New diorama editor")
+	for folder in folders:
+		for name in DirAccess.get_files_at(folder):
+			DirAccess.remove_absolute(folder.path_join(name))
+		DirAccess.remove_absolute(folder)
+	print("PASS: packaged creation shell, Look, Craft and main menu")
 	tree.quit(0)
+
+## Walk the creation shell the way a player first meets it. Returns what
+## failed, or "" when every step held.
+static func _check_creation_shell(scene: Node) -> String:
+	var editor: NativeChunkEditor = scene._chunk_editor
+	var palette: Control = scene.creation_palette
+	if not scene._has_world or not scene.places.plain or not editor.data.blank:
+		return "startup did not open on the Genesis plain"
+	var ids: Array = scene.brush_ids
+	if palette == null or not palette.is_visible_in_tree() or ids.is_empty() or palette.brush_ids() != ids:
+		return "creation palette is missing or does not list the registered brushes"
+	for id: String in ids:
+		if not palette.buttons.has(id) or not palette.buttons[id].is_visible_in_tree():
+			return "creation palette has no button for brush "+id
+	if not scene._creating() or editor.mode != ids[0] or not palette.buttons[ids[0]].button_pressed:
+		return "launch did not put the first brush in hand"
+	var rail: Control = scene._build_palette.get("_tool_rail")
+	if rail != null and rail.is_visible_in_tree():
+		return "craft rail is showing in creation mode"
+	# Look puts the brush away: nothing paints and a press falls to the camera.
+	palette.look_button.pressed.emit()
+	if not scene.looking or editor.active or scene._creating() or not palette.look_button.button_pressed:
+		return "Look did not put the brush away"
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = scene.get_viewport().get_visible_rect().size*0.5
+	var revision := editor.data.heights.duplicate()
+	scene._unhandled_input(press)
+	var orbiting: bool = scene._orbiting
+	var release := press.duplicate()
+	release.pressed = false
+	scene._input(release)
+	if editor._painting or editor.data.heights != revision or not orbiting:
+		return "a press while looking painted instead of turning the camera"
+	palette.buttons[ids[0]].pressed.emit()
+	if scene.looking or not scene._creating() or editor.mode != ids[0]:
+		return "picking the brush did not end Look"
+	# Craft opens the fine tools behind one control; Create returns to the brush.
+	scene._build_button.pressed.emit()
+	if not scene.crafting or not editor.active or rail == null or not rail.is_visible_in_tree() or palette.is_visible_in_tree():
+		return "Craft did not open the fine tools"
+	scene._build_button.pressed.emit()
+	if scene.crafting or not scene._creating() or rail.is_visible_in_tree() or not palette.is_visible_in_tree():
+		return "Create did not return to the brush"
+	# The main menu covers the shell and gives it back.
+	scene.show_menu()
+	if scene._menu == null or not scene._menu.visible or palette.is_visible_in_tree():
+		return "main menu is missing"
+	scene.close_menu()
+	if scene._menu.visible or not palette.is_visible_in_tree() or not scene._creating():
+		return "closing the main menu did not return to the brush"
+	return ""

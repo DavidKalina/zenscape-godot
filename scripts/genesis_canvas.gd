@@ -7,6 +7,22 @@ extends RefCounted
 const Families = preload("res://scripts/palette_families.gd")
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 
+## The creation brushes, in palette order; number keys follow it (1 land,
+## 2 water, 3 meadow, 4 forest, 5 path). The palette (scripts/
+## creation_palette.gd) shows whatever is listed here. Each entry is a
+## Dictionary, or a brush object or script exposing the same names:
+## - `brush_id`: the NativeChunkEditor mode that paints it; picking the brush
+##   calls `select_tool(brush_id)`.
+## - `title`: the palette's name for it.
+## - `hint`: optional one-line how-to under the palette.
+## - `size` / `strength`: optional editor properties that `[ ]` and
+##   Shift+`[ ]` step; by default the SETTINGS entries titled "Brush size" and
+##   "Strength" for the mode.
+## Brush branches append their own entry.
+const BRUSHES := [
+	{"brush_id":"land","title":"Land","hint":"Drag to raise land  ·  Shift or right drag lowers"},
+]
+
 ## A seeded misty morning or soft day over a meadow palette.
 static func world(seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
