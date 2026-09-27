@@ -21,16 +21,16 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | Control | While creating |
 | --- | --- |
 | **1**–**5** | Land, Water, Meadow, Forest, Path (or click a palette brush) |
-| Left drag | Paint with the brush in hand |
+| **1** again / **Shift+1** (land in hand) | Next / previous land form: Hill, Alpine, Ridge, Mesa, Volcano, Tors ([mountain forms](docs/scenic/brushes.md#mountain-forms)) |
+| Left drag | Paint with the brush in hand (with a mountain form: press where the peak goes, drag out to grow it) |
 | Shift-drag | Work the other way: land lowers, water drains, a meadow lifts, forest clears, a path grows back |
 | **`[ ]`** / **Shift+`[ ]`** | Brush size / strength |
-| **Double-click** (or point and press **F**) | Glide to a creature, tree, rock or pond and circle it; creatures are followed. On bare ground the view moves there |
-| Right drag, Ctrl-drag, or a two-finger swipe | Look around (orbit), with the brush still in hand |
+| Right drag, Ctrl-drag, Alt-drag, a drag off the land, or a two-finger swipe | Orbit, with the brush still in hand |
 | Middle drag, Shift + two-finger swipe, arrows | Pan (Shift+arrows turn and tilt) |
 | Scroll / pinch | Zoom toward the pointer |
+| **Double-click** (or point and press **F**) | Glide to a creature, tree, rock or pond and circle it; creatures are followed. On bare ground the view moves there. The first click's dab or pour is taken back |
 | **Backspace** or **Home** | Glide back to the view before |
 | **Tab** (or **Look**) | Put the brush away, so a left drag orbits too and pointing names things |
-| Alt-drag, or a drag off the land | Orbit without putting the brush away |
 | **R** | Overview |
 | **H** | Hide the controls (and the brush); H again restores both |
 | **P** (or **Photo**) | Photo mode (below) |
@@ -39,7 +39,7 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | **Alt+`[ ]`** | Step through the showcase seeds |
 | **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
 | **Cmd/Ctrl S** | Save now |
-| **Esc** | Menu |
+| **Esc** | Close the moods, otherwise open the menu |
 
 **Craft** at the top right opens the fine sculpt, paint and place tools (the
 Build palette below; there **1**–**4** pick raise, lower, smooth and flatten and

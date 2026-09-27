@@ -1677,8 +1677,10 @@ func stroke_mode() -> String:
 	if mountain.active: return "mountain"
 	return brush_id if mode == "land" else mode
 
-## A left press paints and a right press works the other way (Shift either
-## way): land rises and lowers, forest grows and clears, and so on.
+## A left press paints and Shift-drag works the other way: land rises and
+## lowers, forest grows and clears, and so on. A right press works the other
+## way too only while `right_works_other_way` is on (the classic build); the
+## creation shell turns it off, so right drags orbit there.
 ## A press that misses the land, or holds Alt, falls through to the camera, so
 ## the sky still orbits with either button.
 func _land_press(event: InputEventMouseButton) -> bool:

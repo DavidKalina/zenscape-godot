@@ -17,7 +17,7 @@ const Erosion = preload("res://scripts/terrain_erosion.gd")
 ## The forms in picker order: data only, so a shell can restyle the picker.
 ## `glyph` names a scripts/glass_chrome.gd GLYPHS entry.
 const FORMS := [
-	{"id":"hill","title":"Hill","glyph":"land","hint":"Drag to raise land  ·  Shift or right drag lowers"},
+	{"id":"hill","title":"Hill","glyph":"land","hint":"Drag to raise land  ·  Shift-drag lowers"},
 	{"id":"alpine","title":"Alpine","glyph":"form_alpine","hint":"Press where the peak goes  ·  drag out for a bigger, higher peak"},
 	{"id":"ridge","title":"Ridge","glyph":"form_ridge","hint":"Press and drag along the ridge  ·  longer is higher"},
 	{"id":"mesa","title":"Mesa","glyph":"form_mesa","hint":"Press for a mesa  ·  drag out for a broader, higher one"},

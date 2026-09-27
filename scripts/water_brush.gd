@@ -8,7 +8,7 @@ extends "res://scripts/creation_brush.gd"
 ##   as a stream to the next basin, or off the edge of the diorama; basins
 ##   that overflow into each other become one lake;
 ## - water poured well above where it pools runs down to it as a stream.
-## Shift or a right drag drains instead: ponds and streams under the brush go.
+## Shift-drag (or a right drag outside the creation shell) drains instead: ponds and streams under the brush go.
 ##
 ## `plan` is pure data on a detached height copy, so the editor runs it on a
 ## worker and the release frame only records the dabs. The result carries a

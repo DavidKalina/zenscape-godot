@@ -209,7 +209,7 @@ the form's hint.
   rising flank under the pointer never shrinks it.
 - The form rises live while the button is held (`RISE_SECONDS` 2.2 s, eased)
   and reshapes as you drag. After release it finishes rising, then lands.
-- Shift or a right press still lowers with the Hill brush.
+- Shift-drag still lowers, with the Hill brush, whichever form is in hand. Right drags orbit in the creation shell.
 
 **Landing, undo and weathering.** Landing closes the mountain's undo step at
 full height (`_land_mountain`). Weathering and rock colour then run on a
