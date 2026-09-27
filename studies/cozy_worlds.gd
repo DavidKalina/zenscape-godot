@@ -31,6 +31,8 @@ var photo: Node
 ## panel that picks them (scripts/mood_panel.gd). M or the palette's Mood.
 var mood_look: Node
 var mood_panel: Control
+## The shell's camera: focus, follow, glides and gestures (scripts/camera_rig.gd).
+var camera_rig: Node
 ## True once the shell is built and the first world is open.
 var shell_ready := false
 var _craft_before_menu := false
@@ -121,6 +123,11 @@ func _setup_creation() -> void:
 	_toolbar.get_parent().add_child(mood_panel)
 	_toolbar.get_parent().move_child(mood_panel,creation_palette.get_index())
 	mood_panel.setup(self)
+	camera_rig = preload("res://scripts/camera_rig.gd").new()
+	add_child(camera_rig)
+	camera_rig.setup(self)
+	# Right drags orbit here; Shift-drag works the brush the other way.
+	_chunk_editor.right_works_other_way = false
 	_layout_shell()
 	_sync_creation_ui()
 
@@ -344,6 +351,7 @@ func blocks_world_input(point: Vector2) -> bool:
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
 	if photo != null and photo.contains_pointer(point): return true
 	if mood_panel != null and mood_panel.contains_pointer(point): return true
+	if camera_rig != null and camera_rig.contains_pointer(point): return true
 	if _toolbar_glass != null and _toolbar_glass.is_visible_in_tree() and _toolbar_glass.get_global_rect().has_point(point): return true
 	return super.blocks_world_input(point)
 
