@@ -77,6 +77,35 @@ const PLATE := 11.0
 ## Metres² the generator's per-habitat tree counts are spread over.
 const PLANTED_AREA := 462.0
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus"]
+## Tree species by stand. The land is split into stands about STAND_SIZE
+## metres across (jittered cells, nearest seed wins, so the edges wander).
+## Each stand draws a dominant and a companion species from its habitat's
+## pool, leaned by the stand's moisture and altitude and by the world's own
+## taste; the rest of its trees are a rare accent from the whole pool. Every
+## place reads as one wood, neighbouring stands differ, and the odd stranger
+## still turns up. `tree` is the spruce family.
+const STAND_SIZE := 8.0
+## Dominant share per stand, from a mixed stand to a near-pure one; the
+## companion takes the rest but RARE_SHARE.
+const STAND_PURITY := Vector2(0.55,0.9)
+const RARE_SHARE := 0.08
+const TREE_POOLS := {
+	"meadow":{"broadleaf":1.0,"layered_tree":0.6,"tree":0.35},
+	"wetland":{"broadleaf":1.0,"layered_tree":0.8,"tree":0.15},
+	"woodland":{"broadleaf":1.0,"tree":0.9,"layered_tree":0.5},
+	"redwood":{"redwood":1.0,"tree":0.45,"broadleaf":0.15},
+	"alpine":{"tree":1.0,"broadleaf":0.1,"layered_tree":0.05},
+	"arid":{"joshua":1.0,"cactus":0.8,"broadleaf":0.0},
+}
+## Crown tints (sRGB) for the trees whose canopies are baked grey, as the
+## landscape presets plant them (native_landscape_presets.gd). Without one an
+## emerged tree took the reference scene's first instance colour, a blossom
+## pale that made every emerged broadleaf lavender. A stand shares a small hue
+## and saturation shift; each tree its own brightness.
+const TREE_TINTS := {"broadleaf":"6f9c46","tree":"3e7a44","redwood":"b1c2a5"}
+const STAND_HUE := 0.05
+const STAND_SATURATION := Vector2(0.88,1.12)
+const TREE_BRIGHTNESS := Vector2(0.82,1.08)
 ## Forest intent (scripts/forest_brush.gd, docs/scenic/brushes.md). Where the
 ## forest brush wished for forest, shrubs and trees come sooner and the core
 ## fills first; a forest stroke plans only candidates inside its wish.
@@ -507,7 +536,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 				and _near(p,Guidance.LONE_RADIUS,true) == 0 and guide.at(guide.feature,p) < Guidance.FEATURE_KEEP \
 				and Variety.unit(key+[20]) < Guidance.LONE_DROP*float(guide.gain.lone):
 			return _refuse("lone")
-		kind = _tree_kind(habitat,Variety.unit(key+[5]))
+		kind = _tree_kind(habitat,p,Variety.unit(key+[5]))
 	else:
 		if slope > 0.6 or float(h) > _treeline(habitat)+1.5:
 			return _refuse("steep or high")
@@ -538,7 +567,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		elif leaned < draw-0.001: guided_sizes.down += 1
 		draw = leaned
 	var size := lerpf(span.x,span.y,draw)*float(KIND_SIZE.get(kind,1.0))
-	var id := data.place(kind,p,Variety.unit(key+[7])*TAU,size)
+	var id := data.place(kind,p,Variety.unit(key+[7])*TAU,size,{},_tree_tint(kind,p,key))
 	if id < 0:
 		return false
 	data.objects.back()["source"] = "emerged"
@@ -633,13 +662,81 @@ func _refuse(reason: String) -> bool:
 	refusals[reason] = refusals.get(reason,0)+1
 	return false
 
-func _tree_kind(habitat: String, pick: float) -> String:
-	match habitat:
-		"woodland": return "layered_tree" if pick < 0.15 else "broadleaf" if pick < 0.6 else "tree"
-		"redwood": return "redwood"
-		"arid": return "joshua" if pick < 0.55 else "cactus"
-		"meadow","wetland": return "broadleaf"
-	return "tree"
+func _tree_kind(habitat: String, p: Vector2, pick: float) -> String:
+	var pool: Dictionary = TREE_POOLS.get(habitat,{"tree":1.0})
+	var stand := _stand(p)
+	var kinds: Array = pool.keys()
+	var weights := []
+	for kind: String in kinds:
+		weights.append(_species_weight(habitat,kind,float(pool[kind]),stand.moisture,stand.altitude)*Variety.lean(salt,"tree:"+kind))
+	var dominant := Variety.weighted(weights,Variety.unit(stand.key+[1]))
+	var purity := lerpf(STAND_PURITY.x,STAND_PURITY.y,Variety.unit(stand.key+[3]))
+	if pick < purity:
+		return kinds[dominant]
+	var others := weights.duplicate()
+	others[dominant] = 0.0
+	var total := 0.0
+	for w: float in others: total += w
+	if total <= 0.0:
+		return kinds[dominant]
+	var companion := Variety.weighted(others,Variety.unit(stand.key+[2]))
+	if pick < 1.0-RARE_SHARE or kinds.size() < 3:
+		return kinds[companion]
+	# The rare accent: anything else in the pool, by its weight, so a rare
+	# species stays rare even when it is the accent.
+	var rare := weights.duplicate()
+	rare[dominant] = 0.0
+	rare[companion] = 0.0
+	total = 0.0
+	for w: float in rare: total += w
+	if total <= 0.0:
+		return kinds[companion]
+	return kinds[Variety.weighted(rare,(pick-(1.0-RARE_SHARE))/RARE_SHARE)]
+
+## An emerged tree's crown tint, or "" to keep the catalog colour.
+func _tree_tint(kind: String, p: Vector2, key: Array) -> String:
+	if not TREE_TINTS.has(kind):
+		return ""
+	var stand := _stand(p)
+	var color := Color(TREE_TINTS[kind])
+	color.h = fposmod(color.h+(Variety.unit(stand.key+[4])-0.5)*STAND_HUE,1.0)
+	color.s = clampf(color.s*lerpf(STAND_SATURATION.x,STAND_SATURATION.y,Variety.unit(stand.key+[5])),0.0,1.0)
+	return NativeObjectPose.encode_tint(color.srgb_to_linear()*lerpf(TREE_BRIGHTNESS.x,TREE_BRIGHTNESS.y,Variety.unit(key+[22])))
+
+## The stand a point belongs to: the nearest of the jittered stand seeds in
+## the cells around it, with the seed's key and its moisture and altitude, so
+## a whole stand leans the same way.
+func _stand(p: Vector2) -> Dictionary:
+	var base := Vector2i((p/STAND_SIZE).floor())
+	var best := {}
+	var nearest := INF
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			var c := base+Vector2i(dx,dz)
+			var seed := (Vector2(c)+Vector2(Variety.unit([salt,c.x,c.y,31]),Variety.unit([salt,c.x,c.y,32])))*STAND_SIZE
+			var d := p.distance_squared_to(seed)
+			if d < nearest:
+				nearest = d
+				best = {"key":[salt,c.x,c.y,30],"seed":seed}
+	var at: Vector2 = best.seed.clamp(Vector2(-13.99,-13.99),Vector2(13.99,13.99))
+	best.moisture = _blend.moisture(at)
+	best.altitude = _blend.altitude(at)
+	return best
+
+## A species' weight in a stand: its pool weight leaned by the stand's
+## ground. Broadleaves and layered trees want water, spruce wants height and
+## drier ground, cactus wants neither. In arid land a broadleaf stands only by
+## water, where it makes an oasis.
+func _species_weight(habitat: String, kind: String, base: float, moisture: float, altitude: float) -> float:
+	match kind:
+		"broadleaf":
+			if habitat == "arid": return 1.2*smoothstep(0.45,0.8,moisture)
+			return base*lerpf(0.6,1.5,moisture)*lerpf(1.2,0.6,altitude)
+		"layered_tree": return base*lerpf(0.7,1.4,moisture)
+		"tree": return base*lerpf(1.3,0.7,moisture)*lerpf(0.8,1.6,altitude)
+		"redwood": return base*lerpf(0.6,1.4,moisture)
+		"cactus": return base*lerpf(1.4,0.4,moisture)
+	return base
 
 func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:
 	match habitat:

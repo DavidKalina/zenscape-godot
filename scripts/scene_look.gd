@@ -163,7 +163,7 @@ const SOURCE_SEASON_KEYS := {"mesh-8":"trunk","mesh-9":"canopy","mesh-10":"grass
 static func leaf_season(key: String) -> Vector4:
 	if key in ["canopy","trunk"] or key.begins_with("tree:spruce-") or key.begins_with("redwood:") or key.begins_with("joshua:") or key.begins_with("cactus:"):
 		return Vector4.ZERO
-	if key in ["broadleaf:broadleaf-canopies","layered_tree:layered-canopies"]: return Vector4(1.0,1.0,0.45,0.0)
+	if key in ["broadleaf:broadleaf-canopies","layered_tree:layered-canopies"]: return Vector4(1.0,1.0,0.15,0.0)
 	if key.begins_with("shrub:"): return Vector4(1.0,0.55,0.3,0.0)
 	if key.begins_with("fern:"): return Vector4(1.0,0.0,0.0,0.6)
 	if key in ["petal","stem"] or "flower" in key: return Vector4(1.0,0.0,0.0,1.0)
