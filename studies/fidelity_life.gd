@@ -25,6 +25,7 @@ var _habitat_blocked := false
 var _reaction := Label3D.new()
 var _reaction_time := 0.0
 var foliage_tread: Node
+var land_life: Node3D
 
 func _ready() -> void:
 	super._ready()
@@ -107,6 +108,11 @@ func _ready() -> void:
 	dead_wood = preload("res://scripts/dead_wood.gd").new()
 	add_child(dead_wood)
 	dead_wood.setup(self)
+	# Blank worlds: fish, frogs, birds and fireflies find the land you made
+	# (docs/scenic/life.md). The Fidelity world keeps its authored life.
+	land_life = preload("res://scripts/land_life.gd").new()
+	add_child(land_life)
+	land_life.setup(self)
 	_choose_inhabited_shore()
 	_seed_loose_stones()
 	_focus_bigfoot()
