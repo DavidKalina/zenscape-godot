@@ -432,7 +432,7 @@ Merged in order: water brush, land brushes, life answers, creation shell. Not on
 - **One paint path.** The editor's "land" tool paints with the brush in hand, water included. Water extends `creation_brush.gd` as a settling brush: dabs only record, and the pour plans on a worker after release. The shell picks brushes with `NativeChunkEditor.select_brush` rather than `select_tool(brush_id)`, because a `"meadow"` mode already means the craft Meadow tool. `[ ]` size the brush in hand; the palette's meters read `brush_setting`.
 - **Feel.** Water is a `StrokeFeedback.BRUSH_FEEL` entry (fog reveal, soft swell, no rumble, puffs or wave).
 - **Life.** LandLife also re-reads the world when a pour settles (`water_settled`) and waits for a settling pour before it surveys.
-- **Checks.** `--verify-desktop-build` also picks every registered brush from its palette button. A Movie Maker film of all five brushes and the life that follows is `tools/film_genesis.gd`.
+- **Checks.** `--verify-desktop-build` also picks every registered brush from its palette button. A Movie Maker film of all five brushes and the life that follows is `tools/film_genesis.gd` (rendered 2026-09-26 to `captures/phase3-slices-2-5.mp4`, not committed; with `--force-moments` it starts a deer or heron near the end if none came on its own).
 6. **Sound.**
    - Stroke sounds: rumble as land rises, water filling, wind swelling.
    - World beds that follow what exists (water, birds, forest).

@@ -226,6 +226,10 @@ var _stroke_button := MOUSE_BUTTON_LEFT
 var brushes := {}
 var brush_id := "land"
 signal brush_changed(id: String)
+## Viewport point that stands in for the OS pointer while painting, or null.
+## Films drive strokes with synthetic events; in a rendered window the
+## viewport's mouse position is the real cursor, which they must not move.
+var pointer_override: Variant = null
 ## The water brush (scripts/water_brush.gd): poured water settles on a worker
 ## after release, then lands as one undoable edit.
 var water_brush = preload("res://scripts/water_brush.gd").new()
@@ -683,7 +687,8 @@ func _process(delta: float) -> void:
 		return
 	if (_painting or _selection_drag) and (not Input.is_mouse_button_pressed(_stroke_button) or scene._growth.terrain < 0.995):
 		finish_stroke()
-	var hit: Variant = pick(scene.get_viewport().get_mouse_position()) if not scene._orbiting and not scene._panning else null
+	var pointer: Vector2 = pointer_override if pointer_override != null else scene.get_viewport().get_mouse_position()
+	var hit: Variant = pick(pointer) if not scene._orbiting and not scene._panning else null
 	if mode == "pond":
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
