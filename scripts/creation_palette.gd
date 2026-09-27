@@ -8,7 +8,7 @@ extends Control
 const Glass = preload("res://scripts/glass_chrome.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const PAD := Vector2(10,8)
-const LOOK_HINT := "Just looking  ·  drag to orbit  ·  P for a photo  ·  Tab or a brush to create again"
+const LOOK_HINT := "Just looking  ·  drag to orbit  ·  double-click something to go there  ·  P for a photo  ·  Tab or a brush to create again"
 var scene: Node3D
 var editor: NativeChunkEditor
 ## Normalised registry entries: brush_id, title, hint.

@@ -126,7 +126,7 @@ func setup(owner_scene: Node3D) -> void:
 	busy = false
 	_update_badge()
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
-	if plain: scene._notice.text = "Drag across the plain to raise land. Shift or right drag lowers it."
+	if plain: scene._notice.text = "Drag across the plain to raise land. Shift-drag lowers it."
 	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--seed")
@@ -423,7 +423,7 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	if scene.has_method("resume_creation"): scene.resume_creation()
 	if _scenery():
 		scene._paused = old_paused
-		scene._notice.text = "Drag across the plain to raise land. Shift or right drag lowers it." if plain else ""
+		scene._notice.text = "Drag across the plain to raise land. Shift-drag lowers it." if plain else ""
 		return
 	# The original pickup ground no longer exists after regeneration.
 	var safe: Variant = scene.navigation.nearest_safe(origin_feet)

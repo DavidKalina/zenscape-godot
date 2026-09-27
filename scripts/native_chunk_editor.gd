@@ -34,7 +34,7 @@ const TOOL_TEXT := {
 	"pond":"Dig a hollow first. Hover to preview the water, then click to fill.",
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
 	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
-	"land":"Drag to raise land · Shift or right drag lowers · [ ] brush size",
+	"land":"Drag to raise land · Shift-drag lowers · [ ] brush size",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -220,6 +220,9 @@ signal land_weathered(bounds: Rect2)
 var _land_lower := false
 ## The button holding the current land stroke; every other stroke is a left drag.
 var _stroke_button := MOUSE_BUTTON_LEFT
+## A right press works the brush the other way; false leaves right drags to
+## the camera (the creation shell), and Shift-drag alone lowers.
+var right_works_other_way := true
 ## Every creation brush by id (scripts/genesis_canvas.gd `BRUSHES`). The
 ## "land" tool paints with whichever is in hand: land, water, meadow, forest
 ## or path. `land_brush` and `water_brush` are the "land" and "water" entries.
@@ -1669,6 +1672,7 @@ func _land_press(event: InputEventMouseButton) -> bool:
 		if _painting and event.button_index == _stroke_button: finish_stroke()
 		return _painting or event.button_index == MOUSE_BUTTON_LEFT
 	if _painting or event.alt_pressed: return _painting
+	if event.button_index == MOUSE_BUTTON_RIGHT and not right_works_other_way: return false
 	var hit: Variant = pick(event.position)
 	if hit == null: return false
 	_stroke_button = event.button_index

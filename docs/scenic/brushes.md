@@ -15,8 +15,11 @@ included: `NativeChunkEditor.brush_id`, `select_brush(id)`, `held_brush()`,
 and the `brush_changed` signal for a shell to follow. Stroke signals carry the
 brush id as their mode.
 
-- **Drag** paints. **Shift-drag** or **right-drag** works the other way:
-  land lowers, a meadow lifts, forest clears, and a path grows back.
+- **Drag** paints. **Shift-drag** works the other way: land lowers, a meadow
+  lifts, forest clears, and a path grows back. Right drags belong to the
+  camera in the creation shell ([camera](camera.md));
+  `NativeChunkEditor.right_works_other_way` keeps the old right-drag lowering
+  for the classic build.
 - **`[ ]`** sets the size of the brush in hand, and **Shift+`[ ]`** sets its
   strength. Land keeps `land_radius` and `land_strength` as editor settings.
   The others, water included, keep `radius` and `strength` on the brush and

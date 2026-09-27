@@ -38,10 +38,10 @@ Run `./run-cozy-flow.command` and try the following:
 2. Drag slowly across the middle. A soft ridge should rise under the pointer.
 3. Drag back over the same line. It should grow crests and shoulders, not a bigger dome.
 4. Release the mouse. After a short beat, gullies should settle into the slopes. Check whether they read at the overview distance.
-5. Hold Shift and drag, or right-drag, to press a hollow.
+5. Hold Shift and drag to press a hollow.
 6. Press `[` and `]` to change the brush size, and Shift+`[` / `]` to change its strength.
 7. Stroke the same spot for a long time. The peak should flatten out at about 10 m, with rock on its steep faces and snow on top.
-8. Drag from the sky, or Alt-drag, to orbit. Middle-drag pans.
+8. Right-drag (or drag from the sky, or Alt-drag) to orbit. Middle-drag pans. Double-click a spot to glide there ([camera](camera.md)).
 9. Press Cmd+Z to undo the last stroke, including its gullies.
 10. Press **Craft** to open the fine tools, then **Create** to go back to the land brush.
 11. Press **Regrow landscape** for a generated world, and paint over it too. Then use World → New open plain to get a fresh plain.

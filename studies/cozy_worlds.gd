@@ -27,6 +27,8 @@ var brush: String = brush_ids[0] if not brush_ids.is_empty() else "land"
 var creation_palette: Control
 ## Photo mode: compose, then capture (scripts/photo_mode.gd). P or the palette's camera.
 var photo: Node
+## The shell's camera: focus, follow, glides and gestures (scripts/camera_rig.gd).
+var camera_rig: Node
 ## True once the shell is built and the first world is open.
 var shell_ready := false
 var _craft_before_menu := false
@@ -108,6 +110,11 @@ func _setup_creation() -> void:
 	photo = preload("res://scripts/photo_mode.gd").new()
 	add_child(photo)
 	photo.setup(self)
+	camera_rig = preload("res://scripts/camera_rig.gd").new()
+	add_child(camera_rig)
+	camera_rig.setup(self)
+	# Right drags orbit here; Shift-drag works the brush the other way.
+	_chunk_editor.right_works_other_way = false
 	_layout_shell()
 	_sync_creation_ui()
 
@@ -307,6 +314,7 @@ func blocks_world_input(point: Vector2) -> bool:
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
 	if photo != null and photo.contains_pointer(point): return true
+	if camera_rig != null and camera_rig.contains_pointer(point): return true
 	if _toolbar_glass != null and _toolbar_glass.is_visible_in_tree() and _toolbar_glass.get_global_rect().has_point(point): return true
 	return super.blocks_world_input(point)
 

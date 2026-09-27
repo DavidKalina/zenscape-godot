@@ -14,7 +14,7 @@ Phase 3, slice 2 (branch `feature/water-brush`, 2026-09-26). Press `2` while cre
   - **A pond at the rim rises.** Water poured into a pond that already brims at the plate's rim raises a soft lip on the rim beside it (`_lip`), and the pond rises, up to `LIP_RISE` per pour. The lip grows over up to three settles as the rising pond reaches more of the rim. A lip that raises no pond is dropped. Water the lip cannot hold scoops a hollow as before. New water that runs off the edge still scoops a hollow; it does not build a lip.
   - **Streams carve shallow beds** (`_carve_beds`). Each new stream lowers a soft (1 − t²)² trough under its course, `BED_DEPTH` deep and at least `BED_HALF_WIDTH` to either side, and its surface drops into the bed. Ground at or above a nearby pond's level is never cut below that level, so a bed cannot open a pond's bank. If a bed would still break a new pond's surface, the pour keeps its uncarved ground.
 - **The ground moves first.** When a pour reshapes the land (a scooped hollow, stream beds, a rim lip), the ground sinks or rises into place over `WATER_SHAPE_SECONDS` (0.7 s), and then the water starts to fill (`NativeChunkEditor._shape_water_ground`). The ground moves with the light refresh a paint stroke uses, at 30 Hz. Another stroke, an undo or a new pour lands the shaping pour at once first.
-- **Shift-drag or right-drag drains.** Ponds and streams under the brush are removed.
+- **Shift-drag drains.** Ponds and streams under the brush are removed.
 - **One undo** removes the whole pour: the ponds, the streams, any hollow, beds and lip.
 - **Water fills; it never appears.**
   - A pond rises from its bed over `FILL_SECONDS`.

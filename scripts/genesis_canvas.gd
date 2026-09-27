@@ -17,11 +17,11 @@ const Generator = preload("res://scripts/cozy_world_generator.gd")
 ## - `hint`: the one-line how-to under the palette;
 ## - `script`: the brush (scripts/creation_brush.gd documents the interface).
 const BRUSHES := [
-	{"brush_id":"land","title":"Land","hint":"Drag to raise land  ·  Shift or right drag lowers","script":"res://scripts/land_brush.gd"},
-	{"brush_id":"water","title":"Water","hint":"Drag to pour water  ·  it runs downhill and pools  ·  Shift or right drag drains","script":"res://scripts/water_brush.gd"},
-	{"brush_id":"meadow","title":"Meadow","hint":"Drag to lay a meadow  ·  Shift or right drag lifts it","script":"res://scripts/meadow_brush.gd"},
-	{"brush_id":"forest","title":"Forest","hint":"Drag to grow forest  ·  Shift or right drag clears","script":"res://scripts/forest_brush.gd"},
-	{"brush_id":"path","title":"Path","hint":"Drag to wear a path  ·  Shift or right drag grows it back","script":"res://scripts/path_brush.gd"},
+	{"brush_id":"land","title":"Land","hint":"Drag to raise land  ·  Shift-drag lowers","script":"res://scripts/land_brush.gd"},
+	{"brush_id":"water","title":"Water","hint":"Drag to pour water  ·  it runs downhill and pools  ·  Shift-drag drains","script":"res://scripts/water_brush.gd"},
+	{"brush_id":"meadow","title":"Meadow","hint":"Drag to lay a meadow  ·  Shift-drag lifts it","script":"res://scripts/meadow_brush.gd"},
+	{"brush_id":"forest","title":"Forest","hint":"Drag to grow forest  ·  Shift-drag clears","script":"res://scripts/forest_brush.gd"},
+	{"brush_id":"path","title":"Path","hint":"Drag to wear a path  ·  Shift-drag grows it back","script":"res://scripts/path_brush.gd"},
 ]
 
 static func brush_ids() -> Array:
