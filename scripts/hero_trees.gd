@@ -30,7 +30,7 @@ const JOSHUA_SCALE := Vector3(0.85, 0.85, 0.85)
 
 ## Birch, willow and juniper are their own asset kinds too: part node -> [glb
 ## mesh, palette role, colour mode]. Crowns are TINT, so the per-tree tint gives
-## the species colour (emergence.gd TREE_COLOURS) and `tint` stands in when a
+## the species colour (tree_stands.gd TREE_COLOURS) and `tint` stands in when a
 ## record has none. Scales bring them to `height` metres at record scale 1,
 ## which is also the whole-tree wind bend height (stiffer when above it).
 const SPECIES := {

@@ -1,5 +1,5 @@
 extends SceneTree
-## Stills of emerged stands through the autumn (emergence.gd `_stand_autumn`,
+## Stills of emerged stands through the autumn (tree_stands.gd `autumn`,
 ## zs_autumn_stand_paint). Opens the Genesis plain, wishes a forest over most
 ## of the plate, runs emergence to the end at once, then pins the season to
 ## summer, mid-autumn and late autumn and saves the same views of each.

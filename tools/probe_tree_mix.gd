@@ -1,8 +1,8 @@
 extends SceneTree
-## Headless probe: the tree species mix by stand (emergence.gd `_tree_kind`).
+## Headless probe: the tree species mix by stand (tree_stands.gd `tree_kind`).
 ## Wishes a forest over most of the plate, lets it emerge, and prints the
 ## species counts by habitat and a letter map, so stands show as patches, then
-## the deciduous stands' autumn characters (emergence.gd `_stand_autumn`):
+## the deciduous stands' autumn characters (tree_stands.gd `autumn`):
 ## c turns early to copper, a stops at amber, g hangs on green and goes gold.
 ## Dead wood (snag n, log -, stump o) is counted by habitat and by old or
 ## young stand, with its share of the wood, and spruce dead tops by stand.

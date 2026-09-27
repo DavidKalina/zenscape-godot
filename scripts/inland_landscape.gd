@@ -1,6 +1,15 @@
 extends RefCounted
 const Desert = preload("res://scripts/desert_landscape.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
+const Stands = preload("res://scripts/tree_stands.gd")
+## Generated worlds draw emergence's species pools, but a redwood world stays
+## led by redwoods, which carry its canopy mist (redwood_biome_mist.gd), and a
+## desert's few trees by Joshua trees, its silhouette; spruce, broadleaf and
+## juniper come as companions and the odd stand.
+const TREE_POOLS := {
+	"redwood":{"redwood":3.0,"tree":0.45,"broadleaf":0.15},
+	"arid":{"joshua":2.0,"cactus":0.8,"juniper":0.4,"broadleaf":0.0,"willow":0.0},
+}
 ## Low-cover candidates per habitat; any other habitat draws 250.
 const COVER := {"arid":25,"wetland":620}
 var data: NativeTerrainData
@@ -14,6 +23,13 @@ var blend: RefCounted
 var variety := 0
 ## This world's key for variety hashes, from the planting seed.
 var salt := 0
+## The key tree stands hash from (scripts/tree_stands.gd): the salt emergence
+## gives this world, so a forest painted later grows on in the same stands.
+var stand_salt := 0
+## The moisture, altitude and water distance stands lean by: the blend, or for
+## a one-habitat world a plain field over its terrain.
+var _stand_field: RefCounted
+var _pools: Dictionary = Stands.TREE_POOLS.merged(TREE_POOLS,true)
 var _drift: FastNoiseLite
 func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null) -> void:
 	data = terrain
@@ -64,6 +80,11 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 			densest = maxf(densest,_tree_budget(b))
 		budget = int(total)
 	budget = int(budget*float(genome.tree_density))
+	stand_salt = Variety.mix([int(genome.plant_seed),97])
+	_stand_field = blend
+	if _stand_field == null and variety >= 1 and budget > 0:
+		_stand_field = preload("res://scripts/biome_blend.gd").new(genome,data._recipe.inland.sampler)
+		_stand_field.apply(genome.habitat,[])
 	var planted := 0
 	var occupied: Array[Vector2] = []
 	var habitat_noise := FastNoiseLite.new()
@@ -89,11 +110,21 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 			if other.distance_squared_to(p)<1.2: crowded = true; break
 		if crowded: continue
 		var kind: String = "tree"
-		if habitat == "woodland": kind = "layered_tree" if pick<0.15 else "broadleaf" if pick<0.6 else "tree"
+		var tint := ""
+		# Seeded worlds plant emergence's species by stand, with its crown
+		# colours and autumns; the stand draws are hashes, and `pick` comes
+		# from the planting stream as before.
+		var key := [stand_salt,61,i]
+		var by_stand := variety >= 1 and habitat != "wetland"
+		if by_stand:
+			kind = Stands.tree_kind(habitat,p,pick,Variety.unit(key+[25]),stand_salt,_stand_field,_pools)
+			tint = Stands.tree_tint(kind,p,key,stand_salt,_stand_field)
+		elif habitat == "woodland": kind = "layered_tree" if pick<0.15 else "broadleaf" if pick<0.6 else "tree"
 		elif habitat == "redwood": kind = "redwood"
 		elif habitat == "arid": kind = "joshua" if pick<0.55 else "cactus"
 		elif habitat == "wetland": kind = "reeds"
-		if data.place(kind,p,angle,size)>=0:
+		if data.place(kind,p,angle,size,{},tint)>=0:
+			if by_stand: data.objects.back()["autumn"] = Stands.autumn(p,stand_salt,_stand_field)
 			planted += 1
 			occupied.append(p)
 		if planted>=budget: break

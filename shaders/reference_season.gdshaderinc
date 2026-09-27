@@ -48,8 +48,8 @@ void zs_season_leaves(inout vec3 color, vec3 local, vec2 root, vec3 normal, floa
 	}
 }
 
-// Autumn on an emerged tree whose stand has its own character (`stand` 0..1,
-// scripts/emergence.gd _stand_autumn); the source's zs_autumn_paint, which
+// Autumn on a tree whose stand has its own character (`stand` 0..1,
+// scripts/tree_stands.gd autumn); the source's zs_autumn_paint, which
 // keys on world noise, stays for every other plant. Low stands hang on green
 // and stop at gold, the middle stops at amber, high stands turn first and go
 // on to copper-red. How far into autumn is the clock's (zs_season.w,
