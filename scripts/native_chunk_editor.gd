@@ -251,6 +251,34 @@ var water_brush = preload("res://scripts/water_brush.gd").new()
 var water_settling := false
 ## Emitted when settled water lands in the world; `bounds` in plate metres.
 signal water_settled(bounds: Rect2)
+## The water ball (scripts/water_ball.gd): with water in hand a press
+## condenses a ball that fills while held; release drops it, and its water
+## settles as one pour where it lands. --pour-water brings back drag-to-pour.
+var water_ball := "--pour-water" not in OS.get_cmdline_user_args()
+var ball: Node3D
+## m³ a ball starts with and holds at most. It fills as a pour of the same
+## size and flow would (WaterBrush RATE).
+const BALL_MIN_VOLUME := 0.6
+const BALL_MAX_VOLUME := 24.0
+## A new stream stretch that drops at least FALL_DROP m within FALL_REACH m,
+## at FALL_SLOPE or steeper, becomes a waterfall; at most FALL_MAX per drop.
+const FALL_DROP := 1.2
+const FALL_REACH := 2.5
+const FALL_SLOPE := 0.8
+const FALL_MAX := 2
+## A drop of at least LAKE_VOLUME m³ that spreads a pond LAKE_AREA m² across,
+## or a pond that swallowed others, is a lake; a new stream at least
+## RIVER_LENGTH m long makes the drop a stream.
+const LAKE_AREA := 40.0
+const LAKE_VOLUME := 12.0
+const RIVER_LENGTH := 5.0
+var ball_volume := 0.0
+var _ball_holding := false
+var _ball_serial := 0
+## Emitted when a dropped ball's water has settled: {"kind": "waterfall",
+## "stream", "lake", "pond" or "soaked", "ponds", "pond_area", "merged",
+## "streams", "stream_length", "falls", "fish", "volume"}.
+signal ball_settled(outcome: Dictionary)
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -710,6 +738,9 @@ func _process(delta: float) -> void:
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
 	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted())
+	if _ball_holding:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
+		else: _ball_step(hit,delta)
 	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
@@ -754,6 +785,7 @@ func finish_pointer_gesture() -> void:
 		finish_stroke()
 
 func finish_stroke() -> void:
+	if _ball_holding: _ball_release()
 	_selection_drag = false
 	end_selection_edit()
 	if not _painting:
@@ -1692,8 +1724,12 @@ func stroke_mode() -> String:
 ## the sky still orbits with either button.
 func _land_press(event: InputEventMouseButton) -> bool:
 	if not event.pressed:
+		if _ball_holding and event.button_index == MOUSE_BUTTON_LEFT:
+			_ball_release()
+			return true
 		if _painting and event.button_index == _stroke_button: finish_stroke()
 		return _painting or event.button_index == MOUSE_BUTTON_LEFT
+	if _ball_holding: return true
 	if _painting or event.alt_pressed: return _painting
 	if event.button_index == MOUSE_BUTTON_RIGHT and not right_works_other_way: return false
 	var hit: Variant = pick(event.position)
@@ -1705,6 +1741,9 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	var brush = creation_brush()
 	if mountain_in_hand() and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
 		_mountain_press(hit)
+		return true
+	if brush_id == "water" and water_ball and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
+		_ball_press(hit)
 		return true
 	brush.prepare(data,land_seed)
 	brush.begin()
@@ -1831,6 +1870,98 @@ func _release_pour() -> void:
 	_pour.dabs = water_brush.dabs.duplicate()
 	water_brush.begin()
 	water_settling = true
+
+## A press with water in hand condenses a ball over the ground point.
+func _ball_press(hit: Vector3) -> void:
+	if ball == null:
+		ball = preload("res://scripts/water_ball.gd").new()
+		ball.name = "WaterBall"
+		terrain.add_child(ball)
+		ball.landed.connect(_ball_landed)
+	var life: Variant = scene.get("land_life")
+	_ball_serial += 1
+	ball.condense(hit,life.material if life != null and life.get("material") != null else null,hash([land_seed,_ball_serial]))
+	ball_volume = BALL_MIN_VOLUME
+	_ball_holding = true
+	_emit_stroke(0,hit,brush_radius(),0.0)
+
+## While held the ball fills and follows the pointer's ground point.
+func _ball_step(hit: Variant, delta: float) -> void:
+	const WaterBrush := preload("res://scripts/water_brush.gd")
+	var rate: float = WaterBrush.RATE*brush_strength()*pow(brush_radius()/WaterBrush.REFERENCE_RADIUS,2.0)
+	ball_volume = minf(BALL_MAX_VOLUME,ball_volume+rate*minf(delta,0.05))
+	ball.hold(hit,ball_volume)
+
+func _ball_release() -> void:
+	if not _ball_holding: return
+	_ball_holding = false
+	ball.release()
+	var at: Vector3 = ball.position
+	_emit_stroke(2,Vector3(at.x,ball.ground,at.z),ball.radius,0.0)
+
+## The ball hit the ground: its water settles as one pour from where it
+## landed (`_pour_live`), in one undo step, and remembers its fish.
+func _ball_landed(point: Vector2, volume: float, fish: Array) -> void:
+	if forming or data.ground_height(point) == null: return
+	water_brush.drop(point,volume)
+	_release_pour()
+	if not _pour.is_empty(): _pour.ball = {"point":point,"volume":volume,"fish":fish}
+
+## Before a ball's pour closes: steep stretches of its new streams become
+## waterfalls (object records, inside the pour's undo step), and the pour is
+## named for what the land made of it.
+func _ball_falls(pour: Dictionary) -> Dictionary:
+	const WaterBrush := preload("res://scripts/water_brush.gd")
+	var plan: Dictionary = pour.get("shown",{})
+	var falls := 0
+	for entry: Dictionary in plan.get("added_streams",[]):
+		if falls >= FALL_MAX: break
+		var points: Array = entry.record.pts
+		var best := {}
+		for i in range(points.size()):
+			var a := Vector2(points[i].x,points[i].z)
+			for j in range(i+1,points.size()):
+				var b := Vector2(points[j].x,points[j].z)
+				var run := a.distance_to(b)
+				if run > FALL_REACH: break
+				var drop := float(points[i].h)-float(points[j].h)
+				if drop >= FALL_DROP and drop >= run*FALL_SLOPE and drop > float(best.get("drop",0.0)):
+					best = {"from":a,"to":b,"drop":drop}
+		if best.is_empty(): continue
+		var width := clampf(float(entry.record.width)*1.6,0.4,1.4)
+		if data.add_waterfall(best.from,best.to,width): falls += 1
+	var added: Array = plan.get("added",[])
+	var area := 0.0
+	var center: Vector2 = pour.ball.point
+	for entry: Dictionary in added:
+		var cells: float = float(entry.cells.size())*WaterBrush.GRID*WaterBrush.GRID
+		if cells > area:
+			area = cells
+			center = Vector2(entry.record.x,entry.record.z)
+	var merged: bool = data.ponds.size() < pour.ponds.size()+added.size()
+	var streams: int = plan.get("added_streams",[]).size()
+	var longest := 0.0
+	for entry: Dictionary in plan.get("added_streams",[]):
+		var length := 0.0
+		var points: Array = entry.record.pts
+		for i in range(1,points.size()): length += Vector2(points[i].x-points[i-1].x,points[i].z-points[i-1].z).length()
+		longest = maxf(longest,length)
+	var kind := "soaked"
+	if falls > 0: kind = "waterfall"
+	elif longest >= RIVER_LENGTH: kind = "stream"
+	elif (area >= LAKE_AREA and float(pour.ball.volume) >= LAKE_VOLUME) or merged: kind = "lake"
+	elif not added.is_empty(): kind = "pond"
+	return {"kind":kind,"ponds":added.size(),"pond_area":snappedf(area,0.01),"merged":merged,"streams":streams,"stream_length":snappedf(longest,0.01),"falls":falls,"center":center,
+		"fish":pour.ball.fish.size(),"volume":snappedf(float(pour.ball.volume),0.01)}
+
+## The ball's fish go to the pond it made (LandLife `carry_fish`), and the
+## status line says what the water became.
+func _ball_settled(pour: Dictionary, outcome: Dictionary) -> void:
+	var life: Variant = scene.get("land_life")
+	if life != null and not pour.ball.fish.is_empty() and int(outcome.ponds) > 0: life.carry_fish(outcome.center,pour.ball.fish)
+	var said := {"waterfall":"The water fell, and gathered below.","stream":"The water found a way down.","lake":"The water spread into a lake.","pond":"The water gathered in a pond.","soaked":"The ground drank the water."}
+	_set_status(said[outcome.kind])
+	ball_settled.emit(outcome)
 
 ## Show `plan` inside the pour's open undo step: the ground moves first, then
 ## the water lands and the yielding refresh publishes it. False when the pour
@@ -1966,6 +2097,9 @@ func _commit_pour() -> void:
 		if pour.has("landing"):
 			_set_pour_water(pour,pour.landing)
 			refresh(get_tree())
+		var outcome := _ball_falls(pour) if pour.has("ball") else {}
+		if int(outcome.get("falls",0)) > 0: refresh(get_tree())
+		if not outcome.is_empty(): _ball_settled(pour,outcome)
 		if data.end_stroke() and pour.rect.has_area():
 			# Grass creeps out from new shores (scripts/emergence.gd).
 			_stroke_rect = pour.rect
