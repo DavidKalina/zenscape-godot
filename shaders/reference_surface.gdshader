@@ -77,6 +77,8 @@ varying float grass_bow;
 varying float inversion_transmit;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
 uniform bool instance_fire_enabled = false;
+// Emerged births, written per instance by GardenView into INSTANCE_CUSTOM.ba.
+uniform bool instance_birth_enabled = false;
 uniform vec2 object_fire = vec2(0.0);
 // Cave earth walls only (BigfootLairRoom): the room's unrotated world origin,
 // the wall's outward normal, and how far its middle has dissolved.
@@ -195,9 +197,15 @@ void vertex() {
 	}
 	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
 	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth.x);
-	if (plant_growth) {
-		float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-		float t = clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0);
+	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
+	// (born, seconds); instances without one stay at 1 (scripts/emergence.gd).
+	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a) : 1.0;
+	if (plant_growth || birth < 1.0) {
+		float t = birth;
+		if (plant_growth) {
+			float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+			t = min(t, clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
+		}
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
 	}

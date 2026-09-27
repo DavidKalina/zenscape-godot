@@ -40,6 +40,10 @@ const REDUCED := {"density": 0.7, "far_blades": 2.0, "fade_start": 18.0}
 const FULL := {"density": 1.0, "far_blades": 3.0, "fade_start": 22.0}
 var material := ShaderMaterial.new()
 var mask := ImageTexture.new()
+## Emerged cover's births per meadow cell (data.cover_births), so new tufts
+## rise in one by one instead of switching on as the mask greens.
+var births := ImageTexture.new()
+var _births_key := []
 var _scene: Node3D
 var _tiles: Array[MultiMeshInstance3D] = []
 var _baked_mesh: Mesh
@@ -58,6 +62,9 @@ func setup(scene: Node3D) -> void:
 	material.set_shader_parameter("grid_side", SIDE)
 	var tile_size := HALF * 2.0 / TILES
 	material.set_shader_parameter("spacing", tile_size / SIDE)
+	const Emergence = preload("res://scripts/emergence.gd")
+	material.set_shader_parameter("emergence_creep", Emergence.COVER_CREEP)
+	material.set_shader_parameter("emergence_rise", Emergence.COVER_RISE)
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = _clump_mesh()
@@ -105,6 +112,7 @@ func update(wanted: bool, delta: float) -> void:
 			RenderingServer.global_shader_parameter_set("zs_grass_offset", world_offset(seed_value))
 	visible = wanted and _baked and terrain != null
 	if not wanted or terrain == null or terrain.mesh == null: return
+	if editor.data != null: _publish_births(editor.data)
 	if terrain.mesh == _baked_mesh or _bake_busy:
 		_since_change = 0.0
 		return
@@ -134,6 +142,27 @@ func _bake(mesh: Mesh, data: NativeTerrainData) -> void:
 	else: mask.set_image(image)
 	material.set_shader_parameter("grass_mask", mask)
 	_baked = true
+
+## Upload the emerged cover births when they change: r the cell's birth, g the
+## share of its tufts that stood before (the grass it had over the grass it
+## has), a 1 where a birth is. Only emerged cells are written.
+func _publish_births(data: NativeTerrainData) -> void:
+	var key := [data, data.cover_births_revision]
+	if key == _births_key: return
+	_births_key = key
+	var side := NativeTerrainData.MEADOW_CELLS
+	var texels := PackedFloat32Array()
+	texels.resize(side * side * 4)
+	for index: int in data.cover_births:
+		var birth: Dictionary = data.cover_births[index]
+		texels[index * 4] = birth.born
+		texels[index * 4 + 1] = clampf(float(birth.prior) / maxf(data.grass[index], 0.0001), 0.0, 1.0)
+		texels[index * 4 + 3] = 1.0
+	var image := Image.create_from_data(side, side, false, Image.FORMAT_RGBAF, texels.to_byte_array())
+	if births.get_width() == side: births.update(image)
+	else:
+		births.set_image(image)
+		material.set_shader_parameter("emergence_map", births)
 
 ## Shifts the shader's world-scale noise per seed, so each world has its own
 ## tussocks, dry patches and flower drifts.

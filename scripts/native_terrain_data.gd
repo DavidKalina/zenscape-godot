@@ -23,6 +23,13 @@ const SOURCE_GENERATED := 0
 const SOURCE_EMERGED := 1
 const SOURCE_HAND := 2
 var provenance := PackedByteArray()
+## Emerged cover still growing in (scripts/emergence.gd): cell index ->
+## {"born", "prior", "tufts"}. `born` is the cell's birth on the emergence
+## clock, `prior` its grass before, `tufts` a birth per meadow tuft (-1 for
+## one that stood before). Emerged objects carry their own `"born"`. Neither
+## is saved or undone: a birth only animates, so dropping one means grown.
+var cover_births := {}
+var cover_births_revision := 0
 var objects: Array[Dictionary] = []
 var ponds: Array[Dictionary] = []
 var streams: Array[Dictionary] = []
@@ -1259,7 +1266,13 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":objects.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+
+## Records as saved: an emerged plant's birth only animates its arrival.
+func _saved_objects() -> Array[Dictionary]:
+	var saved := objects.duplicate(true)
+	for item in saved: item.erase("born")
+	return saved
 
 func _template_id() -> String:
 	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()

@@ -150,6 +150,8 @@ func _ready() -> void:
 	_catalog_poses["explosive_leaves"] = Transform3D.IDENTITY
 	for key in _materials:
 		FireMaterial.enable_instances(_materials[key])
+		# Every batch has custom data; emerged instances read their birth there.
+		if _materials[key] is ShaderMaterial: _materials[key].set_shader_parameter("instance_birth_enabled",true)
 		_materials[key].set_shader_parameter("palette_role",preload("res://scripts/scene_look.gd").part_role(key))
 		# Evergreens hold their colour; broadleaves blossom, turn and fall.
 		_materials[key].set_shader_parameter("leaf_season",preload("res://scripts/scene_look.gd").leaf_season(key))
@@ -386,6 +388,9 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 			var color: Color = instance_tints[key][i] if i < instance_tints[key].size() else tints.get(key, Color.WHITE)
 			sampled.sources[key][i]["color"] = color
 			batch.multimesh.set_instance_color(i,color)
+			# Emerged arrivals grow in at their own birth (docs/scenic/emergence.md).
+			if sampled.sources[key][i].has("born"):
+				batch.multimesh.set_instance_custom_data(i,_custom(sampled.sources[key][i],Vector2.ZERO))
 			if frame_tree != null and i%256 == 255:
 				await budget.checkpoint()
 				if generation != _instance_generation:
@@ -475,7 +480,14 @@ func _write_fire(id: int, char: float, burn: float) -> void:
 	for part: Dictionary in _fire_parts.get(id,[]):
 		var batch: MultiMeshInstance3D = part.batch
 		if is_instance_valid(batch) and batch.multimesh != null and batch.multimesh.use_custom_data:
-			batch.multimesh.set_instance_custom_data(part.index,Color(char,burn,0.0,0.0))
+			var source: Dictionary = _sources[batch.get_meta("part")][part.index]
+			batch.multimesh.set_instance_custom_data(part.index,_custom(source,Vector2(char,burn)))
+
+## One instance's custom data: fire (char, burn) in rg, and the emerged birth
+## (born, rise seconds) in ba. The birth comes from the source, never read back
+## from the MultiMesh, which could stall on the GPU.
+static func _custom(source: Dictionary, fire: Vector2) -> Color:
+	return Color(fire.x,fire.y,float(source.get("born",0.0)),float(source.get("rise",0.0)))
 
 func discard_cache() -> void:
 	cancel_rebuild()

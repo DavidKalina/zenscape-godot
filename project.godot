@@ -367,6 +367,10 @@ zs_growth_wave_5={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 1)
 }
+zs_emergence_time={
+"type": "float",
+"value": 0.0
+}
 zs_ice={
 "type": "float",
 "value": 0.0

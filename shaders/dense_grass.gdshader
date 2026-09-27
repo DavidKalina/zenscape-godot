@@ -24,6 +24,12 @@ render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 uniform sampler2D grass_mask : filter_linear, repeat_disable;
 // g: ground height, a: water surface height; -1000 where there is none.
 global uniform sampler2D zs_water_map;
+// Emerged cover per 0.5 m meadow cell of the 28 m plate (56 x 56), from
+// scripts/dense_grass.gd: r the cell's birth on zs_emergence_time, g the share
+// of its tufts that stood before, a 1 where there is a birth.
+uniform sampler2D emergence_map : hint_default_black, filter_nearest, repeat_disable;
+uniform float emergence_creep = 3.0;
+uniform float emergence_rise = 1.4;
 instance uniform vec2 tile_origin;
 uniform int grid_side = 32;
 uniform float spacing = 0.11;
@@ -154,6 +160,17 @@ void vertex() {
 	float distance_to_eye = length(vec3(root.x, ground, root.y) - zs_camera_position);
 	float thin = 1.0 - 0.6 * smoothstep(fade_start, fade_end, distance_to_eye);
 	float grown = smoothstep(grass_hash(seed + 7.7) * 0.6, grass_hash(seed + 7.7) * 0.6 + 0.4, min(zs_growth.y, zs_growth_wave_at(root)));
+	// Emerged cover (scripts/emergence.gd): as the cell thickens, each new
+	// tuft rises from the ground in keep order, the first at the cell's birth
+	// and the last emergence_creep seconds later. Tufts it had before stay.
+	vec4 birth = texture(emergence_map, (floor((root + 14.0) * 2.0) + 0.5) / 56.0);
+	if (birth.a > 0.5) {
+		float rank = grass_hash(seed + 5.1) / max(keep * thin, 0.0001);
+		if (rank >= birth.g) {
+			float start = birth.r + emergence_creep * (rank - birth.g) / max(1.0 - birth.g, 0.0001);
+			grown = min(grown, smoothstep(0.0, 1.0, clamp((zs_emergence_time - start) / emergence_rise, 0.0, 1.0)));
+		}
+	}
 	float height = blade_height * (0.55 + 0.9 * zs_noise(root * 0.37 + 11.0)) * (0.7 + 0.3 * mask.a)
 		* (0.8 + 0.4 * grass_hash(seed + 2.9)) * grown * (1.0 - 0.75 * smoothstep(0.1, 0.7, zs_snow))
 		* (1.0 - 0.3 * zs_season.z);

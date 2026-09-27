@@ -643,8 +643,10 @@ func pick(mouse: Vector2) -> Variant:
 	return data.ray_hit(origin,direction.normalized())
 
 func _process(delta: float) -> void:
+	# Emergence refreshes yield like a stroke's settle: the worker samples
+	# instances and the budget spreads the rest, so a step never stalls a frame.
 	if not forming and emergence.advance(delta):
-		refresh()
+		refresh(get_tree())
 	if forming or not active:
 		pond_preview.clear()
 		return

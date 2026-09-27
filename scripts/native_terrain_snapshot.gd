@@ -9,6 +9,7 @@ static func for_queries(source: NativeTerrainData, with_neighbors := false) -> N
 	data.blades = source.blades.duplicate()
 	data.tint = source.tint.duplicate()
 	data.objects.assign(source.objects.duplicate(true))
+	data.cover_births = source.cover_births.duplicate(true)
 	return data
 
 ## Height-only consumers do not copy potentially thousands of object records.

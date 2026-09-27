@@ -11,8 +11,11 @@ extends RefCounted
 ## pinned or generated are never changed; emergence only adds, and withdraws
 ## only what it grew itself.
 ##
-## `advance` applies changes in chunky steps of `STEP` seconds and returns true
-## when the caller should refresh the view once.
+## `advance` applies changes in steps of `STEP` seconds and returns true when
+## the caller should refresh the view once. Every arrival is stamped with its
+## own birth on `time`, a little ahead of the step, and the shaders grow it in
+## from there with the regrow pop, so arrivals rise one by one rather than
+## switching on a step at a time. Plants that stood before carry no birth.
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
@@ -31,6 +34,17 @@ const TREE_DELAY := 18.0
 const TREE_SPREAD := 20.0
 ## One view refresh per step; GardenView rebuilds the whole plate today.
 const STEP := 0.75
+## Seconds an arrival takes to rise from the ground and overshoot into place:
+## the regrow pop (shaders/reference_surface.gdshader), run per plant at its
+## own birth. Meadow tufts of the blades cover rise like shrubs, only quicker.
+const TREE_RISE := 1.8
+const SHRUB_RISE := 1.1
+const TUFT_RISE := 0.8
+## Dense grass (shaders/dense_grass.gdshader): a cell's new tufts start over
+## COVER_CREEP seconds from its birth, each rising over COVER_RISE. The creep
+## spans the cell's cover climb plus the grass mask's rebake.
+const COVER_CREEP := 3.0
+const COVER_RISE := 1.4
 ## Candidate lattices in metres, and the free ground each arrival needs.
 const SHRUB_LATTICE := 0.9
 const TREE_LATTICE := 1.3
@@ -41,6 +55,10 @@ const PLATE := 11.0
 ## Metres² the generator's per-habitat tree counts are spread over.
 const PLANTED_AREA := 462.0
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus"]
+
+## The clock births are stamped on, published as `zs_emergence_time`. Shared
+## and never reset, so a birth can never sit in a later world's future.
+static var time := 0.0
 
 var data: NativeTerrainData
 ## World key for every hash. Two worlds with the same strokes differ by it.
@@ -130,8 +148,15 @@ func _plan(rect: Rect2, born: float) -> void:
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
 	_regions.append(region)
 
+## Seconds an emerged record of `asset` takes to grow in.
+static func rise_seconds(asset: String) -> float:
+	return TREE_RISE if asset in TREES else SHRUB_RISE
+
 ## Move world time on. True means cover or objects changed: refresh once.
+## The clock runs even when idle, so the last arrivals finish growing.
 func advance(seconds: float) -> bool:
+	time += seconds
+	RenderingServer.global_shader_parameter_set(&"zs_emergence_time",time)
 	if not enabled or not busy():
 		return false
 	# Never write into an open stroke; its undo record must stay the player's.
@@ -154,10 +179,14 @@ func advance(seconds: float) -> bool:
 		var age: float = _clock-region.born
 		if _grow_cover(region,age): changed = true
 		while region.next < region.plants.size() and region.plants[region.next].at <= age:
-			if _arrive(region.plants[region.next]): changed = true
+			var plant: Dictionary = region.plants[region.next]
+			# Born at its own moment one step on, so this step's arrivals rise
+			# spread through the next step instead of all at once.
+			if _arrive(plant,time+clampf(plant.at-age+STEP,0.0,STEP)): changed = true
 			region.next += 1
 		if region.cells.is_empty() and region.next >= region.plants.size():
 			_regions.remove_at(r)
+	_forget_grown_cover()
 	return changed
 
 func _grow_cover(region: Dictionary, age: float) -> bool:
@@ -179,9 +208,13 @@ func _grow_cover(region: Dictionary, age: float) -> bool:
 			var next_grass := move_toward(grass,maxf(target.x,grass) if generated else target.x,rate)
 			var next_blades := move_toward(blades,maxf(target.y,blades) if generated else target.y,rate*0.6)
 			if absf(next_grass-grass) > 0.0005 or absf(next_blades-blades) > 0.0005:
+				var tufts := int(data.grass_density(index)*8.0)
 				data.grass[index] = next_grass
 				data.blades[index] = next_blades
 				data.provenance[index] = NativeTerrainData.SOURCE_EMERGED
+				# The front reached this cell at its own moment; stamp that, one
+				# step on, so the creep stays smooth between steps.
+				_stamp_cover(index,grass,tufts,time+clampf(float(region.fronts[k])-age+STEP,0.0,STEP))
 				changed = true
 				done = false
 		if done:
@@ -191,6 +224,41 @@ func _grow_cover(region: Dictionary, age: float) -> bool:
 		else:
 			k += 1
 	return changed
+
+## Record a cover change's grow-in for the views (data.cover_births). A cell
+## keeps its birth while it is still creeping in; a later change after that
+## starts a new one over what then stands. Meadow tufts the change added are
+## born through the next step; ones it took away lose their birth.
+func _stamp_cover(index: int, prior: float, tufts_before: int, born: float) -> void:
+	var birth: Dictionary = data.cover_births.get(index,{})
+	if birth.is_empty() or time-float(birth.born) > COVER_CREEP+COVER_RISE:
+		var kept: PackedFloat32Array = birth.get("tufts",PackedFloat32Array())
+		if kept.is_empty():
+			kept.resize(8)
+			kept.fill(-1.0)
+		birth = {"born":born,"prior":prior,"tufts":kept}
+		data.cover_births[index] = birth
+	var tufts: PackedFloat32Array = birth.tufts
+	var after := mini(int(data.grass_density(index)*8.0),8)
+	for i in range(mini(tufts_before,after),maxi(tufts_before,after)):
+		tufts[i] = time+Variety.unit([salt,13,index,i])*STEP if after > tufts_before else -1.0
+	birth.tufts = tufts
+	data.cover_births_revision += 1
+
+## Drop births that have finished growing, so the maps stay small.
+func _forget_grown_cover() -> void:
+	var settled := time-COVER_CREEP-COVER_RISE-1.0
+	var forgot := false
+	for index: int in data.cover_births.keys():
+		var birth: Dictionary = data.cover_births[index]
+		if float(birth.born) > settled: continue
+		var growing := false
+		for born in birth.tufts:
+			if born > time-TUFT_RISE-1.0: growing = true
+		if growing: continue
+		data.cover_births.erase(index)
+		forgot = true
+	if forgot: data.cover_births_revision += 1
 
 ## Grass and standing-blade cover the ground asks for, or x < 0 to leave the
 ## cell alone (outside the land, or under water).
@@ -207,7 +275,7 @@ func _cover_target(p: Vector2) -> Vector2:
 	var blades := grass*(0.22+0.26*smoothstep(0.2,0.6,_blend.moisture(p)))*(1.0-smoothstep(0.35,0.8,_slope(p)))
 	return Vector2(grass,blades)
 
-func _arrive(plant: Dictionary) -> bool:
+func _arrive(plant: Dictionary, born: float) -> bool:
 	var p: Vector2 = plant.p
 	var h: Variant = data.ground_height(p)
 	if h == null or _wet(p):
@@ -247,6 +315,7 @@ func _arrive(plant: Dictionary) -> bool:
 	if id < 0:
 		return false
 	data.objects.back()["source"] = "emerged"
+	data.objects.back()["born"] = born
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
 	return true
 

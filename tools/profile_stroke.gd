@@ -88,6 +88,10 @@ func stroke(a: Vector2, b: Vector2, count: int, frames: Array[float], ticks: Arr
 	var last_point: Variant = null
 	editor._level = 0.0
 	editor.data.begin_stroke()
+	if mode == "land":
+		# As the pointer press does: without the ridge field a dab is a no-op.
+		editor.land_brush.prepare(editor.data,editor.land_seed)
+		editor.land_brush.begin()
 	editor._painting = true
 	var previous := Time.get_ticks_usec()
 	while dabs < count:
@@ -103,7 +107,10 @@ func stroke(a: Vector2, b: Vector2, count: int, frames: Array[float], ticks: Arr
 		var steps := maxi(1,ceili(from.distance_to(center)/(editor.radius*0.15)))
 		for i in range(1,steps+1):
 			var point := from.lerp(center,float(i)/steps)
-			if mode == "land": editor.land_dab(point,editor.land_strength/30.0/steps)
+			if mode == "land":
+				editor.land_dab(point,editor.land_strength/30.0/steps)
+				# As _land_step does, so the release hands its rect to emergence.
+				editor._touch(point,editor.land_radius)
 			else: editor.dab(point,editor.strength/30.0/steps)
 		editor.refresh()
 		_tick_end = Time.get_ticks_usec()
