@@ -12,7 +12,10 @@ game's do. Godot's y-up plate metres become Blender's z-up as (x, -z, y).
 
 `close` follows the snake from 2.6 m; `far` sits 43 m off at the game's default
 camera angle, with a field of view that gives the same metres per pixel as the
-full 1440x900 game frame (the render is a crop of it); `top` looks straight down.
+full 1440x900 game frame (the render is a crop of it); `top` looks straight down;
+`cam` is the probe's simulated player camera (its path and target, the game's
+45 degree field of view; `--cam-scale` pulls it in along its line to the
+snake); `shoulder` looks over the head toward `--toward=x,z`. The pond's fish are drawn where the probe had them.
 `--sheet=N` renders N evenly spaced frames to /tmp/zs-snake-previews/<name>.png;
 `--video` renders every `--every`th frame to <name>.mp4 at 30 fps.
 """
@@ -129,6 +132,14 @@ for iz in range(nz - 1):
 		colors += [c] * 6
 ground = triangles('Ground', verts, colors, material('Ground', roughness=0.9))
 
+
+def ground_at(x, z):
+	fx = min(max((x - ox) / step, 0), nx - 1.001)
+	fz = min(max((z - oz) / step, 0), nz - 1.001)
+	ix, iz = int(fx), int(fz)
+	u, v = fx - ix, fz - iz
+	return (H[iz, ix] * (1 - u) + H[iz, ix + 1] * u) * (1 - v) + (H[iz + 1, ix] * (1 - u) + H[iz + 1, ix + 1] * u) * v
+
 # The pond, from the view's own triangles.
 w = world['water']
 if w:
@@ -158,6 +169,7 @@ for obj in bpy.context.scene.objects:
 			poly.use_smooth = False
 
 # The snake, posed per frame from its bones.
+HEAD_BONE = 26  # rings 0-25, then head, tongue, jaw (scripts/life_snakes.gd)
 V = np.array(mesh_data['vertices'], dtype=np.float64).reshape(-1, 3)
 C = np.array(mesh_data['colors'], dtype=np.float64).reshape(-1, 3)
 B = np.array(mesh_data['bones'], dtype=np.int64)
@@ -213,6 +225,43 @@ for i in range(14):
 	rings.append(obj)
 
 
+fish_mat = material('Fish', srgb('e07a2a'), vertex=False, roughness=0.5)
+fishes = []
+for i in range(12):
+	bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=1.0)
+	obj = bpy.context.object
+	obj.name = f'Fish{i}'
+	obj.data.materials.append(fish_mat)
+	for poly in obj.data.polygons:
+		poly.use_smooth = False
+	obj.hide_render = True
+	fishes.append(obj)
+
+
+fish_heading = {}
+
+
+def show_fish(frame):
+	for obj in fishes:
+		obj.hide_render = True
+	for slot, x, y, z, size in frame.get('fish', []):
+		if slot >= len(fishes):
+			continue
+		obj = fishes[slot]
+		at = Vector(b(x, y, z))
+		# Turned along its motion since the last frame drawn.
+		last = fish_heading.get(slot)
+		if last is not None and (at - last[0]).length > 1e-4:
+			d = at - last[0]
+			fish_heading[slot] = (at, math.atan2(d.y, d.x))
+		else:
+			fish_heading[slot] = (at, last[1] if last else 0.0)
+		obj.hide_render = False
+		obj.location = at
+		obj.rotation_euler = (0, 0, fish_heading[slot][1])
+		obj.scale = (0.17 * size, 0.05 * size, 0.045 * size)
+
+
 def show_rings(frame):
 	for obj in rings:
 		obj.hide_render = True
@@ -233,7 +282,7 @@ centers = []
 for frame in frames:
 	bones = np.array(frame['bones']).reshape(-1, 12)
 	# `--target=head` frames the head and neck instead of the whole body.
-	o = bones[-2, 9:12] if ARGS.get('target') == 'head' else bones[:-2, 9:12].mean(axis=0)
+	o = bones[HEAD_BONE, 9:12] if ARGS.get('target') == 'head' else bones[:HEAD_BONE, 9:12].mean(axis=0)
 	centers.append(np.array(b(*o)))
 keep = float(ARGS.get('smooth', 0.96))
 smooth = [centers[0]]
@@ -250,7 +299,12 @@ scene.camera = cam
 game_dir = Vector(b(36.95, 18.35, -12.12)).normalized()
 if 'mirror' in ARGS:  # the same angle from the opposite side
 	game_dir = Vector((-game_dir.x, -game_dir.y, game_dir.z))
-if VIEW == 'far':
+if VIEW == 'cam':
+	cam.data.sensor_fit = 'VERTICAL'
+	cam.data.angle_y = math.radians(45)
+	cam.data.clip_start = 0.02
+	cam.data.clip_end = 200
+elif VIEW == 'far':
 	cam.data.sensor_fit = 'VERTICAL'
 	cam.data.angle_y = 2 * math.atan(7.125 / 43.0)
 	cam.data.clip_end = 200
@@ -265,6 +319,27 @@ still = Vector(tuple(span.mean(axis=0)))
 
 def aim(i):
 	target = Vector(tuple(smooth[i]))
+	if VIEW == 'cam':
+		frame = frames[i]
+		look = Vector(b(*frame['look']))
+		# `--cam-scale` pulls the camera in along its line to the snake, so it
+		# keeps the bearing the snake tracks but frames it closer.
+		cam.location = look + (Vector(b(*frame['cam'])) - look) * float(ARGS.get('cam-scale', 1.0))
+		# Pulled in, it stays clear of the ground.
+		cam.location.z = max(cam.location.z, ground_at(cam.location.x, -cam.location.y) + 0.2)
+		cam.rotation_euler = (look - cam.location).to_track_quat('-Z', 'Y').to_euler()
+		return
+	if VIEW == 'shoulder':
+		# Behind and above the head, looking past it toward `--toward=x,z`.
+		tx, tz = (float(v) for v in ARGS.get('toward', '0,0').split(','))
+		toward = Vector(b(tx, float(ARGS.get('toward-y', target.z)), tz))
+		back = (target - toward)
+		back.z = 0
+		back.normalize()
+		cam.location = target + back * float(ARGS.get('distance', 1.2)) + Vector((0, 0, float(ARGS.get('rise', 0.7))))
+		look = target.lerp(toward, float(ARGS.get('lean', 0.35)))
+		cam.rotation_euler = (look - cam.location).to_track_quat('-Z', 'Y').to_euler()
+		return
 	if VIEW == 'far':
 		target = still
 		cam.location = target + game_dir * 43.0
@@ -288,6 +363,7 @@ def render(indices, folder):
 		snake_mesh.vertices.foreach_set('co', pose(frame).ravel())
 		snake_mesh.update()
 		show_rings(frame)
+		show_fish(frame)
 		aim(i)
 		scene.render.filepath = str(folder / f'{n:04d}.png')
 		bpy.ops.render.render(write_still=True)

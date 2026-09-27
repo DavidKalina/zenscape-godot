@@ -14,11 +14,16 @@ extends Node3D
 ## still under it.
 ##
 ## The motion keeps the ambient Bigfoot's rules
-## (tools/blender_bigfoot/ambient_clips.py): it travels in bursts and holds; it
-## dips its head and draws back before it sets off; the head rises with a small
-## overshoot, turns before the neck follows and then holds still in space; the
-## rear settles into its curves after a stop; and breath, drift and tongue
-## flicks never stop.
+## (tools/blender_bigfoot/ambient_clips.py), with nothing keyed pose to pose:
+## every head and neck quantity is a goal that eases in and follows on a
+## critically damped spring. It travels in bursts and holds, and settles its
+## head and draws back before it sets off. At a stop it picks something to
+## watch (you, if the camera comes close; a fish or frog; a bird; a slow drift
+## over the water) and follows it smoothly with its head held still in space
+## while the neck's S takes up the turn and the forebody slowly leans in. Come
+## right in and it rears back and hisses, a warning and never a lunge. The rear
+## settles into its curves after a stop, and breath, drift and tongue flicks
+## never stop.
 ##
 ## Owned and advanced by LandLife on its clock. At most one snake at a time.
 
@@ -88,11 +93,52 @@ const LIFT := Vector2(0.045,0.07)
 const SWIM_LIFT := 0.03
 const REST := 0.003
 const DIP := 0.0
-## The draw-back before it sets off, and the beat it takes.
+## The draw-back before it sets off, and how long before a move it starts to
+## settle its head.
 const RECOIL := 0.012
-const ANTICIPATION := 0.45
-const LOOK_TIME := 0.4
+const ANTICIPATION := 0.8
 const FLICK := 0.44
+## How it travels: a goal runs along its way, speeding up at GOAL_ACCEL and
+## slowing at GOAL_DECEL, and the head follows it on a TRAVEL_HZ spring, so
+## it eases off and eases in.
+const GOAL_ACCEL := 0.8
+const GOAL_DECEL := 0.6
+const TRAVEL_HZ := 1.0
+## Path points read ahead of the head, to see a climb coming.
+const AHEAD := 8
+## You. Within NOTICE metres it stops and watches you, for up to WATCH_MOST s
+## at a stop, then once more at most every NOTICE_COOLDOWN s on the move.
+## Within HISS_NEAR it rears back and hisses, at most every HISS_COOLDOWN s.
+const NOTICE := 6.0
+const WATCH_MOST := 20.0
+const NOTICE_COOLDOWN := 25.0
+const HISS_NEAR := 2.2
+const HISS_COOLDOWN := 18.0
+## The hiss: it draws its head back (to HISS_DRAW of the neck's reach) and up
+## to HISS_LIFT over 1.1 s, opens its jaw JAW_OPEN radians and swells its
+## forebody by SWELL, holds, and eases down again, all within HISS_TIME.
+const HISS_TIME := 4.3
+const HISS_LIFT := 0.085
+const HISS_DRAW := 0.7
+const JAW_OPEN := 0.3
+const SWELL := 0.14
+## The chance it hisses at whoever is watching before it leaves.
+const PARTING_HISS := 0.3
+## How far its head turns from the neck's way, in radians. Watching you from
+## further round than TURN_TO for TURN_AFTER s, it turns its body to face you.
+const LOOK_MAX := 2.0
+const TURN_TO := 1.8
+const TURN_AFTER := 1.5
+## Seconds each wake from basking lasts.
+const WAKE_TIME := 3.7
+## The head and neck springs. Each goal first eases over SPRING_EASE seconds,
+## then the value follows it at SPRING_HZ with SPRING_DAMP damping (1 is
+## critical; the look is a touch under, so it settles with the smallest
+## overshoot).
+enum {S_LIFT,S_POSE,S_YAW,S_PITCH,S_LEAN,S_REACH,S_RECOIL,S_JAW,S_SWELL,S_COUNT}
+const SPRING_HZ := [0.8,0.75,0.85,0.85,0.28,0.55,1.0,1.4,0.5]
+const SPRING_DAMP := [1.0,1.0,0.85,0.9,1.0,1.0,1.0,1.0,1.0]
+const SPRING_EASE := [0.12,0.12,0.1,0.1,0.3,0.15,0.1,0.06,0.15]
 ## Seconds between wake rings while it swims.
 const WAKE := 0.42
 ## Rings shrink over this many metres as they pass into cover.
@@ -106,6 +152,7 @@ const PLAN_BUDGET_USEC := 400
 const OVER_REACH := RADIUS*2.8
 const OVER_TOP := RADIUS*0.8
 const NO_WATER := -1000.0
+const WATERLINE := 0.03
 
 const BACK := Color(0.19,0.24,0.11)
 const FLANK := Color(0.25,0.31,0.15)
@@ -118,6 +165,7 @@ const HEAD_TOP := Color(0.18,0.22,0.12)
 const LIP := Color(0.84,0.82,0.7)
 const EYE := Color(0.04,0.04,0.035)
 const TONGUE := Color(0.24,0.03,0.05)
+const MOUTH := Color(0.2,0.06,0.07)
 
 const BREATH_KEYS := [[0.0,0.0],[0.38,1.0],[0.86,0.0],[1.0,0.0]]
 const DEFLECT := [1,-1,2,-2,3,-3,4,-4,5,-5,6,-6,8,-8,10,-10]
@@ -126,6 +174,7 @@ var life: Node3D
 ## Every visit so far: {kind, at, p}.
 var history: Array[Dictionary] = []
 var visits := 0
+var hisses := 0
 ## What it set out to do, and each way it worked out (length, distance left to
 ## its goal, microseconds, from, goal, end), for probes.
 var journal: Array = []
@@ -164,6 +213,7 @@ var _carry_w := PackedFloat32Array()
 var _breath_w := PackedFloat32Array()
 var _rear_w := PackedFloat32Array()
 var _tail_w := PackedFloat32Array()
+var _front_w := PackedFloat32Array()
 var _neck_count := 0
 var _pos := PackedVector3Array()
 var _curve := PackedVector3Array()
@@ -178,10 +228,15 @@ var _plan: Array[Dictionary] = []
 var _action := {}
 var _stops := PackedInt32Array()
 
-# The head and body.
+# The head and body. The spring values, velocities, eased goals and goals.
+var _sx := PackedFloat32Array()
+var _sv := PackedFloat32Array()
+var _sf := PackedFloat32Array()
+var _sg := PackedFloat32Array()
 var _head_s := 0.0
-var _recoil := 0.0
-var _speed := 0.0
+var _head_v := 0.0
+var _s_goal := 0.0
+var _v_goal := 0.0
 var _cruise := CRUISE
 var _stop := 0
 var _going := false
@@ -190,11 +245,18 @@ var _hold_age := 0.0
 var _time := 0.0
 var _lift := CARRY
 var _pose_w := 0.0
-var _gaze := 0.0
-var _gaze_neck := 0.0
-var _gaze_speed := 0.0
-var _pitch := 0.0
 var _tilt := 0.0
+# What it watches, and you.
+var _target := {}
+var _retarget_in := 0.0
+var _hiss_t := -1.0
+var _hiss_ready := 0.0
+var _hissed := false
+var _notice_ready := 0.0
+var _turn_ready := 0.0
+var _camera := Vector3(0,1000,0)
+var _camera_d := INF
+var _head_pos := Vector3.ZERO
 var _rest_w := 0.0
 var _flick := -10.0
 var _next_flick := 0.0
@@ -203,6 +265,8 @@ var _gate := 0.0
 var _gate_mode := 0
 var _wake := 0.0
 var _floating := false
+## The neck, not just the head, is on the water: it is swimming.
+var _swimming := false
 var _level := NO_WATER
 var _snout := Vector3.ZERO
 
@@ -210,13 +274,14 @@ func setup(owner: Node3D) -> void:
 	life = owner
 	name = "Snakes"
 	for buffer in [_tx,_tz,_tg,_tw,_tr,_tp,_tq,_tf]: buffer.resize(TRAIL)
+	for spring in [_sx,_sv,_sf,_sg]: spring.resize(S_COUNT)
 	_stations()
 	_skeleton = Skeleton3D.new()
 	_skeleton.name = "Snake"
 	add_child(_skeleton)
 	var skin := Skin.new()
-	for k in range(STATIONS+2):
-		_skeleton.add_bone("ring%d" % k if k < STATIONS else ("head" if k == STATIONS else "tongue"))
+	for k in range(STATIONS+3):
+		_skeleton.add_bone("ring%d" % k if k < STATIONS else ["head","tongue","jaw"][k-STATIONS])
 		skin.add_bind(k,Transform3D.IDENTITY)
 	_body = MeshInstance3D.new()
 	_body.name = "Body"
@@ -248,9 +313,12 @@ func advance(step: float) -> void:
 		_resample = _laid-TRAIL+1
 		_watch_place()
 	if _resample >= 0: _reread()
+	_see_camera()
 	if _going: _go_step(step)
 	else: _hold_step(step)
-	if not _state.is_empty(): _pose(step)
+	if _state.is_empty(): return
+	_springs(step)
+	_pose(step)
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
@@ -269,11 +337,15 @@ func force(options := {}) -> bool:
 func showing() -> String:
 	return str(_state.get("phase",""))
 
-## The live bone poses, rings then head then tongue, for probes.
+## The live bone poses, rings then head, tongue and jaw, for probes.
 func poses() -> Array[Transform3D]:
 	var result: Array[Transform3D] = []
-	for k in range(STATIONS+2): result.append(_skeleton.get_bone_pose(k))
+	for k in range(STATIONS+3): result.append(_skeleton.get_bone_pose(k))
 	return result
+
+## Where it is looking and at what, for probes: [kind, point].
+func watching() -> Array:
+	return [str(_target.get("kind","")) if _target.get("kind","") != "site" else str(_target.what),_target_point()]
 
 func stations() -> PackedFloat32Array:
 	return _arc
@@ -334,7 +406,7 @@ func _leave_now() -> void:
 	# hold rouses now.
 	_stops = PackedInt32Array()
 	if _going:
-		_stop = mini(_stop,ceili(_head_s/STEP)+3)
+		_stop_soon()
 		_action = {"do":"go"}
 	elif not _hold.is_empty():
 		_hold.time = minf(float(_hold.time),_hold_age+ANTICIPATION+0.05)
@@ -371,13 +443,25 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	_lay_to(hidden.size()-1)
 	_gate = _head_s-PEEK
 	_gate_mode = 1
-	_recoil = 0.0
-	_speed = 0.0
+	_head_v = 0.0
+	_s_goal = _head_s
+	_v_goal = 0.0
+	for i in range(S_COUNT):
+		_sx[i] = 0.0
+		_sv[i] = 0.0
+	_sx[S_LIFT] = CARRY
+	_sx[S_YAW] = way.angle()
+	_sx[S_REACH] = 1.0
+	_sf = _sx.duplicate()
+	_sg = _sx.duplicate()
 	_lift = CARRY
 	_pose_w = 0.0
-	_gaze = 0.0
-	_gaze_neck = 0.0
-	_gaze_speed = 0.0
+	_target = {}
+	_hiss_t = -1.0
+	_hiss_ready = 0.0
+	_notice_ready = 0.0
+	_turn_ready = 0.0
+	_head_pos = Vector3(cover.x,_ground_est(cover),cover.y)
 	_rest_w = 0.0
 	_flick = -10.0
 	_time = 0.0
@@ -465,6 +549,8 @@ func _expand(action: Dictionary) -> void:
 			_plan.push_front({"do":"slip","phase":"slip"})
 			_plan.push_front({"do":"hold","kind":"look","time":_rng.randf_range(0.9,1.5)})
 			_plan.push_front({"do":"go","to":cover,"bursts":true,"phase":"leave"})
+			# Now and then a parting warning at whoever is watching.
+			if not _floating and _rng.randf() < PARTING_HISS: _plan.push_front({"do":"hold","kind":"hiss","time":1.0})
 		"shore":
 			var target := _nearest_shore(_record())
 			if target != Vector2.INF: _plan.push_front({"do":"go","to":target,"water":true,"phase":"swim"})
@@ -486,10 +572,10 @@ func _prefetch() -> void:
 func _go_leg(action: Dictionary) -> Dictionary:
 	var water: bool = action.get("water",false)
 	var to: Vector2 = action.to
-	var gen := _leg_begin(_head_xz(),_heading(),to,water,SWIM_WEAVE if water else WEAVE,SWIM_WAVE if water else WAVE,TURN,minf(_head_xz().distance_to(to)*2.5+1.0,12.0))
+	var gen := _leg_begin(_head_xz(),_heading(),to,water,SWIM_WEAVE if water else WEAVE,SWIM_WAVE if water else WAVE,float(action.get("turn",TURN)),minf(_head_xz().distance_to(to)*2.5+1.0,12.0))
 	# Setting off on land from the water's edge it may pass through the
 	# shallows it starts in.
-	gen.wet_start = not water and _wet(_head_xz())
+	gen.wet_start = not water and not action.get("dry",false) and _wet(_head_xz())
 	return gen
 
 ## The next stop along the edge, a look toward the water, and the rest of the hunt.
@@ -506,15 +592,19 @@ func _plan_hunt() -> void:
 	var fwd := Vector2.from_angle(_heading())
 	var best := Vector2.INF
 	var best_score := INF
-	for cell in record.shore:
-		var p := Survey.center(cell)
-		var d := p.distance_to(here)
-		if d < 0.6 or d > 1.8 or fwd.dot((p-here)/d) < -0.3: continue
-		# Round the pond its own way, and rather ahead than behind it.
-		var score := absf(wrapf((p-center).angle()-want,-PI,PI))+0.5*(1.0-fwd.dot((p-here)/d))+_rng.randf()*0.15
-		if score < best_score:
-			best_score = score
-			best = p
+	# Round the pond its own way, and rather ahead than behind it; failing
+	# that, a little further and more to the side.
+	for bounds: Array in [[0.6,1.8,-0.3],[0.5,2.6,-0.6]]:
+		for cell in record.shore:
+			var p := _dry_bank(Survey.center(cell),center)
+			if p == Vector2.INF: continue
+			var d := p.distance_to(here)
+			if d < float(bounds[0]) or d > float(bounds[1]) or fwd.dot((p-here)/d) < float(bounds[2]): continue
+			var score := absf(wrapf((p-center).angle()-want,-PI,PI))+0.5*(1.0-fwd.dot((p-here)/d))+_rng.randf()*0.15
+			if score < best_score:
+				best_score = score
+				best = p
+		if best != Vector2.INF: break
 	if best == Vector2.INF:
 		_state.hunts = 0
 		_plan_hunt()
@@ -595,8 +685,25 @@ func _begin_go() -> void:
 	_stop = _stops[0]
 	_stops.remove_at(0)
 	_going = true
-	_speed = 0.0
+	_s_goal = _head_s
+	_v_goal = 0.0
 	_hold = {}
+
+## How much of a climb over its own body lies in the next AHEAD path points,
+## 0 to 1.
+func _climb_ahead() -> float:
+	var head := _head_s-_sx[S_RECOIL]
+	var first := ceili(_head_s/STEP)
+	var most := 0.0
+	for k in range(first,mini(first+AHEAD,_laid)+1):
+		var i := k%TRAIL
+		if _tp[i] >= 0.0: most = maxf(most,_raise(_tp[i],head)*_tf[i])
+	return clampf(most/(2.0*BELLY*RADIUS),0.0,1.0)
+
+## Bring the goal to a stop as soon as it can ease off, on a path point.
+func _stop_soon() -> void:
+	var room := _v_goal*_v_goal/(2.0*GOAL_DECEL)+0.01
+	_stop = mini(_stop,ceili((_s_goal+room)/STEP)+1)
 
 ## The burst reached its stop: hold before the next, or finish the action.
 func _arrived() -> void:
@@ -615,52 +722,24 @@ func _arrived() -> void:
 
 func _begin_hold(time: float, kind: String) -> void:
 	_going = false
-	_speed = 0.0
 	_hold_age = 0.0
 	var floating := _floating
 	var up := _rng.randf_range(LIFT.x,LIFT.y)
 	if kind == "peek": up = 0.045
-	if floating or kind == "swim": up = SWIM_LIFT+0.012
-	var end := maxf(time-ANTICIPATION,0.5)
-	var lift_keys := [[0.0,_lift],[0.5,up,0.12],[end,up*0.93]]
-	var pose_keys := [[0.0,_pose_w],[0.3,1.0]]
-	var gaze_keys := [[0.0,_gaze]]
-	var looks := []
-	var flicks := []
+	if floating: up = SWIM_LIFT+0.012
+	var wakes := []
 	if kind == "bask":
-		lift_keys = [[0.0,_lift],[0.9,REST]]
-		pose_keys = [[0.0,_pose_w],[0.9,0.0]]
-		# Now and then it wakes: the head comes up, looks about, tastes the air
-		# and settles again. Each wake takes 3.7 s, between the settling-in and
-		# the last rousing before it moves.
-		var room := end-1.1-0.9
-		var wakes := 2 if room >= 11.0 else (1 if room >= 5.0 else 0)
-		for n in range(wakes):
-			var slot := room/wakes
-			var at := 0.9+slot*n+(slot-3.7)*_rng.randf_range(0.3,0.7)
-			var high := _rng.randf_range(LIFT.x,LIFT.y)
-			lift_keys += [[at,REST],[at+0.55,high,0.12],[at+2.8,high*0.94],[at+3.7,REST]]
-			pose_keys += [[at,0.0],[at+0.35,1.0],[at+3.0,1.0],[at+3.7,0.0]]
-			looks.append([at+0.7,_look_yaw(true)])
-			looks.append([at+1.9,_look_yaw(false)])
-			flicks.append(at+1.2)
-		# Awake and ready to move again before it sets off.
-		lift_keys += [[end-1.1,REST],[end-0.5,up,0.12],[end,up*0.95]]
-		pose_keys += [[end-1.1,0.0],[end-0.6,1.0]]
-		looks.append([end-0.45,_look_yaw(true)])
-	else:
-		var first := 0.3+_rng.randf_range(0.0,0.25)
-		looks.append([first,_look_yaw(kind == "hunt")])
-		if end-first > 1.6: looks.append([first+_rng.randf_range(0.8,end-first-0.6),_look_yaw(false)])
-		if _rng.randf() < 0.8: flicks.append(_rng.randf_range(0.45,maxf(end-0.5,0.5)))
-		if end > 2.2 and _rng.randf() < 0.4: flicks.append(end-0.5)
-	var last := float(_gaze)
-	for look: Array in looks:
-		gaze_keys.append([float(look[0]),last])
-		gaze_keys.append([float(look[0])+LOOK_TIME,float(look[1]),0.1])
-		last = float(look[1])
-	_hold = {"time":time,"kind":kind,"recoil":_recoil,"lift":lift_keys,"pose":pose_keys,"gaze":gaze_keys,"looks":looks,"flicks":flicks,"flicked":0,"floating":floating}
+		# Now and then it wakes: the head comes up, it watches something and
+		# tastes the air, and it settles again; and it rouses before it moves.
+		var room := time-ANTICIPATION-1.6-1.0
+		var count := 2 if room >= 11.0 else (1 if room >= 5.0 else 0)
+		for n in range(count):
+			var slot := room/count
+			wakes.append(1.0+slot*n+(slot-WAKE_TIME)*_rng.randf_range(0.3,0.7))
+	_hold = {"time":time,"kind":kind,"floating":floating,"up":up,"wakes":wakes,"watched":0.0}
+	_retarget_in = 0.0
 	if floating: life.ripple(Vector3(_snout.x,_level,_snout.z),0.22)
+	if kind == "hiss": _start_hiss()
 
 func _hold_step(step: float) -> void:
 	if _hold.is_empty():
@@ -668,41 +747,70 @@ func _hold_step(step: float) -> void:
 	_hold_age += step
 	if _stops.is_empty(): _prefetch()
 	var age := _hold_age
-	var time: float = _hold.time
 	var floating: bool = _hold.floating
-	var lift := _beats(age,_hold.lift)
-	var pose := _beats(age,_hold.pose)
-	var gaze := _beats(age,_hold.gaze)
-	# The head dips a little on the way through each look: an arc, not a swivel.
-	for look: Array in _hold.looks:
-		lift -= 0.006*pow(sin(PI*clampf((age-float(look[0]))/LOOK_TIME,0.0,1.0)),2.0)
-	# Before it sets off: the head dips, turns home and draws back, and the
-	# rear straightens out of its settle, gathering.
-	var antic := clampf((age-(time-ANTICIPATION))/ANTICIPATION,0.0,1.0)
-	var u := _settle(antic)
-	# A draw-back left from before (a move that never came) eases out first.
-	_recoil = maxf(float(_hold.recoil)*(1.0-_smooth(age/0.3)),RECOIL*u*(0.5 if floating else 1.0))
-	if antic > 0.0:
-		lift = lerpf(lift,SWIM_LIFT if floating else DIP,u)
-		gaze = lerpf(gaze,0.0,u)
-		pose = lerpf(pose,1.0 if floating else 0.0,u)
-	_rest_w = _settle(clampf(age/0.9,0.0,1.0),0.35)*(1.0-_smooth(antic))
-	if floating: lift = maxf(lift,SWIM_LIFT*0.8)
-	# A moving hold: the head drifts and never freezes.
-	var drift := _drift(_time,6.0)
-	_lift = lift+0.0025*drift.x*pose
-	_pose_w = clampf(pose,0.0,1.0)
-	_gaze = gaze+0.035*drift.y*pose
-	_tilt = 0.14*clampf(gaze,-1.0,1.0)*pose
-	_pitch = lerpf(0.0,-0.1+0.03*drift.z,pose)
-	var flicks: Array = _hold.flicks
-	var done := int(_hold.flicked)
-	if done < flicks.size() and age >= float(flicks[done]):
-		_hold.flicked = done+1
+	var closing := age >= float(_hold.time)-ANTICIPATION and _hiss_t < 0.0
+	# You, close by: it watches you while you stay, and if you come right in
+	# it rears up and hisses.
+	if _camera_d < NOTICE and not closing and float(_hold.watched) < WATCH_MOST:
+		_hold.watched = float(_hold.watched)+step
+		_hold.time = maxf(float(_hold.time),age+ANTICIPATION+1.2)
+	# Coming right in stops even its wind-up to move. Not while it swims;
+	# lying on the bank with its head over the water it may.
+	if _camera_d < HISS_NEAR and _hiss_t < 0.0 and _time >= _hiss_ready and not _swimming:
+		_start_hiss()
+		closing = false
+	# You have stayed round behind it: it turns its body to face you.
+	if str(_target.get("kind","")) == "camera" and absf(_off(_camera)) > TURN_TO and _hiss_t < 0.0 and not closing and not _swimming and _time >= _turn_ready:
+		_hold.behind = float(_hold.get("behind",0.0))+step
+		if float(_hold.behind) > TURN_AFTER:
+			_turn_ready = _time+6.0
+			var goal := _turn_goal()
+			if goal != Vector2.INF:
+				_stops = PackedInt32Array()
+				_plan.push_front({"do":"go","to":goal,"phase":showing(),"turn":TURN*1.6,"dry":true})
+				_hold.time = age+ANTICIPATION
+				closing = true
+	else:
+		_hold.behind = 0.0
+	var awake := true
+	if _hold.kind == "bask":
+		awake = _camera_d < NOTICE or _hiss_t >= 0.0 or age >= float(_hold.time)-ANTICIPATION-1.6
+		for wake: float in _hold.wakes:
+			if age >= wake and age < wake+WAKE_TIME: awake = true
+	_retarget_in -= step
+	if str(_target.get("kind","")) != "camera" and _hiss_t < 0.0 and absf(_off(_target_point())) > LOOK_MAX+0.2: _retarget_in = 0.0
+	if _retarget_in <= 0.0:
+		_retarget()
+		_retarget_in = _rng.randf_range(1.2,2.2)
+	var up: float = _hold.up
+	_sg[S_POSE] = 1.0 if awake or floating else 0.0
+	_sg[S_LIFT] = up if awake else REST
+	_sg[S_RECOIL] = 0.0
+	_sg[S_JAW] = 0.0
+	_sg[S_SWELL] = 0.0
+	_aim(awake or floating)
+	if _hiss_t >= 0.0: _hiss_step(step)
+	# Before it sets off: the head settles to the ground and turns home, the
+	# body draws back a little, and the rear straightens, gathering.
+	if closing:
+		_sg[S_POSE] = 1.0 if floating else 0.0
+		_sg[S_LIFT] = SWIM_LIFT if floating else DIP
+		_aim_yaw(_head_fwd.angle())
+		_sg[S_PITCH] = 0.0
+		_sg[S_LEAN] = 0.0
+		_sg[S_REACH] = 1.0
+		_sg[S_RECOIL] = RECOIL*(0.5 if floating else 1.0)
+	if floating: _sg[S_LIFT] = maxf(_sg[S_LIFT],SWIM_LIFT*0.8)
+	var time: float = _hold.time
+	_rest_w = _settle(clampf(age/0.9,0.0,1.0),0.35)*(1.0-_smooth((age-(time-ANTICIPATION))/ANTICIPATION))
+	# It tastes the air while it watches: more often when what it watches
+	# moves. Never mid-hiss.
+	if awake and _hiss_t < 0.0 and not closing and _time >= _next_flick:
 		_flick = _time
+		var lively := str(_target.get("kind","")) in ["camera","site"]
+		_next_flick = _time+(_rng.randf_range(1.1,2.2) if lively else _rng.randf_range(2.0,3.8))
 	if age >= time:
 		_hold = {}
-		_recoil = RECOIL*(0.5 if floating else 1.0)
 		if _going: return
 		if not _stops.is_empty() and str(_action.get("do","")) in ["go","coil","slip"]:
 			_begin_go()
@@ -710,34 +818,213 @@ func _hold_step(step: float) -> void:
 			_next_action()
 			if not _state.is_empty() and not _going and _hold.is_empty(): _begin_hold(1.2,"look")
 
-## Yaw from the head's way to the water, or a glance either side.
-func _look_yaw(water: bool) -> float:
-	if water:
-		var center: Vector2 = _state.center
-		var yaw := wrapf((center-_head_xz()).angle()-_head_fwd.angle(),-PI,PI)
-		if absf(yaw) < 1.3: return clampf(yaw,-0.9,0.9)
-	return (1.0 if _rng.randf() < 0.5 else -1.0)*_rng.randf_range(0.25,0.75)
+## Turn the head, lean and reach toward what it watches. Small, continuous
+## adjustments; never a snap.
+func _aim(awake: bool) -> void:
+	if not awake:
+		_aim_yaw(_head_fwd.angle())
+		_sg[S_PITCH] = 0.0
+		_sg[S_LEAN] = 0.0
+		_sg[S_REACH] = 1.0
+		return
+	var p := _target_point()
+	var d := Vector2(p.x-_head_pos.x,p.z-_head_pos.z)
+	var drift := _drift(_time,7.0)
+	var rel := _off(p)
+	# Something behind it stays on the side it is already looking round.
+	if absf(rel) > LOOK_MAX and signf(rel) != signf(_look_rel()) and absf(_look_rel()) > 0.3: rel = signf(_look_rel())*LOOK_MAX
+	rel = clampf(rel,-LOOK_MAX,LOOK_MAX)+0.03*drift.x
+	_aim_rel(rel)
+	_sg[S_PITCH] = clampf(atan2(p.y-_head_pos.y,maxf(d.length(),0.05)),-0.45,0.6)*0.8+0.02*drift.y
+	# The forebody leans slowly toward what interests it.
+	var interest := 1.0 if str(_target.get("kind","")) in ["camera","site"] else 0.4
+	_sg[S_LEAN] = rel*0.45*interest
+	_sg[S_REACH] = 1.0+0.05*interest
+
+## A point's bearing from the neck's way, -PI..PI.
+func _off(p: Vector3) -> float:
+	var d := Vector2(p.x-_head_pos.x,p.z-_head_pos.z)
+	return wrapf(d.angle()-_head_fwd.angle(),-PI,PI) if d.length() > 0.03 else 0.0
+
+## Where the head looks now, from the neck's way.
+func _look_rel() -> float:
+	return wrapf(_sx[S_YAW]-_head_fwd.angle(),-PI,PI)
+
+## Aim the look `rel` round from the neck's way. Goals are set relative to
+## where it looks now, so a turn never goes the long way round behind it.
+func _aim_rel(rel: float) -> void:
+	_sg[S_YAW] = _sx[S_YAW]+(rel-_look_rel())
+
+func _aim_yaw(yaw: float) -> void:
+	_aim_rel(wrapf(yaw-_head_fwd.angle(),-PI,PI))
+
+## Dry, open ground a little way toward you, to turn round onto; or none.
+func _turn_goal() -> Vector2:
+	var here := _head_xz()
+	var toward := Vector2(_camera.x-_head_pos.x,_camera.z-_head_pos.z).normalized()
+	for reach: float in [0.9,0.7,0.5]:
+		for off: float in [0.0,0.3,-0.3,0.6,-0.6]:
+			var q := here+toward.rotated(off)*reach
+			if _passable(q,false) and _passable(here.lerp(q,0.5),false): return q
+	return Vector2.INF
+
+## Something to watch: you if the camera is near; else a frog or fish in the
+## pond, a firefly at dusk or a passing bird; else a slow drift over the water.
+func _retarget() -> void:
+	if _camera_d < NOTICE:
+		_target = {"kind":"camera"}
+		return
+	if str(_target.get("kind","")) == "site" and _alive(_target) and _target_point().distance_to(_head_pos) < 4.5 and absf(_off(_target_point())) < LOOK_MAX and _rng.randf() < 0.7: return
+	var options := []
+	var weights := []
+	var total := 0.0
+	for kind: String in ["frog","fish","firefly","bird"]:
+		if kind == "firefly" and life._daylight() > 0.5: continue
+		var reach: float = {"frog":3.0,"fish":4.5,"firefly":3.0,"bird":16.0}[kind]
+		for site: Dictionary in life.present(kind):
+			var at := _site_point(kind,site)
+			var d := at.distance_to(_head_pos)
+			if d > reach or absf(_off(at)) > LOOK_MAX: continue
+			var weight: float = {"frog":3.0,"fish":2.0,"firefly":1.0,"bird":0.6}[kind]/(1.0+d)
+			options.append({"kind":"site","what":kind,"site":site})
+			weights.append(weight)
+			total += weight
+	if not options.is_empty():
+		var roll := _rng.randf()*total
+		for i in range(options.size()):
+			roll -= float(weights[i])
+			if roll <= 0.0 or i == options.size()-1:
+				_target = options[i]
+				return
+	if str(_target.get("kind","")) == "drift" and absf(_off(_target_point())) < LOOK_MAX: return
+	_target = {"kind":"drift","at":_drift_anchor(),"phase":_rng.randf()*TAU}
+
+func _alive(target: Dictionary) -> bool:
+	var site: Dictionary = target.site
+	return bool(site.get("here",false)) and not bool(site.get("leaving",false))
+
+func _site_point(kind: String, site: Dictionary) -> Vector3:
+	if kind == "bird":
+		var bird: Dictionary = life._birds.birds[int(site.slot)]
+		return Vector3(float(bird.x),float(bird.y),float(bird.z))
+	return site.p
+
+func _target_point() -> Vector3:
+	match str(_target.get("kind","")):
+		"camera": return _camera
+		"site":
+			if _alive(_target): return _site_point(str(_target.what),_target.site)
+		"drift":
+			var at: Vector3 = _target.at
+			var phase: float = _target.phase
+			return at+Vector3(cos(_time*0.23+phase)*0.5,0.0,sin(_time*0.17+phase*1.3)*0.4)
+	return _head_pos+Vector3(_head_fwd.x,0.0,_head_fwd.y)
+
+## A point over the water toward the pond, or a little ahead on the ground.
+func _drift_anchor() -> Vector3:
+	var here := Vector2(_head_pos.x,_head_pos.z)
+	var record := _record()
+	if not record.is_empty():
+		var toward: Vector2 = (record.center as Vector2)-here
+		if toward.length() < sqrt(float(record.area)/PI)+4.0 and absf(wrapf(toward.angle()-_head_fwd.angle(),-PI,PI)) < LOOK_MAX:
+			var q := here+toward.normalized()*minf(1.4,toward.length())
+			var level := _water_est(q)
+			return Vector3(q.x,level if level > NO_WATER else _ground_est(q)+0.05,q.y)
+	var q := here+_head_fwd*1.5
+	return Vector3(q.x,_ground_est(q)+0.05,q.y)
+
+func _see_camera() -> void:
+	var camera: Camera3D = life.scene.get("camera")
+	if camera == null or not camera.is_inside_tree():
+		_camera_d = INF
+		return
+	_camera = life.to_local(camera.global_position)
+	_camera_d = _camera.distance_to(_head_pos)
+
+## A warning: it rears back and up with a slow wind-up, opens its jaw and
+## swells, holds, and eases down again.
+func _start_hiss() -> void:
+	_hiss_t = 0.0
+	_hissed = false
+	_hiss_ready = _time+HISS_COOLDOWN
+	hisses += 1
+	if _camera_d < 15.0: _target = {"kind":"camera"}
+	_retarget_in = HISS_TIME
+	_hold.time = maxf(float(_hold.time),_hold_age+HISS_TIME+0.8+ANTICIPATION)
+	journal.append([snappedf(life.clock,0.1),"hiss",snappedf(_camera_d,0.01)])
+
+func _hiss_step(step: float) -> void:
+	_hiss_t += step
+	var t := _hiss_t
+	var drawn := _smoother(t/1.1)*(1.0-_smoother((t-3.0)/1.1))
+	_sg[S_POSE] = 1.0
+	_sg[S_LIFT] = lerpf(_sg[S_LIFT],HISS_LIFT,drawn)
+	_sg[S_REACH] = lerpf(_sg[S_REACH],HISS_DRAW,drawn)
+	_sg[S_LEAN] = lerpf(_sg[S_LEAN],0.0,drawn)
+	_sg[S_JAW] = JAW_OPEN*_smoother((t-1.0)/0.35)*(1.0-_smoother((t-2.75)/0.35))
+	_sg[S_SWELL] = _smoother((t-0.9)/0.6)*(1.0-_smoother((t-2.9)/0.9))
+	if t >= 1.1 and not _hissed:
+		_hissed = true
+		life.moment.emit("snake_hiss",life.to_global(_head_pos))
+	if t >= HISS_TIME: _hiss_t = -1.0
+
+## Every spring one step: the goal eases, and the value follows it.
+func _springs(step: float) -> void:
+	if step <= 0.0: return
+	var count := ceili(step/0.02)
+	var h := step/count
+	for i in range(S_COUNT):
+		var w := TAU*float(SPRING_HZ[i])
+		var z := float(SPRING_DAMP[i])
+		_sf[i] += (_sg[i]-_sf[i])*(1.0-exp(-step/float(SPRING_EASE[i])))
+		var x := _sx[i]
+		var v := _sv[i]
+		for _n in range(count):
+			v += ((_sf[i]-x)*w*w-v*2.0*z*w)*h
+			x += v*h
+		_sx[i] = x
+		_sv[i] = v
+	_lift = _sx[S_LIFT]
+	_pose_w = clampf(_sx[S_POSE],0.0,1.0)
 
 # --- Going ------------------------------------------------------------------------
 
 func _go_step(step: float) -> void:
-	var remaining := float(_stop)*STEP-_head_s
-	var want := _cruise*minf(1.0,sqrt(maxf(remaining,0.0)/DECEL))
-	_speed = move_toward(_speed,want,ACCEL*step) if want > _speed else want
-	_speed = maxf(_speed,0.012)
-	var move := minf(_speed*step,remaining)
-	_head_s += move
-	# The draw-back springs out as it goes.
-	_recoil = move_toward(_recoil,0.0,RECOIL/0.22*step)
-	_lay_to(mini(ceili(_head_s/STEP-1e-6),_stop))
+	var stop_s := float(_stop)*STEP
+	var left := stop_s-_s_goal
+	# It reads its way a little ahead, and slows to climb over its own body.
+	_lay_to(mini(ceili(_head_s/STEP-1e-6)+AHEAD,_stop))
+	var cruise := _cruise*(1.0-0.6*_climb_ahead())
+	_v_goal = move_toward(_v_goal,minf(cruise,sqrt(2.0*GOAL_DECEL*maxf(left,0.0))),GOAL_ACCEL*step)
+	_s_goal = minf(_s_goal+_v_goal*step,stop_s)
+	var count := ceili(step/0.02)
+	var h := step/count
+	var w := TAU*TRAVEL_HZ
+	for _i in range(count):
+		_head_v += ((_s_goal-_head_s)*w*w-_head_v*2.0*w)*h
+		_head_s += _head_v*h
+	if _head_s > stop_s:
+		_head_s = stop_s
+		_head_v = 0.0
 	var float_w := 1.0 if _floating else 0.0
-	_pose_w = move_toward(_pose_w,float_w,step*2.5)
-	_lift = move_toward(_lift,SWIM_LIFT if _floating else CARRY,step*0.2)
 	var drift := _drift(_time,5.0)
-	_gaze = move_toward(_gaze,0.06*drift.y*float_w,step*2.0)
-	_pitch = move_toward(_pitch,-0.05*float_w,step*0.6)
-	_tilt = move_toward(_tilt,0.0,step*0.8)
+	_sg[S_POSE] = float_w
+	_sg[S_LIFT] = SWIM_LIFT if _floating else CARRY
+	_aim_yaw(_head_fwd.angle()+0.05*drift.y*float_w)
+	_sg[S_PITCH] = -0.05*float_w
+	_sg[S_LEAN] = 0.0
+	_sg[S_REACH] = 1.0
+	_sg[S_RECOIL] = 0.0
+	_sg[S_JAW] = 0.0
+	_sg[S_SWELL] = 0.0
 	_rest_w = move_toward(_rest_w,0.0,step*4.0)
+	# You, close: it eases to a stop to watch, and keeps the rest of its way.
+	var phase := showing()
+	if not _swimming and phase != "slip" and ((_camera_d < NOTICE and _time >= _notice_ready) or (_camera_d < HISS_NEAR and _time >= _hiss_ready)):
+		_notice_ready = _time+NOTICE_COOLDOWN
+		var before := _stop
+		_stop_soon()
+		if _stop < before: _stops.insert(0,before)
 	# It tastes the air as it goes.
 	if not _floating and _time >= _next_flick:
 		_flick = _time
@@ -749,8 +1036,9 @@ func _go_step(step: float) -> void:
 			life.ripple(Vector3(_snout.x,_level,_snout.z),0.36)
 	else:
 		_wake = 0.0
-	if remaining-move <= 1e-5:
-		_head_s = float(_stop)*STEP
+	if _s_goal >= stop_s-1e-6 and stop_s-_head_s < 0.0006 and absf(_head_v) < 0.004:
+		_head_s = stop_s
+		_head_v = 0.0
 		_arrived()
 
 # --- The path -----------------------------------------------------------------------
@@ -833,14 +1121,14 @@ func _leg_run(gen: Dictionary, budget: int) -> bool:
 		p = next
 		height = _surface_est(p)
 		travelled += STEP
-		# A way that has come no closer for a metre, plus the room to turn
-		# round, ends where it was closest.
+		# A way that has come no closer for half a metre, plus the room to
+		# turn round, ends where it was closest.
 		if not free:
 			var left := p.distance_to(goal)
 			if left < float(gen.closest)-0.01:
 				gen.closest = left
 				gen.closest_at = points.size()-1
-			elif points.size()-1-int(gen.closest_at) > int((1.0+PI/maxf(turn,0.5))/STEP):
+			elif points.size()-1-int(gen.closest_at) > int((0.5+PI/maxf(turn,0.5))/STEP):
 				points.resize(int(gen.closest_at)+1)
 				p = points[points.size()-1]
 				finished = true
@@ -1027,7 +1315,7 @@ func _put(k: int, p: Vector2, keep_partner: bool) -> void:
 	# rides up over it on a smooth bump, full height over its middle.
 	var partner := -1.0
 	var nearest := OVER_REACH*OVER_REACH
-	var tail := _head_s-_recoil-LENGTH
+	var tail := _head_s-_sx[S_RECOIL]-LENGTH
 	var newest := k-int((NECK+0.08)/STEP)
 	var oldest := maxi(maxi(_laid-TRAIL+2,0),ceili(tail/STEP))
 	for q in range(newest,oldest-1,-1):
@@ -1144,6 +1432,15 @@ func _cover_near(p: Vector2, center: Vector2) -> Vector2:
 				best = q
 	return best if best != Vector2.INF else p+(p-center).normalized()*2.5
 
+## The nearest open ground to `p` on the side away from the pond's middle,
+## within half a metre: a bank cell's centre can sit at the water's edge.
+func _dry_bank(p: Vector2, center: Vector2) -> Vector2:
+	var away := (p-center).normalized()
+	for n in range(11):
+		var q := p+away*0.05*n
+		if _passable(q,false): return q
+	return Vector2.INF
+
 ## Open ground along the straight line from `p` to `q`, past the first 0.6 m
 ## (it may start at the water's edge).
 func _open_line(p: Vector2, q: Vector2) -> bool:
@@ -1174,6 +1471,7 @@ func _stations() -> void:
 	_breath_w.resize(STATIONS)
 	_rear_w.resize(STATIONS)
 	_tail_w.resize(STATIONS)
+	_front_w.resize(STATIONS)
 	_roll.resize(STATIONS)
 	_scale.resize(STATIONS)
 	_pos.resize(STATIONS)
@@ -1191,6 +1489,7 @@ func _stations() -> void:
 		_breath_w[k] = sin(PI*clampf((u-0.1)/0.55,0.0,1.0))
 		_rear_w[k] = smoothstep(0.5,0.78,u)
 		_tail_w[k] = pow(smoothstep(0.82,1.0,u),2.0)
+		_front_w[k] = 1.0-smoothstep(0.15,0.4,u)
 		if _arc[k] < NECK: _neck_count = k+1
 
 func _body_u(a: float) -> float:
@@ -1226,12 +1525,12 @@ func _sample(s: float, r: float, head: float) -> Vector3:
 	f -= i
 	var a := i%TRAIL
 	var b := (i+1)%TRAIL
-	var y := maxf(lerpf(_tg[a],_tg[b],f)+BELLY*r*lerpf(_tq[a],_tq[b],f),lerpf(_tw[a],_tw[b],f)-0.1*r)
+	var y := _smax(lerpf(_tg[a],_tg[b],f)+BELLY*r*lerpf(_tq[a],_tq[b],f),lerpf(_tw[a],_tw[b],f)-0.1*r)
 	if _tp[a] >= 0.0 or _tp[b] >= 0.0: y += lerpf(_raise(_tp[a],head)*_tf[a],_raise(_tp[b],head)*_tf[b],f)
 	return Vector3(lerpf(_tx[a],_tx[b],f),y,lerpf(_tz[a],_tz[b],f))
 
 func _pose(step: float) -> void:
-	var head := _head_s-_recoil
+	var head := _head_s-_sx[S_RECOIL]
 	var low := maxi(_laid-TRAIL+1,0)
 	var carry := _lift*(1.0-_pose_w)
 	var breath := _beats(fposmod(_time/3.1,1.0),BREATH_KEYS)
@@ -1252,14 +1551,16 @@ func _pose(step: float) -> void:
 		var b := (i+1)%TRAIL
 		var ground := lerpf(_tg[a],_tg[b],f)+BELLY*r*lerpf(_tq[a],_tq[b],f)
 		var afloat := lerpf(_tw[a],_tw[b],f)-0.1*r
-		var y := maxf(ground,afloat)+carry*_carry_w[k]
+		# A held breath swells the forebody; its belly stays on the ground.
+		var swell := SWELL*_sx[S_SWELL]*_front_w[k]
+		var y := _smax(ground,afloat)+carry*_carry_w[k]+swell*BELLY*r
 		if _tp[a] >= 0.0 or _tp[b] >= 0.0: y += lerpf(_raise(_tp[a],head)*_tf[a],_raise(_tp[b],head)*_tf[b],f)
 		_pos[k] = Vector3(lerpf(_tx[a],_tx[b],f),y,lerpf(_tz[a],_tz[b],f))
 		_roll[k] = lerpf(_tr[a],_tr[b],f) if ground >= afloat else 0.0
 		var gate := 1.0
 		if _gate_mode > 0: gate = smoothstep(_gate,_gate+GATE_SOFT,s)
 		elif _gate_mode < 0: gate = 1.0-smoothstep(_gate-GATE_SOFT,_gate,s)
-		_scale[k] = maxf((1.0+0.035*breath*_breath_w[k])*gate,0.001)
+		_scale[k] = maxf((1.0+0.035*breath*_breath_w[k]+swell)*gate,0.001)
 	if _gate_mode > 0 and head-LENGTH > _gate+GATE_SOFT: _gate_mode = 0
 	# The head's resting place on the path, and whether it is on the water.
 	var head_r := RADIUS*0.85
@@ -1276,18 +1577,13 @@ func _pose(step: float) -> void:
 	var head_dir := (snout-back).normalized()
 	# It holds its head's way steady: the weave passes under a swimming head.
 	var neck := _sample(head-NECK,RADIUS,head)
+	var nf := clampf((head-NECK)/STEP,float(low),float(_laid))
+	var ni := mini(floori(nf),maxi(_laid-1,0))
+	_swimming = lerpf(_tw[ni%TRAIL],_tw[(ni+1)%TRAIL],nf-ni)-0.1*RADIUS > lerpf(_tg[ni%TRAIL],_tg[(ni+1)%TRAIL],nf-ni)+BELLY*RADIUS*_tq[ni%TRAIL]
 	var way := Vector2(snout.x-neck.x,snout.z-neck.z)
 	if way.length_squared() > 1e-8 and step > 0.0:
 		var rate := lerpf(12.0,3.0,_pose_w) if _going else 0.0
 		_head_fwd = _head_fwd.slerp(way.normalized(),1.0-exp(-rate*step)).normalized()
-	# The neck turns after the head: overlap. A critically damped spring, in
-	# small steps so a fast clock stays stable.
-	if step > 0.0:
-		var count := ceili(step/0.02)
-		var h := step/count
-		for _i in range(count):
-			_gaze_speed += ((_gaze-_gaze_neck)*81.0-_gaze_speed*18.0)*h
-			_gaze_neck += _gaze_speed*h
 	# The rear settles into its curves after a stop, and the tail's tip drifts.
 	if _rest_w > 0.001:
 		_held = _pos.duplicate()
@@ -1303,36 +1599,44 @@ func _pose(step: float) -> void:
 				var t := _held[k-1]-_held[k+1]
 				var side := Vector2(t.z,-t.x).normalized()*0.014*drift.x*_tail_w[k]*_rest_w
 				_pos[k] += Vector3(side.x,0.0,side.y)
-	# The neck lifts and bends toward where the head is held: an S from the
-	# body's line to the head.
+	# The neck lifts toward where the head is held and bends in an S from the
+	# body's line to the head. The head's place moves only with the slow lean
+	# and reach; its look turns on the spot, like a periscope.
 	var hd := head_dir
 	var hb := back
+	var rel := clampf(_look_rel(),-LOOK_MAX-0.2,LOOK_MAX+0.2)
+	_tilt = 0.12*clampf(rel,-1.0,1.0)*_pose_w
 	if _pose_w > 0.001:
 		var o := neck
 		var o_back := _sample(head-NECK-0.03,RADIUS,head)
 		var t0 := (o-o_back).normalized()
-		var bend := _head_fwd.rotated(_gaze_neck*0.55)
+		var bend := _head_fwd.rotated(_sx[S_LEAN])
 		var rest := back.y-carry*0.9
-		var look := _head_fwd.rotated(_gaze)
-		var held := Vector3(look.x*cos(_pitch),sin(_pitch),look.y*cos(_pitch))
+		var look := _head_fwd.rotated(rel)
+		var pitch := _sx[S_PITCH]
+		var held := Vector3(look.x*cos(pitch),sin(pitch),look.y*cos(pitch))
 		# The curve keeps the neck's own length: its reach is corrected once
 		# against the measured length, and the rings sit at their arc along it.
+		# Drawn back (reach under 1) the head comes nearer the body and the S
+		# deepens: its handles lengthen until the curve is the neck's length again.
 		var length := NECK-HEAD
-		var reach := sqrt(maxf(length*length-_lift*_lift,1e-4))
-		var raised := o
-		for attempt in range(2):
-			raised = Vector3(o.x+bend.x*reach,rest+_lift,o.z+bend.y*reach)
-			var span := o.distance_to(raised)
+		var reach := sqrt(maxf(length*length-_lift*_lift,1e-4))*_sx[S_REACH]
+		var raised := Vector3(o.x+bend.x*reach,rest+_lift,o.z+bend.y*reach)
+		var span := o.distance_to(raised)
+		var handle := 1.0
+		for attempt in range(3):
 			var total := 0.0
 			var last := o
 			for n in range(NECK_SAMPLES+1):
-				var point := _hermite(o,t0*span,raised,held*span,float(n)/NECK_SAMPLES)
+				var point := _hermite(o,t0*span*handle,raised,held*span*handle,float(n)/NECK_SAMPLES)
 				total += point.distance_to(last)
 				_curve[n] = point
 				_curve_arc[n] = total
 				last = point
-			if attempt == 0: reach *= clampf(length/maxf(total,1e-4),0.6,1.4)
+			if attempt < 2: handle = clampf(handle*pow(length/maxf(total,1e-4),1.6),0.5,3.0)
 		var total := _curve_arc[NECK_SAMPLES]
+		# Drawn back, the neck's length gathers into the S's bend rather than
+		# the rings bunching: they keep their share of the curve.
 		for k in range(_neck_count):
 			var want := (NECK-_arc[k])/(NECK-HEAD)*total
 			var n := 1
@@ -1340,7 +1644,12 @@ func _pose(step: float) -> void:
 			var u := clampf((want-_curve_arc[n-1])/maxf(_curve_arc[n]-_curve_arc[n-1],1e-6),0.0,1.0)
 			_pos[k] = _pos[k].lerp(_curve[n-1].lerp(_curve[n],u),_pose_w)
 		hb = back.lerp(raised,_pose_w)
-		hd = head_dir.lerp(held,_pose_w).normalized()
+		# Blend the way the head points by angle, from the neck's way, so it
+		# turns and never flips.
+		var trail_rel := wrapf(Vector2(head_dir.x,head_dir.z).angle()-_head_fwd.angle(),-PI,PI)
+		var yaw := _head_fwd.angle()+lerpf(trail_rel,rel,_pose_w)
+		var tilt := lerpf(asin(clampf(head_dir.y,-1.0,1.0)),pitch,_pose_w)
+		hd = Vector3(cos(yaw)*cos(tilt),sin(tilt),sin(yaw)*cos(tilt))
 	# Rings along the body.
 	for k in range(STATIONS):
 		var ahead := _pos[k-1] if k > 0 else hb
@@ -1359,11 +1668,16 @@ func _pose(step: float) -> void:
 	elif _gate_mode < 0: head_gate = 1.0-smoothstep(_gate-GATE_SOFT,_gate,head-HEAD*0.5)
 	var hs := maxf(head_gate,0.001)
 	_skeleton.set_bone_pose(STATIONS,Transform3D(Basis(head_side*hs,head_up*hs,hd*hs),hb))
+	_head_pos = hb
 	_snout = hb+hd*HEAD
+	# The jaw hinges at the back of the head; positive turns about the side
+	# open it downward.
+	var jaw := _sx[S_JAW]
+	_skeleton.set_bone_pose(STATIONS+2,Transform3D(Basis(head_side*hs,head_up.rotated(head_side,jaw)*hs,hd.rotated(head_side,jaw)*hs),hb))
 	var out := 0.0
 	var flutter := 0.0
 	var age := _time-_flick
-	if age >= 0.0 and age < FLICK:
+	if age >= 0.0 and age < FLICK and _hiss_t < 0.0:
 		out = smoothstep(0.0,0.07,age)*(1.0-smoothstep(FLICK-0.08,FLICK,age))
 		flutter = sin(TAU*12.0*age)*0.5*out
 	# Positive turns about the side tip the tongue down.
@@ -1371,6 +1685,12 @@ func _pose(step: float) -> void:
 	var tongue_up := head_up.rotated(head_side,0.15+flutter)
 	var ts := maxf(out*head_gate,0.001)
 	_skeleton.set_bone_pose(STATIONS+1,Transform3D(Basis(head_side*ts,tongue_up*ts,tongue*ts),hb+hd*(HEAD*0.98)-head_up*RADIUS*0.3))
+
+## The higher of the ground and the water, rounded over WATERLINE metres so
+## the body glides onto the surface instead of meeting it at a corner.
+static func _smax(a: float, b: float) -> float:
+	var h := maxf(WATERLINE-absf(a-b),0.0)/WATERLINE
+	return maxf(a,b)+h*h*WATERLINE*0.25
 
 static func _hermite(p0: Vector3, m0: Vector3, p1: Vector3, m1: Vector3, t: float) -> Vector3:
 	var t2 := t*t
@@ -1382,6 +1702,11 @@ static func _hermite(p0: Vector3, m0: Vector3, p1: Vector3, m1: Vector3, t: floa
 static func _smooth(x: float) -> float:
 	x = clampf(x,0.0,1.0)
 	return x*x*(3.0-2.0*x)
+
+## A smoother ease: no jump in speed or acceleration at either end.
+static func _smoother(x: float) -> float:
+	x = clampf(x,0.0,1.0)
+	return x*x*x*(x*(6.0*x-15.0)+10.0)
 
 ## 0..1 ease. With `over` it arrives early, overshoots by that share and settles.
 static func _settle(x: float, over := 0.0) -> float:
@@ -1413,7 +1738,8 @@ static func _drift(t: float, period: float) -> Vector3:
 
 # --- The mesh ------------------------------------------------------------------------
 
-## Faceted rings on their own bones, a head and a forked tongue. Colours are per
+## Faceted rings on their own bones, a head with a hinged jaw, and a forked
+## tongue. Colours are per
 ## face with a slight shade each, like scripts/life_models.gd.
 func _build_mesh(material: Material) -> ArrayMesh:
 	var mesh := MeshParts.new()
@@ -1438,14 +1764,25 @@ func _build_mesh(material: Material) -> ArrayMesh:
 	var s2 := _hexagon(hr,0.6,0.46,-HEAD_BELLY*hr+0.866*0.46*hr+0.02*hr,HEAD*0.86)
 	var tip := Vector3(0,-0.38*hr,HEAD)
 	var h := STATIONS
+	var jaw := STATIONS+2
 	for j in range(6):
 		var n := (j+1)%6
 		# The collar joins the head to the first ring.
 		mesh.quad(s0[j],h,s0[n],h,rings[0][j],0,rings[0][n],0,_collar(j),_collar(j))
-		var top := HEAD_TOP if j in [0,1,2] else (UNDER if j == 4 else LIP)
-		mesh.quad(s1[j],h,s1[n],h,s0[j],h,s0[n],h,top,top)
-		mesh.quad(s2[j],h,s2[n],h,s1[j],h,s1[n],h,top,top)
-		mesh.tri(s2[j],h,tip,h,s2[n],h,top)
+		# The lower half is the jaw, hinged at the back of the head: its back
+		# edge stays with the head and the corner of the mouth stretches.
+		var upper := j in [0,1,2]
+		var bone := h if upper else jaw
+		var top := HEAD_TOP if upper else (UNDER if j == 4 else LIP)
+		mesh.quad(s1[j],bone,s1[n],bone,s0[j],h,s0[n],h,top,top)
+		mesh.quad(s2[j],bone,s2[n],bone,s1[j],bone,s1[n],bone,top,top)
+		mesh.tri(s2[j],bone,tip,bone,s2[n],bone,top)
+	# Inside the mouth: a dark palate on the head and a floor on the jaw,
+	# together along the lip line while it is closed.
+	for bone in [h,jaw]:
+		mesh.quad(s1[0],bone,s1[3],bone,s0[0],h,s0[3],h,MOUTH,MOUTH)
+		mesh.quad(s2[0],bone,s2[3],bone,s1[0],bone,s1[3],bone,MOUTH,MOUTH)
+		mesh.tri(s2[0],bone,tip,bone,s2[3],bone,MOUTH)
 	# Small dark eyes high on the sides, just ahead of the head's widest,
 	# standing a hair proud of the face they sit on.
 	for j: int in [0,2]:

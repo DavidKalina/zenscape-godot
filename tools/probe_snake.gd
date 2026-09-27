@@ -9,10 +9,14 @@ extends SceneTree
 ## clock fast and waits for a snake to come by itself.
 ##   godot --headless --path . -s res://tools/probe_snake.gd -- --dump=/tmp/zs-snake-previews/frames
 ## `--dump=DIR` writes the mesh, the ground and water, the plants and every
-## frame's bone poses and ripples for tools/render_snake_probe.py (the first
-## visit only). `--visits=N` runs N visits back to back, each choosing its own
-## way, and adds their numbers up. `--bask=S`, `--hunts=N` and `--no-swim`
-## shape the visits.
+## frame's bone poses, ripples, fish and camera for
+## tools/render_snake_probe.py (the first visit only). `--visits=N` runs N
+## visits back to back, each choosing its own way, and adds their numbers up
+## (`--dump-visit=N` dumps visit N instead of the first).
+## `--approach=N` (default 1) brings the camera in during the first N visits'
+## hunts, the way a player would: in from the default view to 4 m, round the
+## snake, right in to 1.5 m (where it hisses), a while there, and out again.
+## `--bask=S`, `--hunts=N` and `--no-swim` shape the visits.
 const Snakes = preload("res://scripts/life_snakes.gd")
 const DT := 1.0/30.0
 var scene: Node3D
@@ -23,6 +27,8 @@ var bask := 8.0
 var hunts := 3
 var swim := true
 var visits := 1
+var approaches := 1
+var dump_visit := 0
 ## Every measure, over every visit.
 var m := {}
 var worst_spacing := [1.0,0,0,""]
@@ -54,6 +60,8 @@ func run() -> void:
 		if arg.begins_with("--bask="): bask = float(arg.trim_prefix("--bask="))
 		if arg.begins_with("--hunts="): hunts = int(arg.trim_prefix("--hunts="))
 		if arg.begins_with("--visits="): visits = int(arg.trim_prefix("--visits="))
+		if arg.begins_with("--approach="): approaches = int(arg.trim_prefix("--approach="))
+		if arg.begins_with("--dump-visit="): dump_visit = int(arg.trim_prefix("--dump-visit="))
 		if arg == "--no-swim": swim = false
 	create_timer(170+120*visits).timeout.connect(func() -> void: push_error("Snake probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
@@ -98,11 +106,11 @@ func run() -> void:
 	life.set_process(false)
 	if not dump.is_empty(): DirAccess.make_dir_recursive_absolute(dump)
 	for visit in range(visits):
-		if not run_visit(visit,dump if visit == 0 else ""): break
+		if not run_visit(visit,dump if visit == dump_visit else ""): break
 	var keys := m.keys()
 	keys.sort()
 	for key in keys: print("SNAKE %s %s" % [key,JSON.stringify(stats(m[key]))])
-	print("SNAKE worst_us=",snake.worst_usec)
+	print("SNAKE worst_us=",snake.worst_usec," hisses=",snake.hisses)
 	print("SNAKE pops ",pops.size()," ",JSON.stringify(pops.slice(0,24)))
 	print("SNAKE extremes squeeze=",worst_spacing," stretch=",worst_stretch," fastest=",fastest)
 	if not dump.is_empty(): write_scene(dump)
@@ -140,12 +148,42 @@ func run_visit(visit: int, dir: String) -> bool:
 	var last_phase := ""
 	var previous: Array = []
 	var before: Array = []
+	# The snout over the last four frames, for acceleration and jerk.
+	var snouts: Array[Vector3] = []
+	# The simulated player camera: far off until the hunt, then in, round,
+	# right in, and out.
+	var camera: Camera3D = scene.camera
+	var far := life.to_local(camera.global_position)
+	var approach := visit < approaches
+	var cam_t := -1.0
+	var held := 0.0
+	var az0 := 0.0
+	var seen := Vector3.ZERO
+	var hisses_before: int = snake.hisses
 	var frame := 0
 	while frame < 30*240:
+		var head_now: Vector3 = snake._head_pos
+		seen = head_now if frame == 0 else seen.lerp(head_now,1.0-exp(-DT*1.2))
+		if approach and cam_t < 0.0:
+			# At a hunt stop with stops still to come, so it is on land a while.
+			held = held+DT if snake.showing() == "hunt" and not snake._going and int(snake._state.get("hunts",0)) >= 1 else 0.0
+			if held > 0.6:
+				cam_t = 0.0
+				az0 = snake._head_fwd.angle()+0.9
+		var cam_local := far
+		if cam_t >= 0.0:
+			cam_t += DT
+			cam_local = camera_path(cam_t,seen,az0,far)
+			# Like the game's camera, it never goes into the ground.
+			var under := ground(Vector2(cam_local.x,cam_local.z))
+			if not is_nan(under): cam_local.y = maxf(cam_local.y,under+0.45)
+		camera.global_position = life.to_global(cam_local)
 		var t0 := Time.get_ticks_usec()
 		snake.advance(DT)
 		add("cost_us",float(Time.get_ticks_usec()-t0))
-		life._move_rings(DT)
+		# The pond's own life moves too, on the same clock.
+		life.clock += DT
+		life._animate(DT)
 		frame += 1
 		var phase: String = snake.showing()
 		if phase != last_phase:
@@ -216,7 +254,23 @@ func run_visit(visit: int, dir: String) -> bool:
 					worst_k = k
 			var ha := ((snout-2.0*(previous[rings] as Vector3)+(before[rings] as Vector3))/(DT*DT)).length()
 			add("accel_head_mps2",ha)
-			if worst > 6.0 or ha > 8.0: pops.append([visit,frame,phase,snappedf(worst,0.1),worst_k,snappedf(ha,0.1)])
+			if ha > 3.5: add("head_spikes_over_3_5",1.0)
+			if worst > 6.0 or ha > 3.5: pops.append([visit,frame,phase,snappedf(worst,0.1),worst_k,snappedf(ha,0.1)])
+		snouts.append(snout)
+		if snouts.size() > 4: snouts.remove_at(0)
+		if snouts.size() == 4:
+			add("jerk_head_mps3",((snouts[3]-3.0*snouts[2]+3.0*snouts[1]-snouts[0])/(DT*DT*DT)).length())
+		# How closely the head follows what it watches, while it holds and
+		# looks (not winding up to move, not hissing).
+		var watch: Array = snake.watching()
+		if not snake._going and snake._pose_w > 0.9 and snake._hiss_t < 0.0 and not snake._hold.is_empty() and snake._hold_age < float(snake._hold.time)-Snakes.ANTICIPATION:
+			var to: Vector3 = (watch[1] as Vector3)-head_pose.origin
+			var ahead := Vector2(head_pose.basis.z.x,head_pose.basis.z.z)
+			var want := Vector2(to.x,to.z)
+			if want.length() > 0.05 and ahead.length() > 0.01:
+				var err := rad_to_deg(absf(ahead.angle_to(want)))
+				add("track_err_camera_deg" if watch[0] == "camera" else "track_err_other_deg",err)
+		if snake._hiss_t >= 0.0: add("jaw_rad",(poses[rings+2] as Transform3D).basis.z.normalized().angle_to(head_pose.basis.z.normalized()))
 		before = previous
 		previous = centers.duplicate()
 		previous.append(snout)
@@ -227,9 +281,18 @@ func run_visit(visit: int, dir: String) -> bool:
 			var ripples := []
 			for ring: Dictionary in life._ring_state:
 				if float(ring.age) < 4.0: ripples.append([ring.p.x,ring.p.y,ring.p.z,ring.age,ring.size])
-			frame_file.store_line(JSON.stringify({"f":frame,"phase":phase,"bones":bones.map(func(v: float) -> float: return snappedf(v,0.00001)),"rings":ripples}))
+			var fish := []
+			# The fish sites' own places (the headless renderer keeps no
+			# instance transforms); the renderer turns each along its motion.
+			for site: Dictionary in life.present("fish"):
+				var at: Vector3 = site.p
+				fish.append([int(site.slot),at.x,at.y,at.z,float(site.size)])
+			var aim: Vector3 = watch[1]
+			frame_file.store_line(JSON.stringify({"f":frame,"phase":phase,"bones":bones.map(func(v: float) -> float: return snappedf(v,0.00001)),"rings":ripples,"cam":[cam_local.x,cam_local.y,cam_local.z],"look":[seen.x,seen.y,seen.z],"fish":fish,"aim":[watch[0],aim.x,aim.y,aim.z],"hiss":snake._hiss_t}))
 	if frame_file != null: frame_file.close()
 	add("visit_seconds",frame*DT)
+	add("hisses_per_visit",float(snake.hisses-hisses_before))
+	camera.global_position = life.to_global(far)
 	print("SNAKE visit=%d timeline %s" % [visit,JSON.stringify(timeline)])
 	var legs := []
 	for entry: Array in snake.journal.slice(first_entry):
@@ -238,6 +301,26 @@ func run_visit(visit: int, dir: String) -> bool:
 	for leg: Array in legs:
 		if float(leg[1]) > 0.3: add("legs_short_of_goal",1.0)
 	return true
+
+## The player's camera: in from `far` to 4.2 m off the snake over 5 s, round
+## it 90 degrees, right in to 1.5 m, 7.5 s there, and back out.
+func camera_path(t: float, head: Vector3, az0: float, far: Vector3) -> Vector3:
+	var orbit := func(az: float, distance: float, rise: float) -> Vector3:
+		return head+Vector3(cos(az)*cos(rise),sin(rise),sin(az)*cos(rise))*distance
+	if t < 5.0: return far.lerp(orbit.call(az0,4.2,0.5),ease_in_out(t/5.0))
+	if t < 11.0:
+		var u := ease_in_out((t-5.0)/6.0)
+		return orbit.call(az0+1.6*u,lerpf(4.2,3.6,u),0.5)
+	if t < 13.5:
+		var u := ease_in_out((t-11.0)/2.5)
+		return orbit.call(az0+1.6,lerpf(3.6,1.5,u),lerpf(0.5,0.62,u))
+	if t < 21.0: return orbit.call(az0+1.6+0.25*ease_in_out((t-13.5)/7.5),1.5,0.62)
+	if t < 26.0: return (orbit.call(az0+1.85,1.5,0.62) as Vector3).lerp(far,ease_in_out((t-21.0)/5.0))
+	return far
+
+static func ease_in_out(x: float) -> float:
+	x = clampf(x,0.0,1.0)
+	return x*x*x*(x*(6.0*x-15.0)+10.0)
 
 ## The mesh, the ground and water round the visit, and the plants.
 func write_scene(dir: String) -> void:
@@ -256,7 +339,7 @@ func write_scene(dir: String) -> void:
 	var file := FileAccess.open(dir+"/mesh.json",FileAccess.WRITE)
 	file.store_string(JSON.stringify({"vertices":flat,"colors":paint,"bones":owner}))
 	file.close()
-	print("SNAKE mesh triangles=%d bones=%d" % [vertices.size()/3,Snakes.STATIONS+2])
+	print("SNAKE mesh triangles=%d bones=%d" % [vertices.size()/3,Snakes.STATIONS+3])
 	var pond: PackedVector3Array = scene._chunk_editor.content.pond_vertices
 	var low := (lo.min(Vector2(-7.5,-2.5))-Vector2(2.5,2.5)).max(Vector2(-13.9,-13.9))
 	var high := (hi.max(Vector2(1.5,6.5))+Vector2(2.5,2.5)).min(Vector2(13.9,13.9))
