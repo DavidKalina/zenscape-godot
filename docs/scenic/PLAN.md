@@ -328,27 +328,56 @@ Four parallel branches, merged in this order:
 
 **Follow-ups from slice 1:**
 - The plain's ground reads greyer and more mauve than Fidelity's green. It picks a random palette family (for example Chalk & turquoise) under mist. Offered: default the plain to Fidelity's palette and a clearer sky.
-- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H).
-- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch.
-- Fix the dense-grass render, or retire it.
-- Remove the first-dab hitch, the first-plan hitch and the water release frame.
+- There is no "just look" mode while creating: the brush stays in hand even with the UI hidden (H). Slice 5 covers it.
+- `--verify-desktop-build` may fail, because it expects the tool rail to be visible at launch. Slice 5 covers it.
+- The dense-grass render, the first-dab and first-plan hitches, and the water release frame are in the remaining slices below.
 - A plain launch copies `places.json` to `places-previous.json` before it is overwritten.
 
-**Later slices:**
-- water brush (spill-level fill plus downhill trace)
-- meadow, forest and path brushes
-- habitat-driven fauna
-- regional beauty guidance
-- the creation UI rebuild
-- stroke sounds
-- inspect and photo mode
+### Where Phase 3 stands (2026-09-26)
 
-### Also in this phase
+Slice 1 is done and merged to `main` (7978080, not pushed). You can launch onto the plain, raise land and watch it answer. Painting is smooth on the CPU side, and plants grow in where you made land. Everything below is still open. The order is a recommendation; each slice ends with a film for the user (`tools/film_genesis.gd`) and a look on screen.
 
-- **Rebuild the UI around creation:**
-  - Replace the top toolbar, which hides buttons by moving them into the World menu by position (`diorama.gd`).
-  - Check the maker-editor look on screen. It is parked on `wip/parked-2026-09-26` and has never been seen.
-- **Add an inspect and photo mode.**
+### Remaining slices
+
+2. **Water brush, and the plain in Fidelity's colours.**
+   - Paint water and it settles: find the basin's spill level, fill it with the existing fill animation, and trace overflow downhill (`NativeWaterCourse.trace`) as a stream. Water painted on a hilltop runs down and pools.
+   - Move the water flood and shoreline off the main thread, or into C++. That also removes the roughly 40 ms release frame when a stroke changes water.
+   - Default the blank plain to Fidelity's palette and a clearer sky; other families stay for generated worlds.
+   - Done when a film shows water filling a painted hollow and a stream finding its way down, with no visible hitch.
+3. **Life answers the land.**
+   - Fish settle in new water.
+   - Frogspawn appears in shallow edges.
+   - Birds and herons come to shores.
+   - Deer come to forest edges at dawn.
+   - Birds, fireflies and frogs read the live world instead of fixed reference positions.
+   - Arrivals follow conditions plus a delay, like plant emergence.
+   - Add the rare "and it was good" moments: a heron landing, deer at dawn, a rainbow after rain, perhaps a glimpse of Bigfoot at the forest edge.
+4. **Meadow, forest and path brushes.**
+   - These write intent, and the world picks the details.
+   - A forest brush plants a natural edge and thins on steep rock.
+   - A path brush leaves worn ground with stony edges.
+   - A meadow brush paints softer painted cover and flowers as ground colour, not blades.
+   - All three respect provenance, so hand work always wins.
+5. **The creation interface.**
+   - Replace the top toolbar and the World-menu index hack (`diorama.gd`) with a creation-first shell.
+   - Check the parked maker-editor look (`wip/parked-2026-09-26`) on screen, and reuse its glass chrome if it fits.
+   - Add a "just look" state where the brush is put away.
+   - Make `--verify-desktop-build` pass again.
+6. **Sound.**
+   - Stroke sounds: rumble as land rises, water filling, wind swelling.
+   - World beds that follow what exists (water, birds, forest).
+   - None exist today; `tools/generate_nature_audio.py` can synthesise them.
+7. **Inspect and photo mode.**
+   - A composed camera, UI off, and capture.
+   - This may be the "finished moment" that the open questions ask about.
+8. **Quiet guidance.**
+   - A regional beauty score that nudges water levels, edges and variant choice without the player seeing it.
+
+**Carried polish, fold into whichever slice touches it:**
+- The first-dab hitch (about 28 ms) and emergence's first plan (about 36 ms).
+- Dense grass: fix its render or retire it. It is opt-in with `--beauty-grass`, and the user does not want blades by default.
+- Craft mode's fine tools against the new provenance and pipeline: check that they still behave.
+- Bring tests back only when the user asks.
 
 ## Phase 4: presentation
 
