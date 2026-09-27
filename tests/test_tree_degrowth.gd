@@ -1,7 +1,8 @@
 extends SceneTree
 ## Render the actual catalog materials: trunks and crowns must both shrink,
 ## reach zero before terrain recedes, and return to their original silhouette.
-const PARTS := ["trunk","canopy","broadleaf:mesh-11","broadleaf:broadleaf-canopies","layered_tree:layered-trunk","layered_tree:layered-canopies","redwood:redwood-trunk","redwood:redwood-canopies"]
+const PARTS := ["trunk","canopy","broadleaf:mesh-11","broadleaf:broadleaf-canopies","layered_tree:layered-trunk","layered_tree:layered-canopies","redwood:redwood-trunk","redwood:redwood-canopies",
+	"birch:birch-trunk","birch:birch-canopies","willow:willow-trunk","willow:willow-canopies","juniper:juniper-trunk","juniper:juniper-deadwood","juniper:juniper-canopies"]
 var failures := 0
 func check(ok: bool, message: String) -> void:
 	if not ok:

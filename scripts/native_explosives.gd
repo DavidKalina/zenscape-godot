@@ -8,7 +8,7 @@ const MAX_BODIES := 100
 ## Only fast, substantial debris knocks down the resident or unseats props.
 const STRIKE_SPEED := 4.0
 const STRIKE_RADIUS := 0.25
-const SOLIDS := ["tree","layered_tree","redwood","broadleaf","snag","bigfoot_tree","rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
+const SOLIDS := ["tree","layered_tree","redwood","broadleaf","snag","bigfoot_tree","birch","willow","juniper","rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
 var editor: NativeChunkEditor
 var effects = preload("res://scripts/explosion_effects.gd").new()
 var collisions := NativePlayCollisions.new()

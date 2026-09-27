@@ -121,7 +121,7 @@ func object_found(id: int, bounds := AABB()) -> Dictionary:
 		if not flat.has_point(at): bounds = AABB()
 	if not bounds.has_volume():
 		var scale := float(item.get("scale",1.0))*editor.terrain.global_basis.get_scale().x
-		var tall := 3.0 if str(item.asset) in ["tree","layered_tree","broadleaf","redwood","joshua","bigfoot_tree","snag"] else 0.8
+		var tall := 3.0 if str(item.asset) in ["tree","layered_tree","broadleaf","redwood","joshua","bigfoot_tree","snag","birch","willow","juniper"] else 0.8
 		bounds = AABB(at-Vector3(tall*0.3,0.0,tall*0.3)*scale,Vector3(tall*0.6,tall,tall*0.6)*scale)
 	var center := bounds.get_center()
 	var base := Vector3(center.x,bounds.position.y,center.z)
@@ -259,6 +259,7 @@ func _plant_story(item: Dictionary) -> String:
 static func plant_name(asset: String) -> String:
 	asset = asset.rstrip("_0123456789")
 	const NAMES := {"tree":"Tree","layered_tree":"Pine","broadleaf":"Broadleaf","redwood":"Redwood","joshua":"Joshua tree",
+		"birch":"Birch","willow":"Willow","juniper":"Juniper",
 		"cactus":"Cactus","fern":"Fern","bush":"Bush","shrub":"Shrub","rock":"Rock","stone":"Stone","boulder":"Boulder",
 		"log":"Fallen log","stump":"Stump","flower":"Flowers","mushroom":"Mushrooms","reed":"Reeds","arch":"Stone arch",
 		"bigfoot_tree":"Old tree","snag":"Snag"}

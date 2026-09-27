@@ -66,17 +66,20 @@ const BARE_SLOPE := Vector2(0.9,1.15)
 ## other and with the creatures (scripts/life_models.gd: a deer stands about
 ## 1.2 m, a heron about 1.1 m). At scale 1 the layered broadleaf is 5.9 m tall
 ## and as wide, the spruce family 2.5-4.5 m, the hero oak 1.9 m, and the fern
-## 1.6 m across.
+## 1.6 m across. The birch (3.4 m), willow (2.7 m tall, 2.6 m across) and
+## juniper (1.6 m tall, 2.9 m across) are sized in scripts/hero_trees.gd, so
+## a birch tops the oaks and a juniper stands at a deer's shoulder; the
+## willow's broad curtain reads large, so it grows a little under the oaks.
 const TREE_SIZE := Vector2(0.65,1.0)
 const SHRUB_SIZE := Vector2(0.5,0.9)
-const KIND_SIZE := {"layered_tree":0.55,"broadleaf":1.45,"redwood":0.6,"fern":0.6}
+const KIND_SIZE := {"layered_tree":0.55,"broadleaf":1.45,"redwood":0.6,"fern":0.6,"birch":1.0,"willow":0.9,"juniper":1.0}
 ## Ferns read as dark spiders from above; woodland undergrowth takes few.
 const FERN_WEIGHT := 0.3
 ## Plants stay inside the band the generator plants.
 const PLATE := 11.0
 ## Metres² the generator's per-habitat tree counts are spread over.
 const PLANTED_AREA := 462.0
-const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus"]
+const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus","birch","willow","juniper"]
 ## Tree species by stand. The land is split into stands about STAND_SIZE
 ## metres across (jittered cells, nearest seed wins, so the edges wander).
 ## Each stand draws a dominant and a companion species from its habitat's
@@ -90,13 +93,18 @@ const STAND_SIZE := 8.0
 const STAND_PURITY := Vector2(0.55,0.9)
 const RARE_SHARE := 0.08
 const TREE_POOLS := {
-	"meadow":{"broadleaf":1.0,"layered_tree":0.6,"tree":0.35},
-	"wetland":{"broadleaf":1.0,"layered_tree":0.8,"tree":0.15},
-	"woodland":{"broadleaf":1.0,"tree":0.9,"layered_tree":0.5},
+	"meadow":{"broadleaf":1.0,"birch":0.7,"layered_tree":0.6,"tree":0.35,"willow":0.15},
+	"wetland":{"broadleaf":1.0,"willow":0.9,"layered_tree":0.8,"birch":0.3,"tree":0.15},
+	"woodland":{"broadleaf":1.0,"tree":0.9,"birch":0.5,"layered_tree":0.5,"juniper":0.15,"willow":0.15},
 	"redwood":{"redwood":1.0,"tree":0.45,"broadleaf":0.15},
-	"alpine":{"tree":1.0,"broadleaf":0.1,"layered_tree":0.05},
-	"arid":{"joshua":1.0,"cactus":0.8,"broadleaf":0.0},
+	"alpine":{"tree":1.0,"juniper":0.6,"birch":0.15,"broadleaf":0.1,"layered_tree":0.05},
+	"arid":{"joshua":1.0,"cactus":0.8,"juniper":0.5,"broadleaf":0.0,"willow":0.0},
 }
+## Willows follow the water itself rather than their stand: where the pool
+## holds one, a tree this close to water (metres, full to none) turns willow
+## at up to this chance, so banks are hung with them inside any stand.
+const WILLOW_BANK := Vector2(0.6,2.2)
+const WILLOW_BANK_CHANCE := 0.4
 ## Crown colours by species (sRGB), as [colour, weight, lean]. The broadleaf,
 ## spruce and redwood crowns are baked grey and take the colour whole, as the
 ## landscape presets plant them (native_landscape_presets.gd); without one an
@@ -111,6 +119,9 @@ const TREE_COLOURS := {
 	"tree":[["3e7a44",1.0,""],["2f6440",0.7,""],["44756a",0.4,"high"],["56733f",0.3,"low"]],
 	"redwood":[["b1c2a5",1.0,""],["bcc29a",0.5,""],["a3bca9",0.5,"wet"]],
 	"layered_tree":[["ffffff",1.0,""],["f0ffd6",0.5,"low"],["ffecc8",0.4,""],["dcf0ea",0.4,"wet"]],
+	"birch":[["8fae4f",1.0,""],["a3b85a",0.6,"low"],["7a9f4a",0.6,"wet"],["b0b865",0.3,"high"]],
+	"willow":[["86a050",1.0,""],["7b9a58",0.7,"wet"],["93a95e",0.5,""],["6f8f5f",0.3,"wet"]],
+	"juniper":[["527d5e",1.0,""],["5a7d6c",0.7,"high"],["66804f",0.5,"low"],["6d8a7a",0.3,"high"]],
 }
 const TREE_STRAY := 0.12
 const TREE_BRIGHTNESS := Vector2(0.82,1.08)
@@ -544,7 +555,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 				and _near(p,Guidance.LONE_RADIUS,true) == 0 and guide.at(guide.feature,p) < Guidance.FEATURE_KEEP \
 				and Variety.unit(key+[20]) < Guidance.LONE_DROP*float(guide.gain.lone):
 			return _refuse("lone")
-		kind = _tree_kind(habitat,p,Variety.unit(key+[5]))
+		kind = _tree_kind(habitat,p,Variety.unit(key+[5]),Variety.unit(key+[25]))
 	else:
 		if slope > 0.6 or float(h) > _treeline(habitat)+1.5:
 			return _refuse("steep or high")
@@ -670,8 +681,10 @@ func _refuse(reason: String) -> bool:
 	refusals[reason] = refusals.get(reason,0)+1
 	return false
 
-func _tree_kind(habitat: String, p: Vector2, pick: float) -> String:
+func _tree_kind(habitat: String, p: Vector2, pick: float, bank_pick := 1.0) -> String:
 	var pool: Dictionary = TREE_POOLS.get(habitat,{"tree":1.0})
+	if pool.has("willow") and bank_pick < WILLOW_BANK_CHANCE*(1.0-smoothstep(WILLOW_BANK.x,WILLOW_BANK.y,_blend.water_distance(p)))*Variety.lean(salt,"tree:willow"):
+		return "willow"
 	var stand := _stand(p)
 	var kinds: Array = pool.keys()
 	var weights := []
@@ -744,8 +757,10 @@ func _stand(p: Vector2) -> Dictionary:
 
 ## A species' weight in a stand: its pool weight leaned by the stand's
 ## ground. Broadleaves and layered trees want water, spruce wants height and
-## drier ground, cactus wants neither. In arid land a broadleaf stands only by
-## water, where it makes an oasis.
+## drier ground, cactus wants neither. In arid land a broadleaf or a willow
+## stands only by water, where it makes an oasis. Birch takes any ground and
+## climbs a little; willow wants water above all; juniper wants it dry, high
+## and exposed.
 func _species_weight(habitat: String, kind: String, base: float, moisture: float, altitude: float) -> float:
 	match kind:
 		"broadleaf":
@@ -755,6 +770,11 @@ func _species_weight(habitat: String, kind: String, base: float, moisture: float
 		"tree": return base*lerpf(1.3,0.7,moisture)*lerpf(0.8,1.6,altitude)
 		"redwood": return base*lerpf(0.6,1.4,moisture)
 		"cactus": return base*lerpf(1.4,0.4,moisture)
+		"birch": return base*lerpf(0.9,1.3,altitude)
+		"willow":
+			if habitat == "arid": return 0.8*smoothstep(0.5,0.85,moisture)
+			return base*lerpf(0.02,2.5,smoothstep(0.3,0.75,moisture))
+		"juniper": return base*lerpf(1.5,0.25,moisture)*lerpf(0.7,1.6,altitude)
 	return base
 
 func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:

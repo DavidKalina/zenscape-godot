@@ -11,7 +11,7 @@ var streams: Array[Dictionary] = []
 var objects: Array[Dictionary] = []
 var waters: Array[RefCounted] = []
 var solids: Array[AABB] = []
-const PARTING_TREES := ["tree","layered_tree","redwood","broadleaf"]
+const PARTING_TREES := ["tree","layered_tree","redwood","broadleaf","birch","willow","juniper"]
 
 ## Restored from the stitched world's foliage wake: keep a solid trunk core.
 static func trunk_core(box: AABB) -> AABB:

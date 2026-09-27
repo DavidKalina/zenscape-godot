@@ -85,10 +85,10 @@ func _load_bounds() -> void:
 	_bounds.layered_tree = layered.mesh.get_aabb()
 	_bounds.redwood = preload("res://scripts/redwood_assets.gd").mesh("redwood-trunk").get_aabb()
 	_bounds.rock = AABB(Vector3(-0.6,-0.425,-0.6),Vector3(1.2,0.85,1.2))
-	for kind in ["broadleaf","log","stump","snag","boulder_1","boulder_2","boulder_3","boulder_4"]:
-		# The first broadleaf part is its solid trunk, not the canopy.
+	for kind in ["broadleaf","birch","willow","juniper","log","stump","snag","boulder_1","boulder_2","boulder_3","boulder_4"]:
+		# The first tree part is its solid trunk, not the canopy.
 		var node_name: String = CATALOG.PARTS[kind][0]
-		var original: Node3D = source.get_node(node_name)
+		var original: Node3D = CATALOG.source_node(source,node_name)
 		var mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
 		_bounds[kind] = CATALOG.part_pose(kind+":"+node_name,original,mesh)*mesh.get_aabb()
 	var arch: MeshInstance3D = source.get_node("landmark-arch")

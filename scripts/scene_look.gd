@@ -161,9 +161,13 @@ const SOURCE_SEASON_KEYS := {"mesh-8":"trunk","mesh-9":"canopy","mesh-10":"grass
 ## Material parameters only, so new tree and prop variants that reuse these
 ## keys follow along.
 static func leaf_season(key: String) -> Vector4:
-	if key in ["canopy","trunk"] or key.begins_with("tree:spruce-") or key.begins_with("redwood:") or key.begins_with("joshua:") or key.begins_with("cactus:"):
+	if key in ["canopy","trunk"] or key.begins_with("tree:spruce-") or key.begins_with("redwood:") or key.begins_with("joshua:") or key.begins_with("cactus:") or key.begins_with("juniper:"):
 		return Vector4.ZERO
 	if key in ["broadleaf:broadleaf-canopies","layered_tree:layered-canopies"]: return Vector4(1.0,1.0,0.15,0.0)
+	# Birch goes gold and bare, no blossom; willow greens first and holds its
+	# curtain late, so only half of it falls.
+	if key == "birch:birch-canopies": return Vector4(1.0,1.0,0.0,0.0)
+	if key == "willow:willow-canopies": return Vector4(1.0,0.5,0.0,0.0)
 	if key.begins_with("shrub:"): return Vector4(1.0,0.55,0.3,0.0)
 	if key.begins_with("fern:"): return Vector4(1.0,0.0,0.0,0.6)
 	if key in ["petal","stem"] or "flower" in key: return Vector4(1.0,0.0,0.0,1.0)
@@ -173,6 +177,8 @@ static func leaf_season(key: String) -> Vector4:
 static func part_role(key: String) -> int:
 	if key.begins_with("fern:"): return 5
 	if key.begins_with("joshua:"): return preload("res://scripts/hero_trees.gd").JOSHUA[key.get_slice(":",1)][1]
+	var species: int = preload("res://scripts/hero_trees.gd").species_role(key)
+	if species >= 0: return species
 	if key in ["redwood:redwood-trunk","layered_tree:layered-trunk"] or (key.begins_with("layered_tree:") and key.ends_with("-trunk")): return 4
 	if key in ["grass","stem"] or "flower-stems" in key or "grass" in key: return 5
 	if key == "rock" or key.begins_with("boulder_"): return 3

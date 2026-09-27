@@ -4,7 +4,7 @@ extends SceneTree
 ## species counts by habitat and a letter map, so stands show as patches.
 ## godot --headless --path . -s res://tools/probe_tree_mix.gd -- [seed|-1] [salt]
 const Emergence = preload("res://scripts/emergence.gd")
-const LETTERS := {"broadleaf":"B","layered_tree":"L","tree":"S","redwood":"R","joshua":"J","cactus":"C"}
+const LETTERS := {"broadleaf":"B","layered_tree":"L","tree":"S","redwood":"R","joshua":"J","cactus":"C","birch":"A","willow":"W","juniper":"P"}
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:

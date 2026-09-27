@@ -1,7 +1,7 @@
 extends Node
 ## One owner for quiet environmental activities. Uses real safe routes and
 ## scenery bounds; physical interruptions always take precedence.
-const TREES := ["tree","layered_tree","broadleaf","redwood","bigfoot_tree"]
+const TREES := ["tree","layered_tree","broadleaf","redwood","bigfoot_tree","birch","willow","juniper"]
 const TREE_HUG = preload("res://scripts/bigfoot_tree_hug.gd")
 const TREE_TOUCH = preload("res://scripts/bigfoot_tree_touch.gd")
 var _touch_start := Vector3.ZERO

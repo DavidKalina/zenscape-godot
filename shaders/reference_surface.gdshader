@@ -75,6 +75,9 @@ uniform bool source_bird_flight = false;
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
 // share, w winter die-back. The default keeps the source's autumn only.
 uniform vec4 leaf_season = vec4(1.0, 0.0, 0.0, 0.0);
+// Birch and aspen turn clear yellow where the source's autumn goes orange;
+// 1 lifts the turned green up to the red (scripts/hero_trees.gd SPECIES).
+uniform float autumn_yellow = 0.0;
 varying vec3 leaf_local;
 varying vec2 plant_root;
 varying float foliage_gust;
@@ -283,7 +286,12 @@ void fragment() {
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
 	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
+	vec3 before_autumn = tint;
 	zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
+	if (autumn_yellow > 0.0) {
+		float turned = clamp(length(tint - before_autumn) * 4.0, 0.0, 1.0);
+		tint.g = mix(tint.g, max(tint.g, tint.r * 0.8), turned * autumn_yellow);
+	}
 	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	else if (palette_role == 1 || palette_role == 5) zs_season_grass(tint, leaf_season.x);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);

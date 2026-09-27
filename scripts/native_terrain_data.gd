@@ -12,7 +12,7 @@ signal document_captured(document: Dictionary)
 const MIN_HEIGHT := -1.5
 const MAX_HEIGHT := 64.0
 const MAX_EXPLOSIVES := 32
-const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4"]
+const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
