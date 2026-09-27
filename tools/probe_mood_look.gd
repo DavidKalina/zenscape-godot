@@ -38,7 +38,9 @@ func run() -> void:
 	await process_frame
 	check(scene.mood_open() and scene.mood_panel.visible,"M opens the panel over the palette")
 	check(scene.mood_panel.frame.position.y+scene.mood_panel.frame.size.y*scene.mood_panel.frame.scale.y <= scene.creation_palette.frame.position.y,"panel sits above the palette")
-	# Every mood, faded, with frame costs.
+	check(scene.world_clock.running,"the plain's day turns")
+	# Every mood, faded, with frame costs. On the plain a mood sets its hour and
+	# the day keeps turning, except the moods defined by their hour.
 	var worst_build := 0
 	var worst_frame := 0
 	for id: String in mood.mood_ids():
@@ -53,6 +55,9 @@ func run() -> void:
 		var sky := Color(p.colors.sky)
 		check(look.colors.sky.is_equal_approx(sky) and mood.value("weather") == p.weather and mood.value("season") == mood.MOOD_SEASONS[id],
 			"%s: sky, weather %s, season %s after %d frames" % [id,mood.value("weather"),mood.value("season"),frames])
+		var holds: bool = id in mood.HOUR_MOODS
+		var hour_gap := absf(angle_difference(float(p.phase)*TAU,scene._celestial.phase*TAU))/TAU
+		check(scene.world_clock.running == (not holds) and hour_gap < 0.01,"%s: %s from its hour (%.3f off)" % [id,"holds" if holds else "turns",hour_gap])
 	print("Rebuild worst %.2f ms, fade frame worst %.3f ms" % [worst_build/1000.0,worst_frame/1000.0])
 	# Mid-fade frame: the sky is between the two moods.
 	mood.choose("golden_meadow",false)
@@ -78,6 +83,7 @@ func run() -> void:
 	while mood.fading(): await process_frame
 	check(look.colors.rock.to_html(false) == "8a5fb0","purple rock survives golden meadow -> first snow")
 	check(mood.value("weather") == "mist" and mood.value("time") == "dusk" and mood.value("season") == "winter","weather, time and season pins survive")
+	check(not scene.world_clock.running,"a pinned hour holds under a turning mood")
 	check(look.colors.sky.is_equal_approx(Color("879cb9")),"first snow's own sky is not pinned")
 	mood.pin("season","summer")
 	while mood.fading(): await process_frame

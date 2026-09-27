@@ -17,6 +17,10 @@ const FADE_SECONDS := 1.2
 ## The season each mood was painted for: its gold, cold and palette belong to it.
 const MOOD_SEASONS := {"alpine_morning":"summer","golden_meadow":"summer","copper_autumn":"autumn","rosewater_dusk":"spring",
 	"enchanted_forest":"summer","halloween_hollow":"autumn","first_snow":"winter","nordic_night":"winter","after_the_rain":"spring"}
+## Moods defined by their hour: they hold it even where the day turns. Every
+## other mood, on a world whose day turns (the creation plain), sets its hour
+## as the time now and lets the day carry on from there.
+const HOUR_MOODS := ["nordic_night","rosewater_dusk","halloween_hollow"]
 ## Customise, in drawer order. `colors` is one control per COLORS key.
 const CONTROLS := [
 	{"id":"season","title":"Season"},
@@ -208,6 +212,8 @@ func _rebuild(fade: bool) -> void:
 		base_season = WorldClock.name_for_season(float(origin.season))
 	else:
 		_apply_preset(mood)
+		# The preset holds its hour; a turning day keeps turning from it.
+		if turns_day(mood): scene._celestial.cycling = true
 		var visuals: Node3D = scene._world_visuals
 		visuals.rock_style = int(origin.rock_style)
 		visuals.rock_detail = float(origin.floats.get("_world_visuals:rock_detail",visuals.rock_detail))
@@ -263,6 +269,12 @@ func _rebuild(fade: bool) -> void:
 		_to.clear()
 	last_build_usec = Time.get_ticks_usec()-started
 	changed.emit()
+
+## True when `id` leaves the day turning: the world's own day turned before
+## any mood (the creation plain) and the mood is not one of HOUR_MOODS. A
+## pinned Time of day still wins, since it is applied after the mood.
+func turns_day(id: String) -> bool:
+	return id != "" and id not in HOUR_MOODS and bool(origin.get("running",false))
 
 func _let_drift() -> void:
 	var living: RefCounted = scene.get("living_weather")
