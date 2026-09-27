@@ -151,6 +151,42 @@ Before the recipe-world gates, a pour on seed 184 had a 29–42 ms frame (a ligh
 
 The final plan is the same as `main`'s for the same dabs and start: seed 184 settles to the same ponds and streams. The plain at `--plain-seed 7` differs between runs on both builds, because its start heights differ from run to run. `tools/probe_craft_tools.gd -- --plain-seed 7` passes all 26 checks, including a sculpt landing a shaping pour first and one undo taking the pour whole.
 
+### Water ball (`feature/water-ball`, 2026-09-27)
+
+The user: "imagine a swirling ball of water with fish in it, and you drop it into the geometry to create either a river, lake, pond, waterfall, depending on the geometry." Water is a thing you hold and let go, and the land decides what it becomes. The ball is the Water brush's default; `--pour-water` brings back drag-to-pour (`NativeChunkEditor.water_ball`). Shift-drag still drains as before.
+
+- **Hold** (`scripts/water_ball.gd`). With water in hand a left press condenses a ball over the ground point, its underside `HOVER` (1.6 m) up. It fills while held at the rate a pour of the brush's size and flow would (`WaterBrush.RATE` × strength × (radius/3)² m³/s), from `BALL_MIN_VOLUME` (0.6 m³) to `BALL_MAX_VOLUME` (24 m³, about 10 s at the defaults). Its radius is ∛(3V/4π), at least `MIN_RADIUS` (0.28 m): a full ball is 1.8 m across the radius. It condenses with an ease-out-back overshoot, swells past each new size on a spring and settles, trails the pointer on an underdamped spring, bobs, and stretches along its speed. The water wobbles more after a jolt and rings down.
+- **The look** (`shaders/water_ball.gdshader`). The ponds' own colours: the depth ramp from GardenView `sample_ponds` (79ae9b to 245a5c over the chord through the ball) × `zs_palette_water`, with the pond's fresnel, sky reflection, hemisphere light and sun glint (the non-planar path of `reference_water_body.gdshaderinc`). It looks through to what is behind and inside, bent like a lens and tinted by the ponds' absorption, so its fish show. Three spiral arms and a finer counter-swirl wind round the axis and climb, bending the normal and catching a little foam white.
+- **Fish.** 2 + V/5 of them (at most 5) circle inside at their own depths and paces, half of them the other way round. They are LandLife's own fish meshes and swim material (`LifeModels.fish`, tail beat on), from one pond company (koi, or wild fish), and grow in as the ball grows.
+- **Release.** A small hop (anticipation), then gravity (18 m/s²) straight down. On the ground it squashes flat over 0.14 s and bursts: a ring runs out, 14 droplets fly, and each fish leaps out on its own arc and dives in. The landing hands its water to the pour pipeline as one dab (`WaterBrush.drop`, then `_release_pour`), so the settle, fill, streams, scoops, lips, beds, emergence, undo and `water_settled` are the poured stroke's own. One undo takes the whole drop back, waterfalls included.
+- **What the land made of it** (`_ball_falls`, `ball_settled`). Before the pour's undo step closes, every new stream's steepest stretch that drops at least `FALL_DROP` (1.2 m) within `FALL_REACH` (2.5 m), at `FALL_SLOPE` (0.8) or steeper, becomes a waterfall object (`NativeTerrainData.add_waterfall`, drawn by `NativeGardenFalls` with its plunge and mist), at most `FALL_MAX` (2) per drop. The drop is then named, first match: *waterfall*; *stream* (a new stream at least `RIVER_LENGTH`, 5 m, long); *lake* (a pond at least `LAKE_AREA`, 40 m², from at least `LAKE_VOLUME`, 12 m³, or one that swallowed others); *pond*; or *soaked*. The status line says it ("The water found a way down.").
+- **The fish stay** (LandLife `carry_fish`). The ball's fish go to the pond it made: the new fish sites nearest the biggest new pond take them, in the ball's own kinds and markings, and come in `CARRY_DELAY` (2 s) after the site opens, while the pond finishes rising. A small ball's pond may hold no water as deep as the survey's 0.22 m; its own fish then settle in water at least `CARRY_DEPTH` (0.1 m) deep. Fish no site takes within `CARRY_SECONDS` (30 s) are gone.
+
+`tools/probe_water_ball.gd` drives the real input path on the plain (press, the editor's own `_process` following the pointer, release) for four drops and prints each:
+
+| Drop | Held | V (m³) | Radius | Fish | Became | Fish arrived | Worst frame held / settling |
+|---|---|---|---|---|---|---|---|
+| Plain (-3, 2) | 1.5 s | 4.2 | 0.98 | 2 | pond, 67 m² | 2 of 2 in 1.8 s | 9.2 / 10.4 ms |
+| Plain (2.5, -1.5) | 6 s | 15.0 | 1.52 | 5 | stream: two ponds joined by a 5.8 m stream | 5 of 5 in 2.4 s | 11.4 / 11.4 ms |
+| Plain (0.5, 1), past the cap | 12 s | 24.0 | 1.79 | 5 | lake: two ponds, 57.5 m², two short streams | 5 of 5 in 2.3 s | 10.3 / 11.3 ms |
+| Top of an alpine peak (8.6 m) | 3 s | 7.8 | 1.22 | 3 | waterfall: a 7.6 m stream with one fall, into ponds of 53 m² | 3 of 3 in 2.4 s | 13.9 / 20.8 ms |
+
+The plain's start heights differ from run to run, so the same drop can come out a little differently: in an earlier run the 15 m³ drop left a 1.1 m stream and read as a pond. Each drop added one undo step, and one undo restored heights, ponds, streams and objects exactly. Release costs about 0.2 ms. The one frame over 16.7 ms (20.8 ms, the peak drop's settle) lands in the refresh's `maps` stage. A Shift press with water in hand makes no ball and paints (drains) as before. Headless, so none of the look or motion was seen.
+
+Unverified (nothing was rendered):
+
+- The ball's whole look: whether it reads as the ponds' water rather than glass, the swirl, the lens and tint on what is behind it, the fish inside it, the foam streaks; whether `water_ball.gdshader` compiles at all (headless does not compile shaders).
+- The motion: condense, swell, follow, bob, stretch, hop, fall, squash, burst, ring, droplets and the fish leaping out.
+- The fish meshes in a MultiMesh of one outside LandLife's batches, and their scale inside the ball.
+- The waterfall on a brush stream: it appears when the pour closes, before the stream's front reaches it, and draws over the stream's own mesh along the same stretch.
+- The gap between the fish diving in and arriving (about 2–4 s while the pond rises and the survey reads it).
+
+Known gaps:
+
+- On open ground a drop never makes a lake by itself: water that would spread thinner scoops a hollow of at most `SCOOP_RADIUS` (4.5 m), about 63 m². A lake comes from a basin the land already has, or from ponds joining.
+- A carried fish keeps its look only until the place is saved and loaded: saved life stores sites, not looks, so it comes back as the pond's own kind.
+- A ball dropped while an earlier ball's pour still settles closes that pour on the plan showing, as a new stroke does.
+
 ## Unverified
 
 Only headless checks were run: parse checks, the profiles above, the probe, and a launch check. The launch check drove key `2`, a press, the settle, undo, key `1`, and Craft and Create. Nothing was rendered, so all of the following are unverified:
