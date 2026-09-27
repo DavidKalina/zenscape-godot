@@ -768,8 +768,10 @@ func _hold_step(step: float) -> void:
 			if goal != Vector2.INF:
 				_stops = PackedInt32Array()
 				_plan.push_front({"do":"go","to":goal,"phase":showing(),"turn":TURN*1.6,"dry":true})
-				_hold.time = age+ANTICIPATION
-				closing = true
+			# Nowhere dry to turn round onto: rather than strain round at you,
+			# it moves on along its way, which brings it round.
+			_hold.time = age+ANTICIPATION
+			closing = true
 	else:
 		_hold.behind = 0.0
 	var awake := true
@@ -862,8 +864,10 @@ func _aim_yaw(yaw: float) -> void:
 func _turn_goal() -> Vector2:
 	var here := _head_xz()
 	var toward := Vector2(_camera.x-_head_pos.x,_camera.z-_head_pos.z).normalized()
-	for reach: float in [0.9,0.7,0.5]:
-		for off: float in [0.0,0.3,-0.3,0.6,-0.6]:
+	# Straight at you first; failing that, round to one side along the bank,
+	# which still leaves you within its look.
+	for reach: float in [0.9,0.7,0.5,0.35]:
+		for off: float in [0.0,0.3,-0.3,0.6,-0.6,0.9,-0.9,1.2,-1.2]:
 			var q := here+toward.rotated(off)*reach
 			if _passable(q,false) and _passable(here.lerp(q,0.5),false): return q
 	return Vector2.INF
