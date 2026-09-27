@@ -68,7 +68,9 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 	for k in range(h.size()): depth_grid.append(maxf(0.0,pond.level-h[k]) if wet[k] else 0.0)
 	return {"h":h,"xy":xy,"wet":wet,"depth":depth_grid}
 
-static func build(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
+## `prepared` may carry the waterfall impacts and colour ramp, which read the
+## live recipe, so a detached height copy can build the surface off-thread.
+static func build(data: NativeTerrainData, pond: Dictionary, prepared := {}) -> Dictionary:
 	var grid:=field(data,pond)
 	if grid.is_empty(): return {"vertices":PackedVector3Array(),"depths":PackedFloat32Array(),"colors":PackedColorArray(),"fetch_a":PackedColorArray(),"fetch_b":PackedColorArray()}
 	var h: PackedFloat32Array=grid.h
@@ -89,8 +91,8 @@ static func build(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 	var result:=PackedVector3Array()
 	var depths:=PackedFloat32Array()
 	var colors:=PackedColorArray()
-	var impacts:=data.waterfall_impacts()
-	var ramp:=water_ramp(data._recipe.source.g.get("water",{}))
+	var impacts: Array[Dictionary]=prepared.impacts if prepared.has("impacts") else data.waterfall_impacts()
+	var ramp: Array[Color]=prepared.ramp if prepared.has("ramp") else water_ramp(data._recipe.source.g.get("water",{}))
 	for z in range(N):
 		for x in range(N):
 			var ids: Array[int]=[z*W+x,z*W+x+1,(z+1)*W+x+1,(z+1)*W+x]

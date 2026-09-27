@@ -40,7 +40,7 @@ func update_world(delta: float, paused: bool, scene: Node) -> void:
 	if points.has("fall"): water_player.global_position = points.fall
 	var weather = scene._precipitation.surface_weather
 	var grown: float = scene._growth.water if scene._growth.terrain >= 0.995 else 0.0
-	update_state(delta,paused,scene._atmosphere._air_strength*scene._atmosphere.gust_at(scene._atmosphere._wind_time),scene._precipitation.state.x,weather.snow_phase,weather.ice,scene._growth.terrain,grown if points.has("fall") else 0.0)
+	update_state(delta,paused,(scene._atmosphere._air_strength+scene._atmosphere.swell)*scene._atmosphere.gust_at(scene._atmosphere._wind_time),scene._precipitation.state.x,weather.snow_phase,weather.ice,scene._growth.terrain,grown if points.has("fall") else 0.0)
 	nature.update_state(delta,paused,muted,volume,scene._celestial.state.get("zs_daylight",1.0),weather.cold,scene._precipitation.state.x,scene._atmosphere._air_strength,weather.ice,1.0 if scene._growth.terrain >= 0.995 else 0.0,grown,scene.camera.global_position,points)
 
 static func target_gains(wind: float, rain: float, snow_phase: float, ice: float, terrain: float, water: float) -> Vector3:

@@ -2,6 +2,7 @@ class_name GardenView
 extends Node3D
 signal instances_published()
 const HeroTrees := preload("res://scripts/hero_trees.gd")
+const GrassTuft := preload("res://scripts/grass_tuft_mesh.gd")
 const RockVariants := preload("res://scripts/rock_variants.gd")
 const Variety := preload("res://scripts/seeded_variety.gd")
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
@@ -43,13 +44,15 @@ var _view_signature := PackedByteArray()
 var _water_signature := PackedByteArray()
 var _stream_probe := {}
 var _cascade_probe := {}
+var _lift_heights := PackedFloat32Array()
 
 func _ready() -> void:
 	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	for pair: Array in [["trunk", "mesh-8"], ["canopy", "mesh-9"], ["grass", "mesh-10"], ["stem", "flower-stems"], ["petal", "flowers-daisy"]]:
 		var original: MultiMeshInstance3D = source.get_node(pair[1])
-		_meshes[pair[0]] = original.multimesh.mesh
+		_meshes[pair[0]] = GrassTuft.swap(pair[1], original.multimesh.mesh)
 		_materials[pair[0]] = original.multimesh.mesh.surface_get_material(0).duplicate()
+		if _meshes[pair[0]] != original.multimesh.mesh: GrassTuft.dress(_materials[pair[0]], _meshes[pair[0]])
 		if pair[0] in ["trunk", "canopy"]:
 			_materials[pair[0]].set_shader_parameter("conifer_sway", true)
 	for kind in preload("res://scripts/native_asset_catalog.gd").PARTS:
@@ -58,9 +61,11 @@ func _ready() -> void:
 			var original: Node3D = NativeAssetCatalog.source_node(source,node_name)
 			var key: String = kind+":"+node_name
 			_catalog_parts[kind].append(key)
-			var mesh: Mesh = HeroTrees.swap(node_name,original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh)
+			var source_mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
+			var mesh: Mesh = GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh))
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
+			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = Color.WHITE
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
@@ -145,6 +150,8 @@ func _ready() -> void:
 	_catalog_poses["explosive_leaves"] = Transform3D.IDENTITY
 	for key in _materials:
 		FireMaterial.enable_instances(_materials[key])
+		# Every batch has custom data; emerged instances read their birth there.
+		if _materials[key] is ShaderMaterial: _materials[key].set_shader_parameter("instance_birth_enabled",true)
 		_materials[key].set_shader_parameter("palette_role",preload("res://scripts/scene_look.gd").part_role(key))
 		# Evergreens hold their colour; broadleaves blossom, turn and fall.
 		_materials[key].set_shader_parameter("leaf_season",preload("res://scripts/scene_look.gd").leaf_season(key))
@@ -160,6 +167,7 @@ func _ready() -> void:
 func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 	# Reuse and in-place lifts supersede pending preparation too.
 	_instance_generation += 1
+	_lift_heights = PackedFloat32Array()
 	if not force and _reuse():
 		return true
 	# Object commits do not alter shorelines, streams or waterfall geometry.
@@ -177,6 +185,16 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 		_move_instances(instance_region)
 	last_water_usec.clear()
 	var water_began := Time.get_ticks_usec()
+	# A yielding rebuild floods recipe ponds on a private copy first, before any
+	# water node changes, so a superseded rebuild leaves the old water whole.
+	var recipe_water: Array = []
+	if frame_tree != null and data is NativeTerrainData and data._recipe != null and not data.ponds.is_empty() and data._water_grid_h.size() == NativeRecipeWater.W*NativeRecipeWater.W:
+		var generation := _instance_generation
+		var sampled := {"heights":data.heights.duplicate(),"ponds":data.ponds.duplicate(true),"streams":data.streams.duplicate(true),"waterfall":data.landscape_waterfall}
+		recipe_water = await _sample_recipe_water(frame_tree)
+		if generation != _instance_generation or data.heights != sampled.heights or data.ponds != sampled.ponds or data.streams != sampled.streams or data.landscape_waterfall != sampled.waterfall: return false
+		last_water_usec["pond_worker"] = Time.get_ticks_usec()-water_began
+		water_began = Time.get_ticks_usec()
 	for node in _stream_nodes: node.free()
 	_stream_nodes.clear()
 	_stream_probe = {}
@@ -238,9 +256,10 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 	# Adjacent triangles share vertices. Shore-distance sampling is identical at
 	# those points within this rebuild, regardless of which triangle owns them.
 	var fetch_by_vertex := {}
-	for pond: Dictionary in data.ponds:
+	for pond_index in range(data.ponds.size()):
+		var pond: Dictionary = data.ponds[pond_index]
 		if data is NativeTerrainData and data._recipe != null:
-			var water: Dictionary=preload("res://scripts/native_recipe_water.gd").build(data,pond)
+			var water: Dictionary=recipe_water[pond_index] if not recipe_water.is_empty() else preload("res://scripts/native_recipe_water.gd").build(data,pond)
 			pond_vertices.append_array(water.vertices)
 			pond_depths.append_array(water.depths)
 			pond_colors.append_array(water.colors)
@@ -285,6 +304,22 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 		_view_ready = true
 
 	return true
+
+## Every recipe pond's surface, built from a detached height copy on a worker.
+## The impacts and colour ramp read the live recipe, so they are taken here.
+func _sample_recipe_water(frame_tree: SceneTree) -> Array:
+	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+	detached._recipe_heights = data._recipe_heights.duplicate()
+	detached._water_grid_h = data._water_grid_h.duplicate()
+	detached.streams.assign(data.streams.duplicate(true))
+	var ponds: Array = data.ponds.duplicate(true)
+	var prepared := {"impacts":data.waterfall_impacts(),"ramp":NativeRecipeWater.water_ramp(data._recipe.source.g.get("water",{}))}
+	var job = preload("res://scripts/background_work.gd").new()
+	return await job.run(func() -> Array:
+		var built := []
+		for pond: Dictionary in ponds:
+			built.append(NativeRecipeWater.build(detached,pond,prepared))
+		return built,frame_tree)
 
 func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	last_instance_usec.clear()
@@ -353,12 +388,18 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 			var color: Color = instance_tints[key][i] if i < instance_tints[key].size() else tints.get(key, Color.WHITE)
 			sampled.sources[key][i]["color"] = color
 			batch.multimesh.set_instance_color(i,color)
+			# Emerged arrivals grow in at their own birth (docs/scenic/emergence.md).
+			if sampled.sources[key][i].has("born"):
+				batch.multimesh.set_instance_custom_data(i,_custom(sampled.sources[key][i],Vector2.ZERO))
 			if frame_tree != null and i%256 == 255:
 				await budget.checkpoint()
 				if generation != _instance_generation:
 					staging.free()
 					return false
 		batch.material_override = _materials[key]
+		# The painted meadow tufts are many and small; their shadows would not
+		# resolve, so they skip the shadow pass, as the dense grass does.
+		if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		replacement.append(batch)
 		if frame_tree != null:
 			await budget.checkpoint()
@@ -439,7 +480,14 @@ func _write_fire(id: int, char: float, burn: float) -> void:
 	for part: Dictionary in _fire_parts.get(id,[]):
 		var batch: MultiMeshInstance3D = part.batch
 		if is_instance_valid(batch) and batch.multimesh != null and batch.multimesh.use_custom_data:
-			batch.multimesh.set_instance_custom_data(part.index,Color(char,burn,0.0,0.0))
+			var source: Dictionary = _sources[batch.get_meta("part")][part.index]
+			batch.multimesh.set_instance_custom_data(part.index,_custom(source,Vector2(char,burn)))
+
+## One instance's custom data: fire (char, burn) in rg, and the emerged birth
+## (born, rise seconds) in ba. The birth comes from the source, never read back
+## from the MultiMesh, which could stall on the GPU.
+static func _custom(source: Dictionary, fire: Vector2) -> Color:
+	return Color(fire.x,fire.y,float(source.get("born",0.0)),float(source.get("rise",0.0)))
 
 func discard_cache() -> void:
 	cancel_rebuild()
@@ -473,6 +521,18 @@ func _reuse() -> bool:
 		return false
 	_move_instances(region)
 	_view_heights = data.heights.duplicate()
+	return true
+
+## A held brush lifts plants and props under each dab and leaves everything
+## else - water, cover batches and the cached view state - for the rebuild at
+## stroke end. That rebuild still diffs from the heights of the last full one,
+## so it repeats these lifts over the whole stroke and lands where it would have.
+func lift_instances() -> bool:
+	if not _view_ready or not data is NativeTerrainData: return false
+	var region: Variant = data.moved_region(_lift_heights if _lift_heights.size() == data.heights.size() else _view_heights)
+	if region is Rect2: _move_instances(region)
+	elif region == null: return false
+	_lift_heights = data.heights.duplicate()
 	return true
 
 func _move_instances(region: Rect2) -> void:

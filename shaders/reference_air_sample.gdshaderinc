@@ -41,7 +41,9 @@ vec4 zs_air_sample(vec3 p) {
 	keep *= 1.0 - smoothstep(0.12, 0.5, puff) * (0.55 + 0.45 * loosen);
 	float blank = shroud * (0.38 + 0.28 * noise) * bank * keep;
 	float stream = 0.72 + 0.56 * g;
-	float d = (density * pool * noise * 0.36 * stream + haze * 0.026 + blank) * fade;
+	// A fresh land stroke parts the fog over what it made (scripts/stroke_feedback.gd).
+	float reveal = zs_reveal_keep(p.xz);
+	float d = (density * pool * noise * 0.36 * stream + haze * 0.026 + blank) * fade * reveal;
 	if (over < -0.4 || ground < -100.0) d = 0.0;
 	float open_sky = cloudShadeAt(p, zs_cloud_direction);
 	float ag_band = max(0.8, 0.08 * (zs_summit.y - 0.15));
@@ -63,7 +65,7 @@ vec4 zs_air_sample(vec3 p) {
 		vec3 cap_light = zs_cloud_sun * open_sky * sun_amount * min(cap_phase, 1.7) * 0.42 + zs_cloud_sky * 0.7;
 		lit = (lit * d + cap_light * cap) / (d + cap);
 	}
-	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * (1.0 - shroud);
+	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * (1.0 - shroud) * reveal;
 	if (inversion > 0.0) {
 		lit = (lit * (d + cap) + zs_inversion_color * mix(0.8, 1.0, open_sky) * inversion) / max(d + cap + inversion, 0.0001);
 	}

@@ -4,6 +4,7 @@ extends Node
 ## In scenery mode there is no Bigfoot to carry: regrow folds and replays the
 ## land directly.
 const Generator = preload("res://scripts/cozy_world_generator.gd")
+const Genesis = preload("res://scripts/genesis_canvas.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 ## The best-scoring seeds per landform family (tools/probe_world_beauty.gd),
 ## plus a few weathers. Step through them with [ and ] to check look changes.
@@ -49,6 +50,17 @@ var marker_mat := StandardMaterial3D.new()
 var landing: Variant = null
 var pool_revision := -1
 var pool_depth := 0.0
+## True while the current world is a Genesis plain (scripts/genesis_canvas.gd).
+var plain := false
+
+## Launch into the Genesis plain unless asked for the old start: --generated
+## (or --seed N) opens the saved place or the valley as before, --resume opens
+## the last saved place.
+static func launch_choice() -> String:
+	var args := OS.get_cmdline_user_args()
+	if "--resume" in args: return "resume"
+	if "--generated" in args or "--seed" in args: return "generated"
+	return "plain"
 
 func setup(owner_scene: Node3D) -> void:
 	primary = owner_scene
@@ -56,9 +68,26 @@ func setup(owner_scene: Node3D) -> void:
 	busy = true
 	process_priority = 100
 	DirAccess.make_dir_recursive_absolute(scene.library_path)
+	var choice := launch_choice()
 	var saved := _read_saved()
+	if choice == "plain" and not saved.is_empty():
+		# The plain replaces the saved place on the next save; keep one copy.
+		DirAccess.copy_absolute(primary.places_path,primary.places_path.get_basename()+"-previous.json")
 	scene._paused = true
-	if saved.is_empty():
+	if choice == "plain":
+		scene.restore_cave_state({})
+		var plain_seed := _plain_seed()
+		generated_world = Genesis.world(plain_seed)
+		await Genesis.form(scene._chunk_editor,generated_world,false)
+		scene._chunk_editor.data._undo.clear()
+		scene._chunk_editor.data._redo.clear()
+		Genesis.apply_mood(scene,generated_world)
+		world_seed = plain_seed
+		plain = true
+		slots = [{}]
+		active = 0
+		saved = {}
+	elif saved.is_empty():
 		scene.restore_cave_state({})
 		await scene._chunk_editor.form_landscape("valley","",true)
 		scene._refresh_habitat()
@@ -84,6 +113,8 @@ func setup(owner_scene: Node3D) -> void:
 	busy = false
 	_update_badge()
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
+	if plain: scene._notice.text = "Drag across the plain to raise land. Shift or right drag lowers it."
+	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--seed")
 	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): regrow.call_deferred(int(args[at+1]))
@@ -104,6 +135,12 @@ func _fresh_seed() -> int:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = candidate
 		if preload("res://scripts/inland_genome.gd").sample(rng.randi_range(0,999999)).composition != current: return candidate
+	return randi() % 1000000
+
+func _plain_seed() -> int:
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--plain-seed")
+	if at >= 0 and at+1 < args.size() and args[at+1].is_valid_int(): return int(args[at+1])
 	return randi() % 1000000
 
 func _scenery() -> bool:
@@ -166,6 +203,7 @@ func _build_overlay() -> void:
 
 func _label(world: Node3D) -> String:
 	var recipe: Dictionary = world._chunk_editor.data._recipe_settings
+	if plain and recipe.is_empty(): return "Open plain · "+Genesis.palette_title(generated_world)
 	if recipe.get("kind")=="inland":
 		return preload("res://scripts/biome_blend.gd").title(recipe)+" · "+recipe.composition.replace("-"," ").capitalize()+(" · seed %d" % world_seed if world_seed>=0 else "")
 	var family: String = world._chunk_editor.data._recipe_settings.get("family","")
@@ -259,7 +297,11 @@ func _process(delta: float) -> void:
 			armed = false
 			regrow()
 
-func regrow(requested_seed := -1) -> void:
+## Fold this world away and lay down a fresh Genesis plain in its place.
+func new_plain(requested_seed := -1) -> void:
+	await regrow(requested_seed,true)
+
+func regrow(requested_seed := -1, to_plain := false) -> void:
 	if busy or not initialized or scene._chunk_editor.forming: return
 	var before_state := NativeGardenStore.capture(scene)
 	if holding:
@@ -282,17 +324,27 @@ func regrow(requested_seed := -1) -> void:
 	busy = true
 	armed = false
 	marker.hide()
-	scene.set_building(false)
+	if scene.has_method("suspend_creation"): scene.suspend_creation()
+	else: scene.set_building(false)
 	scene._growth.reset_feedback()
 	phase = "reversing"
 	scene._notice.text = "Letting this landscape settle back to earth…"
 	await _animate_growth(false,DEGROW_SECONDS)
 	phase = "regenerating"
-	var chosen := _fresh_seed() if requested_seed<0 else requested_seed
-	generated_world = await Generator.sample_async(chosen,{},get_tree())
-	world_seed = chosen
-	scene._notice.text = "Shaping a new wilderness…"
-	await scene._chunk_editor.form_inland(generated_world.terrain,true,false)
+	if to_plain:
+		var plain_seed := randi() % 1000000 if requested_seed<0 else requested_seed
+		generated_world = Genesis.world(plain_seed)
+		world_seed = plain_seed
+		scene._notice.text = "Laying down a quiet plain…"
+		await Genesis.form(scene._chunk_editor,generated_world,true)
+	else:
+		var chosen := _fresh_seed() if requested_seed<0 else requested_seed
+		generated_world = await Generator.sample_async(chosen,{},get_tree())
+		world_seed = chosen
+		scene._notice.text = "Shaping a new wilderness…"
+		await scene._chunk_editor.form_inland(generated_world.terrain,true,false)
+	plain = to_plain
+	scene._chunk_editor.land_seed = world_seed
 	# form_inland captures its snapshot while the old world is folded down.
 	# Undo must instead restore the complete, playable scene before the reveal.
 	if not scene._chunk_editor.data._undo.is_empty():
@@ -328,9 +380,10 @@ func regrow(requested_seed := -1) -> void:
 	phase = "ready"
 	busy = false
 	_update_badge()
+	if scene.has_method("resume_creation"): scene.resume_creation()
 	if _scenery():
 		scene._paused = old_paused
-		scene._notice.text = ""
+		scene._notice.text = "Drag across the plain to raise land. Shift or right drag lowers it." if plain else ""
 		return
 	# The original pickup ground no longer exists after regeneration.
 	var safe: Variant = scene.navigation.nearest_safe(origin_feet)

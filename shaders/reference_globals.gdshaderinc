@@ -89,6 +89,50 @@ global uniform float zs_fire;
 global uniform float zs_ground_wet;
 global uniform float zs_foliage_wet;
 global uniform float zs_flow_time;
+// Stroke feedback (scripts/stroke_feedback.gd). Reveal: xz centre, radius,
+// strength of the hole a land stroke opens in the fog. Growth waves: xz
+// centre, radius (0 = idle), progress: -1..0 shrinks away, 0..1 grows back in.
+global uniform vec4 zs_reveal;
+global uniform vec4 zs_growth_wave_0;
+global uniform vec4 zs_growth_wave_1;
+global uniform vec4 zs_growth_wave_2;
+global uniform vec4 zs_growth_wave_3;
+global uniform vec4 zs_growth_wave_4;
+global uniform vec4 zs_growth_wave_5;
+
+// 1 away from recent strokes. Inside them, the furthest-along covering wave's
+// grow-in, so a plant pops once per pass however many waves overlap it; a
+// plant's pop reads min(zs_growth.y, this).
+float zs_growth_wave_at(vec2 p) {
+	vec4 waves[6] = vec4[6](zs_growth_wave_0, zs_growth_wave_1, zs_growth_wave_2, zs_growth_wave_3, zs_growth_wave_4, zs_growth_wave_5);
+	float grown = -1.0;
+	for (int i = 0; i < 6; i++) {
+		vec4 w = waves[i];
+		if (w.z <= 0.0) continue;
+		float reach = 1.0 - smoothstep(w.z * 0.65, w.z, distance(p, w.xy));
+		if (reach > 0.0) grown = max(grown, mix(1.0, abs(w.w), reach));
+	}
+	return grown < 0.0 ? 1.0 : grown;
+}
+
+// Emergence (scripts/emergence.gd): the clock its births are stamped on.
+global uniform float zs_emergence_time;
+
+// Grow-in 0..1 of one emerged instance born at `born` that rises over
+// `seconds`. 1 with no birth (seconds <= 0), and for a birth from another
+// clock (far in the future), so a stale stamp never hides a plant.
+float zs_birth_growth(float born, float seconds) {
+	if (seconds <= 0.0) return 1.0;
+	float age = zs_emergence_time - born;
+	if (age < -20.0) return 1.0;
+	return clamp(age / seconds, 0.0, 1.0);
+}
+
+// Fog kept at p: 1 outside the stroke reveal, down to 1 - strength inside.
+float zs_reveal_keep(vec2 p) {
+	if (zs_reveal.w <= 0.0) return 1.0;
+	return 1.0 - zs_reveal.w * (1.0 - smoothstep(zs_reveal.z * 0.45, zs_reveal.z, distance(p, zs_reveal.xy)));
+}
 #endif
 
 global uniform vec3 zs_key_direction;
