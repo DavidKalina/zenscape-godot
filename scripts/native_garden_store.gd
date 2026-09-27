@@ -13,6 +13,7 @@ const FIELDS := {
 }
 
 static func capture(scene: Node3D) -> Dictionary:
+	if scene.get("mood_look") != null: scene.mood_look.finish_fade()
 	var result := {"quality":scene._quality.selected,"quality_chosen":true,"look":scene._celestial.look.document()}
 	for group: String in FIELDS:
 		var object: Object = _object(scene,group)
@@ -39,6 +40,8 @@ static func capture(scene: Node3D) -> Dictionary:
 	# Optional, and empty whenever nothing is alight, so a garden that has never
 	# burned costs no bytes and a save written before fire existed still loads.
 	if scene.get("_fire_field") != null: result["fire"] = scene._fire_field.document()
+	# Optional: the chosen mood and pins (scripts/mood_look.gd).
+	if scene.get("mood_look") != null: result["mood"] = scene.mood_look.document()
 	return result
 
 static func valid(scene: Node3D, state: Variant) -> bool:
@@ -76,6 +79,7 @@ static func valid(scene: Node3D, state: Variant) -> bool:
 	if state.has("weather_scheduler") and not state.weather_scheduler is Dictionary: return false
 	if state.has("land_life") and not preload("res://scripts/land_life.gd").valid_document(state.land_life): return false
 	if state.has("look") and not preload("res://scripts/scene_look.gd").valid(state.look): return false
+	if state.has("mood") and not preload("res://scripts/mood_look.gd").valid(state.mood): return false
 	if state.has("bigfoot_habits") and not preload("res://scripts/bigfoot_habits.gd").valid(state.bigfoot_habits): return false
 	if state.has("bigfoot_living") and not preload("res://scripts/bigfoot_living_world.gd").valid(state.bigfoot_living): return false
 	if state.has("fish_state") and not preload("res://scripts/fidelity_fish.gd").valid_state(state.fish_state): return false
@@ -136,6 +140,8 @@ static func restore(scene: Node3D, state: Dictionary) -> void:
 	# Living weather reads the restored sky and clock; saves from before it
 	# have no weather origin or pinned season and get them from what they show.
 	if scene.has_method("restore_season_state"): scene.restore_season_state(state)
+	# Saves from before moods open on their own look with nothing pinned.
+	if scene.get("mood_look") != null: scene.mood_look.restore_document(state.get("mood",{}))
 	scene._process(0.0)
 	scene._sync_saved_controls()
 	if scene._landscape_editor != null: scene._landscape_editor.hide()

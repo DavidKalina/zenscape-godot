@@ -30,6 +30,7 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | **R** | Overview |
 | **H** | Hide the controls (and the brush); H again restores both |
 | **P** (or **Photo**) | Photo mode (below) |
+| **M** (or **Mood**) | Moods: nine authored looks that cross-fade the sky, light, weather, season and colours; **Customise** sets season, time, weather, rock and colours, which stay through mood changes ([moods](docs/scenic/mood.md)). Esc closes |
 | **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season |
 | **Alt+`[ ]`** | Step through the showcase seeds |
 | **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
@@ -56,7 +57,7 @@ living. Camera moves glide to rest.
 The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
 place away and grow a procedural world with its own terrain, palette,
 atmosphere, time of day and weather), **Return to previous place**, **Save now**,
-**Colors & sky**, **Overview**, **Sound** (mute, Master and the creation volume for
+**Colors & sky** (the full look editor; **M** is the quick way), **Overview**, **Sound** (mute, Master and the creation volume for
 stroke voices, ambient beds and life) and **Main menu**. Quitting saves the place, with
 its forest wishes and the life that has arrived, and the next launch keeps one
 earlier place to return to. `--classic-build` restores the old Build/Enjoy
