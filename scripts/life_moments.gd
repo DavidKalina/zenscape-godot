@@ -2,15 +2,17 @@ extends Node3D
 ## "And it was good": rare moments when a place has become rich
 ## (docs/scenic/life.md). A heron lands to fish in water that holds fish; deer
 ## step out of a wood's edge at dawn; a rainbow follows rain over a living
-## place; and, rarest, something large stands for a moment at the forest's
-## edge and is gone. Each has its conditions, a delay after those first hold,
-## a chance per check and a long cooldown, so they stay rare.
+## place; and, rarest, Bigfoot steps out of a mature wood at dusk, looks at
+## you and is gone (scripts/life_bigfoot.gd). Each has its conditions, a
+## delay after those first hold, a chance per check and a long cooldown, so
+## they stay rare.
 ##
 ## Owned by LandLife and advanced on its clock; it reads LandLife's survey and
 ## creatures and never looks at the world by itself.
 
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
+const Bigfoot = preload("res://scripts/life_bigfoot.gd")
 
 ## Seconds between condition checks.
 const CHECK := 2.0
@@ -42,14 +44,31 @@ const BOW_RISE := 6.0
 const BOW_HOLD := 30.0
 const BOW_FALL := 10.0
 const BOW_STRENGTH := 0.85
-## Bigfoot: scenery mode only, a real wood, low light, far from the camera.
-const BIGFOOT_TREES := 14
-const BIGFOOT_EDGE_TREES := 8
-const BIGFOOT_CHANCE := 0.006
-const BIGFOOT_COOLDOWN := 1200.0
+## Bigfoot (docs/scenic/life.md, "Bigfoot: when he comes"): scenery mode only.
+## A mature wood: BIGFOOT_TREES trees, richness BIGFOOT_RICHNESS and an edge
+## with BIGFOOT_EDGE_TREES trees near, all held for BIGFOOT_SETTLE s of life.
+const BIGFOOT_TREES := 18
+const BIGFOOT_EDGE_TREES := 7
 const BIGFOOT_RICHNESS := 2.0
-const BIGFOOT_DISTANCE := 18.0
-const BIGFOOT_STAND := 5.0
+const BIGFOOT_SETTLE := 600.0
+## A quiet world: nothing painted for BIGFOOT_QUIET s.
+const BIGFOOT_QUIET := 45.0
+## Low light: dawn and dusk count fully, night at BIGFOOT_NIGHT, and full day
+## only in mist (fog at least BIGFOOT_MIST). Mist, or the BIGFOOT_AFTER_RAIN s
+## after rain, multiply the chance by BIGFOOT_DAMP; a downpour keeps him in.
+const BIGFOOT_NIGHT := 0.6
+const BIGFOOT_MIST := 0.45
+const BIGFOOT_AFTER_RAIN := 180.0
+const BIGFOOT_DAMP := 1.75
+const BIGFOOT_DOWNPOUR := 0.5
+## Chance per CHECK at full weight, then he is about for BIGFOOT_ABOUT s: he
+## shows at the first edge the camera can see; if none comes, he was missed.
+const BIGFOOT_CHANCE := 0.006
+const BIGFOOT_ABOUT := 90.0
+const BIGFOOT_COOLDOWN := 1200.0
+## --force-bigfoot[=watch|listen|stride]: a sighting as soon as the wood
+## allows, and again BIGFOOT_FORCE_GAP s after each one ends (filming).
+const BIGFOOT_FORCE_GAP := 12.0
 
 var life: Node3D
 ## Every moment so far: {kind, at, p}.
@@ -70,9 +89,15 @@ var _deer_next := 0.0
 var _edge_since := -1.0
 var _rain := 0.0
 var _bow := {}
-var _bigfoot: Node3D
-var _bigfoot_state := {}
+var bigfoot: Node3D
 var _bigfoot_next := 0.0
+var _bigfoot_about := -1.0
+var _rich_since := -1.0
+var _stroke_at := -INF
+var _wet_until := -INF
+var _force_bigfoot := ""
+var _forcing := false
+var _force_next := 0.0
 
 func setup(owner: Node3D) -> void:
 	life = owner
@@ -117,11 +142,23 @@ func setup(owner: Node3D) -> void:
 			legs.append(leg)
 		root.visible = false
 		_deer.append({"root":root,"neck":neck,"legs":legs})
-	_bigfoot = Node3D.new()
-	_bigfoot.name = "Glimpse"
-	_bigfoot.add_child(_part(Models.bigfoot(material)))
-	_bigfoot.visible = false
-	add_child(_bigfoot)
+	bigfoot = Bigfoot.new()
+	add_child(bigfoot)
+	bigfoot.setup(self)
+	# Painting keeps him away, and near him sends him off.
+	var editor: Node = life.editor
+	editor.stroke_started.connect(_stroke)
+	editor.stroke_moved.connect(func(center: Vector3, radius: float, mode: String, _amount: float) -> void: _stroke(center,radius,mode))
+	editor.stroke_finished.connect(_stroke)
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--force-bigfoot" or arg.begins_with("--force-bigfoot="):
+			_forcing = true
+			_force_bigfoot = arg.trim_prefix("--force-bigfoot").trim_prefix("=")
+
+func _stroke(center: Vector3, _radius: float, _mode: String) -> void:
+	if life == null: return
+	_stroke_at = life.clock
+	bigfoot.stroke(life.to_local(center))
 
 func _part(mesh: Mesh) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
@@ -135,8 +172,9 @@ func clear() -> void:
 	_heron.visible = false
 	_deer_state = {}
 	for deer in _deer: deer.root.visible = false
-	_bigfoot_state = {}
-	_bigfoot.visible = false
+	bigfoot.hide_now()
+	_bigfoot_about = -1.0
+	_rich_since = -1.0
 	_water_since.clear()
 	_edge_since = -1.0
 	_end_bow()
@@ -148,7 +186,9 @@ func advance(step: float, real_step: float) -> void:
 		_consider()
 	if not _heron_state.is_empty(): _move_heron(step)
 	if not _deer_state.is_empty(): _move_deer(step)
-	if not _bigfoot_state.is_empty(): _move_bigfoot(step)
+	if bigfoot.showing():
+		bigfoot.advance(step,real_step)
+		if not bigfoot.showing(): _bigfoot_gone()
 	_watch_rain(real_step)
 	if not _bow.is_empty(): _move_bow(step)
 
@@ -194,9 +234,7 @@ func _consider() -> void:
 	elif _edge_since < 0.0: _edge_since = clock
 	if _deer_state.is_empty() and clock >= _deer_next and survey.tree_count >= DEER_TREES and _edge_since >= 0.0 and clock-_edge_since >= DEER_DELAY and _in(DAWN) and _rain_now() < 0.3 and _roll(DEER_CHANCE):
 		_deer_arrive(edges)
-	var hidden: bool = bool(life.scene.get("scenery_mode")) and not bool(life.scene.get("resident_enabled"))
-	if hidden and _bigfoot_state.is_empty() and clock >= _bigfoot_next and survey.tree_count >= BIGFOOT_TREES and survey.richness() >= BIGFOOT_RICHNESS and (_in(DAWN) or _in(DUSK)) and _roll(BIGFOOT_CHANCE):
-		_bigfoot_arrive(edges)
+	_consider_bigfoot(survey,clock)
 
 ## Probes only: start a moment now, skipping its delay, chance and hour but
 ## not the place it needs. False when the world has no such place.
@@ -213,10 +251,13 @@ func force(kind: String) -> bool:
 			if not survey.forest_edges.is_empty() and _deer_state.is_empty():
 				_deer_arrive(survey.forest_edges)
 				return true
-		"bigfoot":
-			if _bigfoot_state.is_empty():
-				_bigfoot_arrive(survey.forest_edges)
-				return not _bigfoot_state.is_empty()
+		"bigfoot","bigfoot_watch","bigfoot_listen","bigfoot_stride":
+			if bigfoot.showing(): return false
+			var how := kind.trim_prefix("bigfoot").trim_prefix("_")
+			# On screen if the camera allows it, anywhere with footing if not.
+			if bigfoot.begin(how,survey.forest_edges,BIGFOOT_EDGE_TREES,true) or bigfoot.begin(how,survey.forest_edges,BIGFOOT_EDGE_TREES,false):
+				_record("bigfoot",bigfoot.position)
+				return true
 		"rainbow":
 			_bow = {"age":0.0}
 			_record("rainbow",Vector3.ZERO)
@@ -225,7 +266,7 @@ func force(kind: String) -> bool:
 
 ## What is on stage now, for probes.
 func showing() -> Dictionary:
-	return {"heron":str(_heron_state.get("phase","")),"deer":_deer_state.size() > 0,"bigfoot":not _bigfoot_state.is_empty(),"rainbow":not _bow.is_empty()}
+	return {"heron":str(_heron_state.get("phase","")),"deer":_deer_state.size() > 0,"bigfoot":bigfoot.showing(),"rainbow":not _bow.is_empty()}
 
 func _daylight() -> float:
 	return life._daylight()
@@ -415,7 +456,9 @@ func _move_deer(step: float) -> void:
 
 func _watch_rain(real_step: float) -> void:
 	var rain := _rain_now()
-	if rain > RAIN_WET: _rain += real_step
+	if rain > RAIN_WET:
+		_rain += real_step
+		_wet_until = life.clock+BIGFOOT_AFTER_RAIN
 	elif rain < RAIN_DRY:
 		if _rain >= RAIN_SECONDS and _bow.is_empty() and life.survey != null and life.survey.richness() >= BOW_RICHNESS and _daylight() > 0.35 and _roll(BOW_CHANCE):
 			_bow = {"age":0.0}
@@ -436,46 +479,67 @@ func _end_bow() -> void:
 	var celestial: RefCounted = life.scene._celestial
 	if "moment_bow" in celestial: celestial.moment_bow = 0.0
 
-# --- A glimpse ------------------------------------------------------------------
+# --- Bigfoot -------------------------------------------------------------------
 
-func _bigfoot_arrive(edges: Array) -> void:
-	var camera: Camera3D = life.scene.camera
-	var eye := life.to_local(camera.global_position)
-	var best: Dictionary = {}
-	for edge: Dictionary in edges:
-		if int(edge.trees) < BIGFOOT_EDGE_TREES: continue
-		var p: Vector2 = edge.p
-		if Vector2(eye.x,eye.z).distance_to(p) < BIGFOOT_DISTANCE: continue
-		# Seen from the open side: the camera is on the side the wood is not.
-		if (Vector2(eye.x,eye.z)-p).dot(edge.into) > 0.0: continue
-		best = edge
-		break
-	if best.is_empty(): return
-	var into: Vector2 = best.into
-	var stand: Vector2 = (best.p as Vector2)+into*1.2
-	_bigfoot_state = {"age":0.0,"from":stand,"to":stand+into*3.6,"out":atan2(-into.x,-into.y),"in":atan2(into.x,into.y)}
-	_bigfoot.position = Vector3(stand.x,_ground(stand),stand.y)
-	_bigfoot.rotation.y = _bigfoot_state.out
-	_bigfoot.scale = Vector3.ONE
-	_bigfoot.visible = true
-	_record("bigfoot",_bigfoot.position)
+## Why he may or may not come now, for probes and the doc: each condition and
+## the chance per check it gives.
+func bigfoot_conditions() -> Dictionary:
+	var survey: RefCounted = life.survey
+	var clock: float = life.clock
+	var hidden: bool = bool(life.scene.get("scenery_mode")) and not bool(life.scene.get("resident_enabled"))
+	var trees: int = survey.tree_count if survey != null else 0
+	var richness: float = survey.richness() if survey != null else 0.0
+	var edges := 0
+	if survey != null:
+		for edge: Dictionary in survey.forest_edges:
+			if int(edge.trees) >= BIGFOOT_EDGE_TREES: edges += 1
+	var rich := survey != null and trees >= BIGFOOT_TREES and richness >= BIGFOOT_RICHNESS and edges > 0
+	var settled := rich and _rich_since >= 0.0 and clock-_rich_since >= BIGFOOT_SETTLE
+	var quiet: bool = not life.editor._painting and clock-_stroke_at >= BIGFOOT_QUIET
+	var light := _bigfoot_light()
+	var weather := _bigfoot_weather()
+	return {"hidden":hidden,"trees":trees,"richness":snappedf(richness,0.01),"edges":edges,"rich":rich,
+		"rich_for":snappedf(clock-_rich_since,0.1) if _rich_since >= 0.0 else -1.0,"settled":settled,"quiet":quiet,
+		"phase":snappedf(_phase(),0.001),"light":light,"weather":weather,"cooldown":snappedf(maxf(0.0,_bigfoot_next-clock),0.1),
+		"about":_bigfoot_about >= clock,"chance":BIGFOOT_CHANCE*light*weather if hidden and settled and quiet and clock >= _bigfoot_next else 0.0}
 
-func _move_bigfoot(step: float) -> void:
-	var s := _bigfoot_state
-	s.age = float(s.age)+step
-	var age: float = s.age
-	var from: Vector2 = s.from
-	var to: Vector2 = s.to
-	var turn := smoothstep(BIGFOOT_STAND,BIGFOOT_STAND+1.2,age)
-	var walk := clampf((age-BIGFOOT_STAND-1.0)/3.2,0.0,1.0)
-	var p := from.lerp(to,walk)
-	var bob := absf(sin(age*4.0))*0.04 if walk > 0.0 and walk < 1.0 else 0.0
-	_bigfoot.position = Vector3(p.x,_ground(p)+bob,p.y)
-	_bigfoot.rotation.y = lerp_angle(float(s.out),float(s.in),turn)
-	_bigfoot.rotation.z = sin(age*1.3)*0.03*(1.0-turn)
-	var fade := 1.0-smoothstep(BIGFOOT_STAND+3.4,BIGFOOT_STAND+4.2,age)
-	_bigfoot.scale = Vector3.ONE*maxf(fade,0.001)
-	if fade <= 0.0:
-		_bigfoot_state = {}
-		_bigfoot.visible = false
-		_bigfoot_next = life.clock+BIGFOOT_COOLDOWN
+## Light he walks in: dawn and dusk 1, night BIGFOOT_NIGHT, day only in mist.
+func _bigfoot_light() -> float:
+	if _in(DAWN) or _in(DUSK): return 1.0
+	var phase := _phase()
+	if phase < DAWN.x or phase > DUSK.y: return BIGFOOT_NIGHT
+	return 1.0 if _fog() >= BIGFOOT_MIST else 0.0
+
+func _bigfoot_weather() -> float:
+	if _rain_now() > BIGFOOT_DOWNPOUR: return 0.0
+	return BIGFOOT_DAMP if _fog() >= BIGFOOT_MIST or life.clock < _wet_until else 1.0
+
+func _fog() -> float:
+	var atmosphere: Variant = life.scene.get("_atmosphere")
+	return float(atmosphere.fog_amount) if atmosphere != null else 0.0
+
+func _consider_bigfoot(survey: RefCounted, clock: float) -> void:
+	# Poll the model's threaded load here, never on a sighting's frame.
+	if not bigfoot.ready_to_show(): return
+	var state := bigfoot_conditions()
+	if state.rich:
+		if _rich_since < 0.0: _rich_since = clock
+	else:
+		_rich_since = -1.0
+	if bigfoot.showing() or not state.hidden: return
+	if _forcing:
+		if clock >= _force_next: force("bigfoot_"+_force_bigfoot if _force_bigfoot != "" else "bigfoot")
+		return
+	if _bigfoot_about >= clock:
+		# About: he shows at the first edge the camera can see, while it holds.
+		if state.quiet and float(state.light)*float(state.weather) > 0.0 and bigfoot.begin("",survey.forest_edges,BIGFOOT_EDGE_TREES,true):
+			_bigfoot_about = -1.0
+			_record("bigfoot",bigfoot.position)
+		return
+	if float(state.chance) > 0.0 and _roll(float(state.chance)):
+		_bigfoot_about = clock+BIGFOOT_ABOUT
+		_consider_bigfoot(survey,clock)
+
+func _bigfoot_gone() -> void:
+	_bigfoot_next = life.clock+BIGFOOT_COOLDOWN
+	_force_next = life.clock+BIGFOOT_FORCE_GAP
