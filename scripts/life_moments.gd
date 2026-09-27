@@ -14,6 +14,7 @@ const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Bigfoot = preload("res://scripts/life_bigfoot.gd")
 const Rigs = preload("res://scripts/life_rigs.gd")
+const HeronRig = preload("res://scripts/life_rig_heron.gd")
 
 ## Seconds between condition checks.
 const CHECK := 2.0
@@ -25,6 +26,10 @@ const HERON_CHANCE := 0.06
 const HERON_STAY := Vector2(45.0,90.0)
 const HERON_COOLDOWN := 240.0
 const HERON_FLIGHT := 7.0
+## The Blender heron glides in from this fraction of the flight, and takes a slow
+## wading step now and then, HERON_STALK s apart.
+const HERON_GLIDE := 0.55
+const HERON_STALK := Vector2(12.0,25.0)
 ## Deer: a forest edge for DEER_DELAY s, at dawn (celestial phase DAWN).
 const DEER_TREES := 6
 const DEER_DELAY := 25.0
@@ -81,6 +86,8 @@ var _heron_pose: Node3D
 var _heron_neck: Node3D
 var _heron_legs: Node3D
 var _heron_wings: Array[Node3D] = []
+## The Blender heron (life_rig_heron.gd); null with --classic-life.
+var _heron_rig: HeronRig
 var _heron_state := {}
 var _heron_next := 0.0
 var _water_since := {}
@@ -124,6 +131,11 @@ func setup(owner: Node3D) -> void:
 		wing.add_child(_part(Models.heron_wing(material,left)))
 		_heron_pose.add_child(wing)
 		_heron_wings.append(wing)
+	if HeronRig.enabled():
+		_heron_rig = HeronRig.new()
+		_heron_rig.setup(material)
+		_heron.add_child(_heron_rig)
+		_heron_pose.visible = false
 	_heron.visible = false
 	for coat in [Color(0.58,0.38,0.22),Color(0.66,0.46,0.28)]:
 		if Rigs.enabled():
@@ -299,6 +311,9 @@ func _heron_arrive(record: Dictionary) -> void:
 	var leave := Vector2.from_angle(life._rng.randf()*TAU)
 	_heron_state = {"phase":"in","age":0.0,"from":start,"spot":spot,"level":record.level,"stay":life._rng.randf_range(HERON_STAY.x,HERON_STAY.y),"leave":Vector3(leave.x,0,leave.y),"strike":life._rng.randf_range(5.0,9.0),"yaw":atan2(-outward.x,-outward.y)}
 	_heron.visible = true
+	if _heron_rig:
+		_heron_state.stalk = life._rng.randf_range(HERON_STALK.x,HERON_STALK.y)
+		_heron_rig.play("Fly",0.0)
 	_record("heron",spot)
 
 func _move_heron(step: float) -> void:
@@ -333,27 +348,33 @@ func _move_heron(step: float) -> void:
 				reach = smoothstep(0.0,0.2,strike)*(1.0-smoothstep(0.6,1.2,strike))
 				if strike >= 0.25 and not s.get("rang",false):
 					s.rang = true
-					var beak := spot+Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,0.55)
+					var beak := spot+Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,HeronRig.STRIKE_REACH if _heron_rig else 0.55)
 					life.ripple(Vector3(beak.x,float(s.level),beak.z),0.35)
 				if strike > 1.3:
 					s.strike = float(s.age)+life._rng.randf_range(7.0,14.0)
 					s.rang = false
 			_heron_neck.rotation.x = reach*1.05
 			_heron_neck.scale = Vector3.ONE
-			if float(s.age) >= float(s.stay) or _rain_now() > 0.4 or not _water_still_there():
+			# The Blender heron finishes a strike or a step before it goes, unless driven off.
+			var busy := _heron_rig != null and _heron_rig.clip in ["Strike","Stalk"] and not _heron_rig.done()
+			if (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there():
 				s.phase = "out"
 				s.age = 0.0
 				s.from = spot
 				for wing in _heron_wings: wing.visible = true
 		"out":
-			var u := minf(float(s.age)/HERON_FLIGHT,1.0)
+			# The Blender heron crouches before it leaves the ground.
+			var u := minf(maxf(float(s.age)-(HeronRig.TAKEOFF_LEAD if _heron_rig else 0.0),0.0)/HERON_FLIGHT,1.0)
 			var leave: Vector3 = s.leave
 			var bend := spot+leave*5.0+Vector3.UP*3.0
 			var target := spot+leave*26.0+Vector3.UP*11.0
 			var e := pow(u,1.6)
 			var p := _bezier(spot,bend,target,e)
 			var ahead := _bezier(spot,bend,target,minf(e+0.02,1.0))
-			if ahead.distance_to(p) > 0.001: s.yaw = atan2(ahead.x-p.x,ahead.z-p.z)
+			if ahead.distance_to(p) > 0.001:
+				var toward := atan2(ahead.x-p.x,ahead.z-p.z)
+				# The Blender heron turns into its take-off through the crouch.
+				s.yaw = lerp_angle(float(s.yaw),toward,minf(1.0,step*5.0)) if _heron_rig else toward
 			_heron.position = p
 			_fly_pose(float(s.age),smoothstep(0.0,0.2,u),lerpf(2.0,1.0,u))
 			if u >= 1.0:
@@ -362,6 +383,52 @@ func _move_heron(step: float) -> void:
 				_heron_next = life.clock+HERON_COOLDOWN
 				return
 	_heron.rotation.y = float(s.yaw)
+	if _heron_rig: _heron_act(step)
+
+## The Blender heron's clip for the moment: flying, gliding and landing on the way in;
+## standing, striking in time with the ripple and now and then a wading step while it
+## stays; taking off on the way out.
+func _heron_act(step: float) -> void:
+	var s := _heron_state
+	var rig := _heron_rig
+	var age := float(s.age)
+	match s.phase:
+		"in":
+			if age >= HERON_FLIGHT-HeronRig.LAND_TOUCH: _heron_clip("Land",0.3)
+			elif age >= HERON_FLIGHT*HERON_GLIDE: _heron_clip("Glide",0.6)
+		"stand":
+			var strike := age-float(s.strike)
+			if rig.clip != "Strike" and strike >= 0.25-HeronRig.STRIKE_CONTACT and strike < 0.25:
+				rig.play("Strike",0.2)
+			elif rig.clip == "Stalk" and rig.done():
+				# The clip walked the heron forward; move it there and stand on.
+				var spot: Vector3 = s.spot
+				var ahead := Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,HeronRig.STALK_DISTANCE)
+				var there := Vector2(spot.x+ahead.x,spot.z+ahead.z)
+				s.spot = Vector3(there.x,_ground(there),there.y)
+				_heron.position = s.spot
+				rig.play("Stand",0.0)
+			elif rig.clip != "Stand" and rig.done():
+				rig.play("Stand",0.3)
+			elif rig.clip == "Stand" and rig.time > 3.0 and age >= float(s.stalk) and strike < -5.0:
+				s.stalk = age+life._rng.randf_range(HERON_STALK.x,HERON_STALK.y)
+				var spot: Vector3 = s.spot
+				var ahead := Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,HeronRig.STALK_DISTANCE)
+				if life.survey != null and life.survey.wet_at(Vector2(spot.x+ahead.x,spot.z+ahead.z)):
+					rig.play("Stalk",0.3)
+			if rig.clip == "Stalk":
+				# Each foot goes down with a small ring.
+				for at in HeronRig.STALK_STEPS:
+					if rig.time < at and rig.time+step >= at:
+						var foot := (s.spot as Vector3)+Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,HeronRig.STALK_DISTANCE)
+						life.ripple(Vector3(foot.x,float(s.level),foot.z),0.3)
+		"out":
+			if rig.clip == "TakeOff" and rig.done(): rig.play("Fly",0.15)
+			elif rig.clip != "TakeOff" and rig.clip != "Fly": rig.play("TakeOff",0.2)
+	rig.advance(step)
+
+func _heron_clip(clip: String, blend: float) -> void:
+	if _heron_rig.clip != clip: _heron_rig.play(clip,blend)
 
 ## Wings beat, legs trail and the neck tucks as far as `flight` (0 standing).
 func _fly_pose(age: float, flight: float, beat: float) -> void:
