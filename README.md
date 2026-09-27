@@ -29,6 +29,7 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | Middle drag / scroll | Pan / zoom |
 | **R** | Overview |
 | **H** | Hide the controls (and the brush); H again restores both |
+| **P** (or **Photo**) | Photo mode (below) |
 | **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season |
 | **Alt+`[ ]`** | Step through the showcase seeds |
 | **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
@@ -38,10 +39,25 @@ the night in a few seconds, so dawn and dusk come round within a session.
 **Craft** at the top right opens the fine sculpt, paint and place tools (the
 Build palette below; there **1**–**4** pick raise, lower, smooth and flatten and
 **V** selects); it reads **Create** while open and returns to the brushes.
+
+**Photo mode.** **P** (or **Photo**) hides the controls while the world keeps
+living. Camera moves glide to rest.
+
+| Control | In photo mode |
+| --- | --- |
+| Drag / right drag / scroll | Orbit / pan / dolly |
+| **G** | Walk the ground at eye height (arrows or right drag walk) |
+| **`[ ]`** / **Shift+`[ ]`** | Lens / exposure |
+| **F**, then click | Depth of field; a click focuses there and names the creature or plant under it |
+| **H** | Hide the hints |
+| **Space** | Save a full-resolution PNG with no UI to **~/Pictures/ZenScape** (Show in Finder is on the "Saved" note) |
+| **P** or **Esc** | Back to where you were |
+
 The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
 place away and grow a procedural world with its own terrain, palette,
 atmosphere, time of day and weather), **Return to previous place**, **Save now**,
-**Colors & sky**, **Overview** and **Main menu**. Quitting saves the place, with
+**Colors & sky**, **Overview**, **Sound** (mute, Master and the creation volume for
+stroke voices, ambient beds and life) and **Main menu**. Quitting saves the place, with
 its forest wishes and the life that has arrived, and the next launch keeps one
 earlier place to return to. `--classic-build` restores the old Build/Enjoy
 toolbar, and `--beauty-grass` brings back the retired dense GPU grass. See
