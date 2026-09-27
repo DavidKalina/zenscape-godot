@@ -13,6 +13,14 @@ var flight_in := 15.0
 var paused := false
 var muted := false
 var volume := 0.55
+## Set by scripts/genesis_audio.gd on blank worlds, so the Genesis plain's
+## wildlife follows what exists there: songs need woods or birds, crickets
+## need cover, frogs need frogs. 1 (as before) everywhere else.
+var song_presence := 1.0
+var cricket_presence := 1.0
+var frog_presence := 1.0
+## When set, songs come from these points (the woods) instead of around the listener.
+var song_points := PackedVector3Array()
 
 func _ready() -> void:
 	rng.randomize()
@@ -84,9 +92,9 @@ func update_state(delta: float, stopped: bool, silence: bool, level: float, dayl
 		var player: AudioStreamPlayer3D = beds[name]
 		var gain := 0.0
 		var point := listener+Vector3(-6,0,-9)
-		if name == "cricket": gain = 0.22*night*warm*growth
+		if name == "cricket": gain = 0.22*night*warm*growth*cricket_presence
 		elif name == "frog":
-			gain = 0.18*maxf(night,rain*0.8)*warm*water_growth if water_points.has("shore") else 0.0
+			gain = 0.18*maxf(night,rain*0.8)*warm*water_growth*frog_presence if water_points.has("shore") else 0.0
 			point = water_points.get("shore",point)
 		elif water_points.has(name):
 			point = water_points[name]
@@ -100,13 +108,16 @@ func update_state(delta: float, stopped: bool, silence: bool, level: float, dayl
 	owl_in -= dt
 	flight_in -= dt
 	var point := listener+Vector3(rng.randf_range(-12,12),rng.randf_range(-1,3),-10)
+	if not song_points.is_empty(): point = song_points[rng.randi_range(0,song_points.size()-1)]
+	# A sparse world skips most of its chances to sing, rather than singing quieter.
+	var sings := rng.randf() < song_presence
 	if daylight > 0.12 and song_in <= 0.0:
 		var dusk := (1.0-smoothstep(0.35,0.6,daylight))*smoothstep(0.1,0.3,daylight)
-		call_bird("hermit-thrush" if rng.randf() < dusk else SONGS[rng.randi_range(0,SONGS.size()-1)],point,0.32)
+		if sings: call_bird("hermit-thrush" if rng.randf() < dusk else SONGS[rng.randi_range(0,SONGS.size()-1)],point,0.32)
 		song_in = rng.randf_range(6,20)
 	if daylight < 0.165 and owl_in <= 0.0:
-		call_bird("owl",point,0.38)
+		if sings: call_bird("owl",point,0.38)
 		owl_in = rng.randf_range(30,90)
 	if daylight > 0.3 and flight_in <= 0.0:
-		call_bird("raven" if rng.randf()<0.5 else "nutcracker",point,0.28)
+		if sings: call_bird("raven" if rng.randf()<0.5 else "nutcracker",point,0.28)
 		flight_in = rng.randf_range(25,55)

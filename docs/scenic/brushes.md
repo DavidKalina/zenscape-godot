@@ -38,7 +38,7 @@ it is held, and the pour is planned and applied after release
 |---|---|---|
 | Meadow | Marked hand. Emergence never thins or plants in them, so a meadow painted inside a forest stays an open glade. | Untouched. |
 | Path | Marked hand, tread and margin. Nothing emerges on a path. | At release, clears emerged records from the tread, plus generated undergrowth (`PathBrush.UNDERGROWTH`). Lays stones, which are tagged hand like every record minted in a stroke. |
-| Forest | Left as they are, so emergence can plant. The floor tint skips hand cells. | A clearing stroke withdraws emerged plants where it left the wish at `CLEAR_BELOW` or lower. |
+| Forest | Left as they are, so emergence can plant. The floor tint skips hand cells. | A clearing stroke withdraws emerged plants where it left the wish at `CLEAR_BELOW` or lower. A firm pass takes its cells there at release (`FIRM_PASS`). |
 
 Hand-placed and pinned records are never removed. Generated trees and rocks
 stay on a path too.
@@ -103,6 +103,7 @@ At arrival (`emergence.gd`, `_arrive` and `_frayed`):
 | `FLOOR_WEIGHT` | 0.42 | Weight of the darker forest-floor tint at a full wish. |
 | `FLOOR_SHIFT` | (0.015, −0.04, −0.07) | Hue, saturation and lightness shift from the palette's darkest grass. |
 | `CLEAR_BELOW` | −0.25 | A clearing stroke withdraws emerged plants at or below this wish. |
+| `FIRM_PASS`, `FIRM_MIN`, `FIRM_EMPTY` | 0.7, 0.3, 0.1 | A firm clearing pass. A cell the stroke pushed down by `FIRM_PASS` of wish (the sum of its dabs, before clamping), or by `FIRM_MIN` that left it at `FIRM_EMPTY` or less, drops to `CLEAR_BELOW` at release, so one deliberate Shift pass clears a young forest. A steady pass at strength 1 pushes about 1 at its centre; a light pass only thins the wish. |
 | `radius` | 3.6 (1.5–9) | Brush radius in metres. |
 
 ## Meadow

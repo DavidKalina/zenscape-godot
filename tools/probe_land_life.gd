@@ -113,7 +113,7 @@ func run() -> void:
 	var timeline := []
 	for second in range(int(watch)):
 		await watch_frames(1.0,frames,own)
-		timeline.append([second+1,snappedf(life.clock,0.1),present(),life.moments.showing()])
+		timeline.append([second+1,snappedf(life.clock,0.1),present(),life.moments.showing(),{"snake":life.snakes.showing()}])
 	var survey: RefCounted = life.survey
 	var bodies := []
 	if survey != null:

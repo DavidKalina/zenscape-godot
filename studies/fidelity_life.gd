@@ -26,6 +26,8 @@ var _reaction := Label3D.new()
 var _reaction_time := 0.0
 var foliage_tread: Node
 var land_life: Node3D
+## Stroke voices, creation beds and life's one-shots (scripts/genesis_audio.gd).
+var genesis_audio: Node
 
 func _ready() -> void:
 	super._ready()
@@ -113,6 +115,9 @@ func _ready() -> void:
 	land_life = preload("res://scripts/land_life.gd").new()
 	add_child(land_life)
 	land_life.setup(self)
+	genesis_audio = preload("res://scripts/genesis_audio.gd").new()
+	add_child(genesis_audio)
+	genesis_audio.setup(self)
 	_choose_inhabited_shore()
 	_seed_loose_stones()
 	_focus_bigfoot()

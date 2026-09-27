@@ -200,7 +200,7 @@ Painting has to feel so smooth and satisfying that it is almost mind-blowing: a 
 - The fog and volumetric fog drift aside to reveal what you made.
 - Water fills a basin; it does not appear in it.
 - The wind picks up, and the trees you just grew start to sway.
-- Sound effects for every stage. None exist yet.
+- Sound effects for every stage (slice 6, `docs/scenic/sound.md`).
 
 Nothing may hitch while you paint. Frame pacing during a stroke matters more than anywhere else in the game (see Phase 0 and Phase 4).
 
@@ -257,7 +257,7 @@ Nothing may hitch while you paint. Frame pacing during a stroke matters more tha
   - There is no succession timeline.
   - Nothing finds a basin's spill level.
   - Fauna use fixed reference positions.
-  - The beauty score is whole-plate and terrain-only.
+  - The beauty score is whole-plate and terrain-only. *Slice 8 adds a regional score (`docs/scenic/guidance.md`).*
 
 ### Slice 1: the land brush, with the full feel (done 2026-09-26)
 
@@ -333,14 +333,14 @@ Four parallel branches, merged in this order:
 - The dense-grass render, the first-dab and first-plan hitches, and the water release frame are in the remaining slices below.
 - A plain launch copies `places.json` to `places-previous.json` before it is overwritten.
 
-### Where Phase 3 stands (2026-09-26, evening)
+### Where Phase 3 stands (2026-09-27)
 
-Slices 1-5 are on `main`. Slice 1 is 7978080. Slices 2-5 were built in parallel and merged as `feature/phase3-slices-2-5`, described under "Slices 2-5 integrated" below.
-- **What you can do:** launch onto a plain in Fidelity's colours and paint with five brushes: land, water, meadow, forest and path.
-- **How the world answers:** water settles into basins and streams, plants and forest emerge, and fish, frogspawn, frogs, birds, a heron, deer and, rarest, the ambient Bigfoot arrive from conditions.
-- **The interface:** a glass creation palette, with Look, Craft and World behind it.
+Slices 1-8 are done. Slice 1 is 7978080 and slices 2-5 were merged as `feature/phase3-slices-2-5` (see "Slices 2-5 integrated" below). Sound (6), photo mode (7) and quiet guidance (8) came in with the Phase 3 polish on `feature/phase3-wrapup`. Each slice's "What landed" is under "Slices 2-8" below.
+- **What you can do:** launch onto a plain in Fidelity's colours and paint with five brushes: land, water, meadow, forest and path. **P** composes and saves a photo.
+- **How the world answers:** water settles into basins and streams, plants and forest emerge, and fish, frogspawn, frogs, birds, a heron, deer and, rarest, the ambient Bigfoot arrive from conditions. A quiet beauty score nudges emerged plants and new water. Strokes, the land's beds and life's arrivals are heard.
+- **The interface:** a glass creation palette, with Look, Photo, Craft and World (World > Sound for volumes) behind it.
 
-The user watched the slices 2-5 film (`captures/phase3-slices-2-5.mp4`) and said it looks "just like God creating something". Slices 6-8 are still open, along with the outstanding items below.
+The user watched the slices 2-5 film (`captures/phase3-slices-2-5.mp4`) and said it looks "just like God creating something". Slices 6-8 are backed only by headless runs: nothing has been heard, and photo mode and guidance have not been judged on screen.
 
 ### Outstanding from the slices 2-5 film
 
@@ -353,22 +353,28 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 - ~~**Tree scale.**~~ Fixed on `feature/genesis-look-fixes`: emergence scales each kind (`KIND_SIZE`). Layered broadleaves are now 2.1–3.2 m (they were up to 6 m), hero oaks 1.8–2.8 m and spruces 1.6–4.5 m, against a 1.2 m deer.
 - ~~**Tree in the pond.**~~ Fixed on `feature/phase3-round2`: when a pour lands, emergence withdraws the emerged plants whose base its new ponds or streams cover (`emergence.gd` `drown`, from the water plan's flooded cells), inside the pour's undo step. Until a plan that saw the new water replaces the blend's pond raster, arrivals read the fresh ponds too, so nothing is placed in them in between. Hand, pinned and generated objects stay.
 - ~~**Look shows play hints.**~~ Fixed on `feature/phase3-round2`: in the creation shell, hovering a tree or rock no longer shows "Drag a tree to bend · Drag a rock or log to throw" (`diorama_world_play.gd`). Look keeps the palette's own calm line (`creation_palette.gd` `LOOK_HINT`). A bend or throw already under way still says how to finish it.
-- **Frame spikes at release.** *Update (`feature/settle-hitches`):* the land stroke's release weathering, emergence's plan (live blend and pond flood included) and the encounter ground now run on workers. On the plain a land stroke's release frame went from 19–26 ms to about 1 ms, and its worst settle frame from 30–42 ms to 14–16 ms. On seed 184 the first plan's 54 ms frame is gone. *Water polish (`feature/water-polish`):* a pour's own settle frames are now at most 13–14 ms; the 35–47 ms first plan that followed a pour is the one the settle-hitches work moved to a worker. One 18–21 ms frame remains when a stroke crosses a pond on a recipe world: the planar reflection re-setup's first slice (12–15 ms, `planar_water.gd`). Numbers are in `docs/performance/stroke-pipeline.md` and `docs/scenic/water-brush.md`.
+- **Frame spikes at release.** *Update (`feature/settle-hitches`):* the land stroke's release weathering, emergence's plan (live blend and pond flood included) and the encounter ground now run on workers. On the plain a land stroke's release frame went from 19–26 ms to about 1 ms, and its worst settle frame from 30–42 ms to 14–16 ms. On seed 184 the first plan's 54 ms frame is gone. *Water polish (`feature/water-polish`):* a pour's own settle frames are now at most 13–14 ms; the 35–47 ms first plan that followed a pour is the one the settle-hitches work moved to a worker. The 18–21 ms frame when a stroke crossed a pond on a recipe world (the reflection re-setup's first slice) no longer reproduces; see "Remaining frame" below. Headless, no frame of a stroke's settle is over 16.7 ms on the plain or seed 184. Numbers are in `docs/performance/stroke-pipeline.md` and `docs/scenic/water-brush.md`.
 - **Reflections.** *Done on `feature/water-polish`.* Planar reflections cost 0.58 ms of CPU per frame while ponds exist, down from 4.79 ms. Materials now sync by change. Clip shaders compile ahead in idle frames after the scene grows, so a pour's first setup compiles none. The GPU pipeline cost of those shaders is unmeasured.
 - ~~**Things not saved.**~~ Done on `feature/world-continuity`: the forest wish is saved in the terrain document (`intent_forest`, `docs/scenic/brushes.md`), and life in the scene state (`land_life`, `docs/scenic/life.md`). A loaded world resumes its life; saves without it still start settled. Moments are not saved. `tools/probe_world_continuity.gd` checks the round trip, an old save, the plain's day and the arrival puffs headless.
 - **Water gaps.** *Done on `feature/water-polish`; the look is unverified.* New streams carve shallow beds. Ground a pour reshapes (a hollow, beds, a rim lip) moves into place over 0.7 s before the water fills, inside the pour's undo step. Pouring into a pond that brims at the plate's rim raises a soft lip there, so the pond rises by up to 0.5 m a pour.
 - ~~**Deer need dawn.**~~ Done on `feature/world-continuity`. In creation mode the plain's day turns at 1200 s per 24 hours, and the night (phase 0.8 to 0.2) passes in a few seconds, eased like N. A full turning day would spend minutes in a night that hides the land, which the plain was chosen to avoid. A held day never brings dawn. Dawn and dusk are kept whole, so life's DAWN and DUSK windows each last about three minutes. From full day, dawn comes within six to eight minutes. Generated worlds still hold their hour. Still to judge on screen: whether the sun's pace reads as calm, and how the eased night looks. The same turning day gives Bigfoot his dawn, dusk and night windows on the plain.
 - ~~**Forest wind.**~~ Done on `feature/world-continuity`: each batch of emerged trees gets a light local puff as it is born, which reaches the trees as they finish rising (`docs/scenic/stroke-feel.md`). Still to judge on screen.
 - **Bigfoot sighting (`feature/bigfoot-sighting`):** the silhouette is replaced by the ambient model (`scripts/life_bigfoot.gd`). He steps out of a mature wood to watch or listen, or crosses along its edge in the Patterson stride, and leaves if the camera rushes him or the player paints near. He comes about once per 20-40 minutes of a rich, quiet world: a 10-minute settle, then chance 0.006 × light × weather per 2 s check, and a 20-minute cooldown. The rules and their reasoning are in `docs/scenic/life.md`, "Bigfoot". `--force-bigfoot[=watch|listen|stride]` brings him for filming; the probe is `tools/probe_bigfoot_sighting.gd`. Peeks wait for trunks thick enough (hero trees).
-- **Tree variety (to discuss with the user first).** Emerged broadleaves are mostly the pale lavender blossom tree, which does not suit the plain. The user wants variety that is random but cohesive: a believable place with the odd surprise, with blossom allowed as an accent. Ideas: dominant, companion and rare mixes per stand; species that follow moisture, altitude and facing; neighbourhoods that drift across the land; the hero tree family (`scripts/hero_trees.gd`). Do not build this before talking it through.
-- **Climate answers water (idea).** Ground far from water, or high and sun-facing, slowly dries (green, then ochre, then sand). Grass thins, and Joshua trees and scrub emerge. A river through it greens an oasis. This is how the plain could grow deserts without a desert brush. Generated worlds already have desert compositions (showcase seeds 134, 45, 250, 309, 248, 278 and 364).
-- **Forest Shift feel.** One Shift pass over a young forest only brings its wish to about 0, above `CLEAR_BELOW` (−0.25), so nothing clears until a second pass. This is a feel question for the user.
-- **Remaining frame.** On seed 184, a stroke across a pond has one 18–21 ms frame, from the first slice of the reflection-view rebuild in `planar_water.gd`. Recipe-world stream geometry still builds on the main thread (4.2 ms).
+- ~~**Forest Shift feel.**~~ Done on `feature/phase3-polish`: one firm Shift pass now clears a young forest. The brush sums how much each clearing stroke pushed the wish down per cell; at release a cell pushed by 0.7, or by 0.3 that left nothing wished, drops to `CLEAR_BELOW` inside the stroke's undo step, so its emerged plants go (`forest_brush.gd` `FIRM_PASS`). On plain seed 7, one pass at strength 1 withdraws 22 of 37 emerged plants (two passes were needed before); a pass at strength 0.5 thins the wish to 0.5 and withdraws nothing. Hand and pinned records stay. How it feels is still to judge on screen.
+- ~~**Remaining frame.**~~ *`feature/phase3-polish`:* the 18–21 ms frame no longer reproduces on `main` after the water-polish merge. On seed 184, a raise or land stroke across the pond (`--from=-1,4 --to=6,8`; the profiler's default path misses the pond) re-sets up the reflection views in slices of 2.0–2.3 ms, and the settle's worst frame is 11–12 ms. The old first slice was the clip-shader parse and the first full material push, which water polish moved to idle frames and change-only sync. A clip shader the warm-up missed (a plant kind that appeared after it) now gets a frame of its own instead of stacking on a spent slice (5–6 ms, the parse alone). Recipe-world stream geometry now runs on the recipe pond worker against a private recipe: 4.3 ms to 0.4 ms on the main thread, settle max 14.1 to 11.7 ms, fingerprints identical. Numbers are in `docs/performance/stroke-pipeline.md`.
 - **Not yet exercised:** Nobody has looked at the glass blur's frame cost, or at the palette on screen outside the film. Shift strokes are now profiled (`profile_stroke --then=shift`): forest clearing and path grow-back settle under 10 ms.
 - **Film tool:** its layout depends on emergence timing and varies run to run. It forces the heron and deer with `--force-moments` and speeds up the life clock.
+- **Phase 3 polish (`feature/phase3-polish`):** the non-design leftovers above are closed: the remaining frame, recipe streams off the main thread, forest Shift, Craft tools against the new pipeline, dense grass retired and the README's controls. Only headless runs back them; the look and feel are unverified on screen.
 - **Tests:** `test_bigfoot_home`, `test_editor_coherence` and `test_diorama_flow` reference the old toolbar and menu. Update them when tests come back. The README's cozy-flow section now describes the creation shell.
 
-### Remaining slices
+### Next, after Phase 3
+
+- **Tree and foliage variety (talk with the user first).** Emerged broadleaves are mostly the pale lavender blossom tree, which does not suit the plain. Root cause: `emergence.gd` `_tree_kind` maps meadow and wetland to broadleaf only, and the plain's pinned spring makes broadleaves blossom through `scene_look.leaf_season`. The user wants variety that is random but cohesive: a believable place with the odd surprise, with blossom allowed as an accent. Ideas: dominant, companion and rare mixes per stand; species that follow moisture, altitude and facing; neighbourhoods that drift across the land; the hero tree family (`scripts/hero_trees.gd`). Do not build this before talking it through.
+- **Climate answers water (idea).** Ground far from water, or high and sun-facing, slowly dries (green, then ochre, then sand). Grass thins, and Joshua trees and scrub emerge. A river through it greens an oasis. This is how the plain could grow deserts without a desert brush. Generated worlds already have desert compositions (showcase seeds 134, 45, 250, 309, 248, 278 and 364).
+- **A sculpt drops a planning pour.** A Craft sculpt while a pour is still planning (25–135 ms after release) drops the pour with "The land changed while the water settled. Pour again." It is as designed today; a replan against the new ground would keep the pour.
+- **Exit-time leak lines.** `--verify-desktop-build` prints the same resource leak lines at exit as on `main`, and `tools/verify_desktop_export.py` fails on any `ERROR:`. Track them down.
+
+### Slices 2-8
 
 2. **Water brush, and the plain in Fidelity's colours.**
    - Paint water and it settles: find the basin's spill level, fill it with the existing fill animation, and trace overflow downhill (`NativeWaterCourse.trace`) as a stream. Water painted on a hilltop runs down and pools.
@@ -458,12 +464,69 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 6. **Sound.**
    - Stroke sounds: rumble as land rises, water filling, wind swelling.
    - World beds that follow what exists (water, birds, forest).
-   - None exist today; `tools/generate_nature_audio.py` can synthesise them.
+   - None existed before this slice; `tools/generate_nature_audio.py` synthesises them.
+   - **What landed** (`feature/genesis-sound`, 2026-09-26; nothing has been heard yet, since headless audio is a dummy driver). Details, levels and tunables are in `docs/scenic/sound.md`.
+     - **Stroke voices** (`scripts/genesis_audio.gd`). One eased looping voice per brush, driven by the stroke signals and `BRUSH_FEEL`, so fast dabs never stack or click:
+       - land: a low rumble scaled with the rise rate, as the tremor is; a mountain click gives one thump;
+       - water: a pour while the brush is down and a quieter tail while it settles, then glugs that rise in pitch while its ponds fill and a trickle while its streams run, timed from `water_births` on the emergence clock;
+       - forest: a leafy swell that rides `atmosphere.swell`;
+       - meadow and path: a soft swish and a gravel scuff, following brush speed.
+     - **Beds that follow what exists**, read from LandLife's survey every 0.5 s:
+       - leaves rustle from the nearest wood, with the wind and camera proximity;
+       - an open-ground wind fills a bare plain and recedes as life comes;
+       - Nature's birdsong (now sung from the woods), crickets and frogs are gated by what has grown and arrived; a bare plain has no birds;
+       - water lapping, streams and rain stay with the existing beds.
+     - **One-shots:** a plop when fish arrive, a croak for frogs, a heron's call, deer steps and a faint chord for the rainbow. They are sparse: 1.5 s between any two, 6-8 s per kind, and none for 12 s after a load or undo. Bigfoot hushes the birds for 50 s, and 60% of the time two distant, reverberant wood knocks come from deeper in the wood.
+     - **Mix:** a `Genesis` bus (the Sound volume, limiter) under Master, with `GenesisFar` (low-pass and reverb) for the knock. World > Sound opens Settings with Mute all, Master and Sound (`scripts/sound_settings.gd`), kept in `user://sound.cfg`.
+     - **Sources:** all synthesised by `tools/generate_nature_audio.py --genesis` (14 mono WAVs, about 1.9 MB, imported as QOA; no Vorbis encoder here). Recorded in `assets/audio/ATTRIBUTION.md`.
+     - **Cost:** GenesisAudio p95 0.035 ms a frame, max 0.35 ms (`tools/probe_genesis_audio.gd`). `profile_stroke` land and water frames are unchanged within noise. `--verify-desktop-build` passes.
+     - **Still open:** listening. The synthesised heron and frog are the likeliest to need another pass. Ducking the ambient beds under a stroke is untried.
 7. **Inspect and photo mode.**
    - A composed camera, UI off, and capture.
    - This may be the "finished moment" that the open questions ask about.
+   - **What landed** (`feature/photo-mode`, 2026-09-26; `scripts/photo_mode.gd`):
+     - **Entering.** **P**, or **Photo** (a camera glyph beside Look in the palette), from the brush or from Look. The brush is put away, every CanvasLayer at layer 1 or above hides (the shell, notices, hints, the place badge), and the world keeps living. Layers at 0 and below are part of the picture (display fog, look grade, fall mist) and stay. **P** or **Esc** (or **Back**) returns to Look or the brush in hand, and the camera glides home over 0.7 s; a drag during the glide takes it over. A brush number leaves and picks that brush up.
+     - **The camera.** It still places the scene's own orbit (target, yaw, polar, distance), so the fog, reflections and look pass read the camera they always do; photo mode runs before the scene each frame and writes an eased pose into it.
+       - Drag orbits, right- or middle-drag (or Shift-drag) pans, scroll or pinch dollies. All of it glides to rest (exponential ease, 0.22 s), a little slower than the everyday orbit. Over the plate the orbit never dips under the ground.
+       - **G, the ground eye:** the camera steps down 0.85 m above the ground a little ahead of where it was, facing the same way. Drag looks around, right-drag or the arrows walk, scroll steps. After 1.6 s without input the pitch settles gently toward the horizon. The horizon is always level: there is no roll. **G** again rises back to an orbit around a point ahead. The eye follows the terrain, not pond surfaces.
+       - **`[ ]`** steps the lens through 16, 24, 29, 35, 50, 70 and 100 mm (the scene's 45° is about 29 mm), easing the field of view. **Shift+`[ ]`** sets exposure in quarter stops to ±1.5 (`CameraAttributesPractical.exposure_multiplier`).
+       - **F** turns on depth of field (near and far blur around a focus distance), starting on what the centre of the frame rests on; a click refocuses there with an eased rack. Camera attributes go on only when exposure or focus is first used.
+       - **H** hides the strip and hints for a clean view; **R** reframes where photo mode began.
+     - **Chrome.** A glass strip (Ground/Rise, lens, Focus, exposure −/+, the shutter, Back) wakes on pointer movement and fades after 2.2 s still. A one-line hint fades after 6 s. All of it is on its own layer and never in a photo.
+     - **Capture.** **Space** (or Enter, C, or the shutter) hides the strip for one frame, reads that frame back and writes an 8-bit RGB PNG on a `WorkerThreadPool` task, at the window's render resolution (no supersampling: the display fog is a canvas pass on the main viewport, so a 2× render would need a second composite). Photos go to **~/Pictures/ZenScape** (`user://photos` if Pictures is missing; `--photo-dir=PATH` for probes), named like `ZenScape - Open plain - Fidelity green - Day 2 dawn - 2026-09-26 14.03.22.png`. A quiet "Saved to Pictures/ZenScape" toast offers **Show in Finder**. A soft flash marks the shot.
+     - **Inspect.** A click on a creature or plant shows a small glass label that fades after 4.5 s, e.g. "Grey heron · landed at dawn", "Frog · arrived at dusk", "Pine · took root in the morning", "Tree · part of the land". Creatures come from LandLife's present sites (fish, frogspawn, frogs, birds) and its moments (heron, deer, and Bigfoot as "Something tall"); plants and stones from the editor's object picker. The hour comes from arrivals photo mode heard this session (`LandLife.arrived`/`moment`, `Emergence.tree_arrived`); older ones read "settled here", "grew here on its own", "placed by hand" or "part of the land".
+     - **Checks.** `--verify-desktop-build` enters photo mode from the palette, drags (turns, paints nothing), steps the lens, tries the ground eye, leaves with P back to the brush, then enters with P from Look and leaves with Esc back to Look. It passes headless from the source tree (enter 0.5 ms, leave 0.01 ms); its exit-time leak lines are the same six as on `main`. `tools/capture_photo_mode.gd` is the rendered check (seed 184, 1600×1000 window).
+     - **Measured** rendered on the Mac, 1600×1000, seed 184 (frames about 15 ms at the 120 fps cap with the scene's load):
+       - Entering: 1.7–2.8 ms on the main thread, no frame above 17.7 ms. The shell's first Look of a session costs one ~26 ms frame (parking the editor), whether Tab or P does it; photo mode skips Look's world-play preparation (props and collision, 21 ms on a fresh world) because it keeps every press for the camera.
+       - Leaving: 0.4–0.6 ms, worst frame 17.5–19.8 ms, from picking the brush back up.
+       - Capture: hiding 1.1 ms, readback 14–33 ms (the unavoidable GPU sync, once per shot), then nothing on the main thread; frames after it stay at 14–15.5 ms. The PNG (0.7–0.8 MB) is written on a worker.
+       - Inspect: 12–15 ms on a click, mostly the object picker building triangle meshes the first time.
+     - **Stills:** `/private/tmp/zs-photo/out/` (not committed): the orbit and ground-eye photos, `still-strip.png` (the strip and hint), `still-ground-label.png` (a label and the toast) and `still-after.png` (the shell back). The photos carry no UI.
+     - **Still open:** the feel of the ease and the ground eye in the hand, the DoF look at other hours and in fog (the display-fog composite draws over the blurred frame), whether P should keep pausing anything (P used to pause motion in the shell; it now opens photo mode there, and still pauses in the studies), a photo gallery or share, and water-aware eye height.
 8. **Quiet guidance.**
    - A regional beauty score that nudges water levels, edges and variant choice without the player seeing it.
+   - **What landed** (`feature/quiet-guidance`, 2026-09-27; headless only, the look is unverified). Details, tunables and numbers are in `docs/scenic/guidance.md`.
+     - **The score.** `scripts/quiet_guidance.gd` scores a rect on the 1 m blend grid. Its terms are relief, water (presence and shore: no one-cell tongues or strips of land), forest edges (the canopy outline's straightness, and lone trees), openness against clutter, cover variety, and framing (water seen past trees from the overview camera, and big trees on feature spots). Each emergence plan scores its region on the worker and keeps it as `region.score`. The terms set how hard the lone-tree, sightline and clutter nudges lean.
+     - **Water nudges** (on the pour's worker):
+       - A new pond sits up to 5 cm lower when that trims a thin fringe.
+       - A scooped hollow moves up to 1.5 m when that avoids a sliver of land beside other water.
+       - Hollows are ovals along the contour, not circles.
+     - **Edge nudges.** Where a forest wish's edge reads as a ruled line, candidates read the wish up to 3 m off along slow noise, so the edge wanders into bays and bulges. Lone trees in ordinary spots usually do not take. Knolls, shores and thirds of the view count as feature spots and keep their tree.
+     - **Variant choice.**
+       - Sizes lean between two hash draws: larger on feature spots, smaller in front of water.
+       - Outside a forest's core, trees in front of water thin, so clearings keep the view.
+       - Rotation and kind are left alone.
+     - **Spacing.** Undergrowth already crowded by three neighbours usually yields.
+     - **Rules.** Everything comes from position hashes and the salt, so the same strokes give the same world. Only emerged plants and new water are nudged. `--no-guidance` restores the old path exactly: the emergence and water probes print the same results as `main`.
+     - **A/B** (`tools/probe_guidance.gd`, plain seed 7, salt 12345, a standard stroke set):
+       - With the ground held the same, the plate scores 0.756 guided against 0.749 unguided, and the forest band 0.662 against 0.645, mostly from openness. 33 plants change size, 13 undergrowth yield to clutter and 8 trees to sightlines.
+       - With the water nudges on as well, the plate reads 0.750. One oval hollow sent a later pour into the existing pond instead of a new one.
+       - No level trim or hollow move fired on the plain. The made-up cases show both working.
+     - **Frames.** Stroke and settle frames are unchanged within noise. The plan's guide costs 1.8–2.8 ms on the worker, and arrival steps cost p95 0.27 ms against 0.15 ms.
+     - **Still open.**
+       - Judge on screen whether bays, ovals, thinned sightlines and bigger feature trees read as taste.
+       - On the plain's dense woodland, lone trees never came up.
+       - The edges term says emerged forest edges already break up at the tree scale.
 
 ### Slices 2-5 integrated (`feature/phase3-slices-2-5`, 2026-09-26)
 
@@ -477,8 +540,8 @@ Merged in order: water brush, land brushes, life answers, creation shell, then m
 
 **Carried polish, fold into whichever slice touches it:**
 - The first-dab hitch no longer reproduces on the plain (3.4 ms), and on recipe worlds it dropped from about 75 ms to 2 ms. Emergence's first plan now runs on a worker (see "Frame spikes at release" above).
-- Dense grass: fix its render or retire it. It is opt-in with `--beauty-grass`, and the user does not want blades by default.
-- Craft mode's fine tools against the new provenance and pipeline: check that they still behave.
+- ~~Dense grass: fix its render or retire it.~~ **Retired unless requested** (`feature/phase3-polish`): only `--beauty-grass` draws it, on Ultra too, and nothing is built until it is first wanted (setup 4.9 ms to 0 on a default launch). Its render (tufts metres wide, lying flat) is not fixed; fix it only if the user asks for blades.
+- ~~Craft mode's fine tools against the new provenance and pipeline.~~ Checked on `feature/phase3-polish` with `tools/probe_craft_tools.gd` (26 checks, plain seed 7 and seed 184): sculpt, cover and place tools against land weathering, pour planning and ground shaping, emerged and generated provenance, craft ponds on the plain and undo order. One bug fixed: a stroke opened while the previous land stroke still weathered called `finish` on an unfinished worker, so in debug runs the weathering was lost and the join threw; the join now waits for it. Still as designed: a sculpt while a pour is still planning (25–135 ms after release) drops the pour with "The land changed while the water settled. Pour again."
 - Bring tests back only when the user asks.
 
 ## Phase 4: presentation

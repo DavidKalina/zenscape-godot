@@ -22,11 +22,12 @@ var _scene: Node3D
 var _grade_layer := CanvasLayer.new()
 var _grade := ShaderMaterial.new()
 var _water_map: Texture2D
-## Dense meadow grass: full on Ultra, and at reduced density on Beauty while
-## `beauty_grass` is on. Off by default until its first render is fixed: on
-## 2026-09-26 its tufts and flower faces drew metres wide and lying flat
-## across the Genesis plain. `--beauty-grass` turns it on. Balanced never
-## draws it, so the Mac keeps a cheap tier. See docs/scenic/grass-look.md.
+## Dense meadow grass, retired unless requested: only `--beauty-grass`
+## turns it on, at full cover on Ultra and reduced on Beauty. The user does
+## not want blades by default, and its render is unfixed: on 2026-09-26 its
+## tufts and flower faces drew metres wide and lying flat across the Genesis
+## plain. Balanced never draws it. Off, it builds nothing (dense_grass.gd).
+## See docs/scenic/grass-look.md.
 var grass = preload("res://scripts/dense_grass.gd").new()
 var beauty_grass := _flag("--beauty-grass") and not (_flag("--no-beauty-grass") or _flag("--classic-grass"))
 var _last_update := 0
@@ -82,7 +83,7 @@ func update(camera: Camera3D, celestial) -> void:
 	_update_ridges(on)
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
-	var dense := enabled and (tier == 2 or (tier == 0 and beauty_grass))
+	var dense := enabled and beauty_grass and tier != 1
 	grass.update(dense, 0.0 if _last_update == 0 else (now - _last_update) / 1000000.0)
 	_log_grass(dense)
 	_last_update = now
@@ -128,8 +129,8 @@ func _log_grass(dense: bool) -> void:
 	_grass_logged = state
 	var cover := "off"
 	if dense: cover = "full cover" if tier == 2 else "reduced cover (--beauty-grass)"
-	elif tier == 0: cover = "off (--beauty-grass turns it on)"
 	elif tier == 1: cover = "off on Balanced"
+	else: cover = "off (retired; --beauty-grass turns it on)"
 	var line := "Grass: tier %s, dense meadow %s, tufts %s" % [["Beauty","Balanced","Ultra"][clampi(tier,0,2)], cover, preload("res://scripts/grass_tuft_mesh.gd").describe()]
 	print(line)
 

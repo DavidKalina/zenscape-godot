@@ -8,13 +8,15 @@ extends Control
 const Glass = preload("res://scripts/glass_chrome.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const PAD := Vector2(10,8)
-const LOOK_HINT := "Just looking  ·  drag to orbit  ·  Tab or a brush to create again"
+const LOOK_HINT := "Just looking  ·  drag to orbit  ·  P for a photo  ·  Tab or a brush to create again"
 var scene: Node3D
 var editor: NativeChunkEditor
 ## Normalised registry entries: brush_id, title, hint.
 var entries: Array[Dictionary] = []
 var buttons := {}
 var look_button: Button
+## Photo mode (scripts/photo_mode.gd), beside Look.
+var photo_button: Button
 var frame := Control.new()
 var glass: Panel
 var row := HBoxContainer.new()
@@ -95,6 +97,11 @@ func setup(owner_scene: Node3D) -> void:
 	look_button.tooltip_text = "Put the brush away and just look · Tab"
 	look_button.pressed.connect(func() -> void: scene.set_looking(not scene.looking))
 	row.add_child(look_button)
+	photo_button = _tool_button("Photo",preload("res://scripts/photo_mode.gd").glyph("camera",22))
+	photo_button.toggle_mode = false
+	photo_button.tooltip_text = "Compose and take a photo, with no UI · P"
+	photo_button.pressed.connect(func() -> void: scene.enter_photo())
+	row.add_child(photo_button)
 	hint.add_theme_font_size_override("font_size",13)
 	hint.add_theme_color_override("font_color",Color(Glass.INK,0.72))
 	hint.add_theme_color_override("font_shadow_color",Color("182628",0.8))
