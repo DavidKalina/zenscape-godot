@@ -44,6 +44,6 @@ with tempfile.TemporaryDirectory(prefix='zenscape-export-check-') as temporary:
         raise RuntimeError(f'Packaged self-check failed (exit {result.returncode})')
     for marker in ['PASS: packaged native terrain kernel loaded',
                    'PASS: packaged native mesh equivalence',
-                   'PASS: packaged main menu and New diorama editor']:
+                   'PASS: packaged creation shell, Look, Craft and main menu']:
         if marker not in output:
             raise RuntimeError(f'Packaged self-check did not finish: {marker}')

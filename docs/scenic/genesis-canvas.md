@@ -8,6 +8,7 @@ Phase 3, first slice (branch `feature/genesis-canvas`, 2026-09-26).
   - The swells are about a metre tall, the ground is fully grassed, and a few patches of standing blades are scattered over it.
   - There are no trees, water or objects.
   - The sky and land colours come from a curated palette family (a meadow draw at dawn or full day), with mist weather and thin ground fog. Living weather drifts from there.
+  - *Since slice 2:* the plain uses Fidelity's own ground, foliage, rock, earth and water colours under a clear day sky, in fair weather with a thin ground mist (`Genesis.FIDELITY`). The badge reads "Fidelity green".
   - The badge reads "Open plain · <family>".
 - **Regrow is unchanged.** It still folds the plain away and grows a full generated world, and Undo restores the plain.
 - **World → New open plain** folds any world back into a fresh plain, with the same animation and the same Undo.
