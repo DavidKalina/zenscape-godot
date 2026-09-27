@@ -5,6 +5,8 @@ const Tunnels = preload("res://scripts/native_tunnels.gd")
 const MODEL = preload("res://assets/models/zenscape-cave.glb")
 var _masked: Array[Dictionary] = []
 var _signature := PackedByteArray()
+## Scenery mode: saved cave sites stay in the data but build no shell.
+var hidden := false
 const LOCAL_BOUNDS := AABB(Vector3(-5.8,-0.8,-9.2),Vector3(11.6,7.3,9.4))
 static func pose(item: Dictionary) -> Transform3D:
 	return Tunnels.pose(item)*Transform3D(Basis(Vector3.UP,PI).scaled(Vector3.ONE*float(item.get("cave_scale",1.0))),Vector3.ZERO)
@@ -20,6 +22,11 @@ func rebuild(data: NativeTerrainData) -> void:
 			if record.masked.get_instance_transform(saved.index) == Transform3D(Basis.from_scale(Vector3.ZERO),Vector3.ZERO):
 				record.masked.set_instance_transform(saved.index,saved.pose)
 	_masked.clear()
+	if hidden:
+		for child in get_children():
+			remove_child(child)
+			child.queue_free()
+		return
 	_mask_foliage(data)
 	var signature := var_to_bytes(data.tunnels)
 	if signature == _signature: return
