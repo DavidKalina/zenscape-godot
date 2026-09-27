@@ -1,6 +1,7 @@
 // Seasons on plants. studies/fidelity.gd publishes zs_season from
 // WeatherScheduler.season_plants only when it changes:
-//   x spring bloom, y deciduous leaf fall, z winter dormancy, w unused.
+//   x spring bloom, y deciduous leaf fall, z winter dormancy, w how far
+//   into autumn (0 outside it).
 // Each part says how it follows them with its own `leaf_season` uniform
 // (scripts/scene_look.gd leaf_season). Include after reference_wind, which
 // supplies zs_noise.
@@ -45,6 +46,30 @@ void zs_season_leaves(inout vec3 color, vec3 local, vec2 root, vec3 normal, floa
 		vec3 petal = mix(vec3(0.66, 0.40, 0.48), vec3(0.68, 0.64, 0.56), step(0.5, fract(tree * 17.0)));
 		color = mix(color, petal, open * zs_season.x * turn);
 	}
+}
+
+// Autumn on an emerged tree whose stand has its own character (`stand` 0..1,
+// scripts/emergence.gd _stand_autumn); the source's zs_autumn_paint, which
+// keys on world noise, stays for every other plant. Low stands hang on green
+// and stop at gold, the middle stops at amber, high stands turn first and go
+// on to copper-red. How far into autumn is the clock's (zs_season.w,
+// WeatherScheduler.season_plants) or, without one, the gold itself, which
+// alone reaches mid-autumn. One offset per tree, never per fragment, so a
+// stand turns as one faceted grove. Same green and warm keys as the source.
+void zs_autumn_stand_paint(inout vec3 color, vec2 root, float amount, float stand) {
+	if (amount <= 0.004) return;
+	float green = clamp((color.g - max(color.r, color.b)) * 6.0, 0.0, 1.0);
+	float warm = smoothstep(0.20, 0.50, color.r / max(color.g, 1e-4));
+	float along = max(0.65 * amount, zs_season.w) + (zs_season_tree_hash(root + vec2(3.7, 11.9)) - 0.5) * 0.08;
+	float onset = mix(0.62, 0.0, stand);
+	float turn = smoothstep(onset, onset + 0.3, along) * smoothstep(0.004, 0.3, amount) * green * warm;
+	if (turn <= 0.003) return;
+	float reach = mix(0.1, 0.45, smoothstep(0.0, 0.6, stand)) + 0.55 * smoothstep(0.55, 0.85, stand);
+	float depth = reach * smoothstep(onset + 0.1, onset + 0.9, along);
+	vec3 hue = mix(vec3(1.00, 0.66, 0.14), vec3(1.00, 0.52, 0.10), smoothstep(0.0, 0.35, depth));
+	hue = mix(hue, vec3(0.50, 0.16, 0.05), smoothstep(0.35, 1.0, depth));
+	float lum = dot(color, vec3(0.30, 0.55, 0.15));
+	color = mix(color, hue * (lum * 2.9), smoothstep(0.0, 0.55, turn));
 }
 
 // Grass and green ground through the year: fresher in spring, straw in winter.

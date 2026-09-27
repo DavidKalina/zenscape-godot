@@ -1398,6 +1398,9 @@ func load_document(document: Variant) -> bool:
 				if item.has("source"):
 					if item.source not in ["hand","emerged"]: return false
 					record.source = item.source
+				if item.has("autumn"):
+					if not GardenData._number(item.autumn,0.0,1.0): return false
+					record.autumn = float(item.autumn)
 				if item.has("pinned"):
 					if not item.pinned is bool: return false
 					record.pinned = item.pinned

@@ -580,6 +580,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		return false
 	data.objects.back()["source"] = "emerged"
 	data.objects.back()["born"] = born
+	if kind in TREES: data.objects.back()["autumn"] = _stand_autumn(p)
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
 	if kind in TREES: tree_arrived.emit(p,born)
 	return true
@@ -721,6 +722,15 @@ func _tree_tint(kind: String, p: Vector2, key: Array) -> String:
 	var color := Color(options[pick][0]).srgb_to_linear()*lerpf(TREE_BRIGHTNESS.x,TREE_BRIGHTNESS.y,Variety.unit(key+[22]))
 	# Tints above 1 are refused (NativeObjectPose.valid_tint), and the tree with them.
 	return NativeObjectPose.encode_tint(Color(minf(color.r,1.0),minf(color.g,1.0),minf(color.b,1.0)))
+
+## A stand's autumn character, the tree record's `autumn`, 0..1: low stands
+## hang on green late and stop at gold, the middle turns on time and stops at
+## amber, high stands turn first and go all the way to copper-red
+## (zs_autumn_stand_paint, shaders/reference_autumn.gdshaderinc). Drawn per
+## stand so a grove turns as one, and leaned by the world's taste so one world
+## runs coppery and another golden. Evergreens carry it and ignore it.
+func _stand_autumn(p: Vector2) -> float:
+	return snappedf(pow(Variety.unit(_stand(p).key+[40]),1.0/sqrt(Variety.lean(salt,"autumn"))),0.01)
 
 ## The stand a point belongs to: the nearest of the jittered stand seeds in
 ## the cells around it, with the seed's key and its moisture and altitude, so

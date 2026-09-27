@@ -137,6 +137,17 @@ float zs_birth_growth(float born, float seconds) {
 	return clamp(age / seconds, 0.0, 1.0);
 }
 
+// An emerged tree's INSTANCE_CUSTOM.a packs its stand's autumn above its rise
+// seconds, in whole ZS_RISE_SPANs of 1 + 15 * autumn (GardenView._custom), so
+// a plain rise, or 0, reads as before. Rises stay under the span.
+#define ZS_RISE_SPAN 4.0
+float zs_instance_rise(float packed) { return mod(packed, ZS_RISE_SPAN); }
+// The stand's autumn 0..1, or -1 for an instance with none.
+float zs_instance_autumn(float packed) {
+	float code = floor(packed / ZS_RISE_SPAN + 1e-4);
+	return code >= 1.0 ? (code - 1.0) / 15.0 : -1.0;
+}
+
 // Fog kept at p: 1 outside the stroke reveal, down to 1 - strength inside.
 float zs_reveal_keep(vec2 p) {
 	if (zs_reveal.w <= 0.0) return 1.0;

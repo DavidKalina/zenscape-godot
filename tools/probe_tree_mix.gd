@@ -1,7 +1,9 @@
 extends SceneTree
 ## Headless probe: the tree species mix by stand (emergence.gd `_tree_kind`).
 ## Wishes a forest over most of the plate, lets it emerge, and prints the
-## species counts by habitat and a letter map, so stands show as patches.
+## species counts by habitat and a letter map, so stands show as patches, then
+## the deciduous stands' autumn characters (emergence.gd `_stand_autumn`):
+## c turns early to copper, a stops at amber, g hangs on green and goes gold.
 ## godot --headless --path . -s res://tools/probe_tree_mix.gd -- [seed|-1] [salt]
 const Emergence = preload("res://scripts/emergence.gd")
 const LETTERS := {"broadleaf":"B","layered_tree":"L","tree":"S","redwood":"R","joshua":"J","cactus":"C"}
@@ -32,6 +34,7 @@ func run() -> void:
 	for n in range(400): emergence.advance(0.25)
 	var by_habitat := {}
 	var grid := {}
+	var autumn := {}
 	var trees := []
 	for i in range(before,data.objects.size()):
 		var item: Dictionary = data.objects[i]
@@ -42,6 +45,8 @@ func run() -> void:
 		counts[item.asset] = counts.get(item.asset,0)+1
 		grid[Vector2i((p+Vector2(12,12)).floor())] = LETTERS.get(item.asset,"?")
 		trees.append([p,item.asset])
+		if item.asset in ["broadleaf","layered_tree"]:
+			autumn[Vector2i((p+Vector2(12,12)).floor())] = "c" if item.autumn > 0.65 else ("a" if item.autumn >= 0.2 else "g")
 	print("seed %d salt %d" % [world_seed,salt])
 	for habitat in by_habitat: print("  %s %s" % [habitat,by_habitat[habitat]])
 	# Stand coherence: share of neighbour pairs (under 3 m) of one species,
@@ -61,5 +66,7 @@ func run() -> void:
 	for z in range(24):
 		var row := "  "
 		for x in range(24): row += grid.get(Vector2i(x,z),".")+" "
+		row += "   "
+		for x in range(24): row += autumn.get(Vector2i(x,z),".")+" "
 		print(row)
 	quit()

@@ -5,6 +5,9 @@ const HeroTrees := preload("res://scripts/hero_trees.gd")
 const GrassTuft := preload("res://scripts/grass_tuft_mesh.gd")
 const RockVariants := preload("res://scripts/rock_variants.gd")
 const Variety := preload("res://scripts/seeded_variety.gd")
+## Seconds above every birth's rise (Emergence TREE_RISE and kin), where the
+## instance custom a packs a stand's autumn. Mirrors ZS_RISE_SPAN.
+const RISE_SPAN := 4.0
 ## Render editable records with the original ZenScape tree/grass/flower meshes.
 var data: RefCounted:
 	set(value):
@@ -572,7 +575,7 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 			sampled.sources[key][i]["color"] = color
 			batch.multimesh.set_instance_color(i,color)
 			# Emerged arrivals grow in at their own birth (docs/scenic/emergence.md).
-			if sampled.sources[key][i].has("born"):
+			if sampled.sources[key][i].has("born") or sampled.sources[key][i].has("autumn"):
 				batch.multimesh.set_instance_custom_data(i,_custom(sampled.sources[key][i],Vector2.ZERO))
 			if frame_tree != null and i%256 == 255:
 				await budget.checkpoint()
@@ -669,9 +672,13 @@ func _write_fire(id: int, char: float, burn: float) -> void:
 
 ## One instance's custom data: fire (char, burn) in rg, and the emerged birth
 ## (born, rise seconds) in ba. The birth comes from the source, never read back
-## from the MultiMesh, which could stall on the GPU.
+## from the MultiMesh, which could stall on the GPU. An emerged tree's stand
+## autumn rides in a above the rise, in whole RISE_SPANs of 1 + 15 * autumn, so
+## a (no stand) is the rise alone (zs_instance_rise, zs_instance_autumn in
+## shaders/reference_globals.gdshaderinc).
 static func _custom(source: Dictionary, fire: Vector2) -> Color:
-	return Color(fire.x,fire.y,float(source.get("born",0.0)),float(source.get("rise",0.0)))
+	var stand := 1.0+roundf(15.0*float(source.autumn)) if source.has("autumn") else 0.0
+	return Color(fire.x,fire.y,float(source.get("born",0.0)),float(source.get("rise",0.0))+RISE_SPAN*stand)
 
 func discard_cache() -> void:
 	cancel_rebuild()

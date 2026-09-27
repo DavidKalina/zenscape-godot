@@ -85,6 +85,8 @@ varying float inversion_transmit;
 uniform bool instance_fire_enabled = false;
 // Emerged births, written per instance by GardenView into INSTANCE_CUSTOM.ba.
 uniform bool instance_birth_enabled = false;
+// An emerged tree's stand autumn (zs_instance_autumn), -1 for everything else.
+varying flat float stand_autumn;
 uniform vec2 object_fire = vec2(0.0);
 // Cave earth walls only (BigfootLairRoom): the room's unrotated world origin,
 // the wall's outward normal, and how far its middle has dissolved.
@@ -223,8 +225,10 @@ void vertex() {
 	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
 	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth_now().x);
 	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
-	// (born, seconds); instances without one stay at 1 (scripts/emergence.gd).
-	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a) : 1.0;
+	// (born, seconds, with the stand's autumn packed above); instances without
+	// one stay at 1 (scripts/emergence.gd).
+	stand_autumn = instance_birth_enabled && !bird_wings ? zs_instance_autumn(INSTANCE_CUSTOM.a) : -1.0;
+	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, zs_instance_rise(INSTANCE_CUSTOM.a)) : 1.0;
 	if (plant_growth || birth < 1.0) {
 		float t = birth;
 		if (plant_growth) {
@@ -283,7 +287,8 @@ void fragment() {
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
 	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
-	zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
+	if (stand_autumn >= 0.0) zs_autumn_stand_paint(tint, plant_root, zs_autumn * leaf_season.x, stand_autumn);
+	else zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
 	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	else if (palette_role == 1 || palette_role == 5) zs_season_grass(tint, leaf_season.x);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);

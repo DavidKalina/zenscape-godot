@@ -109,8 +109,9 @@ void vertex() {
 
 	}
 	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
-	// (born, seconds); instances without one stay at 1 (scripts/emergence.gd).
-	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a) : 1.0;
+	// (born, seconds, with the stand's autumn packed above); instances without
+	// one stay at 1 (scripts/emergence.gd).
+	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, zs_instance_rise(INSTANCE_CUSTOM.a)) : 1.0;
 	if (plant_growth || birth < 1.0) {
 		float t = birth;
 		if (plant_growth) {

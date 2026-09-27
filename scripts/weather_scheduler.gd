@@ -152,9 +152,18 @@ const SEASON_BLOOM := [0.02, 0.08, 0.18, 0.25, 1.0]    ## Spring blossom and mea
 const SEASON_BARE := [0.70, 0.79, 0.93, 0.99, 1.0]     ## Deciduous leaves fall as the gold fades, bud again at the year's end.
 const SEASON_DORMANT := [0.73, 0.82, 0.93, 0.99, 1.0]  ## Grass goes to straw and flowers die back.
 
-## The plants' season as the `zs_season` shader global: (bloom, bare, dormant, 0).
+## How far into autumn, [start, full, gone]: 0 at the gold's first rise, 1 as
+## it starts to fade, 0 again once it is gone. Emerged stands turn along it
+## (zs_autumn_stand_paint), early ones first; snapped so the global changes in
+## steps rather than every frame.
+const SEASON_AUTUMN_ALONG := [0.50, 0.72, 0.80]
+
+## The plants' season as the `zs_season` shader global: (bloom, bare, dormant,
+## autumn along).
 static func season_plants(season: float) -> Vector4:
-	return Vector4(_season_plateau(season, SEASON_BLOOM), _season_plateau(season, SEASON_BARE), _season_plateau(season, SEASON_DORMANT), 0.0)
+	var year := fposmod(season, 1.0) if is_finite(season) else 0.0
+	var along := 0.0 if year >= float(SEASON_AUTUMN_ALONG[2]) else snappedf(clampf(inverse_lerp(float(SEASON_AUTUMN_ALONG[0]), float(SEASON_AUTUMN_ALONG[1]), year), 0.0, 1.0), 1.0/64.0)
+	return Vector4(_season_plateau(season, SEASON_BLOOM), _season_plateau(season, SEASON_BARE), _season_plateau(season, SEASON_DORMANT), along)
 
 ## A symmetric bump, [centre, half width, strength]; the weather mix's quarter
 ## weights still use it.

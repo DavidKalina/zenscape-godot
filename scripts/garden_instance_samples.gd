@@ -4,7 +4,8 @@ extends RefCounted
 ## `world` is SeededVariety.world for the recipe: which rock and layered-tree
 ## variants this world leans on. Variants are picked per record by stable hash.
 ## Emerged records and meadow tufts still growing in give their source a `born`
-## and `rise` (seconds) for GardenView to write into the instance custom data.
+## and `rise` (seconds), and emerged trees their stand's `autumn`, for
+## GardenView to write into the instance custom data.
 static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Dictionary, tints: Dictionary, world: Dictionary = {}) -> Dictionary:
 	const Stones = preload("res://scripts/rock_variants.gd")
 	const Variety = preload("res://scripts/seeded_variety.gd")
@@ -27,6 +28,7 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 		if item.has("born"):
 			anchor.born = float(item.born)
 			anchor.rise = Emergence.rise_seconds(item.asset)
+		if item.has("autumn"): anchor.autumn = float(item.autumn)
 		# Rocks and boulders draw from the seeded stone family.
 		if catalog_parts.has("rock_variants") and Stones.is_stone(item.asset):
 			var stone: String = catalog_parts.rock_variants[Stones.index(item,world)]

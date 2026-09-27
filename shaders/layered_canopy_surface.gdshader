@@ -36,6 +36,8 @@ uniform bool terrain_growth = false;
 uniform bool plant_growth = false;
 // Emerged births, written per instance by GardenView into INSTANCE_CUSTOM.ba.
 uniform bool instance_birth_enabled = false;
+// An emerged tree's stand autumn (zs_instance_autumn), -1 for everything else.
+varying flat float stand_autumn;
 // Opt-in for thin foliage; trunks and other shared surfaces stay opaque.
 #define ZS_FOLIAGE_TRANSMISSION
 uniform float foliage_transmission : hint_range(0.0, 1.0) = 0.0;
@@ -130,8 +132,10 @@ void vertex() {
 
 	}
 	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
-	// (born, seconds); instances without one stay at 1 (scripts/emergence.gd).
-	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a) : 1.0;
+	// (born, seconds, with the stand's autumn packed above); instances without
+	// one stay at 1 (scripts/emergence.gd).
+	stand_autumn = instance_birth_enabled && !bird_wings ? zs_instance_autumn(INSTANCE_CUSTOM.a) : -1.0;
+	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, zs_instance_rise(INSTANCE_CUSTOM.a)) : 1.0;
 	if (plant_growth || birth < 1.0) {
 		float t = birth;
 		if (plant_growth) {
@@ -157,7 +161,8 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
-	zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
+	if (stand_autumn >= 0.0) zs_autumn_stand_paint(tint, plant_root, zs_autumn * leaf_season.x, stand_autumn);
+	else zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
 	zs_season_leaves(tint, crown_position, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
 	// Order is palette -> autumn -> season -> char -> wet -> snow.
