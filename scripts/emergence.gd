@@ -479,7 +479,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	var biome: Dictionary = Shape.BIOMES[habitat]
 	var slope := _slope(p)
 	# Nothing takes on bare rock or snow.
-	if slope > float(biome.rock_slope) or float(h) > _snowline()-1.8:
+	if slope > _rock_slope(habitat) or float(h) > _snowline()-1.8:
 		return _refuse("rock or snow")
 	var key: Array = plant.key
 	var roll := Variety.unit(key+[4])
@@ -597,7 +597,7 @@ func _count_mates(plants: Array, known: PackedVector4Array) -> void:
 		if h == null or _wet(p): continue
 		var habitat: String = _blend.pick(p)
 		var slope := _slope(p)
-		if slope > float(Shape.BIOMES[habitat].rock_slope) or float(h) > minf(_snowline()-1.8,_treeline(habitat)): continue
+		if slope > _rock_slope(habitat) or float(h) > minf(_snowline()-1.8,_treeline(habitat)): continue
 		var wish := _wish_at(p,plant.guide)
 		var chance := _tree_chance(habitat,slope,wish,_frayed(p,plant.key,wish),plant.forest)
 		if Variety.unit(plant.key+[4]) < minf(chance,0.85):
@@ -687,8 +687,7 @@ func _withdraw(rect: Rect2) -> void:
 		if NativeTerrainData.object_source(item) != "emerged" or not rect.has_point(p):
 			continue
 		var h: Variant = data.ground_height(p)
-		var biome: Dictionary = Shape.BIOMES[_blend.pick(p)]
-		if h == null or _wet(p) or _slope(p) > float(biome.rock_slope)*1.1 or float(h) > _snowline()-1.0:
+		if h == null or _wet(p) or _slope(p) > _rock_slope(_blend.pick(p))*1.1 or float(h) > _snowline()-1.0:
 			data.objects.remove_at(index)
 			removed = true
 	if removed:
@@ -725,7 +724,7 @@ func _forget(region: Dictionary, rect: Rect2) -> void:
 func _wet(p: Vector2) -> bool:
 	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p))
 
-## A pour settled (native_chunk_editor.gd `_land_water`), inside its open
+## A pour showed (native_chunk_editor.gd `_set_pour_water`), inside its open
 ## stroke so one undo brings the plants back with the ground. Withdraw the
 ## emerged plants whose base its new ponds and streams now cover, and refuse
 ## that water to arrivals until a plan that saw it takes over. `ponds` and
@@ -775,6 +774,16 @@ static func _in_courses(p: Vector2, courses: Array) -> bool:
 		for point: Dictionary in route.pts:
 			if p.distance_squared_to(Vector2(point.x,point.z)) < reach: return true
 	return false
+
+## The slope above which a plant finds bare rock: the habitat's own rock
+## slope, or the slope the terrain mesh paints rock above when that is gentler
+## (its recipe biome's, else the palette's: 0.93 on the plain;
+## NativeTerrainData and native_mesh_samples.gd). Without the second, a
+## meadow's 1.3 let plants take on a raised peak's painted rock. Emergence
+## only; generated worlds plant through their own generator.
+func _rock_slope(habitat: String) -> float:
+	var drawn: Dictionary = Shape.BIOMES.get(data._recipe_settings.get("biome",""),{})
+	return minf(float(Shape.BIOMES[habitat].rock_slope),float(drawn.get("rock_slope",data._palette.rock_slope)))
 
 func _slope(p: Vector2) -> float:
 	return preload("res://scripts/native_landscape_presets.gd")._slope(data,p)

@@ -1,5 +1,5 @@
 extends "res://scripts/creation_brush.gd"
-## The meadow brush: drag to lay a soft meadow; Shift or a right drag lifts it
+## The meadow brush: drag to lay a soft meadow; Shift-drag (or a right drag outside the creation shell) lifts it
 ## again. A meadow here is ground colour, never standing blades: the faceted,
 ## painted look of the Fidelity scene (user choice, 2026-09-26). Each dab
 ## eases the cover up to full and paints a lush, warm yellow-green in soft

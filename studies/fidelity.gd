@@ -106,6 +106,8 @@ var _cold_slider: HSlider
 var _tremor := preload("res://scripts/reference_tremor.gd").new()
 ## Tremor, fog reveal, wind swell and local grow-in answering each brush stroke.
 var _stroke_feedback: Node
+## Held rumble and fog pour for long world changes (scripts/world_rumble.gd).
+var world_rumble: Node
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -214,6 +216,9 @@ func _ready() -> void:
 	_stroke_feedback.name = "StrokeFeedback"
 	add_child(_stroke_feedback)
 	_stroke_feedback.setup(self)
+	world_rumble = preload("res://scripts/world_rumble.gd").new()
+	add_child(world_rumble)
+	world_rumble.setup(self)
 	add_child(_leaf_litter)
 	add_child(_planar_water)
 	add_child(_redwood_mist)
@@ -797,7 +802,8 @@ func _advance_fire(delta: float) -> void:
 	if _fire_field == null:
 		return
 	_fire_water_age += delta
-	if _fire_water_age > 2.0:
+	# A pour republishes the water maps every replan; re-seed once it closes.
+	if _fire_water_age > 2.0 and not _chunk_editor.water_pouring:
 		_refresh_fire_water()
 	var burning := _fire_field.active()
 	var transaction: bool = _chunk_editor.forming or (not _chunk_editor.data._before.is_empty() and not _fire_stroke)

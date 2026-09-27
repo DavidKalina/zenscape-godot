@@ -48,7 +48,15 @@ vec4 zs_air_sample(vec3 p) {
 	float stream = 0.72 + 0.56 * g;
 	// A fresh land stroke parts the fog over what it made (scripts/stroke_feedback.gd).
 	float reveal = zs_reveal_keep(p.xz);
-	float d = (density * pool * noise * 0.36 * stream + haze * 0.026 + blank) * fade * reveal;
+	float poured = 0.0;
+	if (zs_pour.x > 0.0) {
+		// A regeneration pour (scripts/world_rumble.gd): heavy fog churning downwind.
+		vec3 c = p * vec3(0.26, 0.5, 0.26) - vec3(zs_wind_direction.x, -0.25, zs_wind_direction.y) * zs_pour.w * 0.6;
+		float churn = clamp(wxFbm2(c) * 1.33, 0.0, 1.0);
+		float floor_y = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
+		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / 14.0));
+	}
+	float d = (density * pool * noise * 0.36 * stream + haze * 0.026 + blank) * fade * reveal + poured;
 	if (over < -0.4 || ground < -100.0) d = 0.0;
 	float open_sky = cloudShadeAt(p, zs_cloud_direction);
 	float ag_band = max(0.8, 0.08 * (zs_summit.y - 0.15));
@@ -76,6 +84,7 @@ vec4 zs_air_sample(vec3 p) {
 	}
 	d += inversion;
 	lit = mix(lit, fog_display, shroud);
+	if (poured > 0.0) lit = mix(lit, fog_display, 0.45 * poured / max(d, 0.0001));
 	float fd = length(p - zs_flash.xyz);
 	lit += vec3(0.7, 0.82, 1.0) * zs_flash.w * 120.0 / (fd * fd + 60.0);
 	d += cap;
