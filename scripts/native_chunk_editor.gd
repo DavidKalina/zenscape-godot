@@ -1823,6 +1823,8 @@ func _land_water(plan: Dictionary) -> void:
 	if plan.has("heights"): data.heights = plan.heights
 	data.ponds.assign(plan.ponds)
 	data.streams.assign(plan.streams)
+	# Emerged plants the new water covers go with the pour, in its undo step.
+	emergence.drown(plan.added,plan.added_streams)
 	if not data.end_stroke(): return
 	var now: float = preload("res://scripts/emergence.gd").time
 	for entry: Dictionary in plan.added:

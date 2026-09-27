@@ -442,7 +442,9 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		var drop: float = float(record.level)-(previous if previous > -INF else h[deepest])
 		var bounds_rect := Rect2(position_of(region[0]),Vector2.ZERO)
 		for k in region: bounds_rect = bounds_rect.expand(position_of(k))
-		added.append({"record":record,"root":root,"drop":drop,"rect":bounds_rect})
+		# `cells` are the flooded planning cells; emergence withdraws the
+		# plants they drown (emergence.gd `drown`).
+		added.append({"record":record,"root":root,"drop":drop,"rect":bounds_rect,"cells":region})
 		changed = _grow(changed,any_change,bounds_rect.grow(1.0))
 		any_change = true
 	# Streams from high dabs down to their pond, then overflows in order.

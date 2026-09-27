@@ -20,6 +20,7 @@ const Variety = preload("res://scripts/seeded_variety.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const LandIntent = preload("res://scripts/land_intent.gd")
+const WaterBrush = preload("res://scripts/water_brush.gd")
 
 ## An emerged tree was placed at plate point `p`; it grows in from `born` on
 ## `time` over TREE_RISE. Stroke feedback sends a little gust to settle it.
@@ -134,6 +135,10 @@ var _plan_generation := 0
 ## Main-thread planning time of the last plan (install only, when on a worker)
 ## and the worker's time, for profiles.
 var last_plan_usec := {}
+## Ponds a pour has just filled (`drown`), kept until a plan that saw them
+## replaces the blend's pond raster: {"level", "cells", "rect", "record",
+## "stamp"}. Until then `_wet` reads them too, so nothing arrives in them.
+var _fresh_ponds: Array[Dictionary] = []
 
 func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 	data = terrain
@@ -155,6 +160,7 @@ func clear() -> void:
 	# A plan still on its worker was made for the ground being left.
 	_plan_generation += 1
 	_plan_job = null
+	_fresh_ponds.clear()
 
 ## Entry point for a finished stroke. `rect` is in plate metres. `source`
 ## "forest" is a forest brush stroke: it plans only what its wish asks for,
@@ -168,6 +174,8 @@ func on_region_changed(rect: Rect2, source := "") -> void:
 
 func _plan(rect: Rect2, born: float, source := "") -> void:
 	_refresh_blend([rect])
+	# The blend's pond raster was just read from the live ground.
+	_fresh_ponds.clear()
 	_install(rect,source,_plan_region(rect,born,source))
 
 ## Build the live blend, or re-read it under `rects`. The first build sets the
@@ -250,6 +258,8 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 	_blend._sampler.data = data
 	_blend._sampler.recipe_water = {}
 	salt = planned.salt
+	# Ponds poured after this plan began are not in its raster yet.
+	_fresh_ponds = _fresh_ponds.filter(func(pond: Dictionary) -> bool: return int(pond.stamp) >= generation)
 	for i in range(jobs.size()):
 		_install(jobs[i].rect,jobs[i].get("source",""),planned.regions[i])
 	last_plan_usec.worker = planned.usec
@@ -596,7 +606,58 @@ func _forget(region: Dictionary, rect: Rect2) -> void:
 	region.next = 0
 
 func _wet(p: Vector2) -> bool:
-	return _blend._sampler.wet(p)
+	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p))
+
+## A pour settled (native_chunk_editor.gd `_land_water`), inside its open
+## stroke so one undo brings the plants back with the ground. Withdraw the
+## emerged plants whose base its new ponds and streams now cover, and refuse
+## that water to arrivals until a plan that saw it takes over. `ponds` and
+## `streams` are the water plan's `added` and `added_streams` entries. Hand,
+## pinned and generated objects stay. True when anything was withdrawn.
+func drown(ponds: Array, streams: Array) -> bool:
+	for entry: Dictionary in ponds:
+		if not entry.has("cells"): continue
+		var cells := {}
+		for k: int in entry.cells: cells[k] = true
+		_fresh_ponds.append({"level":float(entry.record.level),"cells":cells,"rect":Rect2(entry.rect).grow(WaterBrush.GRID),"record":entry.record,"stamp":_plan_generation})
+	var courses: Array = []
+	for entry: Dictionary in streams: courses.append(entry.record)
+	var removed := false
+	for index in range(data.objects.size()-1,-1,-1):
+		var item: Dictionary = data.objects[index]
+		if NativeTerrainData.object_source(item) != "emerged": continue
+		var p := Vector2(item.x,item.z)
+		if _under_fresh_pond(p) or _in_courses(p,courses):
+			data.objects.remove_at(index)
+			removed = true
+	if removed:
+		data.objects_revision += 1
+		_pending_refresh = true
+	return removed
+
+## Under a freshly poured pond: a planning cell at a corner of `p`'s grid
+## square is flooded, and the ground at `p` lies below the pond's level.
+func _under_fresh_pond(p: Vector2) -> bool:
+	for pond: Dictionary in _fresh_ponds:
+		if not pond.rect.has_point(p): continue
+		var corner := ((p-Vector2.ONE*WaterBrush.ORIGIN)/WaterBrush.GRID).floor()
+		var flooded := false
+		for offset: Vector2 in [Vector2.ZERO,Vector2.RIGHT,Vector2.DOWN,Vector2.ONE]:
+			if pond.cells.has(WaterBrush.cell_of(Vector2.ONE*WaterBrush.ORIGIN+(corner+offset)*WaterBrush.GRID)):
+				flooded = true
+				break
+		if not flooded: continue
+		var h: Variant = data.ground_height(p)
+		if h != null and float(h) < float(pond.level) and data.ponds.has(pond.record): return true
+	return false
+
+## Within a new stream's water: its half width of a course point.
+static func _in_courses(p: Vector2, courses: Array) -> bool:
+	for route: Dictionary in courses:
+		var reach := pow(float(route.width)*0.5,2.0)
+		for point: Dictionary in route.pts:
+			if p.distance_squared_to(Vector2(point.x,point.z)) < reach: return true
+	return false
 
 func _slope(p: Vector2) -> float:
 	return preload("res://scripts/native_landscape_presets.gd")._slope(data,p)
