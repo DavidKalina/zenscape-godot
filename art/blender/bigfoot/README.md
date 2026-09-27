@@ -9,7 +9,12 @@ neutral woodland presence that is hard to read, never a monster and never a masc
 blender -b --python tools/blender_bigfoot/build_ambient_bigfoot.py -- [--no-render] [--no-anim]
 blender -b --python tools/blender_bigfoot/check_ambient_bigfoot.py -- [--clip=PeekL] [--trace]
 blender -b --python tools/blender_bigfoot/review_ambient_bigfoot.py -- --clip=PeekL --view=peek [--frames=0,100] [--video]
+blender -b --python tools/blender_bigfoot/film_patterson.py -- [--still=194] [--scale=0.6]
 ```
+
+`film_patterson.py` shoots the classic footage framing: a hand-held pan across a
+clearing as he strides past, looks at the camera and walks on
+(`/tmp/zs-bigfoot-previews/patterson.mp4`).
 
 - **Look:** one continuous skinned mesh, a metaball body decimated into large facets,
   after the original woodland creature and the classic model (`bigfoot-classic.png`).
@@ -28,11 +33,19 @@ blender -b --python tools/blender_bigfoot/review_ambient_bigfoot.py -- --clip=Pe
   more plates, or raised ones, read as spikes.
 - **Skinning:** only the lid meshes follow `Lid_L`/`Lid_R`, and the heat weights the
   lids would take from the brow go to `Head`. Breathing uses rotation only.
+  The arms are their own metaball family, so they are separate islands of the one
+  mesh. In the body's family the arms hanging by the flanks melted into them, and the
+  stride's backswing stretched a web of flank skin behind each arm. Each arm starts in
+  a ball centred on the shoulder joint, which turns in place inside the mantle.
+  `arm_weights()` weights the arms by distance to their own bones, blending over the
+  elbow and wrist. The torso keeps no arm weight: it goes to the shoulder cap, or to
+  the chest down the flank.
 - **Rig:** 27 deform bones, plus Root, foot IK and poles, and arm IK controls
   (`HandIK_*`, `ElbowPole_*`). The arm IK is off unless a hand holds something. All
   controls are baked into the exported bone motion. `FootIK_*` must share the foot bone's
   head, tail and roll: the foot copies its rotation, and a level control tipped his
-  toes up. Walking feet roll over the ball or heel, not the ankle.
+  toes up. Walking feet roll over the ball or heel, not the ankle. Each arm swings
+  against its own leg: back while its foot reaches forward.
 - **Clips** (30 fps, seamless loops, in place):
   - `Idle` 16 s: weight wanders foot to foot, the free heel rolls up, and the gaze
     travels and holds (right, a pause to sniff the air, left).
@@ -54,6 +67,17 @@ blender -b --python tools/blender_bigfoot/review_ambient_bigfoot.py -- --clip=Pe
     extra) at playback speed 1.
   - `WalkGlance` 10 s: three walk cycles with the look back over his left shoulder,
     head first, then shoulders.
+  - `Stride` 1.4 s: the classic 1967 film walk, made to be seen from the side. Long
+    compliant steps on knees that never lock (about 21° at heel strike), so the hips
+    glide low instead of bobbing. The heel peels up over the ball and the foot kicks up
+    behind with its sole showing. The long arms swing wide, further back than forward,
+    with the back arm nearly straight and the hand trailing the front one. Move the
+    actor at `stride_speed_mps` (0.97 m/s, a rig extra).
+  - `StrideLookL` / `StrideLookR` 7 s: five strides with the famous look. Without
+    breaking step he turns to face the viewer, head and shoulders coming round together
+    as one heavy mass, holds the look for a stride and a half and turns back. A blink
+    rides each turn. `L` looks over his left shoulder, the side the film saw. Both begin
+    on the same left heel strike as `Stride`, so the clips chain with no blend.
   Godot imports clips non-looping; set `loop_mode` when wiring.
 - **Peek contract:** the peeks are authored against a trunk of radius 0.42 m whose
   axis is 0.92 m in front of him: Godot local (0, 0.92) on X/Z, stored as the rig
@@ -66,14 +90,19 @@ blender -b --python tools/blender_bigfoot/review_ambient_bigfoot.py -- --clip=Pe
   - Gaze spread down the spine with per-joint delays; the head leads, then holds.
   - Arcs on head turns.
   - Spring follow-through on the arms, simulated over three loops. A holding hand
-    steadies its arm.
+    steadies its arm. The stride clips stiffen the springs (`SPRING_STIFFNESS`), which
+    would otherwise resonate with its 0.7 Hz arm swing.
+  - Cyclic curves (feet, hip height) use `spline()`, which does not stop at its keys,
+    and the swinging foot meets the ground already moving at ground speed.
   - Breath and drift in every hold.
 - **Checks:** `check_ambient_bigfoot.py` reports, per clip, floor penetration, foot
   drift, the loop seam and the worst joint acceleration (to catch pops). For peeks
   it also reports bark penetration, eye clearance and palm gap. On the 2026-09-26
   pass every seam is 0, the feet stay within 6 mm of the floor (the toe pads' own
-  depth), and the fingertips press at most 1.4 cm into the bark. The largest joint accelerations are about 14 m/s² in
-  `Forage`, in its quick look-up, and under 7 m/s² elsewhere.
+  depth), and the fingertips press at most 1.4 cm into the bark. The largest joint accelerations are about 13 m/s² in
+  `Forage`, in its quick look-up, and under 7 m/s² in the other idles. The stride's
+  pendulum arms reach about 11 m/s², and 18 to 23 m/s² as the look turns the trunk
+  under them. That is a smooth rise over about 15 frames, not a pop.
 - Export: `assets/models/zenscape-bigfoot-ambient.glb`. Review stills and videos go
   to `/tmp/zs-bigfoot-previews/review/`. The script regenerates the .blend, so make
   hand edits in a copy.

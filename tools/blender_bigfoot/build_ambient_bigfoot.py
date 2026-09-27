@@ -124,15 +124,23 @@ def build_body(collection):
 	ellipsoid(mb, h + Vector((0, -0.07, -0.17)), (0.14, 0.09, 0.055))
 	for s in (1, -1):
 		ball(mb, h + Vector((0.13 * s, -0.08, -0.1)), 0.075)  # full cheeks and jaw keep the face square
-	# Arms, left and right.
+	# Arms, left and right, as their own metaball family. In the body's family the long
+	# arms hanging by the flanks melted into them, and a swinging arm dragged a web of
+	# flank skin with it. Each arm starts in a ball centred on the shoulder joint, which
+	# turns in place inside the mantle, so the joint stays closed at any swing.
+	arm_mb = bpy.data.metaballs.new('ArmBall')
+	arm_mb.resolution = arm_mb.render_resolution = mb.resolution
+	arm_mb.threshold = mb.threshold
+	arm_obj = bpy.data.objects.new('ArmBall', arm_mb)
+	collection.objects.link(arm_obj)
 	for side in (SHOULDER, mirror(SHOULDER)):
 		s = 1 if side.x > 0 else -1
 		sh, el, wr = side, ELBOW if s > 0 else mirror(ELBOW), WRIST if s > 0 else mirror(WRIST)
-		limb(mb, sh, el, 0.1, 0.082, 8, bulge=0.01, bulge_at=0.35, bulge_dir=(0.01 * s, 0, 0))
-		limb(mb, el, wr, 0.088, 0.066, 7, bulge=0.014, bulge_at=0.3, bulge_dir=(0, -0.01, 0))
+		limb(arm_mb, sh, el, 0.1, 0.082, 8, bulge=0.01, bulge_at=0.35, bulge_dir=(0.01 * s, 0, 0))
+		limb(arm_mb, el, wr, 0.088, 0.066, 7, bulge=0.014, bulge_at=0.3, bulge_dir=(0, -0.01, 0))
 		palm = wr + Vector((0.008 * s, -0.035, -0.09))
-		ellipsoid(mb, palm, (0.05, 0.09, 0.1))
-		ball(mb, wr + Vector((0.0, -0.02, -0.02)), 0.06)
+		ellipsoid(arm_mb, palm, (0.05, 0.09, 0.1))
+		ball(arm_mb, wr + Vector((0.0, -0.02, -0.02)), 0.06)
 	# Legs and the big flat feet, each with five toe pads.
 	for s in (1, -1):
 		hip, knee, ankle = sided(HIP, s), sided(KNEE, s), sided(ANKLE, s)
@@ -144,9 +152,16 @@ def build_body(collection):
 				(0.043, -0.232, 0.023), (0.068, -0.212, 0.021))):
 			ball(mb, (0.18 * s + dx * s, dy, 0.03 + r * 0.4), r)
 	dg = bpy.context.evaluated_depsgraph_get()
-	mesh = bpy.data.meshes.new_from_object(obj.evaluated_get(dg))
-	bpy.data.objects.remove(obj)
-	bpy.data.metaballs.remove(mb)
+	bm = bmesh.new()
+	for o, m in ((obj, mb), (arm_obj, arm_mb)):
+		part = bpy.data.meshes.new_from_object(o.evaluated_get(dg))
+		bm.from_mesh(part)
+		bpy.data.meshes.remove(part)
+		bpy.data.objects.remove(o)
+		bpy.data.metaballs.remove(m)
+	mesh = bpy.data.meshes.new('Body')
+	bm.to_mesh(mesh)
+	bm.free()
 	body = bpy.data.objects.new('Body', mesh)
 	collection.objects.link(body)
 	# Big facets, then a slight jitter so no two faces share a plane.
@@ -476,6 +491,7 @@ def skin(rig, body, extras):
 				if g.group == lid.index and g.weight > 0:
 					head.add([v.index], g.weight, 'ADD')
 		lid.remove([v.index for v in body.data.vertices])
+	arm_weights(rig, body)
 	tree = KDTree(len(body.data.vertices))
 	for v in body.data.vertices:
 		tree.insert(v.co, v.index)
@@ -512,6 +528,78 @@ def skin(rig, body, extras):
 				obj.vertex_groups[name].add(island, w, 'REPLACE')
 		bm.free()
 	return deform
+
+
+ARM_BONES = ('UpperArm', 'Forearm', 'Hand', 'Fingers', 'Thumb')
+
+
+def arm_weights(rig, body):
+	"""The arms are separate islands (build_body). Each follows only its own bones, by
+	distance to them, blending over the elbow and wrist; the torso keeps none of them."""
+	bm = bmesh.new()
+	bm.from_mesh(body.data)
+	bm.verts.ensure_lookup_table()
+	seen, islands = set(), []
+	for v in bm.verts:
+		if v.index in seen:
+			continue
+		stack, island = [v], []
+		seen.add(v.index)
+		while stack:
+			cur = stack.pop()
+			island.append(cur.index)
+			for e in cur.link_edges:
+				o = e.other_vert(cur)
+				if o.index not in seen:
+					seen.add(o.index)
+					stack.append(o)
+		islands.append(island)
+	bm.free()
+	verts = body.data.vertices
+	groups = body.vertex_groups
+	arm_names = [f'{b}_{s}' for b in ARM_BONES for s in 'LR']
+	arms = {}
+	for island in islands:
+		centre = sum((verts[i].co for i in island), Vector()) / len(island)
+		if abs(centre.x) > 0.3 and 0.5 < centre.z < 1.8:
+			arms['L' if centre.x > 0 else 'R'] = island
+	assert set(arms) == {'L', 'R'}, f'expected two arm islands, found {sorted(arms)}'
+	on_arm = {i for island in arms.values() for i in island}
+	# The torso: arm weights go to the shoulder cap, and to the chest down the flank,
+	# since the shoulders shrug and swing too.
+	for v in verts:
+		if v.index in on_arm:
+			continue
+		# Copy first: adding to a group invalidates the vertex's group list.
+		for index, weight in [(g.group, g.weight) for g in v.groups]:
+			name = groups[index].name
+			if name in arm_names and weight > 0:
+				to = f'Shoulder_{name[-1]}' if v.co.z > SHOULDER.z - 0.12 else 'Chest'
+				groups[to].add([v.index], weight, 'ADD')
+				groups[index].remove([v.index])
+	for suffix, island in arms.items():
+		segments = [(rig.data.bones[f'{b}_{suffix}'].head_local, rig.data.bones[f'{b}_{suffix}'].tail_local)
+			for b in ARM_BONES[:3]]
+		for g in groups:
+			g.remove(island)
+		for i in island:
+			p = verts[i].co
+			raw = []
+			for a, b in segments:
+				ab = b - a
+				t = clamp01((p - a).dot(ab) / ab.length_squared)
+				raw.append(1.0 / ((p - (a + ab * t)).length ** 6 + 1e-9))
+			total = sum(raw)
+			ws = [w / total for w in raw]
+			ws = [w if w > 0.03 else 0.0 for w in ws]
+			total = sum(ws)
+			for bone, w in zip(ARM_BONES, ws):
+				if w > 0:
+					groups[f'{bone}_{suffix}'].add([i], w / total, 'REPLACE')
+
+
+def clamp01(x):
+	return max(0.0, min(1.0, x))
 
 
 # ---------------------------------------------------------------- preview
@@ -625,6 +713,7 @@ def main():
 		m.object = rig
 	body.parent = rig
 	rig['walk_speed_mps'] = clips.WALK_SPEED
+	rig['stride_speed_mps'] = clips.STRIDE_SPEED
 	rig['peek_trunk'] = [*clips.PEEK_TRUNK[0], clips.PEEK_TRUNK[1]]
 	rig['height_m'] = max((v.co.z for v in body.data.vertices))
 	if '--no-anim' not in ARGS:
@@ -648,7 +737,7 @@ def main():
 		export_def_bones=True, export_cameras=False, export_lights=False, export_extras=True,
 		export_yup=True, export_vertex_color='ACTIVE', export_skins=True)
 	print('BIGFOOT_EXPORT', glb, 'faces', len(body.data.polygons), 'height', rig['height_m'],
-		'walk_speed', clips.WALK_SPEED, 'bones', sum(1 for b in rig.data.bones if b.use_deform))
+		'walk_speed', clips.WALK_SPEED, 'stride_speed', clips.STRIDE_SPEED, 'bones', sum(1 for b in rig.data.bones if b.use_deform))
 	if '--no-render' in ARGS:
 		return
 	setup_studio()
