@@ -25,6 +25,8 @@ var brush_ids: Array = Palette.registered().map(func(info: Dictionary) -> String
 ## The creation brush last in hand; Look and Craft return to it.
 var brush: String = brush_ids[0] if not brush_ids.is_empty() else "land"
 var creation_palette: Control
+## Photo mode: compose, then capture (scripts/photo_mode.gd). P or the palette's camera.
+var photo: Node
 ## True once the shell is built and the first world is open.
 var shell_ready := false
 var _craft_before_menu := false
@@ -102,6 +104,9 @@ func _setup_creation() -> void:
 	_toolbar.get_parent().add_child(creation_palette)
 	_toolbar.get_parent().move_child(creation_palette,_toolbar_glass.get_index())
 	creation_palette.setup(self)
+	photo = preload("res://scripts/photo_mode.gd").new()
+	add_child(photo)
+	photo.setup(self)
 	_layout_shell()
 	_sync_creation_ui()
 
@@ -164,6 +169,10 @@ func set_looking(enabled: bool) -> void:
 	if enabled == looking and not crafting: return
 	_set_looking_state(enabled)
 	set_building(false)
+
+## Photo mode from the shell: the brush goes away and the chrome hides.
+func enter_photo() -> void:
+	if photo != null: photo.enter()
 
 ## Pick up a registered creation brush; this also ends Look and Craft.
 func select_brush(id: String) -> void:
@@ -252,8 +261,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	_sync_creation_ui()
 
 ## Keys while creating or looking: Tab looks, 1-9 pick brushes in palette
-## order, H hides the chrome and puts the brush away with it, Esc opens the
-## menu. Returns true when the key was used.
+## order, H hides the chrome and puts the brush away with it, P opens photo
+## mode, Esc opens the menu. Returns true when the key was used.
 func _creation_key(event: InputEventKey) -> bool:
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
 	if event.keycode == KEY_TAB:
@@ -271,6 +280,9 @@ func _creation_key(event: InputEventKey) -> bool:
 	if not (_creating() or looking): return false
 	if event.keycode == KEY_ESCAPE:
 		show_menu()
+		return true
+	if event.keycode == KEY_P:
+		enter_photo()
 		return true
 	# Number keys pick brushes; V and unused numbers wait for the Craft palette.
 	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
@@ -293,6 +305,7 @@ func handle_resident_input(event: InputEvent) -> bool:
 func blocks_world_input(point: Vector2) -> bool:
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
+	if photo != null and photo.contains_pointer(point): return true
 	if _toolbar_glass != null and _toolbar_glass.is_visible_in_tree() and _toolbar_glass.get_global_rect().has_point(point): return true
 	return super.blocks_world_input(point)
 
