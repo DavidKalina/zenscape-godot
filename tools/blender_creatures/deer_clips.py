@@ -181,7 +181,8 @@ def place(leg, offset=(0, 0, 0), pitch=0.0, flex=0.0):
 def step_arc(x, lift, reach=(0, 0, 0)):
 	"""A hoof lifted and set down: x runs 0..1 over the move; returns (offset, pitch, flex)."""
 	up = math.sin(math.pi * clamp(x)) ** 1.3
-	return Vector(reach) * smooth(x) + Vector((0, 0, lift * up)), 38 * up, 62 * up
+	# The hoof leaves the ground before it travels, and lands before it stops.
+	return Vector(reach) * smooth((x - 0.12) / 0.76) + Vector((0, 0, lift * up)), 38 * up, 62 * up
 
 
 # ---------------------------------------------------------------- body layers
@@ -457,7 +458,7 @@ def alert(rig, t):
 	T = 180
 	up = beats(t, [(0, 0), (5, 0), (9, -0.1), (15, 1, 0.14), (118, 1), (156, 0), (180, 0)], T)
 	sigh = beats(t, [(0, 0), (116, 0), (128, 1), (134, 1), (164, 0), (180, 0)], T)
-	stand(rig, t, T, rise=0.008 * up, weight=-0.12 * up, breaths=2, breath_amp=1 - 0.6 * up, lid=0.12 - 0.12 * up,
+	stand(rig, t, T, rise=0.005 * up, weight=-0.12 * up, breaths=2, breath_amp=1 - 0.6 * up, lid=0.12 - 0.12 * up,
 		blinks=(46, 142), seed=3, drift_amp=1 - 0.7 * up)
 	set_rot(rig, 'Neck1', ((1, 0, 0), -15 * up + 4 * sigh))
 	set_rot(rig, 'Neck2', ((1, 0, 0), -8 * up))
@@ -466,7 +467,8 @@ def alert(rig, t):
 	look = lambda u: beats(u, [(0, (0, 0, 0)), (32, (0, 0, 0)), (40, (-10, -2, -4), 0.15), (64, (-10, -2, -4)),
 		(70, (-4, -1, 3), 0.2), (112, (-4, -1, 3)), (150, (0, 0, 0)), (180, (0, 0, 0))], T)
 	gaze(rig, t, look, chain=DEER_GAZE, arc=1.0)
-	ears(rig, t, T=T, perk=18 * up,
+	# The head tips back as it rises; the ears perk past that to point at the sound.
+	ears(rig, t, T=T, perk=36 * up,
 		left=[(0, (0, 0)), (14, (-14, 0), 0.1), (120, (-14, 0)), (150, (0, 0)), (180, (0, 0))],
 		right=[(0, (0, 0)), (14, (-14, 0), 0.1), (70, (-14, 0)), (75, (36, 0), 0.2), (96, (36, 0)), (100, (-14, 0), 0.15),
 			(120, (-14, 0)), (150, (0, 0)), (180, (0, 0))],
@@ -583,7 +585,7 @@ CLIPS = {  # name: (frames, pose, loops)
 TRANSITIONS = {  # name: (frames, from, to, lags per bone, arc)
 	# The neck leads both ways and the face turns last: down to the grass, up to level.
 	'HeadDown': (40, 'Idle', 'Graze', {'Neck1': 0, 'Neck2': 1, 'Head': 4, 'Jaw': 4, 'Lid': 0, 'Ear': 5, 'Chest': 3,
-		'Scapula': 7, 'Spine': 8, 'Hips': 9, 'Tail1': 10, 'Tail2': 12, 'body': 8}, head_down_arc, 0.02, 0.12),
+		'Scapula': 7, 'Spine': 8, 'Hips': 9, 'Tail1': 10, 'Tail2': 12, 'body': 8}, head_down_arc, 0.02, 0.06),
 	'HeadUp': (36, 'Graze', 'Idle', {'Neck1': 0, 'Neck2': 1, 'Head': 4, 'Jaw': 4, 'Lid': 0, 'Ear': 3, 'Chest': 2,
 		'Scapula': 5, 'Spine': 6, 'Hips': 7, 'Tail1': 8, 'Tail2': 10, 'body': 6}, head_up_arc, 0.1, 0.0),
 }

@@ -375,8 +375,8 @@ def body_colour(p, n, coat, fawn, eyes_at):
 	top = smoothstep(0.2, 0.85, n.z) * smoothstep(0.78, 0.95, p.z)
 	c = c.lerp(coat * 0.72, 0.55 * top)
 	# Belly, the inside of the legs and the chest between the forelegs.
-	if (n.z < -0.35 and p.z < 0.8 and -0.3 < p.y < 0.3) or (abs(p.x) < 0.035 and p.z < 0.72 and n.z < 0.3):
-		c = c.lerp(PALE, 0.85)
+	if (n.z < -0.6 and p.z < 0.74 and -0.3 < p.y < 0.3) or (abs(p.x) < 0.03 and p.z < 0.7 and n.z < 0.2):
+		c = c.lerp(PALE, 0.75)
 	# The white rump patch under the tail and down the backs of the thighs.
 	if p.y > 0.34 and abs(p.x) < 0.065 and 0.6 < p.z < 0.9 and n.y > 0.2:
 		c = c.lerp(WHITE, 0.9 * smoothstep(0.6, 0.7, p.z))
@@ -400,7 +400,7 @@ def body_colour(p, n, coat, fawn, eyes_at):
 			c = c.lerp(WHITE, 0.85)
 	if fawn and not head and p.z > 0.72 and -0.28 < p.y < 0.38:
 		for spot in FAWN_SPOTS:
-			if (p - spot).length < 0.026:
+			if (p - spot).length < 0.022:
 				c = c.lerp(WHITE, 0.82)
 				break
 	mottle = 1.0 + 0.05 * noise.noise(p * 9.0) + rng.uniform(-0.025, 0.025)

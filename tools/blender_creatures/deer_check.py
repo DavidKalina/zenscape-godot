@@ -76,8 +76,8 @@ for name in names:
 		worst = 0.0
 		for f in range(1, frames + 1):
 			a, b = toes[f - 1][leg], toes[f][leg]
-			if a.z < 0.004 and b.z < 0.004:
-				worst = max(worst, (b - a).length * clips.FPS)
+			if a.z < 0.004 and b.z < 0.004:  # horizontal slip only; lifting is not sliding
+				worst = max(worst, (b - a).to_2d().length * clips.FPS)
 		slide[leg] = round(worst, 3)
 	r['planted_slide_mps'] = slide
 	worst = (0.0, None, None)
