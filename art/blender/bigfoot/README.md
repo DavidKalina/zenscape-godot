@@ -1,3 +1,85 @@
+# Ambient Bigfoot (scenic direction)
+
+For the scenic diorama Bigfoot is an atmospheric prop, not an agent: a rare,
+neutral woodland presence that is hard to read, never a monster and never a mascot.
+`tools/blender_bigfoot/build_ambient_bigfoot.py` builds the model and rig into
+`zenscape-bigfoot-ambient.blend`. The clips live in `ambient_clips.py`.
+
+```sh
+blender -b --python tools/blender_bigfoot/build_ambient_bigfoot.py -- [--no-render] [--no-anim]
+blender -b --python tools/blender_bigfoot/check_ambient_bigfoot.py -- [--clip=PeekL] [--trace]
+blender -b --python tools/blender_bigfoot/review_ambient_bigfoot.py -- --clip=PeekL --view=peek [--frames=0,100] [--video]
+```
+
+- **Look:** one continuous skinned mesh, a metaball body decimated into large facets,
+  after the original woodland creature and the classic model (`bigfoot-classic.png`).
+  The sculpt is already stooped: the head hangs forward of the chest and sits down
+  in a mantle of shoulder, the shoulders slope, and the long arms leave the
+  fingertips level with the knees. The torso is one barrel with no waist. With a
+  waist and upright posture he read as a person in a suit.
+  The head keeps the approved helmet dome, but with a thick, rounded brow: a thin
+  brim read as a cap and, level with the eyes, as a frown. The face is recessed and
+  shadowed, with a broad wedge nose, full cheeks and a square jaw. The eyes are
+  small, round and dark amber-brown, smooth-shaded so the catchlight is a soft
+  point. Faceted eyes threw white triangles that read as fangs. The coat is an even
+  earthy brown, with ash-grey temples, a touch of moss and a few leaves.
+  About 1,860 faces and 2.2 m tall, with one vertex-coloured coat material and one
+  eye material. Only a few flat fur plates sit on the crown and mantle, because
+  more plates, or raised ones, read as spikes.
+- **Skinning:** only the lid meshes follow `Lid_L`/`Lid_R`, and the heat weights the
+  lids would take from the brow go to `Head`. Breathing uses rotation only.
+- **Rig:** 27 deform bones, plus Root, foot IK and poles, and arm IK controls
+  (`HandIK_*`, `ElbowPole_*`). The arm IK is off unless a hand holds something. All
+  controls are baked into the exported bone motion. `FootIK_*` must share the foot bone's
+  head, tail and roll: the foot copies its rotation, and a level control tipped his
+  toes up. Walking feet roll over the ball or heel, not the ankle.
+- **Clips** (30 fps, seamless loops, in place):
+  - `Idle` 16 s: weight wanders foot to foot, the free heel rolls up, and the gaze
+    travels and holds (right, a pause to sniff the air, left).
+  - `Watch` 14 s, the encounter beat: a glance, a slow full turn to face the
+    viewer, and a long, still look with a curious tilt and a slow blink. His weight
+    settles back onto his heels (wary, not hostile), then he loses interest and
+    looks back the way he was.
+  - `Listen` 12 s: he rises a little and finds the sound with small head
+    adjustments. He holds his breath, sniffs, then lets it go with a sigh.
+  - `PeekL` / `PeekR` 16 s: behind a trunk he takes hold of the bark, steps out
+    and leans, slowly, head last. At the sight of you there is a small take and a
+    long look, then the head ducks back first and the foot steps home. `L` leans
+    out to his left.
+  - `Forage` 15 s: he folds down with a hand on his knee and picks at a low plant
+    (tug, tug, pull). He sniffs it, notices you over his hand, lets it fall and
+    straightens.
+  - `Walk` 3.33 s: a slow, heavy amble on soft knees, with the head kept level.
+    Move the actor along local Godot +Z at `walk_speed_mps` (0.336 m/s, a rig
+    extra) at playback speed 1.
+  - `WalkGlance` 10 s: three walk cycles with the look back over his left shoulder,
+    head first, then shoulders.
+  Godot imports clips non-looping; set `loop_mode` when wiring.
+- **Peek contract:** the peeks are authored against a trunk of radius 0.42 m whose
+  axis is 0.92 m in front of him: Godot local (0, 0.92) on X/Z, stored as the rig
+  extra `peek_trunk` in Blender coordinates `[x, y, radius]`. Palms rest on the bark
+  and the near eye clears the trunk's silhouette by about 7 cm from straight ahead.
+  For a wider trunk, move him back by the extra radius. The camera-facing head
+  turn is baked forward; a runtime look-at can take over during the hold.
+- **Motion polish** (see the `ambient_clips.py` docstring):
+  - Travel-and-hold beats that overshoot and settle.
+  - Gaze spread down the spine with per-joint delays; the head leads, then holds.
+  - Arcs on head turns.
+  - Spring follow-through on the arms, simulated over three loops. A holding hand
+    steadies its arm.
+  - Breath and drift in every hold.
+- **Checks:** `check_ambient_bigfoot.py` reports, per clip, floor penetration, foot
+  drift, the loop seam and the worst joint acceleration (to catch pops). For peeks
+  it also reports bark penetration, eye clearance and palm gap. On the 2026-09-26
+  pass every seam is 0, the feet stay within 6 mm of the floor (the toe pads' own
+  depth), and the fingertips press at most 1.4 cm into the bark. The largest joint accelerations are about 14 m/s² in
+  `Forage`, in its quick look-up, and under 7 m/s² elsewhere.
+- Export: `assets/models/zenscape-bigfoot-ambient.glb`. Review stills and videos go
+  to `/tmp/zs-bigfoot-previews/review/`. The script regenerates the .blend, so make
+  hand edits in a copy.
+
+The sections below describe the earlier gameplay Bigfoot.
+
 # Wanderer: Blender rig and walk
 
 Current selected locomotion: **Heavy with loose arms**, authored in
