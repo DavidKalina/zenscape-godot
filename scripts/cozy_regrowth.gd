@@ -11,6 +11,16 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const SHOWCASE := [184,105,147,193,303,79,328,301,176,33,102,353,58,177,198,134,45,309,248,250,278,364]
 const DEGROW_SECONDS := 3.4
 const GROW_SECONDS := 5.0
+## The plain's day (creation mode only). Its world clock turns at a gentle
+## PLAIN_DAY_LENGTH real seconds per 24 hours (the default day is 480 s), so
+## dawn and dusk come round within a session and the deer can find the dawn.
+## Night hides the land, so the plain eases through it (celestial phases
+## PLAIN_NIGHT.x -> PLAIN_NIGHT.y) in a few seconds, like pressing N. Both ends
+## sit just outside life's DAWN and DUSK windows (scripts/life_moments.gd).
+## The day length doubles as the marker: a saved plain keeps its clock, and a
+## plain whose day length is anything else was saved before the plain turned.
+const PLAIN_DAY_LENGTH := 1200.0
+const PLAIN_NIGHT := Vector2(0.8,0.2)
 var scene: Node3D
 var primary: Node3D
 var initialized := false
@@ -84,6 +94,7 @@ func setup(owner_scene: Node3D) -> void:
 		Genesis.apply_mood(scene,generated_world)
 		world_seed = plain_seed
 		plain = true
+		_sync_plain_day(true)
 		slots = [{}]
 		active = 0
 		saved = {}
@@ -101,6 +112,8 @@ func setup(owner_scene: Node3D) -> void:
 		await scene._chunk_editor.refresh(get_tree())
 		NativeGardenStore.restore(scene,slots[active].state)
 		scene._refresh_habitat()
+		plain = scene._chunk_editor.data.blank and scene._chunk_editor.data._recipe_settings.is_empty()
+		_sync_plain_day(false)
 	scene.position = Vector3.ZERO
 	if saved.get("layout","")!="regrowth": scene._frame_diorama()
 	scene._chunk_editor.save_path = scene.library_path.path_join("Current.json")
@@ -145,6 +158,31 @@ func _plain_seed() -> int:
 
 func _scenery() -> bool:
 	return bool(scene.get("scenery_mode"))
+
+## Turn the plain's day (PLAIN_DAY_LENGTH) when a plain opens in creation mode,
+## and put other worlds back on the default day; their moods hold the hour.
+## `fresh` is a new plain; a loaded one keeps the clock it was saved with,
+## unless it was saved before the plain turned.
+func _sync_plain_day(fresh: bool) -> void:
+	var clock: WorldClock = scene.get("world_clock")
+	if clock == null: return
+	var marked := is_equal_approx(clock.day_length,PLAIN_DAY_LENGTH)
+	if not (plain and bool(scene.get("creation_mode"))):
+		if marked: clock.day_length = WorldClock.DEFAULT_DAY_LENGTH
+		return
+	if marked and not fresh: return
+	clock.day_length = PLAIN_DAY_LENGTH
+	clock.running = true
+
+## The plain eases through the night to the edge of dawn. Keyed on the clock's
+## day length rather than `plain`, since an undo past a regrow restores the
+## old world's clock without telling this node.
+func _pass_plain_night() -> void:
+	var clock: WorldClock = scene.get("world_clock")
+	if clock == null or not clock.running or clock.target_hour >= 0.0 or not is_equal_approx(clock.day_length,PLAIN_DAY_LENGTH): return
+	# The margin keeps a skip that lands a hair short of dawn from firing again.
+	if clock.phase > PLAIN_NIGHT.x or clock.phase < PLAIN_NIGHT.y-0.01:
+		clock.skip_to(WorldClock.hour_for_phase(PLAIN_NIGHT.y))
 
 func _build_overlay() -> void:
 	cover.layer = 60
@@ -281,6 +319,7 @@ func _process(delta: float) -> void:
 		carry_actor.advance(minf(delta,0.05))
 		carry_image.position = (last_mouse-carry_offset).clamp(Vector2.ZERO,scene.get_viewport().get_visible_rect().size-carry_image.size)
 	if busy: return
+	_pass_plain_night()
 	if badge.text!=_badge_text(): _update_badge()
 	if not holding: return
 	_update_landing(last_mouse)
@@ -352,6 +391,7 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	# Publication, atmosphere, framing and navigation each get a fresh frame.
 	await get_tree().process_frame
 	Generator.apply_mood(scene,generated_world)
+	_sync_plain_day(true)
 	next_look = scene._celestial.look.document()
 	next_hour = scene._celestial.phase
 	_set_growth(0.0)
@@ -589,6 +629,7 @@ func resume_previous() -> bool:
 	NativeGardenStore.restore(scene,slots[active].state)
 	scene._refresh_habitat()
 	plain = scene._chunk_editor.data.blank and scene._chunk_editor.data._recipe_settings.is_empty()
+	_sync_plain_day(false)
 	generated_world = {}
 	world_seed = -1
 	_set_growth(1.0)

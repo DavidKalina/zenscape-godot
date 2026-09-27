@@ -48,7 +48,8 @@ Each kind keeps sites keyed by survey cell. This works like emergence's candidat
 - **Choosing sites:** up to a capacity per water body. Sites that already stand keep their place while they still qualify. New ones are taken in position-hash order (`salt` is emergence's world salt) with a minimum gap. The same strokes on the same world bring the same life.
 - **Arrival:** a site is born when its conditions first hold. Its creature arrives after `delay + spread × hash` seconds of the life clock.
 - **Departure:** a site whose conditions go away sends its creature off. Fish sink and fade, frogspawn shrinks, frogs hop away up the bank, birds fly off into the distance, and fireflies dim. A site that has not arrived yet simply closes.
-- **Settled worlds:** a new, regrown or loaded world starts settled. Its first sites start `SETTLED_HEAD` (85%) of the way through their delay, so a generated world comes alive within a few seconds. An undo keeps whatever still fits, and new sites wait their full delay.
+- **Settled worlds:** a new or regrown world, or one loaded from a save that kept no life, starts settled. Its first sites start `SETTLED_HEAD` (85%) of the way through their delay, so a generated world comes alive within a few seconds. An undo keeps whatever still fits, and new sites wait their full delay.
+- **Saved life:** the place's save keeps its life (`NativeGardenStore` `land_life`, from `LandLife.document`): `{"version": 1, "clock": s, "sites": {kind: [[key, delay, age, here], ...]}}`. `key` is the survey cell (a bird's slot), `age` the life-clock seconds since the site's conditions first held, and `here` whether its creature had arrived. Leaving and closing sites are not saved, nor are moments. On load, `restore_document` sends the old world's life away and holds the saved sites until the first survey of the loaded ground. That survey reopens the saved sites that still qualify ahead of new ones, with their own delays and ages. Creatures that had arrived come back at once, already grown in (frogs sitting on their bank). They count in `LandLife.resumed`, not `arrivals`, and do not emit `arrived`. Sites the save did not know wait their full delay. The life clock only moves forward on load, since moments keep their cooldowns on it.
 - **The clock:** the life clock is real seconds and stops while the scene is paused or the world is regrowing. `pace` multiplies it for probes.
 
 | Kind | Needs | Delay + spread (s) | How many |
@@ -141,7 +142,7 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 
 - Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw.
 - Fish live in ponds only, not streams.
-- Life is not saved. A loaded world starts settled instead.
-- Deer need the dawn window. The plain's clock is frozen at its launch hour, so a plain launched at full day never sees deer until the day turns.
+- Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions.
+- Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
 - Sound hooks: `LandLife.arrived` and `LandLife.moment` are emitted but nothing listens yet.
 - `fidelity_fish.gd`, Bigfoot's catchable fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish and only matters with `--bigfoot`.

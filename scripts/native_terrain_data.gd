@@ -4,6 +4,9 @@ extends RefCounted
 signal stroke_starting
 signal history_captured(state: Dictionary)
 signal state_restored(state: Dictionary)
+## A document is being written: companions that keep saved state outside the
+## terrain (the forest wish, scripts/land_intent.gd) add their own fields.
+signal document_captured(document: Dictionary)
 ## Edit the imported chunk's own welded vertices, retaining every material/UV
 ## channel and the original irregular topology. No replacement heightfield.
 const MIN_HEIGHT := -1.5
@@ -1266,7 +1269,9 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	document_captured.emit(document)
+	return document
 
 ## Records as saved: an emerged plant's birth only animates its arrival.
 func _saved_objects() -> Array[Dictionary]:
@@ -1312,6 +1317,13 @@ func load_document(document: Variant) -> bool:
 	if made == null:
 		return false
 	loaded.provenance = made
+	# Optional: the forest wish the brushes left (scripts/land_intent.gd).
+	# Saves without it have no wish anywhere.
+	if document.has("intent_forest"):
+		var wish: Variant = preload("res://scripts/land_intent.gd").decode(document.intent_forest,meadow.size())
+		if wish == null:
+			return false
+		loaded.intent_forest = wish
 	loaded.blank = document.blank
 	loaded.objects = []
 	loaded.ponds = []

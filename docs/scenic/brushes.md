@@ -49,8 +49,17 @@ stay on a path too.
 This is one float per cover cell, from -1 (keep clear) through 0 (the biome
 decides) to 1 (the heart of a forest). It rides the undo history through
 `history_captured` and `state_restored`, the same way the fire field does, so
-one undo removes the wish and its painted floor together. It is not saved;
-trees that have already grown are.
+one undo removes the wish and its painted floor together.
+
+The wish is saved with the place, so a stroke after a load still honours it
+(a clearing stays clear, a forest keeps its core and frayed edge).
+`NativeTerrainData.to_document` emits `document_captured`, and the intent adds
+an optional `intent_forest` field whenever any cell carries a wish:
+`{"cells": 3136, "deflate": <base64 of the deflated float32 cells>}`.
+`load_document` checks it (cell count, finite values in -1..1) and hands it
+back through `state_restored`. The document version stays 10; saves without
+the field load with no wish anywhere, and a malformed field fails the load
+like any other bad field.
 
 When the stroke is released, its bounds go to emergence as a `"forest"`
 region. A forest region:

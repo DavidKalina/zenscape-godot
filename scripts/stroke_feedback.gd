@@ -1,6 +1,6 @@
 extends Node
 ## A painted stroke answers the hand. Listens to NativeChunkEditor's stroke
-## signals and drives four cheap, time-damped responses:
+## signals and drives five cheap, time-damped responses:
 ## - tremor: the camera rumbles while land rises, scaled by how fast it rises;
 ## - fog: a reveal hole (global `zs_reveal`) parts the fog over the stroke;
 ##   each brush's mix of these is in BRUSH_FEEL (pouring water does not
@@ -8,7 +8,9 @@ extends Node
 ## - wind: `atmosphere.swell` eases up during a stroke and down after it, and
 ##   fog-parting puffs ride the air across the brush;
 ## - growth: `zs_growth_wave_N` slots replay the plant grow-in pop locally, so
-##   plants the brush passes shrink and pop back while the rest stays grown.
+##   plants the brush passes shrink and pop back while the rest stays grown;
+## - arrival gusts: a light puff over each batch of emerged trees as they are
+##   born, long after the stroke, so they sway as they settle in.
 ## Nothing here allocates per frame; globals are only written while they move.
 
 const LAND_MODES := ["raise", "lower", "flatten", "smooth", "mountain", "land"]
@@ -46,6 +48,13 @@ const SWELL_FALL := 0.4
 const SWELL_HOLD := 0.8
 ## Seconds between fog-parting air puffs sent across a land stroke.
 const GUST_INTERVAL := 0.7
+## Arrival gusts: emerged trees (scripts/emergence.gd `tree_arrived`) arrive
+## long after the stroke's swell has eased, so each little batch gets its own
+## light puff as it is born. A puff starts upwind and reaches the trees about
+## as they finish rising, so they sway as they settle in. Trees born within
+## ARRIVAL_GAP s of each other share one puff at their middle.
+const ARRIVAL_GAP := 1.2
+const ARRIVAL_PUFF := 0.3
 
 # Fog reveal over the stroke's bounds.
 const REVEAL_STRENGTH := 0.85
@@ -97,6 +106,10 @@ var _reveal_strength := 0.0
 var _reveal_published := true
 var _waves := PackedVector4Array()
 var _newest := -1
+var _editor: NativeChunkEditor
+## Emerged trees waiting for their birth: Vector3(x, z, born) in plate metres.
+var _arriving := PackedVector3Array()
+var _arrival_wait := 0.0
 
 func setup(scene: Node3D) -> void:
 	_scene = scene
@@ -111,6 +124,9 @@ func setup(scene: Node3D) -> void:
 	editor.stroke_started.connect(_on_stroke_started)
 	editor.stroke_moved.connect(_on_stroke_moved)
 	editor.stroke_finished.connect(_on_stroke_finished)
+	_editor = editor
+	editor.emergence.tree_arrived.connect(func(p: Vector2, born: float) -> void: _arriving.append(Vector3(p.x, p.y, born)))
+	editor.data.state_restored.connect(func(_state: Dictionary) -> void: _arriving.clear())
 
 func _on_stroke_started(center: Vector3, radius: float, mode: String) -> void:
 	_mode = mode
@@ -157,6 +173,27 @@ func _on_stroke_moved(center: Vector3, radius: float, _mode_name: String, amount
 func _on_stroke_finished(_center: Vector3, _radius: float, _mode_name: String) -> void:
 	_stroking = false
 
+## One light puff over the trees whose birth has come, at their middle.
+func _puff_arrivals() -> void:
+	var now: float = preload("res://scripts/emergence.gd").time
+	var waiting := PackedVector3Array()
+	var sum := Vector2.ZERO
+	var count := 0
+	for tree in _arriving:
+		if tree.z <= now:
+			sum += Vector2(tree.x, tree.y)
+			count += 1
+		else:
+			waiting.append(tree)
+	if count == 0:
+		return
+	_arriving = waiting
+	_arrival_wait = ARRIVAL_GAP
+	var middle := sum / float(count)
+	var ground: Variant = _editor.data.ground_height(middle)
+	var at: Vector3 = _editor.terrain.global_transform * Vector3(middle.x, float(ground) if ground != null else 0.0, middle.y)
+	_atmosphere.send_gust(at, ARRIVAL_PUFF)
+
 func _drop_wave() -> void:
 	# Reuse an idle slot, else the one furthest along (usually already grown).
 	var pick := 0
@@ -200,6 +237,9 @@ func _process(delta: float) -> void:
 		if _gust_timer <= 0.0:
 			_gust_timer = _gust_interval
 			_atmosphere.send_gust(Vector3(_brush.x, 0.0, _brush.y))
+	_arrival_wait -= delta
+	if not _arriving.is_empty() and _arrival_wait <= 0.0 and not paused:
+		_puff_arrivals()
 
 	# Fog: part over the stroke's bounds, hold, then close slowly.
 	var revealing := _reveal and (_stroking or _after < REVEAL_HOLD)
