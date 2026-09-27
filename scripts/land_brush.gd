@@ -10,10 +10,6 @@ extends RefCounted
 ## outside is locked through the `fixed` mask, so fresh land gets gullies and
 ## aprons while the rest of the world stays exactly as it was.
 const Erosion = preload("res://scripts/terrain_erosion.gd")
-## The creation brush list (scripts/genesis_canvas.gd) reads these.
-const brush_id := "land"
-const title := "Land"
-const HINT := "Drag to raise land  ·  Shift or right drag lowers  ·  [ ] brush size  ·  drag the sky to orbit"
 ## Bucket size for the per-vertex lookup, in metres.
 const CELL := 2.0
 ## Peak rise in metres per second at the stroke centre, at strength 1.
@@ -26,6 +22,10 @@ const FLOOR := -1.2
 const WEATHER := {"detail":0.0,"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterations":20,"k":0.012,
 	"channel_area":2.5,"jitter":0.6,"max_cut":0.7,"deposit":0.5,"deposit_slope":0.35,"deposit_cap":0.05,
 	"edge_inner":11.6,"edge_outer":13.4}
+## The creation brush interface (scripts/creation_brush.gd); land keeps its
+## size and strength on the editor (land_radius, land_strength).
+var brush_id := "land"
+var settles := false
 var seed_value := -1
 var _ridge := PackedFloat32Array()
 var _cells := {}
@@ -60,6 +60,13 @@ func prepare(data: NativeTerrainData, world_seed: int) -> void:
 		var key := Vector2i(floori(p.x/CELL),floori(p.y/CELL))
 		if not _cells.has(key): _cells[key] = PackedInt32Array()
 		_cells[key].append(i)
+
+## Land keeps its size and strength on the editor (land_radius, land_strength).
+func activate(_owner: Node) -> void:
+	pass
+
+func deactivate(_owner: Node) -> void:
+	pass
 
 func begin() -> void:
 	has_bounds = false

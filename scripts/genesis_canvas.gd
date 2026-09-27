@@ -6,27 +6,39 @@ extends RefCounted
 ## mood, visuals, palette), so `CozyWorldGenerator.apply_mood` dresses it.
 const Families = preload("res://scripts/palette_families.gd")
 const Generator = preload("res://scripts/cozy_world_generator.gd")
-
-## Creation brushes in key order: 1 land, 2 water, then meadow, forest and
-## path as they arrive. Each script exposes `brush_id` (also the chunk
-## editor mode that paints it), `title` and `HINT`.
+## The creation brushes, in palette order; number keys follow it (1 land,
+## 2 water, 3 meadow, 4 forest, 5 path). This is the one list: the editor
+## (NativeChunkEditor holds one brush of each `script`; its "land" tool paints
+## with whichever is in hand), the shell's number keys (studies/cozy_worlds.gd)
+## and the palette (scripts/creation_palette.gd) all read it. Each entry:
+## - `brush_id`: the brush; `NativeChunkEditor.select_brush(brush_id)` puts it
+##   in hand, and stroke signals carry it as their mode;
+## - `title`: the palette's name for it;
+## - `hint`: the one-line how-to under the palette;
+## - `script`: the brush (scripts/creation_brush.gd documents the interface).
 const BRUSHES := [
-	preload("res://scripts/land_brush.gd"),
-	preload("res://scripts/water_brush.gd"),
+	{"brush_id":"land","title":"Land","hint":"Drag to raise land  ·  Shift or right drag lowers","script":"res://scripts/land_brush.gd"},
+	{"brush_id":"water","title":"Water","hint":"Drag to pour water  ·  it runs downhill and pools  ·  Shift or right drag drains","script":"res://scripts/water_brush.gd"},
+	{"brush_id":"meadow","title":"Meadow","hint":"Drag to lay a meadow  ·  Shift or right drag lifts it","script":"res://scripts/meadow_brush.gd"},
+	{"brush_id":"forest","title":"Forest","hint":"Drag to grow forest  ·  Shift or right drag clears","script":"res://scripts/forest_brush.gd"},
+	{"brush_id":"path","title":"Path","hint":"Drag to wear a path  ·  Shift or right drag grows it back","script":"res://scripts/path_brush.gd"},
 ]
 
 static func brush_ids() -> Array:
-	return BRUSHES.map(func(brush: GDScript) -> String: return brush.brush_id)
+	return BRUSHES.map(func(entry: Dictionary) -> String: return entry.brush_id)
 
 ## The brush a number key picks (KEY_1 is the first), or "" for none.
 static func brush_for_key(keycode: int) -> String:
 	var index := keycode-KEY_1
 	return BRUSHES[index].brush_id if index >= 0 and index < BRUSHES.size() else ""
 
+static func brush_entry(id: String) -> Dictionary:
+	for entry: Dictionary in BRUSHES:
+		if entry.brush_id == id: return entry
+	return {}
+
 static func brush_hint(id: String) -> String:
-	for brush: GDScript in BRUSHES:
-		if brush.brush_id == id: return brush.HINT
-	return ""
+	return str(brush_entry(id).get("hint",""))
 
 ## The plain's colours: the original Fidelity scene's painted green ground,
 ## earth and bare grey-brown rock (SceneLook.DEFAULT_COLORS), under a clear

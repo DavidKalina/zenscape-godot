@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/creation_brush.gd"
 ## The water brush (docs/scenic/water-brush.md). Dragging pours water; when
 ## the hand lifts, the water settles with gentle physics:
 ## - each dab's water runs down the land to the low ground it drains to;
@@ -14,12 +14,12 @@ extends RefCounted
 ## worker and the release frame only records the dabs. The result carries a
 ## delay per pond and stream, so a stream reaches its pond before the pond
 ## fills, and an overflow leaves only once its pond is nearly full.
-const brush_id := "water"
-const title := "Water"
-const HINT := "Drag to pour water  ·  it runs downhill and pools  ·  Shift or right drag drains  ·  [ ] brush size"
+## It is a creation brush (scripts/creation_brush.gd) that settles: dabs only
+## record, nothing changes while the button is down, and the editor plans and
+## applies the pour after release (NativeChunkEditor `_settle_water`).
 
 ## The planning grid: 0.5 m cells over the 28 m plate.
-const CELL := 0.5
+const GRID := 0.5
 const SIDE := 57
 const ORIGIN := -14.0
 ## Cubic metres poured per second at strength 1 with a brush of REFERENCE_RADIUS.
@@ -62,22 +62,27 @@ const MERGE := 0.35
 
 ## x, z and volume (m³) of each dab; negative volume drains.
 var dabs := PackedVector3Array()
-## World-space XZ bounds of the stroke in progress.
-var bounds := Rect2()
-var has_bounds := false
 var last_plan_usec := 0
 
-func begin() -> void:
-	dabs = PackedVector3Array()
-	has_bounds = false
-	bounds = Rect2()
+func _init() -> void:
+	brush_id = "water"
+	settles = true
+	radius = 3.0
+	radius_range = Vector2(1.0,8.0)
 
-## One dab. `amount` is seconds of brushing times strength; `drain` removes water.
-func dab(center: Vector2, radius: float, amount: float, drain: bool) -> void:
+## The plan runs on its own grid, not the per-vertex buckets.
+func prepare(_data: NativeTerrainData, _world_seed: int) -> void:
+	pass
+
+func begin() -> void:
+	super.begin()
+	dabs = PackedVector3Array()
+
+## One dab. `amount` is seconds of brushing times strength; `drain` removes
+## water. Only records: the land is untouched until the pour settles.
+func dab(_data: NativeTerrainData, center: Vector2, radius: float, amount: float, drain: bool) -> void:
 	if radius <= 0.0 or amount <= 0.0: return
-	var reach := Rect2(center-Vector2.ONE*radius,Vector2.ONE*radius*2.0)
-	bounds = bounds.merge(reach) if has_bounds else reach
-	has_bounds = true
+	_grow_bounds(center,radius)
 	var volume := amount*RATE*pow(radius/REFERENCE_RADIUS,2.0)
 	if drain: volume = -maxf(radius,0.5)
 	if not dabs.is_empty():
@@ -129,12 +134,12 @@ class Heap:
 		k[b] = tk
 
 static func cell_of(point: Vector2) -> int:
-	var i := clampi(roundi((point.x-ORIGIN)/CELL),0,SIDE-1)
-	var j := clampi(roundi((point.y-ORIGIN)/CELL),0,SIDE-1)
+	var i := clampi(roundi((point.x-ORIGIN)/GRID),0,SIDE-1)
+	var j := clampi(roundi((point.y-ORIGIN)/GRID),0,SIDE-1)
 	return j*SIDE+i
 
 static func position_of(k: int) -> Vector2:
-	return Vector2(ORIGIN+(k%SIDE)*CELL,ORIGIN+(k/SIDE)*CELL)
+	return Vector2(ORIGIN+(k%SIDE)*GRID,ORIGIN+(k/SIDE)*GRID)
 
 static func _border(k: int) -> bool:
 	var i := k%SIDE
@@ -196,7 +201,7 @@ static func _grid(data: NativeTerrainData) -> Dictionary:
 	return {"h":h,"drain":drain_cell}
 
 static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, streams: Array, dabs_in: PackedVector3Array, validate: bool) -> Dictionary:
-	var area := CELL*CELL
+	var area := GRID*GRID
 	var h: PackedFloat32Array = grid.h
 	var drain_cell: PackedByteArray = grid.drain
 	# Existing ponds on the grid: each floods from its seed below its level.
@@ -480,7 +485,7 @@ static func _scoop(data: NativeTerrainData, heights: PackedFloat32Array, grid: D
 	data.heights = heights
 	var h: PackedFloat32Array = grid.h
 	var drain_cell: PackedByteArray = grid.drain
-	var rect := Rect2(center-Vector2.ONE*(radius+CELL),Vector2.ONE*(radius+CELL)*2.0)
+	var rect := Rect2(center-Vector2.ONE*(radius+GRID),Vector2.ONE*(radius+GRID)*2.0)
 	for k in range(SIDE*SIDE):
 		if drain_cell[k] and h[k] <= -1000.0: continue
 		if not rect.has_point(position_of(k)): continue

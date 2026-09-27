@@ -640,11 +640,18 @@ func discard_cache() -> void:
 func cancel_rebuild() -> void:
 	_instance_generation += 1
 
+## What the instance batches are built from. The grass mask is not in it: it
+## colours terrain faces (and the GPU-placed dense grass) but places no
+## instance, so painting cover, a brush stroke or emergence's creep never
+## rebuilds every MultiMesh. Standing blades and meadow tufts are instances.
 func _signature() -> PackedByteArray:
-	return var_to_bytes([data.objects_revision,data.objects.size(),data.ponds,data.streams,data.landscape_waterfall,data.grass,data.blades,data.meadow,data.blank,data._recipe_settings])
+	return var_to_bytes([data.objects_revision,data.objects.size(),data.ponds,data.streams,data.landscape_waterfall,data.blades,data.meadow,data.blank,data._recipe_settings])
 
+## What the water, streams and falls are built from. Cover masks place no
+## water, so a cover change rebuilds instances only and keeps `revision`
+## (planar water, leaf litter and the surface maps key on it).
 func _environment_signature() -> PackedByteArray:
-	return var_to_bytes([data.ponds,data.streams,data.landscape_waterfall,data.grass,data.blades,data.meadow,data.blank,data._recipe_settings])
+	return var_to_bytes([data.ponds,data.streams,data.landscape_waterfall,data.blank,data._recipe_settings])
 
 func _stale(record: Dictionary) -> bool:
 	return not record.is_empty() and data.probe_stale(record)

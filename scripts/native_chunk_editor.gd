@@ -35,7 +35,6 @@ const TOOL_TEXT := {
 	"waterfall":"Click the waterfall lip, then a lower landing point.",
 	"ember":"Drop a live ember on dry ground. Wind carries the front; rain, snow and wet ground put it out.",
 	"land":"Drag to raise land · Shift or right drag lowers · [ ] brush size",
-	"water":"Drag to pour water · It runs downhill and pools · Shift or right drag drains",
 }
 ## Every numeric setting a tool offers, in the order a shell should show them.
 const SETTINGS := [
@@ -69,8 +68,6 @@ const SETTINGS := [
 	{"property":"land_radius","title":"Brush size","low":1.5,"high":9.0,"step":0.25,"unit":"","whole":false,"modes":["land"]},
 	{"property":"land_strength","title":"Strength","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["land"]},
 	{"property":"land_ceiling","title":"Highest land","low":2.0,"high":24.0,"step":0.5,"unit":"m","whole":false,"modes":["land"]},
-	{"property":"water_radius","title":"Brush size","low":1.0,"high":8.0,"step":0.25,"unit":"","whole":false,"modes":["water"]},
-	{"property":"water_strength","title":"Flow","low":0.25,"high":3.0,"step":0.05,"unit":"","whole":false,"modes":["water"]},
 ]
 const POSE_TOOLS := ["tree","flower","rock","assets"]
 ## The one-shot commands a tool offers beside its sliders. The name is the node
@@ -223,11 +220,15 @@ signal land_weathered(bounds: Rect2)
 var _land_lower := false
 ## The button holding the current land stroke; every other stroke is a left drag.
 var _stroke_button := MOUSE_BUTTON_LEFT
+## Every creation brush by id (scripts/genesis_canvas.gd `BRUSHES`). The
+## "land" tool paints with whichever is in hand: land, water, meadow, forest
+## or path. `land_brush` and `water_brush` are the "land" and "water" entries.
+var brushes := {}
+var brush_id := "land"
+signal brush_changed(id: String)
 ## The water brush (scripts/water_brush.gd): poured water settles on a worker
 ## after release, then lands as one undoable edit.
 var water_brush = preload("res://scripts/water_brush.gd").new()
-var water_radius := 3.0
-var water_strength := 1.0
 ## True while a released water stroke is being settled on a worker.
 var water_settling := false
 var _water_generation := 0
@@ -282,6 +283,13 @@ func setup(owner_scene: Node3D) -> void:
 	explosives.name = "RemoteExplosives"
 	scene.add_child(explosives)
 	explosives.setup(self)
+	_setup_brushes()
+
+func _setup_brushes() -> void:
+	brushes = {"land":land_brush,"water":water_brush}
+	for entry: Dictionary in load("res://scripts/genesis_canvas.gd").BRUSHES:
+		if not brushes.has(entry.brush_id): brushes[entry.brush_id] = load(entry.script).new()
+	creation_brush().activate(self)
 
 ## The tools a shell may offer, grouped as the build panel lays them out.
 func tool_groups() -> Array:
@@ -350,14 +358,15 @@ func select_tool(tool: String) -> void:
 	if selection != null:
 		selection.update_marker(selected_object_id)
 	tool_changed.emit(tool)
-	if TOOL_TEXT.has(tool):
+	if tool == "land" and brushes.has(brush_id):
+		_set_status(load("res://scripts/genesis_canvas.gd").brush_hint(brush_id))
+	elif TOOL_TEXT.has(tool):
 		_set_status(TOOL_TEXT[tool])
 
 ## Radius the terrain shader should draw for the tool in hand.
 func preview_radius() -> float:
 	if mode == "explosive": return blast_radius
-	if mode == "land": return land_radius
-	if mode == "water": return water_radius
+	if mode == "land": return brush_radius()
 	if mode == "tunnel": return tunnel_width/2
 	if mode == "mountain":
 		return mountain_radius
@@ -464,6 +473,13 @@ func handle_input(event: InputEvent) -> bool:
 			redo()
 			return true
 	if event is InputEventKey and event.pressed and not event.ctrl_pressed and not event.meta_pressed:
+		# With a creation brush in hand, number keys never pick craft tools; the
+		# shell picks brushes with them (studies/cozy_worlds.gd `_creation_key`).
+		if mode == "land" and event.keycode >= KEY_1 and event.keycode <= KEY_9: return false
+		# [ ] size the brush in hand, Shift+[ ] its strength.
+		if mode == "land" and brush_id != "land" and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]:
+			_step_brush_setting(event.shift_pressed,1.0 if event.keycode == KEY_BRACKETRIGHT else -1.0)
+			return true
 		var tools := {KEY_V:"select",KEY_1:"raise",KEY_2:"lower",KEY_3:"smooth",KEY_4:"flatten"}
 		if tools.has(event.keycode) and not event.echo:
 			select_tool(tools[event.keycode])
@@ -472,7 +488,6 @@ func handle_input(event: InputEvent) -> bool:
 			var step := 0.25 if event.keycode == KEY_BRACKETRIGHT else -0.25
 			var property := "strength" if event.shift_pressed else "radius"
 			if mode == "land": property = "land_strength" if event.shift_pressed else "land_radius"
-			if mode == "water": property = "water_strength" if event.shift_pressed else "water_radius"
 			set_setting(property,get(property)+step)
 			return true
 		if event.keycode == KEY_K and not event.echo and sky_toggle_requested.has_connections():
@@ -481,7 +496,7 @@ func handle_input(event: InputEvent) -> bool:
 	if mode == "select" and event is InputEventMouseMotion and _selection_drag:
 		move_selection_pointer(event.position)
 		return true
-	if mode in ["land","water"] and event is InputEventMouseButton and event.button_index in [MOUSE_BUTTON_LEFT,MOUSE_BUTTON_RIGHT]:
+	if mode == "land" and event is InputEventMouseButton and event.button_index in [MOUSE_BUTTON_LEFT,MOUSE_BUTTON_RIGHT]:
 		return _land_press(event)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
@@ -662,6 +677,7 @@ func _process(delta: float) -> void:
 	# instances and the budget spreads the rest, so a step never stalls a frame.
 	if not forming and emergence.advance(delta):
 		refresh(get_tree())
+	_warm_face_probes()
 	if forming or not active:
 		pond_preview.clear()
 		return
@@ -679,9 +695,9 @@ func _process(delta: float) -> void:
 		if _painting and placement_trail and trail_available():
 			continue_trail(center)
 			_emit_stroke(1,hit,preview_radius(),delta)
-		elif _painting and mode in ["land","water"]:
+		elif _painting and mode == "land":
 			_land_step(center,delta)
-			_emit_stroke(1,hit,preview_radius(),(water_strength if mode == "water" else land_strength)*delta)
+			_emit_stroke(1,hit,brush_radius(),brush_strength()*delta)
 		elif _painting:
 			_elapsed += minf(delta,0.05)
 			if _elapsed >= 1.0/30.0:
@@ -697,6 +713,16 @@ func _process(delta: float) -> void:
 		_last_point = null
 		_trail_point = null
 		_elapsed = 0.0
+
+## A recipe world's first sculpting dab needs the per-face slope probes. They
+## are dropped whenever the sample cache fills, and resolving them on the main
+## thread cost that dab about 70 ms, so keep them ready on a worker instead.
+var _warming_probes := false
+func _warm_face_probes() -> void:
+	if _warming_probes or forming or data._recipe == null or data._face_probe.size() == data._face_center.size()*4: return
+	_warming_probes = true
+	await data._prepare_face_probes(get_tree())
+	_warming_probes = false
 
 func finish_pointer_gesture() -> void:
 	if _selection_drag or _painting:
@@ -720,14 +746,14 @@ func finish_stroke() -> void:
 	_settle_stroke()
 	if changed: _stroke_ended()
 	_stroke_rect = Rect2()
-	stroke_finished.emit(_stroke_center,_stroke_radius,mode)
-	if mode == "water": _settle_water()
+	stroke_finished.emit(_stroke_center,_stroke_radius,stroke_mode())
+	if mode == "land" and creation_brush().settles: _settle_water()
 
 ## Hand a finished stroke's ground to emergence. Kept as one call so the
 ## stroke_finished signal can take it over.
-func _stroke_ended() -> void:
+func _stroke_ended(kind := "") -> void:
 	if emergence_enabled and _stroke_rect.has_area():
-		emergence.on_region_changed(_stroke_rect)
+		emergence.on_region_changed(_stroke_rect,stroke_mode() if kind.is_empty() else kind)
 
 func _touch(point: Vector2, reach: float) -> void:
 	var area := Rect2(point-Vector2.ONE*reach,Vector2.ONE*reach*2.0)
@@ -738,9 +764,9 @@ func _emit_stroke(phase: int, hit: Vector3, size: float, amount: float) -> void:
 	_stroke_center = terrain.to_global(hit)
 	_stroke_radius = size*terrain.global_basis.get_scale().x
 	match phase:
-		0: stroke_started.emit(_stroke_center,_stroke_radius,mode)
-		1: stroke_moved.emit(_stroke_center,_stroke_radius,mode,amount)
-		_: stroke_finished.emit(_stroke_center,_stroke_radius,mode)
+		0: stroke_started.emit(_stroke_center,_stroke_radius,stroke_mode())
+		1: stroke_moved.emit(_stroke_center,_stroke_radius,stroke_mode(),amount)
+		_: stroke_finished.emit(_stroke_center,_stroke_radius,stroke_mode())
 
 func undo() -> void:
 	_history_step(false)
@@ -1553,8 +1579,62 @@ func form_inland(settings: Dictionary,live := true,apply_mood := true) -> void:
 	forming = false
 	_set_status("Landscape ready")
 
-# --- Creation brush ------------------------------------------------------------
-## A left press raises and a right press lowers (Shift lowers either way).
+# --- Creation brushes -----------------------------------------------------------
+## The brush in hand while the "land" tool is.
+func creation_brush() -> Variant:
+	return brushes.get(brush_id,land_brush)
+
+## Put a brush in hand, and the "land" tool with it.
+func select_brush(id: String) -> bool:
+	if not brushes.has(id): return false
+	finish_stroke()
+	if id != brush_id:
+		creation_brush().deactivate(self)
+		brush_id = id
+		creation_brush().activate(self)
+		brush_changed.emit(id)
+	if mode != "land": select_tool("land")
+	else: _set_status(load("res://scripts/genesis_canvas.gd").brush_hint(id))
+	return true
+
+## The creation brush in hand, or "" while the "land" tool is not.
+func held_brush() -> String:
+	return brush_id if mode == "land" else ""
+
+## Land keeps its size and strength here, as settings; the others on the brush.
+func brush_radius() -> float:
+	return land_radius if brush_id == "land" else float(creation_brush().radius)
+
+func brush_strength() -> float:
+	return land_strength if brush_id == "land" else float(creation_brush().strength)
+
+## A brush's size ("size") or strength ("strength") for a shell's meters:
+## {value, low, high}, or {} for an unknown brush.
+func brush_setting(id: String, which: String) -> Dictionary:
+	if not brushes.has(id): return {}
+	if id == "land":
+		var spec := setting_spec("land_radius" if which == "size" else "land_strength")
+		return {"value":float(get(spec.property)),"low":spec.low,"high":spec.high}
+	var brush = brushes[id]
+	var span: Vector2 = brush.radius_range if which == "size" else brush.strength_range
+	return {"value":float(brush.radius if which == "size" else brush.strength),"low":span.x,"high":span.y}
+
+func _step_brush_setting(strength_step: bool, direction: float) -> void:
+	var brush = creation_brush()
+	if strength_step:
+		brush.strength = clampf(brush.strength+0.25*direction,brush.strength_range.x,brush.strength_range.y)
+		setting_changed.emit("brush_strength",brush.strength)
+	else:
+		var step := 0.25 if brush.radius_range.y > 4.0 else 0.1
+		brush.radius = clampf(brush.radius+step*direction,brush.radius_range.x,brush.radius_range.y)
+		setting_changed.emit("brush_radius",brush.radius)
+
+## The mode stroke signals carry: the brush id while a creation brush paints.
+func stroke_mode() -> String:
+	return brush_id if mode == "land" else mode
+
+## A left press paints and a right press works the other way (Shift either
+## way): land rises and lowers, forest grows and clears, and so on.
 ## A press that misses the land, or holds Alt, falls through to the camera, so
 ## the sky still orbits with either button.
 func _land_press(event: InputEventMouseButton) -> bool:
@@ -1566,30 +1646,25 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	if hit == null: return false
 	_stroke_button = event.button_index
 	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT
+	var brush = creation_brush()
+	brush.prepare(data,land_seed)
+	brush.begin()
+	_stroke_first_id = data.next_id
 	_painting = true
 	_elapsed = 0.0
 	_last_point = Vector2(hit.x,hit.z)
-	if mode == "water":
-		# Poured water changes nothing until it settles after release.
-		water_brush.begin()
-		water_dab(_last_point,water_strength/30.0)
-		_emit_stroke(0,hit,water_radius,0.0)
-		return true
-	land_brush.prepare(data,land_seed)
-	land_brush.begin()
-	data.begin_stroke()
-	land_dab(_last_point,land_strength/30.0)
-	refresh()
-	_emit_stroke(0,hit,land_radius,0.0)
+	# A settling brush (water) changes nothing until it settles after release,
+	# so it opens no undo step and needs no refresh while it is held.
+	if not brush.settles: data.begin_stroke()
+	land_dab(_last_point,brush_strength()/30.0)
+	if not brush.settles: refresh()
+	_emit_stroke(0,hit,brush_radius(),0.0)
 	return true
 
 func land_dab(point: Vector2, amount: float) -> void:
 	var lower := _land_lower or Input.is_key_pressed(KEY_SHIFT)
-	land_brush.dab(data,point,land_radius,amount,lower,land_ceiling)
-
-func water_dab(point: Vector2, amount: float) -> void:
-	var drain := _land_lower or Input.is_key_pressed(KEY_SHIFT)
-	water_brush.dab(point,water_radius,amount,drain)
+	if brush_id == "land": land_brush.dab(data,point,land_radius,amount,lower,land_ceiling)
+	else: creation_brush().dab(data,point,brush_radius(),amount,lower)
 
 ## Dabs along the pointer's path at a fifth of the brush size, at most one
 ## refresh per 1/30 s. The rate is independent of how far the pointer moved.
@@ -1597,17 +1672,14 @@ func _land_step(center: Vector2, delta: float) -> void:
 	_elapsed += minf(delta,0.05)
 	if _elapsed < 1.0/30.0: return
 	var previous: Vector2 = _last_point if _last_point != null else center
-	var water := mode == "water"
-	var size := water_radius if water else land_radius
-	var dabs := clampi(ceili(previous.distance_to(center)/(size*0.2)),1,24)
+	var reach := brush_radius()
+	var settles: bool = creation_brush().settles
+	var dabs := clampi(ceili(previous.distance_to(center)/(reach*0.2)),1,24)
 	for i in range(1,dabs+1):
 		var point := previous.lerp(center,float(i)/dabs)
-		if water:
-			water_dab(point,water_strength*_elapsed/dabs)
-			continue
-		land_dab(point,land_strength*_elapsed/dabs)
-		_touch(point,land_radius)
-	if not water: refresh()
+		land_dab(point,brush_strength()*_elapsed/dabs)
+		if not settles: _touch(point,reach)
+	if not settles: refresh()
 	_elapsed = 0.0
 	_last_point = center
 
@@ -1650,15 +1722,24 @@ func _settle_water() -> void:
 		content.water_births[GardenView.water_key(entry.record)] = {"born":now+float(entry.delay),"seconds":float(entry.seconds)}
 	# Grass creeps out from new shores (scripts/emergence.gd).
 	_stroke_rect = plan.rect
-	_stroke_ended()
+	_stroke_ended("water")
 	_stroke_rect = Rect2()
 	water_settled.emit(plan.rect)
 	refresh(get_tree())
 
 ## Runs inside the stroke's transaction, so one undo removes the land and its
-## weathering together.
+## weathering together. Other brushes do their release work here too (stones
+## along a path, clearing a forest) and say which ground emergence answers.
+## True when the settle refresh must publish it.
 func _weather_land() -> bool:
-	if mode != "land" or not land_brush.has_bounds: return false
+	if mode != "land": return false
+	if brush_id != "land":
+		var brush = creation_brush()
+		# A settling brush (water) has nothing to finish here; it settles after.
+		if brush.settles or not brush.has_bounds: return false
+		_stroke_rect = brush.finish(data)
+		return true
+	if not land_brush.has_bounds: return false
 	var region: Rect2 = land_brush.bounds
 	if not land_brush.weather(data): return false
 	land_weathered.emit(region)

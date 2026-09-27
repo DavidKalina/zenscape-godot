@@ -14,7 +14,7 @@ func pour(label: String, points: Array, seconds: float) -> void:
 	editor.water_brush.begin()
 	for point: Vector2 in points:
 		for tick in range(int(seconds*30.0/points.size())):
-			editor.water_brush.dab(point,editor.water_radius,editor.water_strength/30.0,false)
+			editor.water_brush.dab(editor.data,point,editor.water_brush.radius,editor.water_brush.strength/30.0,false)
 	var dabs: PackedVector3Array = editor.water_brush.dabs
 	var detached := preload("res://scripts/native_terrain_snapshot.gd").for_height(editor.data)
 	var plan: Dictionary = preload("res://scripts/water_brush.gd").plan(detached,editor.data.ponds.duplicate(true),editor.data.streams.duplicate(true),dabs,true)
