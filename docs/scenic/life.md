@@ -1,13 +1,16 @@
 # Life answers the land
 
-Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fireflies find their places in the world as it stands now, and arrive in their own time. Herons, deer, a rainbow and, very rarely, Bigfoot come when a place has become rich. Nothing is placed by the player.
+Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fireflies find their places in the world as it stands now, and arrive in their own time. Herons, deer, a grass snake, a rainbow and, very rarely, Bigfoot come when a place has become rich. Nothing is placed by the player.
 
 - `scripts/land_life.gd`: the scheduler and the everyday creatures.
 - `scripts/life_survey.gd`: what the land offers, read from the live world.
 - `scripts/life_moments.gd`: the rare moments, and when Bigfoot may come.
 - `scripts/life_bigfoot.gd`: the Bigfoot sighting: where he stands, what he does, when he leaves.
-- `scripts/life_models.gd`: low-poly procedural meshes for the fish, frogspawn, heron and deer.
+- `scripts/life_models.gd`: low-poly procedural meshes for the fish and frogspawn, and the classic heron and deer (`--classic-life`).
+- `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
+- `scripts/life_snakes.gd`: the grass snake, built and moved in code.
 - `tools/probe_land_life.gd` and `tools/probe_bigfoot_sighting.gd`: the headless probes.
+- `tools/probe_snake.gd` and `tools/render_snake_probe.py`: the snake's headless probe and a Blender renderer for what it dumps.
 
 `studies/fidelity_life.gd` builds `LandLife` after the fish and dead wood. It runs only on blank worlds: the Genesis plain and generated worlds. The Fidelity reference world keeps its authored birds, frogs and fireflies. `--no-life` turns the whole system off, for A/B timing.
 
@@ -170,6 +173,62 @@ He stands 2.21 m tall at scale 1, the model's own height, next to 3-6 m trees. H
 - `moments.force("bigfoot")`, `"bigfoot_watch"`, `"bigfoot_listen"` or `"bigfoot_stride"` start one now. They prefer an edge on screen and fall back to any edge with footing.
 - `--force-bigfoot` on the command line (or `--force-bigfoot=watch|listen|stride`) brings him as soon as the wood qualifies (the survey's trees and edge, not the hour, settle time or chance), and again 12 s after each sighting ends, for filming. Example: `godot --path . -- --force-bigfoot=stride`.
 
+## The grass snake
+
+`scripts/life_snakes.gd`, owned and advanced by LandLife like the moments. `LandLife.force("snake")` (or `snakes.force(options)`) summons one for probes.
+
+### When
+
+Checked every `CHECK` (2 s) of life time, at most one snake at a time.
+
+| Needs | Delay | Chance per check | Cooldown (s) |
+|---|---|---|---|
+| a pond of ≥ `POND_AREA` (3 m²) with ≥ 8 bank cells and fish, frogspawn or frogs in it; celestial phase 0.24-0.52 (`MORNING`); daylight ≥ 0.5; rain < 0.1 | the pond has qualified for 40 s | 0.1 | 420 |
+
+Rain above 0.4 or the pond draining sends it off early, swimming to the nearest bank first if it is in the water.
+
+### A visit
+
+1. **Out of cover.** It picks a flat spot 0.5-1.5 m up the bank with open ground all round to coil. For cover it takes the best spot 1.5-5 m away that it can reach in a straight line: trees or shrubs in the survey's coarse grid, else thick grass, else open ground away from the water. Its body starts laid out inside the cover with its head and neck out (`PEEK`, 25 cm). It pauses there with its head up, then comes to the bank in bursts.
+2. **Coil and bask.** It spirals in to a loose coil, 1.6 turns from 0.2 m to 0.08 m radius, on the side away from the water. Failing that it tries the other side, then a slightly tighter coil, before it gives up and basks as it lies. It basks 16-28 s (`BASK`) with its head resting in the middle. Once or twice it wakes: the head comes up, looks about, tastes the air and settles again. Then it rouses, lifts its head and crawls out over its own coils.
+3. **Hunt.** 3-5 stops (`HUNT`) round the pond in one direction, each 0.6-1.8 m ahead of it on the bank. At each it holds 1.8-3.4 s with its head up and turned toward the water.
+4. **Swim, half the time** (`SWIM_CHANCE`). From the nearest bank cell it looks at the water, slides in and swims to the far water's edge, crossing at least 1.2 pond radii of open water. Its head is held up and steady while the body undulates on the surface. A ring spreads from its head every 0.42 s, and it pauses once midway, floating with its head up. It hauls out and pauses.
+5. **Leave.** It goes to cover in bursts and slips in. Rings shrink to nothing as they pass the cover's edge, head first, so it vanishes into the cover the way the deer melt back into the trees. It never slips away on open water: from the water it makes for the bank first.
+
+A visit takes 95-125 s with an 8 s bask. With the usual 16-28 s bask it is about two minutes.
+
+### Body and motion
+
+- **Mesh.** A faceted hexagonal tube with a flat belly: 26 rings, a head and a forked tongue, 28 bones, 354 triangles. Every vertex belongs to one bone, so rings stay rigid and the faces between them stretch; skinning runs on the GPU. It is drawn with the frogs' `reference_surface` material and per-face vertex colours: an olive back, darker bars and spots on half-faces, a pale belly, the yellow collar patches with a black crescent behind them, and small dark eyes. It is 1.2 m long and 5.6 cm across (`LENGTH`, `RADIUS`): a big female, slightly larger than the usual metre so it reads from further off.
+- **The path.** The head follows a way worked out ahead of time, with points `STEP` (2 cm) apart measured along the ground rather than across it, so the body keeps its length on slopes. Every ring sits on that path at its own distance behind the snout, so the serpentine comes from the head weaving (`WEAVE`, `WAVE`) and nothing slides sideways. The way turns toward its goal at `TURN` rad/m and is smoothed. It looks ahead, never past the goal, to steer round water and ground steeper than `SLOPE_MAX`.
+  - **Near a goal:** ahead of it, it steers harder and stops weaving, so it arrives. A goal behind it is swung round to wide, never in a hairpin.
+  - **No progress:** a way that stops getting closer ends where it was closest.
+  - **Water's edge:** on land it may turn through the shallows in its first half metre. Swims may slide over the steep band at the water's level. Leaving from the water, it may use the water for its first 1.5 m.
+  - **Cost:** each way is worked out a slice at a time (`PLAN_BUDGET_USEC`, 0.4 ms a frame) during the hold before the move.
+- **Contact.** Each path point reads the live ground height once, plus the level of any pond in or beside its cell. A ring's centre stands `BELLY` × radius above the ground (divided by the slope's cosine), or floats at the water's level, whichever is higher. It rolls with the sideways slope. After a new survey the points are re-read 12 a frame. Where the way crosses the body (leaving the coil), the upper part rides a smooth bump over whatever of the lower part is still underneath, and settles as the tail slides out from under it.
+- **Travel and hold.** On land it moves in bursts of 0.35-0.9 m at up to 0.24 m/s (`CRUISE`), easing off over the last few centimetres, then holds for 0.9-2.2 s. In a hold the head rises 4.5-7 cm with a small overshoot. The neck bends up in an S whose rings keep their spacing. The head turns to look first, and the neck follows on a critically damped spring. Each look dips a little on the way (an arc, not a swivel) and then holds still while breath and drift continue. The rear third settles deeper into its curves with a small overshoot, and the tail's tip drifts.
+- **Anticipation.** Before each move (the last 0.45 s of a hold), the head dips to the ground and turns home, the body draws back 12 mm along its path, and the rear straightens. As it sets off the draw-back springs out.
+- **Tongue.** A 0.44 s flick with a fast flutter at stops and every 2-4.5 s on the move.
+- **Swimming.** The head is held up (`SWIM_LIFT`) and its heading is smoothed, so the weave passes under a steady head.
+
+### Measured
+
+`tools/probe_snake.gd -- --visits=6`, headless, stepping each visit at exactly 30 fps, on 2026-09-26. There were six visits, all with the full programme (coil, bask, hunt, swim, leave): 10.1 minutes of snake time.
+
+- **Cost per step:** median 27 µs, p95 38 µs, p99 43 µs, worst 0.87 ms (a slice of planning). Arriving costs 0.8-1.5 ms once. While no snake is out, only the condition check runs, every 2 s.
+- **Contact:**
+  - A flat belly sits a median 0.2 mm from the ground (p95 1.0 mm, p99 2.4 mm).
+  - The belly's edges stand 1.3 mm off at p95 and sink at most 4 mm.
+  - Floating rings sit at the water's level to within 0.1 mm.
+  - Over its own coils, the upper body rests within 8 mm of the lower.
+- **Spacing:** along the body, rings stay at 0.87-1.14 of their spacing (p99 1.06). On the lifted neck the p99 is 1.07.
+- **Motion:**
+  - The head travels at a median 0.23 m/s, p99 0.35 m/s.
+  - Sideways slip of the body rings is p99 2 cm/s.
+  - Body acceleration is p99 1.2 m/s², at most 4.1 m/s².
+  - The head peaks higher, 6-9.6 m/s², on its quick rises and dips at the start and end of each hold.
+- **LandLife with the snake hooked in** (`probe_land_life.gd -- --pace=6 --watch=15`): median 0.08 ms, p95 0.15 ms per frame. Every other creature and moment still comes.
+
 ## Models
 
 `life_models.gd` builds everything from faceted spindles (a bipyramid over a 4-7 sided ring) and flat fans, with vertex colours and a slight per-face shade. It uses the Fidelity frog's own `reference_surface` material (flat faces, scene palette), so the models sit in the painted look and share a pipeline that is already compiled.
@@ -208,23 +267,30 @@ godot --headless --path . -s res://tools/probe_land_life.gd -- --pace=1 --watch=
 godot --headless --path . -s res://tools/probe_bigfoot_sighting.gd
 godot --headless --path . -s res://tools/probe_bigfoot_sighting.gd -- --natural=60 --pace=30
 godot --path . -s res://tools/probe_bigfoot_sighting.gd -- --stills=/tmp/zs-bigfoot-sighting
+godot --headless --path . -s res://tools/probe_snake.gd -- --dump=/tmp/zs-snake-previews/frames
+blender -b --python tools/render_snake_probe.py -- --view=close --video --every=2 --name=visit
 ```
 
 The first command digs a pond on the plain and stands a small wood beside it. It prints a per-second timeline of what is present, the survey, arrivals and moments, then forces each moment. Last, it drains the pond (the water life leaves) and undoes the drain (it comes back after its delays). The second regrows a generated world and watches it come alive.
 
+The snake probe digs the same pond, with shrubs on its west bank, and waits for fish. It then summons a snake and steps it at exactly 30 fps through a whole visit. It prints the timeline, the cost per step, ground and water contact, ring spacing, head speed, sideways slip, per-frame acceleration and the planning journal. Last it runs the life clock fast and waits for a snake to come by itself. `--dump` writes the mesh, the ground, the pond, the plants and every frame's bone poses and ripples. The Blender script poses the same mesh on the CPU from those and renders it as contact sheets or video, following the snake (`close`), from the game's default camera 43 m off at the game's pixel density (`far`, add `--mirror` for the other side), or from above (`top`).
+
 ## Tunables
 
-All of these are constants at the top of `land_life.gd` and `life_moments.gd`:
+All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `life_snakes.gd`:
 
 - `DELAYS`, `SETTLED_HEAD` and the per-kind caps and gaps.
 - `SURVEY_BUDGET_USEC`, `SURVEY_QUIET` and `SURVEY_GAP`.
 - Each moment's `*_DELAY`, `*_CHANCE`, `*_COOLDOWN` and `*_STAY`, and the `DAWN` and `DUSK` phase windows.
+- The snake's `SNAKE_*`, `MORNING`, `BASK`, `HUNT` and `SWIM_CHANCE`; its size (`LENGTH`, `RADIUS`); and its motion (`CRUISE`, `SWIM`, `WEAVE`, `WAVE`, `LIFT`, `RECOIL`, `ANTICIPATION`).
 
 The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`, `WADE_MAX`, `MIN_BODY_AREA`, `FOREST_*` and `DAMP_REACH`.
 
 ## Open
 
-- Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw.
+- Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw. The snake has been seen only in Blender renders of the probe's dump, not through the game's shader and palette.
+- At the default overview (43 m) the snake is a line one or two pixels wide. Only its motion and wake show from there; it is for looking at up close.
+- The snake's cover is where it vanishes, not something it hides under: a painted-grass world has no blades for it to slip between.
 - Fish live in ponds only, not streams.
 - Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
