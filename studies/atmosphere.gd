@@ -92,9 +92,10 @@ func advance(delta: float, paused: bool) -> void:
 	puffs.retire(_gust_distance)
 	_publish_wind()
 
-func send_gust(center: Vector3) -> void:
+## `strength` is the puff's weight (wind_puffs.gd); 0.45 is a full gust.
+func send_gust(center: Vector3, strength := 0.45) -> void:
 	var direction := Vector2(cos(_air_angle), sin(_air_angle))
-	puffs.puff(Vector2(center.x, center.z), direction, _gust_distance, _air_strength)
+	puffs.puff(Vector2(center.x, center.z), direction, _gust_distance, _air_strength, strength)
 	_publish_wind()
 
 func set_fog(value: float) -> void:

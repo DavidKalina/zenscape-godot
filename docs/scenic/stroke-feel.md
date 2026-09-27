@@ -33,6 +33,17 @@ and trees sway harder, and plants under the brush sprout again.
     advanced one, and all retire together once grown, so a plant pops once per
     pass.
 
+  - **Arrival gusts**: emerged trees come 5-23 s after a forest stroke, long
+    after its swell has eased (`SWELL_HOLD` 0.8 s). Emergence emits
+    `tree_arrived(p, born)` for each tree it places. When a batch's birth
+    comes, the feedback sends one light puff (`ARRIVAL_PUFF` 0.3, against 0.45
+    for a stroke's puffs) at the batch's middle, at most every `ARRIVAL_GAP`
+    (1.2 s). A puff starts 5 m upwind and travels with the air, so it reaches
+    the trees about when their 1.8 s rise ends, and they sway as they settle
+    in. It is local: the global swell is untouched. Any emerged tree gets one,
+    so trees that follow a land stroke settle the same way.
+    `studies/atmosphere.gd` `send_gust` takes an optional strength for this.
+
 All tunables are constants at the top of `scripts/stroke_feedback.gd`.
 
 ## Cost

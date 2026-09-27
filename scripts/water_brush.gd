@@ -59,6 +59,25 @@ const OVERFLOW_AT := 0.8
 const START_DELAY := 0.1
 ## Nearby dabs merge into one, so a long stroke stays a short list.
 const MERGE := 0.35
+## A new stream carves a shallow bed: a (1 - t²)² trough BED_DEPTH deep at its
+## centre and BED_HALF_WIDTH (at least) to either side, and its water drops
+## BED_SINK of what was carved under it, so it runs in the bed, not on the
+## grass. Ground at or above a nearby pond's level is never cut below it, so a
+## bed cannot open a pond's bank.
+const BED_DEPTH := 0.14
+const BED_HALF_WIDTH := 0.9
+const BED_SINK := 0.75
+const BED_GUARD := 0.03
+## Water poured into a pond already brimming at the plate's rim raises a soft
+## lip there instead of pouring off the edge: rim ground within LIP_WIDTH of
+## the edge, beside the pond, rises so the pond can rise up to LIP_RISE per
+## pour (LIP_PASSES settles, as the rising pond reaches more of the rim). A
+## lip that raises no pond is dropped. What the lip can't hold scoops a hollow
+## as other lost water does.
+const LIP_WIDTH := 2.2
+const LIP_RISE := 0.5
+const LIP_FREEBOARD := 0.1
+const LIP_PASSES := 3
 
 ## x, z and volume (m³) of each dab; negative volume drains.
 var dabs := PackedVector3Array()
@@ -164,10 +183,46 @@ static func plan(data: NativeTerrainData, ponds: Array, streams: Array, dabs_in:
 	var began := Time.get_ticks_usec()
 	var grid := _grid(data)
 	var result := _settle(data,grid,ponds,streams,dabs_in,validate)
+	# A pond brimming at the rim raises a lip there and settles again. As it
+	# rises it may reach the rim further along, so the lip grows a few times,
+	# never past LIP_RISE over where the pond first brimmed.
+	var lips := 0
+	var cap := -INF
+	for rim: Dictionary in result.rims: cap = maxf(cap,float(rim.level)+LIP_RISE)
+	var unlipped := {"result":result,"heights":data.heights.duplicate(),"h":grid.h.duplicate()}
+	for lip_pass in range(LIP_PASSES):
+		if result.rims.is_empty(): break
+		# Ponds keep their water, not their level: the lip lets them rise.
+		if not grid.has("before"): grid["before"] = grid.h.duplicate()
+		var heights := data.heights
+		var rect := Rect2()
+		var raised := false
+		for rim: Dictionary in result.rims:
+			var touched := _lip(data,heights,grid,rim,cap)
+			if touched.has_area():
+				rect = _grow(rect,raised,touched)
+				raised = true
+		if not raised: break
+		lips += 1
+		data.heights = heights
+		var before_rect: Rect2 = result.rect
+		var before_changed: bool = result.changed
+		result = _settle(data,grid,ponds,streams,dabs_in,validate)
+		rect = _grow(before_rect,before_changed,rect)
+		result.rect = result.rect.merge(rect) if result.changed else rect
+		result.changed = true
+		result["heights"] = data.heights
+	# A lip that raised no pond is only a bank; leave the rim as it was.
+	if lips > 0 and result.added.is_empty():
+		lips = 0
+		result = unlipped.result
+		data.heights = unlipped.heights
+		grid.h = unlipped.h
+		grid.erase("before")
 	var sites := _scoop_sites(grid,result.lost)
 	if not sites.is_empty():
 		# Ponds keep their water, not their level: the hollow may deepen them.
-		grid["before"] = grid.h.duplicate()
+		if not grid.has("before"): grid["before"] = grid.h.duplicate()
 		var heights := data.heights
 		for site: Dictionary in sites:
 			var rect := _scoop(data,heights,grid,site)
@@ -179,8 +234,16 @@ static func plan(data: NativeTerrainData, ponds: Array, streams: Array, dabs_in:
 		result.rect = result.rect.merge(rect) if result.changed else rect
 		result.changed = true
 		result["heights"] = data.heights
+	var carved := _carve_beds(data,grid,result,validate)
+	if carved.has_area():
+		result.rect = result.rect.merge(carved) if result.changed else carved
+		result.changed = true
+		result["heights"] = data.heights
 	result.erase("lost")
+	result.erase("rims")
 	result["scoops"] = sites.size()
+	result["lips"] = lips
+	result["beds"] = carved.has_area()
 	result["usec"] = Time.get_ticks_usec()-began
 	return result
 
@@ -235,6 +298,7 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 	var poured := {}
 	var sources := {}
 	var lost: Array = []
+	var rims: Array = []
 	var changed := Rect2()
 	var any_change := false
 	for d in dabs_in:
@@ -338,6 +402,16 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		result["deepest"] = deepest
 		# Water leaving the plate is lost to it.
 		var off_edge: bool = result.spill >= 0 and result.remaining > 0.0 and (result.edge or sink[result.spill] < 0)
+		# A pond already there, brimming at the rim itself, raises a lip there
+		# (`_lip`) so more water raises it. New water lost off the edge still
+		# scoops a hollow.
+		var holds_pond := false
+		for k in region:
+			if owner[k] >= 0 and not removed.has(owner[k]):
+				holds_pond = true
+				break
+		if off_edge and result.edge and holds_pond and _rim_distance(result.spill) <= 1.5:
+			rims.append({"region":region,"level":float(result.level),"volume":float(result.remaining),"spill":int(result.spill)})
 		if off_edge: lost.append({"volume":result.remaining,"start":deepest})
 		var held: float = float(result.volume)-(float(result.remaining) if result.spill >= 0 else 0.0)
 		var level: float = result.level-(SPILL_MARGIN if result.spill >= 0 else 0.0)
@@ -368,7 +442,9 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		var drop: float = float(record.level)-(previous if previous > -INF else h[deepest])
 		var bounds_rect := Rect2(position_of(region[0]),Vector2.ZERO)
 		for k in region: bounds_rect = bounds_rect.expand(position_of(k))
-		added.append({"record":record,"root":root,"drop":drop,"rect":bounds_rect})
+		# `cells` are the flooded planning cells; emergence withdraws the
+		# plants they drown (emergence.gd `drown`).
+		added.append({"record":record,"root":root,"drop":drop,"rect":bounds_rect,"cells":region})
 		changed = _grow(changed,any_change,bounds_rect.grow(1.0))
 		any_change = true
 	# Streams from high dabs down to their pond, then overflows in order.
@@ -395,7 +471,9 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		if path.size() < 2 or _path_length(path) < STREAM_REACH*0.5: continue
 		var entry: Dictionary = pond_of.get(into,{})
 		var end_level: float = float(entry.record.level) if not entry.is_empty() else maxf(h[path[-1]],float(results.get(into,{}).get("level",h[path[-1]])))
-		new_streams.append({"path":path,"volume":float(result.remaining),"into":into,"from":root,"level":end_level})
+		var from_entry: Dictionary = pond_of.get(root,{})
+		var from_level: float = float(from_entry.record.level) if not from_entry.is_empty() else float(result.level)-SPILL_MARGIN
+		new_streams.append({"path":path,"volume":float(result.remaining),"into":into,"from":root,"level":end_level,"from_level":from_level})
 	new_streams.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.volume > b.volume)
 	new_streams.resize(mini(new_streams.size(),MAX_STREAMS))
 	# Timing: a pond fills once its streams arrive; overflows leave near full.
@@ -413,7 +491,7 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		var water: PackedVector3Array = surfaces.get(stream.into,PackedVector3Array())
 		var record := _stream_record(data,stream,water)
 		if record.is_empty(): continue
-		stream_records.append({"record":record,"delay":stream.delay,"seconds":stream.seconds})
+		stream_records.append({"record":record,"delay":stream.delay,"seconds":stream.seconds,"from_level":float(stream.get("from_level",-INF))})
 		changed = _grow(changed,any_change,_stream_rect(record).grow(1.0))
 		any_change = true
 	var streams_out: Array = kept_streams
@@ -424,7 +502,7 @@ static func _settle(data: NativeTerrainData, grid: Dictionary, ponds: Array, str
 		entry["delay"] = float(ready.get(entry.root,START_DELAY))
 		entry.erase("root")
 	return {"ponds":ponds_out,"streams":streams_out,"added":added,"added_streams":stream_records,
-		"rect":changed if any_change else Rect2(),"changed":any_change,"lost":lost}
+		"rect":changed if any_change else Rect2(),"changed":any_change,"lost":lost,"rims":rims}
 
 ## Where lost water comes to rest: down its steepest path from where it last
 ## stood, the lowest point far enough from the rim to hold a hollow. Nearby
@@ -491,6 +569,139 @@ static func _scoop(data: NativeTerrainData, heights: PackedFloat32Array, grid: D
 		if not rect.has_point(position_of(k)): continue
 		var value: Variant = data.ground_height(position_of(k))
 		if value != null: h[k] = float(value)
+	return rect.grow(1.0)
+
+## Raise a soft lip along the rim beside a pond that brims there, high enough
+## to hold the water it lost (at most LIP_RISE more). Only raises ground.
+## Returns the rect it touched, or an empty rect.
+static func _lip(data: NativeTerrainData, heights: PackedFloat32Array, grid: Dictionary, rim: Dictionary, cap: float) -> Rect2:
+	var region: PackedInt32Array = rim.region
+	var frontage := PackedVector2Array()
+	frontage.append(position_of(int(rim.spill)))
+	for k in region:
+		if _rim_distance(k) <= 1.5: frontage.append(position_of(k))
+	var area := float(region.size())*GRID*GRID
+	var top: float = minf(float(rim.level)+float(rim.volume)/maxf(area,1.0),cap)+SPILL_MARGIN+LIP_FREEBOARD
+	var bounds := Rect2(frontage[0],Vector2.ZERO)
+	for p in frontage: bounds = bounds.expand(p)
+	bounds = bounds.grow(LIP_WIDTH+2.0)
+	var touched := Rect2()
+	var any := false
+	for i in range(data.points.size()):
+		var p := data.points[i]
+		if not bounds.has_point(p): continue
+		var edge := 14.0-maxf(absf(p.x),absf(p.y))
+		if edge >= LIP_WIDTH: continue
+		var near := INF
+		for f in frontage: near = minf(near,f.distance_to(p))
+		if near >= 3.5: continue
+		var w := (1.0-smoothstep(0.0,LIP_WIDTH,edge))*(1.0-smoothstep(1.5,3.5,near))
+		var raised := minf(NativeTerrainData.MAX_HEIGHT,lerpf(heights[i],maxf(heights[i],top),w))
+		if raised <= heights[i]+0.001: continue
+		heights[i] = raised
+		touched = _grow(touched,any,Rect2(p,Vector2.ZERO))
+		any = true
+	if not any: return Rect2()
+	data.heights = heights
+	_regrid(data,grid,touched.grow(1.0))
+	return touched.grow(1.5)
+
+## Re-sample the planning grid under `rect` after the heights changed.
+static func _regrid(data: NativeTerrainData, grid: Dictionary, rect: Rect2) -> void:
+	var h: PackedFloat32Array = grid.h
+	var drain_cell: PackedByteArray = grid.drain
+	for k in range(SIDE*SIDE):
+		if drain_cell[k] and h[k] <= -1000.0: continue
+		if not rect.has_point(position_of(k)): continue
+		var value: Variant = data.ground_height(position_of(k))
+		if value != null: h[k] = float(value)
+
+## Carve a shallow bed under each new stream and let its water down into it.
+## Ground beside a pond, at or above its level, stays above that level, so no
+## bed breaches a bank or drains a pond down a new channel. Returns the rect
+## carved, or an empty rect.
+static func _carve_beds(data: NativeTerrainData, grid: Dictionary, result: Dictionary, validate: bool) -> Rect2:
+	var entries: Array = result.added_streams
+	if entries.is_empty(): return Rect2()
+	# Guard level per grid cell: the highest pond whose water is within ~1 m.
+	var h: PackedFloat32Array = grid.h
+	var guard := PackedFloat32Array()
+	guard.resize(SIDE*SIDE)
+	guard.fill(-INF)
+	var owner := PackedInt32Array()
+	owner.resize(SIDE*SIDE)
+	owner.fill(-1)
+	var ponds: Array = result.ponds
+	for index in range(ponds.size()):
+		var level := float(ponds[index].level)
+		for k in _flood_below(h,cell_of(Vector2(ponds[index].x,ponds[index].z)),level,owner,index):
+			var i := k%SIDE
+			var j := k/SIDE
+			for dj in range(-2,3):
+				for di in range(-2,3):
+					var ni := i+di
+					var nj := j+dj
+					if ni < 0 or nj < 0 or ni >= SIDE or nj >= SIDE: continue
+					guard[nj*SIDE+ni] = maxf(guard[nj*SIDE+ni],level)
+	var heights := data.heights
+	var cut := PackedFloat32Array()
+	cut.resize(heights.size())
+	var rect := Rect2()
+	var any := false
+	for entry: Dictionary in entries:
+		var record: Dictionary = entry.record
+		var pts: Array = record.pts
+		var half := maxf(BED_HALF_WIDTH,float(record.width)*1.1)
+		var bounds := _stream_rect(record).grow(half)
+		for i in range(data.points.size()):
+			var p := data.points[i]
+			if not bounds.has_point(p): continue
+			var near := INF
+			for s in range(1,pts.size()):
+				var a := Vector2(pts[s-1].x,pts[s-1].z)
+				var b := Vector2(pts[s].x,pts[s].z)
+				near = minf(near,p.distance_to(Geometry2D.get_closest_point_to_segment(p,a,b)))
+			if near >= half: continue
+			var t := near/half
+			var depth := BED_DEPTH*(1.0-t*t)*(1.0-t*t)
+			var floor_level: float = guard[cell_of(p)]
+			if heights[i] >= floor_level:
+				depth = minf(depth,maxf(0.0,heights[i]-(floor_level+BED_GUARD)))
+			cut[i] = maxf(cut[i],depth)
+	var before := heights.duplicate()
+	for i in range(heights.size()):
+		if cut[i] <= 0.001: continue
+		heights[i] = maxf(NativeTerrainData.MIN_HEIGHT,heights[i]-cut[i])
+		rect = _grow(rect,any,Rect2(data.points[i],Vector2.ZERO))
+		any = true
+	if not any: return Rect2()
+	# Each stream's surface follows the ground down into its new bed.
+	var ground_before := {}
+	for entry: Dictionary in entries:
+		for p: Dictionary in entry.record.pts:
+			ground_before[Vector2(p.x,p.z)] = data.ground_height(Vector2(p.x,p.z))
+	data.heights = heights
+	# A pond whose surface the bed would break keeps the uncarved ground.
+	if validate:
+		for added: Dictionary in result.added:
+			if NativeGardenWater.surface(data,added.record).is_empty():
+				data.heights = before
+				return Rect2()
+	for entry: Dictionary in entries:
+		var record: Dictionary = entry.record
+		var lowered: Dictionary = record.duplicate(true)
+		var ceiling := INF
+		for p: Dictionary in lowered.pts:
+			var was: Variant = ground_before[Vector2(p.x,p.z)]
+			var now: Variant = data.ground_height(Vector2(p.x,p.z))
+			var sink := BED_SINK*(float(was)-float(now)) if was != null and now != null else 0.0
+			ceiling = minf(ceiling,float(p.h)-sink)
+			p.h = clampf(ceiling,-1.5,66.0)
+		if not preload("res://scripts/native_stream_record.gd").valid(lowered): continue
+		var index: int = result.streams.find(record)
+		if index >= 0: result.streams[index] = lowered
+		entry.record = lowered
+	_regrid(data,grid,rect.grow(1.0))
 	return rect.grow(1.0)
 
 static func _grow(rect: Rect2, started: bool, add: Rect2) -> Rect2:

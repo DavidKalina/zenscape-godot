@@ -49,8 +49,17 @@ stay on a path too.
 This is one float per cover cell, from -1 (keep clear) through 0 (the biome
 decides) to 1 (the heart of a forest). It rides the undo history through
 `history_captured` and `state_restored`, the same way the fire field does, so
-one undo removes the wish and its painted floor together. It is not saved;
-trees that have already grown are.
+one undo removes the wish and its painted floor together.
+
+The wish is saved with the place, so a stroke after a load still honours it
+(a clearing stays clear, a forest keeps its core and frayed edge).
+`NativeTerrainData.to_document` emits `document_captured`, and the intent adds
+an optional `intent_forest` field whenever any cell carries a wish:
+`{"cells": 3136, "deflate": <base64 of the deflated float32 cells>}`.
+`load_document` checks it (cell count, finite values in -1..1) and hands it
+back through `state_restored`. The document version stays 10; saves without
+the field load with no wish anywhere, and a malformed field fails the load
+like any other bad field.
 
 When the stroke is released, its bounds go to emergence as a `"forest"`
 region. A forest region:
@@ -102,12 +111,18 @@ At arrival (`emergence.gd`, `_arrive` and `_frayed`):
 (the Fidelity look; standing grass was rejected on 2026-09-26). Each cell
 settles on a target:
 
-- **Most cells** get a lighter, warmer meadow green, with a patch-noise weight
-  in `GREEN_WEIGHT`.
-- **Some cells** inside flower drifts get one of the world's three flower
-  colours at `FLOWER_WEIGHT`. The drifts come from noise at
-  `DRIFT_FREQUENCY`. Up to `FLOWER_SHARE` of the cells in a full drift bloom.
-  The three colours are picked per world seed from `FLOWERS`.
+- **Most cells** get a lush, warm meadow green, with a patch-noise weight in
+  `GREEN_WEIGHT`. The green is the palette's lightest grass shifted by
+  `GREEN_SHIFT`, leaned `MEADOW_LEAN` toward `MEADOW_GREEN`, so it reads on
+  every family.
+- **Flower drifts** come from noise at `DRIFT_FREQUENCY`. Each drift blooms in
+  one of the world's three flower colours, picked by a slow noise at
+  `HUE_FREQUENCY`, so a drift is one colour rather than confetti. Across the
+  drift the green washes toward that colour (`FLOWER_WASH` at its heart), and
+  up to `FLOWER_SHARE` of its cells bloom fully at `FLOWER_WEIGHT`. The three
+  colours are picked per world seed from `FLOWERS`, which are all warm
+  (buttercup, gold, poppy, rose, apricot, coral, cream). The first film's pale
+  blues and whites read as cold shards of sky on the faceted ground.
 
 Cover eases to `COVER`. Dabs move each cell toward its target, so repeated
 strokes settle instead of saturating. Lifting a meadow fades the tint and
@@ -116,19 +131,27 @@ leaves the cover.
 | Tunable | Default |
 |---|---|
 | `RATE` | 1.6 |
-| `GREEN_WEIGHT` | 0.26–0.44 |
-| `GREEN_SHIFT` | (−0.022, 0.02, 0.045) from the lightest grass |
-| `FLOWER_SHARE`, `FLOWER_WEIGHT` | 0.2, 0.62 |
-| `DRIFT_FREQUENCY` | 0.32 /m |
+| `GREEN_WEIGHT` | 0.6–0.85 |
+| `GREEN_SHIFT` | (−0.035, 0.16, 0.035) from the lightest grass |
+| `MEADOW_GREEN`, `MEADOW_LEAN` | `a8cc58`, 0.55 |
+| `FLOWER_WASH`, `FLOWER_SHARE`, `FLOWER_WEIGHT` | 0.42, 0.26, 0.66 |
+| `DRIFT_FREQUENCY`, `HUE_FREQUENCY` | 0.3 /m, 0.12 /m |
 | `radius` | 3.2 (1–9) |
 
 ## Path
 
 `scripts/path_brush.gd` wears a tread and gives it stony margins.
 
+- **Edges.** Each cell's distance from the stroke wanders by up to
+  `EDGE_WANDER` radii on a slow noise (`EDGE_FREQUENCY`) plus a per-cell
+  `EDGE_FRAY`, so the tread's sides are irregular rather than a clean strip.
 - **Tread** (inside `TREAD` of the radius). Cover eases down to `WORN_COVER`,
   and the ground takes a packed-earth colour (the palette's sand and gravel)
-  at `EARTH_WEIGHT`.
+  at `EARTH_WEIGHT`. The worn centre (inside `CENTRE` of the tread) is darker
+  packed earth, which turns dusty, lighter and a little green toward the
+  shoulders. Each cell's earth varies in lightness by up to `EARTH_JITTER`.
+- **Grassy shoulders.** `GRASSY_SHARE` of the shoulder cells keep their green
+  cover under a light dusting of earth.
 - **Margin** (out to `MARGIN`). A hashed `STONY_SHARE` of the cells take a
   gravel colour at `STONY_WEIGHT`.
 - **Settling.** The tread sinks at `SINK_RATE` to at most `MAX_SINK` below
@@ -143,9 +166,11 @@ leaves the cover.
 | Tunable | Default |
 |---|---|
 | `RATE` | 2.2 |
-| `WORN_COVER`, `EARTH_WEIGHT` | 0.12, 0.8 |
-| `TREAD`, `MARGIN` | 0.7, 1.15 radii |
-| `STONY_SHARE`, `STONY_WEIGHT` | 0.45, 0.6 |
+| `WORN_COVER`, `EARTH_WEIGHT` | 0.12, 0.9 |
+| `TREAD`, `MARGIN`, `CENTRE` | 0.7, 1.15 radii; 0.45 of the tread |
+| `EDGE_WANDER`, `EDGE_FRAY`, `EDGE_FREQUENCY` | 0.22, 0.12 radii; 0.7 /m |
+| `GRASSY_SHARE`, `EARTH_JITTER` | 0.35, 0.12 |
+| `STONY_SHARE`, `STONY_WEIGHT` | 0.4, 0.55 |
 | `SINK_RATE`, `MAX_SINK`, `SMOOTH` | 0.3 m/s, 0.07 m, 4 /s |
 | `STONE_SPACING`, `STONE_CHANCE`, `STONE_SIZE`, `STONE_CAP` | 0.32 m, 0.34, 0.1–0.22, 80 |
 | `radius` | 1.1 (0.5–3) |

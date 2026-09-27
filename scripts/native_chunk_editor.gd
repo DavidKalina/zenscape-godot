@@ -244,6 +244,9 @@ func setup(owner_scene: Node3D) -> void:
 	terrain = scene.get_node("Reference/terrain")
 	terrain.add_child(pond_preview)
 	data.setup(terrain.mesh)
+	data.stroke_starting.connect(_join_weathering)
+	# Plans run on a worker; the editor's frames must not wait for them.
+	emergence.plan_on_worker = true
 	_original_ground_map = scene._precipitation.ground_texture.get_image()
 	_original_stream_map = scene._precipitation.stream_texture.get_image()
 	_original_bird_ground = scene._bird_flight.ground
@@ -742,13 +745,17 @@ func finish_stroke() -> void:
 	_trail_point = null
 	_elapsed = 0.0
 	_last_point = null
+	# The land brush weathers on a worker; the settle waits for it to land.
+	var region: Rect2 = land_brush.bounds
+	var weathering: Callable = land_brush.weather_job(data) if mode == "land" and brush_id == "land" else Callable()
 	var weathered := _weather_land()
 	_stroke_button = MOUSE_BUTTON_LEFT
 	data.mark_objects_hand(_stroke_first_id)
 	var changed := data.end_stroke()
 	# Weathering lands after the last light dab, so the settle refresh pays it.
 	if weathered: _settle_pending = true
-	_settle_stroke()
+	if changed and weathering.is_valid(): _weather_async(weathering,region)
+	else: _settle_stroke()
 	if changed: _stroke_ended()
 	_stroke_rect = Rect2()
 	stroke_finished.emit(_stroke_center,_stroke_radius,stroke_mode())
@@ -781,12 +788,16 @@ func redo() -> void:
 
 func _history_step(forward: bool) -> void:
 	if forming: return
+	# A pour still shaping its ground lands, so undo takes it back whole.
+	_finish_water_shape()
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
-	# A water stroke still settling belongs to the world being left.
+	# A water stroke still settling belongs to the world being left, and so
+	# does a land stroke's weathering.
 	_water_generation += 1
 	water_settling = false
+	_drop_weathering()
 	if scene.has_method("_finish_fire_stroke"): scene._finish_fire_stroke()
 	var history: Array = data._redo if forward else data._undo
 	if history.is_empty(): return
@@ -917,7 +928,8 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	stage_start = Time.get_ticks_usec()
 	if update_encounter_ground and terrain.mesh != _bigfoot_mesh:
 		_bigfoot_mesh = terrain.mesh
-		scene._bigfoot.ground.setup(terrain)
+		if frame_tree != null: _setup_encounter_ground(terrain.mesh)
+		else: scene._bigfoot.ground.setup(terrain)
 	var encounter_pose: Variant = null
 	for item: Dictionary in data.objects:
 		if item.asset == "bigfoot_tree":
@@ -943,6 +955,16 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	refresh_stage = ""
 
 	return _finish_refresh(true)
+
+## A yielding refresh buckets the encounter ground's triangles on a worker
+## (about 3-4 ms on the main thread) and adopts them a frame or two later,
+## unless a newer terrain mesh has been published meanwhile.
+func _setup_encounter_ground(mesh: Mesh) -> void:
+	var ground = scene._bigfoot.ground
+	var prepared: Dictionary = ground.prepare(terrain)
+	var job = preload("res://scripts/background_work.gd").new()
+	var built: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/reference_ground.gd").build(prepared),get_tree())
+	if _bigfoot_mesh == mesh and is_instance_valid(scene) and scene._bigfoot.ground == ground: ground.adopt(built)
 
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
@@ -995,8 +1017,8 @@ var _settled_objects_revision := -1
 var _settled_blades := PackedFloat32Array()
 var _settled_meadow := PackedFloat32Array()
 
-func _light_refresh_ready() -> bool:
-	if not _painting or forming or not content._view_ready: return false
+func _light_refresh_ready(shaping := false) -> bool:
+	if not (_painting or shaping) or forming or not content._view_ready: return false
 	return data.objects_revision == _settled_objects_revision and data.blades == _settled_blades and (data.blank or data.meadow == _settled_meadow)
 
 func _refresh_light() -> bool:
@@ -1694,10 +1716,22 @@ func _land_step(center: Vector2, delta: float) -> void:
 ## snapshots. A later stroke, undo or world change supersedes the plan.
 func _settle_water() -> void:
 	if water_brush.dabs.is_empty() or forming: return
+	# A pour still shaping its ground lands first, so this one plans on it.
+	_finish_water_shape()
 	_water_generation += 1
 	var generation := _water_generation
 	var dabs: PackedVector3Array = water_brush.dabs
 	water_brush.begin()
+	water_settling = true
+	# A land stroke's weathering still in flight (`_weather_async`) lands
+	# first, so the pour plans on the weathered ground instead of finding the
+	# land changed under it. Undo or a newer pour supersedes the wait.
+	while _weather_job != null:
+		await get_tree().process_frame
+		if generation != _water_generation: return
+	if forming:
+		water_settling = false
+		return
 	var detached: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
 	var target := data
 	var heights := data.heights.duplicate()
@@ -1708,17 +1742,89 @@ func _settle_water() -> void:
 	var job = preload("res://scripts/background_work.gd").new()
 	var plan: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/water_brush.gd").plan(detached,ponds,streams,dabs,validate),get_tree())
 	if generation != _water_generation: return
-	water_settling = false
 	water_brush.last_plan_usec = plan.usec
-	if not plan.changed: return
+	if not plan.changed:
+		water_settling = false
+		return
 	if forming or data != target or data.heights != heights or data.ponds != ponds or data.streams != streams or not data._before.is_empty():
+		water_settling = false
 		_set_status("The land changed while the water settled. Pour again.")
 		return
 	data.begin_stroke()
+	# The pour reshaped the ground (a scooped hollow, stream beds, a lip at
+	# the rim): it sinks or rises into place first, then the water arrives.
+	if plan.has("heights") and _light_refresh_ready(true):
+		_water_shape = {"plan":plan,"target":data,"from":data.heights.duplicate()}
+		data.stroke_starting.connect(_finish_water_shape)
+		await _shape_water_ground()
+		return
+	_land_water(plan)
+
+## Seconds a pour's reshaped ground takes to move into place before its
+## water starts to fill. Ticks at the paint loop's 30 Hz with light refreshes.
+const WATER_SHAPE_SECONDS := 0.7
+## The pour whose ground is moving: {"plan", "target", "from"}.
+var _water_shape := {}
+
+func _shape_water_ground() -> void:
+	var shape := _water_shape
+	var final: PackedFloat32Array = shape.plan.heights
+	var from: PackedFloat32Array = shape.from
+	var moved := PackedInt32Array()
+	for i in range(mini(final.size(),from.size())):
+		if absf(final[i]-from[i]) > 0.0005: moved.append(i)
+	var elapsed := 0.0
+	var since_tick := 0.0
+	var last := Time.get_ticks_usec()
+	while elapsed < WATER_SHAPE_SECONDS and not moved.is_empty():
+		await get_tree().process_frame
+		# Landed early (another stroke, an undo, a newer pour) or abandoned.
+		if not is_same(_water_shape,shape): return
+		if data != shape.target or forming:
+			_abandon_water_shape()
+			return
+		var now := Time.get_ticks_usec()
+		var step := minf((now-last)/1000000.0,0.05)
+		last = now
+		elapsed += step
+		since_tick += step
+		if since_tick < 1.0/30.0: continue
+		since_tick = 0.0
+		if not _light_refresh_ready(true): break
+		var t := smoothstep(0.0,1.0,clampf(elapsed/WATER_SHAPE_SECONDS,0.0,1.0))
+		var heights := data.heights
+		for i in moved: heights[i] = lerpf(from[i],final[i],t)
+		data.heights = heights
+		_refresh_light()
+	if is_same(_water_shape,shape): _finish_water_shape()
+
+## Land a shaping pour at once: its final ground, then its water.
+func _finish_water_shape() -> void:
+	if _water_shape.is_empty(): return
+	var shape := _water_shape
+	_water_shape = {}
+	if shape.target.stroke_starting.is_connected(_finish_water_shape): shape.target.stroke_starting.disconnect(_finish_water_shape)
+	if data != shape.target:
+		water_settling = false
+		return
+	_land_water(shape.plan)
+
+func _abandon_water_shape() -> void:
+	var shape := _water_shape
+	_water_shape = {}
+	if is_instance_valid(shape.target) and shape.target.stroke_starting.is_connected(_finish_water_shape): shape.target.stroke_starting.disconnect(_finish_water_shape)
+	water_settling = false
+
+## Apply a settled pour inside its open stroke: ground, ponds and streams as
+## one undo step, then fill births and the yielding settle refresh.
+func _land_water(plan: Dictionary) -> void:
+	water_settling = false
 	# Lost water scooped a hollow to pool in (water_brush.gd `_scoop`).
 	if plan.has("heights"): data.heights = plan.heights
 	data.ponds.assign(plan.ponds)
 	data.streams.assign(plan.streams)
+	# Emerged plants the new water covers go with the pour, in its undo step.
+	emergence.drown(plan.added,plan.added_streams)
 	if not data.end_stroke(): return
 	var now: float = preload("res://scripts/emergence.gd").time
 	for entry: Dictionary in plan.added:
@@ -1732,20 +1838,69 @@ func _settle_water() -> void:
 	water_settled.emit(plan.rect)
 	refresh(get_tree())
 
-## Runs inside the stroke's transaction, so one undo removes the land and its
-## weathering together. Other brushes do their release work here too (stones
-## along a path, clearing a forest) and say which ground emergence answers.
-## True when the settle refresh must publish it.
+## Release work for the creation brushes other than land, inside the stroke's
+## transaction: stones along a path, clearing a forest. It says which ground
+## emergence answers. True when the settle refresh must publish it. Land
+## weathers on a worker instead (`_weather_async`).
 func _weather_land() -> bool:
-	if mode != "land": return false
-	if brush_id != "land":
-		var brush = creation_brush()
-		# A settling brush (water) has nothing to finish here; it settles after.
-		if brush.settles or not brush.has_bounds: return false
-		_stroke_rect = brush.finish(data)
-		return true
-	if not land_brush.has_bounds: return false
-	var region: Rect2 = land_brush.bounds
-	if not land_brush.weather(data): return false
-	land_weathered.emit(region)
+	if mode != "land" or brush_id == "land": return false
+	var brush = creation_brush()
+	# A settling brush (water) has nothing to finish here; it settles after.
+	if brush.settles or not brush.has_bounds: return false
+	_stroke_rect = brush.finish(data)
 	return true
+
+## A land stroke's weathering (land_brush.gd `weather_job`) runs on a worker
+## from the heights at release, and the stroke's settle refresh starts when it
+## lands, a few frames on. It lands after `end_stroke`, outside the undo step,
+## which still holds the ground from before the stroke, so one undo removes
+## the land and its weathering together. Anything that opens a new transaction
+## first joins it (`data.stroke_starting`), so a quick second stroke starts
+## from weathered ground. Undo, a regrow or any other height change drops it.
+var land_settling := false
+var _weather_job: RefCounted
+var _weather_generation := 0
+var _weather_heights := PackedFloat32Array()
+var _weather_region := Rect2()
+
+func _weather_async(job: Callable, region: Rect2) -> void:
+	_drop_weathering()
+	_weather_generation += 1
+	var generation := _weather_generation
+	_weather_heights = data.heights
+	_weather_region = region
+	var work: RefCounted = preload("res://scripts/background_work.gd").new()
+	work.start(job)
+	_weather_job = work
+	land_settling = true
+	emergence.ground_settling = true
+	# Dropped or joined work still runs out here, so it never blocks a frame.
+	while generation == _weather_generation and not work.completed():
+		await get_tree().process_frame
+	if generation == _weather_generation: _land_weathering(true)
+	while work.active() and not work.completed():
+		await get_tree().process_frame
+	if work.active(): work.finish()
+
+## Publish finished (or, joining, finishing) weathering. `settle` starts the
+## stroke's settle refresh; a joining stroke leaves that to its own release.
+func _land_weathering(settle: bool) -> void:
+	var job: RefCounted = _weather_job
+	_drop_weathering()
+	if job == null: return
+	var result: Dictionary = job.finish()
+	land_brush.last_weather_usec = result.usec
+	if result.moved and not forming and data.heights == _weather_heights:
+		data.heights = result.heights
+		land_weathered.emit(_weather_region)
+	_settle_pending = true
+	if settle: _settle_stroke()
+
+func _drop_weathering() -> void:
+	_weather_generation += 1
+	_weather_job = null
+	land_settling = false
+	emergence.ground_settling = false
+
+func _join_weathering() -> void:
+	if _weather_job != null: _land_weathering(false)

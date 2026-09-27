@@ -1,6 +1,6 @@
 extends RefCounted
 ## Low-poly creatures for the life that arrives on the land (docs/scenic/life.md):
-## fish, frogspawn, a heron, deer and a distant Bigfoot. Every part is a
+## fish, frogspawn, a heron and deer. Every part is a
 ## faceted spindle (a bipyramid over a few-sided ring) or a flat fan, painted
 ## with vertex colours and drawn with the frogs' own `reference_surface`
 ## material (flat faces, scene palette), so they sit in the Fidelity look and
@@ -158,16 +158,4 @@ static func deer_neck(material: Material, coat: Color) -> ArrayMesh:
 static func deer_leg(material: Material, coat: Color, length := 0.74) -> ArrayMesh:
 	var b := Build.new()
 	b.spindle(Vector3(0,0.04,0),Vector3(0,-length,0.01),0.045,coat.darkened(0.2),4,0.25)
-	return b.commit(material)
-
-## A hulking dark figure for a glimpse at the forest's edge. It is only ever
-## seen far off and for a few seconds, so it is a silhouette, not a character.
-static func bigfoot(material: Material) -> ArrayMesh:
-	var b := Build.new()
-	var fur := Color(0.21,0.15,0.1)
-	for x in [-0.17,0.17]:
-		b.spindle(Vector3(x,0.95,0),Vector3(x*1.1,0.0,0.05),0.13,fur,5,0.35)
-		b.spindle(Vector3(x*2.2,1.62,0.04),Vector3(x*2.6,0.72,0.14),0.09,fur,5,0.3)
-	b.spindle(Vector3(0,0.82,-0.02),Vector3(0,1.78,0.1),0.34,fur,6,0.55,0.26)
-	b.spindle(Vector3(0,1.66,0.14),Vector3(0,2.08,0.16),0.15,fur.lightened(0.05),5,0.45)
 	return b.commit(material)

@@ -20,6 +20,11 @@ const Variety = preload("res://scripts/seeded_variety.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const LandIntent = preload("res://scripts/land_intent.gd")
+const WaterBrush = preload("res://scripts/water_brush.gd")
+
+## An emerged tree was placed at plate point `p`; it grows in from `born` on
+## `time` over TREE_RISE. Stroke feedback sends a little gust to settle it.
+signal tree_arrived(p: Vector2, born: float)
 
 ## Seconds after a stroke before the first grass shows.
 const GRASS_DELAY := 1.5
@@ -51,6 +56,21 @@ const SHRUB_LATTICE := 0.9
 const TREE_LATTICE := 1.3
 const TREE_GAP := 1.1
 const SHRUB_GAP := 0.45
+## Where emerged grass gives way to bare ground, in shares of the habitat's
+## rock slope: full grass below .x, none above .y. Gentle hills stay green;
+## only real steeps go bare (the plain's rock slope is 0.93).
+const BARE_SLOPE := Vector2(0.9,1.15)
+## Emerged plant sizes (record scale): trees and undergrowth draw from these
+## ranges, and a kind's own factor brings the models into proportion with each
+## other and with the creatures (scripts/life_models.gd: a deer stands about
+## 1.2 m, a heron about 1.1 m). At scale 1 the layered broadleaf is 5.9 m tall
+## and as wide, the spruce family 2.5-4.5 m, the hero oak 1.9 m, and the fern
+## 1.6 m across.
+const TREE_SIZE := Vector2(0.65,1.0)
+const SHRUB_SIZE := Vector2(0.5,0.9)
+const KIND_SIZE := {"layered_tree":0.55,"broadleaf":1.45,"redwood":0.6,"fern":0.6}
+## Ferns read as dark spiders from above; woodland undergrowth takes few.
+const FERN_WEIGHT := 0.3
 ## Plants stay inside the band the generator plants.
 const PLATE := 11.0
 ## Metres² the generator's per-habitat tree counts are spread over.
@@ -103,6 +123,22 @@ var _crowd := {}
 var _crowd_built := false
 ## Why candidates did not take, by reason; for probes and tuning.
 var refusals := {}
+## Plan queued strokes on a worker, over a detached copy of the ground, and
+## take the regions in on a later frame. The editor turns this on; probes that
+## drive `advance` in a tight loop plan on the calling thread.
+var plan_on_worker := false
+## The editor sets this while a finished stroke's ground is still settling
+## (land weathering on a worker); planning waits for it.
+var ground_settling := false
+var _plan_job: RefCounted
+var _plan_generation := 0
+## Main-thread planning time of the last plan (install only, when on a worker)
+## and the worker's time, for profiles.
+var last_plan_usec := {}
+## Ponds a pour has just filled (`drown`), kept until a plan that saw them
+## replaces the blend's pond raster: {"level", "cells", "rect", "record",
+## "stamp"}. Until then `_wet` reads them too, so nothing arrives in them.
+var _fresh_ponds: Array[Dictionary] = []
 
 func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 	data = terrain
@@ -114,13 +150,17 @@ func _init(terrain: NativeTerrainData, world_salt := -1) -> void:
 
 ## Planned work still to come, for probes and UI.
 func busy() -> bool:
-	return not _regions.is_empty() or not _queued.is_empty() or _pending_refresh
+	return not _regions.is_empty() or not _queued.is_empty() or _pending_refresh or _plan_job != null
 
 func clear() -> void:
 	_regions.clear()
 	_queued.clear()
 	_blend = null
 	_pending_refresh = false
+	# A plan still on its worker was made for the ground being left.
+	_plan_generation += 1
+	_plan_job = null
+	_fresh_ponds.clear()
 
 ## Entry point for a finished stroke. `rect` is in plate metres. `source`
 ## "forest" is a forest brush stroke: it plans only what its wish asks for,
@@ -133,21 +173,103 @@ func on_region_changed(rect: Rect2, source := "") -> void:
 		_queued.append({"rect":rect,"born":_clock,"source":source})
 
 func _plan(rect: Rect2, born: float, source := "") -> void:
+	_refresh_blend([rect])
+	# The blend's pond raster was just read from the live ground.
+	_fresh_ponds.clear()
+	_install(rect,source,_plan_region(rect,born,source))
+
+## Build the live blend, or re-read it under `rects`. The first build sets the
+## salt: a generated world keys its life to its planting seed; a blank plain
+## keeps the session's draw.
+func _refresh_blend(rects: Array) -> void:
 	if _blend == null:
 		_blend = BiomeBlend.live(data)
-		# A generated world keys its life to its planting seed; a blank plain
-		# keeps the session's draw.
 		if not _fixed_salt and int(_blend._genome.plant_seed) != 0:
 			salt = Variety.mix([int(_blend._genome.plant_seed),97])
-	else:
-		_blend.refresh_rect(rect)
-	var forest := source == "forest"
-	# A newer stroke replans the ground it covers. A forest stroke only adds:
-	# a candidate planned twice lands once, the second is crowded out.
-	if not forest:
-		for region in _regions:
-			_forget(region,rect)
+		return
+	for rect: Rect2 in rects: _blend.refresh_rect(rect)
+
+## Take a planned region in. A newer stroke replans the ground it covers. A
+## forest stroke only adds: a candidate planned twice lands once, the second
+## is crowded out.
+func _install(rect: Rect2, source: String, region: Dictionary) -> void:
+	if source != "forest":
+		for other in _regions:
+			_forget(other,rect)
 	_withdraw(rect)
+	_regions.append(region)
+
+## Plan every queued stroke on a worker. The planner is a second Emergence
+## over a detached copy of the ground: heights, provenance, water, the recipe
+## settings and the forest wish as they stand now. It builds or refreshes a
+## copy of the blend, so the live one stays readable here meanwhile. The
+## regions, the blend and the salt come back together; `_install` runs here.
+func _plan_async(queued: Array[Dictionary]) -> void:
+	var began := Time.get_ticks_usec()
+	var ground: NativeTerrainData = preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+	ground.provenance = data.provenance.duplicate()
+	ground.ponds.assign(data.ponds.duplicate(true))
+	ground.streams.assign(data.streams.duplicate(true))
+	ground.landscape_waterfall = data.landscape_waterfall
+	ground._recipe_settings = data._recipe_settings.duplicate(true)
+	ground._recipe_heights = data._recipe_heights.duplicate()
+	ground._water_grid_h = data._water_grid_h.duplicate()
+	ground._palette = data._palette
+	# A recipe world's pond flood reads its impacts and ramp from the live
+	# recipe; take them here, as GardenView's worker flood does.
+	var recipe_water := {}
+	if data._recipe != null and not data.ponds.is_empty():
+		recipe_water = {"impacts":data.waterfall_impacts(),"ramp":NativeRecipeWater.water_ramp(data._recipe.source.g.get("water",{}))}
+	var settings: Dictionary = BiomeBlend.live_settings(data) if _blend == null else {}
+	var previous: RefCounted = _blend
+	var planner = get_script().new(ground,salt)
+	planner.intent.forest = intent.forest.duplicate()
+	var fixed := _fixed_salt
+	var jobs := queued.duplicate(true)
+	_plan_generation += 1
+	var generation := _plan_generation
+	var job = preload("res://scripts/background_work.gd").new()
+	_plan_job = job
+	job.start(func() -> Dictionary:
+		var worker_began := Time.get_ticks_usec()
+		var rects := []
+		for item: Dictionary in jobs: rects.append(item.rect)
+		if previous == null:
+			planner._blend = BiomeBlend.live_on(settings,ground,recipe_water)
+			if not fixed and int(planner._blend._genome.plant_seed) != 0:
+				planner.salt = Variety.mix([int(planner._blend._genome.plant_seed),97])
+		else:
+			planner._blend = previous.copy_onto(BiomeBlend.LiveGround.new(ground,recipe_water,false))
+			for rect: Rect2 in rects: planner._blend.refresh_rect(rect)
+		var regions := []
+		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source","")))
+		return {"blend":planner._blend,"salt":planner.salt,"regions":regions,"usec":Time.get_ticks_usec()-worker_began})
+	last_plan_usec = {"start":Time.get_ticks_usec()-began}
+	# A superseded job still runs out here, so dropping it never blocks a frame.
+	while not job.completed():
+		await Engine.get_main_loop().process_frame
+	began = Time.get_ticks_usec()
+	var planned: Dictionary = job.finish()
+	if generation != _plan_generation: return
+	_plan_job = null
+	_blend = planned.blend
+	# The blend reads the live ground from here on; its pond raster stays the
+	# one planned against until the next refresh, as before.
+	_blend._sampler.data = data
+	_blend._sampler.recipe_water = {}
+	salt = planned.salt
+	# Ponds poured after this plan began are not in its raster yet.
+	_fresh_ponds = _fresh_ponds.filter(func(pond: Dictionary) -> bool: return int(pond.stamp) >= generation)
+	for i in range(jobs.size()):
+		_install(jobs[i].rect,jobs[i].get("source",""),planned.regions[i])
+	last_plan_usec.worker = planned.usec
+	last_plan_usec.install = Time.get_ticks_usec()-began
+
+## The succession for one stroke's rect: cover cells with their fronts and
+## targets, and the shrub and tree candidates in arrival order. Reads only
+## `data`, the blend, the forest wish and the salt, so it runs on a planner.
+func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
+	var forest := source == "forest"
 	var region := {"rect":rect,"born":born,"cells":PackedInt32Array(),"fronts":PackedFloat32Array(),"targets":PackedVector2Array(),"plants":[],"next":0}
 	var origin := _origin(rect)
 	var side := data.MEADOW_CELLS
@@ -184,7 +306,7 @@ func _plan(rect: Rect2, born: float, source := "") -> void:
 					at = (FOREST_TREE_DELAY if tree else FOREST_SHRUB_DELAY)+(FOREST_TREE_SPREAD if tree else FOREST_SHRUB_SPREAD)*(0.6*(1.0-wish)+0.4*Variety.unit(key+[3]))
 				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest})
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
-	_regions.append(region)
+	return region
 
 ## Seconds an emerged record of `asset` takes to grow in.
 static func rise_seconds(asset: String) -> float:
@@ -209,9 +331,13 @@ func advance(seconds: float) -> bool:
 	_pending_refresh = false
 	_crowd.clear()
 	_crowd_built = false
-	for queued in _queued:
-		_plan(queued.rect,queued.born,queued.get("source",""))
-	_queued.clear()
+	# Plans wait while the ground settles, and one plan runs at a time.
+	if not _queued.is_empty() and not ground_settling and _plan_job == null:
+		if plan_on_worker: _plan_async(_queued.duplicate())
+		else:
+			for queued in _queued:
+				_plan(queued.rect,queued.born,queued.get("source",""))
+		_queued.clear()
 	for r in range(_regions.size()-1,-1,-1):
 		var region: Dictionary = _regions[r]
 		var age: float = _clock-region.born
@@ -306,7 +432,7 @@ func _cover_target(p: Vector2) -> Vector2:
 		return Vector2(-1,-1)
 	var biome: Dictionary = Shape.BIOMES[_blend.pick(p)]
 	var snow := _snowline()
-	var bare := smoothstep(float(biome.rock_slope)*0.75,float(biome.rock_slope)*1.1,_slope(p))
+	var bare := smoothstep(float(biome.rock_slope)*BARE_SLOPE.x,float(biome.rock_slope)*BARE_SLOPE.y,_slope(p))
 	var grass: float = _blend.cover(p)*(1.0-bare)*(1.0-smoothstep(snow-1.8,snow,float(h)))
 	# Emerged cover is painted ground only, never standing blades: the
 	# faceted green reads as the diorama's grass (user choice, 2026-09-26).
@@ -365,13 +491,15 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
 	if _crowded(p,plant.layer == "tree"):
 		return _refuse("crowded")
-	var size := lerpf(0.6,1.05,Variety.unit(key+[6])) if plant.layer == "tree" else lerpf(0.5,0.9,Variety.unit(key+[6]))
+	var span := TREE_SIZE if plant.layer == "tree" else SHRUB_SIZE
+	var size := lerpf(span.x,span.y,Variety.unit(key+[6]))*float(KIND_SIZE.get(kind,1.0))
 	var id := data.place(kind,p,Variety.unit(key+[7])*TAU,size)
 	if id < 0:
 		return false
 	data.objects.back()["source"] = "emerged"
 	data.objects.back()["born"] = born
 	_crowd.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,1.0 if kind in TREES else 0.0))
+	if kind in TREES: tree_arrived.emit(p,born)
 	return true
 
 ## The forest wish at a candidate, frayed by its own scatter and slow lobes,
@@ -409,7 +537,7 @@ func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:
 			return flowers[Variety.weighted(weights,pick)]
 		"woodland","redwood":
 			var kinds := ["fern","shrub","grass_tuft","mushroom"]
-			var weights := [1.5 if habitat == "redwood" else 1.0,0.8,0.8,0.25]
+			var weights := [1.5 if habitat == "redwood" else FERN_WEIGHT,0.8,0.8,0.25]
 			for n in range(kinds.size()): weights[n] *= Variety.lean(salt,kinds[n])
 			return kinds[Variety.weighted(weights,pick)]
 		"arid": return "shrub" if pick < 0.8 else "grass_tuft"
@@ -478,7 +606,58 @@ func _forget(region: Dictionary, rect: Rect2) -> void:
 	region.next = 0
 
 func _wet(p: Vector2) -> bool:
-	return _blend._sampler.wet(p)
+	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p))
+
+## A pour settled (native_chunk_editor.gd `_land_water`), inside its open
+## stroke so one undo brings the plants back with the ground. Withdraw the
+## emerged plants whose base its new ponds and streams now cover, and refuse
+## that water to arrivals until a plan that saw it takes over. `ponds` and
+## `streams` are the water plan's `added` and `added_streams` entries. Hand,
+## pinned and generated objects stay. True when anything was withdrawn.
+func drown(ponds: Array, streams: Array) -> bool:
+	for entry: Dictionary in ponds:
+		if not entry.has("cells"): continue
+		var cells := {}
+		for k: int in entry.cells: cells[k] = true
+		_fresh_ponds.append({"level":float(entry.record.level),"cells":cells,"rect":Rect2(entry.rect).grow(WaterBrush.GRID),"record":entry.record,"stamp":_plan_generation})
+	var courses: Array = []
+	for entry: Dictionary in streams: courses.append(entry.record)
+	var removed := false
+	for index in range(data.objects.size()-1,-1,-1):
+		var item: Dictionary = data.objects[index]
+		if NativeTerrainData.object_source(item) != "emerged": continue
+		var p := Vector2(item.x,item.z)
+		if _under_fresh_pond(p) or _in_courses(p,courses):
+			data.objects.remove_at(index)
+			removed = true
+	if removed:
+		data.objects_revision += 1
+		_pending_refresh = true
+	return removed
+
+## Under a freshly poured pond: a planning cell at a corner of `p`'s grid
+## square is flooded, and the ground at `p` lies below the pond's level.
+func _under_fresh_pond(p: Vector2) -> bool:
+	for pond: Dictionary in _fresh_ponds:
+		if not pond.rect.has_point(p): continue
+		var corner := ((p-Vector2.ONE*WaterBrush.ORIGIN)/WaterBrush.GRID).floor()
+		var flooded := false
+		for offset: Vector2 in [Vector2.ZERO,Vector2.RIGHT,Vector2.DOWN,Vector2.ONE]:
+			if pond.cells.has(WaterBrush.cell_of(Vector2.ONE*WaterBrush.ORIGIN+(corner+offset)*WaterBrush.GRID)):
+				flooded = true
+				break
+		if not flooded: continue
+		var h: Variant = data.ground_height(p)
+		if h != null and float(h) < float(pond.level) and data.ponds.has(pond.record): return true
+	return false
+
+## Within a new stream's water: its half width of a course point.
+static func _in_courses(p: Vector2, courses: Array) -> bool:
+	for route: Dictionary in courses:
+		var reach := pow(float(route.width)*0.5,2.0)
+		for point: Dictionary in route.pts:
+			if p.distance_squared_to(Vector2(point.x,point.z)) < reach: return true
+	return false
 
 func _slope(p: Vector2) -> float:
 	return preload("res://scripts/native_landscape_presets.gd")._slope(data,p)

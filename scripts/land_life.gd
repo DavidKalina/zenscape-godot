@@ -46,6 +46,11 @@ const DELAYS := {
 ## A fresh world (new, regrown or loaded) is already settled: its sites start
 ## this share of the way through their delay.
 const SETTLED_HEAD := 0.85
+## Seconds a creature brought back from a save counts as already here, so it
+## shows grown in rather than arriving again.
+const RESUMED_AGE := 10.0
+## Version of the saved life (`document`).
+const DOCUMENT_VERSION := 1
 ## Fish: one per FISH_AREA m² of still water, deep cells only.
 const FISH_AREA := 2.0
 const FISH_BODY_MAX := 7
@@ -98,6 +103,8 @@ var salt := 0
 var sites := {"fish":{},"spawn":{},"frog":{},"bird":{},"firefly":{}}
 ## Arrivals so far by kind, and survey timings, for probes.
 var arrivals := {}
+## Creatures a loaded save brought back, by kind (not counted as arrivals).
+var resumed := {}
 var surveys := 0
 var last_usec := 0
 var worst_usec := 0
@@ -121,6 +128,10 @@ var _fireflies_owned := false
 var _fading_flies := {}
 var _rng := RandomNumberGenerator.new()
 var _planning: Array = []
+## A loaded world's life, kind -> {key: [delay, age, here]}, waiting for the
+## first survey of the loaded ground to reopen its sites (`restore_document`).
+var _resume := {}
+var _resume_used := false
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -210,7 +221,9 @@ func _changed(urgent := false) -> void:
 	if urgent: _urgent = true
 
 ## Undo, loads and new worlds. A new or loaded world starts settled; an undo
-## keeps whatever still fits. A survey of the old ground is dropped.
+## keeps whatever still fits. A survey of the old ground is dropped. A load
+## whose save kept its life then hands it over through `restore_document`, and
+## resumes instead of settling.
 func _world_restored(state: Dictionary) -> void:
 	if state.is_empty():
 		clear()
@@ -229,6 +242,60 @@ func clear() -> void:
 	_reading = null
 	_planning.clear()
 	survey = null
+	_resume.clear()
+	_resume_used = false
+
+# --- Saving -------------------------------------------------------------------
+
+## What has arrived where and how far along the rest are, for the place's save
+## (NativeGardenStore). Empty when life is not running on this world. Each
+## kind lists [key, delay, age, here]: the survey cell (a bird's slot), its own
+## delay, the life-clock seconds since its conditions first held, and whether
+## its creature had arrived. Moments are not saved; they come round again.
+func document() -> Dictionary:
+	if not active: return {}
+	var saved := {}
+	for kind: String in sites:
+		var rows := []
+		for key: int in sites[kind]:
+			var site: Dictionary = sites[kind][key]
+			if site.leaving or site.get("closing",false): continue
+			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here)])
+		saved[kind] = rows
+	return {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved}
+
+static func valid_document(value: Variant) -> bool:
+	if not value is Dictionary: return false
+	if value.is_empty(): return true
+	if value.get("version") != float(DOCUMENT_VERSION) and value.get("version") != DOCUMENT_VERSION: return false
+	if not GardenData._number(value.get("clock"),0.0,1e9) or not value.get("sites") is Dictionary: return false
+	for kind: Variant in value.sites:
+		if not DELAYS.has(kind) or not value.sites[kind] is Array or value.sites[kind].size() > 64: return false
+		for row: Variant in value.sites[kind]:
+			if not row is Array or row.size() != 4 or not GardenData._integer(row[0]) or int(row[0]) < 0 or int(row[0]) >= Survey.SIDE*Survey.SIDE: return false
+			if not GardenData._number(row[1],0.0,1e6) or not GardenData._number(row[2],0.0,1e9) or not row[3] is bool: return false
+	return true
+
+## Reopen a saved world's life: the clock at least where it stood, and every saved site
+## waiting for the first survey of the loaded ground, which keeps the ones whose
+## conditions still hold. An empty document (a save from before life was kept,
+## or a world without life) starts the world settled, as loads always have.
+## Only loads and restored scenes call this, so the old world's life goes.
+func restore_document(value: Dictionary) -> void:
+	clear()
+	_restored = true
+	_changed(true)
+	if value.is_empty() or not valid_document(value):
+		_fresh = true
+		return
+	# Sites carry their own ages, so the clock only has to not run backwards:
+	# moments keep cooldowns on it within a session.
+	clock = maxf(clock,float(value.clock))
+	for kind: String in value.sites:
+		var rows := {}
+		for row: Array in value.sites[kind]: rows[int(row[0])] = [float(row[1]),float(row[2]),bool(row[3])]
+		_resume[kind] = rows
+	_fresh = false
 
 func _process(delta: float) -> void:
 	var began := Time.get_ticks_usec()
@@ -272,7 +339,11 @@ func _survey(delta: float) -> void:
 		_dirty = false
 		_urgent = false
 		_since_survey = 0.0
-		if _restored and data._undo.is_empty() and data._redo.is_empty(): _fresh = true
+		# Saved life reopens on the first survey of the loaded ground only.
+		if _resume_used:
+			_resume.clear()
+			_resume_used = false
+		if _restored and data._undo.is_empty() and data._redo.is_empty(): _fresh = _resume.is_empty()
 		_restored = false
 		salt = int(editor.emergence.salt)
 		_reading = Survey.new(data,editor.content.pond_vertices)
@@ -288,7 +359,9 @@ func _survey(delta: float) -> void:
 	# One kind a frame, so a finished survey never lands in a single frame.
 	if not _planning.is_empty():
 		call("_plan_"+_planning.pop_front())
-		if _planning.is_empty(): _fresh = false
+		if _planning.is_empty():
+			_fresh = false
+			_resume_used = not _resume.is_empty()
 
 # --- Sites ---------------------------------------------------------------
 
@@ -377,6 +450,12 @@ func _choose(kind: String, cells: PackedInt32Array, cap: int, gap: float) -> Arr
 		if qualified.has(cell):
 			chosen.append(cell)
 			points.append(Survey.center(cell))
+	# Then a loaded world's saved sites, which may have come from another salt.
+	for cell: int in _resume.get(kind,{}):
+		if chosen.size() >= cap: break
+		if qualified.has(cell) and not existing.has(cell):
+			chosen.append(cell)
+			points.append(Survey.center(cell))
 	# Hash order through one native sort: the rank in the high bits, the cell
 	# (under 4096) in the low twelve.
 	var key := Variety.mix([salt,kind.hash()])
@@ -421,6 +500,13 @@ func _reconcile(kind: String, wanted: Dictionary, cap: int) -> void:
 		var site := {"cell":cell,"kind":kind,"delay":delay,"here":false,"leaving":false,"slot":-1,"settled":_fresh}
 		site.merge(wanted[cell],true)
 		site.since = clock-(delay*SETTLED_HEAD if site.settled else 0.0)
+		# A saved site picks up where it was: its own delay and age, and one
+		# that had arrived comes back at once, already settled in.
+		var saved: Array = _resume.get(kind,{}).get(cell,[])
+		if not saved.is_empty():
+			site.delay = float(saved[0])
+			site.since = clock-(maxf(float(saved[1]),float(saved[0])) if saved[2] else float(saved[1]))
+			site.resumed = bool(saved[2])
 		current[cell] = site
 	# Sites that have not arrived yet simply close; arrived ones leave.
 	for cell: int in current.keys():
@@ -450,6 +536,17 @@ func _arrive_due() -> void:
 			site.slot = _free[kind].pop_back()
 			site.here = true
 			site.born = clock
+			if site.get("resumed",false):
+				# Back from a save: already grown in, and a frog already on its bank.
+				site.resumed = false
+				site.born = clock-RESUMED_AGE
+				call("_arrive_"+kind,site)
+				if kind == "frog":
+					site.p = site.home
+					site.mode = "sit"
+				resumed[kind] = int(resumed.get(kind,0))+1
+				if kind == "spawn": spawn_changed = true
+				continue
 			call("_arrive_"+kind,site)
 			arrivals[kind] = int(arrivals.get(kind,0))+1
 			arrived.emit(kind,to_global(site.get("p",Vector3.ZERO)))

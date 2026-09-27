@@ -157,6 +157,11 @@ func _frame_diorama() -> void:
 	var screen := get_viewport().get_visible_rect().size
 	var kit_scale := minf(1.0,minf(screen.x/1080.0,screen.y/720.0))
 	var safe := Rect2(24,48,screen.x-48,screen.y-80-70*kit_scale)
+	# A degenerate viewport (seen headless, intermittently) has no safe area to
+	# fit; testing every outline corner against it floods the log with errors.
+	if safe.size.x <= 0.0 or safe.size.y <= 0.0:
+		push_warning("Overview framing skipped: the viewport is %s" % str(screen))
+		return
 	var outline := {}
 	for mesh: MeshInstance3D in [_chunk_editor.terrain,_chunk_editor._skirt]:
 		for surface in range(mesh.mesh.get_surface_count()):

@@ -15,12 +15,24 @@ const RATE := 2.2
 ## The tread: cover left at its centre, the worn earth's weight, and how far
 ## out (in brush radii) the earth and the stony margin reach.
 const WORN_COVER := 0.12
-const EARTH_WEIGHT := 0.8
+const EARTH_WEIGHT := 0.9
 const TREAD := 0.7
 const MARGIN := 1.15
 ## Share of margin cells that turn to gravel, and their weight.
-const STONY_SHARE := 0.45
-const STONY_WEIGHT := 0.6
+const STONY_SHARE := 0.4
+const STONY_WEIGHT := 0.55
+## Character. The edge wanders by up to `EDGE_WANDER` radii on a slow noise
+## (`EDGE_FREQUENCY`, 1/m) plus a per-cell fray, so the tread is never a clean
+## strip. The worn centre (inside `CENTRE` of the tread) is darker packed earth;
+## toward the shoulders the earth turns dusty and lighter, and `GRASSY_SHARE`
+## of the shoulder cells keep tufts of green. Each cell's earth varies in
+## lightness by up to `EARTH_JITTER`.
+const EDGE_WANDER := 0.22
+const EDGE_FRAY := 0.12
+const EDGE_FREQUENCY := 0.7
+const CENTRE := 0.45
+const GRASSY_SHARE := 0.35
+const EARTH_JITTER := 0.12
 ## Settling: metres per second of sinking at the centre, the deepest it goes
 ## below where the stroke found the ground, and how fast (per second) it
 ## eases each vertex toward the mean of its neighbours.
@@ -37,7 +49,9 @@ const STONE_CAP := 80
 const UNDERGROWTH := ["grass_tuft","fern","shrub","mushroom","bank_grass","reeds","button_flower","spike_flower","umbel_flower","daisy_flower","flower","leaf_bed"]
 
 var _earth := Color()
+var _dust := Color()
 var _gravel := Color()
+var _edge := FastNoiseLite.new()
 var _start := PackedFloat32Array()
 var _trail := PackedVector2Array()
 var _trail_radius := 0.0
@@ -50,9 +64,15 @@ func _init() -> void:
 
 func _prepared(data: NativeTerrainData) -> void:
 	var palette: NativeTerrainPalette = data._palette
-	_earth = palette.sand.lerp(palette.gravel,0.45)*0.78
+	# Worn centre: darker packed earth; shoulders: dusty, lighter, a little green.
+	_earth = palette.sand.lerp(palette.gravel,0.45)*0.6
 	_earth.a = 1.0
+	_dust = palette.sand.lerp(palette.gravel,0.3).lerp(palette.grass[1],0.18)*0.92
+	_dust.a = 1.0
 	_gravel = palette.gravel.lerp(palette.rock[1],0.35)
+	_edge.seed = seed_value+233
+	_edge.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_edge.frequency = EDGE_FREQUENCY
 
 func begin() -> void:
 	super.begin()
@@ -72,9 +92,13 @@ func dab(data: NativeTerrainData, center: Vector2, reach: float, amount: float, 
 	var tint := data.tint
 	var grass := data.grass
 	var provenance := data.provenance
-	for found: Vector2 in _cells_near(data,center,reach*MARGIN):
+	for found: Vector2 in _cells_near(data,center,reach*(MARGIN+EDGE_WANDER)):
 		var cell := int(found.x)
-		var t := found.y/reach
+		# The edge wanders: a slow noise plus a per-cell fray moves each cell
+		# nearer or farther from the tread, so the strip's sides are irregular.
+		var p := data.meadow_position(cell%data.MEADOW_CELLS,cell/data.MEADOW_CELLS)+Vector2.ONE*data.MEADOW_STEP*0.5
+		var wander := _edge.get_noise_2d(p.x,p.y)*EDGE_WANDER+(Variety.unit([seed_value,23,cell])-0.5)*EDGE_FRAY
+		var t := maxf(found.y/reach-wander*smoothstep(0.2,TREAD,found.y/reach),0.0)
 		var step := amount*RATE*(1.0-smoothstep(TREAD,MARGIN,t))
 		if step <= 0.0: continue
 		provenance[cell] = NativeTerrainData.SOURCE_HAND
@@ -82,10 +106,19 @@ func dab(data: NativeTerrainData, center: Vector2, reach: float, amount: float, 
 			_tint_toward(tint,cell,Color(),0.0,step)
 			grass[cell] = move_toward(grass[cell],1.0,step)
 			continue
+		var shoulder := smoothstep(TREAD*CENTRE,TREAD,t)
 		if t > TREAD*0.85 and Variety.unit([seed_value,17,cell]) < STONY_SHARE:
 			_tint_toward(tint,cell,_gravel,STONY_WEIGHT,step*STONY_WEIGHT)
+		elif shoulder > 0.3 and Variety.unit([seed_value,29,cell]) < GRASSY_SHARE:
+			# A tuft of green left standing at the shoulder: little earth.
+			_tint_toward(tint,cell,_dust,EARTH_WEIGHT*0.3,step*EARTH_WEIGHT)
+			grass[cell] = move_toward(grass[cell],1.0,step)
+			continue
 		else:
-			_tint_toward(tint,cell,_earth,EARTH_WEIGHT*(1.0-smoothstep(TREAD*0.6,MARGIN,t)*0.5),step*EARTH_WEIGHT)
+			var jitter := 1.0+(Variety.unit([seed_value,31,cell])-0.5)*2.0*EARTH_JITTER
+			var earth := _earth.lerp(_dust,shoulder)*jitter
+			earth.a = 1.0
+			_tint_toward(tint,cell,earth,EARTH_WEIGHT*(1.0-smoothstep(TREAD*0.6,MARGIN,t)*0.5),step*EARTH_WEIGHT)
 		grass[cell] = move_toward(grass[cell],lerpf(WORN_COVER,1.0,smoothstep(TREAD*0.5,MARGIN,t)),step)
 	data.tint = tint
 	data.grass = grass

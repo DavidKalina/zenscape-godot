@@ -23,6 +23,9 @@ These are the same rules the generator uses: the habitat and its cover come from
 - Nothing grows on water, on bare rock (slope above the habitat's `rock_slope`), or within 1.8 m of the snowline.
 - Trees stop at the treeline (the genome's treeline in alpine ground, 10 m elsewhere). They thin out as the slope climbs from 0.45 to `rock_slope`, so forests on steep ground are sparse.
 - Shrubs need a slope under 0.6.
+- Emerged grass fades to bare ground between `BARE_SLOPE` (0.9–1.15) of the habitat's rock slope, so gentle hills stay green.
+- **Sizes.** Trees draw their record scale from `TREE_SIZE` (0.65–1.0) and undergrowth from `SHRUB_SIZE` (0.5–0.9). `KIND_SIZE` then brings the models into proportion with each other and with the creatures (a deer stands about 1.2 m): the layered broadleaf ×0.55 (5.9 m tall at scale 1, so 2.1–3.2 m), the hero oak ×1.45 (1.9 m, so 1.8–2.8 m), the redwood ×0.6 and the fern ×0.6 (1.6 m across at scale 1). Spruces keep 1.6–4.5 m. Generated worlds are unchanged.
+- **Ferns** take `FERN_WEIGHT` (0.3, it was 1.0) in emerged woodland undergrowth: from above they read as dark spiders. The fern mesh (`scripts/redwood_assets.gd`) now has nine fuller fronds in a fresher green, so the ones that come read as leafy rosettes.
 - Crowding: tree to tree 1.1 m, tree to anything else 0.6 m, shrub to shrub 0.45 m. Existing objects of every source count.
 - Cover target: grass follows the blend's `cover(p)`, fading to nothing on rock and near snow. Blades follow grass, are thickest toward water, and are absent on steep ground.
 
@@ -36,7 +39,7 @@ The recipe path is unchanged. `probe_biome_dressing.gd` gives identical digests 
 
 - **Cover cells.** `NativeTerrainData.provenance` is a 56×56 byte grid aligned with the masks: 0 generated, 1 emerged, 2 hand. The editor's paint and erase brushes call `mark_hand` for every dab. Blasts, fire and the generators write masks without claiming cells. Emergence never touches a hand cell, and it only thickens generated cover (it never thins it). Emerged cover follows its target in both directions. Erasing a patch claims it too, so cleared ground stays clear.
 - **Objects.** `"source": "hand"` or `"emerged"`, plus an optional `"pinned": true`. A record without a source reads as generated; this covers the generator's objects and everything saved before provenance existed. `NativeTerrainData.object_source(item)` resolves the source, and pinned counts as hand. The editor tags every object minted during a placement stroke as hand (`mark_objects_hand`). `update_object` also makes the edited object hand, the same way it drops `landscape`.
-- **Emergence only adds.** The one exception: when a new stroke covers them, emerged objects whose ground has turned to water, rock or snow are withdrawn.
+- **Emergence only adds.** The one exception: when a new stroke covers them, emerged objects whose ground has turned to water, rock or snow are withdrawn. A pour also withdraws the emerged plants its new ponds and streams cover as it lands, inside its undo step (`drown`), and arrivals read those fresh ponds as water until a plan that saw them replaces the blend's pond raster.
 - **Saving.** The save stays at version 10, with `provenance` as an optional hex string. Older saves load with every cell generated. Undo history carries the grid.
 
 ## Growing in
@@ -55,7 +58,7 @@ Every arrival grows in with the regrow pop: it rises from the ground and oversho
 
 - `advance(delta)` runs in steps of 0.75 s. It returns true at most once per step, and the editor then calls `refresh(get_tree())` once. This is the yielding path a stroke's settle takes: instances are sampled on a worker and the rest is spread by the frame budget.
 - **Measured** with `tools/profile_stroke.gd -- --mode=land --watch=40`, headless, on the cozy world. The profiler's land mode now prepares the brush and grows the stroke rect, as the pointer does; before that fix it never raised land, so it never started emergence. With the old synchronous `refresh()`, every step cost 15–27 ms on one frame. With the yielding refresh, the settle frames were median 8.3 ms, p95 9.1 ms, and 5 of 4800 over 16.7 ms: four at 16–19 ms in the content stage, and the one-time first plan (below) at 48 ms. The birth stamping adds 0.2–3.8 ms to a step's `advance`.
-- **Planning.** A stroke's plan runs on the first step after release, never on release itself. It costs about 10 ms on a warm blend. The first plan on a world also builds the live blend, about 35 ms, most of it pond flooding.
+- **Planning.** A stroke's plan starts on the first step after release, never on release itself, and waits while the stroke's weathering is still on its worker. In the editor it runs on a worker over a detached copy of the ground (`_plan_async`, `plan_on_worker`): a planner Emergence builds or refreshes a copy of the live blend, pond flooding included, and plans every queued region. The main thread pays 0.4–1 ms to take the copy and about 0.1 ms to install the regions a few frames later. The worker takes 20–53 ms for a first plan. Probes that call `advance` in a tight loop plan synchronously, as before: about 10 ms on a warm blend and 25–54 ms for a first plan.
 - **Step cost.** The steps themselves cost under 1 ms, not counting the refresh.
 - **Pausing.** Emergence pauses while a stroke or selection edit is open, so emerged changes never fold into the player's undo step. Undo, load and new worlds clear pending work (`state_restored`).
 - **Not saved.** Pending succession is not saved. Anything already grown is saved.
@@ -67,7 +70,6 @@ Every arrival grows in with the regrow pop: it rises from the ground and oversho
 ## Open
 
 - Hook `_stroke_ended` to `stroke_finished` from `feature/stroke-feel` once that branch lands.
-- The first plan on a world, mostly the live blend's pond flooding, still costs one frame of about 35–48 ms. Moving it onto a worker would need a snapshot of the ponds and recipe.
 - Dense grass only checks `prior` against the current grass, not the real keep mask. So when emergence thickens cover that was already partial, a few tufts that were standing may regrow.
 - Should world time or season scale the pace?
 - Water-first creep (grass from new ponds even without sculpting) needs pond fills to report their rect, which they do today only through the editor's pond click.

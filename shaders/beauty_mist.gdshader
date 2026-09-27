@@ -15,7 +15,8 @@ void fog() {
     float patches = smoothstep(0.28, 0.72, wxFbm(p * vec3(0.23, 0.35, 0.23) - drift));
     float passing_air = zs_gust_pulse_at(p.xz, zs_gust_distance);
     patches *= 1.0 - 0.35 * clamp(passing_air, 0.0, 1.0);
-    float pool = exp(-max(height, 0.0) * 0.8);
+    // Pooled mist thins over open water, so ponds read clear rather than milky.
+    float pool = exp(-max(height, 0.0) * 0.8) * (1.0 - 0.8 * zs_open_water(texture(ground_map, uv), texture(stream_map, uv)));
     DENSITY = ground < -100.0 || height < -0.15 ? 0.0 : edge * density * exp(-max(p.y - 2.0, 0.0) * 0.38) * (0.055 + pool * patches);
     ALBEDO = vec3(0.85, 0.91, 0.96);
     EMISSION = vec3(0.0);
