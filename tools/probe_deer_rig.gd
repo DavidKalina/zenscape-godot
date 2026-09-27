@@ -78,6 +78,13 @@ func _initialize() -> void:
 			if seen.is_empty() or seen[-1] != now: seen.append(now)
 	print("DEER_PROBE info visit clips ",seen)
 	check(seen == ["Walk","HeadDown","Graze","HeadUp","Alert","Idle","HeadDown","Graze","HeadUp","Idle","Walk"],"visit plays walk, graze, alert, idle and walk out in order")
+	# The first head-up of a visit holds long enough for HeadUp and Alert to play out.
+	var am := {"phase":"graze","scale":1.0,"down":false,"clip":"Graze","age":10.0,"next":12.5}
+	moments._play_deer(doe,am,false,1.0/30.0)
+	check(is_equal_approx(float(am.next),10.0+doe.length("HeadUp")+doe.length("Alert")),"alert head-up window runs %.2f s" % (float(am.next)-10.0))
+	var im := {"phase":"graze","scale":1.0,"down":false,"clip":"Graze","ups":1,"age":10.0,"next":12.5}
+	moments._play_deer(doe,im,false,1.0/30.0)
+	check(is_equal_approx(float(im.next),12.5),"a later head-up keeps its rolled window")
 	var fm := {"phase":"in","scale":0.62,"down":true}
 	moments._play_deer(fawn,fm,true,1.0/30.0)
 	check(is_equal_approx(fawn.speed,0.42*1.15/(0.42*0.62)),"fawn walk speed syncs to 1.15x at 0.62 scale (%.3f)" % fawn.speed)

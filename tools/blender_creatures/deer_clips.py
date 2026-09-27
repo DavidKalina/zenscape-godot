@@ -253,9 +253,11 @@ def chew(rig, t, amount, rate=2.3):
 	set_rot(rig, 'Jaw', ((1, 0, 0), 6 * open_ * amount), ((0, 0, 1), 3.5 * math.sin(math.tau * phase - 0.8) * amount))
 
 
-# The neck bows to the grass: Neck1, Neck2, Head (deg). The head turns back up against the
-# neck so the face hangs nose-down; the body tips forward onto the forelegs.
-GRAZE = (108.0, -3.0, -62.0)
+# The neck bows to the grass: Neck1, Neck2, Head (deg), the neck nearly straight and the
+# head turned back up against it so the face hangs nose-down. The neck is short, so the
+# forequarters come down to meet it: the body tips forward over the forelegs, the weight
+# goes forward, the shoulders dip and the fore knees soften.
+GRAZE = (115.0, 0.0, -86.0)
 
 
 def lower(rig, k1, k2=None, k3=None, kb=None):
@@ -265,9 +267,12 @@ def lower(rig, k1, k2=None, k3=None, kb=None):
 	set_rot(rig, 'Neck1', ((1, 0, 0), GRAZE[0] * k1))
 	set_rot(rig, 'Neck2', ((1, 0, 0), GRAZE[1] * k2))
 	set_rot(rig, 'Head', ((1, 0, 0), GRAZE[2] * k3))
-	set_rot(rig, 'Chest', ((1, 0, 0), 5 * kb))
-	set_rot(rig, 'Hips', ((1, 0, 0), 2.5 * kb))
-	add_loc(rig, 'Hips', (0, -0.012 * kb, -0.012 * kb))
+	set_rot(rig, 'Chest', ((1, 0, 0), 7 * kb))
+	set_rot(rig, 'Hips', ((1, 0, 0), 10 * kb))
+	add_loc(rig, 'Hips', (0, -0.03 * kb, -0.03 * kb))
+	for s, suffix in SIDES:
+		set_rot(rig, f'Scapula_{suffix}', ((1, 0, 0), 5 * kb))
+		place(f'{suffix}F', flex=14 * kb)
 
 
 # ---------------------------------------------------------------- follow-through

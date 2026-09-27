@@ -61,5 +61,8 @@ class Rig:
 	func current() -> String:
 		return player.current_animation
 
+	func length(clip: String) -> float:
+		return player.get_animation(clip).length
+
 	func advance(step: float) -> void:
 		player.advance(step*speed)

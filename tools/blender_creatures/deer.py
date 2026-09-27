@@ -50,18 +50,19 @@ FORE_FETLOCK = Vector((0.07, -0.23, 0.075))
 FORE_TOE = Vector((0.07, -0.29, 0.0))
 # Neck and head along the vertebrae: the neck rises at about 60 degrees and is long enough
 # for the nose to reach the grass; the face hangs about 50 degrees nose-down from the poll.
-# The vertebrae leave the chest low, at the point of the shoulder, rise steeply and curve
-# forward under the poll.
+# The neck leaves the front of the chest, rises steeply and curves forward under the poll.
+# It is kept short (0.45 m; the old deer's was 0.37 m from a pivot at the withers) with the
+# poll near the old head height; grazing drops the forequarters to reach the grass.
 def _run(start, length, degrees):
 	a = math.radians(degrees)
 	return start + Vector((0, -math.cos(a), math.sin(a))) * length
 
 
-NECK_BASE = Vector((0, -0.32, 0.74))
-NECK_MID = _run(NECK_BASE, 0.273, 65)
-POLL = _run(NECK_MID, 0.233, 50)
-HEAD_LEN = 0.275
-NOSE = _run(POLL, HEAD_LEN, -52)
+NECK_BASE = Vector((0, -0.29, 0.82))
+NECK_MID = _run(NECK_BASE, 0.24, 66)
+POLL = _run(NECK_MID, 0.21, 56)
+HEAD_LEN = 0.28
+NOSE = _run(POLL, HEAD_LEN, -50)
 HEAD_AXIS = (NOSE - POLL).normalized()
 HEAD_DOWN = Vector((0, -HEAD_AXIS.z, HEAD_AXIS.y))  # ventral: toward the jaw and throat
 EYE_AT, EYE_X, EYE_R = 0.36, 0.05, 0.017
@@ -374,9 +375,10 @@ def body_colour(p, n, coat, fawn, eyes_at):
 	# Countershading: darker along the back and the top of the neck, paler down the sides.
 	top = smoothstep(0.2, 0.85, n.z) * smoothstep(0.78, 0.95, p.z)
 	c = c.lerp(coat * 0.72, 0.55 * top)
-	# Belly, the inside of the legs and the chest between the forelegs.
-	if (n.z < -0.6 and p.z < 0.74 and -0.3 < p.y < 0.3) or (abs(p.x) < 0.03 and p.z < 0.7 and n.z < 0.2):
-		c = c.lerp(PALE, 0.75)
+	# Belly and the chest between the forelegs, kept off the elbows and hams.
+	if (n.z < -0.78 and p.z < 0.74 and -0.1 < p.y < 0.2 and abs(p.x) < 0.075) or \
+			(abs(p.x) < 0.03 and p.z < 0.7 and n.z < 0.2 and -0.1 < p.y < 0.2):
+		c = c.lerp(PALE, 0.6)
 	# The white rump patch under the tail and down the backs of the thighs.
 	if p.y > 0.34 and abs(p.x) < 0.065 and 0.6 < p.z < 0.9 and n.y > 0.2:
 		c = c.lerp(WHITE, 0.9 * smoothstep(0.6, 0.7, p.z))
@@ -398,18 +400,13 @@ def body_colour(p, n, coat, fawn, eyes_at):
 		throat = (p - neck_point(min(1.0, neck_t(p)))).dot(Vector((0, -0.8, -0.6)))
 		if throat > 0.035 and n.dot(Vector((0, -0.8, -0.6))) > 0.45:
 			c = c.lerp(WHITE, 0.85)
-	if fawn and not head and p.z > 0.72 and -0.28 < p.y < 0.38:
-		for spot in FAWN_SPOTS:
-			if (p - spot).length < 0.022:
-				c = c.lerp(WHITE, 0.82)
-				break
 	mottle = 1.0 + 0.05 * noise.noise(p * 9.0) + rng.uniform(-0.025, 0.025)
 	return c * mottle
 
 
 def leg_colour(p, n, coat, s):
 	c = Vector(coat).lerp(coat * 0.85, smoothstep(0.5, 0.2, p.z))
-	inside = n.x * s < -0.35
+	inside = n.x * s < -0.35 and p.z < 0.5  # the inner lower leg; its top is the elbow or ham
 	if inside:
 		c = c.lerp(PALE, 0.6)
 	if p.z < 0.2 and not inside:  # the lower legs go grey-brown, darker at the front
@@ -417,33 +414,68 @@ def leg_colour(p, n, coat, s):
 	return c * (1 + rng.uniform(-0.03, 0.03))
 
 
-def fawn_spots():
-	"""Two rows of white spots along the fawn's back and a scatter down the flanks."""
-	spots = []
+CREAM = Vector((0.9, 0.82, 0.68))
+
+
+def fawn_spots(mesh, part):
+	"""The fawn's dapples: two loose rows along the back, one either side of the spine, each a
+	single compact face that touches no other spot. Returns (spot faces, faces edging them)."""
+	candidates = []
+	for poly in mesh.polygons:
+		p, n = poly.center, poly.normal
+		if part[poly.index].value != PART_BODY or in_head(p) or not (-0.2 < p.y < 0.34) or p.z < 0.8 or n.z < 0.3:
+			continue
+		v = [mesh.vertices[i].co for i in poly.vertices]
+		edges = sum((v[i] - v[i - 1]).length_squared for i in range(len(v)))
+		if 4 * math.sqrt(3) * poly.area / edges > 0.6:  # near-equilateral, so it reads round
+			candidates.append(poly)
+	areas = sorted(poly.area for poly in candidates)
+	typical = areas[len(areas) // 2]
 	r = random.Random(4)
+	chosen, used = [], set()
 	for s in (1, -1):
-		for i in range(9):
-			y = -0.22 + i * 0.07 + r.uniform(-0.012, 0.012)
-			spots.append(Vector((0.04 * s, y, 0.955 - 0.1 * (y - 0.05) ** 2)))
-		for i in range(16):
-			y = r.uniform(-0.22, 0.36)
-			z = r.uniform(0.76, 0.9)
-			spots.append(Vector((0.115 * s, y, z)))
-	return spots
-
-
-FAWN_SPOTS = fawn_spots()
+		for i in range(7):
+			target = Vector((0.05 * s + r.uniform(-0.012, 0.012), -0.17 + i * 0.075 + r.uniform(-0.018, 0.018)))
+			best, score = None, 9.0
+			for poly in candidates:
+				if poly.center.x * s < 0.015 or used.intersection(poly.vertices):
+					continue
+				d = (poly.center.to_2d() - target).length
+				if d > 0.04:
+					continue
+				value = d / 0.04 + 0.6 * poly.area / typical  # near the row, and small
+				if value < score:
+					best, score = poly, value
+			if best is not None:
+				chosen.append(best.index)
+				used.update(best.vertices)
+	spots = set(chosen)
+	edge_of = {}
+	for poly in mesh.polygons:
+		for key in poly.edge_keys:
+			edge_of.setdefault(key, []).append(poly.index)
+	halo = set()
+	for index in spots:
+		for key in mesh.polygons[index].edge_keys:
+			halo.update(f for f in edge_of[key] if f not in spots)
+	return spots, halo
 
 
 def paint(obj, fawn, eyes_at, ears):
 	coat = FAWN_COAT if fawn else COAT
 	part = obj.data.attributes['part'].data
 	rng.seed(21)
+	spots, halo = fawn_spots(obj.data, part) if fawn else (set(), set())
 
 	def colour(poly):
 		p, n, k = poly.center, poly.normal, part[poly.index].value
 		if k == PART_BODY:
-			return body_colour(p, n, coat, fawn, eyes_at)
+			c = body_colour(p, n, coat, fawn, eyes_at)
+			if poly.index in spots:
+				c = c.lerp(CREAM, 0.62)
+			elif poly.index in halo:  # a soft edge, so a dapple is not a hard shard
+				c = c.lerp(CREAM, 0.14)
+			return c
 		if k >= PART_LEG:
 			s = 1 if k in (PART_LEG, PART_LEG + 2) else -1
 			if p.z < 0.035:
@@ -686,7 +718,6 @@ def main():
 	body = build_body(asset)
 	mark(body, PART_BODY)
 	bvh = BVHTree.FromObject(body, bpy.context.evaluated_depsgraph_get())
-	FAWN_SPOTS[:] = [bvh.find_nearest(spot)[0] for spot in FAWN_SPOTS]
 	pieces = [body]
 	# Legs: LF, RF, LH, RH, one object each so they carry their own part number.
 	for i, name in enumerate(LEG_NAMES):

@@ -446,6 +446,8 @@ func _play_deer(rig: RefCounted, m: Dictionary, moving: bool, step: float) -> vo
 					rig.play("HeadUp")
 					rig.then(next)
 					if next != "Idle": rig.then("Idle")
+					# Keep the head up long enough for the alert to play out.
+					if next == "Alert": m.next = maxf(float(m.get("next",0.0)),float(m.get("age",0.0))+rig.length("HeadUp")+rig.length("Alert"))
 	rig.speed = DEER_SPEED*(1.0 if float(m.scale) >= 1.0 else 1.15)/(Rigs.DEER_WALK_SPEED*float(m.scale)) if moving else 1.0
 	rig.advance(step)
 
