@@ -68,8 +68,18 @@ void zs_autumn_stand_paint(inout vec3 color, vec2 root, float amount, float stan
 	float depth = reach * smoothstep(onset + 0.1, onset + 0.9, along);
 	vec3 hue = mix(vec3(1.00, 0.66, 0.14), vec3(1.00, 0.52, 0.10), smoothstep(0.0, 0.35, depth));
 	hue = mix(hue, vec3(0.50, 0.16, 0.05), smoothstep(0.35, 1.0, depth));
+	// Green goes to the hue by way of a clear yellow-gold, red leading green,
+	// and the half-turned colour is pushed away from its grey, so a crown on
+	// its way reads warm yellow rather than the olive and khaki a straight
+	// green-to-orange mix passes through. A whole turn lands on the same hue.
 	float lum = dot(color, vec3(0.30, 0.55, 0.15));
-	color = mix(color, hue * (lum * 2.9), smoothstep(0.0, 0.55, turn));
+	vec3 gold = vec3(1.00, 0.68, 0.06) * (lum * 2.6);
+	float t = smoothstep(0.0, 0.55, turn);
+	float first = clamp(t * 2.0, 0.0, 1.0);
+	vec3 lead = vec3(1.0 - (1.0 - first) * (1.0 - first), first, first);
+	vec3 turned = mix(mix(color, gold, lead), hue * (lum * 2.9), clamp(t * 2.0 - 1.0, 0.0, 1.0));
+	float grey = dot(turned, vec3(0.30, 0.55, 0.15));
+	color = max(mix(vec3(grey), turned, 1.0 + 0.6 * sin(3.14159 * t)), vec3(0.0));
 }
 
 // Grass and green ground through the year: fresher in spring, straw in winter.
