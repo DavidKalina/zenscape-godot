@@ -67,6 +67,7 @@ func _fill_world_menu() -> void:
 		_build_palette.close_palette()
 		edit_scene_look(),4)
 	add_world_action("Overview",_overview,6)
+	add_world_action("Sound",func() -> void: _settings.popup_centered(Vector2i(400,0)),125)
 	_world_menu.get_popup().add_separator()
 	add_world_action("Main menu",show_menu,124)
 

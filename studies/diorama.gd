@@ -282,6 +282,8 @@ func _make_shell() -> void:
 		_set_quality(index)
 		_defaults.quality = index)
 	options.add_child(quality)
+	# Master volume and mute, and the creation Sound volume (scripts/sound_settings.gd).
+	preload("res://scripts/sound_settings.gd").build(options)
 	for group: String in ["_ambient_audio","_thunder_audio"]:
 		var audio: Node = get(group)
 		var toggle := CheckButton.new()

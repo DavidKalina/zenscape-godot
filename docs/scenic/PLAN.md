@@ -200,7 +200,7 @@ Painting has to feel so smooth and satisfying that it is almost mind-blowing: a 
 - The fog and volumetric fog drift aside to reveal what you made.
 - Water fills a basin; it does not appear in it.
 - The wind picks up, and the trees you just grew start to sway.
-- Sound effects for every stage. None exist yet.
+- Sound effects for every stage (slice 6, `docs/scenic/sound.md`).
 
 Nothing may hitch while you paint. Frame pacing during a stroke matters more than anywhere else in the game (see Phase 0 and Phase 4).
 
@@ -459,7 +459,23 @@ Seen in the stills of the first rendered film. Each needs a fix and another look
 6. **Sound.**
    - Stroke sounds: rumble as land rises, water filling, wind swelling.
    - World beds that follow what exists (water, birds, forest).
-   - None exist today; `tools/generate_nature_audio.py` can synthesise them.
+   - None existed before this slice; `tools/generate_nature_audio.py` synthesises them.
+   - **What landed** (`feature/genesis-sound`, 2026-09-26; nothing has been heard yet, since headless audio is a dummy driver). Details, levels and tunables are in `docs/scenic/sound.md`.
+     - **Stroke voices** (`scripts/genesis_audio.gd`). One eased looping voice per brush, driven by the stroke signals and `BRUSH_FEEL`, so fast dabs never stack or click:
+       - land: a low rumble scaled with the rise rate, as the tremor is; a mountain click gives one thump;
+       - water: a pour while the brush is down and a quieter tail while it settles, then glugs that rise in pitch while its ponds fill and a trickle while its streams run, timed from `water_births` on the emergence clock;
+       - forest: a leafy swell that rides `atmosphere.swell`;
+       - meadow and path: a soft swish and a gravel scuff, following brush speed.
+     - **Beds that follow what exists**, read from LandLife's survey every 0.5 s:
+       - leaves rustle from the nearest wood, with the wind and camera proximity;
+       - an open-ground wind fills a bare plain and recedes as life comes;
+       - Nature's birdsong (now sung from the woods), crickets and frogs are gated by what has grown and arrived; a bare plain has no birds;
+       - water lapping, streams and rain stay with the existing beds.
+     - **One-shots:** a plop when fish arrive, a croak for frogs, a heron's call, deer steps and a faint chord for the rainbow. They are sparse: 1.5 s between any two, 6-8 s per kind, and none for 12 s after a load or undo. Bigfoot hushes the birds for 50 s, and 60% of the time two distant, reverberant wood knocks come from deeper in the wood.
+     - **Mix:** a `Genesis` bus (the Sound volume, limiter) under Master, with `GenesisFar` (low-pass and reverb) for the knock. World > Sound opens Settings with Mute all, Master and Sound (`scripts/sound_settings.gd`), kept in `user://sound.cfg`.
+     - **Sources:** all synthesised by `tools/generate_nature_audio.py --genesis` (14 mono WAVs, about 1.9 MB, imported as QOA; no Vorbis encoder here). Recorded in `assets/audio/ATTRIBUTION.md`.
+     - **Cost:** GenesisAudio p95 0.035 ms a frame, max 0.35 ms (`tools/probe_genesis_audio.gd`). `profile_stroke` land and water frames are unchanged within noise. `--verify-desktop-build` passes.
+     - **Still open:** listening. The synthesised heron and frog are the likeliest to need another pass. Ducking the ambient beds under a stroke is untried.
 7. **Inspect and photo mode.**
    - A composed camera, UI off, and capture.
    - This may be the "finished moment" that the open questions ask about.
