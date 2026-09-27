@@ -81,6 +81,14 @@ const RINGS := 12
 const SPAWN_SEASON := [1.0, 0.7, 0.3, 0.0]
 ## Seconds a frog takes to turn round on its bank and face the water.
 const FROG_TURN := 0.42
+## Fish a water ball carried (`carry_fish`): life-clock seconds they wait for
+## their pond to find them before they are gone, and the seconds each waits
+## after its site opens, while the new pond finishes rising.
+const CARRY_SECONDS := 30.0
+const CARRY_DELAY := 2.0
+## Carried fish settle in water this deep (m) when the pond they landed in
+## has none as deep as the survey's DEEP, so a small ball's pond keeps them.
+const CARRY_DEPTH := 0.1
 
 ## Multiplies the life clock; probes run it fast.
 var pace := 1.0
@@ -144,6 +152,8 @@ var _planning: Array = []
 ## A loaded world's life, kind -> {key: [delay, age, here]}, waiting for the
 ## first survey of the loaded ground to reopen its sites (`restore_document`).
 var _resume := {}
+## Fish a water ball let go (`carry_fish`): {"center", "looks", "until"}.
+var _carried := {}
 var _resume_used := false
 
 func setup(owner_scene: Node3D) -> void:
@@ -267,6 +277,7 @@ func clear() -> void:
 	survey = null
 	_resume.clear()
 	_resume_used = false
+	_carried = {}
 
 # --- Saving -------------------------------------------------------------------
 
@@ -392,12 +403,58 @@ func _survey(delta: float) -> void:
 
 func _plan_fish() -> void:
 	var wanted := {}
+	var landing := _carried_body()
 	for record: Dictionary in survey.bodies:
-		if record.deep.is_empty(): continue
+		var deep: PackedInt32Array = record.deep
+		# A small ball's pond may hold no deep water; its own fish still stay.
+		if deep.is_empty() and record.id == landing:
+			deep = PackedInt32Array(Array(record.cells).filter(func(cell: int) -> bool: return survey.depth(cell) >= CARRY_DEPTH))
+		if deep.is_empty(): continue
 		var cap := clampi(int(record.area/FISH_AREA),1,FISH_BODY_MAX)
-		for cell in _choose("fish",record.deep,cap,FISH_GAP):
+		for cell in _choose("fish",deep,cap,FISH_GAP):
 			wanted[cell] = {"body":record.id,"level":record.level,"pond":record.cells[0]}
 	_reconcile("fish",wanted,FISH_MAX)
+	_claim_carried()
+
+## A water ball's fish (scripts/water_ball.gd), let go into the pond it made
+## around `center`: the new fish sites nearest it take them, in the ball's
+## own kinds and markings, and come in CARRY_DELAY s later instead of after
+## their own delay. `looks` are [{"kind", "seed", "mirror"}]. Fish no new site
+## takes within CARRY_SECONDS are gone, as are those beyond the pond's room.
+func carry_fish(center: Vector2, looks: Array) -> void:
+	if not active or looks.is_empty(): return
+	_carried = {"center":center,"looks":looks.duplicate(),"until":clock+CARRY_SECONDS}
+	_changed(true)
+
+## The id of the pond body a carried school landed nearest, or -1. Puddles
+## (no wading cells) do not count.
+func _carried_body() -> int:
+	if _carried.is_empty() or survey == null: return -1
+	var center: Vector2 = _carried.center
+	var found := -1
+	var nearest := INF
+	for record: Dictionary in survey.bodies:
+		if record.wade.is_empty(): continue
+		var reach: float = (record.center as Vector2).distance_to(center)
+		if reach < nearest:
+			nearest = reach
+			found = record.id
+	return found
+
+func _claim_carried() -> void:
+	if _carried.is_empty(): return
+	if clock > float(_carried.until):
+		_carried = {}
+		return
+	var center: Vector2 = _carried.center
+	var open: Array = sites.fish.values().filter(func(site: Dictionary) -> bool: return not site.here and not site.has("carried") and not site.get("settled",false))
+	open.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return Survey.center(a.cell).distance_to(center) < Survey.center(b.cell).distance_to(center))
+	for site: Dictionary in open:
+		if _carried.looks.is_empty(): break
+		site.carried = _carried.looks.pop_front()
+		site.delay = CARRY_DELAY
+		site.since = clock
+	if _carried.looks.is_empty(): _carried = {}
 
 func _plan_spawn() -> void:
 	var wanted := {}
@@ -620,9 +677,15 @@ func _arrive_fish(site: Dictionary) -> void:
 	var company: Array = Models.FISH_PONDS[int(_pond_hash(site)*Models.FISH_PONDS.size())]
 	var kind := _pick(company,_hash(site,5))
 	var seed := int(_hash(site,6)*float(Models.FISH_KINDS[kind].get("seeds",1)))
+	site.mirror = _hash(site,8) < 0.5
+	# A fish a water ball carried keeps the look it swam in with.
+	var carried: Dictionary = site.get("carried",{})
+	if not carried.is_empty():
+		kind = carried.kind
+		seed = int(carried.seed)
+		site.mirror = bool(carried.mirror)
 	site.look = "%s %d" % [kind,seed]
 	site.title = Models.FISH_KINDS[kind].title
-	site.mirror = _hash(site,8) < 0.5
 	# Just under the surface, the dorsal fin clear of it.
 	site.sink = maxf(0.07,Models.fish_top(kind)*float(site.size)+0.015)
 	site.home = Vector3(c.x,float(site.level)-float(site.sink),c.y)
