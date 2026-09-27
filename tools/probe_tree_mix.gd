@@ -6,7 +6,9 @@ extends SceneTree
 ## c turns early to copper, a stops at amber, g hangs on green and goes gold.
 ## Dead wood (snag n, log -, stump o) is counted by habitat and by old or
 ## young stand, with its share of the wood, and spruce dead tops by stand.
-## godot --headless --path . -s res://tools/probe_tree_mix.gd -- [seed|-1] [salt]
+## A third argument paints a smaller forest, of that radius in metres, as a
+## player's patch would be.
+## godot --headless --path . -s res://tools/probe_tree_mix.gd -- [seed|-1] [salt] [radius]
 const Emergence = preload("res://scripts/emergence.gd")
 const LETTERS := {"broadleaf":"B","layered_tree":"L","tree":"S","redwood":"R","joshua":"J","cactus":"C","birch":"A","willow":"W","juniper":"P","snag":"n","log":"-","stump":"o"}
 func _initialize() -> void: run.call_deferred()
@@ -15,6 +17,7 @@ func run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var world_seed := int(args[0]) if not args.is_empty() and args[0].lstrip("-").is_valid_int() else -1
 	var salt := int(args[1]) if args.size() > 1 and args[1].is_valid_int() else 7
+	var radius := float(args[2]) if args.size() > 2 and args[2].is_valid_float() else 11.0
 	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var mesh: ArrayMesh = reference.get_node("terrain").mesh
 	reference.free()
@@ -28,7 +31,7 @@ func run() -> void:
 	var emergence = Emergence.new(data,salt)
 	for z in range(data.MEADOW_CELLS):
 		for x in range(data.MEADOW_CELLS):
-			if data.meadow_position(x,z).length() < 11.0:
+			if data.meadow_position(x,z).length() < radius:
 				emergence.intent.forest[z*data.MEADOW_CELLS+x] = 1.0
 	emergence.intent.revision += 1
 	var before := data.objects.size()
@@ -50,7 +53,8 @@ func run() -> void:
 		var counts: Dictionary = by_habitat.get_or_add(habitat,{})
 		counts[item.asset] = counts.get(item.asset,0)+1
 		grid[Vector2i((p+Vector2(12,12)).floor())] = LETTERS.get(item.asset,"?")
-		var age: Array = by_age[emergence.old_stand(emergence._stand(p))]
+		var stand: Dictionary = emergence._stand(p)
+		var age: Array = by_age[emergence.old_stand(stand) or emergence.elders.has(str(stand.key))]
 		age[1 if dead else 0] += 1
 		if dead:
 			dead_kinds[item.asset] = dead_kinds.get(item.asset,0)+1
@@ -79,7 +83,7 @@ func run() -> void:
 	for old in [true,false]:
 		var age: Array = by_age[old]
 		print("  %s stands: %d trees, %d dead (%.1f%%), %d of %d spruces dead-topped" % ["old" if old else "young",age[0],age[1],100.0*age[1]/maxi(age[0]+age[1],1),age[3],age[2]])
-	print("  dead wood %s" % dead_kinds)
+	print("  dead wood %s, %d stands named old" % [dead_kinds,emergence.elders.size()])
 	# Dead wood keeps its pose and tint through a save, and spruces their variant.
 	var copy := NativeTerrainData.new()
 	copy.setup(mesh)

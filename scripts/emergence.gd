@@ -151,27 +151,39 @@ const FOREST_UNDER_SHRUBS := 0.12
 ## tree's place, so a wood reads old and lived-in. It goes by stand: DEAD_OLD
 ## of stands are old (more on high, dry ground), and a tree there comes up
 ## dead at DEAD_SHARE.y, a young stand's at DEAD_SHARE.x. Dry, high and steep
-## ground lean it up to DEAD_HARSH times, a forest's dense core by DEAD_CORE;
-## open meadow grows none. Pieces keep DEAD_GAP apart so none reads as a
-## woodpile, and one without room stays a living tree.
+## ground lean it up to DEAD_HARSH times, a forest's dense core by DEAD_CORE,
+## to DEAD_MAX at most; open meadow grows none. Pieces keep DEAD_GAP apart,
+## and no more than DEAD_CLUSTER stand within DEAD_REACH, so none reads as a
+## woodpile nor an old stand as a dead one; one without room stays a living
+## tree. A painted forest whose stands all drew young names its eldest old (a
+## stand counts from ELDER_MIN wished tree candidates), so every forest the
+## player paints shows a few pieces.
 const DEAD_KINDS := ["snag","log","stump"]
 const DEAD_OLD := Vector2(0.25,0.55)
-const DEAD_SHARE := Vector2(0.02,0.15)
+const DEAD_SHARE := Vector2(0.025,0.22)
 const DEAD_HARSH := Vector2(0.6,1.7)
 const DEAD_CORE := 0.6
+const DEAD_MAX := 0.28
 const DEAD_HABITAT := {"meadow":0.0,"wetland":0.4,"arid":0.25,"alpine":1.2}
 const DEAD_GAP := 2.6
+const DEAD_REACH := 5.0
+const DEAD_CLUSTER := 3
+const ELDER_MIN := 8
 ## Snag height and width, log length and girth, stump size (record scale);
-## the emerged woods stand at about two thirds of the source's.
-const SNAG_SIZE := Vector4(1.7,2.8,1.0,1.35)
+## the emerged woods stand at about two thirds of the source's, but a snag
+## keeps nearer its full height and some girth, so its grey pole and broken
+## top stand clear of the crowns as a silhouette from the diorama camera.
+const SNAG_SIZE := Vector4(2.3,3.3,1.2,1.55)
 const LOG_SIZE := Vector4(1.1,1.9,0.75,1.0)
 const STUMP_SIZE := Vector2(0.6,0.95)
 ## Weathered wood: gentle multipliers over the models' own browns (sRGB, so
-## near white; a tint can only darken). Less red and green greys the brown
-## toward bleached silver, or leaves it grey-brown; never a fire's near-black.
+## near white; a tint can only darken). The snag's own wood is already a
+## pale warm grey (the source's LITTER_SILVER) and the sky's blue fill cools
+## it, so a blue tint rendered lavender slate: these stay near neutral to
+## read silver, or leave it grey-brown; never a fire's near-black.
 const DEAD_COLOURS := {
-	"snag":[["e2edff",1.0],["eef0f2",0.7],["f6f0e8",0.4]],
-	"log":[["e8eef6",1.0],["f4ede4",0.8]],
+	"snag":[["f4f2ee",1.0],["eef0f0",0.7],["f8f0e6",0.4]],
+	"log":[["eef0f2",1.0],["f4ede4",0.8]],
 	"stump":[["f4ede4",1.0],["e6ebf2",0.7]],
 }
 ## Old and high stands let the spruce family's dead-top variant lean up to
@@ -203,6 +215,8 @@ var _crowd := {}
 var _crowd_built := false
 ## Why candidates did not take, by reason; for probes and tuning.
 var refusals := {}
+## Stands painted forests named old (`_elder`), by str(key); for probes.
+var elders := {}
 ## Plan queued strokes on a worker, over a detached copy of the ground, and
 ## take the regions in on a later frame. The editor turns this on; probes that
 ## drive `advance` in a tight loop plan on the calling thread.
@@ -245,6 +259,7 @@ func busy() -> bool:
 func clear() -> void:
 	_regions.clear()
 	_queued.clear()
+	elders.clear()
 	_blend = null
 	_pending_refresh = false
 	# A plan still on its worker was made for the ground being left.
@@ -287,6 +302,7 @@ func _install(rect: Rect2, source: String, region: Dictionary) -> void:
 		for other in _regions:
 			_forget(other,rect)
 	_withdraw(rect)
+	if region.has("elder"): elders[str(region.elder)] = true
 	_regions.append(region)
 
 ## Plan every queued stroke on a worker. The planner is a second Emergence
@@ -395,6 +411,7 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 	var reach := maxf(rect.size.length()*0.5,1.0)
 	# A guided forest's edge may bulge past the stroke's own bounds.
 	var span := rect.grow(Guidance.WARP) if forest and guide != null else rect
+	var wished := PackedVector2Array()
 	for layer in [["shrub",SHRUB_LATTICE,SHRUB_DELAY,SHRUB_SPREAD],["tree",TREE_LATTICE,TREE_DELAY,TREE_SPREAD]]:
 		var lattice: float = layer[1]
 		for j in range(floori(span.position.y/lattice),ceili(span.end.y/lattice)):
@@ -411,10 +428,31 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 					# Wished-for forest comes sooner, its core first.
 					var tree: bool = layer[0] == "tree"
 					at = (FOREST_TREE_DELAY if tree else FOREST_SHRUB_DELAY)+(FOREST_TREE_SPREAD if tree else FOREST_SHRUB_SPREAD)*(0.6*(1.0-wish)+0.4*Variety.unit(key+[3]))
+					if tree: wished.append(p)
 				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide})
 	if guide != null: _count_mates(region.plants,known)
+	var elder := _elder(wished)
+	if not elder.is_empty():
+		region["elder"] = elder
+		for plant: Dictionary in region.plants: plant["elder"] = elder
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
 	return region
+
+## The stand a painted forest names old when every stand it covers drew
+## young: of those holding ELDER_MIN of its wished tree candidates, the one
+## with the oldest draw. Empty when one of them is old already, or none is.
+## It reads only the strokes and the salt, so a world replays the same.
+func _elder(wished: PackedVector2Array) -> Array:
+	var stands := {}
+	for p in wished:
+		var stand := _stand(p)
+		stands.get_or_add(str(stand.key),[stand,0])[1] += 1
+	var elder := []
+	for entry: Array in stands.values():
+		if entry[1] < ELDER_MIN: continue
+		if old_stand(entry[0]): return []
+		if elder.is_empty() or Variety.unit(entry[0].key+[40]) < Variety.unit(elder+[40]): elder = entry[0].key
+	return elder
 
 ## Seconds an emerged record of `asset` takes to grow in.
 static func rise_seconds(asset: String) -> float:
@@ -608,9 +646,10 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
 	if _crowded(p,plant.layer == "tree"):
 		return _refuse("crowded")
-	if plant.layer == "tree" and _dead_wood(habitat,p,slope,wish,frayed,key,born):
+	var elder: Array = plant.get("elder",[])
+	if plant.layer == "tree" and _dead_wood(habitat,p,slope,wish,frayed,key,born,elder):
 		return true
-	if kind == "tree": p = _dead_top(p,key)
+	if kind == "tree": p = _dead_top(p,key,elder)
 	var span := TREE_SIZE if plant.layer == "tree" else SHRUB_SIZE
 	var draw := Variety.unit(key+[6])
 	if guide != null:
@@ -632,14 +671,15 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 
 ## A tree candidate that comes up as dead wood instead: true when a snag, log
 ## or stump was placed. With no room for one, the living tree stands.
-func _dead_wood(habitat: String, p: Vector2, slope: float, wish: float, frayed: float, key: Array, born: float) -> bool:
+func _dead_wood(habitat: String, p: Vector2, slope: float, wish: float, frayed: float, key: Array, born: float, elder: Array) -> bool:
 	var stand := _stand(p)
 	var core := smoothstep(FOREST_EDGE.y,1.2,frayed) if wish > 0.0 else 0.0
-	if Variety.unit(key+[40]) >= _dead_share(habitat,stand,slope,wish,core) or _near(p,DEAD_GAP,false,true) > 0:
+	if Variety.unit(key+[40]) >= _dead_share(habitat,stand,slope,wish,core,elder) or _near(p,DEAD_GAP,false,true) > 0 or _near(p,DEAD_REACH,false,true) >= DEAD_CLUSTER:
 		return false
 	var harsh := _harsh(stand,slope)
-	# Snags stand on exposed ground, logs lie in the dense core, stumps at the edge.
-	var weights := [0.6+0.9*harsh,0.4+1.0*core,0.3+0.5*(1.0-core)]
+	# Snags stand on exposed ground, logs lie in the dense core, stumps at the
+	# edge; snags lead, as the piece that reads from afar.
+	var weights := [0.9+0.9*harsh,0.4+1.0*core,0.3+0.5*(1.0-core)]
 	for n in range(weights.size()): weights[n] *= Variety.lean(salt,"dead:"+DEAD_KINDS[n])
 	var kind: String = DEAD_KINDS[Variety.weighted(weights,Variety.unit(key+[41]))]
 	var yaw := Variety.unit(key+[7])*TAU
@@ -652,7 +692,7 @@ func _dead_wood(habitat: String, p: Vector2, slope: float, wish: float, frayed: 
 		"snag":
 			# Stunted where it is exposed, and leaning a little.
 			size = lerpf(SNAG_SIZE.z,SNAG_SIZE.w,b)
-			var basis := Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,Variety.unit(key+[44])*0.12)*Basis.from_scale(Vector3(size,lerpf(SNAG_SIZE.x,SNAG_SIZE.y,a)*(1.0-0.3*harsh),size))
+			var basis := Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,Variety.unit(key+[44])*0.12)*Basis.from_scale(Vector3(size,lerpf(SNAG_SIZE.x,SNAG_SIZE.y,a)*(1.0-0.2*harsh),size))
 			pose = NativeObjectPose.make(basis,-0.05)
 		"log":
 			# Lies along the ground clear of trunks, pitched to its slope, sunk
@@ -678,9 +718,10 @@ func _dead_wood(habitat: String, p: Vector2, slope: float, wish: float, frayed: 
 	for q in footprint: _crowd.get_or_add(Vector2i(q.floor()),[]).append(Vector3(q.x,q.y,2.0))
 	return true
 
-## An old stand, drawn once per stand and likelier on high, dry ground.
-func old_stand(stand: Dictionary) -> bool:
-	return Variety.unit(stand.key+[40]) < lerpf(DEAD_OLD.x,DEAD_OLD.y,_harsh(stand,0.0))
+## An old stand, drawn once per stand and likelier on high, dry ground, or
+## the one its painted forest named (`_elder`).
+func old_stand(stand: Dictionary, elder := []) -> bool:
+	return stand.key == elder or Variety.unit(stand.key+[40]) < lerpf(DEAD_OLD.x,DEAD_OLD.y,_harsh(stand,0.0))
 
 ## How hard the ground is on trees, 0-1: the stand's height and dryness, and
 ## the steepness where it stands.
@@ -705,9 +746,9 @@ func _dead_tint(kind: String, stand: Dictionary, key: Array) -> String:
 ## is a hash of the record's id and centimetre position (hero_trees.gd
 ## spruce_index), so such a tree moves a few centimetres to a spot that draws
 ## it; saved worlds read back the same variant.
-func _dead_top(p: Vector2, key: Array) -> Vector2:
+func _dead_top(p: Vector2, key: Array, elder: Array) -> Vector2:
 	var stand := _stand(p)
-	var lean := DEAD_TOPS*maxf(1.0 if old_stand(stand) else 0.0,smoothstep(0.55,0.9,float(stand.altitude)))
+	var lean := DEAD_TOPS*maxf(1.0 if old_stand(stand,elder) else 0.0,smoothstep(0.55,0.9,float(stand.altitude)))
 	if Variety.unit(key+[45]) >= lean:
 		return p
 	var dead_top := -1
@@ -720,11 +761,11 @@ func _dead_top(p: Vector2, key: Array) -> Vector2:
 	return p
 
 ## The share of a stand's tree candidates that come up dead.
-func _dead_share(habitat: String, stand: Dictionary, slope: float, wish: float, core: float) -> float:
+func _dead_share(habitat: String, stand: Dictionary, slope: float, wish: float, core: float, elder: Array) -> float:
 	if wish < 0.0: return 0.0
 	# A painted forest on meadow ground is woodland; open meadow grows none.
 	var base: float = 1.0 if wish > 0.05 and habitat == "meadow" else DEAD_HABITAT.get(habitat,1.0)
-	return base*(DEAD_SHARE.y if old_stand(stand) else DEAD_SHARE.x)*lerpf(DEAD_HARSH.x,DEAD_HARSH.y,_harsh(stand,slope))*(1.0+DEAD_CORE*core)
+	return minf(base*(DEAD_SHARE.y if old_stand(stand,elder) else DEAD_SHARE.x)*lerpf(DEAD_HARSH.x,DEAD_HARSH.y,_harsh(stand,slope))*(1.0+DEAD_CORE*core),DEAD_MAX)
 
 ## The forest wish a candidate reads. With a guide, the wish is sampled a
 ## little way off where its edge reads as a ruled line (Guide.warp), so the
