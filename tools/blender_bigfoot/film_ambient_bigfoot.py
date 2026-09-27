@@ -1,4 +1,4 @@
-"""Film the ambient Bigfoot wandering among the hero trees, then pausing to look around.
+"""Film the ambient Bigfoot wandering among the hero trees, then stopping to watch.
 
 Run after build_ambient_bigfoot.py:
   blender -b --python tools/blender_bigfoot/film_ambient_bigfoot.py -- [--still] [--frames=N]
@@ -33,7 +33,7 @@ speed = rig['walk_speed_mps']
 FPS = 30
 WALK_END = 420          # frames of walking (a little over four cycles)
 STOP = 18               # frames to settle into the look
-LOOK = 300
+LOOK = 420             # the Watch clip
 TOTAL = WALK_END + LOOK
 
 # ---- stage: drop the studio backdrop, lay a mossy ground, plant trees
@@ -56,7 +56,7 @@ def import_glb(name):
 	return [o for o in new if o.parent is None]
 
 
-# ---- clips on the NLA: walk loops, then the look blends in
+# ---- clips on the NLA: walk loops, then the watch blends in
 ad = rig.animation_data
 for t in list(ad.nla_tracks):
 	ad.nla_tracks.remove(t)
@@ -66,7 +66,7 @@ ws = walk.strips.new('Walk', 0, bpy.data.actions['Walk'])
 ws.repeat = (WALK_END + STOP) / (ws.action_frame_end - ws.action_frame_start)
 ws.extrapolation = 'HOLD_FORWARD'
 look = ad.nla_tracks.new(); look.name = 'LookTrack'
-ls = look.strips.new('Look', WALK_END - STOP // 2, bpy.data.actions['Look'])
+ls = look.strips.new('Watch', WALK_END - STOP // 2, bpy.data.actions['Watch'])
 ls.blend_in = STOP
 ls.extrapolation = 'HOLD'
 

@@ -1,4 +1,4 @@
-"""Ambient Bigfoot: a single skinned, faceted mesh with a small rig and a few quiet clips.
+"""Ambient Bigfoot: a single skinned, faceted mesh with a small rig; clips come from ambient_clips.py.
 
 Run: blender -b --python tools/blender_bigfoot/build_ambient_bigfoot.py -- [--no-render] [--no-anim]
 
@@ -6,7 +6,8 @@ The body is one metaball family (torso, head, limbs, palms, feet) converted to a
 decimated into large facets like the hero trees. Hanging fur locks, fingers, eyes and
 blinking lids are added on top, rigidly weighted to the nearest skinned body vertex.
 Saves art/blender/bigfoot/zenscape-bigfoot-ambient.blend, exports
-assets/models/zenscape-bigfoot-ambient.glb and renders previews to /tmp/zs-bigfoot-previews/.
+assets/models/zenscape-bigfoot-ambient.glb and renders rest views to /tmp/zs-bigfoot-previews/rest/
+(clips: review_ambient_bigfoot.py; numbers: check_ambient_bigfoot.py).
 Metres, origin between the feet, Blender Z-up, facing -Y (Godot +Z after export).
 """
 import bpy, bmesh, math, random, sys
@@ -16,8 +17,10 @@ from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'blender_trees'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kit
 from kit import srgb, mix
+import ambient_clips as clips
 
 ROOT = kit.ROOT
 ARGS = kit.ARGS
@@ -28,23 +31,27 @@ kit.rng.seed(7)
 
 # ---------------------------------------------------------------- landmarks
 # Left side (+X); the right side mirrors. Surface radii, not metaball influence radii.
-SHOULDER = Vector((0.36, 0.03, 1.75))
-ELBOW = Vector((0.44, 0.06, 1.31))
-WRIST = Vector((0.47, -0.02, 0.90))
-HIP = Vector((0.15, 0.03, 1.03))
-KNEE = Vector((0.17, -0.03, 0.58))
-ANKLE = Vector((0.18, 0.04, 0.13))
-HEAD = Vector((0.0, -0.11, 2.03))
-EYE_X, EYE_Z, EYE_R = 0.07, 2.04, 0.02
+# The sculpt is already stooped, after the original woodland creature: the head hangs
+# forward of the chest, the shoulders slope into a mantle, and the long arms leave the
+# fingertips level with the knees.
+SHOULDER = Vector((0.36, -0.01, 1.68))
+ELBOW = Vector((0.43, 0.05, 1.22))
+WRIST = Vector((0.45, -0.02, 0.80))
+HIP = Vector((0.15, 0.03, 1.0))
+KNEE = Vector((0.17, -0.04, 0.56))
+ANKLE = Vector((0.18, 0.04, 0.12))
+HEAD = Vector((0.0, -0.16, 1.97))  # skull reference; face features are placed relative to it
+EYE_X, EYE_Z, EYE_R = 0.072, HEAD.z + 0.01, 0.023
 
-COAT_TOP = srgb('775842')
-COAT_MID = srgb('5e4333')
-COAT_LOW = srgb('412e24')
-COAT_GREY = srgb('917a68')
-SKIN = srgb('4f3d34')
-SKIN_DARK = srgb('2d221d')
-PALM = srgb('4f3b32')
+COAT_TOP = srgb('6f5a47')
+COAT_MID = srgb('594636')
+COAT_LOW = srgb('3e3129')
+COAT_GREY = srgb('8f8577')
+SKIN = srgb('4a3a32')
+SKIN_DARK = srgb('2a201b')
+PALM = srgb('4c3a31')
 MOSS = srgb('6f7d3a')
+EYE = srgb('2e1a0c')
 
 
 def mirror(v):
@@ -90,42 +97,47 @@ def build_body(collection):
 	mb.threshold = 0.6
 	obj = bpy.data.objects.new('BodyBall', mb)
 	collection.objects.link(obj)
-	# Torso: a soft belly, deep chest and broad shoulders with only a slight hunch.
-	ellipsoid(mb, (0, 0.03, 1.07), (0.21, 0.16, 0.16))
-	ellipsoid(mb, (0, -0.02, 1.29), (0.22, 0.18, 0.19))
-	ellipsoid(mb, (0, 0.01, 1.56), (0.26, 0.18, 0.22))
-	ellipsoid(mb, (0, 0.07, 1.75), (0.25, 0.14, 0.13))
-	ellipsoid(mb, (0, 0.02, 1.87), (0.18, 0.14, 0.12))
+	# Torso: one barrel from hips to chest with no waist, so he never reads as a person
+	# in a suit. The upper back rises into a mantle behind the head.
+	ellipsoid(mb, (0, 0.02, 1.07), (0.235, 0.18, 0.17))
+	ellipsoid(mb, (0, -0.04, 1.29), (0.245, 0.215, 0.19))
+	ellipsoid(mb, (0, -0.04, 1.5), (0.27, 0.22, 0.2))
+	ellipsoid(mb, (0, 0.02, 1.66), (0.27, 0.17, 0.12))
+	ellipsoid(mb, (0, 0.09, 1.79), (0.22, 0.15, 0.16))  # mantle
+	ellipsoid(mb, (0, -0.03, 1.84), (0.17, 0.15, 0.11))  # the head sits in it, no neck
 	for s in (1, -1):
 		ball(mb, sided(SHOULDER, s), 0.11)
-		ball(mb, Vector((0.11 * s, 0.11, 1.02)), 0.115)  # glutes
-		ellipsoid(mb, (0.16 * s, 0.06, 1.52), (0.09, 0.11, 0.17))  # lats
-	# Head, after the earlier classic model: a big round helmet dome, a sharp brow visor
-	# jutting forward like a cap brim, a recessed face with a broad wedge nose, and a deep
-	# rounded jaw. The back of the dome melts into the shoulder hump; no neck, no crest peak.
-	ellipsoid(mb, (0, -0.1, 2.09), (0.2, 0.18, 0.18))
-	ellipsoid(mb, (0, 0.0, 1.97), (0.16, 0.13, 0.13))
-	ellipsoid(mb, (0, -0.265, 2.09), (0.18, 0.07, 0.032))
-	ellipsoid(mb, (0, -0.225, 1.98), (0.14, 0.08, 0.09))
-	ellipsoid(mb, (0, -0.31, 1.995), (0.055, 0.032, 0.032))
-	ellipsoid(mb, (0, -0.235, 1.91), (0.13, 0.085, 0.065))
-	ellipsoid(mb, (0, -0.18, 1.86), (0.14, 0.09, 0.055))
+		ellipsoid(mb, (0.19 * s, 0.03, 1.77), (0.12, 0.11, 0.08))  # sloping trapezius
+		ball(mb, Vector((0.1 * s, 0.1, 1.01)), 0.1)  # glutes, kept inside the barrel
+		ellipsoid(mb, (0.17 * s, 0.05, 1.46), (0.09, 0.12, 0.17))  # lats
+	# Head, after the earlier classic model: a big round helmet dome, a heavy rounded brow,
+	# a recessed face with a broad wedge nose, and a deep rounded jaw. The back of the dome
+	# melts into the mantle. The brow is thick rather than a thin brim, which read as a cap
+	# and, level with the eyes, as a frown.
+	h = HEAD
+	ellipsoid(mb, h + Vector((0, 0.01, 0.06)), (0.2, 0.18, 0.18))
+	ellipsoid(mb, h + Vector((0, 0.11, -0.06)), (0.16, 0.13, 0.13))
+	ellipsoid(mb, h + Vector((0, -0.145, 0.07)), (0.17, 0.065, 0.048))
+	ellipsoid(mb, h + Vector((0, -0.115, -0.05)), (0.14, 0.08, 0.09))
+	ellipsoid(mb, h + Vector((0, -0.2, -0.035)), (0.055, 0.032, 0.032))
+	ellipsoid(mb, h + Vector((0, -0.13, -0.12)), (0.125, 0.085, 0.065))
+	ellipsoid(mb, h + Vector((0, -0.07, -0.17)), (0.14, 0.09, 0.055))
 	for s in (1, -1):
-		ball(mb, (0.13 * s, -0.19, 1.93), 0.075)  # full cheeks and jaw keep the face square
+		ball(mb, h + Vector((0.13 * s, -0.08, -0.1)), 0.075)  # full cheeks and jaw keep the face square
 	# Arms, left and right.
 	for side in (SHOULDER, mirror(SHOULDER)):
 		s = 1 if side.x > 0 else -1
 		sh, el, wr = side, ELBOW if s > 0 else mirror(ELBOW), WRIST if s > 0 else mirror(WRIST)
-		limb(mb, sh, el, 0.095, 0.08, 8, bulge=0.01, bulge_at=0.35, bulge_dir=(0.01 * s, 0, 0))
-		limb(mb, el, wr, 0.085, 0.065, 7, bulge=0.012, bulge_at=0.3, bulge_dir=(0, -0.01, 0))
+		limb(mb, sh, el, 0.1, 0.082, 8, bulge=0.01, bulge_at=0.35, bulge_dir=(0.01 * s, 0, 0))
+		limb(mb, el, wr, 0.088, 0.066, 7, bulge=0.014, bulge_at=0.3, bulge_dir=(0, -0.01, 0))
 		palm = wr + Vector((0.008 * s, -0.035, -0.09))
 		ellipsoid(mb, palm, (0.05, 0.09, 0.1))
 		ball(mb, wr + Vector((0.0, -0.02, -0.02)), 0.06)
 	# Legs and the big flat feet, each with five toe pads.
 	for s in (1, -1):
 		hip, knee, ankle = sided(HIP, s), sided(KNEE, s), sided(ANKLE, s)
-		limb(mb, hip, knee, 0.13, 0.095, 8, bulge=0.01, bulge_at=0.3, bulge_dir=(0.01 * s, -0.01, 0))
-		limb(mb, knee, ankle, 0.09, 0.065, 8, bulge=0.02, bulge_at=0.3, bulge_dir=(0, 0.035, 0))
+		limb(mb, hip, knee, 0.14, 0.1, 8, bulge=0.012, bulge_at=0.3, bulge_dir=(0.01 * s, -0.01, 0))
+		limb(mb, knee, ankle, 0.095, 0.068, 8, bulge=0.022, bulge_at=0.3, bulge_dir=(0, 0.035, 0))
 		ellipsoid(mb, (0.18 * s, -0.08, 0.055), (0.085, 0.17, 0.055))
 		ellipsoid(mb, (0.18 * s, 0.07, 0.065), (0.07, 0.07, 0.065))
 		for k, (dx, dy, r) in enumerate(((-0.055, -0.235, 0.034), (-0.02, -0.25, 0.027), (0.013, -0.245, 0.025),
@@ -160,23 +172,26 @@ TARGET_FACES = 800
 def region(p, n):
 	"""Region label for a body point with normal n."""
 	x, y, z = abs(p.x), p.y, p.z
-	if y < -0.2 and n.y < 0.25 and (x / 0.15) ** 2 + ((z - 1.98) / (0.09 if z > 1.98 else 0.11)) ** 2 < 1:
+	fz = HEAD.z - 0.05
+	if y < HEAD.y - 0.09 and n.y < 0.25 and (x / 0.15) ** 2 + ((z - fz) / (0.09 if z > fz else 0.11)) ** 2 < 1:
 		return 'face'
 	if z < 0.12 or (z < 0.2 and y < -0.15):
 		return 'foot'
-	if z < 0.88 and x > 0.36:
+	if z < WRIST.z - 0.04 and x > 0.34:
 		return 'hand'
 	return 'coat'
 
 
 def coat_colour(p, n):
-	t = max(0.0, min(1.0, (p.z - 0.3) / 1.5))
+	t = max(0.0, min(1.0, (p.z - 0.3) / 1.45))
 	base = mix(COAT_LOW, COAT_MID, t * 1.6) if t < 0.62 else mix(COAT_MID, COAT_TOP, (t - 0.62) / 0.38)
-	if abs(p.x) > 0.32 and p.z < 1.45:  # forearms darker
+	if abs(p.x) > 0.32 and p.z < 1.4:  # forearms darker
 		base = mix(base, COAT_LOW, 0.45)
-	if p.z > 1.8 and p.y < -0.12 and abs(p.x) < 0.14:  # a slightly lighter chin
+	if p.z > HEAD.z - 0.2 and p.y < HEAD.y + 0.07 and abs(p.x) < 0.14:  # a slightly lighter chin
 		base = mix(base, COAT_GREY, 0.12)
-	if p.x > 0.2 and p.z > 1.74 and p.y > 0.0 and noise.noise(p * 7) > 0.25:  # a little moss on one shoulder
+	if p.z > HEAD.z - 0.04 and abs(p.x) > 0.13 and p.y < HEAD.y + 0.12:  # old ash-grey temples
+		base = mix(base, COAT_GREY, 0.3)
+	if p.x > 0.2 and p.z > 1.68 and p.y > 0.0 and noise.noise(p * 7) > 0.25:  # a little moss on one shoulder
 		base = mix(base, MOSS, 0.4)
 	mottle = 1.0 + 0.06 * noise.noise(p * 5.0) + rng.uniform(-0.03, 0.03)
 	lift = 0.94 + 0.12 * max(0.0, n.z)
@@ -185,11 +200,12 @@ def coat_colour(p, n):
 
 def face_colour(p, n):
 	c = SKIN * (1.0 + rng.uniform(-0.04, 0.04))
-	if 1.96 < p.z < 2.03 and abs(p.x) < 0.055 and p.y < -0.3 and n.z > -0.4:  # broad flat nose
+	z = p.z - HEAD.z
+	if -0.07 < z < 0.0 and abs(p.x) < 0.055 and p.y < HEAD.y - 0.19 and n.z > -0.4:  # broad flat nose
 		c = mix(c, SKIN_DARK, 0.6)
-	elif p.z < 1.93 and abs(p.x) < 0.07 and n.z < 0.3:  # quiet mouth line
+	elif z < -0.1 and abs(p.x) < 0.07 and n.z < 0.3:  # quiet mouth line
 		c = mix(c, SKIN_DARK, 0.55)
-	if p.z > 2.05:  # brow a touch warmer, blending into the coat
+	if z > 0.04:  # brow a touch warmer, blending into the coat
 		c = mix(c, COAT_MID, 0.25)
 	return c
 
@@ -220,13 +236,13 @@ def locks(body):
 		p, n = poly.center, poly.normal
 		if region(p, n) != 'coat' or n.z < -0.55:
 			continue
-		if p.z > 1.92:
+		if p.z > HEAD.z - 0.05:
 			chance, length = 0.45, (0.04, 0.07)
-			if p.y < -0.12:  # keep the brow and face clear
+			if p.y < HEAD.y + 0.07:  # keep the brow and face clear
 				continue
-		elif p.z > 1.62:
+		elif p.z > 1.56:
 			chance, length = 0.7, (0.07, 0.12)
-			if p.y < -0.08 and abs(p.x) < 0.2:  # no flap hanging off the chin
+			if p.y < HEAD.y + 0.11 and abs(p.x) < 0.2:  # no flap hanging off the chin
 				continue
 		else:
 			continue
@@ -304,7 +320,7 @@ def eyes(body_bvh, collection):
 		hit = surface_point(body_bvh, origin, Vector((0, 1, 0)))
 		centre = Vector((EYE_X * s, hit.y + EYE_R * 0.55, EYE_Z))
 		centres.append(centre)
-		ico = bmesh.ops.create_icosphere(eye_bm, subdivisions=1, radius=EYE_R)
+		ico = bmesh.ops.create_icosphere(eye_bm, subdivisions=2, radius=EYE_R)
 		for v in ico['verts']:
 			v.co += centre
 		# Lid: a spherical cap around the pole, tilted forward so its edge rests above the pupil.
@@ -325,7 +341,9 @@ def eyes(body_bvh, collection):
 	bmesh.ops.recalc_face_normals(lid_bm, faces=lid_bm.faces)
 	eye_obj = kit.to_object(eye_bm, 'Eyes', collection)
 	lid_obj = kit.to_object(lid_bm, 'Lids', collection)
-	kit.paint(eye_obj, lambda poly: srgb('1a110b'))
+	kit.paint(eye_obj, lambda poly: EYE)
+	for poly in eye_obj.data.polygons:  # round eyes, so the catchlight is a soft point, not a fang
+		poly.use_smooth = True
 	kit.paint(lid_obj, lambda poly: SKIN * 0.95)
 	# Close the lid cap's open side so it is solid from any angle.
 	lid_obj.data.update()
@@ -335,9 +353,9 @@ def eyes(body_bvh, collection):
 def leaves(collection):
 	"""Two small leaves caught in the crown fur and one on the shoulder: a little charm."""
 	bm = bmesh.new()
-	spots = [(Vector((0.07, 0.0, 2.2)), Vector((0.4, 0.6, 0.3)), srgb('a8742c')),
-		(Vector((-0.1, 0.05, 2.14)), Vector((-0.5, 0.4, 0.4)), srgb('7d8a3a')),
-		(Vector((0.3, 0.12, 1.84)), Vector((0.3, 0.5, 0.7)), srgb('b0582c'))]
+	spots = [(HEAD + Vector((0.07, 0.11, 0.17)), Vector((0.4, 0.6, 0.3)), srgb('a8742c')),
+		(HEAD + Vector((-0.1, 0.16, 0.11)), Vector((-0.5, 0.4, 0.4)), srgb('7d8a3a')),
+		(Vector((0.28, 0.1, 1.77)), Vector((0.3, 0.5, 0.7)), srgb('b0582c'))]
 	colours = []
 	for base, direction, colour in spots:
 		direction = direction.normalized()
@@ -378,27 +396,33 @@ def build_rig(collection, eye_centres):
 		return b
 
 	bone('Root', (0, 0, 0), (0, 0.3, 0), deform=False)
-	bone('Pelvis', (0, 0.03, 1.0), (0, 0.02, 1.2), 'Root')
-	bone('Spine', (0, 0.02, 1.2), (0, 0.01, 1.5), 'Pelvis', connect=True)
-	bone('Chest', (0, 0.01, 1.5), (0, 0.04, 1.8), 'Spine', connect=True)
-	bone('Neck', (0, 0.04, 1.8), (0, -0.05, 1.93), 'Chest', connect=True)
-	bone('Head', (0, -0.05, 1.93), (0, -0.08, 2.28), 'Neck', connect=True)
+	bone('Pelvis', (0, 0.03, 1.0), (0, 0.02, 1.22), 'Root')
+	bone('Spine', (0, 0.02, 1.22), (0, 0.0, 1.48), 'Pelvis', connect=True)
+	bone('Chest', (0, 0.0, 1.48), (0, 0.03, 1.74), 'Spine', connect=True)
+	bone('Neck', (0, 0.03, 1.74), (0, -0.1, 1.88), 'Chest', connect=True)
+	bone('Head', (0, -0.1, 1.88), (0, -0.16, 2.2), 'Neck', connect=True)
 	for s, suffix in ((1, 'L'), (-1, 'R')):
 		sh, el, wr = sided(SHOULDER, s), sided(ELBOW, s), sided(WRIST, s)
 		palm = wr + Vector((0.008 * s, -0.035, -0.09))
 		ec = eye_centres[0 if s > 0 else 1]
 		bone(f'Lid_{suffix}', ec, ec + Vector((0, -0.05, 0)), 'Head')
-		bone(f'Shoulder_{suffix}', (0.08 * s, 0.03, 1.8), sh, 'Chest')
+		bone(f'Shoulder_{suffix}', (0.08 * s, 0.01, 1.72), sh, 'Chest')
 		bone(f'UpperArm_{suffix}', sh, el, f'Shoulder_{suffix}', connect=True)
 		bone(f'Forearm_{suffix}', el, wr, f'UpperArm_{suffix}', connect=True)
 		bone(f'Hand_{suffix}', wr, palm + Vector((0, 0, -0.06)), f'Forearm_{suffix}', connect=True)
+		# Arm IK for contacts (bark, ground). Its influence is keyed per clip and is zero
+		# unless a hand holds something; the exporter bakes the solved pose.
+		bone(f'HandIK_{suffix}', wr, palm + Vector((0, 0, -0.06)), 'Root', deform=False)
+		bone(f'ElbowPole_{suffix}', el + Vector((0.2 * s, 0.6, 0)), el + Vector((0.2 * s, 0.7, 0)), 'Root', deform=False)
 		bone(f'Fingers_{suffix}', palm + Vector((0, 0, -0.06)), palm + Vector((-0.02 * s, -0.01, -0.19)), f'Hand_{suffix}', connect=True)
 		bone(f'Thumb_{suffix}', palm + Vector((-0.012 * s, -0.07, 0.02)), palm + Vector((-0.03 * s, -0.115, -0.08)), f'Hand_{suffix}')
 		bone(f'Thigh_{suffix}', sided(HIP, s), sided(KNEE, s), 'Pelvis')
 		bone(f'Shin_{suffix}', sided(KNEE, s), sided(ANKLE, s), f'Thigh_{suffix}', connect=True)
 		bone(f'Foot_{suffix}', sided(ANKLE, s), Vector((0.18 * s, -0.17, 0.04)), f'Shin_{suffix}', connect=True)
 		bone(f'Toes_{suffix}', Vector((0.18 * s, -0.17, 0.04)), Vector((0.18 * s, -0.28, 0.035)), f'Foot_{suffix}', connect=True)
-		bone(f'FootIK_{suffix}', sided(ANKLE, s), sided(ANKLE, s) + Vector((0, -0.18, 0)), 'Root', deform=False)
+		# Same head, tail and roll as the foot: the foot copies this bone's rotation, so any
+		# difference tips the whole foot (a level control left his toes pointing up).
+		bone(f'FootIK_{suffix}', sided(ANKLE, s), Vector((0.18 * s, -0.17, 0.04)), 'Root', deform=False)
 		bone(f'KneePole_{suffix}', sided(KNEE, s) + Vector((0, -0.6, 0)), sided(KNEE, s) + Vector((0, -0.7, 0)), 'Root', deform=False)
 	# Consistent rolls: bones' local Z points backward (+Y) or up, so X is the bend axis.
 	for b in eb:
@@ -414,6 +438,17 @@ def build_rig(collection, eye_centres):
 		foot = rig.pose.bones[f'Foot_{suffix}']
 		c = foot.constraints.new('COPY_ROTATION')
 		c.target, c.subtarget = rig, f'FootIK_{suffix}'
+		c = rig.pose.bones[f'Forearm_{suffix}'].constraints.new('IK')
+		c.name = 'ArmIK'
+		c.target, c.subtarget = rig, f'HandIK_{suffix}'
+		c.pole_target, c.pole_subtarget = rig, f'ElbowPole_{suffix}'
+		c.pole_angle = math.radians(80)  # found by aiming the elbow at far poles; clips place the pole
+		c.chain_count = 2
+		c.influence = 0.0
+		c = rig.pose.bones[f'Hand_{suffix}'].constraints.new('COPY_ROTATION')
+		c.name = 'ArmIKHand'
+		c.target, c.subtarget = rig, f'HandIK_{suffix}'
+		c.influence = 0.0
 	for pb in rig.pose.bones:
 		pb.rotation_mode = 'QUATERNION'
 	bpy.ops.object.mode_set(mode='OBJECT')
@@ -479,172 +514,6 @@ def skin(rig, body, extras):
 	return deform
 
 
-# ---------------------------------------------------------------- animation
-
-def quat(*pairs):
-	q = Quaternion()
-	for axis, degrees in pairs:
-		q = Quaternion(Vector(axis), math.radians(degrees)) @ q
-	return q
-
-
-def local(rig, name, q_arm):
-	"""A rotation given in armature axes, expressed in the bone's rest frame."""
-	rest = rig.data.bones[name].matrix_local.to_3x3().to_quaternion()
-	return rest.inverted() @ q_arm @ rest
-
-
-def reset(rig):
-	for pb in rig.pose.bones:
-		pb.location = (0, 0, 0)
-		pb.rotation_quaternion = (1, 0, 0, 0)
-		pb.scale = (1, 1, 1)
-
-
-def key_all(rig, frame):
-	for pb in rig.pose.bones:
-		pb.keyframe_insert('location', frame=frame)
-		pb.keyframe_insert('rotation_quaternion', frame=frame)
-
-
-def set_rot(rig, name, *pairs):
-	pb = rig.pose.bones[name]
-	pb.rotation_quaternion = local(rig, name, quat(*pairs)) @ pb.rotation_quaternion
-
-
-def set_loc(rig, name, offset):
-	"""Translate a bone by an armature-space offset."""
-	rest = rig.data.bones[name].matrix_local.to_3x3()
-	rig.pose.bones[name].location = rest.inverted() @ Vector(offset)
-
-
-def smooth(x):
-	x = max(0.0, min(1.0, x))
-	return x * x * (3 - 2 * x)
-
-
-def blink(t, starts, close=3, hold=1, open_=5):
-	"""0 open .. 1 closed for blinks starting at the given frames."""
-	value = 0.0
-	for s in starts:
-		d = t - s
-		if 0 <= d < close:
-			value = max(value, d / close)
-		elif close <= d < close + hold:
-			value = 1.0
-		elif close + hold <= d < close + hold + open_:
-			value = max(value, 1 - (d - close - hold) / open_)
-	return value
-
-
-def base_pose(rig, t, period, breath_cycles, sway_cycles=1, blinks=(), lid_rest=6):
-	"""Shared standing pose: slow breath, weight drifting between the feet, arms hanging."""
-	w = math.tau * t / period
-	breath = math.sin(w * breath_cycles)
-	sway = math.sin(w * sway_cycles)
-	# Posture: a gentle forward lean, head held level and slightly low.
-	set_loc(rig, 'Pelvis', (0.012 * sway, 0, -0.012 + 0.003 * breath))
-	set_rot(rig, 'Pelvis', ((0, 1, 0), 1.5 * sway))
-	set_rot(rig, 'Spine', ((1, 0, 0), 3 + 0.8 * breath), ((0, 1, 0), -1.0 * sway))
-	set_rot(rig, 'Chest', ((1, 0, 0), 2 - 1.4 * breath), ((0, 1, 0), -0.8 * sway))
-	set_rot(rig, 'Neck', ((1, 0, 0), -5 + 0.6 * breath))
-	set_rot(rig, 'Head', ((1, 0, 0), -3 + 1.0 * breath), ((0, 1, 0), 1.5 * sway))
-	for s, suffix in ((1, 'L'), (-1, 'R')):
-		set_rot(rig, f'Shoulder_{suffix}', ((0, 1, 0), s * (-1.5 * breath)))
-		set_rot(rig, f'UpperArm_{suffix}', ((1, 0, 0), -3 + 1.5 * math.sin(w * sway_cycles + 0.6 * s)), ((0, 1, 0), s * 2))
-		set_rot(rig, f'Forearm_{suffix}', ((1, 0, 0), -10 + 2 * math.sin(w * sway_cycles + 1.1 * s)))
-		set_rot(rig, f'Hand_{suffix}', ((1, 0, 0), -4), ((0, 1, 0), s * -3))
-		set_rot(rig, f'Fingers_{suffix}', ((1, 0, 0), -8 - 3 * breath))
-		lid = max(lid_rest / 70, blink(t, blinks))
-		set_rot(rig, f'Lid_{suffix}', ((1, 0, 0), -70 * lid))
-	for s, suffix in ((1, 'L'), (-1, 'R')):
-		set_loc(rig, f'FootIK_{suffix}', (0, 0, 0))
-	return breath, sway
-
-
-def bake_clip(rig, name, frames, pose, step=2):
-	action = bpy.data.actions.new(name)
-	action.use_fake_user = True
-	rig.animation_data_create()
-	rig.animation_data.action = action
-	for f in list(range(0, frames, step)) + [frames]:
-		reset(rig)
-		pose(rig, f % frames)
-		key_all(rig, f)
-	action.frame_range = (0, frames)
-	action.use_frame_range = True
-	track = rig.animation_data.nla_tracks.new()
-	track.name = name
-	strip = track.strips.new(name, 0, action)
-	track.mute = True
-	rig.animation_data.action = None
-	return action
-
-
-def idle(rig, t):
-	base_pose(rig, t, 240, breath_cycles=2, blinks=(52, 176))
-
-
-def look(rig, t):
-	"""Senses something, turns head then shoulders toward it, tilts curiously, turns back."""
-	base_pose(rig, t, 300, breath_cycles=2, blinks=(44, 132, 214))
-	turn = smooth((t - 40) / 50) - smooth((t - 200) / 60)
-	chest_turn = smooth((t - 55) / 60) - smooth((t - 210) / 60)
-	tilt = smooth((t - 110) / 30) - smooth((t - 170) / 25)
-	set_rot(rig, 'Spine', ((0, 0, 1), 8 * chest_turn))
-	set_rot(rig, 'Chest', ((0, 0, 1), 10 * chest_turn))
-	set_rot(rig, 'Neck', ((0, 0, 1), 18 * turn), ((1, 0, 0), -3 * turn))
-	set_rot(rig, 'Head', ((0, 0, 1), 26 * turn), ((0, 1, 0), -11 * tilt), ((1, 0, 0), 4 * tilt))
-	set_rot(rig, 'UpperArm_R', ((1, 0, 0), -6 * chest_turn))
-
-
-WALK_FRAMES = 100
-STEP = 0.56  # metres per step; two steps per cycle
-WALK_SPEED = 2 * STEP / (WALK_FRAMES / FPS)
-
-
-def walk(rig, t):
-	"""Slow, heavy amble in place. Move the root forward at WALK_SPEED."""
-	period = WALK_FRAMES
-	w = math.tau * t / period
-	stance = 0.64
-	for s, suffix, offset in ((1, 'L', 0.0), (-1, 'R', 0.5)):
-		p = (t / period + offset) % 1.0
-		travel = WALK_SPEED * stance * period / FPS
-		if p < stance:
-			q = p / stance
-			y = -travel / 2 + travel * q
-			lift = 0.0
-			pitch = 14 * (1 - smooth(q / 0.16)) - 20 * smooth((q - 0.72) / 0.28)
-		else:
-			q = (p - stance) / (1 - stance)
-			y = travel / 2 - travel * smooth(q)
-			lift = 0.09 * math.sin(math.pi * q) ** 1.2
-			pitch = -20 * (1 - smooth(q / 0.4)) + 14 * smooth((q - 0.55) / 0.45)
-		# pitch > 0 lifts the toe; positive rotation about X drops it.
-		set_loc(rig, f'FootIK_{suffix}', (0.0, y, lift + max(0.0, -pitch) * 0.0025))
-		set_rot(rig, f'FootIK_{suffix}', ((1, 0, 0), -pitch))
-		set_rot(rig, f'Toes_{suffix}', ((1, 0, 0), -max(0.0, -pitch) if p < stance else 0.0))
-	bob = math.cos(2 * w)
-	sway = math.sin(w)
-	set_loc(rig, 'Pelvis', (0.03 * sway, 0.0, -0.01 + 0.012 * bob))
-	set_rot(rig, 'Pelvis', ((0, 0, 1), 6 * math.cos(w)), ((0, 1, 0), 3.5 * sway))
-	set_rot(rig, 'Spine', ((0, 0, 1), -4 * math.cos(w)), ((1, 0, 0), 7 - 1.2 * bob), ((0, 1, 0), -2.5 * sway))
-	set_rot(rig, 'Chest', ((0, 0, 1), -5 * math.cos(w)), ((1, 0, 0), 5), ((0, 1, 0), -1.5 * sway))
-	set_rot(rig, 'Neck', ((1, 0, 0), -4 + 1.2 * bob), ((0, 0, 1), 3 * math.cos(w)))
-	set_rot(rig, 'Head', ((1, 0, 0), -2 + 1.5 * bob), ((0, 0, 1), 2 * math.cos(w)), ((0, 1, 0), -1.5 * sway))
-	for s, suffix in ((1, 'L'), (-1, 'R')):
-		swing = math.cos(w + (0 if s < 0 else math.pi))
-		set_rot(rig, f'UpperArm_{suffix}', ((1, 0, 0), -2 + 14 * swing), ((0, 1, 0), s * 3))
-		set_rot(rig, f'Forearm_{suffix}', ((1, 0, 0), -14 + 7 * math.cos(w + (0 if s < 0 else math.pi) - 0.8)))
-		set_rot(rig, f'Hand_{suffix}', ((1, 0, 0), -6 + 5 * math.cos(w + (0 if s < 0 else math.pi) - 1.4)))
-		set_rot(rig, f'Fingers_{suffix}', ((1, 0, 0), -12))
-		set_rot(rig, f'Lid_{suffix}', ((1, 0, 0), -6 - 70 * blink(t, (30,))))
-
-
-CLIPS = {'Idle': (240, idle), 'Look': (300, look), 'Walk': (WALK_FRAMES, walk)}
-
-
 # ---------------------------------------------------------------- preview
 
 
@@ -705,7 +574,7 @@ VIEWS = {
 	'front': ((0, -5.2, 1.3), (0, 0, 1.18), 42),
 	'side': ((5.2, -0.1, 1.3), (0, 0, 1.18), 42),
 	'back': ((-2.0, 3.6, 1.8), (0, 0, 1.2), 34),
-	'face': ((0.55, -1.55, 2.08), (0, -0.15, 2.02), 60),
+	'face': (HEAD + Vector((0.55, -1.4, 0.06)), HEAD + Vector((0, -0.05, 0)), 60),
 	'hands': ((1.6, -1.6, 0.8), (0.45, 0, 0.55), 45),
 }
 
@@ -755,12 +624,13 @@ def main():
 		m = body.modifiers.new('Armature', 'ARMATURE')
 		m.object = rig
 	body.parent = rig
-	rig['walk_speed_mps'] = WALK_SPEED
+	rig['walk_speed_mps'] = clips.WALK_SPEED
+	rig['peek_trunk'] = [*clips.PEEK_TRUNK[0], clips.PEEK_TRUNK[1]]
 	rig['height_m'] = max((v.co.z for v in body.data.vertices))
 	if '--no-anim' not in ARGS:
-		for name, (frames, pose) in CLIPS.items():
-			bake_clip(rig, name, frames, pose)
-	reset(rig)
+		for name, (frames, pose) in clips.CLIPS.items():
+			clips.bake_clip(rig, name, frames, pose)
+	clips.reset(rig)
 	bpy.context.scene.render.fps = FPS
 
 	blend = ROOT / 'art/blender/bigfoot/zenscape-bigfoot-ambient.blend'
@@ -778,19 +648,11 @@ def main():
 		export_def_bones=True, export_cameras=False, export_lights=False, export_extras=True,
 		export_yup=True, export_vertex_color='ACTIVE', export_skins=True)
 	print('BIGFOOT_EXPORT', glb, 'faces', len(body.data.polygons), 'height', rig['height_m'],
-		'walk_speed', WALK_SPEED, 'bones', sum(1 for b in rig.data.bones if b.use_deform))
+		'walk_speed', clips.WALK_SPEED, 'bones', sum(1 for b in rig.data.bones if b.use_deform))
 	if '--no-render' in ARGS:
 		return
 	setup_studio()
 	render_views(rig, VIEWS, 'rest')
-	if '--no-anim' not in ARGS:
-		track = rig.animation_data.nla_tracks
-		for name, (frames, _) in CLIPS.items():
-			for t in track:
-				t.mute = t.name != name
-			sample = [0, frames // 4, frames // 2, 3 * frames // 4] if name == 'Walk' else [0, frames * 2 // 5, frames * 3 // 5]
-			views = {'clip-' + name.lower(): VIEWS['hero'], f'clip-{name.lower()}-side': VIEWS['side']}
-			render_views(rig, views, 'clips', sample)
 
-
-main()
+if __name__ == '__main__':
+	main()
