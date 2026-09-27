@@ -115,6 +115,19 @@ float zs_growth_wave_at(vec2 p) {
 	return grown < 0.0 ? 1.0 : grown;
 }
 
+// Emergence (scripts/emergence.gd): the clock its births are stamped on.
+global uniform float zs_emergence_time;
+
+// Grow-in 0..1 of one emerged instance born at `born` that rises over
+// `seconds`. 1 with no birth (seconds <= 0), and for a birth from another
+// clock (far in the future), so a stale stamp never hides a plant.
+float zs_birth_growth(float born, float seconds) {
+	if (seconds <= 0.0) return 1.0;
+	float age = zs_emergence_time - born;
+	if (age < -20.0) return 1.0;
+	return clamp(age / seconds, 0.0, 1.0);
+}
+
 // Fog kept at p: 1 outside the stroke reveal, down to 1 - strength inside.
 float zs_reveal_keep(vec2 p) {
 	if (zs_reveal.w <= 0.0) return 1.0;

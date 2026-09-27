@@ -32,6 +32,8 @@ uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
 uniform bool plant_growth = false;
+// Emerged births, written per instance by GardenView into INSTANCE_CUSTOM.ba.
+uniform bool instance_birth_enabled = false;
 // Opt-in for thin foliage; trunks and other shared surfaces stay opaque.
 #define ZS_FOLIAGE_TRANSMISSION
 uniform float foliage_transmission : hint_range(0.0, 1.0) = 0.0;
@@ -106,9 +108,15 @@ void vertex() {
 		}
 
 	}
-	if (plant_growth) {
-		float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-		float t = clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0);
+	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
+	// (born, seconds); instances without one stay at 1 (scripts/emergence.gd).
+	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a) : 1.0;
+	if (plant_growth || birth < 1.0) {
+		float t = birth;
+		if (plant_growth) {
+			float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+			t = min(t, clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
+		}
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
 	}

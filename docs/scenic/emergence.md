@@ -39,10 +39,22 @@ The recipe path is unchanged. `probe_biome_dressing.gd` gives identical digests 
 - **Emergence only adds.** The one exception: when a new stroke covers them, emerged objects whose ground has turned to water, rock or snow are withdrawn.
 - **Saving.** The save stays at version 10, with `provenance` as an optional hex string. Older saves load with every cell generated. Undo history carries the grid.
 
+## Growing in
+
+Every arrival grows in with the regrow pop: it rises from the ground and overshoots into place, at its own birth. Nothing that stood before re-pops.
+
+- **The clock.** `Emergence.time` is a static clock that `advance` moves every frame, busy or not, and publishes as the global `zs_emergence_time`. It is shared and never reset, so a birth can't land in a later world's future.
+- **Objects.** An arrival's record gets `"born"`: its scheduled time plus one step, so it falls somewhere in the next 0.75 s. The arrivals of one step then rise one at a time instead of together. `GardenInstanceSamples` copies `born` into the instance source, with a rise time from `Emergence.rise_seconds`: trees take `TREE_RISE` (1.8 s) and everything else `SHRUB_RISE` (1.1 s). GardenView writes `(fire char, fire burn, born, rise)` into the MultiMesh custom data. `_write_fire` takes the birth from the source, so a fire update keeps it. It never reads the value back from the GPU.
+- **Shaders.** `reference_surface`, `layered_tree_wood` and `layered_canopy_surface` gain `instance_birth_enabled`, which GardenView sets on its materials. `zs_birth_growth(born, rise)` in `reference_globals.gdshaderinc` gives the grow-in, and the shaders take the min of it and the global and wave grow-in (`zs_growth.y`, `zs_growth_wave_at`). An instance with no birth has rise 0 and reads 1, so generated and hand plants behave as before. The pop also applies to materials without `plant_growth`, such as the cactus. A birth more than 20 s in the future reads as grown.
+- **Meadow tufts** (the blades cover). `data.cover_births[cell]` holds a birth for each of the cell's 8 tufts. When a step raises a cell's tuft count, the new tufts are born over the next step and rise over `TUFT_RISE` (0.8 s). Tufts that were already standing keep no birth.
+- **Dense grass** (Ultra and Beauty). The blades are placed on the GPU from the terrain's green mask, so each cell also records `born` (the moment the front reached it, plus one step) and `prior` (the grass it had before). `dense_grass.gd` uploads them as a 56×56 `emergence_map`: r is born, g is prior over the current grass, a marks a birth. In the shader, tufts ranked below g stood before and stay grown. The rest start one by one, in keep order, across `COVER_CREEP` (3 s) after the cell's birth, and each rises over `COVER_RISE` (1.4 s). A tuft switches on as the mask greens, but it still rises from the ground instead of appearing at full height.
+- **Not saved, not undone.** `to_document` strips `born`, `load_document` never reads it, and `cover_births` is not in the save or the undo state. A dropped birth reads as fully grown. Births that have finished growing are pruned each step.
+- **Kept across rebuilds.** Births live in the records and in `cover_births`, so the full rebuild writes them again. The in-place lift (`_move_instances`, `lift_instances`) and the object preview only touch transforms and colours, which leaves custom data as it was.
+
 ## Pacing and cost
 
-- `advance(delta)` runs in steps of 0.75 s. It returns true at most once per step, and the editor then calls `refresh()` once.
-- **Batching is chunky on purpose.** Today `refresh()` rebuilds the whole mesh and view. `feature/stroke-pipeline` is making those rebuilds regional, and once it lands `STEP` can drop for a smoother creep.
+- `advance(delta)` runs in steps of 0.75 s. It returns true at most once per step, and the editor then calls `refresh(get_tree())` once. This is the yielding path a stroke's settle takes: instances are sampled on a worker and the rest is spread by the frame budget.
+- **Measured** with `tools/profile_stroke.gd -- --mode=land --watch=40`, headless, on the cozy world. The profiler's land mode now prepares the brush and grows the stroke rect, as the pointer does; before that fix it never raised land, so it never started emergence. With the old synchronous `refresh()`, every step cost 15–27 ms on one frame. With the yielding refresh, the settle frames were median 8.3 ms, p95 9.1 ms, and 5 of 4800 over 16.7 ms: four at 16–19 ms in the content stage, and the one-time first plan (below) at 48 ms. The birth stamping adds 0.2–3.8 ms to a step's `advance`.
 - **Planning.** A stroke's plan runs on the first step after release, never on release itself. It costs about 10 ms on a warm blend. The first plan on a world also builds the live blend, about 35 ms, most of it pond flooding.
 - **Step cost.** The steps themselves cost under 1 ms, not counting the refresh.
 - **Pausing.** Emergence pauses while a stroke or selection edit is open, so emerged changes never fold into the player's undo step. Undo, load and new worlds clear pending work (`state_restored`).
@@ -55,6 +67,7 @@ The recipe path is unchanged. `probe_biome_dressing.gd` gives identical digests 
 ## Open
 
 - Hook `_stroke_ended` to `stroke_finished` from `feature/stroke-feel` once that branch lands.
-- Arrivals should use the regrow grow-in animation rather than popping in.
+- The first plan on a world, mostly the live blend's pond flooding, still costs one frame of about 35–48 ms. Moving it onto a worker would need a snapshot of the ponds and recipe.
+- Dense grass only checks `prior` against the current grass, not the real keep mask. So when emergence thickens cover that was already partial, a few tufts that were standing may regrow.
 - Should world time or season scale the pace?
 - Water-first creep (grass from new ponds even without sculpting) needs pond fills to report their rect, which they do today only through the editor's pond click.

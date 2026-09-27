@@ -3,9 +3,12 @@ extends RefCounted
 ## are the same as the sequential GardenView builder. No scene resources.
 ## `world` is SeededVariety.world for the recipe: which rock and layered-tree
 ## variants this world leans on. Variants are picked per record by stable hash.
+## Emerged records and meadow tufts still growing in give their source a `born`
+## and `rise` (seconds) for GardenView to write into the instance custom data.
 static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Dictionary, tints: Dictionary, world: Dictionary = {}) -> Dictionary:
 	const Stones = preload("res://scripts/rock_variants.gd")
 	const Variety = preload("res://scripts/seeded_variety.gd")
+	const Emergence = preload("res://scripts/emergence.gd")
 	var sources := {}
 	var transforms := {"trunk": [], "canopy": [], "grass": [], "stem": [], "petal": [], "rock": [], "explosive_leaves": []}
 	for kind in catalog_parts:
@@ -21,6 +24,9 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 		var basis := preload("res://scripts/native_object_pose.gd").decode_basis(item.pose) if item.has("pose") else Basis(Vector3.UP, item.angle).scaled(Vector3.ONE * item.scale)
 		var transform := Transform3D(basis, position)
 		var anchor := {"x":item.x,"z":item.z,"basis":basis,"item":item.duplicate(true),"pose":null,"lift":0.0}
+		if item.has("born"):
+			anchor.born = float(item.born)
+			anchor.rise = Emergence.rise_seconds(item.asset)
 		# Rocks and boulders draw from the seeded stone family.
 		if catalog_parts.has("rock_variants") and Stones.is_stone(item.asset):
 			var stone: String = catalog_parts.rock_variants[Stones.index(item,world)]
@@ -75,6 +81,7 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 				sources.rock.append(lifted)
 				instance_tints.rock.append(tint if tint != null else Color.WHITE)
 	var cells: int = data.meadow_side()
+	var births: Dictionary = data.cover_births if data is NativeTerrainData else {}
 	for z in range(cells):
 		for x in range(cells):
 			var index := z * cells + x
@@ -89,6 +96,9 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 				var size := rng.randf_range(0.65, 1.3)
 				var transform := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(p.x, height, p.y))
 				var blade := {"x":p.x,"z":p.y,"basis":transform.basis,"item":null,"pose":null,"lift":0.0}
+				if births.has(index) and i < 8 and births[index].tufts[i] >= 0.0:
+					blade.born = births[index].tufts[i]
+					blade.rise = Emergence.TUFT_RISE
 				transforms.grass.append(transform)
 				sources.grass.append(blade)
 				if i < int(data.meadow[index] * 8.0) and i % 4 == 0:
