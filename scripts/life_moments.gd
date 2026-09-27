@@ -11,6 +11,7 @@ extends Node3D
 
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
+const Rigs = preload("res://scripts/life_rigs.gd")
 
 ## Seconds between condition checks.
 const CHECK := 2.0
@@ -100,6 +101,12 @@ func setup(owner: Node3D) -> void:
 		_heron_wings.append(wing)
 	_heron.visible = false
 	for coat in [Color(0.58,0.38,0.22),Color(0.66,0.46,0.28)]:
+		if Rigs.enabled():
+			# The Blender deer: a doe, then her fawn.
+			var rig: RefCounted = Rigs.deer(material,not _deer.is_empty())
+			add_child(rig.root)
+			_deer.append({"root":rig.root,"rig":rig})
+			continue
 		var root := Node3D.new()
 		root.name = "Deer"
 		add_child(root)
@@ -396,10 +403,13 @@ func _move_deer(step: float) -> void:
 		root.visible = size > 0.001
 		if not root.visible: continue
 		var here: Vector2 = m.p
-		var bob := absf(sin(float(m.walk)))*0.025 if moving else 0.0
+		var bob := absf(sin(float(m.walk)))*0.025 if moving and not deer.has("rig") else 0.0
 		root.position = Vector3(here.x,_ground(here)+bob*float(m.scale),here.y)
 		root.rotation.y = float(m.yaw)
 		root.scale = Vector3.ONE*float(m.scale)*maxf(size,0.001)
+		if deer.has("rig"):
+			_play_deer(deer.rig,m,moving,step)
+			continue
 		(deer.neck as Node3D).rotation.x = smoothstep(0.0,1.0,float(m.head))*1.05
 		(deer.neck as Node3D).rotation.y = sin(float(m.age)*0.7+i)*0.25*(1.0-float(m.head))
 		var legs: Array = deer.legs
@@ -410,6 +420,34 @@ func _move_deer(step: float) -> void:
 		_deer_state = {}
 		for deer in _deer: deer.root.visible = false
 		_deer_next = life.clock+DEER_COOLDOWN
+
+## The rigged deer plays what the member is doing: a walk synced to its ground
+## speed, head down to graze (through HeadDown), and head up (through HeadUp)
+## to an alert look on the first lift of a visit, then a look back or a quiet
+## stand in turn.
+func _play_deer(rig: RefCounted, m: Dictionary, moving: bool, step: float) -> void:
+	var want := "Walk" if moving else ("Graze" if m.phase == "graze" and m.down else "Idle")
+	var was: String = m.get("clip","")
+	if want != was:
+		m.clip = want
+		match want:
+			"Walk":
+				rig.play("Walk",0.6 if was == "Graze" else 0.3)
+			"Graze":
+				rig.play("HeadDown",0.35 if was == "Walk" else Rigs.BLEND)
+				rig.then("Graze")
+			"Idle":
+				if was != "Graze":
+					rig.play("Idle",0.4)
+				else:
+					var ups := int(m.get("ups",0))
+					m.ups = ups+1
+					var next := "Alert" if ups == 0 else ("Look" if ups%2 == 0 else "Idle")
+					rig.play("HeadUp")
+					rig.then(next)
+					if next != "Idle": rig.then("Idle")
+	rig.speed = DEER_SPEED*(1.0 if float(m.scale) >= 1.0 else 1.15)/(Rigs.DEER_WALK_SPEED*float(m.scale)) if moving else 1.0
+	rig.advance(step)
 
 # --- Rainbow --------------------------------------------------------------------
 
