@@ -4,11 +4,16 @@ extends Node3D
 ## outer borders only, and its plants, props and ponds through a GardenView of
 ## its own. Nothing here edits; making a chunk live loads its document into
 ## the editor instead.
+##
+## A frozen chunk shares no material with the live one: every surface gets its
+## own copy with `zs_atlas_frozen` set (shaders/reference_globals.gdshaderinc),
+## so the live chunk's growth, stroke waves and emergence clock, which are
+## shader globals, never fold, regrow or re-emerge a neighbour.
 
 var slot := Vector2i.ZERO
 var data: NativeTerrainData
-## The document this view was built from, to skip rebuilding an unchanged one.
-var document_hash := 0
+## The slot revision this view was drawn from (ChunkAtlas.store bumps it).
+var revision := 0
 var terrain: MeshInstance3D
 var skirt: MeshInstance3D
 var content: GardenView
@@ -17,13 +22,13 @@ var content: GardenView
 ## relative to the terrain. `open_sides` are borders that face another chunk.
 func build(document: Dictionary, source_mesh: ArrayMesh, terrain_material: Material, skirt_source: ArrayMesh, skirt_offset: Vector3, open_sides: Dictionary) -> bool:
 	data = NativeTerrainData.new()
+	data.world_offset = preload("res://scripts/chunk_atlas.gd").world_origin(slot)
 	data.setup(source_mesh)
 	if not data.load_document(document): return false
-	document_hash = hash(document.get("heights"))
 	terrain = MeshInstance3D.new()
 	terrain.name = "Terrain"
 	terrain.mesh = data.play_mesh(data.build_mesh())
-	if terrain_material != null: terrain.material_override = terrain_material
+	if terrain_material != null: terrain.material_override = terrain_material.duplicate()
 	add_child(terrain)
 	skirt = MeshInstance3D.new()
 	skirt.name = "Skirt"
@@ -39,8 +44,52 @@ func build(document: Dictionary, source_mesh: ArrayMesh, terrain_material: Mater
 	# Its _process drives landscape foam and mist from the owning scene; a
 	# frozen chunk's water stays still.
 	content.set_process(false)
-	content.rebuild(true)
+	await content.rebuild(true)
+	freeze()
 	return true
+
+## Copies every ShaderMaterial under this view, once per original, and marks
+## the copies frozen. Multimesh surfaces get a copied mesh so the material
+## swap stays local. Returns the frozen copies.
+func freeze() -> Array[ShaderMaterial]:
+	var copies := {}
+	for node in find_children("*","GeometryInstance3D",true,false):
+		var geometry := node as GeometryInstance3D
+		if geometry.material_override is ShaderMaterial:
+			geometry.material_override = _frozen(geometry.material_override,copies)
+			continue
+		if geometry is MeshInstance3D and geometry.mesh != null:
+			var instance := geometry as MeshInstance3D
+			for surface in range(instance.mesh.get_surface_count()):
+				var material := instance.get_active_material(surface)
+				if material is ShaderMaterial: instance.set_surface_override_material(surface,_frozen(material,copies))
+		elif geometry is MultiMeshInstance3D and geometry.multimesh != null and geometry.multimesh.mesh != null:
+			var mesh: Mesh = geometry.multimesh.mesh
+			var shaded := false
+			for surface in range(mesh.get_surface_count()):
+				if mesh.surface_get_material(surface) is ShaderMaterial: shaded = true
+			if not shaded: continue
+			var local: Mesh = mesh.duplicate()
+			for surface in range(local.get_surface_count()):
+				var material := local.surface_get_material(surface)
+				if material is ShaderMaterial: local.surface_set_material(surface,_frozen(material,copies))
+			geometry.multimesh.mesh = local
+	frozen_materials.clear()
+	for copy in copies.values(): frozen_materials.append(copy)
+	return frozen_materials
+
+var frozen_materials: Array[ShaderMaterial] = []
+
+static func _frozen(material: ShaderMaterial, copies: Dictionary) -> ShaderMaterial:
+	if copies.has(material): return copies[material]
+	# A material already frozen for this view (the terrain's own copy) keeps
+	# its identity; anything else is copied first.
+	var copy: ShaderMaterial = material if material.get_shader_parameter("zs_atlas_frozen") == true else material.duplicate()
+	copy.set_shader_parameter("zs_atlas_frozen",true)
+	copy.set_shader_parameter("atlas_hold",Vector4.ZERO)
+	copies[material] = copy
+	copies[copy] = copy
+	return copy
 
 func set_open_sides(skirt_source: ArrayMesh, skirt_offset: Vector3, open_sides: Dictionary) -> void:
 	skirt.mesh = cut_sides(lift_skirt(skirt_source,skirt_offset,data),skirt_offset,open_sides)

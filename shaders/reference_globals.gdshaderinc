@@ -81,6 +81,12 @@ global uniform vec3 zs_cloud_direction;
 global uniform float zs_haze;
 global uniform vec2 zs_growth;
 global uniform float zs_water_growth;
+// Chunk atlas (scripts/chunk_atlas_view.gd): a frozen neighbour chunk is drawn
+// fully grown and settled, whatever the live chunk's growth, stroke waves and
+// emergence clock are doing. Read growth through the *_now() helpers below.
+uniform bool zs_atlas_frozen = false;
+vec2 zs_growth_now() { return zs_atlas_frozen ? vec2(1.0) : zs_growth; }
+float zs_water_growth_now() { return zs_atlas_frozen ? 1.0 : zs_water_growth; }
 global uniform float zs_ice;
 global uniform float zs_snow;
 global uniform float zs_autumn;
@@ -104,6 +110,7 @@ global uniform vec4 zs_growth_wave_5;
 // grow-in, so a plant pops once per pass however many waves overlap it; a
 // plant's pop reads min(zs_growth.y, this).
 float zs_growth_wave_at(vec2 p) {
+	if (zs_atlas_frozen) return 1.0;
 	vec4 waves[6] = vec4[6](zs_growth_wave_0, zs_growth_wave_1, zs_growth_wave_2, zs_growth_wave_3, zs_growth_wave_4, zs_growth_wave_5);
 	float grown = -1.0;
 	for (int i = 0; i < 6; i++) {
@@ -117,12 +124,14 @@ float zs_growth_wave_at(vec2 p) {
 
 // Emergence (scripts/emergence.gd): the clock its births are stamped on.
 global uniform float zs_emergence_time;
+// Far past every birth: a frozen chunk's ponds and streams stand full.
+float zs_emergence_now() { return zs_atlas_frozen ? 1.0e7 : zs_emergence_time; }
 
 // Grow-in 0..1 of one emerged instance born at `born` that rises over
 // `seconds`. 1 with no birth (seconds <= 0), and for a birth from another
 // clock (far in the future), so a stale stamp never hides a plant.
 float zs_birth_growth(float born, float seconds) {
-	if (seconds <= 0.0) return 1.0;
+	if (seconds <= 0.0 || zs_atlas_frozen) return 1.0;
 	float age = zs_emergence_time - born;
 	if (age < -20.0) return 1.0;
 	return clamp(age / seconds, 0.0, 1.0);

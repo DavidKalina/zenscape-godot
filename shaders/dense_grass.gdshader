@@ -159,7 +159,7 @@ void vertex() {
 		max(wet_texel(base + ivec2(0, 3)), wet_texel(base - ivec2(0, 3))));
 	float distance_to_eye = length(vec3(root.x, ground, root.y) - zs_camera_position);
 	float thin = 1.0 - 0.6 * smoothstep(fade_start, fade_end, distance_to_eye);
-	float grown = smoothstep(grass_hash(seed + 7.7) * 0.6, grass_hash(seed + 7.7) * 0.6 + 0.4, min(zs_growth.y, zs_growth_wave_at(root)));
+	float grown = smoothstep(grass_hash(seed + 7.7) * 0.6, grass_hash(seed + 7.7) * 0.6 + 0.4, min(zs_growth_now().y, zs_growth_wave_at(root)));
 	// Emerged cover (scripts/emergence.gd): as the cell thickens, each new
 	// tuft rises from the ground in keep order, the first at the cell's birth
 	// and the last emergence_creep seconds later. Tufts it had before stay.
@@ -168,7 +168,7 @@ void vertex() {
 		float rank = grass_hash(seed + 5.1) / max(keep * thin, 0.0001);
 		if (rank >= birth.g) {
 			float start = birth.r + emergence_creep * (rank - birth.g) / max(1.0 - birth.g, 0.0001);
-			grown = min(grown, smoothstep(0.0, 1.0, clamp((zs_emergence_time - start) / emergence_rise, 0.0, 1.0)));
+			grown = min(grown, smoothstep(0.0, 1.0, clamp((zs_emergence_now() - start) / emergence_rise, 0.0, 1.0)));
 		}
 	}
 	float height = blade_height * (0.55 + 0.9 * zs_noise(root * 0.37 + 11.0)) * (0.7 + 0.3 * mask.a)

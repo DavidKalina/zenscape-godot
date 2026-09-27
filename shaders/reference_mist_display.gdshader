@@ -47,7 +47,7 @@ void fragment() {
 	float p = phase;
 	float feather = smoothstep(0.5,0.08,length(UV-vec2(0.5)));
 	float opacity = feather*smoothstep(0.0,0.15,p)*(1.0-smoothstep(0.45,1.0,p))
-		*smoothstep(0.5,1.0,zs_water_growth)*(1.0-zs_ice*0.9)*mix(0.18,1.0,zs_daylight)*0.3;
+		*smoothstep(0.5,1.0,zs_water_growth_now())*(1.0-zs_ice*0.9)*mix(0.18,1.0,zs_daylight)*0.3;
 	if (depth_distance > scene_depth) opacity *= 1.0-depth_sample.g;
 	COLOR = vec4(0.88,0.95,0.97,opacity);
 }

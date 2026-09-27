@@ -68,7 +68,7 @@ void vertex() {
 	leaf_thinness = mix(COLOR.a, 1.0, smoothstep(0.5, 1.0, char_state.x));
 	foliage_gust = 0.0;
 	if (terrain_growth) {
-		float grown = max(smoothstep(UV.x, UV.x + 0.3, zs_growth.x), UV.y);
+		float grown = max(smoothstep(UV.x, UV.x + 0.3, zs_growth_now().x), UV.y);
 		VERTEX.y = mix(0.6, UV2.y, grown);
 		vec3 living = mix(CUSTOM0.rgb, COLOR.rgb, smoothstep(0.6, 1.0, grown));
 		vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
@@ -136,7 +136,7 @@ void vertex() {
 		float t = birth;
 		if (plant_growth) {
 			float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-			t = min(t, clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
+			t = min(t, clamp((min(zs_growth_now().y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
 		}
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;

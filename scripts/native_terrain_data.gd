@@ -136,6 +136,25 @@ var _pond_cache_state := PackedByteArray()
 var pond_cache_hits := 0
 var pond_cache_misses := 0
 
+## Where this chunk's centre sits in world metres. The ground's grass, rock
+## and shimmer patterns are sampled there, so atlas chunks
+## (scripts/chunk_atlas.gd) carry one continuous pattern across their seams
+## instead of each repeating the origin chunk's.
+var world_offset := Vector2.ZERO
+
+func set_world_offset(offset: Vector2, force := false) -> void:
+	if offset == world_offset and not force: return
+	world_offset = offset
+	for face in range(_face_x.size()):
+		var x: float = _face_x[face]+offset.x
+		var z: float = _face_z[face]+offset.y
+		_face_grass[face] = _palette.grass_at_coordinates(x,z)
+		_face_rock[face] = _palette.rock_at_coordinates(x,z)
+		_face_snow[face] = _palette.shimmer_coordinates(_palette.snow,x,z)
+		_face_shimmer[face] = (_palette.noise.hash_at(x*7.3,z*7.3)-0.5)*0.07
+	# Every face colour changed: the next build is a full one.
+	_mesh_result = null
+
 func setup(mesh: ArrayMesh) -> void:
 	_clear_pond_cache()
 	blades.resize(MEADOW_CELLS*MEADOW_CELLS)
@@ -173,6 +192,7 @@ func setup(mesh: ArrayMesh) -> void:
 		_face_rock.append(_palette.rock_at_coordinates(x,z))
 		_face_snow.append(_palette.shimmer_coordinates(_palette.snow,x,z))
 		_face_shimmer.append((_palette.noise.hash_at(x*7.3,z*7.3)-0.5)*0.07)
+	if world_offset != Vector2.ZERO: set_world_offset(world_offset,true)
 	for i in range(0, vertex_ids.size(), 3):
 		var low := Vector2(INF, INF)
 		var high := Vector2(-INF, -INF)

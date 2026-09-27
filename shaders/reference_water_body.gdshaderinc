@@ -64,17 +64,17 @@ void vertex() {
 	// stream carries its birth and run time in CUSTOM1.zw and its front runs
 	// down the course. Water without a birth reads zero and stands full.
 	if (!flowing && UV.y > 0.0) {
-		float filled = clamp((zs_emergence_time - UV.x) / max(pond_fill_seconds, 0.01), 0.0, 1.0);
+		float filled = clamp((zs_emergence_now() - UV.x) / max(pond_fill_seconds, 0.01), 0.0, 1.0);
 		float below = UV.y * (1.0 - filled * (2.0 - filled));
 		VERTEX.y -= below;
 		water_depth = max(water_depth - below, 0.0);
 	}
 	float stream_front = 1.0;
 	if (flowing && CUSTOM1.w > 0.0) {
-		stream_front = clamp((zs_emergence_time - CUSTOM1.z) / CUSTOM1.w, 0.0, 1.0) * 1.14;
+		stream_front = clamp((zs_emergence_now() - CUSTOM1.z) / CUSTOM1.w, 0.0, 1.0) * 1.14;
 	}
 	if (flowing) {
-		float arrived = smoothstep(CUSTOM0.w, CUSTOM0.w + 0.14, min(smoothstep(0.1, 0.7, zs_water_growth), stream_front));
+		float arrived = smoothstep(CUSTOM0.w, CUSTOM0.w + 0.14, min(smoothstep(0.1, 0.7, zs_water_growth_now()), stream_front));
 		VERTEX = mix(CUSTOM0.xyz, VERTEX, arrived);
 		shore *= arrived;
 		wave = sin(UV.x * 5.0 - zs_flow_time * 3.4 + UV.y * 2.0);
@@ -133,7 +133,7 @@ void fragment() {
 		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
 		shore_depth = min(shore_depth, max(submerged, 0.0));
 	}
-	float glint = smoothstep(0.75, 1.0, zs_water_growth) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
+	float glint = smoothstep(0.75, 1.0, zs_water_growth_now()) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
 	if (flowing) {
 		float streak = sin(UV.x * 7.0 - zs_flow_time * 5.0 + sin(UV.y * 18.0) * 1.5);

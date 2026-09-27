@@ -101,6 +101,20 @@ global uniform sampler2D zs_water_map;
 
 #include "res://shaders/terrain_geology.gdshaderinc"
 
+// Chunk atlas: borders that meet a neighbour (n, e, s, w as 1) stay at their
+// pinned height while the live chunk folds down or grows back, so a seam never
+// opens mid-regeneration (the source's SEAM_HOLD).
+uniform vec4 atlas_hold = vec4(0.0);
+uniform float atlas_hold_width = 3.2;
+float zs_atlas_hold_at(vec2 p) {
+	float d = 1.0e3;
+	if (atlas_hold.x > 0.5) d = min(d, p.y + 14.0);
+	if (atlas_hold.y > 0.5) d = min(d, 14.0 - p.x);
+	if (atlas_hold.z > 0.5) d = min(d, 14.0 - p.y);
+	if (atlas_hold.w > 0.5) d = min(d, p.x + 14.0);
+	return 1.0 - smoothstep(0.0, atlas_hold_width, d);
+}
+
 void vertex() {
 	leaf_local = VERTEX;
 	plant_root = MODEL_MATRIX[3].xz;
@@ -113,7 +127,7 @@ void vertex() {
 	char_clump = zs_char_clump(VERTEX);
 	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
 	if (terrain_growth) {
-		float grown = max(smoothstep(UV.x, UV.x + 0.3, zs_growth.x), UV.y);
+		float grown = max(max(smoothstep(UV.x, UV.x + 0.3, zs_growth_now().x), UV.y), zs_atlas_hold_at(VERTEX.xz));
 		VERTEX.y = mix(0.6, UV2.y, grown);
 		vec3 living = mix(CUSTOM0.rgb, COLOR.rgb, smoothstep(0.6, 1.0, grown));
 		vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
@@ -196,7 +210,7 @@ void vertex() {
 
 	}
 	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
-	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth.x);
+	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth_now().x);
 	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
 	// (born, seconds); instances without one stay at 1 (scripts/emergence.gd).
 	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a) : 1.0;
@@ -204,7 +218,7 @@ void vertex() {
 		float t = birth;
 		if (plant_growth) {
 			float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-			t = min(t, clamp((min(zs_growth.y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
+			t = min(t, clamp((min(zs_growth_now().y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
 		}
 		float b = t - 1.0;
 		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;

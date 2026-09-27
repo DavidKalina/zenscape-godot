@@ -5,7 +5,7 @@ uniform float lake_algae_seed = 0.0;
 uniform vec3 lake_algae_anchors[12];
 void zs_lake_algae(inout vec3 body, inout float alpha, vec3 world_p, vec2 local_p, float depth, float cut) {
 
-      if (lake_algae_amount > 0.0 && cut < 0.5 && zs_ice < 0.85 && zs_water_growth > 0.97) {
+      if (lake_algae_amount > 0.0 && cut < 0.5 && zs_ice < 0.85 && zs_water_growth_now() > 0.97) {
         vec2 algaeDir = normalize(zs_wind_direction + vec2(0.0001));
         vec2 algaeAcross = vec2(-algaeDir.y, algaeDir.x);
         // Slow surface drift, with elongated, warped streaks along the wind.

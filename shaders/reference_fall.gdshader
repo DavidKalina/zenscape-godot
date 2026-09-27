@@ -31,7 +31,7 @@ void vertex() {
 	float angle = UV.y;
 	float tau = centers_tau[r].w;
 	float total = centers_tau[ring_count - 1].w;
-	float front = smoothstep(0.0, 0.5, zs_water_growth);
+	float front = smoothstep(0.0, 0.5, zs_water_growth_now());
 	float front_tau = front * total;
 	int fi = 0;
 	for (int j = 0; j < 30; j++) {
