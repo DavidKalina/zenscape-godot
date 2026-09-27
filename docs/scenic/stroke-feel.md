@@ -46,6 +46,62 @@ and trees sway harder, and plants under the brush sprout again.
 
 All tunables are constants at the top of `scripts/stroke_feedback.gd`.
 
+## Rumble and pour
+
+Long world changes (Regenerate landscape, New open plain, and anything else
+that takes seconds to resolve) hold a rolling rumble and pour a heavy fog
+across the plate. `scripts/world_rumble.gd` (`WorldRumble`, the fidelity
+scene's `world_rumble`) owns both. Tunables are constants at its top.
+
+```gdscript
+var rumble: Node = scene.get("world_rumble")
+rumble.hold(&"mountain", 0.8)   # 0..1; call again to change it; strongest hold wins
+rumble.release(&"mountain")     # the tail keeps rolling while the editor resolves
+rumble.pour_fog()               # whole plate, rolls in from upwind, drains when the rumble eases
+rumble.pour_fog(rect, 4.0)      # plate-metre rect, spreads from its middle, drains after 4 s
+rumble.drain_fog()              # start the drain now
+```
+
+- **Envelope.** `level` eases toward the strongest hold (`RISE` 1.3/s up,
+  `FALL` 1.1/s down). After the last `release`, a tail at `TAIL` (55%) of that
+  hold keeps it rolling while the editor is still resolving: `forming`,
+  `refresh_pending > 0` or `water_settling`. When none is, it eases out, gone
+  in about 2 s. `holding` is true while any hold or the tail runs.
+- **Tremor.** The level drives `reference_tremor.rumble`, a held displacement
+  on its own clock (`rumble_clock`): a slower, rounder roll and heave than
+  trauma's shake, with slow breathing swells and occasional surges
+  (`PEAK` 0.36, `BREATH`, `SURGE`). It never decays by itself and never emits
+  `shaken`, so creatures do not stumble through it. Trauma kicks (formation
+  kicks, the mountain thump) stay as sharp accents on top. `tremor.enabled`
+  turns both off.
+- **Sound.** GenesisAudio's rumble voice follows `strength` (up to 85% of
+  `RUMBLE_GAIN`, pitch 0.78-0.95) whenever that is louder than the stroke's
+  rumble, and plays through a paused world clock.
+- **Pour.** Globals `zs_pour` (amount, lid depth above the plate floor, front
+  0..1, flow clock) and `zs_pour_area` (xz centre, radius; 0 is the whole
+  plate). `zs_pour_at` in `reference_globals.gdshaderinc` fills the low
+  ground up to a churning lid (`POUR_DEPTH` 2.4 m) with a thin skin on the
+  slopes. It reads the drawn ground (`zs_drawn_ground`, which follows
+  `zs_growth.x`), so the fog sits on the old land as it sinks, the new land
+  rises out of it, and it pools in the valleys as they form. The front rolls
+  in over `ROLL_IN` (2.6 s). Draining lowers the lid to `DRAIN_DEPTH` first,
+  so it sinks into the valleys, then thins it away. Read by the display fog
+  (`reference_air_sample`, which also tints it toward the fog colour) and the
+  native fog volume (`reference_fog`). It ignores the stroke reveal.
+- **Regrowth** (`scripts/cozy_regrowth.gd`): holds `regrow` from the start,
+  0.55 -> 0.85 as the old land sinks, 0.8 while the new one is made, 1.0 as it
+  rises and down to 0.6 as the plants arrive, then releases it when the new
+  place is ready. It pours over the whole plate at the start and drains at
+  45% of the grow-in, just as the land finishes forming. Headless, with seed
+  184: busy 9.2 s, rumble gone 13 s, fog gone 11.5 s; a new plain is 8.5 s,
+  12.4 s and 10.8 s.
+- **Cost.** About 1 us a frame while active; two globals written only while
+  they move. Shader cost is one two-octave noise per fog sample, only while
+  `zs_pour.x > 0`.
+
+`tools/probe_regen_envelope.gd` prints the envelope over a regenerate and a
+new plain, headless.
+
 ## Cost
 
 No per-frame allocation. Globals are written only while they change: the

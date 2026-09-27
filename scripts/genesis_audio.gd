@@ -57,6 +57,10 @@ const MOVE_FLOOR := 0.3
 const SPEED_RESPONSE := 6.0
 ## Rumble pitch: slower rises sound deeper.
 const RUMBLE_PITCH := Vector2(0.85,1.1)
+## The held world rumble (scripts/world_rumble.gd) plays the rumble voice at
+## this share of RUMBLE_GAIN at full level, deep, and through a paused world.
+const HELD_GAIN := 0.85
+const HELD_PITCH := Vector2(0.78,0.95)
 ## A filling pond's glugs rise in pitch as its water rises.
 const FILL_PITCH := Vector2(0.9,1.12)
 
@@ -109,6 +113,7 @@ const VOICE_CLIPS := ["genesis-rumble","genesis-pour","genesis-fill","stream-bed
 
 var scene: Node3D
 var editor: NativeChunkEditor
+var world_rumble: Node
 var life: Node3D
 ## Microseconds this node spent last frame and at most, for probes.
 var last_usec := 0
@@ -139,6 +144,8 @@ var _moved := 0.0
 var _speed := 0.0
 var _poured := false
 var _thump_wait := 0.0
+## The world rumble's strength over its peak, 0 when nothing holds it.
+var _held := 0.0
 ## Emergence-clock windows of the last pour: ponds rising, stream fronts running.
 var _fill := Vector2(INF,-INF)
 var _run := Vector2(INF,-INF)
@@ -170,6 +177,7 @@ func setup(owner_scene: Node3D) -> void:
 	name = "GenesisAudio"
 	editor = scene._chunk_editor
 	life = scene.get("land_life")
+	world_rumble = scene.get("world_rumble")
 	_rng.randomize()
 	ensure_buses()
 	apply_settings(load_settings())
@@ -416,7 +424,7 @@ func _process(delta: float) -> void:
 		var gain := lerpf(_gain[i],target,1.0-exp(-delta*(ATTACK if target > _gain[i] else RELEASE)))
 		if target == 0.0 and gain < 0.0005: gain = 0.0
 		_gain[i] = gain
-		_level(_voices[i],gain,paused)
+		_level(_voices[i],gain,paused and not (i == RUMBLE and _held > 0.0))
 	var active: bool = life != null and bool(life.active)
 	if active != _active: _set_active(active)
 	_tick -= delta
@@ -466,6 +474,13 @@ func _stroke_targets(delta: float) -> void:
 		_target[POUR] = POUR_GAIN*POUR_SETTLING
 	_voices[RUMBLE].global_position = _brush
 	_voices[RUMBLE].pitch_scale = lerpf(RUMBLE_PITCH.x,RUMBLE_PITCH.y,rise)
+	# A held world rumble follows its swelling strength, and wins when louder.
+	_held = 0.0 if world_rumble == null else float(world_rumble.strength)/float(world_rumble.PEAK)
+	var held := RUMBLE_GAIN*HELD_GAIN*minf(1.0,_held)
+	if held > _target[RUMBLE]:
+		_target[RUMBLE] = held
+		_voices[RUMBLE].global_position = scene.target
+		_voices[RUMBLE].pitch_scale = lerpf(HELD_PITCH.x,HELD_PITCH.y,clampf(_held,0.0,1.0))
 	# The forest's leafy swell rides the same eased swell the trees sway to.
 	if _forest:
 		_voices[SWELL].global_position = _brush
