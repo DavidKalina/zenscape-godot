@@ -16,6 +16,7 @@ Branch `feature/mood-look`, 2026-09-27. The user asked for a quick way back to t
   - **Colours**: Grass, Leaves, Rock, Earth, Water, Sky (upper sky) and Mist (the mist tint). Each has six curated swatches and a free colour picker. Picker drags apply directly with no fade.
 - **Pins.** A mood gives every control its starting value. Any control you set is pinned: it shows a dot and survives mood changes. For example, a purple rock set under Golden meadow stays purple under First snow. Clicking a dot lets that one control follow the mood again. **Back to mood** clears every pin.
 - **The hour.** Each mood has an hour. On a world whose day turns (the creation plain, where the day runs at `PLAIN_DAY_LENGTH` so the deer find their dawn), picking a mood sets its hour as the time now and the day carries on turning from there. The moods defined by their hour hold it: **Nordic night**, **Rosewater dusk** and **Halloween hollow** (`MoodLook.HOUR_MOODS`), since a turning plain would otherwise pass their night or dusk within seconds. On a world whose day was held before any mood, every mood holds its hour, as before. A pinned **Time of day** always wins: an hour holds, **Turning day** turns. "Turns" is read from the world before its first mood (`origin.running`), so it survives moving between moods.
+- **W, E and Shift+W.** **W** (next weather) and **E** (next season) pin what they turn to, exactly as choosing it in Customise would: the drawer shows the new weather or season with its dot, a later mood keeps it, and a pinned weather holds the drift. **Shift+W** letting the weather drift again unpins the weather (it returns to the mood's own sky and drifts from there); Shift+W holding the weather pins nothing. The keys reach the moods through `_weather_keyed` (`studies/diorama.gd`, overridden in `studies/cozy_worlds.gd`).
 - **World → Colors & sky** is still the full editor. Its edits sit on top until the next mood change.
 
 ## How it works
@@ -58,6 +59,5 @@ Discrete choices (the weather preset, rock treatment and whether the clock runs)
 
 ## Known gaps
 
-- **E** (next season) and **W** (next weather) move the world without updating pins, so a pinned control can briefly disagree with the world until the next mood change reapplies it.
 - Mood changes are not on the Cmd+Z stack.
 - **Unverified on screen.** Only headless checks were run: parse checks and `tools/probe_mood_look.gd`, which applies every mood; pins rock, season, weather, rock type and time; switches mood; clears pins; round trips the save and a pre-mood save; resets on a new plain; and times the rebuild and fade frames. Nobody has yet seen how the fade looks, whether the chips read, whether the drawer layout fits at small window sizes, or whether the rock types and swatches look right.

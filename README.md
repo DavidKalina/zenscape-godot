@@ -35,7 +35,7 @@ the night in a few seconds, so dawn and dusk come round within a session.
 | **H** | Hide the controls (and the brush); H again restores both |
 | **P** (or **Photo**) | Photo mode (below) |
 | **M** (or **Mood**) | Moods: nine authored looks that cross-fade the sky, light, weather, season and colours; **Customise** sets season, time, weather, rock and colours, which stay through mood changes ([moods](docs/scenic/mood.md)). Esc closes |
-| **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season |
+| **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season. W and E pin their choice in the moods, as Customise would; letting the weather drift unpins it |
 | **Alt+`[ ]`** | Step through the showcase seeds |
 | **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
 | **Cmd/Ctrl S** | Save now |

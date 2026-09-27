@@ -125,6 +125,30 @@ func run() -> void:
 	for i in range(30): mood.pin("grass",Color(0.3+i*0.01,0.6,0.3).to_html(false),false)
 	print("Picker drag: %.3f ms per colour" % ((Time.get_ticks_usec()-started)/30000.0))
 	check(mood.pinned("grass") and not mood.fading(),"picker pins without a fade")
+	# W and E pin what they turn to, as a drawer choice would; Shift+W's drift unpins.
+	mood.clear_pins()
+	while mood.fading(): await process_frame
+	var w := InputEventKey.new()
+	w.keycode = KEY_W
+	w.pressed = true
+	scene._unhandled_input(w)
+	while mood.fading(): await process_frame
+	var shown_weather: String = scene._precipitation.PRESET_NAMES[scene._precipitation.preset_index]
+	check(mood.pinned("weather") and mood.value("weather") == shown_weather and not scene.weather_scheduler.enabled,"W pins the weather it turns to (%s)" % shown_weather)
+	var e := InputEventKey.new()
+	e.keycode = KEY_E
+	e.pressed = true
+	var season_before: String = scene.world_clock.season_name()
+	scene._unhandled_input(e)
+	while mood.fading(): await process_frame
+	check(mood.pinned("season") and mood.value("season") == scene.world_clock.season_name() and season_before != scene.world_clock.season_name(),"E pins the season it turns to (%s -> %s)" % [season_before,mood.value("season")])
+	var drift := InputEventKey.new()
+	drift.keycode = KEY_W
+	drift.shift_pressed = true
+	drift.pressed = true
+	scene._unhandled_input(drift)
+	while mood.fading(): await process_frame
+	check(not mood.pinned("weather") and scene.weather_scheduler.enabled and mood.pinned("season"),"Shift+W lets the weather drift and unpins it")
 	scene.toggle_mood()
 	check(not scene.mood_open(),"toggle closes the panel")
 	# A new plain opens on its own look with nothing pinned.

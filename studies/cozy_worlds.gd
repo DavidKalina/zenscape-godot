@@ -203,6 +203,16 @@ func toggle_mood() -> void:
 func mood_open() -> bool:
 	return mood_panel != null and mood_panel.open
 
+## W and E pin the weather and season they turned to, as the mood drawer's
+## Customise would, so the drawer never shows a stale value and a later mood
+## keeps them; Shift+W letting the weather drift again unpins the weather.
+func _weather_keyed(control: String, value: String) -> void:
+	if mood_look == null: return
+	match control:
+		"weather", "season": mood_look.pin(control,value)
+		"drift":
+			if value == "on": mood_look.unpin("weather")
+
 ## A new world opens on its own look with nothing pinned.
 func establish_world_weather(world: Dictionary) -> void:
 	super.establish_world_weather(world)
