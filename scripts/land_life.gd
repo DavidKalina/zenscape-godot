@@ -79,7 +79,8 @@ const LEAVE := 1.2
 const RINGS := 12
 ## The pond's year for frogspawn, [spring, summer, autumn, winter].
 const SPAWN_SEASON := [1.0, 0.7, 0.3, 0.0]
-const FISH_COLORS := [Color(0.88,0.47,0.16),Color(0.92,0.74,0.32),Color(0.72,0.74,0.72),Color(0.94,0.9,0.82)]
+## Seconds a frog takes to turn round on its bank and face the water.
+const FROG_TURN := 0.42
 
 ## Multiplies the life clock; probes run it fast.
 var pace := 1.0
@@ -122,9 +123,13 @@ var snakes: Node3D
 var material: Material
 
 var _tick := 0.0
-var _fish: MultiMeshInstance3D
+## One batch per look, made when the first creature of that look arrives:
+## fish by kind and markings ("kohaku 1"), frogs by kind, markings and pose
+## ("toad 0 leap"). A kind's slots are shared, so each batch has room for all
+## of them and shows only its own.
+var _fish_looks := {}
 var _spawn: MultiMeshInstance3D
-var _frogs: MultiMeshInstance3D
+var _frog_looks := {}
 var _rings: MultiMeshInstance3D
 var _ring_state: Array[Dictionary] = []
 var _next_ring := 0
@@ -149,19 +154,13 @@ func setup(owner_scene: Node3D) -> void:
 	var reference: Node3D = scene.get_node("Reference")
 	var frog_source: MultiMeshInstance3D = reference.get_node("mesh-40")
 	material = frog_source.multimesh.mesh.surface_get_material(0)
-	_fish = _batch("Fish",Models.fish(material),FISH_MAX,true)
 	_spawn = _batch("Frogspawn",Models.frogspawn(material),SPAWN_MAX,false)
-	_frogs = _batch("Frogs",frog_source.multimesh.mesh,FROG_MAX,true)
 	var ring_source: MultiMeshInstance3D = reference.get_node("mesh-39")
 	_rings = _batch("Rings",ring_source.multimesh.mesh,RINGS,false,true)
 	var ring_material := ShaderMaterial.new()
 	ring_material.shader = preload("res://shaders/reference_contact_ring.gdshader")
 	_rings.material_override = ring_material
 	for i in range(RINGS): _ring_state.append({"p":Vector3.ZERO,"age":100.0,"size":1.0})
-	var frog_colors: Array[Color] = []
-	for i in range(frog_source.multimesh.instance_count): frog_colors.append(frog_source.multimesh.get_instance_color(i))
-	if frog_colors.is_empty(): frog_colors.append(Color(0.45,0.6,0.3))
-	for i in range(FROG_MAX): _frogs.multimesh.set_instance_color(i,frog_colors[i%frog_colors.size()])
 	_setup_birds(reference)
 	for kind in sites: _free[kind] = range(_capacity(kind)-1,-1,-1)
 	var flies: MultiMesh = scene._fireflies.multimesh
@@ -195,6 +194,18 @@ func _batch(label: String, mesh: Mesh, count: int, colors: bool, custom := false
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	return node
+
+## The batch for `look`, built by `build` the first time it is asked for. It
+## draws only up to the highest slot it has shown (`_show_slot`); slots are
+## handed out lowest first, so that stays near the number of live creatures.
+func _look(looks: Dictionary, look: String, capacity: int, build: Callable) -> MultiMesh:
+	if not looks.has(look):
+		looks[look] = _batch(look.replace(" ","-"),build.call(),capacity,true)
+		(looks[look] as MultiMeshInstance3D).multimesh.visible_instance_count = 0
+	return (looks[look] as MultiMeshInstance3D).multimesh
+
+static func _show_slot(batch: MultiMesh, slot: int) -> void:
+	batch.visible_instance_count = maxi(batch.visible_instance_count,slot+1)
 
 static func _hidden() -> Transform3D:
 	return Transform3D(Basis.from_scale(Vector3.ONE*0.00001),Vector3(0,-50,0))
@@ -385,7 +396,7 @@ func _plan_fish() -> void:
 		if record.deep.is_empty(): continue
 		var cap := clampi(int(record.area/FISH_AREA),1,FISH_BODY_MAX)
 		for cell in _choose("fish",record.deep,cap,FISH_GAP):
-			wanted[cell] = {"body":record.id,"level":record.level}
+			wanted[cell] = {"body":record.id,"level":record.level,"pond":record.cells[0]}
 	_reconcile("fish",wanted,FISH_MAX)
 
 func _plan_spawn() -> void:
@@ -414,7 +425,7 @@ func _plan_frog() -> void:
 		for cell in _choose("frog",record.shore,FROG_BODY_MAX,FROG_GAP):
 			var water: int = survey.water_near(Survey.center(cell),record.id,1.0,Survey.WADE_MAX)
 			if water < 0: water = survey.water_near(Survey.center(cell),record.id,1.0,INF)
-			wanted[cell] = {"body":record.id,"level":record.level,"water":water,"settled":spawning[record.id]}
+			wanted[cell] = {"body":record.id,"level":record.level,"water":water,"settled":spawning[record.id],"pond":record.cells[0]}
 	_reconcile("frog",wanted,FROG_MAX)
 
 ## Birds come to shores and woods. Their thermals rise over the biggest waters
@@ -558,6 +569,7 @@ func _arrive_due() -> void:
 				if kind == "frog":
 					site.p = site.home
 					site.mode = "sit"
+					site.yaw = _facing_water(site)
 				resumed[kind] = int(resumed.get(kind,0))+1
 				if kind == "spawn": spawn_changed = true
 				continue
@@ -571,9 +583,11 @@ func _arrive_due() -> void:
 func _release(kind: String, site: Dictionary) -> void:
 	if not site.here or site.slot < 0: return
 	match kind:
-		"fish": _fish.multimesh.set_instance_transform(site.slot,_hidden())
+		"fish":
+			for look: MultiMeshInstance3D in _fish_looks.values(): look.multimesh.set_instance_transform(site.slot,_hidden())
 		"spawn": _spawn.multimesh.set_instance_transform(site.slot,_hidden())
-		"frog": _frogs.multimesh.set_instance_transform(site.slot,_hidden())
+		"frog":
+			for look: MultiMeshInstance3D in _frog_looks.values(): look.multimesh.set_instance_transform(site.slot,_hidden())
 		"bird": _birds.birds[site.slot].delay = 5.0
 		"firefly": _fly_presence(site.slot,0.0)
 	_free[kind].append(site.slot)
@@ -583,18 +597,48 @@ func _release(kind: String, site: Dictionary) -> void:
 func _hash(site: Dictionary, tag: int) -> float:
 	return Variety.unit([salt,str(site.kind).hash(),site.cell,tag])
 
+## The same for every site of one kind on one pond, so a pond keeps one
+## company of fish and one of frogs.
+func _pond_hash(site: Dictionary) -> float:
+	return Variety.unit([salt,str(site.kind).hash(),int(site.get("pond",site.cell)),11])
+
+## One of a company's kinds, by its weights ([[kind, weight], ...]).
+static func _pick(company: Array, roll: float) -> String:
+	return company[Variety.weighted(company.map(func(entry: Array) -> float: return entry[1]),roll)][0]
+
 # --- Arrivals ---------------------------------------------------------------
 
 func _arrive_fish(site: Dictionary) -> void:
 	var c := Survey.center(site.cell)
-	site.home = Vector3(c.x,float(site.level)-0.07,c.y)
-	site.p = site.home
 	site.phase = _hash(site,1)*TAU
 	site.speed = lerpf(0.45,0.8,_hash(site,2))
-	site.size = lerpf(0.85,1.25,_hash(site,3))
+	site.size = lerpf(0.85,1.15,_hash(site,3))
 	site.rise = clock+lerpf(8.0,24.0,_hash(site,4))
-	var color: Color = FISH_COLORS[Variety.weighted([1.0,0.7,0.5,0.35],_hash(site,5))]
-	_fish.multimesh.set_instance_color(site.slot,color)
+	# A pond is a koi pond or a wild one (Models.FISH_PONDS); each fish is one
+	# of its kinds, a patterned kind in one of its markings, and half of them
+	# wear those markings mirrored.
+	var company: Array = Models.FISH_PONDS[int(_pond_hash(site)*Models.FISH_PONDS.size())]
+	var kind := _pick(company,_hash(site,5))
+	var seed := int(_hash(site,6)*float(Models.FISH_KINDS[kind].get("seeds",1)))
+	site.look = "%s %d" % [kind,seed]
+	site.title = Models.FISH_KINDS[kind].title
+	site.mirror = _hash(site,8) < 0.5
+	# Just under the surface, the dorsal fin clear of it.
+	site.sink = maxf(0.07,Models.fish_top(kind)*float(site.size)+0.015)
+	site.home = Vector3(c.x,float(site.level)-float(site.sink),c.y)
+	site.p = site.home
+	var shade := lerpf(0.93,1.05,_hash(site,9))
+	var batch := _look(_fish_looks,site.look,FISH_MAX,func() -> Mesh: return Models.fish(material,kind,seed))
+	var node: MultiMeshInstance3D = _fish_looks[site.look]
+	if node.material_override == null:
+		# Its own copy of the shared material, with the tail beat on: same
+		# shader, so nothing new to compile.
+		var swim: ShaderMaterial = material.duplicate()
+		swim.set_shader_parameter("fish_swim",true)
+		swim.set_shader_parameter("fish_wave",Models.fish_wave(kind))
+		node.material_override = swim
+	batch.set_instance_color(site.slot,Color(shade,shade,shade))
+	_show_slot(batch,site.slot)
 
 func _arrive_spawn(site: Dictionary) -> void:
 	var c := Survey.center(site.cell)+Vector2(_hash(site,1)-0.5,_hash(site,2)-0.5)*0.2
@@ -609,7 +653,21 @@ func _arrive_frog(site: Dictionary) -> void:
 	site.home = Vector3(c.x,(float(ground) if ground != null else 0.0)+0.02,c.y)
 	var landing := Survey.center(int(site.water)) if int(site.water) >= 0 else c
 	site.landing = Vector3(landing.x,float(site.level)-0.02,landing.y)
-	site.size = lerpf(1.25,1.7,_hash(site,1))
+	# The pond's frogs are mostly one kind (Models.FROG_PONDS).
+	var company: Array = Models.FROG_PONDS[int(_pond_hash(site)*Models.FROG_PONDS.size())]
+	var kind := _pick(company,_hash(site,4))
+	site.species = kind
+	site.look = "%s %d" % [kind,int(_hash(site,5)*2.0)]
+	site.title = Models.FROG_KINDS[kind].title
+	site.size = float(Models.FROG_KINDS[kind].size)*lerpf(1.0,1.3,_hash(site,1))
+	# A toad's hops are short and low.
+	site.spring = 0.6 if kind == "toad" else 1.0
+	site.shown_pose = ""
+	var shade := lerpf(0.93,1.05,_hash(site,6))
+	for pose in ["sit","leap"]:
+		var batch := _frog_pose(site,pose)
+		batch.set_instance_color(site.slot,Color(shade,shade,shade))
+		_show_slot(batch,site.slot)
 	site.phase = _hash(site,2)*TAU
 	# Hops in from further up the bank.
 	var away: Vector3 = site.home+(site.home-site.landing).normalized()*1.1
@@ -684,10 +742,12 @@ func _move_fish(site: Dictionary, _step: float, fade: float) -> void:
 	var candidate: Vector3 = site.home+Vector3(sin(t)*reach,0,cos(t*0.83)*reach)
 	if survey.wet_at(Vector2(candidate.x,candidate.z)): site.p = candidate
 	var heading := Vector2(cos(t)*reach,-0.83*sin(t*0.83)*reach)
-	var yaw := atan2(heading.x,heading.y)+sin(clock*7.0+float(site.phase))*0.12
+	var yaw := atan2(heading.x,heading.y)+sin(clock*9.0+float(site.phase))*0.03
 	var p: Vector3 = site.p
-	p.y = float(site.level)-0.07-(1.0-grow)*0.3
-	_fish.multimesh.set_instance_transform(site.slot,Transform3D(Basis(Vector3.UP,yaw).scaled(Vector3.ONE*maxf(float(site.size)*grow,0.00001)),p))
+	p.y = float(site.level)-float(site.sink)-(1.0-grow)*0.3
+	var scale := maxf(float(site.size)*grow,0.00001)
+	var basis := Basis(Vector3.UP,yaw)*Basis.from_scale(Vector3(-scale if site.mirror else scale,scale,scale))
+	_fish_looks[site.look].multimesh.set_instance_transform(site.slot,Transform3D(basis,p))
 	# Now and then a fish rises and leaves a ring, most often in low light.
 	if clock >= float(site.rise) and not site.leaving:
 		site.rise = clock+lerpf(10.0,28.0,fposmod(float(site.rise)*0.618,1.0))*(0.6 if _daylight() < 0.6 else 1.0)
@@ -702,9 +762,17 @@ func _move_spawn(site: Dictionary, _step: float, fade: float) -> void:
 	_spawn.multimesh.set_instance_transform(site.slot,Transform3D(Basis(Vector3.UP,float(site.angle)).scaled(Vector3(scale,scale,scale)),site.p))
 
 ## The Fidelity pond loop: sit on the bank, leap into checked water, paddle,
-## hop back to the same bank (studies/frog_motion.gd).
+## hop back to the same bank (studies/frog_motion.gd). A frog sits in its
+## sitting pose and flies in its leaping one, legs thrown out behind, from just
+## after it pushes off until just before it lands; it swims in the leaping pose
+## too, low in the water with its eyes and back above it. Back on the bank it
+## turns round to face the water, as frogs sit.
 func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 	site.age = float(site.age)+step
+	var size := float(site.size)
+	var pose := "sit"
+	var pitch := 0.0
+	var squash := Vector3.ONE
 	match site.mode:
 		"sit":
 			site.wait = float(site.wait)-step
@@ -714,33 +782,66 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 			var from: Vector3 = site.from
 			var to: Vector3 = site.to
 			site.p = from.lerp(to,u)
-			site.p.y += 4.0*(0.2+from.distance_to(to)*0.16)*u*(1.0-u)
+			site.p.y += 4.0*(0.2+from.distance_to(to)*0.16)*float(site.get("spring",1.0))*u*(1.0-u)
+			pitch = -(0.5-u)*1.2
+			if u > 0.06 and u < 0.88: pose = "leap"
+			# Crouched to push off, and squashed as it lands.
+			else: squash = Vector3(1.04,0.9,1.0)
 			if u >= 1.0:
 				if site.mode == "in":
 					ripple(site.landing,0.6)
 					site.mode = "swim"
 					site.age = 0.0
+				elif site.mode == "out":
+					site.mode = "turn"
+					site.age = 0.0
+					site.turn_from = float(site.yaw)
 				else:
 					site.mode = "sit"
 					site.wait = 7.0+6.0*fposmod(float(site.phase)+clock*0.37,1.0)
+		"turn":
+			var u := minf(1.0,float(site.age)/FROG_TURN)
+			var home: Vector3 = site.home
+			site.yaw = lerp_angle(float(site.turn_from),_facing_water(site),smoothstep(0.0,1.0,u))
+			site.p = home+Vector3(0,0.05*size*4.0*u*(1.0-u),0)
+			if u >= 1.0:
+				site.mode = "sit"
+				site.wait = 7.0+6.0*fposmod(float(site.phase)+clock*0.37,1.0)
 		"swim":
+			pose = "leap"
 			var landing: Vector3 = site.landing
 			var candidate := landing+Vector3(sin(float(site.age)*1.8)*0.12,0,(1.0-cos(float(site.age)*1.8))*0.1)
 			if survey.wet_at(Vector2(candidate.x,candidate.z)): site.p = candidate
-			site.p.y = landing.y-0.06*sin(minf(1.0,float(site.age)/0.4)*PI*0.5)
+			site.p.y = landing.y+0.02-0.135*size*sin(minf(1.0,float(site.age)/0.4)*PI*0.5)
+			var kick := maxf(0.0,sin(float(site.age)*5.0))
+			squash = Vector3(1.0-0.04*kick,1.0,1.0+0.12*kick)
+			# Late in the swim it comes round toward its bank.
+			if float(site.age) > 2.2:
+				var home: Vector3 = site.home
+				site.yaw = lerp_angle(float(site.yaw),atan2(home.x-site.p.x,home.z-site.p.z),1.0-exp(-step*3.0))
 			if float(site.age) >= 3.5 or site.leaving: _hop(site,site.home,"out")
-	var scale := Vector3.ONE*float(site.size)*smoothstep(0.0,0.3,clock-float(site.born))*fade
-	var pitch := 0.0
-	if site.mode in ["in","out","away"]:
-		scale *= Vector3(1,0.85,1.35)
-		pitch = -(0.5-minf(1.0,float(site.age)/float(site.duration)))*1.2
-	elif site.mode == "swim":
-		var kick := maxf(0.0,sin(float(site.age)*5.0))
-		scale *= Vector3(1.0-0.06*kick,1.0-0.12*kick,1.0+0.3*kick)
-	else:
-		scale.y *= 1.0+0.05*sin(clock*7.0+float(site.phase))
+	var scale := Vector3.ONE*size*smoothstep(0.0,0.3,clock-float(site.born))*fade*squash
+	if site.mode == "sit":
+		# A slow breath through the throat, not a shiver.
+		scale.y *= 1.0+0.02*sin(clock*2.4+float(site.phase))
 	if scale.x <= 0.0: scale = Vector3.ONE*0.00001
-	_frogs.multimesh.set_instance_transform(site.slot,Transform3D(Basis.from_euler(Vector3(pitch,float(site.yaw),0),EULER_ORDER_XYZ).scaled(scale),site.p))
+	var shown := _frog_pose(site,pose)
+	if site.shown_pose != pose:
+		if site.shown_pose != "": _frog_pose(site,site.shown_pose).set_instance_transform(site.slot,_hidden())
+		site.shown_pose = pose
+	shown.set_instance_transform(site.slot,Transform3D(Basis.from_euler(Vector3(pitch,float(site.yaw),0),EULER_ORDER_XYZ).scaled(scale),site.p))
+
+## The batch showing a frog's look in `pose`.
+func _frog_pose(site: Dictionary, pose: String) -> MultiMesh:
+	var kind: String = site.species
+	var seed := int(str(site.look).get_slice(" ",1))
+	return _look(_frog_looks,"%s %s" % [site.look,pose],FROG_MAX,func() -> Mesh: return Models.frog(material,kind,pose,seed))
+
+## The yaw that faces a frog from its bank to its water.
+func _facing_water(site: Dictionary) -> float:
+	var home: Vector3 = site.home
+	var landing: Vector3 = site.landing
+	return atan2(landing.x-home.x,landing.z-home.z)
 
 func _hop(site: Dictionary, destination: Vector3, mode: String) -> void:
 	var from: Vector3 = site.p

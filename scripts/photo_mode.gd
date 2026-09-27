@@ -856,7 +856,7 @@ func _creatures() -> Array[Dictionary]:
 				p = life._bird_node.to_global(Vector3(float(bird.x),float(bird.y),float(bird.z)))
 			else:
 				p = life.to_global(p)
-			found.append({"kind":kind,"title":names[kind],"p":p,"r":radius[kind]})
+			found.append({"kind":kind,"title":str(site.get("title",names[kind])),"p":p,"r":radius[kind]})
 	var moments: Node = life.get("moments")
 	if moments == null: return found
 	var heron: Node3D = moments.get("_heron")
