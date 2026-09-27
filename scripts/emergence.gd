@@ -202,8 +202,9 @@ func _cover_target(p: Vector2) -> Vector2:
 	var snow := _snowline()
 	var bare := smoothstep(float(biome.rock_slope)*0.75,float(biome.rock_slope)*1.1,_slope(p))
 	var grass: float = _blend.cover(p)*(1.0-bare)*(1.0-smoothstep(snow-1.8,snow,float(h)))
-	# Standing blades gather on gentle ground, thickest toward water.
-	var blades := grass*0.4*(0.35+0.65*smoothstep(0.2,0.6,_blend.moisture(p)))*(1.0-smoothstep(0.35,0.8,_slope(p)))
+	# Standing blades carpet gentle ground (about seven tufts a square metre
+	# where it is dry, as the Genesis plain has) and thicken toward water.
+	var blades := grass*(0.22+0.26*smoothstep(0.2,0.6,_blend.moisture(p)))*(1.0-smoothstep(0.35,0.8,_slope(p)))
 	return Vector2(grass,blades)
 
 func _arrive(plant: Dictionary) -> bool:

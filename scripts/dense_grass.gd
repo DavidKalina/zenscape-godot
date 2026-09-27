@@ -1,5 +1,6 @@
 extends Node3D
-## Dense meadow grass for the Ultra tier. One MultiMesh of blade tufts is
+## Dense meadow grass for the Ultra tier, and at reduced cover for Beauty
+## (on by default, look_pass.gd `beauty_grass`). One MultiMesh of blade tufts is
 ## shared by an 8x8 grid of tiles, so each tile culls on its own. The GPU
 ## does the placing (shaders/dense_grass.gdshader): heights come from the
 ## precipitation ground map the chunk editor already keeps current, and colour
@@ -32,9 +33,10 @@ const STEM_HALF_WIDTH := 0.004
 ## Petals round a flower's face.
 const PETALS := 5
 const REBAKE_SECONDS := 0.5
-## Reduced cover for the Beauty tier (look_pass.gd `beauty_grass`): share of
-## tufts kept, blades a far tuft keeps, and where the fade starts.
-const REDUCED := {"density": 0.55, "far_blades": 2.0, "fade_start": 16.0}
+## Reduced cover for the Beauty tier (look_pass.gd `beauty_grass`, on by
+## default): share of tufts kept, blades a far tuft keeps, and where the fade
+## starts. Enough that the plain reads as meadow from the diorama camera.
+const REDUCED := {"density": 0.7, "far_blades": 2.0, "fade_start": 18.0}
 const FULL := {"density": 1.0, "far_blades": 3.0, "fade_start": 22.0}
 var material := ShaderMaterial.new()
 var mask := ImageTexture.new()

@@ -4,7 +4,7 @@ Phase 3, branch `feature/grass-look`. The user said the grass "looks like stubbl
 
 Scope: every tier's grass.
 
-- The dense GPU grass, drawn on Ultra and, with `--beauty-grass`, at reduced density on Beauty (`scripts/dense_grass.gd`, `shaders/dense_grass.gdshader`).
+- The dense GPU grass, drawn on Ultra and at reduced density on Beauty (`scripts/dense_grass.gd`, `shaders/dense_grass.gdshader`). Beauty drew it only with `--beauty-grass` at first; since round two it is on by default.
 - The dressed grass tufts every tier draws: the `grass_tuft` catalog part and the painted blades, both the source's `mesh-10` (`scripts/grass_tuft_mesh.gd`, and `reference_surface.gdshader` with `grass_blades`).
 - Both share `shaders/grass_look.gdshaderinc`: the wind wave, straw patches, mass normal, tip glow, and the per-world noise offset `zs_grass_offset`.
 
@@ -47,7 +47,7 @@ The season response (`zs_season_grass`, the winter shortening), autumn paint, sn
 
 ## Default tiers: the dressed tufts
 
-- **Mesh** (`scripts/grass_tuft_mesh.gd`): 7 blades per tuft, fanned out using the source's root ring, heights and lean. Each blade is a tapered strip that arcs outward (`LEAN_CURVE`) and has a pointed tip. The mesh copies its root and tip colours from `mesh-10`, so it keeps the source gradient. It has 49 vertices and 35 triangles, where the source had 18 and 6. `--classic-grass` keeps the source tuft.
+- **Mesh** (`scripts/grass_tuft_mesh.gd`): 7 blades per tuft (10 since round two, below), fanned out using the source's root ring, heights and lean. Each blade is a tapered strip that arcs outward (`LEAN_CURVE`) and has a pointed tip. The mesh copies its root and tip colours from `mesh-10`, so it keeps the source gradient. It has 49 vertices and 35 triangles, where the source had 18 and 6. `--classic-grass` keeps the source tuft.
 - **Material** (`GardenView`): `grass_blades` is on and `flat_faces` is off. The shader:
   - lights the tuft with the height-map ground normal, domed outward (`grass_round`);
   - adds the shared rolling wave and its paling, on top of the source sway;
@@ -57,22 +57,57 @@ The season response (`zs_season_grass`, the winter shortening), autumn paint, sn
 
 ## Dense grass on Beauty
 
-`--beauty-grass` (`look_pass.gd` `beauty_grass`) shows the dense grass on Beauty at reduced cover (`DenseGrass.REDUCED`):
+Beauty shows the dense grass by default at reduced cover (`DenseGrass.REDUCED`, set on `feature/grass-lush`):
 
-- density 0.55;
+- density 0.7 (was 0.55 behind the old opt-in);
 - 2 blades per far tuft;
-- the fade starts at 16 m.
+- the fade starts at 18 m.
 
-It is off by default, and the default tier is unchanged. The estimate on the 4070 Super at 1440p is about 0.6–1.4 ms on top of Beauty's glow, 24-tap god rays and 2× MSAA. Beauty lacks Ultra's 4× MSAA, SSAO, 0.75-scale fog and 768 px reflections, which cost more than this. The recommendation is to time it on the 4070 Super and turn it on by default for Beauty if it holds, but keep it off on the Mac.
+`--no-beauty-grass` turns it off, and so does `--classic-grass`, so that A/B shows the old default look. `--beauty-grass` is still accepted and forces it on. Balanced never draws it; Ultra draws full cover. The choice and its cost are in "Round two" below.
+
+## Round two: a lush default (`feature/grass-lush`)
+
+After watching a Movie Maker film of the Genesis plain (default Beauty tier, Chalk & turquoise, summer, mist), the user could not tell whether the new grass was on. It was: the painterly tuft was drawn. The ground still read as sparse, dry straw spikes over grey, for these reasons.
+
+### Diagnosis
+
+- **Almost no tufts.** `genesis_canvas.gd` set `blades` to `smoothstep(0.38, 0.7, noise) * 0.4`. The noise rarely passes 0.4, and `GardenInstanceSamples` truncated `blades * 8` to whole tufts, so a blank plain had about 80 tufts in total (76–94 over three seeds). Emergence raised dry ground to 0.14, which truncated to one tuft per 0.25 m² cell.
+- **The palette turned the tufts to straw.** Palette families tint grass by a ratio to the source green #5d9e53. For Chalk & turquoise (#929c72) that ratio is about (2.6, 1.0, 1.9) in linear. It turned the tuft's #93c05f tip into a tan straw (about #e3bd82) and its #38663a root into a grey olive. The dense grass, tinted through the ground palette, would have gone grey the same way.
+- **Straw patches and a dark base.** `grass_dry` 0.45 took a noticeable share of the ground to straw. The tuft's root shade (from the source, about 4.3× darker than its tip) was darkened again by the contact-occlusion term over its whole height, since it stands under 0.85 m.
+- **Too thin at the camera distance.** At 20–26 m a pixel spans about 2.5 cm. The 7-blade tuft, with blades 5.6 cm wide at the root and tapering to a point, drew as a few one-pixel spikes.
+- **No dense grass on Beauty.** Beauty is the default tier, and the dense GPU meadow was opt-in there.
+- **Not grass.** Mist and display fog still soften the whole plain; the twiggy dark shapes in the film are dead wood and shrubs, not grass. Neither was changed here.
+
+### What changed
+
+- **Coverage.** The Genesis plain lays a carpet of `blades` 0.22 everywhere, rising by up to 0.3 in tussocks (`GENESIS_BLADES`), with small flower drifts in `meadow` (`GENESIS_FLOWERS` 0.13, one flower a cell inside a drift). Emergence grows dry ground to 0.22 and damp ground to 0.48. The instance sampler now dithers the fraction per cell with a golden-ratio sequence instead of truncating it. A blank plain has about 7,500 tufts and 130–230 flowers, up from about 80 and none.
+- **A fuller tuft.** `grass_tuft_mesh.gd` has 10 blades, 8.4 cm wide at the root. Inner blades stand tallest (up to 0.44 m) and outer ones lean furthest (up to 0.26 m), so each tuft is a rounded mound about 0.55 m across. It has 70 vertices and 50 triangles, up from 49 and 35.
+- **Living colour tied to the family.** `zs_grass_living` in `grass_look.gdshaderinc` takes the family's grass colour and leans it 40% toward living green at the same luminance, then saturates it slightly (1.12). For Chalk & turquoise this gives a soft sage green (about #83a666) where the tufts were tan. The tufts then run from the shared `ZS_GRASS_ROOT_SHADE` to `ZS_GRASS_TIP_LIFT`, as the dense grass does, and jitter ±12% per tuft. Their vertex colour, divided by the mesh's own root and tip colours (`grass_source_root`, `grass_source_tip`, set by `GrassTuft.dress`), only carries each blade's tip jitter and any instance tint. The dense grass leans its ground colour to living green the same way (`living_pull`, `living_saturation`).
+- **Straw as an accent.** `grass_dry` on the tufts and `dry_amount` on the dense grass both drop from 0.45 to 0.25.
+- **Softer base.** The tufts keep 40% of the contact darkening (`grass_contact`).
+- **Shadows.** The painted meadow tufts (the `grass` batch) no longer cast shadows, like the dense grass. At about 5× the count, the shadow pass would have doubled their vertex cost, and tuft shadows do not resolve at diorama distance. The `grass_tuft` catalog props still cast them.
+- **Dense grass on Beauty by default,** as described above.
+- **A log line.** `look_pass.gd` prints one line at startup, and again only when the tier changes. For example: `Grass: tier Beauty, dense meadow reduced cover (--no-beauty-grass to turn off), tufts painterly tuft (10 blades, scripts/grass_tuft_mesh.gd)`.
+
+### Cost
+
+This is an estimate; nothing has been measured.
+
+- **Tufts:** a blank plain draws about 7,500 tufts, or 375k triangles and 525k vertices, with no shadow pass. That is about 0.3–0.6 ms on the 4070 Super. On an Apple-silicon Mac on Balanced, expect 0.5–1.5 ms. Generated worlds grow about 10–40% more tufts than before, from the dithering.
+- **Dense grass on Beauty:** 65,536 tufts are vertex-shaded wherever a tile is in view, and 70% of them are drawn. That is about 0.6–1.4 ms on the 4070 Super at 1440p, the earlier estimate. On the Mac it is probably 2–4 ms. Mac players who need the frames should use Balanced (`--balanced`) or `--no-beauty-grass`.
+- **CPU:** every garden rebuild samples and fills about 7,500 more multimesh instances. This runs on the worker, and the main-thread fill runs under the frame budget, but a stroke refresh on the Genesis plain now carries about 5× the grass instances.
 
 ## Tunables
 
 All tunables are shader uniforms on `DenseGrass.material` unless noted. Each group lists its defaults.
 
+- **Tufts (reference_surface, every tier):** `grass_dry` 0.25, `grass_living` 0.4, `grass_variation` 0.12, `grass_contact` 0.4, `grass_round` 0.55 and `grass_tip_glow` 0.55. The mesh constants are `BLADES`, `HALF_WIDTH`, `ROOT_RING`, `HEIGHT` and `LEAN` in `grass_tuft_mesh.gd`. Cover on the plain is `GENESIS_BLADES` and `GENESIS_FLOWERS` in `genesis_canvas.gd`; emerged cover is `_cover_target` in `emergence.gd`.
+- **Living colour (dense grass):** `living_pull` 0.4 and `living_saturation` 1.12.
+
 - **Size:** `blade_height` 0.34 (was 0.26) and `blade_width` 1.0. The mesh constants in `dense_grass.gd` are `BLADES`, `BLADE_HALF_WIDTH`, `ROOT_SPREAD`, `LEAN` and `BLADE_SHARE`.
 - **Clumping:** `tuft_scale` 1.3, `tuft_contrast` 0.7, `tuft_lift` 0.75 and `water_lush` 0.35.
 - **Shape:** `tuft_spread` 1.0, `blade_lean` 1.0 and `blade_curve` 1.8.
-- **Colour:** `root_shade` (0.46, 0.53, 0.46), `tip_lift` (1.30, 1.28, 0.84), `tip_curve` 0.8, `dry_amount` 0.45, `dry_scale` 0.16, `straw_tint` and `tuft_variation` 0.12.
+- **Colour:** `root_shade` (0.46, 0.53, 0.46), `tip_lift` (1.30, 1.28, 0.84), `tip_curve` 0.8, `dry_amount` 0.25, `dry_scale` 0.16, `straw_tint` and `tuft_variation` 0.12.
 - **Light:** `mass_shading` 0.9, `tuft_round` 0.55 and `tip_translucency` 0.55.
 - **Wind:** `wave_length` 6.5 m, `wave_speed` 1.0, `wave_strength` 0.6, `wave_sheen` 0.22 and `flutter` 0.06.
 - **Accents:** `flower_amount` 0.035, `spring_flowers` 0.08, `seed_amount` 0.04, `flower_size` 0.026 m, `seed_head_size` (0.008, 0.075) and `flower_palette_pull` 0.3.
@@ -91,3 +126,12 @@ Expect roughly 1–2.5 ms on the RTX 4070 Super at 1440p Ultra. If it costs more
 ## Unverified
 
 Headless runs do not compile shaders, so none of this has been seen on screen. The checklist to go through on first launch is in the branch's report.
+
+Round two is also unverified on screen. The shader changes in `grass_look.gdshaderinc`, `reference_surface.gdshader` and `dense_grass.gdshader` have not been compiled. The GDScript parses headless. A headless probe built the tuft (70 vertices, 50 triangles) and sampled three Genesis plains (7,518–7,662 tufts). To check on the next film:
+
+- the plain reads green and grassy rather than as spikes;
+- the Chalk & turquoise tufts are sage green, not tan;
+- straw patches are occasional;
+- flower drifts are visible but sparse;
+- the startup log names the grass that is on;
+- `--classic-grass` shows the source tuft with no dense grass on Beauty.

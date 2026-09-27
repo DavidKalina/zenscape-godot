@@ -50,8 +50,20 @@ uniform bool bird_wings = false;
 // tuft lights, how much of it goes to straw, and how its tips glow.
 uniform bool grass_blades = false;
 uniform float grass_round = 0.55;
-uniform float grass_dry = 0.45;
+uniform float grass_dry = 0.25;
 uniform float grass_tip_glow = 0.55;
+// The tuft mesh's own root and tip colours (GrassTuft.dress, linear): the
+// vertex colour over these keeps each blade's jitter and any instance tint,
+// while the colour itself is the family's living green (grass_look).
+uniform vec3 grass_source_root = vec3(0.0396, 0.1329, 0.0423);
+uniform vec3 grass_source_tip = vec3(0.2917, 0.5271, 0.1145);
+// How far the family's grass leans to living green, and each tuft's
+// brightness jitter either way.
+uniform float grass_living = 0.4;
+uniform float grass_variation = 0.12;
+// How much of the contact darkening the tufts keep; their root shade
+// already darkens the base.
+uniform float grass_contact = 0.4;
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -225,10 +237,16 @@ void fragment() {
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
 	if (grass_blades) {
-		// The mesh carries the source's root-to-tip colours; add the shared
-		// straw patches and the paling of blades a passing wave bows.
+		// The family's grass leaned to living green, dark at the root and
+		// sunlit at the tip like the dense meadow, with straw patches as
+		// accents and the paling of blades a passing wave bows. The vertex
+		// colour over the mesh's own gradient keeps blade jitter and tints.
+		vec3 grass_src = max(mix(grass_source_root, grass_source_tip, grass_along), vec3(0.002));
+		vec3 own = clamp(COLOR.rgb / grass_src, vec3(0.0), vec3(3.0));
+		vec3 living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
+		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation;
 		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
-		tint = zs_grass_paint(tint, grass_along, dry, ZS_GRASS_STRAW, vec3(1.0), vec3(1.0), 1.0);
+		tint = zs_grass_paint(living * base_color.rgb * own, grass_along, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
 	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
@@ -304,6 +322,7 @@ void fragment() {
 	// Look pass: ambient-only contact occlusion. Emission bypasses Godot's SSAO,
 	// so the hemisphere term is where grounding has to happen.
 	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
+	if (grass_blades) contact = mix(1.0, contact, grass_contact);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
 	if (zs_look_rim > 0.0) {

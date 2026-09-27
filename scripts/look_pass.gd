@@ -22,12 +22,17 @@ var _scene: Node3D
 var _grade_layer := CanvasLayer.new()
 var _grade := ShaderMaterial.new()
 var _water_map: Texture2D
-## Dense meadow grass: full on Ultra, and at reduced density on Beauty when
-## `beauty_grass` is on (`--beauty-grass` at launch). Off by default until
-## it is timed on the 4070 Super; see docs/scenic/grass-look.md.
+## Dense meadow grass: full on Ultra, and at reduced density on Beauty while
+## `beauty_grass` is on. On by default for the good-PC target (RTX 4070
+## Super); `--no-beauty-grass` turns it off, and so does `--classic-grass`
+## so that A/B shows the old default look. Balanced never draws it, so the
+## Mac keeps a cheap tier. See docs/scenic/grass-look.md.
 var grass = preload("res://scripts/dense_grass.gd").new()
-var beauty_grass := "--beauty-grass" in OS.get_cmdline_user_args() or "--beauty-grass" in OS.get_cmdline_args()
+var beauty_grass := not (_flag("--no-beauty-grass") or _flag("--classic-grass")) or _flag("--beauty-grass")
 var _last_update := 0
+## The grass setup last logged, so the log line prints once at startup and
+## again only when the tier or the dense grass changes.
+var _grass_logged := -1
 
 func setup(scene: Node3D) -> void:
 	_scene = scene
@@ -77,7 +82,9 @@ func update(camera: Camera3D, celestial) -> void:
 	_update_ridges(on)
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
-	grass.update(enabled and (tier == 2 or (tier == 0 and beauty_grass)), 0.0 if _last_update == 0 else (now - _last_update) / 1000000.0)
+	var dense := enabled and (tier == 2 or (tier == 0 and beauty_grass))
+	grass.update(dense, 0.0 if _last_update == 0 else (now - _last_update) / 1000000.0)
+	_log_grass(dense)
 	_last_update = now
 	RenderingServer.global_shader_parameter_set("zs_look_shore", shore * on)
 	# The chunk editor updates this texture in place; a regrow may replace it.
@@ -109,6 +116,22 @@ func update(camera: Camera3D, celestial) -> void:
 		var strength := smoothstep(-0.05, 0.12, sun.y) * (1.0 - minf(cloud * 1.2, 0.9))
 		blend.set_shader_parameter("rays_sun", Vector3(screen.x, screen.y, strength))
 		blend.set_shader_parameter("rays_color", _tint(celestial.aerial_sun_color, 1.0) * 0.6)
+
+static func _flag(name: String) -> bool:
+	return name in OS.get_cmdline_user_args() or name in OS.get_cmdline_args()
+
+## Say which grass is on, so a film or a play session can tell: the tier,
+## whether the dense GPU meadow draws and at what cover, and which tuft.
+func _log_grass(dense: bool) -> void:
+	var state := tier * 2 + int(dense)
+	if state == _grass_logged: return
+	_grass_logged = state
+	var cover := "off"
+	if dense: cover = "full cover" if tier == 2 else "reduced cover (--no-beauty-grass to turn off)"
+	elif tier == 0: cover = "off (--no-beauty-grass or --classic-grass)"
+	elif tier == 1: cover = "off on Balanced"
+	var line := "Grass: tier %s, dense meadow %s, tufts %s" % [["Beauty","Balanced","Ultra"][clampi(tier,0,2)], cover, preload("res://scripts/grass_tuft_mesh.gd").describe()]
+	print(line)
 
 ## The sky's horizon ridges follow the world: its terrain seed picks the
 ## skyline and its relief how tall the hills stand.

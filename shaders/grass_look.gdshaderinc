@@ -11,7 +11,8 @@
 global uniform vec2 zs_grass_offset;
 
 // Defaults both use; dense grass exposes each as a uniform of the same name
-// without the prefix, the tufts use these as they are.
+// without the prefix, the tufts use these as they are (the tufts' straw
+// share is their own `grass_dry` uniform).
 const float ZS_GRASS_WAVE_LENGTH = 6.5;
 const float ZS_GRASS_WAVE_SPEED = 1.0;
 const float ZS_GRASS_WAVE_STRENGTH = 0.6;
@@ -22,6 +23,26 @@ const float ZS_GRASS_TIP_CURVE = 0.8;
 const float ZS_GRASS_TIP_TRANSLUCENCY = 0.55;
 const float ZS_GRASS_DRY_SCALE = 0.16;
 const vec3 ZS_GRASS_STRAW = vec3(1.18, 1.0, 0.62);
+// Living colour. Palette families tint grass by their ratio to the source's
+// grass green (#5d9e53, ZS_GRASS_SOURCE in linear). On a muted family such as
+// Chalk & turquoise (#929c72) that ratio is about (2.6, 1.0, 1.9), which
+// turns the tuft's yellow-green tips to straw and its roots to grey. Grass
+// instead takes the family's own grass colour and leans it toward living
+// green (ZS_GRASS_LIVING_HUE is the source green at unit luminance), keeping
+// the family's lightness and some of its hue. The pull is `grass_living` on
+// the tufts and `living_pull` on the dense grass, both 0.4.
+const vec3 ZS_GRASS_SOURCE = vec3(0.1094, 0.3419, 0.0865);
+const vec3 ZS_GRASS_LIVING_HUE = vec3(0.4678, 1.4621, 0.3699);
+const float ZS_GRASS_LIVING_SATURATION = 1.12;
+
+// A family's grass colour leaned `g_pull` of the way to living green at the
+// same luminance, then saturated a little.
+vec3 zs_grass_living(vec3 g_family, float g_pull, float g_saturation) {
+	float g_lum = dot(g_family, vec3(0.30, 0.55, 0.15));
+	vec3 g_color = mix(g_family, ZS_GRASS_LIVING_HUE * g_lum, clamp(g_pull, 0.0, 1.0));
+	float g_after = dot(g_color, vec3(0.30, 0.55, 0.15));
+	return max(mix(vec3(g_after), g_color, g_saturation), vec3(0.0));
+}
 
 // 0..1: how near a wind wave's crest this root stands. Long waves roll
 // downwind on the air's own travel (zs_gust_distance), so they move with the

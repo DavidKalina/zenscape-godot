@@ -57,8 +57,14 @@ uniform float blade_curve = 1.8;
 uniform vec3 root_shade = vec3(0.46, 0.53, 0.46);
 uniform vec3 tip_lift = vec3(1.30, 1.28, 0.84);
 uniform float tip_curve = 0.8;
-// World-noise patches gone to straw: how much, how big (per metre) and colour.
-uniform float dry_amount = 0.45;
+// How far the palette-tinted ground colour leans to living green, so muted
+// families (Chalk & turquoise) grow a green meadow, not a grey one
+// (grass_look zs_grass_living).
+uniform float living_pull = 0.4;
+uniform float living_saturation = 1.12;
+// World-noise patches gone to straw, as accents: how much, how big (per
+// metre) and colour.
+uniform float dry_amount = 0.25;
 uniform float dry_scale = 0.16;
 uniform vec3 straw_tint = vec3(1.18, 1.0, 0.62);
 // Per-tuft brightness jitter.
@@ -244,7 +250,7 @@ void vertex() {
 
 void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(blade_normal, 0.0)).xyz);
-	vec3 tint = scene_palette(ground_color);
+	vec3 tint = zs_grass_living(scene_palette(ground_color), living_pull, living_saturation);
 	// Patches gone to straw, then dark at the root where the blades crowd
 	// and sunlit toward the tip, each tuft a shade apart.
 	tint = zs_grass_paint(tint, blade_t, dry, straw_tint, root_shade, tip_lift, tip_curve) * tuft_shade;
