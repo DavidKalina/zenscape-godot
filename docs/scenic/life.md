@@ -172,6 +172,7 @@ He stands 2.21 m tall at scale 1, the model's own height, next to 3-6 m trees. H
 
 - `moments.force("bigfoot")`, `"bigfoot_watch"`, `"bigfoot_listen"` or `"bigfoot_stride"` start one now. They prefer an edge on screen and fall back to any edge with footing.
 - `--force-bigfoot` on the command line (or `--force-bigfoot=watch|listen|stride`) brings him as soon as the wood qualifies (the survey's trees and edge, not the hour, settle time or chance), and again 12 s after each sighting ends, for filming. Example: `godot --path . -- --force-bigfoot=stride`.
+- `--force-life` (or `--force-life=deer,heron,snake`, any of them) does the same for the deer, heron and grass snake: each comes as soon as the world has its place (a forest edge; wading water; a pond with a bank), skipping delay, chance and hour, and again 8 s after it has gone. Example: `godot --path . -- --force-life`, then paint a pond with a wood beside it.
 
 ## The grass snake
 

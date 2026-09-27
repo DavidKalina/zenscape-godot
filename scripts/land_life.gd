@@ -85,6 +85,12 @@ const FISH_COLORS := [Color(0.88,0.47,0.16),Color(0.92,0.74,0.32),Color(0.72,0.7
 var pace := 1.0
 ## --no-life turns the whole system off, for A/B timing.
 var enabled := "--no-life" not in OS.get_cmdline_user_args()
+## --force-life[=deer,heron,snake]: each named creature (all three by default)
+## comes as soon as the world has its place, skipping delay, chance and hour,
+## and again FORCE_GAP s after it has gone, for looking at them in the game.
+const FORCE_GAP := 8.0
+var _force_kinds := _forced_kinds()
+var _force_next := {}
 var scene: Node3D
 var editor: NativeChunkEditor
 var data: NativeTerrainData
@@ -322,6 +328,7 @@ func _process(delta: float) -> void:
 		_animate(step)
 		moments.advance(step,minf(delta,0.1))
 		snakes.advance(step)
+		if not _force_kinds.is_empty(): _force_due()
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
@@ -808,6 +815,22 @@ func _fade_fireflies() -> void:
 ## Probes only: start a moment or a snake now (see LifeMoments.force).
 func force(kind: String) -> bool:
 	return snakes.force() if kind == "snake" else moments.force(kind)
+
+static func _forced_kinds() -> PackedStringArray:
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--force-life": return PackedStringArray(["deer","heron","snake"])
+		if arg.begins_with("--force-life="): return arg.trim_prefix("--force-life=").split(",",false)
+	return PackedStringArray()
+
+func _force_due() -> void:
+	var on_stage: Dictionary = moments.showing()
+	on_stage.snake = snakes.showing()
+	for kind in _force_kinds:
+		# Deer and rainbow report a bool, heron and snake their phase.
+		var shown: Variant = on_stage.get(kind,"")
+		var present: bool = shown if shown is bool else str(shown) != ""
+		if present: _force_next[kind] = clock+FORCE_GAP
+		elif clock >= float(_force_next.get(kind,0.0)) and force(kind): _force_next[kind] = clock+FORCE_GAP
 
 # --- World ------------------------------------------------------------------
 
