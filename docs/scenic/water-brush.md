@@ -26,6 +26,7 @@ Phase 3, slice 2 (branch `feature/water-brush`, 2026-09-26). Press `2` while cre
   - Births live in `GardenView.water_births`. Like emerged plants' births, they are neither saved nor undone, and water without a birth stands full.
 - **Stroke feel.** A pour parts the fog over the stroke and swells the air softly (`SWELL_WATER`). There is no tremor and no growth wave (`scripts/stroke_feedback.gd`).
 - **Life follows.** The settled water's rect is handed to emergence, so grass creeps out from new shores.
+- **Quiet guidance** (slice 8, `docs/scenic/guidance.md`). A new pond may sit up to 5 cm lower when that trims a thin fringe. A scooped hollow may move up to 1.5 m to leave no sliver of land beside other water, and is a soft oval along the contour instead of a circle. `--no-guidance` restores the plain plan.
 
 ## Tunables
 
