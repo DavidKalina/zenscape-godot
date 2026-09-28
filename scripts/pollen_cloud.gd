@@ -52,6 +52,7 @@ const Wind = preload("res://scripts/pollen_wind.gd")
 ## knot's footprint radius), "motes", "path" (the knots, plate x, z), "length"
 ## (m swept), and for probes "promised" (each knot's footprint at release:
 ## [a, b, radius]), "drift" (m the air carried it, mean over the veil),
+## "drifts" (m, each part of the veil the wind was read for),
 ## "worst" (the farthest landing in shares of the radius from the footprint
 ## as it stood then), "outside" (landings outside it) and "outside_promised"
 ## (landings outside the release's footprint)}.
@@ -598,7 +599,7 @@ func _settle(veil: Dictionary) -> void:
 	var drift := Vector2.ZERO
 	for d: Vector2 in veil.drift: drift += d
 	settled.emit({"id":veil.id,"seeds":veil.seeds,"points":veil.points,"lost":veil.lost,"radius":veil.radius,"motes":veil.motes.size(),
-		"path":path,"length":veil.length,"promised":veil.promised,"drift":drift/float(veil.drift.size()),"worst":veil.worst,
+		"path":path,"length":veil.length,"promised":veil.promised,"drift":drift/float(veil.drift.size()),"drifts":veil.drift.duplicate(),"worst":veil.worst,
 		"outside":veil.outside,"outside_promised":veil.outside_promised})
 
 func _step_ground(delta: float) -> void:

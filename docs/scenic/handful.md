@@ -7,7 +7,7 @@ Agreed 2026-09-27 (branch `feature/handful-shadow`), after the user said the wat
 ## Words
 
 - **Handful.** The thing a tool carries in the hand and lets go: water (the water ball, `scripts/water_ball.gd`) and pollen for forest (`scripts/pollen_cloud.gd`, `docs/scenic/brushes.md` "Pollen"), later perhaps seed for meadow. A handful has a size that grows while it is gathered, and a place on the ground where it will land.
-- **Pollen.** Forest is a released cloud of pollen and seed-fluff, light enough that the air carries it. In still air it floats straight down, spreading as it sinks. In wind it drifts downwind, landing further off and stretched out. Two earlier tries were turned down on 2026-09-27: a gathered handful of winged seeds (hold, then release) and a seed sprinkle that poured while the button was down. The sprinkle was "a paintbrush".
+- **Pollen.** Forest is a veil of pollen and seed-fluff, light enough that the air carries it. While the button is held, a sweep lays the veil in the air along the pointer's way, and nothing lands. On release the whole veil comes down together: in still air straight down in the swept shape, in wind smeared and drifted downwind. Three earlier tries were turned down on 2026-09-27: a gathered handful of winged seeds (hold, then release), a seed sprinkle that poured while the button was down (it was "a paintbrush"), and a single released cloud that a drag only moved (the user found letting it all go at the last point unintuitive). In the user's words, what they want instead: "you kind of drag around and then you release a bunch of pollen that starts in the air, and then that area that you dragged descends from the air, and then the wind kind of arranges it."
 - **Shaping tools** work the ground directly under the pointer while the button is down: land and path. They stay brushes (`docs/scenic/brushes.md`).
 - **Sowing tools** release a handful onto the land: water falls, pollen drifts. Meadow is still to come. What they make is decided by where it lands and what the land does with it, never by a painted outline.
 - **The lifecycle**, in order:
@@ -19,7 +19,7 @@ Agreed 2026-09-27 (branch `feature/handful-shadow`), after the user said the wat
   - *take*: the land accepts it (the pour settles);
   - *grow*: what it becomes (a pond, a stream, a waterfall; later a meadow).
 
-  Pollen *drifts* rather than falls: each mote comes down on the air at its own pace, and the cloud is carried by the wind all the way down. It *takes* where the ground suits it (moisture, water, slope, height, rock, snow, existing forest) and *grows* into a stand of the species the ground's stand holds.
+  Pollen is *laid* rather than gathered: the sweep is its carry, and the veil is the handful. At release it takes a breath (lifts and gathers in) and then *drifts* rather than falls: it sinks as one sheet, peeling down along the sweep, each mote on the air at its own pace, and the wind carries it all the way down. It *takes* where the ground suits it (moisture, water, slope, height, rock, snow, existing forest) and *grows* into a stand of the species the ground's stand holds.
 
 ## The shadow is the promise
 
@@ -35,7 +35,7 @@ What this guarantees:
 
 What it does not promise: where the land takes the handful once it has landed. Water runs downhill to the basin it drains to (`docs/scenic/water-brush.md`), and seeds will root where the ground suits them. That run should read as the handful being taken, not as it teleporting; for water it does not yet (see the water brush's known gaps).
 
-For pollen, which drifts, the promise is a footprint: a soft pool on the ground where the cloud will settle, given the wind as it blows now. It is round and centred in still air, and in wind it is a capsule shifted and stretched downwind. The wind is read every frame, so a gust through the falling cloud carries it, and the footprint moves with it, as the ball's mark moves with the ball. Every mote lands inside the footprint as it stands at that moment. In steady air that is the footprint shown at release. The footprint is drawn in the water ball's family, softer and lighter, with a warm rim and faint twinkling specks (`shaders/pollen_footprint.gdshader`).
+For pollen, which drifts, the promise is a footprint: a soft pool on the ground that follows the swept shape while the veil is laid, showing where it will settle given the wind as it blows now. In still air it lies right under the sweep. In wind each part of it is shifted and stretched downwind. The wind is read every frame at several places along the veil, so a gust through the falling veil carries the part it passes, and the footprint moves with it, as the ball's mark moves with the ball. Every mote lands inside the footprint as it stands at that moment. In steady air that is the footprint shown at release. The footprint is drawn in the water ball's family, softer and lighter, with a warm rim and faint twinkling specks (`shaders/pollen_footprint.gdshader`).
 
 ## The water ball's mark
 

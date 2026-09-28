@@ -10,7 +10,7 @@ extends RefCounted
 ##
 ## This is the one place pollen asks the wind. It also adds the push of any
 ## gust the wind tool has sent, when the editor has one (`gust.wind_at`,
-## scripts/wind_gust.gd on feature/wind-gust, plate x, z in m/s); without it,
+## scripts/wind_gust.gd, plate x, z in m/s, taken at GUST_CARRY); without it,
 ## only the world's wind.
 ##
 ## Preloaded, not a class_name.
@@ -20,6 +20,12 @@ extends RefCounted
 const DRIFT := 1.4
 ## The shaders' field is 0.45 + 1.1 × (noise + gust pulse); the noise's mean.
 const FIELD_MEAN := 0.5
+## Share of a wind-tool gust's air speed (`wind_at`, m/s: 8 to 22 at its head)
+## pollen is carried at. Fluff rides a passing gust only for the moment the
+## gust's head is over it; at the full speed one swipe threw a veil 12 m and
+## most of it off the land (tools/probe_seed_handful.gd, "wind tool"). At this
+## share a full swipe carries it a few metres, like a few seconds of breeze.
+const GUST_CARRY := 0.25
 
 ## The drift velocity (plate x, z, m/s) at plate point `p`. `scene` holds the
 ## atmosphere (`_atmosphere`), `plate` is the terrain node pollen lives under.
@@ -42,5 +48,5 @@ static func at(scene: Node, plate: Node3D, p: Vector2) -> Vector2:
 static func _gusts(scene: Node, p: Vector2) -> Vector2:
 	var editor: Variant = scene.get("_chunk_editor")
 	var gust: Variant = editor.get("gust") if editor is Object else null
-	if gust is Object and gust.has_method("wind_at"): return gust.wind_at(p)
+	if gust is Object and gust.has_method("wind_at"): return gust.wind_at(p)*GUST_CARRY
 	return Vector2.ZERO

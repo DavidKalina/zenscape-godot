@@ -184,9 +184,11 @@ static func loop(centre: Vector2, radius: float, sides: int) -> Array:
 	return out
 
 ## One release: press at the path's start, sweep it over `seconds` (then hold
-## `dwell` more), release; let it settle and grow. `swipe` sends a gust across
-## the falling veil a second after release.
-func release(label: String, path: Array, seconds: float, wind: Array, dwell := 0.0, swipe := false) -> Dictionary:
+## `dwell` more), release; let it settle and grow. A second after release
+## `swipe` sends a gust across the falling veil: "parcel", one of the
+## atmosphere's gust parcels; "tool", a swipe of the wind tool
+## (scripts/wind_gust.gd) across the veil's middle.
+func release(label: String, path: Array, seconds: float, wind: Array, dwell := 0.0, swipe := "") -> Dictionary:
 	set_wind(wind[0],wind[1])
 	var data := editor.data
 	# Growth still coming from earlier work would be counted as this veil's.
@@ -243,6 +245,7 @@ func release(label: String, path: Array, seconds: float, wind: Array, dwell := 0
 	previous = Time.get_ticks_usec()
 	began = previous
 	var swiped := false
+	var blown := {}
 	var lift := 0.0
 	var lift_frames := 0
 	var middle_y0 := NAN
@@ -261,9 +264,9 @@ func release(label: String, path: Array, seconds: float, wind: Array, dwell := 0
 				lift = maxf(lift,y-middle_y0)
 				lift_frames += 1
 		# A gust across the falling veil, a second after release.
-		if swipe and not swiped and elapsed > 1.0:
+		if not swipe.is_empty() and not swiped and elapsed > 1.0:
 			swiped = true
-			await _swipe(path,flow)
+			blown = await _swipe(path,swipe)
 		var now := Time.get_ticks_usec()
 		fall_frames.append((now-previous-_count_usec)/1000.0)
 		fall_step.append(h.last_usec/1000.0)
@@ -366,8 +369,8 @@ func release(label: String, path: Array, seconds: float, wind: Array, dwell := 0
 		"lift_m":snappedf(lift,0.01),"landed":points.size(),"lost":settled.get("lost",0),"seeds":seeds.size(),"fell_s":snappedf(fell_s,0.01),
 		"footprint":{"capsules":promised.size(),"radius":snappedf(radius,0.01)},
 		"outside":outside,"worst_share":snappedf(worst,0.01),"outside_release_footprint":settled.get("outside_promised",0),"worst_share_release_footprint":snappedf(promised_worst,0.01),
-		"drift_m":snappedf(drift.length(),0.01),"settled_centre_from_path_m":snappedf(middle.distance_to(path_middle),0.01),"settled_downwind_m":snappedf((middle-path_middle).dot(downwind),0.01),
-		"undo_steps_added":data._undo.size()-steps,
+		"drift_m":snappedf(drift.length(),0.01),"drift_parts_m":Array(settled.get("drifts",[])).map(func(d: Vector2) -> float: return snappedf(d.length(),0.01)),"settled_centre_from_path_m":snappedf(middle.distance_to(path_middle),0.01),"settled_downwind_m":snappedf((middle-path_middle).dot(downwind),0.01),
+		"undo_steps_added":data._undo.size()-steps,"swipe":blown,
 		"grown":{"trees":trees,"shrubs":shrubs,"kinds":kinds,"tree_habitats":habitats,"on_seeds":on_seed,"first_on_seed_s":snappedf(first_on_seed,0.1) if first_on_seed < INF else null,"others_after_s":stats(others),"seed_outcomes":outcomes},
 		"along_path":{"trees_within_reach":near,"reach_m":snappedf(reach,0.01),"farthest_m":snappedf(farthest,0.01),"path_covered":"%d of %d m" % [covered,samples]},
 		"flicker":{"frames":_counts.size(),"spikes":flicker.slice(0,6),"peak_instances":peak},
@@ -389,11 +392,38 @@ func release(label: String, path: Array, seconds: float, wind: Array, dwell := 0
 	check(restored.wish and restored.tint and restored.objects,label+": undo restores")
 	return report
 
-## A gust swept across the falling veil: the wind tool's swipe when the editor
-## has one, else a gust parcel from the atmosphere.
-func _swipe(path: Array, _flow: Vector2) -> void:
+## A gust across the falling veil: a gust parcel from the atmosphere, or the
+## wind tool swiped across the veil's middle, square to the sweep, over
+## 0.15 s, starting 3 m before it. The forest comes back into hand after.
+## Returns the tool's gust record, or {}.
+func _swipe(path: Array, kind: String) -> Dictionary:
 	var at: Vector2 = along(path,0.5)
-	scene._atmosphere.send_gust(editor.terrain.to_global(Vector3(at.x,0.0,at.y)),0.8)
+	if kind == "parcel":
+		scene._atmosphere.send_gust(editor.terrain.to_global(Vector3(at.x,0.0,at.y)),0.8)
+		return {}
+	var tangent := (Vector2(path.back())-Vector2(path[0])).normalized()
+	var across := Vector2(tangent.y,-tangent.x)
+	var from := at-across*3.0
+	var to := at+across*2.0
+	editor.select_brush("wind")
+	var point := screen_of(from)
+	editor.pointer_override = point
+	mouse(point,true)
+	var began := Time.get_ticks_usec()
+	while true:
+		var t := (Time.get_ticks_usec()-began)/1000000.0/0.15
+		point = screen_of(from.lerp(to,clampf(t,0.0,1.0)))
+		editor.pointer_override = point
+		await process_frame
+		if t >= 1.0: break
+	var gust = editor.get("gust")
+	var count: int = gust.gusts.size() if gust != null else 0
+	mouse(point,false)
+	editor.pointer_override = null
+	editor.select_brush("forest")
+	if gust == null or gust.gusts.size() <= count: return {"sent":false}
+	var g: Dictionary = gust.gusts.back()
+	return {"sent":true,"heading":[snappedf(g.heading.x,0.01),snappedf(g.heading.y,0.01)],"power":snappedf(float(g.power),0.01),"reach":snappedf(float(g.get("reach",0.0)),0.01),"across":[snappedf(across.x,0.01),snappedf(across.y,0.01)]}
 
 func run() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -429,10 +459,11 @@ func run() -> void:
 			["straight sweep",[Vector2(-8.0,-6.0),Vector2(4.0,-6.0)],1.6,[0.0,0.0]],
 			["loop",loop(Vector2(3.0,4.0),3.2,24),2.4,[0.0,0.0]],
 			["sweep in wind",[Vector2(-9.0,-5.0),Vector2(-9.0,6.0)],1.4,[0.8,0.0]],
-			["sweep, gust mid-fall",[Vector2(-8.0,-4.0),Vector2(-8.0,5.0)],1.2,[0.4,0.0],0.0,true],
+			["sweep, gust mid-fall",[Vector2(-8.0,-4.0),Vector2(-8.0,5.0)],1.2,[0.4,0.0],0.0,"parcel"],
+			["sweep, wind tool mid-fall",[Vector2(-2.0,-5.0),Vector2(-2.0,4.0)],1.2,[0.0,0.0],0.0,"tool"],
 			["long zigzag",zigzag,3.0,[0.0,0.0]]]:
 		if not only.is_empty() and not only in spec[0]: continue
-		var report := await release(spec[0],spec[1],spec[2],spec[3],spec[4] if spec.size() > 4 else 0.0,spec.size() > 5)
+		var report := await release(spec[0],spec[1],spec[2],spec[3],spec[4] if spec.size() > 4 else 0.0,spec[5] if spec.size() > 5 else "")
 		results[spec[0]] = report
 		print("RELEASE ",JSON.stringify(report))
 	if not only.is_empty():
