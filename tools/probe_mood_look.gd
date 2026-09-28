@@ -37,7 +37,14 @@ func run() -> void:
 	scene._unhandled_input(key)
 	await process_frame
 	check(scene.mood_open() and scene.mood_panel.visible,"M opens the panel over the palette")
-	check(scene.mood_panel.frame.position.y+scene.mood_panel.frame.size.y*scene.mood_panel.frame.scale.y <= scene.creation_palette.frame.position.y,"panel sits above the palette")
+	if scene.lantern:
+		# Lantern: the orbs pour left of the right column, clear of it.
+		await create_timer(0.6).timeout
+		var column: Rect2 = scene.creation_palette.world_plate.get_global_rect()
+		var orbs: Array = scene.mood_panel.orbs.values().filter(func(orb: Control) -> bool: return orb.visible)
+		check(not orbs.is_empty() and orbs.all(func(orb: Control) -> bool: return orb.get_global_rect().end.x <= column.position.x and root.get_visible_rect().encloses(orb.get_global_rect())),"mood orbs sit on screen, left of the right column")
+	else:
+		check(scene.mood_panel.frame.position.y+scene.mood_panel.frame.size.y*scene.mood_panel.frame.scale.y <= scene.creation_palette.frame.position.y,"panel sits above the palette")
 	check(scene.world_clock.running,"the plain's day turns")
 	# Every mood, faded, with frame costs. On the plain a mood sets its hour and
 	# the day keeps turning, except the moods defined by their hour.
