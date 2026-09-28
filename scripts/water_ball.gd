@@ -4,9 +4,11 @@ extends Node3D
 ## (shaders/water_ball.gdshader) above the ground, with a few fish riding the
 ## vortex inside; it grows while the button is held, beads of water spiralling
 ## in and ringing out over its surface, and follows the pointer on a spring,
-## bobbing and wobbling, its shadow and gathered sunlight on the ground below
-## (shaders/water_ball_ground.gdshader) and now and then a drip. Release drops
-## it: it hops, falls, squashes on the ground and spreads into a wash of foam
+## bobbing and wobbling, now and then a drip. Straight below it on the ground
+## lies its mark (shaders/water_ball_ground.gdshader), which is the promise
+## (docs/scenic/handful.md): the ball lands inside it. Release drops it: it
+## hops straight up, falls straight down onto the mark, squashes on the
+## ground and spreads into a wash of foam
 ## under a crown of spray (shaders/water_splash.gdshader), droplets fly and the
 ## fish leap out; `landed` hands its water and fish to the editor
 ## (NativeChunkEditor `_ball_landed`), which settles the water as one pour and
@@ -26,9 +28,10 @@ const HOVER := 1.6
 ## The smallest ball drawn, in metres of radius, however little it holds.
 const MIN_RADIUS := 0.28
 ## The follow spring (1/s²) and its damping (1/s): a little under critical,
-## so the ball overshoots and settles behind a quick pointer.
-const FOLLOW := 60.0
-const FOLLOW_DAMP := 11.0
+## so the ball overshoots and settles behind a quick pointer. It trails a
+## steady pointer by FOLLOW_DAMP/FOLLOW s (0.13 s) of its travel.
+const FOLLOW := 120.0
+const FOLLOW_DAMP := 16.0
 ## The radius spring: a growing ball swells past its size and settles.
 const SWELL := 90.0
 const SWELL_DAMP := 9.0
@@ -39,7 +42,8 @@ const BOB_RATE := 0.55
 ## rush in as it does.
 const CONDENSE_SECONDS := 0.35
 const CONDENSE_BEADS := 22
-## Release: the anticipation hop (m/s up), then gravity (m/s²).
+## Release: the anticipation hop (m/s up), then gravity (m/s²). The fall is
+## straight down: the carried speed goes into the wobble, not the path.
 const HOP := 1.4
 const GRAVITY := 18.0
 ## The splash: seconds to squash, to spread into a wash and burst into foam,
@@ -76,9 +80,13 @@ var volume := 0.0
 var radius := MIN_RADIUS
 var age := 0.0
 var velocity := Vector3.ZERO
-## Ground height under the ball and the pointer's ground point while held.
+## Ground height under the ball (and its mark) and the pointer's ground
+## point while held.
 var ground := 0.0
 var target := Vector3.ZERO
+## The terrain's height at a plate x, z (a Vector2), or null off the land.
+## Unset, the ball takes the pointer's ground height.
+var ground_at := Callable()
 var fish: Array[Dictionary] = []
 ## The vortex's turned angle (radians) and how hard it churns (0..1).
 var swirl := 0.0
@@ -217,6 +225,7 @@ func condense(point: Vector3, fish_material: Material, salt: int) -> void:
 	ground = point.y
 	target = point
 	position = point+Vector3.UP*(HOVER+MIN_RADIUS)
+	_ground_under()
 	_ball.visible = true
 	_ball.transform = Transform3D.IDENTITY
 	_funnel = 0.0
@@ -239,15 +248,31 @@ func hold(point: Variant, water: float) -> void:
 	if state != "holding": return
 	if point != null:
 		target = point
-		ground = point.y
+		if not ground_at.is_valid(): ground = point.y
 	volume = water
 
-## Let go: a small hop, then it falls straight down.
+## Let go: a small hop, then it falls straight down onto its mark. What speed
+## it carried shakes the water instead of moving it on.
 func release() -> void:
 	if state != "holding": return
 	state = "falling"
-	velocity = Vector3(velocity.x*0.25,HOP,velocity.z*0.25)
-	_jolt = maxf(_jolt,0.6)
+	var carried_speed := Vector2(velocity.x,velocity.z).length()
+	velocity = Vector3(0.0,HOP,0.0)
+	_jolt = clampf(maxf(_jolt,0.6+carried_speed*0.06),0.0,1.0)
+	_ground_under()
+
+## The mark's centre on the ground, plate coordinates: straight below the ball.
+func mark() -> Vector3:
+	return Vector3(position.x,ground,position.z)
+
+## The ground height under the ball's own x, z (not the pointer's), kept
+## as it was where there is no land.
+func _ground_under() -> bool:
+	if not ground_at.is_valid(): return true
+	var h: Variant = ground_at.call(Vector2(position.x,position.z))
+	if h == null: return false
+	ground = h
+	return true
 
 func size_for(water: float) -> float:
 	return maxf(MIN_RADIUS,pow(3.0*maxf(water,0.0)/(4.0*PI),1.0/3.0))
@@ -317,10 +342,19 @@ func _step_held(delta: float) -> void:
 	_radius_speed += pull*delta
 	radius = maxf(0.0,radius+_radius_speed*delta)
 	var bob := sin(age*TAU*BOB_RATE)*BOB*_condensed()
-	var goal := target+Vector3.UP*(HOVER+size+bob)
+	# It hovers over the higher of the pointer's ground and its own, so it
+	# clears a rise it is lagging over.
+	var goal := Vector3(target.x,maxf(target.y,ground),target.z)+Vector3.UP*(HOVER+size+bob)
 	var before := velocity
 	velocity += ((goal-position)*FOLLOW-velocity*FOLLOW_DAMP)*delta
+	var was := position
 	position += velocity*delta
+	# It never swings out past the land's edge, where it could not land.
+	if not _ground_under():
+		position.x = was.x
+		position.z = was.z
+		velocity.x = 0.0
+		velocity.z = 0.0
 	_jolt = minf(1.0,_jolt+(velocity-before).length()*0.02)
 	_held = minf(1.0,_held+delta*3.0)
 	# While it fills, beads of water spiral in from the air round it.
@@ -348,7 +382,6 @@ func _condensed() -> float:
 func _step_fall(delta: float) -> void:
 	velocity.y -= GRAVITY*delta
 	position += velocity*delta
-	_held = maxf(0.0,_held-delta*4.0)
 	_shape(delta)
 	_swim(delta)
 	if position.y-radius <= ground: _impact()
@@ -502,7 +535,7 @@ func _drop_ring(point: Vector3) -> void:
 	_drops[_drop_next] = Vector4(world.x,world.z,age,1.0)
 	_drop_next = (_drop_next+1)%_drops.size()
 
-## The ground under the ball: shadow and caustic while held, drips, the splash.
+## The ground under the ball: its mark while held and falling, drips, the splash.
 func _paint_ground() -> void:
 	var r := radius if _splash_age < 0.0 else _landed_radius
 	var at := position if _splash_age < 0.0 else _landing+Vector3.UP*r
@@ -514,7 +547,8 @@ func _paint_ground() -> void:
 	_ground_node.visible = r > 0.05
 	_ground_material.set_shader_parameter("ball_center",parent.to_global(at))
 	_ground_material.set_shader_parameter("radius",maxf(r,0.05))
-	_ground_material.set_shader_parameter("held",_held*smoothstep(0.1,0.5,r))
+	_ground_material.set_shader_parameter("mark",_held*smoothstep(0.05,0.3,r))
+	_ground_material.set_shader_parameter("breath",sin(age*TAU*BOB_RATE)*_condensed() if _splash_age < 0.0 else 0.0)
 	var ceiling := floor_y+(HOVER*0.8 if _splash_age < 0.0 else 0.6)
 	_ground_material.set_shader_parameter("ceiling",parent.to_global(Vector3(at.x,ceiling,at.z)).y)
 	_ground_material.set_shader_parameter("splash",_splash_age)

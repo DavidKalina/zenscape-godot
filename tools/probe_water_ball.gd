@@ -7,10 +7,15 @@ extends SceneTree
 ## stream, lake, pond), its volume and fish, main-loop frame gaps while held
 ## and from release until the pour closed, the pour's undo steps, and whether
 ## one undo takes the whole drop back. Then the fish: how many of the ball's
-## fish LandLife placed and how many have arrived.
-##   -- --hold=1.5 --big=6.0 --fish-wait=10
+## fish LandLife placed and how many have arrived. And the promise
+## (docs/scenic/handful.md): "mark" compares the mark's centre at release (the
+## ground shader's `ball_center`, straight below the ball) with where `landed`
+## fired, in x, z and in height against the terrain there, and how far the
+## pointer's ground point ran ahead of the mark while carried.
+##   -- --hold=1.5 --big=6.0 --fish-wait=10 --drops=carry fast,peak
 ## Drops: "hollow" on the plain, "big" (held --big s), "full" (held 12 s, past
-## the cap) on the plain, and "peak"
+## the cap) on the plain, "carry fast" and "carry slow" (held 1 s, then swept
+## 6 m in 0.5 s or 4 m in 1 s and let go while still moving), and "peak"
 ## on the top of an alpine peak raised first, so the stream and waterfall
 ## paths run. Frame gaps are CPU main-loop intervals under the dummy renderer.
 var scene: Node3D
@@ -19,6 +24,11 @@ var hold := 1.5
 var big := 6.0
 var fish_wait := 10.0
 var _outcome := {}
+var _landed_at: Variant = null
+## The ball's impact height less the terrain's at the landing, when it landed.
+var _landed_ground: Variant = null
+## Only the drops named here (--drops=hollow,carry fast); empty: all.
+var only := []
 ## The refresh stage in flight over each settle frame above 16.7 ms.
 var slow_stages := []
 
@@ -59,7 +69,19 @@ func wait_settled(frames: Array, limit := 20.0) -> void:
 		var busy: bool = editor.ball.state != "idle" or not editor._pour.is_empty() or editor.water_settling or editor.refresh_pending > 0 or editor.land_settling or editor.mountain.active
 		quiet = 0 if busy else quiet+1
 
-func drop(label: String, at: Vector2, seconds: float) -> Dictionary:
+## Where the pointer's ray meets the ground, plate x, z, or null.
+func pointer_ground(pointer: Vector2) -> Variant:
+	var hit: Variant = editor.pick(pointer)
+	return null if hit == null else Vector2(hit.x,hit.z)
+
+func mark_xz() -> Vector2:
+	var center: Vector3 = editor.ball._ground_material.get_shader_parameter("ball_center")
+	var local := editor.terrain.to_local(center)
+	return Vector2(local.x,local.z)
+
+## Hold at `at` for `seconds`; with `sweep_to`, then sweep the pointer there
+## over `sweep_seconds` and let go while it moves.
+func drop(label: String, at: Vector2, seconds: float, sweep_to: Variant = null, sweep_seconds := 0.5) -> Dictionary:
 	var data := editor.data
 	var ponds := data.ponds.duplicate(true)
 	var streams := data.streams.duplicate(true)
@@ -70,6 +92,8 @@ func drop(label: String, at: Vector2, seconds: float) -> Dictionary:
 	editor.pointer_override = point
 	mouse(point,true)
 	var holding: bool = editor._ball_holding
+	if not editor.ball.landed.is_connected(_on_landed): editor.ball.landed.connect(_on_landed)
+	_landed_at = null
 	var held_frames := []
 	var previous := Time.get_ticks_usec()
 	var held := 0.0
@@ -81,10 +105,25 @@ func drop(label: String, at: Vector2, seconds: float) -> Dictionary:
 		held += (now-previous)/1000000.0
 		previous = now
 		if radius_at.is_empty() and held >= 0.5: radius_at = {"t":0.5,"radius":snappedf(editor.ball.radius,0.01),"fish":editor.ball.carried().size()}
+	# The sweep: the pointer runs on ahead and the ball trails it.
+	var lags := []
+	if sweep_to != null:
+		var swept := 0.0
+		var start := Time.get_ticks_usec()
+		while swept < sweep_seconds:
+			swept = (Time.get_ticks_usec()-start)/1000000.0
+			point = screen_of(at.lerp(sweep_to,clampf(swept/sweep_seconds,0.0,1.0)))
+			editor.pointer_override = point
+			await process_frame
+			var ahead: Variant = pointer_ground(point)
+			if ahead != null: lags.append(Vector2(ahead).distance_to(mark_xz()))
 	var volume := editor.ball_volume
 	var radius: float = editor.ball.radius
 	var carried: int = editor.ball.carried().size()
 	var hover: float = editor.ball.position.y-editor.ball.radius-editor.ball.ground
+	var pointer_at: Variant = pointer_ground(point)
+	var mark_at := mark_xz()
+	var mark_y: float = editor.ball.ground
 	var release := Time.get_ticks_usec()
 	mouse(point,false)
 	var release_ms := (Time.get_ticks_usec()-release)/1000.0
@@ -93,7 +132,19 @@ func drop(label: String, at: Vector2, seconds: float) -> Dictionary:
 	slow_stages.clear()
 	var began := Time.get_ticks_usec()
 	await wait_settled(settle_frames)
-	var report := {"drop":label,"at":[at.x,at.y],"press_taken":holding,"held_s":snappedf(held,0.01),"volume":snappedf(volume,0.01),"radius":snappedf(radius,0.01),
+	var promise := {"mark_at_release":[snappedf(mark_at.x,0.001),snappedf(mark_at.y,0.001)],"pointer_to_mark_m":snappedf(Vector2(pointer_at).distance_to(mark_at),0.001) if pointer_at != null else null}
+	if _landed_at != null:
+		var landed_at: Vector2 = _landed_at
+		promise["landed"] = [snappedf(landed_at.x,0.001),snappedf(landed_at.y,0.001)]
+		promise["mark_to_landed_m"] = snappedf(landed_at.distance_to(mark_at),0.0001)
+		promise["impact_ground_error_m"] = snappedf(float(_landed_ground),0.0001) if _landed_ground != null else null
+		promise["mark_height_to_impact_m"] = snappedf(mark_y-float(editor.ball._landing.y),0.0001)
+	if not lags.is_empty():
+		var total := 0.0
+		for lag: float in lags: total += lag
+		promise["carry_speed_m_s"] = snappedf(at.distance_to(sweep_to)/sweep_seconds,0.1)
+		promise["carry_pointer_to_mark_m"] = {"mean":snappedf(total/lags.size(),0.01),"max":snappedf(lags.max(),0.01),"frames":lags.size()}
+	var report := {"drop":label,"mark":promise,"at":[at.x,at.y],"press_taken":holding,"held_s":snappedf(held,0.01),"volume":snappedf(volume,0.01),"radius":snappedf(radius,0.01),
 		"hover_m":snappedf(hover,0.01),"at_half_second":radius_at,"fish_in_ball":carried,"outcome":_outcome,
 		"ponds":[ponds.size(),data.ponds.size()],"streams":[streams.size(),data.streams.size()],"objects":[objects,data.objects.size()],
 		"undo_steps_added":data._undo.size()-steps,"release_ms":snappedf(release_ms,0.01),"held_frames_ms":stats(held_frames),"settle_frames_ms":stats(settle_frames),"slow_stages":slow_stages.duplicate(),
@@ -134,6 +185,7 @@ func run() -> void:
 		if arg.begins_with("--hold="): hold = float(arg.trim_prefix("--hold="))
 		if arg.begins_with("--big="): big = float(arg.trim_prefix("--big="))
 		if arg.begins_with("--fish-wait="): fish_wait = float(arg.trim_prefix("--fish-wait="))
+		if arg.begins_with("--drops="): only = Array(arg.trim_prefix("--drops=").split(","))
 	create_timer(420).timeout.connect(func() -> void: push_error("Water ball probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
@@ -154,19 +206,27 @@ func run() -> void:
 	editor.select_brush("water")
 	editor.ball_settled.connect(func(outcome: Dictionary) -> void:
 		_outcome = outcome.duplicate()
-		_outcome.erase("center"))
+		_outcome.erase("center")
+		if _landed_at != null and int(outcome.ponds) > 0: _outcome["pond_from_landing_m"] = snappedf(Vector2(outcome.center).distance_to(_landed_at),0.01))
 	print("water_ball ",editor.water_ball," brush ",editor.held_brush()," life ",scene.get("land_life") != null)
 	await create_timer(1.0).timeout
 	var data := editor.data
-	for spec: Array in [["hollow",Vector2(-3.0,2.0),hold],["big",Vector2(2.5,-1.5),big],["full",Vector2(0.5,1.0),12.0]]:
+	for spec: Array in [["hollow",Vector2(-3.0,2.0),hold],["big",Vector2(2.5,-1.5),big],["full",Vector2(0.5,1.0),12.0],
+			["carry fast",Vector2(-4.0,-2.0),1.0,Vector2(2.0,-2.0),0.5],["carry slow",Vector2(-2.0,3.0),1.0,Vector2(2.0,3.0),1.0]]:
+		if not only.is_empty() and spec[0] not in only: continue
 		var heights := data.heights.duplicate()
 		var ponds := data.ponds.duplicate(true)
 		var streams := data.streams.duplicate(true)
 		var objects := data.objects.size()
-		var report := await drop(spec[0],spec[1],spec[2])
+		var report := await drop(spec[0],spec[1],spec[2],spec[3] if spec.size() > 3 else null,spec[4] if spec.size() > 4 else 0.5)
 		report["fish"] = await fish_check(report.outcome)
 		await undo_check(report,heights,ponds,streams,objects)
 		print("DROP ",JSON.stringify(report))
+	if not only.is_empty() and "peak" not in only:
+		scene.queue_free()
+		for _frame in range(3): await process_frame
+		quit()
+		return
 	# A peak first (the land brush's alpine form), then a ball on its top.
 	var peak_at := Vector2(-1.0,-3.0)
 	editor.select_brush("land")
@@ -214,6 +274,11 @@ func run() -> void:
 	scene.queue_free()
 	for _frame in range(3): await process_frame
 	quit()
+
+func _on_landed(point: Vector2, _volume: float, _fish: Array) -> void:
+	_landed_at = point
+	var h: Variant = editor.data.ground_height(point)
+	_landed_ground = null if h == null else float(editor.ball._landing.y)-float(h)
 
 func _shift(pressed: bool) -> InputEventKey:
 	var key := InputEventKey.new()

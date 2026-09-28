@@ -740,7 +740,7 @@ func _process(delta: float) -> void:
 	if mode == "pond":
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
-	# A held water ball shows where it will land with its own shadow.
+	# A held water ball shows where it will land with its own mark.
 	_material.set_shader_parameter("brush_visible",hit != null and preview_wanted() and (ball == null or ball.state == "idle"))
 	if _ball_holding:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
@@ -1882,6 +1882,8 @@ func _ball_press(hit: Vector3) -> void:
 		ball.name = "WaterBall"
 		terrain.add_child(ball)
 		ball.landed.connect(_ball_landed)
+		# It lands on the terrain under itself, where its mark lies.
+		ball.ground_at = func(point: Vector2) -> Variant: return data.ground_height(point)
 	var life: Variant = scene.get("land_life")
 	_ball_serial += 1
 	ball.condense(hit,life.material if life != null and life.get("material") != null else null,hash([land_seed,_ball_serial]))
@@ -1889,7 +1891,8 @@ func _ball_press(hit: Vector3) -> void:
 	_ball_holding = true
 	_emit_stroke(0,hit,brush_radius(),0.0)
 
-## While held the ball fills and follows the pointer's ground point.
+## While held the ball fills and follows the pointer's ground point; its mark
+## lies on the ground straight below it, not below the pointer.
 func _ball_step(hit: Variant, delta: float) -> void:
 	const WaterBrush := preload("res://scripts/water_brush.gd")
 	var rate: float = WaterBrush.RATE*brush_strength()*pow(brush_radius()/WaterBrush.REFERENCE_RADIUS,2.0)
@@ -1900,8 +1903,7 @@ func _ball_release() -> void:
 	if not _ball_holding: return
 	_ball_holding = false
 	ball.release()
-	var at: Vector3 = ball.position
-	_emit_stroke(2,Vector3(at.x,ball.ground,at.z),ball.radius,0.0)
+	_emit_stroke(2,ball.mark(),ball.radius,0.0)
 
 ## The ball hit the ground: its water settles as one pour from where it
 ## landed (`_pour_live`), in one undo step, and remembers its fish.

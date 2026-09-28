@@ -2,18 +2,20 @@ shader_type spatial;
 render_mode unshaded, blend_premul_alpha, depth_draw_never, depth_test_disabled, cull_front, fog_disabled;
 // What the water ball (scripts/water_ball.gd) does to the ground under it,
 // painted as a decal: a box around the spot reads the depth buffer back to the
-// ground it covers. While the ball is held its shadow lies on the ground with
-// the sun gathered to a rippling caustic inside it, and drips that fall from it
-// ring out where they land. After it bursts, the ground darkens wet under a
-// ring of foam that runs out and breaks up.
+// ground it covers. While the ball is held and while it falls, its mark lies
+// straight below it: the promise (docs/scenic/handful.md), the ground it will
+// land on. Drips that fall from it ring out where they land. After it bursts,
+// the ground darkens wet under a ring of foam that runs out and breaks up.
 // Premultiplied: ALBEDO is light added, ALPHA how much of the ground is dimmed.
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/pool_caustics.gdshaderinc"
 uniform sampler2D ground_depth : hint_depth_texture, filter_nearest, repeat_disable;
-// The ball's centre (world), radius (m) and how much of the held look shows.
+// The ball's centre (world), radius (m), how much of its mark shows, and its
+// bob (-1..1), which the mark breathes with.
 uniform vec3 ball_center = vec3(0.0);
 uniform float radius = 1.0;
-uniform float held = 0.0;
+uniform float mark = 0.0;
+uniform float breath = 0.0;
 // Nothing above this world height is painted (keeps the ball's fish clean).
 uniform float ceiling = 0.0;
 // Seconds since the splash (negative: none), and how far its foam runs (m).
@@ -22,6 +24,13 @@ uniform float reach = 3.0;
 // Drips landed: world x, z, and the age they landed.
 uniform vec4 drops[4];
 uniform float age = 0.0;
+
+// The mark: a MARK_SIDES-gon (faceted, like the ground) the ball's own size,
+// turning MARK_TURN rad/s. Held high (MARK_HIGH m of gap or more) it is soft
+// and lighter; as the ball comes down it darkens and its edge sharpens.
+const int MARK_SIDES = 12;
+const float MARK_TURN = 0.12;
+const float MARK_HIGH = 2.0;
 
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise2(vec2 p) {
@@ -41,22 +50,34 @@ void fragment() {
 	vec3 light = zs_key_irradiance / PI * zs_celestial_clear;
 	float shade = 0.0;
 	vec3 add = vec3(0.0);
-	if (held > 0.001) {
-		// The shadow falls along the sun; a soft contact darkening sits right
-		// under the ball so it is clear where it will land.
-		vec3 sun = normalize(vec3(zs_key_direction.x, max(zs_key_direction.y, 0.25), zs_key_direction.z));
-		float above = ball_center.y - world.y;
-		vec2 image = ball_center.xz - sun.xz / sun.y * above;
-		float d = length(world.xz - image) / radius;
-		float shadow = (1.0 - smoothstep(0.55, 1.05, d)) * 0.42;
-		float under = exp(-pow(length(world.xz - ball_center.xz) / (radius * 1.2), 2.0) * 1.5) * 0.18;
-		// The ball is a lens: it gathers the sun to a bright, restless spot.
-		float focus = exp(-d * d * 10.0);
-		float play = d < 0.9 ? zs_pool_caustics((world.xz - image) / radius * 3.4 + vec2(age * 0.15, 0.0), age * 2.4) * (0.4 + 0.6 * noise2((world.xz - image) * 4.0 + age)) : 0.0;
-		shade = max(shadow, under) * (1.0 - focus * 0.8);
-		add += light * (focus * (0.3 + play * 0.6) + (1.0 - smoothstep(0.2, 0.85, d)) * play * 0.22) * 0.5 * zs_daylight;
-		shade *= held;
-		add *= held;
+	if (mark > 0.001) {
+		// Straight below the ball, never along the sun: a second dark shape off
+		// to one side would be taken for where it lands.
+		vec2 from = world.xz - ball_center.xz;
+		float gap = max(ball_center.y - radius - world.y, 0.0);
+		float near = 1.0 - clamp(gap / MARK_HIGH, 0.0, 1.0);
+		float wedge = TAU / float(MARK_SIDES);
+		float around = mod(atan(from.y, from.x) + age * MARK_TURN, wedge) - wedge * 0.5;
+		float size = radius * (1.0 + breath * 0.035);
+		float d = length(from) * cos(around) / size;
+		// A pooled shadow in two painted tones, a darker core and a lighter
+		// band, with a crisp but soft edge.
+		float edge = mix(0.16, 0.05, near);
+		float pool = 1.0 - smoothstep(1.0 - edge, 1.0, d);
+		float core = 1.0 - smoothstep(0.58 - edge * 0.5, 0.58, d);
+		shade = pool * mix(0.3, 0.44, near) + core * mix(0.08, 0.14, near);
+		// A pale rim of water light, lit by the sky as well as the sun and never
+		// quite dark, so the mark reads on dark ground and at night. It swells a
+		// little as the ball bobs up.
+		float rim = exp(-pow((d - 1.0) / mix(0.07, 0.045, near), 2.0));
+		vec3 sky_light = zs_hemi_sky * zs_hemi_energy / PI;
+		vec3 glow = vec3(0.72, 0.9, 0.88) * (light * 0.3 + sky_light * 0.7 + vec3(0.02 + 0.03 * zs_night));
+		add += glow * rim * (0.6 + 0.15 * breath);
+		// The ball is a lens: sunlight it gathers plays restlessly in the pool.
+		float play = d < 0.95 ? zs_pool_caustics(from / radius * 3.4 + vec2(age * 0.15, 0.0), age * 2.4) * (0.4 + 0.6 * noise2(from * 4.0 + age)) : 0.0;
+		add += light * play * pool * 0.12 * zs_daylight;
+		shade *= mark;
+		add *= mark;
 	}
 	for (int i = 0; i < 4; i++) {
 		float since = age - drops[i].z;
