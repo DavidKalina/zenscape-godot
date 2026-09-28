@@ -159,6 +159,18 @@ zs_puff_5={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_puff_heading_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_puff_heading_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_puff_heading_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_tread_0={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

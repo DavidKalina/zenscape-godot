@@ -29,6 +29,11 @@ global uniform vec4 zs_puff_2;
 global uniform vec4 zs_puff_3;
 global uniform vec4 zs_puff_4;
 global uniform vec4 zs_puff_5;
+// Parcel headings (scripts/wind_gust.gd): parcel 2i in xy, 2i+1 in zw; zero
+// rides zs_wind_direction.
+global uniform vec4 zs_puff_heading_0;
+global uniform vec4 zs_puff_heading_1;
+global uniform vec4 zs_puff_heading_2;
 global uniform vec4 zs_tread_0;
 global uniform vec4 zs_tread_1;
 global uniform vec4 zs_tread_2;

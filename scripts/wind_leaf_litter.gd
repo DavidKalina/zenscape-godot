@@ -70,10 +70,11 @@ func _step(dt: float, air: Node) -> void:
 	var ambient: float = air._air_strength * air.gust_at(air._wind_time)
 	for leaf in leaves:
 		var p: Vector3 = leaf.position
-		var gust: float = air.puffs.sample_at(Vector2(p.x,p.z),direction,air._gust_distance)
+		# Each parcel pushes along its own heading (a wind-tool gust's is the swipe's).
+		var gust: Vector2 = air.puffs.push_at(Vector2(p.x,p.z),direction,air._gust_distance)
 		var local := Vector3.ZERO
 		if is_instance_valid(local_wind): local = local_wind.sample_local(p)
-		var wind := Vector3(direction.x,0,direction.y)*(ambient*1.3+gust*7.0)+local
+		var wind := Vector3(direction.x,0,direction.y)*ambient*1.3+Vector3(gust.x,0,gust.y)*7.0+local
 		var speed := Vector2(wind.x,wind.z).length()
 		leaf.cooldown = maxf(0.0,leaf.cooldown-dt)
 		if not leaf.airborne:

@@ -33,3 +33,7 @@ What it does not promise: where the land takes the handful once it has landed. W
 ## The water ball's mark
 
 `shaders/water_ball_ground.gdshader`, the ball's ground decal. The mark is a pooled shadow the size of the ball (`radius`), drawn as a slowly turning `MARK_SIDES`-gon (12, turning `MARK_TURN` 0.12 rad/s) so it is faceted like the ground. It is painted in two tones, a darker core inside 0.58 of the radius and a lighter band out to the edge. A pale rim of water light sits on the edge, lit by the sky as well as the sun with a small floor that rises at night, so it reads on dark ground. The rim and size breathe with the ball's bob (`breath`, ±3.5 %). Held high (`MARK_HIGH`, 2 m of gap or more) the mark is soft and lighter (0.3 + 0.08 dimming, edge 0.16 of the radius); as the ball falls it darkens (0.44 + 0.14) and its edge sharpens (0.05). Sunlight gathered by the ball plays as caustics inside it by day. The mark shows from the ball's first moment (`mark` = the hold ramp × smoothstep(0.05, 0.3, radius)) and stays through the fall until the splash takes over.
+
+## Wind
+
+The wind tool (`docs/scenic/wind-gust.md`, `scripts/wind_gust.gd`) lets go of air rather than a handful: press and drag to blow, and release to send a gust along the swipe. Its promise is a lane on the ground, adapted from the water ball's mark, that shows where the air will roll, how wide and how far. What `release` sends is exactly what the lane showed, and the air stays inside it. A still press is a burst, and its promise is a ring.

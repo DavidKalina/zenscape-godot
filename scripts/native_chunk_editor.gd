@@ -746,6 +746,7 @@ func _process(delta: float) -> void:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
 		else: _ball_step(hit,delta)
 	if _painting and _mountain_holding: _mountain_step(pointer,delta)
+	if gust != null: _gust_process(hit)
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
@@ -1727,6 +1728,7 @@ func stroke_mode() -> String:
 ## A press that misses the land, or holds Alt, falls through to the camera, so
 ## the sky still orbits with either button.
 func _land_press(event: InputEventMouseButton) -> bool:
+	if _gust_input(event): return true
 	if not event.pressed:
 		if _ball_holding and event.button_index == MOUSE_BUTTON_LEFT:
 			_ball_release()
@@ -1968,6 +1970,59 @@ func _ball_settled(pour: Dictionary, outcome: Dictionary) -> void:
 	var said := {"waterfall":"The water fell, and gathered below.","stream":"The water found a way down.","lake":"The water spread into a lake.","pond":"The water gathered in a pond.","soaked":"The ground drank the water."}
 	_set_status(said[outcome.kind])
 	ball_settled.emit(outcome)
+
+# --- Wind gust -------------------------------------------------------------------
+## The wind tool (scripts/wind_gust.gd, docs/scenic/wind-gust.md): with wind
+## in hand a press starts a blow and its mark shows the promised gust while
+## the hand drags; release sends it along the swipe, or, not moved, bursts
+## round the press. It changes no land, so it takes no undo step.
+var gust: Node3D
+
+## Presses and releases with wind in hand. True when the gust took the event.
+func _gust_input(event: InputEventMouseButton) -> bool:
+	if gust != null and gust.aiming():
+		if not event.pressed and event.button_index == _stroke_button: gust.release()
+		return true
+	if not event.pressed or brush_id != "wind" or _painting or _ball_holding or event.alt_pressed: return false
+	if event.button_index == MOUSE_BUTTON_RIGHT and not right_works_other_way: return false
+	var hit: Variant = pick(event.position)
+	if hit == null: return false
+	_land_mountain()
+	_stroke_button = event.button_index
+	if gust == null:
+		gust = preload("res://scripts/wind_gust.gd").new()
+		gust.name = "WindGust"
+		terrain.add_child(gust)
+		gust.ground_at = func(point: Vector2) -> Variant: return data.ground_height(point)
+		gust.scene = scene
+		gust.atmosphere = scene.get("_atmosphere")
+		gust.lightning = scene.get("_lightning")
+		var resident: Variant = scene.get("_resident_wind")
+		if resident != null and resident.get("field") != null: gust.field = resident.field
+		data.state_restored.connect(func(_state: Dictionary) -> void: gust.clear())
+		# The plate's bounds, which never move: lanes stop short of the edge.
+		var low := Vector2(INF,INF)
+		var high := -low
+		for point: Vector2 in data.points:
+			low = low.min(point)
+			high = high.max(point)
+		gust.land = Rect2(low,high-low)
+	var brush = creation_brush()
+	gust.press(hit,brush.radius,brush.strength)
+	return true
+
+## While the hand blows the mark is the only shape under it; a release
+## missed (the button up off the window) lets the gust go.
+func _gust_process(hit: Variant) -> void:
+	if not gust.aiming(): return
+	if forming or scene._growth.terrain < 0.995:
+		gust.cancel()
+		return
+	if not Input.is_mouse_button_pressed(_stroke_button):
+		gust.release()
+		return
+	_material.set_shader_parameter("brush_visible",false)
+	gust.aim(hit)
 
 ## Show `plan` inside the pour's open undo step: the ground moves first, then
 ## the water lands and the yielding refresh publishes it. False when the pour

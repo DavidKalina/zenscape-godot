@@ -228,6 +228,16 @@ void vertex() {
 		vec2 motion = zs_wind_direction * min(sway, 0.95) * bend * blade_h;
 		motion += vec2(-zs_wind_direction.y, zs_wind_direction.x) * shiver * bend * blade_h;
 		wind_bow = crest * min(wind, 1.0) * gust;
+		// Local gusts (the wind tool's, scripts/wind_gust.gd, and the
+		// resident's) bow the blades their own way, as they bend the trees in
+		// reference_surface, and the bowed blades catch the sky.
+		vec3 air = zs_local_wind(vec3(root.x, ground + 0.5, root.y));
+		float air_speed = length(air);
+		if (air_speed > 0.001) {
+			float give = air_speed / (air_speed + 10.0);
+			motion += air.xz / air_speed * give * 0.9 * bend * blade_h;
+			wind_bow = max(wind_bow, give * 0.8);
+		}
 		float press = 0.0;
 		if (zs_tread_0.w > 0.0) {
 			vec2 shove = zs_tread_push(root, press) * blade_h * ZS_TREAD_REACH * bend;

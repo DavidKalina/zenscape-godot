@@ -78,6 +78,7 @@ const GLYPHS := {
 	"meadow":'<path d="M3 20 C6 18 9 18 12 20 C15 18 18 18 21 20"/><path d="M7 18 V11 M12 19 V8 M17 18 V12"/><circle cx="12" cy="6" r="2"/><circle cx="7" cy="9" r="1.5"/>',
 	"forest":'<path d="M8 3 L3.5 12 H6 L3 18 H13 L10 12 H12.5 Z"/><path d="M8 18 V21"/><path d="M17 8 L13.5 15 H20.5 Z M17 15 V21"/>',
 	"path":'<path d="M9 21 C9 16 15 15 15 11 C15 7 10 7 10 3"/><path d="M14 21 C14 17 19 15.5 19 11 C19 7.5 15 6 15 3" stroke-opacity="0.5"/>',
+	"wind":'<path d="M3 9 H14 C17 9 18 5.5 15.5 4.5 C13.5 3.8 12 5.5 12.5 7"/><path d="M3 13 H18 C21 13 21.5 17.5 18.5 18 C16.5 18.3 15.5 16.5 16.5 15.5"/><path d="M5 17 H11" stroke-opacity="0.5"/>',
 	"look":'<path d="M2 12 C5 6.5 8.5 5 12 5 C15.5 5 19 6.5 22 12 C19 17.5 15.5 19 12 19 C8.5 19 5 17.5 2 12 Z"/><circle cx="12" cy="12" r="3.2"/>',
 	"craft":'<path d="M14.5 4.5 L19.5 9.5 L9 20 H4 V15 Z"/><path d="M12.5 6.5 L17.5 11.5"/>',
 	"world":'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12 H21"/>',

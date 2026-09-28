@@ -26,6 +26,43 @@ func emit_gust(origin: Vector3, direction: Vector3, strength: float, radius: flo
 	publish()
 	return id
 
+## A steered gust (scripts/wind_gust.gd): its owner moves it and sets its
+## strength each frame with `steer`, so it has no envelope of its own and
+## never ages out; `let_go` ends it. Returns its id, or -1. Like any gust, a
+## ninth replaces the oldest, so `steer` returns false once it is gone. It is
+## not published here: the owner publishes once a frame, after steering.
+func emit_steered(origin: Vector3, direction: Vector3, strength: float, radius: float) -> int:
+	if not origin.is_finite() or not direction.is_finite() or direction.length_squared() < 0.000001 or not is_finite(radius) or radius <= 0.0:
+		return -1
+	var id := _next_id
+	_next_id += 1
+	if _gusts.size() == CAPACITY:
+		_gusts.pop_front()
+	_gusts.append({"id": id, "origin": origin, "direction": direction.normalized(), "strength": maxf(strength, 0.0), "radius": radius, "duration": 1.0e9, "age": 0.0, "steered": true})
+	return id
+
+func steer(id: int, origin: Vector3, direction: Vector3, strength: float, radius: float) -> bool:
+	for gust: Dictionary in _gusts:
+		if gust.id != id:
+			continue
+		if origin.is_finite(): gust.origin = origin
+		if direction.length_squared() > 0.000001: gust.direction = direction.normalized()
+		gust.strength = maxf(strength, 0.0) if is_finite(strength) else 0.0
+		gust.radius = maxf(radius, 0.01)
+		return true
+	return false
+
+func let_go(id: int) -> void:
+	for i in range(_gusts.size()):
+		if _gusts[i].id == id:
+			_gusts.remove_at(i)
+			publish()
+			return
+
+## A gust's share of its strength now: the envelope, or all of it steered.
+static func weight_of(gust: Dictionary) -> float:
+	return 1.0 if gust.get("steered", false) else envelope(gust.age, gust.duration)
+
 static func envelope(age: float, duration: float) -> float:
 	var phase := clampf(age / duration, 0.0, 1.0)
 	return smoothstep(0.0, 0.15, phase) * (1.0 - smoothstep(0.35, 1.0, phase))
@@ -37,7 +74,7 @@ func sample_local(position: Vector3) -> Vector3:
 	for gust: Dictionary in _gusts:
 		var distance: float = position.distance_to(gust.origin) / gust.radius
 		var weight := 1.0 - smoothstep(0.0, 1.0, distance)
-		velocity += gust.direction * gust.strength * envelope(gust.age, gust.duration) * weight
+		velocity += gust.direction * gust.strength * weight_of(gust) * weight
 	return velocity
 
 func sample(position: Vector3) -> Vector3:
@@ -61,7 +98,7 @@ func publish() -> void:
 		if i < _gusts.size():
 			var gust: Dictionary = _gusts[i]
 			origin = Vector4(gust.origin.x, gust.origin.y, gust.origin.z, gust.radius)
-			vector = Vector4(gust.direction.x, gust.direction.y, gust.direction.z, gust.strength * envelope(gust.age, gust.duration))
+			vector = Vector4(gust.direction.x, gust.direction.y, gust.direction.z, gust.strength * weight_of(gust))
 		RenderingServer.global_shader_parameter_set("zs_local_gust_origin_%d" % i, origin)
 		RenderingServer.global_shader_parameter_set("zs_local_gust_vector_%d" % i, vector)
 

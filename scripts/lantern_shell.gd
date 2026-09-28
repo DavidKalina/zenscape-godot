@@ -380,7 +380,7 @@ func _fade_hint(delay: float) -> void:
 	_hint_tween.tween_property(hint,"modulate:a",0.0,1.4)
 
 func painting() -> bool:
-	return editor._painting or editor.get("_ball_holding") == true
+	return editor._painting or editor.get("_ball_holding") == true or (editor.get("gust") != null and editor.gust.aiming())
 
 func _process(delta: float) -> void:
 	_clock += delta

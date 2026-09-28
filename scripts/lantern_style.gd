@@ -23,7 +23,7 @@ const PLATE_ALPHA := 0.4
 const MUTED := Color("c9c3b6")
 ## Halo tints by brush, mode and button.
 const TINTS := {
-	"land":Color("ecd49c"),"water":Color("a8dcf0"),"meadow":Color("cfe78c"),"forest":Color("9fe3c0"),"path":Color("ebc7a2"),
+	"land":Color("ecd49c"),"water":Color("a8dcf0"),"meadow":Color("cfe78c"),"forest":Color("9fe3c0"),"path":Color("ebc7a2"),"wind":Color("d2eef0"),
 	"paint":Color("f3e2b8"),"lower":Color("d9c6f0"),"look":Color("bfe0f0"),"undo":Color("f6dcae"),
 	"mood":Color("f0c3cc"),"world":Color("c6d9f2"),"craft":Color("e8d7b4"),"photo":Color("f6dcae"),
 }

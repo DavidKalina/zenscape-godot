@@ -13,13 +13,20 @@ float zs_noise(vec2 p) {
 		mix(zs_noise_hash(i + vec2(0.0, 1.0)), zs_noise_hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 
-float zs_gust_pulse_at(vec2 position, float travel) {
-	vec2 dir = zs_wind_direction;
+// Each parcel rides its own heading (zs_puff_heading_N, set by the wind tool,
+// scripts/wind_gust.gd), or the global wind when it has none. `push` is the
+// pulse as a direction: each parcel along its heading, the clap ring outward.
+float zs_gust_pulse_push(vec2 position, float travel, out vec2 push) {
 	float pulse = 0.0;
+	push = vec2(0.0);
 	vec4 parcels[6] = vec4[6](zs_puff_0, zs_puff_1, zs_puff_2, zs_puff_3, zs_puff_4, zs_puff_5);
+	vec4 headings[3] = vec4[3](zs_puff_heading_0, zs_puff_heading_1, zs_puff_heading_2);
 	for (int i = 0; i < 6; i++) {
 		vec4 parcel = parcels[i];
 		if (parcel.w <= 0.0) continue;
+		vec4 pair = headings[i / 2];
+		vec2 heading = (i % 2 == 0) ? pair.xy : pair.zw;
+		vec2 dir = dot(heading, heading) > 0.25 ? heading : zs_wind_direction;
 		float age = travel - parcel.z;
 		vec2 relative = position - (parcel.xy + dir * age);
 		float along = dot(relative, dir);
@@ -27,10 +34,24 @@ float zs_gust_pulse_at(vec2 position, float travel) {
 		float shape = exp(-(along * along * 0.02778 + across * across * 0.07716));
 		float life = smoothstep(0.0, 1.5, age) * (1.0 - smoothstep(30.0, 52.0, age));
 		pulse += parcel.w * shape * life;
+		push += dir * (parcel.w * shape * life);
 	}
-	float distance = length(position - zs_clap.xy) - zs_clap.z;
+	vec2 out_from = position - zs_clap.xy;
+	float distance = length(out_from) - zs_clap.z;
 	float ring = zs_clap.w * exp(-distance * distance * (distance > 0.0 ? 0.17361 : 0.02041));
+	push += out_from / max(length(out_from), 0.001) * ring;
 	return pulse + ring;
+}
+
+float zs_gust_pulse_at(vec2 position, float travel) {
+	vec2 push;
+	return zs_gust_pulse_push(position, travel, push);
+}
+
+vec2 zs_gust_push_at(vec2 position, float travel) {
+	vec2 push;
+	zs_gust_pulse_push(position, travel, push);
+	return push;
 }
 
 float zs_gust_parts_at(vec2 position, float travel, out float puff) {

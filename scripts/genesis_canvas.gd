@@ -7,7 +7,7 @@ extends RefCounted
 const Families = preload("res://scripts/palette_families.gd")
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 ## The creation brushes, in palette order; number keys follow it (1 land,
-## 2 water, 3 meadow, 4 forest, 5 path). This is the one list: the editor
+## 2 water, 3 meadow, 4 forest, 5 path, 6 wind). This is the one list: the editor
 ## (NativeChunkEditor holds one brush of each `script`; its "land" tool paints
 ## with whichever is in hand), the shell's number keys (studies/cozy_worlds.gd)
 ## and the palette (scripts/creation_palette.gd) all read it. Each entry:
@@ -22,6 +22,7 @@ const BRUSHES := [
 	{"brush_id":"meadow","title":"Meadow","hint":"Drag to lay a meadow  ·  Shift-drag lifts it","script":"res://scripts/meadow_brush.gd"},
 	{"brush_id":"forest","title":"Forest","hint":"Drag to grow forest  ·  Shift-drag clears","script":"res://scripts/forest_brush.gd"},
 	{"brush_id":"path","title":"Path","hint":"Drag to wear a path  ·  Shift-drag grows it back","script":"res://scripts/path_brush.gd"},
+	{"brush_id":"wind","title":"Wind","hint":"Swipe to send a gust  ·  a quick swipe blows harder  ·  Press and let go for a burst","script":"res://scripts/wind_brush.gd"},
 ]
 
 static func brush_ids() -> Array:
