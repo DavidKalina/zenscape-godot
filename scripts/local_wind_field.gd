@@ -30,7 +30,8 @@ func emit_gust(origin: Vector3, direction: Vector3, strength: float, radius: flo
 ## strength each frame with `steer`, so it has no envelope of its own and
 ## never ages out; `let_go` ends it. Returns its id, or -1. Like any gust, a
 ## ninth replaces the oldest, so `steer` returns false once it is gone. It is
-## not published here: the owner publishes once a frame, after steering.
+## never published to shaders: it is for what samples the field on the CPU
+## (leaf litter, the resident's body). Shaders take the wind tool's own air.
 func emit_steered(origin: Vector3, direction: Vector3, strength: float, radius: float) -> int:
 	if not origin.is_finite() or not direction.is_finite() or direction.length_squared() < 0.000001 or not is_finite(radius) or radius <= 0.0:
 		return -1
@@ -92,11 +93,16 @@ func advance(delta: float) -> void:
 func publish() -> void:
 	_published = true
 	RenderingServer.global_shader_parameter_set("zs_local_ambient_velocity", ambient_velocity if ambient_velocity.is_finite() else Vector3.ZERO)
+	# Steered gusts stay on the CPU (leaf litter, the resident's body): the
+	# wind tool gives shaders its own air (zs_blow_*, scripts/wind_gust.gd).
+	var shown: Array[Dictionary] = []
+	for gust: Dictionary in _gusts:
+		if not gust.get("steered", false): shown.append(gust)
 	for i in range(CAPACITY):
 		var origin := Vector4.ZERO
 		var vector := Vector4.ZERO
-		if i < _gusts.size():
-			var gust: Dictionary = _gusts[i]
+		if i < shown.size():
+			var gust: Dictionary = shown[i]
 			origin = Vector4(gust.origin.x, gust.origin.y, gust.origin.z, gust.radius)
 			vector = Vector4(gust.direction.x, gust.direction.y, gust.direction.z, gust.strength * weight_of(gust))
 		RenderingServer.global_shader_parameter_set("zs_local_gust_origin_%d" % i, origin)

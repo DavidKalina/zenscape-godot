@@ -102,7 +102,7 @@ void vertex() {
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
 		float wave = sway_frequency.z * sin(zs_motion_time * sway_frequency.x + phase)
 			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
-		float g = zs_gust_field(root);
+		float g = zs_breeze_field(root);
 		float gust = 0.22 + 1.15 * g * g;
 		// Wind is a world-space direction; asset yaw must not rotate the air.
 		vec2 lean = zs_wind_direction * zs_wind_strength * zs_wind_strength * sway_shape.z * 0.55 * bend * gust;
@@ -129,6 +129,12 @@ void vertex() {
 			VERTEX += inverse(mat3(MODEL_MATRIX)) * displacement;
 			foliage_gust = max(foliage_gust, response * bend);
 		}
+		// The wind tool (scripts/wind_gust.gd): its gusts, bursts and the
+		// blowing hand bend the plant its own way, with spring-back and
+		// sway after (zs_blow_bend).
+		float blow_shiver;
+		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y, blow_shiver);
+		foliage_gust = max(foliage_gust, blow_shiver * bend);
 
 	}
 	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =

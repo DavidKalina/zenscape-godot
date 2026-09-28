@@ -13,13 +13,15 @@ void vertex() {
 	float cycle = mod(zs_motion_time * leaf.y + leaf.z * (span + rest) * 7.0, span + rest);
 	float fall = min(cycle, span);
 	float air = 1.0 - step(span, cycle);
-	float g = zs_gust_field(home.xz);
+	float g = zs_breeze_field(home.xz);
+	float blow_shiver;
+	vec2 blow = zs_blow_at(home.xz, leaf.z * 17.0, blow_shiver);
 	float g0 = zs_gust_field_at(home.xz, zs_gust_distance - zs_gust_speed * cycle / leaf.y);
 	float hard = smoothstep(0.5, 0.85, g) * min(zs_wind_strength, 2.0);
 	float sw = sin(zs_motion_time * 2.1 + leaf.z * 37.0 + fall * 1.7);
 	float sw2 = cos(zs_motion_time * 1.3 + leaf.z * 61.0 + fall * 1.1);
 	float wob = mix(0.12 + 0.5 * hard, 1.0 + 0.5 * hard, air);
-	vec2 drift = zs_wind_direction * zs_wind_strength * (0.28 + 0.4 * g) * fall;
+	vec2 drift = zs_wind_direction * zs_wind_strength * (0.28 + 0.4 * g) * fall + blow * 0.8 * fall;
 	float lift = air * hard * 0.22 * fall / span;
 	vec3 p = vec3(home.x + drift.x + sw * 0.3 * wob, max(home.y - fall + lift, leaf.x + 0.04), home.z + drift.y + sw2 * 0.3 * wob);
 	vec3 view = (VIEW_MATRIX * vec4(p, 1.0)).xyz;

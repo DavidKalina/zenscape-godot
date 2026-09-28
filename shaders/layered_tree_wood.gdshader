@@ -24,6 +24,10 @@ uniform float roughness_value = 1.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
 uniform bool conifer_sway = false;
+// Branchwork that does not sway still bends with its crown under the wind
+// tool (zs_blow_bend), over the crown's `blow_shape` (bend from, height).
+uniform bool blow_enabled = false;
+uniform vec2 blow_shape = vec2(0.5, 6.0);
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -73,13 +77,17 @@ void vertex() {
 	if (conifer_sway) {
 		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
 	}
+	if (blow_enabled && !sway_enabled && !conifer_sway) {
+		float blow_shiver;
+		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, blow_shiver);
+	}
 	if (sway_enabled && !conifer_sway) {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
 		float wave = sway_frequency.z * sin(zs_motion_time * sway_frequency.x + phase)
 			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
-		float g = zs_gust_field(root);
+		float g = zs_breeze_field(root);
 		float gust = 0.22 + 1.15 * g * g;
 		// Wind is a world-space direction; asset yaw must not rotate the air.
 		vec2 lean = zs_wind_direction * zs_wind_strength * zs_wind_strength * sway_shape.z * 0.55 * bend * gust;
@@ -106,6 +114,12 @@ void vertex() {
 			VERTEX += inverse(mat3(MODEL_MATRIX)) * displacement;
 			foliage_gust = max(foliage_gust, response * bend);
 		}
+		// The wind tool (scripts/wind_gust.gd): its gusts, bursts and the
+		// blowing hand bend the plant its own way, with spring-back and
+		// sway after (zs_blow_bend).
+		float blow_shiver;
+		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y, blow_shiver);
+		foliage_gust = max(foliage_gust, blow_shiver * bend);
 
 	}
 	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =

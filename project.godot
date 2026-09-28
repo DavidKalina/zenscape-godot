@@ -171,6 +171,70 @@ zs_puff_heading_2={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_blow_0_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_0_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_0_c={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_1_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_1_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_1_c={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_2_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_2_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_2_c={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_3_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_3_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_blow_3_c={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_burst_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_burst_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_aim_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_aim_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_tread_0={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

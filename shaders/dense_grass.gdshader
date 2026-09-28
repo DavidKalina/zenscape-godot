@@ -220,7 +220,7 @@ void vertex() {
 		// Wind: long waves rolling downwind, bent a little by noise so the
 		// crests wander, carried by the scene's gusts; a light flutter over it.
 		float crest = zs_grass_crest(root, wave_length, wave_speed, zs_grass_offset);
-		float gust = 0.22 + 1.15 * zs_gust_field(root);
+		float gust = 0.22 + 1.15 * zs_breeze_field(root);
 		float wind = min(zs_wind_strength, 1.5);
 		float sway = (wind * wind * 0.35 + wind * wave_strength * crest) * gust;
 		float bend = blade_t * blade_t;
@@ -238,6 +238,12 @@ void vertex() {
 			motion += air.xz / air_speed * give * 0.9 * bend * blade_h;
 			wind_bow = max(wind_bow, give * 0.8);
 		}
+		// The wind tool (scripts/wind_gust.gd) lays the meadow over its own
+		// way, in a travelling front that springs back (zs_blow_at).
+		float blow_shiver;
+		vec2 blow = zs_blow_at(root, CUSTOM0.w * TAU, blow_shiver);
+		motion += (blow + vec2(-blow.y, blow.x) * blow_shiver * 0.12 * sin(zs_motion_time * 13.0 + CUSTOM0.w * 40.0)) * zs_blow_give(blade_h) * bend * blade_h;
+		wind_bow = max(wind_bow, max(length(blow), blow_shiver) * 0.8);
 		float press = 0.0;
 		if (zs_tread_0.w > 0.0) {
 			vec2 shove = zs_tread_push(root, press) * blade_h * ZS_TREAD_REACH * bend;

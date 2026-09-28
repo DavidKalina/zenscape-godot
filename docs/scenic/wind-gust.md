@@ -20,7 +20,7 @@ A lane runs between `REACH` 8 m (weakest) and 30 m (full). A swipe longer than t
 - **Anticipation.** For `WIND_UP` (0.14 s) the air draws back, up to `PULL_BACK` (0.6 m) at full power, and builds to a quarter of its strength.
 - **Launch and follow-through.** The head leaves at `LAUNCH` (1.3) times its cruising speed. `CRUISE` is 7 m/s for the weakest gust and 15 m/s for a full one; a burst's `BURST_CRUISE` is 8 to 12 m/s. The head then eases to a stop at the lane's end on a quadratic ease-out.
 - **Build and fade.** The air reaches full strength over `BUILD` (18 %) of the run and fades over `FADE` (55 % to 100 %).
-- **Settle.** For `SETTLE` (1.1 s) after the run, the ribbons thin and the leaves land.
+- **Settle.** For `SETTLE` (2.0 s) after the run, the ribbons thin, the leaves land and foliage finishes swaying back.
 - **Several at once.** Up to `MAX_GUSTS` (4) gusts fly together. A fifth sends the oldest straight to its fade.
 
 ## Travelling in the swipe's direction
@@ -42,7 +42,7 @@ The heading costs one branch and one vec4 read per parcel, inside one include.
 ## What it gives the shared air
 
 - **A lane** holds one parcel slot and steers it along the lane every frame. Its weight goes from `PUFF` 0.35 to 0.8 with power, times the build and fade. The parcel is held `PARCEL_AGE` (8 m of air travel) past its birth, so its centre is exactly at the head.
-- **A lane also steers one local gust** in the resident's `LocalWindField` (`emit_steered`, `steer`, `let_go`). The local gust rides `LOCAL_LIFT` (1.2 m) above the head, reaches `LOCAL_REACH` (1.6) half widths, and pushes along the true heading at `LOCAL` 8 to 22 m/s. This is what bends foliage, trees, conifers, meadow grass and water in the swipe's direction.
+- **A lane also steers one local gust** in the resident's `LocalWindField` (`emit_steered`, `steer`, `let_go`). The local gust rides `LOCAL_LIFT` (1.2 m) above the head, reaches `LOCAL_REACH` (1.6) half widths, and pushes along the true heading at `LOCAL` 8 to 22 m/s. Steered gusts stay on the CPU, for leaf litter and the resident's body, and are not published to shaders. Foliage and water take the wind tool's own air instead (see "Foliage" below), so nothing is pushed twice.
 - **A burst** takes the clap ring (`zs_clap`, written through `studies/lightning.gd`'s `clap`) at `BURST_CLAP` 0.5 to 0.9, and four steered local gusts that push outward on the ring.
 - **Tie-in.** `WindGust.wind_at(point)` returns the gusts' push at a plate point, in m/s, for anything that drifts on the air. Leaf litter already follows gusts, through `LocalWindField.sample_local` and `puffs.push_at`.
 
@@ -62,30 +62,48 @@ The heading costs one branch and one vec4 read per parcel, inside one include.
 - **Sound.** A looped `wind-bed.wav` on the Genesis bus, placed at the head: `VOICE_GAIN` 0.34 while a gust runs and `AIM_GAIN` 0.07 while the hand blows. Its pitch (`VOICE_PITCH` 0.85 to 1.18) follows power and head speed. There are two voices (`VOICES`).
 - **Shell.** The Lantern shell recedes while the hand blows. The terrain brush circle hides while the mark shows.
 
+## Foliage
+
+The first version bent foliage only through the steered local gust. Each asset's small sway constant scaled that gust, so a broadleaf crown moved about 0.14 m and a conifer's top about 0.2 m. The burst's clap ring only swelled the lean along the global breeze. The user found foliage barely reacted.
+
+Foliage now reads its own globals, `zs_blow_*`, published by `WindGust._publish_blow`: four lanes (`zs_blow_0..3_a/b/c`), the burst (`zs_burst_a/b`) and the blowing hand (`zs_aim_a/b`). `zs_blow_at` in `shaders/reference_wind.gdshaderinc` turns them into a horizontal lean at any point. The lean is 0 when calm and about 1 at a full gust's head, capped at `ZS_BLOW_MAX` 1.4. It comes with a shiver (0 to 1).
+
+- **Along the gust's own way.** A lane leans foliage along its heading, with a little crosswise turbulence (±15 %) riding the front. A burst leans foliage straight out from its centre. So the whole motion follows the swipe.
+- **Follow-through.** A shader has no memory, so each point works out when the head passed it. The head's ease-out, start + travel × (1 − (1 − u)²), inverts exactly. From that moment the point plays a damped swing, `zs_blow_swing`: it rises over the 0.3 s before the head arrives and peaks as the head passes. It then swings back past rest by about 30 % at 0.57 s (`ZS_BLOW_RING` 5.5 rad/s, `ZS_BLOW_DAMP` 2.2 /s) and sways out over about 1.5 s. The shiver, a quick flutter across the lean, rises with the front and dies over about 1 s.
+- **Anticipation.** During the gust's 0.14 s wind-up, foliage near the lane's start leans back toward the hand, up to 0.25.
+- **Strength.** The lean at the head is `BLOW_LEAN` 0.45 to 1.0 with power, and a burst's is `BURST_LEAN` 0.55 to 1.15. Each is scaled by the run's build and fade at the moment the head passed. A settling gust keeps its lean until its sway has died away (`_linger`).
+- **The blowing hand.** The air moves before release:
+  - **Holding still:** pressure builds round the press, from `HOLD_LEAN` 0.2 to 0.8 over `HOLD_BUILD` 1.6 s. It leans foliage out from the press, swirling round it at about 30°, with a tremble, out to the ring the burst will reach.
+  - **Dragging:** the forming lane parts to either side and leans along the drag, most near the hand. The strength is `DRAG_LEAN` 0.35 to 0.75 with the swipe's power, building over the first `DRAG_BUILD` 3 m.
+  - **Handover:** after release the hand's air dies away over `HAND_FADE` (0.4 s for a lane, 0.6 s for a burst) while the gust takes over.
+- **How plants bend.** `zs_blow_bend` bends a plant above its bend point as a cantilever: tip offset = lean × `zs_blow_give(height)` × height × (h / height)², keeping its length. `zs_blow_give` is 1.0 for plants up to 0.5 m and 0.3 for plants 3 m and taller. Small plants lie over; tall trees lean.
+  - Full lean on a 0.35 m tuft moves its tip 0.35 m, about 45°.
+  - It moves a broadleaf crown's top (2.4 m, bending from 0.4 m) 0.8 m.
+  - It moves a 7 m conifer's top 2.1 m.
+- **Where it is wired:**
+  - `reference_surface` sway: grass tufts, flowers, shrubs, reeds, bank grass, fern, broadleaf canopies;
+  - `conifer_wind.gdshaderinc`: hero spruces, emerged trunk and canopy, birch, willow, juniper, redwood, joshua. It bends trunk and crown together, with a shiver in the rims;
+  - `layered_canopy_surface` and `layered_tree_wood`: layered trees;
+  - `dense_grass`: laid over in a travelling front;
+  - `reference_leaves`: falling leaves drift with the lean;
+  - `zs_water_gust`: water ripples, at 9 m/s per unit of lean.
+- **Trunks follow crowns.** A trunk that does not sway (`broadleaf:mesh-11`, the layered trunks) would stay put while its crown bent. It now bends with its crown's shape (`blow_enabled`, `blow_shape`), paired in `scripts/garden_view.gd` and `scripts/layered_tree.gd`, so a strong gust never pulls them apart.
+- **The steady breeze is unchanged.** Foliage's lean along the global wind now reads `zs_breeze_field`, which is `zs_gust_field` without the wind tool's parcels and without the clap ring while a burst owns it. With no wind-tool air about, the two are identical, and `zs_blow_at` returns 0 with a few comparisons.
+- **CPU mirror.** `WindGust.blow_at` is `zs_blow_at` in GDScript, fed from the same published values. The probe reads foliage through it. Keep it in step with the shader.
+
 ## Lasting wind
 
 This is an open option and is off by default. With `--gust-nudges`, `nudge` (0.25) of a lane's power turns the atmosphere's `direction_angle` toward the gust's heading and adds up to 0.05 to its `strength`. These are the steady breeze's dials, so the change is saved with the place, and living weather may move them on later. In the probe's "nudge" gesture, a 0.93-power gust turned the breeze 12.9° in one run and 37.3° in another; each run seeds a different breeze.
 
 ## What answers on the Genesis plain
 
-- **True direction (local gust):**
-  - hero trees and emerged trees (`reference_surface` `conifer_sway`, `sway_enabled`);
-  - redwoods and layered trees;
-  - meadow grass tufts (`grass_blades`);
-  - the dense meadow (`shaders/dense_grass.gdshader`), which gained a small local-wind term on this branch. It is off on the plain unless `--beauty-grass` is given;
-  - water (`inland_water` normals through `zs_water_gust`);
-  - waterfall spray and falls;
-  - leaf litter.
-- **Pulse, now along the heading:**
-  - fog parting (`reference_air_sample`, `living_fog`);
-  - display mist;
-  - the gust field that makes grass and trees heave and shiver;
-  - falling leaves.
+- **Bends along the gust's own way (`zs_blow_at`):** every tree, shrub, grass, flower, reed and fern kind listed under "Foliage"; falling leaves; water.
+- **Carried on the CPU:** leaf litter, through the steered local gust and `puffs.push_at`.
+- **Pulse, along the heading:** fog parting (`reference_air_sample`, `living_fog`) and display mist.
 - **Does not answer:**
   - The painted ground itself is static. The decal's passing band stands in for it.
   - Clouds and peak clouds ignore gusts.
   - The resident's `CreatureWindBody` will be pushed if it is visible, because it samples the same `LocalWindField`.
-- **Direction caveat.** In `reference_surface` and `dense_grass`, the pulse-driven lean still bends along the global breeze. The local gust adds the swipe's direction on top, and at a gust's strength it dominates.
 
 ## The probe
 
@@ -102,7 +120,26 @@ This is an open option and is off by default. With `--gust-nudges`, `nudge` (0.2
 
 - Each sent gust equals its promise at release.
 - A volley of five swipes 0.12 s apart took parcel slots 0 to 4, with no two gusts sharing a slot. All five were given back within 3 s. A second volley took slots 0 to 2 again. After every gesture: no slots held, no steered local gusts, and a clap weight of 0.
-- **Cost.** WindGust's own work was 0.1 to 0.15 ms median per frame for one gust. With five gusts and 64 motes it was 0.3 to 0.4 ms median and 0.58 ms at worst. A release cost 0.9 to 2.2 ms: 0.7 to 1.4 ms sampling the ground grid, and 0.3 to 1.0 ms building ribbons. Main-loop frames were 8.3 ms median and at most 10 ms throughout. These are CPU numbers only. The dummy renderer does not draw.
+- **Cost.** WindGust's own work, including publishing `zs_blow_*`, was 0.1 to 0.2 ms median per frame for one gust. With five gusts and 64 motes it was 0.34 to 0.59 ms median across four runs, with p95 at most 0.91 ms. A later volley of three ran 0.25 to 0.47 ms median. The first gust of a session can cost one frame about 7 ms while its nodes and materials are made (seen once, in a cold run of the volley alone). A release cost 0.9 to 2.2 ms: 0.7 to 1.4 ms sampling the ground grid, and 0.3 to 1.0 ms building ribbons. Main-loop frames were 8.3 ms median and at most 10 ms throughout. These are CPU numbers only. The dummy renderer does not draw.
+
+### Foliage, before and after
+
+Foliage figures come from the `FOLIAGE` lines: the tip movement of a broadleaf crown, a 7 m conifer and a 0.35 m tuft. "Old" is the first wind tool (the steered local gust through each asset's sway constant). "Lean" is along the way the air goes, so a negative value is the swing back.
+
+| gesture, point | lean peak | swings back | still moving until | crown / conifer / tuft, new | old |
+|---|---|---|---|---|---|
+| hold 1.5 s, 1.5 m out | 0.76 (18° swirl) | | while held | 0.64 / 1.67 / 0.28 m | 0 |
+| hold 1.5 s, 4 m out | 0.80 (30° swirl) | | while held | 0.74 / 1.95 / 0.32 m | 0 |
+| burst (power 1), 3 m out | 1.14 at 0.32 s | -0.30 (26 %) | 1.64 s | 0.93 / 2.44 / 0.41 m | 0.09 / 0.14 / 0.06 m |
+| burst, 6 m out | 1.09 at 0.57 s | -0.35 (33 %) | 1.9 s | 0.87 / 2.28 / 0.38 m | 0.02 / 0.02 / 0.01 m |
+| burst, 14 m out (past the ring) | 0 | | | 0 | 0 |
+| swipe (0.92), 10 m along | 0.90 at 0.97 s, 2.7° off heading | -0.29 (33 %) | 2.27 s | 0.73 / 1.90 / 0.32 m | 0.14 / 0.22 / 0.10 m |
+| swipe, 16 m along | 0.90 at 1.49 s | -0.29 | 2.8 s | 0.73 / 1.91 / 0.32 m | 0.14 / 0.22 / 0.10 m |
+| swipe, 6 m to the side (outside) | 0 | | | 0 | 0 |
+| slow drag (0.28), 1.2 m left and right of the line | 0.20 / 0.26 outward | | while dragging | 0.28 / 0.74 / 0.12 m | 0 |
+
+- **Hold build-up.** The pressure grows the longer the hand holds: 1.5 m out, the lean along the outward way is 0.15, 0.37 and 0.47 at 0, 0.5 and 1.0 s. Swirl and tremble make it waver around that.
+- **Size of the change.** The new tip movement is 5 to 10 times the old in a lane's path, and 10 to 90 times the old for a burst.
 
 ## Unverified
 
@@ -111,9 +148,13 @@ The probe only checks CPU state. Nothing below has been seen rendered:
 - how the lane mark, arrow tip, chevrons and ring read on bright and dark ground, by day and at night, and the flat-ground mask on slopes;
 - the passing band (dappled shade, sheen, ripples), and whether it reads as air on the painted plain;
 - the ribbons' window, width and flow, and the leaves' size, colours and tumble;
-- trees, meadow grass and dense grass bending in the swipe's direction against the breeze's lean, and the water's ripples following the heading;
+- how the new foliage bend reads on screen: its size (a 7 m conifer's top moving 2 m), the swing back, the shiver, the swirl while holding and the parting while dragging;
+- whether any crown and trunk still part: the broadleaf and layered trunks now follow their crowns, but the other pairs are conifer-swayed, and no pair has been looked at;
+- whether 0.35 m blades lying over by 45° look right, and the dense meadow front;
+- water ripples driven by the lean;
+- shader cost: `zs_blow_at` loops over four lanes for every foliage vertex. It returns early when a lane is idle, and with no wind-tool air it is a few comparisons, but the GPU cost with five gusts is unmeasured, because headless has no GPU timing;
 - the fog parting along the lane, and the clap ring on the fog and water;
-- the dense-grass local-wind term, including its effect under the resident's own gusts;
+- the dense-grass local-wind term (the resident's gusts only, now);
 - the wind voice's level against the Genesis beds.
 
 Water answering the clap ring changed on this branch: the ring now pushes water outward, where it used to push along the global wind. Lightning downbursts are affected too.

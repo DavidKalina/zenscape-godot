@@ -16,6 +16,16 @@ extends SceneTree
 ## against the swipe's and against the global wind, and the local gust's
 ## direction. Cost: WindGust's own time per frame (`last_usec`) and on
 ## release (`send_usec`), and main-loop frame gaps (dummy renderer, CPU only).
+## Foliage ("foliage burst", "foliage swipe", "foliage drag"): what the
+## shaders' zs_blow_at gives plants at sample points over time, read through
+## its CPU mirror (WindGust `blow_at`) from the published zs_blow_*: the lean
+## along the way the air goes (out from a burst, along a lane), how far it
+## swings back past rest (the overshoot), when it has settled, and the tip
+## movement that makes for a broadleaf crown (bends from 0.4 m, 2.4 m tall),
+## a 7 m hero conifer and a 0.35 m grass tuft. "old" is what the first wind
+## tool gave the same plants, from the steered local gust alone (reference_
+## surface's flexibility * 3 * speed / (speed + 10), conifer_wind's
+## local / (10 + speed) * 0.32); the hand's air had none.
 ##   godot --headless --path . --script tools/probe_wind_gust.gd [-- --only=fast,burst]
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -64,7 +74,7 @@ func degrees(a: Vector2, b: Vector2) -> float:
 
 ## Press at `from`, drag to `to` over `seconds`, let go; or hold still for
 ## `seconds` when `to` is null. Returns the promise at release and the gust.
-func blow(from: Vector2, to: Variant, seconds: float) -> Dictionary:
+func blow(from: Vector2, to: Variant, seconds: float, watch := Callable()) -> Dictionary:
 	var point := screen_of(from)
 	editor.pointer_override = point
 	mouse(point,true)
@@ -78,6 +88,7 @@ func blow(from: Vector2, to: Variant, seconds: float) -> Dictionary:
 			point = screen_of(from.lerp(to,clampf(elapsed/seconds,0.0,1.0)))
 			editor.pointer_override = point
 		await frame()
+		if watch.is_valid(): watch.call(elapsed)
 	var promised: Dictionary = gust.promise()
 	var count: int = gust.gusts.size()
 	mouse(point,false)
@@ -163,6 +174,119 @@ func gust_land() -> Array:
 		high = high.max(point)
 	return [round2(low),round2(high)]
 
+## Plants the foliage readout moves: bend from, height (m).
+const PLANTS := {"canopy":[0.4,2.4],"conifer":[0.0,7.0],"grass":[0.0,0.35]}
+const OLD_FLEX := {"canopy":0.07,"grass":0.05}
+
+func world_of(p: Vector2) -> Vector3:
+	var data := editor.data
+	return editor.terrain.to_global(Vector3(p.x,float(data.sample(p,data.heights)),p.y))
+
+## One reading of every point: [label, plate point, plate way (the way the
+## air should push there; ZERO: out from `center`)].
+func read_foliage(points: Array, t: float, rows: Dictionary, center := Vector2.ZERO) -> void:
+	var clock_now := float(scene.get("_motion_time"))
+	for spec: Array in points:
+		var label: String = spec[0]
+		var p: Vector2 = spec[1]
+		var way: Vector2 = spec[2] if spec[2] != Vector2.ZERO else (p-center).normalized()
+		var world := world_of(p)
+		var world_way := editor.terrain.global_basis*Vector3(way.x,0,way.y)
+		var ref := Vector2(world_way.x,world_way.z).normalized()
+		var reading: Vector3 = gust.blow_at(Vector2(world.x,world.z),clock_now)
+		var lean := Vector2(reading.x,reading.y)
+		var along := lean.dot(ref)
+		var local: Vector3 = gust.field.sample_local(world+Vector3.UP*1.5)
+		var speed := local.length()
+		var row: Dictionary = rows.get(label,{})
+		if row.is_empty():
+			row = {"peak":0.0,"t_peak":0.0,"back":0.0,"t_back":0.0,"shiver":0.0,"angle_at_peak":0.0,"last_moving":0.0,"series":[],"new_m":{},"old_m":{}}
+			for plant: String in PLANTS:
+				row.new_m[plant] = 0.0
+				row.old_m[plant] = 0.0
+			rows[label] = row
+		if along > row.peak:
+			row.peak = along
+			row.t_peak = t
+			row.angle_at_peak = rad_to_deg(absf(lean.angle_to(ref))) if lean.length() > 0.001 else 0.0
+		if along < row.back and row.peak > 0.05:
+			row.back = along
+			row.t_back = t
+		row.shiver = maxf(row.shiver,reading.z)
+		if lean.length() > 0.03: row.last_moving = t
+		for plant: String in PLANTS:
+			var shape: Array = PLANTS[plant]
+			row.new_m[plant] = maxf(row.new_m[plant],lean.length()*gust.give(shape[1])*(shape[1]-shape[0]))
+			var old := 0.0
+			if plant == "conifer": old = Vector2(local.x,local.z).length()/(10.0+speed)*0.32
+			else: old = OLD_FLEX[plant]*3.0*speed/(speed+10.0)
+			row.old_m[plant] = maxf(row.old_m[plant],old)
+		var series: Array = row.series
+		if series.is_empty() or t-float(series.back()[0]) >= 0.1-0.0001:
+			series.append([snappedf(t,0.01),snappedf(along,0.01),snappedf(reading.z,0.01)])
+
+func foliage_report(rows: Dictionary) -> Dictionary:
+	var out := {}
+	for label: String in rows:
+		var row: Dictionary = rows[label]
+		var new_m := {}
+		var old_m := {}
+		for plant: String in PLANTS:
+			new_m[plant] = snappedf(row.new_m[plant],0.01)
+			old_m[plant] = snappedf(row.old_m[plant],0.01)
+		out[label] = {"lean_peak":snappedf(row.peak,0.01),"at_s":snappedf(row.t_peak,0.01),"angle_at_peak_deg":snappedf(row.angle_at_peak,0.1),
+			"swings_back":snappedf(row.back,0.01),"back_at_s":snappedf(row.t_back,0.01),"overshoot":snappedf(-row.back/maxf(row.peak,0.001),0.01),
+			"shiver_max":snappedf(row.shiver,0.01),"moving_until_s":snappedf(row.last_moving,0.01),"tip_m_new":new_m,"tip_m_old":old_m,
+			"series":row.series.filter(func(entry: Array) -> bool: return int(round(entry[0]*10.0))%3 == 0)}
+	return out
+
+## Watch the points until every gust has settled.
+func watch_foliage(points: Array, rows: Dictionary, began: int, center := Vector2.ZERO) -> void:
+	while not gust.gusts.is_empty():
+		await frame()
+		read_foliage(points,(Time.get_ticks_usec()-began)/1000000.0,rows,center)
+
+func foliage_gestures() -> void:
+	# A burst: held still 1.5 s (the pressure builds), then let go.
+	var center := Vector2(-2.0,1.0)
+	var hold_points := [["held, 1.5 m out",center+Vector2(1.5,0.0),Vector2.ZERO],["held, 4 m out",center+Vector2(0.0,4.0),Vector2.ZERO],["held, 10 m out",center+Vector2(-10.0,0.0),Vector2.ZERO]]
+	var hold_rows := {}
+	var began := Time.get_ticks_usec()
+	var blown := await blow(center,null,1.5,func(elapsed: float) -> void: read_foliage(hold_points,elapsed,hold_rows,center))
+	var burst_points := [["3 m out",center+Vector2(3.0,0.0),Vector2.ZERO],["6 m out",center+Vector2(0.0,-6.0),Vector2.ZERO],["9 m out",center+Vector2(-6.4,6.4),Vector2.ZERO],["14 m out (past the ring)",center+Vector2(9.9,9.9),Vector2.ZERO]]
+	var burst_rows := {}
+	var released := Time.get_ticks_usec()
+	await watch_foliage(burst_points,burst_rows,released,center)
+	var hold_series := {}
+	for label: String in hold_rows:
+		hold_series[label] = hold_rows[label].series.filter(func(entry: Array) -> bool: return int(round(entry[0]*10.0))%5 == 0)
+	print("FOLIAGE ",JSON.stringify({"gesture":"foliage burst","held_s":1.5,"reach":snappedf(float(blown.gust.reach),0.01),"power":snappedf(float(blown.gust.power),0.01),
+		"while_held":foliage_report(hold_rows),"held_over_time":hold_series,"after_release":foliage_report(burst_rows)}))
+	# A fast swipe: foliage along the lane and beside it.
+	var from := Vector2(-8.0,-5.0)
+	var to := Vector2(-2.0,-5.0)
+	var heading := (to-from).normalized()
+	var side := Vector2(-heading.y,heading.x)
+	var swipe_points := [["4 m along",from+heading*4.0,heading],["10 m along",from+heading*10.0,heading],["16 m along",from+heading*16.0,heading],
+		["10 m along, 2 m aside",from+heading*10.0+side*2.0,heading],["10 m along, 6 m aside (outside)",from+heading*10.0+side*6.0,heading]]
+	var swipe_rows := {}
+	began = Time.get_ticks_usec()
+	blown = await blow(from,to,0.15,func(elapsed: float) -> void: read_foliage(swipe_points,elapsed,swipe_rows))
+	await watch_foliage(swipe_points,swipe_rows,began)
+	print("FOLIAGE ",JSON.stringify({"gesture":"foliage swipe","reach":snappedf(float(blown.gust.reach),0.01),"power":snappedf(float(blown.gust.power),0.01),"lanes":foliage_report(swipe_rows)}))
+	# A slow drag: the forming lane parts under the hand before release.
+	from = Vector2(4.0,-6.0)
+	to = Vector2(4.0,2.0)
+	heading = (to-from).normalized()
+	side = Vector2(-heading.y,heading.x)
+	var drag_points := [["2 m along, 1.2 m left",from+heading*2.0+side*1.2,side],["2 m along, 1.2 m right",from+heading*2.0-side*1.2,-side],["6 m along, centre",from+heading*6.0,heading]]
+	var drag_rows := {}
+	blown = await blow(from,to,1.6,func(elapsed: float) -> void: read_foliage(drag_points,elapsed,drag_rows))
+	var dragging := foliage_report(drag_rows)
+	var after_rows := {}
+	await watch_foliage(drag_points,after_rows,Time.get_ticks_usec())
+	print("FOLIAGE ",JSON.stringify({"gesture":"foliage drag","drag_s":1.6,"power":snappedf(float(blown.gust.power),0.01),"while_dragging":dragging,"after_release":foliage_report(after_rows)}))
+
 func air_state() -> Dictionary:
 	var air: Node = scene._atmosphere
 	var held := 0
@@ -202,6 +326,16 @@ func run() -> void:
 		" resident field ",scene.get("_resident_wind") != null)
 	await create_timer(0.5).timeout
 	print("land ",editor.data.points.size()," points, lane bounds ",gust_land())
+	# Foliage wiring: which emerged-plant materials bend under the wind tool.
+	var wiring := {"conifer_sway":[],"sway_enabled":[],"trunk_follows_crown":[]}
+	var materials: Dictionary = editor.content._materials
+	for key: String in materials:
+		var material := materials[key] as ShaderMaterial
+		if material == null: continue
+		if material.get_shader_parameter("conifer_sway") == true: wiring.conifer_sway.append(key)
+		elif material.get_shader_parameter("sway_enabled") == true: wiring.sway_enabled.append(key)
+		elif material.get_shader_parameter("blow_enabled") == true: wiring.trunk_follows_crown.append(key)
+	print("WIRING ",JSON.stringify(wiring))
 	# Fast: a quick 6 m flick, toward -x+z. Slow: 4 m over 1.2 s, toward +z.
 	for spec: Array in [["fast",Vector2(4.0,-3.0),Vector2(-1.2,0.0),0.15],["slow",Vector2(-5.0,-4.0),Vector2(-5.0,0.0),1.2],["burst",Vector2(1.0,2.0),null,0.8]]:
 		if not only.is_empty() and spec[0] not in only: continue
@@ -225,6 +359,8 @@ func run() -> void:
 		report["frame_ms"] = stats(frames)
 		report["after"] = air_state()
 		print("GUST ",JSON.stringify(report))
+	if only.is_empty() or "foliage" in only:
+		await foliage_gestures()
 	if only.is_empty() or "nudge" in only:
 		# Lasting wind, the open option: a strong gust turns the breeze.
 		var air: Node = scene._atmosphere

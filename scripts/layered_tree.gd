@@ -63,6 +63,9 @@ func _ready() -> void:
 	material.set_shader_parameter("plant_growth",true)
 	material.set_shader_parameter("palette_role",4)
 	material.set_shader_parameter("tactile",1.0)
+	# The branchwork bends with the crown under the wind tool (zs_blow_bend).
+	material.set_shader_parameter("blow_enabled",true)
+	material.set_shader_parameter("blow_shape",Vector2(0.5,6.0))
 	trunk.material_override = material
 	add_child(trunk)
 

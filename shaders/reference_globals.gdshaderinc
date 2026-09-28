@@ -34,6 +34,28 @@ global uniform vec4 zs_puff_5;
 global uniform vec4 zs_puff_heading_0;
 global uniform vec4 zs_puff_heading_1;
 global uniform vec4 zs_puff_heading_2;
+// The wind tool's own air for foliage (scripts/wind_gust.gd `_publish_blow`,
+// read by zs_blow_at). Lanes N=0..3: a (origin x, z, heading x, z), b (s since
+// release, run s, head's start m, its travel m), c (lean at the head, half
+// width m, reach m, 0). Burst: a (centre x, z, s since release, lean), b (run,
+// start, travel, reach). The blowing hand: a (origin x, z, heading x, z), b
+// (reach or swept m, strength, half width, mode 0 none, 1 holding, 2 dragging).
+global uniform vec4 zs_blow_0_a;
+global uniform vec4 zs_blow_0_b;
+global uniform vec4 zs_blow_0_c;
+global uniform vec4 zs_blow_1_a;
+global uniform vec4 zs_blow_1_b;
+global uniform vec4 zs_blow_1_c;
+global uniform vec4 zs_blow_2_a;
+global uniform vec4 zs_blow_2_b;
+global uniform vec4 zs_blow_2_c;
+global uniform vec4 zs_blow_3_a;
+global uniform vec4 zs_blow_3_b;
+global uniform vec4 zs_blow_3_c;
+global uniform vec4 zs_burst_a;
+global uniform vec4 zs_burst_b;
+global uniform vec4 zs_aim_a;
+global uniform vec4 zs_aim_b;
 global uniform vec4 zs_tread_0;
 global uniform vec4 zs_tread_1;
 global uniform vec4 zs_tread_2;

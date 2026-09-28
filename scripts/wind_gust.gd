@@ -63,8 +63,9 @@ const PULL_BACK := 0.6
 const LAUNCH := 1.3
 const BUILD := 0.18
 const FADE := Vector2(0.55,1.0)
-## Seconds after the run for ribbons to thin and leaves to land.
-const SETTLE := 1.1
+## Seconds after the run for ribbons to thin, leaves to land and foliage to
+## finish swaying back (its follow-through is about 1.5 s).
+const SETTLE := 2.0
 ## Gusts in flight at once; one more hastens the oldest to its fade.
 const MAX_GUSTS := 4
 
@@ -120,6 +121,32 @@ const CARRY_DAMP := 7.5
 ## m/s a mote falls once the air has left it.
 const MOTE_FALL := 0.9
 
+# --- Foliage (zs_blow_*, read by zs_blow_at in reference_wind.gdshaderinc) ---
+## Lean at a gust's head, weakest and full. A lean of 1 bends a plant's tip
+## over by zs_blow_give(height) of its height: grass lies over about 45
+## degrees, a 7 m tree's top moves about 2 m.
+const BLOW_LEAN := Vector2(0.45,1.0)
+## A burst's lean, weakest and full.
+const BURST_LEAN := Vector2(0.55,1.15)
+## The blowing hand. Held still, the pressure round the press leans foliage
+## out from HOLD_LEAN.x to .y over HOLD_BUILD s. Dragging, the forming lane
+## parts at DRAG_LEAN (weakest and full power), building over the first
+## DRAG_BUILD m. After release the hand's air dies away over HAND_FADE s while
+## the gust takes over.
+const HOLD_LEAN := Vector2(0.2,0.8)
+const HOLD_BUILD := 1.6
+const DRAG_LEAN := Vector2(0.35,0.75)
+const DRAG_BUILD := 3.0
+const HAND_FADE := 0.4
+## Lanes the shaders read at once (zs_blow_0..3).
+const BLOW_LANES := 4
+const BLOW_GLOBALS: Array[StringName] = [&"zs_blow_0_a",&"zs_blow_0_b",&"zs_blow_0_c",&"zs_blow_1_a",&"zs_blow_1_b",&"zs_blow_1_c",
+	&"zs_blow_2_a",&"zs_blow_2_b",&"zs_blow_2_c",&"zs_blow_3_a",&"zs_blow_3_b",&"zs_blow_3_c",&"zs_burst_a",&"zs_burst_b",&"zs_aim_a",&"zs_aim_b"]
+## The shader's side of the swing (reference_wind.gdshaderinc), for `blow_at`.
+const SWING_RING := 5.5
+const SWING_DAMP := 2.2
+const BLOW_MAX := 1.4
+
 # --- Sound --------------------------------------------------------------------
 ## A looped wind bed (assets/audio/wind-bed.wav) on the Genesis bus: its gain
 ## while a gust runs and while the hand blows, and pitch at weakest and full.
@@ -166,6 +193,16 @@ var _voices: Array[AudioStreamPlayer3D] = []
 var _voice_gain := PackedFloat32Array()
 var _voice_goal := PackedFloat32Array()
 var _clap_owner: Dictionary = {}
+## Gusts in the shaders' lanes, and the burst they read.
+var _lanes: Array = [null,null,null,null]
+var _burst: Dictionary = {}
+## The hand's air as published (zs_aim_a, zs_aim_b), and seconds it has
+## been dying away since release (-1 while the hand blows).
+var _hand_a := Vector4.ZERO
+var _hand_b := Vector4.ZERO
+var _hand_fade := -1.0
+## What zs_blow_* hold now, in BLOW_GLOBALS order.
+var blow := PackedVector4Array()
 var _rng := RandomNumberGenerator.new()
 const LEAF_COLORS := [Color("8fb35a"),Color("a9b957"),Color("c7b35c"),Color("6f9a4c"),Color("b98f4a")]
 const MOTE_COLOR := Color("ece6d2")
@@ -289,6 +326,8 @@ func release() -> Dictionary:
 	var ribbon_usec := Time.get_ticks_usec()
 	_claim_air(g)
 	var air_usec := Time.get_ticks_usec()
+	_take_lane(g)
+	_hand_fade = 0.0
 	for mote: Dictionary in _motes:
 		if mote.gust == null and mote.state == "gather": _board(mote,g)
 	g.cost_usec = {"promise":mark_usec-began,"ground":ground_usec-mark_usec,"ribbons":ribbon_usec-ground_usec,"air":air_usec-ribbon_usec,"motes":Time.get_ticks_usec()-air_usec}
@@ -305,6 +344,7 @@ func release() -> Dictionary:
 func cancel() -> void:
 	if not aiming(): return
 	_aim = {}
+	_hand_fade = 0.0
 	_give_mark(_aim_mark)
 	_aim_mark = null
 	for mote: Dictionary in _motes:
@@ -352,15 +392,12 @@ func _process(delta: float) -> void:
 			gusts.remove_at(i)
 	_step_motes(delta)
 	_step_voices(delta)
+	if _hand_fade >= 0.0: _hand_fade += delta
+	_publish_blow()
 	if not gusts.is_empty() and atmosphere != null and atmosphere.get("puffs") != null: atmosphere.puffs.publish()
-	if field != null and _steering(): field.publish()
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
-func _steering() -> bool:
-	for g: Dictionary in gusts:
-		if not g.local.is_empty(): return true
-	return false
 
 func _step_aim(delta: float) -> void:
 	_aim.held = float(_aim.held)+delta
@@ -379,6 +416,7 @@ func _step_aim(delta: float) -> void:
 		var rate := POWER_RISE if target > _aim.power else POWER_FALL
 		_aim.power = lerpf(_aim.power,target,1.0-exp(-rate*delta))
 	var plan := promise()
+	_hold_hand(plan)
 	_paint(_aim_mark,plan,1.0,-1000.0,0.0,0.0,_aim_span(plan))
 	var voice: int = _aim.voice
 	_voice_goal[voice] = AIM_GAIN*(float(plan.power) if plan.kind == "lane" else 0.4+0.6*smoothstep(0.0,BURST_GATHER,float(_aim.held)))
@@ -487,6 +525,9 @@ func _set_clap(clap: Vector4) -> void:
 
 func _retire(g: Dictionary) -> void:
 	_release_air(g)
+	for i in range(BLOW_LANES):
+		if is_same(_lanes[i],g): _lanes[i] = null
+	if is_same(_burst,g): _burst = {}
 	g.done = true
 	_give_mark(g.mark)
 	if is_instance_valid(g.get("ribbons")): g.ribbons.queue_free()
@@ -500,6 +541,152 @@ func _nudge(g: Dictionary) -> void:
 	var share := nudge*float(g.power)
 	atmosphere.direction_angle = rad_to_deg(lerp_angle(deg_to_rad(atmosphere.direction_angle),atan2(way.z,way.x),share))
 	atmosphere.strength = minf(float(atmosphere.strength)+share*0.2,1.4)
+
+# --- Foliage -------------------------------------------------------------------
+
+## A lane takes one of the shaders' BLOW_LANES, the oldest's if all are
+## taken; a burst becomes the one they read.
+func _take_lane(g: Dictionary) -> void:
+	if g.kind == "burst":
+		_burst = g
+		return
+	var pick := _lanes.find(null)
+	if pick < 0:
+		pick = 0
+		for i in range(BLOW_LANES):
+			if float(_lanes[i].t) > float(_lanes[pick].t): pick = i
+	_lanes[pick] = g
+
+## The blowing hand's air while the button is down: held still, pressure
+## round the press; dragging, the forming lane.
+func _hold_hand(plan: Dictionary) -> void:
+	var scale := _world_scale()
+	var origin := _world(Vector3(plan.origin.x,0.0,plan.origin.y))
+	_hand_fade = -1.0
+	if plan.kind == "burst":
+		var pressure := lerpf(HOLD_LEAN.x,HOLD_LEAN.y,smoothstep(0.0,HOLD_BUILD,float(_aim.held)))
+		_hand_a = Vector4(origin.x,origin.z,0.0,0.0)
+		_hand_b = Vector4(float(plan.reach)*scale,pressure,float(plan.half)*scale,1.0)
+	else:
+		var way := _world_way(plan.heading)
+		var swept := maxf((Vector2(_aim.pointer)-Vector2(plan.origin)).dot(plan.heading),0.0)
+		var strength := lerpf(DRAG_LEAN.x,DRAG_LEAN.y,float(plan.power))*smoothstep(0.0,DRAG_BUILD,swept)
+		_hand_a = Vector4(origin.x,origin.z,way.x,way.z)
+		_hand_b = Vector4(swept*scale,strength,float(plan.half)*scale,2.0)
+
+## A gust's share of its foliage lean while it settles: all of it until the
+## last of its sway has died away.
+func _linger(g: Dictionary) -> float:
+	var settle := clampf((float(g.t)-WIND_UP-float(g.run))/SETTLE,0.0,1.0)
+	return 1.0-smoothstep(0.6,1.0,settle)
+
+## Publish zs_blow_*: the lanes, the burst and the hand (only what changed).
+func _publish_blow() -> void:
+	var scale := _world_scale()
+	var values := PackedVector4Array()
+	values.resize(BLOW_GLOBALS.size())
+	for i in range(BLOW_LANES):
+		var g: Variant = _lanes[i]
+		if g == null: continue
+		var origin := _world(Vector3(g.origin.x,0.0,g.origin.y))
+		var way := _world_way(g.heading)
+		var from := -PULL_BACK*float(g.power)
+		values[i*3] = Vector4(origin.x,origin.z,way.x,way.z)
+		values[i*3+1] = Vector4(float(g.t),float(g.run),from*scale,(float(g.reach)-from)*scale)
+		values[i*3+2] = Vector4(lerpf(BLOW_LEAN.x,BLOW_LEAN.y,float(g.power))*_linger(g),float(g.half)*scale,float(g.reach)*scale,0.0)
+	if not _burst.is_empty():
+		var g := _burst
+		var center := _world(Vector3(g.origin.x,0.0,g.origin.y))
+		var from := RING_START-PULL_BACK*float(g.power)
+		values[12] = Vector4(center.x,center.z,float(g.t),lerpf(BURST_LEAN.x,BURST_LEAN.y,float(g.power))*_linger(g))
+		values[13] = Vector4(float(g.run),from*scale,(float(g.reach)-from)*scale,float(g.reach)*scale)
+	var hand := _hand_b
+	if _hand_fade >= 0.0:
+		hand.y *= 1.0-smoothstep(0.0,HAND_FADE*(1.5 if hand.w < 1.5 else 1.0),_hand_fade)
+		if hand.y <= 0.0: hand = Vector4.ZERO
+	values[14] = _hand_a if hand.w > 0.0 else Vector4.ZERO
+	values[15] = hand
+	if blow.size() != values.size():
+		blow.resize(values.size())
+		for i in range(values.size()): blow[i] = Vector4(1,1,1,1)
+	for i in range(values.size()):
+		if values[i] != blow[i]:
+			blow[i] = values[i]
+			RenderingServer.global_shader_parameter_set(BLOW_GLOBALS[i],values[i])
+
+## The shaders' zs_blow_at on the CPU, from what is published: the lean
+## (x, z) and shiver at a world x, z. `motion_time` is zs_motion_time. Keep in
+## step with reference_wind.gdshaderinc; probes read foliage from it.
+func blow_at(p: Vector2, motion_time := 0.0, phase := 0.0) -> Vector3:
+	var lean := Vector2.ZERO
+	var shiver := 0.0
+	if blow.size() != BLOW_GLOBALS.size(): return Vector3.ZERO
+	for i in range(BLOW_LANES):
+		var a := blow[i*3]
+		var b := blow[i*3+1]
+		var c := blow[i*3+2]
+		if c.x <= 0.0: continue
+		var h := Vector2(a.z,a.w)
+		var side := Vector2(-h.y,h.x)
+		var rel := p-Vector2(a.x,a.y)
+		var across := rel.dot(side)
+		var lateral := 1.0-smoothstep(0.75*c.y,1.35*c.y,absf(across))
+		if lateral <= 0.0: continue
+		var along := rel.dot(h)
+		var front := _front(along,b,c.z)
+		var swirl := sin(along*1.3-b.x*8.0+phase)*0.15
+		lean += (h+side*swirl)*front.x*c.x*lateral
+		shiver = maxf(shiver,front.y*c.x*lateral)
+	var burst_a := blow[12]
+	if burst_a.w > 0.0:
+		var burst_b := blow[13]
+		var rel := p-Vector2(burst_a.x,burst_a.y)
+		var r := rel.length()
+		var front := _front(r,Vector4(burst_a.z,burst_b.x,burst_b.y,burst_b.z),burst_b.w)
+		lean += rel/maxf(r,0.001)*front.x*burst_a.w*smoothstep(0.2,1.0,r)
+		shiver = maxf(shiver,front.y*burst_a.w)
+	var aim_a := blow[14]
+	var aim_b := blow[15]
+	if aim_b.w > 0.5 and aim_b.y > 0.0:
+		var rel := p-Vector2(aim_a.x,aim_a.y)
+		var tremble := sin(motion_time*9.0+phase*3.0+rel.length()*2.0)
+		if aim_b.w < 1.5:
+			var reach := maxf(aim_b.x,0.5)
+			var r := rel.length()
+			var out := rel/maxf(r,0.001)
+			var w := aim_b.y*(1.0-smoothstep(0.35*reach,1.15*reach,r))*smoothstep(0.1,0.8,r)
+			lean += (out*(0.8+0.25*tremble)+Vector2(-out.y,out.x)*(0.45+0.15*sin(motion_time*1.7+r*0.8)))*w
+			shiver = maxf(shiver,w)
+		else:
+			var h := Vector2(aim_a.z,aim_a.w)
+			var side := Vector2(-h.y,h.x)
+			var hw := maxf(aim_b.z,0.5)
+			var along := rel.dot(h)
+			var across := rel.dot(side)
+			var lateral := 1.0-smoothstep(0.6*hw,1.3*hw,absf(across))
+			var swept := aim_b.x
+			var w := aim_b.y*lateral*smoothstep(-1.5,0.3,along)*(1.0-smoothstep(swept,swept+2.5,along))*(0.45+0.55*smoothstep(swept-6.0,swept,along))
+			var part := signf(across)*smoothstep(0.0,0.5*hw,absf(across))
+			lean += (h*0.55+side*(part*0.5+tremble*0.15))*w
+			shiver = maxf(shiver,w)
+	if lean.length() > BLOW_MAX: lean *= BLOW_MAX/lean.length()
+	return Vector3(lean.x,lean.y,shiver)
+
+## zs_blow_front: (lean share, shiver) of a front at `along`.
+func _front(along: float, run: Vector4, reach: float) -> Vector2:
+	var k := clampf((along-run.z)/maxf(run.w,0.001),0.0,1.0)
+	var u := 1.0-sqrt(1.0-k)
+	var tau := run.x-(WIND_UP+u*run.y)
+	var ends := smoothstep(run.z-3.0,run.z,along)*(1.0-smoothstep(reach,reach+2.5,along))
+	var amp := lerpf(0.25,1.0,smoothstep(0.0,BUILD,u))*(1.0-smoothstep(FADE.x,FADE.y,u))*ends
+	var after := maxf(tau,0.0)
+	var swing := smoothstep(-0.3,0.05,tau)*exp(-SWING_DAMP*after)*cos(SWING_RING*after)
+	var draw_back := sin(run.x/WIND_UP*PI)*0.25*exp(-absf(along-run.z)*0.25) if run.x < WIND_UP else 0.0
+	return Vector2(amp*swing-draw_back,amp*smoothstep(-0.2,0.1,tau)*exp(-1.2*after))
+
+## zs_blow_give: the share of its height a plant's tip leans per unit of lean.
+static func give(height: float) -> float:
+	return lerpf(1.0,0.3,smoothstep(0.5,3.0,height))
 
 # --- Ground ------------------------------------------------------------------------
 

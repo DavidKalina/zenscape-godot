@@ -28,6 +28,11 @@ uniform float coat_wetness : hint_range(0.0, 1.0) = 0.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
 uniform bool conifer_sway = false;
+// A trunk that does not sway still bends with its swaying crown under the
+// wind tool (zs_blow_bend), over the crown's `blow_shape` (bend from,
+// height); scripts/garden_view.gd pairs them.
+uniform bool blow_enabled = false;
+uniform vec2 blow_shape = vec2(0.4, 2.4);
 uniform bool tree_tread = false;
 uniform float tree_tread_height = 4.26;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
@@ -169,13 +174,17 @@ void vertex() {
 	if (conifer_sway) {
 		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
 	}
+	if (blow_enabled && !sway_enabled && !conifer_sway) {
+		float blow_shiver;
+		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, blow_shiver);
+	}
 	if (sway_enabled && !conifer_sway) {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
 		float wave = sway_frequency.z * sin(zs_motion_time * sway_frequency.x + phase)
 			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
-		float g = zs_gust_field(root);
+		float g = zs_breeze_field(root);
 		float gust = 0.22 + 1.15 * g * g;
 		// Wind is a world-space direction; asset yaw must not rotate the air.
 		vec2 lean = zs_wind_direction * zs_wind_strength * zs_wind_strength * sway_shape.z * 0.55 * bend * gust;
@@ -223,6 +232,13 @@ void vertex() {
 			VERTEX += inverse(mat3(MODEL_MATRIX)) * displacement;
 			foliage_gust = max(foliage_gust, response * bend);
 		}
+		// The wind tool (scripts/wind_gust.gd): its gusts, bursts and the
+		// blowing hand bend the plant its own way, with spring-back and
+		// sway after (zs_blow_bend).
+		float blow_shiver;
+		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y, blow_shiver);
+		foliage_gust = max(foliage_gust, blow_shiver * bend);
+		if (grass_blades) grass_bow = max(grass_bow, blow_shiver * 0.8);
 
 	}
 	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);

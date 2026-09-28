@@ -3,7 +3,9 @@
 vec3 zs_water_gust(vec3 world_p) {
 	// Each passing parcel pushes along its own heading (zs_gust_push_at).
 	vec2 push = zs_gust_push_at(world_p.xz, zs_gust_distance);
-	vec3 passing_air = vec3(push.x, 0.0, push.y) * 7.0;
+	float blow_shiver;
+	vec2 blow = zs_blow_at(world_p.xz, 0.0, blow_shiver);
+	vec3 passing_air = vec3(push.x, 0.0, push.y) * 7.0 + vec3(blow.x, 0.0, blow.y) * 9.0;
 	return (zs_local_wind(world_p) + passing_air) * (1.0 - zs_ice);
 }
 float zs_water_gust_height(vec3 world_p, float depth) {

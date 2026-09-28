@@ -116,6 +116,16 @@ func _ready() -> void:
 		for key in keys:
 			_materials[key].set_shader_parameter("tree_tread",true)
 			_materials[key].set_shader_parameter("tree_tread_height",height)
+		# A trunk that does not sway bends with its swaying crown under the
+		# wind tool (zs_blow_bend), so a strong gust never parts them.
+		var crown: Variant = null
+		for key in keys:
+			if _materials[key].get_shader_parameter("sway_enabled") == true and _materials[key].get_shader_parameter("conifer_sway") != true: crown = _materials[key].get_shader_parameter("sway_shape")
+		if crown != null:
+			for key in keys:
+				if _materials[key].get_shader_parameter("sway_enabled") != true and _materials[key].get_shader_parameter("conifer_sway") != true:
+					_materials[key].set_shader_parameter("blow_enabled",true)
+					_materials[key].set_shader_parameter("blow_shape",Vector2(crown.x,crown.y))
 	_foam_template=source.get_node("mesh-31").mesh
 	source.free()
 	# A faceted stone in the same muted palette as the ground.
