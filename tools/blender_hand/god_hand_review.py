@@ -55,6 +55,8 @@ VIEWS = {
 	'high': (GAME_DIR * 3.6 + Vector((0, -0.05, 0.85)), (0, -0.05, 0.85), 35),
 	'side': ((3.4, -0.25, 0.45), (0, -0.25, 0.4), 35),
 	'front': ((0.35, -3.4, 0.7), (0, -0.2, 0.4), 35),
+	# The snow globe grip, as the game sees it: from outside the rim, above and to one side.
+	'rim': ((1.3, 2.6, 1.5), (0, 0, 0.0), 35),
 }
 
 
@@ -105,7 +107,19 @@ class Stage:
 		c = bpy.data.collections.new('PREVIEW - review')
 		scene.collection.children.link(c)
 		kit.rng.seed(3)
-		kit.ground(c, 4, srgb('5f8c3c'), srgb('86ad4e'), relief=0.0)
+		self.ground = kit.ground(c, 4, srgb('5f8c3c'), srgb('86ad4e'), relief=0.0)
+		# The diorama's rim for the Shake clips: the plate's top at z = 0 for y < 0, the
+		# earth block's wall at y = 0 below it.
+		bm = bmesh.new()
+		bmesh.ops.create_cube(bm, size=1.0)
+		for v in bm.verts:
+			v.co.x *= 3.0
+			v.co.y = v.co.y * 2.0 - 1.0
+			v.co.z = v.co.z * 1.5 - 0.75
+		self.rim = kit.to_object(bm, 'Rim', c)
+		kit.paint(self.rim, lambda p: srgb('86ad4e') if p.normal.z > 0.5 else srgb('8a6a4a'))
+		self.rim.data.materials.append(kit.material('Rim', 1.0))
+		self.rim.hide_render = True
 		bm = bmesh.new()
 		bmesh.ops.create_circle(bm, cap_ends=True, segments=12, radius=0.09)
 		self.mark = kit.to_object(bm, 'Mark', c)
@@ -306,6 +320,8 @@ def contact_sheet(name):
 		clips.pose(rig, p, s, marks)
 		bpy.context.view_layer.update()
 		shown = name.startswith('Cup') and not (name == 'CupOut' and f > clips.CUP_POP)
+		stage.ground.hide_render = name.startswith("Shake")
+		stage.rim.hide_render = not name.startswith('Shake')
 		orb = (world_of('Ball'), 1.0) if shown else None
 		stage.show(0.0, orb, [])
 		scene.render.filepath = str(folder / f'{i:02d}.png')
@@ -362,6 +378,7 @@ def check():
 		('Idle', 'PressIn'), ('PressIn', 'PressHold'), ('PressHold', 'PressOut'), ('PressOut', 'Idle'),
 		('Idle', 'CupIn'), ('CupIn', 'CupHold'), ('CupHold', 'CupOut'), ('CupOut', 'Idle'),
 		('Idle', 'SprinkleIn'), ('SprinkleIn', 'SprinkleHold'), ('SprinkleHold', 'SprinkleOut'), ('SprinkleOut', 'Idle')]
+	pairs += [('Idle', 'ShakeIn'), ('ShakeIn', 'ShakeHold'), ('ShakeHold', 'ShakeOut'), ('ShakeOut', 'Idle')]
 	for a, b in pairs:
 		gap = max((x - y).length for x, y in zip(last[a], first[b]))
 		print(f'HAND_HANDOFF {a:>12s} -> {b:12s} {gap:.4f}')

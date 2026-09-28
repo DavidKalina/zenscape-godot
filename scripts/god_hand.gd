@@ -52,8 +52,10 @@ const TURN := 5.0
 const FADE := 4.0
 ## Seconds of crossfade into a gesture's In or Out from wherever it is.
 const BLEND := 0.18
-const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle"}
-const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold"]
+## "shake" is a reach, not a tool: gripping the rim and shaking the diorama
+## like a snow globe (scripts/snow_globe.gd).
+const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake"}
+const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
 ## after a plain Idle one plays with VARIANT_CHANCE, never the same one twice
@@ -78,17 +80,19 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2}
+const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0}
 ## No knuckle or palm goes into the land: CLEAR_BONES are kept CLEAR hand
 ## lengths over the ground under them by lifting the whole hand, quickly up
 ## and slowly back down (1/s). A pinch's tips are meant to touch (PINCHING),
-## and so is a pressing palm, which is never lifted.
+## and so is a pressing palm, which is never lifted, and so are fingers hooked
+## over the rim (UNLIFTED).
 const CLEAR := 0.05
 const LIFT_UP := 14.0
 const LIFT_DOWN := 3.0
 const CLEAR_BONES := ["Hand","MetaIndex","MetaMiddle","MetaRing","MetaPinky","Index1","Middle1","Ring1","Pinky1",
 	"Index2","Middle2","Ring2","Pinky2","Index3","Middle3","Ring3","Pinky3","Thumb1","Thumb2","Thumb3"]
 const PINCHING := ["Index2","Index3","Thumb2","Thumb3"]
+const UNLIFTED := ["press","cup","shake"]
 ## When the hand leaves the ball (a pop, or a ball gone) the offset that kept
 ## it there springs away on this critically damped spring (1/s).
 const LET_GO := 6.0
@@ -144,6 +148,12 @@ var _handful_at: Variant = null
 ## letting go.
 var reach_gesture := ""
 var reach_point: Variant = null
+## A reach may also turn the hand: `reach_facing` (a horizontal plate
+## direction) is where its reach leads instead of keeping its profile to the
+## camera (the rim grip reaches in across the lip), and `reach_pace` is how
+## fast its Hold plays (a harder shake shakes faster). Cleared with the rest.
+var reach_facing: Variant = null
+var reach_pace := 1.0
 
 static func enabled() -> bool:
 	return not "--no-hand" in OS.get_cmdline_user_args()
@@ -201,6 +211,7 @@ func _process(delta: float) -> void:
 		_sow(delta,false)
 		return
 	_play(working)
+	player.speed_scale = reach_pace if not reach_gesture.is_empty() and String(player.current_animation).ends_with("Hold") else 1.0
 	# The pinch holds a rising mountain by its summit, wherever the drag goes.
 	var work: Variant = editor.hand_work_point() if editor.has_method("hand_work_point") else null
 	var goal: Vector3 = anchor if hit == null else hit
@@ -244,8 +255,12 @@ func _process(delta: float) -> void:
 	_rise_clear(size,delta)
 	_sow(delta,true)
 
-## The yaw that turns the hand's profile to the camera.
+## The yaw that turns the hand's profile to the camera, or its reach along
+## `reach_facing` (the model's reach is its +z).
 func _facing() -> float:
+	if reach_facing != null:
+		var along: Vector3 = reach_facing
+		return atan2(along.x,along.z)
 	var camera: Vector3 = get_parent().to_local(scene.camera.global_position)-anchor
 	if Vector2(camera.x,camera.z).length_squared() < 0.0001: return yaw
 	return atan2(camera.x,camera.z)-atan2(TO_CAMERA.x,TO_CAMERA.z)
@@ -307,7 +322,7 @@ func _carried(delta: float) -> Vector3:
 func _rise_clear(size: float, delta: float) -> void:
 	var data: Variant = editor.get("data")
 	var need := 0.0
-	if data != null and gesture != "press" and gesture != "cup":
+	if data != null and not gesture in UNLIFTED:
 		for bone in _clear:
 			if gesture == "pinch" and bone in _pinching: continue
 			var p := _bone_at(bone)

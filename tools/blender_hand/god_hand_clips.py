@@ -239,6 +239,7 @@ def prepare(rig):
 	apply_shape(rig, POINT)
 	POKE_TIP = tail_of(rig, 'Index3').copy()
 	reset(rig)
+	prepare_shake(rig)
 
 
 # ---------------------------------------------------------------- placement
@@ -835,6 +836,136 @@ CLIPS = {
 	'SprinkleHold': (SPRINKLE_HOLD_T, sprinkle_hold, True, None, None),
 	'SprinkleOut': (SPRINKLE_OUT_T, sprinkle_out, False, 'SprinkleHold', 'Idle'),
 }
+
+
+# ---------------------------------------------------------------- shake: the snow globe (hand-world)
+
+# Shaking the diorama like a snow globe (docs/scenic/hand-snow-globe.md). The anchor is a
+# point on the rim's outer lip, and the game turns the hand so its reach (-Y) points in
+# across the lip: the plate's top is z = 0 for y < 0 and the earth block's wall is y = 0
+# below it. The hand hangs on the outside of the wall with its palm to it, the four
+# fingers hooked over the lip onto the top and the thumb braced on the wall, a ledge grip
+# the camera sees from the back. The game shakes the diorama itself (the camera rings on
+# a spring); the clips give the hand's side of it: the grip, the effort in the wrist while
+# it shakes, and the let-go. The hold is a short loop the game plays faster or slower
+# with how hard the drag shakes (god_hand.gd `reach_pace`).
+SHAKE_CONTACT = 12  # frame the fingers hook over the lip
+SHAKE_IN_T = 22
+SHAKE_HOLD_T = 24  # two shakes a loop, 2.5 a second at pace 1
+SHAKE_OUT_T = 42
+GRIP_PITCH = -84  # fingers up the wall, leaning a touch over the plate
+GRIP_PALM = Vector((0.0, 0.045, -0.2))  # the middle of the palm, just off the wall
+# Where each fingertip hooks over onto the plate's top, and the thumb on the wall.
+GRIP_TIPS = {'Index': (0.19, -0.11, 0.022), 'Middle': (0.06, -0.14, 0.022), 'Ring': (-0.075, -0.12, 0.022),
+	'Pinky': (-0.19, -0.075, 0.022), 'Thumb': (0.3, 0.075, -0.16)}
+GRIP_AT = Vector(GRIP_TIPS['Middle'])  # the point the grip holds the lip by
+# Solved against the rig by prepare_shake(): the grip, the grip squeezed, and the middle
+# fingertip in the hand's own frame under the grip.
+GRIP = GRIP_HARD = None
+GRIP_TIP = None
+
+
+def grip_place(dx=0.0, dy=0.0, dz=0.0, pitch=0.0, roll=0.0, yaw=0.0):
+	"""The grip, turned about the hooked fingertips so they keep to the lip."""
+	return contact(GRIP_TIP, GRIP_AT + Vector((dx, dy, dz)), GRIP_PITCH + pitch, roll, yaw)
+
+
+def prepare_shake(rig):
+	"""Solve the ledge grip: palm to the wall, fingertips hooked onto the plate's top,
+	thumb braced on the wall."""
+	global GRIP, GRIP_HARD, GRIP_TIP
+	p = contact(PALM_POINT, GRIP_PALM, GRIP_PITCH, 0.0)
+	q = attitude(*p[3:])
+	h = Vector(p[:3])
+	goals = [(f'{name}3', q.inverted() @ (Vector(at) - h) + H) for name, at in GRIP_TIPS.items()]
+	guess = shape((40, 50, 30, 2), (40, 52, 30, 0), (40, 52, 30, -3), (38, 50, 28, -7), (6, 10, 10, -20, 0), 3)
+	free = free_finger('Index') + free_finger('Middle') + free_finger('Ring') + free_finger('Pinky') + FREE_THUMB
+	GRIP, err = solve_shape(rig, guess, free, goals)
+	print('HAND_SOLVE grip', round(err, 4))
+	apply_shape(rig, GRIP)
+	GRIP_TIP = tail_of(rig, 'Middle3').copy()
+	reset(rig)
+	GRIP_HARD = add(GRIP, {'Index': (7, 0), 'Middle': (7, 0), 'Ring': (8, 0), 'Pinky': (9, 0), 'Thumb': (5, 0)})
+
+
+def shake_wave(t):
+	"""The shake at frame t of the hold, -1..1, two a loop: near a sine, with a little
+	snap as each stroke turns."""
+	u = math.tau * 2 * (t % SHAKE_HOLD_T) / SHAKE_HOLD_T
+	return (math.sin(u) + 0.18 * math.sin(3 * u)) / 1.03
+
+
+def shake_hold_place(t):
+	"""Working the rim: the heel of the hand swings along the lip and back about the
+	hooked fingertips, the wrist rolling into each stroke, and the palm pumps against the
+	wall at the turns. The fingertips keep their hold."""
+	t %= SHAKE_HOLD_T
+	w = shake_wave(t)
+	lag = shake_wave(t - 2)  # the wrist trails the heel
+	u = math.tau * 2 * t / SHAKE_HOLD_T
+	return grip_place(0.012 * w, 0.006 * math.cos(2 * u), -0.004 * abs(w),
+		pitch=3.0 * math.cos(2 * u), roll=9.0 * lag, yaw=7.0 * w)
+
+
+def shake_hold_shape(t):
+	"""The grip squeezes at each turn; the thumb flaps a beat behind the stroke and the
+	little finger lifts off at the far end and hooks back."""
+	t %= SHAKE_HOLD_T
+	w = shake_wave(t)
+	u = math.tau * 2 * t / SHAKE_HOLD_T
+	s = lerp(GRIP, GRIP_HARD, 0.5 + 0.5 * math.cos(2 * u))
+	lag = shake_wave(t - 3)
+	s['Thumb'][3] += 9 * lag
+	s['Thumb'][1] += 5 * lag
+	lift = max(0.0, lag)
+	s['Pinky'][0] -= 12 * lift
+	s['Pinky'][1] -= 8 * lift
+	return s
+
+
+def shake_in(t):
+	"""Taking hold: it rises and opens wide as it draws back from the rim, swings out over
+	the lip with the palm to the wall and the fingers long and up, then drops and hooks them
+	over, squeezing past the grip and easing back."""
+	lift = moved(IDLE0, dy=-0.03, dz=0.08, pitch=-18, roll=6)
+	out = grip_place(dy=0.16, dz=0.2, pitch=-8, roll=-4)
+	over = grip_place(dy=0.03, dz=0.05, pitch=-4)
+	p = track(t, [(0, IDLE0), (5, lift), (9, out), (SHAKE_CONTACT, over), (15, grip_place(dz=-0.012, pitch=2), 0.1),
+		(SHAKE_IN_T, shake_hold_place(0))])
+	s = track(t, [(0, idle0_shape()), (5, OPEN), (9, lerp(OPEN, BLOOM, 0.5)), (SHAKE_CONTACT, lerp(OPEN, GRIP, 0.8)),
+		(15, GRIP_HARD, 0.12), (SHAKE_IN_T, shake_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (SHAKE_CONTACT - 1, 0.0), (15, 1.0)])
+
+
+def shake_hold(t):
+	return shake_hold_place(t), shake_hold_shape(t), 1.0
+
+
+def shake_out(t):
+	"""Letting go: one last squeeze with the heel dipping, then the fingers unhook and
+	fling open as the hand springs up and back off the rim, shakes itself out loose from
+	the wrist, and floats home."""
+	start = shake_hold_place(0)
+	squeeze = grip_place(dz=-0.02, pitch=4)
+	unhook = grip_place(dy=0.1, dz=0.1, pitch=-14)
+	sprung = moved(IDLE0, dy=0.18, dz=0.2, pitch=-30, roll=-10)
+	p = track(t, [(0, start), (3, squeeze), (6, unhook), (12, sprung, 0.12), (24, moved(IDLE0, dy=0.06, dz=0.08, pitch=-10)),
+		(SHAKE_OUT_T, IDLE0)])
+	loose = window(t, 13, 16, 22, 27) * math.sin(math.tau * (t - 13) / 5)
+	p = moved(p, dx=0.006 * loose, roll=12 * loose, yaw=4 * loose)
+	s = track(t, [(0, shake_hold_shape(0)), (3, GRIP_HARD), (6, lerp(GRIP, OPEN, 0.5)), (11, FLING, 0.15),
+		(24, lerp(FLING, RELAX, 0.6)), (SHAKE_OUT_T, idle0_shape())])
+	for name in FINGER_NAMES:
+		for j, k in enumerate((10, 8, 5)):
+			s[name][j] += k * loose
+	return p, s, track(t, [(0, 1.0), (3, 1.0), (7, 0.0)])
+
+
+CLIPS.update({
+	'ShakeIn': (SHAKE_IN_T, shake_in, False, 'Idle', 'ShakeHold'),
+	'ShakeHold': (SHAKE_HOLD_T, shake_hold, True, None, None),
+	'ShakeOut': (SHAKE_OUT_T, shake_out, False, 'ShakeHold', 'Idle'),
+})
 
 
 def frame(name, f):
