@@ -21,7 +21,7 @@ Poses come from god_hand_clips.evaluate(), the same frames the bake keys. Does n
 """
 import bpy, bmesh, math, random, shutil, subprocess, sys
 from pathlib import Path
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 HERE = Path(__file__).resolve().parent
 for folder in ('blender_trees', 'blender_bigfoot', 'blender_creatures'):
@@ -105,7 +105,8 @@ class Stage:
 		c = bpy.data.collections.new('PREVIEW - review')
 		scene.collection.children.link(c)
 		kit.rng.seed(3)
-		kit.ground(c, 4, srgb('5f8c3c'), srgb('86ad4e'), relief=0.0)
+		self.ground = kit.ground(c, 4, srgb('5f8c3c'), srgb('86ad4e'), relief=0.0)
+		self.sun_rim_stage(c)
 		bm = bmesh.new()
 		bmesh.ops.create_circle(bm, cap_ends=True, segments=12, radius=0.09)
 		self.mark = kit.to_object(bm, 'Mark', c)
@@ -130,6 +131,35 @@ class Stage:
 			m.data.materials.append(pollen)
 			self.motes.append(m)
 		self.height = 0.0
+
+	def sun_rim_stage(self, c):
+		"""Hand world stand-ins: the sun's disc at the anchor, facing the level camera
+		the Reach clips are made for, and the earth block whose rim the Rim clips grip
+		(its top at 0 behind the edge, x < 0)."""
+		bm = bmesh.new()
+		bmesh.ops.create_circle(bm, cap_ends=True, segments=24, radius=0.13)
+		bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, 'Y'))
+		self.sun = kit.to_object(bm, 'SunDisc', c)
+		self.sun.data.materials.append(flat_material('SunDisc', srgb('ffd98a'), 1.0, 6.0))
+		bm = bmesh.new()
+		bmesh.ops.create_cube(bm, size=1.0)
+		for v in bm.verts:
+			v.co.x = -1.0 + v.co.x * 2.0
+			v.co.y *= 3.0
+			v.co.z = -0.3 + v.co.z * 0.6
+		self.block = kit.to_object(bm, 'EarthBlock', c)
+		self.block.data.materials.append(flat_material('EarthBlock', srgb('7a5a3e')))
+		self.sun.hide_render = self.block.hide_render = True
+
+	def sun_rim(self, name):
+		"""Show the stand-in a hand world clip works on, in place of the ground."""
+		self.sun.hide_render = not name.startswith('Reach')
+		self.block.hide_render = not name.startswith('Rim')
+		self.ground.hide_render = not (self.sun.hide_render and self.block.hide_render)
+		# The sun is held in the sky: lift it and the hand into the middle of the frame.
+		lift = 0.4 if name.startswith('Reach') else 0.0
+		rig.location = (0, 0, lift)
+		self.sun.location = (0, 0, lift)
 
 	def show(self, height, orb, motes):
 		self.height = height
@@ -308,6 +338,7 @@ def contact_sheet(name):
 		shown = name.startswith('Cup') and not (name == 'CupOut' and f > clips.CUP_POP)
 		orb = (world_of('Ball'), 1.0) if shown else None
 		stage.show(0.0, orb, [])
+		stage.sun_rim(name)
 		scene.render.filepath = str(folder / f'{i:02d}.png')
 		bpy.ops.render.render(write_still=True)
 	cols = 4
@@ -362,6 +393,7 @@ def check():
 		('Idle', 'PressIn'), ('PressIn', 'PressHold'), ('PressHold', 'PressOut'), ('PressOut', 'Idle'),
 		('Idle', 'CupIn'), ('CupIn', 'CupHold'), ('CupHold', 'CupOut'), ('CupOut', 'Idle'),
 		('Idle', 'SprinkleIn'), ('SprinkleIn', 'SprinkleHold'), ('SprinkleHold', 'SprinkleOut'), ('SprinkleOut', 'Idle')]
+	pairs += clips.SUN_RIM_HANDOFFS
 	for a, b in pairs:
 		gap = max((x - y).length for x, y in zip(last[a], first[b]))
 		print(f'HAND_HANDOFF {a:>12s} -> {b:12s} {gap:.4f}')

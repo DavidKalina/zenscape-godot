@@ -764,6 +764,193 @@ def sprinkle_out(t):
 	return p, s, 0.0, {'handful': 1.0 if t < SPRINKLE_OUT_RELEASE else 0.0}
 
 
+# ================================================================ hand world: the sun and the rim
+# The first hand-world slice (docs/scenic/hand-sun-rim.md): the hand holds the sun to set
+# the hour and grips the diorama's rim to turn the season. Kept in its own section, with
+# its own CLIPS entries (SUN_RIM_CLIPS, added after CLIPS), so sibling slices can add
+# theirs beside it.
+
+# ---------------------------------------------------------------- reach: holding the sun
+
+# The sun is far off in the sky, so the game holds the hand along the view ray toward it
+# (scripts/hand_reach.gd) and turns it to face the camera square on. These clips are made
+# for a camera level with the hand on its thumb side (+X); the other clips' camera looks
+# down at 25 degrees. The anchor is the sun's disc. The hand stands upright beside it,
+# palm turned to it and a little to the camera, the fingers arching over it and the thumb
+# curled under: a C round the disc, so the disc shows through the cup and the light of
+# the hand never covers it.
+SUN_AT = Vector((0.08, -0.44, -0.29))  # rest space: the middle of the cup, in front of the palm
+SUN_PITCH = -78  # the fingers stand up, leaning a touch over the disc
+SUN_YAW = 24  # the palm turned a little toward the camera
+# Cupped round the disc: fingers arched, fanning a little, the thumb swung under.
+SUN_CUP = shape((30, 34, 18, 6), (33, 36, 19, 1), (36, 38, 20, -4), (40, 42, 22, -10), (20, 40, 30, 10, 30), 6)
+# Warmed: the fingers ease out a little from the heat, then settle back round it.
+SUN_WARM = add(SUN_CUP, {'Index': (-12, 3), 'Middle': (-12, 1), 'Ring': (-11, -1), 'Pinky': (-10, -3), 'Thumb': (-8, -4)})
+REACH_HOLD_T = 96
+REACH_CLOSED = 27  # frame the fingers close round the disc
+REACH_IN_T = 36
+
+
+def sun_place(pitch=0.0, roll=0.0, yaw=0.0, lift=0.0, out=0.0):
+	"""The hand round the disc, turned about it (so it stays in the cup), lifted by lift
+	and drawn away from it by out along the back of the hand (hand lengths)."""
+	p = contact(SUN_AT, (0, 0, 0), SUN_PITCH + pitch, roll, SUN_YAW + yaw)
+	away = attitude(SUN_PITCH + pitch, roll, SUN_YAW + yaw) @ Vector((0, 0, 1))
+	return moved(p, out * away.x, out * away.y, out * away.z + lift)
+
+
+def reach_hold_place(t):
+	"""Holding the sun: the hand turns it gently like a warm coin, rocking round the disc
+	once a loop, and breathes; everything turns about the disc, so it stays in the cup."""
+	t %= REACH_HOLD_T
+	u = math.tau * t / REACH_HOLD_T
+	d = drift(t, REACH_HOLD_T, 5)
+	return breathing(sun_place(4 * math.sin(u) + d[0], 7 * math.sin(u + 1.2) + d[1], 5 * math.cos(u) + d[2]),
+		t, REACH_HOLD_T, 2, amp=0.6, seed=5)
+
+
+def warmth(t):
+	"""0..1, once a loop: the fingers ease out from the heat and settle back."""
+	return pulses(t % REACH_HOLD_T, [30], 34)
+
+
+def reach_hold_shape(t):
+	"""The fingers roll a slow wave round the disc, index to little finger, the thumb
+	strokes under it, and once a loop they ease out from the warmth and close again."""
+	t %= REACH_HOLD_T
+	u = math.tau * t / REACH_HOLD_T
+	s = lerp(SUN_CUP, SUN_WARM, warmth(t))
+	s = add(s, {name: (7 * math.sin(2 * u - 0.8 * i), 1.5 * math.cos(2 * u - 0.8 * i))
+		for i, name in enumerate(FINGER_NAMES)})
+	s['Thumb'][3] += 6 * math.sin(2 * u + 0.4)
+	s['Thumb'][1] += 4 * math.sin(2 * u + 1.1)
+	return s
+
+
+def reach_in(t):
+	"""It gathers, dropping a touch with the fingers curling in, then swings up open and
+	long past the disc, the fingers fanned, and closes round it with a little overshoot."""
+	gather = moved(IDLE0, dz=-0.05, pitch=10, roll=-6)
+	reach = sun_place(-12, 0, -8, lift=0.1, out=0.16)
+	close = sun_place(3, 0, 2, lift=-0.015)
+	p = track(t, [(0, IDLE0), (7, gather), (19, reach, 0.06), (REACH_CLOSED, close), (REACH_IN_T, reach_hold_place(0))])
+	s = track(t, [(0, idle0_shape()), (7, lerp(RELAX, FIST, 0.35)), (18, STRETCH, 0.1), (REACH_CLOSED, SUN_CUP, 0.12),
+		(REACH_IN_T, reach_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (REACH_CLOSED - 2, 0.0), (REACH_CLOSED + 3, 0.4), (REACH_IN_T, 0.3)])
+
+
+def reach_hold(t):
+	return reach_hold_place(t), reach_hold_shape(t), 0.3
+
+
+REACH_OUT_T = 40
+
+
+def reach_out(t):
+	"""Letting the sun go: the fingers bloom open round it, the hand drawing back off it
+	and down, shakes the warmth from its fingers and floats home."""
+	start = reach_hold_place(0)
+	loose = sun_place(-6, 0, 4, lift=0.02, out=0.1)
+	back = sun_place(-14, -10, 10, lift=-0.08, out=0.28)
+	p = track(t, [(0, start), (5, loose), (13, back, 0.1), (22, moved(IDLE0, dz=0.06, pitch=-6)), (REACH_OUT_T, IDLE0)])
+	shake = window(t, 14, 17, 22, 27) * math.sin(math.tau * (t - 14) / 5)
+	p = moved(p, roll=6 * shake, pitch=2 * shake, yaw=2 * shake)
+	s = track(t, [(0, reach_hold_shape(0)), (5, SUN_WARM), (11, BLOOM, 0.14), (22, lerp(BLOOM, RELAX, 0.5)),
+		(REACH_OUT_T, idle0_shape())])
+	return p, s, track(t, [(0, 0.3), (5, 0.0)])
+
+
+# ---------------------------------------------------------------- rim: turning the season
+
+# The anchor is the rim under the pointer: the top edge of the earth block. The game puts
+# it there and turns the hand as for the other clips, so the edge runs across the view
+# (along Y), the plate behind it (-X, its top at z = 0) and the block's wall dropping on
+# the camera's side (+X). The hand comes from outside: the heel over the wall, the
+# fingers reaching over the edge with their tips on the plate's top and the thumb hooked
+# down the wall, and it works the rim like a stiff dial.
+RIM_GRIP = Vector((0.03, -0.80, -0.06))  # rest space: under the middle fingers' pads, the grip on the edge
+RIM_AT = Vector((-0.1, 0.0, 0.035))  # where the grip sits, just over the edge on the plate
+RIM_PITCH = 34  # fingertips down onto the top
+RIM_ROLL = -8
+RIM_YAW = -62  # fingers reach away over the edge, leading left
+# Gripping: fingers bent down over the edge, pads on top; the thumb hooked down the wall.
+RIM_HOLD = shape((20, 44, 20, 5), (22, 46, 22, 0), (24, 48, 22, -5), (26, 50, 24, -11), (-4, 24, 30, -24, -12), 3)
+# Bearing on it: the fingertips dig in a little more.
+RIM_DIG = add(RIM_HOLD, {'Index': (12, 0), 'Middle': (12, 0), 'Ring': (10, 0), 'Pinky': (10, 0), 'Thumb': (8, 0)})
+RIM_HOLD_T = 72
+RIM_CONTACT = 12
+
+
+def rim_place(dy=0.0, dz=0.0, pitch=0.0, roll=0.0, yaw=0.0):
+	return contact(RIM_GRIP, RIM_AT + Vector((0, dy, dz)), RIM_PITCH + pitch, RIM_ROLL + roll, RIM_YAW + yaw)
+
+
+def shove(t):
+	"""About -1..1 along the edge, twice a loop: a push one way, a catch and a push back,
+	each easing in and snapping a touch at the end like a dial clicking round."""
+	return math.sin(math.tau * (t % RIM_HOLD_T) / 36) + 0.2 * math.sin(math.tau * 2 * (t % RIM_HOLD_T) / 36)
+
+
+def rim_hold_place(t):
+	"""Working the dial: the heel shoves along the edge and back, twice a loop, the
+	fingertips keeping their grip (the hand turns about them), the wrist leading and the
+	hand rolling into each shove; the breath goes on under it."""
+	t %= RIM_HOLD_T
+	k = shove(t)
+	d = drift(t, RIM_HOLD_T, 6)
+	return rim_place(0.012 * k, -0.004 * abs(k), 2 * abs(k) + 0.8 * d[2], 6 * k + d[0], -8 * k + d[1])
+
+
+def rim_hold_shape(t):
+	return lerp(RIM_HOLD, RIM_DIG, abs(shove(t % RIM_HOLD_T)) / 1.2)
+
+
+def rim_in(t):
+	"""It rises and draws back, the fingers opening, then swoops down onto the edge, the
+	fingertips hooking over it with a little bite, and settles into its grip."""
+	lift = moved(IDLE0, dz=0.08, pitch=-12)
+	above = rim_place(0, 0.14, -18, 0, -6)
+	touch = rim_place(0, -0.004, 4)
+	p = track(t, [(0, IDLE0), (6, lift), (10, above), (RIM_CONTACT, touch, 0.08), (22, rim_hold_place(0))])
+	s = track(t, [(0, idle0_shape()), (6, OPEN), (10, lerp(OPEN, RIM_HOLD, 0.5)), (RIM_CONTACT, RIM_DIG, 0.1),
+		(22, rim_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (RIM_CONTACT - 2, 0.0), (RIM_CONTACT, 1.0)])
+
+
+def rim_hold(t):
+	return rim_hold_place(t), rim_hold_shape(t), 1.0
+
+
+RIM_OUT_T = 34
+
+
+def rim_out(t):
+	"""Letting go: a last press, then the fingertips peel off the edge and the hand pops
+	up and back, flicks its fingers loose and floats home."""
+	start = rim_hold_place(0)
+	p = track(t, [(0, start), (4, rim_place(0, -0.006, 4)), (11, rim_place(0, 0.16, -22, 0, 4), 0.1),
+		(20, moved(IDLE0, dz=0.08, pitch=-10)), (RIM_OUT_T, IDLE0)])
+	flick = window(t, 12, 14, 18, 23) * math.sin(math.tau * (t - 12) / 5)
+	p = moved(p, roll=5 * flick, pitch=2 * flick)
+	s = track(t, [(0, rim_hold_shape(0)), (4, RIM_DIG), (11, BLOOM, 0.12), (20, lerp(BLOOM, RELAX, 0.5)),
+		(RIM_OUT_T, idle0_shape())])
+	return p, s, track(t, [(0, 1.0), (4, 1.0), (8, 0.0)])
+
+
+SUN_RIM_CLIPS = {
+	'ReachIn': (REACH_IN_T, reach_in, False, 'Idle', 'ReachHold'),
+	'ReachHold': (REACH_HOLD_T, reach_hold, True, None, None),
+	'ReachOut': (REACH_OUT_T, reach_out, False, 'ReachHold', 'Idle'),
+	'RimIn': (22, rim_in, False, 'Idle', 'RimHold'),
+	'RimHold': (RIM_HOLD_T, rim_hold, True, None, None),
+	'RimOut': (RIM_OUT_T, rim_out, False, 'RimHold', 'Idle'),
+}
+# The hand-offs god_hand_review.py --check measures for these clips.
+SUN_RIM_HANDOFFS = [('Idle', 'ReachIn'), ('ReachIn', 'ReachHold'), ('ReachHold', 'ReachOut'), ('ReachOut', 'Idle'),
+	('Idle', 'RimIn'), ('RimIn', 'RimHold'), ('RimHold', 'RimOut'), ('RimOut', 'Idle')]
+# ================================================================ end of the sun and the rim
+
+
 # ---------------------------------------------------------------- follow-through
 
 # Finger springs: frequency in Hz and damping ratio; heavier fingers are a little slower.
@@ -835,6 +1022,7 @@ CLIPS = {
 	'SprinkleHold': (SPRINKLE_HOLD_T, sprinkle_hold, True, None, None),
 	'SprinkleOut': (SPRINKLE_OUT_T, sprinkle_out, False, 'SprinkleHold', 'Idle'),
 }
+CLIPS.update(SUN_RIM_CLIPS)  # hand world: the sun and the rim
 
 
 def frame(name, f):
