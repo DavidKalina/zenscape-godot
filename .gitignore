@@ -37,3 +37,6 @@ docs/wind-playground/test-logs/
 
 # Local film and still captures
 captures/
+
+# Python bytecode from the Blender scripts.
+__pycache__/
