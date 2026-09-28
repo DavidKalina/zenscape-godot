@@ -60,6 +60,8 @@ const COLORS := [
 	{"id":"sky","title":"Sky","swatches":["78aacb","709ebd","7c9daf","8676a1","49385d","536884"]},
 	{"id":"fog","title":"Mist","swatches":["ffffff","e8e2d4","d6e4ec","ac83bc","eac0b5","bcd9c4"]},
 ]
+## A pinned Time of day that holds any hour (`held_hour`): this prefix, then the phase.
+const HELD_HOUR := "at:"
 ## Winter frost laid on the ground when a pinned winter replaces a mood's own season.
 const WINTER_SNOW := 0.45
 ## Continuous state the cross-fade blends, by owner.
@@ -110,9 +112,18 @@ static func options(control: String) -> Array:
 	return []
 
 static func option(control: String, id: String) -> Dictionary:
+	if control == "time" and id.begins_with(HELD_HOUR):
+		var phase := id.substr(HELD_HOUR.length())
+		if not phase.is_valid_float() or float(phase) < 0.0 or float(phase) >= 1.0: return {}
+		return {"id":id,"title":"Held hour","phase":float(phase)}
 	for entry: Dictionary in options(control):
 		if entry.id == id: return entry
 	return {}
+
+## A Time of day pin for any hour, not one of TIMES: the sun dragged to it
+## (scripts/hand_reach.gd). "at:0.5230" holds that phase.
+static func held_hour(phase: float) -> String:
+	return HELD_HOUR+("%.4f" % clampf(fposmod(phase,1.0),0.0,0.9999))
 
 static func color_keys() -> Array:
 	return COLORS.map(func(entry: Dictionary) -> String: return entry.id)
@@ -180,6 +191,25 @@ func unpin(control: String) -> void:
 	if busy() or not pins.has(control): return
 	pins.erase(control)
 	_rebuild(true)
+
+## The sun let go at an hour (scripts/hand_reach.gd): pin Time of day to it
+## as a held hour. The hour is already on screen, so nothing is rebuilt: only
+## the pin and the held clock, which a later rebuild applies the same way. A
+## running fade lands on the new hour too.
+func pin_hour(phase: float) -> void:
+	if busy(): return
+	_remember_origin()
+	var id := held_hour(phase)
+	pins["time"] = id
+	var held: float = option("time",id).phase
+	scene._celestial.cycling = false
+	scene._celestial.set_phase(held)
+	if not _to.is_empty():
+		_to.phase = held
+		_to.running = false
+		_from.phase = held
+	scene._sync_saved_controls()
+	changed.emit()
 
 ## Back to mood: every control follows the mood again.
 func clear_pins() -> void:

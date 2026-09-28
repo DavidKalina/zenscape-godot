@@ -117,9 +117,10 @@ var fall := 0.0
 ## The jiggle: offset (screen heights, x right, y down) and its rate.
 var jiggle := Vector2.ZERO
 var jiggle_speed := Vector2.ZERO
-## While true, a grab shows the hand gripping at once; at merge, when the
-## rim grab turns the season dial, set it false so the hand only shakes once
-## a shake is decided.
+## While true, a grab shows the hand gripping at once. The rim grab
+## (scripts/hand_reach.gd) shows its own grip while it turns the season dial,
+## so fidelity.gd sets it false and the hand only shakes once a shake is
+## decided.
 var claim_grip := true
 var _pull := Vector2.ZERO
 var _gain := 0.0
@@ -140,8 +141,6 @@ var _turns: Array[float] = []
 var _written := false
 var _fed := false
 var _hand_set := false
-var _last_feed := 0
-var _seam_grab := false
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -151,7 +150,6 @@ func setup(owner_scene: Node3D) -> void:
 	process_priority = -10
 
 func _process(delta: float) -> void:
-	_seam_check()
 	advance(minf(delta,0.05))
 
 ## Take hold of the rim at `screen_pos`. The grip goes to the lip nearest
@@ -367,42 +365,3 @@ func _block() -> AABB:
 	if skirt is MeshInstance3D and skirt.mesh != null:
 		return terrain.global_transform.affine_inverse()*skirt.global_transform*skirt.get_aabb()
 	return AABB(Vector3(-EDGE-LIP,-4.0,-EDGE-LIP),Vector3(2.0*(EDGE+LIP),4.0,2.0*(EDGE+LIP)))
-
-# ---------------------------------------------------------------- Temporary rim grab
-# TEMPORARY until scripts/hand_reach.gd lands: it owns the rim grab and will
-# call grab() on rim_grabbed, feed() on rim_dragged and release() on
-# rim_released. At merge, delete from here to the end of the file (and the
-# input it takes) and connect those signals instead.
-
-## Whether a left press at `screen_pos` takes hold of the rim.
-func _is_rim(screen_pos: Vector2) -> bool:
-	if editor == null or not editor.pointer_in_world(screen_pos): return false
-	return rim_at(screen_pos) != null
-
-## A press on the rim is the hand's, not the camera's or the brush's.
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and not grabbed:
-		if _is_rim(event.position):
-			grab(event.position)
-			_seam_grab = true
-			_last_feed = Time.get_ticks_usec()
-			get_viewport().set_input_as_handled()
-
-## While held, the drag is read before the controls, so it carries on across
-## a panel, as the camera's orbit does.
-func _input(event: InputEvent) -> void:
-	if not grabbed: return
-	if event is InputEventMouseMotion:
-		var now := Time.get_ticks_usec()
-		feed(event.relative,(now-_last_feed)/1000000.0)
-		_last_feed = now
-		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		_seam_grab = false
-		release()
-
-## A release lost outside the window still lets go.
-func _seam_check() -> void:
-	if _seam_grab and grabbed and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_seam_grab = false
-		release()

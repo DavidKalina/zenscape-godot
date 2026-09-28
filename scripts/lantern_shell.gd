@@ -4,8 +4,10 @@ extends Control
 ## editor. The brushes run along the top (Land carries its form as a badge and
 ## opens the forms wheel), the hand modes and the Undo wisp run down the left,
 ## Mood, World and Craft down the right, Photo is the play button at the lower
-## right, and a slim bottom holds the season and time scrubber over one hint
-## line. Size and strength live on the cursor (scripts/lantern_cursor.gd).
+## right, and a slim bottom holds one hint line. Size and strength live on the
+## cursor (scripts/lantern_cursor.gd). The season and time scrubber over the
+## hint is retired: the hand drags the sun and turns the rim instead
+## (scripts/hand_reach.gd); `--scrubber` brings it back.
 ## While you paint everything recedes but the brush in hand.
 ##
 ## It stands in for scripts/creation_palette.gd (--classic-shell brings that
@@ -38,6 +40,9 @@ const MOOD_HINT := "Click a mood  ·  Tune this mood for season, time, weather a
 const OTHER_WAY := {"land":"Drag to lower land","water":"Drag to drain water","meadow":"Drag to lift the meadow",
 	"forest":"Drag to clear forest","path":"Drag to grow the path back"}
 const WATER_BALL_HINT := "Hold to gather a ball of water  ·  Release to drop it  ·  Shift-drag drains"
+## The bottom scrubber (season and time) shows only with `--scrubber`.
+static func scrubber_wanted() -> bool:
+	return "--scrubber" in OS.get_cmdline_user_args()
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -82,6 +87,8 @@ var _wheel_by_hold := false
 var _held_until := 0
 var _wheel_close_at := -1.0
 var _clock := 0.0
+## What the hand's reach names while the pointer is near it (`reach_hint`).
+var _reach_hint := ""
 
 static func registered() -> Array[Dictionary]:
 	return Palette.registered()
@@ -309,6 +316,8 @@ func _build_bottom() -> void:
 	scrubber.setup(scene)
 	scrubber.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	bottom.add_child(scrubber)
+	scrubber.visible = scrubber_wanted()
+	bottom_plate.visible = scrubber.visible
 	hint = Hint.new()
 	hint.name = "Hint"
 	bottom.add_child(hint)
@@ -352,10 +361,12 @@ func _sync_hint(holding: String, other: bool, mood_open: bool) -> void:
 	var ball: bool = editor.get("_ball_holding") == true
 	var state := "look" if scene.looking else "mood" if mood_open else holding+("/"+editor.land_form if holding == "land" else "")+("/other" if other else "")
 	if ball: state = "ball/%d" % int(editor.ball_volume)
+	elif not _reach_hint.is_empty(): state = "reach/"+_reach_hint
 	if state == _last_state: return
 	_last_state = state
 	var text := LOOK_HINT
-	if ball:
+	if state.begins_with("reach/"): text = _reach_hint
+	elif ball:
 		var volume := int(round(editor.ball_volume))
 		var made := "a lake" if editor.ball_volume >= editor.LAKE_VOLUME else "a pond"
 		text = "Release to drop it  ·  %d m³, %s" % [volume,made]+("  ·  it is full" if editor.ball_volume >= editor.BALL_MAX_VOLUME-0.01 else "  ·  Hold for more")
@@ -370,8 +381,15 @@ func _sync_hint(holding: String, other: bool, mood_open: bool) -> void:
 	hint.modulate.a = 1.0
 	if _hint_tween != null: _hint_tween.kill()
 	# Until the first stroke the how-to stays; after it, each change shows briefly.
-	if _painted and not ball and not mood_open: _fade_hint(5.0)
+	if _painted and not ball and not mood_open and _reach_hint.is_empty(): _fade_hint(5.0)
 	fit()
+
+## The hand's reach (scripts/hand_reach.gd): while the pointer is near the sun
+## or the rim, the hint line names it; "" gives the line back.
+func reach_hint(text: String) -> void:
+	if text == _reach_hint: return
+	_reach_hint = text
+	sync()
 
 func _fade_hint(delay: float) -> void:
 	if _hint_tween != null: _hint_tween.kill()
@@ -501,7 +519,7 @@ func contains_pointer(point: Vector2) -> bool:
 	# A receded shell never blocks the stroke that made it recede.
 	if _recede > 0.5: return false
 	for control: Control in [frame,modes_plate,world_plate,bottom_plate]:
-		if control.get_global_rect().has_point(point): return true
+		if control.is_visible_in_tree() and control.get_global_rect().has_point(point): return true
 	return photo_button.get_global_rect().has_point(point)
 
 func _input(event: InputEvent) -> void:

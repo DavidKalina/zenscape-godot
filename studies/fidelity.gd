@@ -112,6 +112,8 @@ var world_rumble: Node
 var god_hand: Node3D
 ## Shaking the diorama by its rim like a snow globe (scripts/snow_globe.gd).
 var snow_globe: Node
+## What the hand reaches and holds: the sun, the rim (scripts/hand_reach.gd).
+var hand_reach: Node
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -227,6 +229,15 @@ func _ready() -> void:
 	snow_globe = preload("res://scripts/snow_globe.gd").new()
 	snow_globe.setup(self)
 	add_child(snow_globe)
+	hand_reach = preload("res://scripts/hand_reach.gd").new()
+	add_child(hand_reach)
+	hand_reach.setup(self)
+	# The rim grab feeds the snow globe; a shake takes the rim from the season dial.
+	snow_globe.claim_grip = false
+	hand_reach.rim_grabbed.connect(snow_globe.grab)
+	hand_reach.rim_dragged.connect(snow_globe.feed)
+	hand_reach.rim_released.connect(snow_globe.release)
+	snow_globe.shake_started.connect(hand_reach.revert_season_to_grab)
 	world_rumble = preload("res://scripts/world_rumble.gd").new()
 	add_child(world_rumble)
 	world_rumble.setup(self)

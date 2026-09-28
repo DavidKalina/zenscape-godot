@@ -114,11 +114,11 @@ func _run() -> void:
 	print("  screen height %d px" % int(height))
 
 	# Which presses hold the rim.
-	_check(not globe._is_rim(camera.unproject_position(Vector3(0.0,1.0,0.0))),"a press on the land is the camera's")
-	_check(not globe._is_rim(camera.unproject_position(Vector3(0.0,1.0,11.0))),"so is one well inside the edge")
-	_check(globe._is_rim(camera.unproject_position(Vector3(3.0,1.0,13.4))),"a press on the plate's top by its edge holds the rim")
-	_check(globe._is_rim(camera.unproject_position(Vector3(-2.0,-1.5,14.2))),"so does one on the earth block's wall")
-	_check(not globe._is_rim(camera.unproject_position(Vector3(0.0,12.0,-30.0))),"the sky is nothing to hold")
+	_check(not globe.rim_at(camera.unproject_position(Vector3(0.0,1.0,0.0))) != null,"a press on the land is the camera's")
+	_check(not globe.rim_at(camera.unproject_position(Vector3(0.0,1.0,11.0))) != null,"so is one well inside the edge")
+	_check(globe.rim_at(camera.unproject_position(Vector3(3.0,1.0,13.4))) != null,"a press on the plate's top by its edge holds the rim")
+	_check(globe.rim_at(camera.unproject_position(Vector3(-2.0,-1.5,14.2))) != null,"so does one on the earth block's wall")
+	_check(not globe.rim_at(camera.unproject_position(Vector3(0.0,12.0,-30.0))) != null,"the sky is nothing to hold")
 	var lip: Array = globe.rim_at(camera.unproject_position(Vector3(-2.0,-1.5,14.2)))
 	_check(lip[0].distance_to(Vector3(-2.0,1.0,14.2)) < 0.3 and lip[1].is_equal_approx(Vector3(0.0,0.0,-1.0)),
 		"the grip goes to the lip above, reaching in (%s, %s)" % [lip[0],lip[1]])

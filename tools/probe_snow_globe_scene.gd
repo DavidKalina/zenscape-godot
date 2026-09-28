@@ -37,6 +37,8 @@ func _run() -> void:
 	# Snow for sure: the world's cold decides, so make it winter-cold.
 	scene._precipitation.surface_weather.cold = 1.0
 	scene._precipitation.surface_weather.target_cold = 1.0
+	# Held there, or the season of whatever world was saved last pulls it back.
+	scene._precipitation.cold_override = 1.0
 	var before: float = scene._precipitation.state.y
 	globe.grab(toward)
 	var height: float = globe._screen_height()
