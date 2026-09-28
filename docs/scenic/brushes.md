@@ -111,46 +111,65 @@ At arrival (`emergence.gd`, `_arrive` and `_frayed`):
 | `FIRM_PASS`, `FIRM_MIN`, `FIRM_EMPTY` | 0.7, 0.3, 0.1 | A firm clearing pass. A cell the stroke pushed down by `FIRM_PASS` of wish (the sum of its dabs, before clamping), or by `FIRM_MIN` that left it at `FIRM_EMPTY` or less, drops to `CLEAR_BELOW` at release, so one deliberate Shift pass clears a young forest. A steady pass at strength 1 pushes about 1 at its centre; a light pass only thins the wish. |
 | `radius` | 3.6 (1.5–9) | Brush radius in metres. |
 
-## Seed sprinkle
+## Pollen
 
-`feature/seed-handful`, 2026-09-27. The user first asked for forest to work like the water ball: "you're actually putting seeds or spores in, kind of like they're drifting towards the ground and then they land and then they start to grow." A gathered handful of seeds was built (hold to gather, release to sow). The user tried it and said: "I actually don't like the hold and release. I think it makes more sense to have it be like... you're sprinkling kind of onto the map." So Forest is now a sprinkle. The words are in `docs/scenic/handful.md`. `--paint-forest` brings back drag-to-paint (`NativeChunkEditor.seed_handful`), and Shift-drag still clears as before.
+`feature/seed-handful`, 2026-09-27. Forest is a released cloud of pollen and seed-fluff: **you release something; the world decides what becomes of it** (`docs/scenic/handful.md`). Two earlier tries were turned down the same day: a gathered handful of winged seeds, and a seed sprinkle that poured while the button was down (both in the branch history). Of the sprinkle the user said: "I just don't like it as a paintbrush... the seeds need to be affected by the wind, and if there's no wind, it just kind of floats down." `--paint-forest` brings back drag-to-paint (`NativeChunkEditor.seed_handful`), and Shift-drag still clears as before.
 
-- **Pour** (`scripts/seed_handful.gd`). While the left button is down with forest in hand, seeds pour from a spout `KINDS.forest.drop` (0.8 m) above the pointer's ground point. The rate is `KINDS.forest.rate` (9 a second) × strength × (brush radius / `REFERENCE_RADIUS` 3.6 m)². The first seed leaves on the press, so a tap still sows one. At most `AIR_MAX` (48) seeds are in the air; the spout waits for room. The spout follows the pointer on a stiff spring (`FOLLOW` 900, `FOLLOW_DAMP` 55, stepped at most 1/240 s at a time), about 0.06 m behind per m/s of pointer speed, and jiggles `SHAKE` (3 cm at 5 Hz) as it pours. Holding still sprinkles one spot densely; a drag lays a trail.
-- **The promise.** Each seed is given a landing point as it leaves, inside the mark under the spout at `INSIDE` (0.85) of its radius. The mark's radius is `KINDS.forest.mark` (0.3) × the brush radius, at least `MARK_MIN` (0.5 m): 1.08 m at the default brush. A new mark is laid when the spout has moved `MARK_STEP` (0.5) of a radius from the last one. At most `MARKS` (24) stand at once; past that, the newest serves. A mark stays while any of its seeds is in the air, then shrinks away over `MARK_FADE` (0.3 s). Holding still shows one mark. A drag shows a short trail of marks behind the spout, one pool where they overlap. The marks (`shaders/seed_handful_mark.gdshader`) are drawn like the water ball's (`shaders/water_ball_ground.gdshader`): a slowly turning 12-gon pooled shadow in two tones with a pale rim, straight below, never along the sun. The rim is warm seed light and is brighter while seeds pour. The terrain's brush ring hides while a sprinkle is out.
-- **Drift.** Each seed takes 0.38–0.58 s to come down (`KINDS.forest.fall`). It gets a small toss (`TOSS` 0.12 m) and a scatter at the spout (`SCATTER` 0.08 m). It spins on its wing at 10–16 rad/s, rocks as it flutters and sways up to 0.12 m, plus `BREEZE` (0.08 m) along the world's wind (`_atmosphere._air_angle`). Sway and breeze are scaled by sin(πu), so they die out at the landing and each seed lands on its own point.
-- **Land and take.** Each landing rings out on the mark and throws `MOTES` (4) dust motes. Where the ground will take it (`Emergence.takes`: ground, not water, not a hand-laid path, below the rock slope, the snow and the treeline) and no other young sprout stands within `SPROUT_ROOM` (0.35 m), a two-leafed sprout pops up. The sprout overshoots, sways, settles and sinks after `SPROUT_SECONDS` (9 s). A dense spot shows a patch of sprouts, not a heap.
-- **One stroke, one undo step.** The press opens the step. Each landing raises the forest wish round it (`ForestBrush.sow`) by up to `SEED_WISH` (0.3), with the dab's falloff over `SEED_REACH` (1.2 m). The wish fades from the edge of the seed's own mark to `SEED_EDGE` (0.8 m) past it, and the landing darkens the floor as a dab does. The wish shows through the light refresh, at most once a frame. When the button is up and the last seed is down, the step closes (`_handful_sown`) and the view settles. The seeds are then thinned to one per `TREE_GAP` (1.1 m) and handed to emergence as a `"forest"` region with the stroke's bounds. The extra seeds of a dense spot only sprouted and asked for forest; they are not sent to emergence to be crowded out. A new press, or an undo while seeds are in the air, lands them at once where they were promised, and the undo then takes the whole stroke back. An undo, a load or a new world also clears the sprouts (`withdraw`).
-- **Growth starts from the seeds** (`emergence.gd`, `SOWN_*`, unchanged from the handful). Each planted seed is a tree candidate at its landing point. It arrives first, at `SOWN_DELAY` (1.2 s) plus up to `SOWN_STAGGER` (2 s), and takes at `SOWN_TAKE` (0.8), thinned on steep ground as any tree is. It skips quiet guidance's sightline and lone-tree drops, and never comes up as dead wood. The region's lattice candidates then arrive by distance from the nearest seed: `SOWN_TREE_DELAY` (4 s) or `SOWN_SHRUB_DELAY` (7 s), plus distance / `SOWN_SPREAD` (0.4 m/s), plus up to `SOWN_JITTER` (5 s). Species come by stand; water, snow, steep rock and crowding rules are unchanged.
-- **What the seeds look like.** A samara: a dark faceted nut at the root of one creased, veined wing, 0.22 m long, lit as the scene is with a small glow on the wing (`glow` 0.3, `shaders/seed_handful.gdshader`). Seeds pop out of the spout over 0.08 s. The wing colour follows the dominant tree of the stand under the press (`Emergence.seed_family`, `LOOKS`): pine tan, maple green-gold, birch pale, desert dust. It is the default broadleaf look until the live blend is built.
-- **Other kinds later.** `begin(point, kind, …)` takes a `kind` from `KINDS`. A meadow sprinkle of seed or pollen would be another entry, with a higher rate, lighter seeds, a longer drift and a wider mark. Only forest is built.
+- **Release** (`scripts/pollen_cloud.gd`). With forest in hand, a press gathers a cloud `HEIGHT` (2.2 m) above the pointer's ground point. A click lets a puff go. Holding swells it to a full cloud over `HOLD_SECONDS` (1.4 s at strength 1).
+  - A puff has `MOTES` 120 motes and a full cloud 260, scaled by √strength and by the brush's size (radius / 3.6 m, kept within `SIZE` 0.6–1.6). The cloud's radius runs `CLOUD` 0.6–1.3 m, puff to full.
+  - While held the cloud floats after the pointer on a soft spring (`FOLLOW` 30, `FOLLOW_DAMP` 9), bobbing and billowing. Nothing is written while it is held, and dragging paints nothing.
+  - Up to `CLOUDS` (4) may be in the air at once. Pressing any other brush settles them first.
+- **The look.** Glinting motes of fluff (tiny faceted specks that twinkle, glowing a little) under a soft additive haze (`shaders/pollen_haze.gdshader`, `HAZE` 8 camera-facing puffs per cloud). The haze thins as the cloud spreads and settles. The colour follows the dominant tree of the stand under the press (`Emergence.seed_family`, `LOOKS`): pine gold, broadleaf cream, birch pale, desert dust.
+- **Drift** (`scripts/pollen_wind.gd`, the one place pollen asks the wind). The wind is read every frame from the same state the shaders' wind reads:
+  - the atmosphere's strength (air strength + swell, times the gust envelope `gust_at`) and its direction;
+  - the gust parcels it has sent, through `wind_puffs.gd` `sample_at`, the CPU mirror of `zs_gust_pulse_at`. The noise field is taken at its mean.
 
-`tools/probe_seed_handful.gd` drives the real input path on the plain (press, the editor's own `_process` following the pointer, release). It reports each stroke, then an undo while seeds are in the air, a Shift press and a press with the sprinkle off. Headless (`--headless --script tools/probe_seed_handful.gd`), one run, default brush unless noted:
+  Drift is `DRIFT` (1.4 m/s) × strength × (0.45 + 1.1 × min(1, 0.5 + pulse)), so still air gives no drift. When the editor has the wind tool (`gust`, on `feature/wind-gust`), its `wind_at` push is added; without it, only the world's wind counts.
 
-| Stroke | Held | Seeds dropped / landed | Most in air | Inside their marks | Farthest (share of radius) | Spout lag | Landing to pointer (median) | Sent to emergence | Trees / shrubs | Saplings on seeds |
+  Each mote falls for 3.2–5.2 s (`FALL`), the lightest the longest. It sinks at a steady rate after a soft start, drifts apart from the others to a spread within `SPREAD` (1.8–2.8 m, puff to full), wanders `WANDER` (0.35 m) on the curl of the air, and rides the cloud's drift, which the air adds to every mote still aloft. Near the ground each mote looks ahead to where it will land, so it comes down onto the ground there.
+- **The promise.** While aiming, a soft footprint (`shaders/pollen_footprint.gdshader`) shows where a click would settle. It follows the held cloud and moves with the released one until the cloud has settled.
+  - It is a capsule of radius r0 + sigma. It runs from the cloud's drift so far, carried on by the present wind for the least and the most fall time left: round and centred in still air, shifted and stretched downwind in wind.
+  - A mote lands at its place in the cloud at release (within r0), plus its spread (within sigma), plus the cloud's drift by then. So every mote lands inside the footprint as it stands when that mote lands. In steady air that is the footprint shown at release. A gust moves the footprint, and the cloud, downwind.
+  - It is drawn like the water ball's mark (a slowly turning 12-sided pooled shadow in two tones with a rim), but softer and lighter, with a warm rim and faint twinkling specks. The terrain's brush ring hides while pollen is in hand.
+- **Land.** A landed mote glints for `GLINT` (0.8 s). A mote at least `SEED_GAP` (1.1 m, Emergence TREE_GAP) from the cloud's other seeds is a seed; the rest is dust. Where a seed lands on ground that could take it (`Emergence.takes`: ground, no water, not a path, below the rock slope, the snow and the treeline), a two-leafed sprout pops up and sinks after 9 s. Motes that drift off the land are lost.
+- **The land decides.** When a cloud's last mote is down (`_pollen_settled`, `_write_cloud`), its seeds raise the forest wish round them (`ForestBrush.sow`: up to `SEED_WISH` 0.45 over `SEED_REACH` 1.6 m) and darken the floor, as one undo step. The seeds then go to emergence as a `"forest"` region.
+  - Each seed is a tree candidate at its point. It comes up first, at `SOWN_DELAY` (1.2 s) + up to `SOWN_STAGGER` (2 s), and takes at `SOWN_TAKE` (0.9) × `_fertility`.
+  - `_fertility` is the habitat's share (`SOWN_FERTILITY`: woodland and redwood 1, wetland 0.8, alpine and meadow 0.75, arid 0.3). It is leaned down on dry ground (to `SOWN_DRY` 0.75 at no moisture; moisture is the blend's, which water nearby raises) and on exposed heights (to `SOWN_EXPOSED` 0.65 at the top of the altitude range).
+  - The ordinary rules refuse water, bare rock, snow and above the treeline, thin trees on steep ground, and crowd seeds out of existing forest.
+  - The region's lattice candidates follow by distance from the nearest seed (`SOWN_TREE_DELAY` 4 s, `SOWN_SHRUB_DELAY` 7 s, `SOWN_SPREAD` 0.4 m/s, `SOWN_JITTER` 5 s). Their trees take at the fertility too.
+  - Species come by stand (scripts/tree_stands.gd), and sown trees never come up as dead wood. `Emergence.sown_outcomes` tallies what became of every seed, by habitat.
+- **Undo.** One release is one undo step, written when the cloud settles. An undo while clouds are in the air settles them, oldest first, and takes back the last. An undo, a load or a new world clears sprouts and clouds (`withdraw`). No stroke signals start while a cloud is held: the forest brush's feel would swell the very wind the cloud drifts on. The settled cloud reports `stroke_finished`.
+- **Other kinds later.** A meadow's seed would be another cloud, lighter and further-drifting, whose settle writes meadow ground.
+
+`tools/probe_seed_handful.gd` drives the real input path on the Genesis plain (press, the editor's own `_process` following the pointer, release), with the wind set on the scene's atmosphere. It checks each landing against the footprint as it stood when the mote landed, and against the footprint shown at release. Headless (`--headless --script tools/probe_seed_handful.gd`), one run:
+
+| Release | Held | Wind (strength, heading) | Drift at release | Motes / seeds | Footprint radius, length | Inside at landing | Outside the release footprint | Settled from pointer | Trees / shrubs | Seeds took |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Tap | 0.06 s | 1 / 1 | 1 | 1 of 1 | 0.55 | 0 m | – | 1 | 1 / 0 | 1 |
-| Linger 3 s | 3 s | 28 / 28 | 5 | 28 of 28 | 0.85 | 0 m | 0.61 m | 2 | 3 / 1 | 2 |
-| Slow drag, 1.7 m/s | 3 s | 28 / 28 | 5 | 28 of 28 | 0.85 | 0.11 m | 1.15 m | 7 | 7 / 3 | 7 |
-| Fast drag, 8.3 m/s | 1.2 s | 11 / 11 | 5 | 11 of 11 | 0.85 | 0.53 m | 4.98 m | 7 | 8 / 2 | 5 |
-| Wide drag, brush 6 m, 4 m/s | 2 s | 51 / 51 | 15 | 51 of 51 | 0.85 | 0.25 m | 2.7 m | 13 | 14 / 4 | 11 |
+| Still puff | click | 0 | 0 | 126 / 9 | 2.47 m, 0 | 126 of 126 | 0 | 0.06 m | 7 / 11 | 6 of 9 |
+| Still full | 1.5 s | 0 | 0 | 256 / 25 | 4.1 m, 0 | 256 of 256 | 0 | 0.1 m | 21 / 16 | 18 of 25 |
+| Wind puff | click | 0.8, 0° | 1.07 m/s | 126 / 8 | 2.47 m, 2.14 m | 126 of 126 | 0 | 4.34 m downwind | 5 / 7 | 3 of 8 |
+| Wind full | 1.5 s | 0.8, 0° | 0.61 m/s | 256 / 21 | 4.1 m, 1.22 m | 256 of 256 | 0 | 2.82 m downwind | 16 / 15 | 12 of 21 |
+| Gust mid-fall | click | 0.4, 0° + a gust parcel after 1 s | 0.43 m/s | 126 / 11 | 2.47 m, 0.85 m | 126 of 126 | 4 (worst 1.14 radii) | 2.54 m downwind | 7 / 13 | 5 of 11 |
+| Peak top (8.9 m) | 1.5 s | 0 | 0 | 256 / 20 | 4.1 m | 256 of 256 | 0 | 0.61 m | 0 / 1 | 0 of 20: all bare rock |
+| Flank to pond | 1.5 s | 0.5, 180° | 0.62 m/s | 256 / 22 | 4.1 m, 1.24 m | 256 of 256 | 0 | 1.83 m downwind | 1 / 1 | 1 of 22: 10 rock, 8 crowded by the peak's forest, 1 water, 2 thinned |
 
-Results:
-
-- **Growth.** Planted seeds grew their saplings 2.1–3.7 s after the stroke closed, and the forest round them mostly about 8.5–10.7 s after. No grown tree stood more than 1.5 m from a landed seed.
-- **Undo.** Each stroke added one undo step. One undo restored the wish, the floor tint and the objects exactly, and cleared the sprouts. An undo with 3 seeds still in the air landed them and took the stroke back.
-- **Shift and `--paint-forest`.** A Shift press made no sprinkle and painted (cleared). With the sprinkle off, a press painted as before.
-- **Frame cost.** The sprinkle's own step is 0.04–0.15 ms a frame (median) and at most 0.5 ms while pouring. Its worst frame is 4–6 ms, when the stroke's undo step closes and its settle starts. Release costs under 0.2 ms. Main-loop frames stayed under 13.3 ms while pouring and settling. While the forest grew, one frame each in the fast and wide drags went over 16.7 ms (40 ms and 16.7 ms), in emergence's own arrival refreshes.
+- **Wind.** The same strength gives different drifts from one release to the next, because the gust envelope (`gust_at`) swings the wind's strength over time.
+- **The gust test.** A gust parcel sent through the falling cloud carried it about 1.2 m further than the release footprint allowed (3.38 m of drift against 2.2 m at the release wind). 4 motes landed outside the release footprint, all inside the footprint as it stood.
+- **Growth.** Seeds grew their saplings 2.0–3.5 s after the cloud settled, and the forest round them 9.4–10.7 s after (median).
+- **Undo.** Each release added one undo step. One undo restored the wish, the floor tint and the objects, and cleared the sprouts. An undo with 137 motes in the air settled the cloud and took it back.
+- **Shift and `--paint-forest`.** A Shift press made no cloud and painted (cleared), and with pollen off a press painted as before.
+- **Cost.** The cloud's own step (motes, haze, footprint and wind) is 0.2–0.8 ms a frame (median), at most 1.1 ms while held. Its worst frame is 3–8 ms, the settle frame that writes the cloud's undo step. Release costs 0.2–0.5 ms. Main-loop frames stayed under 15 ms while held and falling. While the forest grew, one frame (25.8 ms) went over 16.7 ms, in emergence's own refresh.
 
 Known and unverified:
 
-- **A linger grows a small clump.** A linger's forest is small: 28 seeds in one spot send 2 to emergence and grow about 3 trees, because trees keep `TREE_GAP` apart. Lingering longer darkens the floor and raises the wish, but it cannot pack trees closer.
-- **Fast drags land behind the pointer.** A fast drag lands its seeds about 5 m behind the pointer, where the spout was when they left. The trail of marks shows this, but whether it reads as right or as lag is untested.
+- **One habitat only.** The plain is all woodland, so the probe exercised rock, water, crowding and chance, but not the habitat fertility table. A meadow or arid world would show fewer trees from the same cloud; that is the table's intent, untested here.
+- **Stand size.** A click puff grows about 5–7 trees and a full cloud 16–21. The number is limited by seeds keeping `TREE_GAP` apart and by the fertility.
+- **Steered gusts.** The wind tool's `wind_at` is looked up but was not present on this branch, so steered gusts were not exercised.
 - **Unverified (nothing was rendered):**
-  - whether the seeds read at the diorama's distance (`size`, `glow`);
-  - whether the small marks are clear on every ground, sky and mood;
-  - whether the trail of marks on a drag reads as a promise or as clutter;
-  - whether the pour looks like shaken seed;
-  - whether lit, glowing seeds fit the painted look;
+  - whether the cloud reads as soft, drifting, glinting fluff at the diorama's distance (the motes are 4.5 cm with a glow of 0.9, the haze brightness `HAZE_GLOW` 0.16);
+  - whether the additive haze survives the display fog or reads as a smudge;
+  - whether the soft footprint is noticeable enough, and whether a moving footprint under a gusting cloud reads as honest or as unreliable;
+  - whether the floor darkening all at once when a cloud settles reads well;
   - whether sprouts that sink without a sapling read as seeds failing to take.
 
 ## Meadow

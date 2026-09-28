@@ -20,7 +20,7 @@ const BRUSHES := [
 	{"brush_id":"land","title":"Land","hint":"Drag to raise land  ·  Shift-drag lowers","script":"res://scripts/land_brush.gd"},
 	{"brush_id":"water","title":"Water","hint":"Drag to pour water  ·  it runs downhill and pools  ·  Shift-drag drains","script":"res://scripts/water_brush.gd"},
 	{"brush_id":"meadow","title":"Meadow","hint":"Drag to lay a meadow  ·  Shift-drag lifts it","script":"res://scripts/meadow_brush.gd"},
-	{"brush_id":"forest","title":"Forest","hint":"Drag or hold to sprinkle seeds  ·  Shift-drag clears","script":"res://scripts/forest_brush.gd"},
+	{"brush_id":"forest","title":"Forest","hint":"Click to let pollen go, hold for a bigger cloud  ·  the wind and the land decide  ·  Shift-drag clears","script":"res://scripts/forest_brush.gd"},
 	{"brush_id":"path","title":"Path","hint":"Drag to wear a path  ·  Shift-drag grows it back","script":"res://scripts/path_brush.gd"},
 	{"brush_id":"wind","title":"Wind","hint":"Swipe to send a gust  ·  a quick swipe blows harder  ·  Press and let go for a burst","script":"res://scripts/wind_brush.gd"},
 ]

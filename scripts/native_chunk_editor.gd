@@ -432,7 +432,8 @@ func preview_radius() -> float:
 func preview_wanted() -> bool:
 	if mode in ["assets","select","pond"]:
 		return false
-	if handful != null and handful.active(): return false
+	# Pollen shows its own footprint where the cloud would settle.
+	if _pollen_in_hand(): return false
 	return mode != "waterfall" or _fall_start == null
 
 func seal_tunnel() -> void:
@@ -746,7 +747,7 @@ func _process(delta: float) -> void:
 	if _ball_holding:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
 		else: _ball_step(hit,delta)
-	if handful != null: _handful_process(hit,delta)
+	_handful_process(hit,delta)
 	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if gust != null: _gust_process(hit)
 	if hit != null:
@@ -1748,9 +1749,9 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	var hit: Variant = pick(event.position)
 	if hit == null: return false
 	# A mountain still rising lands before anything else is painted, and
-	# seeds still in the air land and close their sprinkle's undo step.
+	# pollen in the air settles first, unless this press gathers more.
 	_land_mountain()
-	if handful != null: handful.settle_now()
+	if handful != null and not (event.button_index == MOUSE_BUTTON_LEFT and _pollen_in_hand()): handful.settle_now()
 	_stroke_button = event.button_index
 	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT or other_way
 	var brush = creation_brush()
@@ -1761,6 +1762,7 @@ func _land_press(event: InputEventMouseButton) -> bool:
 		_ball_press(hit)
 		return true
 	if brush_id == "forest" and seed_handful and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
+		# Pollen: gathered and released, never painted.
 		_handful_press(hit)
 		return true
 	brush.prepare(data,land_seed)
@@ -2436,93 +2438,97 @@ func _mountain_feel(phase: int, speed := 0.0, seconds := 0.0) -> void:
 ## Seconds the poured fog holds before draining, from press or regrowth.
 const RISE_FOG_SECONDS := 4.0
 
-# --- Seed sprinkle --------------------------------------------------------------
-## The seed sprinkle (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
-## sprinkle"): with forest in hand, seeds pour from just above the pointer
-## while the button is down, each landing inside the small mark under the spout.
-## The press opens one undo step; each landing raises the forest wish round it
-## (ForestBrush `sow`); once the button is up and the last seed is down the
-## step closes and the seeds, thinned to TREE_GAP apart, go to emergence, which
-## grows the forest out from them. Shift-drag still clears as before, and
-## --paint-forest brings back drag-to-paint.
+# --- Pollen -------------------------------------------------------------------
+## Pollen (scripts/pollen_cloud.gd, docs/scenic/brushes.md "Pollen"): with
+## forest in hand a press gathers a cloud of pollen above the pointer, a hold
+## swells it, and release lets it go on the wind. You release it; the world
+## decides what becomes of it. When a cloud has settled its seeds raise the
+## forest wish round them (ForestBrush `sow`) as one undo step, and go to
+## emergence, where the land decides what takes and grows (Emergence
+## `_fertility`). Shift-drag still clears as before, and --paint-forest brings
+## back drag-to-paint.
 var seed_handful := "--paint-forest" not in OS.get_cmdline_user_args()
 var handful: Node3D
 var _handful_holding := false
 var _handful_serial := 0
-var _sowing := false
-var _sow_dirty := false
-## The last stroke sown, for probes: {"points", "planted", "bounds", "changed"}.
+## Settled clouds waiting for no other stroke to be open.
+var _settled_clouds: Array[Dictionary] = []
+## The last cloud sown, for probes: the cloud (Pollen `settled`) with its
+## "bounds" and "changed".
 var last_sowing := {}
 
+## True while pollen is the forest tool in hand and a press would gather it.
+func _pollen_in_hand() -> bool:
+	return mode == "land" and brush_id == "forest" and seed_handful and not other_way and not Input.is_key_pressed(KEY_SHIFT)
+
+func _make_pollen() -> void:
+	handful = preload("res://scripts/pollen_cloud.gd").new()
+	handful.name = "Pollen"
+	handful.scene = scene
+	terrain.add_child(handful)
+	handful.settled.connect(_pollen_settled)
+	handful.ground_at = func(p: Vector2) -> float:
+		var h: Variant = data.ground_height(p)
+		return float(h) if h != null else NAN
+	handful.takes = func(p: Vector2) -> bool: return emergence.takes(p)
+	# Undo, load and new worlds take the ground away: sprouts and clouds still
+	# out go with it. An undo settles the clouds first (_history_step).
+	data.state_restored.connect(func(_state: Dictionary) -> void:
+		_handful_holding = false
+		_settled_clouds.clear()
+		handful.withdraw())
+
 func _handful_press(hit: Vector3) -> void:
-	if handful == null:
-		handful = preload("res://scripts/seed_handful.gd").new()
-		handful.name = "SeedHandful"
-		terrain.add_child(handful)
-		handful.seed_landed.connect(_seed_landed)
-		handful.sown.connect(_handful_sown)
-		handful.ground_at = func(p: Vector2) -> float:
-			var h: Variant = data.ground_height(p)
-			return float(h) if h != null else float(data.sample(p,data.heights))
-		handful.takes = func(p: Vector2) -> bool: return emergence.takes(p)
-		# Undo, load and new worlds take the ground away: sprouts and seeds
-		# still out go with it. An undo lands the seeds first (_history_step).
-		data.state_restored.connect(func(_state: Dictionary) -> void:
-			_handful_holding = false
-			_sowing = false
-			_sow_dirty = false
-			handful.withdraw())
+	if handful == null: _make_pollen()
 	_handful_serial += 1
-	var air: Variant = scene.get("_atmosphere")
-	handful.wind = Vector2(cos(air._air_angle),sin(air._air_angle)) if air != null and air.get("_air_angle") != null else Vector2.ZERO
 	var forest = creation_brush()
 	forest.prepare(data,land_seed)
-	handful.begin(hit,"forest",forest.radius,forest.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
-	# One stroke, one undo step, seeds still in the air included.
-	data.begin_stroke()
-	forest.begin()
-	_sowing = true
+	handful.gather(hit,forest.radius,forest.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
+	# No stroke starts: the brush feel's swell would raise the very wind the
+	# cloud drifts on. The settled cloud reports its stroke (`_write_cloud`).
 	_handful_holding = true
-	_emit_stroke(0,hit,handful.mark_radius,0.0)
 
-## While the button is down the spout follows the pointer's ground point;
-## landed seeds' wish shows through the light refresh, at most once a frame.
+## Aiming shows a click's footprint under the pointer; a held cloud follows
+## it. Settled clouds are written once no other stroke is open.
 func _handful_process(hit: Variant, delta: float) -> void:
+	var aiming := _pollen_in_hand() and not _painting and not forming and active
+	if handful == null:
+		if not aiming or hit == null: return
+		_make_pollen()
+	handful.hover(hit if aiming else null,float(brushes.forest.radius))
 	if _handful_holding:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _handful_release()
-		else:
-			handful.aim(hit)
-			_emit_stroke(1,handful.spout_point(),handful.mark_radius,brush_strength()*minf(delta,0.05))
-	if _sow_dirty and _light_refresh_ready(true):
-		_sow_dirty = false
-		_refresh_light()
+		else: handful.hold(hit)
+	while not _settled_clouds.is_empty() and data._before.is_empty() and not forming:
+		_write_cloud(_settled_clouds.pop_front())
 
 func _handful_release() -> void:
 	if not _handful_holding: return
 	_handful_holding = false
-	handful.end()
-	_emit_stroke(2,handful.spout_point(),handful.mark_radius,0.0)
+	handful.release()
 
-## A seed came down inside `mark` (centre x, z and radius).
-func _seed_landed(point: Vector2, mark: Vector3) -> void:
-	if forming or not _sowing: return
-	brushes.forest.sow(data,point,mark)
-	_sow_dirty = true
+func _pollen_settled(cloud: Dictionary) -> void:
+	if forming: return
+	_settled_clouds.append(cloud)
+	if data._before.is_empty(): _write_cloud(_settled_clouds.pop_front())
 
-## The stroke is over and its last seed down: close the step, settle the
-## view, and let the forest grow out from the seeds. A dense spot sends one
-## seed per TREE_GAP; the rest only sprouted and asked for forest.
-func _handful_sown(points: PackedVector2Array) -> void:
-	if not _sowing: return
-	_sowing = false
-	_sow_dirty = false
-	var bounds: Rect2 = brushes.forest.finish(data)
+## A settled cloud's seeds ask for forest, as one undo step, and go to
+## emergence, which grows the forest out from them as the land allows.
+func _write_cloud(cloud: Dictionary) -> void:
+	var forest = brushes.get("forest")
+	var seeds: PackedVector2Array = cloud.seeds
+	if forest == null or seeds.is_empty(): return
+	forest.prepare(data,land_seed)
+	forest.begin()
+	data.begin_stroke()
+	for p in seeds: forest.sow(data,p)
+	var bounds: Rect2 = forest.finish(data)
 	var changed := data.end_stroke()
 	_settle_pending = true
 	_settle_stroke()
-	const Emergence := preload("res://scripts/emergence.gd")
-	var planted := PackedVector2Array()
-	for p in points:
-		if Emergence._nearest(planted,p) >= Emergence.TREE_GAP: planted.append(p)
-	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",planted)
-	last_sowing = {"points":points,"planted":planted,"bounds":bounds,"changed":changed}
+	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",seeds)
+	var middle := bounds.get_center()
+	_emit_stroke(2,Vector3(middle.x,float(data.sample(middle,data.heights)),middle.y),bounds.size.length()*0.5,0.0)
+	last_sowing = cloud.duplicate()
+	last_sowing.bounds = bounds
+	last_sowing.changed = changed

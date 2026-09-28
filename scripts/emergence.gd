@@ -105,17 +105,24 @@ const FOREST_LOBE_FREQUENCY := 0.28
 const FOREST_MARGIN := Vector4(0.02,0.25,0.5,0.8)
 const FOREST_MARGIN_SHRUBS := 0.45
 const FOREST_UNDER_SHRUBS := 0.12
-## Sown forest (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
-## sprinkle"). A sprinkle stroke's region carries its landed seeds. Each is a tree
-## candidate of its own at its landing point, which comes up first: at
-## SOWN_DELAY plus up to SOWN_STAGGER, taking at SOWN_TAKE (thinned on steep
-## ground as any tree is). The region's lattice candidates then arrive by
-## their distance from the nearest seed, SOWN_SPREAD m a second after
-## SOWN_TREE_DELAY (trees) or SOWN_SHRUB_DELAY (shrubs), plus up to
-## SOWN_JITTER, so the forest spreads out from where the seeds fell.
+## Sown forest (scripts/pollen_cloud.gd, docs/scenic/brushes.md "Pollen").
+## A released cloud's region carries the seeds it settled. Each is a tree
+## candidate of its own at its point, which comes up first: at SOWN_DELAY plus
+## up to SOWN_STAGGER, taking at SOWN_TAKE × the ground's fertility (`_fertility`)
+## and thinned on steep ground as any tree is. The region's lattice candidates
+## then arrive by their distance from the nearest seed, SOWN_SPREAD m a second
+## after SOWN_TREE_DELAY (trees) or SOWN_SHRUB_DELAY (shrubs), plus up to
+## SOWN_JITTER, and their trees take at the fertility too, so the forest
+## spreads out from where the seeds fell as far as the land lets it.
 const SOWN_DELAY := 1.2
 const SOWN_STAGGER := 2.0
-const SOWN_TAKE := 0.8
+const SOWN_TAKE := 0.9
+## The ground's fertility for sown trees (`_fertility`): the habitat's share,
+## leaned down on dry ground (SOWN_DRY at no moisture) and on exposed heights
+## (SOWN_EXPOSED at the top of the altitude range, from its .x share).
+const SOWN_FERTILITY := {"woodland":1.0,"redwood":1.0,"wetland":0.8,"alpine":0.75,"meadow":0.75,"arid":0.3}
+const SOWN_DRY := 0.75
+const SOWN_EXPOSED := Vector2(0.6,0.65)
 const SOWN_TREE_DELAY := 4.0
 const SOWN_SHRUB_DELAY := 7.0
 const SOWN_SPREAD := 0.4
@@ -188,6 +195,10 @@ var _crowd := {}
 var _crowd_built := false
 ## Why candidates did not take, by reason; for probes and tuning.
 var refusals := {}
+## What became of sown seeds, by habitat: {habitat: {"took" or a refusal
+## reason: count}}; for probes and tuning.
+var sown_outcomes := {}
+var _sown_habitat := ""
 ## Stands painted forests named old (`_elder`), by str(key); for probes.
 var elders := {}
 ## Plan queued strokes on a worker, over a detached copy of the ground, and
@@ -406,7 +417,7 @@ func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2A
 					if not sown.is_empty():
 						at = (SOWN_TREE_DELAY if tree else SOWN_SHRUB_DELAY)+_nearest(sown,p)/SOWN_SPREAD+SOWN_JITTER*Variety.unit(key+[3])
 					if tree: wished.append(p)
-				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide})
+				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide,"pollen":not sown.is_empty()})
 	# Each landed seed is a candidate of its own, first to come up.
 	for k in range(sown.size()):
 		var p: Vector2 = sown[k]
@@ -575,6 +586,13 @@ func _cover_target(p: Vector2) -> Vector2:
 
 func _arrive(plant: Dictionary, born: float) -> bool:
 	var p: Vector2 = plant.p
+	_sown_habitat = "(before habitat)" if plant.get("sown",false) else ""
+	var arrived := _arrive_as(plant,born,p)
+	if arrived and not _sown_habitat.is_empty(): _tally("took")
+	_sown_habitat = ""
+	return arrived
+
+func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 	var h: Variant = data.ground_height(p)
 	if h == null or _wet(p):
 		return _refuse("water")
@@ -582,6 +600,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	if data.provenance[cell.y*data.MEADOW_CELLS+cell.x] == NativeTerrainData.SOURCE_HAND:
 		return _refuse("hand")
 	var habitat: String = _blend.pick(p)
+	if not _sown_habitat.is_empty(): _sown_habitat = habitat
 	var biome: Dictionary = Shape.BIOMES[habitat]
 	var slope := _slope(p)
 	# Nothing takes on bare rock or snow.
@@ -599,7 +618,9 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 		if float(h) > _treeline(habitat):
 			return _refuse("treeline")
 		var sown: bool = plant.get("sown",false)
-		var chance := SOWN_TAKE*(1.0-smoothstep(0.45,float(biome.rock_slope),slope)) if sown else _tree_chance(habitat,slope,wish,frayed,only_wish)
+		var chance := SOWN_TAKE*_fertility(habitat,p)*(1.0-smoothstep(0.45,float(biome.rock_slope),slope)) if sown else _tree_chance(habitat,slope,wish,frayed,only_wish)
+		# Round a released cloud's seeds the land decides how thick it grows.
+		if plant.get("pollen",false) and not sown: chance *= _fertility(habitat,p)
 		if guide != null and not sown and (wish <= 0.0 or frayed < FOREST_EDGE.y):
 			# Outside a forest's core, fewer trees stand in front of water.
 			var kept: float = chance*guide.sight_keep(p)
@@ -843,7 +864,20 @@ func _near(p: Vector2, radius: float, trees_only: bool, dead_only := false) -> i
 
 func _refuse(reason: String) -> bool:
 	refusals[reason] = refusals.get(reason,0)+1
+	if not _sown_habitat.is_empty(): _tally(reason)
 	return false
+
+func _tally(outcome: String) -> void:
+	var by: Dictionary = sown_outcomes.get_or_add(_sown_habitat,{})
+	by[outcome] = int(by.get(outcome,0))+1
+
+## How well sown trees take at `p` in `habitat`: the habitat's share
+## (SOWN_FERTILITY), leaned by moisture (the blend's, which the water nearby
+## raises) and by exposure on high ground.
+func _fertility(habitat: String, p: Vector2) -> float:
+	var wet := lerpf(SOWN_DRY,1.0,clampf(_blend.moisture(p),0.0,1.0))
+	var exposed := 1.0-(1.0-SOWN_EXPOSED.y)*smoothstep(SOWN_EXPOSED.x,1.0,clampf(_blend.altitude(p),0.0,1.0))
+	return float(SOWN_FERTILITY.get(habitat,0.75))*wet*exposed
 
 func _tree_kind(habitat: String, p: Vector2, pick: float, bank_pick := 1.0) -> String:
 	return Stands.tree_kind(habitat,p,pick,bank_pick,salt,_blend)
@@ -959,7 +993,7 @@ func takes(p: Vector2) -> bool:
 	var habitat: String = _blend.pick(p)
 	return _slope(p) <= _rock_slope(habitat) and float(h) <= minf(_snowline()-1.8,_treeline(habitat))
 
-## The tree a handful gathered at `p` carries seed of (scripts/seed_handful.gd
+## The tree a cloud of pollen gathered at `p` carries (scripts/pollen_cloud.gd
 ## FAMILY): the dominant species of the stand there, or "" before the live
 ## blend is built.
 func seed_family(p: Vector2) -> String:
