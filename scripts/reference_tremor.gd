@@ -9,6 +9,12 @@ var enabled := true
 ## never decays here and never emits `shaken`, so creatures do not stumble.
 var rumble := 0.0
 var rumble_clock := 0.0
+## The diorama jiggling in the hand (scripts/snow_globe.gd owns it): how far
+## the world is moved on screen, metres along the camera's right and up (x, y),
+## and how far it is rolled about the view, radians (z). The camera moves the
+## other way, so the whole world moves together and nothing in it is touched.
+## Held as given: it never decays here and never emits `shaken`.
+var jiggle := Vector3.ZERO
 
 func add(magnitude: float) -> void:
 	if enabled and is_finite(magnitude) and magnitude>0.0:
@@ -29,6 +35,9 @@ func _roll(frequency: float, phase: float) -> float:
 	return sin(t * frequency + phase) * 0.55 + sin(t * frequency * 1.73 + phase * 1.9) * 0.3 + sin(t * frequency * 4.1 + phase * 3.1) * 0.15
 
 func apply(base: Transform3D) -> Transform3D:
+	if jiggle != Vector3.ZERO:
+		base.origin -= base.basis.x*jiggle.x+base.basis.y*jiggle.y
+		base.basis = base.basis*Basis(Vector3.BACK,-jiggle.z)
 	if not enabled or (trauma <= 0.0001 and rumble <= 0.0001):
 		return base
 	var strength := trauma * trauma

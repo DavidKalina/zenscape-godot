@@ -110,6 +110,8 @@ var _stroke_feedback: Node
 var world_rumble: Node
 ## The hand of light that works the creation tools (scripts/god_hand.gd).
 var god_hand: Node3D
+## Shaking the diorama by its rim like a snow globe (scripts/snow_globe.gd).
+var snow_globe: Node
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -222,6 +224,9 @@ func _ready() -> void:
 		god_hand = preload("res://scripts/god_hand.gd").new()
 		_chunk_editor.terrain.add_child(god_hand)
 		god_hand.setup(self)
+	snow_globe = preload("res://scripts/snow_globe.gd").new()
+	snow_globe.setup(self)
+	add_child(snow_globe)
 	world_rumble = preload("res://scripts/world_rumble.gd").new()
 	add_child(world_rumble)
 	world_rumble.setup(self)
