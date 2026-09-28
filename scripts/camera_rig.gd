@@ -18,7 +18,9 @@ extends Node
 ## Every move is a critically damped spring toward a goal, so a glide starts
 ## and ends softly, never overshoots, and any new input takes it over from
 ## wherever it is. The scene's pooled drag deltas are taken as input here, so
-## its own easing has nothing left to apply. A pose written from outside (a
+## its own easing has nothing left to apply. A mouse drag that orbits turns
+## the world by its grabbed ground instead, and a flick spins it on
+## (scripts/world_turn.gd; `--classic-orbit` for the old orbit). A pose written from outside (a
 ## regrowth, the menu's Overview, a new plain) is adopted as it stands.
 const Inspector = preload("res://scripts/scene_inspector.gd")
 const Glass = preload("res://scripts/glass_chrome.gd")
@@ -77,6 +79,9 @@ var _history: Array[Dictionary] = []
 var focus := {}
 var following := false
 var hovered := {}
+## Turning the world like a lazy Susan (scripts/world_turn.gd): a mouse drag
+## that orbits grabs the ground and turns it, and a flick spins it on.
+var turn: Node
 var _dragging := false
 var _hand_view := Vector2.ZERO
 var _hand_pan := Vector3.ZERO
@@ -115,6 +120,9 @@ func setup(owner_scene: Node3D) -> void:
 	# After photo mode (-10), before the scene: the scene reads this frame's pose.
 	process_priority = -9
 	inspector.setup(scene)
+	turn = preload("res://scripts/world_turn.gd").new()
+	add_child(turn)
+	turn.setup(self)
 	_hint_seen = _read_seen()
 	_build_chrome()
 
@@ -268,13 +276,17 @@ func _process(delta: float) -> void:
 	var was_live := live
 	live = _is_live()
 	if not live or not was_live or _moved_outside(): _adopt()
-	if not live: hovered = {}
+	if not live:
+		hovered = {}
+		turn.rest()
 	if live:
 		_take_scene_drags(delta)
 		_keys(delta)
 		_advance_fling(delta)
 		_advance_follow(delta)
 		_step(delta)
+		_keep_clear()
+		turn.advance(delta)
 		_keep_clear()
 		_write()
 		_hover(delta)
@@ -294,6 +306,7 @@ func _adopt() -> void:
 	_fling_view = Vector2.ZERO
 	_fling_pan = Vector3.ZERO
 	following = false
+	turn.stop()
 	_written = [scene.target,scene.yaw,scene.polar,scene.distance]
 
 func _moved_outside() -> bool:
@@ -421,6 +434,7 @@ func glide_to(pivot: Vector3, yaw: float, polar: float, distance: float) -> void
 	_glide_time = 0.0
 	_fling_view = Vector2.ZERO
 	_fling_pan = Vector3.ZERO
+	turn.stop()
 	_hand()
 
 func _remember() -> void:
@@ -513,8 +527,11 @@ func _advance_follow(_delta: float) -> void:
 
 ## Drags the scene pooled this frame (right, Ctrl, Alt, off-land or Look
 ## drags orbit; middle drags pan) become goals, and a quick release flings.
+## A mouse orbit's side-to-side is the world turn's (scripts/world_turn.gd);
+## only its tilt is taken here.
 func _take_scene_drags(delta: float) -> void:
 	var orbit: Vector2 = scene._orbit_delta
+	if turn.takes_orbit(): orbit.x = 0.0
 	var pan: Vector2 = scene._pan_delta
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
@@ -555,6 +572,7 @@ func _keys(delta: float) -> void:
 	# In the chunk atlas plain arrows step between chunks (chunk_atlas_controller.gd).
 	if scene.get("atlas") != null and not Input.is_key_pressed(KEY_SHIFT): return
 	if Input.is_key_pressed(KEY_SHIFT):
+		turn.stop()
 		_view_goal.x += move.x*KEY_TURN*delta
 		_view_goal.y = clampf(_view_goal.y-move.y*KEY_TURN*0.6*delta,POLAR.x,POLAR.y)
 		_w_view = HAND
@@ -610,6 +628,7 @@ func handle(event: InputEvent) -> bool:
 		var fingers: Vector2 = event.delta*SWIPE*SWIPE_SIGN
 		if event.shift_pressed: pan_pixels(fingers)
 		else:
+			turn.stop()
 			orbit_pixels(fingers)
 			_used.orbit = true
 		_fling_view = Vector2.ZERO

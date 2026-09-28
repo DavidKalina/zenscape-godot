@@ -103,6 +103,10 @@ velocity included.
 | Hand (drags, swipes, wheel, pinch, keys) | 16 /s | 0.30 s | 0.42 s |
 | Follow (the pivot on a creature) | 3.2 /s | 1.5 s | — |
 
+- **Turning.** A mouse drag that orbits grabs the ground and turns the world
+  like a lazy Susan, and a flick spins it on with weight; see
+  `docs/scenic/hand-turn.md`. `--classic-orbit` restores the pixel orbit
+  below.
 - **Inertia.** A released mouse drag carries on at 35 % of the hand's speed
   (capped at 2.5 rad/s) and fades over 0.22 s. A slow drag ends where it was
   let go; a flick keeps turning a little. Trackpad swipes get no fling from the
