@@ -168,7 +168,7 @@ func _build_veil() -> void:
 			flow.add_child(button)
 	var rock := _row("rock_type","Rock",extra)
 	for entry: Dictionary in Mood.ROCK_TYPES:
-		var chip := _chip(Color(entry.color),entry.title)
+		var chip := _chip(Color(entry.color),entry.title,72.0)
 		chip.pressed.connect(func() -> void: mood.pin("rock_type",entry.id))
 		rows.rock_type.buttons[entry.id] = chip
 		rock.add_child(chip)
@@ -199,6 +199,8 @@ func _build_veil() -> void:
 	picker.custom_minimum_size = Vector2(40,24)
 	picker.tooltip_text = "Any colour"
 	picker.flat = true
+	picker.text = "ANY"
+	Style.style_label(picker,10)
 	picker.color_changed.connect(func(c: Color) -> void: if not color_key.is_empty(): mood.pin(color_key,c.to_html(false),false))
 	swatch_row.add_child(picker)
 
@@ -251,11 +253,11 @@ func _text_button(button: Button, text: String, font_size: int) -> void:
 		button.add_theme_stylebox_override(state,style)
 
 ## A round colour chip with its name under it.
-func _chip(color: Color, heading: String) -> Button:
+func _chip(color: Color, heading: String, width := 52.0) -> Button:
 	var chip := Button.new()
 	Style.bare(chip)
 	chip.toggle_mode = true
-	chip.custom_minimum_size = Vector2(52,50)
+	chip.custom_minimum_size = Vector2(width,50)
 	chip.tooltip_text = heading
 	chip.set_meta("color",color)
 	chip.draw.connect(func() -> void:
@@ -267,7 +269,7 @@ func _chip(color: Color, heading: String) -> Button:
 		if on: chip.draw_arc(c,17.0,0,TAU,40,Color(Style.tint("mood"),0.7),1.0,true))
 	var label := Style.label(heading,9,Color(Style.LIGHT,0.85))
 	label.position = Vector2(0,32)
-	label.size = Vector2(52,14)
+	label.size = Vector2(width,14)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	chip.add_child(label)
 	return chip

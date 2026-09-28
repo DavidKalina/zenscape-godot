@@ -144,7 +144,7 @@ func _setup_creation() -> void:
 	_toolbar.get_parent().add_child(creation_palette)
 	_toolbar.get_parent().move_child(creation_palette,_toolbar_glass.get_index())
 	creation_palette.setup(self)
-	if lantern: preload("res://scripts/lantern_style.gd").style_label(_notice,15)
+	if lantern: preload("res://scripts/lantern_style.gd").style_label(_notice,16,Color("fbf6ea"),true)
 	photo = preload("res://scripts/photo_mode.gd").new()
 	add_child(photo)
 	photo.setup(self)
@@ -160,7 +160,7 @@ func _setup_creation() -> void:
 	add_child(camera_rig)
 	camera_rig.setup(self)
 	if lantern:
-		for text: Label in [camera_rig.hint,camera_rig.label]: preload("res://scripts/lantern_style.gd").style_label(text,15)
+		for text: Label in [camera_rig.hint,camera_rig.label]: preload("res://scripts/lantern_style.gd").style_label(text,16,Color("fbf6ea"),true)
 	# Right drags orbit here; Shift-drag works the brush the other way.
 	_chunk_editor.right_works_other_way = false
 	_layout_shell()

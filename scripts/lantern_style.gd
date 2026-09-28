@@ -38,6 +38,7 @@ const FONT_PATH := "res://assets/fonts/CormorantGaramond-SemiBold-latin.ttf"
 
 static var _glyphs := {}
 static var _font: FontVariation
+static var _text_font: FontVariation
 static var _glyph_material: ShaderMaterial
 
 ## `min(W/1440, H/900)`: the shell keeps its proportions at any window size.
@@ -70,6 +71,14 @@ static func font() -> FontVariation:
 	_font.spacing_glyph = 2
 	return _font
 
+## The same face, tracked for sentences: notices and the camera's first-run line.
+static func text_font() -> FontVariation:
+	if _text_font != null: return _text_font
+	_text_font = font().duplicate()
+	_text_font.spacing_glyph = 0
+	_text_font.spacing_space = 1
+	return _text_font
+
 static func caps(text: String) -> String:
 	return text.to_upper()
 
@@ -83,8 +92,8 @@ static func label(text: String, size := 12, color := LIGHT) -> Label:
 	style_label(node,size,color)
 	return node
 
-static func style_label(node: Control, size := 12, color := LIGHT) -> void:
-	node.add_theme_font_override("font",font())
+static func style_label(node: Control, size := 12, color := LIGHT, sentence := false) -> void:
+	node.add_theme_font_override("font",text_font() if sentence else font())
 	node.add_theme_font_size_override("font_size",size)
 	node.add_theme_color_override("font_color",color)
 	node.add_theme_color_override("font_outline_color",Color(SHADE,0.62))
