@@ -35,6 +35,13 @@ extends Node3D
 ## Motes are capped per veil (`_cap`): a long sweep spreads its motes along the
 ## path, taking them from where the veil is densest, rather than adding more.
 ##
+## With the God Hand (scripts/god_hand.gd) new motes gather in its palm
+## (`hand_at`) instead of at the veil's head, and wait there until the hand
+## throws (`toss`): then they fly out at the throw's speed and a spring draws
+## each on to its place in the veil. A throw after release carries them on to
+## where the falling veil has got to. Where each mote lands never changes:
+## the hand only shows where the pollen comes from.
+##
 ## Motes that land at least SEED_GAP from the veil's other seeds are its seeds;
 ## the rest is dust that glints and is gone. Where a seed lands on ground that
 ## could take it (`takes`) a sprout pops up and later sinks as the forest takes
@@ -118,6 +125,19 @@ const GLINT := 0.8
 const SPROUT_POP := 0.35
 const SPROUT_SECONDS := 9.0
 const SPROUT_SIZE := 0.3
+## Thrown motes: the spring (1/s²) and damping (1/s) that draw a mote from
+## the throw on to its place, how widely a throw scatters them (a share of
+## its speed, and m/s), the handful's size (a share of each mote's place in
+## the veil), the longest a mote waits in the hand (s) before it goes by
+## itself, and how near its place (m), or how long after (s), a thrown mote
+## is back with the veil.
+const FLING_SPRING := 26.0
+const FLING_DAMP := 7.0
+const SCATTER := Vector2(0.35,0.8)
+const HANDFUL := 0.14
+const HAND_WAIT := 0.6
+const ARRIVED := 0.1
+const FLIGHT := 1.2
 ## Veils in the air at once; another's release settles the oldest at once.
 const CLOUDS := 4
 const MOTES_MAX := 2560
@@ -138,6 +158,8 @@ const FAMILY := {"tree":"conifer","redwood":"conifer","juniper":"conifer","broad
 var ground_at: Callable = func(_p: Vector2) -> float: return 0.0
 var takes: Callable = func(_p: Vector2) -> bool: return true
 var scene: Node
+## The God Hand's handful (plate), or null: new motes gather there.
+var hand_at: Variant = null
 ## Microseconds the last frame's step took (for probes).
 var last_usec := 0
 var age := 0.0
@@ -279,7 +301,8 @@ func release() -> void:
 		# adds the rest as it falls.
 		var off := Vector2(mote.off.x,mote.off.z).limit_length(float(knot.r))
 		mote.base = _flat(knot.p)+off+Vector2.RIGHT.rotated(rng.randf()*TAU)*float(knot.sigma)*sqrt(rng.randf())
-		mote.from = mote.p
+		# Still in the hand or on its way: its fall starts from its place.
+		mote.from = _hang(veil,knot,mote) if mote.has("hand") or mote.has("v") else mote.p
 		mote.start = LIFT+float(knot.wave)+rng.randf()*JITTER
 		mote.fall = rng.randf_range(FALL.x,FALL.y)
 		mote.floor = float(knot.p.y)
@@ -318,6 +341,48 @@ func withdraw() -> void:
 	_sprouts.clear()
 	_glints.clear()
 	_hide()
+
+## The God Hand throws what is in its palm at `velocity` (plate m/s): each
+## mote flies out, scattered a little, and a spring draws it on to its place.
+func toss(velocity: Vector3) -> void:
+	var all: Array[Dictionary] = clouds.duplicate()
+	if not held.is_empty(): all.append(held)
+	# Its own dice, not the veil's: a throw never moves where anything lands.
+	for veil: Dictionary in all:
+		for mote: Dictionary in veil.motes:
+			if not mote.has("hand"): continue
+			mote.erase("hand")
+			var scatter := Vector3(randf_range(-1,1),randf_range(-0.6,1),randf_range(-1,1))
+			mote.v = velocity*randf_range(0.75,1.15)+scatter*(velocity.length()*SCATTER.x+SCATTER.y)
+
+## A mote waiting in the hand sits in the handful; with no hand, or after
+## HAND_WAIT, it goes by itself, drifting up out of the palm. False once it
+## is out.
+func _in_hand(mote: Dictionary, delta: float) -> bool:
+	if not mote.has("hand"): return false
+	mote.hand = float(mote.hand)+delta
+	if hand_at == null or float(mote.hand) > HAND_WAIT:
+		mote.erase("hand")
+		mote.v = Vector3.UP*1.5
+		return false
+	mote.p = Vector3(hand_at)+Vector3(mote.off)*HANDFUL
+	return true
+
+## A thrown mote flies on a spring to `to`; within ARRIVED m, and slow, it
+## is back with the veil, which carries it on from there. In a held veil it
+## is back after FLIGHT s whatever: a place turning quickly round its knot
+## keeps ahead of the spring, as it keeps ahead of the veil's own easing.
+func _fly(mote: Dictionary, to: Vector3, delta: float, held_veil := false) -> void:
+	var v: Vector3 = mote.v
+	var p: Vector3 = mote.p
+	v += ((to-p)*FLING_SPRING-v*FLING_DAMP)*delta
+	p += v*delta
+	mote.p = p
+	mote.v = v
+	mote.flown = float(mote.get("flown",0.0))+delta
+	if (p.distance_squared_to(to) < ARRIVED*ARRIVED and v.length_squared() < 1.0) or (held_veil and float(mote.flown) > FLIGHT):
+		mote.erase("v")
+		mote.erase("flown")
 
 # --- Laying the veil ------------------------------------------------------------
 
@@ -404,8 +469,12 @@ func _fill(veil: Dictionary, k: int, count: int) -> void:
 				knots[from].count = int(knots[from].count)-1
 				break
 		else:
-			motes.append({"k":k,"off":slot,"p":Vector3(veil.head)+Vector3(rng.randf_range(-0.15,0.15),rng.randf_range(-0.1,0.1),rng.randf_range(-0.15,0.15)),
-				"born":float(veil.age),"phase":rng.randf()*TAU,"rate":rng.randf_range(0.3,0.9)*(1.0 if rng.randf() < 0.5 else -1.0),"size":rng.randf_range(0.7,1.3),"landed":false})
+			var mote := {"k":k,"off":slot,"p":Vector3(veil.head)+Vector3(rng.randf_range(-0.15,0.15),rng.randf_range(-0.1,0.1),rng.randf_range(-0.15,0.15)),
+				"born":float(veil.age),"phase":rng.randf()*TAU,"rate":rng.randf_range(0.3,0.9)*(1.0 if rng.randf() < 0.5 else -1.0),"size":rng.randf_range(0.7,1.3),"landed":false}
+			if hand_at != null:
+				mote.hand = 0.0
+				mote.p = Vector3(hand_at)+slot*HANDFUL
+			motes.append(mote)
 		knots[k].count = int(knots[k].count)+1
 
 ## A place in knot `knot`'s part of the veil: within its half-width across,
@@ -456,11 +525,14 @@ func _step_held(delta: float) -> void:
 			knot.thick = minf(1.0,float(knot.thick)+delta*float(veil.strength)/HOLD_SECONDS)
 			knot.r = maxf(float(knot.r),_knot_radius(veil,float(knot.thick)))
 			_fill(veil,k,roundi(_knot_target(veil,k))-int(knot.count))
-	# Each mote churns round its place and eases there, so new ones trail.
+	# Each mote churns round its place and eases there, so new ones trail;
+	# thrown ones fly there, and the hand's wait in its palm.
 	var ease := 1.0-exp(-SETTLE_RATE*delta)
 	for mote: Dictionary in veil.motes:
 		var knot: Dictionary = knots[mote.k]
-		mote.p = Vector3(mote.p).lerp(_hang(veil,knot,mote),ease)
+		if _in_hand(mote,delta): continue
+		if mote.has("v"): _fly(mote,_hang(veil,knot,mote),delta,true)
+		else: mote.p = Vector3(mote.p).lerp(_hang(veil,knot,mote),ease)
 
 ## Where a held mote hangs: its knot, HEIGHT up with a ripple running along the
 ## veil, its place turning slowly round the knot, billowing.
@@ -506,7 +578,13 @@ func _step_flying(veil: Dictionary, delta: float) -> void:
 			# Down part way through this frame: the drift up to that moment.
 			_land(veil,mote,Vector2(mote.base)+Vector2(before[g])+Vector2(veil.wind[g])*(down-was))
 			continue
+		if _in_hand(mote,delta): continue
+		var shown: Vector3 = mote.p
 		_place(veil,knot,mote)
+		if mote.has("v"):
+			var to: Vector3 = mote.p
+			mote.p = shown
+			_fly(mote,to,delta)
 	if int(veil.down) >= veil.motes.size(): _settle(veil)
 
 ## A released mote before its fall: the breath (it lifts and gathers in toward
@@ -647,6 +725,7 @@ func _draw() -> void:
 			motes.set_instance_transform(n,Transform3D(Basis(Vector3.UP,float(mote.phase)+age).scaled(Vector3.ONE*size),mote.p))
 			motes.set_instance_color(n,Color(colour.r,colour.g,colour.b,0.9))
 			n += 1
+			if mote.has("hand"): continue
 			var group: Array = groups[int(mote.k)*buckets/knots.size() if along else i%HAZE]
 			group[0] += Vector3(mote.p)
 			group[1] += 1

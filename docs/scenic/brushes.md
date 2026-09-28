@@ -113,6 +113,24 @@ At arrival (`emergence.gd`, `_arrive` and `_frayed`):
 
 ## Pollen
 
+### Thrown seed (the default since `feature/god-hand`, 2026-09-28)
+
+The user, once the God Hand threw pollen: "when he throws it, there's actually some real physics and momentum of the seeds and where they land is where they land ... I want it to feel like very realistic". They chose that seeds land as they are thrown (no hanging veil), that the hand throws toward the pointer, and that a soft preview still shows where a throw will land. The veil below stays behind `--pollen-veil`.
+
+- **Throwing** (`scripts/seed_throw.gd`). With forest in hand, holding the button fills a handful (`PUFF` 36 motes at the press, `FILL` 36 a second, by √strength × brush size²) and throws it at the pointer. The God Hand throws it at its own pace, about every 1.33 s, the first about a second after the press; letting go throws the last of it. The hand stands `STAND_OFF` (2.2 m) back from the pointer and lobs onto it. Without the hand the handful throws itself on the same pace, from 2.2 m back on the camera's side, `THROW_HEIGHT` (1.4 m) up.
+- **Physics.** Every mote is a particle under gravity with drag toward the air (the wind, `scripts/pollen_wind.gd`). Each throw leaves at the hand's angle, kept between `ANGLE` (0.55–0.9 rad up), and is as fast as it takes to land a seed on the pointer in still air. On top of that it carries `CARRY` (0.8) of the pointer's own speed, so a throw made on the move lands ahead along the drag.
+  - `SEED_SHARE` (35 %) of a handful is seed, falling at up to `SEED_FALL` (5 m/s). A seed arcs out, scattered `SPREAD` (0.55 rad across, half that up and down) and `SPEED_JITTER` (±22 %). One coming down faster than 1.5 m/s skips once.
+  - The rest is pollen dust, falling at up to `DUST_FALL` (0.65 m/s). It puffs out wider and slower, floats down wandering on the curl of the air, and drifts downwind.
+- **Where it lands is where it lands.** A seed landing at least `SEED_GAP` (1.1 m) from the sowing's other seeds is one of its seeds. It sprouts where the ground could take it. Dust glints and is gone. When a sowing's last mote is down (press to release, every throw), it settles as one undo step, and its seeds go to the forest wish and emergence as before.
+- **The promise.** A soft footprint shows where the next throw's seeds will come down: aimed at the pointer, then carried on by the pointer's way and by the wind as it blows now. Each throw keeps its own footprint until its seeds are down. The footprint is a capsule from the still-air landing to the wind's, as wide as the farthest the scatter's corners throw a seed plus `PROMISE_MARGIN` (0.4 m) for the skip. Seeds land inside it unless the wind changes while they fly.
+- `tools/probe_seed_throw.gd` checks this headless:
+  - still air: seeds 0.2 m round the pointer, 4 seed spots from 3 throws at one spot;
+  - a throw at 3 m/s lands 1.3 m ahead;
+  - wind at strength 1 moves seeds 1.2 m and dust 3.4 m;
+  - every seed lands inside its promise.
+
+### The veil (`--pollen-veil`)
+
 `feature/seed-handful`, 2026-09-27. Forest is a veil of pollen and seed-fluff, swept into the air and let go: **you release something; the world decides what becomes of it** (`docs/scenic/handful.md`). Three earlier tries were turned down the same day: a gathered handful of winged seeds, a seed sprinkle that poured while the button was down, and a single released cloud that a drag only moved (all in the branch history). Of the sprinkle the user said: "I just don't like it as a paintbrush." Of the cloud, they asked for this instead: "you kind of drag around and then you release a bunch of pollen that starts in the air, and then that area that you dragged descends from the air, and then the wind kind of arranges it." `--paint-forest` brings back drag-to-paint (`NativeChunkEditor.seed_handful`), and Shift-drag still clears as before.
 
 - **The sweep** (`scripts/pollen_cloud.gd`). With forest in hand, holding the button lays pollen in the air `HEIGHT` (2.2 m) up along the pointer's way. A line, a curve or a loop round an area can be swept. Nothing lands while it is held, and nothing is written.

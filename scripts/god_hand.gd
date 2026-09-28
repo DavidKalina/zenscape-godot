@@ -1,16 +1,27 @@
 extends Node3D
 ## The God Hand (tools/blender_hand/god_hand.py): one right hand of light
-## that works the creation tools. It hovers over the pointer's ground point,
+## that works the creation tools. It floats over the pointer's ground point,
 ## and the tool in hand decides its gesture (NativeChunkEditor `hand_gesture`):
-## it pinches land up, presses it down like clay, cups the water ball and
-## sprinkles pollen. Each gesture plays In, a looping Hold and Out; Idle
-## plays in between. It only shows the work: the brushes, the ball and the
-## pollen behave exactly as they do without it. `--no-hand` leaves it out.
+## it pinches land up and pulls, presses it down like clay, rolls the water
+## ball in its palm and pops it, and throws pollen. Each gesture plays In, a
+## looping Hold and Out; in between it idles, bobbing, and now and then plays
+## one of Idle's variations (a stretch, a look at its palm...). It only shows
+## the work: the brushes, the ball and the pollen land where they would
+## without it. `--no-hand` leaves it out.
 ##
 ## Every clip is placed against the anchor, the model's origin: the ground
-## point under the pointer, followed on a spring. The anchor is turned so the
-## camera sees the hand's three-quarter profile, the reach leading left and
-## away with the thumb side toward the camera; end-on it reads as a blob.
+## point under the pointer (or the summit of a rising mountain, which the
+## pinch holds), followed on a spring. The anchor is turned so the camera
+## sees the hand's three-quarter profile, the reach leading left and away
+## with the thumb side toward the camera; end-on it reads as a blob. Over it,
+## the hand leans into the pointer's way and rocks back when it stops, tilts
+## with the slope it works on, and keeps its knuckles and palm clear of the
+## land.
+##
+## The clips carry marks on non-deforming bones (god_hand_clips.py): Ball and
+## BallTouch are where the clip takes the water ball to be and where the hand
+## touches it, and the hand is carried so they sit on the real ball, of any
+## size; Handful is pollen held in the palm, whose drop throws it.
 ##
 ## Lives under the terrain node, so its coordinates are the plate's, like the
 ## water ball's.
@@ -42,16 +53,51 @@ const FADE := 4.0
 ## Seconds of crossfade into a gesture's In or Out from wherever it is.
 const BLEND := 0.18
 const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle"}
-const LOOPS := ["Idle","PinchHold","PressHold","CupHold","SprinkleHold"]
-## The orb's radius in the cupped palm, in hand lengths (god_hand_clips.py ORB_R).
-const ORB_R := 0.2
-## Seconds into CupIn when the palm has formed under the ball, and into
-## CupOut when the hand tosses it (the rig's cup_formed_s, cup_release_s).
-const CUP_FORMED := 0.7
-const CUP_RELEASE := 0.3
-## The ball leaves when the button does, so CupOut starts this many seconds
-## short of its toss rather than from its anticipation.
-const CUP_TOSS_LEAD := 0.08
+const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold"]
+## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
+## ending on Idle's first pose, so one may follow whenever Idle comes round:
+## after a plain Idle one plays with VARIANT_CHANCE, never the same one twice
+## running, once the hand has hovered near still (under STILL m/s) for
+## STILL_SECONDS. Idle itself is played one round at a time for this.
+const IDLE_VARIANTS := ["IdleStretch","IdlePeek","IdleRipple","IdleGather","IdleDrift"]
+const VARIANT_CHANCE := 0.55
+const STILL := 1.5
+const STILL_SECONDS := 1.0
+## Leaning into the pointer's way: radians of lean per m/s the hand is
+## carried at, at most MAX_LEAN, on a spring (1/s², 1/s) under critical, so
+## a stop rocks it back through upright. It turns about a point LEAN_PIVOT
+## hand lengths over the anchor, about the middle of the hovering hand. Only
+## while the hand is free (idling or throwing pollen).
+const LEAN := 0.045
+const MAX_LEAN := 0.35
+const LEAN_SPRING := 70.0
+const LEAN_DAMP := 8.0
+const LEAN_PIVOT := 0.45
+## Settling onto slopes: the ground is read TILT_REACH hand lengths round the
+## anchor and the hand tilts about the anchor with it, at most MAX_TILT
+## radians, by each gesture's share: fully while it touches the land.
+const TILT_REACH := 0.5
+const MAX_TILT := 0.55
+const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2}
+## No knuckle or palm goes into the land: CLEAR_BONES are kept CLEAR hand
+## lengths over the ground under them by lifting the whole hand, quickly up
+## and slowly back down (1/s). A pinch's tips are meant to touch (PINCHING),
+## and so is a pressing palm, which is never lifted.
+const CLEAR := 0.05
+const LIFT_UP := 14.0
+const LIFT_DOWN := 3.0
+const CLEAR_BONES := ["Hand","MetaIndex","MetaMiddle","MetaRing","MetaPinky","Index1","Middle1","Ring1","Pinky1",
+	"Index2","Middle2","Ring2","Pinky2","Index3","Middle3","Ring3","Pinky3","Thumb1","Thumb2","Thumb3"]
+const PINCHING := ["Index2","Index3","Thumb2","Thumb3"]
+## When the hand leaves the ball (a pop, or a ball gone) the offset that kept
+## it there springs away on this critically damped spring (1/s).
+const LET_GO := 6.0
+## A throw carries the pollen on at this share of the handful's speed, at
+## most MAX_THROW m/s.
+const THROW_CARRY := 1.3
+const MAX_THROW := 7.0
+## Seconds into CupOut when the index pops the ball (the rig's cup_pop_s).
+const CUP_POP := 0.4333
 
 var scene: Node3D
 var editor: Node
@@ -67,11 +113,37 @@ var yaw := 0.0
 var opacity := 0.0
 var cursor_sized := "--hand-cursor" in OS.get_cmdline_user_args()
 var _placed := false
-var _orb := -1
 ## The skeleton's transform in the hand's own space.
 var _skeleton_space := Transform3D.IDENTITY
-## 0 to 1 while the palm is carried by a held ball.
-var _cup := 0.0
+var _ball := -1
+var _touch := -1
+var _handful := -1
+var _clear: Array[int] = []
+var _pinching: Array[int] = []
+## Seconds the hand has hovered near still, and the last variation played.
+var _still := 0.0
+var _last_variant := ""
+## The lean (radians toward plate x, z) and its rate; the tilt's share.
+var _lean := Vector2.ZERO
+var _lean_speed := Vector2.ZERO
+var _tilt := 0.0
+## Metres the hand is lifted clear of the land.
+var _lift := 0.0
+## The offset from the anchor that keeps the Ball mark on the real ball, and
+## its rate, so a let-go carries on smoothly.
+var _carry := Vector3.ZERO
+var _carry_speed := Vector3.ZERO
+## The handful's hold on the last frame and where it was, for the throw.
+var _held := 0.0
+var _handful_at: Variant = null
+## Reaching past the creation tools (docs/scenic/hand-world.md: the sun, the
+## rim, turning the world): while `reach_gesture` is set it stands in for the
+## tool's gesture, a key of GESTURES, and shows the hand wherever the tool is,
+## and the hand works at `reach_point` (plate coordinates) when that is set
+## instead of over the pointer. Whoever reaches sets both and clears them on
+## letting go.
+var reach_gesture := ""
+var reach_point: Variant = null
 
 static func enabled() -> bool:
 	return not "--no-hand" in OS.get_cmdline_user_args()
@@ -97,7 +169,14 @@ func setup(owner_scene: Node3D) -> void:
 	for loop in LOOPS: player.get_animation(loop).loop_mode = Animation.LOOP_LINEAR
 	player.animation_finished.connect(_finished)
 	skeleton = model.find_children("*","Skeleton3D",true,false)[0]
-	_orb = skeleton.find_bone("Orb")
+	_ball = skeleton.find_bone("Ball")
+	_touch = skeleton.find_bone("BallTouch")
+	_handful = skeleton.find_bone("Handful")
+	for bone in CLEAR_BONES:
+		var i := skeleton.find_bone(bone)
+		if i < 0: continue
+		_clear.append(i)
+		if bone in PINCHING: _pinching.append(i)
 	_skeleton_space = global_transform.affine_inverse()*skeleton.global_transform
 	player.play("Idle")
 	visible = false
@@ -107,16 +186,33 @@ func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
 	var hit: Variant = editor.pointer_hit
 	var working: String = editor.hand_gesture() if editor.active else ""
-	var wanted: bool = editor.active and not editor.forming and editor.mode == "land" and (hit != null or not working.is_empty())
+	if not reach_gesture.is_empty(): working = reach_gesture
+	var wanted: bool = not reach_gesture.is_empty() or (editor.active and not editor.forming and editor.mode == "land" and (hit != null or not working.is_empty()))
 	_set_opacity(move_toward(opacity,1.0 if wanted else 0.0,delta*FADE))
 	visible = opacity > 0.0
 	if not visible:
 		_placed = false
-		_cup = 0.0
+		_carry = Vector3.ZERO
+		_carry_speed = Vector3.ZERO
+		_lift = 0.0
+		_lean = Vector2.ZERO
+		_lean_speed = Vector2.ZERO
 		if not gesture.is_empty(): _play("")
+		_sow(delta,false)
 		return
 	_play(working)
-	var goal := anchor if hit == null else (hit as Vector3)
+	# The pinch holds a rising mountain by its summit, wherever the drag goes.
+	var work: Variant = editor.hand_work_point() if editor.has_method("hand_work_point") else null
+	var goal: Vector3 = anchor if hit == null else hit
+	if work != null: goal = work
+	if reach_point != null: goal = reach_point
+	# Throwing seed it stands back from the pointer and lobs onto it.
+	var cloud: Node3D = editor.get("handful")
+	if hit != null and cloud != null and cloud.has_method("stand_off") and (gesture == "sprinkle" or String(player.current_animation).begins_with("Sprinkle")):
+		goal -= Basis(Vector3.UP,yaw)*Vector3.BACK*float(cloud.stand_off())
+		var data: Variant = editor.get("data")
+		var h: Variant = data.ground_height(Vector2(goal.x,goal.z)) if data != null else null
+		if h != null: goal.y = float(h)
 	if not _placed:
 		anchor = goal
 		velocity = Vector3.ZERO
@@ -124,24 +220,120 @@ func _process(delta: float) -> void:
 		_placed = true
 	velocity += ((goal-anchor)*FOLLOW-velocity*FOLLOW_DAMP)*delta
 	anchor += velocity*delta
+	# While it touches the land it rides the land's height exactly, rising
+	# with a pulled summit and sinking with pressed clay.
+	if gesture == "pinch" or gesture == "press":
+		anchor.y = goal.y
+		velocity.y = 0.0
 	yaw = lerp_angle(yaw,_facing(),1.0-exp(-TURN*delta))
 	var size: float = HAND_METRES*(scene.distance/CURSOR_DISTANCE if cursor_sized else 1.0)
-	transform = Transform3D(Basis(Vector3.UP,yaw).scaled(Vector3.ONE*size),anchor)
-	# While a ball is held the palm rides under it: the ball keeps its own
-	# spring and its promise, and the hand goes where the ball is.
-	var ball: Node3D = editor.ball
-	var holding: bool = gesture == "cup" and ball != null and ball.state == "holding"
-	_cup = move_toward(_cup,1.0 if holding else 0.0,delta/CUP_FORMED)
-	if _cup > 0.0 and ball != null:
-		var orb := basis*(_skeleton_space*skeleton.get_bone_global_pose(_orb).origin)
-		var carried: Vector3 = ball.position-Vector3.UP*(ball.radius-ORB_R*size)-orb
-		position = anchor.lerp(carried,smoothstep(0.0,1.0,_cup))
+	var flat := Vector2(velocity.x,velocity.z)
+	_still = _still+delta if flat.length() < STILL else 0.0
+	# It leans into the pointer's way and rocks back through upright on a stop.
+	var free := gesture.is_empty() or gesture == "sprinkle"
+	var lean_goal := (flat*LEAN).limit_length(MAX_LEAN) if free else Vector2.ZERO
+	_lean_speed += ((lean_goal-_lean)*LEAN_SPRING-_lean_speed*LEAN_DAMP)*delta
+	_lean += _lean_speed*delta
+	var lean := Basis.IDENTITY
+	if _lean.length() > 0.0001: lean = Basis(Vector3(_lean.y,0.0,-_lean.x).normalized(),_lean.length())
+	_tilt = move_toward(_tilt,float(TILT.get(gesture,0.0)),delta*3.0)
+	var tilt := _slope(anchor,size)
+	var pivot := Vector3.UP*LEAN_PIVOT*size
+	transform = Transform3D(lean*tilt*Basis(Vector3.UP,yaw).scaled(Vector3.ONE*size),anchor+pivot-lean*pivot)
+	position += _carried(delta)
+	_rise_clear(size,delta)
+	_sow(delta,true)
 
 ## The yaw that turns the hand's profile to the camera.
 func _facing() -> float:
 	var camera: Vector3 = get_parent().to_local(scene.camera.global_position)-anchor
 	if Vector2(camera.x,camera.z).length_squared() < 0.0001: return yaw
 	return atan2(camera.x,camera.z)-atan2(TO_CAMERA.x,TO_CAMERA.z)
+
+## The turn that stands the hand on the slope round `at`, by the gesture's
+## share (`_tilt`).
+func _slope(at: Vector3, size: float) -> Basis:
+	var data: Variant = editor.get("data")
+	if _tilt <= 0.0 or data == null: return Basis.IDENTITY
+	var r := TILT_REACH*size
+	var heights := []
+	for p in [Vector2(at.x-r,at.z),Vector2(at.x+r,at.z),Vector2(at.x,at.z-r),Vector2(at.x,at.z+r)]:
+		var h: Variant = data.ground_height(p)
+		if h == null: return Basis.IDENTITY
+		heights.append(float(h))
+	var normal := Vector3(heights[0]-heights[1],2.0*r,heights[2]-heights[3]).normalized()
+	var angle := minf(Vector3.UP.angle_to(normal),MAX_TILT)*_tilt
+	var axis := Vector3.UP.cross(normal)
+	if angle < 0.001 or axis.length_squared() < 0.000001: return Basis.IDENTITY
+	return Basis(axis.normalized(),angle)
+
+## Where a bone is, plate coordinates, as the hand stands now.
+func _bone_at(bone: int) -> Vector3:
+	return position+basis*(_skeleton_space*skeleton.get_bone_global_pose(bone).origin)
+
+## A bone mark's weight: the clips carry it on the bone's scale.
+func _weight(bone: int) -> float:
+	return clampf(skeleton.get_bone_global_pose(bone).basis.get_scale().x,0.0,1.0)
+
+## The offset that keeps the clip's Ball mark on the real ball while a ball
+## is held or tossed: the clip's ball centre goes to the real centre, pushed
+## out along the touch by the difference in radius, so the palm stays under
+## a ball of any size and the finger meets its skin. As the mark lets go (a
+## pop) or the ball is gone, the offset springs back to the pointer.
+func _carried(delta: float) -> Vector3:
+	var ball: Node3D = editor.get("ball")
+	_carry_speed += (-_carry*LET_GO*LET_GO-_carry_speed*2.0*LET_GO)*delta
+	var loose := _carry+_carry_speed*delta
+	var weight := 0.0
+	var want := Vector3.ZERO
+	if ball != null and _ball >= 0 and (ball.state == "holding" or ball.state == "tossed"):
+		weight = _weight(_ball)
+		if weight > 0.002:
+			var centre := _bone_at(_ball)-position
+			var reach := _bone_at(_touch)-position-centre
+			var toward := reach.normalized()
+			want = ball.position+toward*(float(ball.radius)-reach.length())-centre-position
+			if "poke" in ball: ball.poke = toward
+	if weight > 0.002:
+		var held := loose.lerp(want,weight)
+		_carry_speed = ((held-_carry)/maxf(delta,0.001)).limit_length(30.0)
+		_carry = held
+	else:
+		_carry = loose
+	return _carry
+
+## Lift the hand clear where a knuckle or the palm would go into the land.
+## Not while it presses (the palm is meant to be down) or holds a ball.
+func _rise_clear(size: float, delta: float) -> void:
+	var data: Variant = editor.get("data")
+	var need := 0.0
+	if data != null and gesture != "press" and gesture != "cup":
+		for bone in _clear:
+			if gesture == "pinch" and bone in _pinching: continue
+			var p := _bone_at(bone)
+			var h: Variant = data.ground_height(Vector2(p.x,p.z))
+			if h != null: need = maxf(need,float(h)+CLEAR*size-p.y)
+	_lift = lerpf(_lift,need,1.0-exp(-(LIFT_UP if need > _lift else LIFT_DOWN)*delta))
+	position.y += _lift
+
+## Pollen (scripts/pollen_cloud.gd) gathers in the palm while the hand is
+## free, and is thrown when a Sprinkle clip's Handful mark drops, at the
+## handful's speed.
+func _sow(delta: float, shown: bool) -> void:
+	var cloud: Node3D = editor.get("handful")
+	if cloud == null or not "hand_at" in cloud or _handful < 0: return
+	var clip := String(player.current_animation)
+	if not shown or not (gesture.is_empty() or gesture == "sprinkle" or clip.begins_with("Sprinkle")):
+		cloud.hand_at = null
+		_handful_at = null
+		return
+	var at := _bone_at(_handful)
+	var held := _weight(_handful)
+	if _handful_at != null and _held >= 0.5 and held < 0.5 and clip.begins_with("Sprinkle"):
+		cloud.toss(((at-Vector3(_handful_at))/maxf(delta,0.001)*THROW_CARRY).limit_length(MAX_THROW))
+	cloud.hand_at = at
+	_handful_at = at
+	_held = held
 
 ## Start `next`'s In, or the last gesture's Out when `next` is "".
 func _play(next: String) -> void:
@@ -152,15 +344,29 @@ func _play(next: String) -> void:
 		player.play(GESTURES[next]+"In",BLEND)
 	elif not last.is_empty():
 		player.play(GESTURES[last]+"Out",BLEND)
-		if last == "cup": player.seek(CUP_RELEASE-CUP_TOSS_LEAD)
+		# The index pops the ball as the ball pops: start CupOut so its poke
+		# lands on the ball's own beat (scripts/water_ball.gd POP_SECONDS).
+		var ball: Node3D = editor.get("ball")
+		if last == "cup" and ball != null and ball.has_method("pop_in"):
+			player.seek(maxf(CUP_POP-float(ball.pop_in()),0.0))
 
-## An In runs into its Hold, an Out into Idle; the clips meet with no gap.
+## An In runs into its Hold, an Out into Idle, and Idle into itself or one of
+## its variations; the clips meet with no gap.
 func _finished(clip: StringName) -> void:
 	var clip_name := String(clip)
 	if clip_name.ends_with("In") and not gesture.is_empty() and clip_name == GESTURES[gesture]+"In":
 		player.play(GESTURES[gesture]+"Hold",0.0)
-	elif clip_name.ends_with("Out"):
-		player.play("Idle",0.0)
+	elif clip_name.ends_with("Out") or clip_name.begins_with("Idle"):
+		player.play(_next_idle(clip_name),0.0)
+
+## After a plain Idle, sometimes one of its variations; after anything else,
+## Idle.
+func _next_idle(last: String) -> String:
+	if last != "Idle" or _still < STILL_SECONDS or randf() > VARIANT_CHANCE: return "Idle"
+	var choices := IDLE_VARIANTS.filter(func(v: String) -> bool: return v != _last_variant and player.has_animation(v))
+	if choices.is_empty(): return "Idle"
+	_last_variant = choices[randi()%choices.size()]
+	return _last_variant
 
 func _set_opacity(value: float) -> void:
 	if value == opacity and value > 0.0: return

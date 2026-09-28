@@ -14,7 +14,11 @@ Saves art/blender/hand/zenscape-god-hand.blend and exports assets/models/zenscap
 Units: 1.0 = wrist to middle fingertip. Blender Z-up, palm down, fingers along -Y (Godot
 +Z after export), thumb on +X; the armature origin is the anchor the clips are placed on.
 Non-deforming bones mark where the game attaches things: Orb (the water orb's centre),
-Palm (the press), Pinch (where the tips meet) and Pollen (where the pinch of salt gathers).
+Palm (the press), Pinch (where the tips meet), Pollen (where the pinch of salt gathers)
+and Handful (pollen held in the palm; its scale is 1 while held, and a drop throws it).
+Ball and BallTouch hang off Root, not the hand: where a clip takes the water orb to be and
+the point on it the hand touches, Ball's scale how firmly the hand keeps to it
+(god_hand_clips.py, the marks).
 """
 import bpy, bmesh, math, random, sys
 from pathlib import Path
@@ -238,8 +242,11 @@ def build_rig(collection):
 	for i in range(3):
 		bone(f'Thumb{i + 1}', p[i], p[i + 1], 'Hand' if i == 0 else f'Thumb{i}', connect=i > 0, roll_up=THUMB_NAIL)
 	for name, point in (('Orb', clips.ORB_CENTRE), ('Palm', clips.PALM_POINT), ('Pinch', clips.PINCH_POINT),
-			('Pollen', clips.BUNCH_POINT)):
+			('Pollen', clips.BUNCH_POINT), ('Handful', clips.HANDFUL_POINT)):
 		bone(name, point, point + Vector((0, -0.08, 0)), 'Hand', deform=False)
+	# Marks the clips move on their own, off the hand: the orb as the clip takes it to be.
+	for name, point in (('Ball', clips.B0), ('BallTouch', clips.B0 + clips.UNDER)):
+		bone(name, point, point + Vector((0, -0.08, 0)), 'Root', deform=False)
 	bpy.ops.object.mode_set(mode='POSE')
 	for pb in rig.pose.bones:
 		pb.rotation_mode = 'QUATERNION'
@@ -360,7 +367,9 @@ def main():
 	rig['pinch_contact_s'] = clips.PINCH_CONTACT / clips.FPS
 	rig['press_contact_s'] = clips.PRESS_CONTACT / clips.FPS
 	rig['cup_formed_s'] = clips.CUP_FORMED / clips.FPS
-	rig['cup_release_s'] = clips.CUP_TOSS / clips.FPS
+	rig['cup_pop_s'] = clips.CUP_POP / clips.FPS
+	rig['sprinkle_release_s'] = clips.THROW_RELEASE / clips.FPS
+	rig['idle_variants'] = ','.join(clips.IDLE_VARIANTS)
 	if '--no-anim' not in ARGS:
 		for name in clips.CLIPS:
 			clips.bake_clip(rig, name)

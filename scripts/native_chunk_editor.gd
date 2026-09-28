@@ -2318,6 +2318,20 @@ func hand_gesture() -> String:
 		return "press" if _land_lower or Input.is_key_pressed(KEY_SHIFT) else "pinch"
 	return ""
 
+## Where the God Hand works when it is not under the pointer: the summit of
+## a mountain rising under a held press, which the pinch holds and pulls up
+## however far the drag goes. The highest of the centre and a ring round it,
+## so a volcano is held by its rim. Plate coordinates, or null.
+func hand_work_point() -> Variant:
+	if not _mountain_holding or not mountain.active: return null
+	var best: Variant = null
+	for k in range(9):
+		var p: Vector2 = mountain.center
+		if k > 0: p += Vector2.RIGHT.rotated(TAU*k/8.0)*mountain.spread*0.2
+		var h: Variant = data.ground_height(p)
+		if h != null and (best == null or float(h) > best.y): best = Vector3(p.x,float(h),p.y)
+	return best
+
 func mountain_in_hand() -> bool:
 	return mode == "land" and brush_id == "land" and land_form != "hill"
 
@@ -2459,15 +2473,17 @@ func _mountain_feel(phase: int, speed := 0.0, seconds := 0.0) -> void:
 const RISE_FOG_SECONDS := 4.0
 
 # --- Pollen -------------------------------------------------------------------
-## Pollen (scripts/pollen_cloud.gd, docs/scenic/brushes.md "Pollen"): with
-## forest in hand, holding the button lays a veil of pollen in the air along
-## the pointer's sweep (holding still thickens it, a click is a small puff),
-## and release lets the whole veil go on the wind. You release it; the world
-## decides what becomes of it. When a cloud has settled its seeds raise the
-## forest wish round them (ForestBrush `sow`) as one undo step, and go to
-## emergence, where the land decides what takes and grows (Emergence
-## `_fertility`). Shift-drag still clears as before, and --paint-forest brings
-## back drag-to-paint.
+## Seed (scripts/seed_throw.gd, docs/scenic/brushes.md "Pollen"): with
+## forest in hand, holding the button fills a handful and throws it at the
+## pointer, a throw every second or so (the God Hand's, when it is out), and
+## release throws the last of it. Seeds fly on real momentum and the wind and
+## land where they land; you throw it, the world decides what becomes of it.
+## When a sowing's last seed is down its seeds raise the forest wish round
+## them (ForestBrush `sow`) as one undo step, and go to emergence, where the
+## land decides what takes and grows (Emergence `_fertility`). Shift-drag
+## still clears as before, --paint-forest brings back drag-to-paint, and
+## --pollen-veil the veil laid in the air along the sweep
+## (scripts/pollen_cloud.gd), which the throws replaced.
 var seed_handful := "--paint-forest" not in OS.get_cmdline_user_args()
 var handful: Node3D
 var _handful_holding := false
@@ -2483,7 +2499,8 @@ func _pollen_in_hand() -> bool:
 	return mode == "land" and brush_id == "forest" and seed_handful and not other_way and not Input.is_key_pressed(KEY_SHIFT)
 
 func _make_pollen() -> void:
-	handful = preload("res://scripts/pollen_cloud.gd").new()
+	var veil := "--pollen-veil" in OS.get_cmdline_user_args()
+	handful = (preload("res://scripts/pollen_cloud.gd") if veil else preload("res://scripts/seed_throw.gd")).new()
 	handful.name = "Pollen"
 	handful.scene = scene
 	terrain.add_child(handful)

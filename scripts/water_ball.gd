@@ -6,9 +6,12 @@ extends Node3D
 ## in and ringing out over its surface, and follows the pointer on a spring,
 ## bobbing and wobbling, now and then a drip. Straight below it on the ground
 ## lies its mark (shaders/water_ball_ground.gdshader), which is the promise
-## (docs/scenic/handful.md): the ball lands inside it. Release drops it: it
-## hops straight up, falls straight down onto the mark, squashes on the
-## ground and spreads into a wash of foam
+## (docs/scenic/handful.md): the ball lands inside it. Release lets it go: it
+## is tossed straight up, hangs trembling at the top and pops (the God Hand's
+## finger pokes it on the same beat, scripts/god_hand.gd): its skin bursts in
+## a ring of droplets from where it was popped, and the water, loose now,
+## falls straight down onto the mark, stretching and shedding drops as it
+## goes. It squashes on the ground and spreads into a wash of foam
 ## under a crown of spray (shaders/water_splash.gdshader), droplets fly and the
 ## fish leap out; `landed` hands its water and fish to the editor
 ## (NativeChunkEditor `_ball_landed`), which settles the water as one pour and
@@ -42,10 +45,20 @@ const BOB_RATE := 0.55
 ## rush in as it does.
 const CONDENSE_SECONDS := 0.35
 const CONDENSE_BEADS := 22
-## Release: the anticipation hop (m/s up), then gravity (m/s²). The fall is
+## Release: the toss lifts the ball TOSS m, easing to a hang, and it pops
+## POP_SECONDS after the release (the God Hand's CupOut pops it then:
+## god_hand_clips.py CUP_POP), then falls under GRAVITY (m/s²). The fall is
 ## straight down: the carried speed goes into the wobble, not the path.
-const HOP := 1.4
+const TOSS := 0.45
+const POP_SECONDS := 0.4333
 const GRAVITY := 18.0
+## The pop: droplets of skin thrown out, how much of the skin is gone from
+## the falling water (the shader's burst), how far the loose water stretches
+## as it falls, and the drops it sheds a second.
+const POP_SPRAY := 30
+const LOOSE := 0.22
+const LOOSE_STRETCH := 0.7
+const SHED_RATE := 40.0
 ## The splash: seconds to squash, to spread into a wash and burst into foam,
 ## the crown's life, and the whole of it (the wet ground dries after).
 const SQUASH_SECONDS := 0.1
@@ -74,7 +87,8 @@ const FISH_GROWN := 1.8
 const RIPPLES := 10
 const BUBBLES := 18
 
-## "idle", "holding", "falling" or "splashing".
+## "idle", "holding", "tossed" (let go, rising to its pop), "falling" or
+## "splashing".
 var state := "idle"
 var volume := 0.0
 var radius := MIN_RADIUS
@@ -91,12 +105,19 @@ var fish: Array[Dictionary] = []
 ## The vortex's turned angle (radians) and how hard it churns (0..1).
 var swirl := 0.0
 var churn := 0.4
+## Plate direction from the ball's centre to where it will be popped (the God
+## Hand's finger sets it), or zero for its side.
+var poke := Vector3.ZERO
 var _radius_speed := 0.0
 var _jolt := 0.0
 var _splash_age := -1.0
 var _landing := Vector3.ZERO
 var _landed_radius := 0.0
 var _funnel := 0.0
+var _toss_t := 0.0
+var _toss_from := 0.0
+var _loose := 0.0
+var _shed := 0.0
 var _held := 0.0
 var _last_volume := 0.0
 var _intake := 0.0
@@ -209,8 +230,8 @@ func _ready() -> void:
 ## Start a ball over `point` (plate coordinates, on the ground). `fish_material`
 ## is LandLife's creature material (null: no fish); `salt` picks the fish.
 func condense(point: Vector3, fish_material: Material, salt: int) -> void:
-	# A ball still falling lands before the next one forms.
-	if state == "falling": _impact()
+	# A ball still in the air lands before the next one forms.
+	if state == "falling" or state == "tossed": _impact()
 	_finish_splash()
 	state = "holding"
 	age = 0.0
@@ -231,6 +252,8 @@ func condense(point: Vector3, fish_material: Material, salt: int) -> void:
 	_funnel = 0.0
 	_ripples.fill(Vector4.ZERO)
 	_drops.fill(Vector4.ZERO)
+	_loose = 0.0
+	poke = Vector3.ZERO
 	_material.set_shader_parameter("burst",0.0)
 	_material.set_shader_parameter("landed",0.0)
 	_splash_age = -1.0
@@ -251,15 +274,22 @@ func hold(point: Variant, water: float) -> void:
 		if not ground_at.is_valid(): ground = point.y
 	volume = water
 
-## Let go: a small hop, then it falls straight down onto its mark. What speed
-## it carried shakes the water instead of moving it on.
+## Let go: tossed straight up, it pops at the top and falls straight down
+## onto its mark. What speed it carried shakes the water instead of moving
+## it on.
 func release() -> void:
 	if state != "holding": return
-	state = "falling"
+	state = "tossed"
+	_toss_t = 0.0
+	_toss_from = position.y
 	var carried_speed := Vector2(velocity.x,velocity.z).length()
-	velocity = Vector3(0.0,HOP,0.0)
+	velocity = Vector3(0.0,2.0*TOSS/POP_SECONDS,0.0)
 	_jolt = clampf(maxf(_jolt,0.6+carried_speed*0.06),0.0,1.0)
 	_ground_under()
+
+## Seconds until a tossed ball pops (0 once it has, or before it is let go).
+func pop_in() -> float:
+	return maxf(POP_SECONDS-_toss_t,0.0) if state == "tossed" else 0.0
 
 ## The mark's centre on the ground, plate coordinates: straight below the ball.
 func mark() -> Vector3:
@@ -292,6 +322,7 @@ func _process(delta: float) -> void:
 	age += delta
 	match state:
 		"holding": _step_held(delta)
+		"tossed": _step_tossed(delta)
 		"falling": _step_fall(delta)
 		"splashing": _step_splash(delta)
 	if state == "idle" and _splash_age >= 0.0: _splash_age += delta
@@ -379,17 +410,56 @@ func _condensed() -> float:
 	var t := clampf(age/CONDENSE_SECONDS,0.0,1.0)-1.0
 	return 1.0+t*t*(2.70158*t+1.70158)
 
+## Rising on the toss, easing to a hang; the skin trembles more as the pop
+## comes.
+func _step_tossed(delta: float) -> void:
+	_toss_t += delta
+	var u := clampf(_toss_t/POP_SECONDS,0.0,1.0)
+	position.y = _toss_from+TOSS*(1.0-(1.0-u)*(1.0-u))
+	velocity = Vector3(0.0,2.0*TOSS*(1.0-u)/POP_SECONDS,0.0)
+	_jolt = maxf(_jolt,0.35+0.35*u)
+	_shape(delta)
+	_swim(delta)
+	if u >= 1.0: _pop()
+
+## The skin bursts: rings run over the water from the popped spot, droplets
+## of skin fly out round it, and the water, loose, starts to fall.
+func _pop() -> void:
+	state = "falling"
+	velocity = Vector3.ZERO
+	_jolt = 1.0
+	_loose = LOOSE
+	_shed = 0.0
+	_material.set_shader_parameter("burst",_loose)
+	var from := poke.normalized() if poke.length_squared() > 0.0001 else Vector3(0.8,0.2,0.56).normalized()
+	for k in range(3): _ripples[(_ripple_next+k)%RIPPLES] = Vector4(from.x,from.y,from.z,age-0.06*k)
+	_ripple_next = (_ripple_next+3)%RIPPLES
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([position.x,position.z,volume])
+	for i in range(POP_SPRAY):
+		# Most from round the popped spot, the rest from a ring about it.
+		var dir := (from+Vector3(rng.randf_range(-1,1),rng.randf_range(-1,1),rng.randf_range(-1,1))*(0.6 if i < POP_SPRAY/2 else 1.4)).normalized()
+		var speed := rng.randf_range(1.8,4.2)*(0.7+radius*0.3)
+		_beads.append({"kind":"drip","p":position+dir*radius*1.02,"v":dir*speed+Vector3.UP*rng.randf_range(0.4,1.8),"size":rng.randf_range(0.03,0.07)*(0.7+radius*0.3),"t":0.0})
+
 func _step_fall(delta: float) -> void:
 	velocity.y -= GRAVITY*delta
 	position += velocity*delta
 	_shape(delta)
 	_swim(delta)
+	# Loose water sheds drops as it falls.
+	if _loose > 0.0:
+		_shed += delta*SHED_RATE
+		while _shed >= 1.0:
+			_shed -= 1.0
+			var off := Vector2(randf_range(-0.6,0.6),randf_range(-0.6,0.6))*radius
+			_beads.append({"kind":"drip","p":position+Vector3(off.x,randf_range(0.2,0.8)*radius,off.y),"v":velocity*randf_range(0.8,0.95)+Vector3(off.x,0.0,off.y)*0.8,"size":randf_range(0.03,0.06),"t":0.0})
 	if position.y-radius <= ground: _impact()
 
 ## Squash and stretch along the velocity, volume kept.
 func _shape(_delta: float) -> void:
 	var speed := velocity.length()
-	var stretch := clampf(speed*0.035,0.0,0.35)
+	var stretch := clampf(speed*(0.07 if _loose > 0.0 else 0.035),0.0,LOOSE_STRETCH if _loose > 0.0 else 0.35)
 	var basis := Basis.from_scale(Vector3.ONE*radius)
 	if stretch > 0.01:
 		basis = _stretched(velocity/speed,stretch)*basis
@@ -449,7 +519,7 @@ func _step_splash(delta: float) -> void:
 	var r := _landed_radius
 	_ball.basis = Basis.from_scale(Vector3(r*wide,r*flat,r*wide))
 	position = _landing+Vector3.UP*r*flat*0.85
-	var burst := clampf((t-SQUASH_SECONDS*0.8)/(SPREAD_SECONDS*0.8),0.0,1.0)
+	var burst := maxf(clampf((t-SQUASH_SECONDS*0.8)/(SPREAD_SECONDS*0.8),0.0,1.0),_loose)
 	_material.set_shader_parameter("burst",burst)
 	_ball.visible = burst < 1.0
 	var crown := clampf(t/CROWN_SECONDS,0.0,1.0)

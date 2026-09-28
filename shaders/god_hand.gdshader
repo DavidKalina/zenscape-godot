@@ -15,6 +15,11 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_back, shadows_disabled;
 // leaves no depth for the display fog to read as solid.
 // It is light: unshaded, receives no shadow, and must cast none (the node
 // turns cast_shadow off; no sun shadow may compete with the handful's mark).
+// Where it meets the land (a pinch, a press, a knuckle brushing a slope) it
+// glows brighter and thins to nothing at the line where it goes in, so a
+// touch reads as light on the ground rather than a hard cut: the ground's
+// depth (copied before the transparent pass, so without the hand's own
+// first pass) says how far behind each fragment the land is.
 
 // Overall visibility (0..1): the fade in and out.
 uniform float hand_opacity : hint_range(0.0, 1.0) = 1.0;
@@ -24,6 +29,9 @@ uniform float hand_glow : hint_range(0.0, 4.0) = 1.0;
 uniform vec3 hand_tint : source_color = vec3(1.0);
 // Brightness drift across the facets, as a share (0 is the still stand-in).
 uniform float hand_shimmer : hint_range(0.0, 0.3) = 0.05;
+// Extra glow where the hand touches the land, as a share.
+uniform float hand_touch_glow : hint_range(0.0, 3.0) = 1.1;
+uniform sampler2D hand_ground : hint_depth_texture, filter_nearest, repeat_disable;
 
 // The stand-in's Layer Weight blend (0.45) as Blender's facing exponent,
 // 2 * blend below one half, and its map range.
@@ -32,6 +40,10 @@ const float HAND_RIM_LOW = 0.22;
 // Shimmer: cells per metre of the model, and its slow pace.
 const float HAND_SHIMMER_SCALE = 7.0;
 const float HAND_SHIMMER_PACE = 0.23;
+// Metres in front of the land over which the light brightens, and over which
+// it thins to nothing where it goes in.
+const float HAND_TOUCH_REACH = 0.45;
+const float HAND_TOUCH_SOFT = 0.1;
 
 // One point per facet (the first vertex's), so the shimmer drifts facet by
 // facet, as the faceted world is painted.
@@ -69,6 +81,10 @@ void fragment() {
 			+ hand_noise(p * 2.1 - vec3(t * 0.7, -t, t * 0.5)) * 0.35;
 		glow *= 1.0 + (n * 2.0 - 1.0) * hand_shimmer;
 	}
+	vec4 ground = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, textureLod(hand_ground, SCREEN_UV, 0.0).r, 1.0);
+	float gap = VERTEX.z - ground.z / ground.w;
+	float touch = 1.0 - smoothstep(0.0, HAND_TOUCH_REACH, gap);
+	glow *= 1.0 + touch * touch * hand_touch_glow;
 	ALBEDO = COLOR.rgb * hand_tint * glow * hand_glow;
-	ALPHA = clamp(rim * COLOR.a * hand_opacity, 0.0, 1.0);
+	ALPHA = clamp((rim + touch * touch * 0.35) * COLOR.a * hand_opacity * smoothstep(0.0, HAND_TOUCH_SOFT, gap), 0.0, 1.0);
 }
