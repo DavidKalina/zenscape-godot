@@ -2,76 +2,113 @@ extends Node3D
 ## Pollen for the forest (docs/scenic/brushes.md "Pollen", docs/scenic/handful.md).
 ## You release something; the world decides what becomes of it.
 ##
-## With forest in hand a press gathers a soft, glinting cloud of pollen and
-## seed-fluff in the air above the pointer. A click lets a small puff go; a
-## short hold swells it before it goes (HOLD_SECONDS to the full cloud). While
-## held the cloud drifts after the pointer; dragging paints nothing. Release
-## lets it go: with no wind it floats straight down, spreading and thinning; in
-## wind it is carried downwind as it sinks, landing further off and stretched
-## out along the wind. The wind is read every frame (scripts/pollen_wind.gd,
-## the world's wind and any gust passing), so a gust that comes through while
-## it falls carries it. Each mote comes down at its own pace, and the land
-## decides what, if anything, takes where it lands (NativeChunkEditor
-## `_pollen_settled`, scripts/emergence.gd `_fertility`).
+## With forest in hand, holding the button lays pollen in the air. A glinting,
+## gently churning veil of motes and haze hangs HEIGHT above the ground along
+## the pointer's sweep, a little behind it: a line, a curve, a loop round an
+## area. Holding still thickens it where it is. Nothing lands while it is held.
+## A click without dragging lays a small puff.
+##
+## Release lets the whole veil go together. It takes a breath first (LIFT: it
+## lifts a little and gathers in), then sinks as one soft sheet, peeling down
+## from where it was let go to where the sweep began (WAVE), each mote at its
+## own pace. The wind carries it as it falls (scripts/pollen_wind.gd, read
+## every frame at up to GROUPS places along the veil): still air brings it
+## straight down in the swept shape, wind smears and drifts it downwind, and a
+## gust can push part of it. Where each mote lands, the land decides what, if
+## anything, takes (NativeChunkEditor `_pollen_settled`, scripts/emergence.gd
+## `_fertility`).
+##
+## The veil is a row of knots laid along the sweep, KNOT_STEP apart, each with
+## a half-width `r` (grown by dwelling) and its motes. A mote lands at its knot,
+## plus its offset in the veil (within `r`), plus a spread (within `sigma`),
+## plus the drift the air has given its part of the veil by the time it lands.
 ##
 ## The promise: a soft footprint on the ground (shaders/pollen_footprint.gdshader)
-## shows where the cloud will settle. It shows under the pointer while aiming,
-## follows the held cloud, and moves with the released one until it has
-## settled, as the water ball's mark moves with the ball. In still air it is
-## round and centred under the cloud; in wind it is a capsule shifted and
-## stretched downwind. A mote lands at its own place in the cloud at release
-## (within `r0` of the middle), plus a spread (within `sigma`), plus the drift
-## the air has given the whole cloud by the time it lands. So the footprint
-## runs from the cloud's drift so far, carried on by the present wind for the
-## least and the most fall time left, at radius r0 + sigma; every mote lands
-## inside the footprint as it stands when that mote lands. Only a change of
-## wind moves it; in steady air the release's footprint holds.
+## follows the swept shape while it is laid and shows where the veil will
+## settle in the wind as it blows now: for each knot, a capsule of radius
+## r + sigma from the knot's drift so far, carried on by the present wind for
+## the least and the most time its motes have left in the air. The footprint is
+## the union of them, so every mote lands inside the footprint as it stands
+## when that mote lands. Only a change of wind moves it; in steady air the
+## release's footprint holds.
 ##
-## Motes that land at least SEED_GAP from the cloud's other seeds are its
-## seeds; the rest is dust that glints and is gone. Where a seed lands on ground
-## that could take it (`takes`) a sprout pops up and later sinks as the forest
-## takes over. `settled` hands the editor a cloud whose last mote is down.
+## Motes are capped per veil (`_cap`): a long sweep spreads its motes along the
+## path, taking them from where the veil is densest, rather than adding more.
 ##
-## Several clouds may be in the air at once, up to CLOUDS; each settles as its
+## Motes that land at least SEED_GAP from the veil's other seeds are its seeds;
+## the rest is dust that glints and is gone. Where a seed lands on ground that
+## could take it (`takes`) a sprout pops up and later sinks as the forest takes
+## over. `settled` hands the editor a veil whose last mote is down.
+##
+## Several veils may be in the air at once, up to CLOUDS; each settles as its
 ## own undo step (the editor writes it when it settles).
 ##
 ## Lives under the terrain node, so its coordinates are the plate's.
 
 const Wind = preload("res://scripts/pollen_wind.gd")
 
-## A cloud's last mote is down: {"id", "seeds" (plate x, z), "points" (every
-## landing), "lost" (motes that fell off the land), "radius", "motes", and for
-## probes "promised" (the footprint's ends at release), "drift" (m the air
-## carried it), "worst" (the farthest landing in shares of the radius from
-## the footprint as it stood then), "outside" (landings outside it) and
-## "outside_promised" (landings outside the release's footprint)}.
+## A veil's last mote is down: {"id", "seeds" (plate x, z), "points" (every
+## landing), "lost" (motes that fell off the land), "radius" (the widest
+## knot's footprint radius), "motes", "path" (the knots, plate x, z), "length"
+## (m swept), and for probes "promised" (each knot's footprint at release:
+## [a, b, radius]), "drift" (m the air carried it, mean over the veil),
+## "worst" (the farthest landing in shares of the radius from the footprint
+## as it stood then), "outside" (landings outside it) and "outside_promised"
+## (landings outside the release's footprint)}.
 signal settled(cloud: Dictionary)
 
-## Metres from the ground to the cloud's middle.
+## Metres from the ground to the veil.
 const HEIGHT := 2.2
-## Seconds of holding, at strength 1, from a puff to a full cloud.
+## Seconds of holding still, at strength 1, to thicken a spot fully.
 const HOLD_SECONDS := 1.4
-## Motes in a puff and a full cloud at REFERENCE_RADIUS and strength 1.
+## Motes in a click's puff and in a fully thickened spot, at REFERENCE_RADIUS
+## and strength 1; the motes a knot of a sweep holds.
 const MOTES := Vector2(120,260)
-## The cloud's radius (m) and the spread (m) its motes may drift apart by as
-## they fall, puff to full, at REFERENCE_RADIUS.
+const KNOT_MOTES := 16
+## The veil's half-width (m), thin to thickened, at REFERENCE_RADIUS.
 const CLOUD := Vector2(0.6,1.3)
+## The spread (m) motes drift apart by as they fall: a puff, thin to thickened,
+## and a sweep (SWEEP m or longer), which comes down closer to its shape.
 const SPREAD := Vector2(1.8,2.8)
+const VEIL_SPREAD := 0.7
+const SWEEP := 2.0
+## Metres between knots along the sweep, at REFERENCE_RADIUS. Knots beyond
+## KNOTS merge in pairs (the footprint shader's array).
+const KNOT_STEP := 0.45
+const KNOTS := 64
 ## Brush radius (m) those are for; a brush's radius scales them within SIZE.
 const REFERENCE_RADIUS := 3.6
 const SIZE := Vector2(0.6,1.6)
+## Motes one veil holds at most, at REFERENCE_RADIUS and strength 1.
+const VEIL_MOTES := 560
 ## Seconds a mote takes to come down, the lightest the longest.
 const FALL := Vector2(3.2,5.2)
+## The release: a breath of LIFT seconds in which the veil lifts LIFT_HEIGHT m
+## and gathers in by GATHER of its width, then it sinks, peeling down along the
+## sweep over up to WAVE seconds (the whole of it for sweeps of WAVE_LENGTH m
+## or more), each mote starting within JITTER seconds of its part.
+const LIFT := 0.4
+const LIFT_HEIGHT := 0.22
+const GATHER := 0.12
+const WAVE := 0.6
+const WAVE_LENGTH := 8.0
+const JITTER := 0.3
+## Places along the veil the wind is read, at most, KNOT_GROUP knots each.
+const GROUPS := 8
+const KNOT_GROUP := 6
 ## Metres a mote wanders as it falls (the curl of the air), dying out as it lands.
 const WANDER := 0.35
-## The held cloud's follow spring (1/s²) and damping (1/s): soft, so it floats
-## after the pointer.
+## The veil's head follows the pointer on a soft spring (1/s², 1/s); new motes
+## ease into their place at SETTLE_RATE (1/s), so the veil trails a little.
 const FOLLOW := 30.0
 const FOLLOW_DAMP := 9.0
-## Metres of the held cloud's bob and billow, and their hertz.
+const SETTLE_RATE := 3.5
+## Below this head speed (m/s) the pointer is holding still.
+const STILL := 0.5
+## Metres of the veil's ripple and billow, and their hertz.
 const BOB := Vector2(0.08,0.45)
 const BILLOW := Vector2(0.12,0.3)
-## Metres apart a cloud's seeds land at least (Emergence TREE_GAP); closer
+## Metres apart a veil's seeds land at least (Emergence TREE_GAP); closer
 ## motes are dust.
 const SEED_GAP := 1.1
 ## Seconds a landed mote glints on the ground; the sprout's pop, life and
@@ -80,12 +117,14 @@ const GLINT := 0.8
 const SPROUT_POP := 0.35
 const SPROUT_SECONDS := 9.0
 const SPROUT_SIZE := 0.3
-## Clouds in the air at once; another's release settles the oldest at once.
+## Veils in the air at once; another's release settles the oldest at once.
 const CLOUDS := 4
-const MOTES_MAX := 1024
+const MOTES_MAX := 2560
 const SPROUTS_MAX := 160
-## Soft haze puffs drawn per cloud, and their brightness.
+## Soft haze puffs drawn per veil (a puff's, and at most along a sweep), and
+## their brightness.
 const HAZE := 8
+const HAZE_VEIL := 12
 const HAZE_GLOW := 0.16
 ## Pollen colours by the family of the stand's trees (Emergence
 ## `seed_family`): pine gold, broadleaf cream, birch pale, desert dust.
@@ -101,7 +140,7 @@ var scene: Node
 ## Microseconds the last frame's step took (for probes).
 var last_usec := 0
 var age := 0.0
-## The cloud in hand, or {}; clouds in the air.
+## The veil in hand, or {}; veils in the air.
 var held := {}
 var clouds: Array[Dictionary] = []
 var _hover: Variant = null
@@ -125,7 +164,7 @@ func _ready() -> void:
 	haze.render_priority = 1
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2,2)
-	_haze_node = _instances("Haze",quad,HAZE*(CLOUDS+1),haze)
+	_haze_node = _instances("Haze",quad,HAZE_VEIL*(CLOUDS+1),haze)
 	for i in range(CLOUDS+1):
 		var print_material := ShaderMaterial.new()
 		print_material.shader = preload("res://shaders/pollen_footprint.gdshader")
@@ -145,6 +184,7 @@ func _instances(title: String, mesh: Mesh, count: int, material: Material) -> Mu
 	instances.transform_format = MultiMesh.TRANSFORM_3D
 	instances.use_colors = true
 	instances.instance_count = count
+	# Nothing draws until its transform is written (a fresh buffer is zeros).
 	instances.visible_instance_count = 0
 	instances.mesh = mesh
 	var node := MultiMeshInstance3D.new()
@@ -163,55 +203,90 @@ func hover(point: Variant, brush_radius := REFERENCE_RADIUS) -> void:
 	_hover = point
 	_hover_scale = clampf(brush_radius/REFERENCE_RADIUS,SIZE.x,SIZE.y)
 
-## Start gathering a cloud over `point` (plate, on the ground). `tree_kind` is
-## the stand's tree there (Emergence `seed_family`), "" for the default look.
+## Start laying a veil over `point` (plate, on the ground). `tree_kind` is the
+## stand's tree there (Emergence `seed_family`), "" for the default look.
 func gather(point: Vector3, brush_radius: float, strength: float, tree_kind: String, salt: int) -> void:
 	if not held.is_empty(): release()
 	_serial += 1
 	var rng := RandomNumberGenerator.new()
 	rng.seed = salt
 	var scale := clampf(brush_radius/REFERENCE_RADIUS,SIZE.x,SIZE.y)
-	held = {"id":_serial,"state":"held","centre":point+Vector3.UP*HEIGHT,"velocity":Vector3.ZERO,"target":point,"fill":0.0,"age":0.0,
-		"scale":scale,"strength":clampf(strength,0.25,3.0),"rng":rng,"motes":[],"colour":Color(LOOKS[FAMILY.get(tree_kind,"broadleaf")]),
-		"seeds":PackedVector2Array(),"points":PackedVector2Array(),"lost":0,"down":0}
-	_join(held,_mote_count(held))
+	var strong := clampf(strength,0.25,3.0)
+	held = {"id":_serial,"state":"held","head":point+Vector3.UP*HEIGHT,"velocity":Vector3.ZERO,"target":point,"age":0.0,
+		"scale":scale,"strength":strong,"density":sqrt(strong)*scale*scale,"step":KNOT_STEP*scale,"rng":rng,"knots":[],"motes":[],
+		"colour":Color(LOOKS[FAMILY.get(tree_kind,"broadleaf")]),"seeds":PackedVector2Array(),"points":PackedVector2Array(),"lost":0,"down":0}
+	held.cap = clampi(roundi(VEIL_MOTES*float(held.density)),roundi(MOTES.x),MOTES_MAX/CLOUDS)
+	_lay(held,_flat(point),point.y)
 
 ## Follow the pointer's ground point (plate), or hold still over null.
 func hold(point: Variant) -> void:
 	if not held.is_empty() and point != null: held.target = point
 
-## Let the held cloud go: the wind now decides where each mote comes down.
+## Let the held veil go: the wind now decides where each mote comes down.
 func release() -> void:
 	if held.is_empty(): return
-	var cloud := held
+	var veil := held
 	held = {}
 	if clouds.size() >= CLOUDS: _settle(clouds[0])
-	var shape := _shape(cloud,Wind.at(scene,get_parent() as Node3D,_flat(cloud.centre)))
-	cloud.merge(shape,true)
-	cloud.state = "flying"
-	cloud.origin = _flat(cloud.centre)
-	cloud.drift = Vector2.ZERO
-	cloud.flown = 0.0
-	# The footprint as promised at release, for probes.
-	cloud.promised = [shape.a,shape.b]
-	cloud.worst = 0.0
-	cloud.outside = 0
-	cloud.outside_promised = 0
-	var rng: RandomNumberGenerator = cloud.rng
-	var centre: Vector2 = cloud.origin
-	for mote: Dictionary in cloud.motes:
-		# Its own place in the cloud (within r0) and a spread (within sigma);
-		# the air adds the rest as it falls.
-		var offset := (_flat(mote.p)-centre).limit_length(float(cloud.r0))
-		mote.base = centre+offset+Vector2.RIGHT.rotated(rng.randf()*TAU)*float(cloud.sigma)*sqrt(rng.randf())
+	var knots: Array = veil.knots
+	var n := knots.size()
+	var length: float = knots.back().s
+	veil.length = length
+	# Parts of the veil the wind is read at, and the drift it has given each.
+	var groups := clampi(ceili(float(n)/KNOT_GROUP),1,GROUPS)
+	veil.groups = groups
+	veil.drift = []
+	veil.wind = []
+	veil.middles = []
+	for g in range(groups):
+		veil.drift.append(Vector2.ZERO)
+		veil.wind.append(Vector2.ZERO)
+		veil.middles.append(Vector2.ZERO)
+	var counts := []
+	counts.resize(groups)
+	counts.fill(0)
+	var sweep := clampf(length/SWEEP,0.0,1.0)
+	var wave := WAVE*minf(1.0,length/WAVE_LENGTH)
+	for k in range(n):
+		var knot: Dictionary = knots[k]
+		var g := k*groups/n
+		knot.g = g
+		veil.middles[g] += _flat(knot.p)
+		counts[g] += 1
+		# It peels down from where it was let go, back along the sweep.
+		knot.wave = wave*(length-float(knot.s))/maxf(length,0.001)
+		knot.min_t = LIFT+float(knot.wave)+FALL.x
+		knot.max_t = LIFT+float(knot.wave)+JITTER+FALL.y
+		knot.sigma = _sigma(veil,knot,sweep)
+	for g in range(groups): veil.middles[g] /= float(counts[g])
+	for g in range(groups): veil.wind[g] = Wind.at(scene,get_parent() as Node3D,veil.middles[g])
+	veil.state = "flying"
+	veil.t = 0.0
+	veil.radius = 0.0
+	veil.promised = []
+	for knot: Dictionary in knots:
+		var ends := _ends(veil,knot)
+		veil.promised.append([ends[0],ends[1],float(knot.r)+float(knot.sigma)])
+		veil.radius = maxf(float(veil.radius),float(knot.r)+float(knot.sigma))
+	veil.worst = 0.0
+	veil.outside = 0
+	veil.outside_promised = 0
+	var rng: RandomNumberGenerator = veil.rng
+	for mote: Dictionary in veil.motes:
+		var knot: Dictionary = knots[mote.k]
+		# Its place in the veil (within r) and a spread (within sigma); the air
+		# adds the rest as it falls.
+		var off := Vector2(mote.off.x,mote.off.z).limit_length(float(knot.r))
+		mote.base = _flat(knot.p)+off+Vector2.RIGHT.rotated(rng.randf()*TAU)*float(knot.sigma)*sqrt(rng.randf())
 		mote.from = mote.p
+		mote.start = LIFT+float(knot.wave)+rng.randf()*JITTER
 		mote.fall = rng.randf_range(FALL.x,FALL.y)
-		mote.floor = float(cloud.target.y)
+		mote.floor = float(knot.p.y)
 		mote.aimed = false
 		mote.curl = Vector2.RIGHT.rotated(rng.randf()*TAU)
-	clouds.append(cloud)
+	clouds.append(veil)
 
-## True while a cloud is held or any is in the air.
+## True while a veil is held or any is in the air.
 func active() -> bool:
 	return not held.is_empty() or not clouds.is_empty()
 
@@ -220,12 +295,16 @@ func motes_in_air() -> int:
 	for cloud: Dictionary in clouds: count += cloud.motes.size()-int(cloud.down)
 	return count
 
+## Motes in the veil in hand.
+func motes_held() -> int:
+	return 0 if held.is_empty() else held.motes.size()
+
 static func _to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:
 	var ab := b-a
 	var t := clampf((p-a).dot(ab)/maxf(ab.length_squared(),1e-6),0.0,1.0)
 	return p.distance_to(a+ab*t)
 
-## Land every cloud in the air now, oldest first, where it was promised: a
+## Land every veil in the air now, oldest first, where it was promised: a
 ## new stroke of another brush, an undo or a world change.
 func settle_now() -> void:
 	release()
@@ -239,36 +318,101 @@ func withdraw() -> void:
 	_glints.clear()
 	_hide()
 
-## The footprint of `cloud` in `wind`: {"wind", "r0", "sigma", "a", "b",
-## "radius"} (plate).
-func _shape(cloud: Dictionary, wind: Vector2) -> Dictionary:
-	var fill: float = cloud.fill
-	var scale: float = cloud.scale
-	var r0 := lerpf(CLOUD.x,CLOUD.y,fill)*scale
-	var sigma := lerpf(SPREAD.x,SPREAD.y,fill)*scale
-	var centre := _flat(cloud.centre) if cloud.state == "held" else _flat(cloud.target)
-	return {"wind":wind,"r0":r0,"sigma":sigma,"a":centre+wind*FALL.x,"b":centre+wind*FALL.y,"radius":r0+sigma}
+# --- Laying the veil ------------------------------------------------------------
 
-## A flying cloud's footprint now: its drift so far, carried on by `wind` for
-## the least and the most fall time left.
-func _flying_shape(cloud: Dictionary) -> Array:
-	var wind: Vector2 = cloud.wind
-	var here: Vector2 = Vector2(cloud.origin)+Vector2(cloud.drift)
-	var t: float = cloud.flown
-	return [here+wind*maxf(FALL.x-t,0.0),here+wind*maxf(FALL.y-t,0.0)]
+func _knot_radius(veil: Dictionary, thick: float) -> float:
+	return lerpf(CLOUD.x,CLOUD.y,thick)*float(veil.scale)
 
-func _mote_count(cloud: Dictionary) -> int:
-	return clampi(roundi(lerpf(MOTES.x,MOTES.y,float(cloud.fill))*sqrt(float(cloud.strength))*pow(float(cloud.scale),2.0)),20,MOTES_MAX/CLOUDS)
+## Motes knot `k` wants: a lone knot is a click's puff, a sweep's knots a
+## thinner run; thickening adds more.
+func _knot_target(veil: Dictionary, k: int) -> float:
+	var knot: Dictionary = veil.knots[k]
+	var base := MOTES.x if veil.knots.size() == 1 else float(KNOT_MOTES)
+	return (base+float(knot.thick)*(MOTES.y-MOTES.x))*float(veil.density)
 
-## `count` more motes join the cloud, fading in at their places in it.
-func _join(cloud: Dictionary, count: int) -> void:
-	var rng: RandomNumberGenerator = cloud.rng
+func _sigma(veil: Dictionary, knot: Dictionary, sweep: float) -> float:
+	return lerpf(lerpf(SPREAD.x,SPREAD.y,float(knot.thick)),VEIL_SPREAD,sweep)*float(veil.scale)
+
+## A new knot at `flat` (plate) over ground `ground`, with its motes.
+func _lay(veil: Dictionary, flat: Vector2, ground: float) -> void:
+	var knots: Array = veil.knots
+	var s := 0.0 if knots.is_empty() else float(knots.back().s)+flat.distance_to(_flat(knots.back().p))
+	knots.append({"p":Vector3(flat.x,ground,flat.y),"r":_knot_radius(veil,0.0),"thick":0.0,"count":0,"s":s})
+	if knots.size() > KNOTS: _merge(veil)
+	knots = veil.knots
+	var k := knots.size()-1
+	_fill(veil,k,roundi(_knot_target(veil,k))-int(knots[k].count))
+
+## Too many knots: merge them in pairs. Each kept knot widens to hold its
+## partner's motes where they are, so the promise still holds.
+func _merge(veil: Dictionary) -> void:
+	var knots: Array = veil.knots
+	var kept := []
+	for i in range(0,knots.size(),2):
+		var knot: Dictionary = knots[i]
+		if i+1 < knots.size():
+			var other: Dictionary = knots[i+1]
+			knot.r = maxf(float(knot.r),float(other.r)+_flat(knot.p).distance_to(_flat(other.p)))
+			knot.thick = maxf(float(knot.thick),float(other.thick))
+			knot.count = int(knot.count)+int(other.count)
+		kept.append(knot)
+	for mote: Dictionary in veil.motes:
+		var was: Dictionary = knots[mote.k]
+		var now: Dictionary = kept[int(mote.k)/2]
+		var shift: Vector3 = Vector3(was.p)-Vector3(now.p)
+		mote.off = Vector3(mote.off)+Vector3(shift.x,0.0,shift.z)
+		mote.k = int(mote.k)/2
+	veil.knots = kept
+	veil.step = float(veil.step)*2.0
+
+## `count` more motes for knot `k`: taken from knots holding more than they
+## want first, then new while the veil is under its cap, then from the knot
+## densest for what it wants. They start at the head and ease into place.
+func _fill(veil: Dictionary, k: int, count: int) -> void:
+	if count <= 0: return
+	var knots: Array = veil.knots
+	var rng: RandomNumberGenerator = veil.rng
+	var motes: Array = veil.motes
 	for i in range(count):
-		var up := rng.randf_range(-1.0,1.0)
-		var around := rng.randf()*TAU
-		var slot := Vector3(cos(around)*sqrt(1.0-up*up),up*0.55,sin(around)*sqrt(1.0-up*up))*pow(rng.randf(),0.4)
-		cloud.motes.append({"slot":slot,"p":Vector3(cloud.centre)+slot*0.2,"born":float(cloud.age),"phase":rng.randf()*TAU,
-			"rate":rng.randf_range(0.3,0.9)*(1.0 if rng.randf() < 0.5 else -1.0),"size":rng.randf_range(0.7,1.3),"landed":false})
+		var from := -1
+		var best := 1.0
+		var spare := false
+		for j in range(knots.size()):
+			if j == k: continue
+			var ratio := float(knots[j].count)/maxf(_knot_target(veil,j),1.0)
+			if ratio > best:
+				best = ratio
+				from = j
+		spare = from >= 0
+		if not spare and motes.size() >= int(veil.cap):
+			# At the cap: the densest part of the veil gives one up.
+			best = -1.0
+			for j in range(knots.size()):
+				if j == k or int(knots[j].count) <= 1: continue
+				var ratio := float(knots[j].count)/maxf(_knot_target(veil,j),1.0)
+				if ratio > best:
+					best = ratio
+					from = j
+			if from < 0 or float(knots[from].count)/maxf(_knot_target(veil,from),1.0) <= float(knots[k].count+1)/maxf(_knot_target(veil,k),1.0): return
+		var slot := _slot(veil,knots[k],rng)
+		if from >= 0:
+			for mote: Dictionary in motes:
+				if int(mote.k) != from: continue
+				mote.k = k
+				mote.off = slot
+				knots[from].count = int(knots[from].count)-1
+				break
+		else:
+			motes.append({"k":k,"off":slot,"p":Vector3(veil.head)+Vector3(rng.randf_range(-0.15,0.15),rng.randf_range(-0.1,0.1),rng.randf_range(-0.15,0.15)),
+				"born":float(veil.age),"phase":rng.randf()*TAU,"rate":rng.randf_range(0.3,0.9)*(1.0 if rng.randf() < 0.5 else -1.0),"size":rng.randf_range(0.7,1.3),"landed":false})
+		knots[k].count = int(knots[k].count)+1
+
+## A place in knot `knot`'s part of the veil: within its half-width across,
+## a little up and down.
+func _slot(veil: Dictionary, knot: Dictionary, rng: RandomNumberGenerator) -> Vector3:
+	var around := rng.randf()*TAU
+	var out := sqrt(rng.randf())*float(knot.r)
+	return Vector3(cos(around)*out,rng.randf_range(-0.3,0.3)*(0.6+float(knot.thick)),sin(around)*out)
 
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
@@ -282,97 +426,180 @@ func _process(delta: float) -> void:
 	last_usec = Time.get_ticks_usec()-began
 
 func _step_held(delta: float) -> void:
-	var cloud := held
-	cloud.age = float(cloud.age)+delta
-	cloud.fill = minf(1.0,float(cloud.fill)+delta*float(cloud.strength)/HOLD_SECONDS)
-	var want := _mote_count(cloud)
-	if cloud.motes.size() < want: _join(cloud,want-cloud.motes.size())
-	var goal: Vector3 = Vector3(cloud.target)+Vector3.UP*(HEIGHT+sin(age*TAU*BOB.y)*BOB.x)
-	var velocity: Vector3 = cloud.velocity
-	velocity += ((goal-Vector3(cloud.centre))*FOLLOW-velocity*FOLLOW_DAMP)*delta
-	cloud.velocity = velocity
-	cloud.centre = Vector3(cloud.centre)+velocity*delta
-	var r0 := lerpf(CLOUD.x,CLOUD.y,float(cloud.fill))*float(cloud.scale)
-	for mote: Dictionary in cloud.motes:
-		# Each mote billows round its place, and trails the cloud a little.
-		var turn := float(mote.rate)*float(cloud.age)
-		var slot: Vector3 = Vector3(mote.slot).rotated(Vector3.UP,turn)
-		var billow := Vector3(sin(age*TAU*BILLOW.y+float(mote.phase)),cos(age*TAU*BILLOW.y*1.3+float(mote.phase)),sin(age*TAU*BILLOW.y*0.7+float(mote.phase)*2.0))*BILLOW.x
-		var place: Vector3 = Vector3(cloud.centre)+slot*r0+billow
-		mote.p = Vector3(mote.p).lerp(place,1.0-exp(-6.0*delta))
+	var veil := held
+	veil.age = float(veil.age)+delta
+	var goal: Vector3 = Vector3(veil.target)+Vector3.UP*HEIGHT
+	var velocity: Vector3 = veil.velocity
+	velocity += ((goal-Vector3(veil.head))*FOLLOW-velocity*FOLLOW_DAMP)*delta
+	veil.velocity = velocity
+	veil.head = Vector3(veil.head)+velocity*delta
+	# Lay knots along the head's way, a step apart; never off the land.
+	var head := _flat(veil.head)
+	var guard := 0
+	while guard < 64:
+		guard += 1
+		var last := _flat(veil.knots.back().p)
+		var gap := head.distance_to(last)
+		var step: float = veil.step
+		if gap < step: break
+		var at := last+(head-last)/gap*step
+		var ground: float = ground_at.call(at)
+		if is_nan(ground): break
+		_lay(veil,at,ground)
+	var knots: Array = veil.knots
+	# Holding still thickens the veil where it is.
+	if Vector2(velocity.x,velocity.z).length() < STILL:
+		var k := knots.size()-1
+		var knot: Dictionary = knots[k]
+		if float(knot.thick) < 1.0:
+			knot.thick = minf(1.0,float(knot.thick)+delta*float(veil.strength)/HOLD_SECONDS)
+			knot.r = maxf(float(knot.r),_knot_radius(veil,float(knot.thick)))
+			_fill(veil,k,roundi(_knot_target(veil,k))-int(knot.count))
+	# Each mote churns round its place and eases there, so new ones trail.
+	var ease := 1.0-exp(-SETTLE_RATE*delta)
+	for mote: Dictionary in veil.motes:
+		var knot: Dictionary = knots[mote.k]
+		mote.p = Vector3(mote.p).lerp(_hang(veil,knot,mote),ease)
 
-func _step_flying(cloud: Dictionary, delta: float) -> void:
-	cloud.age = float(cloud.age)+delta
-	# The air where the cloud is now carries every mote still aloft alike.
-	var before: Vector2 = cloud.drift
-	var was: float = cloud.flown
-	var wind := Wind.at(scene,get_parent() as Node3D,Vector2(cloud.origin)+before)
-	cloud.wind = wind
-	cloud.flown = was+delta
-	cloud.drift = before+wind*delta
-	for mote: Dictionary in cloud.motes:
+## Where a held mote hangs: its knot, HEIGHT up with a ripple running along the
+## veil, its place turning slowly round the knot, billowing.
+func _hang(veil: Dictionary, knot: Dictionary, mote: Dictionary) -> Vector3:
+	var off: Vector3 = mote.off
+	var turn := float(mote.rate)*(float(veil.age)-float(mote.born))*0.5
+	var flat := Vector2(off.x,off.z).rotated(turn)
+	var phase: float = mote.phase
+	var billow := Vector3(sin(age*TAU*BILLOW.y+phase),cos(age*TAU*BILLOW.y*1.3+phase),sin(age*TAU*BILLOW.y*0.7+phase*2.0))*BILLOW.x
+	var ripple := sin(age*TAU*BOB.y-float(knot.s)*0.9)*BOB.x
+	return Vector3(knot.p)+Vector3(flat.x,HEIGHT+off.y+ripple,flat.y)+billow
+
+# --- The fall -------------------------------------------------------------------
+
+## Knot `knot`'s footprint now: its part's drift so far, carried on by that
+## part's wind for the least and the most time its motes have left.
+func _ends(veil: Dictionary, knot: Dictionary, at := -1.0) -> Array:
+	var g: int = knot.g
+	var wind: Vector2 = veil.wind[g]
+	var t: float = veil.t if at < 0.0 else minf(at,float(veil.t))
+	# Earlier this frame the drift was that much less.
+	var here: Vector2 = _flat(knot.p)+Vector2(veil.drift[g])-wind*(float(veil.t)-t)
+	return [here+wind*maxf(float(knot.min_t)-t,0.0),here+wind*maxf(float(knot.max_t)-t,0.0)]
+
+func _step_flying(veil: Dictionary, delta: float) -> void:
+	veil.age = float(veil.age)+delta
+	# The air where each part of the veil is now carries its motes alike.
+	var was: float = veil.t
+	var before: Array = veil.drift.duplicate()
+	var parent := get_parent() as Node3D
+	for g in range(int(veil.groups)):
+		var wind := Wind.at(scene,parent,Vector2(veil.middles[g])+Vector2(before[g]))
+		veil.wind[g] = wind
+		veil.drift[g] = Vector2(before[g])+wind*delta
+	veil.t = was+delta
+	var knots: Array = veil.knots
+	for mote: Dictionary in veil.motes:
 		if mote.landed: continue
-		if float(mote.fall) <= float(cloud.flown):
+		var knot: Dictionary = knots[mote.k]
+		var g: int = knot.g
+		var down := float(mote.start)+float(mote.fall)
+		if down <= float(veil.t):
 			# Down part way through this frame: the drift up to that moment.
-			_land(cloud,mote,Vector2(mote.base)+before+wind*(float(mote.fall)-was))
+			_land(veil,mote,Vector2(mote.base)+Vector2(before[g])+Vector2(veil.wind[g])*(down-was))
 			continue
-		_place_falling(cloud,mote)
-	if int(cloud.down) >= cloud.motes.size(): _settle(cloud)
+		_place(veil,knot,mote)
+	if int(veil.down) >= veil.motes.size(): _settle(veil)
 
-## A mote's way down: it sinks at a steady rate after a soft start, drifts
-## apart from the others early, rides the cloud's drift, and wanders on the
-## curl of the air, the wander dying out as it lands. Near the ground it looks
-## ahead to where it will land, so it comes down onto the ground there.
-func _place_falling(cloud: Dictionary, mote: Dictionary) -> void:
-	var u := clampf(float(cloud.flown)/float(mote.fall),0.0,1.0)
+## A released mote before its fall: the breath (it lifts and gathers in toward
+## its knot), then a moment hanging until its part of the veil goes.
+func _lifted(knot: Dictionary, mote: Dictionary, t: float) -> Vector3:
+	var c := 1.0-pow(1.0-clampf(t/LIFT,0.0,1.0),3.0)
 	var from: Vector3 = mote.from
+	var gather := (Vector3(knot.p.x,from.y,knot.p.z)-from)*GATHER*c
+	return from+gather+Vector3.UP*LIFT_HEIGHT*c
+
+## A mote's way down: after its breath it sinks softly, then steadily, and
+## lands gently; it drifts apart from the others early, rides its part's
+## drift, and wanders on the curl of the air, the wander dying out as it
+## lands. Near the ground it looks ahead to where it will land, so it comes
+## down onto the ground there.
+func _place(veil: Dictionary, knot: Dictionary, mote: Dictionary) -> void:
+	var t: float = veil.t
+	var drift: Vector2 = veil.drift[knot.g]
+	if t < float(mote.start):
+		mote.p = _lifted(knot,mote,t)+Vector3(drift.x,0.0,drift.y)
+		return
+	var u := clampf((t-float(mote.start))/float(mote.fall),0.0,1.0)
+	var from := _lifted(knot,mote,float(mote.start))
 	var start := _flat(from)
 	var base: Vector2 = mote.base
-	var flat := start+(base-start)*(1.0-pow(1.0-u,2.0))+Vector2(cloud.drift)
+	var flat := start+(base-start)*(1.0-pow(1.0-u,2.0))+drift
 	flat += Vector2(mote.curl).rotated(u*4.0+float(mote.phase))*WANDER*sin(u*PI)
 	if not mote.aimed and u > 0.6:
 		mote.aimed = true
-		var ahead: float = ground_at.call(base+Vector2(cloud.drift)+Vector2(cloud.wind)*(float(mote.fall)-float(cloud.flown)))
+		var ahead: float = ground_at.call(base+drift+Vector2(veil.wind[knot.g])*(float(mote.start)+float(mote.fall)-t))
 		if not is_nan(ahead): mote.floor = ahead
-	var sink := u*u*(3.0-2.0*u)*0.35+u*0.65
+	var sink := 0.55*u*u*(3.0-2.0*u)+0.45*u*u
 	var y := lerpf(from.y,float(mote.floor),sink)+sin(u*PI*3.0+float(mote.phase))*0.05*(1.0-u)
 	mote.p = Vector3(flat.x,y,flat.y)
 
-func _land(cloud: Dictionary, mote: Dictionary, point: Vector2) -> void:
+## Metres past the footprint `point` lies, in shares of the nearest part's
+## radius (1 is on its edge): the least over the veil's knots.
+func _share(point: Vector2, capsules: Array) -> float:
+	var best := INF
+	for capsule: Array in capsules:
+		best = minf(best,_to_segment(point,capsule[0],capsule[1])/float(capsule[2]))
+	return best
+
+## The footprint's capsules (plate [a, b, radius]) as they stand now, or as
+## they stood at `at` seconds since release, earlier this frame.
+func _capsules(veil: Dictionary, at := -1.0) -> Array:
+	var out := []
+	for knot: Dictionary in veil.knots:
+		var ends := _ends(veil,knot,at)
+		out.append([ends[0],ends[1],float(knot.r)+float(knot.sigma)])
+	return out
+
+func _land(veil: Dictionary, mote: Dictionary, point: Vector2) -> void:
 	mote.landed = true
-	cloud.down = int(cloud.down)+1
-	# Against the footprint as it stands now, and as it was promised at release.
-	var ends := _flying_shape(cloud)
-	var share := _to_segment(point,ends[0],ends[1])/float(cloud.radius)
-	cloud.worst = maxf(float(cloud.worst),share)
-	if share > 1.0001: cloud.outside = int(cloud.outside)+1
-	if _to_segment(point,cloud.promised[0],cloud.promised[1]) > float(cloud.radius)*1.0001: cloud.outside_promised = int(cloud.outside_promised)+1
+	veil.down = int(veil.down)+1
+	# Against the footprint as it stood when it landed, and as it was promised
+	# at release.
+	var share := _share(point,_capsules(veil,float(mote.start)+float(mote.fall)))
+	veil.worst = maxf(float(veil.worst),share)
+	if share > 1.0001: veil.outside = int(veil.outside)+1
+	if _share(point,veil.promised) > 1.0001: veil.outside_promised = int(veil.outside_promised)+1
 	var h: float = ground_at.call(point)
 	mote.lost = is_nan(h)
 	var to := Vector3(point.x,float(mote.floor) if mote.lost else h,point.y)
 	mote.p = to
 	if mote.lost:
-		cloud.lost = int(cloud.lost)+1
+		veil.lost = int(veil.lost)+1
 		return
-	cloud.points.append(point)
-	_glints.append({"p":to,"t":0.0,"size":float(mote.size),"colour":cloud.colour})
-	var seeds: PackedVector2Array = cloud.seeds
+	veil.points.append(point)
+	_glints.append({"p":to,"t":0.0,"size":float(mote.size),"colour":veil.colour})
+	var seeds: PackedVector2Array = veil.seeds
 	for q in seeds:
 		if q.distance_squared_to(point) < SEED_GAP*SEED_GAP: return
 	seeds.append(point)
-	cloud.seeds = seeds
+	veil.seeds = seeds
 	if takes.call(point):
 		_sprouts.append({"p":to,"t":0.0,"yaw":randf()*TAU,"lean":Vector2.RIGHT.rotated(randf()*TAU)})
 		if _sprouts.size() > SPROUTS_MAX: _sprouts = _sprouts.slice(_sprouts.size()-SPROUTS_MAX)
 
-## Land what is left of `cloud` now, on the drift so far and the present
-## wind, and hand it on.
-func _settle(cloud: Dictionary) -> void:
-	for mote: Dictionary in cloud.motes:
-		if not mote.landed: _land(cloud,mote,Vector2(mote.base)+Vector2(cloud.drift)+Vector2(cloud.wind)*maxf(float(mote.fall)-float(cloud.flown),0.0))
-	clouds.erase(cloud)
-	settled.emit({"id":cloud.id,"seeds":cloud.seeds,"points":cloud.points,"lost":cloud.lost,"radius":cloud.radius,"motes":cloud.motes.size(),
-		"promised":cloud.promised,"drift":cloud.drift,"worst":cloud.worst,"outside":cloud.outside,"outside_promised":cloud.outside_promised})
+## Land what is left of `veil` now, on the drift so far and the present wind,
+## and hand it on.
+func _settle(veil: Dictionary) -> void:
+	for mote: Dictionary in veil.motes:
+		if mote.landed: continue
+		var g: int = veil.knots[mote.k].g
+		_land(veil,mote,Vector2(mote.base)+Vector2(veil.drift[g])+Vector2(veil.wind[g])*maxf(float(mote.start)+float(mote.fall)-float(veil.t),0.0))
+	clouds.erase(veil)
+	var path := PackedVector2Array()
+	for knot: Dictionary in veil.knots: path.append(_flat(knot.p))
+	var drift := Vector2.ZERO
+	for d: Vector2 in veil.drift: drift += d
+	settled.emit({"id":veil.id,"seeds":veil.seeds,"points":veil.points,"lost":veil.lost,"radius":veil.radius,"motes":veil.motes.size(),
+		"path":path,"length":veil.length,"promised":veil.promised,"drift":drift/float(veil.drift.size()),"worst":veil.worst,
+		"outside":veil.outside,"outside_promised":veil.outside_promised})
 
 func _step_ground(delta: float) -> void:
 	var kept: Array[Dictionary] = []
@@ -389,6 +616,8 @@ func _step_ground(delta: float) -> void:
 func _flat(p: Vector3) -> Vector2:
 	return Vector2(p.x,p.z)
 
+# --- Drawing --------------------------------------------------------------------
+
 func _draw() -> void:
 	var plate: Transform3D = (get_parent() as Node3D).global_transform
 	var motes := _mote_node.multimesh
@@ -397,32 +626,39 @@ func _draw() -> void:
 	var h := 0
 	var all: Array[Dictionary] = clouds.duplicate()
 	if not held.is_empty(): all.append(held)
-	for cloud: Dictionary in all:
-		var colour: Color = cloud.colour
-		var flying: bool = cloud.state == "flying"
+	for veil: Dictionary in all:
+		var colour: Color = veil.colour
+		var flying: bool = veil.state == "flying"
+		var knots: Array = veil.knots
+		# The haze follows the veil: a puff's few round its middle, a sweep's
+		# spaced along it.
+		var along: bool = knots.size() >= HAZE
+		var buckets := mini(knots.size(),HAZE_VEIL) if along else HAZE
 		var groups := []
-		for g in range(HAZE): groups.append([Vector3.ZERO,0])
-		for i in range(cloud.motes.size()):
-			var mote: Dictionary = cloud.motes[i]
+		for g in range(buckets): groups.append([Vector3.ZERO,0,0.0])
+		for i in range(veil.motes.size()):
+			var mote: Dictionary = veil.motes[i]
 			if mote.landed or n >= MOTES_MAX: continue
 			# Fluff glints as it turns; it fades in as it joins.
 			var twinkle := 0.75+0.25*sin(age*5.0+float(mote.phase)*3.0)
-			var grow := smoothstep(0.0,0.4,float(cloud.age)-float(mote.born)) if not flying else 1.0
+			var grow := smoothstep(0.0,0.4,float(veil.age)-float(mote.born)) if not flying else 1.0
 			var size := 0.045*float(mote.size)*twinkle*maxf(grow,0.01)
 			motes.set_instance_transform(n,Transform3D(Basis(Vector3.UP,float(mote.phase)+age).scaled(Vector3.ONE*size),mote.p))
 			motes.set_instance_color(n,Color(colour.r,colour.g,colour.b,0.9))
 			n += 1
-			var group: Array = groups[i%HAZE]
+			var group: Array = groups[int(mote.k)*buckets/knots.size() if along else i%HAZE]
 			group[0] += Vector3(mote.p)
 			group[1] += 1
-		# The haze: soft light over the cloud, thinning as it spreads and lands.
-		var left := 1.0-float(cloud.down)/maxf(cloud.motes.size(),1.0) if flying else smoothstep(0.0,0.3,float(cloud.age))
-		var spread := 1.0+(float(cloud.age)*0.25 if flying else 0.0)
-		var r0 := lerpf(CLOUD.x,CLOUD.y,float(cloud.fill))*float(cloud.scale)
+			group[2] = maxf(float(group[2]),float(knots[mote.k].r))
+		# The haze: soft light over the veil, thinning as it spreads and lands.
+		var left := 1.0-float(veil.down)/maxf(veil.motes.size(),1.0) if flying else smoothstep(0.0,0.3,float(veil.age))
+		var spread := 1.0+(float(veil.t)*0.25 if flying else 0.0)
+		var span := float(knots.back().s)/float(buckets)*0.5 if along else 0.0
 		for group: Array in groups:
 			if int(group[1]) == 0 or h >= haze.instance_count: continue
 			var at: Vector3 = group[0]/float(group[1])
-			haze.set_instance_transform(h,Transform3D(Basis.from_scale(Vector3.ONE*r0*0.9*spread),at))
+			var size := (float(group[2])+span)*0.9*spread
+			haze.set_instance_transform(h,Transform3D(Basis.from_scale(Vector3.ONE*size),at))
 			haze.set_instance_color(h,Color(colour.r,colour.g,colour.b,HAZE_GLOW*left/spread))
 			h += 1
 	for glint: Dictionary in _glints:
@@ -441,9 +677,6 @@ func _draw() -> void:
 	_haze_node.visible = h > 0
 	var sprouts := _sprout_node.multimesh
 	var count := mini(_sprouts.size(),SPROUTS_MAX)
-	sprouts.visible_instance_count = count
-	_sprout_node.global_transform = plate
-	_sprout_node.visible = count > 0
 	for i in range(count):
 		var s: Dictionary = _sprouts[i]
 		var t: float = s.t
@@ -456,27 +689,48 @@ func _draw() -> void:
 		var basis := Basis(Vector3(lean.x,0,lean.y),sway)*Basis(Vector3.UP,float(s.yaw))
 		sprouts.set_instance_transform(i,Transform3D(basis.scaled(Vector3.ONE*SPROUT_SIZE*maxf(up,0.001)),s.p))
 		sprouts.set_instance_color(i,Color(1,1,1,0))
+	# Shown only once every visible instance has its transform.
+	sprouts.visible_instance_count = count
+	_sprout_node.global_transform = plate
+	_sprout_node.visible = count > 0
 
-## The footprints: the aim (a click's under the pointer, or the held cloud's)
-## and each released cloud's until it has settled.
+## The capsules (plate [a, b, radius]) the held veil would settle into if let
+## go now, in the wind as it blows now.
+func _held_capsules(veil: Dictionary) -> Array:
+	var knots: Array = veil.knots
+	var n := knots.size()
+	var length: float = knots.back().s
+	var groups := clampi(ceili(float(n)/KNOT_GROUP),1,GROUPS)
+	var winds := []
+	var parent := get_parent() as Node3D
+	for g in range(groups):
+		var middle := _flat(knots[mini(n-1,(2*g+1)*n/(2*groups))].p)
+		winds.append(Wind.at(scene,parent,middle))
+	var sweep := clampf(length/SWEEP,0.0,1.0)
+	var wave := WAVE*minf(1.0,length/WAVE_LENGTH)
+	var out := []
+	for k in range(n):
+		var knot: Dictionary = knots[k]
+		var wind: Vector2 = winds[k*groups/n]
+		var delay := LIFT+wave*(length-float(knot.s))/maxf(length,0.001)
+		var here := _flat(knot.p)
+		out.append([here+wind*(delay+FALL.x),here+wind*(delay+JITTER+FALL.y),float(knot.r)+_sigma(veil,knot,sweep)])
+	return out
+
+## The footprints: the aim (a click's under the pointer, or the held veil's)
+## and each released veil's until it has settled.
 func _paint_prints() -> void:
 	var shapes: Array[Dictionary] = []
 	var parent := get_parent() as Node3D
 	if not held.is_empty():
-		var shape := _shape(held,Wind.at(scene,parent,_flat(held.centre)))
-		shape.strength = smoothstep(0.0,0.15,float(held.age))
-		shape.soft = 1.0
-		shapes.append(shape)
+		shapes.append({"capsules":_held_capsules(held),"strength":smoothstep(0.0,0.15,float(held.age)),"soft":1.0})
 	elif _hover != null:
-		var probe := {"fill":0.0,"scale":_hover_scale,"state":"hover","target":_hover,"centre":_hover}
-		var shape := _shape(probe,Wind.at(scene,parent,_flat(_hover)))
-		shape.strength = 0.55
-		shape.soft = 1.0
-		shapes.append(shape)
-	for cloud: Dictionary in clouds:
-		var share := float(cloud.down)/maxf(cloud.motes.size(),1.0)
-		var ends := _flying_shape(cloud)
-		shapes.append({"a":ends[0],"b":ends[1],"radius":cloud.radius,"strength":1.0-smoothstep(0.7,1.0,share),"soft":0.0})
+		var wind := Wind.at(scene,parent,_flat(_hover))
+		var here := _flat(_hover)
+		shapes.append({"capsules":[[here+wind*(LIFT+FALL.x),here+wind*(LIFT+JITTER+FALL.y),(CLOUD.x+SPREAD.x)*_hover_scale]],"strength":0.55,"soft":1.0})
+	for veil: Dictionary in clouds:
+		var share := float(veil.down)/maxf(veil.motes.size(),1.0)
+		shapes.append({"capsules":_capsules(veil),"strength":1.0-smoothstep(0.7,1.0,share),"soft":0.0})
 	var scale := parent.global_basis.get_scale().x
 	for i in range(_prints.size()):
 		var node := _prints[i]
@@ -484,27 +738,42 @@ func _paint_prints() -> void:
 			node.visible = false
 			continue
 		var shape: Dictionary = shapes[i]
-		var a: Vector2 = shape.a
-		var b: Vector2 = shape.b
-		var r: float = shape.radius
-		var ha: float = ground_at.call(a)
-		var hb: float = ground_at.call(b)
-		var hm: float = ground_at.call((a+b)*0.5)
-		var grounds := [ha,hb,hm].filter(func(v: float) -> bool: return not is_nan(v))
-		if grounds.is_empty():
+		var capsules: Array = shape.capsules
+		var low := INF
+		var high := -INF
+		var box := Rect2()
+		var ends := PackedVector4Array()
+		var radii := PackedFloat32Array()
+		# The ground under the ends, read at no more than 16 of them.
+		var every := maxi(1,capsules.size()/16)
+		for k in range(capsules.size()):
+			var capsule: Array = capsules[k]
+			var a: Vector2 = capsule[0]
+			var b: Vector2 = capsule[1]
+			var r: float = capsule[2]
+			var reach := Rect2(Vector2(minf(a.x,b.x),minf(a.y,b.y))-Vector2.ONE*(r+0.6),Vector2(absf(b.x-a.x),absf(b.y-a.y))+Vector2.ONE*(r+0.6)*2.0)
+			box = reach if k == 0 else box.merge(reach)
+			if k%every == 0 or k == capsules.size()-1:
+				for q: Vector2 in [a,b]:
+					var ground: float = ground_at.call(q)
+					if is_nan(ground): continue
+					low = minf(low,ground)
+					high = maxf(high,ground)
+			var wa := parent.to_global(Vector3(a.x,0.0,a.y))
+			var wb := parent.to_global(Vector3(b.x,0.0,b.y))
+			ends.append(Vector4(wa.x,wa.z,wb.x,wb.z))
+			radii.append(r*scale)
+		if low == INF:
 			node.visible = false
 			continue
-		var low: float = grounds.min()
-		var high: float = grounds.max()
-		var middle := (a+b)*0.5
-		var span := Vector2(absf(b.x-a.x),absf(b.y-a.y))*0.5+Vector2.ONE*(r+0.6)
+		var middle := box.get_center()
 		var at := parent.to_global(Vector3(middle.x,(low+high)*0.5,middle.y))
-		node.global_transform = Transform3D(Basis.from_scale(Vector3(span.x*2.0*scale,(high-low+8.0)*scale,span.y*2.0*scale)),at)
+		node.global_transform = Transform3D(Basis.from_scale(Vector3(box.size.x*scale,(high-low+8.0)*scale,box.size.y*scale)),at)
 		node.visible = true
 		var material := node.material_override as ShaderMaterial
-		material.set_shader_parameter("seg_a",parent.to_global(Vector3(a.x,ha if not is_nan(ha) else low,a.y)))
-		material.set_shader_parameter("seg_b",parent.to_global(Vector3(b.x,hb if not is_nan(hb) else low,b.y)))
-		material.set_shader_parameter("radius",r*scale)
+		material.set_shader_parameter("ends",ends)
+		material.set_shader_parameter("radii",radii)
+		material.set_shader_parameter("count",capsules.size())
 		material.set_shader_parameter("strength",float(shape.strength))
 		material.set_shader_parameter("soft",float(shape.soft))
 		material.set_shader_parameter("ceiling",parent.to_global(Vector3(0.0,high+HEIGHT*0.45,0.0)).y)

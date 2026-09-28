@@ -949,10 +949,13 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	stage_start = Time.get_ticks_usec()
 	var original := data.heights == data.original_heights
 	_lift_anchors(original)
+	# Hide what the plate replaces in the same frame the anchors show it: a
+	# yield between the two drew the source chunk's whole forest for a frame
+	# on a blank plate (the flicker when a pollen cloud settled).
+	sync_visibility()
 	if frame_tree != null:
 		await budget.checkpoint()
 		if not current.call(): return _finish_refresh(false)
-	sync_visibility()
 	_rebuild_skirt()
 	if frame_tree != null:
 		await budget.checkpoint()
@@ -2440,8 +2443,9 @@ const RISE_FOG_SECONDS := 4.0
 
 # --- Pollen -------------------------------------------------------------------
 ## Pollen (scripts/pollen_cloud.gd, docs/scenic/brushes.md "Pollen"): with
-## forest in hand a press gathers a cloud of pollen above the pointer, a hold
-## swells it, and release lets it go on the wind. You release it; the world
+## forest in hand, holding the button lays a veil of pollen in the air along
+## the pointer's sweep (holding still thickens it, a click is a small puff),
+## and release lets the whole veil go on the wind. You release it; the world
 ## decides what becomes of it. When a cloud has settled its seeds raise the
 ## forest wish round them (ForestBrush `sow`) as one undo step, and go to
 ## emergence, where the land decides what takes and grows (Emergence
@@ -2488,8 +2492,9 @@ func _handful_press(hit: Vector3) -> void:
 	# cloud drifts on. The settled cloud reports its stroke (`_write_cloud`).
 	_handful_holding = true
 
-## Aiming shows a click's footprint under the pointer; a held cloud follows
-## it. Settled clouds are written once no other stroke is open.
+## Aiming shows a click's footprint under the pointer; a held veil is laid
+## along the pointer's way. Settled veils are written once no other stroke is
+## open.
 func _handful_process(hit: Variant, delta: float) -> void:
 	var aiming := _pollen_in_hand() and not _painting and not forming and active
 	if handful == null:

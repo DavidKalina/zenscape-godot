@@ -399,6 +399,10 @@ func _copy_visual(node: Node, parent: Node, level: float) -> void:
 				copy.material_override = material
 				copy.transform = node.global_transform
 				copy.extra_cull_margin = 2.0
+				# Shown only as the source is: a hidden source (the source
+				# chunk's forest on a blank plate) must not reflect until the
+				# next update_views catches up.
+				copy.visible = node.is_visible_in_tree()
 				parent.add_child(copy)
 				_bindings.append({"source":node,"copy":copy})
 			else: copy.free()

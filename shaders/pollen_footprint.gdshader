@@ -5,16 +5,18 @@ render_mode unshaded, blend_premul_alpha, depth_draw_never, depth_test_disabled,
 // box around it reads the depth buffer back to the ground it covers). In the
 // water ball's family (shaders/water_ball_ground.gdshader): a pooled shadow in
 // two tones with a pale rim, faceted round its ends. It is softer and lighter,
-// because pollen is diffuse, and a capsule: round in still air, stretched
-// from `seg_a` to `seg_b` along the wind. Faint specks of pollen light
-// twinkle inside it.
+// because pollen is diffuse, and follows the swept veil: the union of one
+// capsule per knot of the veil, each round in still air and stretched along
+// the wind (`ends`: world a.x, a.z, b.x, b.z; `radii`: world metres). Faint
+// specks of pollen light twinkle inside it.
 // Premultiplied: ALBEDO is light added, ALPHA how much of the ground is dimmed.
 #include "res://shaders/reference_globals.gdshaderinc"
 uniform sampler2D ground_depth : hint_depth_texture, filter_nearest, repeat_disable;
-// The capsule's ends (world) and radius (world metres).
-uniform vec3 seg_a = vec3(0.0);
-uniform vec3 seg_b = vec3(0.0);
-uniform float radius = 1.0;
+// The capsules (scripts/pollen_cloud.gd KNOTS at most) and how many are used.
+const int CAPSULES = 64;
+uniform vec4 ends[CAPSULES];
+uniform float radii[CAPSULES];
+uniform int count = 0;
 // How much of it shows, and 1 for the aim's softer edge.
 uniform float strength = 0.0;
 uniform float soft = 0.0;
@@ -34,13 +36,25 @@ void fragment() {
 	vec3 world = (INV_VIEW_MATRIX * vec4(view.xyz, 1.0)).xyz;
 	vec3 box = (inverse(MODEL_MATRIX) * vec4(world, 1.0)).xyz;
 	if (any(greaterThan(abs(box), vec3(0.5))) || world.y > ceiling) discard;
-	// Distance to the capsule's spine, faceted like the water ball's mark.
-	vec2 ab = seg_b.xz - seg_a.xz;
-	float along = clamp(dot(world.xz - seg_a.xz, ab) / max(dot(ab, ab), 1e-5), 0.0, 1.0);
-	vec2 from = world.xz - (seg_a.xz + ab * along);
+	// The nearest capsule's spine in shares of its radius, faceted like the
+	// water ball's mark (only the nearest is faceted, to keep the loop cheap).
+	float best = 1e4;
+	vec2 near = vec2(1.0, 0.0);
+	for (int i = 0; i < CAPSULES; i++) {
+		if (i >= count) break;
+		vec2 a = ends[i].xy;
+		vec2 ab = ends[i].zw - a;
+		float along = clamp(dot(world.xz - a, ab) / max(dot(ab, ab), 1e-5), 0.0, 1.0);
+		vec2 from = world.xz - (a + ab * along);
+		float share = length(from) / max(radii[i], 1e-3);
+		if (share < best) {
+			best = share;
+			near = from;
+		}
+	}
 	float wedge = TAU / float(MARK_SIDES);
-	float around = mod(atan(from.y, from.x) + age * MARK_TURN, wedge) - wedge * 0.5;
-	float d = length(from) * cos(around) / radius;
+	float around = mod(atan(near.y, near.x) + age * MARK_TURN, wedge) - wedge * 0.5;
+	float d = best * cos(around);
 	float edge = mix(0.1, 0.2, soft);
 	float pool = 1.0 - smoothstep(1.0 - edge, 1.0, d);
 	float core = 1.0 - smoothstep(0.55 - edge * 0.5, 0.55, d);
