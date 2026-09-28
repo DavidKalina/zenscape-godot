@@ -30,6 +30,13 @@ const CLEAR_BELOW := -0.25
 const FIRM_PASS := 0.7
 const FIRM_MIN := 0.3
 const FIRM_EMPTY := 0.1
+## A landed seed of the seed handful (scripts/seed_handful.gd, `sow`): the
+## wish it raises at its point, how far round it (m, with a dab's falloff),
+## and how far past the handful's mark (m) that wish fades to nothing, so the
+## forest a handful asks for stays inside its mark.
+const SEED_WISH := 0.55
+const SEED_REACH := 1.5
+const SEED_EDGE := 0.3
 
 var _floor := Color()
 var _clearing := false
@@ -68,6 +75,34 @@ func dab(data: NativeTerrainData, center: Vector2, reach: float, amount: float, 
 		var before := wish[cell]
 		wish[cell] = move_toward(before,goal,amount*RATE*weight)
 		if lower: _cleared[cell] = _cleared.get(cell,0.0)+amount*RATE*weight
+		if data.provenance[cell] == NativeTerrainData.SOURCE_HAND: continue
+		_tint_toward(tint,cell,_floor,FLOOR_WEIGHT*maxf(wish[cell],0.0),absf(wish[cell]-before)*FLOOR_WEIGHT+0.0001)
+	intent.forest = wish
+	intent.revision += 1
+	data.tint = tint
+
+## One seed of a handful landed at `point`: raise the forest wish round it
+## and darken the floor there, as a dab does. `mark` is the handful's mark
+## (centre x, z and radius): the wish fades out from its edge to SEED_EDGE
+## past it. Between `begin` and `finish`, inside the handful's undo step.
+func sow(data: NativeTerrainData, point: Vector2, mark: Vector3) -> void:
+	if editor == null: return
+	_grow_bounds(point,SEED_REACH)
+	_planting = true
+	var intent: RefCounted = editor.emergence.intent
+	var wish: PackedFloat32Array = intent.forest
+	var tint := data.tint
+	var centre := Vector2(mark.x,mark.y)
+	var step := data.MEADOW_STEP*0.5
+	for found: Vector2 in _cells_near(data,point,SEED_REACH):
+		var cell := int(found.x)
+		var t := found.y/SEED_REACH
+		var side := data.MEADOW_CELLS
+		var at := data.meadow_position(cell%side,cell/side)+Vector2.ONE*step
+		var weight := pow(1.0-t*t,1.5)*(1.0-smoothstep(mark.z-SEED_EDGE,mark.z+SEED_EDGE,at.distance_to(centre)))
+		if weight <= 0.0: continue
+		var before := wish[cell]
+		wish[cell] = move_toward(before,1.0,SEED_WISH*weight)
 		if data.provenance[cell] == NativeTerrainData.SOURCE_HAND: continue
 		_tint_toward(tint,cell,_floor,FLOOR_WEIGHT*maxf(wish[cell],0.0),absf(wish[cell]-before)*FLOOR_WEIGHT+0.0001)
 	intent.forest = wish

@@ -432,6 +432,7 @@ func preview_radius() -> float:
 func preview_wanted() -> bool:
 	if mode in ["assets","select","pond"]:
 		return false
+	if handful != null and handful.active(): return false
 	return mode != "waterfall" or _fall_start == null
 
 func seal_tunnel() -> void:
@@ -745,6 +746,7 @@ func _process(delta: float) -> void:
 	if _ball_holding:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
 		else: _ball_step(hit,delta)
+	if handful != null: _handful_process(hit,delta)
 	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if gust != null: _gust_process(hit)
 	if hit != null:
@@ -791,6 +793,7 @@ func finish_pointer_gesture() -> void:
 
 func finish_stroke() -> void:
 	if _ball_holding: _ball_release()
+	if _handful_holding: _handful_release()
 	_selection_drag = false
 	end_selection_edit()
 	if not _painting:
@@ -854,6 +857,7 @@ func _history_step(forward: bool) -> void:
 	explosives.clear_effects()
 	_fall_start = null
 	finish_stroke()
+	if handful != null: handful.settle_now()
 	_land_mountain()
 	# A land stroke's weathering belongs to the world being left.
 	_drop_weathering()
@@ -1733,15 +1737,20 @@ func _land_press(event: InputEventMouseButton) -> bool:
 		if _ball_holding and event.button_index == MOUSE_BUTTON_LEFT:
 			_ball_release()
 			return true
+		if _handful_holding and event.button_index == MOUSE_BUTTON_LEFT:
+			_handful_release()
+			return true
 		if _painting and event.button_index == _stroke_button: finish_stroke()
 		return _painting or event.button_index == MOUSE_BUTTON_LEFT
-	if _ball_holding: return true
+	if _ball_holding or _handful_holding: return true
 	if _painting or event.alt_pressed: return _painting
 	if event.button_index == MOUSE_BUTTON_RIGHT and not right_works_other_way: return false
 	var hit: Variant = pick(event.position)
 	if hit == null: return false
-	# A mountain still rising lands before anything else is painted.
+	# A mountain still rising lands before anything else is painted, and
+	# seeds still in the air land and close their handful's undo step.
 	_land_mountain()
+	if handful != null: handful.settle_now()
 	_stroke_button = event.button_index
 	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT or other_way
 	var brush = creation_brush()
@@ -1750,6 +1759,9 @@ func _land_press(event: InputEventMouseButton) -> bool:
 		return true
 	if brush_id == "water" and water_ball and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
 		_ball_press(hit)
+		return true
+	if brush_id == "forest" and seed_handful and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
+		_handful_press(hit)
 		return true
 	brush.prepare(data,land_seed)
 	brush.begin()
@@ -2423,3 +2435,92 @@ func _mountain_feel(phase: int, speed := 0.0, seconds := 0.0) -> void:
 			_emit_stroke(2,at,mountain.spread,0.0)
 ## Seconds the poured fog holds before draining, from press or regrowth.
 const RISE_FOG_SECONDS := 4.0
+
+# --- Seed handful ---------------------------------------------------------------
+## The seed handful (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
+## handful"): with forest in hand a press gathers a handful of seeds that
+## grows while held; release sows them inside the mark under it. Each landing
+## raises the forest wish round it (ForestBrush `sow`); the first opens one
+## undo step and the last closes it and hands the seeds to emergence, which
+## grows the forest out from them. Shift-drag still clears as before, and
+## --paint-forest brings back drag-to-paint.
+var seed_handful := "--paint-forest" not in OS.get_cmdline_user_args()
+var handful: Node3D
+var _handful_holding := false
+var _handful_serial := 0
+var _sowing := false
+var _sow_dirty := false
+## The last handful sown, for probes: {"points", "center", "radius",
+## "bounds", "changed"}.
+var last_sowing := {}
+
+func _handful_press(hit: Vector3) -> void:
+	if handful == null:
+		handful = preload("res://scripts/seed_handful.gd").new()
+		handful.name = "SeedHandful"
+		terrain.add_child(handful)
+		handful.seed_landed.connect(_seed_landed)
+		handful.sown.connect(_handful_sown)
+		handful.ground_at = func(p: Vector2) -> float:
+			var h: Variant = data.ground_height(p)
+			return float(h) if h != null else float(data.sample(p,data.heights))
+		handful.takes = func(p: Vector2) -> bool: return emergence.takes(p)
+		# Undo, load and new worlds take the ground away: sprouts and seeds
+		# still out go with it. An undo lands the seeds first (_history_step).
+		data.state_restored.connect(func(_state: Dictionary) -> void:
+			_handful_holding = false
+			_sowing = false
+			_sow_dirty = false
+			handful.withdraw())
+	_handful_serial += 1
+	var air: Variant = scene.get("_atmosphere")
+	handful.wind = Vector2(cos(air._air_angle),sin(air._air_angle)) if air != null and air.get("_air_angle") != null else Vector2.ZERO
+	var brush = creation_brush()
+	brush.prepare(data,land_seed)
+	handful.gather(hit,"forest",brush.radius,brush.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
+	_handful_holding = true
+	_emit_stroke(0,hit,handful.mark_radius,0.0)
+
+## While held the handful follows the pointer's ground point; landed seeds'
+## wish shows through the light refresh, at most once a frame.
+func _handful_process(hit: Variant, delta: float) -> void:
+	if _handful_holding:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _handful_release()
+		else:
+			handful.hold(hit)
+			_emit_stroke(1,handful.mark_point(),handful.mark_radius,brush_strength()*minf(delta,0.05))
+	if _sow_dirty and _light_refresh_ready(true):
+		_sow_dirty = false
+		_refresh_light()
+
+func _handful_release() -> void:
+	if not _handful_holding: return
+	_handful_holding = false
+	handful.release()
+	_emit_stroke(2,handful.mark_point(),handful.mark_radius,0.0)
+
+## A seed came down. The first opens the handful's undo step.
+func _seed_landed(point: Vector2) -> void:
+	if forming: return
+	var forest = brushes.get("forest")
+	if forest == null: return
+	if not _sowing:
+		_sowing = true
+		data.begin_stroke()
+		forest.prepare(data,land_seed)
+		forest.begin()
+	forest.sow(data,point,Vector3(handful.mark_center.x,handful.mark_center.y,handful.mark_radius))
+	_sow_dirty = true
+
+## The last seed is down: close the step, settle the view, and let the
+## forest grow out from the seeds.
+func _handful_sown(points: PackedVector2Array, center: Vector2, mark: float) -> void:
+	if not _sowing: return
+	_sowing = false
+	_sow_dirty = false
+	var bounds: Rect2 = brushes.forest.finish(data)
+	var changed := data.end_stroke()
+	_settle_pending = true
+	_settle_stroke()
+	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",points)
+	last_sowing = {"points":points,"center":center,"radius":mark,"bounds":bounds,"changed":changed}

@@ -105,6 +105,21 @@ const FOREST_LOBE_FREQUENCY := 0.28
 const FOREST_MARGIN := Vector4(0.02,0.25,0.5,0.8)
 const FOREST_MARGIN_SHRUBS := 0.45
 const FOREST_UNDER_SHRUBS := 0.12
+## Sown forest (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
+## handful"). A handful's region carries its landed seeds. Each seed is a tree
+## candidate of its own at its landing point, which comes up first: at
+## SOWN_DELAY plus up to SOWN_STAGGER, taking at SOWN_TAKE (thinned on steep
+## ground as any tree is). The region's lattice candidates then arrive by
+## their distance from the nearest seed, SOWN_SPREAD m a second after
+## SOWN_TREE_DELAY (trees) or SOWN_SHRUB_DELAY (shrubs), plus up to
+## SOWN_JITTER, so the forest spreads out from where the seeds fell.
+const SOWN_DELAY := 1.2
+const SOWN_STAGGER := 2.0
+const SOWN_TAKE := 0.8
+const SOWN_TREE_DELAY := 4.0
+const SOWN_SHRUB_DELAY := 7.0
+const SOWN_SPREAD := 0.4
+const SOWN_JITTER := 5.0
 ## Dead wood: a standing snag, a fallen log or a stump now and then takes a
 ## tree's place, so a wood reads old and lived-in. It goes by stand: DEAD_OLD
 ## of stands are old (more on high, dry ground), and a tree there comes up
@@ -227,19 +242,20 @@ func clear() -> void:
 
 ## Entry point for a finished stroke. `rect` is in plate metres. `source`
 ## "forest" is a forest brush stroke: it plans only what its wish asks for,
-## leaves cover alone and does not replan other strokes' work.
-func on_region_changed(rect: Rect2, source := "") -> void:
+## leaves cover alone and does not replan other strokes' work. `sown` are a
+## seed handful's landed seeds (plate x, z), where its forest starts.
+func on_region_changed(rect: Rect2, source := "", sown := PackedVector2Array()) -> void:
 	if not enabled:
 		return
 	rect = rect.intersection(Rect2(-14,-14,28,28))
 	if rect.size.x > 0.0 and rect.size.y > 0.0:
-		_queued.append({"rect":rect,"born":_clock,"source":source})
+		_queued.append({"rect":rect,"born":_clock,"source":source,"sown":sown})
 
-func _plan(rect: Rect2, born: float, source := "") -> void:
+func _plan(rect: Rect2, born: float, source := "", sown := PackedVector2Array()) -> void:
 	_refresh_blend([rect])
 	# The blend's pond raster was just read from the live ground.
 	_fresh_ponds.clear()
-	_install(rect,source,_plan_region(rect,born,source))
+	_install(rect,source,_plan_region(rect,born,source,sown))
 
 ## Build the live blend, or re-read it under `rects`. The first build sets the
 ## salt: a generated world keys its life to its planting seed; a blank plain
@@ -311,7 +327,7 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 			planner._blend = previous.copy_onto(BiomeBlend.LiveGround.new(ground,recipe_water,false))
 			for rect: Rect2 in rects: planner._blend.refresh_rect(rect)
 		var regions := []
-		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source","")))
+		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source",""),item.get("sown",PackedVector2Array())))
 		return {"blend":planner._blend,"salt":planner.salt,"regions":regions,"usec":Time.get_ticks_usec()-worker_began,"guide_usec":planner.guided_usec})
 	last_plan_usec = {"start":Time.get_ticks_usec()-began}
 	# A superseded job still runs out here, so dropping it never blocks a frame.
@@ -339,7 +355,7 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 ## The succession for one stroke's rect: cover cells with their fronts and
 ## targets, and the shrub and tree candidates in arrival order. Reads only
 ## `data`, the blend, the forest wish and the salt, so it runs on a planner.
-func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
+func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2Array()) -> Dictionary:
 	var forest := source == "forest"
 	var region := {"rect":rect,"born":born,"cells":PackedInt32Array(),"fronts":PackedFloat32Array(),"targets":PackedVector2Array(),"plants":[],"next":0}
 	# Quiet guidance: the region's score and the fields its nudges read.
@@ -386,8 +402,17 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 					# Wished-for forest comes sooner, its core first.
 					var tree: bool = layer[0] == "tree"
 					at = (FOREST_TREE_DELAY if tree else FOREST_SHRUB_DELAY)+(FOREST_TREE_SPREAD if tree else FOREST_SHRUB_SPREAD)*(0.6*(1.0-wish)+0.4*Variety.unit(key+[3]))
+					# Sown forest spreads out from where its seeds fell.
+					if not sown.is_empty():
+						at = (SOWN_TREE_DELAY if tree else SOWN_SHRUB_DELAY)+_nearest(sown,p)/SOWN_SPREAD+SOWN_JITTER*Variety.unit(key+[3])
 					if tree: wished.append(p)
 				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide})
+	# Each landed seed is a candidate of its own, first to come up.
+	for k in range(sown.size()):
+		var p: Vector2 = sown[k]
+		if maxf(absf(p.x),absf(p.y)) > PLATE: continue
+		var key := [salt,"sown".hash(),roundi(p.x*100.0),roundi(p.y*100.0)]
+		region.plants.append({"at":SOWN_DELAY+SOWN_STAGGER*Variety.unit(key+[3]),"layer":"tree","p":p,"key":key,"forest":true,"guide":guide,"sown":true})
 	if guide != null: _count_mates(region.plants,known)
 	var elder := _elder(wished)
 	if not elder.is_empty():
@@ -395,6 +420,12 @@ func _plan_region(rect: Rect2, born: float, source := "") -> Dictionary:
 		for plant: Dictionary in region.plants: plant["elder"] = elder
 	region.plants.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at < b.at)
 	return region
+
+## Metres from `p` to the nearest of `points`.
+static func _nearest(points: PackedVector2Array, p: Vector2) -> float:
+	var best := INF
+	for q in points: best = minf(best,p.distance_squared_to(q))
+	return sqrt(best)
 
 ## The stand a painted forest names old when every stand it covers drew
 ## young: of those holding ELDER_MIN of its wished tree candidates, the one
@@ -440,7 +471,7 @@ func advance(seconds: float) -> bool:
 		if plan_on_worker: _plan_async(_queued.duplicate())
 		else:
 			for queued in _queued:
-				_plan(queued.rect,queued.born,queued.get("source",""))
+				_plan(queued.rect,queued.born,queued.get("source",""),queued.get("sown",PackedVector2Array()))
 		_queued.clear()
 	for r in range(_regions.size()-1,-1,-1):
 		var region: Dictionary = _regions[r]
@@ -567,8 +598,9 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	if plant.layer == "tree":
 		if float(h) > _treeline(habitat):
 			return _refuse("treeline")
-		var chance := _tree_chance(habitat,slope,wish,frayed,only_wish)
-		if guide != null and (wish <= 0.0 or frayed < FOREST_EDGE.y):
+		var sown: bool = plant.get("sown",false)
+		var chance := SOWN_TAKE*(1.0-smoothstep(0.45,float(biome.rock_slope),slope)) if sown else _tree_chance(habitat,slope,wish,frayed,only_wish)
+		if guide != null and not sown and (wish <= 0.0 or frayed < FOREST_EDGE.y):
 			# Outside a forest's core, fewer trees stand in front of water.
 			var kept: float = chance*guide.sight_keep(p)
 			if roll >= minf(kept,0.85) and roll < minf(chance,0.85):
@@ -605,7 +637,8 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	if _crowded(p,plant.layer == "tree"):
 		return _refuse("crowded")
 	var elder: Array = plant.get("elder",[])
-	if plant.layer == "tree" and _dead_wood(habitat,p,slope,wish,frayed,key,born,elder):
+	# A seed comes up living; dead wood is for the stands round it.
+	if plant.layer == "tree" and not plant.get("sown",false) and _dead_wood(habitat,p,slope,wish,frayed,key,born,elder):
 		return true
 	if kind == "tree": p = _dead_top(p,key,elder)
 	var span := TREE_SIZE if plant.layer == "tree" else SHRUB_SIZE
@@ -912,6 +945,26 @@ func _forget(region: Dictionary, rect: Rect2) -> void:
 	var kept: Array = region.plants.slice(region.next).filter(func(plant: Dictionary) -> bool: return not rect.has_point(plant.p))
 	region.plants = kept
 	region.next = 0
+
+## Whether a seed landing at `p` could take root now: on ground, not in
+## water, not on hand-laid ground (a path), and below the rock slope, the snow
+## and the treeline. Before the live blend is built only the ground counts.
+func takes(p: Vector2) -> bool:
+	var h: Variant = data.ground_height(p)
+	if h == null: return false
+	var cell := Vector2i(((p+Vector2(14,14))/data.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(data.MEADOW_CELLS-1))
+	if data.provenance[cell.y*data.MEADOW_CELLS+cell.x] == NativeTerrainData.SOURCE_HAND: return false
+	if _blend == null: return true
+	if _wet(p): return false
+	var habitat: String = _blend.pick(p)
+	return _slope(p) <= _rock_slope(habitat) and float(h) <= minf(_snowline()-1.8,_treeline(habitat))
+
+## The tree a handful gathered at `p` carries seed of (scripts/seed_handful.gd
+## FAMILY): the dominant species of the stand there, or "" before the live
+## blend is built.
+func seed_family(p: Vector2) -> String:
+	if _blend == null: return ""
+	return _tree_kind(_blend.pick(p),p,0.0)
 
 func _wet(p: Vector2) -> bool:
 	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p))
