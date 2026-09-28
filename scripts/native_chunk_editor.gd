@@ -247,6 +247,9 @@ signal brush_changed(id: String)
 ## Films drive strokes with synthetic events; in a rendered window the
 ## viewport's mouse position is the real cursor, which they must not move.
 var pointer_override: Variant = null
+## The pointer's ground point this frame, in the terrain's space, or null
+## when it is off the land, over the UI or the camera is moving.
+var pointer_hit: Variant = null
 ## The water brush (scripts/water_brush.gd): poured water is planned on a
 ## worker and shows while the hand pours (`_pour_live`), one undoable edit.
 var water_brush = preload("res://scripts/water_brush.gd").new()
@@ -734,11 +737,13 @@ func _process(delta: float) -> void:
 	_warm_face_probes()
 	if forming or not active:
 		pond_preview.clear()
+		pointer_hit = null
 		return
 	if (_painting or _selection_drag) and (not Input.is_mouse_button_pressed(_stroke_button) or scene._growth.terrain < 0.995):
 		finish_stroke()
 	var pointer: Vector2 = pointer_override if pointer_override != null else scene.get_viewport().get_mouse_position()
 	var hit: Variant = pick(pointer) if not scene._orbiting and not scene._panning else null
+	pointer_hit = hit
 	if mode == "pond":
 		var message: String = pond_preview.hover(data,hit,pond_level,delta)
 		if not message.is_empty() and message != status: _set_status(message)
@@ -2300,6 +2305,18 @@ var _mountain_generation := 0
 var _mountain_plane := 0.0
 var _mountain_poured := Rect2()
 var _mountain_elapsed := 0.0
+
+## What the God Hand (scripts/god_hand.gd) is doing with the tool in hand:
+## "pinch" while land rises, "press" while it is lowered, "cup" while a
+## water ball is held, "sprinkle" while pollen is laid, "" otherwise. Wind,
+## meadow and path have no gesture yet.
+func hand_gesture() -> String:
+	if _ball_holding: return "cup"
+	if _handful_holding: return "sprinkle"
+	if _mountain_holding: return "pinch"
+	if _painting and mode == "land" and brush_id == "land":
+		return "press" if _land_lower or Input.is_key_pressed(KEY_SHIFT) else "pinch"
+	return ""
 
 func mountain_in_hand() -> bool:
 	return mode == "land" and brush_id == "land" and land_form != "hill"

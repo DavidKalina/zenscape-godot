@@ -108,6 +108,8 @@ var _tremor := preload("res://scripts/reference_tremor.gd").new()
 var _stroke_feedback: Node
 ## Held rumble and fog pour for long world changes (scripts/world_rumble.gd).
 var world_rumble: Node
+## The hand of light that works the creation tools (scripts/god_hand.gd).
+var god_hand: Node3D
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -216,6 +218,10 @@ func _ready() -> void:
 	_stroke_feedback.name = "StrokeFeedback"
 	add_child(_stroke_feedback)
 	_stroke_feedback.setup(self)
+	if preload("res://scripts/god_hand.gd").enabled():
+		god_hand = preload("res://scripts/god_hand.gd").new()
+		_chunk_editor.terrain.add_child(god_hand)
+		god_hand.setup(self)
 	world_rumble = preload("res://scripts/world_rumble.gd").new()
 	add_child(world_rumble)
 	world_rumble.setup(self)
