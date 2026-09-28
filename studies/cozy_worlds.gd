@@ -11,6 +11,11 @@ var places_path := "user://cozy-worlds/places.json"
 ## the brush away so the camera roams and nothing paints. --classic-build keeps
 ## the old Build/Enjoy toggle.
 var creation_mode := "--classic-build" not in OS.get_cmdline_user_args()
+## The Lantern Maker shell (scripts/lantern_shell.gd): brushes along the top,
+## hands down the left, the world down the right, Photo as the play button.
+## --classic-shell keeps the glass palette (scripts/creation_palette.gd) and
+## its mood panel.
+var lantern := "--classic-shell" not in OS.get_cmdline_user_args()
 ## Emitted when a different creation brush is picked, and when Look puts the
 ## brush away or picks it back up.
 signal brush_changed(brush_id: String)
@@ -102,10 +107,18 @@ func _fill_world_menu() -> void:
 func _places_idle() -> bool:
 	return places != null and places.initialized and not places.busy and not places.holding and not _chunk_editor.forming
 
+## Every brush and land form how-to, as the editor's status repeats them.
+func _brush_hints() -> Array:
+	var hints := Palette.registered().map(func(info: Dictionary) -> String: return info.hint)
+	for entry: Dictionary in preload("res://scripts/mountain_forms.gd").FORMS: hints.append(entry.hint)
+	return hints
+
 func _setup_creation() -> void:
 	_chunk_editor.status_changed.connect(func(text: String) -> void:
 		# Every stroke refreshes; the palette's hint already says how to keep going.
-		if _creating() and text.begins_with("Garden changed"): _notice.text = "")
+		if _creating() and text.begins_with("Garden changed"): _notice.text = ""
+		# Lantern's hint line already shows the brush's how-to.
+		elif lantern and creation_palette != null and text in _brush_hints(): _notice.text = "")
 	if not creation_mode: return
 	for connection: Dictionary in _build_button.pressed.get_connections():
 		_build_button.pressed.disconnect(connection.callable)
@@ -126,21 +139,28 @@ func _setup_creation() -> void:
 	_toolbar_glass = Glass.surface(12)
 	_toolbar.get_parent().add_child(_toolbar_glass)
 	_toolbar.get_parent().move_child(_toolbar_glass,_toolbar.get_index())
-	_toolbar.visibility_changed.connect(func() -> void: _toolbar_glass.visible = _toolbar.visible)
-	creation_palette = Palette.new()
+	_toolbar.visibility_changed.connect(func() -> void: _toolbar_glass.visible = _toolbar.visible and (crafting or not lantern))
+	creation_palette = preload("res://scripts/lantern_shell.gd").new() if lantern else Palette.new()
 	_toolbar.get_parent().add_child(creation_palette)
 	_toolbar.get_parent().move_child(creation_palette,_toolbar_glass.get_index())
 	creation_palette.setup(self)
+	if lantern: preload("res://scripts/lantern_style.gd").style_label(_notice,15)
 	photo = preload("res://scripts/photo_mode.gd").new()
 	add_child(photo)
 	photo.setup(self)
-	mood_panel = preload("res://scripts/mood_panel.gd").new()
-	_toolbar.get_parent().add_child(mood_panel)
-	_toolbar.get_parent().move_child(mood_panel,creation_palette.get_index())
-	mood_panel.setup(self)
+	if lantern:
+		# The Lantern shell pours its own mood orbs from the right column.
+		mood_panel = creation_palette.mood
+	else:
+		mood_panel = preload("res://scripts/mood_panel.gd").new()
+		_toolbar.get_parent().add_child(mood_panel)
+		_toolbar.get_parent().move_child(mood_panel,creation_palette.get_index())
+		mood_panel.setup(self)
 	camera_rig = preload("res://scripts/camera_rig.gd").new()
 	add_child(camera_rig)
 	camera_rig.setup(self)
+	if lantern:
+		for text: Label in [camera_rig.hint,camera_rig.label]: preload("res://scripts/lantern_style.gd").style_label(text,15)
 	# Right drags orbit here; Shift-drag works the brush the other way.
 	_chunk_editor.right_works_other_way = false
 	_layout_shell()
@@ -152,6 +172,13 @@ func _layout_shell() -> void:
 	var pad := Vector2(6,5)*_toolbar.scale.x
 	_toolbar_glass.position = _toolbar.position-pad
 	_toolbar_glass.size = _toolbar.size*_toolbar.scale+pad*2.0
+	# Lantern: notices sit above Photo, clear of the right column.
+	if lantern and creation_palette != null and creation_palette.has_method("notice_bottom"):
+		var screen := get_viewport().get_visible_rect().size
+		var k: float = creation_palette.ui_scale
+		_notice.scale = Vector2.ONE*k
+		_notice.size = Vector2(400.0,_notice.get_minimum_size().y)
+		_notice.position = Vector2(screen.x-(400.0+24.0)*k,creation_palette.notice_bottom()-_notice.size.y*k)
 
 ## A creation brush is in hand and the craft palette is away.
 func _creating() -> bool:
@@ -262,6 +289,14 @@ func _sync_creation_ui() -> void:
 	_build_button.icon = _glyph(brush if crafting else "craft")
 	_build_button.tooltip_text = "Back to the brushes" if crafting else "Fine sculpt, paint and place tools"
 	if not crafting and _chunk_editor.active and not _menu.visible: _ui.visible = false
+	if lantern and _toolbar_glass != null:
+		# The right column holds Craft and World; the old toolbar shows only
+		# while crafting, as the way back (Create) and the World menu.
+		_toolbar_glass.visible = _toolbar.visible and crafting
+		if _build_button.visible != crafting:
+			_build_button.visible = crafting
+			_world_menu.visible = crafting
+			_layout_shell()
 	if creation_palette != null:
 		creation_palette.visible = _has_world and not crafting and _toolbar.visible and not _menu.visible
 		creation_palette.sync()

@@ -234,6 +234,9 @@ var _stroke_button := MOUSE_BUTTON_LEFT
 ## A right press works the brush the other way; false leaves right drags to
 ## the camera (the creation shell), and Shift-drag alone lowers.
 var right_works_other_way := true
+## Every left drag works the brush the other way, as Shift-drag does: the
+## Lantern shell's Other way mode (scripts/lantern_shell.gd).
+var other_way := false
 ## Every creation brush by id (scripts/genesis_canvas.gd `BRUSHES`). The
 ## "land" tool paints with whichever is in hand: land, water, meadow, forest
 ## or path. `land_brush` and `water_brush` are the "land" and "water" entries.
@@ -1738,7 +1741,7 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	# A mountain still rising lands before anything else is painted.
 	_land_mountain()
 	_stroke_button = event.button_index
-	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT
+	_land_lower = event.button_index == MOUSE_BUTTON_RIGHT or other_way
 	var brush = creation_brush()
 	if mountain_in_hand() and not _land_lower and not Input.is_key_pressed(KEY_SHIFT):
 		_mountain_press(hit)

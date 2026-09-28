@@ -212,7 +212,11 @@ func _sync_chrome(delta: float) -> void:
 		hint_box.size = hint_box.get_combined_minimum_size()
 		var factor := minf(1.0,minf(screen.x/1080.0,screen.y/720.0))
 		hint_box.scale = Vector2.ONE*factor
-		hint_box.position = Vector2((screen.x-hint_box.size.x*factor)*0.5,18.0)
+		# Under a shell that runs along the top (scripts/lantern_shell.gd).
+		var shell: Control = scene.get("creation_palette")
+		var top := 18.0
+		if shell != null and shell.has_method("top_clearance") and shell.is_visible_in_tree(): top = shell.top_clearance()
+		hint_box.position = Vector2((screen.x-hint_box.size.x*factor)*0.5,top)
 	overlay.queue_redraw()
 
 func _show_label(text: String, at: Vector3, hold: float) -> void:
