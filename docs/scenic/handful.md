@@ -4,9 +4,10 @@ Agreed 2026-09-27 (branch `feature/handful-shadow`), after the user said the wat
 
 ## Words
 
-- **Handful.** The thing a tool carries in the hand and lets go: water now (the water ball, `scripts/water_ball.gd`), later seeds for forest and pollen for meadow. A handful has a size that grows while it is gathered, and a place on the ground where it will land.
+- **Handful.** The thing a tool carries in the hand and lets go: water (the water ball, `scripts/water_ball.gd`), later perhaps pollen for meadow. A handful has a size that grows while it is gathered, and a place on the ground where it will land.
+- **Sprinkle.** Seeds are not gathered: forest is sown by sprinkling (`scripts/seed_handful.gd`, `docs/scenic/brushes.md` "Seed sprinkle"). While the button is down, seeds pour from a spout just above the pointer, as if shaken from a hand. Holding still sprinkles one spot densely, and a drag lays a trail. There is no carry and no release moment. The user tried the gathered handful of seeds on 2026-09-27 and preferred "sprinkling kind of onto the map".
 - **Shaping tools** work the ground directly under the pointer while the button is down: land and path. They stay brushes (`docs/scenic/brushes.md`).
-- **Sowing tools** gather a handful and release it: water, forest, meadow. What they make is decided by where the handful lands and what the land does with it.
+- **Sowing tools** let something fall onto the land: water as a handful gathered and released, forest as a sprinkle. Meadow is still to come. What they make is decided by where it lands and what the land does with it.
 - **The lifecycle**, in order:
   - *gather*: the press, and the handful growing while held (the ball condensing and filling);
   - *carry*: following the pointer, a little behind it, alive (the ball's spring, bob and wobble);
@@ -14,7 +15,9 @@ Agreed 2026-09-27 (branch `feature/handful-shadow`), after the user said the wat
   - *fall* (or *drift*, for light things like pollen): straight down from where it was let go;
   - *land*: the impact, on the ground under the handful (the splash);
   - *take*: the land accepts it (the pour settles);
-  - *grow*: what it becomes (a pond, a stream, a waterfall; later a stand of trees, a meadow).
+  - *grow*: what it becomes (a pond, a stream, a waterfall; later a meadow).
+
+  A sprinkle skips gather, carry and release: it *pours* while the button is down, then each seed runs *drift*, *land*, *take* and *grow* on its own. The last seeds of a stroke may still be in the air when the button comes up.
 
 ## The shadow is the promise
 
@@ -29,6 +32,8 @@ What this guarantees:
 - The mark is noticeable on bright and dark ground, by day and at night, and it is the only shape under the handful that could be taken for a landing spot. No sun-cast shadow competes with it.
 
 What it does not promise: where the land takes the handful once it has landed. Water runs downhill to the basin it drains to (`docs/scenic/water-brush.md`), and seeds will root where the ground suits them. That run should read as the handful being taken, not as it teleporting; for water it does not yet (see the water brush's known gaps).
+
+For a sprinkle the promise is per seed. Each seed is promised the small mark under the spout at the moment it leaves, and it lands inside that mark. When a quick drag moves the spout on before a spot's seeds are down, the mark stays behind over them until they land, then shrinks away. A fast stroke therefore shows a short trail of marks behind the spout. The sprinkle's marks are drawn like the water ball's, sized down, with a warm rim (`shaders/seed_handful_mark.gdshader`).
 
 ## The water ball's mark
 

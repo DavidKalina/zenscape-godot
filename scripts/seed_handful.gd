@@ -1,49 +1,51 @@
 extends Node3D
-## A handful of seeds (docs/scenic/brushes.md "Seed handful"). With forest in
-## hand a press gathers a small cloud of winged seeds above the ground, and
-## holding draws more in from the air, up to a full handful. The mark on the
-## ground under it (shaders/seed_handful_mark.gdshader) widens with it. The
-## mark is the promise: it lies straight below the handful, not along the sun,
-## and every seed lands inside it.
+## A sprinkle of seeds (docs/scenic/brushes.md "Seed sprinkle",
+## docs/scenic/handful.md). With forest in hand a press starts seeds pouring
+## from a point a little above the pointer, as if shaken from a hand. Holding
+## still sprinkles one spot densely; dragging lays a trail of them along the
+## path. There is no gathering and no release moment: seeds fall for as long
+## as the button is down, at a rate set by the brush's size and strength.
 ##
-## The cloud follows the pointer on a spring, and each seed trails its own
-## place in the cloud on a looser spring of its own, so a quick pull stretches
-## the cloud and a stop sloshes it past and back. It breathes, bobs and churns
-## while held. Release squeezes it (the anticipation), then tosses the seeds up
-## and lets them spill, lowest first. Each spins down on its wing, fluttering
-## and swaying with the breeze, to a landing point drawn inside the mark at
-## release; the sway dies out as it lands, so no seed comes down outside.
-## Where one lands a puff of dust rises and, on ground that will take it
-## (`takes`), a sprout pops up and later sinks as the forest takes over.
+## Each seed spins down on its wing, fluttering and swaying with the breeze,
+## to a landing point drawn inside the mark under the spout at the moment it
+## left (shaders/seed_handful_mark.gdshader). The mark is the promise: a small
+## faceted pool straight below the spout. While seeds from a spot are still in
+## the air, the mark stays there too, so a quick drag leaves a short trail of
+## marks that shrink away as their seeds land. The sway dies out as a seed
+## lands, so no seed comes down outside its mark. Where one lands a puff of dust
+## rises and, on ground that will take it (`takes`), a sprout pops up and later
+## sinks as the forest takes over.
 ##
 ## `seed_landed` tells the editor each landing (NativeChunkEditor
-## `_seed_landed`, which raises the forest wish round it) and `sown` the last,
-## which closes the handful's one undo step and hands the seeds to emergence.
+## `_seed_landed`, which raises the forest wish round it). `sown` fires once the
+## stroke has ended and its last seed is down, which closes the stroke's one
+## undo step and hands its seeds to emergence.
 ##
-## `kind` names what the handful carries (KINDS). Only "forest" is built; a
-## meadow's seed or pollen would be another entry: more, lighter seeds that
-## drift longer over a wider, softer mark.
+## `kind` names what is sprinkled (KINDS). Only "forest" is built; a meadow's
+## seed or pollen would be another entry: more, lighter seeds that drift longer
+## over a wider, softer mark.
 ##
 ## Lives under the terrain node, so its coordinates are the plate's. The node
-## itself stays at the plate's origin; `center` is the cloud's middle.
+## itself stays at the plate's origin; `spout` is where seeds leave.
 
-## One seed came down at plate point `point` (x, z).
-signal seed_landed(point: Vector2)
-## Every seed of the handful is down: their points, and the mark's centre and
-## radius (plate metres).
-signal sown(points: PackedVector2Array, center: Vector2, mark_radius: float)
+## One seed came down at plate point `point` (x, z), inside `mark` (centre x,
+## z and radius, plate metres), the mark it was promised when it left.
+signal seed_landed(point: Vector2, mark: Vector3)
+## The stroke is over and its last seed is down: every landing, in order.
+signal sown(points: PackedVector2Array)
 
-## What a handful can carry, by `kind`:
-## - `seeds`: how many an empty and a full handful hold at REFERENCE_RADIUS;
-## - `mark`: the mark's radius as a share of the brush radius, empty to full;
+## What can be sprinkled, by `kind`:
+## - `rate`: seeds a second at strength 1 and REFERENCE_RADIUS;
+## - `mark`: the mark's radius as a share of the brush radius;
+## - `drop`: metres from the ground to the spout;
 ## - `fall`: seconds a seed takes to come down (drawn per seed);
 ## - `flutter`: metres a seed sways to the side at mid-fall;
 ## - `spin`: radians a second a winged seed turns as it falls;
 ## - `size`: metres from the seed's nut to its wing tip;
-## - `glow`: how much the wings shine of their own, so the cloud reads as
+## - `glow`: how much the wings shine of their own, so the seeds read as
 ##   specks of light at the diorama's distance.
 const KINDS := {
-	"forest":{"seeds":Vector2(4,18),"mark":Vector2(0.35,1.0),"fall":Vector2(1.1,1.8),"flutter":0.3,"spin":Vector2(9.0,15.0),"size":0.22,"glow":0.3},
+	"forest":{"rate":9.0,"mark":0.3,"drop":0.8,"fall":Vector2(0.38,0.58),"flutter":0.12,"spin":Vector2(10.0,16.0),"size":0.22,"glow":0.3},
 }
 ## Wing colours by the family of the stand's trees (Emergence `seed_family`);
 ## the nut is the wing's colour at NUT_SHADE. A pine's dark nut and tan wing,
@@ -52,79 +54,59 @@ const LOOKS := {"conifer":"c9a066","broadleaf":"b4bd55","birch":"e3d6a3","arid":
 const FAMILY := {"tree":"conifer","redwood":"conifer","juniper":"conifer","broadleaf":"broadleaf","layered_tree":"broadleaf",
 	"willow":"broadleaf","birch":"birch","joshua":"arid","cactus":"arid"}
 const NUT_SHADE := 0.42
-## Brush radius (m) the KINDS seed counts are for. A wider brush carries more,
-## by area, up to SEEDS_MAX; the mark is never under MARK_MIN metres.
+## Brush radius (m) the KINDS rate is for; a wider brush sprinkles more, by
+## area. The mark is never under MARK_MIN metres.
 const REFERENCE_RADIUS := 3.6
-const SEEDS_MAX := 64
-const MARK_MIN := 0.9
-## Seconds of holding, at strength 1, from an empty handful to a full one.
-const GATHER_SECONDS := 2.4
-## Metres from the ground to the cloud's middle while held.
-const HOVER := 1.5
-## The cloud's radius (m), empty to full, and its breathing (share, hertz).
-const CLOUD := Vector2(0.2,0.55)
-const BREATHE := Vector2(0.07,0.6)
-## Metres and hertz of the idle bob.
-const BOB := 0.07
-const BOB_RATE := 0.5
-## The follow spring (1/s²) and damping (1/s), a little under critical, so the
-## cloud overshoots and settles behind a quick pointer.
-const FOLLOW := 55.0
-const FOLLOW_DAMP := 10.0
-## Each seed's spring to its place in the cloud: looser, so seeds trail a
-## pull and slosh past a stop (overlap and follow-through).
-const SEED_FOLLOW := 70.0
-const SEED_DAMP := 7.0
-## Radians a second the seeds circle the cloud's middle, and how much faster
-## per m/s the cloud moves; how far (m) the cloud stretches per m/s.
-const CHURN := 1.1
-const CHURN_SPEED := 0.6
-const STRETCH := 0.08
-## Seconds a new handful takes to gather (with an overshoot), and the metres
-## out a new seed is drawn in from.
-const GATHER_IN := 0.3
-const DRAW_FROM := Vector2(0.7,1.5)
-## Release: seconds of the squeeze, how far it squeezes, the dip (m), and the
-## toss (m) seeds rise before they fall.
-const WIND_UP := 0.12
-const SQUEEZE := 0.55
-const DIP := 0.12
-const TOSS := 0.3
-## Seconds over which the seeds leave the cloud, the lowest first.
-const SPILL := 0.3
-## Landing points fill the mark to this share of its radius, so each seed
-## and its puff lie inside it.
-const INSIDE := 0.88
+const MARK_MIN := 0.5
+## Seeds in the air at once, at most; the spout waits for room.
+const AIR_MAX := 48
+## The spout's follow spring (1/s²) and damping (1/s), a touch under
+## critical, so it keeps close behind the pointer (about 0.06 m per m/s) and
+## settles with the smallest overshoot. Stepped at most FOLLOW_STEP s at a time.
+const FOLLOW := 900.0
+const FOLLOW_DAMP := 55.0
+const FOLLOW_STEP := 1.0/240.0
+## The spout's shake: metres and hertz of its jiggle while it pours.
+const SHAKE := Vector2(0.03,5.0)
+## A new mark is laid when the spout has moved this share of the mark radius
+## from the last; at most MARKS stand at once (the shader's `marks` array).
+const MARK_STEP := 0.5
+const MARKS := 24
+## Seconds a spent mark takes to shrink away once its last seed is down, and
+## the spout's mark to come in and go.
+const MARK_FADE := 0.3
+const MARK_IN := 0.15
+## Landing points fill a mark to this share of its radius, so each seed and
+## its puff lie inside it.
+const INSIDE := 0.85
+## Seeds leave the spout with a little toss (m up) and scatter (m round it).
+const TOSS := 0.12
+const SCATTER := 0.08
 ## The breeze a falling seed drifts on (m at mid-fall); it too dies out at
 ## the landing.
-const BREEZE := 0.2
+const BREEZE := 0.08
 ## Puff motes per landing and their life (s); the sprout's pop (s), its life
-## (s) and height (m).
-const MOTES := 5
-const MOTE_SECONDS := 0.55
+## (s), height (m), and the room (m) it needs from another sprout, so a dense
+## spot shows a patch of sprouts, not a heap.
+const MOTES := 4
+const MOTE_SECONDS := 0.45
 const SPROUT_POP := 0.35
 const SPROUT_SECONDS := 9.0
 const SPROUT_SIZE := 0.3
-## Seconds the mark takes to fade once the last seed is down.
-const MARK_FADE := 0.8
+const SPROUT_ROOM := 0.35
 ## Landing rings the mark shader draws at once (its `landings` array).
 const LANDINGS := 32
 const SPROUTS_MAX := 128
-const MOTES_MAX := 256
+const MOTES_MAX := 192
 
-## "idle", "holding", "winding" (the release squeeze) or "sowing".
+## "idle", "pouring" (the button is down) or "settling" (seeds still falling).
 var state := "idle"
 var kind := "forest"
-## 0 (just gathered) to 1 (a full handful).
-var fill := 0.0
-## The mark: its centre (plate x, z) and radius (m). While held it follows
-## the cloud; at release it stays where the seeds will land.
-var mark_center := Vector2.ZERO
-var mark_radius := MARK_MIN
-## The cloud's middle (plate), its velocity, and the pointer's ground point.
-var center := Vector3.ZERO
+## The spout (plate), its velocity, and the pointer's ground point.
+var spout := Vector3.ZERO
 var velocity := Vector3.ZERO
 var target := Vector3.ZERO
+var mark_radius := MARK_MIN
 var age := 0.0
 ## The family of seed carried (LOOKS).
 var family := "broadleaf"
@@ -134,22 +116,22 @@ var ground_at: Callable = func(_p: Vector2) -> float: return 0.0
 var takes: Callable = func(_p: Vector2) -> bool: return true
 ## The world's wind direction (plate x, z), set by the editor; zero draws one.
 var wind := Vector2.ZERO
-## Every seed's landing so far this handful, in landing order.
+## Seeds sprinkled and landed this stroke.
+var dropped := 0
 var landed_points := PackedVector2Array()
 ## Microseconds the last frame's step took, the editor's landings included
 ## (for probes).
 var last_usec := 0
-## Seeds: {"p", "v", "a" (angle in the cloud), "r", "h", "rate", "axis",
-## "tumble", "turn", "size", "colour", and once released: "from", "to",
-## "t", "fall", "sway", "phase", "flutter", "spin", "tilt", "done"}.
+## Seeds in the air: {"p", "v", "from", "to", "t", "fall", "sway", "phase",
+## "flutter", "spin", "tilt", "turn", "size", "colour", "mark"}.
 var _seeds: Array[Dictionary] = []
+## Marks: {"c" (plate x, z), "r", "pending", "fade" (-1 while in use)}.
+var _marks: Array[Dictionary] = []
 var _sprouts: Array[Dictionary] = []
 var _motes: Array[Dictionary] = []
-var _brush_radius := REFERENCE_RADIUS
-var _strength := 1.0
-var _churn := 0.0
-var _wind_t := 0.0
-var _mark_fade := -1.0
+var _rate := 9.0
+var _owed := 0.0
+var _shown := 0.0
 var _breeze := Vector2.ZERO
 var _landings := PackedVector4Array()
 var _landing_next := 0
@@ -164,7 +146,7 @@ static var _meshes := {}
 func _ready() -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/seed_handful.gdshader")
-	_seed_node = _instances("Seeds",_mesh("seed"),SEEDS_MAX,material)
+	_seed_node = _instances("Seeds",_mesh("seed"),AIR_MAX,material)
 	_sprout_node = _instances("Sprouts",_mesh("sprout"),SPROUTS_MAX,material)
 	_mote_node = _instances("Motes",_mesh("mote"),MOTES_MAX,material)
 	_mark_material = ShaderMaterial.new()
@@ -196,67 +178,61 @@ func _instances(title: String, mesh: Mesh, count: int, material: Material) -> Mu
 	add_child(node)
 	return node
 
-## Start a handful over `point` (plate, on the ground) carrying `carry`
-## (KINDS), for a brush of `brush_radius` m at `strength`. `tree_kind` is the
+## Start pouring over `point` (plate, on the ground), sprinkling `carry`
+## (KINDS) for a brush of `brush_radius` m at `strength`. `tree_kind` is the
 ## stand's tree there (Emergence `seed_family`), "" for the default look;
 ## `salt` seeds the draws.
-func gather(point: Vector3, carry: String, brush_radius: float, strength: float, tree_kind: String, salt: int) -> void:
-	# Seeds of an earlier handful still in the air land first.
+func begin(point: Vector3, carry: String, brush_radius: float, strength: float, tree_kind: String, salt: int) -> void:
+	# Seeds of an earlier stroke still in the air land first.
 	settle_now()
 	kind = carry if KINDS.has(carry) else "forest"
-	state = "holding"
-	age = 0.0
-	fill = 0.0
-	_churn = 0.0
-	_brush_radius = maxf(brush_radius,0.5)
-	_strength = maxf(strength,0.05)
+	var spec: Dictionary = KINDS[kind]
+	state = "pouring"
+	var reach := maxf(brush_radius,0.5)
+	mark_radius = maxf(MARK_MIN,reach*float(spec.mark))
+	_rate = float(spec.rate)*maxf(strength,0.05)*pow(reach/REFERENCE_RADIUS,2.0)
+	# The first seed leaves at once, so a tap still sows.
+	_owed = 1.0
 	family = FAMILY.get(tree_kind,"broadleaf")
 	_rng.seed = salt
+	_breeze = wind.normalized() if wind.length() > 0.01 else Vector2.RIGHT.rotated(_rng.randf()*TAU)
 	target = point
-	center = point+Vector3.UP*HOVER
+	spout = point+Vector3.UP*float(spec.drop)
 	velocity = Vector3.ZERO
-	mark_center = Vector2(point.x,point.z)
-	mark_radius = _mark_for(0.0)
-	_mark_fade = -1.0
-	_seeds.clear()
+	dropped = 0
 	landed_points.clear()
-	for i in range(_count_for(0.0)): _add_seed()
+	_marks.clear()
 	_seed_node.visible = true
 	_mark_node.visible = true
 
 ## Follow the pointer's ground point (plate), or hold still over null.
-func hold(point: Variant) -> void:
-	if state == "holding" and point != null: target = point
+func aim(point: Variant) -> void:
+	if state == "pouring" and point != null: target = point
 
-## Let go: a squeeze, then the seeds spill and drift down inside the mark.
-func release() -> void:
-	if state != "holding": return
-	state = "winding"
-	_wind_t = 0.0
-	velocity = Vector3(0.0,velocity.y,0.0)
-	mark_center = Vector2(center.x,center.z)
-	_plan_landings()
+## The button came up: no more seeds leave; those in the air land.
+func end() -> void:
+	if state != "pouring": return
+	state = "settling"
+	if _seeds.is_empty(): _finish()
 
-## True while a handful is held or its seeds are still in the air.
+## True while pouring or while seeds are still in the air.
 func active() -> bool:
 	return state != "idle"
 
-## The number of seeds held or in the air.
-func seed_count() -> int:
+func seeds_in_air() -> int:
 	return _seeds.size()
 
-## The mark's centre on the ground (plate).
-func mark_point() -> Vector3:
-	return Vector3(mark_center.x,ground_at.call(mark_center),mark_center.y)
+## The spout's point on the ground (plate).
+func spout_point() -> Vector3:
+	return Vector3(spout.x,ground_at.call(Vector2(spout.x,spout.z)),spout.z)
 
-## Land every seed still held or in the air now, where it was promised: a
-## new press, an undo or a world change closes the handful at once.
+## Land every seed in the air now, where it was promised, and close the
+## stroke: a new press, an undo or a world change.
 func settle_now() -> void:
-	if state == "holding": release()
 	if state == "idle": return
-	if state == "winding": _spill()
-	for s: Dictionary in _seeds:
-		if not s.done: _land(s)
+	state = "settling"
+	for s: Dictionary in _seeds.duplicate(): _land(s)
+	_seeds.clear()
 	_finish()
 
 ## Drop everything, landing nothing: the ground it was promised to is gone
@@ -264,180 +240,97 @@ func settle_now() -> void:
 func withdraw() -> void:
 	state = "idle"
 	_seeds.clear()
+	_marks.clear()
 	_sprouts.clear()
 	_motes.clear()
-	_mark_fade = -1.0
+	_shown = 0.0
 	_hide()
-
-func _mark_for(amount: float) -> float:
-	var share: Vector2 = KINDS[kind].mark
-	return maxf(MARK_MIN,_brush_radius*lerpf(share.x,share.y,sqrt(amount)))
-
-func _count_for(amount: float) -> int:
-	var seeds: Vector2 = KINDS[kind].seeds
-	var area := pow(_brush_radius/REFERENCE_RADIUS,2.0)
-	return clampi(roundi(lerpf(seeds.x,seeds.y*area,amount)),int(seeds.x),SEEDS_MAX)
-
-## 0 to 1 over GATHER_IN, with an overshoot (ease out back).
-func _gathered() -> float:
-	var t := clampf(age/GATHER_IN,0.0,1.0)-1.0
-	return 1.0+t*t*(2.70158*t+1.70158)
-
-func _cloud_radius() -> float:
-	return lerpf(CLOUD.x,CLOUD.y,sqrt(fill))*_gathered()*(1.0+BREATHE.x*sin(age*TAU*BREATHE.y))
-
-## A seed joins the cloud, drawn in from the air round it with a curl.
-func _add_seed() -> void:
-	var up := _rng.randf_range(-0.7,0.7)
-	var around := _rng.randf()*TAU
-	var out := Vector3(cos(around)*sqrt(1.0-up*up),up,sin(around)*sqrt(1.0-up*up))
-	var from := _rng.randf_range(DRAW_FROM.x,DRAW_FROM.y)*(0.4 if age <= 0.0 else 1.0)
-	var curl := out.cross(Vector3.UP).normalized()*_rng.randf_range(0.8,1.8)
-	var shade := _rng.randf_range(0.88,1.1)
-	_seeds.append({"p":center+out*from,"v":curl,"a":_rng.randf()*TAU,"r":sqrt(_rng.randf_range(0.1,1.0)),"h":_rng.randf_range(-0.55,0.55),
-		"rate":_rng.randf_range(0.7,1.35),"axis":Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized(),
-		"tumble":_rng.randf_range(1.5,3.5),"turn":_rng.randf()*TAU,"size":_rng.randf_range(0.85,1.15),
-		"colour":Color(LOOKS[family])*shade,"done":false})
 
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
-	if state == "idle" and _motes.is_empty() and _sprouts.is_empty() and _mark_fade < 0.0:
+	if state == "idle" and _motes.is_empty() and _sprouts.is_empty() and _marks.is_empty() and _shown <= 0.0:
 		if _mark_node.visible or _sprout_node.visible: _hide()
 		return
 	var began := Time.get_ticks_usec()
 	age += delta
-	match state:
-		"holding": _step_held(delta)
-		"winding": _step_wind(delta)
-		"sowing": _step_sow(delta)
-	if _mark_fade >= 0.0:
-		_mark_fade += delta
-		if _mark_fade >= MARK_FADE: _mark_fade = -1.0
+	_shown = move_toward(_shown,1.0 if state == "pouring" else 0.0,delta/MARK_IN)
+	if state == "pouring": _pour(delta)
+	_fall(delta)
+	_step_marks(delta)
 	_step_motes(delta)
 	_step_sprouts(delta)
 	_draw()
 	_paint_mark()
 	last_usec = Time.get_ticks_usec()-began
 
-func _step_held(delta: float) -> void:
-	fill = minf(1.0,fill+delta*_strength/GATHER_SECONDS)
-	mark_radius = _mark_for(fill)
-	while _seeds.size() < _count_for(fill): _add_seed()
-	var bob := sin(age*TAU*BOB_RATE)*BOB
-	var goal := target+Vector3.UP*(HOVER+bob)
-	velocity += ((goal-center)*FOLLOW-velocity*FOLLOW_DAMP)*delta
-	center += velocity*delta
-	# The mark lies straight below the cloud, where its seeds would land.
-	mark_center = Vector2(center.x,center.z)
-	_churn += (CHURN+velocity.length()*CHURN_SPEED)*delta
-	_hold_seeds(delta,1.0)
-
-## Seeds chase their places in the cloud: circling its middle at their own
-## pace, the cloud stretched along its motion.
-func _hold_seeds(delta: float, squeeze: float) -> void:
-	var r := _cloud_radius()*squeeze
-	var speed := velocity.length()
-	var shape := Basis.IDENTITY
-	if speed > 0.05: shape = _stretched(velocity/speed,clampf(speed*STRETCH,0.0,0.6))
-	for s: Dictionary in _seeds:
-		if s.done or s.has("from"): continue
-		var angle: float = float(s.a)+_churn*float(s.rate)
-		var reach: float = s.r
-		var place := shape*(Vector3(cos(angle)*reach,float(s.h)*0.8,sin(angle)*reach)*r)
-		var v: Vector3 = s.v
-		v += ((center+place-Vector3(s.p))*SEED_FOLLOW-v*SEED_DAMP)*delta
-		s.v = v
-		s.p = Vector3(s.p)+v*delta
-		s.turn = float(s.turn)+float(s.tumble)*delta
-
-## The release squeeze: the cloud draws in and dips, then the seeds spill.
-func _step_wind(delta: float) -> void:
-	_wind_t += delta
-	var t := clampf(_wind_t/WIND_UP,0.0,1.0)
-	var ease := t*t*(3.0-2.0*t)
-	var goal := Vector3(mark_center.x,ground_at.call(mark_center)+HOVER-DIP*ease,mark_center.y)
-	velocity += ((goal-center)*FOLLOW*2.0-velocity*FOLLOW_DAMP)*delta
-	center += velocity*delta
-	_churn += CHURN*(1.0+ease)*delta
-	_hold_seeds(delta,lerpf(1.0,SQUEEZE,ease))
-	if _wind_t >= WIND_UP: _spill()
-
-## Landing points for every seed, inside the mark: a sunflower spiral with a
-## little jitter covers the disc evenly, and seeds pair with points round the
-## circle in order, so the cloud fans outward instead of crossing over.
-func _plan_landings() -> void:
-	var n := _seeds.size()
-	var inside := mark_radius*INSIDE
-	var points: Array[Vector2] = []
-	var turn := _rng.randf()*TAU
-	for i in range(n):
-		var angle := turn+float(i)*2.39996+_rng.randf_range(-0.35,0.35)
-		var reach := inside*sqrt(clampf((float(i)+0.5+_rng.randf_range(-0.4,0.4))/float(n),0.0,1.0))
-		var p := mark_center+Vector2(cos(angle),sin(angle))*minf(reach,inside)
-		points.append(p.clamp(Vector2(-13.9,-13.9),Vector2(13.9,13.9)))
-	var by_angle := func(a: Vector2, b: Vector2) -> bool: return (a-mark_center).angle() < (b-mark_center).angle()
-	points.sort_custom(by_angle)
-	var order := range(n)
-	order.sort_custom(func(a: int, b: int) -> bool:
-		return (Vector2(_seeds[a].p.x,_seeds[a].p.z)-mark_center).angle() < (Vector2(_seeds[b].p.x,_seeds[b].p.z)-mark_center).angle())
+## The spout follows the pointer and seeds leave it at the stroke's rate.
+func _pour(delta: float) -> void:
 	var spec: Dictionary = KINDS[kind]
-	# The breeze: the world's wind where the editor tells it, else a draw.
-	_breeze = wind.normalized() if wind.length() > 0.01 else Vector2.RIGHT.rotated(_rng.randf()*TAU)
-	for k in range(n):
-		var s: Dictionary = _seeds[order[k]]
-		var at: Vector2 = points[k]
-		s.to = Vector3(at.x,ground_at.call(at),at.y)
-		s.fall = _rng.randf_range(spec.fall.x,spec.fall.y)
-		s.sway = Vector2.RIGHT.rotated(_rng.randf()*TAU)
-		s.phase = _rng.randf()*TAU
-		s.flutter = _rng.randf_range(1.4,2.6)
-		s.spin = _rng.randf_range(spec.spin.x,spec.spin.y)*(1.0 if _rng.randf() < 0.5 else -1.0)
-		s.tilt = _rng.randf_range(0.25,0.5)
+	var goal := target+Vector3.UP*float(spec.drop)
+	var steps := ceili(delta/FOLLOW_STEP)
+	for i in range(steps):
+		velocity += ((goal-spout)*FOLLOW-velocity*FOLLOW_DAMP)*(delta/steps)
+		spout += velocity*(delta/steps)
+	_owed = minf(_owed+_rate*delta,4.0)
+	while _owed >= 1.0 and _seeds.size() < AIR_MAX:
+		_owed -= 1.0
+		_sprinkle()
 
-## The seeds leave the cloud, the lowest first.
-func _spill() -> void:
-	state = "sowing"
-	var low := INF
-	var high := -INF
-	for s: Dictionary in _seeds:
-		low = minf(low,float(s.p.y))
-		high = maxf(high,float(s.p.y))
-	for s: Dictionary in _seeds:
-		s.t = -SPILL*(float(s.p.y)-low)/maxf(high-low,0.001)-_rng.randf()*0.04
-
-func _step_sow(delta: float) -> void:
+## One seed leaves the spout, promised a point inside the mark below it.
+func _sprinkle() -> void:
 	var spec: Dictionary = KINDS[kind]
-	# The emptied cloud's middle eases down after its seeds.
-	velocity *= exp(-6.0*delta)
-	center += velocity*delta
-	# Seeds not yet away loosen from the squeeze toward the rim.
-	_hold_seeds(delta,1.15)
-	var waiting := false
+	var mark := _current_mark()
+	var centre: Vector2 = mark.c
+	var angle := _rng.randf()*TAU
+	var reach := float(mark.r)*INSIDE*sqrt(_rng.randf())
+	var at := (centre+Vector2(cos(angle),sin(angle))*reach).clamp(Vector2(-13.9,-13.9),Vector2(13.9,13.9))
+	var shake := Vector3(sin(age*TAU*SHAKE.y),0.0,cos(age*TAU*SHAKE.y*1.3))*SHAKE.x
+	var from := spout+shake+Vector3(_rng.randf_range(-1,1),0.0,_rng.randf_range(-1,1))*SCATTER
+	mark.pending = int(mark.pending)+1
+	var shade := _rng.randf_range(0.88,1.1)
+	_seeds.append({"p":from,"v":Vector3.ZERO,"from":from,"to":Vector3(at.x,ground_at.call(at),at.y),"t":0.0,
+		"fall":_rng.randf_range(spec.fall.x,spec.fall.y),"sway":Vector2.RIGHT.rotated(_rng.randf()*TAU),"phase":_rng.randf()*TAU,
+		"flutter":_rng.randf_range(1.6,2.8),"spin":_rng.randf_range(spec.spin.x,spec.spin.y)*(1.0 if _rng.randf() < 0.5 else -1.0),
+		"tilt":_rng.randf_range(0.25,0.5),"turn":_rng.randf()*TAU,"size":_rng.randf_range(0.85,1.15),
+		"colour":Color(LOOKS[family])*shade,"mark":mark})
+	dropped += 1
+
+## The mark under the spout: the newest while the spout is still over it,
+## else a new one; when MARKS stand already, the newest serves.
+func _current_mark() -> Dictionary:
+	var here := Vector2(spout.x,spout.z)
+	if not _marks.is_empty():
+		var last: Dictionary = _marks.back()
+		if Vector2(last.c).distance_to(here) < mark_radius*MARK_STEP or _marks.size() >= MARKS:
+			return last
+	var mark := {"c":here,"r":mark_radius,"pending":0,"fade":-1.0}
+	_marks.append(mark)
+	return mark
+
+## Seeds spin down on their wings, fluttering; each lands on its point.
+func _fall(delta: float) -> void:
+	var spec: Dictionary = KINDS[kind]
+	var kept: Array[Dictionary] = []
 	for s: Dictionary in _seeds:
-		if s.done: continue
 		s.t = float(s.t)+delta
-		if float(s.t) < 0.0:
-			waiting = true
-			continue
-		if not s.has("from"): s.from = s.p
 		var u := clampf(float(s.t)/float(s.fall),0.0,1.0)
 		var from: Vector3 = s.from
 		var to: Vector3 = s.to
-		# It fans out early and settles into a steady fall, after a toss.
-		var out := 1.0-pow(1.0-u,2.2)
-		var flat := Vector2(from.x,from.z).lerp(Vector2(to.x,to.z),out)
+		# Out a little early, then a steady fall after the toss.
+		var flat := Vector2(from.x,from.z).lerp(Vector2(to.x,to.z),1.0-pow(1.0-u,1.8))
 		# Flutter and breeze die out at the landing, so it lands on its point.
 		var life := sin(u*PI)
 		var sway: Vector2 = Vector2(s.sway)*sin(float(s.t)*TAU*float(s.flutter)*0.5+float(s.phase))*float(spec.flutter)
 		flat += (sway+_breeze*BREEZE)*life
-		var y := lerpf(from.y,to.y,_fall_curve(u))+TOSS*sin(PI*clampf(u/0.3,0.0,1.0))*(1.0-u)
+		var y := lerpf(from.y,to.y,_fall_curve(u))+TOSS*sin(PI*clampf(u/0.35,0.0,1.0))*(1.0-u)
 		var next := Vector3(flat.x,y,flat.y)
 		s.v = (next-Vector3(s.p))/maxf(delta,0.001)
 		s.p = next
-		s.turn = float(s.turn)+float(s.spin)*smoothstep(0.0,0.35,u)*delta
+		s.turn = float(s.turn)+float(s.spin)*smoothstep(0.0,0.3,u)*delta
 		if u >= 1.0: _land(s)
-		else: waiting = true
-	if not waiting: _finish()
+		else: kept.append(s)
+	_seeds = kept
+	if state == "settling" and _seeds.is_empty(): _finish()
 
 ## Accelerates, then falls at a steady rate: the seed's wing catches the air.
 func _fall_curve(u: float) -> float:
@@ -445,28 +338,48 @@ func _fall_curve(u: float) -> float:
 	return (u*u/(2.0*A) if u < A else u-A*0.5)/(1.0-A*0.5)
 
 func _land(s: Dictionary) -> void:
-	s.done = true
 	var to: Vector3 = s.to
 	s.p = to
 	var point := Vector2(to.x,to.z)
 	landed_points.append(point)
-	# A ring on the mark, a puff of dust, and a sprout where it will take.
+	var mark: Dictionary = s.mark
+	mark.pending = int(mark.pending)-1
+	# A ring on the mark, a puff of dust, and a sprout where it will take and
+	# there is room.
 	_landings[_landing_next] = Vector4(to.x,to.z,age,1.0)
 	_landing_next = (_landing_next+1)%LANDINGS
 	for i in range(MOTES):
 		var out := Vector3.RIGHT.rotated(Vector3.UP,TAU*(float(i)+_rng.randf())/MOTES)
-		_motes.append({"p":to+Vector3.UP*0.03,"v":out*_rng.randf_range(0.5,1.1)+Vector3.UP*_rng.randf_range(0.6,1.2),"t":0.0,"size":_rng.randf_range(0.03,0.05)})
+		_motes.append({"p":to+Vector3.UP*0.03,"v":out*_rng.randf_range(0.4,0.9)+Vector3.UP*_rng.randf_range(0.5,1.0),"t":0.0,"size":_rng.randf_range(0.025,0.045)})
 	if _motes.size() > MOTES_MAX: _motes = _motes.slice(_motes.size()-MOTES_MAX)
-	if takes.call(point):
+	if _room_for_sprout(to) and takes.call(point):
 		_sprouts.append({"p":to,"t":0.0,"yaw":_rng.randf()*TAU,"lean":Vector2.RIGHT.rotated(_rng.randf()*TAU)})
 		if _sprouts.size() > SPROUTS_MAX: _sprouts = _sprouts.slice(_sprouts.size()-SPROUTS_MAX)
-	seed_landed.emit(point)
+	seed_landed.emit(point,Vector3(Vector2(mark.c).x,Vector2(mark.c).y,float(mark.r)))
+
+func _room_for_sprout(p: Vector3) -> bool:
+	for other: Dictionary in _sprouts:
+		if float(other.t) < SPROUT_SECONDS-1.2 and Vector3(other.p).distance_squared_to(p) < SPROUT_ROOM*SPROUT_ROOM: return false
+	return true
 
 func _finish() -> void:
 	state = "idle"
-	_seeds.clear()
-	_mark_fade = 0.0
-	sown.emit(landed_points.duplicate(),mark_center,mark_radius)
+	sown.emit(landed_points.duplicate())
+
+## A mark with no seed left to land shrinks away; the one the spout is over
+## stays while it pours.
+func _step_marks(delta: float) -> void:
+	var kept: Array[Dictionary] = []
+	for i in range(_marks.size()):
+		var mark: Dictionary = _marks[i]
+		var over := state == "pouring" and i == _marks.size()-1
+		if int(mark.pending) > 0 or over:
+			mark.fade = -1.0
+		else:
+			mark.fade = maxf(float(mark.fade),0.0)+delta
+			if float(mark.fade) >= MARK_FADE: continue
+		kept.append(mark)
+	_marks = kept
 
 func _step_motes(delta: float) -> void:
 	var kept: Array[Dictionary] = []
@@ -494,20 +407,17 @@ func _draw() -> void:
 	var size: float = spec.size
 	var glow: float = spec.glow
 	var seeds := _seed_node.multimesh
-	var count := mini(_seeds.size(),SEEDS_MAX)
+	var count := mini(_seeds.size(),AIR_MAX)
 	seeds.visible_instance_count = count
 	_seed_node.global_transform = plate
+	_seed_node.visible = count > 0
 	for i in range(count):
 		var s: Dictionary = _seeds[i]
-		var basis: Basis
-		if s.has("from") and not s.done:
-			# A falling samara turns about the upright on its tilted wing, and
-			# rocks as it flutters.
-			var rock := sin(float(s.t)*TAU*float(s.flutter)+float(s.phase))*0.25
-			basis = Basis(Vector3.UP,float(s.turn))*Basis(Vector3.RIGHT,float(s.tilt)+rock)
-		else:
-			basis = Basis(Vector3(s.axis),float(s.turn))
-		var grow := _gathered() if state == "holding" else 1.0
+		# A falling samara turns about the upright on its tilted wing, and
+		# rocks as it flutters; it pops out of the spout.
+		var rock := sin(float(s.t)*TAU*float(s.flutter)+float(s.phase))*0.25
+		var basis := Basis(Vector3.UP,float(s.turn))*Basis(Vector3.RIGHT,float(s.tilt)+rock)
+		var grow := smoothstep(0.0,0.08,float(s.t))
 		seeds.set_instance_transform(i,Transform3D(basis.scaled(Vector3.ONE*size*float(s.size)*maxf(grow,0.01)),s.p))
 		var colour: Color = s.colour
 		seeds.set_instance_color(i,Color(colour.r,colour.g,colour.b,glow))
@@ -539,43 +449,52 @@ func _draw() -> void:
 		motes.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ONE*float(m.size)*left),m.p))
 		motes.set_instance_color(i,Color(0.86,0.8,0.64,0.15))
 
-## The mark: straight under the cloud while held, where the seeds will land
-## once they are loose, fading once the last is down.
+## The marks: the one under the spout, and any a quick drag left behind with
+## seeds still in the air over them, shrinking away once theirs are down.
 func _paint_mark() -> void:
-	var shown := 0.0
-	if state == "holding": shown = smoothstep(0.0,GATHER_IN,age)
-	elif state != "idle": shown = 1.0
-	elif _mark_fade >= 0.0: shown = 1.0-smoothstep(0.0,MARK_FADE,_mark_fade)
-	_mark_node.visible = shown > 0.001 or not _motes.is_empty()
 	var parent := get_parent() as Node3D
 	var scale := parent.global_basis.get_scale().x
-	var floor_y: float = ground_at.call(mark_center)
-	var span := (mark_radius*1.25+0.6)*scale
-	var at := parent.to_global(Vector3(mark_center.x,floor_y,mark_center.y))
-	_mark_node.global_transform = Transform3D(Basis.from_scale(Vector3(span*2.0,8.0*scale,span*2.0)),at)
-	_mark_material.set_shader_parameter("mark_center",at)
-	_mark_material.set_shader_parameter("mark_radius",mark_radius*scale)
-	_mark_material.set_shader_parameter("shown",shown)
-	_mark_material.set_shader_parameter("sowing",1.0 if state in ["winding","sowing"] else 0.0)
-	_mark_material.set_shader_parameter("ceiling",at.y+HOVER*0.6*scale)
+	var shapes := PackedVector4Array()
+	shapes.resize(MARKS)
+	var low := Vector2(INF,INF)
+	var high := -low
+	var floor_y := -INF
+	var n := 0
+	for i in range(_marks.size()):
+		var mark: Dictionary = _marks[i]
+		var c: Vector2 = mark.c
+		var size := 1.0 if float(mark.fade) < 0.0 else 1.0-smoothstep(0.0,MARK_FADE,float(mark.fade))
+		if i == _marks.size()-1 and state == "pouring": size *= smoothstep(0.0,1.0,_shown)
+		if size <= 0.001: continue
+		var world := parent.to_global(Vector3(c.x,ground_at.call(c),c.y))
+		shapes[n] = Vector4(world.x,world.z,float(mark.r)*scale,size)
+		n += 1
+		low = low.min(c-Vector2.ONE*float(mark.r))
+		high = high.max(c+Vector2.ONE*float(mark.r))
+		floor_y = maxf(floor_y,world.y)
+	_mark_node.visible = n > 0 or not _motes.is_empty()
+	if n == 0 and _motes.is_empty(): return
+	if n == 0:
+		low = Vector2(spout.x,spout.z)-Vector2.ONE
+		high = low+Vector2.ONE*2.0
+		floor_y = parent.to_global(spout_point()).y
+	var middle := (low+high)*0.5
+	var span := (high-low)*0.5+Vector2.ONE*0.6
+	var at := parent.to_global(Vector3(middle.x,ground_at.call(middle),middle.y))
+	_mark_node.global_transform = Transform3D(Basis.from_scale(Vector3(span.x*2.0*scale,8.0*scale,span.y*2.0*scale)),at)
+	_mark_material.set_shader_parameter("marks",shapes)
+	_mark_material.set_shader_parameter("count",n)
+	_mark_material.set_shader_parameter("pouring",1.0 if state == "pouring" else 0.0)
+	_mark_material.set_shader_parameter("ceiling",floor_y+float(KINDS[kind].drop)*0.5*scale)
 	_mark_material.set_shader_parameter("age",age)
-	var world := PackedVector4Array()
-	world.resize(LANDINGS)
+	var rings := PackedVector4Array()
+	rings.resize(LANDINGS)
 	for i in range(LANDINGS):
 		var ring := _landings[i]
-		if ring.w < 0.5:
-			continue
-		var p := parent.to_global(Vector3(ring.x,floor_y,ring.y))
-		world[i] = Vector4(p.x,p.z,ring.z,1.0)
-	_mark_material.set_shader_parameter("landings",world)
-
-## A volume-keeping stretch by `stretch` along the unit vector `along`.
-func _stretched(along: Vector3, stretch: float) -> Basis:
-	var side := along.cross(Vector3.UP if absf(along.y) < 0.95 else Vector3.RIGHT).normalized()
-	var third := along.cross(side)
-	var frame := Basis(side,along,third)
-	var thin := 1.0/sqrt(1.0+stretch)
-	return frame*Basis.from_scale(Vector3(thin,1.0+stretch,thin))*frame.transposed()
+		if ring.w < 0.5: continue
+		var p := parent.to_global(Vector3(ring.x,0.0,ring.y))
+		rings[i] = Vector4(p.x,p.z,ring.z,1.0)
+	_mark_material.set_shader_parameter("landings",rings)
 
 func _hide() -> void:
 	if _mark_node == null: return

@@ -30,13 +30,13 @@ const CLEAR_BELOW := -0.25
 const FIRM_PASS := 0.7
 const FIRM_MIN := 0.3
 const FIRM_EMPTY := 0.1
-## A landed seed of the seed handful (scripts/seed_handful.gd, `sow`): the
+## A landed seed of the seed sprinkle (scripts/seed_handful.gd, `sow`): the
 ## wish it raises at its point, how far round it (m, with a dab's falloff),
-## and how far past the handful's mark (m) that wish fades to nothing, so the
-## forest a handful asks for stays inside its mark.
-const SEED_WISH := 0.55
-const SEED_REACH := 1.5
-const SEED_EDGE := 0.3
+## and how far past the mark it was promised (m) that wish fades to nothing,
+## so the forest a sprinkle asks for keeps close to its marks.
+const SEED_WISH := 0.3
+const SEED_REACH := 1.2
+const SEED_EDGE := 0.8
 
 var _floor := Color()
 var _clearing := false
@@ -81,10 +81,10 @@ func dab(data: NativeTerrainData, center: Vector2, reach: float, amount: float, 
 	intent.revision += 1
 	data.tint = tint
 
-## One seed of a handful landed at `point`: raise the forest wish round it
-## and darken the floor there, as a dab does. `mark` is the handful's mark
-## (centre x, z and radius): the wish fades out from its edge to SEED_EDGE
-## past it. Between `begin` and `finish`, inside the handful's undo step.
+## One sprinkled seed landed at `point`: raise the forest wish round it
+## and darken the floor there, as a dab does. `mark` is the mark it was
+## promised (centre x, z and radius): the wish fades out from its edge to
+## SEED_EDGE past it. Between `begin` and `finish`, inside the stroke's undo step.
 func sow(data: NativeTerrainData, point: Vector2, mark: Vector3) -> void:
 	if editor == null: return
 	_grow_bounds(point,SEED_REACH)

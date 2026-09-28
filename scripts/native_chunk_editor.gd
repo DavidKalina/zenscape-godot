@@ -1748,7 +1748,7 @@ func _land_press(event: InputEventMouseButton) -> bool:
 	var hit: Variant = pick(event.position)
 	if hit == null: return false
 	# A mountain still rising lands before anything else is painted, and
-	# seeds still in the air land and close their handful's undo step.
+	# seeds still in the air land and close their sprinkle's undo step.
 	_land_mountain()
 	if handful != null: handful.settle_now()
 	_stroke_button = event.button_index
@@ -2436,12 +2436,13 @@ func _mountain_feel(phase: int, speed := 0.0, seconds := 0.0) -> void:
 ## Seconds the poured fog holds before draining, from press or regrowth.
 const RISE_FOG_SECONDS := 4.0
 
-# --- Seed handful ---------------------------------------------------------------
-## The seed handful (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
-## handful"): with forest in hand a press gathers a handful of seeds that
-## grows while held; release sows them inside the mark under it. Each landing
-## raises the forest wish round it (ForestBrush `sow`); the first opens one
-## undo step and the last closes it and hands the seeds to emergence, which
+# --- Seed sprinkle --------------------------------------------------------------
+## The seed sprinkle (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
+## sprinkle"): with forest in hand, seeds pour from just above the pointer
+## while the button is down, each landing inside the small mark under the spout.
+## The press opens one undo step; each landing raises the forest wish round it
+## (ForestBrush `sow`); once the button is up and the last seed is down the
+## step closes and the seeds, thinned to TREE_GAP apart, go to emergence, which
 ## grows the forest out from them. Shift-drag still clears as before, and
 ## --paint-forest brings back drag-to-paint.
 var seed_handful := "--paint-forest" not in OS.get_cmdline_user_args()
@@ -2450,8 +2451,7 @@ var _handful_holding := false
 var _handful_serial := 0
 var _sowing := false
 var _sow_dirty := false
-## The last handful sown, for probes: {"points", "center", "radius",
-## "bounds", "changed"}.
+## The last stroke sown, for probes: {"points", "planted", "bounds", "changed"}.
 var last_sowing := {}
 
 func _handful_press(hit: Vector3) -> void:
@@ -2475,20 +2475,24 @@ func _handful_press(hit: Vector3) -> void:
 	_handful_serial += 1
 	var air: Variant = scene.get("_atmosphere")
 	handful.wind = Vector2(cos(air._air_angle),sin(air._air_angle)) if air != null and air.get("_air_angle") != null else Vector2.ZERO
-	var brush = creation_brush()
-	brush.prepare(data,land_seed)
-	handful.gather(hit,"forest",brush.radius,brush.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
+	var forest = creation_brush()
+	forest.prepare(data,land_seed)
+	handful.begin(hit,"forest",forest.radius,forest.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
+	# One stroke, one undo step, seeds still in the air included.
+	data.begin_stroke()
+	forest.begin()
+	_sowing = true
 	_handful_holding = true
 	_emit_stroke(0,hit,handful.mark_radius,0.0)
 
-## While held the handful follows the pointer's ground point; landed seeds'
-## wish shows through the light refresh, at most once a frame.
+## While the button is down the spout follows the pointer's ground point;
+## landed seeds' wish shows through the light refresh, at most once a frame.
 func _handful_process(hit: Variant, delta: float) -> void:
 	if _handful_holding:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _handful_release()
 		else:
-			handful.hold(hit)
-			_emit_stroke(1,handful.mark_point(),handful.mark_radius,brush_strength()*minf(delta,0.05))
+			handful.aim(hit)
+			_emit_stroke(1,handful.spout_point(),handful.mark_radius,brush_strength()*minf(delta,0.05))
 	if _sow_dirty and _light_refresh_ready(true):
 		_sow_dirty = false
 		_refresh_light()
@@ -2496,25 +2500,19 @@ func _handful_process(hit: Variant, delta: float) -> void:
 func _handful_release() -> void:
 	if not _handful_holding: return
 	_handful_holding = false
-	handful.release()
-	_emit_stroke(2,handful.mark_point(),handful.mark_radius,0.0)
+	handful.end()
+	_emit_stroke(2,handful.spout_point(),handful.mark_radius,0.0)
 
-## A seed came down. The first opens the handful's undo step.
-func _seed_landed(point: Vector2) -> void:
-	if forming: return
-	var forest = brushes.get("forest")
-	if forest == null: return
-	if not _sowing:
-		_sowing = true
-		data.begin_stroke()
-		forest.prepare(data,land_seed)
-		forest.begin()
-	forest.sow(data,point,Vector3(handful.mark_center.x,handful.mark_center.y,handful.mark_radius))
+## A seed came down inside `mark` (centre x, z and radius).
+func _seed_landed(point: Vector2, mark: Vector3) -> void:
+	if forming or not _sowing: return
+	brushes.forest.sow(data,point,mark)
 	_sow_dirty = true
 
-## The last seed is down: close the step, settle the view, and let the
-## forest grow out from the seeds.
-func _handful_sown(points: PackedVector2Array, center: Vector2, mark: float) -> void:
+## The stroke is over and its last seed down: close the step, settle the
+## view, and let the forest grow out from the seeds. A dense spot sends one
+## seed per TREE_GAP; the rest only sprouted and asked for forest.
+func _handful_sown(points: PackedVector2Array) -> void:
 	if not _sowing: return
 	_sowing = false
 	_sow_dirty = false
@@ -2522,5 +2520,9 @@ func _handful_sown(points: PackedVector2Array, center: Vector2, mark: float) -> 
 	var changed := data.end_stroke()
 	_settle_pending = true
 	_settle_stroke()
-	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",points)
-	last_sowing = {"points":points,"center":center,"radius":mark,"bounds":bounds,"changed":changed}
+	const Emergence := preload("res://scripts/emergence.gd")
+	var planted := PackedVector2Array()
+	for p in points:
+		if Emergence._nearest(planted,p) >= Emergence.TREE_GAP: planted.append(p)
+	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",planted)
+	last_sowing = {"points":points,"planted":planted,"bounds":bounds,"changed":changed}

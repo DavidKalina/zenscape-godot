@@ -106,7 +106,7 @@ const FOREST_MARGIN := Vector4(0.02,0.25,0.5,0.8)
 const FOREST_MARGIN_SHRUBS := 0.45
 const FOREST_UNDER_SHRUBS := 0.12
 ## Sown forest (scripts/seed_handful.gd, docs/scenic/brushes.md "Seed
-## handful"). A handful's region carries its landed seeds. Each seed is a tree
+## sprinkle"). A sprinkle stroke's region carries its landed seeds. Each is a tree
 ## candidate of its own at its landing point, which comes up first: at
 ## SOWN_DELAY plus up to SOWN_STAGGER, taking at SOWN_TAKE (thinned on steep
 ## ground as any tree is). The region's lattice candidates then arrive by
@@ -243,7 +243,7 @@ func clear() -> void:
 ## Entry point for a finished stroke. `rect` is in plate metres. `source`
 ## "forest" is a forest brush stroke: it plans only what its wish asks for,
 ## leaves cover alone and does not replan other strokes' work. `sown` are a
-## seed handful's landed seeds (plate x, z), where its forest starts.
+## seed sprinkle's landed seeds (plate x, z), where its forest starts.
 func on_region_changed(rect: Rect2, source := "", sown := PackedVector2Array()) -> void:
 	if not enabled:
 		return
