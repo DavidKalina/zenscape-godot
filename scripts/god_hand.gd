@@ -52,8 +52,10 @@ const TURN := 5.0
 const FADE := 4.0
 ## Seconds of crossfade into a gesture's In or Out from wherever it is.
 const BLEND := 0.18
-const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle"}
-const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold"]
+## Tools' gestures, and the reach's (scripts/hand_reach.gd): "sun" holds the
+## sun or the moon to set the hour, "rim" grips the rim to turn the season.
+const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","sun":"Reach","rim":"Rim"}
+const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ReachHold","RimHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
 ## after a plain Idle one plays with VARIANT_CHANCE, never the same one twice
@@ -78,7 +80,12 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2}
+const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"sun":0.0,"rim":0.0}
+## Holding the sun, the hand turns square to the camera, however high the sun
+## is: the Reach clips cup the disc for a camera level with the hand. The
+## share per gesture, eased in and out at FACE_RATE (1/s).
+const FACE := {"sun":1.0}
+const FACE_RATE := 4.0
 ## No knuckle or palm goes into the land: CLEAR_BONES are kept CLEAR hand
 ## lengths over the ground under them by lifting the whole hand, quickly up
 ## and slowly back down (1/s). A pinch's tips are meant to touch (PINCHING),
@@ -144,6 +151,8 @@ var _handful_at: Variant = null
 ## letting go.
 var reach_gesture := ""
 var reach_point: Variant = null
+## How square the hand is turned to the camera (FACE).
+var _face := 0.0
 
 static func enabled() -> bool:
 	return not "--no-hand" in OS.get_cmdline_user_args()
@@ -230,7 +239,7 @@ func _process(delta: float) -> void:
 	var flat := Vector2(velocity.x,velocity.z)
 	_still = _still+delta if flat.length() < STILL else 0.0
 	# It leans into the pointer's way and rocks back through upright on a stop.
-	var free := gesture.is_empty() or gesture == "sprinkle"
+	var free := gesture.is_empty() or gesture == "sprinkle" or gesture == "rim"
 	var lean_goal := (flat*LEAN).limit_length(MAX_LEAN) if free else Vector2.ZERO
 	_lean_speed += ((lean_goal-_lean)*LEAN_SPRING-_lean_speed*LEAN_DAMP)*delta
 	_lean += _lean_speed*delta
@@ -238,8 +247,9 @@ func _process(delta: float) -> void:
 	if _lean.length() > 0.0001: lean = Basis(Vector3(_lean.y,0.0,-_lean.x).normalized(),_lean.length())
 	_tilt = move_toward(_tilt,float(TILT.get(gesture,0.0)),delta*3.0)
 	var tilt := _slope(anchor,size)
+	_face = move_toward(_face,float(FACE.get(gesture,0.0)),delta*FACE_RATE)
 	var pivot := Vector3.UP*LEAN_PIVOT*size
-	transform = Transform3D(lean*tilt*Basis(Vector3.UP,yaw).scaled(Vector3.ONE*size),anchor+pivot-lean*pivot)
+	transform = Transform3D(lean*tilt*_square_to_camera()*Basis(Vector3.UP,yaw).scaled(Vector3.ONE*size),anchor+pivot-lean*pivot)
 	position += _carried(delta)
 	_rise_clear(size,delta)
 	_sow(delta,true)
@@ -249,6 +259,17 @@ func _facing() -> float:
 	var camera: Vector3 = get_parent().to_local(scene.camera.global_position)-anchor
 	if Vector2(camera.x,camera.z).length_squared() < 0.0001: return yaw
 	return atan2(camera.x,camera.z)-atan2(TO_CAMERA.x,TO_CAMERA.z)
+
+## The turn, about the anchor, that points the hand's camera side (TO_CAMERA)
+## straight at the camera, up or down, by `_face`.
+func _square_to_camera() -> Basis:
+	if _face <= 0.0: return Basis.IDENTITY
+	var side := Basis(Vector3.UP,yaw)*TO_CAMERA
+	var camera: Vector3 = get_parent().to_local(scene.camera.global_position)-anchor
+	if camera.length_squared() < 0.0001: return Basis.IDENTITY
+	var axis := side.cross(camera.normalized())
+	if axis.length_squared() < 0.000001: return Basis.IDENTITY
+	return Basis(axis.normalized(),side.angle_to(camera)*_face)
 
 ## The turn that stands the hand on the slope round `at`, by the gesture's
 ## share (`_tilt`).
@@ -307,7 +328,7 @@ func _carried(delta: float) -> Vector3:
 func _rise_clear(size: float, delta: float) -> void:
 	var data: Variant = editor.get("data")
 	var need := 0.0
-	if data != null and gesture != "press" and gesture != "cup":
+	if data != null and gesture != "press" and gesture != "cup" and gesture != "rim":
 		for bone in _clear:
 			if gesture == "pinch" and bone in _pinching: continue
 			var p := _bone_at(bone)

@@ -110,6 +110,8 @@ var _stroke_feedback: Node
 var world_rumble: Node
 ## The hand of light that works the creation tools (scripts/god_hand.gd).
 var god_hand: Node3D
+## What the hand reaches and holds: the sun, the rim (scripts/hand_reach.gd).
+var hand_reach: Node
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -222,6 +224,9 @@ func _ready() -> void:
 		god_hand = preload("res://scripts/god_hand.gd").new()
 		_chunk_editor.terrain.add_child(god_hand)
 		god_hand.setup(self)
+	hand_reach = preload("res://scripts/hand_reach.gd").new()
+	add_child(hand_reach)
+	hand_reach.setup(self)
 	world_rumble = preload("res://scripts/world_rumble.gd").new()
 	add_child(world_rumble)
 	world_rumble.setup(self)
