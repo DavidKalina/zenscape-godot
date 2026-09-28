@@ -379,6 +379,9 @@ def check():
 		('Idle', 'CupIn'), ('CupIn', 'CupHold'), ('CupHold', 'CupOut'), ('CupOut', 'Idle'),
 		('Idle', 'SprinkleIn'), ('SprinkleIn', 'SprinkleHold'), ('SprinkleHold', 'SprinkleOut'), ('SprinkleOut', 'Idle')]
 	pairs += [('Idle', 'ShakeIn'), ('ShakeIn', 'ShakeHold'), ('ShakeHold', 'ShakeOut'), ('ShakeOut', 'Idle')]
+	# Turning the world.
+	pairs += [('Idle', 'TurnIn'), ('TurnIn', 'TurnHold'), ('TurnHold', 'TurnOut'), ('TurnOut', 'Idle'),
+		('Idle', 'CatchIn'), ('CatchIn', 'CatchHold'), ('CatchHold', 'CatchOut'), ('CatchOut', 'Idle')]
 	for a, b in pairs:
 		gap = max((x - y).length for x, y in zip(last[a], first[b]))
 		print(f'HAND_HANDOFF {a:>12s} -> {b:12s} {gap:.4f}')

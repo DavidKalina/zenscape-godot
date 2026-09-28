@@ -765,6 +765,82 @@ def sprinkle_out(t):
 	return p, s, 0.0, {'handful': 1.0 if t < SPRINKLE_OUT_RELEASE else 0.0}
 
 
+# ---------------------------------------------------------------- turn and catch: turning the world
+
+# Turning the world like a lazy Susan (scripts/world_turn.gd): the palm lies flat on the
+# grabbed ground with every finger spread wide, the pads pressed down and the knuckles
+# a little raised, gripping, and pushes it round. The game leans the hand into the push
+# (god_hand.gd TURN_LEAN) about the palm; the clips give the grip and its moving hold.
+# Catch is the same grip slapped down quickly onto a spinning world.
+GRIP = shape((-6, 8, 5, 13), (-6, 8, 5, 3), (-5, 8, 5, -8), (-4, 7, 4, -19), (-8, 2, 4, -34, -4), 4)
+# Bearing down on the push: pads harder, knuckles higher.
+GRIP_HARD = shape((-10, 13, 8, 14), (-10, 13, 8, 3), (-9, 13, 8, -9), (-8, 12, 7, -20), (-10, 4, 6, -36, -5), 6)
+TURN_HOLD_T = 60
+TURN_CONTACT = 6
+CATCH_CONTACT = 4
+
+
+def turn_hold_place(t):
+	"""Gripping: the heel bears down and eases once a loop, the palm rocking a touch
+	from the little-finger side to the thumb's as it works the push, breathing under it."""
+	t %= TURN_HOLD_T
+	u = math.tau * t / TURN_HOLD_T
+	d = drift(t, TURN_HOLD_T, 5)
+	return contact(PALM_POINT, (0.004 * d[0], 0.004 * d[1], -0.01 - 0.006 * (0.5 - 0.5 * math.cos(u))),
+		-3 - 4 * math.sin(u) + 1.2 * d[2], 2.5 * math.sin(u + 1.2) + 1.0 * d[0], 1.5 * d[1])
+
+
+def turn_hold_shape(t):
+	"""The fingers knead the ground in a slow wave, little finger to index, re-settling
+	their grip, the pads pressing harder as the heel bears down."""
+	t %= TURN_HOLD_T
+	u = math.tau * t / TURN_HOLD_T
+	s = lerp(GRIP, GRIP_HARD, 0.5 - 0.5 * math.cos(u))
+	return add(s, {name: (6 * math.sin(2 * u - 0.8 * i) - 3, 2 * math.cos(2 * u - 0.8 * i))
+		for i, name in enumerate(('Pinky', 'Ring', 'Middle', 'Index'))})
+
+
+def turn_in(t):
+	"""Reaching in to grip: a small lift with the fingers opening wide, then the hand comes
+	down palm first, the fingers flaring on the touch, and the heel sinks in and settles."""
+	lift = moved(IDLE0, dz=0.05, pitch=-10)
+	above = contact(PALM_POINT, (0, 0.02, 0.1), -8, 0)
+	touch = contact(PALM_POINT, (0, 0, -0.004), -4, 0)
+	sunk = contact(PALM_POINT, (0, 0, -0.02), -6, 0)
+	p = track(t, [(0, IDLE0), (3, lift), (5, above), (TURN_CONTACT, touch), (9, sunk, 0.1), (14, turn_hold_place(0))])
+	s = track(t, [(0, idle0_shape()), (3, OPEN), (TURN_CONTACT, BLOOM), (9, GRIP_HARD, 0.1), (14, turn_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (TURN_CONTACT - 1, 0.0), (TURN_CONTACT + 1, 1.0)])
+
+
+def turn_hold(t):
+	return turn_hold_place(t), turn_hold_shape(t), 1.0
+
+
+def turn_out(t):
+	"""Letting go with follow-through: a last shove from the heel, then the hand peels up
+	heel first, the fingertips leaving last, flicks its fingers open and sails up past
+	the float before it drifts home."""
+	start = turn_hold_place(0)
+	shove = contact(PALM_POINT, (0, 0, -0.022), -8, 0)
+	peel = contact(PINCH_POINT, (0, 0, 0.06), 24, -4)
+	up = moved(IDLE0, dz=0.12, pitch=-14, roll=-6)
+	p = track(t, [(0, start), (3, shove), (7, peel), (14, up, 0.12), (30, IDLE0)])
+	s = track(t, [(0, turn_hold_shape(0)), (3, GRIP_HARD), (7, GRIP), (11, BLOOM, 0.15), (20, lerp(BLOOM, RELAX, 0.6)), (30, idle0_shape())])
+	return p, s, track(t, [(0, 1.0), (5, 1.0), (9, 0.0)])
+
+
+def catch_in(t):
+	"""Catching a spinning world: no time to open wide, a flick of a lift and the palm
+	slaps down, the fingers bent back by the impact, the heel squashing in, and it rides
+	the world's shove a moment before gripping."""
+	lift = moved(IDLE0, dz=0.03, pitch=-6)
+	touch = contact(PALM_POINT, (0, 0, -0.006), -2, 0)
+	squash = contact(PALM_POINT, (0, -0.01, -0.03), -9, 3)
+	p = track(t, [(0, IDLE0), (2, lift), (CATCH_CONTACT, touch), (6, squash, 0.12), (12, turn_hold_place(0))])
+	s = track(t, [(0, idle0_shape()), (2, lerp(RELAX, OPEN, 0.7)), (CATCH_CONTACT, PRESS_HARD), (7, GRIP_HARD, 0.1), (12, turn_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (CATCH_CONTACT - 1, 0.0), (CATCH_CONTACT, 1.0)])
+
+
 # ---------------------------------------------------------------- follow-through
 
 # Finger springs: frequency in Hz and damping ratio; heavier fingers are a little slower.
@@ -835,6 +911,13 @@ CLIPS = {
 	'SprinkleIn': (20, sprinkle_in, False, 'Idle', 'SprinkleHold'),
 	'SprinkleHold': (SPRINKLE_HOLD_T, sprinkle_hold, True, None, None),
 	'SprinkleOut': (SPRINKLE_OUT_T, sprinkle_out, False, 'SprinkleHold', 'Idle'),
+	# Turning the world (scripts/world_turn.gd).
+	'TurnIn': (14, turn_in, False, 'Idle', 'TurnHold'),
+	'TurnHold': (TURN_HOLD_T, turn_hold, True, None, None),
+	'TurnOut': (30, turn_out, False, 'TurnHold', 'Idle'),
+	'CatchIn': (12, catch_in, False, 'Idle', 'CatchHold'),
+	'CatchHold': (TURN_HOLD_T, turn_hold, True, None, None),
+	'CatchOut': (30, turn_out, False, 'CatchHold', 'Idle'),
 }
 
 

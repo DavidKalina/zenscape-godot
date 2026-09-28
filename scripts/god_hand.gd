@@ -53,9 +53,10 @@ const FADE := 4.0
 ## Seconds of crossfade into a gesture's In or Out from wherever it is.
 const BLEND := 0.18
 ## "shake" is a reach, not a tool: gripping the rim and shaking the diorama
-## like a snow globe (scripts/snow_globe.gd).
-const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake"}
-const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold"]
+## like a snow globe (scripts/snow_globe.gd). "turn" and "catch" grip the land
+## to turn the world (scripts/world_turn.gd).
+const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch"}
+const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
 ## after a plain Idle one plays with VARIANT_CHANCE, never the same one twice
@@ -80,7 +81,7 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0}
+const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0}
 ## No knuckle or palm goes into the land: CLEAR_BONES are kept CLEAR hand
 ## lengths over the ground under them by lifting the whole hand, quickly up
 ## and slowly back down (1/s). A pinch's tips are meant to touch (PINCHING),
@@ -93,6 +94,15 @@ const CLEAR_BONES := ["Hand","MetaIndex","MetaMiddle","MetaRing","MetaPinky","In
 	"Index2","Middle2","Ring2","Pinky2","Index3","Middle3","Ring3","Pinky3","Thumb1","Thumb2","Thumb3"]
 const PINCHING := ["Index2","Index3","Thumb2","Thumb3"]
 const UNLIFTED := ["press","cup","shake"]
+## Turning the world (scripts/world_turn.gd): the gestures whose palm lies
+## flat on the land, riding its height and never lifted clear of it; and the
+## lean into the push, TURN_LEAN radians per m/s the grabbed ground moves
+## across the view (`reach_push`), at most MAX_TURN_LEAN, about the palm on
+## the ground rather than the middle of the hand. The lean spring rocks it
+## back through upright when the push stops or lets go.
+const GRIPS := ["turn","catch"]
+const TURN_LEAN := 0.03
+const MAX_TURN_LEAN := 0.24
 ## When the hand leaves the ball (a pop, or a ball gone) the offset that kept
 ## it there springs away on this critically damped spring (1/s).
 const LET_GO := 6.0
@@ -154,6 +164,11 @@ var reach_point: Variant = null
 ## fast its Hold plays (a harder shake shakes faster). Cleared with the rest.
 var reach_facing: Variant = null
 var reach_pace := 1.0
+## Which way the reach pushes what it holds (plate m/s): a turning world's
+## grabbed ground. The hand leans into it while it grips (GRIPS).
+var reach_push := Vector3.ZERO
+## 1 while the hand grips (GRIPS), easing: its lean turns about the palm.
+var _grip := 0.0
 
 static func enabled() -> bool:
 	return not "--no-hand" in OS.get_cmdline_user_args()
@@ -233,7 +248,7 @@ func _process(delta: float) -> void:
 	anchor += velocity*delta
 	# While it touches the land it rides the land's height exactly, rising
 	# with a pulled summit and sinking with pressed clay.
-	if gesture == "pinch" or gesture == "press":
+	if gesture == "pinch" or gesture == "press" or gesture in GRIPS:
 		anchor.y = goal.y
 		velocity.y = 0.0
 	yaw = lerp_angle(yaw,_facing(),1.0-exp(-TURN*delta))
@@ -243,13 +258,15 @@ func _process(delta: float) -> void:
 	# It leans into the pointer's way and rocks back through upright on a stop.
 	var free := gesture.is_empty() or gesture == "sprinkle"
 	var lean_goal := (flat*LEAN).limit_length(MAX_LEAN) if free else Vector2.ZERO
+	if gesture in GRIPS: lean_goal = (Vector2(reach_push.x,reach_push.z)*TURN_LEAN).limit_length(MAX_TURN_LEAN)
 	_lean_speed += ((lean_goal-_lean)*LEAN_SPRING-_lean_speed*LEAN_DAMP)*delta
 	_lean += _lean_speed*delta
 	var lean := Basis.IDENTITY
 	if _lean.length() > 0.0001: lean = Basis(Vector3(_lean.y,0.0,-_lean.x).normalized(),_lean.length())
 	_tilt = move_toward(_tilt,float(TILT.get(gesture,0.0)),delta*3.0)
 	var tilt := _slope(anchor,size)
-	var pivot := Vector3.UP*LEAN_PIVOT*size
+	_grip = move_toward(_grip,1.0 if gesture in GRIPS else 0.0,delta*4.0)
+	var pivot := Vector3.UP*LEAN_PIVOT*size*(1.0-_grip)
 	transform = Transform3D(lean*tilt*Basis(Vector3.UP,yaw).scaled(Vector3.ONE*size),anchor+pivot-lean*pivot)
 	position += _carried(delta)
 	_rise_clear(size,delta)
@@ -322,7 +339,7 @@ func _carried(delta: float) -> Vector3:
 func _rise_clear(size: float, delta: float) -> void:
 	var data: Variant = editor.get("data")
 	var need := 0.0
-	if data != null and not gesture in UNLIFTED:
+	if data != null and not gesture in UNLIFTED and not gesture in GRIPS:
 		for bone in _clear:
 			if gesture == "pinch" and bone in _pinching: continue
 			var p := _bone_at(bone)
