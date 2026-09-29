@@ -160,9 +160,52 @@ The user filmed the first version and liked it, but the live ponds read flat, du
 - The second groove takes about 2 m³ within 8 s of film.
 - At a low grazing camera the pond turns pale grey. It then mostly reflects the hazy sky, and the haze also lies over the land.
 - Both the planned and the live ponds in a palm-pressed basin sit in a steep pit, so the water is seen against its dark walls.
-- **Still off: thin sheets read milky white.** Water only a few centimetres deep, such as an overflow spreading on flat ground, lies wholly inside the shore-foam band (`zs_look_shore`, depth under about 3.5 cm), so the whole sheet takes foam. Planned ponds never have such sheets. The fix would be to fade the lap foam by distance to a dry cell rather than by depth, for example with a shore distance in UV2.y's spare lane.
+- **Fixed since (2026-09-29, waterfalls pass): thin sheets read milky white.** Water only a few centimetres deep, such as an overflow spreading on flat ground, lay wholly inside the shore-foam band (`zs_look_shore`, depth under about 3.5 cm), so the whole sheet took foam. Now the still surface carries each cell's distance from dry ground (a chamfer distance, 0 on the bank corners) in UV.x (UV2.y is taken: it is `cut_face`), and with `shore_distance` on (live still water only) the lap band fades out from 0.2 to 0.55 m from the bank. A thin sheet keeps a foam edge and shows water inside it.
 - **Still off: water in a deep, narrow trench reads as grey haze.** It takes the sky's grey at the planar Fresnel.
 - **Each take differs.** The palm's basin depth varies with the synthesized strokes: −1.5 m in one take and −0.55 m in the next, where the pond spilled onto the plain.
+
+## Waterfalls (2026-09-29)
+
+The user: "The waterfall is very lacking. We're almost gonna have to detect if there's a bunch of vertical flow, and then turn that part with the vertical drop-off into a waterfall. It might have to be more of a prop. It's got to have the foam coming out, the mist, and it's got to fill the actual waterfall. It looks a little dainty." And: the Electron falls "were kind of one-dimensional, but they look great. We could take something like that and improve upon it."
+
+The first version stood the stock authored fall (a fixed ring shape, plunge and spray) wherever moving water dropped steeply, whatever the flow. Now each fall is traced from the flow and drawn by it.
+
+### What the Electron fall does
+
+`~/Documents/Projects/zenscape/waterfall.js` `buildStrand` and `buildWater`:
+- A **strand** is a swept 12-sided tube flattened into a sheet (thickness at most 0.55 of the half width), traced down the rock from a notch to the pool, with rings bunched where it drops (`resample`, 85 % weight on descent). The frame is parallel-transported so it stays plumb over a cliff.
+- **Aeration** is an integrator over travel time (`tau`, distance / (1 + 3·steep)): `a = min(1, a·0.5^dt + steep·dt·1.15)`. Glass at the lip, white below. Colour is a seven-step ramp from `#2f7f9c` to `#f2f7f8`, one colour per facet, with fixed per-column whiteness (striations) and foam bands running down (`fract(tau·1.8 − t·1.6)`). Fresnel sky only on the glass.
+- **Width** necks under the lip and spreads as it breaks up (`(1 − 0.16·steep)(1 + 0.5·aer)`, change per ring 0.94–1.18), capped by the channel. **Thickness** `(0.06 + 0.45·steep)(0.5 + 0.4·flow)`. The inlet pinches to a slit, ring 0 sinks under the lip, and every ring stands off the rock by its thickness.
+- **Foam**: 4 + 3·flow flat-shaded icosahedra round the impact, bobbing; small clusters at ledges.
+- **Mist**: 40·flow + 5 per emitter point sprites (impact weight 3, aerated rings), rising (0.9 + 0.6·flow) with an ease-out, drifting with the wind, alpha 0.3.
+- It is opaque, casts and takes shadows, and has a dim emissive so it does not go black in a notch.
+
+What was taken: all of the strand (the ring shader `reference_fall.gdshader` was already its port), the foam clusters and the mist recipe. What is new: every input comes from the sim and is eased; the flow's strength tears or fills the sheet; a white break at the lip; fast streaks; froth painted into the water; glow for aerated water.
+
+### Detection
+
+`ZenScapeWaterFlow::cascades` (mirror `water_flow_reference.gd`), read by `scripts/flow_falls.gd` every `READ_SECONDS` (0.25 s) with `DETECT`:
+- A wet cell (deeper than `wet`, 1 cm) running faster than `min_speed` (0.3 m/s) is **steep** when its surface falls `slope_on` (1.0, 45°) or more per metre over `run` (0.5 m) down its own flow. It stays steep until that slope is under `slope_off` (0.7): per-cell hysteresis.
+- Steep cells group 8-connected. A group of `min_cells` (3) or more is a **fall** when its lip stands `min_drop` (0.7 m) or more over its plunge and it carries `min_flux` (0.006 m³/s).
+- **Flux** is the larger of what the pipes carry into the group from outside and what they carry out (m³/s, from the sim's own fluxes).
+- **Lip**: the depth-weighted mean of the group's cells within `lip_band` (0.3 m) of its top, and their mean flow direction. Its width is the larger of the lip cells' spread across that direction and the wet channel walked across from the lip's middle.
+- **Plunge**: the flux-weighted mean of the cells the group pours into, with the water's depth there (a pool gets ripple rings).
+- **Course**: the group's cells binned by height every `band` (0.3 m); each bin's centroid, and its half width across the course from the bin's second moments (√3·σ).
+- At most `max` (6), the largest flux first. It costs about 50 µs on the 112 × 112 grid.
+
+### Easing (`flow_falls.gd`)
+
+- Each answer is matched to the falls already known by lip or plunge within `MATCH` (1.5 m).
+- A fall stands once found for `HOLD` (0.75 s), grows in over `GROW` (1.2 s), and once missing for `GRACE` (0.5 s) fades over `FADE` (2 s) and goes. At most `MAX_SHOWN` (4).
+- Its course (resampled to `RINGS`, 14, by descent, then smoothed three passes so band centroids do not zigzag), flux, drop and pool depth ease with a time constant `SMOOTH` (0.6 s).
+- Strength is √(flux / `FULL_FLUX`), `FULL_FLUX` 0.2 m³/s (the largest spring pours 0.25), at least 0.15.
+
+### The prop
+
+- **Curtain** (`shaders/flow_fall.gdshader`, one draw, casts a shadow). The source strand's rings, rebuilt every frame from the eased course: width from the channel (never less than 0.8 of the lip's), necking then spreading; thickness `(0.06 + 0.45·steep)(0.3 + 0.7·strength)`; grown in with presence. `veil` = 1 − smoothstep(0.15, 0.85, strength·presence) tears a trickle into falling strands with gaps (discard, so it stays opaque and depth-writing); `streak_speed` 0.6·√(2g·drop), 2.5–7 m/s; a white break over the first `crest` (0.3 m) of travel; aerated water glows a little (`0.08 + 0.4·aer`).
+- **Plunge**: 7 foam blobs (4 + 3·strength shown, emissive so they do not go black in shadow), a GPU droplet burst (48, `amount_ratio` by strength), four ripple rings when the plunge's water is deeper than about 5 cm, and froth in the water itself: `fall_foam` points (plunge and lip) on the live still and moving materials, a churning core with patches drifting outward (`reference_water_body.gdshaderinc`).
+- **Mist**: the source recipe (impact and the lower half's aerated rings), up to `MIST` (48) sprites through `studies/fall_mist.gd`, with `mist_strength` and `mist_scale` added to its shader: strength `presence·(0.3 + 0.4·strength)`, scale `(0.35 + 0.3·strength)·clamp(0.6 + 0.2·drop)`, rise `(0.9 + 0.6·strength)·clamp(0.5 + 0.25·drop)`. The shader drifts it with the scene's wind (`zs_wind_direction`, `zs_wind_at`).
+- `--no-live-falls` leaves the falls out, for A/B and profiling.
 
 ## Known gaps and follow-ups
 
