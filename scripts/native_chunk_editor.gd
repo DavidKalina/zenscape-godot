@@ -2384,9 +2384,63 @@ static func _nearest_pool(pools: Array, pool: Dictionary) -> Dictionary:
 func _flow_landed(point: Vector2, volume: float, fish: Array) -> void:
 	var kind: String = flow.drop(point,volume)
 	if kind.is_empty(): return
-	if not fish.is_empty(): _flow_fish.append({"point":point,"fish":fish.duplicate(),"until":_flow_clock+FLOW_FISH_SECONDS})
+	var bed: Dictionary = flow.last_bed
+	if not fish.is_empty(): _flow_fish.append({"point":bed.get("pool",point),"fish":fish.duplicate(),"until":_flow_clock+FLOW_FISH_SECONDS})
 	_set_status("A spring rises where the water landed." if kind == "spring" else "The water runs where the land takes it.")
-	ball_settled.emit({"kind":kind,"volume":snappedf(volume,0.01),"fish":fish.size(),"center":point})
+	ball_settled.emit({"kind":kind,"volume":snappedf(volume,0.01),"fish":fish.size(),"center":point,"pool":bed.get("pool",point)})
+	if not bed.is_empty(): _wear_spring_bed(bed)
+
+## Seconds a spring's bed takes to settle into the ground (`_wear_spring_bed`).
+const SPRING_BED_SECONDS := 1.2
+
+## Shows a spring's bed (WaterFlow `spring_bed`), already in the data and its
+## undo step, wearing in with light refreshes at 30 Hz, as a pour's ground
+## moves. The water follows the ground as it goes. A stroke that starts
+## meanwhile, an undo or a new world stops it, the stroke on the finished bed.
+func _wear_spring_bed(bed: Dictionary) -> void:
+	var from: PackedFloat32Array = bed.from.duplicate()
+	var final: PackedFloat32Array = bed.heights
+	var moved := PackedInt32Array()
+	for i in range(mini(final.size(),from.size())):
+		if absf(final[i]-from[i]) > 0.0005: moved.append(i)
+	var target := data
+	# Shared with the handlers (a lambda keeps its own copy of a local).
+	var wear := {"shown":final,"gone":false}
+	var finish := func() -> void:
+		if not wear.gone and target.heights == wear.shown: target.heights = final.duplicate()
+	var restored := func(_state: Dictionary) -> void: wear.gone = true
+	target.stroke_starting.connect(finish)
+	target.state_restored.connect(restored)
+	# A recipe world's first sculpt shades its whole mesh; the yielding refresh
+	# does that on workers (as `_shape_pour`).
+	if data._recipe == null or data._mesh_sculpted:
+		data.heights = from.duplicate()
+		wear.shown = data.heights
+		var elapsed := 0.0
+		var since_tick := 1.0
+		while elapsed < SPRING_BED_SECONDS:
+			await get_tree().process_frame
+			if wear.gone or data != target or data.heights != wear.shown or forming: break
+			var step := minf(get_process_delta_time(),0.05)
+			elapsed += step
+			since_tick += step
+			if since_tick < 1.0/30.0: continue
+			since_tick = 0.0
+			if not _light_refresh_ready(true): break
+			var t := smoothstep(0.0,1.0,clampf(elapsed/SPRING_BED_SECONDS,0.0,1.0))
+			var heights := data.heights
+			for i in moved: heights[i] = lerpf(from[i],final[i],t)
+			data.heights = heights
+			wear.shown = heights
+			_refresh_light()
+	target.stroke_starting.disconnect(finish)
+	target.state_restored.disconnect(restored)
+	if wear.gone or data != target or data.heights != wear.shown or forming: return
+	data.heights = final.duplicate()
+	_stroke_rect = bed.rect
+	_stroke_ended("water")
+	_stroke_rect = Rect2()
+	await refresh(get_tree())
 
 ## Where a held ball's water comes from: called with the m³ it would take this
 ## frame, it returns what it gives (the sky's cloud, scripts/sky_cloud.gd

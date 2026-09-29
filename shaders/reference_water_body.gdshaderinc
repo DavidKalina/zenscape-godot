@@ -40,6 +40,15 @@ varying float flow_fade;
 // depth band, and by depth alone it would all read as foam.
 uniform bool shore_distance = false;
 varying float shore_run;
+// Live moving water thinner than live_thin.y (fading in from live_thin.x) is
+// a film running over the ground, not a stream: it darkens the ground as wet
+// earth does, without the sky's sheen, foam or glint, so a sheet running
+// down a steep face does not read as glass or ice. Off at (0, 0).
+uniform vec2 live_thin = vec2(0.0);
+// Live still water is drawn under the moving water everywhere wet, sheets on
+// a face too. With `live_level` it fades out where its surface tilts (a pond
+// lies level), so on a slope only the moving water's own look shows.
+uniform bool live_level = false;
 // Live waterfalls (scripts/flow_falls.gd) churn the water where they land and
 // whiten it where they tip over: x, z, radius, strength each.
 uniform vec4 fall_foam[8];
@@ -120,6 +129,7 @@ void fragment() {
 	// A moving faceted surface catches light through its actual deformed faces.
 	vec3 wave_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (wave_normal.y < 0.0) { wave_normal = -wave_normal; }
+	float level_face = live_level && !flowing ? smoothstep(0.82, 0.96, wave_normal.y) : 1.0;
 	if (!flowing && cut_face < 0.5 && lake_wind_enabled) {
 		wave_normal = zs_lake_fine_normal(wave_normal, world_position, water_depth, lake_state);
 		wave_normal = zs_water_gust_normal(wave_normal, world_position, water_depth);
@@ -199,6 +209,14 @@ void fragment() {
 	body = mix(body, vec3(0.86, 0.92, 0.93), fall_churn * (1.0 - zs_ice));
 	float absorption = 1.0 - exp(-water_depth / 0.45);
 	float alpha = mix(0.40, 1.0, max(absorption, fresnel));
+	if (flowing && live_thin.y > 0.0) {
+		// Its vertex colour takes foam with speed, and a fast film is pale.
+		float film = 1.0 - smoothstep(live_thin.x, live_thin.y, water_depth);
+		body = mix(body, vec3(0.02, 0.09, 0.08) * zs_palette_water, film);
+		fresnel *= 1.0 - film;
+		glint *= 1.0 - film;
+		alpha = mix(alpha, 0.28, film);
+	}
 	if (!flowing && source_lake_material) alpha = zs_lake_opacity(water_depth, zs_ice);
 	alpha = max(alpha, fall_churn * 0.95);
 	if (!flowing) zs_lake_algae(body, alpha, world_position, lake_local, water_depth, cut_face);
@@ -251,7 +269,7 @@ void fragment() {
 		EMISSION = mix(EMISSION, froth_light, take);
 		inversion_transmit *= 1.0 - take;
 	}
-	ALPHA = opaque_water_probe ? 1.0 : alpha * flow_fade;
+	ALPHA = opaque_water_probe ? 1.0 : alpha * flow_fade * level_face;
 }
 
 #define ZS_COMPLETE_LAKE_LIGHTING
