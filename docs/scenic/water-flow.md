@@ -10,7 +10,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 
 - **Water runs, pools and spills.** Water runs downhill, fills a thumb's groove as a channel, pools in a hollow or a palm-pressed basin, and spills over the lowest point of the rim into the next low ground.
 - **It follows the land.** Every step reads the ground under each cell again from the terrain's heights. A trench cut out of a pond drains it into the trench; a basin pressed beside a stream takes the stream; a peak raised under a pond throws the water off. There is no hook to miss: a sculpt, the clay, an undo, a mountain springing and a new world all move the water the same way.
-- **The plate's edge drains.** Water that reaches the plate's outer ring of cells falls off the plate and is gone. A basin holds its water until the water tops the lowest point of its rim; only then does it run on, and off the edge if nothing lower stops it. This keeps water from ever building up against the rim, and needs no lip.
+- **The plate's edge drains, and pours.** Water that reaches the plate's outer ring of cells falls off the plate. A basin holds its water until the water tops the lowest point of its rim; only then does it run on, and off the edge if nothing lower stops it. This keeps water from ever building up against the rim, and needs no lip. What leaves over each edge cell is counted (m³/s, smoothed), and where it leaves, a waterfall pours down the block's side into the void ("Edge falls" below). A thumb groove run out through the rim notches it into a spillway for this (`docs/scenic/modeless.md`, "The thumb at the rim").
 - **Water soaks and evaporates.** Every wet cell loses `evaporation` a second, and thin water (under `soak_depth`) loses up to `soak` more, so a front soaks in as it runs. A steady spring therefore levels off: in the probe, a 0.084 m³/s spring's water holds at about 12.6 m³ over about 50 m² after four minutes. A pond without a source lasts a long while (a 6 m³ pond, about 15 minutes); a puddle on flat ground soaks in within a minute.
 - **Springs and bursts.** A ball that lands 1.2 m above the plate's low ground (`SPRING_RISE`; the low ground is the plate's 20 % height quantile), or on ground steeper than `SPRING_SLOPE`, lets its water go and **stays as a spring**, pouring `SPRING_SHARE` of its volume each second. A ball anywhere else lets its water go once. Either way the ball's water leaves over `BURST_SECONDS` across `BURST_RADIUS`, not in one lump. The user will refine where springs come from.
 - **Water from the sky** (`--modeless`). The water ball had no door under `--modeless` (left presses on the land are clay). Now a press in the void (the sky) that drags onto the land condenses a water ball there, and it fills while held, as the water brush's press did. Letting go drops it. A click in the void is still the snap. The void's hint says so.
@@ -34,7 +34,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 | Ground | Each cell's centre is mapped once to the terrain triangle under it and its barycentric weights (`WaterFlow.map_cells`, 12 ms on a worker). Each step then reads the ground as three weighted heights, which is `NativeTerrainData.sample`'s arithmetic. Cells off the mesh are walls. |
 | Method | Virtual pipes (O'Brien & Hodgins 1995; Mei, Decaudin & Hu 2007). Each cell keeps an outflow through a pipe to each of its four neighbours. The outflow is accelerated by the drop in surface height (ground plus water), through a pipe as wide as the cell and as deep as the water it leaves, so the flow accelerates at g × slope whatever the cell size. Friction slows it (λ = `friction` + `drag`/depth, solved implicitly), so a thin sheet runs slower than a deep channel. The outflows are scaled so no cell gives more than it holds, and then each depth moves by what came in less what went out. Velocity comes from the mean flux across each cell over its mean depth, capped at `max_speed`. |
 | Timestep | Fixed, apart from the frame: 1/60 s natively and 1/30 s in the mirror, at most 4 steps a frame. A slow frame slows the water rather than piling up work. Both are well inside the pipes' stability limit for water under about 5 m deep. |
-| Edge | The ring of plate cells at the grid's border (or beside a wall) drains. What arrives there is counted as `drained` and removed. |
+| Edge | The ring of plate cells at the grid's border (or beside a wall) drains. What arrives there is counted as `drained` and removed. The ring is the outermost 0.25 m, so water leaves at the lip, not a cell or more short of it (the probe finds the channel wet to the cell beside the edge). Each edge cell also keeps what it drained over the step as a rate, eased with `edge_smooth` (0.5 s), the brink depth that rate makes (critical depth, (q²/g)^⅓ for q per metre of lip) and the velocity of the cell inward of it (its own is meaningless: it never holds water). `stats()` adds the total as `edge_flux`; `drained` still counts every litre. |
 | Losses | Per wet cell per second: `evaporation` + `soak` × max(0, 1 − depth/`soak_depth`). |
 | Where it runs | On the main thread, in `NativeChunkEditor._process` (`_flow_process`). A step costs about 40 µs natively, so a worker round trip would cost more than it saves. |
 
@@ -53,7 +53,9 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
   - Plant, prop and stream changes are copied over a few frames while the old copies keep showing (`_refresh_geometry_live`), as for the planned views. The live water's own meshes are not copied (`skip_reflection`), and neither are other reflections' views (`planar_water.gd` skips SubViewports with their own world).
   - `--no-live-reflection` turns it off, for A/B and profiling. It needs the Forward+ renderer, like the planned views.
   - One vertex stands per cell centre, and a quad is drawn when any corner is wet (over `wet`, 1.2 cm). A dry corner of a drawn quad takes its wet neighbours' mean surface, or sits 2 cm under its own ground where that is lower, so the sheet runs into the bank and the terrain draws the shoreline. Quads split along the flatter diagonal.
+- **The brink.** An edge cell water is leaving over (more than `edge_on`, 0.0005 m³/s) is drawn wet at its brink depth, with its vertex moved out to the rim, so a stream runs right to the lip instead of dipping under the ground a quarter metre short of it.
 - **Falls** (`scripts/flow_falls.gd`, `FlowFalls` on the scene). Traced from the flow and sized by its flux; see "Waterfalls" below.
+- **Edge falls** (`scripts/edge_falls.gd`, `EdgeFalls` on the scene). Where water leaves the plate; see "Edge falls" below.
 
 ## Tunables
 
@@ -70,6 +72,7 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `evaporation` | 0.0004 m/s | Lost from every wet cell. |
 | `soak`, `soak_depth` | 0.004 m/s, 0.03 m | Extra loss from thin water, fading to nothing at `soak_depth`. |
 | `max_speed` | 4 m/s | Velocity cap (for the velocity field, not the fluxes). |
+| `edge_smooth` | 0.5 s | Time constant of each edge cell's outflow rate. |
 | `SPRING_RISE`, `SPRING_SLOPE`, `LOW_SHARE` | 1.2 m, 0.45, 0.2 | A ball is a spring this far above the plate's `LOW_SHARE` height quantile, or on ground this steep. |
 | `SPRING_SHARE`, `SPRING_MIN`, `SPRING_MAX` | 0.012 /s, 0.03, 0.25 m³/s | Spring rate as a share of the ball's volume each second. |
 | `SPRING_RADIUS`, `MAX_SPRINGS` | 0.35 m, 8 | A spring's footprint; the oldest goes when a ninth comes. |
@@ -80,18 +83,21 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `MIN_AREA`, `LEVEL_STEP`, `BAND`, `SWITCH_SHARE` (`live_water_reflection.gd`) | 1.5 m², 1 cm, 0.3 m, 1.6 | When the reflection view stands, how far the pond moves before it follows, how far from its level water still reflects, and when it changes pond. |
 | `SURFACE_SECONDS`, `FALLBACK_SURFACE_SECONDS` (`water_flow_view.gd`) | 1/30 s, 0.1 s | Surface rebuild interval. |
 | Waterfalls (`flow_falls.gd`) | see "Waterfalls" | Detection, easing, look. |
+| `edge_on` (`SURFACE`, default in the kernel) | 0.0005 m³/s | An edge cell leaving more is drawn to the lip at its brink depth. |
+| Edge falls (`edge_falls.gd`) | see "Edge falls" | Spills, easing, course, look. |
 | `FLOW_READ_SECONDS`, `FLOW_REPORT_SECONDS`, `FLOW_AREA_CHANGE` (`native_chunk_editor.gd`) | 1 s, 3 s, 2 m² | Reading and reporting pools. |
 | `FLOW_FISH_SECONDS`, `FLOW_FISH_REACH` (`native_chunk_editor.gd`) | 90 s, 12 m | A ball's fish waiting for a pond. |
 
 ## Code
 
-- `native/terrain_kernels/water_flow.h`: `ZenScapeWaterFlow`, registered by `kernels.cpp`. It holds `configure`, `set_params`, `step` (resample the ground, then run the ticks with the sources), `add_water`, `drain`, `get_depth`/`set_depth`, `get_ground`, `get_velocity`, `wet_cells`, `stats`, `surface`, `pools`, `falls` (the old point search, unused by the view) and `cascades` (the waterfalls). Rebuild the library after changing it (`native/terrain_kernels/README.md`).
+- `native/terrain_kernels/water_flow.h`: `ZenScapeWaterFlow`, registered by `kernels.cpp`. It holds `configure`, `set_params`, `step` (resample the ground, then run the ticks with the sources), `add_water`, `drain`, `get_depth`/`set_depth`, `get_ground`, `get_velocity`, `wet_cells`, `stats`, `surface`, `pools`, `falls` (the old point search, unused by the view), `cascades` (the waterfalls), `edge_outflow` and `spills` (the edge falls). Rebuild the library after changing it (`native/terrain_kernels/README.md`).
 - `scripts/water_flow_reference.gd`: the GDScript mirror, with the same methods and arithmetic. Keep the two in step.
 - `scripts/water_flow.gd`: the owner. It holds the grid and cell map, the fixed clock, springs and bursts, `drop`/`drain`, and undo, save and load.
-  - It takes the mirror when the library is missing, when it lacks the newest method (`cascades`, so a stale build falls back instead of failing), or under `--gdscript-kernels`.
+  - It takes the mirror when the library is missing, when it lacks the newest method (`spills`, so a stale build falls back instead of failing), or under `--gdscript-kernels`.
   - `native` says which one runs, and the probes check it.
 - `scripts/water_flow_view.gd`: the surface meshes; it stands the falls.
 - `scripts/flow_falls.gd` and `shaders/flow_fall.gdshader`: the waterfalls.
+- `scripts/edge_falls.gd` (and the same shader's `break_from`/`break_length`): the edge falls. `scripts/native_chunk_editor.gd` `skirt_mesh_for`, `_rim_slices`, `_sliced_soup`: the earth sides refitted to a notched rim.
 - `scripts/live_water_reflection.gd`: the live ponds' planar view.
 - `shaders/reference_water_body.gdshaderinc`: `planar_band`/`planar_level` (the reflection's fade by level) and `flow_edge_fade` (moving water's fade over still water). Both are off by default, so planned water draws as before.
 - `scripts/native_chunk_editor.gd` "Live water": setup (`flow_wanted`, `_setup_flow`), `_flow_process`, pool reports, `_flow_landed`, `ball_from_sky`, `still_water_triangles`. `_ball_landed` hands over to the flow when it is on. `_ball_step` fills a ball at the water brush's own size and flow whatever brush is in hand.
@@ -217,6 +223,50 @@ What was taken: all of the strand (the ring shader `reference_fall.gdshader` was
 
 What the frames show: from the overview both falls read as white-blue ribbons with foam at their feet; close, the curtain fills the channel, whitens down the drop, and froths where it lands. Still off: the curtain is smoother and bluer than the source's (which is in full sun and many metres tall), and still reads a little like a tube close up; the lip is a narrow point rather than a broad crest; the mist is faint; ripple rings only show in standing water, and neither film's falls land in a pool.
 
+## Edge falls (2026-09-29)
+
+Branch `feature/edge-falls`. The user: "It would be awesome if you could thumb your way to the edge so the water could actually flow and actually spill over the edge of the chunk like a waterfall — a waterfall for the chunk itself, into the void."
+
+Before, water reaching the plate's edge ring silently vanished, and the thumb's groove faded to nothing over the plate's last metres, so no channel could reach the rim. Now a thumb stroke heading out through the rim notches it into a spillway (`docs/scenic/modeless.md`, "The thumb at the rim"), the sim counts what leaves over each edge cell, and each run of edge cells water leaves over stands a fall down the block's side and on into the void.
+
+### Spills
+
+`ZenScapeWaterFlow::spills` (mirror `water_flow_reference.gd`), read by `scripts/edge_falls.gd` every `READ_SECONDS` (0.25 s) with `DETECT`:
+- Along each side, edge cells leaving more than `cell_min` (0.0004 m³/s, smoothed) form runs, bridging gaps of up to `gap` (1) cell. A run carrying `min_flux` (0.003 m³/s) is a spill; at most `max` (8), the largest first.
+- Each spill has its side and outward normal, its flux, a **lip** on the rim (the flux-weighted middle of the run, at the water surface in the cells inward of it), the ground there (`floor`), a half width from the flux's spread (√3·σ + half a cell, at most half the run), the brink depth, and the speed out of the plate in the cells inward.
+- `edge_outflow()` gives the raw per-cell rates by side, for probes.
+- It costs about 15 µs.
+
+### Easing
+
+As the waterfalls': a spill matches the standing fall on the same side within `MATCH` (1.5 m) along it; it stands after `HOLD` (0.75 s), grows in over `GROW` (1.2 s), and once missing for `GRACE` (0.5 s) fades over `FADE` (2 s). Its lip, width, flux, speed and brink ease with `SMOOTH` (0.6 s). At most `MAX_SHOWN` (4). Strength is √(flux / `FULL_FLUX`), `FULL_FLUX` 0.2 m³/s, at least 0.15, so a trickle is a torn veil and a full spring a curtain (`veil`, as the waterfalls).
+
+### The prop
+
+- **Curtain.** The waterfalls' strand (`shaders/flow_fall.gdshader`) on 24 rings: 4 over the bend at the lip, 12 down the face, 8 falling free. Ring 0 sinks 0.12 m under the brink, so the water comes out of the notch.
+- **Hugging the side.** Down the face each ring stands `GAP` (0.05 m) plus its own thickness off the earth side. The side is read from the earth sides' mesh along rays, three across the fall's width every `PROFILE_STEP` (0.2 m) down (`_profile`, redone only when the sides' mesh or the lip moves). Off the lip the water also takes `CLING` (0.25) plus `CLING_FLOW` (0.35) × strength of its ballistic throw at the brink's speed, so a trickle clings and a strong spring leans out.
+- **Aeration and width.** Aeration integrates as the source's does (at its rate × (1 + strength)), so the sheet whitens down the face. Width is the spill's, necked at the lip and spreading 25 % with aeration and a further 70 % as it falls free. Thickness is (0.035 + 0.1·strength), growing in over the first rings and by 60 % falling free.
+- **Into the void.** Past the block's bottom (the lowest facet the rays hit, or `BOTTOM`, −4.8 m) it falls `TAIL` (2.6 m) plus `TAIL_FLOW` (2 m) × strength more. The shader's `break_from`/`break_length` tear it over that stretch: first into strands, then beads, then nothing. It whitens as it breaks.
+- **Droplets and mist, no plunge.** A GPU bead burst (40, `amount_ratio` by strength) falls from where it breaks up. Up to 48 mist sprites (`studies/fall_mist.gd`) trail below from the free fall, sinking rather than rising (`rise_height` −(0.8 + 1.4·strength)) and drifting with the wind. There is no plunge foam and no ripple rings: nothing is there to land on.
+- **The turn and the flip.** It is drawn in the terrain's frame, so it turns with the world. It is **hidden during the diorama flip**: `diorama_flip.gd` leaves `edge_falls.gd` out of its snapshot, and the falls hide while `flip.active()`. When the world lands they fade back in if water still leaves the plate.
+- `--no-edge-falls` leaves them out, for A/B and profiling.
+
+### The rim notch and the earth sides
+
+The earth sides' facets are about 3.5 m along the rim, but the rim's own points are about 0.64 m apart. A notch refitted with the old per-vertex shift would be bridged by one facet, which would stand over the cut or drop away from the land on either side. `skirt_mesh_for` now slices the sides first. Where the rim's change bends more than `SKIRT_BEND` (0.1 m) away from the straight line the facet over it follows, every facet is cut by planes across the side at each rim point and midway between. Every facet takes the same planes, so the sides stay closed. The slices are then shifted as before: the top by the rim's change, less toward the base. The notch therefore runs a shallow chute down the face, fading out toward the bottom. The sliced soup is cached until the planes change. A generated world's gently moved rim keeps its facets.
+
+### Measured
+
+`tools/probe_edge_fall.gd -- --modeless` (headless, `--fixed-fps 60`, dummy renderer). A 4 m peak written at (8, −3); a real thumb stroke through `hand_reach` from (9.4, −3) toward (13, −3), let go short of the rim; an 8 m³ ball dropped at the groove's head:
+- The groove is carried to the lip. It notches the rim 0.8–1.0 m deep over the four rim points from z −3.2 to −1.3. The rim either side is unchanged (0.000 m), and so is the rim beside a thumb run along the edge at x 12.6.
+- The earth sides' top meets the notched rim within 1 mm.
+- The spring's 0.096 m³/s levels off at 0.46 m³ standing. 0.088 m³/s leaves over four edge cells (z −2.9 to −2.1); soak and evaporation take the rest. `poured` = standing + `drained` + `soaked` + `removed` to the litre.
+- The channel is wet to the cell beside the edge, and the stream is drawn to x = 14.0.
+- One spill and one edge fall stand: a 4.3 m face and 8.2 m in all. The spring taken away, it fades out.
+- Cost: the step is 38–49 µs as before, the spills read about 15 µs every 0.25 s, and the edge falls' frame update about 0.05 ms steady. A fall's first frame costs about 10 ms once (its nodes, materials and the side profile), as the waterfalls' does.
+- Draws per edge fall: the curtain (plus its shadow pass), the bead burst, and one mist canvas draw of up to 48 sprites.
+
+EDGE_FALLS_FILM_PLACEHOLDER
 
 ## Known gaps and follow-ups
 

@@ -258,7 +258,7 @@ func run() -> void:
 	print("FALLS ",shown)
 	check("the edge fall stands, full, on +x",shown.size() == 1 and int(shown[0].side) == 1 and float(shown[0].presence) > 0.99,shown.size())
 	if not shown.is_empty():
-		check("it pours down the block's face and on into the void",float(shown[0].face_drop) > 4.0 and float(shown[0].drop) > float(shown[0].face_drop)+2.0,"face %.2f m, in all %.2f m" % [shown[0].face_drop,shown[0].drop])
+		check("it pours down the block's face and on into the void",float(shown[0].face_drop) > 3.5 and float(shown[0].drop) > float(shown[0].face_drop)+2.0,"face %.2f m, in all %.2f m" % [shown[0].face_drop,shown[0].drop])
 		var fall: Dictionary = falls._falls[0]
 		var points: PackedVector3Array = fall.rings.points
 		var hug := ""

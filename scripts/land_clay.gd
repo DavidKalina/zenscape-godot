@@ -190,9 +190,13 @@ var _cells := {}
 var _cells_for: NativeTerrainData
 var _cells_points := -1
 ## The outward normal of the side the thumb's last dab breached (zero when
-## it did not), the stroke's heading, and whether it has been carried to the lip.
+## it did not), the stroke's heading (over its last HEADING_RUN metres, so a
+## slow stroke's pick jitter does not turn it), and whether it has been
+## carried to the lip.
+const HEADING_RUN := 0.6
 var _breach := Vector2.ZERO
 var _heading := Vector2.ZERO
+var _heading_from := Vector2.ZERO
 var _carried := false
 
 static func enabled() -> bool:
@@ -308,6 +312,7 @@ func _begin_drag() -> void:
 	_dirt_depth = {}
 	_breach = Vector2.ZERO
 	_heading = Vector2.ZERO
+	_heading_from = _center
 	_carried = false
 	var ground: Variant = editor.data.sample(_center,_base)
 	_level = float(ground) if ground != null else 0.0
@@ -377,7 +382,9 @@ func _thumb_step(delta: float) -> void:
 	for p in _queued:
 		var from: Vector2 = _last_plate if _last_plate != null else p
 		var count := clampi(ceili(from.distance_to(p)/DAB_SPACING),1,MAX_DABS)
-		if from.distance_to(p) > 0.05: _heading = (p-from).normalized()
+		if _heading_from.distance_to(p) >= HEADING_RUN:
+			_heading = (p-_heading_from).normalized()
+			_heading_from = p
 		for k in range(1,count+1):
 			var q := from.lerp(p,float(k)/count)
 			if verb == "palm":

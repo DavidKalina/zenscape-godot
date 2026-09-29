@@ -224,15 +224,19 @@ func run() -> void:
 	await seconds(1.0)
 
 	print("EDGE peak")
-	await pinch(PEAK,-170.0)
+	await pinch(PEAK,-55.0)
 	print("EDGE peak height %.1f" % height(PEAK))
 	print("EDGE groove")
 	await stroke(GROOVE,3.0)
 	var clay: Node = scene.get("land_clay")
-	if clay != null: print("EDGE notches %d, last %s" % [clay.notches,clay.last_notch])
+	if clay != null: print("EDGE notches %d, last %s, heading %s, breach %s, last point %s" % [clay.notches,clay.last_notch,clay._heading,clay._breach,clay._last_plate])
 	var line := ""
 	for z in [-5.0,-4.0,-3.0,-2.0,-1.0,0.0]: line += " %.2f" % height(Vector2(13.99,z))
 	print("EDGE rim heights z -5..0:",line)
+	line = ""
+	for x in [9.5,10.5,11.5,12.5,13.0,13.5,13.99]: line += " %.2f" % height(Vector2(x,-3.0))
+	print("EDGE groove bed along z -3, x 9.5..14:",line)
+	if "--groove-only" in OS.get_cmdline_user_args(): quit(0)
 	await seconds(0.6)
 
 	print("EDGE spring ",await spring_at(GROOVE[0],3.5))
