@@ -56,6 +56,9 @@ var _yaw := atan2(20.0, 12.0)
 ## bearing to the camera while the land turns. Zero leaves everything where
 ## the source put it (`--classic-orbit`, the studies, the captures).
 var room_yaw := 0.0
+## A shimmer of the key light (0..1) that scripts/spin_time.gd raises as a
+## spinning world nears the speed that winds time, and lowers as it runs on.
+var shimmer := 0.0
 ## The rim light's orientation as set up, before the room's turn.
 var _rim_basis := Basis.IDENTITY
 var _rim_turned := 0.0
@@ -150,6 +153,9 @@ func update_rig() -> void:
 	_sun.position = key_direction * Vector3(20, 14, 12).length()
 	_sun.look_at(Vector3.ZERO)
 	_sun.light_energy = energy * overcast / PI * look.settings.sun_energy
+	if shimmer > 0.0:
+		var t := Time.get_ticks_msec() * 0.001
+		_sun.light_energy *= 1.0 + shimmer * 0.16 * (0.5 * sin(t * 37.0) + 0.5 * sin(t * 23.0 + 1.3))
 	_sun.light_color = _color(tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4)).linear_to_srgb()
 	var ambient := smoothstep(-0.12, 0.10, e)
 	var hemi_sky := _rgb("26324e").lerp(_rgb("8fb3d9"), ambient).lerp(_rgb("7d92bd"), warmth * 0.5)

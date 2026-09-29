@@ -121,6 +121,10 @@ func setup(owner_scene: Node3D) -> void:
 	_build_world()
 	_build_photo()
 	_build_bottom()
+	# --modeless: no tool rail. The hand picks its verb by where it presses.
+	if preload("res://scripts/modeless_input.gd").enabled():
+		frame.visible = false
+		bar.visible = false
 	mood = MoodVeil.new()
 	root.add_child(mood)
 	mood.setup(scene,self)

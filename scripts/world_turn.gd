@@ -71,11 +71,29 @@ const CATCH_HAND := 0.4
 const NEAR := 0.1
 ## Most radians the grab may turn in one frame.
 const MAX_STEP := 0.4
+## Under `--modeless` the world's speed that time reads (`own_rate`) is smoothed
+## over this many seconds, and signed, so a shake's back and forth cancels
+## rather than winding the clock.
+const OWN_SMOOTH := 0.3
 
 var rig: Node
 var scene: Node3D
 var camera: Camera3D
 var enabled := "--classic-orbit" not in OS.get_cmdline_user_args()
+## `--modeless` (docs/scenic/modeless.md): the turn is the rim's alone. Only a
+## grab held from outside (`hold_begin`) turns the world, and a spin or catch
+## that follows; a right drag is the camera and moves the view by pixels, not
+## the room. The room follows only the turn's own yaw, and `own_rate` is the
+## turn's speed, which scripts/spin_time.gd reads as time.
+var modeless := preload("res://scripts/modeless_input.gd").enabled()
+## The rim (or another outside hand) holds the world: its grab point (global)
+## and whether it holds now.
+var external := false
+var external_grab: Variant = null
+## The yaw the turn itself made this frame, and its speed (rad/s, signed and
+## smoothed over OWN_SMOOTH): a grab, a spin, a catch. Never a camera move.
+var own_rate := 0.0
+var _own := 0.0
 ## True from the press that starts an orbiting drag to its release.
 var grabbing := false
 ## The spin's speed (rad/s of yaw) after a flick, 0 when still.
@@ -117,7 +135,27 @@ func setup(owner_rig: Node) -> void:
 
 ## Takes the drag's side-to-side from the rig's orbit: the grab turns instead.
 func takes_orbit() -> bool:
-	return enabled and (scene._orbiting or grabbing)
+	return enabled and (grabbing if modeless else (scene._orbiting or grabbing))
+
+## Under `--modeless`, the rim takes hold of the world at `press` (screen), on
+## the global point `point` (the rim's edge under the pointer), and turns it
+## from there. The press itself is the hand's, so this is told the pointer.
+func hold_begin(press: Vector2, point: Variant) -> void:
+	if not enabled or not modeless: return
+	external = true
+	external_grab = point
+	pointer = press
+	_press_at = press
+
+## The held rim's pointer moved.
+func hold_move(at: Vector2) -> void:
+	pointer = at
+
+## The rim let go. With `flick` false the world stays where it is (a shake
+## took the rim); otherwise it spins on if it was turning fast.
+func hold_end(flick := true) -> void:
+	external = false
+	if not flick: rate = 0.0
 
 ## Something else moves the camera (a swipe, keys, a glide, a pose set from
 ## outside): the spin and the catch stop where they are.
@@ -132,9 +170,12 @@ func stop() -> void:
 func rest() -> void:
 	if not enabled: return
 	grabbing = false
+	external = false
 	grab = null
 	rate = 0.0
 	turning = 0.0
+	own_rate = 0.0
+	_own = 0.0
 	stop()
 	_hand_on = false
 	_hand_hold = 0.0
@@ -145,6 +186,11 @@ func rest() -> void:
 ## follows, so it keeps its bearing to the camera and the diorama is what
 ## turns.
 func turn_room(by: float) -> void:
+	# Modeless: the room follows the turn's own yaw only, so looking round with
+	# the camera moves the view and leaves the sun where it is in the world.
+	if modeless:
+		by = _own
+		_own = 0.0
 	if not enabled or by == 0.0: return
 	room_yaw += by
 	var sky: Object = scene.get("_celestial")
@@ -179,7 +225,7 @@ func advance(delta: float) -> void:
 	if not enabled: return
 	delta = maxf(delta,0.0001)
 	var before: float = rig._view.x
-	var orbiting: bool = scene._orbiting
+	var orbiting: bool = external if modeless else scene._orbiting
 	if orbiting and not grabbing: _begin()
 	elif grabbing and not orbiting: _release()
 	_step_settle(delta)
@@ -193,6 +239,8 @@ func advance(delta: float) -> void:
 		if spin != 0.0 or settle != _applied: _set_yaw(base+spin*delta+settle)
 	_applied = settle
 	turning = lerpf(turning,(float(rig._view.x)-before)/delta,1.0-exp(-delta/RATE_SMOOTH))
+	_own = float(rig._view.x)-before
+	own_rate = lerpf(own_rate,_own/delta,1.0-exp(-delta/OWN_SMOOTH))
 	_last_pointer = pointer
 	_hand(delta)
 
@@ -212,6 +260,10 @@ func _begin() -> void:
 	var hit: Variant = rig.inspector.ground_hit(_press_at)
 	on_land = hit != null
 	grab = hit if hit != null else _on_level(rig._pivot.y,_press_at)
+	# The rim's grab is the edge itself, and the rim shows its own hand.
+	if external and external_grab != null:
+		grab = external_grab
+		on_land = false
 	if grab == null: _lost = true
 	_last_pointer = _press_at
 	# Pressing into a spin is a catch, whatever the press became.

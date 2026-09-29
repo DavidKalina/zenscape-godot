@@ -433,6 +433,8 @@ func preview_radius() -> float:
 
 ## The circle only reads truthfully where a footprint exists.
 func preview_wanted() -> bool:
+	# --modeless: no brush is in hand, so no brush ring on the land.
+	if preload("res://scripts/modeless_input.gd").enabled(): return false
 	if mode in ["assets","select","pond"]:
 		return false
 	# Pollen shows its own footprint where the cloud would settle.
@@ -513,6 +515,10 @@ func set_active(enabled: bool) -> void:
 func handle_input(event: InputEvent) -> bool:
 	if forming: return false
 	if not active:
+		return false
+	# --modeless: a left press is never a brush stroke; the land's press is the
+	# hand's (scripts/hand_reach.gd `land_pressed`).
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and preload("res://scripts/modeless_input.gd").enabled():
 		return false
 	if event is InputEventKey and event.pressed and not event.echo and mode == "select":
 		if event.keycode in [KEY_DELETE,KEY_BACKSPACE]:

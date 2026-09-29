@@ -27,6 +27,15 @@ extends Node
 ## same. A hint line names what the pointer is near, until it has been used a
 ## couple of times.
 ##
+## **Modeless** (`--modeless`, docs/scenic/modeless.md). The sun no longer
+## grabs and the rim no longer dials the season. A rim press is read from its
+## first few pixels: sideways turns the world (scripts/world_turn.gd, held by
+## the rim's edge; a fast spin winds time, scripts/spin_time.gd), vertical is
+## the flip (only the `flip_*` signals, for the flip slice), and a shake takes
+## over from either. A left press on the land is left free: it emits the
+## `land_*` signals for the spring slice and no brush or turn sees it. The hand
+## shows the zone on hover: the rim grip over the rim, a ready pinch over land.
+##
 ## The rim's grab is shared with the snow-globe shake (another slice): it
 ## listens to `rim_dragged`, and when a shake fires it calls
 ## `revert_season_to_grab` so the dial goes back to where it was taken.
@@ -36,6 +45,18 @@ const Living = preload("res://scripts/living_weather.gd")
 signal rim_grabbed(screen_pos: Vector2)
 signal rim_dragged(screen_delta: Vector2, delta: float)
 signal rim_released()
+## Modeless only. A rim drag decided to be the flip (mostly vertical), how far
+## over the lip it has been taken (0..1), and its release with the progress at
+## the moment. A shake that takes the rim over ends it with `flip_released(0.0)`.
+signal flip_began(screen_pos: Vector2)
+signal flip_dragged(progress: float)
+signal flip_released(progress: float)
+## Modeless only. A left press on the land, its drag (pointer, and the
+## motion since the last event) and its release. Nothing else sees these
+## presses; a prop or a tree under the pointer keeps its own grab instead.
+signal land_pressed(screen_pos: Vector2)
+signal land_dragged(screen_pos: Vector2, relative: Vector2)
+signal land_released(screen_pos: Vector2)
 ## The hand took hold of "sun" or "rim", or let go ("").
 signal holding_changed(what: String)
 
@@ -78,6 +99,7 @@ const SETTLED := 0.002
 const SUN_HINT := "Drag to grab the sun  ·  let go and it drifts"
 const MOON_HINT := "Drag to grab the moon  ·  let go and it drifts"
 const RIM_HINT := "Drag to turn the rim for the season"
+const RIM_HINT_MODELESS := "Push the rim to turn  ·  spin it to wind time  ·  shake for weather"
 const HINT_UNTIL := 2
 
 var scene: Node3D
@@ -115,10 +137,25 @@ var _land_cache := {}
 var _land_frame := -1
 ## A shake undid this hold's turn: the let-go leaves the season as it was.
 var _reverted := false
+## `--modeless`: what the pointer is over ("rim", "land" or ""), the plate
+## point it names for the hand, what a rim hold has made of its drag ("" while
+## undecided, "turn", "flip" or "shake"), where the press was, the rim's global
+## edge point the turn holds, and the gesture the hover set on the hand.
+var modeless := Modeless.enabled()
+var hover_zone := ""
+var rim_intent := ""
+var _hover_point: Variant = null
+var _press_pos := Vector2.ZERO
+var _grab_global: Variant = null
+## The rim point the press took (plate coordinates); the hand's point moves
+## with the pointer, the turn's grab does not.
+var _press_edge := Vector3.ZERO
+var _hover_shown := ""
 ## When the rim last moved (µs), for the shake's speeds.
 var _last_drag := 0
 ## The hand's gestures this reach sets, and so may clear.
 const GESTURES := ["sun","rim"]
+const Modeless = preload("res://scripts/modeless_input.gd")
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -153,7 +190,7 @@ func available() -> bool:
 func reach_at(point: Vector2) -> String:
 	var editor := _editor()
 	if not editor.pointer_in_world(point): return ""
-	if not _body_at(point).is_empty(): return "sun"
+	if not modeless and not _body_at(point).is_empty(): return "sun"
 	if _rim_at(point) != null: return "rim"
 	return ""
 
@@ -327,11 +364,12 @@ func handle(event: InputEvent) -> bool:
 		if button.pressed:
 			if not holding.is_empty() or not available() or button.ctrl_pressed or button.double_click: return false
 			var what := reach_at(button.position)
-			if what.is_empty(): return false
+			if what.is_empty():
+				return modeless and _land_press(button.position)
 			grab(what,button.position)
 			return true
 		if holding.is_empty(): return false
-		release()
+		release(button.position)
 		return true
 	if event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
@@ -343,6 +381,8 @@ func handle(event: InputEvent) -> bool:
 ## Take hold of `what` ("sun" or "rim") with the pointer at `point`.
 func grab(what: String, point: Vector2) -> void:
 	holding = what
+	_press_pos = point
+	rim_intent = ""
 	drifting = false
 	settling = false
 	_reverted = false
@@ -360,13 +400,16 @@ func grab(what: String, point: Vector2) -> void:
 		_last_phase = float(scene._celestial.phase)
 		phase_speed = 0.0
 	else:
-		dial = dial_for_season(clock.season)
-		grab_dial = dial
-		grab_season_override = clock.season_override
-		grab_season_pin = str(mood.pins.get("season","")) if mood != null else ""
+		if not modeless:
+			dial = dial_for_season(clock.season)
+			grab_dial = dial
+			grab_season_override = clock.season_override
+			grab_season_pin = str(mood.pins.get("season","")) if mood != null else ""
 		reach_point = rim_point(point)
+		_press_edge = reach_point
 		_rim_angle = _angle_round(point)
 		_last_drag = Time.get_ticks_usec()
+		if modeless: _catch_spin(point)
 		rim_grabbed.emit(point)
 	_set_cursor(Input.CURSOR_DRAG)
 	_show_hint("")
@@ -376,11 +419,13 @@ func drag(point: Vector2, relative: Vector2) -> void:
 	if holding == "sun":
 		var phase := arc_phase(point+_offset,float(scene._celestial.phase))
 		scene._celestial.set_phase(phase)
+	elif holding == "land":
+		land_dragged.emit(point,relative)
 	elif holding == "rim":
 		var angle: Variant = _angle_round(point)
 		# Once a shake has taken the rim (scripts/snow_globe.gd) the dial stays
 		# where it was taken.
-		if angle != null and _rim_angle != null and not _reverted:
+		if angle != null and _rim_angle != null and not _reverted and not modeless:
 			turn_dial(angle_difference(float(_rim_angle),float(angle))/TAU*QUARTERS_PER_TURN)
 		_rim_angle = angle
 		reach_point = rim_point(point)
@@ -389,17 +434,21 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		var now := Time.get_ticks_usec()
 		rim_dragged.emit(relative,clampf((now-_last_drag)/1000000.0,0.001,0.1))
 		_last_drag = now
+		if modeless: _rim_motion(point)
 
 ## Let go of what the hand holds.
-func release() -> void:
+func release(point := Vector2.INF) -> void:
 	var what := holding
 	holding = ""
 	_set_cursor(Input.CURSOR_ARROW)
-	if what == "sun":
+	if what == "land":
+		land_released.emit(point if point != Vector2.INF else _press_pos)
+	elif what == "sun":
 		drifting = true
 		phase_speed = clampf(phase_speed,-DRIFT_MAX,DRIFT_MAX)
 	elif what == "rim":
-		settling = not _reverted
+		settling = not _reverted and not modeless
+		if modeless: _rim_release(point)
 		rim_released.emit()
 	holding_changed.emit("")
 
@@ -498,6 +547,10 @@ func _apply_dial() -> void:
 ## the rim was taken, and a settle in progress stops. After the let-go it
 ## puts the season pin back as it was too.
 func revert_season_to_grab() -> void:
+	# Modeless there is no dial to undo: a shake just takes the rim from the turn or the flip.
+	if modeless:
+		_shake_takes_rim()
+		return
 	settling = false
 	_reverted = not holding.is_empty()
 	dial = grab_dial
@@ -535,7 +588,8 @@ func _process(delta: float) -> void:
 			_rest_season()
 		else:
 			_apply_dial()
-	_drive_hand()
+	if modeless: _drive_hand_modeless()
+	else: _drive_hand()
 	if holding.is_empty() and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		_hover(scene.get_viewport().get_mouse_position())
 
@@ -590,10 +644,19 @@ func _hover(point: Vector2) -> void:
 	var what := reach_at(point) if available() else ""
 	if what == "sun" and _body_at(point) == "moon": what = "moon"
 	reaching = "sun" if what == "moon" else what
+	if modeless:
+		hover_zone = what
+		_hover_point = null
+		if what == "rim": _hover_point = rim_point(point)
+		elif available() and _editor().pointer_in_world(point):
+			var land: Variant = _land(point)
+			if land != null:
+				hover_zone = "land"
+				_hover_point = land
 	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() else Input.CURSOR_ARROW)
 	var text := ""
 	if not what.is_empty() and int(uses.get(reaching,0)) < HINT_UNTIL:
-		text = {"sun":SUN_HINT,"moon":MOON_HINT,"rim":RIM_HINT}[what]
+		text = {"sun":SUN_HINT,"moon":MOON_HINT,"rim":RIM_HINT_MODELESS if modeless else RIM_HINT}[what]
 	_show_hint(text)
 
 ## The hint line: the Lantern shell's (`reach_hint`); the glass palette's
@@ -612,3 +675,131 @@ func _set_cursor(shape: Input.CursorShape) -> void:
 	else:
 		_cursor_owned = true
 	Input.set_default_cursor_shape(shape)
+
+# --- Modeless: the rim's verbs and the land's seam ---------------------------------
+
+## The turn (scripts/world_turn.gd), or null.
+func _turn() -> Node:
+	var rig: Node = scene.get("camera_rig")
+	return rig.get("turn") if rig != null else null
+
+## A press into a spin catches it, as any press on the world does.
+func _catch_spin(point: Vector2) -> void:
+	var turn := _turn()
+	if turn != null and turn.enabled and turn.spinning(): turn.catch_at(point)
+
+## A left press that reached no sun or rim. Under `--modeless` a press on the
+## land is the spring's: emitted, and taken so no brush or turn sees it. A
+## prop, a tree or a resident under the pointer keeps its own grab, and the
+## sky and the far ground are nobody's.
+func _land_press(point: Vector2) -> bool:
+	if _land(point) == null or _prop_at(point): return false
+	holding = "land"
+	_press_pos = point
+	_show_hint("")
+	_catch_spin(point)
+	land_pressed.emit(point)
+	return true
+
+## True when a grabbable prop or tree, or a resident, is under the pointer.
+func _prop_at(point: Vector2) -> bool:
+	var play: Variant = scene.get("world_play")
+	if play != null and play.owner_scene != null:
+		if play.loose_props.pick(point) != null: return true
+		var id: int = play.pick_object(point)
+		if id > 0:
+			var asset: Variant = play._records.get(id,{}).get("asset")
+			if asset in play.TREES or asset in play.PROPS: return true
+	var resident: Variant = scene.get("_resident_play")
+	return resident != null and resident.scene != null and bool(resident.hovered)
+
+## A drag on the held rim, once the snow globe has been fed it. Undecided, the
+## first AXIS_PIXELS of travel choose the turn or the flip.
+func _rim_motion(point: Vector2) -> void:
+	var globe: Node = scene.get("snow_globe")
+	if globe != null and globe.decided:
+		_shake_takes_rim()
+		return
+	var travel := point-_press_pos
+	if rim_intent.is_empty():
+		if travel.length() < Modeless.AXIS_PIXELS: return
+		if absf(travel.y) > absf(travel.x)*Modeless.VERTICAL_BIAS:
+			rim_intent = "flip"
+			flip_began.emit(_press_pos)
+		else:
+			rim_intent = "turn"
+			var turn := _turn()
+			var terrain: Node3D = _editor().terrain
+			_grab_global = terrain.to_global(_press_edge)
+			if turn != null: turn.hold_begin(_press_pos,_grab_global)
+	if rim_intent == "turn":
+		var turn := _turn()
+		if turn != null: turn.hold_move(point)
+	elif rim_intent == "flip":
+		flip_dragged.emit(_flip_progress(point))
+
+## How far over the lip an upward drag has taken the diorama, 0..1.
+func _flip_progress(point: Vector2) -> float:
+	var height := maxf(scene.get_viewport().get_visible_rect().size.y,1.0)
+	return clampf((_press_pos.y-point.y)/(Modeless.FLIP_REACH*height),0.0,1.0)
+
+## A shake was decided: it takes the rim. The turn stops where it is (no spin
+## carried on) and a flip in the making is abandoned as never begun.
+func _shake_takes_rim() -> void:
+	if holding != "rim" or rim_intent == "shake": return
+	var was := rim_intent
+	rim_intent = "shake"
+	if was == "turn":
+		var turn := _turn()
+		if turn != null: turn.hold_end(false)
+	elif was == "flip":
+		flip_released.emit(0.0)
+
+## Letting go of the rim: the turn spins on if it was fast, the flip is told
+## how far over it had gone.
+func _rim_release(point: Vector2) -> void:
+	if rim_intent == "turn":
+		var turn := _turn()
+		if turn != null: turn.hold_end(true)
+	elif rim_intent == "flip":
+		flip_released.emit(_flip_progress(point) if point != Vector2.INF else 0.0)
+	rim_intent = ""
+
+## The hand for the modeless zones: over the rim it takes the rim grip, over
+## the land it readies a pinch; held on the rim it grips it (a decided shake
+## has the hand, as ever). The land's hold is the spring slice's to show.
+func _drive_hand_modeless() -> void:
+	var hand: Node3D = scene.get("god_hand")
+	if holding.is_empty(): reach_point = null
+	if hand == null: return
+	var globe: Node = scene.get("snow_globe")
+	if holding == "rim" and globe != null and globe.decided: return
+	if holding == "land":
+		_hover_shown = ""
+		return
+	if holding == "rim":
+		hand.reach_gesture = "rim"
+		hand.reach_point = reach_point
+		_hover_shown = "rim"
+		return
+	var want := ""
+	var target: Variant = null
+	var camera_busy: bool = scene.get("_orbiting") == true or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if not camera_busy and available():
+		if hover_zone == "rim":
+			want = "rim"
+			target = _hover_point
+		elif hover_zone == "land":
+			want = "pinch"
+			target = _hover_point
+	if not want.is_empty():
+		# Only over a hand that is free, or one of our own hover poses.
+		if hand.reach_gesture.is_empty() or hand.reach_gesture == _hover_shown:
+			hand.reach_gesture = want
+			hand.reach_point = target
+			_hover_shown = want
+	elif not _hover_shown.is_empty():
+		if hand.reach_gesture == _hover_shown:
+			hand.reach_gesture = ""
+			hand.reach_point = null
+		_hover_shown = ""
