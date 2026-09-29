@@ -111,6 +111,20 @@ varying vec3 world_position;
 // Height above the object's own origin: props and plants sit on theirs, so
 // low parts are nearer the ground and see less of the sky.
 varying float contact_height;
+// The plate's earth sides (scripts/scene_look.gd source_roles): a slice cut
+// through the ground, painted in soft strata that follow the rim down from
+// the land's edge instead of the source's near-black vertex colours. UV.x is
+// each vertex's rim top in the mesh's own space, written by
+// NativeChunkEditor.skirt_mesh_for and ChunkAtlasView.lift_skirt, with UV.y
+// 1 when written; an unwritten mesh uses `earth_sides_top`. Local space, so
+// the flip's copy of the sides paints the same.
+uniform bool earth_sides = false;
+uniform float earth_sides_top = 2.6;
+uniform float earth_sides_base = -2.8;
+varying float side_depth;
+varying float side_rise;
+varying float side_above;
+varying float side_along;
 // The precipitation height map: 128 texels over the 32 m plate, alpha the
 // water surface height (-1000 where dry). Read for wet banks only.
 global uniform sampler2D zs_water_map;
@@ -131,8 +145,33 @@ float zs_atlas_hold_at(vec2 p) {
 	return 1.0 - smoothstep(0.0, atlas_hold_width, d);
 }
 
+// The earth sides' paint at `depth` metres under the rim: dark topsoil, loam,
+// an ochre clay seam, darker loam, a pale sand seam, then stone. The seams
+// wander gently along the side (`along`); a rim raised high into a mountain
+// (`raised` m over the plate) turns to stone below its topsoil. Linear.
+vec3 zs_earth_strata(float depth, float along, float raised) {
+	float wander = 0.14 * sin(along * 0.43 + 1.3) + 0.08 * sin(along * 1.17 + 4.1);
+	float d = depth + wander * smoothstep(0.2, 0.8, depth);
+	vec3 c = vec3(0.070, 0.045, 0.025);
+	c = mix(c, vec3(0.165, 0.102, 0.054), smoothstep(0.22, 0.34, d));
+	c = mix(c, vec3(0.245, 0.142, 0.062), smoothstep(0.95, 1.07, d));
+	c = mix(c, vec3(0.140, 0.094, 0.058), smoothstep(1.32, 1.46, d));
+	c = mix(c, vec3(0.285, 0.220, 0.135), smoothstep(2.15, 2.25, d));
+	c = mix(c, vec3(0.150, 0.128, 0.106), smoothstep(2.45, 2.60, d));
+	c = mix(c, vec3(0.105, 0.092, 0.082), smoothstep(3.3, 3.8, d));
+	vec3 stone = vec3(0.20, 0.185, 0.165) * (0.9 + 0.1 * sin(d * 2.3 + along * 0.2));
+	return mix(c, stone, smoothstep(1.0, 3.0, raised) * smoothstep(0.25, 0.45, depth));
+}
+
 void vertex() {
 	leaf_local = VERTEX;
+	if (earth_sides) {
+		float rim_top = UV.y > 0.5 ? UV.x : earth_sides_top;
+		side_depth = rim_top - VERTEX.y;
+		side_rise = rim_top - earth_sides_top;
+		side_above = VERTEX.y - earth_sides_base;
+		side_along = VERTEX.x + VERTEX.z;
+	}
 	plant_root = MODEL_MATRIX[3].xz;
 	if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
 	foliage_gust = 0.0;
@@ -292,6 +331,16 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
+	// The earth sides: strata, each facet a shade apart like the ground's,
+	// dimming toward the base where the void's mist takes over (EMISSION).
+	float side_mist = 0.0;
+	if (earth_sides) {
+		vec3 facet = floor(abs(face_normal) * 40.0);
+		float jitter = fract(sin(dot(facet, vec3(12.9898, 78.233, 37.719))) * 43758.5453) - 0.5;
+		side_mist = 1.0 - smoothstep(0.0, 2.8, side_above);
+		tint = scene_palette(base_color.rgb * zs_earth_strata(side_depth, side_along, side_rise)
+			* (1.0 + 0.14 * jitter) * mix(1.0, 0.5, side_mist));
+	}
 	if (grass_blades) {
 		// The family's grass leaned to living green, dark at the root and
 		// sunlit at the tip like the dense meadow, with straw patches as
@@ -385,8 +434,12 @@ void fragment() {
 	// so the hemisphere term is where grounding has to happen.
 	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
 	if (grass_blades) contact = mix(1.0, contact, grass_contact);
+	// The sides hang below their origin; the contact term would halve them.
+	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
+	// Toward the base the sides take on the sky's cool mist, never black.
+	if (earth_sides) EMISSION += zs_hemi_sky * zs_hemi_energy / PI * 0.07 * side_mist;
 	if (zs_look_rim > 0.0) {
 		// Sky sheen on silhouettes, stronger against the sun; ground-facing
 		// and flat-lying faces stay out so meadows do not glaze over.

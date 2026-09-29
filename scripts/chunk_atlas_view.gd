@@ -103,15 +103,41 @@ static func lift_skirt(source: ArrayMesh, skirt_offset: Vector3, terrain_data: N
 	var low := source.get_aabb().position.y
 	var high := source.get_aabb().end.y
 	var half: float = preload("res://scripts/chunk_atlas.gd").HALF
+	var tops := PackedVector2Array()
+	tops.resize(vertices.size())
 	for i in range(vertices.size()):
 		var local := vertices[i]+skirt_offset
 		var point := Vector2(local.x,local.z).clamp(Vector2(-half,-half),Vector2(half,half))
 		vertices[i].y += terrain_data.delta_at(point)*clampf((vertices[i].y-low)/(high-low),0.0,1.0)
+		tops[i] = Vector2(high+terrain_data.delta_at(rim_point(point,half)),1.0)
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3): normals[i+j] = normal
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = tops
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	mesh.surface_set_material(0,source.surface_get_material(0))
+	return mesh
+
+## The point on the rim (`half` out) nearest `point`: the underside's
+## vertices take their rim top from the edge they hang under, not from the
+## land over them.
+static func rim_point(point: Vector2, half: float) -> Vector2:
+	if absf(point.x) >= absf(point.y): return Vector2(signf(point.x)*half if point.x != 0.0 else half,point.y)
+	return Vector2(point.x,signf(point.y)*half)
+
+## The earth sides as authored, each vertex's UV carrying its rim top (the
+## mesh's top, with y 1 to say it is written), which the sides' strata paint
+## down from (shaders/reference_surface.gdshader earth_sides).
+static func with_rim_tops(source: ArrayMesh) -> ArrayMesh:
+	var arrays := source.surface_get_arrays(0)
+	var count: int = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	var tops := PackedVector2Array()
+	tops.resize(count)
+	tops.fill(Vector2(source.get_aabb().end.y,1.0))
+	arrays[Mesh.ARRAY_TEX_UV] = tops
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,source.surface_get_material(0))

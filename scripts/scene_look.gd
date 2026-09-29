@@ -147,6 +147,8 @@ static func source_roles(geometry: Node3D) -> void:
 		if material != null and material.shader.resource_path.ends_with("reference_surface.gdshader"):
 			material.set_shader_parameter("palette_role",roles[name])
 			material.set_shader_parameter("leaf_season",leaf_season(SOURCE_SEASON_KEYS.get(name,"")))
+			# The plate's sides paint as a slice of earth (shaders/reference_surface.gdshader).
+			if name == "skirt": material.set_shader_parameter("earth_sides",true)
 
 ## Source nodes named by the part key whose seasons they share.
 const SOURCE_SEASON_KEYS := {"mesh-8":"trunk","mesh-9":"canopy","mesh-10":"grass","broadleaf-canopies":"broadleaf:broadleaf-canopies","mesh-13":"shrub:mesh-13","flower-stems":"stem"}

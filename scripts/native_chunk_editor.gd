@@ -300,6 +300,7 @@ func setup(owner_scene: Node3D) -> void:
 	_original_bird_ground = scene._bird_flight.ground
 	_original_precip_top = scene._precipitation._materials[0].get_shader_parameter("top")
 	_skirt = scene.get_node("Reference/skirt")
+	_skirt.mesh = AtlasView.with_rim_tops(_skirt.mesh)
 	_skirt_mesh = _skirt.mesh
 	_landmark_pose = scene._growth._landmark.transform
 	for boulder: Dictionary in scene._growth._boulders:
@@ -1400,6 +1401,15 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
 	arrays[Mesh.ARRAY_NORMAL] = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array).duplicate()
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	# Each vertex's rim height above it, for the strata (the earth-sides
+	# switch in shaders/reference_surface.gdshader).
+	var tops := PackedVector2Array()
+	tops.resize(vertices.size())
+	var high := _skirt_mesh.get_aabb().end.y
+	for i in range(vertices.size()):
+		var local := placing*vertices[i]
+		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
+		tops[i] = Vector2(high+source.delta_at(AtlasView.rim_point(point,14.0)),1.0)
 	# Each vertex's weight and the face it reads stand while the slicing does;
 	# a stroke only moves heights, read here as `delta_at` reads them.
 	var reads := _skirt_reads_for(source,key,vertices)
@@ -1423,6 +1433,7 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 			normals[i+j] = normal
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = tops
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_skirt_mesh.surface_get_material(0))
