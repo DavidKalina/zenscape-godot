@@ -110,6 +110,8 @@ var _stroke_feedback: Node
 var world_rumble: Node
 ## The hand of light that works the creation tools (scripts/god_hand.gd).
 var god_hand: Node3D
+## The land spring: pull the land and let go to raise or sink it (--modeless).
+var land_spring: Node
 ## Shaking the diorama by its rim like a snow globe (scripts/snow_globe.gd).
 var snow_globe: Node
 ## What the hand reaches and holds: the sun, the rim (scripts/hand_reach.gd).
@@ -228,6 +230,11 @@ func _ready() -> void:
 		god_hand = preload("res://scripts/god_hand.gd").new()
 		_chunk_editor.terrain.add_child(god_hand)
 		god_hand.setup(self)
+	# The land spring (docs/scenic/modeless-spring.md), only under --modeless.
+	if preload("res://scripts/land_spring.gd").enabled():
+		land_spring = preload("res://scripts/land_spring.gd").new()
+		add_child(land_spring)
+		land_spring.setup(self)
 	snow_globe = preload("res://scripts/snow_globe.gd").new()
 	snow_globe.setup(self)
 	add_child(snow_globe)
