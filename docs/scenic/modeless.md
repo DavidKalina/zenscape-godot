@@ -13,6 +13,54 @@ The control scheme agreed on 2026-09-28 (see "Verbs on the diorama" in `docs/sce
 
 Each slice adds its own section below. The shared flag and numbers are in `scripts/modeless_input.gd`.
 
+## The agreed scheme (second pass, 2026-09-28)
+
+This supersedes the table above, which is what the first slices built. Settled in a design session with the user; the build is in progress in the slices listed at the end.
+
+**The rule.** The left button is the hand; the right button is the eye (camera: drag to tilt and look round, scroll or pinch to zoom). Where you press decides what the hand touches; the shape and timing of the drag decides the verb. There are no tool modes. Shift means "fine fingers" everywhere: the careful, smaller version of whatever you are doing. Everything should be found by playing, not taught: the hand's hover pose shows what a press will do, a hint line names it the first few times, and Cmd+Z is the safety net. Designed for a mouse; the user tests on a trackpad, so every verb must also work there.
+
+**The edge (the lip and the block's walls, all the way down): whole-world verbs, big and dramatic.**
+
+| Do | Result |
+|---|---|
+| Push sideways | the world turns; a fast spin winds time (days, then seasons) |
+| Shift + push sideways | turns without winding time, however fast |
+| Shake | the weather changes (snow globe) |
+| Pull down, release | the whole block dips as a unit while you pull; on release a random range springs up. The pull sets height and jaggedness: a gentle pull gives rolling hills, a hard one tall jagged peaks. Placement, direction and peak count are random, leaning away from the rim and from what is already tall. Springs stack, up to a height ceiling that suits a 28 m plate. A quick starter to shape from, not a precise tool |
+| Pull up, release slowly | the block lifts as a unit; on release a random basin sinks, sized by the pull (lakes and oceans later) |
+| Pull up, release fast | a physics toss: the block tilts over its far edge by the flick's speed and either falls back and wobbles or goes over (the flip, a new world). Tilts add up while it is still up, so you can pump it over like a swing; one hard flick also does it |
+
+Up is decided at release, not at the start: while you pull up the block's edge lifts and tilts after the hand, and the hand's upward speed when you let go makes it a toss or a basin.
+
+**The land: local shaping, direct like clay (no springs).**
+
+| Do | Result |
+|---|---|
+| Tap | poke: a creature or a tree reacts |
+| Drag | the thumb: a slow, deliberate stroke digs a soft groove (future streams follow grooves), a fast back-and-forth rub smooths |
+| Press, hold still a beat, then drag up or down | the hand visibly closes into a pinch; up raises, down sinks, following the hand directly, and it stays where you let go |
+| Shift + drag | the palm: flattens and levels |
+| Shift + pinch | a smaller, gentler raise or sink |
+
+The charged land spring retires: springs belong to the edge. Props, trees and residents under a press keep their own grab.
+
+**The void (sky, atmosphere, off the diorama).**
+
+| Do | Result |
+|---|---|
+| Click | the hand snaps its fingers: instant day ↔ night (a cut, or a very fast blend; instant is preferred, it is the drama) |
+| Shift + click | the snap steps dawn → noon → dusk → night |
+
+**The hand is always there.** It is under the pointer wherever the pointer is, and its pose says what a press would do: over the land a ready pinch; on a wall its palm faces the wall; on the lip the rim grip; in the void it floats relaxed at a fixed depth along the pointer's ray, fingers loosely curled, ready to snap. It fades out while the right-button camera moves and comes back when it stops.
+
+**Later.** Water: springs on high ground, streams in the thumb's grooves, ponds and lakes in basins, and its physics. The grooves and basins are shaped now so that water can follow them.
+
+**Build slices.**
+1. Edge rework (`feature/modeless-edge-spring`): the whole-block dip, the random multi-peak range, the basin, the physics toss with pumping, decided at release.
+2. Land as clay (`feature/modeless-clay`): tap, thumb and pinch by timing, groove or smooth by speed, Shift palm, the land spring retired.
+3. Void and the ever-present hand (`feature/modeless-void`): the snap, Shift-snap, the void pose, the fade under the camera, Shift-turn without time.
+4. The wall palm (`feature/modeless-wall-hand`): a hand pose with the palm on the wall.
+
 ## Rim slice: the whole-world verbs, spin is time, right-drag is the camera
 
 Branch `feature/modeless-rim`. Checked headless only (`tools/probe_modeless_rim.gd`); nothing has been seen or felt on screen.
