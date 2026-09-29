@@ -296,6 +296,8 @@ func available() -> bool:
 	if menu != null and menu.visible: return false
 	var photo: Node = scene.get("photo")
 	if photo != null and photo.get("active") == true: return false
+	var wanderer: Node = scene.get("wanderer")
+	if wanderer != null and wanderer.get("active") == true: return false
 	var mood := _mood()
 	if mood != null and mood.busy(): return false
 	return not (editor.get("_painting") == true or editor.get("_ball_holding") == true or editor.get("_handful_holding") == true or (editor.get("gust") != null and editor.gust.aiming()))

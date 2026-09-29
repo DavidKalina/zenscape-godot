@@ -22,6 +22,12 @@ World menu and the Cmd+K palette.
 
 The hand fades while the camera moves.
 
+**V** (a first test for a person who roams the chunk) sets a small figure down
+on the land under the pointer and looks out through its eyes: move the mouse
+to look, **WASD** or the arrows to walk, **Shift** to run, **V** or **Esc** to
+step back out. The figure stays where you walked it; V off the land steps back
+into it. It is not saved with the place.
+
 ## The land (left button on the ground)
 
 | Do | Result |

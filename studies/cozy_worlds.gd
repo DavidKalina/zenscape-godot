@@ -37,6 +37,8 @@ var brush: String = brush_ids[0] if not brush_ids.is_empty() else "land"
 var creation_palette: Control
 ## Photo mode: compose, then capture (scripts/photo_mode.gd). P or the palette's camera.
 var photo: Node
+## A figure to set down and look through (scripts/wanderer_eye.gd). V.
+var wanderer: Node
 ## Moods and their pins (scripts/mood_look.gd), saved with the place, and the
 ## panel that picks them (scripts/mood_panel.gd). M or the palette's Mood.
 var mood_look: Node
@@ -258,6 +260,9 @@ func _setup_creation() -> void:
 	photo = preload("res://scripts/photo_mode.gd").new()
 	add_child(photo)
 	photo.setup(self)
+	wanderer = preload("res://scripts/wanderer_eye.gd").new()
+	add_child(wanderer)
+	wanderer.setup(self)
 	if lantern:
 		# The Lantern shell pours its own mood orbs from the right column.
 		mood_panel = creation_palette.mood
