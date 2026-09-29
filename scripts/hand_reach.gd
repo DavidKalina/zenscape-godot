@@ -711,7 +711,8 @@ func _catch_spin(point: Vector2) -> void:
 	if turn != null and turn.enabled and turn.spinning(): turn.catch_at(point)
 
 ## A left press that reached no sun or rim. Under `--modeless` a press on the
-## land is the spring's: emitted, and taken so no brush or turn sees it. A
+## land is clay's (scripts/land_clay.gd): emitted, and taken so no brush or
+## turn sees it. A
 ## prop, a tree or a resident under the pointer keeps its own grab, and the
 ## sky and the far ground are nobody's.
 func _land_press(point: Vector2) -> bool:

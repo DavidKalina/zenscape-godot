@@ -871,6 +871,7 @@ func _history_step(forward: bool) -> void:
 	finish_stroke()
 	if handful != null: handful.settle_now()
 	if spring != null: spring.land_now()
+	if clay != null: clay.finish_now()
 	_land_mountain()
 	# A land stroke's weathering belongs to the world being left.
 	_drop_weathering()
@@ -2311,6 +2312,9 @@ var _mountain_holding := false
 ## The land spring (scripts/land_spring.gd, `--modeless`) when there is one:
 ## a pull or a springing land settles before anything else changes the ground.
 var spring: Node = null
+## Land as clay (scripts/land_clay.gd, `--modeless`) when there is one: a
+## stroke or pinch in hand closes before anything else changes the ground.
+var clay: Node = null
 var _mountain_generation := 0
 var _mountain_plane := 0.0
 var _mountain_poured := Rect2()

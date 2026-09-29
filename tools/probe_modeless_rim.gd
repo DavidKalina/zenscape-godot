@@ -305,14 +305,21 @@ func run() -> void:
 	check("a land drag emits land_dragged",lands.dragged >= 20,lands)
 	check("the land press does not turn the world",absf(angle_difference(yaw0,scene.yaw)) < 0.0005,rad_to_deg(scene.yaw-yaw0))
 	check("the land press is no brush stroke",not editor._painting)
-	# With the land spring (scripts/land_spring.gd) the press is a pull, and
-	# the land shows its tension; without it the land is untouched.
+	# With land as clay (scripts/land_clay.gd) the drag is the thumb; the land
+	# spring (scripts/land_spring.gd) is retired from the land and stays idle.
+	# Without clay the land is untouched.
+	var clay: Node = scene.get("land_clay")
 	var spring: Node = scene.get("land_spring")
-	if spring != null: check("the land press drives the spring",spring.state == 1,spring.state)
+	if clay != null: check("the land drag works the land as clay (the thumb)",clay.state == 2 and clay.verb == "thumb",[clay.state,clay.verb])
 	else: check("the land press changes nothing",data._undo.size() == undo0 and data.heights == heights0)
+	if spring != null: check("the land spring is not driven by the land",spring.state == 0,spring.state)
 	button(end,MOUSE_BUTTON_LEFT,false)
 	await frames(30)
 	check("the land release emits land_released",lands.released == 1 and reach.holding == "",lands)
+	if clay != null:
+		check("the stroke is one undo step",data._undo.size() == undo0+1,data._undo.size()-undo0)
+		editor.undo()
+		await frames(30)
 	check("no spin after a land drag",not turn.spinning())
 	check("the land drag leaves time alone",absf(hours()-hour0) < 0.001)
 

@@ -2,6 +2,8 @@
 
 One slice of the modeless scheme (`docs/scenic/hand-world.md`, "Verbs on the diorama"), behind `--modeless`. The land is a spring: press it, pull toward the bottom of the screen and let go, and a mountain springs up; pull the other way and let go, and it springs down into a basin for a lake. How far you pull decides how much.
 
+**Retired from the land (2026-09-28, `feature/modeless-clay`).** In the agreed scheme (`docs/scenic/modeless.md`, second pass) springs belong to the edge and the land is clay: a land press now goes to `scripts/land_clay.gd` (see "Land as clay" there), and nothing on the land drives the spring. The code stays, still created under `--modeless`, because the edge spring (`feature/modeless-edge-spring`) reuses its mountain form, its spring motion and the editor's `_land_mountain`. `tools/probe_land_spring.gd` now drives it directly through `press`, `pull` and `release` and checks the land signals leave it idle. The rest of this page describes the spring as built.
+
 **Status: built and probed headless only. Nothing here has been seen or felt on screen.** The numbers below are CPU frame gaps and heights; the look of the pucker, the tremble, the ring-down and the hand's pose are unverified.
 
 ## What you do
@@ -27,9 +29,9 @@ The pull is the pointer's vertical travel from the press, as a share of `PULL_SC
 
 ## The seam
 
-`press(screen_pos)`, `pull(screen_pos, relative)`, `release(screen_pos)` match the modeless input's `land_pressed`, `land_dragged` and `land_released`. Connect them at merge and delete the block marked TEMPORARY at the end of `land_spring.gd` (`_unhandled_input`, `seam_enabled`, `_seam_pull`). `land_now()` and the `sprung(kind, size)` signal are the other public surface.
+`press(screen_pos)`, `pull(screen_pos, relative)` and `release(screen_pos)` take a screen press, its drag and its release. They were connected to the modeless input's `land_pressed`, `land_dragged` and `land_released` until land as clay took those; now nothing in the game calls them, and the edge spring will drive them (or the shapes under them) from the rim. `land_now()` and the `sprung(kind, size)` signal are the other public surface.
 
-Wiring: `studies/fidelity.gd` creates it when `--modeless` is on (`land_spring`), and `NativeChunkEditor.spring` points at it. Without `--modeless` nothing exists and the brushes work as before.
+Wiring: `studies/fidelity.gd` creates it when `--modeless` is on (`land_spring`), and `NativeChunkEditor.spring` points at it, so an undo lands a spring in progress. Without `--modeless` nothing exists and the brushes work as before.
 
 ## Probe
 

@@ -113,7 +113,55 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 - forty extra days through the spin's path change the weather;
 - a vertical drag decides "flip", emits the three flip signals and does not turn the world or touch time;
 - a shake decided from a sideways or a vertical start becomes "shake", the turn lets go, the flip is ended with 0, the hand shakes, and time is not wound;
-- a left land press emits `land_pressed`, `land_dragged`, `land_released`, does not turn, paints nothing (no undo step, no height change);
+- a left land press emits `land_pressed`, `land_dragged`, `land_released`, does not turn and starts no brush stroke; with land as clay the drag is the thumb (one undo step, undone after), and the land spring stays idle;
 - a fast right drag tilts and looks round without changing time, the room or the spin.
 
 `tools/probe_wall_grab.gd` (same flags) takes a low, close camera facing a wall and proves the wall's middle is rim, reaches the point under the pointer, shows the rim grip stood out from the wall, turns the world with the grabbed point within a few pixels of the pointer, and decides the flip from an upward drag.
+
+## Land as clay: tap, thumb, pinch and palm
+
+Branch `feature/modeless-clay`. Checked headless only (`tools/probe_land_clay.gd`); nothing has been seen or felt on screen.
+
+### Try it
+
+Run the product scene with `-- --modeless` and left-press the land (not a prop, a tree or a resident: they keep their own grab).
+
+- **Tap it.** A small dimple rings out at the spot and the land comes back exactly. A resident within 8 m looks round at it. No undo step.
+- **Drag slowly.** The thumb digs a soft groove along the path: about 0.3 m deep and 2.4 m across, with a level, rounded floor and a faint lip either side. Going over the same line again digs deeper; lingering does not.
+- **Rub fast, back and forth.** The land under the rub smooths out. Between slow and fast the stroke does some of each.
+- **Hold still for a beat, then drag up or down.** The hand closes into a pinch. Up raises the spot and down sinks it; the summit keeps to the pointer, and the land stays where you let go. A hold let go without moving changes nothing.
+- **Shift + drag.** The palm: levels the land toward the height under the press.
+- **Shift + hold.** A smaller, gentler pinch.
+- **Cmd+Z** takes back one stroke or one pinch at a time.
+
+The charged land spring no longer answers the land (see `docs/scenic/modeless-spring.md`).
+
+### How it works
+
+- **Where.** `scripts/land_clay.gd`, created by `studies/fidelity.gd` under `--modeless` and connected to `hand_reach`'s `land_pressed`, `land_dragged` and `land_released` in place of the land spring. `NativeChunkEditor.clay` points at it, and an undo closes whatever it has in hand first (`finish_now`).
+- **Deciding.** A press is undecided until the pointer has gone `MOVE_PIXELS` (6 px) from it, which makes it a drag, or it has been held `HOLD_SECONDS` (0.3 s, counted in frame time) without that, which makes it a pinch. A release before either is a tap. Shift is read when the verb is decided, so it can go down after the button.
+- **The thumb's speed.** The pointer's path length in pixels over the last `SPEED_WINDOW` (0.25 s), so a rub's turns do not read as slow. The rub share is `smoothstep(GROOVE_SPEED, RUB_SPEED, speed)`: 500 px/s and under only digs, 1200 px/s and over only smooths, between it blends. Dabs are laid `DAB_SPACING` (0.3 m) apart along the path, at most 64 a frame.
+- **The groove.** Each dab pulls the points within `GROOVE_HALF_WIDTH` (1.2 m) `GROOVE_STEP` (half) of the way toward a shape: a level bed `GROOVE_DEPTH` (0.3 m) under the ground on the stroke's line, full depth inside `GROOVE_FLOOR` (35 %) of the half-width and easing to the untouched ground on a smoothstep. It never digs below that shape, so the groove is even and unbroken whatever the pace. Its bed follows the ground along the line, so it runs downhill where the land does. Points just outside that the groove has not dug rise by up to `GROOVE_LIP` (5 cm) out to 1.6 half-widths. The land's points are about 0.6 m apart, which is why the groove is this wide: the nearest row always reaches the bed.
+- **The rub.** Each dab moves the points within `RUB_RADIUS` (1.6 m) `RUB_STEP` (0.45) of the way to the mean of their neighbours, easing out over the outer half.
+- **The palm.** Each dab moves the points within `PALM_RADIUS` (2 m) `PALM_STEP` (half) of the way to the height under the press, easing out over the outer 45 %.
+- **The pinch.** The pointer's travel up the screen is turned into metres at the scale of a metre standing at the spot (never less than 0.3 of a metre across the ground, so a camera looking straight down still pinches), so the summit follows the pointer. The shape is `(1-t²)²` over a radius of 2.2 m plus 0.45 m per metre of lift, at most 5.6 m; the lift is between -4 and +8 m, and sinking never takes ground below -1.2 m. The Shift pinch takes 0.4 of the travel over 1.2 m plus 0.3 m per metre (at most 2.6 m), between -1 and +2 m. The shape is written from the heights at the hold, so it follows the hand both ways with no spring.
+- **The poke.** A dimple 0.1 m deep over 1.2 m, `-depth·e^(-7t)·cos(26t)` over half a second, then the exact heights come back (only where nothing else moved them).
+- **One undo step each.** `data.begin_stroke()` opens when the verb is decided and `end_stroke()` closes at release, so an unmoved pinch adds none. Release runs the editor's settle refresh and tells emergence about the stroke's ground as a land stroke would. Nothing weathers after: clay stays as it was left.
+- **Frame cost.** Only the points near a dab are written (a bucket lookup, 1.5 m cells), and the land is shown through the editor's light refresh, one at a time, as the brushes and the land spring do.
+- **The hand.** The hover's ready pinch stays while the press is undecided. The pinch plays its `PinchIn` again when it is decided, so the hand visibly closes. The thumb, the palm and the poke use `press` (the thumb's Hold plays faster as the stroke turns into a rub). On release the hand is let go and the hover takes it back.
+
+### Limits and open points
+
+- **No thumb or poke clips.** The thumb, the palm and the poke all show the Press pose. A thumb stroke and a fingertip poke want their own clips.
+- **The pinch follows the hand very directly.** From the default view a metre is about 15 px, so 60 px of drag raises about 4 m. This is what "follows the hand" means, but it may feel too touchy from far out. `PINCH.scale` is the knob.
+- **The groove bed follows the ground**, so across a hump it rises and falls with it. Water may want the bed kept falling along the stroke; that belongs to the water slice.
+- **A drag off the land** skips the points off it and joins up again where the pointer comes back.
+- **Creatures.** Only the resident notices a poke. Other life (birds, deer, frogs) does not react yet.
+- **Unverified on screen:** how the groove, the rub, the palm and the pinch look and feel; whether 0.3 s and 6 px classify well on a trackpad; whether 500 and 1200 px/s split a stroke from a rub for a real hand; the Press pose standing in for the thumb.
+
+### Probe
+
+`tools/probe_land_clay.gd` (run with `-- --modeless`, `--fixed-fps 60`) drives the real product scene with synthesized mouse input through `hand_reach`, on a bare spot it finds. It proves: a quick release is a tap that dimples the spot, the hand pokes, the ground comes back bit-exact and no undo step is added; a 4 px nudge let go at 0.17 s is still a tap; a press is undecided before 0.3 s and a pinch after, with `PinchIn` playing, and a pinch let go unmoved keeps nothing; a 6 px move decides the thumb by the second frame; a 300 px/s drag is a groove (rub share 0) dug 0.27 to 0.31 m deep all along its path, with banks raised at most a few centimetres; an 1800 px/s back-and-forth is a rub (share 1) that takes the probe's roughened ground from about 0.09 to 0.0001 mean neighbour difference without digging; Shift-drag is the palm and levels the ground to the press's height; hold and drag up 60 px raises the spot about 4 m with the summit within a pixel of the pointer, and it stays after release; down sinks it; a Shift pinch raises about a third as much over a sixth of the points; each verb is one undo step and one undo restores the heights exactly; the land spring never starts or springs. CPU frame gaps (dummy renderer) while dragging: groove max 7 ms, rub under 6 ms, pinch under 5 ms.
+
+`tools/probe_land_spring.gd` now drives the spring directly and checks the land signals leave it idle; `tools/probe_modeless_rim.gd` checks a land drag is the thumb and the spring stays idle.
+

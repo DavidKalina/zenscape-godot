@@ -110,8 +110,11 @@ var _stroke_feedback: Node
 var world_rumble: Node
 ## The hand of light that works the creation tools (scripts/god_hand.gd).
 var god_hand: Node3D
-## The land spring: pull the land and let go to raise or sink it (--modeless).
+## The land spring (--modeless). Retired from land presses (they are clay
+## now); kept for the edge spring, which reuses its forms and spring motion.
 var land_spring: Node
+## Land as clay: tap, thumb, pinch and palm on the land (--modeless).
+var land_clay: Node
 ## Shaking the diorama by its rim like a snow globe (scripts/snow_globe.gd).
 var snow_globe: Node
 ## What the hand reaches and holds: the sun, the rim (scripts/hand_reach.gd).
@@ -235,17 +238,22 @@ func _ready() -> void:
 		land_spring = preload("res://scripts/land_spring.gd").new()
 		add_child(land_spring)
 		land_spring.setup(self)
+		# Land as clay (docs/scenic/modeless.md "Land as clay").
+		land_clay = preload("res://scripts/land_clay.gd").new()
+		add_child(land_clay)
+		land_clay.setup(self)
 	snow_globe = preload("res://scripts/snow_globe.gd").new()
 	snow_globe.setup(self)
 	add_child(snow_globe)
 	hand_reach = preload("res://scripts/hand_reach.gd").new()
 	add_child(hand_reach)
 	hand_reach.setup(self)
-	# Under --modeless a left press on the land is the spring.
-	if land_spring != null:
-		hand_reach.land_pressed.connect(func(at: Vector2) -> void: land_spring.press(at))
-		hand_reach.land_dragged.connect(land_spring.pull)
-		hand_reach.land_released.connect(land_spring.release)
+	# Under --modeless a left press on the land is clay; the land spring no
+	# longer takes it (docs/scenic/modeless-spring.md).
+	if land_clay != null:
+		hand_reach.land_pressed.connect(func(at: Vector2) -> void: land_clay.press(at))
+		hand_reach.land_dragged.connect(land_clay.pull)
+		hand_reach.land_released.connect(land_clay.release)
 	# --modeless: spin is time (docs/scenic/modeless.md).
 	if preload("res://scripts/modeless_input.gd").enabled():
 		spin_time = preload("res://scripts/spin_time.gd").new()
