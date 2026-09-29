@@ -245,6 +245,9 @@ func _process(delta: float) -> void:
 	if not reach_gesture.is_empty(): working = reach_gesture
 	var wanted: bool = not reach_gesture.is_empty() or (editor.active and not editor.forming and editor.mode == "land" and (hit != null or not working.is_empty()))
 	if held_off: wanted = false
+	# Never in the wanderer's eyes (scripts/wanderer_eye.gd).
+	var wanderer: Node = scene.get("wanderer")
+	if wanderer != null and wanderer.get("active") == true: wanted = false
 	_set_opacity(move_toward(opacity,1.0 if wanted else 0.0,delta*FADE))
 	visible = opacity > 0.0
 	if not visible:

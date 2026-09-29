@@ -31,6 +31,28 @@ const POLAR := Vector2(0.25,2.8)
 const PLATE_REACH := 13.5
 ## Seconds the glide back to the orbit takes.
 const RETURN := 0.7
+## The figure's own radius in the plate plane, with room for the eye's near
+## plane, so trunks and rocks never fill the view.
+const RADIUS := 0.28
+## What stops the figure: trees, rocks and the other solid props. Only their
+## geometry between STEP and HEAD above their ground counts, so a crown that
+## sweeps low (a spruce) keeps the eye out of it, a broadleaf's high crown
+## does not, and anything lower than STEP is stepped over.
+const SOLID := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree","snag","birch","willow","juniper","joshua","cactus",
+	"rock","log","stump","boulder_1","boulder_2","boulder_3","boulder_4"]
+const STEP := 0.2
+const HEAD := FIGURE_HEIGHT+0.2
+## Bands each part's mesh is cut into for its footprint (`_profile`).
+const BANDS := 24
+## Push-out passes a step takes; each can move off one more obstacle.
+const PASSES := 3
+## Water: the figure wades in, slowing, and will not step where live water
+## stands deeper than WADE metres; a soft wall it slides along.
+const WADE := 0.4
+const WADE_SLOW := 0.55
+## How far round `place` looks for a free spot, and the ring spacing.
+const FREE_REACH := 4.0
+const FREE_STEP := 0.2
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  V or Esc to step out"
 
 signal entered
@@ -55,6 +77,14 @@ var _hint_time := 0.0
 var _layer: CanvasLayer
 var _hint: Label
 var _dot: Control
+## Obstacles in the plate plane: [Vector3(x, z, radius)], figure radius
+## included, and what they were read from (`_obstacle_key`).
+var _obstacles := PackedVector3Array()
+var _obstacle_key := []
+## Live water depths, read once a frame while walking.
+var _depths := PackedFloat32Array()
+## Footprint profile of a mesh: [y0, band height, radius per band...].
+static var _profiles := {}
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -148,10 +178,12 @@ func _clamped(local: Vector3) -> Vector3:
 	return local
 
 ## Set the figure down at a terrain-local point, facing the way the camera
-## looks.
+## looks: on the nearest free, shallow spot to it.
 func place(local: Vector3) -> void:
 	if not has_figure(): _build_figure()
-	_feet = _clamped(local)
+	_read_obstacles(true)
+	_read_depths()
+	_feet = _clamped(_free_spot(_clamped(local)))
 	_yaw = scene.yaw
 	_sync_figure()
 
@@ -166,6 +198,152 @@ func _sync_figure() -> void:
 	if not has_figure(): return
 	figure.position = _feet
 	figure.rotation = Vector3(0.0,_yaw-_turn(),0.0)
+
+# --- Obstacles and water ------------------------------------------------------------
+
+## Re-reads the solid props' footprints when the objects or their batches
+## have changed (or always, with `force`). Each drawn part of a solid object
+## becomes a circle round its origin, as wide as its mesh is between STEP
+## and HEAD over the object's ground.
+func _read_obstacles(force: bool) -> void:
+	var content: Node = editor.content
+	if content == null: return
+	var batches: Array = content._batches
+	var key := [editor.data.objects_revision,batches.size()]
+	for batch in batches: key.append(batch.get_instance_id())
+	if not force and key == _obstacle_key: return
+	_obstacle_key = key
+	_obstacles = PackedVector3Array()
+	var to_plate: Transform3D = editor.terrain.global_transform.affine_inverse()
+	for batch: MultiMeshInstance3D in batches:
+		if not is_instance_valid(batch) or batch.multimesh == null or batch.multimesh.mesh == null: continue
+		var sources: Array = content._sources.get(batch.get_meta("part"),[])
+		for source: Dictionary in sources:
+			var item: Variant = source.get("item")
+			if item == null or not str(item.asset) in SOLID: continue
+			var placed: Variant = content._instance_transform(source)
+			if placed == null: continue
+			_add_obstacle(batch.multimesh.mesh,to_plate*batch.global_transform*(placed as Transform3D),item)
+	# The encounter tree is a landmark of its own, not a batch.
+	var landmarks: Node = editor.get("landmarks")
+	if landmarks == null: return
+	for item: Dictionary in editor.data.objects:
+		if item.asset != "bigfoot_tree": continue
+		var node := landmarks.get_node_or_null("%s_%d" % [item.asset,item.id])
+		if node == null: continue
+		for mesh: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
+			if mesh.mesh != null: _add_obstacle(mesh.mesh,to_plate*mesh.global_transform,item)
+
+func _add_obstacle(mesh: Mesh, placed: Transform3D, item: Dictionary) -> void:
+	var profile := _profile(mesh)
+	if profile.size() < 3: return
+	var ground := _ground(Vector3(float(item.x),placed.origin.y,float(item.z)))
+	var lift: float = placed.basis.y.y
+	var scale := placed.basis.get_scale()
+	var wide := maxf(scale.x,scale.z)
+	var reach := 0.0
+	for band in range(profile.size()-2):
+		var low := placed.origin.y+lift*(profile[0]+profile[1]*band)
+		var high := low+lift*profile[1]
+		if high < ground+STEP or low > ground+HEAD: continue
+		reach = maxf(reach,profile[band+2]*wide)
+	if reach > 0.0: _obstacles.append(Vector3(placed.origin.x,placed.origin.z,reach+RADIUS))
+
+## A mesh's footprint by height: [lowest y, band height, then the widest
+## any vertex in each band stands from the mesh's vertical axis]. Built once.
+static func _profile(mesh: Mesh) -> PackedFloat32Array:
+	if _profiles.has(mesh): return _profiles[mesh]
+	var box := mesh.get_aabb()
+	var profile := PackedFloat32Array([box.position.y,maxf(box.size.y,0.001)/BANDS])
+	profile.resize(BANDS+2)
+	for s in range(mesh.get_surface_count()):
+		var vertices: PackedVector3Array = mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		for v in vertices:
+			var band := clampi(int((v.y-profile[0])/profile[1]),0,BANDS-1)
+			profile[band+2] = maxf(profile[band+2],Vector2(v.x,v.z).length())
+	_profiles[mesh] = profile
+	return profile
+
+func _read_depths() -> void:
+	var flow: RefCounted = editor.get("flow")
+	_depths = flow.depths() if flow != null and flow.ready else PackedFloat32Array()
+
+## Live water depth at a plate point, 0 without live water.
+func _depth(point: Vector2) -> float:
+	if _depths.is_empty(): return 0.0
+	var at: int = editor.flow.cell_at(point)
+	return _depths[at] if at >= 0 and at < _depths.size() else 0.0
+
+func _wet(point: Vector2) -> bool:
+	return _depth(point) > WADE
+
+## `point` pushed out of every obstacle it stands in, PASSES times over.
+func _pushed_out(point: Vector2) -> Vector2:
+	for i in range(PASSES):
+		var moved := false
+		for o in _obstacles:
+			var away := point-Vector2(o.x,o.y)
+			var gap := away.length()
+			if gap >= o.z: continue
+			point = Vector2(o.x,o.y)+(away/gap if gap > 0.0001 else Vector2.RIGHT)*o.z
+			moved = true
+		if not moved: break
+	return point
+
+func _blocked(point: Vector2) -> bool:
+	for o in _obstacles:
+		if point.distance_squared_to(Vector2(o.x,o.y)) < o.z*o.z-0.0001: return true
+	return _wet(point)
+
+## One step of the walk: into the obstacles, then pushed back out along
+## their normals, which keeps the part of the step along them, so the figure
+## slides round a trunk. Walked square into one it is turned a little aside,
+## so it never stops dead. Deep water is a wall: the step keeps whichever of
+## its two plate axes stays shallow.
+func _walk(feet: Vector3, step: Vector2) -> Vector3:
+	if step.length_squared() < 1e-10: return feet
+	var from := Vector2(feet.x,feet.z)
+	var to := from+step
+	for o in _obstacles:
+		var centre := Vector2(o.x,o.y)
+		var away := to-centre
+		if away.length() >= o.z: continue
+		var normal := (from-centre).normalized() if from.distance_to(centre) > 0.0001 else -step.normalized()
+		# Square on: lean the step round the trunk on the side it is already on.
+		if step.normalized().dot(-normal) > 0.97:
+			var side := signf(normal.cross(step)) if absf(normal.cross(step)) > 1e-6 else 1.0
+			to += Vector2(-normal.y,normal.x)*side*step.length()*0.6
+	to = _pushed_out(to)
+	if _wet(to) and not _wet(from):
+		var across := Vector2(to.x,from.y)
+		var along := Vector2(from.x,to.y)
+		if not _wet(across) and not _blocked(_pushed_out(across)): to = _pushed_out(across)
+		elif not _wet(along) and not _blocked(_pushed_out(along)): to = _pushed_out(along)
+		else: to = from
+	return Vector3(to.x,feet.y,to.y)
+
+## The free, shallow spot nearest `local` (on the plate), or `local` itself
+## if nothing is free within FREE_REACH.
+func _free_spot(local: Vector3) -> Vector3:
+	var at := Vector2(local.x,local.z)
+	if not _blocked(at) and _pushed_out(at) == at: return local
+	# The push-out first: the nearest way out of the one it stands in.
+	var out := _pushed_out(at)
+	if _free(out): return Vector3(out.x,local.y,out.y)
+	var ring := FREE_STEP
+	while ring <= FREE_REACH:
+		var best := Vector2.INF
+		var count := maxi(8,int(TAU*ring/FREE_STEP))
+		for i in range(count):
+			var angle := TAU*i/count
+			var p := at+Vector2(cos(angle),sin(angle))*ring
+			if _free(p) and (best == Vector2.INF or p.distance_squared_to(at) < best.distance_squared_to(at)): best = p
+		if best != Vector2.INF: return Vector3(best.x,local.y,best.y)
+		ring += FREE_STEP
+	return local
+
+func _free(p: Vector2) -> bool:
+	return absf(p.x) <= PLATE_REACH and absf(p.y) <= PLATE_REACH and not _blocked(p)
 
 # --- Stepping in and out ------------------------------------------------------------
 
@@ -198,7 +376,9 @@ func enter() -> void:
 	_pace = Vector2.ZERO
 	_yaw = figure.rotation.y+_turn()
 	_polar = PI*0.5
-	_feet = _clamped(_feet)
+	_read_obstacles(true)
+	_read_depths()
+	_feet = _clamped(_free_spot(_clamped(_feet)))
 	_eye_y = _feet.y+EYE_HEIGHT
 	scene._orbiting = false
 	scene._panning = false
@@ -259,7 +439,12 @@ func _advance_eye(delta: float) -> void:
 	var heading := _yaw-_turn()
 	var forward := -Vector3(sin(heading),0.0,cos(heading))
 	var right := forward.cross(Vector3.UP)
-	_feet = _clamped(_feet+(right*_pace.x-forward*_pace.y)*delta)
+	_read_obstacles(false)
+	_read_depths()
+	var move := right*_pace.x-forward*_pace.y
+	# Wading slows the walk as the water deepens.
+	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
+	_feet = _clamped(_walk(_feet,Vector2(move.x,move.z)*delta))
 	_eye_y = lerpf(_eye_y,_feet.y+EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
 	# Never below the ground right under the eye.
 	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT*0.6)

@@ -809,8 +809,12 @@ func _process(delta: float) -> void:
 			_rest_season()
 		else:
 			_apply_dial()
+	# Looking out through the wanderer (scripts/wanderer_eye.gd) the hover
+	# shows nothing: no outline, hint, cursor or hand pose.
+	var eye := _eye_in()
+	if eye: _stand_down_for_eye()
 	# The hover first, so the hand shows what the pointer is over this frame.
-	if holding.is_empty() and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+	elif holding.is_empty() and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		_hover(scene.get_viewport().get_mouse_position() if pointer_override == null else pointer_override)
 	elif outline != null and outline.tree_id > 0: _outline_tree(-1)
 	if outline != null and outline.tree_id > 0: outline.spores_ready = _tree_rested(outline.tree_id)
@@ -821,8 +825,29 @@ func _process(delta: float) -> void:
 			# Only a drag is the wind's: a still press is loading a snap.
 			if holding == "void" and _void_travel > CLICK_PIXELS: wind.step(delta)
 		_step_trees(delta)
-		_drive_hand_modeless()
-	else: _drive_hand()
+		if not eye: _drive_hand_modeless()
+	elif not eye: _drive_hand()
+
+## True while the camera looks out through the wanderer.
+func _eye_in() -> bool:
+	var wanderer: Node = scene.get("wanderer")
+	return wanderer != null and wanderer.get("active") == true
+
+## Clears every hover affordance, once, on stepping into the wanderer; the
+## hover reads afresh on stepping out (`_hover_key` is cleared).
+func _stand_down_for_eye() -> void:
+	if outline != null and outline.tree_id > 0: _outline_tree(-1)
+	if _hover_key.is_empty() and hover_zone.is_empty(): return
+	_hover_key = []
+	hover_zone = ""
+	_hover_point = null
+	reaching = ""
+	_set_cursor(Input.CURSOR_ARROW)
+	_read_hint("")
+	_show_hint("")
+	var hand: Node3D = scene.get("god_hand")
+	if hand != null and not _hover_shown.is_empty() and hand.reach_gesture == _hover_shown: _set_hand(hand,"",null,null)
+	_hover_shown = ""
 
 ## The sun has come to rest: the hour is held, or a day that was turning turns on.
 func _rest_sun() -> void:
