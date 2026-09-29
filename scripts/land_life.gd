@@ -234,9 +234,13 @@ func _setup_birds(reference: Node3D) -> void:
 	_bird_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_bird_node)
 	var flock: Array = source.birds.slice(0,BIRD_MAX)
+	# Every gull starts away: `setup` publishes each at its `out`, and the
+	# source file has them all out, which left the flock hanging at the
+	# Fidelity positions until a site first flew them.
 	for bird: Dictionary in flock:
 		bird.delay = 5.0
 		bird.col = 0
+		bird.out = 0.0
 	var columns := []
 	for i in range(3): columns.append({"x":0.0,"z":0.0,"base":0.0,"top":10.0,"r":3.6,"lift":2.1})
 	_birds = BirdFlight.new()
@@ -792,11 +796,19 @@ func _animate(step: float) -> void:
 		if bird.delay >= 1.05:
 			_release("bird",site)
 			sites.bird.erase(cell)
-	if not sites.bird.is_empty():
+	# Fly on while any gull still shows, not only while a site holds one: a
+	# gull released at once (a new world) is hidden on the next step, instead
+	# of freezing mid-wingbeat where it was.
+	if not sites.bird.is_empty() or _birds_out():
 		var air: Node3D = scene._atmosphere
 		_birds.advance(step,false,air._air_strength,Vector2(cos(air._air_angle),sin(air._air_angle)))
 	_fade_fireflies()
 	_move_rings(step)
+
+func _birds_out() -> bool:
+	for bird: Dictionary in _birds.birds:
+		if float(bird.out) > 0.001: return true
+	return false
 
 func _move_fish(site: Dictionary, _step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,SETTLE,clock-float(site.born))*fade

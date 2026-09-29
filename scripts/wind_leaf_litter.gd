@@ -49,7 +49,7 @@ func seed_from(anchors: Array, probe: Callable) -> void:
 			var normal := _ground_normal(point,float(height))
 			if normal.y < 0.65: continue
 			var position := Vector3(point.x,float(height)+0.035,point.y)
-			leaves.append({"position":position,"home":position,"velocity":Vector3.ZERO,"yaw":angle,"spin":0.0,"phase":_rng.randf()*TAU,"size":_rng.randf_range(0.18,0.30),"weight":_rng.randf_range(0.8,1.4),"cooldown":_rng.randf_range(0.0,0.8),"airborne":false,"normal":normal})
+			leaves.append({"position":position,"home":position,"velocity":Vector3.ZERO,"yaw":angle,"spin":0.0,"phase":_rng.randf()*TAU,"size":_rng.randf_range(0.18,0.30),"weight":_rng.randf_range(0.8,1.4),"cooldown":_rng.randf_range(0.0,0.8),"airborne":false,"normal":normal,"tumble":0.0,"turn":-1.0 if _rng.randf() < 0.5 else 1.0})
 			var color := Color("b79545").lerp(Color("9b6139"),_rng.randf())
 			multimesh.set_instance_color(leaves.size()-1,color.srgb_to_linear())
 	multimesh.visible_instance_count = leaves.size()
@@ -79,8 +79,16 @@ func _step(dt: float, air: Node) -> void:
 		leaf.cooldown = maxf(0.0,leaf.cooldown-dt)
 		if not leaf.airborne:
 			# Static friction: ordinary calm air does not make the floor crawl.
-			if speed < 1.25*leaf.weight: continue
+			if speed < 1.25*leaf.weight:
+				leaf.tumble = maxf(0.0,leaf.tumble-dt*3.0)
+				continue
 			leaf.velocity = Vector3(wind.x,0,wind.z)*0.28
+			leaf.tumble = minf(1.0,leaf.tumble+dt*4.0)
+			# A dry leaf skitters in little hops rather than gliding tip first.
+			if leaf.cooldown <= 0.0 and _rng.randf() < dt*2.5:
+				leaf.airborne = true
+				leaf.velocity.y = lerpf(0.5,0.9,_rng.randf())/leaf.weight
+				leaf.cooldown = 0.3
 			if speed>2.0*leaf.weight and leaf.cooldown<=0.0:
 				leaf.airborne = true
 				leaf.velocity.y = minf(2.6,speed*0.48)/leaf.weight
@@ -93,7 +101,10 @@ func _step(dt: float, air: Node) -> void:
 			velocity.y += (-2.3*leaf.weight + minf(speed*0.20,1.0))*dt
 			leaf.spin += dt*(2.2+speed*0.5)
 		else:
-			leaf.yaw = lerp_angle(leaf.yaw,atan2(wind.x,wind.z),dt*4.0)
+			# Skidding, it turns about and rocks on its edge; a pointed leaf
+			# that faced the wind while it slid read as a fish swimming.
+			leaf.yaw += leaf.turn*dt*(0.8+speed*0.5)
+			leaf.spin += dt*(3.0+speed*1.2)
 		p += velocity*dt
 		var height: Variant = ground_height.call(Vector2(p.x,p.z))
 		if height == null or not is_finite(float(height)):
@@ -117,6 +128,8 @@ func _draw() -> void:
 		var basis := Basis(Quaternion(Vector3.UP,leaf.normal)) * Basis(Vector3.UP,leaf.yaw)
 		if leaf.airborne:
 			basis = basis * Basis(Vector3.RIGHT,leaf.spin) * Basis(Vector3.FORWARD,sin(_clock*5.0+leaf.phase)*0.65)
+		elif leaf.tumble > 0.0:
+			basis = basis * Basis(Vector3.FORWARD,sin(leaf.spin)*0.35*leaf.tumble) * Basis(Vector3.RIGHT,sin(leaf.spin*0.7+leaf.phase)*0.2*leaf.tumble)
 		var size: float = leaf.size
 		multimesh.set_instance_transform(i,Transform3D(basis.scaled(Vector3.ONE*size),leaf.position))
 
