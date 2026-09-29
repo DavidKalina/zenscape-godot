@@ -35,6 +35,10 @@ extends Node
 ## over from either. A left press on the land is left free: it emits the
 ## `land_*` signals for the spring slice and no brush or turn sees it. The hand
 ## shows the zone on hover: the rim grip over the rim, a ready pinch over land.
+## Anywhere else in the world is the void: the hand floats ready on the
+## pointer's ray, a click there snaps day to night (scripts/void_snap.gd) and
+## Shift-click steps the golden hours. The hover stands the hand down while the
+## camera moves (`camera_moving`).
 ##
 ## The rim's grab is shared with the snow-globe shake (another slice): it
 ## listens to `rim_dragged`, and when a shake fires it calls
@@ -159,6 +163,27 @@ var _last_drag := 0
 ## The hand's gestures this reach sets, and so may clear.
 const GESTURES := ["sun","rim"]
 const Modeless = preload("res://scripts/modeless_input.gd")
+const VoidSnap = preload("res://scripts/void_snap.gd")
+## The void (docs/scenic/modeless.md "Void slice"): where the pointer reaches
+## no land, rim or wall, the hand floats along the pointer's ray VOID_DEPTH of
+## the camera's distance to its pivot out (about the size it has over the
+## middle of the land), and never nearer than VOID_NEAR metres. A press there
+## that moves under CLICK_PIXELS before its release is a click: a snap.
+const VOID_DEPTH := 0.8
+const VOID_NEAR := 5.0
+const CLICK_PIXELS := 6.0
+const VOID_HINT := "Click the sky to snap day and night  ·  Shift-click steps dawn, noon, dusk, night"
+## The camera counts as moving (the hand stands down) while its view turns or
+## zooms faster than CAMERA_TURNING (rad/s, or log-distance/s) or its pivot
+## slides faster than CAMERA_SLIDING m/s, besides a right drag.
+const CAMERA_TURNING := 0.05
+const CAMERA_SLIDING := 0.15
+## The void's press: how far it has wandered, and the snaps made (for probes).
+var _void_travel := 0.0
+var snaps := 0
+## Headless probes have no pointer: where they say it is, for the hover.
+var pointer_override: Variant = null
+signal snapped(phase: float, step: bool)
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -387,10 +412,14 @@ func handle(event: InputEvent) -> bool:
 			if not holding.is_empty() or not available() or button.ctrl_pressed or button.double_click: return false
 			var what := reach_at(button.position)
 			if what.is_empty():
+				if modeless and _void_press(button.position): return true
 				return modeless and _land_press(button.position)
 			grab(what,button.position)
 			return true
 		if holding.is_empty(): return false
+		if holding == "void":
+			_void_release(button.position,button.shift_pressed)
+			return true
 		release(button.position)
 		return true
 	if event is InputEventMouseMotion:
@@ -443,6 +472,8 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		scene._celestial.set_phase(phase)
 	elif holding == "land":
 		land_dragged.emit(point,relative)
+	elif holding == "void":
+		_void_drag(point)
 	elif holding == "rim":
 		var angle: Variant = _angle_round(point)
 		# Once a shake has taken the rim (scripts/snow_globe.gd) the dial stays
@@ -465,6 +496,8 @@ func release(point := Vector2.INF) -> void:
 	_set_cursor(Input.CURSOR_ARROW)
 	if what == "land":
 		land_released.emit(point if point != Vector2.INF else _press_pos)
+	elif what == "void":
+		reach_point = null
 	elif what == "sun":
 		drifting = true
 		phase_speed = clampf(phase_speed,-DRIFT_MAX,DRIFT_MAX)
@@ -613,7 +646,7 @@ func _process(delta: float) -> void:
 	if modeless: _drive_hand_modeless()
 	else: _drive_hand()
 	if holding.is_empty() and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		_hover(scene.get_viewport().get_mouse_position())
+		_hover(scene.get_viewport().get_mouse_position() if pointer_override == null else pointer_override)
 
 ## The sun has come to rest: the hour is held, or a day that was turning turns on.
 func _rest_sun() -> void:
@@ -675,10 +708,12 @@ func _hover(point: Vector2) -> void:
 			if land != null:
 				hover_zone = "land"
 				_hover_point = land
+		_hover_void(point)
 	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() else Input.CURSOR_ARROW)
 	var text := ""
 	if not what.is_empty() and int(uses.get(reaching,0)) < HINT_UNTIL:
 		text = {"sun":SUN_HINT,"moon":MOON_HINT,"rim":RIM_HINT_MODELESS if modeless else RIM_HINT}[what]
+	if modeless and hover_zone == "void" and int(uses.get("void",0)) < HINT_UNTIL: text = VOID_HINT
 	_show_hint(text)
 
 ## The hint line: the Lantern shell's (`reach_hint`); the glass palette's
@@ -794,10 +829,15 @@ func _drive_hand_modeless() -> void:
 	var hand: Node3D = scene.get("god_hand")
 	if holding.is_empty(): reach_point = null
 	if hand == null: return
+	# Only the hover stands the hand down for the camera; a hold keeps it.
+	hand.held_off = false
 	var globe: Node = scene.get("snow_globe")
 	if holding == "rim" and globe != null and globe.decided: return
 	if holding == "land":
 		_hover_shown = ""
+		return
+	if holding == "void":
+		_drive_void_hold(hand)
 		return
 	# Turning the diorama over, the flip (scripts/diorama_flip.gd) has the hand.
 	if holding == "rim" and rim_intent == "flip": return
@@ -808,14 +848,19 @@ func _drive_hand_modeless() -> void:
 		return
 	var want := ""
 	var target: Variant = null
-	var camera_busy: bool = scene.get("_orbiting") == true or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	if not camera_busy and available():
+	# While the camera moves the hand fades out as it stands, and comes back.
+	var camera_busy := camera_moving()
+	hand.held_off = camera_busy
+	if available():
 		if hover_zone == "rim":
 			want = "rim"
 			target = _hover_point
 		elif hover_zone == "land":
 			want = "pinch"
 			target = _hover_point
+		elif hover_zone == "void":
+			want = "void"
+			target = _void_point(_void_pointer())
 	if not want.is_empty():
 		# Only over a hand that is free, or one of our own hover poses.
 		if hand.reach_gesture.is_empty() or hand.reach_gesture == _hover_shown:
@@ -827,3 +872,85 @@ func _drive_hand_modeless() -> void:
 			hand.reach_gesture = ""
 			hand.reach_point = null
 		_hover_shown = ""
+
+# --- Modeless: the void and the snap (docs/scenic/modeless.md "Void slice") --------
+
+## True when a pointer at `point` is in the void: in the world, reaching no
+## rim or wall, over no land and no prop or resident.
+func void_at(point: Vector2) -> bool:
+	if not available() or not _editor().pointer_in_world(point): return false
+	return reach_at(point).is_empty() and _land(point) == null and not _prop_at(point)
+
+## Where the hand floats for a pointer in the void (plate coordinates): along
+## its ray, VOID_DEPTH of the camera's distance to its pivot out.
+func _void_point(point: Vector2) -> Vector3:
+	var camera: Camera3D = scene.camera
+	var depth := maxf(float(scene.get("distance"))*VOID_DEPTH,VOID_NEAR)
+	return _editor().terrain.to_local(camera.project_ray_origin(point)+camera.project_ray_normal(point)*depth)
+
+## The pointer the hover last read.
+func _void_pointer() -> Vector2:
+	if not _hover_key.is_empty(): return _hover_key[0]
+	return scene.get_viewport().get_mouse_position() if pointer_override == null else pointer_override
+
+## Hover: the void when no rim, wall or land is under the pointer.
+func _hover_void(point: Vector2) -> void:
+	if not hover_zone.is_empty() or not available() or not _editor().pointer_in_world(point): return
+	if _prop_at(point): return
+	hover_zone = "void"
+	_hover_point = _void_point(point)
+
+## A left press in the void loads a snap; nothing else sees it.
+func _void_press(point: Vector2) -> bool:
+	if not void_at(point): return false
+	holding = "void"
+	_press_pos = point
+	_void_travel = 0.0
+	reach_point = _void_point(point)
+	_show_hint("")
+	holding_changed.emit("void")
+	return true
+
+func _void_drag(point: Vector2) -> void:
+	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
+	reach_point = _void_point(point)
+
+## The release: a click fires the snap, a drag lets the loaded hand go.
+func _void_release(point: Vector2, step: bool) -> void:
+	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
+	var click := _void_travel <= CLICK_PIXELS
+	release(point)
+	if click: fire_snap(step)
+
+## Snap: the hand snaps its fingers and the world cuts to night or day (or,
+## with `step`, the next golden hour) in the same frame.
+func fire_snap(step := false) -> void:
+	var phase := VoidSnap.snap(scene,step)
+	snaps += 1
+	uses["void"] = int(uses.get("void",0))+1
+	var hand: Node3D = scene.get("god_hand")
+	if hand != null:
+		hand.reach_gesture = "void"
+		hand.snap()
+		_hover_shown = "void"
+	_hover_key = []
+	snapped.emit(phase,step)
+
+## Held in the void, the hand is loaded to snap while the press is still a
+## click, and relaxes once it has become a drag.
+func _drive_void_hold(hand: Node3D) -> void:
+	if not (hand.reach_gesture.is_empty() or hand.reach_gesture in ["void","snap"]): return
+	hand.reach_gesture = "snap" if _void_travel <= CLICK_PIXELS else "void"
+	hand.reach_point = reach_point
+	_hover_shown = hand.reach_gesture
+
+## True while the camera is moving under the player's hand: a right drag, or
+## its view or pivot still gliding from one (a fling, a zoom, a double-click's
+## glide). A world turned by the rim or a spin is not the camera moving, nor
+## is a followed creature carrying the pivot.
+func camera_moving() -> bool:
+	if scene.get("_orbiting") == true or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): return true
+	var rig: Node = scene.get("camera_rig")
+	if rig == null or not "_view_v" in rig: return false
+	if (rig._view_v as Vector3).length() > CAMERA_TURNING: return true
+	return not rig.following and (rig._pivot_v as Vector3).length() > CAMERA_SLIDING

@@ -58,8 +58,8 @@ const BLEND := 0.18
 ## to set the hour, "rim" grips the rim to turn the season (scripts/hand_reach.gd),
 ## and "flip" is the same grip held through a diorama flip (scripts/diorama_flip.gd),
 ## a key hand_reach does not clear.
-const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim"}
-const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold"]
+const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim","void":"Void","snap":"Snap"}
+const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold","VoidHold","SnapHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
 ## after a plain Idle one plays with VARIANT_CHANCE, never the same one twice
@@ -84,11 +84,11 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0}
+const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0,"void":0.0,"snap":0.0}
 ## Holding the sun, the hand turns square to the camera, however high the sun
 ## is: the Reach clips cup the disc for a camera level with the hand. The
 ## share per gesture, eased in and out at FACE_RATE (1/s).
-const FACE := {"sun":1.0}
+const FACE := {"sun":1.0,"void":1.0,"snap":1.0}
 const FACE_RATE := 4.0
 ## No knuckle or palm goes into the land: CLEAR_BONES are kept CLEAR hand
 ## lengths over the ground under them by lifting the whole hand, quickly up
@@ -101,7 +101,7 @@ const LIFT_DOWN := 3.0
 const CLEAR_BONES := ["Hand","MetaIndex","MetaMiddle","MetaRing","MetaPinky","Index1","Middle1","Ring1","Pinky1",
 	"Index2","Middle2","Ring2","Pinky2","Index3","Middle3","Ring3","Pinky3","Thumb1","Thumb2","Thumb3"]
 const PINCHING := ["Index2","Index3","Thumb2","Thumb3"]
-const UNLIFTED := ["press","cup","shake","rim","flip"]
+const UNLIFTED := ["press","cup","shake","rim","flip","void","snap"]
 ## Turning the world (scripts/world_turn.gd): the gestures whose palm lies
 ## flat on the land, riding its height and never lifted clear of it; and the
 ## lean into the push, TURN_LEAN radians per m/s the grabbed ground moves
@@ -120,6 +120,15 @@ const THROW_CARRY := 1.3
 const MAX_THROW := 7.0
 ## Seconds into CupOut when the index pops the ball (the rig's cup_pop_s).
 const CUP_POP := 0.4333
+## The void (docs/scenic/modeless.md "Void slice"): "void" floats the hand
+## ready over the pointer's ray, "snap" is the press that loads a snap. Both
+## float free, leaning into the pointer's way. `snap()` fires it: SnapOut,
+## the slam and its follow-through, runs back into VoidHold. SNAP_BLEND is the
+## crossfade into it (seconds), short so the slam lands with the release.
+const FLOATING := ["void","snap"]
+const SNAP_BLEND := 0.04
+## Unloading a snap that became a drag: a crossfade from SnapHold to VoidHold.
+const UNLOAD_BLEND := 0.25
 
 var scene: Node3D
 var editor: Node
@@ -179,6 +188,9 @@ var reach_push := Vector3.ZERO
 var _grip := 0.0
 ## How square the hand is turned to the camera (FACE).
 var _face := 0.0
+## True while something asks the hand to stand down (scripts/hand_reach.gd:
+## the camera is moving): it fades out whatever it shows, and back after.
+var held_off := false
 
 static func enabled() -> bool:
 	return not "--no-hand" in OS.get_cmdline_user_args()
@@ -223,6 +235,7 @@ func _process(delta: float) -> void:
 	var working: String = editor.hand_gesture() if editor.active else ""
 	if not reach_gesture.is_empty(): working = reach_gesture
 	var wanted: bool = not reach_gesture.is_empty() or (editor.active and not editor.forming and editor.mode == "land" and (hit != null or not working.is_empty()))
+	if held_off: wanted = false
 	_set_opacity(move_toward(opacity,1.0 if wanted else 0.0,delta*FADE))
 	visible = opacity > 0.0
 	if not visible:
@@ -267,6 +280,7 @@ func _process(delta: float) -> void:
 	_still = _still+delta if flat.length() < STILL else 0.0
 	# It leans into the pointer's way and rocks back through upright on a stop.
 	var free := gesture.is_empty() or gesture == "sprinkle" or gesture == "rim" or gesture == "flip"
+	if gesture in FLOATING: free = true
 	var lean_goal := (flat*LEAN).limit_length(MAX_LEAN) if free else Vector2.ZERO
 	if gesture in GRIPS: lean_goal = (Vector2(reach_push.x,reach_push.z)*TURN_LEAN).limit_length(MAX_TURN_LEAN)
 	_lean_speed += ((lean_goal-_lean)*LEAN_SPRING-_lean_speed*LEAN_DAMP)*delta
@@ -392,6 +406,7 @@ func _sow(delta: float, shown: bool) -> void:
 ## Start `next`'s In, or the last gesture's Out when `next` is "".
 func _play(next: String) -> void:
 	if next == gesture: return
+	if _void_play(next): return
 	var last := gesture
 	gesture = next
 	if not next.is_empty():
@@ -408,6 +423,7 @@ func _play(next: String) -> void:
 ## its variations; the clips meet with no gap.
 func _finished(clip: StringName) -> void:
 	var clip_name := String(clip)
+	if _void_finished(clip_name): return
 	if clip_name.ends_with("In") and not gesture.is_empty() and clip_name == GESTURES[gesture]+"In":
 		player.play(GESTURES[gesture]+"Hold",0.0)
 	elif clip_name.ends_with("Out") or clip_name.begins_with("Idle"):
@@ -427,3 +443,28 @@ func _set_opacity(value: float) -> void:
 	opacity = value
 	material.set_shader_parameter("hand_opacity",value)
 	depth_material.set_shader_parameter("hand_opacity",value)
+
+# --- The void and the snap (docs/scenic/modeless.md "Void slice") -------------
+
+## Fire the snap: SnapOut from wherever the hand is (a loaded SnapHold, or a
+## SnapIn cut short by a quick click), then VoidHold. The gesture becomes
+## "void", which the reach sets in the same frame, so nothing else plays.
+func snap() -> void:
+	gesture = "void"
+	player.play("SnapOut",SNAP_BLEND)
+
+## The void's own hand-offs: a loaded snap let go without firing crossfades
+## back to VoidHold instead of running VoidIn from Idle's pose.
+func _void_play(next: String) -> bool:
+	if gesture == "snap" and next == "void":
+		gesture = next
+		player.play("VoidHold",UNLOAD_BLEND)
+		return true
+	return false
+
+## SnapOut runs back into VoidHold while the hand is still in the void.
+func _void_finished(clip_name: String) -> bool:
+	if clip_name != "SnapOut": return false
+	# A gesture change while it played has already crossfaded away from it.
+	player.play("VoidHold" if gesture == "void" else "VoidOut",0.0)
+	return true

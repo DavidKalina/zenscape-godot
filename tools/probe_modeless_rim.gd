@@ -155,7 +155,9 @@ func run() -> void:
 		reach._hover_key = []
 		reach._hover(Vector2(4,4))
 		reach._drive_hand_modeless()
-		check("over nothing it lets go",scene.god_hand.reach_gesture == "",scene.god_hand.reach_gesture)
+		# Over the sky the hand stays, floating ready to snap (docs/scenic/modeless.md
+		# "Void slice"); it lets go only where it reaches nothing at all.
+		check("over the sky it floats ready",scene.god_hand.reach_gesture == ("void" if reach.void_at(Vector2(4,4)) else ""),[scene.god_hand.reach_gesture,reach.hover_zone])
 
 	# --- A slow rim push turns the world and leaves the clock alone ------------
 	scene._celestial.set_phase(0.5)

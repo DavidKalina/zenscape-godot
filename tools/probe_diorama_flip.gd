@@ -179,7 +179,9 @@ func run() -> void:
 	check("released under half way it falls back and rests",flip.phase == flip.Phase.IDLE and fell[0],n)
 	check("with a small bounce",bounces >= 1,bounces)
 	check("and nothing changed (heights, document, seed, layers, camera, terrain)",same(base,signature()))
-	check("the hand lets go",hand == null or hand.reach_gesture == "")
+	# The hand is always there (docs/scenic/modeless.md "Void slice"): let go of
+	# the flip, it shows the hover pose under the pointer, the void pose in the sky.
+	check("the hand lets go",hand == null or hand.reach_gesture == ("void" if scene.hand_reach.hover_zone == "void" else ""),[hand.reach_gesture if hand != null else "",scene.hand_reach.hover_zone])
 	check("no snapshot is left",flip.pivot == null and flip._hidden.is_empty())
 	await frames(20)
 
@@ -222,7 +224,9 @@ func run() -> void:
 	check("the real world was never drawn while the snapshot stood",_leak_frames == 0,{"frames_seen":_leak_frames,"covered":_covered_frames,"most_meshes":_leaks})
 	check("the flip landed and settled (no snapshot, camera and terrain back)",flip.phase == flip.Phase.IDLE and flip.pivot == null and after.mask == base.mask and after.terrain.is_equal_approx(Transform3D.IDENTITY))
 	check("the scene is unpaused and idle again",not scene._paused and not scene.places.busy and not editor.forming)
-	check("the hand let go",hand == null or hand.reach_gesture == "")
+	# The hand is always there (docs/scenic/modeless.md "Void slice"): let go of
+	# the flip, it shows the hover pose under the pointer, the void pose in the sky.
+	check("the hand let go",hand == null or hand.reach_gesture == ("void" if scene.hand_reach.hover_zone == "void" else ""),[hand.reach_gesture if hand != null else "",scene.hand_reach.hover_zone])
 	var worst := 0.0
 	var worst_at := 0
 	for i in range(frame_ms.size()):

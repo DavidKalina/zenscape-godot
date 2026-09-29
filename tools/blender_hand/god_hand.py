@@ -370,6 +370,7 @@ def main():
 	rig['cup_pop_s'] = clips.CUP_POP / clips.FPS
 	rig['sprinkle_release_s'] = clips.THROW_RELEASE / clips.FPS
 	rig['idle_variants'] = ','.join(clips.IDLE_VARIANTS)
+	rig['snap_hit_s'] = clips.SNAP_HIT / clips.FPS
 	if '--no-anim' not in ARGS:
 		for name in clips.CLIPS:
 			clips.bake_clip(rig, name)

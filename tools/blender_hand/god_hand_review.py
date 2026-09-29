@@ -57,6 +57,9 @@ VIEWS = {
 	'front': ((0.35, -3.4, 0.7), (0, -0.2, 0.4), 35),
 	# The snow globe grip, as the game sees it: from outside the rim, above and to one side.
 	'rim': ((1.3, 2.6, 1.5), (0, 0, 0.0), 35),
+	# The void and the snap, as the game squares them: level, straight at the thumb side
+	# (god_hand.gd TO_CAMERA), the hand lifted into the middle of the frame (sun_rim()).
+	'void': (Vector((0.958, 0.287, 0.0)) * 2.2 + Vector((0, -0.3, 0.7)), (0, -0.3, 0.7), 35),
 }
 
 
@@ -169,9 +172,10 @@ class Stage:
 		"""Show the stand-in a hand world clip works on, in place of the ground."""
 		self.sun.hide_render = not name.startswith('Reach')
 		self.block.hide_render = not name.startswith('Rim')
-		self.ground.hide_render = not (self.sun.hide_render and self.block.hide_render)
+		in_void = name.startswith(('Void', 'Snap'))
+		self.ground.hide_render = not (self.sun.hide_render and self.block.hide_render) or in_void
 		# The sun is held in the sky: lift it and the hand into the middle of the frame.
-		lift = 0.4 if name.startswith('Reach') else 0.0
+		lift = 0.4 if name.startswith('Reach') or in_void else 0.0
 		rig.location = (0, 0, lift)
 		self.sun.location = (0, 0, lift)
 
@@ -414,6 +418,7 @@ def check():
 	pairs += [('Idle', 'TurnIn'), ('TurnIn', 'TurnHold'), ('TurnHold', 'TurnOut'), ('TurnOut', 'Idle'),
 		('Idle', 'CatchIn'), ('CatchIn', 'CatchHold'), ('CatchHold', 'CatchOut'), ('CatchOut', 'Idle')]
 	pairs += clips.SUN_RIM_HANDOFFS
+	pairs += clips.VOID_HANDOFFS
 	for a, b in pairs:
 		gap = max((x - y).length for x, y in zip(last[a], first[b]))
 		print(f'HAND_HANDOFF {a:>12s} -> {b:12s} {gap:.4f}')

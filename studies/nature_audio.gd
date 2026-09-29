@@ -54,6 +54,15 @@ func footstep(point: Vector3) -> void:
 		player.play()
 		return
 
+## A snap turned day to night or back (scripts/void_snap.gd): the calls that
+## belong to the other half of the day fade out over their usual half second,
+## and the new half's first call comes within a few seconds.
+func snap_to(night: bool) -> void:
+	for call: Dictionary in calls:
+		if (str(call.get("name","")) == "owl") != night: call.length = minf(float(call.length),float(call.age)+0.5)
+	if night: owl_in = minf(owl_in,rng.randf_range(1.5,4.0))
+	else: song_in = minf(song_in,rng.randf_range(0.5,2.0))
+
 func call_bird(name: String, point: Vector3, gain: float) -> void:
 	if paused or muted or calls.size() >= 3: return
 	var player := AudioStreamPlayer3D.new()
@@ -65,7 +74,7 @@ func call_bird(name: String, point: Vector3, gain: float) -> void:
 	player.global_position = point
 	var length := minf(player.stream.get_length(),rng.randf_range(4.0,8.0))
 	player.play(rng.randf_range(0.0,maxf(0.0,player.stream.get_length()-length)))
-	calls.append({"player":player,"age":0.0,"length":length,"gain":gain})
+	calls.append({"player":player,"age":0.0,"length":length,"gain":gain,"name":name})
 
 func update_state(delta: float, stopped: bool, silence: bool, level: float, daylight: float, cold: float, rain: float, wind: float, ice: float, growth: float, water_growth: float, listener: Vector3, water_points: Dictionary) -> void:
 	paused = stopped
