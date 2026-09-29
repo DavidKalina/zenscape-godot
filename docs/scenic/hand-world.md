@@ -71,6 +71,16 @@ Camera and hand compete for drags. The rule still has to be settled. One candida
 - **Tool pots on the rim**: water, pollen, a wind jar, clay. The hand dips into one to take that tool, and its shape then shows what it holds, so no button needs to light up.
 - **Finger frame.** Thumb and index make an L, and that enters photo mode.
 
+## Verbs on the diorama
+
+Agreed with the user on 2026-09-28, after playing the first three slices (the sun drag, the season rim, the snow globe, the lazy Susan). Each big thing you do to the world is one physical verb you would do to a toy, so the player finds them by trying. Each verb answers a little before it commits (a faster spin starts the sky flickering), so the player feels there is more and pushes further.
+
+- **Spin = time.** A slow turn just shows the other side. A fast spin winds the world forward: the sun races round, days flicker past, the seasons roll on, and the weather changes because time passed. As it slows you land wherever it stopped. The user: "the spin is just a more legible way to change the time". **This replaces the sun drag**, which goes, and the rim's season dial with it.
+- **Shake = the snow globe.** It stays the weather verb: snow in the cold, rain otherwise. (A hard shake to regenerate was weighed and set aside.)
+- **Spring = raise and sink.** The land behaves like a spring. Pull it down and let go, and mountains spring up; push it the other way and let go, and it springs down into a basin for a lake. How far you pull decides how much.
+- **Flip = a new world.** Turn the diorama over, and its other side is a fresh chunk: flipping is starting over.
+- **Setting the weather directly** is still wanted whenever the player likes: reach into the sky (cup a cloud and squeeze it, flick it away), and the Mood drawer (M) stays as the precise way.
+
 ## Down to the ground
 
 From above you are the hand shaping the diorama. The other half of the game is being small inside what you made. You drop a wanderer into the world, or slip into a creature, and see it first-person. The user on 2026-09-28: "a way for you to kind of see the world unfold in a different cinematic perspective."
