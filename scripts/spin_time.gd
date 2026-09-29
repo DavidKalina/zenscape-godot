@@ -73,6 +73,8 @@ func _process(delta: float) -> void:
 	# A shake is not a spin: the globe has the rim.
 	var globe: Node = scene.get("snow_globe")
 	if globe != null and globe.decided: speed = 0.0
+	# A turn pushed with Shift winds no time, however fast.
+	if bool(rig.turn.get("timeless")): speed = 0.0
 	var sky: Object = scene.get("_celestial")
 	if sky != null: sky.shimmer = shimmer_for(speed)
 	hours_per_second = hours_for(speed)

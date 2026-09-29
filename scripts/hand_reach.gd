@@ -30,10 +30,14 @@ extends Node
 ## **Modeless** (`--modeless`, docs/scenic/modeless.md). The sun no longer
 ## grabs and the rim no longer dials the season. A rim press is read from its
 ## first few pixels: sideways turns the world (scripts/world_turn.gd, held by
-## the rim's edge; a fast spin winds time, scripts/spin_time.gd), vertical is
-## the flip (only the `flip_*` signals, for the flip slice), and a shake takes
-## over from either. A left press on the land is left free: it emits the
-## `land_*` signals for the spring slice and no brush or turn sees it. The hand
+## the rim's edge; a fast spin winds time, scripts/spin_time.gd, unless Shift
+## was held), up lifts the block (the `flip_*` signals, scripts/diorama_flip.gd,
+## which decides at the release between a basin, a toss and the flip), down
+## dips it for the edge spring (the `edge_spring_*` signals,
+## scripts/edge_spring.gd), and a shake takes over from any of them. While a
+## tossed block is in the air a press catches it (`_catch_toss`). A left
+## press on the land is left free: it emits the `land_*` signals for the
+## spring slice and no brush or turn sees it. The hand
 ## shows the zone on hover: the rim grip over the rim, a ready pinch over land.
 ##
 ## The rim's grab is shared with the snow-globe shake (another slice): it
@@ -51,6 +55,12 @@ signal rim_released()
 signal flip_began(screen_pos: Vector2)
 signal flip_dragged(progress: float)
 signal flip_released(progress: float)
+## Modeless only. A rim drag decided to be the edge spring (mostly vertical,
+## downward): the press, the pointer as it moves, and the let-go. A shake that
+## takes the rim over ends it with a release at the press, so nothing is kept.
+signal edge_spring_began(screen_pos: Vector2)
+signal edge_spring_dragged(screen_pos: Vector2)
+signal edge_spring_released(screen_pos: Vector2)
 ## Modeless only. A left press on the land, its drag (pointer, and the
 ## motion since the last event) and its release. Nothing else sees these
 ## presses; a prop or a tree under the pointer keeps its own grab instead.
@@ -110,7 +120,7 @@ const SETTLED := 0.002
 const SUN_HINT := "Drag to grab the sun  ·  let go and it drifts"
 const MOON_HINT := "Drag to grab the moon  ·  let go and it drifts"
 const RIM_HINT := "Drag to turn the rim for the season"
-const RIM_HINT_MODELESS := "Push the rim to turn  ·  spin it to wind time  ·  shake for weather"
+const RIM_HINT_MODELESS := "Push the rim to turn  ·  pull it down to spring  ·  shake for weather"
 const HINT_UNTIL := 2
 
 var scene: Node3D
@@ -154,7 +164,7 @@ var _land_frame := -1
 var _reverted := false
 ## `--modeless`: what the pointer is over ("rim", "land" or ""), the plate
 ## point it names for the hand, what a rim hold has made of its drag ("" while
-## undecided, "turn", "flip" or "shake"), where the press was, the rim's global
+## undecided, "turn", "flip", "spring" or "shake"), where the press was, the rim's global
 ## edge point the turn holds, and the gesture the hover set on the hand.
 var modeless := Modeless.enabled()
 var hover_zone := ""
@@ -166,6 +176,8 @@ var _grab_global: Variant = null
 ## with the pointer, the turn's grab does not.
 var _press_edge := Vector3.ZERO
 var _hover_shown := ""
+## Shift was held at the rim's press: a turn from it winds no time.
+var _press_shift := false
 ## When the rim last moved (µs), for the shake's speeds.
 var _last_drag := 0
 ## The hand's gestures this reach sets, and so may clear.
@@ -444,8 +456,12 @@ func handle(event: InputEvent) -> bool:
 		if button.pressed:
 			# While the diorama is turning over, a press waits for it to land.
 			var flip: Node = scene.get("flip")
-			if holding.is_empty() and flip != null and flip.active(): return true
+			if holding.is_empty() and flip != null and flip.active():
+				# A tossed block in the air is caught; otherwise the press waits.
+				if modeless and flip.can_catch(): _catch_toss(button.position)
+				return true
 			if not holding.is_empty() or not available() or button.ctrl_pressed or button.double_click: return false
+			_press_shift = button.shift_pressed
 			var what := reach_at(button.position)
 			if what.is_empty():
 				return modeless and _land_press(button.position)
@@ -799,7 +815,8 @@ func _prop_at(point: Vector2) -> bool:
 	return resident != null and resident.scene != null and bool(resident.hovered)
 
 ## A drag on the held rim, once the snow globe has been fed it. Undecided, the
-## first AXIS_PIXELS of travel choose the turn or the flip.
+## first AXIS_PIXELS of travel choose: sideways the turn, up the flip, down
+## the edge spring.
 func _rim_motion(point: Vector2) -> void:
 	var globe: Node = scene.get("snow_globe")
 	if globe != null and globe.decided:
@@ -809,11 +826,17 @@ func _rim_motion(point: Vector2) -> void:
 	if rim_intent.is_empty():
 		if travel.length() < Modeless.AXIS_PIXELS: return
 		if absf(travel.y) > absf(travel.x)*Modeless.VERTICAL_BIAS:
-			rim_intent = "flip"
-			flip_began.emit(_press_pos)
+			if travel.y < 0.0:
+				rim_intent = "flip"
+				flip_began.emit(_press_pos)
+			else:
+				rim_intent = "spring"
+				edge_spring_began.emit(_press_pos)
 		else:
 			rim_intent = "turn"
 			var turn := _turn()
+			# Shift turns without winding time, however fast (spin_time.gd).
+			if turn != null: turn.timeless = _press_shift or Input.is_key_pressed(KEY_SHIFT)
 			var terrain: Node3D = _editor().terrain
 			_grab_global = terrain.to_global(_press_edge)
 			if turn != null: turn.hold_begin(_press_pos,_grab_global)
@@ -822,6 +845,16 @@ func _rim_motion(point: Vector2) -> void:
 		if turn != null: turn.hold_move(point)
 	elif rim_intent == "flip":
 		flip_dragged.emit(_flip_progress(point))
+	elif rim_intent == "spring":
+		edge_spring_dragged.emit(point)
+
+## A press while a tossed block is in the air: the hand holds the rim again
+## and the flip is caught where it is, so the next drag and flick add to it.
+func _catch_toss(point: Vector2) -> void:
+	var flip: Node = scene.get("flip")
+	if not flip.catch(point): return
+	grab("rim",point)
+	rim_intent = "flip"
 
 ## How far over the lip an upward drag has taken the diorama, 0..1.
 func _flip_progress(point: Vector2) -> float:
@@ -829,7 +862,8 @@ func _flip_progress(point: Vector2) -> float:
 	return clampf((_press_pos.y-point.y)/(Modeless.FLIP_REACH*height),0.0,1.0)
 
 ## A shake was decided: it takes the rim. The turn stops where it is (no spin
-## carried on) and a flip in the making is abandoned as never begun.
+## carried on), a flip in the making is abandoned as never begun, and an edge
+## spring is let go at its press, so it relaxes and keeps nothing.
 func _shake_takes_rim() -> void:
 	if holding != "rim" or rim_intent == "shake": return
 	var was := rim_intent
@@ -839,15 +873,19 @@ func _shake_takes_rim() -> void:
 		if turn != null: turn.hold_end(false)
 	elif was == "flip":
 		flip_released.emit(0.0)
+	elif was == "spring":
+		edge_spring_released.emit(_press_pos)
 
 ## Letting go of the rim: the turn spins on if it was fast, the flip is told
-## how far over it had gone.
+## how far over it had gone, the edge spring where the pointer let go.
 func _rim_release(point: Vector2) -> void:
 	if rim_intent == "turn":
 		var turn := _turn()
 		if turn != null: turn.hold_end(true)
 	elif rim_intent == "flip":
 		flip_released.emit(_flip_progress(point) if point != Vector2.INF else 0.0)
+	elif rim_intent == "spring":
+		edge_spring_released.emit(point if point != Vector2.INF else _press_pos)
 	rim_intent = ""
 
 ## The hand for the modeless zones: over the rim's lip it takes the rim grip,
@@ -865,7 +903,8 @@ func _drive_hand_modeless() -> void:
 		_hover_shown = ""
 		return
 	# Turning the diorama over, the flip (scripts/diorama_flip.gd) has the hand.
-	if holding == "rim" and rim_intent == "flip": return
+	# Drawing the edge spring, the spring (scripts/land_spring.gd) has it.
+	if holding == "rim" and rim_intent in ["flip","spring"]: return
 	if holding == "rim":
 		_show_hand(hand,reach_point)
 		return

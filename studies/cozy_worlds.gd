@@ -49,6 +49,9 @@ var atlas: Node
 var atlas_path := "user://cozy-worlds/atlas.json"
 ## --modeless: turning the diorama over for a new world (scripts/diorama_flip.gd).
 var flip: Node
+## --modeless: the rim pulled down springs a range; a lift set down slowly
+## sinks a basin (scripts/edge_spring.gd).
+var edge_spring: Node
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -90,6 +93,15 @@ func _ready() -> void:
 			hand_reach.flip_began.connect(func(at: Vector2) -> void: flip.begin(at))
 			hand_reach.flip_dragged.connect(flip.drag)
 			hand_reach.flip_released.connect(flip.release)
+		# Pulling the rim down dips the block and springs a range; a lift set
+		# down slowly sinks a basin (the flip's `set_down`).
+		edge_spring = preload("res://scripts/edge_spring.gd").new()
+		add_child(edge_spring)
+		edge_spring.setup(self)
+		if hand_reach != null:
+			hand_reach.edge_spring_began.connect(func(at: Vector2) -> void: edge_spring.pull_begin(at))
+			hand_reach.edge_spring_dragged.connect(func(at: Vector2) -> void: edge_spring.pull(at))
+			hand_reach.edge_spring_released.connect(edge_spring.release)
 	shell_ready = true
 
 func _fill_world_menu() -> void:

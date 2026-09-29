@@ -4,9 +4,11 @@ extends SceneTree
 ## with `--modeless`, raises a hill so the land has relief, and drives the
 ## flip through its API at a fixed 60 Hz:
 ## - the pose maths: identity at rest, upside down and back in place at pi;
-## - a drag under half way that is let go falls back (bouncing), and nothing
-##   changes: heights, the whole document, the layers, the camera, the terrain;
-## - a drag past half way goes over: the world is a new one (its seed, its
+## - a slow drag under upright that is let go falls back (bouncing) and is set
+##   down: the edge spring (scripts/edge_spring.gd) sinks a basin, one undo
+##   step, and after that undo nothing has changed: heights, the whole
+##   document, the layers, the camera, the terrain;
+## - a drag past upright goes over: the world is a new one (its seed, its
 ##   heights), made while the snapshot is in the air, hidden from the camera
 ##   every frame, the flip lands and settles, the hand grips the rim and lets
 ##   go, and the longest main-thread frame is reported;
@@ -147,6 +149,7 @@ func run() -> void:
 	# started to sample is kept for the flip after.
 	flip.next_seed = 424242
 	var base := signature()
+	var undo_base: int = data._undo.size()
 	var hand: Node3D = scene.get("god_hand")
 	var mark := _phases.size()
 	var fell := [false]
@@ -178,7 +181,22 @@ func run() -> void:
 	print("FALLBACK ",JSON.stringify({"peak_deg":snappedf(rad_to_deg(peak),0.1),"frames":n,"bounces":bounces,"phases":phases_seen(mark)}))
 	check("released under half way it falls back and rests",flip.phase == flip.Phase.IDLE and fell[0],n)
 	check("with a small bounce",bounces >= 1,bounces)
-	check("and nothing changed (heights, document, seed, layers, camera, terrain)",same(base,signature()))
+	# A slow set-down sinks a basin (the agreed scheme): one undo step, and
+	# after it nothing else has changed.
+	var edge_spring: Node = scene.get("edge_spring")
+	if edge_spring != null:
+		var waited := 0
+		while (edge_spring.state != 0 or editor.mountain.active or editor.refresh_pending > 0) and waited < 600:
+			await tick()
+			waited += 1
+		await frames(6)
+		var sank := 0.0
+		for i in range(base.heights.size()): sank = maxf(sank,base.heights[i]-data.heights[i])
+		print("SETDOWN ",JSON.stringify({"basin":edge_spring.last_basin,"sank_m":snappedf(sank,0.01)}))
+		check("set down slowly, a basin sinks (one undo step)",sank > 0.2 and data._undo.size() == undo_base+1,sank)
+		editor.undo()
+		await frames(20)
+	check("and after its undo nothing changed (heights, document, seed, layers, camera, terrain)",same(base,signature()))
 	check("the hand lets go",hand == null or hand.reach_gesture == "")
 	check("no snapshot is left",flip.pivot == null and flip._hidden.is_empty())
 	await frames(20)

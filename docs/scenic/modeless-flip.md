@@ -10,7 +10,9 @@ The rim agent's `hand_reach.gd` emits `flip_began(screen_pos)`, `flip_dragged(pr
 
 - `begin(screen_pos) -> bool`: takes the snapshot and grips the rim. False while another flip, a regrowth or a formation is busy (`can_begin()`).
 - `drag(progress)`: 0..1, how far over the lip. Starts making the world at `GENERATE_AT` (0.2). At `AUTO_COMMIT` (0.97) it goes over without waiting for the release.
-- `release(progress)`: under `COMMIT_AT` (0.5) it falls back; past it, or with a flick (a smoothed drag rate over `FLICK_RATE`, let go past `FLICK_FROM`), it goes over.
+- `release(progress)`: decided at the release (the edge rework, `docs/scenic/modeless.md`): upright or past it (`TIP_ANGLE`) it goes over; with a flick (smoothed drag rate at least `TOSS_RATE`) it is tossed and may fall back or go over; slowly, it falls back and emits `set_down(progress)`, which sinks a basin. `COMMIT_AT`, `FLICK_RATE` and `FLICK_FROM` are gone.
+- `can_catch()`, `catch(screen_pos)`: a tossed plate in the air is held where it is, and the next drag adds to its angle.
+- `dip_begin(screen_pos)`, `dip_to(amount)`, `dip_release(amount)`, `dip_finish()`: the edge spring's dip, on the same snapshot; `dipped(amount)` when it is back at rest.
 - `flip_back() -> bool`: flips the other way and brings the previous world back (see Undo). `back_source()` says how (UNDO, KEPT, or NEW for nothing to bring back). The parent should route its undo key here when `back_source() != NEW` and the flip is the last thing done.
 - Signals: `landed(world_seed)`, `fell_back`, `phase_changed(phase)`. `active()` and `going_over()` tell the rim routing to ignore presses.
 

@@ -33,6 +33,10 @@ The pull is the pointer's vertical travel from the press, as a share of `PULL_SC
 
 Wiring: `studies/fidelity.gd` creates it when `--modeless` is on (`land_spring`), and `NativeChunkEditor.spring` points at it, so an undo lands a spring in progress. Without `--modeless` nothing exists and the brushes work as before.
 
+## The edge
+
+The rim pulled down is the edge spring (`scripts/edge_spring.gd`, `docs/scenic/modeless.md`, "Edge rework"): the block dips as a unit while held, and on release a random multi-peak range springs up on this spring, built into the editor's mountain from the alpine form and a rolling dome, and a lifted rim set down slowly sinks this basin at a random spot. It extends this file for the spring, the landing and the basin. The agreed scheme retires the land press's spring (the clay slice); the edge keeps using this code.
+
 ## Probe
 
 `tools/probe_land_spring.gd`, on the real `studies/cozy_worlds.tscn`, headless (see its header for the command; run with and without `--modeless`). Last run: all checks pass. On the plain at (-2, 1), ground 0.23 m:
