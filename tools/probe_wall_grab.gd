@@ -99,7 +99,9 @@ func run() -> void:
 	reach._hover_key = []
 	reach._hover(Vector2(4,4))
 	reach._drive_hand_modeless()
-	check("letting go and moving off clears the palm's facing",hand.reach_gesture == "" and hand.reach_facing == null,[hand.reach_gesture,hand.reach_facing])
+	# Off the diorama the hand stays, in the void pose (docs/scenic/modeless.md "Void slice").
+	var off: String = "void" if reach.hover_zone == "void" else ""
+	check("letting go and moving off clears the palm's facing",hand.reach_gesture == off and hand.reach_facing == null,[hand.reach_gesture,hand.reach_facing,reach.hover_zone])
 	await frames(10)
 	# Turn: sideways drag along the wall.
 	var yaw0: float = rig._view.x

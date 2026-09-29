@@ -225,3 +225,42 @@ Branch `feature/modeless-edge-spring`, the first build slice of the agreed schem
 - a small flick (960 px/s) tosses the block from 0.26 rad to 0.75 rad; it falls back, lands three times, sinks no basin and makes no new world;
 - caught in the air and flicked the same way again, it goes over and a new world lands; one hard flick (2400 px/s) also goes over;
 - Shift and a fast push turns at 8.9 rad/s and winds no time.
+
+## Void slice: the ever-present hand and the snap
+
+Branch `feature/modeless-void`. Checked headless only (`tools/probe_void_snap.gd`); nothing has been seen, heard or felt on screen.
+
+### Try it
+
+Run the product scene with `-- --modeless`.
+
+- **Point at the sky**, or anywhere off the diorama. The hand floats there, half upright with its fingers loosely curled, and now and then its thumb rubs its middle fingertip. Over the land it readies a pinch and on the lip it takes the rim grip, as before. Over a panel it goes.
+- **Click the sky.** The hand snaps its fingers and it is night; click again and it is day. The cut is instant.
+- **Shift-click the sky.** The snap steps the golden hours: dawn, noon, dusk, night, dawn.
+- **Press the sky and drag.** Nothing happens: the loaded hand relaxes and no snap fires.
+- **Right-drag, scroll or pinch.** The hand fades while the camera moves and comes back when it stops.
+
+### How it works
+
+- **The void.** A pointer that is in the world (`pointer_in_world`) but reaches no rim or wall, has no land under it and no prop, tree or resident is in the void (`hand_reach.void_at`, hover zone `"void"`). The hand stands on the pointer's ray `VOID_DEPTH` (0.8) of the camera's distance to its pivot out, and never nearer than `VOID_NEAR` (5 m). That is about the size the hand has over the middle of the land, a touch bigger, so it does not jump in size as the pointer leaves the land; at the overview (59 m) it is 47 m out. The sun grab's fixed 12 m made the 2.5 m hand fill a fifth of the screen.
+- **The poses.** The god hand gestures `"void"` (VoidIn, VoidHold, VoidOut) and `"snap"` (SnapIn, SnapHold) turn the hand square to the camera, as the sun's Reach does, and float free (they lean into the pointer's way; no tilt, no lift). `docs/scenic/god-hand.md` has the clips.
+- **The click.** A left press in the void is held by the hand (`holding == "void"`) and loads the snap: the hand plays SnapIn and holds it. If the pointer wanders more than `CLICK_PIXELS` (6 px) the press is a drag: the hand relaxes back into VoidHold and the release does nothing. A release inside that is a click: `fire_snap(shift)` changes the hour and the hand plays SnapOut, the slam and its follow-through, back into VoidHold. The cut and the slam start on the same frame. There is no time limit: holding the loaded snap and letting go is still a snap.
+- **The hours.** `scripts/void_snap.gd`. Day is the sun above the horizon. From day a snap lands on mood_look's Night (phase 0.035, just after midnight, the moon high); from night on its Morning (0.345). Shift steps to the nearest of Dawn 0.275, Midday 0.47, Dusk 0.705 and Night 0.035 ahead of the hour now. The clock is wound forward to it, as a spin winds it (the day moves on; nothing runs backwards). The weather is not advanced.
+- **Instant.** The blend is 0 s. Everything that smooths the hour between the clock and the screen is bypassed for a snap: a mood cross-fade in flight is landed first (`finish_fade`, else it drags the old hour back over 1.2 s); the N key's easing (`skip_to`) is dropped by setting the time outright; the celestial rig is rebuilt at once (`update_rig`), so the lights and every sky, fog and night global are the new hour's that frame; and the sky's radiance map, which refreshes over several frames (`PROCESS_MODE_INCREMENTAL`), runs in real time for 0.3 s so the wet-sheen reflections follow. Everything else that reads the hour (fireflies, the display fog colours, the look pass, the cricket and frog beds) already follows it every frame.
+- **Audio.** The cricket and frog beds follow daylight every frame, so they switch at once. A bird call from the wrong half of the day (a song after a night snap, an owl after a day snap) fades out over half a second (`nature_audio.snap_to`), and the new half's first call comes within a few seconds (an owl in 1.5 to 4 s, a song in 0.5 to 2 s). There is no snap sound yet.
+- **Pins.** As for a spin: a clock that was running keeps running from the new hour; a held clock is pinned again at it (`mood_look.pin_hour`, a held hour).
+- **The camera fades the hand.** `hand_reach.camera_moving()` is true during a right drag and while the camera's view still turns or zooms faster than 0.05 rad/s (or log-distance/s) or its pivot slides faster than 0.15 m/s (a fling, a zoom, a double-click's glide). A turn or spin of the world is not the camera moving, nor is a followed creature carrying the pivot. While it is true the hover sets `god_hand.held_off` and the hand fades out as it stands (keeping its pose) and back in when the camera stops, at the hand's usual fade (0.25 s). A hold (rim, land, flip, void) keeps the hand.
+- **Hint.** Over the void the hint line reads "Click the sky to snap day and night · Shift-click steps dawn, noon, dusk, night" until two snaps have been made.
+- **Signals.** `hand_reach.snapped(phase, step)` after each snap; `hand_reach.snaps` counts them.
+
+### Limits and open points
+
+- Nothing has been checked on a GPU: the hand's size and pose in the sky, the snap's read, the cut, and the reflections catching up are all unseen. Headless has no renderer, so the radiance switch is only checked as a setting.
+- The snap itself has no sound; the nature beds and calls are the only audio that changes, and they are unheard.
+- Shift + sideways rim push (turn without time) is the edge slice's.
+- Headless has no pointer, so probes set `hand_reach.pointer_override` for the hover.
+- Clicking the sky no longer lets go of a hover as the rim slice's probe expected: over the sky the hand stays. `tools/probe_modeless_rim.gd` and `tools/probe_diorama_flip.gd` now expect the void pose where the pointer is in the sky.
+
+### Probe
+
+`tools/probe_void_snap.gd` (`--headless --fixed-fps 60 ... -- --modeless`) on the product scene: the glb has the six clips; the sky is void and the land's middle is not; hover there takes the void pose and plays the void clips, the hand shows at the void depth with its point under the pointer; over a panel the hand lets go and hides; a press loads the snap, and the release cuts to night the same frame (phase, `zs_night`, key light energy and `zs_sky_up` all change), the day moves on, radiance runs in real time and goes back, the hand plays SnapOut and returns to VoidHold; a running clock keeps running unpinned; a second click is day; a held clock is pinned at the new hour; a mood fade in flight is landed; Shift-clicks step 0.275, 0.47, 0.705, 0.035, 0.275; a drag relaxes the hand and does not snap; a right drag fades the hand, which comes back once the camera stops; land and rim presses are as before and do not snap.
