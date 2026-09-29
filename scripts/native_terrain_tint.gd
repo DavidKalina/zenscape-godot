@@ -60,6 +60,21 @@ static func paint(layer: PackedFloat32Array, cells: int, step: float, center: Ve
 			layer[k+2] = lerpf(layer[k+2],color.b,share)
 			layer[k+3] = minf(after,1.0)
 
+## Raise one cell's weight to at least `weight` over what it carried in `base`,
+## mixing `color` in by the share the coat adds, as `paint` does. Coating again
+## from the same base rewrites the cell, so the caller only ever deepens it.
+static func coat(layer: PackedFloat32Array, base: PackedFloat32Array, cell: int, color: Color, weight: float) -> void:
+	var k := cell*STRIDE
+	var before := base[k+3]
+	var after := minf(weight,1.0)
+	if after <= before:
+		return
+	var share := (after-before)/after
+	layer[k] = lerpf(base[k],color.r,share)
+	layer[k+1] = lerpf(base[k+1],color.g,share)
+	layer[k+2] = lerpf(base[k+2],color.b,share)
+	layer[k+3] = after
+
 ## Wipe painted colour back out, matching the cover brushes' falloff.
 static func erase(layer: PackedFloat32Array, cells: int, step: float, center: Vector2, radius: float, amount: float) -> void:
 	if radius <= 0.0 or amount <= 0.0:

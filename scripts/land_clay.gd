@@ -10,10 +10,12 @@ extends Node
 ##   and residents under the pointer never reach here: hand_reach keeps their
 ##   own grab.)
 ## - **Drag** (moved MOVE_PIXELS before HOLD_SECONDS): the thumb. How fast the
-##   pointer travels decides it, blended: a slow stroke digs a soft groove along
+##   pointer travels decides it, blended: a slow stroke digs a channel along
 ##   the path, a fast back-and-forth rub smooths the land under it. **Shift**
-##   when the drag is decided makes it the palm, which levels the land to the
-##   height under the press.
+##   when the drag is decided makes it the palm, which levels the land to a
+##   little under the height under the press, a pan a pond can fill. Where
+##   either takes the ground down, bare earth shows through the grass (the
+##   tint layer) and stays.
 ## - **Hold still** for HOLD_SECONDS: the hand closes into a pinch, and then
 ##   dragging up raises and down sinks the pinched spot, directly: the summit
 ##   follows the pointer. **Shift** when the pinch closes makes it a smaller,
@@ -43,24 +45,30 @@ const MOVE_PIXELS := 6.0
 const GROOVE_SPEED := 500.0
 const RUB_SPEED := 1200.0
 const SPEED_WINDOW := 0.25
-## Dabs along the path, metres apart, and at most this many a frame.
+## Dabs along the path, metres apart, and at most this many a frame (a
+## thumb's first SPEED_WINDOW of dabs are laid together once its speed is read).
 const DAB_SPACING := 0.3
 const MAX_DABS := 64
 ## The groove: half-width and depth in metres below the ground on the stroke's
 ## line. Its bed is level across (the ground at the line, less the depth),
 ## full depth inside GROOVE_FLOOR of the half-width (the land's points are
-## about 0.6 m apart, so the nearest row always reaches the bed) and eases to
+## 0.45 to 0.75 m apart, so a row or two always reaches the bed) and eases to
 ## the untouched ground at the half-width on a smoothstep, so the floor and
 ## the banks are rounded. A lip of GROOVE_LIP metres rises just
 ## outside (to LIP_OUT half-widths), the clay the thumb pushed aside. Each dab
 ## moves the ground GROOVE_STEP of the way to that shape, and a stroke never
 ## digs below it however long it lingers: a groove is even and unbroken.
-const GROOVE_HALF_WIDTH := 1.2
-const GROOVE_DEPTH := 0.3
-const GROOVE_FLOOR := 0.35
-const GROOVE_LIP := 0.05
+## The bed never climbs along the stroke, so a downhill stroke is a channel
+## that keeps falling across the ground's bumps; it cuts at most GROOVE_CUT
+## metres deeper than GROOVE_DEPTH to do so, and past that it rises with a
+## hump (an uphill stroke: level, then rising, so it drains back to its start).
+const GROOVE_HALF_WIDTH := 1.25
+const GROOVE_DEPTH := 1.0
+const GROOVE_FLOOR := 0.55
+const GROOVE_LIP := 0.1
 const LIP_OUT := 1.6
 const GROOVE_STEP := 0.5
+const GROOVE_CUT := 0.5
 ## The rub: radius in metres, and the share each dab moves a point toward the
 ## mean of its neighbours at the centre (easing to nothing at the rim from
 ## RUB_CORE of the radius).
@@ -68,10 +76,25 @@ const RUB_RADIUS := 1.6
 const RUB_STEP := 0.45
 const RUB_CORE := 0.5
 ## The palm: radius in metres, and the share each dab moves a point toward
-## the level under the press (full inside PALM_CORE of the radius).
+## the level under the press (full inside PALM_CORE of the radius). The level
+## is pressed PALM_SINK metres below the ground under the press, easing to
+## none at the rim, so the palm leaves a level-floored pan a pond can fill;
+## each stroke presses from the ground as it stands, so pressing again deepens it.
 const PALM_RADIUS := 2.0
 const PALM_STEP := 0.5
 const PALM_CORE := 0.55
+const PALM_SINK := 0.4
+## Dirt: where the thumb or the palm takes the ground down, the painted grass
+## has caved in and bare earth shows. The tint layer's weight rises from
+## nothing at DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens
+## from DIRT toward DIRT_DEEP by GROOVE_DEPTH. A cell a stroke leaves at least
+## DIRT_BARE bare loses its grass and blades and is marked hand-made, so cover
+## does not creep back and nothing takes root in it. Dirt only ever deepens.
+const DIRT_FROM := 0.04
+const DIRT_FULL := 0.45
+const DIRT_BARE := 0.5
+const DIRT := Color("946c47")
+const DIRT_DEEP := Color("73513a")
 ## The pinch. The pinched spot rises by the pointer's travel up the screen at
 ## the scale of a metre standing there (so the summit keeps to the pointer),
 ## `(1-t²)²` falloff over a radius that widens with the height: R0 plus GROW
@@ -132,6 +155,11 @@ var _last_plate: Variant = null
 var _moved := 0.0
 var _window: Array[Vector2] = []
 var _dug := PackedByteArray()
+var _bed := INF
+var _stroking := 0.0
+var _tint_base := PackedFloat32Array()
+var _dirt_depth := {}
+var _dirt_rect := Rect2()
 var _level := 0.0
 var _near := PackedInt32Array()
 var _near_d := PackedFloat32Array()
@@ -190,7 +218,7 @@ func pull(screen_pos: Vector2, _relative := Vector2.ZERO) -> void:
 	travel = maxf(travel,screen_pos.distance_to(_press))
 	if state == State.PENDING and travel >= MOVE_PIXELS: _begin_drag()
 	if state == State.THUMB:
-		var hit: Variant = editor.pick(screen_pos)
+		var hit: Variant = _pick_base(screen_pos)
 		if hit != null: _queued.append(Vector2(hit.x,hit.z))
 
 ## The button came up: a tap pokes, a stroke or a pinch is kept as it stands.
@@ -250,6 +278,10 @@ func _begin_drag() -> void:
 	_open_stroke()
 	_dug = PackedByteArray()
 	_dug.resize(_base.size())
+	_bed = INF
+	_stroking = 0.0
+	_tint_base = editor.data.tint.duplicate()
+	_dirt_depth = {}
 	var ground: Variant = editor.data.sample(_center,_base)
 	_level = float(ground) if ground != null else 0.0
 	state = State.THUMB
@@ -288,6 +320,7 @@ func _open_stroke() -> void:
 func _end_stroke() -> void:
 	var data := editor.data
 	data.mark_objects_hand(_first_id)
+	_bare()
 	var kept := data.end_stroke()
 	editor._stroke_rect = _region.grow(1.0)
 	editor._settle_pending = true
@@ -306,23 +339,32 @@ func _end_stroke() -> void:
 ## Dabs along the pointer's path since the last frame.
 func _thumb_step(delta: float) -> void:
 	if delta > 0.0: _track_speed(delta)
+	_stroking += delta
 	rub = smoothstep(GROOVE_SPEED,RUB_SPEED,speed) if verb == "thumb" else 0.0
-	if _queued.is_empty(): return
+	# A thumb's first SPEED_WINDOW is held until its speed is known, so a rub
+	# does not start by digging (a release lays it down as it stands).
+	if _queued.is_empty() or (verb == "thumb" and delta > 0.0 and _stroking < SPEED_WINDOW): return
 	var data := editor.data
 	var heights := data.heights
+	_dirt_rect = Rect2()
 	for p in _queued:
 		var from: Vector2 = _last_plate if _last_plate != null else p
 		var count := clampi(ceili(from.distance_to(p)/DAB_SPACING),1,MAX_DABS)
 		for k in range(1,count+1):
 			var q := from.lerp(p,float(k)/count)
-			if verb == "palm": _palm(heights,q)
+			if verb == "palm":
+				_palm(heights,q)
+				_dirty(q,PALM_RADIUS)
 			else:
-				if rub < 0.99: _groove(heights,q,1.0-rub)
+				if rub < 0.99:
+					_groove(heights,q,1.0-rub)
+					_dirty(q,GROOVE_HALF_WIDTH)
 				if rub > 0.01: _rub(heights,q,rub)
 			dabs += 1
 		_last_plate = p
 	_queued = PackedVector2Array()
 	data.heights = heights
+	_dirt()
 	_show()
 	var at := _ground_at(_last_plate)
 	editor._emit_stroke(1,at,GROOVE_HALF_WIDTH,delta)
@@ -331,11 +373,14 @@ func _thumb_step(delta: float) -> void:
 	if hand != null and _hand_set == "press": hand.reach_pace = 1.0+1.5*rub
 
 ## The groove's dab at `q` with weight `g`: toward a level bed GROOVE_DEPTH
-## under the stroke's line, never below it.
+## under the stroke's line, never below it, and never above the bed behind it
+## (by at most GROOVE_CUT).
 func _groove(heights: PackedFloat32Array, q: Vector2, g: float) -> void:
 	var ground: Variant = editor.data.sample(q,_base)
 	if ground == null: return
 	var bed := float(ground)-GROOVE_DEPTH
+	bed = maxf(minf(bed,_bed),bed-GROOVE_CUT)
+	_bed = bed
 	var reach := GROOVE_HALF_WIDTH*LIP_OUT
 	_gather(q,reach)
 	_touch(q,reach)
@@ -368,14 +413,64 @@ func _rub(heights: PackedFloat32Array, q: Vector2, w: float) -> void:
 		var f := 1.0-smoothstep(RUB_CORE,1.0,_near_d[k]/RUB_RADIUS)
 		heights[i] = lerpf(heights[i],total/around.size(),RUB_STEP*w*f*_fade(i))
 
-## The palm's dab at `q`: toward the level under the press.
+## The palm's dab at `q`: toward the level under the press, pressed PALM_SINK
+## down in the middle.
 func _palm(heights: PackedFloat32Array, q: Vector2) -> void:
 	_gather(q,PALM_RADIUS)
 	_touch(q,PALM_RADIUS)
 	for k in _near.size():
 		var i := _near[k]
 		var f := 1.0-smoothstep(PALM_CORE,1.0,_near_d[k]/PALM_RADIUS)
-		heights[i] = lerpf(heights[i],_level,PALM_STEP*f*_fade(i))
+		var goal := _level-PALM_SINK*f
+		heights[i] = maxf(lerpf(heights[i],goal,PALM_STEP*f*_fade(i)),NativeTerrainData.MIN_HEIGHT)
+
+## The ground a dab at `q` may have dug, `reach` round it, for this frame's dirt.
+func _dirty(q: Vector2, reach: float) -> void:
+	var area := Rect2(q-Vector2.ONE*reach,Vector2.ONE*reach*2.0)
+	_dirt_rect = _dirt_rect.merge(area) if _dirt_rect.has_area() else area
+
+## Bare earth into the tint cells under this frame's dabs, by how far each
+## cell's middle now stands below the ground at the stroke's start. Written
+## from the stroke's starting tint, so it lands the same whatever the pace.
+func _dirt() -> void:
+	if not _dirt_rect.has_area(): return
+	var data := editor.data
+	var side := NativeTerrainData.MEADOW_CELLS
+	var step := NativeTerrainData.MEADOW_STEP
+	var low := Vector2i(((_dirt_rect.position+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((_dirt_rect.end+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var light := DIRT.srgb_to_linear()
+	var deep := DIRT_DEEP.srgb_to_linear()
+	var heights := data.heights
+	var tint := data.tint
+	var changed := false
+	for z in range(low.y,high.y+1):
+		for x in range(low.x,high.x+1):
+			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
+			var was: Variant = data.sample(p,_base)
+			var now: Variant = data.sample(p,heights)
+			if was == null or now == null: continue
+			var cell := z*side+x
+			var dug := float(was)-float(now)
+			if dug <= float(_dirt_depth.get(cell,DIRT_FROM)): continue
+			_dirt_depth[cell] = dug
+			var color := light.lerp(deep,smoothstep(DIRT_FULL,GROOVE_DEPTH,dug))
+			NativeTerrainTint.coat(tint,_tint_base,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug))
+			changed = true
+	_dirt_rect = Rect2()
+	if changed: data.tint = tint
+
+## Where a stroke left the ground bare, the grass is gone for good: no cover,
+## no blades, and hand-made, so emergence neither regrows nor plants it.
+func _bare() -> void:
+	var data := editor.data
+	for cell: int in _dirt_depth:
+		if NativeTerrainTint.weight_at(data.tint,cell) < DIRT_BARE: continue
+		data.grass[cell] = 0.0
+		data.blades[cell] = 0.0
+		data.meadow[cell] = 0.0
+		data.provenance[cell] = NativeTerrainData.SOURCE_HAND
+	_dirt_depth = {}
 
 ## The pinch follows the pointer: its lift is the pointer's travel up the
 ## screen in metres standing at the spot.
@@ -484,6 +579,17 @@ func _gather(center: Vector2, radius: float) -> void:
 				if d < radius:
 					_near.append(i)
 					_near_d.append(d)
+
+## The pointer on the ground as it stood when the stroke began: picked on the
+## live ground, a groove deepening ahead of the pointer would draw the line
+## onto its far wall, away from the camera, and widen it on that side.
+func _pick_base(screen_pos: Vector2) -> Variant:
+	var data := editor.data
+	var now := data.heights
+	data.heights = _base
+	var hit: Variant = editor.pick(screen_pos)
+	data.heights = now
+	return hit
 
 func _fade(i: int) -> float:
 	var p: Vector2 = editor.data.points[i]
