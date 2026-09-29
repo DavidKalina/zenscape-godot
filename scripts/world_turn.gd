@@ -22,6 +22,16 @@ extends Node
 ## `--classic-orbit` leaves this out and the rig orbits by pixels as before.
 ## Trackpad swipes, Shift+arrows and glides still orbit the rig's way, and
 ## stop a spin dead.
+##
+## The room stays put while the world turns: every change of the camera's
+## yaw the rig makes while it drives (a grab, a spin, a catch, a swipe,
+## Shift+arrows, a glide, Space's idle drift) also turns the room by as much
+## (`turn_room`), and studies/celestial.gd turns the sun and moon, both lights,
+## the stars, the aurora and the horizon hills by the room's yaw. Seen from the
+## camera the room then never moves, and the diorama spins under it like a
+## model on a turntable under a fixed lamp. Poses set from outside (a
+## regrowth, the menu's Overview, photo mode, a capture) move the camera, not
+## the room.
 
 ## Below this turning speed (rad/s) a release lets the world stand; above it
 ## the world spins on at FLICK_GAIN times the speed it had, at most MAX_SPIN
@@ -94,6 +104,10 @@ var _caught := 0.0
 var _catch_at: Variant = null
 var _hand_hold := 0.0
 var _hand_on := false
+## The room's yaw (radians): how far the camera's yaw has turned under the
+## rig since the scene started, which the room follows. Stays 0 with
+## `--classic-orbit`.
+var room_yaw := 0.0
 
 func setup(owner_rig: Node) -> void:
 	rig = owner_rig
@@ -126,6 +140,15 @@ func rest() -> void:
 	_hand_hold = 0.0
 	_catch_pending = false
 	_hand(0.0)
+
+## The rig turned the camera's yaw by `by` radians this frame: the room
+## follows, so it keeps its bearing to the camera and the diorama is what
+## turns.
+func turn_room(by: float) -> void:
+	if not enabled or by == 0.0: return
+	room_yaw += by
+	var sky: Object = scene.get("_celestial")
+	if sky != null: sky.room_yaw = room_yaw
 
 func spinning() -> bool:
 	return absf(spin) > 0.0

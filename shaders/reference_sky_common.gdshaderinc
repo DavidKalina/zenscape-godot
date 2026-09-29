@@ -1,6 +1,15 @@
 // Ported from ZenScape sky.js and aurora.js; shared by sky and water.
 #include "res://shaders/reference_globals.gdshaderinc"
 
+  // A world direction as the room sees it (docs/scenic/hand-turn.md, "A fixed
+  // room"): turned back about the vertical by the room's yaw, so what is
+  // drawn in the room keeps its bearing to the camera as the diorama turns.
+  vec3 zsRoomDir(vec3 dir) {
+    float c = cos(zs_room_yaw);
+    float s = sin(zs_room_yaw);
+    return vec3(c * dir.x - s * dir.z, dir.y, s * dir.x + c * dir.z);
+  }
+
   
    // strength, speed, palette, heading
   

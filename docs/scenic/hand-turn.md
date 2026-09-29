@@ -29,6 +29,27 @@ Open the game as usual (`studies/cozy_worlds.tscn`) and put a world up.
 
 The clips live in `tools/blender_hand/god_hand_clips.py`, in the section "turn and catch". They are TurnIn (14 frames, touching down at frame 6), TurnHold (a 2 s loop), TurnOut (30), CatchIn (12, touching down at frame 4), CatchHold (the same loop) and CatchOut (the same as TurnOut). `god_hand_review.py --check` checks their hand-offs, and every gap is 0. Their peak accelerations are within the range of the existing clips. According to `--heights`, the kneading hold presses the ring and little fingertips up to 0.06 hand lengths into the ground (about 15 cm). The soft contact in the shader should hide this, but it has not been seen on a GPU.
 
+## A fixed room
+
+On screen, orbiting the camera and turning the world look the same, except for everything that belongs to the room rather than the diorama. So since 2026-09-28 the room follows the camera: the sky, the sun and the lights stay put while the diorama spins under them, like a model on a turntable under a fixed lamp in front of a fixed backdrop. The world's nodes are not moved. Terrain, water, creatures, physics, particles and the wind all stay in world space, and only the room turns with the camera.
+
+- **The room's yaw.** `world_turn.gd` keeps `room_yaw`, which is how far the rig has turned the camera's yaw since the scene started. Every yaw change the rig makes while it drives the camera counts, and so does Space's idle drift (the scene adds it after the rig writes the pose). That covers a grab, a spin, a catch, a bat, a swipe, Shift+arrows, a glide and a focus. Tilt and zoom are still camera moves. Poses set from outside, such as a regrowth, the menu's Overview, photo mode or a capture tool writing `scene.yaw`, move the camera but not the room. The room's yaw is not saved: each launch starts with the room where the source put it.
+- **What turns with the room.** `studies/celestial.gd` has a `room_yaw`, added to the ring's own yaw, so the sun and moon, the key light (`_sun`), the rim light (turned from its set-up orientation) and everything published from them follow: `zs_sun_direction`, `zs_moon_direction`, `zs_moon_shadow_direction`, `zs_key_direction`, `zs_rim_direction`, `zs_cloud_direction`, `zs_alpen_direction`, the rainbow, the sky's dusk glow and Belt of Venus, the water's sun glints and sky reflections, and the look pass's sun shafts. It also turns the aurora's heading (`zs_aurora.w`) and the meteor's streak. It publishes the new global `zs_room_yaw`, which the sky shader (`shaders/reference_sky.gdshader`) uses to turn the view direction back (`zsRoomDir` in `reference_sky_common.gdshaderinc`) before it looks up the Milky Way, the stars and the horizon hills. The hand's sun grab (`hand_reach.gd` `body_direction`) goes through the same ring, so it finds the disc where the sky draws it.
+- **What stays with the diorama.** The cloud deck (`reference_cloud_field` / `reference_cloud_march`) is a 3D field over the plate. It casts its shadows on the land, is lifted over the plate's highest peak, and drifts with the wind, so it turns with the diorama, although it is lit from the room's sun. The peak clouds, mist and fog volumes hug the terrain and turn with it too.
+- **Known limits.** These are in world space although they arguably belong to the room: the wind's direction (foliage lean, the drift of the cloud deck, blown leaves, pollen), the fall of rain and snow (along the wind), the lightning's placement, and the rainbow's faint drop texture. When the world turns, the wind turns with it. The cloud deck turning with the diorama is a choice, and the first thing to look at if the sky still reads as swinging round.
+- **Cost.** One more global uniform, written once a frame. The rim light is set only when the room has turned, and nothing is baked again.
+- `--classic-orbit` leaves `room_yaw` at 0, so everything is exactly as before.
+
+Checked headless with `tools/probe_fixed_room.gd` (and `-- --classic-orbit`), 2026-09-28, both passing:
+
+- **Grab** (-142.9°), **flick** (-1861.8°) and **idle drift** (4.7°). The room turned by exactly the camera's yaw. The aurora's heading turned by the same amount. The sun, moon, key, rim, alpen and cloud directions turned about the vertical by the camera's yaw (worst error 2e-6), so seen from the camera none of them moved.
+- The hand's sun and moon directions match the sky's exactly.
+- A pose written from outside (+57°) left the room unturned.
+- `--classic-orbit`: a drag of 83° left the room at 0 and every direction unchanged.
+- All 69 shaders in `shaders/` parse under the headless renderer with no errors.
+
+**Not verified:** anything on screen. The sky is not rendered headless, so the stars, the horizon hills, the shadows and the shading have not been seen turning with the room.
+
 ## Choices made where the direction was open
 
 - **Tilt stays on pixels, as before.** A true grab could also solve the tilt so that the grab point stays exactly under the pointer. The trouble is that the tilt's direction would then depend on where you grabbed: the near ground and the far ground pull opposite ways. The side-to-side is the lazy Susan, and up and down stays the familiar tilt.

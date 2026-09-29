@@ -77,6 +77,10 @@ global uniform vec3 zs_sky_down;
 global uniform vec3 zs_sky_up;
 global uniform vec3 zs_sky_glow;
 global uniform vec3 zs_sun_direction;
+// The room's turn about the vertical (radians, studies/celestial.gd
+// room_yaw): the sky's stars and horizon are drawn in the room, which keeps
+// its bearing to the camera while the diorama turns under it.
+global uniform float zs_room_yaw;
 // Look pass (scripts/look_pass.gd): contact occlusion, silhouette rim and shore strengths.
 global uniform float zs_look_ao;
 global uniform float zs_look_rim;

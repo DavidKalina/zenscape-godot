@@ -20,8 +20,11 @@ extends Node
 ## wherever it is. The scene's pooled drag deltas are taken as input here, so
 ## its own easing has nothing left to apply. A mouse drag that orbits turns
 ## the world by its grabbed ground instead, and a flick spins it on
-## (scripts/world_turn.gd; `--classic-orbit` for the old orbit). A pose written from outside (a
-## regrowth, the menu's Overview, a new plain) is adopted as it stands.
+## (scripts/world_turn.gd; `--classic-orbit` for the old orbit). The room (sky,
+## sun, lights) turns with every yaw change made here, so the diorama is what
+## seems to spin (world_turn.gd `turn_room`). A pose written from outside (a
+## regrowth, the menu's Overview, a new plain) is adopted as it stands, and
+## does not turn the room.
 const Inspector = preload("res://scripts/scene_inspector.gd")
 const Glass = preload("res://scripts/glass_chrome.gd")
 ## Spring stiffness (natural frequency, 1/s). A glide covers 95 % in 0.63 s
@@ -93,6 +96,9 @@ var _rest := 0.0
 var _hover_key := []
 var _hover_clock := 0.0
 var _cursor_owned := false
+## The scene's idle drift was on when this last wrote the pose, so the yaw
+## it has added since is a turn of the world.
+var _drifting := false
 # Chrome: the ring and name, and the first-session hint.
 var layer := CanvasLayer.new()
 var overlay := Control.new()
@@ -275,6 +281,10 @@ func _is_live() -> bool:
 func _process(delta: float) -> void:
 	var was_live := live
 	live = _is_live()
+	var yaw_from: float = scene.yaw
+	# Space's idle drift turns the scene's yaw after this has written it; that
+	# turn is the world's too (world_turn.gd `turn_room`).
+	if live and was_live and _drifting and not _written.is_empty(): turn.turn_room(angle_difference(_written[1],yaw_from))
 	if not live or not was_live or _moved_outside(): _adopt()
 	if not live:
 		hovered = {}
@@ -289,11 +299,13 @@ func _process(delta: float) -> void:
 		turn.advance(delta)
 		_keep_clear()
 		_write()
+		turn.turn_room(angle_difference(yaw_from,scene.yaw))
 		_hover(delta)
 	elif _cursor_owned:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		_cursor_owned = false
 	_sync_chrome(delta)
+	_drifting = live and bool(scene.get("_auto_orbit"))
 
 ## Take the scene's pose as it stands: nothing in flight.
 func _adopt() -> void:

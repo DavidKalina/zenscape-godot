@@ -49,11 +49,22 @@ var _sun: DirectionalLight3D
 var _rim: DirectionalLight3D
 var _tilt := 0.0
 var _yaw := atan2(20.0, 12.0)
+## The room's turn (radians about the vertical, anticlockwise seen from above)
+## under which the diorama spins (docs/scenic/hand-turn.md, "A fixed room"):
+## scripts/world_turn.gd sets it to follow the camera's yaw, so the sun and
+## moon ring, both lights, the stars, the aurora and the horizon keep their
+## bearing to the camera while the land turns. Zero leaves everything where
+## the source put it (`--classic-orbit`, the studies, the captures).
+var room_yaw := 0.0
+## The rim light's orientation as set up, before the room's turn.
+var _rim_basis := Basis.IDENTITY
+var _rim_turned := 0.0
 
 func setup(lights: Array[DirectionalLight3D]) -> void:
 	look.publish()
 	_sun = lights[0]
 	_rim = lights[1]
+	_rim_basis = _rim.global_basis
 	var elevation := asin(14.0 / Vector3(20, 14, 12).length())
 	_tilt = PI / 2.0 - clampf(elevation + 0.32, 0.7, 1.08)
 	update_rig()
@@ -146,6 +157,9 @@ func update_rig() -> void:
 	hemi_sky = hemi_sky.lerp(Vector3(0.5, 0.55, 0.62), cloud * 0.6).lerp(Vector3(0.66, 0.58, 0.46), autumn * 0.3).lerp(Vector3(0.62, 0.70, 0.85), cold * 0.35)
 	var hemi_ground := _rgb("0d1016").lerp(_rgb("4a5240"), day)
 	hemi_ground *= look.ratio("bounce")
+	if _rim_turned != room_yaw:
+		_rim.global_basis = Basis(Vector3.UP, room_yaw) * _rim_basis
+		_rim_turned = room_yaw
 	_rim.light_energy = 1.1 * (0.3 + 0.7 * day) * lerpf(1.0, 0.5, cloud) / PI
 	_publish("zs_key_direction", _sun.global_basis.z.normalized())
 	var key_color := _sun.light_color.srgb_to_linear()
@@ -214,16 +228,20 @@ func update_rig() -> void:
 	_publish("zs_celestial_clear", 1.0 - minf(1.0, cloud * 1.3))
 	_publish("zs_dusk_direction", warmth * 0.9)
 	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)))
-	_publish("zs_aurora", Vector4(aurora_strength, 1.0, 0.15, -1.2))
+	# The aurora's heading is a bearing, so the room's turn simply adds to it.
+	_publish("zs_aurora", Vector4(aurora_strength, 1.0, 0.15, -1.2 + room_yaw))
+	_publish("zs_room_yaw", room_yaw)
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
 	_publish("zs_bow_shape", Vector2.ONE)
 
+## A body's direction on its ring, turned by the room.
 func _ring_direction(theta: float, tilt: float) -> Vector3:
 	var x := cos(theta)
 	var y := sin(theta) * cos(tilt)
 	var z := sin(theta) * sin(tilt)
-	return Vector3(x * cos(_yaw) + z * sin(_yaw), y, -x * sin(_yaw) + z * cos(_yaw))
+	var yaw := _yaw + room_yaw
+	return Vector3(x * cos(yaw) + z * sin(yaw), y, -x * sin(yaw) + z * cos(yaw))
 
 func _rgb(hex: String) -> Vector3:
 	var color := Color(hex).srgb_to_linear()
@@ -267,8 +285,9 @@ func sample_sky_motion(time: float) -> void:
 	var tail := Vector3.ZERO
 	var envelope := 0.0
 	if _meteor_fires and progress<1.0:
-		head = (_meteor_start+_meteor_tangent*progress*0.45).normalized()
-		tail = (_meteor_start+_meteor_tangent*maxf(progress-0.22,0.0)*0.45).normalized()
+		# The streak crosses the room's sky, so it turns with the room.
+		head = (_meteor_start+_meteor_tangent*progress*0.45).normalized().rotated(Vector3.UP,room_yaw)
+		tail = (_meteor_start+_meteor_tangent*maxf(progress-0.22,0.0)*0.45).normalized().rotated(Vector3.UP,room_yaw)
 		envelope = smoothstep(0.0,0.1,progress)*(1.0-smoothstep(0.7,1.0,progress))
 		if float(state.get("zs_night",0.0))*float(state.get("zs_celestial_clear",0.0))*envelope>0.08:
 			meteor = {"window":window,"head":head,"tail":tail}

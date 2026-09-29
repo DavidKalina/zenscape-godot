@@ -52,6 +52,10 @@ shader_type sky;
           // sun disc's own dot() threshold, which silently erases it.
           vec3 dir = normalize(EYEDIR);
           float y = dir.y;
+          // The stars and the horizon hills are the room's: they stay put while
+          // the diorama turns. The sun, moon, meteor, glow and bow already
+          // arrive turned (studies/celestial.gd room_yaw).
+          vec3 room = zsRoomDir(dir);
           // The gradient itself is zsSkyGradient (above): the dome is a caller
           // of it like anything else that has to know what colour the sky is.
           vec3 col = zsSkyGradient(dir);
@@ -72,14 +76,14 @@ shader_type sky;
             // The Milky Way: a tilted great-circle band, clumped by smooth
             // noise so it reads as spilled light, not an airbrushed stripe.
             vec3 mwN = normalize(vec3(0.6, 0.25, 0.75));
-            float mwD = dot(dir, mwN);
+            float mwD = dot(room, mwN);
             float mwBand = exp(-mwD * mwD / 0.045);
-            float mwClump = vnoise(dir * 9.0) * 0.65 + vnoise(dir * 23.0) * 0.35;
+            float mwClump = vnoise(room * 9.0) * 0.65 + vnoise(room * 23.0) * 0.35;
             float mw = mwBand * (0.3 + 0.7 * smoothstep(0.32, 0.8, mwClump));
             col += vec3(0.55, 0.62, 0.85) * mw * 0.05 * starK;
 
             // bright stars
-            vec3 sp = dir * 46.0;
+            vec3 sp = room * 46.0;
             vec3 cell = floor(sp);
             float h = hash(cell);
             vec3 pos = cell + 0.15
@@ -92,7 +96,7 @@ shader_type sky;
 
             // star dust — smaller, dimmer, denser, and denser still inside the
             // Milky Way's band, which is what the band actually IS
-            vec3 sp2 = dir * 92.0;
+            vec3 sp2 = room * 92.0;
             vec3 cell2 = floor(sp2);
             float h2 = hash(cell2 + 5.0);
             vec3 pos2 = cell2 + 0.2
@@ -139,8 +143,9 @@ shader_type sky;
           // and moon so they set behind the hills; faded out below the horizon
           // so the void under the floating plate stays sky.
           if (horizon_ridges > 0.0 && y > -0.14 && y < 0.12) {
-            vec2 around = normalize(dir.xz + 1e-5);
-            vec3 horizon = zsSkyGradient(normalize(vec3(around.x, 0.0, around.y)));
+            vec2 around = normalize(room.xz + 1e-5);
+            vec2 seen = normalize(dir.xz + 1e-5);
+            vec3 horizon = zsSkyGradient(normalize(vec3(seen.x, 0.0, seen.y)));
             float below = smoothstep(-0.14, -0.04, y);
             for (int k = 0; k < 3; k++) {
               float layer = float(k);
