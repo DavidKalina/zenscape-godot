@@ -374,7 +374,10 @@ func _rings(shape: Dictionary, presence: float, strength: float) -> Dictionary:
 	var air := 0.0
 	for r in range(n):
 		var dt := tau[r]-tau[r-1] if r > 0 else 0.0
-		air = minf(1.0,air*pow(0.5,dt)+steep[r]*dt*1.15)
+		# The source's rate (1.15), raised with the flow: a strong spring
+		# over our few metres of face should break white as the source's
+		# long falls do.
+		air = minf(1.0,air*pow(0.5,dt)+steep[r]*dt*1.15*(1.0+strength))
 		aer.append(air)
 	# Width: the lip's channel, necking as it falls and spreading as it breaks
 	# up, never wider than the wet channel at that height (plus a margin, so
@@ -490,7 +493,7 @@ func _create(id: int) -> Dictionary:
 ## ring), 40·flow sprites plus five an emitter, rising (0.9 + 0.6·flow) m;
 ## here also sized and lifted by the drop.
 func _update_mist(scene: Node, grown: bool) -> void:
-	if scene == null or scene.get("camera") == null: return
+	if scene == null or scene.get("camera") == null or _falls.is_empty(): return
 	var depth: CompositorEffect = null
 	if scene.get("_display_fog") != null: depth = scene._display_fog.depth
 	elif scene.has_node("WaterfallSpray"):

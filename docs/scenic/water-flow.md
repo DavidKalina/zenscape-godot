@@ -202,10 +202,21 @@ What was taken: all of the strand (the ring shader `reference_fall.gdshader` was
 
 ### The prop
 
-- **Curtain** (`shaders/flow_fall.gdshader`, one draw, casts a shadow). The source strand's rings, rebuilt every frame from the eased course: width from the channel (never less than 0.8 of the lip's), necking then spreading; thickness `(0.06 + 0.45·steep)(0.3 + 0.7·strength)`; grown in with presence. `veil` = 1 − smoothstep(0.15, 0.85, strength·presence) tears a trickle into falling strands with gaps (discard, so it stays opaque and depth-writing); `streak_speed` 0.6·√(2g·drop), 2.5–7 m/s; a white break over the first `crest` (0.3 m) of travel; aerated water glows a little (`0.08 + 0.4·aer`).
+- **Curtain** (`shaders/flow_fall.gdshader`, one draw, casts a shadow). The source strand's rings, rebuilt every frame from the eased course (aeration at the source's rate × (1 + strength), so a strong spring breaks white over a few metres of face as the source's long falls do): width from the channel (never less than 0.8 of the lip's), necking then spreading; thickness `(0.06 + 0.45·steep)(0.3 + 0.7·strength)`; grown in with presence. `veil` = 1 − smoothstep(0.15, 0.85, strength·presence) tears a trickle into falling strands with gaps (discard, so it stays opaque and depth-writing); `streak_speed` 0.6·√(2g·drop), 2.5–7 m/s; a white break over the first `crest` (0.3 m) of travel; aerated water glows a little (`0.08 + 0.4·aer`).
 - **Plunge**: 7 foam blobs (4 + 3·strength shown, emissive so they do not go black in shadow), a GPU droplet burst (48, `amount_ratio` by strength), four ripple rings when the plunge's water is deeper than about 5 cm, and froth in the water itself: `fall_foam` points (plunge and lip) on the live still and moving materials, a churning core with patches drifting outward (`reference_water_body.gdshaderinc`).
 - **Mist**: the source recipe (impact and the lower half's aerated rings), up to `MIST` (48) sprites through `studies/fall_mist.gd`, with `mist_strength` and `mist_scale` added to its shader: strength `presence·(0.3 + 0.4·strength)`, scale `(0.35 + 0.3·strength)·clamp(0.6 + 0.2·drop)`, rise `(0.9 + 0.6·strength)·clamp(0.5 + 0.25·drop)`. The shader drifts it with the scene's wind (`zs_wind_direction`, `zs_wind_at`).
 - `--no-live-falls` leaves the falls out, for A/B and profiling.
+
+### Measured and seen
+
+`tools/film_hand_world.gd` (rendered, 1280×720, M-series Mac; it now ends closing on the tallest fall and saves `fall_close.png`, and `--falls-only` skips the tour):
+- Two falls stand, found within a second of the springs and steady for the rest of the take (same ids, lip still to a centimetre): the tall peak's, 0.16–0.26 m³/s over 2.7–3.0 m, 0.63 m wide; the far peak's, 0.11 m³/s over 1.4–1.6 m, 1.0 m wide.
+- CPU: the read is about 50 µs (native) every 0.25 s; the per-frame update (easing, rings, uniforms, blobs, mist placement) about 0.1 ms for both falls, 0.2 ms during camera moves. A fall's first frame costs 11–16 ms once (its nodes and materials are made); that hitch is a follow-up (pool the nodes).
+- Per fall: 4 draws (curtain, foam blobs, droplet burst, ripple rings) plus the curtain's shadow pass and one mist canvas draw of up to 48 sprites; 48 droplet particles. The froth in the water adds no draw. The GPU cost is not measured (the Mac's GPU timers do not report).
+- `tools/probe_water_flow_modeless.gd` still passes; its groove (0.28 m deep, on a gentler flank) now stands no fall, where the old point search stood one or two.
+
+What the frames show: from the overview both falls read as white-blue ribbons with foam at their feet; close, the curtain fills the channel, whitens down the drop, and froths where it lands. Still off: the curtain is smoother and bluer than the source's (which is in full sun and many metres tall), and still reads a little like a tube close up; the lip is a narrow point rather than a broad crest; the mist is faint; ripple rings only show in standing water, and neither film's falls land in a pool.
+
 
 ## Known gaps and follow-ups
 
