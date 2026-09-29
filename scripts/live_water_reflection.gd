@@ -152,6 +152,12 @@ func _move_level(at: float) -> void:
 		if key.begins_with("pond:"): continue
 		_material_bindings[key].target.set_shader_parameter("zs_clip_level",at+0.015)
 
+## The one view's level moves, and `_move_level` sets every copy's clip level,
+## so a source material has one copy whatever the level: a filling pond no
+## longer duplicates every copied material at each geometry refresh.
+func _material_key(original: ShaderMaterial, _level: float) -> String:
+	return str(original.get_instance_id()) + ":live"
+
 ## No standing water: the view and its copies go; the material bindings stay.
 func _drop_view() -> void:
 	_setup_generation += 1
