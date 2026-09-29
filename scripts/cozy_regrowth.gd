@@ -58,6 +58,9 @@ var active := 0
 var regrow_button: Button
 var cover := CanvasLayer.new()
 var badge := Label.new()
+## The hand scheme's badge: seconds it holds after each change (`_flash_badge`).
+const BADGE_HOLD := 3.5
+var _badge_tween: Tween
 var carry_view := SubViewport.new()
 var carry_actor := CreatureActor.new()
 var carry_image := TextureRect.new()
@@ -134,7 +137,7 @@ func setup(owner_scene: Node3D, choice := "") -> void:
 	busy = false
 	_update_badge()
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
-	if plain: scene._notice.text = "Drag across the plain to raise land. Shift-drag lowers it."
+	if plain: scene._notice.text = _plain_notice()
 	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--seed")
@@ -260,11 +263,30 @@ func _badge_text() -> String:
 	var living: RefCounted = scene.get("living_weather")
 	return _label(scene)+("\n"+living.label() if living != null else "")
 
+## The plain's first how-to; the hand scheme (docs/scenic/modeless.md) has none,
+## its hand line names each verb itself.
+func _plain_notice() -> String:
+	return "" if _hand_only() else "Drag across the plain to raise land. Shift-drag lowers it."
+
+func _hand_only() -> bool:
+	return scene.get("hand_only") == true
+
 func _update_badge() -> void:
 	badge.text = _badge_text()
+	if _hand_only(): _flash_badge()
+
+## The hand scheme: the badge is no fixture; each change fades in, holds
+## BADGE_HOLD seconds and fades away.
+func _flash_badge() -> void:
+	if _badge_tween != null: _badge_tween.kill()
+	_badge_tween = create_tween()
+	_badge_tween.tween_property(badge,"modulate:a",1.0,0.5*(1.0-badge.modulate.a))
+	_badge_tween.tween_interval(BADGE_HOLD)
+	_badge_tween.tween_property(badge,"modulate:a",0.0,1.4)
 
 func blocks(point: Vector2) -> bool:
-	return busy or badge.get_global_rect().has_point(point)
+	# The hand scheme's passing badge never takes the pointer.
+	return busy or (not _hand_only() and badge.get_global_rect().has_point(point))
 
 func handle(event: InputEvent) -> bool:
 	if not initialized: return true
@@ -446,7 +468,7 @@ func regrow(requested_seed := -1, to_plain := false) -> void:
 	if scene.has_method("resume_creation"): scene.resume_creation()
 	if _scenery():
 		scene._paused = old_paused
-		scene._notice.text = "Drag across the plain to raise land. Shift-drag lowers it." if plain else ""
+		scene._notice.text = _plain_notice() if plain else ""
 		return
 	# The original pickup ground no longer exists after regeneration.
 	var safe: Variant = scene.navigation.nearest_safe(origin_feet)
