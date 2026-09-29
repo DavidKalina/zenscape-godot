@@ -10,7 +10,11 @@ uniform float vignette = 0.0;
 vec3 zs_look_grade(vec3 color, vec2 uv, vec2 pixel_size) {
 	if (grade_strength > 0.0) {
 		float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-		vec3 toned = color * mix(grade_shadow, grade_highlight, smoothstep(0.05, 0.85, luma));
+		// Light that has burnt out to white (the sun's disc, hot glints) stays
+		// white: tinting it turned the sun a cold cyan.
+		float burnt = smoothstep(0.78, 0.98, min(min(color.r, color.g), color.b));
+		vec3 tint = mix(mix(grade_shadow, grade_highlight, smoothstep(0.05, 0.85, luma)), vec3(1.0), burnt);
+		vec3 toned = color * tint;
 		toned = mix(vec3(dot(toned, vec3(0.2126, 0.7152, 0.0722))), toned, grade_saturation);
 		color = mix(color, toned, grade_strength);
 	}

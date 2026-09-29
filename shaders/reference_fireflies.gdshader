@@ -17,10 +17,19 @@ void vertex() {
 	// left (scripts/land_life.gd). The Fidelity set keeps 0.
 	glow = smoothstep(0.0,0.05,cycle)*(1.0-smoothstep(0.09,0.17,cycle))*activity*(1.0-INSTANCE_CUSTOM.w);
 	MODELVIEW_MATRIX = VIEW_MATRIX*mat4(INV_VIEW_MATRIX[0],INV_VIEW_MATRIX[1],INV_VIEW_MATRIX[2],center);
-	VERTEX *= (2.5+glow*4.5)*60.0/(VIEWPORT_SIZE.y*PROJECTION_MATRIX[1][1]);
+	// Room for the halo round the hot core: the core itself stays a few
+	// pixels across.
+	VERTEX *= (5.0+glow*11.0)*60.0/(VIEWPORT_SIZE.y*PROJECTION_MATRIX[1][1]);
 }
 void fragment() {
-	float halo = smoothstep(0.5,0.0,length(UV-vec2(0.5)));
-	ALBEDO = mix(vec3(0.62,1.0,0.32),vec3(1.0,1.0,0.75),halo*halo)*1.5;
-	ALPHA = halo*glow;
+	// A white-hot heart in a wide chartreuse halo, bright past 1.0 so the
+	// glow catches it: a point of light, not a flat green disc.
+	float d = length(UV-vec2(0.5))*2.0;
+	float edge = 1.0-smoothstep(0.75,1.0,d);
+	float core = exp(-d*d*60.0);
+	float inner = exp(-d*d*16.0);
+	float halo = exp(-d*d*6.5)*edge;
+	vec3 light = vec3(0.55,1.0,0.22)*halo*0.9 + vec3(0.86,1.0,0.45)*inner*1.6 + vec3(1.0,1.0,0.86)*core*5.0;
+	ALBEDO = light;
+	ALPHA = clamp(glow,0.0,1.0);
 }
