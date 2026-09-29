@@ -18,8 +18,11 @@ extends Node
 ##   tint layer) and stays.
 ## - **Hold still** for HOLD_SECONDS: the hand closes into a pinch, and then
 ##   dragging up raises and down sinks the pinched spot, directly: the summit
-##   follows the pointer. **Shift** when the pinch closes makes it a smaller,
-##   gentler one.
+##   follows the pointer. A low raise is a soft swell; a tall one draws up
+##   into a horn, the edge spring's jagged peaks' kind, and is painted with
+##   their rock when let go. Trees the pinch stood on ground they cannot hold
+##   (rock or the rock band under the snow) slide down to its foot when it is
+##   let go. **Shift** when the pinch closes makes it a smaller, gentler one.
 ##
 ## Each stroke or pinch is one undo step (opened when the verb is decided,
 ## closed at release). The land shows through the editor's light refresh, one
@@ -54,7 +57,8 @@ const MAX_DABS := 64
 ## full depth inside GROOVE_FLOOR of the half-width (the land's points are
 ## 0.45 to 0.75 m apart, so a row or two always reaches the bed) and eases to
 ## the untouched ground at the half-width on a smoothstep, so the floor and
-## the banks are rounded. A lip of GROOVE_LIP metres rises just
+## the banks are rounded. A lip of GROOVE_LIP metres (enough for its facets
+## to catch the light either side of the groove) rises just
 ## outside (to LIP_OUT half-widths), the clay the thumb pushed aside. Each dab
 ## moves the ground GROOVE_STEP of the way to that shape, and a stroke never
 ## digs below it however long it lingers: a groove is even and unbroken.
@@ -65,7 +69,7 @@ const MAX_DABS := 64
 const GROOVE_HALF_WIDTH := 1.25
 const GROOVE_DEPTH := 1.0
 const GROOVE_FLOOR := 0.55
-const GROOVE_LIP := 0.1
+const GROOVE_LIP := 0.22
 const LIP_OUT := 1.6
 const GROOVE_STEP := 0.5
 const GROOVE_CUT := 0.5
@@ -87,23 +91,59 @@ const PALM_SINK := 0.4
 ## Dirt: where the thumb or the palm takes the ground down, the painted grass
 ## has caved in and bare earth shows. The tint layer's weight rises from
 ## nothing at DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens
-## from DIRT toward DIRT_DEEP by GROOVE_DEPTH. A cell a stroke leaves at least
-## DIRT_BARE bare loses its grass and blades and is marked hand-made, so cover
-## does not creep back and nothing takes root in it. Dirt only ever deepens.
+## from DIRT toward DIRT_DEEP by GROOVE_DEPTH, so the bed reads as a dark line
+## from the overview. The earth covers whatever was painted there before (the
+## rock of a range's foot, a pinch's flank) by its own weight, not only by the
+## weight it adds: dug ground is earth. Where a groove's lip rises LIP_TURNED
+## metres or more the pushed-aside clay shows as a pale fringe, TURNED at up
+## to TURNED_WEIGHT, so the groove is outlined on both banks. A cell a stroke
+## leaves at least DIRT_BARE bare loses its grass and blades and is marked
+## hand-made, so cover does not creep back and nothing takes root in it. Dirt
+## only ever deepens.
 const DIRT_FROM := 0.04
-const DIRT_FULL := 0.45
+const DIRT_FULL := 0.3
 const DIRT_BARE := 0.5
 const DIRT := Color("946c47")
-const DIRT_DEEP := Color("73513a")
+const DIRT_DEEP := Color("5f412e")
+const TURNED := Color("b39469")
+const TURNED_WEIGHT := 0.45
+const LIP_TURNED := 0.03
 ## The pinch. The pinched spot rises by the pointer's travel up the screen at
 ## the scale of a metre standing there (so the summit keeps to the pointer),
 ## `(1-t²)²` falloff over a radius that widens with the height: R0 plus GROW
 ## per metre, at most MAX_RADIUS. The lift is between -SINK and RAISE metres,
 ## and sinking never takes ground below FLOOR (the land brush's floor).
 ## A Shift pinch is FINE_SCALE of the travel over a smaller spread.
+##
+## A raise turns from that rounded swell into a horn as it grows (HORN, metres
+## of lift, as a smoothstep), the edge spring's peaks' kind (mountain_forms
+## "alpine", scripts/edge_spring.gd `_build_range`): concave faces up to a
+## sharp summit, three to five arêtes (seeded by the spot, so they hold while
+## the hand moves) standing proud between hollows, and the forms' crag noise
+## over the flanks, the outline wandering by the forms' lump noise (so the
+## points are gathered HORN_REACH of the widest radius out). The summit still
+## keeps to the pointer. Sinks stay rounded.
 const PINCH := {"r0":2.2,"grow":0.45,"max_radius":5.6,"raise":8.0,"sink":4.0,"scale":1.0}
 const FINE_PINCH := {"r0":1.2,"grow":0.3,"max_radius":2.6,"raise":2.0,"sink":1.0,"scale":0.4}
 const FLOOR := -1.2
+const HORN := Vector2(1.0,4.0)
+const HORN_REACH := 1.25
+## Let go, a raise of at least ROCK_FROM metres takes the range's granite on
+## its steeps and upper share (mountain_forms `_rock_tint`), measured against
+## a height that keeps a low swell green, as the range's gentle pulls do.
+## The hand's bare earth keeps its colour.
+const ROCK_FROM := 2.5
+## Trees on ground a pinch moved, once let go, keep their footing only where
+## a tree could take root (emergence's rule: no steeper than the rock slope
+## the terrain paints rock above, and under the rock band below the
+## snowline). Else they slide down the fall line in SLIDE_STEP metre steps
+## until the ground is at most SLIDE_REST steep and under that band (or water,
+## the plate's edge or SLIDE_MAX metres stop them), and stand there: shaken
+## off the clay to its foot. Pinned trees hold.
+const SLIDE_STEP := 0.25
+const SLIDE_REST := 0.45
+const SLIDE_MAX := 12.0
+const ROCK_BAND := 1.8
 ## A metre standing at the pinch is never taken as fewer than this share of a
 ## metre across the ground on screen, so a camera looking straight down still
 ## pinches.
@@ -175,6 +215,7 @@ var _bed := INF
 var _stroking := 0.0
 var _tint_base := PackedFloat32Array()
 var _dirt_depth := {}
+var _turned := {}
 var _dirt_rect := Rect2()
 var _level := 0.0
 var _near := PackedInt32Array()
@@ -186,6 +227,11 @@ var _poke_t := 0.0
 var _poke_idx := PackedInt32Array()
 var _poke_shape := PackedFloat32Array()
 var _poke_written := PackedFloat32Array()
+var _aretes := PackedFloat32Array()
+var _jag := PackedFloat32Array()
+var _lump := PackedFloat32Array()
+## Trees the last pinch shook off: [{"id","from","to"}], for probes.
+var shaken: Array = []
 var _cells := {}
 var _cells_for: NativeTerrainData
 var _cells_points := -1
@@ -262,6 +308,8 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 			_end_stroke()
 		State.PINCH:
 			_pinch_step()
+			_rock()
+			_shake_trees()
 			_end_stroke()
 
 ## End whatever is in hand at once (undo, a new press, a world change): a
@@ -270,7 +318,11 @@ func finish_now() -> void:
 	if poking: _end_poke()
 	match state:
 		State.PENDING: state = State.IDLE
-		State.THUMB, State.PINCH: _end_stroke()
+		State.THUMB: _end_stroke()
+		State.PINCH:
+			_rock()
+			_shake_trees()
+			_end_stroke()
 
 # --- Frame loop ------------------------------------------------------------------
 
@@ -310,6 +362,7 @@ func _begin_drag() -> void:
 	_stroking = 0.0
 	_tint_base = editor.data.tint.duplicate()
 	_dirt_depth = {}
+	_turned = {}
 	_breach = Vector2.ZERO
 	_heading = Vector2.ZERO
 	_heading_from = _center
@@ -324,7 +377,16 @@ func _begin_pinch() -> void:
 	verb = "fine_pinch" if fine else "pinch"
 	var spec: Dictionary = FINE_PINCH if fine else PINCH
 	_open_stroke()
-	_gather(_center,float(spec.max_radius))
+	# The pinch takes the clay's nearest point, so the horn's tip stands on
+	# a point of the land and the summit reaches the pointer.
+	_gather(_center,CELL)
+	var nearest := INF
+	for k in _near.size():
+		if _near_d[k] < nearest:
+			nearest = _near_d[k]
+			_center = editor.data.points[_near[k]]
+	_gather(_center,float(spec.max_radius)*HORN_REACH)
+	_horn_setup()
 	var at := _ground_at(_center)
 	var camera: Camera3D = scene.camera
 	var terrain: Node3D = editor.terrain
@@ -394,7 +456,7 @@ func _thumb_step(delta: float) -> void:
 				if rub < 0.99:
 					_breach = _breaching(q)
 					_groove(heights,q,1.0-rub,_breach)
-					_dirty(q,GROOVE_HALF_WIDTH)
+					_dirty(q,GROOVE_HALF_WIDTH*LIP_OUT)
 				if rub > 0.01: _rub(heights,q,rub)
 			dabs += 1
 		_last_plate = p
@@ -509,6 +571,7 @@ func _dirt() -> void:
 	var high := Vector2i(((_dirt_rect.end+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var light := DIRT.srgb_to_linear()
 	var deep := DIRT_DEEP.srgb_to_linear()
+	var turned := TURNED.srgb_to_linear()
 	var heights := data.heights
 	var tint := data.tint
 	var changed := false
@@ -520,13 +583,34 @@ func _dirt() -> void:
 			if was == null or now == null: continue
 			var cell := z*side+x
 			var dug := float(was)-float(now)
+			if dug < -LIP_TURNED and verb == "thumb":
+				# The groove's lip: pushed-aside clay, a pale fringe.
+				var weight := TURNED_WEIGHT*smoothstep(LIP_TURNED,GROOVE_LIP,-dug)
+				if weight <= float(_turned.get(cell,0.0)) or _dirt_depth.has(cell): continue
+				_turned[cell] = weight
+				_earth(tint,cell,turned,weight)
+				changed = true
+				continue
 			if dug <= float(_dirt_depth.get(cell,DIRT_FROM)): continue
 			_dirt_depth[cell] = dug
 			var color := light.lerp(deep,smoothstep(DIRT_FULL,GROOVE_DEPTH,dug))
-			NativeTerrainTint.coat(tint,_tint_base,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug))
+			_earth(tint,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug))
 			changed = true
 	_dirt_rect = Rect2()
 	if changed: data.tint = tint
+
+## Earth `color` at `weight` into tint `cell`, over the stroke's starting
+## tint: it covers what was painted there by its own weight (dug ground is
+## earth, whatever colour its surface was), and the cell's weight never drops.
+## Written from the starting tint, so coating again rewrites the cell.
+func _earth(tint: PackedFloat32Array, cell: int, color: Color, weight: float) -> void:
+	var k := cell*NativeTerrainTint.STRIDE
+	var before := _tint_base[k+3]
+	var share := 1.0 if before <= 0.0 else clampf(weight,0.0,1.0)
+	tint[k] = lerpf(_tint_base[k],color.r,share)
+	tint[k+1] = lerpf(_tint_base[k+1],color.g,share)
+	tint[k+2] = lerpf(_tint_base[k+2],color.b,share)
+	tint[k+3] = maxf(before,minf(weight,1.0))
 
 ## Where a stroke left the ground bare, the grass is gone for good: no cover,
 ## no blades, and hand-made, so emergence neither regrows nor plants it.
@@ -548,19 +632,125 @@ func _pinch_step() -> void:
 	if is_equal_approx(lift,_shown_lift): return
 	_shown_lift = lift
 	var radius := minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))
+	var horn := smoothstep(HORN.x,HORN.y,lift)
 	var data := editor.data
 	var heights := data.heights
 	for k in _near.size():
 		var i := _near[k]
 		var t := _near_d[k]/radius
 		var shape := pow(1.0-t*t,2.0) if t < 1.0 else 0.0
+		if horn > 0.0: shape = lerpf(shape,_horn(i,t),horn)
 		var h := _base[i]+lift*shape*_fade(i)
 		if lift < 0.0: h = maxf(h,minf(_base[i],FLOOR))
 		heights[i] = clampf(h,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
 	data.heights = heights
-	_touch(_center,radius)
+	_touch(_center,radius*HORN_REACH)
 	_show()
 	_hand("pinch",_ground_at(_center))
+
+## The pinch's noise and arêtes: the mountain forms' per-point noise (built
+## once per world) and three to five arêtes seeded by the pinched spot.
+func _horn_setup() -> void:
+	var mountain: RefCounted = editor.mountain
+	mountain.prepare(editor.data,editor.land_seed)
+	_jag = mountain._jag
+	_lump = mountain._lump
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([editor.land_seed,"pinch",_center.snapped(Vector2.ONE*0.01)])
+	_aretes = PackedFloat32Array()
+	var count := rng.randi_range(3,5)
+	var turn := rng.randf()*TAU
+	for a in range(count): _aretes.append(turn+TAU*(float(a)+rng.randf_range(-0.22,0.22))/count)
+
+## The horn's share of the lift at point `i`, `t` radii from the pinch: the
+## alpine form (mountain_forms `_stamp`) scaled so its summit is 1.
+func _horn(i: int, t: float) -> float:
+	var rw := t*(1.0+(_lump[i]-0.5)*0.4)
+	if rw >= 1.0: return 0.0
+	var d: Vector2 = editor.data.points[i]-_center
+	var theta := atan2(d.y,d.x)
+	var arete := 0.0
+	for angle in _aretes: arete = maxf(arete,1.0-absf(angle_difference(theta,angle))/0.6)
+	arete = arete*arete*smoothstep(0.02,0.25,rw)
+	var profile := pow(1.0-rw,1.9)
+	var crag := (_jag[i]-0.5)*0.16*rw*(1.0-rw)*4.0
+	var shoulder := pow(1.0-rw,1.2)*0.12*arete
+	return clampf((profile*(0.8+0.2*arete)+shoulder+crag)/0.8,0.0,1.0)
+
+## A raise let go takes the range's rock (see ROCK_FROM).
+func _rock() -> void:
+	if verb != "pinch" or lift < ROCK_FROM: return
+	var data := editor.data
+	var forms := preload("res://scripts/mountain_forms.gd")
+	var reach := float(PINCH.max_radius)*HORN_REACH
+	var horn := smoothstep(HORN.x,HORN.y,lift)
+	var ground: Variant = data.sample(_center,_base)
+	var job := {"tint":data.tint.duplicate(),"rock":forms.ROCKS.granite,"height":maxf(2.0,lerpf(10.0,lift,horn)),"base":_base,
+		"region":Rect2(_center-Vector2.ONE*reach,Vector2.ONE*reach*2.0),"lock":preload("res://scripts/edge_spring.gd")._bare_cells(data),
+		"salt":hash([editor.land_seed,"pinch",_center.snapped(Vector2.ONE*0.01)]),"form":"alpine","ground":float(ground) if ground != null else 0.0}
+	data.tint = forms._rock_tint(data,job)
+
+## Trees on ground the pinch moved that can no longer hold it slide down to
+## where they can (see SLIDE_STEP). Their records move inside the pinch's undo
+## step; they stay wild (not marked hand-made).
+func _shake_trees() -> void:
+	shaken = []
+	var data := editor.data
+	var trees: Array = preload("res://scripts/diorama_world_play.gd").TREES
+	var presets := preload("res://scripts/native_landscape_presets.gd")
+	var snowline: float = preload("res://scripts/biome_blend.gd").snowline(data._recipe_settings,data._palette.snowline)
+	var drawn: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
+	var rock_slope := float(drawn.get("rock_slope",data._palette.rock_slope))
+	var band := snowline-ROCK_BAND
+	var reach := float(PINCH.max_radius)*HORN_REACH+1.0
+	var moved := false
+	for index in range(data.objects.size()):
+		var item: Dictionary = data.objects[index]
+		if not str(item.asset) in trees or item.asset == "bigfoot_tree" or item.get("pinned",false): continue
+		var from := Vector2(item.x,item.z)
+		if from.distance_to(_center) > reach: continue
+		var was: Variant = data.sample(from,_base)
+		var now: Variant = data.ground_height(from)
+		if was == null or now == null or absf(float(now)-float(was)) < 0.05: continue
+		if presets._slope(data,from) <= rock_slope and float(now) <= band: continue
+		var p := from
+		var travelled := 0.0
+		while travelled < SLIDE_MAX:
+			var here: Variant = data.ground_height(p)
+			if presets._slope(data,p) <= SLIDE_REST and here != null and float(here) <= band: break
+			var fall := _fall(p)
+			if fall == Vector2.ZERO: break
+			var next := p+fall*SLIDE_STEP
+			if maxf(absf(next.x),absf(next.y)) > EDGE.x or data.ground_height(next) == null or _in_pond(next): break
+			p = next
+			travelled += SLIDE_STEP
+		if p == from: continue
+		var moved_item := item.duplicate(true)
+		moved_item.x = p.x
+		moved_item.z = p.y
+		data.objects[index] = moved_item
+		moved = true
+		shaken.append({"id":item.id,"from":from,"to":p})
+	if moved: data.objects_revision += 1
+
+## Whether `p` is under a pond (as native_landscape_presets `_wet` reads one).
+func _in_pond(p: Vector2) -> bool:
+	var data := editor.data
+	var h: Variant = data.ground_height(p)
+	for pool: Dictionary in data.ponds:
+		if h != null and float(h) < float(pool.level)+0.15 and p.distance_to(Vector2(pool.x,pool.z)) < 7.0: return true
+	return false
+
+## The way down at `p`: against the ground's gradient, or zero on the level.
+func _fall(p: Vector2) -> Vector2:
+	var data := editor.data
+	var e: Variant = data.ground_height(p+Vector2(0.25,0))
+	var w: Variant = data.ground_height(p-Vector2(0.25,0))
+	var n: Variant = data.ground_height(p+Vector2(0,0.25))
+	var s: Variant = data.ground_height(p-Vector2(0,0.25))
+	if e == null or w == null or n == null or s == null: return Vector2.ZERO
+	var gradient := Vector2(float(e)-float(w),float(n)-float(s))
+	return -gradient.normalized() if gradient.length() > 0.0001 else Vector2.ZERO
 
 # --- The poke ----------------------------------------------------------------------
 
