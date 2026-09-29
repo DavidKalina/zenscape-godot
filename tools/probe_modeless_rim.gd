@@ -147,7 +147,9 @@ func run() -> void:
 		reach._hover_key = []
 		reach._hover(rim_at)
 		reach._drive_hand_modeless()
-		check("over the rim the hand takes the rim grip",scene.god_hand.reach_gesture == "rim",scene.god_hand.reach_gesture)
+		# rim_point() takes the wall half a metre under the lip: the palm lays on the
+		# wall there (the lip's rim grip is tools/probe_wall_grab.gd's).
+		check("over the rim's wall the hand lays its palm on it",scene.god_hand.reach_gesture == "wall",scene.god_hand.reach_gesture)
 		reach._hover_key = []
 		reach._hover(land_at)
 		reach._drive_hand_modeless()
@@ -167,7 +169,7 @@ func run() -> void:
 	check("a sideways rim push decides the turn",reach.rim_intent == "turn",reach.rim_intent)
 	check("the rim push turns the world",absf(angle_difference(yaw0,scene.yaw)) > 0.05,rad_to_deg(scene.yaw-yaw0))
 	check("the room turns with it",absf(turn.room_yaw-room0) > 0.05,rad_to_deg(turn.room_yaw-room0))
-	check("the hand grips the rim",scene.god_hand == null or scene.god_hand.reach_gesture == "rim",scene.god_hand.reach_gesture if scene.god_hand != null else "")
+	check("the hand keeps its palm on the wall",scene.god_hand == null or scene.god_hand.reach_gesture == "wall",scene.god_hand.reach_gesture if scene.god_hand != null else "")
 	button(end,MOUSE_BUTTON_LEFT,false)
 	await frames(90)
 	check("a slow turn leaves the clock alone",absf(hours()-t0) < 0.001,hours()-t0)

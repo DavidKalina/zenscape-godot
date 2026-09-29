@@ -2,7 +2,9 @@ extends SceneTree
 ## Headless: from a low camera, hover, turn and flip by the block's side wall
 ## (docs/scenic/modeless.md). The wall is rim: the hand shows at the pointer,
 ## a sideways drag turns the world with the grabbed wall point kept under the
-## pointer, and an upward drag decides the flip.
+## pointer, and an upward drag decides the flip. The hand lays its palm on the
+## wall ("wall", its Wall clips facing into the wall) on hover and while it
+## holds and turns, and the lip keeps the rim grip.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_wall_grab.gd -- --modeless
 var scene: Node3D
 var failures := []
@@ -66,9 +68,39 @@ func run() -> void:
 	reach._hover_key = []
 	reach._hover(at)
 	reach._drive_hand_modeless()
-	check("hover shows the rim grip",hand.reach_gesture == "rim",hand.reach_gesture)
+	check("hover lays the palm on the wall",hand.reach_gesture == "wall",hand.reach_gesture)
+	check("the palm faces into the wall",hand.reach_facing != null and Vector3(hand.reach_facing).distance_to(Vector3(0,0,-1)) < 0.001,hand.reach_facing)
 	var shown: Variant = hand.reach_point
-	check("the hand stands out from the wall at the pointer",shown != null and float(shown.z) > 14.4 and absf(float(shown.y)-wall_local.y) < 0.4,shown)
+	var face: float = reach._wall_face(Vector3(rim),Vector3(0,0,1))
+	print("earth side's face ",face," m out from the plate there")
+	check("the hand stands on the earth side's face at the pointer",shown != null and face > 0.0 and face < 0.6 and absf(float(shown.z)-14.0-face) < 0.001 and absf(float(shown.y)-wall_local.y) < 0.4,shown)
+	var model: AnimationPlayer = hand.player
+	check("the Wall clips are in the model",model.has_animation("WallIn") and model.has_animation("WallHold") and model.has_animation("WallOut"),"")
+	check("the palm faces the wall with its reach",absf(angle_difference(float(hand._facing()),atan2(0.0,-1.0))) < 0.001,hand._facing())
+	# The lip, just over the wall's top on screen: still the rim grip, facing the camera.
+	var lip_local := Vector3(2.0,reach._rim_height(Vector2(2.0,14.0)),14.0)
+	var lip: Vector2 = camera.unproject_position(terrain.to_global(lip_local))+Vector2(0,-4)
+	reach._hover_key = []
+	reach._hover(lip)
+	reach._drive_hand_modeless()
+	check("the lip keeps the rim grip",hand.reach_gesture == "rim" and hand.reach_facing == null,[hand.reach_gesture,hand.reach_facing,reach._rim_at(lip)])
+	# Held on the wall without moving: the palm stays laid on it and its clips play.
+	# (Headless has no real pointer, so a hold keeps the pose over frames.)
+	button(at,true)
+	await frames(90)
+	check("a wall hold keeps the palm on the wall",reach.holding == "rim" and hand.reach_gesture == "wall" and hand.reach_facing != null,[reach.holding,hand.reach_gesture])
+	check("WallIn has run into WallHold",hand.gesture == "wall" and String(model.current_animation) == "WallHold",model.current_animation)
+	var palm: Vector3 = hand._bone_at(hand.skeleton.find_bone("Palm"))
+	# The earth side's outermost face there: the hand keeps WALL_GAP past it.
+	var surface := 14.0+face-float(reach.WALL_GAP)
+	check("the palm lies on the earth side, not in it (m past its face)",palm.z > surface-0.02 and palm.z < surface+0.3,palm.z-surface)
+	button(at,false)
+	await frames(2)
+	reach._hover_key = []
+	reach._hover(Vector2(4,4))
+	reach._drive_hand_modeless()
+	check("letting go and moving off clears the palm's facing",hand.reach_gesture == "" and hand.reach_facing == null,[hand.reach_gesture,hand.reach_facing])
+	await frames(10)
 	# Turn: sideways drag along the wall.
 	var yaw0: float = rig._view.x
 	button(at,true)
@@ -84,6 +116,7 @@ func run() -> void:
 			var seen := camera.unproject_position(terrain.to_global(grabbed))
 			worst = maxf(worst,absf(seen.x-p.x))
 	check("a sideways wall drag decides the turn",reach.rim_intent == "turn",reach.rim_intent)
+	check("the palm stays on the wall while it turns",hand.reach_gesture == "wall" and hand.reach_facing != null,hand.reach_gesture)
 	check("the world turned",absf(angle_difference(yaw0,rig._view.x)) > 0.05,rig._view.x-yaw0)
 	check("the grabbed wall point stays under the pointer (px)",worst < 25.0,worst)
 	button(p,false)

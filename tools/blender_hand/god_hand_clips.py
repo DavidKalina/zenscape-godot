@@ -41,7 +41,7 @@ A clip is a function of the frame giving (placement, shape, pin[, marks]):
   The weights ride on the bones' scale.
 """
 import math
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, Quaternion, Euler
 
 from ambient_clips import clamp, settle, smooth, drift, pulses, spline
 from heron_clips import R, tail_of
@@ -1235,6 +1235,161 @@ CLIPS.update({
 	'ShakeHold': (SHAKE_HOLD_T, shake_hold, True, None, None),
 	'ShakeOut': (SHAKE_OUT_T, shake_out, False, 'ShakeHold', 'Idle'),
 })
+
+
+# ---------------------------------------------------------------- wall: a palm on the block's side
+
+# The block's earth walls are rim (docs/scenic/modeless.md): a pointer on one shows the
+# hand there, ready to push the wall sideways, pull it down or lift it. The anchor is the
+# point on the wall under the pointer, and the game turns the hand so its reach (-Y) points
+# into the wall, as for the Shake: the wall is the plane y = 0, the block behind it (y < 0)
+# and the camera outside (+Y). The palm lies flat on the wall with the fingers spread and
+# a little relaxed, their pads resting on it, and the fingers lean up and to the hand's
+# left (+X) like a right hand laid on a wall from below and to the right; leaning, the
+# attitude stays clear of the Euler lock that straight-up fingers would hit. The back of
+# the hand is to the camera, so the spread fingers read as a hand.
+WALL_PITCH = -62  # fingers up the wall, 28 degrees off upright
+WALL_ROLL = 90  # palm turned to the wall
+WALL_YAW = 90  # the reach laid along the wall
+WALL_GAP = 0.022  # PALM_POINT stands this far off the wall, so the palm's fullest part meets it
+WALL_AT = Vector((0.0, WALL_GAP, 0.0))  # where PALM_POINT goes
+WALL_IN_T = 32
+WALL_HOLD_T = 120
+WALL_OUT_T = 34
+WALL_CONTACT = 20  # frame the heel meets the wall
+WALL_LAID = 24  # frame the fingers have come down onto it
+# Rest-space pivots: the heel of the palm, and the middle finger's pad.
+HEEL = Vector((0.0, -0.14, -0.08))
+PADS = Vector((0.04, -0.90, -0.05))
+# The palm laid flat: the fingers fanned and a little relaxed, each pad just resting on the
+# wall (god_hand_review.py --wall measures it), the thumb out along it. And bearing on it:
+# the knuckles rise a touch and the pads press.
+WALL_LAY = shape((0, 3, 2, 14), (0, 3, 2, 3), (-1, 3, 2, -10), (-1, 2, 1, -23), (-22, 3, 4, 2, -10), -4)
+WALL_PRESS = add(WALL_LAY, {name: (2, 0) for name in FINGER_NAMES})
+for _name in FINGER_NAMES:
+	WALL_PRESS[_name][1] -= 3
+	WALL_PRESS[_name][2] -= 2
+
+
+def wall_base():
+	return attitude(WALL_PITCH, WALL_ROLL, WALL_YAW)
+
+
+def wall_place(dx=0.0, dy=0.0, dz=0.0, tip=0.0, swirl=0.0, turn=0.0, about=None):
+	"""The palm on the wall, moved by (dx, dy, dz) and turned about the rest-space point
+	`about` (the palm by default): tip + lifts the fingertips off the wall, the heel
+	staying (- lifts the heel), swirl + turns the fingers round the wall's normal toward
+	the thumb (+X), turn + lifts the thumb side off the wall. Given back as a placement,
+	its Euler angles kept near the base attitude's."""
+	base = wall_base()
+	fingers = base @ Vector((0, -1, 0))
+	normal = Vector((0, 1, 0))
+	q = (Quaternion(fingers.cross(normal).normalized(), math.radians(tip)) @ Quaternion(normal, math.radians(swirl))
+		@ Quaternion(fingers, math.radians(turn)) @ base)
+	e = q.to_matrix().to_euler('YXZ', Euler((math.radians(WALL_PITCH), math.radians(WALL_ROLL), math.radians(WALL_YAW)), 'YXZ'))
+	about = Vector(about) if about is not None else PALM_POINT
+	at = WALL_AT + base @ (about - PALM_POINT)
+	return contact(about, at + Vector((dx, dy, dz)), math.degrees(e.x), math.degrees(e.y), math.degrees(e.z))
+
+
+def wall_breath(t):
+	"""0..1, twice a hold loop: breathing in, the palm eases its weight onto the wall."""
+	return 0.5 - 0.5 * math.cos(math.tau * 2 * (t % WALL_HOLD_T) / WALL_HOLD_T)
+
+
+def wall_hold_place(t):
+	"""Resting on the wall, alive: it breathes, the heel settling in and easing off with a
+	fingertip tip, the fingers swaying slowly round the palm and the hand drifting a little
+	along the wall; now and then the thumb side lifts a touch and lays back."""
+	t %= WALL_HOLD_T
+	u = math.tau * t / WALL_HOLD_T
+	b = wall_breath(t)
+	d = drift(t, WALL_HOLD_T, 7)
+	shift = pulses(t, [84], 26)
+	return wall_place(0.008 * d[0], -0.004 * b, 0.01 * math.sin(u + 0.4) + 0.006 * d[1],
+		tip=1.4 * b - 0.4 + 0.6 * d[2], swirl=2.5 * math.sin(u) + 1.0 * d[1], turn=1.2 * d[0] + 3.0 * shift)
+
+
+def wall_hold_shape(t):
+	"""The pads press and ease with the breath; once a loop the fingers settle one by
+	one, little finger to index, each lifting off a hair and laying back, and the thumb
+	slides out and back."""
+	t %= WALL_HOLD_T
+	s = lerp(WALL_LAY, WALL_PRESS, 0.35 * wall_breath(t))
+	for i, name in enumerate(('Pinky', 'Ring', 'Middle', 'Index')):
+		lift = pulses(t, [30 + 6 * i], 20)
+		for j, k in enumerate((-9, -3, 3)):
+			s[name][j] += k * lift
+		s[name][3] += (1.5 - i) * lift
+	slide = pulses(t, [80], 30)
+	s['Thumb'][3] += 7 * slide
+	s['Thumb'][1] += 3 * slide
+	return s
+
+
+def glide(t, keys):
+	"""Like track() without overshoot, but turning the hand the short way round between
+	keys (a slerp): the swing from hovering palm down to a palm on the wall is a big turn,
+	and the Euler angles would take it the long way."""
+	if t <= keys[0][0]:
+		return keys[0][1]
+	for (fa, a), (fb, b) in zip(keys, keys[1:]):
+		if t <= fb:
+			u = settle((t - fa) / max(1e-6, fb - fa))
+			q = attitude(*a[3:]).slerp(attitude(*b[3:]), u)
+			near = Euler([math.radians(x) for x in lerp(a[3:], b[3:], u)], 'YXZ')
+			e = q.to_matrix().to_euler('YXZ', near)
+			return (*lerp(a[:3], b[:3], u), math.degrees(e.x), math.degrees(e.y), math.degrees(e.z))
+	return keys[-1][1]
+
+
+def wall_in(t):
+	"""Laying a palm on the wall: it sinks and draws back a touch, the fingers gathering,
+	then swings round and reaches up the wall from below, turning its palm to it, the
+	fingers stretched and fanned; the heel meets the wall first, the fingers come down
+	onto it with a little press, and it settles."""
+	gather = moved(IDLE0, dy=0.14, dz=-0.16, pitch=12, roll=-12)
+	reach = wall_place(dy=0.16, dz=-0.1, tip=12, swirl=-16, about=HEEL)
+	heel = wall_place(dy=0.006, dz=0.035, tip=12, swirl=-3, about=HEEL)
+	laid = wall_place(dy=-0.006, dz=0.012, tip=-1.5, swirl=1, about=HEEL)
+	if t <= 16:
+		p = glide(t, [(0, IDLE0), (7, gather), (16, reach)])
+	else:
+		p = track(t, [(16, reach), (WALL_CONTACT, heel), (WALL_LAID, laid, 0.08), (WALL_IN_T, wall_hold_place(0))])
+	s = track(t, [(0, idle0_shape()), (7, lerp(RELAX, FIST, 0.3)), (16, STRETCH, 0.1), (WALL_CONTACT, lerp(STRETCH, WALL_LAY, 0.5)),
+		(WALL_LAID, WALL_PRESS, 0.1), (WALL_IN_T, wall_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (WALL_CONTACT, 0.0), (WALL_LAID, 1.0)])
+
+
+def wall_hold(t):
+	return wall_hold_place(t), wall_hold_shape(t), 1.0
+
+
+def wall_out(t):
+	"""Letting go: a last press, the heel peels off first while the fingertips keep the
+	wall, then they leave it too, flick open as the hand springs up and away, shake out
+	loose and float home."""
+	start = wall_hold_place(0)
+	press = wall_place(dy=-0.012, tip=1, about=HEEL)
+	peel = wall_place(dy=0.004, tip=-16, swirl=2, about=PADS)
+	off = wall_place(dy=0.24, dz=0.12, tip=-6, swirl=-6, about=PADS)
+	if t <= 15:
+		p = track(t, [(0, start), (4, press), (9, peel), (15, off, 0.1)])
+	else:
+		p = glide(t, [(15, off), (24, moved(IDLE0, dy=0.22, dz=0.12, pitch=-14, roll=-10)), (WALL_OUT_T, IDLE0)])
+	loose = window(t, 16, 18, 23, 28) * math.sin(math.tau * (t - 16) / 5)
+	p = moved(p, roll=6 * loose, pitch=2 * loose)
+	s = track(t, [(0, wall_hold_shape(0)), (4, WALL_PRESS), (9, lerp(WALL_LAY, WALL_PRESS, 0.5)), (14, BLOOM, 0.14),
+		(24, lerp(BLOOM, RELAX, 0.55)), (WALL_OUT_T, idle0_shape())])
+	return p, s, track(t, [(0, 1.0), (9, 1.0), (13, 0.0)])
+
+
+CLIPS.update({
+	'WallIn': (WALL_IN_T, wall_in, False, 'Idle', 'WallHold'),
+	'WallHold': (WALL_HOLD_T, wall_hold, True, None, None),
+	'WallOut': (WALL_OUT_T, wall_out, False, 'WallHold', 'Idle'),
+})
+WALL_HANDOFFS = [('Idle', 'WallIn'), ('WallIn', 'WallHold'), ('WallHold', 'WallOut'), ('WallOut', 'Idle')]
 
 
 def frame(name, f):
