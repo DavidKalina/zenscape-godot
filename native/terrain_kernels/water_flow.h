@@ -15,6 +15,7 @@
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -60,6 +61,7 @@ protected:
         ClassDB::bind_method(D_METHOD("get_depth"), &ZenScapeWaterFlow::get_depth);
         ClassDB::bind_method(D_METHOD("set_depth", "values"), &ZenScapeWaterFlow::set_depth);
         ClassDB::bind_method(D_METHOD("get_ground"), &ZenScapeWaterFlow::get_ground);
+        ClassDB::bind_method(D_METHOD("wet_cells", "min_depth"), &ZenScapeWaterFlow::wet_cells);
         ClassDB::bind_method(D_METHOD("get_velocity"), &ZenScapeWaterFlow::get_velocity);
         ClassDB::bind_method(D_METHOD("stats"), &ZenScapeWaterFlow::stats);
         ClassDB::bind_method(D_METHOD("surface", "params"), &ZenScapeWaterFlow::surface);
@@ -271,6 +273,15 @@ public:
         PackedFloat32Array out;
         out.resize(ground.size());
         std::copy(ground.begin(), ground.end(), out.ptrw());
+        return out;
+    }
+
+    // 1 per cell standing `min_depth` or deeper, else 0.
+    PackedByteArray wet_cells(double min_depth) const {
+        PackedByteArray out;
+        out.resize(depth.size());
+        uint8_t *p = out.ptrw();
+        for (size_t c = 0; c < depth.size(); ++c) p[c] = depth[c] >= min_depth ? 1 : 0;
         return out;
     }
 

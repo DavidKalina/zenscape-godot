@@ -53,7 +53,7 @@ The charged land spring retires: springs belong to the edge. Props, trees and re
 
 **The hand is always there.** It is under the pointer wherever the pointer is, and its pose says what a press would do: over the land a ready pinch; on a wall its palm faces the wall; on the lip the rim grip; in the void it floats relaxed at a fixed depth along the pointer's ray, fingers loosely curled, ready to snap. It fades out while the right-button camera moves and comes back when it stops.
 
-**Later.** Water: springs on high ground, streams in the thumb's grooves, ponds and lakes in basins, and its physics. The grooves and basins are shaped now so that water can follow them.
+**Water** (`feature/water-flow`, `docs/scenic/water-flow.md`). A drag from the sky onto the land gathers a water ball, and letting go drops it. On high or steep ground it becomes a spring. Its water runs in a live simulation: streams in the thumb's grooves, ponds in the palm's basins, spilling over rims, and following every change to the land. `--planned-water` keeps the one-shot plan.
 
 **Build slices.**
 1. Edge rework (`feature/modeless-edge-spring`): the whole-block dip, the random multi-peak range, the basin, the physics toss with pumping, decided at release.
@@ -103,7 +103,7 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 
 ### Limits and open points
 
-- **The water ball** is a brush, so it is not reachable under `--modeless`: left presses on land no longer reach the editor. It needs its own door (a zone or a gesture) when the spring slice defines the land's verbs.
+- **The water ball** is a brush, so left presses on land do not reach it under `--modeless`. Its door is the sky: a void press dragged onto the land (`docs/scenic/water-flow.md`).
 - **A shake swings the world for its first strokes**: until the shake is decided (a stroke or two) the rim grab follows the pointer, so the world turns back and forth a little, and it stays wherever it was when the shake took over. It does not wind time.
 - **Reach depends on where you grab.** The turn's speed is the pointer's speed over the grab's distance from the pivot, so the same flick winds more time near the pivot's side of the rim than far from it. `TIME_MIN` and `HOURS_GAIN` in `scripts/spin_time.gd` are the knobs, and the headless probe cannot say how they feel.
 - Props, trees and residents under a left press keep their own grab (they are checked with `pick_object`, once per press).
@@ -244,7 +244,7 @@ Run the product scene with `-- --modeless`.
 - **Point at the sky**, or anywhere off the diorama. The hand floats there, half upright with its fingers loosely curled, and now and then its thumb rubs its middle fingertip. Over the land it readies a pinch and on the lip it takes the rim grip, as before. Over a panel it goes.
 - **Click the sky.** The hand snaps its fingers, with a crisp snap you hear, and it is night; click again and it is day. The cut is instant.
 - **Shift-click the sky.** The snap steps the golden hours: dawn, noon, dusk, night, dawn. It is a lighter snap, quieter and a touch higher.
-- **Press the sky and drag.** Nothing happens: the loaded hand relaxes and no snap fires.
+- **Press the sky and drag.** No snap fires, and the loaded hand relaxes. If the drag comes over the land, a water ball condenses there and the hand holds it until you let go (`docs/scenic/water-flow.md`).
 - **Right-drag, scroll or pinch.** The hand fades while the camera moves and comes back when it stops.
 
 ### How it works

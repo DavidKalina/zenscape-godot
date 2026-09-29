@@ -87,7 +87,8 @@ var worst_step_usec := 0
 ## the library is not built). Build the cell map with `map_cells` (or `setup`).
 func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	data = terrain
-	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow"):
+	# A library built before the newest method (`wet_cells`) is stale: use the mirror.
+	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","wet_cells"):
 		kernel = ClassDB.instantiate("ZenScapeWaterFlow")
 		native = true
 	else:
@@ -257,12 +258,8 @@ func cell_at(point: Vector2) -> int:
 ## call, so a planner on a worker can keep the one it was given.
 const WET_DEPTH := 0.05
 func wet_mask() -> Dictionary:
-	var mask := PackedByteArray()
-	var values := depths()
-	mask.resize(values.size())
-	for c in range(values.size()):
-		if values[c] >= WET_DEPTH: mask[c] = 1
-	return {"mask":mask,"origin":origin,"cell":cell,"width":width,"height":height}
+	if not ready: return {}
+	return {"mask":kernel.wet_cells(WET_DEPTH),"origin":origin,"cell":cell,"width":width,"height":height}
 
 ## True when `mask` (from `wet_mask`) has water at `point`.
 static func wet_in(mask: Dictionary, point: Vector2) -> bool:

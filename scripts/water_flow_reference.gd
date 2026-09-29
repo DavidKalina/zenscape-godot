@@ -249,6 +249,13 @@ func set_depth(values: PackedFloat32Array) -> void:
 func get_ground() -> PackedFloat32Array:
 	return ground.duplicate()
 
+func wet_cells(min_depth: float) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(depth.size())
+	for c in range(depth.size()):
+		if depth[c] >= min_depth: out[c] = 1
+	return out
+
 func get_velocity() -> PackedVector2Array:
 	var out := PackedVector2Array()
 	out.resize(vx.size())

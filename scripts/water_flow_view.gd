@@ -9,8 +9,10 @@ extends Node3D
 ## downstream, with foam blended into COLOR where it is fast). Where moving
 ## water drops steeply, a waterfall stands (`FlowFalls`, the authored falls'
 ## ring shader, plunge and spray).
-## Seconds between surface rebuilds, and between waterfall reads.
-const SURFACE_SECONDS := 0.05
+## Seconds between surface rebuilds (native), and between waterfall reads.
+const SURFACE_SECONDS := 1.0/30.0
+## The GDScript mirror's coarser grid rebuilds less often (about 4 ms a build).
+const FALLBACK_SURFACE_SECONDS := 0.1
 const FALL_SECONDS := 0.5
 ## Surface parameters (ZenScapeWaterFlow::surface). Water shallower than
 ## `wet` is not drawn; the sheet sits `lift` above the water.
@@ -72,7 +74,7 @@ func _exit_tree() -> void:
 func update(delta: float) -> void:
 	_since += delta
 	_since_falls += delta
-	if _since >= SURFACE_SECONDS and flow.revision != _drawn:
+	if _since >= (SURFACE_SECONDS if flow.native else FALLBACK_SURFACE_SECONDS) and flow.revision != _drawn:
 		_since = 0.0
 		_drawn = flow.revision
 		publish()
