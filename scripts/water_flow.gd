@@ -38,6 +38,9 @@ const PARAMS := {
 	"soak":0.004,
 	"soak_depth":0.03,
 	"max_speed":4.0,
+	# s: the time constant the water leaving each edge cell is smoothed with
+	# (edge_outflow, spills; the edge falls read it).
+	"edge_smooth":0.5,
 }
 ## A ball is a spring when it lands SPRING_RISE m above the plate's low ground
 ## (its LOW_SHARE quantile), or on ground steeper than SPRING_SLOPE.
@@ -87,8 +90,8 @@ var worst_step_usec := 0
 ## the library is not built). Build the cell map with `map_cells` (or `setup`).
 func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	data = terrain
-	# A library built before the newest method (`wet_cells`) is stale: use the mirror.
-	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","wet_cells"):
+	# A library built before the newest method (`spills`) is stale: use the mirror.
+	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","spills"):
 		kernel = ClassDB.instantiate("ZenScapeWaterFlow")
 		native = true
 	else:
@@ -279,6 +282,21 @@ func pools() -> Array:
 ## Steep drops of moving water: flat x0, y0, z0, x1, y1, z1, flux per fall.
 func falls(min_flux: float, min_drop: float, min_slope: float, reach: float) -> PackedFloat32Array:
 	return kernel.falls(min_flux,min_drop,min_slope,reach) if ready else PackedFloat32Array()
+
+## Waterfalls traced from the flow (ZenScapeWaterFlow::cascades): lip, plunge,
+## flux and a course down the face, for scripts/flow_falls.gd.
+func cascades(params: Dictionary) -> Array:
+	return kernel.cascades(params) if ready else []
+
+## The water leaving the plate over each edge cell, m³/s smoothed:
+## {"sides": [-x, +x, -z, +z] (PackedFloat32Array along each), "total"}.
+func edge_outflow() -> Dictionary:
+	return kernel.edge_outflow() if ready else {"sides":[],"total":0.0}
+
+## Runs of edge cells water leaves the plate over (ZenScapeWaterFlow::spills),
+## for scripts/edge_falls.gd.
+func spills(params: Dictionary) -> Array:
+	return kernel.spills(params) if ready else []
 
 ## The saved form: springs, and the depth grid deflated as float32, base64.
 func encode() -> Dictionary:

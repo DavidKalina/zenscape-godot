@@ -24,6 +24,26 @@ varying float rest_height;
 uniform bool planar_enabled = false;
 uniform sampler2D planar_reflection : filter_linear, repeat_disable;
 uniform mat4 reflection_matrix;
+// Live water (scripts/water_flow_view.gd) has one planar view for all its
+// ponds, at `planar_level` (object space, the mesh's rest height). With a
+// band, water further than it from that level fades to the ordinary surface,
+// so a second pond at another height does not take a displaced reflection.
+uniform float planar_band = 0.0;
+uniform float planar_level = 0.0;
+// Live moving water lies over still water drawn everywhere wet; CUSTOM1.x
+// fades it out towards the slow water round it, so the two meet softly.
+uniform bool flow_edge_fade = false;
+varying float flow_fade;
+// Live still water carries its distance from dry ground in UV.x
+// (ZenScapeWaterFlow::surface). With `shore_distance`, the shore foam keeps
+// to the bank: a sheet a few centimetres deep lies wholly inside the lap's
+// depth band, and by depth alone it would all read as foam.
+uniform bool shore_distance = false;
+varying float shore_run;
+// Live waterfalls (scripts/flow_falls.gd) churn the water where they land and
+// whiten it where they tip over: x, z, radius, strength each.
+uniform vec4 fall_foam[8];
+uniform int fall_foam_count = 0;
 uniform sampler2D pond_screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D pond_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform float caustics_strength = 0.0;
@@ -48,6 +68,8 @@ varying float cut_face;
 
 void vertex() {
 	rest_height = VERTEX.y;
+	flow_fade = flow_edge_fade ? CUSTOM1.x : 1.0;
+	shore_run = shore_distance && !flowing ? UV.x : 1000.0;
 	lake_local = VERTEX.xz;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	water_depth = max(UV2.x - level_drop, 0.0);
@@ -116,7 +138,13 @@ void fragment() {
 	// Depth for the shoreline foam: the mesh's own, or where the planar path
 	// reads the bed behind each pixel, the true per-pixel depth.
 	float shore_depth = water_depth;
-	if (planar_enabled && cut_face < 0.5) {
+	float planar_weight = planar_enabled && cut_face < 0.5 ? 1.0 : 0.0;
+	if (planar_band > 0.0) planar_weight *= 1.0 - smoothstep(planar_band * 0.5, planar_band, abs(rest_height - planar_level));
+	if (planar_weight > 0.0) {
+		float plain_fresnel = fresnel;
+		vec3 plain_reflection = reflection;
+		vec3 plain_body = body;
+		float plain_shore = shore_depth;
 		fresnel = 0.16 + 0.72 * pow(1.0 - max(dot(eye, wave_normal), 0.0), 3.0);
 		vec4 projected = reflection_matrix * vec4(world_position, 1.0);
 		vec2 uv = projected.xy / projected.w * vec2(0.5, -0.5) + 0.5;
@@ -132,6 +160,10 @@ void fragment() {
 		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth);
 		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
 		shore_depth = min(shore_depth, max(submerged, 0.0));
+		fresnel = mix(plain_fresnel, fresnel, planar_weight);
+		reflection = mix(plain_reflection, reflection, planar_weight);
+		body = mix(plain_body, body, planar_weight);
+		shore_depth = mix(plain_shore, shore_depth, planar_weight);
 	}
 	float glint = smoothstep(0.75, 1.0, zs_water_growth_now()) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
@@ -144,14 +176,31 @@ void fragment() {
 		// Look pass: a thin broken foam line where still water meets the bank,
 		// lapping in and out slowly with the wind.
 		float lap = 0.035 + 0.02 * sin(zs_flow_time * 0.9 + zs_noise(world_position.xz * 0.6) * 6.2832) * (0.4 + min(zs_wind_strength, 1.0) * 0.6);
-		float band = 1.0 - smoothstep(lap * 0.5, lap, shore_depth);
+		float band = (1.0 - smoothstep(lap * 0.5, lap, shore_depth)) * (1.0 - smoothstep(0.2, 0.55, shore_run));
 		float broken = smoothstep(0.35, 0.7, zs_noise(world_position.xz * 3.1 + vec2(zs_flow_time * 0.05, 0.0)));
 		foam = max(foam, band * mix(0.35, 0.8, broken) * zs_look_shore);
 	}
 	body = mix(body, vec3(0.65, 0.80, 0.79), foam * (1.0 - zs_ice));
+	// Churn under a live fall, spreading outward in broken patches.
+	float fall_churn = 0.0;
+	for (int i = 0; i < 8; i++) {
+		if (i >= fall_foam_count) break;
+		vec4 f = fall_foam[i];
+		vec2 d = world_position.xz - f.xy;
+		float r = length(d) / max(f.z, 0.01);
+		if (r >= 1.0) continue;
+		vec2 outward = d / max(length(d), 0.001);
+		float spread = zs_noise((world_position.xz - outward * zs_flow_time * 0.55) * 3.2 + float(i) * 7.1);
+		float fine = zs_noise((world_position.xz - outward * zs_flow_time * 0.9) * 7.5 + float(i) * 3.3);
+		float core = 1.0 - smoothstep(0.12, 0.42, r);
+		float patches = smoothstep(0.42, 0.7, spread * 0.7 + fine * 0.3) * (1.0 - smoothstep(0.3, 1.0, r));
+		fall_churn = max(fall_churn, clamp(core * (0.7 + 0.3 * fine) + patches, 0.0, 1.0) * f.w);
+	}
+	body = mix(body, vec3(0.86, 0.92, 0.93), fall_churn * (1.0 - zs_ice));
 	float absorption = 1.0 - exp(-water_depth / 0.45);
 	float alpha = mix(0.40, 1.0, max(absorption, fresnel));
 	if (!flowing && source_lake_material) alpha = zs_lake_opacity(water_depth, zs_ice);
+	alpha = max(alpha, fall_churn * 0.95);
 	if (!flowing) zs_lake_algae(body, alpha, world_position, lake_local, water_depth, cut_face);
 	if (!flowing && cut_face > 0.5) alpha = max(alpha, 0.95);
 	if (!flowing && cut_face < 0.5 && lake_wind_enabled) zs_lake_foam(body, alpha, world_position, water_depth, lake_state);
@@ -193,7 +242,16 @@ void fragment() {
 		inversion_transmit = zs_inversion_paint(world_position, EMISSION) * (1.0 - fresnel) * (1.0 - path.a);
 		SPECULAR = 0.0;
 	}
-	ALPHA = opaque_water_probe ? 1.0 : alpha;
+	if (fall_churn > 0.0) {
+		// Froth is lit like the fall's foam, whichever lighting path ran above.
+		vec3 froth = vec3(0.86, 0.92, 0.93);
+		vec3 froth_light = froth * (mix(zs_hemi_ground, zs_hemi_sky, 0.8) * zs_hemi_energy / PI + 0.3 * (0.25 + 0.75 * zs_daylight));
+		float take = fall_churn * (1.0 - zs_ice);
+		ALBEDO = mix(ALBEDO, froth, take);
+		EMISSION = mix(EMISSION, froth_light, take);
+		inversion_transmit *= 1.0 - take;
+	}
+	ALPHA = opaque_water_probe ? 1.0 : alpha * flow_fade;
 }
 
 #define ZS_COMPLETE_LAKE_LIGHTING

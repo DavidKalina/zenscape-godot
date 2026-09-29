@@ -7,6 +7,8 @@ extends SceneTree
 ## comes down and circles while the water runs. Rendered (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 --write-movie /tmp/zs-film/world.avi \
 ##     -s res://tools/film_hand_world.gd -- --modeless
+## It ends closing on the tallest waterfall (saving /private/tmp/zs-film/
+## fall_close.png); --falls-only skips the tour before that.
 ## Headless it prints the numbers, for a dry run.
 
 var scene: Node3D
@@ -161,6 +163,35 @@ func spring_at(p: Vector2, hold: float) -> Dictionary:
 	editor.ball_settled.disconnect(got)
 	return outcome
 
+## The waterfalls standing (scripts/flow_falls.gd), and what they cost.
+func falls_report() -> void:
+	var falls: Node = editor.flow_view.falls if editor.flow_view != null else null
+	if falls == null: return
+	for fall: Dictionary in falls.describe():
+		print("WORLD fall %d: lip %s plunge %s, %.3f m³/s over %.2f m, %.2f m wide, presence %.2f" % [fall.id,fall.lip,fall.plunge,fall.flux,fall.drop,fall.width,fall.presence])
+	print("WORLD falls %d, read %d us, frame %d us (worst %d)" % [falls.shown_count(),falls.last_read_usec,falls.last_update_usec,falls.worst_update_usec])
+## Closes on the tallest standing waterfall from a three-quarter view
+## downstream of it, holds, and saves fall_close.png.
+func close_on_fall() -> void:
+	var falls: Node = editor.flow_view.falls if editor.flow_view != null else null
+	if falls == null or falls.describe().is_empty(): return
+	var tallest: Dictionary = {}
+	for fall: Dictionary in falls.describe():
+		if tallest.is_empty() or fall.drop > tallest.drop: tallest = fall
+	var lip: Vector3 = tallest.lip
+	var plunge: Vector3 = tallest.plunge
+	var run := Vector2(plunge.x-lip.x,plunge.z-lip.z).normalized()
+	var middle: Vector3 = editor.terrain.to_global(lip.lerp(plunge,0.55))
+	print("WORLD close on fall %d" % tallest.id)
+	await camera_to(middle,6.5,atan2(run.x,run.y)+0.55,1.18,5.0)
+	await seconds(2.0)
+	falls_report()
+	if DisplayServer.get_name() != "headless":
+		DirAccess.make_dir_recursive_absolute("/private/tmp/zs-film")
+		root.get_texture().get_image().save_png("/private/tmp/zs-film/fall_close.png")
+	await camera_to(middle,6.5,atan2(run.x,run.y)+1.1,1.12,5.0)
+	await seconds(1.0)
+
 func lake_water() -> float:
 	return water_near(Vector2(0.2,2.4),4.5)
 
@@ -239,13 +270,16 @@ func run() -> void:
 	for k in range(5):
 		await seconds(3.0)
 		print("WORLD fill %d: lake %.1f m³, pond %.1f m³, all %.1f m³" % [k,lake_water(),water_near(POND,2.8),editor.flow.volume()])
+		falls_report()
 	lapse = 2
-	print("WORLD tour")
 	dot.visible = false
-	await camera_to(Vector3(0,0.5,0),27.0,scene.yaw+0.5,1.02,4.0)
-	await camera_to(Vector3(-2,1.0,-2),22.0,scene.yaw+1.1,1.08,7.0)
-	await camera_to(Vector3(1,0.0,3),20.0,scene.yaw+0.9,0.98,6.0)
-	print("WORLD end: lake %.1f m³, pond %.1f m³, all %.1f m³" % [lake_water(),water_near(POND,2.8),editor.flow.volume()])
-	await seconds(1.0)
+	if not "--falls-only" in OS.get_cmdline_user_args():
+		print("WORLD tour")
+		await camera_to(Vector3(0,0.5,0),27.0,scene.yaw+0.5,1.02,4.0)
+		await camera_to(Vector3(-2,1.0,-2),22.0,scene.yaw+1.1,1.08,7.0)
+		await camera_to(Vector3(1,0.0,3),20.0,scene.yaw+0.9,0.98,6.0)
+		print("WORLD end: lake %.1f m³, pond %.1f m³, all %.1f m³" % [lake_water(),water_near(POND,2.8),editor.flow.volume()])
+		await seconds(1.0)
+	await close_on_fall()
 	print("WORLD done")
 	quit(0)
