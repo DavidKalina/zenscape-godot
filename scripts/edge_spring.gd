@@ -69,6 +69,31 @@ const LUCK := 1.5
 ## BASIN_FULL of it is a full-size basin.
 const BASIN_MIN := 0.08
 const BASIN_FULL := 0.45
+## Amplify. A plate whose relief (the largest departure of any point from the
+## smooth base, faded at the rim) is at least RELIEF_MIN metres has been
+## shaped, and its own shapes spring up instead of a range: each departure is
+## scaled by AMPLIFY (a gentle pull to the cap), so peaks rise and grooves and
+## basins deepen.
+const RELIEF_MIN := 0.35
+const AMPLIFY := Vector2(1.1,1.6)
+## The smooth base: point heights averaged onto a BASE_CELL metre grid, then
+## blurred with three box passes of BASE_RADIUS cells either side (about a
+## 4 m gaussian). It is refined BASE_CLAMPS.size() times, each time blurring
+## the heights clamped to within that many metres of the last base, so a
+## sculpted peak or basin barely pulls the base toward itself (no moat or
+## rampart round what is amplified).
+const BASE_CELL := 1.0
+const BASE_RADIUS := 4
+const BASE_CLAMPS := [1.0,0.5,0.25,0.25]
+## Peaks sharpen and roughen with the pull's jaggedness (JAGGED, as the
+## range's): on upper slopes (UPPER, metres above the base, as a smoothstep)
+## the gain grows by SHARPEN of itself, and the forms' crag noise moves the
+## ground by up to CRAG of its departure either way.
+const UPPER := Vector2(0.6,3.5)
+const SHARPEN := 0.4
+const CRAG := 0.14
+## Deepening eases ground below SINK_KNEE toward MIN_HEIGHT, never reaching it.
+const SINK_KNEE := -0.8
 
 var flip: Node
 ## A seed for the next range or basin (< 0 is a random one), for a probe.
@@ -76,6 +101,7 @@ var next_seed := -1
 ## What the last range and basin were, for the probe.
 var last_range := {}
 var last_basin := {}
+var last_amplify := {}
 ## Let go, waiting for the block to come back up before the range springs.
 var waiting := false
 var _chained: Node = null
@@ -209,7 +235,172 @@ func _rng() -> RandomNumberGenerator:
 
 func _build_shape(what: String, amount: float) -> void:
 	if what == "basin": super._build_shape(what,amount)
-	else: _build_range(amount)
+	elif not _build_amplify(amount): _build_range(amount)
+
+## The plate's own relief, amplified for a pull `amount`, built into the
+## editor's mountain as the range is (so it springs, lands, weathers and undoes
+## the same way). False, with nothing built, when the plate is nearly flat.
+func _build_amplify(amount: float) -> bool:
+	var started := Time.get_ticks_usec()
+	var data := editor.data
+	var smooth := _smooth_base(data,_base)
+	var relief := 0.0
+	for i in range(_base.size()): relief = maxf(relief,absf(_base[i]-smooth[i])*_fade(i,data))
+	last_amplify = {"relief":relief,"base_ms":(Time.get_ticks_usec()-started)/1000.0}
+	if relief < RELIEF_MIN: return false
+	next_seed = -1
+	last_range = {}
+	var factor := lerpf(AMPLIFY.x,AMPLIFY.y,amount)
+	var jag := smoothstep(JAGGED.x,JAGGED.y,amount)
+	var shown_heights := data.heights
+	data.heights = _base.duplicate()
+	var mountain: RefCounted = editor.mountain
+	mountain.prepare(data,editor.land_seed)
+	mountain.begin(data,"alpine",Vector2.ZERO,0.01,editor.land_strength,Vector2.RIGHT)
+	var keep: PackedFloat32Array = mountain._keep
+	var rough: PackedFloat32Array = mountain._jag
+	var fine: PackedFloat32Array = mountain._fine
+	var lifts: PackedFloat32Array = mountain._lift
+	var touched := PackedInt32Array()
+	var bounds := Rect2()
+	var bounded := false
+	var top := 0.0
+	var deepest := 0.0
+	var middle := Vector2.ZERO
+	var mass := 0.0
+	for i in range(_base.size()):
+		var d := _base[i]-smooth[i]
+		var lift := 0.0
+		if d > 0.0:
+			# Rise: more on the upper slopes, with crags, under the ceiling.
+			var up := jag*smoothstep(UPPER.x,UPPER.y,d)
+			var grain := lerpf(rough[i],fine[i],0.4)*2.0-1.0
+			lift = maxf(0.0,d*((factor-1.0)*(1.0+SHARPEN*up)+CRAG*up*grain)*keep[i])
+			lift = clampf(_ceiling(_base[i]+lift)-_base[i],0.0,lift)
+			lift = minf(lift,NativeTerrainData.MAX_HEIGHT-_base[i])
+		elif d < 0.0:
+			# Deepen, eased above the floor.
+			var goal := _base[i]+d*(factor-1.0)*_fade(i,data)
+			lift = minf(_sink(goal)-_base[i],0.0)
+		lifts[i] = lift
+		if absf(lift) < 0.0005:
+			lifts[i] = 0.0
+			continue
+		touched.append(i)
+		top = maxf(top,lift)
+		deepest = minf(deepest,lift)
+		var p: Vector2 = data.points[i]
+		if lift > 0.0:
+			middle += p*lift
+			mass += lift
+		if absf(lift) > 0.02:
+			bounds = bounds.expand(p) if bounded else Rect2(p,Vector2.ZERO)
+			bounded = true
+	center = middle/mass if mass > 0.0 else bounds.get_center()
+	var ground: Variant = data.sample(center,smooth)
+	mountain.center = center
+	mountain.ground = float(ground) if ground != null else 0.0
+	mountain.spread = clampf(maxf(bounds.size.x,bounds.size.y)*0.5,3.0,9.5)
+	# Gentle pulls keep their green, as the range's: the rock paints by share
+	# of this height.
+	mountain.height = maxf(2.0,maxf(top,lerpf(10.0,top,jag)))
+	mountain._lift = lifts
+	mountain._touched = touched
+	mountain.bounds = bounds
+	mountain._has_bounds = bounded
+	mountain.tint_lock = _bare_cells(data)
+	data.heights = shown_heights
+	_region = bounds
+	last_amplify.merge({"factor":factor,"jag":jag,"top":top,"deepest":deepest,"centre":center,"touched":touched.size(),
+		"build_ms":(Time.get_ticks_usec()-started)/1000.0},true)
+	return true
+
+## Each point's smooth base under `heights`: see BASE_CELL.
+func _smooth_base(data: NativeTerrainData, heights: PackedFloat32Array) -> PackedFloat32Array:
+	var side := int(round(28.0/BASE_CELL))+1
+	var mean := PackedFloat32Array()
+	var weight := PackedFloat32Array()
+	mean.resize(side*side)
+	weight.resize(side*side)
+	var cells := PackedInt32Array()
+	cells.resize(heights.size())
+	for i in range(heights.size()):
+		var p: Vector2 = data.points[i]
+		var c := clampi(roundi((p.y+14.0)/BASE_CELL),0,side-1)*side+clampi(roundi((p.x+14.0)/BASE_CELL),0,side-1)
+		cells[i] = c
+		mean[c] += heights[i]
+		weight[c] += 1.0
+	for c in range(mean.size()):
+		if weight[c] > 0.0: mean[c] /= weight[c]
+	var spread := _blur(weight,side)
+	var base := _blur_mean(mean,weight,spread,side)
+	for limit: float in BASE_CLAMPS:
+		var held := PackedFloat32Array()
+		held.resize(mean.size())
+		for c in range(mean.size()): held[c] = clampf(mean[c],base[c]-limit,base[c]+limit)
+		base = _blur_mean(held,weight,spread,side)
+	var out := PackedFloat32Array()
+	out.resize(heights.size())
+	for i in range(heights.size()):
+		var p: Vector2 = data.points[i]
+		var fx := clampf((p.x+14.0)/BASE_CELL,0.0,side-1.001)
+		var fz := clampf((p.y+14.0)/BASE_CELL,0.0,side-1.001)
+		var x := int(fx)
+		var z := int(fz)
+		var u := fx-x
+		var v := fz-z
+		var c := z*side+x
+		out[i] = lerpf(lerpf(base[c],base[c+1],u),lerpf(base[c+side],base[c+side+1],u),v)
+	return out
+
+## `values` blurred with weights `weight` (their blur `spread`).
+func _blur_mean(values: PackedFloat32Array, weight: PackedFloat32Array, spread: PackedFloat32Array, side: int) -> PackedFloat32Array:
+	var weighted := PackedFloat32Array()
+	weighted.resize(values.size())
+	for c in range(values.size()): weighted[c] = values[c]*weight[c]
+	weighted = _blur(weighted,side)
+	for c in range(values.size()): weighted[c] = weighted[c]/spread[c] if spread[c] > 0.0 else 0.0
+	return weighted
+
+## Three box passes of BASE_RADIUS each way over a `side`² grid (zero outside).
+func _blur(field: PackedFloat32Array, side: int) -> PackedFloat32Array:
+	var a := field.duplicate()
+	var b := PackedFloat32Array()
+	b.resize(a.size())
+	for pass_index in range(3):
+		for axis in range(2):
+			var stride := 1 if axis == 0 else side
+			var lane := side if axis == 0 else 1
+			for row in range(side):
+				var start := row*lane
+				var sum := 0.0
+				for k in range(mini(BASE_RADIUS,side-1)+1): sum += a[start+k*stride]
+				for k in range(side):
+					b[start+k*stride] = sum
+					var enter := k+BASE_RADIUS+1
+					var leave := k-BASE_RADIUS
+					if enter < side: sum += a[start+enter*stride]
+					if leave >= 0: sum -= a[start+leave*stride]
+			var swap := a
+			a = b
+			b = swap
+	return a
+
+## Ground at `height` eased above the floor: as is down to SINK_KNEE, then
+## toward MIN_HEIGHT, never reaching it.
+static func _sink(height: float) -> float:
+	if height >= SINK_KNEE: return height
+	var span := SINK_KNEE-NativeTerrainData.MIN_HEIGHT
+	return SINK_KNEE-span*(1.0-exp(-(SINK_KNEE-height)/span))
+
+## Tint cells the hand has bared (the clay's dirt, paths): the rock leaves
+## them as they are.
+static func _bare_cells(data: NativeTerrainData) -> PackedByteArray:
+	var lock := PackedByteArray()
+	lock.resize(data.provenance.size())
+	for cell in range(lock.size()):
+		if data.provenance[cell] == NativeTerrainData.SOURCE_HAND and data.grass[cell] <= 0.01: lock[cell] = 1
+	return lock
 
 ## The range for a pull `amount`, built into the editor's mountain (so it
 ## lands, weathers and undoes as one): its lift is the peaks' combined lift.

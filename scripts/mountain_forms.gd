@@ -104,6 +104,10 @@ var _aretes := PackedFloat32Array()
 var _stacks: Array[Vector4] = []
 var _salt := 0
 var _has_bounds := false
+## Tint cells (the meadow grid) the rock must leave alone, 1 each: set after
+## `begin` by a caller that keeps the hand's bare earth (scripts/edge_spring.gd);
+## empty paints everywhere.
+var tint_lock := PackedByteArray()
 
 static func form_ids() -> Array:
 	return FORMS.map(func(entry: Dictionary) -> String: return entry.id)
@@ -182,6 +186,7 @@ func begin(data: NativeTerrainData, form_id: String, press: Vector2, size: float
 	_reach = Rect2()
 	bounds = Rect2()
 	_has_bounds = false
+	tint_lock = PackedByteArray()
 	spread = -1.0
 	aim(data,press)
 
@@ -407,7 +412,7 @@ func weather_job(data: NativeTerrainData) -> Callable:
 	settings.detail = float(settings.detail)*clampf(height/HEIGHT_REF,0.4,1.4)
 	settings.merge({"size":Erosion.SIZE,"cell":Erosion.CELL,"origin":Erosion.ORIGIN,"seed":(_salt+7919)&0xffffffff})
 	var job := {"base":_base.duplicate(),"lift":_lift.duplicate(),"keep":_keep.duplicate(),"tint":data.tint.duplicate(),
-		"region":region,"settings":settings,"rock":ROCKS[shape.rock],"form":form,"height":height,"ground":ground,"salt":_salt}
+		"region":region,"settings":settings,"rock":ROCKS[shape.rock],"form":form,"height":height,"ground":ground,"salt":_salt,"lock":tint_lock.duplicate()}
 	return func() -> Dictionary: return _weathered(snapshot,job)
 
 ## `data` is a detached copy. Erodes only grid cells the mountain lifted (the
@@ -465,12 +470,14 @@ static func _rock_tint(data: NativeTerrainData, job: Dictionary) -> PackedFloat3
 	var tall: float = job.height
 	var base: PackedFloat32Array = job.base
 	var region: Rect2 = job.region
+	var lock: PackedByteArray = job.get("lock",PackedByteArray())
 	var side := data.MEADOW_CELLS
 	var step := data.MEADOW_STEP
 	var low := Vector2i(clampi(floori((region.position.x+14.0)/step),0,side-1),clampi(floori((region.position.y+14.0)/step),0,side-1))
 	var high := Vector2i(clampi(floori((region.end.x+14.0)/step),0,side-1),clampi(floori((region.end.y+14.0)/step),0,side-1))
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
+			if not lock.is_empty() and lock[z*side+x] != 0: continue
 			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
 			var h: Variant = data.sample(p,data.heights)
 			var b: Variant = data.sample(p,base)
