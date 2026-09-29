@@ -4,6 +4,7 @@
   blender -b --python tools/blender_hand/god_hand_review.py -- --clip=PinchIn [--count=8] [--view=side]
   blender -b --python tools/blender_hand/god_hand_review.py -- --check
   blender -b --python tools/blender_hand/god_hand_review.py -- --heights=PinchIn,PressHold
+  blender -b --python tools/blender_hand/god_hand_review.py -- --wall=WallHold [--count=8]
 
 The reel plays every gesture the way the game would chain them: Idle, then each In, its
 Hold twice and its Out, with a short crossfade where Idle is cut. Stand-ins show what the
@@ -57,7 +58,15 @@ VIEWS = {
 	'front': ((0.35, -3.4, 0.7), (0, -0.2, 0.4), 35),
 	# The snow globe grip, as the game sees it: from outside the rim, above and to one side.
 	'rim': ((1.3, 2.6, 1.5), (0, 0, 0.0), 35),
+	# The wall palm, as the game sees it: from outside the wall, a little above and aside.
+	'wall': ((-1.1, 3.2, 1.0), (0.15, 0, 0.3), 35),
+	# Along the wall, to see the palm lie on it.
+	'along': ((3.4, 0.35, 0.35), (0.1, 0, 0.3), 35),
+	# Through the wall (it is hidden) at the palm laid on it.
+	'inside': ((0.4, -3.2, 0.45), (0.1, 0, 0.3), 35),
 }
+# The Wall clips stand on the Shake's wall stand-in, raised so its top is over the hand.
+WALL_TOP = 1.1
 
 
 def studio(scale):
@@ -350,11 +359,15 @@ def contact_sheet(name):
 		clips.pose(rig, p, s, marks)
 		bpy.context.view_layer.update()
 		shown = name.startswith('Cup') and not (name == 'CupOut' and f > clips.CUP_POP)
-		stage.ground.hide_render = name.startswith("Shake")
-		stage.rim.hide_render = not name.startswith('Shake')
+		stage.ground.hide_render = name.startswith(("Shake", "Wall"))
+		stage.rim.hide_render = not name.startswith(('Shake', 'Wall'))
+		stage.rim.location = (0, 0, WALL_TOP if name.startswith('Wall') else 0.0)
 		orb = (world_of('Ball'), 1.0) if shown else None
 		stage.show(0.0, orb, [])
 		stage.sun_rim(name)
+		if name.startswith('Wall'):
+			stage.ground.hide_render = stage.mark.hide_render = True
+			stage.rim.hide_render = VIEW == 'inside'
 		scene.render.filepath = str(folder / f'{i:02d}.png')
 		bpy.ops.render.render(write_still=True)
 	cols = 4
@@ -414,6 +427,7 @@ def check():
 	pairs += [('Idle', 'TurnIn'), ('TurnIn', 'TurnHold'), ('TurnHold', 'TurnOut'), ('TurnOut', 'Idle'),
 		('Idle', 'CatchIn'), ('CatchIn', 'CatchHold'), ('CatchHold', 'CatchOut'), ('CatchOut', 'Idle')]
 	pairs += clips.SUN_RIM_HANDOFFS
+	pairs += clips.WALL_HANDOFFS
 	for a, b in pairs:
 		gap = max((x - y).length for x, y in zip(last[a], first[b]))
 		print(f'HAND_HANDOFF {a:>12s} -> {b:12s} {gap:.4f}')
@@ -432,7 +446,43 @@ def heights(name):
 	print(f'HAND_HEIGHTS {name}: ' + ', '.join(f'{d} {z:+.3f}@{f}' for d, (z, f) in low.items()))
 
 
-if 'heights' in ARGS:
+def wall_depth(name):
+	"""How far the posed mesh is off the wall (y = 0) over a clip: its nearest point,
+	and the palm's and each digit's, by the bone each vertex is weighted to most. Negative
+	is into the wall."""
+	frames = clips.evaluate(rig, name)
+	groups = {g.index: g.name for g in hand.vertex_groups}
+	owner = {}
+	for v in hand.data.vertices:
+		if v.groups:
+			bone = groups[max(v.groups, key=lambda g: g.weight).group]
+			owner[v.index] = next((d for d in clips.DIGITS if bone.startswith(d)), 'Palm')
+	T, _, loop, _, _ = clips.CLIPS[name]
+	count = int(ARGS.get('count', '8'))
+	picks = [round(i * (len(frames) - 1) / (count - 1)) for i in range(count)]
+	rig.location = (0, 0, 0)
+	for f in picks:
+		p, s, marks = frames[f]
+		clips.pose(rig, p, s, marks)
+		bpy.context.view_layer.update()
+		dg = bpy.context.evaluated_depsgraph_get()
+		ev = hand.evaluated_get(dg)
+		mesh = ev.to_mesh()
+		m = rig.matrix_world.inverted() @ hand.matrix_world
+		low = {}
+		for v in mesh.vertices:
+			y = (m @ v.co).y
+			k = owner.get(v.index, 'Palm')
+			if k not in low or y < low[k]:
+				low[k] = y
+		ev.to_mesh_clear()
+		print(f'HAND_WALL {name} f{f:3d}: ' + ', '.join(f'{k} {y:+.3f}' for k, y in sorted(low.items(), key=lambda kv: kv[1])))
+
+
+if 'wall' in ARGS:
+	for name in ARGS['wall'].split(','):
+		wall_depth(name)
+elif 'heights' in ARGS:
 	for name in ARGS['heights'].split(','):
 		heights(name)
 elif 'check' in ARGS:

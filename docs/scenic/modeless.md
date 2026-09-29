@@ -90,8 +90,9 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 - **Signals for the other slices**, all on `hand_reach`:
   - `flip_began(screen_pos)`, `flip_dragged(progress)` (0..1, up to `FLIP_REACH` = 0.45 screen heights of upward drag), `flip_released(progress)`. If a shake takes over a flip, the flip is ended with `flip_released(0.0)`.
   - `land_pressed(screen_pos)`, `land_dragged(screen_pos, relative)`, `land_released(screen_pos)`. `hand_reach.holding` is `"land"` between them. The hand is not driven while the land is held, so the spring slice can set `god_hand.reach_gesture`.
-- **The walls are rim.** The block's earth sides are rim all the way down to the foot: a pointer on a wall reaches the point it is over (`_wall_hit`, outer faces only, unless a hill stands nearer along the ray), not the lip above it. That point is the turn's grab, so the wall stays under the pointer as the world turns; the hand shows there stood `WALL_OUT` (0.5 m) out from the wall, clear of the faceted sides, which bulge about 0.45 m past the plate. Before this, a wall press took the lip: the hand sat on it, hidden inside the bulge and often off screen in a low view, and the grab drifted about 150 px from the pointer (`tools/probe_wall_grab.gd`).
-- **Hover.** `_drive_hand_modeless` sets `reach_gesture` to `"rim"` or `"pinch"` (with the point) only when the hand is free or already showing one of its own hover poses, and clears it after.
+- **The walls are rim.** The block's earth sides are rim all the way down to the foot: a pointer on a wall reaches the point it is over (`_wall_hit`, outer faces only, unless a hill stands nearer along the ray), not the lip above it. That point is the turn's grab, so the wall stays under the pointer as the world turns. Before this, a wall press took the lip: the hand sat on it, hidden inside the bulge and often off screen in a low view, and the grab drifted about 150 px from the pointer (`tools/probe_wall_grab.gd`).
+- **The palm on the wall.** On a wall the hand lays its palm flat against it (`"wall"`, the Wall clips in `docs/scenic/god-hand.md`), fingers spread up the wall, ready to push it sideways, pull it down or lift it. The lip keeps the Rim grip. `reach_facing` is the wall's inward normal, so the palm faces into the wall whichever side the camera is on. The faceted earth sides bulge 0 to 0.45 m past the plate (about 0.2 m typically), so the hand does not stand a fixed distance out: `_wall_face` reads the facets round the palm (rays into them over the palm and fingers, `WALL_SPAN` either side, `WALL_BELOW` under to `WALL_ABOVE` over the point, and their corners there) and the hand point stands `WALL_GAP` (4 cm) past the outermost of them. The palm then lies on the earth, not in it or floating off it; `WALL_OUT` (0.5 m) is only the fallback where the sides cannot be read. It costs about 0.15 ms a call, once per hover change or drag motion. `_hand_at` gives the hand point, and `_wall_facing` tells a wall point (outside the plate) from the lip.
+- **Hover.** `_drive_hand_modeless` sets `reach_gesture` to `"rim"`, `"wall"` or `"pinch"` (with the point, and for the wall its facing) only when the hand is free or already showing one of its own hover poses, and clears all three after. A rim hold keeps the same pose (wall or lip) while it is undecided or turning; the flip and a decided shake take the hand over as before. The hover is read before the hand is driven each frame, so the pose never trails the pointer by a frame.
 
 ### Limits and open points
 
@@ -100,14 +101,14 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 - **Reach depends on where you grab.** The turn's speed is the pointer's speed over the grab's distance from the pivot, so the same flick winds more time near the pivot's side of the rim than far from it. `TIME_MIN` and `HOURS_GAIN` in `scripts/spin_time.gd` are the knobs, and the headless probe cannot say how they feel.
 - Props, trees and residents under a left press keep their own grab (they are checked with `pick_object`, once per press).
 - The hover key in `hand_reach` only changes with the pointer and camera, so while the world spins under a still pointer the hover pose can lag until the pointer moves.
-- **Unverified on screen:** the shimmer, the hand's rim and pinch poses, how the sky, leaves and weather look while time races, whether 3 rad/s and the 12 px axis decision feel right, and the hidden tool rail's layout.
+- **Unverified on screen:** the shimmer, the hand's rim, wall and pinch poses (the Wall clips have been looked at only in Blender review renders), how the sky, leaves and weather look while time races, whether 3 rad/s and the 12 px axis decision feel right, and the hidden tool rail's layout.
 
 ### Probe
 
 `tools/probe_modeless_rim.gd` (run with `-- --modeless`, `--fixed-fps 60`). It proves, in the real product scene with synthesized input:
 
-- the sun does not grab; over the rim the hand takes "rim", over the land "pinch", over nothing it lets go;
-- a sideways rim push decides "turn", turns the world and the room, and shows the rim grip;
+- the sun does not grab; over the rim's wall (half a metre under the lip) the hand takes "wall", over the land "pinch", over nothing it lets go;
+- a sideways rim push decides "turn", turns the world and the room, and keeps the palm on the wall;
 - a slow turn leaves the clock and the shimmer alone and does not spin on;
 - two fast flicks wind the clock exactly as much as the spin's hours a second integrate to, the faster flick winds more, a held season rolls with the calendar, the shimmer rises, the world keeps its time at rest and the hour is pinned;
 - forty extra days through the spin's path change the weather;
@@ -116,4 +117,4 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 - a left land press emits `land_pressed`, `land_dragged`, `land_released`, does not turn, paints nothing (no undo step, no height change);
 - a fast right drag tilts and looks round without changing time, the room or the spin.
 
-`tools/probe_wall_grab.gd` (same flags) takes a low, close camera facing a wall and proves the wall's middle is rim, reaches the point under the pointer, shows the rim grip stood out from the wall, turns the world with the grabbed point within a few pixels of the pointer, and decides the flip from an upward drag.
+`tools/probe_wall_grab.gd` (same flags) takes a low, close camera facing a wall and proves the wall's middle is rim, reaches the point under the pointer, lays the palm on the wall on hover (`"wall"`, facing into it, the hand point on the earth side's face), keeps the rim grip on the lip, has the Wall clips in the model and plays WallIn into WallHold while held, keeps the palm on the earth rather than in it, clears the facing on letting go, keeps the palm on the wall while it turns, turns the world with the grabbed point within a few pixels of the pointer, and decides the flip from an upward drag.

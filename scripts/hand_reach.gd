@@ -72,9 +72,17 @@ const SUN_LOW := -0.05
 ## the land's border band RIM_BAND metres deep, or over the block's walls.
 const RIM_PIXELS := 28.0
 const RIM_BAND := 0.8
-## A hand on the block's walls stands this far out from them, clear of the
-## faceted earth sides, which bulge up to about 0.45 m past the plate.
+## A hand on the block's walls lays its palm on the faceted earth sides, which
+## bulge up to about 0.45 m past the plate: it stands WALL_GAP out from the
+## outermost of them round the palm (WALL_SPAN metres either side along the
+## wall, from WALL_BELOW under the point to WALL_ABOVE over it, where the
+## fingers reach; `_wall_face`), or WALL_OUT out from the plate where the sides
+## are not there to read.
 const WALL_OUT := 0.5
+const WALL_GAP := 0.04
+const WALL_SPAN := 1.2
+const WALL_BELOW := 0.8
+const WALL_ABOVE := 1.8
 ## Metres from the camera, along the ray to the sun, the hand holds it: about
 ## where the Reach clips' cup is the size of the disc on screen.
 const SUN_REACH := 12.0
@@ -135,6 +143,10 @@ var _rim_angle: Variant = null
 var _hint := ""
 var _cursor_owned := false
 var _block_low: Variant = null
+## The earth sides' triangles (corners in threes) in plate coordinates, and the
+## mesh and placing they were read from.
+var _skirt_points := PackedVector3Array()
+var _skirt_read: Array = []
 var _hover_key := []
 var _land_cache := {}
 var _land_frame := -1
@@ -268,12 +280,61 @@ func rim_point(point: Vector2) -> Vector3:
 	return _outline_nearest(point)[1]
 
 ## Where the hand shows a rim point: on the lip as it is, on a wall stood out
-## from it (WALL_OUT) so the earth sides do not hide it.
+## from it onto the face of the earth sides round the palm, so they do not
+## hide it and the palm lies on them.
 func _hand_at(rim: Vector3) -> Vector3:
 	var edge := Vector2(rim.x,rim.z)
 	if rim.y > _rim_height(edge)-0.05: return rim
 	var out := Vector3(signf(rim.x),0.0,0.0) if absf(rim.x) >= absf(rim.z) else Vector3(0.0,0.0,signf(rim.z))
-	return rim+out*WALL_OUT
+	return rim+out*_wall_face(rim,out)
+
+## How far out from the plate's wall at `rim` (outward `out`) the palm lies:
+## WALL_GAP past the outermost face of the earth sides round it, read along
+## rays into their facets over the palm and fingers and at the facets' corners
+## there. The facets are large, so their corners alone can miss a bulge.
+func _wall_face(rim: Vector3, out: Vector3) -> float:
+	var editor := _editor()
+	var skirt: MeshInstance3D = editor.get("_skirt")
+	if skirt == null or skirt.mesh == null or not skirt.visible: return WALL_OUT
+	var placing: Transform3D = editor.terrain.global_transform.affine_inverse()*skirt.global_transform
+	if _skirt_read != [skirt.mesh,placing]:
+		_skirt_read = [skirt.mesh,placing]
+		_skirt_points = placing*skirt.mesh.get_faces()
+	var along := Vector3(out.z,0.0,-out.x)
+	var near := PackedVector3Array()
+	var face := -INF
+	for i in range(0,_skirt_points.size()-2,3):
+		var corners := [_skirt_points[i]-rim,_skirt_points[i+1]-rim,_skirt_points[i+2]-rim]
+		var outmost := -INF
+		var low := INF
+		var high := -INF
+		var left := INF
+		var right := -INF
+		for d: Vector3 in corners:
+			outmost = maxf(outmost,d.dot(out))
+			low = minf(low,d.y)
+			high = maxf(high,d.y)
+			left = minf(left,d.dot(along))
+			right = maxf(right,d.dot(along))
+		# Only this wall's facets over the palm's reach.
+		if outmost < -1.0 or high < -WALL_BELOW or low > WALL_ABOVE or right < -WALL_SPAN or left > WALL_SPAN: continue
+		near.append_array(PackedVector3Array(corners))
+		for d: Vector3 in corners:
+			if d.y >= -WALL_BELOW and d.y <= WALL_ABOVE and absf(d.dot(along)) <= WALL_SPAN: face = maxf(face,d.dot(out))
+	for across in [-WALL_SPAN,0.0,WALL_SPAN]:
+		for up in [-WALL_BELOW,0.0,WALL_ABOVE*0.5,WALL_ABOVE]:
+			var from: Vector3 = along*across+Vector3.UP*up+out*2.0
+			for i in range(0,near.size(),3):
+				var hit: Variant = Geometry3D.ray_intersects_triangle(from,-out,near[i],near[i+1],near[i+2])
+				if hit != null: face = maxf(face,Vector3(hit).dot(out))
+	return maxf(face,0.0)+WALL_GAP if face > -INF else WALL_OUT
+
+## The way into the wall a hand point faces (`_hand_at`), or null on the lip.
+func _wall_facing(at: Variant) -> Variant:
+	if at == null: return null
+	var p: Vector3 = at
+	if maxf(absf(p.x),absf(p.z)) < PLATE_HALF+0.01: return null
+	return Vector3(-signf(p.x),0.0,0.0) if absf(p.x) >= absf(p.z) else Vector3(0.0,0.0,-signf(p.z))
 
 ## Where the pointer's ray meets the plane of the rim's height near it (plate
 ## coordinates), or null when it looks up.
@@ -610,10 +671,11 @@ func _process(delta: float) -> void:
 			_rest_season()
 		else:
 			_apply_dial()
-	if modeless: _drive_hand_modeless()
-	else: _drive_hand()
+	# The hover first, so the hand shows what the pointer is over this frame.
 	if holding.is_empty() and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		_hover(scene.get_viewport().get_mouse_position())
+	if modeless: _drive_hand_modeless()
+	else: _drive_hand()
 
 ## The sun has come to rest: the hour is held, or a day that was turning turns on.
 func _rest_sun() -> void:
@@ -787,9 +849,11 @@ func _rim_release(point: Vector2) -> void:
 		flip_released.emit(_flip_progress(point) if point != Vector2.INF else 0.0)
 	rim_intent = ""
 
-## The hand for the modeless zones: over the rim it takes the rim grip, over
-## the land it readies a pinch; held on the rim it grips it (a decided shake
-## has the hand, as ever). The land's hold is the spring slice's to show.
+## The hand for the modeless zones: over the rim's lip it takes the rim grip,
+## on the block's walls it lays its palm on the wall ("wall", facing into it),
+## over the land it readies a pinch; held on the rim it keeps that pose while it
+## turns (a decided shake and the flip have the hand, as ever). The land's hold
+## is the spring slice's to show.
 func _drive_hand_modeless() -> void:
 	var hand: Node3D = scene.get("god_hand")
 	if holding.is_empty(): reach_point = null
@@ -802,9 +866,7 @@ func _drive_hand_modeless() -> void:
 	# Turning the diorama over, the flip (scripts/diorama_flip.gd) has the hand.
 	if holding == "rim" and rim_intent == "flip": return
 	if holding == "rim":
-		hand.reach_gesture = "rim"
-		hand.reach_point = reach_point
-		_hover_shown = "rim"
+		_show_hand(hand,reach_point)
 		return
 	var want := ""
 	var target: Variant = null
@@ -819,11 +881,20 @@ func _drive_hand_modeless() -> void:
 	if not want.is_empty():
 		# Only over a hand that is free, or one of our own hover poses.
 		if hand.reach_gesture.is_empty() or hand.reach_gesture == _hover_shown:
-			hand.reach_gesture = want
-			hand.reach_point = target
-			_hover_shown = want
+			if want == "rim": _show_hand(hand,target)
+			else: _set_hand(hand,want,target,null)
 	elif not _hover_shown.is_empty():
-		if hand.reach_gesture == _hover_shown:
-			hand.reach_gesture = ""
-			hand.reach_point = null
+		if hand.reach_gesture == _hover_shown: _set_hand(hand,"",null,null)
 		_hover_shown = ""
+
+## The rim pose at a hand point (`_hand_at`): the palm on the wall, facing into
+## it, below the lip; the rim grip on it.
+func _show_hand(hand: Node3D, at: Variant) -> void:
+	var facing: Variant = _wall_facing(at)
+	_set_hand(hand,"rim" if facing == null else "wall",at,facing)
+
+func _set_hand(hand: Node3D, gesture: String, at: Variant, facing: Variant) -> void:
+	hand.reach_gesture = gesture
+	hand.reach_point = at
+	hand.reach_facing = facing
+	_hover_shown = gesture
