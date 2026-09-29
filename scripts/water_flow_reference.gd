@@ -22,6 +22,15 @@ var vz := PackedFloat32Array()
 var flux := PackedFloat32Array()
 var flowing := PackedByteArray()
 var steep := PackedByteArray()
+## The edge ring's outflow (ZenScapeWaterFlow: edge_cells ... edge_brink).
+var edge_cells := PackedInt32Array()
+var edge_inner := PackedInt32Array()
+var edge_side := PackedByteArray()
+var side_of := PackedInt32Array()
+var edge_acc := PackedFloat64Array()
+var edge_rate := PackedFloat32Array()
+var edge_brink := PackedFloat32Array()
+var edge_smooth := 0.5
 var gravity := 9.81
 var friction := 0.6
 var drag := 0.06
@@ -55,6 +64,15 @@ func configure(width: int, height: int, cell_size: float, origin: Vector2, faces
 	flowing.fill(0)
 	steep.resize(n)
 	steep.fill(0)
+	edge_acc.resize(n)
+	edge_acc.fill(0.0)
+	edge_rate = _zeros(n)
+	edge_brink = _zeros(n)
+	edge_cells = PackedInt32Array()
+	edge_inner = PackedInt32Array()
+	edge_side = PackedByteArray()
+	side_of.resize(n)
+	side_of.fill(-1)
 	poured = 0.0
 	drained = 0.0
 	soaked = 0.0
@@ -73,6 +91,24 @@ func configure(width: int, height: int, cell_size: float, origin: Vector2, faces
 			var c := j*w+i
 			if kind[c] != WATER: continue
 			if i == 0 or j == 0 or i == w-1 or j == h-1 or kind[c-1] == OUTSIDE or kind[c+1] == OUTSIDE or kind[c-w] == OUTSIDE or kind[c+w] == OUTSIDE: kind[c] = EDGE
+	for j in range(h):
+		for i in range(w):
+			var c := j*w+i
+			if kind[c] != EDGE: continue
+			var side := 3
+			if i == 0: side = 0
+			elif i == w-1: side = 1
+			elif j == 0: side = 2
+			elif j == h-1: side = 3
+			elif kind[c-1] == OUTSIDE: side = 0
+			elif kind[c+1] == OUTSIDE: side = 1
+			elif kind[c-w] == OUTSIDE: side = 2
+			var a := clampi(i+[1,-1,0,0][side],0,w-1)
+			var b := clampi(j+[0,0,1,-1][side],0,h-1)
+			edge_cells.append(c)
+			edge_inner.append(b*w+a)
+			edge_side.append(side)
+			side_of[c] = side
 
 static func _zeros(n: int) -> PackedFloat32Array:
 	var values := PackedFloat32Array()
@@ -88,6 +124,7 @@ func set_params(p: Dictionary) -> void:
 	soak = p.get("soak",soak)
 	soak_depth = p.get("soak_depth",soak_depth)
 	max_speed = p.get("max_speed",max_speed)
+	edge_smooth = maxf(0.01,p.get("edge_smooth",edge_smooth))
 
 func _index(x: float, z: float) -> int:
 	var i := floori((x-ox)/cell)
@@ -197,6 +234,7 @@ func _tick(dt: float) -> void:
 				vz[c] = 0.0
 			if kind[c] == EDGE:
 				drained += d*area
+				edge_acc[c] += d*area
 				d = 0.0
 			elif d > 0.0:
 				var lost := minf(d,dt*(evaporation+soak*maxf(0.0,1.0-d/soak_depth)))
@@ -217,8 +255,25 @@ func step(heights: PackedFloat32Array, sources: PackedFloat32Array, ticks: int, 
 		for s in range(count): poured += _spread(sources[s*4],sources[s*4+1],sources[s*4+2],sources[s*4+3]*dt)
 		_tick(dt)
 		steps += 1
+	_settle_edge(ticks*dt)
 	last_usec = Time.get_ticks_usec()-began
 	return last_usec
+
+## See ZenScapeWaterFlow::settle_edge.
+func _settle_edge(seconds: float) -> void:
+	if seconds <= 0.0: return
+	var k := 1.0-exp(-seconds/edge_smooth)
+	for e in range(edge_cells.size()):
+		var c := edge_cells[e]
+		var m := edge_inner[e]
+		var rate := edge_acc[c]/seconds
+		edge_acc[c] = 0.0
+		edge_rate[c] = edge_rate[c]+(rate-edge_rate[c])*k
+		if edge_rate[c] < 1e-7: edge_rate[c] = 0.0
+		var q := edge_rate[c]/cell
+		edge_brink[c] = pow(q*q/gravity,1.0/3.0)
+		vx[c] = vx[m]
+		vz[c] = vz[m]
 
 func add_water(center: Vector2, radius: float, volume: float) -> float:
 	var added := _spread(center.x,center.y,radius,volume)
@@ -248,6 +303,8 @@ func set_depth(values: PackedFloat32Array) -> void:
 	flux.fill(0.0)
 	vx.fill(0.0)
 	vz.fill(0.0)
+	edge_rate.fill(0.0)
+	edge_brink.fill(0.0)
 
 func get_ground() -> PackedFloat32Array:
 	return ground.duplicate()
@@ -271,7 +328,9 @@ func stats() -> Dictionary:
 	for d in depth:
 		volume += d
 		if d > 0.01: wet += 1
-	return {"volume":volume*cell*cell,"poured":poured,"drained":drained,"soaked":soaked,"removed":removed,"wet_cells":wet,"usec":last_usec,"steps":steps,"native":false}
+	var edge_flux := 0.0
+	for c in edge_cells: edge_flux += edge_rate[c]
+	return {"edge_flux":edge_flux,"volume":volume*cell*cell,"poured":poured,"drained":drained,"soaked":soaked,"removed":removed,"wet_cells":wet,"usec":last_usec,"steps":steps,"native":false}
 
 ## See ZenScapeWaterFlow::surface.
 func surface(p: Dictionary) -> Dictionary:
@@ -286,6 +345,7 @@ func surface(p: Dictionary) -> Dictionary:
 	var deep: Color = p.get("deep",Color(0.02,0.1,0.11))
 	var foam: Color = p.get("foam",Color(0.65,0.8,0.79))
 	var under: bool = p.get("under",false)
+	var edge_on: float = p.get("edge_on",0.0005)
 	var n := w*h
 	var top := PackedFloat32Array()
 	top.resize(n)
@@ -295,6 +355,10 @@ func surface(p: Dictionary) -> Dictionary:
 		if kind[c] != OUTSIDE and depth[c] > wet:
 			state[c] = 1
 			top[c] = ground[c]+depth[c]
+	for c in edge_cells:
+		if edge_rate[c] > edge_on:
+			state[c] = 1
+			top[c] = ground[c]+maxf(edge_brink[c],wet*1.5)
 	for j in range(h):
 		for i in range(w):
 			var c := j*w+i
@@ -358,6 +422,9 @@ func surface(p: Dictionary) -> Dictionary:
 			var x := ox+(i+0.5)*cell
 			var z := oz+(j+0.5)*cell
 			var y := top[c]+lift
+			if state[c] == 1 and side_of[c] >= 0:
+				x += [-0.5,0.5,0.0,0.0][side_of[c]]*cell
+				z += [0.0,0.0,-0.5,0.5][side_of[c]]*cell
 			var d := maxf(0.0,top[c]-ground[c])
 			slot[c] = vertices.size()
 			vertices.append(Vector3(x,y,z))
@@ -698,5 +765,79 @@ func cascades(p: Dictionary) -> Array:
 		if drop < min_drop: continue
 		found.append({"flux":q,"drop":drop,"cells":cells.size(),"lip":lip,"lip_dir":dir,"lip_half":lip_half,"plunge":plunge,
 			"plunge_depth":landing_depth/outflow if outflow > 0.0 else 0.0,"course":course})
+	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.flux > b.flux)
+	return found.slice(0,most)
+
+## See ZenScapeWaterFlow::edge_outflow.
+func edge_outflow() -> Dictionary:
+	var along: Array[PackedFloat32Array] = [_zeros(h),_zeros(h),_zeros(w),_zeros(w)]
+	var total := 0.0
+	for e in range(edge_cells.size()):
+		var c := edge_cells[e]
+		var s := edge_side[e]
+		var k := c/w if s < 2 else c%w
+		along[s][k] += edge_rate[c]
+		total += edge_rate[c]
+	return {"sides":along,"total":total}
+
+## See ZenScapeWaterFlow::spills.
+func spills(p: Dictionary) -> Array:
+	var cell_min: float = p.get("cell_min",0.0004)
+	var min_flux: float = p.get("min_flux",0.003)
+	var gap: int = p.get("gap",1)
+	var most: int = p.get("max",8)
+	var found := []
+	var order: Array = [[],[],[],[]]
+	var along_of := PackedInt32Array()
+	along_of.resize(edge_cells.size())
+	for e in range(edge_cells.size()):
+		var c := edge_cells[e]
+		along_of[e] = c/w if edge_side[e] < 2 else c%w
+		order[edge_side[e]].append(e)
+	for s in range(4):
+		var list: Array = order[s]
+		list.sort_custom(func(a: int, b: int) -> bool: return along_of[a] < along_of[b])
+		var start := ox if s >= 2 else oz
+		var k := 0
+		while k < list.size():
+			if edge_rate[edge_cells[list[k]]] <= cell_min:
+				k += 1
+				continue
+			var end := k
+			for m in range(k+1,list.size()):
+				if along_of[list[m]]-along_of[list[end]] > gap+1: break
+				if edge_rate[edge_cells[list[m]]] > cell_min: end = m
+			var q := 0.0
+			var t := 0.0
+			var tt := 0.0
+			var y := 0.0
+			var fl := 0.0
+			var dep := 0.0
+			var sp := 0.0
+			for m in range(k,end+1):
+				var e: int = list[m]
+				var c := edge_cells[e]
+				var inner := edge_inner[e]
+				var r := edge_rate[c]
+				var a := start+(along_of[e]+0.5)*cell
+				var out_speed: float = [-vx[inner],vx[inner],-vz[inner],vz[inner]][s]
+				q += r
+				t += r*a
+				tt += r*a*a
+				y += r*maxf(ground[inner]+depth[inner],ground[c]+edge_brink[c])
+				fl += r*ground[c]
+				dep += r*edge_brink[c]
+				sp += r*maxf(0.0,out_speed)
+			var from := start+along_of[list[k]]*cell
+			var to := start+(along_of[list[end]]+1)*cell
+			k = end+1
+			if q < min_flux: continue
+			var mid := t/q
+			var half := minf(0.5*(to-from),sqrt(3.0*maxf(0.0,tt/q-mid*mid))+0.5*cell)
+			var rim_x: float = [ox,ox+w*cell,0.0,0.0][s]
+			var rim_z: float = [0.0,0.0,oz,oz+h*cell][s]
+			var normal: Vector2 = [Vector2(-1,0),Vector2(1,0),Vector2(0,-1),Vector2(0,1)][s]
+			var lip := Vector3(rim_x,y/q,mid) if s < 2 else Vector3(mid,y/q,rim_z)
+			found.append({"side":s,"normal":normal,"flux":q,"lip":lip,"floor":fl/q,"half":half,"from":from,"to":to,"depth":dep/q,"speed":sp/q})
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.flux > b.flux)
 	return found.slice(0,most)

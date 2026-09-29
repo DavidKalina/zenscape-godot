@@ -46,6 +46,17 @@ class ZenScapeWaterFlow : public RefCounted {
     std::vector<float> ground, depth, next, vx, vz;
     std::vector<float> flux;     // 4 per cell: -x, +x, -z, +z outflow, m³/s
     std::vector<uint8_t> flowing;
+    // The edge ring's outflow (docs/scenic/water-flow.md "Edge falls"): each
+    // edge cell's side (0 -x, 1 +x, 2 -z, 3 +z), the plate cell inward of it,
+    // the volume drained into it over the current step, and the smoothed rate
+    // (m³/s) and brink depth (m) of the water leaving over it.
+    std::vector<int32_t> edge_cells, edge_inner;
+    std::vector<uint8_t> edge_side;
+    std::vector<int8_t> side_of;   // per cell: its edge side, or -1
+    std::vector<double> edge_acc;
+    std::vector<float> edge_rate, edge_brink;
+    // Seconds: the time constant the edge outflow is smoothed with.
+    double edge_smooth = 0.5;
     // Tunables (set_params); the defaults match scripts/water_flow.gd.
     double gravity = 9.81, friction = 0.6, drag = 0.06, evaporation = 0.00006, soak = 0.0035, soak_depth = 0.03, max_speed = 4.0;
     // Totals since configure, m³.
@@ -70,6 +81,8 @@ protected:
         ClassDB::bind_method(D_METHOD("pools", "min_depth", "max_speed", "min_cells"), &ZenScapeWaterFlow::pools);
         ClassDB::bind_method(D_METHOD("falls", "min_flux", "min_drop", "min_slope", "reach"), &ZenScapeWaterFlow::falls);
         ClassDB::bind_method(D_METHOD("cascades", "params"), &ZenScapeWaterFlow::cascades);
+        ClassDB::bind_method(D_METHOD("edge_outflow"), &ZenScapeWaterFlow::edge_outflow);
+        ClassDB::bind_method(D_METHOD("spills", "params"), &ZenScapeWaterFlow::spills);
     }
 
     static int64_t now_usec() {
@@ -175,8 +188,10 @@ protected:
                 vx[c] = float(u); vz[c] = float(v);
             } else vx[c] = vz[c] = 0.0f;
             if (kind[c] == EDGE) {
-                // Water that reaches the plate's edge falls off it.
+                // Water that reaches the plate's edge falls off it; the edge
+                // falls read how much, cell by cell.
                 drained += d*area;
+                edge_acc[c] += d*area;
                 d = 0.0;
             } else if (d > 0.0) {
                 // Evaporation everywhere; thin water soaks into the ground too.
@@ -191,6 +206,25 @@ protected:
         depth.swap(next);
     }
 
+    // The edge's outflow over the last `seconds`: each edge cell's rate eased
+    // with `edge_smooth`, the brink depth that rate makes (critical depth,
+    // (q²/g)^⅓ for q per metre of lip), and the inward cell's velocity (an
+    // edge cell's own is meaningless: it never holds water).
+    void settle_edge(double seconds) {
+        if (seconds <= 0.0) return;
+        const double k = 1.0-std::exp(-seconds/edge_smooth);
+        for (size_t e = 0; e < edge_cells.size(); ++e) {
+            const int c = edge_cells[e], m = edge_inner[e];
+            const double rate = edge_acc[c]/seconds;
+            edge_acc[c] = 0.0;
+            edge_rate[c] = float(edge_rate[c]+(rate-edge_rate[c])*k);
+            if (edge_rate[c] < 1e-7f) edge_rate[c] = 0.0f;
+            const double q = edge_rate[c]/cell;
+            edge_brink[c] = float(std::cbrt(q*q/gravity));
+            vx[c] = vx[m]; vz[c] = vz[m];
+        }
+    }
+
 public:
     void configure(int width, int height, double cell_size, Vector2 origin, const PackedInt32Array &faces, const PackedFloat32Array &weights) {
         w = std::max(width, 0); h = std::max(height, 0);
@@ -199,6 +233,8 @@ public:
         face.assign(n*3, -1); weight.assign(n*2, 0.0f); kind.assign(n, OUTSIDE);
         ground.assign(n, 0.0f); depth.assign(n, 0.0f); next.assign(n, 0.0f);
         vx.assign(n, 0.0f); vz.assign(n, 0.0f); flux.assign(n*4, 0.0f); flowing.assign(n, 0); steep.assign(n, 0);
+        edge_acc.assign(n, 0.0); edge_rate.assign(n, 0.0f); edge_brink.assign(n, 0.0f);
+        edge_cells.clear(); edge_inner.clear(); edge_side.clear(); side_of.assign(n, -1);
         poured = drained = soaked = removed = 0.0;
         steps = 0;
         if (faces.size() != n*3 || weights.size() != n*2) { w = h = 0; return; }
@@ -213,12 +249,31 @@ public:
             if (kind[c] != WATER) continue;
             if (i == 0 || j == 0 || i == w-1 || j == h-1 || kind[c-1] == OUTSIDE || kind[c+1] == OUTSIDE || kind[c-w] == OUTSIDE || kind[c+w] == OUTSIDE) kind[c] = EDGE;
         }
+        // Each edge cell's side and the cell inward of it. Corners go to the
+        // x sides; a cell beside outside faces the outside neighbour.
+        for (int j = 0; j < h; ++j) for (int i = 0; i < w; ++i) {
+            const int c = j*w+i;
+            if (kind[c] != EDGE) continue;
+            int side;
+            if (i == 0) side = 0;
+            else if (i == w-1) side = 1;
+            else if (j == 0) side = 2;
+            else if (j == h-1) side = 3;
+            else side = kind[c-1] == OUTSIDE ? 0 : kind[c+1] == OUTSIDE ? 1 : kind[c-w] == OUTSIDE ? 2 : 3;
+            static const int step_i[4] = {1, -1, 0, 0}, step_j[4] = {0, 0, 1, -1};
+            const int a = std::min(std::max(i+step_i[side], 0), w-1), b = std::min(std::max(j+step_j[side], 0), h-1);
+            edge_cells.push_back(c);
+            edge_inner.push_back(b*w+a);
+            edge_side.push_back(uint8_t(side));
+            side_of[c] = int8_t(side);
+        }
     }
 
     void set_params(const Dictionary &p) {
         gravity = p.get("gravity", gravity); friction = p.get("friction", friction); drag = p.get("drag", drag);
         evaporation = p.get("evaporation", evaporation); soak = p.get("soak", soak); soak_depth = p.get("soak_depth", soak_depth);
         max_speed = p.get("max_speed", max_speed);
+        edge_smooth = std::max(0.01, double(p.get("edge_smooth", edge_smooth)));
     }
 
     // `sources`: x, z, radius, rate (m³/s) per source. Returns the step's usec.
@@ -232,6 +287,7 @@ public:
             tick(dt);
             ++steps;
         }
+        settle_edge(ticks*dt);
         last_usec = now_usec()-began;
         return last_usec;
     }
@@ -270,6 +326,8 @@ public:
         std::fill(flux.begin(), flux.end(), 0.0f);
         std::fill(vx.begin(), vx.end(), 0.0f);
         std::fill(vz.begin(), vz.end(), 0.0f);
+        std::fill(edge_rate.begin(), edge_rate.end(), 0.0f);
+        std::fill(edge_brink.begin(), edge_brink.end(), 0.0f);
     }
 
     PackedFloat32Array get_ground() const {
@@ -297,13 +355,15 @@ public:
     }
 
     Dictionary stats() const {
-        double volume = 0.0;
+        double volume = 0.0, edge_flux = 0.0;
         int64_t wet = 0;
         for (size_t c = 0; c < depth.size(); ++c) {
             volume += depth[c];
             if (depth[c] > 0.01f) ++wet;
         }
+        for (int c : edge_cells) edge_flux += edge_rate[c];
         Dictionary out;
+        out["edge_flux"] = edge_flux;
         out["volume"] = volume*cell*cell;
         out["poured"] = poured;
         out["drained"] = drained;
@@ -333,10 +393,14 @@ public:
         const double foam_from = p.get("foam_from", 0.8), foam_to = p.get("foam_to", 2.2), depth_scale = p.get("depth_scale", 0.45);
         const Color shallow = p.get("shallow", Color(0.2, 0.42, 0.33)), deep = p.get("deep", Color(0.02, 0.1, 0.11)), foam = p.get("foam", Color(0.65, 0.8, 0.79));
         const bool under = p.get("under", false);
+        const double edge_on = p.get("edge_on", 0.0005);
         const int n = w*h;
         std::vector<float> top(n, 0.0f);
         std::vector<uint8_t> state(n, 0); // 0 none, 1 wet, 2 shore
         for (int c = 0; c < n; ++c) if (kind[c] != OUTSIDE && depth[c] > wet) { state[c] = 1; top[c] = ground[c]+depth[c]; }
+        // An edge cell water leaves over is drawn at its brink depth, and its
+        // vertex stands on the plate's rim, so the sheet runs to the lip.
+        for (int c : edge_cells) if (edge_rate[c] > edge_on) { state[c] = 1; top[c] = float(ground[c]+std::max(double(edge_brink[c]), wet*1.5)); }
         for (int j = 0; j < h; ++j) for (int i = 0; i < w; ++i) {
             const int c = j*w+i;
             if (state[c] != 0 || kind[c] == OUTSIDE) continue;
@@ -412,7 +476,12 @@ public:
             auto vertex = [&](int c) -> int32_t {
                 if (slot[c] >= 0) return slot[c];
                 const int i = c%w, j = c/w;
-                const double x = ox+(i+0.5)*cell, z = oz+(j+0.5)*cell, y = top[c]+lift;
+                double x = ox+(i+0.5)*cell, z = oz+(j+0.5)*cell;
+                const double y = top[c]+lift;
+                if (state[c] == 1 && side_of[c] >= 0) {
+                    static const double out_x[4] = {-0.5, 0.5, 0.0, 0.0}, out_z[4] = {0.0, 0.0, -0.5, 0.5};
+                    x += out_x[side_of[c]]*cell; z += out_z[side_of[c]]*cell;
+                }
                 const double d = std::max(0.0, double(top[c])-double(ground[c]));
                 slot[c] = int32_t(vertices.size());
                 vertices.push_back(Vector3(float(x), float(y), float(z)));
@@ -771,6 +840,99 @@ public:
         }
         std::sort(found.begin(), found.end(), [](const Found &a, const Found &b) { return a.flux > b.flux; });
         for (size_t k = 0; k < found.size() && int(k) < most; ++k) out.push_back(found[k].fall);
+        return out;
+    }
+
+    // The water leaving the plate over each edge cell, m³/s smoothed
+    // (`edge_smooth`): {"sides": [-x, +x, -z, +z], each a PackedFloat32Array
+    // along its side (by row for the x sides, by column for the z sides),
+    // "total"}.
+    Dictionary edge_outflow() const {
+        Array sides;
+        PackedFloat32Array along[4];
+        along[0].resize(h); along[1].resize(h); along[2].resize(w); along[3].resize(w);
+        for (int s = 0; s < 4; ++s) along[s].fill(0.0f);
+        double total = 0.0;
+        for (size_t e = 0; e < edge_cells.size(); ++e) {
+            const int c = edge_cells[e], s = edge_side[e];
+            const int k = s < 2 ? c/w : c%w;
+            along[s].set(k, along[s][k]+edge_rate[c]);
+            total += edge_rate[c];
+        }
+        for (int s = 0; s < 4; ++s) sides.push_back(along[s]);
+        Dictionary out;
+        out["sides"] = sides;
+        out["total"] = total;
+        return out;
+    }
+
+    // Spills off the plate for the edge falls (docs/scenic/water-flow.md
+    // "Edge falls"): runs of edge cells along one side each leaving more than
+    // `cell_min` m³/s, bridging gaps of up to `gap` cells, that carry
+    // `min_flux` m³/s between them. Each spill, the largest first (at most
+    // `max`), is {"side" (0 -x, 1 +x, 2 -z, 3 +z), "normal" (Vector2, out of
+    // the plate), "flux", "lip" (Vector3 on the rim: the flux-weighted middle
+    // of the run, at the water's surface in the cells inward of it), "floor"
+    // (the ground at the lip, flux-weighted), "half" (half its width across,
+    // from the flux's spread), "from" and "to" (the run's ends along the
+    // side, m), "depth" (the brink depth, flux-weighted), "speed" (m/s out of
+    // the plate in the cells inward, flux-weighted, at least 0)}.
+    Array spills(const Dictionary &p) const {
+        const double cell_min = p.get("cell_min", 0.0004), min_flux = p.get("min_flux", 0.003);
+        const int gap = p.get("gap", 1), most = p.get("max", 8);
+        struct Found { double flux; Dictionary spill; };
+        std::vector<Found> found;
+        const int count = int(edge_cells.size());
+        // Edge cells by side, in order along it.
+        std::vector<int> order[4];
+        for (int e = 0; e < count; ++e) order[edge_side[e]].push_back(e);
+        for (int s = 0; s < 4; ++s) {
+            std::vector<int> &list = order[s];
+            auto along_of = [&](int e) -> int { const int c = edge_cells[e]; return s < 2 ? c/w : c%w; };
+            std::sort(list.begin(), list.end(), [&](int a, int b) { return along_of(a) < along_of(b); });
+            size_t k = 0;
+            while (k < list.size()) {
+                if (edge_rate[edge_cells[list[k]]] <= cell_min) { ++k; continue; }
+                // A run: carry on while the next leaving cell is within `gap`.
+                size_t end = k;
+                for (size_t m = k+1; m < list.size(); ++m) {
+                    if (along_of(list[m])-along_of(list[end]) > gap+1) break;
+                    if (edge_rate[edge_cells[list[m]]] > cell_min) end = m;
+                }
+                double q = 0.0, t = 0.0, tt = 0.0, y = 0.0, fl = 0.0, dep = 0.0, sp = 0.0;
+                for (size_t m = k; m <= end; ++m) {
+                    const int e = list[m], c = edge_cells[e], in = edge_inner[e];
+                    const double r = edge_rate[c];
+                    const double a = (s < 2 ? oz : ox)+(along_of(e)+0.5)*cell;
+                    const double out_speed = s == 0 ? -vx[in] : s == 1 ? vx[in] : s == 2 ? -vz[in] : vz[in];
+                    q += r; t += r*a; tt += r*a*a;
+                    y += r*std::max(double(ground[in]+depth[in]), double(ground[c]+edge_brink[c]));
+                    fl += r*ground[c]; dep += r*edge_brink[c]; sp += r*std::max(0.0, out_speed);
+                }
+                const double from = (s < 2 ? oz : ox)+along_of(list[k])*cell, to = (s < 2 ? oz : ox)+(along_of(list[end])+1)*cell;
+                k = end+1;
+                if (q < min_flux) continue;
+                const double mid = t/q, spread = std::max(0.0, tt/q-mid*mid);
+                const double half = std::min(0.5*(to-from), std::sqrt(3.0*spread)+0.5*cell);
+                const double rim_x = s == 0 ? ox : s == 1 ? ox+w*cell : 0.0, rim_z = s == 2 ? oz : s == 3 ? oz+h*cell : 0.0;
+                const Vector2 normal = s == 0 ? Vector2(-1, 0) : s == 1 ? Vector2(1, 0) : s == 2 ? Vector2(0, -1) : Vector2(0, 1);
+                Dictionary spill;
+                spill["side"] = s;
+                spill["normal"] = normal;
+                spill["flux"] = q;
+                spill["lip"] = s < 2 ? Vector3(float(rim_x), float(y/q), float(mid)) : Vector3(float(mid), float(y/q), float(rim_z));
+                spill["floor"] = fl/q;
+                spill["half"] = half;
+                spill["from"] = from;
+                spill["to"] = to;
+                spill["depth"] = dep/q;
+                spill["speed"] = sp/q;
+                found.push_back({q, spill});
+            }
+        }
+        std::sort(found.begin(), found.end(), [](const Found &a, const Found &b) { return a.flux > b.flux; });
+        Array out;
+        for (size_t k = 0; k < found.size() && int(k) < most; ++k) out.push_back(found[k].spill);
         return out;
     }
 };
