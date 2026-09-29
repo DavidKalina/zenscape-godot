@@ -40,18 +40,23 @@ extends Node
 ## old sun drag did), and a pinned season is retargeted to the quarter the
 ## world landed in. A clock that was turning its own day keeps turning.
 
-## The turn's speed (rad/s) below which time is untouched: about 0.5 of a
-## turn a second, faster than a deliberate push, slower than a flick.
-const TIME_MIN := 3.0
+## The turn's speed (rad/s) below which time is untouched: about a third of a
+## turn a second, faster than a deliberate push, slower than a flick. Probed
+## headless at 60 fps on the near rim: pushes over 0.4 s or more reach 0.8 to
+## 1.4 rad/s and wind nothing; a brisk trackpad flick (150 to 300 px in 0.15
+## to 0.2 s) lets go at 3.8 to 4.7 rad/s and winds 6 to 22 hours; a hard one
+## (250 px in 0.12 s) about two days. It was 3.0, which only the hardest
+## flicks reached. The speed is the spin itself once let go (see _process).
+const TIME_MIN := 2.2
 ## The shimmer begins here (rad/s).
-const CUE_FROM := 1.8
+const CUE_FROM := 1.3
 ## Hours a second grow as the square of the excess (rad/s over TIME_MIN):
 ## HOURS_GAIN*excess^2. Just past the threshold it is a few hours a second, a
-## hard flick (6 rad/s) winds about a day in all, and the turn's fastest spin
-## (12 rad/s) peaks at about 20 days a second and winds nearly three weeks, so
-## the seasons roll. The spin runs down by itself (world_turn.gd SPIN_DRAG),
+## hard flick (6 rad/s) winds about two days in all, and the turn's fastest spin
+## (12 rad/s) peaks at about 20 days a second (as at the old 3.0 and 6) and
+## winds nearly three weeks, so the seasons roll. The spin runs down by itself (world_turn.gd SPIN_DRAG),
 ## and each bat adds to it. This is what is wound, not how fast it is shown.
-const HOURS_GAIN := 6.0
+const HOURS_GAIN := 5.0
 ## The fastest the sun travels while the world catches up, in world hours a
 ## real second: 6 is a whole day and night in four seconds.
 const SKY_HOURS_MAX := 6.0
@@ -135,7 +140,9 @@ func _process(delta: float) -> void:
 	var clock: WorldClock = scene.get("world_clock")
 	if rig == null or clock == null or delta <= 0.0: return
 	_notice_outside(clock,raw)
-	var speed := absf(float(rig.turn.own_rate))
+	# The turn's own speed, and once let go the spin itself: own_rate trails a
+	# flick's spin by its smoothing, which would eat the flick's peak.
+	var speed := maxf(absf(float(rig.turn.own_rate)),absf(float(rig.turn.spin)))
 	# A shake is not a spin: the globe has the rim.
 	var globe: Node = scene.get("snow_globe")
 	if globe != null and globe.decided: speed = 0.0
