@@ -119,6 +119,18 @@ const NOTICE := 8.0
 ## The plate's last metres, where shaping fades to nothing (as the land
 ## spring and the mountain forms).
 const EDGE := Vector2(11.4,13.6)
+## A thumb's groove that runs into that fade heading out of the plate (its
+## travel within BREACH_ANGLE degrees of straight out across the nearest
+## side) breaches the rim: it digs at full depth to the lip and notches the
+## rim, a spillway the live water runs off (docs/scenic/modeless.md, "The
+## thumb at the rim"). A stroke let go, or run off the plate, while breaching
+## is carried on to BREACH_PAST metres beyond the rim (PLATE_HALF), so the rim's
+## own points take the groove's bed. Only the groove itself is dug so: its
+## banks' raised lip, the pinch, the palm, the rub and a thumb running along
+## the edge still fade, so the plate's outline stays clean round the notch.
+const BREACH_ANGLE := 50.0
+const BREACH_PAST := 0.4
+const PLATE_HALF := 14.0
 ## Metres per bucket of the point lookup.
 const CELL := 1.5
 
@@ -143,6 +155,10 @@ var refreshes := 0
 var dabs := 0
 var pinch_closes := 0
 var poking := false
+## Rim notches the thumb has cut this session, and the last one: {"normal"
+## (out of the plate), "at" (plate point on the rim), "bed" (m)}, for probes.
+var notches := 0
+var last_notch := {}
 
 var _press := Vector2.ZERO
 var _pointer := Vector2.ZERO
@@ -173,6 +189,11 @@ var _poke_written := PackedFloat32Array()
 var _cells := {}
 var _cells_for: NativeTerrainData
 var _cells_points := -1
+## The outward normal of the side the thumb's last dab breached (zero when
+## it did not), the stroke's heading, and whether it has been carried to the lip.
+var _breach := Vector2.ZERO
+var _heading := Vector2.ZERO
+var _carried := false
 
 static func enabled() -> bool:
 	return "--modeless" in OS.get_cmdline_user_args()
@@ -220,6 +241,8 @@ func pull(screen_pos: Vector2, _relative := Vector2.ZERO) -> void:
 	if state == State.THUMB:
 		var hit: Variant = _pick_base(screen_pos)
 		if hit != null: _queued.append(Vector2(hit.x,hit.z))
+		# Run off the plate while breaching: the groove goes on to the lip.
+		elif not _carried: _carry_to_lip()
 
 ## The button came up: a tap pokes, a stroke or a pinch is kept as it stands.
 func release(screen_pos: Vector2 = Vector2.INF) -> void:
@@ -231,6 +254,7 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 			_poke()
 		State.THUMB:
 			_thumb_step(0.0)
+			if not _carried and _carry_to_lip(): _thumb_step(0.0)
 			_end_stroke()
 		State.PINCH:
 			_pinch_step()
@@ -282,6 +306,9 @@ func _begin_drag() -> void:
 	_stroking = 0.0
 	_tint_base = editor.data.tint.duplicate()
 	_dirt_depth = {}
+	_breach = Vector2.ZERO
+	_heading = Vector2.ZERO
+	_carried = false
 	var ground: Variant = editor.data.sample(_center,_base)
 	_level = float(ground) if ground != null else 0.0
 	state = State.THUMB
@@ -350,6 +377,7 @@ func _thumb_step(delta: float) -> void:
 	for p in _queued:
 		var from: Vector2 = _last_plate if _last_plate != null else p
 		var count := clampi(ceili(from.distance_to(p)/DAB_SPACING),1,MAX_DABS)
+		if from.distance_to(p) > 0.05: _heading = (p-from).normalized()
 		for k in range(1,count+1):
 			var q := from.lerp(p,float(k)/count)
 			if verb == "palm":
@@ -357,7 +385,8 @@ func _thumb_step(delta: float) -> void:
 				_dirty(q,PALM_RADIUS)
 			else:
 				if rub < 0.99:
-					_groove(heights,q,1.0-rub)
+					_breach = _breaching(q)
+					_groove(heights,q,1.0-rub,_breach)
 					_dirty(q,GROOVE_HALF_WIDTH)
 				if rub > 0.01: _rub(heights,q,rub)
 			dabs += 1
@@ -374,9 +403,12 @@ func _thumb_step(delta: float) -> void:
 
 ## The groove's dab at `q` with weight `g`: toward a level bed GROOVE_DEPTH
 ## under the stroke's line, never below it, and never above the bed behind it
-## (by at most GROOVE_CUT).
-func _groove(heights: PackedFloat32Array, q: Vector2, g: float) -> void:
-	var ground: Variant = editor.data.sample(q,_base)
+## (by at most GROOVE_CUT). `breach` (the outward normal of the side it is
+## breaching, or zero) digs its bed without the edge fade.
+func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector2.ZERO) -> void:
+	# Past the rim (a breach carried to the lip) the bed follows the ground
+	# at the rim.
+	var ground: Variant = editor.data.sample(q.clamp(-Vector2.ONE*(PLATE_HALF-0.02),Vector2.ONE*(PLATE_HALF-0.02)),_base)
 	if ground == null: return
 	var bed := float(ground)-GROOVE_DEPTH
 	bed = maxf(minf(bed,_bed),bed-GROOVE_CUT)
@@ -384,12 +416,16 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float) -> void:
 	var reach := GROOVE_HALF_WIDTH*LIP_OUT
 	_gather(q,reach)
 	_touch(q,reach)
+	var notched := false
 	for k in _near.size():
 		var i := _near[k]
 		var t := _near_d[k]/GROOVE_HALF_WIDTH
 		var fade := _fade(i)
 		if t < 1.0:
 			_dug[i] = 1
+			if breach != Vector2.ZERO:
+				fade = 1.0
+				notched = notched or editor.data.points[i].dot(breach) >= PLATE_HALF-0.001
 			var goal := minf(_base[i],lerpf(bed,_base[i],smoothstep(GROOVE_FLOOR,1.0,t)))
 			var h := heights[i]
 			if goal < h: heights[i] = maxf(lerpf(h,goal,GROOVE_STEP*g*fade),NativeTerrainData.MIN_HEIGHT)
@@ -398,6 +434,31 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float) -> void:
 			var goal := _base[i]+rim
 			var h := heights[i]
 			if goal > h: heights[i] = lerpf(h,goal,GROOVE_STEP*g*fade)
+	if notched:
+		if last_notch.is_empty() or last_notch.normal != breach or (last_notch.at as Vector2).distance_to(q) > GROOVE_HALF_WIDTH*2.0: notches += 1
+		var along := Vector2(breach.y,-breach.x)
+		last_notch = {"normal":breach,"at":breach*PLATE_HALF+along*q.dot(along),"bed":bed}
+
+## The outward normal of the side a groove dab at `q` breaches: the nearest
+## side's, when `q` is in the edge fade and the stroke heads out across that
+## side within BREACH_ANGLE degrees; else zero.
+func _breaching(q: Vector2) -> Vector2:
+	if maxf(absf(q.x),absf(q.y)) < EDGE.x or _heading == Vector2.ZERO: return Vector2.ZERO
+	var normal := Vector2(signf(q.x),0.0) if absf(q.x) >= absf(q.y) else Vector2(0.0,signf(q.y))
+	return normal if _heading.dot(normal) >= cos(deg_to_rad(BREACH_ANGLE)) else Vector2.ZERO
+
+## Carries a breaching groove on along its heading to BREACH_PAST beyond the
+## rim, queued as the pointer's next point. False when it is not breaching or
+## is already there.
+func _carry_to_lip() -> bool:
+	if verb != "thumb" or _breach == Vector2.ZERO or _last_plate == null: return false
+	var from: Vector2 = _queued[-1] if not _queued.is_empty() else _last_plate
+	var out := _heading.dot(_breach)
+	var left := PLATE_HALF+BREACH_PAST-from.dot(_breach)
+	if out <= 0.0 or left <= 0.05: return false
+	_carried = true
+	_queued.append(from+_heading*(left/out))
+	return true
 
 ## The rub's dab at `q` with weight `w`: each point toward its neighbours' mean.
 func _rub(heights: PackedFloat32Array, q: Vector2, w: float) -> void:

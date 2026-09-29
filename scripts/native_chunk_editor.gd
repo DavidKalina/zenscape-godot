@@ -1391,14 +1391,20 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	if rim_unchanged: return _skirt_mesh
 	# Deform the original faceted earth sides, keeping their base and material.
 	# The captured rim extends 0.2 units beyond the terrain's outer edge.
-	var arrays := _skirt_mesh.surface_get_arrays(0)
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	var planes := _rim_slices(source)
+	var key := [planes,placing]
+	if _skirt_sliced_for != key:
+		_skirt_sliced_for = key
+		_skirt_sliced = _sliced_soup(_skirt_mesh.surface_get_arrays(0),placing,planes)
+	var arrays: Array = _skirt_sliced.duplicate()
+	var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
+	arrays[Mesh.ARRAY_NORMAL] = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array).duplicate()
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var low := _skirt_mesh.get_aabb().position.y
 	var high := _skirt_mesh.get_aabb().end.y
 	for i in range(vertices.size()):
-		var world := _skirt.to_global(vertices[i])
-		var local := terrain.to_local(world)
+		var local := placing*vertices[i]
 		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
 		vertices[i].y += source.delta_at(point) * clampf((vertices[i].y-low)/(high-low),0.0,1.0)
 	for i in range(0,vertices.size(),3):
@@ -1411,6 +1417,130 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_skirt_mesh.surface_get_material(0))
 	return mesh
+
+## The earth sides' facets are about 3.5 m along the rim and the rim's own
+## points about 0.64 m apart, so a cut in the rim (a thumb's spillway,
+## scripts/land_clay.gd) would be bridged by one facet, which would stand
+## over the cut or drop away from the land on either side of it. Where the
+## rim has moved (or beside where it has), the sides are first sliced across
+## at each rim point and midway between, so their top follows the land's
+## edge point for point. Every facet is sliced by the same planes, so the
+## sides stay closed. Returns [x planes, z planes], plate metres, sorted.
+func _rim_slices(source: NativeTerrainData) -> Array:
+	var sides: Array = [[],[],[],[]]
+	for i in range(source.points.size()):
+		var point := source.points[i]
+		var moved := absf(source.heights[i]-source.original_heights[i]) > 0.005
+		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,1.0 if moved else 0.0))
+		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,1.0 if moved else 0.0))
+	var found := [{},{}]
+	for s in range(4):
+		var rim: Array = sides[s]
+		rim.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+		for k in range(rim.size()):
+			var near: bool = rim[k].y > 0.0 or (k > 0 and rim[k-1].y > 0.0) or (k+1 < rim.size() and rim[k+1].y > 0.0)
+			if not near: continue
+			# Planes across the x sides are z planes, and the other way round.
+			var into: Dictionary = found[1 if s < 2 else 0]
+			for at: float in [rim[k].x,(rim[k].x+rim[maxi(k-1,0)].x)*0.5,(rim[k].x+rim[mini(k+1,rim.size()-1)].x)*0.5]:
+				# Not the corners, where the other sides' facets stand.
+				if absf(at) < 13.9: into[snappedf(at,0.0001)] = true
+	var planes := []
+	for axis in found:
+		var values := PackedFloat32Array(axis.keys())
+		values.sort()
+		planes.append(values)
+	return planes
+
+var _skirt_sliced_for: Array = []
+var _skirt_sliced: Array = []
+
+## A triangle soup's arrays (indexed arrays are unrolled) with every triangle
+## cut by the planes `planes` ([x values, z values] in plate metres, read
+## through `placing`) and fanned back into triangles. Every per-vertex array
+## is interpolated along the cut edges.
+static func _sliced_soup(source: Array, placing: Transform3D, planes: Array) -> Array:
+	var positions: PackedVector3Array = source[Mesh.ARRAY_VERTEX]
+	var indices: Variant = source[Mesh.ARRAY_INDEX]
+	var order := PackedInt32Array()
+	if indices is PackedInt32Array and not (indices as PackedInt32Array).is_empty(): order = indices
+	else: order = PackedInt32Array(range(positions.size()))
+	var count := positions.size()
+	# The per-vertex arrays: [slot, components].
+	var slots := []
+	for slot in range(Mesh.ARRAY_MAX):
+		if slot == Mesh.ARRAY_INDEX or source[slot] == null: continue
+		var size: int = source[slot].size()
+		if size > 0 and size % count == 0: slots.append([slot,size/count])
+	var vertex := func(i: int) -> Array:
+		var values := []
+		for entry: Array in slots:
+			var array: Variant = source[entry[0]]
+			if entry[1] == 1: values.append(array[i])
+			else: values.append(array.slice(i*entry[1],(i+1)*entry[1]))
+		return values
+	var mix := func(a: Array, b: Array, t: float) -> Array:
+		var values := []
+		for k in range(slots.size()):
+			var x: Variant = a[k]
+			var y: Variant = b[k]
+			if x is Vector3 or x is Vector2 or x is Color: values.append(x.lerp(y,t))
+			elif x is float: values.append(lerpf(x,y,t))
+			elif x is PackedFloat32Array:
+				var mixed := PackedFloat32Array(x)
+				for c in range(mixed.size()): mixed[c] = lerpf(x[c],y[c],t)
+				values.append(mixed)
+			else: values.append(x if t < 0.5 else y)
+		return values
+	var at := slots.map(func(entry: Array) -> int: return entry[0]).find(Mesh.ARRAY_VERTEX)
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	for entry: Array in slots:
+		var empty: Variant = source[entry[0]].duplicate()
+		empty.resize(0)
+		out[entry[0]] = empty
+	for f in range(0,order.size()-2,3):
+		var pieces := [[vertex.call(order[f]),vertex.call(order[f+1]),vertex.call(order[f+2])]]
+		for axis in range(2):
+			var cuts: PackedFloat32Array = planes[axis]
+			if cuts.is_empty(): continue
+			var coordinate := func(v: Array) -> float:
+				var p: Vector3 = placing*(v[at] as Vector3)
+				return p.x if axis == 0 else p.z
+			var next := []
+			for piece: Array in pieces:
+				var low := INF
+				var high := -INF
+				for v: Array in piece:
+					low = minf(low,coordinate.call(v))
+					high = maxf(high,coordinate.call(v))
+				for c in cuts:
+					if c <= low+0.001 or c >= high-0.001: continue
+					var below := []
+					var above := []
+					for k in range(piece.size()):
+						var a: Array = piece[k]
+						var b: Array = piece[(k+1)%piece.size()]
+						var da: float = coordinate.call(a)-c
+						var db: float = coordinate.call(b)-c
+						if da <= 0.0: below.append(a)
+						if da >= 0.0: above.append(a)
+						if (da < 0.0 and db > 0.0) or (da > 0.0 and db < 0.0):
+							var middle: Array = mix.call(a,b,da/(da-db))
+							below.append(middle)
+							above.append(middle)
+					if below.size() >= 3: next.append(below)
+					piece = above
+					if piece.size() < 3: break
+				if piece.size() >= 3: next.append(piece)
+			pieces = next
+		for piece: Array in pieces:
+			for k in range(1,piece.size()-1):
+				for v: Array in [piece[0],piece[k],piece[k+1]]:
+					for s in range(slots.size()):
+						if slots[s][1] == 1: out[slots[s][0]].append(v[s])
+						else: out[slots[s][0]].append_array(v[s])
+	return out
 
 func dab(point: Vector2, amount: float) -> void:
 	if mode in ["grass","blades","meadow","paint","erase"]: data.mark_hand(point,radius)
