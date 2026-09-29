@@ -162,7 +162,7 @@ func run() -> void:
 	check("a flick spins the world on",absf(spin0) > turn.FLICK_MIN,spin0)
 	var yaws: Array[float] = [scene.yaw]
 	var stopped := -1
-	for i in range(600):
+	for i in range(1200):
 		await frames(1)
 		yaws.append(scene.yaw)
 		if not turn.spinning():
@@ -174,8 +174,23 @@ func run() -> void:
 	var last_step := absf(yaws[-1]-yaws[-2]) if yaws.size() > 1 else 0.0
 	print("SPIN ",JSON.stringify({"speed_rad_s":snappedf(spin0,0.01),"on_deg":snappedf(rad_to_deg(yaws[-1]-yaws[0]),0.1),"stopped_s":snappedf(stopped/60.0,0.01),"last_step_deg":snappedf(rad_to_deg(last_step),0.004)}))
 	check("the spin slows every frame",decays)
-	check("the spin runs down by itself (under 5 s)",stopped > 0 and stopped < 300,stopped/60.0)
+	check("it spins on like a basketball (over a full turn)",absf(yaws[-1]-yaws[0]) > TAU,rad_to_deg(yaws[-1]-yaws[0]))
+	check("the spin runs down by itself (under 15 s)",stopped > 0 and stopped < 900,stopped/60.0)
 	check("and eases out (last frame under 0.02 deg)",rad_to_deg(last_step) < 0.02,rad_to_deg(last_step))
+
+	# A bat: flick, then flick again the same way mid-spin; it goes faster.
+	await drag(centre+Vector2(-200,120),Vector2(8,0),8)
+	await frames(20)
+	var before_bat: float = turn.spin
+	await drag(centre+Vector2(-200,120),Vector2(8,0),8)
+	await frames(1)
+	print("BAT ",JSON.stringify({"before_rad_s":snappedf(before_bat,0.01),"after_rad_s":snappedf(turn.spin,0.01)}))
+	check("a flick the same way bats the spin faster",absf(turn.spin) > absf(before_bat)+0.5 and signf(turn.spin) == signf(before_bat),[before_bat,turn.spin])
+	# A click mid-spin stops it (the catch below starts from rest).
+	button(centre+Vector2(80,90),MOUSE_BUTTON_RIGHT,true)
+	await frames(1)
+	button(centre+Vector2(80,90),MOUSE_BUTTON_RIGHT,false)
+	await frames(90)
 
 	# A catch: flick, then a click mid-spin.
 	await drag(centre+Vector2(-200,120),Vector2(30,0),8)

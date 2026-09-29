@@ -7,9 +7,11 @@ extends Node
 ## point's angle round the pivot, not from a pixels-to-radians gain. Up and
 ## down still tilt as they always have.
 ##
-## Let go with speed and the world spins on with weight and friction, easing
-## to a stop by itself. A press during the spin catches it: the world carries
-## on a few degrees against the hand, comes back and settles. The God Hand
+## Let go with speed and the world spins on like a basketball on a finger,
+## faster than it was pushed and for a long while, easing to a stop by
+## itself. A press during the spin catches it: the world carries on a few
+## degrees against the hand, comes back and settles. A flick the same way
+## during a spin bats it on instead, and each bat adds to the spin. The God Hand
 ## (scripts/god_hand.gd) shows it: it spreads its fingers on the grabbed
 ## ground and pushes it round, lets go with follow-through, and slaps down to
 ## catch a spin.
@@ -22,16 +24,21 @@ extends Node
 ## stop a spin dead.
 
 ## Below this turning speed (rad/s) a release lets the world stand; above it
-## the world spins on at the speed it had, at most MAX_SPIN.
+## the world spins on at FLICK_GAIN times the speed it had, at most MAX_SPIN
+## (about two turns a second).
 const FLICK_MIN := 0.35
-const MAX_SPIN := 4.0
+const FLICK_GAIN := 1.6
+const MAX_SPIN := 12.0
+## A flick the same way as a spin it pressed into bats it: the new spin is
+## the flick's plus BAT_KEEP of the spin it had.
+const BAT_KEEP := 1.0
 ## The spin's drag: its speed falls by e every SPIN_DRAG seconds, and a dry
 ## friction (rad/s²) takes FRICTION off per second on top. The friction fades
 ## out below FRICTION_SOFT rad/s, so the last of the spin eases away rather
-## than stopping on a step. Under SPIN_STOP rad/s it has stopped. A 3.9 rad/s
-## flick turns on about 164 degrees and has run down in 3.7 s.
-const SPIN_DRAG := 0.9
-const FRICTION := 0.3
+## than stopping on a step. Under SPIN_STOP rad/s it has stopped. A spin of
+## 6 rad/s goes round about two and a half times and runs down in about 8 s.
+const SPIN_DRAG := 3.0
+const FRICTION := 0.15
 const FRICTION_SOFT := 0.25
 const SPIN_STOP := 0.004
 ## The drag's turning speed is read over about this many seconds, so a drag
@@ -82,6 +89,8 @@ var _lost := false
 ## The catch's offset already in the rig's yaw.
 var _applied := 0.0
 var _catch_pending := false
+## The spin (rad/s) the press caught, which a flick the same way bats on.
+var _caught := 0.0
 var _catch_at: Variant = null
 var _hand_hold := 0.0
 var _hand_on := false
@@ -134,6 +143,7 @@ func _input(event: InputEvent) -> void:
 ## into the settle spring, which brings it back and to rest.
 func catch_at(at: Vector2) -> void:
 	settle_speed += clampf(spin,-MAX_CATCH,MAX_CATCH)
+	_caught = spin
 	spin = 0.0
 	_catch_pending = true
 	_catch_at = rig.inspector.ground_hit(at)
@@ -186,7 +196,10 @@ func _begin() -> void:
 
 func _release() -> void:
 	grabbing = false
-	if absf(rate) > FLICK_MIN: spin = clampf(rate,-MAX_SPIN,MAX_SPIN)
+	if absf(rate) > FLICK_MIN:
+		var kept := _caught*BAT_KEEP if signf(_caught) == signf(rate) else 0.0
+		spin = clampf(rate*FLICK_GAIN+kept,-MAX_SPIN,MAX_SPIN)
+	_caught = 0.0
 	rate = 0.0
 	grab = null
 

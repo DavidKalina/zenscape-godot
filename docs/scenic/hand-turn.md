@@ -7,7 +7,8 @@ One slice of the hand-world direction (`docs/scenic/hand-world.md`, "Turn it lik
 Open the game as usual (`studies/cozy_worlds.tscn`) and put a world up.
 
 - **Turn.** Right-drag (or Ctrl-drag) anywhere. With the brush put away (Look), a plain drag works too, and so does a drag off the land with a brush in hand. The ground you pressed keeps its bearing round the pivot under the pointer. The near side of the world follows the pointer and the far side goes the other way, as a turntable does. Up and down still tilt, as before.
-- **Flick.** Let go while moving and the world spins on at the speed it had, slows under friction and eases to a stop by itself. A drag that stops before you let go does not spin.
+- **Flick.** Let go while moving and the world spins on like a basketball on a finger: 1.6 times the speed it had, up to about two turns a second, slowing over several seconds and easing to a stop by itself. A drag that stops before you let go does not spin.
+- **Bat.** Flick again the same way while it spins and the new flick adds to the spin, so you can keep it going. A click, or a flick the other way, catches it instead.
 - **Catch.** Press anywhere on the world while it spins. The world carries on a few degrees against the hand, comes back to where you caught it and settles. If the press goes on into a drag, that drag turns the world from there.
 - **The hand.** When the drag starts on the land, the God Hand lays its palm flat on the grabbed ground with its fingers spread and leans into the push. When you let go it peels off with a follow-through, and it slaps down to catch a spin. It shows in Look too, but only while it holds the world. Off the land (on empty space or the sky) the world still turns, but the hand stays away.
 - **A/B.** `--classic-orbit` turns all of this off, and the rig orbits by pixels again (a screen height is a full turn, with the old 35 % fling).
