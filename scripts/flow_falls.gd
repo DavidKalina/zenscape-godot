@@ -120,10 +120,11 @@ func setup(water_flow: RefCounted, water_materials: Array) -> void:
 
 ## Rings × sections as flat facets: UV is (ring, angle) per vertex, UV2 (ring,
 ## section) per face, as the source's strand. The shader places every vertex.
-static func _build_ring_mesh() -> ArrayMesh:
+## `rings` defaults to RINGS (the edge falls use more, scripts/edge_falls.gd).
+static func _build_ring_mesh(rings := RINGS) -> ArrayMesh:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for ring in range(RINGS-1):
+	for ring in range(rings-1):
 		for section in range(SECTIONS):
 			for corner: Vector2i in [Vector2i(0,0),Vector2i(1,0),Vector2i(1,1),Vector2i(0,0),Vector2i(1,1),Vector2i(0,1)]:
 				surface.set_uv(Vector2(ring+corner.x,TAU*(section+corner.y)/SECTIONS))

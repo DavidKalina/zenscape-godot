@@ -1424,21 +1424,39 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 ## over the cut or drop away from the land on either side of it. Where the
 ## rim has moved (or beside where it has), the sides are first sliced across
 ## at each rim point and midway between, so their top follows the land's
-## edge point for point. Every facet is sliced by the same planes, so the
-## sides stay closed. Returns [x planes, z planes], plate metres, sorted.
+## edge point for point. Only where the rim's change bends away (by more
+## than SKIRT_BEND m) from the straight line the facet over it can follow:
+## a generated world's gently moved rim keeps its few facets. Every facet is
+## sliced by the same planes, so the sides stay closed. Returns [x planes,
+## z planes], plate metres, sorted.
+const SKIRT_BEND := 0.02
 func _rim_slices(source: NativeTerrainData) -> Array:
 	var sides: Array = [[],[],[],[]]
 	for i in range(source.points.size()):
 		var point := source.points[i]
-		var moved := absf(source.heights[i]-source.original_heights[i]) > 0.005
-		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,1.0 if moved else 0.0))
-		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,1.0 if moved else 0.0))
+		var change := source.heights[i]-source.original_heights[i]
+		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,change))
+		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,change))
+	var columns := _skirt_columns(source)
 	var found := [{},{}]
 	for s in range(4):
 		var rim: Array = sides[s]
 		rim.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+		var bent := PackedByteArray()
+		bent.resize(rim.size())
+		var tops: PackedFloat32Array = columns[s]
 		for k in range(rim.size()):
-			var near: bool = rim[k].y > 0.0 or (k > 0 and rim[k-1].y > 0.0) or (k+1 < rim.size() and rim[k+1].y > 0.0)
+			# The facet's top edge over this point runs straight between the
+			# columns either side of it.
+			var c := tops.bsearch(rim[k].x)
+			if tops.size() < 2: bent[k] = 1 if absf(rim[k].y) > SKIRT_BEND else 0
+			else:
+				var a := tops[clampi(c-1,0,tops.size()-2)]
+				var b := tops[clampi(c,1,tops.size()-1)]
+				var straight := lerpf(_rim_change(rim,a),_rim_change(rim,b),clampf((rim[k].x-a)/maxf(b-a,0.001),0.0,1.0))
+				bent[k] = 1 if absf(rim[k].y-straight) > SKIRT_BEND else 0
+		for k in range(rim.size()):
+			var near: bool = bent[k] == 1 or (k > 0 and bent[k-1] == 1) or (k+1 < rim.size() and bent[k+1] == 1)
 			if not near: continue
 			# Planes across the x sides are z planes, and the other way round.
 			var into: Dictionary = found[1 if s < 2 else 0]
@@ -1454,6 +1472,37 @@ func _rim_slices(source: NativeTerrainData) -> Array:
 
 var _skirt_sliced_for: Array = []
 var _skirt_sliced: Array = []
+var _skirt_columns_for: Array = []
+var _skirt_columns_found: Array = []
+
+## A rim's change (sorted [along, change] points) at `along`, linearly.
+static func _rim_change(rim: Array, along: float) -> float:
+	if rim.is_empty(): return 0.0
+	if along <= rim[0].x: return rim[0].y
+	for k in range(1,rim.size()):
+		if along <= rim[k].x: return lerpf(rim[k-1].y,rim[k].y,(along-rim[k-1].x)/maxf(rim[k].x-rim[k-1].x,0.0001))
+	return rim[-1].y
+
+## Where along each side (0 -x, 1 +x, 2 -z, 3 +z) the earth sides' facets
+## have a corner on the rim line: their top edge runs straight between.
+func _skirt_columns(source: NativeTerrainData) -> Array:
+	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	if _skirt_columns_for == [_skirt_mesh,placing]: return _skirt_columns_found
+	var found := [{},{},{},{}]
+	for v: Vector3 in placing*_skirt_mesh.get_faces():
+		for s in range(4):
+			var out: float = [-v.x,v.x,-v.z,v.z][s]
+			var along: float = v.z if s < 2 else v.x
+			if absf(out-14.0) > 0.01: continue
+			var ground: Variant = source.sample(Vector2(v.x,v.z).clamp(Vector2(-14,-14),Vector2(14,14)),source.original_heights)
+			if ground != null and absf(v.y-float(ground)) < 0.35: found[s][snappedf(along,0.001)] = true
+	_skirt_columns_found = []
+	for side: Dictionary in found:
+		var values := PackedFloat32Array(side.keys())
+		values.sort()
+		_skirt_columns_found.append(values)
+	_skirt_columns_for = [_skirt_mesh,placing]
+	return _skirt_columns_found
 
 ## A triangle soup's arrays (indexed arrays are unrolled) with every triangle
 ## cut by the planes `planes` ([x values, z values] in plate metres, read

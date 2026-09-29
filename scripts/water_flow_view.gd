@@ -12,7 +12,10 @@ extends Node3D
 ## The ponds reflect through one planar view that follows the largest pond
 ## (`reflection`, scripts/live_water_reflection.gd). Where fast water crosses
 ## a big drop, a waterfall stands, traced from the flow and sized by its flux
-## (`falls`, scripts/flow_falls.gd; --no-live-falls leaves them out).
+## (`falls`, scripts/flow_falls.gd; --no-live-falls leaves them out). Where
+## water leaves the plate over its rim, a fall pours down the block's side
+## into the void (`edge_falls`, scripts/edge_falls.gd; --no-edge-falls leaves
+## them out).
 ## Seconds between surface rebuilds (native).
 const SURFACE_SECONDS := 1.0/30.0
 ## The GDScript mirror's coarser grid rebuilds less often (about 4 ms a build).
@@ -28,6 +31,7 @@ var data: NativeTerrainData
 var still := MeshInstance3D.new()
 var moving := MeshInstance3D.new()
 var falls: Node3D
+var edge_falls: Node3D
 ## The ponds' planar view, or null without a scene or under --no-live-reflection.
 var reflection: Node3D
 var scene_node: Node3D
@@ -74,6 +78,11 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		falls.name = "FlowFalls"
 		scene.add_child(falls)
 		falls.setup(flow,[still_material,moving_material])
+	if scene != null and not "--no-edge-falls" in OS.get_cmdline_user_args():
+		edge_falls = preload("res://scripts/edge_falls.gd").new()
+		edge_falls.name = "EdgeFalls"
+		scene.add_child(edge_falls)
+		edge_falls.setup(flow,scene.get("_chunk_editor"))
 	if scene != null and not "--no-live-reflection" in OS.get_cmdline_user_args():
 		reflection = preload("res://scripts/live_water_reflection.gd").new()
 		reflection.name = "LiveReflection"
@@ -84,6 +93,7 @@ var _params := {}
 
 func _exit_tree() -> void:
 	if is_instance_valid(falls): falls.queue_free()
+	if is_instance_valid(edge_falls): edge_falls.queue_free()
 
 ## The standing water the reflection follows (WaterFlow.pools), set by the
 ## editor as it reads them.

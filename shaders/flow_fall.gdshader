@@ -8,7 +8,11 @@ render_mode cull_disabled, diffuse_lambert;
 // - `veil` (0 a full curtain, 1 a trickle) tears the sheet into falling
 //   streaks with gaps between them;
 // - `streak_speed` (m/s) is how fast those streaks fall;
-// - `crest` (m of travel) is the white break where the water tips over.
+// - `crest` (m of travel) is the white break where the water tips over;
+// - `break_from` and `break_length` (m of travel): an edge fall
+//   (scripts/edge_falls.gd) pours off the block into the void, and past the
+//   block's bottom it breaks up over break_length into strands, then
+//   droplets, then nothing (off by default: break_from is far away).
 // The rings come from the script every frame (smoothed), so the mesh itself
 // only carries ring and angle indices.
 
@@ -42,6 +46,8 @@ uniform float body_white = 0.0;
 uniform float veil = 0.0;
 uniform float streak_speed = 3.0;
 uniform float crest = 0.3;
+uniform float break_from = 100000.0;
+uniform float break_length = 3.0;
 const vec3 ramp[7] = vec3[7](vec3(0.02842604, 0.21223076, 0.33245154), vec3(0.07036010, 0.33245154, 0.47932018), vec3(0.15896084, 0.47932018, 0.61049557), vec3(0.30054379, 0.63759687, 0.73046074), vec3(0.50888132, 0.78353779, 0.85499261), vec3(0.71569350, 0.87962240, 0.92158186), vec3(0.88792312, 0.93011086, 0.93868573));
 
 void vertex() {
@@ -86,9 +92,16 @@ void fragment() {
 	float edge = abs(cos(across * 6.2831853));
 	float torn = veil * (0.55 + 0.35 * edge + 0.25 * aeration);
 	if (streak < torn * 0.85 && travel > crest * 0.5) discard;
+	// Falling free past the block: strands, then beads, then gone.
+	float broken = clamp((travel - break_from) / max(break_length, 0.01), 0.0, 1.0);
+	if (broken > 0.0) {
+		float beads = zs_noise(vec2(across * 64.0 + fall_seed * 1.7, travel * 4.5 - run * 4.5));
+		float keep = mix(streak, beads, smoothstep(0.3, 0.75, broken));
+		if (keep < mix(0.3, 1.02, broken) + 0.12 * edge * broken) discard;
+	}
 	float white_crest = (1.0 - smoothstep(crest * 0.5, crest, travel)) * (0.55 + 0.45 * smoothstep(0.3, 0.6, zs_noise(vec2(across * 30.0 + fall_seed, zs_flow_time * 1.3))));
 	vec3 tint = (COLOR.rgb * zs_palette_water) * base_color.rgb;
-	float bright = smoothstep(0.5, 0.8, streak) * (0.35 + 0.5 * aeration);
+	float bright = smoothstep(0.5, 0.8, streak) * (0.35 + 0.5 * aeration) + 0.5 * broken;
 	tint = mix(tint, vec3(0.88792312, 0.93011086, 0.93868573) * zs_palette_water, clamp(bright + white_crest * 0.9, 0.0, 1.0) * (1.0 - zs_ice * 0.85));
 	vec3 face = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
