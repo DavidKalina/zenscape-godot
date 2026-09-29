@@ -258,12 +258,12 @@ The earth sides' facets are about 3.5 m along the rim, but the rim's own points 
 ### Measured
 
 `tools/probe_edge_fall.gd -- --modeless` (headless, `--fixed-fps 60`, dummy renderer). A 4 m peak written at (8, −3); a real thumb stroke through `hand_reach` from (9.4, −3) toward (13, −3), let go short of the rim; an 8 m³ ball dropped at the groove's head:
-- The groove is carried to the lip. It notches the rim 0.8–1.0 m deep over the four rim points from z −3.2 to −1.3. The rim either side is unchanged (0.000 m), and so is the rim beside a thumb run along the edge at x 12.6.
-- The earth sides' top meets the notched rim within 1 mm.
-- The spring's 0.096 m³/s levels off at 0.46 m³ standing. 0.088 m³/s leaves over four edge cells (z −2.9 to −2.1); soak and evaporation take the rest. `poured` = standing + `drained` + `soaked` + `removed` to the litre.
+- The groove is carried to the lip and notches the rim 0.9–1.0 m deep over three rim points (z −3.2 to −1.9; the screen-straight stroke lands a little off z −3). The rim either side is unchanged (under 2 cm at the notch's shoulder, 0.000 m further out), and so is the rim beside a thumb run along the edge at x 12.6.
+- The earth sides' top meets the notched rim within 1 mm. They go from 392 to about 1,750 triangles. Refitting them costs about 3.6 ms per light refresh while the rim is notched, against 1.2 ms for the old per-vertex shift; a generated world's rim alone slices nothing.
+- The spring's 0.096 m³/s levels off at 0.35–0.46 m³ standing (it varies take to take). 0.088 m³/s leaves over four edge cells; soak and evaporation take the rest. `poured` = standing + `drained` + `soaked` + `removed` to the litre.
 - The channel is wet to the cell beside the edge, and the stream is drawn to x = 14.0.
-- One spill and one edge fall stand: a 4.3 m face and 8.2 m in all. The spring taken away, it fades out.
-- Cost: the step is 38–49 µs as before, the spills read about 15 µs every 0.25 s, and the edge falls' frame update about 0.05 ms steady. A fall's first frame costs about 10 ms once (its nodes, materials and the side profile), as the waterfalls' does.
+- One spill and one edge fall stand: a 3.7–4.3 m face and 7.6–8.2 m in all. The spring taken away, it fades out.
+- Cost: the step is 38–60 µs as before, the spills read about 15 µs every 0.25 s, and the edge falls' frame update about 0.05 ms steady. A fall's first frame costs 0.5–16 ms once (its nodes, materials and the side profile), as the waterfalls' does.
 - Draws per edge fall: the curtain (plus its shadow pass), the bead burst, and one mist canvas draw of up to 48 sprites.
 
 ### Filmed
