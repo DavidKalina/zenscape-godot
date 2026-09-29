@@ -362,6 +362,9 @@ func handle(event: InputEvent) -> bool:
 		var button := event as InputEventMouseButton
 		if button.button_index != MOUSE_BUTTON_LEFT: return false
 		if button.pressed:
+			# While the diorama is turning over, a press waits for it to land.
+			var flip: Node = scene.get("flip")
+			if holding.is_empty() and flip != null and flip.active(): return true
 			if not holding.is_empty() or not available() or button.ctrl_pressed or button.double_click: return false
 			var what := reach_at(button.position)
 			if what.is_empty():
@@ -777,6 +780,8 @@ func _drive_hand_modeless() -> void:
 	if holding == "land":
 		_hover_shown = ""
 		return
+	# Turning the diorama over, the flip (scripts/diorama_flip.gd) has the hand.
+	if holding == "rim" and rim_intent == "flip": return
 	if holding == "rim":
 		hand.reach_gesture = "rim"
 		hand.reach_point = reach_point

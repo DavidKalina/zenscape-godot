@@ -85,6 +85,11 @@ func _ready() -> void:
 		flip = preload("res://scripts/diorama_flip.gd").new()
 		add_child(flip)
 		flip.setup(self)
+		# Dragging the rim up and over the lip turns the diorama over.
+		if hand_reach != null:
+			hand_reach.flip_began.connect(func(at: Vector2) -> void: flip.begin(at))
+			hand_reach.flip_dragged.connect(flip.drag)
+			hand_reach.flip_released.connect(flip.release)
 	shell_ready = true
 
 func _fill_world_menu() -> void:

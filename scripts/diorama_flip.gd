@@ -228,6 +228,8 @@ func _idle_world() -> bool:
 func begin(screen_pos: Vector2) -> bool:
 	if not can_begin(): return false
 	editor.finish_stroke()
+	# A scripted drag left over from a flip that went over on its own.
+	_debug_progress = -1.0
 	_rate = 0.0
 	_progress = 0.0
 	angle = 0.0
@@ -281,18 +283,11 @@ func back_source() -> Source:
 	if not kept.is_empty(): return Source.KEPT
 	return Source.NEW
 
-# --- TEMPORARY trigger -------------------------------------------------------
-## TEMPORARY: F8 flips the diorama by itself (a scripted drag up and over the
-## near lip, then let go), F7 flips back. Remove when scripts/hand_reach.gd
-## routes the rim gesture to begin / drag / release.
-func _unhandled_key_input(event: InputEvent) -> void:
-	if not enabled() or not event is InputEventKey or not event.pressed or event.echo: return
-	match event.keycode:
-		KEY_F8: debug_flip()
-		KEY_F7: flip_back()
-
-## TEMPORARY: a scripted drag from the near lip (or, given `pace`, the speed of
-## it in progress per second) that lets go at `release_at`.
+# --- Scripted flips (probes) ------------------------------------------------
+## For the probes: a scripted drag from the near lip (or, given `pace`, the
+## speed of it in progress per second) that lets go at `release_at`. In play
+## the rim drives begin / drag / release (scripts/hand_reach.gd flip_*
+## signals, connected in studies/cozy_worlds.gd).
 func debug_flip(release_at := 1.0, pace := DEBUG_PACE) -> bool:
 	var size := scene.get_viewport().get_visible_rect().size
 	if not begin(Vector2(size.x*0.5,size.y*0.85)): return false

@@ -560,7 +560,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_panning = event.pressed
 		# --modeless: only the right button is the camera; a left press is the hand's.
 		if event.button_index == MOUSE_BUTTON_RIGHT or (event.button_index == MOUSE_BUTTON_LEFT and not preload("res://scripts/modeless_input.gd").enabled()):
-			_orbiting = event.pressed
+			# Not while the diorama is turning over (scripts/diorama_flip.gd).
+			_orbiting = event.pressed and not (get("flip") != null and get("flip").active())
 		if event.pressed and (_orbiting or _panning):
 			_auto_orbit = false # The source cancels its idle spin on the first press.
 		if event.pressed:

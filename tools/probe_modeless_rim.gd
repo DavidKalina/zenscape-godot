@@ -256,6 +256,14 @@ func run() -> void:
 	check("the flip's release reports its progress",flips.released.size() == 1 and flips.released[0] > 0.3,flips.released)
 	check("the flip leaves time alone",absf(hours()-hour0) < 0.001)
 	check("no spin after a flip",not turn.spinning())
+	# With the flip wired in (scripts/diorama_flip.gd) that drag really turned
+	# the diorama over; presses wait for it to land.
+	var flipper: Node = scene.get("flip")
+	if flipper != null:
+		for i in range(3000):
+			if not flipper.active(): break
+			await frames(1)
+		check("the flip lands",not flipper.active())
 
 	# --- A shake takes the rim from either axis ------------------------------------
 	for axis in [Vector2.RIGHT,Vector2.DOWN]:
@@ -323,4 +331,7 @@ func run() -> void:
 	check("the shimmer stays off",scene._celestial.shimmer == 0.0)
 
 	print("RESULT ","PASS" if failures.is_empty() else "FAIL "+str(failures))
+	# Nothing of the flip's may still be running when the engine tears down.
+	var flip_node: Node = scene.get("flip")
+	if flip_node != null: await flip_node.wait_idle()
 	quit(0 if failures.is_empty() else 1)

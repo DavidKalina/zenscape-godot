@@ -281,6 +281,33 @@ func run() -> void:
 	for v in frame_ms: worst2 = maxf(worst2,v)
 	check("no frame over the budget flipping out of a generated world",worst2 < FRAME_BUDGET_MS,worst2)
 	check("and it landed on the new seed",editor.land_seed == 555001,editor.land_seed)
+	await settle(600)
+
+	# The rim routing (scripts/hand_reach.gd) drives it: a short drag up the
+	# lip lifts the plate, and let go early it falls back.
+	var reach: Node = scene.get("hand_reach")
+	check("the scene has the rim routing",reach != null)
+	if reach != null:
+		var seed_before: int = editor.land_seed
+		var fell_signal := [false]
+		flip.fell_back.connect(func() -> void: fell_signal[0] = true)
+		var size: Vector2 = scene.get_viewport().get_visible_rect().size
+		var phases_seen: Array = []
+		flip.phase_changed.connect(func(p: Variant) -> void: phases_seen.append(p))
+		reach.flip_began.emit(Vector2(720,760))
+		check("flip_began starts the flip",flip.active())
+		for i in range(30):
+			reach.flip_dragged.emit(0.4*float(i+1)/30.0)
+			await tick()
+		await frames(10)
+		reach.flip_released.emit(0.4)
+		for i in range(900):
+			await tick()
+			if not flip.active(): break
+		print("RIM PHASES ",phases_seen)
+		print("RIM FLIP ",JSON.stringify({"fell":fell_signal[0],"active":flip.active(),"phase":flip.phase}))
+		check("let go early through the rim, it falls back",fell_signal[0] and not flip.active())
+		check("and the world is the same",editor.land_seed == seed_before,editor.land_seed)
 	finish()
 
 func report_frames(label: String) -> void:
