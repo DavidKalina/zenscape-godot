@@ -72,6 +72,9 @@ const SUN_LOW := -0.05
 ## the land's border band RIM_BAND metres deep, or over the block's walls.
 const RIM_PIXELS := 28.0
 const RIM_BAND := 0.8
+## A hand on the block's walls stands this far out from them, clear of the
+## faceted earth sides, which bulge up to about 0.45 m past the plate.
+const WALL_OUT := 0.5
 ## Metres from the camera, along the ray to the sun, the hand holds it: about
 ## where the Reach clips' cup is the size of the disc on screen.
 const SUN_REACH := 12.0
@@ -230,33 +233,47 @@ func _screen(direction: Vector3) -> Variant:
 	return camera.unproject_position(far)
 
 ## The rim point (plate coordinates) a pointer at `point` reaches, or null.
-## Found on the plane of the rim's height, the block's walls and the rim's
-## outline on screen, which are cheap; only a candidate asks the land (a
-## ray into the terrain, about a millisecond) whether a hill stands in front.
+## The block's walls are all rim: a pointer on one reaches the very point it
+## is over, unless a hill stands in front. Otherwise it is found on the plane
+## of the rim's height and the rim's outline on screen, which are cheap; only
+## a candidate asks the land (a ray into the terrain, about a millisecond)
+## whether a hill stands in front.
 func _rim_at(point: Vector2) -> Variant:
+	var hit: Variant = _land(point)
+	var wall: Variant = _wall_hit(point)
+	if wall != null and (hit == null or _eye_distance(point,hit) > _eye_distance(point,wall)-0.05): return wall
 	var rim: Variant = null
 	var at: Variant = _plate_at(point)
 	if at != null and absf(at.x) <= PLATE_HALF and absf(at.z) <= PLATE_HALF:
 		if maxf(absf(at.x),absf(at.z)) < PLATE_HALF-RIM_BAND: return null
 		rim = _edge(Vector2(at.x,at.z))
 	else:
-		rim = _wall_hit(point)
-		if rim == null:
-			var near: Array = _outline_nearest(point)
-			if float(near[0]) > RIM_PIXELS: return null
-			rim = near[1]
-	var hit: Variant = _land(point)
+		var near: Array = _outline_nearest(point)
+		if float(near[0]) > RIM_PIXELS: return null
+		rim = near[1]
 	if hit != null and maxf(absf(hit.x),absf(hit.z)) < PLATE_HALF-RIM_BAND: return null
 	return rim
+
+## How far a plate point is from the camera's eye along the pointer's ray.
+func _eye_distance(point: Vector2, local: Vector3) -> float:
+	return _editor().terrain.to_local(scene.camera.project_ray_origin(point)).distance_to(local)
 
 ## The rim point nearest the pointer, wherever it is: for a drag, which may
 ## wander off the rim. Cheap: no ray into the terrain.
 func rim_point(point: Vector2) -> Vector3:
-	var at: Variant = _plate_at(point)
-	if at != null and absf(at.x) <= PLATE_HALF and absf(at.z) <= PLATE_HALF: return _edge(Vector2(at.x,at.z))
 	var wall: Variant = _wall_hit(point)
 	if wall != null: return wall
+	var at: Variant = _plate_at(point)
+	if at != null and absf(at.x) <= PLATE_HALF and absf(at.z) <= PLATE_HALF: return _edge(Vector2(at.x,at.z))
 	return _outline_nearest(point)[1]
+
+## Where the hand shows a rim point: on the lip as it is, on a wall stood out
+## from it (WALL_OUT) so the earth sides do not hide it.
+func _hand_at(rim: Vector3) -> Vector3:
+	var edge := Vector2(rim.x,rim.z)
+	if rim.y > _rim_height(edge)-0.05: return rim
+	var out := Vector3(signf(rim.x),0.0,0.0) if absf(rim.x) >= absf(rim.z) else Vector3(0.0,0.0,signf(rim.z))
+	return rim+out*WALL_OUT
 
 ## Where the pointer's ray meets the plane of the rim's height near it (plate
 ## coordinates), or null when it looks up.
@@ -296,8 +313,8 @@ func _rim_height(edge: Vector2) -> float:
 	var h: Variant = _editor().data.ground_height(inside)
 	return float(h) if h != null else 0.0
 
-## The block's walls: where the pointer's ray meets one, between the block's
-## foot and the rim over it.
+## The block's walls: where the pointer's ray meets one from outside, between
+## the block's foot and the rim over it (a little above it counts as the lip).
 func _wall_hit(point: Vector2) -> Variant:
 	var editor := _editor()
 	var terrain: Node3D = editor.terrain
@@ -310,6 +327,8 @@ func _wall_hit(point: Vector2) -> Variant:
 	for axis in [0,2]:
 		if absf(direction[axis]) < 1e-5: continue
 		for side in [-1.0,1.0]:
+			# Only a wall's outer face: the ray must be going in through it.
+			if side*direction[axis] >= 0.0: continue
 			var t: float = (side*PLATE_HALF-origin[axis])/direction[axis]
 			if t <= 0.0 or t >= nearest: continue
 			var at: Vector3 = origin+direction*t
@@ -319,7 +338,7 @@ func _wall_hit(point: Vector2) -> Variant:
 			var top := _rim_height(edge)
 			if at.y < low or at.y > top+0.3: continue
 			nearest = t
-			best = Vector3(edge.x,top,edge.y)
+			best = Vector3(edge.x,minf(at.y,top),edge.y)
 	return best
 
 ## The foot of the earth block, plate coordinates (the skirt mesh's lowest point).
@@ -408,8 +427,8 @@ func grab(what: String, point: Vector2) -> void:
 			grab_dial = dial
 			grab_season_override = clock.season_override
 			grab_season_pin = str(mood.pins.get("season","")) if mood != null else ""
-		reach_point = rim_point(point)
-		_press_edge = reach_point
+		_press_edge = rim_point(point)
+		reach_point = _hand_at(_press_edge)
 		_rim_angle = _angle_round(point)
 		_last_drag = Time.get_ticks_usec()
 		if modeless: _catch_spin(point)
@@ -431,7 +450,7 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		if angle != null and _rim_angle != null and not _reverted and not modeless:
 			turn_dial(angle_difference(float(_rim_angle),float(angle))/TAU*QUARTERS_PER_TURN)
 		_rim_angle = angle
-		reach_point = rim_point(point)
+		reach_point = _hand_at(rim_point(point))
 		# The time since the last move, not the frame's: several moves may
 		# come in one frame, and the shake reads their speed.
 		var now := Time.get_ticks_usec()
@@ -650,7 +669,7 @@ func _hover(point: Vector2) -> void:
 	if modeless:
 		hover_zone = what
 		_hover_point = null
-		if what == "rim": _hover_point = rim_point(point)
+		if what == "rim": _hover_point = _hand_at(rim_point(point))
 		elif available() and _editor().pointer_in_world(point):
 			var land: Variant = _land(point)
 			if land != null:
