@@ -1,14 +1,18 @@
 extends Node3D
 ## Draws the live water (scripts/water_flow.gd, docs/scenic/water-flow.md)
-## with the ponds' and streams' own materials, so it keeps today's look.
+## with copies of the ponds' and streams' own materials, so it keeps today's
+## look.
 ##
-## Every SURFACE_SECONDS the depth field becomes two meshes: still water
+## Every SURFACE_SECONDS the depth field becomes two meshes: all the water
 ## through the pond material (the lake shader: shore fetch in CUSTOM0/1 for its
-## chop, depth in UV2, the depth palette in COLOR) and moving water through the
-## stream material (UV along and across the flow, so its streaks run
-## downstream, with foam blended into COLOR where it is fast). Where moving
-## water drops steeply, a waterfall stands (`FlowFalls`, the authored falls'
-## ring shader, plunge and spray).
+## chop, depth in UV2, the depth palette in COLOR), and over it the moving
+## water through the stream material (UV along and across the flow, so its
+## streaks run downstream, with foam blended into COLOR where it is fast),
+## fading out towards the slow water round it so the two meet without a seam.
+## The ponds reflect through one planar view that follows the largest pond
+## (`reflection`, scripts/live_water_reflection.gd). Where moving water drops
+## steeply, a waterfall stands (`FlowFalls`, the authored falls' ring shader,
+## plunge and spray).
 ## Seconds between surface rebuilds (native), and between waterfall reads.
 const SURFACE_SECONDS := 1.0/30.0
 ## The GDScript mirror's coarser grid rebuilds less often (about 4 ms a build).
@@ -16,7 +20,8 @@ const FALLBACK_SURFACE_SECONDS := 0.1
 const FALL_SECONDS := 0.5
 ## Surface parameters (ZenScapeWaterFlow::surface). Water shallower than
 ## `wet` is not drawn; the sheet sits `lift` above the water.
-const SURFACE := {"wet":0.012,"lift":0.012,"flow_on":0.22,"flow_off":0.12,"foam_from":0.8,"foam_to":2.2,"depth_scale":0.45}
+## With `under`, still water is drawn everywhere wet, moving water over it.
+const SURFACE := {"wet":0.012,"lift":0.012,"flow_on":0.22,"flow_off":0.12,"foam_from":0.8,"foam_to":2.2,"depth_scale":0.45,"under":true}
 ## A waterfall: moving water of at least FALL_FLUX m³/s whose surface drops
 ## FALL_DROP m within FALL_REACH m, at FALL_SLOPE or steeper. It shows after
 ## FALL_HOLD s of being found and goes FALL_LINGER s after it is not.
@@ -34,6 +39,11 @@ var data: NativeTerrainData
 var still := MeshInstance3D.new()
 var moving := MeshInstance3D.new()
 var falls: Node3D
+## The ponds' planar view, or null without a scene or under --no-live-reflection.
+var reflection: Node3D
+var scene_node: Node3D
+## Indices of the still mesh's calm triangles (the rest lie under moving water).
+var _calm := 0
 var _since := 0.0
 var _since_falls := 0.0
 var _drawn := -1
@@ -51,27 +61,49 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	flow = water_flow
 	data = flow.data
 	still.name = "FlowStill"
-	still.material_override = pond_material
+	# Copies, so the planar view and the moving water's fade are live water's
+	# own; they follow their sources' parameters (`reflection`, `_follow`).
+	var still_material: ShaderMaterial = pond_material.duplicate()
+	still_material.set_shader_parameter("hide_pool_surface",false)
+	still_material.set_shader_parameter("planar_levels",Vector2(-1000000.0,-1000000.0))
+	still.material_override = still_material
 	moving.name = "FlowMoving"
-	moving.material_override = stream_material
+	var moving_material: ShaderMaterial = stream_material.duplicate()
+	moving_material.set_shader_parameter("flow_edge_fade",true)
+	# Drawn after the still water it lies over, whatever the sort says.
+	moving_material.render_priority = 1
+	moving.material_override = moving_material
 	for node: MeshInstance3D in [still,moving]:
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.mesh = ArrayMesh.new()
+		# A pond's reflection does not show the water itself.
+		node.set_meta("skip_reflection",true)
 		add_child(node)
 	var colors := {"shallow":Color("79ae9b").srgb_to_linear(),"deep":Color("245a5c").srgb_to_linear(),"foam":Color(0.65,0.8,0.79)}
 	_params = SURFACE.merged(colors)
+	scene_node = scene
 	if scene != null:
 		falls = FlowFalls.new()
 		falls.name = "FlowFalls"
 		scene.add_child(falls)
+	if scene != null and not "--no-live-reflection" in OS.get_cmdline_user_args():
+		reflection = preload("res://scripts/live_water_reflection.gd").new()
+		reflection.name = "LiveReflection"
+		add_child(reflection)
+		reflection.setup_live(still_material,pond_material,moving_material,stream_material,float(SURFACE.lift))
 
 var _params := {}
 
 func _exit_tree() -> void:
 	if is_instance_valid(falls): falls.queue_free()
 
+## The standing water the reflection follows (WaterFlow.pools), set by the
+## editor as it reads them.
+var pools: Array = []
+
 ## Rebuilds what changed since the last call.
 func update(delta: float) -> void:
+	if reflection != null: reflection.sync_live(scene_node,get_tree(),pools)
 	_since += delta
 	_since_falls += delta
 	if _since >= (SURFACE_SECONDS if flow.native else FALLBACK_SURFACE_SECONDS) and flow.revision != _drawn:
@@ -90,6 +122,10 @@ func publish() -> void:
 	began = Time.get_ticks_usec()
 	_fill(still.mesh,arrays.still)
 	_fill(moving.mesh,arrays.flow)
+	# A library without `under` draws still and moving apart, all calm.
+	_calm = int(arrays.still.get("calm",(arrays.still.indices as PackedInt32Array).size()))
+	var under: bool = arrays.still.has("calm")
+	if moving.material_override.get_shader_parameter("flow_edge_fade") != under: moving.material_override.set_shader_parameter("flow_edge_fade",under)
 	last_publish_usec = Time.get_ticks_usec()-began
 	worst_publish_usec = maxi(worst_publish_usec,last_publish_usec)
 
@@ -122,7 +158,7 @@ func still_triangles() -> PackedVector3Array:
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	var lift: float = SURFACE.lift
-	for i in indices: soup.append(vertices[i]-Vector3(0,lift,0))
+	for k in range(mini(_calm,indices.size())): soup.append(vertices[indices[k]]-Vector3(0,lift,0))
 	return soup
 
 ## Waterfalls come and go with the flow: found for FALL_HOLD s to stand,

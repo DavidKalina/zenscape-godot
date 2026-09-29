@@ -2075,6 +2075,7 @@ func _flow_process(delta: float) -> void:
 
 func _read_flow_pools() -> void:
 	var pools: Array = flow.pools()
+	flow_view.pools = pools
 	emergence.flow_wet = flow.wet_mask()
 	# What moved: new ponds, ponds gone, ponds that grew or shrank.
 	for pool: Dictionary in pools:

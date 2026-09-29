@@ -282,6 +282,7 @@ func surface(p: Dictionary) -> Dictionary:
 	var shallow: Color = p.get("shallow",Color(0.2,0.42,0.33))
 	var deep: Color = p.get("deep",Color(0.02,0.1,0.11))
 	var foam: Color = p.get("foam",Color(0.65,0.8,0.79))
+	var under: bool = p.get("under",false)
 	var n := w*h
 	var top := PackedFloat32Array()
 	top.resize(n)
@@ -315,6 +316,22 @@ func surface(p: Dictionary) -> Dictionary:
 		var speed := sqrt(vx[c]*vx[c]+vz[c]*vz[c])
 		if speed > flow_on: flowing[c] = 1
 		elif speed < flow_off: flowing[c] = 0
+	var fade := PackedFloat32Array()
+	fade.resize(n)
+	for c in range(n):
+		if state[c] == 1: fade[c] = clampf((sqrt(vx[c]*vx[c]+vz[c]*vz[c])-flow_off)/maxf(flow_on-flow_off,0.000001),0.0,1.0)
+	for j in range(h):
+		for i in range(w):
+			var c := j*w+i
+			if state[c] != 2: continue
+			var most := 0.0
+			for dj in range(-1,2):
+				for di in range(-1,2):
+					var a := i+di
+					var b := j+dj
+					if a < 0 or b < 0 or a >= w or b >= h: continue
+					if state[b*w+a] == 1: most = maxf(most,fade[b*w+a])
+			fade[c] = most
 	var out := {}
 	const DI := [1,1,0,-1,-1,-1,0,1]
 	const DJ := [0,1,1,1,0,-1,-1,-1]
@@ -363,7 +380,7 @@ func surface(p: Dictionary) -> Dictionary:
 				uv.append(Vector2(x*ax+z*az,-x*az+z*ax))
 				color = color.lerp(foam,smoothstep(foam_from,foam_to,speed)*0.55)
 				custom0.append_array([x,y,z,-1.0])
-				custom1.append_array([0.0,0.0,0.0,0.0])
+				custom1.append_array([fade[c],0.0,0.0,0.0])
 			else:
 				uv.append(Vector2.ZERO)
 				var fetch := PackedFloat32Array()
@@ -382,24 +399,29 @@ func surface(p: Dictionary) -> Dictionary:
 				custom1.append_array(fetch.slice(4,8))
 			colors.append(color)
 			return slot[c]
-		for j in range(h-1):
-			for i in range(w-1):
-				var a := j*w+i
-				var b := a+1
-				var c := a+w
-				var d := c+1
-				if state[a] == 0 or state[b] == 0 or state[c] == 0 or state[d] == 0: continue
-				if state[a] != 1 and state[b] != 1 and state[c] != 1 and state[d] != 1: continue
-				var moving := flowing[a] != 0 or flowing[b] != 0 or flowing[c] != 0 or flowing[d] != 0
-				if moving != (set_index == 1): continue
-				var split := absf(top[a]-top[d]) <= absf(top[b]-top[c])
-				var va: int = vertex.call(a)
-				var vb: int = vertex.call(b)
-				var vc: int = vertex.call(c)
-				var vd: int = vertex.call(d)
-				if split: indices.append_array([va,vb,vd,va,vd,vc])
-				else: indices.append_array([va,vb,vc,vb,vd,vc])
-		out["still" if set_index == 0 else "flow"] = {"vertices":vertices,"colors":colors,"uv":uv,"uv2":uv2,"custom0":custom0,"custom1":custom1,"indices":indices}
+		var calm := 0
+		# Still water with `under` takes the calm quads, then the moving ones.
+		for pass_index in range(2 if set_index == 0 and under else 1):
+			if pass_index == 1: calm = indices.size()
+			for j in range(h-1):
+				for i in range(w-1):
+					var a := j*w+i
+					var b := a+1
+					var c := a+w
+					var d := c+1
+					if state[a] == 0 or state[b] == 0 or state[c] == 0 or state[d] == 0: continue
+					if state[a] != 1 and state[b] != 1 and state[c] != 1 and state[d] != 1: continue
+					var moving := flowing[a] != 0 or flowing[b] != 0 or flowing[c] != 0 or flowing[d] != 0
+					if moving != (set_index == 1 or pass_index == 1): continue
+					var split := absf(top[a]-top[d]) <= absf(top[b]-top[c])
+					var va: int = vertex.call(a)
+					var vb: int = vertex.call(b)
+					var vc: int = vertex.call(c)
+					var vd: int = vertex.call(d)
+					if split: indices.append_array([va,vb,vd,va,vd,vc])
+					else: indices.append_array([va,vb,vc,vb,vd,vc])
+		if set_index == 0 and not under: calm = indices.size()
+		out["still" if set_index == 0 else "flow"] = {"vertices":vertices,"colors":colors,"uv":uv,"uv2":uv2,"custom0":custom0,"custom1":custom1,"indices":indices,"calm":calm}
 	return out
 
 ## See ZenScapeWaterFlow::pools.

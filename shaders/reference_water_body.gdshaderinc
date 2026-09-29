@@ -24,6 +24,16 @@ varying float rest_height;
 uniform bool planar_enabled = false;
 uniform sampler2D planar_reflection : filter_linear, repeat_disable;
 uniform mat4 reflection_matrix;
+// Live water (scripts/water_flow_view.gd) has one planar view for all its
+// ponds, at `planar_level` (object space, the mesh's rest height). With a
+// band, water further than it from that level fades to the ordinary surface,
+// so a second pond at another height does not take a displaced reflection.
+uniform float planar_band = 0.0;
+uniform float planar_level = 0.0;
+// Live moving water lies over still water drawn everywhere wet; CUSTOM1.x
+// fades it out towards the slow water round it, so the two meet softly.
+uniform bool flow_edge_fade = false;
+varying float flow_fade;
 uniform sampler2D pond_screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D pond_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform float caustics_strength = 0.0;
@@ -48,6 +58,7 @@ varying float cut_face;
 
 void vertex() {
 	rest_height = VERTEX.y;
+	flow_fade = flow_edge_fade ? CUSTOM1.x : 1.0;
 	lake_local = VERTEX.xz;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	water_depth = max(UV2.x - level_drop, 0.0);
@@ -116,7 +127,13 @@ void fragment() {
 	// Depth for the shoreline foam: the mesh's own, or where the planar path
 	// reads the bed behind each pixel, the true per-pixel depth.
 	float shore_depth = water_depth;
-	if (planar_enabled && cut_face < 0.5) {
+	float planar_weight = planar_enabled && cut_face < 0.5 ? 1.0 : 0.0;
+	if (planar_band > 0.0) planar_weight *= 1.0 - smoothstep(planar_band * 0.5, planar_band, abs(rest_height - planar_level));
+	if (planar_weight > 0.0) {
+		float plain_fresnel = fresnel;
+		vec3 plain_reflection = reflection;
+		vec3 plain_body = body;
+		float plain_shore = shore_depth;
 		fresnel = 0.16 + 0.72 * pow(1.0 - max(dot(eye, wave_normal), 0.0), 3.0);
 		vec4 projected = reflection_matrix * vec4(world_position, 1.0);
 		vec2 uv = projected.xy / projected.w * vec2(0.5, -0.5) + 0.5;
@@ -132,6 +149,10 @@ void fragment() {
 		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth);
 		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
 		shore_depth = min(shore_depth, max(submerged, 0.0));
+		fresnel = mix(plain_fresnel, fresnel, planar_weight);
+		reflection = mix(plain_reflection, reflection, planar_weight);
+		body = mix(plain_body, body, planar_weight);
+		shore_depth = mix(plain_shore, shore_depth, planar_weight);
 	}
 	float glint = smoothstep(0.75, 1.0, zs_water_growth_now()) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
@@ -193,7 +214,7 @@ void fragment() {
 		inversion_transmit = zs_inversion_paint(world_position, EMISSION) * (1.0 - fresnel) * (1.0 - path.a);
 		SPECULAR = 0.0;
 	}
-	ALPHA = opaque_water_probe ? 1.0 : alpha;
+	ALPHA = opaque_water_probe ? 1.0 : alpha * flow_fade;
 }
 
 #define ZS_COMPLETE_LAKE_LIGHTING

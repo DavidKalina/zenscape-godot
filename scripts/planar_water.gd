@@ -343,6 +343,9 @@ func _copy_geometry(node: Node, parent: Node, level: float, frame_tree: SceneTre
 	while not pending.is_empty():
 		var current: Variant = pending.pop_back()
 		if not is_instance_valid(current) or current == self: continue
+		# Another reflection's views (live water's, scripts/live_water_reflection.gd)
+		# draw their own world; their copies are not scene geometry.
+		if current is SubViewport and current.own_world_3d: continue
 		# A clip shader the warm-up has not reached (a kind of plant or prop
 		# that appeared after it) parses in 3-7 ms. Give it a frame of its own
 		# rather than stacking it on a slice that has already spent its budget.
@@ -447,6 +450,7 @@ func _warm_shaders(scene: Node3D) -> void:
 	while not pending.is_empty():
 		var node: Variant = pending.pop_back()
 		if not is_instance_valid(node) or node == self: continue
+		if node is SubViewport and node.own_world_3d: continue
 		if node is GeometryInstance3D and node != source_water and not node.has_meta("skip_reflection"):
 			var mesh: Mesh = null
 			if node is MeshInstance3D: mesh = node.mesh

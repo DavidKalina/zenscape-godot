@@ -319,12 +319,16 @@ public:
     // the mean surface of its wet neighbours, or sits just under its own ground
     // when that is lower, so the sheet meets the bank and the terrain hides the
     // edge. Params: wet, lift, flow_on, flow_off, foam_from, foam_to, shallow,
-    // deep, foam (linear colours), depth_scale.
+    // deep, foam (linear colours), depth_scale, under. With `under`, "still"
+    // holds every drawn quad, the calm ones first ("calm" indices of them), so
+    // moving water lies over still water; moving vertices carry in CUSTOM1.x
+    // how fast they run between flow_off (0) and flow_on (1), to fade by.
     Dictionary surface(const Dictionary &p) {
         const double wet = p.get("wet", 0.012), lift = p.get("lift", 0.01);
         const double flow_on = p.get("flow_on", 0.22), flow_off = p.get("flow_off", 0.12);
         const double foam_from = p.get("foam_from", 0.8), foam_to = p.get("foam_to", 2.2), depth_scale = p.get("depth_scale", 0.45);
         const Color shallow = p.get("shallow", Color(0.2, 0.42, 0.33)), deep = p.get("deep", Color(0.02, 0.1, 0.11)), foam = p.get("foam", Color(0.65, 0.8, 0.79));
+        const bool under = p.get("under", false);
         const int n = w*h;
         std::vector<float> top(n, 0.0f);
         std::vector<uint8_t> state(n, 0); // 0 none, 1 wet, 2 shore
@@ -349,6 +353,26 @@ public:
             const double speed = std::sqrt(double(vx[c])*vx[c]+double(vz[c])*vz[c]);
             if (speed > flow_on) flowing[c] = 1;
             else if (speed < flow_off) flowing[c] = 0;
+        }
+        // How fast each wet cell runs, 0 at flow_off to 1 at flow_on; a bank
+        // corner takes its fastest wet neighbour's.
+        std::vector<float> fade(n, 0.0f);
+        for (int c = 0; c < n; ++c) {
+            if (state[c] != 1) continue;
+            const double speed = std::sqrt(double(vx[c])*vx[c]+double(vz[c])*vz[c]);
+            fade[c] = float(std::min(1.0, std::max(0.0, (speed-flow_off)/std::max(flow_on-flow_off, 1e-6))));
+        }
+        for (int j = 0; j < h; ++j) for (int i = 0; i < w; ++i) {
+            const int c = j*w+i;
+            if (state[c] != 2) continue;
+            float most = 0.0f;
+            for (int dj = -1; dj <= 1; ++dj) for (int di = -1; di <= 1; ++di) {
+                const int a = i+di, b = j+dj;
+                if (a < 0 || b < 0 || a >= w || b >= h) continue;
+                const int m = b*w+a;
+                if (state[m] == 1) most = std::max(most, fade[m]);
+            }
+            fade[c] = most;
         }
         Dictionary out;
         for (int set = 0; set < 2; ++set) {
@@ -389,7 +413,8 @@ public:
                     t = std::min(1.0, std::max(0.0, t));
                     color = color.lerp(foam, float(t*t*(3.0-2.0*t)*0.55));
                     custom0.push_back(float(x)); custom0.push_back(float(y)); custom0.push_back(float(z)); custom0.push_back(-1.0f);
-                    for (int k = 0; k < 4; ++k) custom1.push_back(0.0f);
+                    custom1.push_back(fade[c]);
+                    for (int k = 0; k < 3; ++k) custom1.push_back(0.0f);
                 } else {
                     uv.push_back(Vector2(0.0f, 0.0f));
                     // Shore fetch in eight directions (NativeTerrainData.pond_fetch),
@@ -416,23 +441,29 @@ public:
                 colors.push_back(color);
                 return slot[c];
             };
-            for (int j = 0; j < h-1; ++j) for (int i = 0; i < w-1; ++i) {
-                const int a = j*w+i, b = a+1, c = a+w, d = c+1;
-                if (!state[a] || !state[b] || !state[c] || !state[d]) continue;
-                if (state[a] != 1 && state[b] != 1 && state[c] != 1 && state[d] != 1) continue;
-                const bool moving = flowing[a] || flowing[b] || flowing[c] || flowing[d];
-                if (moving != (set == 1)) continue;
-                // Split along the lower diagonal so a spill reads as a slope, not a fold.
-                const bool split = std::fabs(top[a]-top[d]) <= std::fabs(top[b]-top[c]);
-                const int32_t va = vertex(a), vb = vertex(b), vc = vertex(c), vd = vertex(d);
-                if (split) {
-                    indices.push_back(va); indices.push_back(vb); indices.push_back(vd);
-                    indices.push_back(va); indices.push_back(vd); indices.push_back(vc);
-                } else {
-                    indices.push_back(va); indices.push_back(vb); indices.push_back(vc);
-                    indices.push_back(vb); indices.push_back(vd); indices.push_back(vc);
+            int calm = 0;
+            // Still water with `under` takes the calm quads, then the moving ones.
+            for (int pass = 0; pass < (set == 0 && under ? 2 : 1); ++pass) {
+                if (pass == 1) calm = int(indices.size());
+                for (int j = 0; j < h-1; ++j) for (int i = 0; i < w-1; ++i) {
+                    const int a = j*w+i, b = a+1, c = a+w, d = c+1;
+                    if (!state[a] || !state[b] || !state[c] || !state[d]) continue;
+                    if (state[a] != 1 && state[b] != 1 && state[c] != 1 && state[d] != 1) continue;
+                    const bool moving = flowing[a] || flowing[b] || flowing[c] || flowing[d];
+                    if (moving != (set == 1 || pass == 1)) continue;
+                    // Split along the lower diagonal so a spill reads as a slope, not a fold.
+                    const bool split = std::fabs(top[a]-top[d]) <= std::fabs(top[b]-top[c]);
+                    const int32_t va = vertex(a), vb = vertex(b), vc = vertex(c), vd = vertex(d);
+                    if (split) {
+                        indices.push_back(va); indices.push_back(vb); indices.push_back(vd);
+                        indices.push_back(va); indices.push_back(vd); indices.push_back(vc);
+                    } else {
+                        indices.push_back(va); indices.push_back(vb); indices.push_back(vc);
+                        indices.push_back(vb); indices.push_back(vd); indices.push_back(vc);
+                    }
                 }
             }
+            if (set == 0 && !under) calm = int(indices.size());
             Dictionary arrays;
             arrays["vertices"] = vertices;
             arrays["colors"] = colors;
@@ -441,6 +472,7 @@ public:
             arrays["custom0"] = custom0;
             arrays["custom1"] = custom1;
             arrays["indices"] = indices;
+            arrays["calm"] = calm;
             out[set == 0 ? "still" : "flow"] = arrays;
         }
         return out;
