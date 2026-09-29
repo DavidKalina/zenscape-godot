@@ -32,7 +32,14 @@ void fragment() {
 	vec2 q = UV * 2.0 - 1.0;
 	float d = length(q);
 	float soft = exp(-d * d * 4.0) * (1.0 - smoothstep(0.7, 1.0, d));
+	float core = exp(-d * d * 22.0);
 	vec3 light = zs_key_irradiance / PI * zs_celestial_clear * zs_daylight + zs_hemi_sky * zs_hemi_energy / PI;
-	ALBEDO = tint * (light * 0.85 + vec3(0.12));
-	ALPHA = soft * opacity;
+	// Lit fluff with a glint at its heart: the grain catches the sun and
+	// shines past white, so the cloud reads as motes of light rather than a
+	// grey smudge. A little light of its own keeps it golden at dusk.
+	float bright = dot(light, vec3(0.2126, 0.7152, 0.0722));
+	vec3 lit = tint * (light * 0.9 + vec3(0.3));
+	vec3 glint = mix(tint, vec3(1.0, 0.97, 0.88), 0.55) * (1.3 + 1.6 * bright);
+	ALBEDO = mix(lit, glint, core);
+	ALPHA = clamp(soft * 0.85 + core * 0.4, 0.0, 1.0) * opacity;
 }
