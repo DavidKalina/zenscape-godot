@@ -139,6 +139,37 @@ static func tree_tint(kind: String, p: Vector2, key: Array, salt: int, field: Re
 static func autumn(p: Vector2, salt: int, field: RefCounted) -> float:
 	return snappedf(pow(Variety.unit(stand(p,salt,field).key+[40]),1.0/sqrt(Variety.lean(salt,"autumn"))),0.01)
 
+## How well `kind` suits the ground at `p`, 0..1: its weight there over the
+## best kind's (`species_weight`, leaned by the world's taste), 0 where the
+## habitat does not grow it. A flicked tree's seeds keep its kind by this
+## (Emergence `_heir_kind`).
+static func fit(habitat: String, kind: String, p: Vector2, salt: int, field: RefCounted) -> float:
+	var pool: Dictionary = TREE_POOLS.get(habitat,{"tree":1.0})
+	if not pool.has(kind): return 0.0
+	var at := stand(p,salt,field)
+	var best := 0.0
+	var own := 0.0
+	for other: String in pool:
+		var w := species_weight(habitat,other,float(pool[other]),at.moisture,at.altitude)*Variety.lean(salt,"tree:"+other)
+		best = maxf(best,w)
+		if other == kind: own = w
+	return own/best if best > 0.0 else 0.0
+
+## A sport: some other kind the ground at `p` grows, by its weight there
+## (`pick` 0..1), or "" if there is none.
+static func sport(habitat: String, kind: String, p: Vector2, pick: float, salt: int, field: RefCounted) -> String:
+	var pool: Dictionary = TREE_POOLS.get(habitat,{"tree":1.0})
+	var at := stand(p,salt,field)
+	var kinds := []
+	var weights := []
+	for other: String in pool:
+		if other == kind: continue
+		var w := species_weight(habitat,other,float(pool[other]),at.moisture,at.altitude)*Variety.lean(salt,"tree:"+other)
+		if w <= 0.0: continue
+		kinds.append(other)
+		weights.append(w)
+	return "" if kinds.is_empty() else kinds[Variety.weighted(weights,pick)]
+
 ## A species' weight in a stand: its pool weight leaned by the stand's
 ## ground. Broadleaves and layered trees want water, spruce wants height and
 ## drier ground, cactus wants neither. In arid land a broadleaf or a willow

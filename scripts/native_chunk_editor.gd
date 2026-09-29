@@ -2120,12 +2120,16 @@ func _ball_step(hit: Variant, delta: float) -> void:
 	# The water brush's own size and flow, also for a ball gathered from the
 	# sky with another brush in hand (`ball_from_sky`).
 	var rate: float = WaterBrush.RATE*float(water_brush.strength)*pow(float(water_brush.radius)/WaterBrush.REFERENCE_RADIUS,2.0)
-	ball_volume = minf(BALL_MAX_VOLUME,ball_volume+rate*minf(delta,0.05))
+	var more := minf(rate*minf(delta,0.05),BALL_MAX_VOLUME-ball_volume)
+	# A ball from the sky's cloud fills only with what the cloud has.
+	if ball_supply.is_valid(): more = float(ball_supply.call(more))
+	ball_volume = minf(BALL_MAX_VOLUME,ball_volume+more)
 	ball.hold(hit,ball_volume)
 
 func _ball_release() -> void:
 	if not _ball_holding: return
 	_ball_holding = false
+	ball_supply = Callable()
 	ball.release()
 	_emit_stroke(2,ball.mark(),ball.radius,0.0)
 
@@ -2301,8 +2305,13 @@ func _flow_landed(point: Vector2, volume: float, fish: Array) -> void:
 	_set_status("A spring rises where the water landed." if kind == "spring" else "The water runs where the land takes it.")
 	ball_settled.emit({"kind":kind,"volume":snappedf(volume,0.01),"fish":fish.size(),"center":point})
 
-## Water in hand from the sky (--modeless, scripts/hand_reach.gd): a drag
-## that starts in the void and comes over the land condenses a water ball
+## Where a held ball's water comes from: called with the m³ it would take this
+## frame, it returns what it gives (the sky's cloud, scripts/sky_cloud.gd
+## `supply`). Unset, the ball fills at the brush's rate. Cleared at release.
+var ball_supply := Callable()
+
+## Water in hand from the sky (--modeless, scripts/hand_reach.gd): a tuft
+## torn from the sky's cloud and carried over the land condenses a water ball
 ## there, held until the button is let go, as the water brush's press does.
 ## True when the ball was taken.
 func ball_from_sky(screen_pos: Vector2) -> bool:
@@ -2340,6 +2349,12 @@ func _gust_input(event: InputEventMouseButton) -> bool:
 	if hit == null: return false
 	_land_mountain()
 	_stroke_button = event.button_index
+	_make_gust()
+	var brush = creation_brush()
+	gust.press(hit,brush.radius,brush.strength)
+	return true
+
+func _make_gust() -> void:
 	if gust == null:
 		gust = preload("res://scripts/wind_gust.gd").new()
 		gust.name = "WindGust"
@@ -2358,9 +2373,55 @@ func _gust_input(event: InputEventMouseButton) -> bool:
 			low = low.min(point)
 			high = high.max(point)
 		gust.land = Rect2(low,high-low)
-	var brush = creation_brush()
-	gust.press(hit,brush.radius,brush.strength)
+
+## A swipe through the sky (scripts/sky_wind.gd): a gust at `power` (0..1)
+## blown across the land along `heading` (plate x, z), from the land's upwind
+## side, SKY_GUST_HALF m either side of its line. False when the land is busy.
+func gust_from_sky(heading: Vector2, power: float) -> bool:
+	if forming or not active or heading.length_squared() < 0.000001: return false
+	_make_gust()
+	heading = heading.normalized()
+	var land: Rect2 = gust.land
+	var middle := land.get_center()
+	# Back from the middle, upwind, to just inside the land's edge.
+	var back := INF
+	if absf(heading.x) > 0.0001: back = minf(back,(middle.x-land.position.x)/absf(heading.x))
+	if absf(heading.y) > 0.0001: back = minf(back,(middle.y-land.position.y)/absf(heading.y))
+	back = maxf(back-SKY_GUST_INSET,0.0)
+	var origin := middle
+	var ground: Variant = null
+	# Walk in toward the middle until there is ground under it.
+	while back >= 0.0:
+		origin = middle-heading*back
+		ground = data.ground_height(origin)
+		if ground != null: break
+		back -= 1.0
+	if ground == null: return false
+	gust.send_lane(Vector3(origin.x,float(ground),origin.y),heading,power,SKY_GUST_HALF)
 	return true
+
+## Wind dragged from the sky onto the land (--modeless, scripts/sky_wind.gd):
+## the wind tool is taken in hand where the pointer meets the ground, as the
+## wind brush's press does, carrying the flick's `heading` (plate x, z) and
+## `power` (0..1). From there it is the tool: the lane shows its promise, the
+## hand's air moves, a swipe on sends it and a still hold bursts, until the
+## button is let go. True when the tool was taken.
+func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float) -> bool:
+	if forming or not active or _painting or _ball_holding or _handful_holding: return false
+	if gust != null and gust.aiming(): return false
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return false
+	_land_mountain()
+	_stroke_button = MOUSE_BUTTON_LEFT
+	_make_gust()
+	var brush = brushes.get("wind")
+	gust.press(hit,float(brush.radius) if brush != null else SKY_GUST_HALF,float(brush.strength) if brush != null else 1.0)
+	gust.carry(heading,power)
+	return true
+
+## A sky gust's half-width (m) and how far inside the land's edge it starts.
+const SKY_GUST_HALF := 5.0
+const SKY_GUST_INSET := 2.0
 
 ## While the hand blows the mark is the only shape under it; a release
 ## missed (the button up off the window) lets the gust go.
@@ -2649,6 +2710,8 @@ func hand_gesture() -> String:
 	if _ball_holding: return "cup"
 	if _handful_holding: return "sprinkle"
 	if _mountain_holding: return "pinch"
+	# Wind in hand from the sky: the open hand blows.
+	if gust != null and gust.aiming(): return "void"
 	if _painting and mode == "land" and brush_id == "land":
 		return "press" if _land_lower or Input.is_key_pressed(KEY_SHIFT) else "pinch"
 	return ""
@@ -2834,7 +2897,9 @@ func _pollen_in_hand() -> bool:
 	return mode == "land" and brush_id == "forest" and seed_handful and not other_way and not Input.is_key_pressed(KEY_SHIFT)
 
 func _make_pollen() -> void:
-	var veil := "--pollen-veil" in OS.get_cmdline_user_args()
+	# The hand scheme flings the veil from a tree (docs/scenic/sky-cloud.md
+	# "Seeds"); the brush throws seed.
+	var veil := "--pollen-veil" in OS.get_cmdline_user_args() or preload("res://scripts/modeless_input.gd").enabled()
 	handful = (preload("res://scripts/pollen_cloud.gd") if veil else preload("res://scripts/seed_throw.gd")).new()
 	handful.name = "Pollen"
 	handful.scene = scene
@@ -2876,6 +2941,41 @@ func _handful_process(hit: Variant, delta: float) -> void:
 	while not _settled_clouds.is_empty() and data._before.is_empty() and not forming:
 		_write_cloud(_settled_clouds.pop_front())
 
+## A tree flicked in the hand (--modeless, scripts/hand_reach.gd): its spores
+## burst from `crown` (plate) and fly `reach` m along `direction` (plate, unit)
+## from its foot `base`, laid as a veil along that line and let go at once, at
+## `strength` times the forest brush's. `kind` is the tree they came from ("":
+## the stand decides). The line stops where the land does. True when it flew.
+func fling_from_tree(base: Vector3, crown: Vector3, direction: Vector2, reach: float, kind: String, strength: float) -> bool:
+	if forming or not active or _ball_holding or _handful_holding or _painting: return false
+	var path := []
+	var d := FLING_FROM
+	while d <= reach:
+		var at := Vector2(base.x,base.z)+direction*d
+		var ground: Variant = data.ground_height(at)
+		if ground == null: break
+		path.append(Vector3(at.x,float(ground),at.y))
+		d += FLING_STEP
+	if path.is_empty(): return false
+	_land_mountain()
+	if handful == null: _make_pollen()
+	_handful_serial += 1
+	var forest = brushes.forest
+	forest.prepare(data,land_seed)
+	var family: String = kind if not kind.is_empty() else emergence.seed_family(Vector2(base.x,base.z))
+	handful.set("seed_kind",kind)
+	var velocity := Vector3(direction.x,0.0,direction.y)*reach*FLING_SPEED+Vector3.UP*FLING_LOFT
+	handful.fling(crown,velocity,path,forest.radius,forest.strength*strength,family,hash([land_seed,_handful_serial]))
+	return true
+
+## A flicked tree's veil starts FLING_FROM m out from its foot, with a knot
+## each FLING_STEP m; its spores leave the crown at FLING_SPEED times the
+## reach a second, lofted FLING_LOFT m/s.
+const FLING_FROM := 1.0
+const FLING_STEP := 0.5
+const FLING_SPEED := 1.4
+const FLING_LOFT := 2.0
+
 func _handful_release() -> void:
 	if not _handful_holding: return
 	_handful_holding = false
@@ -2893,14 +2993,19 @@ func _write_cloud(cloud: Dictionary) -> void:
 	var seeds: PackedVector2Array = cloud.seeds
 	if forest == null or seeds.is_empty(): return
 	forest.prepare(data,land_seed)
+	# The brush knows the editor only while it is in hand; a veil from the sky
+	# or a tree (the hand scheme) sows with it out of hand.
+	var in_hand: Node = forest.editor
+	forest.editor = self
 	forest.begin()
 	data.begin_stroke()
 	for p in seeds: forest.sow(data,p)
 	var bounds: Rect2 = forest.finish(data)
+	forest.editor = in_hand
 	var changed := data.end_stroke()
 	_settle_pending = true
 	_settle_stroke()
-	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",seeds)
+	if changed and emergence_enabled and bounds.has_area(): emergence.on_region_changed(bounds,"forest",seeds,str(cloud.get("kind","")))
 	var middle := bounds.get_center()
 	_emit_stroke(2,Vector3(middle.x,float(data.sample(middle,data.heights)),middle.y),bounds.size.length()*0.5,0.0)
 	last_sowing = cloud.duplicate()

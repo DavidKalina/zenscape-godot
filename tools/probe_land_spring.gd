@@ -106,7 +106,7 @@ func run() -> void:
 	editor.select_tool("land")
 	editor.select_brush("land")
 	await create_timer(1.0).timeout
-	var modeless: bool = "--modeless" in OS.get_cmdline_user_args()
+	var modeless: bool = preload("res://scripts/modeless_input.gd").enabled()
 	if not modeless:
 		await baseline()
 	else:

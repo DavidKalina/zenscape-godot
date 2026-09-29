@@ -16,6 +16,11 @@ var creation_mode := "--classic-build" not in OS.get_cmdline_user_args()
 ## --classic-shell keeps the glass palette (scripts/creation_palette.gd) and
 ## its mood panel.
 var lantern := "--classic-shell" not in OS.get_cmdline_user_args()
+## The hand scheme (scripts/modeless_input.gd): the hand is the only way to
+## touch the world. No brush bar, hand modes, world column, Photo button, Craft
+## or command palette; the keys are M (moods), P (photo), Esc (menu) and the
+## Cmd shortcuts. `--classic-controls` brings the old shell back.
+var hand_only := creation_mode and lantern and preload("res://scripts/modeless_input.gd").enabled()
 ## Emitted when a different creation brush is picked, and when Look puts the
 ## brush away or picks it back up.
 signal brush_changed(brush_id: String)
@@ -52,6 +57,14 @@ var flip: Node
 ## --modeless: the rim pulled down springs a range; a lift set down slowly
 ## sinks a basin (scripts/edge_spring.gd).
 var edge_spring: Node
+## The title: the game opens on a generated world the camera orbits, under the
+## title menu, and the pick opens the place ("resume" or "plain", the choices
+## of scripts/cozy_regrowth.gd `launch_choice`). A launch flag that names a
+## world (--resume, --generated, --seed, --atlas), --no-title, the desktop
+## self-check and a scene a probe instantiates itself go straight in.
+signal title_picked(choice: String)
+## True while the title's world is up and waiting for a pick.
+var titled := false
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -71,10 +84,19 @@ func _ready() -> void:
 	add_child(mood_look)
 	mood_look.setup(self)
 	await super._ready()
+	_retitle_menu()
+	var choice := ""
+	var veil: Node
+	if _title_wanted():
+		choice = await _run_title()
+		veil = preload("res://scripts/title_loading.gd").new()
+		add_child(veil)
+		veil.stage("Opening your world")
 	places = preload("res://scripts/cozy_regrowth.gd").new()
 	add_child(places)
-	await places.setup(self)
+	await places.setup(self,choice)
 	places_ready = places.initialized
+	if veil != null: veil.queue_free()
 	get_window().title = "ZenScape · Gentle regrowth"
 	if preload("res://scripts/chunk_atlas_controller.gd").enabled():
 		atlas = preload("res://scripts/chunk_atlas_controller.gd").new()
@@ -100,7 +122,7 @@ func _ready() -> void:
 		edge_spring.setup(self)
 		if hand_reach != null:
 			hand_reach.edge_spring_began.connect(func(at: Vector2) -> void: edge_spring.pull_begin(at))
-			hand_reach.edge_spring_dragged.connect(func(at: Vector2) -> void: edge_spring.pull(at))
+			hand_reach.edge_spring_dragged.connect(func(at: Vector2, relative: Vector2) -> void: edge_spring.pull(at,relative))
 			hand_reach.edge_spring_released.connect(edge_spring.release)
 	shell_ready = true
 
@@ -126,6 +148,71 @@ func _fill_world_menu() -> void:
 	add_world_action("Sound",func() -> void: _settings.popup_centered(Vector2i(400,0)),125)
 	_world_menu.get_popup().add_separator()
 	add_world_action("Main menu",show_menu,124)
+
+func _title_wanted() -> bool:
+	if get_tree().current_scene != self: return false
+	var args := OS.get_cmdline_user_args()
+	for flag: String in ["--no-title","--resume","--generated","--seed","--atlas","--verify-desktop-build"]:
+		if flag in args: return false
+	return true
+
+## Forms a showcase world (scripts/title_showcase.gd), orbits it under the
+## title menu and returns the pick, with the menu closed.
+func _run_title() -> String:
+	var loading := preload("res://scripts/title_loading.gd").new()
+	add_child(loading)
+	loading.stage("Raising the land · growing the forest")
+	resident_enabled = false
+	restore_cave_state({})
+	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
+	if title_recipe.has("terrain_recipe"):
+		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
+	else:
+		await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
+	_frame_title()
+	_has_world = false
+	titled = true
+	show_menu()
+	loading.queue_free()
+	var choice: String = await title_picked
+	titled = false
+	_has_world = true
+	_before_menu_paused = false
+	_menu_orbit = false
+	close_menu()
+	set_building(false)
+	return choice
+
+## The title menu for this flow: Continue, a new world, Settings, Quit. The
+## legacy diorama entries (Fidelity, Open, Save a copy) are hidden.
+func _retitle_menu() -> void:
+	if _menu == null: return
+	_continue.text = "Continue your world"
+	for index: int in [1,3,4]: _menu.buttons[index].disabled = true
+	# show_menu re-enables Save a copy; point it at a button nobody sees.
+	_save_copy = Button.new()
+	var fresh: Button = _menu.buttons[2]
+	fresh.text = "Create a new world"
+	for connection: Dictionary in fresh.pressed.get_connections(): fresh.pressed.disconnect(connection.callable)
+	fresh.pressed.connect(_new_world_from_menu)
+
+func _new_world_from_menu() -> void:
+	if titled:
+		title_picked.emit("plain")
+		return
+	if not _places_idle(): return
+	close_menu()
+	places.new_plain()
+
+func continue_world() -> void:
+	if titled:
+		if FileAccess.file_exists(places_path): title_picked.emit("resume")
+		return
+	super.continue_world()
+
+## Continue picks up the regrowth save, not the legacy diorama's recent file.
+func _recent_path() -> String:
+	return places_path if FileAccess.file_exists(places_path) else ""
 
 func _places_idle() -> bool:
 	return places != null and places.initialized and not places.busy and not places.holding and not _chunk_editor.forming
@@ -359,7 +446,7 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if places != null and places.holding: creature.hide()
 	# Cmd/Ctrl K opens the palette directly; treat that as entering Craft.
-	if creation_mode and not crafting and _ui.visible and _chunk_editor.active and _menu != null and not _menu.visible:
+	if creation_mode and not hand_only and not crafting and _ui.visible and _chunk_editor.active and _menu != null and not _menu.visible:
 		crafting = true
 		if _chunk_editor.mode == "land": _chunk_editor.select_tool(craft_tool)
 		_sync_creation_ui()
@@ -367,11 +454,18 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	var key: bool = event is InputEventKey and event.pressed and not event.echo
 	# Alt [ ] steps the showcase seeds; plain [ ] sizes the brush in hand.
-	if places != null and places.initialized and key and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT] and (event.alt_pressed or not creation_mode):
+	if places != null and places.initialized and key and not hand_only and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT] and (event.alt_pressed or not creation_mode):
 		places.step_showcase(1 if event.keycode == KEY_BRACKETRIGHT else -1)
 		get_viewport().set_input_as_handled()
 		return
 	if key and creation_mode and _has_world and not crafting and not (_menu.visible or _file_dialog.visible or _settings.visible) and _creation_key(event):
+		get_viewport().set_input_as_handled()
+		return
+	# The hand scheme: any other plain key is the old shell's or a debug key
+	# (brush numbers, V, [ ], G, R, W, E, N, B, L...). Only Cmd and Ctrl
+	# shortcuts (save, undo, redo), Esc, the F keys and the mouse go on.
+	if hand_only and event is InputEventKey and not (event.ctrl_pressed or event.meta_pressed) \
+			and event.keycode != KEY_ESCAPE and not (event.keycode >= KEY_F1 and event.keycode <= KEY_F12):
 		get_viewport().set_input_as_handled()
 		return
 	super._unhandled_input(event)
@@ -382,6 +476,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## mode, M the moods, Esc closes the moods or opens the menu. Returns true when the key was used.
 func _creation_key(event: InputEventKey) -> bool:
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
+	if hand_only: return _hand_key(event)
 	if event.keycode == KEY_TAB:
 		set_looking(not looking)
 		return true
@@ -419,6 +514,19 @@ func _creation_key(event: InputEventKey) -> bool:
 	if event.keycode == KEY_V: return true
 	# Looking holds no brush: size keys have nothing to size.
 	return looking and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]
+
+## Keys in the hand scheme: M the moods, P photo mode, Esc closes the moods
+## or opens the menu. Returns true when the key was used.
+func _hand_key(event: InputEventKey) -> bool:
+	if not _creating(): return false
+	match event.keycode:
+		KEY_M: toggle_mood()
+		KEY_P: enter_photo()
+		KEY_ESCAPE:
+			if mood_open(): toggle_mood()
+			else: show_menu()
+		_: return false
+	return true
 
 func handle_resident_input(event: InputEvent) -> bool:
 	# The build palette forwards resident gestures before the scene's _input.

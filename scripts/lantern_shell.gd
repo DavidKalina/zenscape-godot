@@ -89,6 +89,9 @@ var _wheel_close_at := -1.0
 var _clock := 0.0
 ## What the hand's reach names while the pointer is near it (`reach_hint`).
 var _reach_hint := ""
+## The hand scheme (scripts/modeless_input.gd): only the hint line and the
+## mood drawer show; the hint names the hand's reach, never a brush.
+var hand_only := preload("res://scripts/modeless_input.gd").enabled()
 
 static func registered() -> Array[Dictionary]:
 	return Palette.registered()
@@ -121,10 +124,12 @@ func setup(owner_scene: Node3D) -> void:
 	_build_world()
 	_build_photo()
 	_build_bottom()
-	# --modeless: no tool rail. The hand picks its verb by where it presses.
-	if preload("res://scripts/modeless_input.gd").enabled():
-		frame.visible = false
-		bar.visible = false
+	# The hand scheme: no brushes, no hand modes, no world column and no Photo
+	# button. The hand picks its verb by where it presses; the shell keeps only
+	# the hint line and the mood drawer (M). Photo is P.
+	if hand_only:
+		for control: Control in [frame,bar,modes_plate,modes,world_plate,world,photo_group]:
+			control.visible = false
 	mood = MoodVeil.new()
 	root.add_child(mood)
 	mood.setup(scene,self)
@@ -375,6 +380,7 @@ func _sync_hint(holding: String, other: bool, mood_open: bool) -> void:
 		var made := "a lake" if editor.ball_volume >= editor.LAKE_VOLUME else "a pond"
 		text = "Release to drop it  ·  %d m³, %s" % [volume,made]+("  ·  it is full" if editor.ball_volume >= editor.BALL_MAX_VOLUME-0.01 else "  ·  Hold for more")
 	elif mood_open: text = MOOD_HINT
+	elif hand_only: text = ""
 	elif not scene.looking:
 		text = str(info_for(holding).get("hint",""))
 		if holding == "water" and editor.water_ball: text = WATER_BALL_HINT
@@ -524,7 +530,7 @@ func contains_pointer(point: Vector2) -> bool:
 	if _recede > 0.5: return false
 	for control: Control in [frame,modes_plate,world_plate,bottom_plate]:
 		if control.is_visible_in_tree() and control.get_global_rect().has_point(point): return true
-	return photo_button.get_global_rect().has_point(point)
+	return photo_group.visible and photo_button.get_global_rect().has_point(point)
 
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree(): return

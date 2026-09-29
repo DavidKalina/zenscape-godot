@@ -63,7 +63,7 @@ signal flip_released(progress: float)
 ## downward): the press, the pointer as it moves, and the let-go. A shake that
 ## takes the rim over ends it with a release at the press, so nothing is kept.
 signal edge_spring_began(screen_pos: Vector2)
-signal edge_spring_dragged(screen_pos: Vector2)
+signal edge_spring_dragged(screen_pos: Vector2, relative: Vector2)
 signal edge_spring_released(screen_pos: Vector2)
 ## Modeless only. A left press on the land, its drag (pointer, and the
 ## motion since the last event) and its release. Nothing else sees these
@@ -197,7 +197,28 @@ const SnapSound = preload("res://scripts/snap_sound.gd")
 const VOID_DEPTH := 0.8
 const VOID_NEAR := 5.0
 const CLICK_PIXELS := 6.0
-const VOID_HINT := "Click the sky to snap day and night  ·  Shift-click steps dawn, noon, dusk, night  ·  drag from the sky onto the land for water"
+const VOID_HINT := "Click the sky to snap day and night  ·  Swipe it for a gust, or drag onto the land to aim one  ·  Hold and pull to turn the wind"
+## The sky's cloud (scripts/sky_cloud.gd, docs/scenic/sky-cloud.md): water's
+## source. Its hints, over it and when it is pulled dry.
+const CLOUD_HINT := "Pull the cloud to tear off some water  ·  carry it over the land"
+const CLOUD_DRY_HINT := "The cloud is wrung dry  ·  it fills again in time"
+## A grown tree bent and let go (docs/scenic/sky-cloud.md "Seeds") flicks its
+## spores out the way it whips, if it was bent at least FLICK_MIN of the way
+## over: they land FLICK_REACH m out (a small tug to a full bend), a veil
+## TREE_STRENGTH times the forest brush's at a full bend, that grows the
+## tree's own kind. Then it rests TREE_REST seconds.
+const FLICK_MIN := 0.3
+const FLICK_REACH := Vector2(2.5,9.0)
+const TREE_STRENGTH := 1.8
+const TREE_REST := 45.0
+const TREE_HINT := "Bend it back and let go to flick its spores"
+const TREE_RESTING_HINT := "This tree has given its spores  ·  let it rest"
+## Tree kinds emergence can grow from spores; others (a snag, Bigfoot's tree)
+## leave the kind to the stand.
+const SPORE_KINDS := ["tree","layered_tree","broadleaf","redwood","birch","willow","juniper"]
+const SkyCloud = preload("res://scripts/sky_cloud.gd")
+const TreeOutline = preload("res://scripts/tree_outline.gd")
+const SkyWind = preload("res://scripts/sky_wind.gd")
 ## The camera counts as moving (the hand stands down) while its view turns or
 ## zooms faster than CAMERA_TURNING (rad/s, or log-distance/s) or its pivot
 ## slides faster than CAMERA_SLIDING m/s, besides a right drag.
@@ -208,6 +229,33 @@ var _void_travel := 0.0
 var snaps := 0
 ## The snap's sound (scripts/snap_sound.gd), made in setup under --modeless.
 var snap_sound: SnapSound
+## The sky's cloud, made in setup under --modeless, and the one in hand (or
+## under the pointer).
+var cloud: SkyCloud
+var _source: SkyCloud
+## The golden outline round the tree under the pointer (scripts/tree_outline.gd),
+## made in setup under --modeless.
+var outline: TreeOutline
+## The wind in the sky (scripts/sky_wind.gd): a void drag's gust or held wind.
+var wind: SkyWind
+## Trees' spores: when each tree (world play's object id) last gave them
+## (msec), and the flicks that threw them, for probes.
+var _tree_given := {}
+var tree_spores := 0
+## The tree in hand (a PlaySpringTree world play promoted), its object id, the
+## level plane it is pulled on and where the pull began; and trees let go and
+## still springing (object id to tree), stepped here while world play is
+## paused (it is whenever the editor is active, which it always is under the
+## hand). World play frees its promoted trees whenever the world's objects
+## change (`invalidate`, as each emerged plant arrives), so each tree's spring
+## is kept here (`_tree_springs`) and carried onto the tree promoted again.
+var _tree: Node3D
+var _tree_id := -1
+var _tree_plane := Plane()
+var _tree_origin := Vector3.ZERO
+var _springing := {}
+var _tree_springs := {}
+const SPRING_STATE := ["bend","velocity","crown","crown_velocity","tip","tip_velocity"]
 ## Headless probes have no pointer: where they say it is, for the hover.
 var pointer_override: Variant = null
 signal snapped(phase: float, step: bool)
@@ -221,6 +269,12 @@ func setup(owner_scene: Node3D) -> void:
 	if modeless:
 		snap_sound = SnapSound.new()
 		add_child(snap_sound)
+		cloud = SkyCloud.new()
+		add_child(cloud)
+		cloud.setup(scene)
+		outline = TreeOutline.new()
+		add_child(outline)
+		wind = SkyWind.new(scene)
 
 # --- What the pointer reaches --------------------------------------------------
 
@@ -237,11 +291,14 @@ func available() -> bool:
 	if editor == null or scene.camera == null or editor.forming: return false
 	if scene.get("crafting") == true: return false
 	if scene.get("_has_world") == false: return false
+	# The main menu over a world takes the clicks.
+	var menu: Control = scene.get("_menu")
+	if menu != null and menu.visible: return false
 	var photo: Node = scene.get("photo")
 	if photo != null and photo.get("active") == true: return false
 	var mood := _mood()
 	if mood != null and mood.busy(): return false
-	return not (editor.get("_painting") == true or editor.get("_ball_holding") == true)
+	return not (editor.get("_painting") == true or editor.get("_ball_holding") == true or editor.get("_handful_holding") == true or (editor.get("gust") != null and editor.gust.aiming()))
 
 ## What a pointer at `point` reaches: "sun", "rim" or "". The sky's body
 ## wins where both are near; land under the pointer (but for its border band)
@@ -494,9 +551,11 @@ func handle(event: InputEvent) -> bool:
 				return true
 			if not holding.is_empty() or not available() or button.ctrl_pressed or button.double_click: return false
 			_press_shift = button.shift_pressed
+			if modeless and _cloud_press(button.position): return true
 			var what := reach_at(button.position)
 			if what.is_empty():
 				if modeless and _void_press(button.position): return true
+				if modeless and _tree_press(button.position): return true
 				return modeless and _land_press(button.position)
 			grab(what,button.position)
 			return true
@@ -558,6 +617,10 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		land_dragged.emit(point,relative)
 	elif holding == "void":
 		_void_drag(point)
+	elif holding == "cloud":
+		_cloud_drag(point)
+	elif holding == "tree":
+		_tree_pull(point)
 	elif holding == "rim":
 		var angle: Variant = _angle_round(point)
 		# Once a shake has taken the rim (scripts/snow_globe.gd) the dial stays
@@ -571,7 +634,7 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		var now := Time.get_ticks_usec()
 		rim_dragged.emit(relative,clampf((now-_last_drag)/1000000.0,0.001,0.1))
 		_last_drag = now
-		if modeless: _rim_motion(point)
+		if modeless: _rim_motion(point,relative)
 
 ## Let go of what the hand holds.
 func release(point := Vector2.INF) -> void:
@@ -582,6 +645,12 @@ func release(point := Vector2.INF) -> void:
 		land_released.emit(point if point != Vector2.INF else _press_pos)
 	elif what == "void":
 		reach_point = null
+	elif what == "tree":
+		reach_point = null
+		_tree_let_go()
+	elif what == "cloud":
+		reach_point = null
+		if _source != null: _source.let_go()
 	elif what == "sun":
 		drifting = true
 		phase_speed = clampf(phase_speed,-DRIFT_MAX,DRIFT_MAX)
@@ -730,7 +799,16 @@ func _process(delta: float) -> void:
 	# The hover first, so the hand shows what the pointer is over this frame.
 	if holding.is_empty() and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		_hover(scene.get_viewport().get_mouse_position() if pointer_override == null else pointer_override)
-	if modeless: _drive_hand_modeless()
+	elif outline != null and outline.tree_id > 0: _outline_tree(-1)
+	if outline != null and outline.tree_id > 0: outline.spores_ready = _tree_rested(outline.tree_id)
+	if modeless:
+		if wind != null:
+			# A press let go off the window never releases: the wind lets go too.
+			if holding != "void" and not wind.state.is_empty(): wind.state = ""
+			# Only a drag is the wind's: a still press is loading a snap.
+			if holding == "void" and _void_travel > CLICK_PIXELS: wind.step(delta)
+		_step_trees(delta)
+		_drive_hand_modeless()
 	else: _drive_hand()
 
 ## The sun has come to rest: the hour is held, or a day that was turning turns on.
@@ -779,6 +857,8 @@ func _drive_hand() -> void:
 func _hover(point: Vector2) -> void:
 	# Only when the pointer or the camera has moved.
 	var key := [point,scene.camera.global_transform,snappedf(float(scene._celestial.phase),0.0005)]
+	# The cloud drifts under a still pointer.
+	if cloud != null: key.append(cloud.centre.snapped(Vector3.ONE*0.25))
 	if key == _hover_key: return
 	_hover_key = key
 	var what := reach_at(point) if available() else ""
@@ -787,18 +867,27 @@ func _hover(point: Vector2) -> void:
 	if modeless:
 		hover_zone = what
 		_hover_point = null
-		if what == "rim": _hover_point = _hand_at(rim_point(point))
+		var found := _source_at(point)
+		if not found.is_empty():
+			what = ""
+			reaching = ""
+			hover_zone = "cloud"
+			_source = found[0]
+			_hover_point = _editor().terrain.to_local(found[1])
+		elif what == "rim": _hover_point = _hand_at(rim_point(point))
 		elif available() and _editor().pointer_in_world(point):
 			var land: Variant = _land(point)
 			if land != null:
 				hover_zone = "land"
 				_hover_point = land
 		_hover_void(point)
-	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() else Input.CURSOR_ARROW)
+		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] else -1)
+	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone == "cloud" else Input.CURSOR_ARROW)
 	var text := ""
 	if not what.is_empty() and int(uses.get(reaching,0)) < HINT_UNTIL:
 		text = {"sun":SUN_HINT,"moon":MOON_HINT,"rim":RIM_HINT_MODELESS if modeless else RIM_HINT}[what]
 	if modeless and hover_zone == "void" and int(uses.get("void",0)) < HINT_UNTIL: text = VOID_HINT
+	if modeless and hover_zone == "cloud" and int(uses.get(_source.kind,0)) < HINT_UNTIL: text = CLOUD_HINT
 	_show_hint(text)
 
 ## The hint line: the Lantern shell's (`reach_hint`); the glass palette's
@@ -859,7 +948,7 @@ func _prop_at(point: Vector2) -> bool:
 ## A drag on the held rim, once the snow globe has been fed it. Undecided, the
 ## first AXIS_PIXELS of travel choose: sideways the turn, up the flip, down
 ## the edge spring.
-func _rim_motion(point: Vector2) -> void:
+func _rim_motion(point: Vector2, relative: Vector2) -> void:
 	var globe: Node = scene.get("snow_globe")
 	if globe != null and globe.decided:
 		_shake_takes_rim()
@@ -888,7 +977,7 @@ func _rim_motion(point: Vector2) -> void:
 	elif rim_intent == "flip":
 		flip_dragged.emit(_flip_progress(point))
 	elif rim_intent == "spring":
-		edge_spring_dragged.emit(point)
+		edge_spring_dragged.emit(point,relative)
 
 ## A press while a tossed block is in the air: the hand holds the rim again
 ## and the flip is caught where it is, so the next drag and flick add to it.
@@ -949,6 +1038,14 @@ func _drive_hand_modeless() -> void:
 	if holding == "void":
 		_drive_void_hold(hand)
 		return
+	if holding == "cloud":
+		reach_point = _editor().terrain.to_local(_source.hand_point())
+		_set_hand(hand,"cloud",reach_point,null)
+		return
+	if holding == "tree":
+		if is_instance_valid(_tree): reach_point = _editor().terrain.to_local(_tree.center(float(_tree.tree_height)*0.6))
+		_set_hand(hand,"cloud",reach_point,null)
+		return
 	# Turning the diorama over, the flip (scripts/diorama_flip.gd) has the hand.
 	# Drawing the edge spring, the spring (scripts/land_spring.gd) has it.
 	if holding == "rim" and rim_intent in ["flip","spring"]: return
@@ -970,6 +1067,10 @@ func _drive_hand_modeless() -> void:
 		elif hover_zone == "void":
 			want = "void"
 			target = _void_point(_void_pointer())
+		elif hover_zone == "cloud":
+			# Open and ready over the cloud, where the pointer meets it.
+			want = "void"
+			target = _hover_point
 	if not want.is_empty():
 		# Only over a hand that is free, or one of our own hover poses.
 		if hand.reach_gesture.is_empty() or hand.reach_gesture == _hover_shown:
@@ -1024,6 +1125,7 @@ func _void_press(point: Vector2) -> bool:
 	holding = "void"
 	_press_pos = point
 	_void_travel = 0.0
+	if wind != null: wind.press(point)
 	reach_point = _void_point(point)
 	_show_hint("")
 	holding_changed.emit("void")
@@ -1032,19 +1134,26 @@ func _void_press(point: Vector2) -> bool:
 func _void_drag(point: Vector2) -> void:
 	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
 	reach_point = _void_point(point)
-	# Water from the sky (docs/scenic/water-flow.md): a drag out of the void
-	# that comes over the land condenses a water ball there, and the editor
-	# holds it until the button is let go (NativeChunkEditor `ball_from_sky`).
-	if _void_travel > CLICK_PIXELS and not _press_shift and _land(point) != null:
-		var editor := _editor()
-		if editor.get("water_ball") == true and editor.has_method("ball_from_sky") and editor.ball_from_sky(point): release(point)
+	if wind == null: return
+	wind.drag(point)
+	# Over the land the drag takes the wind tool in hand (scripts/sky_wind.gd
+	# `to_land`); the editor has the gesture from here to the release.
+	if _void_travel > CLICK_PIXELS and _land(point) != null and wind.to_land(point):
+		uses["wind"] = int(uses.get("wind",0))+1
+		release(point)
 
-## The release: a click fires the snap, a drag lets the loaded hand go.
+## The release: a click fires the snap; a drag is the wind's, a swipe's gust
+## or a held sweep's wind (scripts/sky_wind.gd).
 func _void_release(point: Vector2, step: bool) -> void:
 	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
 	var click := _void_travel <= CLICK_PIXELS
+	var blew := ""
+	if wind != null:
+		if click: wind.state = ""
+		else: blew = wind.release(point)
 	release(point)
 	if click: fire_snap(step)
+	elif not blew.is_empty(): uses["wind"] = int(uses.get("wind",0))+1
 
 ## Snap: the hand snaps its fingers and the world cuts to night or day (or,
 ## with `step`, the next golden hour) in the same frame, with the snap's
@@ -1080,3 +1189,214 @@ func camera_moving() -> bool:
 	if rig == null or not "_view_v" in rig: return false
 	if (rig._view_v as Vector3).length() > CAMERA_TURNING: return true
 	return not rig.following and (rig._pivot_v as Vector3).length() > CAMERA_SLIDING
+
+# --- Modeless: the sky's cloud and trees' spores (docs/scenic/sky-cloud.md)
+
+## The sky source (the cloud) under a pointer and the point on it (world), or [].
+func _source_at(point: Vector2) -> Array:
+	if cloud == null or not available() or not _editor().pointer_in_world(point): return []
+	var at: Variant = cloud.hit(point)
+	return [cloud,at] if at != null else []
+
+## The point on a sky source under a pointer (world), or null.
+func _cloud_at(point: Vector2) -> Variant:
+	var found := _source_at(point)
+	return found[1] if not found.is_empty() else null
+
+## A left press on the cloud: the hand pinches it, and nothing
+## else sees it.
+func _cloud_press(point: Vector2) -> bool:
+	var found := _source_at(point)
+	if found.is_empty(): return false
+	_source = found[0]
+	holding = "cloud"
+	_press_pos = point
+	_source.grab(point,found[1])
+	reach_point = _editor().terrain.to_local(_source.hand_point())
+	_set_cursor(Input.CURSOR_DRAG)
+	_show_hint("")
+	holding_changed.emit("cloud")
+	return true
+
+## The cloud stretches after the pointer and, pulled far enough, tears a
+## tuft off into the hand. Carried over the land the tuft becomes the water
+## ball (NativeChunkEditor `ball_from_sky`), which fills from the cloud while
+## the editor holds it, until the button is let go.
+func _cloud_drag(point: Vector2) -> void:
+	_source.pull(point)
+	if _source.dry: _show_hint(CLOUD_DRY_HINT)
+	if not _source.torn() or _land(point) == null: return
+	var editor := _editor()
+	if editor.get("water_ball") != true or not editor.has_method("ball_from_sky"): return
+	editor.ball_supply = _source.supply
+	if not editor.ball_from_sky(point):
+		editor.ball_supply = Callable()
+		return
+	_source.into_ball(editor.ball)
+	uses[_source.kind] = int(uses.get(_source.kind,0))+1
+	release(point)
+
+## A left press on a grown tree: the hand takes it by the crown to bend it
+## (world play's spring tree, scripts/play_spring_tree.gd, promoted here
+## because world play is paused while the editor is active). Let go, it whips
+## back, and a rested tree flicks its spores (`_tree_let_go`).
+func _tree_press(point: Vector2) -> bool:
+	var id := _tree_under(point)
+	if id <= 0: return false
+	var tree := _tree_node(id,_springing.get(id))
+	if tree == null: return false
+	holding = "tree"
+	_press_pos = point
+	_tree = tree
+	_tree_id = id
+	tree.begin_grab()
+	_springing.erase(id)
+	var camera: Camera3D = scene.camera
+	_tree_plane = Plane(Vector3.UP,tree.center(float(tree.tree_height)*0.6).y)
+	var at: Variant = _tree_plane.intersects_ray(camera.project_ray_origin(point),camera.project_ray_normal(point))
+	_tree_origin = at if at != null else tree.global_position
+	reach_point = _editor().terrain.to_local(tree.center(float(tree.tree_height)*0.6))
+	_set_cursor(Input.CURSOR_DRAG)
+	_show_hint(TREE_HINT if _tree_rested(id) and int(uses.get("tree",0)) < HINT_UNTIL else "")
+	holding_changed.emit("tree")
+	return true
+
+## World play's object id of the grown tree under a pointer, or -1.
+func _tree_under(point: Vector2) -> int:
+	var play: Variant = scene.get("world_play")
+	if play == null or play.owner_scene == null: return -1
+	# A tree already taken (promoted) is not in world play's pick: its own is.
+	var id := -1
+	for active_id: int in play._active:
+		if play._active[active_id] is PlaySpringTree and play._active[active_id].pick(scene.camera,point): id = active_id
+	if id <= 0: id = play.pick_object(point)
+	if id <= 0 or not str(play._records.get(id,{}).get("asset","")) in play.TREES: return -1
+	return id
+
+## Outline tree `id` (or none, for -1): its parts as world play batches them,
+## or the meshes of the tree it has promoted. A bent tree is not outlined,
+## as the outline would not bend with it.
+func _outline_tree(id: int) -> void:
+	if outline == null: return
+	var parts := []
+	var play: Variant = scene.get("world_play")
+	if id > 0 and play != null:
+		var active: Variant = play._active.get(id)
+		if is_instance_valid(active) and active is PlaySpringTree:
+			if float(active.tension) < 0.03 and float(active.velocity.length()) < 0.05:
+				for child in active.get_children():
+					if child is MeshInstance3D and child.visible and child.mesh != null: parts.append({"mesh":child.mesh,"transform":child.global_transform})
+		else:
+			for part: Dictionary in play._parts.get(id,[]): parts.append({"mesh":part.mesh,"transform":part.transform})
+	if parts.is_empty(): id = -1
+	if id == outline.tree_id and id <= 0: return
+	outline.show_tree(id,parts)
+	if id > 0: outline.spores_ready = _tree_rested(id)
+
+func _tree_rested(id: int) -> bool:
+	return Time.get_ticks_msec()-int(_tree_given.get(id,-1000000)) > TREE_REST*1000.0
+
+## The tree bends after the pointer.
+func _tree_pull(point: Vector2) -> void:
+	_tree = _tree_node(_tree_id,_tree)
+	if _tree == null:
+		release(point)
+		return
+	var camera: Camera3D = scene.camera
+	var at: Variant = _tree_plane.intersects_ray(camera.project_ray_origin(point),camera.project_ray_normal(point))
+	if at != null: _tree.drag_to(Vector3(at)-_tree_origin)
+	var tension := float(_tree.get("tension"))
+	var rested := _tree_rested(_tree_id)
+	if not rested and tension > 0.4 and int(uses.get("tree",0)) < HINT_UNTIL: _show_hint(TREE_RESTING_HINT)
+
+## Let the tree go: it springs back (and flings what it hits, as world play's
+## release does), stepped here until it rests. Bent far enough, a rested tree
+## flicks its spores out the way it whips (`_flick`).
+func _tree_let_go() -> void:
+	_tree = _tree_node(_tree_id,_tree)
+	if _tree == null:
+		_tree_id = -1
+		return
+	var play: Variant = scene.get("world_play")
+	var strength := float(_tree.get("tension"))
+	if strength >= FLICK_MIN and _tree_rested(_tree_id): _flick(_tree,_tree_id,strength)
+	_tree.release()
+	_springing[_tree_id] = _tree
+	if play != null and not play._habitat_blocked and scene.get("environment_life") != null:
+		scene.environment_life.notice_tree_release(_tree,strength)
+	_tree = null
+	_tree_id = -1
+
+## A tree let go at `tension` throws its spores the way it whips back, against
+## the pull, further and thicker the further it was bent (NativeChunkEditor
+## `fling_from_tree`); they grow its own kind.
+func _flick(tree: Node3D, id: int, tension: float) -> void:
+	var editor := _editor()
+	var terrain: Node3D = editor.terrain
+	var pull: Vector3 = terrain.global_basis.inverse()*Vector3(tree.last_pull)
+	var direction := -Vector2(pull.x,pull.z)
+	if direction.length() < 0.001: return
+	var play: Variant = scene.get("world_play")
+	var kind := str(play._records.get(id,{}).get("asset",""))
+	if not kind in SPORE_KINDS: kind = ""
+	var share := inverse_lerp(FLICK_MIN,1.0,minf(tension,1.0))
+	var reach := lerpf(FLICK_REACH.x,FLICK_REACH.y,share)
+	var base := terrain.to_local(tree.global_position)
+	var crown := terrain.to_local(tree.center(float(tree.tree_height)*0.8))
+	if not editor.fling_from_tree(base,crown,direction.normalized(),reach,kind,TREE_STRENGTH*lerpf(0.4,1.0,share)): return
+	_tree_given[id] = Time.get_ticks_msec()
+	tree_spores += 1
+	uses["tree"] = int(uses.get("tree",0))+1
+	_show_hint("")
+
+## Trees in hand or springing back are stepped here while world play is
+## paused; when it runs it steps its own.
+func _step_trees(delta: float) -> void:
+	var play: Variant = scene.get("world_play")
+	if play == null or not play._paused:
+		_springing.clear()
+		_tree_springs.clear()
+		return
+	if holding == "tree":
+		_tree = _tree_node(_tree_id,_tree)
+		if _tree == null:
+			release()
+			return
+		_tree.advance(delta)
+		_keep_spring(_tree_id,_tree)
+	for id: int in _springing.keys():
+		var tree := _tree_node(id,_springing[id])
+		if tree == null:
+			_springing.erase(id)
+			_tree_springs.erase(id)
+			continue
+		tree.advance(delta)
+		_springing[id] = tree
+		if tree.bend == Vector2.ZERO and not tree.held:
+			_springing.erase(id)
+			_tree_springs.erase(id)
+		else:
+			_keep_spring(id,tree)
+
+## The tree for object `id`: `known` while it stands, else world play's
+## promoted one, else promoted again and given the spring kept for it (a held
+## tree is taken hold of again, at the same pull). Null if it is gone.
+func _tree_node(id: int, known: Variant) -> Node3D:
+	if is_instance_valid(known): return known
+	var play: Variant = scene.get("world_play")
+	if play == null or id <= 0: return null
+	var active: Variant = play._active.get(id)
+	var tree: Variant = active if is_instance_valid(active) and active is PlaySpringTree else play.promote(id)
+	if not is_instance_valid(tree) or not tree is PlaySpringTree: return null
+	var kept: Dictionary = _tree_springs.get(id,{})
+	if not kept.is_empty():
+		for field: String in SPRING_STATE: tree.set(field,kept[field])
+		if kept.held:
+			tree.begin_grab()
+			tree.drag_to(kept.pull)
+	return tree
+
+func _keep_spring(id: int, tree: Node3D) -> void:
+	var kept := {"held":tree.held,"pull":tree.last_pull}
+	for field: String in SPRING_STATE: kept[field] = tree.get(field)
+	_tree_springs[id] = kept

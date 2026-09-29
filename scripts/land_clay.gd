@@ -200,7 +200,7 @@ var _heading_from := Vector2.ZERO
 var _carried := false
 
 static func enabled() -> bool:
-	return "--modeless" in OS.get_cmdline_user_args()
+	return preload("res://scripts/modeless_input.gd").enabled()
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene

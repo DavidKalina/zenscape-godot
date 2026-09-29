@@ -137,6 +137,20 @@ static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZE
 			meadow[index] = GENESIS_FLOWERS*smoothstep(0.2,0.4,drifts.get_noise_2d(p.x,p.y))
 	data.blades = blades
 	data.meadow = meadow
+	# Under the hand, one wild tree stands on the plain: the forest's first
+	# source, flicked for its spores (docs/scenic/sky-cloud.md "Seeds").
+	if preload("res://scripts/modeless_input.gd").enabled(): _wild_tree(data,seed_value)
+
+## The plain's one wild tree: a mature tree of WILD_KINDS, WILD_RING m out
+## from the middle, the way the seed turns.
+const WILD_KINDS := ["broadleaf","tree","birch"]
+const WILD_RING := Vector2(3.0,6.5)
+const WILD_SIZE := 1.35
+static func _wild_tree(data: NativeTerrainData, seed_value: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value+83
+	var at := Vector2.RIGHT.rotated(rng.randf()*TAU)*rng.randf_range(WILD_RING.x,WILD_RING.y)
+	data.place(WILD_KINDS[rng.randi()%WILD_KINDS.size()],at,rng.randf()*TAU,WILD_SIZE)
 
 ## Form the plain as one undoable operation that also restores the previous
 ## scene look, as `form_inland` does for generated worlds.

@@ -1,0 +1,110 @@
+# How to play
+
+Launch with `run-cozy-flow.command`, or press F5 in Godot. The game opens on
+the title: a generated world the camera orbits, under the menu. **Continue
+your world** picks up your last place; **Create a new world** starts a blank
+Genesis plate. In a world, **Esc** brings the menu back. There is no toolbar, palette or
+button column: the hand is the only way to touch the world. There are no tool modes: the **left button is the hand**,
+and what it does depends on where you press. The **right button is the eye**.
+The hand's pose shows what a press will do before you press, and **Cmd+Z**
+takes back any shaping.
+
+The design, with the numbers, is in [docs/scenic/modeless.md](scenic/modeless.md).
+`--classic-controls` brings back the old shell: brushes, tool rail, Craft, the
+World menu and the Cmd+K palette.
+
+## The eye (right button)
+
+| Do | Result |
+|---|---|
+| Right-drag | tilt and look round |
+| Scroll or pinch | zoom |
+
+The hand fades while the camera moves.
+
+## The land (left button on the ground)
+
+| Do | Result |
+|---|---|
+| Tap | a small poke; nearby creatures look round |
+| Drag slowly | the **thumb** digs a groove about 1 m deep; water will run along it |
+| Rub fast, back and forth | smooths the ground |
+| Press, **hold still a beat**, then drag up or down | the hand closes into a **pinch**: up raises a peak, down sinks a hollow |
+| Shift + drag | the **palm** levels a flat pan that a pond can fill |
+| Shift + hold, then drag | a smaller, gentler pinch |
+| Thumb a groove **out through the edge** | notches the rim into a spillway; water pours off the chunk into the void |
+| Press a **tree** and drag | bends it; let go and it whips back |
+| Bend it all the way over | its spores shake loose into your hand; sweep and let go, and its own kind grows. It then rests for a while |
+
+Props and creatures under a press keep their own grab.
+
+## The edge (left button on the rim or the block's walls)
+
+The **rim** is the plate's top edge, the last metre or so of land. The
+**walls** are the earth block's sides, all the way down. Aim for the edge
+itself, not the land near it.
+
+| Do | Result |
+|---|---|
+| Push sideways | the world turns; spin it fast and time winds on (days, then seasons) |
+| Shift + push sideways | turns without winding time |
+| Shake | snow-globe weather: snow in winter, rain otherwise |
+| **Pull down**, let go | the block dips while you hold; on release the shapes you made spring up bigger (a blank plate gets a random range instead). Pull harder for more; the camera leans in with you and the pointer won't run out of screen |
+| **Keep pulling** past that, let go | the whole plate fills with height, a plateau to carve valleys and ravines into with the thumb |
+| Pull up, let go **slowly** | a basin sinks |
+| Pull up, **flick** | tosses the block; flick hard enough (or catch it and flick again) and it flips over into a new world |
+
+## The sky (left button off the diorama)
+
+| Do | Result |
+|---|---|
+| Click | the hand snaps: day ↔ night |
+| Shift + click | steps dawn → noon → dusk → night |
+| Press the **cloud** and pull | it stretches after your hand; pull far enough and a tuft tears off. Let go short and it springs back |
+| Swipe empty sky | a **gust** blows across the land the way you swiped, harder the faster you flick |
+| Drag from empty sky onto the land | you hold the **wind**: the plants lean under your hand. Keep swiping and let go to send a gust along the swipe, or hold still and let go for a burst |
+| Press empty sky, pull and hold | the prevailing wind turns the way you pull, stronger the further you pull, and stays when you let go |
+| Carry the tuft over the land | it becomes a **water ball** that fills from the cloud while you hold it; let go to drop it. On high or steep ground it becomes a spring. The water runs in a live simulation: it fills grooves, pools in palm pans and pours off notched edges |
+
+The cloud's grey belly shows how much water it holds. It shrinks as it gives
+and refills in about a minute; a dry cloud won't tear.
+
+## Trees
+
+Every new plain has one wild tree. Water splashing on the land grows trees too.
+
+| Do | Result |
+|---|---|
+| Press a tree and drag | it bends after your hand |
+| Let go | it whips back. Bent far enough, it flicks its spores out the way it whips, further the more you bent it; they drift down in the wind and grow mostly the same kind of tree. The land bends it: an oak's seeds come up willow by water and pine up high, and now and then something new |
+
+A tree that has just thrown its spores only bends for about 45 seconds.
+
+## Keys
+
+| Key | Does |
+|---|---|
+| M | mood drawer |
+| P | photo mode |
+| Esc | close the moods, otherwise the menu |
+| R | overview |
+| F | glide to what's under the pointer (Backspace goes back) |
+| Arrows | pan (Shift+arrows turn and tilt) |
+| Cmd+Z / Shift+Cmd+Z | undo / redo |
+| Cmd+S | save now |
+
+Every other key does nothing in the hand scheme.
+
+## Launch flags
+
+Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
+
+- `--no-title` skips the title and opens a new plain; `--resume` opens the last saved place; `--generated` or `--seed N` opens a generated world. Each of these skips the title.
+- `--classic-controls` brings back the tool modes.
+- `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
+
+## Not reachable in the hand scheme yet
+
+The palette's grass brush has no hand verb yet (forest comes from flicking
+trees and from water; wind from the sky). Life arrives on the land you make by itself. Use
+`--classic-controls` to paint with the brushes.

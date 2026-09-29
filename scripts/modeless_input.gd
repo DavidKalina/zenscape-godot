@@ -1,8 +1,9 @@
 extends RefCounted
 ## The modeless control scheme (docs/scenic/modeless.md, docs/scenic/hand-world.md
-## "Verbs on the diorama"): behind `--modeless` the game has no tool modes. What
-## the hand does depends on where the left button goes down, and the only mode
-## is the camera, on the right button.
+## "Verbs on the diorama"): the default since 2026-09-29; `--classic-controls`
+## brings back the tool modes. There are no tool modes: what the hand does
+## depends on where the left button goes down, and the only mode is the camera,
+## on the right button.
 ##
 ## - **Rim:** push sideways turns the world (a fast spin winds time, see
 ##   scripts/spin_time.gd); shake is the snow globe; drag up and over is the
@@ -14,8 +15,8 @@ extends RefCounted
 ## - **Right button, or scroll:** the camera. It tilts, looks round and zooms,
 ##   and never changes time.
 ##
-## Without the flag none of this exists and everything behaves as before. This
-## file holds the flag and the numbers the slices share; the behaviour lives
+## With `--classic-controls` none of this exists and everything behaves as
+## before. This file holds the flag and the numbers the slices share; the behaviour lives
 ## where the input is read.
 
 ## Screen pixels of a rim drag that decide its axis: mostly sideways turns the
@@ -27,5 +28,7 @@ const VERTICAL_BIAS := 1.2
 ## Screen heights of upward drag that count as all the way over the lip.
 const FLIP_REACH := 0.45
 
+## `--modeless` is still accepted (the probes and films pass it) but no longer
+## needed.
 static func enabled() -> bool:
-	return "--modeless" in OS.get_cmdline_user_args()
+	return not "--classic-controls" in OS.get_cmdline_user_args()

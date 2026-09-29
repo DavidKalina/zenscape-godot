@@ -11,7 +11,17 @@ extends "res://scripts/land_spring.gd"
 ##   its snapshot, so no terrain is touched while held). The pull is measured
 ##   as the land spring's is (PULL_SCREEN of the viewport's height is the
 ##   cap, DEAD shows nothing, under MIN_PULL let go keeps nothing), down only,
-##   and trembles harder near the cap.
+##   and trembles harder near the cap. Once the pull is decided the pointer is
+##   held (captured, the hand gripping the rim stands in for it) and its travel
+##   is counted, so a rim pressed low on the screen has the whole pull. The camera leans down and in with the block
+##   (scripts/camera_rig.gd `lean`), so digging in is felt, and it stops where
+##   the pull does. Let go, the pointer comes back where it pressed.
+## - **The deep pull.** Past the cap the pull goes on (`deep`, 0..1 over
+##   DEEP_SCREEN more): the block and the camera keep sinking, and on release
+##   the whole plate fills with height under the spring's shapes, a plateau up
+##   to FILL_HEIGHT metres whose sides fall away toward the rim, for the
+##   clay's thumb to cut valleys and ravines into (scripts/land_clay.gd). Its
+##   top stays green; its sides take the rock (mountain_forms `rock_base`).
 ## - **The release.** The block snaps back up, and the moment it is at rest
 ##   the shape springs through the land on the land spring's spring
 ##   (`x'' = -w²(x-1) - 2·z·w·x'`, kicked), overshoots, rings down, and lands
@@ -101,6 +111,18 @@ const SHARPEN := 0.4
 const CRAG := 0.2
 ## Deepening eases ground below SINK_KNEE toward MIN_HEIGHT, never reaching it.
 const SINK_KNEE := -0.8
+## The deep pull: DEEP_SCREEN more of the viewport's height past the cap is a
+## full fill; under DEEP_MIN fills nothing. While held the block dips DEEP_DIP
+## more (diorama_flip `dip` units) at a full fill.
+const DEEP_SCREEN := 0.9
+const DEEP_MIN := 0.05
+const DEEP_DIP := 0.8
+## The fill: its height in metres at a full deep pull, flat to FILL_EDGE.x
+## metres out (the larger of |x| and |z|) and gone by FILL_EDGE.y, with a
+## lumpy top (FILL_LUMP of its height either way) and a ragged edge.
+const FILL_HEIGHT := 5.5
+const FILL_EDGE := Vector2(8.0,13.2)
+const FILL_LUMP := 0.12
 
 var flip: Node
 ## A seed for the next range or basin (< 0 is a random one), for a probe.
@@ -112,6 +134,16 @@ var last_amplify := {}
 ## Let go, waiting for the block to come back up before the range springs.
 var waiting := false
 var _chained: Node = null
+## Downward travel counted since the press (pixels, 0 to the cap), whether
+## it is counted from motion yet, and the pointer's mode before it was held.
+var _travel := 0.0
+## How far past the cap the pull has gone, 0..1 (see DEEP_SCREEN), and what
+## the last spring filled with, for the probe.
+var deep := 0.0
+var last_fill := {}
+var _counting := false
+var _held_pointer := false
+var _mode_before := Input.MOUSE_MODE_VISIBLE
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -137,16 +169,33 @@ func pull_begin(screen_pos: Vector2) -> bool:
 	_start(screen_pos)
 	return true
 
+## The first move after the press counts its travel from the press (the rim
+## decided its axis on it) and holds the pointer; later moves add theirs.
 func pull(screen_pos: Vector2, relative := Vector2.ZERO) -> void:
 	if state != State.PULLING or waiting: return
-	super.pull(screen_pos,relative)
-	pulled = maxf(pulled,0.0)
+	var span := maxf(scene.get_viewport().get_visible_rect().size.y*PULL_SCREEN,1.0)
+	if _counting: _travel += relative.y
+	else:
+		_travel = screen_pos.y-_press.y
+		_counting = true
+		_hold_pointer(true)
+	# Kept within the pull, so coming back up answers at once.
+	var deep_span := maxf(scene.get_viewport().get_visible_rect().size.y*DEEP_SCREEN,1.0)
+	_travel = clampf(_travel,0.0,span+deep_span)
+	pulled = minf(_travel/span,1.0)
+	deep = maxf(_travel-span,0.0)/deep_span
 
 ## Let go: the block snaps back up; the amplified land (or the range) springs
 ## once it is at rest. A small pull keeps nothing.
 func release(screen_pos: Vector2 = Vector2.INF) -> void:
 	if state != State.PULLING or waiting: return
-	if screen_pos != Vector2.INF: pull(screen_pos)
+	_hold_pointer(false)
+	# Let go at its press (a shake took the rim, the window lost the pointer)
+	# keeps nothing; a held pointer's own place says nothing about the pull.
+	if screen_pos == _press:
+		pulled = 0.0
+		deep = 0.0
+	elif screen_pos != Vector2.INF and not _counting: pull(screen_pos)
 	_size = pulled
 	if _size < MIN_PULL:
 		flip.dip_release(0.0)
@@ -170,6 +219,7 @@ func _risen(_amount: float) -> void:
 	editor._mountain_feel(0)
 
 func land_now() -> void:
+	_hold_pointer(false)
 	if flip != null and (waiting or state == State.PULLING): flip.dip_finish()
 	super.land_now()
 	if _chained != null and _chained != self: _chained.land_now()
@@ -207,7 +257,8 @@ func _tension(delta: float) -> void:
 	var goal := pulled if pulled >= DEAD else 0.0
 	shown = lerpf(shown,goal,1.0-exp(-TENSION_FOLLOW*delta))
 	kind = "mountain" if shown > 0.004 else ""
-	flip.dip_to(shown*(1.0+TREMBLE*shown*shown*sin(elapsed*TREMBLE_RATE)))
+	var sink := shown+DEEP_DIP*deep*minf(shown,1.0)
+	flip.dip_to(sink*(1.0+TREMBLE*shown*shown*sin(elapsed*TREMBLE_RATE)))
 
 # --- Shapes ----------------------------------------------------------------------
 
@@ -232,6 +283,10 @@ func _start(screen_pos: Vector2) -> void:
 	spring_peak = 0.0
 	_keep_kind = ""
 	_region = Rect2()
+	_travel = 0.0
+	_counting = false
+	deep = 0.0
+	last_fill = {}
 
 func _rng() -> RandomNumberGenerator:
 	var rng := RandomNumberGenerator.new()
@@ -241,8 +296,44 @@ func _rng() -> RandomNumberGenerator:
 	return rng
 
 func _build_shape(what: String, amount: float) -> void:
-	if what == "basin": super._build_shape(what,amount)
-	elif not _build_amplify(amount): _build_range(amount)
+	if what == "basin":
+		super._build_shape(what,amount)
+		return
+	if not _build_amplify(amount): _build_range(amount)
+	if deep >= DEEP_MIN: _add_fill(deep)
+
+## The deep pull's plateau, added under the mountain's lift (so it springs,
+## lands and undoes with it), `amount` 0..1 of FILL_HEIGHT.
+func _add_fill(amount: float) -> void:
+	var data := editor.data
+	var mountain: RefCounted = editor.mountain
+	var lifts: PackedFloat32Array = mountain._lift
+	var lump: PackedFloat32Array = mountain._lump
+	var rough: PackedFloat32Array = mountain._jag
+	var height := FILL_HEIGHT*amount
+	var floor_line := _base.duplicate()
+	var touched := PackedInt32Array()
+	var bounds: Rect2 = mountain.bounds if mountain._has_bounds else Rect2()
+	var bounded: bool = mountain._has_bounds
+	for i in range(_base.size()):
+		var p: Vector2 = data.points[i]
+		var out := maxf(absf(p.x),absf(p.y))+(rough[i]-0.5)*1.6
+		var fill := height*smoothstep(FILL_EDGE.y,FILL_EDGE.x,out)*(1.0+FILL_LUMP*(lump[i]*2.0-1.0))*_fade(i,data)
+		fill = clampf(fill,0.0,NativeTerrainData.MAX_HEIGHT-_base[i]-lifts[i])
+		floor_line[i] += fill
+		lifts[i] += fill
+		if absf(lifts[i]) < 0.0005: continue
+		touched.append(i)
+		if fill > 0.02:
+			bounds = bounds.expand(p) if bounded else Rect2(p,Vector2.ZERO)
+			bounded = true
+	mountain._lift = lifts
+	mountain._touched = touched
+	mountain.bounds = bounds
+	mountain._has_bounds = bounded
+	mountain.rock_base = floor_line
+	_region = bounds
+	last_fill = {"amount":amount,"height":height,"touched":touched.size()}
 
 ## The plate's own relief, amplified for a pull `amount`, built into the
 ## editor's mountain as the range is (so it springs, lands, weathers and undoes
@@ -521,6 +612,21 @@ func _place(rng: RandomNumberGenerator, direction: Vector2, half: float, room: f
 			best_score = score
 			best = at
 	return best
+
+# --- The pointer -----------------------------------------------------------------
+
+## Hold the pointer while the rim is pulled (its motion still comes, so the
+## travel is counted past the screen's edge), and give it back at the press.
+func _hold_pointer(on: bool) -> void:
+	if on == _held_pointer: return
+	_held_pointer = on
+	if DisplayServer.get_name() == "headless": return
+	if on:
+		_mode_before = Input.mouse_mode
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else:
+		Input.mouse_mode = _mode_before
+		scene.get_viewport().warp_mouse(_press)
 
 # --- The hand --------------------------------------------------------------------
 

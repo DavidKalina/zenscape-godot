@@ -79,13 +79,14 @@ static func launch_choice() -> String:
 	if "--generated" in args or "--seed" in args: return "generated"
 	return "plain"
 
-func setup(owner_scene: Node3D) -> void:
+## `choice` overrides the launch flags (the title's pick); empty reads them.
+func setup(owner_scene: Node3D, choice := "") -> void:
 	primary = owner_scene
 	scene = primary
 	busy = true
 	process_priority = 100
 	DirAccess.make_dir_recursive_absolute(scene.library_path)
-	var choice := launch_choice()
+	if choice.is_empty(): choice = launch_choice()
 	var saved := _read_saved()
 	if choice == "plain" and not saved.is_empty():
 		# The plain replaces the saved place on the next save; keep one copy.

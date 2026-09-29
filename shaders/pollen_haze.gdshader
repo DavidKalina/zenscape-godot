@@ -1,8 +1,9 @@
 shader_type spatial;
-render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 // The soft haze over a pollen cloud (scripts/pollen_cloud.gd): camera-facing
 // puffs of light with a round soft falloff, thinning as the cloud spreads and
 // settles. Instance colour is the pollen's colour; its alpha the brightness.
+// No fog: added over the whole quad, it painted each puff as a pale square.
 #include "res://shaders/reference_globals.gdshaderinc"
 varying float bright;
 varying vec3 tint;

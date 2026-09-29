@@ -117,6 +117,16 @@ const FOREST_UNDER_SHRUBS := 0.12
 const SOWN_DELAY := 1.2
 const SOWN_STAGGER := 2.0
 const SOWN_TAKE := 0.9
+## A flicked tree's spores lean to its kind, and the land bends them
+## (`_heir_kind`). A seed keeps the parent's kind at its fit there
+## (Stands.fit, eased by FIT_EASE, so a kind a little off its ground mostly
+## holds); the forest spreading from the seeds does so SOWN_KIND_SHARE of the
+## time. The rest is the stand's own pick, so an oak's seeds come up willow
+## on a shore and pine up high. SPORT of them come up some other kind the
+## ground grows, whatever the fit, so even a flat plain drifts.
+const SOWN_KIND_SHARE := 0.75
+const FIT_EASE := 0.5
+const SPORT := 0.07
 ## The ground's fertility for sown trees (`_fertility`): the habitat's share,
 ## leaned down on dry ground (SOWN_DRY at no moisture) and on exposed heights
 ## (SOWN_EXPOSED at the top of the altitude range, from its .x share).
@@ -258,19 +268,22 @@ func clear() -> void:
 ## Entry point for a finished stroke. `rect` is in plate metres. `source`
 ## "forest" is a forest brush stroke: it plans only what its wish asks for,
 ## leaves cover alone and does not replan other strokes' work. `sown` are a
-## seed sprinkle's landed seeds (plate x, z), where its forest starts.
-func on_region_changed(rect: Rect2, source := "", sown := PackedVector2Array()) -> void:
+## seed sprinkle's landed seeds (plate x, z), where its forest starts. `kind`
+## is the tree the seeds came from (spores flicked off a grown tree,
+## scripts/hand_reach.gd): the seeds and the forest spreading from them lean
+## to that kind where the land suits it (`_heir_kind`). Empty, the stand decides.
+func on_region_changed(rect: Rect2, source := "", sown := PackedVector2Array(), kind := "") -> void:
 	if not enabled:
 		return
 	rect = rect.intersection(Rect2(-14,-14,28,28))
 	if rect.size.x > 0.0 and rect.size.y > 0.0:
-		_queued.append({"rect":rect,"born":_clock,"source":source,"sown":sown})
+		_queued.append({"rect":rect,"born":_clock,"source":source,"sown":sown,"kind":kind})
 
-func _plan(rect: Rect2, born: float, source := "", sown := PackedVector2Array()) -> void:
+func _plan(rect: Rect2, born: float, source := "", sown := PackedVector2Array(), kind := "") -> void:
 	_refresh_blend([rect])
 	# The blend's pond raster was just read from the live ground.
 	_fresh_ponds.clear()
-	_install(rect,source,_plan_region(rect,born,source,sown))
+	_install(rect,source,_plan_region(rect,born,source,sown,kind))
 
 ## Build the live blend, or re-read it under `rects`. The first build sets the
 ## salt: a generated world keys its life to its planting seed; a blank plain
@@ -343,7 +356,7 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 			planner._blend = previous.copy_onto(BiomeBlend.LiveGround.new(ground,recipe_water,false))
 			for rect: Rect2 in rects: planner._blend.refresh_rect(rect)
 		var regions := []
-		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source",""),item.get("sown",PackedVector2Array())))
+		for item: Dictionary in jobs: regions.append(planner._plan_region(item.rect,item.born,item.get("source",""),item.get("sown",PackedVector2Array()),item.get("kind","")))
 		return {"blend":planner._blend,"salt":planner.salt,"regions":regions,"usec":Time.get_ticks_usec()-worker_began,"guide_usec":planner.guided_usec})
 	last_plan_usec = {"start":Time.get_ticks_usec()-began}
 	# A superseded job still runs out here, so dropping it never blocks a frame.
@@ -371,7 +384,7 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 ## The succession for one stroke's rect: cover cells with their fronts and
 ## targets, and the shrub and tree candidates in arrival order. Reads only
 ## `data`, the blend, the forest wish and the salt, so it runs on a planner.
-func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2Array()) -> Dictionary:
+func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2Array(), kind := "") -> Dictionary:
 	var forest := source == "forest"
 	var region := {"rect":rect,"born":born,"cells":PackedInt32Array(),"fronts":PackedFloat32Array(),"targets":PackedVector2Array(),"plants":[],"next":0}
 	# Quiet guidance: the region's score and the fields its nudges read.
@@ -422,13 +435,13 @@ func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2A
 					if not sown.is_empty():
 						at = (SOWN_TREE_DELAY if tree else SOWN_SHRUB_DELAY)+_nearest(sown,p)/SOWN_SPREAD+SOWN_JITTER*Variety.unit(key+[3])
 					if tree: wished.append(p)
-				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide,"pollen":not sown.is_empty()})
+				region.plants.append({"at":at,"layer":layer[0],"p":p,"key":key,"forest":forest,"guide":guide,"pollen":not sown.is_empty(),"kind":kind})
 	# Each landed seed is a candidate of its own, first to come up.
 	for k in range(sown.size()):
 		var p: Vector2 = sown[k]
 		if maxf(absf(p.x),absf(p.y)) > PLATE: continue
 		var key := [salt,"sown".hash(),roundi(p.x*100.0),roundi(p.y*100.0)]
-		region.plants.append({"at":SOWN_DELAY+SOWN_STAGGER*Variety.unit(key+[3]),"layer":"tree","p":p,"key":key,"forest":true,"guide":guide,"sown":true})
+		region.plants.append({"at":SOWN_DELAY+SOWN_STAGGER*Variety.unit(key+[3]),"layer":"tree","p":p,"key":key,"forest":true,"guide":guide,"sown":true,"kind":kind})
 	if guide != null: _count_mates(region.plants,known)
 	var elder := _elder(wished)
 	if not elder.is_empty():
@@ -487,7 +500,7 @@ func advance(seconds: float) -> bool:
 		if plan_on_worker: _plan_async(_queued.duplicate())
 		else:
 			for queued in _queued:
-				_plan(queued.rect,queued.born,queued.get("source",""),queued.get("sown",PackedVector2Array()))
+				_plan(queued.rect,queued.born,queued.get("source",""),queued.get("sown",PackedVector2Array()),queued.get("kind",""))
 		_queued.clear()
 	for r in range(_regions.size()-1,-1,-1):
 		var region: Dictionary = _regions[r]
@@ -641,6 +654,9 @@ func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 				and Variety.unit(key+[20]) < Guidance.LONE_DROP*float(guide.gain.lone):
 			return _refuse("lone")
 		kind = _tree_kind(habitat,p,Variety.unit(key+[5]),Variety.unit(key+[25]))
+		# Spores from a grown tree lean to its kind, as the land allows.
+		var parent: String = plant.get("kind","")
+		if parent in TREES and (sown or plant.get("pollen",false)): kind = _heir_kind(parent,habitat,p,kind,key,sown)
 	else:
 		if slope > 0.6 or float(h) > _treeline(habitat)+1.5:
 			return _refuse("steep or high")
@@ -883,6 +899,15 @@ func _fertility(habitat: String, p: Vector2) -> float:
 	var wet := lerpf(SOWN_DRY,1.0,clampf(_blend.moisture(p),0.0,1.0))
 	var exposed := 1.0-(1.0-SOWN_EXPOSED.y)*smoothstep(SOWN_EXPOSED.x,1.0,clampf(_blend.altitude(p),0.0,1.0))
 	return float(SOWN_FERTILITY.get(habitat,0.75))*wet*exposed
+
+## What a flicked tree's spore grows at `p` (SOWN_KIND_SHARE): now and then a
+## sport, else the parent's kind at its fit there, else the land's `own`.
+func _heir_kind(parent: String, habitat: String, p: Vector2, own: String, key: Array, sown: bool) -> String:
+	if Variety.unit(key+[27]) < SPORT:
+		var odd := Stands.sport(habitat,parent,p,Variety.unit(key+[28]),salt,_blend)
+		if not odd.is_empty(): return odd
+	var keep := pow(Stands.fit(habitat,parent,p,salt,_blend),FIT_EASE)*(1.0 if sown else SOWN_KIND_SHARE)
+	return parent if Variety.unit(key+[26]) < keep else own
 
 func _tree_kind(habitat: String, p: Vector2, pick: float, bank_pick := 1.0) -> String:
 	return Stands.tree_kind(habitat,p,pick,bank_pick,salt,_blend)

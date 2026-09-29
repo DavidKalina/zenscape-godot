@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode cull_disabled, specular_disabled;
-// The pollen cloud's pieces (scripts/pollen_cloud.gd): motes of pollen and
-// seed-fluff, and the sprouts that pop up where its seeds could take. Faceted
+// The sprouts that pop up where the pollen cloud's seeds could take
+// (scripts/pollen_cloud.gd; its motes are shaders/pollen_speck.gdshader). Faceted
 // meshes lit as the scene is; vertex colour × instance colour is the albedo.
 // The alpha is a glow: how much a face shines of its own, so the fluff glints
 // as specks of light at the diorama's distance.

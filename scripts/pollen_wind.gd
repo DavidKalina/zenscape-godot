@@ -15,17 +15,18 @@ extends RefCounted
 ##
 ## Preloaded, not a class_name.
 
-## Metres a second pollen drifts at wind strength 1 under a mean field. No
-## wind, no drift: still air lets it float straight down.
-const DRIFT := 1.4
+## Metres a second pollen drifts at wind strength 1 under a mean field (a
+## breeze of 0.4 carries a 7 s fall about 5 m). No wind, no drift: still air
+## lets it float straight down.
+const DRIFT := 2.4
 ## The shaders' field is 0.45 + 1.1 × (noise + gust pulse); the noise's mean.
 const FIELD_MEAN := 0.5
 ## Share of a wind-tool gust's air speed (`wind_at`, m/s: 8 to 22 at its head)
 ## pollen is carried at. Fluff rides a passing gust only for the moment the
 ## gust's head is over it; at the full speed one swipe threw a veil 12 m and
 ## most of it off the land (tools/probe_seed_handful.gd, "wind tool"). At this
-## share a full swipe carries it a few metres, like a few seconds of breeze.
-const GUST_CARRY := 0.25
+## share a full swipe carries it several metres, a gust you can see it ride.
+const GUST_CARRY := 0.45
 
 ## The drift velocity (plate x, z, m/s) at plate point `p`. `scene` holds the
 ## atmosphere (`_atmosphere`), `plate` is the terrain node pollen lives under.

@@ -5,20 +5,26 @@ editable diorama: shape a place with a brush, then gradually bring it to life.
 
 ## Cozy Bigfoot worlds
 
-Run **`run-cozy-flow.command`**, or press **F5** in Godot, to enter the cozy flow
-with the full native terrain, scenery, water, lighting, atmosphere and life. It
-opens on a quiet **Genesis plain** with a brush already in hand
-([the creation plan](docs/scenic/PLAN.md), Phase 3). `--resume` opens the last
-saved place instead, and `--generated` or `--seed N` a generated world.
+Run **`run-cozy-flow.command`**, or press **F5** in Godot, to open the title: a
+generated world the camera orbits, under the main menu. **Create a new world**
+enters the cozy flow on a quiet **Genesis plain** with the hand ready
+([the creation plan](docs/scenic/PLAN.md), Phase 3); **Continue your world**
+picks up the last place. `--no-title` goes straight to a new plain, `--resume`
+to the last saved place, and `--generated` or `--seed N` to a generated world.
 
-The **creation palette** is the glass strip along the bottom: the brushes, the
-size and strength of the one in hand, and **Look**. Nothing is placed under the
-pointer: grass, shrubs, trees, fish, frogs, birds and deer arrive on the land
+**[How to play](docs/HOW-TO-PLAY.md)** lists every control. There are no tool
+modes: the left button is the hand, and what it does depends on where you press
+(the land, the rim, or the sky); the right button is the camera.
+There is no toolbar, palette or button column; the keys left are **M** (moods),
+**P** (photo), **Esc** (menu), the camera's **R**, **F**, **Backspace** and
+arrows, and **Cmd+Z** / **Cmd+S**. `--classic-controls` brings back the old
+creation shell that the table, Craft and World notes below describe. Nothing is placed
+under the pointer: grass, shrubs, trees, fish, frogs, birds and deer arrive on the land
 you made in their own time ([brushes](docs/scenic/brushes.md),
 [life](docs/scenic/life.md)). The plain's day turns slowly and passes through
 the night in a few seconds, so dawn and dusk come round within a session.
 
-| Control | While creating |
+| Control | While creating (`--classic-controls`) |
 | --- | --- |
 | **1**–**5** | Land, Water, Meadow, Forest, Path (or click a palette brush) |
 | **1** again / **Shift+1** (land in hand) | Next / previous land form: Hill, Alpine, Ridge, Mesa, Volcano, Tors ([mountain forms](docs/scenic/brushes.md#mountain-forms)) |
@@ -214,7 +220,7 @@ original Three.js right. The comparison still shows open lighting/fog difference
 For a standalone Windows or Mac app, use the [desktop build downloads and instructions](docs/desktop-builds.md).
 
 Open `project.godot` in **Godot 4.7.2** (standard edition; no .NET needed), then
-press **F5** for the diorama main menu with Forward+ lighting and volumetric fog.
+press **F5** for the title and the cozy flow (the same as `run-cozy-flow.command`).
 Open `scenes/sandbox.tscn` and press **F6** for the sculpting prototype, or use
 **Esc** from the fidelity scene.
 

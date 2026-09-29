@@ -108,6 +108,11 @@ var _has_bounds := false
 ## `begin` by a caller that keeps the hand's bare earth (scripts/edge_spring.gd);
 ## empty paints everywhere.
 var tint_lock := PackedByteArray()
+## The ground the rock measures its share of height from, when not the
+## ground under the mountain: set after `begin` by a caller that lifts a
+## plateau under the peaks (scripts/edge_spring.gd), so the plateau's top
+## stays green. Empty is the ground under it.
+var rock_base := PackedFloat32Array()
 
 static func form_ids() -> Array:
 	return FORMS.map(func(entry: Dictionary) -> String: return entry.id)
@@ -160,6 +165,7 @@ func begin(data: NativeTerrainData, form_id: String, press: Vector2, size: float
 	center = press
 	rise = 0.0
 	_base = data.heights.duplicate()
+	rock_base = PackedFloat32Array()
 	var at: Variant = data.sample(press,_base)
 	ground = float(at) if at != null else 0.0
 	_start = clampf(size*shape.spread.z,shape.spread.x,shape.spread.y)
@@ -411,7 +417,7 @@ func weather_job(data: NativeTerrainData) -> Callable:
 	settings.merge(shape.erode,true)
 	settings.detail = float(settings.detail)*clampf(height/HEIGHT_REF,0.4,1.4)
 	settings.merge({"size":Erosion.SIZE,"cell":Erosion.CELL,"origin":Erosion.ORIGIN,"seed":(_salt+7919)&0xffffffff})
-	var job := {"base":_base.duplicate(),"lift":_lift.duplicate(),"keep":_keep.duplicate(),"tint":data.tint.duplicate(),
+	var job := {"base":(_base if rock_base.is_empty() else rock_base).duplicate(),"lift":_lift.duplicate(),"keep":_keep.duplicate(),"tint":data.tint.duplicate(),
 		"region":region,"settings":settings,"rock":ROCKS[shape.rock],"form":form,"height":height,"ground":ground,"salt":_salt,"lock":tint_lock.duplicate()}
 	return func() -> Dictionary: return _weathered(snapshot,job)
 

@@ -182,6 +182,7 @@ const TIP_ANGLE := PI*0.5
 ## DIP_RISE_ZETA) and is handed back the moment it passes its rest.
 const DIP_DROP := 0.9
 const DIP_TILT := 0.06
+const DIP_MOST := 2.2
 const DIP_RISE_W := 26.0
 const DIP_RISE_ZETA := 0.5
 
@@ -274,7 +275,7 @@ var _dip_goal := 0.0
 var _dip_amount := 0.0
 
 static func enabled() -> bool:
-	return "--modeless" in OS.get_cmdline_user_args()
+	return preload("res://scripts/modeless_input.gd").enabled()
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -416,9 +417,10 @@ func dip_begin(screen_pos: Vector2) -> bool:
 	_grip(true)
 	return true
 
-## How far down the plate is pulled, 0..1 of the cap.
+## How far down the plate is pulled, 0..1 of the cap; a deep pull
+## (scripts/edge_spring.gd) takes it on to DIP_MOST.
 func dip_to(amount: float) -> void:
-	if phase == Phase.DIP: _dip_goal = clampf(amount,0.0,1.2)
+	if phase == Phase.DIP: _dip_goal = clampf(amount,0.0,DIP_MOST)
 
 ## Let the dip go: the plate snaps back up and `dipped(amount)` is emitted
 ## the moment it is at rest again, with the pull it had.

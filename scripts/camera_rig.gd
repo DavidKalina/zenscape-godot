@@ -25,6 +25,12 @@ extends Node
 ## seems to spin (world_turn.gd `turn_room`). A pose written from outside (a
 ## regrowth, the menu's Overview, a new plain) is adopted as it stands, and
 ## does not turn the room.
+##
+## While the rim is pulled down for the edge spring (scripts/edge_spring.gd)
+## the camera leans with the dipping block (`lean`): down after it, in toward
+## the grabbed edge and a little lower, so the pull reads as digging in, and
+## it rides the block's snap back up. The lean is laid over the eased pose as
+## it is written and never enters it.
 const Inspector = preload("res://scripts/scene_inspector.gd")
 const Glass = preload("res://scripts/glass_chrome.gd")
 ## Spring stiffness (natural frequency, 1/s). A glide covers 95 % in 0.63 s
@@ -56,6 +62,13 @@ const HISTORY := 8
 ## Seconds the pointer rests before a hover names what is under it.
 const HOVER_LOOK := 0.08
 const HOVER_BRUSH := 0.45
+## The lean at a full dip (diorama_flip `dip` 1): LEAN_FOLLOW of the block's
+## drop, LEAN_TOWARD of the way from the pivot to the grabbed edge (level),
+## LEAN_IN off the distance, and LEAN_TILT radians lower.
+const LEAN_FOLLOW := 0.7
+const LEAN_TOWARD := 0.12
+const LEAN_IN := 0.12
+const LEAN_TILT := 0.08
 const HINT := "Double-click anything to go there  ·  right-drag or swipe with two fingers to look around  ·  pinch or scroll to zoom  ·  Backspace goes back"
 const HINT_FILE := "user://camera.cfg"
 
@@ -99,6 +112,8 @@ var _cursor_owned := false
 ## The scene's idle drift was on when this last wrote the pose, so the yaw
 ## it has added since is a turn of the world.
 var _drifting := false
+## The lean last written: pivot offset, polar offset and distance factor.
+var _lean := [Vector3.ZERO,0.0,1.0]
 # Chrome: the ring and name, and the first-session hint.
 var layer := CanvasLayer.new()
 var overlay := Control.new()
@@ -309,9 +324,12 @@ func _process(delta: float) -> void:
 
 ## Take the scene's pose as it stands: nothing in flight.
 func _adopt() -> void:
-	_pivot = scene.target
+	# A pose this wrote with a lean on is taken without it.
+	var leaned := not _moved_outside()
+	_pivot = scene.target-(_lean[0] if leaned else Vector3.ZERO)
 	_pivot_goal = _pivot
-	_view = Vector3(scene.yaw,scene.polar,log(maxf(scene.distance,0.01)))
+	_view = Vector3(scene.yaw,scene.polar-(_lean[1] if leaned else 0.0),log(maxf(scene.distance/(_lean[2] if leaned else 1.0),0.01)))
+	_lean = [Vector3.ZERO,0.0,1.0]
 	_view_goal = _view
 	_pivot_v = Vector3.ZERO
 	_view_v = Vector3.ZERO
@@ -327,11 +345,24 @@ func _moved_outside() -> bool:
 		or absf(scene.polar-_written[2]) > 0.0001 or absf(scene.distance-_written[3]) > 0.0005
 
 func _write() -> void:
-	scene.target = _pivot
+	_lean = lean()
+	scene.target = _pivot+_lean[0]
 	scene.yaw = _view.x
-	scene.polar = _view.y
-	scene.distance = exp(_view.z)
+	scene.polar = _view.y+_lean[1]
+	scene.distance = exp(_view.z)*_lean[2]
 	_written = [scene.target,scene.yaw,scene.polar,scene.distance]
+
+## The lean for the block's dip now: [pivot offset, polar offset, distance
+## factor]. None unless the block is dipped or rising back.
+func lean() -> Array:
+	var flip: Node = scene.get("flip")
+	if flip == null or not flip.phase in [flip.Phase.DIP,flip.Phase.RISE] or flip.dip <= 0.0: return [Vector3.ZERO,0.0,1.0]
+	var dip: float = flip.dip
+	var edge: Vector3 = flip._centre+flip._grab_dir*flip._half-_pivot
+	edge.y = 0.0
+	var move: Vector3 = edge*LEAN_TOWARD*dip+Vector3.DOWN*flip.DIP_DROP*LEAN_FOLLOW*dip
+	var tilt := minf(LEAN_TILT*dip,POLAR.y-_view.y)
+	return [move,maxf(tilt,0.0),1.0-LEAN_IN*dip]
 
 ## Exact critically damped step of x toward goal (floats or vectors): [x, v].
 static func spring(x: Variant, v: Variant, goal: Variant, w: float, dt: float) -> Array:

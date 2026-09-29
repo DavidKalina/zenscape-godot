@@ -1,6 +1,6 @@
 # Modeless controls
 
-The control scheme agreed on 2026-09-28 (see "Verbs on the diorama" in `docs/scenic/hand-world.md`). Everything here is behind `--modeless`; without the flag the game behaves exactly as before. The idea is almost no UI and no tool modes. The hand is contextual and what it does depends on where you press. The only mode is the camera, on the right button.
+The control scheme agreed on 2026-09-28 (see "Verbs on the diorama" in `docs/scenic/hand-world.md`). Since 2026-09-29 this is the default; `--classic-controls` brings back the tool modes. (Before that it was behind `--modeless`, which the slices' "Try it" notes and the probes still pass; the flag is now harmless.) The idea is almost no UI and no tool modes. The hand is contextual and what it does depends on where you press. The only mode is the camera, on the right button.
 
 | Press (left button) | Do | Result |
 |---|---|---|
@@ -26,7 +26,7 @@ This supersedes the table above, which is what the first slices built. Settled i
 | Push sideways | the world turns; a fast spin winds time (days, then seasons) |
 | Shift + push sideways | turns without winding time, however fast |
 | Shake | the weather changes (snow globe) |
-| Pull down, release | the whole block dips as a unit while you pull; on release your own sculpt springs up bigger: the peaks you pinched grow taller and more jagged, grooves and basins get deeper. The pull sets how much. It adds energy to what you made; it adds no new mountains. On a blank or nearly flat plate a random range springs up instead, as a starter: its placement, direction and peak count are random, leaning away from the rim and from what is already tall, and the pull sets its height and jaggedness. Either way springs stack, under a height ceiling that suits a 28 m plate |
+| Pull down, release | the whole block dips as a unit while you pull; on release your own sculpt springs up bigger: the peaks you pinched grow taller and more jagged, grooves and basins get deeper. The pull sets how much. It adds energy to what you made; it adds no new mountains. On a blank or nearly flat plate a random range springs up instead, as a starter: its placement, direction and peak count are random, leaning away from the rim and from what is already tall, and the pull sets its height and jaggedness. Either way springs stack, under a height ceiling that suits a 28 m plate. While you pull, the pointer is held (the hand on the rim stands in for it) and the travel is counted, so a rim near the bottom of the screen still has the whole pull, and the camera leans down and in with the block. **Pull on past the cap** (the deep pull, up to another 0.9 screen heights) and the block and the camera keep sinking; on release the whole plate also fills with height, a plateau up to 5.5 m, green on top with rocky sides falling to the rim, for the thumb to carve valleys and ravines into |
 | Pull up, release slowly | the block lifts as a unit; on release a random basin sinks, sized by the pull (lakes and oceans later) |
 | Pull up, release fast | a physics toss: the block tilts over its far edge by the flick's speed and either falls back and wobbles or goes over (the flip, a new world). Tilts add up while it is still up, so you can pump it over like a swing; one hard flick also does it |
 
@@ -50,10 +50,13 @@ The charged land spring retires: springs belong to the edge. Props, trees and re
 |---|---|
 | Click | the hand snaps its fingers: instant day ↔ night (a cut, or a very fast blend; instant is preferred, it is the drama) |
 | Shift + click | the snap steps dawn → noon → dusk → night |
+| Swipe (let go within 0.3 s) | a passing gust across the land along the swipe; the weather is left alone ("Wind" below) |
+| Drag onto the land | the wind tool in hand where the drag meets the ground: its lane is promised, swipe on and let go to send it, hold still to burst ("Wind" below) |
+| Press, drag and hold | the prevailing wind turns the way you pull from the press, harder the further you pull; it stays when you let go ("Wind" below) |
 
 **The hand is always there.** It is under the pointer wherever the pointer is, and its pose says what a press would do: over the land a ready pinch; on a wall its palm faces the wall; on the lip the rim grip; in the void it floats relaxed at a fixed depth along the pointer's ray, fingers loosely curled, ready to snap. It fades out while the right-button camera moves and comes back when it stops.
 
-**Water** (`feature/water-flow`, `docs/scenic/water-flow.md`). A drag from the sky onto the land gathers a water ball, and letting go drops it. On high or steep ground it becomes a spring. Its water runs in a live simulation: streams in the thumb's grooves, ponds in the palm's basins, spilling over rims, and following every change to the land. `--planned-water` keeps the one-shot plan.
+**Water** (`feature/water-flow`, `docs/scenic/water-flow.md`). A tuft pulled off the sky's cloud and carried over the land becomes a water ball (`docs/scenic/sky-cloud.md`), and letting go drops it. On high or steep ground it becomes a spring. Its water runs in a live simulation: streams in the thumb's grooves, ponds in the palm's basins, spilling over rims, and following every change to the land. `--planned-water` keeps the one-shot plan.
 
 **Build slices.**
 1. Edge rework (`feature/modeless-edge-spring`): the whole-block dip, the random multi-peak range, the basin, the physics toss with pumping, decided at release.
@@ -296,7 +299,7 @@ Run the product scene with `-- --modeless`.
 - **Point at the sky**, or anywhere off the diorama. The hand floats there, half upright with its fingers loosely curled, and now and then its thumb rubs its middle fingertip. Over the land it readies a pinch and on the lip it takes the rim grip, as before. Over a panel it goes.
 - **Click the sky.** The hand snaps its fingers, with a crisp snap you hear, and it is night; click again and it is day. The cut is instant.
 - **Shift-click the sky.** The snap steps the golden hours: dawn, noon, dusk, night, dawn. It is a lighter snap, quieter and a touch higher.
-- **Press the sky and drag.** No snap fires, and the loaded hand relaxes. If the drag comes over the land, a water ball condenses there and the hand holds it until you let go (`docs/scenic/water-flow.md`).
+- **Press the sky and drag.** No snap fires, and the loaded hand relaxes. The drag is the wind's ("Wind" below). Water comes from the sky's cloud now, not from empty sky (`docs/scenic/sky-cloud.md`).
 - **Right-drag, scroll or pinch.** The hand fades while the camera moves and comes back when it stops.
 
 ### How it works
@@ -324,3 +327,26 @@ Run the product scene with `-- --modeless`.
 ### Probe
 
 `tools/probe_void_snap.gd` (`--headless --fixed-fps 60 ... -- --modeless`) on the product scene: the glb has the six clips; the sky is void and the land's middle is not; hover there takes the void pose and plays the void clips, the hand shows at the void depth with its point under the pointer; over a panel the hand lets go and hides; a press loads the snap, and the release cuts to night the same frame (phase, `zs_night`, key light energy and `zs_sky_up` all change), the day moves on, radiance runs in real time and goes back, the hand plays SnapOut and returns to VoidHold; a running clock keeps running unpinned; a second click is day; a held clock is pinned at the new hour; a mood fade in flight is landed; Shift-clicks step 0.275, 0.47, 0.705, 0.035, 0.275; a drag relaxes the hand and does not snap; a right drag fades the hand, which comes back once the camera stops; land and rim presses are as before and do not snap.
+
+## Wind: swipe the sky for a gust, hold and pull to turn the wind
+
+Branch `feature/sky-cloud`. Checked headless only (`tools/probe_sky_wind.gd`); nothing has been seen or felt on screen.
+
+### Try it
+
+- **Swipe the sky** (press in empty sky, flick across, let go within `SWIPE_SECONDS`, 0.3 s). A gust blows across the land along the swipe, as the camera sees it: flicking right blows to the screen's right, flicking up blows away from you. The faster the flick, the stronger the gust. It is the wind tool's lane gust (`scripts/wind_gust.gd`, `docs/scenic/wind-gust.md`), so the fog parts, trees, grass and water bend as it passes, leaves blow and pollen in the air rides it. It starts just inside the land's upwind edge and runs across it, 5 m either side of its line. The prevailing wind does not change.
+- **Press the sky, drag and hold.** After 0.3 s the prevailing wind is in hand. It blows the way the pointer lies from the press, laid onto the ground as the camera sees it, and harder the further you pull: from a breeze (0.15) at 4 % of the view's height to a strong wind (1.3) at 40 %. The world's air swings round to it while you hold, faster than the weather would turn it. Let go and it stays. Pollen falling after that drifts on it.
+- **Drag from the sky onto the land.** The wind tool (`docs/scenic/wind-gust.md`) is taken in hand where the drag meets the ground, as if the Wind brush had pressed there, and the gesture is the tool's from then on: the lane's promise shows on the ground, the hand's air leans the foliage, swiping on and letting go sends the lane along the swipe, and holding still gathers a burst. The flick's heading and power come with it (`WindGust.carry`), so a fast drag in from the sky blows hard at once and then follows the swipe on the land. The lane is the Wind brush's size (3 m half width) and strength. A held wind turned on the way in (the drag took longer than 0.3 s to reach the land) is put back as it was. The god hand opens to blow while the tool is held.
+- **Click** is still the snap: a press that moves under 6 px is never the wind's.
+
+### How it works
+
+- `scripts/sky_wind.gd` (made by `hand_reach` under `--modeless`) is fed the void's press, drag and release, and is stepped each frame while a void press has moved past `CLICK_PIXELS`. It stays a swipe until `SWIPE_SECONDS`, then becomes the held wind.
+- **The swipe.** Its speed is read over the last `SWIPE_WINDOW` (0.12 s), in view heights a second: 0.4 or slower is the weakest gust (power 0.25), 3 or faster a full one. `NativeChunkEditor.gust_from_sky` finds the start, backing up from the land's middle against the heading to `SKY_GUST_INSET` (2 m) inside the land's rectangle, then walking in until there is ground. It sends the gust with `WindGust.send_lane`, which is the tool's press and release in one step.
+- **To the land.** `hand_reach._void_drag` calls `SkyWind.to_land` once the drag has moved past `CLICK_PIXELS` and the pointer is over the land. That calls `NativeChunkEditor.gust_in_hand`, which presses the tool at the ground point and carries the flick. The hand's reach then lets go of the void, and the editor's `_gust_process` aims the tool and sends it when the button comes up, as it does for the Wind brush.
+- **The held wind.** It sets the atmosphere's `direction_angle` and `strength`, the targets its air eases toward at the weather's pace (`weather_response`, 0.55/s). While held it also swings `_air_angle` and `_air_strength` there at `STEER` (4/s), so you see the world answer. The weather's drift moves strength relative to where it stands, so a set wind survives it. A mood preset or a mood's restore sets the wind again. The atmosphere's fields are saved with the garden.
+
+### Limits and open points
+
+- Nothing shows the wind's heading while you hold except the world bending (trees, grass, fog, the wind trails). A vane or streaks under the hand may be wanted.
+- The hand has no blowing pose; it relaxes as for any void drag.

@@ -48,6 +48,8 @@ The heading costs one branch and one vec4 read per parcel, inside one include.
 
 ## How it looks
 
+**Off by default since 2026-09-29.** The user found the lane, arrow, chevrons and ring too hand-holding, so they are drawn only with `--show-promise` (`WindGust.show_promise`). Without it, the hand's air leaning the foliage while you drag or hold is the only preview. A sent gust shows its passing band of shade at the head, but not the promise being used up behind it. `promise()` and `release()` are unchanged, so the gust still goes exactly where the hidden mark would have promised.
+
 - **The mark** is the water ball's mark adapted to air. It is a pale two-tone lane (0.2 and 0.07 shade, lighter than the ball's) with a rim of air light, lit by sky and sun with a night floor.
   - The lane's back is half a 12-gon. Its tip is an arrow `TIP_FLARE` (1.25) times its width.
   - Chevrons of air light flow along the lane, `CHEVRON_SPACING` 1.6 m apart, faster for a harder gust (`CHEVRON_FLOW` 0.5 to 2.2 spacings a second). The mark breathes ±3.5 % at 0.55 Hz.

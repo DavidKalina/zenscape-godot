@@ -1510,7 +1510,9 @@ func _input(event: InputEvent) -> void:
 	if editor.scene.has_method("handle_resident_input") and editor.scene.handle_resident_input(event): return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		editor.finish_stroke()
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K and (event.ctrl_pressed or event.meta_pressed):
+	# The hand scheme has no command palette (studies/cozy_worlds.gd `hand_only`).
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K and (event.ctrl_pressed or event.meta_pressed) \
+			and editor.scene.get("hand_only") != true:
 		if not editor.active: editor.set_active(true)
 		editor.scene._ui.visible = true
 		if _bar.visible: close_palette()

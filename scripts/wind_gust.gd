@@ -170,6 +170,11 @@ var scene: Node
 ## Lasting wind, an open option (off unless --gust-nudges): the share of a
 ## sent gust's power that turns the steady breeze toward its heading and
 ## freshens it. It writes the atmosphere's dials, so it is saved with the place.
+## Whether the lane, arrow, chevrons and ring are drawn: off unless
+## --show-promise. The user found them too hand-holding; the hand's air
+## leaning the foliage is the preview, and a sent gust shows only its passing
+## band of shade at the head.
+var show_promise := "--show-promise" in OS.get_cmdline_user_args()
 var nudge := 0.25 if "--gust-nudges" in OS.get_cmdline_user_args() else 0.0
 ## Gusts in flight: {"kind" ("lane" or "burst"), "origin" (plate x, z),
 ## "heading" (plate, unit), "reach", "half", "power", "t" (s since release),
@@ -313,6 +318,8 @@ func release() -> Dictionary:
 	var cruise := lerpf(CRUISE.x,CRUISE.y,g.power) if g.kind == "lane" else lerpf(BURST_CRUISE.x,BURST_CRUISE.y,g.power)
 	g.run = maxf(0.4,2.0*travel/(LAUNCH*cruise))
 	g.mark = _aim_mark
+	# Hidden while aiming without the promise; its passing band shows now.
+	if g.mark != null: g.mark.visible = true
 	_aim_mark = null
 	# Too many in flight: the oldest hastens to its fade.
 	var flying := gusts.filter(func(other: Dictionary) -> bool: return not other.done)
@@ -339,6 +346,26 @@ func release() -> Dictionary:
 	send_usec = Time.get_ticks_usec()-began
 	sent.emit(g)
 	return g
+
+## Send a lane gust at once from `origin` (plate, on the ground) along
+## `heading` (plate x, z) at `power` (0..1), `half` m either side: a swipe
+## through the sky (NativeChunkEditor `gust_from_sky`). Returns its record.
+func send_lane(origin: Vector3, heading: Vector2, power: float, half: float) -> Dictionary:
+	press(origin,half)
+	var start := Vector2(origin.x,origin.z)
+	_aim.heading = heading.normalized()
+	_aim.power = clampf(power,MIN_POWER,1.0)
+	_aim.pointer = start+_aim.heading*STILL_DRAG*2.0
+	_aim.moved = STILL_DRAG*2.0
+	return release()
+
+## Carry a sky flick's heading (plate x, z) and power (0..1) into a blow just
+## pressed (NativeChunkEditor `gust_in_hand`), so wind dragged in from the sky
+## keeps the speed it came with; the swipe then goes on from there.
+func carry(heading: Vector2, power: float) -> void:
+	if not aiming() or heading.length_squared() < 0.000001: return
+	_aim.heading = heading.normalized()
+	_aim.power = clampf(maxf(power,float(_aim.power)),MIN_POWER,1.0)
 
 ## Drop the hand's blow without sending anything.
 func cancel() -> void:
@@ -417,7 +444,8 @@ func _step_aim(delta: float) -> void:
 		_aim.power = lerpf(_aim.power,target,1.0-exp(-rate*delta))
 	var plan := promise()
 	_hold_hand(plan)
-	_paint(_aim_mark,plan,1.0,-1000.0,0.0,0.0,_aim_span(plan))
+	_aim_mark.visible = show_promise
+	if show_promise: _paint(_aim_mark,plan,1.0,-1000.0,0.0,0.0,_aim_span(plan))
 	var voice: int = _aim.voice
 	_voice_goal[voice] = AIM_GAIN*(float(plan.power) if plan.kind == "lane" else 0.4+0.6*smoothstep(0.0,BURST_GATHER,float(_aim.held)))
 	_voices[voice].global_position = _world(Vector3(plan.origin.x,float(_aim.start_y),plan.origin.y))
@@ -446,7 +474,7 @@ func _step_gust(g: Dictionary, delta: float) -> void:
 			_release_air(g)
 	if not g.done: _feed_air(g)
 	var settle := clampf((t-WIND_UP-float(g.run))/SETTLE,0.0,1.0)
-	_paint(g.mark,g,1.0-smoothstep(0.0,0.6,settle),float(g.head),float(g.air),float(g.speed),Vector2(g.floor,g.ceiling))
+	_paint(g.mark,g,(1.0-smoothstep(0.0,0.6,settle))*(1.0 if show_promise else 0.0),float(g.head),float(g.air),float(g.speed),Vector2(g.floor,g.ceiling))
 	var ribbons: MeshInstance3D = g.ribbons
 	var material := ribbons.material_override as ShaderMaterial
 	material.set_shader_parameter("head",float(g.head))

@@ -23,7 +23,7 @@ extends Node3D
 ## plus its offset in the veil (within `r`), plus a spread (within `sigma`),
 ## plus the drift the air has given its part of the veil by the time it lands.
 ##
-## The promise: a soft footprint on the ground (shaders/pollen_footprint.gdshader)
+## The promise (drawn only with --show-promise): a soft footprint on the ground (shaders/pollen_footprint.gdshader)
 ## follows the swept shape while it is laid and shows where the veil will
 ## settle in the wind as it blows now: for each knot, a capsule of radius
 ## r + sigma from the knot's drift so far, carried on by the present wind for
@@ -76,9 +76,10 @@ const KNOT_MOTES := 16
 ## The veil's half-width (m), thin to thickened, at REFERENCE_RADIUS.
 const CLOUD := Vector2(0.6,1.3)
 ## The spread (m) motes drift apart by as they fall: a puff, thin to thickened,
-## and a sweep (SWEEP m or longer), which comes down closer to its shape.
-const SPREAD := Vector2(1.8,2.8)
-const VEIL_SPREAD := 0.7
+## and a sweep (SWEEP m or longer), which comes down closer to its shape but
+## still loose, a drift rather than a line.
+const SPREAD := Vector2(2.6,4.0)
+const VEIL_SPREAD := 1.8
 const SWEEP := 2.0
 ## Metres between knots along the sweep, at REFERENCE_RADIUS. Knots beyond
 ## KNOTS merge in pairs (the footprint shader's array).
@@ -89,8 +90,9 @@ const REFERENCE_RADIUS := 3.6
 const SIZE := Vector2(0.6,1.6)
 ## Motes one veil holds at most, at REFERENCE_RADIUS and strength 1.
 const VEIL_MOTES := 560
-## Seconds a mote takes to come down, the lightest the longest.
-const FALL := Vector2(3.2,5.2)
+## Seconds a mote takes to come down, the lightest the longest: long enough
+## that it floats a while and the wind has time to carry it.
+const FALL := Vector2(5.5,9.0)
 ## The release: a breath of LIFT seconds in which the veil lifts LIFT_HEIGHT m
 ## and gathers in by GATHER of its width, then it sinks, peeling down along the
 ## sweep over up to WAVE seconds (the whole of it for sweeps of WAVE_LENGTH m
@@ -104,8 +106,10 @@ const JITTER := 0.3
 ## Places along the veil the wind is read, at most, KNOT_GROUP knots each.
 const GROUPS := 8
 const KNOT_GROUP := 6
-## Metres a mote wanders as it falls (the curl of the air), dying out as it lands.
-const WANDER := 0.35
+## Metres a mote wanders as it falls (the curl of the air), dying out as it
+## lands, and how high it rides back up on the air early in its fall (m).
+const WANDER := 1.1
+const FLOAT := 0.45
 ## The veil's head follows the pointer on a soft spring (1/s², 1/s); new motes
 ## ease into their place at SETTLE_RATE (1/s), so the veil trails a little.
 const FOLLOW := 30.0
@@ -146,10 +150,15 @@ const SPROUTS_MAX := 160
 ## their brightness.
 const HAZE := 8
 const HAZE_VEIL := 12
-const HAZE_GLOW := 0.16
+const HAZE_GLOW := 0.1
+## Share of motes drawn: the rest still land and seed, unseen, so the air
+## reads as a few wisps rather than a swarm. A speck's radius (m) and opacity.
+const SHOWN := 0.4
+const SPECK := 0.06
+const SPECK_ALPHA := 0.75
 ## Pollen colours by the family of the stand's trees (Emergence
-## `seed_family`): pine gold, broadleaf cream, birch pale, desert dust.
-const LOOKS := {"conifer":"eed477","broadleaf":"f2e8bf","birch":"f4f0da","arid":"ead7a6"}
+## `seed_family`): all yellows, pine the deepest gold, birch the palest.
+const LOOKS := {"conifer":"f0c640","broadleaf":"f3d35a","birch":"f2dc7c","arid":"e6c060"}
 const FAMILY := {"tree":"conifer","redwood":"conifer","juniper":"conifer","broadleaf":"broadleaf","layered_tree":"broadleaf",
 	"willow":"broadleaf","birch":"birch","joshua":"arid","cactus":"arid"}
 
@@ -180,7 +189,11 @@ static var _meshes := {}
 func _ready() -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/pollen_mote.gdshader")
-	_mote_node = _instances("Motes",_mesh("mote"),MOTES_MAX,material)
+	var speck := ShaderMaterial.new()
+	speck.shader = preload("res://shaders/pollen_speck.gdshader")
+	var square := QuadMesh.new()
+	square.size = Vector2(2,2)
+	_mote_node = _instances("Motes",square,MOTES_MAX,speck,true)
 	_sprout_node = _instances("Sprouts",_mesh("sprout"),SPROUTS_MAX,material)
 	var haze := ShaderMaterial.new()
 	haze.shader = preload("res://shaders/pollen_haze.gdshader")
@@ -202,10 +215,11 @@ func _ready() -> void:
 		add_child(node)
 		_prints.append(node)
 
-func _instances(title: String, mesh: Mesh, count: int, material: Material) -> MultiMeshInstance3D:
+func _instances(title: String, mesh: Mesh, count: int, material: Material, custom := false) -> MultiMeshInstance3D:
 	var instances := MultiMesh.new()
 	instances.transform_format = MultiMesh.TRANSFORM_3D
 	instances.use_colors = true
+	instances.use_custom_data = custom
 	instances.instance_count = count
 	# Nothing draws until its transform is written (a fresh buffer is zeros).
 	instances.visible_instance_count = 0
@@ -226,6 +240,11 @@ func hover(point: Variant, brush_radius := REFERENCE_RADIUS) -> void:
 	_hover = point
 	_hover_scale = clampf(brush_radius/REFERENCE_RADIUS,SIZE.x,SIZE.y)
 
+## The tree the next veil's seeds came from (spores pulled off a grown tree),
+## stamped on the veil at `gather` and handed on in `settled` as "kind", so
+## emergence grows that kind; "" lets the stand decide.
+var seed_kind := ""
+
 ## Start laying a veil over `point` (plate, on the ground). `tree_kind` is the
 ## stand's tree there (Emergence `seed_family`), "" for the default look.
 func gather(point: Vector3, brush_radius: float, strength: float, tree_kind: String, salt: int) -> void:
@@ -237,9 +256,23 @@ func gather(point: Vector3, brush_radius: float, strength: float, tree_kind: Str
 	var strong := clampf(strength,0.25,3.0)
 	held = {"id":_serial,"state":"held","head":point+Vector3.UP*HEIGHT,"velocity":Vector3.ZERO,"target":point,"age":0.0,
 		"scale":scale,"strength":strong,"density":sqrt(strong)*scale*scale,"step":KNOT_STEP*scale,"rng":rng,"knots":[],"motes":[],
-		"colour":Color(LOOKS[FAMILY.get(tree_kind,"broadleaf")]),"seeds":PackedVector2Array(),"points":PackedVector2Array(),"lost":0,"down":0}
+		"colour":Color(LOOKS[FAMILY.get(tree_kind,"broadleaf")]),"seeds":PackedVector2Array(),"points":PackedVector2Array(),"lost":0,"down":0,"kind":seed_kind}
 	held.cap = clampi(roundi(VEIL_MOTES*float(held.density)),roundi(MOTES.x),MOTES_MAX/CLOUDS)
 	_lay(held,_flat(point),point.y)
+
+## A tree flicked (scripts/hand_reach.gd): its spores burst from `crown`
+## (plate) at `velocity` (plate m/s) and a spring draws each on to its place
+## in a veil laid at once along `path` (ground points, plate), let go straight
+## away, so the wind and the land decide from there as for a swept veil.
+func fling(crown: Vector3, velocity: Vector3, path: Array, brush_radius: float, strength: float, tree_kind: String, salt: int) -> void:
+	gather(path[0],brush_radius,strength,tree_kind,salt)
+	for i in range(1,path.size()): _lay(held,_flat(path[i]),float(path[i].y))
+	for mote: Dictionary in held.motes:
+		mote.erase("hand")
+		mote.p = crown+Vector3(randf_range(-0.4,0.4),randf_range(-0.3,0.3),randf_range(-0.4,0.4))
+		var scatter := Vector3(randf_range(-1,1),randf_range(-0.2,1),randf_range(-1,1))
+		mote.v = velocity*randf_range(0.6,1.2)+scatter*(velocity.length()*SCATTER.x+SCATTER.y)
+	release()
 
 ## Follow the pointer's ground point (plate), or hold still over null.
 func hold(point: Variant) -> void:
@@ -616,8 +649,9 @@ func _place(veil: Dictionary, knot: Dictionary, mote: Dictionary) -> void:
 		mote.aimed = true
 		var ahead: float = ground_at.call(base+drift+Vector2(veil.wind[knot.g])*(float(mote.start)+float(mote.fall)-t))
 		if not is_nan(ahead): mote.floor = ahead
-	var sink := 0.55*u*u*(3.0-2.0*u)+0.45*u*u
-	var y := lerpf(from.y,float(mote.floor),sink)+sin(u*PI*3.0+float(mote.phase))*0.05*(1.0-u)
+	# It hangs on the air, even rides up a little, before it sinks.
+	var sink := 0.35*u*u*(3.0-2.0*u)+0.65*u*u*u
+	var y := lerpf(from.y,float(mote.floor),sink)+sin(u*PI)*(1.0-u)*FLOAT*float(mote.size)+sin(u*PI*5.0+float(mote.phase))*0.08*(1.0-u)
 	mote.p = Vector3(flat.x,y,flat.y)
 
 ## Metres past the footprint `point` lies, in shares of the nearest part's
@@ -654,7 +688,7 @@ func _land(veil: Dictionary, mote: Dictionary, point: Vector2) -> void:
 		veil.lost = int(veil.lost)+1
 		return
 	veil.points.append(point)
-	_glints.append({"p":to,"t":0.0,"size":float(mote.size),"colour":veil.colour})
+	if _shown(mote): _glints.append({"p":to,"t":0.0,"size":float(mote.size),"colour":veil.colour})
 	var seeds: PackedVector2Array = veil.seeds
 	for q in seeds:
 		if q.distance_squared_to(point) < SEED_GAP*SEED_GAP: return
@@ -678,7 +712,7 @@ func _settle(veil: Dictionary) -> void:
 	for d: Vector2 in veil.drift: drift += d
 	settled.emit({"id":veil.id,"seeds":veil.seeds,"points":veil.points,"lost":veil.lost,"radius":veil.radius,"motes":veil.motes.size(),
 		"path":path,"length":veil.length,"promised":veil.promised,"drift":drift/float(veil.drift.size()),"drifts":veil.drift.duplicate(),"worst":veil.worst,
-		"outside":veil.outside,"outside_promised":veil.outside_promised})
+		"outside":veil.outside,"outside_promised":veil.outside_promised,"kind":veil.get("kind","")})
 
 func _step_ground(delta: float) -> void:
 	var kept: Array[Dictionary] = []
@@ -697,8 +731,16 @@ func _flat(p: Vector3) -> Vector2:
 
 # --- Drawing --------------------------------------------------------------------
 
+## Whether a mote is one of the SHOWN share that is drawn (fixed per mote).
+static func _shown(mote: Dictionary) -> bool:
+	return fposmod(float(mote.phase)*7.31,1.0) < SHOWN
+
+var _drawn_at := -1.0
+
 func _draw() -> void:
 	var plate: Transform3D = (get_parent() as Node3D).global_transform
+	var step := age-_drawn_at if _drawn_at >= 0.0 else 0.0
+	_drawn_at = age
 	var motes := _mote_node.multimesh
 	var haze := _haze_node.multimesh
 	var n := 0
@@ -718,13 +760,22 @@ func _draw() -> void:
 		for i in range(veil.motes.size()):
 			var mote: Dictionary = veil.motes[i]
 			if mote.landed or n >= MOTES_MAX: continue
-			# Fluff glints as it turns; it fades in as it joins.
-			var twinkle := 0.75+0.25*sin(age*5.0+float(mote.phase)*3.0)
-			var grow := smoothstep(0.0,0.4,float(veil.age)-float(mote.born)) if not flying else 1.0
-			var size := 0.045*float(mote.size)*twinkle*maxf(grow,0.01)
-			motes.set_instance_transform(n,Transform3D(Basis(Vector3.UP,float(mote.phase)+age).scaled(Vector3.ONE*size),mote.p))
-			motes.set_instance_color(n,Color(colour.r,colour.g,colour.b,0.9))
-			n += 1
+			if _shown(mote):
+				# A soft speck that glints as it turns, fades in as it joins, and
+				# draws out into a wisp along the way it moves.
+				var twinkle := 0.7+0.3*sin(age*4.0+float(mote.phase)*3.0)
+				var grow := smoothstep(0.0,0.4,float(veil.age)-float(mote.born)) if not flying else 1.0
+				var size := SPECK*float(mote.size)*maxf(grow,0.01)
+				var world: Vector3 = plate*Vector3(mote.p)
+				var seen: Vector3 = mote.get("seen",world)
+				var moving: Vector3 = mote.get("moving",Vector3.ZERO)
+				if step > 0.0: moving = moving.lerp((world-seen)/step,0.25)
+				mote.seen = world
+				mote.moving = moving
+				motes.set_instance_transform(n,Transform3D(Basis.from_scale(Vector3.ONE*size),mote.p))
+				motes.set_instance_color(n,Color(colour.r,colour.g,colour.b,SPECK_ALPHA*twinkle*grow))
+				motes.set_instance_custom_data(n,Color(moving.x,moving.y,moving.z,0.0))
+				n += 1
 			if mote.has("hand"): continue
 			var group: Array = groups[int(mote.k)*buckets/knots.size() if along else i%HAZE]
 			group[0] += Vector3(mote.p)
@@ -744,10 +795,11 @@ func _draw() -> void:
 	for glint: Dictionary in _glints:
 		if n >= MOTES_MAX: break
 		var t: float = glint.t
-		var size := 0.04*float(glint.size)*(1.0-t/GLINT)*(0.7+0.3*sin(t*18.0))
-		motes.set_instance_transform(n,Transform3D(Basis.from_scale(Vector3.ONE*maxf(size,0.001)),Vector3(glint.p)+Vector3.UP*0.02))
+		var size := SPECK*0.8*float(glint.size)*(1.0-t/GLINT)
+		motes.set_instance_transform(n,Transform3D(Basis.from_scale(Vector3.ONE*maxf(size,0.001)),Vector3(glint.p)+Vector3.UP*0.04))
 		var colour: Color = glint.colour
-		motes.set_instance_color(n,Color(colour.r,colour.g,colour.b,0.9))
+		motes.set_instance_color(n,Color(colour.r,colour.g,colour.b,SPECK_ALPHA*(0.7+0.3*sin(t*18.0))))
+		motes.set_instance_custom_data(n,Color(0,0,0,0))
 		n += 1
 	motes.visible_instance_count = n
 	_mote_node.global_transform = plate
@@ -797,9 +849,17 @@ func _held_capsules(veil: Dictionary) -> Array:
 		out.append([here+wind*(delay+FALL.x),here+wind*(delay+JITTER+FALL.y),float(knot.r)+_sigma(veil,knot,sweep)])
 	return out
 
+## Whether the footprints are drawn: off unless --show-promise. The user found
+## the landing outlines too many and too hand-holding; the veil drifting in
+## the air and the sprouts where it lands say where it went.
+var show_prints := "--show-promise" in OS.get_cmdline_user_args()
+
 ## The footprints: the aim (a click's under the pointer, or the held veil's)
 ## and each released veil's until it has settled.
 func _paint_prints() -> void:
+	if not show_prints:
+		for node in _prints: node.visible = false
+		return
 	var shapes: Array[Dictionary] = []
 	var parent := get_parent() as Node3D
 	if not held.is_empty():
@@ -868,15 +928,14 @@ func _hide() -> void:
 
 # --- Meshes -------------------------------------------------------------------
 
-## The faceted meshes, built once: a mote of fluff (1 m radius) and a
-## two-leafed sprout (1 m tall). Vertex colour is a shade of the instance
-## colour; its alpha is how much of the instance's glow the face takes.
+## The faceted sprout mesh, built once: two-leafed, 1 m tall. Vertex colour
+## is a shade of the instance colour; its alpha is how much of the instance's
+## glow the face takes.
 static func _mesh(which: String) -> Mesh:
 	if _meshes.has(which): return _meshes[which]
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	if which == "sprout": _build_sprout(tool)
-	else: _build_mote(tool)
+	_build_sprout(tool)
 	tool.generate_normals()
 	var mesh := tool.commit()
 	_meshes[which] = mesh
@@ -910,12 +969,3 @@ static func _build_sprout(tool: SurfaceTool) -> void:
 		_face(tool,leaf,[crease,tip,edge_a])
 		_face(tool,under,[root,edge_b,crease])
 		_face(tool,under,[crease,edge_b,tip])
-
-static func _build_mote(tool: SurfaceTool) -> void:
-	var dust := Color(1,1,1,1)
-	var points := [Vector3(0,1,0),Vector3(1,0,0),Vector3(0,0,1),Vector3(-1,0,0),Vector3(0,0,-1),Vector3(0,-1,0)]
-	for i in range(4):
-		var a: Vector3 = points[1+i]
-		var b: Vector3 = points[1+(i+1)%4]
-		_face(tool,dust,[points[0],b,a])
-		_face(tool,dust,[points[5],a,b])
