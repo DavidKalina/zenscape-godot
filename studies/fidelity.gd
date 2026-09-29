@@ -246,10 +246,6 @@ func _ready() -> void:
 		hand_reach.land_pressed.connect(func(at: Vector2) -> void: land_spring.press(at))
 		hand_reach.land_dragged.connect(land_spring.pull)
 		hand_reach.land_released.connect(land_spring.release)
-		# The rim pulled down draws the same spring from the edge.
-		hand_reach.edge_spring_began.connect(func(at: Vector2, edge: Vector3, hand_at: Vector3) -> void: land_spring.edge_press(at,edge,hand_at))
-		hand_reach.edge_spring_dragged.connect(func(at: Vector2) -> void: land_spring.pull(at))
-		hand_reach.edge_spring_released.connect(land_spring.release)
 	# --modeless: spin is time (docs/scenic/modeless.md).
 	if preload("res://scripts/modeless_input.gd").enabled():
 		spin_time = preload("res://scripts/spin_time.gd").new()

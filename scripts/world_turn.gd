@@ -93,6 +93,10 @@ var external_grab: Variant = null
 ## The yaw the turn itself made this frame, and its speed (rad/s, signed and
 ## smoothed over OWN_SMOOTH): a grab, a spin, a catch. Never a camera move.
 var own_rate := 0.0
+## Modeless: this turn (the hold and the spin it lets go into) winds no time,
+## however fast: the rim was pushed with Shift held (scripts/hand_reach.gd sets
+## it when a turn is decided; scripts/spin_time.gd reads it).
+var timeless := false
 var _own := 0.0
 ## True from the press that starts an orbiting drag to its release.
 var grabbing := false
@@ -176,6 +180,7 @@ func rest() -> void:
 	turning = 0.0
 	own_rate = 0.0
 	_own = 0.0
+	timeless = false
 	stop()
 	_hand_on = false
 	_hand_hold = 0.0

@@ -7,7 +7,7 @@ The control scheme agreed on 2026-09-28 (see "Verbs on the diorama" in `docs/sce
 | Rim | push sideways | the world turns; a fast spin winds time |
 | Rim | shake | snow-globe weather |
 | Rim | drag up and over | flip (the flip slice) |
-| Rim (lip or wall) | pull down, release | a range springs up inward of that edge (the edge spring) |
+| Rim (lip or wall) | pull down or up, release | a random range, a basin, a toss or the flip ("Edge rework" below) |
 | Land | pull down or up, release | spring up mountains or sink a basin (the spring slice) |
 | Right button anywhere | drag, scroll | camera: tilt, look round, zoom; never changes time |
 
@@ -82,7 +82,7 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 ### How it works
 
 - **Zones and the press.** `scripts/hand_reach.gd` reads a left press in `_input`. A rim press is held by the hand; a land press (`_land(point)` hits terrain, no prop, tree or resident under the pointer) is taken and emitted; anything else falls through as before. `NativeChunkEditor.handle_input` ignores left presses under `--modeless`, and `studies/fidelity.gd` makes only the right button an orbit, so no brush and no scene orbit can start from a left press.
-- **The rim's axis.** The first `AXIS_PIXELS` (12 px) of a rim drag decide it: if the vertical travel beats the sideways by `VERTICAL_BIAS` (1.2) it is the flip when it goes up and the edge spring when it goes down (see "Edge spring" below), otherwise the turn. The snow globe is fed every motion from the start, so a shake can be decided at any point and takes over from either. `hand_reach.rim_intent` is `""`, `"turn"`, `"flip"`, `"spring"` or `"shake"`.
+- **The rim's axis.** The first `AXIS_PIXELS` (12 px) of a rim drag decide it: if the vertical travel beats the sideways by `VERTICAL_BIAS` (1.2) it is the lift (`"flip"`) when it goes up and the edge spring when it goes down (see "Edge rework" below), otherwise the turn. The snow globe is fed every motion from the start, so a shake can be decided at any point and takes over from either. `hand_reach.rim_intent` is `""`, `"turn"`, `"flip"`, `"spring"` or `"shake"`.
 - **The turn.** `world_turn.gd` gets `hold_begin(press, rim_edge_global)`, `hold_move(pointer)` and `hold_end(flick)`. The rim's edge point is the grab point, so its existing bearing-hold, flick, bat and catch run unchanged (`on_land` is false, so its own "turn" hand stays away and the rim grip shows). A press on the rim or land during a spin catches it.
 - **The room.** Under `--modeless` the room turns only by the turn's own yaw (a rim hold, a spin, a catch). A right drag looks round by pixels and leaves `room_yaw` alone. Reasoning: the user thinks of the camera as a separate mode, so looking round should be the camera moving round a world whose sun stays where it is, and turning the diorama should be the world moving in a fixed room. The two are different things to do and read differently.
 - **Spin is time.** `scripts/spin_time.gd` reads `world_turn.own_rate`, the turn's own speed, signed and smoothed over 0.3 s (so a shake's back and forth cancels rather than winding the clock). Below `TIME_MIN` (3 rad/s) time is untouched. Above it the clock winds `6*excess^2` hours a second (excess is rad/s over the threshold): a hard flick winds about a day, the fastest spin about 19 days at a peak of 20 days a second. The clock's day and hour move, a held season (`season_override`) moves with the calendar and is shown at once, and living weather is handed the real time those hours would take (2 s per world hour, at most 40 s a frame) so the sky drifts because time passed, by its own dwell times. A pinned weather still holds it.
@@ -119,43 +119,61 @@ The sun no longer grabs, the rim no longer turns the season, and the tool rail (
 
 `tools/probe_wall_grab.gd` (same flags) takes a low, close camera facing a wall and proves the wall's middle is rim, reaches the point under the pointer, shows the rim grip stood out from the wall, turns the world with the grabbed point within a few pixels of the pointer, and decides the flip from an upward drag.
 
-## Edge spring: pull the rim down and let go
+## Edge rework: the dip, the random range, the basin and the toss
 
-Branch `feature/modeless-edge-spring`. Checked headless only (`tools/probe_edge_spring.gd`); nothing has been seen or felt on screen.
-
-The rim is a drawn bow. Grab the edge of the diorama, the lip or anywhere down the block's walls, pull it down and let go, and the energy springs up as a range in the land inward of that edge. How far you pull decides how long and how high.
+Branch `feature/modeless-edge-spring`, the first build slice of the agreed scheme above (the edge's rows). Checked headless only (`tools/probe_edge_spring.gd`); nothing has been seen or felt on screen.
 
 ### Try it
 
-- **Press the rim and pull down.** The land sags in a trough a few metres in from the edge you hold, deeper and longer as you pull, trembling harder near the cap. The hand pinches at the edge and dips with the pull. The world does not turn and nothing flips.
-- **Let go.** A ridge runs along that edge where the trough was, springs up through it, overshoots, rings down and settles, then weathers as any mountain does. One undo takes it all back.
-- **Pull only a little and let go.** The sag relaxes with a small wobble and nothing is kept, no undo step.
-- **Up is still the flip, sideways still the turn, a shake still the snow globe.** A shake that takes over a downward start lets the spring go with nothing kept.
+- **Pull the rim down** (the lip, or anywhere down a wall). The whole block dips as a unit and tips a little toward your hand, deeper as you pull, trembling near the cap. Nothing on the land moves yet.
+- **Let go.** The block snaps back up and a random range springs out of the land, overshoots, rings down, settles and weathers. A gentle pull gives low rolling hills, a hard one tall jagged peaks. Where it rises, which way it runs and how many peaks it has are random, leaning away from the rim and from ground that is already tall. Pull again and another stacks on, under a ceiling. One undo takes each back.
+- **A tiny pull** keeps nothing and adds no undo step.
+- **Lift the rim up.** The block's near edge lifts and tilts after your hand, hinged on the far edge, as the flip always did. What happens is decided when you let go:
+  - **let go slowly** (or hold still first): the block settles back with a small bounce and a random basin sinks, sized by how far you lifted, away from the rim;
+  - **flick it**: the block is tossed. It turns about its far edge at the flick's speed under gravity; too little and it falls back and wobbles, enough and it passes upright and goes over (the flip: a new world);
+  - **catch it in the air** (press anywhere while it is up) and flick again: the tilts add up, so you can pump it over like a swing. One hard flick also takes it over.
+- **Shift and push sideways.** The world turns, however fast, and time does not wind (no shimmer either).
 
 ### How it works
 
-- **The decision** is the rim's axis (above): vertical and downward is `rim_intent == "spring"`. `hand_reach` then emits `edge_spring_began(press, edge, hand_point)` (the grabbed rim point `_press_edge`, plate coordinates, on the lip or on the wall, and where the hand shows it), `edge_spring_dragged(pointer)` on every move, and `edge_spring_released(pointer)` on let-go. A shake ends it with a release at the press, so the pull reads 0. `studies/fidelity.gd` connects them to `land_spring.edge_press`, `pull` and `release`.
-- **The spring is the land spring's**, drawn from the side: same pull measure (the pointer's travel from the press over 0.32 screen heights, down only), same `DEAD` and `MIN_PULL`, same tension smoothing and tremble, same spring, same landing through the mountain machinery, same single undo step. What differs is the shape, below and in `docs/scenic/modeless-spring.md`.
-- **The hand.** While the spring is drawn `_drive_hand_modeless` leaves the hand to the spring, which shows its pull pose ("pinch") at the grabbed edge, dipped up to 0.35 m with the pull. On let-go the spring clears only its own poses, so a shake's hand is not cut off.
-- **Presses and the camera** behave as for the land spring: a new press on the land or the rim lands a springing range first; the camera is not blocked.
+- **The dip** is the flip's snapshot (`scripts/diorama_flip.gd` `dip_begin`, `dip_to`, `dip_release`): the diorama's meshes are copied onto one pivot and the real ones hidden, as for the flip, and the pivot is posed with `pose(-DIP_TILT*d, -DIP_DROP*d)`: at a full pull the block drops `DIP_DROP` (0.9 m) and tips `DIP_TILT` (0.06 rad) about its far edge, so the grabbed edge goes down about 2.3 m. It follows the pull on the hold spring (13/s, 0.85). Let go, it snaps up on a stiffer spring (26/s, 0.5) and is handed back the moment it reaches rest (5 frames in the probe); `dipped(amount)` then starts the range's spring. No terrain is touched while it is held, so the snapshot never shows stale land.
+- **The pull** is the land spring's measure: travel down from the press over 0.32 of the viewport's height is the cap; under 0.03 nothing shows; let go under 0.12 and nothing is kept.
+- **The range** (`scripts/edge_spring.gd`, which extends `scripts/land_spring.gd` for its spring, landing and basin):
+  - random, from a seeded generator: 2 to 5 peaks (`RANGE_PEAKS`), a crest line 6 to 15 m long (`RANGE_LENGTH`) at a random bearing;
+  - placement: the best of 24 random middles (`CANDIDATES`), its ends kept within 9 m of the middle lines (`RANGE_ROOM`), scored `-3·(distance out / 11 m)² - 0.6·(mean ground along the line, m) + 1.5·random`. The grabbed edge plays no part;
+  - peaks slip along the line by up to 35 % of their spacing and stand off it by up to 1.2 m; each is 65 to 100 % of the range's height, lower toward the ends;
+  - the pull sets height and jaggedness together. The range's height is 1.2 m at no pull to 9.5 m at the cap (`RANGE_HEIGHT`). Each peak is a blend of a rolling dome (radius 3.2 to 4.8 m, `(1-r²)²` with the forms' lumpy noise) and the alpine horn of `scripts/mountain_forms.gd` (its own arêtes, crags and faces). The blend runs from all dome below a pull of 0.15 to all horn above 0.85 (`JAGGED`). In the probe, with the same seed, a 0.24 pull rose 3.2 m with a roughness of 0.014 per metre and a full pull 7.8 m at 0.024;
+  - the peaks are combined as the root of the sum of their squares, so neighbours join in saddles;
+  - **the ceiling**: ground is left as is up to `KNEE` (7 m) and eased toward `CEILING` (11 m) above it (`7 + 4·(1 - e^(-(h-7)/4))`), so it never reaches 11 m and a range on tall ground adds little. 11 m suits the 28 m plate: under half its width, above the snow line (about 6.5 m). Three full pulls in the probe reached 9.4 m;
+  - it is built into the editor's mountain (`editor.mountain`: the alpine form's `begin` for the base, the keep-out from water and the rim, and the salt; each peak's `_reshape`; the combined lift written back), so it springs through the land spring's `_apply`, lands through `_land_mountain` (weathering and rock on a worker) and is one undo step. Built in 1.4 to 2.4 ms at release in the probe. Gentle ranges keep their green: the rock paints by share of `max(top, lerp(10, top, jag))` m.
+- **The toss** (`diorama_flip.gd`). A release reads the drag's rate (progress per second, smoothed over 0.06 s; progress is upward drag over 0.45 screen heights):
+  - upright or past it (`TIP_ANGLE`, pi/2): it goes over, as before;
+  - rate at least `TOSS_RATE` (1.5 a second, about 600 px/s on a 900 px window): tossed, at `max(the plate's own rate, rate·pi·TOSS_GAIN)` rad/s with `TOSS_GAIN` 0.5. In the air it is a hinged slab: `angle'' = -TOSS_GRAVITY·cos(angle) - TOSS_DRAG·angle'` with `TOSS_GRAVITY` 16 rad/s² and `TOSS_DRAG` 0.3/s, stepped at 240 Hz. From flat that needs about 5.7 rad/s (`sqrt(2·16)`) to reach upright; passing upright hands it to the flip's throw (no pull back), which makes and lands the new world as before. Landing keeps 28 % of its speed per bounce, as the fall back does;
+  - slower: it falls back as before, and when it rests `set_down(progress)` sinks a basin. A toss that falls back sinks nothing.
+- **Catching.** While a tossed plate is in the air (`can_catch`: tossing or falling back), any left press is `catch`: the hand holds the rim again (`hand_reach._catch_toss`, `rim_intent` "flip") and the plate is held where it is, its speed kept; the next drag adds to its angle (`base + pi·progress`), and the next release is read as above. `tosses` counts flicks since it left the ground.
+- **The basin.** `edge_spring.basin(progress)`: nothing under a lift of 0.08; the land spring's bowl at `min(progress/0.45, 1)` of its size (radius 2.2 to 5 m, 0.4 to 1.1 m deep), at a spot chosen as the range's is, its rim within 11 m of the middle lines. One undo step.
+- **Shift.** `hand_reach` records Shift at the rim's press (or held when the turn is decided) and sets `world_turn.timeless`; `spin_time.gd` reads a timeless turn as speed 0.
+- **Undo.** `edge_spring` chains its `land_now` onto the editor's spring hook, so an undo mid-dip or mid-spring lands it first (the probe undoes one mid-spring and gets the heights back exactly).
 
 ### Limits and open points
 
-- **One form.** The range is the ridge form (one serrated crest along the edge). A true range of several peaks, or the biome's form, is open.
-- **Where it rises** is fixed by the edge: the crest line is 5 to 6.5 m in from the grabbed edge, its middle at the grab (kept so its ends stay on the plate). Rising at the plate's middle, or where the pointer is when you let go, are alternatives to try on screen.
-- **The edge itself does not move.** The sag is in the land, a few metres in; the lip and the walls stay put, because the plate's last metres are faded in every shape (the walls do not follow the ground). Tipping the whole block toward the grabbed edge would read more like a trampoline and is untried.
-- **No pull up from the edge.** Up is the flip. A basin from the edge is not offered.
-- The wall hand (palm to the wall, feature/modeless-wall-hand) could replace the pinch while pulling from a wall once merged.
-- **Unverified on screen:** how the sag reads, whether a trough is the right tension, the hand's pose at the edge, the ridge's size, and how the whole thing feels.
+- **Several forms.** The horns are alpine only; ridge, mesa or the biome's form could join. Hills weather with the alpine settings.
+- **The dip snaps up and hands over.** The block's own overshoot upward is not shown (the snapshot is released at rest); the range's overshoot carries the energy. A small upward tremor at the hand-over is untried.
+- **Catch reach.** Any left press catches a tossed plate, wherever it is, not only one on its rim.
+- **The land spring stays** for the land press until the clay slice retires it; `edge_spring.gd` extends it, so retiring it means keeping the file or moving the shared parts.
+- **The hand** grips the rim with the flip's grip during the dip; the wall palm could replace it on walls.
+- **Unverified on screen:** how the dip, the snap and the springing range read, whether the toss's gravity and gain feel right on a mouse and on a trackpad (600 px/s may be too easy or too hard to hit on purpose), the catch, the rolling-to-jagged blend, and whether the ceiling suits the look.
 
 ### Probe
 
-`tools/probe_edge_spring.gd` (run with `-- --modeless`, `--fixed-fps 60`) proves, in the real product scene with synthesized input, from the lip in the overview and from the +z wall in a low close view:
+`tools/probe_edge_spring.gd` (run with `-- --modeless`, `--fixed-fps 60`) proves, in the real product scene with synthesized input:
 
-- a downward rim drag decides "spring", does not flip and does not turn the world;
-- the land sags with the pull (0.17 m a third of the way, 0.40 m at 0.67 of the cap) and the sag is capped; the hand pinches;
-- let go, it springs; the highest rise (6.4 to 6.6 m at 0.67 of the cap) is 6 m in from the grabbed edge and near the grab along it; the far side of the plate is untouched; `sprung("range", size)` is emitted;
-- one undo step, and one undo restores the heights exactly;
-- a tiny pull (14 px) decides "spring" but keeps nothing and adds no undo step;
-- a sideways drag still turns and draws no spring; an upward drag still flips.
-
+- a downward rim drag, from the lip in the overview and from a wall in a low view, decides "spring", does not flip or turn, dips the block as a unit (1.05 m at a 0.67 pull, the grabbed edge 1.56 m) on the snapshot, touches no terrain while held and shows the rim grip;
+- let go, the block is back up in 5 frames and the range springs: several peaks, off the rim, one undo step, restored exactly by one undo;
+- the same seed pulled gently and hard: 3.2 m and roughness 0.014 against 7.8 m and 0.024;
+- three full pulls with one seed land in three places (the tall ground moves the next away) and stay under the ceiling (9.4 m); three undos restore them;
+- an undo mid-spring takes it back exactly; a tiny pull keeps nothing;
+- a slow lift let go settles the block and sinks a basin (1.07 m deep), off the rim, one undo step, restored by one undo;
+- a small flick (960 px/s) tosses the block from 0.26 rad to 0.75 rad; it falls back, lands three times, sinks no basin and makes no new world;
+- caught in the air and flicked the same way again, it goes over and a new world lands; one hard flick (2400 px/s) also goes over;
+- Shift and a fast push turns at 8.9 rad/s and winds no time.

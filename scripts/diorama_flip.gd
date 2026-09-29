@@ -4,12 +4,13 @@ extends Node
 ##
 ## The rim gesture (scripts/hand_reach.gd) drives it with `begin(screen_pos)`,
 ## `drag(progress)` and `release(progress)`: progress runs 0..1 as the drag
-## goes up and over the lip, and half way is the tipping point. Dragged, the
+## goes up and over the lip, and upright is the tipping point. Dragged, the
 ## diorama tips up on a hinge at the far edge, with weight and a little
-## resistance. Let go before half way and it falls back with a small bounce,
-## and nothing has changed. Past half way, or with a flick, it goes over: a
-## pull back, a throw, a slow hover upside down (which lasts as long as the new
-## world needs), a drop and a thump, and the world that lands face up is new.
+## resistance. Let go slowly before upright and it falls back with a small
+## bounce (the edge spring then sinks a basin); flicked, it is tossed (below).
+## Upright or past it, it goes over: a pull back, a throw, a slow hover upside
+## down (which lasts as long as the new world needs), a drop and a thump, and
+## the world that lands face up is new.
 ##
 ## How it looks. The world's nodes are never moved: terrain, water, creatures,
 ## particles and the wind all work in world space. Instead `begin` takes a
@@ -28,6 +29,18 @@ extends Node
 ## The drop touches down on the new world, flat and folded like a Regrow's,
 ## and the land grows up out of it with the sky easing over.
 ##
+## **The toss and the dip** (docs/scenic/modeless.md, "The agreed scheme"). Up
+## is decided at the release: let go slowly and the plate settles back and
+## says so (`set_down`, the edge spring sinks a basin); let go with a flick
+## and it is tossed: it turns about its far edge at the flick's speed under a
+## hinged slab's gravity (`TOSS_GRAVITY` times the cosine of its angle), and
+## either falls back and wobbles or passes upright and goes over, which is the
+## flip. While it is in the air a press catches it where it is (`catch`), so a
+## second flick adds to the first, like pumping a swing. Pulled down, the
+## plate dips as a unit and tips a little toward the hand (`dip_begin`,
+## `dip_to`, `dip_release`); let go, it snaps back up and says so (`dipped`),
+## and the edge spring (scripts/edge_spring.gd) raises its range.
+##
 ## The old world is never lost. `form_inland` leaves it one step down the undo
 ## history (marked "flip"), and the world is also kept whole in memory and in
 ## `flip-previous.json` beside the places. `flip_back()` flips the other way
@@ -41,8 +54,12 @@ const Budget = preload("res://scripts/frame_work_budget.gd")
 signal landed(world_seed: int)
 signal fell_back
 signal phase_changed(phase: int)
+## A slow release: the plate settled back from `progress` (0..1) of the lift.
+signal set_down(progress: float)
+## A dip was let go and the plate is back at rest, with the pull it had.
+signal dipped(amount: float)
 
-enum Phase { IDLE, HELD, FALL, THROW, HOVER, DROP, LAND }
+enum Phase { IDLE, HELD, FALL, THROW, HOVER, DROP, LAND, TOSS, DIP, RISE }
 ## Which world the flip brings up: a fresh one, the last step of undo, or the
 ## copy kept in memory.
 enum Source { NEW, UNDO, KEPT }
@@ -58,16 +75,12 @@ const LEAVE_OUT := ["precipitation.gd","lightning.gd","atmosphere.gd","landscape
 const DEFAULT_HALF := 14.4
 const DEFAULT_MIDDLE := -2.1
 
-## Progress at which the world starts to be made, and the progress at which a
-## release goes over.
+## Progress (or angle over pi) at which the world starts to be made. A
+## release goes over once the plate is upright (TIP_ANGLE, below).
 const GENERATE_AT := 0.2
-const COMMIT_AT := 0.5
 ## A drag that reaches this far goes over without waiting for the release.
 const AUTO_COMMIT := 0.97
-## A drag this fast (progress per second, smoothed) let go past FLICK_FROM
-## goes over, whatever the progress.
-const FLICK_RATE := 1.6
-const FLICK_FROM := 0.2
+## Seconds the drag's rate is smoothed over (the toss reads it).
 const RATE_SMOOTH := 0.06
 
 ## The hinge stays on the far edge while the plate tips up this far (radians),
@@ -129,6 +142,27 @@ const LAND_TIME := 0.9
 const GROW_SECONDS := 4.0
 ## The temporary trigger's pace: progress per second.
 const DEBUG_PACE := 1.1
+## The toss. A release whose drag rate (progress per second, smoothed over
+## RATE_SMOOTH) is at least TOSS_RATE is a flick; slower is a set-down. A
+## flick throws the plate at TOSS_GAIN of the hand's angular speed (progress
+## rate times pi), or the plate's own if faster. In the air it is a hinged
+## slab: angular acceleration -TOSS_GRAVITY*cos(angle) (rad/s², so going
+## over from flat needs sqrt(2*TOSS_GRAVITY) = 5.7 rad/s) less TOSS_DRAG times
+## its rate. Upright (TIP_ANGLE) is the point of no return. Landing it keeps
+## BOUNCE of its speed, as the fall back does.
+const TOSS_RATE := 1.5
+const TOSS_GAIN := 0.5
+const TOSS_GRAVITY := 16.0
+const TOSS_DRAG := 0.3
+const TIP_ANGLE := PI*0.5
+## The dip: at a full pull the plate drops DIP_DROP metres and tips DIP_TILT
+## radians toward the hand (about its far edge). It follows the pull on the
+## hold spring; let go, it snaps back on a stiffer one (DIP_RISE_W 1/s,
+## DIP_RISE_ZETA) and is handed back the moment it passes its rest.
+const DIP_DROP := 0.9
+const DIP_TILT := 0.06
+const DIP_RISE_W := 26.0
+const DIP_RISE_ZETA := 0.5
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -195,6 +229,18 @@ var _debug_release := 1.0
 var _forming_started := false
 var _clock := 0.0
 var _hand_on := false
+## The toss: flicks since the plate left the ground (a pump is more than
+## one), the highest it has been, and the angle a catch took it at (the drag
+## adds to that).
+var tosses := 0
+var toss_peak := 0.0
+var _base_angle := 0.0
+var _tossed := false
+## The dip: how far down (0..1 of the cap), its rate and the pull it follows.
+var dip := 0.0
+var dip_speed := 0.0
+var _dip_goal := 0.0
+var _dip_amount := 0.0
 
 static func enabled() -> bool:
 	return "--modeless" in OS.get_cmdline_user_args()
@@ -232,9 +278,14 @@ func begin(screen_pos: Vector2) -> bool:
 	_debug_progress = -1.0
 	_rate = 0.0
 	_progress = 0.0
+	_last_progress = 0.0
 	angle = 0.0
 	omega = 0.0
 	_goal = 0.0
+	_base_angle = 0.0
+	tosses = 0
+	toss_peak = 0.0
+	_tossed = false
 	source = Source.NEW
 	_kept_pending = true
 	_grab_from(screen_pos)
@@ -243,23 +294,132 @@ func begin(screen_pos: Vector2) -> bool:
 	_grip(true)
 	return true
 
-## The drag is `progress` (0..1) of the way over the lip.
+## The drag is `progress` (0..1) of the way over the lip (from the catch,
+## after one).
 func drag(progress: float) -> void:
 	if phase != Phase.HELD: return
 	progress = clampf(progress,0.0,1.0)
 	_progress = progress
-	_goal = _goal_angle(progress)
-	if progress >= GENERATE_AT: _prepare()
-	if progress >= AUTO_COMMIT: _go_over()
+	_goal = _goal_angle(progress) if _base_angle <= 0.0 else _base_angle+PI*progress
+	if progress >= GENERATE_AT or _goal >= GENERATE_AT*PI: _prepare()
+	if progress >= AUTO_COMMIT or _goal >= PI*AUTO_COMMIT: _go_over()
 
-## The drag is let go at `progress`. Under half way (and not flicked) the
-## diorama falls back; otherwise it goes over.
+## The drag is let go at `progress`. Upright or past it, it goes over; with a
+## flick it is tossed; slowly, it settles back and `set_down` says how far it
+## had been lifted.
 func release(progress: float) -> void:
 	if phase != Phase.HELD: return
 	progress = clampf(progress,0.0,1.0)
-	var flick := _rate > FLICK_RATE and progress >= FLICK_FROM
-	if progress >= COMMIT_AT or flick: _go_over()
-	else: _fall_back()
+	if angle >= TIP_ANGLE: _go_over()
+	elif _rate >= TOSS_RATE: _toss()
+	else:
+		_set_down = progress if not _tossed else -1.0
+		_fall_back()
+
+var _set_down := -1.0
+
+## True while the plate is in the air from a toss (or settling back) and a
+## press may catch it.
+func can_catch() -> bool:
+	return phase in [Phase.TOSS,Phase.FALL] and pivot != null
+
+## A press catches the plate in the air: it is held where it is, its speed
+## kept, and the drag from here adds to its angle.
+func catch(_screen_pos: Vector2) -> bool:
+	if not can_catch(): return false
+	_base_angle = maxf(angle,0.001)
+	_progress = 0.0
+	_last_progress = 0.0
+	_rate = 0.0
+	_goal = _base_angle
+	_set_phase(Phase.HELD)
+	_grip(true)
+	return true
+
+## A flick: the plate is thrown about its far edge.
+func _toss() -> void:
+	omega = maxf(omega,_rate*PI*TOSS_GAIN)
+	tosses += 1
+	_tossed = true
+	_set_phase(Phase.TOSS)
+
+func _step_toss(delta: float) -> void:
+	var remaining := delta
+	while remaining > 0.0:
+		var h := minf(remaining,1.0/240.0)
+		remaining -= h
+		omega -= (TOSS_GRAVITY*cos(angle)+TOSS_DRAG*omega)*h
+		angle += omega*h
+	toss_peak = maxf(toss_peak,angle)
+	if angle >= GENERATE_AT*PI: _prepare()
+	if angle >= TIP_ANGLE:
+		_go_over(true)
+		return
+	if angle <= 0.0:
+		angle = 0.0
+		if absf(omega) > REST_SPEED:
+			omega = -omega*BOUNCE
+			var thump: Variant = scene.get("_tremor")
+			if thump != null: thump.add(clampf(absf(omega)*0.08,0.05,0.25))
+		else:
+			omega = 0.0
+			_finish_fall_back()
+
+# --- The dip -----------------------------------------------------------------
+
+## The rim is pulled down at `screen_pos`: the snapshot is taken and the plate
+## dips with the pull. False when a flip or a regrowth is busy.
+func dip_begin(screen_pos: Vector2) -> bool:
+	if not can_begin(): return false
+	editor.finish_stroke()
+	_debug_progress = -1.0
+	angle = 0.0
+	omega = 0.0
+	dip = 0.0
+	dip_speed = 0.0
+	_dip_goal = 0.0
+	_grab_from(screen_pos)
+	_hold_world()
+	_set_phase(Phase.DIP)
+	_grip(true)
+	return true
+
+## How far down the plate is pulled, 0..1 of the cap.
+func dip_to(amount: float) -> void:
+	if phase == Phase.DIP: _dip_goal = clampf(amount,0.0,1.2)
+
+## Let the dip go: the plate snaps back up and `dipped(amount)` is emitted
+## the moment it is at rest again, with the pull it had.
+func dip_release(amount: float) -> void:
+	if phase != Phase.DIP: return
+	_dip_amount = amount
+	_set_phase(Phase.RISE)
+
+## Finish a dip at once (an undo, a new press).
+func dip_finish() -> void:
+	if phase == Phase.DIP: dip_release(0.0)
+	if phase == Phase.RISE: _dip_done()
+
+func _step_dip(delta: float) -> void:
+	var goal := _dip_goal if phase == Phase.DIP else 0.0
+	var w := HOLD_W if phase == Phase.DIP else DIP_RISE_W
+	var zeta := HOLD_ZETA if phase == Phase.DIP else DIP_RISE_ZETA
+	var remaining := delta
+	while remaining > 0.0:
+		var h := minf(remaining,1.0/240.0)
+		remaining -= h
+		dip_speed += (w*w*(goal-dip)-2.0*zeta*w*dip_speed)*h
+		dip += dip_speed*h
+		if phase == Phase.RISE and dip <= 0.0:
+			_dip_done()
+			return
+
+func _dip_done() -> void:
+	dip = 0.0
+	dip_speed = 0.0
+	_release_world()
+	_set_phase(Phase.IDLE)
+	dipped.emit(_dip_amount)
 
 ## Flip the other way and bring the previous world back: by undo when the flip
 ## is still the last step of the undo history, from the kept copy when it is
@@ -321,7 +481,9 @@ func _process(delta: float) -> void:
 		Phase.HOVER: _step_hover(delta)
 		Phase.DROP: _step_drop(delta)
 		Phase.LAND: _step_land(delta)
-	if phase in [Phase.HELD,Phase.FALL,Phase.THROW,Phase.HOVER,Phase.DROP]: _pose_all()
+		Phase.TOSS: _step_toss(delta)
+		Phase.DIP,Phase.RISE: _step_dip(delta)
+	if phase in [Phase.HELD,Phase.FALL,Phase.THROW,Phase.HOVER,Phase.DROP,Phase.TOSS,Phase.DIP,Phase.RISE]: _pose_all()
 	if phase in [Phase.THROW,Phase.HOVER]: making_time += delta
 	var rumble: Node = scene.get("world_rumble")
 	if rumble != null and phase in [Phase.THROW,Phase.HOVER]:
@@ -368,6 +530,9 @@ func _finish_fall_back() -> void:
 	_settle_scene()
 	_set_phase(Phase.IDLE)
 	fell_back.emit()
+	var settled := _set_down
+	_set_down = -1.0
+	if settled >= 0.0: set_down.emit(settled)
 
 ## Undo what making a world held: the pause, the rumble, the brush.
 func _settle_scene() -> void:
@@ -383,10 +548,11 @@ func _settle_scene() -> void:
 
 var _made := false
 
-## Decided: go over. Starts the world's making and the pull back.
-func _go_over() -> void:
+## Decided: go over. Starts the world's making and the pull back (none when
+## it is tossed over: it is already on its way).
+func _go_over(tossed := false) -> void:
 	if phase == Phase.THROW: return
-	_pull = PULL_TIME
+	_pull = 0.0 if tossed else PULL_TIME
 	throw_time = 0.0
 	hover_time = 0.0
 	making_time = 0.0
@@ -488,6 +654,7 @@ func lift_now() -> float:
 func _pose_all() -> void:
 	if pivot == null: return
 	var t := pose(angle,lift_now())
+	if phase in [Phase.DIP,Phase.RISE]: t = pose(-DIP_TILT*dip,-DIP_DROP*dip)
 	pivot.transform = t
 	editor.terrain.global_transform = t*_terrain_base
 

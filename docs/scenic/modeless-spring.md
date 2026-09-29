@@ -13,7 +13,6 @@ One slice of the modeless scheme (`docs/scenic/hand-world.md`, "Verbs on the dio
 | Pull up | A dimple sinks at the spot (the hand switches to Press). |
 | Let go, pulled far enough | Mountain (down) or basin (up) springs into place, overshoots, rings down, settles. |
 | Let go, pulled very little, or back at the start | The land relaxes with a small wobble, nothing is kept, no undo step. |
-| Press the rim, pull down, let go | The same spring from the edge: a ridge rises inward of it ("From the edge" below). |
 
 The pull is the pointer's vertical travel from the press, as a share of `PULL_SCREEN` (0.32) of the viewport's height. Under `DEAD` (0.03) nothing shows; under `MIN_PULL` (0.12) letting go keeps nothing. The shown tension follows the pull with a quick smoothing (`TENSION_FOLLOW`), so the land never jumps.
 
@@ -32,22 +31,9 @@ The pull is the pointer's vertical travel from the press, as a share of `PULL_SC
 
 Wiring: `studies/fidelity.gd` creates it when `--modeless` is on (`land_spring`), and `NativeChunkEditor.spring` points at it. Without `--modeless` nothing exists and the brushes work as before.
 
-## From the edge
+## The edge
 
-The same spring, drawn from the rim: press the lip or the block's wall, pull down, let go (`docs/scenic/modeless.md`, "Edge spring"). `hand_reach` decides it from a downward rim drag and calls `edge_press(screen_pos, edge, hand_point)`, then the usual `pull` and `release`.
-
-| Gesture | Result |
-| --- | --- |
-| Press the rim, pull down | A trough sags along the grabbed edge, a few metres in, deeper and longer with the pull. The hand pinches at the edge and dips with it. |
-| Let go, pulled far enough | A ridge along that edge springs up through the trough, overshoots, rings down, settles and weathers. |
-| Let go, pulled very little | The trough relaxes, nothing is kept, no undo step. |
-
-- **The pull** is measured as on the land but clamped to down only (0..1 of the cap). `DEAD` and `MIN_PULL` are the same.
-- **Where.** The grabbed rim point's larger coordinate picks the side; the crest line runs along that side `EDGE_INSET` in (5 m at a small pull to 6.5 m at the cap), its middle at the grab along the edge, clamped so the ridge's ends stay within `ALONG_ROOM` (11 m) of the plate's middle line.
-- **Tension** is a trough on that crest line: depth `SAG_DEPTH` 0.08 to 0.6 m (with the usual tremble), half-width `SAG_WIDTH` 2.6 m, half-length the ridge's, `(1-u²)²` across and along, faded over the plate's last metres like every shape. Only the strip the trough and the ridge's carry can reach is gathered at the press.
-- **The shape** is the `ridge` form of `scripts/mountain_forms.gd`, aimed along the edge: half-length `EDGE_SPREAD` 4 to 9 m, height `EDGE_HEIGHT` 3 to 8.5 m (set directly, not from the spread). It is built once at release; the trough carries into the spring and fades as the ridge takes over, exactly as the pucker does for a mountain.
-- **Landing, undo and the hand** are the mountain's: `_land_mountain`, one undo step, `sprung("range", size)`. The hand's point is the grabbed edge (as `hand_reach` shows it, stood out from a wall) lowered by up to `EDGE_HAND_DIP` (0.35 m). Letting go clears only the spring's own poses ("pinch", "press"), so a shake that took the rim keeps its hand.
-- Probe: `tools/probe_edge_spring.gd`. In the overview, a 0.67 pull from the near lip sags 0.40 m and raises a ridge 6.6 m high about 6 m in; the mean frame while pulling is about 3.4 ms (headless, CPU).
+The rim pulled down is the edge spring (`scripts/edge_spring.gd`, `docs/scenic/modeless.md`, "Edge rework"): the block dips as a unit while held, and on release a random multi-peak range springs up on this spring, built into the editor's mountain from the alpine form and a rolling dome, and a lifted rim set down slowly sinks this basin at a random spot. It extends this file for the spring, the landing and the basin. The agreed scheme retires the land press's spring (the clay slice); the edge keeps using this code.
 
 ## Probe
 
