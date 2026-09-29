@@ -177,6 +177,8 @@ func side_view() -> void:
 	if falls != null and not falls.describe().is_empty(): lip = falls.describe()[0].lip
 	var target: Vector3 = editor.terrain.to_global(Vector3(lip.x+0.6,lip.y-3.2,lip.z))
 	print("EDGE side view on ",lip)
+	var hand: Node3D = scene.get("god_hand") as Node3D
+	if hand != null: hand.visible = false
 	await camera_to(target,13.0,PI*0.5+0.75,1.36,6.0)
 	await seconds(1.5)
 	falls_report()
@@ -212,6 +214,9 @@ func run() -> void:
 	while scene.places.busy or scene._chunk_editor.forming: await process_frame
 	reach = scene.hand_reach
 	editor = scene._chunk_editor
+	# Clean frames: the scene's overlays off (before any mist layer exists),
+	# the drawn pointer kept.
+	for overlay: Node in scene.find_children("*","CanvasLayer",true,false): overlay.visible = false
 	scene._overview()
 	scene.distance *= 0.85
 	scene._update_camera()

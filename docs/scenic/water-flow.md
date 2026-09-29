@@ -266,11 +266,28 @@ The earth sides' facets are about 3.5 m along the rim, but the rim's own points 
 - Cost: the step is 38–49 µs as before, the spills read about 15 µs every 0.25 s, and the edge falls' frame update about 0.05 ms steady. A fall's first frame costs about 10 ms once (its nodes, materials and the side profile), as the waterfalls' does.
 - Draws per edge fall: the curtain (plus its shadow pass), the bead burst, and one mist canvas draw of up to 48 sprites.
 
-EDGE_FALLS_FILM_PLACEHOLDER
+### Filmed
+
+`tools/film_edge_fall.gd` (rendered, 1280×720, M-series Mac):
+- **Gestures.** A 3–3.7 m peak pinched at (8, −3) and a thumb groove from its flank toward (13.1, −3). The groove is carried to the lip and notches it about 0.9 m deep. A spring from the sky at the groove's head gives 0.115 m³/s.
+- **Time lapse.** The water runs ×6. One edge fall stands within the first read: 0.95 m wide, a 4.3 m face and 8.4 m in all. Steady, 0.48 m³ stands on the plate and 0.115 m³/s leaves over the edge.
+- **The camera.** It comes down to a low three-quarter side view, saves `edge_fall.png`, and orbits 1.5 rad over 16 s. The clip is `edge_fall.mp4`.
+- **Cost.** The edge falls' frame update is about 0.05 ms and the read about 14 µs. The first frame of a fall is 7–16 ms once (nodes, materials, side profile).
+
+What the frames show:
+- The notch reads as a clean V-shaped spillway in the rim with a chute down the face. The fall comes out of it as a pale blue sheet that whitens down the face, clinging just off the side.
+- Past the block's bottom it tears into strands and then beads. Droplets and faint mist trail below and are gone a few metres down.
+- Still off:
+  - The sheet is smooth and bright, and reads a little like a ribbon close up.
+  - Its own shadow darkens the chute beside it.
+  - Seen head-on, the peak's own groove waterfall (`flow_falls.gd`) plunges just inside the lip, and its foam blobs sit on the brink like a white cap.
+  - The mist is faint.
+  - The God Hand stays in shot: the film's hide does not hold.
+  - The flip is not filmed: the falls hide while it runs, and that was only reasoned, not seen.
 
 ## Known gaps and follow-ups
 
-- **Unverified on screen:** how the flip and the turn treat the new meshes; the GPU cost of the reflection view and the mesh uploads (see "Look pass").
+- **Unverified on screen:** how the flip and the turn treat the new meshes (the edge falls hide during the flip, unfilmed); the GPU cost of the reflection view and the mesh uploads (see "Look pass").
 - **One reflection for all live ponds.** Only the followed pond, and water within 0.3 m of its level, reflects; other live ponds keep the ordinary surface, as planned ponds past the two largest do.
 - **Record ponds and streams are not simulated.** A generated world's ponds and streams, and the planned water under `--planned-water`, stay as records. Live water sees their beds as bare ground, so it pools in them and draws over them. They could be seeded into the depth grid and retired.
 - **Emergence only avoids the water.** Its biome blend still reads water distance and wetness from pond records, so reeds and bank grass do not yet favour live shores, and plants already standing where live water arrives stay. `drown` has no live counterpart.

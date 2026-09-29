@@ -163,6 +163,19 @@ The charged land spring no longer answers the land (see `docs/scenic/modeless-sp
 - **Frame cost.** Only the points near a dab are written (a bucket lookup, 1.5 m cells), and the land is shown through the editor's light refresh, one at a time, as the brushes and the land spring do. The dirt samples the ground at each tint cell under the frame's dabs; a 1 m groove stroke measured a 7.1 ms CPU max, 5.2 ms mean (dummy renderer), about what the 0.3 m groove cost.
 - **The hand.** The hover's ready pinch stays while the press is undecided. The pinch plays its `PinchIn` again when it is decided, so the hand visibly closes. The thumb, the palm and the poke use `press` (the thumb's Hold plays faster as the stroke turns into a rub). On release the hand is let go and the hover takes it back.
 
+### The thumb at the rim
+
+Branch `feature/edge-falls` (2026-09-29). The user wanted to "thumb your way to the edge so the water could actually flow and actually spill over the edge of the chunk like a waterfall … into the void".
+
+- **The fade stays for everything else.** Shaping fades to nothing over the plate's last metres (`EDGE`, 11.4 to 13.6 m from the middle, `_fade`), so a groove could not reach the rim. It still does for the pinch, the palm, the rub, the groove's raised banks, and a thumb running along the edge. The plate's outline stays clean.
+- **Heading out breaches.** A groove dab in that fade zone whose stroke is heading out across the nearest side, within `BREACH_ANGLE` (50°) of straight out, **breaches** (`_breaching`). It digs its bed at full depth without the fade, rim points included.
+- **The heading.** It is taken over the stroke's last `HEADING_RUN` (0.6 m), so a slow stroke's pick jitter cannot turn it.
+- **Carried to the lip.** A breaching stroke let go short of the rim, or run off the plate into the void (where the pick finds nothing), is carried on along its heading to `BREACH_PAST` (0.4 m) beyond the rim (`_carry_to_lip`). The groove therefore always reaches the lip.
+- **The spillway.** The bed keeps falling (it never climbs), so the rim is notched to the groove's level-floored, round-banked section, about 1 m deep and 2.5 m across. It is tinted with the groove's dirt.
+- **The earth sides follow.** They are refitted to the notch without a gap (`skirt_mesh_for` slices their big facets at the rim's points where it bends; `docs/scenic/water-flow.md`, "Edge falls"). The notch runs a shallow chute down the face, fading toward the block's base.
+- **Counters.** `notches` and `last_notch` (side normal, rim point, bed) are for probes.
+- **Checked.** `tools/probe_edge_fall.gd`: a stroke let go at 13 m notches the rim 0.8–1.0 m deep over four rim points. The rim beside the notch, and beside a thumb run along the edge, is unchanged. The earth sides meet the notch within 1 mm. Filmed in `tools/film_edge_fall.gd`.
+
 ### Limits and open points
 
 - **No thumb or poke clips.** The thumb, the palm and the poke all show the Press pose. A thumb stroke and a fingertip poke want their own clips.
