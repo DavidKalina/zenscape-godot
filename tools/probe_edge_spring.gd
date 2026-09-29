@@ -72,7 +72,7 @@ func settled() -> void:
 	while quiet < 20 and n < 3000:
 		await process_frame
 		n += 1
-		var busy: bool = editor.mountain.active or editor.land_settling or editor.refresh_pending > 0 or spring.state != 0 or spring.waiting or flip.active() or scene.places.busy
+		var busy: bool = editor.mountain.active or editor.land_settling or editor.refresh_pending > 0 or spring.state != 0 or spring.waiting or flip.active() or scene.places.busy or editor.forming
 		quiet = 0 if busy else quiet+1
 
 ## The highest rise over `base` and where.
@@ -132,7 +132,9 @@ func lip_point() -> Vector2:
 		for i in range(7):
 			var f := -6.0+12.0*i/6.0
 			var edge: Vector2 = [Vector2(f,-13.7),Vector2(13.7,f),Vector2(f,13.7),Vector2(-13.7,f)][side]
-			var top := float(editor.data.ground_height(edge))
+			var h: Variant = editor.data.ground_height(edge)
+			if h == null: continue
+			var top := float(h)
 			var world := terrain.to_global(Vector3(edge.x,top,edge.y))
 			if scene.camera.is_position_behind(world): continue
 			var at: Vector2 = scene.camera.unproject_position(world)

@@ -107,6 +107,17 @@ func off_level(center: Vector2, radius: float, level: float) -> float:
 		count += 1
 	return total/maxi(count,1)
 
+## The mean ground height within `radius` of `center` (signed: a trench lowers it).
+func mean_height(center: Vector2, radius: float) -> float:
+	var data := editor.data
+	var total := 0.0
+	var count := 0
+	for i in range(data.points.size()):
+		if data.points[i].distance_to(center) >= radius: continue
+		total += data.heights[i]
+		count += 1
+	return total/maxi(count,1)
+
 func stats(values: Array[float]) -> String:
 	if values.is_empty(): return "-"
 	var total := 0.0
@@ -247,7 +258,7 @@ func run() -> void:
 
 	# --- Fast rub: smooths ---
 	var before := roughness(at,1.0)
-	var mean_before := off_level(at,1.0,0.0)
+	var mean_before := mean_height(at,1.6)
 	button(spot+Vector2(-60,0),true)
 	await tick()
 	p = spot+Vector2(-60,0)
@@ -268,7 +279,10 @@ func run() -> void:
 	print("RUB ",JSON.stringify({"speed":snappedf(rub_speed,1.0),"rub":snappedf(rub_share,0.01),"roughness_before":snappedf(before,0.0001),"roughness_after":snappedf(after,0.0001),"frames":stats(rub_gaps)}))
 	check("a fast back-and-forth (1800 px/s) reads as a rub",rub_share > 0.95,"%.2f at %.0f px/s" % [rub_share,rub_speed])
 	check("the rub smooths the land under it",after < before*0.6,"%.4f -> %.4f" % [before,after])
-	check("without digging a trench",absf(off_level(at,1.0,0.0)-mean_before) < 0.06,"mean |h| %.3f -> %.3f" % [mean_before,off_level(at,1.0,0.0)])
+	# The world is random each run, so compare the mean ground under the rub with
+	# itself: smoothing keeps it about level, a groove would take ~0.3 m off it.
+	var mean_after := mean_height(at,1.6)
+	check("without digging a trench",mean_after-mean_before > -0.08,"mean h %.3f -> %.3f" % [mean_before,mean_after])
 	check("one undo step for the rub",data._undo.size() == undo0+1)
 	check("frames stay interactive while rubbing (CPU)",rub_gaps.max() < 25.0,stats(rub_gaps))
 	editor.undo()
