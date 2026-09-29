@@ -351,14 +351,78 @@ func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
 				closest = hit
 				best = origin.distance_squared_to(hit)
 		return closest
+	# Every pointer asks this each frame, so walk the ray over the 2 m face
+	# buckets `_locate` uses, nearest first, instead of trying every face. A
+	# face's bucket span covers its XZ extent, so a hit is in the bucket under
+	# it; once the nearest hit lies before the next bucket, none beyond can
+	# beat it. Ties keep the lowest face, as a walk over all faces would.
+	if _bucket_span_for != _buckets.size():
+		_bucket_span_for = _buckets.size()
+		_bucket_low = Vector2i(1 << 30, 1 << 30)
+		_bucket_high = -_bucket_low
+		for key: Vector2i in _buckets:
+			_bucket_low = _bucket_low.min(key)
+			_bucket_high = _bucket_high.max(key)
+	if _buckets.is_empty(): return null
+	var lower := Vector2(_bucket_low)*2.0
+	var upper := Vector2(_bucket_high+Vector2i.ONE)*2.0
+	var from := Vector2(origin.x,origin.z)
+	var step := Vector2(direction.x,direction.z)
+	# The stretch of the ray over the buckets' square.
+	var enter := 0.0
+	var leave := INF
+	for axis in range(2):
+		if absf(step[axis]) < 1e-12:
+			if from[axis] < lower[axis] or from[axis] > upper[axis]: return null
+			continue
+		var a := (lower[axis]-from[axis])/step[axis]
+		var b := (upper[axis]-from[axis])/step[axis]
+		enter = maxf(enter,minf(a,b))
+		leave = minf(leave,maxf(a,b))
+	if enter > leave: return null
+	var at := from+step*enter
+	var cell := Vector2i(clampi(floori(at.x/2),_bucket_low.x,_bucket_high.x),clampi(floori(at.y/2),_bucket_low.y,_bucket_high.y))
+	var towards := Vector2i(1 if step.x > 0.0 else -1,1 if step.y > 0.0 else -1)
+	var next := Vector2(INF,INF)
+	var stride := Vector2(INF,INF)
+	for axis in range(2):
+		if absf(step[axis]) < 1e-12: continue
+		var edge := float(cell[axis]+(1 if towards[axis] > 0 else 0))*2.0
+		next[axis] = (edge-from[axis])/step[axis]
+		stride[axis] = 2.0/absf(step[axis])
 	var nearest: Variant = null
 	var distance := INF
-	for i in range(0, vertex_ids.size(), 3):
-		var hit: Variant = Geometry3D.ray_intersects_triangle(origin, direction, _vertex(vertex_ids[i]), _vertex(vertex_ids[i+1]), _vertex(vertex_ids[i+2]))
-		if hit != null and origin.distance_squared_to(hit) < distance:
-			nearest = hit
-			distance = origin.distance_squared_to(hit)
+	var nearest_face := -1
+	var nearest_t := INF
+	var cell_enter := enter
+	while cell.x >= _bucket_low.x and cell.x <= _bucket_high.x and cell.y >= _bucket_low.y and cell.y <= _bucket_high.y:
+		# A little slack so a hit rounded onto a bucket's edge is still found.
+		if nearest_t < cell_enter-0.001: break
+		for i: int in _buckets.get(cell,[]):
+			var hit: Variant = Geometry3D.ray_intersects_triangle(origin, direction, _vertex(vertex_ids[i]), _vertex(vertex_ids[i+1]), _vertex(vertex_ids[i+2]))
+			if hit == null: continue
+			var d := origin.distance_squared_to(hit)
+			if d < distance or (d == distance and i < nearest_face):
+				nearest = hit
+				distance = d
+				nearest_face = i
+				nearest_t = (hit-origin).dot(direction)/direction.length_squared()
+		# Straight down: the one bucket under it.
+		if is_inf(next.x) and is_inf(next.y): break
+		if next.x < next.y:
+			cell_enter = next.x
+			next.x += stride.x
+			cell.x += towards.x
+		else:
+			cell_enter = next.y
+			next.y += stride.y
+			cell.y += towards.y
+		if cell_enter > leave+0.001: break
 	return nearest
+
+var _bucket_span_for := -1
+var _bucket_low := Vector2i.ZERO
+var _bucket_high := Vector2i.ZERO
 
 func _vertex(id: int) -> Vector3:
 	return Vector3(points[id].x, heights[id], points[id].y)
