@@ -47,6 +47,10 @@ const MAX_SHOWN := 4
 ## the least half width.
 const GAP := 0.05
 const W_MIN := 0.1
+## The share of its ballistic throw off the lip a fall takes: CLING, plus
+## CLING_FLOW at a full curtain (it hugs the side, leaning out with more water).
+const CLING := 0.25
+const CLING_FLOW := 0.35
 ## Metres it falls free below the block's bottom: TAIL, plus TAIL_FLOW at a
 ## full curtain. The block's bottom when the earth sides cannot be read.
 const TAIL := 2.6
@@ -354,7 +358,9 @@ func _rings(fall: Dictionary, presence: float, strength: float) -> Dictionary:
 			out = -0.12
 			y = lip.y-maxf(float(now.depth),0.03)*0.5
 		else:
-			var thrown := speed*sqrt(2.0*drops[r]/9.81)
+			# A sheet this thin clings to the side over the lip rather than
+			# flying its full ballistic arc; a strong spring leans out more.
+			var thrown := speed*sqrt(2.0*drops[r]/9.81)*(CLING+CLING_FLOW*strength)
 			if r <= last_face: standing = _face_at(profile,y)+thick[r]+GAP
 			out = maxf(standing,thrown)
 		points.append(n*(rim+out)+axis*along+Vector3.UP*y)

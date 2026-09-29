@@ -187,7 +187,7 @@ func run() -> void:
 	check("the notch is where the stroke met the rim",absf(at.x-14.0) < 0.01 and absf(at.y-HEAD.y) < 1.5,at)
 	var bed := height(Vector2(13.999,at.y))
 	var bank := height(Vector2(13.999,at.y+2.4))
-	var skirt_began := Time.get_ticks_usec()
+	skirt_began = Time.get_ticks_usec()
 	editor.skirt_mesh_for(data)
 	print("SKIRT fit, notched rim: %d us" % (Time.get_ticks_usec()-skirt_began))
 	check("the spillway's floor is a groove below the rim",bank-bed > 0.6,"floor %.2f, rim beside %.2f" % [bed,bank])
@@ -205,6 +205,8 @@ func run() -> void:
 	var step_worst := 0
 	var read_worst := 0
 	var update_worst := 0
+	var update_sum := 0
+	var update_count := 0
 	falls.worst_update_usec = 0
 	for second in range(240):
 		flow.run(roundi(1.0/flow.dt))
@@ -212,6 +214,9 @@ func run() -> void:
 		step_worst = maxi(step_worst,flow.last_step_usec)
 		read_worst = maxi(read_worst,falls.last_read_usec)
 		update_worst = maxi(update_worst,falls.last_update_usec)
+		if second >= 60:
+			update_sum += falls.last_update_usec
+			update_count += 1
 		if second % 20 == 19:
 			var s: Dictionary = flow.stats()
 			history.append(s)
@@ -274,7 +279,7 @@ func run() -> void:
 	print("DRY edge %.5f m³/s, falls %d" % [after.edge_flux,falls.shown_count()])
 	check("without the spring the stream dies down and the fall fades out",falls.shown_count() == 0,"edge %.5f m³/s" % after.edge_flux)
 
-	print("COST ",JSON.stringify({"step_us_worst":step_worst,"spills_read_us_worst":read_worst,"edge_falls_frame_us_worst":update_worst,"step_us_last":flow.last_step_usec}))
+	print("COST ",JSON.stringify({"step_us_worst":step_worst,"spills_read_us_worst":read_worst,"edge_falls_frame_us_worst":update_worst,"edge_falls_frame_us_mean_steady":update_sum/maxi(update_count,1),"step_us_last":flow.last_step_usec}))
 	print("RESULT ","PASS" if failures.is_empty() else "FAIL "+str(failures))
 	quit(0 if failures.is_empty() else 1)
 

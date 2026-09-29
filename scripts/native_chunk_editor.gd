@@ -1429,7 +1429,7 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 ## a generated world's gently moved rim keeps its few facets. Every facet is
 ## sliced by the same planes, so the sides stay closed. Returns [x planes,
 ## z planes], plate metres, sorted.
-const SKIRT_BEND := 0.02
+const SKIRT_BEND := 0.1
 func _rim_slices(source: NativeTerrainData) -> Array:
 	var sides: Array = [[],[],[],[]]
 	for i in range(source.points.size()):
