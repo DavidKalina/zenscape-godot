@@ -1,0 +1,71 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+Bigfoot clearing: (-4.0, 1.834998, 9.5)
+Grass: tier Beauty, dense meadow off (retired; --beauty-grass turns it on), tufts classic source tuft (--painterly-grass for the blade tuft)
+OK   run with --modeless
+OK   rig live
+OK   a rim point is found on screen  (826.6136, 701.9023)
+OK   a land point is found on screen  (653.9857, 442.2609)
+OK   the tool rail is hidden
+OK   the sun is not reached
+OK   over the rim the hand takes the rim grip  rim
+OK   over the land it readies a pinch  pinch
+OK   over nothing it lets go
+OK   a sideways rim push decides the turn  turn
+OK   the rim push turns the world  -14.4507477670987
+OK   the room turns with it  -14.4507477670987
+OK   the hand grips the rim  rim
+OK   a slow turn leaves the clock alone  0.0
+OK   a slow turn does not spin on
+OK   the sky's shimmer is off for a slow turn  0.0
+  step (50.0, 0.0): spin up to 4.6 rad/s, wound 1.7 h (0.07 days), expected 1.7 h, season override 0.375 -> 0.377, shimmer up to 1.00
+OK   the fast flick spins on and winds time ((50.0, 0.0))
+OK   the wound time matches the spin's hours a second ((50.0, 0.0))  { "wound": 1.66760197459565, "expected": 1.66660493266286 }
+OK   the anticipation cue shimmered ((50.0, 0.0))  0.99999953582269
+OK   a held season rolled on with the days ((50.0, 0.0))
+  step (90.0, 0.0): spin up to 11.8 rad/s, wound 371.4 h (15.48 days), expected 371.4 h, season override 0.377 -> 0.930, shimmer up to 1.00
+OK   the fast flick spins on and winds time ((90.0, 0.0))
+OK   the wound time matches the spin's hours a second ((90.0, 0.0))  { "wound": 371.445811664859, "expected": 371.447023700968 }
+OK   the anticipation cue shimmered ((90.0, 0.0))  0.99997286128244
+OK   a held season rolled on with the days ((90.0, 0.0))
+OK   a faster spin winds more  [1.66760197459565, 371.445811664859]
+OK   the world keeps the new time
+OK   the shimmer is gone at rest  0.0
+OK   the hour is pinned again at rest  { "time": "at:0.7771" }
+OK   the season pin (if any) follows: none was set, none made
+OK   the weather changed because time passed  mist -> mist, scheduler 38.8 h -> 77.2 h
+OK   a vertical rim drag is the flip  flip
+OK   flip progress grows toward 1  0.37037037037037
+OK   the flip does not turn the world  0.0
+OK   the flip's release reports its progress  [0.37037037037037]
+OK   the flip leaves time alone
+OK   no spin after a flip
+OK   a shake on the rim is decided ((1.0, 0.0))  shake
+OK   the turn let go when the shake took over ((1.0, 0.0))
+OK   a shake does not wind time ((1.0, 0.0))  0.0
+OK   the hand shakes ((1.0, 0.0))  shake
+OK   no spin left by a shake ((1.0, 0.0))
+OK   a shake on the rim is decided ((0.0, 1.0))  shake
+OK   the turn let go when the shake took over ((0.0, 1.0))
+OK   a vertical start that becomes a shake abandons the flip  [0.0]
+OK   a shake does not wind time ((0.0, 1.0))  0.0
+OK   the hand shakes ((0.0, 1.0))  shake
+OK   no spin left by a shake ((0.0, 1.0))
+OK   a land press emits land_pressed and holds the land  { "pressed": 1, "dragged": 25, "released": 0 }
+OK   a land drag emits land_dragged  { "pressed": 1, "dragged": 25, "released": 0 }
+OK   the land press does not turn the world  0.0
+FAIL the land press paints nothing
+OK   the land release emits land_released  { "pressed": 1, "dragged": 25, "released": 1 }
+OK   no spin after a land drag
+OK   the land drag leaves time alone
+OK   a right drag tilts  0.62999981641769
+OK   a right drag looks round  -261.383580441491
+OK   a fast right drag does not change time  0.0
+OK   a right drag leaves the room where it was  0.0
+OK   a right drag does not spin the world
+OK   the shimmer stays off
+RESULT FAIL ["the land press paints nothing"]
+ERROR: 27 RID allocations of type 'N13RendererDummy15MaterialStorage13DummyMaterialE' were leaked at exit.
+ERROR: 2 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+ERROR: 54 RID allocations of type 'N13RendererDummy9DummyMeshE' were leaked at exit.
+ERROR: 26 RID allocations of type 'N17RendererSceneCull8InstanceE' were leaked at exit.

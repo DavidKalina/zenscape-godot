@@ -222,23 +222,15 @@ func modeless_run() -> void:
 	await settled()
 	check(heights_equal(base),"one undo restores the heights exactly (basin)")
 
-	# The temporary input seam, synchronously.
+	# The modeless input's land signals (scripts/hand_reach.gd) drive it.
 	editor.pointer_override = null
-	var press := InputEventMouseButton.new()
-	press.button_index = MOUSE_BUTTON_LEFT
-	press.pressed = true
-	press.position = screen(at)
-	spring._unhandled_input(press)
-	check(spring.state == 1,"the temporary seam takes a left press on the land")
-	var motion := InputEventMouseMotion.new()
-	motion.position = press.position+Vector2(0,120)
-	spring._unhandled_input(motion)
+	var reach: Node = scene.hand_reach
+	var start_at := screen(at)
+	reach.land_pressed.emit(start_at)
+	check(spring.state == 1,"the land press signal starts a pull")
+	reach.land_dragged.emit(start_at+Vector2(0,120),Vector2(0,120))
 	check(spring.pulled > 0.3,"and follows the pointer's pull (%.2f)" % spring.pulled)
-	var release := InputEventMouseButton.new()
-	release.button_index = MOUSE_BUTTON_LEFT
-	release.pressed = false
-	release.position = motion.position
-	spring._unhandled_input(release)
+	reach.land_released.emit(start_at+Vector2(0,120))
 	check(spring.state == 2,"and springs on release")
 	spring.land_now()
 	await settled()

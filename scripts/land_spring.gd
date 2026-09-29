@@ -23,9 +23,9 @@ extends Node
 ##   back with a small wobble and nothing is kept. So a click, or a pull that
 ##   returns to the start, changes nothing.
 ##
-## The input is a seam: the modeless input (scripts/modeless_input.gd on
-## another branch) calls `press`, `pull` and `release`. `_unhandled_input`
-## below is TEMPORARY and stands in for it until the two merge.
+## The input comes from the modeless press (scripts/hand_reach.gd): its
+## `land_pressed`, `land_dragged` and `land_released` call `press`, `pull` and
+## `release` (connected in studies/fidelity.gd).
 
 const Mountains = preload("res://scripts/mountain_forms.gd")
 
@@ -108,8 +108,6 @@ var center := Vector2.ZERO
 var elapsed := 0.0
 var refreshes := 0
 ## Whether the temporary input seam is on, and whether it started this pull.
-var seam_enabled := true
-var _seam_pull := false
 
 var _press := Vector2.ZERO
 var _base := PackedFloat32Array()
@@ -216,9 +214,6 @@ func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
 	match state:
 		State.PULLING:
-			if _seam_pull and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-				release()
-				return
 			_tension(delta)
 		State.SPRINGING: _spring(delta)
 
@@ -458,24 +453,3 @@ func _hand_pace(pace: float) -> void:
 	if hand == null or hand.reach_gesture.is_empty(): return
 	hand.reach_pace = pace
 	hand.reach_point = _at()
-
-# --- TEMPORARY input --------------------------------------------------------------
-## TEMPORARY: remove at merge, when the modeless input's land_pressed,
-## land_dragged and land_released signals drive `press`, `pull` and `release`.
-## Left presses on the land, under --modeless only. This node sits below the
-## scene, so it hears the press before the brushes and the camera do.
-func _unhandled_input(event: InputEvent) -> void:
-	if not seam_enabled or not enabled() or editor == null: return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			if event.alt_pressed or not editor.active or editor.mode != "land": return
-			if press(event.position):
-				_seam_pull = true
-				get_viewport().set_input_as_handled()
-		elif state == State.PULLING and _seam_pull:
-			release(event.position)
-			_seam_pull = false
-			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and state == State.PULLING and _seam_pull:
-		pull(event.position,event.relative)
-		get_viewport().set_input_as_handled()

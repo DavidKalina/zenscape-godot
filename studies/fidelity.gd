@@ -241,6 +241,11 @@ func _ready() -> void:
 	hand_reach = preload("res://scripts/hand_reach.gd").new()
 	add_child(hand_reach)
 	hand_reach.setup(self)
+	# Under --modeless a left press on the land is the spring.
+	if land_spring != null:
+		hand_reach.land_pressed.connect(func(at: Vector2) -> void: land_spring.press(at))
+		hand_reach.land_dragged.connect(land_spring.pull)
+		hand_reach.land_released.connect(land_spring.release)
 	# --modeless: spin is time (docs/scenic/modeless.md).
 	if preload("res://scripts/modeless_input.gd").enabled():
 		spin_time = preload("res://scripts/spin_time.gd").new()
