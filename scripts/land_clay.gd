@@ -53,12 +53,14 @@ const SPEED_WINDOW := 0.25
 const DAB_SPACING := 0.3
 const MAX_DABS := 64
 ## The groove: half-width and depth in metres below the ground on the stroke's
-## line. Its bed is level across (the ground at the line, less the depth),
-## full depth inside GROOVE_FLOOR of the half-width (the land's points are
-## 0.45 to 0.75 m apart, so a row or two always reaches the bed) and eases to
-## the untouched ground at the half-width on a smoothstep, so the floor and
-## the banks are rounded. A lip of GROOVE_LIP metres (enough for its facets
-## to catch the light either side of the groove) rises just
+## line. Across, it follows the ground: each point sinks by the line's depth
+## from where it stood, so on a slope's face the uphill bank is cut no deeper
+## than the downhill one (a level bed across cut 1.5-2.5 m into a flank and
+## read as a trench). Full depth inside GROOVE_FLOOR of the half-width (the
+## land's points are 0.45 to 0.75 m apart, so a row or two always reaches the
+## bed), easing to the untouched ground at the half-width on a smoothstep, so
+## the floor and the banks are rounded and the banks stay gentle. A lip of
+## GROOVE_LIP metres (enough for its facets to catch the light) rises just
 ## outside (to LIP_OUT half-widths), the clay the thumb pushed aside. Each dab
 ## moves the ground GROOVE_STEP of the way to that shape, and a stroke never
 ## digs below it however long it lingers: a groove is even and unbroken.
@@ -66,13 +68,13 @@ const MAX_DABS := 64
 ## that keeps falling across the ground's bumps; it cuts at most GROOVE_CUT
 ## metres deeper than GROOVE_DEPTH to do so, and past that it rises with a
 ## hump (an uphill stroke: level, then rising, so it drains back to its start).
-const GROOVE_HALF_WIDTH := 1.25
-const GROOVE_DEPTH := 1.0
-const GROOVE_FLOOR := 0.55
-const GROOVE_LIP := 0.22
+const GROOVE_HALF_WIDTH := 1.35
+const GROOVE_DEPTH := 0.75
+const GROOVE_FLOOR := 0.35
+const GROOVE_LIP := 0.12
 const LIP_OUT := 1.6
 const GROOVE_STEP := 0.5
-const GROOVE_CUT := 0.5
+const GROOVE_CUT := 0.2
 ## The rub: radius in metres, and the share each dab moves a point toward the
 ## mean of its neighbours at the centre (easing to nothing at the rim from
 ## RUB_CORE of the radius).
@@ -91,8 +93,10 @@ const PALM_SINK := 0.4
 ## Dirt: where the thumb or the palm takes the ground down, the painted grass
 ## has caved in and bare earth shows. The tint layer's weight rises from
 ## nothing at DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens
-## from DIRT toward DIRT_DEEP by GROOVE_DEPTH, so the bed reads as a dark line
-## from the overview. The earth covers whatever was painted there before (the
+## from DIRT toward DIRT_DEEP by GROOVE_DEPTH, so the bed reads as a line
+## from the overview. Both are muted, greyed earths, and the weight ramps over
+## most of the bank, so the groove blends into the grass instead of standing
+## as a saturated brown gash. The earth covers whatever was painted there before (the
 ## rock of a range's foot, a pinch's flank) by its own weight, not only by the
 ## weight it adds: dug ground is earth. Where a groove's lip rises LIP_TURNED
 ## metres or more the pushed-aside clay shows as a pale fringe, TURNED at up
@@ -101,12 +105,12 @@ const PALM_SINK := 0.4
 ## hand-made, so cover does not creep back and nothing takes root in it. Dirt
 ## only ever deepens.
 const DIRT_FROM := 0.04
-const DIRT_FULL := 0.3
+const DIRT_FULL := 0.45
 const DIRT_BARE := 0.5
-const DIRT := Color("946c47")
-const DIRT_DEEP := Color("5f412e")
-const TURNED := Color("b39469")
-const TURNED_WEIGHT := 0.45
+const DIRT := Color("8f7c62")
+const DIRT_DEEP := Color("6e5b47")
+const TURNED := Color("a39a78")
+const TURNED_WEIGHT := 0.2
 const LIP_TURNED := 0.03
 ## The pinch. The pinched spot rises by the pointer's travel up the screen at
 ## the scale of a metre standing there (so the summit keeps to the pointer),
@@ -482,6 +486,10 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 	var bed := float(ground)-GROOVE_DEPTH
 	bed = maxf(minf(bed,_bed),bed-GROOVE_CUT)
 	_bed = bed
+	# The cut across follows the ground: each point sinks by the line's depth
+	# from where it stood, so a groove along a slope's face is no deeper on its
+	# uphill bank than on its downhill one.
+	var depth := float(ground)-bed
 	var reach := GROOVE_HALF_WIDTH*LIP_OUT
 	_gather(q,reach)
 	_touch(q,reach)
@@ -495,7 +503,7 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 			if breach != Vector2.ZERO:
 				fade = 1.0
 				notched = notched or editor.data.points[i].dot(breach) >= PLATE_HALF-0.001
-			var goal := minf(_base[i],lerpf(bed,_base[i],smoothstep(GROOVE_FLOOR,1.0,t)))
+			var goal := _base[i]-depth*(1.0-smoothstep(GROOVE_FLOOR,1.0,t))
 			var h := heights[i]
 			if goal < h: heights[i] = maxf(lerpf(h,goal,GROOVE_STEP*g*fade),NativeTerrainData.MIN_HEIGHT)
 		elif _dug[i] == 0:

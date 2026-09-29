@@ -30,6 +30,11 @@ const SURFACE := {"wet":0.012,"lift":0.012,"flow_on":0.22,"flow_off":0.12,"foam_
 ## took the sky's sheen at the face's grazing angle, and its speed's foam,
 ## and read as a pale glassy shell.
 const THIN := Vector2(0.012,0.05)
+## How much faster than a planned pond's the live still water hides its bed
+## with depth under the planar view (shader `bed_absorb`). The planned ponds'
+## basins are a metre or more deep; a spring's pool is 0.4-1 m, and at 1 its
+## floor showed through as the grass it was cut from.
+const BED_ABSORB := 2.0
 const FORMAT :=(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 
 var flow: RefCounted
@@ -66,6 +71,9 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	# Still water lies level; where the sheet under moving water tilts down a
 	# face it fades, and the moving water's look shows alone.
 	still_material.set_shader_parameter("live_level",true)
+	# A live pond is shallower than a planned one: its water hides the bed
+	# sooner under the planar view, so it reads as a pond, not grass.
+	still_material.set_shader_parameter("bed_absorb",BED_ABSORB)
 	still.material_override = still_material
 	moving.name = "FlowMoving"
 	var moving_material: ShaderMaterial = stream_material.duplicate()
