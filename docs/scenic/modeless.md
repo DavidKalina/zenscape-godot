@@ -7,7 +7,7 @@ The control scheme agreed on 2026-09-28 (see "Verbs on the diorama" in `docs/sce
 | Rim | push sideways | the world turns; a fast spin winds time |
 | Rim | shake | snow-globe weather |
 | Rim | drag up and over | flip (the flip slice) |
-| Rim (lip or wall) | pull down or up, release | a random range, a basin, a toss or the flip ("Edge rework" below) |
+| Rim (lip or wall) | pull down or up, release | your shapes amplified (a random range on a blank plate), a basin, a toss or the flip ("Edge rework" below) |
 | Land | pull down or up, release | spring up mountains or sink a basin (the spring slice) |
 | Right button anywhere | drag, scroll | camera: tilt, look round, zoom; never changes time |
 
@@ -26,7 +26,7 @@ This supersedes the table above, which is what the first slices built. Settled i
 | Push sideways | the world turns; a fast spin winds time (days, then seasons) |
 | Shift + push sideways | turns without winding time, however fast |
 | Shake | the weather changes (snow globe) |
-| Pull down, release | the whole block dips as a unit while you pull; on release a random range springs up. The pull sets height and jaggedness: a gentle pull gives rolling hills, a hard one tall jagged peaks. Placement, direction and peak count are random, leaning away from the rim and from what is already tall. Springs stack, up to a height ceiling that suits a 28 m plate. A quick starter to shape from, not a precise tool |
+| Pull down, release | the whole block dips as a unit while you pull; on release your own sculpt springs up bigger: the peaks you pinched grow taller and more jagged, grooves and basins get deeper. The pull sets how much. It adds energy to what you made; it adds no new mountains. On a blank or nearly flat plate a random range springs up instead, as a starter: its placement, direction and peak count are random, leaning away from the rim and from what is already tall, and the pull sets its height and jaggedness. Either way springs stack, under a height ceiling that suits a 28 m plate |
 | Pull up, release slowly | the block lifts as a unit; on release a random basin sinks, sized by the pull (lakes and oceans later) |
 | Pull up, release fast | a physics toss: the block tilts over its far edge by the flick's speed and either falls back and wobbles or goes over (the flip, a new world). Tilts add up while it is still up, so you can pump it over like a swing; one hard flick also does it |
 
@@ -194,14 +194,15 @@ Branch `feature/edge-falls` (2026-09-29). The user wanted to "thumb your way to 
 
 `tools/probe_land_spring.gd` now drives the spring directly and checks the land signals leave it idle; `tools/probe_modeless_rim.gd` checks a land drag is the thumb and the spring stays idle.
 
-## Edge rework: the dip, the random range, the basin and the toss
+## Edge rework: the dip, the amplify, the random range, the basin and the toss
 
 Branch `feature/modeless-edge-spring`, the first build slice of the agreed scheme above (the edge's rows). Checked headless only (`tools/probe_edge_spring.gd`); nothing has been seen or felt on screen.
 
 ### Try it
 
 - **Pull the rim down** (the lip, or anywhere down a wall). The whole block dips as a unit and tips a little toward your hand, deeper as you pull, trembling near the cap. Nothing on the land moves yet.
-- **Let go.** The block snaps back up and a random range springs out of the land, overshoots, rings down, settles and weathers. A gentle pull gives low rolling hills, a hard one tall jagged peaks. Where it rises, which way it runs and how many peaks it has are random, leaning away from the rim and from ground that is already tall. Pull again and another stacks on, under a ceiling. One undo takes each back.
+- **Let go on land you have shaped.** The block snaps back up and your own shapes spring up bigger: they overshoot, ring down, settle and weather. Peaks you pinched grow taller, sharper and craggier; thumb grooves and palm basins get deeper, and water standing in them reflows. A gentle pull adds a little, a hard one a lot. Nothing new is placed. Rock repaints the taller slopes, and the thumb's bare earth stays as it was. Pull again to amplify again, under a ceiling. One undo takes each back.
+- **Let go on a blank plate.** Nothing to amplify, so a random range springs out of the land instead, as a starter. A gentle pull gives low rolling hills, a hard one tall jagged peaks. Where it rises, which way it runs and how many peaks it has are random, leaning away from the rim and from ground that is already tall.
 - **A tiny pull** keeps nothing and adds no undo step.
 - **Lift the rim up.** The block's near edge lifts and tilts after your hand, hinged on the far edge, as the flip always did. What happens is decided when you let go:
   - **let go slowly** (or hold still first): the block settles back with a small bounce and a random basin sinks, sized by how far you lifted, away from the rim;
@@ -213,7 +214,16 @@ Branch `feature/modeless-edge-spring`, the first build slice of the agreed schem
 
 - **The dip** is the flip's snapshot (`scripts/diorama_flip.gd` `dip_begin`, `dip_to`, `dip_release`): the diorama's meshes are copied onto one pivot and the real ones hidden, as for the flip, and the pivot is posed with `pose(-DIP_TILT*d, -DIP_DROP*d)`: at a full pull the block drops `DIP_DROP` (0.9 m) and tips `DIP_TILT` (0.06 rad) about its far edge, so the grabbed edge goes down about 2.3 m. It follows the pull on the hold spring (13/s, 0.85). Let go, it snaps up on a stiffer spring (26/s, 0.5) and is handed back the moment it reaches rest (5 frames in the probe); `dipped(amount)` then starts the range's spring. No terrain is touched while it is held, so the snapshot never shows stale land.
 - **The pull** is the land spring's measure: travel down from the press over 0.32 of the viewport's height is the cap; under 0.03 nothing shows; let go under 0.12 and nothing is kept.
-- **The range** (`scripts/edge_spring.gd`, which extends `scripts/land_spring.gd` for its spring, landing and basin):
+- **Shaped or blank** (`scripts/edge_spring.gd` `_build_shape`). At release the plate's relief is measured: the largest departure of any point from the smooth base (below), faded at the rim. At `RELIEF_MIN` (0.5 m) or more the plate has been shaped and is amplified; under it a range springs. The cozy worlds' starting plate measures 0.22 to 0.27 m; one clay pinch, groove or two palm presses take it over.
+- **The amplify** (`_build_amplify`, branch `feature/edge-spring-amplify`):
+  - **the base** is a robust heavy blur of the land: point heights averaged onto a 1 m grid, blurred with three box passes 4 cells either side (about a 4 m gaussian), then refined four times, each time blurring the heights clamped to within 1, 0.5, 0.25 and 0.25 m of the last base (`BASE_CLAMPS`). A clamped peak or basin barely pulls the base toward itself, so what you shaped stands out from the base and the ground round it does not. The plate's plain level (a flat base) was rejected: it scales every height, so a palm basin pressed into raised ground (still above the plain) would rise instead of deepening, and a broad raised shoulder would lift as a block. A plain blur was also rejected: a peak pulls it up round itself, so its foot sinks into a moat (0.32 m round a 3.3 m peak at a hard pull in the probe, against 0.19 m with the clamps, most of which is the plate's own ripple amplified);
+  - **the factor**: each departure is scaled by `lerp(1.1, 1.6, pull)` (`AMPLIFY`), so the smallest kept pull (0.12) is about ×1.16 and the cap ×1.6. Peaks rise, grooves and basins deepen;
+  - **jaggedness** follows the range's blend (`JAGGED`, 0.15 to 0.85 of the pull). On upper slopes (a smoothstep over 0.6 to 3.5 m above the base, `UPPER`) the gain grows by up to 40 % of itself (`SHARPEN`), so summits sharpen, and the mountain forms' ridged and fine crag noise moves the ground by up to 20 % of its departure either way (`CRAG`). A rise is never negative;
+  - **limits**: rises are eased under the range's ceiling (`KNEE` 7 m toward `CEILING` 11 m), faded off water by the mountain keep-out and capped at `MAX_HEIGHT`; sinks are eased below `SINK_KNEE` (-0.8 m) toward `MIN_HEIGHT` (-1.5 m), never reaching it. Both fade to nothing over the plate's last metres (`EDGE`, 11.4 to 13.6 m), as the range does;
+  - it is built into the editor's mountain as the range is (lift, touched points, bounds, a middle weighted by the rise), so it springs through `_apply`, lands through `_land_mountain` (weathering on the risen cells only, rock by share of `max(2, top, lerp(10, top, jag))` m) and is one undo step, which restores the heights and tint exactly; an undo mid-spring lands it first;
+  - **bare earth stays**: `tint_lock` on the mountain (`scripts/mountain_forms.gd`) names the tint cells the rock must leave alone, set to the cells the hand has bared (hand provenance, no grass: the clay's dirt and paths);
+  - built in about 4 ms at release (3 ms of it the base) on the 2025-point plate in the probe.
+- **The range** (blank plates; `scripts/edge_spring.gd`, which extends `scripts/land_spring.gd` for its spring, landing and basin):
   - random, from a seeded generator: 2 to 5 peaks (`RANGE_PEAKS`), a crest line 6 to 15 m long (`RANGE_LENGTH`) at a random bearing;
   - placement: the best of 24 random middles (`CANDIDATES`), its ends kept within 9 m of the middle lines (`RANGE_ROOM`), scored `-3·(distance out / 11 m)² - 0.6·(mean ground along the line, m) + 1.5·random`. The grabbed edge plays no part;
   - peaks slip along the line by up to 35 % of their spacing and stand off it by up to 1.2 m; each is 65 to 100 % of the range's height, lower toward the ends;
@@ -232,12 +242,14 @@ Branch `feature/modeless-edge-spring`, the first build slice of the agreed schem
 
 ### Limits and open points
 
+- **Amplify weathers with the alpine settings**, and a gentle pull's rock height of about 10 m also raises the weathering's detail, as the range's rolling hills do. The crags add little fine roughness the probe can measure (roughness per metre of prominence 0.053 before, 0.053 after a hard pull); the sharpening shows more (prominence ×1.86 at a ×1.6 factor). How craggy it reads needs eyes.
+- **The relief threshold** is a single number over the whole plate. A world generated with more ripple than 0.5 m would amplify on its first pull.
 - **Several forms.** The horns are alpine only; ridge, mesa or the biome's form could join. Hills weather with the alpine settings.
 - **The dip snaps up and hands over.** The block's own overshoot upward is not shown (the snapshot is released at rest); the range's overshoot carries the energy. A small upward tremor at the hand-over is untried.
 - **Catch reach.** Any left press catches a tossed plate, wherever it is, not only one on its rim.
 - **The land spring stays** for the land press until the clay slice retires it; `edge_spring.gd` extends it, so retiring it means keeping the file or moving the shared parts.
 - **The hand** grips the rim with the flip's grip during the dip; the wall palm could replace it on walls.
-- **Unverified on screen:** how the dip, the snap and the springing range read, whether the toss's gravity and gain feel right on a mouse and on a trackpad (600 px/s may be too easy or too hard to hit on purpose), the catch, the rolling-to-jagged blend, and whether the ceiling suits the look.
+- **Unverified on screen:** how the amplify reads (whether the sharpening and crags look like more energy or like noise, the rock on the risen slopes, the dirt left in grooves), how the dip, the snap and the springing range read, whether the toss's gravity and gain feel right on a mouse and on a trackpad (600 px/s may be too easy or too hard to hit on purpose), the catch, the rolling-to-jagged blend, and whether the ceiling suits the look.
 
 ### Probe
 
@@ -252,6 +264,26 @@ Branch `feature/modeless-edge-spring`, the first build slice of the agreed schem
 - a small flick (960 px/s) tosses the block from 0.26 rad to 0.75 rad; it falls back, lands three times, sinks no basin and makes no new world;
 - caught in the air and flicked the same way again, it goes over and a new world lands; one hard flick (2400 px/s) also goes over;
 - Shift and a fast push turns at 8.9 rad/s and winds no time.
+
+Its stacking check (three full pulls with one seed) predates the amplify: after the first range the plate is shaped, so the second and third pulls now amplify it, and that section needs rewriting.
+
+`tools/probe_edge_amplify.gd` (same flags) proves the amplify:
+
+- the blank plate measures 0.22 to 0.27 m of relief and a hard pull still springs a random range (3 peaks, 9.5 m), taken back exactly by one undo;
+- the clay sculpts a peak (a pinch, about 3.3 m), a groove (a slow thumb, about 1.1 m) and a basin (two palm presses, about 0.5 m). In one run, before, gentle (0.24 pull, ×1.22) and hard (full pull, ×1.6):
+
+  | | sculpted | gentle | hard | hard twice |
+  |---|---|---|---|---|
+  | peak height (m) | 3.45 | 4.27 | 6.24 | 9.81 |
+  | peak prominence (m) | 3.33 | 4.18 | 6.20 | 9.85 |
+  | groove depth (m) | 1.14 | 1.37 | 1.63 | 1.89 |
+  | basin depth (m) | 0.50 | 0.60 | 0.77 | 1.21 |
+
+- it springs: the shape's scale overshoots to 1.26 (the peak reached 6.9 m before settling at 6.2 m);
+- nothing moves beyond 13.6 m out; the fade band moves at most 0.19 m at a hard pull (the plate's own ripple amplified);
+- none of the 195 bare-earth tint cells changes;
+- each is one undo step, which restores heights and tint exactly; an undo mid-spring does too;
+- the build takes about 4.1 ms at release (3.1 ms for the base) and the release frame about 7.4 ms, against 2.5 ms and 12.6 ms for the blank plate's range.
 
 ## Void slice: the ever-present hand and the snap
 
