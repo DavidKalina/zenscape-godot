@@ -30,6 +30,11 @@ uniform mat4 reflection_matrix;
 // so a second pond at another height does not take a displaced reflection.
 uniform float planar_band = 0.0;
 uniform float planar_level = 0.0;
+// How fast the planar path's water hides the bed with depth (1 for the
+// planned ponds, whose basins are a metre or more deep). Live ponds are
+// shallower and take more, so a spring's pool reads as water, not the grass
+// under it inside a ring of shore foam.
+uniform float bed_absorb = 1.0;
 // Live moving water lies over still water drawn everywhere wet; CUSTOM1.x
 // fades it out towards the slow water round it, so the two meet softly.
 uniform bool flow_edge_fade = false;
@@ -167,7 +172,7 @@ void fragment() {
 		float shallows = smoothstep(0.04, 0.22, submerged) * (1.0 - smoothstep(0.8, 2.4, submerged));
 		float caustics = zs_pool_caustics(receiver.xz, zs_flow_time) * shallows * caustics_strength * (1.0 - zs_ice) * zs_daylight * zs_celestial_clear;
 		vec3 bed = textureLod(pond_screen, SCREEN_UV, 0.0).rgb * (1.0 + vec3(0.95, 0.90, 0.65) * caustics);
-		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth);
+		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth * bed_absorb);
 		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
 		shore_depth = min(shore_depth, max(submerged, 0.0));
 		fresnel = mix(plain_fresnel, fresnel, planar_weight);

@@ -304,7 +304,7 @@ A rendered playtest dropped an 8 m³ ball on the top of a pinched peak on an ope
 - **A spring ball no longer bursts.** Its water wells out of the spring over `SPRING_HEAD_SECONDS`, about 0.75 m³/s for an 8 m³ ball, then the spring keeps its steady rate.
 - **The spring rises `SPRING_SET` down the steepest descent** from the landing point (`WaterFlow.descent`), so a summit's water takes one flank.
 - **The spring's bed** (`WaterFlow.spring_bed`). The course runs to its foot, where two 0.5 m steps in a row fall less than 8 %. There the water wears two things:
-  - a pool sized to hold the ball: the water brush's hollow, radius 1.4 + 0.9√V (1.8–4.5 m) and depth 3V/πr² + 0.05 m (0.15–0.9 m), set half a radius past the foot and kept 1.5 m inside the rim;
+  - a pool sized to hold the ball, set half a radius past the foot and kept 1.5 m inside the rim. It was first the water brush's hollow (radius 1.4 + 0.9√V, depth 3V/πr² + 0.05 m); it is now a floored pond (see "The foot pool read as grass" below);
   - a rill 0.3 m deep and 1 m to either side, down the course from the spring to the pool.
   
   A foot already in a hollow 0.25 m deep, such as a palm-pressed basin, keeps its ground. So does a course that reaches the rim, such as a notched spillway. The bed is inside the spring's undo step: one undo takes the spring and the bed, and redo brings both back. `last_bed` hands the editor the ground before and after, and `_wear_spring_bed` eases it in over 1.2 s with light refreshes. A stroke that starts meanwhile, an undo or a new world stops it. `--no-spring-bed` keeps the old ground, for A/B.
@@ -330,6 +330,36 @@ Once full, the pool overflows with the spring's steady 0.09 m³/s and runs on as
 - a burst on flat low ground still spreads into a thin sheet, and can still show the shore-foam ring;
 - trees standing where the pool is cut stay, sunk to the new ground;
 - the rill cuts into the user's peak; `--no-spring-bed` shows it without.
+
+### The foot pool read as grass (2026-09-29, rendered playtest)
+
+In the rendered take the stream was right, but the pool at its foot showed only as a thin pale curve on the grass.
+
+**Why** (headless, the playtest's gestures; `pools()`, the surface arrays and the live materials read at 8–30 s):
+- **The water was there.** About 7–8 m³ stood in the pool, and `pools()` reported 12 m² from about 15 s. The planar view came on then (`planar_enabled`, level followed).
+- **It was a shallow dish.** The water brush's (1 − t²)² hollow, 7.7 m across, held most of its water in a thin rim. Within 4.5 m of the pool at 16 s, 44 m² was drawn: 21 m² under 15 cm, 9 m² deeper than 30 cm, and a mean depth of 0.17 m. 24 m² of it still ran fast enough (over 0.22 m/s) to draw as a stream.
+- **The planar path shows the bed through shallow water.** It mixes in the screen's bed by `exp(−(2.0, 0.7, 0.45)·depth)`. That is tuned for the planned ponds' basins, which are a metre or more deep. At 0.17 m it keeps 89 % of the grass in green. The shallow end of the depth palette (`79ae9b`) is itself close to the meadow's green, so the inside read as grass, and only the shore-foam band showed.
+- **Not the cause:** `live_level`. 94 % of the pool's rest facets are within 16° of level, and the swell and chop tilt them by only a few degrees more. `live_thin` applies only to moving water.
+
+**What changed:**
+- **The pool is a pond** (`BED_*` in `water_flow.gd`).
+  - Radius 1.2 + 0.55√V (1.8–3.4 m; 2.7 m for a 7.5 m³ ball, against 3.9 m before).
+  - Full depth inside 45 % of the radius, rising to the ground on a smoothstep.
+  - Deep enough to hold the ball with 0.1 m to spare (0.35–1 m; 0.71 m for 7.5 m³, against 0.53 m at the middle only).
+- **Live ponds hide their bed sooner** (shader `bed_absorb`, `water_flow_view.gd` `BED_ABSORB` = 2): the planar path's absorption runs twice as fast with depth for live still water. Planned ponds keep 1. Thin moving films keep the `live_thin` wet-ground look.
+
+**Measured** (same gestures; a take's pool lands where its course runs):
+
+| At 16 s | Before (4.5 m round the pool) | After (0.9 radius round the pool) |
+|---|---|---|
+| Still water drawn | 44 m², 24 m² of it under moving water | 18 m², 1.7 m² of it under moving water |
+| Mean drawn depth | 0.17 m | 0.44 m |
+| Deeper than 30 / 60 cm | 9 / 0 m² | 12.4 / 6.1 m² |
+| `pools()` | 12 m², 0.49 m deep | 15 m², 0.78 m deep |
+
+Soaked by 30 s: 1.5 m³ before, 0.8 m³ after. The reflection comes on at about 15 s in both.
+
+**Unverified on screen:** the pond's look with `bed_absorb`. The shader edit needs a windowed compile check.
 
 ## Known gaps and follow-ups
 

@@ -79,8 +79,8 @@ const COURSE_FLAT_STEPS := 2
 const COURSE_MAX_STEPS := 80
 const COURSE_RIM := 2.0
 ## Where the course levels off on open ground, the spring's water wears a
-## bed (`spring_bed`): a pool at the foot sized to hold the ball (the water
-## brush's hollow: radius and depth from the volume, kept POOL_RIM m inside
+## bed (`spring_bed`): a pool at the foot sized to hold the ball (a
+## floored pond, BED_*: radius and depth from the volume, kept POOL_RIM m inside
 ## the rim) and a rill RILL_DEPTH deep, RILL_HALF_WIDTH to either side, down
 ## the course to it, so the water runs as one stream into a pond instead of
 ## sheeting over the face and spreading thin over the flat. A foot that
@@ -88,6 +88,20 @@ const COURSE_RIM := 2.0
 ## so does a course that runs to the rim. `--no-spring-bed` turns it off.
 const POOL_RIM := 1.5
 const POOL_HOLLOW := 0.25
+## The pool is a pond, not the water brush's dish: the brush's (1-t²)² hollow
+## sized to the ball came out 7-8 m across and 0.5 m deep only at its middle,
+## half its water under 15 cm, and the pond shader showed that as the grass
+## under it inside a ring of shore foam. Radius BED_SIZE.x + BED_SIZE.y·√V
+## (within BED_RADIUS), full depth inside BED_FLOOR of it and easing up to
+## the ground on a smoothstep, deep enough to hold the ball with
+## BED_FREEBOARD to spare (within BED_DEPTH).
+const BED_SIZE := Vector2(1.2,0.55)
+const BED_RADIUS := Vector2(1.8,3.4)
+const BED_FLOOR := 0.45
+const BED_DEPTH := Vector2(0.35,1.0)
+const BED_FREEBOARD := 0.1
+## The share of radius² × depth × π a BED_FLOOR profile holds.
+const BED_FILL := 0.54
 const RILL_DEPTH := 0.3
 const RILL_HALF_WIDTH := 1.0
 ## Standing water deeper than POOL_DEPTH and slower than POOL_SPEED, over at
@@ -316,11 +330,10 @@ static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
 ## lets it go (the course reaches the rim, or no pool fits inside it). Only
 ## lowers ground.
 static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start: int, volume: float) -> Dictionary:
-	const WaterBrush := preload("res://scripts/water_brush.gd")
 	var course: PackedVector3Array = descended.points
 	if course.size() < 3 or descended.end == "rim": return {}
 	var foot := Vector2(course[-1].x,course[-1].z)
-	var radius := WaterBrush._scoop_radius(volume)
+	var radius := clampf(BED_SIZE.x+BED_SIZE.y*sqrt(volume),BED_RADIUS.x,BED_RADIUS.y)
 	# Already a hollow: the water pools there by itself.
 	var rim_low := INF
 	for k in range(16):
@@ -334,16 +347,16 @@ static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start:
 	if limit < 0.0:
 		radius = 14.0-POOL_RIM
 		limit = 0.0
-	if radius < WaterBrush.SCOOP_RADIUS.x: return {}
+	if radius < BED_RADIUS.x: return {}
 	var pool := (foot+heading*radius*0.5).clamp(Vector2(-limit,-limit),Vector2(limit,limit))
-	var depth := clampf(3.0*volume/(PI*radius*radius)+0.05,WaterBrush.SCOOP_DEPTH.x,WaterBrush.SCOOP_DEPTH.y)
+	var depth := clampf(volume/(PI*radius*radius*BED_FILL)+BED_FREEBOARD,BED_DEPTH.x,BED_DEPTH.y)
 	var heights := terrain.heights.duplicate()
 	var rect := Rect2(pool-Vector2.ONE*radius,Vector2.ONE*radius*2.0)
 	for i in range(terrain.points.size()):
 		var p := terrain.points[i]
 		var cut := 0.0
 		var t := p.distance_to(pool)/radius
-		if t < 1.0: cut = depth*(1.0-t*t)*(1.0-t*t)
+		if t < 1.0: cut = depth*(1.0-smoothstep(BED_FLOOR,1.0,t))
 		# The rill follows the course from the spring down to the pool.
 		var near := INF
 		for k in range(maxi(start,1),course.size()):
