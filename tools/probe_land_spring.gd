@@ -5,7 +5,10 @@ extends SceneTree
 ## returned pulls, and undo, and prints what the land did: heights at the
 ## spot, the spring's overshoot and ring-down, and the longest frames.
 ## With --modeless (after the `--`) it runs the spring; without it, it proves
-## the spring is absent and the brush still paints.
+## the spring is absent and the brush still paints. The spring is retired from
+## land presses (land as clay, scripts/land_clay.gd, takes them): this drives
+## it directly, as the edge spring will, and checks the land signals leave it
+## alone.
 ##   perl -e 'alarm 300; exec @ARGV' Godot --headless --fixed-fps 60 --path . \
 ##     --script res://tools/probe_land_spring.gd -- --modeless
 ## Frame gaps are CPU main-loop intervals under the dummy renderer, so they
@@ -222,19 +225,24 @@ func modeless_run() -> void:
 	await settled()
 	check(heights_equal(base),"one undo restores the heights exactly (basin)")
 
-	# The modeless input's land signals (scripts/hand_reach.gd) drive it.
+	# Retired from the land (docs/scenic/modeless-spring.md): the modeless
+	# input's land signals (scripts/hand_reach.gd) drive land as clay
+	# (scripts/land_clay.gd) now, and the spring stays idle under them. The
+	# spring itself is kept, driven directly above, for the edge spring.
 	editor.pointer_override = null
 	var reach: Node = scene.hand_reach
+	var clay: Node = scene.get("land_clay")
 	var start_at := screen(at)
+	var pulled_before: float = spring.pulled
 	reach.land_pressed.emit(start_at)
-	check(spring.state == 1,"the land press signal starts a pull")
+	check(spring.state == 0,"the land press signal no longer starts a pull")
+	check(clay != null and clay.state == 1,"it goes to land as clay instead")
 	reach.land_dragged.emit(start_at+Vector2(0,120),Vector2(0,120))
-	check(spring.pulled > 0.3,"and follows the pointer's pull (%.2f)" % spring.pulled)
+	check(spring.state == 0 and spring.pulled == pulled_before,"a land drag does not pull the spring")
 	reach.land_released.emit(start_at+Vector2(0,120))
-	check(spring.state == 2,"and springs on release")
-	spring.land_now()
+	check(spring.state == 0,"and a land release springs nothing")
 	await settled()
-	check(height(at) > ground+0.5,"land_now lands a springing mountain at once")
+	while clay != null and clay.state != 0: await tick()
 	editor.undo()
 	await settled()
-	check(heights_equal(base),"and one undo restores it")
+	check(heights_equal(base),"and one undo restores the ground")
