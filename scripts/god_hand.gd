@@ -55,8 +55,10 @@ const BLEND := 0.18
 ## "shake" is a reach, not a tool: gripping the rim and shaking the diorama
 ## like a snow globe (scripts/snow_globe.gd). "turn" and "catch" grip the land
 ## to turn the world (scripts/world_turn.gd). "sun" holds the sun or the moon
-## to set the hour, "rim" grips the rim to turn the season (scripts/hand_reach.gd).
-const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim"}
+## to set the hour, "rim" grips the rim to turn the season (scripts/hand_reach.gd),
+## and "flip" is the same grip held through a diorama flip (scripts/diorama_flip.gd),
+## a key hand_reach does not clear.
+const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim"}
 const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
@@ -82,7 +84,7 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0}
+const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0}
 ## Holding the sun, the hand turns square to the camera, however high the sun
 ## is: the Reach clips cup the disc for a camera level with the hand. The
 ## share per gesture, eased in and out at FACE_RATE (1/s).
@@ -99,7 +101,7 @@ const LIFT_DOWN := 3.0
 const CLEAR_BONES := ["Hand","MetaIndex","MetaMiddle","MetaRing","MetaPinky","Index1","Middle1","Ring1","Pinky1",
 	"Index2","Middle2","Ring2","Pinky2","Index3","Middle3","Ring3","Pinky3","Thumb1","Thumb2","Thumb3"]
 const PINCHING := ["Index2","Index3","Thumb2","Thumb3"]
-const UNLIFTED := ["press","cup","shake","rim"]
+const UNLIFTED := ["press","cup","shake","rim","flip"]
 ## Turning the world (scripts/world_turn.gd): the gestures whose palm lies
 ## flat on the land, riding its height and never lifted clear of it; and the
 ## lean into the push, TURN_LEAN radians per m/s the grabbed ground moves
@@ -264,7 +266,7 @@ func _process(delta: float) -> void:
 	var flat := Vector2(velocity.x,velocity.z)
 	_still = _still+delta if flat.length() < STILL else 0.0
 	# It leans into the pointer's way and rocks back through upright on a stop.
-	var free := gesture.is_empty() or gesture == "sprinkle" or gesture == "rim"
+	var free := gesture.is_empty() or gesture == "sprinkle" or gesture == "rim" or gesture == "flip"
 	var lean_goal := (flat*LEAN).limit_length(MAX_LEAN) if free else Vector2.ZERO
 	if gesture in GRIPS: lean_goal = (Vector2(reach_push.x,reach_push.z)*TURN_LEAN).limit_length(MAX_TURN_LEAN)
 	_lean_speed += ((lean_goal-_lean)*LEAN_SPRING-_lean_speed*LEAN_DAMP)*delta

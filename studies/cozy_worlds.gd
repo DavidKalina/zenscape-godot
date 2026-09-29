@@ -47,6 +47,8 @@ var _glyphs := {}
 ## --atlas: Genesis chunks stitched into one world (scripts/chunk_atlas_controller.gd).
 var atlas: Node
 var atlas_path := "user://cozy-worlds/atlas.json"
+## --modeless: turning the diorama over for a new world (scripts/diorama_flip.gd).
+var flip: Node
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -79,6 +81,10 @@ func _ready() -> void:
 		await atlas.setup(self)
 		get_window().title = "ZenScape · Chunk atlas"
 	_setup_creation()
+	if preload("res://scripts/diorama_flip.gd").enabled():
+		flip = preload("res://scripts/diorama_flip.gd").new()
+		add_child(flip)
+		flip.setup(self)
 	shell_ready = true
 
 func _fill_world_menu() -> void:
