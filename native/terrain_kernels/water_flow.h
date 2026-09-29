@@ -21,8 +21,10 @@
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
+#include <godot_cpp/variant/packed_vector4_array.hpp>
 #include <godot_cpp/variant/rect2.hpp>
 #include <godot_cpp/variant/vector2.hpp>
+#include <godot_cpp/variant/vector4.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -67,6 +69,7 @@ protected:
         ClassDB::bind_method(D_METHOD("surface", "params"), &ZenScapeWaterFlow::surface);
         ClassDB::bind_method(D_METHOD("pools", "min_depth", "max_speed", "min_cells"), &ZenScapeWaterFlow::pools);
         ClassDB::bind_method(D_METHOD("falls", "min_flux", "min_drop", "min_slope", "reach"), &ZenScapeWaterFlow::falls);
+        ClassDB::bind_method(D_METHOD("cascades", "params"), &ZenScapeWaterFlow::cascades);
     }
 
     static int64_t now_usec() {
@@ -195,7 +198,7 @@ public:
         const int n = w*h;
         face.assign(n*3, -1); weight.assign(n*2, 0.0f); kind.assign(n, OUTSIDE);
         ground.assign(n, 0.0f); depth.assign(n, 0.0f); next.assign(n, 0.0f);
-        vx.assign(n, 0.0f); vz.assign(n, 0.0f); flux.assign(n*4, 0.0f); flowing.assign(n, 0);
+        vx.assign(n, 0.0f); vz.assign(n, 0.0f); flux.assign(n*4, 0.0f); flowing.assign(n, 0); steep.assign(n, 0);
         poured = drained = soaked = removed = 0.0;
         steps = 0;
         if (faces.size() != n*3 || weights.size() != n*2) { w = h = 0; return; }
@@ -319,7 +322,8 @@ public:
     // the mean surface of its wet neighbours, or sits just under its own ground
     // when that is lower, so the sheet meets the bank and the terrain hides the
     // edge. Params: wet, lift, flow_on, flow_off, foam_from, foam_to, shallow,
-    // deep, foam (linear colours), depth_scale, under. With `under`, "still"
+    // deep, foam (linear colours), depth_scale, under. Still water's UV.x is
+    // its distance from dry ground, m (0 on the bank). With `under`, "still"
     // holds every drawn quad, the calm ones first ("calm" indices of them), so
     // moving water lies over still water; moving vertices carry in CUSTOM1.x
     // how fast they run between flow_off (0) and flow_on (1), to fade by.
@@ -346,6 +350,29 @@ public:
             if (found == 0) continue;
             state[c] = 2;
             top[c] = float(std::min(sum/found, double(ground[c])-0.02));
+        }
+        // How far each wet cell lies from dry ground (a cell not drawn wet), in
+        // metres, by a chamfer distance: bank corners 0. Still water carries it
+        // in UV.x, so the shore foam follows the bank rather than the depth.
+        std::vector<float> shore(n, 0.0f);
+        const float diagonal = float(cell*1.41421356);
+        for (int c = 0; c < n; ++c) if (state[c] == 1) shore[c] = 1e6f;
+        for (int pass = 0; pass < 2; ++pass) {
+            const int from = pass == 0 ? 0 : n-1, to = pass == 0 ? n : -1, step = pass == 0 ? 1 : -1;
+            for (int c = from; c != to; c += step) {
+                if (state[c] != 1) continue;
+                const int i = c%w, j = c/w;
+                float best = shore[c];
+                for (int dj = -1; dj <= 1; ++dj) for (int di = -1; di <= 1; ++di) {
+                    if (di == 0 && dj == 0) continue;
+                    const int a = i+di, b = j+dj;
+                    const float d = (di != 0 && dj != 0) ? diagonal : float(cell);
+                    if (a < 0 || b < 0 || a >= w || b >= h) { best = std::min(best, d); continue; }
+                    const int m = b*w+a;
+                    best = std::min(best, (state[m] == 1 ? shore[m] : 0.0f)+d);
+                }
+                shore[c] = best;
+            }
         }
         // Moving or still, with a little hysteresis so the split does not flicker.
         for (int c = 0; c < n; ++c) {
@@ -416,7 +443,7 @@ public:
                     custom1.push_back(fade[c]);
                     for (int k = 0; k < 3; ++k) custom1.push_back(0.0f);
                 } else {
-                    uv.push_back(Vector2(0.0f, 0.0f));
+                    uv.push_back(Vector2(shore[c], 0.0f));
                     // Shore fetch in eight directions (NativeTerrainData.pond_fetch),
                     // in half-metre steps up to 9 m, for the lake chop.
                     static const int di8[8] = {1, 1, 0, -1, -1, -1, 0, 1};
@@ -567,6 +594,171 @@ public:
             out.push_back(float(f.x1)); out.push_back(float(f.y1)); out.push_back(float(f.z1));
             out.push_back(float(f.q));
         }
+        return out;
+    }
+
+    // Waterfalls for the view (docs/scenic/water-flow.md "Waterfalls"): where
+    // fast water crosses a big drop over a short run. A wet cell (deeper than
+    // `wet`) running faster than `min_speed` is steep when its surface falls
+    // `slope_on` m per metre or more over `run` m down its flow, and stays
+    // steep until that is under `slope_off` (per-cell hysteresis, `steep`).
+    // Steep cells group 8-connected. A group of `min_cells` or more is a fall
+    // when its lip stands `min_drop` m or more over its plunge and it carries
+    // `min_flux` m³/s: the larger of what flows into it from outside and what
+    // flows out. Each fall, the largest flux first (at most `max`) is
+    // {"flux", "drop", "cells", "lip" (Vector3: the depth-weighted mean of the
+    // cells within `lip_band` of the top), "lip_dir" (Vector2, the flow there),
+    // "lip_half" (half the lip's width across lip_dir), "plunge" (Vector3,
+    // flux-weighted, where the water leaving it lands), "plunge_depth",
+    // "course" (PackedVector4Array: x, y, z and half width, from lip to
+    // plunge, at stations `band` m of drop apart)}.
+    std::vector<uint8_t> steep;
+    Array cascades(const Dictionary &p) {
+        const double wet = p.get("wet", 0.01), min_speed = p.get("min_speed", 0.3);
+        const double slope_on = p.get("slope_on", 1.0), slope_off = p.get("slope_off", 0.7), run = p.get("run", 0.5);
+        const double min_drop = p.get("min_drop", 0.6), min_flux = p.get("min_flux", 0.004);
+        const double lip_band = p.get("lip_band", 0.3), band = std::max(0.05, double(p.get("band", 0.3)));
+        const int min_cells = p.get("min_cells", 3), most = p.get("max", 6);
+        const int n = w*h;
+        Array out;
+        if (n == 0) return out;
+        if (int(steep.size()) != n) steep.assign(n, 0);
+        std::vector<float> top(n);
+        for (int c = 0; c < n; ++c) top[c] = ground[c]+depth[c];
+        // 1. Steep cells, with hysteresis.
+        for (int c = 0; c < n; ++c) {
+            uint8_t s = 0;
+            if (kind[c] == WATER && depth[c] > wet) {
+                const double speed = std::sqrt(double(vx[c])*vx[c]+double(vz[c])*vz[c]);
+                if (speed > min_speed) {
+                    const double x = ox+(c%w+0.5)*cell, z = oz+(c/w+0.5)*cell;
+                    const int m = index(x+vx[c]/speed*run, z+vz[c]/speed*run);
+                    if (m >= 0 && m != c && kind[m] != OUTSIDE) {
+                        const double slope = (double(top[c])-top[m])/run;
+                        s = slope >= (steep[c] ? slope_off : slope_on) ? 1 : 0;
+                    }
+                }
+            }
+            steep[c] = s;
+        }
+        // 2. Groups.
+        struct Found { double flux; Dictionary fall; };
+        std::vector<Found> found;
+        std::vector<int32_t> group(n, -1);
+        std::vector<int32_t> cells, todo;
+        int serial = 0;
+        for (int s = 0; s < n; ++s) {
+            if (!steep[s] || group[s] >= 0) continue;
+            cells.clear(); todo.clear();
+            todo.push_back(s); group[s] = serial;
+            while (!todo.empty()) {
+                const int c = todo.back(); todo.pop_back();
+                cells.push_back(c);
+                const int i = c%w, j = c/w;
+                for (int dj = -1; dj <= 1; ++dj) for (int di = -1; di <= 1; ++di) {
+                    const int a = i+di, b = j+dj;
+                    if (a < 0 || b < 0 || a >= w || b >= h) continue;
+                    const int m = b*w+a;
+                    if (steep[m] && group[m] < 0) { group[m] = serial; todo.push_back(m); }
+                }
+            }
+            const int id = serial++;
+            if (int(cells.size()) < min_cells) continue;
+            double high = -1e9, low = 1e9;
+            for (int c : cells) { high = std::max(high, double(top[c])); low = std::min(low, double(top[c])); }
+            // What crosses the group's edge: in from outside, out to where it lands.
+            double in = 0.0, outq = 0.0, px = 0.0, py = 0.0, pz = 0.0, pd = 0.0;
+            for (int c : cells) {
+                const int i = c%w, j = c/w;
+                const int nb[4] = {i > 0 ? c-1 : -1, i < w-1 ? c+1 : -1, j > 0 ? c-w : -1, j < h-1 ? c+w : -1};
+                // The neighbour's pipe back towards c: -x's +x, +x's -x, -z's +z, +z's -z.
+                static const int back[4] = {1, 0, 3, 2};
+                for (int k = 0; k < 4; ++k) {
+                    const int m = nb[k];
+                    if (m < 0 || group[m] == id || kind[m] == OUTSIDE) continue;
+                    in += flux[m*4+back[k]];
+                    const double q = flux[c*4+k];
+                    if (q <= 0.0) continue;
+                    outq += q;
+                    px += q*(ox+(m%w+0.5)*cell); pz += q*(oz+(m/w+0.5)*cell); py += q*top[m]; pd += q*depth[m];
+                }
+            }
+            const double q = std::max(in, outq);
+            if (q < min_flux) continue;
+            // The lip: the cells near the top, by depth.
+            double lw = 0.0, lx = 0.0, ly = 0.0, lz = 0.0, dx = 0.0, dz = 0.0;
+            for (int c : cells) {
+                if (top[c] < high-lip_band) continue;
+                const double k = depth[c]+1e-4;
+                lw += k; lx += k*(ox+(c%w+0.5)*cell); lz += k*(oz+(c/w+0.5)*cell); ly += k*top[c];
+                dx += k*vx[c]; dz += k*vz[c];
+            }
+            lx /= lw; ly /= lw; lz /= lw;
+            const double dl = std::sqrt(dx*dx+dz*dz);
+            if (dl > 1e-9) { dx /= dl; dz /= dl; } else { dx = 1.0; dz = 0.0; }
+            double lo = 1e9, hi = -1e9;
+            for (int c : cells) {
+                if (top[c] < high-lip_band) continue;
+                const double t = (ox+(c%w+0.5)*cell-lx)*-dz+(oz+(c/w+0.5)*cell-lz)*dx;
+                lo = std::min(lo, t); hi = std::max(hi, t);
+            }
+            const double lip_half = 0.5*(hi-lo)+0.5*cell;
+            // Stations down the face: the cells in each band of height.
+            const int bands = std::max(1, int(std::ceil((high-low)/band)));
+            std::vector<double> sum(size_t(bands)*7, 0.0); // count, x, z, y, xx, zz, xz
+            for (int c : cells) {
+                const int b = std::min(bands-1, int((high-top[c])/band));
+                const double x = ox+(c%w+0.5)*cell, z = oz+(c/w+0.5)*cell;
+                double *e = &sum[size_t(b)*7];
+                e[0] += 1.0; e[1] += x; e[2] += z; e[3] += top[c]; e[4] += x*x; e[5] += z*z; e[6] += x*z;
+            }
+            std::vector<Vector4> course;
+            std::vector<int> used;
+            course.push_back(Vector4(float(lx), float(ly), float(lz), float(lip_half)));
+            for (int b = 0; b < bands; ++b) {
+                const double *e = &sum[size_t(b)*7];
+                if (e[0] < 1.0) continue;
+                const double y = e[3]/e[0];
+                if (y >= ly-0.05) continue;
+                course.push_back(Vector4(float(e[1]/e[0]), float(y), float(e[2]/e[0]), 0.0f));
+                used.push_back(b);
+            }
+            Vector3 plunge;
+            if (outq > 0.0) plunge = Vector3(float(px/outq), float(py/outq), float(pz/outq));
+            else plunge = Vector3(course.back().x, float(low), course.back().z);
+            const double plunge_depth = outq > 0.0 ? pd/outq : 0.0;
+            course.push_back(Vector4(plunge.x, plunge.y, plunge.z, 0.0f));
+            // Each band's half width across the course there, from its spread.
+            for (size_t k = 1; k+1 < course.size(); ++k) {
+                const double *e = &sum[size_t(used[k-1])*7];
+                const double mx = e[1]/e[0], mz = e[2]/e[0];
+                const double sxx = e[4]/e[0]-mx*mx, szz = e[5]/e[0]-mz*mz, sxz = e[6]/e[0]-mx*mz;
+                double tx = course[k+1].x-course[k-1].x, tz = course[k+1].z-course[k-1].z;
+                const double tl = std::sqrt(tx*tx+tz*tz);
+                if (tl > 1e-6) { tx /= tl; tz /= tl; } else { tx = dx; tz = dz; }
+                const double ax = -tz, az = tx;
+                const double spread = std::max(0.0, sxx*ax*ax+2.0*sxz*ax*az+szz*az*az);
+                course[k].w = float(std::sqrt(3.0*spread)+0.5*cell);
+            }
+            course.back().w = course.size() > 2 ? course[course.size()-2].w : float(lip_half);
+            const double drop = ly-plunge.y;
+            if (drop < min_drop) continue;
+            PackedVector4Array stations;
+            for (const Vector4 &v : course) stations.push_back(v);
+            Dictionary fall;
+            fall["flux"] = q;
+            fall["drop"] = drop;
+            fall["cells"] = int(cells.size());
+            fall["lip"] = Vector3(float(lx), float(ly), float(lz));
+            fall["lip_dir"] = Vector2(float(dx), float(dz));
+            fall["lip_half"] = lip_half;
+            fall["plunge"] = plunge;
+            fall["plunge_depth"] = plunge_depth;
+            fall["course"] = stations;
+            found.push_back({q, fall});
+        }
+        std::sort(found.begin(), found.end(), [](const Found &a, const Found &b) { return a.flux > b.flux; });
+        for (size_t k = 0; k < found.size() && int(k) < most; ++k) out.push_back(found[k].fall);
         return out;
     }
 };

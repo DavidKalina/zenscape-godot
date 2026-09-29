@@ -87,8 +87,8 @@ var worst_step_usec := 0
 ## the library is not built). Build the cell map with `map_cells` (or `setup`).
 func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	data = terrain
-	# A library built before the newest method (`wet_cells`) is stale: use the mirror.
-	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","wet_cells"):
+	# A library built before the newest method (`cascades`) is stale: use the mirror.
+	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","cascades"):
 		kernel = ClassDB.instantiate("ZenScapeWaterFlow")
 		native = true
 	else:
@@ -279,6 +279,11 @@ func pools() -> Array:
 ## Steep drops of moving water: flat x0, y0, z0, x1, y1, z1, flux per fall.
 func falls(min_flux: float, min_drop: float, min_slope: float, reach: float) -> PackedFloat32Array:
 	return kernel.falls(min_flux,min_drop,min_slope,reach) if ready else PackedFloat32Array()
+
+## Waterfalls traced from the flow (ZenScapeWaterFlow::cascades): lip, plunge,
+## flux and a course down the face, for scripts/flow_falls.gd.
+func cascades(params: Dictionary) -> Array:
+	return kernel.cascades(params) if ready else []
 
 ## The saved form: springs, and the depth grid deflated as float32, base64.
 func encode() -> Dictionary:

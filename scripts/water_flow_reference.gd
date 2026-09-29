@@ -21,6 +21,7 @@ var vx := PackedFloat32Array()
 var vz := PackedFloat32Array()
 var flux := PackedFloat32Array()
 var flowing := PackedByteArray()
+var steep := PackedByteArray()
 var gravity := 9.81
 var friction := 0.6
 var drag := 0.06
@@ -52,6 +53,8 @@ func configure(width: int, height: int, cell_size: float, origin: Vector2, faces
 	kind.fill(OUTSIDE)
 	flowing.resize(n)
 	flowing.fill(0)
+	steep.resize(n)
+	steep.fill(0)
 	poured = 0.0
 	drained = 0.0
 	soaked = 0.0
@@ -309,6 +312,7 @@ func surface(p: Dictionary) -> Dictionary:
 			if found == 0: continue
 			state[c] = 2
 			top[c] = minf(sum/found,ground[c]-0.02)
+	var shore := _shore_distance(state)
 	for c in range(n):
 		if state[c] != 1:
 			flowing[c] = 0
@@ -382,7 +386,7 @@ func surface(p: Dictionary) -> Dictionary:
 				custom0.append_array([x,y,z,-1.0])
 				custom1.append_array([fade[c],0.0,0.0,0.0])
 			else:
-				uv.append(Vector2.ZERO)
+				uv.append(Vector2(shore[c],0.0))
 				var fetch := PackedFloat32Array()
 				for k in range(8):
 					var stepped := (1.41421356 if DI[k] != 0 and DJ[k] != 0 else 1.0)*stride*cell
@@ -423,6 +427,35 @@ func surface(p: Dictionary) -> Dictionary:
 		if set_index == 0 and not under: calm = indices.size()
 		out["still" if set_index == 0 else "flow"] = {"vertices":vertices,"colors":colors,"uv":uv,"uv2":uv2,"custom0":custom0,"custom1":custom1,"indices":indices,"calm":calm}
 	return out
+
+## How far each wet cell (state 1) lies from dry ground, m, by a chamfer
+## distance (see ZenScapeWaterFlow::surface).
+func _shore_distance(state: PackedByteArray) -> PackedFloat32Array:
+	var n := w*h
+	var shore := _zeros(n)
+	var diagonal := cell*1.41421356
+	for c in range(n):
+		if state[c] == 1: shore[c] = 1000000.0
+	for pass_index in range(2):
+		var order := range(n) if pass_index == 0 else range(n-1,-1,-1)
+		for c: int in order:
+			if state[c] != 1: continue
+			var i := c%w
+			var j := c/w
+			var best := shore[c]
+			for dj in range(-1,2):
+				for di in range(-1,2):
+					if di == 0 and dj == 0: continue
+					var a := i+di
+					var b := j+dj
+					var d := diagonal if di != 0 and dj != 0 else cell
+					if a < 0 or b < 0 or a >= w or b >= h:
+						best = minf(best,d)
+						continue
+					var m := b*w+a
+					best = minf(best,(shore[m] if state[m] == 1 else 0.0)+d)
+			shore[c] = best
+	return shore
 
 ## See ZenScapeWaterFlow::pools.
 func pools(min_depth: float, max_speed_still: float, min_cells: int) -> Array:
@@ -503,3 +536,157 @@ func falls(min_flux: float, min_drop: float, min_slope: float, reach: float) -> 
 	var out := PackedFloat32Array()
 	for f: Array in kept: out.append_array(f)
 	return out
+
+## See ZenScapeWaterFlow::cascades.
+func cascades(p: Dictionary) -> Array:
+	var wet: float = p.get("wet",0.01)
+	var min_speed: float = p.get("min_speed",0.3)
+	var slope_on: float = p.get("slope_on",1.0)
+	var slope_off: float = p.get("slope_off",0.7)
+	var run: float = p.get("run",0.5)
+	var min_drop: float = p.get("min_drop",0.6)
+	var min_flux: float = p.get("min_flux",0.004)
+	var lip_band: float = p.get("lip_band",0.3)
+	var band := maxf(0.05,float(p.get("band",0.3)))
+	var min_cells: int = p.get("min_cells",3)
+	var most: int = p.get("max",6)
+	var n := w*h
+	if n == 0: return []
+	if steep.size() != n:
+		steep.resize(n)
+		steep.fill(0)
+	var top := _zeros(n)
+	for c in range(n): top[c] = ground[c]+depth[c]
+	for c in range(n):
+		var s := 0
+		if kind[c] == WATER and depth[c] > wet:
+			var speed := sqrt(vx[c]*vx[c]+vz[c]*vz[c])
+			if speed > min_speed:
+				var m := _index(ox+(c%w+0.5)*cell+vx[c]/speed*run,oz+(c/w+0.5)*cell+vz[c]/speed*run)
+				if m >= 0 and m != c and kind[m] != OUTSIDE:
+					var slope := (top[c]-top[m])/run
+					s = 1 if slope >= (slope_off if steep[c] != 0 else slope_on) else 0
+		steep[c] = s
+	var found := []
+	var group := PackedInt32Array()
+	group.resize(n)
+	group.fill(-1)
+	var serial := 0
+	var back := [1,0,3,2]
+	for start in range(n):
+		if steep[start] == 0 or group[start] >= 0: continue
+		var cells: Array[int] = []
+		var todo: Array[int] = [start]
+		group[start] = serial
+		while not todo.is_empty():
+			var c: int = todo.pop_back()
+			cells.append(c)
+			var i := c%w
+			var j := c/w
+			for dj in range(-1,2):
+				for di in range(-1,2):
+					var a := i+di
+					var b := j+dj
+					if a < 0 or b < 0 or a >= w or b >= h: continue
+					var m := b*w+a
+					if steep[m] != 0 and group[m] < 0:
+						group[m] = serial
+						todo.append(m)
+		var id := serial
+		serial += 1
+		if cells.size() < min_cells: continue
+		var high := -1e9
+		var low := 1e9
+		for c in cells:
+			high = maxf(high,top[c])
+			low = minf(low,top[c])
+		var inflow := 0.0
+		var outflow := 0.0
+		var landing := Vector3.ZERO
+		var landing_depth := 0.0
+		for c in cells:
+			var i := c%w
+			var j := c/w
+			var nb := [c-1 if i > 0 else -1,c+1 if i < w-1 else -1,c-w if j > 0 else -1,c+w if j < h-1 else -1]
+			for k in range(4):
+				var m: int = nb[k]
+				if m < 0 or group[m] == id or kind[m] == OUTSIDE: continue
+				inflow += flux[m*4+back[k]]
+				var q := flux[c*4+k]
+				if q <= 0.0: continue
+				outflow += q
+				landing += q*Vector3(ox+(m%w+0.5)*cell,top[m],oz+(m/w+0.5)*cell)
+				landing_depth += q*depth[m]
+		var q := maxf(inflow,outflow)
+		if q < min_flux: continue
+		var lw := 0.0
+		var lip := Vector3.ZERO
+		var dir := Vector2.ZERO
+		for c in cells:
+			if top[c] < high-lip_band: continue
+			var k := depth[c]+0.0001
+			lw += k
+			lip += k*Vector3(ox+(c%w+0.5)*cell,top[c],oz+(c/w+0.5)*cell)
+			dir += k*Vector2(vx[c],vz[c])
+		lip /= lw
+		dir = dir.normalized() if dir.length() > 1e-9 else Vector2(1,0)
+		var lo := 1e9
+		var hi := -1e9
+		for c in cells:
+			if top[c] < high-lip_band: continue
+			var t := (ox+(c%w+0.5)*cell-lip.x)*-dir.y+(oz+(c/w+0.5)*cell-lip.z)*dir.x
+			lo = minf(lo,t)
+			hi = maxf(hi,t)
+		var lip_half := 0.5*(hi-lo)+0.5*cell
+		var bands := maxi(1,ceili((high-low)/band))
+		var sums := PackedFloat64Array()
+		sums.resize(bands*7)
+		sums.fill(0.0)
+		for c in cells:
+			var b := mini(bands-1,int((high-top[c])/band))
+			var x := ox+(c%w+0.5)*cell
+			var z := oz+(c/w+0.5)*cell
+			var e := b*7
+			sums[e] += 1.0
+			sums[e+1] += x
+			sums[e+2] += z
+			sums[e+3] += top[c]
+			sums[e+4] += x*x
+			sums[e+5] += z*z
+			sums[e+6] += x*z
+		var course := PackedVector4Array([Vector4(lip.x,lip.y,lip.z,lip_half)])
+		var used: Array[int] = []
+		for b in range(bands):
+			var e := b*7
+			if sums[e] < 1.0: continue
+			var y := sums[e+3]/sums[e]
+			if y >= lip.y-0.05: continue
+			course.append(Vector4(sums[e+1]/sums[e],y,sums[e+2]/sums[e],0.0))
+			used.append(b)
+		var plunge: Vector3
+		if outflow > 0.0: plunge = landing/outflow
+		else: plunge = Vector3(course[-1].x,low,course[-1].z)
+		course.append(Vector4(plunge.x,plunge.y,plunge.z,0.0))
+		for k in range(1,course.size()-1):
+			var e := used[k-1]*7
+			var mx := sums[e+1]/sums[e]
+			var mz := sums[e+2]/sums[e]
+			var sxx := sums[e+4]/sums[e]-mx*mx
+			var szz := sums[e+5]/sums[e]-mz*mz
+			var sxz := sums[e+6]/sums[e]-mx*mz
+			var tangent := Vector2(course[k+1].x-course[k-1].x,course[k+1].z-course[k-1].z)
+			tangent = tangent.normalized() if tangent.length() > 1e-6 else dir
+			var across := Vector2(-tangent.y,tangent.x)
+			var spread := maxf(0.0,sxx*across.x*across.x+2.0*sxz*across.x*across.y+szz*across.y*across.y)
+			var station := course[k]
+			station.w = sqrt(3.0*spread)+0.5*cell
+			course[k] = station
+		var last := course[course.size()-1]
+		last.w = course[course.size()-2].w if course.size() > 2 else lip_half
+		course[course.size()-1] = last
+		var drop := lip.y-plunge.y
+		if drop < min_drop: continue
+		found.append({"flux":q,"drop":drop,"cells":cells.size(),"lip":lip,"lip_dir":dir,"lip_half":lip_half,"plunge":plunge,
+			"plunge_depth":landing_depth/outflow if outflow > 0.0 else 0.0,"course":course})
+	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.flux > b.flux)
+	return found.slice(0,most)

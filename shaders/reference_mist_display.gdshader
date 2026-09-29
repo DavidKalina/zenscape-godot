@@ -10,6 +10,9 @@ uniform vec3 origins[64];
 uniform vec4 motion[64];
 uniform int particle_count = 0;
 uniform float rise_height = 1.0;
+// Live falls (scripts/flow_falls.gd) size and thin their mist by the flow.
+uniform float mist_strength = 1.0;
+uniform float mist_scale = 1.0;
 uniform vec3 camera_origin;
 uniform mat3 world_to_view;
 uniform vec2 camera_planes;
@@ -34,7 +37,7 @@ void vertex() {
 		float distance = -view.z;
 		if (distance >= camera_planes.x && distance <= camera_planes.y) {
 			vec2 center = vec2(0.5)+vec2(view.x,-view.y)/(distance*projection_scale)*0.5;
-			float diameter = (14.0+p*46.0)*data.w*30.0/distance;
+			float diameter = (14.0+p*46.0)*data.w*mist_scale*30.0/distance;
 			VERTEX = center*viewport_size+(UV-vec2(0.5))*diameter;
 			phase = p;
 			depth_distance = distance;
@@ -47,7 +50,7 @@ void fragment() {
 	float p = phase;
 	float feather = smoothstep(0.5,0.08,length(UV-vec2(0.5)));
 	float opacity = feather*smoothstep(0.0,0.15,p)*(1.0-smoothstep(0.45,1.0,p))
-		*smoothstep(0.5,1.0,zs_water_growth_now())*(1.0-zs_ice*0.9)*mix(0.18,1.0,zs_daylight)*0.3;
+		*smoothstep(0.5,1.0,zs_water_growth_now())*(1.0-zs_ice*0.9)*mix(0.18,1.0,zs_daylight)*0.3*mist_strength;
 	if (depth_distance > scene_depth) opacity *= 1.0-depth_sample.g;
 	COLOR = vec4(0.88,0.95,0.97,opacity);
 }

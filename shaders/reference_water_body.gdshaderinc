@@ -34,6 +34,16 @@ uniform float planar_level = 0.0;
 // fades it out towards the slow water round it, so the two meet softly.
 uniform bool flow_edge_fade = false;
 varying float flow_fade;
+// Live still water carries its distance from dry ground in UV.x
+// (ZenScapeWaterFlow::surface). With `shore_distance`, the shore foam keeps
+// to the bank: a sheet a few centimetres deep lies wholly inside the lap's
+// depth band, and by depth alone it would all read as foam.
+uniform bool shore_distance = false;
+varying float shore_run;
+// Live waterfalls (scripts/flow_falls.gd) churn the water where they land and
+// whiten it where they tip over: x, z, radius, strength each.
+uniform vec4 fall_foam[8];
+uniform int fall_foam_count = 0;
 uniform sampler2D pond_screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D pond_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform float caustics_strength = 0.0;
@@ -59,6 +69,7 @@ varying float cut_face;
 void vertex() {
 	rest_height = VERTEX.y;
 	flow_fade = flow_edge_fade ? CUSTOM1.x : 1.0;
+	shore_run = shore_distance && !flowing ? UV.x : 1000.0;
 	lake_local = VERTEX.xz;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	water_depth = max(UV2.x - level_drop, 0.0);
@@ -165,14 +176,31 @@ void fragment() {
 		// Look pass: a thin broken foam line where still water meets the bank,
 		// lapping in and out slowly with the wind.
 		float lap = 0.035 + 0.02 * sin(zs_flow_time * 0.9 + zs_noise(world_position.xz * 0.6) * 6.2832) * (0.4 + min(zs_wind_strength, 1.0) * 0.6);
-		float band = 1.0 - smoothstep(lap * 0.5, lap, shore_depth);
+		float band = (1.0 - smoothstep(lap * 0.5, lap, shore_depth)) * (1.0 - smoothstep(0.2, 0.55, shore_run));
 		float broken = smoothstep(0.35, 0.7, zs_noise(world_position.xz * 3.1 + vec2(zs_flow_time * 0.05, 0.0)));
 		foam = max(foam, band * mix(0.35, 0.8, broken) * zs_look_shore);
 	}
 	body = mix(body, vec3(0.65, 0.80, 0.79), foam * (1.0 - zs_ice));
+	// Churn under a live fall, spreading outward in broken patches.
+	float fall_churn = 0.0;
+	for (int i = 0; i < 8; i++) {
+		if (i >= fall_foam_count) break;
+		vec4 f = fall_foam[i];
+		vec2 d = world_position.xz - f.xy;
+		float r = length(d) / max(f.z, 0.01);
+		if (r >= 1.0) continue;
+		vec2 outward = d / max(length(d), 0.001);
+		float spread = zs_noise((world_position.xz - outward * zs_flow_time * 0.55) * 3.2 + float(i) * 7.1);
+		float fine = zs_noise((world_position.xz - outward * zs_flow_time * 0.9) * 7.5 + float(i) * 3.3);
+		float core = 1.0 - smoothstep(0.12, 0.42, r);
+		float patches = smoothstep(0.42, 0.7, spread * 0.7 + fine * 0.3) * (1.0 - smoothstep(0.3, 1.0, r));
+		fall_churn = max(fall_churn, clamp(core * (0.7 + 0.3 * fine) + patches, 0.0, 1.0) * f.w);
+	}
+	body = mix(body, vec3(0.86, 0.92, 0.93), fall_churn * (1.0 - zs_ice));
 	float absorption = 1.0 - exp(-water_depth / 0.45);
 	float alpha = mix(0.40, 1.0, max(absorption, fresnel));
 	if (!flowing && source_lake_material) alpha = zs_lake_opacity(water_depth, zs_ice);
+	alpha = max(alpha, fall_churn * 0.95);
 	if (!flowing) zs_lake_algae(body, alpha, world_position, lake_local, water_depth, cut_face);
 	if (!flowing && cut_face > 0.5) alpha = max(alpha, 0.95);
 	if (!flowing && cut_face < 0.5 && lake_wind_enabled) zs_lake_foam(body, alpha, world_position, water_depth, lake_state);
