@@ -130,25 +130,40 @@ func sync(scene: Node3D, frame_tree: SceneTree = null) -> void:
 
 ## Props and plants replace instance batches, not the water or its views. A
 ## live refresh copies the new geometry over a few frames beside the old
-## copies, then drops the old ones; a newer change restarts it.
+## copies, then drops the old ones; a newer change restarts it. A copy whose
+## source still stands with the same material is kept (`_reuse`): growing
+## saplings bump the revisions every second or so, and copying all ~140
+## sources afresh each time churned as many instances and materials.
 func _refresh_geometry_live(scene: Node3D, frame_tree: SceneTree) -> bool:
 	_setup_generation += 1
 	var generation := _setup_generation
 	if _old_bindings.is_empty(): _old_bindings = _bindings
 	else:
+		# A restarted refresh drops the copies it made, not those it took over.
+		var standing := {}
+		for binding in _old_bindings: standing[binding.copy] = true
 		for binding in _bindings:
-			if is_instance_valid(binding.copy): binding.copy.free()
+			if is_instance_valid(binding.copy) and not standing.has(binding.copy): binding.copy.free()
 	_bindings = []
 	_used_material_bindings.clear()
 	_used_shaders.clear()
+	_reuse.clear()
+	for binding in _old_bindings:
+		if binding.has("original") and is_instance_valid(binding.source) and is_instance_valid(binding.copy):
+			_reuse[[binding.source.get_instance_id(),binding.copy.get_parent().get_instance_id()]] = binding
 	_setup_busy = true
 	_busy_kind = "geometry"
 	for view in views:
-		if not await _copy_geometry(scene,view.viewport,view.level,frame_tree): return false
-		if generation != _setup_generation: return false
+		var copied: bool = await _copy_geometry(scene,view.viewport,view.level,frame_tree)
+		if not copied or generation != _setup_generation:
+			if generation == _setup_generation: _reuse.clear()
+			return false
 	_setup_busy = false
+	_reuse.clear()
+	var kept := {}
+	for binding in _bindings: kept[binding.copy] = true
 	for binding in _old_bindings:
-		if is_instance_valid(binding.copy): binding.copy.free()
+		if is_instance_valid(binding.copy) and not kept.has(binding.copy): binding.copy.free()
 	_old_bindings = []
 	for key in _material_bindings.keys():
 		if not str(key).begins_with("pond:") and not _used_material_bindings.has(key): _material_bindings.erase(key)
@@ -205,6 +220,7 @@ func _refresh_geometry(scene: Node3D) -> void:
 func _retire() -> void:
 	_setup_generation += 1
 	_setup_busy = false
+	_reuse.clear()
 	_retired = {"nodes":get_children(),"views":views,"bindings":_old_bindings+_bindings}
 	views = []
 	_bindings = []
@@ -228,6 +244,7 @@ func clear(keep_shaders := false) -> void:
 	objects_revision = -1
 	instances_revision = -1
 	_old_bindings = []
+	_reuse.clear()
 	if is_instance_valid(source_water):
 		source_water.material_override.set_shader_parameter("hide_pool_surface", false)
 	for child in get_children():
@@ -368,6 +385,7 @@ func _copy_visual(node: Node, parent: Node, level: float) -> void:
 	# Geometry can opt out, e.g. dense grass, whose per-tile instance
 	# parameters a copy would not carry and which would double its cost.
 	if node is GeometryInstance3D and node != source_water and not node.has_meta("skip_reflection"):
+		if not _reuse.is_empty() and _reused(node,parent): return
 		var copy: GeometryInstance3D
 		var mesh: Mesh
 		if node is MeshInstance3D and node.mesh != null:
@@ -386,7 +404,7 @@ func _copy_visual(node: Node, parent: Node, level: float) -> void:
 				var key := str(original.shader.get_instance_id())
 				_used_shaders[key] = true
 				var shader := _clip_shader(original.shader)
-				var material_key := str(original.get_instance_id()) + ":" + str(level)
+				var material_key := _material_key(original,level)
 				_used_material_bindings[material_key] = true
 				if not _material_bindings.has(material_key):
 					var target: ShaderMaterial = original.duplicate()
@@ -407,8 +425,35 @@ func _copy_visual(node: Node, parent: Node, level: float) -> void:
 				# next update_views catches up.
 				copy.visible = node.is_visible_in_tree()
 				parent.add_child(copy)
-				_bindings.append({"source":node,"copy":copy})
+				_bindings.append({"source":node,"copy":copy,"original":original,"material_key":material_key})
 			else: copy.free()
+
+## Copies a live geometry refresh may keep: [source id, view viewport id] ->
+## binding (`_refresh_geometry_live`).
+var _reuse := {}
+
+## Keeps `node`'s copy in `parent` from before a live geometry refresh if it
+## still draws with the material it was copied with. The view list moves,
+## shows and re-meshes it as its source changes (`_update_view_list`).
+func _reused(node: GeometryInstance3D, parent: Node) -> bool:
+	var key := [node.get_instance_id(),parent.get_instance_id()]
+	var binding: Variant = _reuse.get(key)
+	if binding == null: return false
+	_reuse.erase(key)
+	var mesh: Mesh = null
+	if node is MeshInstance3D: mesh = node.mesh
+	elif node is MultiMeshInstance3D and node.multimesh != null: mesh = node.multimesh.mesh
+	if mesh == null or mesh.get_surface_count() == 0 or not is_instance_valid(binding.copy): return false
+	var original = node.material_override if node.material_override != null else mesh.surface_get_material(0)
+	if original != binding.original or not _material_bindings.has(binding.material_key): return false
+	_used_material_bindings[binding.material_key] = true
+	_used_shaders[str(original.shader.get_instance_id())] = true
+	_bindings.append(binding)
+	return true
+
+## The copied material's key: one copy of a source material per view level.
+func _material_key(original: ShaderMaterial, level: float) -> String:
+	return str(original.get_instance_id()) + ":" + str(level)
 
 ## Whether copying `node` would parse a clip shader this session has not made.
 func _uncompiled(node: Node) -> bool:
