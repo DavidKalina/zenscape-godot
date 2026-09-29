@@ -197,7 +197,7 @@ const SnapSound = preload("res://scripts/snap_sound.gd")
 const VOID_DEPTH := 0.8
 const VOID_NEAR := 5.0
 const CLICK_PIXELS := 6.0
-const VOID_HINT := "Click the sky to snap day and night  ·  Shift-click steps dawn, noon, dusk, night"
+const VOID_HINT := "Click the sky to snap day and night  ·  Shift-click steps dawn, noon, dusk, night  ·  drag from the sky onto the land for water"
 ## The camera counts as moving (the hand stands down) while its view turns or
 ## zooms faster than CAMERA_TURNING (rad/s, or log-distance/s) or its pivot
 ## slides faster than CAMERA_SLIDING m/s, besides a right drag.
@@ -1032,6 +1032,12 @@ func _void_press(point: Vector2) -> bool:
 func _void_drag(point: Vector2) -> void:
 	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
 	reach_point = _void_point(point)
+	# Water from the sky (docs/scenic/water-flow.md): a drag out of the void
+	# that comes over the land condenses a water ball there, and the editor
+	# holds it until the button is let go (NativeChunkEditor `ball_from_sky`).
+	if _void_travel > CLICK_PIXELS and not _press_shift and _land(point) != null:
+		var editor := _editor()
+		if editor.get("water_ball") == true and editor.has_method("ball_from_sky") and editor.ball_from_sky(point): release(point)
 
 ## The release: a click fires the snap, a drag lets the loaded hand go.
 func _void_release(point: Vector2, step: bool) -> void:

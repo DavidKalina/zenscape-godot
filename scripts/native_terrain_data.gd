@@ -1346,6 +1346,12 @@ func load_document(document: Variant) -> bool:
 		if wish == null:
 			return false
 		loaded.intent_forest = wish
+	# Optional: live water (scripts/water_flow.gd), springs and depth.
+	if document.has("water_flow"):
+		var flow: Variant = preload("res://scripts/water_flow.gd").decode(document.water_flow)
+		if flow == null:
+			return false
+		loaded.water_flow = flow
 	loaded.blank = document.blank
 	loaded.objects = []
 	loaded.ponds = []

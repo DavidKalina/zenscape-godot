@@ -217,6 +217,10 @@ var last_plan_usec := {}
 ## replaces the blend's pond raster: {"level", "cells", "rect", "record",
 ## "stamp"}. Until then `_wet` reads them too, so nothing arrives in them.
 var _fresh_ponds: Array[Dictionary] = []
+## Live water's wet cells (scripts/water_flow.gd `wet_mask`), set by the
+## editor as the water moves: nothing emerges under it.
+var flow_wet := {}
+const WaterFlow = preload("res://scripts/water_flow.gd")
 ## Quiet guidance (scripts/quiet_guidance.gd): each plan reads its region's
 ## score and steers edges, lone trees, sightlines, sizes and spacing a
 ## little. Off with --no-guidance. `guided_usec` is the last plan's guide
@@ -315,6 +319,7 @@ func _plan_async(queued: Array[Dictionary]) -> void:
 	var previous: RefCounted = _blend
 	var planner = get_script().new(ground,salt)
 	planner.intent.forest = intent.forest.duplicate()
+	planner.flow_wet = flow_wet
 	planner.guided = guided
 	if guided:
 		var reach: Rect2 = queued[0].rect
@@ -1001,7 +1006,7 @@ func seed_family(p: Vector2) -> String:
 	return _tree_kind(_blend.pick(p),p,0.0)
 
 func _wet(p: Vector2) -> bool:
-	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p))
+	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p)) or WaterFlow.wet_in(flow_wet,p)
 
 ## A pour showed (native_chunk_editor.gd `_set_pour_water`), inside its open
 ## stroke so one undo brings the plants back with the ground. Withdraw the
