@@ -27,7 +27,13 @@ func parts(only_id := -1) -> Array[Dictionary]:
 				continue
 			if only_id > 0 and int(item.id) != only_id:
 				continue
-			result.append({"id":int(item.id), "mesh":batch.multimesh.mesh, "transform":batch.global_transform*batch.multimesh.get_instance_transform(i)})
+			var transform: Transform3D = batch.global_transform*batch.multimesh.get_instance_transform(i)
+			# Play hides an instance it has taken up (a bent tree, a thrown rock)
+			# by scaling it to nothing (diorama_world_play.gd `_hide_authored`):
+			# not there to pick or bound, and it cannot be inverted.
+			if absf(transform.basis.determinant()) < 1e-12:
+				continue
+			result.append({"id":int(item.id), "mesh":batch.multimesh.mesh, "transform":transform})
 	for item: Dictionary in editor.data.objects:
 		if only_id > 0 and int(item.id) != only_id:
 			continue
