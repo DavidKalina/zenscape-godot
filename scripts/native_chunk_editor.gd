@@ -339,6 +339,7 @@ func setup(owner_scene: Node3D) -> void:
 	scene.add_child(explosives)
 	explosives.setup(self)
 	_setup_brushes()
+	if flow_wanted(): _setup_flow.call_deferred()
 
 func _setup_brushes() -> void:
 	brushes = {"land":land_brush,"water":water_brush}
@@ -741,6 +742,7 @@ func _process(delta: float) -> void:
 	if not forming and emergence.advance(delta):
 		refresh(get_tree())
 	_warm_face_probes()
+	_flow_process(delta)
 	if forming or not active:
 		pond_preview.clear()
 		pointer_hit = null
@@ -1802,6 +1804,10 @@ func _land_press(event: InputEventMouseButton) -> bool:
 
 func land_dab(point: Vector2, amount: float) -> void:
 	var lower := _land_lower or Input.is_key_pressed(KEY_SHIFT)
+	# With live water the water brush's other way drains it (and its springs).
+	if brush_id == "water" and lower and flow != null and flow.ready:
+		flow.drain(point,brush_radius())
+		return
 	if brush_id == "land": land_brush.dab(data,point,land_radius,amount,lower,land_ceiling)
 	else: creation_brush().dab(data,point,brush_radius(),amount,lower)
 	# A pour shows while the hand pours.
@@ -1932,7 +1938,9 @@ func _ball_press(hit: Vector3) -> void:
 ## lies on the ground straight below it, not below the pointer.
 func _ball_step(hit: Variant, delta: float) -> void:
 	const WaterBrush := preload("res://scripts/water_brush.gd")
-	var rate: float = WaterBrush.RATE*brush_strength()*pow(brush_radius()/WaterBrush.REFERENCE_RADIUS,2.0)
+	# The water brush's own size and flow, also for a ball gathered from the
+	# sky with another brush in hand (`ball_from_sky`).
+	var rate: float = WaterBrush.RATE*float(water_brush.strength)*pow(float(water_brush.radius)/WaterBrush.REFERENCE_RADIUS,2.0)
 	ball_volume = minf(BALL_MAX_VOLUME,ball_volume+rate*minf(delta,0.05))
 	ball.hold(hit,ball_volume)
 
@@ -1943,9 +1951,13 @@ func _ball_release() -> void:
 	_emit_stroke(2,ball.mark(),ball.radius,0.0)
 
 ## The ball hit the ground: its water settles as one pour from where it
-## landed (`_pour_live`), in one undo step, and remembers its fish.
+## landed (`_pour_live`), in one undo step, and remembers its fish. With live
+## water it feeds the simulation instead (`_flow_landed`).
 func _ball_landed(point: Vector2, volume: float, fish: Array) -> void:
 	if forming or data.ground_height(point) == null: return
+	if flow != null and flow.ready:
+		_flow_landed(point,volume,fish)
+		return
 	water_brush.drop(point,volume)
 	_release_pour()
 	if not _pour.is_empty(): _pour.ball = {"point":point,"volume":volume,"fish":fish}
@@ -2005,6 +2017,130 @@ func _ball_settled(pour: Dictionary, outcome: Dictionary) -> void:
 	var said := {"waterfall":"The water fell, and gathered below.","stream":"The water found a way down.","lake":"The water spread into a lake.","pond":"The water gathered in a pond.","soaked":"The ground drank the water."}
 	_set_status(said[outcome.kind])
 	ball_settled.emit(outcome)
+
+# --- Live water ------------------------------------------------------------------
+## Live water (scripts/water_flow.gd, docs/scenic/water-flow.md): under
+## --modeless, or anywhere with --water-flow, a dropped water ball feeds a
+## shallow-water simulation instead of the one-shot plan: on high or steep
+## ground it becomes a spring, elsewhere its water goes once, and the water
+## then runs, pools and spills as the land lets it, following every change
+## to the land. --planned-water keeps the plan (scripts/water_brush.gd).
+var flow: RefCounted
+var flow_view: Node3D
+## Seconds between reads of the standing water for life and emergence, and
+## the least time between two reports of changed ponds (`water_settled`).
+const FLOW_READ_SECONDS := 1.0
+const FLOW_REPORT_SECONDS := 3.0
+## A pond whose area moves by FLOW_AREA_CHANGE m² (or appears, or goes)
+## is reported.
+const FLOW_AREA_CHANGE := 2.0
+## Seconds a ball's fish wait for a pond to form before they are gone.
+const FLOW_FISH_SECONDS := 90.0
+## Metres from its landing a ball's fish look for a pond.
+const FLOW_FISH_REACH := 12.0
+var _flow_read := 0.0
+var _flow_reported := 0.0
+var _flow_pools: Array = []
+var _flow_changed := Rect2()
+## Fish waiting for a pond: [{"point", "fish", "until"}].
+var _flow_fish: Array[Dictionary] = []
+var _flow_clock := 0.0
+
+static func flow_wanted() -> bool:
+	var args := OS.get_cmdline_user_args()
+	if "--planned-water" in args: return false
+	return "--water-flow" in args or preload("res://scripts/modeless_input.gd").enabled()
+
+func _setup_flow() -> void:
+	flow = preload("res://scripts/water_flow.gd").new(data)
+	await flow.setup(get_tree())
+	flow_view = preload("res://scripts/water_flow_view.gd").new()
+	flow_view.name = "LiveWater"
+	content.add_child(flow_view)
+	flow_view.setup(flow,content._water_material,content._stream_material,scene)
+
+## Steps the water at its fixed rate, redraws it, and now and then reads the
+## ponds it makes for life and emergence.
+func _flow_process(delta: float) -> void:
+	if flow == null or not flow.ready: return
+	flow.paused = forming
+	flow.advance(delta)
+	flow_view.update(delta)
+	_flow_clock += delta
+	_flow_read += delta
+	_flow_reported += delta
+	if _flow_read < FLOW_READ_SECONDS or forming: return
+	_flow_read = 0.0
+	_read_flow_pools()
+
+func _read_flow_pools() -> void:
+	var pools: Array = flow.pools()
+	emergence.flow_wet = flow.wet_mask()
+	# What moved: new ponds, ponds gone, ponds that grew or shrank.
+	for pool: Dictionary in pools:
+		var before := _nearest_pool(_flow_pools,pool)
+		if before.is_empty() or absf(float(before.area)-float(pool.area)) >= FLOW_AREA_CHANGE:
+			_flow_changed = _flow_changed.merge(pool.rect) if _flow_changed.has_area() else pool.rect
+	for pool: Dictionary in _flow_pools:
+		if _nearest_pool(pools,pool).is_empty():
+			_flow_changed = _flow_changed.merge(pool.rect) if _flow_changed.has_area() else pool.rect
+	_flow_pools = pools
+	# A ball's fish go to the pond nearest where it landed.
+	var life: Variant = scene.get("land_life")
+	for waiting: Dictionary in _flow_fish.duplicate():
+		var home := {}
+		for pool: Dictionary in pools:
+			var reach := Vector2(pool.x,pool.z).distance_to(waiting.point)
+			if reach <= FLOW_FISH_REACH and (home.is_empty() or reach < Vector2(home.x,home.z).distance_to(waiting.point)): home = pool
+		if not home.is_empty() and life != null: life.carry_fish(Vector2(home.x,home.z),waiting.fish)
+		if not home.is_empty() or _flow_clock > float(waiting.until): _flow_fish.erase(waiting)
+	if _flow_changed.has_area() and _flow_reported >= FLOW_REPORT_SECONDS and not _painting:
+		# Grass creeps out from the new shores (scripts/emergence.gd), and life
+		# reads the water again (scripts/land_life.gd).
+		var rect := _flow_changed.grow(1.0)
+		_flow_changed = Rect2()
+		_flow_reported = 0.0
+		_stroke_rect = rect
+		_stroke_ended("water")
+		_stroke_rect = Rect2()
+		water_settled.emit(rect)
+
+## The pool in `pools` over the same water as `pool` (its deepest point
+## inside the other's bounds), or {}.
+static func _nearest_pool(pools: Array, pool: Dictionary) -> Dictionary:
+	for other: Dictionary in pools:
+		if (other.rect as Rect2).grow(0.3).has_point(Vector2(pool.x,pool.z)) or (pool.rect as Rect2).grow(0.3).has_point(Vector2(other.x,other.z)): return other
+	return {}
+
+## A ball landed with live water: a spring or a burst (scripts/water_flow.gd
+## `drop`), and its fish wait for the pond the water makes.
+func _flow_landed(point: Vector2, volume: float, fish: Array) -> void:
+	var kind: String = flow.drop(point,volume)
+	if kind.is_empty(): return
+	if not fish.is_empty(): _flow_fish.append({"point":point,"fish":fish.duplicate(),"until":_flow_clock+FLOW_FISH_SECONDS})
+	_set_status("A spring rises where the water landed." if kind == "spring" else "The water runs where the land takes it.")
+	ball_settled.emit({"kind":kind,"volume":snappedf(volume,0.01),"fish":fish.size(),"center":point})
+
+## Water in hand from the sky (--modeless, scripts/hand_reach.gd): a drag
+## that starts in the void and comes over the land condenses a water ball
+## there, held until the button is let go, as the water brush's press does.
+## True when the ball was taken.
+func ball_from_sky(screen_pos: Vector2) -> bool:
+	if forming or not active or _ball_holding or _painting: return false
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return false
+	_land_mountain()
+	_stroke_button = MOUSE_BUTTON_LEFT
+	_ball_press(hit)
+	return true
+
+## Still water's surface as triangles (three points each) in plate metres:
+## the ponds the view drew, and the live water's still part. For the life
+## survey (scripts/life_survey.gd).
+func still_water_triangles() -> PackedVector3Array:
+	var soup: PackedVector3Array = content.pond_vertices.duplicate()
+	if flow_view != null: soup.append_array(flow_view.still_triangles())
+	return soup
 
 # --- Wind gust -------------------------------------------------------------------
 ## The wind tool (scripts/wind_gust.gd, docs/scenic/wind-gust.md): with wind

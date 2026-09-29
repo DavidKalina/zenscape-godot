@@ -45,7 +45,7 @@ const PEAK := Vector2(-6.0,-1.0)
 const HEAD := Vector2(-4.6,-1.0)
 const BASIN := Vector2(3.0,-1.0)
 const BASIN_TWO := Vector2(3.0,6.5)
-func land(p: Vector2, trench := false) -> float:
+static func land(p: Vector2, trench := false) -> float:
 	var h := bump(p,PEAK,6.0,4.0)
 	# The groove: its bed falls steadily from 0.9 m under the flank at its head
 	# to the basin's floor, (1 - t²)² across 1.25 m either side.
@@ -111,7 +111,7 @@ func run() -> void:
 	if prefer_native: check("the native kernel is taken",flow.native)
 
 	# 1. Peak, groove, basin.
-	shape(land)
+	shape(func(p: Vector2) -> float: return land(p))
 	data.begin_stroke()
 	data.end_stroke()
 	var undo_depth := data._undo.size()
@@ -162,7 +162,7 @@ func run() -> void:
 	check("water on flat ground soaks away rather than staying",water_near(flow,flat,4.0) < spread)
 
 	# 4. A steady spring levels off.
-	shape(land)
+	shape(func(p: Vector2) -> float: return land(p))
 	flow.drain(Vector2.ZERO,40.0)
 	flow.drop(HEAD,6.0)
 	var volumes := []

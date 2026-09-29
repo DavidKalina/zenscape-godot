@@ -382,7 +382,7 @@ func _survey(delta: float) -> void:
 		if _restored and data._undo.is_empty() and data._redo.is_empty(): _fresh = _resume.is_empty()
 		_restored = false
 		salt = int(editor.emergence.salt)
-		_reading = Survey.new(data,editor.content.pond_vertices)
+		_reading = Survey.new(data,editor.still_water_triangles())
 		global_transform = editor.terrain.global_transform
 	if _reading != null and _reading.step(SURVEY_BUDGET_USEC):
 		survey_worst_usec = maxi(survey_worst_usec,_reading.worst_step_usec)

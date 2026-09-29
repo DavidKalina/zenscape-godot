@@ -252,6 +252,26 @@ func cell_at(point: Vector2) -> int:
 	var j := floori((point.y-origin.y)/cell)
 	return j*width+i if i >= 0 and j >= 0 and i < width and j < height else -1
 
+## Where water stands WET_DEPTH or deeper, for emergence: {"mask" (1 per
+## wet cell), "origin", "cell", "width", "height"}. A new dictionary each
+## call, so a planner on a worker can keep the one it was given.
+const WET_DEPTH := 0.05
+func wet_mask() -> Dictionary:
+	var mask := PackedByteArray()
+	var values := depths()
+	mask.resize(values.size())
+	for c in range(values.size()):
+		if values[c] >= WET_DEPTH: mask[c] = 1
+	return {"mask":mask,"origin":origin,"cell":cell,"width":width,"height":height}
+
+## True when `mask` (from `wet_mask`) has water at `point`.
+static func wet_in(mask: Dictionary, point: Vector2) -> bool:
+	if mask.is_empty(): return false
+	var i := floori((point.x-float(mask.origin.x))/float(mask.cell))
+	var j := floori((point.y-float(mask.origin.y))/float(mask.cell))
+	if i < 0 or j < 0 or i >= int(mask.width) or j >= int(mask.height): return false
+	return (mask.mask as PackedByteArray)[j*int(mask.width)+i] != 0
+
 func surface(params: Dictionary) -> Dictionary:
 	return kernel.surface(params)
 
