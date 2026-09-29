@@ -26,6 +26,14 @@ extends Node
 ## The input comes from the modeless press (scripts/hand_reach.gd): its
 ## `land_pressed`, `land_dragged` and `land_released` call `press`, `pull` and
 ## `release` (connected in studies/fidelity.gd).
+##
+## **From the edge.** The rim pulled down is the same spring drawn from the
+## side (hand_reach's `edge_spring_*` signals call `edge_press`, `pull` and
+## `release`). The pull is measured the same way, down only. While held, the
+## land sags in a trough along the grabbed edge, EDGE_INSET in, where the range
+## will rise; let go and a ridge (the mountain machinery's "ridge" form) runs
+## along that edge, its length and height set by the pull, springing up
+## through the sag on the same spring and landing as a mountain does.
 
 const Mountains = preload("res://scripts/mountain_forms.gd")
 
@@ -84,6 +92,23 @@ const REST_SPEED := 0.03
 const MAX_SPRING := 3.5
 ## Metres of ground round the press that tension and basins may touch.
 const REACH := 5.2
+## From the edge: half the plate's side (metres), the ridge's crest line this
+## far in from the grabbed edge, its half-length and height (small pull to
+## cap), and the form. The ridge's middle follows the grab along the edge but
+## its ends stay within ALONG_ROOM of the plate's middle line.
+const PLATE_HALF := 14.0
+const EDGE_INSET := Vector2(5.0,6.5)
+const EDGE_SPREAD := Vector2(4.0,9.0)
+const EDGE_HEIGHT := Vector2(3.0,8.5)
+const EDGE_FORM := "ridge"
+const ALONG_ROOM := 11.0
+## The sag while an edge is pulled: its depth (small pull to cap), half-width
+## across the crest line in metres, and its half-length as a share of the
+## ridge's. The hand dips by EDGE_HAND_DIP metres at the cap.
+const SAG_DEPTH := Vector2(0.08,0.6)
+const SAG_WIDTH := 2.6
+const SAG_ALONG := 1.0
+const EDGE_HAND_DIP := 0.35
 
 enum State { IDLE, PULLING, SPRINGING }
 
@@ -121,6 +146,17 @@ var _shape_lift := PackedFloat32Array()
 var _bulge := PackedFloat32Array()
 var _region := Rect2()
 var _landing := false
+## From the edge: whether this pull is one, the grabbed edge's outward
+## direction and its direction along the edge (plate XZ), where along it the
+## grab was, the hand's point at the grab, and each gathered point's distance
+## in from the edge (in `_near_d`) and along it (`_near_a`).
+var from_edge := false
+var _edge_out := Vector2.RIGHT
+var _edge_dir := Vector2.DOWN
+var _edge_along := 0.0
+var _edge_hand := Vector3.ZERO
+var _near_a := PackedFloat32Array()
+var _edge_amount := 0.0
 
 ## The flag every part of the modeless scheme sits behind.
 static func enabled() -> bool:
@@ -145,13 +181,46 @@ func press(screen_pos: Vector2) -> bool:
 	editor._land_mountain()
 	var data := editor.data
 	center = Vector2(hit.x,hit.z)
+	from_edge = false
+	_open(screen_pos)
+	_gather(data)
+	_region = Rect2(center-Vector2.ONE*REACH,Vector2.ONE*REACH*2.0)
+	editor._emit_stroke(0,Vector3(hit.x,hit.y,hit.z),BULGE_RADIUS.y,0.0)
+	_hand("pinch")
+	return true
+
+## A rim pulled down: the spring drawn from the edge. `edge` is the grabbed
+## rim point (terrain-local: on the lip, or on a wall), `hand_point` where the
+## hand shows it. False when the editor cannot take it.
+func edge_press(screen_pos: Vector2, edge: Vector3, hand_point: Variant = null) -> bool:
+	if editor == null or editor.forming or not editor.active: return false
+	land_now()
+	editor._land_mountain()
+	var across_x := absf(edge.x) >= absf(edge.z)
+	var side := signf(edge.x if across_x else edge.z)
+	if side == 0.0: side = 1.0
+	_edge_out = Vector2(side,0.0) if across_x else Vector2(0.0,side)
+	_edge_dir = Vector2(0.0,1.0) if across_x else Vector2(1.0,0.0)
+	_edge_along = edge.z if across_x else edge.x
+	_edge_hand = hand_point if hand_point is Vector3 else edge
+	from_edge = true
+	_open(screen_pos)
+	_gather_edge(editor.data)
+	center = _edge_centre(0.0)
+	var ground := _at()
+	editor._emit_stroke(0,ground,BULGE_RADIUS.y,0.0)
+	_hand("pinch")
+	return true
+
+## Open the pull's undo step and reset its state.
+func _open(screen_pos: Vector2) -> void:
+	var data := editor.data
 	_press = screen_pos
 	# Opening the step first joins any weathering still landing, so the base
 	# is the ground as it now stands.
 	data.begin_stroke()
 	_base = data.heights.duplicate()
 	_first_id = data.next_id
-	_gather(data)
 	state = State.PULLING
 	kind = ""
 	pulled = 0.0
@@ -160,16 +229,13 @@ func press(screen_pos: Vector2) -> bool:
 	refreshes = 0
 	spring_peak = 0.0
 	_keep_kind = ""
-	_region = Rect2(center-Vector2.ONE*REACH,Vector2.ONE*REACH*2.0)
-	editor._emit_stroke(0,Vector3(hit.x,hit.y,hit.z),BULGE_RADIUS.y,0.0)
-	_hand("pinch")
-	return true
+	_edge_amount = 0.0
 
 ## The pointer moved to `screen_pos` (`relative` since the last event).
 func pull(screen_pos: Vector2, _relative := Vector2.ZERO) -> void:
 	if state != State.PULLING: return
 	var span := maxf(scene.get_viewport().get_visible_rect().size.y*PULL_SCREEN,1.0)
-	pulled = clampf((screen_pos.y-_press.y)/span,-1.0,1.0)
+	pulled = clampf((screen_pos.y-_press.y)/span,0.0 if from_edge else -1.0,1.0)
 
 ## The button came up at `screen_pos`: spring, or relax if the pull was tiny.
 func release(screen_pos: Vector2 = Vector2.INF) -> void:
@@ -231,7 +297,9 @@ func _tension(delta: float) -> void:
 	var data := editor.data
 	var heights := data.heights
 	var tremble := 1.0+TREMBLE*amount*amount*sin(elapsed*TREMBLE_RATE)
-	if kind == "mountain":
+	if from_edge:
+		_sag(heights,data,amount,tremble)
+	elif kind == "mountain":
 		var height := lerpf(BULGE_HEIGHT.x,BULGE_HEIGHT.y,amount)*tremble
 		var reach := lerpf(BULGE_RADIUS.x,BULGE_RADIUS.y,amount)
 		for k in _near.size():
@@ -250,6 +318,25 @@ func _tension(delta: float) -> void:
 	data.heights = heights
 	_show(amount)
 	if elapsed > 0.0: editor._emit_stroke(1,_at(),BULGE_RADIUS.y,amount*delta)
+
+## The edge's tension: a trough along the crest line the ridge would rise
+## on, deepest at its middle, sagging with the pull (0 writes the base back).
+func _sag(heights: PackedFloat32Array, data: NativeTerrainData, amount: float, tremble: float) -> void:
+	_edge_amount = amount
+	var depth := lerpf(SAG_DEPTH.x,SAG_DEPTH.y,amount)*tremble if amount > 0.0 else 0.0
+	var inset := lerpf(EDGE_INSET.x,EDGE_INSET.y,amount)
+	var spread := lerpf(EDGE_SPREAD.x,EDGE_SPREAD.y,amount)
+	var mid := center.dot(_edge_dir)
+	var length := spread*SAG_ALONG
+	for k in _near.size():
+		var i := _near[k]
+		var across := (_near_d[k]-inset)/SAG_WIDTH
+		var along := (_near_a[k]-mid)/length
+		var w := 0.0
+		if absf(across) < 1.0 and absf(along) < 1.0: w = pow(1.0-across*across,2.0)*pow(1.0-along*along,2.0)
+		heights[i] = _base[i]-depth*w*_fade(i,data)
+	# The crest's middle moves with the pull, as the ridge's would.
+	center = _edge_centre(amount)
 
 ## Run the spring one frame and show the land at its scale.
 func _spring(delta: float) -> void:
@@ -311,6 +398,41 @@ func _gather(data: NativeTerrainData) -> void:
 		_near.append(i)
 		_near_d.append(d)
 
+## From the edge: every point the sag or the ridge's carry may touch, with
+## its distance in from the grabbed edge and its place along it.
+func _gather_edge(data: NativeTerrainData) -> void:
+	_near = PackedInt32Array()
+	_near_d = PackedFloat32Array()
+	_near_a = PackedFloat32Array()
+	var lo := INF
+	var hi := -INF
+	for spread: float in [EDGE_SPREAD.x,EDGE_SPREAD.y]:
+		var room := maxf(0.0,ALONG_ROOM-spread)
+		var mid := clampf(_edge_along,-room,room)
+		lo = minf(lo,mid-spread*SAG_ALONG)
+		hi = maxf(hi,mid+spread*SAG_ALONG)
+	var deepest := EDGE_INSET.y+SAG_WIDTH
+	for i in range(data.points.size()):
+		var p: Vector2 = data.points[i]
+		var depth := PLATE_HALF-p.dot(_edge_out)
+		if depth < 0.0 or depth > deepest: continue
+		var along := p.dot(_edge_dir)
+		if along < lo or along > hi: continue
+		_near.append(i)
+		_near_d.append(depth)
+		_near_a.append(along)
+	var a := _edge_dir*lo+_edge_out*PLATE_HALF
+	var b := _edge_dir*hi+_edge_out*(PLATE_HALF-deepest)
+	_region = Rect2(a,Vector2.ZERO).expand(b)
+
+## The middle of the ridge's crest for a pull `amount`: in from the edge by
+## the inset, along it at the grab, kept so its ends stay on the plate.
+func _edge_centre(amount: float) -> Vector2:
+	var spread := lerpf(EDGE_SPREAD.x,EDGE_SPREAD.y,amount)
+	var room := maxf(0.0,ALONG_ROOM-spread)
+	var inset := lerpf(EDGE_INSET.x,EDGE_INSET.y,amount)
+	return _edge_dir*clampf(_edge_along,-room,room)+_edge_out*(PLATE_HALF-inset)
+
 func _fade(i: int, data: NativeTerrainData) -> float:
 	var p: Vector2 = data.points[i]
 	var edge := maxf(absf(p.x),absf(p.y))
@@ -352,10 +474,20 @@ func _build_shape(what: String, amount: float) -> void:
 	var shown_heights := data.heights
 	data.heights = _base.duplicate()
 	mountain.prepare(data,editor.land_seed)
-	var right: Vector3 = editor.terrain.global_basis.inverse()*editor.scene.camera.global_basis.x
-	mountain.begin(data,MOUNTAIN_FORM,center,0.01,editor.land_strength,Vector2(right.x,right.z))
-	var spread := lerpf(MOUNTAIN_SPREAD.x,MOUNTAIN_SPREAD.y,amount)
-	mountain.aim(data,center+Vector2(spread-mountain.spread,0.0))
+	if from_edge:
+		# A ridge along the grabbed edge: aimed along it (the drag sets a
+		# ridge's direction and half-length), then raised to the pull's height.
+		center = _edge_centre(amount)
+		mountain.begin(data,EDGE_FORM,center,0.01,editor.land_strength,_edge_dir)
+		var half := lerpf(EDGE_SPREAD.x,EDGE_SPREAD.y,amount)
+		mountain.aim(data,center+_edge_dir*(half-mountain.spread))
+		mountain.height = lerpf(EDGE_HEIGHT.x,EDGE_HEIGHT.y,amount)
+		mountain._reshape(data)
+	else:
+		var right: Vector3 = editor.terrain.global_basis.inverse()*editor.scene.camera.global_basis.x
+		mountain.begin(data,MOUNTAIN_FORM,center,0.01,editor.land_strength,Vector2(right.x,right.z))
+		var spread := lerpf(MOUNTAIN_SPREAD.x,MOUNTAIN_SPREAD.y,amount)
+		mountain.aim(data,center+Vector2(spread-mountain.spread,0.0))
 	data.heights = shown_heights
 	# The pucker that was showing carries into the spring and fades out.
 	_bulge = PackedFloat32Array()
@@ -399,7 +531,7 @@ func _end_spring() -> void:
 		editor._land_mountain()
 		editor._stroke_rect = Rect2()
 		state = State.IDLE
-		sprung.emit("mountain",_size)
+		sprung.emit("range" if from_edge else "mountain",_size)
 	else:
 		data.mark_objects_hand(_first_id)
 		var changed := data.end_stroke()
@@ -444,12 +576,21 @@ func _at() -> Vector3:
 func _hand(gesture: String) -> void:
 	var hand: Node = scene.get("god_hand") as Node
 	if hand == null: return
+	# Letting go clears only the spring's own poses: a shake that took the
+	# rim from an edge pull keeps its hand.
+	if gesture.is_empty() and not (hand.reach_gesture in ["pinch","press"]): return
 	hand.reach_gesture = gesture
-	hand.reach_point = _at() if not gesture.is_empty() else null
+	hand.reach_point = _hand_point() if not gesture.is_empty() else null
 	if gesture.is_empty(): hand.reach_pace = 1.0
 
 func _hand_pace(pace: float) -> void:
 	var hand: Node = scene.get("god_hand") as Node
 	if hand == null or hand.reach_gesture.is_empty(): return
 	hand.reach_pace = pace
-	hand.reach_point = _at()
+	hand.reach_point = _hand_point()
+
+## Where the hand holds: the spot on the land, or from the edge the grabbed
+## rim, drawn down a little with the pull.
+func _hand_point() -> Vector3:
+	if from_edge: return _edge_hand+Vector3.DOWN*EDGE_HAND_DIP*_edge_amount
+	return _at()
