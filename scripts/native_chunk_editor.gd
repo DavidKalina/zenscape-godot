@@ -1383,9 +1383,8 @@ func _rebuild_skirt() -> void:
 ## (scripts/diorama_flip.gd).
 func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var rim_unchanged := true
-	for i in range(source.points.size()):
-		var point := source.points[i]
-		if maxf(absf(point.x),absf(point.y)) > 13.9999 and source.heights[i] != source.original_heights[i]:
+	for i in _rim_ids(source):
+		if source.heights[i] != source.original_heights[i]:
 			rim_unchanged = false
 			break
 	if rim_unchanged: return _skirt_mesh
@@ -1401,12 +1400,23 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
 	arrays[Mesh.ARRAY_NORMAL] = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array).duplicate()
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	var low := _skirt_mesh.get_aabb().position.y
-	var high := _skirt_mesh.get_aabb().end.y
-	for i in range(vertices.size()):
-		var local := placing*vertices[i]
-		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
-		vertices[i].y += source.delta_at(point) * clampf((vertices[i].y-low)/(high-low),0.0,1.0)
+	# Each vertex's weight and the face it reads stand while the slicing does;
+	# a stroke only moves heights, read here as `delta_at` reads them.
+	var reads := _skirt_reads_for(source,key,vertices)
+	var at: PackedInt32Array = reads[0]
+	var ids: PackedInt32Array = reads[1]
+	var bary: PackedFloat64Array = reads[2]
+	var heights := source.heights
+	var original := source.original_heights
+	for k in range(at.size()):
+		var a := ids[k*3]
+		var b := ids[k*3+1]
+		var c := ids[k*3+2]
+		var u := bary[k*3]
+		var v := bary[k*3+1]
+		var current := u*heights[a]+v*heights[b]+(1.0-u-v)*heights[c]
+		var was := u*original[a]+v*original[b]+(1.0-u-v)*original[c]
+		vertices[at[k]].y += (current-was)*bary[k*3+2]
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3):
@@ -1431,20 +1441,22 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 ## z planes], plate metres, sorted.
 const SKIRT_BEND := 0.1
 func _rim_slices(source: NativeTerrainData) -> Array:
-	var sides: Array = [[],[],[],[]]
-	for i in range(source.points.size()):
-		var point := source.points[i]
-		var change := source.heights[i]-source.original_heights[i]
-		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,change))
-		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,change))
 	var columns := _skirt_columns(source)
 	var found := [{},{}]
+	var order := _rim_sides(source)
 	for s in range(4):
-		var rim: Array = sides[s]
-		rim.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+		# Each side's rim points, along it (the order never changes), with how
+		# far each has moved.
+		var rim: Array = []
+		for i in order[s]:
+			var point := source.points[i]
+			rim.append(Vector2(point.y if s < 2 else point.x,source.heights[i]-source.original_heights[i]))
 		var bent := PackedByteArray()
 		bent.resize(rim.size())
 		var tops: PackedFloat32Array = columns[s]
+		# The rim's change at each column, read once.
+		var at_tops := PackedFloat64Array()
+		for top in tops: at_tops.append(_rim_change(rim,top))
 		for k in range(rim.size()):
 			# The facet's top edge over this point runs straight between the
 			# columns either side of it.
@@ -1453,7 +1465,7 @@ func _rim_slices(source: NativeTerrainData) -> Array:
 			else:
 				var a := tops[clampi(c-1,0,tops.size()-2)]
 				var b := tops[clampi(c,1,tops.size()-1)]
-				var straight := lerpf(_rim_change(rim,a),_rim_change(rim,b),clampf((rim[k].x-a)/maxf(b-a,0.001),0.0,1.0))
+				var straight := lerpf(at_tops[clampi(c-1,0,tops.size()-2)],at_tops[clampi(c,1,tops.size()-1)],clampf((rim[k].x-a)/maxf(b-a,0.001),0.0,1.0))
 				bent[k] = 1 if absf(rim[k].y-straight) > SKIRT_BEND else 0
 		for k in range(rim.size()):
 			var near: bool = bent[k] == 1 or (k > 0 and bent[k-1] == 1) or (k+1 < rim.size() and bent[k+1] == 1)
@@ -1472,6 +1484,66 @@ func _rim_slices(source: NativeTerrainData) -> Array:
 
 var _skirt_sliced_for: Array = []
 var _skirt_sliced: Array = []
+var _skirt_reads_key: Array = []
+var _skirt_reads: Array = []
+var _rim_ids_key: Array = []
+var _rim_ids_found := PackedInt32Array()
+
+## The land's rim points (indices), in index order. The triangulation's points
+## never move sideways, so this holds while the source does.
+func _rim_ids(source: NativeTerrainData) -> PackedInt32Array:
+	if _rim_ids_key == [source,source.points.size()]: return _rim_ids_found
+	_rim_ids_found = PackedInt32Array()
+	for i in range(source.points.size()):
+		var point := source.points[i]
+		if maxf(absf(point.x),absf(point.y)) > 13.9999: _rim_ids_found.append(i)
+	_rim_ids_key = [source,source.points.size()]
+	return _rim_ids_found
+
+## Each side's (0 -x, 1 +x, 2 -z, 3 +z) rim point indices, sorted along it.
+var _rim_sides_key: Array = []
+var _rim_sides_found: Array = []
+func _rim_sides(source: NativeTerrainData) -> Array:
+	if _rim_sides_key == [source,source.points.size()]: return _rim_sides_found
+	var sides: Array = [[],[],[],[]]
+	for i in _rim_ids(source):
+		var point := source.points[i]
+		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,i))
+		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,i))
+	_rim_sides_found = []
+	for side: Array in sides:
+		side.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+		_rim_sides_found.append(PackedInt32Array(side.map(func(item: Vector2) -> int: return int(item.y))))
+	_rim_sides_key = [source,source.points.size()]
+	return _rim_sides_found
+
+## Which sliced sides' vertices move with the land, and how: [vertex indices,
+## the three height ids each reads, and per vertex (u, v, weight)]. The foot
+## (weight 0) and points off the land read nothing and stay put.
+func _skirt_reads_for(source: NativeTerrainData, sliced_key: Array, vertices: PackedVector3Array) -> Array:
+	var key := [sliced_key,_skirt_mesh,source,source.points.size()]
+	if _skirt_reads_key == key: return _skirt_reads
+	var placing: Transform3D = sliced_key[1]
+	var low := _skirt_mesh.get_aabb().position.y
+	var high := _skirt_mesh.get_aabb().end.y
+	var at := PackedInt32Array()
+	var ids := PackedInt32Array()
+	var bary := PackedFloat64Array()
+	for i in range(vertices.size()):
+		var weight := clampf((vertices[i].y-low)/(high-low),0.0,1.0)
+		if weight <= 0.0: continue
+		var local := placing*vertices[i]
+		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
+		# `sample` resolves and memoises the face; take its answer as is.
+		if source.sample(point,source.heights) == null: continue
+		var slot: int = source._locate_cache[point]
+		var face: int = source._locate_face[slot]
+		at.append(i)
+		ids.append_array([source.vertex_ids[face],source.vertex_ids[face+1],source.vertex_ids[face+2]])
+		bary.append_array([source._locate_u[slot],source._locate_v[slot],weight])
+	_skirt_reads_key = key
+	_skirt_reads = [at,ids,bary]
+	return _skirt_reads
 var _skirt_columns_for: Array = []
 var _skirt_columns_found: Array = []
 
