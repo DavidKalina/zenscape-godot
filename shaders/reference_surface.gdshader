@@ -121,10 +121,10 @@ varying float contact_height;
 uniform bool earth_sides = false;
 uniform float earth_sides_top = 2.6;
 uniform float earth_sides_base = -2.8;
-varying float side_depth;
-varying float side_rise;
-varying float side_above;
-varying float side_along;
+// The earth sides' depth below the rim, the rim's rise, height above the
+// base and position along the side, packed in one varying: the shader is at
+// the 31-varying limit (Metal), and four floats would take four.
+varying vec4 earth_side;
 // The precipitation height map: 128 texels over the 32 m plate, alpha the
 // water surface height (-1000 where dry). Read for wet banks only.
 global uniform sampler2D zs_water_map;
@@ -167,10 +167,7 @@ void vertex() {
 	leaf_local = VERTEX;
 	if (earth_sides) {
 		float rim_top = UV.y > 0.5 ? UV.x : earth_sides_top;
-		side_depth = rim_top - VERTEX.y;
-		side_rise = rim_top - earth_sides_top;
-		side_above = VERTEX.y - earth_sides_base;
-		side_along = VERTEX.x + VERTEX.z;
+		earth_side = vec4(rim_top - VERTEX.y, rim_top - earth_sides_top, VERTEX.y - earth_sides_base, VERTEX.x + VERTEX.z);
 	}
 	plant_root = MODEL_MATRIX[3].xz;
 	if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
@@ -337,8 +334,8 @@ void fragment() {
 	if (earth_sides) {
 		vec3 facet = floor(abs(face_normal) * 40.0);
 		float jitter = fract(sin(dot(facet, vec3(12.9898, 78.233, 37.719))) * 43758.5453) - 0.5;
-		side_mist = 1.0 - smoothstep(0.0, 2.8, side_above);
-		tint = scene_palette(base_color.rgb * zs_earth_strata(side_depth, side_along, side_rise)
+		side_mist = 1.0 - smoothstep(0.0, 2.8, earth_side.z);
+		tint = scene_palette(base_color.rgb * zs_earth_strata(earth_side.x, earth_side.w, earth_side.y)
 			* (1.0 + 0.14 * jitter) * mix(1.0, 0.5, side_mist));
 	}
 	if (grass_blades) {
