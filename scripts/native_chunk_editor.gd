@@ -300,6 +300,7 @@ func setup(owner_scene: Node3D) -> void:
 	_original_bird_ground = scene._bird_flight.ground
 	_original_precip_top = scene._precipitation._materials[0].get_shader_parameter("top")
 	_skirt = scene.get_node("Reference/skirt")
+	_skirt.mesh = AtlasView.with_rim_tops(_skirt.mesh)
 	_skirt_mesh = _skirt.mesh
 	_landmark_pose = scene._growth._landmark.transform
 	for boulder: Dictionary in scene._growth._boulders:
@@ -1401,18 +1402,22 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
 	arrays[Mesh.ARRAY_NORMAL] = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array).duplicate()
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var tops := PackedVector2Array()
+	tops.resize(vertices.size())
 	var low := _skirt_mesh.get_aabb().position.y
 	var high := _skirt_mesh.get_aabb().end.y
 	for i in range(vertices.size()):
 		var local := placing*vertices[i]
 		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
 		vertices[i].y += source.delta_at(point) * clampf((vertices[i].y-low)/(high-low),0.0,1.0)
+		tops[i] = Vector2(high+source.delta_at(AtlasView.rim_point(point,14.0)),1.0)
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3):
 			normals[i+j] = normal
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = tops
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_skirt_mesh.surface_get_material(0))
