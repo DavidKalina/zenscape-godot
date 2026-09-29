@@ -376,9 +376,12 @@ func _sync_hint(holding: String, other: bool, mood_open: bool) -> void:
 	var text := LOOK_HINT
 	if state.begins_with("reach/"): text = _reach_hint
 	elif ball:
-		var volume := int(round(editor.ball_volume))
-		var made := "a lake" if editor.ball_volume >= editor.LAKE_VOLUME else "a pond"
-		text = "Release to drop it  ·  %d m³, %s" % [volume,made]+("  ·  it is full" if editor.ball_volume >= editor.BALL_MAX_VOLUME-0.01 else "  ·  Hold for more")
+		var full: bool = editor.ball_volume >= editor.BALL_MAX_VOLUME-0.01
+		if hand_only: text = "Release to drop"+("  ·  full" if full else "  ·  hold for more")
+		else:
+			var volume := int(round(editor.ball_volume))
+			var made := "a lake" if editor.ball_volume >= editor.LAKE_VOLUME else "a pond"
+			text = "Release to drop it  ·  %d m³, %s" % [volume,made]+("  ·  it is full" if full else "  ·  Hold for more")
 	elif mood_open: text = MOOD_HINT
 	elif hand_only: text = ""
 	elif not scene.looking:

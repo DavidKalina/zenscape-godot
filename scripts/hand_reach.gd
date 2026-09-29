@@ -120,12 +120,16 @@ const QUARTERS_PER_TURN := 4.0
 const DETENT := 0.6
 const SETTLE := 7.0
 const SETTLED := 0.002
-## The hint line, and how many holds of a thing it takes to stop naming it.
-const SUN_HINT := "Drag to grab the sun  ·  let go and it drifts"
-const MOON_HINT := "Drag to grab the moon  ·  let go and it drifts"
-const RIM_HINT := "Drag to turn the rim for the season"
-const RIM_HINT_MODELESS := "Push the rim to turn  ·  pull it down to spring  ·  shake for weather"
-const HINT_UNTIL := 2
+## The hint line, one short verb a zone, and when it goes quiet: after
+## HINT_UNTIL uses of the zone's verb, or once it has been read HOVER_UNTIL
+## times (a hover that showed it at least HOVER_READ seconds). Per session.
+const SUN_HINT := "Drag the sun"
+const MOON_HINT := "Drag the moon"
+const RIM_HINT := "Drag the rim to turn the season"
+const RIM_HINT_MODELESS := "Push the rim to turn the seasons"
+const HINT_UNTIL := 1
+const HOVER_UNTIL := 3
+const HOVER_READ := 1.0
 
 var scene: Node3D
 ## What the pointer is over now ("sun", "rim" or ""), and what the hand holds.
@@ -150,6 +154,12 @@ var grab_season_pin := ""
 var reach_point: Variant = null
 ## Times each thing has been held, for the hint.
 var uses := {"sun":0,"rim":0}
+## Times each zone's hint has been read on a hover (`_read_hint`), the zone
+## whose hint shows now and since when (`_hint_clock`, seconds of frames).
+var hint_reads := {}
+var _hint_zone := ""
+var _hint_since := 0.0
+var _hint_clock := 0.0
 var _offset := Vector2.ZERO
 var _last_phase := 0.0
 var _turning := false
@@ -197,11 +207,11 @@ const SnapSound = preload("res://scripts/snap_sound.gd")
 const VOID_DEPTH := 0.8
 const VOID_NEAR := 5.0
 const CLICK_PIXELS := 6.0
-const VOID_HINT := "Click the sky to snap day and night  ·  Swipe it for a gust, or drag onto the land to aim one  ·  Hold and pull to turn the wind"
+const VOID_HINT := "Click the sky for night or day"
 ## The sky's cloud (scripts/sky_cloud.gd, docs/scenic/sky-cloud.md): water's
 ## source. Its hints, over it and when it is pulled dry.
-const CLOUD_HINT := "Pull the cloud to tear off some water  ·  carry it over the land"
-const CLOUD_DRY_HINT := "The cloud is wrung dry  ·  it fills again in time"
+const CLOUD_HINT := "Pull the cloud for water"
+const CLOUD_DRY_HINT := "Wrung dry for now"
 ## A grown tree bent and let go (docs/scenic/sky-cloud.md "Seeds") flicks its
 ## spores out the way it whips, if it was bent at least FLICK_MIN of the way
 ## over: they land FLICK_REACH m out (a small tug to a full bend), a veil
@@ -211,8 +221,8 @@ const FLICK_MIN := 0.3
 const FLICK_REACH := Vector2(2.5,9.0)
 const TREE_STRENGTH := 1.8
 const TREE_REST := 45.0
-const TREE_HINT := "Bend it back and let go to flick its spores"
-const TREE_RESTING_HINT := "This tree has given its spores  ·  let it rest"
+const TREE_HINT := "Bend it and let go"
+const TREE_RESTING_HINT := "Resting"
 ## Tree kinds emergence can grow from spores; others (a snag, Bigfoot's tree)
 ## leave the kind to the stand.
 const SPORE_KINDS := ["tree","layered_tree","broadleaf","redwood","birch","willow","juniper"]
@@ -775,6 +785,7 @@ func revert_season_to_grab() -> void:
 # --- Frames ----------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_hint_clock += delta
 	if scene == null or scene.camera == null or _editor() == null: return
 	delta = minf(delta,0.1)
 	var phase := float(scene._celestial.phase)
@@ -884,11 +895,35 @@ func _hover(point: Vector2) -> void:
 		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] else -1)
 	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone == "cloud" else Input.CURSOR_ARROW)
 	var text := ""
-	if not what.is_empty() and int(uses.get(reaching,0)) < HINT_UNTIL:
+	var zone := ""
+	if not what.is_empty():
+		zone = reaching
 		text = {"sun":SUN_HINT,"moon":MOON_HINT,"rim":RIM_HINT_MODELESS if modeless else RIM_HINT}[what]
-	if modeless and hover_zone == "void" and int(uses.get("void",0)) < HINT_UNTIL: text = VOID_HINT
-	if modeless and hover_zone == "cloud" and int(uses.get(_source.kind,0)) < HINT_UNTIL: text = CLOUD_HINT
+	if modeless and hover_zone == "void":
+		zone = "void"
+		text = VOID_HINT
+	if modeless and hover_zone == "cloud":
+		zone = _source.kind
+		text = CLOUD_HINT
+	if _hint_quiet(zone): text = ""
+	_read_hint(zone if not text.is_empty() else "")
 	_show_hint(text)
+
+## A zone's hint is done: its verb used HINT_UNTIL times (the sky's snap or
+## any gust counts for the void), or read HOVER_UNTIL times.
+func _hint_quiet(zone: String) -> bool:
+	if zone.is_empty(): return true
+	var used := int(uses.get(zone,0))+(int(uses.get("wind",0)) if zone == "void" else 0)
+	return used >= HINT_UNTIL or int(hint_reads.get(zone,0)) >= HOVER_UNTIL
+
+## The zone whose hint the hover shows now; one shown HOVER_READ seconds or
+## more counts as read once when it goes.
+func _read_hint(zone: String) -> void:
+	if zone == _hint_zone: return
+	if not _hint_zone.is_empty() and _hint_clock-_hint_since >= HOVER_READ:
+		hint_reads[_hint_zone] = int(hint_reads.get(_hint_zone,0))+1
+	_hint_zone = zone
+	_hint_since = _hint_clock
 
 ## The hint line: the Lantern shell's (`reach_hint`); the glass palette's
 ## status line otherwise.
