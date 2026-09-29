@@ -2,7 +2,7 @@
 
 **The game revolves around the hand.** The God Hand (`docs/scenic/god-hand.md`) starts out showing the creation tools at work. The direction is for it to become how you touch everything: the land, the air, the sky, the time of day, the season and the diorama itself, with most of the menus gone. The user said on 2026-09-28: "the game has to revolve around this kind of animated hand ... that's what's going to really be the draw of the game, that you're really making and carving, creating this world." On the UI they said: "imagine you could reach into the atmosphere and change the color without having to go through a menu item, or you could make it snow ... maybe not remove the UI but greatly simplify it."
 
-This is a direction only, agreed in conversation on 2026-09-28. None of it is built. The clips and wiring that exist are described in `docs/scenic/god-hand.md`.
+This is the direction, agreed in conversation on 2026-09-28. Parts are being built on `feature/hand-world` (see the slice docs `hand-sun-rim.md`, `hand-snow-globe.md`, `hand-turn.md`, `modeless.md`). **"The hand is the mode" (below) is the settled direction for all creation controls.** The clips and wiring that exist are described in `docs/scenic/god-hand.md`.
 
 ## What it is
 
@@ -80,6 +80,57 @@ Agreed with the user on 2026-09-28, after playing the first three slices (the su
 - **Spring = raise and sink.** The land behaves like a spring. Pull it down and let go, and mountains spring up; push it the other way and let go, and it springs down into a basin for a lake. How far you pull decides how much.
 - **Flip = a new world.** Turn the diorama over, and its other side is a fresh chunk: flipping is starting over.
 - **Setting the weather directly** is still wanted whenever the player likes: reach into the sky (cup a cloud and squeeze it, flick it away), and the Mood drawer (M) stays as the precise way.
+
+## The hand is the mode
+
+**This is the direction.** Agreed with the user on 2026-09-28. Where it and older ideas in this doc disagree (tool pots, the tool rail, brushes chosen from a palette), this section wins.
+
+There are no tool modes in the UI. There are still modes, but **the mode is on the hand**: what the hand is doing and how it is shaped is what the player's press will do, and the player changes it by what they do with the hand, never by picking a button. The user: "we're still going to need modes, I think. It's just that the mode is on the hand. The mode is not visible in the UI. Based on a pinch or based on a pull, you can change and morph the terrain to your liking." The only mode outside the hand is the **camera mode** (the right button).
+
+### Where you press
+
+The first slice of this is being built behind `--modeless` (`docs/scenic/modeless.md`).
+
+| Press (left button) | Do | Result |
+|---|---|---|
+| Rim | push it sideways | the world turns; a fast spin winds time |
+| Rim | shake it | snow-globe weather |
+| Rim | drag it up and over | flip: a new world |
+| Land | pull, release | the spring (below) |
+| Land, on a landform | press, hold, then drag | clay (below) |
+| Right button anywhere | drag, scroll | camera: tilt, zoom, look round; time is untouched |
+
+### Shaping the land: two layers from two primitives
+
+Everything on the land is **pull** or **push**: the drag's direction, toward you raises and away from you lowers. From those two primitives and a few hand shapes the player can build anything the game allows. The workflow the user described: rough the chunk in with a few quick springs, flatten one into a mesa, then pinch and pull like clay to make the mountains bigger and shape them, and draw a river.
+
+1. **Rough in: the spring.** Fast and playful. Pull and release on bare ground. How far you pull chooses the kind of landform, not only its size: a small spring makes hills, a bigger one a mountain, a massive one a single great massif. Pushing does the same downward: a dip, a pond, a lake basin. The bulge changes character visibly as the pull crosses each threshold (it firms up, a peak forms, it starts to crack), so the player sees what they will get before they let go.
+2. **Shape: clay.** Slower and precise, and it works the landforms already there. Press and hold on a landform until the hand takes hold, then drag. The part of the hand doing the work decides the effect:
+   - **Pinch and pull** (fingertips): stretch a peak taller, or drag it sideways to lean it or move it.
+   - **Palm push** (flat hand): press the top of a mountain into a mesa, or press a hill down.
+   - **Thumb drag** (a line): carve a valley or a riverbed that water then follows.
+   - **Side-of-hand wipe**: smooth or soften an area.
+
+A quick press-and-drag on bare ground is a spring; a press and hold on a landform is clay. That is how the two layers share the land without a mode switch.
+
+### How the hand chooses its shape
+
+- **Context, first.** The hand reads what is under it and readies the right shape before any press: a pinch over a peak, a flat palm over a broad top, a thumb along a slope, a spring-ready pinch over bare ground. The landforms made in the rough-in become the handles for shaping.
+- **The scroll wheel as the override.** Scrolling opens and closes the hand (fingertip, pinch, palm, side of the hand), the old brush size shown as the hand's own shape. Zoom then lives in camera mode (right button held plus scroll).
+- **The hand's shape is the only indicator.** No ring, no cursor badge, no tool name. If the player cannot tell from the hand what a press will do, the telegraphing has failed.
+
+### Rules for this layer
+
+- **Telegraph before commit.** Every verb shows itself before it happens: the hover shape, the pinch points on the land, the bulge that grows with the pull. The user asked for this to be polished properly ("mousing over the edge of the chunk looks different ... showing the different pinch points and how things change"); it is a later pass, but nothing here works without it.
+- **A wrong guess must be cheap.** Context will sometimes read the land differently from what the player meant. The shape shows before the press, the scroll wheel overrides it, and one undo takes back any press.
+- **Water, seed and pollen are things the hand carries, not shapes it makes.** How the player picks them up without a tool rail is still open.
+
+### Open questions
+
+- How a hold is told apart from a slow start of a drag (the hold time, and what the hand does as it takes hold).
+- Whether the spring's thresholds are fixed landform kinds or a continuous scale with named bands.
+- How water, seed, pollen, wind and paths are reached with no tool rail.
+- Whether the camera mode is the right button only or also a held key.
 
 ## Down to the ground
 
