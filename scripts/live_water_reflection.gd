@@ -38,7 +38,7 @@ var last_sync_usec := 0
 func setup_live(still_copy: ShaderMaterial, still_source: ShaderMaterial, moving_copy: ShaderMaterial, moving_source: ShaderMaterial, surface_lift: float) -> void:
 	still_material = still_copy
 	lift = surface_lift
-	var own := ["hide_pool_surface","planar_enabled","planar_reflection","reflection_matrix","caustics_strength","planar_levels","planar_band","planar_level","flow_edge_fade","shore_distance","fall_foam","fall_foam_count"]
+	var own := ["hide_pool_surface","planar_enabled","planar_reflection","reflection_matrix","caustics_strength","planar_levels","planar_band","planar_level","flow_edge_fade","shore_distance","live_thin","live_level","fall_foam","fall_foam_count"]
 	for pair: Array in [[still_copy,still_source],[moving_copy,moving_source]]:
 		var names := PackedStringArray()
 		for parameter in pair[1].shader.get_shader_uniform_list():

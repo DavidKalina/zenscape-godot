@@ -24,7 +24,13 @@ const FALLBACK_SURFACE_SECONDS := 0.1
 ## `wet` is not drawn; the sheet sits `lift` above the water.
 ## With `under`, still water is drawn everywhere wet, moving water over it.
 const SURFACE := {"wet":0.012,"lift":0.012,"flow_on":0.22,"flow_off":0.12,"foam_from":0.8,"foam_to":2.2,"depth_scale":0.45,"under":true}
-const FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+## Moving water from THIN.x (the drawn `wet` depth) to THIN.y m deep fades
+## from a wet darkening of the ground to the stream's full look (shader
+## `live_thin`). A sheet a centimetre or two deep running down a steep face
+## took the sky's sheen at the face's grazing angle, and its speed's foam,
+## and read as a pale glassy shell.
+const THIN := Vector2(0.012,0.05)
+const FORMAT :=(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 
 var flow: RefCounted
 var data: NativeTerrainData
@@ -57,10 +63,15 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	still_material.set_shader_parameter("planar_levels",Vector2(-1000000.0,-1000000.0))
 	# The shore foam keeps to the bank (distance from dry ground in UV.x).
 	still_material.set_shader_parameter("shore_distance",true)
+	# Still water lies level; where the sheet under moving water tilts down a
+	# face it fades, and the moving water's look shows alone.
+	still_material.set_shader_parameter("live_level",true)
 	still.material_override = still_material
 	moving.name = "FlowMoving"
 	var moving_material: ShaderMaterial = stream_material.duplicate()
 	moving_material.set_shader_parameter("flow_edge_fade",true)
+	# A film thinner than THIN reads as wet ground, not glassy water.
+	moving_material.set_shader_parameter("live_thin",THIN)
 	# Drawn after the still water it lies over, whatever the sort says.
 	moving_material.render_priority = 1
 	moving.material_override = moving_material

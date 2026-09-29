@@ -11,8 +11,10 @@ extends RefCounted
 ## the GDScript mirror, run on a coarser grid (`FALLBACK_CELL`).
 ##
 ## Sources: a water ball dropped on high or steep ground becomes a spring that
-## keeps pouring (`springs`, saved and undoable); anywhere else it lets all its
-## water go once, over BURST_SECONDS (`bursts`, neither saved nor undone).
+## keeps pouring (`springs`, saved and undoable), after the ball's own water
+## wells out of it, and on open ground wears a rill and a pool at its foot
+## (`spring_bed`); anywhere else it lets all its water go once, over
+## BURST_SECONDS (`bursts`, neither saved nor undone).
 ## The depth itself is saved with the place but is not part of undo: undoing a
 ## sculpt puts the land back and the water follows it.
 
@@ -58,6 +60,36 @@ const MAX_SPRINGS := 8
 ## A burst lets its volume go over BURST_SECONDS across BURST_RADIUS m.
 const BURST_SECONDS := 1.2
 const BURST_RADIUS := 0.8
+## A spring's ball does not burst on the summit: its water wells out of the
+## spring over SPRING_HEAD_SECONDS (a strong first run that reaches the foot
+## in a few seconds), and the spring then keeps its steady rate. Dumped in
+## 1.2 s on a peak, the ball's water sheeted down every flank at once and
+## ended as a film a few centimetres deep over a hundred square metres of the
+## plain, which soaked away.
+const SPRING_HEAD_SECONDS := 10.0
+## The spring rises SPRING_SET m down its course from where the ball landed,
+## so on a summit its water takes one flank instead of splitting over all.
+const SPRING_SET := 1.0
+## A spring's course (`descent`): steepest descent over the ground in
+## COURSE_STEP m steps, ending at its foot once COURSE_FLAT_STEPS steps in a
+## row fall less than COURSE_FLAT per metre, or COURSE_RIM m from the rim.
+const COURSE_STEP := 0.5
+const COURSE_FLAT := 0.08
+const COURSE_FLAT_STEPS := 2
+const COURSE_MAX_STEPS := 80
+const COURSE_RIM := 2.0
+## Where the course levels off on open ground, the spring's water wears a
+## bed (`spring_bed`): a pool at the foot sized to hold the ball (the water
+## brush's hollow: radius and depth from the volume, kept POOL_RIM m inside
+## the rim) and a rill RILL_DEPTH deep, RILL_HALF_WIDTH to either side, down
+## the course to it, so the water runs as one stream into a pond instead of
+## sheeting over the face and spreading thin over the flat. A foot that
+## already sits in a hollow at least POOL_HOLLOW deep keeps its ground, and
+## so does a course that runs to the rim. `--no-spring-bed` turns it off.
+const POOL_RIM := 1.5
+const POOL_HOLLOW := 0.25
+const RILL_DEPTH := 0.3
+const RILL_HALF_WIDTH := 1.0
 ## Standing water deeper than POOL_DEPTH and slower than POOL_SPEED, over at
 ## least POOL_CELLS cells, is a pool (fish and shore life; `pools()`).
 const POOL_DEPTH := 0.15
@@ -205,19 +237,126 @@ func low_ground() -> float:
 	sorted.sort()
 	return sorted[clampi(int(sorted.size()*LOW_SHARE),0,sorted.size()-1)] if not sorted.is_empty() else 0.0
 
-## A water ball lands: its water goes as a burst, and on high or steep ground
-## a spring stays and keeps pouring. The spring is its own undo step. Returns
-## the kind.
+## A water ball lands. Anywhere low its water goes as a burst. On high or
+## steep ground a spring stays SPRING_SET m down the slope, the ball's water
+## wells out of it over SPRING_HEAD_SECONDS, and where its course levels off
+## on open ground the water wears a bed and a pool (`spring_bed`). The spring
+## and its bed are one undo step; `last_bed` keeps the ground before and
+## after, for the editor to show the change. Returns the kind.
 func drop(point: Vector2, volume: float) -> String:
 	var kind := source_kind(point)
+	last_bed = {}
 	if kind.is_empty() or not ready: return ""
-	bursts.append({"x":point.x,"z":point.y,"rate":volume/BURST_SECONDS,"radius":BURST_RADIUS,"left":volume})
-	if kind == "spring":
-		data.begin_stroke()
-		if springs.size() >= MAX_SPRINGS: springs.pop_front()
-		springs.append({"x":point.x,"z":point.y,"rate":clampf(volume*SPRING_SHARE,SPRING_MIN,SPRING_MAX),"radius":SPRING_RADIUS})
-		data.end_stroke()
+	if kind == "burst":
+		bursts.append({"x":point.x,"z":point.y,"rate":volume/BURST_SECONDS,"radius":BURST_RADIUS,"left":volume})
+		return kind
+	var course := descent(data,point)
+	var points: PackedVector3Array = course.points
+	var at := point
+	var set := mini(roundi(SPRING_SET/COURSE_STEP),points.size()-1)
+	if set > 0: at = Vector2(points[set].x,points[set].z)
+	bursts.append({"x":at.x,"z":at.y,"rate":volume/SPRING_HEAD_SECONDS,"radius":SPRING_RADIUS,"left":volume})
+	data.begin_stroke()
+	var bed := {} if "--no-spring-bed" in OS.get_cmdline_user_args() else spring_bed(data,course,set,volume)
+	if not bed.is_empty():
+		last_bed = {"from":data.heights.duplicate(),"heights":bed.heights.duplicate(),"rect":bed.rect,"pool":bed.pool,"radius":bed.radius}
+		data.heights = bed.heights
+	if springs.size() >= MAX_SPRINGS: springs.pop_front()
+	springs.append({"x":at.x,"z":at.y,"rate":clampf(volume*SPRING_SHARE,SPRING_MIN,SPRING_MAX),"radius":SPRING_RADIUS})
+	data.end_stroke()
 	return kind
+
+## The last spring's bed: {"from", "heights" (the ground before and after),
+## "rect", "pool", "radius"}, or {} when it wore none.
+var last_bed := {}
+
+## The way water runs from `point`: steepest descent over the ground, one
+## COURSE_STEP a step: {"points" (x, ground, z), "end"}. "end" says how it
+## ends: "foot" where COURSE_FLAT_STEPS steps in a row fall less than
+## COURSE_FLAT per metre, "hollow" where no step goes lower, "rim" within
+## COURSE_RIM m of the rim (or after COURSE_MAX_STEPS).
+static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
+	var course := PackedVector3Array()
+	var ground: Variant = terrain.ground_height(point)
+	if ground == null: return {"points":course,"end":"rim"}
+	var at := point
+	var h := float(ground)
+	course.append(Vector3(at.x,h,at.y))
+	var flat := 0
+	var end := "rim"
+	for step in range(COURSE_MAX_STEPS):
+		var best := at
+		var lowest := h
+		var blocked := false
+		for k in range(16):
+			var next := at+Vector2.from_angle(TAU*k/16.0)*COURSE_STEP
+			var below: Variant = terrain.ground_height(next)
+			if below == null or 14.0-maxf(absf(next.x),absf(next.y)) < COURSE_RIM:
+				blocked = true
+				continue
+			if float(below) < lowest:
+				lowest = float(below)
+				best = next
+		if best == at:
+			end = "rim" if blocked else "hollow"
+			break
+		flat = flat+1 if h-lowest < COURSE_STEP*COURSE_FLAT else 0
+		at = best
+		h = lowest
+		course.append(Vector3(at.x,h,at.y))
+		if flat >= COURSE_FLAT_STEPS:
+			end = "foot"
+			break
+	return {"points":course,"end":end}
+
+## The ground a spring's water wears on open ground: a rill down its
+## `descent` from the `start`th point and a pool at its foot that holds
+## `volume`, as {"heights", "rect", "pool", "radius"}. {} where the land
+## already holds the water (the foot lies in a hollow POOL_HOLLOW deep) or
+## lets it go (the course reaches the rim, or no pool fits inside it). Only
+## lowers ground.
+static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start: int, volume: float) -> Dictionary:
+	const WaterBrush := preload("res://scripts/water_brush.gd")
+	var course: PackedVector3Array = descended.points
+	if course.size() < 3 or descended.end == "rim": return {}
+	var foot := Vector2(course[-1].x,course[-1].z)
+	var radius := WaterBrush._scoop_radius(volume)
+	# Already a hollow: the water pools there by itself.
+	var rim_low := INF
+	for k in range(16):
+		var ring: Variant = terrain.ground_height(foot+Vector2.from_angle(TAU*k/16.0)*radius)
+		if ring != null: rim_low = minf(rim_low,float(ring))
+	if rim_low-course[-1].y >= POOL_HOLLOW: return {}
+	# The pool lies on past the foot, so it meets the slope rather than
+	# cutting under it, and stays POOL_RIM inside the rim.
+	var heading := (foot-Vector2(course[-2].x,course[-2].z)).normalized()
+	var limit := 14.0-POOL_RIM-radius
+	if limit < 0.0:
+		radius = 14.0-POOL_RIM
+		limit = 0.0
+	if radius < WaterBrush.SCOOP_RADIUS.x: return {}
+	var pool := (foot+heading*radius*0.5).clamp(Vector2(-limit,-limit),Vector2(limit,limit))
+	var depth := clampf(3.0*volume/(PI*radius*radius)+0.05,WaterBrush.SCOOP_DEPTH.x,WaterBrush.SCOOP_DEPTH.y)
+	var heights := terrain.heights.duplicate()
+	var rect := Rect2(pool-Vector2.ONE*radius,Vector2.ONE*radius*2.0)
+	for i in range(terrain.points.size()):
+		var p := terrain.points[i]
+		var cut := 0.0
+		var t := p.distance_to(pool)/radius
+		if t < 1.0: cut = depth*(1.0-t*t)*(1.0-t*t)
+		# The rill follows the course from the spring down to the pool.
+		var near := INF
+		for k in range(maxi(start,1),course.size()):
+			var a := Vector2(course[k-1].x,course[k-1].z)
+			var run := Vector2(course[k].x,course[k].z)-a
+			var along := clampf((p-a).dot(run)/maxf(run.length_squared(),0.000001),0.0,1.0)
+			near = minf(near,p.distance_to(a+run*along))
+		if near < RILL_HALF_WIDTH:
+			var u := near/RILL_HALF_WIDTH
+			cut = maxf(cut,RILL_DEPTH*(1.0-u*u)*(1.0-u*u))
+			rect = rect.expand(p)
+		if cut > 0.0: heights[i] = maxf(NativeTerrainData.MIN_HEIGHT,heights[i]-cut)
+	return {"heights":heights,"rect":rect.grow(1.0),"pool":pool,"radius":radius}
 
 ## Takes the water within `radius` of `point` and any spring there, as one
 ## undo step for the springs. Returns the m³ taken.

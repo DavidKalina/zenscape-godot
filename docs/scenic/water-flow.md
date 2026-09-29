@@ -12,7 +12,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 - **It follows the land.** Every step reads the ground under each cell again from the terrain's heights. A trench cut out of a pond drains it into the trench; a basin pressed beside a stream takes the stream; a peak raised under a pond throws the water off. There is no hook to miss: a sculpt, the clay, an undo, a mountain springing and a new world all move the water the same way.
 - **The plate's edge drains, and pours.** Water that reaches the plate's outer ring of cells falls off the plate. A basin holds its water until the water tops the lowest point of its rim; only then does it run on, and off the edge if nothing lower stops it. This keeps water from ever building up against the rim, and needs no lip. What leaves over each edge cell is counted (m³/s, smoothed), and where it leaves, a waterfall pours down the block's side into the void ("Edge falls" below). A thumb groove run out through the rim notches it into a spillway for this (`docs/scenic/modeless.md`, "The thumb at the rim").
 - **Water soaks and evaporates.** Every wet cell loses `evaporation` a second, and thin water (under `soak_depth`) loses up to `soak` more, so a front soaks in as it runs. A steady spring therefore levels off: in the probe, a 0.084 m³/s spring's water holds at about 12.6 m³ over about 50 m² after four minutes. A pond without a source lasts a long while (a 6 m³ pond, about 15 minutes); a puddle on flat ground soaks in within a minute.
-- **Springs and bursts.** A ball that lands 1.2 m above the plate's low ground (`SPRING_RISE`; the low ground is the plate's 20 % height quantile), or on ground steeper than `SPRING_SLOPE`, lets its water go and **stays as a spring**, pouring `SPRING_SHARE` of its volume each second. A ball anywhere else lets its water go once. Either way the ball's water leaves over `BURST_SECONDS` across `BURST_RADIUS`, not in one lump. The user will refine where springs come from.
+- **Springs and bursts.** A ball that lands 1.2 m above the plate's low ground (`SPRING_RISE`; the low ground is the plate's 20 % height quantile), or on ground steeper than `SPRING_SLOPE`, **stays as a spring**, pouring `SPRING_SHARE` of its volume each second. The spring rises `SPRING_SET` (1 m) down the slope from where the ball landed, and the ball's own water wells out of it over `SPRING_HEAD_SECONDS` (10 s). Where the spring's course levels off on open ground, the water wears a rill down to a pool at the foot (see "Drop legibility" below). A ball anywhere else lets its water go once, over `BURST_SECONDS` across `BURST_RADIUS`. The user will refine where springs come from.
 - **Water from the sky** (`--modeless`). The water ball had no door under `--modeless` (left presses on the land are clay). Now a tuft torn from the sky's cloud and carried over the land condenses a water ball there, and it fills from the cloud while held (`docs/scenic/sky-cloud.md`; before that, any drag from the void did). Letting go drops it. A click in the void is still the snap. The void's hint says so.
 - **Undo, drain, save.**
   - A spring is its own undo step: undo removes it and redo brings it back. Springs ride the terrain history (`history_captured`, `state_restored`), as the forest wish does.
@@ -76,7 +76,12 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `SPRING_RISE`, `SPRING_SLOPE`, `LOW_SHARE` | 1.2 m, 0.45, 0.2 | A ball is a spring this far above the plate's `LOW_SHARE` height quantile, or on ground this steep. |
 | `SPRING_SHARE`, `SPRING_MIN`, `SPRING_MAX` | 0.012 /s, 0.03, 0.25 m³/s | Spring rate as a share of the ball's volume each second. |
 | `SPRING_RADIUS`, `MAX_SPRINGS` | 0.35 m, 8 | A spring's footprint; the oldest goes when a ninth comes. |
-| `BURST_SECONDS`, `BURST_RADIUS` | 1.2 s, 0.8 m | How a ball's own water leaves it. |
+| `BURST_SECONDS`, `BURST_RADIUS` | 1.2 s, 0.8 m | How a burst ball's water leaves it. |
+| `SPRING_HEAD_SECONDS`, `SPRING_SET` | 10 s, 1 m | How a spring ball's own water leaves it, and how far down its course the spring rises. |
+| `COURSE_STEP`, `COURSE_FLAT`, `COURSE_FLAT_STEPS`, `COURSE_RIM` | 0.5 m, 0.08, 2, 2 m | A spring's course (`descent`) and where its foot is. |
+| `RILL_DEPTH`, `RILL_HALF_WIDTH`, `POOL_RIM`, `POOL_HOLLOW` | 0.3 m, 1 m, 1.5 m, 0.25 m | A spring's bed (`spring_bed`): the rill, the pool's distance from the rim, and how deep a hollow at the foot already holds the water. The pool's size is the water brush's hollow (`WaterBrush._scoop_radius`, `SCOOP_DEPTH`). |
+| `SPRING_BED_SECONDS` (`native_chunk_editor.gd`) | 1.2 s | How long the bed takes to wear in on screen. |
+| `THIN` (`water_flow_view.gd`) | 1.2–5 cm | Moving water this thin fades from wet ground to the stream's look (shader `live_thin`). |
 | `POOL_DEPTH`, `POOL_SPEED`, `POOL_CELLS` | 0.15 m, 0.12 m/s, 12 | What counts as standing water for life. |
 | `WET_DEPTH` | 0.05 m | Water that stops emergence. |
 | `SURFACE` (`water_flow_view.gd`) | wet 1.2 cm, lift 1.2 cm, flow on/off 0.22/0.12 m/s, foam 0.8–2.2 m/s, depth scale 0.45 m, under | Surface build. |
@@ -284,6 +289,47 @@ What the frames show:
   - The mist is faint.
   - The God Hand stays in shot: the film's hide does not hold.
   - The flip is not filmed: the falls hide while it runs, and that was only reasoned, not seen.
+
+## Drop legibility (2026-09-29)
+
+A rendered playtest dropped an 8 m³ ball on the top of a pinched peak on an open plain. What a player saw: a pale, glassy sheet draped over the summit and down a flank, thin white rings on the plain, a small fall on the face, and no stream or pond.
+
+**Why** (headless reproduction, `/private/tmp/zs-drop/probe_drop.gd`, the playtest's own gestures at `--fixed-fps 60`):
+- **The whole ball burst on the summit.** A spring ball still let its water go as a burst, 7.3 m³ in 1.2 s over 0.8 m. That is about 6 m³/s at the apex, so it ran down every flank at once. The waterfall detector read a 19 m³/s cascade and stood a curtain 5.5 m wide over the dome.
+- **Then it spread thin over the flat.** Within 3 s, 7.2 m³ was on the plain. By 6 s it covered 106 m², mostly 1–10 cm deep, with nothing to pool in. At 30 s 5.3 m³ had soaked in and 1.4 m³ had gone over the edge; 3.3 m³ was left.
+- **Thin water drew as glass.** A sheet 1–3 cm deep on a steep face was drawn twice: once through the stream material and once through the pond material under it. The stream material shows at least 40 % alpha, takes the sky's Fresnel sheen at the face's grazing angle, and takes speed foam in its vertex colour. The pond material shows the lake's Fresnel on a surface that is not level. At 16 s, 47 m² of moving water was drawn, half of it under 3 cm deep.
+- **The rings.** Once a pool stood anywhere, the live reflection's planar path drew the plain's 3–10 cm sheet with the bed showing through: an almost invisible interior, and only the shore foam band round its edge.
+
+**What changed:**
+- **A spring ball no longer bursts.** Its water wells out of the spring over `SPRING_HEAD_SECONDS`, about 0.75 m³/s for an 8 m³ ball, then the spring keeps its steady rate.
+- **The spring rises `SPRING_SET` down the steepest descent** from the landing point (`WaterFlow.descent`), so a summit's water takes one flank.
+- **The spring's bed** (`WaterFlow.spring_bed`). The course runs to its foot, where two 0.5 m steps in a row fall less than 8 %. There the water wears two things:
+  - a pool sized to hold the ball: the water brush's hollow, radius 1.4 + 0.9√V (1.8–4.5 m) and depth 3V/πr² + 0.05 m (0.15–0.9 m), set half a radius past the foot and kept 1.5 m inside the rim;
+  - a rill 0.3 m deep and 1 m to either side, down the course from the spring to the pool.
+  
+  A foot already in a hollow 0.25 m deep, such as a palm-pressed basin, keeps its ground. So does a course that reaches the rim, such as a notched spillway. The bed is inside the spring's undo step: one undo takes the spring and the bed, and redo brings both back. `last_bed` hands the editor the ground before and after, and `_wear_spring_bed` eases it in over 1.2 s with light refreshes. A stroke that starts meanwhile, an undo or a new world stops it. `--no-spring-bed` keeps the old ground, for A/B.
+- **Thin moving water reads as wet ground** (shader `live_thin`, from `THIN`). From 1.2 to 5 cm deep, moving water fades from a dark wet tint at 28 % alpha to the stream's look, and loses the sky sheen, speed foam and glint. Deeper water is unchanged.
+- **Live still water on a slope fades out** (shader `live_level`, smoothstep 0.82–0.96 on the surface normal's y). On a face, only the moving water's own look shows. Level ponds are unchanged.
+- The ball's fish wait for the bed's pool.
+
+**Measured** (same probe, two takes each; the pinched peak is 8–9.7 m and varies take to take):
+
+| | Before | After |
+|---|---|---|
+| Largest cascade the falls read | 19 m³/s, 5.5 m wide (2 s) | 1.0–1.4 m³/s, 1.3–1.6 m wide during the head, then 0.1 m³/s, 0.9 m |
+| Water in the pool (within 4.5 m of its centre) | none (the groove caught 6.8 m², depth 0.37 m) | 2.2–2.4 m³ at 4 s, 5.1–5.4 m³ at 8 s, 7.2–7.4 m³ at 12 s |
+| Deepest water on the flat | 0.37–0.5 m (in the thumb groove) | 0.59–0.6 m in the pool; `pools()` reports 13–16 m² at 15 s |
+| Moving water drawn at 20 s (under 3 cm) | 40–44 m² (24–27 m²) | 21 m² (6–8 m²) |
+| Standing at 30 s, soaked, over the edge | 3.3 m³, 5.3, 1.4 | 6.2–7.1 m³, 2.0–2.3, 1.0–1.6 (the full pool overflowing) |
+
+Once full, the pool overflows with the spring's steady 0.09 m³/s and runs on as before.
+
+`tools/probe_water_flow.gd` and `tools/probe_edge_fall.gd` still pass (run with `--no-title`, which the title screen now needs). The groove's head in each ends in a basin or at the rim, so neither wears a bed. `tools/probe_water_flow_modeless.gd` fails on main as well: its drag starts in the plain sky, and since the cloud change only a tuft from the cloud makes a ball.
+
+**Unverified:** none of this has been rendered. The wet-ground tint, the fade of still water on slopes, the rill and pool's look, and the bed wearing in all need a rendered take. Still open:
+- a burst on flat low ground still spreads into a thin sheet, and can still show the shore-foam ring;
+- trees standing where the pool is cut stay, sunk to the new ground;
+- the rill cuts into the user's peak; `--no-spring-bed` shows it without.
 
 ## Known gaps and follow-ups
 
