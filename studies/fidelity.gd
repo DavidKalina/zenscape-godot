@@ -114,6 +114,8 @@ var god_hand: Node3D
 var snow_globe: Node
 ## What the hand reaches and holds: the sun, the rim (scripts/hand_reach.gd).
 var hand_reach: Node
+## --modeless: the world's spin winds the clock (scripts/spin_time.gd).
+var spin_time: Node
 ## Fire. The field is the simulation and the only piece this scene requires;
 ## the look and effects layers are optional companions loaded through a guarded
 ## `load()` so a build without them still runs. Everything reaches the world
@@ -232,6 +234,11 @@ func _ready() -> void:
 	hand_reach = preload("res://scripts/hand_reach.gd").new()
 	add_child(hand_reach)
 	hand_reach.setup(self)
+	# --modeless: spin is time (docs/scenic/modeless.md).
+	if preload("res://scripts/modeless_input.gd").enabled():
+		spin_time = preload("res://scripts/spin_time.gd").new()
+		spin_time.setup(self)
+		add_child(spin_time)
 	# The rim grab feeds the snow globe; a shake takes the rim from the season dial.
 	snow_globe.claim_grip = false
 	hand_reach.rim_grabbed.connect(snow_globe.grab)
@@ -539,7 +546,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			_panning = event.pressed
-		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+		# --modeless: only the right button is the camera; a left press is the hand's.
+		if event.button_index == MOUSE_BUTTON_RIGHT or (event.button_index == MOUSE_BUTTON_LEFT and not preload("res://scripts/modeless_input.gd").enabled()):
 			_orbiting = event.pressed
 		if event.pressed and (_orbiting or _panning):
 			_auto_orbit = false # The source cancels its idle spin on the first press.
