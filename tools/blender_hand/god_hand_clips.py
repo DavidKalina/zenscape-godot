@@ -1407,55 +1407,93 @@ WALL_HANDOFFS = [('Idle', 'WallIn'), ('WallIn', 'WallHold'), ('WallHold', 'WallO
 #
 # - VoidIn, VoidHold, VoidOut: from the float into the ready hand, its moving hold (a slow
 #   bob and sway, the thumb idly rubbing the middle fingertip twice a round), and back.
-# - SnapIn, SnapHold: the press loads the snap: a small dip, then the hand rises, the thumb
-#   pad finds the middle fingertip and squeezes; the hold trembles with the pressure.
-# - SnapOut: the release fires it: one more squeeze with the wrist cocked, then in two
-#   frames the middle finger slams into the heel of the thumb and the thumb shoots past
-#   the index, the wrist flicking down. It holds the hit a beat, recoils up, the fingers
-#   fling loose and it settles back into VoidHold. The game cuts day and night on the
-#   release, the frame the snap starts, so the cut and the slam land together.
+# - SnapIn, SnapHold: the press loads the snap. A quick small dip and the fingers ease
+#   open (the anticipation), then the hand rises and its wrist cocks back, the middle
+#   fingertip comes down on the thumb's pad (the index lifted clear above them, so the
+#   loop the thumb and middle make shows from the camera) and the two squeeze together,
+#   the ring and little finger curled in the palm. The hold is a living held
+#   tension: the pressure swells and eases, the pressed joints tremble, the wrist stays
+#   cocked and breathes.
+# - SnapOut: the release fires it. The slam is its first frame (SNAP_HIT): the middle
+#   finger slips off the thumb and whips down into the heel of the thumb, the thumb flicks
+#   up and on past where the middle was, and the wrist jolts forward and down. The thumb
+#   and wrist carry on a beat past the hit, the hand recoils up, the fingers let go one
+#   after another (the middle first, the little finger last) and open a touch past
+#   relaxed, shake out and settle into VoidHold. The game cuts day and night and plays
+#   the snap's sound on the release, the frame the slam starts, so the cut, the click and
+#   the slam land together.
 VOID_T = 150
 VOID_IN_T = 20
 VOID_OUT_T = 24
 SNAP_IN_T = 10
-SNAP_HOLD_T = 30
-SNAP_OUT_T = 34
-SNAP_HIT = 3  # frame of SnapOut the middle finger lands
+SNAP_HOLD_T = 60
+SNAP_OUT_T = 32
+SNAP_HIT = 1  # frame of SnapOut the middle finger lands
+SNAP_LOADED = 3  # frame of SnapIn the middle fingertip meets the thumb
 VOID_PITCH = -70  # fingers up, leaning forward a touch
 VOID_ROLL = -6
 VOID_YAW = -30  # the back of the hand turned a little to the camera, the thumb and middle in profile
+# Loaded, the hand keeps the float's turn to the camera and stands a touch more upright
+# (more still with its wrist cocked), so the load and the slam rock the wrist in the
+# picture plane. Turning the palm to the camera hid the loop in front of the palm.
+SNAP_PITCH = -68
+SNAP_ROLL = -6
+SNAP_YAW = -30
 SNAP_AT = Vector((0.0, -0.04, 0.16))  # where the thumb meets the middle, over the anchor
-# Rest space: where the thumb's pad meets the middle fingertip when loaded.
-SNAP_POINT = Vector((0.09, -0.48, -0.3))
+# Rest space: the point the ready hand turns about, by the middle fingertip.
+VOID_POINT = Vector((0.09, -0.48, -0.3))
+# Rest space: where the middle fingertip presses on the thumb's pad, loaded; the thumb's
+# tip lies a little past it on the index side, under the middle's pad.
+SNAP_POINT = Vector((0.1, -0.55, -0.27))
+THUMB_UNDER = Vector((0.03, 0.0, 0.03))
+# Squeezing: both tips pushed back toward the palm together.
+SQUEEZED = Vector((0.0, 0.006, 0.012))
+# Snapped: where the thumb's tip flies to, up and out on the index side.
+THUMB_FLICK = Vector((0.2, -0.5, -0.3))
 # Loosely curled and ready: a cascade, the index least, the thumb resting by the middle.
 VOID_RELAX = shape((20, 26, 12, 5), (28, 32, 14, 0), (36, 38, 18, -5), (42, 42, 20, -11), (10, 16, 14, 4, 6), 5)
-# Solved against the rig by prepare_void(): the loaded snap (thumb pad on the middle tip,
-# index lifted clear, ring and little finger tucked), squeezed harder, and the snap.
-SNAP_SET = SNAP_HARD = SNAPPED = None
+# Solved against the rig by prepare_void(): the loaded snap (the middle fingertip on the
+# thumb's pad, the index lifted clear above it, ring and little finger curled in the
+# palm), squeezed harder, the snap (the middle in the heel of the thumb, the thumb flicked
+# up), and the thumb's flick carried past it.
+SNAP_SET = SNAP_HARD = SNAPPED = SNAP_THROUGH = None
 
 
 def prepare_void(rig):
-	global SNAP_SET, SNAP_HARD, SNAPPED
-	guess = shape((24, 30, 14, 6), (42, 52, 22, 0), (72, 84, 44, -2), (76, 86, 46, -5), (16, 16, 16, 18, 4), 6)
-	# The middle finger bends at the knuckle too, as a finger loaded to snap does.
-	free = [('Middle', 0, 30, 70), ('Middle', 1, 20, 80), ('Middle', 2, 0, 60), ('Middle', 3, -12, 12)] + FREE_THUMB
-	SNAP_SET, err = solve_shape(rig, guess, free,
-		[('Middle3', SNAP_POINT), ('Thumb3', SNAP_POINT + Vector((0.03, 0.02, -0.035)))])
+	global SNAP_SET, SNAP_HARD, SNAPPED, SNAP_THROUGH
+	guess = shape((10, 14, 6, 6), (40, 50, 22, 0), (72, 86, 46, -2), (76, 88, 48, -6), (20, 12, 10, 10, 0), 5)
+	middle = [('Middle', 0, 10, 80), ('Middle', 1, 10, 90), ('Middle', 2, 0, 60), ('Middle', 3, -12, 12)]
+	SNAP_SET, err = solve_shape(rig, guess, middle + FREE_THUMB,
+		[('Middle3', SNAP_POINT), ('Thumb3', SNAP_POINT + THUMB_UNDER)])
 	print('HAND_SOLVE snap', round(err, 4))
-	SNAP_HARD = add(SNAP_SET, {'Middle': (6, 0), 'Thumb': (7, 2), 'Ring': (6, 0), 'Pinky': (6, 0), 'Index': (-4, 1)})
-	# Snapped: the middle slammed down into the palm, the thumb flung on past the index and
-	# up, the index flicked out a touch by the jolt.
-	SNAPPED = copy(SNAP_SET)
-	SNAPPED['Middle'] = [88, 92, 50, -2]
-	SNAPPED['Thumb'] = [-10, 2, 6, 26, 14]
-	SNAPPED['Index'] = [10, 14, 6, 8]
-	SNAPPED['Ring'] = [80, 90, 48, -3]
-	SNAPPED['Pinky'] = [82, 90, 48, -6]
+	# Squeezed: the tips pressed back together, the ring and little finger clenching with
+	# them and the index lifting away.
+	hard = add(SNAP_SET, {'Ring': (8, 0), 'Pinky': (8, 0), 'Index': (-8, 1)})
+	SNAP_HARD, err = solve_shape(rig, hard, middle + FREE_THUMB,
+		[('Middle3', SNAP_POINT + SQUEEZED), ('Thumb3', SNAP_POINT + SQUEEZED + THUMB_UNDER)])
+	print('HAND_SOLVE snap_hard', round(err, 4))
+	# Snapped: the middle slammed into the heel of the thumb, the ring and little finger
+	# jolted tighter, the index jolted out, the thumb flicked up and out.
+	snapped = copy(SNAP_SET)
+	snapped['Middle'] = [88, 98, 58, -2]
+	snapped['Ring'] = [80, 92, 50, -3]
+	snapped['Pinky'] = [82, 92, 50, -7]
+	snapped['Index'] = [8, 12, 5, 6]
+	SNAPPED, err = solve_shape(rig, snapped, FREE_THUMB, [('Thumb3', THUMB_FLICK)])
+	print('HAND_SOLVE snapped', round(err, 4))
+	# The thumb carries on past it, its tip bent back by the flick.
+	SNAP_THROUGH = add(SNAPPED, {'Thumb': (-16, -4), 'Middle': (4, 0), 'Index': (-4, 1)})
 
 
 def void_place(dx=0.0, dy=0.0, dz=0.0, pitch=0.0, roll=0.0, yaw=0.0):
-	"""The ready hand, turned about the snap point so it stays over the pointer."""
-	return contact(SNAP_POINT, SNAP_AT + Vector((dx, dy, dz)), VOID_PITCH + pitch, VOID_ROLL + roll, VOID_YAW + yaw)
+	"""The ready hand, turned about the middle fingertip so it stays over the pointer."""
+	return contact(VOID_POINT, SNAP_AT + Vector((dx, dy, dz)), VOID_PITCH + pitch, VOID_ROLL + roll, VOID_YAW + yaw)
+
+
+def snap_place(dx=0.0, dy=0.0, dz=0.0, pitch=0.0, roll=0.0, yaw=0.0):
+	"""The loaded hand, turned about the thumb and middle's meeting so it stays over the
+	pointer."""
+	return contact(SNAP_POINT, SNAP_AT + Vector((dx, dy, dz)), SNAP_PITCH + pitch, SNAP_ROLL + roll, SNAP_YAW + yaw)
 
 
 def void_hold_place(t):
@@ -1508,54 +1546,98 @@ def void_out(t):
 
 
 def snap_hold_place(t):
-	"""Loaded: the wrist held a touch cocked, trembling with the pressure, breathing."""
+	"""Loaded: the wrist held cocked back, breathing, a fine tremble of held effort in it."""
 	t %= SNAP_HOLD_T
 	u = math.tau * t / SNAP_HOLD_T
-	quiver = math.sin(math.tau * t / 5)
-	return void_place(0.0, 0.0, 0.03 + 0.004 * math.sin(u), pitch=-7 + 0.8 * quiver, roll=0.6 * quiver, yaw=math.sin(u))
+	tremble = 0.6 * math.sin(13 * u) + 0.4 * math.sin(19 * u + 1.3)
+	return snap_place(0.002 * math.sin(u + 2.0), 0.004 * math.sin(u + 0.5), 0.03 + 0.007 * math.sin(u),
+		pitch=-8 - 1.5 * math.sin(u) + 0.7 * tremble, roll=0.5 * tremble + 1.2 * math.sin(u + 1.0), yaw=1.2 * math.sin(u + 2.4))
+
+
+def pressure(t):
+	"""How hard the loaded tips press, 0 (SNAP_SET) .. 1 (SNAP_HARD): two swells a round,
+	the second deeper."""
+	t %= SNAP_HOLD_T
+	u = math.tau * t / SNAP_HOLD_T
+	return 0.55 + 0.12 * math.sin(u) + 0.25 * pulses(t, [8], 18) + 0.35 * pulses(t, [34], 20) - 0.1
 
 
 def snap_hold_shape(t):
-	"""The thumb presses on the middle finger in slow pulses, the fingers tense with it."""
+	"""The tips press together in swells, the pressed joints trembling with the effort, the
+	lifted index drifting a little."""
 	t %= SNAP_HOLD_T
-	return lerp(SNAP_SET, SNAP_HARD, 0.35 + 0.35 * math.sin(math.tau * t / SNAP_HOLD_T))
+	u = math.tau * t / SNAP_HOLD_T
+	s = lerp(SNAP_SET, SNAP_HARD, pressure(t))
+	shake = math.sin(17 * u) + 0.6 * math.sin(23 * u + 0.7)
+	s['Middle'][1] += 1.2 * shake
+	s['Thumb'][2] -= 1.5 * shake
+	s['Ring'][0] += 0.8 * shake
+	s['Index'][0] += 3 * math.sin(u + 0.9)
+	s['Index'][3] += 1.5 * math.sin(u + 2.1)
+	return s
 
 
 def snap_in(t):
-	"""Loading the snap: a small dip the other way, then the hand rises and cocks, the
-	thumb finds the middle fingertip and squeezes past, easing to the hold."""
-	p = track(t, [(0, void_hold_place(0)), (3, void_place(dz=-0.012, pitch=5)), (7, void_place(dz=0.036, pitch=-9), 0.12),
+	"""Loading the snap: a quick small dip with the fingers easing open, then the hand
+	rises and cocks, the middle fingertip comes down on the thumb (SNAP_LOADED) and the two
+	squeeze past, easing to the hold. The tips meet early, so a click that cuts this
+	short still snaps from a loaded hand (the game skips a cut-short load to
+	SNAP_LOADED)."""
+	p = track(t, [(0, void_hold_place(0)), (1.5, void_place(dz=-0.012, pitch=5)), (5, snap_place(dz=0.04, pitch=-11), 0.12),
 		(SNAP_IN_T, snap_hold_place(0))])
-	s = track(t, [(0, void_hold_shape(0)), (3, lerp(VOID_RELAX, OPEN, 0.25)), (7, SNAP_HARD, 0.1), (SNAP_IN_T, snap_hold_shape(0))])
-	return p, s, track(t, [(0, 0.0), (6, 0.0), (8, 1.0)])
+	s = track(t, [(0, void_hold_shape(0)), (1.5, lerp(VOID_RELAX, OPEN, 0.25)), (SNAP_LOADED, SNAP_SET), (5, SNAP_HARD, 0.1),
+		(SNAP_IN_T, snap_hold_shape(0))])
+	return p, s, track(t, [(0, 0.0), (SNAP_LOADED - 1, 0.0), (SNAP_LOADED, 1.0)])
 
 
 def snap_hold(t):
 	return snap_hold_place(t), snap_hold_shape(t), 1.0
 
 
+def _snap_out_shape(t):
+	loose = lerp(VOID_RELAX, BLOOM, 0.15)
+	return track(t, [(0, snap_hold_shape(0)), (SNAP_HIT, SNAPPED), (3, SNAP_THROUGH), (7, lerp(SNAPPED, VOID_RELAX, 0.2)),
+		(13, loose, 0.1), (21, lerp(loose, VOID_RELAX, 0.8)), (SNAP_OUT_T, void_hold_shape(0))])
+
+
+# How many frames each digit lets go after the middle finger, and the frame the lag is
+# gone by.
+LET_GO = {'Index': 1.0, 'Middle': 0.0, 'Ring': 2.0, 'Pinky': 3.5, 'Thumb': 0.5}
+LET_GO_END = 26
+
+
 def snap_out(t):
-	"""The snap: a last squeeze with the wrist cocked, then the middle finger slams down
-	into the palm in two frames and the thumb flies past the index, the wrist flicking
-	forward and the hand dropping with it. It holds the hit a beat, recoils up and back,
-	the fingers flung loose, shakes out and settles into the ready hand."""
+	"""The snap. The slam is frame SNAP_HIT, the first after the loaded hold: the middle
+	finger slips off the thumb and whips down into the heel of the thumb, the thumb flicks
+	up past where the middle was and the wrist jolts forward and down. The thumb and wrist
+	carry on a beat, easing out, the hand recoils up past the float and the fingers let go
+	one after another, a touch open, shake out and settle into the ready hand."""
 	loaded = snap_hold_place(0)
-	cocked = void_place(dz=0.035, pitch=-12, roll=2)
-	hit = void_place(dy=-0.02, dz=-0.02, pitch=16, roll=-4, yaw=-3)
-	held = void_place(dy=-0.022, dz=-0.026, pitch=18, roll=-5, yaw=-3)
-	recoil = void_place(dy=0.01, dz=0.05, pitch=-10, roll=4, yaw=2)
-	p = track(t, [(0, loaded), (1, cocked), (SNAP_HIT, hit), (6, held), (13, recoil, 0.12), (22, void_place(dz=0.01, pitch=2)),
-		(SNAP_OUT_T, void_hold_place(0))])
-	shake = window(t, 14, 16, 20, 25) * math.sin(math.tau * (t - 14) / 5)
-	p = moved(p, roll=4 * shake, pitch=1.5 * shake)
-	flung = lerp(VOID_RELAX, BLOOM, 0.45)
-	s = track(t, [(0, snap_hold_shape(0)), (1, SNAP_HARD), (SNAP_HIT, SNAPPED), (7, SNAPPED), (13, flung, 0.12),
-		(22, lerp(flung, VOID_RELAX, 0.7)), (SNAP_OUT_T, void_hold_shape(0))])
+	hit = snap_place(dy=-0.02, dz=-0.03, pitch=13, roll=-3, yaw=-4)
+	through = snap_place(dy=-0.03, dz=-0.045, pitch=19, roll=-5, yaw=-6)
+	recoil = snap_place(dy=0.008, dz=0.035, pitch=-3, roll=2, yaw=2)
+	if t <= SNAP_HIT:
+		p = lerp(loaded, hit, t / SNAP_HIT)
+	elif t <= 4:
+		# Still travelling after the hit, slowing to a stop: no ease in, so the jolt reads.
+		x = (t - SNAP_HIT) / (4 - SNAP_HIT)
+		p = lerp(hit, through, 1 - (1 - x) ** 2)
+	else:
+		p = track(t, [(4, through), (11, recoil, 0.1), (19, void_place(dz=0.008, pitch=2)), (SNAP_OUT_T, void_hold_place(0))])
+	shake = window(t, 11, 13, 17, 22) * math.sin(math.tau * (t - 11) / 5)
+	p = moved(p, roll=3 * shake, pitch=1.2 * shake)
+	# The digits let go in turn after the hit, the lag closing up before the end.
+	fade = 1.0 if t < 14 else 1 - smooth((t - 14) / (LET_GO_END - 14))
+	s = {}
+	for name in DIGITS:
+		f = t if t <= 3 else max(3.0, t - LET_GO[name] * fade)
+		s[name] = _snap_out_shape(f)[name]
+	s['cup'] = _snap_out_shape(t)['cup']
 	for name in FINGER_NAMES:
-		for j, k in enumerate((6, 5, 3)):
+		for j, k in enumerate((5, 4, 2)):
 			s[name][j] += k * shake
-	# The fingers are held by the pressure until the snap lets them go; then the springs
-	# give the flung fingers their follow-through.
+	# The pressure holds the fingers until the snap lets them go; then the springs give
+	# the loosened fingers their follow-through.
 	return p, s, track(t, [(0, 1.0), (SNAP_HIT, 1.0), (SNAP_HIT + 2, 0.0)])
 
 

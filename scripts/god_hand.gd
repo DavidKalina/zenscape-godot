@@ -125,10 +125,16 @@ const CUP_POP := 0.4333
 ## The void (docs/scenic/modeless.md "Void slice"): "void" floats the hand
 ## ready over the pointer's ray, "snap" is the press that loads a snap. Both
 ## float free, leaning into the pointer's way. `snap()` fires it: SnapOut,
-## the slam and its follow-through, runs back into VoidHold. SNAP_BLEND is the
-## crossfade into it (seconds), short so the slam lands with the release.
+## the slam and its follow-through, runs back into VoidHold. The slam is
+## SnapOut's first frame after the loaded pose (the rig's snap_hit_s), so it
+## lands with the release, the time cut and the snap's sound. SNAP_BLEND is the
+## crossfade into it (seconds), short so the slam is not smeared.
+## SNAP_LOADED is when SnapIn's tips meet (the rig's snap_loaded_s): a click
+## quicker than that skips the load on to it, so the snap still fires from a
+## loaded hand.
 const FLOATING := ["void","snap"]
 const SNAP_BLEND := 0.04
+const SNAP_LOADED := 0.1
 ## Unloading a snap that became a drag: a crossfade from SnapHold to VoidHold.
 const UNLOAD_BLEND := 0.25
 
@@ -450,10 +456,15 @@ func _set_opacity(value: float) -> void:
 # --- The void and the snap (docs/scenic/modeless.md "Void slice") -------------
 
 ## Fire the snap: SnapOut from wherever the hand is (a loaded SnapHold, or a
-## SnapIn cut short by a quick click), then VoidHold. The gesture becomes
-## "void", which the reach sets in the same frame, so nothing else plays.
+## SnapIn cut short by a quick click), then VoidHold. A SnapIn cut short
+## before its tips meet is first moved on to SNAP_LOADED, so SnapOut's short
+## crossfade starts from a loaded hand, not from the anticipation's dip. The
+## gesture becomes "void", which the reach sets in the same frame, so nothing
+## else plays.
 func snap() -> void:
 	gesture = "void"
+	if String(player.current_animation) == "SnapIn" and player.current_animation_position < SNAP_LOADED:
+		player.seek(SNAP_LOADED,true)
 	player.play("SnapOut",SNAP_BLEND)
 
 ## The void's own hand-offs: a loaded snap let go without firing crossfades

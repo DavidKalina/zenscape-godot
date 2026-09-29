@@ -188,6 +188,7 @@ var _last_drag := 0
 const GESTURES := ["sun","rim"]
 const Modeless = preload("res://scripts/modeless_input.gd")
 const VoidSnap = preload("res://scripts/void_snap.gd")
+const SnapSound = preload("res://scripts/snap_sound.gd")
 ## The void (docs/scenic/modeless.md "Void slice"): where the pointer reaches
 ## no land, rim or wall, the hand floats along the pointer's ray VOID_DEPTH of
 ## the camera's distance to its pivot out (about the size it has over the
@@ -205,6 +206,8 @@ const CAMERA_SLIDING := 0.15
 ## The void's press: how far it has wandered, and the snaps made (for probes).
 var _void_travel := 0.0
 var snaps := 0
+## The snap's sound (scripts/snap_sound.gd), made in setup under --modeless.
+var snap_sound: SnapSound
 ## Headless probes have no pointer: where they say it is, for the hover.
 var pointer_override: Variant = null
 signal snapped(phase: float, step: bool)
@@ -214,6 +217,10 @@ func setup(owner_scene: Node3D) -> void:
 	name = "HandReach"
 	# Last among the scene's children, so its `_input` comes before theirs.
 	scene.move_child.call_deferred(self,-1)
+	# The snap's sound loads here, so the first snap does not wait on it.
+	if modeless:
+		snap_sound = SnapSound.new()
+		add_child(snap_sound)
 
 # --- What the pointer reaches --------------------------------------------------
 
@@ -1034,9 +1041,11 @@ func _void_release(point: Vector2, step: bool) -> void:
 	if click: fire_snap(step)
 
 ## Snap: the hand snaps its fingers and the world cuts to night or day (or,
-## with `step`, the next golden hour) in the same frame.
+## with `step`, the next golden hour) in the same frame, with the snap's
+## sound (a lighter one for a step).
 func fire_snap(step := false) -> void:
 	var phase := VoidSnap.snap(scene,step)
+	if snap_sound != null: snap_sound.snap(step)
 	snaps += 1
 	uses["void"] = int(uses.get("void",0))+1
 	var hand: Node3D = scene.get("god_hand")

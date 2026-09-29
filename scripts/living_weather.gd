@@ -80,8 +80,11 @@ func setup(owner: Node3D) -> void:
 	scene._atmosphere.weather_response = RESPONSE
 	surface.pace = SURFACE_PACE
 
-## Once per frame, from the scene's weather step.
-func advance(delta: float, paused: bool) -> void:
+## Once per frame, from the scene's weather step. `blend_seconds` is how much
+## of `delta` the fog and cloud peaks may ease by (all of it when negative):
+## a spin (scripts/spin_time.gd) hands over extra weather time with 0, so the
+## sky's change still eases in over the real seconds of the frame's own step.
+func advance(delta: float, paused: bool, blend_seconds := -1.0) -> void:
 	var scheduler: WeatherScheduler = scene.weather_scheduler
 	_refresh_climate()
 	var precipitation: Node3D = scene._precipitation
@@ -95,7 +98,8 @@ func advance(delta: float, paused: bool) -> void:
 		_apply(name)
 	if not paused and delta > 0.0:
 		var origin := scheduler.origin if FOG.has(scheduler.origin) else scheduler.current
-		var blend := 1.0 - exp(-delta * RESPONSE)
+		var eased := delta if blend_seconds < 0.0 else minf(blend_seconds, delta)
+		var blend := 1.0 - exp(-eased * RESPONSE)
 		var visuals: Node3D = scene._world_visuals
 		visuals.weather_fog = lerpf(visuals.weather_fog, float(FOG.get(scheduler.current, 1.0)) / float(FOG[origin]), blend)
 		visuals.weather_peaks = lerpf(visuals.weather_peaks, float(PEAKS.get(scheduler.current, 1.0)) / float(PEAKS[origin]), blend)

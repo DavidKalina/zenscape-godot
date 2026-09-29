@@ -3,8 +3,9 @@ extends SceneTree
 ## product scene, `--modeless`, synthesized mouse input at a fixed 60 Hz.
 ## - a rim push turns the world, decides "turn", and flips nothing;
 ## - a slow turn leaves the clock alone;
-## - a fast spin winds the clock in proportion to the spin, the world keeps
-##   the new time, and the pins follow;
+## - a fast spin winds the clock in proportion to the spin, shown over time
+##   (the world glides on after the spin stops winding), the world keeps the
+##   new time, and the pins follow;
 ## - a shake on the rim still decides a shake and does not wind time;
 ## - a vertical rim drag emits the flip signals and does not turn;
 ## - the sun no longer grabs;
@@ -190,6 +191,8 @@ func run() -> void:
 		var expected := 0.0
 		var shimmered := 0.0
 		var top := 0.0
+		# Frames the world was still travelling after the spin stopped winding.
+		var glided := 0
 		button(rim_at,MOUSE_BUTTON_LEFT,true)
 		await frames(1)
 		var at := rim_at
@@ -206,6 +209,7 @@ func run() -> void:
 			await frames(1)
 			expected += scene.spin_time.hours_per_second/60.0
 			top = maxf(top,absf(turn.spin))
+			if scene.spin_time.gliding() and scene.spin_time.hours_per_second == 0.0: glided += 1
 			shimmered = maxf(shimmered,scene._celestial.shimmer)
 			if not turn.spinning() and not scene.spin_time.winding and i > 10: break
 		var wound := hours()-start
@@ -213,6 +217,7 @@ func run() -> void:
 		print("  step %s: spin up to %.1f rad/s, wound %.1f h (%.2f days), expected %.1f h, season override %.3f -> %.3f, shimmer up to %.2f" % [step,top,wound,wound/24.0,expected,season0,clock.season_override,shimmered])
 		results.append(wound)
 		check("the fast flick spins on and winds time (%s)" % step,top > 3.0 and wound > 1.0)
+		check("the world shows the wound time over time, not at once (%s)" % step,glided > 30,glided)
 		check("the wound time matches the spin's hours a second (%s)" % step,absf(wound-expected) < maxf(0.5,expected*0.03),{"wound":wound,"expected":expected})
 		check("the anticipation cue shimmered (%s)" % step,shimmered > 0.2,shimmered)
 		check("a held season rolled on with the days (%s)" % step,absf(fposmod(clock.season_override-season0,1.0)-fposmod(wound/24.0/float(clock.year_days),1.0)) < 0.002)
@@ -231,16 +236,38 @@ func run() -> void:
 		before_weather = str(scene.weather_scheduler.current)
 		var changed := false
 		var tt: float = scene.weather_scheduler.now_hour()
-		# Wind a fortnight through the spin's own path.
+		# Wind a fortnight through the spin's own path, then let the world
+		# travel there (the sky eases, the days roll: scripts/spin_time.gd).
+		var day0 := clock.day
 		for i in range(40):
 			scene.spin_time._wind(clock,24.0*0.4)
 			await frames(1)
 			if str(scene.weather_scheduler.current) != before_weather: changed = true
+		var glide_frames := 40
+		for i in range(1200):
+			if not scene.spin_time.gliding(): break
+			await frames(1)
+			glide_frames += 1
+			if str(scene.weather_scheduler.current) != before_weather: changed = true
+		print("  a fortnight's wind took %.1f s to show, %d days" % [glide_frames/60.0,clock.day-day0])
+		check("the wound fortnight is shown over seconds, not at once",glide_frames > 120 and not scene.spin_time.gliding(),glide_frames)
 		scene.spin_time.winding = true
 		scene.spin_time._rest(clock)
 		check("the weather changed because time passed",changed,"%s -> %s, scheduler %.1f h -> %.1f h" % [before_weather,scene.weather_scheduler.current,tt,scene.weather_scheduler.now_hour()])
 	else:
 		print("NOTE living weather is off here; the weather step was not exercised")
+
+	# --- A snap during a glide lands it where the snap put it -----------------------
+	scene.spin_time._wind(clock,48.0)
+	await frames(20)
+	var gliding_before: bool = scene.spin_time.gliding()
+	preload("res://scripts/void_snap.gd").snap(scene,false)
+	var snapped := hours()
+	await frames(2)
+	var own := 2.0/60.0*clock.speed*24.0/clock.day_length if clock.running else 0.0
+	check("a snap drops the spin's glide",gliding_before and not scene.spin_time.gliding(),scene.spin_time.ahead)
+	check("and the world stays at the snap's hour",absf(hours()-snapped-own) < 0.01,hours()-snapped)
+	await frames(10)
 
 	# The diorama has turned under the pointer: find its rim again.
 	rim_at = rim_point()

@@ -10,7 +10,7 @@ extends Node
 ## bounce (the edge spring then sinks a basin); flicked, it is tossed (below).
 ## Upright or past it, it goes over: a pull back, a throw, a slow hover upside
 ## down (which lasts as long as the new world needs), a drop and a thump, and
-## the world that lands face up is new.
+## what lands face up is a blank plain to shape.
 ##
 ## How it looks. The world's nodes are never moved: terrain, water, creatures,
 ## particles and the wind all work in world space. Instead `begin` takes a
@@ -19,15 +19,24 @@ extends Node
 ## render layer the camera and the lights do not use. The pivot is what tips
 ## and turns, in front of the fixed room, so the sky, sun and lights stay put.
 ## The real world carries on hidden underneath, which is where the new one is
-## made. The God Hand is a child of the real terrain, so the terrain node
-## rides the pivot's pose and the hand grips the rim all the way over.
+## made, and stays where it is: forming reads the terrain node's transform
+## (the earth sides, the fog's ground bounds), so it must not move. The God
+## Hand, a child of the terrain, is carried over to a stand-in on the pivot
+## (`_hand_anchor`, the terrain's rest pose) for the flip and handed back
+## after, so it grips the rim all the way over.
 ##
-## The new world is made with the existing generator (scripts/cozy_regrowth.gd
-## does it for Regrow): the world is sampled on a worker thread from a fresh
-## seed once the drag passes GENERATE_AT, and formed with `form_inland` behind
-## the snapshot while it is thrown. The flip hovers, alive, until it is done.
-## The drop touches down on the new world, flat and folded like a Regrow's,
-## and the land grows up out of it with the sky easing over.
+## The other side is a blank canvas: a Genesis plain (scripts/genesis_canvas.gd),
+## not a generated world, under the same sky. It is baked ahead, off to the
+## side, while nothing is happening: a worker thread shapes a plain into a
+## detached copy of the land and builds its mesh (`_bake_underside`). That
+## mesh and its earth sides hang on the snapshot's underside from the first
+## tip, exactly where the real plain will stand once the plate is over, so
+## the side you see coming over is the side that lands. As it passes upright
+## the old world is pressed flat into the plate (`_squash`), so nothing of it
+## hangs below the new one when it lands. The real plain is formed behind the
+## snapshot once the flip is decided (a plain is about 40 ms of work, spread
+## over frames), and the touchdown swaps the snapshot for it with no growth
+## and no change of sky.
 ##
 ## **The toss and the dip** (docs/scenic/modeless.md, "The agreed scheme"). Up
 ## is decided at the release: let go slowly and the plate settles back and
@@ -47,7 +56,7 @@ extends Node
 ## and brings it back, by undo when the flip is still the last step, from the
 ## kept copy when it is not.
 
-const Generator = preload("res://scripts/cozy_world_generator.gd")
+const Genesis = preload("res://scripts/genesis_canvas.gd")
 const Budget = preload("res://scripts/frame_work_budget.gd")
 
 ## Emitted once the new world has landed, and when a flip fell back.
@@ -75,7 +84,7 @@ const LEAVE_OUT := ["precipitation.gd","lightning.gd","atmosphere.gd","landscape
 const DEFAULT_HALF := 14.4
 const DEFAULT_MIDDLE := -2.1
 
-## Progress (or angle over pi) at which the world starts to be made. A
+## Progress (or angle over pi) at which the world it would replace is kept. A
 ## release goes over once the plate is upright (TIP_ANGLE, below).
 const GENERATE_AT := 0.2
 ## A drag that reaches this far goes over without waiting for the release.
@@ -94,7 +103,7 @@ const HOLD_ZETA := 0.85
 const RESIST := 0.16
 ## How high the middle rises while it turns, as a share of the plate's half
 ## width. Fully turned, and on the ground again, it has none.
-const LIFT := 0.3
+const LIFT := 0.08
 ## The fall back: radians/s² pulling down (more when high), a light damping
 ## (1/s), the share of speed a landing keeps, and the speed under which it
 ## has stopped.
@@ -138,8 +147,19 @@ const LAND_DIP := 5.0
 const LAND_W := 22.0
 const LAND_ZETA := 0.28
 const LAND_TIME := 0.9
-## Seconds the new land takes to grow.
-const GROW_SECONDS := 4.0
+## The underside: its footprint is held this much inside the old world's (a
+## share of the plate) so their walls do not fight, and the old world is
+## pressed flat to SQUASH_LEFT of its depth between SQUASH_FROM and SQUASH_TO
+## (radians of turn), and drawn in by SQUASH_IN of its footprint, so at the
+## landing it sits inside the new plate.
+const UNDER_SHRINK := 0.996
+const SQUASH_FROM := PI*0.3
+const SQUASH_TO := PI*0.75
+const SQUASH_LEFT := 0.02
+const SQUASH_IN := 0.01
+## Seconds between checks that the baked plain still matches the land's
+## palette (a mood change recolours the ground).
+const BAKE_CHECK := 1.0
 ## The temporary trigger's pace: progress per second.
 const DEBUG_PACE := 1.1
 ## The toss. A release whose drag rate (progress per second, smoothed over
@@ -182,9 +202,9 @@ var next_seed := -1
 var throw_time := 0.0
 var hover_time := 0.0
 var making_time := 0.0
-## What making the last world cost (ms): sampling on the worker, forming the
-## land (spread over frames), fitting the view, and the longest single step
-## the main thread took inside forming.
+## What the last plain cost (ms): baking the underside on the worker, and
+## forming the real one (spread over frames). `fit_ms` is kept for the probe:
+## a plain keeps the view it had.
 var sample_ms := 0.0
 var form_ms := 0.0
 var fit_ms := 0.0
@@ -210,15 +230,25 @@ var _rim_local := Vector3.ZERO
 ## The world that was replaced, whole: document, scene state, label. Kept in
 ## memory for `flip_back`, and written beside the places.
 var kept := {}
-var _prepared := {}
-var _preparing := false
-var _prepare_id := 0
 var _make_id := 0
 var _world := {}
 var _seed := -1
-var _look := {}
-var _hour := 0.0
-var _distance := 40.0
+## The plain baked for the underside: its seed, terrain mesh, earth sides and
+## lowest point (m), the palette it was baked with, and its worker task.
+var _under_seed := -1
+var _under_mesh: ArrayMesh
+var _under_skirt: ArrayMesh
+var _under_low := 0.0
+var _under_signature := []
+var _baker := -1
+var _bake_wait := 0.0
+## The snapshot's two faces: the old world (pressed flat as it goes over) and
+## the plain underneath it.
+var _old_face: Node3D
+var _under_face: Node3D
+var _plate_bottom := 0.0
+## Where the God Hand rides while the plate is in the air.
+var _hand_anchor: Node3D
 var _paused_before := false
 var _bounce := 0.0
 var _bounce_speed := 0.0
@@ -290,6 +320,7 @@ func begin(screen_pos: Vector2) -> bool:
 	_kept_pending = true
 	_grab_from(screen_pos)
 	_hold_world()
+	_hang_underside()
 	_set_phase(Phase.HELD)
 	_grip(true)
 	return true
@@ -459,7 +490,9 @@ func debug_flip(release_at := 1.0, pace := DEBUG_PACE) -> bool:
 # --- Frame -------------------------------------------------------------------
 
 func _process(delta: float) -> void:
-	if phase == Phase.IDLE: return
+	if phase == Phase.IDLE:
+		_keep_baked(delta)
+		return
 	delta = minf(delta,0.05)
 	_clock += delta
 	if _debug_progress >= 0.0 and phase == Phase.HELD:
@@ -656,7 +689,7 @@ func _pose_all() -> void:
 	var t := pose(angle,lift_now())
 	if phase in [Phase.DIP,Phase.RISE]: t = pose(-DIP_TILT*dip,-DIP_DROP*dip)
 	pivot.transform = t
-	editor.terrain.global_transform = t*_terrain_base
+	_squash()
 
 func _grab_from(screen_pos: Vector2, reverse := false) -> void:
 	var box := _plate_box()
@@ -668,19 +701,31 @@ func _grab_from(screen_pos: Vector2, reverse := false) -> void:
 	var flat: Vector3 = scene.camera.global_position-_centre
 	flat.y = 0.0
 	var towards := flat.normalized() if flat.length() > 0.001 else Vector3.BACK
+	var pressed := Vector3.ZERO
 	if screen_pos.x >= 0.0:
 		var origin: Vector3 = scene.camera.project_ray_origin(screen_pos)
 		var direction: Vector3 = scene.camera.project_ray_normal(screen_pos)
 		if absf(direction.y) > 0.0001:
 			var hit := origin+direction*((0.0-origin.y)/direction.y)
 			var away := Vector3(hit.x,0.0,hit.z)
-			if away.length() > 0.5: towards = away.normalized()
+			if away.length() > 0.5:
+				towards = away.normalized()
+				pressed = away
 	# The camera's own side of the plate, whichever way it is turned: the
 	# grabbed edge is the one nearest the camera, so it lifts toward the view.
-	_grab_dir = towards
-	if reverse: _grab_dir = -towards
+	# Snapped to the plate's own axes: turned over about a skewed axis the
+	# square comes down turned in yaw, and the old world and the plain on its
+	# underside cross like a star (the user saw it on 2026-09-28).
+	var plate := editor.terrain.global_basis
+	var local := plate.inverse()*towards
+	var side := Vector3(signf(local.x),0.0,0.0) if absf(local.x) >= absf(local.z) else Vector3(0.0,0.0,signf(local.z))
+	_grab_dir = (plate*side).normalized()
+	if reverse: _grab_dir = -_grab_dir
 	_axis = _grab_dir.cross(Vector3.UP).normalized()
-	_rim_local = Vector3(_grab_dir.x*(_half-0.4),0.3,_grab_dir.z*(_half-0.4))
+	# The hand grips the lip where it was pressed, along the grabbed side.
+	var along := _axis*clampf(pressed.dot(_axis),-(_half-2.0),_half-2.0) if not reverse else Vector3.ZERO
+	var rim := _grab_dir*(_half-0.4)+along
+	_rim_local = editor.terrain.global_transform.affine_inverse()*Vector3(rim.x,0.3,rim.z)
 
 ## The plate's bounds: half width and the height of its middle, from the skirt.
 func _plate_box() -> AABB:
@@ -748,11 +793,15 @@ func _hold_world() -> void:
 	pivot = Node3D.new()
 	pivot.name = "FlipSnapshot"
 	scene.add_child(pivot)
+	_old_face = Node3D.new()
+	_old_face.name = "OldFace"
+	pivot.add_child(_old_face)
+	_under_face = null
 	var sources: Array = []
 	_gather(scene,sources)
 	_hidden.clear()
 	for node: GeometryInstance3D in sources:
-		if _drawn(node): pivot.add_child(_copy_of(node))
+		if _drawn(node): _old_face.add_child(_copy_of(node))
 		_hidden.append([node,node.layers])
 		node.layers = HIDDEN_LAYER
 	# The camera and the lights never look at the hidden layer.
@@ -763,6 +812,12 @@ func _hold_world() -> void:
 		_lights[light] = light.light_cull_mask
 		light.light_cull_mask = light.light_cull_mask & ~HIDDEN_LAYER
 	_terrain_base = editor.terrain.global_transform
+	_hand_anchor = Node3D.new()
+	_hand_anchor.name = "HandAnchor"
+	_hand_anchor.transform = _terrain_base
+	pivot.add_child(_hand_anchor)
+	var hand: Node3D = scene.get("god_hand")
+	if hand != null and hand.get_parent() == editor.terrain: hand.reparent(_hand_anchor,false)
 	get_tree().node_added.connect(_on_node_added)
 	_paused_before = bool(scene.get("_paused"))
 
@@ -800,8 +855,13 @@ func _release_world() -> void:
 		if is_instance_valid(entry[0]): entry[0].layers = entry[1]
 	_hidden.clear()
 	editor.terrain.global_transform = _terrain_base
+	var hand: Node3D = scene.get("god_hand")
+	if hand != null and hand.get_parent() == _hand_anchor: hand.reparent(editor.terrain,false)
+	_hand_anchor = null
 	pivot.queue_free()
 	pivot = null
+	_old_face = null
+	_under_face = null
 	_grip(false)
 
 func _grip(on: bool) -> void:
@@ -820,56 +880,131 @@ func _grip(on: bool) -> void:
 
 # --- The new world -----------------------------------------------------------
 
-## Start the world sampling (on a worker thread) so it is ready when wanted;
-## also keep the world it will replace, whole. One sample is held for the
-## next flip when this one fell back.
+## Keep the world the flip will replace, whole, once the drag is well on.
 func _prepare() -> void:
 	if _kept_pending: _keep_current()
-	if _preparing or not _prepared.is_empty(): return
-	_preparing = true
-	var id := _prepare_id
-	var places: Node = scene.get("places")
-	var chosen := next_seed
-	if chosen < 0: chosen = places._fresh_seed() if places != null else randi()%1000000
-	var began := Time.get_ticks_usec()
-	# The same job as Generator.sample_async, but with its task known here so
-	# that leaving the tree (or quitting) joins it.
-	var result: Array[Dictionary] = []
-	_sampler = WorkerThreadPool.add_task(func() -> void: result.append(Generator.sample(chosen,{})))
-	while not WorkerThreadPool.is_task_completed(_sampler): await get_tree().process_frame
-	WorkerThreadPool.wait_for_task_completion(_sampler)
-	_sampler = -1
-	var world: Dictionary = result[0]
-	sample_ms = (Time.get_ticks_usec()-began)/1000.0
-	_preparing = false
-	if id != _prepare_id: return
-	world["flip_seed"] = chosen
-	_prepared = world
 
 var _kept_pending := true
 ## The worker task writing the kept world beside the places, or -1.
 var _writer := -1
-## The worker task sampling the next world, or -1.
-var _sampler := -1
 
 func _join_writer() -> void:
 	if _writer < 0: return
 	WorkerThreadPool.wait_for_task_completion(_writer)
 	_writer = -1
 
+func _join_baker() -> void:
+	if _baker < 0: return
+	WorkerThreadPool.wait_for_task_completion(_baker)
+	_baker = -1
+
 ## Wait for everything the flip has in the background: the kept world's
-## write and a world still being sampled. Call before quitting.
+## write and a plain being baked. Call before quitting.
 func wait_idle() -> void:
-	_prepare_id += 1
 	_make_id += 1
-	while _preparing: await get_tree().process_frame
+	_join_baker()
 	_join_writer()
 
 func _exit_tree() -> void:
 	_join_writer()
-	if _sampler >= 0:
-		WorkerThreadPool.wait_for_task_completion(_sampler)
-		_sampler = -1
+	_join_baker()
+
+# --- The underside -------------------------------------------------------------
+
+## What the land's colours are read from; a plain baked under other colours is
+## baked again.
+func _palette_signature() -> Array:
+	var data := editor.data
+	var signature := [data._ground_tint,data.world_offset]
+	for key in ["sand","gravel","snowline","rock_slope"]: signature.append(data._palette.get(key))
+	return signature
+
+## While nothing is happening, keep a plain baked for the next flip's
+## underside (checked every BAKE_CHECK seconds, and at once for a new seed).
+func _keep_baked(delta: float) -> void:
+	if scene == null or editor == null or _baker >= 0: return
+	var wanted := next_seed if next_seed >= 0 else _under_seed
+	_bake_wait -= delta
+	if _under_mesh != null and wanted == _under_seed and _bake_wait > 0.0: return
+	_bake_wait = BAKE_CHECK
+	var signature := _palette_signature()
+	if _under_mesh != null and wanted == _under_seed and signature == _under_signature: return
+	if editor.forming or editor.data.source_mesh == null: return
+	_bake_underside(signature)
+
+## On a worker, a detached copy of the land is set up from the land's own
+## arrays, shaped as a Genesis plain from the seed the flip will use, and its
+## mesh built: the same steps and the same vertices as forming it for real.
+## Only the earth sides are fitted here, on the main thread (a millisecond).
+func _bake_underside(signature: Array) -> void:
+	var chosen := next_seed if next_seed >= 0 else randi()%1000000
+	var land := editor.data
+	var mesh := land.source_mesh
+	var arrays := land._arrays.duplicate()
+	var palette := {}
+	for key in ["sand","gravel","snowline","rock_slope"]: palette[key] = land._palette.get(key)
+	var tint: Variant = land._ground_tint
+	var offset := land.world_offset
+	var baked: Array = []
+	var began := Time.get_ticks_usec()
+	_baker = WorkerThreadPool.add_task(func() -> void:
+		var ghost := NativeTerrainData.new()
+		for key in palette: ghost._palette.set(key,palette[key])
+		ghost._ground_tint = tint
+		ghost.world_offset = offset
+		ghost.setup(mesh,arrays)
+		Genesis.shape(ghost,chosen)
+		baked.append(ghost)
+		baked.append(ghost.build_mesh()))
+	while not WorkerThreadPool.is_task_completed(_baker): await get_tree().process_frame
+	_join_baker()
+	sample_ms = (Time.get_ticks_usec()-began)/1000.0
+	if baked.size() < 2 or baked[1] == null or not is_inside_tree(): return
+	_under_seed = chosen
+	_under_mesh = baked[1]
+	_under_skirt = editor.skirt_mesh_for(baked[0])
+	_under_low = _under_mesh.get_aabb().position.y
+	_under_signature = signature
+
+## True when the underside is baked and a fresh plain is what will land.
+func _has_underside() -> bool:
+	return _under_mesh != null and source == Source.NEW
+
+## Hang the baked plain on the snapshot's underside, turned over about the
+## plate's middle. The middle is set so the plain's lowest point just meets
+## the old world's base; turned over by pi, the plain then stands exactly
+## where the real one will.
+func _hang_underside() -> void:
+	if not _has_underside() or pivot == null: return
+	_plate_bottom = _plate_box().position.y
+	_centre.y = (_plate_bottom+_under_low)*0.5
+	_under_face = Node3D.new()
+	_under_face.name = "UnderFace"
+	pivot.add_child(_under_face)
+	var shrink := Transform3D(Basis.from_scale(Vector3(UNDER_SHRINK,1.0,UNDER_SHRINK)),Vector3.ZERO)
+	var over := pose(PI,0.0).affine_inverse()*shrink
+	var land := _copy_of(editor.terrain) as MeshInstance3D
+	land.mesh = _under_mesh
+	land.transform = over*_terrain_base
+	_under_face.add_child(land)
+	var skirt: Variant = editor.get("_skirt")
+	if skirt is MeshInstance3D:
+		var sides := _copy_of(skirt) as MeshInstance3D
+		sides.mesh = _under_skirt
+		sides.transform = over*skirt.global_transform
+		_under_face.add_child(sides)
+
+## Press the old world flat into the plate as it passes upright, and keep the
+## hand on the lip that is coming up.
+func _squash() -> void:
+	if _old_face == null: return
+	var q := smoothstep(SQUASH_FROM,SQUASH_TO,angle) if _under_face != null else 0.0
+	var depth := lerpf(1.0,SQUASH_LEFT,q)
+	var inward := 1.0-SQUASH_IN*q
+	_old_face.transform = Transform3D(Basis.from_scale(Vector3(inward,depth,inward)),Vector3(0.0,_plate_bottom*(1.0-depth),0.0))
+	var hand: Node3D = scene.get("god_hand")
+	if _hand_on and hand != null and _under_face != null:
+		hand.reach_point = Vector3(_rim_local.x*inward,_plate_bottom+(_rim_local.y-_plate_bottom)*depth,_rim_local.z*inward)
 
 ## The world about to be replaced, whole, in memory and beside the places.
 func _keep_current() -> void:
@@ -907,9 +1042,6 @@ func _make_world() -> void:
 	scene._paused = true
 	if places != null:
 		places.busy = true
-		_look = scene._celestial.look.document()
-		_hour = scene._celestial.phase
-		_distance = scene.distance
 	if scene.has_method("suspend_creation"): scene.suspend_creation()
 	var rumble: Node = scene.get("world_rumble")
 	if rumble != null: rumble.hold(&"flip",RUMBLE)
@@ -933,32 +1065,25 @@ func _settle_editor(id: int) -> void:
 	while (editor.forming or editor.refresh_pending > 0) and id == _make_id: await get_tree().process_frame
 	await get_tree().process_frame
 
+## Lay down the plain the underside shows, behind the snapshot. The sky is
+## left as it is.
 func _make_new(id: int) -> void:
 	var places: Node = scene.get("places")
-	if _prepared.is_empty():
-		_prepare()
-		while _prepared.is_empty() and id == _make_id: await get_tree().process_frame
-		if id != _make_id: return
+	while editor.forming and id == _make_id: await get_tree().process_frame
+	if id != _make_id: return
+	_seed = _under_seed if _under_mesh != null else (next_seed if next_seed >= 0 else randi()%1000000)
+	_world = Genesis.world(_seed)
 	_stamp("sampled")
-	_world = _prepared
-	_prepared = {}
-	_seed = int(_world.get("flip_seed",-1))
 	_forming_started = true
 	Budget.override_usec = MAKE_BUDGET_USEC
 	var began := Time.get_ticks_usec()
-	await editor.form_inland(_world.terrain,true,false)
+	await Genesis.form(editor,_world,true)
 	form_ms = (Time.get_ticks_usec()-began)/1000.0
 	Budget.override_usec = 0
 	_stamp("formed")
 	if id != _make_id: return
 	# A step of undo that brings the whole old scene back.
 	if not editor.data._undo.is_empty(): editor.data._undo.back()["flip"] = true
-	await get_tree().process_frame
-	if places != null:
-		began = Time.get_ticks_usec()
-		places.next_distance = await places._fit_distance(get_tree())
-		fit_ms = (Time.get_ticks_usec()-began)/1000.0
-		_stamp("fitted")
 	await get_tree().process_frame
 	if places != null and not bool(scene.get("scenery_mode")):
 		var nav_workers: int = scene.navigation.thread_workers
@@ -980,43 +1105,27 @@ func _make_kept(id: int) -> void:
 	# What was replaced is kept in turn, so flipping back again undoes this.
 	kept = now
 
-## The new world is where the snapshot was: drop the snapshot, fold the land
-## down and let it grow, the sky easing over as Regrow's does.
+## The new world is where the snapshot was: drop the snapshot. A fresh plain
+## is already whole (the underside showed it all the way over), so there is
+## nothing to grow and the sky stays as it was.
 func _reveal() -> void:
 	var places: Node = scene.get("places")
 	var fresh := source == Source.NEW
-	if fresh and places != null:
-		Generator.apply_mood(scene,_world)
-		places.generated_world = _world
-		places.world_seed = _seed
-		places.plain = false
-		places._sync_plain_day(true)
-		places.previous_look = _look
-		places.previous_hour = _hour
-		places.previous_distance = _distance
-		places.next_look = scene._celestial.look.document()
-		places.next_hour = scene._celestial.phase
-		if places.next_distance <= 0.0: places.next_distance = _distance
-		places.phase = "growing"
-		places._set_growth(0.0)
+	if fresh:
+		if places != null:
+			places.generated_world = _world
+			places.world_seed = _seed
+			places.plain = true
+			places._sync_plain_day(true)
+			places.generation += 1
 		editor.land_seed = _seed
 		last_seed = _seed
+		# The next flip gets a plain of its own.
+		_under_mesh = null
+		_under_seed = -1
+		_bake_wait = 0.0
 	_release_world()
 	scene._growth.reset_feedback()
 	_kept_pending = true
-	if fresh and places != null:
-		scene._paused = _paused_before
-		_made = false
-		_grow(places)
-	else:
-		_settle_scene()
+	_settle_scene()
 	landed.emit(_seed)
-
-func _grow(places: Node) -> void:
-	await places._animate_growth(true,GROW_SECONDS)
-	places.generation += 1
-	places.phase = "ready"
-	places.busy = false
-	var rumble: Node = scene.get("world_rumble")
-	if rumble != null: rumble.release(&"flip")
-	if scene.has_method("resume_creation"): scene.resume_creation()

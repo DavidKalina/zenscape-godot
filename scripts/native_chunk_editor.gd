@@ -1373,15 +1373,20 @@ func start_flat() -> void:
 func _rebuild_skirt() -> void:
 	_skirt.visible = data.void_faces.is_empty()
 	if not _skirt.visible: return
+	var mesh := skirt_mesh_for(data)
+	_skirt.mesh = mesh if open_sides.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
+
+## The faceted earth sides fitted to `source`'s rim: the editor's own land, or
+## a plain baked off to the side for the flip's underside
+## (scripts/diorama_flip.gd).
+func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var rim_unchanged := true
-	for i in range(data.points.size()):
-		var point := data.points[i]
-		if maxf(absf(point.x),absf(point.y)) > 13.9999 and data.heights[i] != data.original_heights[i]:
+	for i in range(source.points.size()):
+		var point := source.points[i]
+		if maxf(absf(point.x),absf(point.y)) > 13.9999 and source.heights[i] != source.original_heights[i]:
 			rim_unchanged = false
 			break
-	if rim_unchanged:
-		_skirt.mesh = _skirt_mesh if open_sides.is_empty() else AtlasView.cut_sides(_skirt_mesh,_skirt.position,open_sides)
-		return
+	if rim_unchanged: return _skirt_mesh
 	# Deform the original faceted earth sides, keeping their base and material.
 	# The captured rim extends 0.2 units beyond the terrain's outer edge.
 	var arrays := _skirt_mesh.surface_get_arrays(0)
@@ -1393,7 +1398,7 @@ func _rebuild_skirt() -> void:
 		var world := _skirt.to_global(vertices[i])
 		var local := terrain.to_local(world)
 		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
-		vertices[i].y += data.delta_at(point) * clampf((vertices[i].y-low)/(high-low),0.0,1.0)
+		vertices[i].y += source.delta_at(point) * clampf((vertices[i].y-low)/(high-low),0.0,1.0)
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3):
@@ -1403,7 +1408,7 @@ func _rebuild_skirt() -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_skirt_mesh.surface_get_material(0))
-	_skirt.mesh = mesh if open_sides.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
+	return mesh
 
 func dab(point: Vector2, amount: float) -> void:
 	if mode in ["grass","blades","meadow","paint","erase"]: data.mark_hand(point,radius)

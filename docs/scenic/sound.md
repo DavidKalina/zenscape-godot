@@ -66,6 +66,8 @@ Any two arrival sounds are at least `SHOT_GAP` (1.5 s) apart. For `SHOT_QUIET` (
 
 ## Sources
 
+The god hand's finger snap (`finger-snap-1..3`, `scripts/snap_sound.gd`, played on the Genesis bus when a click in the sky snaps day and night) is synthesised by `tools/generate_nature_audio.py --snap`; `docs/scenic/modeless.md` "Void slice" describes it.
+
 Every new sound is synthesised by `tools/generate_nature_audio.py` (`bake_genesis`) from noise, RBJ biquads, sines and Minnaert bubbles, so the project's own licence covers them. Deer steps reuse the baked footsteps and stream fronts reuse `stream-bed`; the Nature recordings are credited in `assets/audio/ATTRIBUTION.md`.
 
 The files are mono 16-bit WAV at 12–24 kHz: 12 kHz for the rumble and thump, 16 kHz for the fill and the plain air. Loops are baked 0.6 s long and crossfaded into their heads, so they loop without a seam. Godot imports them compressed as QOA (`compress/mode=2`), like the existing beds. They are not Ogg because there is no Vorbis encoder here: ffmpeg's built-in one is experimental and stereo-only. The new files total about 1.9 MB on disk.

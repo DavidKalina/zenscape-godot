@@ -1,6 +1,7 @@
 """Bake deterministic native equivalents of Electron audio.js procedural voices.
 Run with Python 3; no external audio dependencies. Wildlife remains recordings.
 `--genesis` bakes only the Genesis sounds (bake_genesis, docs/scenic/sound.md).
+`--snap` bakes only the god hand's finger snaps (bake_snap, docs/scenic/modeless.md).
 """
 import math
 import random
@@ -370,9 +371,61 @@ def bake_genesis():
     one_shot('bow-swell', 22050, 7.0, 0.5, bow)
 
 
+def finger_snap(variant):
+    def make(rng, count, rate):
+        # A finger snap: the middle finger slapping into the heel of the thumb. A dry
+        # tick where skin meets skin, a bright crack of squeezed air round 2-4 kHz
+        # (about 1 ms up, 40 ms down), a faint sizzle over it, a short low slap of
+        # flesh, and a small room: three early reflections and a quiet tail. The
+        # variants differ in their noise, their crack's centre and their body.
+        centre, body_hz, tail_level = variant
+        crack = filtered(rng, count, [Biquad('band', centre, 1.1, rate), Biquad('high', 900, 0.7, rate)])
+        sizzle = filtered(rng, count, [Biquad('band', 6200, 1.4, rate)])
+        tick = filtered(rng, count, [Biquad('high', 3000, 0.7, rate)])
+        room = filtered(rng, count, [Biquad('band', 1900, 0.6, rate), Biquad('low', 5000, 0.7, rate)])
+        dry = []
+        phase = 0.0
+        for i in range(count):
+            t = i / rate
+            up = min(1.0, t / 0.0009)
+            phase += math.tau * body_hz * (1 + 0.6 * math.exp(-t / 0.006)) / rate
+            dry.append(up * (1.0 * crack[i] * math.exp(-t / 0.016)
+                + 0.45 * crack[i] * math.exp(-t / 0.045)
+                + 0.35 * sizzle[i] * math.exp(-t / 0.007)
+                + 0.18 * math.sin(phase) * math.exp(-t / 0.018))
+                + 0.7 * tick[i] * math.exp(-t / 0.0007))
+        out = list(dry)
+        for delay, gain in ((0.0071, 0.22), (0.0127, 0.14), (0.0193, 0.08)):
+            shift = round(delay * rate)
+            for i in range(shift, count):
+                out[i] += gain * dry[i - shift]
+        for i in range(count):
+            t = i / rate - 0.004
+            if t > 0:
+                out[i] += tail_level * room[i] * min(1.0, t / 0.01) * math.exp(-t / 0.075)
+        return out
+    return make
+
+
+def bake_snap():
+    """The god hand's finger snaps (docs/scenic/modeless.md "Void slice"): three takes,
+    so repeats vary before the game varies their pitch and level."""
+    for n, variant in enumerate(((2700, 190, 0.05), (3100, 210, 0.045), (2400, 175, 0.055)), 1):
+        # Not one_shot(): its 2 ms fade-in would blunt the tick. A 0.2 ms one is enough.
+        rate = 44100
+        count = round(rate * 0.32)
+        samples = finger_snap(variant)(random.Random(f'finger-snap-{n}'), count, rate)
+        samples = [x * min(1.0, i / (rate * .0002), (count - i) / (rate * .015)) for i, x in enumerate(samples)]
+        save(f'finger-snap-{n}', rate, samples, 0.9)
+
+
 if __name__ == '__main__':
     import sys
-    # --genesis bakes only the Genesis sounds; the classic set stays as it is.
-    if '--genesis' not in sys.argv:
-        bake_classic()
-    bake_genesis()
+    # --genesis bakes only the Genesis sounds and --snap only the finger snaps; the
+    # classic set stays as it is.
+    if '--snap' in sys.argv:
+        bake_snap()
+    else:
+        if '--genesis' not in sys.argv:
+            bake_classic()
+        bake_genesis()

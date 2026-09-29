@@ -155,7 +155,9 @@ func set_world_offset(offset: Vector2, force := false) -> void:
 	# Every face colour changed: the next build is a full one.
 	_mesh_result = null
 
-func setup(mesh: ArrayMesh) -> void:
+## `arrays` are the mesh's own surface arrays when the caller already holds
+## them (a worker thread baking a plain off to the side reads no mesh).
+func setup(mesh: ArrayMesh, arrays: Array = []) -> void:
 	_clear_pond_cache()
 	blades.resize(MEADOW_CELLS*MEADOW_CELLS)
 	blades.fill(0.0)
@@ -167,7 +169,7 @@ func setup(mesh: ArrayMesh) -> void:
 	provenance.resize(MEADOW_CELLS*MEADOW_CELLS)
 	provenance.fill(SOURCE_GENERATED)
 	source_mesh = mesh
-	_arrays = mesh.surface_get_arrays(0)
+	_arrays = arrays if not arrays.is_empty() else mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = _arrays[Mesh.ARRAY_VERTEX]
 	var ids := {}
 	for vertex in vertices:

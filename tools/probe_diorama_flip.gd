@@ -34,6 +34,24 @@ var _covered_frames := 0
 
 func _initialize() -> void: run.call_deferred()
 
+## Wait (a few seconds at most) for the flip to bake the plain for `seed`.
+func baked(seed: int) -> bool:
+	for i in range(600):
+		if flip._under_seed == seed and flip._under_mesh != null: return true
+		await tick()
+	return false
+
+## Once the real plain is formed under the snapshot: the underside's land has
+## its vertices, and turned over by pi stands where it does (within the
+## underside's small shrink).
+func underside_matches() -> Dictionary:
+	var land: MeshInstance3D = flip._under_face.get_child(0)
+	var same: bool = land.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] == editor.terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var landed_at: Transform3D = flip.pose(PI,0.0)*land.transform
+	var want: Transform3D = Transform3D(Basis.from_scale(Vector3(flip.UNDER_SHRINK,1.0,flip.UNDER_SHRINK)),Vector3.ZERO)*flip._terrain_base
+	var corner := Vector3(14.0,0.3,-14.0)
+	return {"same_mesh":same,"in_place":(landed_at*corner).distance_to(want*corner) < 0.01}
+
 func check(label: String, ok: bool, detail: Variant = "") -> void:
 	if not ok: failures.append(label)
 	print(("OK   " if ok else "FAIL ")+label+("" if str(detail).is_empty() else "  "+str(detail)))
@@ -148,6 +166,7 @@ func run() -> void:
 	# A drag under half way falls back and changes nothing. The world it
 	# started to sample is kept for the flip after.
 	flip.next_seed = 424242
+	check("a plain is baked for the underside",await baked(424242),flip._under_seed)
 	var base := signature()
 	var undo_base: int = data._undo.size()
 	var hand: Node3D = scene.get("god_hand")
@@ -156,6 +175,7 @@ func run() -> void:
 	flip.fell_back.connect(func() -> void: fell[0] = true)
 	check("the rim can be grabbed",flip.begin(Vector2(720,760)))
 	check("a snapshot stands",flip.pivot != null and flip.pivot.get_child_count() > 0,flip.pivot.get_child_count() if flip.pivot != null else 0)
+	check("with the baked plain on its underside",flip._under_face != null and flip._under_face.get_child_count() == 2)
 	var progress := 0.0
 	var peak := 0.0
 	var grip := false
@@ -214,6 +234,7 @@ func run() -> void:
 	var angle_at_form := -1.0
 	var swapped_at := -1.0
 	check("the rim can be grabbed again",flip.begin(Vector2(720,760)))
+	check("it turns about one of the plate's own sides, not a skewed axis (no star)",minf(absf(flip._grab_dir.x),absf(flip._grab_dir.z)) < 0.001,flip._grab_dir)
 	for i in range(40):
 		progress = 0.8*float(i+1)/40.0
 		flip.drag(progress)
@@ -223,19 +244,25 @@ func run() -> void:
 	var real_before: PackedFloat32Array = base.heights
 	var hover_frames := 0
 	var max_angle := 0.0
+	var under_checked := {}
+	var min_squash := 1.0
 	while (flip.phase != flip.Phase.IDLE or scene.places.busy) and n < 1500:
 		await tick()
 		max_angle = maxf(max_angle,flip.angle)
 		if flip.phase == flip.Phase.HOVER: hover_frames += 1
 		if angle_at_ready < 0.0 and flip.world_ready: angle_at_ready = flip.angle
 		if swapped_at < 0.0 and editor.data.heights != real_before and flip.pivot != null: swapped_at = flip.angle
+		if flip._old_face != null: min_squash = minf(min_squash,flip._old_face.transform.basis.y.y)
+		if under_checked.is_empty() and flip.world_ready and flip._under_face != null: under_checked = underside_matches()
 		n += 1
 	await frames(6)
 	var after := signature()
 	print("FLIP ",JSON.stringify({"frames":n,"seconds":snappedf(n/60.0,0.01),"phases":phases_seen(mark),"max_angle_deg":snappedf(rad_to_deg(max_angle),0.1),"angle_at_ready_deg":snappedf(rad_to_deg(angle_at_ready),0.1),"real_world_changed_at_deg":snappedf(rad_to_deg(swapped_at),0.1),"hover_frames":hover_frames,"making_s":snappedf(flip.making_time,0.01),"sample_ms":snappedf(flip.sample_ms,1.0),"form_ms":snappedf(flip.form_ms,1.0),"fit_ms":snappedf(flip.fit_ms,1.0),"stamps":flip.stamps,"keep_ms":snappedf(flip.keep_ms,1.0)}))
 	check("released past half way it went over and landed",landed[0] == 424242,landed[0])
 	check("the plate went all the way over (pi)",max_angle >= PI-0.001,max_angle)
-	check("the world after is a different one (heights, its recipe's seed)",after.heights != base.heights and after.seed != base.seed,{"seed":after.seed,"was":base.seed})
+	check("the world after is a blank plain (new heights, no recipe)",after.heights != base.heights and after.blank and after.seed == -1,{"seed":after.seed,"blank":after.blank})
+	check("the underside was the plain that landed: the same vertices, and turned over it stands where the plain does",under_checked.get("same_mesh",false) and under_checked.get("in_place",false),under_checked)
+	check("the old world was pressed flat by the landing",min_squash < 0.1,min_squash)
 	check("made from the seed asked for",editor.land_seed == 424242,editor.land_seed)
 	check("the real world changed only while the snapshot was up",swapped_at >= 0.0,swapped_at)
 	check("the world was ready before the drop, and hovered for it",angle_at_ready >= 0.0 and hover_frames >= 0)
@@ -270,11 +297,12 @@ func run() -> void:
 	# The kept copy: flip again, paint on the new world so the flip is no
 	# longer the last undo step, flip back.
 	flip.next_seed = 777001
+	await baked(777001)
 	check("a second flip",flip.debug_flip(1.0,1.6))
 	await settle()
 	print("FLIPB ",JSON.stringify({"sample_ms":snappedf(flip.sample_ms,1.0),"form_ms":snappedf(flip.form_ms,1.0),"stamps":flip.stamps}))
 	var second := signature()
-	check("the second world is new again",second.heights != base.heights and second.seed != new_world.seed and editor.land_seed == 777001,editor.land_seed)
+	check("the second world is a new plain again",second.heights != base.heights and second.heights != new_world.heights and editor.land_seed == 777001,editor.land_seed)
 	editor.data.begin_stroke()
 	for _pass in range(3): editor.data.brush(Vector2(-4.0,3.0),3.0,0.4,"raise",0.0)
 	editor.data.end_stroke()
@@ -286,12 +314,13 @@ func run() -> void:
 	var again := signature()
 	check("the kept copy brought the old world back exactly",again.heights == base.heights and again.document == base.document and again.seed == base.seed,{"seed":again.seed})
 
-	# A flip out of a generated world (a bigger document to keep, more to
-	# hide and to grow): what it costs the main thread.
+	# Two more flips, plain to plain: what one costs the main thread.
 	flip.next_seed = 31337
-	check("a flip into a generated world",flip.debug_flip(1.0,1.6))
+	await baked(31337)
+	check("a third flip",flip.debug_flip(1.0,1.6))
 	await settle()
 	flip.next_seed = 555001
+	await baked(555001)
 	frame_ms.clear()
 	_phases.clear()
 	var third_start := _frame
@@ -301,7 +330,7 @@ func run() -> void:
 	print("FLIP2 ",JSON.stringify({"frames":_frame-third_start,"phases":phases_seen(0),"sample_ms":snappedf(flip.sample_ms,1.0),"form_ms":snappedf(flip.form_ms,1.0),"fit_ms":snappedf(flip.fit_ms,1.0),"keep_ms":snappedf(flip.keep_ms,1.0),"stamps":flip.stamps}))
 	var worst2 := 0.0
 	for v in frame_ms: worst2 = maxf(worst2,v)
-	check("no frame over the budget flipping out of a generated world",worst2 < FRAME_BUDGET_MS,worst2)
+	check("no frame over the budget flipping plain to plain",worst2 < FRAME_BUDGET_MS,worst2)
 	check("and it landed on the new seed",editor.land_seed == 555001,editor.land_seed)
 	await settle(600)
 
