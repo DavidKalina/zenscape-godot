@@ -41,7 +41,7 @@ uniform float fall_seed = 0.0;
 uniform float body_white = 0.0;
 uniform float veil = 0.0;
 uniform float streak_speed = 3.0;
-uniform float crest = 0.18;
+uniform float crest = 0.3;
 const vec3 ramp[7] = vec3[7](vec3(0.02842604, 0.21223076, 0.33245154), vec3(0.07036010, 0.33245154, 0.47932018), vec3(0.15896084, 0.47932018, 0.61049557), vec3(0.30054379, 0.63759687, 0.73046074), vec3(0.50888132, 0.78353779, 0.85499261), vec3(0.71569350, 0.87962240, 0.92158186), vec3(0.88792312, 0.93011086, 0.93868573));
 
 void vertex() {
@@ -86,9 +86,9 @@ void fragment() {
 	float edge = abs(cos(across * 6.2831853));
 	float torn = veil * (0.55 + 0.35 * edge + 0.25 * aeration);
 	if (streak < torn * 0.85 && travel > crest * 0.5) discard;
-	float white_crest = (1.0 - smoothstep(crest * 0.4, crest, travel)) * smoothstep(0.25, 0.6, zs_noise(vec2(across * 30.0 + fall_seed, zs_flow_time * 1.3)));
+	float white_crest = (1.0 - smoothstep(crest * 0.5, crest, travel)) * (0.55 + 0.45 * smoothstep(0.3, 0.6, zs_noise(vec2(across * 30.0 + fall_seed, zs_flow_time * 1.3))));
 	vec3 tint = (COLOR.rgb * zs_palette_water) * base_color.rgb;
-	float bright = smoothstep(0.55, 0.85, streak) * (0.25 + 0.5 * aeration);
+	float bright = smoothstep(0.5, 0.8, streak) * (0.35 + 0.5 * aeration);
 	tint = mix(tint, vec3(0.88792312, 0.93011086, 0.93868573) * zs_palette_water, clamp(bright + white_crest * 0.9, 0.0, 1.0) * (1.0 - zs_ice * 0.85));
 	vec3 face = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
@@ -98,6 +98,8 @@ void fragment() {
 	ALBEDO = tint;
 	EMISSION = vec3(0.07 * (1.0 - 0.5 * zs_ice), 0.12 * (1.0 - 0.4 * zs_ice), 0.14) * (0.12 + 0.88 * zs_daylight);
 	EMISSION += tint * mix(zs_hemi_ground, zs_hemi_sky, face.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	// Aerated water scatters light: in a cliff's shadow a foaming fall still glows.
+	EMISSION += tint * (0.08 + 0.4 * aeration + 0.3 * white_crest) * (0.25 + 0.75 * zs_daylight) * (1.0 - zs_ice * 0.7);
 	EMISSION += zs_afterglow(world_position, face, tint);
 	float g = smoothstep(0.45, 1.0, glass) * (1.0 - white_crest);
 	float fresnel = (0.02 + 0.98 * pow(1.0 - clamp(dot(face, eye), 0.0, 1.0), 5.0)) * g * g * 0.55;

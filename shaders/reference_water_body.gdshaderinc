@@ -242,6 +242,15 @@ void fragment() {
 		inversion_transmit = zs_inversion_paint(world_position, EMISSION) * (1.0 - fresnel) * (1.0 - path.a);
 		SPECULAR = 0.0;
 	}
+	if (fall_churn > 0.0) {
+		// Froth is lit like the fall's foam, whichever lighting path ran above.
+		vec3 froth = vec3(0.86, 0.92, 0.93);
+		vec3 froth_light = froth * (mix(zs_hemi_ground, zs_hemi_sky, 0.8) * zs_hemi_energy / PI + 0.3 * (0.25 + 0.75 * zs_daylight));
+		float take = fall_churn * (1.0 - zs_ice);
+		ALBEDO = mix(ALBEDO, froth, take);
+		EMISSION = mix(EMISSION, froth_light, take);
+		inversion_transmit *= 1.0 - take;
+	}
 	ALPHA = opaque_water_probe ? 1.0 : alpha * flow_fade;
 }
 

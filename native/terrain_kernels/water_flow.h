@@ -702,7 +702,19 @@ public:
                 const double t = (ox+(c%w+0.5)*cell-lx)*-dz+(oz+(c/w+0.5)*cell-lz)*dx;
                 lo = std::min(lo, t); hi = std::max(hi, t);
             }
-            const double lip_half = 0.5*(hi-lo)+0.5*cell;
+            // The wet channel at the lip may be wider than its steep cells:
+            // walk across it from the lip's middle while the water holds.
+            double reach_lo = 0.0, reach_hi = 0.0;
+            for (int side = -1; side <= 1; side += 2) {
+                double run = 0.0;
+                for (double d = 0.5*cell; d <= 3.0; d += 0.5*cell) {
+                    const int m = index(lx-dz*side*d, lz+dx*side*d);
+                    if (m < 0 || kind[m] == OUTSIDE || depth[m] <= wet) break;
+                    run = d;
+                }
+                (side < 0 ? reach_lo : reach_hi) = run;
+            }
+            const double lip_half = std::max(0.5*(hi-lo), 0.5*(reach_lo+reach_hi))+0.5*cell;
             // Stations down the face: the cells in each band of height.
             const int bands = std::max(1, int(std::ceil((high-low)/band)));
             std::vector<double> sum(size_t(bands)*7, 0.0); // count, x, z, y, xx, zz, xz

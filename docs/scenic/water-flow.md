@@ -53,7 +53,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
   - Plant, prop and stream changes are copied over a few frames while the old copies keep showing (`_refresh_geometry_live`), as for the planned views. The live water's own meshes are not copied (`skip_reflection`), and neither are other reflections' views (`planar_water.gd` skips SubViewports with their own world).
   - `--no-live-reflection` turns it off, for A/B and profiling. It needs the Forward+ renderer, like the planned views.
   - One vertex stands per cell centre, and a quad is drawn when any corner is wet (over `wet`, 1.2 cm). A dry corner of a drawn quad takes its wet neighbours' mean surface, or sits 2 cm under its own ground where that is lower, so the sheet runs into the bank and the terrain draws the shoreline. Quads split along the flatter diagonal.
-- **Falls** (`FlowFalls`, which extends `scripts/native_garden_falls.gd`). Twice a second the flow is searched for moving water carrying `FALL_FLUX` whose surface drops `FALL_DROP` within `FALL_REACH` at `FALL_SLOPE` or steeper. A drop found for `FALL_HOLD` s stands an authored-look waterfall from its top to its foot (the ring shader, plunge and spray), and it goes `FALL_LINGER` s after the drop stops. At most `FALL_MAX` stand at once. The probe's groove down a 4 m peak stands one or two.
+- **Falls** (`scripts/flow_falls.gd`, `FlowFalls` on the scene). Traced from the flow and sized by its flux; see "Waterfalls" below.
 
 ## Tunables
 
@@ -79,19 +79,19 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `SURFACE` (`water_flow_view.gd`) | wet 1.2 cm, lift 1.2 cm, flow on/off 0.22/0.12 m/s, foam 0.8–2.2 m/s, depth scale 0.45 m, under | Surface build. |
 | `MIN_AREA`, `LEVEL_STEP`, `BAND`, `SWITCH_SHARE` (`live_water_reflection.gd`) | 1.5 m², 1 cm, 0.3 m, 1.6 | When the reflection view stands, how far the pond moves before it follows, how far from its level water still reflects, and when it changes pond. |
 | `SURFACE_SECONDS`, `FALLBACK_SURFACE_SECONDS` (`water_flow_view.gd`) | 1/30 s, 0.1 s | Surface rebuild interval. |
-| `FALL_FLUX`, `FALL_DROP`, `FALL_SLOPE`, `FALL_REACH` (`water_flow_view.gd`) | 0.02 m³/s, 0.8 m, 0.8, 1.8 m | A waterfall. |
-| `FALL_HOLD`, `FALL_LINGER`, `FALL_MAX` (`water_flow_view.gd`) | 1 s, 2 s, 3 | When falls come and go, and how many stand. |
+| Waterfalls (`flow_falls.gd`) | see "Waterfalls" | Detection, easing, look. |
 | `FLOW_READ_SECONDS`, `FLOW_REPORT_SECONDS`, `FLOW_AREA_CHANGE` (`native_chunk_editor.gd`) | 1 s, 3 s, 2 m² | Reading and reporting pools. |
 | `FLOW_FISH_SECONDS`, `FLOW_FISH_REACH` (`native_chunk_editor.gd`) | 90 s, 12 m | A ball's fish waiting for a pond. |
 
 ## Code
 
-- `native/terrain_kernels/water_flow.h`: `ZenScapeWaterFlow`, registered by `kernels.cpp`. It holds `configure`, `set_params`, `step` (resample the ground, then run the ticks with the sources), `add_water`, `drain`, `get_depth`/`set_depth`, `get_ground`, `get_velocity`, `wet_cells`, `stats`, `surface`, `pools` and `falls`. Rebuild the library after changing it (`native/terrain_kernels/README.md`).
+- `native/terrain_kernels/water_flow.h`: `ZenScapeWaterFlow`, registered by `kernels.cpp`. It holds `configure`, `set_params`, `step` (resample the ground, then run the ticks with the sources), `add_water`, `drain`, `get_depth`/`set_depth`, `get_ground`, `get_velocity`, `wet_cells`, `stats`, `surface`, `pools`, `falls` (the old point search, unused by the view) and `cascades` (the waterfalls). Rebuild the library after changing it (`native/terrain_kernels/README.md`).
 - `scripts/water_flow_reference.gd`: the GDScript mirror, with the same methods and arithmetic. Keep the two in step.
 - `scripts/water_flow.gd`: the owner. It holds the grid and cell map, the fixed clock, springs and bursts, `drop`/`drain`, and undo, save and load.
-  - It takes the mirror when the library is missing, when it lacks the newest method (`wet_cells`, so a stale build falls back instead of failing), or under `--gdscript-kernels`.
+  - It takes the mirror when the library is missing, when it lacks the newest method (`cascades`, so a stale build falls back instead of failing), or under `--gdscript-kernels`.
   - `native` says which one runs, and the probes check it.
-- `scripts/water_flow_view.gd`: the surface meshes and the falls.
+- `scripts/water_flow_view.gd`: the surface meshes; it stands the falls.
+- `scripts/flow_falls.gd` and `shaders/flow_fall.gdshader`: the waterfalls.
 - `scripts/live_water_reflection.gd`: the live ponds' planar view.
 - `shaders/reference_water_body.gdshaderinc`: `planar_band`/`planar_level` (the reflection's fade by level) and `flow_edge_fade` (moving water's fade over still water). Both are off by default, so planned water draws as before.
 - `scripts/native_chunk_editor.gd` "Live water": setup (`flow_wanted`, `_setup_flow`), `_flow_process`, pool reports, `_flow_landed`, `ball_from_sky`, `still_water_triangles`. `_ball_landed` hands over to the flow when it is on. `_ball_step` fills a ball at the water brush's own size and flow whatever brush is in hand.

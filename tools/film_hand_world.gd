@@ -170,7 +170,6 @@ func falls_report() -> void:
 	for fall: Dictionary in falls.describe():
 		print("WORLD fall %d: lip %s plunge %s, %.3f m³/s over %.2f m, %.2f m wide, presence %.2f" % [fall.id,fall.lip,fall.plunge,fall.flux,fall.drop,fall.width,fall.presence])
 	print("WORLD falls %d, read %d us, frame %d us (worst %d)" % [falls.shown_count(),falls.last_read_usec,falls.last_update_usec,falls.worst_update_usec])
-
 ## Closes on the tallest standing waterfall from a three-quarter view
 ## downstream of it, holds, and saves fall_close.png.
 func close_on_fall() -> void:

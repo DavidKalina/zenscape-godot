@@ -637,7 +637,17 @@ func cascades(p: Dictionary) -> Array:
 			var t := (ox+(c%w+0.5)*cell-lip.x)*-dir.y+(oz+(c/w+0.5)*cell-lip.z)*dir.x
 			lo = minf(lo,t)
 			hi = maxf(hi,t)
-		var lip_half := 0.5*(hi-lo)+0.5*cell
+		var reach := 0.0
+		for side in [-1.0,1.0]:
+			var walked := 0.0
+			var d := 0.5*cell
+			while d <= 3.0:
+				var m := _index(lip.x-dir.y*side*d,lip.z+dir.x*side*d)
+				if m < 0 or kind[m] == OUTSIDE or depth[m] <= wet: break
+				walked = d
+				d += 0.5*cell
+			reach += walked
+		var lip_half := maxf(0.5*(hi-lo),0.5*reach)+0.5*cell
 		var bands := maxi(1,ceili((high-low)/band))
 		var sums := PackedFloat64Array()
 		sums.resize(bands*7)

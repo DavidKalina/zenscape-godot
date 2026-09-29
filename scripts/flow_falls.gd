@@ -79,6 +79,10 @@ func setup(water_flow: RefCounted, water_materials: Array) -> void:
 	var blob_look := StandardMaterial3D.new()
 	blob_look.albedo_color = FOAM
 	blob_look.roughness = 0.9
+	# Foam scatters light: lit alone it went black in a cliff's shadow.
+	blob_look.emission_enabled = true
+	blob_look.emission = FOAM
+	blob_look.emission_energy_multiplier = 0.45
 	_blob_mesh.material = blob_look
 	_bead_mesh = SphereMesh.new()
 	_bead_mesh.radius = 0.035
@@ -227,6 +231,14 @@ func _shape(answer: Dictionary) -> Dictionary:
 		while j < course.size()-2 and cumulative[j+1] < want: j += 1
 		var t := clampf((want-cumulative[j])/maxf(cumulative[j+1]-cumulative[j],0.0001),0.0,1.0)
 		stations.append(course[j].lerp(course[j+1],t))
+	# The band centroids wander a cell either way; smooth the line (not its
+	# ends) so the curtain hangs straight rather than zigzagging.
+	for pass_index in range(3):
+		var smoothed := stations.duplicate()
+		for r in range(1,RINGS-1):
+			var mean := (stations[r-1]+stations[r]*2.0+stations[r+1])/4.0
+			smoothed[r] = Vector4(mean.x,stations[r].y,mean.z,mean.w)
+		stations = smoothed
 	return {"course":stations,"flux":float(answer.flux),"drop":float(answer.drop),"pool":float(answer.plunge_depth),
 		"lip":answer.lip,"plunge":answer.plunge,"lip_dir":answer.lip_dir}
 
@@ -293,7 +305,7 @@ func _draw(grown: bool, paused: bool) -> void:
 		for i in range(FOAM_BLOBS):
 			var angle := float(i)/FOAM_BLOBS*TAU+float(fall.id)*5.1
 			var radius := (0.35+_hash(i,1)*0.9)*spread*0.8
-			var extent := (0.12+_hash(i,2)*0.18)*(0.7+strength*0.25)*presence
+			var extent := (0.08+_hash(i,2)*0.12)*(0.7+strength*0.25)*presence
 			var bob := absf(sin(_clock*2.0+i*1.7))*0.08 if not paused else 0.0
 			var point := impact+Vector3(cos(angle)*radius,0.04+bob,sin(angle)*radius*0.75)
 			var churn := Basis.from_euler(Vector3(i,i*2+_clock*0.25,i*3))
@@ -372,7 +384,7 @@ func _rings(shape: Dictionary, presence: float, strength: float) -> Dictionary:
 	var cap := maxf(W_MIN*3.0,minf(lip_half*2.2,maxf(length*0.35,lip_half)))
 	var half := PackedFloat32Array()
 	for r in range(n):
-		var room := course[r].w+0.05
+		var room := maxf(course[r].w,lip_half*0.8)+0.05
 		var profile := (1.0-0.16*steep[r])*(1.0+0.5*aer[r])
 		var want := minf(minf(room*(1.0+0.3*aer[r]),cap*(1.0+0.5*aer[r])),maxf(W_MIN,lip_half*profile))
 		half.append(want if r == 0 else clampf(want,half[r-1]*0.94,half[r-1]*1.18))
@@ -497,8 +509,8 @@ func _update_mist(scene: Node, grown: bool) -> void:
 		if _clock-float(fall.nodes.mist_at) >= 0.1:
 			fall.nodes.mist_at = _clock
 			_place_mist(mist,fall,strength)
-		mist.material.set_shader_parameter("mist_strength",presence*(0.45+0.55*strength))
-		mist.material.set_shader_parameter("mist_scale",(0.6+0.5*strength)*clampf(0.6+0.2*drop,0.7,1.4))
+		mist.material.set_shader_parameter("mist_strength",presence*(0.3+0.4*strength))
+		mist.material.set_shader_parameter("mist_scale",(0.35+0.3*strength)*clampf(0.6+0.2*drop,0.7,1.4))
 		mist.material.set_shader_parameter("rise_height",(0.9+0.6*strength)*clampf(0.5+0.25*drop,0.6,1.5))
 		mist.update_view(scene.camera,depth)
 
@@ -508,7 +520,8 @@ func _place_mist(mist: CanvasLayer, fall: Dictionary, strength: float) -> void:
 	var widths: PackedVector4Array = rings.across
 	var aer: PackedVector2Array = rings.aer_steep
 	var emitters := [{"at":rings.impact,"weight":3.0,"spread":0.6+strength*0.6}]
-	for r in range(2,RINGS-1,2):
+	# Only the lower half: mist rises where the water has broken up.
+	for r in range(RINGS/2,RINGS-1,2):
 		if aer[r].x < 0.25: continue
 		emitters.append({"at":Vector3(centers[r].x,centers[r].y,centers[r].z),"weight":aer[r].x*aer[r].x*1.6,"spread":widths[r].w*1.1})
 	var total := 0.0
