@@ -1,9 +1,10 @@
 extends "res://scripts/land_spring.gd"
 ## The edge spring (docs/scenic/modeless.md, "The agreed scheme" and "Edge
 ## spring"). The edge of the diorama is a drawn bow: grab the rim (the lip or
-## anywhere down the block's walls), pull down and let go, and a random range
-## springs up out of the land. Lift the rim and set it down slowly, and a
-## random basin sinks instead.
+## anywhere down the block's walls), pull down and let go, and the land's own
+## shapes spring up bigger: peaks taller and more jagged, grooves and basins
+## deeper. On a blank plate a random range springs up instead. Lift the rim
+## and set it down slowly, and a random basin sinks.
 ##
 ## - **The pull.** While the rim is pulled down the whole block dips as a unit
 ##   and tips a little toward the hand (scripts/diorama_flip.gd `dip_*`, on
@@ -12,11 +13,17 @@ extends "res://scripts/land_spring.gd"
 ##   cap, DEAD shows nothing, under MIN_PULL let go keeps nothing), down only,
 ##   and trembles harder near the cap.
 ## - **The release.** The block snaps back up, and the moment it is at rest
-##   the range springs up through the land on the land spring's spring
+##   the shape springs through the land on the land spring's spring
 ##   (`x'' = -w²(x-1) - 2·z·w·x'`, kicked), overshoots, rings down, and lands
 ##   as any mountain does (`_land_mountain`: weathering on a worker), one undo
 ##   step for the whole thing.
-## - **The range.** Random: its middle, direction, length and number of peaks,
+## - **Amplify** (a shaped plate, `_build_amplify`). Each point's departure
+##   from a smooth base (a robust heavy blur of the land, see BASE_CELL) is
+##   scaled by AMPLIFY, set by the pull; on upper slopes a hard pull sharpens
+##   it further and adds the forms' crag noise. Rises stay under the ceiling
+##   and off water, sinks ease above the floor, and both fade at the rim. The
+##   rock repaints the risen slopes but never the hand's bare earth.
+## - **The range** (a blank plate: relief under RELIEF_MIN). Random: its middle, direction, length and number of peaks,
 ##   from a seeded generator. Placement is the best of CANDIDATES random spots
 ##   by a score that leans away from the rim and from ground that is already
 ##   tall, with luck mixed in; the grabbed edge does not choose it. The pull
@@ -74,7 +81,7 @@ const BASIN_FULL := 0.45
 ## shaped, and its own shapes spring up instead of a range: each departure is
 ## scaled by AMPLIFY (a gentle pull to the cap), so peaks rise and grooves and
 ## basins deepen.
-const RELIEF_MIN := 0.35
+const RELIEF_MIN := 0.5
 const AMPLIFY := Vector2(1.1,1.6)
 ## The smooth base: point heights averaged onto a BASE_CELL metre grid, then
 ## blurred with three box passes of BASE_RADIUS cells either side (about a
@@ -91,7 +98,7 @@ const BASE_CLAMPS := [1.0,0.5,0.25,0.25]
 ## ground by up to CRAG of its departure either way.
 const UPPER := Vector2(0.6,3.5)
 const SHARPEN := 0.4
-const CRAG := 0.14
+const CRAG := 0.2
 ## Deepening eases ground below SINK_KNEE toward MIN_HEIGHT, never reaching it.
 const SINK_KNEE := -0.8
 
@@ -135,8 +142,8 @@ func pull(screen_pos: Vector2, relative := Vector2.ZERO) -> void:
 	super.pull(screen_pos,relative)
 	pulled = maxf(pulled,0.0)
 
-## Let go: the block snaps back up; the range springs once it is at rest. A
-## small pull keeps nothing.
+## Let go: the block snaps back up; the amplified land (or the range) springs
+## once it is at rest. A small pull keeps nothing.
 func release(screen_pos: Vector2 = Vector2.INF) -> void:
 	if state != State.PULLING or waiting: return
 	if screen_pos != Vector2.INF: pull(screen_pos)
@@ -150,7 +157,7 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 	waiting = true
 	flip.dip_release(_size)
 
-## The block is back at rest: spring the range.
+## The block is back at rest: spring the shape.
 func _risen(_amount: float) -> void:
 	if not waiting: return
 	waiting = false
@@ -274,7 +281,7 @@ func _build_amplify(amount: float) -> bool:
 		if d > 0.0:
 			# Rise: more on the upper slopes, with crags, under the ceiling.
 			var up := jag*smoothstep(UPPER.x,UPPER.y,d)
-			var grain := lerpf(rough[i],fine[i],0.4)*2.0-1.0
+			var grain := lerpf(rough[i],fine[i],0.5)*2.0-1.0
 			lift = maxf(0.0,d*((factor-1.0)*(1.0+SHARPEN*up)+CRAG*up*grain)*keep[i])
 			lift = clampf(_ceiling(_base[i]+lift)-_base[i],0.0,lift)
 			lift = minf(lift,NativeTerrainData.MAX_HEIGHT-_base[i])
