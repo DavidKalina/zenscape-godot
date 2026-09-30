@@ -39,6 +39,7 @@ extends Node
 
 const Tray = preload("res://scripts/materials_tray.gd")
 const Roll = preload("res://scripts/tool_roll.gd")
+const Foot = preload("res://scripts/tool_foot.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const Modeless = preload("res://scripts/modeless_input.gd")
 ## Tree seeds: the specimen and the emergence tree kind it sows
@@ -83,6 +84,12 @@ var scene: Node3D
 var reach: Node
 var tray: Control
 var roll: Control
+var foot: Control
+## The HUD's one "hud hidden" switch: while true every HUD piece in HUD_GROUP
+## steps out (`want(false)`). Photo mode throws it (scripts/tool_foot.gd). A new
+## piece (the almanac) joins HUD_GROUP and has `want(on)`; the foot follows the roll.
+const HUD_GROUP := "hud_piece"
+var hud_hidden := false
 var clump: Clump
 ## The specimen in hand (a materials_tray.gd SPECIMENS id) or "".
 var held := ""
@@ -111,13 +118,18 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	layer.add_child(tray)
 	roll = Roll.new()
 	layer.add_child(roll)
+	foot = Foot.new()
+	foot.setup(roll,self)
+	layer.add_child(foot)
+	tray.add_to_group(HUD_GROUP)
+	roll.add_to_group(HUD_GROUP)
 	clump = Clump.new()
 	clump.name = "HeldMaterial"
 	reach._editor().terrain.add_child(clump)
 
-## True over the materials bar or the tool roll, while they show.
+## True over the materials bar, the tool roll or its foot, while they show.
 func tray_under(point: Vector2) -> bool:
-	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point))
+	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point)) or (foot != null and foot.contains_pointer(point))
 
 ## The size in hand (the roll's pips): the clay's reach and a scatter's spread.
 func size_scale() -> float:
@@ -153,6 +165,7 @@ func _pointer() -> Vector2:
 ## A left press the hand reach has let through (nothing held, the hand free).
 ## True when it was the case's or the material's.
 func press(point: Vector2) -> bool:
+	if foot != null and foot.press(point): return true
 	# The tool roll: the pips size what is in hand; the Hand puts a material down.
 	var pip: int = roll.pip_at(point)
 	if pip >= 0:
@@ -306,9 +319,8 @@ func _drop(at: Variant, size: float) -> bool:
 
 ## Each frame, after the hand reach has driven the hand.
 func step(delta: float) -> void:
-	var wanted := _tray_wanted()
-	tray.want(wanted)
-	roll.want(wanted)
+	var wanted := _tray_wanted() and not hud_hidden
+	for piece in get_tree().get_nodes_in_group(HUD_GROUP): piece.want(wanted)
 	# A drag under way (a rim pull, the clay, a sowing) never wakes the bars.
 	var quiet: bool = not str(reach.holding) in ["","jar"]
 	tray.quiet = quiet
