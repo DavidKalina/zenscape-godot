@@ -6,7 +6,8 @@ extends SceneTree
 ## hammer, material) shows over bare land at each size with the right extent
 ## (terrain metres) and fades in over FADE_IN; it hides over the tray, the
 ## roll, the void and a tree, while the camera moves, and once a drag or pinch
-## starts; the wire's line spans press to pointer during its drag; the drop
+## starts; the wire's line spans press to pointer during its drag, following
+## the path the drag drew round a bend (the wire's `drawn`); the drop
 ## ring follows the material held; alpha stays under FAINT_CAP.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_ground_marks.gd -- --no-title
 ## Headless draws nothing: this checks what the mark is told to draw, not
@@ -206,28 +207,47 @@ func run() -> void:
 	await frames(20)
 
 	# --- The wire: press to pointer ---
-	roll.tool = "wire"
+	# Taken as the roll takes it, so the clay holds the wire and draws its path.
+	materials.select_tool("wire")
 	await frames(16)
 	check("the wire on hover is a single toggle at the pointer",marks.kind == "wire" and marks.shown > 0.99 and (marks.wire_start as Vector3).distance_to(marks.centre) < 1e-3)
 	var start: Vector3 = marks.centre
 	button(spot,true)
 	await frames(2)
 	var p := spot
-	for i in range(24):
-		p += Vector2(5,0)
+	# An L: along the screen, then down it, bending at `corner`.
+	var corner := spot+Vector2(80,0)
+	for i in range(26):
+		var step := Vector2(5,0) if i < 16 else Vector2(0,5)
+		p += step
 		point_at(p)
-		motion(p,Vector2(5,0))
+		motion(p,step)
 		await frames(1)
 	await frames(2)
 	var ground: Variant = reach._land(p)
+	var bend: Variant = reach._land(corner)
 	check("during the drag (held %s) the wire shows" % reach.holding,marks.kind == "wire" and marks.shown > 0.99 and marks.node.visible,[marks.reason,marks.shown])
 	check("  from the press point",(marks.wire_start as Vector3).distance_to(start) < 1e-3,[marks.wire_start,start])
 	check("  to the pointer's ground",ground != null and (marks.centre as Vector3).distance_to(ground) < 1e-3,[marks.centre,ground])
 	check("  both ends inside the decal box",boxed(marks.wire_start) and boxed(marks.centre))
+	var path: PackedVector2Array = marks.wire_path
+	var off := func(q: Vector2) -> float:
+		var best := INF
+		for j in range(path.size()-1): best = minf(best,q.distance_to(Geometry2D.get_closest_point_to_segment(q,path[j],path[j+1])))
+		return best
+	var chord := Vector2(start.x+(marks.centre as Vector3).x,start.z+(marks.centre as Vector3).z)*0.5
+	var corner_off: float = off.call(Vector2(bend.x,bend.z)) if bend != null and path.size() >= 2 else INF
+	var chord_off: float = off.call(chord) if path.size() >= 2 else 0.0
+	check("  along the path the drag drew (%d points), round the bend" % path.size(),path.size() >= 3 and corner_off < 0.6 and chord_off > 0.8,"the corner %.2f m off the line, the straight line's middle %.2f m" % [corner_off,chord_off])
+	check("  the path runs press to pointer",path.size() >= 2 and path[0].distance_to(Vector2(start.x,start.z)) < 1e-3 and path[-1].distance_to(Vector2((marks.centre as Vector3).x,(marks.centre as Vector3).z)) < 1e-3)
+	var all_boxed := true
+	for q: Vector2 in path: all_boxed = all_boxed and boxed(Vector3(q.x,height(q),q.y))
+	check("  every point of it inside the decal box",all_boxed)
+	check("  and the shader has it",int(marks.material.get_shader_parameter("wire_count")) == mini(path.size(),Marks.WIRE_POINTS),marks.material.get_shader_parameter("wire_count"))
 	check("  and faint: %.2f" % marks.line_alpha_now(),faint())
 	button(p,false)
 	await settled()
-	roll.tool = "hand"
+	materials.select_tool("hand")
 	point_at(spot)
 	await frames(20)
 

@@ -22,15 +22,19 @@ extends RefCounted
 ##   frame `drag_frame(delta)` and a `dab(heights, q)` for every point
 ##   DAB_SPACING apart along the pointer's path; `drag_off()` whenever the
 ##   pointer runs off the land; `drag_end()` at release (not when the stroke
-##   is cut short by an undo or a new press); the clay closes the undo step.
+##   is cut short by an undo or a new press); the clay closes the undo step,
+##   or, while `drag_running()` is true after `drag_end`, keeps it open as the
+##   tool's `frame` works on (the Wire drawing its cut through the clay) and
+##   closes it once that is false, or after `finish()`.
 ## - A hold: `hold_begin(fine)` once the undo step is open; then
 ##   `hold_step(heights, rise)` each frame the pointer has moved, and once more
 ##   at release; `hold_end()`; the clay closes the undo step.
 ## - A tap: `tap(fine)`. The tool opens and closes its own undo step if it
 ##   keeps anything (`clay.open_stroke()` ... `clay.close_stroke()`), or none.
 ## - `frame(delta)` every frame, for anything that runs on after a press (the
-##   Modeller's poke rings out); `finish()` ends it at once (an undo, a new press,
-##   a change of tool).
+##   Modeller's poke rings out, the Wire's cut draws through); `finish()` ends
+##   it at once (an undo, a new press, a change of tool), leaving what it
+##   would have left had it run out.
 
 ## The clay working the land (scripts/land_clay.gd), set when the tool is made.
 var clay: Node
@@ -103,6 +107,11 @@ func drag_off() -> void: pass
 ## queued more path (`clay.queue_point`) for the clay to lay first.
 func drag_end() -> bool: return false
 
+## True while a drag let go still works the land (the Wire's cut drawing
+## through), run on by `frame` and landed whole by `finish`: the clay keeps
+## the stroke's undo step open until it is false. `busy` is true then too.
+func drag_running() -> bool: return false
+
 # --- Hold --------------------------------------------------------------------------
 
 ## The hold is decided; `fine` is Shift. May move `clay.center` (the pinch
@@ -129,7 +138,8 @@ func tap(_fine: bool) -> void: pass
 
 func frame(_delta: float) -> void: pass
 func finish() -> void: pass
-## True while something the tool started still runs (a poke ringing out).
+## True while something the tool started still runs (a poke ringing out, a
+## cut drawing through).
 func busy() -> bool: return false
 
 # --- Stand-in props -----------------------------------------------------------------
