@@ -92,6 +92,9 @@ var _reach_hint := ""
 ## The hand scheme (scripts/modeless_input.gd): only the hint line and the
 ## mood drawer show; the hint names the hand's reach, never a brush.
 var hand_only := preload("res://scripts/modeless_input.gd").enabled()
+## Design units the hint line sits higher, clear of the materials tray
+## (scripts/hand_materials.gd) along the bottom edge.
+var bottom_lift := 0.0
 
 static func registered() -> Array[Dictionary]:
 	return Palette.registered()
@@ -501,7 +504,7 @@ func fit() -> void:
 	# The scrubber over the hint, bottom centre.
 	bottom.size = Vector2(minf(design.x-2.0*(Style.MARGIN+Style.PHOTO_SLOT+24.0),1000.0),0)
 	bottom.size = Vector2(bottom.size.x,bottom.get_combined_minimum_size().y)
-	bottom.position = Vector2((design.x-bottom.size.x)*0.5,design.y-16.0-bottom.size.y)
+	bottom.position = Vector2((design.x-bottom.size.x)*0.5,design.y-16.0-bottom.size.y-bottom_lift)
 	bottom_plate.size = scrubber.size+Vector2(28,4)
 	bottom_plate.position = bottom.position+Vector2((bottom.size.x-bottom_plate.size.x)*0.5,-2.0)
 	_apply_recede(false)

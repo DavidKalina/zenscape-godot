@@ -75,6 +75,23 @@ itself, not the land near it.
 The cloud's grey belly shows how much water it holds. It shrinks as it gives
 and refills in about a minute; a dry cloud won't tear.
 
+## The tray (experiment)
+
+Along the bottom edge sits a small tray of jars: **seeds**, **water** and
+**stones**. It stays faint until the pointer comes near.
+
+| Do | Result |
+|---|---|
+| Press a jar | the hand takes some: a pinch of seeds or stones, a cupped hand of water |
+| Seeds: drag over the land | sprinkles seeds along the way; the wind carries them down and the land picks what grows |
+| Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
+| Stones: tap | sets a stone down, bigger the longer you press |
+| Stones: drag | scatters a few pebbles |
+| Click the sky, the tray or the same jar | puts the material back |
+
+The trees' spores and the cloud still work as before. `--no-tray` hides the
+tray.
+
 ## Trees
 
 Every new plain has one wild tree. Water splashing on the land grows trees too.
@@ -108,6 +125,7 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--no-title` skips the title and opens a new plain; `--resume` opens the last saved place; `--generated` or `--seed N` opens a generated world. Each of these skips the title.
 - `--classic-controls` brings back the tool modes.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
+- `--no-tray` hides the materials tray.
 
 ## Not reachable in the hand scheme yet
 
