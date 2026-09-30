@@ -376,9 +376,9 @@ func _consider() -> void:
 	for key in _pond_since.keys():
 		if not seen.has(key): _pond_since.erase(key)
 	if not _state.is_empty():
-		if _rain() > 0.4 and not bool(_state.get("leaving",false)): _leave_now()
+		if (_rain() > 0.4 or life.winter.frozen()) and not bool(_state.get("leaving",false)): _leave_now()
 		return
-	if clock < _next or life._daylight() < SUN or _rain() > 0.1: return
+	if clock < _next or life._daylight() < SUN or _rain() > 0.1 or life.winter.frozen(): return
 	var phase := float(life.scene._celestial.phase)
 	if phase < MORNING.x or phase > MORNING.y: return
 	for key in _pond_since:

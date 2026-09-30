@@ -266,7 +266,7 @@ func _consider() -> void:
 		if not _water_since.has(key): _water_since[key] = clock
 	for key in _water_since.keys():
 		if not seen.has(key): _water_since.erase(key)
-	if _heron_state.is_empty() and clock >= _heron_next and _daylight() > 0.25 and _rain_now() < 0.3:
+	if _heron_state.is_empty() and clock >= _heron_next and _daylight() > 0.25 and _rain_now() < 0.3 and not life.winter.frozen():
 		for key in _water_since:
 			if clock-float(_water_since[key]) >= HERON_DELAY and _roll(HERON_CHANCE):
 				_heron_arrive(seen[key])
@@ -379,7 +379,7 @@ func _move_heron(step: float) -> void:
 			_heron_neck.scale = Vector3.ONE
 			# The Blender heron finishes a strike or a step before it goes, unless driven off.
 			var busy := _heron_rig != null and _heron_rig.clip in ["Strike","Stalk"] and not _heron_rig.done()
-			if (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there():
+			if (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there() or life.winter.frozen():
 				s.phase = "out"
 				s.age = 0.0
 				s.from = spot
