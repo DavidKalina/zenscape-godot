@@ -40,6 +40,8 @@ var weather_bow := 0.0
 var moment_bow := 0.0
 ## A moonbow that life calls after night rain under a near-full moon.
 var moon_bow := 0.0
+## 1 on a double rainbow: brings the fainter second bow up (life_moments.gd).
+var moment_bow_double := 0.0
 var alpen_enabled := true
 var inversion_enabled := true
 var wind := 0.4
@@ -281,6 +283,7 @@ func update_rig() -> void:
 	_publish("zs_bow_grow", _rainbow_growth)
 	_publish("zs_bow_shape", Vector2.ONE)
 	_publish("zs_moonbow", moon_bow * night * smoothstep(-0.02, 0.08, moon.y))
+	_publish("zs_bow_double", moment_bow_double)
 
 ## The moon's direction at a phase: half a day round from the sun on a flatter
 ## ring, less the turn it has fallen behind this far into the month.
