@@ -84,6 +84,7 @@ Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a dela
 | Heron lands | a pond with ≥ 2 fish settled for 30 s and wading water; daylight > 0.25; rain < 0.3 | 0.06 | 240 |
 | Deer at dawn | ≥ 6 trees; a forest edge that has stood 25 s; celestial phase 0.2-0.36; rain < 0.3 | 0.25 | 300 |
 | Rainbow after rain | ≥ 8 s of rain above 0.25 that then stops (< 0.06); richness ≥ 1.2; daylight > 0.35 | 0.6 once per rain | none |
+| Moonbow after night rain | the same rain stopping at night (daylight < 0.1); richness ≥ 1.2; the moon up and ≥ 90% lit | 0.5 once per rain | none |
 | Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather | 1200 |
 
 What each moment looks like:
@@ -92,6 +93,7 @@ What each moment looks like:
 - **Deer:** a doe, and half the time a fawn, step out of the trees to the edge at 0.42 m/s. They graze, head down for 5-11 s and up for 2-4 s, for 25-45 s, and leave when their time is up or the sun climbs. They walk back into the wood and fade inside the trees.
   The deer are a rigged Blender model (`assets/models/zenscape-deer.glb`, built by `tools/blender_creatures/deer.py`, clips in `deer_clips.py`) played through `scripts/life_rigs.gd`: Walk synced to ground speed (the fawn's legs run faster), HeadDown into Graze, and HeadUp into Alert on the first lift of a visit, then Look or Idle in turn. Clips advance on the life clock. `--classic-life` brings back the code-built deer from `life_models.gd`.
 - **Rainbow:** `celestial.moment_bow`, a new term in `studies/celestial.gd` next to `rainbow_strength` and `weather_bow`, rises to 0.85 over 6 s, holds 30 s and fades over 10 s. It is never saved.
+- **Moonbow:** `celestial.moon_bow`, published as `zs_moonbow`: the rainbow's drawing (`zsRainbow`) about the antilunar point, washed nearly to grey and cooled. It rises to 0.35 over 12 s, holds 40 s and fades over 15 s, and sounds as a lower, quieter bow swell. Near-full moons at night after rain make it legendary.
 - **Bigfoot:** the ambient model steps out of the wood, watches you and goes back in, or strides across in front of it like the 1967 film. See "Bigfoot" below. The resident Bigfoot (`--bigfoot`) is untouched.
 
 `moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`.

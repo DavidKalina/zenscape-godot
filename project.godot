@@ -347,6 +347,10 @@ zs_aurora={
 "type": "vec4",
 "value": Vector4(0.65, 1, 0.15, -1.2)
 }
+zs_moonbow={
+"type": "float",
+"value": 0.0
+}
 zs_night={
 "type": "float",
 "value": 0.0

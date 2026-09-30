@@ -343,11 +343,11 @@ func _body_at(point: Vector2) -> String:
 	return best
 
 ## The sun's or the moon's direction at a phase, as studies/celestial.gd
-## rings them: the moon half a day round, on a flatter ring.
+## rings them: the moon half a day round less its month, on a flatter ring.
 func body_direction(which: String, at_phase: float) -> Vector3:
 	var celestial: RefCounted = scene._celestial
 	var theta := (at_phase-0.25)*TAU
-	if which == "moon": return celestial._ring_direction(theta+PI,celestial._tilt*0.75)
+	if which == "moon": return celestial.moon_direction(at_phase)
 	return celestial._ring_direction(theta,celestial._tilt)
 
 ## Where a sky direction is on screen, or null behind the camera.

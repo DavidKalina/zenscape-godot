@@ -290,18 +290,31 @@ shader_type sky;
           vec3 sunHdr = (discCol * disc * mix(mix(1.1, 8.0, high), mix(2.4, 30.0, high), pow(mu, 0.7))
             + glowCol * exp(-beyond / 0.004) * (1.0 - disc) * 2.5) * sunVis;
 
-          // The moon: smaller and cooler, gibbous by construction — a second
-          // disc offset anti-sunward (daynight.js computes it) eats the dark
-          // limb. Faintly there by day, full presence at night.
+          // The moon: smaller and cooler, in phase. The disc is shaded as a
+          // sphere lit by the sun, so its terminator follows the month
+          // (studies/celestial.gd moon_age) with a faint earthshine on the dark
+          // side and soft grey seas. Its glow and HDR light follow the lit
+          // share. Faintly there by day, full presence at night.
           float md = dot(dir, zs_moon_direction);
-          float moon = smoothstep(0.99958, 0.99982, md);
-          float bite = smoothstep(0.99958, 0.99982, dot(dir, zs_moon_shadow_direction));
-          float moonVis = zs_celestial_clear * smoothstep(-0.04, 0.03, zs_moon_direction.y) * mix(0.15, 1.0, zs_night);
-          col += vec3(0.86, 0.92, 1.0) * moon * (1.0 - 0.72 * bite) * 1.6 * moonVis;
-          col += vec3(0.5, 0.6, 0.8) * 0.06 * pow(max(md, 0.0), 160.0) * moonVis * zs_night;
-          // A thin silver corona hugging the disc.
           float moonAng = sqrt(max(2.0 * (1.0 - md), 0.0));
-          col += vec3(0.7, 0.8, 1.0) * exp(-max(moonAng - 0.019, 0.0) / 0.006) * 0.22 * (1.0 - moon) * moonVis * zs_night;
+          float moonVis = zs_celestial_clear * smoothstep(-0.04, 0.03, zs_moon_direction.y) * mix(0.15, 1.0, zs_night);
+          float moonLit = 0.5 - 0.5 * dot(zs_moon_direction, zs_sun_direction);
+          const float MOON_R = 0.024;
+          float moon = 1.0 - smoothstep(MOON_R - 0.005, MOON_R + 0.005, moonAng);
+          if (moon > 0.0 && moonVis > 0.0) {
+            vec3 mSide = normalize(cross(zs_moon_direction, vec3(0.0, 1.0, 0.0)));
+            vec3 mUp = cross(mSide, zs_moon_direction);
+            vec2 mo = vec2(dot(dir, mSide), dot(dir, mUp)) / MOON_R;
+            vec3 mN = mSide * mo.x + mUp * mo.y - zs_moon_direction * sqrt(max(1.0 - dot(mo, mo), 0.0));
+            float lit = smoothstep(-0.06, 0.1, dot(mN, zs_sun_direction));
+            float seas = 1.0 - 0.16 * smoothstep(0.45, 0.75, vnoise(vec3(mo * 2.6, 3.7)));
+            float face = mix(0.035, seas, lit);
+            col += vec3(0.86, 0.92, 1.0) * moon * face * 1.6 * moonVis;
+            skyHdr += vec3(0.86, 0.92, 1.0) * moon * lit * seas * 0.6 * moonVis * zs_night;
+          }
+          col += vec3(0.5, 0.6, 0.8) * 0.06 * pow(max(md, 0.0), 160.0) * moonVis * zs_night * moonLit;
+          // A thin silver corona hugging the disc.
+          col += vec3(0.7, 0.8, 1.0) * exp(-max(moonAng - 0.019, 0.0) / 0.006) * 0.22 * (1.0 - moon) * moonVis * zs_night * moonLit;
 
           // Horizon ridges, far to near, each a step deeper into the haze and
           // pale at its feet where valley mist would lie. Painted over the sun
