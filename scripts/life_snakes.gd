@@ -327,6 +327,9 @@ func setup(owner: Node3D) -> void:
 	_body.name = "Body"
 	_body.mesh = _build_mesh(life.material)
 	_body.skin = skin
+	# Godot 4 leaves a MeshInstance3D's skeleton path empty: without it the body is
+	# never posed and every ring sits unskinned at the plate's origin, out of sight.
+	_body.skeleton = NodePath("..")
 	_body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	# It roams the plate; one generous box keeps it from culling itself.
 	_body.custom_aabb = AABB(Vector3(-16,-4,-16),Vector3(32,40,32))
