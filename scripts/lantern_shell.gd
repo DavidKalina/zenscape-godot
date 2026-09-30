@@ -329,6 +329,7 @@ func _build_bottom() -> void:
 	bottom_plate.visible = scrubber.visible
 	hint = Hint.new()
 	hint.name = "Hint"
+	hint.plain = hand_only
 	bottom.add_child(hint)
 
 # --- State ---------------------------------------------------------------------------

@@ -4,11 +4,19 @@ extends HBoxContainer
 ## land  ·  Shift-drag lowers") and each segment's leading key becomes a
 ## small-caps key cap. `text` reads back the plain hint, so probes that read
 ## the glass palette's hint read this one the same way.
+##
+## `plain` (the hand scheme): no key caps and no capitals, just the sentence,
+## quiet, in the notices' face ("Click the sky for night or day").
 const Style = preload("res://scripts/lantern_style.gd")
 ## Leading phrases that are keys or gestures, longest first.
 const KEYS := ["Shift-click","Shift-drag","Right-drag","Double-click","Shift [ ]","[ ]","Drag","Press","Click","Hold","Release","Tab","Esc","P","M","1"]
 const FILLERS := ["to ","for "]
 const SEPARATOR := "  ·  "
+## The plain line's alpha: a murmur, not a label.
+const PLAIN_ALPHA := 0.82
+
+## Set before `text`: one quiet sentence instead of key caps.
+var plain := false
 
 var text := "":
 	set(value):
@@ -36,6 +44,14 @@ func _build() -> void:
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
+	if plain:
+		if text.strip_edges().is_empty(): return
+		var line := Label.new()
+		line.text = SEPARATOR.join(Array(text.split("·",false)).map(func(part: String) -> String: return part.strip_edges()))
+		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		Style.style_label(line,15,Color(Style.LIGHT,PLAIN_ALPHA),true)
+		add_child(line)
+		return
 	var first := true
 	for segment: String in text.split("·",false):
 		if segment.strip_edges().is_empty(): continue

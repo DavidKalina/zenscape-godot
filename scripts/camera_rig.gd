@@ -229,7 +229,8 @@ func _sync_chrome(delta: float) -> void:
 		label.position = (camera.unproject_position(_label_at)+Vector2(-label.size.x*0.5,-label.size.y-22.0)).clamp(Vector2(8,8),screen-label.size-Vector2(8,8))
 	label.visible = label.modulate.a > 0.01 and not camera.is_position_behind(_label_at)
 	# First session: one calm line under the top edge, until dismissed or used.
-	var hint_wanted: bool = not _hint_seen and live and not scene.crafting
+	# The hand scheme teaches nothing up front: the hand names its own verbs.
+	var hint_wanted: bool = not _hint_seen and live and not scene.crafting and scene.get("hand_only") != true
 	if hint_wanted and scene._toolbar.visible:
 		# Read for a minute is read.
 		_hint_time += delta
