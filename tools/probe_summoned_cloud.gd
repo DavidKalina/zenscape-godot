@@ -10,7 +10,13 @@ extends SceneTree
 ##     overshoot; the hold going on into a pull tears a tuft before it has
 ##     finished forming, and over the land the tuft is the held ball, all in
 ##     one press; let go, the ball lands;
+##   - with no cloud, a press that pauses under the summon's hold and then
+##     drags is still the wind;
 ##   - the lingering cloud plucks again at once, with a pinch;
+##   - while it is up, empty sky is the snap's and the wind's: a click
+##     snaps, a press that pauses long and then drags is wind, and neither
+##     moves or re-calls the cloud; it floats within its bounds over 20 s,
+##     and a hand hovering by it keeps it past its linger;
 ##   - left alone, it drifts off and is gone; wrung dry, it goes sooner;
 ##   - a hold let go without a pull snaps nothing and leaves the cloud.
 ## The old always-there cloud (`--always-cloud`) is tools/probe_sky_cloud.gd.
@@ -82,6 +88,29 @@ func bulk() -> float:
 		shown += cloud._size[i]
 		full += cloud._radius[i]*cloud.size
 	return shown/maxf(full,0.001)
+
+## Press at `at`, wait `pause` frames still, then drag `by` in `steps` frames and let go.
+func press_drag(at: Vector2, pause: int, by: Vector2, steps: int) -> void:
+	point(at)
+	await frames(3)
+	button(at,true)
+	await frames(pause)
+	var p := at
+	for i in range(steps):
+		p += by/steps
+		motion(p,by/steps)
+		await frames(1)
+	button(p,false)
+	await frames(10)
+
+## Empty sky at least `away` px from the cloud on screen, or INF.
+func sky_away(away: float) -> Vector2:
+	var cloud_at: Vector2 = scene.camera.unproject_position(cloud.centre)
+	for y in [20.0,60.0,120.0,200.0]:
+		for x in [40.0,1400.0,300.0,1140.0,720.0]:
+			var candidate := Vector2(float(x),float(y))
+			if candidate.distance_to(cloud_at) >= away and reach.void_at(candidate) and not cloud.near(candidate): return candidate
+	return Vector2.INF
 
 ## Press at `at`, pull toward the land in `steps` frames; stops once the ball is held.
 func pull_to_land(at: Vector2, steps: int) -> Vector2:
@@ -183,6 +212,11 @@ func run() -> void:
 	await frames(10)
 	check("a quick drag is still the wind",int(reach.uses.get("wind",0)) == winds+1 and reach.snaps == snaps and cloud.presence == "gone" and cloud.summons == 0,[int(reach.uses.get("wind",0))-winds,reach.snaps-snaps,cloud.presence])
 	await frames(30)
+	# A pause shorter than the summon's hold, then a drag: still the wind.
+	winds = int(reach.uses.get("wind",0))
+	await press_drag(sky,int(reach.SUMMON_HOLD*60.0)-8,across,20)
+	check("with no cloud, a short pause then a drag is still the wind",int(reach.uses.get("wind",0)) == winds+1 and cloud.presence == "gone" and cloud.summons == 0,[int(reach.uses.get("wind",0))-winds,cloud.presence])
+	await frames(30)
 
 	# A still hold calls it; the same press pulls, tears and makes the ball.
 	snaps = reach.snaps
@@ -242,6 +276,47 @@ func run() -> void:
 	check("and plucks again: a second ball",cloud.tears == tears+1 and editor._ball_holding and cloud.summons == 1,[cloud.tears,editor._ball_holding])
 	check("let go, it lands",await land_ball(p))
 
+	# While it is up, empty sky is the snap's and the wind's.
+	var anchor: Vector3 = cloud._anchor
+	var bound: Vector2 = cloud.float_reach()
+	var elsewhere := sky_away(350.0)
+	check("found empty sky away from the cloud",elsewhere != Vector2.INF)
+	if elsewhere != Vector2.INF:
+		snaps = reach.snaps
+		point(elsewhere)
+		await frames(3)
+		button(elsewhere,true)
+		await frames(3)
+		button(elsewhere,false)
+		await frames(20)
+		check("while it is up, a click elsewhere snaps",reach.snaps == snaps+1 and cloud.summons == 1,[reach.snaps-snaps,cloud.summons])
+		winds = int(reach.uses.get("wind",0))
+		var sweeps: int = reach.wind.sweeps
+		var way := Vector2(1.0 if elsewhere.x < 720.0 else -1.0,0.0)*200.0
+		# Held still well past the summon's hold, then dragged: a held wind.
+		await press_drag(elsewhere,int(reach.SUMMON_HOLD*60.0)*2,way,30)
+		check("while it is up, a long pause then a drag elsewhere is the wind",int(reach.uses.get("wind",0)) == winds+1 and reach.wind.sweeps == sweeps+1 and cloud.summons == 1 and reach.holding.is_empty(),[int(reach.uses.get("wind",0))-winds,reach.wind.sweeps-sweeps,cloud.summons])
+		check("and the cloud stays where it formed",cloud._anchor == anchor and cloud.presence == "here",[cloud._anchor.distance_to(anchor),cloud.presence])
+	# It floats within its bounds; a hand hovering by it keeps it up.
+	var farthest := Vector2.ZERO
+	for i in range(20*60):
+		point(scene.camera.unproject_position(cloud.centre))
+		await frames(1)
+		var off: Vector3 = cloud.centre-anchor
+		farthest = Vector2(maxf(farthest.x,Vector2(off.x,off.z).length()),maxf(farthest.y,absf(off.y)))
+	check("over 20 s it floats within its sway, never following",farthest.x <= bound.x+0.01 and farthest.y <= bound.y+0.01 and farthest.x > 0.1,[farthest,bound])
+	check("a hand hovering by it keeps it past its linger",cloud.presence == "here" and cloud._idle < 1.0,[cloud.presence,cloud._idle])
+	at = scene.camera.unproject_position(cloud.centre)
+	point(at)
+	await frames(4)
+	button(at,true)
+	await frames(2)
+	tears = cloud.tears
+	p = await pull_to_land(at,40)
+	check("a press on it still plucks",cloud.tears == tears+1 and editor._ball_holding,[cloud.tears-tears,editor._ball_holding])
+	check("and that ball lands",await land_ball(p))
+	point(sky_away(350.0))
+
 	# Left alone, it leaves.
 	var stood: Vector3 = cloud.centre
 	var waited := 0
@@ -265,6 +340,7 @@ func run() -> void:
 	button(sky,false)
 	await frames(int(cloud.FORM_SECONDS*60.0)+10)
 	check("a hold let go calls the cloud and snaps nothing",cloud.presence == "here" and reach.snaps == snaps and cloud.summons == 2,[cloud.presence,reach.snaps-snaps])
+	point(sky_away(350.0))
 	cloud.water = 0.2
 	cloud.wrung = true
 	waited = 0

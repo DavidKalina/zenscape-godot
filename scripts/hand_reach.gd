@@ -213,10 +213,11 @@ const VOID_HINT := "Click the sky for night or day"
 ## source. Its hints, over it and when it is pulled dry.
 const CLOUD_HINT := "Pull the cloud for water"
 const CLOUD_DRY_HINT := "Wrung dry for now"
-## Summoned (docs/scenic/sky-cloud.md "Summoned"): a press held still in the
-## void (under CLICK_PIXELS) SUMMON_HOLD seconds calls the cloud into the
-## hand's pinch; quicker clicks still snap and quicker drags are still the
-## wind. The hand cups while it forms and pinches once it has formed, or once
+## Summoned (docs/scenic/sky-cloud.md "Summoned"): with no cloud up, a press
+## held still in the void (under CLICK_PIXELS) SUMMON_HOLD seconds calls the
+## cloud into the hand's pinch; quicker clicks still snap, and a press that
+## moves first is still the wind. With a cloud up, the void is the snap's and
+## the wind's only: the cloud is taken only by a press on it. The hand cups while it forms and pinches once it has formed, or once
 ## the pull passes PINCH_TENSION. The void's hint names the summon, until it
 ## has been used SUMMON_HINT_UNTIL times or read SUMMON_READS times: after the
 ## demo cloud has shown, or once the snap's hint is done.
@@ -841,7 +842,9 @@ func _process(delta: float) -> void:
 		# A still hold in the void calls the cloud (before the wind reads it).
 		if holding == "void":
 			_void_held += delta
-			if _void_travel <= CLICK_PIXELS and _void_held >= SUMMON_HOLD and cloud != null and cloud.summoned: _summon()
+			if _void_travel <= CLICK_PIXELS and _void_held >= SUMMON_HOLD and cloud != null and cloud.summoned and cloud.presence == "gone": _summon()
+		# A hand hovering by the cloud keeps it up.
+		if cloud != null and cloud.summoned and holding.is_empty() and cloud.near(scene.get_viewport().get_mouse_position() if pointer_override == null else pointer_override): cloud.keep()
 		if wind != null:
 			# A press let go off the window never releases: the wind lets go too.
 			if holding != "void" and not wind.state.is_empty(): wind.state = ""

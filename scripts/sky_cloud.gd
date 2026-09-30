@@ -137,12 +137,23 @@ const SWELL_FREQ := 17.0
 const GATHER_RATE := 14.0
 const FORM_SECONDS := PUFF_START+PUFF_STAGGER+PUFF_SECONDS
 const TEAR_FORM := 0.35
+## Floating: once up it stays where it formed, swaying FLOAT_SWAY either side
+## over SWAY_SECONDS and bobbing BOB, and wandering WANDER at most across and
+## WANDER·WANDER_DEPTH in depth over WANDER_SECONDS (all metres times its
+## size). It never follows the hand.
+const FLOAT_SWAY := 1.0
+const WANDER := 1.5
+const WANDER_DEPTH := 0.6
+const WANDER_SECONDS := Vector2(97.0,131.0)
+## A pointer within NEAR_SLACK of a puff's radius keeps it (its idle clock
+## starts again), as a pluck does.
+const NEAR_SLACK := 2.2
 ## Lingering and leaving: left alone LINGER seconds (DEMO_LINGER for the
 ## demo), or DRY_LINGER once wrung dry, it drifts off on the sky's wind at
 ## DRIFT (m/s at no wind to a strong one, times its size), rising RISE m/s,
 ## and thins away over LEAVE_SECONDS, outer puffs first. Under LEAVE_GRAB of
 ## the way gone a press calls it back.
-const LINGER := 10.0
+const LINGER := 20.0
 const DEMO_LINGER := 6.0
 const DRY_LINGER := 3.0
 const DRIFT := Vector2(1.2,4.0)
@@ -347,11 +358,10 @@ func formed_enough() -> bool:
 
 ## A still hold in empty sky calls the cloud: it forms round `at` (world, the
 ## hand's pinch on the pointer's ray) with the pointer at `point`, already in
-## hand. A cloud still in the sky flies in and re-forms there, keeping its
-## water.
+## hand. Only when there is no cloud: one in the sky stays where it is.
 func summon(point: Vector2, at: Vector3) -> void:
+	if presence != "gone": return
 	var camera: Camera3D = scene.camera
-	var fresh := presence == "gone"
 	var away := -camera.global_basis.z
 	away.y = 0.0
 	if away.length_squared() < 0.0001: away = camera.global_basis.y*Vector3(1,0,1)
@@ -361,11 +371,7 @@ func summon(point: Vector2, at: Vector3) -> void:
 	centre = at-frame*(GRIP*size)
 	_anchor = centre
 	summons += 1
-	# A tuft on its way home is taken back first.
-	if state == "returning":
-		water = minf(CAPACITY,water+_tuft_water)
-		_tuft_water = 0.0
-	_start_form(fresh,at)
+	_start_form(true,at)
 	grab(point,at)
 
 ## The demo: the session's first calm world shows the cloud once, unasked,
@@ -396,6 +402,7 @@ func _start_form(fresh: bool, focus: Vector3) -> void:
 	demo = false
 	_focus = focus
 	if fresh:
+		_bob_time = 0.0
 		water = CAPACITY
 		shown = 1.0
 		wrung = false
@@ -479,13 +486,32 @@ func _gone() -> void:
 func hit(point: Vector2) -> Variant:
 	if not visible or state != "idle": return null
 	if summoned and (presence == "gone" or _leave > LEAVE_GRAB): return null
+	return _ray_hit(point,HIT_SLACK)
+
+## True when a pointer is near the cloud (NEAR_SLACK): the hand hovering by it.
+func near(point: Vector2) -> bool:
+	if not visible or presence == "gone": return false
+	return _ray_hit(point,NEAR_SLACK) != null
+
+## The hover keeps the cloud: its idle clock starts again.
+func keep() -> void:
+	_idle = 0.0
+
+## How far floating may carry it from where it formed (metres: across and in
+## depth, and up and down), for probes.
+func float_reach() -> Vector2:
+	return Vector2(Vector2(FLOAT_SWAY+WANDER,WANDER*WANDER_DEPTH).length(),BOB)*size
+
+## The point where a pointer's ray meets the body puffs, `slack` times their
+## radius, or null.
+func _ray_hit(point: Vector2, slack: float) -> Variant:
 	var camera: Camera3D = scene.camera
 	var origin := camera.project_ray_origin(point)
 	var ray := camera.project_ray_normal(point)
 	var nearest := INF
 	var found: Variant = null
 	for i in range(BODY):
-		var r := _size[i]*HIT_SLACK
+		var r := _size[i]*slack
 		var to := _at[i]-origin
 		var along := to.dot(ray)
 		var miss := to.length_squared()-along*along
@@ -632,10 +658,14 @@ func _process(delta: float) -> void:
 func _place(editor: Node, delta: float) -> void:
 	if state == "held" or state == "carried": return
 	if summoned:
-		# Summoned it stays where it was called, bobbing, till it leaves.
+		# Summoned it stays where it was called, floating, till it leaves.
 		if presence == "leaving": _anchor += (_drift*smoothstep(0.0,0.35,_leave)+Vector3.UP*RISE*size)*delta
 		_bob_time += delta
-		centre = _anchor+Vector3.UP*sin(_bob_time*TAU*BOB_RATE)*BOB*size
+		var t := _bob_time
+		# All start at nothing, so it sets off from where it formed.
+		var across := sin(t*TAU/SWAY_SECONDS)*FLOAT_SWAY+sin(t*TAU/WANDER_SECONDS.x)*WANDER
+		var deep := sin(t*TAU/WANDER_SECONDS.y)*WANDER*WANDER_DEPTH
+		centre = _anchor+(frame.x*across+frame.z*deep+Vector3.UP*sin(t*TAU*BOB_RATE)*BOB)*size
 		return
 	var middle: Vector3 = (editor.terrain as Node3D).global_position
 	var camera: Camera3D = scene.camera
