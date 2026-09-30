@@ -7,9 +7,10 @@ extends Node3D
 ## bobbing and wobbling, now and then a drip. Straight below it on the ground
 ## lies its mark (shaders/water_ball_ground.gdshader), which is the promise
 ## (docs/scenic/handful.md): the ball lands inside it. Release lets it go: it
-## is tossed straight up, hangs trembling at the top and pops (the God Hand's
-## finger pokes it on the same beat, scripts/god_hand.gd): its skin bursts in
-## a ring of droplets from where it was popped, and the water, loose now,
+## is tossed straight up, hangs trembling at the top and pops on its own beat
+## (POP_SECONDS; no hand is needed, and under `--hand-everywhere` the God
+## Hand's finger pokes it on that beat, scripts/god_hand.gd): its skin bursts
+## in a ring of droplets from where it was popped, and the water, loose now,
 ## falls straight down onto the mark, stretching and shedding drops as it
 ## goes. It squashes on the ground and spreads into a wash of foam
 ## under a crown of spray (shaders/water_splash.gdshader), droplets fly and the
@@ -46,9 +47,10 @@ const BOB_RATE := 0.55
 const CONDENSE_SECONDS := 0.35
 const CONDENSE_BEADS := 22
 ## Release: the toss lifts the ball TOSS m, easing to a hang, and it pops
-## POP_SECONDS after the release (the God Hand's CupOut pops it then:
-## god_hand_clips.py CUP_POP), then falls under GRAVITY (m/s²). The fall is
-## straight down: the carried speed goes into the wobble, not the path.
+## POP_SECONDS after the release, then falls under GRAVITY (m/s²): about 0.9 s
+## from release to landing. The ball keeps this beat itself; the God Hand's
+## CupOut (god_hand_clips.py CUP_POP) was made to it. The fall is straight
+## down: the carried speed goes into the wobble, not the path.
 const TOSS := 0.45
 const POP_SECONDS := 0.4333
 const GRAVITY := 18.0
@@ -105,8 +107,9 @@ var fish: Array[Dictionary] = []
 ## The vortex's turned angle (radians) and how hard it churns (0..1).
 var swirl := 0.0
 var churn := 0.4
-## Plate direction from the ball's centre to where it will be popped (the God
-## Hand's finger sets it), or zero for its side.
+## Plate direction from the ball's centre to where it will be popped (set at
+## release toward the camera, or by the God Hand's finger), or zero for its
+## side.
 var poke := Vector3.ZERO
 var _radius_speed := 0.0
 var _jolt := 0.0

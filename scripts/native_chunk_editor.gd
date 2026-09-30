@@ -2213,6 +2213,11 @@ func _ball_release() -> void:
 	if not _ball_holding: return
 	_ball_holding = false
 	ball_supply = Callable()
+	# No finger pokes it: it pops on the side toward the camera, a little up,
+	# where the burst is seen (a God Hand's finger sets its own).
+	if ball.poke.length_squared() < 0.0001 and scene.camera != null:
+		var toward: Vector3 = terrain.to_local(scene.camera.global_position)-ball.position
+		if Vector2(toward.x,toward.z).length_squared() > 0.0001: ball.poke = (Vector3(toward.x,0.0,toward.z).normalized()+Vector3.UP*0.25).normalized()
 	ball.release()
 	_emit_stroke(2,ball.mark(),ball.radius,0.0)
 
@@ -2852,7 +2857,8 @@ var _mountain_elapsed := 0.0
 
 ## What the God Hand (scripts/god_hand.gd) is doing with the tool in hand:
 ## "pinch" while land rises, "press" while it is lowered, "cup" while a
-## water ball is held, "sprinkle" while pollen is laid, "" otherwise. Wind,
+## water ball is held, "sprinkle" while pollen is laid, "" otherwise ("cup"
+## and "sprinkle" show the hand only under `--hand-everywhere`). Wind,
 ## meadow and path have no gesture yet.
 func hand_gesture() -> String:
 	if _ball_holding: return "cup"

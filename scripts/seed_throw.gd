@@ -22,11 +22,13 @@ extends Node3D
 ## throw's own until its seeds are down. They land inside it unless the wind
 ## changes while they fly. Dust is not promised: it grows nothing.
 ##
-## With the God Hand (scripts/god_hand.gd) the handful gathers as a pinch in
-## its fingertips (`hand_at`) and flies when it tosses (`toss`), at its toss's angle; the
-## hand stands `stand_off()` back from the pointer, so each throw is a lob
-## onto it. Without the hand the handful throws itself from STAND_OFF back on
-## the camera's side, THROW_HEIGHT up.
+## Under `--hand-everywhere` the God Hand (scripts/god_hand.gd) holds the
+## handful as a pinch in its fingertips (`hand_at`) and it flies when the hand
+## tosses (`toss`), at its toss's angle; the hand stands `stand_off()` back
+## from the pointer, so each throw is a lob onto it. Otherwise nothing holds
+## it and the handful throws itself from STAND_OFF back on the camera's side,
+## THROW_HEIGHT up. (The materials bar sows the veil, scripts/pollen_cloud.gd,
+## whose `hand_at` and `toss` this shares.)
 ##
 ## It keeps the API of the pollen veil it replaced (scripts/pollen_cloud.gd,
 ## still there behind `--pollen-veil`).
@@ -113,7 +115,7 @@ const AIM_EVERY := 0.08
 var ground_at: Callable = func(_p: Vector2) -> float: return 0.0
 var takes: Callable = func(_p: Vector2) -> bool: return true
 var scene: Node
-## The God Hand's handful (plate), or null: the handful gathers there.
+## A thrower's handful (plate), or null: the handful gathers there.
 var hand_at: Variant = null
 ## Microseconds the last frame's step took (for probes).
 var last_usec := 0

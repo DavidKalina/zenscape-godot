@@ -1,11 +1,13 @@
 extends Node3D
-## The God Hand (tools/blender_hand/god_hand.py): one right hand of light
-## that works the creation tools. It floats over the pointer's ground point,
-## and the tool in hand decides its gesture (NativeChunkEditor `hand_gesture`):
-## it pinches land up and pulls, presses it down like clay, rolls the water
-## ball in its palm and pops it, and throws pollen. Each gesture plays In, a
-## looping Hold and Out; in between it idles, bobbing, and now and then plays
-## one of Idle's variations (a stretch, a look at its palm...). It only shows
+## The God Hand (tools/blender_hand/god_hand.py): one right hand of light.
+## It shows for the whole world's reaches (WORLD) and the sky's cloud (SKY);
+## under `--hand-everywhere` it also works the creation tools, floating over
+## the pointer's ground point, the tool in hand deciding its gesture
+## (NativeChunkEditor `hand_gesture`): it pinches land up and pulls, presses
+## it down like clay, rolls the water ball in its palm and pops it, and
+## throws pollen. Each gesture plays In, a looping Hold and Out; in between it
+## idles, bobbing, and now and then plays one of Idle's variations (a
+## stretch, a look at its palm...). It only shows
 ## the work: the brushes, the ball and the pollen land where they would
 ## without it. `--no-hand` leaves it out.
 ##
@@ -73,9 +75,13 @@ const GESTURES := {"grip":"Rim","summon":"Reach","pinch":"Pinch","press":"Press"
 ## own cursors (scripts/land_clay.gd `_place_prop`). `--hand-everywhere` brings
 ## back the hand over the land, the void and every tool.
 const WORLD := ["rim","wall","flip","shake","turn","catch","sun"]
-## Material carried from the bar still rides in the hand, and the sky's cloud
-## is pulled by it, until the materials are their own cursors too.
-const CARRYING := ["cup","sprinkle","cloud","summon"]
+## The sky's cloud is still pulled by the hand (scripts/hand_reach.gd holding
+## "cloud": "summon" cups it as it forms, "cloud" pinches it, and a grown
+## tree's crown is taken with the same pinch) until the sky has verbs of its
+## own. Material carried from the bar never rides in the hand: it is its own
+## cursor (scripts/hand_materials.gd `Clump`), so "cup" (a water ball held)
+## and "sprinkle" (seed sown) show the hand only under `--hand-everywhere`.
+const SKY := ["cloud","summon"]
 static var everywhere := "--hand-everywhere" in OS.get_cmdline_user_args()
 const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold","WallHold","VoidHold","SnapHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
@@ -259,7 +265,7 @@ func _process(delta: float) -> void:
 	var working: String = editor.hand_gesture() if editor.active else ""
 	if not reach_gesture.is_empty(): working = reach_gesture
 	var wanted: bool = not reach_gesture.is_empty() or (editor.active and not editor.forming and editor.mode == "land" and (hit != null or not working.is_empty()))
-	if not everywhere: wanted = working in WORLD or working in CARRYING
+	if not everywhere: wanted = working in WORLD or working in SKY
 	if held_off: wanted = false
 	# Never in the wanderer's eyes (scripts/wanderer_eye.gd).
 	var wanderer: Node = scene.get("wanderer")
@@ -423,12 +429,13 @@ func _rise_clear(size: float, delta: float) -> void:
 	_lift = lerpf(_lift,need,1.0-exp(-(LIFT_UP if need > _lift else LIFT_DOWN)*delta))
 	position.y += _lift
 
-## Pollen (scripts/pollen_cloud.gd) gathers in the palm while the hand is
-## free, and is thrown when a Sprinkle clip's Handful mark drops, at the
-## handful's speed.
+## Under `--hand-everywhere`, pollen (scripts/pollen_cloud.gd) gathers in the
+## palm while the hand is free, and is thrown when a Sprinkle clip's Handful
+## mark drops, at the handful's speed. Otherwise seed is thrown from the
+## material's own cursor (scripts/hand_materials.gd `_sow`), or throws itself.
 func _sow(delta: float, shown: bool) -> void:
 	var cloud: Node3D = editor.get("handful")
-	if cloud == null or not "hand_at" in cloud or _handful < 0: return
+	if not everywhere or cloud == null or not "hand_at" in cloud or _handful < 0: return
 	var clip := String(player.current_animation)
 	if not shown or not (gesture.is_empty() or gesture == "sprinkle" or clip.begins_with("Sprinkle")):
 		cloud.hand_at = null

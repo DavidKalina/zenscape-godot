@@ -124,31 +124,10 @@ const CELL := 1.5
 const HEADING_RUN := 0.6
 ## The held prop turns toward the way the hand goes at PROP_TURN (1/s).
 const PROP_TURN := 6.0
-## The prop as its own cursor (`_place_prop`). Its working end follows the
-## pointer on a stiff spring (1/s², 1/s: about 0.1 s to settle, barely a
-## trail) and hovers PROP_HOVER metres over the land; while a verb works it
-## sits PROP_PRESS_IN into it. Its height rides a soft spring, so it bounces
-## as it lands and as it lifts off.
-const PROP_FOLLOW := 900.0
-const PROP_FOLLOW_DAMP := 55.0
-const PROP_HOVER := 0.3
-const PROP_PRESS_IN := 0.05
-const PROP_DROP := 320.0
-const PROP_DROP_DAMP := 16.0
-## The handle leads the working end by PROP_LEAN_SPEED degrees per m/s of
-## pointer speed, at most PROP_MAX_LEAN, on a loose spring (a wobble upright
-## on a stop). Under PROP_STILL m/s it is still: its way holds, and after a
-## moment it bobs PROP_BOB metres at PROP_BOB_HZ and sways PROP_SWAY degrees.
-const PROP_LEAN_SPEED := 1.6
-const PROP_MAX_LEAN := 20.0
-const PROP_LEAN_SPRING := 160.0
-const PROP_LEAN_DAMP := 9.0
-const PROP_STILL := 0.3
-const PROP_BOB := 0.035
-const PROP_BOB_HZ := 0.45
-const PROP_SWAY := 2.5
-## How quickly (1/s) it grows in and shrinks away.
-const PROP_SHOW := 7.0
+## The prop as its own cursor (`_place_prop`) moves as a material carried
+## from the bar does (scripts/cursor_motion.gd): pinned by its working end,
+## hovering, dropping onto the land on a press, leaning and idling.
+const CursorMotion = preload("res://scripts/cursor_motion.gd")
 const GodHand = preload("res://scripts/god_hand.gd")
 
 enum State { IDLE, PENDING, DRAG, HOLD }
@@ -228,19 +207,8 @@ var _cells_points := -1
 var _prop: Node3D
 var _prop_way := Vector2.ZERO
 var _prop_last: Variant = null
-## The prop as a cursor: its working end (plate), how far it stands over the
-## land, the handle's lead (degrees), and their springs' speeds; how far it
-## has grown in (0..1), how long it has been still, and its bob's clock.
-var _prop_tip := Vector3.ZERO
-var _prop_tip_v := Vector2.ZERO
-var _prop_gap := 0.0
-var _prop_gap_v := 0.0
-var _prop_lean := 0.0
-var _prop_lean_v := 0.0
-var _prop_shown := 0.0
-var _prop_still := 0.0
-var _prop_clock := 0.0
-var _prop_placed := false
+## The prop as a cursor: how it moves (its working end, lean, bob, growing).
+var _prop_motion := CursorMotion.new()
 var _prop_depth := 0.0
 ## Where the verb in hand works (plate), set with its gesture, or null.
 var _work_at: Variant = null
@@ -282,8 +250,7 @@ func _take_prop() -> void:
 		_prop.name = "HeldTool"
 		_prop.visible = false
 		_prop_depth = _tip_depth(_prop)
-		_prop_placed = false
-		_prop_shown = 0.0
+		_prop_motion.reset()
 		editor.terrain.add_child(_prop)
 
 ## The tool `id`, made if it has not been yet (it is not taken into the
@@ -833,7 +800,8 @@ func _fall(p: Vector2) -> Vector2:
 ## The tool is its own cursor (docs/design/tools/PLAN.md "The hand at the
 ## rim"): no hand holds it. Its working end sits on the pointer's ground point,
 ## or on the point the verb works (`hand_gesture`), so the cursor stays exact;
-## the life is in how it hangs from there. It hovers PROP_HOVER over the land,
+## the life is in how it hangs from there (scripts/cursor_motion.gd, which a
+## material carried from the bar shares). It hovers 0.3 m over the land,
 ## bobbing and swaying a little once still; it drops onto the land when a verb
 ## takes hold, bouncing as it lands, and springs back up when it lets go; it
 ## leans the tool's `prop_tilt` toward the way it goes (the last way it went
@@ -860,61 +828,20 @@ func _place_prop(delta: float) -> void:
 		var holding: String = reach.holding
 		want = working or holding in ["land","feather"] or (holding.is_empty() and reach.hover_zone == "land")
 		want = want and (hit != null or (working and _work_at != null))
-	_prop_shown = move_toward(_prop_shown,1.0 if want else 0.0,delta*PROP_SHOW)
-	_prop.visible = _prop_shown > 0.0
+	var motion := _prop_motion
+	_prop.visible = motion.show(want,delta)
 	if not _prop.visible:
-		_prop_placed = false
 		_prop_last = null
 		return
 	var goal: Variant = _work_at if working and _work_at != null else hit
-	if goal == null: goal = _prop_tip
-	var target: Vector3 = goal
-	if not _prop_placed:
-		_prop_tip = target
-		_prop_tip_v = Vector2.ZERO
-		_prop_gap = PROP_HOVER*2.0
-		_prop_gap_v = 0.0
-		_prop_lean = 0.0
-		_prop_lean_v = 0.0
-		_prop_way = Vector2.ZERO
-		_prop_placed = true
-	# Across the land: a stiff spring, so the tip is under the pointer.
-	var flat := Vector2(_prop_tip.x,_prop_tip.z)
-	_prop_tip_v += ((Vector2(target.x,target.z)-flat)*PROP_FOLLOW-_prop_tip_v*PROP_FOLLOW_DAMP)*delta
-	flat += _prop_tip_v*delta
-	var ground: Variant = editor.data.ground_height(flat)
-	var floor_y: float = float(ground) if ground != null else target.y
-	if working and _work_at != null: floor_y = maxf(floor_y,target.y)
-	var speed := _prop_tip_v.length()
-	_prop_still = _prop_still+delta if speed < PROP_STILL else 0.0
-	_prop_clock += delta
-	# Height over the land: in contact while a verb works, else hovering, with
-	# a bob that eases in once it has been still a moment.
-	var idle := smoothstep(0.3,1.2,_prop_still)
-	var gap_goal := -PROP_PRESS_IN if working else PROP_HOVER+sin(_prop_clock*TAU*PROP_BOB_HZ)*PROP_BOB*idle
-	_prop_gap_v += ((gap_goal-_prop_gap)*PROP_DROP-_prop_gap_v*PROP_DROP_DAMP)*delta
-	_prop_gap += _prop_gap_v*delta
-	_prop_tip = Vector3(flat.x,floor_y+_prop_gap,flat.y)
-	# Its way: toward where it goes, held when it stops.
-	if speed > PROP_STILL:
-		_prop_way = _prop_way.lerp(_prop_tip_v.normalized(),1.0-exp(-PROP_TURN*delta))
-	if _prop_way.length() < 0.1:
-		# At rest it leans across the view, as the roll's icon leans.
-		var right: Vector3 = editor.terrain.global_basis.inverse()*scene.camera.global_basis.x
-		_prop_way = Vector2(-right.x,-right.z).normalized()
-	# The drag: the handle leads by the speed, and wobbles back on a stop.
-	var lean_goal := minf(speed*PROP_LEAN_SPEED,PROP_MAX_LEAN)
-	_prop_lean_v += ((lean_goal-_prop_lean)*PROP_LEAN_SPRING-_prop_lean_v*PROP_LEAN_DAMP)*delta
-	_prop_lean += _prop_lean_v*delta
-	var sway := sin(_prop_clock*TAU*PROP_BOB_HZ*0.5+0.7)*PROP_SWAY*idle
-	var way := Vector3(_prop_way.x,0.0,_prop_way.y).normalized()
-	var axis := way.cross(Vector3.UP).normalized()
-	var tilt := deg_to_rad(-tool.prop_tilt()+_prop_lean+sway)
-	var facing := Basis(Vector3.UP,atan2(way.x,way.z))
-	var turn := Basis(axis,tilt)*facing
-	var size := _prop_size()*smoothstep(0.0,1.0,_prop_shown)
+	if goal == null: goal = motion.tip
+	var at_work := working and _work_at != null
+	var ground := func(flat: Vector2) -> Variant: return editor.data.ground_height(flat)
+	motion.advance(delta,goal,working,ground,CursorMotion.across_view(editor.terrain,scene.camera),(goal as Vector3).y if at_work else -INF)
+	var turn := motion.turn(-tool.prop_tilt())
+	var size := _prop_size()*motion.size()
 	# Pinned by its working end: the grip stands its depth above the tip.
-	var grip := _prop_tip+turn*Vector3(0.0,_prop_depth*size,0.0)
+	var grip := motion.tip+turn*Vector3(0.0,_prop_depth*size,0.0)
 	_prop.transform = Transform3D(turn.scaled(Vector3.ONE*maxf(size,0.001)),grip)
 
 ## The prop's size: the God Hand's scale (1 at the hand's own size), which
