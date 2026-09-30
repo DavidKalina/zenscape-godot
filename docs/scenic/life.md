@@ -6,6 +6,7 @@ Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fir
 - `scripts/life_survey.gd`: what the land offers, read from the live world.
 - `scripts/life_moments.gd`: the rare moments, and when Bigfoot may come.
 - `scripts/life_bigfoot.gd`: the Bigfoot sighting: where he stands, what he does, when he leaves.
+- `scripts/life_trail.gd`: Bigfoot's trail, the signs before the sighting: tracks, a cairn, a snapped sapling, a far howl and wood knocks.
 - `scripts/life_models.gd`: low-poly procedural meshes for the fish, frogs and frogspawn, and the classic heron and deer (`--classic-life`). Fish and frogs come in kinds, one table entry each (`FISH_KINDS`, `FROG_KINDS`).
 - `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
 - `scripts/life_snakes.gd`: the grass snake, built and moved in code.
@@ -84,7 +85,8 @@ Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a dela
 | Heron lands | a pond with ≥ 2 fish settled for 30 s and wading water; daylight > 0.25; rain < 0.3 | 0.06 | 240 |
 | Deer at dawn | ≥ 6 trees; a forest edge that has stood 25 s; celestial phase 0.2-0.36; rain < 0.3 | 0.25 | 300 |
 | Rainbow after rain | ≥ 8 s of rain above 0.25 that then stops (< 0.06); richness ≥ 1.2; daylight > 0.35 | 0.6 once per rain | none |
-| Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather | 1200 |
+| Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather × trail boost (1-1.6) | 1200 |
+| Bigfoot's signs | see "Bigfoot's trail" below | up to 0.02 (marks), 0.015 (howl), 0.014 (knocks) × kinship | 240, 420, 300 |
 
 What each moment looks like:
 
@@ -94,7 +96,7 @@ What each moment looks like:
 - **Rainbow:** `celestial.moment_bow`, a new term in `studies/celestial.gd` next to `rainbow_strength` and `weather_bow`, rises to 0.85 over 6 s, holds 30 s and fades over 10 s. It is never saved.
 - **Bigfoot:** the ambient model steps out of the wood, watches you and goes back in, or strides across in front of it like the 1967 film. See "Bigfoot" below. The resident Bigfoot (`--bigfoot`) is untouched.
 
-`moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`.
+`moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`; for his trail, `bigfoot_tracks`, `bigfoot_cairn`, `bigfoot_branch`, `bigfoot_howl` and `bigfoot_knocks`.
 
 ## Bigfoot
 
@@ -176,6 +178,31 @@ He stands 2.21 m tall at scale 1, the model's own height, next to 3-6 m trees. H
 - `moments.force("bigfoot")`, `"bigfoot_watch"`, `"bigfoot_listen"` or `"bigfoot_stride"` start one now. They prefer an edge on screen and fall back to any edge with footing.
 - `--force-bigfoot` on the command line (or `--force-bigfoot=watch|listen|stride`) brings him as soon as the wood qualifies (the survey's trees and edge, not the hour, settle time or chance), and again 12 s after each sighting ends, for filming. Example: `godot --path . -- --force-bigfoot=stride`.
 - `--force-life` (or `--force-life=deer,heron,snake`, any of them) does the same for the deer, heron and grass snake: each comes as soon as the world has its place (a forest edge; wading water; a pond with a bank), skipping delay, chance and hour, and again 8 s after it has gone. Example: `godot --path . -- --force-life`, then paint a pond with a wood beside it.
+
+### Bigfoot's trail
+
+`scripts/life_trail.gd`, owned by LifeMoments and checked on its 2 s clock. He is a rumour before he is a glimpse: on a world that is becoming his kind of place, signs turn up earlier and more often than he does. Nothing marks or names them; photo mode labels only what it already did.
+
+**The gate** is a weaker sighting wood: ≥ 10 trees (`TRAIL_TREES`), richness ≥ 1.4, a forest edge with ≥ 5 trees near, held 3 minutes (`TRAIL_SETTLE`), scenery mode only. Sounds and in-the-dark marks also want no stroke for 20 s.
+
+**Kinship** (`kinship`, 0.2-1) scales every chance: trees (10 → 30), richness (1.4 → 3.0), the densest edge (5 → 12 trees), dead wood in the wood (an old stand), and water, then × 0.5 → 1 as the wood holds from 3 to 15 minutes.
+
+| Sign | When | Where |
+|---|---|---|
+| Tracks | a mark: at night or dawn (0.02 × kinship per check), or once for each night that goes by (0.5 × kinship; the plain eases through its night in seconds) | from a strong edge down to the nearest shore (≤ 11 m) and back into the wood; in snow with no water near, a loop out of the wood and back. Prints show in snow (`snow_cover` ≥ 0.2), on wet ground (`ground_wet` ≥ 0.35) or within 3 m of water, so on a dry day only the muddy end shows |
+| Stacked stones | a mark, as above | at the wood's edge nearest the elder stand: 3-5 flat stones, knee high |
+| Snapped sapling | a mark, as above | the same: snapped at 1.5-1.8 m and folded down, or bent into an arch with its crown to the ground |
+| Far howl | the last of dusk or night, still (air + swell < 0.45), clear (no rain or snow, cloud < 0.45, fog < 0.3) | 16 m beyond the elder stand, away from the camera |
+| Wood knocks | the sighting's light (dawn, dusk, night, day mist), no downpour | 4 m into the elder stand, 2-3 knocks 0.7-1.2 s apart |
+
+Marks are tracks (55%; a cairn or sapling when no tracks can be laid), a cairn (25%) or a sapling (20%), at most one per 240 s. The elder stand is the dead wood with the most dead wood and trees round it (old stands grow snags, logs and stumps, `emergence.gd`), or the densest square metre of wood without any.
+
+- **Prints:** big bare feet, about 0.42 m long (a person's are 0.27), 1.25 m a step (a person's is 0.75), toed out a little, two MultiMeshes (left, right) of the `reference_surface` material, laid on the ground's slope and toned by instance colour: dark mud, or blue snow shadow. They fade over 15 minutes of life, in 45 s of rain, in 2 minutes of falling snow, and snow tracks in a minute once the snow goes; fading prints shrink and fill toward the ground's tone. At most two sets of 20.
+- **Cairns and saplings:** one faceted mesh each from a seed, at most three; one goes when its ground moves more than 0.25 m or floods.
+- **Sound:** GenesisAudio answers the `bigfoot_howl` and `bigfoot_knocks` moments on the far bus and hushes the wood for 20 s (`docs/scenic/sound.md`). The howl, `far-howl.wav`, is synthesised (`tools/generate_nature_audio.py --howl`).
+- **The sighting:** every sign counts, and his chance per check grows by up to 60% (`SIGHTING_BOOST`) once four have been left (`boost()`, shown in `bigfoot_conditions().trail`).
+- **Saved:** LandLife's document carries `trail`: `{"version": 1, "count", "tracks": [{"kind", "fade", "prints": [x, z, yaw, left, ...]}], "marks": [[kind, x, z, yaw, seed]]}`. Loads rebuild them; a new world clears them; an undo keeps them if their ground still stands.
+- **Cost:** nothing per frame without tracks; with tracks, a fade step per frame and a redraw of at most 40 prints every 0.5 s. The elder stand is looked for only when a sign needs it.
 
 ## The grass snake
 
@@ -340,7 +367,8 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 - At the default overview (43 m) the snake is a line one or two pixels wide. Only its motion and wake show from there; it is for looking at up close.
 - The snake's cover is where it vanishes, not something it hides under: a painted-grass world has no blades for it to slip between.
 - Fish live in ponds only, not streams.
-- Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions.
+- Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions. Bigfoot's trail is saved.
+- Bigfoot's trail is unseen and unheard: the prints, cairn and sapling have not been rendered, and the howl has not been listened to. Snow tracks do not also show deer or foxes yet.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
 - Sound: `scripts/genesis_audio.gd` listens to `LandLife.arrived` and `LandLife.moment` and reads the survey for its beds (`docs/scenic/sound.md`).
 - `fidelity_fish.gd`, Bigfoot's catchable fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish and only matters with `--bigfoot`.

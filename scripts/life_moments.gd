@@ -3,7 +3,8 @@ extends Node3D
 ## (docs/scenic/life.md). A heron lands to fish in water that holds fish; deer
 ## step out of a wood's edge at dawn; a rainbow follows rain over a living
 ## place; and, rarest, Bigfoot steps out of a mature wood at dusk, looks at
-## you and is gone (scripts/life_bigfoot.gd). Each has its conditions, a
+## you and is gone (scripts/life_bigfoot.gd), after a trail of signs that he
+## is about (scripts/life_trail.gd). Each has its conditions, a
 ## delay after those first hold, a chance per check and a long cooldown, so
 ## they stay rare.
 ##
@@ -13,6 +14,7 @@ extends Node3D
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Bigfoot = preload("res://scripts/life_bigfoot.gd")
+const Trail = preload("res://scripts/life_trail.gd")
 const Rigs = preload("res://scripts/life_rigs.gd")
 const HeronRig = preload("res://scripts/life_rig_heron.gd")
 
@@ -67,7 +69,8 @@ const BIGFOOT_MIST := 0.45
 const BIGFOOT_AFTER_RAIN := 180.0
 const BIGFOOT_DAMP := 1.75
 const BIGFOOT_DOWNPOUR := 0.5
-## Chance per CHECK at full weight, then he is about for BIGFOOT_ABOUT s: he
+## Chance per CHECK at full weight (times the trail's boost, up to 1.6 once
+## signs have been left), then he is about for BIGFOOT_ABOUT s: he
 ## shows at the first edge the camera can see; if none comes, he was missed.
 const BIGFOOT_CHANCE := 0.006
 const BIGFOOT_ABOUT := 90.0
@@ -98,6 +101,8 @@ var _edge_since := -1.0
 var _rain := 0.0
 var _bow := {}
 var bigfoot: Node3D
+## His signs before the sighting (life_trail.gd).
+var trail: Node3D
 var _bigfoot_next := 0.0
 var _bigfoot_about := -1.0
 var _rich_since := -1.0
@@ -164,6 +169,9 @@ func setup(owner: Node3D) -> void:
 	bigfoot = Bigfoot.new()
 	add_child(bigfoot)
 	bigfoot.setup(self)
+	trail = Trail.new()
+	add_child(trail)
+	trail.setup(self)
 	# Painting keeps him away, and near him sends him off.
 	var editor: Node = life.editor
 	editor.stroke_started.connect(_stroke)
@@ -192,6 +200,7 @@ func clear() -> void:
 	_deer_state = {}
 	for deer in _deer: deer.root.visible = false
 	bigfoot.hide_now()
+	trail.clear()
 	_bigfoot_about = -1.0
 	_rich_since = -1.0
 	_water_since.clear()
@@ -208,6 +217,7 @@ func advance(step: float, real_step: float) -> void:
 	if bigfoot.showing():
 		bigfoot.advance(step,real_step)
 		if not bigfoot.showing(): _bigfoot_gone()
+	trail.advance(step)
 	_watch_rain(real_step)
 	if not _bow.is_empty(): _move_bow(step)
 
@@ -224,6 +234,13 @@ func _phase() -> float:
 func _in(window: Vector2) -> bool:
 	var phase := _phase()
 	return phase >= window.x and phase <= window.y
+
+## "dawn", "dusk", "night" or "day" by the celestial phase.
+func light_now() -> String:
+	if _in(DAWN): return "dawn"
+	if _in(DUSK): return "dusk"
+	var phase := _phase()
+	return "night" if phase < DAWN.x or phase > DUSK.y else "day"
 
 # --- Conditions ---------------------------------------------------------------
 
@@ -254,9 +271,11 @@ func _consider() -> void:
 	if _deer_state.is_empty() and clock >= _deer_next and survey.tree_count >= DEER_TREES and _edge_since >= 0.0 and clock-_edge_since >= DEER_DELAY and _in(DAWN) and _rain_now() < 0.3 and _roll(DEER_CHANCE):
 		_deer_arrive(edges)
 	_consider_bigfoot(survey,clock)
+	trail.consider(survey,clock)
 
 ## Probes only: start a moment now, skipping its delay, chance and hour but
-## not the place it needs. False when the world has no such place.
+## not the place it needs. False when the world has no such place. The
+## trail's signs are bigfoot_tracks, _cairn, _branch, _howl and _knocks.
 func force(kind: String) -> bool:
 	var survey: RefCounted = life.survey
 	if survey == null: return false
@@ -270,6 +289,8 @@ func force(kind: String) -> bool:
 			if not survey.forest_edges.is_empty() and _deer_state.is_empty():
 				_deer_arrive(survey.forest_edges)
 				return true
+		"bigfoot_tracks","bigfoot_cairn","bigfoot_branch","bigfoot_howl","bigfoot_knocks":
+			return trail.force(kind.trim_prefix("bigfoot_"))
 		"bigfoot","bigfoot_watch","bigfoot_listen","bigfoot_stride":
 			if bigfoot.showing(): return false
 			var how := kind.trim_prefix("bigfoot").trim_prefix("_")
@@ -608,7 +629,8 @@ func bigfoot_conditions() -> Dictionary:
 	return {"hidden":hidden,"trees":trees,"richness":snappedf(richness,0.01),"edges":edges,"rich":rich,
 		"rich_for":snappedf(clock-_rich_since,0.1) if _rich_since >= 0.0 else -1.0,"settled":settled,"quiet":quiet,
 		"phase":snappedf(_phase(),0.001),"light":light,"weather":weather,"cooldown":snappedf(maxf(0.0,_bigfoot_next-clock),0.1),
-		"about":_bigfoot_about >= clock,"chance":BIGFOOT_CHANCE*light*weather if hidden and settled and quiet and clock >= _bigfoot_next else 0.0}
+		"about":_bigfoot_about >= clock,"trail":trail.conditions(),
+		"chance":BIGFOOT_CHANCE*trail.boost()*light*weather if hidden and settled and quiet and clock >= _bigfoot_next else 0.0}
 
 ## Light he walks in: dawn and dusk 1, night BIGFOOT_NIGHT, day only in mist.
 func _bigfoot_light() -> float:

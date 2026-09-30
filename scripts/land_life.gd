@@ -290,6 +290,7 @@ func clear() -> void:
 ## kind lists [key, delay, age, here]: the survey cell (a bird's slot), its own
 ## delay, the life-clock seconds since its conditions first held, and whether
 ## its creature had arrived. Moments are not saved; they come round again.
+## Bigfoot's trail (life_trail.gd) is: its signs stay where he left them.
 func document() -> Dictionary:
 	if not active: return {}
 	var saved := {}
@@ -300,13 +301,17 @@ func document() -> Dictionary:
 			if site.leaving or site.get("closing",false): continue
 			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here)])
 		saved[kind] = rows
-	return {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved}
+	var result := {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved}
+	var trail: Dictionary = moments.trail.document()
+	if not trail.is_empty(): result["trail"] = trail
+	return result
 
 static func valid_document(value: Variant) -> bool:
 	if not value is Dictionary: return false
 	if value.is_empty(): return true
 	if value.get("version") != float(DOCUMENT_VERSION) and value.get("version") != DOCUMENT_VERSION: return false
 	if not GardenData._number(value.get("clock"),0.0,1e9) or not value.get("sites") is Dictionary: return false
+	if value.has("trail") and not Moments.Trail.valid_document(value.trail): return false
 	for kind: Variant in value.sites:
 		if not DELAYS.has(kind) or not value.sites[kind] is Array or value.sites[kind].size() > 64: return false
 		for row: Variant in value.sites[kind]:
@@ -329,6 +334,7 @@ func restore_document(value: Dictionary) -> void:
 	# Sites carry their own ages, so the clock only has to not run backwards:
 	# moments keep cooldowns on it within a session.
 	clock = maxf(clock,float(value.clock))
+	moments.trail.restore(value.get("trail",{}))
 	for kind: String in value.sites:
 		var rows := {}
 		for row: Array in value.sites[kind]: rows[int(row[0])] = [float(row[1]),float(row[2]),bool(row[3])]
