@@ -217,9 +217,9 @@ func film_snake() -> void:
 	# From the side of its way to the frog, both in frame.
 	side = atan2(way.x,way.y)+PI*0.5
 	# From outside NOTICE, or it stops to watch the camera: a long lens instead.
-	distance = 7.5
+	distance = 6.6
 	polar = 1.12
-	scene.camera.fov = 22.0
+	scene.camera.fov = 18.0
 	look = head
 	mark("snake sets off for the frog")
 	var struck := -1.0
