@@ -293,6 +293,10 @@ var pointer_override: Variant = null
 ## (setting stones, flowers or reeds).
 const HandMaterials = preload("res://scripts/hand_materials.gd")
 var materials: HandMaterials
+## The faint ground mark of what is in hand (scripts/ground_marks.gd), made
+## with the tray.
+const GroundMarks = preload("res://scripts/ground_marks.gd")
+var marks: GroundMarks
 signal snapped(phase: float, step: bool)
 
 func setup(owner_scene: Node3D) -> void:
@@ -314,6 +318,9 @@ func setup(owner_scene: Node3D) -> void:
 			materials = HandMaterials.new()
 			add_child(materials)
 			materials.setup(scene,self)
+			marks = GroundMarks.new()
+			add_child(marks)
+			marks.setup(scene,self)
 
 # --- What the pointer reaches --------------------------------------------------
 
@@ -886,6 +893,7 @@ func _process(delta: float) -> void:
 		_step_trees(delta)
 		if not eye: _drive_hand_modeless()
 		if materials != null: materials.step(delta)
+		if marks != null: marks.step(delta)
 	elif not eye: _drive_hand()
 
 ## True while the camera looks out through the wanderer.
