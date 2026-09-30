@@ -233,3 +233,108 @@ Nothing has been seen on screen:
 - the borrowed Rim grip over open land
 - where the prop actually sits in the hand, its lean, and its size
 - whether the flat-shaded parts read as the icon's facets
+
+## The Hammer
+
+`scripts/clay_tools/hammer.gd`. A rock hammer with one verb, the blow; the
+gestures decide where the blows land.
+
+- **What is rock.** A blow cracks where the land already knows rock at the
+  spot, any of three ways: the tint layer carries a rock's paint (weight 0.4
+  or more and not the clay's earth colours: a range's granite, a pinch's
+  flank, earlier scree); the ground is at least 0.85 of the biome's
+  `rock_slope`, the gradient the terrain paints rock above; or it stands in
+  the rock band 1.8 m under the snowline.
+- **Crack** (tap on rock). Within `CRACK_RADIUS` (1.8 m), rock more than
+  `CRACK_DEPTH` (1.4 m) over the level is broken off: level is the highest
+  point there, less the depth. The whole cut applies inside 35% of the
+  radius and eases to the rim. Each point loses a seeded 0.72 to 1 share of
+  it, so the scar is rough. A peak loses its top, and a cliff's lip is
+  knocked off. The scar is painted a fresh pale grey (`#c4beb2`, up to 0.65).
+  - **Scree.** Each broken piece walks out of the scar, to the lowest
+    neighbour farther from the blow. Then it goes down the fall line while
+    the drop is steeper than `REPOSE` (0.7, tan 35°), and lies there as loose
+    rock. The loose rock then settles: wherever it stands more than 0.7 per
+    metre over a neighbour, half the excess runs downhill. Bedrock never
+    moves, so a cliff stays a cliff. The land's points are taken as equal
+    areas, so the heights' sum is kept exactly.
+  - Scree is painted in one of four pale broken-rock tones (`#bdb6a8`,
+    `#aea799`, `#c9c2b3`, `#b3aa98`), up to 0.9. It covers what was under it
+    by its thickness, fully from 0.15 m. A cell at least half scree loses
+    its grass and is marked hand-made, as the clay's dug earth is.
+  - Trees on moved ground that cannot hold it slide off (`shake_trees`
+    within the crack radius plus 8 m).
+- **Knock** (tap on anything else). A dent `KNOCK_DEPTH` (8 cm) deep over
+  `KNOCK_RADIUS` (1 m), on a `(1-t²)²` profile. No scree and no paint.
+- **The swing.** A tap winds the head back 38° over 0.09 s, then brings it
+  down to -14° over 0.05 s. The blow lands then, 0.14 s after the release, or
+  at once if anything ends it first (`finish`). The head recoils with one
+  bounce over 0.24 s, and the hand shows the Press pose for 0.2 s. The
+  swing turns a pivot inside the prop (`Swing`), so the clay's placement is
+  untouched.
+- **Drag.** The blow repeated every `STRIKE_GAP` (1.6 m, about a crack's
+  radius) along the path. Each blow is a crack or a knock, by the ground it
+  lands on, so a drag works a ridge line down. The whole drag is one undo
+  step. Blows land on the live ground, not on `clay.base`, because scree
+  from the last blow is part of what the next one strikes. Blows at that
+  spacing barely overlap.
+- **Hold.** A deliberate blow that lands at release, with nothing
+  following the pointer while held; the head waits wound back. The design
+  gave the hammer no drag and no hold. These are the blow again, not new
+  verbs. A hammer has no pinch, and a slow press or a sweep should strike,
+  not vanish into nothing.
+- **Shift** halves the radius and the depth (`FINE`). The size pips scale
+  both, so a bigger blow reaches further into the rock.
+- **Verbs reported:** `crack`, `knock`, `strikes`, or `fine_crack`,
+  `fine_knock`, `fine_strikes` with Shift.
+- **Radii for the ground mark** (`ground_marks.gd` `HAMMER_RADIUS`, now a
+  0.9 m placeholder): the crack reaches 1.8 m × the pips (0.9 m with Shift),
+  and the knock 1.0 m. Scree runs on downhill as far as the ground stays
+  steeper than repose; the probe's 8 m horn spilled it 4.9 to 5.9 m.
+- **Prop:** a hexagonal wood handle (`#9a7550`) with a pommel. Across its
+  foot is an octagonal head in `#7a6a5a`, with a flat face (`#9a8b7a`)
+  toward the drag, a four-sided pick behind, and a dark collar (`#584b3f`).
+  It tilts -30°.
+
+### Checked headless
+
+`tools/probe_tool_hammer.gd`:
+
+```sh
+godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_hammer.gd -- --modeless --no-title
+```
+
+- The pocket takes the hammer, the hand grips it, and the prop is built in
+  the icon's tint.
+- On grass a tap is a knock, 6 to 8 cm deep over 6 points, with nothing
+  raised. The smallest pip moves 1 point.
+- The Hand's pinch raises an 8.1 to 8.5 m horn with granite paint. A tap
+  just under its tip is a crack:
+  - The summit drops 1.0 to 1.3 m.
+  - Scree covers 10 to 19 points, down to the horn's foot, 4.9 to 5.9 m
+    out.
+  - The heights' sum moves 0.0000, and the true volume (a 0.2 m grid)
+    changes by at most 0.12 m³.
+  - The steepest scree edge is 0.707, against a repose of 0.70.
+  - 5/5 and 8/9 of the thick scree points are painted scree.
+  - The blow lands after the wind-up, not on the release.
+- Shift takes 0.51 to 0.64 m off the top against 1.02 to 1.08 m. The widest
+  pip takes 1.53 to 1.83 m off and moves 33 to 58 points, against 16.
+- A drag strikes along its path in one undo step. A hold changes nothing
+  while held and cracks at release.
+- Every blow is one undo step, and one undo restores the heights and the
+  tint exactly.
+- Esc gives back the Hand.
+
+### Unverified
+
+Nothing has been seen on screen:
+
+- whether a 1 m crack off a horn and a few points of scree read from the
+  default camera, and whether `CRACK_DEPTH` wants to be larger
+- whether the scree tones read as rubble beside the granite, and whether the
+  scar's fresh grey reads at all
+- whether an 8 cm knock is visible
+- the swing, the 0.14 s delay before a tap lands (anticipation or lag), and
+  the Press pose on impact
+- the prop's proportions, its lean and where it sits in the hand
