@@ -684,3 +684,32 @@ Nothing has been seen on screen:
 - whether a 0.24 m hotspot reads at all from 58 m out
 - the lane's edges and fill on slopes and at night, and the burst ring
 - the roll's new divider and the feather icon at 1.2 line width
+
+## The hand at the rim
+
+Decided 2026-09-30, once the linen HUD carried the verbs. The God Hand is for the
+whole world only. It shows for the rim's reaches (the rim and wall hover, spin,
+shake, flip, and the grip that turns the world) and fades out anywhere else
+(scripts/god_hand.gd `WORLD`). The shaping tools and the Feather are their own
+cursors, with no hand holding them. Material carried from the bar and the sky's
+cloud still ride in the hand (`CARRYING`) until the materials become cursors too.
+The void's snap plays without a hand until day and night move to the HUD.
+`--hand-everywhere` brings back the old hand.
+
+The prop as a cursor (scripts/land_clay.gd `_place_prop`):
+
+- **The tip is pinned.** Its working end sits on the pointer's ground point, or
+  on the point the verb works (`hand_gesture`), on a stiff spring (about 0.1 s).
+  The cursor stays exact, and the life comes from how the prop hangs off the tip.
+- **It hovers and lands.** It hovers `PROP_HOVER` (0.3 m) over the land. A press
+  brings it down at once, before the verb is decided, `PROP_PRESS_IN` into the
+  land, on a soft spring so it bounces as it lands and as it lifts.
+- **It leans.** It leans the tool's `prop_tilt` toward the way it goes. The
+  handle leads by the pointer's speed and wobbles upright on a stop.
+- **It idles.** Still for a moment, it bobs and sways a little.
+- **It grows and shrinks at the tip.** It grows in out of the tip and shrinks
+  back into it: over the land, with no material held, and not while the camera
+  moves.
+
+Still to come: the Hand slot becomes a sculptor's clay tool with a prop, the
+materials become cursors, and day and night move to the HUD in place of the snap.

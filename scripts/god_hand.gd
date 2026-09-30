@@ -67,6 +67,16 @@ const BLEND := 0.18
 ## until the tools have their own clips it borrows the rim grip's curled
 ## fingers and hooked thumb, over the land and lifted clear of it.
 const GESTURES := {"grip":"Rim","summon":"Reach","pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim","wall":"Wall","void":"Void","snap":"Snap","cloud":"Pinch"}
+## The hand is for the whole world (docs/design/tools/PLAN.md "The hand at the
+## rim"): it shows only for these, the rim's reaches and what they grip. The
+## land's tools and the void's snap go without it; the shaping tools are their
+## own cursors (scripts/land_clay.gd `_place_prop`). `--hand-everywhere` brings
+## back the hand over the land, the void and every tool.
+const WORLD := ["rim","wall","flip","shake","turn","catch","sun"]
+## Material carried from the bar still rides in the hand, and the sky's cloud
+## is pulled by it, until the materials are their own cursors too.
+const CARRYING := ["cup","sprinkle","cloud","summon"]
+static var everywhere := "--hand-everywhere" in OS.get_cmdline_user_args()
 const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold","WallHold","VoidHold","SnapHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
@@ -249,6 +259,7 @@ func _process(delta: float) -> void:
 	var working: String = editor.hand_gesture() if editor.active else ""
 	if not reach_gesture.is_empty(): working = reach_gesture
 	var wanted: bool = not reach_gesture.is_empty() or (editor.active and not editor.forming and editor.mode == "land" and (hit != null or not working.is_empty()))
+	if not everywhere: wanted = working in WORLD or working in CARRYING
 	if held_off: wanted = false
 	# Never in the wanderer's eyes (scripts/wanderer_eye.gd).
 	var wanderer: Node = scene.get("wanderer")

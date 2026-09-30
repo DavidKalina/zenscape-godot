@@ -123,6 +123,32 @@ const CELL := 1.5
 const HEADING_RUN := 0.6
 ## The held prop turns toward the way the hand goes at PROP_TURN (1/s).
 const PROP_TURN := 6.0
+## The prop as its own cursor (`_place_prop`). Its working end follows the
+## pointer on a stiff spring (1/s², 1/s: about 0.1 s to settle, barely a
+## trail) and hovers PROP_HOVER metres over the land; while a verb works it
+## sits PROP_PRESS_IN into it. Its height rides a soft spring, so it bounces
+## as it lands and as it lifts off.
+const PROP_FOLLOW := 900.0
+const PROP_FOLLOW_DAMP := 55.0
+const PROP_HOVER := 0.3
+const PROP_PRESS_IN := 0.05
+const PROP_DROP := 320.0
+const PROP_DROP_DAMP := 16.0
+## The handle leads the working end by PROP_LEAN_SPEED degrees per m/s of
+## pointer speed, at most PROP_MAX_LEAN, on a loose spring (a wobble upright
+## on a stop). Under PROP_STILL m/s it is still: its way holds, and after a
+## moment it bobs PROP_BOB metres at PROP_BOB_HZ and sways PROP_SWAY degrees.
+const PROP_LEAN_SPEED := 1.6
+const PROP_MAX_LEAN := 20.0
+const PROP_LEAN_SPRING := 160.0
+const PROP_LEAN_DAMP := 9.0
+const PROP_STILL := 0.3
+const PROP_BOB := 0.035
+const PROP_BOB_HZ := 0.45
+const PROP_SWAY := 2.5
+## How quickly (1/s) it grows in and shrinks away.
+const PROP_SHOW := 7.0
+const GodHand = preload("res://scripts/god_hand.gd")
 
 enum State { IDLE, PENDING, DRAG, HOLD }
 
@@ -200,6 +226,22 @@ var _cells_points := -1
 var _prop: Node3D
 var _prop_way := Vector2.ZERO
 var _prop_last: Variant = null
+## The prop as a cursor: its working end (plate), how far it stands over the
+## land, the handle's lead (degrees), and their springs' speeds; how far it
+## has grown in (0..1), how long it has been still, and its bob's clock.
+var _prop_tip := Vector3.ZERO
+var _prop_tip_v := Vector2.ZERO
+var _prop_gap := 0.0
+var _prop_gap_v := 0.0
+var _prop_lean := 0.0
+var _prop_lean_v := 0.0
+var _prop_shown := 0.0
+var _prop_still := 0.0
+var _prop_clock := 0.0
+var _prop_placed := false
+var _prop_depth := 0.0
+## Where the verb in hand works (plate), set with its gesture, or null.
+var _work_at: Variant = null
 
 static func enabled() -> bool:
 	return preload("res://scripts/modeless_input.gd").enabled()
@@ -229,6 +271,9 @@ func set_tool(id: String) -> bool:
 	if _prop != null:
 		_prop.name = "HeldTool"
 		_prop.visible = false
+		_prop_depth = _tip_depth(_prop)
+		_prop_placed = false
+		_prop_shown = 0.0
 		editor.terrain.add_child(_prop)
 	return true
 
@@ -650,9 +695,10 @@ func touched() -> Rect2:
 ## Drive the God Hand. `again` plays the gesture's In afresh even if it is
 ## already showing (the hover's ready pinch closes into the real one).
 func hand_gesture(gesture: String, point: Variant = null, again := false) -> void:
+	hand_set = gesture
+	_work_at = point if not gesture.is_empty() else null
 	var god: Node = scene.get("god_hand") as Node
 	if god == null: return
-	hand_set = gesture
 	god.reach_gesture = gesture
 	god.reach_point = point if not gesture.is_empty() else null
 	if gesture.is_empty(): god.reach_pace = 1.0
@@ -775,13 +821,117 @@ func _fall(p: Vector2) -> Vector2:
 
 # --- The held prop -------------------------------------------------------------------
 
-## The tool's stand-in prop rides in the God Hand: its grip between the index
-## and thumb tips (god_hand `hold_at`), its working end down toward the land,
-## leaning the tool's `prop_tilt` toward the way the hand is going (the last
-## way it went when it stops). Shown while the hand shows and no material is
-## held; sized with the hand.
+## The tool is its own cursor (docs/design/tools/PLAN.md "The hand at the
+## rim"): no hand holds it. Its working end sits on the pointer's ground point,
+## or on the point the verb works (`hand_gesture`), so the cursor stays exact;
+## the life is in how it hangs from there. It hovers PROP_HOVER over the land,
+## bobbing and swaying a little once still; it drops onto the land when a verb
+## takes hold, bouncing as it lands, and springs back up when it lets go; it
+## leans the tool's `prop_tilt` toward the way it goes (the last way it went
+## when it stops), and its handle leads its working end by the pointer's
+## speed, wobbling upright again on a stop. It grows out of the ground point as
+## it comes and shrinks back into it as it goes: over the land while no
+## material is held, and not while the camera moves. `--hand-everywhere` puts
+## it back in the God Hand (`_place_prop_in_hand`).
 func _place_prop(delta: float) -> void:
 	if _prop == null: return
+	if GodHand.everywhere:
+		_place_prop_in_hand(delta)
+		return
+	var reach: Node = scene.get("hand_reach")
+	var materials: Node = reach.get("materials") if reach != null else null
+	var carrying: bool = materials != null and not str(materials.get("held")).is_empty()
+	var wanderer: Node = scene.get("wanderer")
+	var eye: bool = wanderer != null and wanderer.get("active") == true
+	# A press comes down at once, before its verb is decided.
+	var working := state != State.IDLE or not hand_set.is_empty()
+	var hit: Variant = editor.pointer_hit
+	var want: bool = reach != null and reach.available() and not reach.camera_moving() and not carrying and not eye
+	if want:
+		var holding: String = reach.holding
+		want = working or holding in ["land","feather"] or (holding.is_empty() and reach.hover_zone == "land")
+		want = want and (hit != null or (working and _work_at != null))
+	_prop_shown = move_toward(_prop_shown,1.0 if want else 0.0,delta*PROP_SHOW)
+	_prop.visible = _prop_shown > 0.0
+	if not _prop.visible:
+		_prop_placed = false
+		_prop_last = null
+		return
+	var goal: Variant = _work_at if working and _work_at != null else hit
+	if goal == null: goal = _prop_tip
+	var target: Vector3 = goal
+	if not _prop_placed:
+		_prop_tip = target
+		_prop_tip_v = Vector2.ZERO
+		_prop_gap = PROP_HOVER*2.0
+		_prop_gap_v = 0.0
+		_prop_lean = 0.0
+		_prop_lean_v = 0.0
+		_prop_way = Vector2.ZERO
+		_prop_placed = true
+	# Across the land: a stiff spring, so the tip is under the pointer.
+	var flat := Vector2(_prop_tip.x,_prop_tip.z)
+	_prop_tip_v += ((Vector2(target.x,target.z)-flat)*PROP_FOLLOW-_prop_tip_v*PROP_FOLLOW_DAMP)*delta
+	flat += _prop_tip_v*delta
+	var ground: Variant = editor.data.ground_height(flat)
+	var floor_y: float = float(ground) if ground != null else target.y
+	if working and _work_at != null: floor_y = maxf(floor_y,target.y)
+	var speed := _prop_tip_v.length()
+	_prop_still = _prop_still+delta if speed < PROP_STILL else 0.0
+	_prop_clock += delta
+	# Height over the land: in contact while a verb works, else hovering, with
+	# a bob that eases in once it has been still a moment.
+	var idle := smoothstep(0.3,1.2,_prop_still)
+	var gap_goal := -PROP_PRESS_IN if working else PROP_HOVER+sin(_prop_clock*TAU*PROP_BOB_HZ)*PROP_BOB*idle
+	_prop_gap_v += ((gap_goal-_prop_gap)*PROP_DROP-_prop_gap_v*PROP_DROP_DAMP)*delta
+	_prop_gap += _prop_gap_v*delta
+	_prop_tip = Vector3(flat.x,floor_y+_prop_gap,flat.y)
+	# Its way: toward where it goes, held when it stops.
+	if speed > PROP_STILL:
+		_prop_way = _prop_way.lerp(_prop_tip_v.normalized(),1.0-exp(-PROP_TURN*delta))
+	if _prop_way.length() < 0.1:
+		# At rest it leans across the view, as the roll's icon leans.
+		var right: Vector3 = editor.terrain.global_basis.inverse()*scene.camera.global_basis.x
+		_prop_way = Vector2(-right.x,-right.z).normalized()
+	# The drag: the handle leads by the speed, and wobbles back on a stop.
+	var lean_goal := minf(speed*PROP_LEAN_SPEED,PROP_MAX_LEAN)
+	_prop_lean_v += ((lean_goal-_prop_lean)*PROP_LEAN_SPRING-_prop_lean_v*PROP_LEAN_DAMP)*delta
+	_prop_lean += _prop_lean_v*delta
+	var sway := sin(_prop_clock*TAU*PROP_BOB_HZ*0.5+0.7)*PROP_SWAY*idle
+	var way := Vector3(_prop_way.x,0.0,_prop_way.y).normalized()
+	var axis := way.cross(Vector3.UP).normalized()
+	var tilt := deg_to_rad(-tool.prop_tilt()+_prop_lean+sway)
+	var facing := Basis(Vector3.UP,atan2(way.x,way.z))
+	var turn := Basis(axis,tilt)*facing
+	var size := _prop_size()*smoothstep(0.0,1.0,_prop_shown)
+	# Pinned by its working end: the grip stands its depth above the tip.
+	var grip := _prop_tip+turn*Vector3(0.0,_prop_depth*size,0.0)
+	_prop.transform = Transform3D(turn.scaled(Vector3.ONE*maxf(size,0.001)),grip)
+
+## The prop's size: the God Hand's scale (1 at the hand's own size), which
+## `--hand-cursor` keeps one size on screen.
+func _prop_size() -> float:
+	if not "--hand-cursor" in OS.get_cmdline_user_args(): return 1.0
+	return float(scene.distance)/GodHand.CURSOR_DISTANCE
+
+## How far the prop's working end hangs below its grip (m at size 1): the
+## lowest point of its meshes.
+static func _tip_depth(prop: Node3D) -> float:
+	var low := 0.0
+	for mesh: MeshInstance3D in prop.find_children("*","MeshInstance3D",true,false):
+		var to_prop := mesh.transform
+		var up := mesh.get_parent()
+		while up != prop and up != null:
+			to_prop = (up as Node3D).transform*to_prop
+			up = up.get_parent()
+		low = minf(low,(to_prop*mesh.get_aabb()).position.y)
+	return -low
+
+## `--hand-everywhere`: the prop rides in the God Hand, its grip between the
+## index and thumb tips (god_hand `hold_at`), its working end down toward the
+## land, leaning the tool's `prop_tilt` toward the way the hand is going.
+## Shown while the hand shows and no material is held; sized with the hand.
+func _place_prop_in_hand(delta: float) -> void:
 	var god: Node3D = scene.get("god_hand") as Node3D
 	var materials: Node = scene.hand_reach.get("materials") if scene.get("hand_reach") != null else null
 	var carrying: bool = materials != null and not str(materials.get("held")).is_empty()
@@ -795,7 +945,6 @@ func _place_prop(delta: float) -> void:
 		_prop_way = _prop_way.lerp((flat-(_prop_last as Vector2)).normalized(),1.0-exp(-PROP_TURN*delta))
 	_prop_last = flat
 	if _prop_way.length() < 0.1:
-		# At rest it leans across the view, as the roll's icon leans.
 		var right: Vector3 = editor.terrain.global_basis.inverse()*scene.camera.global_basis.x
 		_prop_way = Vector2(-right.x,-right.z).normalized()
 	var way := Vector3(_prop_way.x,0.0,_prop_way.y).normalized()
