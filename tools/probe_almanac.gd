@@ -311,7 +311,10 @@ func in_game() -> void:
 	await frames(20)
 	tap.call(almanac._tag_rect("wind").get_center())
 	check("Wind's tag: Customise at the wind row",materials.page_asked == ["customise","wind"],materials.page_asked)
-	# Quiet while another drag is under way.
+	check("the tag opens the Customise page",materials.pages != null and materials.pages.is_open())
+	# Quiet while another drag is under way. The tag opened the Customise page,
+	# which keeps the strip reached on purpose; close it first.
+	if materials.pages != null: materials.pages.close()
 	point.call(Vector2(720,450))
 	await frames(60)
 	reach.take_hold("scatter",Vector2(720,450))
