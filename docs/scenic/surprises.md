@@ -170,7 +170,8 @@ A running list of what looks off or is still unverified, gathered from the first
 - **[unseen]** has not been seen or heard rendered yet.
 
 ### Existing look, beyond these features
-- [bug] The grass snake does not draw in the rendered game at all (headless says it's visible and in place). Being diagnosed; first suspect is the balanced display fog painting ground-hugging geometry as ground.
+- ~~[bug] The grass snake never drew in the rendered game.~~ Fixed on feature/sp-predation (281652f): its body wasn't bound to the skeleton. The user has seen it and likes it.
+- [tune] The snake is small. Being made bigger by default (about 1.5x), with seeded size variety per visit (about 0.8-1.3x).
 - [look] Open water is nearly invisible from most angles; fish seem to float in a green hollow.
 - [look] Fireflies draw as faint square quads in dusk fog (fog applied to their additive quads).
 - [look] Broadleaf crowns read pale lilac-white in summer and autumn, not green or gold. Check the stand tint, and whether autumn tint reaches that kind.
