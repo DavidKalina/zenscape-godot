@@ -205,7 +205,9 @@ func run() -> void:
 	check("before HOLD_SECONDS the press is undecided",clay.state == 1,clay.state)
 	await frames(8)
 	check("held still past HOLD_SECONDS: a pinch",clay.verb == "pinch" and clay.state == 3,[clay.verb,clay.state])
-	check("the hand closes into a pinch",hand == null or (hand.reach_gesture == "pinch" and String(hand.player.current_animation) == "PinchIn"),[hand.reach_gesture,hand.player.current_animation] if hand != null else "")
+	# The God Hand stays at the rim (docs/design/tools/PLAN.md "The hand at the
+	# rim"): the pinch is named for it but it does not show over the land.
+	check("the pinch is the verb in hand, the God Hand not shown",clay.hand_set == "pinch" and (hand == null or not hand.visible),[clay.hand_set,hand.visible if hand != null else ""])
 	button(spot,false)
 	await settled()
 	check("a pinch let go without moving keeps nothing",worked.back() == ["pinch",false] and data.heights == base and data._undo.size() == undo0,worked.back())
