@@ -4,8 +4,9 @@ extends Control
 ## the left edge, one shaping tool tucked into each stitched pocket, and under
 ## a double stitched line three pips for the size of whatever is in hand.
 ## What the hand SHAPES with; the materials bar (scripts/materials_tray.gd)
-## holds what it adds. One thing is in hand across both: the bare Hand unless
-## a material is taken, and then the Hand's pocket is stitched round faintly,
+## holds what it adds. One thing is in hand across both: the Modeller (the
+## first pocket, id `hand`, a sculptor's boxwood modelling tool) unless a
+## material is taken, and then the Modeller's pocket is stitched round faintly,
 ## "put this down".
 ##
 ## The tools not built yet show as undiscovered silhouettes (UNBUILT) until
@@ -57,7 +58,7 @@ var ui_scale := 1.0
 var shown := 0.0
 var awake := 0.0
 ## The tool in hand, and whether a material is held instead (then no tool is
-## pressed and the Hand shows the put-down cue).
+## pressed and the Modeller's pocket shows the put-down cue).
 var tool := "hand"
 var material_held := false
 ## The size level (index into SIZES) and the held thing's tint for its pip.

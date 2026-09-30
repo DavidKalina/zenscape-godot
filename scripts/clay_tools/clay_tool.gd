@@ -3,7 +3,7 @@ extends RefCounted
 ## clay (scripts/land_clay.gd) reads the gesture: it decides from the shape
 ## and timing of a press whether it is a tap, a drag or a hold-then-drag, and
 ## reads Shift when it decides. The tool in hand says what that verb does to
-## the land. Every tool keeps the Hand's grammar; only what the gestures do
+## the land. Every tool keeps the Modeller's grammar; only what the gestures do
 ## changes.
 ##
 ## A tool is one script in scripts/clay_tools/, named for its id in the tool
@@ -29,7 +29,7 @@ extends RefCounted
 ## - A tap: `tap(fine)`. The tool opens and closes its own undo step if it
 ##   keeps anything (`clay.open_stroke()` ... `clay.close_stroke()`), or none.
 ## - `frame(delta)` every frame, for anything that runs on after a press (the
-##   Hand's poke rings out); `finish()` ends it at once (an undo, a new press,
+##   Modeller's poke rings out); `finish()` ends it at once (an undo, a new press,
 ##   a change of tool).
 
 ## The clay working the land (scripts/land_clay.gd), set when the tool is made.
@@ -67,10 +67,10 @@ func mark_size() -> Vector2: return Vector2.ZERO
 ## (land_clay TURNED): clay pushed aside.
 func turns_lip(_verb: String) -> bool: return false
 
-## The stand-in prop the hand holds, or null (the bare Hand). Built once when
-## the tool is first taken, in the terrain's space, with the handle's grip at
-## the origin and the tool's working end down -Y. A Blender glb replaces the
-## body of this one function later.
+## The stand-in prop, the tool's own cursor over the land, or null for none.
+## Built each time the tool is taken, in the terrain's space, with the
+## handle's grip at the origin and the tool's working end down -Y. A Blender
+## glb replaces the body of this one function later.
 func build_prop() -> Node3D: return null
 
 ## Degrees the prop leans off upright toward the way the hand is going (the

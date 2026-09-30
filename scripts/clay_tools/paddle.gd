@@ -1,5 +1,5 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
-## The Paddle, "Mass" (docs/design/tools/PLAN.md): the Hand's grammar with a
+## The Paddle, "Mass" (docs/design/tools/PLAN.md): the Modeller's grammar with a
 ## broad blade, for moving a lot of land softly.
 ##
 ## - **Drag:** a sweep. The blade pushes the earth under it ahead and aside:
@@ -56,8 +56,8 @@ const NARROW := 0.5
 ## The ground mark (`mark_size`): the pat's reach across the view, and
 ## MARK_DEPTH of it toward the camera. The pat is round, but the design draws
 ## the paddle's mark as an ellipse twice as wide as it is deep (its 180×54 px
-## sketch against the Hand's 96×58 loop), a blade's footprint, so it never
-## reads as the Hand's loop grown larger.
+## sketch against the Modeller's 96×58 loop), a blade's footprint, so it never
+## reads as the Modeller's loop grown larger.
 const MARK_DEPTH := 0.5
 ## The stand-in prop, metres at the hand's own size: the icon's tint
 ## (scripts/hud_icons.gd "paddle") on the blade, a darker handle, a lighter

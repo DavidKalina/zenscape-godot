@@ -4,7 +4,7 @@ extends Node
 ## sketch on the land under the ghost hand of what a press there will touch.
 ## The 3D hand stays the cursor; this is only its shadow of intent.
 ##
-## - **Hand:** a soft stitched loop with a faint fill, the thumb's reach
+## - **Modeller** (id `hand`): a soft stitched loop with a faint fill, the thumb's reach
 ##   (hand.gd RUB_RADIUS, between the groove's half-width and the palm).
 ## - **Paddle:** a wide stitched ellipse, long across the view.
 ## - **Chisel:** a hard square in one solid line, the only solid mark, laid in
@@ -78,7 +78,7 @@ const NIGHT_DIM := 0.55
 ## Sizes in metres at size 1 (the roll's middle pip; ×0.6 and ×1.5 either
 ## side). Each tool says its own (clay_tool.gd `mark_size`, read from the
 ## clay's tool of that id), so a tool's reach and its mark cannot drift apart:
-## the Hand's thumb rub (1.6 m), the paddle's pat across the view (3 × 1.5 m),
+## the Modeller's thumb rub (1.6 m), the paddle's pat across the view (3 × 1.5 m),
 ## the chisel's notch (a 0.8 m half-square), the hammer's crack (1.8 m). These
 ## are the fallbacks, for a tool that gives none or a scene without the clay:
 ## the design's proportions against the hand's 96×58 px sketch (the paddle

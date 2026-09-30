@@ -305,7 +305,7 @@ func run() -> void:
 	# --- Esc gives back the Hand ---
 	await key(KEY_ESCAPE)
 	check("Esc puts the Feather back: the Hand again",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
-	check("its prop is gone",clay.get("_prop") == null or not is_instance_valid(clay.get("_prop")))
+	check("its prop gives way to the Modeller's",not is_instance_valid(prop) and clay.get("_prop") is Node3D and (clay.get("_prop") as Node3D).find_children("*","MeshInstance3D",true,false).size() >= 3)
 	await hover(spot)
 	check("the hand hovers ready to pinch again",hand == null or hand.reach_gesture == "pinch",hand.reach_gesture if hand != null else "")
 	check("still no undo step, heights unchanged",data._undo.size() == undo0 and data.heights == base)

@@ -10,7 +10,7 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##   pointer) shows where it will go, and the land is untouched. A wire is
 ##   pulled taut between two points and then drawn through; the line is the
 ##   preview, the release is the cut. Cut live, the gorge would have to follow
-##   the pointer's path (a groove, the Hand's thumb) or be torn up and recut
+##   the pointer's path (a groove, the Modeller's thumb) or be torn up and recut
 ##   each frame as the far end moved.
 ## - **Hold, then drag up or down:** a slice. Everything within SLICE_RADIUS of
 ##   the press that stands above a level plane is cut down to it: a hilltop

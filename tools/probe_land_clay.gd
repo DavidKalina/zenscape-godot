@@ -146,6 +146,9 @@ func run() -> void:
 		quit(1)
 		return
 	clay.worked.connect(func(verb: String, kept: bool) -> void: worked.append([verb,kept]))
+	var prop: Node3D = clay.get("_prop")
+	var parts: Array = prop.find_children("*","MeshInstance3D",true,false) if prop != null else []
+	check("the Modeller, the tool in hand from the start, has its stand-in prop",clay.tool_id == "hand" and parts.size() >= 3 and ((parts[-1] as MeshInstance3D).material_override as StandardMaterial3D).albedo_color == Color("e0a07a"),parts.size())
 	if spring != null: spring.sprung.connect(func(_k: String, _s: float) -> void: sprung += 1)
 	await settled()
 	var data := editor.data

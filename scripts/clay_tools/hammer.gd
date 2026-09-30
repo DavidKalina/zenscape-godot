@@ -1,7 +1,7 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
 ## The Hammer, "Break" (docs/design/tools/PLAN.md): a rock hammer. It knocks
 ## chunks off rock and cracks it into scree. It has one verb, the blow, and
-## the Hand's grammar decides where the blows land.
+## the Modeller's grammar decides where the blows land.
 ##
 ## - **Tap:** a blow at the spot. On rock it cracks: the rock within
 ##   CRACK_RADIUS standing more than CRACK_DEPTH under the local top is left,

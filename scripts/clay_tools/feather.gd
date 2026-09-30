@@ -3,9 +3,9 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## "ZenScape HUD 5 Air" section C): wind held in hand. It is not a clay tool:
 ## it shapes no land, so it has no verbs here. It rides the clay's seam only
 ## for what every tool in hand shares: `LandClay.set_tool("feather")` puts the
-## quill in the ghost hand (`build_prop`, leaning `prop_tilt`), the hand grips
-## it over the land, and Esc, the Hand's pocket or taking a material give the
-## Hand back, as for any tool.
+## quill in hand (`build_prop`, leaning `prop_tilt`) as the cursor over the
+## land, and Esc, the Modeller's pocket or taking a material give the Modeller
+## back, as for any tool.
 ##
 ## Its gestures are the materials hand's (scripts/hand_materials.gd, "The
 ## Feather"), which takes a press on the land before the clay sees it and

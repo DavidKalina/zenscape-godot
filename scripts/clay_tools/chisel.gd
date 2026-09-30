@@ -1,5 +1,5 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
-## The Chisel, "Cut" (docs/design/tools/PLAN.md): the Hand's grammar with a
+## The Chisel, "Cut" (docs/design/tools/PLAN.md): the Modeller's grammar with a
 ## steel edge. It is the only tool that makes crisp rock: faces, cliffs,
 ## mesas, terraces. Everything it makes is a level flat and a steep face, and
 ## the faces take the range's granite while the flats stay ground.

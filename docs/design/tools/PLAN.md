@@ -1,7 +1,8 @@
 # Shaping tools: paddle, chisel, wire and hammer
 
 The tool roll (docs/design/materials-tray/HUD-4c.md) holds five shaping tools:
-the Hand, and four that were undiscovered silhouettes until they had verbs.
+the Modeller (once the Hand, see "The Modeller"), and four that were
+undiscovered silhouettes until they had verbs.
 This plan gives them verbs. The user approved the design on 2026-09-30.
 
 ## The design
@@ -13,7 +14,7 @@ it is taken off `UNBUILT`, with no discovery unlock.
 
 | Tool | Tag | Drag | Hold, then drag | Tap | Shift |
 |---|---|---|---|---|---|
-| Hand | Mould | the thumb: a groove when slow, a rub when fast | the pinch: up raises, down sinks, a horn when tall | a poke that rings out | the palm; a smaller pinch |
+| Modeller (id `hand`; was the Hand) | Mould | the thumb: a groove when slow, a rub when fast | the pinch: up raises, down sinks, a horn when tall | a poke that rings out | the palm; a smaller pinch |
 | Paddle | Mass | a broad sweep pushing earth ahead and aside, leaving a long soft trough with a ridge on either bank | a wide round-shouldered swell (several times the pinch's radius), up or down | a broad pat that flattens | a narrower blade |
 | Chisel | Cut | a flat shelf at the press's height with a steep face downhill (terraces) | a flat-topped mesa or a sunk pit with cliff walls; its height follows the pointer | a step or notch | shallower |
 | Wire | Slice | a narrow deep gorge, near-vertical walls, rock painted on the walls | slices a hilltop off level at the pointer's height | (none yet) | shallower |
@@ -50,11 +51,12 @@ replaces the body of that one function later.
 - **Faceted.** `ClayTool.part(mesh, colour, at, size)` flat-shades a
   primitive: every face its own normal, like the land's facets and the HUD
   icons' facets. It adds a little emission so the prop reads at night.
-- **Tint.** Each prop follows its icon's tint (`scripts/hud_icons.gd`): Hand
+- **Tint.** Each prop follows its icon's tint (`scripts/hud_icons.gd`): Modeller
   `#e0a07a`, Paddle `#c49a5e`, Chisel `#6f8aa6`, Wire `#b8683f`, Hammer
   `#7a6a5a`. A darker and a lighter tone of it pick out the parts.
 - **Tilt.** Each prop leans off upright toward the way the hand is going, as
-  the cursor sketches lean: Hand -12°, Paddle -24°, Hammer -30°. The Chisel
+  the cursor sketches lean: Modeller -20° (the Hand's was -12°), Paddle -24°,
+  Hammer -30°. The Chisel
   and the Wire are untilted. A negative tilt leans the working end forward
   into the drag, and the handle back. At rest the prop leans across the view.
 - **Where it rides.** The clay places the prop each frame. Its grip (the
@@ -711,5 +713,30 @@ The prop as a cursor (scripts/land_clay.gd `_place_prop`):
   back into it: over the land, with no material held, and not while the camera
   moves.
 
-Still to come: the Hand slot becomes a sculptor's clay tool with a prop, the
-materials become cursors, and day and night move to the HUD in place of the snap.
+Still to come: the materials become cursors, and day and night move to the HUD
+in place of the snap.
+
+## The Modeller
+
+Decided 2026-09-30, with the hand at the rim. The roll's first pocket held the
+bare Hand, whose `build_prop()` was null, so with the God Hand gone the default
+tool showed no cursor. It is now the Modeller, "Mould": a sculptor's boxwood
+modelling tool with the Hand's verbs unchanged (tap a poke, drag the thumb's
+groove or rub, Shift-drag the palm, hold-then-drag the pinch).
+
+- **Kept.** The internal id stays `hand` (`scripts/clay_tools/hand.gd`,
+  `LandClay.hand`, the roll's `TOOLS`, the ground marks' kind), and the verbs
+  keep their names, so saves, probes and signals do not churn. Only the label
+  (`scripts/hud_icons.gd` "hand": "Modeller · Mould"), the icon and the prop
+  are new.
+- **The prop.** A pale boxwood octagonal shaft through the grip with a darker
+  band at the grip, a short tapered point over it, and below a neck flaring
+  into a flattened seven-sided spatula in the tint, thin across the way it
+  pushes. Tilt -20°, held as a pencil is. The clay builds it at setup, since
+  the tool in hand from the start is never taken through `set_tool`.
+- **The icon.** The same tool laid on the diagonal, spatula down to the left,
+  point up to the right, with a band line at the grip and a line down the
+  spatula for its thumb-worn hollow; the finer 1.2 line, full opacity (the
+  Hand's was 0.82).
+- **Unverified.** Nothing of it has been seen rendered: the prop's size and
+  lean against the land, and the icon at the roll's size.

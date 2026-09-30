@@ -1,6 +1,10 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
-## The bare Hand (docs/scenic/modeless.md "Land as clay"), the tool the clay
-## starts with: the verbs the clay had before the tools, moved here unchanged.
+## The Modeller (docs/scenic/modeless.md "Land as clay"; docs/design/tools/PLAN.md
+## "The Modeller"), the tool the clay starts with: a sculptor's boxwood modelling
+## tool in the roll's first pocket, which was the bare Hand's. It keeps the
+## Hand's verbs, the ones the clay had before the tools, and their names (the
+## thumb, the palm, the pinch: what a sculptor's hand does with the tool), and
+## keeps the id `hand`, so saves, probes and `LandClay.hand` read as before.
 ##
 ## - **Tap:** a poke. A small dimple rings out at the spot and the land comes
 ##   back exactly; a resident nearby looks round. Nothing is kept, no undo step.
@@ -104,6 +108,24 @@ const POKE_STRENGTH := 0.7
 const BREACH_ANGLE := 50.0
 const BREACH_PAST := 0.4
 
+## The stand-in modelling tool, metres at the hand's own size: a pale boxwood
+## shaft, a short point standing over the grip, and a rounded spatula hanging
+## below it, its working end, in the icon's tint (scripts/hud_icons.gd "hand"),
+## the wood darkened by wet clay. A darker band of it marks the grip.
+const TINT := Color("e0a07a")
+const WOOD := Color("ecd2a2")
+const BAND := Color("b87c58")
+const SHAFT_LENGTH := 0.9
+const SHAFT_RADIUS := 0.032
+## The spatula's half extents (m): across, along the shaft, and thin across
+## the way it pushes (local z).
+const SPATULA := Vector3(0.1,0.17,0.03)
+## The point standing over the grip (m).
+const POINT_LENGTH := 0.18
+## The cursor sketch's lean: held as a pencil is, its spatula drawn through
+## the clay, so it leans further than the Hand's -12 did.
+const TILT := -20.0
+
 ## The thumb's rub share, 0..1.
 var rub := 0.0
 var poking := false
@@ -132,8 +154,7 @@ func pace() -> float: return 1.0+1.5*rub
 func worked_as(verb: String) -> String: return "groove" if verb == "thumb" else verb
 func stroke_radius() -> float: return _groove_hw()
 func turns_lip(verb: String) -> bool: return verb == "thumb"
-## The cursor sketch's lean; the bare Hand holds no prop.
-func prop_tilt() -> float: return -12.0
+func prop_tilt() -> float: return TILT
 
 ## The ground mark is the thumb's rub: between the groove's half-width and the
 ## palm's, and where a pinch starts.
@@ -424,3 +445,40 @@ func _end_poke() -> void:
 	clay.settle()
 	if clay.hand_set == "press": clay.hand_gesture("")
 	clay.worked.emit("poke",false)
+
+# --- The stand-in prop ------------------------------------------------------------------
+
+## A faceted boxwood modelling tool from primitives: an octagonal shaft through
+## the grip, a banded grip, a tapered point over it, and below, a neck that
+## flares into a flattened seven-sided spatula, thin across the way it pushes
+## (local z, turned to face the drag by the clay). Replaced by a Blender glb
+## later: only this function changes.
+func build_prop() -> Node3D:
+	var root := Node3D.new()
+	var top := 0.25
+	root.add_child(part(_prism(8),WOOD,Vector3(0.0,top-SHAFT_LENGTH*0.5,0.0),Vector3(SHAFT_RADIUS,SHAFT_LENGTH,SHAFT_RADIUS)))
+	root.add_child(part(_prism(8),BAND,Vector3(0.0,-0.02,0.0),Vector3(SHAFT_RADIUS*1.2,0.06,SHAFT_RADIUS*1.2)))
+	root.add_child(part(_prism(8,1.0,0.25),WOOD.lightened(0.1),Vector3(0.0,top+POINT_LENGTH*0.5,0.0),Vector3(SHAFT_RADIUS,POINT_LENGTH,SHAFT_RADIUS)))
+	var foot := top-SHAFT_LENGTH
+	root.add_child(part(_prism(8,1.8),WOOD,Vector3(0.0,foot-0.06,0.0),Vector3(SHAFT_RADIUS,0.12,SHAFT_RADIUS*0.7)))
+	root.add_child(part(_ball(),TINT,Vector3(0.0,foot-0.1-SPATULA.y*0.8,0.0),SPATULA))
+	return root
+
+## An upright n-sided prism, unit radius and height, tapering to `foot` of
+## its radius at the bottom and `top` of it at the top.
+static func _prism(sides: int, foot := 1.0, top := 1.0) -> Mesh:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = top
+	mesh.bottom_radius = foot
+	mesh.height = 1.0
+	mesh.radial_segments = sides
+	mesh.rings = 1
+	return mesh
+
+static func _ball() -> Mesh:
+	var mesh := SphereMesh.new()
+	mesh.radius = 1.0
+	mesh.height = 2.0
+	mesh.radial_segments = 7
+	mesh.rings = 4
+	return mesh

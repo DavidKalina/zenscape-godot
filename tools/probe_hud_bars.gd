@@ -6,6 +6,7 @@ extends SceneTree
 
 const Tray = preload("res://scripts/materials_tray.gd")
 const Roll = preload("res://scripts/tool_roll.gd")
+const Icons = preload("res://scripts/hud_icons.gd")
 var failures := 0
 
 func check(ok: bool, what: String) -> void:
@@ -62,6 +63,7 @@ func _init() -> void:
 	for i in range(30): await process_frame
 	check(roll.awake > 0.99,"roll comes out near the left edge")
 	check(roll._tag_rect().size.x > 0.0,"hand tag shows")
+	check(str(Icons.item("hand").get("label","")) == "Modeller · Mould","the first tool's tag reads Modeller · Mould")
 	roll.material_held = true
 	check(roll._tag_rect().size.x == 0.0,"no tool tag with a material held")
 	print("failures=%d" % failures)

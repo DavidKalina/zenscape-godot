@@ -8,16 +8,17 @@ extends Node
 ## tool roll, docs/design/tools/PLAN.md "The seam") says what each gesture does:
 ##
 ## - **Tap** (let go within HOLD_SECONDS, moved under MOVE_PIXELS): the tool's
-##   `tap`. The bare Hand pokes: a dimple rings out and the land comes back.
+##   `tap`. The Modeller (the roll's first tool, id `hand`) pokes: a dimple
+##   rings out and the land comes back.
 ##   (Props, trees and residents under the pointer never reach here:
 ##   hand_reach keeps their own grab.)
 ## - **Drag** (moved MOVE_PIXELS before HOLD_SECONDS): the tool's dabs, laid
-##   DAB_SPACING apart along the pointer's path. The Hand's thumb digs a
+##   DAB_SPACING apart along the pointer's path. The Modeller's thumb digs a
 ##   groove or rubs, by the pointer's speed; Shift, read when the drag is
 ##   decided, makes it the palm.
 ## - **Hold still** for HOLD_SECONDS, then drag: the tool's hold, following the
 ##   pointer's travel up or down the screen in metres standing at the spot.
-##   The Hand's is the pinch.
+##   The Modeller's is the pinch.
 ##
 ## Everything the tools share is here: each drag or hold is one undo step
 ## (opened when the verb is decided, closed at release); ground a stroke takes
@@ -33,7 +34,7 @@ extends Node
 ## `press`, `pull` and `release` (connected in studies/fidelity.gd). The tool
 ## roll picks the tool (scripts/hand_materials.gd calls `set_tool`).
 
-## Emitted when a press ends: `verb` is the tool's name for it (the Hand's are
+## Emitted when a press ends: `verb` is the tool's name for it (the Modeller's are
 ## "poke", "groove" (a thumb stroke, its rub share 0..1 in `last_rub`),
 ## "palm", "pinch" or "fine_pinch"); `kept` is whether the land changed and an
 ## undo step was added.
@@ -43,7 +44,7 @@ const ClayTool = preload("res://scripts/clay_tools/clay_tool.gd")
 ## The tools' scripts: scripts/clay_tools/<id>.gd for each tool roll id.
 const TOOL_PATH := "res://scripts/clay_tools/%s.gd"
 const HandTool = preload("res://scripts/clay_tools/hand.gd")
-## The Hand's groove, kept here for the probes that measure it.
+## The Modeller's groove, kept here for the probes that measure it.
 const GROOVE_HALF_WIDTH := HandTool.GROOVE_HALF_WIDTH
 const GROOVE_DEPTH := HandTool.GROOVE_DEPTH
 
@@ -60,7 +61,7 @@ const MAX_DABS := 64
 ## Dirt: where a stroke takes the ground down, the painted grass has caved in
 ## and bare earth shows. The tint layer's weight rises from nothing at
 ## DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens from DIRT
-## toward DIRT_DEEP by DIRT_DEEP_AT (the Hand's groove depth), so a groove's
+## toward DIRT_DEEP by DIRT_DEEP_AT (the Modeller's groove depth), so a groove's
 ## bed reads as a line from the overview. Both are muted, greyed earths, and
 ## the weight ramps over most of the bank, so the groove blends into the grass
 ## instead of standing as a saturated brown gash. The earth covers whatever
@@ -68,7 +69,7 @@ const MAX_DABS := 64
 ## its own weight, not only by the weight it adds: dug ground is earth. Where
 ## a tool that `turns_lip` raises ground LIP_TURNED metres or more the
 ## pushed-aside clay shows as a pale fringe, TURNED at up to TURNED_WEIGHT
-## (full by TURNED_FULL, the Hand's groove lip), so a groove is outlined on
+## (full by TURNED_FULL, the Modeller's groove lip), so a groove is outlined on
 ## both banks. A cell a stroke leaves at least DIRT_BARE bare loses its grass
 ## and blades and is marked hand-made, so cover does not creep back and
 ## nothing takes root in it. Dirt only ever deepens.
@@ -166,7 +167,7 @@ var speed := 0.0
 var refreshes := 0
 var dabs := 0
 var pinch_closes := 0
-## Rim notches the Hand's thumb has cut this session, and the last one:
+## Rim notches the Modeller's thumb has cut this session, and the last one:
 ## {"normal" (out of the plate), "at" (plate point on the rim), "bed" (m)},
 ## for probes.
 var notches := 0
@@ -181,7 +182,8 @@ var size_scale := 1.0
 var tool: ClayTool
 var tool_id := "hand"
 var _tools := {}
-## The Hand, always made: the probes read its state through the clay.
+## The Modeller (id `hand`), always made: the probes read its state through
+## the clay.
 var hand: HandTool
 
 ## For the tools (the plan's "What the clay gives a tool"): the plate point
@@ -197,7 +199,7 @@ var near_d := PackedFloat32Array()
 ## The gesture the clay last gave the God Hand ("" when it let it go).
 var hand_set := ""
 
-## The Hand's state, read by the probes through the clay.
+## The Modeller's state, read by the probes through the clay.
 var rub: float:
 	get: return hand.rub
 var last_rub: float:
@@ -253,6 +255,7 @@ func setup(owner_scene: Node3D) -> void:
 	name = "LandClay"
 	hand = _make("hand")
 	tool = hand
+	_take_prop()
 
 # --- The tool in hand -------------------------------------------------------------
 
@@ -265,6 +268,13 @@ func set_tool(id: String) -> bool:
 	finish_now()
 	tool = next
 	tool_id = id
+	_take_prop()
+	return true
+
+## The tool in hand's stand-in prop, in place of the last one's, hidden until
+## `_place_prop` shows it. The Modeller, the tool the clay starts with, has
+## one too, so it is built at setup as well as on a change of tool.
+func _take_prop() -> void:
 	if _prop != null: _prop.queue_free()
 	_prop = tool.build_prop()
 	_prop_last = null
@@ -275,7 +285,6 @@ func set_tool(id: String) -> bool:
 		_prop_placed = false
 		_prop_shown = 0.0
 		editor.terrain.add_child(_prop)
-	return true
 
 ## The tool `id`, made if it has not been yet (it is not taken into the
 ## hand), or null when there is no such tool. For readers that size something
@@ -459,7 +468,7 @@ func _drag_step(delta: float) -> void:
 	var data := editor.data
 	var heights := data.heights
 	_dirt_rect = Rect2()
-	# A tool's dab may queue more path (the Hand carrying a groove to the lip).
+	# A tool's dab may queue more path (the Modeller carrying a groove to the lip).
 	var k := 0
 	while k < _queued.size():
 		var p := _queued[k]

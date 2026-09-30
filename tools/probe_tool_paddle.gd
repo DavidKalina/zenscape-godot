@@ -347,7 +347,7 @@ func run() -> void:
 	# --- Esc gives back the Hand ---
 	await key(KEY_ESCAPE)
 	check("Esc puts the paddle back: the Hand again",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
-	check("its prop is gone",clay.get("_prop") == null or not is_instance_valid(clay.get("_prop")))
+	check("its prop gives way to the Modeller's",not is_instance_valid(prop) and clay.get("_prop") is Node3D and (clay.get("_prop") as Node3D).find_children("*","MeshInstance3D",true,false).size() >= 3)
 	reach.pointer_override = spot
 	motion(spot,Vector2.ZERO,false)
 	await frames(20)

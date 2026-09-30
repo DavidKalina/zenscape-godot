@@ -164,7 +164,10 @@ static func _build() -> void:
 	_add("crystal","Crystal","Quartz","#9b7fc9",["M7.5 21 L5.5 11 L8.5 6 L11.5 11 L9.5 21Z","M13 21 L12 8 L15 3 L18 8 L16.5 21Z"],[],8)
 	_add("snow","Frost","Winter","#7fbfd0",_snowflake(),[],9)
 	# Shaping tools (the tool roll).
-	_add("hand","Hand","Mould","#e0a07a",["M7 11.5 Q7 10 8.5 10 L16.5 10.5 Q18 10.6 17.8 12 L17 17 Q16 21.5 12 21.5 Q8 21.5 7.3 17Z","M7.2 11 L7 5.4 A1.25 1.25 0 0 1 9.5 5.3 L9.7 11Z","M10 10.5 L10.2 3.4 A1.25 1.25 0 0 1 12.7 3.5 L12.5 10.6Z","M12.9 10.7 L13.5 4.4 A1.2 1.2 0 0 1 15.9 4.7 L15.3 11Z","M15.6 11.2 L16.6 6.6 A1.1 1.1 0 0 1 18.7 7.1 L17.7 12Z","M7.6 15.5 L3.8 11.8 A1.3 1.3 0 0 1 5.6 9.9 L9.2 13Z"],["M9.5 15.5 Q12 17 15 14.8"],10,0.82)
+	# The Modeller (id "hand", the roll's first pocket, once the bare Hand's): a
+	# boxwood modelling tool laid on the diagonal, its spatula down to the left.
+	var modeller := _modeller()
+	_add("hand","Modeller","Mould","#e0a07a",modeller[0],modeller[1],10,1.0,1.2)
 	_add("paddle","Paddle","Mass","#c49a5e",["M5.5 12 Q5.5 9.5 8 9.5 H16 Q18.5 9.5 18.5 12 V19 Q18.5 22 15.5 22 H8.5 Q5.5 22 5.5 19Z","M10.7 9.6 V2.9 A1.3 1.3 0 0 1 13.3 2.9 V9.6Z"],["M9 13 V19 M15 13 V19","M10.9 5.6 H13.1"],11)
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
@@ -192,6 +195,27 @@ static func _build() -> void:
 		_add("plate_"+season,"Plate",season.capitalize(),SEASON_TINT[season],["M12 4.4 L21.4 9.6 L12 14.8 L2.6 9.6Z","M2.6 9.6 L12 14.8 L21.4 9.6 L21.4 12.6 L12 18 L2.6 12.6Z",_circle(20.3,16.8,1.2)],["M2.6 9.6 L12 14.8 L21.4 9.6","M4 17.4 Q12 22.8 19.2 17.6"],18,1.0,1.3)
 	_add("globe","Globe","Weather","#9fb4c0",[_circle(12,10,7.6),"M6 16.6 H18 L19.6 21.4 Q19.7 22 19.1 22 H4.9 Q4.3 22 4.4 21.4Z"],["M5.4 17.6 H18.6","M5.6 13.2 Q12 9.8 18.4 13.2","M9 6.6 L9 6.7 M14.6 5.6 L14.6 5.7 M12 9 L12 9.1 M16 9.6 L16 9.7 M7.6 10.2 L7.6 10.3"],19,1.0,1.5)
 	for deg: int in SOCK_DROOPS: _add(sock_id(deg),"Sock","Wind","#c47c5c",_windsock(deg)[0],_windsock(deg)[1],20,1.0,1.4)
+
+## The Modeller's icon: a boxwood modelling tool from the spatula's centre at
+## (5.8, 18.2) up the diagonal to its point, [fills, lines]. The spatula is an
+## oval sampled to a polygon (5 along, 3.5 across); the shaft flares from a
+## neck at 4 to 1.35 across by 6.8 and runs to a point at 20. A band marks
+## the grip at 12.6, and a short line down the spatula its thumb-worn hollow.
+static func _modeller() -> Array:
+	var centre := Vector2(5.8,18.2)
+	var along := Vector2(1.0,-1.0).normalized()
+	var across := Vector2(1.0,1.0).normalized()
+	var at := func(t: float, w: float) -> Vector2: return centre+along*t+across*w
+	var oval := []
+	for k in range(16):
+		var a := k*TAU/16.0
+		oval.append(at.call(cos(a)*5.0,sin(a)*3.5))
+	var shaft := [at.call(4.0,0.9),at.call(6.8,1.35),at.call(17.0,1.35),at.call(20.0,0.0),at.call(17.0,-1.35),at.call(6.8,-1.35),at.call(4.0,-0.9)]
+	var band: Array = [at.call(12.6,1.35),at.call(12.6,-1.35)]
+	var hollow: Array = [at.call(-2.2,0.0),at.call(1.4,0.0)]
+	var lines := []
+	for pair: Array in [band,hollow]: lines.append("M%.2f %.2f L%.2f %.2f" % [pair[0].x,pair[0].y,pair[1].x,pair[1].y])
+	return [[_poly(oval),_poly(shaft)],lines]
 
 ## HUD 5 foot: the undo arrow, sampled as lowpoly.js does (`ub`, no masks): a
 ## half ring round (12.8, 13.4), outer radius 7.8 and inner 4.6, from the left
