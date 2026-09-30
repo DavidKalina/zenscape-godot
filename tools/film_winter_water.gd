@@ -106,6 +106,10 @@ func run() -> void:
 	report("filled")
 	await seconds(2.0)
 
+	if "--mist-only" in OS.get_cmdline_user_args():
+		await mist_shot()
+		quit(0)
+		return
 	# (a) The freeze.
 	var first := frame
 	look(BASIN,7.5,scene.yaw,0.9)
@@ -142,18 +146,21 @@ func run() -> void:
 		report("thaw")
 	print("SHOT b-thaw %d %d" % [first,frame])
 
-	# (c) A late autumn dawn, clear, low over the pond.
-	surface.pace = 1.0
+	await mist_shot()
+	quit(0)
+
+## (c) A late autumn dawn, clear, low over the pond.
+func mist_shot() -> void:
+	scene._precipitation.surface_weather.pace = 1.0
 	scene.world_clock.season_override = 0.7
-	scene._celestial.set_phase(0.27)
-	look(BASIN+Vector2(0.0,0.5),9.0,scene.yaw+0.8,1.3)
+	scene._celestial.set_phase(0.31)
+	look(BASIN,9.5,scene.yaw+0.8,1.12)
 	await seconds(1.0)
 	life.winter.mist = life.winter._mist_wanted()
-	first = frame
+	var first := frame
 	for k in range(4):
 		await seconds(2.0)
 		report("dawn")
 	await orbit(10.0,0.5)
 	report("mist")
 	print("SHOT c-mist %d %d" % [first,frame])
-	quit(0)
