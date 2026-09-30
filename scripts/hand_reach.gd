@@ -580,6 +580,8 @@ func _input(event: InputEvent) -> void:
 ## The pointer's events. True when the event was the hand's.
 func handle(event: InputEvent) -> bool:
 	if scene == null or not scene.is_node_ready(): return false
+	if event is InputEventKey:
+		return materials != null and holding.is_empty() and available() and materials.key(event as InputEventKey)
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
 		if button.button_index != MOUSE_BUTTON_LEFT: return false

@@ -251,6 +251,13 @@ var _breach := Vector2.ZERO
 var _heading := Vector2.ZERO
 var _heading_from := Vector2.ZERO
 var _carried := false
+## The hand's size (the tool roll's pips, scripts/tool_roll.gd SIZES): the
+## thumb's groove, the rub, the palm and the pinch's spread all scale by it.
+var size_scale := 1.0
+
+func _groove_hw() -> float: return GROOVE_HALF_WIDTH*size_scale
+func _rub_r() -> float: return RUB_RADIUS*size_scale
+func _palm_r() -> float: return PALM_RADIUS*size_scale
 
 static func enabled() -> bool:
 	return preload("res://scripts/modeless_input.gd").enabled()
@@ -392,7 +399,7 @@ func _begin_pinch() -> void:
 		if _near_d[k] < nearest:
 			nearest = _near_d[k]
 			_center = editor.data.points[_near[k]]
-	_gather(_center,float(spec.max_radius)*HORN_REACH)
+	_gather(_center,float(spec.max_radius)*size_scale*HORN_REACH)
 	_horn_setup()
 	var at := _ground_at(_center)
 	var camera: Camera3D = scene.camera
@@ -415,7 +422,7 @@ func _open_stroke() -> void:
 	_base = data.heights.duplicate()
 	_first_id = data.next_id
 	_region = Rect2(_center,Vector2.ZERO).grow(1.0)
-	editor._emit_stroke(0,_ground_at(_center),GROOVE_HALF_WIDTH,0.0)
+	editor._emit_stroke(0,_ground_at(_center),_groove_hw(),0.0)
 
 ## Close the verb's undo step and settle the land, as a brush's release does.
 func _end_stroke() -> void:
@@ -428,7 +435,7 @@ func _end_stroke() -> void:
 	editor._settle_stroke()
 	if kept: editor._stroke_ended("land")
 	editor._stroke_rect = Rect2()
-	editor._emit_stroke(2,_ground_at(_center),GROOVE_HALF_WIDTH,0.0)
+	editor._emit_stroke(2,_ground_at(_center),_groove_hw(),0.0)
 	var done := verb
 	if verb == "thumb": done = "groove"
 	last_rub = rub
@@ -458,12 +465,12 @@ func _thumb_step(delta: float) -> void:
 			var q := from.lerp(p,float(k)/count)
 			if verb == "palm":
 				_palm(heights,q)
-				_dirty(q,PALM_RADIUS)
+				_dirty(q,_palm_r())
 			else:
 				if rub < 0.99:
 					_breach = _breaching(q)
 					_groove(heights,q,1.0-rub,_breach)
-					_dirty(q,GROOVE_HALF_WIDTH*LIP_OUT)
+					_dirty(q,_groove_hw()*LIP_OUT)
 				if rub > 0.01: _rub(heights,q,rub)
 			dabs += 1
 		_last_plate = p
@@ -472,7 +479,7 @@ func _thumb_step(delta: float) -> void:
 	_dirt()
 	_show()
 	var at := _ground_at(_last_plate)
-	editor._emit_stroke(1,at,GROOVE_HALF_WIDTH,delta)
+	editor._emit_stroke(1,at,_groove_hw(),delta)
 	_hand("press",at)
 	var hand: Node = scene.get("god_hand") as Node
 	if hand != null and _hand_set == "press": hand.reach_pace = 1.0+1.5*rub
@@ -493,13 +500,13 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 	# from where it stood, so a groove along a slope's face is no deeper on its
 	# uphill bank than on its downhill one.
 	var depth := float(ground)-bed
-	var reach := GROOVE_HALF_WIDTH*LIP_OUT
+	var reach := _groove_hw()*LIP_OUT
 	_gather(q,reach)
 	_touch(q,reach)
 	var notched := false
 	for k in _near.size():
 		var i := _near[k]
-		var t := _near_d[k]/GROOVE_HALF_WIDTH
+		var t := _near_d[k]/_groove_hw()
 		var fade := _fade(i)
 		if t < 1.0:
 			_dug[i] = 1
@@ -515,7 +522,7 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 			var h := heights[i]
 			if goal > h: heights[i] = lerpf(h,goal,GROOVE_STEP*g*fade)
 	if notched:
-		if last_notch.is_empty() or last_notch.normal != breach or (last_notch.at as Vector2).distance_to(q) > GROOVE_HALF_WIDTH*2.0: notches += 1
+		if last_notch.is_empty() or last_notch.normal != breach or (last_notch.at as Vector2).distance_to(q) > _groove_hw()*2.0: notches += 1
 		var along := Vector2(breach.y,-breach.x)
 		last_notch = {"normal":breach,"at":breach*PLATE_HALF+along*q.dot(along),"bed":bed}
 
@@ -543,25 +550,25 @@ func _carry_to_lip() -> bool:
 ## The rub's dab at `q` with weight `w`: each point toward its neighbours' mean.
 func _rub(heights: PackedFloat32Array, q: Vector2, w: float) -> void:
 	var neighbors: Array[PackedInt32Array] = editor.data._neighbors
-	_gather(q,RUB_RADIUS)
-	_touch(q,RUB_RADIUS)
+	_gather(q,_rub_r())
+	_touch(q,_rub_r())
 	for k in _near.size():
 		var i := _near[k]
 		var around: PackedInt32Array = neighbors[i]
 		if around.is_empty(): continue
 		var total := 0.0
 		for j in around: total += heights[j]
-		var f := 1.0-smoothstep(RUB_CORE,1.0,_near_d[k]/RUB_RADIUS)
+		var f := 1.0-smoothstep(RUB_CORE,1.0,_near_d[k]/_rub_r())
 		heights[i] = lerpf(heights[i],total/around.size(),RUB_STEP*w*f*_fade(i))
 
 ## The palm's dab at `q`: toward the level under the press, pressed PALM_SINK
 ## down in the middle.
 func _palm(heights: PackedFloat32Array, q: Vector2) -> void:
-	_gather(q,PALM_RADIUS)
-	_touch(q,PALM_RADIUS)
+	_gather(q,_palm_r())
+	_touch(q,_palm_r())
 	for k in _near.size():
 		var i := _near[k]
-		var f := 1.0-smoothstep(PALM_CORE,1.0,_near_d[k]/PALM_RADIUS)
+		var f := 1.0-smoothstep(PALM_CORE,1.0,_near_d[k]/_palm_r())
 		var goal := _level-PALM_SINK*f
 		heights[i] = maxf(lerpf(heights[i],goal,PALM_STEP*f*_fade(i)),NativeTerrainData.MIN_HEIGHT)
 
@@ -642,7 +649,7 @@ func _pinch_step() -> void:
 	lift = clampf((_press.y-_pointer.y)/_metre_pixels*float(spec.scale),-float(spec.sink),float(spec.raise))
 	if is_equal_approx(lift,_shown_lift): return
 	_shown_lift = lift
-	var radius := minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))
+	var radius := minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))*size_scale
 	var horn := smoothstep(HORN.x,HORN.y,lift)
 	var data := editor.data
 	var heights := data.heights
@@ -693,7 +700,7 @@ func _rock() -> void:
 	if verb != "pinch" or lift < ROCK_FROM: return
 	var data := editor.data
 	var forms := preload("res://scripts/mountain_forms.gd")
-	var reach := float(PINCH.max_radius)*HORN_REACH
+	var reach := float(PINCH.max_radius)*size_scale*HORN_REACH
 	var horn := smoothstep(HORN.x,HORN.y,lift)
 	var ground: Variant = data.sample(_center,_base)
 	var job := {"tint":data.tint.duplicate(),"rock":forms.ROCKS.granite,"height":maxf(2.0,lerpf(10.0,lift,horn)),"base":_base,
@@ -713,7 +720,7 @@ func _shake_trees() -> void:
 	var drawn: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
 	var rock_slope := float(drawn.get("rock_slope",data._palette.rock_slope))
 	var band := snowline-ROCK_BAND
-	var reach := float(PINCH.max_radius)*HORN_REACH+1.0
+	var reach := float(PINCH.max_radius)*size_scale*HORN_REACH+1.0
 	var moved := false
 	for index in range(data.objects.size()):
 		var item: Dictionary = data.objects[index]

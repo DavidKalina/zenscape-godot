@@ -1,18 +1,23 @@
 extends Node
 ## The materials tray, an experiment (docs/scenic/modeless.md "Materials tray
-## (experiment)"): the naturalist's field case along the table's edge, one
-## specimen to a compartment (scripts/materials_tray.gd). Press a specimen and
+## (experiment)"): the linen materials bar along the bottom edge
+## (scripts/materials_tray.gd) and the tool roll on the left
+## (scripts/tool_roll.gd), design "ZenScape HUD 4c"
+## (docs/design/materials-tray/HUD-4c.md). One thing is in hand across both:
+## the bare Hand, or one material. The roll's pips (or 1, 2, 3, [ and ]) size
+## it: the clay's reach, or a scatter's spread. Esc, the Hand or the material
+## again puts a material down. Press a material and
 ## the hand takes some: it pinches seeds and stones and cups water, and a
 ## small clump tinted as the specimen rides in it. The hand stays modeless:
 ## what it holds decides what a press does.
 ##
-## - **Tree seeds** (oak, pine, willow, birch). Press and drag over the land:
+## - **Tree seeds** (oak, pine, willow; birch has no slot in 4c). Press and drag over the land:
 ##   the hand sprinkles the forest brush's veil along the way, and the wind
 ##   carries it down (NativeChunkEditor `sow_from_hand`, the Forest brush's own
 ##   veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
 ##   a flicked tree's spores are: what comes up leans to it, as far as the
 ##   ground there allows (SEEDS).
-## - **Wildflower seed and reeds.** Tap to set a drift of meadow flowers or a
+## - **Meadow, dandelion and reeds.** Tap to set a drift of flowers or a
 ##   clump of reeds; drag to scatter more under the hand (SCATTER: the build
 ##   palette's plants, set down by NativeChunkEditor `set_objects`, one undo
 ##   step a drag). They sprout as a placed plant does.
@@ -31,6 +36,8 @@ extends Node
 ## Made by scripts/hand_reach.gd, which hands it the presses first.
 
 const Tray = preload("res://scripts/materials_tray.gd")
+const Roll = preload("res://scripts/tool_roll.gd")
+const Icons = preload("res://scripts/hud_icons.gd")
 const Modeless = preload("res://scripts/modeless_input.gd")
 ## Tree seeds: the specimen and the emergence tree kind it sows
 ## (scripts/tree_stands.gd TREE_POOLS; "tree" is the spruce family's pine).
@@ -41,7 +48,8 @@ const SEEDS := {"oak":"broadleaf","pine":"tree","willow":"willow","birch":"birch
 ## `scatter_grow` s), and at most `most` drops a drag.
 const SCATTER := {
 	"stone":{"assets":["rock"],"each":1,"spread":0.0,"tap":Vector2(0.5,1.4),"grow":1.6,"scatter":Vector2(0.26,0.6),"scatter_grow":2.5,"most":7},
-	"wildflower":{"assets":["daisy_flower","button_flower","spike_flower","umbel_flower"],"each":5,"spread":0.75,"tap":Vector2(0.55,0.9),"grow":1.6,"scatter":Vector2(0.5,0.8),"scatter_grow":2.5,"most":8},
+	"wildflower":{"assets":["daisy_flower","spike_flower","umbel_flower"],"each":5,"spread":0.75,"tap":Vector2(0.55,0.9),"grow":1.6,"scatter":Vector2(0.5,0.8),"scatter_grow":2.5,"most":8},
+	"dandelion":{"assets":["button_flower","daisy_flower"],"each":4,"spread":0.9,"tap":Vector2(0.5,0.8),"grow":1.6,"scatter":Vector2(0.45,0.75),"scatter_grow":2.5,"most":8},
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
 }
 ## Cupped, not pinched.
@@ -61,7 +69,7 @@ const CLICK_PIXELS := 6.0
 ## The hint line with material in hand, until each has been used once.
 const SOW_HINT := "Drag over the land to sow"
 const HINTS := {"water":"Hold over the land to pour","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
-	"wildflower":"Tap to sow a drift of flowers  ·  Drag to scatter","reed":"Tap to set reeds  ·  Drag to scatter"}
+	"wildflower":"Tap to sow a drift of flowers  ·  Drag to scatter","dandelion":"Tap to sow a drift of flowers  ·  Drag to scatter","reed":"Tap to set reeds  ·  Drag to scatter"}
 const BACK_HINT := "Click the sky or the case to put it back"
 ## Design units the Lantern hint line moves up to clear the case.
 const HINT_LIFT := 100.0
@@ -72,6 +80,7 @@ static func enabled() -> bool:
 var scene: Node3D
 var reach: Node
 var tray: Control
+var roll: Control
 var clump: Clump
 ## The specimen in hand (a materials_tray.gd SPECIMENS id) or "".
 var held := ""
@@ -98,13 +107,40 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	add_child(layer)
 	tray = Tray.new()
 	layer.add_child(tray)
+	roll = Roll.new()
+	layer.add_child(roll)
 	clump = Clump.new()
 	clump.name = "HeldMaterial"
 	reach._editor().terrain.add_child(clump)
 
-## True over the case, while it shows.
+## True over the materials bar or the tool roll, while they show.
 func tray_under(point: Vector2) -> bool:
-	return tray != null and tray.contains_pointer(point)
+	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point))
+
+## The size in hand (the roll's pips): the clay's reach and a scatter's spread.
+func size_scale() -> float:
+	return roll.size_scale() if roll != null else 1.0
+
+func set_size(level: int) -> void:
+	if roll == null: return
+	roll.size_level = clampi(level,0,Roll.SIZES.size()-1)
+	var clay: Node = scene.get("land_clay")
+	if clay != null: clay.size_scale = roll.size_scale()
+
+## Keys for the hand's HUD: 1, 2, 3 or [ and ] size what is in hand; Esc puts
+## a material down (back to the bare Hand). True when the key was used.
+func key(event: InputEventKey) -> bool:
+	if not event.pressed or event.echo or roll == null or roll.shown < 0.5: return false
+	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
+	match event.keycode:
+		KEY_1, KEY_2, KEY_3: set_size(event.keycode-KEY_1)
+		KEY_BRACKETLEFT: set_size(roll.size_level-1)
+		KEY_BRACKETRIGHT: set_size(roll.size_level+1)
+		KEY_ESCAPE:
+			if held.is_empty(): return false
+			put_back()
+		_: return false
+	return true
 
 func _pointer() -> Vector2:
 	return scene.get_viewport().get_mouse_position() if reach.pointer_override == null else reach.pointer_override
@@ -114,6 +150,17 @@ func _pointer() -> Vector2:
 ## A left press the hand reach has let through (nothing held, the hand free).
 ## True when it was the case's or the material's.
 func press(point: Vector2) -> bool:
+	# The tool roll: the pips size what is in hand; the Hand puts a material down.
+	var pip: int = roll.pip_at(point)
+	if pip >= 0:
+		set_size(pip)
+		return true
+	var tool: String = roll.tool_at(point)
+	if not tool.is_empty():
+		if not roll.discovered(tool): roll.not_yet(tool)
+		elif tool == "hand": put_back()
+		return true
+	if roll.contains_pointer(point): return true
 	var specimen: String = tray.specimen_at(point)
 	if not specimen.is_empty():
 		if not tray.discovered(specimen):
@@ -227,7 +274,7 @@ func _drop(at: Variant, size: float) -> bool:
 	var items := []
 	for i in range(int(spec.each)):
 		var offset := Vector2.ZERO
-		if i > 0: offset = Vector2.from_angle(randf()*TAU)*float(spec.spread)*sqrt(randf())
+		if i > 0: offset = Vector2.from_angle(randf()*TAU)*float(spec.spread)*size_scale()*sqrt(randf())
 		var assets: Array = spec.assets
 		items.append({"asset":assets[randi()%assets.size()],"point":at+offset,"size":size*randf_range(0.88,1.12)*(1.0 if i == 0 else randf_range(0.75,1.0)),"angle":randf()*TAU})
 	var step: Variant = reach._editor().set_objects(items,_stone_step)
@@ -245,7 +292,15 @@ func _drop(at: Variant, size: float) -> bool:
 
 ## Each frame, after the hand reach has driven the hand.
 func step(delta: float) -> void:
-	tray.want(_tray_wanted())
+	var wanted := _tray_wanted()
+	tray.want(wanted)
+	roll.want(wanted)
+	# A drag under way (a rim pull, the clay, a sowing) never wakes the bars.
+	var quiet: bool = not str(reach.holding) in ["","jar"]
+	tray.quiet = quiet
+	roll.quiet = quiet
+	roll.material_held = not held.is_empty()
+	roll.held_tint = Icons.item(held if not held.is_empty() else roll.tool).get("tint",roll.held_tint)
 	# The Lantern hint line sits just over the case.
 	var shell: Node = scene.get("creation_palette")
 	if not _shell_lifted and shell != null and "bottom_lift" in shell:
@@ -292,7 +347,7 @@ func _scatter(delta: float) -> void:
 	if int(editor.refresh_pending) > 0 or editor.reactions.active_count() > 0: return
 	var at: Variant = _ground(_pointer())
 	if at == null: return
-	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= STONE_GAP: _drop(at,_scatter_size())
+	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= STONE_GAP*size_scale(): _drop(at,_scatter_size())
 
 ## The hand while material is in hand, or over the case: it pinches or cups
 ## what it carries over the land and in the sky, and floats ready over the
@@ -351,7 +406,7 @@ class Clump extends Node3D:
 	## down, birch straw, flower seed with a petal or two, reed brown.
 	const TONES := {
 		"oak":["a57b48","8c6a3f","c09a66"],"pine":["7a5a3a","946f48","6a4c30"],"willow":["dcd8c4","c9c6ae","ece8d6"],
-		"birch":["c9ab7a","b89868","dcc190"],"wildflower":["c9a86a","f2c53d","e38aa0"],"reed":["8a6a45","7a5c3a","a07e56"],
+		"birch":["c9ab7a","b89868","dcc190"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
 	}
 	var kind := ""
 	var target := 0.0
