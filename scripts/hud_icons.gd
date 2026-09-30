@@ -184,3 +184,55 @@ static func _undo_arrow() -> Array:
 	for i in range(24,-1,-1): ring.append(centre+Vector2.from_angle(-PI+i/24.0*PI)*4.6)
 	var head := [centre+Vector2(-2.6,-0.2),centre+Vector2(-9.8,-0.2),centre+Vector2(-6.2,5.6)]
 	return [_poly(ring),_poly(head)]
+
+# --- HUD 5 page icons and vignettes (design "ZenScape HUD 5 Air") -----------------
+# docs/design/hud-5/lowpoly.js `vignette()` and VIGNETTE_SIZES; the almanac's
+# pages (scripts/almanac_pages.gd) draw them. Everything HUD 5's pages add to
+# this file lives in this block.
+
+## The vignette's own box (lowpoly.js: viewBox 40x25, stretched to the card).
+const VIGNETTE_BOX := Vector2(40.0,25.0)
+## Sizes it is drawn at, design pixels: the strip's Mood pocket, a Moods page
+## card, the This world row and a Customise mini.
+const VIGNETTE_SIZES := {"strip":Vector2(44.0,28.0),"card":Vector2(78.0,49.0),"world":Vector2(56.0,35.0),"mini":Vector2(22.0,14.0)}
+## The clips, in the box: the horizon band the glow shows through, the slab's
+## top the land shows through, and the slab's flat side.
+const VIGNETTE_GLOW := "M0 10.5 L40 8.6 L40 16.4 L0 17.6Z"
+const VIGNETTE_LAND := "M3 18.2 L20 13.4 L37.5 16.8 L21 22.2Z"
+const VIGNETTE_SIDE := "M3 18.2 L21 22.2 L37.5 16.8 L37.5 19.4 L21 25.5 L3 20.8Z"
+## The sun or moon: radius and x in the box; y high, and low for the hours
+## near the horizon. Its colours: the night's moon and the day's sun (a low
+## sun is the glow lit 55% toward LIGHT).
+const VIGNETTE_DISC := Vector3(1.9,30.0,5.5)
+const VIGNETTE_DISC_LOW_Y := 10.0
+const VIGNETTE_MOON := Color("e6eaf2")
+const VIGNETTE_SUN := Color("fff3d6")
+## A slab side is the grass this far toward SHADE.
+const VIGNETTE_SIDE_SHADE := 0.55
+
+## A mood's vignette as SVG text: `seed` (lowpoly.js 23..32), its sky, glow and
+## grass, and its hour, "night", "low" (dawn, golden hour, dusk) or "high".
+## Three facet grids (sky over the card, glow in the horizon band, land on the
+## slab's top), the slab's flat side and the disc, `size` pixels.
+static func vignette_svg(seed: int, sky: Color, glow: Color, grass: Color, hour: String, size: Vector2) -> String:
+	var body := '<defs><clipPath id="g"><path d="%s"/></clipPath><clipPath id="l"><path d="%s"/></clipPath></defs>' % [VIGNETTE_GLOW,VIGNETTE_LAND]
+	var stretch := 'transform="scale(%s %s)"' % [_num(VIGNETTE_BOX.x/24.0),_num(VIGNETTE_BOX.y/24.0)]
+	var layers := [[seed,sky,""],[seed+40,glow,"g"],[seed+80,grass,"l"]]
+	for layer: Array in layers:
+		var group := ""
+		for tri: Dictionary in facets(int(layer[0]),_mix(layer[1],layer[1],0.0)):
+			group += '<polygon points="%s" fill="#%s" stroke="#%s" stroke-width="0.2"/>' % [tri.points,tri.fill,tri.fill]
+		group = '<g %s>%s</g>' % [stretch,group]
+		body += group if str(layer[2]).is_empty() else '<g clip-path="url(#%s)">%s</g>' % [layer[2],group]
+	body += '<path d="%s" fill="#%s"/>' % [VIGNETTE_SIDE,_mix(grass,SHADE,VIGNETTE_SIDE_SHADE).to_html(false)]
+	var disc := VIGNETTE_MOON if hour == "night" else _mix(glow,LIGHT,0.55) if hour == "low" else VIGNETTE_SUN
+	var y := VIGNETTE_DISC_LOW_Y if hour == "low" else VIGNETTE_DISC.z
+	body += '<circle cx="%s" cy="%s" r="%s" fill="#%s"/>' % [_num(VIGNETTE_DISC.y),_num(y),_num(VIGNETTE_DISC.x),disc.to_html(false)]
+	return '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %s %s" preserveAspectRatio="none">%s</svg>' % [
+		maxi(1,roundi(size.x)),maxi(1,roundi(size.y)),_num(VIGNETTE_BOX.x),_num(VIGNETTE_BOX.y),body]
+
+## The vignette rasterised `size` pixels (its box stretched to fit).
+static func vignette_texture(seed: int, sky: Color, glow: Color, grass: Color, hour: String, size: Vector2) -> Texture2D:
+	var image := Image.new()
+	if image.load_svg_from_string(vignette_svg(seed,sky,glow,grass,hour,size),1.0) != OK: return null
+	return ImageTexture.create_from_image(image)
