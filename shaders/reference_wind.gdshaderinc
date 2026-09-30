@@ -133,6 +133,70 @@ float zs_blow_front(float along, vec4 run, float reach, out float shiver) {
 	return amp * zs_blow_swing(tau) - draw_back;
 }
 
+// The Feather's live wake (scripts/wind_gust.gd "The wake"): the air laid
+// along the path the feather took, as it passed. Each point finds the nearest
+// stretch of the path and leans along it by when the feather went by there:
+// it stirs ZS_WAKE_LEAD s before, holds while the feather's air streams past
+// (ZS_WAKE_HOLD s, easing a little), then lets go into the lanes' damped
+// swing. It parts out from the path by ZS_WAKE_PART of its lean. Keep in step
+// with WindGust `_wake_at` and its WAKE_HOLD, WAKE_LEAD and WAKE_PART.
+const float ZS_WAKE_HOLD = 0.3;
+const float ZS_WAKE_LEAD = 0.12;
+const float ZS_WAKE_PART = 0.3;
+
+float zs_wake_swing(float tau) {
+	float after = max(tau - ZS_WAKE_HOLD, 0.0);
+	return smoothstep(-ZS_WAKE_LEAD, 0.0, tau) * mix(1.0, 0.8, smoothstep(0.0, ZS_WAKE_HOLD, tau))
+		* exp(-ZS_BLOW_DAMP * after) * cos(ZS_BLOW_RING * after);
+}
+
+vec2 zs_wake_at(vec2 p, float phase, out float shiver) {
+	shiver = 0.0;
+	int count = int(zs_wake_a.y + 0.5);
+	if (count < 2 || p.x < zs_wake_c.x || p.y < zs_wake_c.y || p.x > zs_wake_c.z || p.y > zs_wake_c.w) return vec2(0.0);
+	vec4 pts[12] = vec4[12](zs_wake_0, zs_wake_1, zs_wake_2, zs_wake_3, zs_wake_4, zs_wake_5, zs_wake_6, zs_wake_7, zs_wake_8, zs_wake_9, zs_wake_10, zs_wake_11);
+	float best = 1e9;
+	vec2 h = vec2(0.0);
+	vec2 off = vec2(0.0);
+	float when = 0.0;
+	float strength = 0.0;
+	for (int j = 0; j < 11; j++) {
+		if (j + 1 >= count) break;
+		vec4 a = pts[j];
+		vec4 b = pts[j + 1];
+		// b starts a new stroke: nothing joins it to the one before.
+		if (b.w < 0.0) continue;
+		vec2 ab = b.xy - a.xy;
+		float len2 = dot(ab, ab);
+		float s = len2 > 0.000001 ? clamp(dot(p - a.xy, ab) / len2, 0.0, 1.0) : 0.0;
+		vec2 d = p - (a.xy + ab * s);
+		float dist2 = dot(d, d);
+		if (dist2 < best) {
+			best = dist2;
+			if (len2 > 0.000001) h = ab * inversesqrt(len2);
+			off = d;
+			when = mix(a.z, b.z, s);
+			strength = mix(abs(a.w), b.w, s);
+		}
+	}
+	if (dot(h, h) < 0.5) return vec2(0.0);
+	float hw = max(zs_wake_a.z, 0.5);
+	float lateral = 1.0 - smoothstep(0.6 * hw, 1.3 * hw, sqrt(best));
+	if (lateral <= 0.0 || strength <= 0.0) return vec2(0.0);
+	float tau = zs_wake_a.x - when;
+	// Ahead of the feather the air only stirs, as it comes.
+	vec2 feather = pts[min(count, 12) - 1].xy;
+	float ahead = dot(p - feather, zs_wake_b.xy);
+	if (tau < 0.2 && ahead > 0.0) tau = min(tau, -ahead / max(zs_wake_b.z, 2.0));
+	vec2 side = vec2(-h.y, h.x);
+	float across = dot(off, side);
+	float part = sign(across) * smoothstep(0.0, 0.5 * hw, abs(across));
+	float swirl = sin(when * 9.0 + dot(p, vec2(0.9, 1.3)) + phase) * 0.12;
+	float s = strength * lateral * zs_wake_swing(tau);
+	shiver = strength * lateral * smoothstep(-0.2, 0.1, tau) * exp(-1.2 * max(tau, 0.0));
+	return (h + side * (part * ZS_WAKE_PART + swirl)) * s;
+}
+
 // The wind tool's lean at world x, z: a horizontal direction and size (0
 // calm, about 1 where a full gust's head is), and how hard foliage there
 // should shiver (0..1). `phase` varies it per plant.
@@ -196,6 +260,9 @@ vec2 zs_blow_at(vec2 p, float phase, out float shiver) {
 			shiver = max(shiver, w);
 		}
 	}
+	float wake_shiver;
+	lean += zs_wake_at(p, phase, wake_shiver);
+	shiver = max(shiver, wake_shiver);
 	float size = length(lean);
 	if (size > ZS_BLOW_MAX) lean *= ZS_BLOW_MAX / size;
 	return lean;

@@ -16,13 +16,12 @@ extends Node
 ## - **Material:** a dotted drop ring under the carried item, as wide as the
 ##   spread it will set down (hand_materials SCATTER spread × size).
 ## - **Feather** (HUD 5 "Gust", wind in hand): at rest only a small stitched
-##   hotspot ellipse (FEATHER_HOTSPOT); while a swipe is under way, the lane's
-##   two stitched edges from the press along the swipe, with the faint fill
-##   between (no arrowhead: the wind tool's promise stays hidden); held still
-##   past hand_materials FEATHER_BURST_SECONDS, the burst's ring, growing. The
-##   swipe and the hold keep their mark while pressed, unlike the tools'
-##   (`_step_feather`): the design has them, and they are its only preview
-##   now the wind tool's own lane is off.
+##   hotspot ellipse (FEATHER_HOTSPOT); while a drag is under way the hotspot
+##   rides under the feather, since the wind itself (the live wake) shows
+##   where it goes; held still past hand_materials FEATHER_BURST_SECONDS, the
+##   burst's ring, growing. The hold keeps its mark while pressed, unlike the
+##   tools' (`_step_feather`). The lane's stitched edges (`feather_lane`) are
+##   drawn only for an aimed lane, which the Feather no longer makes.
 ##
 ## Each scales with the roll's size (tool_roll.gd SIZES) and lies on the
 ## terrain: a box decal reads the depth buffer back to the ground under it
@@ -257,11 +256,12 @@ func _pointer() -> Vector2:
 	return scene.get_viewport().get_mouse_position() if reach.pointer_override == null else reach.pointer_override
 
 ## The Feather's marks. While its wind is in hand (a press on the land, or wind
-## dragged in from the sky) the mark follows the wind tool's promise: the
-## lane's edges from the press to the pointer's reach along the heading, or,
-## held still, the burst's ring (hand_materials `feather_ring`), or the
-## hotspot at the press until the ring starts. At rest, the hotspot under the
-## hovering hand, by the same rules as every mark.
+## dragged in from the sky) the mark follows the wind tool's promise: under a
+## live wake, the hotspot under the feather; for an aimed lane, the lane's
+## edges from the press to the pointer's reach along the heading; held still,
+## the burst's ring (hand_materials `feather_ring`), or the hotspot at the
+## press until the ring starts. At rest, the hotspot under the hovering hand,
+## by the same rules as every mark.
 func _step_feather(delta: float, materials: Node) -> void:
 	if reach.camera_moving():
 		hide(delta,"camera")
@@ -270,6 +270,10 @@ func _step_feather(delta: float, materials: Node) -> void:
 		var plan: Dictionary = materials._gust().promise()
 		var start: Vector2 = plan.origin
 		var from := Vector3(start.x,_height(start,centre.y),start.y)
+		if plan.kind == "wake":
+			var under: Variant = reach._land(_pointer())
+			_feather_mark("feather",under if under != null else centre,FEATHER_HOTSPOT,_view_right(),delta)
+			return
 		if plan.kind == "lane":
 			var heading: Vector2 = plan.heading
 			var to: Variant = reach._land(_pointer())

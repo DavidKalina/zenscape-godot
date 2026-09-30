@@ -8,11 +8,13 @@ extends SceneTree
 ##   - a held sweep turns the prevailing wind the way it is pulled, the air
 ##     swings round while held, and it stays when let go, with no gust;
 ##     pulled further it blows harder; pollen's wind follows it;
-##   - a drag from the sky onto the land takes the wind tool in hand there:
-##     its lane is promised while held, a swipe on sends it along the drag,
-##     a still hold bursts, and the prevailing wind is left as it was.
+##   - a drag from the sky onto the land takes the wind tool in hand there,
+##     carrying the flick: a drag on is the Feather's live wake along the
+##     drag, dying away on release with no gust sent; a still hold bursts;
+##     and the prevailing wind is left as it was.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_wind.gd -- --no-title
 const Wind = preload("res://scripts/pollen_wind.gd")
+const Disturbance = preload("res://scripts/disturbance.gd")
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -184,6 +186,9 @@ func run() -> void:
 	check("found land on screen",land != Vector2.INF)
 	if land != Vector2.INF:
 		var sent: int = editor.gust.gusts.size()
+		var wakes: int = int(Disturbance.counts.get("gust",0))
+		var went := []
+		editor.gust.sent.connect(func(g: Dictionary) -> void: went.append(g.kind))
 		var wind_angle: float = air.direction_angle
 		var wind_strength: float = air.strength
 		var start := sky
@@ -197,16 +202,17 @@ func run() -> void:
 		check("carrying the flick's heading",editor.gust._aim.heading != Vector2.ZERO and float(editor.gust._aim.power) > 0.15,[editor.gust._aim.heading,editor.gust._aim.power])
 		var on := await drag(over,over+Vector2(0,120),6)
 		var promised: Dictionary = editor.gust.promise()
-		check("its lane is promised while held",promised.get("kind","") == "lane",promised)
+		check("a drag on is a live wake",promised.get("kind","") == "wake" and went == ["wake"],[promised,went])
 		button(on,false)
 		await frames(3)
-		check("let go, the tool's gust goes",editor.gust.gusts.size() > sent and not editor.gust.aiming(),[sent,editor.gust.gusts.size()])
-		if editor.gust.gusts.size() > sent:
-			var g: Dictionary = editor.gust.gusts.back()
+		check("let go, the wake dies away and no gust is sent",editor.gust.gusts.size() == sent and not editor.gust.aiming() and not editor.gust.wakes.is_empty() and not editor.gust.wakes.back().live,[sent,editor.gust.gusts.size()])
+		if not editor.gust.wakes.is_empty():
+			var g: Dictionary = editor.gust.wakes.back()
 			var world: Vector3 = editor.terrain.global_basis*Vector3(g.heading.x,0.0,g.heading.y)
-			var down := ground_way(Vector2(0,1))  # the swipe on the land runs down the screen
+			var down := ground_way(Vector2(0,1))  # the drag on the land runs down the screen
 			check("along the drag as the camera sees it",angle_off(atan2(world.z,world.x),down.angle()) < 15.0,[Vector2(world.x,world.z).normalized(),down])
-			check("sent as promised",g.kind == promised.kind and absf(float(g.power)-float(promised.power)) < 0.1,[g.power,promised.power])
+			check("carrying the flick's strength",float(g.power) > 0.3 and g.kind == promised.kind,[g.power,promised.power])
+			check("creatures hear it as it goes",int(Disturbance.counts.get("gust",0)) > wakes,Disturbance.counts)
 		check("the prevailing wind is left alone",is_equal_approx(air.direction_angle,wind_angle) and is_equal_approx(air.strength,wind_strength),[wind_angle,air.direction_angle])
 		check("and no snap",reach.snaps == snaps+click)
 		await frames(120)

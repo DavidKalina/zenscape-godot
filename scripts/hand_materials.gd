@@ -34,10 +34,11 @@ extends Node
 ##   scatter a few pebbles under the pointer (the rock tool's placement).
 ##
 ## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
-##   hand, taken like a tool. Swipe on the land and let go: a lane of wind
-##   runs along the swipe. Hold still FEATHER_BURST_SECONDS: a burst, rung out
-##   round the press on release (a shorter still press sends nothing). Both
-##   are the wind tool's own gust (NativeChunkEditor `gust_in_hand`,
+##   hand, taken like a tool. Drag it over the land: the wind goes with it
+##   while it moves, along the path it takes, as hard as it moves, and dies
+##   away when let go (a live wake). Hold still FEATHER_BURST_SECONDS: a
+##   burst, rung out round the press on release (a shorter still press sends
+##   nothing). Both are the wind tool's own air (NativeChunkEditor `gust_in_hand`,
 ##   scripts/wind_gust.gd), FEATHER_HALF m either side at the middle pip. It
 ##   changes no land and takes no undo step. Dragging wind from the sky onto
 ##   the land puts the Feather in hand too (`take_feather`).
@@ -95,13 +96,13 @@ const STONE_SECONDS := 0.3
 ## The Feather. It is not a clay tool (it shapes no land), so its press is
 ## held here, as "scatter" is, and handed to the wind tool, which reads the
 ## pointer each frame; the prop and the grip come from the clay's seam
-## (scripts/clay_tools/feather.gd). FEATHER_HALF is the lane's half-width (m)
+## (scripts/clay_tools/feather.gd). FEATHER_HALF is the wake's half-width (m)
 ## at the middle pip: the wind brush's radius (scripts/wind_brush.gd). The
 ## pips scale it as they scale every tool, 0.6 / 1 / 1.5 (the design's 20 /
 ## 34 / 52 px lanes). A still press held FEATHER_BURST_SECONDS is a burst;
 ## let go sooner it sends nothing, so a stray click blows nothing. The burst's
-## ring (the ground mark) grows from the lane's half-width to FEATHER_RING
-## times it, 1.5× the lane's width across, over the wind tool's gather
+## ring (the ground mark) grows from the wake's half-width to FEATHER_RING
+## times it, 1.5× the wake's width across, over the wind tool's gather
 ## (WindGust.BURST_GATHER), then the gust rings out past it on release.
 const FEATHER := "feather"
 const FEATHER_HALF := 3.0
@@ -158,10 +159,10 @@ var _sowing := false
 var flicks := 0
 var _shell_lifted := false
 ## Seconds the Feather's press has been held, and what its last release sent
-## ("lane", "burst" or "" for nothing), with counts, for the marks and probes.
+## ("wake", "burst" or "" for nothing), with counts, for the marks and probes.
 var feather_seconds := 0.0
 var feather_last := ""
-var feather_sent := {"lane":0,"burst":0,"none":0}
+var feather_sent := {"wake":0,"burst":0,"none":0}
 
 func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	scene = owner_scene
@@ -298,7 +299,7 @@ func select_tool(id: String) -> void:
 
 # --- The Feather ------------------------------------------------------------------
 
-## The Feather's lane half-width (m) at the size in hand.
+## The Feather's wake half-width (m) at the size in hand.
 func feather_half() -> float:
 	return FEATHER_HALF*size_scale()
 
@@ -310,7 +311,7 @@ func take_feather() -> void:
 	if roll.tool != FEATHER: select_tool(FEATHER)
 
 ## A press on the land with the Feather: the wind tool is taken there, no
-## flick carried, as wide as the Feather's lane, and the press is held here
+## flick carried, as wide as the Feather's wake, and the press is held here
 ## until the button comes up. Nothing happens if the land is busy.
 func _feather_press(point: Vector2) -> void:
 	var editor: Node = reach._editor()
@@ -330,15 +331,15 @@ func feather_blowing() -> bool:
 	return roll != null and roll.tool == FEATHER and held.is_empty() and gust != null and gust.aiming()
 
 ## The burst ring's radius (m) while the Feather is held still, or 0 before
-## FEATHER_BURST_SECONDS: the lane's half-width, growing to FEATHER_RING of it.
+## FEATHER_BURST_SECONDS: the wake's half-width, growing to FEATHER_RING of it.
 func feather_ring() -> float:
 	if reach.holding != FEATHER or feather_seconds < FEATHER_BURST_SECONDS: return 0.0
 	var gust := _gust()
 	var gather: float = float(gust.BURST_GATHER) if gust != null else 1.2
 	return feather_half()*lerpf(1.0,FEATHER_RING,smoothstep(FEATHER_BURST_SECONDS,gather,feather_seconds))
 
-## The Feather's press comes up: a swipe's lane goes as the wind tool
-## promised it; a still press is a burst only once held long enough.
+## The Feather's press comes up: a drag's wake is let go and dies away; a
+## still press is a burst only once held long enough.
 func _feather_let_go() -> void:
 	var gust := _gust()
 	if gust == null or not gust.aiming(): return
