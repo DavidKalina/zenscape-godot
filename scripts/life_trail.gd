@@ -412,7 +412,7 @@ func _place_mark(survey: RefCounted, kind: String) -> bool:
 	var edges := _strong_edges(survey)
 	edges.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return (a.p as Vector2).distance_squared_to(elder) < (b.p as Vector2).distance_squared_to(elder))
 	var rng: RandomNumberGenerator = life._rng
-	for edge in edges.slice(0,8):
+	for edge in edges.slice(0,32):
 		var into: Vector2 = edge.into
 		var p: Vector2 = (edge.p as Vector2)+into*rng.randf_range(0.0,0.3)+into.orthogonal()*rng.randf_range(-0.25,0.25)
 		var cell := Survey.cell_at(p)
