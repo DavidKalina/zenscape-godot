@@ -158,3 +158,72 @@ All in `studies/celestial.gd`, drawn by `shaders/reference_sky.gdshader` and `re
 - **Moon phases.** `LUNAR_DAYS` (8) world days a month, starting `LUNAR_START` (0.85, waxing gibbous). The moon falls a turn behind the sun each month, so it rises later every night and a new moon is up by day. The disc is shaded as a sphere lit by the sun, with earthshine and faint seas; the lit part is HDR. Moonlight runs from `MOON_LIGHT.x` to `.y` of the old fixed moon, and the night fill from `MOON_FILL.x` to `.y`. The moon's lake glint follows its phase.
 - **Moonbow.** A life moment (`docs/scenic/life.md`): night rain stopping under a moon at least `MOONBOW_FULL` (0.9) lit.
 
+
+## Polish tally
+
+A running list of what looks off or is still unverified, gathered from the first rendered takes (2026-09-29, clips in `captures/surprises/`, not in Git). Nothing here blocks the others. Pick items off in later sessions, and add to the list as things are seen. Strike an item through, or remove it, once it's done.
+
+**Legend:**
+- **[bug]** is broken.
+- **[look]** works but doesn't read well.
+- **[tune]** is a number to adjust.
+- **[unseen]** has not been seen or heard rendered yet.
+
+### Existing look, beyond these features
+- [bug] The grass snake does not draw in the rendered game at all (headless says it's visible and in place). Being diagnosed; first suspect is the balanced display fog painting ground-hugging geometry as ground.
+- [look] Open water is nearly invisible from most angles; fish seem to float in a green hollow.
+- [look] Fireflies draw as faint square quads in dusk fog (fog applied to their additive quads).
+- [look] Broadleaf crowns read pale lilac-white in summer and autumn, not green or gold. Check the stand tint, and whether autumn tint reaches that kind.
+- [look] Cold weather turns the ground orange-brown and leaves pale fog blobs at the frame edges.
+- [look] Dead-wood snags look short and stubby.
+- [look] Hills read low and soft from the play camera.
+
+### Rain
+- [look] Rain fog veils the water, so the filling pond reads as a pale ring and rills barely show. Thin the rain fog near the ground so players can watch their pond fill.
+- [unseen] How water entering the ground looks (a source may show as a small welling on a slope).
+- [unseen] Whether fish arrive at a rain-made pond.
+
+### Predation
+- [look] The heron stands at the very edge of the pond, once right on a frogspawn clump.
+- [look] A fish carried off in flight is small.
+- [unseen] The snake's stalk, strike and swallow bulge (blocked by the snake bug).
+
+### Noticing the hand
+- [look] Dusk fog hides the fish in the gust shot; the gull is hard to see.
+- [look] The deer bolt plays its Walk at 2.3x and may look like scurrying. A run clip is needed (Blender).
+- [unseen] A frog buried in the bank for winter reacting to a poke or the wanderer.
+
+### Rare variants
+- [look] The white "stag" is a cream doe: the rig has no antlers.
+- [unseen] Fish carried by water balls don't roll for golden koi.
+
+### Night sky
+- [look] The moon disc is soft in an extreme close-up.
+- [tune] Old saves or moods that stored aurora 0.65 still show a constant aurora.
+- [bug] Merge risk: main's uncommitted sky edits (bow in front of the hills) touch the same shader include.
+
+### Small life
+- [look] Geese side-on read as a loose cluster; the V shows from above.
+- [unseen] The drum and honk sounds haven't been listened to.
+- [tune] Butterfly and woodpecker sizes were raised for readability (butterfly SCALE 2.4, woodpecker SIZE 2.2); judge at play distance.
+- [look] Sine-driven motion may feel mechanical. The woodpecker is the first candidate for Blender clips if so.
+
+### Pond seasons
+- [look] Lily pads read nearly black; they want a lighter leafy green.
+- [look] Lily flowers are hard to find.
+- [look] Leaves on water read as small specks at play distance; one leaf can't be followed down a rill.
+- [unseen] Survey fix: fish, frogs and herons now find live-water ponds. Watch for over-population or odd arrivals.
+
+### Winter water
+- [tune] The dawn mist reads as bright glowing puffs, not a thin low layer. Lower `MIST_STRENGTH` and `MIST_SCALE`.
+- [unseen] Freeze and thaw state isn't saved.
+
+### Bigfoot trail
+- [look] Prints read as dark blobs from a few metres, not bare feet.
+- [tune] The howl (about -20 dB) and knocks (about -27 dB) are quiet.
+- [tune] The natural odds fire (6 simulated days: 4-9 tracks, 5 howls, 9-11 knocks) but haven't been judged for feel.
+- [unseen] Snow tracks don't also show deer or foxes.
+
+### Filming
+- The God Hand and hover rings leak into some takes; film scripts should switch off the hand's processing, not just hide it.
+- Film scripts: `tools/film_{rain,predation,hand_notice,night_sky,small_life,winter_water,bigfoot_trail,pond_seasons}.gd`, and variants to come.
