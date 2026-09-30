@@ -747,7 +747,10 @@ func _process(delta: float) -> void:
 	_celestial.sample_sky_motion(_motion_time)
 	_bird_flight.growth = minf(_growth.foliage, _growth.water) if _growth.terrain >= 0.995 else 0.0
 	_fireflies.update_conditions(_celestial.state.get("zs_daylight",1.0), _precipitation.state.x, _precipitation.surface_weather.cold, _bird_flight.growth)
-	if _chunk_editor.data.blank:
+	# A blank world has no fireflies of its own, unless LandLife has brought
+	# them to its damp places (scripts/land_life.gd).
+	var life: Variant = get("land_life")
+	if _chunk_editor.data.blank and not (life != null and life.active):
 		_fireflies.visible = false
 	_bigfoot.visible = not _chunk_editor.data.blank or _bigfoot.authored_tree
 	_bird_flight.advance(delta, _paused, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle),sin(_atmosphere._air_angle)))
