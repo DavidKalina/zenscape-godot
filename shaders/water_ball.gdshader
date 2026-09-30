@@ -39,6 +39,9 @@ uniform float lens = 0.35;
 uniform float burst = 0.0;
 // 1 once it has hit the ground: its bubbles have gone with the splash.
 uniform float landed = 0.0;
+// 1 lights each facet of the low-poly ball by its own flat normal, the
+// ripples and chop riding on it at FACET_DETAIL; 0 is the smooth sphere.
+uniform float facets = 1.0;
 // Seconds the ball has existed (TIME keeps running when paused).
 uniform float age = 0.0;
 // Ripple rings: object-space direction on the ball, and the age they began.
@@ -51,6 +54,7 @@ varying vec3 world_position;
 
 const int STEPS = 18;
 const float IOR = 1.333;
+const float FACET_DETAIL = 0.45;
 const vec3 SHALLOW = vec3(0.19, 0.42, 0.33);
 const vec3 DEEP = vec3(0.018, 0.10, 0.11);
 const vec3 FOAM = vec3(0.86, 0.94, 0.93);
@@ -220,6 +224,14 @@ void fragment() {
 	mat3 normal_to_world = transpose(mat3(to_ball));
 	vec3 n = normalize(local_position);
 	vec3 normal_local = surface_normal(n);
+	if (facets > 0.5) {
+		// The facet's own plane, from how the surface runs across the pixel,
+		// turned to face out; the ripples tilt it a little.
+		vec3 flat_world = normalize(cross(dFdx(world_position), dFdy(world_position)));
+		vec3 flat_local = normalize(mat3(to_ball) * flat_world);
+		if (dot(flat_local, n) < 0.0) flat_local = -flat_local;
+		normal_local = normalize(flat_local + (normal_local - n) * FACET_DETAIL);
+	}
 	vec3 normal = normalize(normal_to_world * normal_local);
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	float facing = max(dot(eye, normal), 0.0);

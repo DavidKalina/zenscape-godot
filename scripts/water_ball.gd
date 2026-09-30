@@ -147,6 +147,58 @@ var _ground_material: ShaderMaterial
 var _crown: MeshInstance3D
 var _crown_material: ShaderMaterial
 var _school: Node3D
+## The ball is cut in facets, as the land and the props are
+## (docs/design/tools/PLAN.md, the Fidelity look): a unit icosphere split
+## FACET_STEPS times (320 faces), lit by each facet's own flat normal with the
+## ripples and chop riding on it (the shader's `facets`). Its wobble moves the
+## corners, so the facets jostle. `--smooth-ball` gives back the smooth sphere.
+const FACET_STEPS := 2
+const SMOOTH_ARG := "--smooth-ball"
+static var SMOOTH := SMOOTH_ARG in OS.get_cmdline_user_args()
+static var _icospheres := {}
+
+## A unit icosphere, split `steps` times, corners shared so the wobble keeps it
+## whole. Built once per split and shared.
+static func icosphere(steps: int) -> ArrayMesh:
+	if _icospheres.has(steps): return _icospheres[steps]
+	var t := (1.0+sqrt(5.0))*0.5
+	var points: Array[Vector3] = []
+	for p in [Vector3(-1,t,0),Vector3(1,t,0),Vector3(-1,-t,0),Vector3(1,-t,0),Vector3(0,-1,t),Vector3(0,1,t),
+			Vector3(0,-1,-t),Vector3(0,1,-t),Vector3(t,0,-1),Vector3(t,0,1),Vector3(-t,0,-1),Vector3(-t,0,1)]:
+		points.append((p as Vector3).normalized())
+	var faces: Array[Vector3i] = [Vector3i(0,11,5),Vector3i(0,5,1),Vector3i(0,1,7),Vector3i(0,7,10),Vector3i(0,10,11),
+		Vector3i(1,5,9),Vector3i(5,11,4),Vector3i(11,10,2),Vector3i(10,7,6),Vector3i(7,1,8),
+		Vector3i(3,9,4),Vector3i(3,4,2),Vector3i(3,2,6),Vector3i(3,6,8),Vector3i(3,8,9),
+		Vector3i(4,9,5),Vector3i(2,4,11),Vector3i(6,2,10),Vector3i(8,6,7),Vector3i(9,8,1)]
+	for step in range(steps):
+		var middles := {}
+		var split: Array[Vector3i] = []
+		var middle := func(a: int, b: int) -> int:
+			var key := Vector2i(mini(a,b),maxi(a,b))
+			if not middles.has(key):
+				middles[key] = points.size()
+				points.append((points[a]+points[b]).normalized())
+			return middles[key]
+		for f in faces:
+			var ab: int = middle.call(f.x,f.y)
+			var bc: int = middle.call(f.y,f.z)
+			var ca: int = middle.call(f.z,f.x)
+			split.append_array([Vector3i(f.x,ab,ca),Vector3i(f.y,bc,ab),Vector3i(f.z,ca,bc),Vector3i(ab,bc,ca)])
+		faces = split
+	var vertices := PackedVector3Array(points)
+	var indices := PackedInt32Array()
+	# Godot's front faces wind clockwise seen from outside.
+	for f in faces: indices.append_array([f.x,f.z,f.y])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = vertices
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	_icospheres[steps] = mesh
+	return mesh
+
 ## Fish meshes by look ("kind seed"), shared by every ball.
 static var _fish_meshes := {}
 static var _swim_materials := {}
@@ -154,11 +206,16 @@ static var _swim_materials := {}
 func _ready() -> void:
 	_material = ShaderMaterial.new()
 	_material.shader = preload("res://shaders/water_ball.gdshader")
-	var sphere := SphereMesh.new()
-	sphere.radius = 1.0
-	sphere.height = 2.0
-	sphere.radial_segments = 64
-	sphere.rings = 32
+	var sphere: Mesh
+	if SMOOTH:
+		sphere = SphereMesh.new()
+		sphere.radius = 1.0
+		sphere.height = 2.0
+		sphere.radial_segments = 64
+		sphere.rings = 32
+	else:
+		sphere = icosphere(FACET_STEPS)
+	_material.set_shader_parameter("facets",0.0 if SMOOTH else 1.0)
 	_ball = MeshInstance3D.new()
 	_ball.name = "Ball"
 	_ball.mesh = sphere
