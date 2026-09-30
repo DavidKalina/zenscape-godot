@@ -27,7 +27,7 @@ void fog() {
 	vec3 q = p * vec3(0.22, 0.42, 0.22) + vec3(zs_cloud_drift.x * 3.0, zs_motion_time * 0.012, zs_cloud_drift.z * 3.0)
 		- vec3(zs_wind_offset.x, 0.0, zs_wind_offset.y) * 0.03;
 	float noise = 0.55 + 0.75 * wxFbm(q);
-	float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / 14.0);
+	float fade = zs_plate_keep(p, ground);
 	float stream = 0.72 + 0.56 * zs_gust_field(p.xz);
 	float reveal = zs_reveal_keep(p.xz);
 	float poured = 0.0;
@@ -58,7 +58,7 @@ void fog() {
 		vec3 cap_light = zs_cloud_sun * open_sky * sun_amount * min(cap_phase, 1.7) * 0.42 + zs_cloud_sky * 0.7;
 		lit = (lit * d + cap_light * cap) / (d + cap);
 	}
-	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * reveal;
+	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * reveal * fade;
 	if (inversion > 0.0) {
 		lit = (lit * (d + cap) + zs_inversion_color * mix(0.8, 1.0, open_sky) * inversion) / max(d + cap + inversion, 0.0001);
 	}

@@ -177,6 +177,7 @@ A running list of what looks off or is still unverified, gathered from the first
 - [look] Fireflies draw as faint square quads in dusk fog (fog applied to their additive quads).
 - [look] Broadleaf crowns read pale lilac-white in summer and autumn, not green or gold. Check the stand tint, and whether autumn tint reaches that kind.
 - [look] Cold weather turns the ground orange-brown and leaves pale fog blobs at the frame edges.
+- [unseen] Fog puffs hung past the plate's rim over the void in nearly every shot. On polish/void-fog-puffs the display air, native valley fog, fog bank and peak clouds keep only where land is behind them (`zs_plate_keep`), and fair-weather ground mist gathers in patches. Needs a rendered look, including low views and night.
 - [look] Dead-wood snags look short and stubby.
 - [look] Hills read low and soft from the play camera.
 

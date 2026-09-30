@@ -80,10 +80,11 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	# mostly produce empty sky, so fair/misty weather needs a broken deck.
 	var coverage: Vector2 = {"clear":Vector2(.08,.22),"fair":Vector2(.42,.62),"mist":Vector2(.48,.66),"rain":Vector2(.72,.9),"snow":Vector2(.65,.85),"overcast":Vector2(.8,.95)}[weather]
 	mood.clouds = rng.randf_range(coverage.x,coverage.y)
+	# Out of cloudy or misty skies, peak clouds are decoration: keep them rare.
 	var visuals := {
 		"fog_density":rng.randf_range(.45,.8) if weather=="mist" else rng.randf_range(.18,.38) if rainy or snowy else rng.randf_range(.02,.08) if dry else rng.randf_range(.08,.22),
 		"fog_height":rng.randf_range(4.0,7.0),
-		"peak_density":rng.randf_range(.14,.3) if cloudy or weather=="mist" else rng.randf_range(.03,.10),
+		"peak_density":rng.randf_range(.14,.3) if cloudy or weather=="mist" else rng.randf_range(.015,.05),
 		"peak_altitude":rng.randf_range(4.0,7.0),
 		"rock_style":1,"rock_detail":.65
 	}
