@@ -550,6 +550,7 @@ func handle_resident_input(event: InputEvent) -> bool:
 func blocks_world_input(point: Vector2) -> bool:
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
+	if hand_reach != null and hand_reach.materials != null and hand_reach.materials.tray_under(point): return true
 	if photo != null and photo.contains_pointer(point): return true
 	if atlas != null and atlas.contains_pointer(point): return true
 	if mood_panel != null and mood_panel.contains_pointer(point): return true

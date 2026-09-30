@@ -287,6 +287,12 @@ var _tree_springs := {}
 const SPRING_STATE := ["bend","velocity","crown","crown_velocity","tip","tip_velocity"]
 ## Headless probes have no pointer: where they say it is, for the hover.
 var pointer_override: Variant = null
+## The materials tray (scripts/hand_materials.gd, an experiment): the field
+## case of specimens; made in setup under --modeless unless --no-tray. It sees
+## a free press first and holds "jar" (a press on a specimen) or "scatter"
+## (setting stones, flowers or reeds).
+const HandMaterials = preload("res://scripts/hand_materials.gd")
+var materials: HandMaterials
 signal snapped(phase: float, step: bool)
 
 func setup(owner_scene: Node3D) -> void:
@@ -304,6 +310,10 @@ func setup(owner_scene: Node3D) -> void:
 		outline = TreeOutline.new()
 		add_child(outline)
 		wind = SkyWind.new(scene)
+		if HandMaterials.enabled():
+			materials = HandMaterials.new()
+			add_child(materials)
+			materials.setup(scene,self)
 
 # --- What the pointer reaches --------------------------------------------------
 
@@ -582,6 +592,7 @@ func handle(event: InputEvent) -> bool:
 				return true
 			if not holding.is_empty() or not available() or button.ctrl_pressed or button.double_click: return false
 			_press_shift = button.shift_pressed
+			if materials != null and materials.press(button.position): return true
 			if modeless and _cloud_press(button.position): return true
 			var what := reach_at(button.position)
 			if what.is_empty():
@@ -652,6 +663,8 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		_cloud_drag(point)
 	elif holding == "tree":
 		_tree_pull(point)
+	elif holding in ["jar","scatter"]:
+		materials.drag(point)
 	elif holding == "rim":
 		var angle: Variant = _angle_round(point)
 		# Once a shake has taken the rim (scripts/snow_globe.gd) the dial stays
@@ -682,6 +695,9 @@ func release(point := Vector2.INF) -> void:
 	elif what == "cloud":
 		reach_point = null
 		if _source != null: _source.let_go()
+	elif what in ["jar","scatter"]:
+		reach_point = null
+		materials.let_go(what,point)
 	elif what == "sun":
 		drifting = true
 		phase_speed = clampf(phase_speed,-DRIFT_MAX,DRIFT_MAX)
@@ -689,6 +705,21 @@ func release(point := Vector2.INF) -> void:
 		settling = not _reverted and not modeless
 		if modeless: _rim_release(point)
 		rim_released.emit()
+	holding_changed.emit("")
+
+## Another part of the hand (scripts/hand_materials.gd) takes the press as
+## `what`: its drag and release come back to it through `drag` and `release`.
+func take_hold(what: String, point: Vector2) -> void:
+	holding = what
+	_press_pos = point
+	_show_hint("")
+	holding_changed.emit(what)
+
+## Lets go of a hold without its release: its press has gone on to the
+## editor, which holds it from here.
+func drop_hold() -> void:
+	holding = ""
+	reach_point = null
 	holding_changed.emit("")
 
 ## A hold ends if the window loses the pointer mid-drag, as a release would.
@@ -852,6 +883,7 @@ func _process(delta: float) -> void:
 			if holding == "void" and _void_travel > CLICK_PIXELS: wind.step(delta)
 		_step_trees(delta)
 		if not eye: _drive_hand_modeless()
+		if materials != null: materials.step(delta)
 	elif not eye: _drive_hand()
 
 ## True while the camera looks out through the wanderer.
@@ -945,8 +977,11 @@ func _hover(point: Vector2) -> void:
 				hover_zone = "land"
 				_hover_point = land
 		_hover_void(point)
-		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] else -1)
-	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone == "cloud" else Input.CURSOR_ARROW)
+		if materials != null and hover_zone.is_empty() and materials.tray_under(point): hover_zone = "tray"
+		# With material in hand a press on a tree sows or pours: no outline.
+		var carrying := materials != null and not materials.held.is_empty()
+		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] and not carrying else -1)
+	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone in ["cloud","tray"] else Input.CURSOR_ARROW)
 	var text := ""
 	var zone := ""
 	if not what.is_empty():
@@ -962,6 +997,10 @@ func _hover(point: Vector2) -> void:
 	if modeless and hover_zone == "cloud":
 		zone = _source.kind
 		text = CLOUD_HINT
+	if materials != null and not materials.held.is_empty() and hover_zone in ["land","void","cloud"]:
+		var said: Array = materials.hint(hover_zone)
+		zone = said[0]
+		text = said[1]
 	if _hint_quiet(zone): text = ""
 	_read_hint(zone if not text.is_empty() else "")
 	_show_hint(text)
@@ -1123,6 +1162,7 @@ func _drive_hand_modeless() -> void:
 	if hand == null: return
 	# Only the hover stands the hand down for the camera; a hold keeps it.
 	hand.held_off = false
+	if materials != null and materials.drive_hand(hand): return
 	var globe: Node = scene.get("snow_globe")
 	if holding == "rim" and globe != null and globe.decided: return
 	if holding == "land":

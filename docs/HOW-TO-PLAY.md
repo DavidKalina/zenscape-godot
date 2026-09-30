@@ -88,6 +88,29 @@ under "Pull feel (experiment)".
 The cloud's grey belly shows how much water it holds. It shrinks as it gives
 and refills in about a minute; a dry cloud won't tear.
 
+## The tray (experiment)
+
+Along the bottom edge sits a field case, a long, low case of smoked glass
+with one specimen in each compartment. The seeds are **acorn** (oak), **pine
+cone**, **willow catkin**, **birch samara**, **wildflower seed head** and
+**reed**. Then come **water** and a **river stone**. The case stays faint
+until the pointer comes near. Hover a specimen to read its name. Faint
+outlines are kinds you haven't found yet, and pressing one gives nothing.
+
+| Do | Result |
+|---|---|
+| Press a specimen | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment stays faintly outlined while you hold it |
+| Tree seeds: drag over the land | sprinkles seeds along the way, and the wind carries them down. What comes up leans to that tree, as far as the ground there allows |
+| Wildflower: tap, or drag | sows a drift of meadow flowers; a drag scatters more drifts |
+| Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
+| Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
+| Stone: tap | sets a stone down, bigger the longer you press |
+| Stone: drag | scatters a few pebbles |
+| Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
+
+The trees' spores and the cloud still work as before. `--no-tray` hides the
+tray.
+
 ## Trees
 
 Every new plain has one wild tree. Water splashing on the land grows trees too.
@@ -122,6 +145,7 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--classic-controls` brings back the tool modes.
 - `--pull-cam=a|b|c|old` sets how the camera shows the edge pull (see "The edge" above). The default is `a`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
+- `--no-tray` hides the materials tray.
 
 ## Not reachable in the hand scheme yet
 

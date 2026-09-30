@@ -355,3 +355,61 @@ Branch `feature/sky-cloud`. Checked headless only (`tools/probe_sky_wind.gd`); n
 
 - Nothing shows the wind's heading while you hold except the world bending (trees, grass, fog, the wind trails). A vane or streaks under the hand may be wanted.
 - The hand has no blowing pose; it relaxes as for any void drag.
+
+## Materials tray (experiment)
+
+Branches `experiment/materials-tray` (the first jars) and `experiment/field-case` (this redesign). Checked headless only (a throwaway probe and composite mocks); nothing has been seen or felt on screen. The chains that give material in the hand scheme (bend a tree for spores, tear the cloud for a water ball) felt contrived, so this tries a case of materials at the edge of the table instead. The shaping verbs are untouched, and the old sources still work, so both can be compared. `--no-tray` leaves the tray out.
+
+The first tray was a pill of three cartoon jars that bobbed and squashed. The user found it cheap, too small and too cool in colour. This redesign follows `docs/design/materials-tray/BRIEF.md`, the "naturalist's field case": the title screen's restraint, amber rather than cool, engraved specimens, and nothing that bounces.
+
+### Try it
+
+- **The case** is a long, low panel of dark smoked glass, centred at the bottom, edged with a brass hairline and a fainter inner one. It holds eleven compartments in three groups parted by hairline dividers. The seeds are acorn (oak), pine cone, willow catkin, birch samara, wildflower seed head and reed. Next come water and a river stone, then a crystal outline, and finally a snowflake outline and one vacant place. At rest it shows at 42% and sits 4 px low; as the pointer nears the bottom edge it wakes to full over 0.3 s.
+- **Hover a specimen.** It warms from resting to lit amber, a hairline draws out beneath it, and its name fades in below, in tracked Newsreader capitals like the title's tagline (`ACORN · OAK`).
+- **Press a specimen.** The hand takes some: it pinches seeds and stones and cups water, and a small clump tinted as the specimen rides in it. The compartment is left as a faint outline while the specimen is in the hand. What the hand holds decides what a press does, until it is put back. You can also press a specimen and drag straight out onto the land.
+- **Tree seeds** (oak, pine, willow, birch). Press and drag over the land: the hand sprinkles a veil along the way, and when you let go the wind carries it down. What comes up leans to the seed's kind, as a flicked tree's spores do, but the land may still turn some to what grows there.
+- **Wildflower.** Tap to sow a drift of meadow flowers (daisy, button, spike and umbel flowers); drag to scatter more drifts. **Reed:** the same with clumps of reeds. They sprout as placed plants do, and a drag is one undo step.
+- **Water.** Press and hold over the land: a water ball forms and fills while you hold. Let go and it drops, making a pool, or a spring on high or steep ground.
+- **Stone.** Tap to set a stone down; the longer the press, the bigger the stone. Drag to scatter a few pebbles under the hand. A drag is one undo step.
+- **Undiscovered** compartments (the crystal, the snowflake, the vacant place) give nothing. A press warms the outline a little, and it cools again.
+- **Put it back** by clicking the sky, the case or the specimen you took, or by letting go there after drawing it out. The specimen glides home and settles into its compartment. A press on the rim keeps the rim's verbs and the material stays in hand.
+- **Cmd+Z** takes back stones, flowers, reeds, sown forest and a spring's bed, as for the old sources.
+
+### How it works
+
+- `scripts/materials_tray.gd` only draws, in `_draw` in viewport pixels. It uses design units at 1440×900 scaled by `lantern_style.gd` `ui_scale`, so hairlines and type stay crisp. It sits on its own canvas layer and ignores the mouse. The `SPECIMENS` table lists each compartment's id, glyph, label and group, and the `hidden` flag marks undiscovered ones. The palette is in named constants:
+
+  | Constant | Hex | Role |
+  |---|---|---|
+  | `AMBER_REST` | `#b08a55` | a specimen at rest |
+  | `AMBER_LIT` | `#f0c67f` | a hovered specimen, its hairline |
+  | `BRASS` | `#c49a5c` | the case's border and dividers (50% alpha; inner border 13%) |
+  | `AMBER_DEEP` | `#8a6b45` | undiscovered outlines (26%, 36% hovered) |
+  | `CREAM` | `#e6decd` | labels (78%), the title tagline's cream |
+  | `GLASS_TOP` → `GLASS_FOOT` | `#231b12` → `#0b0a08` | the glass, 44% → 60% alpha |
+
+  These sit beside the title's `#e2d0aa` hairline and `#e3d7bd` cream. The size of each part is set by named constants too: `CELL` 66, `HEIGHT` 80, `GROUP_GAP` 20, `PAD` 18, `BOTTOM` 28 and `GLYPH` 46. The case is 802 design units wide, 56% of the screen.
+- **Motion.** Nothing springs. Each state is a linear progress drawn through smoothstep:
+
+  | Change | Property | Duration | Easing |
+  |---|---|---|---|
+  | wake / rest | opacity 42% ↔ 100%, rise 4 px | `WAKE` 0.3 s | smoothstep |
+  | hover | resting → lit amber; hairline 0 → 30 wide; label fades in | `HOVER` 0.2 s | smoothstep |
+  | pick up | specimen → 20% (faint outline) | `HELD` 0.2 s | smoothstep |
+  | put back | glides from the hand to its compartment, 80% → 100% size, fading out as the compartment fades back in | `GLIDE` 0.3 s, then `HELD` 0.2 s | smoothstep |
+  | undiscovered press | outline warms, then cools | `NOT_YET` 0.45 s | smoothstep |
+
+  The pick-up "tick" sound belongs in `hand_materials.gd` `_take`, which carries a comment marking the spot.
+- **Specimens** are botanical-engraving line art drawn by `tools/paint_tray_specimens.py` into `assets/ui/tray/*.svg`. They are white strokes only: contour 1.15, detail 0.85 and hatching 0.55 on a 48-unit box, which is about 1 px at 1×. Shade falls to the lower right as contour-following form lines (`contour_hatch`) and a little straight hatching, clipped in Python, so the SVGs hold no clips, masks, gradients or `rgba()`, only `stroke-opacity`. The tray tints them with `modulate`. It rasterises each SVG at the size it is drawn (`Image.load_svg_from_string`) and rebuilds when `ui_scale` changes. The exported builds carry the SVG sources: `export_presets.cfg` adds `assets/ui/tray/*.svg` to `include_filter`. If a source is missing the tray falls back to the imported texture, which is imported at 4× with mipmaps. No blur is used behind the glass.
+- `scripts/hand_materials.gd` holds the material and gets a free left press first (`hand_reach.gd` `handle`). A specimen press is held as `"jar"`, and a tap or drag that sets things down as `"scatter"`. Seeds and water go to the editor, which holds them until the button comes up, as the cloud's tuft does. Carrying anything but water, the hand uses the cloud's pinch (`"cloud"`); carrying water it uses the summon's cupped Reach (`"summon"`). The clump keeps its old shape and pop, but its seed tones are per specimen (`Clump.TONES`).
+- **Tree seeds** go through `NativeChunkEditor.sow_from_hand(point, kind)`, which calls `_handful_press` with the forest brush and the kind (`SEEDS`: oak → `broadleaf`, pine → `tree` (the spruce family), willow → `willow`, birch → `birch`). The kind is stamped on the veil (`pollen_cloud.gd` `seed_kind`) and gives its look family. `_write_cloud` then hands it to emergence, and `_heir_kind` keeps the kind where the stand's pool holds it, weighted by its fit there. `_handful_press` now always sets `seed_kind`, so a plain brush press no longer inherits a stale kind.
+- **Wildflower, reed and stone** go through `NativeChunkEditor.set_objects`, a generalised `set_stone`. It places a list of build-palette assets in one stroke, marks them as hand work, folds each follow-on drop in a drag into one undo step, and plays each asset's `NativeDropReactions` arrival. That arrival is a sprout for plants and a drop for the rock. Per-material settings live in `SCATTER`: the assets, how many one drop sets, their spread, and the tap and drag size ranges. A wildflower drop sets 5 flowers within 0.75 m; a reed drop sets 3 reeds within 0.4 m. A drag drops a set every `STONE_GAP` (0.9 m), at most `most` a drag, and only once the last has been drawn and has landed.
+- **Water** reuses the cloud tuft's ball: `ball_from_sky` with no `ball_supply`.
+
+### Limits and open points
+
+- Nothing has been seen live. Still unseen: the case over fog, snow and night, the label's legibility at 9.5 px, the glide home, the wake distance (`NEAR` 170), and the hand's carrying poses and clump. The composite mocks were drawn with the tray's constants, Godot's SVG rasteriser and its font rasteriser, but not by the renderer.
+- Reeds grow anywhere they are set, not only by water, and the meadow flowers are placed plants; neither paints the meadow brush's ground colour.
+- The crystal and the snowflake are outlines only; there is no discovery yet that fills them in.
+- Seeds sow the Forest brush's veil at its own strength, weaker than a full tree flick (`TREE_STRENGTH` 1.8).
+- With material in hand a press on a tree or a prop sows, pours or sets things down; those keep their own grab only with an empty hand.
