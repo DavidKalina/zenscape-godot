@@ -21,6 +21,8 @@ const POND := Vector2(3.0,2.5)
 const MOOD := "Alpine daylight"
 ## Life clock speed while the pond ages (shot a).
 const LAPSE := 60.0
+## Extra leaves a second in shot b, so the drift reads on camera.
+const EXTRA_LEAVES := 1.5
 
 func _initialize() -> void: run.call_deferred()
 
@@ -29,6 +31,8 @@ func seconds(value: float) -> void:
 		await process_frame
 		scene._atmosphere.set_fog(0.04)
 		scene._atmosphere.set_haze(0.06)
+		# Film only: EXTRA_LEAVES more leaves a second than the default rate.
+		if shot == "b" and life != null: life.seasons._shed += EXTRA_LEAVES/60.0
 
 func height(p: Vector2) -> float:
 	var h: Variant = editor.data.ground_height(p)
