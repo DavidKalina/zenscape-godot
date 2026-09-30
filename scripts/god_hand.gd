@@ -63,7 +63,10 @@ const BLEND := 0.18
 ## the wall's inward normal), the fingers spread up it. "summon" is the open
 ## cupped Reach held square to the camera while a summoned cloud forms in it
 ## (docs/scenic/sky-cloud.md "Summoned"), before the pinch closes on it.
-const GESTURES := {"summon":"Reach","pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim","wall":"Wall","void":"Void","snap":"Snap","cloud":"Pinch"}
+## "grip" holds a shaping tool (scripts/land_clay.gd, docs/design/tools/PLAN.md):
+## until the tools have their own clips it borrows the rim grip's curled
+## fingers and hooked thumb, over the land and lifted clear of it.
+const GESTURES := {"grip":"Rim","summon":"Reach","pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim","wall":"Wall","void":"Void","snap":"Snap","cloud":"Pinch"}
 const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold","WallHold","VoidHold","SnapHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
@@ -89,7 +92,7 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"summon":0.0,"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0,"wall":0.0,"void":0.0,"snap":0.0,"cloud":0.0}
+const TILT := {"grip":0.35,"summon":0.0,"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0,"wall":0.0,"void":0.0,"snap":0.0,"cloud":0.0}
 ## Holding the sun, the hand turns square to the camera, however high the sun
 ## is: the Reach clips cup the disc for a camera level with the hand. The
 ## share per gesture, eased in and out at FACE_RATE (1/s).
@@ -353,6 +356,16 @@ func _slope(at: Vector3, size: float) -> Basis:
 ## Where a bone is, plate coordinates, as the hand stands now.
 func _bone_at(bone: int) -> Vector3:
 	return position+basis*(_skeleton_space*skeleton.get_bone_global_pose(bone).origin)
+
+## Where something held rides (the materials tray, scripts/hand_materials.gd),
+## plate coordinates: between the index and thumb tips for a pinch, else in
+## the palm (the Handful mark).
+func hold_at(pinch: bool) -> Vector3:
+	if pinch:
+		var index := skeleton.find_bone("Index3")
+		var thumb := skeleton.find_bone("Thumb3")
+		if index >= 0 and thumb >= 0: return (_bone_at(index)+_bone_at(thumb))*0.5
+	return _bone_at(_handful) if _handful >= 0 else position
 
 ## A bone mark's weight: the clips carry it on the bone's scale.
 func _weight(bone: int) -> float:

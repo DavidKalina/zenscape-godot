@@ -4,140 +4,97 @@ extends Node
 ## of the press decide the verb. There are no springs here: the land follows
 ## the hand and stays where it is let go.
 ##
-## - **Tap** (let go within HOLD_SECONDS, moved under MOVE_PIXELS): a poke. A
-##   small dimple rings out at the spot and the land comes back exactly; a
-##   resident nearby looks round. Nothing is kept, no undo step. (Props, trees
-##   and residents under the pointer never reach here: hand_reach keeps their
-##   own grab.)
-## - **Drag** (moved MOVE_PIXELS before HOLD_SECONDS): the thumb. How fast the
-##   pointer travels decides it, blended: a slow stroke digs a channel along
-##   the path, a fast back-and-forth rub smooths the land under it. **Shift**
-##   when the drag is decided makes it the palm, which levels the land to a
-##   little under the height under the press, a pan a pond can fill. Where
-##   either takes the ground down, bare earth shows through the grass (the
-##   tint layer) and stays.
-## - **Hold still** for HOLD_SECONDS: the hand closes into a pinch, and then
-##   dragging up raises and down sinks the pinched spot, directly: the summit
-##   follows the pointer. A low raise is a soft swell; a tall one draws up
-##   into a horn, the edge spring's jagged peaks' kind, and is painted with
-##   their rock when let go. Trees the pinch stood on ground they cannot hold
-##   (rock or the rock band under the snow) slide down to its foot when it is
-##   let go. **Shift** when the pinch closes makes it a smaller, gentler one.
+## This reads the gesture; the tool in hand (scripts/clay_tools/, chosen in the
+## tool roll, docs/design/tools/PLAN.md "The seam") says what each gesture does:
 ##
-## Each stroke or pinch is one undo step (opened when the verb is decided,
-## closed at release). The land shows through the editor's light refresh, one
-## at a time, as the brushes and the land spring do; only the points near the
-## hand are written. Nothing weathers after: clay stays as it was left.
+## - **Tap** (let go within HOLD_SECONDS, moved under MOVE_PIXELS): the tool's
+##   `tap`. The bare Hand pokes: a dimple rings out and the land comes back.
+##   (Props, trees and residents under the pointer never reach here:
+##   hand_reach keeps their own grab.)
+## - **Drag** (moved MOVE_PIXELS before HOLD_SECONDS): the tool's dabs, laid
+##   DAB_SPACING apart along the pointer's path. The Hand's thumb digs a
+##   groove or rubs, by the pointer's speed; Shift, read when the drag is
+##   decided, makes it the palm.
+## - **Hold still** for HOLD_SECONDS, then drag: the tool's hold, following the
+##   pointer's travel up or down the screen in metres standing at the spot.
+##   The Hand's is the pinch.
+##
+## Everything the tools share is here: each drag or hold is one undo step
+## (opened when the verb is decided, closed at release); ground a stroke takes
+## down shows bare earth through the grass (the tint layer) and stays; the
+## land shows through the editor's light refresh, one at a time, as the
+## brushes and the land spring do, and only the points near the hand are
+## written; rock paint and trees sliding off at release (`paint_rock` on
+## raised ground, `paint_faces` on cut faces, `shake_trees`, called by the
+## tools); and the size pips' `size_scale`.
+## Nothing weathers after: clay stays as it was left.
 ##
 ## Input: hand_reach's `land_pressed`, `land_dragged` and `land_released` call
-## `press`, `pull` and `release` (connected in studies/fidelity.gd).
+## `press`, `pull` and `release` (connected in studies/fidelity.gd). The tool
+## roll picks the tool (scripts/hand_materials.gd calls `set_tool`).
 
-## Emitted when a press ends: `verb` is "poke", "groove" (a thumb stroke, its
-## `rub` share 0..1 in `last_rub`), "palm", "pinch" or "fine_pinch"; `kept` is
-## whether the land changed and an undo step was added.
+## Emitted when a press ends: `verb` is the tool's name for it (the Hand's are
+## "poke", "groove" (a thumb stroke, its rub share 0..1 in `last_rub`),
+## "palm", "pinch" or "fine_pinch"); `kept` is whether the land changed and an
+## undo step was added.
 signal worked(verb: String, kept: bool)
 
-## Seconds of holding still that close the pinch, and the screen pixels of
+const ClayTool = preload("res://scripts/clay_tools/clay_tool.gd")
+## The tools' scripts: scripts/clay_tools/<id>.gd for each tool roll id.
+const TOOL_PATH := "res://scripts/clay_tools/%s.gd"
+const HandTool = preload("res://scripts/clay_tools/hand.gd")
+## The Hand's groove, kept here for the probes that measure it.
+const GROOVE_HALF_WIDTH := HandTool.GROOVE_HALF_WIDTH
+const GROOVE_DEPTH := HandTool.GROOVE_DEPTH
+
+## Seconds of holding still that close the hold, and the screen pixels of
 ## travel that make the press a drag instead. A release before either is a tap.
 const HOLD_SECONDS := 0.3
 const MOVE_PIXELS := 6.0
-## The thumb's speed blend, pointer pixels per second over the last
-## SPEED_WINDOW seconds of travel (path length, so a rub's turns do not read
-## as slow): at GROOVE_SPEED and under it only digs, at RUB_SPEED and over it
-## only smooths, and between it does some of each.
-const GROOVE_SPEED := 500.0
-const RUB_SPEED := 1200.0
+## A drag's speed, pointer pixels per second over the last SPEED_WINDOW
+## seconds of travel (path length, so a rub's turns do not read as slow).
 const SPEED_WINDOW := 0.25
-## Dabs along the path, metres apart, and at most this many a frame (a
-## thumb's first SPEED_WINDOW of dabs are laid together once its speed is read).
+## Dabs along the path, metres apart, and at most this many a frame.
 const DAB_SPACING := 0.3
 const MAX_DABS := 64
-## The groove: half-width and depth in metres below the ground on the stroke's
-## line. Across, it follows the ground: each point sinks by the line's depth
-## from where it stood, so on a slope's face the uphill bank is cut no deeper
-## than the downhill one (a level bed across cut 1.5-2.5 m into a flank and
-## read as a trench). Full depth inside GROOVE_FLOOR of the half-width (the
-## land's points are 0.45 to 0.75 m apart, so a row or two always reaches the
-## bed), easing to the untouched ground at the half-width on a smoothstep, so
-## the floor and the banks are rounded and the banks stay gentle. A lip of
-## GROOVE_LIP metres (enough for its facets to catch the light) rises just
-## outside (to LIP_OUT half-widths), the clay the thumb pushed aside. Each dab
-## moves the ground GROOVE_STEP of the way to that shape, and a stroke never
-## digs below it however long it lingers: a groove is even and unbroken.
-## The bed never climbs along the stroke, so a downhill stroke is a channel
-## that keeps falling across the ground's bumps; it cuts at most GROOVE_CUT
-## metres deeper than GROOVE_DEPTH to do so, and past that it rises with a
-## hump (an uphill stroke: level, then rising, so it drains back to its start).
-const GROOVE_HALF_WIDTH := 1.35
-const GROOVE_DEPTH := 0.75
-const GROOVE_FLOOR := 0.35
-const GROOVE_LIP := 0.12
-const LIP_OUT := 1.6
-const GROOVE_STEP := 0.5
-const GROOVE_CUT := 0.2
-## The rub: radius in metres, and the share each dab moves a point toward the
-## mean of its neighbours at the centre (easing to nothing at the rim from
-## RUB_CORE of the radius).
-const RUB_RADIUS := 1.6
-const RUB_STEP := 0.45
-const RUB_CORE := 0.5
-## The palm: radius in metres, and the share each dab moves a point toward
-## the level under the press (full inside PALM_CORE of the radius). The level
-## is pressed PALM_SINK metres below the ground under the press, easing to
-## none at the rim, so the palm leaves a level-floored pan a pond can fill;
-## each stroke presses from the ground as it stands, so pressing again deepens it.
-const PALM_RADIUS := 2.0
-const PALM_STEP := 0.5
-const PALM_CORE := 0.55
-const PALM_SINK := 0.4
-## Dirt: where the thumb or the palm takes the ground down, the painted grass
-## has caved in and bare earth shows. The tint layer's weight rises from
-## nothing at DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens
-## from DIRT toward DIRT_DEEP by GROOVE_DEPTH, so the bed reads as a line
-## from the overview. Both are muted, greyed earths, and the weight ramps over
-## most of the bank, so the groove blends into the grass instead of standing
-## as a saturated brown gash. The earth covers whatever was painted there before (the
-## rock of a range's foot, a pinch's flank) by its own weight, not only by the
-## weight it adds: dug ground is earth. Where a groove's lip rises LIP_TURNED
-## metres or more the pushed-aside clay shows as a pale fringe, TURNED at up
-## to TURNED_WEIGHT, so the groove is outlined on both banks. A cell a stroke
-## leaves at least DIRT_BARE bare loses its grass and blades and is marked
-## hand-made, so cover does not creep back and nothing takes root in it. Dirt
-## only ever deepens.
+## Dirt: where a stroke takes the ground down, the painted grass has caved in
+## and bare earth shows. The tint layer's weight rises from nothing at
+## DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens from DIRT
+## toward DIRT_DEEP by DIRT_DEEP_AT (the Hand's groove depth), so a groove's
+## bed reads as a line from the overview. Both are muted, greyed earths, and
+## the weight ramps over most of the bank, so the groove blends into the grass
+## instead of standing as a saturated brown gash. The earth covers whatever
+## was painted there before (the rock of a range's foot, a pinch's flank) by
+## its own weight, not only by the weight it adds: dug ground is earth. Where
+## a tool that `turns_lip` raises ground LIP_TURNED metres or more the
+## pushed-aside clay shows as a pale fringe, TURNED at up to TURNED_WEIGHT
+## (full by TURNED_FULL, the Hand's groove lip), so a groove is outlined on
+## both banks. A cell a stroke leaves at least DIRT_BARE bare loses its grass
+## and blades and is marked hand-made, so cover does not creep back and
+## nothing takes root in it. Dirt only ever deepens.
 const DIRT_FROM := 0.04
 const DIRT_FULL := 0.45
+const DIRT_DEEP_AT := 0.75
 const DIRT_BARE := 0.5
 const DIRT := Color("8f7c62")
 const DIRT_DEEP := Color("6e5b47")
 const TURNED := Color("a39a78")
 const TURNED_WEIGHT := 0.2
+const TURNED_FULL := 0.12
 const LIP_TURNED := 0.03
-## The pinch. The pinched spot rises by the pointer's travel up the screen at
-## the scale of a metre standing there (so the summit keeps to the pointer),
-## `(1-t²)²` falloff over a radius that widens with the height: R0 plus GROW
-## per metre, at most MAX_RADIUS. The lift is between -SINK and RAISE metres,
-## and sinking never takes ground below FLOOR (the land brush's floor).
-## A Shift pinch is FINE_SCALE of the travel over a smaller spread.
-##
-## A raise turns from that rounded swell into a horn as it grows (HORN, metres
-## of lift, as a smoothstep), the edge spring's peaks' kind (mountain_forms
-## "alpine", scripts/edge_spring.gd `_build_range`): concave faces up to a
-## sharp summit, three to five arêtes (seeded by the spot, so they hold while
-## the hand moves) standing proud between hollows, and the forms' crag noise
-## over the flanks, the outline wandering by the forms' lump noise (so the
-## points are gathered HORN_REACH of the widest radius out). The summit still
-## keeps to the pointer. Sinks stay rounded.
-const PINCH := {"r0":2.2,"grow":0.45,"max_radius":5.6,"raise":8.0,"sink":4.0,"scale":1.0}
-const FINE_PINCH := {"r0":1.2,"grow":0.3,"max_radius":2.6,"raise":2.0,"sink":1.0,"scale":0.4}
+## Sinking never takes ground below FLOOR metres (the land brush's floor).
 const FLOOR := -1.2
-const HORN := Vector2(1.0,4.0)
-const HORN_REACH := 1.25
-## Let go, a raise of at least ROCK_FROM metres takes the range's granite on
-## its steeps and upper share (mountain_forms `_rock_tint`), measured against
-## a height that keeps a low swell green, as the range's gentle pulls do.
-## The hand's bare earth keeps its colour.
-const ROCK_FROM := 2.5
-## Trees on ground a pinch moved, once let go, keep their footing only where
+## Rock on cut faces (`paint_faces`): mountain_forms' granite on tint cells
+## the stroke moved at least FACE_MOVED metres, either way, weighted by the
+## ground's slope alone, from nothing at FACE_SLOPE.x (rise over run) to full
+## at .y. The slope is read FACE_REACH metres either side of a cell's middle
+## (the cells are 0.5 m), close enough that a flat a cell off the face stays
+## ground. There is no summit share, unlike `paint_rock`'s, so a mesa's top,
+## a shelf or a gorge's bed stays earth however high or low it stands.
+const FACE_SLOPE := Vector2(0.6,1.2)
+const FACE_MOVED := 0.04
+const FACE_REACH := 0.25
+## Trees on ground a stroke moved, once let go, keep their footing only where
 ## a tree could take root (emergence's rule: no steeper than the rock slope
 ## the terrain paints rock above, and under the rock band below the
 ## snowline). Else they slide down the fall line in SLIDE_STEP metre steps
@@ -148,109 +105,101 @@ const SLIDE_STEP := 0.25
 const SLIDE_REST := 0.45
 const SLIDE_MAX := 12.0
 const ROCK_BAND := 1.8
-## A metre standing at the pinch is never taken as fewer than this share of a
+## A metre standing at a hold is never taken as fewer than this share of a
 ## metre across the ground on screen, so a camera looking straight down still
-## pinches.
+## holds.
 const MIN_UPRIGHT := 0.3
-## The poke: a dimple POKE_DEPTH metres deep over POKE_RADIUS, ringing out
-## over POKE_SECONDS; a resident within NOTICE metres looks round at it.
-const POKE_DEPTH := 0.1
-const POKE_RADIUS := 1.2
-const POKE_SECONDS := 0.5
-const POKE_RATE := 26.0
-const POKE_DAMP := 7.0
+## A resident within NOTICE metres looks round at a tap (`stir`).
 const NOTICE := 8.0
-## How hard a poke disturbs the life round it (scripts/disturbance.gd), 0..1.
-const POKE_STRENGTH := 0.7
 const Disturbance = preload("res://scripts/disturbance.gd")
 ## The plate's last metres, where shaping fades to nothing (as the land
-## spring and the mountain forms).
+## spring and the mountain forms), and its half-width to the rim.
 const EDGE := Vector2(11.4,13.6)
-## A thumb's groove that runs into that fade heading out of the plate (its
-## travel within BREACH_ANGLE degrees of straight out across the nearest
-## side) breaches the rim: it digs at full depth to the lip and notches the
-## rim, a spillway the live water runs off (docs/scenic/modeless.md, "The
-## thumb at the rim"). A stroke let go, or run off the plate, while breaching
-## is carried on to BREACH_PAST metres beyond the rim (PLATE_HALF), so the rim's
-## own points take the groove's bed. Only the groove itself is dug so: its
-## banks' raised lip, the pinch, the palm, the rub and a thumb running along
-## the edge still fade, so the plate's outline stays clean round the notch.
-const BREACH_ANGLE := 50.0
-const BREACH_PAST := 0.4
 const PLATE_HALF := 14.0
 ## Metres per bucket of the point lookup.
 const CELL := 1.5
+## A stroke's heading is taken over its last HEADING_RUN metres, so a slow
+## stroke's pick jitter does not turn it.
+const HEADING_RUN := 0.6
+## The held prop turns toward the way the hand goes at PROP_TURN (1/s).
+const PROP_TURN := 6.0
 
-enum State { IDLE, PENDING, THUMB, PINCH }
+enum State { IDLE, PENDING, DRAG, HOLD }
 
 var scene: Node3D
 var editor: NativeChunkEditor
 var state := State.IDLE
-## "thumb" or "palm" for a drag, "pinch" or "fine_pinch" for a hold.
+## The tool's name for the decided verb ("thumb", "pinch", "sweep"...).
 var verb := ""
 ## Seconds since the press, and the most pixels the pointer has been from it.
 var held := 0.0
 var travel := 0.0
-## The thumb's speed (pixels per second over the window) and its rub share.
+## A drag's speed, pixels per second over the window.
 var speed := 0.0
-var rub := 0.0
-var last_rub := 0.0
-## The pinch's lift in metres, as shown.
-var lift := 0.0
-## Counters for the probe: light refreshes, dabs, times the pinch closed.
+## Counters for the probe: light refreshes, dabs, times a hold closed.
 var refreshes := 0
 var dabs := 0
 var pinch_closes := 0
-var poking := false
-## Rim notches the thumb has cut this session, and the last one: {"normal"
-## (out of the plate), "at" (plate point on the rim), "bed" (m)}, for probes.
+## Rim notches the Hand's thumb has cut this session, and the last one:
+## {"normal" (out of the plate), "at" (plate point on the rim), "bed" (m)},
+## for probes.
 var notches := 0
 var last_notch := {}
+## Trees the last stroke shook off: [{"id","from","to"}], for probes.
+var shaken: Array = []
+## The hand's size (the tool roll's pips, scripts/tool_roll.gd SIZES): every
+## tool's reach scales by it.
+var size_scale := 1.0
+
+## The tool in hand, and every tool made so far by id.
+var tool: ClayTool
+var tool_id := "hand"
+var _tools := {}
+## The Hand, always made: the probes read its state through the clay.
+var hand: HandTool
+
+## For the tools (the plan's "What the clay gives a tool"): the plate point
+## the verb works at (a hold may move it), the heights when its stroke opened,
+## a stroke's heading (unit, plate) and the last path point laid, and the
+## points `gather` found and their distances.
+var center := Vector2.ZERO
+var base := PackedFloat32Array()
+var heading := Vector2.ZERO
+var last_plate: Variant = null
+var near := PackedInt32Array()
+var near_d := PackedFloat32Array()
+## The gesture the clay last gave the God Hand ("" when it let it go).
+var hand_set := ""
+
+## The Hand's state, read by the probes through the clay.
+var rub: float:
+	get: return hand.rub
+var last_rub: float:
+	get: return hand.rub
+var poking: bool:
+	get: return tool.busy()
+var lift: float:
+	get: return tool.lift
 
 var _press := Vector2.ZERO
 var _pointer := Vector2.ZERO
-var _center := Vector2.ZERO
-var _base := PackedFloat32Array()
 var _first_id := 0
 var _region := Rect2()
 var _queued := PackedVector2Array()
-var _last_plate: Variant = null
 var _moved := 0.0
 var _window: Array[Vector2] = []
-var _dug := PackedByteArray()
-var _bed := INF
-var _stroking := 0.0
 var _tint_base := PackedFloat32Array()
 var _dirt_depth := {}
 var _turned := {}
 var _dirt_rect := Rect2()
-var _level := 0.0
-var _near := PackedInt32Array()
-var _near_d := PackedFloat32Array()
 var _metre_pixels := 1.0
-var _shown_lift := INF
-var _hand_set := ""
-var _poke_t := 0.0
-var _poke_idx := PackedInt32Array()
-var _poke_shape := PackedFloat32Array()
-var _poke_written := PackedFloat32Array()
-var _aretes := PackedFloat32Array()
-var _jag := PackedFloat32Array()
-var _lump := PackedFloat32Array()
-## Trees the last pinch shook off: [{"id","from","to"}], for probes.
-var shaken: Array = []
+var _heading_from := Vector2.ZERO
 var _cells := {}
 var _cells_for: NativeTerrainData
 var _cells_points := -1
-## The outward normal of the side the thumb's last dab breached (zero when
-## it did not), the stroke's heading (over its last HEADING_RUN metres, so a
-## slow stroke's pick jitter does not turn it), and whether it has been
-## carried to the lip.
-const HEADING_RUN := 0.6
-var _breach := Vector2.ZERO
-var _heading := Vector2.ZERO
-var _heading_from := Vector2.ZERO
-var _carried := false
+var _prop: Node3D
+var _prop_way := Vector2.ZERO
+var _prop_last: Variant = null
 
 static func enabled() -> bool:
 	return preload("res://scripts/modeless_input.gd").enabled()
@@ -260,6 +209,50 @@ func setup(owner_scene: Node3D) -> void:
 	editor = owner_scene._chunk_editor
 	editor.clay = self
 	name = "LandClay"
+	hand = _make("hand")
+	tool = hand
+
+# --- The tool in hand -------------------------------------------------------------
+
+## Take the tool `id` (a tool roll id with a script in scripts/clay_tools/).
+## Whatever is in hand finishes first. False when there is no such tool.
+func set_tool(id: String) -> bool:
+	if id == tool_id: return true
+	var next := _make(id)
+	if next == null: return false
+	finish_now()
+	tool = next
+	tool_id = id
+	if _prop != null: _prop.queue_free()
+	_prop = tool.build_prop()
+	_prop_last = null
+	if _prop != null:
+		_prop.name = "HeldTool"
+		_prop.visible = false
+		editor.terrain.add_child(_prop)
+	return true
+
+## The tool `id`, made if it has not been yet (it is not taken into the
+## hand), or null when there is no such tool. For readers that size something
+## by a tool not yet in hand: the ground marks' `mark_size`.
+func tool_of(id: String) -> ClayTool:
+	return _make(id)
+
+## Whether a tool id has its script.
+static func has_tool(id: String) -> bool:
+	return ResourceLoader.exists(TOOL_PATH % id)
+
+func _make(id: String) -> ClayTool:
+	if _tools.has(id): return _tools[id]
+	if not has_tool(id): return null
+	var made: ClayTool = load(TOOL_PATH % id).new()
+	made.clay = self
+	_tools[id] = made
+	return made
+
+## The God Hand's gesture over the land while nothing is pressed.
+func hover_gesture() -> String:
+	return tool.hover_gesture()
 
 # --- The seam the modeless input drives -------------------------------------------
 
@@ -272,19 +265,18 @@ func press(screen_pos: Vector2) -> bool:
 	if hit == null: return false
 	_press = screen_pos
 	_pointer = screen_pos
-	_center = Vector2(hit.x,hit.z)
-	_last_plate = _center
+	center = Vector2(hit.x,hit.z)
+	last_plate = center
 	_queued = PackedVector2Array()
 	_window.clear()
 	_moved = 0.0
 	held = 0.0
 	travel = 0.0
 	speed = 0.0
-	rub = 0.0
-	lift = 0.0
 	verb = ""
 	refreshes = 0
 	dabs = 0
+	tool.reset()
 	state = State.PENDING
 	return true
 
@@ -295,56 +287,56 @@ func pull(screen_pos: Vector2, _relative := Vector2.ZERO) -> void:
 	_pointer = screen_pos
 	travel = maxf(travel,screen_pos.distance_to(_press))
 	if state == State.PENDING and travel >= MOVE_PIXELS: _begin_drag()
-	if state == State.THUMB:
+	if state == State.DRAG:
 		var hit: Variant = _pick_base(screen_pos)
 		if hit != null: _queued.append(Vector2(hit.x,hit.z))
-		# Run off the plate while breaching: the groove goes on to the lip.
-		elif not _carried: _carry_to_lip()
+		else: tool.drag_off()
 
-## The button came up: a tap pokes, a stroke or a pinch is kept as it stands.
+## The button came up: a tap is the tool's, a drag or a hold is kept as it
+## stands.
 func release(screen_pos: Vector2 = Vector2.INF) -> void:
 	if state == State.IDLE: return
 	if screen_pos != Vector2.INF: pull(screen_pos)
 	match state:
 		State.PENDING:
 			state = State.IDLE
-			_poke()
-		State.THUMB:
-			_thumb_step(0.0)
-			if not _carried and _carry_to_lip(): _thumb_step(0.0)
-			_end_stroke()
-		State.PINCH:
-			_pinch_step()
-			_rock()
-			_shake_trees()
-			_end_stroke()
+			tool.tap(_shift())
+		State.DRAG:
+			_drag_step(0.0)
+			if tool.drag_end(): _drag_step(0.0)
+			close_stroke()
+		State.HOLD:
+			_hold_step()
+			tool.hold_end()
+			close_stroke()
 
-## End whatever is in hand at once (undo, a new press, a world change): a
-## stroke or pinch closes as it stands, a poke's dimple is taken back.
+## End whatever is in hand at once (undo, a new press, a world change, a
+## change of tool): a stroke or hold closes as it stands, anything the tool
+## left running (a poke's dimple) is taken back.
 func finish_now() -> void:
-	if poking: _end_poke()
+	tool.finish()
 	match state:
 		State.PENDING: state = State.IDLE
-		State.THUMB: _end_stroke()
-		State.PINCH:
-			_rock()
-			_shake_trees()
-			_end_stroke()
+		State.DRAG: close_stroke()
+		State.HOLD:
+			tool.hold_end()
+			close_stroke()
 
 # --- Frame loop ------------------------------------------------------------------
 
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
-	if poking: _poke_step(delta)
+	tool.frame(delta)
 	match state:
 		State.PENDING:
 			held += delta
 			_track_speed(delta)
-			if held >= HOLD_SECONDS and travel < MOVE_PIXELS: _begin_pinch()
-		State.THUMB: _thumb_step(delta)
-		State.PINCH: _pinch_step()
+			if held >= HOLD_SECONDS and travel < MOVE_PIXELS: _begin_hold()
+		State.DRAG: _drag_step(delta)
+		State.HOLD: _hold_step()
+	_place_prop(delta)
 
-## The thumb's speed: path pixels over the last SPEED_WINDOW seconds.
+## The drag's speed: path pixels over the last SPEED_WINDOW seconds.
 func _track_speed(delta: float) -> void:
 	_window.append(Vector2(delta,_moved))
 	_moved = 0.0
@@ -358,67 +350,46 @@ func _track_speed(delta: float) -> void:
 		pixels += _window[k].y
 	speed = pixels/maxf(seconds,1.0/120.0)
 
-# --- Verbs -------------------------------------------------------------------------
+# --- Deciding the verb -------------------------------------------------------------
 
 func _begin_drag() -> void:
-	verb = "palm" if _shift() else "thumb"
-	_open_stroke()
-	_dug = PackedByteArray()
-	_dug.resize(_base.size())
-	_bed = INF
-	_stroking = 0.0
-	_tint_base = editor.data.tint.duplicate()
-	_dirt_depth = {}
-	_turned = {}
-	_breach = Vector2.ZERO
-	_heading = Vector2.ZERO
-	_heading_from = _center
-	_carried = false
-	var ground: Variant = editor.data.sample(_center,_base)
-	_level = float(ground) if ground != null else 0.0
-	state = State.THUMB
-	_hand("press",_ground_at(_center))
+	open_stroke()
+	_heading_from = center
+	heading = Vector2.ZERO
+	verb = tool.drag_begin(_shift())
+	state = State.DRAG
+	hand_gesture(tool.gesture(verb),ground_at(center))
 
-func _begin_pinch() -> void:
-	var fine := _shift()
-	verb = "fine_pinch" if fine else "pinch"
-	var spec: Dictionary = FINE_PINCH if fine else PINCH
-	_open_stroke()
-	# The pinch takes the clay's nearest point, so the horn's tip stands on
-	# a point of the land and the summit reaches the pointer.
-	_gather(_center,CELL)
-	var nearest := INF
-	for k in _near.size():
-		if _near_d[k] < nearest:
-			nearest = _near_d[k]
-			_center = editor.data.points[_near[k]]
-	_gather(_center,float(spec.max_radius)*HORN_REACH)
-	_horn_setup()
-	var at := _ground_at(_center)
+func _begin_hold() -> void:
+	open_stroke()
+	verb = tool.hold_begin(_shift())
+	var at := ground_at(center)
 	var camera: Camera3D = scene.camera
 	var terrain: Node3D = editor.terrain
 	var foot := camera.unproject_position(terrain.to_global(at))
 	var up := camera.unproject_position(terrain.to_global(at+Vector3.UP)).distance_to(foot)
 	var across := camera.unproject_position(terrain.to_global(at+Vector3.RIGHT)).distance_to(foot)
 	_metre_pixels = maxf(maxf(up,across*MIN_UPRIGHT),1.0)
-	_shown_lift = INF
-	state = State.PINCH
+	state = State.HOLD
 	pinch_closes += 1
-	_hand("pinch",at,true)
+	hand_gesture(tool.gesture(verb),at,true)
 
 ## Open the verb's one undo step on the ground as it now stands.
-func _open_stroke() -> void:
+func open_stroke() -> void:
 	var data := editor.data
 	# Anything still landing lands first, as a brush press would.
 	editor._land_mountain()
 	data.begin_stroke()
-	_base = data.heights.duplicate()
+	base = data.heights.duplicate()
 	_first_id = data.next_id
-	_region = Rect2(_center,Vector2.ZERO).grow(1.0)
-	editor._emit_stroke(0,_ground_at(_center),GROOVE_HALF_WIDTH,0.0)
+	_region = Rect2(center,Vector2.ZERO).grow(1.0)
+	_tint_base = data.tint.duplicate()
+	_dirt_depth = {}
+	_turned = {}
+	editor._emit_stroke(0,ground_at(center),tool.stroke_radius(),0.0)
 
 ## Close the verb's undo step and settle the land, as a brush's release does.
-func _end_stroke() -> void:
+func close_stroke() -> void:
 	var data := editor.data
 	data.mark_objects_hand(_first_id)
 	_bare()
@@ -428,147 +399,268 @@ func _end_stroke() -> void:
 	editor._settle_stroke()
 	if kept: editor._stroke_ended("land")
 	editor._stroke_rect = Rect2()
-	editor._emit_stroke(2,_ground_at(_center),GROOVE_HALF_WIDTH,0.0)
-	var done := verb
-	if verb == "thumb": done = "groove"
-	last_rub = rub
+	editor._emit_stroke(2,ground_at(center),tool.stroke_radius(),0.0)
+	var done := tool.worked_as(verb)
 	state = State.IDLE
 	verb = ""
-	_hand("")
+	hand_gesture("")
 	worked.emit(done,kept)
 
 ## Dabs along the pointer's path since the last frame.
-func _thumb_step(delta: float) -> void:
+func _drag_step(delta: float) -> void:
 	if delta > 0.0: _track_speed(delta)
-	_stroking += delta
-	rub = smoothstep(GROOVE_SPEED,RUB_SPEED,speed) if verb == "thumb" else 0.0
-	# A thumb's first SPEED_WINDOW is held until its speed is known, so a rub
-	# does not start by digging (a release lays it down as it stands).
-	if _queued.is_empty() or (verb == "thumb" and delta > 0.0 and _stroking < SPEED_WINDOW): return
+	var go := tool.drag_frame(delta)
+	if _queued.is_empty() or not go: return
 	var data := editor.data
 	var heights := data.heights
 	_dirt_rect = Rect2()
-	for p in _queued:
-		var from: Vector2 = _last_plate if _last_plate != null else p
+	# A tool's dab may queue more path (the Hand carrying a groove to the lip).
+	var k := 0
+	while k < _queued.size():
+		var p := _queued[k]
+		var from: Vector2 = last_plate if last_plate != null else p
 		var count := clampi(ceili(from.distance_to(p)/DAB_SPACING),1,MAX_DABS)
 		if _heading_from.distance_to(p) >= HEADING_RUN:
-			_heading = (p-_heading_from).normalized()
+			heading = (p-_heading_from).normalized()
 			_heading_from = p
-		for k in range(1,count+1):
-			var q := from.lerp(p,float(k)/count)
-			if verb == "palm":
-				_palm(heights,q)
-				_dirty(q,PALM_RADIUS)
-			else:
-				if rub < 0.99:
-					_breach = _breaching(q)
-					_groove(heights,q,1.0-rub,_breach)
-					_dirty(q,GROOVE_HALF_WIDTH*LIP_OUT)
-				if rub > 0.01: _rub(heights,q,rub)
+		for j in range(1,count+1):
+			var q := from.lerp(p,float(j)/count)
+			var reach := tool.dab(heights,q)
+			if reach > 0.0: dirty(q,reach)
 			dabs += 1
-		_last_plate = p
+		last_plate = p
+		k += 1
 	_queued = PackedVector2Array()
 	data.heights = heights
 	_dirt()
-	_show()
-	var at := _ground_at(_last_plate)
-	editor._emit_stroke(1,at,GROOVE_HALF_WIDTH,delta)
-	_hand("press",at)
-	var hand: Node = scene.get("god_hand") as Node
-	if hand != null and _hand_set == "press": hand.reach_pace = 1.0+1.5*rub
+	show_land()
+	var at := ground_at(last_plate)
+	editor._emit_stroke(1,at,tool.stroke_radius(),delta)
+	hand_gesture(tool.gesture(verb),at)
+	var god: Node = scene.get("god_hand") as Node
+	if god != null and not hand_set.is_empty(): god.reach_pace = tool.pace()
 
-## The groove's dab at `q` with weight `g`: toward a level bed GROOVE_DEPTH
-## under the stroke's line, never below it, and never above the bed behind it
-## (by at most GROOVE_CUT). `breach` (the outward normal of the side it is
-## breaching, or zero) digs its bed without the edge fade.
-func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector2.ZERO) -> void:
-	# Past the rim (a breach carried to the lip) the bed follows the ground
-	# at the rim.
-	var ground: Variant = editor.data.sample(q.clamp(-Vector2.ONE*(PLATE_HALF-0.02),Vector2.ONE*(PLATE_HALF-0.02)),_base)
-	if ground == null: return
-	var bed := float(ground)-GROOVE_DEPTH
-	bed = maxf(minf(bed,_bed),bed-GROOVE_CUT)
-	_bed = bed
-	# The cut across follows the ground: each point sinks by the line's depth
-	# from where it stood, so a groove along a slope's face is no deeper on its
-	# uphill bank than on its downhill one.
-	var depth := float(ground)-bed
-	var reach := GROOVE_HALF_WIDTH*LIP_OUT
-	_gather(q,reach)
-	_touch(q,reach)
-	var notched := false
-	for k in _near.size():
-		var i := _near[k]
-		var t := _near_d[k]/GROOVE_HALF_WIDTH
-		var fade := _fade(i)
-		if t < 1.0:
-			_dug[i] = 1
-			if breach != Vector2.ZERO:
-				fade = 1.0
-				notched = notched or editor.data.points[i].dot(breach) >= PLATE_HALF-0.001
-			var goal := _base[i]-depth*(1.0-smoothstep(GROOVE_FLOOR,1.0,t))
-			var h := heights[i]
-			if goal < h: heights[i] = maxf(lerpf(h,goal,GROOVE_STEP*g*fade),NativeTerrainData.MIN_HEIGHT)
-		elif _dug[i] == 0:
-			var rim := GROOVE_LIP*sin(PI*(t-1.0)/(LIP_OUT-1.0))
-			var goal := _base[i]+rim
-			var h := heights[i]
-			if goal > h: heights[i] = lerpf(h,goal,GROOVE_STEP*g*fade)
-	if notched:
-		if last_notch.is_empty() or last_notch.normal != breach or (last_notch.at as Vector2).distance_to(q) > GROOVE_HALF_WIDTH*2.0: notches += 1
-		var along := Vector2(breach.y,-breach.x)
-		last_notch = {"normal":breach,"at":breach*PLATE_HALF+along*q.dot(along),"bed":bed}
+## A hold follows the pointer: its travel up the screen in metres standing at
+## the spot.
+func _hold_step() -> void:
+	var data := editor.data
+	var heights := data.heights
+	if not tool.hold_step(heights,(_press.y-_pointer.y)/_metre_pixels): return
+	data.heights = heights
+	_dirt()
+	show_land()
+	hand_gesture(tool.gesture(verb),ground_at(center))
 
-## The outward normal of the side a groove dab at `q` breaches: the nearest
-## side's, when `q` is in the edge fade and the stroke heads out across that
-## side within BREACH_ANGLE degrees; else zero.
-func _breaching(q: Vector2) -> Vector2:
-	if maxf(absf(q.x),absf(q.y)) < EDGE.x or _heading == Vector2.ZERO: return Vector2.ZERO
-	var normal := Vector2(signf(q.x),0.0) if absf(q.x) >= absf(q.y) else Vector2(0.0,signf(q.y))
-	return normal if _heading.dot(normal) >= cos(deg_to_rad(BREACH_ANGLE)) else Vector2.ZERO
+# --- What the clay gives a tool ------------------------------------------------------
 
-## Carries a breaching groove on along its heading to BREACH_PAST beyond the
-## rim, queued as the pointer's next point. False when it is not breaching or
-## is already there.
-func _carry_to_lip() -> bool:
-	if verb != "thumb" or _breach == Vector2.ZERO or _last_plate == null: return false
-	var from: Vector2 = _queued[-1] if not _queued.is_empty() else _last_plate
-	var out := _heading.dot(_breach)
-	var left := PLATE_HALF+BREACH_PAST-from.dot(_breach)
-	if out <= 0.0 or left <= 0.05: return false
-	_carried = true
-	_queued.append(from+_heading*(left/out))
-	return true
+## Queue a plate point on the drag's path, laid after those queued before it.
+func queue_point(p: Vector2) -> void:
+	_queued.append(p)
 
-## The rub's dab at `q` with weight `w`: each point toward its neighbours' mean.
-func _rub(heights: PackedFloat32Array, q: Vector2, w: float) -> void:
-	var neighbors: Array[PackedInt32Array] = editor.data._neighbors
-	_gather(q,RUB_RADIUS)
-	_touch(q,RUB_RADIUS)
-	for k in _near.size():
-		var i := _near[k]
-		var around: PackedInt32Array = neighbors[i]
-		if around.is_empty(): continue
-		var total := 0.0
-		for j in around: total += heights[j]
-		var f := 1.0-smoothstep(RUB_CORE,1.0,_near_d[k]/RUB_RADIUS)
-		heights[i] = lerpf(heights[i],total/around.size(),RUB_STEP*w*f*_fade(i))
+## The path's last point: the last queued, else the last laid.
+func path_end() -> Vector2:
+	return _queued[-1] if not _queued.is_empty() else last_plate
 
-## The palm's dab at `q`: toward the level under the press, pressed PALM_SINK
-## down in the middle.
-func _palm(heights: PackedFloat32Array, q: Vector2) -> void:
-	_gather(q,PALM_RADIUS)
-	_touch(q,PALM_RADIUS)
-	for k in _near.size():
-		var i := _near[k]
-		var f := 1.0-smoothstep(PALM_CORE,1.0,_near_d[k]/PALM_RADIUS)
-		var goal := _level-PALM_SINK*f
-		heights[i] = maxf(lerpf(heights[i],goal,PALM_STEP*f*_fade(i)),NativeTerrainData.MIN_HEIGHT)
-
-## The ground a dab at `q` may have dug, `reach` round it, for this frame's dirt.
-func _dirty(q: Vector2, reach: float) -> void:
+## The ground a dab at `q` may have dug, `reach` round it, for this frame's
+## dirt (the clay lays it after the frame's dabs or hold step).
+func dirty(q: Vector2, reach: float) -> void:
 	var area := Rect2(q-Vector2.ONE*reach,Vector2.ONE*reach*2.0)
 	_dirt_rect = _dirt_rect.merge(area) if _dirt_rect.has_area() else area
+
+## Every point within `radius` of `at` into `near` (and distances `near_d`).
+func gather(at: Vector2, radius: float) -> void:
+	var data := editor.data
+	if _cells_for != data or _cells_points != data.points.size():
+		_cells.clear()
+		_cells_for = data
+		_cells_points = data.points.size()
+		for i in range(data.points.size()):
+			var key := Vector2i(floori(data.points[i].x/CELL),floori(data.points[i].y/CELL))
+			if not _cells.has(key): _cells[key] = PackedInt32Array()
+			_cells[key].append(i)
+	near = PackedInt32Array()
+	near_d = PackedFloat32Array()
+	var low := Vector2i(floori((at.x-radius)/CELL),floori((at.y-radius)/CELL))
+	var high := Vector2i(floori((at.x+radius)/CELL),floori((at.y+radius)/CELL))
+	var points := data.points
+	for x in range(low.x,high.x+1):
+		for y in range(low.y,high.y+1):
+			var cell: Variant = _cells.get(Vector2i(x,y))
+			if cell == null: continue
+			for i: int in cell:
+				var d := points[i].distance_to(at)
+				if d < radius:
+					near.append(i)
+					near_d.append(d)
+
+## How much shaping reaches point `i`: 1 inside, easing to 0 over the
+## plate's last metres (EDGE).
+func fade(i: int) -> float:
+	var p: Vector2 = editor.data.points[i]
+	var edge := maxf(absf(p.x),absf(p.y))
+	return clampf((EDGE.y-edge)/(EDGE.y-EDGE.x),0.0,1.0)
+
+## The stroke touched the ground `reach` round `q` (the settle refresh covers it).
+func touch(q: Vector2, reach: float) -> void:
+	_region = _region.merge(Rect2(q-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
+
+func ground_at(p: Vector2) -> Vector3:
+	var h: Variant = editor.data.ground_height(p)
+	return Vector3(p.x,float(h) if h != null else 0.0,p.y)
+
+## Send the land to the screen: one light refresh at a time, so a slow one is
+## never stacked on; a full one if the light one cannot run.
+func show_land() -> void:
+	if editor.refresh_pending > 0: return
+	refreshes += 1
+	if editor._light_refresh_ready(true): editor._refresh_light()
+	else: editor.refresh(get_tree())
+
+## Settle the land after something outside a stroke moved it (a poke).
+func settle() -> void:
+	editor._settle_pending = true
+	editor._settle_stroke()
+
+## A tap on the land stirs the life round `at` (plate): a resident within
+## NOTICE looks round, and frogs, fish, deer and the heron near it notice too
+## (scripts/life_notice.gd answers a "poke").
+func stir(at: Vector2, radius: float, strength: float) -> void:
+	var point: Vector3 = editor.terrain.to_global(ground_at(at))
+	var creature: Node3D = scene.get("creature") as Node3D
+	if creature != null and creature.visible and creature.has_method("notice"):
+		if creature.global_position.distance_to(point) < NOTICE: creature.notice(point)
+	Disturbance.raise(point,radius,strength,"poke")
+
+## The range's rock onto ground the stroke raised round `at`, `reach` out
+## (mountain_forms `_rock_tint`, `form`'s rock job run at once), measured
+## against `height` so a low swell stays green. The hand's bare earth keeps
+## its colour. It goes into the stroke's undo step.
+func paint_rock(at: Vector2, reach: float, height: float, form := "alpine") -> void:
+	var data := editor.data
+	var forms := preload("res://scripts/mountain_forms.gd")
+	var ground: Variant = data.sample(at,base)
+	var job := {"tint":data.tint.duplicate(),"rock":forms.ROCKS.granite,"height":height,"base":base,
+		"region":Rect2(at-Vector2.ONE*reach,Vector2.ONE*reach*2.0),"lock":preload("res://scripts/edge_spring.gd")._bare_cells(data),
+		"salt":hash([editor.land_seed,"pinch",at.snapped(Vector2.ONE*0.01)]),"form":form,"ground":float(ground) if ground != null else 0.0}
+	data.tint = forms._rock_tint(data,job)
+
+## The range's granite on the faces a stroke cut (or built) inside `region`
+## (plate): every tint cell the stroke moved at least FACE_MOVED metres from
+## `base`, up or down, whose ground now stands steeper than FACE_SLOPE.x,
+## weighted by that slope alone (see FACE_SLOPE). `paint_rock` is the one for
+## raised ground: it measures a share of `height` up from `base`, so ground a
+## stroke lowered never takes it, and it adds a summit share that would paint
+## a tall mesa's top. A cut cliff is stone whichever way it was made.
+##
+## A cell's colour goes that share of the way to the rock over whatever was
+## laid there before, the stroke's own bare earth included (lay the dirt
+## first, `lay_dirt`, so the rock goes over it: a face is stone, not soil),
+## and its weight never drops. Call it at release or inside a tap's stroke,
+## so the undo step takes it back.
+func paint_faces(region: Rect2) -> void:
+	var data := editor.data
+	var forms := preload("res://scripts/mountain_forms.gd")
+	var rock: Dictionary = forms.ROCKS.granite
+	var colors: Array = rock.colors.map(func(hex: String) -> Color: return Color(hex).srgb_to_linear())
+	var side := NativeTerrainData.MEADOW_CELLS
+	var step := NativeTerrainData.MEADOW_STEP
+	var low := Vector2i(((region.position+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((region.end+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var heights := data.heights
+	var tint := data.tint
+	var salt := hash([editor.land_seed,tool.id(),center.snapped(Vector2.ONE*0.01)])
+	var changed := false
+	for z in range(low.y,high.y+1):
+		for x in range(low.x,high.x+1):
+			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
+			var h: Variant = data.sample(p,heights)
+			var b: Variant = data.sample(p,base)
+			if h == null or b == null or absf(float(h)-float(b)) < FACE_MOVED: continue
+			var share := smoothstep(FACE_SLOPE.x,FACE_SLOPE.y,_face_slope(data,heights,p))
+			if share <= 0.01: continue
+			var roll := float(hash([salt,x,z])%1000)/1000.0
+			var color: Color = colors[int(roll*colors.size())%colors.size()]
+			var k := (z*side+x)*NativeTerrainTint.STRIDE
+			var before: float = tint[k+3]
+			var mix := 1.0 if before <= 0.0 else share
+			tint[k] = lerpf(tint[k],color.r,mix)
+			tint[k+1] = lerpf(tint[k+1],color.g,mix)
+			tint[k+2] = lerpf(tint[k+2],color.b,mix)
+			tint[k+3] = minf(maxf(before,share*float(rock.weight)),1.0)
+			changed = true
+	if changed: data.tint = tint
+
+## Bare earth now, `reach` round `at`, on ground the stroke took down. The clay
+## lays it by itself after a frame's dabs and each hold step; a tool whose
+## change lands some other way (a cut written whole at release, a tap's own
+## stroke) calls this, before `paint_faces` so the rock goes over it.
+func lay_dirt(at: Vector2, reach: float) -> void:
+	dirty(at,reach)
+	_dirt()
+
+## Trees on ground the stroke moved, within `reach` of `at` (or inside `area`
+## when it is given), that can no longer hold it slide down to where they can
+## (see SLIDE_STEP). Their records move inside the stroke's undo step; they
+## stay wild (not marked hand-made).
+func shake_trees(at: Vector2, reach: float, area := Rect2()) -> void:
+	shaken = []
+	var data := editor.data
+	var trees: Array = preload("res://scripts/diorama_world_play.gd").TREES
+	var presets := preload("res://scripts/native_landscape_presets.gd")
+	var snowline: float = preload("res://scripts/biome_blend.gd").snowline(data._recipe_settings,data._palette.snowline)
+	var drawn: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
+	var rock_slope := float(drawn.get("rock_slope",data._palette.rock_slope))
+	var band := snowline-ROCK_BAND
+	var moved := false
+	for index in range(data.objects.size()):
+		var item: Dictionary = data.objects[index]
+		if not str(item.asset) in trees or item.asset == "bigfoot_tree" or item.get("pinned",false): continue
+		var from := Vector2(item.x,item.z)
+		if area.has_area():
+			if not area.has_point(from): continue
+		elif from.distance_to(at) > reach: continue
+		var was: Variant = data.sample(from,base)
+		var now: Variant = data.ground_height(from)
+		if was == null or now == null or absf(float(now)-float(was)) < 0.05: continue
+		if presets._slope(data,from) <= rock_slope and float(now) <= band: continue
+		var p := from
+		var travelled := 0.0
+		while travelled < SLIDE_MAX:
+			var here: Variant = data.ground_height(p)
+			if presets._slope(data,p) <= SLIDE_REST and here != null and float(here) <= band: break
+			var fall := _fall(p)
+			if fall == Vector2.ZERO: break
+			var next := p+fall*SLIDE_STEP
+			if maxf(absf(next.x),absf(next.y)) > EDGE.x or data.ground_height(next) == null or _in_pond(next): break
+			p = next
+			travelled += SLIDE_STEP
+		if p == from: continue
+		var moved_item := item.duplicate(true)
+		moved_item.x = p.x
+		moved_item.z = p.y
+		data.objects[index] = moved_item
+		moved = true
+		shaken.append({"id":item.id,"from":from,"to":p})
+	if moved: data.objects_revision += 1
+
+## The ground the stroke has touched so far (plate rect), for `shake_trees`.
+func touched() -> Rect2:
+	return _region
+
+## Drive the God Hand. `again` plays the gesture's In afresh even if it is
+## already showing (the hover's ready pinch closes into the real one).
+func hand_gesture(gesture: String, point: Variant = null, again := false) -> void:
+	var god: Node = scene.get("god_hand") as Node
+	if god == null: return
+	hand_set = gesture
+	god.reach_gesture = gesture
+	god.reach_point = point if not gesture.is_empty() else null
+	if gesture.is_empty(): god.reach_pace = 1.0
+	if again and god.get("gesture") == gesture and god.player != null:
+		var clip: String = god.GESTURES[gesture]+"In"
+		if god.player.has_animation(clip): god.player.play(clip,god.BLEND)
+
+# --- Dirt ------------------------------------------------------------------------------
 
 ## Bare earth into the tint cells under this frame's dabs, by how far each
 ## cell's middle now stands below the ground at the stroke's start. Written
@@ -583,20 +675,21 @@ func _dirt() -> void:
 	var light := DIRT.srgb_to_linear()
 	var deep := DIRT_DEEP.srgb_to_linear()
 	var turned := TURNED.srgb_to_linear()
+	var turns := tool.turns_lip(verb)
 	var heights := data.heights
 	var tint := data.tint
 	var changed := false
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
 			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
-			var was: Variant = data.sample(p,_base)
+			var was: Variant = data.sample(p,base)
 			var now: Variant = data.sample(p,heights)
 			if was == null or now == null: continue
 			var cell := z*side+x
 			var dug := float(was)-float(now)
-			if dug < -LIP_TURNED and verb == "thumb":
-				# The groove's lip: pushed-aside clay, a pale fringe.
-				var weight := TURNED_WEIGHT*smoothstep(LIP_TURNED,GROOVE_LIP,-dug)
+			if dug < -LIP_TURNED and turns:
+				# A lip: pushed-aside clay, a pale fringe.
+				var weight := TURNED_WEIGHT*smoothstep(LIP_TURNED,TURNED_FULL,-dug)
 				if weight <= float(_turned.get(cell,0.0)) or _dirt_depth.has(cell): continue
 				_turned[cell] = weight
 				_earth(tint,cell,turned,weight)
@@ -604,7 +697,7 @@ func _dirt() -> void:
 				continue
 			if dug <= float(_dirt_depth.get(cell,DIRT_FROM)): continue
 			_dirt_depth[cell] = dug
-			var color := light.lerp(deep,smoothstep(DIRT_FULL,GROOVE_DEPTH,dug))
+			var color := light.lerp(deep,smoothstep(DIRT_FULL,DIRT_DEEP_AT,dug))
 			_earth(tint,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug))
 			changed = true
 	_dirt_rect = Rect2()
@@ -635,114 +728,31 @@ func _bare() -> void:
 		data.provenance[cell] = NativeTerrainData.SOURCE_HAND
 	_dirt_depth = {}
 
-## The pinch follows the pointer: its lift is the pointer's travel up the
-## screen in metres standing at the spot.
-func _pinch_step() -> void:
-	var spec: Dictionary = FINE_PINCH if verb == "fine_pinch" else PINCH
-	lift = clampf((_press.y-_pointer.y)/_metre_pixels*float(spec.scale),-float(spec.sink),float(spec.raise))
-	if is_equal_approx(lift,_shown_lift): return
-	_shown_lift = lift
-	var radius := minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))
-	var horn := smoothstep(HORN.x,HORN.y,lift)
+# --- Helpers -----------------------------------------------------------------------
+
+func _shift() -> bool:
+	return Input.is_key_pressed(KEY_SHIFT)
+
+## The pointer on the ground as it stood when the stroke began: picked on the
+## live ground, a groove deepening ahead of the pointer would draw the line
+## onto its far wall, away from the camera, and widen it on that side.
+func _pick_base(screen_pos: Vector2) -> Variant:
 	var data := editor.data
-	var heights := data.heights
-	for k in _near.size():
-		var i := _near[k]
-		var t := _near_d[k]/radius
-		var shape := pow(1.0-t*t,2.0) if t < 1.0 else 0.0
-		if horn > 0.0: shape = lerpf(shape,_horn(i,t),horn)
-		var h := _base[i]+lift*shape*_fade(i)
-		if lift < 0.0: h = maxf(h,minf(_base[i],FLOOR))
-		heights[i] = clampf(h,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
-	data.heights = heights
-	_touch(_center,radius*HORN_REACH)
-	_show()
-	_hand("pinch",_ground_at(_center))
+	var now := data.heights
+	data.heights = base
+	var hit: Variant = editor.pick(screen_pos)
+	data.heights = now
+	return hit
 
-## The pinch's noise and arêtes: the mountain forms' per-point noise (built
-## once per world) and three to five arêtes seeded by the pinched spot.
-func _horn_setup() -> void:
-	var mountain: RefCounted = editor.mountain
-	mountain.prepare(editor.data,editor.land_seed)
-	_jag = mountain._jag
-	_lump = mountain._lump
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([editor.land_seed,"pinch",_center.snapped(Vector2.ONE*0.01)])
-	_aretes = PackedFloat32Array()
-	var count := rng.randi_range(3,5)
-	var turn := rng.randf()*TAU
-	for a in range(count): _aretes.append(turn+TAU*(float(a)+rng.randf_range(-0.22,0.22))/count)
-
-## The horn's share of the lift at point `i`, `t` radii from the pinch: the
-## alpine form (mountain_forms `_stamp`) scaled so its summit is 1.
-func _horn(i: int, t: float) -> float:
-	var rw := t*(1.0+(_lump[i]-0.5)*0.4)
-	if rw >= 1.0: return 0.0
-	var d: Vector2 = editor.data.points[i]-_center
-	var theta := atan2(d.y,d.x)
-	var arete := 0.0
-	for angle in _aretes: arete = maxf(arete,1.0-absf(angle_difference(theta,angle))/0.6)
-	arete = arete*arete*smoothstep(0.02,0.25,rw)
-	var profile := pow(1.0-rw,1.9)
-	var crag := (_jag[i]-0.5)*0.16*rw*(1.0-rw)*4.0
-	var shoulder := pow(1.0-rw,1.2)*0.12*arete
-	return clampf((profile*(0.8+0.2*arete)+shoulder+crag)/0.8,0.0,1.0)
-
-## A raise let go takes the range's rock (see ROCK_FROM).
-func _rock() -> void:
-	if verb != "pinch" or lift < ROCK_FROM: return
-	var data := editor.data
-	var forms := preload("res://scripts/mountain_forms.gd")
-	var reach := float(PINCH.max_radius)*HORN_REACH
-	var horn := smoothstep(HORN.x,HORN.y,lift)
-	var ground: Variant = data.sample(_center,_base)
-	var job := {"tint":data.tint.duplicate(),"rock":forms.ROCKS.granite,"height":maxf(2.0,lerpf(10.0,lift,horn)),"base":_base,
-		"region":Rect2(_center-Vector2.ONE*reach,Vector2.ONE*reach*2.0),"lock":preload("res://scripts/edge_spring.gd")._bare_cells(data),
-		"salt":hash([editor.land_seed,"pinch",_center.snapped(Vector2.ONE*0.01)]),"form":"alpine","ground":float(ground) if ground != null else 0.0}
-	data.tint = forms._rock_tint(data,job)
-
-## Trees on ground the pinch moved that can no longer hold it slide down to
-## where they can (see SLIDE_STEP). Their records move inside the pinch's undo
-## step; they stay wild (not marked hand-made).
-func _shake_trees() -> void:
-	shaken = []
-	var data := editor.data
-	var trees: Array = preload("res://scripts/diorama_world_play.gd").TREES
-	var presets := preload("res://scripts/native_landscape_presets.gd")
-	var snowline: float = preload("res://scripts/biome_blend.gd").snowline(data._recipe_settings,data._palette.snowline)
-	var drawn: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
-	var rock_slope := float(drawn.get("rock_slope",data._palette.rock_slope))
-	var band := snowline-ROCK_BAND
-	var reach := float(PINCH.max_radius)*HORN_REACH+1.0
-	var moved := false
-	for index in range(data.objects.size()):
-		var item: Dictionary = data.objects[index]
-		if not str(item.asset) in trees or item.asset == "bigfoot_tree" or item.get("pinned",false): continue
-		var from := Vector2(item.x,item.z)
-		if from.distance_to(_center) > reach: continue
-		var was: Variant = data.sample(from,_base)
-		var now: Variant = data.ground_height(from)
-		if was == null or now == null or absf(float(now)-float(was)) < 0.05: continue
-		if presets._slope(data,from) <= rock_slope and float(now) <= band: continue
-		var p := from
-		var travelled := 0.0
-		while travelled < SLIDE_MAX:
-			var here: Variant = data.ground_height(p)
-			if presets._slope(data,p) <= SLIDE_REST and here != null and float(here) <= band: break
-			var fall := _fall(p)
-			if fall == Vector2.ZERO: break
-			var next := p+fall*SLIDE_STEP
-			if maxf(absf(next.x),absf(next.y)) > EDGE.x or data.ground_height(next) == null or _in_pond(next): break
-			p = next
-			travelled += SLIDE_STEP
-		if p == from: continue
-		var moved_item := item.duplicate(true)
-		moved_item.x = p.x
-		moved_item.z = p.y
-		data.objects[index] = moved_item
-		moved = true
-		shaken.append({"id":item.id,"from":from,"to":p})
-	if moved: data.objects_revision += 1
+## Rise over run at plate point `p` on `heights`, read FACE_REACH either side
+## (for `paint_faces`).
+static func _face_slope(data: NativeTerrainData, heights: PackedFloat32Array, p: Vector2) -> float:
+	var e: Variant = data.sample(p+Vector2(FACE_REACH,0),heights)
+	var w: Variant = data.sample(p-Vector2(FACE_REACH,0),heights)
+	var n: Variant = data.sample(p+Vector2(0,FACE_REACH),heights)
+	var s: Variant = data.sample(p-Vector2(0,FACE_REACH),heights)
+	if e == null or w == null or n == null or s == null: return 0.0
+	return Vector2(float(e)-float(w),float(n)-float(s)).length()/(2.0*FACE_REACH)
 
 ## Whether `p` is under a pond (as native_landscape_presets `_wet` reads one).
 func _in_pond(p: Vector2) -> bool:
@@ -763,134 +773,35 @@ func _fall(p: Vector2) -> Vector2:
 	var gradient := Vector2(float(e)-float(w),float(n)-float(s))
 	return -gradient.normalized() if gradient.length() > 0.0001 else Vector2.ZERO
 
-# --- The poke ----------------------------------------------------------------------
+# --- The held prop -------------------------------------------------------------------
 
-## A tap on bare land: a small dimple that rings out, and a resident near it
-## looks round. The ground comes back exactly and no undo step is added.
-func _poke() -> void:
-	verb = ""
-	var data := editor.data
-	_gather(_center,POKE_RADIUS)
-	_poke_idx = _near.duplicate()
-	_poke_shape = PackedFloat32Array()
-	_poke_written = PackedFloat32Array()
-	_base = data.heights.duplicate()
-	for k in _near.size():
-		var t := _near_d[k]/POKE_RADIUS
-		_poke_shape.append(pow(1.0-t*t,2.0)*_fade(_near[k]))
-	_poke_written.resize(_poke_idx.size())
-	_poke_t = 0.0
-	poking = true
-	_hand("press",_ground_at(_center))
-	var creature: Node3D = scene.get("creature") as Node3D
-	if creature != null and creature.visible and creature.has_method("notice"):
-		var at: Vector3 = editor.terrain.to_global(_ground_at(_center))
-		if creature.global_position.distance_to(at) < NOTICE: creature.notice(at)
-	# Frogs, fish, deer and the heron near it notice too (scripts/life_notice.gd).
-	Disturbance.raise(editor.terrain.to_global(_ground_at(_center)),POKE_RADIUS,POKE_STRENGTH,"poke")
-	_poke_step(0.0)
-
-func _poke_step(delta: float) -> void:
-	_poke_t += delta
-	if _poke_t >= POKE_SECONDS:
-		_end_poke()
+## The tool's stand-in prop rides in the God Hand: its grip between the index
+## and thumb tips (god_hand `hold_at`), its working end down toward the land,
+## leaning the tool's `prop_tilt` toward the way the hand is going (the last
+## way it went when it stops). Shown while the hand shows and no material is
+## held; sized with the hand.
+func _place_prop(delta: float) -> void:
+	if _prop == null: return
+	var god: Node3D = scene.get("god_hand") as Node3D
+	var materials: Node = scene.hand_reach.get("materials") if scene.get("hand_reach") != null else null
+	var carrying: bool = materials != null and not str(materials.get("held")).is_empty()
+	_prop.visible = god != null and god.visible and float(god.opacity) > 0.3 and not carrying
+	if not _prop.visible:
+		_prop_last = null
 		return
-	var amount := -POKE_DEPTH*exp(-POKE_DAMP*_poke_t)*cos(POKE_RATE*_poke_t)
-	var data := editor.data
-	var heights := data.heights
-	for k in _poke_idx.size():
-		var i := _poke_idx[k]
-		heights[i] = _base[i]+amount*_poke_shape[k]
-		_poke_written[k] = heights[i]
-	data.heights = heights
-	_show()
-
-## The dimple is taken back: the exact ground from before, where nothing else
-## has moved it since.
-func _end_poke() -> void:
-	poking = false
-	var data := editor.data
-	var heights := data.heights
-	for k in _poke_idx.size():
-		var i := _poke_idx[k]
-		if i < heights.size() and heights[i] == _poke_written[k]: heights[i] = _base[i]
-	data.heights = heights
-	editor._settle_pending = true
-	editor._settle_stroke()
-	if _hand_set == "press": _hand("")
-	worked.emit("poke",false)
-
-# --- Helpers -----------------------------------------------------------------------
-
-func _shift() -> bool:
-	return Input.is_key_pressed(KEY_SHIFT)
-
-## Every point within `radius` of `center` into _near (and distances _near_d).
-func _gather(center: Vector2, radius: float) -> void:
-	var data := editor.data
-	if _cells_for != data or _cells_points != data.points.size():
-		_cells.clear()
-		_cells_for = data
-		_cells_points = data.points.size()
-		for i in range(data.points.size()):
-			var key := Vector2i(floori(data.points[i].x/CELL),floori(data.points[i].y/CELL))
-			if not _cells.has(key): _cells[key] = PackedInt32Array()
-			_cells[key].append(i)
-	_near = PackedInt32Array()
-	_near_d = PackedFloat32Array()
-	var low := Vector2i(floori((center.x-radius)/CELL),floori((center.y-radius)/CELL))
-	var high := Vector2i(floori((center.x+radius)/CELL),floori((center.y+radius)/CELL))
-	var points := data.points
-	for x in range(low.x,high.x+1):
-		for y in range(low.y,high.y+1):
-			var cell: Variant = _cells.get(Vector2i(x,y))
-			if cell == null: continue
-			for i: int in cell:
-				var d := points[i].distance_to(center)
-				if d < radius:
-					_near.append(i)
-					_near_d.append(d)
-
-## The pointer on the ground as it stood when the stroke began: picked on the
-## live ground, a groove deepening ahead of the pointer would draw the line
-## onto its far wall, away from the camera, and widen it on that side.
-func _pick_base(screen_pos: Vector2) -> Variant:
-	var data := editor.data
-	var now := data.heights
-	data.heights = _base
-	var hit: Variant = editor.pick(screen_pos)
-	data.heights = now
-	return hit
-
-func _fade(i: int) -> float:
-	var p: Vector2 = editor.data.points[i]
-	var edge := maxf(absf(p.x),absf(p.y))
-	return clampf((EDGE.y-edge)/(EDGE.y-EDGE.x),0.0,1.0)
-
-func _touch(q: Vector2, reach: float) -> void:
-	_region = _region.merge(Rect2(q-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
-
-func _ground_at(p: Vector2) -> Vector3:
-	var h: Variant = editor.data.ground_height(p)
-	return Vector3(p.x,float(h) if h != null else 0.0,p.y)
-
-## Send the land to the screen: one light refresh at a time, so a slow one is
-## never stacked on; a full one if the light one cannot run.
-func _show() -> void:
-	if editor.refresh_pending > 0: return
-	refreshes += 1
-	if editor._light_refresh_ready(true): editor._refresh_light()
-	else: editor.refresh(get_tree())
-
-## Drive the God Hand. `again` plays the gesture's In afresh even if it is
-## already showing (the hover's ready pinch closes into the real one).
-func _hand(gesture: String, point: Variant = null, again := false) -> void:
-	var hand: Node = scene.get("god_hand") as Node
-	if hand == null: return
-	_hand_set = gesture
-	hand.reach_gesture = gesture
-	hand.reach_point = point if not gesture.is_empty() else null
-	if gesture.is_empty(): hand.reach_pace = 1.0
-	if again and hand.get("gesture") == gesture and hand.player != null:
-		var clip: String = hand.GESTURES[gesture]+"In"
-		if hand.player.has_animation(clip): hand.player.play(clip,hand.BLEND)
+	var grip: Vector3 = god.hold_at(true)
+	var flat := Vector2(grip.x,grip.z)
+	if _prop_last != null and flat.distance_to(_prop_last) > 0.01:
+		_prop_way = _prop_way.lerp((flat-(_prop_last as Vector2)).normalized(),1.0-exp(-PROP_TURN*delta))
+	_prop_last = flat
+	if _prop_way.length() < 0.1:
+		# At rest it leans across the view, as the roll's icon leans.
+		var right: Vector3 = editor.terrain.global_basis.inverse()*scene.camera.global_basis.x
+		_prop_way = Vector2(-right.x,-right.z).normalized()
+	var way := Vector3(_prop_way.x,0.0,_prop_way.y).normalized()
+	var axis := way.cross(Vector3.UP)
+	var lean := Basis.IDENTITY
+	if axis.length_squared() > 0.0001: lean = Basis(axis.normalized(),deg_to_rad(-tool.prop_tilt()))
+	var size: float = god.basis.get_scale().x/float(god.HAND_METRES)
+	var facing := Basis(Vector3.UP,atan2(way.x,way.z))
+	_prop.transform = Transform3D((lean*facing).scaled(Vector3.ONE*size),grip)

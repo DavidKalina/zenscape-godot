@@ -2550,8 +2550,10 @@ func gust_from_sky(heading: Vector2, power: float) -> bool:
 ## wind brush's press does, carrying the flick's `heading` (plate x, z) and
 ## `power` (0..1). From there it is the tool: the lane shows its promise, the
 ## hand's air moves, a swipe on sends it and a still hold bursts, until the
-## button is let go. True when the tool was taken.
-func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float) -> bool:
+## button is let go. True when the tool was taken. `half` (m) is the lane's
+## half-width when the Feather sets it (scripts/hand_materials.gd); below 0
+## it is the wind brush's.
+func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float, half := -1.0) -> bool:
 	if forming or not active or _painting or _ball_holding or _handful_holding: return false
 	if gust != null and gust.aiming(): return false
 	var hit: Variant = pick(screen_pos)
@@ -2560,7 +2562,8 @@ func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float) -> bool:
 	_stroke_button = MOUSE_BUTTON_LEFT
 	_make_gust()
 	var brush = brushes.get("wind")
-	gust.press(hit,float(brush.radius) if brush != null else SKY_GUST_HALF,float(brush.strength) if brush != null else 1.0)
+	if half < 0.0: half = float(brush.radius) if brush != null else SKY_GUST_HALF
+	gust.press(hit,half,float(brush.strength) if brush != null else 1.0)
 	gust.carry(heading,power)
 	return true
 
@@ -3061,12 +3064,14 @@ func _make_pollen() -> void:
 		_settled_clouds.clear()
 		handful.withdraw())
 
-func _handful_press(hit: Vector3) -> void:
+func _handful_press(hit: Vector3, forest: Variant = null, kind := "") -> void:
 	if handful == null: _make_pollen()
 	_handful_serial += 1
-	var forest = creation_brush()
+	if forest == null: forest = creation_brush()
 	forest.prepare(data,land_seed)
-	handful.gather(hit,forest.radius,forest.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
+	var family: String = kind if not kind.is_empty() else emergence.seed_family(Vector2(hit.x,hit.z))
+	handful.set("seed_kind",kind)
+	handful.gather(hit,forest.radius,forest.strength,family,hash([land_seed,_handful_serial]))
 	# No stroke starts: the brush feel's swell would raise the very wind the
 	# cloud drifts on. The settled cloud reports its stroke (`_write_cloud`).
 	_handful_holding = true
@@ -3112,6 +3117,59 @@ func fling_from_tree(base: Vector3, crown: Vector3, direction: Vector2, reach: f
 	var velocity := Vector3(direction.x,0.0,direction.y)*reach*FLING_SPEED+Vector3.UP*FLING_LOFT
 	handful.fling(crown,velocity,path,forest.radius,forest.strength*strength,family,hash([land_seed,_handful_serial]))
 	return true
+
+## Seeds from the materials tray (scripts/hand_materials.gd): a press with
+## seeds in hand lays the forest brush's veil from the pointer's ground point,
+## as the Forest brush's press does, held until the button is let go; the wind
+## and the land then decide. `kind` is the tree the seeds are of (an emergence
+## tree kind: "broadleaf", "tree", "willow", "birch"), stamped on the veil as a
+## flicked tree's spores are, so its sprouts lean to that kind as far as the
+## ground allows (Emergence `_heir_kind`); "" lets the stand pick. True when
+## the veil was taken.
+func sow_from_hand(screen_pos: Vector2, kind := "") -> bool:
+	if forming or not active or _ball_holding or _handful_holding or _painting: return false
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return false
+	_land_mountain()
+	_handful_press(hit,brushes.forest,kind)
+	return true
+
+## A stone set down by the hand (the materials tray), placed as the rock
+## tool's click places one (`set_objects`).
+func set_stone(point: Vector2, size: float, angle: float, after: Variant = null) -> Variant:
+	return set_objects([{"asset":"rock","point":point,"size":size,"angle":angle}],after)
+
+## Things set down by the hand (the materials tray, scripts/hand_materials.gd):
+## stones, wildflowers, reeds. Each of `items` ({"asset", "point" (plate x, z),
+## "size", "angle"}) is placed as the build palette's click places one, marked
+## hand work, all in one undo step, and arrives as NativeDropReactions has it
+## (a stone falls, a plant sprouts). `after` is the undo step of the last set
+## down in the same drag: while that is still the step under this one, this
+## one folds into it, so a scattering drag undoes as one. Returns the undo step
+## they lie in, or null when none was placed.
+func set_objects(items: Array, after: Variant = null) -> Variant:
+	if forming or not active or _painting: return null
+	_land_mountain()
+	data.begin_stroke()
+	var placed: Array[int] = []
+	for item: Dictionary in items:
+		if data.ground_height(item.point) == null: continue
+		var id := data.place(item.asset,item.point,float(item.angle),float(item.size))
+		if id < 0: continue
+		data.mark_objects_hand(id)
+		placed.append(id)
+	if not data.end_stroke() or placed.is_empty(): return null
+	var step: Dictionary = data._undo.back()
+	if after != null and data._undo.size() >= 2 and is_same(data._undo[-2],after):
+		data._undo.pop_back()
+		step = after
+	# The arrival starts the frame they are drawn, before they can sit still.
+	refresh(get_tree(),func(stage: String) -> void:
+		if stage != "content" or not reactions_enabled: return
+		for id in placed:
+			var index := data._object_index(id)
+			if index >= 0: reactions.play(str(data.objects[index].asset),reactions.record_pose(data.objects[index]),data.objects[index],id))
+	return step
 
 ## A flicked tree's veil starts FLING_FROM m out from its foot, with a knot
 ## each FLING_STEP m; its spores leave the crown at FLING_SPEED times the
