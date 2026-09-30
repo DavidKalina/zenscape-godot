@@ -90,8 +90,12 @@ func plate(at: Vector2) -> Variant:
 	var hit: Variant = editor.pick(at)
 	return Vector2(hit.x,hit.z) if hit != null else null
 
+## True when a press at `at` (screen) would reach the land and nothing else:
+## not the rim's band, the void, a prop, tree or cloud, nor any of the HUD
+## (the tray, the tool roll and its foot, the almanac, an open page).
 func bare(at: Vector2) -> bool:
-	return reach.reach_at(at) == "" and reach._land(at) != null and not reach._prop_at(at)
+	return reach.reach_at(at) == "" and reach._land(at) != null and not reach._prop_at(at) \
+		and not materials.tray_under(at) and reach._cloud_at(at) == null and reach._tree_under(at) < 0
 
 ## Points moved from `base`: {"up","down","moved"} counts past `least` metres.
 func moved(base: PackedFloat32Array, least := 0.01) -> Dictionary:
@@ -324,14 +328,24 @@ func run() -> void:
 	var undo0: int = data._undo.size()
 	var base := data.heights.duplicate()
 	var tint := data.tint.duplicate()
-	var from := tall+Vector2(-120,0)
+	# The drag runs 240 px through the horn's tip. Its start must be bare land:
+	# 120 px left of the tip can fall in the rim's band or the void, which then
+	# take the press (the rim a spin, the void a gust) and the hammer never sees
+	# it. So it comes from whichever side is clear.
+	var way := Vector2.ZERO
+	for side in [Vector2(1,0),Vector2(-1,0),Vector2(0,-1)]:
+		if bare(tall-side*120.0):
+			way = side
+			break
+	check("the drag starts on bare land, clear of the rim, the void and the HUD",way != Vector2.ZERO,[reach.reach_at(tall+Vector2(-120,0)),reach.reach_at(tall+Vector2(120,0))])
+	var from := tall-way*120.0
 	button(from,true)
 	await frames(1)
 	p = from
 	var verb := ""
 	for i in range(48):
-		p += Vector2(5,0)
-		motion(p,Vector2(5,0))
+		p += way*5.0
+		motion(p,way*5.0)
 		await frames(1)
 		if verb.is_empty() and clay.state == 2: verb = clay.verb
 	button(p,false)
@@ -343,6 +357,7 @@ func run() -> void:
 
 	# --- Hold: a blow at release ---
 	undo0 = data._undo.size()
+	check("the hold's point is bare land",bare(tall))
 	button(tall,true)
 	await frames(int(ceil(clay.HOLD_SECONDS*60.0))+10)
 	var held_verb: String = clay.verb
