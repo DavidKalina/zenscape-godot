@@ -169,6 +169,9 @@ static func _build() -> void:
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
 	_add("hammer","Hammer","Break","#7a6a5a",["M3 5.5 Q3 4.5 4 4.5 H15 L20.5 7.2 L15 9.8 H4 Q3 9.8 3 8.8Z","M8.2 9.8 H10.8 V20.8 A1.3 1.3 0 0 1 8.2 20.8Z"],["M12.5 4.5 V9.8"],14)
+	# The Feather, "Gust" (HUD 5, lowpoly.js SHAPING_TOOLS[5]): wind held in
+	# hand, below the tools after the roll's divider. A finer quill line (1.2).
+	_add("feather","Feather","Gust","#cbb994",["M4.6 21.2 Q5.4 11 17.6 2.8 Q19.6 1.8 20.6 3.2 Q21.2 4.6 19.8 6.6 Q12.8 17.4 4.6 21.2Z"],["M3.2 22.6 L17.2 6","M9.4 15.2 L6.6 14.4","M12.6 11.4 L10 10.2","M11.6 15.2 L14.4 14.6","M15 11 L17.4 10.8"],15,1.0,1.2)
 	# --- HUD 5 foot icons (docs/design/hud-5/lowpoly.js ROLL_FOOT; the tool
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)

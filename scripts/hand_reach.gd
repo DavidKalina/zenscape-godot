@@ -704,7 +704,7 @@ func release(point := Vector2.INF) -> void:
 	elif what == "cloud":
 		reach_point = null
 		if _source != null: _source.let_go()
-	elif what in ["jar","scatter","almanac"]:
+	elif what in ["jar","scatter","almanac","feather"]:
 		reach_point = null
 		materials.let_go(what,point)
 	elif what == "sun":
@@ -1287,10 +1287,14 @@ func _void_drag(point: Vector2) -> void:
 	if wind == null: return
 	wind.drag(point)
 	# Over the land the drag takes the wind tool in hand (scripts/sky_wind.gd
-	# `to_land`); the editor has the gesture from here to the release.
-	if _void_travel > CLICK_PIXELS and _land(point) != null and wind.to_land(point):
+	# `to_land`); the editor has the gesture from here to the release. With
+	# the tray the wind is the Feather: its lane is the Feather's width, and
+	# it stays in hand after, pressed in the roll (hand_materials `take_feather`).
+	var half: float = materials.feather_half() if materials != null else -1.0
+	if _void_travel > CLICK_PIXELS and _land(point) != null and wind.to_land(point,half):
 		uses["wind"] = int(uses.get("wind",0))+1
 		release(point)
+		if materials != null: materials.take_feather()
 
 ## The release: a click fires the snap; a drag is the wind's, a swipe's gust
 ## or a held sweep's wind (scripts/sky_wind.gd).

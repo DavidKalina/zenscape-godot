@@ -19,8 +19,12 @@ extends Control
 
 const Linen = preload("res://scripts/hud_linen.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
-## The tools, top to bottom.
-const TOOLS := ["hand","paddle","chisel","wire","hammer"]
+## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind, not
+## clay: it sits under the shaping tools after a divider (DIVIDER_BEFORE).
+const TOOLS := ["hand","paddle","chisel","wire","hammer","feather"]
+## Indices in TOOLS that a stitched divider sits above (lowpoly.js
+## TOOL_DIVIDER_BEFORE): the Feather, set apart from the tools that shape.
+const DIVIDER_BEFORE := [5]
 ## Tools without verbs yet: shown as undiscovered.
 const UNBUILT := []
 ## Sizes: the pip's diameter and hit cell (design pixels) and the scale it
@@ -119,7 +123,14 @@ func rect() -> Rect2:
 	return _roll()
 
 func _height() -> float:
-	return PAD.y*2.0+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER+PIPS_H
+	return PAD.y*2.0+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER*(1+DIVIDER_BEFORE.size())+PIPS_H
+
+## Design pixels of tool dividers above slot `i` (each is one DIVIDER block).
+func _dividers_above(i: int) -> float:
+	var count := 0
+	for at: int in DIVIDER_BEFORE:
+		if at <= i: count += 1
+	return DIVIDER*count
 
 func _roll() -> Rect2:
 	var extent := Vector2(PAD.x*2.0+Linen.SLOT,_height())*ui_scale
@@ -128,12 +139,12 @@ func _roll() -> Rect2:
 
 func _cell(i: int) -> Rect2:
 	var roll := _roll()
-	return Rect2((roll.position+Vector2(PAD.x,PAD.y+(Linen.SLOT+GAP)*i)*ui_scale).round(),Vector2.ONE*roundf(Linen.SLOT*ui_scale))
+	return Rect2((roll.position+Vector2(PAD.x,PAD.y+(Linen.SLOT+GAP)*i+_dividers_above(i))*ui_scale).round(),Vector2.ONE*roundf(Linen.SLOT*ui_scale))
 
 ## The pips' row, and one pip's hit cell.
 func _pips() -> Rect2:
 	var roll := _roll()
-	var y := PAD.y+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER
+	var y := PAD.y+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER*(1+DIVIDER_BEFORE.size())
 	return Rect2(roll.position+Vector2(PAD.x,y)*ui_scale,Vector2(Linen.SLOT,PIPS_H)*ui_scale)
 
 func _pip_cell(i: int) -> Rect2:
@@ -210,12 +221,16 @@ func _draw() -> void:
 		_pocket(cell,line)
 		if id == "hand" and material_held:
 			Linen.dashed_round(self,cell.grow(-2.0*ui_scale),8.0*ui_scale,Linen.CUE,line,ui_scale)
-	# The divider: two stitched lines, 3 px apart.
+	# The dividers: two stitched lines, 3 px apart, over the pips and over
+	# each tool set apart (the Feather).
 	var row := _pips()
 	var mid := row.position.x+row.size.x*0.5
-	for k in range(2):
-		var y := roundf(row.position.y-GAP*ui_scale-(DIVIDER-6.0-k*4.0)*ui_scale)+line*0.5
-		Linen.dashed(self,PackedVector2Array([Vector2(mid-20.0*ui_scale,y),Vector2(mid+20.0*ui_scale,y)]),Linen.DIVIDER,line,3.0*ui_scale,3.0*ui_scale)
+	var tops := [row.position.y-GAP*ui_scale-DIVIDER*ui_scale]
+	for at: int in DIVIDER_BEFORE: tops.append(_cell(at).position.y-(GAP*0.5+DIVIDER)*ui_scale)
+	for top: float in tops:
+		for k in range(2):
+			var y := roundf(top+(6.0+k*4.0)*ui_scale)+line*0.5
+			Linen.dashed(self,PackedVector2Array([Vector2(mid-20.0*ui_scale,y),Vector2(mid+20.0*ui_scale,y)]),Linen.DIVIDER,line,3.0*ui_scale,3.0*ui_scale)
 	# The size pips.
 	for i in range(SIZES.size()):
 		var cell := _pip_cell(i)

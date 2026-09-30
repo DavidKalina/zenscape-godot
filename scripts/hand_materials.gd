@@ -29,6 +29,15 @@ extends Node
 ## - **Stones.** Tap to set one down, bigger the longer the press; drag to
 ##   scatter a few pebbles under the hand (the rock tool's placement).
 ##
+## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
+##   hand, taken like a tool. Swipe on the land and let go: a lane of wind
+##   runs along the swipe. Hold still FEATHER_BURST_SECONDS: a burst, rung out
+##   round the press on release (a shorter still press sends nothing). Both
+##   are the wind tool's own gust (NativeChunkEditor `gust_in_hand`,
+##   scripts/wind_gust.gd), FEATHER_HALF m either side at the middle pip. It
+##   changes no land and takes no undo step. Dragging wind from the sky onto
+##   the land puts the Feather in hand too (`take_feather`).
+##
 ## A press in the sky, on the case or on the specimen held puts the material
 ## back; so does letting go there after drawing it out of the case. A press on
 ## a compartment not found yet gives nothing. The rim keeps its verbs with
@@ -69,6 +78,21 @@ const TRAY_NEAR := 4.0
 ## STONE_SECONDS apart (and only once the last has been drawn and has landed).
 const STONE_GAP := 0.9
 const STONE_SECONDS := 0.3
+## The Feather. It is not a clay tool (it shapes no land), so its press is
+## held here, as "scatter" is, and handed to the wind tool, which reads the
+## pointer each frame; the prop and the grip come from the clay's seam
+## (scripts/clay_tools/feather.gd). FEATHER_HALF is the lane's half-width (m)
+## at the middle pip: the wind brush's radius (scripts/wind_brush.gd). The
+## pips scale it as they scale every tool, 0.6 / 1 / 1.5 (the design's 20 /
+## 34 / 52 px lanes). A still press held FEATHER_BURST_SECONDS is a burst;
+## let go sooner it sends nothing, so a stray click blows nothing. The burst's
+## ring (the ground mark) grows from the lane's half-width to FEATHER_RING
+## times it, 1.5× the lane's width across, over the wind tool's gather
+## (WindGust.BURST_GATHER), then the gust rings out past it on release.
+const FEATHER := "feather"
+const FEATHER_HALF := 3.0
+const FEATHER_BURST_SECONDS := 0.4
+const FEATHER_RING := 1.5
 ## Screen pixels a press may wander and still be a tap.
 const CLICK_PIXELS := 6.0
 ## The hint line with material in hand, until each has been used once.
@@ -115,6 +139,11 @@ var _stone_count := 0
 var _stone_since := 0.0
 var _carry_shown := false
 var _shell_lifted := false
+## Seconds the Feather's press has been held, and what its last release sent
+## ("lane", "burst" or "" for nothing), with counts, for the marks and probes.
+var feather_seconds := 0.0
+var feather_last := ""
+var feather_sent := {"lane":0,"burst":0,"none":0}
 
 func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	scene = owner_scene
@@ -224,6 +253,12 @@ func press(point: Vector2) -> bool:
 	if tray.contains_pointer(point):
 		put_back()
 		return true
+	# The Feather in hand: a press on the land is the wind's; the rim and the
+	# sky keep their own verbs (a sky swipe still sends a passing gust).
+	if held.is_empty() and roll.tool == FEATHER:
+		if reach.reach_at(point) == "rim" or reach._land(point) == null: return false
+		_feather_press(point)
+		return true
 	if held.is_empty(): return false
 	# The rim keeps its verbs; the land is the material's; the sky puts it back.
 	if reach.reach_at(point) == "rim": return false
@@ -241,6 +276,63 @@ func select_tool(id: String) -> void:
 	var clay: Node = scene.get("land_clay")
 	if clay != null and not clay.set_tool(id): return
 	roll.tool = id
+
+# --- The Feather ------------------------------------------------------------------
+
+## The Feather's lane half-width (m) at the size in hand.
+func feather_half() -> float:
+	return FEATHER_HALF*size_scale()
+
+## Wind dragged in from the sky onto the land (scripts/hand_reach.gd
+## `_void_drag`): the Feather is in hand from here, pressed in the roll. One
+## thing in hand: a material goes back first.
+func take_feather() -> void:
+	put_back()
+	if roll.tool != FEATHER: select_tool(FEATHER)
+
+## A press on the land with the Feather: the wind tool is taken there, no
+## flick carried, as wide as the Feather's lane, and the press is held here
+## until the button comes up. Nothing happens if the land is busy.
+func _feather_press(point: Vector2) -> void:
+	var editor: Node = reach._editor()
+	if not editor.has_method("gust_in_hand") or not editor.gust_in_hand(point,Vector2.ZERO,0.0,feather_half()): return
+	feather_seconds = 0.0
+	reach.take_hold(FEATHER,point)
+
+## The wind tool's gust, or null.
+func _gust() -> Node:
+	var editor: Node = reach._editor()
+	return editor.get("gust") if editor != null else null
+
+## True while the Feather's wind is in hand (its own press, or wind dragged
+## in from the sky), for the marks.
+func feather_blowing() -> bool:
+	var gust := _gust()
+	return roll != null and roll.tool == FEATHER and held.is_empty() and gust != null and gust.aiming()
+
+## The burst ring's radius (m) while the Feather is held still, or 0 before
+## FEATHER_BURST_SECONDS: the lane's half-width, growing to FEATHER_RING of it.
+func feather_ring() -> float:
+	if reach.holding != FEATHER or feather_seconds < FEATHER_BURST_SECONDS: return 0.0
+	var gust := _gust()
+	var gather: float = float(gust.BURST_GATHER) if gust != null else 1.2
+	return feather_half()*lerpf(1.0,FEATHER_RING,smoothstep(FEATHER_BURST_SECONDS,gather,feather_seconds))
+
+## The Feather's press comes up: a swipe's lane goes as the wind tool
+## promised it; a still press is a burst only once held long enough.
+func _feather_let_go() -> void:
+	var gust := _gust()
+	if gust == null or not gust.aiming(): return
+	var plan: Dictionary = gust.promise()
+	if plan.get("kind","") == "burst" and feather_seconds < FEATHER_BURST_SECONDS:
+		gust.cancel()
+		feather_last = ""
+		feather_sent.none += 1
+		return
+	var sent: Dictionary = gust.release()
+	feather_last = str(sent.get("kind",""))
+	if feather_sent.has(feather_last): feather_sent[feather_last] += 1
+	reach.uses["feather"] = int(reach.uses.get("feather",0))+1
 
 func _take(id: String) -> void:
 	# One thing in hand: a material puts the tool back.
@@ -303,6 +395,9 @@ func drag(point: Vector2) -> void:
 func let_go(what: String, point: Vector2) -> void:
 	if what == "almanac":
 		almanac.let_go(point)
+		return
+	if what == FEATHER:
+		_feather_let_go()
 		return
 	var known := point != Vector2.INF
 	var over_land: bool = known and reach._land(point) != null
@@ -376,6 +471,7 @@ func step(delta: float) -> void:
 		shell.fit()
 		_shell_lifted = true
 	if reach.holding == "scatter": _scatter(delta)
+	if reach.holding == FEATHER: feather_seconds += delta
 	var hand: Node3D = scene.get("god_hand")
 	var at: Variant = reach.reach_point
 	var share := 1.0
