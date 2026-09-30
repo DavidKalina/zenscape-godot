@@ -10,6 +10,8 @@ extends SceneTree
 ## the cost of the work, not of drawing it.
 
 const HandTool = preload("res://scripts/clay_tools/hand.gd")
+## Metres round the press the pinch's summit is looked for.
+const SUMMIT_NEAR := 1.5
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -254,7 +256,9 @@ func run() -> void:
 	var shallowest: float = depths.min() if not depths.is_empty() else 0.0
 	var deepest: float = depths.max() if not depths.is_empty() else 0.0
 	print("GROOVE ",JSON.stringify({"samples":depths.size(),"shallowest":snappedf(shallowest,0.01),"deepest":snappedf(deepest,0.01),"refreshes":clay.refreshes,"dabs":clay.dabs,"frames":stats(drag_gaps)}))
-	check("the slow drag digs a groove all along its path",depths.size() > 20 and shallowest > 0.15 and deepest < clay.GROOVE_DEPTH+0.08,"%.2f..%.2f m" % [shallowest,deepest])
+	# The bed never climbs, so across the ground's bumps it may cut up to
+	# GROOVE_CUT deeper than GROOVE_DEPTH (hand.gd "The thumb"), and no more.
+	check("the slow drag digs a groove all along its path",depths.size() > 20 and shallowest > 0.15 and deepest < clay.GROOVE_DEPTH+HandTool.GROOVE_CUT+0.05,"%.2f..%.2f m" % [shallowest,deepest])
 	var side: Vector2 = path[path.size()/2]+Vector2(0,clay.GROOVE_HALF_WIDTH*1.3)
 	var side2: Vector2 = path[path.size()/2]-Vector2(0,clay.GROOVE_HALF_WIDTH*1.3)
 	var side_rise := maxf(height(side)-float(editor.data.sample(side,base)),height(side2)-float(editor.data.sample(side2,base)))
@@ -404,7 +408,13 @@ func pinch(spot: Vector2, pixels: float, fine: bool) -> Dictionary:
 		await tick()
 	var pinch_gaps := gaps.duplicate()
 	await frames(2)
-	var summit: Vector2 = scene.camera.unproject_position(editor.terrain.to_global(Vector3(at.x,height(at),at.y)))
+	# The summit: the highest point near the press. The pinch's horn lumps the
+	# peak by the world's noise, so it may stand a little off the press point.
+	var top := Vector3(at.x,height(at),at.y)
+	for i in range(data.points.size()):
+		if data.points[i].distance_to(at) < SUMMIT_NEAR and data.heights[i] > top.y:
+			top = Vector3(data.points[i].x,data.heights[i],data.points[i].y)
+	var summit: Vector2 = scene.camera.unproject_position(editor.terrain.to_global(top))
 	var follow := absf(summit.y-p.y) if not fine else 0.0
 	button(p,false)
 	await frames(1)
