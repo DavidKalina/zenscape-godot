@@ -20,6 +20,8 @@ extends RefCounted
 ## - the wildlife calls (studies/nature_audio.gd) that belong to the other half
 ##   of the day are faded out, and the new half's first call comes soon. The
 ##   cricket and frog beds already follow daylight every frame.
+## - the life notices (scripts/life_notice.gd): night wakes the fireflies in
+##   a wave, and day brings a dawn chorus.
 ##
 ## Pins behave as they do for a spin: a clock that was running keeps running
 ## from the new hour; a held clock is pinned again at it (`mood_look.pin_hour`).
@@ -33,6 +35,7 @@ const STEPS := [0.275,0.47,0.705,0.035]
 const STEP_EPSILON := 0.01
 ## Seconds of real-time radiance after a snap.
 const RADIANCE_SECONDS := 0.3
+const Disturbance = preload("res://scripts/disturbance.gd")
 
 ## The phase a snap from `phase` lands on.
 static func target_phase(phase: float, step: bool) -> float:
@@ -58,6 +61,7 @@ static func snap(scene: Node, step: bool) -> float:
 	var sky: Object = scene.get("_celestial")
 	var mood: Node = scene.get("mood_look")
 	if mood != null: mood.finish_fade()
+	var was_night := is_night(clock.phase)
 	var goal := target_phase(clock.phase,step)
 	var hours := fposmod(WorldClock.hour_for_phase(goal)-clock.hour,WorldClock.HOURS_PER_DAY)
 	var total := float(clock.day)*WorldClock.HOURS_PER_DAY+clock.hour+hours
@@ -68,6 +72,7 @@ static func snap(scene: Node, step: bool) -> float:
 	if sky != null: sky.update_rig()
 	_radiance_now(scene)
 	_wildlife(scene,is_night(goal))
+	_disturb(scene,was_night,is_night(goal))
 	return goal
 
 ## Refresh the sky's radiance every frame for a moment, then as before.
@@ -83,6 +88,13 @@ static func _radiance_now(scene: Node) -> void:
 		if not is_instance_valid(sky) or int(sky.get_meta("snap_count",0)) != count: return
 		sky.process_mode = int(sky.get_meta("snap_mode"))
 		sky.remove_meta("snap_mode"))
+
+## Night falling wakes the fireflies in a wave; day breaking brings a dawn
+## chorus (scripts/disturbance.gd, scripts/life_notice.gd).
+static func _disturb(scene: Node, was_night: bool, night: bool) -> void:
+	if was_night == night: return
+	var target: Variant = scene.get("target")
+	Disturbance.raise(target if target is Vector3 else Vector3.ZERO,0.0,1.0,"night" if night else "dawn")
 
 ## The other half of the day's calls fade out; the new half's first comes soon.
 static func _wildlife(scene: Node, night: bool) -> void:

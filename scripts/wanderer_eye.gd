@@ -53,6 +53,15 @@ const WADE_SLOW := 0.55
 ## How far round `place` looks for a free spot, and the ring spacing.
 const FREE_REACH := 4.0
 const FREE_STEP := 0.2
+## Creatures notice the figure (scripts/disturbance.gd, scripts/life_notice.gd):
+## a disturbance each STRIDE metres walked, as strong as the pace (a run is
+## 1), one every STILL_PING seconds while it stands in its eyes, at
+## STILL_STRENGTH, and one when it is set down, at PLACE_STRENGTH.
+const STRIDE := 0.7
+const STILL_PING := 2.0
+const STILL_STRENGTH := 0.15
+const PLACE_STRENGTH := 0.6
+const Disturbance = preload("res://scripts/disturbance.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  V or Esc to step out"
 
 signal entered
@@ -83,6 +92,9 @@ var _obstacles := PackedVector3Array()
 var _obstacle_key := []
 ## Live water depths, read once a frame while walking.
 var _depths := PackedFloat32Array()
+## Metres walked and seconds stood since the last disturbance.
+var _stride := 0.0
+var _still := 0.0
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -186,6 +198,7 @@ func place(local: Vector3) -> void:
 	_feet = _clamped(_free_spot(_clamped(local)))
 	_yaw = scene.yaw
 	_sync_figure()
+	_disturb(PLACE_STRENGTH)
 
 ## The terrain's own turn; the world turn (scripts/world_turn.gd) turns the
 ## camera, so this is normally 0.
@@ -444,7 +457,9 @@ func _advance_eye(delta: float) -> void:
 	var move := right*_pace.x-forward*_pace.y
 	# Wading slows the walk as the water deepens.
 	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
+	var was := _feet
 	_feet = _clamped(_walk(_feet,Vector2(move.x,move.z)*delta))
+	_notice_step(Vector2(_feet.x-was.x,_feet.z-was.z).length(),delta)
 	_eye_y = lerpf(_eye_y,_feet.y+EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
 	# Never below the ground right under the eye.
 	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT*0.6)
@@ -460,6 +475,20 @@ func _advance_eye(delta: float) -> void:
 	_sync_figure()
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-4.0)/1.5,0.0,1.0)
+
+## A stride walked, or a while stood: the life round it hears.
+func _notice_step(moved: float, delta: float) -> void:
+	_stride += moved
+	_still = 0.0 if moved > 0.001 else _still+delta
+	if _stride >= STRIDE:
+		_stride = 0.0
+		_disturb(clampf(_pace.length()/RUN,STILL_STRENGTH,1.0))
+	elif _still >= STILL_PING:
+		_still = 0.0
+		_disturb(STILL_STRENGTH)
+
+func _disturb(strength: float) -> void:
+	Disturbance.raise(editor.terrain.to_global(_feet),RADIUS,strength,"figure")
 
 func _advance_return(delta: float) -> void:
 	_returning = maxf(0.0,_returning-delta)
