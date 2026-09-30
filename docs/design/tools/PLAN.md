@@ -691,18 +691,22 @@ Decided 2026-09-30, once the linen HUD carried the verbs. The God Hand is for th
 whole world only. It shows for the rim's reaches (the rim and wall hover, spin,
 shake, flip, and the grip that turns the world) and fades out anywhere else
 (scripts/god_hand.gd `WORLD`). The shaping tools and the Feather are their own
-cursors, with no hand holding them. Material carried from the bar and the sky's
-cloud still ride in the hand (`CARRYING`) until the materials become cursors too.
-The void's snap plays without a hand until day and night move to the HUD.
-`--hand-everywhere` brings back the old hand.
+cursors, with no hand holding them, and so is material carried from the bar
+(below). Only the sky's cloud is still pulled by the hand (`SKY`: "cloud" and
+"summon", and a grown tree's crown, which borrows the cloud's pinch); the ball
+a torn tuft becomes over the land goes without it. The void's snap plays
+without a hand until day and night move to the HUD. `--hand-everywhere` brings
+back the old hand for the tools, the water ball ("cup") and the sown seed
+("sprinkle"); material from the bar stays a cursor even then.
 
-The prop as a cursor (scripts/land_clay.gd `_place_prop`):
+The prop as a cursor (scripts/land_clay.gd `_place_prop`; the motion is
+scripts/cursor_motion.gd, shared with the materials):
 
 - **The tip is pinned.** Its working end sits on the pointer's ground point, or
   on the point the verb works (`hand_gesture`), on a stiff spring (about 0.1 s).
   The cursor stays exact, and the life comes from how the prop hangs off the tip.
-- **It hovers and lands.** It hovers `PROP_HOVER` (0.3 m) over the land. A press
-  brings it down at once, before the verb is decided, `PROP_PRESS_IN` into the
+- **It hovers and lands.** It hovers `HOVER` (0.3 m) over the land. A press
+  brings it down at once, before the verb is decided, `PRESS_IN` into the
   land, on a soft spring so it bounces as it lands and as it lifts.
 - **It leans.** It leans the tool's `prop_tilt` toward the way it goes. The
   handle leads by the pointer's speed and wobbles upright on a stop.
@@ -711,5 +715,24 @@ The prop as a cursor (scripts/land_clay.gd `_place_prop`):
   back into it: over the land, with no material held, and not while the camera
   moves.
 
-Still to come: the Hand slot becomes a sculptor's clay tool with a prop, the
-materials become cursors, and day and night move to the HUD in place of the snap.
+The material as a cursor (scripts/hand_materials.gd `Clump`, decided
+2026-09-30: "a pinch of seeds or a bead of water follows the pointer, and a
+flick sows"). A small faceted stand-in of what is in hand, built in code as the
+props are, is the cursor, pinned by its underside and moving as the props do:
+
+- **Seeds** are a pinch tinted by kind: three capped acorns, a fan of winged
+  pine or birch seed, willow down or a dandelion's puff, flower seed with a
+  petal or two, slim reed seed. Sowing, the veil's motes gather in the pinch
+  (the handful's `hand_at`) and it flicks them out every 0.45 s and once more
+  on release (`toss`, carrying the pointer's speed): a quick snap forward and
+  a swell. Where they land is the veil's, as before.
+- **Water** is a bead coming to a point. A press swells it into the water
+  ball, which pops on its own beat (scripts/water_ball.gd `POP_SECONDS`,
+  about 0.9 s from release to landing), no hand needed; the bead comes back
+  once the ball is down.
+- **Stones** are a few heaped pebbles, and flowers and reeds their seed. A
+  press sets them onto the land, a still press swells them, and a drop sheds
+  a little.
+
+Still to come: the Hand slot becomes a sculptor's clay tool with a prop, and
+day and night move to the HUD in place of the snap.

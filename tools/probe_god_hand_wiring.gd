@@ -3,8 +3,16 @@ extends SceneTree
 ## Fidelity scene: a stand-in scene, editor, ground, water ball and pollen
 ## cloud drive it through each gesture, and the probe prints which clip
 ## plays and where the marks are in the plate's space.
+##
+## First the hand at the rim (docs/design/tools/PLAN.md "The hand at the
+## rim"): by default it stays out of the land's work, the water ball ("cup")
+## and the sowing ("sprinkle"), and leaves the pollen's palm (`hand_at`) to the
+## material's own cursor (scripts/hand_materials.gd `Clump`); it shows for the
+## rim and the sky's cloud. Then the old hand, as `--hand-everywhere` brings
+## it back (the probe sets `GodHand.everywhere`), through every gesture.
 ##   Godot --headless --path . --script res://tools/probe_god_hand_wiring.gd
 
+const GodHand = preload("res://scripts/god_hand.gd")
 const FakeEditor := """
 extends Node
 var active := true
@@ -91,6 +99,30 @@ func _run() -> void:
 	var palm: int = hand.skeleton.find_bone("Palm")
 	var mark: int = hand.skeleton.find_bone("Ball")
 	var touch: int = hand.skeleton.find_bone("BallTouch")
+
+	# --- The hand at the rim: none for the land, the ball or the sowing ---
+	GodHand.everywhere = false
+	for gesture: String in ["","pinch","press","cup","sprinkle"]:
+		editor.gesture = gesture
+		await _seconds(0.3)
+		_check(not hand.visible,"no hand for \"%s\" over the land" % gesture)
+	_check(cloud.hand_at == null and cloud.throws.is_empty(),"and none takes the pollen's palm or throws it")
+	editor.gesture = ""
+	for gesture: String in ["cloud","summon","rim"]:
+		hand.reach_gesture = gesture
+		hand.reach_point = Vector3(2.0,3.0,-1.0)
+		await _seconds(0.4)
+		_check(hand.visible and float(hand.opacity) > 0.9 and String(hand.player.current_animation).begins_with(hand.GESTURES[gesture]),
+			"the hand shows for \"%s\" (%s)" % [gesture,hand.player.current_animation])
+	hand.reach_gesture = ""
+	hand.reach_point = null
+	await _seconds(0.5)
+	_check(not hand.visible,"and fades once the reach lets go")
+	_check(cloud.hand_at == null,"still leaving the pollen's palm alone")
+	await _seconds(1.5)
+
+	# --- The old hand, everywhere ---
+	GodHand.everywhere = true
 
 	await _frames(40)
 	_check(hand.visible and is_equal_approx(hand.opacity,1.0),"hand fades in over the pointer")

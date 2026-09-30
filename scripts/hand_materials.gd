@@ -9,25 +9,29 @@ extends Node
 ## again puts a material down. A built shaping tool in the roll is taken by
 ## pressing it (scripts/land_clay.gd `set_tool`, docs/design/tools/PLAN.md);
 ## Esc or the Hand puts it back, and taking a material does too. Press a material and
-## the hand takes some: it pinches seeds and stones and cups water, and a
-## small clump tinted as the specimen rides in it. The hand stays modeless:
-## what it holds decides what a press does.
+## some is in hand: no hand holds it (docs/design/tools/PLAN.md "The hand at
+## the rim"). A small stand-in of the material itself is the cursor (`Clump`):
+## a pinch of seeds tinted by kind, a bead of water, a few pebbles. It moves
+## as a shaping tool's prop does (scripts/cursor_motion.gd). What is in hand
+## decides what a press does.
 ##
 ## - **Tree seeds** (oak, pine, willow; birch has no slot in 4c). Press and drag over the land:
-##   the hand sprinkles the forest brush's veil along the way, and the wind
-##   carries it down (NativeChunkEditor `sow_from_hand`, the Forest brush's own
-##   veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
+##   the pinch flicks the forest brush's veil out along the way (FLICK_SECONDS),
+##   and the wind carries it down (NativeChunkEditor `sow_from_hand`, the Forest
+##   brush's own veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
 ##   a flicked tree's spores are: what comes up leans to it, as far as the
 ##   ground there allows (SEEDS).
 ## - **Meadow, dandelion and reeds.** Tap to set a drift of flowers or a
-##   clump of reeds; drag to scatter more under the hand (SCATTER: the build
+##   clump of reeds; drag to scatter more under the pointer (SCATTER: the build
 ##   palette's plants, set down by NativeChunkEditor `set_objects`, one undo
 ##   step a drag). They sprout as a placed plant does.
-## - **Water.** Press and hold over the land: a water ball condenses and fills
-##   while held, and drops on release, a pool or a spring as the ground decides
-##   (NativeChunkEditor `ball_from_sky`, the cloud tuft's own ball).
+## - **Water.** Press and hold over the land: the bead swells into a water
+##   ball that fills while held, and on release is tossed up, pops on its own
+##   beat and drops, a pool or a spring as the ground decides (NativeChunkEditor
+##   `ball_from_sky`, the cloud tuft's own ball; scripts/water_ball.gd). The
+##   bead comes back once the ball is down.
 ## - **Stones.** Tap to set one down, bigger the longer the press; drag to
-##   scatter a few pebbles under the hand (the rock tool's placement).
+##   scatter a few pebbles under the pointer (the rock tool's placement).
 ##
 ## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
 ##   hand, taken like a tool. Swipe on the land and let go: a lane of wind
@@ -66,15 +70,25 @@ const SCATTER := {
 	"dandelion":{"assets":["button_flower","daisy_flower"],"each":4,"spread":0.9,"tap":Vector2(0.5,0.8),"grow":1.6,"scatter":Vector2(0.45,0.75),"scatter_grow":2.5,"most":8},
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
 }
-## Cupped, not pinched.
-const CUPPED := ["water"]
-## The hand carrying floats CARRY_LIFT m over the pointer's ground point.
-## Over the tray it floats TRAY_DEPTH of the camera's distance out along the
-## pointer's ray (nearer than the void's: the near land lies under the tray).
-const CARRY_LIFT := 0.8
-const TRAY_DEPTH := 0.55
-const TRAY_NEAR := 4.0
-## A drag drops a set every STONE_GAP m under the hand, no sooner than
+## Pressed, the cursor comes down to PRESS_GAP m over the land: a stone
+## touches it, a pinch of seeds or flowers stops short.
+const PRESS_GAP := {"stone":0.0}
+const PRESS_GAP_DEFAULT := 0.1
+## Sowing from the pinch: while the button is held it flicks every
+## FLICK_SECONDS (the first FIRST_FLICK after the press), and once more as the
+## button comes up, throwing what has gathered in it (the veil's `toss`,
+## scripts/pollen_cloud.gd, whose motes wait in it at most 0.6 s) out along its
+## way at FLICK_OUT and up at FLICK_UP m/s, plus THROW_CARRY of the pointer's
+## speed, at most MAX_THROW m/s. Where the seeds land is the veil's, as ever.
+const FLICK_SECONDS := 0.45
+const FIRST_FLICK := 0.25
+const FLICK_OUT := 1.5
+const FLICK_UP := 3.0
+const THROW_CARRY := 1.3
+const MAX_THROW := 7.0
+const GodHand = preload("res://scripts/god_hand.gd")
+const CursorMotion = preload("res://scripts/cursor_motion.gd")
+## A drag drops a set every STONE_GAP m under the pointer, no sooner than
 ## STONE_SECONDS apart (and only once the last has been drawn and has landed).
 const STONE_GAP := 0.9
 const STONE_SECONDS := 0.3
@@ -137,7 +151,11 @@ var _stone_last: Variant = null
 var _stone_step: Variant = null
 var _stone_count := 0
 var _stone_since := 0.0
-var _carry_shown := false
+## Seconds to the pinch's next flick, and whether it was sowing last frame;
+## flicks thrown, for probes.
+var _flick_in := FIRST_FLICK
+var _sowing := false
+var flicks := 0
 var _shell_lifted := false
 ## Seconds the Feather's press has been held, and what its last release sent
 ## ("lane", "burst" or "" for nothing), with counts, for the marks and probes.
@@ -171,6 +189,7 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	pages.setup(scene)
 	clump = Clump.new()
 	clump.name = "HeldMaterial"
+	clump.ground = func(flat: Vector2) -> Variant: return reach._editor().data.ground_height(flat)
 	reach._editor().terrain.add_child(clump)
 
 ## True over the materials bar, the tool roll or its foot, the almanac or an
@@ -350,7 +369,6 @@ func put_back() -> void:
 	tray.return_home(held,from)
 	reach.uses["tray_back"] = int(reach.uses.get("tray_back",0))+1
 	held = ""
-	clump.hide_away()
 
 ## A press over the land with material in hand. Seeds and water go to the
 ## editor, which holds them until the button comes up; what is set down by
@@ -472,23 +490,60 @@ func step(delta: float) -> void:
 		_shell_lifted = true
 	if reach.holding == "scatter": _scatter(delta)
 	if reach.holding == FEATHER: feather_seconds += delta
-	var hand: Node3D = scene.get("god_hand")
-	var at: Variant = reach.reach_point
-	var share := 1.0
-	var size := 1.0
-	if hand != null:
-		# It fades with the hand, as the camera moves.
-		share = float(hand.opacity) if hand.visible else 0.0
-		if hand.visible:
-			at = hand.hold_at(not held in CUPPED)
-			size = hand.basis.get_scale().x/float(hand.HAND_METRES)
-	if at == null: at = clump.position
-	if held.is_empty() or not _carry_shown: clump.hide_away()
-	elif clump.kind != held or clump.target == 0.0: clump.show_kind(held)
+	_carry(delta)
+
+## The material in hand is its own cursor (`Clump`): over the land while
+## nothing else holds the press, not while the camera moves or the wanderer
+## looks, and not while the water ball it became is out (the ball is the
+## water then). Pressed, it comes down onto the land. Seeds gather in it and
+## it flicks them out as it sows (`_sow`).
+func _carry(delta: float) -> void:
+	var editor: Node = reach._editor()
+	if not held.is_empty() and clump.kind != held: clump.show_kind(held)
+	var ball: Node = editor.get("ball")
+	var pouring: bool = held == "water" and ball != null and str(ball.state) in ["holding","tossed","falling"]
+	var sowing: bool = SEEDS.has(held) and editor.get("_handful_holding") == true
+	var pressing: bool = reach.holding == "scatter" or sowing
+	var wanderer: Node = scene.get("wanderer")
+	var eye: bool = wanderer != null and wanderer.get("active") == true
+	var hit: Variant = editor.pointer_hit
+	var want: bool = not held.is_empty() and hit != null and not reach.camera_moving() and not eye and not pouring
+	# The sowing editor holds the press, so the reach is not free while it does.
+	want = want and (pressing or (reach.available() and reach.holding.is_empty() and reach.hover_zone == "land"))
 	var growing: bool = reach.holding == "scatter" and _travel <= CLICK_PIXELS and SCATTER.has(held)
 	clump.grow = smoothstep(0.12,float(SCATTER[held].grow),_held_seconds) if growing else 0.0
-	clump.advance(delta,at,size,share)
-	_carry_shown = false
+	var size: float = float(scene.distance)/GodHand.CURSOR_DISTANCE if "--hand-cursor" in OS.get_cmdline_user_args() else 1.0
+	var rest := CursorMotion.across_view(editor.terrain,scene.camera)
+	clump.advance(delta,want,hit,pressing,rest,float(PRESS_GAP.get(held,PRESS_GAP_DEFAULT)),size)
+	_sow(delta,sowing)
+
+## Seeds in hand: what the veil lays gathers in the pinch (its `hand_at`) and
+## the pinch flicks it out, every FLICK_SECONDS while held and once as the
+## button comes up. Under `--hand-everywhere` the God Hand's palm has it.
+func _sow(delta: float, sowing: bool) -> void:
+	var handful: Node = reach._editor().get("handful")
+	if handful == null or not "hand_at" in handful or GodHand.everywhere: return
+	var pinching := SEEDS.has(held) and clump.visible
+	handful.hand_at = clump.launch_point() if pinching else null
+	if sowing:
+		_flick_in -= delta
+		if _flick_in <= 0.0:
+			_flick_in = FLICK_SECONDS
+			_flick(handful)
+	else:
+		# The button came up: the last of it goes.
+		if _sowing: _flick(handful)
+		_flick_in = FIRST_FLICK
+	_sowing = sowing
+
+func _flick(handful: Node) -> void:
+	if not clump.visible: return
+	clump.flick()
+	flicks += 1
+	var motion: CursorMotion = clump.motion
+	var along := Vector3(motion.way.x,0.0,motion.way.y)
+	var carry := Vector3(motion.tip_velocity.x,0.0,motion.tip_velocity.y)*THROW_CARRY
+	handful.toss((carry+along*FLICK_OUT+Vector3.UP*FLICK_UP).limit_length(MAX_THROW))
 
 func _tray_wanted() -> bool:
 	var editor: Node = reach._editor()
@@ -501,7 +556,7 @@ func _tray_wanted() -> bool:
 		if node != null and node.get("active") == true: return false
 	return true
 
-## A held drag sets more down under the hand as it goes.
+## A held drag sets more down under the pointer as it goes.
 func _scatter(delta: float) -> void:
 	_held_seconds += delta
 	_stone_since += delta
@@ -513,43 +568,20 @@ func _scatter(delta: float) -> void:
 	if at == null: return
 	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= STONE_GAP*size_scale(): _drop(at,_scatter_size())
 
-## The hand while material is in hand, or over the case: it pinches or cups
-## what it carries over the land and in the sky, and floats ready over the
-## case. False when it has nothing to show, so the hand reach drives it.
+## The God Hand is for the whole world: material in hand is its own cursor,
+## so the hand stands down while it is held over the land and the sky, while
+## the case or the almanac holds the press, and over the case. The rim keeps
+## its reach. False when the hand reach drives it as usual.
 func drive_hand(hand: Node3D) -> bool:
 	var holding: String = reach.holding
 	if not holding in ["","jar","scatter","almanac"]: return false
-	var carrying := not held.is_empty()
-	var pointer := _pointer()
-	var gesture := ("summon" if held in CUPPED else "cloud") if carrying else "void"
-	var at: Variant = null
-	if holding == "almanac": at = _tray_point(pointer)
-	elif holding == "jar":
-		var ground: Variant = reach._land(pointer)
-		at = _carry_point(ground) if ground != null else _tray_point(pointer)
-	elif holding == "scatter":
-		var ground: Variant = reach._land(pointer)
-		at = _carry_point(ground) if ground != null else reach._void_point(pointer)
-	else:
+	if holding.is_empty():
 		if not reach.available(): return false
-		if reach.hover_zone == "tray": at = _tray_point(pointer)
-		elif not carrying: return false
-		elif reach.hover_zone == "land": at = _carry_point(reach._hover_point)
-		elif reach.hover_zone in ["void","cloud"]: at = reach._void_point(pointer)
-		else: return false
-		hand.held_off = reach.camera_moving()
-	if holding.is_empty() and not (hand.reach_gesture.is_empty() or hand.reach_gesture == reach._hover_shown): return true
-	reach._set_hand(hand,gesture,at,null)
-	_carry_shown = carrying
+		if reach.hover_zone == "rim" or (held.is_empty() and reach.hover_zone != "tray"): return false
+		# Only a hand that is free, or one of the hover's own poses.
+		if not (hand.reach_gesture.is_empty() or hand.reach_gesture == reach._hover_shown): return true
+	reach._set_hand(hand,"",null,null)
 	return true
-
-func _carry_point(ground: Vector3) -> Vector3:
-	return ground+Vector3.UP*CARRY_LIFT
-
-func _tray_point(point: Vector2) -> Vector3:
-	var camera: Camera3D = scene.camera
-	var depth := maxf(float(scene.get("distance"))*TRAY_DEPTH,TRAY_NEAR)
-	return reach._editor().terrain.to_local(camera.project_ray_origin(point)+camera.project_ray_normal(point)*depth)
 
 ## The hint with material in hand: its verb over the land, the way home over
 ## the sky. [zone, text], or ["", ""].
@@ -559,133 +591,187 @@ func hint(zone: String) -> Array:
 	if zone in ["void","cloud"]: return ["tray_back",BACK_HINT]
 	return ["",""]
 
-## The clump that rides in the hand: a few seeds, a droplet or pebbles, tinted
-## as the specimen taken. It pops in when taken, sheds a little as a drop is
-## set down, swells as a still press grows a stone, and shrinks away when used
-## or put back.
+## The material in hand as the cursor: a small faceted stand-in of it, built
+## in code as the tools' props are (scripts/clay_tools/clay_tool.gd `part`), its
+## underside pinned to the pointer's ground point and moving as a tool's prop
+## does (scripts/cursor_motion.gd): a pinch of seeds tinted by kind (acorns,
+## winged pine and birch seed, willow down, flower seed with a petal or two,
+## a dandelion's puff, slim reed seed), a bead of water, a few pebbles. It
+## grows in over the land and shrinks away off it, comes down onto the land
+## on a press, swells as a still press grows a stone, sheds a little as a
+## drop is set down, and flicks (a quick snap forward and a swell) as it
+## throws seed.
 class Clump extends Node3D:
-	## Pop spring (1/s², 1/s), under-damped so it overshoots once.
-	const SPRING := 220.0
-	const DAMP := 11.0
+	const ClayTool = preload("res://scripts/clay_tools/clay_tool.gd")
+	const Motion = preload("res://scripts/cursor_motion.gd")
+	const Icons = preload("res://scripts/hud_icons.gd")
 	## Seed tones by specimen (sRGB): acorn browns, pine-seed umber, willow
-	## down, birch straw, flower seed with a petal or two, reed brown.
+	## down, birch straw, flower seed with a petal or two, dandelion clock,
+	## reed brown.
 	const TONES := {
 		"oak":["a57b48","8c6a3f","c09a66"],"pine":["7a5a3a","946f48","6a4c30"],"willow":["dcd8c4","c9c6ae","ece8d6"],
 		"birch":["c9ab7a","b89868","dcc190"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
 	}
+	## The flick: FLICK_SNAP s, tipping FLICK_TURN degrees forward and
+	## swelling by FLICK_SWELL at its height, then back.
+	const FLICK_SNAP := 0.28
+	const FLICK_TURN := 38.0
+	const FLICK_SWELL := 0.25
 	var kind := ""
-	var target := 0.0
 	var grow := 0.0
-	var _size := 0.0
-	var _speed := 0.0
+	var motion := Motion.new()
+	## The land's height at a plate x, z (a Vector2), or null.
+	var ground := Callable()
+	var _body: Node3D
+	var _height := 0.0
 	var _shed := 0.0
+	var _flick := 0.0
 	var _time := 0.0
 	var _parts: Array[MeshInstance3D] = []
 	var _rest: Array[Vector3] = []
 
 	func _init() -> void:
 		visible = false
+		_body = Node3D.new()
+		add_child(_body)
 
 	func show_kind(next: String) -> void:
 		if next != kind: _build(next)
 		kind = next
-		if target == 0.0:
-			target = 1.0
-			if _size < 0.05:
-				_size = 0.0
-				_speed = 0.0
-
-	func hide_away() -> void:
-		target = 0.0
 
 	func shed() -> void:
 		_shed = 1.0
 
-	func advance(delta: float, at: Vector3, hand_size: float, share: float) -> void:
+	func flick() -> void:
+		_flick = 1.0
+
+	## True while it is flicking.
+	func flicking() -> bool:
+		return _flick > 0.0
+
+	## Where thrown seed leaves it (plate): the middle of the pinch.
+	func launch_point() -> Vector3:
+		return position+basis*Vector3(0.0,_height*0.5,0.0)
+
+	## One frame: toward `goal` (the pointer's ground point, plate) while
+	## `want`, pressed onto the land to `press_gap` while `pressing`, facing
+	## `rest_way` before it has moved, `size` times its own size.
+	func advance(delta: float, want: bool, goal: Variant, pressing: bool, rest_way: Vector2, press_gap: float, size: float) -> void:
 		delta = minf(delta,0.05)
 		_time += delta
-		if target > 0.0:
-			_speed += ((target-_size)*SPRING-_speed*DAMP)*delta
-			_size += _speed*delta
-		else:
-			_size = move_toward(_size,0.0,delta*7.0)
-			_speed = 0.0
-		_shed = move_toward(_shed,0.0,delta*3.0)
-		var s := maxf(_size,0.0)*hand_size*share*(1.0+0.45*grow)*(1.0-0.35*_shed*_shed)
-		visible = s > 0.01
+		visible = motion.show(want and goal != null,delta)
 		if not visible: return
-		position = at
-		scale = Vector3.ONE*s
-		# A small living wobble, never still.
-		rotation = Vector3(sin(_time*1.3)*0.12,_time*0.4,cos(_time*1.1)*0.1)
+		motion.advance(delta,goal if goal != null else motion.tip,pressing,ground,rest_way,-INF,press_gap)
+		_shed = move_toward(_shed,0.0,delta*3.0)
+		_flick = move_toward(_flick,0.0,delta/FLICK_SNAP)
+		# Out fast, back slower: a snap.
+		var u := 1.0-_flick
+		var snap := sin(PI*sqrt(u))*(1.0-u) if _flick > 0.0 else 0.0
+		var s := size*motion.size()*(1.0+0.45*grow)*(1.0-0.35*_shed*_shed)*(1.0+FLICK_SWELL*snap)
+		transform = Transform3D(motion.turn(-FLICK_TURN*snap).scaled(Vector3.ONE*maxf(s,0.001)),motion.tip)
+		# A small living stir in the pinch, never quite still.
 		for i in range(_parts.size()):
-			_parts[i].position = _rest[i]+Vector3(0.0,sin(_time*2.3+i*1.7)*0.012,0.0)
+			_parts[i].position = _rest[i]+Vector3(0.0,sin(_time*2.3+i*1.7)*0.006,0.0)
 
 	func _build(next: String) -> void:
 		for part in _parts: part.queue_free()
 		_parts.clear()
 		_rest.clear()
-		if TONES.has(next):
-			var tones: Array = TONES[next]
-			# Reed seed is slender; the rest are plump.
-			var shape := Vector3(0.03,0.03,0.1) if next == "reed" else Vector3(0.05,0.045,0.085)
-			for i in range(6):
-				var angle := TAU*i/6.0
-				_part(_egg(),Color(tones[i%3]),Vector3(cos(angle)*0.07,(i%2)*0.04,sin(angle)*0.07),shape,Vector3(0.3*i,angle,0.2),0.7)
-			return
 		match next:
+			"oak":
+				# Three acorns, capped, leaning out from the pinch.
+				for i in range(3):
+					var out := Vector3.RIGHT.rotated(Vector3.UP,TAU*i/3.0)
+					var lean := Vector3(out.z,0.0,-out.x)*0.35
+					var at := out*0.07+Vector3.UP*0.09
+					_part(_egg(),TONES.oak[i],at,Vector3(0.065,0.085,0.065),lean)
+					_part(_egg(),"6b4a2c",at+Vector3.UP*0.06+out*0.02,Vector3(0.075,0.035,0.075),lean)
+			"pine", "birch":
+				# Winged seeds in a fan: pine's long wings, birch's round ones.
+				var pine := next == "pine"
+				var tones: Array = TONES[next]
+				for i in range(5):
+					var angle := TAU*i/5.0+0.3
+					var out := Vector3(cos(angle),0.0,sin(angle))
+					var at := out*0.05+Vector3.UP*(0.05+(i%2)*0.03)
+					_part(_egg(),tones[i%3],at,Vector3(0.03,0.025,0.045) if pine else Vector3(0.025,0.02,0.03),Vector3(0.0,-angle,0.0))
+					var wing := Vector3(0.028,0.006,0.07) if pine else Vector3(0.055,0.005,0.04)
+					_part(_egg(),"d8bf8f" if pine else "e2cfa4",at+out*(0.06 if pine else 0.03)+Vector3.UP*0.02,wing,Vector3(0.25,-angle+(0.0 if pine else PI*0.5),0.0))
+			"willow", "dandelion":
+				# Down: soft pale balls, a few dark seeds caught under them.
+				var tones: Array = TONES[next]
+				for i in range(6):
+					var angle := TAU*i/6.0
+					_part(_egg(),tones[i%2],Vector3(cos(angle)*0.07,0.08+(i%3)*0.03,sin(angle)*0.07),Vector3.ONE*(0.055+0.01*(i%3)),Vector3(i,angle,0.0))
+				_part(_egg(),tones[0],Vector3(0.0,0.14,0.0),Vector3.ONE*0.07)
+				for i in range(3):
+					var angle := TAU*i/3.0+0.5
+					_part(_egg(),"8a6a45" if next == "willow" else tones[2],Vector3(cos(angle)*0.04,0.03,sin(angle)*0.04),Vector3(0.018,0.03,0.018),Vector3(0.4,angle,0.0))
+			"wildflower", "reed":
+				# Seed heaped in the pinch; flower seed with a petal or two.
+				var tones: Array = TONES[next]
+				var reed := next == "reed"
+				for i in range(7):
+					var angle := TAU*i/7.0
+					var shape := Vector3(0.018,0.018,0.07) if reed else Vector3(0.035,0.03,0.05)
+					_part(_egg(),tones[i%2] if reed else tones[0],Vector3(cos(angle)*0.07,0.03+(i%2)*0.04,sin(angle)*0.07),shape,Vector3(0.3*i,angle,0.2))
+				if reed: _part(_egg(),tones[2],Vector3(0.0,0.1,0.0),Vector3(0.02,0.02,0.08),Vector3(0.9,0.4,0.0))
+				else:
+					_part(_egg(),tones[1],Vector3(0.03,0.11,0.02),Vector3(0.06,0.012,0.035),Vector3(0.3,0.6,0.0))
+					_part(_egg(),tones[2],Vector3(-0.04,0.1,-0.02),Vector3(0.055,0.012,0.032),Vector3(-0.25,2.2,0.0))
 			"water":
-				_part(_ball(),Color("8ecaf0"),Vector3.ZERO,Vector3(0.16,0.19,0.16),Vector3.ZERO,0.08)
-				_part(_ball(),Color("f4fbff"),Vector3(-0.05,0.07,0.1),Vector3.ONE*0.035,Vector3.ZERO,0.1)
+				# A bead: a faceted drop coming to a point, a glint on it and
+				# a droplet beside it.
+				_part(_egg(),"8ecaf0",Vector3(0.0,0.12,0.0),Vector3(0.12,0.11,0.12),Vector3.ZERO,true)
+				_part(_cone(),"8ecaf0",Vector3(0.0,0.26,0.0),Vector3(0.085,0.12,0.085),Vector3.ZERO,true)
+				_part(_egg(),"f4fbff",Vector3(-0.05,0.18,0.08),Vector3.ONE*0.025,Vector3.ZERO,true)
+				_part(_egg(),"a9d8f4",Vector3(0.14,0.035,0.05),Vector3.ONE*0.035,Vector3.ZERO,true)
 			"stone":
-				_part(_pebble(),Color("a89d91"),Vector3(0.0,0.0,0.0),Vector3(0.13,0.085,0.11),Vector3(0.2,0.4,0.1),0.85)
-				_part(_pebble(),Color("c6bbae"),Vector3(0.05,0.075,0.03),Vector3(0.085,0.06,0.08),Vector3(-0.3,1.2,0.2),0.85)
-				_part(_pebble(),Color("b7ab9f"),Vector3(-0.1,0.02,0.06),Vector3(0.055,0.045,0.05),Vector3(0.5,2.0,-0.2),0.85)
+				# A few pebbles, heaped.
+				_part(_egg(),"a89d91",Vector3(0.0,0.08,0.0),Vector3(0.14,0.09,0.12),Vector3(0.2,0.4,0.1))
+				_part(_egg(),"c6bbae",Vector3(0.07,0.15,0.03),Vector3(0.09,0.065,0.085),Vector3(-0.3,1.2,0.2))
+				_part(_egg(),"b7ab9f",Vector3(-0.12,0.05,0.06),Vector3(0.06,0.05,0.055),Vector3(0.5,2.0,-0.2))
+			_:
+				var tint: Variant = Icons.item(next).get("tint")
+				_part(_egg(),(tint as Color).to_html(false) if tint is Color else "c6bbae",Vector3(0.0,0.1,0.0),Vector3.ONE*0.1)
+		# Pinned by its underside: the lowest point sits on its origin.
+		var low := INF
+		var high := -INF
+		for part in _parts:
+			var box: AABB = part.transform*part.get_aabb()
+			low = minf(low,box.position.y)
+			high = maxf(high,box.end.y)
+		_body.position.y = -low if low < INF else 0.0
+		_height = high-low if low < INF else 0.0
 
-	func _part(mesh: Mesh, colour: Color, at: Vector3, size: Vector3, turn: Vector3, rough: float) -> void:
-		var node := MeshInstance3D.new()
-		node.mesh = mesh
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var material := StandardMaterial3D.new()
-		material.albedo_color = colour
-		material.roughness = rough
-		# A little light of its own, so it reads by night and in the hand's glow.
-		material.emission_enabled = true
-		material.emission = colour
-		material.emission_energy_multiplier = 0.22
-		if rough < 0.2:
+	func _part(mesh: Mesh, colour: String, at: Vector3, size: Vector3, turn := Vector3.ZERO, wet := false) -> void:
+		var node := ClayTool.part(mesh,Color(colour),at,size,turn)
+		if wet:
+			# Water: smooth and glinting, where the rest is matte.
+			var material := node.material_override as StandardMaterial3D
+			material.roughness = 0.08
 			material.metallic_specular = 0.9
 			material.rim_enabled = true
 			material.rim = 0.6
-		node.material_override = material
-		node.position = at
-		node.rotation = turn
-		node.scale = size
-		add_child(node)
+		_body.add_child(node)
 		_parts.append(node)
 		_rest.append(at)
 
+	## Faceted, like the land's stones and the tools' props.
 	static func _egg() -> Mesh:
-		var mesh := SphereMesh.new()
-		mesh.radius = 1.0
-		mesh.height = 2.0
-		mesh.radial_segments = 12
-		mesh.rings = 6
-		return mesh
-
-	static func _ball() -> Mesh:
-		var mesh := SphereMesh.new()
-		mesh.radius = 1.0
-		mesh.height = 2.0
-		mesh.radial_segments = 20
-		mesh.rings = 10
-		return mesh
-
-	## Faceted, like the land's stones.
-	static func _pebble() -> Mesh:
 		var mesh := SphereMesh.new()
 		mesh.radius = 1.0
 		mesh.height = 2.0
 		mesh.radial_segments = 7
 		mesh.rings = 4
+		return mesh
+
+	## A unit cone, point up, for the bead's tip.
+	static func _cone() -> Mesh:
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 0.0
+		mesh.bottom_radius = 1.0
+		mesh.height = 1.0
+		mesh.radial_segments = 7
+		mesh.rings = 1
 		return mesh

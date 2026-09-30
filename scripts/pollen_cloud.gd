@@ -35,12 +35,15 @@ extends Node3D
 ## Motes are capped per veil (`_cap`): a long sweep spreads its motes along the
 ## path, taking them from where the veil is densest, rather than adding more.
 ##
-## With the God Hand (scripts/god_hand.gd) new motes gather in its palm
-## (`hand_at`) instead of at the veil's head, and wait there until the hand
-## throws (`toss`): then they fly out at the throw's speed and a spring draws
-## each on to its place in the veil. A throw after release carries them on to
-## where the falling veil has got to. Where each mote lands never changes:
-## the hand only shows where the pollen comes from.
+## With a thrower, new motes gather at `hand_at` instead of at the veil's
+## head, and wait there until it throws (`toss`): then they fly out at the
+## throw's speed and a spring draws each on to its place in the veil. The
+## thrower is the pinch of seeds carried from the materials bar
+## (scripts/hand_materials.gd `_sow`, which flicks), or under
+## `--hand-everywhere` the God Hand's palm (scripts/god_hand.gd). A throw after
+## release carries them on to where the falling veil has got to. Where each
+## mote lands never changes: the thrower only shows where the pollen comes
+## from.
 ##
 ## Motes that land at least SEED_GAP from the veil's other seeds are its seeds;
 ## the rest is dust that glints and is gone. Where a seed lands on ground that
@@ -167,7 +170,8 @@ const FAMILY := {"tree":"conifer","redwood":"conifer","juniper":"conifer","broad
 var ground_at: Callable = func(_p: Vector2) -> float: return 0.0
 var takes: Callable = func(_p: Vector2) -> bool: return true
 var scene: Node
-## The God Hand's handful (plate), or null: new motes gather there.
+## The thrower's handful (plate): the materials' pinch or the God Hand's
+## palm, or null. New motes gather there.
 var hand_at: Variant = null
 ## Microseconds the last frame's step took (for probes).
 var last_usec := 0
