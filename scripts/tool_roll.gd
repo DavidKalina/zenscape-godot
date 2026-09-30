@@ -114,6 +114,10 @@ func pip_at(point: Vector2) -> int:
 func contains_pointer(point: Vector2) -> bool:
 	return shown >= 0.5 and _roll().grow(2.0*ui_scale).has_point(point)
 
+## The roll's cloth, viewport pixels (the foot, scripts/tool_foot.gd, hangs under it).
+func rect() -> Rect2:
+	return _roll()
+
 func _height() -> float:
 	return PAD.y*2.0+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER+PIPS_H
 
