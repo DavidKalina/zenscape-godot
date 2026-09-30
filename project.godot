@@ -339,6 +339,10 @@ zs_bow_grow={
 "type": "float",
 "value": 1.0
 }
+zs_bow_double={
+"type": "float",
+"value": 0.0
+}
 zs_bow_shape={
 "type": "vec2",
 "value": Vector2(1, 1)

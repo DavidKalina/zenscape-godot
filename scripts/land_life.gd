@@ -56,6 +56,14 @@ const DOCUMENT_VERSION := 1
 const FISH_AREA := 2.0
 const FISH_BODY_MAX := 7
 const FISH_MAX := 24
+## Rare variants, rolled per creature from its site hash so a save brings them
+## back: the odds that a koi in a koi pond is a golden koi, and that a frog is
+## an albino or a blue one (albino first, so blue is the next slice of the roll).
+const KOI_GOLDEN_CHANCE := 0.015
+const FROG_ALBINO_CHANCE := 0.015
+const FROG_BLUE_CHANCE := 0.01
+## A golden koi is drawn this much brighter than the shade its fellows take.
+const GOLDEN_GLOW := 1.14
 const FISH_GAP := 0.9
 ## Frogspawn: shallow still edges, not in winter.
 const SPAWN_BODY_MAX := 3
@@ -682,6 +690,9 @@ func _arrive_fish(site: Dictionary) -> void:
 	var kind := _pick(company,_hash(site,5))
 	var seed := int(_hash(site,6)*float(Models.FISH_KINDS[kind].get("seeds",1)))
 	site.mirror = _hash(site,8) < 0.5
+	if company == Models.FISH_PONDS[0] and _hash(site,21) < KOI_GOLDEN_CHANCE:
+		kind = "golden"
+		seed = 0
 	# A fish a water ball carried keeps the look it swam in with.
 	var carried: Dictionary = site.get("carried",{})
 	if not carried.is_empty():
@@ -694,7 +705,7 @@ func _arrive_fish(site: Dictionary) -> void:
 	site.sink = maxf(0.07,Models.fish_top(kind)*float(site.size)+0.015)
 	site.home = Vector3(c.x,float(site.level)-float(site.sink),c.y)
 	site.p = site.home
-	var shade := lerpf(0.93,1.05,_hash(site,9))
+	var shade := lerpf(0.93,1.05,_hash(site,9))*(GOLDEN_GLOW if kind == "golden" else 1.0)
 	var batch := _look(_fish_looks,site.look,FISH_MAX,func() -> Mesh: return Models.fish(material,kind,seed))
 	var node: MultiMeshInstance3D = _fish_looks[site.look]
 	if node.material_override == null:
@@ -723,6 +734,9 @@ func _arrive_frog(site: Dictionary) -> void:
 	# The pond's frogs are mostly one kind (Models.FROG_PONDS).
 	var company: Array = Models.FROG_PONDS[int(_pond_hash(site)*Models.FROG_PONDS.size())]
 	var kind := _pick(company,_hash(site,4))
+	var roll := _hash(site,22)
+	if roll < FROG_ALBINO_CHANCE: kind = "albino"
+	elif roll < FROG_ALBINO_CHANCE+FROG_BLUE_CHANCE: kind = "blue"
 	site.species = kind
 	site.look = "%s %d" % [kind,int(_hash(site,5)*2.0)]
 	site.title = Models.FROG_KINDS[kind].title

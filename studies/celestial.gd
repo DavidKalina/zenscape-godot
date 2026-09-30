@@ -36,6 +36,8 @@ var rainbow_strength := 0.0
 var weather_bow := 0.0
 ## A rainbow that life calls after rain over a rich place (scripts/life_moments.gd).
 var moment_bow := 0.0
+## 1 on a double rainbow: brings the fainter second bow up (life_moments.gd).
+var moment_bow_double := 0.0
 var alpen_enabled := true
 var inversion_enabled := true
 var wind := 0.4
@@ -240,6 +242,7 @@ func update_rig() -> void:
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
 	_publish("zs_bow_shape", Vector2.ONE)
+	_publish("zs_bow_double", moment_bow_double)
 
 ## A body's direction on its ring, turned by the room.
 func _ring_direction(theta: float, tilt: float) -> Vector3:

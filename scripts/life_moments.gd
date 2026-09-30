@@ -37,6 +37,8 @@ const DEER_CHANCE := 0.25
 const DEER_STAY := Vector2(25.0,45.0)
 const DEER_COOLDOWN := 300.0
 const DEER_SPEED := 0.42
+## One deer arrival in DEER_STAG_CHANCE is a lone white stag, not the doe.
+const DEER_STAG_CHANCE := 0.02
 const DAWN := Vector2(0.2,0.36)
 const DUSK := Vector2(0.64,0.8)
 ## Rainbow: rain of at least RAIN_SECONDS that stops over a place at least
@@ -50,6 +52,10 @@ const BOW_RISE := 6.0
 const BOW_HOLD := 30.0
 const BOW_FALL := 10.0
 const BOW_STRENGTH := 0.85
+## One rainbow in BOW_DOUBLE_CHANCE is a double: the shader's fainter second bow
+## (colours reversed) shows at BOW_DOUBLE_STRENGTH instead of nearly nothing.
+const BOW_DOUBLE_CHANCE := 0.08
+const BOW_DOUBLE_STRENGTH := 1.0
 ## Bigfoot (docs/scenic/life.md, "Bigfoot: when he comes"): scenery mode only.
 ## A mature wood: BIGFOOT_TREES trees, richness BIGFOOT_RICHNESS and an edge
 ## with BIGFOOT_EDGE_TREES trees near, all held for BIGFOOT_SETTLE s of life.
@@ -142,7 +148,9 @@ func setup(owner: Node3D) -> void:
 			# The Blender deer: a doe, then her fawn.
 			var rig: RefCounted = Rigs.deer(material,not _deer.is_empty())
 			add_child(rig.root)
-			_deer.append({"root":rig.root,"rig":rig})
+			var entry := {"root":rig.root,"rig":rig}
+			if _deer.is_empty(): entry.stag = Rigs.stag_material(material,rig)
+			_deer.append(entry)
 			continue
 		var root := Node3D.new()
 		root.name = "Deer"
@@ -278,8 +286,7 @@ func force(kind: String) -> bool:
 				_record("bigfoot",bigfoot.position)
 				return true
 		"rainbow":
-			_bow = {"age":0.0}
-			_record("rainbow",Vector3.ZERO)
+			_start_bow()
 			return true
 	return false
 
@@ -455,6 +462,10 @@ func _deer_arrive(edges: Array) -> void:
 	var p: Vector2 = edge.p
 	var into: Vector2 = edge.into
 	var herd := 2 if life._rng.randf() < 0.5 else 1
+	# A white stag comes alone; the doe wears her own coat.
+	var stag: bool = _deer[0].has("stag") and life._rng.randf() < DEER_STAG_CHANCE
+	if stag: herd = 1
+	if _deer[0].has("stag"): (_deer[0].root.find_children("*","MeshInstance3D",true,false)[0] as MeshInstance3D).material_override = _deer[0].stag if stag else life.material
 	var members := []
 	for i in range(herd):
 		var side := into.orthogonal()*(0.8 if i == 1 else 0.0)-into*(0.5 if i == 1 else 0.0)
@@ -568,9 +579,12 @@ func _watch_rain(real_step: float) -> void:
 		_wet_until = life.clock+BIGFOOT_AFTER_RAIN
 	elif rain < RAIN_DRY:
 		if _rain >= RAIN_SECONDS and _bow.is_empty() and life.survey != null and life.survey.richness() >= BOW_RICHNESS and _daylight() > 0.35 and _roll(BOW_CHANCE):
-			_bow = {"age":0.0}
-			_record("rainbow",Vector3.ZERO)
+			_start_bow()
 		_rain = 0.0
+
+func _start_bow() -> void:
+	_bow = {"age":0.0,"double":life._rng.randf() < BOW_DOUBLE_CHANCE}
+	_record("rainbow",Vector3.ZERO)
 
 func _move_bow(step: float) -> void:
 	_bow.age = float(_bow.age)+step
@@ -578,6 +592,7 @@ func _move_bow(step: float) -> void:
 	var strength := smoothstep(0.0,BOW_RISE,age)*(1.0-smoothstep(BOW_RISE+BOW_HOLD,BOW_RISE+BOW_HOLD+BOW_FALL,age))*BOW_STRENGTH
 	var celestial: RefCounted = life.scene._celestial
 	if "moment_bow" in celestial: celestial.moment_bow = strength
+	if "moment_bow_double" in celestial: celestial.moment_bow_double = BOW_DOUBLE_STRENGTH if _bow.double else 0.0
 	if age >= BOW_RISE+BOW_HOLD+BOW_FALL: _end_bow()
 
 func _end_bow() -> void:
@@ -585,6 +600,7 @@ func _end_bow() -> void:
 	if life == null: return
 	var celestial: RefCounted = life.scene._celestial
 	if "moment_bow" in celestial: celestial.moment_bow = 0.0
+	if "moment_bow_double" in celestial: celestial.moment_bow_double = 0.0
 
 # --- Bigfoot -------------------------------------------------------------------
 

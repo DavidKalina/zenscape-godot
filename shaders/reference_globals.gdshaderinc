@@ -93,6 +93,7 @@ global uniform float zs_belt;
 global uniform float zs_bow;
 global uniform float zs_bow_grow;
 global uniform vec2 zs_bow_shape;
+global uniform float zs_bow_double;
 global uniform vec4 zs_aurora;
 global uniform float zs_night;
 global uniform float zs_celestial_clear;

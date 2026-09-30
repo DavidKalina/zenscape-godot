@@ -109,7 +109,7 @@
     // the light is the sun's: a low sun makes a red bow
     vec3 sun = mix(vec3(1.0, 0.55, 0.32), vec3(1.0), smoothstep(0.02, 0.3, zs_sun_direction.y));
     vec3 col = zsSpectrum(t1, pixelWidth / 1.7) * 0.38
-      + zsSpectrum(1.0 - t2, pixelWidth / 3.2) * 0.085;
+      + zsSpectrum(1.0 - t2, pixelWidth / 3.2) * mix(0.085, 0.2, zs_bow_double);
     // The crest catches clear light; the feet dissolve into wetter air.
     // Broad, fixed variation reads as uneven drops, never a pulsing neon arc.
     float drops = 0.90 + 0.10 * sin(dot(dir, vec3(7.0, 3.0, -5.0)));
