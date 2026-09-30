@@ -43,6 +43,9 @@ var wanderer: Node
 ## panel that picks them (scripts/mood_panel.gd). M or the palette's Mood.
 var mood_look: Node
 var mood_panel: Control
+## The almanac's pages (scripts/almanac_pages.gd), only under --pages-preview
+## until the almanac strip is merged and opens them.
+var almanac_pages: Control
 ## The shell's camera: focus, follow, glides and gestures (scripts/camera_rig.gd).
 var camera_rig: Node
 ## True once the shell is built and the first world is open.
@@ -276,6 +279,7 @@ func _setup_creation() -> void:
 		_toolbar.get_parent().add_child(mood_panel)
 		_toolbar.get_parent().move_child(mood_panel,creation_palette.get_index())
 		mood_panel.setup(self)
+	_pages_preview()
 	camera_rig = preload("res://scripts/camera_rig.gd").new()
 	add_child(camera_rig)
 	camera_rig.setup(self)
@@ -463,6 +467,10 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	var key: bool = event is InputEventKey and event.pressed and not event.echo
+	if key and almanac_pages != null and event.keycode == KEY_F8 and not almanac_pages.is_open():
+		almanac_pages.open(str(almanac_pages.get_meta("preview_page","moods")))
+		get_viewport().set_input_as_handled()
+		return
 	# Alt [ ] steps the showcase seeds; plain [ ] sizes the brush in hand.
 	if places != null and places.initialized and key and not hand_only and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT] and (event.alt_pressed or not creation_mode):
 		places.step_showcase(1 if event.keycode == KEY_BRACKETRIGHT else -1)
@@ -547,7 +555,19 @@ func handle_resident_input(event: InputEvent) -> bool:
 		return true
 	return super.handle_resident_input(event)
 
+## --pages-preview opens the almanac's Moods page on start, or
+## --pages-preview=customise its Customise page; F8 opens it again once closed.
+func _pages_preview() -> void:
+	for arg: String in OS.get_cmdline_user_args():
+		if not arg.begins_with("--pages-preview"): continue
+		almanac_pages = preload("res://scripts/almanac_pages.gd").new()
+		_toolbar.get_parent().add_child(almanac_pages)
+		almanac_pages.setup(self)
+		almanac_pages.open("customise" if arg.ends_with("=customise") else "moods")
+		almanac_pages.set_meta("preview_page","customise" if arg.ends_with("=customise") else "moods")
+
 func blocks_world_input(point: Vector2) -> bool:
+	if almanac_pages != null and almanac_pages.contains_pointer(point): return true
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
 	if hand_reach != null and hand_reach.materials != null and hand_reach.materials.tray_under(point): return true

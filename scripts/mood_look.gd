@@ -60,6 +60,25 @@ const COLORS := [
 	{"id":"sky","title":"Sky","swatches":["78aacb","709ebd","7c9daf","8676a1","49385d","536884"]},
 	{"id":"fog","title":"Mist","swatches":["ffffff","e8e2d4","d6e4ec","ac83bc","eac0b5","bcd9c4"]},
 ]
+## The prevailing wind's strengths, weakest first (design "ZenScape HUD 5
+## Air", docs/design/hud-5/lowpoly.js WINDS and WIND_DROOP): the one table the
+## almanac's Wind pocket (its windsock) and the Customise page's Wind row both
+## read, so a chip and the sock always agree. `strength` is the atmosphere's
+## `strength` a chip sets (the weather keeps it within 0.12 to 1.4; the sky's
+## held sweep reaches 0.15 to 1.3, scripts/sky_wind.gd STRENGTH); `droop` is
+## degrees the windsock hangs below level. A strength in between reads as the
+## nearest (`wind_strength_id`).
+##
+## Wind is not in CONTROLS, so the old drawers (mood_panel, lantern_mood) do
+## not grow a row they cannot draw; it pins like any control all the same,
+## "<strength id>@<degrees>" (`wind_pin`), where degrees is the atmosphere's
+## `direction_angle`, the way it blows on the ground (world x, z).
+const WIND_STRENGTHS := [
+	{"id":"calm","title":"Calm","strength":0.15,"droop":40.0},
+	{"id":"light","title":"Light","strength":0.4,"droop":22.0},
+	{"id":"brisk","title":"Brisk","strength":0.8,"droop":10.0},
+	{"id":"gale","title":"Gale","strength":1.3,"droop":0.0},
+]
 ## A pinned Time of day that holds any hour (`held_hour`): this prefix, then the phase.
 const HELD_HOUR := "at:"
 ## Winter frost laid on the ground when a pinned winter replaces a mood's own season.
@@ -125,6 +144,31 @@ static func option(control: String, id: String) -> Dictionary:
 static func held_hour(phase: float) -> String:
 	return HELD_HOUR+("%.4f" % clampf(fposmod(phase,1.0),0.0,0.9999))
 
+## The WIND_STRENGTHS entry nearest `strength`.
+static func wind_strength(strength: float) -> Dictionary:
+	var best: Dictionary = WIND_STRENGTHS[0]
+	for entry: Dictionary in WIND_STRENGTHS:
+		if absf(float(entry.strength)-strength) < absf(float(best.strength)-strength): best = entry
+	return best
+
+static func wind_strength_id(strength: float) -> String:
+	return str(wind_strength(strength).id)
+
+## A Wind pin: a WIND_STRENGTHS id and the direction it blows (degrees, the
+## atmosphere's `direction_angle`), rounded to a whole degree.
+static func wind_pin(strength_id: String, degrees: float) -> String:
+	return "%s@%d" % [strength_id,roundi(fposmod(degrees,360.0))%360]
+
+## A Wind pin read back: {id, strength, degrees}, or {} when malformed.
+static func wind_parts(pin_value: String) -> Dictionary:
+	var parts := pin_value.split("@")
+	if parts.size() != 2 or not parts[1].is_valid_int(): return {}
+	var degrees := int(parts[1])
+	if degrees < 0 or degrees >= 360: return {}
+	for entry: Dictionary in WIND_STRENGTHS:
+		if entry.id == parts[0]: return {"id":entry.id,"strength":float(entry.strength),"degrees":float(degrees)}
+	return {}
+
 static func color_keys() -> Array:
 	return COLORS.map(func(entry: Dictionary) -> String: return entry.id)
 
@@ -153,6 +197,7 @@ func value(control: String) -> String:
 	if pins.has(control): return str(pins[control])
 	if control in color_keys(): return scene._celestial.look.colors[control].to_html(false)
 	match control:
+		"wind": return wind_pin(wind_strength_id(float(scene._atmosphere.strength)),float(scene._atmosphere.direction_angle))
 		"season": return WorldClock.name_for_season(scene.world_clock.season)
 		"weather": return str(scene._precipitation.PRESET_NAMES[scene._precipitation.preset_index])
 		"time":
@@ -183,6 +228,12 @@ func pin(control: String, pin_value: String, fade := true) -> void:
 	# A colour dragged in the picker lands directly; nothing else depends on it.
 	if not fade and control in color_keys() and _to.is_empty():
 		scene._celestial.look.set_color(control,Color(pin_value))
+		changed.emit()
+		return
+	# So does the wind's dial: the air eases round to it at its own pace.
+	if not fade and control == "wind" and _to.is_empty():
+		_apply_wind()
+		scene._sync_saved_controls()
 		changed.emit()
 		return
 	_rebuild(fade)
@@ -306,6 +357,14 @@ func _rebuild(fade: bool) -> void:
 func turns_day(id: String) -> bool:
 	return id != "" and id not in HOUR_MOODS and bool(origin.get("running",false))
 
+## The pinned wind set on the atmosphere as its targets: the air eases to
+## them (studies/atmosphere.gd), and a cross-fade blends them.
+func _apply_wind() -> void:
+	var wind := wind_parts(str(pins.get("wind","")))
+	if wind.is_empty(): return
+	scene._atmosphere.strength = wind.strength
+	scene._atmosphere.direction_angle = wind.degrees
+
 func _let_drift() -> void:
 	var living: RefCounted = scene.get("living_weather")
 	scene.weather_scheduler.enabled = living == null or living.drift
@@ -340,6 +399,7 @@ func _apply_weather() -> void:
 	var air := {"wind":atmosphere.strength,"cloud":precipitation.cloud_override if precipitation.cloud_override >= 0.0 else precipitation.state.z,
 		"mist":atmosphere._fog_target,"haze":atmosphere._haze_target}
 	var name := str(pins.get("weather",base))
+	var wind := wind_parts(str(pins.get("wind","")))
 	if name != base:
 		var gold := [surface.autumn,surface.target_autumn]
 		var cold := maxf(surface.target_cold,precipitation.cold_override)
@@ -361,8 +421,13 @@ func _apply_weather() -> void:
 		surface.target_autumn = gold[1]
 		surface.target_cold = maxf(surface.target_cold,cold)
 		surface.cold = surface.target_cold
+	# A pinned wind wins over the mood's and the weather's, and the drift
+	# starts from it.
+	if not wind.is_empty():
+		air.wind = wind.strength
+		_apply_wind()
 	var living: RefCounted = scene.get("living_weather")
-	if living != null and (mood != "" or name != base):
+	if living != null and (mood != "" or name != base or not wind.is_empty()):
 		var fog: float = scene._world_visuals.weather_fog
 		var peaks: float = scene._world_visuals.weather_peaks
 		var clock_pin: float = scene.world_clock.season_override
@@ -495,6 +560,7 @@ func restore_document(value: Dictionary) -> void:
 static func _valid_pin(control: String, pin_value: Variant) -> bool:
 	if not pin_value is String: return false
 	if control in color_keys(): return pin_value.is_valid_html_color() and not pin_value.begins_with("#")
+	if control == "wind": return not wind_parts(pin_value).is_empty()
 	return not option(control,pin_value).is_empty()
 
 static func valid(value: Variant) -> bool:

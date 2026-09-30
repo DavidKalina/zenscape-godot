@@ -39,6 +39,9 @@ extends Node
 
 const Tray = preload("res://scripts/materials_tray.gd")
 const Roll = preload("res://scripts/tool_roll.gd")
+const Foot = preload("res://scripts/tool_foot.gd")
+const Almanac = preload("res://scripts/almanac.gd")
+const Pages = preload("res://scripts/almanac_pages.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const Modeless = preload("res://scripts/modeless_input.gd")
 ## Tree seeds: the specimen and the emergence tree kind it sows
@@ -83,6 +86,20 @@ var scene: Node3D
 var reach: Node
 var tray: Control
 var roll: Control
+var foot: Control
+## The HUD's one "hud hidden" switch: while true every HUD piece in HUD_GROUP
+## steps out (`want(false)`). Photo mode throws it (scripts/tool_foot.gd). A new
+## piece (the almanac) joins HUD_GROUP and has `want(on)`; the foot follows the roll.
+const HUD_GROUP := "hud_piece"
+var hud_hidden := false
+## The almanac on the right edge (scripts/almanac.gd, HUD 5): the air's pockets.
+var almanac: Control
+## The page the almanac last asked for, [page, row], until the pages
+## (scripts/almanac_pages.gd, another branch) take the request.
+var page_asked := []
+## The almanac's Moods and Customise pages (scripts/almanac_pages.gd), opened
+## by its pockets and tags. They take their own input while open.
+var pages: Control
 var clump: Clump
 ## The specimen in hand (a materials_tray.gd SPECIMENS id) or "".
 var held := ""
@@ -111,13 +128,33 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	layer.add_child(tray)
 	roll = Roll.new()
 	layer.add_child(roll)
+	foot = Foot.new()
+	foot.setup(roll,self)
+	layer.add_child(foot)
+	tray.add_to_group(HUD_GROUP)
+	roll.add_to_group(HUD_GROUP)
+	almanac = Almanac.new()
+	layer.add_child(almanac)
+	almanac.setup(scene,reach)
+	almanac.page_requested.connect(_page_requested)
+	pages = Pages.new()
+	layer.add_child(pages)
+	pages.setup(scene)
 	clump = Clump.new()
 	clump.name = "HeldMaterial"
 	reach._editor().terrain.add_child(clump)
 
-## True over the materials bar or the tool roll, while they show.
+## True over the materials bar, the tool roll or its foot, the almanac or an
+## open page, while they show.
 func tray_under(point: Vector2) -> bool:
-	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point))
+	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point)) \
+		or (foot != null and foot.contains_pointer(point)) or (almanac != null and almanac.contains_pointer(point)) \
+		or (pages != null and pages.is_open() and pages.contains_pointer(point))
+
+## The almanac asks for a page: the Moods page, or Customise at a row.
+func _page_requested(page: String, row: String) -> void:
+	page_asked = [page,row]
+	if pages != null: pages.open(page,row)
 
 ## The size in hand (the roll's pips): the clay's reach and a scatter's spread.
 func size_scale() -> float:
@@ -153,6 +190,11 @@ func _pointer() -> Vector2:
 ## A left press the hand reach has let through (nothing held, the hand free).
 ## True when it was the case's or the material's.
 func press(point: Vector2) -> bool:
+	if foot != null and foot.press(point): return true
+	# The almanac: its pockets act at once, the Wind's press holds for a drag.
+	if almanac != null and almanac.press(point):
+		if almanac.holding(): reach.take_hold("almanac",point)
+		return true
 	# The tool roll: the pips size what is in hand; the Hand puts a material down.
 	var pip: int = roll.pip_at(point)
 	if pip >= 0:
@@ -245,6 +287,9 @@ func _used() -> void:
 
 ## The pointer moves while the hand holds "jar" or "scatter".
 func drag(point: Vector2) -> void:
+	if reach.holding == "almanac":
+		almanac.drag(point)
+		return
 	_travel = maxf(_travel,point.distance_to(_press_pos))
 	if reach.holding != "jar": return
 	if tray.contains_pointer(point): return
@@ -256,6 +301,9 @@ func drag(point: Vector2) -> void:
 
 ## The hold of "jar" or "scatter" ends at `point` (Vector2.INF: the window lost it).
 func let_go(what: String, point: Vector2) -> void:
+	if what == "almanac":
+		almanac.let_go(point)
+		return
 	var known := point != Vector2.INF
 	var over_land: bool = known and reach._land(point) != null
 	var home: bool = known and not over_land and reach.reach_at(point) != "rim"
@@ -306,13 +354,19 @@ func _drop(at: Variant, size: float) -> bool:
 
 ## Each frame, after the hand reach has driven the hand.
 func step(delta: float) -> void:
-	var wanted := _tray_wanted()
-	tray.want(wanted)
-	roll.want(wanted)
+	var wanted := _tray_wanted() and not hud_hidden
+	for piece in get_tree().get_nodes_in_group(HUD_GROUP): piece.want(wanted)
+	# An open page keeps the almanac reached, and knows the strip's column so a
+	# click on a pocket does not close it; photo mode closes it.
+	if pages != null:
+		if hud_hidden and pages.is_open(): pages.close()
+		almanac.page_open = pages.is_open()
+		pages.strip_rect = almanac.strip_rect()
 	# A drag under way (a rim pull, the clay, a sowing) never wakes the bars.
-	var quiet: bool = not str(reach.holding) in ["","jar"]
+	var quiet: bool = not str(reach.holding) in ["","jar","almanac"]
 	tray.quiet = quiet
 	roll.quiet = quiet
+	almanac.quiet = quiet
 	roll.material_held = not held.is_empty()
 	roll.held_tint = Icons.item(held if not held.is_empty() else roll.tool).get("tint",roll.held_tint)
 	# The Lantern hint line sits just over the case.
@@ -368,12 +422,13 @@ func _scatter(delta: float) -> void:
 ## case. False when it has nothing to show, so the hand reach drives it.
 func drive_hand(hand: Node3D) -> bool:
 	var holding: String = reach.holding
-	if not holding in ["","jar","scatter"]: return false
+	if not holding in ["","jar","scatter","almanac"]: return false
 	var carrying := not held.is_empty()
 	var pointer := _pointer()
 	var gesture := ("summon" if held in CUPPED else "cloud") if carrying else "void"
 	var at: Variant = null
-	if holding == "jar":
+	if holding == "almanac": at = _tray_point(pointer)
+	elif holding == "jar":
 		var ground: Variant = reach._land(pointer)
 		at = _carry_point(ground) if ground != null else _tray_point(pointer)
 	elif holding == "scatter":

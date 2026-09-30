@@ -169,3 +169,134 @@ static func _build() -> void:
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
 	_add("hammer","Hammer","Break","#7a6a5a",["M3 5.5 Q3 4.5 4 4.5 H15 L20.5 7.2 L15 9.8 H4 Q3 9.8 3 8.8Z","M8.2 9.8 H10.8 V20.8 A1.3 1.3 0 0 1 8.2 20.8Z"],["M12.5 4.5 V9.8"],14)
+	# --- HUD 5 foot icons (docs/design/hud-5/lowpoly.js ROLL_FOOT; the tool
+	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
+	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)
+	_add("photo","Camera","Photo","#8f8a86",["M3 8.2 Q3 6.6 4.6 6.6 H8 L9.6 4.4 H14.4 L16 6.6 H19.4 Q21 6.6 21 8.2 V17.8 Q21 19.4 19.4 19.4 H4.6 Q3 19.4 3 17.8Z"],["M15.6 13 A3.6 3.6 0 1 0 8.4 13 A3.6 3.6 0 1 0 15.6 13","M17.6 9.2 L17.7 9.2"],22,1.0,1.5)
+	# --- HUD 5 almanac icons (docs/design/hud-5/lowpoly.js AIR_ICONS, seeds
+	# 16-20; docs/design/hud-5/ALMANAC.md). The almanac's pockets drawn as
+	# their gestures: the sun and the moon (Time), the plate from above in
+	# each season's tint (Season), the snow globe (Weather) and the windsock
+	# at each droop the strip draws (Wind: sock_id). Kept in this one block
+	# so the HUD 5 branches merge simply.
+	var rays := [_circle(12,12,5.2)]
+	for k in range(8):
+		var a := k*PI/4.0
+		rays.append(_bar(12.0+cos(a)*7.2,12.0+sin(a)*7.2,a,3.2,2.2))
+	_add("sun","Sun","Day","#e2b25e",rays,[],16)
+	_add("moon","Moon","Night","#c9cfdf",[_crescent()],[],17)
+	for season: String in SEASON_TINT:
+		_add("plate_"+season,"Plate",season.capitalize(),SEASON_TINT[season],["M12 4.4 L21.4 9.6 L12 14.8 L2.6 9.6Z","M2.6 9.6 L12 14.8 L21.4 9.6 L21.4 12.6 L12 18 L2.6 12.6Z",_circle(20.3,16.8,1.2)],["M2.6 9.6 L12 14.8 L21.4 9.6","M4 17.4 Q12 22.8 19.2 17.6"],18,1.0,1.3)
+	_add("globe","Globe","Weather","#9fb4c0",[_circle(12,10,7.6),"M6 16.6 H18 L19.6 21.4 Q19.7 22 19.1 22 H4.9 Q4.3 22 4.4 21.4Z"],["M5.4 17.6 H18.6","M5.6 13.2 Q12 9.8 18.4 13.2","M9 6.6 L9 6.7 M14.6 5.6 L14.6 5.7 M12 9 L12 9.1 M16 9.6 L16 9.7 M7.6 10.2 L7.6 10.3"],19,1.0,1.5)
+	for deg: int in SOCK_DROOPS: _add(sock_id(deg),"Sock","Wind","#c47c5c",_windsock(deg)[0],_windsock(deg)[1],20,1.0,1.4)
+
+## HUD 5 foot: the undo arrow, sampled as lowpoly.js does (`ub`, no masks): a
+## half ring round (12.8, 13.4), outer radius 7.8 and inner 4.6, from the left
+## over the top to the right in 24 steps, and the arrowhead under its left end.
+static func _undo_arrow() -> Array:
+	var centre := Vector2(12.8,13.4)
+	var ring := []
+	for i in range(25): ring.append(centre+Vector2.from_angle(-PI+i/24.0*PI)*7.8)
+	for i in range(24,-1,-1): ring.append(centre+Vector2.from_angle(-PI+i/24.0*PI)*4.6)
+	var head := [centre+Vector2(-2.6,-0.2),centre+Vector2(-9.8,-0.2),centre+Vector2(-6.2,5.6)]
+	return [_poly(ring),_poly(head)]
+
+# --- HUD 5 page icons and vignettes (design "ZenScape HUD 5 Air") -----------------
+# docs/design/hud-5/lowpoly.js `vignette()` and VIGNETTE_SIZES; the almanac's
+# pages (scripts/almanac_pages.gd) draw them. Everything HUD 5's pages add to
+# this file lives in this block.
+
+## The vignette's own box (lowpoly.js: viewBox 40x25, stretched to the card).
+const VIGNETTE_BOX := Vector2(40.0,25.0)
+## Sizes it is drawn at, design pixels: the strip's Mood pocket, a Moods page
+## card, the This world row and a Customise mini.
+const VIGNETTE_SIZES := {"strip":Vector2(44.0,28.0),"card":Vector2(78.0,49.0),"world":Vector2(56.0,35.0),"mini":Vector2(22.0,14.0)}
+## The clips, in the box: the horizon band the glow shows through, the slab's
+## top the land shows through, and the slab's flat side.
+const VIGNETTE_GLOW := "M0 10.5 L40 8.6 L40 16.4 L0 17.6Z"
+const VIGNETTE_LAND := "M3 18.2 L20 13.4 L37.5 16.8 L21 22.2Z"
+const VIGNETTE_SIDE := "M3 18.2 L21 22.2 L37.5 16.8 L37.5 19.4 L21 25.5 L3 20.8Z"
+## The sun or moon: radius and x in the box; y high, and low for the hours
+## near the horizon. Its colours: the night's moon and the day's sun (a low
+## sun is the glow lit 55% toward LIGHT).
+const VIGNETTE_DISC := Vector3(1.9,30.0,5.5)
+const VIGNETTE_DISC_LOW_Y := 10.0
+const VIGNETTE_MOON := Color("e6eaf2")
+const VIGNETTE_SUN := Color("fff3d6")
+## A slab side is the grass this far toward SHADE.
+const VIGNETTE_SIDE_SHADE := 0.55
+
+## A mood's vignette as SVG text: `seed` (lowpoly.js 23..32), its sky, glow and
+## grass, and its hour, "night", "low" (dawn, golden hour, dusk) or "high".
+## Three facet grids (sky over the card, glow in the horizon band, land on the
+## slab's top), the slab's flat side and the disc, `size` pixels.
+static func vignette_svg(seed: int, sky: Color, glow: Color, grass: Color, hour: String, size: Vector2) -> String:
+	var body := '<defs><clipPath id="g"><path d="%s"/></clipPath><clipPath id="l"><path d="%s"/></clipPath></defs>' % [VIGNETTE_GLOW,VIGNETTE_LAND]
+	var stretch := 'transform="scale(%s %s)"' % [_num(VIGNETTE_BOX.x/24.0),_num(VIGNETTE_BOX.y/24.0)]
+	var layers := [[seed,sky,""],[seed+40,glow,"g"],[seed+80,grass,"l"]]
+	for layer: Array in layers:
+		var group := ""
+		for tri: Dictionary in facets(int(layer[0]),_mix(layer[1],layer[1],0.0)):
+			group += '<polygon points="%s" fill="#%s" stroke="#%s" stroke-width="0.2"/>' % [tri.points,tri.fill,tri.fill]
+		group = '<g %s>%s</g>' % [stretch,group]
+		body += group if str(layer[2]).is_empty() else '<g clip-path="url(#%s)">%s</g>' % [layer[2],group]
+	body += '<path d="%s" fill="#%s"/>' % [VIGNETTE_SIDE,_mix(grass,SHADE,VIGNETTE_SIDE_SHADE).to_html(false)]
+	var disc := VIGNETTE_MOON if hour == "night" else _mix(glow,LIGHT,0.55) if hour == "low" else VIGNETTE_SUN
+	var y := VIGNETTE_DISC_LOW_Y if hour == "low" else VIGNETTE_DISC.z
+	body += '<circle cx="%s" cy="%s" r="%s" fill="#%s"/>' % [_num(VIGNETTE_DISC.y),_num(y),_num(VIGNETTE_DISC.x),disc.to_html(false)]
+	return '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %s %s" preserveAspectRatio="none">%s</svg>' % [
+		maxi(1,roundi(size.x)),maxi(1,roundi(size.y)),_num(VIGNETTE_BOX.x),_num(VIGNETTE_BOX.y),body]
+
+## The vignette rasterised `size` pixels (its box stretched to fit).
+static func vignette_texture(seed: int, sky: Color, glow: Color, grass: Color, hour: String, size: Vector2) -> Texture2D:
+	var image := Image.new()
+	if image.load_svg_from_string(vignette_svg(seed,sky,glow,grass,hour,size),1.0) != OK: return null
+	return ImageTexture.create_from_image(image)
+
+## HUD 5 almanac: the season tints (lowpoly.js SEASON_TINT), keyed by
+## mood_look.gd's season ids.
+const SEASON_TINT := {"spring":"#93b86c","summer":"#6c9a4a","autumn":"#c27c3e","winter":"#cfd8de"}
+## HUD 5 almanac: every droop (degrees below level) the windsock is drawn at:
+## the four strengths (lowpoly.js WIND_DROOP 40, 22, 10, 0), the cue's
+## halfway droops (20, 11, 5) and its lift just past level (-2).
+const SOCK_DROOPS := [40,22,20,11,10,5,0,-2]
+
+## HUD 5 almanac: the windsock's icon id at a droop in SOCK_DROOPS.
+static func sock_id(deg: int) -> String:
+	return "sock_%d" % deg
+
+## HUD 5 almanac: lowpoly.js `windsock`: the pole, and the sock and its two
+## bands turned about (5.2, 8.2) by the droop. [fills, lines].
+static func _windsock(deg: float) -> Array:
+	var a := deg_to_rad(deg)
+	var pivot := Vector2(5.2,8.2)
+	var turn := func(p: Vector2) -> Vector2: return pivot+(p-pivot).rotated(a)
+	var sock := [Vector2(5.2,4.2),Vector2(21,6.6),Vector2(21,10.4),Vector2(5.2,12.2)].map(turn)
+	var lines := []
+	for band: Array in [[Vector2(10.4,5),Vector2(10.4,11.6)],[Vector2(15.6,5.8),Vector2(15.6,11)]]:
+		var p0: Vector2 = turn.call(band[0])
+		var p1: Vector2 = turn.call(band[1])
+		lines.append("M%.2f %.2f L%.2f %.2f" % [p0.x,p0.y,p1.x,p1.y])
+	return [["M3.4 2.4 H5.2 V22.4 H3.4Z",_poly(sock)],lines]
+
+## HUD 5 almanac: lowpoly.js `crescent`: the circle at (11, 12.4) r 8.6 less
+## the one at (15.8, 8.4) r 7.4, sampled to one polygon (no masks).
+static func _crescent() -> String:
+	var c1 := Vector2(11,12.4)
+	var c2 := Vector2(15.8,8.4)
+	var r1 := 8.6
+	var r2 := 7.4
+	var n := 120
+	var outer := []
+	var inner := []
+	var a2 := (c2-c1).angle()
+	for i in range(n):
+		var p := c1+Vector2.from_angle(a2+float(i)/n*TAU)*r1
+		if p.distance_to(c2) >= r2: outer.append(p)
+	var a1 := (c1-c2).angle()+PI
+	for i in range(n):
+		var p := c2+Vector2.from_angle(a1+float(i)/n*TAU)*r2
+		if p.distance_to(c1) < r1: inner.append(p)
+	var last: Vector2 = outer.back()
+	if (inner.back() as Vector2).distance_to(last) < (inner[0] as Vector2).distance_to(last): inner.reverse()
+	return _poly(outer+inner)
