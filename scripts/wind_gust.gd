@@ -26,9 +26,18 @@ extends Node3D
 ## sheen runs along the ground under it. It passes: nothing about the
 ## weather changes, unless --gust-nudges (see `nudge`).
 ##
+## The Feather's press (`press` with `wake`, NativeChunkEditor `gust_in_hand`)
+## is not aimed: once it moves it is a live wake (`_begin_wake`). The air goes
+## with the pointer while the button is down, laid along the path it really
+## takes: foliage bends at and behind the feather and sways back after it
+## (zs_wake_*, `blow_at`), leaves and motes are picked up where it passes and
+## carried along the path, ribbons trail the curve, and a parcel and a steered
+## local gust ride at the feather. The pointer's speed sets its strength; let
+## go, it dies away, and nothing is sent. Held still it bursts, as above.
+##
 ## Lives under the terrain node: its points are the plate's.
 
-## A gust went: its record (see `gusts`).
+## A gust went: its record (see `gusts`), or a wake began (see `wakes`).
 signal sent(gust: Dictionary)
 
 const Disturbance = preload("res://scripts/disturbance.gd")
@@ -96,6 +105,46 @@ const BURST_SPOKES := 4
 ## The ring starts this far out, and draws in by PULL_BACK before it goes.
 const RING_START := 0.9
 
+# --- The wake (the Feather) -------------------------------------------------------
+## Pointer ground speed (m/s) at which a wake blows weakest and full. Under
+## WAKE_SPEED.x its air eases off, so a drag that stops blows nothing.
+const WAKE_SPEED := Vector2(2.0,20.0)
+## Lean at the feather, weakest and full (in BLOW_LEAN's units).
+const WAKE_LEAN := Vector2(0.3,1.0)
+## Per second: how fast the wake's air follows a quickening drag and eases
+## off when it slows or stops.
+const WAKE_RISE := 18.0
+const WAKE_FALL := 4.0
+## The path the shaders read (zs_wake_0..11), oldest first, the last point the
+## feather itself. A point is fixed once the feather is WAKE_STEP m past the
+## last, or WAKE_STEP_SECONDS of travel at speed (so the points cover the
+## foliage's whole sway), or past 0.25 m where the path turns WAKE_TURN degrees.
+const WAKE_POINTS := 12
+const WAKE_STEP := 0.5
+const WAKE_STEP_SECONDS := 0.18
+const WAKE_TURN := 20.0
+## The shaders' side of the wake (reference_wind.gdshaderinc `zs_wake_at`):
+## the air at a point holds WAKE_HOLD s after the feather passes, then lets go
+## into the lanes' damped swing (SWING_RING, SWING_DAMP); foliage stirs
+## WAKE_LEAD s before it arrives, and leans out from the path by WAKE_PART of
+## its lean as it parts.
+const WAKE_HOLD := 0.3
+const WAKE_LEAD := 0.12
+const WAKE_PART := 0.3
+## Let go, the wake's air dies away over WAKE_FADE s while its head coasts on
+## up to WAKE_COAST m past the feather; it is gone WAKE_SETTLE s after.
+const WAKE_FADE := 0.6
+const WAKE_COAST := 3.0
+const WAKE_SETTLE := 2.5
+## Metres of path between the leaves and motes the feather picks up at full
+## power (twice as far apart at the weakest).
+const WAKE_MOTE_GAP := 0.7
+## The path ribbons and motes follow, resampled every RIBBON_STEP m and kept
+## to WAKE_TRAIL samples. Ribbons are baked RIBBON_CHUNK samples at a time as
+## the feather leaves them behind; only the tail to the feather is rebuilt.
+const WAKE_TRAIL := 600
+const RIBBON_CHUNK := 8
+
 # --- How it looks ---------------------------------------------------------------
 ## Ribbons: strands along a lane, spokes of a burst, how much of each shows
 ## behind the head (m), and their width (m) at weakest and full.
@@ -143,7 +192,11 @@ const HAND_FADE := 0.4
 ## Lanes the shaders read at once (zs_blow_0..3).
 const BLOW_LANES := 4
 const BLOW_GLOBALS: Array[StringName] = [&"zs_blow_0_a",&"zs_blow_0_b",&"zs_blow_0_c",&"zs_blow_1_a",&"zs_blow_1_b",&"zs_blow_1_c",
-	&"zs_blow_2_a",&"zs_blow_2_b",&"zs_blow_2_c",&"zs_blow_3_a",&"zs_blow_3_b",&"zs_blow_3_c",&"zs_burst_a",&"zs_burst_b",&"zs_aim_a",&"zs_aim_b"]
+	&"zs_blow_2_a",&"zs_blow_2_b",&"zs_blow_2_c",&"zs_blow_3_a",&"zs_blow_3_b",&"zs_blow_3_c",&"zs_burst_a",&"zs_burst_b",&"zs_aim_a",&"zs_aim_b",
+	&"zs_wake_a",&"zs_wake_b",&"zs_wake_c",&"zs_wake_0",&"zs_wake_1",&"zs_wake_2",&"zs_wake_3",&"zs_wake_4",&"zs_wake_5",&"zs_wake_6",&"zs_wake_7",
+	&"zs_wake_8",&"zs_wake_9",&"zs_wake_10",&"zs_wake_11"]
+## Where the wake's globals start in BLOW_GLOBALS: its a, b and c, then its points.
+const WAKE_AT := 16
 ## The shader's side of the swing (reference_wind.gdshaderinc), for `blow_at`.
 const SWING_RING := 5.5
 const SWING_DAMP := 2.2
@@ -189,8 +242,22 @@ var worst_usec := 0
 var send_usec := 0
 var clock := 0.0
 
-## While the hand blows: {"start", "start_y", "pointer", "samples", "held",
-## "moved", "heading", "power", "half", "scale"}; empty otherwise.
+## Wakes under way or dying away: {"kind" ("wake"), "origin", "heading" (the
+## feather's, plate unit), "half", "power", "air" (0..1 now), "speed" (m/s),
+## "live" (the button is down), "t" (s since let go), "last" (the feather,
+## plate), "dist" (m of path to it), "head" (m the air has reached) and "at"
+## (`_path_at` there, this frame), "trail" (the path resampled: plate x, z, m
+## along, ground), "slot", "local", the ribbon nodes and the voice}.
+var wakes: Array[Dictionary] = []
+## The path points the shaders read (zs_wake_N), oldest first: plate x, z,
+## `clock` when the feather passed, and the lean there, negative where a
+## stroke starts so no segment joins it to the stroke before.
+var _wake_points: Array[Vector4] = []
+
+## While the hand blows: {"start", "start_y", "pointer", "pointer_y",
+## "samples", "held", "moved", "heading", "power", "half", "scale", "wake"
+## (a Feather's press), "air" and "speed" (the wake's), "stroke" (its wake
+## once it moves)}; empty otherwise.
 var _aim := {}
 var _aim_mark: MeshInstance3D
 var _marks: Array[MeshInstance3D] = []
@@ -270,12 +337,13 @@ func _ready() -> void:
 # --- The gesture -----------------------------------------------------------------
 
 ## The hand presses at `point` (plate, on the ground) with a lane `half` m to
-## each side; `scale` (the brush's strength) scales how hard it blows.
-func press(point: Vector3, half: float, scale := 1.0) -> void:
+## each side; `scale` (the brush's strength) scales how hard it blows. With
+## `wake` (the Feather) a press that moves is a live wake, not an aimed lane.
+func press(point: Vector3, half: float, scale := 1.0, wake := false) -> void:
 	if aiming(): cancel()
 	var start := Vector2(point.x,point.z)
-	_aim = {"start":start,"start_y":point.y,"pointer":start,"samples":[Vector3(start.x,start.y,clock)],"held":0.0,"moved":0.0,
-		"heading":Vector2.ZERO,"power":MIN_POWER,"half":half,"scale":scale,"voice":_free_voice()}
+	_aim = {"start":start,"start_y":point.y,"pointer":start,"pointer_y":point.y,"samples":[Vector3(start.x,start.y,clock)],"held":0.0,"moved":0.0,
+		"heading":Vector2.ZERO,"power":MIN_POWER,"half":half,"scale":scale,"voice":_free_voice(),"wake":wake,"air":0.0,"speed":0.0,"stroke":{}}
 	_aim_mark = _take_mark()
 	# The hand stirs the air where the gust will start: leaves and motes lift
 	# and swirl in round the press.
@@ -289,15 +357,22 @@ func aim(point: Variant) -> void:
 	if not aiming() or point == null: return
 	var at := Vector2(point.x,point.z)
 	_aim.pointer = at
+	_aim.pointer_y = point.y
 	_aim.moved = maxf(_aim.moved,at.distance_to(_aim.start))
 	_aim.samples.append(Vector3(at.x,at.y,clock))
 
 ## What the gust will do if the hand lets go now: {"kind", "origin",
 ## "heading", "reach", "half", "power"}. The mark draws exactly this, and
-## `release` sends exactly this.
+## `release` sends exactly this. A Feather's press that has moved is "wake":
+## its air is already going, and letting go only lets it die away ("heading"
+## is the feather's, "reach" the path so far).
 func promise() -> Dictionary:
 	if not aiming(): return {}
 	var start: Vector2 = _aim.start
+	if _aim.wake and _aim.moved >= STILL_DRAG:
+		var w: Dictionary = _aim.stroke
+		var way: Vector2 = w.heading if not w.is_empty() else (Vector2(_aim.pointer)-start).normalized()
+		return {"kind":"wake","origin":start,"heading":way,"reach":float(w.get("dist",0.0)),"half":float(_aim.half),"power":clampf(float(_aim.power)*float(_aim.scale),0.0,1.0)}
 	if _aim.moved < STILL_DRAG:
 		var gathered := smoothstep(0.0,BURST_GATHER,float(_aim.held))
 		return {"kind":"burst","origin":start,"heading":Vector2.ZERO,"reach":_room_round(start,lerpf(BURST_REACH.x,BURST_REACH.y,gathered)),
@@ -309,9 +384,11 @@ func promise() -> Dictionary:
 	var reach := clampf(maxf(lerpf(REACH.x,REACH.y,power),swept),0.0,REACH.y)
 	return {"kind":"lane","origin":start,"heading":heading,"reach":minf(reach,_room(start,heading)),"half":float(_aim.half),"power":power}
 
-## Let go: the gust goes, as promised. Returns its record ({} if none).
+## Let go: the gust goes, as promised. Returns its record ({} if none). A
+## wake is let go instead: its record comes back, and it dies away.
 func release() -> Dictionary:
 	if not aiming(): return {}
+	if _aim.wake and _aim.moved >= STILL_DRAG: return _let_go_wake()
 	var began := Time.get_ticks_usec()
 	var plan := promise()
 	var g := plan.duplicate()
@@ -375,15 +452,20 @@ func send_lane(origin: Vector3, heading: Vector2, power: float, half: float) -> 
 
 ## Carry a sky flick's heading (plate x, z) and power (0..1) into a blow just
 ## pressed (NativeChunkEditor `gust_in_hand`), so wind dragged in from the sky
-## keeps the speed it came with; the swipe then goes on from there.
+## keeps the speed it came with; the swipe then goes on from there. A wake
+## starts out that strong and that way, and eases to the drag's own speed.
 func carry(heading: Vector2, power: float) -> void:
 	if not aiming() or heading.length_squared() < 0.000001: return
 	_aim.heading = heading.normalized()
 	_aim.power = clampf(maxf(power,float(_aim.power)),MIN_POWER,1.0)
+	if _aim.wake: _aim.air = maxf(float(_aim.air),smoothstep(0.0,0.5,power))
 
-## Drop the hand's blow without sending anything.
+## Drop the hand's blow without sending anything (a wake under way dies away).
 func cancel() -> void:
 	if not aiming(): return
+	if not Dictionary(_aim.stroke).is_empty():
+		_let_go_wake()
+		return
 	_aim = {}
 	_hand_fade = 0.0
 	_give_mark(_aim_mark)
@@ -396,6 +478,9 @@ func clear() -> void:
 	cancel()
 	for g: Dictionary in gusts: _retire(g)
 	gusts.clear()
+	for w: Dictionary in wakes: _retire_wake(w)
+	wakes.clear()
+	_wake_points.clear()
 	_motes.clear()
 	_mote_node.multimesh.visible_instance_count = 0
 
@@ -415,6 +500,10 @@ func wind_at(point: Vector2) -> Vector2:
 			var out := point-Vector2(g.origin)
 			var from_ring := absf(out.length()-float(g.head))
 			push += out.normalized()*strength*0.8*(1.0-smoothstep(0.0,1.0,from_ring/maxf(2.5,float(g.head)*0.45)))
+	for w: Dictionary in wakes:
+		if w.air <= 0.0: continue
+		var along: Array = w.at
+		push += Vector2(along[1])*lerpf(LOCAL.x,LOCAL.y,w.power)*w.air*(1.0-smoothstep(0.0,1.0,point.distance_to(along[0])/(float(w.half)*LOCAL_REACH)))
 	return push
 
 # --- Every frame -----------------------------------------------------------------
@@ -431,11 +520,19 @@ func _process(delta: float) -> void:
 		if gusts[i].done and float(gusts[i].t) >= WIND_UP+float(gusts[i].run)+SETTLE:
 			_retire(gusts[i])
 			gusts.remove_at(i)
+	for w: Dictionary in wakes: _step_wake(w,delta)
+	for i in range(wakes.size()-1,-1,-1):
+		if not wakes[i].live and float(wakes[i].t) >= WAKE_SETTLE:
+			_retire_wake(wakes[i])
+			wakes.remove_at(i)
+	# Points the air has long left make room: they lean nothing now.
+	while not _wake_points.is_empty() and clock-_wake_points[0].z > WAKE_SETTLE and (_wake_points.size() < 2 or clock-_wake_points[1].z > WAKE_SETTLE or wakes.is_empty()):
+		_wake_points.pop_front()
 	_step_motes(delta)
 	_step_voices(delta)
 	if _hand_fade >= 0.0: _hand_fade += delta
 	_publish_blow()
-	if not gusts.is_empty() and atmosphere != null and atmosphere.get("puffs") != null: atmosphere.puffs.publish()
+	if (not gusts.is_empty() or not wakes.is_empty()) and atmosphere != null and atmosphere.get("puffs") != null: atmosphere.puffs.publish()
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
@@ -449,7 +546,24 @@ func _step_aim(delta: float) -> void:
 	var shift := Vector2(last.x-first.x,last.y-first.y)
 	var span := last.z-first.z
 	var speed := shift.length()/span if span > 0.0001 else 0.0
-	if _aim.moved >= STILL_DRAG:
+	if _aim.wake:
+		# The wake: no heading is guessed. The drag's speed sets how hard the
+		# air goes, and a stop lets it ease off.
+		_aim.speed = lerpf(float(_aim.speed),speed,1.0-exp(-12.0*delta))
+		var air := smoothstep(0.2,WAKE_SPEED.x,speed)
+		_aim.air = lerpf(float(_aim.air),air,1.0-exp(-(WAKE_RISE if air > float(_aim.air) else WAKE_FALL)*delta))
+		var goal := lerpf(MIN_POWER,1.0,clampf(inverse_lerp(WAKE_SPEED.x,WAKE_SPEED.y,speed),0.0,1.0))
+		_aim.power = lerpf(float(_aim.power),goal,1.0-exp(-(POWER_RISE if goal > float(_aim.power) else POWER_FALL)*delta))
+		if _aim.moved >= STILL_DRAG:
+			if Dictionary(_aim.stroke).is_empty(): _begin_wake()
+			_follow_wake(_aim.stroke,delta)
+			var w: Dictionary = _aim.stroke
+			_voice_goal[int(_aim.voice)] = VOICE_GAIN*lerpf(0.6,1.0,float(w.power))*float(w.air)
+			_voices[int(_aim.voice)].pitch_scale = lerpf(VOICE_PITCH.x,VOICE_PITCH.y,float(w.power))
+			_voices[int(_aim.voice)].global_position = _world(Vector3(w.last.x,float(_aim.pointer_y),w.last.y))
+			_aim_mark.visible = false
+			return
+	elif _aim.moved >= STILL_DRAG:
 		var goal: Vector2 = shift.normalized() if shift.length() > 0.05 else _aim.heading
 		if _aim.heading == Vector2.ZERO: _aim.heading = (Vector2(_aim.pointer)-Vector2(_aim.start)).normalized() if goal == Vector2.ZERO else goal
 		elif goal != Vector2.ZERO: _aim.heading = Vector2(_aim.heading).slerp(goal,1.0-exp(-HEADING_FOLLOW*delta)).normalized()
@@ -584,6 +698,299 @@ func _nudge(g: Dictionary) -> void:
 	atmosphere.direction_angle = rad_to_deg(lerp_angle(deg_to_rad(atmosphere.direction_angle),atan2(way.z,way.x),share))
 	atmosphere.strength = minf(float(atmosphere.strength)+share*0.2,1.4)
 
+# --- The wake ----------------------------------------------------------------------
+
+## A Feather's press has moved past STILL_DRAG: its wake starts at the press.
+## The press's leaves and motes board it, the voice the hand drew goes on as
+## its voice, and a parcel and a steered local gust ride at the feather. The
+## burst's gathering pressure dies away.
+func _begin_wake() -> void:
+	var start: Vector2 = _aim.start
+	var y: float = _aim.start_y
+	var heading: Vector2 = _aim.heading if Vector2(_aim.heading) != Vector2.ZERO else (Vector2(_aim.pointer)-start).normalized()
+	var w := {"kind":"wake","origin":start,"heading":heading,"half":float(_aim.half),"power":clampf(float(_aim.power)*float(_aim.scale),0.0,1.0),
+		"air":float(_aim.air),"let_air":0.0,"speed":float(_aim.speed),"live":true,"t":0.0,"y":y,"last":start,"dist":0.0,"head":0.0,"rest":0.0,"since":0.0,
+		"trail":PackedVector4Array([Vector4(start.x,start.y,0.0,y)]),"at":[start,heading,y],"chunks":[],"chunk_end":0,"strands":[],"slot":-1,"local":[],"voice":int(_aim.voice),"done":false}
+	var lifts := [0.55,1.15,0.35,1.55,0.8]
+	var lags := [0.0,1.4,0.7,2.4,1.9]
+	for k in range(STRANDS):
+		w.strands.append({"across":lerpf(-0.7,0.7,float(k)/(STRANDS-1.0))*float(w.half)+_rng.randf_range(-0.2,0.2),"lift":lifts[k%lifts.size()],"lag":lags[k%lags.size()],"phase":_rng.randf()})
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/wind_gust_trail.gdshader")
+	material.set_shader_parameter("width",lerpf(RIBBON_WIDTH.x,RIBBON_WIDTH.y,float(w.power)))
+	material.set_shader_parameter("trail_length",TRAIL_LENGTH)
+	material.set_shader_parameter("opacity",0.0)
+	w.material = material
+	w.tail = _ribbon_node(w,null)
+	var lean := lerpf(WAKE_LEAN.x,WAKE_LEAN.y,float(w.power))*float(w.air)
+	_wake_points.append(Vector4(start.x,start.y,clock,-maxf(lean,0.0001)))
+	_wake_points.append(Vector4(start.x,start.y,clock,lean))
+	while _wake_points.size() > WAKE_POINTS: _wake_points.pop_front()
+	var up := Vector3.UP*LOCAL_LIFT
+	if atmosphere != null and atmosphere.get("puffs") != null: w.slot = atmosphere.puffs.hold_slot()
+	if field != null:
+		var id := field.emit_steered(_world(Vector3(start.x,y,start.y))+up,_world_way(heading),0.0001,float(w.half)*LOCAL_REACH)
+		if id >= 0: w.local.append(id)
+	for mote: Dictionary in _motes:
+		if mote.gust == null and mote.state == "gather": _board(mote,w)
+	_hand_fade = 0.0
+	_aim.stroke = w
+	wakes.append(w)
+	sent.emit(w)
+
+## Each frame the button is down: the feather moves to the pointer. The path
+## grows behind it, a point is fixed for the shaders once it is far enough on
+## (or turns), leaves are picked up as it goes, and the ribbons' tail follows.
+func _follow_wake(w: Dictionary, delta: float) -> void:
+	w.power = clampf(float(_aim.power)*float(_aim.scale),0.0,1.0)
+	w.air = float(_aim.air)
+	w.speed = float(_aim.speed)
+	var at: Vector2 = _aim.pointer
+	var prev: Vector2 = w.last
+	var step := at.distance_to(prev)
+	if step > 0.001:
+		var way := (at-prev)/step
+		w.heading = way if Vector2(w.heading) == Vector2.ZERO else Vector2(w.heading).slerp(way,1.0-exp(-HEADING_FOLLOW*delta)).normalized()
+		_extend_trail(w,prev,at)
+		w.last = at
+		w.since = float(w.since)+step
+	var trail: PackedVector4Array = w.trail
+	w.dist = trail[trail.size()-1].z+float(w.rest)
+	w.head = w.dist
+	var lean := lerpf(WAKE_LEAN.x,WAKE_LEAN.y,float(w.power))*float(w.air)
+	var n := _wake_points.size()
+	_wake_points[n-1] = Vector4(at.x,at.y,clock,lean)
+	var fixed := _wake_points[n-2]
+	var from := Vector2(fixed.x,fixed.y)
+	var gap := at.distance_to(from)
+	var turned := false
+	if gap > 0.25 and n >= 3 and fixed.w >= 0.0:
+		var before := from-Vector2(_wake_points[n-3].x,_wake_points[n-3].y)
+		turned = before.length() > 0.01 and rad_to_deg(absf(before.angle_to(at-from))) > WAKE_TURN
+	if gap >= maxf(WAKE_STEP,float(w.speed)*WAKE_STEP_SECONDS) or turned:
+		_wake_points.append(_wake_points[n-1])
+		while _wake_points.size() > WAKE_POINTS: _wake_points.pop_front()
+		_disturb_wake(w,from,at)
+	# Leaves and motes lift where the feather passes and ride its air.
+	var gap_m := WAKE_MOTE_GAP*lerpf(2.0,1.0,float(w.power))
+	while float(w.since) >= gap_m:
+		w.since = float(w.since)-gap_m
+		if float(w.air) > 0.2: _pick_up(w,at,float(_aim.pointer_y))
+	_wake_ribbons(w)
+
+## Resample the path from `from` to `to` every RIBBON_STEP m along it, with
+## the ground under each sample, kept to WAKE_TRAIL samples.
+func _extend_trail(w: Dictionary, from: Vector2, to: Vector2) -> void:
+	var trail: PackedVector4Array = w.trail
+	var seg := to-from
+	var length := seg.length()
+	var along := 0.0
+	var rest: float = w.rest
+	while rest+(length-along) >= RIBBON_STEP:
+		along += RIBBON_STEP-rest
+		rest = 0.0
+		var p := from+seg*(along/length)
+		trail.append(Vector4(p.x,p.y,trail[trail.size()-1].z+RIBBON_STEP,_ground(p,float(w.y))))
+	w.rest = rest+length-along
+	if trail.size() > WAKE_TRAIL:
+		# The oldest stretch is long out of sight; the chunks baked from it
+		# keep their own meshes.
+		var drop := WAKE_TRAIL/4
+		trail = trail.slice(drop)
+		w.chunk_end = maxi(int(w.chunk_end)-drop,0)
+	w.trail = trail
+
+## The button comes up (or the blow is dropped): the wake is let go where it
+## is. Its air dies away and its head coasts on a little; nothing is sent.
+func _let_go_wake() -> Dictionary:
+	if Dictionary(_aim.stroke).is_empty(): _begin_wake()
+	var w: Dictionary = _aim.stroke
+	w.live = false
+	w.t = 0.0
+	w.let_air = float(w.air)
+	_give_mark(_aim_mark)
+	_aim_mark = null
+	_aim = {}
+	_wake_ribbons(w)
+	return w
+
+func _step_wake(w: Dictionary, delta: float) -> void:
+	if not w.live:
+		w.t = float(w.t)+delta
+		var t: float = w.t
+		w.air = float(w.let_air)*(1.0-smoothstep(0.0,WAKE_FADE,t))
+		w.head = float(w.dist)+WAKE_COAST*float(w.let_air)*(1.0-exp(-3.0*t))
+		if w.voice >= 0: _voice_goal[w.voice] = VOICE_GAIN*lerpf(0.6,1.0,float(w.power))*float(w.air)
+	w.at = _path_at(w,float(w.head))
+	_feed_wake_air(w)
+	var material: ShaderMaterial = w.material
+	material.set_shader_parameter("head",float(w.head))
+	material.set_shader_parameter("clock",clock)
+	material.set_shader_parameter("opacity",0.85*float(w.air))
+	material.set_shader_parameter("flow",float(w.speed)*0.5+2.0)
+	# Chunks the ribbons' window has left behind go.
+	var chunks: Array = w.chunks
+	while not chunks.is_empty() and float(chunks[0].get_meta("end")) < float(w.head)-TRAIL_LENGTH-4.0:
+		chunks.pop_front().queue_free()
+
+## The parcel and the steered local gust ride at the wake's head, along the
+## path, as strong as its air.
+func _feed_wake_air(w: Dictionary) -> void:
+	if w.slot < 0 and w.local.is_empty(): return
+	var along: Array = w.at
+	var head: Vector2 = along[0]
+	var world := _world(Vector3(head.x,float(along[2]),head.y))
+	var way := _world_way(along[1])
+	var power: float = w.power
+	var air: float = w.air
+	if w.slot >= 0 and atmosphere != null:
+		var travel: float = atmosphere._gust_distance
+		var heading := Vector2(way.x,way.z)
+		var origin := Vector2(world.x,world.z)-heading*PARCEL_AGE
+		atmosphere.puffs.steer(w.slot,Vector4(origin.x,origin.y,travel-PARCEL_AGE,lerpf(PUFF.x,PUFF.y,power)*air),heading)
+	for id: int in w.local:
+		field.steer(id,world+Vector3.UP*LOCAL_LIFT,way,lerpf(LOCAL.x,LOCAL.y,power)*air,float(w.half)*LOCAL_REACH)
+	if not w.live and air <= 0.0: _release_air(w)
+
+func _retire_wake(w: Dictionary) -> void:
+	_release_air(w)
+	w.live = false
+	w.done = true
+	if is_same(_aim.get("stroke"),w): _aim.stroke = {}
+	for node: Node in w.chunks:
+		if is_instance_valid(node): node.queue_free()
+	w.chunks = []
+	if is_instance_valid(w.get("tail")): w.tail.queue_free()
+	for mote: Dictionary in _motes:
+		if is_same(mote.gust,w): mote.state = "gone"
+
+## Creatures notice each stretch of the wake as the feather completes it
+## (scripts/disturbance.gd): a short lane from `from` to `to`, passing at the
+## feather's speed.
+func _disturb_wake(w: Dictionary, from: Vector2, to: Vector2) -> void:
+	var seg := to-from
+	var length := seg.length()
+	if length < 0.05 or float(w.air) < 0.1: return
+	var scale := _world_scale()
+	Disturbance.raise(_world(Vector3(from.x,_ground(from,float(w.y)),from.y)),length*scale,float(w.power)*float(w.air),"gust",{"shape":"lane","way":_world_way(seg/length),
+		"from":0.0,"span":length*scale,"run":maxf(length/maxf(float(w.speed),0.5),0.05),"wind_up":0.0,"across":float(w.half)*LOCAL_REACH*scale})
+
+## The wake's path `u` m from its start: [plate point, unit way, ground]. Past
+## the last sample it runs on to the feather, then along the feather's heading.
+func _path_at(w: Dictionary, u: float) -> Array:
+	var trail: PackedVector4Array = w.trail
+	var last := trail[trail.size()-1]
+	var end := Vector2(last.x,last.y)
+	if u >= last.z or trail.size() < 2:
+		var feather: Vector2 = w.last
+		var reach := feather-end
+		var span := reach.length()
+		var beyond := maxf(u-last.z,0.0)
+		var heading: Vector2 = w.heading if Vector2(w.heading) != Vector2.ZERO else Vector2.RIGHT
+		var point := end+reach*(beyond/span) if beyond < span else feather+heading*(beyond-span)
+		var way: Vector2 = reach/span if span > 0.05 and beyond < span else heading
+		return [point,way,_ground(point,last.w)]
+	var first := trail[0]
+	var f := clampf((u-first.z)/RIBBON_STEP,0.0,trail.size()-1.0001)
+	var i := int(f)
+	var a := trail[i]
+	var b := trail[i+1]
+	var k := f-i
+	var from := Vector2(a.x,a.y)
+	var to := Vector2(b.x,b.y)
+	return [from.lerp(to,k),(to-from).normalized(),lerpf(a.w,b.w,k)]
+
+## A leaf or mote lifts where the feather passes and rides its air.
+func _pick_up(w: Dictionary, at: Vector2, y: float) -> void:
+	if not _add_mote(at,y): return
+	var mote: Dictionary = _motes.back()
+	mote.gust = w
+	mote.state = "ride"
+	mote.u = float(w.dist)-_rng.randf_range(0.0,0.4)
+	mote.v = _rng.randf_range(-0.5,0.5)*float(w.half)
+	mote.home = _rng.randf_range(-0.8,0.8)*float(w.half)
+	mote.lag = _rng.randf_range(0.3,3.5)
+	mote.vu = float(w.speed)*0.5
+	mote.vv = 0.0
+
+## Bake the ribbons the feather has left a whole chunk behind, and rebuild the
+## tail from the last chunk to the feather (and on along the air's coast).
+func _wake_ribbons(w: Dictionary) -> void:
+	var trail: PackedVector4Array = w.trail
+	while trail.size()-1-int(w.chunk_end) >= RIBBON_CHUNK:
+		var from: int = w.chunk_end
+		var node := _ribbon_node(w,_strand_mesh(w,from,from+RIBBON_CHUNK,[]))
+		node.set_meta("end",trail[from+RIBBON_CHUNK].z)
+		w.chunks.append(node)
+		w.chunk_end = from+RIBBON_CHUNK
+	var extra := [Vector4(w.last.x,w.last.y,float(w.dist),_ground(w.last,float(w.y)))]
+	if not w.live:
+		var heading: Vector2 = w.heading if Vector2(w.heading) != Vector2.ZERO else Vector2.RIGHT
+		var on: Vector2 = Vector2(w.last)+heading*WAKE_COAST
+		extra.append(Vector4(on.x,on.y,float(w.dist)+WAKE_COAST,_ground(on,float(w.y))))
+	var tail: MeshInstance3D = w.tail
+	tail.mesh = _strand_mesh(w,int(w.chunk_end),trail.size()-1,extra)
+
+## A ribbon node for a wake, drawn with its material.
+func _ribbon_node(w: Dictionary, mesh: Mesh) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.name = "Ribbons"
+	node.mesh = mesh
+	node.material_override = w.material
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.top_level = true
+	node.extra_cull_margin = 2.0
+	add_child(node)
+	node.global_transform = Transform3D.IDENTITY
+	return node
+
+## The wake's strands along its trail samples `from` to `to`, then `extra`
+## points (plate x, z, m along, ground), UV.x metres along the path as the
+## trail shader reads it. Each strand keeps its side of the path and sways by
+## the metres along, so chunks meet where they join. Null under two points.
+func _strand_mesh(w: Dictionary, from: int, to: int, extra: Array) -> ArrayMesh:
+	var trail: PackedVector4Array = w.trail
+	var line: Array[Vector4] = []
+	for i in range(from,mini(to,trail.size()-1)+1): line.append(trail[i])
+	for q: Vector4 in extra:
+		if line.is_empty() or Vector2(q.x,q.y).distance_to(Vector2(line.back().x,line.back().y)) > 0.05: line.append(q)
+	if line.size() < 2: return null
+	var before: Vector4 = trail[from-1] if from > 0 else line[0]
+	var after: Vector4 = trail[to+1] if extra.is_empty() and to+1 < trail.size() else line.back()
+	var vertices := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for k in range(w.strands.size()):
+		var strand: Dictionary = w.strands[k]
+		var first := vertices.size()
+		for s in range(line.size()):
+			var q := line[s]
+			var prev: Vector4 = line[s-1] if s > 0 else before
+			var next: Vector4 = line[s+1] if s < line.size()-1 else after
+			var way := Vector2(next.x-prev.x,next.y-prev.y).normalized()
+			if way == Vector2.ZERO: way = w.heading if Vector2(w.heading) != Vector2.ZERO else Vector2.RIGHT
+			var a := q.z
+			var across: float = float(strand.across)+sin(a*0.3+k*1.7)*0.35
+			var point := Vector2(q.x,q.y)+Vector2(-way.y,way.x)*across
+			var world := _world(Vector3(point.x,q.w+float(strand.lift)+sin(a*0.21+k)*0.15,point.y))
+			for edge in [0.0,1.0]:
+				vertices.append(world)
+				uvs.append(Vector2(a,edge))
+				colors.append(Color(float(strand.lag),float(strand.phase),0,1))
+			if s > 0:
+				var base := first+(s-1)*2
+				indices.append_array(PackedInt32Array([base,base+1,base+3,base,base+3,base+2]))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	return mesh
+
 # --- Foliage -------------------------------------------------------------------
 
 ## A lane takes one of the shaders' BLOW_LANES, the oldest's if all are
@@ -622,7 +1029,8 @@ func _linger(g: Dictionary) -> float:
 	var settle := clampf((float(g.t)-WIND_UP-float(g.run))/SETTLE,0.0,1.0)
 	return 1.0-smoothstep(0.6,1.0,settle)
 
-## Publish zs_blow_*: the lanes, the burst and the hand (only what changed).
+## Publish zs_blow_*: the lanes, the burst, the hand and the wake (only what
+## changed).
 func _publish_blow() -> void:
 	var scale := _world_scale()
 	var values := PackedVector4Array()
@@ -648,6 +1056,7 @@ func _publish_blow() -> void:
 		if hand.y <= 0.0: hand = Vector4.ZERO
 	values[14] = _hand_a if hand.w > 0.0 else Vector4.ZERO
 	values[15] = hand
+	_publish_wake(values,scale)
 	if blow.size() != values.size():
 		blow.resize(values.size())
 		for i in range(values.size()): blow[i] = Vector4(1,1,1,1)
@@ -655,6 +1064,29 @@ func _publish_blow() -> void:
 		if values[i] != blow[i]:
 			blow[i] = values[i]
 			RenderingServer.global_shader_parameter_set(BLOW_GLOBALS[i],values[i])
+
+## The wake's path (zs_wake_*) into `values`: its points in world x, z, the
+## newest wake's half width and the feather's heading and speed, and the box
+## its air can reach. When the path is full its oldest point leans nothing, so
+## the air fades toward the end that drops away.
+func _publish_wake(values: PackedVector4Array, scale: float) -> void:
+	var count := _wake_points.size()
+	if count < 2: return
+	var w: Dictionary = wakes.back() if not wakes.is_empty() else {}
+	var half: float = float(w.get("half",3.0))*scale
+	var low := Vector2(INF,INF)
+	var high := -low
+	for j in range(count):
+		var q := _wake_points[j]
+		var world := _world(Vector3(q.x,0.0,q.y))
+		values[WAKE_AT+3+j] = Vector4(world.x,world.z,q.z,0.0 if j == 0 and count == WAKE_POINTS else q.w)
+		low = low.min(Vector2(world.x,world.z))
+		high = high.max(Vector2(world.x,world.z))
+	var way := _world_way(w.get("heading",Vector2.RIGHT))
+	var reach := 1.3*half+1.0
+	values[WAKE_AT] = Vector4(clock,count,half,0.0)
+	values[WAKE_AT+1] = Vector4(way.x,way.z,float(w.get("speed",0.0))*scale,0.0)
+	values[WAKE_AT+2] = Vector4(low.x-reach,low.y-reach,high.x+reach,high.y+reach)
 
 ## The shaders' zs_blow_at on the CPU, from what is published: the lean
 ## (x, z) and shiver at a world x, z. `motion_time` is zs_motion_time. Keep in
@@ -711,8 +1143,56 @@ func blow_at(p: Vector2, motion_time := 0.0, phase := 0.0) -> Vector3:
 			var part := signf(across)*smoothstep(0.0,0.5*hw,absf(across))
 			lean += (h*0.55+side*(part*0.5+tremble*0.15))*w
 			shiver = maxf(shiver,w)
+	var wake := _wake_at(p,phase)
+	lean += Vector2(wake.x,wake.y)
+	shiver = maxf(shiver,wake.z)
 	if lean.length() > BLOW_MAX: lean *= BLOW_MAX/lean.length()
 	return Vector3(lean.x,lean.y,shiver)
+
+## zs_wake_at: the wake's lean (x, z) and shiver at a world x, z.
+func _wake_at(p: Vector2, phase: float) -> Vector3:
+	var head := blow[WAKE_AT]
+	var count := int(head.y+0.5)
+	var box := blow[WAKE_AT+2]
+	if count < 2 or p.x < box.x or p.y < box.y or p.x > box.z or p.y > box.w: return Vector3.ZERO
+	var best := 1e9
+	var h := Vector2.ZERO
+	var off := Vector2.ZERO
+	var when := 0.0
+	var strength := 0.0
+	for j in range(mini(count,WAKE_POINTS)-1):
+		var a := blow[WAKE_AT+3+j]
+		var b := blow[WAKE_AT+4+j]
+		if b.w < 0.0: continue
+		var ab := Vector2(b.x-a.x,b.y-a.y)
+		var len2 := ab.length_squared()
+		var s := clampf((p-Vector2(a.x,a.y)).dot(ab)/len2,0.0,1.0) if len2 > 0.000001 else 0.0
+		var d := p-(Vector2(a.x,a.y)+ab*s)
+		var dist2 := d.length_squared()
+		if dist2 < best:
+			best = dist2
+			if len2 > 0.000001: h = ab/sqrt(len2)
+			off = d
+			when = lerpf(a.z,b.z,s)
+			strength = lerpf(absf(a.w),b.w,s)
+	if h == Vector2.ZERO: return Vector3.ZERO
+	var hw := maxf(head.z,0.5)
+	var lateral := 1.0-smoothstep(0.6*hw,1.3*hw,sqrt(best))
+	if lateral <= 0.0 or strength <= 0.0: return Vector3.ZERO
+	var tau := head.x-when
+	# Ahead of the feather the air only stirs, as it comes.
+	var feather := blow[WAKE_AT+3+mini(count,WAKE_POINTS)-1]
+	var bow := blow[WAKE_AT+1]
+	var ahead := (p-Vector2(feather.x,feather.y)).dot(Vector2(bow.x,bow.y))
+	if tau < 0.2 and ahead > 0.0: tau = minf(tau,-ahead/maxf(bow.z,2.0))
+	var side := Vector2(-h.y,h.x)
+	var across := off.dot(side)
+	var part := signf(across)*smoothstep(0.0,0.5*hw,absf(across))
+	var swirl := sin(when*9.0+p.dot(Vector2(0.9,1.3))+phase)*0.12
+	var after := maxf(tau-WAKE_HOLD,0.0)
+	var swing := smoothstep(-WAKE_LEAD,0.0,tau)*lerpf(1.0,0.8,smoothstep(0.0,WAKE_HOLD,tau))*exp(-SWING_DAMP*after)*cos(SWING_RING*after)
+	var lean := (h+side*(part*WAKE_PART+swirl))*strength*lateral*swing
+	return Vector3(lean.x,lean.y,strength*lateral*smoothstep(-0.2,0.1,tau)*exp(-1.2*maxf(tau,0.0)))
 
 ## zs_blow_front: (lean share, shiver) of a front at `along`.
 func _front(along: float, run: Vector4, reach: float) -> Vector2:
@@ -958,29 +1438,31 @@ func _ribbons(g: Dictionary) -> MeshInstance3D:
 
 # --- Leaves and motes ------------------------------------------------------------
 
-## A leaf or mote lifts and swirls in round a press at `start`.
-func _add_mote(start: Vector2, y: float) -> void:
+## A leaf or mote lifts and swirls in round a press at `start`. False when
+## there was no room.
+func _add_mote(start: Vector2, y: float) -> bool:
 	if _motes.size() >= MOTES:
 		# The one that has been resting longest makes room.
 		for i in range(_motes.size()):
 			if _motes[i].state in ["rest","gone"]:
 				_motes.remove_at(i)
 				break
-		if _motes.size() >= MOTES: return
+		if _motes.size() >= MOTES: return false
 	var leaf := _rng.randf() < LEAF_SHARE
 	var color: Color = LEAF_COLORS[_rng.randi()%LEAF_COLORS.size()] if leaf else MOTE_COLOR
 	_motes.append({"gust":null,"state":"gather","center":start,"y0":y,"rho":_rng.randf_range(0.6,1.6),"theta":_rng.randf()*TAU,
 		"u":0.0,"v":0.0,"vu":0.0,"vv":0.0,"y":_rng.randf_range(0.05,0.2),"lift":_rng.randf_range(0.35,1.9),"lag":_rng.randf_range(-0.5,4.5),
 		"home":0.0,"size":_rng.randf_range(MOTE_SIZE.x,MOTE_SIZE.y)*(1.0 if leaf else 0.7),"spin":_rng.randf()*TAU,"phase":_rng.randf()*TAU,
 		"leaf":leaf,"color":color,"shown":0.0,"rest":0.0})
+	return true
 
-## A gathered mote rides the gust that just went.
+## A gathered mote rides the gust that just went (or the wake just begun).
 func _board(mote: Dictionary, g: Dictionary) -> void:
 	mote.gust = g
 	mote.state = "ride"
 	var at := Vector2(mote.center)+Vector2(cos(mote.theta),sin(mote.theta))*float(mote.rho)
 	var rel := at-Vector2(g.origin)
-	if g.kind == "lane":
+	if g.kind in ["lane","wake"]:
 		mote.u = rel.dot(g.heading)
 		mote.v = rel.dot(Vector2(-g.heading.y,g.heading.x))
 		mote.home = _rng.randf_range(-0.8,0.8)*float(g.half)
@@ -1029,11 +1511,19 @@ func _step_motes(delta: float) -> void:
 				mote.vu = float(mote.vu)*exp(-2.2*delta)
 				mote.y = maxf(float(mote.y)-MOTE_FALL*delta*(0.6+0.4*sin(clock*4.0+float(mote.phase))),0.03)
 			mote.u = float(mote.u)+float(mote.vu)*delta
-			var limit: float = float(g.reach)+1.0
-			mote.u = clampf(float(mote.u),-1.5 if g.kind == "lane" else 0.0,limit)
+			var limit: float = float(g.head if g.kind == "wake" else g.reach)+1.0
+			mote.u = clampf(float(mote.u),-1.5 if g.kind != "burst" else 0.0,limit)
 			var at: Vector2
 			var ground: float
-			if g.kind == "lane":
+			if g.kind == "wake":
+				# Carried along the path the feather took, keeping to its side.
+				var wander := sin(clock*2.6+float(mote.phase))*0.35*air
+				mote.v = clampf(lerpf(float(mote.v),float(mote.home)+wander,1.0-exp(-2.5*delta)),-0.95*float(g.half),0.95*float(g.half))
+				var along: Array = _path_at(g,float(mote.u))
+				var way: Vector2 = along[1]
+				at = Vector2(along[0])+Vector2(-way.y,way.x)*float(mote.v)
+				ground = float(along[2])
+			elif g.kind == "lane":
 				var wander := sin(clock*2.6+float(mote.phase))*0.35*air
 				mote.v = lerpf(float(mote.v),float(mote.home)+wander,1.0-exp(-2.5*delta))
 				mote.v = clampf(float(mote.v),-0.95*float(g.half),0.95*float(g.half))
@@ -1087,6 +1577,8 @@ func _busy_voices() -> PackedByteArray:
 	busy.resize(VOICES)
 	for g: Dictionary in gusts:
 		if g.voice >= 0 and not g.done: busy[g.voice] = 1
+	for w: Dictionary in wakes:
+		if w.voice >= 0 and (w.live or float(w.air) > 0.0): busy[w.voice] = 1
 	if aiming(): busy[int(_aim.voice)] = 1
 	return busy
 
@@ -1095,8 +1587,8 @@ func _free_voice() -> int:
 	var busy := _busy_voices()
 	for i in range(VOICES):
 		if busy[i] == 0: return i
-	for g: Dictionary in gusts:
-		if g.voice >= 0 and not g.done:
+	for g: Dictionary in gusts + wakes:
+		if g.voice >= 0 and not g.done and not g.get("live",false):
 			var voice: int = g.voice
 			g.voice = -1
 			return voice

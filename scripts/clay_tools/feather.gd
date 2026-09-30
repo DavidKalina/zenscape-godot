@@ -9,8 +9,8 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##
 ## Its gestures are the materials hand's (scripts/hand_materials.gd, "The
 ## Feather"), which takes a press on the land before the clay sees it and
-## hands it to the wind tool (scripts/wind_gust.gd): a swipe sends a lane, a
-## still hold of 400 ms bursts. So the clay never opens a stroke for it, and
+## hands it to the wind tool (scripts/wind_gust.gd): a drag is a live wake
+## along the path it takes, a still hold of 400 ms bursts. So the clay never opens a stroke for it, and
 ## the Feather adds no undo step. The hooks below stay the base's no-ops in
 ## case a press ever reaches the clay with the Feather in hand (no tray).
 
@@ -38,7 +38,7 @@ const TILT := -18.0
 
 func id() -> String: return "feather"
 func prop_tilt() -> float: return TILT
-## The Feather's lane is the wind brush's 3 m half-width at the middle pip.
+## The Feather's wake is the wind brush's 3 m half-width at the middle pip.
 func stroke_radius() -> float: return 3.0*clay.size_scale
 
 ## A faceted quill from primitives: a hexagonal shaft through the grip, a

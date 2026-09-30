@@ -56,6 +56,26 @@ global uniform vec4 zs_burst_a;
 global uniform vec4 zs_burst_b;
 global uniform vec4 zs_aim_a;
 global uniform vec4 zs_aim_b;
+// The Feather's live wake (scripts/wind_gust.gd `_publish_wake`, read by
+// zs_wake_at): its path oldest first, zs_wake_N (x, z, when the feather passed
+// on zs_wake_a.x's clock, lean there; negative where a stroke starts), a (now,
+// points, half width m, 0), b (the feather's heading x, z, speed m/s, 0), c
+// (the box its air reaches: min x, z, max x, z).
+global uniform vec4 zs_wake_a;
+global uniform vec4 zs_wake_b;
+global uniform vec4 zs_wake_c;
+global uniform vec4 zs_wake_0;
+global uniform vec4 zs_wake_1;
+global uniform vec4 zs_wake_2;
+global uniform vec4 zs_wake_3;
+global uniform vec4 zs_wake_4;
+global uniform vec4 zs_wake_5;
+global uniform vec4 zs_wake_6;
+global uniform vec4 zs_wake_7;
+global uniform vec4 zs_wake_8;
+global uniform vec4 zs_wake_9;
+global uniform vec4 zs_wake_10;
+global uniform vec4 zs_wake_11;
 global uniform vec4 zs_tread_0;
 global uniform vec4 zs_tread_1;
 global uniform vec4 zs_tread_2;

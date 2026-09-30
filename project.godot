@@ -243,6 +243,66 @@ zs_aim_b={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_wake_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_c={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_6={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_7={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_8={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_9={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_10={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_wake_11={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_tread_0={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

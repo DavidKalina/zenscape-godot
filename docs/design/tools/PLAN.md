@@ -657,28 +657,34 @@ Going through the clay's verbs was rejected for three reasons:
 Holding the press in `hand_materials` keeps the wind in one place. Nothing
 about the gust is written twice.
 
-- **Swipe on the land and let go:** the wind tool's lane runs along the
-  swipe, as strong as the swipe was fast (its `promise()`, sent by
-  `release()`).
+- **Drag on the land:** a live wake (below). The wind goes with the feather
+  while it moves, along the path it takes, as strong as it moves, and dies
+  away when let go. Nothing is aimed and nothing is fired.
 - **Hold still `FEATHER_BURST_SECONDS` (0.4 s):** a burst, rung out round the
   press on release, gathered as the wind tool gathers it (4 to 12 m over
   1.2 s). A still press let go sooner sends nothing, so a stray click blows
   nothing.
-- **Width.** The lane is `FEATHER_HALF` (3 m, the Wind brush's radius) either
+- **Width.** The wake is `FEATHER_HALF` (3 m, the Wind brush's radius) either
   side at the middle pip. The pips scale it by 0.6 / 1 / 1.5, as they scale
   every tool: 1.8 / 3 / 4.5 m, standing in for the design's 20 / 34 / 52 px.
 - **From the sky.** Wind dragged from the sky onto the land
   (`hand_reach._void_drag`, `SkyWind.to_land`) now also puts the Feather in
-  hand (`take_feather`), pressed in the roll, with the Feather's lane width.
-  The flick's own heading and power carry on, as before. A sky swipe with
-  the Feather in hand is still the sky's passing gust.
+  hand (`take_feather`), pressed in the roll, with the Feather's wake width.
+  The drag on from there is the Feather's wake, starting out with the
+  flick's power and heading. A sky swipe with the Feather in hand is still
+  the sky's passing gust (`gust_from_sky`).
 - **No land changes.** No undo step, and the heights are left alone.
 - **Prop:** a stand-in quill, until Blender. A pale hexagonal shaft
   (`#ece2c8`) runs through the grip, with a horn quill end (`#a8936a`) over
   it. Two flattened seven-sided ellipsoids in `#cbb994` hang below the grip
   as the vane: a narrow leading half and a broad trailing one. It leans
-  -18° (`GUST.cursorTilt`). There is no 2D cursor: the ghost hand stays the
-  cursor.
+  -18° (`GUST.cursorTilt`). It is its own cursor (below, "The hand at the
+  rim"), and follows the pointer through the whole press, drag and release.
+  The Feather's press is held by the materials hand, not the clay, and makes
+  the hand unavailable (`hand_reach.available` is false while the wind is
+  in hand), so `LandClay._place_prop` lets the quill through on its own
+  (`materials.feather_blowing()`). Before that it shrank away for the whole
+  drag.
 
 Hook lines in shared files:
 
@@ -694,6 +700,40 @@ Hook lines in shared files:
   (`size_of`) is untouched: the Feather's sizes come from the wind.
 - `shaders/ground_mark.gdshader`: kind 7, the lane.
 
+### Live wake
+
+Decided 2026-09-30 after a playtest: "The feather should drag along the path
+you draw... I'll drag, and it will randomly like change directions so I
+can't finish the path." The old drag guessed a heading from the last 0.12 s
+of pointer samples, which flipped with small wobbles, and fired a straight
+lane on release. Now the wind happens while you drag (`scripts/wind_gust.gd`,
+"The wake"):
+
+- **The path, not a heading.** Once the press moves past `STILL_DRAG`
+  (0.6 m), the pointer's ground path is recorded. The shaders get the last
+  12 points (`zs_wake_0..11`, the last one the feather). A point is fixed
+  every 0.5 m, or every 0.18 s of travel at speed so the points cover the
+  whole sway, or sooner where the path turns 20°. Each foliage root finds
+  the nearest stretch and leans along it by when the feather passed there
+  (`zs_wake_at`, mirrored by `blow_at`). It stirs 0.12 s before the feather
+  arrives, holds 0.3 s while its air streams past, then swings back as a
+  lane's head does. It parts out from the path a little.
+- **Speed is strength.** The pointer's ground speed, smoothed, sets the lean
+  from 0.3 (2 m/s) to 1.0 (20 m/s). Under 2 m/s the air eases off, so a
+  drag that stops blows nothing.
+- **Along the path.** Leaves and motes are picked up every 0.7 to 1.4 m
+  where the feather passes, and carried along the path on the gust's
+  spring. Ribbons are laid along the real curve, with UV.x as metres along
+  it, so `wind_gust_trail.gdshader` is unchanged. They are baked 4 m at a
+  time as the feather leaves them behind, and only the tail to the feather
+  is rebuilt each frame. A parcel and a steered local gust ride at the
+  feather, and creatures are told of each stretch as it is completed.
+- **Let go, it dies away.** The air fades over 0.6 s while its head coasts
+  up to 3 m on. Nothing is fired, and the wake is gone after 2.5 s.
+- **Unchanged.** A still hold is the burst. The Genesis wind brush's press
+  (`NativeChunkEditor.handle_input`) and the sky's swipe (`gust_from_sky`)
+  still send aimed lanes.
+
 ### The ground mark
 
 These marks are faint, at the same `LINE_ALPHA` (0.3) and `FILL_ALPHA`
@@ -701,16 +741,14 @@ These marks are faint, at the same `LINE_ALPHA` (0.3) and `FILL_ALPHA`
 
 - **At rest:** a small stitched hotspot ellipse, `FEATHER_HOTSPOT` (0.24 by
   0.12 m, the design's 7 by 3.5 px at the hand sketch's scale).
-- **During a swipe:** the lane's two stitched edges, from the press along
-  the heading to the pointer, with the faint fill between. They are cut
-  square, with no arrowhead and no loop.
+- **During a drag:** the hotspot rides under the feather. The wind itself
+  shows where it goes. (The lane's stitched edges, `feather_lane`, are
+  drawn only for an aimed lane, which the Feather no longer makes.)
 - **Held still:** the hotspot until 0.4 s. Then the burst's ring appears at
   the lane's half-width and grows to 1.5 times it (1.5 times the lane's
   width across) over the wind tool's gather.
 
-Unlike the tools' marks, these stay while the press is held. They are the
-Feather's only preview, since the wind tool's own lane (`--show-promise`) is
-off.
+Unlike the tools' marks, these stay while the press is held.
 
 ### Checked headless
 
@@ -724,16 +762,34 @@ godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_feather.gd --
   between them, against 4. Its pocket takes it.
 - The quill is built faceted in `#cbb994`. The hand grips it, and it rides
   in the shown hand leaning 18.0°.
-- A 240 px swipe sends one lane, 0.1° off the swipe, at power 0.94. It is
-  1.8 / 3 / 4.5 m either side at the three pips, and the mid-swipe mark
-  matches.
+- A 240 px swipe is one live wake, 0.3° off the swipe at the end, power
+  0.94, and sends no lane gust. It is 1.8 / 3 / 4.5 m either side at the
+  three pips. Mid-swipe the hotspot sits under the feather (0.00 m off).
+- A curved drag (a 7 m radius arc, 72 frames, about 10.5 m/s): the quill
+  shows on all 72 frames, its tip at most 0.47 m from the pointer's ground
+  point, and it stays after release. With the old `_place_prop` it showed on
+  7 of 72 frames and its tip was left 10.4 m behind.
+- Through `WindGust.blow_at` mid-drag: foliage leans 0.68 / 0.63 / 0.56 at
+  0.5 / 1.5 / 3 m behind the feather, 0.6° / 10.9° / 1.5° off the arc's
+  tangent. It leans 0.00 at 2 m ahead and at 6 and 7 m off the path. A
+  point the feather passed peaks at 0.70 and swings back to -0.17. 21
+  leaves ride within 2.06 m of the path, and the ribbons lie within 2.46 m
+  of it (strands sit up to 0.7 half-widths aside), their UV running to the
+  feather's 7.87 m. The feather's heading is 5.8° off the tangent. One
+  steered local gust and a parcel ride at the feather.
+- Let go, the lean is 0.04 after 1 s and 0.00 after 3 s, and the wake is
+  gone. A slow 2 m/s drag leans 0.33 against 0.68 for the fast one. The
+  wind tool's own cost peaked at 0.59 and 0.94 ms a frame in two runs.
 - A still press let go at 0.2 s sends nothing. Held, the hotspot stays until
   0.4 s. The ring then shows at 3.06 m, grows to 4.5 m, and bursts on
   release.
 - No undo step, and the heights are unchanged.
 - Taking a stone gives back the Hand. A drag from the sky onto the land puts
-  the Feather in hand, at its lane width, and sends one gust on release.
-  Esc gives back the Hand.
+  the Feather in hand, at its width. The drag on is one wake, which dies
+  away on release with nothing sent. Esc gives back the Hand.
+- `tools/probe_sky_wind.gd`: the carried drag is a wake, 13° off the drag as
+  the camera sees it, at the flick's power (0.98). Creatures are told as
+  it goes. Held still it still bursts.
 - Every mark's line alpha is 0.30, under `FAINT_CAP` (0.4).
 
 ### Unverified
@@ -744,7 +800,14 @@ Nothing has been seen on screen:
   the wind is in hand (`NativeChunkEditor.hand_gesture` "void"), so the quill
   may float in an open hand mid-gesture.
 - whether a 0.24 m hotspot reads at all from 58 m out
-- the lane's edges and fill on slopes and at night, and the burst ring
+- the burst ring on slopes and at night
+- the wake itself: how the bend, the hold and the swing-back read in the
+  grass and trees, whether 0.3 to 1.0 of lean is right for a slow and a fast
+  drag, the ribbons along a curve, and the leaves' pick-up. The shader
+  (`zs_wake_at`) is parse-checked only. It adds a 12-point loop to
+  `zs_blow_at`, which every foliage vertex and the water's fragments run;
+  it returns early outside the wake's box and with no wake. Its cost and
+  GPU limits are unmeasured.
 - the roll's new divider and the feather icon at 1.2 line width
 
 ## The hand at the rim

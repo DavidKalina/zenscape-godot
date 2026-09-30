@@ -820,8 +820,12 @@ func _fall(p: Vector2) -> Vector2:
 ## when it stops), and its handle leads its working end by the pointer's
 ## speed, wobbling upright again on a stop. It grows out of the ground point as
 ## it comes and shrinks back into it as it goes: over the land while no
-## material is held, and not while the camera moves. `--hand-everywhere` puts
-## it back in the God Hand (`_place_prop_in_hand`).
+## material is held, and not while the camera moves. The Feather's wind in
+## hand (hand_materials `feather_blowing`) is a press the clay never sees and
+## makes the hand unavailable (hand_reach `available`), so it is let through
+## on its own: the quill comes down and follows the pointer through the whole
+## press, drag and release. `--hand-everywhere` puts it back in the God Hand
+## (`_place_prop_in_hand`).
 func _place_prop(delta: float) -> void:
 	if _prop == null: return
 	if GodHand.everywhere:
@@ -834,12 +838,13 @@ func _place_prop(delta: float) -> void:
 	var eye: bool = wanderer != null and wanderer.get("active") == true
 	# A press comes down at once, before its verb is decided.
 	var working := state != State.IDLE or not hand_set.is_empty()
+	var blowing: bool = materials != null and materials.has_method("feather_blowing") and materials.feather_blowing()
 	var hit: Variant = editor.pointer_hit
-	var want: bool = reach != null and reach.available() and not reach.camera_moving() and not carrying and not eye
+	var want: bool = reach != null and (reach.available() or blowing) and not reach.camera_moving() and not carrying and not eye
 	if want:
 		var holding: String = reach.holding
-		want = working or holding in ["land","feather"] or (holding.is_empty() and reach.hover_zone == "land")
-		want = want and (hit != null or (working and _work_at != null))
+		want = working or blowing or holding in ["land","feather"] or (holding.is_empty() and reach.hover_zone == "land")
+		want = want and (hit != null or (working and _work_at != null) or (blowing and _prop.visible))
 	var motion := _prop_motion
 	_prop.visible = motion.show(want,delta)
 	if not _prop.visible:
@@ -849,7 +854,7 @@ func _place_prop(delta: float) -> void:
 	if goal == null: goal = motion.tip
 	var at_work := working and _work_at != null
 	var ground := func(flat: Vector2) -> Variant: return editor.data.ground_height(flat)
-	motion.advance(delta,goal,working,ground,CursorMotion.across_view(editor.terrain,scene.camera),(goal as Vector3).y if at_work else -INF)
+	motion.advance(delta,goal,working or blowing,ground,CursorMotion.across_view(editor.terrain,scene.camera),(goal as Vector3).y if at_work else -INF)
 	var turn := motion.turn(-tool.prop_tilt())
 	var size := _prop_size()*motion.size()
 	# Pinned by its working end: the grip stands its depth above the tip.

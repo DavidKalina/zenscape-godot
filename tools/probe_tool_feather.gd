@@ -6,12 +6,18 @@ extends SceneTree
 ## tools/probe_tool_paddle.gd drives the Paddle. Checks: the roll shows the
 ## Feather after a divider under the Hammer and its pocket takes it; the hand
 ## grips the stand-in quill in the tint, leaning -18°; a swipe on the land
-## sends one lane gust along the swipe, as wide as the pips say; a still
-## press held 400 ms bursts and a shorter one sends nothing; a drag from the
-## sky onto the land puts the Feather in hand, its pocket pressed; the faint
-## marks show at rest (hotspot), during the swipe (lane) and during the hold
-## (ring), under the alpha cap; the Feather adds no undo step and leaves the
-## heights as they were; taking a material and Esc give back the Hand.
+## is one live wake along the swipe, as wide as the pips say, and sends no
+## gust; the quill follows the pointer through the whole press, drag and
+## release; a curved drag's wake (read through WindGust `blow_at`, the
+## shaders' mirror) leans foliage at and behind the feather along the path's
+## tangent, springs back past rest, leaves foliage off the path and far ahead
+## alone, carries leaves along the path, lays ribbons on the curve, and dies
+## away after release; a still press held 400 ms bursts and a shorter one
+## sends nothing; a drag from the sky onto the land puts the Feather in hand,
+## its pocket pressed; the faint marks show at rest and under the feather
+## (hotspot) and during the hold (ring), under the alpha cap; the Feather adds
+## no undo step and leaves the heights as they were; taking a material and
+## Esc give back the Hand.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_feather.gd -- --modeless --no-title
 ## Nothing here is seen: the dummy renderer draws nothing, so the grip, the
 ## prop and the marks are checked as data only.
@@ -114,9 +120,11 @@ func hover(spot: Vector2) -> void:
 	await frames(20)
 
 ## Swipe `pixels` along screen x from `start` in `steps` frames and let go.
-## Returns [the gust sent or {}, the lane mark seen mid-swipe, the plate way].
+## Returns [the wake let go or {}, the mark seen mid-swipe, the plate way,
+## lane gusts sent meanwhile].
 func swipe(start: Vector2, pixels: float, steps := 10) -> Array:
-	var sent: int = int(materials.feather_sent.lane)
+	var sent: int = int(materials.feather_sent.wake)
+	var lanes: int = gust().gusts.size() if gust() != null else 0
 	await hover(start)
 	button(start,true)
 	await frames(1)
@@ -126,12 +134,193 @@ func swipe(start: Vector2, pixels: float, steps := 10) -> Array:
 		p += Vector2(pixels/steps,0)
 		motion(p,Vector2(pixels/steps,0))
 		await frames(1)
-		if i == steps-2: seen = {"kind":marks.kind,"shown":marks.shown,"visible":marks.node.visible,"half":marks.half,"from":marks.wire_start,"alpha":marks.line_alpha_now(),"holding":reach.holding}
+		if i == steps-2: seen = {"kind":marks.kind,"shown":marks.shown,"visible":marks.node.visible,"half":marks.half,"centre":marks.centre,"under":plate(p),"alpha":marks.line_alpha_now(),"holding":reach.holding}
 	button(p,false)
 	await frames(2)
 	var way: Vector2 = (plate(p)-plate(start)).normalized()
-	var g: Dictionary = gust().gusts.back() if gust() != null and int(materials.feather_sent.lane) > sent else {}
-	return [g,seen,way]
+	var g: Dictionary = gust().wakes.back() if gust() != null and not gust().wakes.is_empty() and int(materials.feather_sent.wake) > sent else {}
+	return [g,seen,way,gust().gusts.size()-lanes]
+
+func world_of(p: Vector2) -> Vector3:
+	return editor.terrain.to_global(Vector3(p.x,height(p),p.y))
+
+## The wind tool's lean on foliage at plate `p` (WindGust `blow_at`, as the
+## shaders' zs_blow_at reads the published globals): [lean along plate `way`,
+## angle off it (degrees), size].
+func lean_at(p: Vector2, way: Vector2) -> Array:
+	var world := world_of(p)
+	var reading: Vector3 = gust().blow_at(Vector2(world.x,world.z),float(scene.get("_motion_time")))
+	var lean := Vector2(reading.x,reading.y)
+	var w := editor.terrain.global_basis*Vector3(way.x,0.0,way.y)
+	var ref := Vector2(w.x,w.z).normalized()
+	return [lean.dot(ref),rad_to_deg(absf(lean.angle_to(ref))) if lean.length() > 0.001 else 0.0,lean.length()]
+
+## A point on the curved drag's arc at `k` (0..1) of the way, and its tangent.
+func arc(c: Vector2, r: float, k: float) -> Array:
+	var a := lerpf(-0.9,0.9,k)
+	return [c+Vector2(cos(a),sin(a))*r,Vector2(-sin(a),cos(a))]
+
+## Plate points on the Feather's rows of motes and ribbon vertices, as drawn
+## this frame (world, back to plate).
+func drawn_motes() -> Array:
+	var out := []
+	var multimesh: MultiMesh = gust()._mote_node.multimesh
+	for i in range(multimesh.visible_instance_count):
+		if i >= gust()._motes.size(): break
+		if not is_same(gust()._motes[i].gust,gust().wakes.back()): continue
+		var local := editor.terrain.to_local(multimesh.get_instance_transform(i).origin)
+		out.append(Vector2(local.x,local.z))
+	return out
+
+func ribbon_points(w: Dictionary) -> Array:
+	var out := []
+	var nodes: Array = w.chunks.duplicate()
+	nodes.append(w.tail)
+	for node: MeshInstance3D in nodes:
+		if node == null or node.mesh == null: continue
+		var arrays: Array = (node.mesh as ArrayMesh).surface_get_arrays(0)
+		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in range(vertices.size()):
+			var local := editor.terrain.to_local(vertices[i])
+			out.append(Vector3(local.x,local.z,uvs[i].x))
+	return out
+
+## The live wake on a curved drag, read as the shaders read it (WindGust
+## `blow_at`): a quarter-ish arc of radius 7 m in about 1.2 s, then let go.
+func wake_checks(at: Vector2) -> void:
+	var r := 7.0
+	var c := Vector2.INF
+	for centre: Vector2 in [at-Vector2(r,0),at+Vector2(r,0),at-Vector2(0,r),at+Vector2(0,r)]:
+		var ok := true
+		for i in range(11):
+			var s := screen(arc(centre,r,i/10.0)[0])
+			if not bare(s): ok = false
+		if ok:
+			c = centre
+			break
+	check("found bare land for a curved drag",c != Vector2.INF,at)
+	if c == Vector2.INF: return
+	var lanes: int = gust().gusts.size()
+	var wakes: int = int(materials.feather_sent.wake)
+	var start: Vector2 = arc(c,r,0.0)[0]
+	var last := screen(start)
+	await hover(last)
+	button(last,true)
+	await frames(1)
+	var prop: Node3D = clay.get("_prop")
+	var steps := 72
+	var shown := 0
+	var worst_tip := 0.0
+	var worst_usec := 0
+	var watch: Array = arc(c,r,0.3)
+	var follow := {"peak":0.0,"back":0.0}
+	var mid := {}
+	for i in range(1,steps+1):
+		var k := float(i)/steps
+		var s := screen(arc(c,r,k)[0])
+		motion(s,s-last)
+		last = s
+		await frames(1)
+		if prop != null and prop.visible: shown += 1
+		var hit: Variant = editor.pointer_hit
+		var tip: Vector3 = clay.get("_prop_motion").tip
+		if i > 6 and hit != null: worst_tip = maxf(worst_tip,Vector2(tip.x,tip.z).distance_to(Vector2(hit.x,hit.z)))
+		worst_usec = maxi(worst_usec,int(gust().last_usec))
+		var here: float = lean_at(watch[0],watch[1])[0]
+		follow.peak = maxf(follow.peak,here)
+		if follow.peak > 0.1: follow.back = minf(follow.back,here)
+		if i == int(steps*0.65):
+			var w: Dictionary = gust().wakes.back()
+			var metres := 1.8*r
+			var behind := {}
+			for back in [0.5,1.5,3.0]:
+				var b: Array = arc(c,r,k-back/metres)
+				var reading := lean_at(b[0],b[1])
+				behind[back] = [snappedf(reading[0],0.01),snappedf(reading[1],0.1)]
+			var ahead: Array = arc(c,r,minf(k+2.0/metres,1.0))
+			var feather: Array = arc(c,r,k)
+			var outward: Vector2 = (Vector2(feather[0])-c).normalized()
+			mid = {"k":k,"behind":behind,"ahead_2m":snappedf(lean_at(ahead[0],ahead[1])[2],0.01),
+				"centre_7m_off":snappedf(lean_at(c,feather[1])[2],0.01),"outside_6m_off":snappedf(lean_at(Vector2(feather[0])+outward*6.0,feather[1])[2],0.01),
+				"heading_off":snappedf(rad_to_deg(absf(Vector2(w.heading).angle_to(feather[1]))),0.1),"power":snappedf(float(w.power),0.01),"air":snappedf(float(w.air),0.01),
+				"speed":snappedf(float(w.speed),0.1),"lanes_sent":gust().gusts.size()-lanes,"points":gust()._wake_points.size()}
+			var motes := drawn_motes()
+			var mote_off := 0.0
+			for q: Vector2 in motes: mote_off = maxf(mote_off,absf(q.distance_to(c)-r))
+			mid["motes_on_wake"] = motes.size()
+			mid["mote_off_path_m"] = snappedf(mote_off,0.01)
+			var ribbon := ribbon_points(w)
+			var ribbon_off := 0.0
+			var ribbon_uv := 0.0
+			for q: Vector3 in ribbon:
+				ribbon_off = maxf(ribbon_off,absf(Vector2(q.x,q.y).distance_to(c)-r))
+				ribbon_uv = maxf(ribbon_uv,q.z)
+			mid["ribbon_chunks"] = w.chunks.size()
+			mid["ribbon_vertices"] = ribbon.size()
+			mid["ribbon_off_path_m"] = snappedf(ribbon_off,0.01)
+			mid["ribbon_uv_max"] = snappedf(ribbon_uv,0.01)
+			mid["path_m"] = snappedf(float(w.dist),0.01)
+			mid["local_gusts"] = w.local.size()
+			mid["parcel"] = w.slot
+	var mid_hold := {"prop_shown":prop != null and prop.visible}
+	button(last,false)
+	await frames(1)
+	var let_go: Dictionary = gust().wakes.back() if not gust().wakes.is_empty() else {}
+	var shown_after := 0
+	var peaks := [0.0,0.0,0.0]
+	var probes := [arc(c,r,0.3),arc(c,r,0.6),arc(c,r,0.95)]
+	var at_1s := 0.0
+	for f in range(200):
+		await frames(1)
+		if f < 20 and prop != null and prop.visible: shown_after += 1
+		for j in range(probes.size()):
+			var size: float = lean_at(probes[j][0],probes[j][1])[2]
+			if f == 60: at_1s = maxf(at_1s,size)
+			if f >= 170: peaks[j] = maxf(peaks[j],size)
+		var here: float = lean_at(watch[0],watch[1])[0]
+		follow.back = minf(follow.back,here)
+	var published: Vector4 = gust().blow[gust().WAKE_AT]
+	print("WAKE ",JSON.stringify({"mid":mid,"follow":{"peak":snappedf(follow.peak,0.01),"swings_back":snappedf(follow.back,0.01)},"prop_shown_frames":[shown,steps],
+		"tip_gap_max_m":snappedf(worst_tip,0.01),"gust_ms_max":snappedf(worst_usec/1000.0,0.001),"lean_1s_after":snappedf(at_1s,0.01),"lean_3s_after":peaks,"published_points_after":published.y,"wakes_after":gust().wakes.size()}))
+	check("the quill shows through the whole drag (%d of %d frames)" % [shown,steps],shown == steps and bool(mid_hold.prop_shown),[shown,steps])
+	check("  its tip stays on the pointer (%.2f m at most)" % worst_tip,worst_tip < 1.0,worst_tip)
+	check("  and after release it stays, hovering (%d of 20 frames)" % shown_after,shown_after == 20,shown_after)
+	check("a curved drag is one live wake, no gust sent",int(materials.feather_sent.wake) == wakes+1 and gust().gusts.size() == lanes and let_go.get("kind","") == "wake",[materials.feather_sent,gust().gusts.size()-lanes])
+	if mid.is_empty(): return
+	var behind: Dictionary = mid.behind
+	check("  foliage leans at and behind the feather: %s" % str(behind),float(behind[0.5][0]) > 0.3 and float(behind[1.5][0]) > 0.25 and float(behind[3.0][0]) > 0.15,behind)
+	check("  along the curve's tangent (under 25° off)",float(behind[0.5][1]) < 25.0 and float(behind[1.5][1]) < 25.0 and float(behind[3.0][1]) < 25.0,behind)
+	check("  the feather's heading follows the curve (%.1f° off)" % float(mid.heading_off),float(mid.heading_off) < 20.0,mid.heading_off)
+	check("  nothing leans far off the path (%.2f at 7 m, %.2f at 6 m)" % [mid.centre_7m_off,mid.outside_6m_off],float(mid.centre_7m_off) < 0.01 and float(mid.outside_6m_off) < 0.01,mid)
+	check("  and only a stir 2 m ahead (%.2f)" % float(mid.ahead_2m),float(mid.ahead_2m) < 0.1,mid.ahead_2m)
+	check("  it springs back past rest after the feather (%.2f)" % float(follow.back),float(follow.back) < -0.03,follow)
+	check("  leaves ride along the path (%d, %.2f m off it)" % [mid.motes_on_wake,mid.mote_off_path_m],int(mid.motes_on_wake) >= 3 and float(mid.mote_off_path_m) < float(let_go.get("half",3.0))+0.6,mid)
+	check("  ribbons lie on the curve (%.2f m off, %d chunks)" % [mid.ribbon_off_path_m,mid.ribbon_chunks],int(mid.ribbon_vertices) > 0 and float(mid.ribbon_off_path_m) < 0.7*float(let_go.get("half",3.0))+0.7 and absf(float(mid.ribbon_uv_max)-float(mid.path_m)) < 0.6,mid)
+	check("  the air rides at the feather (a steered local gust)",int(mid.local_gusts) == 1,mid.local_gusts)
+	check("let go, the wake dies away (%.2f after 1 s)" % at_1s,at_1s < 0.3,at_1s)
+	check("  and is gone after 3 s",peaks.max() < 0.01 and published.y < 1.5 and gust().wakes.is_empty(),[peaks,published,gust().wakes.size()])
+	# A slow drag blows gently: the same lean read 0.5 m behind the feather.
+	var from := arc(c,r,0.0)
+	var slow_start: Vector2 = from[0]
+	var slow_way: Vector2 = from[1]
+	last = screen(slow_start)
+	await hover(last)
+	button(last,true)
+	await frames(1)
+	var slow := 0.0
+	for i in range(1,91):
+		var p := slow_start+slow_way*3.0*i/90.0
+		var s := screen(p)
+		motion(s,s-last)
+		last = s
+		await frames(1)
+		if i == 70: slow = float(lean_at(p-slow_way*0.5,slow_way)[0])
+	button(last,false)
+	await frames(3)
+	print("SLOW ",JSON.stringify({"lean_0.5m_behind":snappedf(slow,0.01),"fast":behind[0.5][0],"power":snappedf(float(gust().wakes.back().power),0.01)}))
+	check("a slow drag blows gently (%.2f against %.2f fast)" % [slow,float(behind[0.5][0])],slow > 0.05 and slow < float(behind[0.5][0])*0.8,[slow,behind[0.5][0]])
+	await frames(180)
 
 func run() -> void:
 	create_timer(240).timeout.connect(func() -> void: push_error("feather probe timed out"); quit(2))
@@ -215,17 +404,21 @@ func run() -> void:
 		var seen: Dictionary = result[1]
 		var way: Vector2 = result[2]
 		widths[level] = float(g.get("half",0.0))
-		print("SWIPE ",JSON.stringify({"size":roll.SIZES[level].scale,"kind":g.get("kind",""),"half":snappedf(float(g.get("half",0.0)),0.01),"power":snappedf(float(g.get("power",0.0)),0.01),"reach":snappedf(float(g.get("reach",0.0)),0.01),"mark":seen.get("kind",""),"mark_half":seen.get("half",Vector2.ZERO),"alpha":snappedf(float(seen.get("alpha",0.0)),0.01)}))
-		check("size %.1f: a swipe sends one lane gust" % roll.SIZES[level].scale,g.get("kind","") == "lane" and materials.feather_last == "lane",[g.get("kind",""),materials.feather_last])
+		print("SWIPE ",JSON.stringify({"size":roll.SIZES[level].scale,"kind":g.get("kind",""),"half":snappedf(float(g.get("half",0.0)),0.01),"power":snappedf(float(g.get("power",0.0)),0.01),"path_m":snappedf(float(g.get("dist",0.0)),0.01),"lanes_sent":result[3],"mark":seen.get("kind",""),"mark_half":seen.get("half",Vector2.ZERO),"alpha":snappedf(float(seen.get("alpha",0.0)),0.01)}))
+		check("size %.1f: a swipe is one live wake" % roll.SIZES[level].scale,g.get("kind","") == "wake" and materials.feather_last == "wake",[g.get("kind",""),materials.feather_last])
+		check("  and sends no lane gust",int(result[3]) == 0,result[3])
 		if g.is_empty(): continue
 		var off := absf(rad_to_deg((g.heading as Vector2).angle_to(way)))
 		check("  along the swipe (%.1f° off)" % off,off < 15.0,[g.heading,way])
-		check("  its lane %.1f m either side" % want,absf(float(g.half)-want) < 1e-3,g.half)
-		check("  mid-swipe the mark is the lane, %.1f m either side, held %s" % [want,seen.get("holding","")],seen.get("kind","") == "feather_lane" and bool(seen.get("visible",false)) and absf((seen.half as Vector2).x-want) < 1e-3,seen)
+		check("  its wake %.1f m either side" % want,absf(float(g.half)-want) < 1e-3,g.half)
+		var under: Variant = seen.get("under")
+		var off_mark: float = Vector2(seen.centre.x,seen.centre.z).distance_to(under) if under != null and seen.has("centre") else INF
+		check("  mid-swipe the mark is the hotspot under the feather (%.2f m off), held %s" % [off_mark,seen.get("holding","")],seen.get("kind","") == "feather" and bool(seen.get("visible",false)) and off_mark < 0.5,seen)
 		check("  faint: %.2f" % float(seen.get("alpha",1.0)),float(seen.get("alpha",1.0)) <= Marks.FAINT_CAP+1e-4 and Marks.FILL_ALPHA <= Marks.FAINT_CAP)
 		await frames(20)
-	check("the pips widen the lane 0.6 / 1 / 1.5",widths.size() == 3 and float(widths[0]) < float(widths[1]) and float(widths[1]) < float(widths[2]),widths)
+	check("the pips widen the wake 0.6 / 1 / 1.5",widths.size() == 3 and float(widths[0]) < float(widths[1]) and float(widths[1]) < float(widths[2]),widths)
 	materials.set_size(1)
+	await wake_checks(at)
 
 	# --- Hold still: a burst at 400 ms, nothing sooner ---
 	await hover(spot)
@@ -247,7 +440,7 @@ func run() -> void:
 	var half: float = materials.feather_half()
 	print("HOLD ",JSON.stringify({"before":early,"at_0.5s":first,"at_1.5s":grown,"lane_half":half,"promise":gust().promise()}))
 	check("held still, the hotspot stays until 400 ms",early.kind == "feather" and float(early.shown) > 0.99,early)
-	check("  then the burst ring (held %s), from the lane's half-width" % first.holding,first.kind == "feather_burst" and float(first.radius) >= half-1e-3 and float(first.radius) < half*1.2,first)
+	check("  then the burst ring (held %s), from the wake's half-width" % first.holding,first.kind == "feather_burst" and float(first.radius) >= half-1e-3 and float(first.radius) < half*1.2,first)
 	check("  growing to 1.5x it",grown.kind == "feather_burst" and float(grown.radius) > float(first.radius) and float(grown.radius) <= half*Materials.FEATHER_RING+1e-3,grown)
 	check("  faint: %.2f" % float(grown.alpha),float(grown.alpha) <= Marks.FAINT_CAP+1e-4)
 	button(spot,false)
@@ -272,7 +465,7 @@ func run() -> void:
 	var sky := empty_sky()
 	check("found empty sky",sky != Vector2.INF,sky)
 	if sky != Vector2.INF:
-		var lanes: int = int(materials.feather_sent.lane)
+		var wakes: int = int(materials.feather_sent.wake)
 		# Counted as they go: the array also retires settled gusts.
 		var went := []
 		gust().sent.connect(func(g: Dictionary) -> void: went.append(g.kind))
@@ -289,17 +482,17 @@ func run() -> void:
 		await frames(2)
 		check("dragged from the sky onto the land, the Feather is in hand",roll.tool == "feather" and clay.tool_id == "feather" and gust().aiming(),[roll.tool,clay.tool_id,gust().aiming()])
 		check("  its pocket pressed in the roll",roll.tool == "feather" and not roll.material_held,[roll.tool,roll.material_held])
-		check("  the lane is the Feather's width",gust().aiming() and absf(float(gust().promise().get("half",0.0))-materials.feather_half()) < 1e-3,gust().promise().get("half",0.0))
+		check("  the wake is the Feather's width",gust().aiming() and absf(float(gust().promise().get("half",0.0))-materials.feather_half()) < 1e-3,gust().promise().get("half",0.0))
 		var on := p
 		for i in range(6):
 			on += Vector2(0,20)
 			motion(on,Vector2(0,20))
 			await frames(1)
-		check("  the swipe on shows the lane mark",marks.kind == "feather_lane" and marks.node.visible,[marks.kind,marks.reason])
+		check("  the drag on is a wake, the hotspot under the feather",gust().promise().get("kind","") == "wake" and marks.kind == "feather" and marks.node.visible,[gust().promise().get("kind",""),marks.kind,marks.reason])
 		button(on,false)
 		await frames(3)
-		check("  let go, one gust goes",went.size() == 1 and not gust().aiming(),went)
-		check("  and the Feather stays in hand",roll.tool == "feather" and int(materials.feather_sent.lane) == lanes,roll.tool)
+		check("  let go, the one wake dies away, nothing sent",went == ["wake"] and not gust().aiming() and not gust().wakes.back().live,went)
+		check("  and the Feather stays in hand",roll.tool == "feather" and int(materials.feather_sent.wake) == wakes,roll.tool)
 		await frames(20)
 
 	# --- Esc gives back the Hand ---
