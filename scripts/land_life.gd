@@ -31,8 +31,6 @@ const Variety = preload("res://scripts/seeded_variety.gd")
 const BirdFlight = preload("res://studies/bird_flight.gd")
 const Notice = preload("res://scripts/life_notice.gd")
 
-## Microseconds a survey may spend per frame.
-const SURVEY_BUDGET_USEC := 1200
 ## Seconds of quiet after a change before the world is re-read, and the
 ## shortest gap between surveys that no stroke asked for.
 const SURVEY_QUIET := 0.6
@@ -126,6 +124,8 @@ var data: NativeTerrainData
 ## The last complete survey, and one still being read.
 var survey: RefCounted
 var _reading: RefCounted
+## The worker reading `_reading`, polled each frame.
+var _survey_job: RefCounted
 var _dirty := true
 var _urgent := true
 var _quiet := 0.0
@@ -146,7 +146,9 @@ var taken := {}
 var surveys := 0
 var last_usec := 0
 var worst_usec := 0
-## The longest single survey step over every survey so far.
+## The last survey's main-thread parts, microseconds, for profiles.
+var survey_parts := {}
+## The longest survey over every survey so far (each runs whole on a worker).
 var survey_worst_usec := 0
 var moments: Node3D
 var snakes: Node3D
@@ -432,7 +434,7 @@ func _survey(delta: float) -> void:
 	# Emergence refreshes every step while plants arrive, so between strokes
 	# the world is re-read at most every SURVEY_GAP seconds.
 	var due := _urgent or _since_survey >= SURVEY_GAP
-	if _dirty and due and _reading == null and _quiet >= SURVEY_QUIET and not editor._painting and not editor.water_settling and editor.refresh_pending == 0 and not editor.forming:
+	if _dirty and due and _reading == null and _survey_job == null and _quiet >= SURVEY_QUIET and not editor._painting and not editor.water_settling and editor.refresh_pending == 0 and not editor.forming:
 		_dirty = false
 		_urgent = false
 		_since_survey = 0.0
@@ -443,20 +445,46 @@ func _survey(delta: float) -> void:
 		if _restored and data._undo.is_empty() and data._redo.is_empty(): _fresh = _resume.is_empty()
 		_restored = false
 		salt = int(editor.emergence.salt)
-		_reading = Survey.new(data,editor.still_water_triangles())
+		var began := Time.get_ticks_usec()
+		var still: Variant = editor.still_water_triangles()
+		survey_parts.still = Time.get_ticks_usec()-began
+		began = Time.get_ticks_usec()
+		# The survey reads a private copy of what it needs (heights, cover,
+		# records, streams) and runs whole on a worker; the world keeps
+		# moving meanwhile, and the next change starts the next read.
+		var ground := preload("res://scripts/native_terrain_snapshot.gd").for_height(data)
+		ground.grass = data.grass.duplicate()
+		ground.objects.assign(data.objects.duplicate(true))
+		ground.streams.assign(data.streams.duplicate(true))
+		var reading: RefCounted = Survey.new(ground,still)
+		_reading = reading
+		_survey_job = preload("res://scripts/background_work.gd").new()
+		_survey_job.start(func() -> RefCounted:
+			while not reading.step(1 << 30): pass
+			return reading)
+		survey_parts.new = Time.get_ticks_usec()-began
 		global_transform = editor.terrain.global_transform
-	if _reading != null and _reading.step(SURVEY_BUDGET_USEC):
+	if _survey_job != null and _survey_job.completed():
+		var finished: RefCounted = _survey_job.finish()
+		_survey_job = null
+		# A reset meanwhile (new world, undo) dropped the read it started.
+		if finished != _reading: return
 		survey_worst_usec = maxi(survey_worst_usec,_reading.worst_step_usec)
 		survey = _reading
 		_reading = null
 		surveys += 1
+		var seasons_began := Time.get_ticks_usec()
 		seasons.surveyed(survey,_fresh)
+		survey_parts.seasons = Time.get_ticks_usec()-seasons_began
 		_rng.seed = Variety.mix([salt,surveys])
 		_planning = ["fish","spawn","frog","bird","firefly"]
 		return
 	# One kind a frame, so a finished survey never lands in a single frame.
 	if not _planning.is_empty():
-		call("_plan_"+_planning.pop_front())
+		var began := Time.get_ticks_usec()
+		var kind: String = _planning.pop_front()
+		call("_plan_"+kind)
+		survey_parts["plan_"+kind] = Time.get_ticks_usec()-began
 		if _planning.is_empty():
 			_fresh = false
 			_resume_used = not _resume.is_empty()

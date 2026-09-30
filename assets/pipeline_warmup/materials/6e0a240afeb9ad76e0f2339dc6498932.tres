@@ -1,0 +1,26 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[sub_resource type="Image" id="Image_wdw76"]
+data = {
+"data": PackedByteArray(255, 255, 255, 255),
+"format": "RGBA8",
+"height": 1,
+"mipmaps": false,
+"width": 1
+}
+
+[sub_resource type="ImageTexture" id="ImageTexture_xnjit"]
+image = SubResource("Image_wdw76")
+
+[resource]
+render_priority = 2
+transparency = 1
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.9490196, 0.96862745, 0.972549, 1)
+albedo_texture = SubResource("ImageTexture_xnjit")
+emission_enabled = true
+emission = Color(0.9490196, 0.96862745, 0.972549, 1)
+emission_energy_multiplier = 0.35
+disable_receive_shadows = true
+billboard_mode = 1
+billboard_keep_scale = true

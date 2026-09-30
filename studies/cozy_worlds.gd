@@ -101,6 +101,16 @@ func _ready() -> void:
 	add_child(places)
 	await places.setup(self,choice)
 	places_ready = places.initialized
+	# Pipelines for what the world will draw later build now, under the veil
+	# (scripts/pipeline_warmup.gd).
+	if places_ready and preload("res://scripts/pipeline_warmup.gd").enabled():
+		if veil != null: veil.stage("Preparing the materials")
+		var warmup := preload("res://scripts/pipeline_warmup.gd").new()
+		warmup.name = "PipelineWarmup"
+		add_child(warmup)
+		await warmup.warm(self)
+		print_verbose("pipeline warm-up ",warmup.last_usec)
+		warmup.queue_free()
 	if veil != null: veil.queue_free()
 	get_window().title = "ZenScape · Gentle regrowth"
 	if preload("res://scripts/chunk_atlas_controller.gd").enabled():

@@ -737,11 +737,16 @@ func pick(mouse: Vector2) -> Variant:
 	var direction := terrain.global_basis.inverse()*camera.project_ray_normal(mouse)
 	return data.ray_hit(origin,direction.normalized())
 
+## Microseconds the last frame's emergence step took, for profiles.
+var last_emergence_usec := 0
+
 func _process(delta: float) -> void:
 	# Emergence refreshes yield like a stroke's settle: the worker samples
 	# instances and the budget spreads the rest, so a step never stalls a frame.
-	if not forming and emergence.advance(delta):
-		refresh(get_tree())
+	var began := Time.get_ticks_usec()
+	var stepped: bool = not forming and emergence.advance(delta)
+	last_emergence_usec = Time.get_ticks_usec()-began
+	if stepped: refresh(get_tree())
 	_warm_face_probes()
 	_flow_process(delta)
 	if forming or not active:
@@ -964,15 +969,21 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	refresh_stage = "anchors"
 	stage_start = Time.get_ticks_usec()
 	var original := data.heights == data.original_heights
-	_lift_anchors(original)
+	# Anchors and skirt follow the heights alone. Growth and cover refreshes
+	# (emergence steps) leave them where the last refresh lifted them.
+	var lift_key := _lift_key()
+	var lifted := lift_key != _lifted_for
+	if lifted: _lift_anchors(original)
 	# Hide what the plate replaces in the same frame the anchors show it: a
 	# yield between the two drew the source chunk's whole forest for a frame
 	# on a blank plate (the flicker when a pollen cloud settled).
 	sync_visibility()
-	if frame_tree != null:
+	if frame_tree != null and lifted:
 		await budget.checkpoint()
 		if not current.call(): return _finish_refresh(false)
-	_rebuild_skirt()
+	if lifted:
+		_rebuild_skirt()
+		_lifted_for = lift_key
 	if frame_tree != null:
 		await budget.checkpoint()
 		if not current.call(): return _finish_refresh(false)
@@ -1050,6 +1061,12 @@ func _setup_encounter_ground(mesh: Mesh) -> void:
 	var built: Dictionary = await job.run(func() -> Dictionary: return preload("res://scripts/reference_ground.gd").build(prepared),get_tree())
 	if _bigfoot_mesh == mesh and is_instance_valid(scene) and scene._bigfoot.ground == ground: ground.adopt(built)
 
+## The heights (and rim state) anchors and skirt were last lifted for.
+var _lifted_for: Array = []
+
+func _lift_key() -> Array:
+	return [data,data.heights,data.blank,open_sides,data.void_faces.is_empty()]
+
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
 	if published:
@@ -1125,6 +1142,7 @@ func _refresh_light() -> bool:
 	_lift_anchors(data.heights == data.original_heights)
 	sync_visibility()
 	_rebuild_skirt()
+	_lifted_for = _lift_key()
 	last_refresh_usec["anchors_elapsed"] = Time.get_ticks_usec()-stage_start
 	stage_start = Time.get_ticks_usec()
 	if not content.lift_instances():

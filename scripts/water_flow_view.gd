@@ -127,6 +127,10 @@ func update(delta: float) -> void:
 		_drawn = flow.revision
 		publish()
 
+## The still surface last published, as built (see `still_triangles`).
+var _still_vertices := PackedVector3Array()
+var _still_indices := PackedInt32Array()
+
 ## Builds both meshes from the depth field now.
 func publish() -> void:
 	var began := Time.get_ticks_usec()
@@ -135,6 +139,9 @@ func publish() -> void:
 	began = Time.get_ticks_usec()
 	_fill(still.mesh,arrays.still)
 	_fill(moving.mesh,arrays.flow)
+	# Kept for `still_triangles`: reading the mesh back would wait on the GPU.
+	_still_vertices = arrays.still.vertices
+	_still_indices = arrays.still.indices
 	# A library without `under` draws still and moving apart, all calm.
 	_calm = int(arrays.still.get("calm",(arrays.still.indices as PackedInt32Array).size()))
 	var under: bool = arrays.still.has("calm")
@@ -166,10 +173,8 @@ static func _fill(mesh: ArrayMesh, part: Dictionary) -> void:
 ## survey (scripts/life_survey.gd), which reads pond surfaces that way.
 func still_triangles() -> PackedVector3Array:
 	var soup := PackedVector3Array()
-	if still.mesh.get_surface_count() == 0: return soup
-	var arrays: Array = still.mesh.surface_get_arrays(0)
-	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var vertices := _still_vertices
+	var indices := _still_indices
 	var lift: float = SURFACE.lift
 	for k in range(mini(_calm,indices.size())): soup.append(vertices[indices[k]]-Vector3(0,lift,0))
 	return soup

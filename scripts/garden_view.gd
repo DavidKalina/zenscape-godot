@@ -549,7 +549,11 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	var environment := _environment_signature() if frame_tree != null and data is NativeTerrainData else PackedByteArray()
 	var current := _instance_inputs_current.bind(generation,provider,input,parts,poses,tints,environment)
 	_variety = Variety.world(data._recipe_settings if data is NativeTerrainData else {})
-	var action := preload("res://scripts/garden_instance_samples.gd").build.bind(input,parts,poses,tints,_variety.duplicate(true))
+	var variety: Dictionary = _variety.duplicate(true)
+	var action := func() -> Dictionary:
+		var built: Dictionary = preload("res://scripts/garden_instance_samples.gd").build(input,parts,poses,tints,variety)
+		built.buffers = GardenView._pack(built,tints)
+		return built
 	var job = preload("res://scripts/background_work.gd").new()
 	last_instance_usec.snapshot = Time.get_ticks_usec()-stage_start
 	stage_start = Time.get_ticks_usec()
@@ -558,70 +562,77 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	last_instance_usec.worker_elapsed = Time.get_ticks_usec()-stage_start
 	stage_start = Time.get_ticks_usec()
 	if not current.call(): return false
-	var staging := Node3D.new()
-	staging.visible = false
-	add_child(staging)
-	var transforms: Dictionary = sampled.transforms
-	var instance_tints: Dictionary = sampled.tints
-	var replacement: Array[MultiMeshInstance3D] = []
-	var budget = preload("res://scripts/frame_work_budget.gd").new(frame_tree)
-	for key: String in transforms:
-		var placements: Array = transforms[key]
-		if placements.is_empty():
-			continue
-		var batch := MultiMeshInstance3D.new()
-		staging.add_child(batch)
-		batch.name = key.capitalize()
-		batch.set_meta("part", key)
-		batch.multimesh = MultiMesh.new()
-		batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
-		batch.multimesh.use_colors = true
-		batch.multimesh.use_custom_data = true
-		batch.multimesh.mesh = _meshes[key]
-		batch.multimesh.instance_count = placements.size()
-		for i in range(placements.size()):
-			batch.multimesh.set_instance_transform(i, placements[i])
-			var color: Color = instance_tints[key][i] if i < instance_tints[key].size() else tints.get(key, Color.WHITE)
-			sampled.sources[key][i]["color"] = color
-			batch.multimesh.set_instance_color(i,color)
-			# Emerged arrivals grow in at their own birth (docs/scenic/emergence.md).
-			if sampled.sources[key][i].has("born") or sampled.sources[key][i].has("autumn"):
-				batch.multimesh.set_instance_custom_data(i,_custom(sampled.sources[key][i],Vector2.ZERO))
-			if frame_tree != null and i%256 == 255:
-				await budget.checkpoint()
-				if generation != _instance_generation:
-					staging.free()
-					return false
-		batch.material_override = _materials[key]
-		# The painted meadow tufts are many and small; their shadows would not
-		# resolve, so they skip the shadow pass, as the dense grass does.
-		if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		replacement.append(batch)
-		if frame_tree != null:
-			await budget.checkpoint()
-			if generation != _instance_generation:
-				staging.free()
-				return false
-
-	if not current.call():
-		staging.free()
-		return false
 	last_instance_usec.prepare_elapsed = Time.get_ticks_usec()-stage_start
 	stage_start = Time.get_ticks_usec()
-	# Keep the old visible batches until every replacement is ready. Consumers
-	# see sources and instance indices change together on the main thread.
-	for batch in _batches: batch.free()
-	_batches = replacement
+	# Publish in one frame: each part keeps its batch node and takes its new
+	# instances as one buffer the worker packed. Consumers see sources and
+	# instance indices change together, and views that share a batch's
+	# MultiMesh (the water's reflection copies) follow without copying again.
+	# Only a part appearing or going away changes the node set.
+	var buffers: Dictionary = sampled.buffers
+	var kept := {}
+	for batch in _batches: kept[batch.get_meta("part")] = batch
+	var published: Array[MultiMeshInstance3D] = []
+	var nodes_changed := false
+	for key: String in sampled.transforms:
+		var count: int = (sampled.transforms[key] as Array).size()
+		if count == 0: continue
+		var batch: MultiMeshInstance3D = kept.get(key)
+		if batch == null:
+			batch = MultiMeshInstance3D.new()
+			batch.name = key.capitalize()
+			batch.set_meta("part", key)
+			batch.multimesh = MultiMesh.new()
+			batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+			batch.multimesh.use_colors = true
+			batch.multimesh.use_custom_data = true
+			batch.multimesh.mesh = _meshes[key]
+			batch.material_override = _materials[key]
+			# The painted meadow tufts are many and small; their shadows would not
+			# resolve, so they skip the shadow pass, as the dense grass does.
+			if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(batch)
+			nodes_changed = true
+		kept.erase(key)
+		batch.multimesh.instance_count = count
+		batch.multimesh.buffer = buffers[key]
+		published.append(batch)
+	for batch: MultiMeshInstance3D in kept.values():
+		batch.free()
+		nodes_changed = true
+	_batches = published
 	_sources = sampled.sources
-	for batch in _batches:
-		staging.remove_child(batch)
-		add_child(batch)
-	staging.free()
 	_index_fire_parts()
-	instances_revision += 1
+	if nodes_changed: instances_revision += 1
 	instances_published.emit()
 	last_instance_usec.swap = Time.get_ticks_usec()-stage_start
 	return true
+
+## Every part's instances as one MultiMesh buffer (transform, colour, custom
+## data: 20 floats each), on the worker. Colours land in the sources as the
+## per-instance writes left them; custom data carries emerged births.
+static func _pack(sampled: Dictionary, tints: Dictionary) -> Dictionary:
+	var buffers := {}
+	for key: String in sampled.transforms:
+		var placements: Array = sampled.transforms[key]
+		if placements.is_empty(): continue
+		var colors: Array = sampled.tints[key]
+		var sources: Array = sampled.sources[key]
+		var buffer := PackedFloat32Array()
+		buffer.resize(placements.size()*20)
+		for i in range(placements.size()):
+			var t: Transform3D = placements[i]
+			var color: Color = colors[i] if i < colors.size() else tints.get(key, Color.WHITE)
+			sources[i]["color"] = color
+			var custom := _custom(sources[i],Vector2.ZERO) if sources[i].has("born") or sources[i].has("autumn") else Color(0,0,0,0)
+			var o := i*20
+			buffer[o] = t.basis.x.x; buffer[o+1] = t.basis.y.x; buffer[o+2] = t.basis.z.x; buffer[o+3] = t.origin.x
+			buffer[o+4] = t.basis.x.y; buffer[o+5] = t.basis.y.y; buffer[o+6] = t.basis.z.y; buffer[o+7] = t.origin.y
+			buffer[o+8] = t.basis.x.z; buffer[o+9] = t.basis.y.z; buffer[o+10] = t.basis.z.z; buffer[o+11] = t.origin.z
+			buffer[o+12] = color.r; buffer[o+13] = color.g; buffer[o+14] = color.b; buffer[o+15] = color.a
+			buffer[o+16] = custom.r; buffer[o+17] = custom.g; buffer[o+18] = custom.b; buffer[o+19] = custom.a
+		buffers[key] = buffer
+	return buffers
 
 func _instance_inputs_current(generation: int, provider: RefCounted, input: RefCounted, parts: Dictionary, poses: Dictionary, tints: Dictionary, environment: PackedByteArray) -> bool:
 	if generation != _instance_generation: return false

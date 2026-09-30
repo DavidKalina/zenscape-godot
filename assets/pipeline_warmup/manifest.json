@@ -1,0 +1,465 @@
+[
+	{
+		"colors": false,
+		"custom": false,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": false,
+		"custom": true,
+		"format": 34359738369,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_precipitation.gdshader"
+		},
+		"primitive": 1,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": false,
+		"custom": true,
+		"format": 34359738431,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_contact_ring.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": false,
+		"custom": true,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_precipitation.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"file": "d2c3952bd2f8dc4cc9e447dbcae0baee.tres",
+			"priority": 0
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/pollen_mote.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"file": "6e0a240afeb9ad76e0f2339dc6498932.tres",
+			"priority": 2
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"file": "b5eefc87aa5c3a2d9a00f02a5ed3b76b.tres",
+			"priority": 0
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/sky_cloud.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 1,
+			"shader": "res://shaders/pollen_haze.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 10,
+			"shader": "res://shaders/drip_ring.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": false,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 2,
+			"shader": "res://shaders/water_bead.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/layered_canopy_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/layered_tree_wood.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359738383,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359738431,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359738431,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359742479,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/pollen_speck.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"colors": true,
+		"custom": true,
+		"format": 34359742487,
+		"kind": "multimesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_leaves.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transform": 1,
+		"transparent": false
+	},
+	{
+		"format": 34359738375,
+		"kind": "mesh",
+		"material": {
+			"file": "86c0cbde064b8a5bd04535ecc3f82997.tres",
+			"priority": 0
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359738375,
+		"kind": "mesh",
+		"material": {
+			"file": "c75beae7e430f5d569996bf254ce8c54.tres",
+			"priority": 0
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359738393,
+		"kind": "mesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/gust_trail.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359738431,
+		"kind": "mesh",
+		"material": {
+			"priority": -1,
+			"shader": "res://shaders/flow_fall.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transparent": false
+	},
+	{
+		"format": 34359738431,
+		"kind": "mesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359742471,
+		"kind": "mesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/tree_outline.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359742471,
+		"kind": "mesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/water_ball.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359742487,
+		"kind": "mesh",
+		"material": {
+			"file": "b5eefc87aa5c3a2d9a00f02a5ed3b76b.tres",
+			"priority": 0
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transparent": false
+	},
+	{
+		"format": 34359742487,
+		"kind": "mesh",
+		"material": {
+			"priority": -1,
+			"shader": "res://shaders/ground_mark.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359742487,
+		"kind": "mesh",
+		"material": {
+			"priority": -1,
+			"shader": "res://shaders/water_ball_ground.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359742487,
+		"kind": "mesh",
+		"material": {
+			"priority": 1,
+			"shader": "res://shaders/water_splash.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359742487,
+		"kind": "particles",
+		"material": {
+			"priority": 2,
+			"shader": "res://shaders/water_bead.gdshader"
+		},
+		"primitive": 3,
+		"process": {
+			"file": "ee285ff01ed88c44fe5767f1ac62a011.tres",
+			"priority": 0
+		},
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34359787647,
+		"kind": "mesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/reference_surface.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 1,
+		"transparent": false
+	},
+	{
+		"format": 34360258815,
+		"kind": "mesh",
+		"material": {
+			"priority": 0,
+			"shader": "res://shaders/lake_reference_water.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	},
+	{
+		"format": 34360258815,
+		"kind": "mesh",
+		"material": {
+			"priority": 1,
+			"shader": "res://shaders/reference_water.gdshader"
+		},
+		"primitive": 3,
+		"shadow": 0,
+		"transparent": false
+	}
+]

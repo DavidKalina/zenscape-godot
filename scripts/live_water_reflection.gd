@@ -47,8 +47,35 @@ func setup_live(still_copy: ShaderMaterial, still_source: ShaderMaterial, moving
 	still_material.set_shader_parameter("planar_band",BAND)
 	still_material.set_shader_parameter("caustics_strength",0.45)
 
+## True while `warm` holds a view with no water behind it.
+var warming := false
+
+## Build the view once as it would stand, over `extra` (the pipeline warm-up's
+## stand-ins) and the scene, draw it a few frames and drop it: every clip
+## shader draws in this view's passes before any water asks for them
+## (scripts/pipeline_warmup.gd).
+func warm(scene: Node3D, extra: Node3D) -> void:
+	if not views.is_empty() or _setup_busy or still_material == null: return
+	warming = true
+	camera = scene.camera
+	_scene = scene
+	# The mirror runs through the stand-ins: a point on it is its own
+	# reflection, so the mirror camera frames them as the main one does.
+	# (The clip discards their pixels; the draw, and its pipeline, happen.)
+	var at := 0.0
+	if extra != null and extra.get_child_count() > 0: at = (extra.get_child(0) as Node3D).global_position.y
+	await _build(scene,at,null)
+	if not views.is_empty():
+		_show(true)
+		for i in range(4):
+			update_views()
+			await get_tree().process_frame
+	_drop_view()
+	warming = false
+
 ## Called every frame with the standing water (`WaterFlow.pools`).
 func sync_live(scene: Node3D, frame_tree: SceneTree, pools: Array) -> void:
+	if warming: return
 	var began := Time.get_ticks_usec()
 	_scene = scene
 	camera = scene.camera
