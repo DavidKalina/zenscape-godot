@@ -262,7 +262,7 @@ func run() -> void:
 	print("spot ",at," on screen ",spot," ground ",snappedf(height(at),0.01)," points ",data.points.size()," hand ",hand != null)
 
 	# --- Taking the paddle from the roll ---
-	check("the paddle is built (off UNBUILT), chisel is not",roll.discovered("paddle") and not roll.discovered("chisel"))
+	check("the paddle is built (off UNBUILT), the unbuilt are not",roll.discovered("paddle") and roll.UNBUILT.all(func(t: String) -> bool: return not roll.discovered(t)))
 	for i in range(120):
 		if roll.shown > 0.99: break
 		await process_frame

@@ -431,3 +431,128 @@ Nothing has been seen on screen:
 - the swing, the 0.14 s delay before a tap lands (anticipation or lag), and
   the Press pose on impact
 - the prop's proportions, its lean and where it sits in the hand
+
+## The Chisel
+
+`scripts/clay_tools/chisel.gd`. Built on `feature/tool-chisel`.
+
+It is the only tool that makes crisp rock. Every verb leaves a dead-level
+flat and a steep face. The faces take granite and the flats stay ground.
+
+- **Crispness.** The chisel never eases a face. A point is either on the flat,
+  at exactly its level, or off it. The face is whatever row of triangles spans
+  the step, one facet row, as the plan accepts. Flats are written level
+  outright, not moved a share per dab, so going over them again cannot
+  roughen them.
+- **Shelf** (drag). The shelf is level at the height of the press for
+  `SHELF_HALF_WIDTH` (1.2 m) either side of the path, cut or filled to get
+  there. On the downhill side only, a face drops `FACE_DROP` (1 m) to a bench
+  `BENCH` (0.6 m) wide. A `RAMP` (1.2 m, smoothstep, soil) then climbs back to
+  the ground, so the reach is 3 m either side. The bench and ramp only cut.
+  The uphill side is never touched, so on a slope the cut into the hill
+  stands behind the shelf as a riser.
+  - The downhill side is the lower ground 2 m either side of the first
+    stretch. On the flat (under 0.2 m of fall), it is the side toward the
+    camera, so the face is seen.
+  - Each dab writes the stretch from the last dab, squared off 0.1 m past
+    either end. The dabs overlap and the stroke ends square.
+  - If the ground on the line falls 1.2 m under the shelf, or climbs 2 m over
+    it, the shelf steps by whole drops. A stroke down a hill leaves a flight
+    of steps, not a causeway.
+  - A stroke pressed on a bench cuts the next terrace down.
+- **Mesa or pit** (hold, then drag). The outline is a straight-sided polygon
+  of 6 to 8 corners, seeded by the spot, `MESA_RADIUS` (2.5 m) ±18%. Inside
+  it the top is written flat at the spot's height plus the lift, which
+  follows the pointer 1:1 between -3 and +6 m. Outside, the ground is
+  untouched, so the wall is one facet row. Down makes a pit: its floor is
+  flat at the lift and it only cuts, and the clay's `FLOOR` holds. Below
+  0.3 m of lift the flattening eases in, so a hold let go without moving
+  changes nothing.
+- **Notch** (tap). A square `NOTCH_HALF` (0.8 m) half-side is knocked
+  `NOTCH_DEPTH` (0.6 m) down to a flat floor. The square is set to the fall
+  line, or to the view's right on the flat, as the ground mark's square is.
+  It only cuts, so on a slope it is a step. It is one undo step. The hand
+  shows the Press pose for 0.2 s, and the life round it is stirred.
+- **Shift** is `SHALLOW` (half) of every depth and of the hold's travel. The
+  extent stays the same.
+- **The pips** scale every width, never a depth.
+- **Verbs reported:** `shelf`, `mesa`, `notch`, or `shallow_shelf`,
+  `shallow_mesa`, `shallow_notch` with Shift.
+- **Rock.** At release, every tint cell the stroke moved (4 cm or more) takes
+  mountain_forms' granite, weighted by its slope alone: from 0.6 rise/run to
+  full at 1.2, read 0.25 m either side. Rock covers the cut's own bare earth,
+  because a face is stone. There is no summit share, so mesa tops and
+  shelves stay ground.
+- **Prop:** a chisel hanging from the grip, made of an octagonal wood handle
+  (`#9c7444`), steel ferrule and bolster, a square shank (`#4f6680`) and a
+  wedge blade in `#6f8aa6` with its edge across local x. Beside it on +x
+  stands a mallet, head up in `#6f8aa6`, with a wood handle, as the icon
+  draws them. It is untilted.
+
+### A seam gap
+
+`LandClay.paint_rock` paints only ground a stroke raised (mountain_forms
+`_rock_tint` skips cells under 4% of `height` up). Most of a chisel face is
+lowered ground, so it would stay dirt. The chisel therefore lays the granite
+itself (`chisel.gd` `_paint_faces`), inside the stroke, so the undo step takes
+it back. `land_clay.gd` was not changed. If the Wire or the Hammer needs rock
+on cut ground too, move `_paint_faces` to the clay as a `paint_faces(region)`
+hook.
+
+The notch also calls the clay's `dirty` and `_dirt()` itself, because a tap
+lays no dirt by itself, so the notch floor turns to bare earth as a shelf does.
+
+### The ground mark
+
+The placeholder square (ground_marks `CHISEL_HALF`, 0.8 m) matches the
+notch exactly. The shelf levels 1.2 m either side of the line and reaches
+3 m on the downhill side. The mesa's outline is 2.5 m ±18%, up to 2.95 m.
+All of these scale with the pips.
+
+### Checked headless
+
+`tools/probe_tool_chisel.gd`:
+
+```sh
+godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_chisel.gd -- --modeless --no-title
+```
+
+The world differs a little from run to run. The numbers below are from one
+run.
+
+- The pocket takes the chisel. The hand grips it, and the prop is built
+  faceted in the steel tint, untilted.
+- The shelf is level to 0 mm along its line, at the press's height. Its
+  face drops 0.91 m. Its steepest facet across is 1.48 rise/run, against
+  1.06 for the Hand's groove banks. 12 tint cells on the face are granite,
+  and the line stays ground.
+- Shift drops 0.44 m. The widest pip moves 232 points against 144, and
+  drops 1.00 m.
+- A second stroke pressed on the bench below cuts a level 0.81 m under the
+  first, with its own 1 m face.
+- A 60 px hold raises a 4.27 m mesa. Its top spread is 0 mm, it stays within
+  2.4 px of the pointer, and its steepest wall facet is 8.35 rise/run. 58
+  cells on the walls are rock, and none on top. Down sinks a 1.67 m pit with
+  a flat floor, held by `FLOOR`. Shift gives 2.13 m. The smallest pip moves
+  18 points against 52.
+- The tap notches 0.60 m over 7 points and raises none. Shift notches
+  0.30 m.
+- Each verb is one undo step, and one undo restores the heights exactly.
+- Esc gives back the Hand.
+
+`tools/probe_tool_paddle.gd` and `tools/probe_hud_bars.gd` checked "chisel
+is not built". They now check that every tool still on `UNBUILT` is
+undiscovered.
+
+### Unverified
+
+Nothing has been seen on screen:
+
+- whether a one-facet-row face reads as a cliff, or as a stretched smear,
+  from the default camera
+- whether a tall mesa's walls, 4 m in one facet row, shade acceptably
+- how the rock on the faces and the bare earth on the shelves read together
+- whether the camera-side face on flat ground is the right default
+- the notch at 0.8 m, which may be too small to see from 58 m out
+- where the chisel and mallet sit in the grip, their size, and whether the
+  mallet beside the chisel reads

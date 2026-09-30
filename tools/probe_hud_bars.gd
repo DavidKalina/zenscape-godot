@@ -57,7 +57,7 @@ func _init() -> void:
 		check(roll.tool_at(roll._cell(Roll.TOOLS.find(id)).get_center()) == id,"tool %s hit-tests to itself" % id)
 	for i in range(3):
 		check(roll.pip_at(roll._pip_cell(i).get_center()) == i,"pip %d hit-tests" % i)
-	check(roll.discovered("hand") and not roll.discovered("chisel"),"hand built, chisel not")
+	check(roll.discovered("hand") and roll.discovered("chisel") and roll.UNBUILT.all(func(t: String) -> bool: return not roll.discovered(t)),"hand and chisel built, the unbuilt not")
 	roll.pointer_override = Vector2(40,450)
 	for i in range(30): await process_frame
 	check(roll.awake > 0.99,"roll comes out near the left edge")
