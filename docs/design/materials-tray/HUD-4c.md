@@ -48,4 +48,5 @@ spec). It replaces the naturalist's field case on `experiment/field-case-play`.
 - **The inset shadows are approximated** by stacked top bands. The noise
   overlay is a hash grain.
 - **Not built yet:** keyboard focus and Tab between slots (the hand scheme
-  swallows Tab), and the per-tool cursor marks.
+  swallows Tab). The per-tool cursor marks are built, faint:
+  docs/design/materials-tray/CURSOR-MARKS.md.
