@@ -233,7 +233,7 @@ A visit takes 95-125 s with an 8 s bask. With the usual 16-28 s bask it is about
 - **Mesh.** A faceted hexagonal tube with a flat belly: 26 rings, a head with a hinged jaw, and a forked tongue. It has 29 bones and 364 triangles.
   - **Skinning:** every vertex belongs to one bone, so rings stay rigid and the faces between them stretch. Skinning runs on the GPU.
   - **Colour:** it is drawn with the frogs' `reference_surface` material and per-face vertex colours: an olive back, darker bars and spots on half-faces, a pale belly, the yellow collar patches with a black crescent behind them, small dark eyes, and a dark red mouth inside.
-  - **Size:** 1.2 m long and 5.6 cm across (`LENGTH`, `RADIUS`). That is a big female, slightly larger than the usual metre so it reads from further off.
+  - **Size:** the base is 1.2 m long and 5.6 cm across (`LENGTH`, `RADIUS`). Each visit's snake is `SIZE` (1.5) times that, times a seeded `SIZE_RANGE` (0.8-1.3), so it is 1.4-2.3 m long, 1.8 m by default. That is larger than life, so it reads next to the heron. Girth and head follow the length's change to the power `GIRTH_SHARE` (0.75), so the big ones are long rather than bloated. Heights, reaches (the hiss distance, the frog-take range, the stalk and strike), the coil and the bulge scale with it. Speeds scale with its square root. The mesh is rebuilt on arrival (364 triangles).
 - **The path.** The head follows a way worked out ahead of time, with points `STEP` (2 cm) apart measured along the ground rather than across it, so the body keeps its length on slopes. Every ring sits on that path at its own distance behind the snout, so the serpentine comes from the head weaving (`WEAVE`, `WAVE`) and nothing slides sideways. The way turns toward its goal at `TURN` rad/m and is smoothed. It looks ahead, never past the goal, to steer round water and ground steeper than `SLOPE_MAX`.
   - **Near a goal:** ahead of it, it steers harder and stops weaving, so it arrives. A goal behind it is swung round to wide, never in a hairpin.
   - **No progress:** a way that stops getting closer ends where it was closest.
@@ -364,7 +364,7 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 
 ## Open
 
-- Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw. The snake has been seen only in Blender renders of the probe's dump, not through the game's shader and palette.
+- Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw. Until 2026-09-29 the snake never drew in the game: its body's `skeleton` path was empty (Godot 4's default), so it was never skinned. The headless probes and the Blender preview pose the bones themselves, so they never showed it.
 - At the default overview (43 m) the snake is a line one or two pixels wide. Only its motion and wake show from there; it is for looking at up close.
 - The snake's cover is where it vanishes, not something it hides under: a painted-grass world has no blades for it to slip between.
 - Fish live in ponds only, not streams.

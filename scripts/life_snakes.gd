@@ -64,9 +64,17 @@ const NECK_SAMPLES := 8
 const BELLY := 0.736
 const HEAD_BELLY := 0.69
 
-## The path is kept as points STEP apart; TRAIL of them cover the body.
+## Size. Each visit's snake is SIZE times the base above, times a seeded
+## SIZE_RANGE; its girth and head follow the length's change to the power
+## GIRTH_SHARE, so big ones are long rather than bloated. Heights, reaches and
+## the bulge follow the size; speeds follow its square root.
+const SIZE := 1.5
+const SIZE_RANGE := Vector2(0.8,1.3)
+const GIRTH_SHARE := 0.75
+## The path is kept as points STEP apart; TRAIL of them cover the body at its
+## largest.
 const STEP := 0.02
-const TRAIL := 96
+const TRAIL := 180
 ## Metres per second, and how quickly it gets there and stops.
 const CRUISE := 0.24
 const SWIM := 0.27
@@ -179,8 +187,8 @@ const PEEK := 0.25
 const PLAN_BUDGET_USEC := 400
 ## Where its way crosses its own body it rides up over a bump this wide either
 ## side of the body under it, flat on top within OVER_TOP.
-const OVER_REACH := RADIUS*2.8
-const OVER_TOP := RADIUS*0.8
+const OVER_REACH := 2.8
+const OVER_TOP := 0.8
 const NO_WATER := -1000.0
 const WATERLINE := 0.03
 
@@ -300,6 +308,17 @@ var _floating := false
 ## The neck, not just the head, is on the water: it is swimming.
 var _swimming := false
 var _level := NO_WATER
+## This visit's size: length and girth factors on the base, the lengths they
+## give, and its speed factor.
+var _k := SIZE
+var _g := pow(SIZE,GIRTH_SHARE)
+var _pace := sqrt(SIZE)
+var _len := LENGTH*SIZE
+var _girth := RADIUS*_g
+var _head := HEAD*_g
+var _neck := NECK*SIZE
+var _over_reach := OVER_REACH*_girth
+var _over_top := OVER_TOP*_girth
 var _snout := Vector3.ZERO
 ## The strike: how far the head has shot out toward _strike_to (0-1), and how far
 ## past its spring the jaw is open. The meal: where the bulge is along the body and
@@ -463,6 +482,7 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	_survey = survey
 	visits += 1
 	_rng.seed = Variety.mix([int(life.salt),"snake".hash(),visits,int(record.cells[0])])
+	_resize(SIZE*float(options.get("size",_rng.randf_range(SIZE_RANGE.x,SIZE_RANGE.y))))
 	var center: Vector2 = record.center
 	_state = {"phase":"emerge","center":center,"around":1.0 if _rng.randf() < 0.5 else -1.0,
 		"hunts":int(options.get("hunts",_rng.randi_range(HUNT.x,HUNT.y))),
@@ -479,7 +499,7 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	_laid = -1
 	_head_s = 0.0
 	_head_fwd = way
-	var lay := _leg_begin(cover+way*PEEK,(-way).angle(),Vector2.ZERO,false,WEAVE,WAVE,0.0,LENGTH+PEEK+0.02,true)
+	var lay := _leg_begin(cover+way*(PEEK*_k),(-way).angle(),Vector2.ZERO,false,WEAVE,(WAVE*_k),0.0,_len+(PEEK*_k)+0.02,true)
 	_leg_run(lay,1 << 30)
 	var hidden: PackedVector2Array = lay.points
 	hidden.reverse()
@@ -487,7 +507,7 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	_leg_first = 0
 	_head_s = float(hidden.size()-1)*STEP
 	_lay_to(hidden.size()-1)
-	_gate = _head_s-PEEK
+	_gate = _head_s-(PEEK*_k)
 	_gate_mode = 1
 	_head_v = 0.0
 	_s_goal = _head_s
@@ -495,12 +515,12 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	for i in range(S_COUNT):
 		_sx[i] = 0.0
 		_sv[i] = 0.0
-	_sx[S_LIFT] = CARRY
+	_sx[S_LIFT] = (CARRY*_g)
 	_sx[S_YAW] = way.angle()
 	_sx[S_REACH] = 1.0
 	_sf = _sx.duplicate()
 	_sg = _sx.duplicate()
-	_lift = CARRY
+	_lift = (CARRY*_g)
 	_pose_w = 0.0
 	_target = {}
 	_hiss_t = -1.0
@@ -556,7 +576,7 @@ func _start(action: Dictionary) -> bool:
 			var gen: Dictionary = action.get("gen",{})
 			if gen.is_empty() or gen.from != _head_xz(): gen = _go_leg(action)
 			_leg_run(gen,1 << 30)
-			var begun := _begin_leg(gen.points,bool(action.get("bursts",false)) and not gen.water and not gen.get("wet_start",false),(SWIM if gen.water else CRUISE)*float(action.get("pace",1.0)),bool(action.get("pause",false)))
+			var begun := _begin_leg(gen.points,bool(action.get("bursts",false)) and not gen.water and not gen.get("wet_start",false),((SWIM*_pace) if gen.water else (CRUISE*_pace))*float(action.get("pace",1.0)),bool(action.get("pause",false)))
 			# A stalk stops short; the rest of its way is there for the strike.
 			if begun and action.has("short"): _stop = maxi(_leg_first+1,_stop-int(float(action.short)/STEP))
 			return begun
@@ -570,7 +590,7 @@ func _start(action: Dictionary) -> bool:
 			# basks as it lies.
 			for attempt in [[side,1.0],[-side,1.0],[side,0.85],[-side,0.85]]:
 				var leg := _make_coil(_head_xz(),_heading(),float(attempt[0]),float(attempt[1]))
-				if leg.size() > 2: return _begin_leg(leg,false,CRUISE*0.6)
+				if leg.size() > 2: return _begin_leg(leg,false,(CRUISE*_pace)*0.6)
 			journal.append([snappedf(life.clock,0.1),"coil","no room"])
 			return false
 		"slip":
@@ -583,9 +603,9 @@ func _start(action: Dictionary) -> bool:
 				return false
 			_gate = _head_s+0.03
 			_gate_mode = -1
-			var gen := _leg_begin(_head_xz(),_heading(),Vector2.ZERO,false,WEAVE,WAVE,0.0,LENGTH+0.3,true)
+			var gen := _leg_begin(_head_xz(),_heading(),Vector2.ZERO,false,WEAVE,(WAVE*_k),0.0,_len+0.3,true)
 			_leg_run(gen,1 << 30)
-			return _begin_leg(gen.points,false,CRUISE)
+			return _begin_leg(gen.points,false,(CRUISE*_pace))
 		_:
 			_expand(action)
 	return false
@@ -625,7 +645,7 @@ func _prefetch() -> void:
 func _go_leg(action: Dictionary) -> Dictionary:
 	var water: bool = action.get("water",false)
 	var to: Vector2 = action.to
-	var gen := _leg_begin(_head_xz(),_heading(),to,water,SWIM_WEAVE if water else WEAVE,SWIM_WAVE if water else WAVE,float(action.get("turn",TURN)),minf(_head_xz().distance_to(to)*2.5+1.0,12.0))
+	var gen := _leg_begin(_head_xz(),_heading(),to,water,SWIM_WEAVE if water else WEAVE,(SWIM_WAVE*_k) if water else (WAVE*_k),float(action.get("turn",TURN)),minf(_head_xz().distance_to(to)*2.5+1.0,12.0))
 	# Setting off on land from the water's edge it may pass through the
 	# shallows it starts in.
 	gen.wet_start = not water and not action.get("dry",false) and _wet(_head_xz())
@@ -673,13 +693,13 @@ func _plan_hunt() -> void:
 func _plan_take() -> bool:
 	var here := _head_xz()
 	var best := {}
-	var nearest := TAKE_REACH
+	var nearest := (TAKE_REACH*_k)
 	for site: Dictionary in life.present("frog"):
 		if str(site.get("mode","")) != "sit": continue
 		var home: Vector3 = site.home
 		var at := Vector2(home.x,home.z)
 		var d := at.distance_to(here)
-		if d < nearest and d > STRIKE_GAP+0.1 and _open_line(here,at):
+		if d < nearest and d > (STRIKE_GAP*_k)+0.1 and _open_line(here,at):
 			nearest = d
 			best = site
 	if best.is_empty(): return false
@@ -691,10 +711,10 @@ func _plan_take() -> bool:
 	journal.append([snappedf(life.clock,0.1),"stalk",snappedf(nearest,0.01)])
 	_plan.push_front({"do":"hunt"})
 	_plan.push_front({"do":"hold","kind":"strike","time":_rng.randf_range(STRIKE_HOLD.x,STRIKE_HOLD.y)+LUNGE+STRIKE_AFTER,"phase":"strike","escape":_rng.randf() < ESCAPE})
-	_plan.push_front({"do":"go","to":at,"short":STRIKE_GAP,"pace":STALK_PACE,"phase":"stalk"})
-	if nearest > STALK_FROM+0.3:
+	_plan.push_front({"do":"go","to":at,"short":(STRIKE_GAP*_k),"pace":STALK_PACE,"phase":"stalk"})
+	if nearest > (STALK_FROM*_k)+0.3:
 		_plan.push_front({"do":"hold","kind":"look","time":_rng.randf_range(1.4,2.2)})
-		_plan.push_front({"do":"go","to":at+(here-at).normalized()*STALK_FROM,"phase":"hunt"})
+		_plan.push_front({"do":"go","to":at+(here-at).normalized()*(STALK_FROM*_k),"phase":"hunt"})
 	return true
 
 ## The frog it was after goes back to its own life.
@@ -789,7 +809,7 @@ func _climb_ahead() -> float:
 	for k in range(first,mini(first+AHEAD,_laid)+1):
 		var i := k%TRAIL
 		if _tp[i] >= 0.0: most = maxf(most,_raise(_tp[i],head)*_tf[i])
-	return clampf(most/(2.0*BELLY*RADIUS),0.0,1.0)
+	return clampf(most/(2.0*BELLY*_girth),0.0,1.0)
 
 ## Bring the goal to a stop as soon as it can ease off, on a path point.
 func _stop_soon() -> void:
@@ -815,9 +835,9 @@ func _begin_hold(time: float, kind: String) -> void:
 	_going = false
 	_hold_age = 0.0
 	var floating := _floating
-	var up := _rng.randf_range(LIFT.x,LIFT.y)
+	var up := _rng.randf_range((LIFT.x*_g),(LIFT.y*_g))
 	if kind == "peek": up = 0.045
-	if floating: up = SWIM_LIFT+0.012
+	if floating: up = (SWIM_LIFT*_g)+0.012
 	var wakes := []
 	if kind == "bask":
 		# Now and then it wakes: the head comes up, it watches something and
@@ -850,7 +870,7 @@ func _hold_step(step: float) -> void:
 		_hold.time = maxf(float(_hold.time),age+ANTICIPATION+1.2)
 	# Coming right in stops even its wind-up to move. Not while it swims;
 	# lying on the bank with its head over the water it may.
-	if _camera_d < HISS_NEAR and _hiss_t < 0.0 and _time >= _hiss_ready and not _swimming:
+	if _camera_d < (HISS_NEAR*_k) and _hiss_t < 0.0 and _time >= _hiss_ready and not _swimming:
 		_start_hiss()
 		closing = false
 	# You have stayed round behind it: it turns its body to face you.
@@ -880,7 +900,7 @@ func _hold_step(step: float) -> void:
 		_retarget_in = _rng.randf_range(1.2,2.2)
 	var up: float = _hold.up
 	_sg[S_POSE] = 1.0 if awake or floating else 0.0
-	_sg[S_LIFT] = up if awake else REST
+	_sg[S_LIFT] = up if awake else (REST*_g)
 	_sg[S_RECOIL] = 0.0
 	_sg[S_JAW] = 0.0
 	_sg[S_SWELL] = 0.0
@@ -890,13 +910,13 @@ func _hold_step(step: float) -> void:
 	# body draws back a little, and the rear straightens, gathering.
 	if closing:
 		_sg[S_POSE] = 1.0 if floating else 0.0
-		_sg[S_LIFT] = SWIM_LIFT if floating else DIP
+		_sg[S_LIFT] = (SWIM_LIFT*_g) if floating else (DIP*_g)
 		_aim_yaw(_head_fwd.angle())
 		_sg[S_PITCH] = 0.0
 		_sg[S_LEAN] = 0.0
 		_sg[S_REACH] = 1.0
-		_sg[S_RECOIL] = RECOIL*(0.5 if floating else 1.0)
-	if floating: _sg[S_LIFT] = maxf(_sg[S_LIFT],SWIM_LIFT*0.8)
+		_sg[S_RECOIL] = (RECOIL*_g)*(0.5 if floating else 1.0)
+	if floating: _sg[S_LIFT] = maxf(_sg[S_LIFT],(SWIM_LIFT*_g)*0.8)
 	var time: float = _hold.time
 	_rest_w = _settle(clampf(age/0.9,0.0,1.0),0.35)*(1.0-_smooth((age-(time-ANTICIPATION))/ANTICIPATION))
 	# It tastes the air while it watches: more often when what it watches
@@ -950,7 +970,7 @@ func _strike_step(age: float) -> void:
 		_target = {"kind":"site","what":"frog","site":prey}
 		_aim(true)
 		var draw := _smoother(age/1.1)
-		_sg[S_LIFT] = lerpf(STALK_LIFT,STRIKE_LIFT,draw)
+		_sg[S_LIFT] = lerpf((STALK_LIFT*_g),(STRIKE_LIFT*_g),draw)
 		_sg[S_REACH] = lerpf(1.0,STRIKE_DRAW,draw)
 		# It tastes the air once or twice, then nothing moves.
 		if t < -1.0 and _time >= _next_flick:
@@ -967,13 +987,13 @@ func _strike_step(age: float) -> void:
 		var frog: Vector3 = prey.get("home",_head_pos)
 		var reach := Vector2(frog.x,frog.z).distance_to(_head_xz())
 		# Too far to reach: it only watches.
-		if reach > STRIKE_GAP+0.25:
+		if reach > (STRIKE_GAP+0.25)*_k:
 			_hold.time = age
 			_let_prey_go()
 			return
 		_hold.to = frog+Vector3(0,0.02,0)
 		_hold.from_s = _head_s
-		_hold.surge = clampf(reach-0.12,0.0,SURGE)
+		_hold.surge = clampf(reach-0.12*_k,0.0,SURGE*_k)
 		_strike_to = _hold.to
 	var u := t/LUNGE
 	var fed := bool(_state.get("fed",false))
@@ -981,13 +1001,13 @@ func _strike_step(age: float) -> void:
 	_gape = GAPE*_smoother(u/0.7)*(1.0-_smoother((t-LUNGE-(0.3 if fed else 0.0))/0.25))
 	_head_s = float(_hold.from_s)+float(_hold.surge)*_smoother(u)
 	_lay_to(ceili(_head_s/STEP)+1)
-	_sg[S_LIFT] = LIFT.x
+	_sg[S_LIFT] = (LIFT.x*_g)
 	_sg[S_REACH] = 1.0
 	_sg[S_PITCH] = -0.2
 	if u >= 1.0 and not _hold.has("struck"):
 		_hold.struck = true
 		var p: Vector3 = prey.get("p",Vector3.INF)
-		if alive and not _hold.has("fled") and Vector2(p.x,p.z).distance_to(Vector2(_snout.x,_snout.z)) < 0.2:
+		if alive and not _hold.has("fled") and Vector2(p.x,p.z).distance_to(Vector2(_snout.x,_snout.z)) < 0.2*_k:
 			life.take(prey,_snout)
 			takes += 1
 			_state.fed = true
@@ -1011,10 +1031,10 @@ func _swallow_step(age: float) -> void:
 	_sg[S_PITCH] = -0.12
 	_sg[S_LEAN] = 0.0
 	_sg[S_REACH] = 0.92
-	_sg[S_LIFT] = LIFT.x*0.6
+	_sg[S_LIFT] = (LIFT.x*_g)*0.6
 	var w := fposmod(age,1.3)/1.3
 	_gape = 0.16*pow(sin(PI*clampf(w/0.55,0.0,1.0)),2.0)*(1.0-_smooth((age-time*0.5)/1.0))
-	_meal = lerpf(HEAD+0.04,LENGTH*MEAL_AT,_smooth(age/time))
+	_meal = lerpf(_head+0.04,_len*MEAL_AT,_smooth(age/time))
 	_meal_w = _smooth(age/0.6)
 	if _stops.is_empty(): _prefetch()
 
@@ -1164,7 +1184,7 @@ func _hiss_step(step: float) -> void:
 	var t := _hiss_t
 	var drawn := _smoother(t/1.1)*(1.0-_smoother((t-3.0)/1.1))
 	_sg[S_POSE] = 1.0
-	_sg[S_LIFT] = lerpf(_sg[S_LIFT],HISS_LIFT,drawn)
+	_sg[S_LIFT] = lerpf(_sg[S_LIFT],(HISS_LIFT*_g),drawn)
 	_sg[S_REACH] = lerpf(_sg[S_REACH],HISS_DRAW,drawn)
 	_sg[S_LEAN] = lerpf(_sg[S_LEAN],0.0,drawn)
 	_sg[S_JAW] = JAW_OPEN*_smoother((t-1.0)/0.35)*(1.0-_smoother((t-2.75)/0.35))
@@ -1215,7 +1235,7 @@ func _go_step(step: float) -> void:
 	var float_w := 1.0 if _floating else 0.0
 	var drift := _drift(_time,5.0)
 	_sg[S_POSE] = float_w
-	_sg[S_LIFT] = SWIM_LIFT if _floating else CARRY
+	_sg[S_LIFT] = (SWIM_LIFT*_g) if _floating else (CARRY*_g)
 	_aim_yaw(_head_fwd.angle()+0.05*drift.y*float_w)
 	_sg[S_PITCH] = -0.05*float_w
 	_sg[S_LEAN] = 0.0
@@ -1229,11 +1249,11 @@ func _go_step(step: float) -> void:
 	if phase == "stalk" and not prey.is_empty() and _alive({"site":prey}):
 		_target = {"kind":"site","what":"frog","site":prey}
 		_sg[S_POSE] = 1.0
-		_sg[S_LIFT] = STALK_LIFT
+		_sg[S_LIFT] = (STALK_LIFT*_g)
 		_aim(true)
 	_rest_w = move_toward(_rest_w,0.0,step*4.0)
 	# You, close: it eases to a stop to watch, and keeps the rest of its way.
-	if not _swimming and phase not in ["slip","stalk"] and ((_camera_d < NOTICE and _time >= _notice_ready) or (_camera_d < HISS_NEAR and _time >= _hiss_ready)):
+	if not _swimming and phase not in ["slip","stalk"] and ((_camera_d < NOTICE and _time >= _notice_ready) or (_camera_d < (HISS_NEAR*_k) and _time >= _hiss_ready)):
 		_notice_ready = _time+NOTICE_COOLDOWN
 		var before := _stop
 		_stop_soon()
@@ -1405,10 +1425,10 @@ func _make_coil(from: Vector2, heading: float, side: float, size := 1.0) -> Pack
 	var points := PackedVector2Array([from])
 	var p := from
 	var a := heading
-	var count := int((LENGTH+0.12)*size/STEP)
+	var count := int((_len+0.12)*size/STEP)
 	var height := _surface_est(p)
 	for j in range(count):
-		var r := lerpf(0.2,0.08,float(j)/count)*size
+		var r := lerpf(0.2,0.08,float(j)/count)*size*_k
 		a += side*STEP/r
 		p = _stride(p,a,height)
 		height = _surface_est(p)
@@ -1527,9 +1547,9 @@ func _put(k: int, p: Vector2, keep_partner: bool) -> void:
 	# The nearest older part of the body still lying within reach: the path
 	# rides up over it on a smooth bump, full height over its middle.
 	var partner := -1.0
-	var nearest := OVER_REACH*OVER_REACH
-	var tail := _head_s-_sx[S_RECOIL]-LENGTH
-	var newest := k-int((NECK+0.08)/STEP)
+	var nearest := _over_reach*_over_reach
+	var tail := _head_s-_sx[S_RECOIL]-_len
+	var newest := k-int((_neck+0.08)/STEP)
 	var oldest := maxi(maxi(_laid-TRAIL+2,0),ceili(tail/STEP))
 	for q in range(newest,oldest-1,-1):
 		var iq := q%TRAIL
@@ -1540,7 +1560,7 @@ func _put(k: int, p: Vector2, keep_partner: bool) -> void:
 			nearest = d2
 			partner = float(q)*STEP
 	_tp[i] = partner
-	_tf[i] = smoothstep(OVER_REACH,OVER_TOP,sqrt(nearest)) if partner >= 0.0 else 0.0
+	_tf[i] = smoothstep(_over_reach,_over_top,sqrt(nearest)) if partner >= 0.0 else 0.0
 
 func _heading_at(k: int, p: Vector2) -> float:
 	if k > 0 and _laid >= k-1:
@@ -1612,7 +1632,7 @@ func _bask_spot(record: Dictionary) -> Vector2:
 		var p := Survey.center(cell)
 		var room := 0
 		for n in range(8):
-			if _passable(p+Vector2.from_angle(TAU*n/8.0)*0.42,false): room += 1
+			if _passable(p+Vector2.from_angle(TAU*n/8.0)*0.42*_k,false): room += 1
 		if room == 8: return p
 	var shore: PackedInt32Array = record.shore
 	return Survey.center(shore[_rng.randi_range(0,shore.size()-1)])
@@ -1677,6 +1697,21 @@ func _nearest_shore(record: Dictionary) -> Vector2:
 
 ## Station arcs behind the snout: the collar and crescent close behind the
 ## head, then evenly to the tail.
+## This visit's size, `k` times the base length: every length it keeps, and
+## the body rebuilt to match.
+func _resize(k: float) -> void:
+	_k = k
+	_g = pow(k,GIRTH_SHARE)
+	_pace = sqrt(k)
+	_len = LENGTH*k
+	_girth = RADIUS*_g
+	_head = HEAD*_g
+	_neck = NECK*k
+	_over_reach = OVER_REACH*_girth
+	_over_top = OVER_TOP*_girth
+	_stations()
+	if _body != null: _body.mesh = _build_mesh(life.material)
+
 func _stations() -> void:
 	_arc.resize(STATIONS)
 	_radius.resize(STATIONS)
@@ -1691,22 +1726,22 @@ func _stations() -> void:
 	_curve.resize(NECK_SAMPLES+1)
 	_curve_arc.resize(NECK_SAMPLES+1)
 	_held.resize(STATIONS)
-	_arc[0] = HEAD+0.016
+	_arc[0] = _head+0.016
 	_arc[1] = _arc[0]+0.022
-	for k in range(2,STATIONS): _arc[k] = lerpf(_arc[1],LENGTH,float(k-1)/(STATIONS-2))
+	for k in range(2,STATIONS): _arc[k] = lerpf(_arc[1],_len,float(k-1)/(STATIONS-2))
 	_neck_count = 0
 	for k in range(STATIONS):
 		var u := _body_u(_arc[k])
-		_radius[k] = RADIUS*_profile(u)
-		_carry_w[k] = 1.0-smoothstep(HEAD,0.16,_arc[k])
+		_radius[k] = _girth*_profile(u)
+		_carry_w[k] = 1.0-smoothstep(_head,0.16*_k,_arc[k])
 		_breath_w[k] = sin(PI*clampf((u-0.1)/0.55,0.0,1.0))
 		_rear_w[k] = smoothstep(0.5,0.78,u)
 		_tail_w[k] = pow(smoothstep(0.82,1.0,u),2.0)
 		_front_w[k] = 1.0-smoothstep(0.15,0.4,u)
-		if _arc[k] < NECK: _neck_count = k+1
+		if _arc[k] < _neck: _neck_count = k+1
 
 func _body_u(a: float) -> float:
-	return clampf((a-(HEAD+0.016))/(LENGTH-(HEAD+0.016)),0.0,1.0)
+	return clampf((a-(_head+0.016))/(_len-(_head+0.016)),0.0,1.0)
 
 ## Radius share along the body, 0 at the neck and 1 at the tail's tip.
 static func _profile(u: float) -> float:
@@ -1721,8 +1756,8 @@ static func _profile(u: float) -> float:
 func _raise(partner: float, head: float) -> float:
 	if partner < 0.0: return 0.0
 	var a := head-partner
-	if a < 0.0 or a > LENGTH: return 0.0
-	return 2.0*BELLY*RADIUS*(0.85 if a < HEAD else _profile(_body_u(a)))
+	if a < 0.0 or a > _len: return 0.0
+	return 2.0*BELLY*_girth*(0.85 if a < _head else _profile(_body_u(a)))
 
 ## The path at arc `s`: x, the centre's height for a ring of radius `r`, z.
 func _sample(s: float, r: float, head: float) -> Vector3:
@@ -1766,7 +1801,7 @@ func _pose(step: float) -> void:
 		var afloat := lerpf(_tw[a],_tw[b],f)-0.1*r
 		# A held breath swells the forebody; its belly stays on the ground.
 		var swell := SWELL*_sx[S_SWELL]*_front_w[k]
-		if _meal_w > 0.0: swell += BULGE*_meal_w*exp(-pow((_arc[k]-_meal)/MEAL_SPREAD,2.0))
+		if _meal_w > 0.0: swell += BULGE*_meal_w*exp(-pow((_arc[k]-_meal)/(MEAL_SPREAD*_k),2.0))
 		var y := _smax(ground,afloat)+carry*_carry_w[k]+swell*BELLY*r
 		if _tp[a] >= 0.0 or _tp[b] >= 0.0: y += lerpf(_raise(_tp[a],head)*_tf[a],_raise(_tp[b],head)*_tf[b],f)
 		_pos[k] = Vector3(lerpf(_tx[a],_tx[b],f),y,lerpf(_tz[a],_tz[b],f))
@@ -1775,25 +1810,25 @@ func _pose(step: float) -> void:
 		if _gate_mode > 0: gate = smoothstep(_gate,_gate+GATE_SOFT,s)
 		elif _gate_mode < 0: gate = 1.0-smoothstep(_gate-GATE_SOFT,_gate,s)
 		_scale[k] = maxf((1.0+0.035*breath*_breath_w[k]+swell)*gate,0.001)
-	if _gate_mode > 0 and head-LENGTH > _gate+GATE_SOFT: _gate_mode = 0
+	if _gate_mode > 0 and head-_len > _gate+GATE_SOFT: _gate_mode = 0
 	# The head's resting place on the path, and whether it is on the water.
-	var head_r := RADIUS*0.85
+	var head_r := _girth*0.85
 	var snout := _sample(head,head_r,head)
-	var back := _sample(head-HEAD,head_r,head)
+	var back := _sample(head-_head,head_r,head)
 	var fs := clampf(head/STEP,float(low),float(_laid))
 	var si := mini(floori(fs),maxi(_laid-1,0))
 	var water := lerpf(_tw[si%TRAIL],_tw[(si+1)%TRAIL],fs-si)
 	var bed := lerpf(_tg[si%TRAIL],_tg[(si+1)%TRAIL],fs-si)
-	_floating = water-0.1*head_r > bed+HEAD_BELLY*RADIUS*_tq[si%TRAIL]
+	_floating = water-0.1*head_r > bed+HEAD_BELLY*_girth*_tq[si%TRAIL]
 	_level = water
 	back.y += carry*0.9
 	snout.y += carry
 	var head_dir := (snout-back).normalized()
 	# It holds its head's way steady: the weave passes under a swimming head.
-	var neck := _sample(head-NECK,RADIUS,head)
-	var nf := clampf((head-NECK)/STEP,float(low),float(_laid))
+	var neck := _sample(head-_neck,_girth,head)
+	var nf := clampf((head-_neck)/STEP,float(low),float(_laid))
 	var ni := mini(floori(nf),maxi(_laid-1,0))
-	_swimming = lerpf(_tw[ni%TRAIL],_tw[(ni+1)%TRAIL],nf-ni)-0.1*RADIUS > lerpf(_tg[ni%TRAIL],_tg[(ni+1)%TRAIL],nf-ni)+BELLY*RADIUS*_tq[ni%TRAIL]
+	_swimming = lerpf(_tw[ni%TRAIL],_tw[(ni+1)%TRAIL],nf-ni)-0.1*_girth > lerpf(_tg[ni%TRAIL],_tg[(ni+1)%TRAIL],nf-ni)+BELLY*_girth*_tq[ni%TRAIL]
 	var way := Vector2(snout.x-neck.x,snout.z-neck.z)
 	if way.length_squared() > 1e-8 and step > 0.0:
 		var rate := lerpf(12.0,3.0,_pose_w) if _going else 0.0
@@ -1822,7 +1857,7 @@ func _pose(step: float) -> void:
 	_tilt = 0.12*clampf(rel,-1.0,1.0)*_pose_w
 	if _pose_w > 0.001:
 		var o := neck
-		var o_back := _sample(head-NECK-0.03,RADIUS,head)
+		var o_back := _sample(head-_neck-0.03,_girth,head)
 		var t0 := (o-o_back).normalized()
 		var bend := _head_fwd.rotated(_sx[S_LEAN])
 		var rest := back.y-carry*0.9
@@ -1833,14 +1868,14 @@ func _pose(step: float) -> void:
 		# against the measured length, and the rings sit at their arc along it.
 		# Drawn back (reach under 1) the head comes nearer the body and the S
 		# deepens: its handles lengthen until the curve is the neck's length again.
-		var length := NECK-HEAD
+		var length := _neck-_head
 		var reach := sqrt(maxf(length*length-_lift*_lift,1e-4))*_sx[S_REACH]
 		var raised := Vector3(o.x+bend.x*reach,rest+_lift,o.z+bend.y*reach)
 		# The strike carries the head out to the frog, pointing at it.
 		var strike_dir := Vector3.ZERO
 		if _lunge > 0.0:
 			strike_dir = (_strike_to-raised).normalized()
-			raised = raised.lerp(_strike_to-strike_dir*HEAD*0.9,_lunge)
+			raised = raised.lerp(_strike_to-strike_dir*_head*0.9,_lunge)
 			held = held.slerp(strike_dir,_lunge).normalized()
 		var span := o.distance_to(raised)
 		var handle := 1.0
@@ -1858,7 +1893,7 @@ func _pose(step: float) -> void:
 		# Drawn back, the neck's length gathers into the S's bend rather than
 		# the rings bunching: they keep their share of the curve.
 		for k in range(_neck_count):
-			var want := (NECK-_arc[k])/(NECK-HEAD)*total
+			var want := (_neck-_arc[k])/(_neck-_head)*total
 			var n := 1
 			while n < NECK_SAMPLES and _curve_arc[n] < want: n += 1
 			var u := clampf((want-_curve_arc[n-1])/maxf(_curve_arc[n]-_curve_arc[n-1],1e-6),0.0,1.0)
@@ -1885,12 +1920,12 @@ func _pose(step: float) -> void:
 	if _tilt != 0.0: head_up = head_up.rotated(hd,_tilt)
 	var head_side := head_up.cross(hd)
 	var head_gate := 1.0
-	if _gate_mode > 0: head_gate = smoothstep(_gate,_gate+GATE_SOFT,head-HEAD*0.5)
-	elif _gate_mode < 0: head_gate = 1.0-smoothstep(_gate-GATE_SOFT,_gate,head-HEAD*0.5)
+	if _gate_mode > 0: head_gate = smoothstep(_gate,_gate+GATE_SOFT,head-_head*0.5)
+	elif _gate_mode < 0: head_gate = 1.0-smoothstep(_gate-GATE_SOFT,_gate,head-_head*0.5)
 	var hs := maxf(head_gate,0.001)
 	_skeleton.set_bone_pose(STATIONS,Transform3D(Basis(head_side*hs,head_up*hs,hd*hs),hb))
 	_head_pos = hb
-	_snout = hb+hd*HEAD
+	_snout = hb+hd*_head
 	# The jaw hinges at the back of the head; positive turns about the side
 	# open it downward.
 	var jaw := _sx[S_JAW]+_gape
@@ -1905,7 +1940,7 @@ func _pose(step: float) -> void:
 	var tongue := hd.rotated(head_side,0.15+flutter)
 	var tongue_up := head_up.rotated(head_side,0.15+flutter)
 	var ts := maxf(out*head_gate,0.001)
-	_skeleton.set_bone_pose(STATIONS+1,Transform3D(Basis(head_side*ts,tongue_up*ts,tongue*ts),hb+hd*(HEAD*0.98)-head_up*RADIUS*0.3))
+	_skeleton.set_bone_pose(STATIONS+1,Transform3D(Basis(head_side*ts,tongue_up*ts,tongue*ts),hb+hd*(_head*0.98)-head_up*_girth*0.3))
 
 ## The higher of the ground and the water, rounded over WATERLINE metres so
 ## the body glides onto the surface instead of meeting it at a corner.
@@ -1979,11 +2014,11 @@ func _build_mesh(material: Material) -> ArrayMesh:
 			# Marks take half a face, so they read as bars and spots, not bands.
 			mesh.quad(rings[k][j],k,rings[k][(j+1)%6],k,rings[k+1][j],k+1,rings[k+1][(j+1)%6],k+1,marked,plain)
 	# Head sections on the head bone, their bellies level with the rings'.
-	var hr := RADIUS
+	var hr := _girth
 	var s0 := _hexagon(hr,0.95,0.8,-HEAD_BELLY*hr+0.866*0.8*hr,0.0)
-	var s1 := _hexagon(hr,1.05,0.74,-HEAD_BELLY*hr+0.866*0.74*hr,HEAD*0.45)
-	var s2 := _hexagon(hr,0.6,0.46,-HEAD_BELLY*hr+0.866*0.46*hr+0.02*hr,HEAD*0.86)
-	var tip := Vector3(0,-0.38*hr,HEAD)
+	var s1 := _hexagon(hr,1.05,0.74,-HEAD_BELLY*hr+0.866*0.74*hr,_head*0.45)
+	var s2 := _hexagon(hr,0.6,0.46,-HEAD_BELLY*hr+0.866*0.46*hr+0.02*hr,_head*0.86)
+	var tip := Vector3(0,-0.38*hr,_head)
 	var h := STATIONS
 	var jaw := STATIONS+2
 	for j in range(6):
@@ -2020,12 +2055,12 @@ func _build_mesh(material: Material) -> ArrayMesh:
 		mesh.quad(center+length,h,center+width,h,center-width,h,center-length,h,EYE,EYE)
 	# A forked tongue, flat both ways so it shows from above and the side.
 	var t := STATIONS+1
-	var w := 0.0018
+	var w := 0.0018*_g
 	for plane in [Vector3(1,0,0),Vector3(0,1,0)]:
-		mesh.quad(plane*w+Vector3(0,0,0.02),t,-plane*w+Vector3(0,0,0.02),t,plane*w+Vector3(0,0,-0.004),t,-plane*w+Vector3(0,0,-0.004),t,TONGUE,TONGUE)
+		mesh.quad(plane*w+Vector3(0,0,0.02*_g),t,-plane*w+Vector3(0,0,0.02*_g),t,plane*w+Vector3(0,0,-0.004*_g),t,-plane*w+Vector3(0,0,-0.004*_g),t,TONGUE,TONGUE)
 		for fork in [-1.0,1.0]:
-			var end := Vector3(fork*0.0055,0,0.035)
-			mesh.tri(plane*w*0.7+Vector3(0,0,0.019),t,end,t,-plane*w*0.7+Vector3(0,0,0.019),t,TONGUE)
+			var end := Vector3(fork*0.0055,0,0.035)*_g
+			mesh.tri(plane*w*0.7+Vector3(0,0,0.019*_g),t,end,t,-plane*w*0.7+Vector3(0,0,0.019*_g),t,TONGUE)
 	return mesh.commit(material)
 
 static func _hexagon(r: float, w: float, h: float, lift: float, z: float) -> Array[Vector3]:
