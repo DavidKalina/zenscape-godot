@@ -40,7 +40,7 @@ static func enabled() -> bool:
 ## back once the range has settled; "c" is b that stays low; "old" is the
 ## camera lean from before (scripts/camera_rig.gd `lean`), with no squash.
 const PULL_CAMS := ["a","b","c","old"]
-const PULL_CAM_DEFAULT := "b"
+const PULL_CAM_DEFAULT := "a"
 
 static func pull_cam() -> String:
 	for arg: String in OS.get_cmdline_user_args():

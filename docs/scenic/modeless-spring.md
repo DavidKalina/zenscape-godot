@@ -43,8 +43,8 @@ Branch `experiment/pull-spring-feel`. The complaint was that you couldn't tell y
 
 | Variant | What it does |
 | --- | --- |
-| `a` | The camera holds still while the block drops. It follows only late in a deep pull, on a slow spring. At the release it waits a beat, then catches up on its own softer spring. The block squashes and stretches, the plants trail it and the earth strains. |
-| `b` (default) | `a`, plus a low, side-on swing at the press (about 13° above the horizon, only from a higher view, never touching the yaw). The swing eases back to your view once the range has settled. |
+| `a` (default, the user's pick after playing all four) | The camera holds still while the block drops. It follows only late in a deep pull, on a slow spring. At the release it waits a beat, then catches up on its own softer spring. The block squashes and stretches, the plants trail it and the earth strains. |
+| `b` | `a`, plus a low, side-on swing at the press (about 13° above the horizon, only from a higher view, never touching the yaw). The swing eases back to your view once the range has settled. |
 | `c` | `b`, but the camera stays low after the release: the swing becomes your own view. |
 | `old` | The lean from before, exactly: down, in and lower with the block, with no squash, trail or strain. |
 
