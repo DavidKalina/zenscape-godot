@@ -233,3 +233,96 @@ Nothing has been seen on screen:
 - the borrowed Rim grip over open land
 - where the prop actually sits in the hand, its lean, and its size
 - whether the flat-shaded parts read as the icon's facets
+
+## The Wire
+
+`scripts/clay_tools/wire.gd`. It only cuts; it never raises.
+
+- **Gorge** (drag). The cut lands at release, along the straight line from the
+  press to the release point, whatever way the pointer wandered. While the
+  wire is drawn nothing is laid (`drag_frame` returns false, and the hand
+  follows the pointer); the ground marks' faint line from the press point to
+  the pointer is the whole preview. This matches "press, drag, release": a
+  wire is pulled taut between two points and then drawn through. Cut live,
+  it would have to follow the pointer's path (the thumb's groove) or be torn
+  up and recut every frame as the far end moved.
+  - Across: a flat bed `BED_HALF` (1.1 m) either side of the line, then a wall
+    to the untouched ground over `WALL_RUN` (0.35 m), under the point spacing,
+    so each wall is one facet row. The ends are round.
+  - Along: `GORGE_DEPTH` (2.6 m) under the ground, and the bed never climbs.
+    From its higher end it falls at least `BED_FALL` (2 cm per metre), cutting
+    deeper where the ground rises across the line, so water runs its length.
+    Across a dip, the far side is cut to the dip's level. `MIN_HEIGHT`
+    (-1.5 m) stops it, so on low meadow (0.1 to 0.3 m) the gorge is 1.6 to
+    1.9 m deep. A drag is a stroke, like the thumb, so the sink `FLOOR` does
+    not apply.
+  - At release, the dug ground turns to bare earth (the clay's dirt), then the
+    walls take granite on their steeps. The bed stays earth. Trees that cannot
+    hold the cut ground slide off.
+- **Slice** (hold, then drag). Every point within `SLICE_RADIUS` (7 m) that
+  stands above a level plane is cut down to it. The plane starts at the ground
+  under the press and follows the pointer's height, as the pinch's summit
+  does: dragging down takes more of the hill. It is hard-edged, since a wire
+  does not feather. A hill wider than the radius keeps a step at the rim,
+  which takes rock on its steeps. The sliced top is bare earth.
+- **Tap:** nothing yet, and no undo step.
+- **Shift:** a gorge `SHALLOW` (0.4) as deep, and a slice whose plane follows
+  the pointer at 0.4 of the pace, so it takes a thinner cut for the same pull.
+  The pips scale the bed's width and the slice's radius. Depth and the wall's
+  run hold.
+- **Verbs reported:** `gorge`, `slice`, or `shallow_gorge` and `shallow_slice`
+  with Shift.
+- **Prop:** two hexagonal toggles in `#b8683f`, tapered, with darker end caps
+  (`#8a4a2c`). One lies across the grip, and a thin wire (`#e6c3a4`, 12 mm)
+  hangs 1.05 m to the other. It is untilted.
+
+### Where it reaches past the seam
+
+- **Rock on cut ground.** `clay.paint_rock` measures raised ground against
+  `clay.base`, and a cut raises nothing. So the wire lends the clay a base
+  `ROCK_LIFT` (1 m) under the cut ground for that one call, then puts it
+  back. With `height` at `ROCK_TALL` (10 m), every cut point stands at a share
+  of 0.1: over the paint's threshold of 0.04 and under its summit share of
+  0.35. Only steepness decides the rock. A Chisel or a Hammer that paints
+  cliffs it cut will want the same. A `paint_rock` that takes its own base
+  would be the seam's version.
+- **Dirt before rock.** The clay lays dirt after a frame's dabs, and the rock
+  has to go over it. The gorge has no dabs, so `drag_end` writes the heights
+  itself, marks the area (`clay.dirty`), and calls `clay._dirt()` before the
+  rock. `land_clay.gd` is unchanged.
+
+### Checked headless
+
+`tools/probe_tool_wire.gd`:
+
+```sh
+godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_wire.gd -- --modeless --no-title
+```
+
+- The pocket takes the wire. The hand grips it, and the prop is built in the
+  icon's tint, untilted. A tap keeps nothing.
+- A 300 px drag bowed 70 px leaves the land untouched until release. It then
+  cuts a 16 m gorge along the straight line: 1.74 m deep at the middle and
+  1.93 m at most, the full depth the ground allows everywhere on the line.
+  Nothing is dug at the bow, 5.5 m off the line. The bed climbs 0.000 m. The
+  ground 0.6 m past the rim is unmoved. The walls stand at 1.64 (90% to 10%
+  depth), 129 points are lowered and none raised, 0.92 of the wall cells are
+  rock, and 0.98 of the bed cells are earth.
+- Shift cuts 1.15 m against 1.93. The widest pip lowers 186 points against
+  129, and the smallest 88.
+- A 40 px hold-and-drag on a 3.17 m hill slices it to 0.5 m. All 218 points
+  over the plane stand on it, with nothing under it moved. The plane is within
+  1.7 px of the pointer. Shift takes 1.07 m off against 2.67.
+- Each verb is one undo step, and one undo restores the heights exactly.
+- Esc gives back the Hand, which hovers ready to pinch.
+
+### Unverified
+
+Nothing has been seen on screen:
+
+- whether a 1.6 to 1.9 m gorge reads from the default camera, and whether
+  its one-facet walls read as a gorge or as a trench
+- the granite walls beside the earth bed, and the sliced top's bare earth
+- whether water from the shallow-water sim actually runs the bed
+- the prop in the hand: where the grip sits, and whether the 12 mm wire shows
+  at all
