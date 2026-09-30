@@ -171,7 +171,8 @@ A running list of what looks off or is still unverified, gathered from the first
 
 ### Existing look, beyond these features
 - ~~[bug] The grass snake never drew in the rendered game.~~ Fixed on feature/sp-predation (281652f): its body wasn't bound to the skeleton. The user has seen it and likes it.
-- [tune] The snake is small. Being made bigger by default (about 1.5x), with seeded size variety per visit (about 0.8-1.3x).
+- ~~[tune] The snake is small.~~ Now 1.8 m by default, with a seeded 0.8-1.3x size per visit (b93a8a2).
+- [tune] `probe_snake.gd` flags 14 "pops" a visit at the new size; its 6 m/s² threshold was tuned for the old size. Rescale the threshold or check the motion.
 - [look] Open water is nearly invisible from most angles; fish seem to float in a green hollow.
 - [look] Fireflies draw as faint square quads in dusk fog (fog applied to their additive quads).
 - [look] Broadleaf crowns read pale lilac-white in summer and autumn, not green or gold. Check the stand tint, and whether autumn tint reaches that kind.
@@ -187,7 +188,8 @@ A running list of what looks off or is still unverified, gathered from the first
 ### Predation
 - [look] The heron stands at the very edge of the pond, once right on a frogspawn clump.
 - [look] A fish carried off in flight is small.
-- [unseen] The snake's stalk, strike and swallow bulge (blocked by the snake bug).
+- [look] The swallow bulge is subtle at the long-lens film distance.
+- [look] In the escape clip the frog sits nearer the camera than the snake, so the escape reads weakly.
 
 ### Noticing the hand
 - [look] Dusk fog hides the fish in the gust shot; the gull is hard to see.
