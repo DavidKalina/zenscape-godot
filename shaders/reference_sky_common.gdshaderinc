@@ -126,6 +126,22 @@
     col += vec3(0.022) * (1.0 - smoothstep(34.0, 40.6, a1));
     return col * sun;
   }
+  // THE MOONBOW: the same bow about the antilunar point. Moonlight is too
+  // faint for the eye to find its colours, so it reads pale and nearly
+  // white, a breath of hue at its edges; it fades in rather than grows.
+  vec3 zsMoonbow(vec3 dir) {
+    if (zs_moonbow <= 0.001) return vec3(0.0);
+    float mb = zs_moonbow * smoothstep(-0.55, -0.2, dir.y);
+    float am = degrees(acos(clamp(-dot(dir, zs_moon_direction), -1.0, 1.0))) / zs_bow_shape.x;
+    vec3 moonBow = zsRainbow(am, fwidth(am), dir);
+    float grey = dot(moonBow, vec3(0.2126, 0.7152, 0.0722));
+    return mix(vec3(grey), moonBow, 0.18) * vec3(0.86, 0.92, 1.0) * mb;
+  }
+  // Light of the night itself, not of the sky's gradient: the aurora and
+  // the moonbow.
+  vec3 zsNightLights(vec3 dir) {
+    return zsAurora(dir) + zsMoonbow(dir);
+  }
   vec3 zsSkyGradient(vec3 dir) {
     float y = dir.y;
     vec3 col = mix(zs_sky_down, zs_sky_up, smoothstep(-0.4, 0.7, y));
@@ -170,15 +186,11 @@
       col *= 1.0 - 0.08 * ba * smoothstep(42.3, 44.0, a1) * (1.0 - smoothstep(48.5, 50.2, a2));
       col += zsRainbow(a, fwidth(a), dir) * ba;
     }
-    if (zs_moonbow > 0.001) {
-      // THE MOONBOW: the same bow about the antilunar point. Moonlight is too
-      // faint for the eye to find its colours, so it reads pale and nearly
-      // white, a breath of hue at its edges; it fades in rather than grows.
-      float mb = zs_moonbow * smoothstep(-0.55, -0.2, dir.y);
-      float am = degrees(acos(clamp(-dot(dir, zs_moon_direction), -1.0, 1.0))) / zs_bow_shape.x;
-      vec3 moonBow = zsRainbow(am, fwidth(am), dir);
-      float grey = dot(moonBow, vec3(0.2126, 0.7152, 0.0722));
-      col += mix(vec3(grey), moonBow, 0.18) * vec3(0.86, 0.92, 1.0) * mb;
-    }
-    return col + zsAurora(dir);
+    // The dome adds the night's own lights itself, after its deep night,
+    // which would otherwise dim them with the sky behind.
+#ifdef ZS_NIGHT_LIGHTS_APART
+    return col;
+#else
+    return col + zsNightLights(dir);
+#endif
   }

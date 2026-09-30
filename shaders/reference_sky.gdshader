@@ -1,6 +1,7 @@
 shader_type sky;
 // March in the final pass: intermediate sky passes also receive native fog.
 #include "res://shaders/reference_cloud_march.gdshaderinc"
+#define ZS_NIGHT_LIGHTS_APART
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 
@@ -183,6 +184,7 @@ shader_type sky;
             night += vec3(0.02, 0.05, 0.035) * exp(-abs(y) / 0.035) * 0.35;
             col = mix(col, night, deep);
           }
+          col += zsNightLights(dir);
           if (starK > 0.001) {
             // The Milky Way: a tilted great-circle band, clumped by smooth
             // noise so it reads as spilled light, not an airbrushed stripe.
@@ -300,17 +302,20 @@ shader_type sky;
           float moonVis = zs_celestial_clear * smoothstep(-0.04, 0.03, zs_moon_direction.y) * mix(0.15, 1.0, zs_night);
           float moonLit = 0.5 - 0.5 * dot(zs_moon_direction, zs_sun_direction);
           const float MOON_R = 0.024;
-          float moon = 1.0 - smoothstep(MOON_R - 0.005, MOON_R + 0.005, moonAng);
+          float moonEdge = max(pixel * 1.5, 0.002);
+          float moon = 1.0 - smoothstep(MOON_R - moonEdge, MOON_R + moonEdge, moonAng);
           if (moon > 0.0 && moonVis > 0.0) {
             vec3 mSide = normalize(cross(zs_moon_direction, vec3(0.0, 1.0, 0.0)));
             vec3 mUp = cross(mSide, zs_moon_direction);
             vec2 mo = vec2(dot(dir, mSide), dot(dir, mUp)) / MOON_R;
             vec3 mN = mSide * mo.x + mUp * mo.y - zs_moon_direction * sqrt(max(1.0 - dot(mo, mo), 0.0));
             float lit = smoothstep(-0.06, 0.1, dot(mN, zs_sun_direction));
-            float seas = 1.0 - 0.16 * smoothstep(0.45, 0.75, vnoise(vec3(mo * 2.6, 3.7)));
+            float seas = 1.0 - 0.3 * smoothstep(0.45, 0.75, vnoise(vec3(mo * 2.6, 3.7)));
             float face = mix(0.035, seas, lit);
-            col += vec3(0.86, 0.92, 1.0) * moon * face * 1.6 * moonVis;
-            skyHdr += vec3(0.86, 0.92, 1.0) * moon * lit * seas * 0.6 * moonVis * zs_night;
+            // Kept under the display ceiling so the seas survive; only a
+            // breath of HDR on the lit part, for the glow.
+            col += vec3(0.86, 0.92, 1.0) * moon * face * 0.9 * moonVis;
+            skyHdr += vec3(0.86, 0.92, 1.0) * moon * lit * seas * 0.12 * moonVis * zs_night;
           }
           col += vec3(0.5, 0.6, 0.8) * 0.06 * pow(max(md, 0.0), 160.0) * moonVis * zs_night * moonLit;
           // A thin silver corona hugging the disc.
