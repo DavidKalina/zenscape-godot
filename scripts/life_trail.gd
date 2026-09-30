@@ -96,8 +96,8 @@ const BOOST_SIGNS := 4
 ## Print tones (linear), fresh and nearly filled.
 const MUD := Color(0.12,0.09,0.065)
 const MUD_FILLED := Color(0.3,0.25,0.18)
-const SNOW := Color(0.5,0.58,0.76)
-const SNOW_FILLED := Color(0.85,0.88,0.95)
+const SNOW := Color(0.3,0.36,0.5)
+const SNOW_FILLED := Color(0.7,0.75,0.85)
 const DEAD_KINDS := ["snag","log","stump"]
 const DOCUMENT_VERSION := 1
 
