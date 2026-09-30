@@ -36,5 +36,6 @@ void fragment() {
 		}
 	}
 	color = zs_look_grade(color, SCREEN_UV, SCREEN_PIXEL_SIZE);
+	color = zs_look_night(color, max(1.0 - sky_at(SCREEN_UV), air.a));
 	COLOR = vec4(color, 1.0);
 }

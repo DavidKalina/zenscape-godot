@@ -48,6 +48,14 @@ var wind := 0.4
 var autumn := 0.0
 var cold := 0.0
 var night_fill := 1.0
+## How far night leaves daylight's colours behind (the grade's cool, washed
+## rod-lit look, `night_grade`): 1 is the full night look, 0 keeps the day's
+## colours in the dark. Moods can set it like night_fill.
+var night_look := 1.0
+## The grade's night term for scripts/look_pass.gd: x how much of the land's
+## colour gives way to a cool rod-lit grey, yzw that grey's hue at unit
+## luminance. Zero by day; it rises after the afterglow and falls before dawn.
+var night_grade := Vector4.ZERO
 var state: Dictionary = {}
 var _rainbow_growth := 0.0
 var _target := -1.0
@@ -75,10 +83,26 @@ var _rim_turned := 0.0
 ## gibbous). Without a clock the moon stays full, where it always stood.
 const LUNAR_DAYS := 8.0
 const LUNAR_START := 0.85
-## Moonlight at new and full moon, as a share of the old fixed moon.
-const MOON_LIGHT := Vector2(0.12, 1.25)
-## The night fill leans on the moon a little: this at new, this at full.
-const MOON_FILL := Vector2(0.85, 1.1)
+## Moonlight at new and full moon, as a share of the old fixed moon. A full
+## moon is a readable key over the fill, so its shadows and lit faces show.
+const MOON_LIGHT := Vector2(0.1, 2.0)
+## The night fill leans on the moon: this at new, this at full.
+const MOON_FILL := Vector2(0.7, 1.0)
+## Moonlight's colour at new and full moon: a thin dim blue under a sliver,
+## brighter silver-blue under a full moon (the source's b9cae8 sits between).
+const MOON_TINT := ["8a9ac4", "c4d3f4"]
+## The night fill's colour per unit of fill: a deep blue leaning teal, so
+## shaded land goes cool against the moonlit faces.
+const NIGHT_FILL := Vector3(0.11, 0.18, 0.32)
+## The night look (`night_grade`): the share of colour lost to rod vision under
+## a new and a full moon, and the hue left, new and full. Under a new moon it
+## is deeper and darker; a full moon keeps a little more colour, silver-blue.
+const NIGHT_GRADE := Vector2(0.8, 0.62)
+const NIGHT_HUE_NEW := Vector3(0.64, 0.92, 1.5)
+const NIGHT_HUE_FULL := Vector3(0.8, 0.98, 1.3)
+## Sun heights (sun.y) over which the night look comes in: after the
+## afterglow and the belt, so golden hour and dusk keep their colour.
+const NIGHT_LOOK_E := Vector2(-0.2, -0.03)
 ## Aurora: each night rolls once, with this chance by the season it falls in
 ## (winter, late autumn from AURORA_LATE_AUTUMN, and the rest of the year).
 const AURORA_CHANCE := Vector3(0.5, 0.2, 0.025)
@@ -183,6 +207,11 @@ func update_rig() -> void:
 	var sun_energy := 3.4 * smoothstep(-0.03, 0.10, e) * (0.45 + 0.55 * smoothstep(0.08, 0.45, e))
 	var moon_up := smoothstep(0.02, 0.30, moon.y)
 	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit)
+	# How much moon there is to see by (phase and height), and how deep into
+	# the night the look has gone.
+	var moon_glow := moon_lit * moon_up
+	var dark := 1.0 - smoothstep(NIGHT_LOOK_E.x, NIGHT_LOOK_E.y, e)
+	var moon_tint := _rgb(MOON_TINT[0]).lerp(_rgb(MOON_TINT[1]), moon_lit)
 	var tint := look.rgb("sun").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
 	tint = _rgb("ff6222").lerp(_rgb("ffb45c"), smoothstep(-0.02, 0.1, e)).lerp(tint, smoothstep(0.1, 0.4, e))
 	var key_direction := sun
@@ -190,7 +219,7 @@ func update_rig() -> void:
 	if moon_energy > sun_energy:
 		key_direction = moon
 		energy = moon_energy
-		tint = _rgb("b9cae8")
+		tint = moon_tint
 	var overcast := lerpf(1.0, 0.44, cloud) * lerpf(1.0, 0.8, storm) * lerpf(1.0, 0.86, shroud) * lerpf(1.0, 0.92, cold)
 	_sun.position = key_direction * Vector3(20, 14, 12).length()
 	_sun.look_at(Vector3.ZERO)
@@ -208,7 +237,8 @@ func update_rig() -> void:
 	if _rim_turned != room_yaw:
 		_rim.global_basis = Basis(Vector3.UP, room_yaw) * _rim_basis
 		_rim_turned = room_yaw
-	_rim.light_energy = 1.1 * (0.3 + 0.7 * day) * lerpf(1.0, 0.5, cloud) / PI
+	# The rim's night floor follows the moon: a new moon leaves silhouettes.
+	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(0.12, 0.3, moon_glow), dark) + 0.7 * day) * lerpf(1.0, 0.5, cloud) / PI
 	_publish("zs_key_direction", _sun.global_basis.z.normalized())
 	var key_color := _sun.light_color.srgb_to_linear()
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
@@ -217,12 +247,17 @@ func update_rig() -> void:
 	var rim_color := _rim.light_color.srgb_to_linear()
 	_publish("zs_rim_irradiance", Vector3(rim_color.r, rim_color.g, rim_color.b) * _rim.light_energy * PI)
 	_publish("zs_cloud_direction", key_direction)
-	_publish("zs_cloud_sun", tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast))
+	var cloud_sun := tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast)
+	# The source lights air and cloud with the key's colour at full strength
+	# even when nothing is up. At night that left the mist lit like day (and
+	# orange under a new moon): lean it on the moon instead.
+	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(0.12, 0.85, moon_glow) * (0.9 + 0.5 * overcast), dark)
+	_publish("zs_cloud_sun", cloud_sun)
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
 	# Keep sky/cloud/fog colors independent so stars retain their dark backdrop.
-	var fill := night * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_lit * moon_up)
-	_publish("zs_hemi_sky", hemi_sky + Vector3(0.22, 0.28, 0.4) * fill)
+	var fill := night * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
+	_publish("zs_hemi_sky", hemi_sky + NIGHT_FILL * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
 	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill) * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(Vector3(0.055, 0.07, 0.1), day)
@@ -272,6 +307,14 @@ func update_rig() -> void:
 	var inv_color := source_display_fog(fog_color.lerp(state.zs_cloud_sun, 0.35 * sun_on * sun_k), 1.15 * look.settings.exposure)
 	_publish("zs_inversion_color", inv_color.lerp(Vector3.ONE, 0.38 * sun_on * sun_k))
 	_publish("zs_night", night)
+	# The night look: the grade's rod-lit shift, and moonlight for the sky cloud.
+	var hue := NIGHT_HUE_NEW.lerp(NIGHT_HUE_FULL, moon_glow)
+	var mood := look.ratio("ambient")
+	hue *= Vector3.ONE.lerp(mood / maxf(mood.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0001), 0.5)
+	var look_dark := dark * clampf(night_look, 0.0, 1.5)
+	night_grade = Vector4(minf(look_dark * lerpf(NIGHT_GRADE.x, NIGHT_GRADE.y, moon_glow), 0.95), hue.x, hue.y, hue.z)
+	var moonlight := moon_tint * moon_glow * night * lerpf(1.0, 0.35, cloud)
+	_publish("zs_moon_light", Vector4(moonlight.x, moonlight.y, moonlight.z, look_dark))
 	_publish("zs_daylight", day)
 	_publish("zs_celestial_clear", 1.0 - minf(1.0, cloud * 1.3))
 	_publish("zs_dusk_direction", warmth * 0.9)

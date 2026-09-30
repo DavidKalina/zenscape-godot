@@ -104,6 +104,9 @@ func update(camera: Camera3D, celestial) -> void:
 	# cool at golden hour, nearly neutral at noon and under overcast.
 	target.set_shader_parameter("grade_highlight", _tint(celestial.aerial_sun_color, 0.35))
 	target.set_shader_parameter("grade_shadow", _tint(celestial.state.get("zs_hemi_sky",Vector3.ONE), 0.22))
+	# Night's rod-lit shift, by the hour and the moon (studies/celestial.gd).
+	var night: Vector4 = celestial.get("night_grade") if celestial.get("night_grade") != null else Vector4.ZERO
+	target.set_shader_parameter("grade_night", Vector4(night.x * on, night.y, night.z, night.w))
 	# Native fog draws its own shafts from the lights' volumetric energy.
 	if not blended: return
 	var blend: ShaderMaterial = fog.blend
