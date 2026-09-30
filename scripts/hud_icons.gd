@@ -169,3 +169,67 @@ static func _build() -> void:
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
 	_add("hammer","Hammer","Break","#7a6a5a",["M3 5.5 Q3 4.5 4 4.5 H15 L20.5 7.2 L15 9.8 H4 Q3 9.8 3 8.8Z","M8.2 9.8 H10.8 V20.8 A1.3 1.3 0 0 1 8.2 20.8Z"],["M12.5 4.5 V9.8"],14)
+	# --- HUD 5 almanac icons (docs/design/hud-5/lowpoly.js AIR_ICONS, seeds
+	# 16-20; docs/design/hud-5/ALMANAC.md). The almanac's pockets drawn as
+	# their gestures: the sun and the moon (Time), the plate from above in
+	# each season's tint (Season), the snow globe (Weather) and the windsock
+	# at each droop the strip draws (Wind: sock_id). Kept in this one block
+	# so the HUD 5 branches merge simply.
+	var rays := [_circle(12,12,5.2)]
+	for k in range(8):
+		var a := k*PI/4.0
+		rays.append(_bar(12.0+cos(a)*7.2,12.0+sin(a)*7.2,a,3.2,2.2))
+	_add("sun","Sun","Day","#e2b25e",rays,[],16)
+	_add("moon","Moon","Night","#c9cfdf",[_crescent()],[],17)
+	for season: String in SEASON_TINT:
+		_add("plate_"+season,"Plate",season.capitalize(),SEASON_TINT[season],["M12 4.4 L21.4 9.6 L12 14.8 L2.6 9.6Z","M2.6 9.6 L12 14.8 L21.4 9.6 L21.4 12.6 L12 18 L2.6 12.6Z",_circle(20.3,16.8,1.2)],["M2.6 9.6 L12 14.8 L21.4 9.6","M4 17.4 Q12 22.8 19.2 17.6"],18,1.0,1.3)
+	_add("globe","Globe","Weather","#9fb4c0",[_circle(12,10,7.6),"M6 16.6 H18 L19.6 21.4 Q19.7 22 19.1 22 H4.9 Q4.3 22 4.4 21.4Z"],["M5.4 17.6 H18.6","M5.6 13.2 Q12 9.8 18.4 13.2","M9 6.6 L9 6.7 M14.6 5.6 L14.6 5.7 M12 9 L12 9.1 M16 9.6 L16 9.7 M7.6 10.2 L7.6 10.3"],19,1.0,1.5)
+	for deg: int in SOCK_DROOPS: _add(sock_id(deg),"Sock","Wind","#c47c5c",_windsock(deg)[0],_windsock(deg)[1],20,1.0,1.4)
+
+## HUD 5 almanac: the season tints (lowpoly.js SEASON_TINT), keyed by
+## mood_look.gd's season ids.
+const SEASON_TINT := {"spring":"#93b86c","summer":"#6c9a4a","autumn":"#c27c3e","winter":"#cfd8de"}
+## HUD 5 almanac: every droop (degrees below level) the windsock is drawn at:
+## the four strengths (lowpoly.js WIND_DROOP 40, 22, 10, 0), the cue's
+## halfway droops (20, 11, 5) and its lift just past level (-2).
+const SOCK_DROOPS := [40,22,20,11,10,5,0,-2]
+
+## HUD 5 almanac: the windsock's icon id at a droop in SOCK_DROOPS.
+static func sock_id(deg: int) -> String:
+	return "sock_%d" % deg
+
+## HUD 5 almanac: lowpoly.js `windsock`: the pole, and the sock and its two
+## bands turned about (5.2, 8.2) by the droop. [fills, lines].
+static func _windsock(deg: float) -> Array:
+	var a := deg_to_rad(deg)
+	var pivot := Vector2(5.2,8.2)
+	var turn := func(p: Vector2) -> Vector2: return pivot+(p-pivot).rotated(a)
+	var sock := [Vector2(5.2,4.2),Vector2(21,6.6),Vector2(21,10.4),Vector2(5.2,12.2)].map(turn)
+	var lines := []
+	for band: Array in [[Vector2(10.4,5),Vector2(10.4,11.6)],[Vector2(15.6,5.8),Vector2(15.6,11)]]:
+		var p0: Vector2 = turn.call(band[0])
+		var p1: Vector2 = turn.call(band[1])
+		lines.append("M%.2f %.2f L%.2f %.2f" % [p0.x,p0.y,p1.x,p1.y])
+	return [["M3.4 2.4 H5.2 V22.4 H3.4Z",_poly(sock)],lines]
+
+## HUD 5 almanac: lowpoly.js `crescent`: the circle at (11, 12.4) r 8.6 less
+## the one at (15.8, 8.4) r 7.4, sampled to one polygon (no masks).
+static func _crescent() -> String:
+	var c1 := Vector2(11,12.4)
+	var c2 := Vector2(15.8,8.4)
+	var r1 := 8.6
+	var r2 := 7.4
+	var n := 120
+	var outer := []
+	var inner := []
+	var a2 := (c2-c1).angle()
+	for i in range(n):
+		var p := c1+Vector2.from_angle(a2+float(i)/n*TAU)*r1
+		if p.distance_to(c2) >= r2: outer.append(p)
+	var a1 := (c1-c2).angle()+PI
+	for i in range(n):
+		var p := c2+Vector2.from_angle(a1+float(i)/n*TAU)*r2
+		if p.distance_to(c1) < r1: inner.append(p)
+	var last: Vector2 = outer.back()
+	if (inner.back() as Vector2).distance_to(last) < (inner[0] as Vector2).distance_to(last): inner.reverse()
+	return _poly(outer+inner)
