@@ -355,3 +355,32 @@ Branch `feature/sky-cloud`. Checked headless only (`tools/probe_sky_wind.gd`); n
 
 - Nothing shows the wind's heading while you hold except the world bending (trees, grass, fog, the wind trails). A vane or streaks under the hand may be wanted.
 - The hand has no blowing pose; it relaxes as for any void drag.
+
+## Materials tray (experiment)
+
+Branch `experiment/materials-tray`. Checked headless only (a throwaway probe); nothing has been seen or felt on screen. The chains that give material in the hand scheme (bend a tree for spores, tear the cloud for a water ball) felt contrived, so this tries the maker's jars at the edge of the table instead. The shaping verbs are untouched, and the old sources still work, so both can be compared. `--no-tray` leaves the tray out.
+
+### Try it
+
+- **The tray** is a slim rounded strip low in the middle of the bottom edge, with three jars: seeds, water and stones. It rests faint and a little sunk, and rises and brightens as the pointer nears the bottom edge. The jar under the pointer lifts and names itself.
+- **Press a jar.** It squashes and the hand takes some: it pinches seeds and stones and cups water, and a small tinted clump rides in it. What the hand holds decides what a press does, until it is put back. You can also press a jar and drag straight out onto the land.
+- **Seeds.** Press and drag over the land: the hand sprinkles a veil along the way, and when you let go the wind carries it down. The land picks the kind, as it does for a tree's flick.
+- **Water.** Press and hold over the land: a water ball forms and fills while you hold. Let go and it drops, making a pool, or a spring on high or steep ground.
+- **Stones.** Tap to set a stone down; the longer the press, the bigger the stone. Drag to scatter a few pebbles under the hand, growing a little the longer you hold. A drag is one undo step.
+- **Put it back** by clicking the sky, the tray or the jar you took from, or by letting go there after drawing it out of a jar. The material flies home and its jar settles. A press on the rim keeps the rim's verbs and the material stays in hand.
+- **Cmd+Z** takes back stones, sown forest and a spring's bed, as for the old sources.
+
+### How it works
+
+- `scripts/materials_tray.gd` only draws: a Lantern plate (`lantern_style.gd` `plate`) and three filled SVG glyphs (`assets/ui/tray/`, imported at 4x with mipmaps like the Lantern glyphs, drawn with the Lantern glyph shader's rim and glow set softer). It sits on its own canvas layer and ignores the mouse. It rests at `RESTING` (0.36) opacity, sunk `REST_DROP`, and eases (`EASE`, 7/s) to `ALERT` (0.92) as the pointer comes within `NEAR` (150) design units of the bottom edge. The jars' squash and settle are one under-damped spring each (`SPRING`, `DAMP`). A material put back is a tinted mote flying an arc home (`FLIGHT` 0.4 s); the jar settles when it lands. The strip counts as UI for the world (`blocks_world_input`), so no land or sky press starts through it. A right press there still reaches the camera. The Lantern hint line moves up to clear it (`lantern_shell.gd` `bottom_lift`).
+- `scripts/hand_materials.gd` holds the material and gets a free left press first (`hand_reach.gd` `handle`). A jar press is held as `"jar"`, stones as `"stones"`; seeds and water go to the editor, which holds them until the button comes up, as the cloud's tuft does. The hand is driven from `drive_hand`. Carrying seeds or stones it uses the cloud's pinch (`"cloud"`, the Pinch clips), and carrying water the summon's cupped Reach (`"summon"`). It floats `CARRY_LIFT` (0.8 m) over the land, and on the void's ray over the sky and the tray. The clump sits between the index and thumb tips, or in the palm (`god_hand.gd` `hold_at`). It fades with the hand while the camera moves. No new clips.
+- **Seeds** reuse the Forest brush's veil: `NativeChunkEditor.sow_from_hand` calls `_handful_press` with the forest brush and no tree kind stamped, so `_handful_process`, `pollen_cloud.gd`, `_pollen_settled` and `_write_cloud` sow it as a swept veil, and emergence picks the species by habitat. The God Hand throws the motes with its Sprinkle clips, as for the pollen sweep.
+- **Water** reuses the cloud tuft's ball: `ball_from_sky` with no `ball_supply`, so it fills at the water brush's rate. On release `_ball_landed` feeds live water (`_flow_landed`: a spring on high or steep ground, a burst elsewhere).
+- **Stones** are the rock asset (`"rock"`, the seeded faceted stone family), placed by `NativeChunkEditor.set_stone` as the rock tool's click places one. Each stone has its own stroke, and a stroke that follows the drag's last stone is folded into it, so a drag undoes in one step. Each stone falls in with `NativeDropReactions`' drop, played as its batch is drawn (`refresh`'s `on_publish`). A drag drops a stone every `STONE_GAP` (0.9 m) under the hand, at most `STONE_MAX` (7), and only once the last one has been drawn and has landed. That keeps each fall whole and spreads the refreshes out.
+
+### Limits and open points
+
+- Nothing has been seen: the tray's look and ease, the glyphs over fog and snow, the hand's carrying poses (the Pinch and Reach clips were made for the cloud, not for a clump), where the clump sits in them, and the clump's look.
+- The stone drag waits for each refresh, so on a heavy world it may drop fewer pebbles than it could.
+- Seeds sow the Forest brush's veil at its own strength, weaker than a full tree flick (`TREE_STRENGTH` 1.8).
+- With material in hand a press on a tree or a prop sows, pours or sets a stone; those keep their own grab only with an empty hand.

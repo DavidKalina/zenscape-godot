@@ -3061,10 +3061,10 @@ func _make_pollen() -> void:
 		_settled_clouds.clear()
 		handful.withdraw())
 
-func _handful_press(hit: Vector3) -> void:
+func _handful_press(hit: Vector3, forest: Variant = null) -> void:
 	if handful == null: _make_pollen()
 	_handful_serial += 1
-	var forest = creation_brush()
+	if forest == null: forest = creation_brush()
 	forest.prepare(data,land_seed)
 	handful.gather(hit,forest.radius,forest.strength,emergence.seed_family(Vector2(hit.x,hit.z)),hash([land_seed,_handful_serial]))
 	# No stroke starts: the brush feel's swell would raise the very wind the
@@ -3112,6 +3112,45 @@ func fling_from_tree(base: Vector3, crown: Vector3, direction: Vector2, reach: f
 	var velocity := Vector3(direction.x,0.0,direction.y)*reach*FLING_SPEED+Vector3.UP*FLING_LOFT
 	handful.fling(crown,velocity,path,forest.radius,forest.strength*strength,family,hash([land_seed,_handful_serial]))
 	return true
+
+## Seeds from the materials tray (scripts/hand_materials.gd): a press with
+## seeds in hand lays the forest brush's veil from the pointer's ground point,
+## as the Forest brush's press does, held until the button is let go; the wind
+## and the land then decide, and the stand picks the kind (no tree's kind is
+## stamped on it). True when the veil was taken.
+func sow_from_hand(screen_pos: Vector2) -> bool:
+	if forming or not active or _ball_holding or _handful_holding or _painting: return false
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return false
+	_land_mountain()
+	if handful == null: _make_pollen()
+	handful.set("seed_kind","")
+	_handful_press(hit,brushes.forest)
+	return true
+
+## A stone set down by the hand (the materials tray, scripts/hand_materials.gd),
+## placed as the rock tool's click places one, in its own undo step, and it
+## falls into place (NativeDropReactions). `after` is the undo step of the
+## stone set down before it in the same drag: while that is still the step
+## under this one, this one folds into it, so a scattering drag undoes as one.
+## Returns the undo step the stone lies in, or null when none was placed.
+func set_stone(point: Vector2, size: float, angle: float, after: Variant = null) -> Variant:
+	if forming or not active or _painting or data.ground_height(point) == null: return null
+	_land_mountain()
+	data.begin_stroke()
+	var placed := data.place("rock",point,angle,size)
+	if placed > 0: data.mark_objects_hand(placed)
+	if not data.end_stroke() or placed < 0: return null
+	var step: Dictionary = data._undo.back()
+	if after != null and data._undo.size() >= 2 and is_same(data._undo[-2],after):
+		data._undo.pop_back()
+		step = after
+	# The fall starts the frame the stone is drawn, before it can sit still.
+	refresh(get_tree(),func(stage: String) -> void:
+		if stage != "content" or not reactions_enabled: return
+		var index := data._object_index(placed)
+		if index >= 0: reactions.play("rock",reactions.record_pose(data.objects[index]),data.objects[index],placed))
+	return step
 
 ## A flicked tree's veil starts FLING_FROM m out from its foot, with a knot
 ## each FLING_STEP m; its spores leave the crown at FLING_SPEED times the

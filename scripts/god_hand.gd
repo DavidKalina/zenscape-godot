@@ -354,6 +354,16 @@ func _slope(at: Vector3, size: float) -> Basis:
 func _bone_at(bone: int) -> Vector3:
 	return position+basis*(_skeleton_space*skeleton.get_bone_global_pose(bone).origin)
 
+## Where something held rides (the materials tray, scripts/hand_materials.gd),
+## plate coordinates: between the index and thumb tips for a pinch, else in
+## the palm (the Handful mark).
+func hold_at(pinch: bool) -> Vector3:
+	if pinch:
+		var index := skeleton.find_bone("Index3")
+		var thumb := skeleton.find_bone("Thumb3")
+		if index >= 0 and thumb >= 0: return (_bone_at(index)+_bone_at(thumb))*0.5
+	return _bone_at(_handful) if _handful >= 0 else position
+
 ## A bone mark's weight: the clips carry it on the bone's scale.
 func _weight(bone: int) -> float:
 	return clampf(skeleton.get_bone_global_pose(bone).basis.get_scale().x,0.0,1.0)
