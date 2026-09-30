@@ -226,7 +226,7 @@ func film_night() -> void:
 func roll_odds() -> void:
 	var days := 6
 	var seen := {}
-	var start := moments.history.size()
+	var start: int = moments.history.size()
 	var clock: float = life.clock
 	for weathers in [["dry",0.0,0.0],["snow",0.7,0.0]]:
 		var surface: RefCounted = scene._precipitation.surface_weather
