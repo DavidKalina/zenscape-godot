@@ -39,11 +39,13 @@ extends Node
 ## press on the land is left free: it emits the `land_*` signals for the
 ## spring slice and no brush or turn sees it. The hand
 ## shows the zone on hover: the rim grip over the rim, a ready pinch over land.
-## Anywhere else in the world is the void: the hand floats ready on the
-## pointer's ray, a click there snaps day to night (scripts/void_snap.gd) and
-## Shift-click steps the golden hours; a still hold there calls the cloud
-## (scripts/sky_cloud.gd, docs/scenic/sky-cloud.md "Summoned"). The hover stands the hand down while the
-## camera moves (`camera_moving`).
+## Anywhere else in the world is the void: a still hold there calls the cloud
+## (scripts/sky_cloud.gd, docs/scenic/sky-cloud.md "Summoned") and a drag is
+## the sky's wind (scripts/sky_wind.gd). Day and night are the almanac's Time
+## pocket; with `--void-snap` the hand floats ready on the pointer's ray, a
+## click there snaps day to night (scripts/void_snap.gd) and Shift-click steps
+## the golden hours. The hover stands the hand down while the camera moves
+## (`camera_moving`).
 ##
 ## The rim's grab is shared with the snow-globe shake (another slice): it
 ## listens to `rim_dragged`, and when a shake fires it calls
@@ -204,7 +206,8 @@ const SnapSound = preload("res://scripts/snap_sound.gd")
 ## no land, rim or wall, the hand floats along the pointer's ray VOID_DEPTH of
 ## the camera's distance to its pivot out (about the size it has over the
 ## middle of the land), and never nearer than VOID_NEAR metres. A press there
-## that moves under CLICK_PIXELS before its release is a click: a snap.
+## that moves under CLICK_PIXELS before its release is a click: a snap, with
+## `--void-snap` (VOID_HINT is the snap's hint).
 const VOID_DEPTH := 0.8
 const VOID_NEAR := 5.0
 const CLICK_PIXELS := 6.0
@@ -215,12 +218,12 @@ const CLOUD_HINT := "Pull the cloud for water"
 const CLOUD_DRY_HINT := "Wrung dry for now"
 ## Summoned (docs/scenic/sky-cloud.md "Summoned"): with no cloud up, a press
 ## held still in the void (under CLICK_PIXELS) SUMMON_HOLD seconds calls the
-## cloud into the hand's pinch; quicker clicks still snap, and a press that
-## moves first is still the wind. With a cloud up, the void is the snap's and
-## the wind's only: the cloud is taken only by a press on it. The hand cups while it forms and pinches once it has formed, or once
+## cloud into the hand's pinch; quicker clicks do nothing (or snap, with
+## `--void-snap`), and a press that moves first is still the wind. With a cloud
+## up, the void is the wind's only (and the snap's): the cloud is taken only by a press on it. The hand cups while it forms and pinches once it has formed, or once
 ## the pull passes PINCH_TENSION. The void's hint names the summon, until it
-## has been used SUMMON_HINT_UNTIL times or read SUMMON_READS times: after the
-## demo cloud has shown, or once the snap's hint is done.
+## has been used SUMMON_HINT_UNTIL times or read SUMMON_READS times (with
+## `--void-snap`, after the demo cloud has shown or once the snap's hint is done).
 const SUMMON_HOLD := 0.35
 const PINCH_TENSION := 0.08
 const SUMMON_HINT := "Hold in the sky to call a cloud"
@@ -251,7 +254,10 @@ const CAMERA_SLIDING := 0.15
 ## The void's press: how far it has wandered, and the snaps made (for probes).
 var _void_travel := 0.0
 var snaps := 0
-## The snap's sound (scripts/snap_sound.gd), made in setup under --modeless.
+## `--void-snap`: a click in the void snaps day to night (scripts/void_snap.gd).
+var sky_snap := VoidSnap.enabled()
+## The snap's sound (scripts/snap_sound.gd), made in setup under --modeless
+## with `--void-snap`.
 var snap_sound: SnapSound
 ## The sky's cloud, made in setup under --modeless, and the one in hand (or
 ## under the pointer).
@@ -306,8 +312,9 @@ func setup(owner_scene: Node3D) -> void:
 	scene.move_child.call_deferred(self,-1)
 	# The snap's sound loads here, so the first snap does not wait on it.
 	if modeless:
-		snap_sound = SnapSound.new()
-		add_child(snap_sound)
+		if sky_snap:
+			snap_sound = SnapSound.new()
+			add_child(snap_sound)
 		cloud = SkyCloud.new()
 		add_child(cloud)
 		cloud.setup(scene)
@@ -888,7 +895,7 @@ func _process(delta: float) -> void:
 		if wind != null:
 			# A press let go off the window never releases: the wind lets go too.
 			if holding != "void" and not wind.state.is_empty(): wind.state = ""
-			# Only a drag is the wind's: a still press is loading a snap.
+			# Only a drag is the wind's: a still press is a click or a summon.
 			if holding == "void" and _void_travel > CLICK_PIXELS: wind.step(delta)
 		_step_trees(delta)
 		if not eye: _drive_hand_modeless()
@@ -998,10 +1005,11 @@ func _hover(point: Vector2) -> void:
 		zone = reaching
 		text = {"sun":SUN_HINT,"moon":MOON_HINT,"rim":RIM_HINT_MODELESS if modeless else RIM_HINT}[what]
 	if modeless and hover_zone == "void":
-		zone = "void"
-		text = VOID_HINT
-		# Once the demo cloud has shown, or the snap is known, the summon.
-		if cloud != null and cloud.summoned and not _hint_quiet("summon") and (SkyCloud.demo_shown or _hint_quiet("void")):
+		zone = "void" if sky_snap else ""
+		text = VOID_HINT if sky_snap else ""
+		# The summon: at once, or with the snap once the demo cloud has shown
+		# or the snap is known.
+		if cloud != null and cloud.summoned and not _hint_quiet("summon") and (not sky_snap or SkyCloud.demo_shown or _hint_quiet("void")):
 			zone = "summon"
 			text = SUMMON_HINT
 	if modeless and hover_zone == "cloud":
@@ -1211,7 +1219,7 @@ func _drive_hand_modeless() -> void:
 			var clay: Node = scene.get("land_clay")
 			want = clay.hover_gesture() if clay != null else "pinch"
 			target = _hover_point
-		elif hover_zone == "void":
+		elif hover_zone == "void" and sky_snap:
 			want = "void"
 			target = _void_point(_void_pointer())
 		elif hover_zone == "cloud":
@@ -1239,7 +1247,8 @@ func _set_hand(hand: Node3D, gesture: String, at: Variant, facing: Variant) -> v
 	hand.reach_facing = facing
 	_hover_shown = gesture
 
-# --- Modeless: the void and the snap (docs/scenic/modeless.md "Void slice") --------
+# --- Modeless: the void and the snap (docs/scenic/modeless.md "Void slice";
+# the snap behind `--void-snap`) --------
 
 ## True when a pointer at `point` is in the void: in the world, reaching no
 ## rim or wall, over no land and no prop or resident.
@@ -1266,7 +1275,8 @@ func _hover_void(point: Vector2) -> void:
 	hover_zone = "void"
 	_hover_point = _void_point(point)
 
-## A left press in the void loads a snap; nothing else sees it.
+## A left press in the void (a summon, the wind, or with `--void-snap` a
+## snap); nothing else sees it.
 func _void_press(point: Vector2) -> bool:
 	if not void_at(point): return false
 	holding = "void"
@@ -1296,8 +1306,8 @@ func _void_drag(point: Vector2) -> void:
 		release(point)
 		if materials != null: materials.take_feather()
 
-## The release: a click fires the snap; a drag is the wind's, a swipe's gust
-## or a held sweep's wind (scripts/sky_wind.gd).
+## The release: a click does nothing, or fires the snap with `--void-snap`; a
+## drag is the wind's, a swipe's gust or a held sweep's wind (scripts/sky_wind.gd).
 func _void_release(point: Vector2, step: bool) -> void:
 	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
 	var click := _void_travel <= CLICK_PIXELS
@@ -1306,7 +1316,7 @@ func _void_release(point: Vector2, step: bool) -> void:
 		if click: wind.state = ""
 		else: blew = wind.release(point)
 	release(point)
-	if click: fire_snap(step)
+	if click and sky_snap: fire_snap(step)
 	elif not blew.is_empty(): uses["wind"] = int(uses.get("wind",0))+1
 
 ## Snap: the hand snaps its fingers and the world cuts to night or day (or,
@@ -1326,10 +1336,10 @@ func fire_snap(step := false) -> void:
 	snapped.emit(phase,step)
 
 ## Held in the void, the hand is loaded to snap while the press is still a
-## click, and relaxes once it has become a drag.
+## click (with `--void-snap`), and relaxes once it has become a drag.
 func _drive_void_hold(hand: Node3D) -> void:
 	if not (hand.reach_gesture.is_empty() or hand.reach_gesture in ["void","snap"]): return
-	hand.reach_gesture = "snap" if _void_travel <= CLICK_PIXELS else "void"
+	hand.reach_gesture = "snap" if sky_snap and _void_travel <= CLICK_PIXELS else "void"
 	hand.reach_point = reach_point
 	_hover_shown = hand.reach_gesture
 

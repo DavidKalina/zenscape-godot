@@ -23,7 +23,7 @@ It uses the roll's timing tokens: reach 250 ms, recede 400 ms after a 300 ms hol
 
 | Pocket | Drawn as | Click |
 |---|---|---|
-| Time | Sun, or crescent moon by night | `hand_reach.fire_snap(false)`, the void's snap path with its sound and the hand's fingers. Then the hour it landed on is pinned as `night` or `morning`. |
+| Time | Sun, or crescent moon by night | Day and night's home since the void's snap was cut (2026-09-30). `VoidSnap.snap`, the snap's instant cut, without the hand or its sound; pinned as `night` or `morning`. Shift-click steps the golden hours (dawn, midday, dusk, night), pinned by name. With `--void-snap` it is `hand_reach.fire_snap(step)` again. |
 | Season | Plate from above in `SEASON_TINT`, with rim arc and bead | Next season, pinned |
 | Weather | Snow globe | Next of `MoodLook.WEATHERS`, pinned |
 | Wind | Windsock at its strength's droop (40°, 22°, 10°, 0°) | Next of Calm, Light, Brisk, Gale, pinned. Dragging across the pocket turns the prevailing heading by 1.5° per design px; on release it is pinned with the heading. |
@@ -47,7 +47,7 @@ The tag holds while the pointer crosses onto it. Clicking the tag presses the po
 
 | Pocket | Real gesture | How it is noticed |
 |---|---|---|
-| Time | The sky's snap | `hand_reach.snaps` goes up (the pocket's own snap is excluded) |
+| Time | None now: its line reads "shift-click for the golden hours" and retires at the first Shift-click (key `time_golden`). With `--void-snap`: "or click the sky", retired by the sky's snap | `hand_reach.snaps` goes up (the pocket's own snap is excluded) |
 | Wind | The sky's held sweep | `SkyWind.sweeps` goes up |
 | Weather | The shake | `snow_globe.shake_started` |
 | Season | A rim spin that winds the world into another season | While `spin_time.winding`, the season quarter changes |
@@ -82,7 +82,7 @@ Retirement is saved in `user://almanac.cfg` under `[whispers]`, following `camer
 1. **Strip height is 361 px, not "≈ 370".** It is 12 + 5 × 60 + 4 gaps + a 17 px stitch block with a 4 px gap each side. The divider's lines are 40 px wide and 4 px apart, centre to centre, as the roll's.
 2. **Reach is measured as 180 design px from the right edge**, which is x > 1260 at 1440. On wider windows it stays tied to the edge.
 3. **The Time pocket pins the hour.** Customise's Night or Morning is pinned after the snap. On a turning day that holds the hour, whereas the sky's own snap lets the day keep turning. The brief asked every click to tie a pin.
-4. **The Time pocket calls `fire_snap`, so it also counts as a use of the sky's snap for the sky's hint line** (`uses["void"]`). It does not retire the almanac's own whisper.
+4. **With `--void-snap` the Time pocket calls `fire_snap`, so it also counts as a use of the sky's snap for the sky's hint line** (`uses["void"]`). It does not retire the almanac's own whisper.
 5. **Cue during the snap at night.** At night the Time pocket shows the moon, so its cue swaps to the sun. The README only covers the day case ("swaps to moon").
 6. **The Mood's tag opens the Moods page.** The Mood has no Customise row.
 7. **Weather steps in `MoodLook.WEATHERS` order**, not the living weather's next sky that the W key uses.

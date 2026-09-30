@@ -10,9 +10,13 @@ extends Control
 ##
 ## Each pocket is drawn as the gesture that does the same thing in the world,
 ## and clicking it does what the gesture does ("gesture twins"):
-## - **Time** is a sun, or a crescent moon by night. Click and it is the snap
-##   (scripts/hand_reach.gd `fire_snap`, the void's click): day to night or
-##   back, in the same frame.
+## - **Time** is a sun, or a crescent moon by night: day and night's home
+##   since the void's snap was cut (2026-09-30). Click and it is night or day,
+##   in the same frame; Shift-click steps the golden hours (dawn, midday, dusk,
+##   night). It is the snap's own cut (scripts/void_snap.gd `snap`), without
+##   the hand or its sound; its tag opens Customise's Time row for the other
+##   hours. With `--void-snap` it is the void's click again (scripts/hand_reach.gd
+##   `fire_snap`), and its whisper names that.
 ## - **Season** is the plate from above in the season's tint, with a rim arc
 ##   and a bead. Click for the next season.
 ## - **Weather** is a snow globe. Click for the next weather.
@@ -28,10 +32,12 @@ extends Control
 ## quiet line of Spectral under it naming the real gesture ("or click the
 ## sky"), and plays a one-shot cue: the moon swaps in, the plate turns a
 ## little, the globe jiggles, the sock lifts. Nothing loops. Once the player
-## has done the real gesture (the snap, a spin that winds the season on, the
-## shake, the held sweep in the sky), that pocket's line and cue retire for
-## good (`retire`, saved in SETTINGS); the name stays. Clicking the name opens
-## Customise at that row.
+## has done the real gesture (a spin that winds the season on, the shake, the
+## held sweep in the sky), that pocket's line and cue retire for good
+## (`retire`, saved in SETTINGS); the name stays. Time has no gesture twin
+## now: its line teaches the Shift-click, and retires at the first one (with
+## `--void-snap`, at the sky's snap). Clicking the name opens Customise at
+## that row.
 ##
 ## Like the roll it only draws and answers hit tests; the hand
 ## (scripts/hand_materials.gd) hands it the presses and treats it as it treats
@@ -68,7 +74,9 @@ const TAG_GAP := 4.0
 const TAG_PAD := Vector4(12.0,6.0,10.0,7.0)
 const WHISPER_SIZE := 13.0
 const WHISPER_INK := Color("d6cbb2")
-const WHISPERS := {"time":"or click the sky","season":"or spin the plate by its rim","weather":"or shake the plate","wind":"or press and pull in the sky"}
+const WHISPERS := {"time":"shift-click for the golden hours","season":"or spin the plate by its rim","weather":"or shake the plate","wind":"or press and pull in the sky"}
+## Time's line with `--void-snap`, naming the void's click.
+const SNAP_WHISPER := "or click the sky"
 ## The Customise row each pocket's tag opens (the Mood's tag opens the Moods page).
 const ROWS := {"time":"time","season":"season","weather":"weather","wind":"wind"}
 ## The Mood's vignette: size and corner radius (design px), its stitch 2 px
@@ -267,8 +275,13 @@ func press(point: Vector2) -> bool:
 	if id == "wind" and scene != null and scene.get("_atmosphere") != null:
 		_drag = {"from":point,"angle":float(scene._atmosphere.direction_angle),"moved":false}
 		_states.wind.press = 1.0
-	elif not id.is_empty(): click(id)
+	elif not id.is_empty(): click(id,_shift())
 	return true
+
+## Shift was held at the press: the hand's reach reads it off the button
+## (hand_reach `_press_shift`) before it hands the press on.
+func _shift() -> bool:
+	return (reach != null and reach.get("_press_shift") == true) or Input.is_key_pressed(KEY_SHIFT)
 
 ## True while a press on the Wind pocket is held.
 func holding() -> bool:
@@ -297,13 +310,14 @@ func let_go(point: Vector2) -> void:
 	var mood := _mood()
 	if mood != null: mood.pin("wind",Mood.wind_pin(_wind_id(),float(scene._atmosphere.direction_angle)))
 
-## A pocket clicked: what its gesture does, pinned.
-func click(id: String) -> void:
+## A pocket clicked: what its gesture does, pinned. `step` (Shift) steps
+## Time through the golden hours.
+func click(id: String, step := false) -> void:
 	if not _states.has(id): return
 	_states[id].press = 1.0
 	match id:
 		"mood": page_requested.emit("moods","")
-		"time": _snap()
+		"time": _snap(step)
 		"season": _step("season",Mood.SEASONS)
 		"weather": _step("weather",Mood.WEATHERS)
 		"wind": _step_wind()
@@ -316,16 +330,25 @@ func open_tag(id: String) -> void:
 	if ROWS.has(id): page_requested.emit("customise",ROWS[id])
 	else: page_requested.emit("moods","")
 
-## The snap: the void's own path (sound, the hand's fingers, the cut), then
-## the hour it landed on pinned as Customise's Night or Morning would pin it.
-func _snap() -> void:
+## The snap's cut (scripts/void_snap.gd: the clock wound on, the sky, the
+## radiance and the wildlife at once), then the hour it landed on pinned as
+## Customise would pin it (Night or Morning; Dawn, Midday, Dusk or Night for
+## a step). With `--void-snap` it goes the void's own way, with the hand's
+## fingers and the sound (hand_reach `fire_snap`). A step retires the line
+## that teaches it.
+func _snap(step := false) -> void:
 	if scene == null: return
-	if reach != null and reach.has_method("fire_snap"):
-		reach.fire_snap(false)
+	var phase: float
+	if reach != null and reach.get("sky_snap") == true and reach.has_method("fire_snap"):
+		reach.fire_snap(step)
 		_seen_snaps = int(reach.get("snaps"))
-	else: VoidSnap.snap(scene,false)
+		phase = float(scene._celestial.phase)
+	else:
+		phase = VoidSnap.snap(scene,step)
+		if step: retire("time")
 	var mood := _mood()
-	if mood != null: mood.pin("time","night" if VoidSnap.is_night(float(scene._celestial.phase)) else "morning")
+	var id := VoidSnap.pin_id(phase)
+	if mood != null: mood.pin("time",id if not id.is_empty() else "night" if VoidSnap.is_night(phase) else "morning")
 
 ## The next option of a choice control, pinned.
 func _step(control: String, options: Array) -> void:
@@ -359,6 +382,7 @@ func retire(id: String) -> void:
 ## The pocket's whisper line, or "" once retired (or with whispers off).
 func whisper(id: String) -> String:
 	if not whispers or retired.get(id,false): return ""
+	if id == "time" and reach != null and reach.get("sky_snap") == true: return SNAP_WHISPER
 	return str(WHISPERS.get(id,""))
 
 func _private() -> bool:
@@ -370,14 +394,19 @@ func _load_retired() -> void:
 	var config := ConfigFile.new()
 	if config.load(settings_path) != OK: return
 	for id: String in WHISPERS:
-		if bool(config.get_value("whispers",id,false)): retired[id] = true
+		if bool(config.get_value("whispers",_key(id),false)): retired[id] = true
 
 func _save_retired() -> void:
 	if _private(): return
 	var config := ConfigFile.new()
 	config.load(settings_path)
-	for id: String in retired: config.set_value("whispers",id,true)
+	for id: String in retired: config.set_value("whispers",_key(id),true)
 	config.save(settings_path)
+
+## Where a pocket's retirement is kept: Time's Shift-click line is a new line,
+## so a sky snap made before it does not retire it.
+func _key(id: String) -> String:
+	return "time_golden" if id == "time" and not (reach != null and reach.get("sky_snap") == true) else id
 
 ## Notices the real gestures: a snap in the sky (the reach's `snaps`), the
 ## sky's held sweep (scripts/sky_wind.gd `sweeps`), and a rim spin that has

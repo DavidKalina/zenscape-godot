@@ -6,7 +6,7 @@ extends HBoxContainer
 ## the glass palette's hint read this one the same way.
 ##
 ## `plain` (the hand scheme): no key caps and no capitals, just the sentence,
-## quiet, in the notices' face ("Click the sky for night or day").
+## quiet, in the notices' face ("Hold in the sky to call a cloud").
 const Style = preload("res://scripts/lantern_style.gd")
 ## Leading phrases that are keys or gestures, longest first.
 const KEYS := ["Shift-click","Shift-drag","Right-drag","Double-click","Shift [ ]","[ ]","Drag","Press","Click","Hold","Release","Tab","Esc","P","M","1"]

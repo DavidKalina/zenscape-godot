@@ -9,10 +9,12 @@ extends SceneTree
 ##
 ## In the game (the hand scheme): each pocket's click changes the world (the
 ## hour, season, weather, wind strength and heading) and ties a pin, through
-## the hand's own press path; the almanac counts as a bar for the hand; and
-## the real gestures (the snap, the sky's held sweep, the shake, a spin into
-## another season) retire their whispers.
+## the hand's own press path; Shift-clicks on Time step the golden hours; the
+## almanac counts as a bar for the hand; and the real gestures (the sky's held
+## sweep, the shake, a spin into another season; the snap with --void-snap)
+## retire their whispers, as the first Shift-click retires Time's.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_almanac.gd -- --modeless --no-title
+## Add --void-snap for Time as the void's snap.
 
 const Almanac = preload("res://scripts/almanac.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
@@ -223,28 +225,46 @@ func in_game() -> void:
 	await frames(30)
 	check("reached in the game",almanac.shown > 0.99 and almanac.awake > 0.99,[almanac.shown,almanac.awake])
 	check("the hand treats it as a bar (tray_under)",materials.tray_under(almanac.pocket_centre("wind")))
-	var tap := func(at: Vector2) -> void:
+	var tap := func(at: Vector2, shift := false) -> void:
 		var down := InputEventMouseButton.new()
 		down.button_index = MOUSE_BUTTON_LEFT
 		down.pressed = true
+		down.shift_pressed = shift
 		down.position = at
 		reach.handle(down)
 		var up := InputEventMouseButton.new()
 		up.button_index = MOUSE_BUTTON_LEFT
 		up.pressed = false
+		up.shift_pressed = shift
 		up.position = at
 		reach.handle(up)
-	# Time: the snap.
+	# Time: day and night (the void's snap with --void-snap).
 	var night := VoidSnap.is_night(float(scene._celestial.phase))
 	var snaps: int = reach.snaps
+	var day_before: int = scene.world_clock.day
+	check("Time: the whisper names %s" % ("the sky" if reach.sky_snap else "the Shift-click"),almanac.whisper("time") == (Almanac.SNAP_WHISPER if reach.sky_snap else Almanac.WHISPERS.time),almanac.whisper("time"))
 	tap.call(almanac.pocket_centre("time"))
 	await frames(3)
 	check("Time: day and night swap",VoidSnap.is_night(float(scene._celestial.phase)) != night,[night,scene._celestial.phase])
-	check("Time: through the snap's own path",reach.snaps == snaps+1)
-	check("Time: pinned, knot shown",mood.pinned("time") and almanac.pinned("time"),mood.pins)
+	if reach.sky_snap: check("Time: through the void's snap",reach.snaps == snaps+1)
+	else: check("Time: the snap's cut without the void's (no hand, no sound)",reach.snaps == snaps and reach.snap_sound == null,[reach.snaps-snaps,reach.snap_sound])
+	check("Time: the clock winds on, as the snap winds it",scene.world_clock.day*24.0+scene.world_clock.hour > day_before*24.0,[day_before,scene.world_clock.day,scene.world_clock.hour])
+	check("Time: pinned as Night or Morning, knot shown",mood.pinned("time") and almanac.pinned("time") and mood.value("time") == ("morning" if night else "night"),mood.pins)
 	check("Time: its own click does not retire the whisper",not almanac.retired.get("time",false))
 	check("Time: the pocket draws the new body",almanac._night() == (not night))
 	await frames(80)
+	# Time: Shift-click steps the golden hours, from the hour now.
+	var stepped := []
+	for k in range(4):
+		var goal := VoidSnap.target_phase(float(scene._celestial.phase),true)
+		tap.call(almanac.pocket_centre("time"),true)
+		await frames(3)
+		stepped.append([snappedf(float(scene._celestial.phase),0.001),mood.value("time"),goal])
+		await frames(80)
+	check("Time: Shift-clicks step the golden hours, each pinned by name",stepped.all(func(s: Array) -> bool: return is_equal_approx(s[0],snappedf(s[2],0.001)) and s[1] == VoidSnap.pin_id(s[2])),stepped)
+	check("Time: the steps are dawn, midday, dusk and night in order",stepped.map(func(s: Array) -> String: return s[1]) in [["dawn","midday","dusk","night"],["midday","dusk","night","dawn"],["dusk","night","dawn","midday"],["night","dawn","midday","dusk"]],stepped)
+	check("Time: the tag names the step",almanac.tag_text("time") == "Time · "+str(Mood.option("time",str(stepped.back()[1])).title),almanac.tag_text("time"))
+	if not reach.sky_snap: check("Time: a Shift-click retires the line that teaches it",almanac.retired.get("time",false) and almanac.whisper("time").is_empty())
 	# Season.
 	var season: String = mood.value("season")
 	tap.call(almanac.pocket_centre("season"))
@@ -325,9 +345,10 @@ func in_game() -> void:
 	await frames(30)
 	check("after the drag it reaches again",almanac.awake > 0.99)
 	# The real gestures retire the whispers.
-	reach.fire_snap()
-	await frames(2)
-	check("the sky's snap retires Time's whisper",almanac.retired.get("time",false) and almanac.whisper("time").is_empty())
+	if reach.sky_snap:
+		reach.fire_snap()
+		await frames(2)
+		check("the sky's snap retires Time's whisper",almanac.retired.get("time",false) and almanac.whisper("time").is_empty())
 	var sky: RefCounted = reach.wind
 	sky.press(Vector2(700,40))
 	sky.state = "steer"

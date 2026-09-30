@@ -48,13 +48,15 @@ The charged land spring retires: springs belong to the edge. Props, trees and re
 
 | Do | Result |
 |---|---|
-| Click | the hand snaps its fingers: instant day ↔ night (a cut, or a very fast blend; instant is preferred, it is the drama) |
-| Shift + click | the snap steps dawn → noon → dusk → night |
+| Click | nothing (2026-09-30: day and night moved to the almanac's Time pocket; `--void-snap` brings back the snap below) |
+| Hold still | calls the cloud (`docs/scenic/sky-cloud.md` "Summoned") |
+| Click, `--void-snap` | the hand snaps its fingers: instant day ↔ night (a cut, or a very fast blend; instant is preferred, it is the drama) |
+| Shift + click, `--void-snap` | the snap steps dawn → noon → dusk → night |
 | Swipe (let go within 0.3 s) | a passing gust across the land along the swipe; the weather is left alone ("Wind" below) |
 | Drag onto the land | the wind tool in hand where the drag meets the ground: its lane is promised, swipe on and let go to send it, hold still to burst ("Wind" below) |
 | Press, drag and hold | the prevailing wind turns the way you pull from the press, harder the further you pull; it stays when you let go ("Wind" below) |
 
-**The hand is always there.** It is under the pointer wherever the pointer is, and its pose says what a press would do: over the land a ready pinch; on a wall its palm faces the wall; on the lip the rim grip; in the void it floats relaxed at a fixed depth along the pointer's ray, fingers loosely curled, ready to snap. It fades out while the right-button camera moves and comes back when it stops.
+**The hand is always there.** It is under the pointer wherever the pointer is, and its pose says what a press would do: over the land a ready pinch; on a wall its palm faces the wall; on the lip the rim grip; in the void it floats relaxed at a fixed depth along the pointer's ray, fingers loosely curled, ready to snap (since 2026-09-30 only with `--void-snap`; see also `docs/design/tools/PLAN.md` "The hand at the rim"). It fades out while the right-button camera moves and comes back when it stops.
 
 **Water** (`feature/water-flow`, `docs/scenic/water-flow.md`). A tuft pulled off the sky's cloud and carried over the land becomes a water ball (`docs/scenic/sky-cloud.md`), and letting go drops it. On high or steep ground it becomes a spring. Its water runs in a live simulation: streams in the thumb's grooves, ponds in the palm's basins, spilling over rims, and following every change to the land. `--planned-water` keeps the one-shot plan.
 
@@ -295,6 +297,8 @@ Its stacking check (three full pulls with one seed) predates the amplify: after 
 
 ## Void slice: the ever-present hand and the snap
 
+Since 2026-09-30 the snap is behind `--void-snap`: day and night are the almanac's Time pocket (`scripts/almanac.gd`), which runs the same cut (`VoidSnap.snap`) without the hand or its sound. Without the flag a click in the void does nothing, its hint names the cloud's summon, and the hand does not float there. What follows describes the flag.
+
 Branch `feature/modeless-void`. Checked headless only (`tools/probe_void_snap.gd`); nothing has been seen, heard or felt on screen.
 
 ### Try it
@@ -342,7 +346,7 @@ Branch `feature/sky-cloud`. Checked headless only (`tools/probe_sky_wind.gd`); n
 - **Swipe the sky** (press in empty sky, flick across, let go within `SWIPE_SECONDS`, 0.3 s). A gust blows across the land along the swipe, as the camera sees it: flicking right blows to the screen's right, flicking up blows away from you. The faster the flick, the stronger the gust. It is the wind tool's lane gust (`scripts/wind_gust.gd`, `docs/scenic/wind-gust.md`), so the fog parts, trees, grass and water bend as it passes, leaves blow and pollen in the air rides it. It starts just inside the land's upwind edge and runs across it, 5 m either side of its line. The prevailing wind does not change.
 - **Press the sky, drag and hold.** After 0.3 s the prevailing wind is in hand. It blows the way the pointer lies from the press, laid onto the ground as the camera sees it, and harder the further you pull: from a breeze (0.15) at 4 % of the view's height to a strong wind (1.3) at 40 %. The world's air swings round to it while you hold, faster than the weather would turn it. Let go and it stays. Pollen falling after that drifts on it.
 - **Drag from the sky onto the land.** The wind tool (`docs/scenic/wind-gust.md`) is taken in hand where the drag meets the ground, as if the Wind brush had pressed there, and the gesture is the tool's from then on: the lane's promise shows on the ground, the hand's air leans the foliage, swiping on and letting go sends the lane along the swipe, and holding still gathers a burst. The flick's heading and power come with it (`WindGust.carry`), so a fast drag in from the sky blows hard at once and then follows the swipe on the land. The lane is the Wind brush's size (3 m half width) and strength. A held wind turned on the way in (the drag took longer than 0.3 s to reach the land) is put back as it was. The god hand opens to blow while the tool is held.
-- **Click** is still the snap: a press that moves under 6 px is never the wind's.
+- **Click** is never the wind's: a press that moves under 6 px does nothing (the snap, with `--void-snap`).
 
 ### How it works
 

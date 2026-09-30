@@ -4,8 +4,8 @@ extends SceneTree
 ##   - no cloud at rest; the session's first world shows it once by itself
 ##     (the demo), which hangs, drifts off and thins away; then the void's
 ##     hint names the summon;
-##   - a quick click on empty sky still snaps, and a quick drag is still the
-##     wind; neither calls the cloud;
+##   - a quick click on empty sky does nothing (it snaps with --void-snap),
+##     and a quick drag is still the wind; neither calls the cloud;
 ##   - a still hold calls it into a cupped hand; its puffs swell with an
 ##     overshoot; the hold going on into a pull tears a tuft before it has
 ##     finished forming, and over the land the tuft is the held ball, all in
@@ -13,8 +13,8 @@ extends SceneTree
 ##   - with no cloud, a press that pauses under the summon's hold and then
 ##     drags is still the wind;
 ##   - the lingering cloud plucks again at once, with a pinch;
-##   - while it is up, empty sky is the snap's and the wind's: a click
-##     snaps, a press that pauses long and then drags is wind, and neither
+##   - while it is up, empty sky is the wind's (and the snap's): a click
+##     calls nothing, a press that pauses long and then drags is wind, and neither
 ##     moves or re-calls the cloud; it floats within its bounds over 20 s,
 ##     and a hand hovering by it keeps it past its linger;
 ##   - left alone, it drifts off and is gone; wrung dry, it goes sooner;
@@ -187,13 +187,14 @@ func run() -> void:
 	await frames(4)
 	check("after the demo the sky's hint names the summon",reach._hint == reach.SUMMON_HINT,reach._hint)
 
-	# A quick click still snaps.
+	# A quick click calls nothing: it snaps with --void-snap, else does nothing.
+	var click := 1 if reach.sky_snap else 0
 	var snaps: int = reach.snaps
 	button(sky,true)
 	await frames(3)
 	button(sky,false)
 	await frames(20)
-	check("a quick click on empty sky still snaps",reach.snaps == snaps+1 and cloud.presence == "gone",[reach.snaps-snaps,cloud.presence])
+	check("a quick click on empty sky %s, and calls no cloud" % ("still snaps" if reach.sky_snap else "does nothing"),reach.snaps == snaps+click and cloud.presence == "gone",[reach.snaps-snaps,cloud.presence])
 
 	# A quick drag is still the wind.
 	var winds := int(reach.uses.get("wind",0))
@@ -289,7 +290,7 @@ func run() -> void:
 		await frames(3)
 		button(elsewhere,false)
 		await frames(20)
-		check("while it is up, a click elsewhere snaps",reach.snaps == snaps+1 and cloud.summons == 1,[reach.snaps-snaps,cloud.summons])
+		check("while it is up, a click elsewhere %s" % ("snaps" if reach.sky_snap else "calls nothing"),reach.snaps == snaps+click and cloud.summons == 1,[reach.snaps-snaps,cloud.summons])
 		winds = int(reach.uses.get("wind",0))
 		var sweeps: int = reach.wind.sweeps
 		var way := Vector2(1.0 if elsewhere.x < 720.0 else -1.0,0.0)*200.0

@@ -1,7 +1,9 @@
 extends RefCounted
-## The snap (docs/scenic/modeless.md "Void slice"): a click in the void and the
-## hand snaps its fingers, and it is instantly day or night. Shift steps the
-## golden hours instead: dawn, noon, dusk, night, dawn.
+## The snap (docs/scenic/modeless.md "Void slice"): it is instantly day or
+## night. Shift steps the golden hours instead: dawn, noon, dusk, night, dawn.
+## Since 2026-09-30 it is the almanac's Time pocket (scripts/almanac.gd). The
+## void's click, the hand snapping its fingers with a sound, is kept behind
+## `--void-snap` (`enabled`); without it a click in the void does nothing.
 ##
 ## The cut is instant (SNAP_BLEND 0): the world clock is wound forward to the
 ## new hour at once, the way scripts/spin_time.gd winds it (the day moves on,
@@ -36,6 +38,18 @@ const STEP_EPSILON := 0.01
 ## Seconds of real-time radiance after a snap.
 const RADIANCE_SECONDS := 0.3
 const Disturbance = preload("res://scripts/disturbance.gd")
+## mood_look's Time of day ids for the hours a snap lands on, to pin them.
+const PINS := {0.035:"night",0.345:"morning",0.275:"dawn",0.47:"midday",0.705:"dusk"}
+
+## True with `--void-snap`: a click in the void snaps, as before the almanac.
+static func enabled() -> bool:
+	return "--void-snap" in OS.get_cmdline_user_args()
+
+## The mood_look Time of day id of an hour a snap lands on ("" for others).
+static func pin_id(phase: float) -> String:
+	for at: float in PINS:
+		if absf(at-phase) < 0.0005: return PINS[at]
+	return ""
 
 ## The phase a snap from `phase` lands on.
 static func target_phase(phase: float, step: bool) -> float:
