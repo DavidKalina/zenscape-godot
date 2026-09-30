@@ -40,11 +40,11 @@ void fog() {
 	float keep = smoothstep(0.29,0.57,noise)*parcel;
 	keep *= 1.0-activity*0.65*smoothstep(0.5,0.95,gust);
 	keep *= 1.0-smoothstep(0.10,0.6,puff)*0.82;
-	float expansion = activity*2.2;
 	float top = 0.8+bank_height+(noise-0.45)*bank_height*0.9-(1.0-parcel)*bank_height*0.65;
 	float lift = water*water_lift;
 	float body = (1.0-smoothstep(top-1.4,top+1.3,p.y))*smoothstep(ground-0.1+lift,ground+0.4+lift*1.4,p.y)*(1.0-water_clear*water);
-	float edge = (1.0-smoothstep(12.0,16.0+expansion,abs(p.x)))*(1.0-smoothstep(12.0,16.0+expansion,abs(p.z)));
+	// Only where the land is behind it (reference_cloud_field.gdshaderinc).
+	float edge = zs_plate_keep(p,ground);
 	float boundary = 1.0-smoothstep(-0.8,0.0,SDF);
 	DENSITY = ground < -100.0 ? 0.0 : bank_density*keep*body*edge*boundary*zs_reveal_keep(p.xz);
 	ALBEDO = bank_color;

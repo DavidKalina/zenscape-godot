@@ -33,7 +33,10 @@ vec4 zs_air_sample(vec3 p) {
 	vec3 q = p * vec3(0.22, 0.42, 0.22) + vec3(zs_cloud_drift.x * 3.0, zs_motion_time * 0.012, zs_cloud_drift.z * 3.0)
 		- vec3(zs_wind_direction.x, 0.0, zs_wind_direction.y) * zs_gust_distance * (0.03 + 0.19 * loosen);
 	float noise = 0.55 + 0.75 * wxFbm(q);
-	float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / 14.0);
+	float fade = zs_plate_keep(p, ground);
+	// Light weather's ground mist gathers in patches rather than a sheet; a
+	// misty sky (density toward 0.6) fills them in.
+	float patch = mix(smoothstep(0.86, 1.0, noise), 1.0, smoothstep(0.3, 0.6, density));
 	float lid = 0.6 + 1.8 + (noise - 0.9) * 1.8;
 	float bank = 1.0 - smoothstep(lid - 1.2, lid + 1.6, p.y);
 	float g = 0.5, puff = 0.0;
@@ -56,7 +59,7 @@ vec4 zs_air_sample(vec3 p) {
 		float floor_y = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
 		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / 14.0));
 	}
-	float d = (density * pool * noise * 0.36 * stream + haze * 0.026 + blank) * fade * reveal + poured;
+	float d = (density * pool * noise * patch * 0.36 * stream + haze * 0.026 + blank) * fade * reveal + poured;
 	if (over < -0.4 || ground < -100.0) d = 0.0;
 	float open_sky = cloudShadeAt(p, zs_cloud_direction);
 	float ag_band = max(0.8, 0.08 * (zs_summit.y - 0.15));
@@ -78,7 +81,7 @@ vec4 zs_air_sample(vec3 p) {
 		vec3 cap_light = zs_cloud_sun * open_sky * sun_amount * min(cap_phase, 1.7) * 0.42 + zs_cloud_sky * 0.7;
 		lit = (lit * d + cap_light * cap) / (d + cap);
 	}
-	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * (1.0 - shroud) * reveal;
+	float inversion = ground < -100.0 || over < -0.4 ? 0.0 : zs_inversion_at(p) * (1.0 - shroud) * reveal * fade;
 	if (inversion > 0.0) {
 		lit = (lit * (d + cap) + zs_inversion_color * mix(0.8, 1.0, open_sky) * inversion) / max(d + cap + inversion, 0.0001);
 	}

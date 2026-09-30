@@ -13,6 +13,8 @@ void fog() {
 	float band_center = (wxNoise(q*0.62+12.0)-0.5)*2.2;
 	float vertical = 1.0-smoothstep(0.35,2.6,abs(local.y-band_center));
 	float edge = 1.0-smoothstep(11.0,17.0,length(local.xz*vec2(0.85,1.05)));
+	// Only where the land is behind it (reference_cloud_field.gdshaderinc).
+	edge *= zs_plate_keep(p,0.15);
 	float broken = smoothstep(0.43,0.65,billow);
 	DENSITY = cloud_density*broken*vertical*edge*(1.0-smoothstep(-0.7,0.0,SDF));
 	ALBEDO = vec3(0.85,0.9,0.96);
