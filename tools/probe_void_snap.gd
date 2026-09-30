@@ -3,8 +3,9 @@ extends SceneTree
 ## the sky the hand floats ready on the pointer's ray and hides over the UI; a
 ## click snaps day to night and back at once, Shift-click steps the golden
 ## hours, a drag does not snap, a right drag fades the hand and it comes back,
-## land and rim presses are untouched, and the pins behave.
-##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_void_snap.gd -- --modeless
+## land and rim presses are untouched, and the pins behave. The snap is kept
+## behind --void-snap since day and night moved to the almanac (2026-09-30).
+##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_void_snap.gd -- --modeless --void-snap
 const VoidSnap = preload("res://scripts/void_snap.gd")
 var scene: Node3D
 var failures := []
@@ -67,6 +68,7 @@ func run() -> void:
 	var mood: Node = scene.mood_look
 	var editor: Node = scene._chunk_editor
 	check("modeless is on",reach.modeless)
+	check("run with --void-snap (the snap is off by default)",reach.sky_snap)
 	for clip in ["VoidIn","VoidHold","VoidOut","SnapIn","SnapHold","SnapOut"]:
 		check("the glb has "+clip,hand.player.has_animation(clip))
 	scene._overview()

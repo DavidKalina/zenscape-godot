@@ -2,7 +2,7 @@ extends SceneTree
 ## Headless probe of the wind in the sky (scripts/sky_wind.gd,
 ## docs/scenic/modeless.md "Wind"), on the cozy worlds scene with synthesized
 ## input:
-##   - a click in empty sky still snaps and blows nothing;
+##   - a click in empty sky blows nothing (and snaps, with --void-snap);
 ##   - a quick swipe sends one gust across the land, along the swipe as the
 ##     camera sees it, and leaves the prevailing wind alone;
 ##   - a held sweep turns the prevailing wind the way it is pulled, the air
@@ -109,15 +109,16 @@ func run() -> void:
 		quit(1)
 		return
 
-	# A click still snaps.
+	# A click snaps with --void-snap; without it, it does nothing.
 	var snaps: int = reach.snaps
+	var click := 1 if reach.sky_snap else 0
 	point(sky)
 	await frames(3)
 	button(sky,true)
 	await frames(2)
 	button(sky,false)
 	await frames(3)
-	check("a click in the sky still snaps",reach.snaps == snaps+1,[snaps,reach.snaps])
+	check("a click in the sky %s" % ("still snaps" if reach.sky_snap else "does not snap"),reach.snaps == snaps+click,[snaps,reach.snaps])
 	check("and blows nothing",wind.gusts == 0 and wind.sweeps == 0 and (editor.gust == null or editor.gust.gusts.is_empty()))
 
 	# A quick swipe: a gust, the weather left alone.
@@ -131,7 +132,7 @@ func run() -> void:
 	button(end,false)
 	await frames(2)
 	check("a quick swipe sends a gust",wind.gusts == 1 and editor.gust != null and editor.gust.gusts.size() == 1,[wind.gusts,editor.gust.gusts.size() if editor.gust != null else -1])
-	check("and does not snap",reach.snaps == snaps+1)
+	check("and does not snap",reach.snaps == snaps+click)
 	if editor.gust != null and not editor.gust.gusts.is_empty():
 		var g: Dictionary = editor.gust.gusts[0]
 		var world: Vector3 = editor.terrain.global_basis*Vector3(g.heading.x,0.0,g.heading.y)
@@ -168,7 +169,7 @@ func run() -> void:
 	button(pulled,false)
 	await frames(3)
 	check("let go, it is a sweep, not a gust",wind.sweeps == 1 and wind.gusts == 1,[wind.sweeps,wind.gusts])
-	check("and no snap",reach.snaps == snaps+1)
+	check("and no snap",reach.snaps == snaps+click)
 	var kept: float = air.direction_angle
 	await frames(120)
 	check("the wind stays as it was left",is_equal_approx(air.direction_angle,kept) and is_equal_approx(air.strength,strong),[kept,air.direction_angle,strong,air.strength])
@@ -207,7 +208,7 @@ func run() -> void:
 			check("along the drag as the camera sees it",angle_off(atan2(world.z,world.x),down.angle()) < 15.0,[Vector2(world.x,world.z).normalized(),down])
 			check("sent as promised",g.kind == promised.kind and absf(float(g.power)-float(promised.power)) < 0.1,[g.power,promised.power])
 		check("the prevailing wind is left alone",is_equal_approx(air.direction_angle,wind_angle) and is_equal_approx(air.strength,wind_strength),[wind_angle,air.direction_angle])
-		check("and no snap",reach.snaps == snaps+1)
+		check("and no snap",reach.snaps == snaps+click)
 		await frames(120)
 		# Onto the land and held still: a burst.
 		sent = editor.gust.gusts.size()

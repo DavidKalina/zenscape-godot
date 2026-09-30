@@ -695,7 +695,8 @@ shake, flip, and the grip that turns the world) and fades out anywhere else
 (scripts/god_hand.gd `WORLD`). The shaping tools and the Feather are their own
 cursors, with no hand holding them. Material carried from the bar and the sky's
 cloud still ride in the hand (`CARRYING`) until the materials become cursors too.
-The void's snap plays without a hand until day and night move to the HUD.
+Day and night are the almanac's Time pocket (click, Shift-click for the golden
+hours); the void's click snaps nothing, and the snap is behind `--void-snap`.
 `--hand-everywhere` brings back the old hand.
 
 The prop as a cursor (scripts/land_clay.gd `_place_prop`):
@@ -713,8 +714,7 @@ The prop as a cursor (scripts/land_clay.gd `_place_prop`):
   back into it: over the land, with no material held, and not while the camera
   moves.
 
-Still to come: the materials become cursors, and day and night move to the HUD
-in place of the snap.
+Still to come: the materials become cursors.
 
 ## The Modeller
 

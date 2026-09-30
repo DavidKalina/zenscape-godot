@@ -4,10 +4,10 @@ extends SceneTree
 ## tools/probe_summoned_cloud.gd), on the cozy worlds scene with synthesized
 ## input:
 ##   - under --always-cloud nothing is summoned: a long still hold on empty
-##     sky still snaps;
+##     sky calls no cloud (and still snaps, with --void-snap);
 ##   - the cloud floats in the sky, on screen, full;
-##   - hover takes the "cloud" zone and the hand opens over it; empty sky
-##     still snaps;
+##   - hover takes the "cloud" zone and the hand opens over it; a click on
+##     empty sky does nothing (or still snaps, with --void-snap);
 ##   - a press pinches it ("cloud"); a short pull springs back and keeps its
 ##     water;
 ##   - a long pull stretches it (the hand lags the pointer), tears a tuft,
@@ -114,7 +114,7 @@ func run() -> void:
 	check("hover over it is the cloud's zone",reach.hover_zone == "cloud",reach.hover_zone)
 	check("the hand opens over it",hand == null or hand.reach_gesture == "void",hand.reach_gesture if hand != null else "")
 
-	# Empty sky still snaps.
+	# Empty sky still snaps with --void-snap; without it a click does nothing.
 	var sky := Vector2.INF
 	for candidate in [Vector2(40,20),Vector2(1400,20),Vector2(720,10),Vector2(40,200),Vector2(1400,200)]:
 		if reach.void_at(candidate) and reach._cloud_at(candidate) == null:
@@ -123,21 +123,24 @@ func run() -> void:
 	check("found empty sky beside it",sky != Vector2.INF)
 	if sky != Vector2.INF:
 		var snaps: int = reach.snaps
+		var click := 1 if reach.sky_snap else 0
+		var phase := float(scene._celestial.phase)
 		point(sky)
 		await frames(3)
 		button(sky,true)
 		await frames(2)
 		button(sky,false)
 		await frames(20)
-		check("a click on empty sky still snaps",reach.snaps == snaps+1)
-		# A long still hold summons nothing and is still a snap.
+		if reach.sky_snap: check("a click on empty sky still snaps",reach.snaps == snaps+1)
+		else: check("a click on empty sky does nothing",reach.snaps == snaps and is_equal_approx(float(scene._celestial.phase),phase),[reach.snaps-snaps,phase,scene._celestial.phase])
+		# A long still hold summons nothing (and is still a snap, with --void-snap).
 		var stood: Vector3 = cloud.centre
 		button(sky,true)
 		await frames(40)
 		check("a long still hold calls no cloud",reach.holding == "void" and cloud.summons == 0,[reach.holding,cloud.summons])
 		button(sky,false)
 		await frames(20)
-		check("and still snaps, the cloud where it was",reach.snaps == snaps+2 and cloud.centre.distance_to(stood) < 2.0,[reach.snaps-snaps,cloud.centre.distance_to(stood)])
+		check("and the cloud is where it was",reach.snaps == snaps+click*2 and cloud.centre.distance_to(stood) < 2.0,[reach.snaps-snaps,cloud.centre.distance_to(stood)])
 
 	# A short pull springs back.
 	at = cloud_screen()

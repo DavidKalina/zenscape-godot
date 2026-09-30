@@ -77,13 +77,16 @@ under "Pull feel (experiment)".
 
 | Do | Result |
 |---|---|
-| Click | the hand snaps: day ↔ night |
-| Shift + click | steps dawn → noon → dusk → night |
+| Hold still in empty sky | calls the **cloud** into your hand |
 | Press the **cloud** and pull | it stretches after your hand; pull far enough and a tuft tears off. Let go short and it springs back |
 | Swipe empty sky | a **gust** blows across the land the way you swiped, harder the faster you flick |
 | Drag from empty sky onto the land | you hold the **wind**: the plants lean under your hand. Keep swiping and let go to send a gust along the swipe, or hold still and let go for a burst |
 | Press empty sky, pull and hold | the prevailing wind turns the way you pull, stronger the further you pull, and stays when you let go |
 | Carry the tuft over the land | it becomes a **water ball** that fills from the cloud while you hold it; let go to drop it. On high or steep ground it becomes a spring. The water runs in a live simulation: it fills grooves, pools in palm pans and pours off notched edges |
+
+Day and night live on the almanac, the linen strip on the right: click its
+sun (or moon) for night or day, Shift-click to step dawn → midday → dusk →
+night. `--void-snap` brings back the old click in the sky.
 
 The cloud's grey belly shows how much water it holds. It shrinks as it gives
 and refills in about a minute; a dry cloud won't tear.
