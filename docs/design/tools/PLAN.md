@@ -556,3 +556,125 @@ Nothing has been seen on screen:
 - the notch at 0.8 m, which may be too small to see from 58 m out
 - where the chisel and mallet sit in the grip, their size, and whether the
   mallet beside the chisel reads
+
+## The Feather
+
+Design "ZenScape HUD 5 Air", section C (`docs/design/hud-5/README.md`,
+`lowpoly.js` `SHAPING_TOOLS[5]`, `TOOL_DIVIDER_BEFORE`, `GUST`). The Feather,
+"Gust", is wind held in hand. It sits last in the tool roll, below the Hammer,
+after a stitched divider (`tool_roll.gd` `DIVIDER_BEFORE`). The prevailing
+wind stays in the almanac and is not the Feather's.
+
+### Routing: a hold of the hand, with the clay's prop
+
+The Feather shapes no land, so its gestures do not go through the clay. Its
+press is held by the materials hand (`scripts/hand_materials.gd`, "The
+Feather") the way a scatter is, and handed to the wind tool
+(`scripts/wind_gust.gd`, `NativeChunkEditor.gust_in_hand`). There is still a
+`scripts/clay_tools/feather.gd`, but it has no verbs. It is there so that
+`LandClay.set_tool("feather")` does what it does for every tool:
+
+- it builds and places the prop (`build_prop`, `prop_tilt`);
+- the hand grips over the land (`hover_gesture`);
+- one thing is in hand, so Esc, the Hand's pocket or taking a material give
+  back the Hand with no new code.
+
+Going through the clay's verbs was rejected for three reasons:
+
+- the clay opens an undo step when it decides a drag or a hold;
+- it decides a hold at 0.3 s, where the Feather's burst waits 0.4 s;
+- the wind tool reads the pointer itself every frame, and needs to own the
+  release to tell a burst from nothing.
+
+Holding the press in `hand_materials` keeps the wind in one place. Nothing
+about the gust is written twice.
+
+- **Swipe on the land and let go:** the wind tool's lane runs along the
+  swipe, as strong as the swipe was fast (its `promise()`, sent by
+  `release()`).
+- **Hold still `FEATHER_BURST_SECONDS` (0.4 s):** a burst, rung out round the
+  press on release, gathered as the wind tool gathers it (4 to 12 m over
+  1.2 s). A still press let go sooner sends nothing, so a stray click blows
+  nothing.
+- **Width.** The lane is `FEATHER_HALF` (3 m, the Wind brush's radius) either
+  side at the middle pip. The pips scale it by 0.6 / 1 / 1.5, as they scale
+  every tool: 1.8 / 3 / 4.5 m, standing in for the design's 20 / 34 / 52 px.
+- **From the sky.** Wind dragged from the sky onto the land
+  (`hand_reach._void_drag`, `SkyWind.to_land`) now also puts the Feather in
+  hand (`take_feather`), pressed in the roll, with the Feather's lane width.
+  The flick's own heading and power carry on, as before. A sky swipe with
+  the Feather in hand is still the sky's passing gust.
+- **No land changes.** No undo step, and the heights are left alone.
+- **Prop:** a stand-in quill, until Blender. A pale hexagonal shaft
+  (`#ece2c8`) runs through the grip, with a horn quill end (`#a8936a`) over
+  it. Two flattened seven-sided ellipsoids in `#cbb994` hang below the grip
+  as the vane: a narrow leading half and a broad trailing one. It leans
+  -18° (`GUST.cursorTilt`). There is no 2D cursor: the ghost hand stays the
+  cursor.
+
+Hook lines in shared files:
+
+- `hand_reach.gd`: `"feather"` joins the holds whose release goes to
+  `materials.let_go`. `_void_drag` passes `materials.feather_half()` to
+  `to_land` and calls `materials.take_feather()` after.
+- `sky_wind.gd` `to_land(point, half := -1.0)` and
+  `native_chunk_editor.gd` `gust_in_hand(..., half := -1.0)` take the lane
+  width. Below 0, the Wind brush's radius is used, as before.
+- `ground_marks.gd`: three new kinds, `feather`, `feather_lane` and
+  `feather_burst`. There is one branch in `step` (`_step_feather`) and the
+  lane's box, fill and stitches in `_draw` and `_stitches`. The size lookup
+  (`size_of`) is untouched: the Feather's sizes come from the wind.
+- `shaders/ground_mark.gdshader`: kind 7, the lane.
+
+### The ground mark
+
+These marks are faint, at the same `LINE_ALPHA` (0.3) and `FILL_ALPHA`
+(0.05) as the other tools, not the design's 0.85:
+
+- **At rest:** a small stitched hotspot ellipse, `FEATHER_HOTSPOT` (0.24 by
+  0.12 m, the design's 7 by 3.5 px at the hand sketch's scale).
+- **During a swipe:** the lane's two stitched edges, from the press along
+  the heading to the pointer, with the faint fill between. They are cut
+  square, with no arrowhead and no loop.
+- **Held still:** the hotspot until 0.4 s. Then the burst's ring appears at
+  the lane's half-width and grows to 1.5 times it (1.5 times the lane's
+  width across) over the wind tool's gather.
+
+Unlike the tools' marks, these stay while the press is held. They are the
+Feather's only preview, since the wind tool's own lane (`--show-promise`) is
+off.
+
+### Checked headless
+
+`tools/probe_tool_feather.gd`:
+
+```sh
+godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_feather.gd -- --modeless --no-title
+```
+
+- The roll holds the Feather after the Hammer. The divider opens a 21 px gap
+  between them, against 4. Its pocket takes it.
+- The quill is built faceted in `#cbb994`. The hand grips it, and it rides
+  in the shown hand leaning 18.0°.
+- A 240 px swipe sends one lane, 0.1° off the swipe, at power 0.94. It is
+  1.8 / 3 / 4.5 m either side at the three pips, and the mid-swipe mark
+  matches.
+- A still press let go at 0.2 s sends nothing. Held, the hotspot stays until
+  0.4 s. The ring then shows at 3.06 m, grows to 4.5 m, and bursts on
+  release.
+- No undo step, and the heights are unchanged.
+- Taking a stone gives back the Hand. A drag from the sky onto the land puts
+  the Feather in hand, at its lane width, and sends one gust on release.
+  Esc gives back the Hand.
+- Every mark's line alpha is 0.30, under `FAINT_CAP` (0.4).
+
+### Unverified
+
+Nothing has been seen on screen:
+
+- the quill's size, lean and place in the grip. The hand blows open while
+  the wind is in hand (`NativeChunkEditor.hand_gesture` "void"), so the quill
+  may float in an open hand mid-gesture.
+- whether a 0.24 m hotspot reads at all from 58 m out
+- the lane's edges and fill on slopes and at night, and the burst ring
+- the roll's new divider and the feather icon at 1.2 line width

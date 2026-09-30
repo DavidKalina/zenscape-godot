@@ -15,6 +15,14 @@ extends Node
 ##   chunks will fall.
 ## - **Material:** a dotted drop ring under the carried item, as wide as the
 ##   spread it will set down (hand_materials SCATTER spread × size).
+## - **Feather** (HUD 5 "Gust", wind in hand): at rest only a small stitched
+##   hotspot ellipse (FEATHER_HOTSPOT); while a swipe is under way, the lane's
+##   two stitched edges from the press along the swipe, with the faint fill
+##   between (no arrowhead: the wind tool's promise stays hidden); held still
+##   past hand_materials FEATHER_BURST_SECONDS, the burst's ring, growing. The
+##   swipe and the hold keep their mark while pressed, unlike the tools'
+##   (`_step_feather`): the design has them, and they are its only preview
+##   now the wind tool's own lane is off.
 ##
 ## Each scales with the roll's size (tool_roll.gd SIZES) and lies on the
 ## terrain: a box decal reads the depth buffer back to the ground under it
@@ -35,8 +43,8 @@ extends Node
 ## frame (called by scripts/hand_reach.gd after the materials tray).
 
 ## The marks.
-const KINDS := ["hand","paddle","chisel","wire","hammer","material"]
-const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5}
+const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst"]
+const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8}
 
 ## How faint (premultiplied alpha at full show, 0..1): the loops' and dots'
 ## thread, the hand's fill, and the wire's line while dragged. FAINT_CAP is the
@@ -99,6 +107,13 @@ const BOX_ABOVE := 1.0
 const CEILING_LIFT := 0.45
 ## Metres either side a normal is read over.
 const NORMAL_REACH := 0.5
+## The Feather's hotspot at rest, half extents in metres along the view and
+## across: the design's 7×3.5 px ellipse at the hand sketch's scale (its
+## 96 px loop is the thumb's 3.2 m, about 30 px a metre). It does not scale
+## with the pips: it marks the point, not a reach. A swipe's edges show once
+## it has run FEATHER_LANE_MIN m.
+const FEATHER_HOTSPOT := Vector2(0.24,0.12)
+const FEATHER_LANE_MIN := 0.3
 ## Holds a wire drag can be under: the clay's until the wire has its own verb.
 const WIRE_HOLDS := ["land","wire"]
 
@@ -200,6 +215,9 @@ func step(delta: float) -> void:
 	var held: String = materials.held
 	var what := "material" if not held.is_empty() else str(materials.roll.tool)
 	var size: float = materials.size_scale()
+	if what == "feather":
+		_step_feather(delta,materials)
+		return
 	if not reach.available():
 		hide(delta,"unavailable")
 		return
@@ -234,6 +252,71 @@ func step(delta: float) -> void:
 
 func _pointer() -> Vector2:
 	return scene.get_viewport().get_mouse_position() if reach.pointer_override == null else reach.pointer_override
+
+## The Feather's marks. While its wind is in hand (a press on the land, or wind
+## dragged in from the sky) the mark follows the wind tool's promise: the
+## lane's edges from the press to the pointer's reach along the heading, or,
+## held still, the burst's ring (hand_materials `feather_ring`), or the
+## hotspot at the press until the ring starts. At rest, the hotspot under the
+## hovering hand, by the same rules as every mark.
+func _step_feather(delta: float, materials: Node) -> void:
+	if reach.camera_moving():
+		hide(delta,"camera")
+		return
+	if materials.feather_blowing():
+		var plan: Dictionary = materials._gust().promise()
+		var start: Vector2 = plan.origin
+		var from := Vector3(start.x,_height(start,centre.y),start.y)
+		if plan.kind == "lane":
+			var heading: Vector2 = plan.heading
+			var to: Variant = reach._land(_pointer())
+			var run := (Vector2(to.x,to.z)-start).dot(heading) if to != null else Vector2(centre.x-start.x,centre.z-start.y).length()
+			if run >= FEATHER_LANE_MIN:
+				var end := start+heading*run
+				_feather_mark("feather_lane",Vector3(end.x,_height(end,from.y),end.y),Vector2(float(plan.half),0.0),Vector3(heading.x,0.0,heading.y),delta,from)
+				return
+		var ring: float = materials.feather_ring()
+		if ring > 0.0: _feather_mark("feather_burst",from,Vector2(ring,ring),_view_right(),delta)
+		else: _feather_mark("feather",from,FEATHER_HOTSPOT,_view_right(),delta)
+		return
+	if not reach.available():
+		hide(delta,"unavailable")
+		return
+	if not str(reach.holding).is_empty():
+		hide(delta,"held")
+		return
+	var pointer := _pointer()
+	if reach.hover_zone != "land" or reach._hover_point == null:
+		hide(delta,"not land")
+		return
+	if materials.tray_under(pointer):
+		hide(delta,"tray")
+		return
+	if _under_cover(pointer):
+		hide(delta,"covered")
+		return
+	_feather_mark("feather",reach._hover_point,FEATHER_HOTSPOT,_view_right(),delta)
+
+## Show a Feather mark of `which` at `point` (terrain local), `extent` its
+## half extents along `way` and across (the lane: its half-width, and `from`
+## its press point). Its own shape, not `_shape`'s: the Feather's sizes come
+## from the wind, not the tools' size table.
+func _feather_mark(which: String, point: Vector3, extent: Vector2, way: Vector3, delta: float, from: Variant = null) -> void:
+	kind = which
+	wanted = true
+	reason = ""
+	centre = point
+	wire_start = from if from != null else point
+	var p := Vector2(point.x,point.z)
+	var e := NORMAL_REACH
+	var dx := _height(p+Vector2(e,0.0),point.y)-_height(p-Vector2(e,0.0),point.y)
+	var dz := _height(p+Vector2(0.0,e),point.y)-_height(p-Vector2(0.0,e),point.y)
+	normal = Vector3(-dx,2.0*e,-dz).normalized()
+	axis = (way-normal*way.dot(normal)).normalized()
+	half = extent
+	specks.clear()
+	_fade(delta)
+	_draw()
 
 ## True when a prop, tree or resident is under the pointer (their own grab
 ## wins there), or a tree is outlined. Read again only when the hover is.
@@ -310,9 +393,16 @@ func _draw() -> void:
 	# The ground the mark covers: its outline (or the wire's line and toggles).
 	var outline: Array[Vector2] = []
 	var c := Vector2(centre.x,centre.z)
-	if kind == "wire":
+	if kind in ["wire","feather_lane"]:
 		var a := Vector2(wire_start.x,wire_start.z)
-		for k in range(OUTLINE_SAMPLES+1): outline.append(a.lerp(c,float(k)/OUTLINE_SAMPLES))
+		# The Feather's lane also covers its half-width either side.
+		var side := Vector2(-axis.z,axis.x)*half.x if kind == "feather_lane" else Vector2.ZERO
+		for k in range(OUTLINE_SAMPLES+1):
+			var q := a.lerp(c,float(k)/OUTLINE_SAMPLES)
+			outline.append(q)
+			if side != Vector2.ZERO:
+				outline.append(q+side)
+				outline.append(q-side)
 	else:
 		var across := normal.cross(axis).normalized()
 		for k in range(OUTLINE_SAMPLES):
@@ -354,7 +444,7 @@ func _draw() -> void:
 	material.set_shader_parameter("speck_count",packed.size())
 	material.set_shader_parameter("shown",shown)
 	material.set_shader_parameter("line_alpha",WIRE_ALPHA if kind == "wire" else LINE_ALPHA)
-	material.set_shader_parameter("fill_alpha",FILL_ALPHA if kind == "hand" else 0.0)
+	material.set_shader_parameter("fill_alpha",FILL_ALPHA if kind in ["hand","feather_lane"] else 0.0)
 	material.set_shader_parameter("line_px",WIRE_PX if kind == "wire" else LINE_PX)
 	material.set_shader_parameter("dot_px",DOT_PX)
 	material.set_shader_parameter("toggle_px",TOGGLE_PX)
@@ -366,6 +456,8 @@ func _draw() -> void:
 
 ## Whole stitches (or dots) round the loop, so the ring closes evenly.
 func _stitches() -> float:
+	# The Feather's lane: whole stitches along its length.
+	if kind == "feather_lane": return maxf(2.0,roundf(Vector2(centre.x-wire_start.x,centre.z-wire_start.z).length()/STITCH_METRES))
 	var a := half.x
 	var b := half.y
 	# Ramanujan's perimeter; the chisel's square is solid and ignores it.

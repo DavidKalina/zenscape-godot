@@ -15,7 +15,9 @@ render_mode unshaded, blend_premul_alpha, depth_draw_never, depth_test_disabled,
 #include "res://shaders/reference_globals.gdshaderinc"
 uniform sampler2D ground_depth : hint_depth_texture, filter_nearest, repeat_disable;
 
-// 0 hand, 1 paddle, 2 chisel, 3 wire, 4 hammer, 5 material.
+// 0 hand, 1 paddle, 2 chisel, 3 wire, 4 hammer, 5 material, 6 the
+// Feather's hotspot, 7 its lane (wire_from to wire_to, mark_half.x either
+// side), 8 its burst ring.
 uniform int mark_kind = 0;
 // World centre, the mark's major axis (a unit vector along the ground's
 // plane: the paddle's width, the chisel's downhill edge), the ground's normal
@@ -100,6 +102,21 @@ void fragment() {
 		line = band(d / mpp, line_px);
 		float ends = min(length(world.xz - wire_from.xz), length(world.xz - wire_to.xz)) / mpp;
 		line = max(line, disc(ends, toggle_px));
+	} else if (mark_kind == 7) {
+		// The Feather's lane: two stitched edges mark_half.x either side of
+		// the swipe's line, stitched along its length, a faint fill between,
+		// cut square at both ends (no arrowhead).
+		vec2 a = wire_from.xz;
+		vec2 ab = wire_to.xz - a;
+		float run = max(length(ab), 1e-4);
+		vec2 dir = ab / run;
+		vec2 rel2 = world.xz - a;
+		float along = dot(rel2, dir);
+		float side = abs(dot(rel2, vec2(-dir.y, dir.x)));
+		float within = clamp(along / mpp + 0.5, 0.0, 1.0) * clamp((run - along) / mpp + 0.5, 0.0, 1.0);
+		float edge = (side - mark_half.x) / mpp;
+		line = band(edge, line_px) * stitch(along / run, stitches, stitch_duty) * within;
+		fill = (1.0 - smoothstep(-0.5, 0.5, edge)) * within;
 	} else {
 		// A loop: an ellipse with half extents mark_half in the ground's frame.
 		vec2 n = q / max(mark_half, vec2(1e-3));

@@ -99,14 +99,15 @@ func release(point: Vector2) -> String:
 	return "gust"
 
 ## The drag has come over the land at `point`: the wind tool is taken in hand
-## there, carrying the flick. True when it was, and the sky lets go.
-func to_land(point: Vector2) -> bool:
+## there, carrying the flick, `half` m either side (below 0: the wind
+## brush's). True when it was, and the sky lets go.
+func to_land(point: Vector2, half := -1.0) -> bool:
 	if state.is_empty(): return false
 	drag(point)
 	var flick := _flick()
 	var editor: Node = scene.get("_chunk_editor")
 	if flick.is_empty() or editor == null or not editor.has_method("gust_in_hand"): return false
-	if not editor.gust_in_hand(point,flick[0],flick[1]): return false
+	if not editor.gust_in_hand(point,flick[0],flick[1],half): return false
 	# A held wind turned on the way in goes back to what it was; the air
 	# eases back at the weather's pace.
 	var air: Node = scene.get("_atmosphere")

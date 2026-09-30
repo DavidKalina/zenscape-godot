@@ -2550,8 +2550,10 @@ func gust_from_sky(heading: Vector2, power: float) -> bool:
 ## wind brush's press does, carrying the flick's `heading` (plate x, z) and
 ## `power` (0..1). From there it is the tool: the lane shows its promise, the
 ## hand's air moves, a swipe on sends it and a still hold bursts, until the
-## button is let go. True when the tool was taken.
-func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float) -> bool:
+## button is let go. True when the tool was taken. `half` (m) is the lane's
+## half-width when the Feather sets it (scripts/hand_materials.gd); below 0
+## it is the wind brush's.
+func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float, half := -1.0) -> bool:
 	if forming or not active or _painting or _ball_holding or _handful_holding: return false
 	if gust != null and gust.aiming(): return false
 	var hit: Variant = pick(screen_pos)
@@ -2560,7 +2562,8 @@ func gust_in_hand(screen_pos: Vector2, heading: Vector2, power: float) -> bool:
 	_stroke_button = MOUSE_BUTTON_LEFT
 	_make_gust()
 	var brush = brushes.get("wind")
-	gust.press(hit,float(brush.radius) if brush != null else SKY_GUST_HALF,float(brush.strength) if brush != null else 1.0)
+	if half < 0.0: half = float(brush.radius) if brush != null else SKY_GUST_HALF
+	gust.press(hit,half,float(brush.strength) if brush != null else 1.0)
 	gust.carry(heading,power)
 	return true
 
