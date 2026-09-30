@@ -2330,6 +2330,14 @@ func _setup_flow() -> void:
 func _flow_process(delta: float) -> void:
 	if flow == null or not flow.ready: return
 	flow.paused = forming
+	# The sky's rain and snow (and the snow globe's, added to it) reach the water.
+	var precipitation: Variant = scene.get("_precipitation") if scene != null else null
+	if precipitation != null:
+		var fall := minf(1.0,precipitation.state.x+precipitation.state.y)
+		var phase: float = precipitation.surface_weather.snow_phase
+		flow.runoff.rain = fall*(1.0-phase)
+		flow.runoff.snowing = fall*phase
+		flow.runoff.snow_phase = phase
 	flow.advance(delta)
 	flow_view.update(delta)
 	_flow_clock += delta
