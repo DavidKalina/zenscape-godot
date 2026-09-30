@@ -305,7 +305,7 @@ func _consider() -> void:
 		if not _water_since.has(key): _water_since[key] = clock
 	for key in _water_since.keys():
 		if not seen.has(key): _water_since.erase(key)
-	if _heron_state.is_empty() and clock >= _heron_next and _daylight() > 0.25 and _rain_now() < 0.3 and not life.winter.frozen():
+	if _heron_state.is_empty() and clock >= _heron_next and _daylight() > 0.25 and _rain_now() < 0.3 and not _frozen():
 		for key in _water_since:
 			if clock-float(_water_since[key]) >= HERON_DELAY and _roll(HERON_CHANCE):
 				_heron_arrive(seen[key])
@@ -432,7 +432,7 @@ func _move_heron(step: float) -> void:
 			var busy := _heron_rig != null and _heron_rig.clip in ["Strike","Stalk"] and not _heron_rig.done()
 			# One taking its catch away goes as soon as the fish is up in its bill.
 			var carrying := bool(s.get("carry_off",false)) and _heron_rig != null and _heron_rig.clip == "Strike" and _heron_rig.time >= HERON_CARRY_LIFT
-			if carrying or (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there() or life.winter.frozen():
+			if carrying or (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there() or _frozen():
 				_heron_drop_prey()
 				s.phase = "out"
 				s.age = 0.0
@@ -830,3 +830,7 @@ func _consider_bigfoot(survey: RefCounted, clock: float) -> void:
 func _bigfoot_gone() -> void:
 	_bigfoot_next = life.clock+BIGFOOT_COOLDOWN
 	_force_next = life.clock+BIGFOOT_FORCE_GAP
+
+## Ice on the ponds (life_winter.gd); stand-in lives in the probes have none.
+func _frozen() -> bool:
+	return "winter" in life and life.winter != null and life.winter.frozen()

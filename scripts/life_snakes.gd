@@ -419,9 +419,9 @@ func _consider() -> void:
 	for key in _pond_since.keys():
 		if not seen.has(key): _pond_since.erase(key)
 	if not _state.is_empty():
-		if (_rain() > 0.4 or life.winter.frozen()) and not bool(_state.get("leaving",false)): _leave_now()
+		if (_rain() > 0.4 or _frozen()) and not bool(_state.get("leaving",false)): _leave_now()
 		return
-	if clock < _next or life._daylight() < SUN or _rain() > 0.1 or life.winter.frozen(): return
+	if clock < _next or life._daylight() < SUN or _rain() > 0.1 or _frozen(): return
 	var phase := float(life.scene._celestial.phase)
 	if phase < MORNING.x or phase > MORNING.y: return
 	for key in _pond_since:
@@ -2092,3 +2092,7 @@ class MeshParts:
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 		mesh.surface_set_material(0,material)
 		return mesh
+
+## Ice on the ponds (life_winter.gd); stand-in lives in the probes have none.
+func _frozen() -> bool:
+	return "winter" in life and life.winter != null and life.winter.frozen()
