@@ -32,3 +32,20 @@ const FLIP_REACH := 0.45
 ## needed.
 static func enabled() -> bool:
 	return not "--classic-controls" in OS.get_cmdline_user_args()
+
+## How the edge spring's pull is shown (docs/scenic/modeless-spring.md, "Pull
+## feel (experiment)"): `--pull-cam=a|b|c|old`. "a" holds the camera still
+## while the block drops, squashes and stretches the block and trails the
+## plants; "b" (the default) adds a low, side-on swing at the press that eases
+## back once the range has settled; "c" is b that stays low; "old" is the
+## camera lean from before (scripts/camera_rig.gd `lean`), with no squash.
+const PULL_CAMS := ["a","b","c","old"]
+const PULL_CAM_DEFAULT := "a"
+
+static func pull_cam() -> String:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--pull-cam="):
+			var value := arg.trim_prefix("--pull-cam=").to_lower()
+			if value in PULL_CAMS: return value
+			push_warning("--pull-cam=%s is not one of %s; using %s" % [value,PULL_CAMS,PULL_CAM_DEFAULT])
+	return PULL_CAM_DEFAULT

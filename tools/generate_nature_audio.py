@@ -3,6 +3,7 @@ Run with Python 3; no external audio dependencies. Wildlife remains recordings.
 `--genesis` bakes only the Genesis sounds (bake_genesis, docs/scenic/sound.md).
 `--snap` bakes only the god hand's finger snaps (bake_snap, docs/scenic/modeless.md).
 `--howl` bakes only Bigfoot's far howl (bake_howl, docs/scenic/life.md "Bigfoot's trail").
+`--strain` bakes only the edge pull's strain (bake_strain, docs/scenic/modeless-spring.md "Pull feel").
 """
 import math
 import random
@@ -395,6 +396,40 @@ def bow(rng, count, rate):
     return out
 
 
+def strain(rng, count, rate):
+    # The rim pulled down: earth and roots under load. A stick-slip creak (a
+    # train of little slips at a wandering 20-46 a second, ringing three woody
+    # bands) over a low body of brown noise that swells slowly. The game plays
+    # it faster and louder as the pull goes on (scripts/pull_feel.gd).
+    body = filtered(rng, count, [Biquad('low', 150, 0.7, rate), Biquad('low', 105, 0.7, rate)])
+    bands = ((Biquad('band', 185, 7.0, rate), 1.0), (Biquad('band', 410, 6.0, rate), 0.6), (Biquad('band', 860, 5.0, rate), 0.22))
+    wander = smooth_random(rng, count, rate, 0.9)
+    swell = smooth_random(rng, count, rate, 1.6)
+    grip = smooth_random(rng, count, rate, 2.3)
+    creak = []
+    phase = 0.0
+    for i in range(count):
+        phase += (20 + 26 * wander[i]) / rate
+        slip = 0.0
+        if phase >= 1:
+            phase -= 1
+            # Now and then the grain catches and skips a slip.
+            if rng.random() < 0.55 + 0.45 * grip[i]:
+                slip = rng.uniform(0.55, 1.0)
+        x = slip + 0.015 * rng.uniform(-1, 1)
+        creak.append(sum(gain * band(x) for band, gain in bands))
+    def rms(values):
+        return math.sqrt(sum(v * v for v in values) / len(values)) or 1.0
+    # About two parts creak to one of body, by loudness.
+    c, b = rms(creak), rms(body)
+    return [(0.55 + 0.45 * swell[i]) * creak[i] / c + 0.5 * (0.7 + 0.3 * swell[i]) * body[i] / b for i in range(count)]
+
+
+def bake_strain():
+    """The edge pull's strain (docs/scenic/modeless-spring.md, "Pull feel")."""
+    loop('edge-strain', 16000, 4, 0.7, strain)
+
+
 def bake_genesis():
     """The Genesis sounds: stroke voices, creation beds and one-shots."""
     loop('genesis-rumble', 12000, 6, 0.8, rumble)
@@ -470,6 +505,8 @@ if __name__ == '__main__':
         bake_snap()
     elif '--howl' in sys.argv:
         bake_howl()
+    elif '--strain' in sys.argv:
+        bake_strain()
     else:
         if '--genesis' not in sys.argv:
             bake_classic()

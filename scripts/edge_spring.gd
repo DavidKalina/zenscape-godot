@@ -13,9 +13,12 @@ extends "res://scripts/land_spring.gd"
 ##   cap, DEAD shows nothing, under MIN_PULL let go keeps nothing), down only,
 ##   and trembles harder near the cap. Once the pull is decided the pointer is
 ##   held (captured, the hand gripping the rim stands in for it) and its travel
-##   is counted, so a rim pressed low on the screen has the whole pull. The camera leans down and in with the block
-##   (scripts/camera_rig.gd `lean`), so digging in is felt, and it stops where
-##   the pull does. Let go, the pointer comes back where it pressed.
+##   is counted, so a rim pressed low on the screen has the whole pull. The
+##   camera holds still while the block drops, swung low and side-on at the
+##   press, and follows late and slowly only on a deep pull; the block squashes
+##   and the plants trail it (`--pull-cam`, scripts/camera_rig.gd `_pull_step`,
+##   scripts/pull_feel.gd; `--pull-cam=old` is the lean from before, down and
+##   in with the block). Let go, the pointer comes back where it pressed.
 ## - **The deep pull.** Past the cap the pull goes on (`deep`, 0..1 over
 ##   DEEP_SCREEN more): the block and the camera keep sinking, and on release
 ##   the whole plate fills with height under the spring's shapes, a plateau up
@@ -125,6 +128,8 @@ const FILL_EDGE := Vector2(8.0,13.2)
 const FILL_LUMP := 0.12
 
 var flip: Node
+## The pull's overlap (scripts/pull_feel.gd), or null under `--pull-cam=old`.
+var feel: Node
 ## A seed for the next range or basin (< 0 is a random one), for a probe.
 var next_seed := -1
 ## What the last range and basin were, for the probe.
@@ -156,6 +161,11 @@ func setup(owner_scene: Node3D) -> void:
 	if flip != null:
 		flip.dipped.connect(_risen)
 		flip.set_down.connect(basin)
+		# The pull's overlap: plants trailing the block, the strain (not "old").
+		if flip.feel != "old":
+			feel = preload("res://scripts/pull_feel.gd").new()
+			add_child(feel)
+			feel.setup(self)
 
 # --- The seam the rim drives ----------------------------------------------------
 

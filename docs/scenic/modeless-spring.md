@@ -37,6 +37,39 @@ Wiring: `studies/fidelity.gd` creates it when `--modeless` is on (`land_spring`)
 
 The rim pulled down is the edge spring (`scripts/edge_spring.gd`, `docs/scenic/modeless.md`, "Edge rework"): the block dips as a unit while held, and on release a random multi-peak range springs up on this spring, built into the editor's mountain from the alpine form and a rolling dome, and a lifted rim set down slowly sinks this basin at a random spot. It extends this file for the spring, the landing and the basin. The agreed scheme retires the land press's spring (the clay slice); the edge keeps using this code.
 
+## Pull feel (experiment)
+
+Branch `experiment/pull-spring-feel`. The complaint was that you couldn't tell you were pulling the world down: it didn't feel like loading a spring. The old camera lean followed 70 % of the block's drop in the same frame (`LEAN_FOLLOW`), so on screen the block hardly moved, and the void gives no fixed reference. The fix is to move the world first and the camera afterwards, and to show the load on the block. It is chosen with `--pull-cam` (`scripts/modeless_input.gd` `pull_cam`):
+
+| Variant | What it does |
+| --- | --- |
+| `a` (default, the user's pick after playing all four) | The camera holds still while the block drops. It follows only late in a deep pull, on a slow spring. At the release it waits a beat, then catches up on its own softer spring. The block squashes and stretches, the plants trail it and the earth strains. |
+| `b` | `a`, plus a low, side-on swing at the press (about 13° above the horizon, only from a higher view, never touching the yaw). The swing eases back to your view once the range has settled. |
+| `c` | `b`, but the camera stays low after the release: the swing becomes your own view. |
+| `old` | The lean from before, exactly: down, in and lower with the block, with no squash, trail or strain. |
+
+The beats:
+
+- **Press.** The swing runs on two chained critically damped springs (`scripts/camera_rig.gd` `PULL_SIDE` 1.34 rad, `PULL_SIDE_W` 28/s, 95 % in about 0.28 s). The yaw stays the player's, and the eye keeps `CLEARANCE` over the ground.
+- **Pull.** The camera holds. Past the cap (`PULL_LATE_FROM`, dip 1) it follows `PULL_LATE_SHARE` (45 %) of the further drop on a slow spring (`PULL_LATE_W` 2.6/s). The block's snapshot face squashes about its own floor (`scripts/diorama_flip.gd` `SQUASH_MOST`, `STRETCH_MOST`, `SPREAD`, `SQUASH_LEAD`). This is only a visual transform on the flip's copy; the real terrain never moves. Plants trail the block's vertical speed on a spring (`scripts/pull_feel.gd` `HEAVE_*`), published as the global `zs_heave` and read in `zs_blow_bend` and `zs_conifer_offset`. A strain loop plays louder and higher with the tension (`STRAIN_*`, baked by `tools/generate_nature_audio.py --strain`).
+- **Release.** The block shoots up past rest, stretching, and recoils on a critically damped spring (`RECOIL_W` 40/s). It is handed back near rest (`RECOIL_REST`), and the range springs as before (`w` 12.5, `z` 0.4, unchanged). The camera holds `PULL_HOLD` (0.12 s), then catches up on `PULL_CATCH_W` 7/s at `PULL_CATCH_ZETA` 0.5, pushed up over `PULL_CATCH_PUSH` (0.1 s, a sine-squared push, so no acceleration step).
+- **Settle.** After `PULL_RETURN_AFTER` (0.9 s) the swing eases back on `PULL_RETURN_W` (95 % in about 1.7 s), or under `c` it is folded into the player's view.
+
+The sky's cloud (`scripts/sky_cloud.gd`) is now left out of the flip's snapshot (`LEAVE_OUT`), in every variant. Before this it was copied onto the snapshot and rode the dip and the flip, although its own header says it floats in the room. The sky and sun were already fixed. Mist and loose leaves are particles, which the snapshot never copies, so they already stay put. They get no lag of their own.
+
+**Headless only (dummy renderer). Nothing here has been seen, heard or felt.** A throwaway probe drove a real pull on `studies/cozy_worlds.tscn` at 60 Hz, from the overview (polar 0.82). With a full pull (288 px) under `b`:
+
+- The swing is 0.52 rad (30°). The camera pivot does not move while held.
+- The block's middle goes down 1.80 m (tilt included) and squashes to 0.938.
+- At the release it stretches to 1.052 at 83 ms, peaks 0.11 m above rest at 117 ms and is handed back at 183 ms. `old` hands back at 100 ms, so the range starts about 85 ms later.
+- The range's scale peaks at 417 ms (333 ms under `old`). The camera rises 0.19 m, peaking at 333 ms, 217 ms after the block's peak.
+- The plants stretch to +0.12 while dropping, shrink to -0.09 while rising and whip back to +0.03.
+- The worst pivot acceleration is 38 m/s² (290 m/s² under `old`). The worst polar acceleration is 50 rad/s², from the swing.
+
+A deep pull held the camera until the cap, then followed it 0.11 m down, and the block stretched to 1.070. Variant `a` is `b` without the swing. Variant `c` ended at polar 1.34, and the next pull did not swing.
+
+Unverified on screen: whether the 30° swing in 0.28 s reads as a helpful reframe or a lurch; whether the squash, stretch and trail read at 40 m; whether the strain sounds like earth and roots or like noise; whether the extra 85 ms before the range springs feels like a follow-through or like lag; whether the camera's 0.19 m catch reads at all. The trail is a shader edit (a new global uniform, no new varyings), and a headless check misses GPU limits, so compile it windowed once.
+
 ## Probe
 
 `tools/probe_land_spring.gd`, on the real `studies/cozy_worlds.tscn`, headless (see its header for the command; run with and without `--modeless`). Last run: all checks pass. On the plain at (-2, 1), ground 0.23 m:

@@ -30,7 +30,12 @@ extends Node
 ## the camera leans with the dipping block (`lean`): down after it, in toward
 ## the grabbed edge and a little lower, so the pull reads as digging in, and
 ## it rides the block's snap back up. The lean is laid over the eased pose as
-## it is written and never enters it.
+## it is written and never enters it. That is `--pull-cam=old`; the other
+## variants (scripts/modeless_input.gd `pull_cam`, `_pull_step`) hold the
+## camera still so the block's drop reads against a fixed frame: "a" holds,
+## follows only late in a deep pull, waits a beat after the release and then
+## catches up on its own softer spring; "b" also swings low and side-on at
+## the press and eases back once the range has settled; "c" stays low.
 const Inspector = preload("res://scripts/scene_inspector.gd")
 const Glass = preload("res://scripts/glass_chrome.gd")
 ## Spring stiffness (natural frequency, 1/s). A glide covers 95 % in 0.63 s
@@ -69,6 +74,35 @@ const LEAN_FOLLOW := 0.7
 const LEAN_TOWARD := 0.12
 const LEAN_IN := 0.12
 const LEAN_TILT := 0.08
+## The pull's camera (`--pull-cam` a, b, c; see `_pull_step`). Press (b, c),
+## once the pull shows (edge_spring DEAD): a view higher than PULL_SIDE
+## (polar, radians from straight down; 1.34 is about 13 degrees above the
+## horizon) swings down to it on two chained critically damped springs of
+## PULL_SIDE_W 1/s (95 % in about 0.28 s, starting and ending at rest); the
+## yaw is never touched, and it keeps CLEARANCE over the ground.
+const PULL_SIDE := 1.34
+const PULL_SIDE_W := 28.0
+## Pull: the camera holds. Only past PULL_LATE_FROM (diorama_flip `dip`; 1
+## is the cap, so only the deep pull) does it follow, PULL_LATE_SHARE of the
+## block's further drop, on a slow critically damped spring of PULL_LATE_W.
+const PULL_LATE_FROM := 1.0
+const PULL_LATE_SHARE := 0.45
+const PULL_LATE_W := 2.6
+## Release: the camera holds PULL_HOLD seconds while the block shoots up, then
+## catches up on its own softer spring (PULL_CATCH_W 1/s, PULL_CATCH_ZETA; a
+## small overshoot), pushed up by PULL_CATCH_KICK m/s per unit of the pull
+## over PULL_CATCH_PUSH seconds (a sine-squared push, so its acceleration
+## starts and ends at nothing), so it rides the burst and settles.
+const PULL_HOLD := 0.12
+const PULL_CATCH_W := 7.0
+const PULL_CATCH_ZETA := 0.5
+const PULL_CATCH_KICK := 2.4
+const PULL_CATCH_PUSH := 0.1
+## Settle: PULL_RETURN_AFTER seconds after the release the swing eases back
+## to the player's view on two chained springs of PULL_RETURN_W (95 % in
+## about 1.7 s), or, under "c", is kept as the player's own view.
+const PULL_RETURN_AFTER := 0.9
+const PULL_RETURN_W := 4.5
 const HINT := "Double-click anything to go there  ·  right-drag or swipe with two fingers to look around  ·  pinch or scroll to zoom  ·  Backspace goes back"
 const HINT_FILE := "user://camera.cfg"
 
@@ -114,6 +148,22 @@ var _cursor_owned := false
 var _drifting := false
 ## The lean last written: pivot offset, polar offset and distance factor.
 var _lean := [Vector3.ZERO,0.0,1.0]
+## The pull's camera: its variant, its beat ("" at rest, "held", "wait",
+## "catch"), seconds since the release, the pivot's drop below the pose (m,
+## down positive) and its rate, and the swing (polar radians over the pose),
+## its rate and its chained goal. All laid over the pose as the lean is.
+var pull_cam := preload("res://scripts/modeless_input.gd").pull_cam()
+var pull_beat := ""
+var pull_clock := 0.0
+var pull_drop := 0.0
+var pull_swing := 0.0
+var _pull_drop_v := 0.0
+var _pull_swing_v := 0.0
+var _pull_goal := 0.0
+var _pull_goal_v := 0.0
+var _pull_want := 0.0
+var _pull_size := 0.0
+var _pull_armed := false
 # Chrome: the ring and name, and the first-session hint.
 var layer := CanvasLayer.new()
 var overlay := Control.new()
@@ -316,6 +366,7 @@ func _process(delta: float) -> void:
 		_keep_clear()
 		turn.advance(delta)
 		_keep_clear()
+		_pull_step(delta)
 		_write()
 		turn.turn_room(angle_difference(yaw_from,scene.yaw))
 		_hover(delta)
@@ -333,6 +384,7 @@ func _adopt() -> void:
 	_pivot_goal = _pivot
 	_view = Vector3(scene.yaw,scene.polar-(_lean[1] if leaned else 0.0),log(maxf(scene.distance/(_lean[2] if leaned else 1.0),0.01)))
 	_lean = [Vector3.ZERO,0.0,1.0]
+	_pull_rest()
 	_view_goal = _view
 	_pivot_v = Vector3.ZERO
 	_view_v = Vector3.ZERO
@@ -358,6 +410,7 @@ func _write() -> void:
 ## The lean for the block's dip now: [pivot offset, polar offset, distance
 ## factor]. None unless the block is dipped or rising back.
 func lean() -> Array:
+	if pull_cam != "old": return [Vector3.DOWN*pull_drop,pull_swing,1.0]
 	var flip: Node = scene.get("flip")
 	if flip == null or not flip.phase in [flip.Phase.DIP,flip.Phase.RISE] or flip.dip <= 0.0: return [Vector3.ZERO,0.0,1.0]
 	var dip: float = flip.dip
@@ -366,6 +419,104 @@ func lean() -> Array:
 	var move: Vector3 = edge*LEAN_TOWARD*dip+Vector3.DOWN*flip.DIP_DROP*LEAN_FOLLOW*dip
 	var tilt := minf(LEAN_TILT*dip,POLAR.y-_view.y)
 	return [move,maxf(tilt,0.0),1.0-LEAN_IN*dip]
+
+## The pull's camera beats (`--pull-cam` a, b, c): see PULL_SIDE. The swing
+## and the drop are laid over the eased pose by `lean`, so the player's own
+## pose, and any orbit they make meanwhile, stays theirs.
+func _pull_step(delta: float) -> void:
+	if pull_cam == "old": return
+	var flip: Node = scene.get("flip")
+	if flip == null: return
+	var dipping: bool = flip.phase == flip.Phase.DIP
+	if dipping and pull_beat != "held":
+		pull_beat = "held"
+		_pull_armed = false
+	if dipping and not _pull_armed and pull_cam != "a":
+		# Press: once the pull shows (the edge spring's DEAD, so a stray
+		# twitch does not swing), swing low and side-on, never taking the yaw.
+		var edge: Node = scene.get("edge_spring")
+		if edge == null or float(edge.pulled) >= float(edge.DEAD):
+			_pull_armed = true
+			_pull_want = maxf(0.0,PULL_SIDE-_view.y)
+	elif pull_beat == "held" and not dipping:
+		# Release: hold a beat while the block shoots up.
+		pull_beat = "wait"
+		pull_clock = 0.0
+		_pull_size = clampf(float(flip._dip_amount),0.0,1.0)
+		_pull_drop_v = 0.0
+	match pull_beat:
+		"held":
+			var late: float = maxf(float(flip.dip)-PULL_LATE_FROM,0.0)*float(flip.DIP_DROP)*PULL_LATE_SHARE
+			var d := spring(pull_drop,_pull_drop_v,late,PULL_LATE_W,delta)
+			pull_drop = d[0]
+			_pull_drop_v = d[1]
+		"wait","catch":
+			pull_clock += delta
+			if pull_beat == "wait" and pull_clock >= PULL_HOLD: pull_beat = "catch"
+			if pull_beat == "catch":
+				var remaining := delta
+				var since := pull_clock-delta-PULL_HOLD
+				while remaining > 0.0:
+					var h := minf(remaining,1.0/240.0)
+					remaining -= h
+					since += h
+					var push := 0.0
+					if since > 0.0 and since < PULL_CATCH_PUSH: push = PULL_CATCH_KICK*_pull_size*2.0/PULL_CATCH_PUSH*pow(sin(PI*since/PULL_CATCH_PUSH),2.0)
+					_pull_drop_v += (-PULL_CATCH_W*PULL_CATCH_W*pull_drop-2.0*PULL_CATCH_ZETA*PULL_CATCH_W*_pull_drop_v-push)*h
+					pull_drop += _pull_drop_v*h
+			if pull_clock >= PULL_RETURN_AFTER and _pull_want > 0.0:
+				if pull_cam == "c":
+					# Stay low: the swing becomes the player's own view.
+					var kept := _pull_goal-pull_swing
+					_view.y += pull_swing
+					_view_goal.y = minf(_view_goal.y+pull_swing,POLAR.y)
+					pull_swing = 0.0
+					_pull_goal = kept
+				_pull_want = 0.0
+	# The swing: two chained critically damped springs, so it starts and ends
+	# at rest; quicker in than back.
+	var w := PULL_SIDE_W if _pull_want > 0.0 else PULL_RETURN_W
+	var g := spring(_pull_goal,_pull_goal_v,_pull_want,w,delta)
+	_pull_goal = g[0]
+	_pull_goal_v = g[1]
+	var s := spring(pull_swing,_pull_swing_v,_pull_goal,w,delta)
+	pull_swing = s[0]
+	_pull_swing_v = s[1]
+	pull_swing = clampf(pull_swing,0.0,maxf(POLAR.y-_view.y,0.0))
+	_pull_clear()
+	if pull_beat == "catch" and pull_clock >= PULL_RETURN_AFTER and _pull_want == 0.0 \
+			and absf(pull_drop) < 0.001 and absf(_pull_drop_v) < 0.01 and pull_swing < 0.0005 and absf(_pull_goal) < 0.0005:
+		_pull_rest()
+
+## The swing never takes the eye under CLEARANCE over the ground.
+func _pull_clear() -> void:
+	if pull_swing <= 0.0: return
+	var d := exp(_view.z)
+	var pivot := _pivot+Vector3.DOWN*pull_drop
+	var at := pivot+offset(_view.x,_view.y+pull_swing)*d
+	var ground: Variant = inspector.ground_y(at)
+	if ground == null: return
+	var rise := (float(ground)+CLEARANCE-pivot.y)/d
+	if rise >= 1.0:
+		pull_swing = 0.0
+		return
+	var most := maxf(acos(maxf(rise,-1.0))-_view.y,0.0)
+	if pull_swing > most:
+		pull_swing = most
+		_pull_swing_v = minf(_pull_swing_v,0.0)
+
+func _pull_rest() -> void:
+	pull_beat = ""
+	pull_clock = 0.0
+	pull_drop = 0.0
+	pull_swing = 0.0
+	_pull_drop_v = 0.0
+	_pull_swing_v = 0.0
+	_pull_goal = 0.0
+	_pull_goal_v = 0.0
+	_pull_want = 0.0
+	_pull_size = 0.0
+	_pull_armed = false
 
 ## Exact critically damped step of x toward goal (floats or vectors): [x, v].
 static func spring(x: Variant, v: Variant, goal: Variant, w: float, dt: float) -> Array:
