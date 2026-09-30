@@ -88,13 +88,40 @@ Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a dela
 
 What each moment looks like:
 
-- **Heron:** glides in from off the plate along a curve over 7 s with slow wingbeats, legs trailing, then brakes and lands with a ring. It stands in the shallows 45-90 s, and its neck strikes at the water every 7-14 s. It flies off early if rain comes or the water goes.
+- **Heron:** glides in from off the plate over its bank along a curve over 7 s with slow wingbeats, legs trailing, then brakes and lands with a ring, facing into the water. It stands in the shallows 45-90 s, and its neck strikes at the water every 7-14 s. Most strikes miss; some catch a fish (see "Predation" below). It flies off early if rain comes or the water goes.
 - **Deer:** a doe, and half the time a fawn, step out of the trees to the edge at 0.42 m/s. They graze, head down for 5-11 s and up for 2-4 s, for 25-45 s, and leave when their time is up or the sun climbs. They walk back into the wood and fade inside the trees.
   The deer are a rigged Blender model (`assets/models/zenscape-deer.glb`, built by `tools/blender_creatures/deer.py`, clips in `deer_clips.py`) played through `scripts/life_rigs.gd`: Walk synced to ground speed (the fawn's legs run faster), HeadDown into Graze, and HeadUp into Alert on the first lift of a visit, then Look or Idle in turn. Clips advance on the life clock. `--classic-life` brings back the code-built deer from `life_models.gd`.
 - **Rainbow:** `celestial.moment_bow`, a new term in `studies/celestial.gd` next to `rainbow_strength` and `weather_bow`, rises to 0.85 over 6 s, holds 30 s and fades over 10 s. It is never saved.
 - **Bigfoot:** the ambient model steps out of the wood, watches you and goes back in, or strides across in front of it like the 1967 film. See "Bigfoot" below. The resident Bigfoot (`--bigfoot`) is untouched.
 
 `moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`.
+
+## Predation
+
+Life eats life, now and then. Both are on by default; the counts and the save stay true to what is left in the pond.
+
+**The heron catches a fish** (`life_moments.gd`, `HERON_*`).
+- 5 s before a strike, with chance `HERON_LURE` (0.55), the nearest fish of that pond within `HERON_LURE_REACH` (1.9 m) of where the bill will go glides in from its round and noses there, with a small drift, from 0.9 s before the strike. A wading step in progress rules it out.
+- The strike takes it `HERON_CATCH` (0.5) of the time, about one strike in four. Otherwise the fish darts back to its round in 1.1 s (`LandLife.DART`), fast and then slowing. Strikes with no fish drawn in miss too, so misses are about three in four.
+- At most `HERON_CATCHES` (2) a visit, and never when that would leave the pond with fewer than `HERON_FISH` minus one.
+- **A catch:** the fish slips into the bill under the water (0.14 s). The Blender heron's Strike clip already carries a catch on its `Catch` bone. The baked silver fish is hidden for good, and the pond fish's own mesh and material ride that bone instead, `CATCH_LENGTH` (15 cm) long, whatever kind it was: up across the bill, tossed, and gone down with the clip's two gulps and the neck ripple. It fights in the bill in bursts (`CATCH_WRIGGLE`).
+- **A miss:** the Strike clip is cut as the empty bill comes up (`HERON_MISS_CUT`, frame 48) and blends back to Stand over 0.9 s: no toss, no gulp.
+- **Carried off,** `HERON_CARRY` (0.15) of catches: the heron takes off with the fish still in its bill as soon as it is up (`HERON_CARRY_LIFT`), and it stays there through the take-off and flight.
+- It emits `LandLife.moment("heron_catch", position)`. `moments.catches` and `moments.carried` count them.
+- `--classic-life` catches too, but the code-built heron has no fish to show in its bill.
+
+**The grass snake takes a frog** (`life_snakes.gd`, the taking constants), rare.
+- `TAKE_CHANCE` (0.3) of visits try, at a hunt stop, for a frog sitting on its bank within `TAKE_REACH` (3 m) over open ground. The frog keeps still from then on.
+- **Stalk:** it comes to `STALK_FROM` (0.75 m), holds fixed on the frog, then creeps in at `STALK_PACE` (30%) of its cruise with its head low and on the frog, no bursts, to `STRIKE_GAP` (0.3 m) short.
+- **Strike:** it draws back into a tight S (`STRIKE_DRAW`, head up to `STRIKE_LIFT`) and holds still for 1.8-2.8 s (`STRIKE_HOLD`), with a tongue flick or two early on. Then the head shoots out to the frog in `LUNGE` (0.13 s), jaw open to `GAPE`, and the body surges up to `SURGE` (16 cm) along its way. It holds there a moment and eases back over `STRIKE_AFTER`, with the smallest overshoot.
+- **Escape:** `ESCAPE` (0.35) of the time the frog leaps into the water just before (`ESCAPE_LEAD`). The strike hits the bank, and the snake hunts on.
+- **Taken:** the frog is drawn into the mouth in its leaping pose, kicking, over 0.3 s. The snake swallows for 5.5-7.5 s (`SWALLOW`): the jaws walk it in with slow gapes, and a bulge (`BULGE`) runs down to a third of its length and stays there. It then leaves with no parting hiss, at `FED_PACE` (60%), which reads as a slow, satisfied retreat.
+- It emits `LandLife.moment("snake_take", position)`. `snakes.takes` counts them.
+- Rain or a drained pond during a stalk lets the frog go.
+
+**Counts and the save.** `LandLife.take(site, mouth)` removes the creature from `present()` at once, so the heron's and snake's conditions see the smaller pond. Its site stays open with a fresh delay of `PREY_RETURN` (fish 70-160 s, frogs 90-210 s), and a new one arrives the usual way (it counts in `arrivals`). `LandLife.taken` counts by kind. The save writes a taken creature's site as not here, with that delay, so a load brings it back on the same schedule. Lures, frozen frogs and moments in progress are not saved.
+
+**Checked** headless only, on a dug pond with a scratch probe that steps the heron and snake at 30 fps. With the default odds one visit drew in two fish and swallowed both, each showing in the bill for the clip's 27 frames. With `HERON_CARRY` forced to 1, three visits drew in six, caught three and flew off with each, the fish held through take-off and flight. Before the heron landed facing the water, two visits in three struck at dry ground and could not catch. Misses cut to Stand 1.6 s into the clip, and catches play the whole clip. A snake that found a frog in reach took it, swallowed and left. With the escape forced, three strikes all missed, and the snake hunted on each time. Taken fish and frogs came back through arrivals within the next 260 s. `probe_heron_rig.gd` (both herons), `probe_snake.gd --visits=3` and `probe_land_life.gd` still pass. How any of it looks is unverified: the bill fish's size and grip, the strike and the bulge have not been seen rendered.
 
 ## Bigfoot
 
@@ -331,6 +358,7 @@ All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `
 - `SURVEY_BUDGET_USEC`, `SURVEY_QUIET` and `SURVEY_GAP`.
 - Each moment's `*_DELAY`, `*_CHANCE`, `*_COOLDOWN` and `*_STAY`, and the `DAWN` and `DUSK` phase windows.
 - The snake's `SNAKE_*`, `MORNING`, `BASK`, `HUNT` and `SWIM_CHANCE`; its size (`LENGTH`, `RADIUS`); its motion (`CRUISE`, `SWIM`, `WEAVE`, `WAVE`, `LIFT`, `RECOIL`, `ANTICIPATION`, `GOAL_*`, `TRAVEL_HZ`, `SPRING_*`); and how it meets you (`NOTICE`, `WATCH_MOST`, `TURN_TO`, `HISS_NEAR`, `HISS_*`, `JAW_OPEN`, `SWELL`, `PARTING_HISS`).
+- Predation: the heron's `HERON_LURE*`, `HERON_CATCH*`, `HERON_CARRY*` and `HERON_MISS_*`; the rig's `CATCH_LENGTH` and `CATCH_WRIGGLE`; the snake's `TAKE_*`, `STALK_*`, `STRIKE_*`, `LUNGE`, `GAPE`, `SURGE`, `ESCAPE*`, `SWALLOW`, `BULGE`, `MEAL_*` and `FED_PACE`; and LandLife's `TAKE_TIME`, `PREY_RETURN` and `DART`.
 
 The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`, `WADE_MAX`, `MIN_BODY_AREA`, `FOREST_*` and `DAMP_REACH`.
 
