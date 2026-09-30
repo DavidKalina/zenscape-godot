@@ -14,6 +14,8 @@ config/name="ZenScape — Landscape Sandbox"
 run/main_scene="res://studies/cozy_worlds.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 run/max_fps=120
+run/max_fps.macos=60
+run/max_fps.windows=0
 config/icon="res://icon.svg"
 
 [display]

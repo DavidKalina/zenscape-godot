@@ -74,6 +74,10 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--out")
 	if at >= 0 and at+1 < args.size(): output = args[at+1]
+	# Measured at 120 fps whatever the platform ships (the Mac caps at 60), so
+	# runs compare and a frame over 16.7 ms still reads as a hitch.
+	# --keep-fps-cap measures the shipped cap instead.
+	if not "--keep-fps-cap" in args: Engine.max_fps = 120
 	run.call_deferred()
 
 # --- Recording -------------------------------------------------------------------
@@ -487,6 +491,14 @@ func run() -> void:
 		await gpu_phases("two pinched peaks")
 		quit(0)
 		return
+	if "--sky-capture" in OS.get_cmdline_user_args():
+		await sky_capture("bare")
+		quit(0)
+		return
+	if "--gpu-slopes-early" in OS.get_cmdline_user_args():
+		await gpu_slopes("two pinched peaks")
+		quit(0)
+		return
 	if "--smoke" in OS.get_cmdline_user_args():
 		mark("smoke_end")
 		_report()
@@ -542,6 +554,8 @@ func run() -> void:
 	if recording: _write_manifest()
 	_report()
 	if "--gpu-after" in OS.get_cmdline_user_args(): await gpu_phases("grown world")
+	if "--gpu-slopes" in OS.get_cmdline_user_args(): await gpu_slopes("grown world")
+	if "--sky-capture-grown" in OS.get_cmdline_user_args(): await sky_capture("grown")
 	scene.queue_free()
 	await process_frame
 	quit(0)
@@ -622,6 +636,207 @@ func gpu_phases(label: String) -> void:
 	print("PLAY gpu phases (%s): baseline median %.2f ms (runs %s)" % [label,base,base_runs.map(func(v: float) -> String: return "%.1f" % v)])
 	for name: String in names:
 		print("PLAY   off %-16s %6.2f ms  saves %6.2f ms" % [name,results[name],base-results[name]])
+
+## GPU pricing by multiplication (the zenscape-frame-profiling method): K
+## extra full-size views of the same world from the same camera, so one main
+## 3D pass costs (t(3)-t(1))/2 whatever the cap and the fixed costs. Each
+## variant is applied everywhere and its pass cost compared with the
+## baseline's. `--slopes=a,b` picks variants.
+func gpu_slopes(label: String) -> void:
+	var viewport := root.get_viewport()
+	var env: Environment = null
+	for w: Node in root.find_children("*","WorldEnvironment",true,false):
+		if (w as WorldEnvironment).environment != null and (w as WorldEnvironment).get_viewport() == viewport: env = (w as WorldEnvironment).environment
+	var camera: Camera3D = viewport.get_camera_3d()
+	var lights: Array = root.find_children("*","DirectionalLight3D",true,false).filter(func(l: Light3D) -> bool: return l.shadow_enabled and l.get_viewport() == viewport)
+	var filter_quality: int = ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality",2)
+	var shadow_size: int = ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/size",4096)
+	var shadow_16: bool = ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/16_bits",true)
+	var distances: Array = lights.map(func(l: DirectionalLight3D) -> float: return l.directional_shadow_max_distance)
+	var terrain: Node3D = editor.terrain if editor != null else null
+	var content: Node3D = editor.content if editor != null else null
+	# Server-wide settings change only on a change: re-setting them every frame
+	# could rebuild the atlas each time.
+	var server := {"size":shadow_size,"filter":filter_quality}
+	var set_size := func(value: int) -> void:
+		if server.size != value:
+			server.size = value
+			RenderingServer.directional_shadow_atlas_set_size(value,shadow_16)
+	var set_filter := func(value: int) -> void:
+		if server.filter != value:
+			server.filter = value
+			RenderingServer.directional_soft_shadow_filter_set_quality(value)
+	var sky_material: ShaderMaterial = env.sky.sky_material as ShaderMaterial if env != null and env.sky != null else null
+	var saved_steps := [sky_material.get_shader_parameter("cloud_steps") if sky_material != null else 16]
+	if saved_steps[0] == null: saved_steps[0] = 16
+	var variants := {
+		"base":func(_on: bool) -> void: pass,
+		"shadows_off":func(on: bool) -> void:
+			for l: Light3D in lights: l.shadow_enabled = not on,
+		"filter_low":func(on: bool) -> void:
+			set_filter.call(RenderingServer.SHADOW_QUALITY_SOFT_LOW if on else filter_quality),
+		"filter_hard":func(on: bool) -> void:
+			set_filter.call(RenderingServer.SHADOW_QUALITY_HARD if on else filter_quality),
+		"shadow_2048":func(on: bool) -> void:
+			set_size.call(2048 if on else shadow_size),
+		"shadow_dist_60":func(on: bool) -> void:
+			for i in range(lights.size()): lights[i].directional_shadow_max_distance = 60.0 if on else distances[i],
+		"shadow_4096_fit":func(on: bool) -> void:
+			set_size.call(4096 if on else shadow_size)
+			for i in range(lights.size()): lights[i].directional_shadow_max_distance = float(scene.distance)+20.0 if on else distances[i],
+		"ssao_off":func(on: bool) -> void:
+			if env != null: env.ssao_enabled = not on,
+		"glow_off":func(on: bool) -> void:
+			if env != null: env.glow_enabled = not on,
+		"sky_off":func(on: bool) -> void:
+			if env != null: env.background_mode = Environment.BG_COLOR if on else Environment.BG_SKY,
+		"msaa_off":func(on: bool) -> void:
+			viewport.msaa_3d = Viewport.MSAA_DISABLED if on else ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d",0),
+		"terrain_off":func(on: bool) -> void:
+			if terrain != null: terrain.visible = not on,
+		"plants_off":func(on: bool) -> void:
+			if content != null:
+				for b: Node in content.get_children():
+					if b is MultiMeshInstance3D: b.visible = not on,
+		# No coverage, no march. The weather republishes the deck every frame,
+		# so a few unpaused frames after this variant put it back.
+		"clouds_off":func(on: bool) -> void:
+			if on: RenderingServer.global_shader_parameter_set("zs_cloud",Vector4.ZERO),
+		"cloud_steps_12":func(on: bool) -> void:
+			if sky_material != null: sky_material.set_shader_parameter("cloud_steps",12 if on else saved_steps[0]),
+		"full_res_clouds":func(on: bool) -> void:
+			for lighting: Node in root.find_children("*","LandscapeLighting",true,false): lighting.set_process(not on)
+			if sky_material != null: sky_material.set_shader_parameter("half_res_clouds",not on),
+		"half_res":func(on: bool) -> void:
+			viewport.scaling_3d_scale = 0.5 if on else 1.0,
+	}
+	var picked: Array = variants.keys()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--slopes="): picked = Array(a.trim_prefix("--slopes=").split(","))
+	if not "base" in picked: picked.push_front("base")
+	var size := Vector2i(root.size)
+	var extra: Array[SubViewport] = []
+	for i in range(3):
+		var view := SubViewport.new()
+		view.size = size
+		view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		var eye := Camera3D.new()
+		view.add_child(eye)
+		root.add_child(view)
+		eye.current = true
+		extra.append(view)
+	# A holder, since lambdas capture locals by value.
+	var current := {"variant":Callable()}
+	var follow := func(on: bool) -> void:
+		# Re-applied every frame: the scene re-publishes some of these.
+		if (current.variant as Callable).is_valid(): current.variant.call(on)
+		for view: SubViewport in extra:
+			view.msaa_3d = viewport.msaa_3d
+			view.scaling_3d_scale = viewport.scaling_3d_scale
+			var eye: Camera3D = view.get_child(0)
+			eye.global_transform = camera.global_transform
+			eye.fov = camera.fov
+			eye.near = camera.near
+			eye.far = camera.far
+			eye.attributes = camera.attributes
+			eye.cull_mask = camera.cull_mask
+	var views_on := func(count: int) -> void:
+		for i in range(extra.size()):
+			extra[i].render_target_update_mode = SubViewport.UPDATE_ALWAYS if i < count else SubViewport.UPDATE_DISABLED
+	print("PLAY gpu slopes (%s): views %dx%d, msaa %d, camera distance %.1f, env %s, shadowed lights %d at %s m, filter %d, shadow map %d, cloud steps %s, volumetric fog %s, fog %s, half-res clouds %s, variants %s" % [label,size.x,size.y,viewport.msaa_3d,float(scene.distance),env != null,lights.size(),distances,filter_quality,shadow_size,saved_steps[0],env.volumetric_fog_enabled if env != null else null,env.fog_enabled if env != null else null,sky_material.get_shader_parameter("half_res_clouds") if sky_material != null else null,picked])
+	# The world holds still while priced: water, life and growth would
+	# otherwise change the work between readings. Rendering goes on.
+	paused = true
+	var rows := []
+	var rounds := 3
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--slope-rounds="): rounds = int(a.trim_prefix("--slope-rounds="))
+	for round in range(rounds):
+		for name: String in picked:
+			if not variants.has(name): continue
+			var apply: Callable = variants[name]
+			# Each variant beside a fresh baseline, so drift cancels in the pair.
+			if name != "base":
+				views_on.call(1)
+				var b1 := await _gpu_median_drawn(follow)
+				views_on.call(3)
+				var b3 := await _gpu_median_drawn(follow)
+				views_on.call(0)
+				rows.append(["base",b1,b3,(b3-b1)/2.0,name])
+			current.variant = apply
+			var t := {}
+			for count in [1,3]:
+				views_on.call(count)
+				t[count] = await _gpu_median_drawn(follow)
+			views_on.call(0)
+			current.variant = Callable()
+			apply.call(false)
+			if name == "clouds_off":
+				paused = false
+				for i in range(5): await process_frame
+				paused = true
+			await process_frame
+			rows.append([name,t[1],t[3],(t[3]-t[1])/2.0,name])
+			var paired: Array = rows[rows.size()-2] if name != "base" else rows[-1]
+			print("PLAY   slope %-15s t1 %6.2f  t3 %6.2f  pass %6.2f ms  (paired base %6.2f, saves %6.2f)" % [name,t[1],t[3],(t[3]-t[1])/2.0,paired[3],paired[3]-(t[3]-t[1])/2.0])
+	var base := _percentile(rows.filter(func(r: Array) -> bool: return r[0] == "base").map(func(r: Array) -> float: return r[3]),0.5)
+	print("PLAY gpu slopes (%s): one main pass %.2f ms (median of base rows)" % [label,base])
+	for name: String in picked:
+		if name == "base": continue
+		var saves := []
+		for i in range(rows.size()):
+			if rows[i][0] == name and i > 0 and rows[i-1][0] == "base" and rows[i-1][4] == name: saves.append(rows[i-1][3]-rows[i][3])
+		if saves.is_empty(): continue
+		print("PLAY   %-15s saves %6.2f ms per pass, median of paired rounds %s" % [name,_percentile(saves,0.5),saves.map(func(v: float) -> String: return "%.2f" % v)])
+	paused = false
+	for view in extra: view.queue_free()
+
+## Half- against full-resolution cloud march, from the play view and from low
+## down looking up into the deck (20-32 m), in light and heavy cover, as
+## /tmp/zs-sky-<label>-<view>-<cover>-<half|full>.png for the eye and a diff.
+func sky_capture(label: String) -> void:
+	var env: Environment = null
+	for w: Node in root.find_children("*","WorldEnvironment",true,false):
+		if (w as WorldEnvironment).environment != null and (w as WorldEnvironment).get_viewport() == root.get_viewport(): env = (w as WorldEnvironment).environment
+	var sky_material := env.sky.sky_material as ShaderMaterial
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--capture-weather="):
+			var weather := a.trim_prefix("--capture-weather=")
+			scene._precipitation.set_weather(scene._precipitation.PRESET_NAMES.find(weather),true)
+			label += "-"+weather
+			await seconds(5.0)
+	print("PLAY sky capture (%s): volumetric fog %s (density %.3f, sky affect %.2f), fog %s" % [label,env.volumetric_fog_enabled,env.volumetric_fog_density,env.volumetric_fog_sky_affect,env.fog_enabled])
+	paused = true
+	# The paused rig leaves the camera where it is put.
+	var camera := root.get_viewport().get_camera_3d()
+	var kept := camera.global_transform
+	var lighting: Array[Node] = root.find_children("*","LandscapeLighting",true,false)
+	for node in lighting: node.set_process(false)
+	var views := {"play":kept,"up":Transform3D(Basis(),Vector3(0,6,30)).looking_at(Vector3(0,34,-40),Vector3.UP)}
+	for view: String in views:
+		camera.global_transform = views[view]
+		for coverage in [0.06,0.6]:
+			RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(coverage,0.0,20.0,12.0))
+			for half in [true,false]:
+				sky_material.set_shader_parameter("half_res_clouds",half)
+				for i in range(8): await process_frame
+				await RenderingServer.frame_post_draw
+				var path := "/tmp/zs-sky-%s-%s-%s-%s.png" % [label,view,"clear" if coverage < 0.1 else "cloudy","half" if half else "full"]
+				root.get_texture().get_image().save_png(path)
+				print("PLAY sky capture ",path)
+	camera.global_transform = kept
+	for node in lighting: node.set_process(true)
+	paused = false
+
+## A reading with the extra views on that sits at the 120 fps cap means the
+## window was hidden and nothing drew: wait for it to show again and retake.
+func _gpu_median_drawn(apply: Callable) -> float:
+	for attempt in range(20):
+		var ms := await _gpu_median(apply)
+		if ms > 9.5: return ms
+		print("PLAY   reading at the cap (%.2f ms): window hidden? retaking" % ms)
+		await create_timer(3.0).timeout
+	return NAN
 
 ## Median frame over 3 s after 1 s to settle, with `apply` switching off each
 ## frame (and back on after).

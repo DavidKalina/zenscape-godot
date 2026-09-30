@@ -1,4 +1,6 @@
 shader_type sky;
+// The cloud march runs in the half-resolution pass (half_res_clouds).
+render_mode use_half_res_pass;
 // March in the final pass: intermediate sky passes also receive native fog.
 #include "res://shaders/reference_cloud_march.gdshaderinc"
 #define ZS_NIGHT_LIGHTS_APART
@@ -33,6 +35,11 @@ shader_type sky;
         uniform float horizon_ridges = 0.0;
         uniform float horizon_seed = 0.0;
         uniform float horizon_relief = 1.0;
+        // The cloud deck marched at half resolution, in its own pass: most of
+        // the sky's cost (docs/performance/gpu-headroom.md). Off under fog
+        // that covers the whole sky (scripts/landscape_lighting.gd), which
+        // Godot applies to that pass as well.
+        uniform bool half_res_clouds = true;
         // Ridged value noise round the circle of azimuths, so the line wraps
         // with no seam. Nearer layers are busier and lower.
         float ridge_line(vec2 around, float layer) {
@@ -147,6 +154,12 @@ shader_type sky;
           // the interpolated varying shrinks to ~0.991 mid-facet — under the
           // sun disc's own dot() threshold, which silently erases it.
           vec3 dir = normalize(EYEDIR);
+          // The radiance map draws its half-resolution layer as a whole sky.
+          if (AT_HALF_RES_PASS && !AT_CUBEMAP_PASS) {
+            vec4 marched = half_res_clouds ? zs_cloud_march(POSITION, dir, FRAGCOORD.xy) : vec4(0.0);
+            COLOR = marched.rgb;
+            ALPHA = marched.a;
+          } else {
           float y = dir.y;
           // The stars and the horizon hills are the room's: they stay put while
           // the diorama turns. The sun, moon, meteor, glow and bow already
@@ -344,11 +357,12 @@ shader_type sky;
 
           col = zsApplyBow(col, dir);
 
-          vec4 cloud = zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
+          vec4 cloud = half_res_clouds && !AT_CUBEMAP_PASS ? HALF_RES_COLOR : zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
           col = col * (1.0 - cloud.a) + cloud.rgb;
           // Keep the hue where light overflows: scale the colour down to fit
           // rather than clipping each channel, which bleached the sun white.
           col = max(col, vec3(0.0));
           col *= 0.98 / max(max(max(col.r, col.g), col.b), 0.98);
           COLOR = scene_linear_for_display(col) + (sunHdr + skyHdr) * (1.0 - cloud.a) / zs_exposure;
+          }
 }

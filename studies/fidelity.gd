@@ -55,6 +55,7 @@ var _motion_time := 0.0
 var _paused := false
 var _wind := 0.4
 var _environment: Environment
+var _lighting: LandscapeLighting
 var _panning := false
 var _quality: OptionButton
 var look_pass = preload("res://scripts/look_pass.gd").new()
@@ -439,6 +440,7 @@ func _setup_environment() -> void:
 	var lighting := preload("res://scripts/landscape_lighting.gd").new()
 	add_child(lighting)
 	lighting.setup(_source)
+	_lighting = lighting
 	_environment = lighting.environment
 	look_pass.setup(self)
 	_lights.assign(lighting.lights)
@@ -1313,7 +1315,8 @@ func _build_ui() -> void:
 	study.add_child(quality)
 	# Beauty by default: the look pass gives glow something to catch and adds
 	# light shafts. --balanced keeps the lighter tier for slower machines.
-	_set_quality(0)
+	# Windows starts on Ultra: the PC it ships to has GPU to spare.
+	_set_quality(2 if OS.has_feature("windows") else 0)
 	# The panel hugs its controls and stops short of the palette, so the column
 	# never overlaps the bar and inspecting leaves no empty column behind.
 	var fit_column := func() -> void:

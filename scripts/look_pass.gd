@@ -71,6 +71,8 @@ func apply_tier(index: int) -> void:
 	# direct term; Ultra keeps it for that last bit of crease shading.
 	environment.ssao_enabled = tier == 2 or (not enabled and tier == 0)
 	_scene.get_viewport().msaa_3d = Viewport.MSAA_4X if tier == 2 else Viewport.MSAA_2X
+	# Ultra marches the cloud deck at full resolution (docs/performance/gpu-headroom.md).
+	if _scene.get("_lighting") != null: _scene._lighting.full_res_clouds = tier == 2
 	var fog: CanvasLayer = _scene._display_fog
 	if fog != null and fog.buffer_scale != (0.75 if tier == 2 else 0.5):
 		fog.buffer_scale = 0.75 if tier == 2 else 0.5
