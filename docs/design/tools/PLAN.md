@@ -116,11 +116,12 @@ Shift, read when the verb is decided.
 | `dab(heights, q: Vector2) -> float` | every `DAB_SPACING` (0.3 m) along the path | write `heights`; return the reach round `q` that may have gone down (for the dirt), or 0 |
 | `drag_off()` | the pointer runs off the land | |
 | `drag_end() -> bool` | release, after the last dabs | true if it queued more path to lay (`clay.queue_point`) |
+| `drag_running() -> bool` | after `drag_end`, each frame | true while the drag still works the land after release (the Wire's cut drawing through). The clay keeps the undo step open, calls `frame`, and closes it once this is false; `finish()` must land the rest at once (default false) |
 | `hold_begin(fine) -> String` | the hold is decided (still for `HOLD_SECONDS`, 0.3 s) | may move `clay.center`; set up, `clay.gather` the points it will move, return the verb's name. The undo step is already open |
 | `hold_step(heights, rise: float) -> bool` | each frame held, and once at release | `rise` is the pointer's travel up the screen, in metres standing at `clay.center` (down is negative). Write `heights` from `clay.base`, set `lift`, and return false when nothing changed |
 | `hold_end()` | release, or cut short | rock paint, trees sliding off |
 | `tap(fine)` | a tap (let go before 0.3 s, moved under 6 px) | anything. To keep a change, call `clay.open_stroke()`, write `clay.editor.data.heights`, then `clay.close_stroke()` |
-| `frame(delta)` / `finish()` / `busy() -> bool` | every frame / at once / probes | for anything that runs on after a press (the Hand's poke rings out; the paddle's pat holds the hand down) |
+| `frame(delta)` / `finish()` / `busy() -> bool` | every frame / at once / probes | for anything that runs on after a press (the Hand's poke rings out; the paddle's pat holds the hand down; the Wire's cut draws through). `finish()` runs on an undo, a new press or a change of tool, and leaves what running out would have |
 
 A drag's heights reach the land after each frame's dabs; a hold's after each
 `hold_step`. Write only the working copy you are given.
@@ -147,7 +148,7 @@ A drag's heights reach the land after each frame's dabs; a hold's after each
 | `shake_trees(at, reach, area := Rect2())` | trees on moved ground that cannot hold it slide to its foot; `touched()` gives a drag's whole area |
 | `stir(at, radius, strength)` | a tap disturbs the life round it |
 | `open_stroke()` / `close_stroke()` | one undo step, for a tap that keeps its change |
-| `queue_point(p)` / `path_end()` | add to the drag's path |
+| `queue_point(p)` / `path_end()` / `queued()` | add to the drag's path; its last point; the points not yet laid (all of the path, for a tool whose `drag_frame` holds its dabs back) |
 | `hand_gesture(gesture, point, again)` / `hand_set` | drive the God Hand directly |
 | `FLOOR`, `EDGE`, `PLATE_HALF`, `CELL` | the sink floor (-1.2 m), the edge fade, the rim, the lookup cell |
 | `FACE_SLOPE`, `FACE_REACH`, `FACE_MOVED` | `paint_faces`'s slope ramp (rise/run), read distance and least move |
@@ -164,9 +165,9 @@ The clay also owns the dirt tint (`DIRT` to `DIRT_DEEP`, laid by how far each
   at `clay.FLOOR`.
 - Multiply every change by `clay.fade(i)`, so the plate's outline stays clean.
 - `touch` everything you move. The settle refresh covers only the touched area.
-- Paint rock only at release (`hold_end`, `drag_end`, or inside a tap's
-  stroke), so the undo step takes it back. `paint_rock` is for raised ground
-  and `paint_faces` for cut faces.
+- Paint rock only at release (`hold_end`, `drag_end`, while a drag runs on,
+  or inside a tap's stroke), so the undo step takes it back. `paint_rock` is
+  for raised ground and `paint_faces` for cut faces.
 - Call only the clay's public members (the tables above). A tool that needs
   something the clay keeps private wants a new hook here.
 - Check headless with a probe in the style of `tools/probe_tool_paddle.gd`:
@@ -247,28 +248,58 @@ Nothing has been seen on screen:
 
 `scripts/clay_tools/wire.gd`. It only cuts; it never raises.
 
-- **Gorge** (drag). The cut lands at release, along the straight line from the
-  press to the release point, whatever way the pointer wandered. While the
-  wire is drawn nothing is laid (`drag_frame` returns false, and the hand
-  follows the pointer); the ground marks' faint line from the press point to
-  the pointer is the whole preview. This matches "press, drag, release": a
-  wire is pulled taut between two points and then drawn through. Cut live,
-  it would have to follow the pointer's path (the thumb's groove) or be torn
-  up and recut every frame as the far end moved.
-  - Across: a flat bed `BED_HALF` (1.1 m) either side of the line, then a wall
-    to the untouched ground over `WALL_RUN` (0.35 m), under the point spacing,
-    so each wall is one facet row. The ends are round.
-  - Along: `GORGE_DEPTH` (2.6 m) under the ground, and the bed never climbs.
-    From its higher end it falls at least `BED_FALL` (2 cm per metre), cutting
-    deeper where the ground rises across the line, so water runs its length.
-    Across a dip, the far side is cut to the dip's level. `MIN_HEIGHT`
-    (-1.5 m) stops it, so on low meadow (0.1 to 0.3 m) the gorge is 1.6 to
-    1.9 m deep. A drag is a stroke, like the thumb, so the sink `FLOOR` does
-    not apply.
-  - At release, the dug ground turns to bare earth (`clay.lay_dirt`: the cut
-    has no dabs, so the clay would not lay it by itself), then the walls take
-    granite on their steeps (`clay.paint_faces`). The bed stays earth. Trees
-    that cannot hold the cut ground slide off.
+- **Gorge** (drag). The gorge follows the path the pointer drew, bends and
+  all. While the wire is drawn nothing is laid (`drag_frame` returns false,
+  and the hand follows the pointer). The ground marks' faint line follows the
+  drawn path from the press point to the pointer, and it is the whole
+  preview. Let go, the wire is drawn through the clay along the path (see
+  "Drawn through" below).
+  - The path: the pointer's ground points (the clay's `queued`, picked on the
+    ground as it stood at the press) are kept once `PATH_SPACING` (0.5 m)
+    from the last kept point. The kept points and the pointer's own are
+    smoothed `SMOOTH_PASSES` (2) times, each interior point halfway to its
+    neighbours' middle, with the ends held. That takes out the hand's jitter
+    and keeps a deliberate bend: a right angle is rounded by about 0.4 m
+    (`wire.drawn`, the same path the preview line draws).
+  - Across: a flat bed `BED_HALF` (1.1 m) either side of the path, then a
+    wall to the untouched ground over `WALL_RUN` (0.35 m), under the point
+    spacing, so each wall is one facet row. Across is distance to the path,
+    so the ends are round and a bend is a round-cornered channel.
+  - Along, in arc length along the path: `GORGE_DEPTH` (2.6 m) under the
+    ground, and the bed never climbs. From its higher end it falls at least
+    `BED_FALL` (2 cm per metre), cutting deeper where the ground rises under
+    the path, so water runs its length. Across a dip, the far side is cut to
+    the dip's level. Where the path crosses itself, or a point is near two
+    stretches of it at a bend, the deeper cut wins. `MIN_HEIGHT` (-1.5 m)
+    stops it, so on low meadow (0.1 to 0.3 m) the gorge is 1.6 to 1.9 m
+    deep. A drag is a stroke, like the thumb, so the sink `FLOOR` does not
+    apply.
+  - Drawn through: at release the whole cut is planned once (`_plan`: for
+    each point it takes down, the arc length where the wire passes it and
+    the height it goes to, sorted by arc length). A head then runs along the
+    path at `CUT_SPEED` (8 m/s), the whole taking `CUT_SECONDS` (0.5 to
+    2.5 s; a 20 m drag hits the 2.5 s cap). Its pace is half even and half
+    smoothstep (`CUT_EASE` 0.5), so it starts with a pull and eases into the
+    end. Each frame lays only the cuts the head has passed: those points are
+    written, touched and dirtied, and the land is shown through the clay's
+    usual light refresh (`show_land`). The prop rides the head (the clay's
+    `hand_gesture` point), down in the cut, and goes back to the pointer when
+    the stroke closes.
+  - As the head passes, the dug ground turns to bare earth (`clay.lay_dirt`).
+    Once it reaches the end, the walls take granite on their steeps
+    (`clay.paint_faces`) and trees that cannot hold the cut ground slide off.
+    The rock waits for the end because it reads the slope round each cell,
+    and the head's own round end would read as a wall. A tree sliding mid-cut
+    would bump the objects' revision and stop the light refresh. The bed stays
+    earth.
+  - It is one undo step. The clay keeps the stroke open while the cut runs
+    (its `RUN` state, the tool's `drag_running`) and closes it once the cut
+    lands. An undo, a new press, a change of tool or Esc mid-cut calls
+    `finish`, which lays the rest at once, with the dirt, rock and trees, and
+    the stroke closes. The land is the same as an uninterrupted cut's (an
+    undo then takes it all back). `wire.cut_gorge(heights, path)` writes the
+    same cut at once, and `animate = false` cuts at release with no drawing
+    through, for probes.
 - **Slice** (hold, then drag). Every point within `SLICE_RADIUS` (7 m) that
   stands above a level plane is cut down to it. The plane starts at the ground
   under the press and follows the pointer's height, as the pinch's summit
@@ -297,18 +328,42 @@ godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_wire.gd -- --
 
 - The pocket takes the wire. The hand grips it, and the prop is built in the
   icon's tint, untilted. A tap keeps nothing.
-- A 300 px drag bowed 70 px leaves the land untouched until release. It then
-  cuts a 16 m gorge along the straight line: 1.74 m deep at the middle and
-  1.93 m at most, the full depth the ground allows everywhere on the line.
-  Nothing is dug at the bow, 5.5 m off the line. The bed climbs 0.000 m. The
-  ground 0.6 m past the rim is unmoved. The walls stand at 1.64 (90% to 10%
-  depth), 129 points are lowered and none raised, 0.92 of the wall cells are
-  rock, and 0.98 of the bed cells are earth. Since the walls take
-  `clay.paint_faces` (2026-09-30), four runs read 0.96 to 0.99 of the wall
-  cells rock and 0.97 to 1.00 of the bed earth, against 0.88 on the old
-  lent-base `paint_rock` path the same day.
-- Shift cuts 1.15 m against 1.93. The widest pip lowers 186 points against
-  129, and the smallest 88.
+- A 300 px drag bowed 70 px leaves the land untouched until release, and the
+  path it drew is the one the cut runs. The figures below are from four runs
+  on 2026-09-30, after the path and drawing-through change. The world
+  differs from run to run.
+  - Its gorge follows the bow: a 19.4 to 19.8 m path of 30 or 31 points, cut
+    to the full depth the ground allows all along it (1.94 to 2.23 m at
+    most). The straight line's middle, 4.9 to 5.3 m off the path, is not
+    dug. The bed climbs 0.000 m, the ground 0.6 m past the rim is unmoved,
+    and none is raised. The walls stand at 1.92 to 3.19 (90% to 10% depth).
+    0.96 to 0.99 of the wall cells are rock, and 0.96 to 1.00 of the bed
+    cells are earth.
+  - It is drawn through in 145 to 148 frames at 60 fps, each within 3
+    frames of its path's length at 8 m/s (2.4 to 2.5 s). At 0.35 of the
+    way, the ground 10% along is 1.52 to 1.96 m down and the ground 90%
+    along is untouched. The stroke is still open (no undo step yet), and the
+    prop's point is on the head (0.00 m off). The slowest frame while
+    drawing is 8.3 to 9.7 ms headless.
+  - The land it leaves equals `cut_gorge` along the same path, exactly.
+- Cut short at 0.35 of the way:
+  - An undo takes it all back, heights and tint.
+  - A new press or Esc lands the rest at once. Both leave the same heights
+    and the same tint as the full drawing of the same drag, in one undo step.
+- An L drag (170 px along the screen, then 140 px down) cuts both legs 1.6 to
+  1.9 m deep at their middles, at full depth all along. Its bed never climbs
+  round the bend. The corner itself (picked before the cut) is 0.38 m inside
+  the smoothed path and 1.89 m deep. 2.25 m out from the corner (2.6 m off
+  the path) nothing is dug, and nothing is dug on the straight line across
+  the bend, 4.8 to 4.9 m off the path. It equals `cut_gorge` too.
+- Shift: the check that it cuts under 0.6 of the full gorge's deepest failed
+  in all four runs (1.47 against 2.23, 1.64 against 2.00, 1.44 against
+  2.06, 1.27 against 1.94). The straight-line version passed that day, at
+  1.12 against 1.94. The check is world-flaky, and it was flaky before this change. The
+  bowed path crosses more ground than the old straight line did. Where the
+  ground rises along the path, the never-climbing bed deepens the shallow
+  gorge, while the full gorge is held by `MIN_HEIGHT`. The widest pip
+  lowers 225 to 229 points against 155 to 160, and the smallest 101 to 104.
 - A 40 px hold-and-drag on a 3.17 m hill slices it to 0.5 m. All 218 points
   over the plane stand on it, with nothing under it moved. The plane is within
   1.7 px of the pointer. Shift takes 1.07 m off against 2.67.
@@ -323,6 +378,11 @@ Nothing has been seen on screen:
   its one-facet walls read as a gorge or as a trench
 - the granite walls beside the earth bed, and the sliced top's bare earth
 - whether water from the shallow-water sim actually runs the bed
+- how the drawing-through looks and feels: the head's pace and ease, the
+  land's light refresh keeping up with it (headless draws nothing), the prop
+  riding down in the cut, and the rock arriving all at once at the end
+- the preview line along the drawn path (headless compiles the shader but
+  never runs it)
 - the prop in the hand: where the grip sits, and whether the 12 mm wire shows
   at all
 

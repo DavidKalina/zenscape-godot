@@ -9,8 +9,9 @@ extends Node
 ## - **Paddle:** a wide stitched ellipse, long across the view.
 ## - **Chisel:** a hard square in one solid line, the only solid mark, laid in
 ##   the plane of the face it will cut and squared to its fall line.
-## - **Wire:** a toggle dot on hover; while its press is dragged, a straight
-##   line from the press to the pointer with a toggle at each end.
+## - **Wire:** a toggle dot on hover; while its press is dragged, a line along
+##   the path the drag has drawn (the wire's `drawn`, the path its gorge will
+##   follow) from the press to the pointer, with a toggle at each end.
 ## - **Hammer:** a small stitched ring and a few scree specks downhill, where
 ##   chunks will fall.
 ## - **Material:** a dotted drop ring under the carried item, as wide as the
@@ -117,6 +118,9 @@ const FEATHER_HOTSPOT := Vector2(0.24,0.12)
 const FEATHER_LANE_MIN := 0.3
 ## Holds a wire drag can be under: the clay's until the wire has its own verb.
 const WIRE_HOLDS := ["land","wire"]
+## The most points of a wire's drawn path the shader takes (its
+## `wire_path` array); a longer path is thinned evenly, ends kept.
+const WIRE_POINTS := 64
 
 var scene: Node3D
 var reach: Node
@@ -127,12 +131,14 @@ var kind := "hand"
 var shown := 0.0
 var wanted := false
 ## Where it lies (terrain local), its half extents (terrain metres) along
-## `axis` and across, and the wire's press point (terrain local).
+## `axis` and across, the wire's press point and the path it has drawn
+## (terrain local; the path's x, z, empty for a straight line).
 var centre := Vector3.ZERO
 var half := Vector2.ONE
 var axis := Vector3.RIGHT
 var normal := Vector3.UP
 var wire_start := Vector3.ZERO
+var wire_path := PackedVector2Array()
 ## The scree specks, terrain local x, z and radius.
 var specks: Array[Vector3] = []
 ## Why it is hidden this frame, for probes ("" while wanted).
@@ -161,8 +167,9 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 
 ## Show `kind`'s mark at `point` (terrain local, on the ground) at `size_scale`
 ## of its size, fading in. The wire also takes its press point `from`
-## (terrain local); without it the wire is a single toggle at `point`.
-func update(next: String, point: Vector3, size_scale: float, delta: float, from: Variant = null) -> void:
+## (terrain local; without it the wire is a single toggle at `point`) and
+## the path drawn from there (terrain x, z; without it a straight line).
+func update(next: String, point: Vector3, size_scale: float, delta: float, from: Variant = null, path := PackedVector2Array()) -> void:
 	if not next in KINDS:
 		hide(delta)
 		return
@@ -171,6 +178,11 @@ func update(next: String, point: Vector3, size_scale: float, delta: float, from:
 	reason = ""
 	centre = point
 	wire_start = from if from != null else point
+	wire_path = path.duplicate()
+	if path.size() >= 2:
+		# The line runs from the press point to the pointer, as its toggles do.
+		wire_path[0] = Vector2(wire_start.x,wire_start.z)
+		wire_path[-1] = Vector2(point.x,point.z)
 	_shape(size_scale)
 	_fade(delta)
 	_draw()
@@ -238,7 +250,9 @@ func step(delta: float) -> void:
 		if to == null:
 			hide(delta,"off land")
 			return
-		update("wire",to,size,delta,wire_start)
+		var wire: RefCounted = _tool("wire")
+		var path: PackedVector2Array = wire.drawn() if wire != null and wire.has_method("drawn") else PackedVector2Array()
+		update("wire",to,size,delta,wire_start,path)
 		return
 	if reach.hover_zone != "land" or reach._hover_point == null:
 		hide(delta,"not land")
@@ -310,6 +324,7 @@ func _feather_mark(which: String, point: Vector3, extent: Vector2, way: Vector3,
 	reason = ""
 	centre = point
 	wire_start = from if from != null else point
+	wire_path = PackedVector2Array()
 	var p := Vector2(point.x,point.z)
 	var e := NORMAL_REACH
 	var dx := _height(p+Vector2(e,0.0),point.y)-_height(p-Vector2(e,0.0),point.y)
@@ -404,7 +419,9 @@ func _draw() -> void:
 	# The ground the mark covers: its outline (or the wire's line and toggles).
 	var outline: Array[Vector2] = []
 	var c := Vector2(centre.x,centre.z)
-	if kind in ["wire","feather_lane"]:
+	if kind == "wire" and wire_path.size() >= 2:
+		outline.append_array(wire_path)
+	elif kind in ["wire","feather_lane"]:
 		var a := Vector2(wire_start.x,wire_start.z)
 		# The Feather's lane also covers its half-width either side.
 		var side := Vector2(-axis.z,axis.x)*half.x if kind == "feather_lane" else Vector2.ZERO
@@ -447,6 +464,16 @@ func _draw() -> void:
 	material.set_shader_parameter("mark_half",half*scale)
 	material.set_shader_parameter("wire_from",terrain.to_global(wire_start))
 	material.set_shader_parameter("wire_to",terrain.to_global(centre))
+	var line := PackedVector2Array()
+	if kind == "wire" and wire_path.size() >= 2:
+		var count := mini(wire_path.size(),WIRE_POINTS)
+		for k in count:
+			var q := wire_path[roundi(float(k)*(wire_path.size()-1)/(count-1))]
+			var w := terrain.to_global(Vector3(q.x,centre.y,q.y))
+			line.append(Vector2(w.x,w.z))
+	line.resize(WIRE_POINTS)
+	material.set_shader_parameter("wire_path",line)
+	material.set_shader_parameter("wire_count",mini(wire_path.size(),WIRE_POINTS) if kind == "wire" else 0)
 	var packed := PackedVector4Array()
 	for s: Vector3 in specks:
 		var w := terrain.to_global(Vector3(s.x,centre.y,s.y))

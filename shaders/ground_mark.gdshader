@@ -26,9 +26,13 @@ uniform vec3 mark_centre = vec3(0.0);
 uniform vec3 mark_axis = vec3(1.0, 0.0, 0.0);
 uniform vec3 mark_normal = vec3(0.0, 1.0, 0.0);
 uniform vec2 mark_half = vec2(1.0);
-// The wire's two ends (world).
+// The wire's two ends (world), and the path it has drawn between them: world
+// x, z of its first wire_count points (0 for the straight line).
 uniform vec3 wire_from = vec3(0.0);
 uniform vec3 wire_to = vec3(0.0);
+const int WIRE_POINTS = 64;
+uniform vec2 wire_path[WIRE_POINTS];
+uniform int wire_count = 0;
 // The hammer's scree: world x, z and radius (metres) of each speck.
 const int SPECKS = 6;
 uniform vec4 specks[SPECKS];
@@ -94,11 +98,23 @@ void fragment() {
 		float d = max(abs(q.x), abs(q.y)) - mark_half.x;
 		line = band(d / mpp, line_px);
 	} else if (mark_kind == 3) {
-		// The wire: a straight line press to pointer, a toggle at each end.
-		vec2 a = wire_from.xz;
-		vec2 ab = wire_to.xz - a;
-		float along = clamp(dot(world.xz - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-		float d = length(world.xz - (a + ab * along));
+		// The wire: along its drawn path (or straight) press to pointer, a
+		// toggle at each end.
+		float d = 1e9;
+		if (wire_count >= 2) {
+			for (int i = 0; i + 1 < WIRE_POINTS; i++) {
+				if (i + 1 >= wire_count) break;
+				vec2 a = wire_path[i];
+				vec2 ab = wire_path[i + 1] - a;
+				float along = clamp(dot(world.xz - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+				d = min(d, length(world.xz - (a + ab * along)));
+			}
+		} else {
+			vec2 a = wire_from.xz;
+			vec2 ab = wire_to.xz - a;
+			float along = clamp(dot(world.xz - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+			d = length(world.xz - (a + ab * along));
+		}
 		line = band(d / mpp, line_px);
 		float ends = min(length(world.xz - wire_from.xz), length(world.xz - wire_to.xz)) / mpp;
 		line = max(line, disc(ends, toggle_px));

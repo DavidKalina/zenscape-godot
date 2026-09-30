@@ -21,7 +21,8 @@ extends Node
 ##   The Modeller's is the pinch.
 ##
 ## Everything the tools share is here: each drag or hold is one undo step
-## (opened when the verb is decided, closed at release); ground a stroke takes
+## (opened when the verb is decided, closed at release, or once a drag the
+## tool runs on past release is done: the Wire's cut drawn through the clay); ground a stroke takes
 ## down shows bare earth through the grass (the tint layer) and stays; the
 ## land shows through the editor's light refresh, one at a time, as the
 ## brushes and the land spring do, and only the points near the hand are
@@ -130,7 +131,9 @@ const PROP_TURN := 6.0
 const CursorMotion = preload("res://scripts/cursor_motion.gd")
 const GodHand = preload("res://scripts/god_hand.gd")
 
-enum State { IDLE, PENDING, DRAG, HOLD }
+## RUN: a drag let go whose tool still works it (its `drag_running`);
+## its stroke stays open until the tool is done.
+enum State { IDLE, PENDING, DRAG, HOLD, RUN }
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -325,7 +328,8 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 		State.DRAG:
 			_drag_step(0.0)
 			if tool.drag_end(): _drag_step(0.0)
-			close_stroke()
+			if tool.drag_running(): state = State.RUN
+			else: close_stroke()
 		State.HOLD:
 			_hold_step()
 			tool.hold_end()
@@ -333,12 +337,13 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 
 ## End whatever is in hand at once (undo, a new press, a world change, a
 ## change of tool): a stroke or hold closes as it stands, anything the tool
-## left running (a poke's dimple) is taken back.
+## left running (a poke's dimple) is taken back, and a drag the tool runs on
+## past release (the Wire's cut) lands whole and closes.
 func finish_now() -> void:
 	tool.finish()
 	match state:
 		State.PENDING: state = State.IDLE
-		State.DRAG: close_stroke()
+		State.DRAG, State.RUN: close_stroke()
 		State.HOLD:
 			tool.hold_end()
 			close_stroke()
@@ -355,6 +360,7 @@ func _process(delta: float) -> void:
 			if held >= HOLD_SECONDS and travel < MOVE_PIXELS: _begin_hold()
 		State.DRAG: _drag_step(delta)
 		State.HOLD: _hold_step()
+		State.RUN: if not tool.drag_running(): close_stroke()
 	_place_prop(delta)
 
 ## The drag's speed: path pixels over the last SPEED_WINDOW seconds.
@@ -477,6 +483,12 @@ func _hold_step() -> void:
 ## Queue a plate point on the drag's path, laid after those queued before it.
 func queue_point(p: Vector2) -> void:
 	_queued.append(p)
+
+## The drag's path points not yet laid, in order: all of it since the press
+## for a tool whose `drag_frame` holds its dabs back (the Wire reads its
+## drawn path here).
+func queued() -> PackedVector2Array:
+	return _queued
 
 ## The path's last point: the last queued, else the last laid.
 func path_end() -> Vector2:
