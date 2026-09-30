@@ -2,6 +2,7 @@
 Run with Python 3; no external audio dependencies. Wildlife remains recordings.
 `--genesis` bakes only the Genesis sounds (bake_genesis, docs/scenic/sound.md).
 `--snap` bakes only the god hand's finger snaps (bake_snap, docs/scenic/modeless.md).
+`--howl` bakes only Bigfoot's far howl (bake_howl, docs/scenic/life.md "Bigfoot's trail").
 """
 import math
 import random
@@ -339,6 +340,47 @@ def knock(rng, count, rate):
     return out
 
 
+def howl(rng, count, rate):
+    # A far howl: one long, low voice rising into a held "whooo" and falling
+    # away, in the Pacific Northwest's recordings' shape. A voiced source (a
+    # saw with its highs rolled off and a slow wobble) through two formants that
+    # open from "oo" to "aw" as it rises and close again as it falls, plus a
+    # breath of noise. The far bus adds the distance.
+    seconds = count / rate
+    f1 = Biquad('band', 380, 3.0, rate)
+    f2 = Biquad('band', 900, 4.0, rate)
+    soft = Biquad('low', 1800, 0.7, rate)
+    breath = Biquad('band', 700, 1.2, rate)
+    phase = 0.0
+    drift = 0.0
+    out = []
+    for i in range(count):
+        t = i / rate
+        u = t / seconds
+        # Pitch: up from 210 Hz to about 330 by a quarter, held, then a long slide to 170.
+        rise = min(1.0, u / 0.25)
+        fall = max(0.0, (u - 0.55) / 0.45)
+        pitch = 210 + 120 * (rise * rise * (3 - 2 * rise)) - 160 * fall ** 1.4
+        drift += (rng.uniform(-1, 1) - drift) * 0.0015
+        pitch *= 1 + 0.012 * math.sin(math.tau * 4.6 * t) * min(1.0, t / 0.8) + 0.02 * drift
+        phase += pitch / rate
+        saw = soft(2 * (phase % 1.0) - 1)
+        # The mouth opens with the rise and closes with the fall.
+        open_ = rise * (1 - fall)
+        if i % 64 == 0:
+            f1.tune('band', 380 + 260 * open_, 3.0, rate)
+            f2.tune('band', 900 + 250 * open_, 4.0, rate)
+        voiced = f1(saw) + 0.55 * f2(saw)
+        envelope = min(1.0, t / 0.35) ** 1.5 * (1.0 if u < 0.7 else math.cos(math.pi * 0.5 * (u - 0.7) / 0.3) ** 2)
+        out.append(envelope * (voiced + 0.12 * breath(rng.uniform(-1, 1))))
+    return out
+
+
+def bake_howl():
+    """Bigfoot's far howl (docs/scenic/life.md, "Bigfoot's trail")."""
+    one_shot('far-howl', 16000, 4.2, 0.85, howl)
+
+
 def bow(rng, count, rate):
     # A rainbow: an open G-D chord, slightly detuned, breathing in and away.
     notes = (392.0, 587.33, 784.0, 1174.66)
@@ -369,6 +411,7 @@ def bake_genesis():
     one_shot('heron-call', 22050, 0.9, 0.8, heron)
     one_shot('wood-knock', 22050, 0.6, 0.9, knock)
     one_shot('bow-swell', 22050, 7.0, 0.5, bow)
+    bake_howl()
 
 
 def finger_snap(variant):
@@ -425,6 +468,8 @@ if __name__ == '__main__':
     # classic set stays as it is.
     if '--snap' in sys.argv:
         bake_snap()
+    elif '--howl' in sys.argv:
+        bake_howl()
     else:
         if '--genesis' not in sys.argv:
             bake_classic()

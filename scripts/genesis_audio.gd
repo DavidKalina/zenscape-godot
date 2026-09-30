@@ -19,9 +19,11 @@ extends Node
 ## - Arrivals and moments get sparse, quiet one-shots: a plop for fish, one
 ##   croak for a frog, a heron's call, deer steps. When Bigfoot shows, the
 ##   birds hush for a while, and sometimes there is a distant wood knock.
+##   Before he is ever seen, his trail (scripts/life_trail.gd) sounds too: a
+##   far howl on a still, clear night, and knocks from the elder stand.
 ##
 ## Everything plays on the "Genesis" bus (the Sound volume) under Master; the
-## knock goes through "GenesisFar" (low-passed, with reverb). Streams load
+## knocks and the howl go through "GenesisFar" (low-passed, with reverb). Streams load
 ## once in setup; players are pooled; nothing allocates per frame.
 
 const Feedback = preload("res://scripts/stroke_feedback.gd")
@@ -108,6 +110,16 @@ const KNOCK_GAIN := 0.22
 const KNOCK_BACK := 8.0
 const KNOCK_DELAY := Vector2(3.0,6.0)
 const KNOCK_SPACING := 0.8
+## His trail: a howl from HOWL_BACK m beyond the elder stand, away from the
+## camera, and KNOCKS knocks (two or three) from TRAIL_KNOCK_BACK m into it,
+## KNOCK_GAPS s apart. Each quiets the wood's night voices for TRAIL_HUSH s.
+const HOWL_GAIN := 0.3
+const HOWL_BACK := 16.0
+const HOWL_DELAY := 0.5
+const KNOCKS := Vector2i(2,3)
+const KNOCK_GAPS := Vector2(0.7,1.2)
+const TRAIL_KNOCK_BACK := 4.0
+const TRAIL_HUSH := 20.0
 const THUMP_GAP := 0.3
 const POOL := 4
 
@@ -207,7 +219,7 @@ func setup(owner_scene: Node3D) -> void:
 	for i in range(POOL): _pool.append(_player3d(null,true))
 	_far = _player3d(null,true)
 	_far.bus = FAR_BUS
-	for clip: String in ["genesis-thump","fish-plop-1","fish-plop-2","frog-croak","heron-call","wood-knock","bow-swell","footstep-1","footstep-2","footstep-3","footstep-4"]:
+	for clip: String in ["genesis-thump","fish-plop-1","fish-plop-2","frog-croak","heron-call","wood-knock","far-howl","bow-swell","footstep-1","footstep-2","footstep-3","footstep-4"]:
 		_clips[clip] = load(_path(clip))
 	editor.stroke_started.connect(_on_stroke_started)
 	editor.stroke_moved.connect(_on_stroke_moved)
@@ -385,9 +397,25 @@ func _on_moment(kind: String, position: Vector3) -> void:
 				var delay := _rng.randf_range(KNOCK_DELAY.x,KNOCK_DELAY.y)
 				_pending.append([delay,"wood-knock",from,KNOCK_GAIN,1.0,true])
 				_pending.append([delay+KNOCK_SPACING+_rng.randf_range(-0.1,0.15),"wood-knock",from,KNOCK_GAIN*0.85,0.96,true])
+		"bigfoot_howl":
+			_hush = maxf(_hush,TRAIL_HUSH)
+			_pending.append([HOWL_DELAY,"far-howl",_beyond(position,HOWL_BACK),HOWL_GAIN,_rng.randf_range(0.92,1.04),true])
+		"bigfoot_knocks":
+			_hush = maxf(_hush,TRAIL_HUSH)
+			var from := _beyond(position,TRAIL_KNOCK_BACK)
+			var at := 0.0
+			for i in range(_rng.randi_range(KNOCKS.x,KNOCKS.y)):
+				_pending.append([at,"wood-knock",from,KNOCK_GAIN*(1.0-0.1*i),_rng.randf_range(0.94,1.02),true])
+				at += _rng.randf_range(KNOCK_GAPS.x,KNOCK_GAPS.y)
 		_:
 			return
 	played[kind] = int(played.get(kind,0))+1
+
+## `metres` further from the camera than `position`, on the level.
+func _beyond(position: Vector3, metres: float) -> Vector3:
+	var away: Vector3 = position-scene.camera.global_position
+	away.y = 0.0
+	return position+away.normalized()*metres if away.length() > 0.01 else position
 
 ## Play a one-shot from the pool; false when every player is busy.
 func _shot(clip: String, position: Vector3, gain: float, pitch: float, far := false) -> bool:
