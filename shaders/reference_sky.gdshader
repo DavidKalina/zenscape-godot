@@ -153,7 +153,8 @@ shader_type sky;
           vec3 room = zsRoomDir(dir);
           // The gradient itself is zsSkyGradient (above): the dome is a caller
           // of it like anything else that has to know what colour the sky is.
-          vec3 col = zsSkyGradient(dir);
+          // The bow is laid on after the horizon hills, so it crosses them.
+          vec3 col = zsSkyBase(dir) + zsAurora(dir);
 
           // Stars: candidates on 3D lattices the dome slices through — round
           // dots, per-star brightness and a slow twinkle. Two lattices: a
@@ -311,7 +312,8 @@ shader_type sky;
             vec2 around = normalize(room.xz + 1e-5);
             vec2 seen = normalize(dir.xz + 1e-5);
             // Hills sink into the night with the dome, or they stand as a navy band.
-            vec3 horizon = zsSkyGradient(normalize(vec3(seen.x, 0.0, seen.y))) * mix(1.0, 0.4, deep);
+            vec3 flat_dir = normalize(vec3(seen.x, 0.0, seen.y));
+            vec3 horizon = (zsSkyBase(flat_dir) + zsAurora(flat_dir)) * mix(1.0, 0.4, deep);
             float below = smoothstep(-0.14, -0.04, y);
             for (int k = 0; k < 3; k++) {
               float layer = float(k);
@@ -321,6 +323,8 @@ shader_type sky;
               col = mix(col, mix(horizon, horizon * vec3(0.58, 0.64, 0.76), haze), cover * horizon_ridges);
             }
           }
+
+          col = zsApplyBow(col, dir);
 
           vec4 cloud = zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
           col = col * (1.0 - cloud.a) + cloud.rgb;

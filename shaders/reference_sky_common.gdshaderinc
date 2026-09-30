@@ -126,7 +126,9 @@
     col += vec3(0.022) * (1.0 - smoothstep(34.0, 40.6, a1));
     return col * sun;
   }
-  vec3 zsSkyGradient(vec3 dir) {
+  // The sky's own colour, without the bow. The horizon hills paint with
+  // this along a flattened direction; the bow would smear down them.
+  vec3 zsSkyBase(vec3 dir) {
     float y = dir.y;
     vec3 col = mix(zs_sky_down, zs_sky_up, smoothstep(-0.4, 0.7, y));
     // By day the glow band is the preset's, all the way round. At the
@@ -146,6 +148,10 @@
       col += vec3(0.42, 0.13, 0.16) * pink * zs_belt;
       col = mix(col, col * vec3(0.55, 0.62, 0.80), shade * 0.5 * zs_belt);
     }
+    return col;
+  }
+  // The bow lies in the air in front of everything in the sky, hills included.
+  vec3 zsApplyBow(vec3 col, vec3 dir) {
     if (zs_bow > 0.001) {
       // The bow runs on below the horizon a little, as the stars do: the
       // diorama floats, and the dome under it is most of the sky in shot.
@@ -170,5 +176,8 @@
       col *= 1.0 - 0.08 * ba * smoothstep(42.3, 44.0, a1) * (1.0 - smoothstep(48.5, 50.2, a2));
       col += zsRainbow(a, fwidth(a), dir) * ba;
     }
-    return col + zsAurora(dir);
+    return col;
+  }
+  vec3 zsSkyGradient(vec3 dir) {
+    return zsApplyBow(zsSkyBase(dir), dir) + zsAurora(dir);
   }
