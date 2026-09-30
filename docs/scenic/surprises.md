@@ -38,7 +38,7 @@ These are wired into the default Genesis path now (see `life.md`, `emergence.md`
 This is the cheapest source of surprises. Most of it wires together systems that already exist.
 
 ### Weather and water
-- **Rain fills ponds.** The flow sim takes rain as input: ponds rise, rills run, and a dry basin becomes a pond after a storm, which then brings fish. This is the biggest gap. It makes the weather matter. (M, common)
+- **Rain fills ponds.** The flow sim takes rain as input: ponds rise, rills run, and a dry basin becomes a pond after a storm, which then brings fish. This is the biggest gap. It makes the weather matter. (M, common) *Built on `feature/sp-rain`, see water-flow.md "Rain"; a cheap snowmelt pack rides along.*
 - **Snowmelt feeds springs.** Winter snow on the peaks runs into springs and streams in spring, so the streams swell. (M, uncommon)
 - **Winter reaches the water.** Ponds freeze. Fish go slow and dark under the ice, and frogs are gone. The thaw brings a burst of frogspawn. (M, uncommon)
 - **A rainbow in the waterfall spray** when the sun is behind the camera. (S–M, uncommon)
