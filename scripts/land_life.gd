@@ -24,6 +24,7 @@ const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Moments = preload("res://scripts/life_moments.gd")
 const Snakes = preload("res://scripts/life_snakes.gd")
+const PondSeasons = preload("res://scripts/pond_seasons.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BirdFlight = preload("res://studies/bird_flight.gd")
 
@@ -128,6 +129,8 @@ var worst_usec := 0
 var survey_worst_usec := 0
 var moments: Node3D
 var snakes: Node3D
+## Lilies on old ponds and autumn leaves on the water (scripts/pond_seasons.gd).
+var seasons: Node3D
 var material: Material
 
 var _tick := 0.0
@@ -181,6 +184,9 @@ func setup(owner_scene: Node3D) -> void:
 	snakes = Snakes.new()
 	add_child(snakes)
 	snakes.setup(self)
+	seasons = PondSeasons.new()
+	add_child(seasons)
+	seasons.setup(self)
 	editor.play_geometry_changed.connect(_changed)
 	editor.stroke_finished.connect(func(_center: Vector3, _radius: float, _mode: String) -> void: _changed(true))
 	# A pour lands after its stroke has finished, once it settles on a worker.
@@ -276,6 +282,7 @@ func clear() -> void:
 		sites[kind].clear()
 	if moments != null: moments.clear()
 	if snakes != null: snakes.clear()
+	if seasons != null: seasons.clear()
 	_reading = null
 	_planning.clear()
 	survey = null
@@ -300,7 +307,7 @@ func document() -> Dictionary:
 			if site.leaving or site.get("closing",false): continue
 			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here)])
 		saved[kind] = rows
-	return {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved}
+	return {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved,"ponds":seasons.document()}
 
 static func valid_document(value: Variant) -> bool:
 	if not value is Dictionary: return false
@@ -312,7 +319,8 @@ static func valid_document(value: Variant) -> bool:
 		for row: Variant in value.sites[kind]:
 			if not row is Array or row.size() != 4 or not GardenData._integer(row[0]) or int(row[0]) < 0 or int(row[0]) >= Survey.SIDE*Survey.SIDE: return false
 			if not GardenData._number(row[1],0.0,1e6) or not GardenData._number(row[2],0.0,1e9) or not row[3] is bool: return false
-	return true
+	# Pond ages (PondSeasons), optional: saves from before them have none.
+	return not value.has("ponds") or PondSeasons.valid_document(value.ponds)
 
 ## Reopen a saved world's life: the clock at least where it stood, and every saved site
 ## waiting for the first survey of the loaded ground, which keeps the ones whose
@@ -333,6 +341,7 @@ func restore_document(value: Dictionary) -> void:
 		var rows := {}
 		for row: Array in value.sites[kind]: rows[int(row[0])] = [float(row[1]),float(row[2]),bool(row[3])]
 		_resume[kind] = rows
+	seasons.restore(value.get("ponds",[]))
 	_fresh = false
 
 func _process(delta: float) -> void:
@@ -354,6 +363,7 @@ func _process(delta: float) -> void:
 		_animate(step)
 		moments.advance(step,minf(delta,0.1))
 		snakes.advance(step)
+		seasons.advance(step)
 		if not _force_kinds.is_empty(): _force_due()
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
@@ -393,6 +403,7 @@ func _survey(delta: float) -> void:
 		survey = _reading
 		_reading = null
 		surveys += 1
+		seasons.surveyed(survey,_fresh)
 		_rng.seed = Variety.mix([salt,surveys])
 		_planning = ["fish","spawn","frog","bird","firefly"]
 		return

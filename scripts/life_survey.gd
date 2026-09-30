@@ -227,8 +227,19 @@ func _rasterise(first: int, count: int) -> int:
 			for x in range(clampi(int(lo.x),0,SIDE),clampi(int(hi.x)+1,0,SIDE)):
 				var index := z*SIDE+x
 				if level[index] >= water: continue
-				if Geometry2D.point_is_inside_triangle(center(index),a,b,c): level[index] = water
+				if _covers(center(index),a,b,c): level[index] = water
 	return last
+
+## True when `p` lies inside the triangle or on its edge. The live water's
+## quads have their corners at its 0.25 m cell centres, so every survey cell
+## centre falls exactly on a quad's diagonal, which
+## Geometry2D.point_is_inside_triangle counts as outside: the survey saw no
+## live pond at all.
+static func _covers(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> bool:
+	var d1 := (p-b).cross(a-b)
+	var d2 := (p-c).cross(b-c)
+	var d3 := (p-a).cross(c-a)
+	return not ((d1 < -1e-6 or d2 < -1e-6 or d3 < -1e-6) and (d1 > 1e-6 or d2 > 1e-6 or d3 > 1e-6))
 
 func _mark_stream(route: Dictionary) -> void:
 	var reach := float(route.get("width",0.6))*0.5+0.1
