@@ -287,9 +287,10 @@ var _tree_springs := {}
 const SPRING_STATE := ["bend","velocity","crown","crown_velocity","tip","tip_velocity"]
 ## Headless probes have no pointer: where they say it is, for the hover.
 var pointer_override: Variant = null
-## The materials tray (scripts/hand_materials.gd, an experiment): the maker's
-## jars; made in setup under --modeless unless --no-tray. It sees a free
-## press first and holds "jar" (a press on a jar) or "stones" (setting stones).
+## The materials tray (scripts/hand_materials.gd, an experiment): the field
+## case of specimens; made in setup under --modeless unless --no-tray. It sees
+## a free press first and holds "jar" (a press on a specimen) or "scatter"
+## (setting stones, flowers or reeds).
 const HandMaterials = preload("res://scripts/hand_materials.gd")
 var materials: HandMaterials
 signal snapped(phase: float, step: bool)
@@ -662,7 +663,7 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		_cloud_drag(point)
 	elif holding == "tree":
 		_tree_pull(point)
-	elif holding in ["jar","stones"]:
+	elif holding in ["jar","scatter"]:
 		materials.drag(point)
 	elif holding == "rim":
 		var angle: Variant = _angle_round(point)
@@ -694,7 +695,7 @@ func release(point := Vector2.INF) -> void:
 	elif what == "cloud":
 		reach_point = null
 		if _source != null: _source.let_go()
-	elif what in ["jar","stones"]:
+	elif what in ["jar","scatter"]:
 		reach_point = null
 		materials.let_go(what,point)
 	elif what == "sun":

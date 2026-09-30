@@ -77,17 +77,23 @@ and refills in about a minute; a dry cloud won't tear.
 
 ## The tray (experiment)
 
-Along the bottom edge sits a small tray of jars: **seeds**, **water** and
-**stones**. It stays faint until the pointer comes near.
+Along the bottom edge sits a field case, a long, low case of smoked glass
+with one specimen in each compartment. The seeds are **acorn** (oak), **pine
+cone**, **willow catkin**, **birch samara**, **wildflower seed head** and
+**reed**. Then come **water** and a **river stone**. The case stays faint
+until the pointer comes near. Hover a specimen to read its name. Faint
+outlines are kinds you haven't found yet, and pressing one gives nothing.
 
 | Do | Result |
 |---|---|
-| Press a jar | the hand takes some: a pinch of seeds or stones, a cupped hand of water |
-| Seeds: drag over the land | sprinkles seeds along the way; the wind carries them down and the land picks what grows |
+| Press a specimen | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment stays faintly outlined while you hold it |
+| Tree seeds: drag over the land | sprinkles seeds along the way, and the wind carries them down. What comes up leans to that tree, as far as the ground there allows |
+| Wildflower: tap, or drag | sows a drift of meadow flowers; a drag scatters more drifts |
+| Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
-| Stones: tap | sets a stone down, bigger the longer you press |
-| Stones: drag | scatters a few pebbles |
-| Click the sky, the tray or the same jar | puts the material back |
+| Stone: tap | sets a stone down, bigger the longer you press |
+| Stone: drag | scatters a few pebbles |
+| Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
 
 The trees' spores and the cloud still work as before. `--no-tray` hides the
 tray.
