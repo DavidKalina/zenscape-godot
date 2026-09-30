@@ -1,12 +1,11 @@
 extends Control
 ## The Electron inscription and quiet desk, over the live Godot landscape.
-## Actions and world ownership remain in diorama.gd.
+## Actions and world ownership remain in diorama.gd. Mouse and the arrow keys
+## pick; no key legend, the menu reads without one.
 const DISPLAY = preload("res://assets/fonts/newsreader-latin.woff2")
 const READING = preload("res://assets/fonts/spectral-latin-400.woff2")
-const MONO = preload("res://assets/fonts/IBMPlexMono-Regular.ttf")
 var buttons: Array[Button] = []
 var _frame := Control.new()
-var _legend: Label
 var _detail: Label
 var _stem := ColorRect.new()
 var _veil := ColorRect.new()
@@ -48,8 +47,6 @@ func _ready() -> void:
 	_stem.color = Color("e2d0aa")
 	_stem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_frame.add_child(_stem)
-	_legend = _label("↑ ↓  choose     ·     enter  select",MONO,11,Color("a8b4bebf"),Vector2(0,582),Vector2(1180,20))
-	_legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_veil.color = Color("0b0e12")
 	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_veil.hide()
@@ -111,13 +108,13 @@ func add_action(text: String, detail: String, action: Callable) -> Button:
 	buttons.append(button)
 	_track_layout(button, button.position, button.size, 22 if index == 0 else 18)
 	if not detail.is_empty():
-		_detail = _label(detail,MONO,10,Color("e2d0aaa6"),Vector2(130,263),Vector2(430,20))
+		# The menu's own serif: one reading face under the inscription.
+		_detail = _label(detail,READING,14,Color("e2d0aab8"),Vector2(130,261),Vector2(430,22))
 	_layout()
 	return button
 
 func present(cover: bool) -> void:
 	show()
-	_legend.text = "↑ ↓  choose     ·     enter  select" + ("     ·     esc  back" if not cover else "")
 	var row := 0
 	for button in buttons:
 		button.visible = not button.disabled
@@ -141,7 +138,7 @@ func present(cover: bool) -> void:
 		for control in _frame.get_children():
 			control.modulate.a = 0.0
 			var at: Vector2 = control.get_meta("design_position",Vector2(0,222))
-			var delay := 1.3 if control == _legend else 0.95 if at.y >= 222 else 0.0
+			var delay := 0.95 if at.y >= 222 else 0.0
 			_entrance.tween_property(control,"modulate:a",1.0,1.2 if delay > 0 else 2.2).set_delay(delay)
 		_entrance.chain().tween_callback(_veil.hide)
 
@@ -173,8 +170,6 @@ func _layout() -> void:
 		control.size = (control.get_meta("design_size") * _layout_factor).round().max(Vector2.ONE)
 		if control.material is ShaderMaterial:
 			control.material.set_shader_parameter("glyph_scale", _layout_factor)
-	# The inscription is anchored from the top; the key legend hugs the window foot.
-	_legend.position.y = size.y - 38.0*_layout_factor
 	_update_stem()
 
 func _process(delta: float) -> void:
