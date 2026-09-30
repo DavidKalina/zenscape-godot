@@ -32,6 +32,23 @@ const HERON_FLIGHT := 7.0
 ## wading step now and then, HERON_STALK s apart.
 const HERON_GLIDE := 0.55
 const HERON_STALK := Vector2(12.0,25.0)
+## Catching (docs/scenic/life.md, "Predation"). HERON_LURE of strikes, a fish of the
+## pond within HERON_LURE_REACH m is drawn in over HERON_LURE_TIME s to nose where the
+## bill goes in, from HERON_HOVER s before it. The strike takes it HERON_CATCH of the
+## time; otherwise it darts off. At most HERON_CATCHES a visit, never below HERON_FISH
+## in the pond. A caught fish is swallowed, or HERON_CARRY of the time carried off.
+const HERON_LURE := 0.55
+const HERON_LURE_REACH := 1.9
+const HERON_LURE_TIME := 5.0
+const HERON_HOVER := 0.9
+const HERON_CATCH := 0.5
+const HERON_CATCHES := 2
+const HERON_CARRY := 0.15
+## Strike clip seconds: a miss hands back to Stand as the empty bill comes up, over
+## HERON_MISS_BLEND s; a carry takes off once the fish is held high.
+const HERON_MISS_CUT := 48.0/30.0
+const HERON_MISS_BLEND := 0.9
+const HERON_CARRY_LIFT := 58.0/30.0
 ## Deer: a forest edge for DEER_DELAY s, at dawn (celestial phase DAWN).
 const DEER_TREES := 6
 const DEER_DELAY := 25.0
@@ -98,6 +115,9 @@ const BIGFOOT_FORCE_GAP := 12.0
 var life: Node3D
 ## Every moment so far: {kind, at, p}.
 var history: Array[Dictionary] = []
+## Fish herons have caught, and of those carried off, for probes.
+var catches := 0
+var carried := 0
 
 var _check := 0.0
 var _heron: Node3D
@@ -215,8 +235,10 @@ func _part(mesh: Mesh) -> MeshInstance3D:
 
 ## A new world: everything leaves at once and the clocks start again.
 func clear() -> void:
+	_heron_drop_prey()
 	_heron_state = {}
 	_heron.visible = false
+	if _heron_rig: _heron_rig.let_go()
 	_deer_state = {}
 	for deer in _deer: deer.root.visible = false
 	bigfoot.hide_now()
@@ -348,7 +370,9 @@ func _heron_arrive(record: Dictionary) -> void:
 	var c := Survey.center(cell)
 	var bed: float = life.survey.height[cell]
 	var spot := Vector3(c.x,bed,c.y)
-	var outward := c.normalized() if c.length() > 0.5 else Vector2.from_angle(life._rng.randf()*TAU)
+	# In from over its bank, so it lands facing into the water.
+	var from_pond: Vector2 = c-(record.get("center",Vector2.ZERO) as Vector2)
+	var outward := from_pond.normalized() if from_pond.length() > 0.3 else Vector2.from_angle(life._rng.randf()*TAU)
 	outward = outward.rotated(life._rng.randf_range(-0.7,0.7))
 	var start := spot+Vector3(outward.x,0,outward.y)*24.0+Vector3.UP*10.0
 	var leave := Vector2.from_angle(life._rng.randf()*TAU)
@@ -384,23 +408,32 @@ func _move_heron(step: float) -> void:
 			_heron.position = spot
 			_heron_pose.rotation.x = 0.0
 			_heron_legs.rotation.x = 0.0
-			# Now and then the neck strikes at a fish.
+			# Now and then the neck strikes at a fish, and now and then a fish is
+			# there to take.
 			var strike := float(s.age)-float(s.strike)
 			var reach := 0.0
+			if not s.get("weighed",false) and strike >= 0.25-HERON_LURE_TIME:
+				s.weighed = true
+				_heron_lure(0.25-strike)
 			if strike >= 0.0:
 				reach = smoothstep(0.0,0.2,strike)*(1.0-smoothstep(0.6,1.2,strike))
 				if strike >= 0.25 and not s.get("rang",false):
 					s.rang = true
-					var beak := spot+Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,HeronRig.STRIKE_REACH if _heron_rig else 0.55)
+					var beak := _beak()
 					life.ripple(Vector3(beak.x,float(s.level),beak.z),0.35)
+					_heron_prey(beak)
 				if strike > 1.3:
 					s.strike = float(s.age)+life._rng.randf_range(7.0,14.0)
 					s.rang = false
+					s.weighed = false
 			_heron_neck.rotation.x = reach*1.05
 			_heron_neck.scale = Vector3.ONE
 			# The Blender heron finishes a strike or a step before it goes, unless driven off.
 			var busy := _heron_rig != null and _heron_rig.clip in ["Strike","Stalk"] and not _heron_rig.done()
-			if (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there() or life.winter.frozen():
+			# One taking its catch away goes as soon as the fish is up in its bill.
+			var carrying := bool(s.get("carry_off",false)) and _heron_rig != null and _heron_rig.clip == "Strike" and _heron_rig.time >= HERON_CARRY_LIFT
+			if carrying or (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there() or life.winter.frozen():
+				_heron_drop_prey()
 				s.phase = "out"
 				s.age = 0.0
 				s.from = spot
@@ -423,6 +456,7 @@ func _move_heron(step: float) -> void:
 			if u >= 1.0:
 				_heron_state = {}
 				_heron.visible = false
+				if _heron_rig: _heron_rig.let_go()
 				_heron_next = life.clock+HERON_COOLDOWN
 				return
 	_heron.rotation.y = float(s.yaw)
@@ -443,6 +477,10 @@ func _heron_act(step: float) -> void:
 			var strike := age-float(s.strike)
 			if rig.clip != "Strike" and strike >= 0.25-HeronRig.STRIKE_CONTACT and strike < 0.25:
 				rig.play("Strike",0.2)
+				s.caught = false
+			elif rig.clip == "Strike" and not s.get("caught",false) and rig.time >= HERON_MISS_CUT:
+				# Nothing in the bill: no toss and no gulp; it settles back to peering.
+				rig.play("Stand",HERON_MISS_BLEND)
 			elif rig.clip == "Stalk" and rig.done():
 				# The clip walked the heron forward; move it there and stand on.
 				var spot: Vector3 = s.spot
@@ -467,8 +505,71 @@ func _heron_act(step: float) -> void:
 						life.ripple(Vector3(foot.x,float(s.level),foot.z),0.3)
 		"out":
 			if rig.clip == "TakeOff" and rig.done(): rig.play("Fly",0.15)
-			elif rig.clip != "TakeOff" and rig.clip != "Fly": rig.play("TakeOff",0.2)
+			elif rig.clip != "TakeOff" and rig.clip != "Fly": rig.play("TakeOff",0.45 if rig.clip == "Strike" else 0.2)
 	rig.advance(step)
+
+## Where the bill goes into the water.
+func _beak() -> Vector3:
+	var spot: Vector3 = _heron_state.spot
+	return spot+Basis(Vector3.UP,float(_heron_state.yaw))*Vector3(0,0,HeronRig.STRIKE_REACH if _heron_rig else 0.55)
+
+## `lead` s before a strike: now and then the nearest fish of the pond is drawn in
+## to where the bill will go, and whether the strike takes it is settled.
+func _heron_lure(lead: float) -> void:
+	var s := _heron_state
+	# The probe's stub world has no fish.
+	if int(s.get("catches",0)) >= HERON_CATCHES or not life.has_method("take") or not _roll(HERON_LURE): return
+	# A wading step would move the bill from over it.
+	if _heron_rig != null and _heron_rig.clip == "Stalk": return
+	var survey: RefCounted = life.survey
+	var beak := _beak()
+	var at := Vector2(beak.x,beak.z)
+	var cell := Survey.cell_at(at)
+	if survey == null or cell < 0 or not survey.wet_at(at): return
+	var body: int = survey.body[cell]
+	var pond := 0
+	var best := {}
+	var nearest := HERON_LURE_REACH
+	for site: Dictionary in life.present("fish"):
+		if int(site.body) != body: continue
+		pond += 1
+		var p: Vector3 = site.get("shown_p",site.p)
+		var from := Vector2(p.x,p.z)
+		var d := from.distance_to(at)
+		if d < nearest and not site.has("lure") and survey.wet_at(from.lerp(at,0.5)):
+			nearest = d
+			best = site
+	if best.is_empty() or pond < HERON_FISH: return
+	best.lure = {"to":beak,"from":life.clock,"at":life.clock+maxf(lead-HERON_HOVER,0.5),"dart":-1.0}
+	s.prey = best
+	s.catch = _roll(HERON_CATCH)
+
+## The bill goes in: the drawn fish is caught, or darts off.
+func _heron_prey(beak: Vector3) -> void:
+	var s := _heron_state
+	var prey: Dictionary = s.get("prey",{})
+	s.erase("prey")
+	if prey.is_empty() or not prey.has("lure"): return
+	if not bool(s.catch) or not prey.here or prey.leaving:
+		prey.lure.dart = life.clock
+		return
+	var look: MultiMeshInstance3D = life.fish_look(prey)
+	life.take(prey,Vector3(beak.x,float(s.level)-0.04,beak.z))
+	s.catches = int(s.get("catches",0))+1
+	s.caught = true
+	catches += 1
+	if _heron_rig != null and look != null:
+		var kind := str(prey.look).get_slice(" ",0)
+		s.carry_off = _roll(HERON_CARRY)
+		if s.carry_off: carried += 1
+		_heron_rig.hold(look.multimesh.mesh,look.material_override,float(Models.FISH_KINDS[kind].length)/float(prey.size),bool(prey.mirror),bool(s.carry_off))
+	life.moment.emit("heron_catch",life.to_global(beak))
+
+## Leaving before the strike: a fish drawn in darts off.
+func _heron_drop_prey() -> void:
+	var prey: Dictionary = _heron_state.get("prey",{})
+	_heron_state.erase("prey")
+	if prey.has("lure"): prey.lure.dart = life.clock
 
 func _heron_clip(clip: String, blend: float) -> void:
 	if _heron_rig.clip != clip: _heron_rig.play(clip,blend)

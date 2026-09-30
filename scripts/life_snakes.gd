@@ -124,6 +124,36 @@ const JAW_OPEN := 0.3
 const SWELL := 0.14
 ## The chance it hisses at whoever is watching before it leaves.
 const PARTING_HISS := 0.3
+## Taking a frog (docs/scenic/life.md, "Predation"), rare. TAKE_CHANCE of visits try,
+## at a hunt stop, for a frog sitting on its bank within TAKE_REACH m, which keeps
+## still from then on. It comes to STALK_FROM m, fixes on it, and creeps in at
+## STALK_PACE of its cruise, head low (STALK_LIFT), to STRIKE_GAP short. It draws back
+## into a tight S (STRIKE_DRAW of the neck's reach, head up to STRIKE_LIFT) and holds
+## STRIKE_HOLD s, then strikes: the head shoots out over LUNGE s, jaw open to GAPE,
+## the body surging up to SURGE m along its way, and eases back over STRIKE_AFTER s.
+## ESCAPE of the time the frog leaps in ESCAPE_LEAD s before. Fed, it swallows
+## (SWALLOW s, the jaws working and a bulge of BULGE, MEAL_SPREAD wide, running down
+## to MEAL_AT of its length) and leaves at FED_PACE with no parting hiss.
+const TAKE_CHANCE := 0.3
+const TAKE_REACH := 3.0
+const STALK_FROM := 0.75
+const STALK_PACE := 0.3
+const STALK_LIFT := 0.025
+const STRIKE_GAP := 0.3
+const STRIKE_DRAW := 0.62
+const STRIKE_LIFT := 0.075
+const STRIKE_HOLD := Vector2(1.8,2.8)
+const STRIKE_AFTER := 1.4
+const LUNGE := 0.13
+const GAPE := 0.55
+const SURGE := 0.16
+const ESCAPE := 0.35
+const ESCAPE_LEAD := 0.12
+const SWALLOW := Vector2(5.5,7.5)
+const BULGE := 0.3
+const MEAL_SPREAD := 0.05
+const MEAL_AT := 0.38
+const FED_PACE := 0.6
 ## How far its head turns from the neck's way, in radians. Watching you from
 ## further round than TURN_TO for TURN_AFTER s, it turns its body to face you.
 const LOOK_MAX := 2.0
@@ -175,6 +205,8 @@ var life: Node3D
 var history: Array[Dictionary] = []
 var visits := 0
 var hisses := 0
+## Frogs taken, for probes.
+var takes := 0
 ## What it set out to do, and each way it worked out (length, distance left to
 ## its goal, microseconds, from, goal, end), for probes.
 var journal: Array = []
@@ -271,6 +303,14 @@ var _floating := false
 var _swimming := false
 var _level := NO_WATER
 var _snout := Vector3.ZERO
+## The strike: how far the head has shot out toward _strike_to (0-1), and how far
+## past its spring the jaw is open. The meal: where the bulge is along the body and
+## how much of it shows.
+var _lunge := 0.0
+var _strike_to := Vector3.ZERO
+var _gape := 0.0
+var _meal := 0.0
+var _meal_w := 0.0
 
 func setup(owner: Node3D) -> void:
 	life = owner
@@ -297,6 +337,7 @@ func setup(owner: Node3D) -> void:
 
 ## A new world: the snake is gone at once and the pond clocks start again.
 func clear() -> void:
+	_let_prey_go()
 	_state = {}
 	_plan.clear()
 	_pond_since.clear()
@@ -402,6 +443,7 @@ func _watch_place() -> void:
 func _leave_now() -> void:
 	_state.leaving = true
 	_plan.clear()
+	if not bool(_state.get("fed",false)): _let_prey_go()
 	if _floating: _plan.append({"do":"shore"})
 	_plan.append({"do":"leave"})
 	# Whatever it was doing ends at the next chance: a burst stops short, a
@@ -424,7 +466,8 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	_state = {"phase":"emerge","center":center,"around":1.0 if _rng.randf() < 0.5 else -1.0,
 		"hunts":int(options.get("hunts",_rng.randi_range(HUNT.x,HUNT.y))),
 		"swim":bool(options.get("swim",_rng.randf() < SWIM_CHANCE)),
-		"bask":float(options.get("bask",_rng.randf_range(BASK.x,BASK.y)))}
+		"bask":float(options.get("bask",_rng.randf_range(BASK.x,BASK.y))),
+		"take":bool(options.get("take",_rng.randf() < TAKE_CHANCE))}
 	var bask := _bask_spot(record)
 	var cover := _cover_near(bask,center)
 	var way := bask-cover
@@ -460,6 +503,9 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	_pose_w = 0.0
 	_target = {}
 	_hiss_t = -1.0
+	_lunge = 0.0
+	_gape = 0.0
+	_meal_w = 0.0
 	_hiss_ready = 0.0
 	_notice_ready = 0.0
 	_turn_ready = 0.0
@@ -481,6 +527,7 @@ func _arrive(record: Dictionary, options := {}) -> bool:
 	return true
 
 func _gone() -> void:
+	_let_prey_go()
 	_state = {}
 	_plan.clear()
 	visible = false
@@ -508,7 +555,10 @@ func _start(action: Dictionary) -> bool:
 			var gen: Dictionary = action.get("gen",{})
 			if gen.is_empty() or gen.from != _head_xz(): gen = _go_leg(action)
 			_leg_run(gen,1 << 30)
-			return _begin_leg(gen.points,bool(action.get("bursts",false)) and not gen.water and not gen.get("wet_start",false),SWIM if gen.water else CRUISE,bool(action.get("pause",false)))
+			var begun := _begin_leg(gen.points,bool(action.get("bursts",false)) and not gen.water and not gen.get("wet_start",false),(SWIM if gen.water else CRUISE)*float(action.get("pace",1.0)),bool(action.get("pause",false)))
+			# A stalk stops short; the rest of its way is there for the strike.
+			if begun and action.has("short"): _stop = maxi(_leg_first+1,_stop-int(float(action.short)/STEP))
+			return begun
 		"coil":
 			var record := _record()
 			var to_water: Vector2 = (record.center if not record.is_empty() else _state.center)-_head_xz()
@@ -551,8 +601,8 @@ func _expand(action: Dictionary) -> void:
 			_plan.push_front({"do":"slip","phase":"slip"})
 			_plan.push_front({"do":"hold","kind":"look","time":_rng.randf_range(0.9,1.5)})
 			_plan.push_front({"do":"go","to":cover,"bursts":true,"phase":"leave"})
-			# Now and then a parting warning at whoever is watching.
-			if not _floating and _rng.randf() < PARTING_HISS: _plan.push_front({"do":"hold","kind":"hiss","time":1.0})
+			# Now and then a parting warning at whoever is watching; not when fed.
+			if not _floating and not bool(_state.get("fed",false)) and _rng.randf() < PARTING_HISS: _plan.push_front({"do":"hold","kind":"hiss","time":1.0})
 		"shore":
 			var target := _nearest_shore(_record())
 			if target != Vector2.INF: _plan.push_front({"do":"go","to":target,"water":true,"phase":"swim"})
@@ -583,6 +633,7 @@ func _go_leg(action: Dictionary) -> Dictionary:
 ## The next stop along the edge, a look toward the water, and the rest of the hunt.
 func _plan_hunt() -> void:
 	var record := _record()
+	if not record.is_empty() and bool(_state.get("take",false)) and _plan_take(): return
 	if record.is_empty() or int(_state.hunts) <= 0:
 		_plan.push_front({"do":"swim"} if bool(_state.swim) else {"do":"leave"})
 		return
@@ -614,6 +665,42 @@ func _plan_hunt() -> void:
 	_plan.push_front({"do":"hunt"})
 	_plan.push_front({"do":"hold","kind":"hunt","time":_rng.randf_range(1.8,3.4)})
 	_plan.push_front({"do":"go","to":best,"phase":"hunt"})
+
+## A frog sitting on its bank within reach over open ground: it keeps still, and
+## the snake comes near, fixes on it, creeps in and strikes, then hunts on if it
+## missed. False when there is none to try for.
+func _plan_take() -> bool:
+	var here := _head_xz()
+	var best := {}
+	var nearest := TAKE_REACH
+	for site: Dictionary in life.present("frog"):
+		if str(site.get("mode","")) != "sit": continue
+		var home: Vector3 = site.home
+		var at := Vector2(home.x,home.z)
+		var d := at.distance_to(here)
+		if d < nearest and d > STRIKE_GAP+0.1 and _open_line(here,at):
+			nearest = d
+			best = site
+	if best.is_empty(): return false
+	_state.take = false
+	_state.prey = best
+	best.frozen = true
+	var home: Vector3 = best.home
+	var at := Vector2(home.x,home.z)
+	journal.append([snappedf(life.clock,0.1),"stalk",snappedf(nearest,0.01)])
+	_plan.push_front({"do":"hunt"})
+	_plan.push_front({"do":"hold","kind":"strike","time":_rng.randf_range(STRIKE_HOLD.x,STRIKE_HOLD.y)+LUNGE+STRIKE_AFTER,"phase":"strike","escape":_rng.randf() < ESCAPE})
+	_plan.push_front({"do":"go","to":at,"short":STRIKE_GAP,"pace":STALK_PACE,"phase":"stalk"})
+	if nearest > STALK_FROM+0.3:
+		_plan.push_front({"do":"hold","kind":"look","time":_rng.randf_range(1.4,2.2)})
+		_plan.push_front({"do":"go","to":at+(here-at).normalized()*STALK_FROM,"phase":"hunt"})
+	return true
+
+## The frog it was after goes back to its own life.
+func _let_prey_go() -> void:
+	var prey: Dictionary = _state.get("prey",{})
+	prey.erase("frozen")
+	_state.erase("prey")
 
 ## A crossing over open water to the far side, with one floating pause. It
 ## goes to the nearest bank cell (gentle by the survey's rule), looks at the
@@ -679,7 +766,8 @@ func _begin_leg(leg: PackedVector2Array, bursts: bool, cruise: float, pause := f
 		var middle := first+int(float(leg.size())*_rng.randf_range(0.42,0.6))
 		if middle > first+10 and middle < last-10: _stops.append(middle)
 	_stops.append(last)
-	_cruise = cruise
+	# Fed, it goes slowly.
+	_cruise = cruise*(FED_PACE if bool(_state.get("fed",false)) else 1.0)
 	_begin_go()
 	return true
 
@@ -738,7 +826,7 @@ func _begin_hold(time: float, kind: String) -> void:
 		for n in range(count):
 			var slot := room/count
 			wakes.append(1.0+slot*n+(slot-WAKE_TIME)*_rng.randf_range(0.3,0.7))
-	_hold = {"time":time,"kind":kind,"floating":floating,"up":up,"wakes":wakes,"watched":0.0}
+	_hold = {"time":time,"kind":kind,"floating":floating,"up":up,"wakes":wakes,"watched":0.0,"escape":bool(_action.get("escape",false))}
 	_retarget_in = 0.0
 	if floating: life.ripple(Vector3(_snout.x,_level,_snout.z),0.22)
 	if kind == "hiss": _start_hiss()
@@ -746,6 +834,9 @@ func _begin_hold(time: float, kind: String) -> void:
 func _hold_step(step: float) -> void:
 	if _hold.is_empty():
 		_begin_hold(1.2,"look")
+	if str(_hold.kind) in ["strike","swallow"]:
+		_prey_step(step)
+		return
 	_hold_age += step
 	if _stops.is_empty(): _prefetch()
 	var age := _hold_age
@@ -822,6 +913,110 @@ func _hold_step(step: float) -> void:
 			_next_action()
 			if not _state.is_empty() and not _going and _hold.is_empty(): _begin_hold(1.2,"look")
 
+## The strike and the swallow: holds of their own, which nothing else interrupts.
+func _prey_step(step: float) -> void:
+	_hold_age += step
+	var age := _hold_age
+	var time: float = _hold.time
+	_sg[S_POSE] = 1.0
+	_sg[S_RECOIL] = 0.0
+	_sg[S_SWELL] = 0.0
+	_sg[S_JAW] = 0.0
+	_rest_w = _settle(clampf(age/0.9,0.0,1.0),0.35)*(1.0-_smooth((age-(time-ANTICIPATION))/ANTICIPATION))
+	if _hold.kind == "strike": _strike_step(age)
+	else: _swallow_step(age)
+	if _hold_age >= float(_hold.time):
+		_hold = {}
+		_lunge = 0.0
+		_gape = 0.0
+		_next_action()
+		if not _state.is_empty() and not _going and _hold.is_empty(): _begin_hold(1.2,"look")
+
+## Fixed on the frog it draws back into a tight S and holds, still; then the head
+## shoots out, the jaw wide, and the body surges after it. It takes the frog, or
+## the frog is gone and it strikes the bank, and eases back.
+func _strike_step(age: float) -> void:
+	var prey: Dictionary = _state.get("prey",{})
+	var alive := not prey.is_empty() and _alive({"site":prey}) and not prey.has("taken")
+	if not _hold.has("at"): _hold.at = float(_hold.time)-LUNGE-STRIKE_AFTER
+	var t := age-float(_hold.at)
+	if t < 0.0:
+		# Driven off, or the frog gone before it struck: it lets it be.
+		if bool(_state.get("leaving",false)) or not alive:
+			_hold.time = age
+			_let_prey_go()
+			return
+		_target = {"kind":"site","what":"frog","site":prey}
+		_aim(true)
+		var draw := _smoother(age/1.1)
+		_sg[S_LIFT] = lerpf(STALK_LIFT,STRIKE_LIFT,draw)
+		_sg[S_REACH] = lerpf(1.0,STRIKE_DRAW,draw)
+		# It tastes the air once or twice, then nothing moves.
+		if t < -1.0 and _time >= _next_flick:
+			_flick = _time
+			_next_flick = _time+_rng.randf_range(0.9,1.5)
+		# The frog may see it coming.
+		if bool(_hold.escape) and t >= -ESCAPE_LEAD and not _hold.has("fled"):
+			_hold.fled = true
+			prey.erase("frozen")
+			life._hop(prey,prey.landing,"in")
+		return
+	if not _hold.has("to"):
+		# At where the frog sat.
+		var frog: Vector3 = prey.get("home",_head_pos)
+		var reach := Vector2(frog.x,frog.z).distance_to(_head_xz())
+		# Too far to reach: it only watches.
+		if reach > STRIKE_GAP+0.25:
+			_hold.time = age
+			_let_prey_go()
+			return
+		_hold.to = frog+Vector3(0,0.02,0)
+		_hold.from_s = _head_s
+		_hold.surge = clampf(reach-0.12,0.0,SURGE)
+		_strike_to = _hold.to
+	var u := t/LUNGE
+	var fed := bool(_state.get("fed",false))
+	_lunge = _smoother(u) if t < LUNGE+0.18 else 1.0-_settle((t-LUNGE-0.18)/0.9,0.08)
+	_gape = GAPE*_smoother(u/0.7)*(1.0-_smoother((t-LUNGE-(0.3 if fed else 0.0))/0.25))
+	_head_s = float(_hold.from_s)+float(_hold.surge)*_smoother(u)
+	_lay_to(ceili(_head_s/STEP)+1)
+	_sg[S_LIFT] = LIFT.x
+	_sg[S_REACH] = 1.0
+	_sg[S_PITCH] = -0.2
+	if u >= 1.0 and not _hold.has("struck"):
+		_hold.struck = true
+		var p: Vector3 = prey.get("p",Vector3.INF)
+		if alive and not _hold.has("fled") and Vector2(p.x,p.z).distance_to(Vector2(_snout.x,_snout.z)) < 0.2:
+			life.take(prey,_snout)
+			takes += 1
+			_state.fed = true
+			_state.hunts = 0
+			_state.swim = false
+			_plan.clear()
+			_plan.append({"do":"hold","kind":"swallow","time":_rng.randf_range(SWALLOW.x,SWALLOW.y)})
+			_plan.append({"do":"leave"})
+			life.moment.emit("snake_take",life.to_global(_snout))
+			journal.append([snappedf(life.clock,0.1),"take",true])
+		else:
+			_let_prey_go()
+			journal.append([snappedf(life.clock,0.1),"take",false])
+	if _hold.has("struck") and _stops.is_empty(): _prefetch()
+
+## It swallows: the jaws walk the frog in with slow gapes, the head low and still,
+## and the bulge runs down the body, where it stays as it goes.
+func _swallow_step(age: float) -> void:
+	var time: float = _hold.time
+	_aim_yaw(_head_fwd.angle())
+	_sg[S_PITCH] = -0.12
+	_sg[S_LEAN] = 0.0
+	_sg[S_REACH] = 0.92
+	_sg[S_LIFT] = LIFT.x*0.6
+	var w := fposmod(age,1.3)/1.3
+	_gape = 0.16*pow(sin(PI*clampf(w/0.55,0.0,1.0)),2.0)*(1.0-_smooth((age-time*0.5)/1.0))
+	_meal = lerpf(HEAD+0.04,LENGTH*MEAL_AT,_smooth(age/time))
+	_meal_w = _smooth(age/0.6)
+	if _stops.is_empty(): _prefetch()
+
 ## Turn the head, lean and reach toward what it watches. Small, continuous
 ## adjustments; never a snap.
 func _aim(awake: bool) -> void:
@@ -877,6 +1072,10 @@ func _turn_goal() -> Vector2:
 ## Something to watch: you if the camera is near; else a frog or fish in the
 ## pond, a firefly at dusk or a passing bird; else a slow drift over the water.
 func _retarget() -> void:
+	var prey: Dictionary = _state.get("prey",{})
+	if not prey.is_empty() and _alive({"site":prey}):
+		_target = {"kind":"site","what":"frog","site":prey}
+		return
 	if _camera_d < NOTICE:
 		_target = {"kind":"camera"}
 		return
@@ -1027,10 +1226,17 @@ func _go_step(step: float) -> void:
 	_sg[S_RECOIL] = 0.0
 	_sg[S_JAW] = 0.0
 	_sg[S_SWELL] = 0.0
+	var phase := showing()
+	# Stalking, its head is up a little and fixed on the frog.
+	var prey: Dictionary = _state.get("prey",{})
+	if phase == "stalk" and not prey.is_empty() and _alive({"site":prey}):
+		_target = {"kind":"site","what":"frog","site":prey}
+		_sg[S_POSE] = 1.0
+		_sg[S_LIFT] = STALK_LIFT
+		_aim(true)
 	_rest_w = move_toward(_rest_w,0.0,step*4.0)
 	# You, close: it eases to a stop to watch, and keeps the rest of its way.
-	var phase := showing()
-	if not _swimming and phase != "slip" and ((_camera_d < NOTICE and _time >= _notice_ready) or (_camera_d < HISS_NEAR and _time >= _hiss_ready)):
+	if not _swimming and phase not in ["slip","stalk"] and ((_camera_d < NOTICE and _time >= _notice_ready) or (_camera_d < HISS_NEAR and _time >= _hiss_ready)):
 		_notice_ready = _time+NOTICE_COOLDOWN
 		var before := _stop
 		_stop_soon()
@@ -1563,6 +1769,7 @@ func _pose(step: float) -> void:
 		var afloat := lerpf(_tw[a],_tw[b],f)-0.1*r
 		# A held breath swells the forebody; its belly stays on the ground.
 		var swell := SWELL*_sx[S_SWELL]*_front_w[k]
+		if _meal_w > 0.0: swell += BULGE*_meal_w*exp(-pow((_arc[k]-_meal)/MEAL_SPREAD,2.0))
 		var y := _smax(ground,afloat)+carry*_carry_w[k]+swell*BELLY*r
 		if _tp[a] >= 0.0 or _tp[b] >= 0.0: y += lerpf(_raise(_tp[a],head)*_tf[a],_raise(_tp[b],head)*_tf[b],f)
 		_pos[k] = Vector3(lerpf(_tx[a],_tx[b],f),y,lerpf(_tz[a],_tz[b],f))
@@ -1632,6 +1839,12 @@ func _pose(step: float) -> void:
 		var length := NECK-HEAD
 		var reach := sqrt(maxf(length*length-_lift*_lift,1e-4))*_sx[S_REACH]
 		var raised := Vector3(o.x+bend.x*reach,rest+_lift,o.z+bend.y*reach)
+		# The strike carries the head out to the frog, pointing at it.
+		var strike_dir := Vector3.ZERO
+		if _lunge > 0.0:
+			strike_dir = (_strike_to-raised).normalized()
+			raised = raised.lerp(_strike_to-strike_dir*HEAD*0.9,_lunge)
+			held = held.slerp(strike_dir,_lunge).normalized()
 		var span := o.distance_to(raised)
 		var handle := 1.0
 		for attempt in range(3):
@@ -1660,6 +1873,7 @@ func _pose(step: float) -> void:
 		var yaw := _head_fwd.angle()+lerpf(trail_rel,rel,_pose_w)
 		var tilt := lerpf(asin(clampf(head_dir.y,-1.0,1.0)),pitch,_pose_w)
 		hd = Vector3(cos(yaw)*cos(tilt),sin(tilt),sin(yaw)*cos(tilt))
+		if _lunge > 0.0: hd = hd.slerp(strike_dir,_lunge).normalized()
 	# Rings along the body.
 	for k in range(STATIONS):
 		var ahead := _pos[k-1] if k > 0 else hb
@@ -1682,7 +1896,7 @@ func _pose(step: float) -> void:
 	_snout = hb+hd*HEAD
 	# The jaw hinges at the back of the head; positive turns about the side
 	# open it downward.
-	var jaw := _sx[S_JAW]
+	var jaw := _sx[S_JAW]+_gape
 	_skeleton.set_bone_pose(STATIONS+2,Transform3D(Basis(head_side*hs,head_up.rotated(head_side,jaw)*hs,hd.rotated(head_side,jaw)*hs),hb))
 	var out := 0.0
 	var flutter := 0.0

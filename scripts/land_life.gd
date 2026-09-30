@@ -100,6 +100,14 @@ const CARRY_DELAY := 2.0
 ## Carried fish settle in water this deep (m) when the pond they landed in
 ## has none as deep as the survey's DEEP, so a small ball's pond keeps them.
 const CARRY_DEPTH := 0.1
+## Prey (docs/scenic/life.md, "Predation"): a fish a heron catches or a frog a
+## snake takes slips into the mouth over TAKE_TIME s and is gone, and its site
+## waits PREY_RETURN [delay, spread] s before another arrives the usual way.
+const TAKE_TIME := {"fish":0.14,"frog":0.3}
+const PREY_RETURN := {"fish":[70.0,90.0],"frog":[90.0,120.0]}
+## A fish drawn to a heron's feet (`lure`) that the strike misses darts back
+## to its round over DART s.
+const DART := 1.1
 
 ## Multiplies the life clock; probes run it fast.
 var pace := 1.0
@@ -132,6 +140,8 @@ var sites := {"fish":{},"spawn":{},"frog":{},"bird":{},"firefly":{}}
 var arrivals := {}
 ## Creatures a loaded save brought back, by kind (not counted as arrivals).
 var resumed := {}
+## Creatures a heron or snake took, by kind.
+var taken := {}
 var surveys := 0
 var last_usec := 0
 var worst_usec := 0
@@ -326,7 +336,8 @@ func document() -> Dictionary:
 		for key: int in sites[kind]:
 			var site: Dictionary = sites[kind][key]
 			if site.leaving or site.get("closing",false): continue
-			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here)])
+			# One being taken is already gone, waiting for its return.
+			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here) and not site.has("taken")])
 		saved[kind] = rows
 	var result := {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved}
 	var trail: Dictionary = moments.trail.document()
@@ -640,6 +651,10 @@ func _depart(kind: String, site: Dictionary) -> void:
 	if not site.here:
 		site.closing = true
 		return
+	if site.has("taken"):
+		_release(kind,site)
+		site.closing = true
+		return
 	if site.leaving: return
 	site.leaving = true
 	site.left = clock
@@ -826,6 +841,9 @@ func _animate(step: float) -> void:
 		for cell: int in sites[kind].keys():
 			var site: Dictionary = sites[kind][cell]
 			if not site.here: continue
+			if site.has("taken"):
+				_move_taken(kind,site)
+				continue
 			var fade := 1.0
 			if site.leaving:
 				fade = 1.0-clampf((clock-float(site.left))/LEAVE,0.0,1.0)
@@ -870,6 +888,12 @@ func _move_fish(site: Dictionary, step: float, fade: float) -> void:
 	if site.has("steer"): yaw = lerp_angle(yaw,float(site.steer.x),float(site.steer.y))
 	var p: Vector3 = site.p
 	p.y = float(site.level)-float(site.sink)-winter.fish_sink(site)-(1.0-grow)*0.3
+	if site.has("lure"):
+		var drawn := _lured(site,p,yaw)
+		p = drawn[0]
+		yaw = drawn[1]
+	site.shown_p = p
+	site.shown_yaw = yaw
 	var scale := maxf(float(site.size)*grow,0.00001)
 	var basis := Basis(Vector3.UP,yaw)*Basis.from_scale(Vector3(-scale if site.mirror else scale,scale,scale))
 	var batch: MultiMesh = _fish_looks[site.look].multimesh
@@ -880,6 +904,28 @@ func _move_fish(site: Dictionary, step: float, fade: float) -> void:
 	if clock >= float(site.rise) and not site.leaving:
 		site.rise = clock+lerpf(10.0,28.0,fposmod(float(site.rise)*0.618,1.0))*(0.6 if _daylight() < 0.6 else 1.0)*winter.rise_wait()
 		if winter.rises(): ripple(Vector3(p.x,float(site.level),p.z),0.45)
+
+## A fish drawn in to a heron's feet (LifeMoments): it glides from its round
+## to `lure.to` by `lure.at`, noses there with a small drift, and if the strike
+## misses (`lure.dart`) darts back to its round. [where it shows, its yaw].
+func _lured(site: Dictionary, p: Vector3, yaw: float) -> Array:
+	var lure: Dictionary = site.lure
+	var to := Vector3(lure.to.x,p.y,lure.to.z)
+	var toward := atan2(to.x-p.x,to.z-p.z)
+	var w := 0.0
+	if float(lure.dart) < 0.0:
+		w = smoothstep(float(lure.from),float(lure.at),clock)
+		to += Vector3(sin(clock*1.3+float(site.phase)),0.0,cos(clock*1.1+float(site.phase)))*0.035*w
+	else:
+		var u := (clock-float(lure.dart))/DART
+		if u >= 1.0:
+			site.erase("lure")
+			return [p,yaw]
+		# Off at once, slowing as it goes.
+		w = pow(1.0-u,3.0)
+		toward += PI
+	var drawn := p.lerp(to,w)
+	return [Vector3(drawn.x,p.y,drawn.z),lerp_angle(yaw,toward,smoothstep(0.0,0.25,w) if float(lure.dart) < 0.0 else smoothstep(0.0,0.3,w))]
 
 func _move_spawn(site: Dictionary, _step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,3.0,clock-float(site.born))*fade
@@ -904,7 +950,8 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 	match site.mode:
 		"sit":
 			site.wait = float(site.wait)-step
-			if site.wait <= 0.0 and not site.leaving: _hop(site,site.landing,"in")
+			# Stalked, it keeps still (life_snakes.gd).
+			if site.wait <= 0.0 and not site.leaving and not site.get("frozen",false): _hop(site,site.landing,"in")
 		"in","out","away":
 			var u := minf(1.0,float(site.age)/float(site.duration))
 			var from: Vector3 = site.from
@@ -1083,5 +1130,48 @@ func _daylight() -> float:
 func present(kind: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for site: Dictionary in sites[kind].values():
-		if site.here and not site.leaving: result.append(site)
+		if site.here and not site.leaving and not site.has("taken"): result.append(site)
 	return result
+
+# --- Prey -------------------------------------------------------------------
+
+## A heron or snake took this fish or frog: it slips into `mouth` over
+## TAKE_TIME and is gone. It counts as gone at once (`present`, the save), and
+## its site waits PREY_RETURN before another arrives the usual way.
+func take(site: Dictionary, mouth: Vector3) -> void:
+	if not site.here or site.leaving or site.has("taken"): return
+	var kind: String = site.kind
+	site.taken = clock
+	site.mouth = mouth
+	site.erase("lure")
+	site.erase("frozen")
+	var timing: Array = PREY_RETURN[kind]
+	site.delay = float(timing[0])+float(timing[1])*_rng.randf()
+	site.since = clock
+	taken[kind] = int(taken.get(kind,0))+1
+
+## The batch a fish is drawn with, for the one in a heron's bill.
+func fish_look(site: Dictionary) -> MultiMeshInstance3D:
+	return _fish_looks.get(site.get("look",""))
+
+## Into the mouth: toward it and smaller, a frog kicking in its leaping pose,
+## then gone and waiting to return.
+func _move_taken(kind: String, site: Dictionary) -> void:
+	var u := (clock-float(site.taken))/float(TAKE_TIME[kind])
+	if u >= 1.0:
+		_release(kind,site)
+		for key in ["taken","mouth","shown_p","shown_yaw"]: site.erase(key)
+		return
+	var e := smoothstep(0.0,1.0,u)
+	var from: Vector3 = site.get("shown_p",site.p)
+	var p := from.lerp(site.mouth,e)
+	var s := maxf(float(site.size)*(1.0-e),0.00001)
+	if kind == "fish":
+		var basis := Basis(Vector3.UP,float(site.get("shown_yaw",0.0)))*Basis.from_scale(Vector3(-s if site.mirror else s,s,s))
+		_fish_looks[site.look].multimesh.set_instance_transform(site.slot,Transform3D(basis,p))
+		return
+	if site.shown_pose != "leap":
+		if site.shown_pose != "": _frog_pose(site,site.shown_pose).set_instance_transform(site.slot,_hidden())
+		site.shown_pose = "leap"
+	var kick := sin(u*TAU*2.0)*0.25
+	_frog_pose(site,"leap").set_instance_transform(site.slot,Transform3D(Basis.from_euler(Vector3(0.5*e+kick,float(site.yaw),0),EULER_ORDER_XYZ).scaled(Vector3.ONE*s),p))

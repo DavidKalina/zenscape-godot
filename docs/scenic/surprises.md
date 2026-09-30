@@ -28,9 +28,10 @@ These are wired into the default Genesis path now (see `life.md`, `emergence.md`
 | Fireflies at dusk | damp ground near water and plants | common |
 | Springs, rills, pools, falls, edge falls | where a water ball lands | common |
 | Spores from the wild tree sow a forest; 7% come up as another kind | a flick | common |
-| Heron wades and strikes | pond with settled fish, daylight, dry | uncommon |
+| Heron wades and strikes, and now and then catches a fish, swallows it or flies off with it | pond with settled fish, daylight, dry | uncommon |
 | Doe, sometimes a fawn, at the forest edge | ≥6 trees, dawn, dry | uncommon |
 | Grass snake on the bank | rich pond, sunny morning | uncommon |
+| Grass snake stalks and takes a frog | snake visit with a frog sitting in reach | rare |
 | Rainbow after rain | rain that stops over a rich world | uncommon |
 | Meteors | clear night | common (ambient) |
 | Aurora | a clear night that rolls it: 50% in winter, 20% late autumn, 2.5% otherwise | uncommon |
@@ -51,8 +52,8 @@ This is the cheapest source of surprises. Most of it wires together systems that
 - **Morning mist off the ponds** on cold, clear dawns. (S, common) *Done: `life.md`, "Winter on the water".*
 
 ### Life eats life
-- **The heron catches a fish.** It lifts one out, the pond count drops, and a fish comes back later. The strike already exists; only the fish needs removing. (S, uncommon)
-- **The snake takes a frog**, now and then. (S, rare)
+- **The heron catches a fish.** Done, see `life.md` "Predation". (S, uncommon)
+- **The snake takes a frog**, now and then. Done, see `life.md` "Predation". (S, rare)
 - **An eagle snatches a fish** (the user's long-term want). It needs the eagle; see section 3. (L, rare)
 
 ### The world notices the hand
@@ -120,7 +121,7 @@ This is the cheapest way to get a rare surprise. Each is a colour or a table ent
 - **White stag** in place of the doe. (S, legendary)
 - **Albino frog** or a **blue frog**. (S, rare)
 - **Double rainbow.** (S, rare)
-- **A heron with a fish in its bill** flying off. (S, rare)
+- **A heron with a fish in its bill** flying off. Done, 15% of catches. (S, rare)
 
 ## 5. Bigfoot as a trail
 
