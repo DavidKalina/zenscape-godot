@@ -39,7 +39,7 @@ const BLOOM := 0.2
 ## Seconds settled on a flower, and how far off its next flower may be (m).
 const REST := Vector2(1.6, 5.5)
 const NEXT := Vector2(0.9, 5.0)
-const SCALE := 1.5
+const SCALE := 2.4
 const TINTS := [Color(1.0,0.55,0.15), Color(1.0,0.9,0.3), Color(0.55,0.75,1.0), Color(1.0,0.97,0.9), Color(0.95,0.5,0.7)]
 
 var life: Node3D

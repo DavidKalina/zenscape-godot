@@ -35,7 +35,7 @@ const PAUSE := Vector2(2.2, 5.0)
 ## there at unit scale, and the bird's size.
 const PERCH := Vector2(0.5, 0.75)
 const TRUNK := 0.08
-const SIZE := 1.6
+const SIZE := 2.2
 ## The head's swing when it strikes (radians) and the seconds to land and to leave.
 const STRIKE := 0.42
 const LAND := 0.35
