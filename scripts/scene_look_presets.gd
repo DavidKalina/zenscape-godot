@@ -14,7 +14,7 @@ const PRESETS := {
 	"enchanted_forest": {"title":"Enchanted forest","description":"Emerald greens in drifting mist.","palette":"Hollow","phase":0.335,"weather":"mist","clouds":0.3,"mist":0.56,"haze":0.22,"wind":0.28,
 		"strength":0.62,"sun_energy":0.9,"exposure":1.06,"colors":{"sky":"6d9aa5","horizon":"557b7d","glow":"bbd3bc","grass":"6c9d7b","foliage":"4d856a","water":"529595"}},
 	"halloween_hollow": {"title":"Halloween hollow","description":"Amber leaves in haunted violet mist.","palette":"Autumn","phase":0.055,"weather":"mist","clouds":0.22,"mist":0.60,"haze":0.22,"wind":0.48,
-		"strength":0.85,"autumn":0.55,"ambient_energy":1.8,"exposure":1.18,"night_fill":1.35,"colors":{"sky":"49385d","horizon":"625067","glow":"a7795c","grass":"917351","foliage":"cc852f","rock":"706784","earth":"594559","water":"628775","ambient":"b7a0c2","bounce":"786047","rim":"dab27d","fog":"ac83bc"}},
+		"strength":0.85,"autumn":0.55,"ambient_energy":1.8,"exposure":1.18,"night_fill":1.35,"night_look":0.7,"colors":{"sky":"49385d","horizon":"625067","glow":"a7795c","grass":"917351","foliage":"cc852f","rock":"706784","earth":"594559","water":"628775","ambient":"b7a0c2","bounce":"786047","rim":"dab27d","fog":"ac83bc"}},
 	"first_snow": {"title":"First snow","description":"Pearl light and a soft white coat.","palette":"Winter","phase":0.43,"weather":"snow","clouds":0.59,"mist":0.22,"haze":0.24,"wind":0.4,
 		"strength":0.65,"cold":0.92,"snow":0.68,"ice":0.58,"exposure":1.04,"colors":{"sky":"879cb9","horizon":"849aa8","glow":"d8dce7","foliage":"6c8686"}},
 	"nordic_night": {"title":"Nordic night","description":"Silver peaks beneath the aurora.","palette":"Moonlit","phase":0.035,"weather":"clear","clouds":0.03,"mist":0.14,"haze":0.07,"wind":0.2,
@@ -47,7 +47,7 @@ static func look_document(id: String, overrides: Dictionary = {}) -> Dictionary:
 static func controls(id: String, overrides: Dictionary = {}) -> Dictionary:
 	var p := recipe(id,overrides)
 	return {
-		"_celestial":{"phase":p.phase,"cycling":false,"night_fill":p.get("night_fill",1.0),"aurora_strength":p.get("aurora",0.0),"rainbow_strength":p.get("rainbow",0.0),"_rainbow_growth":1.0 if p.get("rainbow",0.0)>0 else 0.0,"_target":-1.0},
+		"_celestial":{"phase":p.phase,"cycling":false,"night_fill":p.get("night_fill",1.0),"night_look":p.get("night_look",1.0),"aurora_strength":p.get("aurora",0.0),"rainbow_strength":p.get("rainbow",0.0),"_rainbow_growth":1.0 if p.get("rainbow",0.0)>0 else 0.0,"_target":-1.0},
 		"_atmosphere":{"strength":p.wind,"direction_angle":p.get("wind_direction",25.0),"_fog_target":p.mist,"_haze_target":p.haze,"summit_mist":p.get("summit_mist",0.65),"shroud":0.0,"loosen":0.5,"ray_strength":p.get("rays",0.65)},
 		"_precipitation":{"cloud_override":p.clouds,"cold_override":p.get("cold",0.0)},
 		"surface_weather":{"autumn":p.get("autumn",0.0),"target_autumn":p.get("autumn",0.0),"cold":p.get("cold",0.0),"target_cold":p.get("cold",0.0),"ice":p.get("ice",0.0),"snow_cover":p.get("snow",0.0),"ground_wet":p.get("wet",0.0),"air_wet":p.get("humidity",0.0)}
