@@ -22,7 +22,7 @@ const Icons = preload("res://scripts/hud_icons.gd")
 ## The tools, top to bottom.
 const TOOLS := ["hand","paddle","chisel","wire","hammer"]
 ## Tools without verbs yet: shown as undiscovered.
-const UNBUILT := ["chisel","hammer"]
+const UNBUILT := ["chisel"]
 ## Sizes: the pip's diameter and hit cell (design pixels) and the scale it
 ## gives the held thing's reach (the clay's radii, a scatter's spread).
 const SIZES := [{"pip":8.0,"cell":16.0,"scale":0.6},{"pip":12.0,"cell":20.0,"scale":1.0},{"pip":18.0,"cell":24.0,"scale":1.5}]
