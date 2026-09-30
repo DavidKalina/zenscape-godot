@@ -64,6 +64,7 @@ const PROFILE_STEP := 0.2
 const MIST := 48
 const DROPS := 40
 const FOAM := Color("f2f7f8")
+const FlowFalls := preload("res://scripts/flow_falls.gd")
 
 var flow: RefCounted
 var editor: Node
@@ -89,20 +90,17 @@ var hidden_for_flip := false
 func setup(water_flow: RefCounted, chunk_editor: Node) -> void:
 	flow = water_flow
 	editor = chunk_editor
-	_ring_mesh = preload("res://scripts/flow_falls.gd")._build_ring_mesh(RINGS)
+	_ring_mesh = FlowFalls._build_ring_mesh(RINGS)
+	# The water ball's lens beads (shaders/water_bead.gdshader), as the
+	# waterfalls' spray: opaque white 5 cm balls read as hail up close.
 	_drop_mesh = SphereMesh.new()
-	_drop_mesh.radius = 0.045
-	_drop_mesh.height = 0.11
-	_drop_mesh.radial_segments = 6
-	_drop_mesh.rings = 3
-	var drop_look := StandardMaterial3D.new()
-	drop_look.albedo_color = FOAM
-	drop_look.roughness = 0.25
-	drop_look.vertex_color_use_as_albedo = true
-	drop_look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	drop_look.emission_enabled = true
-	drop_look.emission = FOAM
-	drop_look.emission_energy_multiplier = 0.3
+	_drop_mesh.radius = 0.03
+	_drop_mesh.height = 0.07
+	_drop_mesh.radial_segments = 8
+	_drop_mesh.rings = 4
+	var drop_look := ShaderMaterial.new()
+	drop_look.shader = preload("res://shaders/water_bead.gdshader")
+	drop_look.render_priority = FlowFalls.SPRAY_PRIORITY
 	_drop_mesh.material = drop_look
 	_drop_material = ParticleProcessMaterial.new()
 	_drop_material.direction = Vector3(0,-1,0.25)
@@ -463,6 +461,7 @@ func _create(id: int) -> Dictionary:
 	curtain.mesh = _ring_mesh
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/flow_fall.gdshader")
+	material.render_priority = FlowFalls.CURTAIN_PRIORITY
 	material.set_shader_parameter("fall_seed",float(id)*17.3+3.0)
 	var white := PackedFloat32Array()
 	for s in range(12): white.append(_hash(s*23+id,4))

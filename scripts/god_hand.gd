@@ -60,8 +60,10 @@ const BLEND := 0.18
 ## and "flip" is the same grip held through a diorama flip (scripts/diorama_flip.gd),
 ## a key hand_reach does not clear. "wall" lays the palm flat on the block's side wall
 ## (modeless, scripts/hand_reach.gd): its reach points into the wall (`reach_facing`,
-## the wall's inward normal), the fingers spread up it.
-const GESTURES := {"pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim","wall":"Wall","void":"Void","snap":"Snap","cloud":"Pinch"}
+## the wall's inward normal), the fingers spread up it. "summon" is the open
+## cupped Reach held square to the camera while a summoned cloud forms in it
+## (docs/scenic/sky-cloud.md "Summoned"), before the pinch closes on it.
+const GESTURES := {"summon":"Reach","pinch":"Pinch","press":"Press","cup":"Cup","sprinkle":"Sprinkle","shake":"Shake","turn":"Turn","catch":"Catch","sun":"Reach","rim":"Rim","flip":"Rim","wall":"Wall","void":"Void","snap":"Snap","cloud":"Pinch"}
 const LOOPS := ["PinchHold","PressHold","CupHold","SprinkleHold","ShakeHold","TurnHold","CatchHold","ReachHold","RimHold","WallHold","VoidHold","SnapHold"]
 ## Idle's variations (god_hand_clips.py IDLE_VARIANTS), each starting and
 ## ending on Idle's first pose, so one may follow whenever Idle comes round:
@@ -87,11 +89,11 @@ const LEAN_PIVOT := 0.45
 ## radians, by each gesture's share: fully while it touches the land.
 const TILT_REACH := 0.5
 const MAX_TILT := 0.55
-const TILT := {"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0,"wall":0.0,"void":0.0,"snap":0.0,"cloud":0.0}
+const TILT := {"summon":0.0,"":0.35,"pinch":1.0,"press":1.0,"cup":0.0,"sprinkle":0.2,"shake":0.0,"turn":1.0,"catch":1.0,"sun":0.0,"rim":0.0,"flip":0.0,"wall":0.0,"void":0.0,"snap":0.0,"cloud":0.0}
 ## Holding the sun, the hand turns square to the camera, however high the sun
 ## is: the Reach clips cup the disc for a camera level with the hand. The
 ## share per gesture, eased in and out at FACE_RATE (1/s).
-const FACE := {"sun":1.0,"void":1.0,"snap":1.0}
+const FACE := {"sun":1.0,"void":1.0,"snap":1.0,"summon":1.0}
 const FACE_RATE := 4.0
 ## No knuckle or palm goes into the land: CLEAR_BONES are kept CLEAR hand
 ## lengths over the ground under them by lifting the whole hand, quickly up
@@ -104,7 +106,7 @@ const LIFT_DOWN := 3.0
 const CLEAR_BONES := ["Hand","MetaIndex","MetaMiddle","MetaRing","MetaPinky","Index1","Middle1","Ring1","Pinky1",
 	"Index2","Middle2","Ring2","Pinky2","Index3","Middle3","Ring3","Pinky3","Thumb1","Thumb2","Thumb3"]
 const PINCHING := ["Index2","Index3","Thumb2","Thumb3"]
-const UNLIFTED := ["press","cup","shake","rim","flip","wall","void","snap","cloud"]
+const UNLIFTED := ["summon","press","cup","shake","rim","flip","wall","void","snap","cloud"]
 ## Turning the world (scripts/world_turn.gd): the gestures whose palm lies
 ## flat on the land, riding its height and never lifted clear of it; and the
 ## lean into the push, TURN_LEAN radians per m/s the grabbed ground moves
@@ -133,7 +135,7 @@ const CUP_POP := 0.4333
 ## SNAP_LOADED is when SnapIn's tips meet (the rig's snap_loaded_s): a click
 ## quicker than that skips the load on to it, so the snap still fires from a
 ## loaded hand.
-const FLOATING := ["void","snap","cloud"]
+const FLOATING := ["void","snap","cloud","summon"]
 const SNAP_BLEND := 0.04
 const SNAP_LOADED := 0.1
 ## Unloading a snap that became a drag: a crossfade from SnapHold to VoidHold.
@@ -472,11 +474,16 @@ func snap() -> void:
 	player.play("SnapOut",SNAP_BLEND)
 
 ## The void's own hand-offs: a loaded snap let go without firing crossfades
-## back to VoidHold instead of running VoidIn from Idle's pose.
+## back to VoidHold instead of running VoidIn from Idle's pose; a loaded snap
+## held on into a summon unloads as slowly into the cupping Reach.
 func _void_play(next: String) -> bool:
 	if gesture == "snap" and next == "void":
 		gesture = next
 		player.play("VoidHold",UNLOAD_BLEND)
+		return true
+	if gesture == "snap" and next == "summon":
+		gesture = next
+		player.play("ReachIn",UNLOAD_BLEND)
 		return true
 	return false
 

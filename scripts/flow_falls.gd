@@ -26,7 +26,7 @@ const SECTIONS := 12
 ## when its surface falls `slope_on` m per metre over `run` m down its flow
 ## (and stays steep down to `slope_off`); steep cells group, and a group whose
 ## lip stands `min_drop` m over its plunge with `min_flux` m³/s is a fall.
-const DETECT := {"wet":0.01,"min_speed":0.3,"slope_on":1.0,"slope_off":0.7,"run":0.5,"min_drop":0.7,"min_flux":0.006,"lip_band":0.3,"band":0.3,"min_cells":3,"max":6}
+const DETECT := {"wet":0.004,"min_speed":0.3,"slope_on":0.8,"slope_off":0.55,"run":0.5,"min_drop":0.7,"min_flux":0.006,"lip_band":0.3,"band":0.3,"min_cells":3,"max":6}
 ## Seconds between reads of the flow.
 const READ_SECONDS := 0.25
 ## m³/s that makes a full curtain (the largest spring pours 0.25).
@@ -48,6 +48,15 @@ const FOAM_BLOBS := 7
 const RING_WAVES := 4
 const RING_PERIOD := 1.15
 const W_MIN := 0.08
+## The curtain is translucent where its water is glass, and writes depth. It
+## draws before the live water (still 0, moving 1, scripts/water_flow_view.gd),
+## so a pool's surface lies over the part that plunges under it (the water
+## draws no depth), and the stream it pours over is hidden behind it rather
+## than showing as a second veil through it. Spray draws after the water.
+const CURTAIN_PRIORITY := -1
+const SPRAY_PRIORITY := 2
+## Seconds a spray puff lives: it rises, swells and fades.
+const PUFF_SECONDS := 1.6
 
 var flow: RefCounted
 var materials: Array[ShaderMaterial] = []
@@ -56,7 +65,7 @@ var _serial := 0
 var _since := 0.0
 var _clock := 0.0
 var _ring_mesh: ArrayMesh
-var _blob_mesh: SphereMesh
+var _blob_mesh: QuadMesh
 var _bead_mesh: SphereMesh
 var _spray_material: ParticleProcessMaterial
 var _ring_wave_mesh: PlaneMesh
@@ -71,29 +80,48 @@ func setup(water_flow: RefCounted, water_materials: Array) -> void:
 	flow = water_flow
 	for material: ShaderMaterial in water_materials: materials.append(material)
 	_ring_mesh = _build_ring_mesh()
-	_blob_mesh = SphereMesh.new()
-	_blob_mesh.radius = 1.0
-	_blob_mesh.height = 2.0
-	_blob_mesh.radial_segments = 6
-	_blob_mesh.rings = 3
+	# Spray puffs, not snowballs: the source's foam clusters were flat-shaded
+	# white icosahedra, which suit its many-metre falls seen from afar; beside
+	# a fall of a few metres seen close they read as snowballs. Soft round
+	# billboards instead, each rising, swelling and fading on its own cycle.
+	var puff := Gradient.new()
+	puff.offsets = PackedFloat32Array([0.0,0.35,0.7,1.0])
+	puff.colors = PackedColorArray([Color(1,1,1,0.9),Color(1,1,1,0.55),Color(1,1,1,0.15),Color(1,1,1,0.0)])
+	var puff_texture := GradientTexture2D.new()
+	puff_texture.gradient = puff
+	puff_texture.fill = GradientTexture2D.FILL_RADIAL
+	puff_texture.fill_from = Vector2(0.5,0.5)
+	puff_texture.fill_to = Vector2(1.0,0.5)
+	puff_texture.width = 64
+	puff_texture.height = 64
+	var blob_quad := QuadMesh.new()
+	blob_quad.size = Vector2(2,2)
 	var blob_look := StandardMaterial3D.new()
 	blob_look.albedo_color = FOAM
-	blob_look.roughness = 0.9
-	# Foam scatters light: lit alone it went black in a cliff's shadow.
+	blob_look.albedo_texture = puff_texture
+	blob_look.vertex_color_use_as_albedo = true
+	blob_look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	blob_look.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	blob_look.billboard_keep_scale = true
+	blob_look.roughness = 1.0
+	blob_look.disable_receive_shadows = true
+	# Spray scatters light: lit alone it went black in a cliff's shadow.
 	blob_look.emission_enabled = true
 	blob_look.emission = FOAM
-	blob_look.emission_energy_multiplier = 0.45
-	_blob_mesh.material = blob_look
+	blob_look.emission_energy_multiplier = 0.35
+	blob_look.render_priority = SPRAY_PRIORITY
+	blob_quad.material = blob_look
+	_blob_mesh = blob_quad
+	# Droplets are the water ball's lens beads (shaders/water_bead.gdshader),
+	# a couple of centimetres: opaque grey-white spheres read as hail.
 	_bead_mesh = SphereMesh.new()
-	_bead_mesh.radius = 0.035
-	_bead_mesh.height = 0.07
-	_bead_mesh.radial_segments = 6
-	_bead_mesh.rings = 3
-	var bead_look := StandardMaterial3D.new()
-	bead_look.albedo_color = FOAM
-	bead_look.roughness = 0.25
-	bead_look.vertex_color_use_as_albedo = true
-	bead_look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_bead_mesh.radius = 0.022
+	_bead_mesh.height = 0.044
+	_bead_mesh.radial_segments = 8
+	_bead_mesh.rings = 4
+	var bead_look := ShaderMaterial.new()
+	bead_look.shader = preload("res://shaders/water_bead.gdshader")
+	bead_look.render_priority = SPRAY_PRIORITY
 	_bead_mesh.material = bead_look
 	_spray_material = ParticleProcessMaterial.new()
 	_spray_material.direction = Vector3.UP
@@ -297,20 +325,25 @@ func _draw(grown: bool, paused: bool) -> void:
 		material.set_shader_parameter("body_white",0.36*(1.0-smoothstep(0.15,0.8,rings.mid_half)))
 		material.set_shader_parameter("veil",1.0-smoothstep(0.15,0.85,s))
 		material.set_shader_parameter("streak_speed",clampf(0.6*sqrt(2.0*9.81*maxf(now.drop,0.1)),2.5,7.0))
+		# Onto running water it fades out over its last stretch; into a pool it
+		# goes under the surface.
+		material.set_shader_parameter("end_travel",(rings.travel as PackedFloat32Array)[RINGS-1])
+		material.set_shader_parameter("end_fade",1.0-smoothstep(0.04,0.18,now.pool))
 		nodes.curtain.custom_aabb = rings.bounds
 		var impact: Vector3 = rings.impact
 		var spread := (0.5+strength*0.5)*(0.8+0.1*minf(now.drop,4.0))
-		# Foam blobs (the source's foamCluster: 4 + 3·flow round the impact).
+		# Spray puffs round the impact (the source's foamCluster: 4 + 3·flow),
+		# each rising, swelling and fading on its own cycle.
 		var blobs: MultiMesh = nodes.foam.multimesh
 		blobs.visible_instance_count = clampi(roundi((4.0+3.0*strength)*minf(presence*1.5,1.0)),0,FOAM_BLOBS)
 		for i in range(FOAM_BLOBS):
-			var angle := float(i)/FOAM_BLOBS*TAU+float(fall.id)*5.1
-			var radius := (0.35+_hash(i,1)*0.9)*spread*0.8
-			var extent := (0.08+_hash(i,2)*0.12)*(0.7+strength*0.25)*presence
-			var bob := absf(sin(_clock*2.0+i*1.7))*0.08 if not paused else 0.0
-			var point := impact+Vector3(cos(angle)*radius,0.04+bob,sin(angle)*radius*0.75)
-			var churn := Basis.from_euler(Vector3(i,i*2+_clock*0.25,i*3))
-			blobs.set_instance_transform(i,Transform3D(churn.scaled(Vector3.ONE*extent*(0.9+0.15*sin(_clock*3.1+i))),point))
+			var life := fposmod(_clock/PUFF_SECONDS+_hash(i+int(fall.id)*7,4),1.0)
+			var angle := float(i)/FOAM_BLOBS*TAU+float(fall.id)*5.1+floorf(_clock/PUFF_SECONDS+_hash(i+int(fall.id)*7,4))*2.39
+			var radius := (0.3+_hash(i,1)*0.7)*spread*0.8*(0.8+0.4*life)
+			var extent := (0.07+_hash(i,2)*0.09)*(0.7+strength*0.25)*presence*(0.7+0.8*life)
+			var point := impact+Vector3(cos(angle)*radius,0.05+life*(0.25+0.25*strength),sin(angle)*radius*0.75)
+			blobs.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ONE*extent),point))
+			blobs.set_instance_color(i,Color(1,1,1,0.7*smoothstep(0.0,0.15,life)*(1.0-smoothstep(0.4,1.0,life))))
 		var spray: GPUParticles3D = nodes.spray
 		spray.position = impact+Vector3.UP*0.05
 		spray.amount_ratio = clampf(s,0.05,1.0)
@@ -396,11 +429,16 @@ func _rings(shape: Dictionary, presence: float, strength: float) -> Dictionary:
 		for r in range(1,n-1): half[r] = (half[r-1]+half[r]*2.0+half[r+1])/4.0
 	# Thickness: a plunging sheet has a belly, water sliding on rock is a skin;
 	# more water, a fuller sheet. The inlet opens over the first rings.
+	# The inlet opens within the first ring: over 2.5 rings (and a pinch over
+	# 1.6) the curtain's visible top hung half a metre under its lip.
 	var thick := PackedFloat32Array()
-	var inlet := minf(1.6,(n-1)*0.12)
+	var inlet := minf(1.0,(n-1)*0.08)
 	for r in range(n):
 		var body := minf(half[r]*0.55,(0.06+0.45*steep[r])*(0.3+0.7*strength))
-		body *= 0.06+0.94*smoothstep(0.0,2.5,float(r))
+		body *= 0.06+0.94*smoothstep(0.0,1.2,float(r))
+		# Into running water rather than a pool, the sheet thins to meet it
+		# instead of ending as an open tube in front of the face.
+		body *= lerpf(1.0,0.35,smoothstep(n-3.0,n-1.0,float(r))*(1.0-smoothstep(0.04,0.18,shape.pool)))
 		var pinch := 0.28+0.72*smoothstep(0.0,inlet,float(r))
 		half[r] *= pinch*lerpf(0.3,1.0,presence)
 		thick.append(body*pinch*presence)
@@ -423,7 +461,8 @@ func _rings(shape: Dictionary, presence: float, strength: float) -> Dictionary:
 		# under the lip so the water comes out of it, not out of a tube mouth.
 		if r == 0: point -= outward[r]*(thick[r]+0.08)
 		else: point += outward[r]*(thick[r]*0.9+0.04)
-		if r == n-1: point.y = points[r].y-0.05
+		# The last ring goes under the water it lands in, deeper in a pool.
+		if r == n-1: point.y = points[r].y-0.08-0.12*smoothstep(0.04,0.18,shape.pool)
 		centers[r] = Vector4(point.x,point.y,point.z,tau[r])
 		axis_a[r] = Vector4(across[r].x,across[r].y,across[r].z,half[r])
 		axis_b[r] = Vector4(outward[r].x,outward[r].y,outward[r].z,thick[r])
@@ -444,6 +483,7 @@ func _create(id: int) -> Dictionary:
 	curtain.mesh = _ring_mesh
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/flow_fall.gdshader")
+	material.render_priority = CURTAIN_PRIORITY
 	material.set_shader_parameter("fall_seed",float(id)*13.7)
 	var white := PackedFloat32Array()
 	for s in range(12): white.append(_hash(s*17+id,2))
@@ -455,6 +495,7 @@ func _create(id: int) -> Dictionary:
 	foam.name = "FlowFallFoam_%d" % id
 	foam.multimesh = MultiMesh.new()
 	foam.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	foam.multimesh.use_colors = true
 	foam.multimesh.mesh = _blob_mesh
 	foam.multimesh.instance_count = FOAM_BLOBS
 	foam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

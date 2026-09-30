@@ -29,7 +29,10 @@ extends Node
 ## (`turn_room`), and studies/celestial.gd turns the sun and moon, both lights,
 ## the stars, the aurora and the horizon hills by the room's yaw. Seen from the
 ## camera the room then never moves, and the diorama spins under it like a
-## model on a turntable under a fixed lamp. Poses set from outside (a
+## model on a turntable under a fixed lamp. Under `--modeless` the turntable's
+## spindle is the plate's middle, not the camera's pivot: the whole rig, pivot
+## and all, swings round it (`_set_yaw`), so however the view is panned the
+## plate turns in place and the camera seems not to move. Poses set from outside (a
 ## regrowth, the menu's Overview, photo mode, a capture) move the camera, not
 ## the room.
 
@@ -250,6 +253,14 @@ func advance(delta: float) -> void:
 	_hand(delta)
 
 func _set_yaw(yaw: float) -> void:
+	if modeless:
+		# The pivot swings round the plate's middle with the yaw, so the plate
+		# turns about its own middle wherever the camera looks.
+		var by: float = yaw-float(rig._view.x)
+		var middle := _middle()
+		rig._pivot = middle+(rig._pivot-middle).rotated(Vector3.UP,by)
+		rig._pivot_goal = middle+(rig._pivot_goal-middle).rotated(Vector3.UP,by)
+		rig._pivot_v = rig._pivot_v.rotated(Vector3.UP,by)
 	rig._view.x = yaw
 	rig._view_goal.x = yaw
 	rig._view_v.x = 0.0
@@ -283,6 +294,19 @@ func _release() -> void:
 	rate = 0.0
 	grab = null
 
+## What the world turns about: under `--modeless` the plate's middle (from its
+## skirt, as scripts/diorama_flip.gd finds it), at the pivot's height; else the
+## camera's pivot.
+func _middle() -> Vector3:
+	var centre: Vector3 = rig._pivot
+	if not modeless: return centre
+	var skirt: Variant = rig.editor.get("_skirt") if rig.editor != null else null
+	if skirt is MeshInstance3D and skirt.mesh != null:
+		var box: AABB = skirt.global_transform*skirt.get_aabb()
+		var mid := box.get_center()
+		return Vector3(mid.x,centre.y,mid.z)
+	return Vector3(0.0,centre.y,0.0)
+
 ## Where the pointer's ray meets the level `height`, for the rig's pose as it
 ## stands this frame (not the camera's last transform), or null above the
 ## horizon.
@@ -302,7 +326,7 @@ func _on_level(height: float, at: Vector2) -> Variant:
 ## it turns by pixels and takes up the ground under the pointer as the grab.
 func _hold(delta: float) -> float:
 	var pixels: float = -TAU*(pointer.x-_last_pointer.x)/rig._height()
-	var centre: Vector3 = rig._pivot
+	var centre := _middle()
 	var under: Variant = _on_level(float(grab.y) if grab != null else centre.y,pointer)
 	var step := pixels
 	var weight := 0.0
@@ -385,6 +409,6 @@ func _hand(delta: float) -> void:
 	if "reach_push" in hand:
 		# The grabbed ground's way across the view: the world turns by minus
 		# the camera's yaw about the pivot.
-		var arm: Vector3 = Vector3(at)-rig._pivot
+		var arm: Vector3 = Vector3(at)-_middle()
 		var push := Vector3(arm.z,0.0,-arm.x)*-turning
 		hand.reach_push = terrain.global_basis.inverse()*push

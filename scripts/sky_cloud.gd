@@ -15,6 +15,15 @@ extends Node3D
 ## does not turn with the world or ride the flip. World coordinates throughout.
 ## scripts/hand_reach.gd drives it (`hit`, `grab`, `pull`, `let_go`,
 ## `into_ball`) and hands `supply` to the editor for the ball's filling.
+##
+## **Summoned** (the default; docs/scenic/sky-cloud.md "Summoned"). The cloud
+## is not in the sky at rest. A still hold in empty sky calls it
+## (`summon`): droplets and wisps swirl in round the hand and the puffs swell
+## from nothing with an overshoot, already in the hand's pinch, so the same
+## press pulls and tears. It lingers while it is used, then drifts off on the
+## wind and thins away (`presence`). On the session's first world it shows
+## itself once, unasked (the demo). `--always-cloud` keeps the old cloud that
+## is always behind the diorama.
 
 ## Where it floats: FAR metres from the plate's middle toward the far rim (away
 ## from the camera), at its kind's height and side (KINDS), swaying its sway
@@ -97,7 +106,100 @@ const DROP_SECONDS := 0.7
 ## The rate (m³/s) the drops count as full: the water brush's default.
 const FULL_FEED := 3.0
 
+## Summoned (docs/scenic/sky-cloud.md "Summoned"). The summoned cloud stands
+## FORM_REACH (in its own metres) behind the hand's pinch, so the hand holds
+## its near face; it is sized by its depth over REFERENCE_DEPTH (about the
+## always-there cloud's depth, so it reads the same size on screen), within
+## SIZE_RANGE.
+const GRIP := Vector3(0.0,0.1,-1.6)
+const REFERENCE_DEPTH := 60.0
+const SIZE_RANGE := Vector2(0.25,1.2)
+## Forming: droplets (GATHER_BEADS of the drops) and the wisps swirl in
+## from GATHER_SPREAD times the cloud's size over GATHER_SECONDS, turning
+## SWIRL radians as they come; then from PUFF_START seconds the puffs swell
+## out from the pinch outward, each PUFF_STAGGER later by its distance from
+## it, each over PUFF_SECONDS on an underdamped spring (SWELL_DAMP, SWELL_FREQ:
+## about 13% overshoot, then a small undershoot), gathering in from
+## PUFF_SPREAD times their place. A pull tears once TEAR_FORM seconds have
+## formed (the middle puffs are there).
+const GATHER_BEADS := 28
+const GATHER_SPREAD := 2.4
+const GATHER_SECONDS := 0.34
+const SWIRL := 2.4
+const PUFF_START := 0.12
+const PUFF_STAGGER := 0.22
+const PUFF_SECONDS := 0.45
+const PUFF_SPREAD := 1.7
+const SWELL_DAMP := 11.0
+const SWELL_FREQ := 17.0
+## How quickly (1/s) a puff gathers in to its place: within about 1% by the
+## end of its PUFF_SECONDS.
+const GATHER_RATE := 14.0
+const FORM_SECONDS := PUFF_START+PUFF_STAGGER+PUFF_SECONDS
+const TEAR_FORM := 0.35
+## Floating: once up it stays where it formed, swaying FLOAT_SWAY either side
+## over SWAY_SECONDS and bobbing BOB, and wandering WANDER at most across and
+## WANDER·WANDER_DEPTH in depth over WANDER_SECONDS (all metres times its
+## size). It never follows the hand.
+const FLOAT_SWAY := 1.0
+const WANDER := 1.5
+const WANDER_DEPTH := 0.6
+const WANDER_SECONDS := Vector2(97.0,131.0)
+## A pointer within NEAR_SLACK of a puff's radius keeps it (its idle clock
+## starts again), as a pluck does.
+const NEAR_SLACK := 2.2
+## Lingering and leaving: left alone LINGER seconds (DEMO_LINGER for the
+## demo), or DRY_LINGER once wrung dry, it drifts off on the sky's wind at
+## DRIFT (m/s at no wind to a strong one, times its size), rising RISE m/s,
+## and thins away over LEAVE_SECONDS, outer puffs first. Under LEAVE_GRAB of
+## the way gone a press calls it back.
+const LINGER := 20.0
+const DEMO_LINGER := 6.0
+const DRY_LINGER := 3.0
+const DRIFT := Vector2(1.2,4.0)
+const RISE := 0.35
+const LEAVE_SECONDS := 4.0
+const LEAVE_GRAB := 0.6
+## The demo: DEMO_DELAY seconds into the session's first calm world it forms
+## by itself where the always-there cloud floats.
+const DEMO_DELAY := 4.0
+## True once this session's demo has shown (or `--no-cloud-demo`).
+static var demo_shown := "--no-cloud-demo" in OS.get_cmdline_user_args()
+
 var scene: Node3D
+## Summoned (the default) or always there (`--always-cloud`).
+var summoned := not "--always-cloud" in OS.get_cmdline_user_args()
+## "gone", "forming", "here" or "leaving" (summoned only; always "here" else).
+var presence := "gone"
+## The cloud's size (1 the always-there cloud's), seconds formed, seconds left
+## alone, how long it may be, share of the way gone, and whether it was wrung
+## dry since it came.
+var size := 1.0
+var _form_time := 0.0
+var _idle := 0.0
+var _linger := LINGER
+var _leave := 0.0
+var wrung := false
+## True while the hand could call the demo (hand_reach sets it: a world is
+## open and nothing is held); the demo's wait; summons made, for probes.
+var calm := false
+var demo := false
+var _demo_wait := 0.0
+var summons := 0
+## Where the summoned cloud floats before its bob, its drift while leaving,
+## and the bob's own clock (it stops while held, so a let-go does not jump).
+var _anchor := Vector3.ZERO
+var _drift := Vector3.ZERO
+var _bob_time := 0.0
+## Forming: each puff's start (seconds), and where and how big it starts
+## (world); the point the droplets gather to, and their starts and turns.
+var _delay := PackedFloat32Array()
+var _form_from := PackedVector3Array()
+var _form_from_r := PackedFloat32Array()
+var _focus := Vector3.ZERO
+var _beads: Array[Vector4] = []
+## The order the puffs thin in when it leaves (0 first).
+var _thin := PackedFloat32Array()
 ## Water held now (m³), and what the look shows (eased).
 var water := CAPACITY
 var shown := 1.0
@@ -182,6 +284,13 @@ func setup(owner_scene: Node3D, which := "cloud") -> void:
 		_weight.append(0.0)
 		_at.append(Vector3.ZERO)
 		_size.append(0.0)
+		_delay.append(0.0)
+		_form_from.append(Vector3.ZERO)
+		_form_from_r.append(0.0)
+	var widest := 0.0
+	for i in range(BODY): widest = maxf(widest,Vector2(_rest[i].x,_rest[i].y*1.6).length())
+	for i in range(BODY): _thin.append(1.0-Vector2(_rest[i].x,_rest[i].y*1.6).length()/maxf(widest,0.001))
+	if not summoned: presence = "here"
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/sky_cloud.gdshader")
 	material.set_shader_parameter("cloud_top",_settings.top)
@@ -227,10 +336,148 @@ func setup(owner_scene: Node3D, which := "cloud") -> void:
 func _editor() -> Node:
 	return scene.get("_chunk_editor") if scene != null else null
 
-## True while the cloud is in the sky: a world is open.
-func present() -> bool:
+## True while a world is open.
+func _world_open() -> bool:
 	var editor := _editor()
 	return editor != null and scene.camera != null and scene.get("_has_world") != false
+
+## True while the cloud is in the sky: a world is open, and summoned, it has
+## been called and has not gone.
+func present() -> bool:
+	return _world_open() and presence != "gone"
+
+## True while a summoned cloud is still forming.
+func forming() -> bool:
+	return presence == "forming"
+
+## True while it can be torn: formed enough to hold a tuft.
+func formed_enough() -> bool:
+	return presence != "forming" or _form_time >= TEAR_FORM
+
+# --- Summoned: coming and going ----------------------------------------------------
+
+## A still hold in empty sky calls the cloud: it forms round `at` (world, the
+## hand's pinch on the pointer's ray) with the pointer at `point`, already in
+## hand. Only when there is no cloud: one in the sky stays where it is.
+func summon(point: Vector2, at: Vector3) -> void:
+	if presence != "gone": return
+	var camera: Camera3D = scene.camera
+	var away := -camera.global_basis.z
+	away.y = 0.0
+	if away.length_squared() < 0.0001: away = camera.global_basis.y*Vector3(1,0,1)
+	var z := away.normalized()
+	frame = Basis(Vector3.UP.cross(z),Vector3.UP,z)
+	size = clampf(camera.global_position.distance_to(at)/REFERENCE_DEPTH,SIZE_RANGE.x,SIZE_RANGE.y)
+	centre = at-frame*(GRIP*size)
+	_anchor = centre
+	summons += 1
+	_start_form(true,at)
+	grab(point,at)
+
+## The demo: the session's first calm world shows the cloud once, unasked,
+## where the always-there cloud floated; it hangs a while and drifts off.
+func show_demo() -> void:
+	demo_shown = true
+	var editor := _editor()
+	var middle: Vector3 = (editor.terrain as Node3D).global_position
+	var away: Vector3 = middle-scene.camera.global_position
+	away.y = 0.0
+	if away.length_squared() < 0.0001: away = Vector3.FORWARD
+	var z := away.normalized()
+	frame = Basis(Vector3.UP.cross(z),Vector3.UP,z)
+	size = 1.0
+	centre = middle+z*FAR+frame.x*float(_settings.side)+Vector3.UP*float(_settings.height)
+	_anchor = centre
+	_start_form(true,centre)
+	demo = true
+	_linger = DEMO_LINGER
+
+## Forming starts: from nothing (`fresh`), or from the cloud as it is drawn.
+func _start_form(fresh: bool, focus: Vector3) -> void:
+	presence = "forming"
+	_form_time = 0.0
+	_idle = 0.0
+	_leave = 0.0
+	_linger = LINGER
+	demo = false
+	_focus = focus
+	if fresh:
+		_bob_time = 0.0
+		water = CAPACITY
+		shown = 1.0
+		wrung = false
+		state = "idle"
+		_wisps.clear()
+		_drops.clear()
+	var grip := frame.inverse()*(focus-centre)/maxf(size,0.001)
+	var farthest := 0.0
+	for i in range(BODY): farthest = maxf(farthest,_rest[i].distance_to(grip))
+	for i in range(BODY):
+		_delay[i] = PUFF_START+PUFF_STAGGER*_rest[i].distance_to(grip)/maxf(farthest,0.001)
+		_offset[i] = Vector3.ZERO
+		_speed[i] = Vector3.ZERO
+		if fresh or _size[i] <= 0.0:
+			var out := Vector3(_rest[i].x,_rest[i].y,_rest[i].z)*PUFF_SPREAD+Vector3(randf_range(-0.6,0.6),randf_range(-0.3,0.3),randf_range(-0.6,0.6))
+			_form_from[i] = centre+frame*(out*size)
+			_form_from_r[i] = 0.0
+		else:
+			_form_from[i] = _at[i]
+			_form_from_r[i] = _size[i]
+	_beads.clear()
+	for k in range(GATHER_BEADS):
+		# [angle, reach (of the cloud's size), start (s), height].
+		_beads.append(Vector4(TAU*k/GATHER_BEADS+randf_range(-0.2,0.2),GATHER_SPREAD*randf_range(0.75,1.2),randf_range(0.0,0.1),randf_range(-0.6,0.6)))
+
+## Coming, lingering and leaving, and the demo's wait.
+func _step_presence(delta: float) -> void:
+	if presence == "gone":
+		if not demo_shown and calm and _world_open():
+			_demo_wait += delta
+			if _demo_wait >= DEMO_DELAY: show_demo()
+		return
+	if presence == "forming":
+		_form_time += delta
+		if _form_time >= FORM_SECONDS: presence = "here"
+	var touched := state != "idle" or _feeding
+	_idle = 0.0 if touched else _idle+delta
+	if touched: _linger = LINGER
+	if presence == "here" and not touched and (_idle >= _linger or (wrung and _idle >= DRY_LINGER)): _begin_leave()
+	if presence == "leaving":
+		_leave += delta/LEAVE_SECONDS
+		if _leave >= 1.0: _gone()
+
+## It drifts off on the sky's wind, rising a little.
+func _begin_leave() -> void:
+	presence = "leaving"
+	_leave = 0.0
+	var way := frame.x
+	var strength := 0.0
+	var air: Node = scene.get("_atmosphere")
+	if air != null:
+		var angle: float = float(air.get("_air_angle")) if air.get("_air_angle") != null else deg_to_rad(float(air.direction_angle))
+		strength = float(air.get("_air_strength")) if air.get("_air_strength") != null else float(air.strength)
+		if strength > 0.02: way = Vector3(cos(angle),0.0,sin(angle))
+	_drift = way*lerpf(DRIFT.x,DRIFT.y,clampf(strength/1.4,0.0,1.0))*size
+	# The trailing side lags as it sets off (overlap): the puffs are kicked back.
+	for i in range(BODY):
+		_speed[i] -= _drift.normalized()*0.8*size*(0.5+0.5*_thin[i])
+
+## Gone: the next call forms afresh.
+func _gone() -> void:
+	presence = "gone"
+	state = "idle"
+	demo = false
+	_leave = 0.0
+	tension = 0.0
+	dry = false
+	_wisps.clear()
+	_drops.clear()
+	for i in range(PUFFS):
+		_offset[i] = Vector3.ZERO
+		_speed[i] = Vector3.ZERO
+		_size[i] = 0.0
+	water = CAPACITY
+	visible = false
 
 # --- The hand's verbs ------------------------------------------------------------
 
@@ -238,13 +485,33 @@ func present() -> bool:
 ## the pointer's ray meets, a little generously. Only a cloud at rest is taken.
 func hit(point: Vector2) -> Variant:
 	if not visible or state != "idle": return null
+	if summoned and (presence == "gone" or _leave > LEAVE_GRAB): return null
+	return _ray_hit(point,HIT_SLACK)
+
+## True when a pointer is near the cloud (NEAR_SLACK): the hand hovering by it.
+func near(point: Vector2) -> bool:
+	if not visible or presence == "gone": return false
+	return _ray_hit(point,NEAR_SLACK) != null
+
+## The hover keeps the cloud: its idle clock starts again.
+func keep() -> void:
+	_idle = 0.0
+
+## How far floating may carry it from where it formed (metres: across and in
+## depth, and up and down), for probes.
+func float_reach() -> Vector2:
+	return Vector2(Vector2(FLOAT_SWAY+WANDER,WANDER*WANDER_DEPTH).length(),BOB)*size
+
+## The point where a pointer's ray meets the body puffs, `slack` times their
+## radius, or null.
+func _ray_hit(point: Vector2, slack: float) -> Variant:
 	var camera: Camera3D = scene.camera
 	var origin := camera.project_ray_origin(point)
 	var ray := camera.project_ray_normal(point)
 	var nearest := INF
 	var found: Variant = null
 	for i in range(BODY):
-		var r := _size[i]*HIT_SLACK
+		var r := _size[i]*slack
 		var to := _at[i]-origin
 		var along := to.dot(ray)
 		var miss := to.length_squared()-along*along
@@ -258,6 +525,9 @@ func hit(point: Vector2) -> Variant:
 ## The hand takes the cloud at `at` (world, from `hit`) with the pointer at
 ## `point`: the puffs near it will follow the pull.
 func grab(point: Vector2, at: Vector3) -> void:
+	# A leaving cloud taken again swells back where it is.
+	if presence == "leaving": _start_form(false,at)
+	demo = false
 	state = "held"
 	_press = point
 	_grab = at
@@ -267,7 +537,9 @@ func grab(point: Vector2, at: Vector3) -> void:
 	tension = 0.0
 	dry = false
 	for i in range(BODY):
-		var d := _at[i].distance_to(at)/GRAB_REACH
+		# Forming, a puff is weighed where it will stand.
+		var from := _at[i] if presence != "forming" else centre+frame*(_rest[i]*lerpf(SHRUNK,1.0,shown)*size)
+		var d := from.distance_to(at)/(GRAB_REACH*size)
 		_weight[i] = exp(-d*d)
 
 ## The pointer moved while the cloud (or a torn tuft) is in hand.
@@ -277,10 +549,10 @@ func pull(point: Vector2) -> void:
 	var height := maxf(scene.get_viewport().get_visible_rect().size.y,1.0)
 	tension = clampf(point.distance_to(_press)/(TEAR_REACH*height),0.0,1.0)
 	if tension >= 1.0:
-		if water >= TEAR_TAKES:
-			_tear()
-		else:
+		if water < TEAR_TAKES:
 			dry = true
+		elif formed_enough():
+			_tear()
 
 ## True once a tuft is torn off and in hand.
 func torn() -> bool:
@@ -319,6 +591,7 @@ func into_ball(ball: Node3D) -> void:
 func supply(amount: float) -> float:
 	var granted := clampf(amount,0.0,water)
 	water -= granted
+	if water < TEAR_TAKES: wrung = true
 	given += granted
 	_fed += granted
 	return granted
@@ -333,10 +606,10 @@ func _tear() -> void:
 	_tuft_water = TEAR_TAKES
 	_tuft_speed = Vector3.ZERO
 	var back := -_stretch.normalized() if _stretch.length() > 0.01 else Vector3.UP
-	_release_weights(RECOIL)
+	_release_weights(RECOIL*size)
 	for k in range(NECK):
 		var i := BODY+k
-		var v := back*randf_range(1.0,3.0)+Vector3(randf_range(-1,1),randf_range(-0.5,1),randf_range(-1,1))
+		var v := (back*randf_range(1.0,3.0)+Vector3(randf_range(-1,1),randf_range(-0.5,1),randf_range(-1,1)))*size
 		_wisps.append([_at[i],v,0.0])
 	while _wisps.size() > WISPS: _wisps.pop_front()
 	tension = 0.0
@@ -363,15 +636,18 @@ func _on_plane(point: Vector2) -> Vector3:
 # --- Frames ------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	delta = minf(delta,0.1)
+	if summoned: _step_presence(delta)
 	visible = present()
 	if not visible: return
-	delta = minf(delta,0.1)
 	_time += delta
+	# A held tuft waiting on the forming cloud tears as soon as it can.
+	if state == "held" and tension >= 1.0 and water >= TEAR_TAKES and formed_enough(): _tear()
 	var editor := _editor()
 	# It gathers water back only while it is left alone, not while it gives.
 	if (state == "idle" or state == "returning") and not _feeding: water = minf(CAPACITY,water+REFILL*delta)
 	shown = lerpf(shown,water/CAPACITY,1.0-exp(-SHOW_RATE*delta))
-	_place(editor)
+	_place(editor,delta)
 	_step_puffs(delta)
 	_step_tuft(delta)
 	_step_feed(editor,delta)
@@ -379,8 +655,18 @@ func _process(delta: float) -> void:
 
 ## The cloud's middle and frame: behind the plate from the camera, easing
 ## round after it, swaying and bobbing. Held, it stays where it was taken.
-func _place(editor: Node) -> void:
+func _place(editor: Node, delta: float) -> void:
 	if state == "held" or state == "carried": return
+	if summoned:
+		# Summoned it stays where it was called, floating, till it leaves.
+		if presence == "leaving": _anchor += (_drift*smoothstep(0.0,0.35,_leave)+Vector3.UP*RISE*size)*delta
+		_bob_time += delta
+		var t := _bob_time
+		# All start at nothing, so it sets off from where it formed.
+		var across := sin(t*TAU/SWAY_SECONDS)*FLOAT_SWAY+sin(t*TAU/WANDER_SECONDS.x)*WANDER
+		var deep := sin(t*TAU/WANDER_SECONDS.y)*WANDER*WANDER_DEPTH
+		centre = _anchor+(frame.x*across+frame.z*deep+Vector3.UP*sin(t*TAU*BOB_RATE)*BOB)*size
+		return
 	var middle: Vector3 = (editor.terrain as Node3D).global_position
 	var camera: Camera3D = scene.camera
 	var away := middle-camera.global_position
@@ -401,8 +687,9 @@ func _step_puffs(delta: float) -> void:
 	if state == "held":
 		var reach := _pointer-_grab
 		var length := reach.length()
-		_stretch = reach/length*STRETCH*(1.0-exp(-length/STRETCH)) if length > 0.001 else Vector3.ZERO
-	var tremble := TREMBLE*pow(tension,3.0)
+		var most := STRETCH*size
+		_stretch = reach/length*most*(1.0-exp(-length/most)) if length > 0.001 else Vector3.ZERO
+	var tremble := TREMBLE*size*pow(tension,3.0)
 	for i in range(BODY):
 		var goal := Vector3.ZERO
 		if state == "held":
@@ -435,7 +722,7 @@ func _step_tuft(delta: float) -> void:
 		var home := centre+frame*_grab_rest
 		_tuft_speed += ((home-_tuft)*TUFT_FOLLOW*0.25-_tuft_speed*TUFT_DAMP*0.5)*delta
 		_tuft += _tuft_speed*delta
-		if _tuft.distance_to(home) < 0.8 or _tuft_age > RETURN_SECONDS:
+		if _tuft.distance_to(home) < 0.8*size or _tuft_age > RETURN_SECONDS:
 			water = minf(CAPACITY,water+_tuft_water)
 			_tuft_water = 0.0
 			state = "idle"
@@ -466,10 +753,27 @@ func _draw() -> void:
 	var puffs := _puffs.multimesh
 	var scale := lerpf(SHRUNK,1.0,shown)
 	var belly := BELLY_DRY.lerp(BELLY_FULL,shown)
+	# Leaving, it pales as it thins.
+	if presence == "leaving": belly = belly.lerp(Color(1,1,1),_leave*0.6)
 	for i in range(BODY):
 		var breath := 1.0+0.035*sin(_time*0.7+i*1.7)
-		_at[i] = centre+frame*(_rest[i]*scale)+_offset[i]
-		_size[i] = _radius[i]*scale*breath
+		_at[i] = centre+frame*(_rest[i]*scale*size)+_offset[i]
+		_size[i] = _radius[i]*scale*breath*size
+		if presence == "forming":
+			# Gathering in from wide and swelling from nothing, with an
+			# overshoot and a settle.
+			var tau := _form_time-_delay[i]
+			if tau <= 0.0:
+				_at[i] = _form_from[i]
+				_size[i] = _form_from_r[i]
+			else:
+				_at[i] = _form_from[i].lerp(_at[i],_gather(tau))
+				_size[i] = lerpf(_form_from_r[i],_size[i],_swell(tau))
+		elif presence == "leaving":
+			# Outer puffs first, drifting apart as they go.
+			var o := _thin[i]
+			_at[i] += frame*(_rest[i]*size*0.35*_leave)
+			_size[i] *= 1.0-smoothstep(o*0.5,o*0.5+0.5,_leave)
 		# Low puffs are belly all over; high ones only underneath.
 		var share: Vector2 = _settings.belly
 		var low := clampf(0.9-_rest[i].y*0.45,share.x,share.y)
@@ -479,7 +783,7 @@ func _draw() -> void:
 	var root := centre+frame*_grab_rest
 	for k in range(NECK):
 		var f := (k+1.0)/(NECK+1.0)
-		var r := NECK_RADIUS*scale*(1.0-0.55*tension)*(1.0-0.3*absf(f-0.5)*2.0)
+		var r := NECK_RADIUS*size*scale*(1.0-0.55*tension)*(1.0-0.3*absf(f-0.5)*2.0)
 		if state != "held" or stretched < 0.4: r = 0.0
 		_set_puff(puffs,BODY+k,root.lerp(root+_stretch,f),r,belly)
 	# The tuft: in hand, condensing into the ball, or drifting home.
@@ -489,16 +793,64 @@ func _draw() -> void:
 	var tuft_offsets := [Vector3(-0.45,0.0,0.1),Vector3(0.4,0.1,-0.1),Vector3(0.0,0.4,0.0),Vector3(0.05,-0.1,0.45)]
 	for k in range(TUFT):
 		var wobble := sin(_time*9.0+k*1.9)*0.06
-		_set_puff(puffs,BODY+NECK+k,_tuft+frame*(tuft_offsets[k] as Vector3)*maxf(tuft,0.2),TUFT_RADIUS*tuft*(1.0+wobble),belly)
+		_set_puff(puffs,BODY+NECK+k,_tuft+frame*(tuft_offsets[k] as Vector3)*maxf(tuft,0.2)*size,TUFT_RADIUS*size*tuft*(1.0+wobble),belly)
 	for k in range(WISPS):
 		var i := BODY+NECK+TUFT+k
 		if k < _wisps.size():
 			var wisp: Array = _wisps[k]
 			var fade := 1.0-float(wisp[2])/WISP_SECONDS
-			_set_puff(puffs,i,wisp[0],NECK_RADIUS*0.6*fade,belly)
+			_set_puff(puffs,i,wisp[0],NECK_RADIUS*size*0.6*fade,belly)
+		elif presence == "forming" and _form_time < GATHER_SECONDS+0.1:
+			# Forming, the wisps curl in to the pinch and are drawn into it.
+			var u := clampf(_form_time/(GATHER_SECONDS+0.1),0.0,1.0)
+			var angle := TAU*(k+0.3)/WISPS+SWIRL*u
+			var out := Vector3(cos(angle),sin(angle)*0.55,sin(angle)*0.4)*GATHER_SPREAD*1.1*(1.0-_gather(u*PUFF_SECONDS))
+			_set_puff(puffs,i,_focus+frame*(out*size),NECK_RADIUS*size*0.55*sin(PI*u),Color(1,1,1).lerp(belly,0.3))
 		else:
 			_set_puff(puffs,i,centre,0.0,belly)
-	_draw_drops()
+	if _drops.is_empty() and presence == "forming": _draw_gather()
+	else: _draw_drops()
+
+## A puff's gathering in, 0 to 1 over its PUFF_SECONDS, `tau` seconds in: a
+## critically damped ease, still at both ends.
+func _gather(tau: float) -> float:
+	if tau >= PUFF_SECONDS: return 1.0
+	return 1.0-exp(-GATHER_RATE*tau)*(1.0+GATHER_RATE*tau)
+
+## A puff's swelling, `tau` seconds in: an underdamped spring from 0 to 1 that
+## overshoots once and settles.
+func _swell(tau: float) -> float:
+	if tau >= PUFF_SECONDS: return 1.0
+	return 1.0-exp(-SWELL_DAMP*tau)*cos(SWELL_FREQ*tau)
+
+## Forming: droplets spiral in from round the cloud to the pinch, speeding up
+## as they come, stretched along their way, and vanish into it.
+func _draw_gather() -> void:
+	var drops := _drop_node.multimesh
+	var count := 0
+	for bead in _beads:
+		if count >= DROPS: break
+		var u := (_form_time-bead.z)/GATHER_SECONDS
+		if u <= 0.0 or u >= 1.0: continue
+		var at := _bead_at(bead,u)
+		var ahead := _bead_at(bead,minf(u+0.03,1.0))-at
+		var r := 0.08*size*(1.0-0.5*u)
+		var basis := Basis.from_scale(Vector3.ONE*r)
+		if ahead.length() > 0.0001:
+			var along := ahead.normalized()
+			var side := along.cross(Vector3.UP if absf(along.y) < 0.95 else Vector3.RIGHT).normalized()
+			basis = Basis(side,along,side.cross(along))*Basis.from_scale(Vector3(r,r*(1.5+2.5*u),r))
+		drops.set_instance_transform(count,Transform3D(basis,at))
+		drops.set_instance_color(count,Color(1,1,1,smoothstep(0.0,0.2,u)))
+		count += 1
+	drops.visible_instance_count = count
+
+## A gathering droplet `u` of the way in: round the pinch in the cloud's own
+## frame, turning SWIRL as it closes, the reach easing in (slow, then quick).
+func _bead_at(bead: Vector4, u: float) -> Vector3:
+	var angle := bead.x+SWIRL*u
+	var reach := bead.y*(1.0-u*u)
+	return _focus+frame*(Vector3(cos(angle),sin(angle)*0.6+bead.w*(1.0-u),sin(angle)*0.5)*reach*size)
 
 ## A puff at `at` of radius `r` (hidden at nothing: a MultiMesh instance must
 ## keep a transform that is not all zero).
@@ -512,7 +864,7 @@ func _draw_drops() -> void:
 	var count := mini(_drops.size(),DROPS)
 	drops.visible_instance_count = count
 	if count == 0 or not is_instance_valid(_ball): return
-	var from := centre+Vector3.DOWN*1.1*lerpf(SHRUNK,1.0,shown)
+	var from := centre+Vector3.DOWN*1.1*size*lerpf(SHRUNK,1.0,shown)
 	var to := _ball.global_position+Vector3.UP*float(_ball.get("radius"))
 	var middle := from.lerp(to,0.5)+Vector3.UP*2.0
 	var across := frame.x
