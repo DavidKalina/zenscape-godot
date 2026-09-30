@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://8jfemaab3yob"
-path="res://.godot/imported/water.svg-52c2a65915e36b26a20f4a61e339bb74.ctex"
+uid="uid://sr3tbd2nu7pp"
+path="res://.godot/imported/water_drop.svg-3e5e4bd7670959a6fd8721d431462a88.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/tray/water.svg"
-dest_files=["res://.godot/imported/water.svg-52c2a65915e36b26a20f4a61e339bb74.ctex"]
+source_file="res://assets/ui/tray/water_drop.svg"
+dest_files=["res://.godot/imported/water_drop.svg-3e5e4bd7670959a6fd8721d431462a88.ctex"]
 
 [params]
 

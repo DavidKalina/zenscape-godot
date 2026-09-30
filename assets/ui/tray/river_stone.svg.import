@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dpejbi1uqqfxa"
-path="res://.godot/imported/seeds.svg-f7631bfdd79fe92c49dcf71996ebdbcf.ctex"
+uid="uid://c6cwbpqmbuoxk"
+path="res://.godot/imported/river_stone.svg-73944b5da6fac06568d8e28d5971573d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/tray/seeds.svg"
-dest_files=["res://.godot/imported/seeds.svg-f7631bfdd79fe92c49dcf71996ebdbcf.ctex"]
+source_file="res://assets/ui/tray/river_stone.svg"
+dest_files=["res://.godot/imported/river_stone.svg-73944b5da6fac06568d8e28d5971573d.ctex"]
 
 [params]
 

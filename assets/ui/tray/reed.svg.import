@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://rurbdki46yv5"
-path="res://.godot/imported/stones.svg-438edb75e9c0bd31290708f3c928fc95.ctex"
+uid="uid://dpso5jp3pg7vt"
+path="res://.godot/imported/reed.svg-1c50e472fc33061711083ee8094dadc5.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/tray/stones.svg"
-dest_files=["res://.godot/imported/stones.svg-438edb75e9c0bd31290708f3c928fc95.ctex"]
+source_file="res://assets/ui/tray/reed.svg"
+dest_files=["res://.godot/imported/reed.svg-1c50e472fc33061711083ee8094dadc5.ctex"]
 
 [params]
 
