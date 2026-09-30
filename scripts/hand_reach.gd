@@ -41,7 +41,8 @@ extends Node
 ## shows the zone on hover: the rim grip over the rim, a ready pinch over land.
 ## Anywhere else in the world is the void: the hand floats ready on the
 ## pointer's ray, a click there snaps day to night (scripts/void_snap.gd) and
-## Shift-click steps the golden hours. The hover stands the hand down while the
+## Shift-click steps the golden hours; a still hold there calls the cloud
+## (scripts/sky_cloud.gd, docs/scenic/sky-cloud.md "Summoned"). The hover stands the hand down while the
 ## camera moves (`camera_moving`).
 ##
 ## The rim's grab is shared with the snow-globe shake (another slice): it
@@ -212,6 +213,18 @@ const VOID_HINT := "Click the sky for night or day"
 ## source. Its hints, over it and when it is pulled dry.
 const CLOUD_HINT := "Pull the cloud for water"
 const CLOUD_DRY_HINT := "Wrung dry for now"
+## Summoned (docs/scenic/sky-cloud.md "Summoned"): a press held still in the
+## void (under CLICK_PIXELS) SUMMON_HOLD seconds calls the cloud into the
+## hand's pinch; quicker clicks still snap and quicker drags are still the
+## wind. The hand cups while it forms and pinches once it has formed, or once
+## the pull passes PINCH_TENSION. The void's hint names the summon, until it
+## has been used SUMMON_HINT_UNTIL times or read SUMMON_READS times: after the
+## demo cloud has shown, or once the snap's hint is done.
+const SUMMON_HOLD := 0.35
+const PINCH_TENSION := 0.08
+const SUMMON_HINT := "Hold in the sky to call a cloud"
+const SUMMON_HINT_UNTIL := 2
+const SUMMON_READS := 5
 ## A grown tree bent and let go (docs/scenic/sky-cloud.md "Seeds") flicks its
 ## spores out the way it whips, if it was bent at least FLICK_MIN of the way
 ## over: they land FLICK_REACH m out (a small tug to a full bend), a veil
@@ -243,6 +256,11 @@ var snap_sound: SnapSound
 ## under the pointer).
 var cloud: SkyCloud
 var _source: SkyCloud
+## Seconds the void's press has been held, the pointer it last had, and
+## whether a summoned cloud's hand has closed its pinch yet.
+var _void_held := 0.0
+var _void_last := Vector2.ZERO
+var _pinched := true
 ## The golden outline round the tree under the pointer (scripts/tree_outline.gd),
 ## made in setup under --modeless.
 var outline: TreeOutline
@@ -819,6 +837,11 @@ func _process(delta: float) -> void:
 	elif outline != null and outline.tree_id > 0: _outline_tree(-1)
 	if outline != null and outline.tree_id > 0: outline.spores_ready = _tree_rested(outline.tree_id)
 	if modeless:
+		if cloud != null: cloud.calm = holding.is_empty() and available()
+		# A still hold in the void calls the cloud (before the wind reads it).
+		if holding == "void":
+			_void_held += delta
+			if _void_travel <= CLICK_PIXELS and _void_held >= SUMMON_HOLD and cloud != null and cloud.summoned: _summon()
 		if wind != null:
 			# A press let go off the window never releases: the wind lets go too.
 			if holding != "void" and not wind.state.is_empty(): wind.state = ""
@@ -929,6 +952,10 @@ func _hover(point: Vector2) -> void:
 	if modeless and hover_zone == "void":
 		zone = "void"
 		text = VOID_HINT
+		# Once the demo cloud has shown, or the snap is known, the summon.
+		if cloud != null and cloud.summoned and not _hint_quiet("summon") and (SkyCloud.demo_shown or _hint_quiet("void")):
+			zone = "summon"
+			text = SUMMON_HINT
 	if modeless and hover_zone == "cloud":
 		zone = _source.kind
 		text = CLOUD_HINT
@@ -940,6 +967,7 @@ func _hover(point: Vector2) -> void:
 ## any gust counts for the void), or read HOVER_UNTIL times.
 func _hint_quiet(zone: String) -> bool:
 	if zone.is_empty(): return true
+	if zone == "summon": return int(uses.get("summon",0)) >= SUMMON_HINT_UNTIL or int(hint_reads.get(zone,0)) >= SUMMON_READS
 	var used := int(uses.get(zone,0))+(int(uses.get("wind",0)) if zone == "void" else 0)
 	return used >= HINT_UNTIL or int(hint_reads.get(zone,0)) >= HOVER_UNTIL
 
@@ -1102,7 +1130,9 @@ func _drive_hand_modeless() -> void:
 		return
 	if holding == "cloud":
 		reach_point = _editor().terrain.to_local(_source.hand_point())
-		_set_hand(hand,"cloud",reach_point,null)
+		# A summoned cloud forms in a cupped hand; the pinch closes on it.
+		if not _pinched and (not _source.forming() or _source.tension >= PINCH_TENSION): _pinched = true
+		_set_hand(hand,"cloud" if _pinched else "summon",reach_point,null)
 		return
 	if holding == "tree":
 		if is_instance_valid(_tree): reach_point = _editor().terrain.to_local(_tree.center(float(_tree.tree_height)*0.6))
@@ -1187,6 +1217,8 @@ func _void_press(point: Vector2) -> bool:
 	holding = "void"
 	_press_pos = point
 	_void_travel = 0.0
+	_void_held = 0.0
+	_void_last = point
 	if wind != null: wind.press(point)
 	reach_point = _void_point(point)
 	_show_hint("")
@@ -1195,6 +1227,7 @@ func _void_press(point: Vector2) -> bool:
 
 func _void_drag(point: Vector2) -> void:
 	_void_travel = maxf(_void_travel,point.distance_to(_press_pos))
+	_void_last = point
 	reach_point = _void_point(point)
 	if wind == null: return
 	wind.drag(point)
@@ -1273,12 +1306,31 @@ func _cloud_press(point: Vector2) -> bool:
 	_source = found[0]
 	holding = "cloud"
 	_press_pos = point
+	_pinched = true
 	_source.grab(point,found[1])
 	reach_point = _editor().terrain.to_local(_source.hand_point())
 	_set_cursor(Input.CURSOR_DRAG)
 	_show_hint("")
 	holding_changed.emit("cloud")
 	return true
+
+## A still hold in the void calls the cloud (scripts/sky_cloud.gd `summon`):
+## it forms round the hand's pinch, where the hand floats on the pointer's
+## ray, and the press is the cloud's from here, so the same hold pulls it.
+func _summon() -> void:
+	var point := _void_last
+	if wind != null: wind.state = ""
+	var at: Vector3 = _editor().terrain.to_global(_void_point(point))
+	_source = cloud
+	holding = "cloud"
+	_press_pos = point
+	_pinched = false
+	cloud.summon(point,at)
+	uses["summon"] = int(uses.get("summon",0))+1
+	reach_point = _editor().terrain.to_local(cloud.hand_point())
+	_set_cursor(Input.CURSOR_DRAG)
+	_show_hint("")
+	holding_changed.emit("cloud")
 
 ## The cloud stretches after the pointer and, pulled far enough, tears a
 ## tuft off into the hand. Carried over the land the tuft becomes the water

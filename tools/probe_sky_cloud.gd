@@ -1,6 +1,10 @@
 extends SceneTree
-## Headless probe of the sky's cloud (docs/scenic/sky-cloud.md), on the cozy
-## worlds scene with synthesized input:
+## Headless probe of the always-there sky cloud (docs/scenic/sky-cloud.md),
+## kept behind `--always-cloud` (the default is summoned: see
+## tools/probe_summoned_cloud.gd), on the cozy worlds scene with synthesized
+## input:
+##   - under --always-cloud nothing is summoned: a long still hold on empty
+##     sky still snaps;
 ##   - the cloud floats in the sky, on screen, full;
 ##   - hover takes the "cloud" zone and the hand opens over it; empty sky
 ##     still snaps;
@@ -16,7 +20,7 @@ extends SceneTree
 ##     flicks its spores the way it whips, which settle and grow mostly its
 ##     own kind (the land bends some);
 ##     then it rests.
-##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_cloud.gd -- --no-title
+##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_cloud.gd -- --no-title --always-cloud
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -90,6 +94,9 @@ func run() -> void:
 	scene.world_clock.running = false
 	cloud = reach.get("cloud")
 	check("the cloud is made under the modeless hand",cloud != null)
+	if cloud != null and cloud.summoned:
+		check("run with --always-cloud (the summoned cloud has its own probe)",false)
+		cloud = null
 	if cloud == null:
 		quit(1)
 		return
@@ -123,6 +130,14 @@ func run() -> void:
 		button(sky,false)
 		await frames(20)
 		check("a click on empty sky still snaps",reach.snaps == snaps+1)
+		# A long still hold summons nothing and is still a snap.
+		var stood: Vector3 = cloud.centre
+		button(sky,true)
+		await frames(40)
+		check("a long still hold calls no cloud",reach.holding == "void" and cloud.summons == 0,[reach.holding,cloud.summons])
+		button(sky,false)
+		await frames(20)
+		check("and still snaps, the cloud where it was",reach.snaps == snaps+2 and cloud.centre.distance_to(stood) < 2.0,[reach.snaps-snaps,cloud.centre.distance_to(stood)])
 
 	# A short pull springs back.
 	at = cloud_screen()
