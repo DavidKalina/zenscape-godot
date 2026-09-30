@@ -479,7 +479,8 @@ func _move_deer(step: float) -> void:
 				var p: Vector2 = m.p
 				var distance := p.distance_to(target)
 				if distance > 0.02:
-					var d := minf(DEER_SPEED*step*(1.0 if m.scale >= 1.0 else 1.15),distance)
+					# `hurry` is a startled deer's (scripts/life_notice.gd).
+					var d := minf(DEER_SPEED*float(m.get("hurry",1.0))*step*(1.0 if m.scale >= 1.0 else 1.15),distance)
 					m.p = p+(target-p)/distance*d
 					m.yaw = lerp_angle(float(m.yaw),atan2(target.x-p.x,target.y-p.y),minf(1.0,step*4.0))
 					moving = true
@@ -556,7 +557,7 @@ func _play_deer(rig: RefCounted, m: Dictionary, moving: bool, step: float) -> vo
 					if next != "Idle": rig.then("Idle")
 					# Keep the head up long enough for the alert to play out.
 					if next == "Alert": m.next = maxf(float(m.get("next",0.0)),float(m.get("age",0.0))+rig.length("HeadUp")+rig.length("Alert"))
-	rig.speed = DEER_SPEED*(1.0 if float(m.scale) >= 1.0 else 1.15)/(Rigs.DEER_WALK_SPEED*float(m.scale)) if moving else 1.0
+	rig.speed = DEER_SPEED*float(m.get("hurry",1.0))*(1.0 if float(m.scale) >= 1.0 else 1.15)/(Rigs.DEER_WALK_SPEED*float(m.scale)) if moving else 1.0
 	rig.advance(step)
 
 # --- Rainbow --------------------------------------------------------------------

@@ -50,13 +50,14 @@ This is the cheapest source of surprises. Most of it wires together systems that
 - **An eagle snatches a fish** (the user's long-term want). It needs the eagle; see section 3. (L, rare)
 
 ### The world notices the hand
-Nothing reacts to the hand now. Each of these is small and makes the world feel alive under your fingers.
+Each of these is small and makes the world feel alive under your fingers. All but the clouds are built on `feature/sp-hand-notice` (`docs/scenic/life.md`, "Noticing"); they are checked headless only.
 - **A gust** flushes the gulls, the fish dart, the deer lift their heads or bolt, and the fireflies scatter and settle again. (S)
 - **A poke near water** sends frogs plopping in. Fish scatter from the rings, then come back to nose at them. (S)
 - **Snapping to night** switches the fireflies on in a wave. Snapping to dawn gives a dawn chorus. (S)
 - **Gusts push clouds**, so you can steer rain over the land you want to grow. (M)
 
 ### The wanderer is noticed
+Built with the hand's reactions (see above).
 - The deer step away from the figure. The snake hisses at it. Fish follow its shadow at the bank. Frogs jump in as it passes. (S each)
 
 ### Seasons and plants

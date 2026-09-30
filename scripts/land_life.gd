@@ -26,6 +26,7 @@ const Moments = preload("res://scripts/life_moments.gd")
 const Snakes = preload("res://scripts/life_snakes.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BirdFlight = preload("res://studies/bird_flight.gd")
+const Notice = preload("res://scripts/life_notice.gd")
 
 ## Microseconds a survey may spend per frame.
 const SURVEY_BUDGET_USEC := 1200
@@ -128,6 +129,8 @@ var worst_usec := 0
 var survey_worst_usec := 0
 var moments: Node3D
 var snakes: Node3D
+## Creatures noticing the hand and the wanderer (scripts/life_notice.gd).
+var notice: RefCounted
 var material: Material
 
 var _tick := 0.0
@@ -181,6 +184,7 @@ func setup(owner_scene: Node3D) -> void:
 	snakes = Snakes.new()
 	add_child(snakes)
 	snakes.setup(self)
+	notice = Notice.new(self)
 	editor.play_geometry_changed.connect(_changed)
 	editor.stroke_finished.connect(func(_center: Vector3, _radius: float, _mode: String) -> void: _changed(true))
 	# A pour lands after its stroke has finished, once it settles on a worker.
@@ -276,6 +280,7 @@ func clear() -> void:
 		sites[kind].clear()
 	if moments != null: moments.clear()
 	if snakes != null: snakes.clear()
+	if notice != null: notice.clear()
 	_reading = null
 	_planning.clear()
 	survey = null
@@ -351,6 +356,7 @@ func _process(delta: float) -> void:
 		if _tick >= TICK:
 			_tick = 0.0
 			_arrive_due()
+		notice.advance(step)
 		_animate(step)
 		moments.advance(step,minf(delta,0.1))
 		snakes.advance(step)
@@ -813,11 +819,13 @@ func _birds_out() -> bool:
 func _move_fish(site: Dictionary, _step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,SETTLE,clock-float(site.born))*fade
 	var t: float = clock*float(site.speed)+float(site.phase)
-	var reach := 0.35
-	var candidate: Vector3 = site.home+Vector3(sin(t)*reach,0,cos(t*0.83)*reach)
+	# `hush`, `nudge` and `steer` are a startled or curious fish's (life_notice.gd).
+	var reach := 0.35*(1.0-float(site.get("hush",0.0)))
+	var candidate: Vector3 = site.home+Vector3(sin(t)*reach,0,cos(t*0.83)*reach)+Vector3(site.get("nudge",Vector3.ZERO))
 	if survey.wet_at(Vector2(candidate.x,candidate.z)): site.p = candidate
 	var heading := Vector2(cos(t)*reach,-0.83*sin(t*0.83)*reach)
 	var yaw := atan2(heading.x,heading.y)+sin(clock*9.0+float(site.phase))*0.03
+	if site.has("steer"): yaw = lerp_angle(yaw,float(site.steer.x),float(site.steer.y))
 	var p: Vector3 = site.p
 	p.y = float(site.level)-float(site.sink)-(1.0-grow)*0.3
 	var scale := maxf(float(site.size)*grow,0.00001)
@@ -894,7 +902,10 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 			if float(site.age) > 2.2:
 				var home: Vector3 = site.home
 				site.yaw = lerp_angle(float(site.yaw),atan2(home.x-site.p.x,home.z-site.p.z),1.0-exp(-step*3.0))
-			if float(site.age) >= 3.5 or site.leaving: _hop(site,site.home,"out")
+			# A startled frog stays under a while longer (`lurk`, life_notice.gd).
+			if float(site.age) >= 3.5+float(site.get("lurk",0.0)) or site.leaving:
+				site.lurk = 0.0
+				_hop(site,site.home,"out")
 	var scale := Vector3.ONE*size*smoothstep(0.0,0.3,clock-float(site.born))*fade*squash
 	if site.mode == "sit":
 		# A slow breath through the throat, not a shiver.

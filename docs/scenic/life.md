@@ -9,6 +9,7 @@ Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fir
 - `scripts/life_models.gd`: low-poly procedural meshes for the fish, frogs and frogspawn, and the classic heron and deer (`--classic-life`). Fish and frogs come in kinds, one table entry each (`FISH_KINDS`, `FROG_KINDS`).
 - `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
 - `scripts/life_snakes.gd`: the grass snake, built and moved in code.
+- `scripts/disturbance.gd` and `scripts/life_notice.gd`: player actions raise a disturbance, and the creatures near it notice (see "Noticing").
 - `tools/probe_land_life.gd` and `tools/probe_bigfoot_sighting.gd`: the headless probes.
 - `tools/probe_snake.gd` and `tools/render_snake_probe.py`: the snake's headless probe and a Blender renderer for what it dumps.
 - `tools/dump_life_models.gd` and `tools/render_life_models.py`: every fish and frog kind dumped headless and rendered in Blender (`-b`) as a contact sheet, or as a koi pond and a wild pond (`--pond`), for judging the designs without opening the game.
@@ -323,6 +324,27 @@ The snake probe digs the same pond, with shrubs on its west bank, and waits for 
 - `cam`: the probe's player camera (`--cam-scale` pulls it in along its line to the snake);
 - `shoulder`: over the head toward a point.
 
+## Noticing
+
+The creatures notice the hand and the wanderer (`feature/sp-hand-notice`). Player actions raise a disturbance through a shared static hub (`scripts/disturbance.gd`: `raise(point, radius, strength, kind, detail)`), and `scripts/life_notice.gd`, owned by LandLife, answers each one once: it finds the creatures near it then, schedules their reactions, and steps only those reacting. Nothing looks for the hand every frame. `--no-notice` turns it off.
+
+| Disturbance | Raised by | What notices |
+|---|---|---|
+| `gust`, with its front's timing | `wind_gust.gd` `release` (hand gusts and sky swipes) | Each creature reacts as the head reaches it. Gulls pull up and are pushed downwind, and some turn their circling round. Fish dart downwind and drift home. Lit fireflies are blown off their places and drift back. Deer lift their heads, or bolt for the trees above 0.6 of full air. A standing heron leaves above 0.5. Sitting frogs go in above 0.6. |
+| `poke` | `land_clay.gd` `_poke` | Rings where it lands in water. Frogs within 3 m plop in, one after another, and stay under 3-7 s longer. Fish within 3.5 m scatter, then come back to nose at the rings for 4-7 s. Deer within 7 m look up, and within 3.5 m walk off. A heron within 4 m leaves. |
+| `night` | `void_snap.gd` snapping to night | Every settled firefly goes dark, then each lights in a wave out from where you look, at 3 m/s. Its blink cycle is set so that it lights on its first flash. |
+| `dawn` | `void_snap.gd` snapping to day | Three songs from the woods within two seconds, if the world has woods or birds (`song_presence`). |
+| `figure` | `wanderer_eye.gd`: set down; each 0.7 m walked (a run is 1); every 2 s standing in its eyes | Sitting frogs within 2.2 m (3.2 m for a runner) jump in and stay under while it is near (15 s at most). Fish within 4.5 m drift over to its shadow at the bank and hang there facing it. One within 1 m of a wading figure darts. Deer look up within 8 m and step away within 5 m. They bolt within 2.5 m, or within 5 m of a runner. A heron within 5 m leaves. The snake watches and hisses at the figure as it does at the camera (`LifeSnakes.watcher`). |
+
+Reactions write only into what the creatures already read, and nothing is kept once a reaction is over:
+- **Fish:** `nudge`, an offset on a spring, which is stiff and a little under-damped for the dart, so the fish overshoots and swings back, and soft on the way home. `hush` quiets the circling. `steer` turns the fish to face its way when it is quick, or what it noses at when it hangs.
+- **Frogs:** `lurk`, extra seconds of the swim.
+- **Deer:** `hurry`, a multiple of the walk speed, and the rig's clip follows it. They go through the head-up beat before they move.
+- **Heron:** a shortened `stay`, so it finishes a strike or step, then takes off.
+- **Gulls and fireflies:** their own flight state and instances.
+
+A creature that leaves or is released mid-reaction is dropped. There is no run clip, so a bolting deer plays Walk at 2.3 times the rate.
+
 ## Tunables
 
 All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `life_snakes.gd`:
@@ -332,6 +354,8 @@ All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `
 - Each moment's `*_DELAY`, `*_CHANCE`, `*_COOLDOWN` and `*_STAY`, and the `DAWN` and `DUSK` phase windows.
 - The snake's `SNAKE_*`, `MORNING`, `BASK`, `HUNT` and `SWIM_CHANCE`; its size (`LENGTH`, `RADIUS`); its motion (`CRUISE`, `SWIM`, `WEAVE`, `WAVE`, `LIFT`, `RECOIL`, `ANTICIPATION`, `GOAL_*`, `TRAVEL_HZ`, `SPRING_*`); and how it meets you (`NOTICE`, `WATCH_MOST`, `TURN_TO`, `HISS_NEAR`, `HISS_*`, `JAW_OPEN`, `SWELL`, `PARTING_HISS`).
 
+What notices what, how far and how hard: the constants at the top of `life_notice.gd` (`DART`, `DART_SPRING`, `NOSE_*`, `FISH_*`, `FROG_*`, `LURK`, `BIRD_*`, `WHEEL`, `FLY_*`, `WAVE_*`, `DEER_*`, `HERON_*`, `CHORUS*`).
+
 The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`, `WADE_MAX`, `MIN_BODY_AREA`, `FOREST_*` and `DAMP_REACH`.
 
 ## Open
@@ -340,6 +364,7 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 - At the default overview (43 m) the snake is a line one or two pixels wide. Only its motion and wake show from there; it is for looking at up close.
 - The snake's cover is where it vanishes, not something it hides under: a painted-grass world has no blades for it to slip between.
 - Fish live in ponds only, not streams.
+- Noticing is checked headless only. None of it has been seen or heard: the dart and nose springs, the gulls' lift, the firefly scatter and wave, the deer's bolt at a sped-up Walk, or the chorus.
 - Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
 - Sound: `scripts/genesis_audio.gd` listens to `LandLife.arrived` and `LandLife.moment` and reads the survey for its beds (`docs/scenic/sound.md`).

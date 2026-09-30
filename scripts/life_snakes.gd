@@ -255,6 +255,8 @@ var _hissed := false
 var _notice_ready := 0.0
 var _turn_ready := 0.0
 var _camera := Vector3(0,1000,0)
+## The wanderer's head, life-local, or INF (scripts/life_notice.gd).
+var watcher := Vector3.INF
 var _camera_d := INF
 var _head_pos := Vector3.ZERO
 var _rest_w := 0.0
@@ -941,9 +943,13 @@ func _see_camera() -> void:
 	var camera: Camera3D = life.scene.get("camera")
 	if camera == null or not camera.is_inside_tree():
 		_camera_d = INF
-		return
-	_camera = life.to_local(camera.global_position)
-	_camera_d = _camera.distance_to(_head_pos)
+	else:
+		_camera = life.to_local(camera.global_position)
+		_camera_d = _camera.distance_to(_head_pos)
+	# The wanderer is watched and hissed at as you are, when nearer.
+	if watcher != Vector3.INF and watcher.distance_to(_head_pos) < _camera_d:
+		_camera = watcher
+		_camera_d = watcher.distance_to(_head_pos)
 
 ## A warning: it rears back and up with a slow wind-up, opens its jaw and
 ## swells, holds, and eases down again.
