@@ -55,10 +55,24 @@ itself, not the land near it.
 | Push sideways | the world turns; spin it fast and time winds on (days, then seasons) |
 | Shift + push sideways | turns without winding time |
 | Shake | snow-globe weather: snow in winter, rain otherwise |
-| **Pull down**, let go | the block dips while you hold; on release the shapes you made spring up bigger (a blank plate gets a random range instead). Pull harder for more; the camera leans in with you and the pointer won't run out of screen |
+| **Pull down**, let go | the block dips while you hold; on release the shapes you made spring up bigger (a blank plate gets a random range instead). Pull harder for more; the pointer won't run out of screen |
 | **Keep pulling** past that, let go | the whole plate fills with height, a plateau to carve valleys and ravines into with the thumb |
 | Pull up, let go **slowly** | a basin sinks |
 | Pull up, **flick** | tosses the block; flick hard enough (or catch it and flick again) and it flips over into a new world |
+
+While you pull down, the camera swings low to look at the block from the
+side and then holds still, so you watch the block sink. The block squashes
+under the load, the trees stretch up behind it, and the earth creaks louder
+and higher the further you pull. Only a deep pull makes the camera follow,
+and slowly. When you let go, the block shoots up past its rest and stretches,
+the range bursts out of it, and a beat later the camera catches up, rises a
+little too far and settles back to your view.
+
+This is an experiment. `--pull-cam=b` is the default described above.
+`--pull-cam=a` skips the swing, `--pull-cam=c` keeps the low view after the
+release, and `--pull-cam=old` brings back the old camera, which leaned down
+with the block. See [docs/scenic/modeless-spring.md](scenic/modeless-spring.md)
+under "Pull feel (experiment)".
 
 ## The sky (left button off the diorama)
 
@@ -107,6 +121,7 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 
 - `--no-title` skips the title and opens a new plain; `--resume` opens the last saved place; `--generated` or `--seed N` opens a generated world. Each of these skips the title.
 - `--classic-controls` brings back the tool modes.
+- `--pull-cam=a|b|c|old` sets how the camera shows the edge pull (see "The edge" above). The default is `b`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
 
 ## Not reachable in the hand scheme yet
