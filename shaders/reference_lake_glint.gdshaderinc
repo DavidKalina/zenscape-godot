@@ -10,6 +10,8 @@ vec4 zs_lake_glint(vec3 reflected, vec3 sun, vec3 moon, float clear, float ice, 
 	vec3 warm = mix(vec3(1.0, 0.47, 0.18), vec3(1.0, 0.96, 0.82), smoothstep(0.02, 0.55, sun.y));
 	vec3 color = mix(vec3(0.38, 0.57, 0.85), warm, sunlight);
 	float weight = (shine * 0.62 + broad) * clear * clear
-		* mix(0.32, 1.0, sunlight) * (1.0 - ice) * enabled;
+		* mix(0.32, 1.0, sunlight) * (1.0 - ice) * enabled
+		// The moon's path is as bright as the moon is full.
+		* mix(0.5 - 0.5 * dot(moon, sun), 1.0, sunlight);
 	return vec4(color, weight);
 }

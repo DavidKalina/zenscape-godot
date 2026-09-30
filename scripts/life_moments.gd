@@ -50,6 +50,16 @@ const BOW_RISE := 6.0
 const BOW_HOLD := 30.0
 const BOW_FALL := 10.0
 const BOW_STRENGTH := 0.85
+## Moonbow: the same rain stopping at night (daylight under MOONBOW_DARK)
+## over a place BOW_RICHNESS rich, with the moon up and at least MOONBOW_FULL
+## lit; MOONBOW_CHANCE, then it glows MOONBOW_RISE/HOLD/FALL s.
+const MOONBOW_DARK := 0.1
+const MOONBOW_FULL := 0.9
+const MOONBOW_CHANCE := 0.5
+const MOONBOW_RISE := 12.0
+const MOONBOW_HOLD := 40.0
+const MOONBOW_FALL := 15.0
+const MOONBOW_STRENGTH := 0.35
 ## Bigfoot (docs/scenic/life.md, "Bigfoot: when he comes"): scenery mode only.
 ## A mature wood: BIGFOOT_TREES trees, richness BIGFOOT_RICHNESS and an edge
 ## with BIGFOOT_EDGE_TREES trees near, all held for BIGFOOT_SETTLE s of life.
@@ -97,6 +107,8 @@ var _deer_next := 0.0
 var _edge_since := -1.0
 var _rain := 0.0
 var _bow := {}
+var _night_rain := 0.0
+var _moonbow := {}
 var bigfoot: Node3D
 var _bigfoot_next := 0.0
 var _bigfoot_about := -1.0
@@ -197,6 +209,7 @@ func clear() -> void:
 	_water_since.clear()
 	_edge_since = -1.0
 	_end_bow()
+	_end_moonbow()
 
 func advance(step: float, real_step: float) -> void:
 	_check += step
@@ -210,6 +223,8 @@ func advance(step: float, real_step: float) -> void:
 		if not bigfoot.showing(): _bigfoot_gone()
 	_watch_rain(real_step)
 	if not _bow.is_empty(): _move_bow(step)
+	_watch_night_rain(real_step)
+	if not _moonbow.is_empty(): _move_moonbow(step)
 
 func _record(kind: String, p: Vector3) -> void:
 	history.append({"kind":kind,"at":life.clock,"p":p})
@@ -585,6 +600,31 @@ func _end_bow() -> void:
 	if life == null: return
 	var celestial: RefCounted = life.scene._celestial
 	if "moment_bow" in celestial: celestial.moment_bow = 0.0
+
+# --- Moonbow -------------------------------------------------------------------
+
+func _watch_night_rain(real_step: float) -> void:
+	var rain := _rain_now()
+	if rain > RAIN_WET: _night_rain += real_step
+	elif rain < RAIN_DRY:
+		var celestial: RefCounted = life.scene._celestial
+		var moon: Vector3 = celestial.state.get("zs_moon_direction",Vector3.DOWN)
+		if _night_rain >= RAIN_SECONDS and _moonbow.is_empty() and "moon_bow" in celestial and life.survey != null and life.survey.richness() >= BOW_RICHNESS and _daylight() < MOONBOW_DARK and moon.y > 0.05 and float(celestial.moon_lit) >= MOONBOW_FULL and _roll(MOONBOW_CHANCE):
+			_moonbow = {"age":0.0}
+			_record("moonbow",Vector3.ZERO)
+		_night_rain = 0.0
+
+func _move_moonbow(step: float) -> void:
+	_moonbow.age = float(_moonbow.age)+step
+	var age: float = _moonbow.age
+	life.scene._celestial.moon_bow = smoothstep(0.0,MOONBOW_RISE,age)*(1.0-smoothstep(MOONBOW_RISE+MOONBOW_HOLD,MOONBOW_RISE+MOONBOW_HOLD+MOONBOW_FALL,age))*MOONBOW_STRENGTH
+	if age >= MOONBOW_RISE+MOONBOW_HOLD+MOONBOW_FALL: _end_moonbow()
+
+func _end_moonbow() -> void:
+	_moonbow = {}
+	if life == null: return
+	var celestial: RefCounted = life.scene._celestial
+	if "moon_bow" in celestial: celestial.moon_bow = 0.0
 
 # --- Bigfoot -------------------------------------------------------------------
 

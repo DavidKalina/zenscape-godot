@@ -97,6 +97,9 @@ const HERON_DELAY := 1.5
 const DEER_GAIN := 0.1
 const BOW_GAIN := 0.08
 const BOW_DELAY := 1.5
+## The moonbow's swell: quieter and lower.
+const MOONBOW_GAIN := 0.05
+const MOONBOW_PITCH := 0.8
 ## Bigfoot: the birds hush this long; a knock comes with this chance, from
 ## KNOCK_BACK metres further into the wood, KNOCK_DELAY seconds after he shows.
 const HUSH_SECONDS := 50.0
@@ -370,6 +373,8 @@ func _on_moment(kind: String, position: Vector3) -> void:
 				at += _rng.randf_range(0.45,0.7)
 		"rainbow":
 			_pending.append([BOW_DELAY,"bow-swell",Vector3.ZERO,BOW_GAIN,1.0,false])
+		"moonbow":
+			_pending.append([BOW_DELAY,"bow-swell",Vector3.ZERO,MOONBOW_GAIN,MOONBOW_PITCH,false])
 		"bigfoot":
 			# The wood goes quiet. Sometimes, from further in, a knock and another.
 			_hush = HUSH_SECONDS

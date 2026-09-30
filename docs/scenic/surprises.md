@@ -30,6 +30,9 @@ These are wired into the default Genesis path now (see `life.md`, `emergence.md`
 | Grass snake on the bank | rich pond, sunny morning | uncommon |
 | Rainbow after rain | rain that stops over a rich world | uncommon |
 | Meteors | clear night | common (ambient) |
+| Aurora | a clear night that rolls it: 50% in winter, 20% late autumn, 2.5% otherwise | uncommon |
+| Moon phases | an 8-day lunar month; full-moon nights are brighter | common (ambient) |
+| Moonbow | night rain stopping under a near-full moon over a rich world | legendary |
 | Lightning starts a fire | rain with storm | rare (accidental) |
 | Bigfoot at the forest edge | big old forest, 10 min settled, dusk, dawn or mist | legendary |
 
@@ -66,7 +69,7 @@ Nothing reacts to the hand now. Each of these is small and makes the world feel 
 - **Spores carried over water** by a gust sow a forest on an island. (S, uncommon)
 
 ### Sky
-- **Aurora only on clear winter nights**, instead of always on. That turns it into something you find. (S, uncommon)
+- **Aurora only on clear winter nights**, instead of always on. That turns it into something you find. (S, uncommon) Done; see "Night sky" below.
 - **Meteors land.** Very rarely, a falling star comes down, leaves a glowing stone, and a strange flower grows there. (M, legendary)
 
 ## 3. New things, by what you build
@@ -101,7 +104,7 @@ Nothing reacts to the hand now. Each of these is small and makes the world feel 
 
 ### Sky and time
 - **Geese in a V** overhead in spring and autumn. (S, uncommon)
-- **Moon phases**, and a **moonbow** after night rain under a full moon. It reuses the rainbow. (S–M, legendary)
+- **Moon phases**, and a **moonbow** after night rain under a full moon. It reuses the rainbow. (S–M, legendary) Done; see "Night sky" below.
 - **Fireflies sync** their blinks when a meadow has been left alone long enough. (S, rare)
 - **Summer thunderstorms** scheduled rarely, with rolling thunder. (S, uncommon)
 - **Comet** across several nights, or an **eclipse**. (M, legendary)
@@ -139,3 +142,12 @@ This is my pick of the best payoff for about a month.
 9. Winter ice on ponds and the spring frogspawn burst. (M)
 
 Players see what exists through the photo labels, and later maybe through a quiet field journal with blank slots. No hints or objectives.
+
+## Night sky (built)
+
+All in `studies/celestial.gd`, drawn by `shaders/reference_sky.gdshader` and `reference_sky_common.gdshaderinc`.
+
+- **Aurora.** Each night (noon to noon on the world clock) rolls once by its season: `AURORA_CHANCE` is 0.5 in winter, 0.2 from `AURORA_LATE_AUTUMN` (season 0.62) and 0.025 the rest of the year. A chosen night gets a strength in `AURORA_STRENGTH` (0.35-1.15), an onset 7-11 h after noon (`AURORA_ONSET`) and 4-9 h of light (`AURORA_HOURS`), ending by 05:30. It fades in and out over `AURORA_FADE` (150 real s for the strongest) and only under cloud below `AURORA_CLOUD`. The look's `aurora_strength` (sliders, moods, presets, `--aurora`) is now a floor, 0 by default; studies without a clock keep only it.
+- **Moon phases.** `LUNAR_DAYS` (8) world days a month, starting `LUNAR_START` (0.85, waxing gibbous). The moon falls a turn behind the sun each month, so it rises later every night and a new moon is up by day. The disc is shaded as a sphere lit by the sun, with earthshine and faint seas; the lit part is HDR. Moonlight runs from `MOON_LIGHT.x` to `.y` of the old fixed moon, and the night fill from `MOON_FILL.x` to `.y`. The moon's lake glint follows its phase.
+- **Moonbow.** A life moment (`docs/scenic/life.md`): night rain stopping under a moon at least `MOONBOW_FULL` (0.9) lit.
+

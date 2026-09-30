@@ -170,5 +170,15 @@
       col *= 1.0 - 0.08 * ba * smoothstep(42.3, 44.0, a1) * (1.0 - smoothstep(48.5, 50.2, a2));
       col += zsRainbow(a, fwidth(a), dir) * ba;
     }
+    if (zs_moonbow > 0.001) {
+      // THE MOONBOW: the same bow about the antilunar point. Moonlight is too
+      // faint for the eye to find its colours, so it reads pale and nearly
+      // white, a breath of hue at its edges; it fades in rather than grows.
+      float mb = zs_moonbow * smoothstep(-0.55, -0.2, dir.y);
+      float am = degrees(acos(clamp(-dot(dir, zs_moon_direction), -1.0, 1.0))) / zs_bow_shape.x;
+      vec3 moonBow = zsRainbow(am, fwidth(am), dir);
+      float grey = dot(moonBow, vec3(0.2126, 0.7152, 0.0722));
+      col += mix(vec3(grey), moonBow, 0.18) * vec3(0.86, 0.92, 1.0) * mb;
+    }
     return col + zsAurora(dir);
   }
