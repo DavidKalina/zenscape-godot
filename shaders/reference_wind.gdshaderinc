@@ -216,19 +216,22 @@ vec3 zs_blow_bend(vec3 vertex, mat4 model, float bend_from, float height, out fl
 	vec2 root = model[3].xz;
 	float phase = dot(root, vec2(0.43, 0.71));
 	vec2 blow = zs_blow_at(root, phase, shiver);
-	if (dot(blow, blow) < 0.000001 && shiver <= 0.0) return vec3(0.0);
-	float scale = length(model[1].xyz);
 	float h = max(vertex.y - bend_from, 0.0);
 	float span = max(height - bend_from, 0.05);
 	float k = clamp(h / span, 0.0, 1.5);
 	float bend = k * k;
+	// Trailing the block's dip (zs_heave): the tip lags, stretching or
+	// shrinking the plant along its own up.
+	vec3 heave = vec3(0.0, zs_heave * span * bend, 0.0);
+	if (dot(blow, blow) < 0.000001 && shiver <= 0.0) return heave;
+	float scale = length(model[1].xyz);
 	vec2 lean = blow * zs_blow_give(height * scale) * span * bend;
 	// Canopies and blades shiver in the passing air: a quick flutter across it.
 	float size = length(blow);
 	vec2 across = size > 0.0001 ? vec2(-blow.y, blow.x) / size : vec2(0.0);
 	lean += across * shiver * sin(zs_motion_time * 13.0 + h * 3.0 + phase * 5.0) * 0.06 * span * bend;
 	float drop = min(dot(lean, lean) / (2.0 * max(h, 0.05)), h * 0.7);
-	return inverse(mat3(model)) * vec3(lean.x, 0.0, lean.y) * scale + vec3(0.0, -drop, 0.0);
+	return inverse(mat3(model)) * vec3(lean.x, 0.0, lean.y) * scale + vec3(0.0, -drop, 0.0) + heave;
 }
 
 float zs_gust_field(vec2 position) {

@@ -48,7 +48,10 @@ extends Node
 ## second flick adds to the first, like pumping a swing. Pulled down, the
 ## plate dips as a unit and tips a little toward the hand (`dip_begin`,
 ## `dip_to`, `dip_release`); let go, it snaps back up and says so (`dipped`),
-## and the edge spring (scripts/edge_spring.gd) raises its range.
+## and the edge spring (scripts/edge_spring.gd) raises its range. Under the
+## pull's feel (`--pull-cam` other than "old", `feel`) the snapshot's face
+## squashes as it dips and stretches as it rises (`_dip_squash`), and the rise
+## runs on past rest and recoils before it is handed back (RECOIL_W).
 ##
 ## The old world is never lost. `form_inland` leaves it one step down the undo
 ## history (marked "flip"), and the world is also kept whole in memory and in
@@ -78,8 +81,9 @@ enum Source { NEW, UNDO, KEPT }
 const HIDDEN_LAYER := 1 << 18
 ## Subtrees the snapshot leaves out, by script: the room (weather, sky, lights),
 ## things that are skinned or physical, and the hand, which is not a copy.
-## The edge falls (scripts/edge_falls.gd) hide themselves while it flips.
-const LEAVE_OUT := ["precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","creature_actor.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","bigfoot_encounter.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd"]
+## The edge falls (scripts/edge_falls.gd) hide themselves while it flips. The
+## sky's cloud (scripts/sky_cloud.gd) floats in the room, so it stays put.
+const LEAVE_OUT := ["precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","creature_actor.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","bigfoot_encounter.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd","sky_cloud.gd"]
 ## The plate when its skirt cannot be read: half its width and the height of
 ## its middle (m).
 const DEFAULT_HALF := 14.4
@@ -185,6 +189,32 @@ const DIP_TILT := 0.06
 const DIP_MOST := 2.2
 const DIP_RISE_W := 26.0
 const DIP_RISE_ZETA := 0.5
+## The pull's feel (`--pull-cam`, scripts/modeless_input.gd `pull_cam`; none
+## of this under "old"). The block shows its load: it squashes as it dips,
+## pressed flatter and a little wider about its own floor, and it stretches
+## as it shoots back up, a mirror of the squash. The strain is the dip plus
+## SQUASH_LEAD seconds of its speed, so the squash leads the drop a touch and
+## turns into a stretch the moment the rise is fast. At a strain e the height
+## is 1 - SQUASH_MOST·tanh(e/SQUASH_SOFT) (e > 0) or 1 - STRETCH_MOST·
+## tanh(e/STRETCH_SOFT) (e < 0), and the width that height to the power
+## -SPREAD (0.5 keeps the volume; less spreads it less). A full pull squashes
+## it about 6 %; the rise stretches it about 5 %. Visual only: the snapshot's
+## old face is scaled, never the real terrain.
+const SQUASH_LEAD := 0.03
+const SQUASH_MOST := 0.09
+const SQUASH_SOFT := 1.2
+const STRETCH_MOST := 0.09
+const STRETCH_SOFT := 0.35
+const SPREAD := 0.35
+## Under the feel the rise runs on past rest: once the block shoots through
+## it, a critically damped recoil (RECOIL_W 1/s) carries it up past rest and
+## back, and it is handed back (the range springs) when it has come down to
+## within RECOIL_REST of rest, or after RECOIL_MOST seconds of rising. A full
+## pull overshoots about 0.06 of a dip (the middle about 10 cm, tilt and all)
+## and is handed back about 0.09 s later than without the feel.
+const RECOIL_W := 40.0
+const RECOIL_REST := 0.015
+const RECOIL_MOST := 0.6
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -273,6 +303,14 @@ var dip := 0.0
 var dip_speed := 0.0
 var _dip_goal := 0.0
 var _dip_amount := 0.0
+## The pull's feel ("a", "b", "c" or "old"), whether the rise has passed
+## rest, how long it has risen, the block's floor (world y) and its squash
+## (1 at rest, under 1 squashed, over 1 stretched), for the probe.
+var feel := preload("res://scripts/modeless_input.gd").pull_cam()
+var squash := 1.0
+var _crossed := false
+var _rise_time := 0.0
+var _floor_y := DEFAULT_MIDDLE-2.7
 
 static func enabled() -> bool:
 	return preload("res://scripts/modeless_input.gd").enabled()
@@ -411,7 +449,9 @@ func dip_begin(screen_pos: Vector2) -> bool:
 	dip = 0.0
 	dip_speed = 0.0
 	_dip_goal = 0.0
+	squash = 1.0
 	_grab_from(screen_pos)
+	_floor_y = _plate_box().position.y
 	_hold_world()
 	_set_phase(Phase.DIP)
 	_grip(true)
@@ -427,6 +467,8 @@ func dip_to(amount: float) -> void:
 func dip_release(amount: float) -> void:
 	if phase != Phase.DIP: return
 	_dip_amount = amount
+	_crossed = false
+	_rise_time = 0.0
 	_set_phase(Phase.RISE)
 
 ## Finish a dip at once (an undo, a new press).
@@ -436,21 +478,30 @@ func dip_finish() -> void:
 
 func _step_dip(delta: float) -> void:
 	var goal := _dip_goal if phase == Phase.DIP else 0.0
-	var w := HOLD_W if phase == Phase.DIP else DIP_RISE_W
-	var zeta := HOLD_ZETA if phase == Phase.DIP else DIP_RISE_ZETA
+	var felt := feel != "old"
+	if phase == Phase.RISE: _rise_time += delta
 	var remaining := delta
 	while remaining > 0.0:
 		var h := minf(remaining,1.0/240.0)
 		remaining -= h
+		var w := HOLD_W if phase == Phase.DIP else (RECOIL_W if _crossed else DIP_RISE_W)
+		var zeta := HOLD_ZETA if phase == Phase.DIP else (1.0 if _crossed else DIP_RISE_ZETA)
 		dip_speed += (w*w*(goal-dip)-2.0*zeta*w*dip_speed)*h
 		dip += dip_speed*h
-		if phase == Phase.RISE and dip <= 0.0:
+		if phase != Phase.RISE: continue
+		if not felt and dip <= 0.0:
+			_dip_done()
+			return
+		# The feel: past rest it runs on up, recoils and is handed back near rest.
+		if dip <= 0.0: _crossed = true
+		if (_crossed and dip_speed >= 0.0 and dip >= -RECOIL_REST) or _rise_time > RECOIL_MOST:
 			_dip_done()
 			return
 
 func _dip_done() -> void:
 	dip = 0.0
 	dip_speed = 0.0
+	squash = 1.0
 	_release_world()
 	_set_phase(Phase.IDLE)
 	dipped.emit(_dip_amount)
@@ -693,6 +744,22 @@ func _pose_all() -> void:
 	if phase in [Phase.DIP,Phase.RISE]: t = pose(-DIP_TILT*dip,-DIP_DROP*dip)
 	pivot.transform = t
 	_squash()
+	if phase in [Phase.DIP,Phase.RISE] and feel != "old": _dip_squash()
+
+## The block's load under the feel (SQUASH_MOST): the old face pressed flatter
+## and wider about the block's floor by the strain, and the hand kept on the
+## lip it grips.
+func _dip_squash() -> void:
+	if _old_face == null: return
+	var strain := dip+SQUASH_LEAD*dip_speed
+	squash = 1.0-SQUASH_MOST*tanh(strain/SQUASH_SOFT) if strain > 0.0 else 1.0-STRETCH_MOST*tanh(strain/STRETCH_SOFT)
+	var wide := pow(squash,-SPREAD)
+	var scale := Basis.from_scale(Vector3(wide,squash,wide))
+	var anchor := Vector3(_centre.x,_floor_y,_centre.z)
+	var pressed := Transform3D(scale,anchor-scale*anchor)
+	_old_face.transform = pressed
+	var hand: Node3D = scene.get("god_hand")
+	if _hand_on and hand != null: hand.reach_point = _terrain_base.affine_inverse()*(pressed*(_terrain_base*_rim_local))
 
 func _grab_from(screen_pos: Vector2, reverse := false) -> void:
 	var box := _plate_box()

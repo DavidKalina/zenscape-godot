@@ -33,5 +33,8 @@ vec3 zs_conifer_offset(vec3 vertex, mat4 model) {
 		motion += blow_across * blow_shiver * rim * bend * conifer_height * 0.05 * sin(zs_motion_time * 11.0 + height * 4.1 + phase * 3.0);
 	}
 	float droop = dot(motion, motion) / max(2.0 * height, 0.5);
-	return inverse(mat3(model)) * vec3(motion.x, -droop, motion.y) * length(model[1].xyz);
+	// Trailing the block's dip (zs_heave, scripts/pull_feel.gd), trunk and
+	// crown together.
+	float heave = zs_heave * conifer_height * bend;
+	return inverse(mat3(model)) * vec3(motion.x, heave - droop, motion.y) * length(model[1].xyz);
 }

@@ -73,6 +73,10 @@ global uniform vec2 zs_inversion;
 global uniform vec3 zs_inversion_color;
 global uniform vec3 zs_alpen_direction;
 global uniform vec4 zs_clap;
+// Plants trailing the block's dip (scripts/pull_feel.gd): the part of a
+// plant above its bend stretches up by this share (shrinks when negative),
+// most at the tip. Zero at rest.
+global uniform float zs_heave;
 global uniform vec3 zs_sky_down;
 global uniform vec3 zs_sky_up;
 global uniform vec3 zs_sky_glow;
