@@ -12,7 +12,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 - **It follows the land.** Every step reads the ground under each cell again from the terrain's heights. A trench cut out of a pond drains it into the trench; a basin pressed beside a stream takes the stream; a peak raised under a pond throws the water off. There is no hook to miss: a sculpt, the clay, an undo, a mountain springing and a new world all move the water the same way.
 - **The plate's edge drains, and pours.** Water that reaches the plate's outer ring of cells falls off the plate. A basin holds its water until the water tops the lowest point of its rim; only then does it run on, and off the edge if nothing lower stops it. This keeps water from ever building up against the rim, and needs no lip. What leaves over each edge cell is counted (m³/s, smoothed), and where it leaves, a waterfall pours down the block's side into the void ("Edge falls" below). A thumb groove run out through the rim notches it into a spillway for this (`docs/scenic/modeless.md`, "The thumb at the rim").
 - **Water soaks and evaporates.** Every wet cell loses `evaporation` a second, and thin water (under `soak_depth`) loses up to `soak` more, so a front soaks in as it runs. A steady spring therefore levels off: in the probe, a 0.084 m³/s spring's water holds at about 12.6 m³ over about 50 m² after four minutes. A pond without a source lasts a long while (a 6 m³ pond, about 15 minutes); a puddle on flat ground soaks in within a minute.
-- **Springs and bursts.** A ball that lands 1.2 m above the plate's low ground (`SPRING_RISE`; the low ground is the plate's 20 % height quantile), or on ground steeper than `SPRING_SLOPE`, **stays as a spring**, pouring `SPRING_SHARE` of its volume each second. The spring rises `SPRING_SET` (1 m) down the slope from where the ball landed, and the ball's own water wells out of it over `SPRING_HEAD_SECONDS` (10 s). Where the spring's course levels off on open ground, the water wears a rill down to a pool at the foot (see "Drop legibility" below). A ball anywhere else lets its water go once, over `BURST_SECONDS` across `BURST_RADIUS`. The user will refine where springs come from.
+- **Springs and bursts.** A ball that lands 1.2 m above the plate's low ground (`SPRING_RISE`; the low ground is the plate's 20 % height quantile), or on ground steeper than `SPRING_SLOPE`, **stays as a spring**, pouring `SPRING_SHARE` of its volume each second. The spring rises just down the slope from where the ball landed (only as far as its footprint needs to lie on one flank, at most `SPRING_SET`, 1 m), and the ball's own water wells out of it over `SPRING_HEAD_SECONDS` (10 s). Where the spring's course levels off on open ground, the water wears a rill down to a pool at the foot (see "Drop legibility" below). A ball anywhere else lets its water go once, over `BURST_SECONDS` across `BURST_RADIUS`. The user will refine where springs come from.
 - **Water from the sky** (`--modeless`). The water ball had no door under `--modeless` (left presses on the land are clay). Now a tuft torn from the sky's cloud and carried over the land condenses a water ball there, and it fills from the cloud while held (`docs/scenic/sky-cloud.md`; before that, any drag from the void did). Letting go drops it. A click in the void is still the snap. The void's hint says so.
 - **Undo, drain, save.**
   - A spring is its own undo step: undo removes it and redo brings it back. Springs ride the terrain history (`history_captured`, `state_restored`), as the forest wish does.
@@ -77,7 +77,7 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `SPRING_SHARE`, `SPRING_MIN`, `SPRING_MAX` | 0.012 /s, 0.03, 0.25 m³/s | Spring rate as a share of the ball's volume each second. |
 | `SPRING_RADIUS`, `MAX_SPRINGS` | 0.35 m, 8 | A spring's footprint; the oldest goes when a ninth comes. |
 | `BURST_SECONDS`, `BURST_RADIUS` | 1.2 s, 0.8 m | How a burst ball's water leaves it. |
-| `SPRING_HEAD_SECONDS`, `SPRING_SET` | 10 s, 1 m | How a spring ball's own water leaves it, and how far down its course the spring rises. |
+| `SPRING_HEAD_SECONDS`, `SPRING_SET`, `SPRING_BACK` | 10 s, 1 m, 0.03 m | How a spring ball's own water leaves it; how far down its course the spring rises at most, and how far the ground `SPRING_RADIUS` behind it must stand over it (`spring_set`). |
 | `COURSE_STEP`, `COURSE_FLAT`, `COURSE_FLAT_STEPS`, `COURSE_RIM` | 0.5 m, 0.08, 2, 2 m | A spring's course (`descent`) and where its foot is. |
 | `RILL_DEPTH`, `RILL_HALF_WIDTH`, `POOL_RIM`, `POOL_HOLLOW` | 0.3 m, 1 m, 1.5 m, 0.25 m | A spring's bed (`spring_bed`): the rill, the pool's distance from the rim, and how deep a hollow at the foot already holds the water. The pool's size is the water brush's hollow (`WaterBrush._scoop_radius`, `SCOOP_DEPTH`). |
 | `SPRING_BED_SECONDS` (`native_chunk_editor.gd`) | 1.2 s | How long the bed takes to wear in on screen. |
@@ -196,7 +196,7 @@ What was taken: all of the strand (the ring shader `reference_fall.gdshader` was
 ### Detection
 
 `ZenScapeWaterFlow::cascades` (mirror `water_flow_reference.gd`), read by `scripts/flow_falls.gd` every `READ_SECONDS` (0.25 s) with `DETECT`:
-- A wet cell (deeper than `wet`, 1 cm) running faster than `min_speed` (0.3 m/s) is **steep** when its surface falls `slope_on` (1.0, 45°) or more per metre over `run` (0.5 m) down its own flow. It stays steep until that slope is under `slope_off` (0.7): per-cell hysteresis.
+- A wet cell (deeper than `wet`, 4 mm; 1 cm before the close-up pass) running faster than `min_speed` (0.3 m/s) is **steep** when its surface falls `slope_on` (0.8, 39°; was 1.0) or more per metre over `run` (0.5 m) down its own flow. It stays steep until that slope is under `slope_off` (0.55; was 0.7): per-cell hysteresis.
 - Steep cells group 8-connected. A group of `min_cells` (3) or more is a **fall** when its lip stands `min_drop` (0.7 m) or more over its plunge and it carries `min_flux` (0.006 m³/s).
 - **Flux** is the larger of what the pipes carry into the group from outside and what they carry out (m³/s, from the sim's own fluxes).
 - **Lip**: the depth-weighted mean of the group's cells within `lip_band` (0.3 m) of its top, and their mean flow direction. Its width is the larger of the lip cells' spread across that direction and the wet channel walked across from the lip's middle.
@@ -227,6 +227,43 @@ What was taken: all of the strand (the ring shader `reference_fall.gdshader` was
 - `tools/probe_water_flow_modeless.gd` still passes; its groove (0.28 m deep, on a gentler flank) now stands no fall, where the old point search stood one or two.
 
 What the frames show: from the overview both falls read as white-blue ribbons with foam at their feet; close, the curtain fills the channel, whitens down the drop, and froths where it lands. Still off: the curtain is smoother and bluer than the source's (which is in full sun and many metres tall), and still reads a little like a tube close up; the lip is a narrow point rather than a broad crest; the mist is faint; ripple rings only show in standing water, and neither film's falls land in a pool.
+
+### Close-up pass (2026-09-29)
+
+The user, close to a fall: "The waterfall looks a bit strange up close. And it doesn't attach as high as I'd like on the mountain." What drew each piece, and why:
+
+| Seen | Drawn by | Why |
+|---|---|---|
+| An opaque, flat-white, faceted sheet with blocky folds | the curtain, `shaders/flow_fall.gdshader` | Opaque (the source's choice), flat-shaded from screen derivatives, and the aerated chop (±11 % and ±8 % of the ring) folded a few-metre sheet into crumples. White because it aerates within a metre or two. |
+| A hard jagged lip in mid-air | the curtain's last ring (`flow_falls.gd` `_rings`) | The course ended at the steep cells' end, at full thickness, an open tube standing off the face where the water ran on down a gentler slope. |
+| A second translucent veil beside it | the live moving water, `FlowMoving` (`reference_water_body.gdshaderinc`, stream path, alpha 0.4–1) | The water on the face the curtain does not cover, and under it, drawn pale and glassy with the sky's Fresnel. |
+| Hair-thin aliased lines on the sides, fanning out at the plunge | the moving water's streak and foam waves | Its UV is each vertex's position along its *own* flow direction (`ZenScapeWaterFlow::surface`), so where the flow turns or fans out, UV jumps metres across one facet and the waves alias into hairs. (The curtain's torn streaks, `across × 22/47` round the tube, added more.) |
+| Big faceted white balls | the foam blobs, `flow_falls.gd` (the source's foamCluster: flat-shaded 6-sided spheres) | Sized for the source's many-metre falls; beside a 3 m fall seen close they read as snowballs. |
+| Small grey beads | the spray, `flow_falls.gd` (GPU particles, opaque StandardMaterial spheres) | |
+
+**Why it hung low.** Measured with `tools/probe_fall_attach.gd` (headless; a 6 m pinch horn, a ball dropped on its summit):
+- The spring was set a flat `SPRING_SET` (1 m) down the steepest descent. On a horn's steep top that is 2.2 m down: the water started at 3.57 m under a 5.78 m summit.
+- The detector only took water 1 cm deep. Near a spring the water runs at the 4 m/s cap only 2–6 mm deep, so the top of the fall was dry to it.
+- The curtain's inlet opened over 2.5 rings (thickness) and 1.6 rings (width), so its visible top hung about 0.5 m under its lip.
+- On rounder mountains the 45° threshold (`slope_on` 1.0) left the upper flank as a stream.
+
+**What changed:**
+- `water_flow.gd`: the spring moves down only until its footprint lies on one flank (`spring_set`: the ground `SPRING_RADIUS` behind it stands `SPRING_BACK` over it), at most `SPRING_SET`. The rill starts at the spring and does not cut ground above it, so the summit is no longer worn down.
+- `flow_falls.gd`: `DETECT` `wet` 0.004, `slope_on` 0.8, `slope_off` 0.55. The inlet opens within one ring. Over running water (no pool) the last rings thin to 35 % and the shader fades the last `END_FADE` (0.35 m) out; into a pool the last ring goes 0.2 m under and the pool's surface draws over it. The foam blobs are soft billboard puffs that rise, swell and fade (`PUFF_SECONDS` 1.6 s); the spray is the water ball's lens beads (2.2 cm). `CURTAIN_PRIORITY` −1 (before the live water), `SPRAY_PRIORITY` 2.
+- `flow_fall.gdshader`: glass is translucent (alpha 0.42–0.62 with more at grazing angles), aerated water and the white break opaque; only the half of the tube facing the eye draws (`sheet_normal`), so it never shows its own back wall; facets shade half way to the smooth sheet normal; the chop is about half; tears and streaks are antialiased coverage, and every noise fades to its mean where it is finer than a pixel (`fall_detail`, as the rainbow). `depth_draw_always`.
+- `reference_water_body.gdshaderinc`: the moving water's streak and foam waves fade to their mean where finer than a pixel; live moving water deeper than about 3 cm on a face steeper than about 37–63° takes white-water foam and opacity (`cascade`), so it agrees with the fall beside it.
+- `edge_falls.gd`: the same curtain priority, and lens beads (3 cm) for its droplets.
+
+**Measured** (`tools/probe_fall_attach.gd -- --no-title`, steady state at 25 s; heights in metres):
+
+| Mountain | Summit | Spring before → after | Curtain's visible top before → after |
+|---|---|---|---|
+| 6 m horn | 5.8–5.9 | 3.57 → 5.11 | 3.37 → 4.60 |
+| 3.5 m horn | 3.3–3.5 | 1.66 → 2.80 | no fall → 2.91 |
+| 4 m dome | 3.9–4.0 | 3.50 → 3.91 | 2.36 → 3.33 |
+| 3 m mesa, ball 2.4 m from the middle | 3.25 | 2.08 → 2.99 | 2.24 → 2.90 |
+
+**Unverified:** none of the look has been rendered. The shader edits need a windowed compile check (Metal's varying limit: the curtain now has 12 custom varying floats) and a rendered look close and far; transparent sorting against other transparent things behind the fall, and whether the translucent curtain still casts its shadow, are unseen. Lower detection thresholds may stand falls on steep streams that had none (`probe_water_flow_modeless.gd`'s groove).
 
 ## Edge falls (2026-09-29)
 

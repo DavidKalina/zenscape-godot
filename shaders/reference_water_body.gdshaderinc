@@ -182,10 +182,24 @@ void fragment() {
 	}
 	float glint = smoothstep(0.75, 1.0, zs_water_growth_now()) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
+	float cascade = 0.0;
 	if (flowing) {
-		float streak = sin(UV.x * 7.0 - zs_flow_time * 5.0 + sin(UV.y * 18.0) * 1.5);
-		float broken = 0.5 + 0.5 * sin(UV.x * 2.3 - zs_flow_time * 1.4 + UV.y * 31.0);
-		foam = smoothstep(0.65, 1.0, streak) * broken * 0.25 * smoothstep(0.01, 0.12, water_depth);
+		// Each wave fades to its mean where it is finer than a pixel (as the
+		// rainbow's bands do): the live water's UV is each vertex's position
+		// along its own flow, so where the flow turns or fans out (a plunge, a
+		// rough face) it changes by metres across one facet, and these waves
+		// drew fields of hair-thin aliased lines.
+		float streak_phase = UV.x * 7.0 + sin(UV.y * 18.0) * 1.5;
+		float broken_phase = UV.x * 2.3 + UV.y * 31.0;
+		float streak_detail = 1.0 - smoothstep(0.5, 2.0, fwidth(streak_phase));
+		float broken_detail = 1.0 - smoothstep(0.5, 2.0, fwidth(broken_phase));
+		float streak = sin(streak_phase - zs_flow_time * 5.0);
+		float broken = mix(0.5, 0.5 + 0.5 * sin(broken_phase - zs_flow_time * 1.4), broken_detail);
+		foam = mix(0.12, smoothstep(0.65, 1.0, streak), streak_detail) * broken * 0.25 * smoothstep(0.01, 0.12, water_depth);
+		// Live water pouring down a face is white water, as the fall it runs
+		// beside (shaders/flow_fall.gdshader), not a pale glassy veil.
+		if (live_thin.y > 0.0) cascade = (1.0 - smoothstep(0.45, 0.8, wave_normal.y)) * smoothstep(live_thin.y * 0.6, live_thin.y * 1.6, water_depth);
+		foam = max(foam, cascade * 0.6);
 	}
 	if (!flowing && cut_face < 0.5 && zs_look_shore > 0.0) {
 		// Look pass: a thin broken foam line where still water meets the bank,
@@ -224,6 +238,7 @@ void fragment() {
 	}
 	if (!flowing && source_lake_material) alpha = zs_lake_opacity(water_depth, zs_ice);
 	alpha = max(alpha, fall_churn * 0.95);
+	alpha = max(alpha, cascade * 0.85);
 	if (!flowing) zs_lake_algae(body, alpha, world_position, lake_local, water_depth, cut_face);
 	if (!flowing && cut_face > 0.5) alpha = max(alpha, 0.95);
 	if (!flowing && cut_face < 0.5 && lake_wind_enabled) zs_lake_foam(body, alpha, world_position, water_depth, lake_state);

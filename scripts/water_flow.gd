@@ -67,9 +67,16 @@ const BURST_RADIUS := 0.8
 ## ended as a film a few centimetres deep over a hundred square metres of the
 ## plain, which soaked away.
 const SPRING_HEAD_SECONDS := 10.0
-## The spring rises SPRING_SET m down its course from where the ball landed,
-## so on a summit its water takes one flank instead of splitting over all.
+## The spring rises down its course from where the ball landed, so on a
+## summit its water takes one flank instead of splitting over all: only as far
+## as it takes for its footprint (SPRING_RADIUS) to lie on the one flank (the
+## ground SPRING_RADIUS behind it, up its course, stands SPRING_BACK over it),
+## at most SPRING_SET m. On a flank that is where it landed. It used to go a
+## flat SPRING_SET m whatever the ground, which on a steep horn is metres down:
+## a ball dropped on a 5.8 m pinch welled 2.2 m under the summit, and its fall
+## hung from a third of the way down the mountain.
 const SPRING_SET := 1.0
+const SPRING_BACK := 0.03
 ## A spring's course (`descent`): steepest descent over the ground in
 ## COURSE_STEP m steps, ending at its foot once COURSE_FLAT_STEPS steps in a
 ## row fall less than COURSE_FLAT per metre, or COURSE_RIM m from the rim.
@@ -252,7 +259,7 @@ func low_ground() -> float:
 	return sorted[clampi(int(sorted.size()*LOW_SHARE),0,sorted.size()-1)] if not sorted.is_empty() else 0.0
 
 ## A water ball lands. Anywhere low its water goes as a burst. On high or
-## steep ground a spring stays SPRING_SET m down the slope, the ball's water
+## steep ground a spring stays just down the slope (`spring_set`), the ball's water
 ## wells out of it over SPRING_HEAD_SECONDS, and where its course levels off
 ## on open ground the water wears a bed and a pool (`spring_bed`). The spring
 ## and its bed are one undo step; `last_bed` keeps the ground before and
@@ -266,12 +273,16 @@ func drop(point: Vector2, volume: float) -> String:
 		return kind
 	var course := descent(data,point)
 	var points: PackedVector3Array = course.points
-	var at := point
-	var set := mini(roundi(SPRING_SET/COURSE_STEP),points.size()-1)
-	if set > 0: at = Vector2(points[set].x,points[set].z)
+	var placed := spring_set(data,points)
+	var at: Vector2 = placed.at
+	var set: int = placed.index
 	bursts.append({"x":at.x,"z":at.y,"rate":volume/SPRING_HEAD_SECONDS,"radius":SPRING_RADIUS,"left":volume})
 	data.begin_stroke()
-	var bed := {} if "--no-spring-bed" in OS.get_cmdline_user_args() else spring_bed(data,course,set,volume)
+	# The rill starts at the spring, not a step above it (the summit).
+	var at_ground: Variant = data.ground_height(at)
+	var from_spring := PackedVector3Array([Vector3(at.x,float(at_ground) if at_ground != null else points[maxi(set-1,0)].y,at.y)])
+	from_spring.append_array(points.slice(set))
+	var bed := {} if "--no-spring-bed" in OS.get_cmdline_user_args() else spring_bed(data,{"points":from_spring,"end":course.end},1,volume)
 	if not bed.is_empty():
 		last_bed = {"from":data.heights.duplicate(),"heights":bed.heights.duplicate(),"rect":bed.rect,"pool":bed.pool,"radius":bed.radius}
 		data.heights = bed.heights
@@ -279,6 +290,28 @@ func drop(point: Vector2, volume: float) -> String:
 	springs.append({"x":at.x,"z":at.y,"rate":clampf(volume*SPRING_SHARE,SPRING_MIN,SPRING_MAX),"radius":SPRING_RADIUS})
 	data.end_stroke()
 	return kind
+
+## Where on a `descent` course the spring wells (see SPRING_SET): {"at" (plate
+## point), "index" (the course point just past it)}.
+static func spring_set(terrain: NativeTerrainData, points: PackedVector3Array) -> Dictionary:
+	if points.is_empty(): return {"at":Vector2.ZERO,"index":0}
+	var out := 0.0
+	for k in range(1,points.size()):
+		var a := Vector2(points[k-1].x,points[k-1].z)
+		var b := Vector2(points[k].x,points[k].z)
+		var run := a.distance_to(b)
+		if run < 0.0001: continue
+		var heading := (b-a)/run
+		var along := 0.0
+		while along < run:
+			var at := a+heading*along
+			if out+along >= SPRING_SET: return {"at":at,"index":k}
+			var here: Variant = terrain.ground_height(at)
+			var back: Variant = terrain.ground_height(at-heading*SPRING_RADIUS)
+			if here == null or back == null or float(back) >= float(here)+SPRING_BACK: return {"at":at,"index":k}
+			along += 0.05
+		out += run
+	return {"at":Vector2(points[-1].x,points[-1].z),"index":points.size()-1}
 
 ## The last spring's bed: {"from", "heights" (the ground before and after),
 ## "rect", "pool", "radius"}, or {} when it wore none.
@@ -351,6 +384,7 @@ static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start:
 	var pool := (foot+heading*radius*0.5).clamp(Vector2(-limit,-limit),Vector2(limit,limit))
 	var depth := clampf(volume/(PI*radius*radius*BED_FILL)+BED_FREEBOARD,BED_DEPTH.x,BED_DEPTH.y)
 	var heights := terrain.heights.duplicate()
+	var top := course[maxi(start-1,0)].y
 	var rect := Rect2(pool-Vector2.ONE*radius,Vector2.ONE*radius*2.0)
 	for i in range(terrain.points.size()):
 		var p := terrain.points[i]
@@ -364,9 +398,10 @@ static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start:
 			var run := Vector2(course[k].x,course[k].z)-a
 			var along := clampf((p-a).dot(run)/maxf(run.length_squared(),0.000001),0.0,1.0)
 			near = minf(near,p.distance_to(a+run*along))
-		if near < RILL_HALF_WIDTH:
+		# Not above the spring: a spring just off a summit wore the peak down.
+		if near < RILL_HALF_WIDTH and terrain.heights[i] < top:
 			var u := near/RILL_HALF_WIDTH
-			cut = maxf(cut,RILL_DEPTH*(1.0-u*u)*(1.0-u*u))
+			cut = maxf(cut,RILL_DEPTH*(1.0-u*u)*(1.0-u*u)*(1.0-smoothstep(top-RILL_DEPTH,top,terrain.heights[i])))
 			rect = rect.expand(p)
 		if cut > 0.0: heights[i] = maxf(NativeTerrainData.MIN_HEIGHT,heights[i]-cut)
 	return {"heights":heights,"rect":rect.grow(1.0),"pool":pool,"radius":radius}
