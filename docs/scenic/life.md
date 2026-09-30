@@ -305,6 +305,19 @@ A visit takes 95-125 s with an 8 s bask. With the usual 16-28 s bask it is about
 - **Spacing:** along the body, rings stay at 0.99 median, p99 1.05. The one tight spot, 0.74, is the last segment of the tail's tip while it settles. On the lifted neck the p99 is 1.22 while it is drawn back to hiss.
 - **LandLife with the snake hooked in** (`probe_land_life.gd -- --pace=6 --watch=15`): median 0.07 ms, p95 0.15 ms per frame. Every other creature and moment still comes.
 
+## Small life: dragonflies, butterflies, woodpecker, geese
+
+Four ambient creatures that answer what was built, each in its own script under `scripts/life_small.gd` (owned by LandLife; three hooks). They read the survey and LandLife's clock, weather and season, never the world, and are not saved. The survey now also lists `flower_spots` (flowering shrubs, the kinds emergence gives meadows) and `snag_spots` (`[x, z, height]`).
+
+| Creature | Needs | Out when | Look and motion |
+|---|---|---|---|
+| Dragonflies (`life_dragonflies.gd`) | still water of at least 2.5 m², one to three a pond, nine in all | summer, daylight, dry | hover with a small jitter, tilt the nose back, dart a metre or two over the water or bank cells and brake late; four wings in antiphase; blue, green, red or amber |
+| Butterflies (`life_butterflies.gd`) | four or more flowering shrubs, one per five, ten at most | spring and summer, daylight, dry | heading wanders on a few sines and is pulled to the next flower, speed surges with each wingbeat, height bobs; settles on a bloom with its wings slowly opening and closing |
+| Woodpecker (`life_woodpecker.gd`) | at least one snag (old stands) | daytime, dry, not deep winter; a visit every two to five minutes | mostly sound: two to four synthesised drum rolls from the snag, with a small bird on its trunk whose head strikes at drumming pace, then it flits off |
+| Geese (`life_geese.gd`) | nothing on the land | spring and autumn, daylight, dry; a flock every four to ten minutes | five to nine in a V high overhead, each drifting in its rank with its own wingbeat, a ripple down the arms and the odd glide; faint honks on the distant bus |
+
+Sounds are synthesised in code the first time they are needed (`life_small_kit.gd`: `drum_roll`, `honk`), so no audio files were added. They play on the Genesis buses and follow the Sound settings. Bodies and wings are MultiMesh batches (one draw each); the woodpecker is two mesh nodes. Everything is unverified visually and by ear.
+
 ## Models
 
 `life_models.gd` builds everything from faceted spindles (a bipyramid over a 4-7 sided ring) and flat fans, with vertex colours and a slight per-face shade. It uses the Fidelity frog's own `reference_surface` material (flat faces, scene palette), so the models sit in the painted look and share a pipeline that is already compiled.
@@ -373,6 +386,8 @@ All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `
 - Each moment's `*_DELAY`, `*_CHANCE`, `*_COOLDOWN` and `*_STAY`, and the `DAWN` and `DUSK` phase windows.
 - The snake's `SNAKE_*`, `MORNING`, `BASK`, `HUNT` and `SWIM_CHANCE`; its size (`LENGTH`, `RADIUS`); its motion (`CRUISE`, `SWIM`, `WEAVE`, `WAVE`, `LIFT`, `RECOIL`, `ANTICIPATION`, `GOAL_*`, `TRAVEL_HZ`, `SPRING_*`); and how it meets you (`NOTICE`, `WATCH_MOST`, `TURN_TO`, `HISS_NEAR`, `HISS_*`, `JAW_OPEN`, `SWELL`, `PARTING_HISS`).
 
+The small creatures' knobs are at the top of their scripts: `SEASON`, `DAYLIGHT_MIN`, `RAIN_MAX`, `ARRIVE`, counts (`MAX`, `PER_POND`, `FLOWERS_EACH`, `GEESE`), `FIRST`/`GAP`/`CHANCE` for the woodpecker and geese, and the motion constants (`HOVER`, `REACH`, `SPEED`, `BEAT`, `WANDER`, `STEER`, `BACK`, `SIDE`, `DRIFT`).
+
 The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`, `WADE_MAX`, `MIN_BODY_AREA`, `FOREST_*` and `DAMP_REACH`.
 
 ## Open
@@ -385,4 +400,5 @@ The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`,
 - Bigfoot's trail is unseen and unheard: the prints, cairn and sapling have not been rendered, and the howl has not been listened to. Snow tracks do not also show deer or foxes yet.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
 - Sound: `scripts/genesis_audio.gd` listens to `LandLife.arrived` and `LandLife.moment` and reads the survey for its beds (`docs/scenic/sound.md`).
+- Small life is unseen on the GPU and unheard: scale (`SCALE` in each script, tuned for the 43 m overview), the goose height and the drum roll's level (`GAIN`) need a rendered look.
 - `fidelity_fish.gd`, Bigfoot's catchable fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish and only matters with `--bigfoot`.
