@@ -109,7 +109,7 @@
     // the light is the sun's: a low sun makes a red bow
     vec3 sun = mix(vec3(1.0, 0.55, 0.32), vec3(1.0), smoothstep(0.02, 0.3, zs_sun_direction.y));
     vec3 col = zsSpectrum(t1, pixelWidth / 1.7) * 0.38
-      + zsSpectrum(1.0 - t2, pixelWidth / 3.2) * 0.085;
+      + zsSpectrum(1.0 - t2, pixelWidth / 3.2) * mix(0.085, 0.2, zs_bow_double);
     // The crest catches clear light; the feet dissolve into wetter air.
     // Broad, fixed variation reads as uneven drops, never a pulsing neon arc.
     float drops = 0.90 + 0.10 * sin(dot(dir, vec3(7.0, 3.0, -5.0)));
@@ -125,6 +125,22 @@
       * (1.0 - smoothstep(0.08, 0.30, pixelWidth));
     col += vec3(0.022) * (1.0 - smoothstep(34.0, 40.6, a1));
     return col * sun;
+  }
+  // THE MOONBOW: the same bow about the antilunar point. Moonlight is too
+  // faint for the eye to find its colours, so it reads pale and nearly
+  // white, a breath of hue at its edges; it fades in rather than grows.
+  vec3 zsMoonbow(vec3 dir) {
+    if (zs_moonbow <= 0.001) return vec3(0.0);
+    float mb = zs_moonbow * smoothstep(-0.55, -0.2, dir.y);
+    float am = degrees(acos(clamp(-dot(dir, zs_moon_direction), -1.0, 1.0))) / zs_bow_shape.x;
+    vec3 moonBow = zsRainbow(am, fwidth(am), dir);
+    float grey = dot(moonBow, vec3(0.2126, 0.7152, 0.0722));
+    return mix(vec3(grey), moonBow, 0.18) * vec3(0.86, 0.92, 1.0) * mb;
+  }
+  // Light of the night itself, not of the sky's gradient: the aurora and
+  // the moonbow.
+  vec3 zsNightLights(vec3 dir) {
+    return zsAurora(dir) + zsMoonbow(dir);
   }
   // The sky's own colour, without the bow. The horizon hills paint with
   // this along a flattened direction; the bow would smear down them.
@@ -179,5 +195,12 @@
     return col;
   }
   vec3 zsSkyGradient(vec3 dir) {
-    return zsApplyBow(zsSkyBase(dir), dir) + zsAurora(dir);
+    vec3 col = zsApplyBow(zsSkyBase(dir), dir);
+    // The dome adds the night's own lights itself, after its deep night,
+    // which would otherwise dim them with the sky behind.
+#ifdef ZS_NIGHT_LIGHTS_APART
+    return col;
+#else
+    return col + zsNightLights(dir);
+#endif
   }

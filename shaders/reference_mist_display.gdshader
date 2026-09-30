@@ -13,6 +13,8 @@ uniform float rise_height = 1.0;
 // Live falls (scripts/flow_falls.gd) size and thin their mist by the flow.
 uniform float mist_strength = 1.0;
 uniform float mist_scale = 1.0;
+// Cycles a second; pond mist (scripts/life_winter.gd) drifts slower.
+uniform float cycle_rate = 0.16;
 uniform vec3 camera_origin;
 uniform mat3 world_to_view;
 uniform vec2 camera_planes;
@@ -27,7 +29,7 @@ void vertex() {
 	VERTEX = vec2(-100000.0);
 	if (i < particle_count) {
 		vec4 data = motion[i];
-		float p = fract(zs_motion_time*0.16+data.z);
+		float p = fract(zs_motion_time*cycle_rate+data.z);
 		float air = zs_wind_at(origins[i].xz);
 		vec3 position = origins[i];
 		position.xz += data.xy*p+zs_wind_direction*(air*p*0.9);

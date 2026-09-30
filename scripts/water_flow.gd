@@ -14,7 +14,8 @@ extends RefCounted
 ## keeps pouring (`springs`, saved and undoable), after the ball's own water
 ## wells out of it, and on open ground wears a rill and a pool at its foot
 ## (`spring_bed`); anywhere else it lets all its water go once, over
-## BURST_SECONDS (`bursts`, neither saved nor undone).
+## BURST_SECONDS (`bursts`, neither saved nor undone). Rain and snowmelt
+## pour where the land gathers them (`runoff`, scripts/rain_runoff.gd).
 ## The depth itself is saved with the place but is not part of undo: undoing a
 ## sculpt puts the land back and the water follows it.
 
@@ -129,6 +130,10 @@ var origin := Vector2.ZERO
 var springs: Array[Dictionary] = []
 ## [{"x", "z", "rate", "radius", "left"}], transient.
 var bursts: Array[Dictionary] = []
+## The weather's water: set `runoff.rain`, `.snowing` and `.snow_phase`.
+var runoff := preload("res://scripts/rain_runoff.gd").new()
+## 1 per grid cell over the plate, 0 outside it.
+var inside := PackedByteArray()
 var ready := false
 var paused := false
 ## Bumped every step, so a view can tell new water from old.
@@ -177,6 +182,7 @@ func setup(tree: SceneTree = null) -> void:
 	var job = preload("res://scripts/background_work.gd").new()
 	var mapped: Dictionary = await job.run(func() -> Dictionary: return map_cells(points,ids,size,start,w,h),tree)
 	kernel.configure(width,height,cell,origin,mapped.faces,mapped.weights)
+	inside = mapped.inside
 	_topology = data.vertex_ids
 	ready = true
 
@@ -211,11 +217,15 @@ static func map_cells(points: PackedVector2Array, ids: PackedInt32Array, size: f
 					faces[at*3+2] = ids[f+2]
 					weights[at*2] = u
 					weights[at*2+1] = v
-	return {"faces":faces,"weights":weights}
+	var inside := PackedByteArray()
+	inside.resize(w*h)
+	for c in range(w*h): inside[c] = 1 if faces[c*3] >= 0 else 0
+	return {"faces":faces,"weights":weights,"inside":inside}
 
 ## Runs the fixed steps `delta` seconds owe. True when any ran.
 func advance(delta: float) -> bool:
 	if not ready or paused: return false
+	runoff.advance(minf(delta,0.1),self)
 	_clock += minf(delta,0.1)
 	var ticks := mini(floori(_clock/dt),MAX_TICKS)
 	if ticks <= 0: return false
@@ -237,6 +247,7 @@ func run(ticks: int) -> void:
 		burst.left = float(burst.left)-rate*seconds
 		finished = finished or burst.left <= 0.0001
 	if finished: bursts = bursts.filter(func(burst: Dictionary) -> bool: return burst.left > 0.0001)
+	sources.append_array(runoff.sources())
 	last_step_usec = kernel.step(data.heights,sources,ticks,dt)
 	worst_step_usec = maxi(worst_step_usec,last_step_usec)
 	revision += 1
@@ -525,6 +536,7 @@ func _restore(state: Dictionary) -> void:
 		return
 	var saved: Variant = state.get("water_flow")
 	springs.clear()
+	runoff.reset()
 	if not ready: return
 	if data.vertex_ids != _topology: await setup()
 	if saved is Dictionary:

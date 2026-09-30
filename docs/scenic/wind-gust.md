@@ -102,6 +102,7 @@ This is an open option and is off by default. With `--gust-nudges`, `nudge` (0.2
 - **Bends along the gust's own way (`zs_blow_at`):** every tree, shrub, grass, flower, reed and fern kind listed under "Foliage"; falling leaves; water.
 - **Carried on the CPU:** leaf litter, through the steered local gust and `puffs.push_at`.
 - **Pulse, along the heading:** fog parting (`reference_air_sample`, `living_fog`) and display mist.
+- **Life, as the head reaches it:** gulls, fish, fireflies, deer, a standing heron and, in a hard gust, frogs. `release` raises a `gust` disturbance carrying the front's timing (`_disturb`, `scripts/disturbance.gd`); see `docs/scenic/life.md`, "Noticing".
 - **Does not answer:**
   - The painted ground itself is static. The decal's passing band stands in for it.
   - Clouds and peak clouds ignore gusts.

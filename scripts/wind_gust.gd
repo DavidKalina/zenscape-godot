@@ -31,6 +31,8 @@ extends Node3D
 ## A gust went: its record (see `gusts`).
 signal sent(gust: Dictionary)
 
+const Disturbance = preload("res://scripts/disturbance.gd")
+
 # --- The gesture --------------------------------------------------------------
 ## Metres the pointer may wander from the press and still make a burst.
 const STILL_DRAG := 0.6
@@ -345,7 +347,19 @@ func release() -> Dictionary:
 	_nudge(g)
 	send_usec = Time.get_ticks_usec()-began
 	sent.emit(g)
+	_disturb(g)
 	return g
+
+## Creatures notice the gust as its head reaches them (scripts/disturbance.gd,
+## scripts/life_notice.gd): its front, in world metres, goes with it.
+func _disturb(g: Dictionary) -> void:
+	var lane: bool = g.kind == "lane"
+	var from := -PULL_BACK*float(g.power) if lane else RING_START-PULL_BACK*float(g.power)
+	var scale := _world_scale()
+	var origin: Vector2 = g.origin
+	Disturbance.raise(_world(Vector3(origin.x,float(g.y),origin.y)),float(g.reach)*scale,float(g.power),"gust",{
+		"shape":g.kind,"way":_world_way(g.heading) if lane else Vector3.ZERO,"from":from*scale,
+		"span":(float(g.reach)-from)*scale,"run":float(g.run),"wind_up":WIND_UP,"across":float(g.half)*LOCAL_REACH*scale})
 
 ## Send a lane gust at once from `origin` (plate, on the ground) along
 ## `heading` (plate x, z) at `power` (0..1), `half` m either side: a swipe

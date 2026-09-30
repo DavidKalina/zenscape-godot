@@ -21,6 +21,9 @@ const HALF := 14.0
 const COARSE := 28
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus","birch","willow","juniper"]
 const SHRUBS := ["shrub","fern","reeds","bank_grass","grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower","mushroom"]
+## Flowering shrubs (butterflies visit them) and dead standing wood (a woodpecker's drum).
+const FLOWERS := ["daisy_flower","button_flower","spike_flower","umbel_flower"]
+const SNAG := "snag"
 ## Water depth a fish needs, and the depth band frogspawn and waders like.
 const DEEP := 0.22
 const SHALLOW_MIN := 0.02
@@ -54,6 +57,9 @@ var shrub_grid := PackedInt32Array()
 var tree_count := 0
 var shrub_count := 0
 var stream_cells := 0
+## Flowering shrubs' plate positions, and snags' [x, z, height].
+var flower_spots := PackedVector2Array()
+var snag_spots := PackedVector3Array()
 ## Dry cells beside any water (still or flowing), for birds and frogs.
 var shore := PackedInt32Array()
 ## [{cell, p, into}] open ground at a forest's edge; `into` points into the trees.
@@ -200,6 +206,11 @@ func _advance() -> void:
 func _bucket_objects() -> void:
 	for item: Dictionary in _objects:
 		var asset := str(item.get("asset",""))
+		if asset in FLOWERS: flower_spots.append(Vector2(float(item.x),float(item.z)))
+		elif asset == SNAG:
+			# The model stands a metre tall at unit scale (foliage.js snagGeometry).
+			var tall := NativeObjectPose.decode_basis(item.pose).y.length() if item.has("pose") else float(item.get("scale",1.0))
+			snag_spots.append(Vector3(float(item.x),float(item.z),tall))
 		var tree := asset in TREES
 		if not tree and asset not in SHRUBS: continue
 		var g := Vector2i(clampi(floori(float(item.x)+HALF),0,COARSE-1),clampi(floori(float(item.z)+HALF),0,COARSE-1))
@@ -227,8 +238,19 @@ func _rasterise(first: int, count: int) -> int:
 			for x in range(clampi(int(lo.x),0,SIDE),clampi(int(hi.x)+1,0,SIDE)):
 				var index := z*SIDE+x
 				if level[index] >= water: continue
-				if Geometry2D.point_is_inside_triangle(center(index),a,b,c): level[index] = water
+				if _covers(center(index),a,b,c): level[index] = water
 	return last
+
+## True when `p` lies inside the triangle or on its edge. The live water's
+## quads have their corners at its 0.25 m cell centres, so every survey cell
+## centre falls exactly on a quad's diagonal, which
+## Geometry2D.point_is_inside_triangle counts as outside: the survey saw no
+## live pond at all.
+static func _covers(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> bool:
+	var d1 := (p-b).cross(a-b)
+	var d2 := (p-c).cross(b-c)
+	var d3 := (p-a).cross(c-a)
+	return not ((d1 < -1e-6 or d2 < -1e-6 or d3 < -1e-6) and (d1 > 1e-6 or d2 > 1e-6 or d3 > 1e-6))
 
 func _mark_stream(route: Dictionary) -> void:
 	var reach := float(route.get("width",0.6))*0.5+0.1

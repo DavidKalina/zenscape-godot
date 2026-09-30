@@ -160,6 +160,9 @@ const POKE_SECONDS := 0.5
 const POKE_RATE := 26.0
 const POKE_DAMP := 7.0
 const NOTICE := 8.0
+## How hard a poke disturbs the life round it (scripts/disturbance.gd), 0..1.
+const POKE_STRENGTH := 0.7
+const Disturbance = preload("res://scripts/disturbance.gd")
 ## The plate's last metres, where shaping fades to nothing (as the land
 ## spring and the mountain forms).
 const EDGE := Vector2(11.4,13.6)
@@ -783,6 +786,8 @@ func _poke() -> void:
 	if creature != null and creature.visible and creature.has_method("notice"):
 		var at: Vector3 = editor.terrain.to_global(_ground_at(_center))
 		if creature.global_position.distance_to(at) < NOTICE: creature.notice(at)
+	# Frogs, fish, deer and the heron near it notice too (scripts/life_notice.gd).
+	Disturbance.raise(editor.terrain.to_global(_ground_at(_center)),POKE_RADIUS,POKE_STRENGTH,"poke")
 	_poke_step(0.0)
 
 func _poke_step(delta: float) -> void:

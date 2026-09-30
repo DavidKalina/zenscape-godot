@@ -31,11 +31,17 @@ var cycling: bool:
 		if clock != null: clock.running = value
 	get:
 		return clock.running if clock != null else _cycling
-var aurora_strength := 0.65
+## The look's own aurora (sliders, moods, presets): a floor under the natural
+## one, which comes on its own on clear winter nights (`_aurora`).
+var aurora_strength := 0.0
 var rainbow_strength := 0.0
 var weather_bow := 0.0
 ## A rainbow that life calls after rain over a rich place (scripts/life_moments.gd).
 var moment_bow := 0.0
+## A moonbow that life calls after night rain under a near-full moon.
+var moon_bow := 0.0
+## 1 on a double rainbow: brings the fainter second bow up (life_moments.gd).
+var moment_bow_double := 0.0
 var alpen_enabled := true
 var inversion_enabled := true
 var wind := 0.4
@@ -62,6 +68,38 @@ var shimmer := 0.0
 ## The rim light's orientation as set up, before the room's turn.
 var _rim_basis := Basis.IDENTITY
 var _rim_turned := 0.0
+
+## Moon phases: a lunar month of LUNAR_DAYS world days. Age 0 is full and 0.5
+## new; the moon falls a turn behind the sun each month, so it rises later
+## every night. A fresh world opens LUNAR_START into the month (waxing
+## gibbous). Without a clock the moon stays full, where it always stood.
+const LUNAR_DAYS := 8.0
+const LUNAR_START := 0.85
+## Moonlight at new and full moon, as a share of the old fixed moon.
+const MOON_LIGHT := Vector2(0.12, 1.25)
+## The night fill leans on the moon a little: this at new, this at full.
+const MOON_FILL := Vector2(0.85, 1.1)
+## Aurora: each night rolls once, with this chance by the season it falls in
+## (winter, late autumn from AURORA_LATE_AUTUMN, and the rest of the year).
+const AURORA_CHANCE := Vector3(0.5, 0.2, 0.025)
+const AURORA_LATE_AUTUMN := 0.62
+## A chosen night's strength, its onset in hours after noon, and how long it
+## burns (hours); it never runs past AURORA_DAWN hours after noon.
+const AURORA_STRENGTH := Vector2(0.35, 1.15)
+const AURORA_ONSET := Vector2(7.0, 11.0)
+const AURORA_HOURS := Vector2(4.0, 9.0)
+const AURORA_DAWN := 17.5
+## Real seconds to fade from nothing to the strongest aurora.
+const AURORA_FADE := 150.0
+## Cloud cover over which it fades out; only a clear sky shows it.
+const AURORA_CLOUD := Vector2(0.12, 0.3)
+const AURORA_SEED := 7121
+## Lunar age now (0 full, 0.5 new) and the lit share of the disc.
+var moon_age := 0.0
+var moon_lit := 1.0
+var _aurora := 0.0
+var _aurora_night := -1
+var _aurora_plan := Vector3.ZERO
 
 func setup(lights: Array[DirectionalLight3D]) -> void:
 	look.publish()
@@ -127,20 +165,24 @@ func advance(delta: float, paused: bool) -> void:
 		var elevation := sin((phase - 0.25) * TAU) * cos(_tilt)
 		var linger := 1.0 - 0.5 * exp(-elevation * elevation / (2.0 * 0.09 * 0.09))
 		phase = fposmod(phase + delta / 480.0 * linger, 1.0)
+	_aurora = move_toward(_aurora, _aurora_target(), delta * AURORA_STRENGTH.y / AURORA_FADE)
 	_rainbow_growth = move_toward(_rainbow_growth, 1.0 if maxf(maxf(rainbow_strength, weather_bow), moment_bow) > 0.04 else 0.0, delta / 6.0)
 	update_rig()
 
 func update_rig() -> void:
 	var theta := (phase - 0.25) * TAU
 	var sun := _ring_direction(theta, _tilt)
-	var moon := _ring_direction(theta + PI, _tilt * 0.75)
+	moon_age = lunar_age()
+	moon_lit = 0.5 + 0.5 * cos(moon_age * TAU)
+	var moon := moon_direction(phase)
 	var e := sun.y
 	var day := smoothstep(-0.06, 0.28, e)
 	daylight = day
 	var night := 1.0 - smoothstep(-0.16, 0.02, e)
 	var warmth := exp(-e * e / (2.0 * 0.13 * 0.13))
 	var sun_energy := 3.4 * smoothstep(-0.03, 0.10, e) * (0.45 + 0.55 * smoothstep(0.08, 0.45, e))
-	var moon_energy := 3.4 * 0.11 * smoothstep(0.02, 0.30, moon.y) * night
+	var moon_up := smoothstep(0.02, 0.30, moon.y)
+	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit)
 	var tint := look.rgb("sun").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
 	tint = _rgb("ff6222").lerp(_rgb("ffb45c"), smoothstep(-0.02, 0.1, e)).lerp(tint, smoothstep(0.1, 0.4, e))
 	var key_direction := sun
@@ -179,7 +221,7 @@ func update_rig() -> void:
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
 	# Keep sky/cloud/fog colors independent so stars retain their dark backdrop.
-	var fill := night * night_fill * lerpf(1.0, 0.4, storm)
+	var fill := night * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_lit * moon_up)
 	_publish("zs_hemi_sky", hemi_sky + Vector3(0.22, 0.28, 0.4) * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
 	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill) * look.settings.ambient_energy)
@@ -235,11 +277,42 @@ func update_rig() -> void:
 	_publish("zs_dusk_direction", warmth * 0.9)
 	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)))
 	# The aurora's heading is a bearing, so the room's turn simply adds to it.
-	_publish("zs_aurora", Vector4(aurora_strength, 1.0, 0.15, -1.2 + room_yaw))
+	_publish("zs_aurora", Vector4(maxf(aurora_strength, _aurora), 1.0, 0.15, -1.2 + room_yaw))
 	_publish("zs_room_yaw", room_yaw)
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)
 	_publish("zs_bow_shape", Vector2.ONE)
+	_publish("zs_moonbow", moon_bow * night * smoothstep(-0.02, 0.08, moon.y))
+	_publish("zs_bow_double", moment_bow_double)
+
+## The moon's direction at a phase: half a day round from the sun on a flatter
+## ring, less the turn it has fallen behind this far into the month.
+func moon_direction(at_phase: float) -> Vector3:
+	return _ring_direction((at_phase - 0.25) * TAU + PI - moon_age * TAU, _tilt * 0.75)
+
+func lunar_age() -> float:
+	if clock == null: return 0.0
+	return fposmod((clock.day + clock.hour / WorldClock.HOURS_PER_DAY) / LUNAR_DAYS + LUNAR_START, 1.0)
+
+## Where tonight's aurora is headed: a roll per night (noon to noon) by the
+## season, a window of hours inside it, and a clear sky. Studies without a
+## clock keep only the look's aurora.
+func _aurora_target() -> float:
+	if clock == null: return 0.0
+	var night := clock.day + (1 if clock.hour >= 12.0 else 0)
+	if night != _aurora_night:
+		_aurora_night = night
+		var rng := RandomNumberGenerator.new()
+		rng.seed = night * 7919 + AURORA_SEED
+		var season := clock.season
+		var chance := AURORA_CHANCE.x if season >= 0.75 else (AURORA_CHANCE.y if season >= AURORA_LATE_AUTUMN else AURORA_CHANCE.z)
+		var onset := rng.randf_range(AURORA_ONSET.x, AURORA_ONSET.y)
+		var strength := rng.randf_range(AURORA_STRENGTH.x, AURORA_STRENGTH.y)
+		var hours := rng.randf_range(AURORA_HOURS.x, AURORA_HOURS.y)
+		_aurora_plan = Vector3(onset, minf(onset + hours, AURORA_DAWN), strength if rng.randf() < chance else 0.0)
+	var after_noon := fposmod(clock.hour - 12.0, WorldClock.HOURS_PER_DAY)
+	if after_noon < _aurora_plan.x or after_noon > _aurora_plan.y: return 0.0
+	return _aurora_plan.z * smoothstep(AURORA_CLOUD.y, AURORA_CLOUD.x, cloud)
 
 ## A body's direction on its ring, turned by the room.
 func _ring_direction(theta: float, tilt: float) -> Vector3:

@@ -24,8 +24,12 @@ const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Moments = preload("res://scripts/life_moments.gd")
 const Snakes = preload("res://scripts/life_snakes.gd")
+const Winter = preload("res://scripts/life_winter.gd")
+const SmallLife = preload("res://scripts/life_small.gd")
+const PondSeasons = preload("res://scripts/pond_seasons.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BirdFlight = preload("res://studies/bird_flight.gd")
+const Notice = preload("res://scripts/life_notice.gd")
 
 ## Microseconds a survey may spend per frame.
 const SURVEY_BUDGET_USEC := 1200
@@ -56,6 +60,14 @@ const DOCUMENT_VERSION := 1
 const FISH_AREA := 2.0
 const FISH_BODY_MAX := 7
 const FISH_MAX := 24
+## Rare variants, rolled per creature from its site hash so a save brings them
+## back: the odds that a koi in a koi pond is a golden koi, and that a frog is
+## an albino or a blue one (albino first, so blue is the next slice of the roll).
+const KOI_GOLDEN_CHANCE := 0.015
+const FROG_ALBINO_CHANCE := 0.015
+const FROG_BLUE_CHANCE := 0.01
+## A golden koi is drawn this much brighter than the shade its fellows take.
+const GOLDEN_GLOW := 1.14
 const FISH_GAP := 0.9
 ## Frogspawn: shallow still edges, not in winter.
 const SPAWN_BODY_MAX := 3
@@ -89,6 +101,14 @@ const CARRY_DELAY := 2.0
 ## Carried fish settle in water this deep (m) when the pond they landed in
 ## has none as deep as the survey's DEEP, so a small ball's pond keeps them.
 const CARRY_DEPTH := 0.1
+## Prey (docs/scenic/life.md, "Predation"): a fish a heron catches or a frog a
+## snake takes slips into the mouth over TAKE_TIME s and is gone, and its site
+## waits PREY_RETURN [delay, spread] s before another arrives the usual way.
+const TAKE_TIME := {"fish":0.14,"frog":0.3}
+const PREY_RETURN := {"fish":[70.0,90.0],"frog":[90.0,120.0]}
+## A fish drawn to a heron's feet (`lure`) that the strike misses darts back
+## to its round over DART s.
+const DART := 1.1
 
 ## Multiplies the life clock; probes run it fast.
 var pace := 1.0
@@ -121,6 +141,8 @@ var sites := {"fish":{},"spawn":{},"frog":{},"bird":{},"firefly":{}}
 var arrivals := {}
 ## Creatures a loaded save brought back, by kind (not counted as arrivals).
 var resumed := {}
+## Creatures a heron or snake took, by kind.
+var taken := {}
 var surveys := 0
 var last_usec := 0
 var worst_usec := 0
@@ -128,6 +150,14 @@ var worst_usec := 0
 var survey_worst_usec := 0
 var moments: Node3D
 var snakes: Node3D
+## Ice on the ponds, the thaw after it, and dawn mist (scripts/life_winter.gd).
+var winter: Winter
+## Dragonflies, butterflies, a woodpecker and geese (scripts/life_small.gd).
+var small: Node3D
+## Creatures noticing the hand and the wanderer (scripts/life_notice.gd).
+var notice: RefCounted
+## Lilies on old ponds and autumn leaves on the water (scripts/pond_seasons.gd).
+var seasons: Node3D
 var material: Material
 
 var _tick := 0.0
@@ -164,7 +194,7 @@ func setup(owner_scene: Node3D) -> void:
 	var reference: Node3D = scene.get_node("Reference")
 	var frog_source: MultiMeshInstance3D = reference.get_node("mesh-40")
 	material = frog_source.multimesh.mesh.surface_get_material(0)
-	_spawn = _batch("Frogspawn",Models.frogspawn(material),SPAWN_MAX,false)
+	_spawn = _batch("Frogspawn",Models.frogspawn(material),_capacity("spawn"),false)
 	var ring_source: MultiMeshInstance3D = reference.get_node("mesh-39")
 	_rings = _batch("Rings",ring_source.multimesh.mesh,RINGS,false,true)
 	var ring_material := ShaderMaterial.new()
@@ -172,6 +202,9 @@ func setup(owner_scene: Node3D) -> void:
 	_rings.material_override = ring_material
 	for i in range(RINGS): _ring_state.append({"p":Vector3.ZERO,"age":100.0,"size":1.0})
 	_setup_birds(reference)
+	winter = Winter.new()
+	add_child(winter)
+	winter.setup(self)
 	for kind in sites: _free[kind] = range(_capacity(kind)-1,-1,-1)
 	var flies: MultiMesh = scene._fireflies.multimesh
 	for i in range(flies.instance_count): _firefly_source.append([flies.get_instance_transform(i),flies.get_instance_custom_data(i)])
@@ -181,6 +214,13 @@ func setup(owner_scene: Node3D) -> void:
 	snakes = Snakes.new()
 	add_child(snakes)
 	snakes.setup(self)
+	small = SmallLife.new()
+	add_child(small)
+	small.setup(self)
+	notice = Notice.new(self)
+	seasons = PondSeasons.new()
+	add_child(seasons)
+	seasons.setup(self)
 	editor.play_geometry_changed.connect(_changed)
 	editor.stroke_finished.connect(func(_center: Vector3, _radius: float, _mode: String) -> void: _changed(true))
 	# A pour lands after its stroke has finished, once it settles on a worker.
@@ -247,7 +287,7 @@ func _setup_birds(reference: Node3D) -> void:
 	_birds.setup(_bird_node.multimesh,data,{"birds":flock,"cols":columns,"species":source.species})
 
 func _capacity(kind: String) -> int:
-	return {"fish":FISH_MAX,"spawn":SPAWN_MAX,"frog":FROG_MAX,"bird":BIRD_MAX,"firefly":FIREFLY_MAX}[kind]
+	return {"fish":FISH_MAX,"spawn":SPAWN_MAX+Winter.THAW_SPAWN_MAX,"frog":FROG_MAX,"bird":BIRD_MAX,"firefly":FIREFLY_MAX}[kind]
 
 ## `urgent` for a finished stroke, undo or new world: re-read as soon as the
 ## editor settles. Plain geometry changes (emergence steps) wait SURVEY_GAP.
@@ -276,6 +316,10 @@ func clear() -> void:
 		sites[kind].clear()
 	if moments != null: moments.clear()
 	if snakes != null: snakes.clear()
+	if winter != null: winter.clear()
+	if small != null: small.clear()
+	if notice != null: notice.clear()
+	if seasons != null: seasons.clear()
 	_reading = null
 	_planning.clear()
 	survey = null
@@ -290,6 +334,7 @@ func clear() -> void:
 ## kind lists [key, delay, age, here]: the survey cell (a bird's slot), its own
 ## delay, the life-clock seconds since its conditions first held, and whether
 ## its creature had arrived. Moments are not saved; they come round again.
+## Bigfoot's trail (life_trail.gd) is: its signs stay where he left them.
 func document() -> Dictionary:
 	if not active: return {}
 	var saved := {}
@@ -298,21 +343,27 @@ func document() -> Dictionary:
 		for key: int in sites[kind]:
 			var site: Dictionary = sites[kind][key]
 			if site.leaving or site.get("closing",false): continue
-			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here)])
+			# One being taken is already gone, waiting for its return.
+			rows.append([key,snappedf(float(site.delay),0.001),snappedf(maxf(clock-float(site.since),0.0),0.001),bool(site.here) and not site.has("taken")])
 		saved[kind] = rows
-	return {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved}
+	var result := {"version":DOCUMENT_VERSION,"clock":clock,"sites":saved,"ponds":seasons.document()}
+	var trail: Dictionary = moments.trail.document()
+	if not trail.is_empty(): result["trail"] = trail
+	return result
 
 static func valid_document(value: Variant) -> bool:
 	if not value is Dictionary: return false
 	if value.is_empty(): return true
 	if value.get("version") != float(DOCUMENT_VERSION) and value.get("version") != DOCUMENT_VERSION: return false
 	if not GardenData._number(value.get("clock"),0.0,1e9) or not value.get("sites") is Dictionary: return false
+	if value.has("trail") and not Moments.Trail.valid_document(value.trail): return false
 	for kind: Variant in value.sites:
 		if not DELAYS.has(kind) or not value.sites[kind] is Array or value.sites[kind].size() > 64: return false
 		for row: Variant in value.sites[kind]:
 			if not row is Array or row.size() != 4 or not GardenData._integer(row[0]) or int(row[0]) < 0 or int(row[0]) >= Survey.SIDE*Survey.SIDE: return false
 			if not GardenData._number(row[1],0.0,1e6) or not GardenData._number(row[2],0.0,1e9) or not row[3] is bool: return false
-	return true
+	# Pond ages (PondSeasons), optional: saves from before them have none.
+	return not value.has("ponds") or PondSeasons.valid_document(value.ponds)
 
 ## Reopen a saved world's life: the clock at least where it stood, and every saved site
 ## waiting for the first survey of the loaded ground, which keeps the ones whose
@@ -329,10 +380,12 @@ func restore_document(value: Dictionary) -> void:
 	# Sites carry their own ages, so the clock only has to not run backwards:
 	# moments keep cooldowns on it within a session.
 	clock = maxf(clock,float(value.clock))
+	moments.trail.restore(value.get("trail",{}))
 	for kind: String in value.sites:
 		var rows := {}
 		for row: Array in value.sites[kind]: rows[int(row[0])] = [float(row[1]),float(row[2]),bool(row[3])]
 		_resume[kind] = rows
+	seasons.restore(value.get("ponds",[]))
 	_fresh = false
 
 func _process(delta: float) -> void:
@@ -346,14 +399,18 @@ func _process(delta: float) -> void:
 	var step := 0.0 if paused else minf(delta,0.1)*pace
 	clock += step
 	_survey(delta)
+	winter.advance(minf(delta,0.1))
 	if step > 0.0:
 		_tick += step
 		if _tick >= TICK:
 			_tick = 0.0
 			_arrive_due()
+		notice.advance(step)
 		_animate(step)
 		moments.advance(step,minf(delta,0.1))
 		snakes.advance(step)
+		small.advance(step)
+		seasons.advance(step)
 		if not _force_kinds.is_empty(): _force_due()
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
@@ -393,6 +450,7 @@ func _survey(delta: float) -> void:
 		survey = _reading
 		_reading = null
 		surveys += 1
+		seasons.surveyed(survey,_fresh)
 		_rng.seed = Variety.mix([salt,surveys])
 		_planning = ["fish","spawn","frog","bird","firefly"]
 		return
@@ -462,13 +520,14 @@ func _claim_carried() -> void:
 
 func _plan_spawn() -> void:
 	var wanted := {}
-	if WorldClock.season_factor(_season(),SPAWN_SEASON) > 0.05:
+	# None under ice, and a burst in the thaw after it.
+	if WorldClock.season_factor(_season(),SPAWN_SEASON) > 0.05 and not winter.frozen():
 		for record: Dictionary in survey.bodies:
 			if record.shallow.is_empty(): continue
-			var cap := clampi(1+int(record.area/10.0),1,SPAWN_BODY_MAX)
+			var cap := clampi(1+int(record.area/10.0),1,SPAWN_BODY_MAX)+winter.extra_spawn()
 			for cell in _choose("spawn",record.shallow,cap,SPAWN_GAP):
 				wanted[cell] = {"body":record.id,"level":record.level}
-	_reconcile("spawn",wanted,SPAWN_MAX)
+	_reconcile("spawn",wanted,SPAWN_MAX+winter.extra_spawn_total())
 
 ## Frogs come to banks of water that already holds frogspawn. Where the spawn
 ## came with a settled world, so do the frogs.
@@ -582,7 +641,7 @@ func _reconcile(kind: String, wanted: Dictionary, cap: int) -> void:
 			continue
 		if current.size() >= cap: break
 		var timing: Array = DELAYS[kind]
-		var delay: float = timing[0]+timing[1]*Variety.unit([salt,kind.hash(),cell,7])
+		var delay: float = (timing[0]+timing[1]*Variety.unit([salt,kind.hash(),cell,7]))*winter.haste(kind)
 		var site := {"cell":cell,"kind":kind,"delay":delay,"here":false,"leaving":false,"slot":-1,"settled":_fresh}
 		site.merge(wanted[cell],true)
 		site.since = clock-(delay*SETTLED_HEAD if site.settled else 0.0)
@@ -603,10 +662,15 @@ func _depart(kind: String, site: Dictionary) -> void:
 	if not site.here:
 		site.closing = true
 		return
+	if site.has("taken"):
+		_release(kind,site)
+		site.closing = true
+		return
 	if site.leaving: return
 	site.leaving = true
 	site.left = clock
 	if kind == "frog":
+		if winter.burrow_on_leave(site): return
 		var away: Vector3 = site.home+(site.home-site.landing).normalized()*1.2
 		away.y = site.home.y
 		_hop(site,away,"away")
@@ -682,6 +746,9 @@ func _arrive_fish(site: Dictionary) -> void:
 	var kind := _pick(company,_hash(site,5))
 	var seed := int(_hash(site,6)*float(Models.FISH_KINDS[kind].get("seeds",1)))
 	site.mirror = _hash(site,8) < 0.5
+	if company == Models.FISH_PONDS[0] and _hash(site,21) < KOI_GOLDEN_CHANCE:
+		kind = "golden"
+		seed = 0
 	# A fish a water ball carried keeps the look it swam in with.
 	var carried: Dictionary = site.get("carried",{})
 	if not carried.is_empty():
@@ -694,7 +761,7 @@ func _arrive_fish(site: Dictionary) -> void:
 	site.sink = maxf(0.07,Models.fish_top(kind)*float(site.size)+0.015)
 	site.home = Vector3(c.x,float(site.level)-float(site.sink),c.y)
 	site.p = site.home
-	var shade := lerpf(0.93,1.05,_hash(site,9))
+	var shade := lerpf(0.93,1.05,_hash(site,9))*(GOLDEN_GLOW if kind == "golden" else 1.0)
 	var batch := _look(_fish_looks,site.look,FISH_MAX,func() -> Mesh: return Models.fish(material,kind,seed))
 	var node: MultiMeshInstance3D = _fish_looks[site.look]
 	if node.material_override == null:
@@ -704,6 +771,7 @@ func _arrive_fish(site: Dictionary) -> void:
 		swim.set_shader_parameter("fish_swim",true)
 		swim.set_shader_parameter("fish_wave",Models.fish_wave(kind))
 		node.material_override = swim
+	site.shade = shade
 	batch.set_instance_color(site.slot,Color(shade,shade,shade))
 	_show_slot(batch,site.slot)
 
@@ -723,6 +791,9 @@ func _arrive_frog(site: Dictionary) -> void:
 	# The pond's frogs are mostly one kind (Models.FROG_PONDS).
 	var company: Array = Models.FROG_PONDS[int(_pond_hash(site)*Models.FROG_PONDS.size())]
 	var kind := _pick(company,_hash(site,4))
+	var roll := _hash(site,22)
+	if roll < FROG_ALBINO_CHANCE: kind = "albino"
+	elif roll < FROG_ALBINO_CHANCE+FROG_BLUE_CHANCE: kind = "blue"
 	site.species = kind
 	site.look = "%s %d" % [kind,int(_hash(site,5)*2.0)]
 	site.title = Models.FROG_KINDS[kind].title
@@ -743,6 +814,7 @@ func _arrive_frog(site: Dictionary) -> void:
 	site.yaw = 0.0
 	site.wait = 4.0+_hash(site,3)*6.0
 	_hop(site,site.home,"out")
+	winter.emerge_on_arrival(site)
 
 func _arrive_bird(site: Dictionary) -> void:
 	var bird: Dictionary = _birds.birds[site.slot]
@@ -780,6 +852,9 @@ func _animate(step: float) -> void:
 		for cell: int in sites[kind].keys():
 			var site: Dictionary = sites[kind][cell]
 			if not site.here: continue
+			if site.has("taken"):
+				_move_taken(kind,site)
+				continue
 			var fade := 1.0
 			if site.leaving:
 				fade = 1.0-clampf((clock-float(site.left))/LEAVE,0.0,1.0)
@@ -810,23 +885,58 @@ func _birds_out() -> bool:
 		if float(bird.out) > 0.001: return true
 	return false
 
-func _move_fish(site: Dictionary, _step: float, fade: float) -> void:
+func _move_fish(site: Dictionary, step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,SETTLE,clock-float(site.born))*fade
-	var t: float = clock*float(site.speed)+float(site.phase)
-	var reach := 0.35
-	var candidate: Vector3 = site.home+Vector3(sin(t)*reach,0,cos(t*0.83)*reach)
+	# Swim time runs on, so the pace can change (ice, a thaw) without a jump.
+	site.swim = float(site.get("swim",clock*float(site.speed)))+step*float(site.speed)*winter.fish_pace()
+	var t: float = float(site.swim)+float(site.phase)
+	# `hush`, `nudge` and `steer` are a startled or curious fish's (life_notice.gd).
+	var reach := 0.35*(1.0-float(site.get("hush",0.0)))
+	var candidate: Vector3 = site.home+Vector3(sin(t)*reach,0,cos(t*0.83)*reach)+Vector3(site.get("nudge",Vector3.ZERO))
 	if survey.wet_at(Vector2(candidate.x,candidate.z)): site.p = candidate
 	var heading := Vector2(cos(t)*reach,-0.83*sin(t*0.83)*reach)
 	var yaw := atan2(heading.x,heading.y)+sin(clock*9.0+float(site.phase))*0.03
+	if site.has("steer"): yaw = lerp_angle(yaw,float(site.steer.x),float(site.steer.y))
 	var p: Vector3 = site.p
-	p.y = float(site.level)-float(site.sink)-(1.0-grow)*0.3
+	p.y = float(site.level)-float(site.sink)-winter.fish_sink(site)-(1.0-grow)*0.3
+	if site.has("lure"):
+		var drawn := _lured(site,p,yaw)
+		p = drawn[0]
+		yaw = drawn[1]
+	site.shown_p = p
+	site.shown_yaw = yaw
 	var scale := maxf(float(site.size)*grow,0.00001)
 	var basis := Basis(Vector3.UP,yaw)*Basis.from_scale(Vector3(-scale if site.mirror else scale,scale,scale))
-	_fish_looks[site.look].multimesh.set_instance_transform(site.slot,Transform3D(basis,p))
-	# Now and then a fish rises and leaves a ring, most often in low light.
+	var batch: MultiMesh = _fish_looks[site.look].multimesh
+	batch.set_instance_transform(site.slot,Transform3D(basis,p))
+	winter.shade_fish(site,batch)
+	# Now and then a fish rises and leaves a ring, most often in low light,
+	# never through ice, and often in a thaw.
 	if clock >= float(site.rise) and not site.leaving:
-		site.rise = clock+lerpf(10.0,28.0,fposmod(float(site.rise)*0.618,1.0))*(0.6 if _daylight() < 0.6 else 1.0)
-		ripple(Vector3(p.x,float(site.level),p.z),0.45)
+		site.rise = clock+lerpf(10.0,28.0,fposmod(float(site.rise)*0.618,1.0))*(0.6 if _daylight() < 0.6 else 1.0)*winter.rise_wait()
+		if winter.rises(): ripple(Vector3(p.x,float(site.level),p.z),0.45)
+
+## A fish drawn in to a heron's feet (LifeMoments): it glides from its round
+## to `lure.to` by `lure.at`, noses there with a small drift, and if the strike
+## misses (`lure.dart`) darts back to its round. [where it shows, its yaw].
+func _lured(site: Dictionary, p: Vector3, yaw: float) -> Array:
+	var lure: Dictionary = site.lure
+	var to := Vector3(lure.to.x,p.y,lure.to.z)
+	var toward := atan2(to.x-p.x,to.z-p.z)
+	var w := 0.0
+	if float(lure.dart) < 0.0:
+		w = smoothstep(float(lure.from),float(lure.at),clock)
+		to += Vector3(sin(clock*1.3+float(site.phase)),0.0,cos(clock*1.1+float(site.phase)))*0.035*w
+	else:
+		var u := (clock-float(lure.dart))/DART
+		if u >= 1.0:
+			site.erase("lure")
+			return [p,yaw]
+		# Off at once, slowing as it goes.
+		w = pow(1.0-u,3.0)
+		toward += PI
+	var drawn := p.lerp(to,w)
+	return [Vector3(drawn.x,p.y,drawn.z),lerp_angle(yaw,toward,smoothstep(0.0,0.25,w) if float(lure.dart) < 0.0 else smoothstep(0.0,0.3,w))]
 
 func _move_spawn(site: Dictionary, _step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,3.0,clock-float(site.born))*fade
@@ -851,7 +961,8 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 	match site.mode:
 		"sit":
 			site.wait = float(site.wait)-step
-			if site.wait <= 0.0 and not site.leaving: _hop(site,site.landing,"in")
+			# Stalked, it keeps still (life_snakes.gd).
+			if site.wait <= 0.0 and not site.leaving and not site.get("frozen",false): _hop(site,site.landing,"in")
 		"in","out","away":
 			var u := minf(1.0,float(site.age)/float(site.duration))
 			var from: Vector3 = site.from
@@ -868,12 +979,18 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 					site.mode = "swim"
 					site.age = 0.0
 				elif site.mode == "out":
-					site.mode = "turn"
-					site.age = 0.0
-					site.turn_from = float(site.yaw)
+					if site.get("burrow",false): winter.begin_burrow(site)
+					else:
+						site.mode = "turn"
+						site.age = 0.0
+						site.turn_from = float(site.yaw)
 				else:
 					site.mode = "sit"
 					site.wait = 7.0+6.0*fposmod(float(site.phase)+clock*0.37,1.0)
+		"burrow","emerge":
+			var crawled: Vector2 = winter.crawl(site)
+			pitch = crawled.x
+			squash = Vector3(1.0,crawled.y,1.0)
 		"turn":
 			var u := minf(1.0,float(site.age)/FROG_TURN)
 			var home: Vector3 = site.home
@@ -894,7 +1011,10 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 			if float(site.age) > 2.2:
 				var home: Vector3 = site.home
 				site.yaw = lerp_angle(float(site.yaw),atan2(home.x-site.p.x,home.z-site.p.z),1.0-exp(-step*3.0))
-			if float(site.age) >= 3.5 or site.leaving: _hop(site,site.home,"out")
+			# A startled frog stays under a while longer (`lurk`, life_notice.gd).
+			if float(site.age) >= 3.5+float(site.get("lurk",0.0)) or site.leaving:
+				site.lurk = 0.0
+				_hop(site,site.home,"out")
 	var scale := Vector3.ONE*size*smoothstep(0.0,0.3,clock-float(site.born))*fade*squash
 	if site.mode == "sit":
 		# A slow breath through the throat, not a shiver.
@@ -1021,5 +1141,48 @@ func _daylight() -> float:
 func present(kind: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for site: Dictionary in sites[kind].values():
-		if site.here and not site.leaving: result.append(site)
+		if site.here and not site.leaving and not site.has("taken"): result.append(site)
 	return result
+
+# --- Prey -------------------------------------------------------------------
+
+## A heron or snake took this fish or frog: it slips into `mouth` over
+## TAKE_TIME and is gone. It counts as gone at once (`present`, the save), and
+## its site waits PREY_RETURN before another arrives the usual way.
+func take(site: Dictionary, mouth: Vector3) -> void:
+	if not site.here or site.leaving or site.has("taken"): return
+	var kind: String = site.kind
+	site.taken = clock
+	site.mouth = mouth
+	site.erase("lure")
+	site.erase("frozen")
+	var timing: Array = PREY_RETURN[kind]
+	site.delay = float(timing[0])+float(timing[1])*_rng.randf()
+	site.since = clock
+	taken[kind] = int(taken.get(kind,0))+1
+
+## The batch a fish is drawn with, for the one in a heron's bill.
+func fish_look(site: Dictionary) -> MultiMeshInstance3D:
+	return _fish_looks.get(site.get("look",""))
+
+## Into the mouth: toward it and smaller, a frog kicking in its leaping pose,
+## then gone and waiting to return.
+func _move_taken(kind: String, site: Dictionary) -> void:
+	var u := (clock-float(site.taken))/float(TAKE_TIME[kind])
+	if u >= 1.0:
+		_release(kind,site)
+		for key in ["taken","mouth","shown_p","shown_yaw"]: site.erase(key)
+		return
+	var e := smoothstep(0.0,1.0,u)
+	var from: Vector3 = site.get("shown_p",site.p)
+	var p := from.lerp(site.mouth,e)
+	var s := maxf(float(site.size)*(1.0-e),0.00001)
+	if kind == "fish":
+		var basis := Basis(Vector3.UP,float(site.get("shown_yaw",0.0)))*Basis.from_scale(Vector3(-s if site.mirror else s,s,s))
+		_fish_looks[site.look].multimesh.set_instance_transform(site.slot,Transform3D(basis,p))
+		return
+	if site.shown_pose != "leap":
+		if site.shown_pose != "": _frog_pose(site,site.shown_pose).set_instance_transform(site.slot,_hidden())
+		site.shown_pose = "leap"
+	var kick := sin(u*TAU*2.0)*0.25
+	_frog_pose(site,"leap").set_instance_transform(site.slot,Transform3D(Basis.from_euler(Vector3(0.5*e+kick,float(site.yaw),0),EULER_ORDER_XYZ).scaled(Vector3.ONE*s),p))
