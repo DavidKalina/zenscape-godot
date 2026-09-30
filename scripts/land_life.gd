@@ -24,6 +24,7 @@ const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Moments = preload("res://scripts/life_moments.gd")
 const Snakes = preload("res://scripts/life_snakes.gd")
+const Winter = preload("res://scripts/life_winter.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BirdFlight = preload("res://studies/bird_flight.gd")
 
@@ -128,6 +129,8 @@ var worst_usec := 0
 var survey_worst_usec := 0
 var moments: Node3D
 var snakes: Node3D
+## Ice on the ponds, the thaw after it, and dawn mist (scripts/life_winter.gd).
+var winter: Winter
 var material: Material
 
 var _tick := 0.0
@@ -164,7 +167,7 @@ func setup(owner_scene: Node3D) -> void:
 	var reference: Node3D = scene.get_node("Reference")
 	var frog_source: MultiMeshInstance3D = reference.get_node("mesh-40")
 	material = frog_source.multimesh.mesh.surface_get_material(0)
-	_spawn = _batch("Frogspawn",Models.frogspawn(material),SPAWN_MAX,false)
+	_spawn = _batch("Frogspawn",Models.frogspawn(material),_capacity("spawn"),false)
 	var ring_source: MultiMeshInstance3D = reference.get_node("mesh-39")
 	_rings = _batch("Rings",ring_source.multimesh.mesh,RINGS,false,true)
 	var ring_material := ShaderMaterial.new()
@@ -172,6 +175,9 @@ func setup(owner_scene: Node3D) -> void:
 	_rings.material_override = ring_material
 	for i in range(RINGS): _ring_state.append({"p":Vector3.ZERO,"age":100.0,"size":1.0})
 	_setup_birds(reference)
+	winter = Winter.new()
+	add_child(winter)
+	winter.setup(self)
 	for kind in sites: _free[kind] = range(_capacity(kind)-1,-1,-1)
 	var flies: MultiMesh = scene._fireflies.multimesh
 	for i in range(flies.instance_count): _firefly_source.append([flies.get_instance_transform(i),flies.get_instance_custom_data(i)])
@@ -247,7 +253,7 @@ func _setup_birds(reference: Node3D) -> void:
 	_birds.setup(_bird_node.multimesh,data,{"birds":flock,"cols":columns,"species":source.species})
 
 func _capacity(kind: String) -> int:
-	return {"fish":FISH_MAX,"spawn":SPAWN_MAX,"frog":FROG_MAX,"bird":BIRD_MAX,"firefly":FIREFLY_MAX}[kind]
+	return {"fish":FISH_MAX,"spawn":SPAWN_MAX+Winter.THAW_SPAWN_MAX,"frog":FROG_MAX,"bird":BIRD_MAX,"firefly":FIREFLY_MAX}[kind]
 
 ## `urgent` for a finished stroke, undo or new world: re-read as soon as the
 ## editor settles. Plain geometry changes (emergence steps) wait SURVEY_GAP.
@@ -276,6 +282,7 @@ func clear() -> void:
 		sites[kind].clear()
 	if moments != null: moments.clear()
 	if snakes != null: snakes.clear()
+	if winter != null: winter.clear()
 	_reading = null
 	_planning.clear()
 	survey = null
@@ -346,6 +353,7 @@ func _process(delta: float) -> void:
 	var step := 0.0 if paused else minf(delta,0.1)*pace
 	clock += step
 	_survey(delta)
+	winter.advance(minf(delta,0.1))
 	if step > 0.0:
 		_tick += step
 		if _tick >= TICK:
@@ -462,13 +470,14 @@ func _claim_carried() -> void:
 
 func _plan_spawn() -> void:
 	var wanted := {}
-	if WorldClock.season_factor(_season(),SPAWN_SEASON) > 0.05:
+	# None under ice, and a burst in the thaw after it.
+	if WorldClock.season_factor(_season(),SPAWN_SEASON) > 0.05 and not winter.frozen():
 		for record: Dictionary in survey.bodies:
 			if record.shallow.is_empty(): continue
-			var cap := clampi(1+int(record.area/10.0),1,SPAWN_BODY_MAX)
+			var cap := clampi(1+int(record.area/10.0),1,SPAWN_BODY_MAX)+winter.extra_spawn()
 			for cell in _choose("spawn",record.shallow,cap,SPAWN_GAP):
 				wanted[cell] = {"body":record.id,"level":record.level}
-	_reconcile("spawn",wanted,SPAWN_MAX)
+	_reconcile("spawn",wanted,SPAWN_MAX+winter.extra_spawn_total())
 
 ## Frogs come to banks of water that already holds frogspawn. Where the spawn
 ## came with a settled world, so do the frogs.
@@ -582,7 +591,7 @@ func _reconcile(kind: String, wanted: Dictionary, cap: int) -> void:
 			continue
 		if current.size() >= cap: break
 		var timing: Array = DELAYS[kind]
-		var delay: float = timing[0]+timing[1]*Variety.unit([salt,kind.hash(),cell,7])
+		var delay: float = (timing[0]+timing[1]*Variety.unit([salt,kind.hash(),cell,7]))*winter.haste(kind)
 		var site := {"cell":cell,"kind":kind,"delay":delay,"here":false,"leaving":false,"slot":-1,"settled":_fresh}
 		site.merge(wanted[cell],true)
 		site.since = clock-(delay*SETTLED_HEAD if site.settled else 0.0)
@@ -607,6 +616,7 @@ func _depart(kind: String, site: Dictionary) -> void:
 	site.leaving = true
 	site.left = clock
 	if kind == "frog":
+		if winter.burrow_on_leave(site): return
 		var away: Vector3 = site.home+(site.home-site.landing).normalized()*1.2
 		away.y = site.home.y
 		_hop(site,away,"away")
@@ -704,6 +714,7 @@ func _arrive_fish(site: Dictionary) -> void:
 		swim.set_shader_parameter("fish_swim",true)
 		swim.set_shader_parameter("fish_wave",Models.fish_wave(kind))
 		node.material_override = swim
+	site.shade = shade
 	batch.set_instance_color(site.slot,Color(shade,shade,shade))
 	_show_slot(batch,site.slot)
 
@@ -743,6 +754,7 @@ func _arrive_frog(site: Dictionary) -> void:
 	site.yaw = 0.0
 	site.wait = 4.0+_hash(site,3)*6.0
 	_hop(site,site.home,"out")
+	winter.emerge_on_arrival(site)
 
 func _arrive_bird(site: Dictionary) -> void:
 	var bird: Dictionary = _birds.birds[site.slot]
@@ -810,23 +822,28 @@ func _birds_out() -> bool:
 		if float(bird.out) > 0.001: return true
 	return false
 
-func _move_fish(site: Dictionary, _step: float, fade: float) -> void:
+func _move_fish(site: Dictionary, step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,SETTLE,clock-float(site.born))*fade
-	var t: float = clock*float(site.speed)+float(site.phase)
+	# Swim time runs on, so the pace can change (ice, a thaw) without a jump.
+	site.swim = float(site.get("swim",clock*float(site.speed)))+step*float(site.speed)*winter.fish_pace()
+	var t: float = float(site.swim)+float(site.phase)
 	var reach := 0.35
 	var candidate: Vector3 = site.home+Vector3(sin(t)*reach,0,cos(t*0.83)*reach)
 	if survey.wet_at(Vector2(candidate.x,candidate.z)): site.p = candidate
 	var heading := Vector2(cos(t)*reach,-0.83*sin(t*0.83)*reach)
 	var yaw := atan2(heading.x,heading.y)+sin(clock*9.0+float(site.phase))*0.03
 	var p: Vector3 = site.p
-	p.y = float(site.level)-float(site.sink)-(1.0-grow)*0.3
+	p.y = float(site.level)-float(site.sink)-winter.fish_sink(site)-(1.0-grow)*0.3
 	var scale := maxf(float(site.size)*grow,0.00001)
 	var basis := Basis(Vector3.UP,yaw)*Basis.from_scale(Vector3(-scale if site.mirror else scale,scale,scale))
-	_fish_looks[site.look].multimesh.set_instance_transform(site.slot,Transform3D(basis,p))
-	# Now and then a fish rises and leaves a ring, most often in low light.
+	var batch: MultiMesh = _fish_looks[site.look].multimesh
+	batch.set_instance_transform(site.slot,Transform3D(basis,p))
+	winter.shade_fish(site,batch)
+	# Now and then a fish rises and leaves a ring, most often in low light,
+	# never through ice, and often in a thaw.
 	if clock >= float(site.rise) and not site.leaving:
-		site.rise = clock+lerpf(10.0,28.0,fposmod(float(site.rise)*0.618,1.0))*(0.6 if _daylight() < 0.6 else 1.0)
-		ripple(Vector3(p.x,float(site.level),p.z),0.45)
+		site.rise = clock+lerpf(10.0,28.0,fposmod(float(site.rise)*0.618,1.0))*(0.6 if _daylight() < 0.6 else 1.0)*winter.rise_wait()
+		if winter.rises(): ripple(Vector3(p.x,float(site.level),p.z),0.45)
 
 func _move_spawn(site: Dictionary, _step: float, fade: float) -> void:
 	var grow := smoothstep(0.0,3.0,clock-float(site.born))*fade
@@ -868,12 +885,18 @@ func _move_frog(site: Dictionary, step: float, fade: float) -> void:
 					site.mode = "swim"
 					site.age = 0.0
 				elif site.mode == "out":
-					site.mode = "turn"
-					site.age = 0.0
-					site.turn_from = float(site.yaw)
+					if site.get("burrow",false): winter.begin_burrow(site)
+					else:
+						site.mode = "turn"
+						site.age = 0.0
+						site.turn_from = float(site.yaw)
 				else:
 					site.mode = "sit"
 					site.wait = 7.0+6.0*fposmod(float(site.phase)+clock*0.37,1.0)
+		"burrow","emerge":
+			var crawled: Vector2 = winter.crawl(site)
+			pitch = crawled.x
+			squash = Vector3(1.0,crawled.y,1.0)
 		"turn":
 			var u := minf(1.0,float(site.age)/FROG_TURN)
 			var home: Vector3 = site.home

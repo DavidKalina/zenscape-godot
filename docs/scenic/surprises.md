@@ -21,6 +21,9 @@ These are wired into the default Genesis path now (see `life.md`, `emergence.md`
 | Dead wood and an elder stand in old forest | forest age | common |
 | Fish, koi or wild company, rising rings at dusk | pond ≥1.5 m², deep cells | common |
 | Frogspawn, then frogs | shallow still edges, not winter | common |
+| Ponds freeze: fish slow and dark, frogs dig into the bank, heron and snake stay away | winter ice | uncommon |
+| Thaw burst: extra frogspawn, frogs crawl out of the banks, lively fish | a thaw after a held freeze | uncommon |
+| Mist off the ponds | cold clear dawns, autumn to early spring | common |
 | Gulls on thermals | shore, trees, streams | common |
 | Fireflies at dusk | damp ground near water and plants | common |
 | Springs, rills, pools, falls, edge falls | where a water ball lands | common |
@@ -40,9 +43,9 @@ This is the cheapest source of surprises. Most of it wires together systems that
 ### Weather and water
 - **Rain fills ponds.** The flow sim takes rain as input: ponds rise, rills run, and a dry basin becomes a pond after a storm, which then brings fish. This is the biggest gap. It makes the weather matter. (M, common)
 - **Snowmelt feeds springs.** Winter snow on the peaks runs into springs and streams in spring, so the streams swell. (M, uncommon)
-- **Winter reaches the water.** Ponds freeze. Fish go slow and dark under the ice, and frogs are gone. The thaw brings a burst of frogspawn. (M, uncommon)
+- **Winter reaches the water.** Ponds freeze. Fish go slow and dark under the ice, and frogs are gone. The thaw brings a burst of frogspawn. (M, uncommon) *Done: `life.md`, "Winter on the water".*
 - **A rainbow in the waterfall spray** when the sun is behind the camera. (S–M, uncommon)
-- **Morning mist off the ponds** on cold, clear dawns. (S, common)
+- **Morning mist off the ponds** on cold, clear dawns. (S, common) *Done: `life.md`, "Winter on the water".*
 
 ### Life eats life
 - **The heron catches a fish.** It lifts one out, the pond count drops, and a fish comes back later. The strike already exists; only the fish needs removing. (S, uncommon)

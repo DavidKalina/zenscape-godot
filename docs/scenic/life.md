@@ -60,7 +60,7 @@ Each kind keeps sites keyed by survey cell. This works like emergence's candidat
 | Kind | Needs | Delay + spread (s) | How many |
 |---|---|---|---|
 | Fish | deep cells of a pond | 10 + 16 | one per 2 m², at most 7 a pond and 24 in all |
-| Frogspawn | shallow still edges, not in winter (`SPAWN_SEASON` 1, 0.7, 0.3, 0) | 22 + 26 | 1 + area/10, at most 3 a pond and 9 in all |
+| Frogspawn | shallow still edges, not in winter (`SPAWN_SEASON` 1, 0.7, 0.3, 0), not under ice | 22 + 26 (× 0.3 in a thaw) | 1 + area/10, at most 3 a pond and 9 in all (+3 and +6 in a thaw) |
 | Frogs | a bank of water that already holds frogspawn | 16 + 22, counted from the spawn's arrival | 2 a pond, 6 in all |
 | Birds | shores and woods | 6 + 24 | one per 14 bank cells + one per 10 trees + one for a stream, at most 8 |
 | Fireflies | damp undergrowth | 12 + 22 | up to 64, 0.7 m apart |
@@ -81,7 +81,7 @@ Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a dela
 
 | Moment | Conditions | Chance per check | Cooldown (s) |
 |---|---|---|---|
-| Heron lands | a pond with ≥ 2 fish settled for 30 s and wading water; daylight > 0.25; rain < 0.3 | 0.06 | 240 |
+| Heron lands | a pond with ≥ 2 fish settled for 30 s and wading water; daylight > 0.25; rain < 0.3; not frozen | 0.06 | 240 |
 | Deer at dawn | ≥ 6 trees; a forest edge that has stood 25 s; celestial phase 0.2-0.36; rain < 0.3 | 0.25 | 300 |
 | Rainbow after rain | ≥ 8 s of rain above 0.25 that then stops (< 0.06); richness ≥ 1.2; daylight > 0.35 | 0.6 once per rain | none |
 | Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather | 1200 |
@@ -95,6 +95,17 @@ What each moment looks like:
 - **Bigfoot:** the ambient model steps out of the wood, watches you and goes back in, or strides across in front of it like the 1967 film. See "Bigfoot" below. The resident Bigfoot (`--bigfoot`) is untouched.
 
 `moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`.
+
+## Winter on the water
+
+`scripts/life_winter.gd` (`LandLife.winter`) reads the world's ice (`SurfaceWeather.ice`, which already draws the ice and slows the water's visible flow). The ponds are frozen for life once ice reaches `FROZEN` (0.5) and open again at `THAW` (0.25); each change re-reads the world.
+
+- **Under ice** (eased over ice 0.3-0.8, `UNDER_ICE`): fish swim at `ICE_PACE` (0.1) of their pace, sink up to `ICE_SINK` (0.28 m, keeping `FISH_FLOOR` off the bed), dim to `ICE_SHADE` (0.4) and beat their tails at `ICE_BEAT` (0.15 of the `fish_wave` amplitude). They leave no rings.
+- **Frogs go into the bank.** No frogspawn comes under ice, so the frogs leave; a frog in the water swims back first. Each backs `BURROW_REACH` (0.3 m) up its bank in `BURROW_SHOVES` (5) shoves over `BURROW_SECONDS` (7 s), rear first and nose up, working side to side, and sinks `BURROW_DEPTH` × size into the ground. The heron and snake do not come to a frozen world, and leave one that freezes.
+- **Thaw:** a thaw after at least `FREEZE_HELD` (20 s) frozen lasts `THAW_SECONDS` (240 s of life clock). Frogspawn takes `THAW_SPAWN_BODY` (3) more clumps a pond and `THAW_SPAWN_MAX` (6) more in all, and it and its frogs wait `THAW_HASTE` (0.3) of their delay. Frogs arriving in it crawl out of the bank above their place (`EMERGE_SECONDS`, 5 s) instead of hopping in. Fish swim up to `THAW_PACE` (1.6×) and wait `THAW_RISE` (0.3) of their usual time between rises, easing back over the thaw. Any thaw after a held freeze counts, not only spring's, but frogspawn still follows `SPAWN_SEASON`. The extra clumps go (hatch) at the first survey after the thaw ends.
+- **Pond mist:** on dawns (celestial phase 0.17-0.38, `MIST_DAWN`) with cloud under `MIST_CLOUD` (0.6; the fair sky, 0.38, still steams) and no rain, over unfrozen ponds of at least `MIST_AREA` (2 m²), by season (`MIST_SEASON` 0.8, 0, 0.6, 1 at each season's opening: autumn, winter and early spring). Up to 64 sprites of the falls' mist (`studies/fall_mist.gd`; `reference_mist_display.gdshader` with a slower `cycle_rate`) stand `MIST_LIFT` over the water, rise `MIST_RISE` (0.3 m) and drift with the wind. They are composited after the display fog, against its depth copy, so the balanced preset's fog cannot hide them. Without the display fog they do not show.
+- **Falls and rills** already slow under ice: `SurfaceWeather.flow_time` runs at 1 − 0.98 × ice, and `flow_fall.gdshader` slows its streaks by the same. The flow sim is untouched, so a thaw does not flood.
+- Freeze and thaw are not saved; a world loaded in winter freezes again at once. Everything visual here is unverified on screen.
 
 ## Bigfoot
 

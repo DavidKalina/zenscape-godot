@@ -370,5 +370,6 @@ Soaked by 30 s: 1.5 m³ before, 0.8 m³ after. The reflection comes on at about 
 - **Drain under `--modeless`.** Only undo removes a spring there. The water brush's Shift-drag drains outside `--modeless`.
 - **The groove's bed.** The clay's groove follows the ground (0.3 m deep on this branch; `feature/thumb-dirt` is deepening it), so a groove across a hump dams its own water. The probe's groove is shaped to fall steadily.
 - **A ball on flat ground soaks away** within a minute or two. The planned water always scooped a hollow instead. Tune `soak` or `evaporation` if puddles should last.
+- **Ice.** Frozen water only looks frozen: the flow's visible speed (falls, rills, ripples) slows with `SurfaceWeather.flow_time`, but the sim runs on, so nothing floods on a thaw. Pond life under ice is in `life.md`, "Winter on the water".
 - **Sound.** The water's sound hears `water_settled` pool reports, but has no running-water layer for live streams.
 - **Tests.** No suite tests were added or run (the user deferred them during the scenic pivot). `tools/probe_void_snap.gd` drags in the void to check a drag does not snap; a drag that crosses the land now gathers a water ball.
