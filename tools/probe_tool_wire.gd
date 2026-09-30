@@ -235,13 +235,19 @@ func gorge(start: Vector2, offsets: Array, fine := false, shape := "bow", interr
 	var shallowest_share := INF
 	var deepest := 0.0
 	var line: Array[float] = []
+	var digs: Array[float] = []
 	for k in range(41):
 		var q: Vector2 = along_path(path,length*(0.05+0.9*k/40.0))[0]
 		var dug := height(q,base)-height(q)
 		var room := minf(Wire.GORGE_DEPTH*(Wire.SHALLOW if fine else 1.0),height(q,base)-NativeTerrainData.MIN_HEIGHT)
 		shallowest_share = minf(shallowest_share,dug/room)
 		deepest = maxf(deepest,dug)
+		digs.append(dug)
 		line.append(height(q))
+	# The gorge's own depth: the median along the path. Where the ground rises
+	# ahead the bed cuts deeper to keep falling, which only the deepest reads.
+	digs.sort()
+	var typical: float = digs[digs.size()/2]
 	# The bed never climbs: read from its higher end.
 	if line[0] < line[-1]: line.reverse()
 	var climb := 0.0
@@ -296,7 +302,7 @@ func gorge(start: Vector2, offsets: Array, fine := false, shape := "bow", interr
 	tool.cut_gorge(instant,path)
 	var count := moved(base,0.03)
 	var result := {"verb":verb,"undo":data._undo.size()-undo0,"base":base,"undo0":undo0,"untouched":untouched_while_drawn,
-		"shallowest_share":shallowest_share,"deepest":deepest,"climb":climb,"chord_off":chord_off,"chord_dug":chord_dug,"centre":centre,
+		"shallowest_share":shallowest_share,"deepest":deepest,"typical":typical,"climb":climb,"chord_off":chord_off,"chord_dug":chord_dug,"centre":centre,
 		"steepest":steepest,"outside":outside,"down":count.down,"up":count.up,"wall_rock":float(wall_rock)/maxi(wall,1),
 		"bed_earth":float(bed_earth)/maxi(bed,1),"length":length,"path":path,"drawn":drawn,"a":a,"b":b,"partway":partway,"ride":ride,
 		"ran":ran,"undo_during":undo_during,"same_as_instant":data.heights == instant,"heights":data.heights.duplicate(),"tint":data.tint.duplicate(),
@@ -513,7 +519,12 @@ func run() -> void:
 
 	var fine := await gorge(spot+Vector2(-150,0),bowed(300.0),true)
 	check("Shift-drag is the shallow gorge",fine.verb == "shallow_gorge" and worked.back() == ["shallow_gorge",true],fine.verb)
-	check("it cuts shallower",fine.deepest < plain.deepest*0.6 and fine.shallowest_share > 0.9,"%.2f vs %.2f m" % [fine.deepest,plain.deepest])
+	# Read by the typical depth: a falling bed through rising ground cuts as
+	# deep as it must for either gorge (wire.gd "The gorge"). The full gorge
+	# may stop on the land's floor, so the shallow one is held to its own
+	# depth, SHALLOW of the gorge's, and to less than the full one's.
+	var shallow_depth := Wire.GORGE_DEPTH*Wire.SHALLOW
+	check("it cuts shallower",absf(fine.typical-shallow_depth) < shallow_depth*0.25 and fine.typical < plain.typical*0.8 and fine.shallowest_share > 0.9,"typical %.2f (made %.2f) vs %.2f m (deepest %.2f vs %.2f)" % [fine.typical,shallow_depth,plain.typical,fine.deepest,plain.deepest])
 	check("one undo step for the shallow gorge",fine.undo == 1)
 	await undo_exact(fine.base,fine.undo0,"shallow gorge")
 

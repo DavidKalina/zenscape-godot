@@ -8,6 +8,8 @@ extends SceneTree
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_land_clay.gd -- --modeless
 ## Frame gaps are CPU main-loop intervals under the dummy renderer: they show
 ## the cost of the work, not of drawing it.
+
+const HandTool = preload("res://scripts/clay_tools/hand.gd")
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -104,6 +106,19 @@ func off_level(center: Vector2, radius: float, level: float) -> float:
 	for i in range(data.points.size()):
 		if data.points[i].distance_to(center) >= radius: continue
 		total += absf(data.heights[i]-level)
+		count += 1
+	return total/maxi(count,1)
+
+## How far the ground within `radius` of `center` strays from its own mean:
+## how level it is, wherever it stands.
+func spread(center: Vector2, radius: float) -> float:
+	var data := editor.data
+	var mean := mean_height(center,radius)
+	var total := 0.0
+	var count := 0
+	for i in range(data.points.size()):
+		if data.points[i].distance_to(center) >= radius: continue
+		total += absf(data.heights[i]-mean)
 		count += 1
 	return total/maxi(count,1)
 
@@ -301,6 +316,7 @@ func run() -> void:
 	var palm_mid: Vector2 = plate(spot)
 	var palm_centre := (palm_at+palm_mid)*0.5
 	var off_before := off_level(palm_centre,1.2,level)
+	var spread_before := spread(palm_centre,1.2)
 	shift(true)
 	button(spot+Vector2(-30,0),true)
 	await tick()
@@ -316,7 +332,14 @@ func run() -> void:
 	var off_after := off_level(palm_centre,1.2,level)
 	print("PALM ",JSON.stringify({"level":snappedf(level,0.01),"off_before":snappedf(off_before,0.001),"off_after":snappedf(off_after,0.001)}))
 	check("Shift-drag is the palm",palm_verb == "palm",palm_verb)
-	check("the palm levels the land toward the height under the press",off_after < off_before*0.5,"%.3f -> %.3f m" % [off_before,off_after])
+	# The palm presses a level pan PALM_SINK under the press (hand.gd "The
+	# palm"), so it is read as a floor: flatter round the press, and sunk.
+	var pan := level-HandTool.PALM_SINK
+	var spread_after := spread(palm_centre,1.2)
+	var mean_pan := mean_height(palm_centre,1.2)
+	print("PAN ",JSON.stringify({"pan":snappedf(pan,0.01),"spread_before":snappedf(spread_before,0.001),"spread_after":snappedf(spread_after,0.001),"mean_after":snappedf(mean_pan,0.01)}))
+	check("the palm levels the land under it",spread_after < spread_before*0.5,"spread %.3f -> %.3f m" % [spread_before,spread_after])
+	check("  into a pan pressed below the ground under the press",mean_pan < level-HandTool.PALM_SINK*0.4 and mean_pan > pan-0.15,"mean %.2f m, pressed %.2f, pan %.2f" % [mean_pan,level,pan])
 	check("one undo step for the palm",worked.back() == ["palm",true] and data._undo.size() == undo0+1)
 	editor.undo()
 	await settled()
