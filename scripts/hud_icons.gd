@@ -169,3 +169,55 @@ static func _build() -> void:
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
 	_add("hammer","Hammer","Break","#7a6a5a",["M3 5.5 Q3 4.5 4 4.5 H15 L20.5 7.2 L15 9.8 H4 Q3 9.8 3 8.8Z","M8.2 9.8 H10.8 V20.8 A1.3 1.3 0 0 1 8.2 20.8Z"],["M12.5 4.5 V9.8"],14)
+
+# --- HUD 5 page icons and vignettes (design "ZenScape HUD 5 Air") -----------------
+# docs/design/hud-5/lowpoly.js `vignette()` and VIGNETTE_SIZES; the almanac's
+# pages (scripts/almanac_pages.gd) draw them. Everything HUD 5's pages add to
+# this file lives in this block.
+
+## The vignette's own box (lowpoly.js: viewBox 40x25, stretched to the card).
+const VIGNETTE_BOX := Vector2(40.0,25.0)
+## Sizes it is drawn at, design pixels: the strip's Mood pocket, a Moods page
+## card, the This world row and a Customise mini.
+const VIGNETTE_SIZES := {"strip":Vector2(44.0,28.0),"card":Vector2(78.0,49.0),"world":Vector2(56.0,35.0),"mini":Vector2(22.0,14.0)}
+## The clips, in the box: the horizon band the glow shows through, the slab's
+## top the land shows through, and the slab's flat side.
+const VIGNETTE_GLOW := "M0 10.5 L40 8.6 L40 16.4 L0 17.6Z"
+const VIGNETTE_LAND := "M3 18.2 L20 13.4 L37.5 16.8 L21 22.2Z"
+const VIGNETTE_SIDE := "M3 18.2 L21 22.2 L37.5 16.8 L37.5 19.4 L21 25.5 L3 20.8Z"
+## The sun or moon: radius and x in the box; y high, and low for the hours
+## near the horizon. Its colours: the night's moon and the day's sun (a low
+## sun is the glow lit 55% toward LIGHT).
+const VIGNETTE_DISC := Vector3(1.9,30.0,5.5)
+const VIGNETTE_DISC_LOW_Y := 10.0
+const VIGNETTE_MOON := Color("e6eaf2")
+const VIGNETTE_SUN := Color("fff3d6")
+## A slab side is the grass this far toward SHADE.
+const VIGNETTE_SIDE_SHADE := 0.55
+
+## A mood's vignette as SVG text: `seed` (lowpoly.js 23..32), its sky, glow and
+## grass, and its hour, "night", "low" (dawn, golden hour, dusk) or "high".
+## Three facet grids (sky over the card, glow in the horizon band, land on the
+## slab's top), the slab's flat side and the disc, `size` pixels.
+static func vignette_svg(seed: int, sky: Color, glow: Color, grass: Color, hour: String, size: Vector2) -> String:
+	var body := '<defs><clipPath id="g"><path d="%s"/></clipPath><clipPath id="l"><path d="%s"/></clipPath></defs>' % [VIGNETTE_GLOW,VIGNETTE_LAND]
+	var stretch := 'transform="scale(%s %s)"' % [_num(VIGNETTE_BOX.x/24.0),_num(VIGNETTE_BOX.y/24.0)]
+	var layers := [[seed,sky,""],[seed+40,glow,"g"],[seed+80,grass,"l"]]
+	for layer: Array in layers:
+		var group := ""
+		for tri: Dictionary in facets(int(layer[0]),_mix(layer[1],layer[1],0.0)):
+			group += '<polygon points="%s" fill="#%s" stroke="#%s" stroke-width="0.2"/>' % [tri.points,tri.fill,tri.fill]
+		group = '<g %s>%s</g>' % [stretch,group]
+		body += group if str(layer[2]).is_empty() else '<g clip-path="url(#%s)">%s</g>' % [layer[2],group]
+	body += '<path d="%s" fill="#%s"/>' % [VIGNETTE_SIDE,_mix(grass,SHADE,VIGNETTE_SIDE_SHADE).to_html(false)]
+	var disc := VIGNETTE_MOON if hour == "night" else _mix(glow,LIGHT,0.55) if hour == "low" else VIGNETTE_SUN
+	var y := VIGNETTE_DISC_LOW_Y if hour == "low" else VIGNETTE_DISC.z
+	body += '<circle cx="%s" cy="%s" r="%s" fill="#%s"/>' % [_num(VIGNETTE_DISC.y),_num(y),_num(VIGNETTE_DISC.x),disc.to_html(false)]
+	return '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %s %s" preserveAspectRatio="none">%s</svg>' % [
+		maxi(1,roundi(size.x)),maxi(1,roundi(size.y)),_num(VIGNETTE_BOX.x),_num(VIGNETTE_BOX.y),body]
+
+## The vignette rasterised `size` pixels (its box stretched to fit).
+static func vignette_texture(seed: int, sky: Color, glow: Color, grass: Color, hour: String, size: Vector2) -> Texture2D:
+	var image := Image.new()
+	if image.load_svg_from_string(vignette_svg(seed,sky,glow,grass,hour,size),1.0) != OK: return null
+	return ImageTexture.create_from_image(image)
