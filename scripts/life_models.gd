@@ -208,6 +208,9 @@ const FISH_KINDS := {
 	"rudd":{"title":"Rudd","length":0.32,"depth":0.32,"width":0.13,"tail":0.25,"fork":0.5,"dorsal":[0.5,0.68,0.1],"pectoral":0.05,"back":"#42523a","flank":"#c9c5a4","belly":"#ece6cc","fin":"#cc3c22","edge":"#e0664a","pattern":"sheen"},
 	"perch":{"title":"Perch","length":0.36,"depth":0.3,"width":0.14,"tail":0.22,"fork":0.35,"hump":0.35,"dorsal":[0.24,0.8,0.1],"spines":true,"pectoral":0.05,"back":"#3a4a1e","flank":"#a3a446","belly":"#e6e0c2","fin":"#8a8c4e","edge":"#b4b47a","low":"#de5626","bar":"#1e250e","pattern":"bars"},
 	"tench":{"title":"Tench","length":0.42,"depth":0.26,"width":0.18,"tail":0.2,"fork":0.04,"dorsal":[0.42,0.62,0.07],"pectoral":0.07,"back":"#2e3c1e","flank":"#5e6a32","belly":"#948f52","fin":"#26301a","edge":"#3c4428","eye":"#c0381c","pattern":"plain"},
+	# A rare variant (KOI_GOLDEN_CHANCE in land_life.gd), in no company: the
+	# ogon's shape in a brighter, more saturated gold with a stronger ridge.
+	"golden":{"title":"Golden koi","length":0.46,"depth":0.25,"width":0.25,"tail":0.2,"fork":0.28,"dorsal":[0.36,0.8,0.055],"pectoral":0.085,"back":"#f0b418","flank":"#ffd54a","belly":"#fff0a0","fin":"#ffd14e","edge":"#fff6c4","pattern":"sheen"},
 	"goldfish":{"title":"Goldfish","length":0.27,"depth":0.33,"width":0.17,"tail":0.34,"fork":0.5,"dorsal":[0.32,0.72,0.08],"pectoral":0.05,"back":"#e45a10","flank":"#f07a1e","belly":"#f6a64c","fin":"#f28a34","edge":"#f8c088","pattern":"sheen"},
 }
 ## Who shares a pond: koi, or wild fish with the odd escaped goldfish.
@@ -390,6 +393,9 @@ const FROG_KINDS := {
 	"common":{"title":"Common frog","size":1.0,"wide":1.0,"legs":1.0,"back":"#7a6a3a","flank":"#8c7a4a","belly":"#e2d8b4","spot":"#342a17","mark":"#3e2c1a","ridge":"#a89460","lip":"#d8caa0","iris":"#caa04c","pattern":"mask"},
 	"pool":{"title":"Pool frog","size":0.95,"wide":0.95,"legs":1.08,"back":"#5b8a2c","flank":"#6c9434","belly":"#ebe7c9","spot":"#22331a","mark":"#bcc862","ridge":"#c2a954","lip":"#b8cc6c","iris":"#dab444","pattern":"stripe"},
 	"leopard":{"title":"Leopard frog","size":1.0,"wide":0.92,"legs":1.12,"back":"#688046","flank":"#7a8c56","belly":"#efebdc","spot":"#232a17","mark":"#d2cb90","ridge":"#dccf9b","lip":"#e4dcb4","iris":"#c89a3c","pattern":"leopard"},
+	# Rare variants (FROG_ALBINO_CHANCE, FROG_BLUE_CHANCE in land_life.gd), in no company.
+	"albino":{"title":"Albino frog","size":1.0,"wide":1.0,"legs":1.0,"back":"#ecd2cc","flank":"#f2ddd6","belly":"#faf0ea","spot":"#dcb4ae","mark":"#e6c4bc","ridge":"#f6e4de","lip":"#fbeee8","iris":"#d01c2a","pattern":"mask"},
+	"blue":{"title":"Blue frog","size":0.95,"wide":0.95,"legs":1.08,"back":"#2c8ee6","flank":"#4aa4f0","belly":"#d6ecfa","spot":"#1a5aa8","mark":"#8cc8f6","ridge":"#7cbcf2","lip":"#c2e2fa","iris":"#f0d24a","pattern":"stripe"},
 	"toad":{"title":"Common toad","size":1.12,"wide":1.18,"legs":0.8,"back":"#86653f","flank":"#927348","belly":"#dccfae","spot":"#5a4026","mark":"#b8925e","lip":"#a88a5e","iris":"#cc7430","pattern":"warts"},
 }
 ## Who sits round a pond: one kind mostly, sometimes another. [kind, weight].

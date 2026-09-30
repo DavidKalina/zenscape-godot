@@ -39,6 +39,24 @@ static func deer(material: Material, fawn: bool) -> Rig:
 	root.visible = false
 	return Rig.new(root,player)
 
+## The white stag's coat, a cream every doe colour is pushed to (life_models
+## `hex`: vertex colours are stored sRGB-encoded).
+const STAG_COAT := "#ece5d4"
+
+## `material` with its colour scaled so the doe's mean vertex colour comes out
+## STAG_COAT: the same mesh and clips, pale, with its darker hooves and nose
+## still darker. The rig has no antlers, so this is a white doe-shaped deer.
+static func stag_material(material: Material, rig: Rig) -> Material:
+	var mesh := rig.root.find_children("*","MeshInstance3D",true,false)[0] as MeshInstance3D
+	var colors: PackedColorArray = mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	var mean := Color(0,0,0)
+	for c in colors: mean += c
+	mean = Color(mean.r/maxf(colors.size(),1),mean.g/maxf(colors.size(),1),mean.b/maxf(colors.size(),1))
+	var coat := Color.html(STAG_COAT).srgb_to_linear()
+	var pale: ShaderMaterial = material.duplicate()
+	pale.set_shader_parameter("base_color",Color(coat.r/maxf(mean.r,0.01),coat.g/maxf(mean.g,0.01),coat.b/maxf(mean.b,0.01)))
+	return pale
+
 class Rig:
 	var root: Node3D
 	var player: AnimationPlayer

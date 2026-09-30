@@ -54,6 +54,8 @@ One-shots come from a pool of four 3D players that fall off with distance (`unit
 | Heron moment | `heron-call`: a rough, falling "fraank", 1.5 s after it sets off | 0.2 | |
 | Deer moment | four soft `footstep-*` steps at pitch 1.2–1.35 | 0.1 | |
 | Rainbow | `bow-swell`: an open G–D chord breathing in over 2.5 s and away over 4.5 s | 0.08 | |
+| Bigfoot's howl (his trail, `docs/scenic/life.md`) | `far-howl`: a long low "whooo" rising and falling over 4 s, 16 m beyond the elder stand, on the far bus; the wood hushes 20 s | 0.3 | 420 s |
+| Bigfoot's knocks (his trail) | two or three `wood-knock`s, 0.7-1.2 s apart, 4 m into the elder stand, on the far bus; the wood hushes 20 s | 0.22 | 300 s |
 | Bigfoot | the birds hush for 50 s (songs off, crickets down 70%), and 60% of the time two wood knocks, 0.8 s apart, 3–6 s after he shows, 8 m further into the wood, on the far bus | 0.22 | he is rare already |
 
 Any two arrival sounds are at least `SHOT_GAP` (1.5 s) apart. For `SHOT_QUIET` (12 s) after a new world, load or undo there are none, because a settled world's life lands in a burst.

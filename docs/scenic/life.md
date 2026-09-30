@@ -6,9 +6,12 @@ Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fir
 - `scripts/life_survey.gd`: what the land offers, read from the live world.
 - `scripts/life_moments.gd`: the rare moments, and when Bigfoot may come.
 - `scripts/life_bigfoot.gd`: the Bigfoot sighting: where he stands, what he does, when he leaves.
+- `scripts/life_trail.gd`: Bigfoot's trail, the signs before the sighting: tracks, a cairn, a snapped sapling, a far howl and wood knocks.
 - `scripts/life_models.gd`: low-poly procedural meshes for the fish, frogs and frogspawn, and the classic heron and deer (`--classic-life`). Fish and frogs come in kinds, one table entry each (`FISH_KINDS`, `FROG_KINDS`).
 - `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
 - `scripts/life_snakes.gd`: the grass snake, built and moved in code.
+- `scripts/disturbance.gd` and `scripts/life_notice.gd`: player actions raise a disturbance, and the creatures near it notice (see "Noticing").
+- `scripts/pond_seasons.gd`: lilies on old ponds and autumn leaves on the water (see "Ponds through the year").
 - `tools/probe_land_life.gd` and `tools/probe_bigfoot_sighting.gd`: the headless probes.
 - `tools/probe_snake.gd` and `tools/render_snake_probe.py`: the snake's headless probe and a Blender renderer for what it dumps.
 - `tools/dump_life_models.gd` and `tools/render_life_models.py`: every fish and frog kind dumped headless and rendered in Blender (`-b`) as a contact sheet, or as a koi pond and a wild pond (`--pond`), for judging the designs without opening the game.
@@ -29,7 +32,7 @@ The editor reports change and LandLife re-reads the world. Nothing scans the wor
 The grid is 56×56 at 0.5 m, aligned with the terrain's cover cells.
 
 - **Ground:** live heights (`data.ground_height`).
-- **Still water:** the pond triangles the view drew (`GardenView.pond_vertices`). Each triangle's water stands at its vertices' height. This is free, and it matches what is on screen. Water from the water brush lands there as long as that branch draws its water through the pond mesh.
+- **Still water:** the pond triangles the view drew (`GardenView.pond_vertices`). Each triangle's water stands at its vertices' height. This is free, and it matches what is on screen. Water from the water brush lands there as long as that branch draws its water through the pond mesh. The live water's calm triangles are added (`still_water_triangles`). Their corners sit on the flow grid's cell centres, so every survey cell centre falls on a quad's diagonal. The rasteriser therefore counts points on an edge as inside (`_covers`). `Geometry2D.point_is_inside_triangle` did not, and before 2026-09-29 the survey saw no live pond at all.
 - **Flowing water:** stream beds from `data.streams`, marked as water 6 cm deep.
 - **Plants:** trees and shrubs from `data.objects`, of every provenance, bucketed on a 1 m grid.
 
@@ -60,7 +63,7 @@ Each kind keeps sites keyed by survey cell. This works like emergence's candidat
 | Kind | Needs | Delay + spread (s) | How many |
 |---|---|---|---|
 | Fish | deep cells of a pond | 10 + 16 | one per 2 m², at most 7 a pond and 24 in all |
-| Frogspawn | shallow still edges, not in winter (`SPAWN_SEASON` 1, 0.7, 0.3, 0) | 22 + 26 | 1 + area/10, at most 3 a pond and 9 in all |
+| Frogspawn | shallow still edges, not in winter (`SPAWN_SEASON` 1, 0.7, 0.3, 0), not under ice | 22 + 26 (× 0.3 in a thaw) | 1 + area/10, at most 3 a pond and 9 in all (+3 and +6 in a thaw) |
 | Frogs | a bank of water that already holds frogspawn | 16 + 22, counted from the spawn's arrival | 2 a pond, 6 in all |
 | Birds | shores and woods | 6 + 24 | one per 14 bank cells + one per 10 trees + one for a stream, at most 8 |
 | Fireflies | damp undergrowth | 12 + 22 | up to 64, 0.7 m apart |
@@ -71,6 +74,7 @@ What each creature looks like and does:
 
 - **Fish:** each pond keeps one company (`FISH_PONDS`, by a hash of the pond's first cell): a koi pond of kohaku, sanke, showa, yamabuki ogon, asagi and chagoi, or a wild pond of rudd, perch, common carp, tench and the odd escaped goldfish. Each kind is a lofted body (length, depth, width, a perch's hump), a forked or round tail, dorsal (a perch's split and spiny), pectoral, pelvic and anal fins with clear rims, and eyes. The paint is baked: countershading, then koi patches (three layouts per patterned kind, mirrored on half the fish), an ogon's bright ridge, a carp's scale net, an asagi's net and red belly, or a perch's bars. They swim just under the surface with the dorsal fin clear of it (`Models.fish_top`), circle their home and never swim out of wet cells. The tail beats in `reference_surface` (`fish_swim`, `fish_wave`): the source's travelling wave, rigid at the nose and swinging at the tail, fitted to each kind's length. Each look draws with its own copy of the shared material, so nothing new compiles. Now and then one rises and leaves a ring, more often in low light.
 - **Frogspawn:** clumps of pale beads with dark eggs, floating flat at the water level and following the level if it changes.
+- **Rare variants:** rolled from the site hash (`_hash(site,21/22)`), so a save brings the same ones back. `KOI_GOLDEN_CHANCE` 1.5% of the koi in a koi pond are a golden koi (`"golden"` in `FISH_KINDS`, brighter than the ogon, drawn `GOLDEN_GLOW` 1.14x). `FROG_ALBINO_CHANCE` 1.5% of frogs are albino (pale pink-white, red eye) and `FROG_BLUE_CHANCE` 1% sky blue. `DEER_STAG_CHANCE` 2% of deer arrivals are a lone white stag: the doe mesh with `Rigs.stag_material` (base colour scaled to cream); the rig has no antlers, and the classic deer has no stag. `BOW_DOUBLE_CHANCE` 8% of rainbows are double: `celestial.moment_bow_double` publishes `zs_bow_double`, which lifts the sky shader's existing reversed second bow from 0.085 to 0.2. Variants are unverified on screen.
 - **Frogs:** code-built, in four kinds: common frog (brown, spotted, dark mask behind the eye), pool frog (green, pale stripe down the back), leopard frog (grey-green, rimmed spots) and common toad (warty, broad, copper eyes, glands behind the eyes, short low hops). A pond's frogs are mostly one kind (`FROG_PONDS`). Each has bulging gold eyes with dark pupils, eardrums, folds down the back, barred legs, and webbed hind feet. It sits propped on its arms with the hind legs folded. It flies in a second, leaping pose, arms back and legs thrown out, from just after it pushes off until just before it lands, crouching and squashing at either end. It swims in the leaping pose, low in the water with only its eyes and back above it, and comes round toward its bank late in the swim. Back on the bank it turns to face the water, as frogs sit. The pond loop is the Fidelity one: sit on the bank, leap into the nearest water, paddle and hop back. The Fidelity reference world keeps its own frogs.
 - **Birds:** the Fidelity gulls with their thermal flight model (`studies/bird_flight.gd`). They fly in from beyond the plate over three thermals, which rise above the two biggest waters and the highest ground.
 - **Fireflies:** the scene's own 90 fireflies. On a blank world every one starts absent. `INSTANCE_CUSTOM.w` in `reference_fireflies.gdshader` is now absence, and each firefly fades in at its place. They glow at dusk as before. Leaving a blank world restores the Fidelity positions.
@@ -81,20 +85,61 @@ Checked every `CHECK` (2 s) of life time. Each moment has its conditions, a dela
 
 | Moment | Conditions | Chance per check | Cooldown (s) |
 |---|---|---|---|
-| Heron lands | a pond with ≥ 2 fish settled for 30 s and wading water; daylight > 0.25; rain < 0.3 | 0.06 | 240 |
+| Heron lands | a pond with ≥ 2 fish settled for 30 s and wading water; daylight > 0.25; rain < 0.3; not frozen | 0.06 | 240 |
 | Deer at dawn | ≥ 6 trees; a forest edge that has stood 25 s; celestial phase 0.2-0.36; rain < 0.3 | 0.25 | 300 |
 | Rainbow after rain | ≥ 8 s of rain above 0.25 that then stops (< 0.06); richness ≥ 1.2; daylight > 0.35 | 0.6 once per rain | none |
-| Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather | 1200 |
+| Moonbow after night rain | the same rain stopping at night (daylight < 0.1); richness ≥ 1.2; the moon up and ≥ 90% lit | 0.5 once per rain | none |
+| Bigfoot | see "Bigfoot: when he comes" below | up to 0.006 × light × weather × trail boost (1-1.6) | 1200 |
+| Bigfoot's signs | see "Bigfoot's trail" below | up to 0.02 (marks), 0.015 (howl), 0.014 (knocks) × kinship | 240, 420, 300 |
 
 What each moment looks like:
 
-- **Heron:** glides in from off the plate along a curve over 7 s with slow wingbeats, legs trailing, then brakes and lands with a ring. It stands in the shallows 45-90 s, and its neck strikes at the water every 7-14 s. It flies off early if rain comes or the water goes.
+- **Heron:** glides in from off the plate over its bank along a curve over 7 s with slow wingbeats, legs trailing, then brakes and lands with a ring, facing into the water. It stands in the shallows 45-90 s, and its neck strikes at the water every 7-14 s. Most strikes miss; some catch a fish (see "Predation" below). It flies off early if rain comes or the water goes.
 - **Deer:** a doe, and half the time a fawn, step out of the trees to the edge at 0.42 m/s. They graze, head down for 5-11 s and up for 2-4 s, for 25-45 s, and leave when their time is up or the sun climbs. They walk back into the wood and fade inside the trees.
   The deer are a rigged Blender model (`assets/models/zenscape-deer.glb`, built by `tools/blender_creatures/deer.py`, clips in `deer_clips.py`) played through `scripts/life_rigs.gd`: Walk synced to ground speed (the fawn's legs run faster), HeadDown into Graze, and HeadUp into Alert on the first lift of a visit, then Look or Idle in turn. Clips advance on the life clock. `--classic-life` brings back the code-built deer from `life_models.gd`.
 - **Rainbow:** `celestial.moment_bow`, a new term in `studies/celestial.gd` next to `rainbow_strength` and `weather_bow`, rises to 0.85 over 6 s, holds 30 s and fades over 10 s. It is never saved.
+- **Moonbow:** `celestial.moon_bow`, published as `zs_moonbow`: the rainbow's drawing (`zsRainbow`) about the antilunar point, washed nearly to grey and cooled. It rises to 0.35 over 12 s, holds 40 s and fades over 15 s, and sounds as a lower, quieter bow swell. Near-full moons at night after rain make it legendary.
 - **Bigfoot:** the ambient model steps out of the wood, watches you and goes back in, or strides across in front of it like the 1967 film. See "Bigfoot" below. The resident Bigfoot (`--bigfoot`) is untouched.
 
-`moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`.
+`moments.force(kind)` starts one now for probes. It skips the delay, chance and hour, but not the place it needs. For Bigfoot the kinds are `bigfoot` (any sighting), `bigfoot_watch`, `bigfoot_listen` and `bigfoot_stride`; for his trail, `bigfoot_tracks`, `bigfoot_cairn`, `bigfoot_branch`, `bigfoot_howl` and `bigfoot_knocks`.
+
+## Winter on the water
+
+`scripts/life_winter.gd` (`LandLife.winter`) reads the world's ice (`SurfaceWeather.ice`, which already draws the ice and slows the water's visible flow). The ponds are frozen for life once ice reaches `FROZEN` (0.5) and open again at `THAW` (0.25); each change re-reads the world.
+
+- **Under ice** (eased over ice 0.3-0.8, `UNDER_ICE`): fish swim at `ICE_PACE` (0.1) of their pace, sink up to `ICE_SINK` (0.28 m, keeping `FISH_FLOOR` off the bed), dim to `ICE_SHADE` (0.4) and beat their tails at `ICE_BEAT` (0.15 of the `fish_wave` amplitude). They leave no rings.
+- **Frogs go into the bank.** No frogspawn comes under ice, so the frogs leave; a frog in the water swims back first. Each backs `BURROW_REACH` (0.3 m) up its bank in `BURROW_SHOVES` (5) shoves over `BURROW_SECONDS` (7 s), rear first and nose up, working side to side, and sinks `BURROW_DEPTH` × size into the ground. The heron and snake do not come to a frozen world, and leave one that freezes.
+- **Thaw:** a thaw after at least `FREEZE_HELD` (20 s) frozen lasts `THAW_SECONDS` (240 s of life clock). Frogspawn takes `THAW_SPAWN_BODY` (3) more clumps a pond and `THAW_SPAWN_MAX` (6) more in all, and it and its frogs wait `THAW_HASTE` (0.3) of their delay. Frogs arriving in it crawl out of the bank above their place (`EMERGE_SECONDS`, 5 s) instead of hopping in. Fish swim up to `THAW_PACE` (1.6×) and wait `THAW_RISE` (0.3) of their usual time between rises, easing back over the thaw. Any thaw after a held freeze counts, not only spring's, but frogspawn still follows `SPAWN_SEASON`. The extra clumps go (hatch) at the first survey after the thaw ends.
+- **Pond mist:** on dawns (celestial phase 0.17-0.38, `MIST_DAWN`) with cloud under `MIST_CLOUD` (0.6; the fair sky, 0.38, still steams) and no rain, over unfrozen ponds of at least `MIST_AREA` (2 m²), by season (`MIST_SEASON` 0.8, 0, 0.6, 1 at each season's opening: autumn, winter and early spring). Up to 64 sprites of the falls' mist (`studies/fall_mist.gd`; `reference_mist_display.gdshader` with a slower `cycle_rate`) stand `MIST_LIFT` over the water, rise `MIST_RISE` (0.3 m) and drift with the wind. They are composited after the display fog, against its depth copy, so the balanced preset's fog cannot hide them. Without the display fog they do not show.
+- **Falls and rills** already slow under ice: `SurfaceWeather.flow_time` runs at 1 − 0.98 × ice, and `flow_fall.gdshader` slows its streaks by the same. The flow sim is untouched, so a thaw does not flood.
+- Freeze and thaw are not saved; a world loaded in winter freezes again at once. Everything visual here is unverified on screen.
+
+## Predation
+
+Life eats life, now and then. Both are on by default; the counts and the save stay true to what is left in the pond.
+
+**The heron catches a fish** (`life_moments.gd`, `HERON_*`).
+- 5 s before a strike, with chance `HERON_LURE` (0.55), the nearest fish of that pond within `HERON_LURE_REACH` (1.9 m) of where the bill will go glides in from its round and noses there, with a small drift, from 0.9 s before the strike. A wading step in progress rules it out.
+- The strike takes it `HERON_CATCH` (0.5) of the time, about one strike in four. Otherwise the fish darts back to its round in 1.1 s (`LandLife.DART`), fast and then slowing. Strikes with no fish drawn in miss too, so misses are about three in four.
+- At most `HERON_CATCHES` (2) a visit, and never when that would leave the pond with fewer than `HERON_FISH` minus one.
+- **A catch:** the fish slips into the bill under the water (0.14 s). The Blender heron's Strike clip already carries a catch on its `Catch` bone. The baked silver fish is hidden for good, and the pond fish's own mesh and material ride that bone instead, `CATCH_LENGTH` (15 cm) long, whatever kind it was: up across the bill, tossed, and gone down with the clip's two gulps and the neck ripple. It fights in the bill in bursts (`CATCH_WRIGGLE`).
+- **A miss:** the Strike clip is cut as the empty bill comes up (`HERON_MISS_CUT`, frame 48) and blends back to Stand over 0.9 s: no toss, no gulp.
+- **Carried off,** `HERON_CARRY` (0.15) of catches: the heron takes off with the fish still in its bill as soon as it is up (`HERON_CARRY_LIFT`), and it stays there through the take-off and flight.
+- It emits `LandLife.moment("heron_catch", position)`. `moments.catches` and `moments.carried` count them.
+- `--classic-life` catches too, but the code-built heron has no fish to show in its bill.
+
+**The grass snake takes a frog** (`life_snakes.gd`, the taking constants), rare.
+- `TAKE_CHANCE` (0.3) of visits try, at a hunt stop, for a frog sitting on its bank within `TAKE_REACH` (3 m) over open ground. The frog keeps still from then on.
+- **Stalk:** it comes to `STALK_FROM` (0.75 m), holds fixed on the frog, then creeps in at `STALK_PACE` (30%) of its cruise with its head low and on the frog, no bursts, to `STRIKE_GAP` (0.3 m) short.
+- **Strike:** it draws back into a tight S (`STRIKE_DRAW`, head up to `STRIKE_LIFT`) and holds still for 1.8-2.8 s (`STRIKE_HOLD`), with a tongue flick or two early on. Then the head shoots out to the frog in `LUNGE` (0.13 s), jaw open to `GAPE`, and the body surges up to `SURGE` (16 cm) along its way. It holds there a moment and eases back over `STRIKE_AFTER`, with the smallest overshoot.
+- **Escape:** `ESCAPE` (0.35) of the time the frog leaps into the water just before (`ESCAPE_LEAD`). The strike hits the bank, and the snake hunts on.
+- **Taken:** the frog is drawn into the mouth in its leaping pose, kicking, over 0.3 s. The snake swallows for 5.5-7.5 s (`SWALLOW`): the jaws walk it in with slow gapes, and a bulge (`BULGE`) runs down to a third of its length and stays there. It then leaves with no parting hiss, at `FED_PACE` (60%), which reads as a slow, satisfied retreat.
+- It emits `LandLife.moment("snake_take", position)`. `snakes.takes` counts them.
+- Rain or a drained pond during a stalk lets the frog go.
+
+**Counts and the save.** `LandLife.take(site, mouth)` removes the creature from `present()` at once, so the heron's and snake's conditions see the smaller pond. Its site stays open with a fresh delay of `PREY_RETURN` (fish 70-160 s, frogs 90-210 s), and a new one arrives the usual way (it counts in `arrivals`). `LandLife.taken` counts by kind. The save writes a taken creature's site as not here, with that delay, so a load brings it back on the same schedule. Lures, frozen frogs and moments in progress are not saved.
+
+**Checked** headless only, on a dug pond with a scratch probe that steps the heron and snake at 30 fps. With the default odds one visit drew in two fish and swallowed both, each showing in the bill for the clip's 27 frames. With `HERON_CARRY` forced to 1, three visits drew in six, caught three and flew off with each, the fish held through take-off and flight. Before the heron landed facing the water, two visits in three struck at dry ground and could not catch. Misses cut to Stand 1.6 s into the clip, and catches play the whole clip. A snake that found a frog in reach took it, swallowed and left. With the escape forced, three strikes all missed, and the snake hunted on each time. Taken fish and frogs came back through arrivals within the next 260 s. `probe_heron_rig.gd` (both herons), `probe_snake.gd --visits=3` and `probe_land_life.gd` still pass. How any of it looks is unverified: the bill fish's size and grip, the strike and the bulge have not been seen rendered.
 
 ## Bigfoot
 
@@ -177,6 +222,31 @@ He stands 2.21 m tall at scale 1, the model's own height, next to 3-6 m trees. H
 - `--force-bigfoot` on the command line (or `--force-bigfoot=watch|listen|stride`) brings him as soon as the wood qualifies (the survey's trees and edge, not the hour, settle time or chance), and again 12 s after each sighting ends, for filming. Example: `godot --path . -- --force-bigfoot=stride`.
 - `--force-life` (or `--force-life=deer,heron,snake`, any of them) does the same for the deer, heron and grass snake: each comes as soon as the world has its place (a forest edge; wading water; a pond with a bank), skipping delay, chance and hour, and again 8 s after it has gone. Example: `godot --path . -- --force-life`, then paint a pond with a wood beside it.
 
+### Bigfoot's trail
+
+`scripts/life_trail.gd`, owned by LifeMoments and checked on its 2 s clock. He is a rumour before he is a glimpse: on a world that is becoming his kind of place, signs turn up earlier and more often than he does. Nothing marks or names them; photo mode labels only what it already did.
+
+**The gate** is a weaker sighting wood: ≥ 10 trees (`TRAIL_TREES`), richness ≥ 1.4, a forest edge with ≥ 5 trees near, held 3 minutes (`TRAIL_SETTLE`), scenery mode only. Sounds and in-the-dark marks also want no stroke for 20 s.
+
+**Kinship** (`kinship`, 0.2-1) scales every chance: trees (10 → 30), richness (1.4 → 3.0), the densest edge (5 → 12 trees), dead wood in the wood (an old stand), and water, then × 0.5 → 1 as the wood holds from 3 to 15 minutes.
+
+| Sign | When | Where |
+|---|---|---|
+| Tracks | a mark: at night or dawn (0.02 × kinship per check), or once for each night that goes by (0.5 × kinship; the plain eases through its night in seconds) | from a strong edge down to the nearest shore (≤ 11 m) and back into the wood; in snow with no water near, a loop out of the wood and back. Prints show in snow (`snow_cover` ≥ 0.2), on wet ground (`ground_wet` ≥ 0.35) or within 3 m of water, so on a dry day only the muddy end shows |
+| Stacked stones | a mark, as above | at the wood's edge nearest the elder stand: 3-5 flat stones, knee high |
+| Snapped sapling | a mark, as above | the same: snapped at 1.5-1.8 m and folded down, or bent into an arch with its crown to the ground |
+| Far howl | the last of dusk or night, still (air + swell < 0.45), clear (no rain or snow, cloud < 0.45, fog < 0.3) | 16 m beyond the elder stand, away from the camera |
+| Wood knocks | the sighting's light (dawn, dusk, night, day mist), no downpour | 4 m into the elder stand, 2-3 knocks 0.7-1.2 s apart |
+
+Marks are tracks (55%; a cairn or sapling when no tracks can be laid), a cairn (25%) or a sapling (20%), at most one per 240 s. The elder stand is the dead wood with the most dead wood and trees round it (old stands grow snags, logs and stumps, `emergence.gd`), or the densest square metre of wood without any.
+
+- **Prints:** big bare feet, about 0.42 m long (a person's are 0.27), 1.25 m a step (a person's is 0.75), toed out a little, two MultiMeshes (left, right) of the `reference_surface` material, laid on the ground's slope and toned by instance colour: dark mud, or blue snow shadow. They fade over 15 minutes of life, in 45 s of rain, in 2 minutes of falling snow, and snow tracks in a minute once the snow goes; fading prints shrink and fill toward the ground's tone. At most two sets of 20.
+- **Cairns and saplings:** one faceted mesh each from a seed, at most three; one goes when its ground moves more than 0.25 m or floods.
+- **Sound:** GenesisAudio answers the `bigfoot_howl` and `bigfoot_knocks` moments on the far bus and hushes the wood for 20 s (`docs/scenic/sound.md`). The howl, `far-howl.wav`, is synthesised (`tools/generate_nature_audio.py --howl`).
+- **The sighting:** every sign counts, and his chance per check grows by up to 60% (`SIGHTING_BOOST`) once four have been left (`boost()`, shown in `bigfoot_conditions().trail`).
+- **Saved:** LandLife's document carries `trail`: `{"version": 1, "count", "tracks": [{"kind", "fade", "prints": [x, z, yaw, left, ...]}], "marks": [[kind, x, z, yaw, seed]]}`. Loads rebuild them; a new world clears them; an undo keeps them if their ground still stands.
+- **Cost:** nothing per frame without tracks; with tracks, a fade step per frame and a redraw of at most 40 prints every 0.5 s. The elder stand is looked for only when a sign needs it.
+
 ## The grass snake
 
 `scripts/life_snakes.gd`, owned and advanced by LandLife like the moments. `LandLife.force("snake")` (or `snakes.force(options)`) summons one for probes.
@@ -206,7 +276,7 @@ A visit takes 95-125 s with an 8 s bask. With the usual 16-28 s bask it is about
 - **Mesh.** A faceted hexagonal tube with a flat belly: 26 rings, a head with a hinged jaw, and a forked tongue. It has 29 bones and 364 triangles.
   - **Skinning:** every vertex belongs to one bone, so rings stay rigid and the faces between them stretch. Skinning runs on the GPU.
   - **Colour:** it is drawn with the frogs' `reference_surface` material and per-face vertex colours: an olive back, darker bars and spots on half-faces, a pale belly, the yellow collar patches with a black crescent behind them, small dark eyes, and a dark red mouth inside.
-  - **Size:** 1.2 m long and 5.6 cm across (`LENGTH`, `RADIUS`). That is a big female, slightly larger than the usual metre so it reads from further off.
+  - **Size:** the base is 1.2 m long and 5.6 cm across (`LENGTH`, `RADIUS`). Each visit's snake is `SIZE` (1.5) times that, times a seeded `SIZE_RANGE` (0.8-1.3), so it is 1.4-2.3 m long, 1.8 m by default. That is larger than life, so it reads next to the heron. Girth and head follow the length's change to the power `GIRTH_SHARE` (0.75), so the big ones are long rather than bloated. Heights, reaches (the hiss distance, the frog-take range, the stalk and strike), the coil and the bulge scale with it. Speeds scale with its square root. The mesh is rebuilt on arrival (364 triangles).
 - **The path.** The head follows a way worked out ahead of time, with points `STEP` (2 cm) apart measured along the ground rather than across it, so the body keeps its length on slopes. Every ring sits on that path at its own distance behind the snout, so the serpentine comes from the head weaving (`WEAVE`, `WAVE`) and nothing slides sideways. The way turns toward its goal at `TURN` rad/m and is smoothed. It looks ahead, never past the goal, to steer round water and ground steeper than `SLOPE_MAX`.
   - **Near a goal:** ahead of it, it steers harder and stops weaving, so it arrives. A goal behind it is swung round to wide, never in a hairpin.
   - **No progress:** a way that stops getting closer ends where it was closest.
@@ -263,6 +333,55 @@ A visit takes 95-125 s with an 8 s bask. With the usual 16-28 s bask it is about
   - Over its own coils, the upper body rests within 9 mm of the lower.
 - **Spacing:** along the body, rings stay at 0.99 median, p99 1.05. The one tight spot, 0.74, is the last segment of the tail's tip while it settles. On the lifted neck the p99 is 1.22 while it is drawn back to hiss.
 - **LandLife with the snake hooked in** (`probe_land_life.gd -- --pace=6 --watch=15`): median 0.07 ms, p95 0.15 ms per frame. Every other creature and moment still comes.
+
+## Small life: dragonflies, butterflies, woodpecker, geese
+
+Four ambient creatures that answer what was built, each in its own script under `scripts/life_small.gd` (owned by LandLife; three hooks). They read the survey and LandLife's clock, weather and season, never the world, and are not saved. The survey now also lists `flower_spots` (flowering shrubs, the kinds emergence gives meadows) and `snag_spots` (`[x, z, height]`).
+
+| Creature | Needs | Out when | Look and motion |
+|---|---|---|---|
+| Dragonflies (`life_dragonflies.gd`) | still water of at least 2.5 m², one to three a pond, nine in all | summer, daylight, dry | hover with a small jitter, tilt the nose back, dart a metre or two over the water or bank cells and brake late; four wings in antiphase; blue, green, red or amber |
+| Butterflies (`life_butterflies.gd`) | four or more flowering shrubs, one per five, ten at most | spring and summer, daylight, dry | heading wanders on a few sines and is pulled to the next flower, speed surges with each wingbeat, height bobs; settles on a bloom with its wings slowly opening and closing |
+| Woodpecker (`life_woodpecker.gd`) | at least one snag (old stands) | daytime, dry, not deep winter; a visit every two to five minutes | mostly sound: two to four synthesised drum rolls from the snag, with a small bird on its trunk whose head strikes at drumming pace, then it flits off |
+| Geese (`life_geese.gd`) | nothing on the land | spring and autumn, daylight, dry; a flock every four to ten minutes | five to nine in a V high overhead, each drifting in its rank with its own wingbeat, a ripple down the arms and the odd glide; faint honks on the distant bus |
+
+Sounds are synthesised in code the first time they are needed (`life_small_kit.gd`: `drum_roll`, `honk`), so no audio files were added. They play on the Genesis buses and follow the Sound settings. Bodies and wings are MultiMesh batches (one draw each); the woodpecker is two mesh nodes. Everything is unverified visually and by ear.
+
+## Ponds through the year
+
+`scripts/pond_seasons.gd` (`PondSeasons`, a child of LandLife and advanced on its clock). The water ages and carries the season. It reads LandLife's survey for the ponds, and reads the live water's depth, ground and velocity through the kernel's own accessors every `SAMPLE_SECONDS` (0.2 s). It never edits the sim. Planned ponds, which the live water does not hold, use the survey's level.
+
+### Lilies on old ponds
+
+- **Age by body.** Each pond of at least `MIN_BODY_AREA` has an age on the life clock. A re-read body takes the oldest age among the cells it now covers, so a pond that grows or merges keeps its age. A live pond with less than `LILY_DRAINED` (30%) of its cells wet has drained, and starts again from clear. A settled world (new or generated) starts its ponds `LILY_SETTLED` (480 s) old. Ages are saved in LandLife's document as `"ponds": [[first cell, age], ...]`. The field is optional, so older saves load.
+- **Clear, then a few pads, then a lily edge.** Pads grow on body cells up to `LILY_RINGS` (3 cells, 1.5 m) in from the bank, no more than `LILY_INNER` (0.6) of the way to the middle, in water `LILY_DEPTH` (0.03–0.9 m) deep, on at most `LILY_COVER` (half) of the pond's cells. They are ranked from one seed spot on the bank, round the edge, then inward. A pond shows the first share of them by `smoothstep(LILY_AGE)` (120 s to 720 s of pond age), so the first pads sit together and the edge fills in.
+- **Seasons.** The share is multiplied by `LILY_SEASON` (spring 0.2, summer 1, autumn 0.75, winter 0; `WorldClock.season_factor`). Pads die back through late autumn and winter, and come back in spring. They turn rust (`LILY_RUST`) as they go. `FLOWER_SHARE` (22%) of pads flower in summer (`FLOWER_SEASON`) once the pond's pads are 30–70% grown. A pond's flowers are white, or pink on 30% of ponds.
+- **Riding the water.** Pads float `LIFT` (1.6 cm) over the live surface. They shrink away over `LILY_EASE` (3 s) where the water drains or runs faster than `LILY_CALM` (0.12 m/s).
+- **Models.** A domed, notched, faceted pad (11 sides), and a flower with eight open petals, six cupped ones and a gold heart. Both are drawn with the frogs' material. Batches hold `LILY_MAX` (160) pads and `FLOWER_MAX` (40) flowers, and are rewritten every `LILY_TICK` (0.1 s).
+
+### Autumn leaves on water
+
+- **Which trees shed.** While the gold (`surface_weather.autumn`) is above 0.02, deciduous trees (broadleaf, layered tree, birch, willow) with water within `LEAF_REACH` (2.6 m) shed onto it. They are found by a scan of `LEAF_SCAN` (12) objects a frame, repeated every `LEAF_RESCAN` (4 s).
+- **How many.** Up to `LEAF_RATE` (1.8) leaves a second, scaled by the falling leaves' shed curve and by wind, reaching full rate at `LEAF_TREES` (6) trees. At most `LEAF_MAX` (160) are out at once.
+- **Falling.** A leaf lets go 1.3–2.8 m over the water and flutters down at `LEAF_FALL` (0.6 m/s).
+- **Drifting.** On the water it takes the flow's velocity (`LEAF_FOLLOW`, top speed `LEAF_SPEED`). So it runs down rills, and turns to face its way on fast water. On still water it circles the pond's middle (`LEAF_SWIRL`, 3.5 cm/s) and drifts out to the bank (`LEAF_SHORE`). Wind adds a little.
+- **Where leaves gather.** A step that would leave the water is not taken, so leaves lodge at banks and in eddies.
+- **Going.** A leaf sinks and darkens into the deep water colour after 60–130 s (`LEAF_FLOAT`, over `LEAF_SINK`). A leaf stranded by draining water, or blown onto the bank, goes within `LEAF_STRANDED` (8 s).
+- **Colour.** From the tree's stand autumn (the record's `autumn`), on the path `zs_autumn_stand_paint` takes: gold, amber or copper-red. Early in the fall the leaves are greener, and one in seven is brown.
+- **Batch.** One pooled MultiMesh. It is written as one buffer each frame from packed arrays.
+
+### Cost
+
+Measured headless with a scratch probe of one live pond and one planned pond:
+
+- **Leaves:** about 3 µs a leaf per frame. That is 0.1–0.15 ms with 40 leaves out, and up to about 0.5 ms at the 160 cap.
+- **Lilies:** about 2 µs a pad per `LILY_TICK`.
+- **Water read:** 15 µs.
+- **Tree scan:** under 0.1 ms a frame while it runs.
+
+Nothing runs outside autumn except the lilies.
+
+The look is not yet verified rendered: pad and flower size, the pad greens and rust, leaf colour under the scene palette, and whether pads sit visibly above the live sheet.
 
 ## Models
 
@@ -323,6 +442,27 @@ The snake probe digs the same pond, with shrubs on its west bank, and waits for 
 - `cam`: the probe's player camera (`--cam-scale` pulls it in along its line to the snake);
 - `shoulder`: over the head toward a point.
 
+## Noticing
+
+The creatures notice the hand and the wanderer (`feature/sp-hand-notice`). Player actions raise a disturbance through a shared static hub (`scripts/disturbance.gd`: `raise(point, radius, strength, kind, detail)`), and `scripts/life_notice.gd`, owned by LandLife, answers each one once: it finds the creatures near it then, schedules their reactions, and steps only those reacting. Nothing looks for the hand every frame. `--no-notice` turns it off.
+
+| Disturbance | Raised by | What notices |
+|---|---|---|
+| `gust`, with its front's timing | `wind_gust.gd` `release` (hand gusts and sky swipes) | Each creature reacts as the head reaches it. Gulls pull up and are pushed downwind, and some turn their circling round. Fish dart downwind and drift home. Lit fireflies are blown off their places and drift back. Deer lift their heads, or bolt for the trees above 0.6 of full air. A standing heron leaves above 0.5. Sitting frogs go in above 0.6. |
+| `poke` | `land_clay.gd` `_poke` | Rings where it lands in water. Frogs within 3 m plop in, one after another, and stay under 3-7 s longer. Fish within 3.5 m scatter, then come back to nose at the rings for 4-7 s. Deer within 7 m look up, and within 3.5 m walk off. A heron within 4 m leaves. |
+| `night` | `void_snap.gd` snapping to night | Every settled firefly goes dark, then each lights in a wave out from where you look, at 3 m/s. Its blink cycle is set so that it lights on its first flash. |
+| `dawn` | `void_snap.gd` snapping to day | Three songs from the woods within two seconds, if the world has woods or birds (`song_presence`). |
+| `figure` | `wanderer_eye.gd`: set down; each 0.7 m walked (a run is 1); every 2 s standing in its eyes | Sitting frogs within 2.2 m (3.2 m for a runner) jump in and stay under while it is near (15 s at most). Fish within 4.5 m drift over to its shadow at the bank and hang there facing it. One within 1 m of a wading figure darts. Deer look up within 8 m and step away within 5 m. They bolt within 2.5 m, or within 5 m of a runner. A heron within 5 m leaves. The snake watches and hisses at the figure as it does at the camera (`LifeSnakes.watcher`). |
+
+Reactions write only into what the creatures already read, and nothing is kept once a reaction is over:
+- **Fish:** `nudge`, an offset on a spring, which is stiff and a little under-damped for the dart, so the fish overshoots and swings back, and soft on the way home. `hush` quiets the circling. `steer` turns the fish to face its way when it is quick, or what it noses at when it hangs.
+- **Frogs:** `lurk`, extra seconds of the swim.
+- **Deer:** `hurry`, a multiple of the walk speed, and the rig's clip follows it. They go through the head-up beat before they move.
+- **Heron:** a shortened `stay`, so it finishes a strike or step, then takes off.
+- **Gulls and fireflies:** their own flight state and instances.
+
+A creature that leaves or is released mid-reaction is dropped. There is no run clip, so a bolting deer plays Walk at 2.3 times the rate.
+
 ## Tunables
 
 All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `life_snakes.gd`:
@@ -331,16 +471,23 @@ All of these are constants at the top of `land_life.gd`, `life_moments.gd` and `
 - `SURVEY_BUDGET_USEC`, `SURVEY_QUIET` and `SURVEY_GAP`.
 - Each moment's `*_DELAY`, `*_CHANCE`, `*_COOLDOWN` and `*_STAY`, and the `DAWN` and `DUSK` phase windows.
 - The snake's `SNAKE_*`, `MORNING`, `BASK`, `HUNT` and `SWIM_CHANCE`; its size (`LENGTH`, `RADIUS`); its motion (`CRUISE`, `SWIM`, `WEAVE`, `WAVE`, `LIFT`, `RECOIL`, `ANTICIPATION`, `GOAL_*`, `TRAVEL_HZ`, `SPRING_*`); and how it meets you (`NOTICE`, `WATCH_MOST`, `TURN_TO`, `HISS_NEAR`, `HISS_*`, `JAW_OPEN`, `SWELL`, `PARTING_HISS`).
+- Predation: the heron's `HERON_LURE*`, `HERON_CATCH*`, `HERON_CARRY*` and `HERON_MISS_*`; the rig's `CATCH_LENGTH` and `CATCH_WRIGGLE`; the snake's `TAKE_*`, `STALK_*`, `STRIKE_*`, `LUNGE`, `GAPE`, `SURGE`, `ESCAPE*`, `SWALLOW`, `BULGE`, `MEAL_*` and `FED_PACE`; and LandLife's `TAKE_TIME`, `PREY_RETURN` and `DART`.
+
+The small creatures' knobs are at the top of their scripts: `SEASON`, `DAYLIGHT_MIN`, `RAIN_MAX`, `ARRIVE`, counts (`MAX`, `PER_POND`, `FLOWERS_EACH`, `GEESE`), `FIRST`/`GAP`/`CHANCE` for the woodpecker and geese, and the motion constants (`HOVER`, `REACH`, `SPEED`, `BEAT`, `WANDER`, `STEER`, `BACK`, `SIDE`, `DRIFT`).
+What notices what, how far and how hard: the constants at the top of `life_notice.gd` (`DART`, `DART_SPRING`, `NOSE_*`, `FISH_*`, `FROG_*`, `LURK`, `BIRD_*`, `WHEEL`, `FLY_*`, `WAVE_*`, `DEER_*`, `HERON_*`, `CHORUS*`).
 
 The survey's thresholds are at the top of `life_survey.gd`: `DEEP`, `SHALLOW_*`, `WADE_MAX`, `MIN_BODY_AREA`, `FOREST_*` and `DAMP_REACH`.
 
 ## Open
 
-- Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw. The snake has been seen only in Blender renders of the probe's dump, not through the game's shader and palette.
+- Everything visual is unverified: the models, the palette they take, and how the heron's and deer's motion read on screen. Headless runs do not draw. Until 2026-09-29 the snake never drew in the game: its body's `skeleton` path was empty (Godot 4's default), so it was never skinned. The headless probes and the Blender preview pose the bones themselves, so they never showed it.
 - At the default overview (43 m) the snake is a line one or two pixels wide. Only its motion and wake show from there; it is for looking at up close.
 - The snake's cover is where it vanishes, not something it hides under: a painted-grass world has no blades for it to slip between.
 - Fish live in ponds only, not streams.
-- Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions.
+- Moments (heron, deer, rainbow, Bigfoot) are not saved; they come round again on their own conditions. Bigfoot's trail is saved.
+- Bigfoot's trail is unseen and unheard: the prints, cairn and sapling have not been rendered, and the howl has not been listened to. Snow tracks do not also show deer or foxes yet.
+- Noticing is checked headless only. None of it has been seen or heard: the dart and nose springs, the gulls' lift, the firefly scatter and wave, the deer's bolt at a sped-up Walk, or the chorus.
 - Deer need the dawn window. In creation mode the plain's day now turns (`scripts/cozy_regrowth.gd`, `PLAIN_DAY_LENGTH` 1200 s per day, the night eased through from phase 0.8 to 0.2), so a plain launched at full day reaches dawn within six to eight minutes. Generated worlds still hold their hour.
 - Sound: `scripts/genesis_audio.gd` listens to `LandLife.arrived` and `LandLife.moment` and reads the survey for its beds (`docs/scenic/sound.md`).
+- Small life is unseen on the GPU and unheard: scale (`SCALE` in each script, tuned for the 43 m overview), the goose height and the drum roll's level (`GAIN`) need a rendered look.
 - `fidelity_fish.gd`, Bigfoot's catchable fish, still seeds from the Fidelity water once at startup. It is separate from these ambient fish and only matters with `--bigfoot`.

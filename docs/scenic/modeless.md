@@ -193,7 +193,7 @@ Branch `feature/edge-falls` (2026-09-29). The user wanted to "thumb your way to 
 - **Dirt only deepens.** A later palm or pinch that fills a groove back in leaves the earth showing; only undo takes it back. Emerged plants already standing in a groove when it is dug stay.
 - **The poke is still 0.1 m.** Beside a 1 m groove it is small (about a pixel from the default view, 58 m out); `POKE_DEPTH` is the knob.
 - **A drag off the land** skips the points off it and joins up again where the pointer comes back.
-- **Creatures.** Only the resident notices a poke. Other life (birds, deer, frogs) does not react yet.
+- **Creatures.** The resident looks round at a poke, and the Genesis life notices it too: frogs near it plop in, fish scatter and come back to nose at the rings, deer look up or walk off, a heron leaves (`docs/scenic/life.md`, "Noticing"). The snap wakes the fireflies in a wave at night and brings a dawn chorus at day.
 - **Unverified on screen:** how the groove, the rub, the palm and the pinch look and feel (the 2026-09-29 legibility pass, the horn, its rock and the pale lip are measured headless only); whether the dirt colours (#946c47, #73513a) sit well in the painted, faceted look beside the grass and the Fidelity reference; whether 0.3 s and 6 px classify well on a trackpad; whether 500 and 1200 px/s split a stroke from a rub for a real hand; the Press pose standing in for the thumb.
 
 ### Probe

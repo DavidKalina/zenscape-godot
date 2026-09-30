@@ -98,6 +98,7 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 - `native/terrain_kernels/water_flow.h`: `ZenScapeWaterFlow`, registered by `kernels.cpp`. It holds `configure`, `set_params`, `step` (resample the ground, then run the ticks with the sources), `add_water`, `drain`, `get_depth`/`set_depth`, `get_ground`, `get_velocity`, `wet_cells`, `stats`, `surface`, `pools`, `falls` (the old point search, unused by the view), `cascades` (the waterfalls), `edge_outflow` and `spills` (the edge falls). Rebuild the library after changing it (`native/terrain_kernels/README.md`).
 - `scripts/water_flow_reference.gd`: the GDScript mirror, with the same methods and arithmetic. Keep the two in step.
 - `scripts/water_flow.gd`: the owner. It holds the grid and cell map, the fixed clock, springs and bursts, `drop`/`drain`, and undo, save and load.
+- `scripts/rain_runoff.gd`: rain and snowmelt as sources (see "Rain"). The editor's `_flow_process` sets its `rain`, `snowing` and `snow_phase` from `scene._precipitation`.
   - It takes the mirror when the library is missing, when it lacks the newest method (`spills`, so a stale build falls back instead of failing), or under `--gdscript-kernels`.
   - `native` says which one runs, and the probes check it.
 - `scripts/water_flow_view.gd`: the surface meshes; it stands the falls.
@@ -361,6 +362,31 @@ Soaked by 30 s: 1.5 m³ before, 0.8 m³ after. The reflection comes on at about 
 
 **Unverified on screen:** the pond's look with `bed_absorb`. The shader edit needs a windowed compile check.
 
+## Rain (2026-09-29)
+
+Branch `feature/sp-rain`. The sky's rain now reaches the live water (`scripts/rain_runoff.gd`, owned by `WaterFlow.runoff`). A storm runs rills down the slopes and swells ponds, and a dry basin can become a pond, which then brings fish through the usual pool reports and life survey. `--no-rain-runoff` turns it off.
+
+- **It gathers first.** Rain spread evenly would be a film far thinner than `soak`, so it runs off first. On a worker every 3 s while water is coming, the ground is cut into 1 m blocks. Each block drains to its steepest lower neighbour. Its water reaches the simulation as a source wherever `LUMP` (14 m²) of catchment has gathered, or where the way ends in a hollow or one block from the rim. Hollows and rim runs with less than `PUDDLE` (5 m²) keep their rain; the ground's wet shading (`zs_ground_wet`) is all that shows. This keeps the sources to a few dozen, not hundreds.
+- **How much.** `RUNOFF` is 0.0002 m/s over the catchment at full rain: a storm pours about 0.1–0.16 m³/s over a generated world, and the "rain" preset (0.6) about 60% of that. The snow globe's rain adds in, because the editor reads `precipitation.state.x + state.y`.
+- **Wet ground holds water.** Saturation rises with rain over about 40 s and dries over 90 s. Saturated ground soaks 30% and evaporates 20% of the dry rates (`set_params`). In dry weather the full rates come back, so ponds shrink again.
+- **A budget.** Rain adds nothing once `VOLUME_CAP` (45 m³) stands on the plate, easing off over the 15 m³ below it, so a sky that never stops cannot flood the plate.
+- **Snow adds no water.** It lies as a pack, up to `SNOW_PACK` (15 m³ of water), weighted to the plate's upper heights (the 50–90% quantiles). It melts over `MELT_SECONDS` (150 s) once the snow phase drops below 0.15, through the same drops, and melting saturates the ground as rain does. The pack is not saved.
+
+Measured headless with a throwaway probe (native kernel):
+
+| Case | Result |
+|---|---|
+| Probe land, light rain (0.6) for 150 s | The dry pressed basin turns into a 4 m² pond, 0.46 m deep; 3.3 m³ poured |
+| Same pond, dry weather | 3.4 m² after 1 min, 1.3 m² after 6 min, gone by 10 min |
+| Generated world (seed 11), storm for 150 s | A 14 m² pond, 0.58 m deep, forms in a natural hollow; 6.3 m³ standing |
+| Same, dry weather | 9.7 m² at 3 min, gone by 10 min |
+| Snow for 2 min, then thaw | Pack fills to 15 m³; melt runs from the high ground, and some drains off the edge |
+| Cost | Route 1.6–2.4 ms on a worker every 3 s; `sources()` about 5 µs; 18–45 drops add about 5 µs a tick to the kernel |
+
+A full live launch under `--still-weather` with the storm preset rains into the flow, with the worst step at 143 µs.
+
+**Unverified on screen:** how the drops look where they meet the ground (a source can show as a small welling on a slope before it runs), how rills read in rain, and whether the pond fill pace feels right in play.
+
 ## Known gaps and follow-ups
 
 - **Unverified on screen:** how the flip and the turn treat the new meshes (the edge falls hide during the flip, unfilmed); the GPU cost of the reflection view and the mesh uploads (see "Look pass").
@@ -370,5 +396,6 @@ Soaked by 30 s: 1.5 m³ before, 0.8 m³ after. The reflection comes on at about 
 - **Drain under `--modeless`.** Only undo removes a spring there. The water brush's Shift-drag drains outside `--modeless`.
 - **The groove's bed.** The clay's groove follows the ground (0.3 m deep on this branch; `feature/thumb-dirt` is deepening it), so a groove across a hump dams its own water. The probe's groove is shaped to fall steadily.
 - **A ball on flat ground soaks away** within a minute or two. The planned water always scooped a hollow instead. Tune `soak` or `evaporation` if puddles should last.
+- **Ice.** Frozen water only looks frozen: the flow's visible speed (falls, rills, ripples) slows with `SurfaceWeather.flow_time`, but the sim runs on, so nothing floods on a thaw. Pond life under ice is in `life.md`, "Winter on the water".
 - **Sound.** The water's sound hears `water_settled` pool reports, but has no running-water layer for live streams.
 - **Tests.** No suite tests were added or run (the user deferred them during the scenic pivot). `tools/probe_void_snap.gd` drags in the void to check a drag does not snap; a drag that crosses the land now gathers a water ball.

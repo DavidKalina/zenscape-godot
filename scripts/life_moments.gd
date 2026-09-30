@@ -3,7 +3,8 @@ extends Node3D
 ## (docs/scenic/life.md). A heron lands to fish in water that holds fish; deer
 ## step out of a wood's edge at dawn; a rainbow follows rain over a living
 ## place; and, rarest, Bigfoot steps out of a mature wood at dusk, looks at
-## you and is gone (scripts/life_bigfoot.gd). Each has its conditions, a
+## you and is gone (scripts/life_bigfoot.gd), after a trail of signs that he
+## is about (scripts/life_trail.gd). Each has its conditions, a
 ## delay after those first hold, a chance per check and a long cooldown, so
 ## they stay rare.
 ##
@@ -13,6 +14,7 @@ extends Node3D
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Bigfoot = preload("res://scripts/life_bigfoot.gd")
+const Trail = preload("res://scripts/life_trail.gd")
 const Rigs = preload("res://scripts/life_rigs.gd")
 const HeronRig = preload("res://scripts/life_rig_heron.gd")
 
@@ -30,6 +32,23 @@ const HERON_FLIGHT := 7.0
 ## wading step now and then, HERON_STALK s apart.
 const HERON_GLIDE := 0.55
 const HERON_STALK := Vector2(12.0,25.0)
+## Catching (docs/scenic/life.md, "Predation"). HERON_LURE of strikes, a fish of the
+## pond within HERON_LURE_REACH m is drawn in over HERON_LURE_TIME s to nose where the
+## bill goes in, from HERON_HOVER s before it. The strike takes it HERON_CATCH of the
+## time; otherwise it darts off. At most HERON_CATCHES a visit, never below HERON_FISH
+## in the pond. A caught fish is swallowed, or HERON_CARRY of the time carried off.
+const HERON_LURE := 0.55
+const HERON_LURE_REACH := 1.9
+const HERON_LURE_TIME := 5.0
+const HERON_HOVER := 0.9
+const HERON_CATCH := 0.5
+const HERON_CATCHES := 2
+const HERON_CARRY := 0.15
+## Strike clip seconds: a miss hands back to Stand as the empty bill comes up, over
+## HERON_MISS_BLEND s; a carry takes off once the fish is held high.
+const HERON_MISS_CUT := 48.0/30.0
+const HERON_MISS_BLEND := 0.9
+const HERON_CARRY_LIFT := 58.0/30.0
 ## Deer: a forest edge for DEER_DELAY s, at dawn (celestial phase DAWN).
 const DEER_TREES := 6
 const DEER_DELAY := 25.0
@@ -37,6 +56,8 @@ const DEER_CHANCE := 0.25
 const DEER_STAY := Vector2(25.0,45.0)
 const DEER_COOLDOWN := 300.0
 const DEER_SPEED := 0.42
+## One deer arrival in DEER_STAG_CHANCE is a lone white stag, not the doe.
+const DEER_STAG_CHANCE := 0.02
 const DAWN := Vector2(0.2,0.36)
 const DUSK := Vector2(0.64,0.8)
 ## Rainbow: rain of at least RAIN_SECONDS that stops over a place at least
@@ -50,6 +71,20 @@ const BOW_RISE := 6.0
 const BOW_HOLD := 30.0
 const BOW_FALL := 10.0
 const BOW_STRENGTH := 0.85
+## Moonbow: the same rain stopping at night (daylight under MOONBOW_DARK)
+## over a place BOW_RICHNESS rich, with the moon up and at least MOONBOW_FULL
+## lit; MOONBOW_CHANCE, then it glows MOONBOW_RISE/HOLD/FALL s.
+const MOONBOW_DARK := 0.1
+const MOONBOW_FULL := 0.9
+const MOONBOW_CHANCE := 0.5
+const MOONBOW_RISE := 12.0
+const MOONBOW_HOLD := 40.0
+const MOONBOW_FALL := 15.0
+const MOONBOW_STRENGTH := 0.35
+## One rainbow in BOW_DOUBLE_CHANCE is a double: the shader's fainter second bow
+## (colours reversed) shows at BOW_DOUBLE_STRENGTH instead of nearly nothing.
+const BOW_DOUBLE_CHANCE := 0.08
+const BOW_DOUBLE_STRENGTH := 1.0
 ## Bigfoot (docs/scenic/life.md, "Bigfoot: when he comes"): scenery mode only.
 ## A mature wood: BIGFOOT_TREES trees, richness BIGFOOT_RICHNESS and an edge
 ## with BIGFOOT_EDGE_TREES trees near, all held for BIGFOOT_SETTLE s of life.
@@ -67,7 +102,8 @@ const BIGFOOT_MIST := 0.45
 const BIGFOOT_AFTER_RAIN := 180.0
 const BIGFOOT_DAMP := 1.75
 const BIGFOOT_DOWNPOUR := 0.5
-## Chance per CHECK at full weight, then he is about for BIGFOOT_ABOUT s: he
+## Chance per CHECK at full weight (times the trail's boost, up to 1.6 once
+## signs have been left), then he is about for BIGFOOT_ABOUT s: he
 ## shows at the first edge the camera can see; if none comes, he was missed.
 const BIGFOOT_CHANCE := 0.006
 const BIGFOOT_ABOUT := 90.0
@@ -79,6 +115,9 @@ const BIGFOOT_FORCE_GAP := 12.0
 var life: Node3D
 ## Every moment so far: {kind, at, p}.
 var history: Array[Dictionary] = []
+## Fish herons have caught, and of those carried off, for probes.
+var catches := 0
+var carried := 0
 
 var _check := 0.0
 var _heron: Node3D
@@ -97,7 +136,11 @@ var _deer_next := 0.0
 var _edge_since := -1.0
 var _rain := 0.0
 var _bow := {}
+var _night_rain := 0.0
+var _moonbow := {}
 var bigfoot: Node3D
+## His signs before the sighting (life_trail.gd).
+var trail: Node3D
 var _bigfoot_next := 0.0
 var _bigfoot_about := -1.0
 var _rich_since := -1.0
@@ -142,7 +185,9 @@ func setup(owner: Node3D) -> void:
 			# The Blender deer: a doe, then her fawn.
 			var rig: RefCounted = Rigs.deer(material,not _deer.is_empty())
 			add_child(rig.root)
-			_deer.append({"root":rig.root,"rig":rig})
+			var entry := {"root":rig.root,"rig":rig}
+			if _deer.is_empty(): entry.stag = Rigs.stag_material(material,rig)
+			_deer.append(entry)
 			continue
 		var root := Node3D.new()
 		root.name = "Deer"
@@ -164,6 +209,9 @@ func setup(owner: Node3D) -> void:
 	bigfoot = Bigfoot.new()
 	add_child(bigfoot)
 	bigfoot.setup(self)
+	trail = Trail.new()
+	add_child(trail)
+	trail.setup(self)
 	# Painting keeps him away, and near him sends him off.
 	var editor: Node = life.editor
 	editor.stroke_started.connect(_stroke)
@@ -187,16 +235,20 @@ func _part(mesh: Mesh) -> MeshInstance3D:
 
 ## A new world: everything leaves at once and the clocks start again.
 func clear() -> void:
+	_heron_drop_prey()
 	_heron_state = {}
 	_heron.visible = false
+	if _heron_rig: _heron_rig.let_go()
 	_deer_state = {}
 	for deer in _deer: deer.root.visible = false
 	bigfoot.hide_now()
+	trail.clear()
 	_bigfoot_about = -1.0
 	_rich_since = -1.0
 	_water_since.clear()
 	_edge_since = -1.0
 	_end_bow()
+	_end_moonbow()
 
 func advance(step: float, real_step: float) -> void:
 	_check += step
@@ -208,8 +260,11 @@ func advance(step: float, real_step: float) -> void:
 	if bigfoot.showing():
 		bigfoot.advance(step,real_step)
 		if not bigfoot.showing(): _bigfoot_gone()
+	trail.advance(step)
 	_watch_rain(real_step)
 	if not _bow.is_empty(): _move_bow(step)
+	_watch_night_rain(real_step)
+	if not _moonbow.is_empty(): _move_moonbow(step)
 
 func _record(kind: String, p: Vector3) -> void:
 	history.append({"kind":kind,"at":life.clock,"p":p})
@@ -224,6 +279,13 @@ func _phase() -> float:
 func _in(window: Vector2) -> bool:
 	var phase := _phase()
 	return phase >= window.x and phase <= window.y
+
+## "dawn", "dusk", "night" or "day" by the celestial phase.
+func light_now() -> String:
+	if _in(DAWN): return "dawn"
+	if _in(DUSK): return "dusk"
+	var phase := _phase()
+	return "night" if phase < DAWN.x or phase > DUSK.y else "day"
 
 # --- Conditions ---------------------------------------------------------------
 
@@ -243,7 +305,7 @@ func _consider() -> void:
 		if not _water_since.has(key): _water_since[key] = clock
 	for key in _water_since.keys():
 		if not seen.has(key): _water_since.erase(key)
-	if _heron_state.is_empty() and clock >= _heron_next and _daylight() > 0.25 and _rain_now() < 0.3:
+	if _heron_state.is_empty() and clock >= _heron_next and _daylight() > 0.25 and _rain_now() < 0.3 and not _frozen():
 		for key in _water_since:
 			if clock-float(_water_since[key]) >= HERON_DELAY and _roll(HERON_CHANCE):
 				_heron_arrive(seen[key])
@@ -254,9 +316,11 @@ func _consider() -> void:
 	if _deer_state.is_empty() and clock >= _deer_next and survey.tree_count >= DEER_TREES and _edge_since >= 0.0 and clock-_edge_since >= DEER_DELAY and _in(DAWN) and _rain_now() < 0.3 and _roll(DEER_CHANCE):
 		_deer_arrive(edges)
 	_consider_bigfoot(survey,clock)
+	trail.consider(survey,clock)
 
 ## Probes only: start a moment now, skipping its delay, chance and hour but
-## not the place it needs. False when the world has no such place.
+## not the place it needs. False when the world has no such place. The
+## trail's signs are bigfoot_tracks, _cairn, _branch, _howl and _knocks.
 func force(kind: String) -> bool:
 	var survey: RefCounted = life.survey
 	if survey == null: return false
@@ -270,6 +334,8 @@ func force(kind: String) -> bool:
 			if not survey.forest_edges.is_empty() and _deer_state.is_empty():
 				_deer_arrive(survey.forest_edges)
 				return true
+		"bigfoot_tracks","bigfoot_cairn","bigfoot_branch","bigfoot_howl","bigfoot_knocks":
+			return trail.force(kind.trim_prefix("bigfoot_"))
 		"bigfoot","bigfoot_watch","bigfoot_listen","bigfoot_stride":
 			if bigfoot.showing(): return false
 			var how := kind.trim_prefix("bigfoot").trim_prefix("_")
@@ -278,8 +344,7 @@ func force(kind: String) -> bool:
 				_record("bigfoot",bigfoot.position)
 				return true
 		"rainbow":
-			_bow = {"age":0.0}
-			_record("rainbow",Vector3.ZERO)
+			_start_bow()
 			return true
 	return false
 
@@ -305,7 +370,9 @@ func _heron_arrive(record: Dictionary) -> void:
 	var c := Survey.center(cell)
 	var bed: float = life.survey.height[cell]
 	var spot := Vector3(c.x,bed,c.y)
-	var outward := c.normalized() if c.length() > 0.5 else Vector2.from_angle(life._rng.randf()*TAU)
+	# In from over its bank, so it lands facing into the water.
+	var from_pond: Vector2 = c-(record.get("center",Vector2.ZERO) as Vector2)
+	var outward := from_pond.normalized() if from_pond.length() > 0.3 else Vector2.from_angle(life._rng.randf()*TAU)
 	outward = outward.rotated(life._rng.randf_range(-0.7,0.7))
 	var start := spot+Vector3(outward.x,0,outward.y)*24.0+Vector3.UP*10.0
 	var leave := Vector2.from_angle(life._rng.randf()*TAU)
@@ -341,23 +408,32 @@ func _move_heron(step: float) -> void:
 			_heron.position = spot
 			_heron_pose.rotation.x = 0.0
 			_heron_legs.rotation.x = 0.0
-			# Now and then the neck strikes at a fish.
+			# Now and then the neck strikes at a fish, and now and then a fish is
+			# there to take.
 			var strike := float(s.age)-float(s.strike)
 			var reach := 0.0
+			if not s.get("weighed",false) and strike >= 0.25-HERON_LURE_TIME:
+				s.weighed = true
+				_heron_lure(0.25-strike)
 			if strike >= 0.0:
 				reach = smoothstep(0.0,0.2,strike)*(1.0-smoothstep(0.6,1.2,strike))
 				if strike >= 0.25 and not s.get("rang",false):
 					s.rang = true
-					var beak := spot+Basis(Vector3.UP,float(s.yaw))*Vector3(0,0,HeronRig.STRIKE_REACH if _heron_rig else 0.55)
+					var beak := _beak()
 					life.ripple(Vector3(beak.x,float(s.level),beak.z),0.35)
+					_heron_prey(beak)
 				if strike > 1.3:
 					s.strike = float(s.age)+life._rng.randf_range(7.0,14.0)
 					s.rang = false
+					s.weighed = false
 			_heron_neck.rotation.x = reach*1.05
 			_heron_neck.scale = Vector3.ONE
 			# The Blender heron finishes a strike or a step before it goes, unless driven off.
 			var busy := _heron_rig != null and _heron_rig.clip in ["Strike","Stalk"] and not _heron_rig.done()
-			if (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there():
+			# One taking its catch away goes as soon as the fish is up in its bill.
+			var carrying := bool(s.get("carry_off",false)) and _heron_rig != null and _heron_rig.clip == "Strike" and _heron_rig.time >= HERON_CARRY_LIFT
+			if carrying or (float(s.age) >= float(s.stay) and not busy) or _rain_now() > 0.4 or not _water_still_there() or _frozen():
+				_heron_drop_prey()
 				s.phase = "out"
 				s.age = 0.0
 				s.from = spot
@@ -380,6 +456,7 @@ func _move_heron(step: float) -> void:
 			if u >= 1.0:
 				_heron_state = {}
 				_heron.visible = false
+				if _heron_rig: _heron_rig.let_go()
 				_heron_next = life.clock+HERON_COOLDOWN
 				return
 	_heron.rotation.y = float(s.yaw)
@@ -400,6 +477,10 @@ func _heron_act(step: float) -> void:
 			var strike := age-float(s.strike)
 			if rig.clip != "Strike" and strike >= 0.25-HeronRig.STRIKE_CONTACT and strike < 0.25:
 				rig.play("Strike",0.2)
+				s.caught = false
+			elif rig.clip == "Strike" and not s.get("caught",false) and rig.time >= HERON_MISS_CUT:
+				# Nothing in the bill: no toss and no gulp; it settles back to peering.
+				rig.play("Stand",HERON_MISS_BLEND)
 			elif rig.clip == "Stalk" and rig.done():
 				# The clip walked the heron forward; move it there and stand on.
 				var spot: Vector3 = s.spot
@@ -424,8 +505,71 @@ func _heron_act(step: float) -> void:
 						life.ripple(Vector3(foot.x,float(s.level),foot.z),0.3)
 		"out":
 			if rig.clip == "TakeOff" and rig.done(): rig.play("Fly",0.15)
-			elif rig.clip != "TakeOff" and rig.clip != "Fly": rig.play("TakeOff",0.2)
+			elif rig.clip != "TakeOff" and rig.clip != "Fly": rig.play("TakeOff",0.45 if rig.clip == "Strike" else 0.2)
 	rig.advance(step)
+
+## Where the bill goes into the water.
+func _beak() -> Vector3:
+	var spot: Vector3 = _heron_state.spot
+	return spot+Basis(Vector3.UP,float(_heron_state.yaw))*Vector3(0,0,HeronRig.STRIKE_REACH if _heron_rig else 0.55)
+
+## `lead` s before a strike: now and then the nearest fish of the pond is drawn in
+## to where the bill will go, and whether the strike takes it is settled.
+func _heron_lure(lead: float) -> void:
+	var s := _heron_state
+	# The probe's stub world has no fish.
+	if int(s.get("catches",0)) >= HERON_CATCHES or not life.has_method("take") or not _roll(HERON_LURE): return
+	# A wading step would move the bill from over it.
+	if _heron_rig != null and _heron_rig.clip == "Stalk": return
+	var survey: RefCounted = life.survey
+	var beak := _beak()
+	var at := Vector2(beak.x,beak.z)
+	var cell := Survey.cell_at(at)
+	if survey == null or cell < 0 or not survey.wet_at(at): return
+	var body: int = survey.body[cell]
+	var pond := 0
+	var best := {}
+	var nearest := HERON_LURE_REACH
+	for site: Dictionary in life.present("fish"):
+		if int(site.body) != body: continue
+		pond += 1
+		var p: Vector3 = site.get("shown_p",site.p)
+		var from := Vector2(p.x,p.z)
+		var d := from.distance_to(at)
+		if d < nearest and not site.has("lure") and survey.wet_at(from.lerp(at,0.5)):
+			nearest = d
+			best = site
+	if best.is_empty() or pond < HERON_FISH: return
+	best.lure = {"to":beak,"from":life.clock,"at":life.clock+maxf(lead-HERON_HOVER,0.5),"dart":-1.0}
+	s.prey = best
+	s.catch = _roll(HERON_CATCH)
+
+## The bill goes in: the drawn fish is caught, or darts off.
+func _heron_prey(beak: Vector3) -> void:
+	var s := _heron_state
+	var prey: Dictionary = s.get("prey",{})
+	s.erase("prey")
+	if prey.is_empty() or not prey.has("lure"): return
+	if not bool(s.catch) or not prey.here or prey.leaving:
+		prey.lure.dart = life.clock
+		return
+	var look: MultiMeshInstance3D = life.fish_look(prey)
+	life.take(prey,Vector3(beak.x,float(s.level)-0.04,beak.z))
+	s.catches = int(s.get("catches",0))+1
+	s.caught = true
+	catches += 1
+	if _heron_rig != null and look != null:
+		var kind := str(prey.look).get_slice(" ",0)
+		s.carry_off = _roll(HERON_CARRY)
+		if s.carry_off: carried += 1
+		_heron_rig.hold(look.multimesh.mesh,look.material_override,float(Models.FISH_KINDS[kind].length)/float(prey.size),bool(prey.mirror),bool(s.carry_off))
+	life.moment.emit("heron_catch",life.to_global(beak))
+
+## Leaving before the strike: a fish drawn in darts off.
+func _heron_drop_prey() -> void:
+	var prey: Dictionary = _heron_state.get("prey",{})
+	_heron_state.erase("prey")
+	if prey.has("lure"): prey.lure.dart = life.clock
 
 func _heron_clip(clip: String, blend: float) -> void:
 	if _heron_rig.clip != clip: _heron_rig.play(clip,blend)
@@ -455,6 +599,10 @@ func _deer_arrive(edges: Array) -> void:
 	var p: Vector2 = edge.p
 	var into: Vector2 = edge.into
 	var herd := 2 if life._rng.randf() < 0.5 else 1
+	# A white stag comes alone; the doe wears her own coat.
+	var stag: bool = _deer[0].has("stag") and life._rng.randf() < DEER_STAG_CHANCE
+	if stag: herd = 1
+	if _deer[0].has("stag"): (_deer[0].root.find_children("*","MeshInstance3D",true,false)[0] as MeshInstance3D).material_override = _deer[0].stag if stag else life.material
 	var members := []
 	for i in range(herd):
 		var side := into.orthogonal()*(0.8 if i == 1 else 0.0)-into*(0.5 if i == 1 else 0.0)
@@ -479,7 +627,8 @@ func _move_deer(step: float) -> void:
 				var p: Vector2 = m.p
 				var distance := p.distance_to(target)
 				if distance > 0.02:
-					var d := minf(DEER_SPEED*step*(1.0 if m.scale >= 1.0 else 1.15),distance)
+					# `hurry` is a startled deer's (scripts/life_notice.gd).
+					var d := minf(DEER_SPEED*float(m.get("hurry",1.0))*step*(1.0 if m.scale >= 1.0 else 1.15),distance)
 					m.p = p+(target-p)/distance*d
 					m.yaw = lerp_angle(float(m.yaw),atan2(target.x-p.x,target.y-p.y),minf(1.0,step*4.0))
 					moving = true
@@ -556,7 +705,7 @@ func _play_deer(rig: RefCounted, m: Dictionary, moving: bool, step: float) -> vo
 					if next != "Idle": rig.then("Idle")
 					# Keep the head up long enough for the alert to play out.
 					if next == "Alert": m.next = maxf(float(m.get("next",0.0)),float(m.get("age",0.0))+rig.length("HeadUp")+rig.length("Alert"))
-	rig.speed = DEER_SPEED*(1.0 if float(m.scale) >= 1.0 else 1.15)/(Rigs.DEER_WALK_SPEED*float(m.scale)) if moving else 1.0
+	rig.speed = DEER_SPEED*float(m.get("hurry",1.0))*(1.0 if float(m.scale) >= 1.0 else 1.15)/(Rigs.DEER_WALK_SPEED*float(m.scale)) if moving else 1.0
 	rig.advance(step)
 
 # --- Rainbow --------------------------------------------------------------------
@@ -568,9 +717,12 @@ func _watch_rain(real_step: float) -> void:
 		_wet_until = life.clock+BIGFOOT_AFTER_RAIN
 	elif rain < RAIN_DRY:
 		if _rain >= RAIN_SECONDS and _bow.is_empty() and life.survey != null and life.survey.richness() >= BOW_RICHNESS and _daylight() > 0.35 and _roll(BOW_CHANCE):
-			_bow = {"age":0.0}
-			_record("rainbow",Vector3.ZERO)
+			_start_bow()
 		_rain = 0.0
+
+func _start_bow() -> void:
+	_bow = {"age":0.0,"double":life._rng.randf() < BOW_DOUBLE_CHANCE}
+	_record("rainbow",Vector3.ZERO)
 
 func _move_bow(step: float) -> void:
 	_bow.age = float(_bow.age)+step
@@ -578,6 +730,7 @@ func _move_bow(step: float) -> void:
 	var strength := smoothstep(0.0,BOW_RISE,age)*(1.0-smoothstep(BOW_RISE+BOW_HOLD,BOW_RISE+BOW_HOLD+BOW_FALL,age))*BOW_STRENGTH
 	var celestial: RefCounted = life.scene._celestial
 	if "moment_bow" in celestial: celestial.moment_bow = strength
+	if "moment_bow_double" in celestial: celestial.moment_bow_double = BOW_DOUBLE_STRENGTH if _bow.double else 0.0
 	if age >= BOW_RISE+BOW_HOLD+BOW_FALL: _end_bow()
 
 func _end_bow() -> void:
@@ -585,6 +738,32 @@ func _end_bow() -> void:
 	if life == null: return
 	var celestial: RefCounted = life.scene._celestial
 	if "moment_bow" in celestial: celestial.moment_bow = 0.0
+	if "moment_bow_double" in celestial: celestial.moment_bow_double = 0.0
+
+# --- Moonbow -------------------------------------------------------------------
+
+func _watch_night_rain(real_step: float) -> void:
+	var rain := _rain_now()
+	if rain > RAIN_WET: _night_rain += real_step
+	elif rain < RAIN_DRY:
+		var celestial: RefCounted = life.scene._celestial
+		var moon: Vector3 = celestial.state.get("zs_moon_direction",Vector3.DOWN)
+		if _night_rain >= RAIN_SECONDS and _moonbow.is_empty() and "moon_bow" in celestial and life.survey != null and life.survey.richness() >= BOW_RICHNESS and _daylight() < MOONBOW_DARK and moon.y > 0.05 and float(celestial.moon_lit) >= MOONBOW_FULL and _roll(MOONBOW_CHANCE):
+			_moonbow = {"age":0.0}
+			_record("moonbow",Vector3.ZERO)
+		_night_rain = 0.0
+
+func _move_moonbow(step: float) -> void:
+	_moonbow.age = float(_moonbow.age)+step
+	var age: float = _moonbow.age
+	life.scene._celestial.moon_bow = smoothstep(0.0,MOONBOW_RISE,age)*(1.0-smoothstep(MOONBOW_RISE+MOONBOW_HOLD,MOONBOW_RISE+MOONBOW_HOLD+MOONBOW_FALL,age))*MOONBOW_STRENGTH
+	if age >= MOONBOW_RISE+MOONBOW_HOLD+MOONBOW_FALL: _end_moonbow()
+
+func _end_moonbow() -> void:
+	_moonbow = {}
+	if life == null: return
+	var celestial: RefCounted = life.scene._celestial
+	if "moon_bow" in celestial: celestial.moon_bow = 0.0
 
 # --- Bigfoot -------------------------------------------------------------------
 
@@ -608,7 +787,8 @@ func bigfoot_conditions() -> Dictionary:
 	return {"hidden":hidden,"trees":trees,"richness":snappedf(richness,0.01),"edges":edges,"rich":rich,
 		"rich_for":snappedf(clock-_rich_since,0.1) if _rich_since >= 0.0 else -1.0,"settled":settled,"quiet":quiet,
 		"phase":snappedf(_phase(),0.001),"light":light,"weather":weather,"cooldown":snappedf(maxf(0.0,_bigfoot_next-clock),0.1),
-		"about":_bigfoot_about >= clock,"chance":BIGFOOT_CHANCE*light*weather if hidden and settled and quiet and clock >= _bigfoot_next else 0.0}
+		"about":_bigfoot_about >= clock,"trail":trail.conditions(),
+		"chance":BIGFOOT_CHANCE*trail.boost()*light*weather if hidden and settled and quiet and clock >= _bigfoot_next else 0.0}
 
 ## Light he walks in: dawn and dusk 1, night BIGFOOT_NIGHT, day only in mist.
 func _bigfoot_light() -> float:
@@ -650,3 +830,7 @@ func _consider_bigfoot(survey: RefCounted, clock: float) -> void:
 func _bigfoot_gone() -> void:
 	_bigfoot_next = life.clock+BIGFOOT_COOLDOWN
 	_force_next = life.clock+BIGFOOT_FORCE_GAP
+
+## Ice on the ponds (life_winter.gd); stand-in lives in the probes have none.
+func _frozen() -> bool:
+	return "winter" in life and life.winter != null and life.winter.frozen()
