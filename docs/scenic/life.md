@@ -11,6 +11,7 @@ Phase 3, slice 3 (`feature/life-answers`). Fish, frogspawn, frogs, birds and fir
 - `scripts/life_rigs.gd` and `scripts/life_rig_heron.gd`: the rigged Blender deer and heron (`tools/blender_creatures/`), played as clips.
 - `scripts/life_snakes.gd`: the grass snake, built and moved in code.
 - `scripts/disturbance.gd` and `scripts/life_notice.gd`: player actions raise a disturbance, and the creatures near it notice (see "Noticing").
+- `scripts/pond_seasons.gd`: lilies on old ponds and autumn leaves on the water (see "Ponds through the year").
 - `tools/probe_land_life.gd` and `tools/probe_bigfoot_sighting.gd`: the headless probes.
 - `tools/probe_snake.gd` and `tools/render_snake_probe.py`: the snake's headless probe and a Blender renderer for what it dumps.
 - `tools/dump_life_models.gd` and `tools/render_life_models.py`: every fish and frog kind dumped headless and rendered in Blender (`-b`) as a contact sheet, or as a koi pond and a wild pond (`--pond`), for judging the designs without opening the game.
@@ -31,7 +32,7 @@ The editor reports change and LandLife re-reads the world. Nothing scans the wor
 The grid is 56×56 at 0.5 m, aligned with the terrain's cover cells.
 
 - **Ground:** live heights (`data.ground_height`).
-- **Still water:** the pond triangles the view drew (`GardenView.pond_vertices`). Each triangle's water stands at its vertices' height. This is free, and it matches what is on screen. Water from the water brush lands there as long as that branch draws its water through the pond mesh.
+- **Still water:** the pond triangles the view drew (`GardenView.pond_vertices`). Each triangle's water stands at its vertices' height. This is free, and it matches what is on screen. Water from the water brush lands there as long as that branch draws its water through the pond mesh. The live water's calm triangles are added (`still_water_triangles`). Their corners sit on the flow grid's cell centres, so every survey cell centre falls on a quad's diagonal. The rasteriser therefore counts points on an edge as inside (`_covers`). `Geometry2D.point_is_inside_triangle` did not, and before 2026-09-29 the survey saw no live pond at all.
 - **Flowing water:** stream beds from `data.streams`, marked as water 6 cm deep.
 - **Plants:** trees and shrubs from `data.objects`, of every provenance, bucketed on a 1 m grid.
 
@@ -345,6 +346,42 @@ Four ambient creatures that answer what was built, each in its own script under 
 | Geese (`life_geese.gd`) | nothing on the land | spring and autumn, daylight, dry; a flock every four to ten minutes | five to nine in a V high overhead, each drifting in its rank with its own wingbeat, a ripple down the arms and the odd glide; faint honks on the distant bus |
 
 Sounds are synthesised in code the first time they are needed (`life_small_kit.gd`: `drum_roll`, `honk`), so no audio files were added. They play on the Genesis buses and follow the Sound settings. Bodies and wings are MultiMesh batches (one draw each); the woodpecker is two mesh nodes. Everything is unverified visually and by ear.
+
+## Ponds through the year
+
+`scripts/pond_seasons.gd` (`PondSeasons`, a child of LandLife and advanced on its clock). The water ages and carries the season. It reads LandLife's survey for the ponds, and reads the live water's depth, ground and velocity through the kernel's own accessors every `SAMPLE_SECONDS` (0.2 s). It never edits the sim. Planned ponds, which the live water does not hold, use the survey's level.
+
+### Lilies on old ponds
+
+- **Age by body.** Each pond of at least `MIN_BODY_AREA` has an age on the life clock. A re-read body takes the oldest age among the cells it now covers, so a pond that grows or merges keeps its age. A live pond with less than `LILY_DRAINED` (30%) of its cells wet has drained, and starts again from clear. A settled world (new or generated) starts its ponds `LILY_SETTLED` (480 s) old. Ages are saved in LandLife's document as `"ponds": [[first cell, age], ...]`. The field is optional, so older saves load.
+- **Clear, then a few pads, then a lily edge.** Pads grow on body cells up to `LILY_RINGS` (3 cells, 1.5 m) in from the bank, no more than `LILY_INNER` (0.6) of the way to the middle, in water `LILY_DEPTH` (0.03–0.9 m) deep, on at most `LILY_COVER` (half) of the pond's cells. They are ranked from one seed spot on the bank, round the edge, then inward. A pond shows the first share of them by `smoothstep(LILY_AGE)` (120 s to 720 s of pond age), so the first pads sit together and the edge fills in.
+- **Seasons.** The share is multiplied by `LILY_SEASON` (spring 0.2, summer 1, autumn 0.75, winter 0; `WorldClock.season_factor`). Pads die back through late autumn and winter, and come back in spring. They turn rust (`LILY_RUST`) as they go. `FLOWER_SHARE` (22%) of pads flower in summer (`FLOWER_SEASON`) once the pond's pads are 30–70% grown. A pond's flowers are white, or pink on 30% of ponds.
+- **Riding the water.** Pads float `LIFT` (1.6 cm) over the live surface. They shrink away over `LILY_EASE` (3 s) where the water drains or runs faster than `LILY_CALM` (0.12 m/s).
+- **Models.** A domed, notched, faceted pad (11 sides), and a flower with eight open petals, six cupped ones and a gold heart. Both are drawn with the frogs' material. Batches hold `LILY_MAX` (160) pads and `FLOWER_MAX` (40) flowers, and are rewritten every `LILY_TICK` (0.1 s).
+
+### Autumn leaves on water
+
+- **Which trees shed.** While the gold (`surface_weather.autumn`) is above 0.02, deciduous trees (broadleaf, layered tree, birch, willow) with water within `LEAF_REACH` (2.6 m) shed onto it. They are found by a scan of `LEAF_SCAN` (12) objects a frame, repeated every `LEAF_RESCAN` (4 s).
+- **How many.** Up to `LEAF_RATE` (1.8) leaves a second, scaled by the falling leaves' shed curve and by wind, reaching full rate at `LEAF_TREES` (6) trees. At most `LEAF_MAX` (160) are out at once.
+- **Falling.** A leaf lets go 1.3–2.8 m over the water and flutters down at `LEAF_FALL` (0.6 m/s).
+- **Drifting.** On the water it takes the flow's velocity (`LEAF_FOLLOW`, top speed `LEAF_SPEED`). So it runs down rills, and turns to face its way on fast water. On still water it circles the pond's middle (`LEAF_SWIRL`, 3.5 cm/s) and drifts out to the bank (`LEAF_SHORE`). Wind adds a little.
+- **Where leaves gather.** A step that would leave the water is not taken, so leaves lodge at banks and in eddies.
+- **Going.** A leaf sinks and darkens into the deep water colour after 60–130 s (`LEAF_FLOAT`, over `LEAF_SINK`). A leaf stranded by draining water, or blown onto the bank, goes within `LEAF_STRANDED` (8 s).
+- **Colour.** From the tree's stand autumn (the record's `autumn`), on the path `zs_autumn_stand_paint` takes: gold, amber or copper-red. Early in the fall the leaves are greener, and one in seven is brown.
+- **Batch.** One pooled MultiMesh. It is written as one buffer each frame from packed arrays.
+
+### Cost
+
+Measured headless with a scratch probe of one live pond and one planned pond:
+
+- **Leaves:** about 3 µs a leaf per frame. That is 0.1–0.15 ms with 40 leaves out, and up to about 0.5 ms at the 160 cap.
+- **Lilies:** about 2 µs a pad per `LILY_TICK`.
+- **Water read:** 15 µs.
+- **Tree scan:** under 0.1 ms a frame while it runs.
+
+Nothing runs outside autumn except the lilies.
+
+The look is not yet verified rendered: pad and flower size, the pad greens and rust, leaf colour under the scene palette, and whether pads sit visibly above the live sheet.
 
 ## Models
 

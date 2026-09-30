@@ -28,6 +28,8 @@ These are wired into the default Genesis path now (see `life.md`, `emergence.md`
 | Fireflies at dusk | damp ground near water and plants | common |
 | Springs, rills, pools, falls, edge falls | where a water ball lands | common |
 | Spores from the wild tree sow a forest; 7% come up as another kind | a flick | common |
+| Water lilies on a pond that has stood a while: a few pads, then a lily edge, flowering in summer, gone in winter | pond age, season | uncommon |
+| Autumn leaves fall on water, run down rills, circle ponds and gather at the banks | trees by water, autumn | common in autumn |
 | Heron wades and strikes, and now and then catches a fish, swallows it or flies off with it | pond with settled fish, daylight, dry | uncommon |
 | Doe, sometimes a fawn, at the forest edge | ≥6 trees, dawn, dry | uncommon |
 | Grass snake on the bank | rich pond, sunny morning | uncommon |
@@ -68,8 +70,8 @@ Built with the hand's reactions (see above).
 - The deer step away from the figure. The snake hisses at it. Fish follow its shadow at the bank. Frogs jump in as it passes. (S each)
 
 ### Seasons and plants
-- **Autumn leaves float.** They fall onto ponds and streams, drift downstream and gather in eddies and at pond edges. (M, common in autumn)
-- **Old ponds grow water lilies**, which bloom in summer. The pond ages from clear, to lilies, to reeds creeping in. (S–M, uncommon)
+- **Autumn leaves float.** Built (`life.md`, "Ponds through the year").
+- **Old ponds grow water lilies.** Built, apart from reeds creeping in (`life.md`, "Ponds through the year").
 - **Lightning finds the tallest tree**, even when rain stops a fire. It leaves a scorched snag that becomes dead wood. (S, rare)
 - **Spores carried over water** by a gust sow a forest on an island. (S, uncommon)
 
