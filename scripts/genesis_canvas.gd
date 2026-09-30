@@ -47,7 +47,7 @@ static func brush_hint(id: String) -> String:
 const FIDELITY := {"grass":"5d9e53","foliage":"47764a","rock":"8d8577","earth":"6a503e","water":"397d79",
 	"sky":"78aacb","horizon":"b3cad3","glow":"f3dfba","sun":"ffcf8f"}
 const FIDELITY_LIGHT := {"ambient":"8fb3d9","bounce":"4a5240","rim":"7fa8c9"}
-const FIDELITY_TITLE := "Fidelity green"
+const FIDELITY_TITLE := "Painted green"
 
 ## A seeded fair morning or day in Fidelity's colours, with a clear sky and a
 ## little low mist.
@@ -78,7 +78,7 @@ static func fidelity_colors(rng: RandomNumberGenerator, hour: int) -> Dictionary
 	for key in FIDELITY_LIGHT: colors[key] = Color(FIDELITY_LIGHT[key])
 	return colors
 
-## "Fidelity green" for the badge; older plains name their family.
+## "Painted green" for the classic badge; older plains name their family.
 static func palette_title(world_value: Dictionary) -> String:
 	var palette := str(world_value.get("palette",""))
 	if palette == "fidelity": return FIDELITY_TITLE

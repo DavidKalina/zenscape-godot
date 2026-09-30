@@ -65,7 +65,7 @@ var edge_spring: Node
 ## world (--resume, --generated, --seed, --atlas), --no-title, the desktop
 ## self-check and a scene a probe instantiates itself go straight in.
 signal title_picked(choice: String)
-## True while the title's world is up and waiting for a pick.
+## True from the title world's forming until the pick.
 var titled := false
 
 func _ready() -> void:
@@ -163,6 +163,7 @@ func _title_wanted() -> bool:
 func _run_title() -> String:
 	var loading := preload("res://scripts/title_loading.gd").new()
 	add_child(loading)
+	titled = true
 	loading.stage("Raising the land · growing the forest")
 	resident_enabled = false
 	restore_cave_state({})
@@ -173,7 +174,6 @@ func _run_title() -> String:
 		await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
 	_frame_title()
 	_has_world = false
-	titled = true
 	show_menu()
 	loading.queue_free()
 	var choice: String = await title_picked
@@ -225,12 +225,17 @@ func _brush_hints() -> Array:
 	for entry: Dictionary in preload("res://scripts/mountain_forms.gd").FORMS: hints.append(entry.hint)
 	return hints
 
+## The editor's status line. The title and the hand scheme show none: the
+## world answers the hand itself, and "Landscape ready" is the editor talking.
+func _show_status(text: String) -> void:
+	if titled or hand_only: return
+	super._show_status(text)
+	# Every stroke refreshes; the palette's hint already says how to keep going.
+	if _creating() and text.begins_with("Garden changed"): _notice.text = ""
+	# Lantern's hint line already shows the brush's how-to.
+	elif lantern and creation_palette != null and text in _brush_hints(): _notice.text = ""
+
 func _setup_creation() -> void:
-	_chunk_editor.status_changed.connect(func(text: String) -> void:
-		# Every stroke refreshes; the palette's hint already says how to keep going.
-		if _creating() and text.begins_with("Garden changed"): _notice.text = ""
-		# Lantern's hint line already shows the brush's how-to.
-		elif lantern and creation_palette != null and text in _brush_hints(): _notice.text = "")
 	if not creation_mode: return
 	for connection: Dictionary in _build_button.pressed.get_connections():
 		_build_button.pressed.disconnect(connection.callable)

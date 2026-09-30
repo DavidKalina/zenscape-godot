@@ -58,9 +58,6 @@ var active := 0
 var regrow_button: Button
 var cover := CanvasLayer.new()
 var badge := Label.new()
-## The hand scheme's badge: seconds it holds after each change (`_flash_badge`).
-const BADGE_HOLD := 3.5
-var _badge_tween: Tween
 var carry_view := SubViewport.new()
 var carry_actor := CreatureActor.new()
 var carry_image := TextureRect.new()
@@ -137,7 +134,7 @@ func setup(owner_scene: Node3D, choice := "") -> void:
 	busy = false
 	_update_badge()
 	scene._notice.text = "Regrow for a new landscape, or press Build to shape this one." if _scenery() else "Regrow this landscape, or carry Bigfoot to an edge to discover a new place."
-	if plain: scene._notice.text = _plain_notice()
+	if plain or _hand_only(): scene._notice.text = _plain_notice()
 	if world_seed >= 0: scene._chunk_editor.land_seed = world_seed
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--seed")
@@ -199,6 +196,8 @@ func _build_overlay() -> void:
 	cover.layer = 60
 	add_child(cover)
 	cover.add_child(badge)
+	# The hand scheme names nothing: the place and its sky speak for themselves.
+	badge.visible = not _hand_only()
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.position = Vector2(18,18)
 	badge.add_theme_font_override("font",preload("res://assets/fonts/Nunito.ttf"))
@@ -273,20 +272,9 @@ func _hand_only() -> bool:
 
 func _update_badge() -> void:
 	badge.text = _badge_text()
-	if _hand_only(): _flash_badge()
-
-## The hand scheme: the badge is no fixture; each change fades in, holds
-## BADGE_HOLD seconds and fades away.
-func _flash_badge() -> void:
-	if _badge_tween != null: _badge_tween.kill()
-	_badge_tween = create_tween()
-	_badge_tween.tween_property(badge,"modulate:a",1.0,0.5*(1.0-badge.modulate.a))
-	_badge_tween.tween_interval(BADGE_HOLD)
-	_badge_tween.tween_property(badge,"modulate:a",0.0,1.4)
 
 func blocks(point: Vector2) -> bool:
-	# The hand scheme's passing badge never takes the pointer.
-	return busy or (not _hand_only() and badge.get_global_rect().has_point(point))
+	return busy or (badge.visible and badge.get_global_rect().has_point(point))
 
 func handle(event: InputEvent) -> bool:
 	if not initialized: return true
@@ -689,7 +677,7 @@ func resume_previous() -> bool:
 	_update_badge()
 	if scene.has_method("resume_creation"): scene.resume_creation()
 	save_places()
-	scene._notice.text = "Back to "+_label(scene)
+	scene._notice.text = "" if _hand_only() else "Back to "+_label(scene)
 	return true
 
 func _read_saved(path := "") -> Dictionary:

@@ -85,11 +85,10 @@ func _ready() -> void:
 	_performance_trace.saved.connect(func(path: String) -> void:
 		_notice.text = "Performance capture saved: "+path if not path.is_empty() else "Could not save performance capture."
 		if not path.is_empty() and DisplayServer.get_name() != "headless": OS.shell_show_in_file_manager(path))
-	_chunk_editor.status_changed.connect(func(text: String) -> void:
-		_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text)
+	_chunk_editor.status_changed.connect(_show_status)
 	_toolbar.hide()
 	_menu.hide()
-	loading.stage("Opening Fidelity" if scenery_mode else "Opening Fidelity · welcoming Bigfoot")
+	loading.stage("Waking the land" if scenery_mode else "Waking the land · welcoming Bigfoot")
 	launch_fidelity()
 	await get_tree().process_frame
 	loading.queue_free()
@@ -340,6 +339,10 @@ func add_world_action(title: String, action: Callable, id: int, available := Cal
 
 func _world_action_available(entry: Dictionary) -> bool:
 	return not entry.available.is_valid() or bool(entry.available.call())
+
+## The editor's status line, in the notice; a tool's own how-to stays off it.
+func _show_status(text: String) -> void:
+	_notice.text = "" if text in NativeChunkEditor.TOOL_TEXT.values() else text
 
 func _layout_shell() -> void:
 	if _menu == null: return
