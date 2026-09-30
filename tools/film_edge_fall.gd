@@ -234,7 +234,7 @@ func run() -> void:
 	print("EDGE groove")
 	await stroke(GROOVE,3.0)
 	var clay: Node = scene.get("land_clay")
-	if clay != null: print("EDGE notches %d, last %s, heading %s, breach %s, last point %s" % [clay.notches,clay.last_notch,clay._heading,clay._breach,clay._last_plate])
+	if clay != null: print("EDGE notches %d, last %s, heading %s, breach %s, last point %s" % [clay.notches,clay.last_notch,clay.heading,clay.hand._breach,clay.last_plate])
 	var line := ""
 	for z in [-5.0,-4.0,-3.0,-2.0,-1.0,0.0]: line += " %.2f" % height(Vector2(13.99,z))
 	print("EDGE rim heights z -5..0:",line)

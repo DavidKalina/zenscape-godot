@@ -6,7 +6,9 @@ extends Node
 ## (docs/design/materials-tray/HUD-4c.md). One thing is in hand across both:
 ## the bare Hand, or one material. The roll's pips (or 1, 2, 3, [ and ]) size
 ## it: the clay's reach, or a scatter's spread. Esc, the Hand or the material
-## again puts a material down. Press a material and
+## again puts a material down. A built shaping tool in the roll is taken by
+## pressing it (scripts/land_clay.gd `set_tool`, docs/design/tools/PLAN.md);
+## Esc or the Hand puts it back, and taking a material does too. Press a material and
 ## the hand takes some: it pinches seeds and stones and cups water, and a
 ## small clump tinted as the specimen rides in it. The hand stays modeless:
 ## what it holds decides what a press does.
@@ -137,8 +139,9 @@ func key(event: InputEventKey) -> bool:
 		KEY_BRACKETLEFT: set_size(roll.size_level-1)
 		KEY_BRACKETRIGHT: set_size(roll.size_level+1)
 		KEY_ESCAPE:
-			if held.is_empty(): return false
-			put_back()
+			if not held.is_empty(): put_back()
+			elif roll.tool != "hand": select_tool("hand")
+			else: return false
 		_: return false
 	return true
 
@@ -158,7 +161,9 @@ func press(point: Vector2) -> bool:
 	var tool: String = roll.tool_at(point)
 	if not tool.is_empty():
 		if not roll.discovered(tool): roll.not_yet(tool)
-		elif tool == "hand": put_back()
+		else:
+			put_back()
+			select_tool(tool)
 		return true
 	if roll.contains_pointer(point): return true
 	var specimen: String = tray.specimen_at(point)
@@ -188,7 +193,16 @@ func press(point: Vector2) -> bool:
 		return true
 	return false
 
+## Take the shaping tool `id` in the roll (the bare Hand is "hand"); the
+## clay works with it from the next press.
+func select_tool(id: String) -> void:
+	var clay: Node = scene.get("land_clay")
+	if clay != null and not clay.set_tool(id): return
+	roll.tool = id
+
 func _take(id: String) -> void:
+	# One thing in hand: a material puts the tool back.
+	if roll.tool != "hand": select_tool("hand")
 	held = id
 	tray.lift_out(id)
 	# A quiet tick belongs here when the tray has sound.

@@ -8,8 +8,9 @@ extends Control
 ## a material is taken, and then the Hand's pocket is stitched round faintly,
 ## "put this down".
 ##
-## Only the Hand is built. The other tools show as undiscovered silhouettes
-## (UNBUILT) until each has its verbs.
+## The tools not built yet show as undiscovered silhouettes (UNBUILT) until
+## each has its verbs: a tool is built when scripts/clay_tools/<id>.gd holds
+## them (docs/design/tools/PLAN.md) and it is taken off UNBUILT.
 ##
 ## It only draws; the hand (scripts/hand_materials.gd) reads `tool_at`,
 ## `pip_at` and `contains_pointer` and takes the presses. It rests receded
@@ -21,7 +22,7 @@ const Icons = preload("res://scripts/hud_icons.gd")
 ## The tools, top to bottom.
 const TOOLS := ["hand","paddle","chisel","wire","hammer"]
 ## Tools without verbs yet: shown as undiscovered.
-const UNBUILT := ["paddle","chisel","wire","hammer"]
+const UNBUILT := ["chisel","wire","hammer"]
 ## Sizes: the pip's diameter and hit cell (design pixels) and the scale it
 ## gives the held thing's reach (the clay's radii, a scatter's spread).
 const SIZES := [{"pip":8.0,"cell":16.0,"scale":0.6},{"pip":12.0,"cell":20.0,"scale":1.0},{"pip":18.0,"cell":24.0,"scale":1.5}]

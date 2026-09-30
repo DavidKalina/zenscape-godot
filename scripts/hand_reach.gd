@@ -1199,7 +1199,9 @@ func _drive_hand_modeless() -> void:
 			want = "rim"
 			target = _hover_point
 		elif hover_zone == "land":
-			want = "pinch"
+			# Ready to pinch, or gripping the shaping tool in hand.
+			var clay: Node = scene.get("land_clay")
+			want = clay.hover_gesture() if clay != null else "pinch"
 			target = _hover_point
 		elif hover_zone == "void":
 			want = "void"

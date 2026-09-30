@@ -35,8 +35,9 @@ spec). It replaces the naturalist's field case on `experiment/field-case-play`.
   That makes 10 slots and a bar 678 px wide.
 - **Birch has no slot.** 4c's seeds don't include it. Dandelion has no species
   of its own: for now it scatters button and daisy flowers.
-- **Paddle, chisel, wire and hammer show as undiscovered** until they have
-  verbs (`tool_roll.gd` `UNBUILT`).
+- **Chisel, wire and hammer show as undiscovered** until they have verbs
+  (`tool_roll.gd` `UNBUILT`). The paddle has its verbs
+  (docs/design/tools/PLAN.md).
 - **The small caps are faked:** capitals at 10 px with 0.22 em tracking. The
   shipped Newsreader has no `smcp` feature.
 - **The roll's tag fades out with the roll**, so "HAND · MOULD" isn't
