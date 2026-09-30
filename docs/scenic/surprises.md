@@ -196,6 +196,9 @@ A running list of what looks off or is still unverified, gathered from the first
 ### Rare variants
 - [look] The white "stag" is a cream doe: the rig has no antlers.
 - [unseen] Fish carried by water balls don't roll for golden koi.
+- [look] The golden koi reads mustard more than luminous under the pond tint.
+- [unseen] Albino and blue frogs haven't been seen beside an ordinary frog.
+- [look] The double rainbow's sky is dark and grey under a low sun.
 
 ### Night sky
 - [look] The moon disc is soft in an extreme close-up.
@@ -226,4 +229,4 @@ A running list of what looks off or is still unverified, gathered from the first
 
 ### Filming
 - The God Hand and hover rings leak into some takes; film scripts should switch off the hand's processing, not just hide it.
-- Film scripts: `tools/film_{rain,predation,hand_notice,night_sky,small_life,winter_water,bigfoot_trail,pond_seasons}.gd`, and variants to come.
+- Film scripts: `tools/film_{rain,predation,hand_notice,night_sky,small_life,winter_water,bigfoot_trail,pond_seasons,variants}.gd`.
