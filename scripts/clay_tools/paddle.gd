@@ -53,6 +53,12 @@ const PAT_SECONDS := 0.25
 const PAT_STRENGTH := 0.5
 ## Shift: the narrower blade, a share of every width above.
 const NARROW := 0.5
+## The ground mark (`mark_size`): the pat's reach across the view, and
+## MARK_DEPTH of it toward the camera. The pat is round, but the design draws
+## the paddle's mark as an ellipse twice as wide as it is deep (its 180×54 px
+## sketch against the Hand's 96×58 loop), a blade's footprint, so it never
+## reads as the Hand's loop grown larger.
+const MARK_DEPTH := 0.5
 ## The stand-in prop, metres at the hand's own size: the icon's tint
 ## (scripts/hud_icons.gd "paddle") on the blade, a darker handle, a lighter
 ## collar; a long handle below the grip and a broad blade below it.
@@ -73,6 +79,7 @@ func id() -> String: return "paddle"
 func prop_tilt() -> float: return TILT
 func turns_lip(verb: String) -> bool: return verb.ends_with("sweep")
 func stroke_radius() -> float: return _width()*SWEEP_HALF_WIDTH
+func mark_size() -> Vector2: return Vector2(PAT_RADIUS,PAT_RADIUS*MARK_DEPTH)
 func gesture(verb: String) -> String: return "press" if verb.ends_with("pat") else "grip"
 
 ## The blade's width share: the size pips, and Shift's narrower blade.

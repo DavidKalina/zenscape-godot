@@ -135,6 +135,10 @@ func turns_lip(verb: String) -> bool: return verb == "thumb"
 ## The cursor sketch's lean; the bare Hand holds no prop.
 func prop_tilt() -> float: return -12.0
 
+## The ground mark is the thumb's rub: between the groove's half-width and the
+## palm's, and where a pinch starts.
+func mark_size() -> Vector2: return Vector2.ONE*RUB_RADIUS
+
 func _groove_hw() -> float: return GROOVE_HALF_WIDTH*clay.size_scale
 func _rub_r() -> float: return RUB_RADIUS*clay.size_scale
 func _palm_r() -> float: return PALM_RADIUS*clay.size_scale

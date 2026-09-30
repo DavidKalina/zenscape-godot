@@ -141,6 +141,10 @@ var last := {}
 func id() -> String: return "hammer"
 func prop_tilt() -> float: return TILT
 func stroke_radius() -> float: return _radius(CRACK_RADIUS)
+## The ground mark's ring is the crack's reach, the blow's on rock (a knock
+## on anything else reaches KNOCK_RADIUS). The scree specks the marks fan
+## downhill of it are their own.
+func mark_size() -> Vector2: return Vector2.ONE*CRACK_RADIUS
 func worked_as(verb: String) -> String: return verb
 
 func _radius(r: float) -> float: return r*clay.size_scale*(FINE if _fine else 1.0)

@@ -5,7 +5,7 @@ extends Node
 ## The 3D hand stays the cursor; this is only its shadow of intent.
 ##
 ## - **Hand:** a soft stitched loop with a faint fill, the thumb's reach
-##   (land_clay RUB_RADIUS, between the groove's half-width and the palm).
+##   (hand.gd RUB_RADIUS, between the groove's half-width and the palm).
 ## - **Paddle:** a wide stitched ellipse, long across the view.
 ## - **Chisel:** a hard square in one solid line, the only solid mark, laid in
 ##   the plane of the face it will cut and squared to its fall line.
@@ -68,12 +68,13 @@ const TONE := Color(1.0,0.955,0.871)
 const NIGHT_DIM := 0.55
 
 ## Sizes in metres at size 1 (the roll's middle pip; ×0.6 and ×1.5 either
-## side). The hand's is read from land_clay RUB_RADIUS when it is there (the
-## thumb's rub: the groove's half-width is 1.35, the palm's 2.0 and a pinch
-## starts at 2.2); HAND_RADIUS is its fallback. The others have no verbs yet
-## and are placeholders in the design's proportions against the hand's
-## 96×58 px sketch: the paddle 180×54 (about 3:1.5 m, wide across the view),
-## the hammer's ring 54×34 (0.9 m), the chisel a 1.6 m square.
+## side). Each tool says its own (clay_tool.gd `mark_size`, read from the
+## clay's tool of that id), so a tool's reach and its mark cannot drift apart:
+## the Hand's thumb rub (1.6 m), the paddle's pat across the view (3 × 1.5 m),
+## the chisel's notch (a 0.8 m half-square), the hammer's crack (1.8 m). These
+## are the fallbacks, for a tool that gives none or a scene without the clay:
+## the design's proportions against the hand's 96×58 px sketch (the paddle
+## 180×54, the hammer's ring 54×34, the chisel a 1.6 m square).
 const HAND_RADIUS := 1.6
 const PADDLE_HALF := Vector2(3.0,1.5)
 const CHISEL_HALF := 0.8
@@ -176,10 +177,12 @@ func line_alpha_now() -> float:
 
 ## The half extents a mark of `which` has at `size_scale` (terrain metres).
 func size_of(which: String, size_scale: float) -> Vector2:
+	var tool: RefCounted = _tool(which)
+	if tool != null:
+		var own: Vector2 = tool.mark_size()
+		if own != Vector2.ZERO: return own*size_scale
 	match which:
-		"hand":
-			var r := float(_constant(scene.get("land_clay"),"RUB_RADIUS",HAND_RADIUS))*size_scale
-			return Vector2(r,r)
+		"hand": return Vector2.ONE*HAND_RADIUS*size_scale
 		"paddle": return PADDLE_HALF*size_scale
 		"chisel": return Vector2.ONE*CHISEL_HALF*size_scale
 		"hammer": return Vector2.ONE*HAMMER_RADIUS*size_scale
@@ -244,6 +247,14 @@ func _under_cover(pointer: Vector2) -> bool:
 		_covered = reach._prop_at(pointer)
 	var outline: Node = reach.get("outline")
 	return _covered or (outline != null and int(outline.get("tree_id")) > 0)
+
+## The clay's tool `id` (scripts/clay_tools/), made if it is not yet, or
+## null: not a tool (a material), or no clay in this scene.
+func _tool(id: String) -> RefCounted:
+	if id == "material": return null
+	var clay: Node = scene.get("land_clay") as Node
+	if clay == null or not clay.has_method("tool_of"): return null
+	return clay.tool_of(id)
 
 func _material_radius() -> float:
 	var materials: Node = reach.get("materials")

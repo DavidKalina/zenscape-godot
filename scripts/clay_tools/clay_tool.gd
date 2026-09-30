@@ -55,6 +55,14 @@ func worked_as(verb: String) -> String: return verb
 ## cursor): about the tool's working width at this size.
 func stroke_radius() -> float: return 1.0
 
+## The ground mark's half extents in metres at the middle pip (the ground
+## marks scale it by the pips): what a press here will touch, x along the
+## mark's axis and y across it (scripts/ground_marks.gd `size_of`; the axis is
+## the view's right, or the fall line for the chisel's square). A tool whose
+## verbs reach differently gives the one the hover best stands for, usually
+## its tap's. Zero leaves the mark its own placeholder size.
+func mark_size() -> Vector2: return Vector2.ZERO
+
 ## Whether ground this drag raises shows the pale turned-clay fringe
 ## (land_clay TURNED): clay pushed aside.
 func turns_lip(_verb: String) -> bool: return false

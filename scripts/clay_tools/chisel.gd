@@ -32,14 +32,12 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## paddle's trough is, so going over them again cannot roughen them; the only
 ## eased part is the bench's outer ramp, which is soil, not rock.
 ##
-## Rock. The clay's `paint_rock` paints only ground a stroke *raised*
-## (mountain_forms `_rock_tint` skips anything under 4% of its height up), so
-## a chisel's cut faces, which are mostly lowered ground, would stay grass or
-## dirt. The chisel lays the same granite itself (`_paint_faces`): every tint
-## cell the stroke moved whose ground is now steeper than the range's rock
-## slope, weighted by that slope alone, with no summit share, so a mesa's top
-## and a shelf stay ground however high they stand. It is written at release,
-## inside the stroke, so the undo step takes it back.
+## Rock. The faces take the range's granite from the clay's `paint_faces`:
+## every tint cell the stroke moved whose ground is now steep, weighted by its
+## slope alone, with no summit share, so a mesa's top and a shelf stay ground
+## however high they stand. (`paint_rock` would not do: it paints only ground
+## a stroke raised, and a chisel's faces are mostly cut.) It is laid at
+## release, inside the stroke, so the undo step takes it back.
 
 ## The shelf, metres at the middle pip. Across the path: level for
 ## SHELF_HALF_WIDTH either side of the line; then, on the downhill side only,
@@ -52,15 +50,25 @@ const SHELF_HALF_WIDTH := 1.2
 const FACE_DROP := 1.0
 const BENCH := 0.6
 const RAMP := 1.2
-## The downhill side: the lower of the ground SIDE_PROBE metres either side of
-## the stroke's first stretch, when it falls more than FLAT_FALL metres
-## across it; on the flat, the side toward the camera, so the face is seen.
+## The downhill side: the side the ground falls more than FLAT_FALL metres
+## to across the stroke's first stretch, read SIDE_NEAR metres out either
+## side, else SIDE_PROBE out; on the flat, the side toward the camera, so the
+## face is seen. The near reading comes first for a stroke pressed on a bench:
+## the terrace above stands a whole face over it within a metre, while past
+## the ramp on the other side the ground may stand as high again, so the far
+## reading alone can call it flat and send the face toward the camera, into
+## the terrace above.
+const SIDE_NEAR := 0.9
 const SIDE_PROBE := 2.0
 const FLAT_FALL := 0.2
 ## Each dab writes the stretch of path from the last dab to it (at most the
 ## clay's DAB_SPACING, 0.3 m), squared off STRIP metres past either end, so
-## consecutive dabs overlap and leave no point of the shelf unlevelled, even
-## round a bend, and a stroke ends square, not rounded.
+## consecutive dabs overlap, and a stroke ends square, not rounded. Round a
+## sharp bend the squared strips leave a wedge on the outside of the turn
+## unlevelled, as wide as the shelf there (a drag along the foot of a face
+## picks now the bench, now the face, so its path zigzags), so the shelf is
+## also laid round every joint between dabs, SHELF_HALF_WIDTH out: round at
+## the joints, square at the two ends.
 const STRIP := 0.1
 ## The shelf stays at the press's height until the ground on its line falls
 ## FILL_MAX below it (or climbs CUT_MAX above it); then it steps down (or up)
@@ -68,6 +76,21 @@ const STRIP := 0.1
 ## rather than a causeway, and one run up it a stair rather than a canyon.
 const FILL_MAX := 1.2
 const CUT_MAX := 2.0
+## A press on a face is a press on the bench at its foot. The land is a
+## triangle mesh, so a face is one facet row, and a pointer aimed at a narrow
+## bench (BENCH wide) often picks the facet above it instead: taken at its
+## own height, the new shelf would stand partway up the face, a sliver of
+## fill above the bench it was meant to cut down from. So where the ground
+## under the press is steeper than the clay's full face slope
+## (land_clay FACE_SLOPE.y, the slope the faces take full rock at), the shelf
+## takes the lowest ground within FOOT_REACH metres instead: the bench. It
+## never takes anything higher than the press, so a terrace is never raised
+## above the bench it was pressed on.
+const FOOT_REACH := 0.6
+## A shelf with less than FLOOR_ROOM metres between it and the land's
+## MIN_HEIGHT is on the floor: it takes no face, and nothing downhill of it is
+## cut, so a stroke pressed on a bench at the floor leaves that bench level.
+const FLOOR_ROOM := 0.05
 ## The mesa: outline radius MESA_RADIUS metres at the middle pip, a polygon of
 ## MESA_SIDES corners (seeded by the spot, so it holds while the hand moves)
 ## each MESA_JAG of the radius in or out, joined by straight edges: a cut
@@ -83,7 +106,7 @@ const MESA_RAISE := 6.0
 const PIT_SINK := 3.0
 const FLAT_FROM := 0.3
 ## The notch: a square NOTCH_HALF metres from its middle to each side (the
-## ground mark's chisel square, ground_marks CHISEL_HALF), its floor
+## ground mark's chisel square, `mark_size`), its floor
 ## NOTCH_DEPTH below the ground at the tap. Only cut: where the ground inside
 ## already lies under the floor it is left, so on a slope the notch is a step.
 const NOTCH_HALF := 0.8
@@ -94,14 +117,6 @@ const NOTCH_STRENGTH := 0.6
 const KNOCK_SECONDS := 0.2
 ## Shift: the shallower cut, a share of every depth and of the hold's travel.
 const SHALLOW := 0.5
-## Rock on the faces: mountain_forms' granite, weighted from nothing at
-## FACE_SLOPE.x (rise over run) to full at .y, on cells the stroke moved at
-## least MOVED metres. The slope is read FACE_REACH metres either side of a
-## tint cell's middle (the cells are 0.5 m), close enough that a shelf's cells
-## a row off the face stay ground.
-const FACE_SLOPE := Vector2(0.6,1.2)
-const MOVED := 0.04
-const FACE_REACH := 0.25
 ## The stand-in prop, metres at the hand's own size, in the icon's tint
 ## (scripts/hud_icons.gd "chisel", steel) with a darker and a lighter steel
 ## and wood handles: the chisel hangs from the grip, its wedge edge down; the
@@ -118,6 +133,7 @@ var _shallow := false
 var _level := 0.0
 var _side := 0
 var _last := Vector2.ZERO
+var _joined := false
 var _along := Vector2.ZERO
 var _shelf := PackedByteArray()
 ## The hold: the outline's corners (angle, radius) and the top's own ground.
@@ -131,6 +147,11 @@ func id() -> String: return "chisel"
 func prop_tilt() -> float: return 0.0
 func gesture(verb: String) -> String: return "press" if verb.ends_with("notch") else "grip"
 func stroke_radius() -> float: return (SHELF_HALF_WIDTH+BENCH)*clay.size_scale
+## The ground mark's square is the notch, the tap's reach: the square the
+## ground marks lay in the ground's plane, squared to the fall line as the
+## notch is. The shelf levels SHELF_HALF_WIDTH either side of its line and the
+## mesa reaches MESA_RADIUS; the hover stands for the tap.
+func mark_size() -> Vector2: return Vector2.ONE*NOTCH_HALF
 
 ## The depth share: Shift's shallower cut.
 func _depth() -> float: return SHALLOW if _shallow else 1.0
@@ -145,10 +166,10 @@ func drag_begin(fine: bool) -> String:
 	_shallow = fine
 	_shelf = PackedByteArray()
 	_shelf.resize(clay.base.size())
-	var ground: Variant = clay.editor.data.sample(clay.center,clay.base)
-	_level = float(ground) if ground != null else 0.0
+	_level = _press_level(clay.center)
 	_side = 0
 	_last = clay.center
+	_joined = false
 	_along = Vector2.ZERO
 	return "shallow_shelf" if fine else "shelf"
 
@@ -165,6 +186,10 @@ func dab(heights: PackedFloat32Array, q: Vector2) -> float:
 	var drop := FACE_DROP*_depth()
 	if _side == 0: _side = _downhill(q,right)
 	_step_level(q,drop)
+	# The face drops only as far as the land's floor lets it. On the floor
+	# there is no face: the bench and ramp would only cut the ground beside
+	# the shelf down to its level, so they are left alone (see FLOOR_ROOM).
+	drop = clampf(_level-NativeTerrainData.MIN_HEIGHT,0.0,drop)
 	var reach := half+(BENCH+RAMP)*width
 	var base: PackedFloat32Array = clay.base
 	var points: PackedVector2Array = clay.editor.data.points
@@ -174,48 +199,83 @@ func dab(heights: PackedFloat32Array, q: Vector2) -> float:
 	for k in near.size():
 		var i := near[k]
 		var d := points[i]-mid
-		if absf(d.dot(_along)) > length*0.5+STRIP: continue
+		# Past the strip's ends, only the joint with the last dab's strip.
+		if absf(d.dot(_along)) > length*0.5+STRIP and not (_joined and points[i].distance_to(from) <= half): continue
 		var s := d.dot(right)*_side
 		var fade: float = clay.fade(i)
 		if absf(s) <= half:
 			# The shelf: dead level, cut or filled.
 			_shelf[i] = 1
 			heights[i] = clampf(lerpf(base[i],_level,fade),NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
-		elif s > half and _shelf[i] == 0:
+		elif s > half and _shelf[i] == 0 and drop >= FLOOR_ROOM:
 			# Downhill of it: the face's foot, a bench, a ramp back up. Only cuts.
 			var t := (s-half)/width
 			if t >= BENCH+RAMP: continue
 			var goal := _level-drop*(1.0-smoothstep(BENCH,BENCH+RAMP,t))
 			if goal >= base[i]: continue
 			heights[i] = minf(heights[i],maxf(lerpf(base[i],goal,fade),NativeTerrainData.MIN_HEIGHT))
+	_joined = true
 	clay.touch(mid,reach+length*0.5)
 	return reach+length*0.5
 
 ## The side of the path the ground falls to, +1 (right) or -1 (left): the
-## lower of the ground SIDE_PROBE out either side, or on the flat the side
-## toward the camera.
+## lower side near, else far (see SIDE_NEAR), or on the flat the side toward
+## the camera.
 func _downhill(q: Vector2, right: Vector2) -> int:
 	var data: NativeTerrainData = clay.editor.data
-	var r: Variant = data.sample(q+right*SIDE_PROBE,clay.base)
-	var l: Variant = data.sample(q-right*SIDE_PROBE,clay.base)
-	if r != null and l != null and absf(float(r)-float(l)) > FLAT_FALL: return 1 if float(r) < float(l) else -1
+	for out in [SIDE_NEAR,SIDE_PROBE]:
+		var r: Variant = data.sample(q+right*out,clay.base)
+		var l: Variant = data.sample(q-right*out,clay.base)
+		if r != null and l != null and absf(float(r)-float(l)) > FLAT_FALL: return 1 if float(r) < float(l) else -1
 	var eye: Vector3 = clay.editor.terrain.to_local(clay.scene.camera.global_position)
 	return 1 if (Vector2(eye.x,eye.z)-q).dot(right) >= 0.0 else -1
 
+## The shelf's level for a press at `at`: the ground there, or on a face the
+## bench at its foot (see FOOT_REACH). Never over the ground pressed.
+func _press_level(at: Vector2) -> float:
+	var data: NativeTerrainData = clay.editor.data
+	var base: PackedFloat32Array = clay.base
+	var ground: Variant = data.sample(at,base)
+	if ground == null: return 0.0
+	var level := float(ground)
+	var e: float = clay.FACE_REACH
+	var slope := Vector2.ZERO
+	for axis in [Vector2.RIGHT,Vector2.DOWN]:
+		var ahead: Variant = data.sample(at+axis*e,base)
+		var behind: Variant = data.sample(at-axis*e,base)
+		if ahead == null or behind == null: return level
+		slope += axis*(float(ahead)-float(behind))/(2.0*e)
+	if slope.length() < float(clay.FACE_SLOPE.y): return level
+	var lowest := level
+	for k in range(8):
+		var way := Vector2.from_angle(TAU*k/8.0)
+		for r in [FOOT_REACH*0.5,FOOT_REACH]:
+			var h: Variant = data.sample(at+way*r,base)
+			if h != null: lowest = minf(lowest,float(h))
+	return lowest
+
 ## The shelf keeps the press's height until the ground on its line runs
-## FILL_MAX under it or CUT_MAX over it, then steps by whole drops.
+## FILL_MAX under it or CUT_MAX over it, then steps by whole drops. It never
+## steps under the land's MIN_HEIGHT or over its MAX_HEIGHT: at the floor the
+## shelf stays level where it is, and its face drops only as far as the floor
+## lets it (none at all when the shelf is on the floor, so a stroke pressed on
+## a bench at the floor leaves that bench level, one step, not a sliver).
 func _step_level(q: Vector2, drop: float) -> void:
 	var ground: Variant = clay.editor.data.sample(q,clay.base)
 	if ground == null: return
 	var g := float(ground)
-	if g < _level-FILL_MAX: _level -= drop*ceilf((_level-FILL_MAX-g)/drop)
-	elif g > _level+CUT_MAX: _level += drop*ceilf((g-_level-CUT_MAX)/drop)
+	var steps := 0.0
+	if g < _level-FILL_MAX: steps = -ceilf((_level-FILL_MAX-g)/drop)
+	elif g > _level+CUT_MAX: steps = ceilf((g-_level-CUT_MAX)/drop)
+	if steps < 0.0: steps = maxf(steps,-floorf((_level-NativeTerrainData.MIN_HEIGHT)/drop))
+	elif steps > 0.0: steps = minf(steps,floorf((NativeTerrainData.MAX_HEIGHT-_level)/drop))
+	_level += drop*steps
 
 ## Let go: the faces take rock, and trees the cut left standing on ground
 ## they cannot hold slide off.
 func drag_end() -> bool:
 	var area: Rect2 = clay.touched()
-	_paint_faces(area)
+	clay.paint_faces(area)
 	clay.shake_trees(clay.center,0.0,area)
 	return false
 
@@ -289,7 +349,7 @@ func _outline(theta: float) -> float:
 ## Let go: the walls take rock, and trees on the moved ground slide off.
 func hold_end() -> void:
 	var reach := _radius()*(1.0+MESA_JAG)+1.0
-	if absf(lift) >= FLAT_FROM: _paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
+	if absf(lift) >= FLAT_FROM: clay.paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
 	clay.shake_trees(clay.center,reach)
 
 # --- Tap: the notch ------------------------------------------------------------------------
@@ -318,10 +378,9 @@ func tap(fine: bool) -> void:
 	data.heights = heights
 	clay.touch(center,reach+1.0)
 	# The notch's floor shows bare earth as a drag's cut does (the clay's dirt,
-	# which a tap does not lay by itself).
-	clay.dirty(center,reach+0.5)
-	clay._dirt()
-	_paint_faces(Rect2(center-Vector2.ONE*(reach+1.0),Vector2.ONE*(reach+1.0)*2.0))
+	# which a tap does not lay by itself), and then its walls take rock over it.
+	clay.lay_dirt(center,reach+0.5)
+	clay.paint_faces(Rect2(center-Vector2.ONE*(reach+1.0),Vector2.ONE*(reach+1.0)*2.0))
 	clay.show_land()
 	var at: Vector3 = clay.ground_at(center)
 	clay.stir(center,reach,NOTCH_STRENGTH)
@@ -355,58 +414,6 @@ func finish() -> void:
 	if _knock_t < 0.0: return
 	_knock_t = -1.0
 	if clay.hand_set == "press" and clay.state == clay.State.IDLE: clay.hand_gesture("")
-
-# --- Rock on the faces ---------------------------------------------------------------------
-
-## The range's granite on every tint cell in `region` (plate) the stroke moved
-## at least MOVED metres whose ground now stands steeper than FACE_SLOPE.x,
-## weighted by the slope alone (see the header's "Rock"). A cell's colour
-## goes that share of the way to the rock, over whatever was laid there before
-## (the cut's own bare earth included: a face is stone, not soil), and its
-## weight never drops.
-func _paint_faces(region: Rect2) -> void:
-	var data: NativeTerrainData = clay.editor.data
-	var forms := preload("res://scripts/mountain_forms.gd")
-	var rock: Dictionary = forms.ROCKS.granite
-	var colors: Array = rock.colors.map(func(hex: String) -> Color: return Color(hex).srgb_to_linear())
-	var side := NativeTerrainData.MEADOW_CELLS
-	var step := NativeTerrainData.MEADOW_STEP
-	var low := Vector2i(((region.position+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var high := Vector2i(((region.end+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var heights := data.heights
-	var base: PackedFloat32Array = clay.base
-	var tint := data.tint
-	var salt := hash([clay.editor.land_seed,"chisel",(clay.center as Vector2).snapped(Vector2.ONE*0.01)])
-	var changed := false
-	for z in range(low.y,high.y+1):
-		for x in range(low.x,high.x+1):
-			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
-			var h: Variant = data.sample(p,heights)
-			var b: Variant = data.sample(p,base)
-			if h == null or b == null or absf(float(h)-float(b)) < MOVED: continue
-			var slope := _slope(data,heights,p)
-			var share := smoothstep(FACE_SLOPE.x,FACE_SLOPE.y,slope)
-			if share <= 0.01: continue
-			var roll := float(hash([salt,x,z])%1000)/1000.0
-			var color: Color = colors[int(roll*colors.size())%colors.size()]
-			var k := (z*side+x)*NativeTerrainTint.STRIDE
-			var before: float = tint[k+3]
-			var mix := 1.0 if before <= 0.0 else share
-			tint[k] = lerpf(tint[k],color.r,mix)
-			tint[k+1] = lerpf(tint[k+1],color.g,mix)
-			tint[k+2] = lerpf(tint[k+2],color.b,mix)
-			tint[k+3] = minf(maxf(before,share*float(rock.weight)),1.0)
-			changed = true
-	if changed: data.tint = tint
-
-## Rise over run at plate point `p` on `heights`, read FACE_REACH either side.
-static func _slope(data: NativeTerrainData, heights: PackedFloat32Array, p: Vector2) -> float:
-	var e: Variant = data.sample(p+Vector2(FACE_REACH,0),heights)
-	var w: Variant = data.sample(p-Vector2(FACE_REACH,0),heights)
-	var n: Variant = data.sample(p+Vector2(0,FACE_REACH),heights)
-	var s: Variant = data.sample(p-Vector2(0,FACE_REACH),heights)
-	if e == null or w == null or n == null or s == null: return 0.0
-	return Vector2(float(e)-float(w),float(n)-float(s)).length()/(2.0*FACE_REACH)
 
 # --- The stand-in prop ------------------------------------------------------------------------
 

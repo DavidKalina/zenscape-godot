@@ -104,6 +104,7 @@ Shift, read when the verb is decided.
 | `pace() -> float` | each drag frame | how fast the gesture's Hold plays (default 1) |
 | `worked_as(verb) -> String` | the press ends | the name `worked` reports (default `verb`) |
 | `stroke_radius() -> float` | stroke signals | the reach in metres the editor's stroke signals report |
+| `mark_size() -> Vector2` | hovering the land | the ground mark's half extents in metres at the middle pip (x along the mark's axis, y across): what the hover stands for, usually the tap's reach. Zero (the default) keeps `ground_marks.gd`'s placeholder |
 | `turns_lip(verb) -> bool` | laying dirt | whether ground the verb raises shows the pale turned-clay fringe |
 | `build_prop() -> Node3D` | the tool is taken | the stand-in prop, or null |
 | `prop_tilt() -> float` | each frame | degrees of lean toward the drag |
@@ -138,13 +139,16 @@ A drag's heights reach the land after each frame's dabs; a hold's after each
 | `dirty(q, reach)` | marks ground for bare earth (a drag's `dab` return value does this) |
 | `ground_at(p) -> Vector3` | the live ground under a plate point |
 | `show_land()` | one light refresh (the clay calls it after dabs and holds) |
-| `paint_rock(at, reach, height, form)` | the range's granite on the steeps round `at` (mountain_forms `_rock_tint`), measured against `height` |
+| `paint_rock(at, reach, height, form)` | the range's granite on the steeps round `at` (mountain_forms `_rock_tint`), measured against `height`. Raised ground only: a cell must stand at least 4% of `height` over `base`, and tall ground takes a summit share |
+| `paint_faces(region: Rect2)` | the range's granite on the faces a stroke cut or built inside `region`: every tint cell moved at least `FACE_MOVED` (4 cm) either way, weighted by its slope alone, from `FACE_SLOPE` 0.6 to full at 1.2 rise/run, read `FACE_REACH` (0.25 m) either side. No summit share, so flats stay ground. It covers the stroke's bare earth, so lay the dirt first. The Chisel and the Wire use it |
+| `lay_dirt(at, reach)` | bare earth now on ground the stroke took down, `reach` round `at`. The clay lays it by itself after a frame's dabs and each hold step; call it when the change landed some other way (a cut written whole at release, a tap's own stroke), before `paint_faces` |
 | `shake_trees(at, reach, area := Rect2())` | trees on moved ground that cannot hold it slide to its foot; `touched()` gives a drag's whole area |
 | `stir(at, radius, strength)` | a tap disturbs the life round it |
 | `open_stroke()` / `close_stroke()` | one undo step, for a tap that keeps its change |
 | `queue_point(p)` / `path_end()` | add to the drag's path |
 | `hand_gesture(gesture, point, again)` / `hand_set` | drive the God Hand directly |
 | `FLOOR`, `EDGE`, `PLATE_HALF`, `CELL` | the sink floor (-1.2 m), the edge fade, the rim, the lookup cell |
+| `FACE_SLOPE`, `FACE_REACH`, `FACE_MOVED` | `paint_faces`'s slope ramp (rise/run), read distance and least move |
 
 The clay also owns the dirt tint (`DIRT` to `DIRT_DEEP`, laid by how far each
 0.5 m tint cell went down), bare ground turning hand-made at release, and the
@@ -159,7 +163,10 @@ The clay also owns the dirt tint (`DIRT` to `DIRT_DEEP`, laid by how far each
 - Multiply every change by `clay.fade(i)`, so the plate's outline stays clean.
 - `touch` everything you move. The settle refresh covers only the touched area.
 - Paint rock only at release (`hold_end`, `drag_end`, or inside a tap's
-  stroke), so the undo step takes it back.
+  stroke), so the undo step takes it back. `paint_rock` is for raised ground
+  and `paint_faces` for cut faces.
+- Call only the clay's public members (the tables above). A tool that needs
+  something the clay keeps private wants a new hook here.
 - Check headless with a probe in the style of `tools/probe_tool_paddle.gd`:
   one undo step per verb, and one undo restoring the heights exactly.
 
@@ -256,15 +263,17 @@ Nothing has been seen on screen:
     (-1.5 m) stops it, so on low meadow (0.1 to 0.3 m) the gorge is 1.6 to
     1.9 m deep. A drag is a stroke, like the thumb, so the sink `FLOOR` does
     not apply.
-  - At release, the dug ground turns to bare earth (the clay's dirt), then the
-    walls take granite on their steeps. The bed stays earth. Trees that cannot
-    hold the cut ground slide off.
+  - At release, the dug ground turns to bare earth (`clay.lay_dirt`: the cut
+    has no dabs, so the clay would not lay it by itself), then the walls take
+    granite on their steeps (`clay.paint_faces`). The bed stays earth. Trees
+    that cannot hold the cut ground slide off.
 - **Slice** (hold, then drag). Every point within `SLICE_RADIUS` (7 m) that
   stands above a level plane is cut down to it. The plane starts at the ground
   under the press and follows the pointer's height, as the pinch's summit
   does: dragging down takes more of the hill. It is hard-edged, since a wire
   does not feather. A hill wider than the radius keeps a step at the rim,
-  which takes rock on its steeps. The sliced top is bare earth.
+  which takes rock on its steeps (`clay.paint_faces`). The sliced top is bare
+  earth.
 - **Tap:** nothing yet, and no undo step.
 - **Shift:** a gorge `SHALLOW` (0.4) as deep, and a slice whose plane follows
   the pointer at 0.4 of the pace, so it takes a thinner cut for the same pull.
@@ -275,21 +284,6 @@ Nothing has been seen on screen:
 - **Prop:** two hexagonal toggles in `#b8683f`, tapered, with darker end caps
   (`#8a4a2c`). One lies across the grip, and a thin wire (`#e6c3a4`, 12 mm)
   hangs 1.05 m to the other. It is untilted.
-
-### Where it reaches past the seam
-
-- **Rock on cut ground.** `clay.paint_rock` measures raised ground against
-  `clay.base`, and a cut raises nothing. So the wire lends the clay a base
-  `ROCK_LIFT` (1 m) under the cut ground for that one call, then puts it
-  back. With `height` at `ROCK_TALL` (10 m), every cut point stands at a share
-  of 0.1: over the paint's threshold of 0.04 and under its summit share of
-  0.35. Only steepness decides the rock. A Chisel or a Hammer that paints
-  cliffs it cut will want the same. A `paint_rock` that takes its own base
-  would be the seam's version.
-- **Dirt before rock.** The clay lays dirt after a frame's dabs, and the rock
-  has to go over it. The gorge has no dabs, so `drag_end` writes the heights
-  itself, marks the area (`clay.dirty`), and calls `clay._dirt()` before the
-  rock. `land_clay.gd` is unchanged.
 
 ### Checked headless
 
@@ -307,7 +301,10 @@ godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_wire.gd -- --
   Nothing is dug at the bow, 5.5 m off the line. The bed climbs 0.000 m. The
   ground 0.6 m past the rim is unmoved. The walls stand at 1.64 (90% to 10%
   depth), 129 points are lowered and none raised, 0.92 of the wall cells are
-  rock, and 0.98 of the bed cells are earth.
+  rock, and 0.98 of the bed cells are earth. Since the walls take
+  `clay.paint_faces` (2026-09-30), four runs read 0.96 to 0.99 of the wall
+  cells rock and 0.97 to 1.00 of the bed earth, against 0.88 on the old
+  lent-base `paint_rock` path the same day.
 - Shift cuts 1.15 m against 1.93. The widest pip lowers 186 points against
   129, and the smallest 88.
 - A 40 px hold-and-drag on a 3.17 m hill slices it to 0.5 m. All 218 points
@@ -380,10 +377,11 @@ gestures decide where the blows land.
   both, so a bigger blow reaches further into the rock.
 - **Verbs reported:** `crack`, `knock`, `strikes`, or `fine_crack`,
   `fine_knock`, `fine_strikes` with Shift.
-- **Radii for the ground mark** (`ground_marks.gd` `HAMMER_RADIUS`, now a
-  0.9 m placeholder): the crack reaches 1.8 m × the pips (0.9 m with Shift),
-  and the knock 1.0 m. Scree runs on downhill as far as the ground stays
-  steeper than repose; the probe's 8 m horn spilled it 4.9 to 5.9 m.
+- **The ground mark** (`mark_size`) is the crack's ring, 1.8 m × the pips.
+  The mark does not read Shift, which halves it to 0.9 m, and the knock
+  reaches 1.0 m. Scree runs on downhill as far as the ground stays steeper
+  than repose; the probe's 8 m horn spilled it 4.9 to 5.9 m, well past the
+  mark's scree specks (1.25 to 2.85 m, ground_marks `SCREE`).
 - **Prop:** a hexagonal wood handle (`#9a7550`) with a pommel. Across its
   foot is an octagonal head in `#7a6a5a`, with a flat face (`#9a8b7a`)
   toward the drag, a four-sided pick behind, and a dark collar (`#584b3f`).
@@ -451,15 +449,30 @@ flat and a steep face. The faces take granite and the flats stay ground.
   the ground, so the reach is 3 m either side. The bench and ramp only cut.
   The uphill side is never touched, so on a slope the cut into the hill
   stands behind the shelf as a riser.
-  - The downhill side is the lower ground 2 m either side of the first
-    stretch. On the flat (under 0.2 m of fall), it is the side toward the
-    camera, so the face is seen.
+  - The downhill side is the side the ground falls 0.2 m or more to across
+    the first stretch, read 0.9 m out either side, else 2 m out. On the flat,
+    it is the side toward the camera, so the face is seen. The near reading
+    keeps a stroke pressed on a bench from cutting its face back into the
+    terrace above: past the ramp the ground can stand as high again, and the
+    far reading alone would call it flat.
   - Each dab writes the stretch from the last dab, squared off 0.1 m past
-    either end. The dabs overlap and the stroke ends square.
+    either end, and the shelf round the joint with the last one, so a
+    zigzag path (a drag along the foot of a face picks now the bench, now
+    the face) leaves no unlevelled wedge outside its turns. The stroke ends
+    square.
   - If the ground on the line falls 1.2 m under the shelf, or climbs 2 m over
     it, the shelf steps by whole drops. A stroke down a hill leaves a flight
     of steps, not a causeway.
-  - A stroke pressed on a bench cuts the next terrace down.
+  - A stroke pressed on a bench cuts the next terrace down. A press that
+    lands on a face (steeper than 1.2 rise/run, as a pointer aimed at a
+    0.6 m bench often does) takes the lowest ground within `FOOT_REACH`
+    (0.6 m): the bench at its foot. A shelf is never set above the ground
+    pressed.
+  - **At the floor.** The level never steps under `MIN_HEIGHT` (-1.5 m), and
+    the face drops only as far as it: less than 1 m of room gives a shorter
+    face. A shelf within `FLOOR_ROOM` (5 cm) of the floor takes no face and
+    cuts nothing beside it, so a stroke pressed on a bench at the floor
+    leaves the bench level.
 - **Mesa or pit** (hold, then drag). The outline is a straight-sided polygon
   of 6 to 8 corners, seeded by the spot, `MESA_RADIUS` (2.5 m) ±18%. Inside
   it the top is written flat at the spot's height plus the lift, which
@@ -478,36 +491,24 @@ flat and a steep face. The faces take granite and the flats stay ground.
 - **The pips** scale every width, never a depth.
 - **Verbs reported:** `shelf`, `mesa`, `notch`, or `shallow_shelf`,
   `shallow_mesa`, `shallow_notch` with Shift.
-- **Rock.** At release, every tint cell the stroke moved (4 cm or more) takes
-  mountain_forms' granite, weighted by its slope alone: from 0.6 rise/run to
-  full at 1.2, read 0.25 m either side. Rock covers the cut's own bare earth,
-  because a face is stone. There is no summit share, so mesa tops and
-  shelves stay ground.
+- **Rock.** At release, `clay.paint_faces`: every tint cell the stroke moved
+  (4 cm or more) takes mountain_forms' granite, weighted by its slope alone:
+  from 0.6 rise/run to full at 1.2, read 0.25 m either side. Rock covers the
+  cut's own bare earth, because a face is stone. There is no summit share,
+  so mesa tops and shelves stay ground. The notch lays its floor's bare
+  earth first (`clay.lay_dirt`), because a tap lays no dirt by itself.
 - **Prop:** a chisel hanging from the grip, made of an octagonal wood handle
   (`#9c7444`), steel ferrule and bolster, a square shank (`#4f6680`) and a
   wedge blade in `#6f8aa6` with its edge across local x. Beside it on +x
   stands a mallet, head up in `#6f8aa6`, with a wood handle, as the icon
   draws them. It is untilted.
 
-### A seam gap
-
-`LandClay.paint_rock` paints only ground a stroke raised (mountain_forms
-`_rock_tint` skips cells under 4% of `height` up). Most of a chisel face is
-lowered ground, so it would stay dirt. The chisel therefore lays the granite
-itself (`chisel.gd` `_paint_faces`), inside the stroke, so the undo step takes
-it back. `land_clay.gd` was not changed. If the Wire or the Hammer needs rock
-on cut ground too, move `_paint_faces` to the clay as a `paint_faces(region)`
-hook.
-
-The notch also calls the clay's `dirty` and `_dirt()` itself, because a tap
-lays no dirt by itself, so the notch floor turns to bare earth as a shelf does.
-
 ### The ground mark
 
-The placeholder square (ground_marks `CHISEL_HALF`, 0.8 m) matches the
-notch exactly. The shelf levels 1.2 m either side of the line and reaches
-3 m on the downhill side. The mesa's outline is 2.5 m ±18%, up to 2.95 m.
-All of these scale with the pips.
+The square is the notch (`mark_size`, `NOTCH_HALF` 0.8 m), the tap's reach.
+The shelf levels 1.2 m either side of the line and reaches 3 m on the
+downhill side. The mesa's outline is 2.5 m ±18%, up to 2.95 m. All of these
+scale with the pips.
 
 ### Checked headless
 
@@ -528,8 +529,13 @@ run.
   and the line stays ground.
 - Shift drops 0.44 m. The widest pip moves 232 points against 144, and
   drops 1.00 m.
-- A second stroke pressed on the bench below cuts a level 0.81 m under the
-  first, with its own 1 m face.
+- A second stroke pressed on the bench below cuts a level at the bench,
+  0.58 to 0.99 m under the first over ten runs, level to 0 mm. Its face drops a whole
+  metre where the floor leaves room, and stops at `MIN_HEIGHT` where it
+  does not (0.48 m with 0.59 m of room). The first shelf still stands at its
+  level uphill. The probe presses the bench point itself, and turns the
+  camera half round first when the bench is hidden behind the shelf's lip.
+  On the floor itself the probe asserts no face instead.
 - A 60 px hold raises a 4.27 m mesa. Its top spread is 0 mm, it stays within
   2.4 px of the pointer, and its steepest wall facet is 8.35 rise/run. 58
   cells on the walls are rock, and none on top. Down sinks a 1.67 m pit with

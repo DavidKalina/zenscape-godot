@@ -40,9 +40,9 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## is not held to the clay's sink FLOOR.
 ##
 ## Let go, the dug ground turns to bare earth (the clay's dirt), and then the
-## walls take the range's granite on their steeps (clay.paint_rock): the bed
-## stays earth, the walls read as rock. Trees on ground the cut moved that
-## cannot hold it slide off.
+## walls take the range's granite on their steeps (clay.paint_faces, rock by
+## slope alone on cut ground): the bed stays earth, the walls read as rock.
+## Trees on ground the cut moved that cannot hold it slide off.
 const BED_HALF := 1.1
 const WALL_RUN := 0.35
 const GORGE_DEPTH := 2.6
@@ -61,17 +61,6 @@ const SLICE_RADIUS := 7.0
 const SLICE_SCALE := 1.0
 const SLICE_SINK := 6.0
 const SLICE_RAISE := 8.0
-## The rock paint: `clay.paint_rock` measures raised ground against the
-## stroke's base, and a cut raises nothing. So the cut ground is measured
-## against a base ROCK_LIFT metres under it, and `height` is ROCK_TALL: every
-## cut point stands at a share of ROCK_LIFT / ROCK_TALL (0.1), over the paint's
-## 0.04 threshold and under its summit share (0.35), so only the steepness
-## decides the rock (mountain_forms ROCK_SLOPE): walls yes, the bed and the
-## sliced top no.
-const ROCK_LIFT := 1.0
-const ROCK_TALL := 10.0
-## Metres a point must have gone down to count as cut, for the rock.
-const CUT := 0.04
 ## The stand-in prop, metres at the hand's own size: two hexagonal toggles in
 ## the icon's tint (scripts/hud_icons.gd "wire"), darker end caps, and a thin
 ## lighter wire between them hanging down from the one in the grip.
@@ -116,12 +105,12 @@ func drag_end() -> bool:
 	var reach := cut_gorge(heights,from,to)
 	data.heights = heights
 	var box := Rect2(from,Vector2.ZERO).expand(to).grow(reach)
-	clay.touch(box.get_center(),maxf(box.size.x,box.size.y)*0.5)
+	var spread := maxf(box.size.x,box.size.y)*0.5
+	clay.touch(box.get_center(),spread)
 	# The clay lays the dirt after a frame's dabs; the cut has no dabs, so it
 	# is laid here, before the rock, which must go over it.
-	clay.dirty(box.get_center(),maxf(box.size.x,box.size.y)*0.5)
-	clay._dirt()
-	_paint_cut(box.get_center(),maxf(box.size.x,box.size.y)*0.5)
+	clay.lay_dirt(box.get_center(),spread)
+	clay.paint_faces(box)
 	clay.show_land()
 	clay.shake_trees(clay.center,0.0,clay.touched())
 	return false
@@ -214,28 +203,9 @@ func slice_level() -> float:
 
 func hold_end() -> void:
 	var radius: float = SLICE_RADIUS*clay.size_scale
-	_paint_cut(clay.center,radius+1.0)
-	clay.shake_trees(clay.center,radius+1.0)
-
-# --- Rock on the cut -------------------------------------------------------------------
-
-## The range's granite on the steeps of the ground this stroke cut, `reach`
-## round `at`: `clay.paint_rock` measured against a base ROCK_LIFT under the
-## cut (see ROCK_LIFT). The clay's own base is lent back at once.
-func _paint_cut(at: Vector2, reach: float) -> void:
-	var data: NativeTerrainData = clay.editor.data
-	var base: PackedFloat32Array = clay.base
-	var heights := data.heights
-	var under := heights.duplicate()
-	var any := false
-	for i in range(heights.size()):
-		if heights[i] < base[i]-CUT:
-			under[i] = heights[i]-ROCK_LIFT
-			any = true
-	if not any: return
-	clay.base = under
-	clay.paint_rock(at,reach,ROCK_TALL)
-	clay.base = base
+	var reach := radius+1.0
+	clay.paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
+	clay.shake_trees(clay.center,reach)
 
 # --- The stand-in prop ------------------------------------------------------------------
 

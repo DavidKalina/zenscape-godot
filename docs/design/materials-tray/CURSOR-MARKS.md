@@ -7,11 +7,11 @@ cursor, and the tool props belong to each tool's own work.
 
 | In hand | Mark | Size at 1× (terrain metres) |
 |---|---|---|
-| Hand | soft stitched loop, faint fill | radius = land_clay `RUB_RADIUS` (1.6), the thumb's rub; groove half-width 1.35, palm 2.0, pinch from 2.2 |
-| Paddle | wide stitched ellipse, long across the view | `PADDLE_HALF` 3.0 × 1.5 (placeholder, the design's 180×54 against the hand's 96×58) |
-| Chisel | hard square, one **solid** line, in the plane of the face, squared to its fall line | `CHISEL_HALF` 0.8 (placeholder) |
+| Hand | soft stitched loop, faint fill | radius = hand.gd `RUB_RADIUS` (1.6) via `mark_size`, the thumb's rub; groove half-width 1.35, palm 2.0, pinch from 2.2 |
+| Paddle | wide stitched ellipse, long across the view | paddle.gd `mark_size`: the pat's `PAT_RADIUS` 3.0 across, × `MARK_DEPTH` 0.5 deep (the design's 180×54 against the hand's 96×58). `PADDLE_HALF` is the fallback |
+| Chisel | hard square, one **solid** line, in the plane of the face, squared to its fall line | chisel.gd `mark_size`: the notch's `NOTCH_HALF` 0.8. `CHISEL_HALF` is the fallback |
 | Wire | a toggle dot on hover; while dragged, a 2 px line from the press to the pointer with a toggle at each end | the drag itself |
-| Hammer | small stitched ring and six scree specks fanned downhill | `HAMMER_RADIUS` 0.9, `SCREE` (placeholder) |
+| Hammer | small stitched ring and six scree specks fanned downhill | hammer.gd `mark_size`: the crack's `CRACK_RADIUS` 1.8. `HAMMER_RADIUS` 0.9 is the fallback; `SCREE` is still a placeholder |
 | Material | dotted drop ring under the carried item | hand_materials `SCATTER` spread (flowers 0.75, dandelion 0.9, reeds 0.4, never under `MATERIAL_MIN` 0.45); seeds 1.3, water 1.0, stone 0.45 (`MATERIAL_RADIUS`) |
 
 Every size is multiplied by the roll's size (0.6×, 1×, 1.5×). Chisel, wire and

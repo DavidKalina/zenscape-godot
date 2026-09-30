@@ -8,7 +8,9 @@ extends SceneTree
 ## a level shelf with a face steeper than the Hand's groove banks, painted
 ## rock while the shelf stays ground; the hold-then-drag raises a flat-topped
 ## mesa whose top follows the pointer, and a drag down sinks a pit; the tap
-## knocks a notch; Shift cuts shallower and the size pips widen the reach;
+## knocks a notch; a second shelf pressed on the first's bench cuts the
+## next terrace down, never above the ground pressed, its face stopping at the
+## land's floor; Shift cuts shallower and the size pips widen the reach;
 ## each is one undo step that one undo takes back exactly; Esc gives back
 ## the Hand.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_chisel.gd -- --modeless --no-title
@@ -86,6 +88,12 @@ func height(p: Vector2) -> float:
 
 func screen(p: Vector2) -> Vector2:
 	return scene.camera.unproject_position(editor.terrain.to_global(Vector3(p.x,height(p),p.y)))
+
+## Whether the camera sees plate point `p`: a pick at its screen point lands
+## within 0.25 m of it.
+func sees(p: Vector2) -> bool:
+	var hit: Variant = plate(screen(p))
+	return hit != null and (hit as Vector2).distance_to(p) < 0.25
 
 func plate(at: Vector2) -> Variant:
 	var hit: Variant = editor.pick(at)
@@ -371,11 +379,50 @@ func run() -> void:
 	# --- Terraces: a second stroke pressed on the first's lower bench ---
 	var first := await drag(spot+Vector2(-150,0),300.0)
 	var bench: Vector2 = first.mid+first.down*first.foot
-	var second := await drag(screen(bench)+Vector2(-150,0),300.0)
-	var upper := height(first.mid-first.down*0.7)
-	print("TERRACE ",JSON.stringify({"upper":snappedf(upper,0.01),"lower":snappedf(second.level,0.01),"lower_spread":snappedf(second.level_spread,0.001),"lower_drop":snappedf(second.drop,0.01)}))
-	check("a stroke pressed on the bench below cuts a second level: a terrace",upper-second.level > 0.3 and second.level_spread < 0.03 and absf(upper-first.level) < 0.03,"upper %.2f, lower %.2f m" % [upper,second.level])
-	check("with its own face below it",second.drop > Chisel.FACE_DROP*0.6,"%.2f m" % second.drop)
+	var bench_h := height(bench)
+	# The bench must be pressed where the camera sees it. A face that falls
+	# away from the camera hides its bench behind the shelf's lip (a 1 m face
+	# hides about 2 m from this camera's 25 degrees), and the press lands on
+	# the ground in front instead: the shelf itself, or higher ground uphill,
+	# which once read as a second level above the first. Then the camera
+	# turns half round, to look at the face.
+	var yaw0: float = scene.yaw
+	var turned := false
+	if not sees(bench):
+		scene.yaw = yaw0+PI
+		scene._update_camera()
+		await frames(3)
+		turned = true
+	check("the bench is in view to press",sees(bench),"turned %s" % turned)
+	# Pressed on the bench point itself (seen, so the press lands on it), and
+	# dragged half the first stroke's length along it.
+	var second := await drag(screen(bench),150.0)
+	if turned:
+		scene.yaw = yaw0
+		scene._update_camera()
+		await frames(3)
+	# The first shelf, read uphill of its line. The second shelf levels 1.2 m
+	# either side of the bench's line, about 1.5 m out, so it takes all but
+	# the first's uphill half, and the facets at either edge of what is left
+	# can each reach 0.75 m in (the points' spacing). So the first shelf is
+	# read every 0.1 m from 0.3 to 0.9 m uphill, and the reading nearest its
+	# level stands for it: some of it must still be at that level.
+	var upper := height(first.mid-first.down*0.3)
+	for k in range(4,10):
+		var h := height(first.mid-first.down*0.1*k)
+		if absf(h-first.level) < absf(upper-first.level): upper = h
+	# At the land's floor there is no room for a whole face under the second
+	# level: its face stops at MIN_HEIGHT (none at all on the floor itself),
+	# and the bench it was pressed on stays level.
+	var room: float = second.level-NativeTerrainData.MIN_HEIGHT
+	print("TERRACE ",JSON.stringify({"upper":snappedf(upper,0.01),"first_level":snappedf(first.level,0.01),"bench":snappedf(bench_h,0.01),"lower":snappedf(second.level,0.01),
+		"lower_spread":snappedf(second.level_spread,0.001),"lower_drop":snappedf(second.drop,0.01),"room":snappedf(room,0.01),"turned":turned}))
+	check("a stroke pressed on the bench below cuts a second level: a terrace",upper-second.level > minf(0.3,(upper-NativeTerrainData.MIN_HEIGHT)*0.6) and second.level_spread < 0.03 and absf(upper-first.level) < 0.03,"upper %.2f, lower %.2f m" % [upper,second.level])
+	check("  never above the ground it was pressed on",second.level < second.press+0.05,"%.2f vs %.2f m" % [second.level,second.press])
+	if room < Chisel.FACE_DROP-Chisel.FLOOR_ROOM:
+		check("  at the floor: its face stops at the floor (%.2f m of room)" % room,second.drop <= room+0.05 and second.level_spread < 0.03,"%.2f m" % second.drop)
+	else:
+		check("  with its own face below it",second.drop > Chisel.FACE_DROP*0.6,"%.2f m" % second.drop)
 	editor.undo()
 	await settled()
 	await undo_exact(first.base,first.undo0,"terrace")

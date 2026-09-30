@@ -115,7 +115,14 @@ func run() -> void:
 	# --- Each tool at each size ---
 	var sizes: Array = []
 	for level in range(3): sizes.append(float(roll.SIZES[level].scale))
-	var expect := {"hand":Vector2(1.6,1.6),"paddle":Vector2(3.0,1.5),"chisel":Vector2(0.8,0.8),"wire":Vector2.ZERO,"hammer":Vector2(0.9,0.9)}
+	# Each tool's own reach (clay_tool.gd `mark_size`): the Hand's rub, the
+	# paddle's pat across the view, the chisel's notch, the hammer's crack.
+	var expect := {"hand":Vector2(1.6,1.6),"paddle":Vector2(3.0,1.5),"chisel":Vector2(0.8,0.8),"wire":Vector2.ZERO,"hammer":Vector2(1.8,1.8)}
+	var linked := {"hand":Vector2.ONE*preload("res://scripts/clay_tools/hand.gd").RUB_RADIUS,
+		"paddle":Vector2(1.0,preload("res://scripts/clay_tools/paddle.gd").MARK_DEPTH)*preload("res://scripts/clay_tools/paddle.gd").PAT_RADIUS,
+		"chisel":Vector2.ONE*preload("res://scripts/clay_tools/chisel.gd").NOTCH_HALF,
+		"hammer":Vector2.ONE*preload("res://scripts/clay_tools/hammer.gd").CRACK_RADIUS}
+	check("the expected sizes are the tools' own reaches",linked.keys().all(func(k: String) -> bool: return (linked[k] as Vector2).is_equal_approx(expect[k])),linked)
 	for tool: String in ["hand","paddle","chisel","wire","hammer"]:
 		roll.tool = tool
 		for level in range(3):

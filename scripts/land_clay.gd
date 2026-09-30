@@ -24,8 +24,9 @@ extends Node
 ## down shows bare earth through the grass (the tint layer) and stays; the
 ## land shows through the editor's light refresh, one at a time, as the
 ## brushes and the land spring do, and only the points near the hand are
-## written; rock paint and trees sliding off at release (`paint_rock`,
-## `shake_trees`, called by the tools); and the size pips' `size_scale`.
+## written; rock paint and trees sliding off at release (`paint_rock` on
+## raised ground, `paint_faces` on cut faces, `shake_trees`, called by the
+## tools); and the size pips' `size_scale`.
 ## Nothing weathers after: clay stays as it was left.
 ##
 ## Input: hand_reach's `land_pressed`, `land_dragged` and `land_released` call
@@ -83,6 +84,16 @@ const TURNED_FULL := 0.12
 const LIP_TURNED := 0.03
 ## Sinking never takes ground below FLOOR metres (the land brush's floor).
 const FLOOR := -1.2
+## Rock on cut faces (`paint_faces`): mountain_forms' granite on tint cells
+## the stroke moved at least FACE_MOVED metres, either way, weighted by the
+## ground's slope alone, from nothing at FACE_SLOPE.x (rise over run) to full
+## at .y. The slope is read FACE_REACH metres either side of a cell's middle
+## (the cells are 0.5 m), close enough that a flat a cell off the face stays
+## ground. There is no summit share, unlike `paint_rock`'s, so a mesa's top,
+## a shelf or a gorge's bed stays earth however high or low it stands.
+const FACE_SLOPE := Vector2(0.6,1.2)
+const FACE_MOVED := 0.04
+const FACE_REACH := 0.25
 ## Trees on ground a stroke moved, once let go, keep their footing only where
 ## a tree could take root (emergence's rule: no steeper than the rock slope
 ## the terrain paints rock above, and under the rock band below the
@@ -220,6 +231,12 @@ func set_tool(id: String) -> bool:
 		_prop.visible = false
 		editor.terrain.add_child(_prop)
 	return true
+
+## The tool `id`, made if it has not been yet (it is not taken into the
+## hand), or null when there is no such tool. For readers that size something
+## by a tool not yet in hand: the ground marks' `mark_size`.
+func tool_of(id: String) -> ClayTool:
+	return _make(id)
 
 ## Whether a tool id has its script.
 static func has_tool(id: String) -> bool:
@@ -527,6 +544,60 @@ func paint_rock(at: Vector2, reach: float, height: float, form := "alpine") -> v
 		"salt":hash([editor.land_seed,"pinch",at.snapped(Vector2.ONE*0.01)]),"form":form,"ground":float(ground) if ground != null else 0.0}
 	data.tint = forms._rock_tint(data,job)
 
+## The range's granite on the faces a stroke cut (or built) inside `region`
+## (plate): every tint cell the stroke moved at least FACE_MOVED metres from
+## `base`, up or down, whose ground now stands steeper than FACE_SLOPE.x,
+## weighted by that slope alone (see FACE_SLOPE). `paint_rock` is the one for
+## raised ground: it measures a share of `height` up from `base`, so ground a
+## stroke lowered never takes it, and it adds a summit share that would paint
+## a tall mesa's top. A cut cliff is stone whichever way it was made.
+##
+## A cell's colour goes that share of the way to the rock over whatever was
+## laid there before, the stroke's own bare earth included (lay the dirt
+## first, `lay_dirt`, so the rock goes over it: a face is stone, not soil),
+## and its weight never drops. Call it at release or inside a tap's stroke,
+## so the undo step takes it back.
+func paint_faces(region: Rect2) -> void:
+	var data := editor.data
+	var forms := preload("res://scripts/mountain_forms.gd")
+	var rock: Dictionary = forms.ROCKS.granite
+	var colors: Array = rock.colors.map(func(hex: String) -> Color: return Color(hex).srgb_to_linear())
+	var side := NativeTerrainData.MEADOW_CELLS
+	var step := NativeTerrainData.MEADOW_STEP
+	var low := Vector2i(((region.position+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((region.end+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var heights := data.heights
+	var tint := data.tint
+	var salt := hash([editor.land_seed,tool.id(),center.snapped(Vector2.ONE*0.01)])
+	var changed := false
+	for z in range(low.y,high.y+1):
+		for x in range(low.x,high.x+1):
+			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
+			var h: Variant = data.sample(p,heights)
+			var b: Variant = data.sample(p,base)
+			if h == null or b == null or absf(float(h)-float(b)) < FACE_MOVED: continue
+			var share := smoothstep(FACE_SLOPE.x,FACE_SLOPE.y,_face_slope(data,heights,p))
+			if share <= 0.01: continue
+			var roll := float(hash([salt,x,z])%1000)/1000.0
+			var color: Color = colors[int(roll*colors.size())%colors.size()]
+			var k := (z*side+x)*NativeTerrainTint.STRIDE
+			var before: float = tint[k+3]
+			var mix := 1.0 if before <= 0.0 else share
+			tint[k] = lerpf(tint[k],color.r,mix)
+			tint[k+1] = lerpf(tint[k+1],color.g,mix)
+			tint[k+2] = lerpf(tint[k+2],color.b,mix)
+			tint[k+3] = minf(maxf(before,share*float(rock.weight)),1.0)
+			changed = true
+	if changed: data.tint = tint
+
+## Bare earth now, `reach` round `at`, on ground the stroke took down. The clay
+## lays it by itself after a frame's dabs and each hold step; a tool whose
+## change lands some other way (a cut written whole at release, a tap's own
+## stroke) calls this, before `paint_faces` so the rock goes over it.
+func lay_dirt(at: Vector2, reach: float) -> void:
+	dirty(at,reach)
+	_dirt()
+
 ## Trees on ground the stroke moved, within `reach` of `at` (or inside `area`
 ## when it is given), that can no longer hold it slide down to where they can
 ## (see SLIDE_STEP). Their records move inside the stroke's undo step; they
@@ -672,6 +743,16 @@ func _pick_base(screen_pos: Vector2) -> Variant:
 	var hit: Variant = editor.pick(screen_pos)
 	data.heights = now
 	return hit
+
+## Rise over run at plate point `p` on `heights`, read FACE_REACH either side
+## (for `paint_faces`).
+static func _face_slope(data: NativeTerrainData, heights: PackedFloat32Array, p: Vector2) -> float:
+	var e: Variant = data.sample(p+Vector2(FACE_REACH,0),heights)
+	var w: Variant = data.sample(p-Vector2(FACE_REACH,0),heights)
+	var n: Variant = data.sample(p+Vector2(0,FACE_REACH),heights)
+	var s: Variant = data.sample(p-Vector2(0,FACE_REACH),heights)
+	if e == null or w == null or n == null or s == null: return 0.0
+	return Vector2(float(e)-float(w),float(n)-float(s)).length()/(2.0*FACE_REACH)
 
 ## Whether `p` is under a pond (as native_landscape_presets `_wet` reads one).
 func _in_pond(p: Vector2) -> bool:
