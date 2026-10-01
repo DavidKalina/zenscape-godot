@@ -58,7 +58,7 @@ func run() -> void:
 	var counts := {}
 	for pair: Array in palette.listed(): counts[pair[0]] = int(counts.get(pair[0],0))+1
 	print("Listed: %s" % counts)
-	check(counts.get("seed",0) == 10 and counts.get("tool",0) == 6 and counts.get("element",0) == 4,"seeds, tools, elements all listed")
+	check(counts.get("seed",0) == 10 and counts.get("tool",0) == 7 and counts.get("element",0) == 4,"seeds, tools, elements all listed")
 	check(counts.get("mood",0) >= 19,"every mood and This world listed (%d)" % counts.get("mood",0))
 	check(counts.get("life",0) == 10 and counts.get("world",0) == 8,"life and world listed")
 
