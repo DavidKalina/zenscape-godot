@@ -71,6 +71,11 @@ func mark_size() -> Vector2: return Vector2.ZERO
 ## (land_clay TURNED): clay pushed aside.
 func turns_lip(_verb: String) -> bool: return false
 
+## How much of the clay's bare earth ground this verb takes down shows, 0..1:
+## 1 the full dirt (a crisp line, the Modeller's groove), less a faint scuff
+## over the grass, 0 none. Below the clay's DIRT_BARE the grass stays alive.
+func dirt_share(_verb: String) -> float: return 1.0
+
 ## The stand-in prop, the tool's own cursor over the land, or null for none.
 ## Built each time the tool is taken, in the terrain's space, with the
 ## handle's grip at the origin and the tool's working end down -Y. A Blender
