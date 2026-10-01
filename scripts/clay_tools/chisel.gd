@@ -2,7 +2,8 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## The Chisel, "Cut" (docs/design/tools/PLAN.md): the Modeller's grammar with a
 ## steel edge. It is the only tool that makes crisp rock: faces, cliffs,
 ## mesas, terraces. Everything it makes is a level flat and a steep face, and
-## the faces take the range's granite while the flats stay ground.
+## the faces show the strata (granite in a tall column) while the flats stay
+## ground.
 ##
 ## - **Drag:** a shelf. The blade is pushed level through the land at the
 ##   height of the press: along the path a strip SHELF_HALF_WIDTH either side
@@ -32,9 +33,10 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## paddle's trough is, so going over them again cannot roughen them; the only
 ## eased part is the bench's outer ramp, which is soil, not rock.
 ##
-## Rock. The faces take the range's granite from the clay's `paint_faces`:
-## every tint cell the stroke moved whose ground is now steep, weighted by its
-## slope alone, with no summit share, so a mesa's top and a shelf stay ground
+## Rock. The faces take the strata from the clay's `paint_faces` (bands
+## below the plain, earth on a low mesa, the granite core in one CORE_FROM
+## tall, scripts/strata.gd): every tint cell the stroke moved whose ground is
+## now steep, weighted by its slope alone, with no summit share, so a mesa's top and a shelf stay ground
 ## however high they stand. (`paint_rock` would not do: it paints only ground
 ## a stroke raised, and a chisel's faces are mostly cut.) It is laid at
 ## release, inside the stroke, so the undo step takes it back.

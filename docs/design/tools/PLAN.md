@@ -144,19 +144,27 @@ A drag's heights reach the land after each frame's dabs; a hold's after each
 | `ground_at(p) -> Vector3` | the live ground under a plate point |
 | `show_land()` | one light refresh (the clay calls it after dabs and holds) |
 | `paint_rock(at, reach, height, form)` | the range's granite on the steeps round `at` (mountain_forms `_rock_tint`), measured against `height`. Raised ground only: a cell must stand at least 4% of `height` over `base`, and tall ground takes a summit share |
-| `paint_faces(region: Rect2)` | the range's granite on the faces a stroke cut or built inside `region`: every tint cell moved at least `FACE_MOVED` (4 cm) either way, weighted by its slope alone, from `FACE_SLOPE` 0.6 to full at 1.2 rise/run, read `FACE_REACH` (0.25 m) either side. No summit share, so flats stay ground. It covers the stroke's bare earth, so lay the dirt first. The Chisel and the Wire use it |
-| `lay_dirt(at, reach)` | bare earth now on ground the stroke took down, `reach` round `at`. The clay lays it by itself after a frame's dabs and each hold step; call it when the change landed some other way (a cut written whole at release, a tap's own stroke), before `paint_faces` |
+| `paint_faces(region: Rect2)` | the strata (scripts/strata.gd) on the faces a stroke cut or built inside `region`, a shade darker than flats (`FACE_SHADE`): every tint cell moved at least `FACE_MOVED` (4 cm) either way, weighted by its slope alone, from `FACE_SLOPE` 0.6 to `FACE_WEIGHT` at 1.2 rise/run, read `FACE_REACH` (0.25 m) either side. Each cell takes the stratum at its own height, under the highest ground `FACE_TOP` (1 m) round it, so a wall through the bands is striped and a tall column's face is its granite core. No summit share, so flats stay ground. It covers the stroke's flat earth, so lay the dirt first. The Chisel and the Wire use it |
+| `lay_dirt(at, reach)` | the strata now on ground the stroke took down, `reach` round `at`. The clay lays it by itself after a frame's dabs and each hold step; call it when the change landed some other way (a cut written whole at release, a tap's own stroke), before `paint_faces` |
 | `shake_trees(at, reach, area := Rect2())` | trees on moved ground that cannot hold it slide to its foot; `touched()` gives a drag's whole area |
 | `stir(at, radius, strength)` | a tap disturbs the life round it |
 | `open_stroke()` / `close_stroke()` | one undo step, for a tap that keeps its change |
 | `queue_point(p)` / `path_end()` / `queued()` | add to the drag's path; its last point; the points not yet laid (all of the path, for a tool whose `drag_frame` holds its dabs back) |
 | `hand_gesture(gesture, point, again)` / `hand_set` | drive the God Hand directly |
 | `FLOOR`, `EDGE`, `PLATE_HALF`, `CELL` | the sink floor (-1.2 m), the edge fade, the rim, the lookup cell |
-| `FACE_SLOPE`, `FACE_REACH`, `FACE_MOVED` | `paint_faces`'s slope ramp (rise/run), read distance and least move |
+| `FACE_SLOPE`, `FACE_REACH`, `FACE_MOVED`, `FACE_WEIGHT`, `FACE_TOP` | `paint_faces`'s slope ramp (rise/run), read distance, least move, full weight and how far it looks for the column's top |
+| `strata()` | the world's strata (scripts/strata.gd): `material_at(point, height, surface)` names what the ground is made of there ("topsoil", "clay", "sand", "shale", "bedrock", "rock_core"); `color_at` gives its colour. See docs/scenic/strata.md |
 
-The clay also owns the dirt tint (`DIRT` to `DIRT_DEEP`, laid by how far each
-0.5 m tint cell went down), bare ground turning hand-made at release, and the
-`worked(verb, kept)` signal.
+The clay also owns the cut-ground tint, bare ground turning hand-made at
+release, and the `worked(verb, kept)` signal. Cut ground shows the stratum it
+reached (docs/scenic/strata.md): each 0.5 m tint cell a stroke took down takes
+the strata colour at its new height, under the ground it was cut from, at a
+weight rising from `DIRT_FROM` (4 cm dug) to full at `DIRT_FULL` (0.45 m),
+scaled by the tool's `dirt_share`. So a scrape is topsoil, a groove's bed the
+ochre clay, a deep pit sand, shale and bedrock, and a cut into ground standing
+2.5 m or more (a tall hill, a mountain) its granite core. The slab's earth
+sides paint from the same definition, so a cut at the rim matches the side
+beside it.
 
 ### Rules a tool keeps
 

@@ -146,22 +146,46 @@ float zs_atlas_hold_at(vec2 p) {
 	return 1.0 - smoothstep(0.0, atlas_hold_width, d);
 }
 
-// The earth sides' paint at `depth` metres under the rim: dark topsoil, loam,
-// an ochre clay seam, darker loam, a pale sand seam, then stone. The seams
-// wander gently along the side (`along`); a rim raised high into a mountain
-// (`raised` m over the plate) turns to stone below its topsoil. Linear.
-vec3 zs_earth_strata(float depth, float along, float raised) {
-	float wander = 0.14 * sin(along * 0.43 + 1.3) + 0.08 * sin(along * 1.17 + 4.1);
-	float d = depth + wander * smoothstep(0.2, 0.8, depth);
-	vec3 c = vec3(0.070, 0.045, 0.025);
-	c = mix(c, vec3(0.165, 0.102, 0.054), smoothstep(0.22, 0.34, d));
-	c = mix(c, vec3(0.245, 0.142, 0.062), smoothstep(0.95, 1.07, d));
-	c = mix(c, vec3(0.140, 0.094, 0.058), smoothstep(1.32, 1.46, d));
-	c = mix(c, vec3(0.285, 0.220, 0.135), smoothstep(2.15, 2.25, d));
-	c = mix(c, vec3(0.150, 0.128, 0.106), smoothstep(2.45, 2.60, d));
-	c = mix(c, vec3(0.105, 0.092, 0.082), smoothstep(3.3, 3.8, d));
-	vec3 stone = vec3(0.20, 0.185, 0.165) * (0.9 + 0.1 * sin(d * 2.3 + along * 0.2));
-	return mix(c, stone, smoothstep(1.0, 3.0, raised) * smoothstep(0.25, 0.45, depth));
+// The earth sides' strata (scripts/strata.gd is the one definition; its
+// `apply` sets these): flat bands by plate height, warped a little per world,
+// and a granite core under columns that stand tall. `strata_offset` takes the
+// sides' own space to plate space.
+uniform vec3 strata_offset = vec3(0.0, -2.0, 0.0);
+uniform vec4 strata_floors = vec4(-0.4, -1.8, -3.2, -4.4);
+// Core from, core base, core bed, shale bed.
+uniform vec4 strata_core = vec4(2.5, 0.0, 0.6, 0.3);
+uniform vec4 strata_wave_a = vec4(0.33, 0.0, 0.0, 0.25);
+uniform vec4 strata_wave_b = vec4(0.0, 0.52, 0.0, 0.0);
+uniform vec2 strata_skin = vec2(0.22, 0.55);
+uniform vec3 strata_topsoil = vec3(0.195, 0.122, 0.071);
+uniform vec3 strata_clay = vec3(0.392, 0.188, 0.072);
+uniform vec3 strata_sand = vec3(0.624, 0.510, 0.305);
+uniform vec3 strata_shale = vec3(0.159, 0.141, 0.127);
+uniform vec3 strata_shale_dark = vec3(0.098, 0.084, 0.076);
+uniform vec3 strata_bedrock = vec3(0.212, 0.209, 0.195);
+uniform vec3 strata_core_a = vec3(0.392, 0.371, 0.332);
+uniform vec3 strata_core_b = vec3(0.491, 0.462, 0.413);
+uniform vec3 strata_core_c = vec3(0.305, 0.288, 0.255);
+
+// The strata's colour at plate point `p` under a column topped at `surface`
+// (strata.gd `color_at`), each band edge eased over a pixel. Linear.
+vec3 zs_strata(vec3 p, float surface) {
+	float warp = strata_wave_a.w * (0.6 * sin(dot(p.xz, strata_wave_a.xy) + strata_wave_a.z)
+		+ 0.4 * sin(dot(p.xz, strata_wave_b.xy) + strata_wave_b.z));
+	float h = p.y + warp;
+	float e = max(fwidth(h), 0.02);
+	float beds = mod(floor((h - strata_floors.w) / strata_core.w), 2.0);
+	vec3 c = strata_bedrock;
+	c = mix(c, beds > 0.5 ? strata_shale_dark : strata_shale, smoothstep(strata_floors.w - e, strata_floors.w + e, h));
+	c = mix(c, strata_sand, smoothstep(strata_floors.z - e, strata_floors.z + e, h));
+	c = mix(c, strata_clay, smoothstep(strata_floors.y - e, strata_floors.y + e, h));
+	c = mix(c, strata_topsoil, smoothstep(strata_floors.x - e, strata_floors.x + e, h));
+	float bed = mod(floor(p.y / strata_core.z), 3.0);
+	vec3 core = bed < 0.5 ? strata_core_a : bed < 1.5 ? strata_core_b : strata_core_c;
+	float ep = max(fwidth(p.y), 0.02);
+	c = mix(c, core, step(strata_core.x, surface) * smoothstep(strata_core.y - ep, strata_core.y + ep, p.y));
+	// The grass's root mat under the rim.
+	return mix(c, strata_topsoil * strata_skin.y, 1.0 - smoothstep(strata_skin.x - 0.03, strata_skin.x + 0.03, surface - p.y));
 }
 
 void vertex() {
@@ -337,8 +361,10 @@ void fragment() {
 	if (earth_sides) {
 		vec3 facet = floor(abs(face_normal) * 40.0);
 		float jitter = fract(sin(dot(facet, vec3(12.9898, 78.233, 37.719))) * 43758.5453) - 0.5;
-		side_mist = 1.0 - smoothstep(0.0, 2.8, earth_side.z);
-		tint = scene_palette(base_color.rgb * zs_earth_strata(earth_side.x, earth_side.w, earth_side.y)
+		side_mist = 1.0 - smoothstep(0.0, 1.6, earth_side.z);
+		// The same strata and ground palette as cut ground (scripts/strata.gd).
+		vec3 plate = (inverse(MODEL_MATRIX) * vec4(world_position, 1.0)).xyz + strata_offset;
+		tint = scene_palette_ground(base_color.rgb * zs_strata(plate, plate.y + earth_side.x)
 			* (1.0 + 0.14 * jitter) * mix(1.0, 0.5, side_mist));
 	}
 	if (grass_blades) {
