@@ -159,7 +159,7 @@ static func _build() -> void:
 	spokes.append("M19.9 3.6 L18.7 6.2")
 	_add("dandelion","Clock","Dandelion","#d6c290",tufts,spokes,4,1.0,0.8)
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
-	_add("water","Water","Spring","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
+	_add("water","Water","Scoop","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)
 	# Seeds with no slot in the case, reached through the command palette
 	# (scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
@@ -184,6 +184,9 @@ static func _build() -> void:
 	# The Feather, "Gust" (HUD 5, lowpoly.js SHAPING_TOOLS[5]): wind held in
 	# hand, below the tools after the roll's divider. A finer quill line (1.2).
 	_add("feather","Feather","Gust","#cbb994",["M4.6 21.2 Q5.4 11 17.6 2.8 Q19.6 1.8 20.6 3.2 Q21.2 4.6 19.8 6.6 Q12.8 17.4 4.6 21.2Z"],["M3.2 22.6 L17.2 6","M9.4 15.2 L6.6 14.4","M12.6 11.4 L10 10.2","M11.6 15.2 L14.4 14.6","M15 11 L17.4 10.8"],15,1.0,1.2)
+	# The watering can, "Pour": water held in hand, under the Feather. A
+	# body, a spout rising to the right with its rose, a loop handle over it.
+	_add("can","Watering can","Pour","#8aa6a8",["M4 10 H14.5 V19.5 Q14.5 21 13 21 H5.5 Q4 21 4 19.5Z","M14 13.6 L20.4 7.4 L21.6 8.8 L14.5 16.2Z","M19.6 5.6 L22.8 8.8 L21.2 10.2 L18.2 7.2Z"],["M5.6 10 Q5.6 4.4 9.25 4.4 Q12.9 4.4 12.9 10","M4 12.4 H14.5"],16,1.0,1.5)
 	# --- HUD 5 foot icons (docs/design/hud-5/lowpoly.js ROLL_FOOT; the tool
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)

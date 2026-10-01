@@ -117,9 +117,16 @@ const FEATHER_RING := 1.5
 const CLICK_PIXELS := 6.0
 ## The hint line with material in hand, until each has been used once.
 const SOW_HINT := "Drag over the land to sow"
-const HINTS := {"water":"Hold over the land to pour","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
+const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
 	"wildflower":"Tap to sow a drift of flowers  ·  Drag to scatter","dandelion":"Tap to sow a drift of flowers  ·  Drag to scatter","reed":"Tap to set reeds  ·  Drag to scatter"}
 const BACK_HINT := "Click the sky or the case to put it back"
+## Water in hand pressed on dry land: nothing to scoop.
+const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
+## The watering can (the tool roll's "can"): not a clay tool either. Its press
+## on the land is held here, as the Feather's is, and handed to the can's
+## stream (NativeChunkEditor `can_in_hand`, scripts/watering_can.gd), which
+## reads the pointer each frame until the button comes up.
+const CAN := "can"
 ## Design units the Lantern hint line moves up to clear the case.
 const HINT_LIFT := 100.0
 
@@ -295,6 +302,14 @@ func press(point: Vector2) -> bool:
 		if reach.reach_at(point) == "rim" or reach._land(point) == null or reach._tree_under(point) > 0: return false
 		_feather_press(point)
 		return true
+	# The can in hand: a press on the land pours there (through trees too).
+	if held.is_empty() and roll.tool == CAN:
+		if reach.reach_at(point) == "rim" or reach._land(point) == null: return false
+		var editor: Node = reach._editor()
+		if editor.has_method("can_in_hand") and editor.can_in_hand(point,size_scale(),Input.is_key_pressed(KEY_SHIFT)):
+			reach.take_hold(CAN,point)
+			reach.uses[CAN] = int(reach.uses.get(CAN,0))+1
+		return true
 	if held.is_empty(): return false
 	# The rim keeps its verbs; the land is the material's; the sky puts it back.
 	if reach.reach_at(point) == "rim": return false
@@ -340,6 +355,11 @@ func _feather_press(point: Vector2) -> void:
 func _gust() -> Node:
 	var editor: Node = reach._editor()
 	return editor.get("gust") if editor != null else null
+
+## True while the can pours (its press is held).
+func can_pouring() -> bool:
+	var can: Node = reach._editor().get("can")
+	return roll != null and roll.tool == CAN and held.is_empty() and can != null and can.pouring
 
 ## True while the Feather's wind is in hand (its own press, or wind dragged
 ## in from the sky), for the marks.
@@ -411,7 +431,13 @@ func _use(point: Vector2) -> void:
 	elif held == "water":
 		if editor.get("water_ball") != true: return
 		editor.ball_supply = Callable()
-		if editor.ball_from_sky(point): _used()
+		# The ball is the ponds' own water: it forms only where there is some.
+		var scooped: String = editor.scoop_ball(point) if editor.has_method("scoop_ball") else ("" if editor.ball_from_sky(point) else "busy")
+		if scooped.is_empty(): _used()
+		elif scooped == "dry":
+			clump.shed()
+			ClaySound.cue(&"ui_refuse")
+			reach._show_hint(DRY_HINT)
 	elif SCATTER.has(held):
 		reach.take_hold("scatter",point)
 		_press_pos = point
@@ -447,6 +473,10 @@ func let_go(what: String, point: Vector2) -> void:
 		return
 	if what == FEATHER:
 		_feather_let_go()
+		return
+	if what == CAN:
+		var can: Node = reach._editor().get("can")
+		if can != null: can.release()
 		return
 	var known := point != Vector2.INF
 	var over_land: bool = known and reach._land(point) != null

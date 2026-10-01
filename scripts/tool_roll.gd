@@ -21,9 +21,10 @@ extends Control
 const Linen = preload("res://scripts/hud_linen.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
-## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind, not
-## clay: it sits under the shaping tools after a divider (DIVIDER_BEFORE).
-const TOOLS := ["hand","paddle","chisel","wire","hammer","feather"]
+## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind and the
+## watering can ("Pour") water, not clay: they sit under the shaping tools
+## after a divider (DIVIDER_BEFORE).
+const TOOLS := ["hand","paddle","chisel","wire","hammer","feather","can"]
 ## Indices in TOOLS that a stitched divider sits above (lowpoly.js
 ## TOOL_DIVIDER_BEFORE): the Feather, set apart from the tools that shape.
 const DIVIDER_BEFORE := [5]

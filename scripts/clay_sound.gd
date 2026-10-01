@@ -76,7 +76,8 @@ const VOICE_CLIPS := ["groove-loop","rub-loop","sweep-loop","scrape-loop","stret
 const VOICE_GAIN := [0.22,0.16,0.2,0.2,0.2,0.32,0.22]
 ## Voices other things drive by name (`voice`), each a loop and its peak gain:
 ## the water ball's swirl while it is held.
-const OTHER_VOICES := {&"water_swirl": {"clip":"water-swirl-loop","gain":0.2}}
+## The watering can's stream borrows the swirl's loop until it has its own.
+const OTHER_VOICES := {&"water_swirl": {"clip":"water-swirl-loop","gain":0.2},&"water_pour": {"clip":"water-swirl-loop","gain":0.16}}
 ## The held rumble is the Genesis land voice (assets/audio/genesis-rumble.wav).
 const RUMBLE_CLIP := "res://assets/audio/genesis-rumble.wav"
 ## A drag's voices come in from SPEED.x px/s and are full at SPEED.y; a hold's

@@ -718,7 +718,7 @@ func release(point := Vector2.INF) -> void:
 	elif what == "cloud":
 		reach_point = null
 		if _source != null: _source.let_go()
-	elif what in ["jar","scatter","almanac","feather"]:
+	elif what in ["jar","scatter","almanac","feather","can"]:
 		reach_point = null
 		materials.let_go(what,point)
 	elif what == "sun":
@@ -1437,7 +1437,7 @@ func _cloud_drag(point: Vector2) -> void:
 func shaping() -> bool:
 	if not modeless or scene == null or scene.get("land_clay") == null: return false
 	if materials == null: return true
-	return materials.held.is_empty() and (materials.roll == null or materials.roll.tool != HandMaterials.FEATHER)
+	return materials.held.is_empty() and (materials.roll == null or not materials.roll.tool in [HandMaterials.FEATHER,HandMaterials.CAN])
 
 ## The size in hand (the tool roll's pips), as the clay reads it.
 func _clay_size() -> float:

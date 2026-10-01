@@ -1153,7 +1153,7 @@ func summon(kind: String) -> String:
 	match kind:
 		"snake":
 			if snakes.showing() != "": return "A snake is already out"
-			return "" if snakes.force() else "A snake needs a pond to come to"
+			return "" if snakes.force() else "A snake needs a pond to come to: pour some water first"
 		"heron":
 			if str(moments.showing().heron) != "": return "The heron is already here"
 			return "" if moments.force("heron") else "A heron needs shallow water"
@@ -1178,21 +1178,20 @@ func summon(kind: String) -> String:
 		_:
 			return "" if moments.force(kind) else "Not now"
 
-## Stand-in forest edges for open ground (`summon`): points on the land a
-## ring out from where the camera looks, each with its "wood" behind it, away
-## from the camera, so whatever steps out walks toward the view.
+## Stand-in forest edges for open ground (`summon`): a grid over the plate's
+## middle (inside the 12.8 m Bigfoot keeps to, with room to walk in and out),
+## each with its "wood" behind it, away from the camera, so whatever steps
+## out walks toward the view. The callers pick the best of them as ever.
 func _open_edges() -> Array:
 	var eye := to_local(scene.camera.global_position)
-	var look := to_local(scene.camera.global_position-scene.camera.global_basis.z*20.0)
-	var centre := Vector2(look.x,look.z)
 	var edges := []
-	for ring: float in [6.0,10.0,14.0]:
-		for k in range(12):
-			var p := centre+Vector2.from_angle(TAU*k/12.0)*ring
+	for i in range(-4,5):
+		for j in range(-4,5):
+			var p := Vector2(i,j)*2.0
 			if data.ground_height(p) == null: continue
 			var into := (p-Vector2(eye.x,eye.z)).normalized()
 			edges.append({"p":p,"into":into,"trees":99})
-	if edges.is_empty(): edges.append({"p":centre,"into":(centre-Vector2(eye.x,eye.z)).normalized(),"trees":99})
+	if edges.is_empty(): edges.append({"p":Vector2.ZERO,"into":(-Vector2(eye.x,eye.z)).normalized(),"trees":99})
 	return edges
 
 static func _forced_kinds() -> PackedStringArray:
@@ -1243,6 +1242,23 @@ func take(site: Dictionary, mouth: Vector3) -> void:
 	site.delay = float(timing[0])+float(timing[1])*_rng.randf()
 	site.since = clock
 	taken[kind] = int(taken.get(kind,0))+1
+
+## A water ball scooping a pond (NativeChunkEditor `_ball_step`): up to
+## `most` fish swimming within `reach` m of `center` are taken up into it at
+## `mouth` (plate coordinates), as a heron takes one, and their looks come
+## back as [{"kind", "seed", "mirror"}] for the ball to carry; their sites
+## wait PREY_RETURN before the pond fills them again.
+func scoop_fish(center: Vector2, reach: float, most: int, mouth: Vector3) -> Array:
+	var looks := []
+	if not active or most <= 0: return looks
+	var near := present("fish").filter(func(site: Dictionary) -> bool: return Vector2(site.p.x,site.p.z).distance_to(center) <= reach)
+	near.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return Vector2(a.p.x,a.p.z).distance_to(center) < Vector2(b.p.x,b.p.z).distance_to(center))
+	for site: Dictionary in near.slice(0,most):
+		var look := str(site.get("look","")).split(" ")
+		if look.size() != 2: continue
+		looks.append({"kind":look[0],"seed":int(look[1]),"mirror":bool(site.get("mirror",false))})
+		take(site,mouth)
+	return looks
 
 ## The batch a fish is drawn with, for the one in a heron's bill.
 func fish_look(site: Dictionary) -> MultiMeshInstance3D:

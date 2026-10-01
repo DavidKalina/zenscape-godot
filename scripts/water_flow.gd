@@ -14,8 +14,12 @@ extends RefCounted
 ## keeps pouring (`springs`, saved and undoable), after the ball's own water
 ## wells out of it, and on open ground wears a rill and a pool at its foot
 ## (`spring_bed`); anywhere else it lets all its water go once, over
-## BURST_SECONDS (`bursts`, neither saved nor undone). Rain and snowmelt
-## pour where the land gathers them (`runoff`, scripts/rain_runoff.gd).
+## BURST_SECONDS (`bursts`, neither saved nor undone). The watering can
+## (scripts/watering_can.gd) pours while it is held (`taps`, transient) and,
+## held still on high ground, plants a spring of its own (`plant_spring`).
+## Rain and snowmelt pour where the land gathers them (`runoff`,
+## scripts/rain_runoff.gd). The water ball takes its water back out of the
+## ponds (`scoop`).
 ## The depth itself is saved with the place but is not part of undo: undoing a
 ## sculpt puts the land back and the water follows it.
 
@@ -40,6 +44,13 @@ const PARAMS := {
 	# m/s lost from thin water, fading to nothing at soak_depth: fronts soak in.
 	"soak":0.004,
 	"soak_depth":0.03,
+	# s: ground wet this long is saturated and soaks no more (it soaks less
+	# as it wets), so a running stream carries its water on to the pond; dry
+	# ground dries back at dry_rate of real time (a minute for a wet one).
+	# Without it a spring's sheet down a hillside soaked away 60% of its
+	# water over 150 m² and its pond never filled.
+	"saturate":6.0,
+	"dry_rate":0.1,
 	"max_speed":4.0,
 	# s: the time constant the water leaving each edge cell is smoothed with
 	# (edge_outflow, spills; the edge falls read it).
@@ -52,12 +63,19 @@ const SPRING_SLOPE := 0.45
 const LOW_SHARE := 0.2
 ## A spring pours SPRING_SHARE of its ball's volume each second, within
 ## SPRING_MIN..SPRING_MAX m³/s, over SPRING_RADIUS m, after letting the ball's
-## own water go as a burst.
-const SPRING_SHARE := 0.012
-const SPRING_MIN := 0.03
-const SPRING_MAX := 0.25
+## own water go as a burst. A spring is a source that never runs dry: it fills
+## the river and the pond below it to the brim and spills on. At the old
+## 0.03..0.25 m³/s a small ball's spring lost its water to the soak on the
+## thin sheet down the face (soak × tens of m²) and its pond never filled;
+## SPRING_MIN outruns that on a long course.
+const SPRING_SHARE := 0.03
+const SPRING_MIN := 0.35
+const SPRING_MAX := 0.7
 const SPRING_RADIUS := 0.35
 const MAX_SPRINGS := 8
+## A ball carrying less than SPRING_BALL m³ lets its water go wherever it
+## lands: a sip scooped from a puddle is no spring.
+const SPRING_BALL := 1.0
 ## A burst lets its volume go over BURST_SECONDS across BURST_RADIUS m.
 const BURST_SECONDS := 1.2
 const BURST_RADIUS := 0.8
@@ -130,6 +148,9 @@ var origin := Vector2.ZERO
 var springs: Array[Dictionary] = []
 ## [{"x", "z", "rate", "radius", "left"}], transient.
 var bursts: Array[Dictionary] = []
+## Sources held open from outside, by name: [x, z, radius, rate], poured
+## every step until erased (the watering can's stream). Transient.
+var taps: Dictionary = {}
 ## The weather's water: set `runoff.rain`, `.snowing` and `.snow_phase`.
 var runoff := preload("res://scripts/rain_runoff.gd").new()
 ## 1 per grid cell over the plate, 0 outside it.
@@ -247,6 +268,7 @@ func run(ticks: int) -> void:
 		burst.left = float(burst.left)-rate*seconds
 		finished = finished or burst.left <= 0.0001
 	if finished: bursts = bursts.filter(func(burst: Dictionary) -> bool: return burst.left > 0.0001)
+	for tap: Array in taps.values(): sources.append_array(tap)
 	sources.append_array(runoff.sources())
 	last_step_usec = kernel.step(data.heights,sources,ticks,dt)
 	worst_step_usec = maxi(worst_step_usec,last_step_usec)
@@ -277,17 +299,32 @@ func low_ground() -> float:
 ## after, for the editor to show the change. Returns the kind.
 func drop(point: Vector2, volume: float) -> String:
 	var kind := source_kind(point)
+	if kind == "spring" and volume < SPRING_BALL: kind = "burst"
 	last_bed = {}
 	if kind.is_empty() or not ready: return ""
 	if kind == "burst":
 		bursts.append({"x":point.x,"z":point.y,"rate":volume/BURST_SECONDS,"radius":BURST_RADIUS,"left":volume})
 		return kind
+	_spring(point,volume,true)
+	return kind
+
+## A spring planted by hand (the watering can held still on high ground):
+## as a ball's spring, its course, bed and pool sized for `volume` m³ (what
+## the can has poured there), but with no ball's water to well out first.
+## False where a ball would not make a spring.
+func plant_spring(point: Vector2, volume: float) -> bool:
+	last_bed = {}
+	if not ready or source_kind(point) != "spring": return false
+	_spring(point,volume,false)
+	return true
+
+func _spring(point: Vector2, volume: float, head: bool) -> void:
 	var course := descent(data,point)
 	var points: PackedVector3Array = course.points
 	var placed := spring_set(data,points)
 	var at: Vector2 = placed.at
 	var set: int = placed.index
-	bursts.append({"x":at.x,"z":at.y,"rate":volume/SPRING_HEAD_SECONDS,"radius":SPRING_RADIUS,"left":volume})
+	if head: bursts.append({"x":at.x,"z":at.y,"rate":volume/SPRING_HEAD_SECONDS,"radius":SPRING_RADIUS,"left":volume})
 	data.begin_stroke()
 	# The rill starts at the spring, not a step above it (the summit).
 	var at_ground: Variant = data.ground_height(at)
@@ -300,7 +337,6 @@ func drop(point: Vector2, volume: float) -> String:
 	if springs.size() >= MAX_SPRINGS: springs.pop_front()
 	springs.append({"x":at.x,"z":at.y,"rate":clampf(volume*SPRING_SHARE,SPRING_MIN,SPRING_MAX),"radius":SPRING_RADIUS})
 	data.end_stroke()
-	return kind
 
 ## Where on a `descent` course the spring wells (see SPRING_SET): {"at" (plate
 ## point), "index" (the course point just past it)}.
@@ -427,6 +463,16 @@ func drain(point: Vector2, radius: float) -> float:
 		data.end_stroke()
 	bursts = bursts.filter(func(burst: Dictionary) -> bool: return Vector2(burst.x,burst.z).distance_to(point) > radius)
 	return kernel.drain(point,radius) if ready else 0.0
+
+## Takes up to `volume` m³ of the water within `radius` of `point` (the water
+## ball scooping a pond): all of it is drained, and what is over is put back
+## spread level over the same circle. Springs and bursts stay. Returns the
+## m³ taken.
+func scoop(point: Vector2, radius: float, volume: float) -> float:
+	if not ready or volume <= 0.0: return 0.0
+	var found: float = kernel.drain(point,radius)
+	if found > volume: kernel.add_water(point,radius,found-volume)
+	return minf(found,volume)
 
 ## Water standing on the plate, m³.
 func volume() -> float:

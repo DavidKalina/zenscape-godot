@@ -365,7 +365,9 @@ func _input(event: InputEvent) -> void:
 func rest(index: int, count: int) -> Vector2:
 	var right: float = shell.world_column_left()-ORB*0.5-18.0
 	var t := float(index)/maxf(1.0,count-1)*2.0-1.0
-	return Vector2(right-BOW*(1.0-t*t),size.y*0.5+t*PITCH*(count-1)*0.5)
+	# Closer together when there are more moods than the screen's height holds.
+	var pitch := minf(PITCH,(size.y-ORB_CHOSEN*2.0)/maxf(1.0,count-1))
+	return Vector2(right-BOW*(1.0-t*t),size.y*0.5+t*pitch*(count-1)*0.5)
 
 func _process(delta: float) -> void:
 	var shown := open and _shown()

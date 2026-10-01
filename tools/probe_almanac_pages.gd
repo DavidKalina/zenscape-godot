@@ -98,7 +98,7 @@ func run() -> void:
 	for id: String in ids:
 		var card: Rect2 = pages.item_rect("card",id)
 		all_cards = all_cards and card.size.x > 90.0*px and rect.encloses(card) and pages._item_at(card.get_center()).get("id") == id
-	check(ids.size() == 9 and all_cards,"nine cards in a 3x3 grid, each hit-tests to itself")
+	check(all_cards,"%d cards three to a row, each hit-tests to itself" % ids.size())
 	check(pages.item_rect("world").size == Vector2.ZERO,"no This world row while the look is the world's own")
 	check(pages._item_at(centre("link","customise")).get("id") == "customise","CUSTOMISE link hit-tests")
 	pages.pointer_override = centre("card","nordic_night")
@@ -141,7 +141,7 @@ func run() -> void:
 	var minis := 0
 	for id: String in [""]+ids:
 		if pages._item_at(centre("mini",id)).get("id") == id: minis += 1
-	check(minis == 10,"ten mini vignettes, each hit-tests to itself")
+	check(minis == ids.size()+1,"%d mini vignettes, each hit-tests to itself (%d)" % [ids.size()+1,minis])
 	await click(centre("mini","first_snow"))
 	check(mood.mood == "first_snow","a mini switches the mood without leaving")
 	await settle()
