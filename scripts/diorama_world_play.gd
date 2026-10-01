@@ -173,6 +173,9 @@ func rebuild_registry(refresh_water := true) -> void:
 			var item: Variant = sources[i].get("item")
 			if item == null or (item.asset not in TREES and item.asset not in PROPS): continue
 			var id := int(item.id)
+			# A drawn instance whose object is not in the data cannot be
+			# picked or promoted (its record would be empty).
+			if not _records.has(id): continue
 			if not _parts.has(id): _parts[id] = []
 			var mesh: Mesh = batch.multimesh.mesh
 			var material: Material = batch.material_override if batch.material_override != null else mesh.surface_get_material(0)
