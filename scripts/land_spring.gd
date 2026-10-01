@@ -70,11 +70,12 @@ const RIM_RING := 0.85
 ## forms' EDGE).
 const EDGE := Vector2(11.4,13.6)
 ## The spring: angular frequency (rad/s) and damping ratio for each kind
-## (under 1 rings; 0.4 overshoots about a quarter), and
-## the speed (per second, on the shape's scale) the release kicks it with.
-const OMEGA := 12.5
-const ZETA := {"mountain":0.4,"basin":0.4}
-const KICK := 4.0
+## (under 1 rings; 0.55 kicked overshoots about an eighth and settles within
+## a hundredth in about 0.4 s, where 12.5 and 0.4 took 0.9 s), and the speed
+## (per second, on the shape's scale) the release kicks it with.
+const OMEGA := 19.0
+const ZETA := {"mountain":0.55,"basin":0.55}
+const KICK := 6.0
 ## Integration substep, seconds, so a long frame cannot blow the spring up.
 const SUBSTEP := 1.0/240.0
 ## The spring is at rest when it is this close to its target (on the shape's

@@ -19,12 +19,16 @@ extends "res://scripts/land_spring.gd"
 ##   and the plants trail it (`--pull-cam`, scripts/camera_rig.gd `_pull_step`,
 ##   scripts/pull_feel.gd; `--pull-cam=old` is the lean from before, down and
 ##   in with the block). Let go, the pointer comes back where it pressed.
+## - **The grabbed side.** The spring answers on the side of the plate the
+##   rim was grabbed at (diorama_flip `_rim_local`): the range is placed
+##   there, its crest running along that edge, and amplify and the deep pull
+##   are weighted toward it (`_side_weight`), fading out across the middle.
 ## - **The deep pull.** Past the cap the pull goes on (`deep`, 0..1 over
 ##   DEEP_SCREEN more): the block and the camera keep sinking, and on release
-##   the whole plate fills with height under the spring's shapes, a plateau up
-##   to FILL_HEIGHT metres whose sides fall away toward the rim, for the
-##   clay's thumb to cut valleys and ravines into (scripts/land_clay.gd). Its
-##   top stays green; its sides take the rock (mountain_forms `rock_base`).
+##   a hillside rises under the spring's shapes on the grabbed side, sloping
+##   up toward that rim to FILL_HEIGHT metres, with no flat top (it was a
+##   plateau over the whole plate until 2026-09-30, and read as a mesa). Its
+##   slopes take the rock by height (mountain_forms `rock_base`).
 ## - **The release.** The block snaps back up, and the moment it is at rest
 ##   the shape springs through the land on the land spring's spring
 ##   (`x'' = -w²(x-1) - 2·z·w·x'`, kicked), overshoots, rings down, and lands
@@ -39,7 +43,7 @@ extends "res://scripts/land_spring.gd"
 ## - **The range** (a blank plate: relief under RELIEF_MIN). Random: its middle, direction, length and number of peaks,
 ##   from a seeded generator. Placement is the best of CANDIDATES random spots
 ##   by a score that leans away from the rim and from ground that is already
-##   tall, with luck mixed in; the grabbed edge does not choose it. The pull
+##   tall, with luck mixed in, drawn toward the grabbed side. The pull
 ##   sets height and jaggedness together: each peak is a blend of a rolling
 ##   dome and the mountain machinery's alpine horn (scripts/mountain_forms.gd),
 ##   domes at a gentle pull, horns at a hard one. The peaks are combined as the
@@ -57,7 +61,7 @@ extends "res://scripts/land_spring.gd"
 
 ## The range: peak height before the ceiling (gentle to hard pull), the crest
 ## line's length in metres, and how many peaks (inclusive).
-const RANGE_HEIGHT := Vector2(1.2,9.5)
+const RANGE_HEIGHT := Vector2(1.0,6.0)
 const RANGE_LENGTH := Vector2(6.0,15.0)
 const RANGE_PEAKS := Vector2i(2,5)
 ## A peak may slip along the line by this share of the spacing, stand off it
@@ -95,7 +99,7 @@ const BASIN_FULL := 0.45
 ## scaled by AMPLIFY (a gentle pull to the cap), so peaks rise and grooves and
 ## basins deepen.
 const RELIEF_MIN := 0.5
-const AMPLIFY := Vector2(1.1,1.6)
+const AMPLIFY := Vector2(1.08,1.45)
 ## The smooth base: point heights averaged onto a BASE_CELL metre grid, then
 ## blurred with three box passes of BASE_RADIUS cells either side (about a
 ## 4 m gaussian). It is refined BASE_CLAMPS.size() times, each time blurring
@@ -120,12 +124,26 @@ const SINK_KNEE := -0.8
 const DEEP_SCREEN := 0.9
 const DEEP_MIN := 0.05
 const DEEP_DIP := 0.8
-## The fill: its height in metres at a full deep pull, flat to FILL_EDGE.x
-## metres out (the larger of |x| and |z|) and gone by FILL_EDGE.y, with a
-## lumpy top (FILL_LUMP of its height either way) and a ragged edge.
-const FILL_HEIGHT := 5.5
-const FILL_EDGE := Vector2(8.0,13.2)
-const FILL_LUMP := 0.12
+## The fill: a hillside on the grabbed side, its height in metres at a full
+## deep pull, rising from nothing FILL_RAMP.x metres across the middle (toward
+## the grabbed rim) to full at FILL_RAMP.y, then faded by the rim, with a
+## rolling top (FILL_LUMP of its height either way) and a ragged foot.
+const FILL_HEIGHT := 3.0
+const FILL_RAMP := Vector2(-4.0,10.5)
+const FILL_LUMP := 0.25
+## The grabbed side: amplify and the fill keep their full strength from
+## SIDE_ACROSS.y metres toward the grabbed rim and fade to nothing by
+## SIDE_ACROSS.x (negative is past the middle), and SIDE_FOCUS of it eases
+## off along the edge between SIDE_ALONG.x and .y metres from the grip. The
+## range's spot is scored -SIDE_LEAN·(distance from a point SIDE_IN metres in
+## from the grip / ROOM)², its crest along the edge give or take SIDE_TURN
+## radians.
+const SIDE_ACROSS := Vector2(-5.0,5.0)
+const SIDE_ALONG := Vector2(5.0,14.0)
+const SIDE_FOCUS := 0.5
+const SIDE_LEAN := 6.0
+const SIDE_IN := 5.5
+const SIDE_TURN := 0.6
 
 var flip: Node
 ## The pull's overlap (scripts/pull_feel.gd), or null under `--pull-cam=old`.
@@ -148,6 +166,9 @@ var deep := 0.0
 var last_fill := {}
 var _counting := false
 var _held_pointer := false
+## The grabbed side (plate-local, a unit axis) and the grip on its rim.
+var _side := Vector2(0.0,1.0)
+var _grip := Vector2(0.0,13.0)
 var _mode_before := Input.MOUSE_MODE_VISIBLE
 
 func setup(owner_scene: Node3D) -> void:
@@ -177,7 +198,26 @@ func pull_begin(screen_pos: Vector2) -> bool:
 	editor._land_mountain()
 	if not flip.dip_begin(screen_pos): return false
 	_start(screen_pos)
+	_take_side()
 	return true
+
+## The grabbed side from the flip's grip on the rim: the larger axis of where
+## the hand holds the lip.
+func _take_side() -> void:
+	var rim: Variant = flip.get("_rim_local")
+	if not rim is Vector3: return
+	var at := Vector2(rim.x,rim.z)
+	if at.length() < 0.5: return
+	_grip = at
+	_side = Vector2(signf(at.x),0.0) if absf(at.x) >= absf(at.y) else Vector2(0.0,signf(at.y))
+
+## How much of the spring a point `p` takes, 0..1: full on the grabbed side,
+## nothing past the middle, easing off along the edge away from the grip.
+func _side_weight(p: Vector2) -> float:
+	var across := smoothstep(SIDE_ACROSS.x,SIDE_ACROSS.y,p.dot(_side))
+	var edge := _side.orthogonal()
+	var along := absf(p.dot(edge)-_grip.dot(edge))
+	return across*lerpf(1.0,smoothstep(SIDE_ALONG.y,SIDE_ALONG.x,along),SIDE_FOCUS)
 
 ## The first move after the press counts its travel from the press (the rim
 ## decided its axis on it) and holds the pointer; later moves add theirs.
@@ -325,10 +365,13 @@ func _add_fill(amount: float) -> void:
 	var touched := PackedInt32Array()
 	var bounds: Rect2 = mountain.bounds if mountain._has_bounds else Rect2()
 	var bounded: bool = mountain._has_bounds
+	var edge := _side.orthogonal()
 	for i in range(_base.size()):
 		var p: Vector2 = data.points[i]
-		var out := maxf(absf(p.x),absf(p.y))+(rough[i]-0.5)*1.6
-		var fill := height*smoothstep(FILL_EDGE.y,FILL_EDGE.x,out)*(1.0+FILL_LUMP*(lump[i]*2.0-1.0))*_fade(i,data)
+		var across := p.dot(_side)+(rough[i]-0.5)*1.6
+		var along := absf(p.dot(edge)-_grip.dot(edge))
+		var reach := lerpf(1.0,smoothstep(SIDE_ALONG.y,SIDE_ALONG.x,along),SIDE_FOCUS)
+		var fill := height*smoothstep(FILL_RAMP.x,FILL_RAMP.y,across)*reach*(1.0+FILL_LUMP*(lump[i]*2.0-1.0))*_fade(i,data)
 		fill = clampf(fill,0.0,NativeTerrainData.MAX_HEIGHT-_base[i]-lifts[i])
 		floor_line[i] += fill
 		lifts[i] += fill
@@ -343,7 +386,7 @@ func _add_fill(amount: float) -> void:
 	mountain._has_bounds = bounded
 	mountain.rock_base = floor_line
 	_region = bounds
-	last_fill = {"amount":amount,"height":height,"touched":touched.size()}
+	last_fill = {"amount":amount,"height":height,"touched":touched.size(),"side":_side}
 
 ## The plate's own relief, amplified for a pull `amount`, built into the
 ## editor's mountain as the range is (so it springs, lands, weathers and undoes
@@ -353,7 +396,11 @@ func _build_amplify(amount: float) -> bool:
 	var data := editor.data
 	var smooth := _smooth_base(data,_base)
 	var relief := 0.0
-	for i in range(_base.size()): relief = maxf(relief,absf(_base[i]-smooth[i])*_fade(i,data))
+	var weights := PackedFloat32Array()
+	weights.resize(_base.size())
+	for i in range(_base.size()):
+		weights[i] = _side_weight(data.points[i])
+		relief = maxf(relief,absf(_base[i]-smooth[i])*_fade(i,data)*weights[i])
 	last_amplify = {"relief":relief,"base_ms":(Time.get_ticks_usec()-started)/1000.0}
 	if relief < RELIEF_MIN: return false
 	next_seed = -1
@@ -379,16 +426,17 @@ func _build_amplify(amount: float) -> bool:
 	for i in range(_base.size()):
 		var d := _base[i]-smooth[i]
 		var lift := 0.0
+		var gain := (factor-1.0)*weights[i]
 		if d > 0.0:
 			# Rise: more on the upper slopes, with crags, under the ceiling.
 			var up := jag*smoothstep(UPPER.x,UPPER.y,d)
 			var grain := lerpf(rough[i],fine[i],0.5)*2.0-1.0
-			lift = maxf(0.0,d*((factor-1.0)*(1.0+SHARPEN*up)+CRAG*up*grain)*keep[i])
+			lift = maxf(0.0,d*(gain*(1.0+SHARPEN*up)+CRAG*up*grain*weights[i])*keep[i])
 			lift = clampf(_ceiling(_base[i]+lift)-_base[i],0.0,lift)
 			lift = minf(lift,NativeTerrainData.MAX_HEIGHT-_base[i])
 		elif d < 0.0:
 			# Deepen, eased above the floor.
-			var goal := _base[i]+d*(factor-1.0)*_fade(i,data)
+			var goal := _base[i]+d*gain*_fade(i,data)
 			lift = minf(_sink(goal)-_base[i],0.0)
 		lifts[i] = lift
 		if absf(lift) < 0.0005:
@@ -520,11 +568,12 @@ func _build_range(amount: float) -> void:
 	var jag := smoothstep(JAGGED.x,JAGGED.y,amount)
 	var count := rng.randi_range(RANGE_PEAKS.x,RANGE_PEAKS.y)
 	var length := rng.randf_range(RANGE_LENGTH.x,RANGE_LENGTH.y)
-	var direction := Vector2.from_angle(rng.randf()*TAU)
+	# The crest runs along the grabbed edge, give or take SIDE_TURN.
+	var direction := _side.orthogonal().rotated(rng.randf_range(-SIDE_TURN,SIDE_TURN))
 	var top := lerpf(RANGE_HEIGHT.x,RANGE_HEIGHT.y,amount)
 	var shown_heights := data.heights
 	data.heights = _base.duplicate()
-	center = _place(rng,direction,length*0.5,RANGE_ROOM)
+	center = _place(rng,direction,length*0.5,RANGE_ROOM,_side_target())
 	var mountain: RefCounted = editor.mountain
 	mountain.prepare(data,editor.land_seed)
 	mountain.begin(data,"alpine",center,0.01,editor.land_strength,direction)
@@ -598,10 +647,17 @@ static func _ceiling(height: float) -> float:
 	var span := CEILING-KNEE
 	return KNEE+span*(1.0-exp(-(height-KNEE)/span))
 
+## Where on the grabbed side a range would like to stand: SIDE_IN metres in
+## from the grip, kept off the corners.
+func _side_target() -> Vector2:
+	var edge := _side.orthogonal()
+	return _side*(_grip.dot(_side)-SIDE_IN)+edge*clampf(_grip.dot(edge),-5.0,5.0)
+
 ## A random spot for a shape `half` metres either side of its middle along
 ## `direction` (0 for a round one), its ends within `room` of the middle
-## lines: the best of CANDIDATES by the placement score.
-func _place(rng: RandomNumberGenerator, direction: Vector2, half: float, room: float) -> Vector2:
+## lines: the best of CANDIDATES by the placement score, drawn toward
+## `target` when there is one.
+func _place(rng: RandomNumberGenerator, direction: Vector2, half: float, room: float, target := Vector2.INF) -> Vector2:
 	var data := editor.data
 	var limit := Vector2(maxf(0.0,room-absf(direction.x)*half),maxf(0.0,room-absf(direction.y)*half))
 	var best := Vector2.ZERO
@@ -618,6 +674,9 @@ func _place(rng: RandomNumberGenerator, direction: Vector2, half: float, room: f
 		ground = ground/samples if samples > 0 else 0.0
 		var out := maxf(absf(at.x),absf(at.y))/ROOM
 		var score := -RIM_LEAN*out*out-TALL_LEAN*maxf(ground,0.0)+LUCK*rng.randf()
+		if target != Vector2.INF:
+			var off := at.distance_to(target)/ROOM
+			score -= SIDE_LEAN*off*off
 		if score > best_score:
 			best_score = score
 			best = at
