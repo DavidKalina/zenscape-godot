@@ -70,6 +70,17 @@ varying float shore_run;
 // earth does, without the sky's sheen, foam or glint, so a sheet running
 // down a steep face does not read as glass or ice. Off at (0, 0).
 uniform vec2 live_thin = vec2(0.0);
+// Live moving water carries its flow velocity (m/s, world xz) in CUSTOM1.yz
+// (ZenScapeWaterFlow::surface). With `live_flow_map` its streaks are world
+// noise smeared along the flow and slid down it in two cross-faded phases
+// (a flow map), instead of waves along each vertex's own heading: where water
+// lands and spreads, those headings fan out from a point and the waves drew
+// starbursts of hair-thin lines. And a sheet on a face steeper than about
+// 35-55 degrees is drawn as a wet film, not white water: on the 25 cm grid it
+// stair-steps down a cliff in jagged terraces, and the fall's curtain
+// (scripts/flow_falls.gd) is the water seen there.
+uniform bool live_flow_map = false;
+varying vec2 live_velocity;
 // Live still water is drawn under the moving water everywhere wet, sheets on
 // a face too. With `live_level` it fades out where its surface tilts (a pond
 // lies level), so on a slope only the moving water's own look shows.
@@ -103,6 +114,7 @@ varying float cut_face;
 void vertex() {
 	rest_height = VERTEX.y;
 	flow_fade = flow_edge_fade ? CUSTOM1.x : 1.0;
+	live_velocity = live_flow_map ? CUSTOM1.yz : vec2(0.0);
 	shore_run = shore_distance && !flowing ? UV.x : 1000.0;
 	lake_local = VERTEX.xz;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -147,6 +159,31 @@ void vertex() {
 		}
 	}
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+// Foam in live moving water, 0..1: noise averaged along the flow (short
+// streaks, longer the faster it runs) and carried down it, two phases half a
+// period apart so neither is seen to reset. Fades to its mean where finer
+// than a pixel.
+float zs_live_flow_foam(vec2 p, vec2 velocity, float t) {
+	float speed = length(velocity);
+	vec2 heading = speed > 0.001 ? velocity / speed : vec2(0.0);
+	float carry = min(speed, 2.5) * 0.7;
+	float reach = clamp(speed * 0.3, 0.0, 0.5);
+	const float PERIOD = 1.4;
+	float detail = 1.0 - smoothstep(0.35, 0.9, max(fwidth(p.x), fwidth(p.y)) * 3.5);
+	float pattern = 0.0;
+	for (int layer = 0; layer < 2; layer++) {
+		float phase = fract(t / PERIOD + 0.5 * float(layer));
+		float weight = 1.0 - abs(2.0 * phase - 1.0);
+		vec2 q = p - heading * carry * phase * PERIOD + float(layer) * vec2(17.3, 5.9);
+		float smear = 0.0;
+		for (int k = 0; k < 4; k++) smear += zs_noise((q - heading * reach * float(k) / 3.0) * 3.5);
+		pattern += smear * 0.25 * weight;
+	}
+	// The average of four taps is flatter than one; stretch it back.
+	pattern = clamp((pattern - 0.5) * (1.6 + reach) + 0.5, 0.0, 1.0);
+	return mix(0.3, smoothstep(0.55, 0.8, pattern), detail);
 }
 
 void fragment() {
@@ -238,9 +275,13 @@ void fragment() {
 		float streak = sin(streak_phase - zs_flow_time * 5.0);
 		float broken = mix(0.5, 0.5 + 0.5 * sin(broken_phase - zs_flow_time * 1.4), broken_detail);
 		foam = mix(0.12, smoothstep(0.65, 1.0, streak), streak_detail) * broken * 0.25 * smoothstep(0.01, 0.12, water_depth);
+		if (live_flow_map) {
+			float run = smoothstep(0.15, 1.2, length(live_velocity));
+			foam = zs_live_flow_foam(world_position.xz, live_velocity, zs_flow_time) * (0.12 + 0.2 * run) * smoothstep(0.01, 0.12, water_depth);
+		}
 		// Live water pouring down a face is white water, as the fall it runs
 		// beside (shaders/flow_fall.gdshader), not a pale glassy veil.
-		if (live_thin.y > 0.0) cascade = (1.0 - smoothstep(0.45, 0.8, wave_normal.y)) * smoothstep(live_thin.y * 0.6, live_thin.y * 1.6, water_depth);
+		else if (live_thin.y > 0.0) cascade = (1.0 - smoothstep(0.45, 0.8, wave_normal.y)) * smoothstep(live_thin.y * 0.6, live_thin.y * 1.6, water_depth);
 		foam = max(foam, cascade * 0.6);
 	}
 	if (!flowing && cut_face < 0.5 && zs_look_shore > 0.0) {
@@ -261,18 +302,35 @@ void fragment() {
 		float r = length(d) / max(f.z, 0.01);
 		if (r >= 1.0) continue;
 		vec2 outward = d / max(length(d), 0.001);
-		float spread = zs_noise((world_position.xz - outward * zs_flow_time * 0.55) * 3.2 + float(i) * 7.1);
-		float fine = zs_noise((world_position.xz - outward * zs_flow_time * 0.9) * 7.5 + float(i) * 3.3);
+		// Drifting outward in two phases that restart half a period apart
+		// (a flow map): carried by the clock alone, after a minute the noise
+		// at neighbouring angles lay metres apart, and the churn drew spokes
+		// out of the plunge that grew finer every second.
+		float spread = 0.0;
+		float fine = 0.0;
+		for (int layer = 0; layer < 2; layer++) {
+			float phase = fract(zs_flow_time / 1.6 + 0.5 * float(layer));
+			float weight = 1.0 - abs(2.0 * phase - 1.0);
+			vec2 seed = float(i) * vec2(7.1, 3.3) + float(layer) * vec2(11.7, 4.9);
+			spread += zs_noise((world_position.xz - outward * phase * 0.9) * 3.2 + seed) * weight;
+			fine += zs_noise((world_position.xz - outward * phase * 1.4) * 7.5 + seed.yx) * weight;
+		}
 		float core = 1.0 - smoothstep(0.12, 0.42, r);
 		float patches = smoothstep(0.42, 0.7, spread * 0.7 + fine * 0.3) * (1.0 - smoothstep(0.3, 1.0, r));
 		fall_churn = max(fall_churn, clamp(core * (0.7 + 0.3 * fine) + patches, 0.0, 1.0) * f.w);
 	}
+	// Churn lies on fairly level water: painted on a face it was a white oval
+	// hanging on the slope.
+	fall_churn *= smoothstep(0.75, 0.92, wave_normal.y);
 	body = mix(body, vec3(0.86, 0.92, 0.93), fall_churn * (1.0 - zs_ice));
 	float absorption = 1.0 - exp(-water_depth / 0.45);
 	float alpha = mix(0.40, 1.0, max(absorption, fresnel));
 	if (flowing && live_thin.y > 0.0) {
 		// Its vertex colour takes foam with speed, and a fast film is pale.
 		float film = 1.0 - smoothstep(live_thin.x, live_thin.y, water_depth);
+		float face = live_flow_map ? 1.0 - smoothstep(0.55, 0.82, wave_normal.y) : 0.0;
+		// On a steep face the film replaces the body, its foam with it.
+		film = max(film, face);
 		body = mix(body, vec3(0.02, 0.09, 0.08) * zs_palette_water, film);
 		fresnel *= 1.0 - film;
 		glint *= 1.0 - film;

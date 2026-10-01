@@ -21,7 +21,7 @@ extends Node3D
 ## - mist rising from the base, sized by flux and drop, drifting with the wind
 ##   (the source's mist sprites, studies/fall_mist.gd).
 const RINGS := 14
-const SECTIONS := 12
+const SECTIONS := 24
 ## ZenScapeWaterFlow::cascades. A wet cell faster than `min_speed` m/s is steep
 ## when its surface falls `slope_on` m per metre over `run` m down its flow
 ## (and stays steep down to `slope_off`); steep cells group, and a group whose
@@ -39,7 +39,17 @@ const GROW := 1.2
 const GRACE := 0.5
 const FADE := 2.0
 ## Seconds: the time constant a fall's shape and flux ease with.
-const SMOOTH := 0.6
+const SMOOTH := 1.2
+## Metres a second a standing ribbon's course may move at most: eased freely
+## it bent and coiled like a hose while the flow settled (2026-10-01).
+const MAX_SHIFT := 0.3
+## A ribbon pours in from its lip rather than swelling into place: its front
+## leaves at POUR_START m/s and falls with gravity, at most POUR_MAX. When it
+## lands, mist and spray burst up from the plunge (fading over BURST_SECONDS)
+## and the plunge's foam comes in. Going, it drains away from the lip.
+const POUR_START := 1.5
+const POUR_MAX := 7.0
+const BURST_SECONDS := 1.6
 const MAX_SHOWN := 4
 ## Mist sprites at most a fall (studies/fall_mist.gd holds 64).
 const MIST := 48
@@ -48,6 +58,19 @@ const FOAM_BLOBS := 7
 const RING_WAVES := 4
 const RING_PERIOD := 1.15
 const W_MIN := 0.08
+## The curtain is a ribbon for narrow, steep drops only (2026-10-01): a wide
+## spill over a lake's rim or a sloping face ballooned the strand into a pale
+## faceted slab metres across. There the live water's own surface, the foam,
+## spray and mist are the fall. A ribbon stands where the lip is at most
+## RIBBON_WIDTH m wide and the water drops at least RIBBON_STEEP m for every
+## metre it runs.
+const RIBBON_WIDTH := 2.5
+const RIBBON_STEEP := 1.0
+## A ribbon standing keeps until it is RIBBON_KEEP times as wide, or as
+## shallow over its run, so it does not flick on and off as the flow settles.
+const RIBBON_KEEP := 1.3
+## Metres thick: a flat ribbon, a little fuller with the flow.
+const RIBBON_THICK := Vector2(0.025,0.05)
 ## The curtain is translucent where its water is glass, and writes depth. It
 ## draws before the live water (still 0, moving 1, scripts/water_flow_view.gd),
 ## so a pool's surface lies over the part that plunges under it (the water
@@ -177,7 +200,7 @@ func describe() -> Array:
 		if not fall.shown or fall.now.is_empty(): continue
 		var course: PackedVector4Array = fall.now.course
 		out.append({"id":fall.id,"lip":Vector3(course[0].x,course[0].y,course[0].z),"plunge":Vector3(course[-1].x,course[-1].y,course[-1].z),
-			"flux":fall.now.flux,"drop":fall.now.drop,"width":course[0].w*2.0,"presence":fall.presence})
+			"flux":fall.now.flux,"drop":fall.now.drop,"width":course[0].w*2.0,"presence":fall.presence,"ribbon":fall.now.ribbon})
 	return out
 
 func _process(delta: float) -> void:
@@ -202,10 +225,15 @@ func _process(delta: float) -> void:
 ## Reads the flow's falls and matches them to the standing ones.
 func _read(elapsed: float) -> void:
 	var began := Time.get_ticks_usec()
-	var found: Array = flow.cascades(DETECT)
+	var found: Array = _chain(flow.cascades(DETECT))
+	var ground: PackedFloat32Array = flow.grounds() if not found.is_empty() else PackedFloat32Array()
+	var depth: PackedFloat32Array = flow.depths() if not found.is_empty() else PackedFloat32Array()
 	var taken := {}
 	for answer: Dictionary in found:
 		var shape := _shape(answer)
+		if shape.is_empty(): continue
+		_hug(shape,ground)
+		_land(shape,ground,depth)
 		if shape.is_empty(): continue
 		var best := -1
 		var nearest := MATCH
@@ -218,10 +246,17 @@ func _read(elapsed: float) -> void:
 				best = k
 		if best < 0:
 			_serial += 1
-			_falls.append({"id":_serial,"found":0.0,"lost":0.0,"shown":false,"presence":0.0,"target":shape,"now":{},"nodes":{}})
+			_falls.append({"id":_serial,"found":0.0,"lost":0.0,"shown":false,"presence":0.0,"target":shape,"now":{},"nodes":{},
+				"poured":0.0,"pour_speed":POUR_START,"arrived":false,"drained":0.0,"drain_speed":POUR_START,"burst":0.0})
 			best = _falls.size()-1
 		taken[best] = true
 		var fall: Dictionary = _falls[best]
+		# A ribbon keeps unless it grows much wider or shallower before it has
+		# poured; once poured it stays while the fall stands (its width capped):
+		# a fresh spring's surge spreads it wide and runs it out over the plain
+		# for a few seconds, and it went on and off.
+		if float(fall.target.ribbon) > 0.5 and float(shape.ribbon) < 0.5:
+			if fall.arrived or (float(shape.width) <= RIBBON_WIDTH*RIBBON_KEEP and float(shape.steepness) >= RIBBON_STEEP/RIBBON_KEEP): shape.ribbon = 1.0
 		fall.target = shape
 		fall.found = float(fall.found)+elapsed
 		fall.lost = 0.0
@@ -268,8 +303,93 @@ func _shape(answer: Dictionary) -> Dictionary:
 			var mean := (stations[r-1]+stations[r]*2.0+stations[r+1])/4.0
 			smoothed[r] = Vector4(mean.x,stations[r].y,mean.z,mean.w)
 		stations = smoothed
-	return {"course":stations,"flux":float(answer.flux),"drop":float(answer.drop),"pool":float(answer.plunge_depth),
-		"lip":answer.lip,"plunge":answer.plunge,"lip_dir":answer.lip_dir}
+	var lip: Vector3 = answer.lip
+	var plunge: Vector3 = answer.plunge
+	var run := Vector2(plunge.x-lip.x,plunge.z-lip.z).length()
+	var narrow := course[0].w*2.0 <= RIBBON_WIDTH
+	var steep := float(answer.drop) >= RIBBON_STEEP*maxf(run,0.01)
+	return {"width":course[0].w*2.0,"steepness":float(answer.drop)/maxf(run,0.01),"course":stations,"flux":float(answer.flux),"drop":float(answer.drop),"pool":float(answer.plunge_depth),
+		"lip":answer.lip,"plunge":answer.plunge,"lip_dir":answer.lip_dir,"ribbon":1.0 if narrow and steep else 0.0}
+
+## Metres between one fall's plunge and the next one's lip, across and in
+## height, for the two to be one fall.
+const CHAIN_ACROSS := 1.0
+const CHAIN_HEIGHT := 0.6
+
+## Joins falls stacked one above the other into one: where a face eases for a
+## step (a ledge a wire cut left), the steep cells part into two groups, and
+## two ribbons stood with a gap between them, the upper ending on the ledge.
+static func _chain(found: Array) -> Array:
+	var falls := found.duplicate()
+	var joined := true
+	while joined:
+		joined = false
+		for a in range(falls.size()):
+			for b in range(falls.size()):
+				if a == b: continue
+				var upper: Dictionary = falls[a]
+				var lower: Dictionary = falls[b]
+				var plunge: Vector3 = upper.plunge
+				var lip: Vector3 = lower.lip
+				if Vector2(plunge.x-lip.x,plunge.z-lip.z).length() > CHAIN_ACROSS or absf(plunge.y-lip.y) > CHAIN_HEIGHT: continue
+				var course: PackedVector4Array = (upper.course as PackedVector4Array).duplicate()
+				course.append_array(lower.course)
+				var one := upper.duplicate()
+				one.course = course
+				one.plunge = lower.plunge
+				one.plunge_depth = lower.plunge_depth
+				one.flux = maxf(float(upper.flux),float(lower.flux))
+				one.drop = float((upper.lip as Vector3).y-(lower.plunge as Vector3).y)
+				falls[a] = one
+				falls.remove_at(b)
+				joined = true
+				break
+			if joined: break
+	return falls
+
+## Carries a shape's end down to the water under it: the steep cells can end
+## above the pool, and the ribbon stopped in the air over it.
+func _land(shape: Dictionary, ground: PackedFloat32Array, depth: PackedFloat32Array) -> void:
+	if ground.is_empty() or depth.size() != ground.size(): return
+	var course: PackedVector4Array = shape.course
+	var last := course[course.size()-1]
+	var c: int = flow.cell_at(Vector2(last.x,last.z))
+	if c < 0: return
+	var level := ground[c]+depth[c]
+	if last.y > level+0.05:
+		course[course.size()-1].y = level
+		shape.course = course
+
+## Narrows a shape's stations where the ground falls away to either side: a
+## flat ribbon laid across a pinched peak stood out into the air at its edges
+## and wrapped round the tip. Each station keeps the widest half width (down to
+## W_MIN) whose ends lie over ground at most 0.12 m + 0.3 × the half width
+## below the ground under its middle. Widths are capped at the widest ribbon.
+func _hug(shape: Dictionary, ground: PackedFloat32Array) -> void:
+	var course: PackedVector4Array = shape.course
+	var n := course.size()
+	var cap := RIBBON_WIDTH*RIBBON_KEEP*0.5
+	var lip_dir: Vector2 = shape.lip_dir
+	for r in range(n):
+		var half := minf(course[r].w,cap)
+		if not ground.is_empty():
+			var ahead := Vector2(course[mini(r+1,n-1)].x-course[maxi(r-1,0)].x,course[mini(r+1,n-1)].z-course[maxi(r-1,0)].z)
+			if ahead.length() < 0.05: ahead = lip_dir
+			if ahead.length() > 0.001:
+				var side := Vector2(-ahead.y,ahead.x).normalized()
+				var middle := Vector2(course[r].x,course[r].z)
+				var under := _ground_at(ground,middle)
+				if is_finite(under):
+					while half > W_MIN:
+						var low := minf(_ground_at(ground,middle+side*half),_ground_at(ground,middle-side*half))
+						if not is_finite(low) or under-low <= 0.12+0.3*half: break
+						half = maxf(W_MIN,half*0.8)
+		course[r].w = half
+	shape.course = course
+
+func _ground_at(ground: PackedFloat32Array, at: Vector2) -> float:
+	var c: int = flow.cell_at(at)
+	return ground[c] if c >= 0 and c < ground.size() else INF
 
 ## Eases every standing fall towards its latest answer, and its presence up
 ## or down; a fall faded out is removed.
@@ -282,15 +402,50 @@ func _ease(delta: float) -> void:
 			continue
 		var now: Dictionary = fall.now
 		var target: Dictionary = fall.target
-		var course: PackedVector4Array = now.course
-		var goal: PackedVector4Array = target.course
-		for r in range(course.size()): course[r] = course[r].lerp(goal[r],k)
-		now.course = course
-		for key in ["flux","drop","pool"]: now[key] = lerpf(now[key],target[key],k)
-		now.lip_dir = (now.lip_dir as Vector2).lerp(target.lip_dir,k)
 		var here := float(fall.lost) <= GRACE
-		fall.presence = move_toward(fall.presence,1.0 if here else 0.0,delta/(GROW if here else FADE))
-		if not here and fall.presence <= 0.0: _drop(index)
+		var length := _length(now.course)
+		fall.burst = move_toward(float(fall.burst),0.0,delta/BURST_SECONDS)
+		if here and not fall.arrived:
+			# Pouring: its shape holds still until the water lands.
+			if float(now.ribbon) < 0.5:
+				fall.arrived = true
+			else:
+				fall.pour_speed = minf(float(fall.pour_speed)+9.81*delta,POUR_MAX)
+				fall.poured = float(fall.poured)+float(fall.pour_speed)*delta
+				fall.arrived = float(fall.poured) >= length
+			if fall.arrived: fall.burst = 1.0
+			continue
+		# A fall that stood as a wide spill and narrows into a ribbon pours one
+		# in, rather than fading one up in place.
+		if here and fall.arrived and float(target.ribbon) > 0.5 and float(now.ribbon) < 0.5 and float(fall.poured) <= 0.0:
+			fall.now = target.duplicate(true)
+			fall.arrived = false
+			fall.pour_speed = POUR_START
+			continue
+		if fall.arrived:
+			var course: PackedVector4Array = now.course
+			var goal: PackedVector4Array = target.course
+			for r in range(course.size()):
+				var step := (goal[r]-course[r])*k
+				var shift := Vector3(step.x,step.y,step.z).limit_length(MAX_SHIFT*delta)
+				course[r] += Vector4(shift.x,shift.y,shift.z,step.w)
+			now.course = course
+			for key in ["flux","drop","pool","ribbon"]: now[key] = lerpf(now[key],target[key],k)
+			now.lip_dir = (now.lip_dir as Vector2).lerp(target.lip_dir,k)
+		if here:
+			fall.presence = move_toward(fall.presence,1.0,delta/GROW)
+			continue
+		fall.presence = move_toward(fall.presence,0.0,delta/FADE)
+		fall.drain_speed = minf(float(fall.drain_speed)+9.81*delta,POUR_MAX)
+		fall.drained = float(fall.drained)+float(fall.drain_speed)*delta
+		var gone := float(now.ribbon) < 0.5 or float(fall.drained) >= minf(float(fall.poured),length) or float(fall.drained) >= length
+		if fall.presence <= 0.0 and gone: _drop(index)
+
+## Metres along a course.
+static func _length(course: PackedVector4Array) -> float:
+	var total := 0.0
+	for r in range(1,course.size()): total += Vector3(course[r].x,course[r].y,course[r].z).distance_to(Vector3(course[r-1].x,course[r-1].y,course[r-1].z))
+	return total
 
 func _drop(index: int) -> void:
 	var nodes: Dictionary = _falls[index].nodes
@@ -309,10 +464,13 @@ func _draw(grown: bool, paused: bool) -> void:
 		var presence: float = fall.presence
 		var now: Dictionary = fall.now
 		var strength := _strength(now.flux)
-		var rings := _rings(now,presence,strength)
+		var rings := _rings(now,float(now.ribbon),strength)
 		var nodes: Dictionary = fall.nodes
-		var visible := grown and presence > 0.001
-		for node: Node3D in [nodes.curtain,nodes.foam,nodes.spray,nodes.waves]: node.visible = visible
+		var burst: float = fall.burst
+		var pouring := float(now.ribbon) > 0.01 and float(fall.poured) > 0.0 and float(fall.drained) < (rings.travel as PackedFloat32Array)[RINGS-1]
+		var visible := grown and (presence > 0.001 or burst > 0.001 or pouring)
+		for node: Node3D in [nodes.foam,nodes.spray,nodes.waves]: node.visible = visible
+		nodes.curtain.visible = visible and pouring
 		if not visible: continue
 		var s := presence*strength
 		var material: ShaderMaterial = nodes.curtain.material_override
@@ -328,7 +486,11 @@ func _draw(grown: bool, paused: bool) -> void:
 		# Onto running water it fades out over its last stretch; into a pool it
 		# goes under the surface.
 		material.set_shader_parameter("end_travel",(rings.travel as PackedFloat32Array)[RINGS-1])
-		material.set_shader_parameter("end_fade",1.0-smoothstep(0.04,0.18,now.pool))
+		# Into a pool it goes under the surface; even so it softens at its end,
+		# or a shallow pool showed a hard cut across it.
+		material.set_shader_parameter("end_fade",maxf(0.5,1.0-smoothstep(0.04,0.18,now.pool)))
+		material.set_shader_parameter("pour_front",100000.0 if fall.arrived else float(fall.poured))
+		material.set_shader_parameter("drain_back",float(fall.drained) if float(fall.drained) > 0.0 else -1.0)
 		nodes.curtain.custom_aabb = rings.bounds
 		var impact: Vector3 = rings.impact
 		var spread := (0.5+strength*0.5)*(0.8+0.1*minf(now.drop,4.0))
@@ -346,7 +508,9 @@ func _draw(grown: bool, paused: bool) -> void:
 			blobs.set_instance_color(i,Color(1,1,1,0.7*smoothstep(0.0,0.15,life)*(1.0-smoothstep(0.4,1.0,life))))
 		var spray: GPUParticles3D = nodes.spray
 		spray.position = impact+Vector3.UP*0.05
-		spray.amount_ratio = clampf(s,0.05,1.0)
+		# The landing's burst, then the steady spray.
+		spray.amount_ratio = clampf(maxf(s,burst),0.05,1.0)
+		spray.emitting = presence > 0.01 or burst > 0.01
 		spray.speed_scale = 0.0 if paused else 1.0
 		# Ripple rings where it lands in standing water.
 		var pool := smoothstep(0.04,0.18,now.pool)
@@ -411,7 +575,9 @@ func _rings(shape: Dictionary, presence: float, strength: float) -> Dictionary:
 		# The source's rate (1.15), raised with the flow: a strong spring
 		# over our few metres of face should break white as the source's
 		# long falls do.
-		air = minf(1.0,air*pow(0.5,dt)+steep[r]*dt*1.15*(1.0+strength))
+		# Half the source's rate (1.15) on our few metres: the top of a ribbon
+		# stays clear glass, whitening on the way down.
+		air = minf(1.0,air*pow(0.5,dt)+steep[r]*dt*0.6*(1.0+strength))
 		aer.append(air)
 	# Width: the lip's channel, necking as it falls and spreading as it breaks
 	# up, never wider than the wet channel at that height (plus a margin, so
@@ -434,11 +600,10 @@ func _rings(shape: Dictionary, presence: float, strength: float) -> Dictionary:
 	var thick := PackedFloat32Array()
 	var inlet := minf(1.0,(n-1)*0.08)
 	for r in range(n):
-		var body := minf(half[r]*0.55,(0.06+0.45*steep[r])*(0.3+0.7*strength))
-		body *= 0.06+0.94*smoothstep(0.0,1.2,float(r))
-		# Into running water rather than a pool, the sheet thins to meet it
-		# instead of ending as an open tube in front of the face.
-		body *= lerpf(1.0,0.35,smoothstep(n-3.0,n-1.0,float(r))*(1.0-smoothstep(0.04,0.18,shape.pool)))
+		# A flat ribbon, not a swept tube: with a belly the sheet read as a
+		# crumpled block of ice up close.
+		var body := minf(half[r]*0.3,lerpf(RIBBON_THICK.x,RIBBON_THICK.y,strength))
+		body *= 0.3+0.7*smoothstep(0.0,1.2,float(r))
 		var pinch := 0.28+0.72*smoothstep(0.0,inlet,float(r))
 		half[r] *= pinch*lerpf(0.3,1.0,presence)
 		thick.append(body*pinch*presence)
@@ -485,6 +650,7 @@ func _create(id: int) -> Dictionary:
 	material.shader = preload("res://shaders/flow_fall.gdshader")
 	material.render_priority = CURTAIN_PRIORITY
 	material.set_shader_parameter("fall_seed",float(id)*13.7)
+	material.set_shader_parameter("painterly",true)
 	var white := PackedFloat32Array()
 	for s in range(12): white.append(_hash(s*17+id,2))
 	material.set_shader_parameter("section_white",white)
@@ -546,7 +712,8 @@ func _update_mist(scene: Node, grown: bool) -> void:
 		if fall.nodes.is_empty() or fall.now.is_empty(): continue
 		var mist: CanvasLayer = fall.nodes.mist
 		var presence: float = fall.presence
-		mist.visible = grown and presence > 0.001
+		var burst: float = fall.burst
+		mist.visible = grown and (presence > 0.001 or burst > 0.001)
 		if not mist.visible: continue
 		var now: Dictionary = fall.now
 		var strength := _strength(now.flux)
@@ -554,8 +721,9 @@ func _update_mist(scene: Node, grown: bool) -> void:
 		if _clock-float(fall.nodes.mist_at) >= 0.1:
 			fall.nodes.mist_at = _clock
 			_place_mist(mist,fall,strength)
-		mist.material.set_shader_parameter("mist_strength",presence*(0.3+0.4*strength))
-		mist.material.set_shader_parameter("mist_scale",(0.35+0.3*strength)*clampf(0.6+0.2*drop,0.7,1.4))
+		# A plume as the water lands, settling to the steady mist.
+		mist.material.set_shader_parameter("mist_strength",presence*(0.3+0.4*strength)+burst*burst*0.4)
+		mist.material.set_shader_parameter("mist_scale",(0.35+0.3*strength)*clampf(0.6+0.2*drop,0.7,1.4)*(1.0+0.4*burst))
 		mist.material.set_shader_parameter("rise_height",(0.9+0.6*strength)*clampf(0.5+0.25*drop,0.6,1.5))
 		mist.update_view(scene.camera,depth)
 

@@ -134,6 +134,18 @@ func run() -> void:
 	var pools: Array = flow.pools()
 	check("the basin reads as a pool",pools.any(func(pool: Dictionary) -> bool: return Vector2(pool.x,pool.z).distance_to(BASIN) < 3.0),str(pools.map(func(pool: Dictionary) -> String: return "(%.1f, %.1f) %.1f m²" % [pool.x,pool.z,pool.area])))
 	var falls: PackedFloat32Array = flow.falls(0.02,0.6,0.7,1.5)
+	# Moving water carries its velocity in CUSTOM1.yz for the stream shader's
+	# flow map, pointing downhill along the groove (towards the basin, +x).
+	var moving: Dictionary = flow.surface({}).flow
+	var custom1: PackedFloat32Array = moving.custom1
+	var downhill := 0
+	var carried := 0
+	for v in range(custom1.size()/4):
+		var velocity := Vector2(custom1[v*4+1],custom1[v*4+2])
+		if velocity.length() < 0.05: continue
+		carried += 1
+		if velocity.x > 0.0: downhill += 1
+	check("moving water carries its velocity, mostly downhill",carried > 20 and downhill > 0.7*carried,"%d of %d vertices downhill" % [downhill,carried])
 	print("FALLS ",falls.size()/7," ",Array(falls).map(func(v: float) -> float: return snappedf(v,0.01)))
 
 	# 2. The land changes under the standing water: a trench to a lower basin.

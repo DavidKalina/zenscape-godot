@@ -519,8 +519,19 @@ public:
                     t = std::min(1.0, std::max(0.0, t));
                     color = color.lerp(foam, float(t*t*(3.0-2.0*t)*0.55));
                     custom0.push_back(float(x)); custom0.push_back(float(y)); custom0.push_back(float(z)); custom0.push_back(-1.0f);
+                    // The flow's velocity (m/s), the mean of the wet cells
+                    // round it, for the stream shader's flow map (live_flow_map).
+                    double mu = 0.0, mv = 0.0;
+                    int moving = 0;
+                    for (int dj = -1; dj <= 1; ++dj) for (int di = -1; di <= 1; ++di) {
+                        const int a = i+di, b = j+dj;
+                        if (a < 0 || b < 0 || a >= w || b >= h) continue;
+                        const int m = b*w+a;
+                        if (state[m] == 1) { mu += vx[m]; mv += vz[m]; ++moving; }
+                    }
+                    if (moving > 0) { mu /= moving; mv /= moving; }
                     custom1.push_back(fade[c]);
-                    for (int k = 0; k < 3; ++k) custom1.push_back(0.0f);
+                    custom1.push_back(float(mu)); custom1.push_back(float(mv)); custom1.push_back(0.0f);
                 } else {
                     uv.push_back(Vector2(shore[c], 0.0f));
                     // Shore fetch in eight directions (NativeTerrainData.pond_fetch),

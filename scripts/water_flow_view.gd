@@ -89,6 +89,8 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	moving_material.set_shader_parameter("flow_edge_fade",true)
 	# A film thinner than THIN reads as wet ground, not glassy water.
 	moving_material.set_shader_parameter("live_thin",THIN)
+	# Streaks from the flow's velocity, a wet film on steep faces.
+	moving_material.set_shader_parameter("live_flow_map",true)
 	# Drawn after the still water it lies over, whatever the sort says.
 	moving_material.render_priority = 1
 	moving.material_override = moving_material

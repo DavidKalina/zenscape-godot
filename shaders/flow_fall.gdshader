@@ -72,7 +72,15 @@ uniform float break_from = 100000.0;
 uniform float break_length = 3.0;
 uniform float end_travel = 100000.0;
 uniform float end_fade = 0.0;
-const float END_FADE = 0.35;
+const float END_FADE = 0.7;
+// The live falls' ribbon (scripts/flow_falls.gd, 2026-10-01): painted rather
+// than glassy-noisy. Clear teal glass at the lip, whitening down the fall,
+// soft white streaks sliding down it at their own speeds, foam at its edges.
+uniform bool painterly = false;
+// m of travel: a ribbon pouring in shows down to its front (a foaming head),
+// and draining away shows only below drain_back (off below 0).
+uniform float pour_front = 100000.0;
+uniform float drain_back = -1.0;
 const vec3 ramp[7] = vec3[7](vec3(0.02842604, 0.21223076, 0.33245154), vec3(0.07036010, 0.33245154, 0.47932018), vec3(0.15896084, 0.47932018, 0.61049557), vec3(0.30054379, 0.63759687, 0.73046074), vec3(0.50888132, 0.78353779, 0.85499261), vec3(0.71569350, 0.87962240, 0.92158186), vec3(0.88792312, 0.93011086, 0.93868573));
 
 void vertex() {
@@ -159,22 +167,47 @@ void fragment() {
 	float threshold = mix(0.3, 1.02, broken) + 0.12 * edge * broken;
 	float bead_cover = mix(1.0 - smoothstep(0.2, 1.0, threshold), fall_cover(keep, threshold), min(coarse_detail, bead_detail));
 	if (broken > 0.0) cover *= bead_cover;
+	// A ribbon's sides feather out rather than ending on a hard wall.
+	cover *= 1.0 - 0.8 * smoothstep(0.86, 1.0, edge);
 	// It meets the running water it lands on instead of ending in the air.
 	cover *= 1.0 - end_fade * smoothstep(end_travel - END_FADE, end_travel, travel);
+	// Pouring in from the lip and draining away from it, with a ragged edge.
+	float ragged = (zs_noise(vec2(lateral * 3.0 + fall_seed, zs_flow_time * 2.0)) - 0.5) * 0.35;
+	float front = pour_front + ragged;
+	cover *= 1.0 - smoothstep(front - 0.15, front, travel);
+	if (drain_back >= 0.0) cover *= smoothstep(drain_back + ragged, drain_back + ragged + 0.3, travel);
+	float head = pour_front < 10000.0 ? smoothstep(front - 0.7, front - 0.1, travel) : 0.0;
+	// Painted streaks: columns about a quarter metre apart, wavering, each a
+	// dash sliding down at its own speed, wider and whiter where aerated.
+	float column_at = lateral * 4.0 + 0.35 * sin(travel * 1.7 + fall_seed);
+	float column = floor(column_at);
+	float column_aa = max(fwidth(column_at), 0.02);
+	float h1 = zs_noise_hash(vec2(column, fall_seed));
+	float h2 = zs_noise_hash(vec2(column * 1.7 + 3.0, fall_seed));
+	float dash = fract(travel * 0.45 * (0.7 + 0.6 * h1) - run * 0.45 * (0.8 + 0.4 * h2) + h2);
+	float half_width = mix(0.1, 0.3, aeration) * (0.6 + 0.8 * h1);
+	float in_column = 1.0 - smoothstep(half_width - column_aa, half_width + column_aa, abs(fract(column_at) - 0.5));
+	float painted = in_column * smoothstep(0.0, 0.12, dash) * (1.0 - smoothstep(0.5, 0.75, dash));
+	painted = mix(0.18, painted, 1.0 - smoothstep(0.3, 0.8, column_aa));
 	vec2 crest_uv = vec2(lateral * 9.0 + fall_seed, zs_flow_time * 1.3);
 	float crest_noise = mix(0.45, smoothstep(0.3, 0.6, zs_noise(crest_uv)), fall_detail(crest_uv));
 	float white_crest = (1.0 - smoothstep(crest * 0.5, crest, travel)) * (0.55 + 0.45 * crest_noise);
 	vec3 tint = (COLOR.rgb * zs_palette_water) * base_color.rgb;
 	float bright = smoothstep(0.45, 0.9, streak) * (0.2 + 0.4 * aeration) + 0.5 * broken;
 	tint = mix(tint, vec3(0.88792312, 0.93011086, 0.93868573) * zs_palette_water, clamp(bright + white_crest * 0.9, 0.0, 1.0) * (1.0 - zs_ice * 0.85));
+	float paint_white = 0.0;
+	if (painterly) {
+		float side_foam = smoothstep(0.78, 0.97, edge);
+		paint_white = clamp(smoothstep(0.35, 1.0, aeration) * 0.7 + painted * (0.4 + 0.45 * aeration) + side_foam * 0.55 + white_crest * 0.8 + head * 0.9, 0.0, 1.0);
+		vec3 glass_tint = ramp[2] * zs_palette_water * base_color.rgb;
+		vec3 foam_tint = ramp[6] * zs_palette_water;
+		tint = mix(mix(glass_tint, foam_tint, paint_white), vec3(0.47932018, 0.60382734, 0.67244316), zs_ice * 0.85);
+	}
 	vec3 face = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (dot(face, eye) < 0.0) face = -face;
 	if (near_side < 0.0) smooth_n = -smooth_n;
 	// Facets half way to the smooth sheet: painted, not crumpled.
-	face = normalize(mix(smooth_n, face, 0.45));
-	// Only the half of the tube facing the eye: the back wall seen through a
-	// translucent front muddied every facet. Edge on, both halves stay.
-	if (near_side < -0.02 || cover < 0.02) discard;
+	face = normalize(mix(smooth_n, face, painterly ? 0.2 : 0.45));
 	vec3 view_face = normalize((VIEW_MATRIX * vec4(face, 0.0)).xyz);
 	NORMAL = faceforward(view_face, -VIEW, view_face);
 	ALBEDO = tint;
@@ -191,8 +224,8 @@ void fragment() {
 	EMISSION = mix(EMISSION, sky, fresnel);
 	// Glass shows what is behind it, a thin veil more so; aerated water and
 	// the white break are opaque; edge on, any water is.
-	float white = clamp(smoothstep(0.3, 0.8, aeration) + bright * 0.6 + white_crest, 0.0, 1.0);
-	float glass_alpha = mix(0.62, 0.42, veil) + 0.35 * pow(1.0 - facing, 3.0);
+	float white = painterly ? paint_white : clamp(smoothstep(0.3, 0.8, aeration) + bright * 0.6 + white_crest, 0.0, 1.0);
+	float glass_alpha = mix(painterly ? 0.74 : 0.62, painterly ? 0.55 : 0.42, veil) + 0.35 * pow(1.0 - facing, 3.0);
 	ALPHA = clamp(mix(glass_alpha, 1.0, max(white, zs_ice)), 0.0, 1.0) * cover;
 	inversion_transmit = zs_inversion_paint(world_position, EMISSION) * (1.0 - fresnel);
 	ROUGHNESS = 0.55 - 0.25 * zs_ice;

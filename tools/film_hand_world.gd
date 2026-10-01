@@ -160,6 +160,11 @@ func spring_at(p: Vector2, hold: float) -> Dictionary:
 	for i in range(240):
 		await frames(1)
 		if not outcome.is_empty(): break
+	# The sky drag no longer makes a ball since the hand moved to the rim
+	# (2026-09-30); land one directly, as a ball would.
+	if outcome.is_empty():
+		editor._flow_landed(p,6.0,[])
+		await frames(2)
 	editor.ball_settled.disconnect(got)
 	return outcome
 
@@ -168,7 +173,7 @@ func falls_report() -> void:
 	var falls: Node = editor.flow_view.falls if editor.flow_view != null else null
 	if falls == null: return
 	for fall: Dictionary in falls.describe():
-		print("WORLD fall %d: lip %s plunge %s, %.3f m³/s over %.2f m, %.2f m wide, presence %.2f" % [fall.id,fall.lip,fall.plunge,fall.flux,fall.drop,fall.width,fall.presence])
+		print("WORLD fall %d: lip %s plunge %s, %.3f m³/s over %.2f m, %.2f m wide, presence %.2f, ribbon %.2f" % [fall.id,fall.lip,fall.plunge,fall.flux,fall.drop,fall.width,fall.presence,fall.get("ribbon",1.0)])
 	print("WORLD falls %d, read %d us, frame %d us (worst %d)" % [falls.shown_count(),falls.last_read_usec,falls.last_update_usec,falls.worst_update_usec])
 ## Closes on the tallest standing waterfall from a three-quarter view
 ## downstream of it, holds, and saves fall_close.png.
@@ -177,7 +182,10 @@ func close_on_fall() -> void:
 	if falls == null or falls.describe().is_empty(): return
 	var tallest: Dictionary = {}
 	for fall: Dictionary in falls.describe():
+		# --ribbon: close on the tallest fall drawn with a curtain.
+		if "--ribbon" in OS.get_cmdline_user_args() and float(fall.get("ribbon",1.0)) < 0.5: continue
 		if tallest.is_empty() or fall.drop > tallest.drop: tallest = fall
+	if tallest.is_empty(): return
 	var lip: Vector3 = tallest.lip
 	var plunge: Vector3 = tallest.plunge
 	var run := Vector2(plunge.x-lip.x,plunge.z-lip.z).normalized()
@@ -189,6 +197,20 @@ func close_on_fall() -> void:
 	if DisplayServer.get_name() != "headless":
 		DirAccess.make_dir_recursive_absolute("/private/tmp/zs-film")
 		root.get_texture().get_image().save_png("/private/tmp/zs-film/fall_close.png")
+		# --layers: the same view without each layer in turn, to tell which
+		# draws what.
+		if "--layers" in OS.get_cmdline_user_args():
+			for node: Node in falls.get_children(): if node is Node3D: node.visible = false
+			falls.set_process(false)
+			await frames(3)
+			root.get_texture().get_image().save_png("/private/tmp/zs-film/fall_close_no_falls.png")
+			editor.flow_view.moving.visible = false
+			await frames(3)
+			root.get_texture().get_image().save_png("/private/tmp/zs-film/fall_close_no_moving.png")
+			editor.flow_view.still.visible = false
+			await frames(3)
+			root.get_texture().get_image().save_png("/private/tmp/zs-film/fall_close_no_water.png")
+			return
 	await camera_to(middle,6.5,atan2(run.x,run.y)+1.1,1.12,5.0)
 	await seconds(1.0)
 

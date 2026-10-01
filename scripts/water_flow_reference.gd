@@ -460,7 +460,24 @@ func surface(p: Dictionary) -> Dictionary:
 				uv.append(Vector2(x*ax+z*az,-x*az+z*ax))
 				color = color.lerp(foam,smoothstep(foam_from,foam_to,speed)*0.55)
 				custom0.append_array([x,y,z,-1.0])
-				custom1.append_array([fade[c],0.0,0.0,0.0])
+				# The flow's velocity, the mean of the wet cells round it
+				# (the stream shader's flow map, live_flow_map).
+				var mu := 0.0
+				var mv := 0.0
+				var moving := 0
+				for dj in range(-1,2):
+					for di in range(-1,2):
+						var a := i+di
+						var b := j+dj
+						if a < 0 or b < 0 or a >= w or b >= h: continue
+						if state[b*w+a] == 1:
+							mu += vx[b*w+a]
+							mv += vz[b*w+a]
+							moving += 1
+				if moving > 0:
+					mu /= moving
+					mv /= moving
+				custom1.append_array([fade[c],mu,mv,0.0])
 			else:
 				uv.append(Vector2(shore[c],0.0))
 				var fetch := PackedFloat32Array()
