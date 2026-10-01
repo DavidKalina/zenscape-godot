@@ -66,6 +66,14 @@ const SHALLOW := 0.4
 ## (each interior point halfway to its neighbours' middle), the ends held.
 const PATH_SPACING := 0.5
 const SMOOTH_PASSES := 2
+## Edge to edge: unlike the other tools the wire cuts at full depth to the
+## plate's rim (no clay `fade`), and a drawn end within RIM_REACH metres of
+## the rim, heading out (its last run's direction at least RIM_HEADING
+## along the rim's outward normal), runs on out through the rim, to RIM_PAST
+## beyond it, so a gorge drawn to the edge opens the plate's side.
+const RIM_REACH := 2.5
+const RIM_HEADING := 0.3
+const RIM_PAST := 0.6
 ## The cut drawn through: the head's pace in metres a second, the whole cut's
 ## least and most seconds, and how much of a smoothstep's ease-in-out is
 ## mixed into its even pace (0 even, 1 a full smoothstep).
@@ -163,7 +171,31 @@ func drawn() -> PackedVector2Array:
 	for n in SMOOTH_PASSES:
 		var was := path.duplicate()
 		for k in range(1,path.size()-1): path[k] = was[k]*0.5+(was[k-1]+was[k+1])*0.25
-	return path
+	return _to_rim(path)
+
+## `path` with each end near the rim and heading out run on through it.
+static func _to_rim(path: PackedVector2Array) -> PackedVector2Array:
+	if path.size() < 2: return path
+	var out := path.duplicate()
+	var tail: Variant = _past_rim(path[-1],path[-2])
+	if tail != null: out.append(tail)
+	var head: Variant = _past_rim(path[0],path[1])
+	if head != null: out.insert(0,head)
+	return out
+
+## Where the run from `from` through `end` leaves the plate RIM_PAST beyond
+## its rim, or null when `end` is not near the rim or not heading out.
+static func _past_rim(end: Vector2, from: Vector2) -> Variant:
+	var half: float = preload("res://scripts/land_clay.gd").PLATE_HALF
+	if half-maxf(absf(end.x),absf(end.y)) > RIM_REACH or end.distance_to(from) < 0.01: return null
+	var heading := (end-from).normalized()
+	var outward := Vector2(signf(end.x),0.0) if absf(end.x) >= absf(end.y) else Vector2(0.0,signf(end.y))
+	if heading.dot(outward) < RIM_HEADING: return null
+	var reach := half+RIM_PAST
+	var run := INF
+	if absf(heading.x) > 0.001: run = minf(run,(signf(heading.x)*reach-end.x)/heading.x)
+	if absf(heading.y) > 0.001: run = minf(run,(signf(heading.y)*reach-end.y)/heading.y)
+	return end+heading*maxf(run,0.0)
 
 ## Let go: the cut is planned along the drawn path and drawn through the
 ## land by `frame`, inside the stroke's undo step, which the clay keeps open
@@ -291,14 +323,12 @@ func _plan(path: PackedVector2Array) -> Dictionary:
 			var t := clampf((p-a).dot(along),0.0,run)
 			var d := p.distance_to(a+along*t)
 			if d >= top: continue
-			var fade: float = clay.fade(i)
-			if fade <= 0.0: continue
 			var s := arc[j]+t
 			var k := s/length*(bed.size()-1) if length > 0.001 else 0.0
 			var floor_h := lerpf(bed[floori(k)],bed[mini(floori(k)+1,bed.size()-1)],k-floorf(k))
 			var goal := floor_h if d <= bed_half else lerpf(floor_h,base[i],(d-bed_half)/WALL_RUN)
 			goal = minf(goal,base[i])
-			var h := maxf(lerpf(base[i],goal,fade),NativeTerrainData.MIN_HEIGHT)
+			var h := maxf(goal,NativeTerrainData.MIN_HEIGHT)
 			if h < base[i]: cuts.append(Vector3(s,i,h))
 	# Vector3s sort by x first: by arc length.
 	cuts.sort()
@@ -370,7 +400,7 @@ func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 	var near: PackedInt32Array = clay.near
 	var radius: float = SLICE_RADIUS*clay.size_scale
 	for i in near:
-		heights[i] = base[i] if base[i] <= level else lerpf(base[i],level,clay.fade(i))
+		heights[i] = minf(base[i],level)
 	clay.touch(clay.center,radius)
 	clay.dirty(clay.center,radius)
 	return true

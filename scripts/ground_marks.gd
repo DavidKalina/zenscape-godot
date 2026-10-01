@@ -43,10 +43,10 @@ extends Node
 ## frame (called by scripts/hand_reach.gd after the materials tray).
 
 ## The marks.
-## The Sculpt's and the drag tools' are the Modeller's ring (the shader's kind
+## The Sculpt's, the drag tools' and the Brush's are the Modeller's ring (the shader's kind
 ## 0), at their reach.
-const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl"]
-const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0}
+const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl","brush"]
+const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0,"brush":0}
 
 ## How faint (premultiplied alpha at full show, 0..1): the loops' and dots'
 ## thread, the hand's fill, and the wire's line while dragged. FAINT_CAP is the
@@ -55,6 +55,9 @@ const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"materia
 const LINE_ALPHA := 0.3
 const FILL_ALPHA := 0.05
 const WIRE_ALPHA := 0.3
+## A wire path's end further than this (m) from the press or the pointer
+## has run on out through the rim, and is drawn where it ends.
+const RIM_RUN := 1.0
 const FAINT_CAP := 0.4
 ## Seconds to fade in on hovering the land, and out on a press, a drag, the
 ## camera moving or the pointer leaving the land.
@@ -181,9 +184,14 @@ func update(next: String, point: Vector3, size_scale: float, delta: float, from:
 	wire_start = from if from != null else point
 	wire_path = path.duplicate()
 	if path.size() >= 2:
-		# The line runs from the press point to the pointer, as its toggles do.
-		wire_path[0] = Vector2(wire_start.x,wire_start.z)
-		wire_path[-1] = Vector2(point.x,point.z)
+		# The line runs from the press point to the pointer, as its toggles
+		# do, unless an end runs on out through the rim (the wire's
+		# `_to_rim`): that end stays, so the line shows the cut opening the
+		# plate's side.
+		var press := Vector2(wire_start.x,wire_start.z)
+		var pointer := Vector2(point.x,point.z)
+		if wire_path[0].distance_to(press) < RIM_RUN: wire_path[0] = press
+		if wire_path[-1].distance_to(pointer) < RIM_RUN: wire_path[-1] = pointer
 	_shape(size_scale)
 	_fade(delta)
 	_draw()
