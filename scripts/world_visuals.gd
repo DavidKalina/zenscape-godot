@@ -63,7 +63,7 @@ func sync(scene: Node3D) -> void:
 		scene._environment.volumetric_fog_enabled = true
 		scene._environment.volumetric_fog_length = maxf(125.0,scene.distance+40.0)
 	var color: Color = scene._celestial.look.colors.fog.srgb_to_linear().lerp(Color(0.85,0.89,0.94).srgb_to_linear(),0.65)
-	var fog_values := {"ground_map":scene._precipitation.ground_texture,"stream_map":scene._precipitation.stream_texture,"bank_density":minf(fog_density*weather_fog,LIMITS.fog_density[1]),"bank_height":fog_height,"activity":clampf(scene._atmosphere._air_strength/3.5,0,1),"bank_clock":scene._motion_time,"bank_color":Vector3(color.r,color.g,color.b)}
+	var fog_values := {"ground_map":scene._precipitation.ground_texture,"stream_map":scene._precipitation.stream_texture,"bank_density":minf(fog_density*weather_fog,LIMITS.fog_density[1])*scene._atmosphere.day_mist,"bank_height":fog_height,"activity":clampf(scene._atmosphere._air_strength/3.5,0,1),"bank_clock":scene._motion_time,"bank_color":Vector3(color.r,color.g,color.b)}
 	for key in fog_values: _fog.material.set_shader_parameter(key,fog_values[key])
 	_peaks.material.set_shader_parameter("cloud_time",scene._motion_time)
 	_peaks.material.set_shader_parameter("cloud_density",minf(peak_density*weather_peaks,LIMITS.peak_density[1]))

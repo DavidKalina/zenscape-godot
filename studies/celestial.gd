@@ -21,6 +21,8 @@ var phase: float:
 	get:
 		return clock.phase if clock != null else _phase
 var daylight := 1.0
+## The sun's height, the y of its direction (-1..1), as of the last update_rig.
+var sun_height := 0.5
 var cloud := 0.06
 var storm := 0.0
 var shroud := 0.0
@@ -200,6 +202,7 @@ func update_rig() -> void:
 	moon_lit = 0.5 + 0.5 * cos(moon_age * TAU)
 	var moon := moon_direction(phase)
 	var e := sun.y
+	sun_height = e
 	var day := smoothstep(-0.06, 0.28, e)
 	daylight = day
 	var night := 1.0 - smoothstep(-0.16, 0.02, e)
