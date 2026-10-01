@@ -702,6 +702,10 @@ func overview() -> void:
 	following = false
 	glide_to(goal[0],goal[1],goal[2],goal[3])
 
+## Turn the view a quarter round the pivot, `way` 1 or -1, as a glide.
+func quarter_turn(way := 1) -> void:
+	glide_to(_pivot_goal,_view_goal.x+PI*0.5*signf(way),_view_goal.y,exp(_view_goal.z))
+
 ## Back to the view before the last focus, recentre or overview.
 func back() -> bool:
 	if _history.is_empty(): return false

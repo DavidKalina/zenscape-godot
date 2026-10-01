@@ -36,3 +36,10 @@ recordings and carry no licence beyond the project's own (docs/scenic/sound.md).
 
 The finger snaps (finger-snap-1..3.wav) are synthesised for ZenScape by
 tools/generate_nature_audio.py --snap; no recording is used.
+
+## Tool and HUD foley (`foley/`)
+
+Cut from CC0 recordings on Freesound and from Kenney's CC0 packs (Impact
+Sounds, Interface Sounds, RPG Audio) by `tools/foley/make_foley.py`. CC0 asks
+for no credit; every file's source, author and page is listed anyway in
+`foley/SOURCES.tsv`.

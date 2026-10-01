@@ -175,6 +175,7 @@ func drag_end() -> bool:
 	_clock = 0.0
 	_seconds = clampf(_length/CUT_SPEED,CUT_SECONDS.x,CUT_SECONDS.y)
 	_running = true
+	if _length > 0.0: clay.sound(&"wire_start",_path[0])
 	if not animate: finish()
 	return false
 
@@ -213,6 +214,7 @@ func finish() -> void:
 	var spread := maxf(_box.size.x,_box.size.y)*0.5
 	clay.touch(_box.get_center(),spread)
 	clay.lay_dirt(_box.get_center(),spread)
+	clay.sound(&"crumble",_box.get_center(),_length/20.0)
 	clay.paint_faces(_box)
 	clay.show_land()
 	clay.shake_trees(clay.center,0.0,clay.touched())

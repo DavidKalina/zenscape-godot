@@ -60,6 +60,53 @@ One-shots come from a pool of four 3D players that fall off with distance (`unit
 
 Any two arrival sounds are at least `SHOT_GAP` (1.5 s) apart. For `SHOT_QUIET` (12 s) after a new world, load or undo there are none, because a settled world's life lands in a burst.
 
+## Tool sound
+
+The shaping tools (Modeller, Paddle, Chisel, Hammer, Wire) and the linen HUD have their own sound. It lives in `scripts/clay_sound.gd` (`ClaySound`), which `studies/fidelity_life.gd` builds next to GenesisAudio when the clay is on (`--modeless`). These sounds are recorded foley, not synthesised: CC0 recordings from Freesound and Kenney, cut by `tools/foley/make_foley.py` into `assets/audio/foley/`. Each file is credited in `assets/audio/foley/SOURCES.tsv`.
+
+**Cues** are one-shots, asked for by name:
+- The tools call `LandClay.sound(cue, at, strength)`, which emits `sounded`.
+- The HUD calls the static `ClaySound.cue(name)`.
+
+Each cue has up to eight takes (`<clip>-<n>.wav`). The same take never plays twice running. Each play is nudged by ±5% in pitch and ±1.5 dB in level, and a stronger moment plays louder and slightly lower. A cue with no takes on disk is silent.
+
+| Moment | Cue | Clip |
+|---|---|---|
+| Modeller poke (tap) | `poke` | `poke` |
+| Groove breaks through the rim | `notch` | `crumble` |
+| Paddle pat (tap) | `pat` | `pat` |
+| Chisel shelf steps down a level | `chisel_step` | `chisel-tick` |
+| Chisel notch (tap) | `chisel_knock` | `chisel-knock` |
+| Chisel mesa breaks free (the lift passes `FLAT_FROM`) | `mesa_break` | `mesa-break` |
+| Chisel shelf let go, and the Wire's cut landing | `crumble` | `crumble` |
+| Hammer blow on rock / elsewhere | `crack` / `knock` | `hammer-rock` / `hammer-soil` |
+| Scree from a crack | `scree` | `scree` |
+| Rock painted on a raised peak | `rock_settle` | `pebbles` |
+| Trees slide off (`shake_trees` moved any) | `trees` | `trees` |
+| Wire's cut sets off | `wire_start` | `wire-start` |
+| Roll or tray reached for; slot hovered | `ui_reach`; `ui_hover` | `ui-cloth`; `ui-tick` |
+| Tool picked; size pip changed | `ui_pick`; `ui_size` | `ui-pick`; `ui-tick` |
+| Material taken; put back | `ui_take`; `ui_put` | `ui-take`; `ui-put` |
+| A slot not found yet | `ui_refuse` | `ui-refuse` |
+| Foot: undo; photo | `ui_undo`; `ui_shutter` | `ui-undo`; `ui-shutter` |
+| Almanac page opened | `ui_page` | `ui-page` |
+
+**Voices** are loops whose gain eases toward a target (in at `ATTACK` 9/s, out at `RELEASE` 3.5/s):
+- **Drags:** the Modeller's groove and rub crossfade by `LandClay.rub`. The palm and the Paddle use the sweep, and the Chisel uses the scrape. All of these follow the pointer's speed (`SPEED`, 40–900 px/s).
+- **Holds:** the pinch, swell and slice stretch. The Chisel's mesa scrapes. These follow how fast the lift moves (`LIFT_RATE`). A raise also brings in the Genesis rumble, deeper when it is slow.
+- **Wire:** the cut loop follows how fast its head runs.
+
+The Feather has no cue of its own, because the wind tool's own wind bed (`scripts/wind_gust.gd`) already answers it.
+
+GenesisAudio leaves the clay's strokes alone (`LandClay.stroking`). Before this change, the editor's last brush voice, usually the rumble, played during clay drags at a level unrelated to the tool.
+
+**Re-cutting the foley.**
+1. Fetch sources with `tools/foley/fs_search.py "<query>" --into /tmp/zs-foley/fs/<dir>`. It takes only CC0 results.
+2. Cut them with `tools/foley/make_foley.py candidates`.
+3. Audition the takes on `/tmp/zs-foley/cand/index.html`.
+4. List the chosen take numbers per clip in `tools/foley/picks.json`.
+5. Run `tools/foley/make_foley.py build`.
+
 ## Mix
 
 - **Buses:** `Master` ← `Genesis` (the Sound volume, default 0.8, with a hard limiter at −1.5 dB) ← `GenesisFar`. `GenesisFar` has a low-pass at 1.6 kHz and a wide reverb (room 0.9, wet 0.45, dry 0.6, 60 ms predelay), and only the knock uses it. Nature and thunder stay on Master under their own toggles and sliders.

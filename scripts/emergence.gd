@@ -142,6 +142,10 @@ const SOWN_GAP := 2.0
 const SOWN_KIND_SHARE := 0.75
 const FIT_EASE := 0.5
 const SPORT := 0.07
+## A seed sown from the hand keeps its kind at least this often, even where
+## the habitat would never grow it (a redwood on the woodland plain): what the
+## player chose to sow is what mostly comes up.
+const HAND_KEEP := 0.85
 ## The ground's fertility for sown trees (`_fertility`): the habitat's share,
 ## leaned down on dry ground (SOWN_DRY at no moisture) and on exposed heights
 ## (SOWN_EXPOSED at the top of the altitude range, from its .x share).
@@ -925,6 +929,7 @@ func _heir_kind(parent: String, habitat: String, p: Vector2, own: String, key: A
 		var odd := Stands.sport(habitat,parent,p,Variety.unit(key+[28]),salt,_blend)
 		if not odd.is_empty(): return odd
 	var keep := pow(Stands.fit(habitat,parent,p,salt,_blend),FIT_EASE)*(1.0 if sown else SOWN_KIND_SHARE)
+	if sown: keep = maxf(keep,HAND_KEEP)
 	return parent if Variety.unit(key+[26]) < keep else own
 
 func _tree_kind(habitat: String, p: Vector2, pick: float, bank_pick := 1.0) -> String:

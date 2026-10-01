@@ -91,7 +91,9 @@ const VIGNETTE_DROP := Color(0.047,0.035,0.020,0.22)
 const VIGNETTE_EVERY := 0.1
 ## Each mood's facet seed (lowpoly.js MOODS, seeds 23-32); "" is the world's own.
 const MOOD_SEEDS := {"":23,"alpine_morning":24,"golden_meadow":25,"copper_autumn":26,"rosewater_dusk":27,
-	"enchanted_forest":28,"halloween_hollow":29,"first_snow":30,"nordic_night":31,"after_the_rain":32}
+	"enchanted_forest":28,"halloween_hollow":29,"first_snow":30,"nordic_night":31,"after_the_rain":32,
+	"rose_dusk":33,"meadow_morning":34,"desert_afternoon":35,"autumn_evening":36,"winter_hush":37,"misty_hollow":38,
+	"ocean_light":39,"moonlit_stillness":40,"storm_gathering":41}
 ## Faceted vignette colours (lowpoly.js `vignette`): the moon, the sun, and
 ## the share a low sun leans from the glow to the light.
 const VIGNETTE_MOON := Color("e6eaf2")

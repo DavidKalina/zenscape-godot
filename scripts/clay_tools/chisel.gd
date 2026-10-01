@@ -272,12 +272,14 @@ func _step_level(q: Vector2, drop: float) -> void:
 	if steps < 0.0: steps = maxf(steps,-floorf((_level-NativeTerrainData.MIN_HEIGHT)/drop))
 	elif steps > 0.0: steps = minf(steps,floorf((NativeTerrainData.MAX_HEIGHT-_level)/drop))
 	_level += drop*steps
+	if steps != 0.0: clay.sound(&"chisel_step",q,minf(absf(steps),3.0)/3.0)
 
 ## Let go: the faces take rock, and trees the cut left standing on ground
 ## they cannot hold slide off.
 func drag_end() -> bool:
 	var area: Rect2 = clay.touched()
 	clay.paint_faces(area)
+	clay.sound(&"crumble",clay.center,area.get_area()/60.0)
 	clay.shake_trees(clay.center,0.0,area)
 	return false
 
@@ -304,6 +306,7 @@ func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 	var share := _depth()
 	lift = clampf(rise*share,-PIT_SINK*share,MESA_RAISE*share)
 	if is_equal_approx(lift,_shown_lift): return false
+	if absf(_shown_lift) < FLAT_FROM and absf(lift) >= FLAT_FROM: clay.sound(&"mesa_break",clay.center,0.5 if _shallow else 1.0)
 	_shown_lift = lift
 	var top := _ground+lift
 	var ease := smoothstep(0.0,FLAT_FROM,absf(lift))
@@ -386,6 +389,7 @@ func tap(fine: bool) -> void:
 	clay.show_land()
 	var at: Vector3 = clay.ground_at(center)
 	clay.stir(center,reach,NOTCH_STRENGTH)
+	clay.sound(&"chisel_knock",center,0.6 if fine else 1.0)
 	clay.close_stroke()
 	# The hand comes down on the chisel's butt for a beat.
 	clay.hand_gesture("press",at,true)

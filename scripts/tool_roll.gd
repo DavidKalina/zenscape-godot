@@ -20,6 +20,7 @@ extends Control
 
 const Linen = preload("res://scripts/hud_linen.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
+const ClaySound = preload("res://scripts/clay_sound.gd")
 ## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind, not
 ## clay: it sits under the shaping tools after a divider (DIVIDER_BEFORE).
 const TOOLS := ["hand","paddle","chisel","wire","hammer","feather"]
@@ -156,6 +157,7 @@ func _pip_cell(i: int) -> Rect2:
 
 func not_yet(id: String) -> void:
 	if _states.has(id): _states[id].refuse = 1.0
+	ClaySound.cue(&"ui_refuse")
 
 # --- Frames ---------------------------------------------------------------------
 
@@ -174,6 +176,7 @@ func _process(delta: float) -> void:
 	var near := _want_shown and not quiet and (pointer.x <= NEAR*ui_scale or (awake > 0.0 and _roll().grow(6.0*ui_scale).has_point(pointer)))
 	if near:
 		_away = 0.0
+		if awake == 0.0: ClaySound.cue(&"ui_reach")
 		awake = move_toward(awake,1.0,delta/Linen.REACH)
 	else:
 		_away += delta
@@ -181,7 +184,9 @@ func _process(delta: float) -> void:
 	visible = shown > 0.0
 	if not visible: return
 	modulate.a = Linen.eased(shown)*lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake))
+	var was_hovered := hovered
 	hovered = tool_at(pointer) if _want_shown and awake > 0.5 else ""
+	if hovered != was_hovered and discovered(hovered): ClaySound.cue(&"ui_hover")
 	for id: String in TOOLS:
 		var state: Dictionary = _states[id]
 		var on := id == hovered and not (id == tool and not material_held) and discovered(id)

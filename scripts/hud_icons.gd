@@ -161,6 +161,15 @@ static func _build() -> void:
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
 	_add("water","Water","Spring","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)
+	# Seeds with no slot in the case, reached through the command palette
+	# (scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
+	_add("birch","Samara","Birch","#d8c79a",[_circle(6.8,12,4.6),_circle(17.2,12,4.6),"M10.2 6.6 Q12 4.8 13.8 6.6 V17.4 Q12 19.2 10.2 17.4Z"],["M12 7.5 V16.5"],40)
+	_add("redwood","Redwood","Giant","#a0563a",["M12 1.2 L15.4 7.6 H13.9 L16.8 13.4 H15.1 L18.2 19 H13.3 V22.8 H10.7 V19 H5.8 L8.9 13.4 H7.2 L10.1 7.6 H8.6Z"],["M12 9 V19"],41)
+	_add("juniper","Juniper","Berry","#64749c",[_circle(8.6,14.2,4.2),_circle(15.4,14.2,4.2),_circle(12,8.4,4.2),"M11.2 17.6 H12.8 V23 H11.2Z"],["M12 4.6 L12.6 3.4"],42)
+	_add("joshua","Joshua","Desert","#9a9658",["M10.8 22.6 V13.4 L7 10.4 V6.6 H9.2 V9.4 L10.8 10.8 V5.6 H13.2 V12.2 L15 10.6 V5.4 H17.2 V11.6 L13.2 15 V22.6Z",_circle(8.1,5.2,2.6),_circle(12,4.4,2.6),_circle(16.1,4.2,2.6)],[],43)
+	# The palette's pockets: All (four squares) and Life (a big bare footprint).
+	_add("all","All","Everything","#d6c290",["M3 4 Q3 3 4 3 H10 Q11 3 11 4 V10 Q11 11 10 11 H4 Q3 11 3 10Z","M13 4 Q13 3 14 3 H20 Q21 3 21 4 V10 Q21 11 20 11 H14 Q13 11 13 10Z","M3 14 Q3 13 4 13 H10 Q11 13 11 14 V20 Q11 21 10 21 H4 Q3 21 3 20Z","M13 14 Q13 13 14 13 H20 Q21 13 21 14 V20 Q21 21 20 21 H14 Q13 21 13 20Z"],[],44)
+	_add("track","Track","Life","#8a6a4a",["M8 11 Q8 6.4 12.2 6.4 Q16.6 6.4 16.6 11.2 Q16.6 15 14.8 18 Q13.8 22.4 11.2 22.4 Q8 22.4 8 18.4Z",_circle(7.4,4.4,1.5),_circle(10.2,2.8,1.5),_circle(13.1,2.5,1.45),_circle(15.8,3.4,1.3),_circle(17.8,5.4,1.15)],[],45)
 	_add("crystal","Crystal","Quartz","#9b7fc9",["M7.5 21 L5.5 11 L8.5 6 L11.5 11 L9.5 21Z","M13 21 L12 8 L15 3 L18 8 L16.5 21Z"],[],8)
 	_add("snow","Frost","Winter","#7fbfd0",_snowflake(),[],9)
 	# Shaping tools (the tool roll).

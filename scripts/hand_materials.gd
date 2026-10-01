@@ -54,14 +54,18 @@ extends Node
 
 const Tray = preload("res://scripts/materials_tray.gd")
 const Roll = preload("res://scripts/tool_roll.gd")
+const ClaySound = preload("res://scripts/clay_sound.gd")
 const Foot = preload("res://scripts/tool_foot.gd")
 const Almanac = preload("res://scripts/almanac.gd")
 const Pages = preload("res://scripts/almanac_pages.gd")
+const Palette = preload("res://scripts/command_palette.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const Modeless = preload("res://scripts/modeless_input.gd")
 ## Tree seeds: the specimen and the emergence tree kind it sows
 ## (scripts/tree_stands.gd TREE_POOLS; "tree" is the spruce family's pine).
-const SEEDS := {"oak":"broadleaf","pine":"tree","willow":"willow","birch":"birch"}
+## Birch, redwood, juniper and Joshua have no slot in the case; the command
+## palette (scripts/command_palette.gd) hands them over.
+const SEEDS := {"oak":"broadleaf","pine":"tree","willow":"willow","birch":"birch","redwood":"redwood","juniper":"juniper","joshua":"joshua"}
 ## Things set down by a tap or a drag: the assets (one picked for each), how
 ## many one drop sets and how far they spread (m), a tap's size range (record
 ## scale, growing over `grow` s of holding) and a drag's (growing over
@@ -140,6 +144,8 @@ var page_asked := []
 ## The almanac's Moods and Customise pages (scripts/almanac_pages.gd), opened
 ## by its pockets and tags. They take their own input while open.
 var pages: Control
+## The command palette (scripts/command_palette.gd): Cmd/Ctrl K or /.
+var palette: Control
 var clump: Clump
 ## The specimen in hand (a materials_tray.gd SPECIMENS id) or "".
 var held := ""
@@ -189,6 +195,9 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	pages = Pages.new()
 	layer.add_child(pages)
 	pages.setup(scene)
+	palette = Palette.new()
+	layer.add_child(palette)
+	palette.setup(scene,self)
 	clump = Clump.new()
 	clump.name = "HeldMaterial"
 	clump.ground = func(flat: Vector2) -> Variant: return reach._editor().data.ground_height(flat)
@@ -199,12 +208,14 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 func tray_under(point: Vector2) -> bool:
 	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point)) \
 		or (foot != null and foot.contains_pointer(point)) or (almanac != null and almanac.contains_pointer(point)) \
-		or (pages != null and pages.is_open() and pages.contains_pointer(point))
+		or (pages != null and pages.is_open() and pages.contains_pointer(point)) or (palette != null and palette.is_open())
 
 ## The almanac asks for a page: the Moods page, or Customise at a row.
 func _page_requested(page: String, row: String) -> void:
 	page_asked = [page,row]
-	if pages != null: pages.open(page,row)
+	if pages != null:
+		pages.open(page,row)
+		ClaySound.cue(&"ui_page")
 
 ## The size in hand (the roll's pips): the clay's reach and a scatter's spread.
 func size_scale() -> float:
@@ -212,7 +223,9 @@ func size_scale() -> float:
 
 func set_size(level: int) -> void:
 	if roll == null: return
+	var was: int = roll.size_level
 	roll.size_level = clampi(level,0,Roll.SIZES.size()-1)
+	if roll.size_level != was: ClaySound.cue(&"ui_size")
 	var clay: Node = scene.get("land_clay")
 	if clay != null: clay.size_scale = roll.size_scale()
 
@@ -295,9 +308,10 @@ func press(point: Vector2) -> bool:
 
 ## Take the shaping tool `id` in the roll (the bare Hand is "hand"); the
 ## clay works with it from the next press.
-func select_tool(id: String) -> void:
+func select_tool(id: String, quiet := false) -> void:
 	var clay: Node = scene.get("land_clay")
 	if clay != null and not clay.set_tool(id): return
+	if roll.tool != id and not quiet: ClaySound.cue(&"ui_pick")
 	roll.tool = id
 
 # --- The Feather ------------------------------------------------------------------
@@ -357,12 +371,22 @@ func _feather_let_go() -> void:
 	if feather_sent.has(feather_last): feather_sent[feather_last] += 1
 	reach.uses["feather"] = int(reach.uses.get("feather",0))+1
 
+## Take `id` in hand from outside the case (the command palette): a seed,
+## water or something to set down, whether or not it has a slot. False when
+## it is not a material the hand knows.
+func take(id: String) -> bool:
+	if not (SEEDS.has(id) or SCATTER.has(id) or id == "water"): return false
+	if held == id: return true
+	if not held.is_empty(): put_back()
+	_take(id)
+	return true
+
 func _take(id: String) -> void:
 	# One thing in hand: a material puts the tool back.
-	if roll.tool != "hand": select_tool("hand")
+	if roll.tool != "hand": select_tool("hand",true)
 	held = id
 	tray.lift_out(id)
-	# A quiet tick belongs here when the tray has sound.
+	ClaySound.cue(&"ui_take")
 	clump.show_kind(id)
 
 ## The specimen goes home to its compartment.
@@ -371,6 +395,7 @@ func put_back() -> void:
 	var from := _pointer()
 	if clump.visible and not scene.camera.is_position_behind(clump.global_position): from = scene.camera.unproject_position(clump.global_position)
 	tray.return_home(held,from)
+	ClaySound.cue(&"ui_put")
 	reach.uses["tray_back"] = int(reach.uses.get("tray_back",0))+1
 	held = ""
 
@@ -380,7 +405,9 @@ func put_back() -> void:
 func _use(point: Vector2) -> void:
 	var editor: Node = reach._editor()
 	if SEEDS.has(held):
-		if editor.has_method("sow_from_hand") and editor.sow_from_hand(point,SEEDS[held]): _used()
+		if editor.has_method("sow_from_hand") and editor.sow_from_hand(point,SEEDS[held]):
+			ClaySound.cue(&"sow")
+			_used()
 	elif held == "water":
 		if editor.get("water_ball") != true: return
 		editor.ball_supply = Callable()
@@ -463,6 +490,8 @@ func _drop(at: Variant, size: float) -> bool:
 	_stone_count += 1
 	_stone_since = 0.0
 	stones_set += 1
+	var ground: Vector3 = reach._editor().terrain.to_global(Vector3(at.x,0.0,at.y))
+	ClaySound.cue_at(&"stone_drop" if held == "stone" else &"plant",ground,clampf(size,0.3,1.0))
 	reach.uses[held] = int(reach.uses.get(held,0))+1
 	clump.shed()
 	return true
@@ -479,6 +508,7 @@ func step(delta: float) -> void:
 		if hud_hidden and pages.is_open(): pages.close()
 		almanac.page_open = pages.is_open()
 		pages.strip_rect = almanac.strip_rect()
+	if palette != null and hud_hidden and palette.is_open(): palette.close()
 	# A drag under way (a rim pull, the clay, a sowing) never wakes the bars.
 	var quiet: bool = not str(reach.holding) in ["","jar","almanac"]
 	tray.quiet = quiet
@@ -614,7 +644,7 @@ class Clump extends Node3D:
 	## reed brown.
 	const TONES := {
 		"oak":["a57b48","8c6a3f","c09a66"],"pine":["7a5a3a","946f48","6a4c30"],"willow":["dcd8c4","c9c6ae","ece8d6"],
-		"birch":["c9ab7a","b89868","dcc190"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
+		"birch":["c9ab7a","b89868","dcc190"],"redwood":["8a4a32","a15a3c","6e3a26"],"juniper":["5f6f8a","74849c","4c5a72"],"joshua":["9a8a5a","b2a06a","7e7048"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
 	}
 	## The flick: FLICK_SNAP s, tipping FLICK_TURN degrees forward and
 	## swelling by FLICK_SWELL at its height, then back.
@@ -690,9 +720,10 @@ class Clump extends Node3D:
 					var at := out*0.07+Vector3.UP*0.09
 					_part(_egg(),TONES.oak[i],at,Vector3(0.065,0.085,0.065),lean)
 					_part(_egg(),"6b4a2c",at+Vector3.UP*0.06+out*0.02,Vector3(0.075,0.035,0.075),lean)
-			"pine", "birch":
-				# Winged seeds in a fan: pine's long wings, birch's round ones.
-				var pine := next == "pine"
+			"pine", "birch", "redwood", "juniper", "joshua":
+				# Winged seeds in a fan: pine's long wings (redwood's, juniper's
+				# and Joshua's too), birch's round ones.
+				var pine := next != "birch"
 				var tones: Array = TONES[next]
 				for i in range(5):
 					var angle := TAU*i/5.0+0.3

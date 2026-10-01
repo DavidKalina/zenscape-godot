@@ -30,6 +30,7 @@ extends Control
 ## it as UI (`tray_under`).
 
 const Linen = preload("res://scripts/hud_linen.gd")
+const ClaySound = preload("res://scripts/clay_sound.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const WHISPER_FONT = preload("res://assets/fonts/spectral-latin-400.woff2")
 ## The slots, left to right, and each one's whisper (ROLL_FOOT_WHISPER).
@@ -137,8 +138,12 @@ func press(point: Vector2) -> bool:
 	_states[id].press = 1.0
 	presses[id] = int(presses[id])+1
 	match id:
-		"undo": undo()
-		"photo": photo()
+		"undo":
+			ClaySound.cue(&"ui_undo")
+			undo()
+		"photo":
+			ClaySound.cue(&"ui_shutter")
+			photo()
 	return true
 
 ## Cmd Z's own path. With nothing to undo it quietly does nothing.
@@ -187,7 +192,9 @@ func _process(delta: float) -> void:
 	modulate.a = Linen.eased(shown)*lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake))
 	var pointer: Variant = pointer_override if pointer_override != null else roll.pointer_override
 	if pointer == null: pointer = get_viewport().get_mouse_position()
+	var was_hovered := hovered
 	hovered = slot_at(pointer) if awake > 0.5 and not roll.quiet else ""
+	if hovered != was_hovered and not hovered.is_empty(): ClaySound.cue(&"ui_hover")
 	for id: String in SLOTS:
 		var state: Dictionary = _states[id]
 		state.hover = move_toward(float(state.hover),1.0 if id == hovered else 0.0,delta/HOVER_TIME)

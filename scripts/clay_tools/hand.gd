@@ -251,7 +251,9 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 			if goal > h: heights[i] = lerpf(h,goal,GROOVE_STEP*g*fade)
 	if notched:
 		var last: Dictionary = clay.last_notch
-		if last.is_empty() or last.normal != breach or (last.at as Vector2).distance_to(q) > _groove_hw()*2.0: clay.notches += 1
+		if last.is_empty() or last.normal != breach or (last.at as Vector2).distance_to(q) > _groove_hw()*2.0:
+			clay.notches += 1
+			clay.sound(&"notch",q)
 		var along := Vector2(breach.y,-breach.x)
 		clay.last_notch = {"normal":breach,"at":breach*half+along*q.dot(along),"bed":bed}
 
@@ -407,6 +409,7 @@ func tap(_fine: bool) -> void:
 	poking = true
 	clay.hand_gesture("press",clay.ground_at(center))
 	clay.stir(center,POKE_RADIUS,POKE_STRENGTH)
+	clay.sound(&"poke",center)
 	_poke_step(0.0)
 
 func frame(delta: float) -> void:
