@@ -13,8 +13,15 @@ extends Control
 ## each has its verbs: a tool is built when scripts/clay_tools/<id>.gd holds
 ## them (docs/design/tools/PLAN.md) and it is taken off UNBUILT.
 ##
+## A tool with modes (scripts/clay_tools/clay_tool.gd `modes`: the Modeller,
+## the Sculpt, the Paddle, the Chisel, the Wire) has them fanned out beside its
+## pocket in place of its name: a small icon each (scripts/hud_icons.gd
+## "<tool>_<mode>"), the one in hand pressed into the cloth. The fan stays
+## shown at rest so the mode can be read while working. The hand sets `modes`
+## and `mode` when it takes a tool.
+##
 ## It only draws; the hand (scripts/hand_materials.gd) reads `tool_at`,
-## `pip_at` and `contains_pointer` and takes the presses. It rests receded
+## `pip_at`, `mode_at` and `contains_pointer` and takes the presses. It rests receded
 ## (REST_OPACITY, tucked REST_TUCK) and comes out as the pointer nears the
 ## left edge; a drag in progress never wakes it.
 
@@ -24,10 +31,16 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 ## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind and the
 ## watering can ("Pour") water, not clay: they sit under the shaping tools
 ## after a divider (DIVIDER_BEFORE).
-const TOOLS := ["hand","paddle","chisel","wire","hammer","feather","can"]
+const TOOLS := ["hand","sculpt","paddle","chisel","wire","hammer","feather","can"]
 ## Indices in TOOLS that a stitched divider sits above (lowpoly.js
 ## TOOL_DIVIDER_BEFORE): the Feather, set apart from the tools that shape.
-const DIVIDER_BEFORE := [5]
+const DIVIDER_BEFORE := [6]
+## The fan beside a tool with modes: a cell (design pixels) and icon each,
+## the fan's padding, and the seconds it takes to fan out.
+const MODE_CELL := 46.0
+const MODE_ICON := 36.0
+const MODE_PAD := 4.0
+const FAN_TIME := 0.18
 ## Tools without verbs yet: shown as undiscovered.
 const UNBUILT := []
 ## Sizes: the pip's diameter and hit cell (design pixels) and the scale it
@@ -67,6 +80,13 @@ var material_held := false
 var size_level := 1
 var held_tint := Color("e0a07a")
 var hovered := ""
+## The tool in hand's mode ids (empty for none), the one in hand, and the
+## one under the pointer.
+var modes: Array = []
+var mode := ""
+var hovered_mode := ""
+## How far the Sculpt's fan is out, 0..1.
+var fan := 0.0
 var quiet := false
 var pointer_override: Variant = null
 var _want_shown := false
@@ -111,6 +131,14 @@ func tool_at(point: Vector2) -> String:
 		if _cell(i).has_point(point): return TOOLS[i]
 	return ""
 
+## The Sculpt mode word under a viewport point, or "".
+func mode_at(point: Vector2) -> String:
+	if shown < 0.5 or not _modes_shown(): return ""
+	var cells := _mode_cells()
+	for k in range(cells.size()):
+		if (cells[k] as Rect2).has_point(point): return modes[k]
+	return ""
+
 ## The size pip under a viewport point, or -1.
 func pip_at(point: Vector2) -> int:
 	if shown < 0.5: return -1
@@ -119,7 +147,7 @@ func pip_at(point: Vector2) -> int:
 	return -1
 
 func contains_pointer(point: Vector2) -> bool:
-	return shown >= 0.5 and _roll().grow(2.0*ui_scale).has_point(point)
+	return shown >= 0.5 and (_roll().grow(2.0*ui_scale).has_point(point) or (_modes_shown() and _tag_rect().has_point(point)))
 
 ## The roll's cloth, viewport pixels (the foot, scripts/tool_foot.gd, hangs under it).
 func rect() -> Rect2:
@@ -172,8 +200,10 @@ func _process(delta: float) -> void:
 		if not is_equal_approx(px,_texture_px) or _textures.is_empty():
 			_texture_px = px
 			Linen.rasterise(_textures,TOOLS,px)
+	_rasterise_modes()
 	var pointer: Vector2 = get_viewport().get_mouse_position() if pointer_override == null else pointer_override
 	shown = move_toward(shown,1.0 if _want_shown else 0.0,delta/Linen.REACH)
+	fan = move_toward(fan,1.0 if _modes_shown() else 0.0,delta/FAN_TIME)
 	var near := _want_shown and not quiet and (pointer.x <= NEAR*ui_scale or (awake > 0.0 and _roll().grow(6.0*ui_scale).has_point(pointer)))
 	if near:
 		_away = 0.0
@@ -188,6 +218,9 @@ func _process(delta: float) -> void:
 	var was_hovered := hovered
 	hovered = tool_at(pointer) if _want_shown and awake > 0.5 else ""
 	if hovered != was_hovered and discovered(hovered): ClaySound.cue(&"ui_hover")
+	var was_mode := hovered_mode
+	hovered_mode = mode_at(pointer) if _want_shown else ""
+	if hovered_mode != was_mode and not hovered_mode.is_empty(): ClaySound.cue(&"ui_hover")
 	for id: String in TOOLS:
 		var state: Dictionary = _states[id]
 		var on := id == hovered and not (id == tool and not material_held) and discovered(id)
@@ -197,17 +230,57 @@ func _process(delta: float) -> void:
 	var tag := _tag_rect()
 	_tag_cloth.visible = tag.size.x > 0.0
 	if _tag_cloth.visible: _tag_cloth.place(tag,ui_scale,2.0,Vector2.ZERO)
-	_tag_cloth.modulate.a = Linen.eased(awake)
+	_tag_cloth.modulate.a = 1.0 if _modes_shown() else Linen.eased(awake)
 	queue_redraw()
 
 ## The held tool's tag strip, right of its pocket; empty with a material held.
 func _tag_rect() -> Rect2:
 	if material_held or not tool in TOOLS: return Rect2()
 	var cell := _cell(TOOLS.find(tool))
+	if _modes_shown():
+		var out := Linen.eased(fan)
+		var reach := Vector2(MODE_PAD*2.0+MODE_CELL*lerpf(1.0,modes.size(),out),MODE_PAD*2.0+MODE_CELL)*ui_scale
+		return Rect2(Vector2(cell.end.x+(TAG_LEFT-Linen.SLOT)*ui_scale,roundf(cell.get_center().y-reach.y*0.5)),reach.round())
 	var width := Linen.tag_width(_font,str(Icons.item(tool).get("label","")),ui_scale)
 	var height := (Linen.TAG_SIZE+4.0)*ui_scale
 	var extent := Vector2(width+(TAG_PAD.x+TAG_PAD.z)*ui_scale,height+(TAG_PAD.y+TAG_PAD.w)*ui_scale)
 	return Rect2(Vector2(cell.position.x+TAG_LEFT*ui_scale,roundf(cell.get_center().y-extent.y*0.5)),extent.round())
+
+## The tool in hand's modes (ids) and the one in hand; a new set fans out
+## afresh.
+func set_modes(ids: Array, current: String) -> void:
+	if ids != modes: fan = 0.0
+	modes = ids.duplicate()
+	mode = current
+	_rasterise_modes()
+
+func _modes_shown() -> bool:
+	return not modes.is_empty() and not material_held
+
+## The icon of mode `id` of the tool in hand.
+func _mode_icon(id: String) -> String:
+	return tool+"_"+id
+
+## The mode icons of the tool in hand, rasterised at the roll's icon size
+## if they are not yet.
+func _rasterise_modes() -> void:
+	if _texture_px <= 0.0: return
+	for id: String in modes:
+		var icon := _mode_icon(id)
+		if _textures.has(icon+":icon"): continue
+		for variant: String in ["icon","lit","shadow"]:
+			var texture: Texture2D = Icons.texture(icon,variant,_texture_px)
+			if texture != null: _textures[icon+":"+variant] = texture
+
+## Each mode's cell on the fan, fanning out from the first.
+func _mode_cells() -> Array[Rect2]:
+	var tag := _tag_rect()
+	var cells: Array[Rect2] = []
+	var out := Linen.eased(fan)
+	for k in range(modes.size()):
+		var at := tag.position+Vector2(MODE_PAD+MODE_CELL*k*out,MODE_PAD)*ui_scale
+		cells.append(Rect2(at.round(),Vector2.ONE*roundf(MODE_CELL*ui_scale)))
+	return cells
 
 func _draw() -> void:
 	var line := maxf(1.0,roundf(ui_scale))
@@ -249,9 +322,22 @@ func _draw() -> void:
 			Linen.dashed_circle(self,centre,r,Linen.PIP_STITCH,line,ui_scale)
 		else:
 			Linen.dashed_circle(self,centre,r,Linen.PIP_REST,line,ui_scale)
-	# The held tool's name, on its strip of cloth.
+	# The held tool's name, on its strip of cloth; the Sculpt's modes fanned
+	# out in its place, the one in hand pressed in, shown at rest too.
 	var tag := _tag_rect()
-	if tag.size.x > 0.0 and awake > 0.0:
+	if tag.size.x > 0.0 and _modes_shown():
+		var cells := _mode_cells()
+		var out := Linen.eased(fan)
+		# Drawn last first, so the fan's folded cells sit under the first.
+		for k in range(modes.size()-1,-1,-1):
+			var id: String = modes[k]
+			var cell: Rect2 = cells[k]
+			var on := id == mode
+			if on: Linen.pressed_patch(self,cell.grow(-2.0*ui_scale),ui_scale,Linen.PRESSED,Linen.PRESSED_SHADE)
+			elif id == hovered_mode: Linen.pressed_patch(self,cell.grow(-2.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
+			var alpha := 1.0 if k == 0 else out
+			Linen.icon(self,_textures,_mode_icon(id),cell.get_center(),MODE_ICON*ui_scale,ui_scale,"lit" if on else "icon",1.0 if on else 1.5,Color(1.0,1.0,1.0,alpha))
+	elif tag.size.x > 0.0 and awake > 0.0:
 		var text := str(Icons.item(tool).get("label",""))
 		var width := Linen.tag_width(_font,text,ui_scale)
 		var x := tag.position.x+TAG_PAD.x*ui_scale+width*0.5

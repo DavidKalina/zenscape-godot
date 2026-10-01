@@ -248,6 +248,14 @@ func _process(delta: float) -> void:
 			"paddle": _target[SWEEP] = pace
 			"chisel": _target[SCRAPE] = pace
 		if clay.last_plate != null: at = clay.ground_at(clay.last_plate)
+	elif state == clay.State.PAINT:
+		# The Sculpt works while held: the land stretching as it rises or
+		# sinks, a rub as it smooths. Its hills knock in as cues of their own.
+		match str(clay.verb):
+			"raise", "lower": _target[STRETCH] = 0.6
+			"smooth", "flatten": _target[RUB] = 0.6
+		if str(clay.verb) == "raise": _target[RUMBLE] = 0.3
+		if clay.last_plate != null: at = clay.ground_at(clay.last_plate)
 	elif state == clay.State.HOLD and tool != null:
 		var lift := float(tool.lift)
 		var rate := smoothstep(0.0,LIFT_RATE,absf(lift-_lift)/delta)

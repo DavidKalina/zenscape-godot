@@ -147,6 +147,10 @@ var _poke_idx := PackedInt32Array()
 var _poke_shape := PackedFloat32Array()
 var _poke_written := PackedFloat32Array()
 
+## The fan's modes (clay_tool `modes`): the pinch, the thumb's groove, the
+## palm (a drag pressed as Shift does) and the poke.
+const MODES := [{"id":"pinch","kind":"hold"},{"id":"groove","kind":"drag"},{"id":"palm","kind":"drag","fine":true},{"id":"poke","kind":"tap"}]
+func modes() -> Array: return MODES
 func id() -> String: return "hand"
 func hover_gesture() -> String: return "pinch"
 func gesture(verb: String) -> String: return "pinch" if verb in ["pinch","fine_pinch"] else "press"

@@ -144,6 +144,10 @@ var _ground := 0.0
 var _shown_lift := INF
 var _knock_t := -1.0
 
+## The fan's modes (clay_tool `modes`): the mesa (or pit), the shelf and
+## the notch.
+const MODES := [{"id":"mesa","kind":"hold"},{"id":"shelf","kind":"drag"},{"id":"notch","kind":"tap"}]
+func modes() -> Array: return MODES
 func id() -> String: return "chisel"
 ## The Chisel stands upright in the hand, as its cursor sketch does.
 func prop_tilt() -> float: return 0.0

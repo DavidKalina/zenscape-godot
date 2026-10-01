@@ -177,6 +177,28 @@ static func _build() -> void:
 	# boxwood modelling tool laid on the diagonal, its spatula down to the left.
 	var modeller := _modeller()
 	_add("hand","Modeller","Mould","#e0a07a",modeller[0],modeller[1],10,1.0,1.2)
+	# The Sculpt, "Shape": a trowel on the diagonal, its kite blade's point
+	# down to the left, the handle up to the right.
+	_add("sculpt","Sculpt","Shape","#9fb0a0",["M3 21 L5.4 12.4 L11.6 9.4 L14.6 12.4 L11.6 18.6Z","M16.2 9.6 L20.6 5.2 Q21.7 4.1 20.8 3.2 Q19.9 2.3 18.8 3.4 L14.4 7.8Z"],["M13.1 10.9 L15.3 8.7","M4.6 19.4 L10.7 13.3"],24,1.0,1.4)
+	# The Sculpt's modes, fanned out beside its pocket (scripts/tool_roll.gd
+	# SCULPT_MODES): the ground in profile, as each leaves it.
+	_add("sculpt_raise","Raise","Sculpt","#8fae78",["M2 21 Q6.5 21 8.6 15.4 Q12 7.6 15.4 15.4 Q17.5 21 22 21 V22.5 H2Z"],["M12 1.8 V7.4","M9.6 4.2 L12 1.8 L14.4 4.2"],25,1.0,1.6)
+	_add("sculpt_lower","Lower","Sculpt","#a08a68",["M2 13 Q6.5 13 8.6 17 Q12 22.6 15.4 17 Q17.5 13 22 13 V22.5 H2Z"],["M12 1.8 V9","M9.6 6.6 L12 9 L14.4 6.6"],26,1.0,1.6)
+	_add("sculpt_hills","Hills","Sculpt","#7fa86a",["M2 22.5 V17.6 Q4.8 11.6 8.4 15.6 Q11.8 6.8 16 14.2 Q19 10.4 22 15.6 V22.5Z"],[],27,1.0,1.6)
+	_add("sculpt_smooth","Smooth","Sculpt","#9aa88a",["M2 15.4 Q12 14.2 22 15.4 V22.5 H2Z"],["M3 8.4 Q6 5.4 9 8.4 Q12 11.4 15 8.4 Q18 5.4 21 8.4"],28,1.0,1.6)
+	# The other tools' modes, fanned out the same way, each in its tool's tint.
+	_add("hand_pinch","Pinch","Modeller","#e0a07a",["M2 21 Q7.6 20.4 9.6 14.6 L12 4.6 L14.4 14.6 Q16.4 20.4 22 21 V22.5 H2Z"],["M7.6 4 L9.8 6.4","M16.4 4 L14.2 6.4"],29,1.0,1.5)
+	_add("hand_groove","Groove","Modeller","#e0a07a",["M2 12.4 H5.6 Q7.2 11 8.6 12.4 Q12 21.4 15.4 12.4 Q16.8 11 18.4 12.4 H22 V22.5 H2Z"],[],30,1.0,1.5)
+	_add("hand_palm","Palm","Modeller","#e0a07a",["M2 12.4 H5 Q6.6 17.4 9 17.4 H15 Q17.4 17.4 19 12.4 H22 V22.5 H2Z"],["M7 9.2 H17","M9.6 4.4 V9.2 M14.4 4.4 V9.2"],31,1.0,1.5)
+	_add("hand_poke","Poke","Modeller","#e0a07a",["M2 14.4 H9.6 Q12 17.6 14.4 14.4 H22 V22.5 H2Z"],["M12 2.6 V10.4","M9.8 8.2 L12 10.4 L14.2 8.2"],32,1.0,1.5)
+	_add("paddle_swell","Swell","Paddle","#c49a5e",["M2 20.6 Q12 6.4 22 20.6 V22.5 H2Z"],["M12 1.6 V6.8","M9.8 3.8 L12 1.6 L14.2 3.8"],33,1.0,1.5)
+	_add("paddle_sweep","Sweep","Paddle","#c49a5e",["M2 14.6 Q3.8 14.6 5.2 12.2 Q6.8 10.4 8.4 13 Q12 19.6 15.6 13 Q17.2 10.4 18.8 12.2 Q20.2 14.6 22 14.6 V22.5 H2Z"],[],34,1.0,1.5)
+	_add("paddle_pat","Pat","Paddle","#c49a5e",["M2 15.4 H22 V22.5 H2Z","M4.6 9 H19.4 V11.6 H4.6Z"],["M12 2.4 V9"],35,1.0,1.5)
+	_add("chisel_mesa","Mesa","Chisel","#6f8aa6",["M2 19.4 H6.2 L7.2 8.4 H16.8 L17.8 19.4 H22 V22.5 H2Z"],[],36,1.0,1.5)
+	_add("chisel_shelf","Shelf","Chisel","#6f8aa6",["M2 8.4 H11.4 L12.2 15.4 H22 V22.5 H2Z"],[],37,1.0,1.5)
+	_add("chisel_notch","Notch","Chisel","#6f8aa6",["M2 12.4 H8.6 V17.4 H15.4 V12.4 H22 V22.5 H2Z"],[],38,1.0,1.5)
+	_add("wire_gorge","Gorge","Wire","#b8683f",["M2 10.4 H7.6 L8.6 19.4 H15.4 L16.4 10.4 H22 V22.5 H2Z"],[],39,1.0,1.5)
+	_add("wire_slice","Slice","Wire","#b8683f",["M2 21 Q5.8 20.4 7.6 15.6 L8.8 12.4 H15.2 L16.4 15.6 Q18.2 20.4 22 21 V22.5 H2Z"],["M3.4 9.4 H20.6"],46,1.0,1.4)
 	_add("paddle","Paddle","Mass","#c49a5e",["M5.5 12 Q5.5 9.5 8 9.5 H16 Q18.5 9.5 18.5 12 V19 Q18.5 22 15.5 22 H8.5 Q5.5 22 5.5 19Z","M10.7 9.6 V2.9 A1.3 1.3 0 0 1 13.3 2.9 V9.6Z"],["M9 13 V19 M15 13 V19","M10.9 5.6 H13.1"],11)
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)

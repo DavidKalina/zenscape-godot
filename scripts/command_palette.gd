@@ -97,6 +97,7 @@ const SEEDS := [
 ]
 const TOOLS := [
 	["hand","Modeller","Mould","Push and pull soft ground into shape."],
+	["sculpt","Sculpt","Shape","Paint the land: raise, lower, hills or smooth. Q and E change it."],
 	["paddle","Paddle","Mass","Raise or flatten broad ground."],
 	["chisel","Chisel","Cut","Crisp rock: faces, cliffs, terraces."],
 	["wire","Wire","Slice","Cuts one straight gorge."],

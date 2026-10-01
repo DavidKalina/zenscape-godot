@@ -6,7 +6,9 @@ extends Node
 ## (docs/design/materials-tray/HUD-4c.md). One thing is in hand across both:
 ## the bare Hand, or one material. The roll's pips (or 1, 2, 3, [ and ]) size
 ## it: the clay's reach, or a scatter's spread. Esc, the Hand or the material
-## again puts a material down. A built shaping tool in the roll is taken by
+## again puts a material down. With a tool that has modes in hand (the
+## Modeller, the Sculpt, the Paddle, the Chisel, the Wire), its fan in the roll
+## (or Q and E) says what its press does. A built shaping tool in the roll is taken by
 ## pressing it (scripts/land_clay.gd `set_tool`, docs/design/tools/PLAN.md);
 ## Esc or the Hand puts it back, and taking a material does too. Press a material and
 ## some is in hand: no hand holds it (docs/design/tools/PLAN.md "The hand at
@@ -190,6 +192,8 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	layer.add_child(tray)
 	roll = Roll.new()
 	layer.add_child(roll)
+	# The Modeller is in hand from the start: its fan, once the clay is made.
+	_show_modes.call_deferred(roll.tool)
 	foot = Foot.new()
 	foot.setup(roll,self)
 	layer.add_child(foot)
@@ -236,8 +240,9 @@ func set_size(level: int) -> void:
 	var clay: Node = scene.get("land_clay")
 	if clay != null: clay.size_scale = roll.size_scale()
 
-## Keys for the hand's HUD: 1, 2, 3 or [ and ] size what is in hand; Esc puts
-## a material down (back to the bare Hand). True when the key was used.
+## Keys for the hand's HUD: 1, 2, 3 or [ and ] size what is in hand; Q and E
+## step the mode of the tool in hand; Esc puts a material down (back to the
+## bare Hand). True when the key was used.
 func key(event: InputEventKey) -> bool:
 	if not event.pressed or event.echo or roll == null or roll.shown < 0.5: return false
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
@@ -245,6 +250,11 @@ func key(event: InputEventKey) -> bool:
 		KEY_1, KEY_2, KEY_3: set_size(event.keycode-KEY_1)
 		KEY_BRACKETLEFT: set_size(roll.size_level-1)
 		KEY_BRACKETRIGHT: set_size(roll.size_level+1)
+		KEY_Q, KEY_E:
+			var clay: Node = scene.get("land_clay")
+			if clay == null or not held.is_empty() or roll.modes.is_empty() or clay.tool_id != roll.tool: return false
+			clay.tool.step_mode(-1 if event.keycode == KEY_Q else 1)
+			set_mode(clay.tool.mode)
 		KEY_ESCAPE:
 			if not held.is_empty(): put_back()
 			elif roll.tool != "hand": select_tool("hand")
@@ -269,6 +279,10 @@ func press(point: Vector2) -> bool:
 	var pip: int = roll.pip_at(point)
 	if pip >= 0:
 		set_size(pip)
+		return true
+	var mode: String = roll.mode_at(point)
+	if not mode.is_empty():
+		set_mode(mode)
 		return true
 	var tool: String = roll.tool_at(point)
 	if not tool.is_empty():
@@ -328,6 +342,22 @@ func select_tool(id: String, quiet := false) -> void:
 	if clay != null and not clay.set_tool(id): return
 	if roll.tool != id and not quiet: ClaySound.cue(&"ui_pick")
 	roll.tool = id
+	_show_modes(id)
+
+## The roll's fan for the tool `id`: its modes, and the one in hand.
+func _show_modes(id: String) -> void:
+	var clay: Node = scene.get("land_clay")
+	var made: RefCounted = clay.tool_of(id) if clay != null else null
+	var ids: Array = made.modes().map(func(spec: Dictionary) -> String: return spec.id) if made != null else []
+	roll.set_modes(ids,made.mode if made != null else "")
+
+## The mode of the tool in hand (scripts/clay_tools/clay_tool.gd `modes`), in
+## the tool and on the roll's fan.
+func set_mode(mode: String) -> void:
+	var clay: Node = scene.get("land_clay")
+	if clay != null and clay.tool_id == roll.tool: clay.tool.mode = mode
+	if roll.mode != mode: ClaySound.cue(&"ui_size")
+	roll.mode = mode
 
 # --- The Feather ------------------------------------------------------------------
 

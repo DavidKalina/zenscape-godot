@@ -113,6 +113,9 @@ var _clock := 0.0
 var _seconds := 0.0
 var _running := false
 
+## The fan's modes (clay_tool `modes`): the gorge and the slice.
+const MODES := [{"id":"gorge","kind":"drag"},{"id":"slice","kind":"hold"}]
+func modes() -> Array: return MODES
 func id() -> String: return "wire"
 func stroke_radius() -> float: return (BED_HALF+WALL_RUN)*clay.size_scale
 

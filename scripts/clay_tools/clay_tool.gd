@@ -40,9 +40,36 @@ extends RefCounted
 var clay: Node
 ## The hold's lift in metres, as last shown (the clay reads it as `lift`).
 var lift := 0.0
+## The mode in hand (an id of `modes`), or "" for a tool with none.
+var mode := ""
 
 ## The tool's id: its pocket in the tool roll.
 func id() -> String: return ""
+
+## The tool's modes, fanned out beside its pocket in the tool roll (each
+## drawn as scripts/hud_icons.gd "<tool id>_<mode id>"), the first taken
+## when the tool is made. Each is {"id", "kind", "fine"?}: the kind is the
+## gesture every press makes while it is in hand ("tap", "drag", "hold", or
+## "paint" for a tool that `paints`), so the press does that verb at once
+## instead of the clay reading it from the press's shape and timing; "fine"
+## true presses as Shift does. Empty for a tool with one verb, which keeps
+## the gesture grammar.
+func modes() -> Array: return []
+
+## The mode in hand's entry in `modes`, or {} for none.
+func mode_spec() -> Dictionary:
+	for spec: Dictionary in modes():
+		if spec.id == mode: return spec
+	return {}
+
+## Take the next or previous mode (Q and E).
+func step_mode(by: int) -> void:
+	var all := modes()
+	if all.is_empty(): return
+	var at := 0
+	for k in range(all.size()):
+		if all[k].id == mode: at = k
+	mode = all[posmod(at+by,all.size())].id
 
 ## The God Hand's gesture (a key of scripts/god_hand.gd GESTURES) while the
 ## hand hovers the land holding this tool, and while `verb` works it.
@@ -142,6 +169,35 @@ func hold_end() -> void: pass
 
 ## A tap: let go within HOLD_SECONDS, moved under MOVE_PIXELS.
 func tap(_fine: bool) -> void: pass
+
+# --- Paint --------------------------------------------------------------------------
+## A tool that paints skips the tap/drag/hold grammar: a press opens its
+## undo step at once and the tool works the land every frame the button is
+## down, at the pointer, whether it holds still or moves (the Sculpt's
+## modes). Its order of calls: `paint_begin(fine)`; each frame
+## `paint_frame(heights, delta, false)` and then a `paint_dab(heights, q, work)`
+## at the pointer, or for every point DAB_SPACING apart along its path when it
+## moved, sharing that frame's `work` seconds; at release (or when cut short)
+## a last `paint_frame(heights, 0, true)`, with any dabs a tap is owed, then
+## `paint_end(tapped)`; the clay closes the undo step.
+
+## True when this tool paints.
+func paints() -> bool: return false
+
+## The paint is pressed; `fine` is Shift. Returns the verb's name.
+func paint_begin(_fine: bool) -> String: return "paint"
+
+## Each frame of the paint, before its dabs (`ending` at release: finish what
+## is still growing). True when it wrote `heights`.
+func paint_frame(_heights: PackedFloat32Array, _delta: float, _ending: bool) -> bool: return false
+
+## `work` seconds of the paint at plate point `q`. Returns the reach round
+## `q` the dab may have taken the ground down, for the dirt, or 0.
+func paint_dab(_heights: PackedFloat32Array, _q: Vector2, _work: float) -> float: return 0.0
+
+## Let go: `tapped` when it was a quick press that never moved. Rock paint
+## and trees sliding off go here, as a hold's do.
+func paint_end(_tapped: bool) -> void: pass
 
 # --- Running on ---------------------------------------------------------------------
 
