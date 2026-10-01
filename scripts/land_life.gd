@@ -1153,7 +1153,7 @@ func summon(kind: String) -> String:
 	match kind:
 		"snake":
 			if snakes.showing() != "": return "A snake is already out"
-			return "" if snakes.force() else "A snake needs a pond to come to"
+			return "" if snakes.force() else "A snake needs a pond to come to: pour some water first"
 		"heron":
 			if str(moments.showing().heron) != "": return "The heron is already here"
 			return "" if moments.force("heron") else "A heron needs shallow water"
@@ -1178,21 +1178,20 @@ func summon(kind: String) -> String:
 		_:
 			return "" if moments.force(kind) else "Not now"
 
-## Stand-in forest edges for open ground (`summon`): points on the land a
-## ring out from where the camera looks, each with its "wood" behind it, away
-## from the camera, so whatever steps out walks toward the view.
+## Stand-in forest edges for open ground (`summon`): a grid over the plate's
+## middle (inside the 12.8 m Bigfoot keeps to, with room to walk in and out),
+## each with its "wood" behind it, away from the camera, so whatever steps
+## out walks toward the view. The callers pick the best of them as ever.
 func _open_edges() -> Array:
 	var eye := to_local(scene.camera.global_position)
-	var look := to_local(scene.camera.global_position-scene.camera.global_basis.z*20.0)
-	var centre := Vector2(look.x,look.z)
 	var edges := []
-	for ring: float in [6.0,10.0,14.0]:
-		for k in range(12):
-			var p := centre+Vector2.from_angle(TAU*k/12.0)*ring
+	for i in range(-4,5):
+		for j in range(-4,5):
+			var p := Vector2(i,j)*2.0
 			if data.ground_height(p) == null: continue
 			var into := (p-Vector2(eye.x,eye.z)).normalized()
 			edges.append({"p":p,"into":into,"trees":99})
-	if edges.is_empty(): edges.append({"p":centre,"into":(centre-Vector2(eye.x,eye.z)).normalized(),"trees":99})
+	if edges.is_empty(): edges.append({"p":Vector2.ZERO,"into":(-Vector2(eye.x,eye.z)).normalized(),"trees":99})
 	return edges
 
 static func _forced_kinds() -> PackedStringArray:
