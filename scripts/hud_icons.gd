@@ -179,6 +179,33 @@ static func _build() -> void:
 	# boxwood modelling tool laid on the diagonal, its spatula down to the left.
 	var modeller := _modeller()
 	_add("hand","Modeller","Mould","#e0a07a",modeller[0],modeller[1],10,1.0,1.2)
+	# The Sculpt, "Shape": a trowel on the diagonal, its kite blade's point
+	# down to the left, the handle up to the right.
+	_add("sculpt","Sculpt","Shape","#9fb0a0",["M3 21 L5.4 12.4 L11.6 9.4 L14.6 12.4 L11.6 18.6Z","M16.2 9.6 L20.6 5.2 Q21.7 4.1 20.8 3.2 Q19.9 2.3 18.8 3.4 L14.4 7.8Z"],["M13.1 10.9 L15.3 8.7","M4.6 19.4 L10.7 13.3"],24,1.0,1.4)
+	# The drag tools: the Hills (two rolling hills), the Mountain (a peak with a
+	# snow cap) and the Bowl (a basin in profile).
+	_add("hills","Hills","Roll","#8fae78",["M2 22.5 V16.6 Q5.6 8.4 10 13.8 Q14.6 5.6 19.4 12.6 Q21 14.6 22 16 V22.5Z"],["M4.4 20 Q8 18.4 11.6 20"],47,1.0,1.3)
+	_add("mountain","Mountain","Peak","#9a948c",["M1.6 22.5 L9.2 9.4 L11.6 11.8 L14.4 4.2 L22.4 22.5Z"],["M12.2 9.6 L14.4 4.2 L16.6 9.8"],48,1.0,1.6)
+	_add("bowl","Bowl","Hollow","#a08a68",["M2 9.4 H5.2 Q7 17.6 12 17.6 Q17 17.6 18.8 9.4 H22 V22.5 H2Z"],["M8 14.4 Q12 15.6 16 14.4"],49,1.0,1.4)
+	# The Sculpt's modes, fanned out beside its pocket (scripts/tool_roll.gd
+	# SCULPT_MODES): the ground in profile, as each leaves it.
+	_add("sculpt_raise","Raise","Sculpt","#8fae78",["M2 21 Q6.5 21 8.6 15.4 Q12 7.6 15.4 15.4 Q17.5 21 22 21 V22.5 H2Z"],["M12 1.8 V7.4","M9.6 4.2 L12 1.8 L14.4 4.2"],25,1.0,1.6)
+	_add("sculpt_lower","Lower","Sculpt","#a08a68",["M2 13 Q6.5 13 8.6 17 Q12 22.6 15.4 17 Q17.5 13 22 13 V22.5 H2Z"],["M12 1.8 V9","M9.6 6.6 L12 9 L14.4 6.6"],26,1.0,1.6)
+	_add("sculpt_hills","Hills","Sculpt","#7fa86a",["M2 22.5 V17.6 Q4.8 11.6 8.4 15.6 Q11.8 6.8 16 14.2 Q19 10.4 22 15.6 V22.5Z"],[],27,1.0,1.6)
+	_add("sculpt_smooth","Smooth","Sculpt","#9aa88a",["M2 15.4 Q12 14.2 22 15.4 V22.5 H2Z"],["M3 8.4 Q6 5.4 9 8.4 Q12 11.4 15 8.4 Q18 5.4 21 8.4"],28,1.0,1.6)
+	# The other tools' modes, fanned out the same way, each in its tool's tint.
+	_add("hand_pinch","Pinch","Modeller","#e0a07a",["M2 21 Q7.6 20.4 9.6 14.6 L12 4.6 L14.4 14.6 Q16.4 20.4 22 21 V22.5 H2Z"],["M7.6 4 L9.8 6.4","M16.4 4 L14.2 6.4"],29,1.0,1.5)
+	_add("hand_groove","Groove","Modeller","#e0a07a",["M2 12.4 H5.6 Q7.2 11 8.6 12.4 Q12 21.4 15.4 12.4 Q16.8 11 18.4 12.4 H22 V22.5 H2Z"],[],30,1.0,1.5)
+	_add("hand_palm","Palm","Modeller","#e0a07a",["M2 12.4 H5 Q6.6 17.4 9 17.4 H15 Q17.4 17.4 19 12.4 H22 V22.5 H2Z"],["M7 9.2 H17","M9.6 4.4 V9.2 M14.4 4.4 V9.2"],31,1.0,1.5)
+	_add("hand_poke","Poke","Modeller","#e0a07a",["M2 14.4 H9.6 Q12 17.6 14.4 14.4 H22 V22.5 H2Z"],["M12 2.6 V10.4","M9.8 8.2 L12 10.4 L14.2 8.2"],32,1.0,1.5)
+	_add("paddle_swell","Swell","Paddle","#c49a5e",["M2 20.6 Q12 6.4 22 20.6 V22.5 H2Z"],["M12 1.6 V6.8","M9.8 3.8 L12 1.6 L14.2 3.8"],33,1.0,1.5)
+	_add("paddle_sweep","Sweep","Paddle","#c49a5e",["M2 14.6 Q3.8 14.6 5.2 12.2 Q6.8 10.4 8.4 13 Q12 19.6 15.6 13 Q17.2 10.4 18.8 12.2 Q20.2 14.6 22 14.6 V22.5 H2Z"],[],34,1.0,1.5)
+	_add("paddle_pat","Pat","Paddle","#c49a5e",["M2 15.4 H22 V22.5 H2Z","M4.6 9 H19.4 V11.6 H4.6Z"],["M12 2.4 V9"],35,1.0,1.5)
+	_add("chisel_mesa","Mesa","Chisel","#6f8aa6",["M2 19.4 H6.2 L7.2 8.4 H16.8 L17.8 19.4 H22 V22.5 H2Z"],[],36,1.0,1.5)
+	_add("chisel_shelf","Shelf","Chisel","#6f8aa6",["M2 8.4 H11.4 L12.2 15.4 H22 V22.5 H2Z"],[],37,1.0,1.5)
+	_add("chisel_notch","Notch","Chisel","#6f8aa6",["M2 12.4 H8.6 V17.4 H15.4 V12.4 H22 V22.5 H2Z"],[],38,1.0,1.5)
+	_add("wire_gorge","Gorge","Wire","#b8683f",["M2 10.4 H7.6 L8.6 19.4 H15.4 L16.4 10.4 H22 V22.5 H2Z"],[],39,1.0,1.5)
+	_add("wire_slice","Slice","Wire","#b8683f",["M2 21 Q5.8 20.4 7.6 15.6 L8.8 12.4 H15.2 L16.4 15.6 Q18.2 20.4 22 21 V22.5 H2Z"],["M3.4 9.4 H20.6"],46,1.0,1.4)
 	_add("paddle","Paddle","Mass","#c49a5e",["M5.5 12 Q5.5 9.5 8 9.5 H16 Q18.5 9.5 18.5 12 V19 Q18.5 22 15.5 22 H8.5 Q5.5 22 5.5 19Z","M10.7 9.6 V2.9 A1.3 1.3 0 0 1 13.3 2.9 V9.6Z"],["M9 13 V19 M15 13 V19","M10.9 5.6 H13.1"],11)
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
@@ -189,6 +216,14 @@ static func _build() -> void:
 	# The watering can, "Pour": water held in hand, under the Feather. A
 	# body, a spout rising to the right with its rose, a loop handle over it.
 	_add("can","Watering can","Pour","#8aa6a8",["M4 10 H14.5 V19.5 Q14.5 21 13 21 H5.5 Q4 21 4 19.5Z","M14 13.6 L20.4 7.4 L21.6 8.8 L14.5 16.2Z","M19.6 5.6 L22.8 8.8 L21.2 10.2 L18.2 7.2Z"],["M5.6 10 Q5.6 4.4 9.25 4.4 Q12.9 4.4 12.9 10","M4 12.4 H14.5"],16,1.0,1.5)
+	# The Brush, "Paint": a flat paint brush on the diagonal, its bristles
+	# down to the left; and its modes, the ground as each leaves it.
+	_add("brush","Brush","Paint","#b9a46a",["M2.6 21.4 L4 15 L9 10 L14 15 L9 20Z","M9 10 L11 8 L16 13 L14 15Z","M13.4 9.6 L19.6 3.4 Q20.8 2.2 21.7 3.1 Q22.6 4 21.4 5.2 L15.2 11.4Z"],["M4.6 18.6 L9.6 13.6"],50,1.0,1.3)
+	_add("brush_grass","Grass","Brush","#7fb069",["M2 16 H22 V22.5 H2Z","M4.6 16 L6 9.6 L7.6 16Z","M9.6 16 L12 6.4 L13.8 16Z","M16 16 L18.2 10.4 L19.4 16Z"],[],51,1.0,1.5)
+	_add("brush_rock","Rock","Brush","#8d8577",["M2 22.5 V17 L6 12 L10 13.4 L13.6 7.6 L18.4 11 L22 16.4 V22.5Z"],["M13.6 7.6 L12.4 14","M6 12 L7.6 17"],52,1.0,1.4)
+	_add("brush_earth","Earth","Brush","#9a7652",["M2 15.4 H22 V22.5 H2Z",_circle(7,12.4,1.7),_circle(13.2,11.6,2.1),_circle(18.2,12.8,1.4)],[],53,1.0,1.5)
+	_add("brush_colour","Colour","Brush","#b06f4a",["M12 3 C18.6 3 22 7.4 22 11.8 C22 15.4 19.6 16.4 17.6 16 C15.6 15.6 14.6 16.8 15.4 18.4 C16.2 20 15.4 21.4 12.6 21.4 C6.6 21.4 2 17.4 2 12 C2 6.8 6.6 3 12 3Z"],[_circle(7.4,10.6,1.6),_circle(11.6,7.2,1.6),_circle(16.4,8.6,1.6),_circle(7.6,15.6,1.6)],55,1.0,1.3)
+	_add("brush_wipe","Wipe","Brush","#c8bfa6",["M2 16 H22 V22.5 H2Z"],["M4 10.4 Q12 3.6 20 10.4","M16.8 7.4 L20 10.4 L15.8 11.4"],54,1.0,1.5)
 	# --- HUD 5 foot icons (docs/design/hud-5/lowpoly.js ROLL_FOOT; the tool
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)

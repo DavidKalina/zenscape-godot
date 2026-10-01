@@ -97,12 +97,16 @@ const SEEDS := [
 ]
 const TOOLS := [
 	["hand","Modeller","Mould","Push and pull soft ground into shape."],
+	["hills","Hills","Roll","Drag across the land to raise rolling hills."],
+	["mountain","Mountain","Peak","Press and drag up to pull a mountain."],
+	["bowl","Bowl","Hollow","Drag to press out a basin a pond can fill."],
 	["paddle","Paddle","Mass","Raise or flatten broad ground."],
 	["chisel","Chisel","Cut","Crisp rock: faces, cliffs, terraces."],
 	["wire","Wire","Slice","Cuts one straight gorge."],
 	["hammer","Hammer","Break","Cracks rock and sheds scree."],
 	["feather","Feather","Gust","Wind in hand."],
 	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
+	["brush","Brush","Paint","Paints grass, rock, bare earth or any colour onto the ground. Shift wipes."],
 ]
 const ELEMENTS := [
 	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],

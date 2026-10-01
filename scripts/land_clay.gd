@@ -19,6 +19,16 @@ extends Node
 ## - **Hold still** for HOLD_SECONDS, then drag: the tool's hold, following the
 ##   pointer's travel up or down the screen in metres standing at the spot.
 ##   The Modeller's is the pinch.
+## - **Paint:** a tool that paints (its `paints`, the Sculpt) skips all of
+##   that: it works from the press to the release, at the pointer, held still
+##   or dragged, each frame's dabs along the path sharing that frame's time
+##   (`_paint_step`). A quick click is worked for TAP_WORK.
+##
+## A tool with modes (its `modes`, picked on the tool roll's fan) skips the
+## reading too: its mode in hand says the gesture (`_kind`), so a press is
+## that verb at once: a drag mode's stroke opens at the press, a hold mode's
+## hold closes at the press (drag up or down straight away), and a tap mode's
+## press is a tap however it moves or however long it is held.
 ##
 ## Everything the tools share is here: each drag or hold is one undo step
 ## (opened when the verb is decided, closed at release, or once a drag the
@@ -63,6 +73,10 @@ const SPEED_WINDOW := 0.25
 ## Dabs along the path, metres apart, and at most this many a frame.
 const DAB_SPACING := 0.3
 const MAX_DABS := 64
+## A painting tool's quick press (let go within HOLD_SECONDS, moved under
+## MOVE_PIXELS) is worked for at least TAP_WORK seconds at the spot, so a
+## click leaves a mark.
+const TAP_WORK := 0.35
 ## Dirt: where a stroke takes the ground down, the painted grass has caved in
 ## and what lies under it shows. The tint layer's weight rises from nothing at
 ## DIRT_FROM metres dug to full at DIRT_FULL, and its colour is the stratum
@@ -144,8 +158,9 @@ const CursorMotion = preload("res://scripts/cursor_motion.gd")
 const GodHand = preload("res://scripts/god_hand.gd")
 
 ## RUN: a drag let go whose tool still works it (its `drag_running`);
-## its stroke stays open until the tool is done.
-enum State { IDLE, PENDING, DRAG, HOLD, RUN }
+## its stroke stays open until the tool is done. PAINT: a tool that paints
+## (its `paints`) working from the press to the release.
+enum State { IDLE, PENDING, DRAG, HOLD, RUN, PAINT }
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -233,6 +248,9 @@ var _prop_motion := CursorMotion.new()
 var _prop_depth := 0.0
 ## Where the verb in hand works (plate), set with its gesture, or null.
 var _work_at: Variant = null
+## The gesture the tool's mode says this press is ("tap", "drag", "hold",
+## "paint"), or "" for the press's shape and timing to say.
+var _kind := ""
 
 static func enabled() -> bool:
 	return preload("res://scripts/modeless_input.gd").enabled()
@@ -289,6 +307,7 @@ func _make(id: String) -> ClayTool:
 	if not has_tool(id): return null
 	var made: ClayTool = load(TOOL_PATH % id).new()
 	made.clay = self
+	if made.mode.is_empty() and not made.modes().is_empty(): made.mode = made.modes()[0].id
 	_tools[id] = made
 	return made
 
@@ -319,7 +338,14 @@ func press(screen_pos: Vector2) -> bool:
 	refreshes = 0
 	dabs = 0
 	tool.reset()
+	_kind = tool.press_kind()
+	if tool.paints():
+		_begin_paint()
+		return true
 	state = State.PENDING
+	match _kind:
+		"drag": _begin_drag()
+		"hold": _begin_hold()
 	return true
 
 ## The pointer moved to `screen_pos`.
@@ -328,11 +354,11 @@ func pull(screen_pos: Vector2, _relative := Vector2.ZERO) -> void:
 	_moved += screen_pos.distance_to(_pointer)
 	_pointer = screen_pos
 	travel = maxf(travel,screen_pos.distance_to(_press))
-	if state == State.PENDING and travel >= MOVE_PIXELS: _begin_drag()
-	if state == State.DRAG:
+	if state == State.PENDING and travel >= MOVE_PIXELS and _kind != "tap": _begin_drag()
+	if state == State.DRAG or state == State.PAINT:
 		var hit: Variant = _pick_base(screen_pos)
 		if hit != null: _queued.append(Vector2(hit.x,hit.z))
-		else: tool.drag_off()
+		elif state == State.DRAG: tool.drag_off()
 
 ## The button came up: a tap is the tool's, a drag or a hold is kept as it
 ## stands.
@@ -342,7 +368,7 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 	match state:
 		State.PENDING:
 			state = State.IDLE
-			tool.tap(_shift())
+			tool.tap(_fine())
 		State.DRAG:
 			_drag_step(0.0)
 			if tool.drag_end(): _drag_step(0.0)
@@ -353,6 +379,11 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 			_hold_step()
 			letting_go = false
 			tool.hold_end()
+			close_stroke()
+		State.PAINT:
+			var tapped := held < HOLD_SECONDS and travel < MOVE_PIXELS
+			_paint_step(0.0,maxf(TAP_WORK-held,0.0) if tapped else 0.0,true)
+			tool.paint_end(tapped)
 			close_stroke()
 
 ## End whatever is in hand at once (undo, a new press, a world change, a
@@ -367,6 +398,10 @@ func finish_now() -> void:
 		State.HOLD:
 			tool.hold_end()
 			close_stroke()
+		State.PAINT:
+			_paint_step(0.0,0.0,true)
+			tool.paint_end(false)
+			close_stroke()
 
 # --- Frame loop ------------------------------------------------------------------
 
@@ -377,10 +412,14 @@ func _process(delta: float) -> void:
 		State.PENDING:
 			held += delta
 			_track_speed(delta)
-			if held >= HOLD_SECONDS and travel < MOVE_PIXELS: _begin_hold()
+			if held >= HOLD_SECONDS and travel < MOVE_PIXELS and _kind != "tap": _begin_hold()
 		State.DRAG: _drag_step(delta)
 		State.HOLD: _hold_step()
 		State.RUN: if not tool.drag_running(): close_stroke()
+		State.PAINT:
+			held += delta
+			_track_speed(delta)
+			_paint_step(delta,delta)
 	_place_prop(delta)
 
 ## The drag's speed: path pixels over the last SPEED_WINDOW seconds.
@@ -403,13 +442,13 @@ func _begin_drag() -> void:
 	open_stroke()
 	_heading_from = center
 	heading = Vector2.ZERO
-	verb = tool.drag_begin(_shift())
+	verb = tool.drag_begin(_fine())
 	state = State.DRAG
 	hand_gesture(tool.gesture(verb),ground_at(center))
 
 func _begin_hold() -> void:
 	open_stroke()
-	verb = tool.hold_begin(_shift())
+	verb = tool.hold_begin(_fine())
 	var at := ground_at(center)
 	var camera: Camera3D = scene.camera
 	var terrain: Node3D = editor.terrain
@@ -420,6 +459,14 @@ func _begin_hold() -> void:
 	state = State.HOLD
 	pinch_closes += 1
 	hand_gesture(tool.gesture(verb),at,true)
+
+func _begin_paint() -> void:
+	open_stroke()
+	_heading_from = center
+	heading = Vector2.ZERO
+	verb = tool.paint_begin(_shift())
+	state = State.PAINT
+	_paint_step(0.0,0.0)
 
 ## Open the verb's one undo step on the ground as it now stands.
 func open_stroke() -> void:
@@ -488,6 +535,37 @@ func _drag_step(delta: float) -> void:
 	hand_gesture(tool.gesture(verb),at)
 	var god: Node = scene.get("god_hand") as Node
 	if god != null and not hand_set.is_empty(): god.reach_pace = tool.pace()
+
+## A painting tool's frame: `work` seconds of it shared by dabs along the
+## pointer's path since the last frame, or one at the pointer if it held
+## still. `ending` at release: the tool finishes what is still growing.
+func _paint_step(delta: float, work: float, ending := false) -> void:
+	var data := editor.data
+	var heights := data.heights
+	_dirt_rect = Rect2()
+	var wrote := tool.paint_frame(heights,delta,ending)
+	var path := PackedVector2Array()
+	for p in _queued:
+		var from: Vector2 = last_plate if last_plate != null else p
+		var count := clampi(ceili(from.distance_to(p)/DAB_SPACING),1,MAX_DABS)
+		if _heading_from.distance_to(p) >= HEADING_RUN:
+			heading = (p-_heading_from).normalized()
+			_heading_from = p
+		for j in range(1,count+1): path.append(from.lerp(p,float(j)/count))
+		last_plate = p
+	_queued = PackedVector2Array()
+	if path.is_empty() and work > 0.0: path.append(last_plate)
+	for q in path:
+		var reach := tool.paint_dab(heights,q,work/path.size())
+		if reach > 0.0: dirty(q,reach)
+		dabs += 1
+	if not wrote and path.is_empty(): return
+	data.heights = heights
+	_dirt()
+	show_land()
+	var at := ground_at(last_plate)
+	editor._emit_stroke(1,at,tool.stroke_radius(),delta)
+	hand_gesture(tool.gesture(verb),at)
 
 ## A hold follows the pointer: its travel up the screen in metres standing at
 ## the spot.
@@ -804,6 +882,10 @@ func _bare() -> void:
 
 func _shift() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
+
+## Shift, or a mode that presses as Shift does (the Modeller's palm).
+func _fine() -> bool:
+	return _shift() or bool(tool.mode_spec().get("fine",false))
 
 ## The pointer on the ground as it stood when the stroke began: picked on the
 ## live ground, a groove deepening ahead of the pointer would draw the line

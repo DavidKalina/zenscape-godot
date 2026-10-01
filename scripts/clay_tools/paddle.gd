@@ -85,6 +85,9 @@ var _swept := PackedByteArray()
 var _shown_lift := INF
 var _pat_t := -1.0
 
+## The fan's modes (clay_tool `modes`): the swell, the sweep and the pat.
+const MODES := [{"id":"swell","kind":"hold"},{"id":"sweep","kind":"drag"},{"id":"pat","kind":"tap"}]
+func modes() -> Array: return MODES
 func id() -> String: return "paddle"
 func prop_tilt() -> float: return TILT
 func dirt_share(verb: String) -> float: return SWEEP_DIRT if verb.ends_with("sweep") else 1.0
