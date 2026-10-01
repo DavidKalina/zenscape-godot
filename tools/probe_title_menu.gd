@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless probe of the title (studies/cozy_worlds.gd `_run_title`): the main
 ## scene, loaded as the current scene, opens on a generated world under the
-## title menu with no world open; "Create a new world" closes the menu and
+## title menu with no world open; "Begin on a quiet plain" closes the menu and
 ## opens the Genesis plain.
 var failures: Array[String] = []
 
@@ -23,7 +23,7 @@ func _run() -> void:
 	_check(scene.places == null, "the place is not loaded yet")
 	_check(scene.title_recipe.has("family"), "a showcase world was chosen", scene.title_recipe.get("family",""))
 	var shown: Array = scene._menu.buttons.filter(func(button: Button) -> bool: return button.visible).map(func(button: Button) -> String: return button.text)
-	_check(shown.size() >= 3 and "Create a new world" in shown and "Quit" in shown, "the menu offers a new world", shown)
+	_check(shown.size() >= 3 and "Begin on a quiet plain" in shown and "Quit" in shown, "the menu offers a new world", shown)
 	_check(not ("Fidelity world" in shown or "Open diorama…" in shown or "Save a copy…" in shown), "the legacy entries are hidden", shown)
 	var fresh: Button = scene._menu.buttons[2]
 	fresh.pressed.emit()

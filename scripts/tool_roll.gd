@@ -20,6 +20,12 @@ extends Control
 ## shown at rest so the mode can be read while working. The hand sets `modes`
 ## and `mode` when it takes a tool.
 ##
+## The tools that tend rather than shape (TOP: the Feather, the can, the
+## Brush) sit on a second, short strip of the same linen along the top edge,
+## so the roll stays short enough for the screen. It is the same roll: one
+## tool in hand across both, and a top tool's fan drops down under the strip
+## rather than out to the side. Each piece rests and wakes on its own reach.
+##
 ## It only draws; the hand (scripts/hand_materials.gd) reads `tool_at`,
 ## `pip_at`, `mode_at` and `contains_pointer` and takes the presses. It rests receded
 ## (REST_OPACITY, tucked REST_TUCK) and comes out as the pointer nears the
@@ -28,13 +34,14 @@ extends Control
 const Linen = preload("res://scripts/hud_linen.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
-## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind, the
-## watering can ("Pour") water and the Brush ("Paint") colour, not clay: they
-## sit under the shaping tools after a divider (DIVIDER_BEFORE).
+## Every tool. The Feather (HUD 5, "Gust") holds wind, the watering can
+## ("Pour") water and the Brush ("Paint") colour, not clay: they are TOP, on
+## the strip along the top edge, left to right; the rest go down the roll.
 const TOOLS := ["hand","hills","mountain","bowl","paddle","chisel","wire","hammer","feather","can","brush"]
-## Indices in TOOLS that a stitched divider sits above (lowpoly.js
-## TOOL_DIVIDER_BEFORE): the Feather, set apart from the tools that shape.
-const DIVIDER_BEFORE := [8]
+const TOP := ["feather","can","brush"]
+## Places on the roll (not indices in TOOLS) that a stitched divider sits
+## above (lowpoly.js TOOL_DIVIDER_BEFORE); none since the Feather went up top.
+const DIVIDER_BEFORE := []
 ## The fan beside a tool with modes: a cell (design pixels) and icon each,
 ## the fan's padding, and the seconds it takes to fan out.
 const MODE_CELL := 46.0
@@ -66,6 +73,12 @@ const TAG_PAD := Vector4(12.0,6.0,10.0,7.0)
 const REST_TUCK := 6.0
 ## Within NEAR of the left edge it is reached for.
 const NEAR := 180.0
+## The top strip: its inset from the top edge, and within NEAR_TOP of the top
+## edge it is reached for. At rest it tucks REST_TUCK up. Its fan or tag hangs
+## HANG under the strip.
+const TOP_INSET := 18.0
+const NEAR_TOP := 120.0
+const HANG := 6.0
 ## The pocket: its height, inset in the slot, bottom radius; the icon sits
 ## LIFT higher so it reads as tucked in.
 const POCKET_H := 22.0
@@ -78,6 +91,8 @@ const NOT_YET := 0.45
 var ui_scale := 1.0
 var shown := 0.0
 var awake := 0.0
+## How far the top strip is reached for, as `awake` is the roll's.
+var awake_top := 0.0
 ## The tool in hand, and whether a material is held instead (then no tool is
 ## pressed and the Modeller's pocket shows the put-down cue).
 var tool := "hand"
@@ -103,6 +118,12 @@ var quiet := false
 var pointer_override: Variant = null
 var _want_shown := false
 var _away := 0.0
+var _away_top := 0.0
+## The tools down the roll (TOOLS less TOP), and the top strip's layer, drawn
+## over the roll so it can rest and wake apart from it.
+var _side: Array = TOOLS.filter(func(id: String) -> bool: return not id in TOP)
+var _top_layer := Control.new()
+var _top_cloth: Linen.Cloth
 var _font: FontVariation
 var _textures := {}
 var _texture_px := 0.0
@@ -124,6 +145,13 @@ func _ready() -> void:
 	add_child(_tag_cloth)
 	_swatch_cloth = Linen.Cloth.new()
 	add_child(_swatch_cloth)
+	_top_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_top_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_top_layer.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(_top_layer)
+	_top_cloth = Linen.Cloth.new()
+	_top_layer.add_child(_top_cloth)
+	_top_layer.draw.connect(func() -> void: _paint(_top_layer,true))
 	for id: String in TOOLS: _states[id] = {"hover":0.0,"refuse":0.0}
 	modulate.a = 0.0
 	visible = false
@@ -172,14 +200,14 @@ func pip_at(point: Vector2) -> int:
 
 func contains_pointer(point: Vector2) -> bool:
 	if picker_open(): return true
-	return shown >= 0.5 and (_roll().grow(2.0*ui_scale).has_point(point) or (_modes_shown() and _tag_rect().has_point(point)) or (_swatches_shown() and _swatch_rect().has_point(point)))
+	return shown >= 0.5 and (_roll().grow(2.0*ui_scale).has_point(point) or _strip().grow(2.0*ui_scale).has_point(point) or (_modes_shown() and _tag_rect().has_point(point)) or (_swatches_shown() and _swatch_rect().has_point(point)))
 
 ## The roll's cloth, viewport pixels (the foot, scripts/tool_foot.gd, hangs under it).
 func rect() -> Rect2:
 	return _roll()
 
 func _height() -> float:
-	return PAD.y*2.0+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER*(1+DIVIDER_BEFORE.size())+PIPS_H
+	return PAD.y*2.0+Linen.SLOT*_side.size()+GAP*(_side.size()+1)+DIVIDER*(1+DIVIDER_BEFORE.size())+PIPS_H
 
 ## Design pixels of tool dividers above slot `i` (each is one DIVIDER block).
 func _dividers_above(i: int) -> float:
@@ -193,14 +221,30 @@ func _roll() -> Rect2:
 	var tuck := REST_TUCK*(1.0-Linen.eased(awake))*ui_scale
 	return Rect2(Vector2(roundf(LEFT*ui_scale-tuck),roundf((size.y-extent.y)*0.5)),extent.round())
 
+## The top strip's cloth, viewport pixels: centred along the top edge.
+func _strip() -> Rect2:
+	var extent := Vector2(PAD.y*2.0+Linen.SLOT*TOP.size()+GAP*(TOP.size()-1),PAD.x*2.0+Linen.SLOT)*ui_scale
+	var tuck := REST_TUCK*(1.0-Linen.eased(awake_top))*ui_scale
+	return Rect2(Vector2(roundf((size.x-extent.x)*0.5),roundf(TOP_INSET*ui_scale-tuck)),extent.round())
+
+## Tool `i` of TOOLS's slot, on the roll or the top strip.
 func _cell(i: int) -> Rect2:
+	var id: String = TOOLS[i]
+	if id in TOP:
+		var strip := _strip()
+		return Rect2((strip.position+Vector2(PAD.y+(Linen.SLOT+GAP)*TOP.find(id),PAD.x)*ui_scale).round(),Vector2.ONE*roundf(Linen.SLOT*ui_scale))
+	var j := _side.find(id)
 	var roll := _roll()
-	return Rect2((roll.position+Vector2(PAD.x,PAD.y+(Linen.SLOT+GAP)*i+_dividers_above(i))*ui_scale).round(),Vector2.ONE*roundf(Linen.SLOT*ui_scale))
+	return Rect2((roll.position+Vector2(PAD.x,PAD.y+(Linen.SLOT+GAP)*j+_dividers_above(j))*ui_scale).round(),Vector2.ONE*roundf(Linen.SLOT*ui_scale))
+
+## True while the tool in hand is one of the top strip's.
+func _held_on_top() -> bool:
+	return tool in TOP
 
 ## The pips' row, and one pip's hit cell.
 func _pips() -> Rect2:
 	var roll := _roll()
-	var y := PAD.y+Linen.SLOT*TOOLS.size()+GAP*(TOOLS.size()+1)+DIVIDER*(1+DIVIDER_BEFORE.size())
+	var y := PAD.y+Linen.SLOT*_side.size()+GAP*(_side.size()+1)+DIVIDER*(1+DIVIDER_BEFORE.size())
 	return Rect2(roll.position+Vector2(PAD.x,y)*ui_scale,Vector2(Linen.SLOT,PIPS_H)*ui_scale)
 
 func _pip_cell(i: int) -> Rect2:
@@ -237,11 +281,29 @@ func _process(delta: float) -> void:
 	else:
 		_away += delta
 		if _away >= Linen.HOLD: awake = move_toward(awake,0.0,delta/Linen.RECEDE)
+	var near_top := _want_shown and not quiet and (pointer.y <= NEAR_TOP*ui_scale or (awake_top > 0.0 and _strip().grow(6.0*ui_scale).has_point(pointer)))
+	if near_top:
+		_away_top = 0.0
+		if awake_top == 0.0: ClaySound.cue(&"ui_reach")
+		awake_top = move_toward(awake_top,1.0,delta/Linen.REACH)
+	else:
+		_away_top += delta
+		if _away_top >= Linen.HOLD: awake_top = move_toward(awake_top,0.0,delta/Linen.RECEDE)
 	visible = shown > 0.0
 	if not visible: return
-	modulate.a = Linen.eased(shown)*lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake))
+	# Each piece rests and wakes on its own: the roll's own drawing and cloth,
+	# and the top strip's layer.
+	modulate.a = Linen.eased(shown)
+	var side_alpha := lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake))
+	var top_alpha := lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake_top))
+	self_modulate.a = side_alpha
+	_cloth.modulate.a = side_alpha
+	_top_layer.modulate.a = top_alpha
+	var held_alpha := top_alpha if _held_on_top() else side_alpha
+	var held_awake := awake_top if _held_on_top() else awake
 	var was_hovered := hovered
-	hovered = tool_at(pointer) if _want_shown and awake > 0.5 else ""
+	hovered = tool_at(pointer) if _want_shown else ""
+	if (hovered in TOP and awake_top <= 0.5) or (not hovered.is_empty() and not hovered in TOP and awake <= 0.5): hovered = ""
 	if hovered != was_hovered and discovered(hovered): ClaySound.cue(&"ui_hover")
 	var was_mode := hovered_mode
 	hovered_mode = mode_at(pointer) if _want_shown else ""
@@ -255,28 +317,34 @@ func _process(delta: float) -> void:
 		state.hover = move_toward(float(state.hover),1.0 if on else 0.0,delta/HOVER_TIME)
 		state.refuse = move_toward(float(state.refuse),0.0,delta/NOT_YET)
 	_cloth.place(_roll(),ui_scale)
+	_top_cloth.place(_strip(),ui_scale)
 	var tag := _tag_rect()
 	_tag_cloth.visible = tag.size.x > 0.0
 	if _tag_cloth.visible: _tag_cloth.place(tag,ui_scale,2.0,Vector2.ZERO)
-	_tag_cloth.modulate.a = 1.0 if _modes_shown() else Linen.eased(awake)
+	_tag_cloth.modulate.a = held_alpha*(1.0 if _modes_shown() else Linen.eased(held_awake))
 	var strip := _swatch_rect()
 	_swatch_cloth.visible = strip.size.x > 0.0
 	if _swatch_cloth.visible:
 		_swatch_cloth.place(strip,ui_scale,2.0,Vector2.ZERO)
-		_swatch_cloth.modulate.a = Linen.eased(fan)
+		_swatch_cloth.modulate.a = held_alpha*Linen.eased(fan)
 	queue_redraw()
+	_top_layer.queue_redraw()
 
 ## The held tool's tag strip, right of its pocket; empty with a material held.
 func _tag_rect() -> Rect2:
 	if material_held or not tool in TOOLS: return Rect2()
 	var cell := _cell(TOOLS.find(tool))
+	# A top tool's fan or tag hangs under the strip, starting under its slot.
+	var under := Vector2(cell.position.x,_strip().end.y+HANG*ui_scale)
 	if _modes_shown():
 		var out := Linen.eased(fan)
 		var reach := Vector2(MODE_PAD*2.0+MODE_CELL*lerpf(1.0,modes.size(),out),MODE_PAD*2.0+MODE_CELL)*ui_scale
+		if _held_on_top(): return Rect2(under.round(),reach.round())
 		return Rect2(Vector2(cell.end.x+(TAG_LEFT-Linen.SLOT)*ui_scale,roundf(cell.get_center().y-reach.y*0.5)),reach.round())
 	var width := Linen.tag_width(_font,str(Icons.item(tool).get("label","")),ui_scale)
 	var height := (Linen.TAG_SIZE+4.0)*ui_scale
 	var extent := Vector2(width+(TAG_PAD.x+TAG_PAD.z)*ui_scale,height+(TAG_PAD.y+TAG_PAD.w)*ui_scale)
+	if _held_on_top(): return Rect2(Vector2(roundf(cell.get_center().x-extent.x*0.5),under.y),extent.round())
 	return Rect2(Vector2(cell.position.x+TAG_LEFT*ui_scale,roundf(cell.get_center().y-extent.y*0.5)),extent.round())
 
 ## The tool in hand's modes (ids) and the one in hand; a new set fans out
@@ -370,47 +438,60 @@ func _mode_cells() -> Array[Rect2]:
 	return cells
 
 func _draw() -> void:
+	_paint(self,false)
+
+## Draws one piece onto `item`: the roll (its tools, dividers and pips) or the
+## top strip (`top`); and the held tool's tag or fan with whichever holds it.
+func _paint(item: CanvasItem, top: bool) -> void:
 	var line := maxf(1.0,roundf(ui_scale))
 	for i in range(TOOLS.size()):
 		var id: String = TOOLS[i]
+		if (id in TOP) != top: continue
 		var state: Dictionary = _states[id]
 		var cell := _cell(i)
 		var on := id == tool and not material_held
-		if on: Linen.pressed_patch(self,cell,ui_scale,Linen.PRESSED,Linen.PRESSED_SHADE)
+		if on: Linen.pressed_patch(item,cell,ui_scale,Linen.PRESSED,Linen.PRESSED_SHADE)
 		elif float(state.hover) > 0.0:
 			var h := Linen.eased(state.hover)
-			Linen.pressed_patch(self,cell,ui_scale,Color(Linen.HOVER,Linen.HOVER.a*h),Color(Linen.HOVER_SHADE,Linen.HOVER_SHADE.a*h))
+			Linen.pressed_patch(item,cell,ui_scale,Color(Linen.HOVER,Linen.HOVER.a*h),Color(Linen.HOVER_SHADE,Linen.HOVER_SHADE.a*h))
 		var centre := cell.get_center()-Vector2(0.0,LIFT*ui_scale)
-		if discovered(id): Linen.icon(self,_textures,id,centre,Linen.ICON*ui_scale,ui_scale,"lit" if on else "icon",1.0 if on else 2.0)
+		if discovered(id): Linen.icon(item,_textures,id,centre,Linen.ICON*ui_scale,ui_scale,"lit" if on else "icon",1.0 if on else 2.0)
 		else:
 			var warm := Linen.eased(state.refuse)*0.25
-			Linen.icon(self,_textures,id,centre,Linen.ICON*ui_scale,ui_scale,"locked",0.0,Color.WHITE.lerp(Color(1.25,1.2,1.1),warm))
-		_pocket(cell,line)
+			Linen.icon(item,_textures,id,centre,Linen.ICON*ui_scale,ui_scale,"locked",0.0,Color.WHITE.lerp(Color(1.25,1.2,1.1),warm))
+		_pocket(item,cell,line)
 		if id == "hand" and material_held:
-			Linen.dashed_round(self,cell.grow(-2.0*ui_scale),8.0*ui_scale,Linen.CUE,line,ui_scale)
+			Linen.dashed_round(item,cell.grow(-2.0*ui_scale),8.0*ui_scale,Linen.CUE,line,ui_scale)
+	_paint_held(item,top,line)
+	if top: return
 	# The dividers: two stitched lines, 3 px apart, over the pips and over
-	# each tool set apart (the Feather).
+	# each tool set apart (DIVIDER_BEFORE).
 	var row := _pips()
 	var mid := row.position.x+row.size.x*0.5
 	var tops := [row.position.y-GAP*ui_scale-DIVIDER*ui_scale]
 	for at: int in DIVIDER_BEFORE: tops.append(_cell(at).position.y-(GAP*0.5+DIVIDER)*ui_scale)
-	for top: float in tops:
+	for above: float in tops:
 		for k in range(2):
-			var y := roundf(top+(6.0+k*4.0)*ui_scale)+line*0.5
-			Linen.dashed(self,PackedVector2Array([Vector2(mid-20.0*ui_scale,y),Vector2(mid+20.0*ui_scale,y)]),Linen.DIVIDER,line,3.0*ui_scale,3.0*ui_scale)
+			var y := roundf(above+(6.0+k*4.0)*ui_scale)+line*0.5
+			Linen.dashed(item,PackedVector2Array([Vector2(mid-20.0*ui_scale,y),Vector2(mid+20.0*ui_scale,y)]),Linen.DIVIDER,line,3.0*ui_scale,3.0*ui_scale)
 	# The size pips.
 	for i in range(SIZES.size()):
 		var cell := _pip_cell(i)
 		var r := float(SIZES[i].pip)*0.5*ui_scale
 		var centre := cell.get_center()
 		if i == size_level:
-			draw_circle(centre,r,held_tint,true,-1.0,true)
-			draw_arc(centre+Vector2(0.0,0.75*ui_scale),r-0.75*ui_scale,0.15*PI,0.85*PI,12,Color(0.1,0.078,0.055,0.28),1.5*ui_scale,true)
-			Linen.dashed_circle(self,centre,r,Linen.PIP_STITCH,line,ui_scale)
+			item.draw_circle(centre,r,held_tint,true,-1.0,true)
+			item.draw_arc(centre+Vector2(0.0,0.75*ui_scale),r-0.75*ui_scale,0.15*PI,0.85*PI,12,Color(0.1,0.078,0.055,0.28),1.5*ui_scale,true)
+			Linen.dashed_circle(item,centre,r,Linen.PIP_STITCH,line,ui_scale)
 		else:
-			Linen.dashed_circle(self,centre,r,Linen.PIP_REST,line,ui_scale)
-	# The held tool's name, on its strip of cloth; the Sculpt's modes fanned
-	# out in its place, the one in hand pressed in, shown at rest too.
+			Linen.dashed_circle(item,centre,r,Linen.PIP_REST,line,ui_scale)
+
+## The held tool's name, on its strip of cloth, drawn with the piece that
+## holds it; the modes fanned out in its place, the one in hand pressed in,
+## shown at rest too.
+func _paint_held(item: CanvasItem, top: bool, line: float) -> void:
+	if top != _held_on_top(): return
+	var held_awake := awake_top if top else awake
 	var tag := _tag_rect()
 	if tag.size.x > 0.0 and _modes_shown():
 		var cells := _mode_cells()
@@ -420,26 +501,26 @@ func _draw() -> void:
 			var id: String = modes[k]
 			var cell: Rect2 = cells[k]
 			var on := id == mode
-			if on: Linen.pressed_patch(self,cell.grow(-2.0*ui_scale),ui_scale,Linen.PRESSED,Linen.PRESSED_SHADE)
-			elif id == hovered_mode: Linen.pressed_patch(self,cell.grow(-2.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
+			if on: Linen.pressed_patch(item,cell.grow(-2.0*ui_scale),ui_scale,Linen.PRESSED,Linen.PRESSED_SHADE)
+			elif id == hovered_mode: Linen.pressed_patch(item,cell.grow(-2.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
 			var alpha := 1.0 if k == 0 else out
-			Linen.icon(self,_textures,_mode_icon(id),cell.get_center(),MODE_ICON*ui_scale,ui_scale,"lit" if on else "icon",1.0 if on else 1.5,Color(1.0,1.0,1.0,alpha))
+			Linen.icon(item,_textures,_mode_icon(id),cell.get_center(),MODE_ICON*ui_scale,ui_scale,"lit" if on else "icon",1.0 if on else 1.5,Color(1.0,1.0,1.0,alpha))
 			# A mode that lays a colour carries the colour in hand.
 			if id == "colour":
 				var dot := cell.end-Vector2.ONE*11.0*ui_scale
-				draw_circle(dot,5.0*ui_scale,Color(colour,alpha),true,-1.0,true)
-				Linen.dashed_circle(self,dot,5.0*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*alpha),line,ui_scale)
-		_draw_swatches(line)
-	elif tag.size.x > 0.0 and awake > 0.0:
+				item.draw_circle(dot,5.0*ui_scale,Color(colour,alpha),true,-1.0,true)
+				Linen.dashed_circle(item,dot,5.0*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*alpha),line,ui_scale)
+		_draw_swatches(item,line)
+	elif tag.size.x > 0.0 and held_awake > 0.0:
 		var text := str(Icons.item(tool).get("label",""))
 		var width := Linen.tag_width(_font,text,ui_scale)
 		var x := tag.position.x+TAG_PAD.x*ui_scale+width*0.5
-		Linen.tag(self,_font,text,x,tag.end.y-TAG_PAD.w*ui_scale,ui_scale,Linen.eased(awake))
+		Linen.tag(item,_font,text,x,tag.end.y-TAG_PAD.w*ui_scale,ui_scale,Linen.eased(held_awake))
 
 ## The swatch strip: each swatch a disc, the one in hand ringed as a size
 ## pip is; the last cell a faceted hue wheel for the full picker, ringed when
 ## the colour in hand came from it.
-func _draw_swatches(line: float) -> void:
+func _draw_swatches(item: CanvasItem, line: float) -> void:
 	if not _swatches_shown(): return
 	var out := Linen.eased(fan)
 	var picked := _swatch_index()
@@ -448,25 +529,25 @@ func _draw_swatches(line: float) -> void:
 		var cell := _swatch_cell(k)
 		var centre := cell.get_center()
 		var alpha := 1.0 if k == 0 else out
-		if k == hovered_swatch: Linen.pressed_patch(self,cell.grow(-1.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
+		if k == hovered_swatch: Linen.pressed_patch(item,cell.grow(-1.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
 		var on := k == picked or (k == swatches.size() and picked < 0)
 		if k < swatches.size():
-			draw_circle(centre,r,Color(swatches[k] as Color,alpha),true,-1.0,true)
+			item.draw_circle(centre,r,Color(swatches[k] as Color,alpha),true,-1.0,true)
 		else:
 			for w in range(6):
 				var a0 := w*TAU/6.0-PI*0.5
 				var a1 := a0+TAU/6.0
-				draw_colored_polygon(PackedVector2Array([centre,centre+Vector2(cos(a0),sin(a0))*r,centre+Vector2(cos(a1),sin(a1))*r]),Color.from_hsv(w/6.0,0.45,0.82,alpha))
-			if picked < 0: draw_circle(centre,r*0.45,Color(colour,alpha),true,-1.0,true)
+				item.draw_colored_polygon(PackedVector2Array([centre,centre+Vector2(cos(a0),sin(a0))*r,centre+Vector2(cos(a1),sin(a1))*r]),Color.from_hsv(w/6.0,0.45,0.82,alpha))
+			if picked < 0: item.draw_circle(centre,r*0.45,Color(colour,alpha),true,-1.0,true)
 		if on:
-			draw_arc(centre+Vector2(0.0,0.75*ui_scale),r-0.75*ui_scale,0.15*PI,0.85*PI,12,Color(0.1,0.078,0.055,0.28*alpha),1.5*ui_scale,true)
-			Linen.dashed_circle(self,centre,r+2.5*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*alpha),line,ui_scale)
+			item.draw_arc(centre+Vector2(0.0,0.75*ui_scale),r-0.75*ui_scale,0.15*PI,0.85*PI,12,Color(0.1,0.078,0.055,0.28*alpha),1.5*ui_scale,true)
+			Linen.dashed_circle(item,centre,r+2.5*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*alpha),line,ui_scale)
 		else:
-			Linen.dashed_circle(self,centre,r,Color(Linen.PIP_REST,Linen.PIP_REST.a*alpha),line,ui_scale)
+			Linen.dashed_circle(item,centre,r,Color(Linen.PIP_REST,Linen.PIP_REST.a*alpha),line,ui_scale)
 
 ## A pocket across the slot's foot: stitched sides and bottom, a darker mouth
 ## with a glint under it.
-func _pocket(cell: Rect2, line: float) -> void:
+func _pocket(item: CanvasItem, cell: Rect2, line: float) -> void:
 	var inset := POCKET_INSET*ui_scale
 	var rect := Rect2(Vector2(cell.position.x+inset,cell.end.y-inset-POCKET_H*ui_scale).round(),Vector2(cell.size.x-inset*2.0,POCKET_H*ui_scale).round())
 	var box := StyleBoxFlat.new()
@@ -474,7 +555,7 @@ func _pocket(cell: Rect2, line: float) -> void:
 	box.corner_radius_bottom_left = int(round(POCKET_RADIUS*ui_scale))
 	box.corner_radius_bottom_right = box.corner_radius_bottom_left
 	box.anti_aliasing = true
-	draw_style_box(box,rect)
+	item.draw_style_box(box,rect)
 	var points := Linen.round_points(rect,POCKET_RADIUS*ui_scale)
 	# Only the sides and bottom are stitched: down the right side, across the
 	# bottom and up the left (round_points 6..21: the right edge's foot of the
@@ -483,7 +564,7 @@ func _pocket(cell: Rect2, line: float) -> void:
 	open.append(Vector2(rect.end.x,rect.position.y))
 	for k in range(6,22): open.append(points[k])
 	open.append(Vector2(rect.position.x,rect.position.y))
-	Linen.dashed(self,open,Linen.POCKET_STITCH,line,3.0*ui_scale,3.0*ui_scale)
+	Linen.dashed(item,open,Linen.POCKET_STITCH,line,3.0*ui_scale,3.0*ui_scale)
 	var y := rect.position.y+line*0.5
-	draw_line(Vector2(rect.position.x,y),Vector2(rect.end.x,y),Linen.POCKET_MOUTH,line)
-	draw_line(Vector2(rect.position.x,y+line),Vector2(rect.end.x,y+line),Linen.POCKET_LIGHT,line)
+	item.draw_line(Vector2(rect.position.x,y),Vector2(rect.end.x,y),Linen.POCKET_MOUTH,line)
+	item.draw_line(Vector2(rect.position.x,y+line),Vector2(rect.end.x,y+line),Linen.POCKET_LIGHT,line)

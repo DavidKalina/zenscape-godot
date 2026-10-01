@@ -88,8 +88,8 @@ func setup(owner_scene: Node3D, choice := "") -> void:
 	DirAccess.make_dir_recursive_absolute(scene.library_path)
 	if choice.is_empty(): choice = launch_choice()
 	var saved := _read_saved()
-	if choice == "plain" and not saved.is_empty():
-		# The plain replaces the saved place on the next save; keep one copy.
+	if choice in ["plain","keep"] and not saved.is_empty():
+		# A new place replaces the saved one on the next save; keep one copy.
 		DirAccess.copy_absolute(primary.places_path,primary.places_path.get_basename()+"-previous.json")
 	scene._paused = true
 	if choice == "plain":
@@ -103,6 +103,19 @@ func setup(owner_scene: Node3D, choice := "") -> void:
 		world_seed = plain_seed
 		plain = true
 		_sync_plain_day(true)
+		slots = [{}]
+		active = 0
+		saved = {}
+	elif choice == "keep":
+		# The title's world (studies/cozy_worlds.gd `_run_title`), already
+		# formed and lit under the menu, becomes the place as it stands.
+		scene._chunk_editor.data._undo.clear()
+		scene._chunk_editor.data._redo.clear()
+		var recipe: Dictionary = scene.get("title_recipe")
+		world_seed = int(recipe.get("terrain_recipe",{}).get("seed",-1))
+		plain = false
+		_sync_plain_day(true)
+		if not _scenery(): scene._refresh_habitat()
 		slots = [{}]
 		active = 0
 		saved = {}

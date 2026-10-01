@@ -64,12 +64,15 @@ var flip: Node
 var edge_spring: Node
 ## The title: the game opens on a generated world the camera orbits, under the
 ## title menu, and the pick opens the place ("resume" or "plain", the choices
-## of scripts/cozy_regrowth.gd `launch_choice`). A launch flag that names a
+## of scripts/cozy_regrowth.gd `launch_choice`, or "keep", the title's own
+## world as it stands). A launch flag that names a
 ## world (--resume, --generated, --seed, --atlas), --no-title, the desktop
 ## self-check and a scene a probe instantiates itself go straight in.
 signal title_picked(choice: String)
 ## True from the title world's forming until the pick.
 var titled := false
+## The title's "Build this world": keeps the orbited world as the new place.
+var _keep_title: Button
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -96,7 +99,7 @@ func _ready() -> void:
 		choice = await _run_title()
 		veil = preload("res://scripts/title_loading.gd").new()
 		add_child(veil)
-		veil.stage("Opening your world")
+		veil.stage("Making this world yours" if choice == "keep" else "Opening your world")
 	places = preload("res://scripts/cozy_regrowth.gd").new()
 	add_child(places)
 	await places.setup(self,choice)
@@ -198,8 +201,9 @@ func _run_title() -> String:
 	set_building(false)
 	return choice
 
-## The title menu for this flow: Continue, a new world, Settings, Quit. The
-## legacy diorama entries (Fidelity, Open, Save a copy) are hidden.
+## The title menu for this flow: Continue, build the world behind the menu,
+## a quiet plain, then Settings and Quit. The legacy diorama entries
+## (Fidelity, Open, Save a copy) are hidden.
 func _retitle_menu() -> void:
 	if _menu == null: return
 	_continue.text = "Continue your world"
@@ -209,9 +213,13 @@ func _retitle_menu() -> void:
 	_save_copy.visible = false
 	_menu.add_child(_save_copy)
 	var fresh: Button = _menu.buttons[2]
-	fresh.text = "Create a new world"
+	fresh.text = "Begin on a quiet plain"
+	fresh.set("detail","Raise every hill yourself")
 	for connection: Dictionary in fresh.pressed.get_connections(): fresh.pressed.disconnect(connection.callable)
 	fresh.pressed.connect(_new_world_from_menu)
+	# Only while the title's world is behind the menu (show_menu).
+	_keep_title = _menu.add_action("Build this world","The land behind the menu",
+		func() -> void: if titled: title_picked.emit("keep"),false,1)
 
 func _new_world_from_menu() -> void:
 	if titled:
@@ -439,6 +447,7 @@ func _sync_creation_ui() -> void:
 
 func show_menu() -> void:
 	if _menu != null and not _menu.visible: _craft_before_menu = crafting
+	if _keep_title != null: _keep_title.disabled = not titled
 	super.show_menu()
 	_sync_creation_ui()
 
