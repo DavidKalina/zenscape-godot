@@ -108,8 +108,14 @@ static func lift_skirt(source: ArrayMesh, skirt_offset: Vector3, terrain_data: N
 	for i in range(vertices.size()):
 		var local := vertices[i]+skirt_offset
 		var point := Vector2(local.x,local.z).clamp(Vector2(-half,-half),Vector2(half,half))
-		vertices[i].y += terrain_data.delta_at(point)*clampf((vertices[i].y-low)/(high-low),0.0,1.0)
-		tops[i] = Vector2(high+terrain_data.delta_at(rim_point(point,half)),1.0)
+		var top := high+terrain_data.delta_at(rim_point(point,half))
+		var ground: Variant = terrain_data.sample(rim_point(point,half),terrain_data.heights)
+		if ground != null: top = float(ground)-skirt_offset.y
+		# The top ring stands on the land's edge itself (flush; unsliced, so
+		# straight between the sides' facet corners).
+		if vertices[i].y >= high-0.001: vertices[i].y = top
+		else: vertices[i].y += terrain_data.delta_at(point)*clampf((vertices[i].y-low)/(high-low),0.0,1.0)
+		tops[i] = Vector2(top,1.0)
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3): normals[i+j] = normal

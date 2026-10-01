@@ -300,7 +300,7 @@ func setup(owner_scene: Node3D) -> void:
 	_original_bird_ground = scene._bird_flight.ground
 	_original_precip_top = scene._precipitation._materials[0].get_shader_parameter("top")
 	_skirt = scene.get_node("Reference/skirt")
-	_skirt.mesh = AtlasView.with_rim_tops(_skirt.mesh)
+	_skirt.mesh = AtlasView.with_rim_tops(flush_deep_sides(_skirt.mesh,_skirt.position))
 	_skirt_mesh = _skirt.mesh
 	_landmark_pose = scene._growth._landmark.transform
 	for boulder: Dictionary in scene._growth._boulders:
@@ -1399,17 +1399,18 @@ func _rebuild_skirt() -> void:
 
 ## The faceted earth sides fitted to `source`'s rim: the editor's own land, or
 ## a plain baked off to the side for the flip's underside
-## (scripts/diorama_flip.gd).
+## (scripts/diorama_flip.gd). The sides are sliced across at every rim point
+## (`_rim_slices`) and their top written at the land's own edge height there;
+## between rim points the land's edge runs straight, as the sliced top does,
+## so grass and side meet flush all the way round, on a fresh plate and after
+## a cut. Lower down the sides follow the rim's change, easing to nothing at
+## their foot. Built again only when the rim moves.
 func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
-	var rim_unchanged := true
-	for i in _rim_ids(source):
-		if source.heights[i] != source.original_heights[i]:
-			rim_unchanged = false
-			break
-	if rim_unchanged: return _skirt_mesh
-	# Deform the original faceted earth sides, keeping their base and material.
-	# The captured rim extends 0.2 units beyond the terrain's outer edge.
 	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	var rim := PackedFloat32Array()
+	for i in _rim_ids(source): rim.append(source.heights[i])
+	var fitted_key := [source,source.points.size(),rim,_skirt_mesh,placing]
+	if _skirt_fitted_key == fitted_key: return _skirt_fitted
 	var planes := _rim_slices(source)
 	var key := [planes,placing]
 	if _skirt_sliced_for != key:
@@ -1419,17 +1420,9 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
 	arrays[Mesh.ARRAY_NORMAL] = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array).duplicate()
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	# Each vertex's rim height above it, for the strata (the earth-sides
-	# switch in shaders/reference_surface.gdshader).
-	var tops := PackedVector2Array()
-	tops.resize(vertices.size())
-	var high := _skirt_mesh.get_aabb().end.y
-	for i in range(vertices.size()):
-		var local := placing*vertices[i]
-		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
-		tops[i] = Vector2(high+source.delta_at(AtlasView.rim_point(point,14.0)),1.0)
-	# Each vertex's weight and the face it reads stand while the slicing does;
-	# a stroke only moves heights, read here as `delta_at` reads them.
+	# Each sliced vertex's weight and the face it reads stand while the
+	# slicing does; a stroke only moves heights, read here as `delta_at` reads
+	# them.
 	var reads := _skirt_reads_for(source,key,vertices)
 	var at: PackedInt32Array = reads[0]
 	var ids: PackedInt32Array = reads[1]
@@ -1445,6 +1438,22 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 		var current := u*heights[a]+v*heights[b]+(1.0-u-v)*heights[c]
 		var was := u*original[a]+v*original[b]+(1.0-u-v)*original[c]
 		vertices[at[k]].y += (current-was)*bary[k*3+2]
+	# The top sits on the land's edge, and each vertex carries its rim top
+	# (the land's edge height above it, in the mesh's own space) for the
+	# strata (the earth-sides switch in shaders/reference_surface.gdshader).
+	var high := _skirt_mesh.get_aabb().end.y
+	var from_terrain := placing.affine_inverse()
+	var authored: PackedVector3Array = _skirt_sliced[Mesh.ARRAY_VERTEX]
+	var tops := PackedVector2Array()
+	tops.resize(vertices.size())
+	for i in range(vertices.size()):
+		var local := placing*authored[i]
+		var point := Vector2(local.x,local.z).clamp(Vector2(-SIDES_HALF,-SIDES_HALF),Vector2(SIDES_HALF,SIDES_HALF))
+		var edge := AtlasView.rim_point(point,SIDES_HALF)
+		var ground: Variant = source.sample(edge,heights)
+		var top := high+source.delta_at(edge) if ground == null else (from_terrain*Vector3(edge.x,float(ground),edge.y)).y
+		tops[i] = Vector2(top,1.0)
+		if authored[i].y >= high-0.001 and ground != null: vertices[i].y = top
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3):
@@ -1455,61 +1464,84 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.surface_set_material(0,_skirt_mesh.surface_get_material(0))
+	_skirt_fitted_key = fitted_key
+	_skirt_fitted = mesh
+	return mesh
+var _skirt_fitted_key: Array = []
+var _skirt_fitted: ArrayMesh
+
+## The land's edge, metres from the middle: the terrain's rim points stand on
+## it, and the earth sides' top ring is laid along it.
+const SIDES_HALF := 14.0
+
+## The authored earth sides (the scene's Reference/skirt) made flush and deep.
+## As authored they lean out past the land's edge (up to 0.43 m) under a flat
+## 0.2 m lip at the rim's height, a brown frame that stood proud round the
+## grass. Here each vertex's reach past the edge is turned inward instead, so
+## the sides keep their facets as a slight undercut that never shows beyond
+## the grass, and the top ring stands on the edge itself, the lip gone. Below
+## their top ring the sides are stretched down so their foot stands at
+## NativeTerrainData.SLAB_BASE, under the deepest dig. `offset` is where the
+## mesh sits in the terrain's frame.
+static func flush_deep_sides(source: ArrayMesh, offset: Vector3) -> ArrayMesh:
+	var arrays := _sliced_soup(source.surface_get_arrays(0),Transform3D(Basis(),offset),[PackedFloat32Array(),PackedFloat32Array()])
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var high := source.get_aabb().end.y
+	var low := source.get_aabb().position.y
+	# The stretch pivots at the highest ring under the top.
+	var pivot := low
+	for v in vertices:
+		if v.y < high-0.01: pivot = maxf(pivot,v.y)
+	var base := NativeTerrainData.SLAB_BASE-offset.y
+	var stretch := (pivot-base)/maxf(pivot-low,0.01)
+	for i in range(vertices.size()):
+		var v := vertices[i]
+		var top := v.y >= high-0.001
+		var p := v+offset
+		for axis in [0,2]:
+			var reach := absf(p[axis])-SIDES_HALF
+			if reach > 0.0: p[axis] = signf(p[axis])*(SIDES_HALF if top else SIDES_HALF-reach)
+		v = p-offset
+		if v.y < pivot: v.y = pivot+(v.y-pivot)*stretch
+		vertices[i] = v
+	var normals := PackedVector3Array()
+	normals.resize(vertices.size())
+	for i in range(0,vertices.size()-2,3):
+		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
+		for j in range(3): normals[i+j] = normal
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	mesh.surface_set_material(0,source.surface_get_material(0))
 	return mesh
 
-## The earth sides' facets are about 3.5 m along the rim and the rim's own
-## points about 0.64 m apart, so a cut in the rim (a thumb's spillway,
-## scripts/land_clay.gd) would be bridged by one facet, which would stand
-## over the cut or drop away from the land on either side of it. Where the
-## rim has moved (or beside where it has), the sides are first sliced across
-## at each rim point and midway between, so their top follows the land's
-## edge point for point. Only where the rim's change bends away (by more
-## than SKIRT_BEND m) from the straight line the facet over it can follow:
-## a generated world's gently moved rim keeps its few facets. Every facet is
-## sliced by the same planes, so the sides stay closed. Returns [x planes,
-## z planes], plate metres, sorted.
-const SKIRT_BEND := 0.1
+## The planes the earth sides are sliced across, so their top can follow the
+## land's edge point for point: every rim point along each side (planes
+## across the x sides are z planes, and the other way round), but not the
+## corners, where the other sides' facets stand. Every facet is sliced by the
+## same planes, so the sides stay closed. Returns [x planes, z planes], plate
+## metres, sorted. The triangulation's points never move, so this holds while
+## the source does.
 func _rim_slices(source: NativeTerrainData) -> Array:
-	var columns := _skirt_columns(source)
+	if _rim_slices_key == [source,source.points.size()]: return _rim_slices_found
 	var found := [{},{}]
 	var order := _rim_sides(source)
 	for s in range(4):
-		# Each side's rim points, along it (the order never changes), with how
-		# far each has moved.
-		var rim: Array = []
+		var into: Dictionary = found[1 if s < 2 else 0]
 		for i in order[s]:
 			var point := source.points[i]
-			rim.append(Vector2(point.y if s < 2 else point.x,source.heights[i]-source.original_heights[i]))
-		var bent := PackedByteArray()
-		bent.resize(rim.size())
-		var tops: PackedFloat32Array = columns[s]
-		# The rim's change at each column, read once.
-		var at_tops := PackedFloat64Array()
-		for top in tops: at_tops.append(_rim_change(rim,top))
-		for k in range(rim.size()):
-			# The facet's top edge over this point runs straight between the
-			# columns either side of it.
-			var c := tops.bsearch(rim[k].x)
-			if tops.size() < 2: bent[k] = 1 if absf(rim[k].y) > SKIRT_BEND else 0
-			else:
-				var a := tops[clampi(c-1,0,tops.size()-2)]
-				var b := tops[clampi(c,1,tops.size()-1)]
-				var straight := lerpf(at_tops[clampi(c-1,0,tops.size()-2)],at_tops[clampi(c,1,tops.size()-1)],clampf((rim[k].x-a)/maxf(b-a,0.001),0.0,1.0))
-				bent[k] = 1 if absf(rim[k].y-straight) > SKIRT_BEND else 0
-		for k in range(rim.size()):
-			var near: bool = bent[k] == 1 or (k > 0 and bent[k-1] == 1) or (k+1 < rim.size() and bent[k+1] == 1)
-			if not near: continue
-			# Planes across the x sides are z planes, and the other way round.
-			var into: Dictionary = found[1 if s < 2 else 0]
-			for at: float in [rim[k].x,(rim[k].x+rim[maxi(k-1,0)].x)*0.5,(rim[k].x+rim[mini(k+1,rim.size()-1)].x)*0.5]:
-				# Not the corners, where the other sides' facets stand.
-				if absf(at) < 13.9: into[snappedf(at,0.0001)] = true
-	var planes := []
+			var at := point.y if s < 2 else point.x
+			if absf(at) < SIDES_HALF-0.1: into[snappedf(at,0.0001)] = true
+	_rim_slices_found = []
 	for axis in found:
 		var values := PackedFloat32Array(axis.keys())
 		values.sort()
-		planes.append(values)
-	return planes
+		_rim_slices_found.append(values)
+	_rim_slices_key = [source,source.points.size()]
+	return _rim_slices_found
+var _rim_slices_key: Array = []
+var _rim_slices_found: Array = []
 
 var _skirt_sliced_for: Array = []
 var _skirt_sliced: Array = []
@@ -1573,37 +1605,6 @@ func _skirt_reads_for(source: NativeTerrainData, sliced_key: Array, vertices: Pa
 	_skirt_reads_key = key
 	_skirt_reads = [at,ids,bary]
 	return _skirt_reads
-var _skirt_columns_for: Array = []
-var _skirt_columns_found: Array = []
-
-## A rim's change (sorted [along, change] points) at `along`, linearly.
-static func _rim_change(rim: Array, along: float) -> float:
-	if rim.is_empty(): return 0.0
-	if along <= rim[0].x: return rim[0].y
-	for k in range(1,rim.size()):
-		if along <= rim[k].x: return lerpf(rim[k-1].y,rim[k].y,(along-rim[k-1].x)/maxf(rim[k].x-rim[k-1].x,0.0001))
-	return rim[-1].y
-
-## Where along each side (0 -x, 1 +x, 2 -z, 3 +z) the earth sides' facets
-## have a corner on the rim line: their top edge runs straight between.
-func _skirt_columns(source: NativeTerrainData) -> Array:
-	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
-	if _skirt_columns_for == [_skirt_mesh,placing]: return _skirt_columns_found
-	var found := [{},{},{},{}]
-	for v: Vector3 in placing*_skirt_mesh.get_faces():
-		for s in range(4):
-			var out: float = [-v.x,v.x,-v.z,v.z][s]
-			var along: float = v.z if s < 2 else v.x
-			if absf(out-14.0) > 0.01: continue
-			var ground: Variant = source.sample(Vector2(v.x,v.z).clamp(Vector2(-14,-14),Vector2(14,14)),source.original_heights)
-			if ground != null and absf(v.y-float(ground)) < 0.35: found[s][snappedf(along,0.001)] = true
-	_skirt_columns_found = []
-	for side: Dictionary in found:
-		var values := PackedFloat32Array(side.keys())
-		values.sort()
-		_skirt_columns_found.append(values)
-	_skirt_columns_for = [_skirt_mesh,placing]
-	return _skirt_columns_found
 
 ## A triangle soup's arrays (indexed arrays are unrolled) with every triangle
 ## cut by the planes `planes` ([x values, z values] in plate metres, read

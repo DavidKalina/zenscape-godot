@@ -55,7 +55,7 @@ const CLING_FLOW := 0.35
 ## full curtain. The block's bottom when the earth sides cannot be read.
 const TAIL := 2.6
 const TAIL_FLOW := 2.0
-const BOTTOM := -4.8
+const BOTTOM := NativeTerrainData.SLAB_BASE
 ## Rings over the bend at the lip, down the face, and falling free.
 const BEND_RINGS := 4
 const FACE_RINGS := 12
