@@ -11,6 +11,9 @@ uniform sampler2D bead_screen : hint_screen_texture, filter_linear_mipmap, repea
 varying vec3 world_position;
 varying float fade;
 
+// pow() on a negative base is NaN on D3D12/Vulkan drivers (exp2(y·log2 x)),
+// where Metal follows C and squares it: square by hand, clamp other bases.
+float zs_sq(float x) { return x * x; }
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	fade = COLOR.a;
@@ -20,7 +23,7 @@ void fragment() {
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	float facing = max(dot(eye, normal), 0.0);
-	float fresnel = 0.04 + 0.9 * pow(1.0 - facing, 4.0);
+	float fresnel = 0.04 + 0.9 * pow(max(1.0 - facing, 0.0), 4.0);
 	// A ball lens flips what is behind it; a drop's image is small, so shift
 	// the sample the other way across the drop.
 	vec2 flip = NORMAL.xy * vec2(1.0, -1.0) * 0.012 * facing;
@@ -31,7 +34,7 @@ void fragment() {
 	// Light gathered through the drop: a drop is brighter than what is behind
 	// it, lit on its far side where the sun comes through.
 	vec3 light = zs_key_irradiance / PI * zs_celestial_clear + zs_hemi_sky * zs_hemi_energy / PI;
-	float through = pow(max(dot(-normal, zs_key_direction), 0.0), 2.0);
+	float through = zs_sq(max(dot(-normal, zs_key_direction), 0.0));
 	vec3 color = mix(behind * tint + light * (0.12 + through * 0.35) * tint, sky * 1.2, fresnel);
 	float glint = pow(max(dot(normalize(zs_key_direction + eye), normal), 0.0), 80.0);
 	color += zs_key_irradiance / PI * glint * 2.5 * zs_celestial_clear;

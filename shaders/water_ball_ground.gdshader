@@ -32,6 +32,9 @@ const int MARK_SIDES = 12;
 const float MARK_TURN = 0.12;
 const float MARK_HIGH = 2.0;
 
+// pow() on a negative base is NaN on D3D12/Vulkan drivers (exp2(y·log2 x)),
+// where Metal follows C and squares it: square by hand, clamp other bases.
+float zs_sq(float x) { return x * x; }
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise2(vec2 p) {
 	vec2 i = floor(p);
@@ -69,7 +72,7 @@ void fragment() {
 		// A pale rim of water light, lit by the sky as well as the sun and never
 		// quite dark, so the mark reads on dark ground and at night. It swells a
 		// little as the ball bobs up.
-		float rim = exp(-pow((d - 1.0) / mix(0.07, 0.045, near), 2.0));
+		float rim = exp(-zs_sq((d - 1.0) / mix(0.07, 0.045, near)));
 		vec3 sky_light = zs_hemi_sky * zs_hemi_energy / PI;
 		vec3 glow = vec3(0.72, 0.9, 0.88) * (light * 0.3 + sky_light * 0.7 + vec3(0.02 + 0.03 * zs_night));
 		add += glow * rim * (0.6 + 0.15 * breath);
@@ -83,7 +86,7 @@ void fragment() {
 		float since = age - drops[i].z;
 		if (drops[i].w < 0.5 || since < 0.0 || since > 0.9) continue;
 		float d = length(world.xz - drops[i].xy);
-		float ring = exp(-pow((d - since * 0.9) / 0.03, 2.0)) * (1.0 - since / 0.9);
+		float ring = exp(-zs_sq((d - since * 0.9) / 0.03)) * (1.0 - since / 0.9);
 		add += vec3(0.8, 0.9, 0.9) * light * ring * 0.25;
 		shade = max(shade, exp(-d * d / 0.01) * 0.25 * (1.0 - since / 0.9));
 	}
@@ -106,11 +109,11 @@ void fragment() {
 		shade = max(shade, film * 0.45);
 		// A foam ring runs out ahead of it and breaks into lace.
 		float front = spread * wobble;
-		float band = exp(-pow((d - front) / (0.12 + splash * 0.1), 2.0));
+		float band = exp(-zs_sq((d - front) / (0.12 + splash * 0.1)));
 		float lace = smoothstep(0.35 + splash * 0.3, 0.8, noise2(from * 5.0 + vec2(splash * 0.8, 0.0)) * 0.6 + noise2(from * 13.0) * 0.4);
 		float foam = band * lace * (1.0 - smoothstep(0.3, 1.8, splash));
 		// Inner rings follow it out.
-		float rings = pow(0.5 + 0.5 * sin((d - splash * 1.6) * 14.0), 8.0) * step(d, front) * (1.0 - smoothstep(0.2, 1.4, splash)) * 0.35;
+		float rings = pow(max(0.5 + 0.5 * sin((d - splash * 1.6) * 14.0), 0.0), 8.0) * step(d, front) * (1.0 - smoothstep(0.2, 1.4, splash)) * 0.35;
 		vec3 foam_light = light * max(zs_key_direction.y, 0.2) + zs_hemi_sky * zs_hemi_energy / PI;
 		add += vec3(0.86, 0.94, 0.93) * foam_light * (foam * 1.3 + rings * lace);
 		shade = max(shade, foam * 0.6);

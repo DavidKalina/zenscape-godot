@@ -52,6 +52,9 @@ const float PAW_FRONT = 1.8;
 const float PAW_TAIL = 4.5;
 const float USED_UP = 7.0;
 
+// pow() on a negative base is NaN on D3D12/Vulkan drivers (exp2(y·log2 x)),
+// where Metal follows C and squares it: square by hand.
+float zs_sq(float x) { return x * x; }
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise2(vec2 p) {
 	vec2 i = floor(p);
@@ -116,7 +119,7 @@ void fragment() {
 		float core = 1.0 - smoothstep(0.58 - edge * 0.5, 0.58, d);
 		// Two painted tones, lighter than the water ball's: this is air.
 		shade = shape == 0 ? pool * 0.2 + core * 0.07 : pool * 0.1;
-		float rim = exp(-pow((d - 1.0) / (shape == 0 ? 0.06 : 0.035), 2.0));
+		float rim = exp(-zs_sq((d - 1.0) / (shape == 0 ? 0.06 : 0.035)));
 		add += glow * rim * (0.55 + 0.12 * breath);
 		// Chevrons of air light flow the way it will blow: along the lane,
 		// or in toward the ring's centre while a burst gathers.

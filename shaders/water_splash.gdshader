@@ -46,7 +46,7 @@ void fragment() {
 	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	float facing = abs(dot(eye, normal));
-	float fresnel = 0.04 + 0.8 * pow(1.0 - facing, 4.0);
+	float fresnel = 0.04 + 0.8 * pow(max(1.0 - facing, 0.0), 4.0);
 	vec3 behind = textureLod(splash_screen, clamp(SCREEN_UV + NORMAL.xy * 0.02, vec2(0.002), vec2(0.998)), 0.0).rgb;
 	vec3 tint = vec3(0.62, 0.9, 0.84);
 	vec3 reflected = reflect(-eye, normal);

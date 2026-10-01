@@ -27,6 +27,9 @@ uniform float age = 0.0;
 const int MARK_SIDES = 12;
 const float MARK_TURN = 0.08;
 
+// pow() on a negative base is NaN on D3D12/Vulkan drivers (exp2(y·log2 x)),
+// where Metal follows C and squares it: square by hand.
+float zs_sq(float x) { return x * x; }
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 void fragment() {
@@ -62,7 +65,7 @@ void fragment() {
 	vec3 light = zs_key_irradiance / PI * zs_celestial_clear;
 	vec3 sky_light = zs_hemi_sky * zs_hemi_energy / PI;
 	vec3 glow = vec3(1.0, 0.93, 0.72) * (light * 0.3 + sky_light * 0.7 + vec3(0.02 + 0.03 * zs_night));
-	float rim = exp(-pow((d - 1.0) / mix(0.05, 0.09, soft), 2.0));
+	float rim = exp(-zs_sq((d - 1.0) / mix(0.05, 0.09, soft)));
 	vec3 add = glow * rim * 0.5;
 	// Specks of pollen light scattered through it, twinkling.
 	vec2 cell = floor(world.xz * 6.0);

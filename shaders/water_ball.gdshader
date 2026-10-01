@@ -59,6 +59,9 @@ const vec3 SHALLOW = vec3(0.19, 0.42, 0.33);
 const vec3 DEEP = vec3(0.018, 0.10, 0.11);
 const vec3 FOAM = vec3(0.86, 0.94, 0.93);
 
+// pow() on a negative base is NaN on D3D12/Vulkan drivers (exp2(y·log2 x)),
+// where Metal follows C and squares it: square by hand, clamp other bases.
+float zs_sq(float x) { return x * x; }
 float hash1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
 float hash3(vec3 p) {
 	p = fract(p * 0.1031);
@@ -88,7 +91,7 @@ float surface_height(vec3 n) {
 	float polar = acos(clamp(n.y, -1.0, 1.0));
 	float dimple = exp(-polar * polar / 0.03) * 0.045 * funnel;
 	// A lip of water climbs round the dimple as it spins.
-	float lip = exp(-pow((polar - 0.36) / 0.12, 2.0)) * 0.008 * funnel;
+	float lip = exp(-zs_sq((polar - 0.36) / 0.12)) * 0.008 * funnel;
 	return shape * wobble - dimple + lip;
 }
 
@@ -97,7 +100,7 @@ float ring_slope(vec3 n, vec3 source, float since) {
 	if (since < 0.0 || since > 1.6) return 0.0;
 	float along = acos(clamp(dot(n, source), -1.0, 1.0));
 	float front = since * 1.1;
-	float packet = exp(-pow((along - front) / 0.16, 2.0));
+	float packet = exp(-zs_sq((along - front) / 0.16));
 	return cos((along - front) * 38.0) * packet * exp(-since * 2.4) * smoothstep(0.0, 0.12, since);
 }
 
@@ -148,11 +151,11 @@ float surface_foam(vec3 n) {
 	float breakup = fbm(q * vec3(4.0, 7.0, 4.0) + vec3(0.0, age * 0.2, 0.0));
 	float fine = vnoise(q * vec3(16.0, 28.0, 16.0) + vec3(0.0, age * 0.6, 0.0));
 	float wind = polar * 22.0 + around * 2.0 - swirl * 1.3 + breakup * 3.0;
-	float lines = pow(0.5 + 0.5 * sin(wind), 16.0) * smoothstep(1.3, 0.45, polar);
+	float lines = pow(max(0.5 + 0.5 * sin(wind), 0.0), 16.0) * smoothstep(1.3, 0.45, polar);
 	float streaks = lines * smoothstep(0.45, 0.75, breakup) * smoothstep(0.3, 0.7, fine) * (0.4 + foam) * 0.8;
 	float arms = sin(around * 3.0 + log(max(polar, 0.03)) * 4.5 - swirl * 1.6);
 	float whirl = smoothstep(0.3, 1.0, arms) * smoothstep(0.75, 0.2, polar) * smoothstep(0.06, 0.16, polar);
-	float froth = (whirl + exp(-pow((polar - 0.26) / 0.08, 2.0)) * 0.7) * funnel * smoothstep(0.3, 0.65, breakup);
+	float froth = (whirl + exp(-zs_sq((polar - 0.26) / 0.08)) * 0.7) * funnel * smoothstep(0.3, 0.65, breakup);
 	float lace = smoothstep(0.66, 0.8, breakup) * foam * 0.6;
 	return clamp(max(max(froth, streaks), lace), 0.0, 1.0);
 }
@@ -168,7 +171,7 @@ float veil_density(vec3 p) {
 	float s3 = unit.y * (3.0 - 4.0 * unit.y * unit.y);
 	float phase = -swirl + r * 7.0 + p.y * 4.0;
 	float arms = s3 * cos(phase) + c3 * sin(phase);
-	float line = pow(0.5 + 0.5 * arms, 12.0);
+	float line = pow(max(0.5 + 0.5 * arms, 0.0), 12.0);
 	if (line < 0.02) return 0.0;
 	float breakup = vnoise(spin_y(p, -swirl * (0.9 + (1.0 - r) * 0.6)) * vec3(3.5, 6.0, 3.5));
 	float shell = smoothstep(0.08, 0.3, r) * (1.0 - smoothstep(0.8, 0.98, length(p)));
@@ -227,7 +230,8 @@ void fragment() {
 	if (facets > 0.5) {
 		// The facet's own plane, from how the surface runs across the pixel,
 		// turned to face out; the ripples tilt it a little.
-		vec3 flat_world = normalize(cross(dFdx(world_position), dFdy(world_position)));
+		vec3 across_pixel = cross(dFdx(world_position), dFdy(world_position));
+		vec3 flat_world = dot(across_pixel, across_pixel) > 1e-20 ? normalize(across_pixel) : normalize(mat3(MODEL_MATRIX) * n);
 		vec3 flat_local = normalize(mat3(to_ball) * flat_world);
 		if (dot(flat_local, n) < 0.0) flat_local = -flat_local;
 		normal_local = normalize(flat_local + (normal_local - n) * FACET_DETAIL);
@@ -235,8 +239,8 @@ void fragment() {
 	vec3 normal = normalize(normal_to_world * normal_local);
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	float facing = max(dot(eye, normal), 0.0);
-	float fresnel = 0.02 + 0.98 * pow(1.0 - facing, 5.0);
-	fresnel = mix(fresnel, 0.02 + 0.70 * pow(1.0 - facing, 5.0), 0.5);
+	float fresnel = 0.02 + 0.98 * pow(max(1.0 - facing, 0.0), 5.0);
+	fresnel = mix(fresnel, 0.02 + 0.70 * pow(max(1.0 - facing, 0.0), 5.0), 0.5);
 
 	// Light, as the pond takes it: the key light and the hemisphere.
 	vec3 key = zs_key_irradiance / PI;
@@ -302,7 +306,7 @@ void fragment() {
 		float lit = exp(-to_sun * radius * 0.9);
 		// Shafts: the wobbling surface focuses the sun into moving ribbons.
 		vec3 across = p - sun_local * pl;
-		float shaft = pow(0.5 + 0.5 * sin(dot(across, vec3(7.0, 3.0, 5.0)) + age * 0.9), 6.0);
+		float shaft = pow(max(0.5 + 0.5 * sin(dot(across, vec3(7.0, 3.0, 5.0)) + age * 0.9), 0.0), 6.0);
 		float veil = veil_density(p);
 		vec3 light = mix(ground_light, sky_light, p.y * 0.5 + 0.5) + key * lit * (0.3 + shaft * 0.45);
 		vec3 step_transmit = exp(-(sigma + veil * 2.5) * dt);
@@ -387,7 +391,7 @@ void fragment() {
 	vec3 color = mix(inside, reflection, fresnel);
 	vec3 half_vector = normalize(zs_key_direction + eye);
 	float nh = max(dot(normal, half_vector), 0.0);
-	float glint = pow(nh, 900.0) * 3.5 + pow(nh, 90.0) * 0.18;
+	float glint = pow(max(nh, 0.0), 900.0) * 3.5 + pow(max(nh, 0.0), 90.0) * 0.18;
 	color += zs_key_irradiance / PI * glint * zs_celestial_clear;
 	float froth = surface_foam(n);
 	// Bursting, it breaks into foam from the rim in.
