@@ -67,7 +67,9 @@ const MAX_DABS := 64
 ## the weight ramps over most of the bank, so the groove blends into the grass
 ## instead of standing as a saturated brown gash. The earth covers whatever
 ## was painted there before (the rock of a range's foot, a pinch's flank) by
-## its own weight, not only by the weight it adds: dug ground is earth. Where
+## its own weight, not only by the weight it adds: dug ground is earth. The
+## tool scales that weight by its `dirt_share` for the verb, so a broad, soft
+## stroke (the Paddle's sweep) can leave its swale grassed. Where
 ## a tool that `turns_lip` raises ground LIP_TURNED metres or more the
 ## pushed-aside clay shows as a pale fringe, TURNED at up to TURNED_WEIGHT
 ## (full by TURNED_FULL, the Modeller's groove lip), so a groove is outlined on
@@ -710,6 +712,7 @@ func _dirt() -> void:
 	var deep := DIRT_DEEP.srgb_to_linear()
 	var turned := TURNED.srgb_to_linear()
 	var turns := tool.turns_lip(verb)
+	var shows := clampf(tool.dirt_share(verb),0.0,1.0)
 	var heights := data.heights
 	var tint := data.tint
 	var changed := false
@@ -729,10 +732,10 @@ func _dirt() -> void:
 				_earth(tint,cell,turned,weight)
 				changed = true
 				continue
-			if dug <= float(_dirt_depth.get(cell,DIRT_FROM)): continue
+			if shows <= 0.0 or dug <= float(_dirt_depth.get(cell,DIRT_FROM)): continue
 			_dirt_depth[cell] = dug
 			var color := light.lerp(deep,smoothstep(DIRT_FULL,DIRT_DEEP_AT,dug))
-			_earth(tint,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug))
+			_earth(tint,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug)*shows)
 			changed = true
 	_dirt_rect = Rect2()
 	if changed: data.tint = tint

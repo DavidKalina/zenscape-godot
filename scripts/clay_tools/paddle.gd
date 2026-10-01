@@ -14,24 +14,34 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## - **Shift** at the moment the verb is decided: a narrower blade
 ##   (NARROW of the width) for all three.
 ##
-## Each is one undo step. Ground a sweep takes down turns to bare earth and its
-## ridges show the pale turned-clay fringe (the clay's dirt). Trees on ground
-## the paddle moved and can no longer hold slide to its foot at release.
+## Each is one undo step. The Paddle is the landscape tool and the Modeller
+## the detail one, so where the Modeller's groove is a crisp bare-earth line,
+## the sweep is a grassed valley: its ground shows only SWEEP_DIRT of the
+## clay's bare earth, a faint scuff that never kills the grass, and its
+## ridges stay grassed shoulders, without the groove's pale turned-clay
+## fringe (`turns_lip`), which outlined it as a trench. Trees on
+## ground the paddle moved and can no longer hold slide to its foot at release.
 ##
 ## The sweep: half-width SWEEP_HALF_WIDTH metres, SWEEP_DEPTH deep on the line
 ## on a raised-cosine profile (no flat floor, no edge: soft), and a ridge
 ## SWEEP_RIDGE high from the trough's edge out to RIDGE_OUT half-widths, on a
 ## sin² profile. The ridge carries about the earth the trough takes out
-## (0.45 m × 2.2 m of trough against 2 × 0.5 × 0.38 m × 2.64 m of ridge).
+## (0.6 m × 2.8 m of trough against 2 × 0.5 × 0.43 m × 3.92 m of ridge). Both
+## are broader and gentler than the groove (steepest about 0.34 rise/run,
+## against the groove's 0.75 m within 1.35 m), so the sweep reads as a swale between low
+## shoulders, not a trench.
 ## Each dab moves the ground SWEEP_STEP of the way to that shape and never past
 ## it: going over a line again within one stroke does not dig it deeper, a
 ## new stroke does. Ground the trough has taken is never raised again by a
 ## later dab's ridge, so a curved sweep leaves its ridges outside the curve.
-const SWEEP_HALF_WIDTH := 2.2
-const SWEEP_DEPTH := 0.45
-const SWEEP_RIDGE := 0.38
-const RIDGE_OUT := 2.2
+const SWEEP_HALF_WIDTH := 2.8
+const SWEEP_DEPTH := 0.6
+const SWEEP_RIDGE := 0.43
+const RIDGE_OUT := 2.4
 const SWEEP_STEP := 0.5
+## The share of the clay's bare earth the sweep's ground shows (clay_tool
+## `dirt_share`): under the clay's DIRT_BARE, so the grass lives on.
+const SWEEP_DIRT := 0.2
 ## The swell: radius in metres (the pinch opens at 2.2), its lift between
 ## -SWELL_SINK and SWELL_RAISE metres (the clay's FLOOR still holds a sink),
 ## at SWELL_SCALE of the pointer's travel in metres standing at the spot. The
@@ -77,7 +87,7 @@ var _pat_t := -1.0
 
 func id() -> String: return "paddle"
 func prop_tilt() -> float: return TILT
-func turns_lip(verb: String) -> bool: return verb.ends_with("sweep")
+func dirt_share(verb: String) -> float: return SWEEP_DIRT if verb.ends_with("sweep") else 1.0
 func stroke_radius() -> float: return _width()*SWEEP_HALF_WIDTH
 func mark_size() -> Vector2: return Vector2(PAT_RADIUS,PAT_RADIUS*MARK_DEPTH)
 func gesture(verb: String) -> String: return "press" if verb.ends_with("pat") else "grip"

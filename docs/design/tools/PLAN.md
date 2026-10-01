@@ -108,6 +108,7 @@ Shift, read when the verb is decided.
 | `stroke_radius() -> float` | stroke signals | the reach in metres the editor's stroke signals report |
 | `mark_size() -> Vector2` | hovering the land | the ground mark's half extents in metres at the middle pip (x along the mark's axis, y across): what the hover stands for, usually the tap's reach. Zero (the default) keeps `ground_marks.gd`'s placeholder |
 | `turns_lip(verb) -> bool` | laying dirt | whether ground the verb raises shows the pale turned-clay fringe |
+| `dirt_share(verb) -> float` | laying dirt | how much of the clay's bare earth ground the verb takes down shows, 0..1 (default 1, the full dirt). Below the clay's `DIRT_BARE` (0.5) the grass stays alive. The Paddle's sweep gives 0.2, so it stays a grassed valley beside the Modeller's bare-earth groove |
 | `build_prop() -> Node3D` | the tool is taken | the stand-in prop, or null |
 | `prop_tilt() -> float` | each frame | degrees of lean toward the drag |
 | `reset()` | each press | forget the last verb's own state; reset `lift` |
@@ -177,19 +178,26 @@ The clay also owns the dirt tint (`DIRT` to `DIRT_DEEP`, laid by how far each
 
 `scripts/clay_tools/paddle.gd`.
 
-- **Sweep** (drag). It aims for a trough `SWEEP_DEPTH` (0.45 m) deep on the
-  line and `SWEEP_HALF_WIDTH` (2.2 m) either side, on a raised cosine: no floor
-  and no edge. A ridge up to `SWEEP_RIDGE` (0.38 m) stands from the trough's
-  edge out to `RIDGE_OUT` (2.2) half-widths, on a sin² profile. The ridges hold
-  about the earth the trough takes out. Both follow the ground across.
+- **Sweep** (drag). The landscape-scale cut: a broad, soft, grassy valley,
+  where the Modeller's groove is the detail tool's crisp bare-earth line. It
+  aims for a trough `SWEEP_DEPTH` (0.6 m) deep on the line and
+  `SWEEP_HALF_WIDTH` (2.8 m) either side, on a raised cosine: no floor and no
+  edge. A ridge up to `SWEEP_RIDGE` (0.43 m) stands from the trough's edge out
+  to `RIDGE_OUT` (2.4) half-widths, on a sin² profile. The ridges hold about
+  the earth the trough takes out (0.6 × 2.8 against 2 × 0.5 × 0.43 × 3.92 m²).
+  Nowhere steeper than about 0.34 rise/run, so it reads as a swale between
+  shoulders, not a trench. Both follow the ground across. (Until 2026-09-30 it
+  was 0.45 m deep, 2.2 m half-width, 0.38 m ridges out to 2.2, with full dirt
+  and a turned fringe: on screen it read as the groove at another width.)
   - Each dab moves `SWEEP_STEP` (half) of the way to that shape, and never
     past it.
   - Ground the trough has taken is never raised again, so a curved sweep leaves
     its ridges outside the curve. The last dab's ridge ring stays in front, as
     earth pushed ahead.
-  - The trough turns to bare earth where it goes 4 cm or more down, and the
-    ridges get the pale turned-clay fringe. Trees on the swept area that cannot
-    hold it slide off at release.
+  - The trough shows only `SWEEP_DIRT` (0.2) of the clay's bare earth
+    (`dirt_share`), a faint scuff that keeps its grass, and the ridges get no
+    turned-clay fringe. Trees on the swept area that cannot hold it slide off
+    at release.
 - **Swell** (hold, then drag). The rise is `1 - smoothstep(0, 1, t)` over
   `SWELL_RADIUS` (6.5 m, three times the pinch's opening radius): level on the
   crown, steepest halfway out, easing into the ground. Its crown follows the
@@ -223,7 +231,8 @@ checks the following:
 - The pat takes the roughness of the probe's roughened ground from 0.060 to
   0.024 and keeps the mean height to the millimetre.
 - The sweep leaves a trough 0.36 to 0.39 m deep all along the path, with
-  ridges 0.30 m or more on both banks.
+  ridges 0.30 m or more on both banks. (Measured on the old 0.45 m profile; not rerun
+  since the 2026-09-30 valley change.)
 - Shift lowers 69 points against 166, and the widest pip 260.
 - A 60 px hold-and-drag raises a 4.2 m swell over 309 points, standing at
   0.79 of the crown 0.3 of the way out, the crown within 1.3 px of the
@@ -234,12 +243,15 @@ checks the following:
 
 ### Unverified
 
-Nothing has been seen on screen:
+Seen on screen (2026-09-30, tools/landscapes/sweep_vs_groove.gd, an untracked
+harness build): beside a Modeller groove, on the flat and down a swell's
+flank, the sweep reads as a grassed swale and the groove as a bare-earth
+trench, at dawn and noon. From the overview at noon the swale is faint: like
+any gentle relief, its facets barely mark it. Not yet seen:
 
-- how the sweep's trough, ridges and dirt read from the default camera
 - whether the swell's crown and shoulders read as "mass" beside the pinch's
   horn
-- whether a 0.45 m trough reads from 58 m out (the Hand's groove needed 1 m)
+- whether water holds to the 0.6 m swale where the 0.45 m trough lost it
 - the borrowed Rim grip over open land
 - where the prop actually sits in the hand, its lean, and its size
 - whether the flat-shaded parts read as the icon's facets
