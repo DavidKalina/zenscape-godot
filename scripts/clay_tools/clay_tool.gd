@@ -56,6 +56,12 @@ func id() -> String: return ""
 ## the gesture grammar.
 func modes() -> Array: return []
 
+## The gesture every press makes with this tool ("tap", "drag", "hold",
+## "paint"), or "" for the clay to read it from the press's shape and timing.
+## By default the mode in hand's kind; a one-verb tool that wants its verb at
+## once (the Mountain's pull) gives it here.
+func press_kind() -> String: return str(mode_spec().get("kind",""))
+
 ## The mode in hand's entry in `modes`, or {} for none.
 func mode_spec() -> Dictionary:
 	for spec: Dictionary in modes():

@@ -251,10 +251,14 @@ func _process(delta: float) -> void:
 	elif state == clay.State.PAINT:
 		# The Sculpt works while held: the land stretching as it rises or
 		# sinks, a rub as it smooths. Its hills knock in as cues of their own.
+		# The Hills and the Bowl only sound while the pointer moves.
+		var pace := smoothstep(SPEED.x,SPEED.y,float(clay.speed))
 		match str(clay.verb):
 			"raise", "lower": _target[STRETCH] = 0.6
 			"smooth", "flatten": _target[RUB] = 0.6
-		if str(clay.verb) == "raise": _target[RUMBLE] = 0.3
+			"hills", "fine_hills": _target[STRETCH] = 0.3+0.5*pace
+			"bowl", "fine_bowl": _target[SWEEP] = 0.3+0.5*pace
+		if str(clay.verb) in ["raise","hills"]: _target[RUMBLE] = 0.3
 		if clay.last_plate != null: at = clay.ground_at(clay.last_plate)
 	elif state == clay.State.HOLD and tool != null:
 		var lift := float(tool.lift)

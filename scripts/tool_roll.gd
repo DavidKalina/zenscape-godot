@@ -14,7 +14,7 @@ extends Control
 ## them (docs/design/tools/PLAN.md) and it is taken off UNBUILT.
 ##
 ## A tool with modes (scripts/clay_tools/clay_tool.gd `modes`: the Modeller,
-## the Sculpt, the Paddle, the Chisel, the Wire) has them fanned out beside its
+## the Paddle, the Chisel, the Wire) has them fanned out beside its
 ## pocket in place of its name: a small icon each (scripts/hud_icons.gd
 ## "<tool>_<mode>"), the one in hand pressed into the cloth. The fan stays
 ## shown at rest so the mode can be read while working. The hand sets `modes`
@@ -31,10 +31,10 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 ## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind and the
 ## watering can ("Pour") water, not clay: they sit under the shaping tools
 ## after a divider (DIVIDER_BEFORE).
-const TOOLS := ["hand","sculpt","paddle","chisel","wire","hammer","feather","can"]
+const TOOLS := ["hand","hills","mountain","bowl","paddle","chisel","wire","hammer","feather","can"]
 ## Indices in TOOLS that a stitched divider sits above (lowpoly.js
 ## TOOL_DIVIDER_BEFORE): the Feather, set apart from the tools that shape.
-const DIVIDER_BEFORE := [6]
+const DIVIDER_BEFORE := [8]
 ## The fan beside a tool with modes: a cell (design pixels) and icon each,
 ## the fan's padding, and the seconds it takes to fan out.
 const MODE_CELL := 46.0

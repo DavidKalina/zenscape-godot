@@ -56,39 +56,51 @@ func run() -> void:
 	await frames(40)
 	print("roll awake ",roll.awake," rect ",roll.rect())
 	await shot("02_roll_out")
-	materials.select_tool("sculpt")
-	materials.set_mode("raise")
-	await frames(20)
-	print("tool ",clay.tool_id," modes cells ",roll._mode_cells())
-	await shot("03_sculpt_taken")
-	roll.pointer_override = Vector2(105,300)
-	await frames(30)
-	await shot("03b_fan_hover")
 	roll.pointer_override = Vector2(1000,450)
-	var at := Vector2(-2,1)
-	var spot := screen(at)
-	var before := height(at)
-	await hold(spot,60)
-	print("RAISE rose ",snappedf(height(at)-before,0.01))
+	materials.select_tool("hills")
+	await frames(10)
+	for row in range(3):
+		var from := screen(Vector2(-8,-4+row*2.5))
+		var to := screen(Vector2(4,-4+row*2.5))
+		reach.pointer_override = from
+		clay.press(from)
+		for k in range(40):
+			var p := from.lerp(to,(k+1)/40.0)
+			reach.pointer_override = p
+			clay.pull(p)
+			await process_frame
+		clay.release(to)
+		await frames(10)
 	await frames(30)
-	await shot("04_raised")
-	materials.set_mode("hills")
-	var from := screen(Vector2(-6,4))
-	reach.pointer_override = from
-	clay.press(from)
-	for k in range(70):
-		var p := from+Vector2(6*(k+1),-1.5*(k+1))
+	await shot("10_hills")
+	materials.select_tool("mountain")
+	await frames(10)
+	var peak_at := screen(Vector2(6,-6))
+	reach.pointer_override = peak_at
+	clay.press(peak_at)
+	for k in range(30):
+		var p := peak_at-Vector2(0,5*(k+1))
 		reach.pointer_override = p
 		clay.pull(p)
 		await process_frame
 	clay.release(reach.pointer_override)
+	await frames(30)
+	await shot("11_mountain")
+	materials.select_tool("bowl")
+	await frames(10)
+	var bowl_from := screen(Vector2(-4,6))
+	var bowl_to := screen(Vector2(2,6))
+	reach.pointer_override = bowl_from
+	clay.press(bowl_from)
+	for k in range(30):
+		var p := bowl_from.lerp(bowl_to,(k+1)/30.0)
+		reach.pointer_override = p
+		clay.pull(p)
+		await process_frame
+	clay.release(bowl_to)
 	await frames(40)
-	await shot("05_hills")
+	await shot("12_bowl")
 	roll.pointer_override = Vector2(30,450)
-	await frames(40)
-	await shot("06_roll_hills_mode")
-	for id in ["hand","paddle","chisel","wire"]:
-		materials.select_tool(id)
-		await frames(30)
-		await shot("07_fan_"+id)
+	await frames(30)
+	await shot("13_roll")
 	quit(0)

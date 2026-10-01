@@ -1,13 +1,16 @@
 extends SceneTree
-## Headless probe of the Sculpt (scripts/clay_tools/sculpt.gd), the painting
-## tool, on the real cozy worlds scene, driven by synthesized input through
-## hand_reach. Checks: its pocket takes it; the mode strip and Q/E pick its
-## modes; a press held still raises (or lowers) the ground continuously, more
-## the longer it is held, with no hold-then-drag; a quick click still leaves
-## a mark; a Hills drag sets down several separate hills; Smooth softens
-## rough ground; Shift inverts Raise; each press is one undo step that one
-## undo takes back exactly.
-##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_sculpt.gd -- --modeless --no-title
+## Headless probe of the drag tools (scripts/clay_tools/hills.gd, mountain.gd,
+## bowl.gd) and the mode fans of the tools with several verbs, on the real
+## cozy worlds scene, driven by synthesized input through hand_reach. Checks:
+## each drag tool has a pocket and no fan; a Hills drag raises the land along
+## the path by how far it goes (rolling, not even), a second pass lifts it
+## more, and it lowers nothing; a Mountain press dragged up pulls a peak at
+## once; a Bowl drag presses out a basin with a level floor and raises
+## nothing; each is one undo step one undo takes back exactly; and the
+## Paddle's and Modeller's fans pick their verb, hold verbs starting at the
+## press.
+##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_drag_tools.gd -- --modeless --no-title
+const Bowl = preload("res://scripts/clay_tools/bowl.gd")
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -141,11 +144,11 @@ func roughen(at: Vector2, radius: float, seed_value: int) -> void:
 	await settled()
 
 func run() -> void:
-	create_timer(280).timeout.connect(func() -> void: push_error("sculpt probe timed out"); quit(2))
+	create_timer(280).timeout.connect(func() -> void: push_error("drag tools probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
-	scene.places_path = "/private/tmp/zs-sculpt-probe-%d/places.json" % Time.get_ticks_usec()
+	scene.places_path = "/private/tmp/zs-drag-probe-%d/places.json" % Time.get_ticks_usec()
 	root.add_child(scene)
 	current_scene = scene
 	while not scene.places_ready or not scene.shell_ready: await process_frame
@@ -180,71 +183,20 @@ func run() -> void:
 	for i in range(120):
 		if roll.shown > 0.99: break
 		await process_frame
-	var pocket: Vector2 = roll._cell(roll.TOOLS.find("sculpt")).get_center()
-	check("the sculpt's pocket hit-tests to it",roll.tool_at(pocket) == "sculpt",roll.tool_at(pocket))
-	await click(pocket)
-	check("pressing the pocket takes the sculpt",roll.tool == "sculpt" and clay.tool_id == "sculpt",[roll.tool,clay.tool_id])
-	var sculpt: RefCounted = clay.tool
-	# The mode strip and the keys.
-	for i in range(30): await process_frame
-	var cells: Array = roll._mode_cells()
-	check("the strip has a cell per mode",cells.size() == 4,cells.size())
-	await click((cells[2] as Rect2).get_center())
-	check("pressing Hills on the strip takes it",sculpt.mode == "hills" and roll.mode == "hills",[sculpt.mode,roll.mode])
-	await key(KEY_E)
-	check("E steps to Smooth",sculpt.mode == "smooth" and roll.mode == "smooth",sculpt.mode)
-	await key(KEY_E)
-	await key(KEY_Q)
-	await key(KEY_Q)
-	await key(KEY_Q)
-	check("Q steps back, wrapping round to Lower",sculpt.mode == "lower",sculpt.mode)
 	var undo0: int = data._undo.size()
+	for id in ["hills","mountain","bowl"]:
+		var pocket: Vector2 = roll._cell(roll.TOOLS.find(id)).get_center()
+		check("the %s has a pocket" % id,roll.tool_at(pocket) == id,roll.tool_at(pocket))
+	var hills_pocket: Vector2 = roll._cell(roll.TOOLS.find("hills")).get_center()
+	await click(hills_pocket)
+	await frames(10)
+	check("pressing it takes the hills, with no fan",clay.tool_id == "hills" and roll.modes.is_empty(),[clay.tool_id,roll.modes])
 
-	# --- Raise and lower: held still, it keeps working ---
-	for way in ["raise","lower"]:
-		materials.set_mode(way)
-		var base := data.heights.duplicate()
-		var before := height(at)
-		button(spot,true)
-		await frames(15)
-		var early := height(at)-before
-		await frames(45)
-		var late := height(at)-before
-		button(spot,false)
-		await settled()
-		print(way.to_upper()," ",JSON.stringify({"after_15":snappedf(early,0.01),"after_60":snappedf(late,0.01)}))
-		var sign := 1.0 if way == "raise" else -1.0
-		check("%s held still moves the ground at once" % way,early*sign > 0.15,early)
-		check("%s keeps going while held" % way,late*sign > early*sign*2.0,[early,late])
-		check("%s is one undo step" % way,data._undo.size() == undo0+1,data._undo.size()-undo0)
-		await undo_exact(base,undo0,way)
-
-	# --- A quick click still leaves a mark ---
-	materials.set_mode("raise")
-	var tap_base := data.heights.duplicate()
-	var tap_before := height(at)
-	await click(spot)
-	await settled()
-	var tap := height(at)-tap_before
-	check("a click raises a little",tap > 0.2 and tap < 1.5,tap)
-	await undo_exact(tap_base,undo0,"click")
-
-	# --- Shift inverts Raise ---
-	var shift_base := data.heights.duplicate()
-	var shift_before := height(at)
-	shift(true)
-	button(spot,true)
-	await frames(30)
-	button(spot,false)
-	shift(false)
-	await settled()
-	check("Shift with Raise lowers",height(at) < shift_before-0.2,height(at)-shift_before)
-	await undo_exact(shift_base,undo0,"shift raise")
-
-	# --- Hills: a drag sets down several ---
-	materials.set_mode("hills")
+	# --- Hills: a drag raises rolling land along the way ---
 	var hill_base := data.heights.duplicate()
 	var from := spot+Vector2(-150,0)
+	var line: Array[Vector2] = []
+	for k in range(13): line.append(plate(from+Vector2(25*k,0)))
 	button(from,true)
 	await frames(2)
 	for k in range(60):
@@ -252,33 +204,71 @@ func run() -> void:
 		await frames(1)
 	button(from+Vector2(300,0),false)
 	await settled()
-	var count := moved(hill_base,0.05)
-	# Peaks: points higher than all their neighbours and raised 0.3 m or more.
-	var peaks := 0
-	for i in range(data.points.size()):
-		if data.heights[i]-hill_base[i] < 0.3: continue
-		var top := true
-		for j in data._neighbors[i]:
-			if data.heights[j] > data.heights[i]: top = false
-		if top: peaks += 1
-	print("HILLS ",JSON.stringify({"raised":count.up,"lowered":count.down,"peaks":peaks}))
-	check("a hills drag raises ground and lowers none",count.up > 50 and count.down == 0,count)
-	check("as several hills",peaks >= 2,peaks)
-	check("hills are one undo step",data._undo.size() == undo0+1)
+	var count: Dictionary = moved(hill_base,0.05)
+	var rises: Array[float] = []
+	for p in line:
+		if p != null: rises.append(height(p)-float(data.sample(p,hill_base)))
+	var inner := rises.slice(2,rises.size()-2)
+	print("HILLS ",JSON.stringify({"raised":count.up,"lowered":count.down,"rises":inner.map(func(r: float) -> float: return snappedf(r,0.01))}))
+	check("a hills drag raises the land and lowers none",count.up > 80 and count.down == 0,count)
+	check("a metre or two along the path in one pass",float(inner.max()) > 1.0 and float(inner.max()) < 3.0,inner.max())
+	check("rolling, not an even ridge",inner.min() < inner.max()*0.8,[inner.min(),inner.max()])
+	var after_one: float = inner.max()
+	button(from,true)
+	await frames(2)
+	for k in range(60):
+		motion(from+Vector2(5*(k+1),0),Vector2(5,0))
+		await frames(1)
+	button(from+Vector2(300,0),false)
+	await settled()
+	var top := 0.0
+	for p in line:
+		if p != null: top = maxf(top,height(p)-float(data.sample(p,hill_base)))
+	check("a second pass lifts it more",top > after_one+0.3,[after_one,top])
+	check("each pass is one undo step",data._undo.size() == undo0+2,data._undo.size()-undo0)
+	editor.undo()
+	await settled()
 	await undo_exact(hill_base,undo0,"hills")
 
-	# --- Smooth softens rough ground ---
-	await roughen(at,4.0,11)
-	materials.set_mode("smooth")
-	var smooth_base := data.heights.duplicate()
-	var rough_before := roughness(at,1.5)
+	# --- Mountain: press and drag up at once ---
+	materials.select_tool("mountain")
+	await frames(10)
+	var peak_base := data.heights.duplicate()
+	var peak_before := height(at)
 	button(spot,true)
-	await frames(30)
-	button(spot,false)
+	await frames(2)
+	check("a mountain press is a hold at once",clay.state == clay.State.HOLD and clay.verb == "peak",[clay.state,clay.verb])
+	for k in range(25):
+		motion(spot-Vector2(0,6*(k+1)),Vector2(0,-6))
+		await frames(1)
+	button(spot-Vector2(0,150),false)
 	await settled()
-	var rough_after := roughness(at,1.5)
-	check("smooth softens rough ground",rough_after < rough_before*0.5,"%.4f -> %.4f" % [rough_before,rough_after])
-	await undo_exact(smooth_base,undo0,"smooth")
+	var peak := height(at)-peak_before
+	print("MOUNTAIN ",snappedf(peak,0.01))
+	check("dragging up pulls a mountain",peak > 4.0,peak)
+	await undo_exact(peak_base,undo0,"mountain")
+
+	# --- Bowl: a drag presses out a level-floored basin ---
+	materials.select_tool("bowl")
+	await frames(10)
+	var bowl_base := data.heights.duplicate()
+	var level := height(at)
+	button(spot+Vector2(-60,0),true)
+	await frames(2)
+	for k in range(24):
+		motion(spot+Vector2(-60+5*(k+1),0),Vector2(5,0))
+		await frames(1)
+	button(spot+Vector2(60,0),false)
+	await settled()
+	var bowl_count: Dictionary = moved(bowl_base,0.05)
+	var floor_points := 0
+	for i in range(data.points.size()):
+		if data.points[i].distance_to(at) < 2.0 and absf(data.heights[i]-(level-Bowl.DEPTH)) < 0.25: floor_points += 1
+	print("BOWL ",JSON.stringify({"lowered":bowl_count.down,"raised":bowl_count.up,"centre_depth":snappedf(level-height(at),0.01),"floor_points":floor_points}))
+	check("a bowl drag lowers the land and raises none",bowl_count.down > 50 and bowl_count.up == 0,bowl_count)
+	check("to about its depth in the middle",absf(level-height(at)-Bowl.DEPTH) < 0.4,level-height(at))
+	check("with a level floor",floor_points >= 6,floor_points)
+	await undo_exact(bowl_base,undo0,"bowl")
 
 	# --- Other tools' modes: the fan picks the verb, no hold-then-drag ---
 	materials.select_tool("paddle")
@@ -328,5 +318,5 @@ func run() -> void:
 	await frames(10)
 	check("the hammer, one verb, has no fan",roll.modes.is_empty())
 
-	print("SCULPT PROBE: ",failures.size()," failures ",failures)
+	print("DRAG TOOLS PROBE: ",failures.size()," failures ",failures)
 	quit(1 if not failures.is_empty() else 0)

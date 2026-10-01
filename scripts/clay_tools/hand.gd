@@ -153,7 +153,12 @@ const MODES := [{"id":"pinch","kind":"hold"},{"id":"groove","kind":"drag"},{"id"
 func modes() -> Array: return MODES
 func id() -> String: return "hand"
 func hover_gesture() -> String: return "pinch"
-func gesture(verb: String) -> String: return "pinch" if verb in ["pinch","fine_pinch"] else "press"
+func gesture(verb: String) -> String: return "pinch" if verb in [_pinch_verb(false),_pinch_verb(true)] else "press"
+
+## The pinch's spread and reach (PINCH, or FINE_PINCH with Shift) and its
+## verb's name: a tool built on the pinch (the Mountain) gives its own.
+func _pinch_spec(fine: bool) -> Dictionary: return FINE_PINCH if fine else PINCH
+func _pinch_verb(fine: bool) -> String: return "fine_pinch" if fine else "pinch"
 func pace() -> float: return 1.0+1.5*rub
 func worked_as(verb: String) -> String: return "groove" if verb == "thumb" else verb
 func stroke_radius() -> float: return _groove_hw()
@@ -316,7 +321,7 @@ func _palm(heights: PackedFloat32Array, q: Vector2) -> void:
 # --- Hold: the pinch -------------------------------------------------------------------
 
 func hold_begin(fine: bool) -> String:
-	var spec: Dictionary = FINE_PINCH if fine else PINCH
+	var spec: Dictionary = _pinch_spec(fine)
 	# The pinch takes the clay's nearest point, so the horn's tip stands on
 	# a point of the land and the summit reaches the pointer.
 	clay.gather(clay.center,clay.CELL)
@@ -328,12 +333,12 @@ func hold_begin(fine: bool) -> String:
 	clay.gather(clay.center,float(spec.max_radius)*clay.size_scale*HORN_REACH)
 	_horn_setup()
 	_shown_lift = INF
-	return "fine_pinch" if fine else "pinch"
+	return _pinch_verb(fine)
 
 ## The pinch follows the pointer: its lift is the pointer's travel up the
 ## screen in metres standing at the spot.
 func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
-	var spec: Dictionary = FINE_PINCH if clay.verb == "fine_pinch" else PINCH
+	var spec: Dictionary = _pinch_spec(clay.verb == _pinch_verb(true))
 	lift = clampf(rise*float(spec.scale),-float(spec.sink),float(spec.raise))
 	if is_equal_approx(lift,_shown_lift): return false
 	_shown_lift = lift
@@ -356,8 +361,8 @@ func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 ## Let go: a raise takes the range's rock (see ROCK_FROM), and trees that
 ## cannot hold the flanks slide down.
 func hold_end() -> void:
-	var reach: float = float(PINCH.max_radius)*clay.size_scale*HORN_REACH
-	if clay.verb == "pinch" and lift >= ROCK_FROM:
+	var reach: float = float(_pinch_spec(false).max_radius)*clay.size_scale*HORN_REACH
+	if clay.verb == _pinch_verb(false) and lift >= ROCK_FROM:
 		var horn := smoothstep(HORN.x,HORN.y,lift)
 		clay.paint_rock(clay.center,reach,maxf(2.0,lerpf(10.0,lift,horn)))
 	clay.shake_trees(clay.center,reach+1.0)

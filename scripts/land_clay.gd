@@ -335,7 +335,7 @@ func press(screen_pos: Vector2) -> bool:
 	refreshes = 0
 	dabs = 0
 	tool.reset()
-	_kind = str(tool.mode_spec().get("kind",""))
+	_kind = tool.press_kind()
 	if tool.paints():
 		_begin_paint()
 		return true
@@ -413,6 +413,7 @@ func _process(delta: float) -> void:
 		State.RUN: if not tool.drag_running(): close_stroke()
 		State.PAINT:
 			held += delta
+			_track_speed(delta)
 			_paint_step(delta,delta)
 	_place_prop(delta)
 

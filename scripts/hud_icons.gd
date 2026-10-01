@@ -180,6 +180,11 @@ static func _build() -> void:
 	# The Sculpt, "Shape": a trowel on the diagonal, its kite blade's point
 	# down to the left, the handle up to the right.
 	_add("sculpt","Sculpt","Shape","#9fb0a0",["M3 21 L5.4 12.4 L11.6 9.4 L14.6 12.4 L11.6 18.6Z","M16.2 9.6 L20.6 5.2 Q21.7 4.1 20.8 3.2 Q19.9 2.3 18.8 3.4 L14.4 7.8Z"],["M13.1 10.9 L15.3 8.7","M4.6 19.4 L10.7 13.3"],24,1.0,1.4)
+	# The drag tools: the Hills (two rolling hills), the Mountain (a peak with a
+	# snow cap) and the Bowl (a basin in profile).
+	_add("hills","Hills","Roll","#8fae78",["M2 22.5 V16.6 Q5.6 8.4 10 13.8 Q14.6 5.6 19.4 12.6 Q21 14.6 22 16 V22.5Z"],["M4.4 20 Q8 18.4 11.6 20"],47,1.0,1.3)
+	_add("mountain","Mountain","Peak","#9a948c",["M1.6 22.5 L9.2 9.4 L11.6 11.8 L14.4 4.2 L22.4 22.5Z"],["M12.2 9.6 L14.4 4.2 L16.6 9.8"],48,1.0,1.6)
+	_add("bowl","Bowl","Hollow","#a08a68",["M2 9.4 H5.2 Q7 17.6 12 17.6 Q17 17.6 18.8 9.4 H22 V22.5 H2Z"],["M8 14.4 Q12 15.6 16 14.4"],49,1.0,1.4)
 	# The Sculpt's modes, fanned out beside its pocket (scripts/tool_roll.gd
 	# SCULPT_MODES): the ground in profile, as each leaves it.
 	_add("sculpt_raise","Raise","Sculpt","#8fae78",["M2 21 Q6.5 21 8.6 15.4 Q12 7.6 15.4 15.4 Q17.5 21 22 21 V22.5 H2Z"],["M12 1.8 V7.4","M9.6 4.2 L12 1.8 L14.4 4.2"],25,1.0,1.6)

@@ -43,9 +43,10 @@ extends Node
 ## frame (called by scripts/hand_reach.gd after the materials tray).
 
 ## The marks.
-## The Sculpt's is the Modeller's ring (the shader's kind 0), at its brush's radius.
-const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt"]
-const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0}
+## The Sculpt's and the drag tools' are the Modeller's ring (the shader's kind
+## 0), at their reach.
+const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl"]
+const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0}
 
 ## How faint (premultiplied alpha at full show, 0..1): the loops' and dots'
 ## thread, the hand's fill, and the wire's line while dragged. FAINT_CAP is the
