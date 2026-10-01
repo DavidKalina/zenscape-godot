@@ -79,6 +79,15 @@ const PALM_SINK := 0.4
 ## keeps to the pointer. Sinks stay rounded.
 const PINCH := {"r0":2.2,"grow":0.45,"max_radius":5.6,"raise":8.0,"sink":4.0,"scale":1.0}
 const FINE_PINCH := {"r0":1.2,"grow":0.3,"max_radius":2.6,"raise":2.0,"sink":1.0,"scale":0.4}
+## The pinch's give: the land does not hang rigidly off the pointer but
+## follows it on a quick spring (PINCH_SPRING rad/s, PINCH_DAMPING of
+## critical), so it stretches a little past and settles, as soft clay
+## does, and lands exactly where it is let go. When the hold takes, the spot
+## is kicked up at GRIP_KICK m/s and rings back to rest, so the grip shows
+## before the hand moves.
+const PINCH_SPRING := 30.0
+const PINCH_DAMPING := 0.6
+const GRIP_KICK := 3.0
 const HORN := Vector2(1.0,4.0)
 const HORN_REACH := 1.25
 ## Let go, a raise of at least ROCK_FROM metres takes the range's granite on
@@ -134,6 +143,7 @@ var _dug := PackedByteArray()
 var _bed := INF
 var _level := 0.0
 var _shown_lift := INF
+var _lift_speed := 0.0
 var _aretes := PackedFloat32Array()
 var _jag := PackedFloat32Array()
 var _lump := PackedFloat32Array()
@@ -324,13 +334,30 @@ func hold_begin(fine: bool) -> String:
 	clay.gather(clay.center,float(spec.max_radius)*clay.size_scale*HORN_REACH)
 	_horn_setup()
 	_shown_lift = INF
+	lift = 0.0
+	_lift_speed = GRIP_KICK*(float(spec.scale) if fine else 1.0)
 	return "fine_pinch" if fine else "pinch"
 
 ## The pinch follows the pointer: its lift is the pointer's travel up the
 ## screen in metres standing at the spot.
 func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 	var spec: Dictionary = FINE_PINCH if clay.verb == "fine_pinch" else PINCH
-	lift = clampf(rise*float(spec.scale),-float(spec.sink),float(spec.raise))
+	var goal := clampf(rise*float(spec.scale),-float(spec.sink),float(spec.raise))
+	if clay.letting_go:
+		lift = goal
+		_lift_speed = 0.0
+	else:
+		# Semi-implicit steps of the spring, so a long frame cannot blow it up.
+		var dt := minf(clay.get_process_delta_time(),0.05)
+		var steps := ceili(dt/0.008)
+		for k in range(steps):
+			var h := dt/steps
+			_lift_speed += (PINCH_SPRING*PINCH_SPRING*(goal-lift)-2.0*PINCH_DAMPING*PINCH_SPRING*_lift_speed)*h
+			lift += _lift_speed*h
+		if absf(goal-lift) < 0.0005 and absf(_lift_speed) < 0.005:
+			lift = goal
+			_lift_speed = 0.0
+		lift = clampf(lift,-float(spec.sink)*1.08,float(spec.raise)*1.08)
 	if is_equal_approx(lift,_shown_lift): return false
 	_shown_lift = lift
 	var radius: float = minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))*clay.size_scale

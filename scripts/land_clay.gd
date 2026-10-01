@@ -55,7 +55,7 @@ const GROOVE_DEPTH := HandTool.GROOVE_DEPTH
 
 ## Seconds of holding still that close the hold, and the screen pixels of
 ## travel that make the press a drag instead. A release before either is a tap.
-const HOLD_SECONDS := 0.3
+const HOLD_SECONDS := 0.2
 const MOVE_PIXELS := 6.0
 ## A drag's speed, pointer pixels per second over the last SPEED_WINDOW
 ## seconds of travel (path length, so a rub's turns do not read as slow).
@@ -157,6 +157,9 @@ var stroking := false
 var verb := ""
 ## Seconds since the press, and the most pixels the pointer has been from it.
 var held := 0.0
+## True through the hold's last step at release: a tool that eases its hold
+## (the Modeller's pinch) lands it where the pointer is.
+var letting_go := false
 var travel := 0.0
 ## A drag's speed, pixels per second over the window.
 var speed := 0.0
@@ -346,7 +349,9 @@ func release(screen_pos: Vector2 = Vector2.INF) -> void:
 			if tool.drag_running(): state = State.RUN
 			else: close_stroke()
 		State.HOLD:
+			letting_go = true
 			_hold_step()
+			letting_go = false
 			tool.hold_end()
 			close_stroke()
 

@@ -171,7 +171,14 @@ A running list of what looks off or is still unverified, gathered from the first
 - **[unseen]** has not been seen or heard rendered yet.
 
 ### Discoverability
-- [look] The raise gesture (hold still about 0.3 s, then drag up) is undiscoverable: the user could not find how to raise terrain (2026-09-30). Show the hold being recognised, e.g. the ground starts to lift under the pointer and a rising creak plays.
+- [look] The raise gesture (hold still about 0.3 s, then drag up) is undiscoverable: the user could not find how to raise terrain (2026-09-30). Show the hold being recognised, e.g. the ground starts to lift under the pointer and a rising creak plays. Partly addressed on polish/leaves-clay-spring: the hold is now 0.2 s and the spot kicks up a few centimetres when it takes (no creak yet).
+
+### Feel pass (2026-09-30, polish/leaves-clay-spring)
+- [unseen] Pond leaves steered tip first down the current, stalk trailing, and barely felt the wind. Now they turn slowly on their own and drift with the gusting wind (shape unchanged).
+- [unseen] Ground leaves ignored ordinary wind (they only moved above about 1.25 wind, and the default is about 0.5), and leaves blown onto a pond or off the plate jumped back to their start, so steady wind ran them in a loop (shape kept as it was; the user likes it). Now they rock in any breeze, skid with weight in gusts, lodge at banks and the rim, fade when blown away and regrow later; the fixed 1/60 s step (0 or 2 steps a frame near 60 fps) is gone.
+- [unseen] The Modeller's pinch felt sluggish. The hold is 0.2 s, the spot kicks up when the hold takes, and the summit follows the pointer on a quick spring (30 rad/s, 0.6 damping), landing exactly where it is let go. Tune PINCH_SPRING, PINCH_DAMPING and GRIP_KICK (scripts/clay_tools/hand.gd) by feel.
+- [bug] "Fish" hanging over dry grass on new chunks were the old resident's food-loop fish (scripts/fidelity_fish.gd), shown from a habitat that is never rebuilt without the resident. They now stand down unless the habitat is current and the world is not blank (studies/fidelity_life.gd). Deprecate or delete the old fish with the old resident; the ambient Bigfoot rebuild is not wired to them.
+- [unseen] A spring's or mountain's weathering popped in a moment after it settled. It now eases in over WEATHER_EASE_SECONDS (1.2 s, scripts/native_chunk_editor.gd).
 
 ### Existing look, beyond these features
 - ~~[bug] The grass snake never drew in the rendered game.~~ Fixed on feature/sp-predation (281652f): its body wasn't bound to the skeleton. The user has seen it and likes it.

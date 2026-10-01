@@ -2198,6 +2198,7 @@ func _pour_live() -> void:
 	while _weather_job != null:
 		await get_tree().process_frame
 		if not is_same(_pour,pour): return
+	_finish_weather_ease(false)
 	if forming or data != pour.target:
 		_drop_pour(pour)
 		return
@@ -2939,11 +2940,19 @@ func _weather_land() -> bool:
 ## the land and its weathering together. Anything that opens a new transaction
 ## first joins it (`data.stroke_starting`), so a quick second stroke starts
 ## from weathered ground. Undo, a regrow or any other height change drops it.
+##
+## Weathering that lands on its own (a spring's or a mountain's, nothing
+## pressing) is not swapped in at once: the ground and its rock colour ease
+## from the release's to the weathered over WEATHER_EASE_SECONDS, shown through
+## the light refresh, so the gullies wear in rather than appearing in a frame.
+## Anything that would have joined the weathering takes the eased ground whole.
+const WEATHER_EASE_SECONDS := 1.2
 var land_settling := false
 var _weather_job: RefCounted
 var _weather_generation := 0
 var _weather_heights := PackedFloat32Array()
 var _weather_region := Rect2()
+var _weather_ease := {}
 
 func _weather_async(job: Callable, region: Rect2) -> void:
 	_drop_weathering()
@@ -2974,23 +2983,85 @@ func _land_weathering(settle: bool) -> void:
 	# it starts from weathered ground rather than dropping the weathering.
 	var result: Dictionary = job.finish() if job.completed() else job.wait()
 	land_brush.last_weather_usec = result.usec
-	if result.moved and not forming and data.heights == _weather_heights:
-		data.heights = result.heights
+	var fresh := not forming and data.heights == _weather_heights
+	var heights: PackedFloat32Array = result.heights if result.moved and fresh else data.heights
+	# A mountain's rock colour (scripts/mountain_forms.gd) comes with it.
+	var tint: PackedFloat32Array = result.tint if fresh and result.has("tint") else data.tint
+	if settle and fresh and (result.moved or tint != data.tint) and _light_refresh_ready(true):
+		_ease_weathering(heights,tint,result.moved)
+		return
+	if result.moved and fresh:
+		data.heights = heights
 		land_weathered.emit(_weather_region)
-		# A mountain's rock colour (scripts/mountain_forms.gd) comes with it.
-		if result.has("tint"): data.tint = result.tint
-	elif result.has("tint") and not forming and data.heights == _weather_heights:
-		data.tint = result.tint
+	data.tint = tint
+	_settle_pending = true
+	if settle: _settle_stroke()
+
+## Ease the land from the ground at release to the weathered `heights` and
+## `tint`, then settle as a landing does. The ease stops where it stands if
+## the heights change under it (an undo, a regrow), and any joining stroke
+## or pour takes it whole (`_finish_weather_ease`).
+func _ease_weathering(heights: PackedFloat32Array, tint: PackedFloat32Array, moved: bool) -> void:
+	var from_h := data.heights
+	var from_t := data.tint
+	var moved_h := PackedInt32Array()
+	for i in range(mini(heights.size(),from_h.size())):
+		if heights[i] != from_h[i]: moved_h.append(i)
+	var moved_t := PackedInt32Array()
+	if tint.size() == from_t.size():
+		for i in range(tint.size()):
+			if tint[i] != from_t[i]: moved_t.append(i)
+	var ease := {"heights":heights,"tint":tint,"moved":moved,"region":_weather_region}
+	_weather_ease = ease
+	land_settling = true
+	emergence.ground_settling = true
+	var t := 0.0
+	var written := from_h
+	while true:
+		await get_tree().process_frame
+		if not is_same(_weather_ease,ease): return
+		if forming or data.heights != written:
+			_weather_ease = {}
+			land_settling = false
+			emergence.ground_settling = false
+			return
+		t += get_process_delta_time()/WEATHER_EASE_SECONDS
+		if t >= 1.0:
+			_finish_weather_ease(true)
+			return
+		var k := smoothstep(0.0,1.0,t)
+		var h := from_h.duplicate()
+		for i in moved_h: h[i] = lerpf(from_h[i],heights[i],k)
+		data.heights = h
+		written = h
+		if not moved_t.is_empty():
+			var c := from_t.duplicate()
+			for i in moved_t: c[i] = lerpf(from_t[i],tint[i],k)
+			data.tint = c
+		if refresh_pending == 0: _refresh_light()
+
+## Put the easing weathering down whole. `settle` starts the settle refresh.
+func _finish_weather_ease(settle: bool) -> void:
+	var ease := _weather_ease
+	if ease.is_empty(): return
+	_weather_ease = {}
+	land_settling = false
+	emergence.ground_settling = false
+	data.heights = ease.heights
+	if ease.tint.size() == data.tint.size() or data.tint.is_empty(): data.tint = ease.tint
+	if ease.moved: land_weathered.emit(ease.region)
 	_settle_pending = true
 	if settle: _settle_stroke()
 
 func _drop_weathering() -> void:
 	_weather_generation += 1
 	_weather_job = null
+	_weather_ease = {}
 	land_settling = false
 	emergence.ground_settling = false
 
 func _join_weathering() -> void:
+	_finish_weather_ease(false)
 	if _weather_job != null: _land_weathering(false)
 
 # --- Mountain forms ---------------------------------------------------------------

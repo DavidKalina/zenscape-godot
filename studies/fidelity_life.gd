@@ -178,8 +178,15 @@ func _process(delta: float) -> void:
 	if not resident_enabled:
 		if foliage_tread != null: foliage_tread.tick(null,delta)
 		creature.visible = false
+		# The resident's fish read the habitat for their water, and without
+		# the resident it is never rebuilt: once the land changes, or on a
+		# blank world (LandLife's fish live there), it describes water that is
+		# not there, and they hung over dry grass. They stand down until the
+		# habitat is current again.
+		var fish_current: bool = not _habitat_changed and not _chunk_editor.data.blank
+		if fish != null: fish.visible = fish_current
 		if ambient_without_resident and not _paused:
-			if fish != null: fish.advance(delta)
+			if fish != null and fish_current: fish.advance(delta)
 			if dead_wood != null: dead_wood.advance(delta)
 		return
 	if (_habitat_changed or navigation.rebuilding) and not _paused and not _chunk_editor.forming: _refresh_habitat(true)

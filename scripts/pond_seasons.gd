@@ -90,11 +90,18 @@ const LEAF_STRANDED := 8.0
 const LEAF_FOLLOW := 1.6
 const LEAF_SPEED := 1.4
 ## On still water (slower than LEAF_STILL m/s): m/s round the pond's middle
-## and out toward its bank; and m/s per unit of wind.
+## and out toward its bank; and m/s per unit of wind on the water (the
+## breeze's gusting, scripts/atmosphere `gust_at`, included; each leaf
+## catches it by its own windage) and in the air as it falls.
 const LEAF_STILL := 0.06
 const LEAF_SWIRL := 0.035
 const LEAF_SHORE := 0.012
-const LEAF_WIND := 0.03
+const LEAF_WIND := 0.15
+const LEAF_AIR_WIND := 0.55
+## rad/s a floating leaf turns, at rest and per m/s it moves or unit of wind.
+## It never turns to face where it goes: a leaf steering tip first down a
+## rill, stem trailing, read as a fish.
+const LEAF_TURN := Vector2(0.12,1.6)
 const LEAF_SIZE := Vector2(0.07,0.11)
 ## Objects scanned for shedding trees each frame, and seconds between scans.
 const LEAF_SCAN := 12
@@ -490,7 +497,7 @@ func _shed_leaves(step: float, autumn: float) -> void:
 			_leaf_v[n] = Vector2.ZERO
 			_leaf_y[n] = surface+lerpf(LEAF_DROP.x,LEAF_DROP.y,_rng.randf())
 			_leaf_yaw[n] = _rng.randf()*TAU
-			_leaf_spin[n] = _rng.randf_range(-0.6,0.6)
+			_leaf_spin[n] = _rng.randf_range(0.4,1.0)*(-1.0 if _rng.randf() < 0.5 else 1.0)
 			_leaf_age[n] = 0.0
 			_leaf_life[n] = lerpf(LEAF_FLOAT.x,LEAF_FLOAT.y,_rng.randf())
 			_leaf_size[n] = lerpf(LEAF_SIZE.x,LEAF_SIZE.y,_rng.randf())
@@ -519,10 +526,10 @@ func _move_leaves(step: float) -> void:
 	var air: Variant = life.scene.get("_atmosphere")
 	var wind := Vector2.ZERO
 	if air != null and air.get("_air_strength") != null:
-		wind = Vector2.from_angle(float(air._air_angle))*float(air._air_strength)*LEAF_WIND
+		wind = Vector2.from_angle(float(air._air_angle))*float(air._air_strength)*air.gust_at(float(air._wind_time))
+	var windy := wind.length()
 	var follow := 1.0-exp(-LEAF_FOLLOW*step)
 	var settle := 1.0-exp(-6.0*step)
-	var turn := 1.0-exp(-1.5*step)
 	var n := 0
 	while n < leaf_count:
 		var age := _leaf_age[n]+step
@@ -532,11 +539,15 @@ func _move_leaves(step: float) -> void:
 			_drop_leaf(n)
 			continue
 		var t := age+_leaf_seed[n]
-		var tilt := 0.06*sin(t*1.3)
+		# Windage by leaf, from its seed: some catch the air more than others.
+		var windage := 0.7+0.6*fposmod(_leaf_seed[n]*1.618,1.0)
+		# Ripples rock it harder in a wind (a fixed beat: a beat that followed
+		# the gusting would jump its phase).
+		var tilt := (0.05+0.05*minf(windy,1.5))*sin(t*1.7)
 		if _leaf_falling[n] == 1:
 			tilt = 0.5*sin(t*2.7)
 			var y := _leaf_y[n]-LEAF_FALL*step
-			p += (Vector2(sin(t*3.1),cos(t*2.3))*0.3+wind*8.0)*step
+			p += (Vector2(sin(t*3.1),cos(t*2.3))*0.3+wind*LEAF_AIR_WIND*windage)*step
 			_leaf_yaw[n] += sin(t*1.7)*2.0*step
 			var surface := _surface_at(p)
 			if surface > -INF and y <= surface+LIFT:
@@ -560,7 +571,7 @@ func _move_leaves(step: float) -> void:
 		else:
 			var target := _velocity_at(p)
 			if target.length_squared() < LEAF_STILL*LEAF_STILL: target += _pond_drift(p,_leaf_seed[n])
-			var v := _leaf_v[n].lerp(target+wind,follow).limit_length(LEAF_SPEED)
+			var v := _leaf_v[n].lerp(target+wind*LEAF_WIND*windage,follow).limit_length(LEAF_SPEED)
 			var next := p+v*step
 			# Lodged against the bank, or in the lee of the flow.
 			if _depth_at(next) < WET: v = Vector2.ZERO
@@ -569,8 +580,7 @@ func _move_leaves(step: float) -> void:
 			var surface := _surface_at(_leaf_p[n])
 			if surface > -INF: _leaf_y[n] = lerpf(_leaf_y[n],surface+LIFT,settle)
 			var speed := v.length()
-			if speed > 0.12: _leaf_yaw[n] = lerp_angle(_leaf_yaw[n],atan2(v.x,v.y),turn)
-			else: _leaf_yaw[n] += _leaf_spin[n]*maxf(speed,0.02)*4.0*step
+			_leaf_yaw[n] += _leaf_spin[n]*(LEAF_TURN.x+LEAF_TURN.y*(speed+0.1*windy*windage))*step
 		var sink := clampf((age-(_leaf_life[n]-LEAF_SINK))/LEAF_SINK,0.0,1.0)
 		var basis := (Basis(Vector3.UP,_leaf_yaw[n])*Basis(Vector3.RIGHT,tilt)).scaled(Vector3.ONE*_leaf_size[n]*(1.0-0.4*sink))
 		var at := _leaf_p[n]
