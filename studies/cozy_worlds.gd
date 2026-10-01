@@ -206,6 +206,8 @@ func _retitle_menu() -> void:
 	for index: int in [1,3,4]: _menu.buttons[index].disabled = true
 	# show_menu re-enables Save a copy; point it at a button nobody sees.
 	_save_copy = Button.new()
+	_save_copy.visible = false
+	_menu.add_child(_save_copy)
 	var fresh: Button = _menu.buttons[2]
 	fresh.text = "Create a new world"
 	for connection: Dictionary in fresh.pressed.get_connections(): fresh.pressed.disconnect(connection.callable)
