@@ -371,6 +371,11 @@ func run() -> void:
 	# --- Esc gives back the Hand ---
 	await key(KEY_ESCAPE)
 	check("Esc gives back the Hand",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
+	# The blows were heard (scripts/clay_sound.gd): cracks, knocks and the pocket's pick.
+	var sound: Node = scene.get("clay_sound")
+	var counts: Dictionary = sound.counts if sound != null else {}
+	print("SOUND ",counts)
+	check("the blows and the pick play their cues",sound != null and int(counts.get(&"crack",[0])[0]) > 0 and int(counts.get(&"knock",[0])[0]) > 0 and int(counts.get(&"ui_pick",[0])[0]) > 0,counts)
 	print("FAILURES: ",failures)
 	scene.queue_free()
 	await frames(3)

@@ -373,12 +373,18 @@ func _layout_customise(y: float, inner: float) -> float:
 	y += HEADER_H+HEADER_GAP
 	var minis: Array = [""]+Mood.mood_ids()
 	var mini: Vector2 = Icons.VIGNETTE_SIZES.mini+Vector2.ONE*MINI_PAD*2.0
-	var span := mini.x*minis.size()+MINI_GAP*(minis.size()-1)
-	var x := PAD.x+(inner-span)*0.5
-	for id: String in minis:
-		_add("mini",id,Rect2(x,y,mini.x,mini.y))
-		x += mini.x+MINI_GAP
-	y += mini.y
+	# As many to a row as the page holds, rows centred, more rows when the
+	# moods outgrow one.
+	var per_row := maxi(1,floori((inner+MINI_GAP)/(mini.x+MINI_GAP)))
+	var x := PAD.x
+	for start in range(0,minis.size(),per_row):
+		var row := minis.slice(start,start+per_row)
+		var span := mini.x*row.size()+MINI_GAP*(row.size()-1)
+		x = PAD.x+(inner-span)*0.5
+		for id: String in row:
+			_add("mini",id,Rect2(x,y,mini.x,mini.y))
+			x += mini.x+MINI_GAP
+		y += mini.y+(MINI_GAP if start+per_row < minis.size() else 0.0)
 	_add("rule","",Rect2(PAD.x,y,inner,RULE_H))
 	y += RULE_H
 	var chips_x := PAD.x+GUTTER+LABEL_W

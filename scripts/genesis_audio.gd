@@ -314,6 +314,8 @@ static func change(key: String, value: Variant) -> void:
 # --- Strokes -------------------------------------------------------------
 
 func _on_stroke_started(center: Vector3, _radius: float, mode: String) -> void:
+	# The clay's strokes have their own sound (scripts/clay_sound.gd).
+	if _clay_stroking(): return
 	_mode = mode
 	var feel: Dictionary = Feedback.BRUSH_FEEL.get(mode,{})
 	_rumble = float(feel.get("rumble",Feedback.RUMBLE_MODE.get(mode,0.0)))
@@ -326,6 +328,10 @@ func _on_stroke_started(center: Vector3, _radius: float, mode: String) -> void:
 	if mode == "mountain" and _thump_wait <= 0.0 and not scene._paused:
 		_thump_wait = THUMP_GAP
 		_shot("genesis-thump",center,THUMP_GAIN,1.0)
+
+func _clay_stroking() -> bool:
+	var clay: Node = scene.get("land_clay") as Node
+	return clay != null and bool(clay.stroking)
 
 func _on_stroke_moved(center: Vector3, _radius: float, _mode_name: String, amount: float) -> void:
 	if not _stroking: return

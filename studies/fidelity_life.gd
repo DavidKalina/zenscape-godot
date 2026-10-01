@@ -28,6 +28,8 @@ var foliage_tread: Node
 var land_life: Node3D
 ## Stroke voices, creation beds and life's one-shots (scripts/genesis_audio.gd).
 var genesis_audio: Node
+## The shaping tools' and the HUD's sound (scripts/clay_sound.gd), with the clay.
+var clay_sound: Node
 
 func _ready() -> void:
 	super._ready()
@@ -118,6 +120,10 @@ func _ready() -> void:
 	genesis_audio = preload("res://scripts/genesis_audio.gd").new()
 	add_child(genesis_audio)
 	genesis_audio.setup(self)
+	if land_clay != null:
+		clay_sound = preload("res://scripts/clay_sound.gd").new()
+		add_child(clay_sound)
+		clay_sound.setup(land_clay)
 	_choose_inhabited_shore()
 	_seed_loose_stones()
 	_focus_bigfoot()

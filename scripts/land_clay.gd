@@ -40,6 +40,10 @@ extends Node
 ## "palm", "pinch" or "fine_pinch"); `kept` is whether the land changed and an
 ## undo step was added.
 signal worked(verb: String, kept: bool)
+## A moment the tools' sound answers (scripts/clay_sound.gd, docs/scenic/sound.md
+## "Tool sound"): `cue` names it, `at` is the ground (plate space, as
+## `ground_at`), `strength` 0..1 how big it was.
+signal sounded(cue: StringName, at: Vector3, strength: float)
 
 const ClayTool = preload("res://scripts/clay_tools/clay_tool.gd")
 ## The tools' scripts: scripts/clay_tools/<id>.gd for each tool roll id.
@@ -146,6 +150,9 @@ enum State { IDLE, PENDING, DRAG, HOLD, RUN }
 var scene: Node3D
 var editor: NativeChunkEditor
 var state := State.IDLE
+## True from `open_stroke` to `close_stroke`: GenesisAudio leaves the clay's
+## strokes to ClaySound (scripts/clay_sound.gd).
+var stroking := false
 ## The tool's name for the decided verb ("thumb", "pinch", "sweep"...).
 var verb := ""
 ## Seconds since the press, and the most pixels the pointer has been from it.
@@ -421,6 +428,7 @@ func open_stroke() -> void:
 	_tint_base = data.tint.duplicate()
 	_dirt_depth = {}
 	_turned = {}
+	stroking = true
 	editor._emit_stroke(0,ground_at(center),tool.stroke_radius(),0.0)
 
 ## Close the verb's undo step and settle the land, as a brush's release does.
@@ -435,6 +443,7 @@ func close_stroke() -> void:
 	if kept: editor._stroke_ended("land")
 	editor._stroke_rect = Rect2()
 	editor._emit_stroke(2,ground_at(center),tool.stroke_radius(),0.0)
+	stroking = false
 	var done := tool.worked_as(verb)
 	state = State.IDLE
 	verb = ""
@@ -545,6 +554,10 @@ func fade(i: int) -> float:
 func touch(q: Vector2, reach: float) -> void:
 	_region = _region.merge(Rect2(q-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
 
+## Ask the tools' sound for `cue` at `at` (plate), `strength` 0..1.
+func sound(cue: StringName, at: Vector2, strength := 1.0) -> void:
+	sounded.emit(cue,ground_at(at),clampf(strength,0.0,1.0))
+
 func ground_at(p: Vector2) -> Vector3:
 	var h: Variant = editor.data.ground_height(p)
 	return Vector3(p.x,float(h) if h != null else 0.0,p.y)
@@ -584,6 +597,7 @@ func paint_rock(at: Vector2, reach: float, height: float, form := "alpine") -> v
 		"region":Rect2(at-Vector2.ONE*reach,Vector2.ONE*reach*2.0),"lock":preload("res://scripts/edge_spring.gd")._bare_cells(data),
 		"salt":hash([editor.land_seed,"pinch",at.snapped(Vector2.ONE*0.01)]),"form":form,"ground":float(ground) if ground != null else 0.0}
 	data.tint = forms._rock_tint(data,job)
+	sound(&"rock_settle",at,height/10.0)
 
 ## The strata on the faces a stroke cut (or built) inside `region` (plate):
 ## every tint cell the stroke moved at least FACE_MOVED metres from `base`,
@@ -690,7 +704,9 @@ func shake_trees(at: Vector2, reach: float, area := Rect2()) -> void:
 		data.objects[index] = moved_item
 		moved = true
 		shaken.append({"id":item.id,"from":from,"to":p})
-	if moved: data.objects_revision += 1
+	if moved:
+		data.objects_revision += 1
+		sound(&"trees",(shaken[0].to as Vector2),shaken.size()/4.0)
 
 ## The ground the stroke has touched so far (plate rect), for `shake_trees`.
 func touched() -> Rect2:

@@ -16,11 +16,13 @@ signal changed
 const FADE_SECONDS := 1.2
 ## The season each mood was painted for: its gold, cold and palette belong to it.
 const MOOD_SEASONS := {"alpine_morning":"summer","golden_meadow":"summer","copper_autumn":"autumn","rosewater_dusk":"spring",
-	"enchanted_forest":"summer","halloween_hollow":"autumn","first_snow":"winter","nordic_night":"winter","after_the_rain":"spring"}
+	"enchanted_forest":"summer","halloween_hollow":"autumn","first_snow":"winter","nordic_night":"winter","after_the_rain":"spring",
+	"rose_dusk":"spring","meadow_morning":"spring","desert_afternoon":"summer","autumn_evening":"autumn","winter_hush":"winter",
+	"misty_hollow":"autumn","ocean_light":"summer","moonlit_stillness":"winter","storm_gathering":"autumn"}
 ## Moods defined by their hour: they hold it even where the day turns. Every
 ## other mood, on a world whose day turns (the creation plain), sets its hour
 ## as the time now and lets the day carry on from there.
-const HOUR_MOODS := ["nordic_night","rosewater_dusk","halloween_hollow"]
+const HOUR_MOODS := ["nordic_night","rosewater_dusk","halloween_hollow","rose_dusk","moonlit_stillness"]
 ## Customise, in drawer order. `colors` is one control per COLORS key.
 const CONTROLS := [
 	{"id":"season","title":"Season"},

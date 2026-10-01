@@ -170,6 +170,9 @@ A running list of what looks off or is still unverified, gathered from the first
 - **[tune]** is a number to adjust.
 - **[unseen]** has not been seen or heard rendered yet.
 
+### Discoverability
+- [look] The raise gesture (hold still about 0.3 s, then drag up) is undiscoverable: the user could not find how to raise terrain (2026-09-30). Show the hold being recognised, e.g. the ground starts to lift under the pointer and a rising creak plays.
+
 ### Existing look, beyond these features
 - ~~[bug] The grass snake never drew in the rendered game.~~ Fixed on feature/sp-predation (281652f): its body wasn't bound to the skeleton. The user has seen it and likes it.
 - ~~[tune] The snake is small.~~ Now 1.8 m by default, with a seeded 0.8-1.3x size per visit (b93a8a2).
@@ -235,3 +238,11 @@ A running list of what looks off or is still unverified, gathered from the first
 ### Filming
 - The God Hand and hover rings leak into some takes; film scripts should switch off the hand's processing, not just hide it.
 - Film scripts: `tools/film_{rain,predation,hand_notice,night_sky,small_life,winter_water,bigfoot_trail,pond_seasons,variants}.gd`.
+
+### Shaping tools (landscape audit, 2026-09-30)
+Full list in `docs/design/tools/LANDSCAPE-AUDIT.md`. The top items:
+- [bug] A shaping press on a tree or shrub does nothing, with no feedback.
+- [bug] A Hammer gesture straight after another is eaten.
+- [tune] Life buries every landform within seconds; open or dry ground can't be kept.
+- [look] Mist blankets every hollow, so water in basins and moats is hard to see.
+- [look] Gentle hills and flower drifts don't read from the building view.

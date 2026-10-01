@@ -26,6 +26,7 @@ signal landed(point: Vector2, volume: float, fish: Array)
 
 const Models = preload("res://scripts/life_models.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
+const ClaySound = preload("res://scripts/clay_sound.gd")
 
 ## Metres from the ground to the ball's underside while held.
 const HOVER := 1.6
@@ -328,6 +329,7 @@ func condense(point: Vector3, fish_material: Material, salt: int) -> void:
 	# It gathers out of the air: beads rush in from all round.
 	for i in range(CONDENSE_BEADS):
 		_bead_in(randf_range(0.8,1.8),randf_range(0.28,0.5))
+	ClaySound.cue_at(&"water_gather",global_position,0.5)
 	_choose_fish(fish_material,salt)
 
 ## Follow the pointer's ground point with `water` m³ in the ball.
@@ -345,6 +347,7 @@ func release() -> void:
 	if state != "holding": return
 	state = "tossed"
 	_toss_t = 0.0
+	ClaySound.cue_at(&"water_toss",global_position,radius)
 	_toss_from = position.y
 	var carried_speed := Vector2(velocity.x,velocity.z).length()
 	velocity = Vector3(0.0,2.0*TOSS/POP_SECONDS,0.0)
@@ -431,6 +434,8 @@ func ripple(direction: Vector3) -> void:
 	_ripple_next = (_ripple_next+1)%RIPPLES
 
 func _step_held(delta: float) -> void:
+	# The vortex is heard while held, louder as it churns and grows.
+	ClaySound.voice(&"water_swirl",lerpf(0.45,1.0,churn)*smoothstep(0.0,0.6,radius),global_position)
 	# Radius swells to the water it holds, overshooting a little.
 	var size := size_for(volume)*_condensed()
 	var pull := (size-radius)*SWELL-_radius_speed*SWELL_DAMP
@@ -490,6 +495,7 @@ func _step_tossed(delta: float) -> void:
 ## of skin fly out round it, and the water, loose, starts to fall.
 func _pop() -> void:
 	state = "falling"
+	ClaySound.cue_at(&"water_pop",global_position,radius)
 	velocity = Vector3.ZERO
 	_jolt = 1.0
 	_loose = LOOSE
@@ -542,6 +548,7 @@ func _impact() -> void:
 	_splash_age = 0.0
 	_landing = Vector3(position.x,ground,position.z)
 	_landed_radius = radius
+	ClaySound.cue_at(&"water_splash",get_parent().to_global(_landing) if get_parent() is Node3D else _landing,clampf(radius/1.2,0.3,1.0))
 	_held = 0.0
 	position.y = ground+radius
 	_jolt = 1.0

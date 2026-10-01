@@ -1140,6 +1140,60 @@ func _fade_fireflies() -> void:
 func force(kind: String) -> bool:
 	return snakes.force() if kind == "snake" else moments.force(kind)
 
+## Kinds `summon` knows, in the command palette's order.
+const SUMMONS := ["deer","heron","snake","bigfoot_watch","bigfoot_stride","bigfoot_tracks","bigfoot_howl","woodpecker","geese","rainbow"]
+
+## Call `kind` (a SUMMONS id) now, whatever its chance, hour or season: the
+## command palette's creative override. Deer and Bigfoot come out of the
+## nearest wood, or, on open ground, from just beyond the view; the others
+## still need their place (water for heron and snake, a snag for the
+## woodpecker). "" when it came, else a short line saying what it needs.
+func summon(kind: String) -> String:
+	if survey == null: return "The land is still waking"
+	match kind:
+		"snake":
+			if snakes.showing() != "": return "A snake is already out"
+			return "" if snakes.force() else "A snake needs a pond to come to: pour some water first"
+		"heron":
+			if str(moments.showing().heron) != "": return "The heron is already here"
+			return "" if moments.force("heron") else "A heron needs shallow water"
+		"deer":
+			if moments.showing().deer: return "The deer are already out"
+			if moments.force("deer"): return ""
+			moments._deer_arrive(_open_edges())
+			return ""
+		"bigfoot","bigfoot_watch","bigfoot_listen","bigfoot_stride":
+			if moments.bigfoot.showing(): return "He is already about"
+			if moments.force(kind): return ""
+			var how := kind.trim_prefix("bigfoot").trim_prefix("_")
+			var edges := _open_edges()
+			if moments.bigfoot.begin(how,edges,0,true) or moments.bigfoot.begin(how,edges,0,false):
+				moments._record("bigfoot",moments.bigfoot.position)
+				return ""
+			return "Bigfoot found no footing here"
+		"woodpecker":
+			return "" if small.woodpecker.start() else "A woodpecker needs a dead tree"
+		"geese":
+			return "" if small.geese.start() else "The geese are already passing"
+		_:
+			return "" if moments.force(kind) else "Not now"
+
+## Stand-in forest edges for open ground (`summon`): a grid over the plate's
+## middle (inside the 12.8 m Bigfoot keeps to, with room to walk in and out),
+## each with its "wood" behind it, away from the camera, so whatever steps
+## out walks toward the view. The callers pick the best of them as ever.
+func _open_edges() -> Array:
+	var eye := to_local(scene.camera.global_position)
+	var edges := []
+	for i in range(-4,5):
+		for j in range(-4,5):
+			var p := Vector2(i,j)*2.0
+			if data.ground_height(p) == null: continue
+			var into := (p-Vector2(eye.x,eye.z)).normalized()
+			edges.append({"p":p,"into":into,"trees":99})
+	if edges.is_empty(): edges.append({"p":Vector2.ZERO,"into":(-Vector2(eye.x,eye.z)).normalized(),"trees":99})
+	return edges
+
 static func _forced_kinds() -> PackedStringArray:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--force-life": return PackedStringArray(["deer","heron","snake"])

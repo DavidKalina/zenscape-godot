@@ -279,6 +279,9 @@ func _strike(heights: PackedFloat32Array, at: Vector2, fine: bool) -> void:
 	_fine = fine
 	if _rocky(at): _crack(heights,at)
 	else: _knock(heights,at)
+	var blow := 0.6 if fine else 1.0
+	clay.sound(&"crack" if last.kind == "crack" else &"knock",at,blow)
+	if int(last.scree) > 0: clay.sound(&"scree",at,blow*minf(float(last.scree)/20.0,1.0))
 
 func _knock(heights: PackedFloat32Array, at: Vector2) -> void:
 	var radius := _radius(KNOCK_RADIUS)

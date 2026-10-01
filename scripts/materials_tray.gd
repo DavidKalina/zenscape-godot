@@ -18,6 +18,7 @@ extends Control
 ## name printed on the linen above it in small caps over a hairline.
 
 const Linen = preload("res://scripts/hud_linen.gd")
+const ClaySound = preload("res://scripts/clay_sound.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 ## The bar, in order: id (what the hand holds) and group. Those marked
 ## "hidden" are not found yet: a silhouette only.
@@ -153,6 +154,7 @@ func return_home(id: String, _from := Vector2.ZERO) -> void:
 ## again. Nothing is given.
 func not_yet(id: String) -> void:
 	if _states.has(id): _states[id].refuse = 1.0
+	ClaySound.cue(&"ui_refuse")
 
 # --- Frames ---------------------------------------------------------------------
 
@@ -168,6 +170,7 @@ func _process(delta: float) -> void:
 	var near := _want_shown and not quiet and (screen.y-pointer.y <= NEAR*ui_scale or (awake > 0.0 and _bar().grow(6.0*ui_scale).has_point(pointer)))
 	if near:
 		_away = 0.0
+		if awake == 0.0: ClaySound.cue(&"ui_reach")
 		awake = move_toward(awake,1.0,delta/Linen.REACH)
 	else:
 		_away += delta
@@ -175,7 +178,9 @@ func _process(delta: float) -> void:
 	visible = shown > 0.0
 	if not visible: return
 	modulate.a = Linen.eased(shown)*lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake))
+	var was_hovered := hovered
 	hovered = specimen_at(pointer) if _want_shown and awake > 0.5 else ""
+	if hovered != was_hovered and not hovered.is_empty() and hovered != held: ClaySound.cue(&"ui_hover")
 	for entry: Dictionary in SPECIMENS:
 		var state: Dictionary = _states[entry.id]
 		var on: bool = entry.id == hovered and entry.id != held and not entry.get("hidden",false)

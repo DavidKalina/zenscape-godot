@@ -21,6 +21,27 @@ const PRESETS := {
 		"strength":0.55,"ambient_energy":1.5,"exposure":1.18,"night_fill":1.4,"aurora":0.95,"colors":{"sky":"536884","horizon":"526d80","glow":"8d9eae","foliage":"627d7c","water":"6e97ac"}},
 	"after_the_rain": {"title":"After the rain","description":"Fresh greens and clearing skies.","palette":"Meadow","phase":0.355,"weather":"fair","clouds":0.29,"mist":0.35,"haze":0.15,"wind":0.5,
 		"strength":0.62,"wet":0.55,"humidity":0.75,"rainbow":0.6,"colors":{"sky":"739fb5","horizon":"76949c","glow":"e0d7b7","grass":"70a268","foliage":"528468","water":"619f9f"}},
+	# The editor's whole moods (SceneLook.MOODS), once only behind the World
+	# menu's Colors & sky: each family's own colours at full strength, as
+	# `apply_scene_mood` set them. Alpine daylight is Alpine morning's.
+	"rose_dusk": {"title":"Rose dusk","description":"Deep rose light over violet hills.","palette":"Dusk","phase":0.71,"weather":"clear","clouds":0.12,"mist":0.16,"haze":0.2,"wind":0.35,
+		"strength":1.0,"colors":{}},
+	"meadow_morning": {"title":"Meadow morning","description":"Cool green light, the dew still on.","palette":"Meadow","phase":0.36,"weather":"fair","clouds":0.22,"mist":0.2,"haze":0.15,"wind":0.65,
+		"strength":1.0,"colors":{}},
+	"desert_afternoon": {"title":"Desert afternoon","description":"Dry gold air and long warm stone.","palette":"Desert","phase":0.59,"weather":"clear","clouds":0.06,"mist":0.02,"haze":0.3,"wind":0.55,
+		"strength":1.0,"colors":{}},
+	"autumn_evening": {"title":"Autumn evening","description":"Low amber sun through turning leaves.","palette":"Autumn","phase":0.64,"weather":"autumn","clouds":0.22,"mist":0.22,"haze":0.25,"wind":0.9,
+		"strength":1.0,"autumn":0.6,"colors":{}},
+	"winter_hush": {"title":"Winter hush","description":"Blue cold and falling snow.","palette":"Winter","phase":0.43,"weather":"snow","clouds":0.6,"mist":0.3,"haze":0.35,"wind":0.5,
+		"strength":1.0,"cold":0.85,"snow":0.55,"ice":0.4,"colors":{}},
+	"misty_hollow": {"title":"Misty hollow","description":"Teal mist pooled in the low ground.","palette":"Hollow","phase":0.31,"weather":"mist","clouds":0.35,"mist":0.85,"haze":0.45,"wind":0.2,
+		"strength":1.0,"colors":{}},
+	"ocean_light": {"title":"Ocean light","description":"Bright sea air and turquoise water.","palette":"Ocean","phase":0.46,"weather":"fair","clouds":0.2,"mist":0.1,"haze":0.18,"wind":1.0,
+		"strength":1.0,"colors":{}},
+	"moonlit_stillness": {"title":"Moonlit stillness","description":"Blue night, the aurora overhead.","palette":"Moonlit","phase":0.02,"weather":"clear","clouds":0.05,"mist":0.18,"haze":0.08,"wind":0.2,
+		"strength":1.0,"aurora":0.65,"colors":{}},
+	"storm_gathering": {"title":"Storm gathering","description":"Slate skies and a rising wind.","palette":"Storm","phase":0.46,"weather":"storm","clouds":0.8,"mist":0.42,"haze":0.58,"wind":2.5,
+		"strength":1.0,"wet":0.5,"humidity":0.8,"colors":{}},
 }
 # World presets can specialize a look without changing the standalone Looks gallery.
 static var _looks := {}

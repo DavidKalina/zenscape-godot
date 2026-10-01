@@ -194,6 +194,7 @@ func tap(fine: bool) -> void:
 		clay.show_land()
 	var at: Vector3 = clay.ground_at(center)
 	clay.stir(center,radius,PAT_STRENGTH)
+	clay.sound(&"pat",center,0.6 if fine else 1.0)
 	clay.close_stroke()
 	# The hand comes down on the blade for a beat.
 	clay.hand_gesture("press",at,true)
