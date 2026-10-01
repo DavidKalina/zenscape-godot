@@ -2,7 +2,7 @@ extends Control
 ## The tool roll's foot (design "ZenScape HUD 5 Air", section F;
 ## docs/design/hud-5/README.md and FOOT.md): a separate small piece of the same
 ## linen, FOOT_GAP under the tool roll (scripts/tool_roll.gd) and as wide, with
-## two small stitched slots, Undo and Photo. They are not tools: nothing is
+## small stitched slots, Undo and Photo, and the Lens under them. They are not tools: nothing is
 ## taken into the hand, a press just does the thing. So they live apart from
 ## the roll's pockets, on their own scrap of cloth, and never show a badge or
 ## a count: an empty history is not greyed out, a press on it does nothing.
@@ -16,6 +16,10 @@ extends Control
 ##   shot every HUD piece steps out: photo mode's `entered` and `left` throw
 ##   the HUD's one "hud hidden" switch (scripts/hand_materials.gd
 ##   `hud_hidden`), whichever way the mode was entered.
+##
+## - **Lens** opens the command palette (scripts/command_palette.gd), as Cmd K
+##   and / do. Two slots fit across the roll's width, so it sits centred on a
+##   second row.
 ##
 ## It is placed from the roll's actual rect each frame, so it follows the roll
 ## as it tucks at rest and as the roll grows (the Feather will make it taller).
@@ -34,8 +38,10 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const WHISPER_FONT = preload("res://assets/fonts/spectral-latin-400.woff2")
 ## The slots, left to right, and each one's whisper (ROLL_FOOT_WHISPER).
-const SLOTS := ["undo","photo"]
-const WHISPERS := {"undo":"or Cmd Z","photo":"the cloth steps out of the shot"}
+const SLOTS := ["undo","photo","palette"]
+const WHISPERS := {"undo":"or Cmd Z","photo":"the cloth steps out of the shot","palette":"reach for anything · or Cmd K"}
+## Slots to a row; a last row with fewer is centred.
+const COLUMNS := 2
 ## Layout, design pixels: the gap under the roll; the foot's slot and icon
 ## sizes; its padding and the gap between the slots (6+32+4+32+6 is the
 ## roll's 80); the cloth's corner radius and its hem (inset, radius).
@@ -73,7 +79,7 @@ var awake := 0.0
 var hovered := ""
 var pointer_override: Variant = null
 ## Presses taken, for probes: {"undo": n, "photo": n}.
-var presses := {"undo":0,"photo":0}
+var presses := {"undo":0,"photo":0,"palette":0}
 var _font: FontVariation
 var _whisper_font: Font
 var _textures := {}
@@ -108,12 +114,16 @@ func _ready() -> void:
 func rect() -> Rect2:
 	if roll == null: return Rect2()
 	var above: Rect2 = roll.rect()
-	var height := roundf((PAD*2.0+SLOT)*ui_scale)
+	var rows := ceili(SLOTS.size()/float(COLUMNS))
+	var height := roundf((PAD*2.0+SLOT*rows+GAP*(rows-1))*ui_scale)
 	return Rect2(Vector2(above.position.x,above.end.y+roundf(FOOT_GAP*ui_scale)),Vector2(above.size.x,height))
 
 func _cell(i: int) -> Rect2:
 	var foot := rect()
-	return Rect2((foot.position+Vector2(PAD+(SLOT+GAP)*i,PAD)*ui_scale).round(),Vector2.ONE*roundf(SLOT*ui_scale))
+	var row := i/COLUMNS
+	var in_row := mini(COLUMNS,SLOTS.size()-row*COLUMNS)
+	var x := (COLUMNS-in_row)*(SLOT+GAP)*0.5+(SLOT+GAP)*(i%COLUMNS)
+	return Rect2((foot.position+Vector2(PAD+x,PAD+(SLOT+GAP)*row)*ui_scale).round(),Vector2.ONE*roundf(SLOT*ui_scale))
 
 ## The slot under a viewport point ("undo", "photo"), or "".
 func slot_at(point: Vector2) -> String:
@@ -144,6 +154,8 @@ func press(point: Vector2) -> bool:
 		"photo":
 			ClaySound.cue(&"ui_shutter")
 			photo()
+		"palette":
+			if materials != null and materials.palette != null: materials.palette.open()
 	return true
 
 ## Cmd Z's own path. With nothing to undo it quietly does nothing.

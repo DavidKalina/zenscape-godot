@@ -170,6 +170,8 @@ static func _build() -> void:
 	# The palette's pockets: All (four squares) and Life (a big bare footprint).
 	_add("all","All","Everything","#d6c290",["M3 4 Q3 3 4 3 H10 Q11 3 11 4 V10 Q11 11 10 11 H4 Q3 11 3 10Z","M13 4 Q13 3 14 3 H20 Q21 3 21 4 V10 Q21 11 20 11 H14 Q13 11 13 10Z","M3 14 Q3 13 4 13 H10 Q11 13 11 14 V20 Q11 21 10 21 H4 Q3 21 3 20Z","M13 14 Q13 13 14 13 H20 Q21 13 21 14 V20 Q21 21 20 21 H14 Q13 21 13 20Z"],[],44)
 	_add("track","Track","Life","#8a6a4a",["M8 11 Q8 6.4 12.2 6.4 Q16.6 6.4 16.6 11.2 Q16.6 15 14.8 18 Q13.8 22.4 11.2 22.4 Q8 22.4 8 18.4Z",_circle(7.4,4.4,1.5),_circle(10.2,2.8,1.5),_circle(13.1,2.5,1.45),_circle(15.8,3.4,1.3),_circle(17.8,5.4,1.15)],[],45)
+	# The Life pocket's creatures and signs (seeds 46-54): see `_life` below.
+	_life()
 	_add("crystal","Crystal","Quartz","#9b7fc9",["M7.5 21 L5.5 11 L8.5 6 L11.5 11 L9.5 21Z","M13 21 L12 8 L15 3 L18 8 L16.5 21Z"],[],8)
 	_add("snow","Frost","Winter","#7fbfd0",_snowflake(),[],9)
 	# Shaping tools (the tool roll).
@@ -191,6 +193,10 @@ static func _build() -> void:
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)
 	_add("photo","Camera","Photo","#8f8a86",["M3 8.2 Q3 6.6 4.6 6.6 H8 L9.6 4.4 H14.4 L16 6.6 H19.4 Q21 6.6 21 8.2 V17.8 Q21 19.4 19.4 19.4 H4.6 Q3 19.4 3 17.8Z"],["M15.6 13 A3.6 3.6 0 1 0 8.4 13 A3.6 3.6 0 1 0 15.6 13","M17.6 9.2 L17.7 9.2"],22,1.0,1.5)
+	# The foot's third slot: a brass lens that opens the command palette
+	# (scripts/command_palette.gd), as the palette's search well draws one.
+	# The ring is one path, its hole wound the other way so it stays open.
+	_add("palette","Lens","Reach","#c9a45e",["M2.6 10 a7.4 7.4 0 1 0 14.8 0 a7.4 7.4 0 1 0 -14.8 0Z M5.2 10 a4.8 4.8 0 1 1 9.6 0 a4.8 4.8 0 1 1 -9.6 0Z",_bar(14.8,14.8,PI*0.25,9.4,3.8)],["M7.2 8 Q8 6.6 9.8 6.4"],55,1.0,1.4)
 	# --- HUD 5 almanac icons (docs/design/hud-5/lowpoly.js AIR_ICONS, seeds
 	# 16-20; docs/design/hud-5/ALMANAC.md). The almanac's pockets drawn as
 	# their gestures: the sun and the moon (Time), the plate from above in
@@ -207,6 +213,146 @@ static func _build() -> void:
 		_add("plate_"+season,"Plate",season.capitalize(),SEASON_TINT[season],["M12 4.4 L21.4 9.6 L12 14.8 L2.6 9.6Z","M2.6 9.6 L12 14.8 L21.4 9.6 L21.4 12.6 L12 18 L2.6 12.6Z",_circle(20.3,16.8,1.2)],["M2.6 9.6 L12 14.8 L21.4 9.6","M4 17.4 Q12 22.8 19.2 17.6"],18,1.0,1.3)
 	_add("globe","Globe","Weather","#9fb4c0",[_circle(12,10,7.6),"M6 16.6 H18 L19.6 21.4 Q19.7 22 19.1 22 H4.9 Q4.3 22 4.4 21.4Z"],["M5.4 17.6 H18.6","M5.6 13.2 Q12 9.8 18.4 13.2","M9 6.6 L9 6.7 M14.6 5.6 L14.6 5.7 M12 9 L12 9.1 M16 9.6 L16 9.7 M7.6 10.2 L7.6 10.3"],19,1.0,1.5)
 	for deg: int in SOCK_DROOPS: _add(sock_id(deg),"Sock","Wind","#c47c5c",_windsock(deg)[0],_windsock(deg)[1],20,1.0,1.4)
+
+# --- Life (the command palette's Life pocket, scripts/command_palette.gd LIFE) ---
+# Each creature as a naturalist's stamp: a profile facing right where it
+# matters, in one muted tint. Seeds 46-54. Bigfoot's "bigfoot" (the Patterson
+# look-back, watching you) and "bigfoot_stride" share his russet with "howl"
+# (his head thrown back, the call's arcs); his tracks reuse "track" above.
+
+static func _life() -> void:
+	_add("deer","Deer","Wood's edge","#b98a5c",_deer(),["M18.6 5.4 L18.7 5.4"],46,1.0,1.2)
+	var heron := _heron()
+	_add("heron","Heron","Wading","#7f93a3",heron[0],heron[1],47,1.0,1.2)
+	var snake := _snake()
+	_add("snake","Snake","By the pond","#7d8048",snake[0],snake[1],48,1.0,1.2)
+	var watch := _bigfoot_watch()
+	_add("bigfoot","Bigfoot","Watching","#6e4a34",watch[0],watch[1],49,1.0,1.1)
+	var stride := _bigfoot_stride()
+	_add("bigfoot_stride","Bigfoot","Striding","#6e4a34",stride[0],stride[1],50,1.0,1.2)
+	var howl := _howl()
+	_add("howl","Howl","A sign","#6e4a34",howl[0],howl[1],51,1.0,1.2)
+	var woodpecker := _woodpecker()
+	_add("woodpecker","Woodpecker","On a snag","#8a3a30",woodpecker[0],woodpecker[1],52,1.0,1.2)
+	_add("geese","Geese","Passing over","#8a7f6c",_geese(),[],53)
+	var bow := _rainbow()
+	_add("rainbow","Rainbow","After rain","#c98a7a",bow[0],bow[1],54,1.0,1.2)
+
+## A band along `spine` (Vector2s), `widths` across at each point.
+static func _ribbon(spine: Array, widths: Array) -> String:
+	var left := []
+	var right := []
+	for i in range(spine.size()):
+		var a: Vector2 = spine[maxi(0,i-1)]
+		var b: Vector2 = spine[mini(spine.size()-1,i+1)]
+		var n := (b-a).normalized().orthogonal()*float(widths[i])*0.5
+		left.append(spine[i]+n)
+		right.push_front(spine[i]-n)
+	return _poly(left+right)
+
+## An arc round `c`, radius `r`, from angle `a0` to `a1`, `w` across.
+static func _arc(c: Vector2, r: float, a0: float, a1: float, w: float) -> String:
+	var spine := []
+	var widths := []
+	for i in range(17):
+		spine.append(c+Vector2.from_angle(lerpf(a0,a1,i/16.0))*r)
+		widths.append(w)
+	return _ribbon(spine,widths)
+
+## Points as Vector2s from a flat [x, y, x, y...] list.
+static func _pts(xy: Array) -> Array:
+	var out := []
+	for i in range(0,xy.size(),2): out.append(Vector2(xy[i],xy[i+1]))
+	return out
+
+## A stag in profile: body, neck and head, four legs and a pair of antlers.
+static func _deer() -> Array:
+	var out := [
+		_poly(_pts([4.6,10.6, 8,9.4, 13.6,9.4, 16,10.2, 16.4,13, 14.6,15, 6.6,15.2, 4.4,13.6])),
+		_poly(_pts([4.8,10.6, 3,10, 4.2,12.2])),
+		_poly(_pts([13.2,10, 15.8,5, 18.4,5.4, 16.8,11.6])),
+		_poly(_pts([16,4.8, 17.6,3.8, 21.8,6.2, 21.4,7.4, 18.4,7.6, 16.4,6.8])),
+		_poly(_pts([16.4,5, 13.8,3.6, 15.6,3.4, 17.2,4.2])),
+	]
+	for x: float in [5.8,7.4,14.2,15.6]: out.append(_bar(x,13.6,PI*0.5,8.8,1.3))
+	out.append_array([_bar(17.4,4.2,-1.95,4.6,1.1),_bar(16.5,2.4,-1.1,2.6,0.9),_bar(18.4,4.2,-1.55,4.4,1.1),_bar(18.4,2.0,-0.7,2.4,0.9)])
+	return out
+
+## A grey heron wading: body, S neck, dagger bill and stilt legs. [fills, lines].
+static func _heron() -> Array:
+	return [[
+		_poly(_pts([4.6,15.6, 7.6,11, 11,9, 14,9.4, 14.6,11.6, 12.6,14.4, 9,15.4])),
+		_ribbon(_pts([13,10.4, 15.4,8.6, 14.6,6, 15.4,3.8, 17,3]),[2.4,1.7,1.5,1.6,2.4]),
+		_circle(17,3.2,1.7),
+		_poly(_pts([17.6,2.3, 23.4,3.9, 17.8,4.4])),
+		_bar(10.8,14.4,PI*0.5+0.03,8.2,1.0),
+		_bar(12.2,14.2,PI*0.5-0.17,8.4,1.0),
+	],["M15.6 2.4 L12.6 2.6"]]
+
+## A snake in an S along the ground, head raised to the right. [fills, lines].
+static func _snake() -> Array:
+	var spine := []
+	var widths := []
+	for i in range(25):
+		var t := i/24.0
+		spine.append(Vector2(2.0+t*15.0,15.0-4.8*sin(t*TAU)))
+		widths.append(lerpf(0.8,4.0,sqrt(t)))
+	var head := _poly(_pts([15.6,13, 17.6,10.6, 20.6,9.8, 22.6,10.8, 22.6,12.2, 19.4,14.6, 16.2,17]))
+	return [[_ribbon(spine,widths),head],["M19.8 11.4 L19.9 11.4"]]
+
+## Bigfoot watching: the Patterson look-back, his stooped body side-on to
+## the right and his peaked head turned to face you, his near arm hanging
+## long past the hip. [fills, lines].
+static func _bigfoot_watch() -> Array:
+	var body := _poly(_pts([13.2,2.2, 14.8,3, 15.4,5, 15.2,6.6, 17.6,7.8, 18.4,10.4, 17.8,13.4, 16.8,15.6,
+		17,19, 16.8,21.6, 19,22.4, 19,22.9, 13.6,22.9, 13.8,21.4, 13.4,18.8, 12.6,18.6,
+		12.4,21.6, 13.2,22.9, 8.6,22.9, 9.4,21.6, 9.2,17.4, 8.4,14, 8.4,10, 9.6,6.6, 11.2,5.8, 11,5, 11.6,3]))
+	var arm := _ribbon(_pts([14.2,8, 16.6,12.2, 17.8,17]),[3.2,2.6,2.4])
+	return [[body,arm],["M12.4 4.8 L12.5 4.8 M14 4.8 L14.1 4.8","M12.4 9 Q14 12.8 16 17.2"]]
+
+## Bigfoot side-on in the Patterson stride, facing right: peaked head thrust
+## forward, hunched back, the far arm swung back and the near one forward,
+## legs in mid-step. [fills, lines].
+static func _bigfoot_stride() -> Array:
+	var body := _poly(_pts([12.8,2.4, 15,2.8, 16.8,4.2, 16.4,5, 17.2,6.4, 16.2,7.6, 15.6,7.8, 17.2,9, 17.4,10.8, 16.6,13.4, 15.8,15.4,
+		18.8,17.6, 18.8,21.4, 21.6,22.3, 21.6,22.9, 17,22.9, 16.8,21.4, 16.2,18.8, 13.4,17.2,
+		11,19.4, 8,21.4, 8.8,22.9, 4.8,22.9, 5.4,21.6, 9.4,18.4, 10.2,16, 10,12.4, 10.2,8.6, 11.2,5.8, 12.4,4.6]))
+	var back_arm := _ribbon(_pts([11.8,7.6, 8.8,11.8, 6.2,15.2]),[3,2.2,2.2])
+	var fore_arm := _ribbon(_pts([14.4,8.4, 17.2,12.6, 19.2,16.6]),[3.2,2.4,2.2])
+	return [[body,back_arm,fore_arm],["M15.6 5 L15.7 5","M12.8 9.6 Q14.8 12.6 17.6 17"]]
+
+## The howl: Bigfoot's head and shoulders, the head (drawn facing right, then
+## turned 55 degrees up round `at`) thrown back with its mouth open, and the
+## call going out from the mouth in two arcs. [fills, lines].
+static func _howl() -> Array:
+	var at := Vector2(8.4,9.8)
+	var up := func(p: Vector2) -> Vector2: return at+p.rotated(-0.96)*1.15
+	var head: Array = _pts([-3.4,2.4, -3.2,-1.2, -1.6,-4.4, 1.6,-3.2, 3,-2, 2.6,-1.2, 3.6,0, 3.4,0.8, 1.4,1.4, 3.2,2.4, 2.6,3.8, 0.4,4.4]).map(up)
+	var body := _poly(_pts([1,23, 1.4,18.6, 3,15.4])+head+_pts([13.6,14.4, 16,17.4, 17,23]))
+	var mouth: Vector2 = up.call(Vector2(1.4,1.4))
+	var eye: Vector2 = up.call(Vector2(2.2,-1.4))
+	return [[body,_arc(mouth,4.8,-1.65,-0.15,1.6),_arc(mouth,8.0,-1.55,-0.25,1.6)],["M%.2f %.2f L%.2f %.2f" % [eye.x,eye.y,eye.x+0.1,eye.y]]]
+
+## A woodpecker on a snag: clinging upright, bill to the trunk, tail propped
+## against it, the dead trunk's top broken off. [fills, lines].
+static func _woodpecker() -> Array:
+	var bird := _poly(_pts([8,3.4, 11,2.6, 13,3.8, 13.6,5, 18.4,6, 13.6,6.8, 13.2,8.4, 14.8,11, 15.8,15.2, 15.6,18, 18.4,22.6, 16.8,22.8, 12.4,19.4, 9.6,17.4, 8,13, 8.6,8.4, 9.2,6.2]))
+	var snag := _poly(_pts([18.2,24.6, 18.2,3.2, 19.2,1.6, 20,2.8, 21.2,0.6, 21.2,24.6]))
+	return [[bird,snag,_bar(15,14.4,0.25,3.4,1.0)],["M8.8 4.6 Q10.6 2.8 12.8 4.2","M9.8 9 Q12.2 12.6 11 17"]]
+
+## A skein of five geese in a V, flying away up the sky.
+static func _geese() -> Array:
+	var out := []
+	var wings := _pts([-4.2,0.2, -2.2,-2, 0,-0.6, 2.2,-2, 4.2,0.2, 2.2,-0.2, 0,1.8, -2.2,-0.2])
+	for at: Vector2 in _pts([12,5, 7.6,9.6, 3.4,14.2, 16.4,9.6, 20.6,14.2]):
+		out.append(_poly(wings.map(func(p: Vector2) -> Vector2: return at+p)))
+	return out
+
+## A rainbow: three bands over the land, a cloud at each foot. [fills, lines].
+static func _rainbow() -> Array:
+	var c := Vector2(12,19)
+	return [[_arc(c,9.4,PI,TAU,5.6),_circle(3.4,19.6,2.2),_circle(5.6,18.6,2.4),_circle(7.6,20.4,1.6),"M1.2 19.6 H9.2 V22 H1.2Z",_circle(16.4,20.4,1.6),_circle(18.4,18.6,2.4),_circle(20.6,19.6,2.2),"M14.8 19.6 H22.8 V22 H14.8Z"],[
+		"M%.2f %.2f A8.5 8.5 0 0 1 %.2f %.2f" % [3.5,19.0,20.5,19.0],"M%.2f %.2f A10.3 10.3 0 0 1 %.2f %.2f" % [1.7,19.0,22.3,19.0]]]
 
 ## The Modeller's icon: a boxwood modelling tool from the spatula's centre at
 ## (5.8, 18.2) up the diagonal to its point, [fills, lines]. The spatula is an

@@ -110,18 +110,18 @@ const ELEMENTS := [
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],
 	["snow","Frost","Winter","Brings winter to the whole chunk."],
 ]
-## Life: [summon kind (land_life SUMMONS), name, sub, glyph, description].
+## Life: [summon kind (land_life SUMMONS), name, sub, icon (hud_icons.gd), description].
 const LIFE := [
-	["deer","Deer","At the wood's edge","D","Deer step out of the trees to graze."],
-	["heron","Heron","Wading","H","A heron comes down to fish the shallows."],
-	["snake","Snake","By the pond","S","A snake comes to the pond's bank."],
-	["bigfoot_watch","Bigfoot","Watching","B","He steps out of the trees and looks back at you."],
-	["bigfoot_stride","Bigfoot","Striding past","B","He crosses the open ground, unhurried."],
-	["bigfoot_tracks","Bigfoot's tracks","A sign","T","A line of big bare footprints."],
-	["bigfoot_howl","Bigfoot's howl","A sign","O","Something calls from far off."],
-	["woodpecker","Woodpecker","On a snag","W","A woodpecker drums on dead wood."],
-	["geese","Geese","Passing over","G","A skein of geese crosses the sky."],
-	["rainbow","Rainbow","After rain","R","A bow over the land."],
+	["deer","Deer","At the wood's edge","deer","Deer step out of the trees to graze."],
+	["heron","Heron","Wading","heron","A heron comes down to fish the shallows."],
+	["snake","Snake","By the pond","snake","A snake comes to the pond's bank."],
+	["bigfoot_watch","Bigfoot","Watching","bigfoot","He steps out of the trees and looks back at you."],
+	["bigfoot_stride","Bigfoot","Striding past","bigfoot_stride","He crosses the open ground, unhurried."],
+	["bigfoot_tracks","Bigfoot's tracks","A sign","track","A line of big bare footprints."],
+	["bigfoot_howl","Bigfoot's howl","A sign","howl","Something calls from far off."],
+	["woodpecker","Woodpecker","On a snag","woodpecker","A woodpecker drums on dead wood."],
+	["geese","Geese","Passing over","geese","A skein of geese crosses the sky."],
+	["rainbow","Rainbow","After rain","rainbow","A bow over the land."],
 ]
 ## World: [id, name, sub, glyph, keys].
 const WORLD := [
@@ -257,7 +257,7 @@ func _build_items() -> void:
 	for entry: Array in ELEMENTS:
 		_items.append({"kind":"element","cat":3,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
 	for entry: Array in LIFE:
-		_items.append({"kind":"life","cat":4,"id":entry[0],"name":entry[1],"sub":entry[2],"glyph":entry[3],"desc":entry[4]})
+		_items.append({"kind":"life","cat":4,"id":entry[0],"name":entry[1],"sub":entry[2],"icon":entry[3],"desc":entry[4]})
 	_items.append({"kind":"mood","cat":5,"id":"","name":"This world","sub":Mood.mood_description(""),"desc":""})
 	for id: String in Mood.mood_ids():
 		_items.append({"kind":"mood","cat":5,"id":id,"name":Mood.mood_title(id),"sub":Mood.mood_description(id),"desc":""})
