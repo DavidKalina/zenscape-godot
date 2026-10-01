@@ -46,8 +46,9 @@ extends Node
 ## A press in the sky, on the case or on the specimen held puts the material
 ## back; so does letting go there after drawing it out of the case. A press on
 ## a compartment not found yet gives nothing. The rim keeps its verbs with
-## material in hand. The trees' flick and the cloud still give seeds and water
-## as before. `--no-tray` leaves all of this out.
+## material in hand. The cloud still gives water as before; a tree's flick
+## gives seeds with the Feather in hand, as a shaping tool presses through a
+## tree to the land under it. `--no-tray` leaves all of this out.
 ##
 ## Made by scripts/hand_reach.gd, which hands it the presses first.
 
@@ -274,9 +275,11 @@ func press(point: Vector2) -> bool:
 		put_back()
 		return true
 	# The Feather in hand: a press on the land is the wind's; the rim and the
-	# sky keep their own verbs (a sky swipe still sends a passing gust).
+	# sky keep their own verbs (a sky swipe still sends a passing gust), and a
+	# grown tree is the hand's to bend and flick (hand_reach `_tree_press`): the
+	# shaping tools press through trees to the land, so this is where it lives.
 	if held.is_empty() and roll.tool == FEATHER:
-		if reach.reach_at(point) == "rim" or reach._land(point) == null: return false
+		if reach.reach_at(point) == "rim" or reach._land(point) == null or reach._tree_under(point) > 0: return false
 		_feather_press(point)
 		return true
 	if held.is_empty(): return false

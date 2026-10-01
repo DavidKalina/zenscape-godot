@@ -341,12 +341,13 @@ func _feather_mark(which: String, point: Vector3, extent: Vector2, way: Vector3,
 	_draw()
 
 ## True when a prop, tree or resident is under the pointer (their own grab
-## wins there), or a tree is outlined. Read again only when the hover is.
+## wins there), or a tree is outlined. A shaping tool works the land under a
+## tree, so its mark shows through one. Read again only when the hover is.
 func _under_cover(pointer: Vector2) -> bool:
 	var key: Array = reach.get("_hover_key")
 	if key != _cover_key or key.is_empty():
 		_cover_key = key.duplicate()
-		_covered = reach._prop_at(pointer)
+		_covered = reach._prop_at(pointer,not reach.shaping())
 	var outline: Node = reach.get("outline")
 	return _covered or (outline != null and int(outline.get("tree_id")) > 0)
 

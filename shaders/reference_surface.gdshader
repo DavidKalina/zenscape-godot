@@ -7,6 +7,7 @@ shader_type spatial;
 #include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_season.gdshaderinc"
+#include "res://shaders/shaping_reveal.gdshaderinc"
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
@@ -316,6 +317,8 @@ void vertex() {
 void fragment() {
 	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
+	// Trees thin round a shaping tool at work (shaders/shaping_reveal.gdshaderinc).
+	if (tree_tread && zs_revealed(leaf_local, plant_root, tree_tread_height, FRAGCOORD.xy)) discard;
 	vec3 face_normal = world_normal;
 	if (grass_blades) {
 		face_normal = normalize(face_normal);

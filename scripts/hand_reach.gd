@@ -70,7 +70,8 @@ signal edge_spring_dragged(screen_pos: Vector2, relative: Vector2)
 signal edge_spring_released(screen_pos: Vector2)
 ## Modeless only. A left press on the land, its drag (pointer, and the
 ## motion since the last event) and its release. Nothing else sees these
-## presses; a prop or a tree under the pointer keeps its own grab instead.
+## presses; a prop or a resident under the pointer keeps its own grab
+## instead, and so does a tree unless a shaping tool is in hand (`shaping`).
 signal land_pressed(screen_pos: Vector2)
 signal land_dragged(screen_pos: Vector2, relative: Vector2)
 signal land_released(screen_pos: Vector2)
@@ -303,6 +304,10 @@ var materials: HandMaterials
 ## with the tray.
 const GroundMarks = preload("res://scripts/ground_marks.gd")
 var marks: GroundMarks
+## Trees thin round the pointer while a shaping tool works the land
+## (scripts/shaping_reveal.gd), made in setup under --modeless.
+const ShapingReveal = preload("res://scripts/shaping_reveal.gd")
+var reveal: ShapingReveal
 signal snapped(phase: float, step: bool)
 
 func setup(owner_scene: Node3D) -> void:
@@ -320,6 +325,7 @@ func setup(owner_scene: Node3D) -> void:
 		cloud.setup(scene)
 		outline = TreeOutline.new()
 		add_child(outline)
+		reveal = ShapingReveal.new()
 		wind = SkyWind.new(scene)
 		if HandMaterials.enabled():
 			materials = HandMaterials.new()
@@ -613,7 +619,8 @@ func handle(event: InputEvent) -> bool:
 			var what := reach_at(button.position)
 			if what.is_empty():
 				if modeless and _void_press(button.position): return true
-				if modeless and _tree_press(button.position): return true
+				# A shaping tool works the land under a tree; only a free hand bends it.
+				if modeless and not shaping() and _tree_press(button.position): return true
 				return modeless and _land_press(button.position)
 			grab(what,button.position)
 			return true
@@ -898,6 +905,7 @@ func _process(delta: float) -> void:
 			# Only a drag is the wind's: a still press is a click or a summon.
 			if holding == "void" and _void_travel > CLICK_PIXELS: wind.step(delta)
 		_step_trees(delta)
+		if reveal != null: reveal.step(delta,_reveal_at(eye),scene.camera.global_position,_clay_size())
 		if not eye: _drive_hand_modeless()
 		if materials != null: materials.step(delta)
 		if marks != null: marks.step(delta)
@@ -995,9 +1003,10 @@ func _hover(point: Vector2) -> void:
 				_hover_point = land
 		_hover_void(point)
 		if materials != null and hover_zone.is_empty() and materials.tray_under(point): hover_zone = "tray"
-		# With material in hand a press on a tree sows or pours: no outline.
+		# With material in hand a press on a tree sows or pours, and with a
+		# shaping tool it works the land under it: no outline.
 		var carrying := materials != null and not materials.held.is_empty()
-		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] and not carrying else -1)
+		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] and not carrying and not shaping() else -1)
 	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone in ["cloud","tray"] else Input.CURSOR_ARROW)
 	var text := ""
 	var zone := ""
@@ -1071,11 +1080,11 @@ func _catch_spin(point: Vector2) -> void:
 
 ## A left press that reached no sun or rim. Under `--modeless` a press on the
 ## land is clay's (scripts/land_clay.gd): emitted, and taken so no brush or
-## turn sees it. A
-## prop, a tree or a resident under the pointer keeps its own grab, and the
-## sky and the far ground are nobody's.
+## turn sees it. A prop or a resident under the pointer keeps its own grab,
+## and so does a tree but for a shaping tool, which works the land under it
+## (`shaping`). The sky and the far ground are nobody's.
 func _land_press(point: Vector2) -> bool:
-	if _land(point) == null or _prop_at(point): return false
+	if _land(point) == null or _prop_at(point,not shaping()): return false
 	holding = "land"
 	_press_pos = point
 	_show_hint("")
@@ -1084,11 +1093,12 @@ func _land_press(point: Vector2) -> bool:
 	return true
 
 ## True when a grabbable prop or tree, or a resident, is under the pointer.
-func _prop_at(point: Vector2) -> bool:
+## Without `trees`, trees are looked through: a prop behind one still counts.
+func _prop_at(point: Vector2, trees := true) -> bool:
 	var play: Variant = scene.get("world_play")
 	if play != null and play.owner_scene != null:
 		if play.loose_props.pick(point) != null: return true
-		var id: int = play.pick_object(point)
+		var id: int = play.pick_object(point,trees)
 		if id > 0:
 			var asset: Variant = play._records.get(id,{}).get("asset")
 			if asset in play.TREES or asset in play.PROPS: return true
@@ -1418,6 +1428,29 @@ func _cloud_drag(point: Vector2) -> void:
 	_source.into_ball(editor.ball)
 	uses[_source.kind] = int(uses.get(_source.kind,0))+1
 	release(point)
+
+## True when a shaping tool is in hand: the clay's Modeller, Paddle, Chisel,
+## Wire or Hammer (scripts/land_clay.gd), with no material held and not the
+## Feather. A press on a tree then works the land under it (the landscape
+## audit, docs/design/tools/LANDSCAPE-AUDIT.md: a press on a tree did nothing),
+## and the trees near the pointer thin so the ground shows (`reveal`).
+func shaping() -> bool:
+	if not modeless or scene == null or scene.get("land_clay") == null: return false
+	if materials == null: return true
+	return materials.held.is_empty() and (materials.roll == null or materials.roll.tool != HandMaterials.FEATHER)
+
+## The size in hand (the tool roll's pips), as the clay reads it.
+func _clay_size() -> float:
+	var clay: Node = scene.get("land_clay")
+	return float(clay.size_scale) if clay != null else 1.0
+
+## Where the trees thin for the shaping tool (global), or null: the land under
+## the pointer while a shaping tool hovers it or works it.
+func _reveal_at(eye: bool) -> Variant:
+	if eye or not shaping(): return null
+	if holding != "land" and not (holding.is_empty() and hover_zone == "land" and available()): return null
+	var land: Variant = _land(scene.get_viewport().get_mouse_position() if pointer_override == null else pointer_override)
+	return _editor().terrain.to_global(land) if land != null else null
 
 ## A left press on a grown tree: the hand takes it by the crown to bend it
 ## (world play's spring tree, scripts/play_spring_tree.gd, promoted here

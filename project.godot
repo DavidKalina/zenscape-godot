@@ -345,6 +345,14 @@ zs_tree_tread_weights_1={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_reveal_point={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_reveal_eye={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_sky_down={
 "type": "vec3",
 "value": Vector3(0.055, 0.07, 0.1)
