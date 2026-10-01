@@ -9,6 +9,7 @@ const Atlas = preload("res://scripts/chunk_atlas.gd")
 const AtlasView = preload("res://scripts/chunk_atlas_view.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const Genes = preload("res://scripts/chunk_atlas_genes.gd")
+const Continue = preload("res://scripts/chunk_atlas_continue.gd")
 ## Chebyshev rings drawn around the live chunk (main.js NEAR_RINGS).
 const NEAR_RINGS := 1
 ## Seconds the camera takes to glide onto the new live chunk (visit.js GLIDE_S).
@@ -93,6 +94,8 @@ func carry_in_live() -> void:
 	await editor.refresh(get_tree())
 
 var last_carry := 0.0
+## What the last grown chunk continued, per side (chunk_atlas_continue.gd).
+var last_continue := {}
 
 func _terrain_material() -> Material:
 	var editor: NativeChunkEditor = scene._chunk_editor
@@ -165,9 +168,18 @@ func move(direction: Vector2i) -> bool:
 		editor.data.load_document(atlas.slots[target].document)
 	editor.data._undo.clear()
 	editor.data._redo.clear()
+	var plain := editor.data.heights.duplicate()
 	_attach_live()
 	if grown: last_carry = atlas.carry_in(target,editor.data)
 	editor.border_pin.apply(editor.data)
+	# Continue (scripts/chunk_atlas_continue.gd): the grown chunk completes
+	# the land at its seams, as one undo step back to the carried ramp.
+	last_continue = {}
+	if grown and Continue.enabled():
+		editor.data.begin_stroke()
+		last_continue = Continue.apply(atlas,target,editor.data,plain)
+		editor.border_pin.apply(editor.data)
+		editor.data.end_stroke()
 	# The world slides under the camera: keep the view where it was, then
 	# glide onto the new chunk.
 	scene.target -= shift
@@ -179,7 +191,9 @@ func move(direction: Vector2i) -> bool:
 	atlas.save(path)
 	busy = false
 	_hint()
-	if grown: scene._notice.text = "A new plain at %s, joined to its neighbours. Drag to raise land." % [target]
+	if grown and not last_continue.is_empty():
+		scene._notice.text = "A new chunk at %s carries on the land beside it. Undo lets it fall away; drag to reshape." % [target]
+	elif grown: scene._notice.text = "A new plain at %s, joined to its neighbours. Drag to raise land." % [target]
 	return true
 
 ## On-screen pad: four arrows round the chunk's name, each marked "new" or

@@ -117,6 +117,9 @@ func _ready() -> void:
 		atlas = preload("res://scripts/chunk_atlas_controller.gd").new()
 		atlas.name = "ChunkAtlasController"
 		atlas.path = atlas_path
+		# --atlas-file=PATH opens another atlas (tools/make_atlas_continue_demo.gd).
+		for arg: String in OS.get_cmdline_user_args()+OS.get_cmdline_args():
+			if arg.begins_with("--atlas-file="): atlas.path = arg.trim_prefix("--atlas-file=")
 		add_child(atlas)
 		await atlas.setup(self)
 		get_window().title = "ZenScape · Chunk atlas"
