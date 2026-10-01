@@ -1394,6 +1394,9 @@ func start_flat() -> void:
 func _rebuild_skirt() -> void:
 	_skirt.visible = data.void_faces.is_empty()
 	if not _skirt.visible: return
+	# The sides' strata, the same as cut ground's (scripts/strata.gd).
+	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	preload("res://scripts/strata.gd").for_seed(land_seed).apply(_skirt_mesh.surface_get_material(0) as ShaderMaterial,placing.origin)
 	var mesh := skirt_mesh_for(data)
 	_skirt.mesh = mesh if open_sides.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
 

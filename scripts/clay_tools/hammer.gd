@@ -71,7 +71,8 @@ const WALK_STEPS := 60
 const SETTLE_VISITS := 200000
 const SETTLE_TOL := 0.004
 ## Rock at the spot: painted rock of at least ROCK_PAINT weight, not within
-## EARTHY (linear RGB distance) of the clay's DIRT, DIRT_DEEP or TURNED; or
+## EARTHY (linear RGB distance) of a soft stratum's colour (topsoil, clay or
+## sand, scripts/strata.gd `earthy`) or the clay's TURNED; or
 ## ground at least ROCK_SLOPE_SHARE of the biome's rock slope.
 const ROCK_PAINT := 0.4
 const EARTHY := 0.05
@@ -263,10 +264,9 @@ func _rocky(at: Vector2) -> bool:
 	var cell: int = data.meadow_cell(at)
 	if NativeTerrainTint.weight_at(data.tint,cell) < ROCK_PAINT: return false
 	var colour := NativeTerrainTint.color_at(data.tint,cell)
-	for earth: Color in [clay.DIRT,clay.DIRT_DEEP,clay.TURNED]:
-		var e := earth.srgb_to_linear()
-		if Vector3(colour.r-e.r,colour.g-e.g,colour.b-e.b).length() < EARTHY: return false
-	return true
+	if clay.Strata.earthy(colour,EARTHY): return false
+	var e: Color = clay.TURNED.srgb_to_linear()
+	return Vector3(colour.r-e.r,colour.g-e.g,colour.b-e.b).length() >= EARTHY
 
 ## How far a blow's scree may reach, for trees sliding off.
 func _spill_reach() -> float:

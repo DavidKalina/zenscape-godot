@@ -60,12 +60,14 @@ const SPEED_WINDOW := 0.25
 const DAB_SPACING := 0.3
 const MAX_DABS := 64
 ## Dirt: where a stroke takes the ground down, the painted grass has caved in
-## and bare earth shows. The tint layer's weight rises from nothing at
-## DIRT_FROM metres dug to full at DIRT_FULL, and its colour darkens from DIRT
-## toward DIRT_DEEP by DIRT_DEEP_AT (the Modeller's groove depth), so a groove's
-## bed reads as a line from the overview. Both are muted, greyed earths, and
-## the weight ramps over most of the bank, so the groove blends into the grass
-## instead of standing as a saturated brown gash. The earth covers whatever
+## and what lies under it shows. The tint layer's weight rises from nothing at
+## DIRT_FROM metres dug to full at DIRT_FULL, and its colour is the stratum
+## the cut reached (scripts/strata.gd `color_at`, docs/scenic/strata.md): by
+## the cell's new height under the ground it was cut from, so a shallow scrape
+## is topsoil, the Modeller's groove bed the ochre clay, a deep pit sand,
+## shale and bedrock, and a cut into a tall hill its granite core. The weight
+## ramps over most of the bank, so the groove blends into the grass instead
+## of standing as a hard-edged gash. The earth covers whatever
 ## was painted there before (the rock of a range's foot, a pinch's flank) by
 ## its own weight, not only by the weight it adds: dug ground is earth. The
 ## tool scales that weight by its `dirt_share` for the verb, so a broad, soft
@@ -78,10 +80,8 @@ const MAX_DABS := 64
 ## nothing takes root in it. Dirt only ever deepens.
 const DIRT_FROM := 0.04
 const DIRT_FULL := 0.45
-const DIRT_DEEP_AT := 0.75
 const DIRT_BARE := 0.5
-const DIRT := Color("8f7c62")
-const DIRT_DEEP := Color("6e5b47")
+const Strata = preload("res://scripts/strata.gd")
 const TURNED := Color("a39a78")
 const TURNED_WEIGHT := 0.2
 const TURNED_FULL := 0.12
@@ -89,14 +89,19 @@ const LIP_TURNED := 0.03
 ## Sinking never takes ground below FLOOR metres (the land brush's floor),
 ## a little over the land's own floor.
 const FLOOR := NativeTerrainData.MIN_HEIGHT+0.3
-## Rock on cut faces (`paint_faces`): mountain_forms' granite on tint cells
-## the stroke moved at least FACE_MOVED metres, either way, weighted by the
-## ground's slope alone, from nothing at FACE_SLOPE.x (rise over run) to full
-## at .y. The slope is read FACE_REACH metres either side of a cell's middle
-## (the cells are 0.5 m), close enough that a flat a cell off the face stays
-## ground. There is no summit share, unlike `paint_rock`'s, so a mesa's top,
-## a shelf or a gorge's bed stays earth however high or low it stands.
+## Cut faces (`paint_faces`): the strata, a shade darker than a flat, on tint
+## cells the stroke moved at least FACE_MOVED metres, either way, weighted by
+## the ground's slope alone, from nothing at FACE_SLOPE.x (rise over run) to
+## FACE_WEIGHT at .y. The slope is read FACE_REACH metres either side of a
+## cell's middle (the cells are 0.5 m), close enough that a flat a cell off
+## the face stays ground. A face's column is topped by the highest ground
+## FACE_TOP metres round it, so a tall mesa's or mountain's face is its
+## granite core all the way down to the plain, and a low one's is earth.
+## There is no summit share, unlike `paint_rock`'s, so a mesa's top stays
+## grass and a shelf or a gorge's bed stays the stratum it was cut to.
 const FACE_SLOPE := Vector2(0.6,1.2)
+const FACE_WEIGHT := 0.8
+const FACE_TOP := 1.0
 const FACE_MOVED := 0.04
 const FACE_REACH := 0.25
 ## Trees on ground a stroke moved, once let go, keep their footing only where
@@ -580,31 +585,31 @@ func paint_rock(at: Vector2, reach: float, height: float, form := "alpine") -> v
 		"salt":hash([editor.land_seed,"pinch",at.snapped(Vector2.ONE*0.01)]),"form":form,"ground":float(ground) if ground != null else 0.0}
 	data.tint = forms._rock_tint(data,job)
 
-## The range's granite on the faces a stroke cut (or built) inside `region`
-## (plate): every tint cell the stroke moved at least FACE_MOVED metres from
-## `base`, up or down, whose ground now stands steeper than FACE_SLOPE.x,
-## weighted by that slope alone (see FACE_SLOPE). `paint_rock` is the one for
-## raised ground: it measures a share of `height` up from `base`, so ground a
-## stroke lowered never takes it, and it adds a summit share that would paint
-## a tall mesa's top. A cut cliff is stone whichever way it was made.
+## The strata on the faces a stroke cut (or built) inside `region` (plate):
+## every tint cell the stroke moved at least FACE_MOVED metres from `base`,
+## up or down, whose ground now stands steeper than FACE_SLOPE.x, weighted by
+## that slope alone (see FACE_SLOPE). Each takes the stratum at its own
+## height (scripts/strata.gd), a shade darker than a flat, so a wall cut
+## through the bands shows them as stripes and a tall column's face its
+## granite core. `paint_rock` is the one for raised ground's surface: it
+## measures a share of `height` up from `base`, so ground a stroke lowered
+## never takes it, and it adds a summit share that would paint a tall mesa's
+## top.
 ##
-## A cell's colour goes that share of the way to the rock over whatever was
-## laid there before, the stroke's own bare earth included (lay the dirt
-## first, `lay_dirt`, so the rock goes over it: a face is stone, not soil),
-## and its weight never drops. Call it at release or inside a tap's stroke,
-## so the undo step takes it back.
+## A cell's colour goes that share of the way to the stratum over whatever
+## was laid there before, the stroke's own flat earth included (lay the dirt
+## first, `lay_dirt`, so the face goes over it), and its weight never drops.
+## Call it at release or inside a tap's stroke, so the undo step takes it
+## back.
 func paint_faces(region: Rect2) -> void:
 	var data := editor.data
-	var forms := preload("res://scripts/mountain_forms.gd")
-	var rock: Dictionary = forms.ROCKS.granite
-	var colors: Array = rock.colors.map(func(hex: String) -> Color: return Color(hex).srgb_to_linear())
+	var layers := strata()
 	var side := NativeTerrainData.MEADOW_CELLS
 	var step := NativeTerrainData.MEADOW_STEP
 	var low := Vector2i(((region.position+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var high := Vector2i(((region.end+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var heights := data.heights
 	var tint := data.tint
-	var salt := hash([editor.land_seed,tool.id(),center.snapped(Vector2.ONE*0.01)])
 	var changed := false
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
@@ -614,22 +619,30 @@ func paint_faces(region: Rect2) -> void:
 			if h == null or b == null or absf(float(h)-float(b)) < FACE_MOVED: continue
 			var share := smoothstep(FACE_SLOPE.x,FACE_SLOPE.y,_face_slope(data,heights,p))
 			if share <= 0.01: continue
-			var roll := float(hash([salt,x,z])%1000)/1000.0
-			var color: Color = colors[int(roll*colors.size())%colors.size()]
+			var top := maxf(float(h),float(b))
+			for around: Vector2 in [Vector2.RIGHT,Vector2.LEFT,Vector2.UP,Vector2.DOWN]:
+				var t: Variant = data.sample(p+around*FACE_TOP,heights)
+				if t != null: top = maxf(top,float(t))
+			var color: Color = layers.color_at(p,float(h),top,true)
 			var k := (z*side+x)*NativeTerrainTint.STRIDE
 			var before: float = tint[k+3]
 			var mix := 1.0 if before <= 0.0 else share
 			tint[k] = lerpf(tint[k],color.r,mix)
 			tint[k+1] = lerpf(tint[k+1],color.g,mix)
 			tint[k+2] = lerpf(tint[k+2],color.b,mix)
-			tint[k+3] = minf(maxf(before,share*float(rock.weight)),1.0)
+			tint[k+3] = minf(maxf(before,share*FACE_WEIGHT),1.0)
 			changed = true
 	if changed: data.tint = tint
+
+## The world's strata (scripts/strata.gd): what the ground is made of by
+## height, for the colours here and for any tool that asks `material_at`.
+func strata() -> Strata:
+	return Strata.for_seed(editor.land_seed)
 
 ## Bare earth now, `reach` round `at`, on ground the stroke took down. The clay
 ## lays it by itself after a frame's dabs and each hold step; a tool whose
 ## change lands some other way (a cut written whole at release, a tap's own
-## stroke) calls this, before `paint_faces` so the rock goes over it.
+## stroke) calls this, before `paint_faces` so the faces go over it.
 func lay_dirt(at: Vector2, reach: float) -> void:
 	dirty(at,reach)
 	_dirt()
@@ -699,8 +712,9 @@ func hand_gesture(gesture: String, point: Variant = null, again := false) -> voi
 
 # --- Dirt ------------------------------------------------------------------------------
 
-## Bare earth into the tint cells under this frame's dabs, by how far each
-## cell's middle now stands below the ground at the stroke's start. Written
+## The strata into the tint cells under this frame's dabs: the stratum at
+## each cell middle's new height, weighted by how far it now stands below the
+## ground at the stroke's start. Written
 ## from the stroke's starting tint, so it lands the same whatever the pace.
 func _dirt() -> void:
 	if not _dirt_rect.has_area(): return
@@ -709,8 +723,7 @@ func _dirt() -> void:
 	var step := NativeTerrainData.MEADOW_STEP
 	var low := Vector2i(((_dirt_rect.position+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var high := Vector2i(((_dirt_rect.end+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var light := DIRT.srgb_to_linear()
-	var deep := DIRT_DEEP.srgb_to_linear()
+	var layers := strata()
 	var turned := TURNED.srgb_to_linear()
 	var turns := tool.turns_lip(verb)
 	var shows := clampf(tool.dirt_share(verb),0.0,1.0)
@@ -735,7 +748,7 @@ func _dirt() -> void:
 				continue
 			if shows <= 0.0 or dug <= float(_dirt_depth.get(cell,DIRT_FROM)): continue
 			_dirt_depth[cell] = dug
-			var color := light.lerp(deep,smoothstep(DIRT_FULL,DIRT_DEEP_AT,dug))
+			var color := layers.color_at(p,float(now),float(was))
 			_earth(tint,cell,color,smoothstep(DIRT_FROM,DIRT_FULL,dug)*shows)
 			changed = true
 	_dirt_rect = Rect2()

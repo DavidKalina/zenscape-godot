@@ -45,11 +45,12 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## MIN_HEIGHT stops it; a drag is a stroke, as the thumb's groove is, so it is
 ## not held to the clay's sink FLOOR.
 ##
-## As the head passes, the dug ground turns to bare earth (the clay's dirt);
-## once the cut has run, the walls take the range's granite on their steeps
-## (clay.paint_faces, rock by slope alone on cut ground), so the bed stays
-## earth and the walls read as rock, and trees on ground the cut moved that
-## cannot hold it slide off. The rock waits for the end because it reads the
+## As the head passes, the dug ground shows the stratum it reached (the
+## clay's dirt, scripts/strata.gd); once the cut has run, the walls take the
+## strata on their steeps, a shade darker (clay.paint_faces, by slope alone on
+## cut ground), so the bed reads as its band and the walls as banded faces,
+## and trees on ground the cut moved that cannot hold it slide off. The faces
+## wait for the end because it reads the
 ## slope round each cell, which the head's own round end would get wrong,
 ## and a tree sliding mid-cut would stop the clay's light refresh.
 const BED_HALF := 1.1
