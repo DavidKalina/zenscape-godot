@@ -190,6 +190,10 @@ static func _build() -> void:
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)
 	_add("photo","Camera","Photo","#8f8a86",["M3 8.2 Q3 6.6 4.6 6.6 H8 L9.6 4.4 H14.4 L16 6.6 H19.4 Q21 6.6 21 8.2 V17.8 Q21 19.4 19.4 19.4 H4.6 Q3 19.4 3 17.8Z"],["M15.6 13 A3.6 3.6 0 1 0 8.4 13 A3.6 3.6 0 1 0 15.6 13","M17.6 9.2 L17.7 9.2"],22,1.0,1.5)
+	# The foot's third slot: a brass lens that opens the command palette
+	# (scripts/command_palette.gd), as the palette's search well draws one.
+	# The ring is one path, its hole wound the other way so it stays open.
+	_add("palette","Lens","Reach","#c9a45e",["M2.6 10 a7.4 7.4 0 1 0 14.8 0 a7.4 7.4 0 1 0 -14.8 0Z M5.2 10 a4.8 4.8 0 1 1 9.6 0 a4.8 4.8 0 1 1 -9.6 0Z",_bar(14.8,14.8,PI*0.25,9.4,3.8)],["M7.2 8 Q8 6.6 9.8 6.4"],55,1.0,1.4)
 	# --- HUD 5 almanac icons (docs/design/hud-5/lowpoly.js AIR_ICONS, seeds
 	# 16-20; docs/design/hud-5/ALMANAC.md). The almanac's pockets drawn as
 	# their gestures: the sun and the moon (Time), the plate from above in

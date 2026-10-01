@@ -47,6 +47,10 @@ func run() -> void:
 	check(palette != null,"the palette is on the HUD layer")
 	if palette == null: quit(1); return
 
+	var foot: Control = materials.foot
+	check(foot.press(foot.slot_centre("palette")) and palette.is_open(),"the foot's Lens opens it")
+	key(KEY_ESCAPE)
+	await frames(15)
 	check(key(KEY_K,true) and palette.is_open(),"Cmd K opens it")
 	await frames(20)
 	var rect: Rect2 = palette.panel_rect()
