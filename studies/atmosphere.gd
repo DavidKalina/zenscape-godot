@@ -20,6 +20,22 @@ var _fog_target := 0.45
 ## Living weather (scripts/living_weather.gd) slows it for gentle drift.
 var weather_response := 0.55
 var haze_amount := 0.15
+## Ground mist by daylight. The mist that pools in hollows (and the fog bank)
+## belongs to dawn, dusk and cold mornings: from DAY_MIST_SUN.x to .y of sun
+## height it thins to DAY_MIST_FLOOR of itself, so water in basins reads by
+## day. A cold season (celestial `cold`) holds it to DAY_MIST_COLD_SUN, later
+## into the morning. Misty weather keeps it all day: fog from DAY_MIST_WEATHER.x
+## up to .y (mist weather, the fog bank) lifts the gate. fog_amount itself is
+## untouched; only what the air draws is thinned (`ground_mist`).
+const DAY_MIST_SUN := Vector2(0.14, 0.4)
+const DAY_MIST_COLD_SUN := Vector2(0.3, 0.6)
+const DAY_MIST_FLOOR := 0.2
+const DAY_MIST_WEATHER := Vector2(0.4, 0.55)
+## Sun height and season cold, set by the scene each frame from Celestial.
+var sun_height := 0.0
+var cold := 0.0
+## 0..1, the share of ground mist the hour leaves (1 at dawn and by night).
+var day_mist := 1.0
 var _haze_target := 0.15
 var _air_strength := 0.4
 var _air_angle := deg_to_rad(19.290046)
@@ -70,7 +86,10 @@ func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false
 	_publish_wind()
 
 func advance(delta: float, paused: bool) -> void:
+	# The hour moves while paused too (scrubbing), so the mist follows it.
+	day_mist = _day_mist()
 	if paused:
+		_publish_fog()
 		_publish_wind()
 		return
 	# Integrating travel avoids the noise pattern jumping when the dial changes.
@@ -97,6 +116,18 @@ func send_gust(center: Vector3, strength := 0.45) -> void:
 	var direction := Vector2(cos(_air_angle), sin(_air_angle))
 	puffs.puff(Vector2(center.x, center.z), direction, _gust_distance, _air_strength, strength)
 	_publish_wind()
+
+## What the hour leaves of the ground mist: thin by day, whole at dawn, dusk,
+## night, on cold mornings and in misty weather.
+func _day_mist() -> float:
+	var window := DAY_MIST_SUN.lerp(DAY_MIST_COLD_SUN, clampf(cold, 0.0, 1.0))
+	var day := smoothstep(window.x, window.y, sun_height)
+	day *= 1.0 - smoothstep(DAY_MIST_WEATHER.x, DAY_MIST_WEATHER.y, fog_amount)
+	return lerpf(1.0, DAY_MIST_FLOOR, day)
+
+## The ground mist the air draws: fog_amount thinned by the hour.
+func ground_mist() -> float:
+	return fog_amount * day_mist
 
 func set_fog(value: float) -> void:
 	fog_amount = value
@@ -174,6 +205,6 @@ func set_weather_profile(profile: Dictionary, instant := false) -> void:
 func _publish_fog() -> void:
 	RenderingServer.global_shader_parameter_set("zs_haze", haze_amount)
 	if _fog_material != null:
-		_fog_material.set_shader_parameter("density", fog_amount)
+		_fog_material.set_shader_parameter("density", ground_mist())
 		_fog_material.set_shader_parameter("haze", haze_amount)
 		_environment.volumetric_fog_enabled = native_volume and (fog_amount > 0.001 or haze_amount > 0.001 or inversion_amount > 0.001)

@@ -120,7 +120,7 @@ func update_view() -> void:
 	resolve.set_shader_parameter("projection_scale", projection_scale)
 	material.set_shader_parameter("shroud", air.shroud)
 	material.set_shader_parameter("loosen", air.loosen)
-	material.set_shader_parameter("density", air.fog_amount)
+	material.set_shader_parameter("density", air.ground_mist())
 	material.set_shader_parameter("haze", air.haze_amount)
 	var rays = air._fog_material.get_shader_parameter("rays") if air._fog_material != null else 1.0
 	material.set_shader_parameter("rays", 1.0 if rays == null else rays)
