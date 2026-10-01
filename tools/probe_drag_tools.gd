@@ -213,6 +213,21 @@ func run() -> void:
 	check("a hills drag raises the land and lowers none",count.up > 80 and count.down == 0,count)
 	check("a metre or two along the path in one pass",float(inner.max()) > 1.0 and float(inner.max()) < 3.0,inner.max())
 	check("rolling, not an even ridge",inner.min() < inner.max()*0.8,[inner.min(),inner.max()])
+	# Steepest rise over run between neighbouring points the drag raised.
+	var steepest := 0.0
+	for i in range(data.points.size()):
+		if data.heights[i]-hill_base[i] < 0.05: continue
+		for j in data._neighbors[i]:
+			var run := data.points[i].distance_to(data.points[j])
+			if run > 0.0: steepest = maxf(steepest,absf(data.heights[i]-data.heights[j])/run)
+	var base_steepest := 0.0
+	for i in range(data.points.size()):
+		if data.heights[i]-hill_base[i] < 0.05: continue
+		for j in data._neighbors[i]:
+			var run := data.points[i].distance_to(data.points[j])
+			if run > 0.0: base_steepest = maxf(base_steepest,absf(hill_base[i]-hill_base[j])/run)
+	print("HILLS SLOPE ",JSON.stringify({"steepest":snappedf(steepest,0.01),"ground_before":snappedf(base_steepest,0.01)}))
+	check("hills, not peaks: gentle all over",steepest < 0.6,steepest)
 	var after_one: float = inner.max()
 	button(from,true)
 	await frames(2)
