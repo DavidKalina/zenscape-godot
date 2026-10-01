@@ -45,10 +45,11 @@ extends Node3D
 ## mote lands never changes: the thrower only shows where the pollen comes
 ## from.
 ##
-## Motes that land at least SEED_GAP from the veil's other seeds are its seeds;
-## the rest is dust that glints and is gone. Where a seed lands on ground that
-## could take it (`takes`) a sprout pops up and later sinks as the forest takes
-## over. `settled` hands the editor a veil whose last mote is down.
+## Motes that land at least SEED_GAP from the veil's other seeds are its seeds
+## (thinned to SEEDS_MAX, spread out, as it settles); the rest is dust that
+## glints and is gone. Where a seed lands on ground that could take it
+## (`takes`) a sprout pops up and later sinks as the forest takes over.
+## `settled` hands the editor a veil whose last mote is down.
 ##
 ## Several veils may be in the air at once, up to CLOUDS; each settles as its
 ## own undo step (the editor writes it when it settles).
@@ -123,9 +124,14 @@ const STILL := 0.5
 ## Metres of the veil's ripple and billow, and their hertz.
 const BOB := Vector2(0.08,0.45)
 const BILLOW := Vector2(0.12,0.3)
-## Metres apart a veil's seeds land at least (Emergence TREE_GAP); closer
-## motes are dust.
-const SEED_GAP := 1.1
+## Metres apart a veil's seeds land at least, and the most seeds one veil
+## gives; closer or later motes are dust. A seed is a tree candidate of its
+## own and the forest spreads from it (scripts/emergence.gd), so a pinch's
+## flick, a sweep or a tree's spores come up as a few trees scattered over
+## where they fell, not a carpet. It was 1.1 m and no cap: one oak flick gave
+## a dozen trees in a 5 m clump (tools/landscapes/spore_spread.gd).
+const SEED_GAP := 2.2
+const SEEDS_MAX := 8
 ## Seconds a landed mote glints on the ground; the sprout's pop, life and
 ## height (m).
 const GLINT := 0.8
@@ -702,6 +708,22 @@ func _land(veil: Dictionary, mote: Dictionary, point: Vector2) -> void:
 		_sprouts.append({"p":to,"t":0.0,"yaw":randf()*TAU,"lean":Vector2.RIGHT.rotated(randf()*TAU)})
 		if _sprouts.size() > SPROUTS_MAX: _sprouts = _sprouts.slice(_sprouts.size()-SPROUTS_MAX)
 
+## At most `most` of `seeds`, as far apart as they go: the first, then each
+## time the one farthest from those kept, so a long sweep keeps seeds all
+## along its length rather than at the end that landed first.
+static func _spread_out(seeds: PackedVector2Array, most: int) -> PackedVector2Array:
+	if seeds.size() <= most: return seeds
+	var kept := PackedVector2Array([seeds[0]])
+	var gaps := PackedFloat32Array()
+	for q in seeds: gaps.append(q.distance_squared_to(seeds[0]))
+	while kept.size() < most:
+		var best := 0
+		for i in range(gaps.size()):
+			if gaps[i] > gaps[best]: best = i
+		kept.append(seeds[best])
+		for i in range(gaps.size()): gaps[i] = minf(gaps[i],seeds[i].distance_squared_to(seeds[best]))
+	return kept
+
 ## Land what is left of `veil` now, on the drift so far and the present wind,
 ## and hand it on.
 func _settle(veil: Dictionary) -> void:
@@ -710,6 +732,7 @@ func _settle(veil: Dictionary) -> void:
 		var g: int = veil.knots[mote.k].g
 		_land(veil,mote,Vector2(mote.base)+Vector2(veil.drift[g])+Vector2(veil.wind[g])*maxf(float(mote.start)+float(mote.fall)-float(veil.t),0.0))
 	clouds.erase(veil)
+	veil.seeds = _spread_out(veil.seeds,SEEDS_MAX)
 	var path := PackedVector2Array()
 	for knot: Dictionary in veil.knots: path.append(_flat(knot.p))
 	var drift := Vector2.ZERO

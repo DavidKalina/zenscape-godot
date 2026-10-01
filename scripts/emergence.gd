@@ -59,6 +59,14 @@ const SHRUB_LATTICE := 0.9
 const TREE_LATTICE := 1.3
 const TREE_GAP := 1.1
 const SHRUB_GAP := 0.45
+## Trees a stroke brings up on open ground (no forest wished there) stand
+## OPEN_GAP apart instead, so sculpted land fills with scattered trees and
+## copses rather than closing over; a painted forest's core keeps TREE_GAP.
+const OPEN_GAP := 1.8
+## Metres a tree's foot keeps from live water (the flow's wet mask, read at
+## four points round it), so no trunk stands in a pond's shallows or its crown
+## over the water. Undergrowth needs only its own point dry.
+const TREE_SHORE := 0.6
 ## Where emerged grass gives way to bare ground, in shares of the habitat's
 ## rock slope: full grass below .x, none above .y. Gentle hills stay green;
 ## only real steeps go bare (the plain's rock slope is 0.93).
@@ -112,11 +120,18 @@ const FOREST_UNDER_SHRUBS := 0.12
 ## and thinned on steep ground as any tree is. The region's lattice candidates
 ## then arrive by their distance from the nearest seed, SOWN_SPREAD m a second
 ## after SOWN_TREE_DELAY (trees) or SOWN_SHRUB_DELAY (shrubs), plus up to
-## SOWN_JITTER, and their trees take at the fertility too, so the forest
-## spreads out from where the seeds fell as far as the land lets it.
+## SOWN_JITTER, and their trees take at the fertility times SOWN_THIN, so the
+## forest spreads out from where the seeds fell as far as the land lets it.
+## Every tree of a sowing, seed or spread, stands SOWN_GAP clear of other
+## trees (TREE_GAP or OPEN_GAP elsewhere), so a sowing comes up as scattered
+## trees and loose copses with light between them, not a carpet. One oak
+## flick (tools/landscapes/spore_spread.gd) gave 9-14 trees a mean 1.2-1.6 m
+## from their nearest; now 4-5 trees, 2.3-2.8 m.
 const SOWN_DELAY := 1.2
 const SOWN_STAGGER := 2.0
-const SOWN_TAKE := 0.9
+const SOWN_TAKE := 1.0
+const SOWN_THIN := 0.6
+const SOWN_GAP := 2.0
 ## A flicked tree's spores lean to its kind, and the land bends them
 ## (`_heir_kind`). A seed keeps the parent's kind at its fit there
 ## (Stands.fit, eased by FIT_EASE, so a kind a little off its ground mostly
@@ -638,7 +653,7 @@ func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 		var sown: bool = plant.get("sown",false)
 		var chance := SOWN_TAKE*_fertility(habitat,p)*(1.0-smoothstep(0.45,float(biome.rock_slope),slope)) if sown else _tree_chance(habitat,slope,wish,frayed,only_wish)
 		# Round a released cloud's seeds the land decides how thick it grows.
-		if plant.get("pollen",false) and not sown: chance *= _fertility(habitat,p)
+		if plant.get("pollen",false) and not sown: chance *= _fertility(habitat,p)*SOWN_THIN
 		if guide != null and not sown and (wish <= 0.0 or frayed < FOREST_EDGE.y):
 			# Outside a forest's core, fewer trees stand in front of water.
 			var kept: float = chance*guide.sight_keep(p)
@@ -676,7 +691,10 @@ func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 				and Variety.unit(key+[21]) < Guidance.CLUTTER_DROP*float(guide.gain.clutter):
 			return _refuse("clutter")
 		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
-	if _crowded(p,plant.layer == "tree"):
+	if plant.layer == "tree" and _shore(p):
+		return _refuse("water")
+	var sowing: bool = plant.get("sown",false) or plant.get("pollen",false)
+	if _crowded(p,plant.layer == "tree",SOWN_GAP if sowing else OPEN_GAP if wish <= 0.05 else TREE_GAP):
 		return _refuse("crowded")
 	var elder: Array = plant.get("elder",[])
 	# A seed comes up living; dead wood is for the stands round it.
@@ -953,21 +971,25 @@ func _build_crowd() -> void:
 			points = _log_points(points[0],Vector2(basis.x.x,basis.x.z))
 		for q in points: _crowd.get_or_add(Vector2i(q.floor()),[]).append(Vector3(q.x,q.y,z))
 
-func _crowded(p: Vector2, tree: bool) -> bool:
+## Whether `p` is too near others: tree to tree `tree_gap`, tree to anything
+## else 0.6 m, shrub to shrub SHRUB_GAP.
+func _crowded(p: Vector2, tree: bool, tree_gap := TREE_GAP) -> bool:
 	_build_crowd()
 	var base := Vector2i(p.floor())
-	for dz in range(-2,3):
-		for dx in range(-2,3):
+	var reach := maxi(2,ceili(tree_gap))
+	for dz in range(-reach,reach+1):
+		for dx in range(-reach,reach+1):
 			for other: Vector3 in _crowd.get(base+Vector2i(dx,dz),[]):
 				var gap := SHRUB_GAP
-				if tree: gap = TREE_GAP if other.z > 0.5 else 0.6
+				if tree: gap = tree_gap if other.z > 0.5 else 0.6
 				elif other.z > 0.5: gap = 0.6
 				if p.distance_squared_to(Vector2(other.x,other.y)) < gap*gap:
 					return true
 	return false
 
-## Withdraw emerged plants the new ground no longer supports: drowned, on bare
-## rock or under snow. Hand, pinned and generated objects stay.
+## Withdraw emerged plants the new ground no longer supports: drowned (a tree
+## within TREE_SHORE of live water), on bare rock or under snow. Hand, pinned
+## and generated objects stay.
 func _withdraw(rect: Rect2) -> void:
 	var removed := false
 	for index in range(data.objects.size()-1,-1,-1):
@@ -976,7 +998,7 @@ func _withdraw(rect: Rect2) -> void:
 		if NativeTerrainData.object_source(item) != "emerged" or not rect.has_point(p):
 			continue
 		var h: Variant = data.ground_height(p)
-		if h == null or _wet(p) or _slope(p) > _rock_slope(_blend.pick(p))*1.1 or float(h) > _snowline()-1.0:
+		if h == null or _wet(p) or (item.asset in TREES and _shore(p)) or _slope(p) > _rock_slope(_blend.pick(p))*1.1 or float(h) > _snowline()-1.0:
 			data.objects.remove_at(index)
 			removed = true
 	if removed:
@@ -1029,6 +1051,12 @@ func takes(p: Vector2) -> bool:
 func seed_family(p: Vector2) -> String:
 	if _blend == null: return ""
 	return _tree_kind(_blend.pick(p),p,0.0)
+
+## Live water within TREE_SHORE of `p`.
+func _shore(p: Vector2) -> bool:
+	for d: Vector2 in [Vector2(TREE_SHORE,0),Vector2(-TREE_SHORE,0),Vector2(0,TREE_SHORE),Vector2(0,-TREE_SHORE)]:
+		if WaterFlow.wet_in(flow_wet,p+d): return true
+	return false
 
 func _wet(p: Vector2) -> bool:
 	return _blend._sampler.wet(p) or (not _fresh_ponds.is_empty() and _under_fresh_pond(p)) or WaterFlow.wet_in(flow_wet,p)
