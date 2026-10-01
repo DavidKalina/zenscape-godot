@@ -214,6 +214,14 @@ static func _build() -> void:
 	# The watering can, "Pour": water held in hand, under the Feather. A
 	# body, a spout rising to the right with its rose, a loop handle over it.
 	_add("can","Watering can","Pour","#8aa6a8",["M4 10 H14.5 V19.5 Q14.5 21 13 21 H5.5 Q4 21 4 19.5Z","M14 13.6 L20.4 7.4 L21.6 8.8 L14.5 16.2Z","M19.6 5.6 L22.8 8.8 L21.2 10.2 L18.2 7.2Z"],["M5.6 10 Q5.6 4.4 9.25 4.4 Q12.9 4.4 12.9 10","M4 12.4 H14.5"],16,1.0,1.5)
+	# The Brush, "Paint": a flat paint brush on the diagonal, its bristles
+	# down to the left; and its modes, the ground as each leaves it.
+	_add("brush","Brush","Paint","#b9a46a",["M2.6 21.4 L4 15 L9 10 L14 15 L9 20Z","M9 10 L11 8 L16 13 L14 15Z","M13.4 9.6 L19.6 3.4 Q20.8 2.2 21.7 3.1 Q22.6 4 21.4 5.2 L15.2 11.4Z"],["M4.6 18.6 L9.6 13.6"],50,1.0,1.3)
+	_add("brush_grass","Grass","Brush","#7fb069",["M2 16 H22 V22.5 H2Z","M4.6 16 L6 9.6 L7.6 16Z","M9.6 16 L12 6.4 L13.8 16Z","M16 16 L18.2 10.4 L19.4 16Z"],[],51,1.0,1.5)
+	_add("brush_rock","Rock","Brush","#8d8577",["M2 22.5 V17 L6 12 L10 13.4 L13.6 7.6 L18.4 11 L22 16.4 V22.5Z"],["M13.6 7.6 L12.4 14","M6 12 L7.6 17"],52,1.0,1.4)
+	_add("brush_earth","Earth","Brush","#9a7652",["M2 15.4 H22 V22.5 H2Z",_circle(7,12.4,1.7),_circle(13.2,11.6,2.1),_circle(18.2,12.8,1.4)],[],53,1.0,1.5)
+	_add("brush_colour","Colour","Brush","#b06f4a",["M12 3 C18.6 3 22 7.4 22 11.8 C22 15.4 19.6 16.4 17.6 16 C15.6 15.6 14.6 16.8 15.4 18.4 C16.2 20 15.4 21.4 12.6 21.4 C6.6 21.4 2 17.4 2 12 C2 6.8 6.6 3 12 3Z"],[_circle(7.4,10.6,1.6),_circle(11.6,7.2,1.6),_circle(16.4,8.6,1.6),_circle(7.6,15.6,1.6)],55,1.0,1.3)
+	_add("brush_wipe","Wipe","Brush","#c8bfa6",["M2 16 H22 V22.5 H2Z"],["M4 10.4 Q12 3.6 20 10.4","M16.8 7.4 L20 10.4 L15.8 11.4"],54,1.0,1.5)
 	# --- HUD 5 foot icons (docs/design/hud-5/lowpoly.js ROLL_FOOT; the tool
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)

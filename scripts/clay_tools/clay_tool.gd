@@ -42,6 +42,9 @@ var clay: Node
 var lift := 0.0
 ## The mode in hand (an id of `modes`), or "" for a tool with none.
 var mode := ""
+## The colour in hand (sRGB), for a tool whose mode in hand lays one
+## (`swatches` not empty): the Brush's Colour.
+var colour := Color.WHITE
 
 ## The tool's id: its pocket in the tool roll.
 func id() -> String: return ""
@@ -67,6 +70,11 @@ func mode_spec() -> Dictionary:
 	for spec: Dictionary in modes():
 		if spec.id == mode: return spec
 	return {}
+
+## The colours offered on the roll's swatch strip while the mode in hand
+## lays one (sRGB), or [] when it lays none. The strip ends with a cell that
+## opens a full picker; either sets `colour`.
+func swatches() -> Array: return []
 
 ## Take the next or previous mode (Q and E).
 func step_mode(by: int) -> void:

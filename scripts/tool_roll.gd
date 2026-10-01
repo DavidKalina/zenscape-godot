@@ -28,10 +28,10 @@ extends Control
 const Linen = preload("res://scripts/hud_linen.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
-## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind and the
-## watering can ("Pour") water, not clay: they sit under the shaping tools
-## after a divider (DIVIDER_BEFORE).
-const TOOLS := ["hand","hills","mountain","bowl","paddle","chisel","wire","hammer","feather","can"]
+## The tools, top to bottom. The Feather (HUD 5, "Gust") holds wind, the
+## watering can ("Pour") water and the Brush ("Paint") colour, not clay: they
+## sit under the shaping tools after a divider (DIVIDER_BEFORE).
+const TOOLS := ["hand","hills","mountain","bowl","paddle","chisel","wire","hammer","feather","can","brush"]
 ## Indices in TOOLS that a stitched divider sits above (lowpoly.js
 ## TOOL_DIVIDER_BEFORE): the Feather, set apart from the tools that shape.
 const DIVIDER_BEFORE := [8]
@@ -41,6 +41,12 @@ const MODE_CELL := 46.0
 const MODE_ICON := 36.0
 const MODE_PAD := 4.0
 const FAN_TIME := 0.18
+## The swatch strip under the fan while the mode in hand lays a colour (the
+## Brush's Colour): a cell and swatch diameter each (design pixels), and the
+## gap between it and the fan. Its last cell opens the full picker.
+const SWATCH_CELL := 26.0
+const SWATCH_PIP := 16.0
+const SWATCH_GAP := 4.0
 ## Tools without verbs yet: shown as undiscovered.
 const UNBUILT := []
 ## Sizes: the pip's diameter and hit cell (design pixels) and the scale it
@@ -87,6 +93,12 @@ var mode := ""
 var hovered_mode := ""
 ## How far the Sculpt's fan is out, 0..1.
 var fan := 0.0
+## The swatch strip's colours (sRGB, empty for none), the colour in hand and
+## the cell under the pointer (a swatch index, swatches.size() for the
+## picker, -1 for none).
+var swatches: Array = []
+var colour := Color.WHITE
+var hovered_swatch := -1
 var quiet := false
 var pointer_override: Variant = null
 var _want_shown := false
@@ -96,6 +108,8 @@ var _textures := {}
 var _texture_px := 0.0
 var _cloth: Linen.Cloth
 var _tag_cloth: Linen.Cloth
+var _swatch_cloth: Linen.Cloth
+var _picker_popup: PopupPanel
 var _states := {}
 
 func _ready() -> void:
@@ -108,6 +122,8 @@ func _ready() -> void:
 	add_child(_cloth)
 	_tag_cloth = Linen.Cloth.new()
 	add_child(_tag_cloth)
+	_swatch_cloth = Linen.Cloth.new()
+	add_child(_swatch_cloth)
 	for id: String in TOOLS: _states[id] = {"hover":0.0,"refuse":0.0}
 	modulate.a = 0.0
 	visible = false
@@ -139,6 +155,14 @@ func mode_at(point: Vector2) -> String:
 		if (cells[k] as Rect2).has_point(point): return modes[k]
 	return ""
 
+## The swatch strip's cell under a viewport point: a swatch's index,
+## `swatches.size()` for the picker, or -1.
+func swatch_at(point: Vector2) -> int:
+	if shown < 0.5 or not _swatches_shown(): return -1
+	for k in range(swatches.size()+1):
+		if _swatch_cell(k).has_point(point): return k
+	return -1
+
 ## The size pip under a viewport point, or -1.
 func pip_at(point: Vector2) -> int:
 	if shown < 0.5: return -1
@@ -147,7 +171,8 @@ func pip_at(point: Vector2) -> int:
 	return -1
 
 func contains_pointer(point: Vector2) -> bool:
-	return shown >= 0.5 and (_roll().grow(2.0*ui_scale).has_point(point) or (_modes_shown() and _tag_rect().has_point(point)))
+	if picker_open(): return true
+	return shown >= 0.5 and (_roll().grow(2.0*ui_scale).has_point(point) or (_modes_shown() and _tag_rect().has_point(point)) or (_swatches_shown() and _swatch_rect().has_point(point)))
 
 ## The roll's cloth, viewport pixels (the foot, scripts/tool_foot.gd, hangs under it).
 func rect() -> Rect2:
@@ -221,6 +246,9 @@ func _process(delta: float) -> void:
 	var was_mode := hovered_mode
 	hovered_mode = mode_at(pointer) if _want_shown else ""
 	if hovered_mode != was_mode and not hovered_mode.is_empty(): ClaySound.cue(&"ui_hover")
+	var was_swatch := hovered_swatch
+	hovered_swatch = swatch_at(pointer) if _want_shown else -1
+	if hovered_swatch != was_swatch and hovered_swatch >= 0: ClaySound.cue(&"ui_hover")
 	for id: String in TOOLS:
 		var state: Dictionary = _states[id]
 		var on := id == hovered and not (id == tool and not material_held) and discovered(id)
@@ -231,6 +259,11 @@ func _process(delta: float) -> void:
 	_tag_cloth.visible = tag.size.x > 0.0
 	if _tag_cloth.visible: _tag_cloth.place(tag,ui_scale,2.0,Vector2.ZERO)
 	_tag_cloth.modulate.a = 1.0 if _modes_shown() else Linen.eased(awake)
+	var strip := _swatch_rect()
+	_swatch_cloth.visible = strip.size.x > 0.0
+	if _swatch_cloth.visible:
+		_swatch_cloth.place(strip,ui_scale,2.0,Vector2.ZERO)
+		_swatch_cloth.modulate.a = Linen.eased(fan)
 	queue_redraw()
 
 ## The held tool's tag strip, right of its pocket; empty with a material held.
@@ -256,6 +289,60 @@ func set_modes(ids: Array, current: String) -> void:
 
 func _modes_shown() -> bool:
 	return not modes.is_empty() and not material_held
+
+## The swatch strip's colours (sRGB; empty hides it) and the colour in hand.
+func set_swatches(colours: Array, current: Color) -> void:
+	swatches = colours.duplicate()
+	colour = current
+	if swatches.is_empty() and picker_open(): _picker_popup.hide()
+
+func _swatches_shown() -> bool:
+	return not swatches.is_empty() and _modes_shown()
+
+## The strip, under the fan's tag; empty while it is hidden.
+func _swatch_rect() -> Rect2:
+	if not _swatches_shown(): return Rect2()
+	var tag := _tag_rect()
+	var extent := Vector2(MODE_PAD*2.0+SWATCH_CELL*(swatches.size()+1),MODE_PAD*2.0+SWATCH_CELL)*ui_scale
+	return Rect2(Vector2(tag.position.x,tag.end.y+SWATCH_GAP*ui_scale).round(),extent.round())
+
+func _swatch_cell(k: int) -> Rect2:
+	var strip := _swatch_rect()
+	var out := Linen.eased(fan)
+	return Rect2((strip.position+Vector2(MODE_PAD+SWATCH_CELL*k*out,MODE_PAD)*ui_scale).round(),Vector2.ONE*roundf(SWATCH_CELL*ui_scale))
+
+## The colour in hand is one of the swatches (else it came from the picker).
+func _swatch_index() -> int:
+	for k in range(swatches.size()):
+		if (swatches[k] as Color).is_equal_approx(colour): return k
+	return -1
+
+# --- The full picker ----------------------------------------------------------------
+
+## Open the full colour picker beside the swatch strip at `colour`;
+## `picked` hears each colour chosen on it (sRGB).
+func open_picker(picked: Callable) -> void:
+	if _picker_popup == null:
+		_picker_popup = PopupPanel.new()
+		_picker_popup.name = "BrushColourPicker"
+		var picker := ColorPicker.new()
+		picker.name = "Picker"
+		picker.edit_alpha = false
+		picker.picker_shape = ColorPicker.SHAPE_OKHSL_CIRCLE
+		picker.presets_visible = false
+		picker.color_modes_visible = false
+		picker.sampler_visible = false
+		_picker_popup.add_child(picker)
+		add_child(_picker_popup)
+	var picker: ColorPicker = _picker_popup.get_node("Picker")
+	for connection: Dictionary in picker.color_changed.get_connections(): picker.color_changed.disconnect(connection.callable)
+	picker.color = colour
+	picker.color_changed.connect(picked)
+	var strip := _swatch_rect()
+	_picker_popup.popup(Rect2i(Vector2i(strip.end.x+int(SWATCH_GAP*ui_scale),strip.position.y),Vector2i.ZERO))
+
+func picker_open() -> bool:
+	return _picker_popup != null and _picker_popup.visible
 
 ## The icon of mode `id` of the tool in hand.
 func _mode_icon(id: String) -> String:
@@ -337,11 +424,45 @@ func _draw() -> void:
 			elif id == hovered_mode: Linen.pressed_patch(self,cell.grow(-2.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
 			var alpha := 1.0 if k == 0 else out
 			Linen.icon(self,_textures,_mode_icon(id),cell.get_center(),MODE_ICON*ui_scale,ui_scale,"lit" if on else "icon",1.0 if on else 1.5,Color(1.0,1.0,1.0,alpha))
+			# A mode that lays a colour carries the colour in hand.
+			if id == "colour":
+				var dot := cell.end-Vector2.ONE*11.0*ui_scale
+				draw_circle(dot,5.0*ui_scale,Color(colour,alpha),true,-1.0,true)
+				Linen.dashed_circle(self,dot,5.0*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*alpha),line,ui_scale)
+		_draw_swatches(line)
 	elif tag.size.x > 0.0 and awake > 0.0:
 		var text := str(Icons.item(tool).get("label",""))
 		var width := Linen.tag_width(_font,text,ui_scale)
 		var x := tag.position.x+TAG_PAD.x*ui_scale+width*0.5
 		Linen.tag(self,_font,text,x,tag.end.y-TAG_PAD.w*ui_scale,ui_scale,Linen.eased(awake))
+
+## The swatch strip: each swatch a disc, the one in hand ringed as a size
+## pip is; the last cell a faceted hue wheel for the full picker, ringed when
+## the colour in hand came from it.
+func _draw_swatches(line: float) -> void:
+	if not _swatches_shown(): return
+	var out := Linen.eased(fan)
+	var picked := _swatch_index()
+	var r := SWATCH_PIP*0.5*ui_scale
+	for k in range(swatches.size(),-1,-1):
+		var cell := _swatch_cell(k)
+		var centre := cell.get_center()
+		var alpha := 1.0 if k == 0 else out
+		if k == hovered_swatch: Linen.pressed_patch(self,cell.grow(-1.0*ui_scale),ui_scale,Linen.HOVER,Linen.HOVER_SHADE)
+		var on := k == picked or (k == swatches.size() and picked < 0)
+		if k < swatches.size():
+			draw_circle(centre,r,Color(swatches[k] as Color,alpha),true,-1.0,true)
+		else:
+			for w in range(6):
+				var a0 := w*TAU/6.0-PI*0.5
+				var a1 := a0+TAU/6.0
+				draw_colored_polygon(PackedVector2Array([centre,centre+Vector2(cos(a0),sin(a0))*r,centre+Vector2(cos(a1),sin(a1))*r]),Color.from_hsv(w/6.0,0.45,0.82,alpha))
+			if picked < 0: draw_circle(centre,r*0.45,Color(colour,alpha),true,-1.0,true)
+		if on:
+			draw_arc(centre+Vector2(0.0,0.75*ui_scale),r-0.75*ui_scale,0.15*PI,0.85*PI,12,Color(0.1,0.078,0.055,0.28*alpha),1.5*ui_scale,true)
+			Linen.dashed_circle(self,centre,r+2.5*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*alpha),line,ui_scale)
+		else:
+			Linen.dashed_circle(self,centre,r,Color(Linen.PIP_REST,Linen.PIP_REST.a*alpha),line,ui_scale)
 
 ## A pocket across the slot's foot: stitched sides and bottom, a darker mouth
 ## with a glint under it.

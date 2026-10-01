@@ -284,6 +284,11 @@ func press(point: Vector2) -> bool:
 	if not mode.is_empty():
 		set_mode(mode)
 		return true
+	var swatch: int = roll.swatch_at(point)
+	if swatch >= 0:
+		if swatch < roll.swatches.size(): set_colour(roll.swatches[swatch])
+		else: roll.open_picker(func(picked: Color) -> void: set_colour(picked,true))
+		return true
 	var tool: String = roll.tool_at(point)
 	if not tool.is_empty():
 		if not roll.discovered(tool): roll.not_yet(tool)
@@ -350,6 +355,7 @@ func _show_modes(id: String) -> void:
 	var made: RefCounted = clay.tool_of(id) if clay != null else null
 	var ids: Array = made.modes().map(func(spec: Dictionary) -> String: return spec.id) if made != null else []
 	roll.set_modes(ids,made.mode if made != null else "")
+	_show_swatches()
 
 ## The mode of the tool in hand (scripts/clay_tools/clay_tool.gd `modes`), in
 ## the tool and on the roll's fan.
@@ -358,6 +364,26 @@ func set_mode(mode: String) -> void:
 	if clay != null and clay.tool_id == roll.tool: clay.tool.mode = mode
 	if roll.mode != mode: ClaySound.cue(&"ui_size")
 	roll.mode = mode
+	_show_swatches()
+
+## The colour the tool in hand lays (the Brush's Colour), sRGB; `quiet` for
+## the full picker, which sends one per step of a drag.
+func set_colour(picked: Color, quiet := false) -> void:
+	var clay: Node = scene.get("land_clay")
+	if clay == null or clay.tool_id != roll.tool: return
+	if not quiet and not clay.tool.colour.is_equal_approx(picked): ClaySound.cue(&"ui_size")
+	clay.tool.colour = picked
+	_show_swatches()
+
+## The roll's swatch strip for the tool in hand: its colours while its mode
+## lays one, none otherwise.
+func _show_swatches() -> void:
+	var clay: Node = scene.get("land_clay")
+	var made: RefCounted = clay.tool_of(roll.tool) if clay != null else null
+	if made == null:
+		roll.set_swatches([],Color.WHITE)
+		return
+	roll.set_swatches(made.swatches(),made.colour)
 
 # --- The Feather ------------------------------------------------------------------
 
