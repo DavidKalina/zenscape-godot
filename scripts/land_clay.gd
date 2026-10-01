@@ -871,12 +871,12 @@ func _place_prop(delta: float) -> void:
 	var eye: bool = wanderer != null and wanderer.get("active") == true
 	# A press comes down at once, before its verb is decided.
 	var working := state != State.IDLE or not hand_set.is_empty()
-	var blowing: bool = materials != null and materials.has_method("feather_blowing") and materials.feather_blowing()
+	var blowing: bool = materials != null and materials.has_method("feather_blowing") and (materials.feather_blowing() or materials.can_pouring())
 	var hit: Variant = editor.pointer_hit
 	var want: bool = reach != null and (reach.available() or blowing) and not reach.camera_moving() and not carrying and not eye
 	if want:
 		var holding: String = reach.holding
-		want = working or blowing or holding in ["land","feather"] or (holding.is_empty() and reach.hover_zone == "land")
+		want = working or blowing or holding in ["land","feather","can"] or (holding.is_empty() and reach.hover_zone == "land")
 		want = want and (hit != null or (working and _work_at != null) or (blowing and _prop.visible))
 	var motion := _prop_motion
 	_prop.visible = motion.show(want,delta)
@@ -887,12 +887,19 @@ func _place_prop(delta: float) -> void:
 	if goal == null: goal = motion.tip
 	var at_work := working and _work_at != null
 	var ground := func(flat: Vector2) -> Variant: return editor.data.ground_height(flat)
-	motion.advance(delta,goal,working or blowing,ground,CursorMotion.across_view(editor.terrain,scene.camera),(goal as Vector3).y if at_work else -INF)
+	# The can pours from above the land, not pressed onto it.
+	motion.advance(delta,goal,working or (blowing and tool.prop_lift() <= 0.0),ground,CursorMotion.across_view(editor.terrain,scene.camera),(goal as Vector3).y if at_work else -INF)
 	var turn := motion.turn(-tool.prop_tilt())
 	var size := _prop_size()*motion.size()
 	# Pinned by its working end: the grip stands its depth above the tip.
-	var grip := motion.tip+turn*Vector3(0.0,_prop_depth*size,0.0)
+	var grip := motion.tip+turn*Vector3(0.0,_prop_depth*size,0.0)+Vector3.UP*tool.prop_lift()*size
 	_prop.transform = Transform3D(turn.scaled(Vector3.ONE*maxf(size,0.001)),grip)
+
+## A point given in the held prop's own space, in plate coordinates (the
+## can's rose, for its stream), or null while the prop is not shown.
+func prop_point(local: Vector3) -> Variant:
+	if _prop == null or not _prop.visible: return null
+	return _prop.transform*local
 
 ## The prop's size: the God Hand's scale (1 at the hand's own size), which
 ## `--hand-cursor` keeps one size on screen.

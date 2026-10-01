@@ -11,7 +11,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 - **Water runs, pools and spills.** Water runs downhill, fills a thumb's groove as a channel, pools in a hollow or a palm-pressed basin, and spills over the lowest point of the rim into the next low ground.
 - **It follows the land.** Every step reads the ground under each cell again from the terrain's heights. A trench cut out of a pond drains it into the trench; a basin pressed beside a stream takes the stream; a peak raised under a pond throws the water off. There is no hook to miss: a sculpt, the clay, an undo, a mountain springing and a new world all move the water the same way.
 - **The plate's edge drains, and pours.** Water that reaches the plate's outer ring of cells falls off the plate. A basin holds its water until the water tops the lowest point of its rim; only then does it run on, and off the edge if nothing lower stops it. This keeps water from ever building up against the rim, and needs no lip. What leaves over each edge cell is counted (m³/s, smoothed), and where it leaves, a waterfall pours down the block's side into the void ("Edge falls" below). A thumb groove run out through the rim notches it into a spillway for this (`docs/scenic/modeless.md`, "The thumb at the rim").
-- **Water soaks and evaporates.** Every wet cell loses `evaporation` a second, and thin water (under `soak_depth`) loses up to `soak` more, so a front soaks in as it runs. A steady spring therefore levels off: in the probe, a 0.084 m³/s spring's water holds at about 12.6 m³ over about 50 m² after four minutes. A pond without a source lasts a long while (a 6 m³ pond, about 15 minutes); a puddle on flat ground soaks in within a minute.
+- **Water soaks and evaporates.** Every wet cell loses `evaporation` a second, and thin water (under `soak_depth`) loses up to `soak` more, so a front soaks in as it runs. Ground that stays wet saturates: its soak fades to nothing over `saturate` seconds of being wet, and comes back as it dries (at `dry_rate` of real time). A running stream therefore carries its water on to the pond below instead of losing it to the ground it already wet (2026-09-30: before saturation a spring's sheet down a hillside soaked away about 60% of its water and its pond never filled; see "The watering can and stronger springs"). A pond without a source lasts a long while (a 6 m³ pond, about 15 minutes); a puddle on flat ground soaks in within a minute.
 - **Springs and bursts.** A ball that lands 1.2 m above the plate's low ground (`SPRING_RISE`; the low ground is the plate's 20 % height quantile), or on ground steeper than `SPRING_SLOPE`, **stays as a spring**, pouring `SPRING_SHARE` of its volume each second. The spring rises just down the slope from where the ball landed (only as far as its footprint needs to lie on one flank, at most `SPRING_SET`, 1 m), and the ball's own water wells out of it over `SPRING_HEAD_SECONDS` (10 s). Where the spring's course levels off on open ground, the water wears a rill down to a pool at the foot (see "Drop legibility" below). A ball anywhere else lets its water go once, over `BURST_SECONDS` across `BURST_RADIUS`. The user will refine where springs come from.
 - **Water from the sky** (`--modeless`). The water ball had no door under `--modeless` (left presses on the land are clay). Now a tuft torn from the sky's cloud and carried over the land condenses a water ball there, and it fills from the cloud while held (`docs/scenic/sky-cloud.md`; before that, any drag from the void did). Letting go drops it. A click in the void is still the snap. The void's hint says so.
 - **Undo, drain, save.**
@@ -35,7 +35,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 | Method | Virtual pipes (O'Brien & Hodgins 1995; Mei, Decaudin & Hu 2007). Each cell keeps an outflow through a pipe to each of its four neighbours. The outflow is accelerated by the drop in surface height (ground plus water), through a pipe as wide as the cell and as deep as the water it leaves, so the flow accelerates at g × slope whatever the cell size. Friction slows it (λ = `friction` + `drag`/depth, solved implicitly), so a thin sheet runs slower than a deep channel. The outflows are scaled so no cell gives more than it holds, and then each depth moves by what came in less what went out. Velocity comes from the mean flux across each cell over its mean depth, capped at `max_speed`. |
 | Timestep | Fixed, apart from the frame: 1/60 s natively and 1/30 s in the mirror, at most 4 steps a frame. A slow frame slows the water rather than piling up work. Both are well inside the pipes' stability limit for water under about 5 m deep. |
 | Edge | The ring of plate cells at the grid's border (or beside a wall) drains. What arrives there is counted as `drained` and removed. The ring is the outermost 0.25 m, so water leaves at the lip, not a cell or more short of it (the probe finds the channel wet to the cell beside the edge). Each edge cell also keeps what it drained over the step as a rate, eased with `edge_smooth` (0.5 s), the brink depth that rate makes (critical depth, (q²/g)^⅓ for q per metre of lip) and the velocity of the cell inward of it (its own is meaningless: it never holds water). `stats()` adds the total as `edge_flux`; `drained` still counts every litre. |
-| Losses | Per wet cell per second: `evaporation` + `soak` × max(0, 1 − depth/`soak_depth`). |
+| Losses | Per wet cell per second: `evaporation` + `soak` × (1 − wet/`saturate`) × max(0, 1 − depth/`soak_depth`), where wet is the seconds the cell has stood wet (deeper than 2 mm), at most `saturate`, falling at `dry_rate` while it is dry. |
 | Where it runs | On the main thread, in `NativeChunkEditor._process` (`_flow_process`). A step costs about 40 µs natively, so a worker round trip would cost more than it saves. |
 
 ### Rendering
@@ -71,10 +71,12 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `drag` | 0.06 m/s | Bed friction that grows as water thins (λ = friction + drag/depth). |
 | `evaporation` | 0.0004 m/s | Lost from every wet cell. |
 | `soak`, `soak_depth` | 0.004 m/s, 0.03 m | Extra loss from thin water, fading to nothing at `soak_depth`. |
+| `saturate`, `dry_rate` | 6 s, 0.1 | Seconds of standing wet before ground soaks no more; how fast it dries back. 0 turns saturation off. |
 | `max_speed` | 4 m/s | Velocity cap (for the velocity field, not the fluxes). |
 | `edge_smooth` | 0.5 s | Time constant of each edge cell's outflow rate. |
 | `SPRING_RISE`, `SPRING_SLOPE`, `LOW_SHARE` | 1.2 m, 0.45, 0.2 | A ball is a spring this far above the plate's `LOW_SHARE` height quantile, or on ground this steep. |
-| `SPRING_SHARE`, `SPRING_MIN`, `SPRING_MAX` | 0.012 /s, 0.03, 0.25 m³/s | Spring rate as a share of the ball's volume each second. |
+| `SPRING_SHARE`, `SPRING_MIN`, `SPRING_MAX` | 0.03 /s, 0.35, 0.7 m³/s | Spring rate as a share of the ball's (or the can's poured) volume each second. Was 0.012, 0.03, 0.25. |
+| `SPRING_BALL` | 1 m³ | A ball carrying less lets its water go wherever it lands. |
 | `SPRING_RADIUS`, `MAX_SPRINGS` | 0.35 m, 8 | A spring's footprint; the oldest goes when a ninth comes. |
 | `BURST_SECONDS`, `BURST_RADIUS` | 1.2 s, 0.8 m | How a burst ball's water leaves it. |
 | `SPRING_HEAD_SECONDS`, `SPRING_SET`, `SPRING_BACK` | 10 s, 1 m, 0.03 m | How a spring ball's own water leaves it; how far down its course the spring rises at most, and how far the ground `SPRING_RADIUS` behind it must stand over it (`spring_set`). |
@@ -436,3 +438,22 @@ A full live launch under `--still-weather` with the storm preset rains into the 
 - **Ice.** Frozen water only looks frozen: the flow's visible speed (falls, rills, ripples) slows with `SurfaceWeather.flow_time`, but the sim runs on, so nothing floods on a thaw. Pond life under ice is in `life.md`, "Winter on the water".
 - **Sound.** The water's sound hears `water_settled` pool reports, but has no running-water layer for live streams.
 - **Tests.** No suite tests were added or run (the user deferred them during the scenic pivot). `tools/probe_void_snap.gd` drags in the void to check a drag does not snap; a drag that crosses the land now gathers a water ball.
+
+## The watering can and stronger springs (2026-09-30)
+
+The user found filling streams with water balls tedious. Three changes:
+
+- **The watering can** (`scripts/watering_can.gd`, prop `scripts/clay_tools/can.gd`, the tool roll's "can" under the Feather). Hold on the land: the can tips and pours `RATE` (1.4 m³/s at the middle pip, the pips scale it 0.6 / 1 / 1.5) into the sim under its rose, through `WaterFlow.taps`. Drag to run a groove. Shift at the press sprinkles: 40% of the rate over three times the splash. Held still within `STILL` (0.35 m) for `SPRING_HOLD` (1.6 s) on ground where a ball would make a spring, it plants one (`WaterFlow.plant_spring`, one undo step with its bed and pool, sized by what the can poured there, at least 2 m³). The stream is drawn as the ball's beads. Its sound borrows the swirl loop (`water_pour`) until a pour clip is picked.
+- **The water ball scoops.** With live water the ball forms only where water stands within `SCOOP_REACH` (1.5 m) of the press (`NativeChunkEditor.scoop_ball`). It fills by taking the water under it (`WaterFlow.scoop`: drain within `SCOOP_RADIUS`, put back what is over), so the pond drops. It takes the fish swimming within `SCOOP_FISH_REACH` (2.2 m), as a heron takes one (`LandLife.scoop_fish`); their sites refill after `PREY_RETURN`. A ball from a fishless pond has no fish. On dry land nothing forms: the bead in hand shrinks, `ui_refuse` plays and the hint says to pour with the can. The sky cloud's tuft still gives a ball as before.
+- **Springs fill.** Springs pour 0.35–0.7 m³/s, and wet ground saturates (above).
+
+`tools/probe_watering_can.gd` (`-- --no-title --no-rain-runoff`) checks the dry refusal, a 3 s pour (4 m³), a scoop (the plate's water drops by what the ball took), and a can spring on a raised 4.5 m hill run for 120 s. Same hill, 120 s, 42 m³ poured:
+
+| | Soaked and evaporated | Over the rim | Pool below |
+|---|---|---|---|
+| Old rate (0.042 m³/s), no saturation | all of it | ~0 | 1.9 m², draining |
+| 0.35 m³/s, no saturation | 25 m³ (59%) | 4 m³ | gone by 45 s |
+| 0.35 m³/s, saturation | 14 m³ (33%) | 29 m³ | 6.8 m², 0.45 m deep, steady from 60 s |
+
+Where the pool ends up depends on the world. Near the rim its overflow runs off the plate. On a wide plain the overflow spreads, and evaporation over the wet area (0.4 mm/s × 200+ m²) becomes the main loss (47% in one world). Nothing here has been seen on screen yet.
+

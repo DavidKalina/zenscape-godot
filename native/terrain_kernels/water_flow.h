@@ -46,6 +46,11 @@ class ZenScapeWaterFlow : public RefCounted {
     std::vector<float> ground, depth, next, vx, vz;
     std::vector<float> flux;     // 4 per cell: -x, +x, -z, +z outflow, m³/s
     std::vector<uint8_t> flowing;
+    // Seconds each cell's ground has stood wet, up to `saturate`: wet ground
+    // soaks less and less, and saturated ground soaks nothing, so a stream
+    // that keeps running carries its water on instead of losing it to the
+    // ground it already wet. Dry ground dries back at `dry_rate` of real time.
+    std::vector<float> wet;
     // The edge ring's outflow (docs/scenic/water-flow.md "Edge falls"): each
     // edge cell's side (0 -x, 1 +x, 2 -z, 3 +z), the plate cell inward of it,
     // the volume drained into it over the current step, and the smoothed rate
@@ -59,6 +64,7 @@ class ZenScapeWaterFlow : public RefCounted {
     double edge_smooth = 0.5;
     // Tunables (set_params); the defaults match scripts/water_flow.gd.
     double gravity = 9.81, friction = 0.6, drag = 0.06, evaporation = 0.00006, soak = 0.0035, soak_depth = 0.03, max_speed = 4.0;
+    double saturate = 0.0, dry_rate = 0.1;
     // Totals since configure, m³.
     double poured = 0.0, drained = 0.0, soaked = 0.0, removed = 0.0;
     int64_t last_usec = 0;
@@ -194,14 +200,17 @@ protected:
                 edge_acc[c] += d*area;
                 d = 0.0;
             } else if (d > 0.0) {
-                // Evaporation everywhere; thin water soaks into the ground too.
-                const double loss = dt*(evaporation+soak*std::max(0.0, 1.0-d/soak_depth));
+                // Evaporation everywhere; thin water soaks into ground not yet
+                // saturated too.
+                const double thirst = saturate > 0.0 ? std::max(0.0, 1.0-wet[c]/saturate) : 1.0;
+                const double loss = dt*(evaporation+soak*thirst*std::max(0.0, 1.0-d/soak_depth));
                 const double lost = std::min(d, loss);
                 soaked += lost*area;
                 d -= lost;
                 if (d < 1e-6) { soaked += d*area; d = 0.0; }
             }
             next[c] = float(d);
+            if (saturate > 0.0) wet[c] = d > 0.002 ? float(std::min(saturate, double(wet[c])+dt)) : float(std::max(0.0, double(wet[c])-dt*dry_rate));
         }
         depth.swap(next);
     }
@@ -232,7 +241,7 @@ public:
         const int n = w*h;
         face.assign(n*3, -1); weight.assign(n*2, 0.0f); kind.assign(n, OUTSIDE);
         ground.assign(n, 0.0f); depth.assign(n, 0.0f); next.assign(n, 0.0f);
-        vx.assign(n, 0.0f); vz.assign(n, 0.0f); flux.assign(n*4, 0.0f); flowing.assign(n, 0); steep.assign(n, 0);
+        vx.assign(n, 0.0f); vz.assign(n, 0.0f); flux.assign(n*4, 0.0f); flowing.assign(n, 0); steep.assign(n, 0); wet.assign(n, 0.0f);
         edge_acc.assign(n, 0.0); edge_rate.assign(n, 0.0f); edge_brink.assign(n, 0.0f);
         edge_cells.clear(); edge_inner.clear(); edge_side.clear(); side_of.assign(n, -1);
         poured = drained = soaked = removed = 0.0;
@@ -273,6 +282,7 @@ public:
         gravity = p.get("gravity", gravity); friction = p.get("friction", friction); drag = p.get("drag", drag);
         evaporation = p.get("evaporation", evaporation); soak = p.get("soak", soak); soak_depth = p.get("soak_depth", soak_depth);
         max_speed = p.get("max_speed", max_speed);
+        saturate = std::max(0.0, double(p.get("saturate", saturate))); dry_rate = std::max(0.0, double(p.get("dry_rate", dry_rate)));
         edge_smooth = std::max(0.01, double(p.get("edge_smooth", edge_smooth)));
     }
 

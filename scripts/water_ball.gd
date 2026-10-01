@@ -105,6 +105,8 @@ var target := Vector3.ZERO
 ## Unset, the ball takes the pointer's ground height.
 var ground_at := Callable()
 var fish: Array[Dictionary] = []
+var _scooped := false
+var _salt := 0
 ## The vortex's turned angle (radians) and how hard it churns (0..1).
 var swirl := 0.0
 var churn := 0.4
@@ -294,7 +296,9 @@ func _ready() -> void:
 
 ## Start a ball over `point` (plate coordinates, on the ground). `fish_material`
 ## is LandLife's creature material (null: no fish); `salt` picks the fish.
-func condense(point: Vector3, fish_material: Material, salt: int) -> void:
+## A `scooped` ball is water taken out of a pond: it carries no fish of its
+## own, only those it takes up as it gathers (`add_fish`).
+func condense(point: Vector3, fish_material: Material, salt: int, scooped := false) -> void:
 	# A ball still in the air lands before the next one forms.
 	if state == "falling" or state == "tossed": _impact()
 	_finish_splash()
@@ -330,7 +334,9 @@ func condense(point: Vector3, fish_material: Material, salt: int) -> void:
 	for i in range(CONDENSE_BEADS):
 		_bead_in(randf_range(0.8,1.8),randf_range(0.28,0.5))
 	ClaySound.cue_at(&"water_gather",global_position,0.5)
-	_choose_fish(fish_material,salt)
+	_scooped = scooped
+	_salt = salt
+	_choose_fish(null if scooped else fish_material,salt)
 
 ## Follow the pointer's ground point with `water` m³ in the ball.
 func hold(point: Variant, water: float) -> void:
@@ -724,24 +730,35 @@ func _choose_fish(material: Material, salt: int) -> void:
 		var weights: Array = company.map(func(pair: Array) -> float: return pair[1])
 		var kind: String = company[Variety.weighted(weights,Variety.unit([salt,i,2]))][0]
 		var seed := int(Variety.unit([salt,i,3])*float(Models.FISH_KINDS[kind].get("seeds",1)))
-		var node := MultiMeshInstance3D.new()
-		var instances := MultiMesh.new()
-		instances.transform_format = MultiMesh.TRANSFORM_3D
-		instances.use_colors = true
-		instances.instance_count = 1
-		instances.mesh = _fish_mesh(material,kind,seed)
-		# A new MultiMesh's transforms are all zero; without this it draws nothing.
-		instances.set_instance_transform(0,Transform3D.IDENTITY)
-		instances.set_instance_color(0,Color.WHITE)
-		node.multimesh = instances
-		node.material_override = _swim_material(material,kind)
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		node.visible = false
-		_school.add_child(node)
-		fish.append({"kind":kind,"seed":seed,"mirror":Variety.unit([salt,i,4]) < 0.5,"node":node,"shown":false,"born":0.0,
-			"angle":Variety.unit([salt,i,5])*TAU,"turn":lerpf(0.9,1.5,Variety.unit([salt,i,6]))*(1.0 if i%2 == 0 else -1.0),
-			"height":lerpf(-0.35,0.3,Variety.unit([salt,i,7])),"orbit":lerpf(0.35,0.55,Variety.unit([salt,i,8])),
-			"weave":lerpf(0.7,1.4,Variety.unit([salt,i,9])),"phase":Variety.unit([salt,i,10])*TAU})
+		_fish_entry(material,kind,seed,Variety.unit([salt,i,4]) < 0.5)
+
+## A fish a scooped ball took up out of its pond (LandLife `scoop_fish`), as
+## {"kind", "seed", "mirror"}: it joins the school, at most FISH_MAX.
+func add_fish(material: Material, look: Dictionary) -> void:
+	if material == null or fish.size() >= FISH_MAX or not Models.FISH_KINDS.has(str(look.get("kind",""))): return
+	_fish_entry(material,str(look.kind),int(look.get("seed",0)),bool(look.get("mirror",false)))
+
+func _fish_entry(material: Material, kind: String, seed: int, mirror: bool) -> void:
+	var salt := _salt
+	var i := fish.size()
+	var node := MultiMeshInstance3D.new()
+	var instances := MultiMesh.new()
+	instances.transform_format = MultiMesh.TRANSFORM_3D
+	instances.use_colors = true
+	instances.instance_count = 1
+	instances.mesh = _fish_mesh(material,kind,seed)
+	# A new MultiMesh's transforms are all zero; without this it draws nothing.
+	instances.set_instance_transform(0,Transform3D.IDENTITY)
+	instances.set_instance_color(0,Color.WHITE)
+	node.multimesh = instances
+	node.material_override = _swim_material(material,kind)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.visible = false
+	_school.add_child(node)
+	fish.append({"kind":kind,"seed":seed,"mirror":mirror,"node":node,"shown":false,"born":0.0,
+		"angle":Variety.unit([salt,i,5])*TAU,"turn":lerpf(0.9,1.5,Variety.unit([salt,i,6]))*(1.0 if i%2 == 0 else -1.0),
+		"height":lerpf(-0.35,0.3,Variety.unit([salt,i,7])),"orbit":lerpf(0.35,0.55,Variety.unit([salt,i,8])),
+		"weave":lerpf(0.7,1.4,Variety.unit([salt,i,9])),"phase":Variety.unit([salt,i,10])*TAU})
 
 func _fish_mesh(material: Material, kind: String, seed: int) -> Mesh:
 	var key := "%s %d %d" % [kind,seed,material.get_instance_id()]
@@ -768,7 +785,8 @@ func _fish_scale(entry: Dictionary) -> Vector3:
 ## core, quicker as the water churns.
 func _swim(delta: float) -> void:
 	_school.position = _ball.position
-	var count := clampi(FISH_MIN+int(volume/FISH_PER_VOLUME),FISH_MIN,FISH_MAX)
+	# A scooped ball shows every fish it took up, and only those.
+	var count := fish.size() if _scooped else clampi(FISH_MIN+int(volume/FISH_PER_VOLUME),FISH_MIN,FISH_MAX)
 	var pace := lerpf(0.85,1.7,churn)
 	for i in range(fish.size()):
 		var entry: Dictionary = fish[i]

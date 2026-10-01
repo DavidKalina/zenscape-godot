@@ -22,6 +22,8 @@ var vz := PackedFloat32Array()
 var flux := PackedFloat32Array()
 var flowing := PackedByteArray()
 var steep := PackedByteArray()
+## Seconds each cell has stood wet (ZenScapeWaterFlow `wet`).
+var wet := PackedFloat32Array()
 ## The edge ring's outflow (ZenScapeWaterFlow: edge_cells ... edge_brink).
 var edge_cells := PackedInt32Array()
 var edge_inner := PackedInt32Array()
@@ -37,6 +39,8 @@ var drag := 0.06
 var evaporation := 0.00006
 var soak := 0.0035
 var soak_depth := 0.03
+var saturate := 0.0
+var dry_rate := 0.1
 var max_speed := 4.0
 var poured := 0.0
 var drained := 0.0
@@ -64,6 +68,7 @@ func configure(width: int, height: int, cell_size: float, origin: Vector2, faces
 	flowing.fill(0)
 	steep.resize(n)
 	steep.fill(0)
+	wet = _zeros(n)
 	edge_acc.resize(n)
 	edge_acc.fill(0.0)
 	edge_rate = _zeros(n)
@@ -123,6 +128,8 @@ func set_params(p: Dictionary) -> void:
 	evaporation = p.get("evaporation",evaporation)
 	soak = p.get("soak",soak)
 	soak_depth = p.get("soak_depth",soak_depth)
+	saturate = maxf(0.0,float(p.get("saturate",saturate)))
+	dry_rate = maxf(0.0,float(p.get("dry_rate",dry_rate)))
 	max_speed = p.get("max_speed",max_speed)
 	edge_smooth = maxf(0.01,p.get("edge_smooth",edge_smooth))
 
@@ -237,13 +244,15 @@ func _tick(dt: float) -> void:
 				edge_acc[c] += d*area
 				d = 0.0
 			elif d > 0.0:
-				var lost := minf(d,dt*(evaporation+soak*maxf(0.0,1.0-d/soak_depth)))
+				var thirst := maxf(0.0,1.0-wet[c]/saturate) if saturate > 0.0 else 1.0
+				var lost := minf(d,dt*(evaporation+soak*thirst*maxf(0.0,1.0-d/soak_depth)))
 				soaked += lost*area
 				d -= lost
 				if d < 0.000001:
 					soaked += d*area
 					d = 0.0
 			next[c] = d
+			if saturate > 0.0: wet[c] = minf(saturate,wet[c]+dt) if d > 0.002 else maxf(0.0,wet[c]-dt*dry_rate)
 	depth = next
 
 func step(heights: PackedFloat32Array, sources: PackedFloat32Array, ticks: int, dt: float) -> int:

@@ -102,9 +102,10 @@ const TOOLS := [
 	["wire","Wire","Slice","Cuts one straight gorge."],
 	["hammer","Hammer","Break","Cracks rock and sheds scree."],
 	["feather","Feather","Gust","Wind in hand."],
+	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
 ]
 const ELEMENTS := [
-	["water","Water","Spring","Pours water where you hold."],
+	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],
 	["stone","River stone","Place","Sets a stone, or scatters pebbles."],
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],
 	["snow","Frost","Winter","Brings winter to the whole chunk."],

@@ -76,6 +76,10 @@ func turns_lip(_verb: String) -> bool: return false
 ## over the grass, 0 none. Below the clay's DIRT_BARE the grass stays alive.
 func dirt_share(_verb: String) -> float: return 1.0
 
+## Metres the prop hangs above its working end's usual hover (the can holds
+## its rose up, to pour from).
+func prop_lift() -> float: return 0.0
+
 ## The stand-in prop, the tool's own cursor over the land, or null for none.
 ## Built each time the tool is taken, in the terrain's space, with the
 ## handle's grip at the origin and the tool's working end down -Y. A Blender

@@ -281,6 +281,18 @@ const RIVER_LENGTH := 5.0
 var ball_volume := 0.0
 var _ball_holding := false
 var _ball_serial := 0
+## With live water the ball is the ponds' own water (`scoop_ball`): it only
+## forms where water stands within SCOOP_REACH m of the press (at least
+## SCOOP_DEPTH deep), and it fills by taking the water within SCOOP_RADIUS m
+## under it, so the pond drops as the ball grows. The fish swimming within
+## SCOOP_FISH_REACH m of it are taken up too, every SCOOP_FISH_SECONDS.
+const SCOOP_REACH := 1.5
+const SCOOP_DEPTH := 0.04
+const SCOOP_RADIUS := 1.6
+const SCOOP_FISH_REACH := 2.2
+const SCOOP_FISH_SECONDS := 0.25
+var _ball_scooping := false
+var _scoop_fish_wait := 0.0
 ## Emitted when a dropped ball's water has settled: {"kind": "waterfall",
 ## "stream", "lake", "pond" or "soaked", "ponds", "pond_area", "merged",
 ## "streams", "stream_length", "falls", "fish", "volume"}.
@@ -769,6 +781,7 @@ func _process(delta: float) -> void:
 	_handful_process(hit,delta)
 	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if gust != null: _gust_process(hit)
+	if can != null and hit != null: can.pointer = hit
 	if hit != null:
 		var center := Vector2(hit.x,hit.z)
 		_material.set_shader_parameter("brush_center",center)
@@ -2239,8 +2252,9 @@ func _release_pour() -> void:
 	water_brush.begin()
 	water_settling = true
 
-## A press with water in hand condenses a ball over the ground point.
-func _ball_press(hit: Vector3) -> void:
+## A press with water in hand condenses a ball over the ground point. A
+## `scooped` ball holds nothing yet: it fills from the water under it.
+func _ball_press(hit: Vector3, scooped := false) -> void:
 	if ball == null:
 		ball = preload("res://scripts/water_ball.gd").new()
 		ball.name = "WaterBall"
@@ -2250,8 +2264,10 @@ func _ball_press(hit: Vector3) -> void:
 		ball.ground_at = func(point: Vector2) -> Variant: return data.ground_height(point)
 	var life: Variant = scene.get("land_life")
 	_ball_serial += 1
-	ball.condense(hit,life.material if life != null and life.get("material") != null else null,hash([land_seed,_ball_serial]))
-	ball_volume = BALL_MIN_VOLUME
+	ball.condense(hit,life.material if life != null and life.get("material") != null else null,hash([land_seed,_ball_serial]),scooped)
+	ball_volume = 0.0 if scooped else BALL_MIN_VOLUME
+	_ball_scooping = scooped
+	_scoop_fish_wait = 0.0
 	_ball_holding = true
 	_emit_stroke(0,hit,brush_radius(),0.0)
 
@@ -2263,14 +2279,56 @@ func _ball_step(hit: Variant, delta: float) -> void:
 	# sky with another brush in hand (`ball_from_sky`).
 	var rate: float = WaterBrush.RATE*float(water_brush.strength)*pow(float(water_brush.radius)/WaterBrush.REFERENCE_RADIUS,2.0)
 	var more := minf(rate*minf(delta,0.05),BALL_MAX_VOLUME-ball_volume)
-	# A ball from the sky's cloud fills only with what the cloud has.
+	# A ball from the sky's cloud fills only with what the cloud has; a
+	# scooped one with what stands under it.
 	if ball_supply.is_valid(): more = float(ball_supply.call(more))
+	elif _ball_scooping: more = _scoop(more,delta)
 	ball_volume = minf(BALL_MAX_VOLUME,ball_volume+more)
 	ball.hold(hit,ball_volume)
+
+## A scooped ball takes up to `more` m³ from the water under it, and the fish
+## near it, and returns the m³ it got.
+func _scoop(more: float, delta: float) -> float:
+	if flow == null or not flow.ready: return 0.0
+	var under := Vector2(ball.position.x,ball.position.z)
+	var got: float = flow.scoop(under,SCOOP_RADIUS,more)
+	_scoop_fish_wait -= delta
+	var life: Variant = scene.get("land_life")
+	if _scoop_fish_wait <= 0.0 and life != null and life.has_method("scoop_fish") and life.get("material") != null:
+		_scoop_fish_wait = SCOOP_FISH_SECONDS
+		for look: Dictionary in life.scoop_fish(under,SCOOP_FISH_REACH,ball.FISH_MAX-ball.fish.size(),ball.position):
+			ball.add_fish(life.material,look)
+	return got
+
+## True when live water stands near the plate point `point` for a ball to
+## scoop (SCOOP_REACH, SCOOP_DEPTH).
+func water_near(point: Vector2) -> bool:
+	if flow == null or not flow.ready: return false
+	for ring: float in [0.0,SCOOP_REACH*0.5,SCOOP_REACH]:
+		for k in range(1 if ring == 0.0 else 8):
+			if flow.depth_at(point+Vector2.from_angle(k*TAU/8.0)*ring) >= SCOOP_DEPTH: return true
+	return false
+
+## The water ball from the hand (the case's water, scripts/hand_materials.gd):
+## with live water it scoops the water standing under the press, and only
+## there: "" when it formed, "dry" when there is no water near to scoop, "busy"
+## when the land cannot take a press now. Without live water it gathers out of
+## the air as before.
+func scoop_ball(screen_pos: Vector2) -> String:
+	if flow == null or not flow.ready: return "" if ball_from_sky(screen_pos) else "busy"
+	if forming or not active or _ball_holding or _painting: return "busy"
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return "busy"
+	if not water_near(Vector2(hit.x,hit.z)): return "dry"
+	_land_mountain()
+	_stroke_button = MOUSE_BUTTON_LEFT
+	_ball_press(hit,true)
+	return ""
 
 func _ball_release() -> void:
 	if not _ball_holding: return
 	_ball_holding = false
+	_ball_scooping = false
 	ball_supply = Callable()
 	# No finger pokes it: it pops on the side toward the camera, a little up,
 	# where the burst is seen (a God Hand's finger sets its own).
@@ -2542,6 +2600,43 @@ func still_water_triangles() -> PackedVector3Array:
 	var soup: PackedVector3Array = content.pond_vertices.duplicate()
 	if flow_view != null: soup.append_array(flow_view.still_triangles())
 	return soup
+
+# --- Watering can ----------------------------------------------------------------
+## The watering can's stream (scripts/watering_can.gd): with the can in hand
+## (the tool roll's "can", scripts/hand_materials.gd CAN) a press pours into
+## the live water under the can's rose until the button comes up, and held
+## still on high ground plants a spring (`_can_spring`).
+var can: Node3D
+
+## A press with the can on the land at `screen_pos`: `scale` is the size in
+## hand, `fine` a sprinkle. False when there is no live water to pour into or
+## the land is busy.
+func can_in_hand(screen_pos: Vector2, scale: float, fine: bool) -> bool:
+	if flow == null or not flow.ready or forming or not active or _ball_holding or _painting: return false
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return false
+	_land_mountain()
+	if can == null:
+		can = preload("res://scripts/watering_can.gd").new()
+		can.name = "WateringCan"
+		can.flow = flow
+		can.clay = clay
+		can.ground_at = func(point: Vector2) -> Variant: return data.ground_height(point)
+		can.spring_planted.connect(_can_spring)
+		terrain.add_child(can)
+	can.press(hit,scale,fine)
+	_emit_stroke(0,hit,0.8*scale,0.0)
+	return true
+
+## The can held still on high ground: a spring rises there, its course and
+## pool worn as a ball's spring's are, in one undo step.
+func _can_spring(point: Vector2) -> void:
+	if not flow.plant_spring(point,maxf(float(can.poured),2.0)): return
+	_set_status("A spring rises where the water fell.")
+	preload("res://scripts/clay_sound.gd").cue_at(&"water_splash",terrain.to_global(Vector3(point.x,float(data.ground_height(point)),point.y)),0.6)
+	var bed: Dictionary = flow.last_bed
+	ball_settled.emit({"kind":"spring","volume":snappedf(float(can.poured),0.01),"fish":0,"center":point,"pool":bed.get("pool",point)})
+	if not bed.is_empty(): _wear_spring_bed(bed)
 
 # --- Wind gust -------------------------------------------------------------------
 ## The wind tool (scripts/wind_gust.gd, docs/scenic/wind-gust.md): with wind
