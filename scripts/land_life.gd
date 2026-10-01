@@ -240,7 +240,7 @@ func _batch(label: String, mesh: Mesh, count: int, colors: bool, custom := false
 	instances.instance_count = count
 	instances.mesh = mesh
 	# Creatures wander; one generous box keeps the batch from culling itself.
-	instances.custom_aabb = AABB(Vector3(-16,-4,-16),Vector3(32,40,32))
+	instances.custom_aabb = AABB(Vector3(-16,NativeTerrainData.MIN_HEIGHT-1.0,-16),Vector3(32,45,32))
 	for i in range(count): instances.set_instance_transform(i,_hidden())
 	node.multimesh = instances
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

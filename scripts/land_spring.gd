@@ -59,7 +59,7 @@ const MOUNTAIN_FORM := "alpine"
 ## cap. The floor never goes below FLOOR.
 const BASIN_RADIUS := Vector2(2.2,5.0)
 const BASIN_DEPTH := Vector2(0.4,1.1)
-const FLOOR := -1.2
+const FLOOR := NativeTerrainData.MIN_HEIGHT+0.3
 ## The bowl keeps its full depth inside this share of the radius and eases to
 ## nothing at the rim; its rim level is the mean ground over the outer ring
 ## (RIM_RING to 1 of the radius).

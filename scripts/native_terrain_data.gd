@@ -9,7 +9,16 @@ signal state_restored(state: Dictionary)
 signal document_captured(document: Dictionary)
 ## Edit the imported chunk's own welded vertices, retaining every material/UV
 ## channel and the original irregular topology. No replacement heightfield.
-const MIN_HEIGHT := -1.5
+## The floor: no ground goes below MIN_HEIGHT metres. The plain stands near
+## 0, so this is about six metres of dig room. Every tool's floor and every
+## clamp on the land's heights reads it (the clay's sink FLOOR stands a little
+## above it). It was -1.5 until 2026-09-30; a world saved then holds heights
+## inside the new range, so it loads unchanged.
+const MIN_HEIGHT := -6.5
+## The foot of the plate's earth sides (NativeChunkEditor's skirt), in the
+## terrain's frame: under MIN_HEIGHT, so a pit dug to the floor at the plate's
+## edge still has earth beneath it.
+const SLAB_BASE := -8.3
 const MAX_HEIGHT := 64.0
 const MAX_EXPLOSIVES := 32
 const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper"]

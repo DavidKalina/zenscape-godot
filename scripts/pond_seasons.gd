@@ -182,7 +182,7 @@ func _batch(label: String, mesh: Mesh, count: int) -> MultiMeshInstance3D:
 	instances.use_colors = true
 	instances.instance_count = count
 	instances.mesh = mesh
-	instances.custom_aabb = AABB(Vector3(-16,-4,-16),Vector3(32,40,32))
+	instances.custom_aabb = AABB(Vector3(-16,NativeTerrainData.MIN_HEIGHT-1.0,-16),Vector3(32,45,32))
 	instances.buffer = _blank(count)
 	instances.visible_instance_count = 0
 	node.multimesh = instances

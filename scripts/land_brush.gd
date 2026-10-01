@@ -15,8 +15,9 @@ const Erosion = preload("res://scripts/terrain_erosion.gd")
 const CELL := 2.0
 ## Peak rise in metres per second at the stroke centre, at strength 1.
 const RATE := 2.4
-## Lowering never digs below this floor (NativeTerrainData.MIN_HEIGHT is -1.5).
-const FLOOR := -1.2
+## Lowering never digs below this floor, a little over
+## NativeTerrainData.MIN_HEIGHT.
+const FLOOR := NativeTerrainData.MIN_HEIGHT+0.3
 ## Rounded hills: one dab never lifts land above a dome over the ground at its
 ## rim, `DOME` metres high per metre of radius, shaped (1-t²)² and scaled by
 ## the ridge field (`DOME_RIDGE`). Its steepest flank is about 1.54·DOME·ridge,

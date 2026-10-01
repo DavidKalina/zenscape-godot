@@ -86,8 +86,9 @@ const TURNED := Color("a39a78")
 const TURNED_WEIGHT := 0.2
 const TURNED_FULL := 0.12
 const LIP_TURNED := 0.03
-## Sinking never takes ground below FLOOR metres (the land brush's floor).
-const FLOOR := -1.2
+## Sinking never takes ground below FLOOR metres (the land brush's floor),
+## a little over the land's own floor.
+const FLOOR := NativeTerrainData.MIN_HEIGHT+0.3
 ## Rock on cut faces (`paint_faces`): mountain_forms' granite on tint cells
 ## the stroke moved at least FACE_MOVED metres, either way, weighted by the
 ## ground's slope alone, from nothing at FACE_SLOPE.x (rise over run) to full

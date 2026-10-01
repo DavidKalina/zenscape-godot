@@ -774,7 +774,7 @@ static func _carve_beds(data: NativeTerrainData, grid: Dictionary, result: Dicti
 			var now: Variant = data.ground_height(Vector2(p.x,p.z))
 			var sink := BED_SINK*(float(was)-float(now)) if was != null and now != null else 0.0
 			ceiling = minf(ceiling,float(p.h)-sink)
-			p.h = clampf(ceiling,-1.5,66.0)
+			p.h = clampf(ceiling,NativeTerrainData.MIN_HEIGHT,66.0)
 		if not preload("res://scripts/native_stream_record.gd").valid(lowered): continue
 		var index: int = result.streams.find(record)
 		if index >= 0: result.streams[index] = lowered
@@ -956,7 +956,7 @@ static func _stream_record(data: NativeTerrainData, stream: Dictionary, water: P
 		var z := clampf(station.z,-14.0,14.0)
 		# The surface never climbs: `h` is non-increasing along a course.
 		ceiling = minf(ceiling,station.y+STREAM_DEPTH-STREAM_SURFACE)
-		var h := clampf(ceiling,-1.5,66.0)
+		var h := clampf(ceiling,NativeTerrainData.MIN_HEIGHT,66.0)
 		if not points.is_empty() and Vector2(points[-1].x,points[-1].z).distance_to(Vector2(x,z)) < 0.05: continue
 		points.append({"x":x,"z":z,"h":h})
 	if points.size() < 2 or points.size() > 1024: return {}
