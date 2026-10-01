@@ -35,6 +35,26 @@ uniform float planar_level = 0.0;
 // shallower and take more, so a spring's pool reads as water, not the grass
 // under it inside a ring of shore foam.
 uniform float bed_absorb = 1.0;
+// With `depth_tint`, still water takes its colour from a three-stop ramp by
+// depth (light teal shallows, blue-teal, deep blue-teal), per pixel from the
+// bed behind it under the planar view, and its bed fades out within
+// `tint_depths.z` metres: by the vertex palette and `bed_absorb` alone a live
+// pond read as clear glass over grass, with no deepening towards its middle.
+// x: depth by which it is mid, y: by which it is deep.
+uniform bool depth_tint = false;
+uniform vec3 tint_shallow : source_color = vec3(0.42, 0.68, 0.62);
+uniform vec3 tint_mid : source_color = vec3(0.25, 0.57, 0.59);
+uniform vec3 tint_deep : source_color = vec3(0.18, 0.39, 0.47);
+uniform vec3 tint_depths = vec3(0.3, 1.1, 0.22);
+vec3 zs_depth_tint(float depth) {
+	vec3 colour = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.x, depth));
+	return mix(colour, tint_deep, smoothstep(tint_depths.x * 0.7, tint_depths.y, depth));
+}
+// How much of the bed shows through `depth` of tinted water, per channel:
+// red goes first, so what shows is tinted teal.
+vec3 zs_depth_tint_bed(float depth) {
+	return exp(-max(depth, 0.0) / max(tint_depths.z, 0.01) * vec3(1.35, 1.0, 0.9));
+}
 // Live moving water lies over still water drawn everywhere wet; CUSTOM1.x
 // fades it out towards the slow water round it, so the two meet softly.
 uniform bool flow_edge_fade = false;
@@ -149,6 +169,17 @@ void fragment() {
 	if (!flowing && source_lake_material) fresnel = zs_lake_reflection(dot(eye, wave_normal)) * (1.0 - cut_face);
 	// Source vertex colors already contain the depth palette; retain it.
 	vec3 body = COLOR.rgb * zs_palette_water;
+	bool tinted = depth_tint && !flowing && cut_face < 0.5;
+	// Under a tint, how opaque the water is for the bed it hides.
+	float tint_alpha = 0.0;
+	if (tinted) {
+		body = zs_depth_tint(water_depth) * zs_palette_water;
+		vec3 seen = zs_depth_tint_bed(water_depth);
+		// Without the planar view the bed shows only through the blend:
+		// thin water lets most of it through, or a broad shallow flat is a
+		// milky sheet of the shallow colour over the grass.
+		tint_alpha = mix(0.18, 0.97, smoothstep(0.0, 0.9, 1.0 - dot(seen, vec3(0.3, 0.4, 0.3))));
+	}
 	vec3 reflection = scene_linear_for_display(clamp(zsSkyGradient(vec3(reflected.x, abs(reflected.y), reflected.z)), vec3(0.0), vec3(0.98)));
 	// Depth for the shoreline foam: the mesh's own, or where the planar path
 	// reads the bed behind each pixel, the true per-pixel depth.
@@ -172,8 +203,19 @@ void fragment() {
 		float shallows = smoothstep(0.04, 0.22, submerged) * (1.0 - smoothstep(0.8, 2.4, submerged));
 		float caustics = zs_pool_caustics(receiver.xz, zs_flow_time) * shallows * caustics_strength * (1.0 - zs_ice) * zs_daylight * zs_celestial_clear;
 		vec3 bed = textureLod(pond_screen, SCREEN_UV, 0.0).rgb * (1.0 + vec3(0.95, 0.90, 0.65) * caustics);
-		vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth * bed_absorb);
-		body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
+		if (tinted) {
+			// The bed's own depth, so the colour deepens smoothly between
+			// the mesh's vertices; the shallows are tinted towards teal.
+			float bed_depth = max(submerged, 0.0);
+			vec3 seen = zs_depth_tint_bed(bed_depth) * (1.0 - zs_ice);
+			vec3 tinted_bed = bed * mix(vec3(1.0), tint_shallow / max(tint_shallow.g, 0.01), 0.5);
+			body = mix(zs_depth_tint(bed_depth) * zs_palette_water, tinted_bed, seen);
+			// The bed is in the body here: only the very edge lets the scene through.
+			tint_alpha = mix(tint_alpha, 0.97 * smoothstep(0.0, 0.05, bed_depth), planar_weight);
+		} else {
+			vec3 absorption = exp(-vec3(2.0, 0.7, 0.45) * water_depth * bed_absorb);
+			body = mix(body, bed * absorption + body * (1.0 - absorption), 1.0 - zs_ice);
+		}
 		shore_depth = min(shore_depth, max(submerged, 0.0));
 		fresnel = mix(plain_fresnel, fresnel, planar_weight);
 		reflection = mix(plain_reflection, reflection, planar_weight);
@@ -237,6 +279,7 @@ void fragment() {
 		alpha = mix(alpha, 0.28, film);
 	}
 	if (!flowing && source_lake_material) alpha = zs_lake_opacity(water_depth, zs_ice);
+	if (tinted) alpha = max(alpha, tint_alpha);
 	alpha = max(alpha, fall_churn * 0.95);
 	alpha = max(alpha, cascade * 0.85);
 	if (!flowing) zs_lake_algae(body, alpha, world_position, lake_local, water_depth, cut_face);

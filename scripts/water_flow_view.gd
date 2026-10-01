@@ -35,6 +35,9 @@ const THIN := Vector2(0.012,0.05)
 ## basins are a metre or more deep; a spring's pool is 0.4-1 m, and at 1 its
 ## floor showed through as the grass it was cut from.
 const BED_ABSORB := 2.0
+## Live still water's depth ramp (shader `tint_*`), and the moving water's
+## vertex palette ends, so a stream over a pond takes the pond's colour.
+const TINT := {"shallow":Color("6aad9e"),"mid":Color("3f9196"),"deep":Color("2f6478")}
 const FORMAT :=(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 
 var flow: RefCounted
@@ -74,6 +77,12 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	# A live pond is shallower than a planned one: its water hides the bed
 	# sooner under the planar view, so it reads as a pond, not grass.
 	still_material.set_shader_parameter("bed_absorb",BED_ABSORB)
+	# Its colour deepens with depth, from teal shallows to deep blue-teal, and
+	# its bed fades out within a hand's depth (shader `depth_tint`).
+	still_material.set_shader_parameter("depth_tint",true)
+	still_material.set_shader_parameter("tint_shallow",TINT.shallow)
+	still_material.set_shader_parameter("tint_mid",TINT.mid)
+	still_material.set_shader_parameter("tint_deep",TINT.deep)
 	still.material_override = still_material
 	moving.name = "FlowMoving"
 	var moving_material: ShaderMaterial = stream_material.duplicate()
@@ -89,7 +98,7 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		# A pond's reflection does not show the water itself.
 		node.set_meta("skip_reflection",true)
 		add_child(node)
-	var colors := {"shallow":Color("79ae9b").srgb_to_linear(),"deep":Color("245a5c").srgb_to_linear(),"foam":Color(0.65,0.8,0.79)}
+	var colors := {"shallow":TINT.shallow.srgb_to_linear(),"deep":TINT.deep.srgb_to_linear(),"foam":Color(0.65,0.8,0.79)}
 	_params = SURFACE.merged(colors)
 	scene_node = scene
 	if scene != null and not "--no-live-falls" in OS.get_cmdline_user_args():

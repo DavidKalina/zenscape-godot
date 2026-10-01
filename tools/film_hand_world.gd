@@ -192,6 +192,46 @@ func close_on_fall() -> void:
 	await camera_to(middle,6.5,atan2(run.x,run.y)+1.1,1.12,5.0)
 	await seconds(1.0)
 
+func lake_stills() -> void:
+	var still: ShaderMaterial = editor.flow_view.still.material_override
+	var center := Vector3(0.6,0.0,2.6)
+	# Afternoon: at the film's dawn (0.3) the ponds steam
+	# (scripts/life_winter.gd) and the mist hides the water's colour.
+	scene._celestial.set_phase(0.62)
+	DirAccess.make_dir_recursive_absolute("/private/tmp/zs-film")
+	for view: Array in [["above",18.0,0.8],["low",13.0,1.05]]:
+		await camera_to(center,view[1],scene.yaw+0.4,view[2],2.0)
+		await seconds(1.0)
+		for tint: bool in [true,false]:
+			still.set_shader_parameter("depth_tint",tint)
+			await frames(4)
+			if DisplayServer.get_name() != "headless":
+				root.get_texture().get_image().save_png("/private/tmp/zs-film/lake_%s_%s.png" % [view[0],"tint" if tint else "plain"])
+		still.set_shader_parameter("depth_tint",true)
+		# The same view without the falls' mist (lake_*_nomist.png).
+		var falls: Node = editor.flow_view.falls
+		if falls != null and DisplayServer.get_name() != "headless":
+			falls.set_process(false)
+			for fall: Dictionary in falls._falls:
+				if not fall.nodes.is_empty(): fall.nodes.mist.visible = false
+			await frames(4)
+			root.get_texture().get_image().save_png("/private/tmp/zs-film/lake_%s_nomist.png" % view[0])
+			# --haze: then without each other layer in turn, to find what
+			# else hazes the lake.
+			if "--haze" in OS.get_cmdline_user_args() and view[0] == "above":
+				for node: Node in root.find_children("*","CanvasLayer",true,false):
+					if (node as CanvasLayer).visible and (node as CanvasLayer).layer < 100: print("WORLD canvas layer ",node.get_path()," ",node.layer)
+				var hidden: Array = []
+				for target: Node in [editor.flow_view.edge_falls,editor.flow_view.moving,editor.flow_view.still]:
+					if target == null: continue
+					target.visible = false
+					hidden.append(target)
+					await frames(4)
+					root.get_texture().get_image().save_png("/private/tmp/zs-film/lake_haze_no_%s.png" % target.name)
+				for target: Node in hidden: target.visible = true
+			falls.set_process(true)
+	print("WORLD lake stills saved")
+
 func lake_water() -> float:
 	return water_near(Vector2(0.2,2.4),4.5)
 
@@ -273,6 +313,12 @@ func run() -> void:
 		falls_report()
 	lapse = 2
 	dot.visible = false
+	# --lake-stills: the lake from above and low across it, with the still
+	# water's depth tint on and off (lake_*_tint.png, lake_*_plain.png).
+	if "--lake-stills" in OS.get_cmdline_user_args():
+		await lake_stills()
+		quit(0)
+		return
 	if not "--falls-only" in OS.get_cmdline_user_args():
 		print("WORLD tour")
 		await camera_to(Vector3(0,0.5,0),27.0,scene.yaw+0.5,1.02,4.0)
