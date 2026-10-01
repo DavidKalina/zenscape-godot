@@ -43,6 +43,7 @@ const SPECIES := {
 		"parts":{"juniper-trunk":["Bark",4,OWN],"juniper-deadwood":["Deadwood",4,OWN],"juniper-canopies":["Crown",2,TINT]}},
 }
 
+## Each glb's meshes by node name; the instance is freed once read.
 static var _scenes := {}
 
 static func enabled() -> bool:
@@ -120,10 +121,15 @@ static func spruce_index(item: Dictionary) -> int:
 
 static func _build(path: String, node_name: String, scale: Vector3, mode: int, material: Material) -> ArrayMesh:
 	if not _scenes.has(path):
-		_scenes[path] = load(path).instantiate()
-	var node := (_scenes[path] as Node).find_child(node_name, true, false) as MeshInstance3D
-	assert(node != null, "%s has no mesh %s" % [path, node_name])
-	var arrays := node.mesh.surface_get_arrays(0)
+		var scene: Node = load(path).instantiate()
+		var meshes := {}
+		for part: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			if not meshes.has(part.name): meshes[String(part.name)] = part.mesh
+		scene.free()
+		_scenes[path] = meshes
+	var source: Mesh = _scenes[path].get(node_name)
+	assert(source != null, "%s has no mesh %s" % [path, node_name])
+	var arrays := source.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	for i in range(vertices.size()):
 		vertices[i] *= scale

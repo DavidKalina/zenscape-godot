@@ -164,6 +164,14 @@ func set_world_offset(offset: Vector2, force := false) -> void:
 	# Every face colour changed: the next build is a full one.
 	_mesh_result = null
 
+## Companions (land_intent, emergence, water_flow) hold this data and listen
+## with handlers that capture themselves, a cycle reference counting never
+## frees. The owner calls this when it is done with the data.
+func release_listeners() -> void:
+	for info: Dictionary in get_signal_list():
+		for connection: Dictionary in get_signal_connection_list(info.name):
+			disconnect(info.name,connection.callable)
+
 ## `arrays` are the mesh's own surface arrays when the caller already holds
 ## them (a worker thread baking a plain off to the side reads no mesh).
 func setup(mesh: ArrayMesh, arrays: Array = []) -> void:

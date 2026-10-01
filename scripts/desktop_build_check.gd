@@ -44,14 +44,20 @@ static func run(scene: Node) -> void:
 			tree.quit(1)
 			return
 		await tree.process_frame
-	var failure := _check_creation_shell(scene)
-	if failure.is_empty(): failure = _check_photo_mode(scene)
+	var failure := ""
+	if scene.hand_only:
+		failure = _check_hand_scheme(scene)
+	else:
+		failure = _check_creation_shell(scene)
+		if failure.is_empty(): failure = _check_photo_mode(scene)
 	if not failure.is_empty():
 		push_error("FAIL: packaged "+failure)
 		tree.quit(1)
 		return
 	print("PASS: packaged photo mode enter %.2f ms, leave %.2f ms" % [scene.photo.timings.enter/1000.0,scene.photo.timings.leave/1000.0])
-	var folders: Array[String] = [scene.library_path,scene.places_path.get_base_dir()]
+	var hand_only: bool = scene.hand_only
+	var folders: Array[String] = [scene.library_path]
+	if scene.places_path.get_base_dir() != scene.library_path: folders.append(scene.places_path.get_base_dir())
 	var audio_streams: Array[WeakRef] = []
 	for kind in ["AudioStreamPlayer","AudioStreamPlayer3D"]:
 		for player in scene.find_children("*",kind,true,false):
@@ -68,7 +74,7 @@ static func run(scene: Node) -> void:
 		for name in DirAccess.get_files_at(folder):
 			DirAccess.remove_absolute(folder.path_join(name))
 		DirAccess.remove_absolute(folder)
-	print("PASS: packaged creation shell, Look, Craft and main menu")
+	print("PASS: packaged hand scheme, photo and main menu" if hand_only else "PASS: packaged creation shell, Look, Craft and main menu")
 	tree.quit(0)
 
 ## Walk the creation shell the way a player first meets it. Returns what
@@ -128,6 +134,48 @@ static func _check_creation_shell(scene: Node) -> String:
 	scene.close_menu()
 	if scene._menu.visible or not palette.is_visible_in_tree() or not scene._creating():
 		return "closing the main menu did not return to the brush"
+	return ""
+
+## The hand scheme (scripts/modeless_input.gd), the default product: no brush
+## bar or Photo button, the hand at work on the Genesis plain, P for photo
+## and Esc for the main menu. Returns what failed, or "".
+static func _check_hand_scheme(scene: Node) -> String:
+	var editor: NativeChunkEditor = scene._chunk_editor
+	var palette: Control = scene.creation_palette
+	var photo: Node = scene.get("photo")
+	if not scene._has_world or not scene.places.plain or not editor.data.blank:
+		return "startup did not open on the Genesis plain"
+	if scene.hand_reach == null or not scene._creating():
+		return "launch did not put the hand to work"
+	if palette == null or palette.bar.visible or palette.photo_group.visible:
+		return "hand scheme still shows the brush bar or the Photo button"
+	var heights: PackedFloat32Array = editor.data.heights.duplicate()
+	if photo == null or not scene._creation_key(_key(KEY_P)) or not photo.active or editor.active or not photo.chrome_hidden():
+		return "P did not open photo mode"
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = scene.get_viewport().get_visible_rect().size*Vector2(0.5,0.4)
+	var yaw: float = photo._goal.yaw
+	var used: bool = photo.handle(press)
+	var drag := InputEventMouseMotion.new()
+	drag.position = press.position+Vector2(80,0)
+	drag.relative = Vector2(80,0)
+	used = photo.handle(drag) and used
+	var release := press.duplicate()
+	release.pressed = false
+	release.position = drag.position
+	used = photo.handle(release) and used
+	if not used or editor._painting or editor.data.heights != heights or is_equal_approx(photo._goal.yaw,yaw):
+		return "a drag in photo mode did not turn the camera, or painted"
+	photo.handle(_key(KEY_P))
+	if photo.active or not scene._creating():
+		return "P did not return from photo mode to the hand"
+	if not scene._creation_key(_key(KEY_ESCAPE)) or scene._menu == null or not scene._menu.visible:
+		return "Esc did not open the main menu"
+	scene.close_menu()
+	if scene._menu.visible or not scene._creating():
+		return "closing the main menu did not return to the hand"
 	return ""
 
 static func _key(code: Key) -> InputEventKey:

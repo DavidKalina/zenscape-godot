@@ -2376,6 +2376,9 @@ var _flow_changed := Rect2()
 var _flow_fish: Array[Dictionary] = []
 var _flow_clock := 0.0
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE: data.release_listeners()
+
 static func flow_wanted() -> bool:
 	var args := OS.get_cmdline_user_args()
 	if "--planned-water" in args: return false
