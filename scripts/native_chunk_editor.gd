@@ -1415,7 +1415,9 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var key := [planes,placing]
 	if _skirt_sliced_for != key:
 		_skirt_sliced_for = key
-		_skirt_sliced = _sliced_soup(_skirt_mesh.surface_get_arrays(0),placing,planes)
+		# The sides' foot and the underside under the land never move: only
+		# the sides themselves are sliced.
+		_skirt_sliced = _sliced_soup(_skirt_mesh.surface_get_arrays(0),placing,planes,SIDES_HALF-1.0)
 	var arrays: Array = _skirt_sliced.duplicate()
 	var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
 	arrays[Mesh.ARRAY_NORMAL] = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array).duplicate()
@@ -1442,18 +1444,24 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	# (the land's edge height above it, in the mesh's own space) for the
 	# strata (the earth-sides switch in shaders/reference_surface.gdshader).
 	var high := _skirt_mesh.get_aabb().end.y
-	var from_terrain := placing.affine_inverse()
+	# The terrain's frame to the mesh's own, in height (the sides only sit
+	# lower than the land; they are not turned or scaled).
+	var lift := placing.affine_inverse().origin.y
+	var rim_ids: PackedInt32Array = reads[3]
+	var rim_bary: PackedFloat64Array = reads[4]
 	var authored: PackedVector3Array = _skirt_sliced[Mesh.ARRAY_VERTEX]
 	var tops := PackedVector2Array()
 	tops.resize(vertices.size())
 	for i in range(vertices.size()):
-		var local := placing*authored[i]
-		var point := Vector2(local.x,local.z).clamp(Vector2(-SIDES_HALF,-SIDES_HALF),Vector2(SIDES_HALF,SIDES_HALF))
-		var edge := AtlasView.rim_point(point,SIDES_HALF)
-		var ground: Variant = source.sample(edge,heights)
-		var top := high+source.delta_at(edge) if ground == null else (from_terrain*Vector3(edge.x,float(ground),edge.y)).y
+		var a := rim_ids[i*3]
+		if a < 0:
+			tops[i] = Vector2(high,1.0)
+			continue
+		var u := rim_bary[i*2]
+		var v := rim_bary[i*2+1]
+		var top := u*heights[a]+v*heights[rim_ids[i*3+1]]+(1.0-u-v)*heights[rim_ids[i*3+2]]+lift
 		tops[i] = Vector2(top,1.0)
-		if authored[i].y >= high-0.001 and ground != null: vertices[i].y = top
+		if authored[i].y >= high-0.001: vertices[i].y = top
 	for i in range(0,vertices.size(),3):
 		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
 		for j in range(3):
@@ -1580,7 +1588,10 @@ func _rim_sides(source: NativeTerrainData) -> Array:
 
 ## Which sliced sides' vertices move with the land, and how: [vertex indices,
 ## the three height ids each reads, and per vertex (u, v, weight)]. The foot
-## (weight 0) and points off the land read nothing and stay put.
+## (weight 0) and points off the land read nothing and stay put. Then, for
+## every vertex, the land's edge point it hangs under: the three height ids
+## (-1 where the edge cannot be read) and (u, v), so its rim top is read by
+## arithmetic alone.
 func _skirt_reads_for(source: NativeTerrainData, sliced_key: Array, vertices: PackedVector3Array) -> Array:
 	var key := [sliced_key,_skirt_mesh,source,source.points.size()]
 	if _skirt_reads_key == key: return _skirt_reads
@@ -1602,15 +1613,30 @@ func _skirt_reads_for(source: NativeTerrainData, sliced_key: Array, vertices: Pa
 		at.append(i)
 		ids.append_array([source.vertex_ids[face],source.vertex_ids[face+1],source.vertex_ids[face+2]])
 		bary.append_array([source._locate_u[slot],source._locate_v[slot],weight])
+	var rim_ids := PackedInt32Array()
+	var rim_bary := PackedFloat64Array()
+	for i in range(vertices.size()):
+		var local := placing*vertices[i]
+		var point := Vector2(local.x,local.z).clamp(Vector2(-SIDES_HALF,-SIDES_HALF),Vector2(SIDES_HALF,SIDES_HALF))
+		var edge := AtlasView.rim_point(point,SIDES_HALF)
+		if source.sample(edge,source.heights) == null:
+			rim_ids.append_array([-1,-1,-1])
+			rim_bary.append_array([0.0,0.0])
+			continue
+		var slot: int = source._locate_cache[edge]
+		var face: int = source._locate_face[slot]
+		rim_ids.append_array([source.vertex_ids[face],source.vertex_ids[face+1],source.vertex_ids[face+2]])
+		rim_bary.append_array([source._locate_u[slot],source._locate_v[slot]])
 	_skirt_reads_key = key
-	_skirt_reads = [at,ids,bary]
+	_skirt_reads = [at,ids,bary,rim_ids,rim_bary]
 	return _skirt_reads
 
 ## A triangle soup's arrays (indexed arrays are unrolled) with every triangle
 ## cut by the planes `planes` ([x values, z values] in plate metres, read
 ## through `placing`) and fanned back into triangles. Every per-vertex array
-## is interpolated along the cut edges.
-static func _sliced_soup(source: Array, placing: Transform3D, planes: Array) -> Array:
+## is interpolated along the cut edges. A triangle lying wholly within
+## `keep` metres of the middle (the larger of |x| and |z|) is left whole.
+static func _sliced_soup(source: Array, placing: Transform3D, planes: Array, keep := 0.0) -> Array:
 	var positions: PackedVector3Array = source[Mesh.ARRAY_VERTEX]
 	var indices: Variant = source[Mesh.ARRAY_INDEX]
 	var order := PackedInt32Array()
@@ -1652,7 +1678,11 @@ static func _sliced_soup(source: Array, placing: Transform3D, planes: Array) -> 
 		out[entry[0]] = empty
 	for f in range(0,order.size()-2,3):
 		var pieces := [[vertex.call(order[f]),vertex.call(order[f+1]),vertex.call(order[f+2])]]
-		for axis in range(2):
+		var inside := true
+		for k in range(3):
+			var p: Vector3 = placing*positions[order[f+k]]
+			if maxf(absf(p.x),absf(p.z)) >= keep: inside = false
+		for axis in (range(2) if not inside else []):
 			var cuts: PackedFloat32Array = planes[axis]
 			if cuts.is_empty(): continue
 			var coordinate := func(v: Array) -> float:
