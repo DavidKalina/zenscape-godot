@@ -1064,8 +1064,11 @@ func _setup_encounter_ground(mesh: Mesh) -> void:
 ## The heights (and rim state) anchors and skirt were last lifted for.
 var _lifted_for: Array = []
 
+## Copies, not the live arrays: a packed array held in the key is the same
+## array the data edits in place, so the key would always match and a change
+## made outside a stroke (erosion at the rim) left the sides standing proud.
 func _lift_key() -> Array:
-	return [data,data.heights,data.blank,open_sides,data.void_faces.is_empty()]
+	return [data,data.heights.duplicate(),data.blank,open_sides.duplicate(),data.void_faces.is_empty()]
 
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
@@ -1484,13 +1487,17 @@ var _skirt_fitted: ArrayMesh
 ## The land's edge, metres from the middle: the terrain's rim points stand on
 ## it, and the earth sides' top ring is laid along it.
 const SIDES_HALF := 14.0
+## How much of the authored sides' lean past the edge they keep: up to
+## 0.11 m out at the foot, which the grass's edge hides from above.
+const SIDES_BATTER := 0.25
 
 ## The authored earth sides (the scene's Reference/skirt) made flush and deep.
 ## As authored they lean out past the land's edge (up to 0.43 m) under a flat
 ## 0.2 m lip at the rim's height, a brown frame that stood proud round the
-## grass. Here each vertex's reach past the edge is turned inward instead, so
-## the sides keep their facets as a slight undercut that never shows beyond
-## the grass, and the top ring stands on the edge itself, the lip gone. Below
+## grass. Here the top ring stands on the edge itself, the lip gone, and each
+## vertex below it keeps a quarter of its reach (SIDES_BATTER), so the sides
+## keep their facets as a slight outward batter. Leaning inward instead, they
+## would stand under an overhang of grass that shades a sunlit side. Below
 ## their top ring the sides are stretched down so their foot stands at
 ## NativeTerrainData.SLAB_BASE, under the deepest dig. `offset` is where the
 ## mesh sits in the terrain's frame.
@@ -1511,7 +1518,7 @@ static func flush_deep_sides(source: ArrayMesh, offset: Vector3) -> ArrayMesh:
 		var p := v+offset
 		for axis in [0,2]:
 			var reach := absf(p[axis])-SIDES_HALF
-			if reach > 0.0: p[axis] = signf(p[axis])*(SIDES_HALF if top else SIDES_HALF-reach)
+			if reach > 0.0: p[axis] = signf(p[axis])*(SIDES_HALF if top else SIDES_HALF+reach*SIDES_BATTER)
 		v = p-offset
 		if v.y < pivot: v.y = pivot+(v.y-pivot)*stretch
 		vertices[i] = v
