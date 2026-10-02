@@ -172,7 +172,11 @@ func _rose(tool: RefCounted) -> Variant:
 func _step_beads(delta: float, rose: Variant, tool: RefCounted) -> void:
 	if rose != null and flow_share > 0.0:
 		var way: Vector3 = tool.spout_way() if tool != null else Vector3.DOWN
-		if tool != null: way = (clay.prop_point(way)-clay.prop_point(Vector3.ZERO)).normalized()
+		# The prop is hidden (the camera moving mid-pour): the drops fall straight.
+		var tip: Variant = clay.prop_point(way) if tool != null else null
+		var foot: Variant = clay.prop_point(Vector3.ZERO) if tool != null else null
+		if tip != null and foot != null: way = ((tip as Vector3)-(foot as Vector3)).normalized()
+		elif tool != null: way = Vector3.DOWN
 		_emit += DROPS_RATE*flow_share*(2.0 if sprinkle else 1.0)*delta
 		while _emit >= 1.0:
 			_emit -= 1.0
