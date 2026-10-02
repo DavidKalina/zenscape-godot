@@ -113,6 +113,7 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		edge_falls.name = "EdgeFalls"
 		scene.add_child(edge_falls)
 		edge_falls.setup(flow,scene.get("_chunk_editor"))
+	data.state_restored.connect(_water_replaced)
 	if scene != null and not "--no-live-reflection" in OS.get_cmdline_user_args():
 		reflection = preload("res://scripts/live_water_reflection.gd").new()
 		reflection.name = "LiveReflection"
@@ -120,6 +121,14 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		reflection.setup_live(still_material,pond_material,moving_material,stream_material,float(SURFACE.lift))
 
 var _params := {}
+
+## A new world or a load replaces the water itself (WaterFlow `_restore`;
+## an undo keeps it): the falls of the water left go with it at once, not
+## standing on for their fade once the scene unpauses.
+func _water_replaced(state: Dictionary) -> void:
+	if state.has("water_springs"): return
+	if is_instance_valid(falls): falls.reset()
+	if is_instance_valid(edge_falls): edge_falls.reset()
 
 func _exit_tree() -> void:
 	if is_instance_valid(falls): falls.queue_free()

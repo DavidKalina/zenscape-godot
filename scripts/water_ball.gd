@@ -360,6 +360,16 @@ func release() -> void:
 	_jolt = clampf(maxf(_jolt,0.6+carried_speed*0.06),0.0,1.0)
 	_ground_under()
 
+## Gone at once, held, in the air or splashing, its fish with it, and it
+## never lands: the world it was over was replaced (the editor's
+## `_world_restored`).
+func vanish() -> void:
+	_hide()
+	velocity = Vector3.ZERO
+	poke = Vector3.ZERO
+	_loose = 0.0
+	_funnel = 0.0
+
 ## Seconds until a tossed ball pops (0 once it has, or before it is let go).
 func pop_in() -> float:
 	return maxf(POP_SECONDS-_toss_t,0.0) if state == "tossed" else 0.0

@@ -447,6 +447,14 @@ static func _length(course: PackedVector4Array) -> float:
 	for r in range(1,course.size()): total += Vector3(course[r].x,course[r].y,course[r].z).distance_to(Vector3(course[r-1].x,course[r-1].y,course[r-1].z))
 	return total
 
+## Every fall goes at once, nodes and all, rather than fading out over its
+## GRACE and FADE: the water it stood on was replaced, by a new world or a
+## load (scripts/water_flow_view.gd `_water_replaced`).
+func reset() -> void:
+	for index in range(_falls.size()-1,-1,-1): _drop(index)
+	_since = 0.0
+	for material in materials: material.set_shader_parameter("fall_foam_count",0)
+
 func _drop(index: int) -> void:
 	var nodes: Dictionary = _falls[index].nodes
 	for node: Variant in nodes.values():

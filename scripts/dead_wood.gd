@@ -36,15 +36,37 @@ var drop := 0.0                       ## Branch-fractions banked toward the next
 var _next_id := 0
 var _spent: Array[Node3D] = []        ## Nodes handed to a carry and already delivered.
 var _clock_elapsed := -1.0            ## Last world-second reading; negative until first sampled.
+var _sites_stale := false             ## A new world: the habitat still has the old trees.
 
 func setup(owner_scene: Node) -> void:
 	scene = owner_scene
 	rebuild_sites()
+	var editor: Variant = scene.get("_chunk_editor") if scene != null else null
+	if editor != null: editor.data.state_restored.connect(_world_restored)
+
+## A new world (`reset_flat`: the flip, a new plain, a regrow) starts with a
+## bare floor. Undo and loads keep theirs; a load's own wood comes back
+## through `restore_state`.
+func _world_restored(state: Dictionary) -> void:
+	if state.is_empty(): clear()
+
+## Every branch goes, and the sites under the old trees with them. No new
+## sites are read until the habitat is rebuilt (`rebuild_sites`, from the
+## scene's `_refresh_habitat`): until then it still describes the trees that
+## were, and new wood would fall under trees that are gone.
+func clear() -> void:
+	for branch in branches:
+		if is_instance_valid(branch.node): branch.node.queue_free()
+	branches.clear()
+	sites.clear()
+	drop = 0.0
+	_sites_stale = true
 
 ## Called again whenever the habitat is rebuilt. Existing branches keep the
 ## ground they are already lying on; only future drops follow the new trees.
 func rebuild_sites() -> void:
 	sites.clear()
+	_sites_stale = false
 	if scene == null: return
 	var habitat: Variant = scene.get("habitat")
 	var navigation: Variant = scene.get("navigation")
@@ -131,7 +153,7 @@ func advance(delta: float) -> void:
 	var days := _world_days(delta)
 	if days <= 0.0: return
 	_rot(days)
-	if sites.is_empty(): rebuild_sites()
+	if sites.is_empty() and not _sites_stale: rebuild_sites()
 	if branches.size() >= MAX_BRANCHES:
 		drop = 0.0
 		return

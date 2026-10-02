@@ -16,6 +16,12 @@ These constants sit at the top of `emergence.gd`.
 
 A candidate's jitter, kind, size, angle and chance all come from `seeded_variety.gd` hashes of (salt, layer, lattice cell). The salt comes from the world's planting seed, or from a per-session draw on a blank plain. So the same strokes on the same world give the same result, and a different seed gives a different one. The conditions are checked when the candidate arrives, not when the stroke finishes, so a later stroke changes what arrives.
 
+## Whose water
+
+Growth follows the player's own work, never the weather. It comes from the player's sculpt strokes, from their own water (a dropped water ball, the watering can's stream, a spring they plant, a pour), and from the one wild tree a new plain is laid with (`genesis_canvas.gd` `_wild_tree`).
+
+Live water (`scripts/water_flow.gd`) is read every second. A pond that appears, goes, or changes by 2 m² reaches emergence only where it meets the player's work of the last 75 s (`FLOW_TENDED_SECONDS`). That work is a stroke's rect, or 5 m round a ball's landing, the can's stream, a planted spring, its course down and its pool (`_tend`, `_flow_moved` in `native_chunk_editor.gd`). So a pond the player made greens its shores as it settles, and ponds from rain, runoff, old springs or stale rects grow nothing. Life still reads every pond change (`water_settled`). Undo, load and new worlds clear the pond record, so the first read after one is only a baseline.
+
 ## The rules a candidate follows
 
 These are the same rules the generator uses: the habitat and its cover come from the biome blend, `BIOMES` supplies `rock_slope`, snowline, treeline and tree counts, and trees are chosen per habitat as in `inland_landscape.form`.
@@ -74,4 +80,3 @@ Every arrival grows in with the regrow pop: it rises from the ground and oversho
 - Hook `_stroke_ended` to `stroke_finished` from `feature/stroke-feel` once that branch lands.
 - Dense grass only checks `prior` against the current grass, not the real keep mask. So when emergence thickens cover that was already partial, a few tufts that were standing may regrow.
 - Should world time or season scale the pace?
-- Water-first creep (grass from new ponds even without sculpting) needs pond fills to report their rect, which they do today only through the editor's pond click.
