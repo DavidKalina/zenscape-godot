@@ -5,7 +5,7 @@ extends SceneTree
 ## godot --headless --path . --script res://tools/probe_hud_icons.gd
 
 const Icons = preload("res://scripts/hud_icons.gd")
-const IDS := ["oak","pine","willow","wildflower","dandelion","reed","water","stone","crystal","snow","hand","paddle","chisel","wire","hammer"]
+const IDS := ["oak","pine","willow","wildflower","dandelion","poppy","cosmos","sunflower","reed","water","stone","crystal","snow","hand","paddle","chisel","wire","hammer"]
 
 func _init() -> void:
 	var px := 88.0

@@ -262,7 +262,7 @@ func run() -> void:
 			await frames(16)
 			var r := 0.0
 			match id:
-				"wildflower": r = 0.75
+				"wildflower": r = 1.1
 				"reed": r = 0.45
 				"stone": r = 0.45
 				"water": r = 1.0

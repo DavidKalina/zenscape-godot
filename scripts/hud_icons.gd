@@ -148,7 +148,7 @@ static func _build() -> void:
 	_add("oak","Acorn","Oak","#c98a3e",["M5 10 Q12 3 19 10 Z","M6.5 10 Q6.5 20 12 22 Q17.5 20 17.5 10 Z"],["M12 5.5 V2.5"],0)
 	_add("pine","Cone","Pine","#8a5a3a",["M12 2 Q18 8 16.5 15 Q15 20.5 12 22 Q9 20.5 7.5 15 Q6 8 12 2Z"],["M8 9 L16 15 M16 9 L8 15 M7.5 13 L12 17 L16.5 13"],1)
 	_add("willow","Sprig","Willow","#7fa35a",["M10.2 22 Q10.2 12 14.2 2.6 L15.9 3.4 Q12.1 12.5 12.1 22Z","M11 16.8 Q3.2 16.8 2.2 9.4 Q10.2 9.8 11 16.8Z","M13.2 11.2 Q20.8 10.7 21.8 3.4 Q14 3.8 13.2 11.2Z","M11.4 21 Q18.4 21 20.6 14.6 Q13.4 14 11.4 21Z"],[],2)
-	_add("wildflower","Clover","Meadow","#b8607a",[_circle(12,8,4.4),_circle(7.8,9.6,3),_circle(16.2,9.6,3),_circle(9.2,5,2.6),_circle(14.8,5,2.6),_circle(12,3.4,2.4),"M10.9 12 H13.1 V22.2 H10.9Z","M12.6 19.2 Q14 14.4 19.8 13.9 Q18.7 19 12.6 19.9Z"],[],3)
+	_add("wildflower","Wildflower","Meadow","#b8607a",[_circle(12,8,4.4),_circle(7.8,9.6,3),_circle(16.2,9.6,3),_circle(9.2,5,2.6),_circle(14.8,5,2.6),_circle(12,3.4,2.4),"M10.9 12 H13.1 V22.2 H10.9Z","M12.6 19.2 Q14 14.4 19.8 13.9 Q18.7 19 12.6 19.9Z"],[],3)
 	var tufts := [_circle(11,9.6,5.4)]
 	for k in range(12): tufts.append(_circle(11.0+6.3*cos(k*PI/6.0),9.6+6.3*sin(k*PI/6.0),1.55))
 	tufts.append_array(["M10 14.5 H12 V22.4 H10Z",_circle(20.4,2.3,1.35)])
@@ -158,6 +158,32 @@ static func _build() -> void:
 		spokes.append("M%.2f %.2f L%.2f %.2f" % [11.0+cos(a),9.6+sin(a),11.0+5.2*cos(a),9.6+5.2*sin(a)])
 	spokes.append("M19.9 3.6 L18.7 6.2")
 	_add("dandelion","Clock","Dandelion","#d6c290",tufts,spokes,4,1.0,0.8)
+	# Flower seed (scripts/flower_sowing.gd SLOTS), seeds 57-59: the flower each
+	# grows. A poppy's four broad petals cupped round its dark cross, with a
+	# nodding bud; cosmos's eight notched petals round a dark eye on a wiry
+	# stem; a sunflower's ring of pointed petals round its ringed disc, a
+	# heart leaf on its thick stem.
+	_add("poppy","Poppy","Field","#cf4a3a",[_circle(11.5,5.4,3.6),_circle(8.2,7.8,4.0),_circle(14.8,7.8,4.0),_circle(9.4,11.0,3.5),_circle(13.6,11.0,3.5),
+		"M10.6 13.6 Q11.2 18 11.2 22.6 H12.8 Q12.8 18 12.4 13.6Z","M12.2 18.6 Q16.2 13.4 19.4 15.2 L18.8 16.2 Q16.4 15 12.8 19.6Z",_circle(19.2,17.4,1.7)],
+		["M9.7 9.6 L13.3 9.6","M11.5 7.8 V11.4"],57,1.0,1.4)
+	var cosmos := [_circle(12.0,9.4,2.0),"M11.4 11 Q10.4 16.8 11.6 22.6 H12.8 Q11.8 16.8 12.6 11Z"]
+	for k in range(8):
+		var a := k*PI/4.0+0.2
+		var way := Vector2.from_angle(a)
+		var side := way.orthogonal()
+		var petal := []
+		for tw: Vector2 in [Vector2(1.4,0.6),Vector2(5.4,1.9),Vector2(7.8,1.3),Vector2(7.0,0.0),Vector2(7.8,-1.3),Vector2(5.4,-1.9),Vector2(1.4,-0.6)]:
+			petal.append(Vector2(12.0,9.4)+way*tw.x+side*tw.y)
+		cosmos.append(_poly(petal))
+	_add("cosmos","Cosmos","Drift","#d47aa6",cosmos,[_circle(12.0,9.4,1.0),"M11.9 19.8 Q15 18.6 17 15.8"],58,1.0,1.3)
+	var sunflower := [_circle(12.0,9.0,4.2),"M10.9 12.8 H13.1 V22.6 H10.9Z","M13 18.4 Q16.6 14.6 20.6 16.4 Q18.8 20.8 13 19.8Z"]
+	for k in range(14):
+		var a := k*TAU/14.0
+		var way := Vector2.from_angle(a)
+		var side := way.orthogonal()
+		var c := Vector2(12.0,9.0)
+		sunflower.append(_poly([c+way*3.6+side*1.0,c+way*8.0,c+way*3.6-side*1.0]))
+	_add("sunflower","Sunflower","Stand","#e2a62e",sunflower,[_circle(12.0,9.0,3.0),_circle(12.0,9.0,1.5)],59,1.0,1.4)
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
 	_add("water","Water","Scoop","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)

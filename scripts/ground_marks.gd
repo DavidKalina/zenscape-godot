@@ -100,7 +100,8 @@ const SCREE := [Vector3(-0.32,1.25,0.07),Vector3(0.18,1.55,0.09),Vector3(-0.08,1
 ## tree seeds gather a veil about the pollen cloud's CLOUD.y across before the
 ## wind takes it; the water ball's pool; a stone's biggest tap. Scattered
 ## things use their SCATTER spread, never under MATERIAL_MIN.
-const MATERIAL_RADIUS := {"oak":1.3,"pine":1.3,"willow":1.3,"birch":1.3,"water":1.0,"stone":0.45}
+const MATERIAL_RADIUS := {"oak":1.3,"pine":1.3,"willow":1.3,"birch":1.3,"water":1.0,"stone":0.45,
+	"wildflower":1.1,"dandelion":1.1,"poppy":1.1,"cosmos":1.1,"sunflower":1.1}
 const MATERIAL_MIN := 0.45
 ## The decal box: metres of margin round the mark, the ground samples round
 ## its outline for the box's height, metres of box under and over the ground

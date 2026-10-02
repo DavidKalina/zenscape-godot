@@ -23,10 +23,20 @@ extends Node
 ##   brush's own veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
 ##   a flicked tree's spores are: what comes up leans to it, as far as the
 ##   ground there allows (SEEDS).
-## - **Meadow, dandelion and reeds.** Tap to set a drift of flowers or a
-##   clump of reeds; drag to scatter more under the pointer (SCATTER: the build
-##   palette's plants, set down by NativeChunkEditor `set_objects`, one undo
-##   step a drag). They sprout as a placed plant does.
+## - **Flower seed** (wildflower, dandelion, poppy, cosmos, sunflower;
+##   scripts/flower_sowing.gd SLOTS). Sown as the tree seeds are: press and
+##   drag over the land and the pinch flicks a light veil of seed and fluff
+##   out along the way; let go and the breeze carries it down, further than
+##   tree seed, a gust or the Feather further still. Where it settles the
+##   ground decides: it takes on open ground, not on water, rock, snow, steep
+##   slopes or under trees, and comes up as a drift of that kind, as a meadow
+##   type composes one (NativeChunkEditor `sow_from_hand`, `_write_flowers`),
+##   one undo step a sweep. A tap drops a small handful where the pointer is.
+##   The pips size the veil.
+## - **Reeds.** Tap to set a clump of reeds; drag to scatter more under the
+##   pointer (SCATTER: the build palette's plants, set down by
+##   NativeChunkEditor `set_objects`, one undo step a drag). They sprout as a
+##   placed plant does.
 ## - **Water.** Press and hold over the land: the bead swells into a water
 ##   ball that fills while held, and on release is tossed up, pops on its own
 ##   beat and drops, a pool or a spring as the ground decides (NativeChunkEditor
@@ -68,14 +78,14 @@ const Modeless = preload("res://scripts/modeless_input.gd")
 ## Birch, redwood, juniper and Joshua have no slot in the case; the command
 ## palette (scripts/command_palette.gd) hands them over.
 const SEEDS := {"oak":"broadleaf","pine":"tree","willow":"willow","birch":"birch","redwood":"redwood","juniper":"juniper","joshua":"joshua"}
+## Flower seed: the slots scripts/flower_sowing.gd sows.
+const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 ## Things set down by a tap or a drag: the assets (one picked for each), how
 ## many one drop sets and how far they spread (m), a tap's size range (record
 ## scale, growing over `grow` s of holding) and a drag's (growing over
 ## `scatter_grow` s), and at most `most` drops a drag.
 const SCATTER := {
 	"stone":{"assets":["rock"],"each":1,"spread":0.0,"tap":Vector2(0.5,1.4),"grow":1.6,"scatter":Vector2(0.26,0.6),"scatter_grow":2.5,"most":7},
-	"wildflower":{"assets":["daisy_flower","spike_flower","umbel_flower"],"each":5,"spread":0.75,"tap":Vector2(0.55,0.9),"grow":1.6,"scatter":Vector2(0.5,0.8),"scatter_grow":2.5,"most":8},
-	"dandelion":{"assets":["button_flower","daisy_flower"],"each":4,"spread":0.9,"tap":Vector2(0.5,0.8),"grow":1.6,"scatter":Vector2(0.45,0.75),"scatter_grow":2.5,"most":8},
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
 }
 ## Pressed, the cursor comes down to PRESS_GAP m over the land: a stone
@@ -119,8 +129,9 @@ const FEATHER_RING := 1.5
 const CLICK_PIXELS := 6.0
 ## The hint line with material in hand, until each has been used once.
 const SOW_HINT := "Drag over the land to sow"
+const FLOWER_HINT := "Drag over the land to sow  ·  Tap for a handful"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
-	"wildflower":"Tap to sow a drift of flowers  ·  Drag to scatter","dandelion":"Tap to sow a drift of flowers  ·  Drag to scatter","reed":"Tap to set reeds  ·  Drag to scatter"}
+	"reed":"Tap to set reeds  ·  Drag to scatter"}
 const BACK_HINT := "Click the sky or the case to put it back"
 ## Water in hand pressed on dry land: nothing to scoop.
 const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
@@ -462,7 +473,7 @@ func _feather_let_go() -> void:
 ## water or something to set down, whether or not it has a slot. False when
 ## it is not a material the hand knows.
 func take(id: String) -> bool:
-	if not (SEEDS.has(id) or SCATTER.has(id) or id == "water"): return false
+	if not (sows(id) or SCATTER.has(id) or id == "water"): return false
 	if held == id: return true
 	if not held.is_empty(): put_back()
 	_take(id)
@@ -491,8 +502,9 @@ func put_back() -> void:
 ## hand is held here.
 func _use(point: Vector2) -> void:
 	var editor: Node = reach._editor()
-	if SEEDS.has(held):
-		if editor.has_method("sow_from_hand") and editor.sow_from_hand(point,SEEDS[held]):
+	if sows(held):
+		var sown: bool = editor.has_method("sow_from_hand") and (editor.sow_from_hand(point,held,size_scale()) if FlowerSowing.has(held) else editor.sow_from_hand(point,SEEDS[held]))
+		if sown:
 			ClaySound.cue(&"sow")
 			_used()
 	elif held == "water":
@@ -514,6 +526,10 @@ func _use(point: Vector2) -> void:
 		_stone_step = null
 		_stone_count = 0
 		_stone_since = STONE_SECONDS
+
+## True for what the pinch sows as a veil: tree seed and flower seed.
+static func sows(id: String) -> bool:
+	return SEEDS.has(id) or FlowerSowing.has(id)
 
 func _used() -> void:
 	reach.uses[held] = int(reach.uses.get(held,0))+1
@@ -633,7 +649,7 @@ func _carry(delta: float) -> void:
 	if not held.is_empty() and clump.kind != held: clump.show_kind(held)
 	var ball: Node = editor.get("ball")
 	var pouring: bool = held == "water" and ball != null and str(ball.state) in ["holding","tossed","falling"]
-	var sowing: bool = SEEDS.has(held) and editor.get("_handful_holding") == true
+	var sowing: bool = sows(held) and editor.get("_handful_holding") == true
 	var pressing: bool = reach.holding == "scatter" or sowing
 	var wanderer: Node = scene.get("wanderer")
 	var eye: bool = wanderer != null and wanderer.get("active") == true
@@ -654,7 +670,7 @@ func _carry(delta: float) -> void:
 func _sow(delta: float, sowing: bool) -> void:
 	var handful: Node = reach._editor().get("handful")
 	if handful == null or not "hand_at" in handful or GodHand.everywhere: return
-	var pinching := SEEDS.has(held) and clump.visible
+	var pinching := sows(held) and clump.visible
 	handful.hand_at = clump.launch_point() if pinching else null
 	if sowing:
 		_flick_in -= delta
@@ -718,7 +734,7 @@ func drive_hand(hand: Node3D) -> bool:
 ## the sky. [zone, text], or ["", ""].
 func hint(zone: String) -> Array:
 	if held.is_empty(): return ["",""]
-	if zone == "land": return [held,SOW_HINT if SEEDS.has(held) else str(HINTS.get(held,""))]
+	if zone == "land": return [held,FLOWER_HINT if FlowerSowing.has(held) else SOW_HINT if SEEDS.has(held) else str(HINTS.get(held,""))]
 	if zone in ["void","cloud"]: return ["tray_back",BACK_HINT]
 	return ["",""]
 
@@ -742,6 +758,7 @@ class Clump extends Node3D:
 	const TONES := {
 		"oak":["a57b48","8c6a3f","c09a66"],"pine":["7a5a3a","946f48","6a4c30"],"willow":["dcd8c4","c9c6ae","ece8d6"],
 		"birch":["c9ab7a","b89868","dcc190"],"redwood":["8a4a32","a15a3c","6e3a26"],"juniper":["5f6f8a","74849c","4c5a72"],"joshua":["9a8a5a","b2a06a","7e7048"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
+		"poppy":["3a2e2a","e0442f","f07a3a"],"cosmos":["4a3a30","e8609f","fcefe2"],"sunflower":["3e3226","f4b61e","d8cdb8"],
 	}
 	## The flick: FLICK_SNAP s, tipping FLICK_TURN degrees forward and
 	## swelling by FLICK_SWELL at its height, then back.
@@ -839,8 +856,10 @@ class Clump extends Node3D:
 				for i in range(3):
 					var angle := TAU*i/3.0+0.5
 					_part(_egg(),"8a6a45" if next == "willow" else tones[2],Vector3(cos(angle)*0.04,0.03,sin(angle)*0.04),Vector3(0.018,0.03,0.018),Vector3(0.4,angle,0.0))
-			"wildflower", "reed":
-				# Seed heaped in the pinch; flower seed with a petal or two.
+			"wildflower", "reed", "poppy", "cosmos", "sunflower":
+				# Seed heaped in the pinch; flower seed with a petal or two
+				# (poppy's fine dark seed, cosmos's slim seed, sunflower's
+				# striped seed under a gold petal).
 				var tones: Array = TONES[next]
 				var reed := next == "reed"
 				for i in range(7):

@@ -34,7 +34,7 @@ func _init() -> void:
 	check(absf(tray.modulate.a-0.6) < 0.02,"rest opacity 0.6 (got %.2f)" % tray.modulate.a)
 	var bar: Rect2 = tray._bar()
 	print("bar ",bar," scale ",tray.ui_scale)
-	check(absf(bar.size.x-678.0*tray.ui_scale) < 2.0,"bar is 678 design px wide")
+	check(absf(bar.size.x-870.0*tray.ui_scale) < 2.0,"bar is 870 design px wide (13 slots)")
 	check(absf(bar.get_center().x-720.0) < 1.0,"bar centred")
 	for entry: Dictionary in Tray.SPECIMENS:
 		check(tray.specimen_at(tray.specimen_centre(entry.id)) == entry.id,"slot %s hit-tests to itself" % entry.id)

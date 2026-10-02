@@ -57,7 +57,8 @@ For scale, the painterly tuft's tallest blade is 0.44 m and the source tuft is 0
 - The kinds are in `NativeAssetCatalog.PARTS` (one part each, `meadow-flower-<kind>`, made by `source_node`; the pose is identity so a plant stands on its root). They are also in `NativeTerrainData.ASSETS` (appended), `NativeDropReactions` (sprout), `FireField.FAST_ASSETS`, `HandReach.PLUCK_UNDERGROWTH`, `PathBrush.UNDERGROWTH`, `LifeSurvey.SHRUBS` and `FLOWERS` (butterflies visit), the build palette's `FOLIAGE`, and trail planting.
 - `GardenView` needs no change: each kind gets its own MultiMesh batch on its own material. The part keys contain "flower", so winter takes them; the palette role is 0, so petals keep their hue.
 - An instance tint multiplies petals and discs, never stems or leaves. For natural colours, place without a tint.
-- **Old worlds are untouched.** `NativeFlora.FLOWER_KINDS`, emergence and the hand materials still place the four old forms, which draw exactly as before.
+- **Old worlds are untouched.** `NativeFlora.FLOWER_KINDS` and emergence in worlds without a meadow type still place the four old forms, which draw exactly as before.
+- **Sown by hand.** Since 2026-10-02 the materials bar's flower slots (Wildflower, Dandelion, Poppy, Cosmos, Sunflower) sow the kit's own kinds as drifts, through the tree seeds' veil (docs/scenic/handful.md "Flower seed", scripts/flower_sowing.gd). They used to scatter the old forms.
 - **Opt-in remap** (`--meadow-flowers`): only the drawing changes; records, saves and digests do not.
   - Old forms draw as kit kinds: daisy as oxeye daisy, button as buttercup, spike as lupine, umbel as dandelion clock.
   - The painted meadow's flowers bloom as drifts, one kind per 5×5 cells, at 0.8 scale, without sunflowers.

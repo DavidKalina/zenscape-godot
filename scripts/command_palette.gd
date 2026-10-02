@@ -91,8 +91,11 @@ const SEEDS := [
 	["redwood","Redwood","Giant","A redwood. The tallest thing on the land."],
 	["juniper","Juniper","Berry","A juniper, low and blue, for dry slopes."],
 	["joshua","Joshua","Desert","A Joshua tree, wherever you set it."],
-	["wildflower","Clover","Meadow","A meadow patch that spreads on its own."],
-	["dandelion","Clock","Dandelion","Dandelion. The wind carries it on."],
+	["wildflower","Wildflower","Meadow","Daisy, buttercup and poppy seed. The wind sows it in drifts."],
+	["dandelion","Clock","Dandelion","Dandelions and their clocks. The wind carries it on."],
+	["poppy","Poppy","Field","Red poppies in drifts, where the wind sets them down."],
+	["cosmos","Cosmos","Drift","Tall pink and white cosmos, a drift of one colour."],
+	["sunflower","Sunflower","Stand","Sunflowers in a stand, their faces to the sun."],
 	["reed","Reed","Cattail","Cattails for the shallows."],
 ]
 const TOOLS := [

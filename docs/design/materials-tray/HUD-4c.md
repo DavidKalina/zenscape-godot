@@ -5,9 +5,9 @@ The in-game build of Claude Design's "ZenScape HUD 4c" (project
 `design_handoff_lowpoly_linen_hud_4c/`; its README and `lowpoly.js` are the
 spec). It replaces the naturalist's field case on `experiment/field-case-play`.
 
-- **Bottom bar, materials:** what you add. Acorn, cone, sprig, clover, dandelion
-  clock and cattail; water and river stone (plus crystal, not found yet); frost
-  (not found yet).
+- **Bottom bar, materials:** what you add. Acorn, cone, sprig, wildflower,
+  dandelion clock, poppy, cosmos, sunflower and cattail; water and river stone
+  (plus crystal, not found yet); frost (not found yet).
 - **Tool roll, left edge:** how you shape. Hand, paddle, chisel, wire and
   hammer in stitched pockets, with three size pips under a double stitch.
 - **One thing in hand:** the bare Hand is the default. Taking a material
@@ -33,8 +33,17 @@ spec). It replaces the naturalist's field case on `experiment/field-case-play`.
 
 - **River stone is back** as "River stone · Place", using `RESERVE.stone`.
   That makes 10 slots and a bar 678 px wide.
-- **Birch has no slot.** 4c's seeds don't include it. Dandelion has no species
-  of its own: for now it scatters button and daisy flowers.
+- **Birch has no slot.** 4c's seeds don't include it.
+- **Three flower slots added (2026-10-02):** poppy, cosmos and sunflower, after
+  the dandelion, drawn in the same facet style (`hud_icons.gd` seeds 57-59:
+  "Poppy · Field", "Cosmos · Drift", "Sunflower · Stand"). The meadow slot is
+  now "Wildflower · Meadow". All five sow flower seed as a veil
+  (docs/scenic/handful.md "Flower seed"). Same 60 px slots and gaps: 13 slots
+  make the bar 870 px wide at the 1440 reference, against 4a's aim of about
+  600 px. It still clears the roll and the almanac at 1440×900 and 1280×720,
+  but it covers more of the plate's front edge. If that is too wide, the
+  flowers could fold into one slot that fans its kinds as the roll fans a
+  tool's modes.
 - **Chisel, wire and hammer show as undiscovered** until they have verbs
   (`tool_roll.gd` `UNBUILT`). The paddle has its verbs
   (docs/design/tools/PLAN.md).

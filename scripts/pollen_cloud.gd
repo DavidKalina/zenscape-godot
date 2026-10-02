@@ -257,7 +257,12 @@ var seed_kind := ""
 
 ## Start laying a veil over `point` (plate, on the ground). `tree_kind` is the
 ## stand's tree there (Emergence `seed_family`), "" for the default look.
-func gather(point: Vector3, brush_radius: float, strength: float, tree_kind: String, salt: int) -> void:
+## `look` overrides it for seed that is not a tree's (the hand's flower seed,
+## scripts/flower_sowing.gd): "colour" (the motes'), "spread" (times the fall's
+## spread, SPREAD and VEIL_SPREAD), "carry" (times the wind's drift: lighter
+## fluff rides the air further) and "takes" (a Callable, plate x, z -> bool,
+## for where a seed shows a sprout, in place of `takes`).
+func gather(point: Vector3, brush_radius: float, strength: float, tree_kind: String, salt: int, look := {}) -> void:
 	if not held.is_empty(): release()
 	_serial += 1
 	var rng := RandomNumberGenerator.new()
@@ -266,7 +271,10 @@ func gather(point: Vector3, brush_radius: float, strength: float, tree_kind: Str
 	var strong := clampf(strength,0.25,3.0)
 	held = {"id":_serial,"state":"held","head":point+Vector3.UP*HEIGHT,"velocity":Vector3.ZERO,"target":point,"age":0.0,
 		"scale":scale,"strength":strong,"density":sqrt(strong)*scale*scale,"step":KNOT_STEP*scale,"rng":rng,"knots":[],"motes":[],
-		"colour":Color(LOOKS[FAMILY.get(tree_kind,"broadleaf")]),"seeds":PackedVector2Array(),"points":PackedVector2Array(),"lost":0,"down":0,"kind":seed_kind}
+		"colour":Color(LOOKS[FAMILY.get(tree_kind,"broadleaf")]),"seeds":PackedVector2Array(),"points":PackedVector2Array(),"times":PackedFloat32Array(),"lost":0,"down":0,"kind":seed_kind,
+		"spread":float(look.get("spread",1.0)),"carry":float(look.get("carry",1.0))}
+	if look.has("colour"): held.colour = look.colour
+	if look.get("takes") is Callable: held.takes = look.takes
 	held.cap = clampi(roundi(VEIL_MOTES*float(held.density)),roundi(MOTES.x),MOTES_MAX/CLOUDS)
 	_lay(held,_flat(point),point.y)
 
@@ -325,7 +333,7 @@ func release() -> void:
 		knot.max_t = LIFT+float(knot.wave)+JITTER+FALL.y
 		knot.sigma = _sigma(veil,knot,sweep)
 	for g in range(groups): veil.middles[g] /= float(counts[g])
-	for g in range(groups): veil.wind[g] = Wind.at(scene,get_parent() as Node3D,veil.middles[g])
+	for g in range(groups): veil.wind[g] = _wind(veil,veil.middles[g])
 	veil.state = "flying"
 	veil.t = 0.0
 	veil.radius = 0.0
@@ -440,7 +448,12 @@ func _knot_target(veil: Dictionary, k: int) -> float:
 	return (base+float(knot.thick)*(MOTES.y-MOTES.x))*float(veil.density)
 
 func _sigma(veil: Dictionary, knot: Dictionary, sweep: float) -> float:
-	return lerpf(lerpf(SPREAD.x,SPREAD.y,float(knot.thick)),VEIL_SPREAD,sweep)*float(veil.scale)
+	return lerpf(lerpf(SPREAD.x,SPREAD.y,float(knot.thick)),VEIL_SPREAD,sweep)*float(veil.scale)*float(veil.get("spread",1.0))
+
+## The air `veil` drifts on at `p` (plate): the wind (scripts/pollen_wind.gd)
+## times the veil's own carry.
+func _wind(veil: Dictionary, p: Vector2) -> Vector2:
+	return Wind.at(scene,get_parent() as Node3D,p)*float(veil.get("carry",1.0))
 
 ## A new knot at `flat` (plate) over ground `ground`, with its motes.
 func _lay(veil: Dictionary, flat: Vector2, ground: float) -> void:
@@ -605,9 +618,8 @@ func _step_flying(veil: Dictionary, delta: float) -> void:
 	# The air where each part of the veil is now carries its motes alike.
 	var was: float = veil.t
 	var before: Array = veil.drift.duplicate()
-	var parent := get_parent() as Node3D
 	for g in range(int(veil.groups)):
-		var wind := Wind.at(scene,parent,Vector2(veil.middles[g])+Vector2(before[g]))
+		var wind := _wind(veil,Vector2(veil.middles[g])+Vector2(before[g]))
 		veil.wind[g] = wind
 		veil.drift[g] = Vector2(before[g])+wind*delta
 	veil.t = was+delta
@@ -698,13 +710,14 @@ func _land(veil: Dictionary, mote: Dictionary, point: Vector2) -> void:
 		veil.lost = int(veil.lost)+1
 		return
 	veil.points.append(point)
+	veil.times.append(float(mote.start)+float(mote.fall))
 	if _shown(mote): _glints.append({"p":to,"t":0.0,"size":float(mote.size),"colour":veil.colour})
 	var seeds: PackedVector2Array = veil.seeds
 	for q in seeds:
 		if q.distance_squared_to(point) < SEED_GAP*SEED_GAP: return
 	seeds.append(point)
 	veil.seeds = seeds
-	if takes.call(point):
+	if (veil.takes if veil.has("takes") else takes).call(point):
 		_sprouts.append({"p":to,"t":0.0,"yaw":randf()*TAU,"lean":Vector2.RIGHT.rotated(randf()*TAU)})
 		if _sprouts.size() > SPROUTS_MAX: _sprouts = _sprouts.slice(_sprouts.size()-SPROUTS_MAX)
 
@@ -737,9 +750,9 @@ func _settle(veil: Dictionary) -> void:
 	for knot: Dictionary in veil.knots: path.append(_flat(knot.p))
 	var drift := Vector2.ZERO
 	for d: Vector2 in veil.drift: drift += d
-	settled.emit({"id":veil.id,"seeds":veil.seeds,"points":veil.points,"lost":veil.lost,"radius":veil.radius,"motes":veil.motes.size(),
+	settled.emit({"id":veil.id,"seeds":veil.seeds,"points":veil.points,"times":veil.times,"lost":veil.lost,"radius":veil.radius,"motes":veil.motes.size(),
 		"path":path,"length":veil.length,"promised":veil.promised,"drift":drift/float(veil.drift.size()),"drifts":veil.drift.duplicate(),"worst":veil.worst,
-		"outside":veil.outside,"outside_promised":veil.outside_promised,"kind":veil.get("kind","")})
+		"outside":veil.outside,"outside_promised":veil.outside_promised,"kind":veil.get("kind",""),"seconds":veil.t})
 
 func _step_ground(delta: float) -> void:
 	var kept: Array[Dictionary] = []
@@ -861,10 +874,9 @@ func _held_capsules(veil: Dictionary) -> Array:
 	var length: float = knots.back().s
 	var groups := clampi(ceili(float(n)/KNOT_GROUP),1,GROUPS)
 	var winds := []
-	var parent := get_parent() as Node3D
 	for g in range(groups):
 		var middle := _flat(knots[mini(n-1,(2*g+1)*n/(2*groups))].p)
-		winds.append(Wind.at(scene,parent,middle))
+		winds.append(_wind(veil,middle))
 	var sweep := clampf(length/SWEEP,0.0,1.0)
 	var wave := WAVE*minf(1.0,length/WAVE_LENGTH)
 	var out := []

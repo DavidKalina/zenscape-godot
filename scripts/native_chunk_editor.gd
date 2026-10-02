@@ -3445,13 +3445,52 @@ func fling_from_tree(base: Vector3, crown: Vector3, direction: Vector2, reach: f
 ## flicked tree's spores are, so its sprouts lean to that kind as far as the
 ## ground allows (Emergence `_heir_kind`); "" lets the stand pick. True when
 ## the veil was taken.
-func sow_from_hand(screen_pos: Vector2, kind := "") -> bool:
+##
+## Flower seed (a FlowerSowing slot: "wildflower", "dandelion", "poppy",
+## "cosmos", "sunflower") lays its own lighter veil instead, `size` times its
+## radius (the materials' pips), stamped with the slot; where it settles the
+## ground decides what takes and it comes up as a drift (`_write_flowers`).
+func sow_from_hand(screen_pos: Vector2, kind := "", size := 1.0) -> bool:
 	if forming or not active or _ball_holding or _handful_holding or _painting: return false
 	var hit: Variant = pick(screen_pos)
 	if hit == null: return false
 	_land_mountain()
+	if FlowerSowing.has(kind): return _flower_press(hit,kind,size)
 	_handful_press(hit,brushes.forest,kind)
 	return true
+
+## Flower seed from the hand: the veil (scripts/pollen_cloud.gd) in the
+## seed's own look, closer-falling and carried further by the air
+## (FlowerSowing SPREAD, CARRY), its sprouts showing where the ground takes
+## flower seed. False without the veil (the classic brush's seed throw).
+func _flower_press(hit: Vector3, kind: String, size: float) -> bool:
+	if handful == null: _make_pollen()
+	if not handful.has_method("toss"): return false
+	_handful_serial += 1
+	handful.set("seed_kind",kind)
+	var sowing := _flower_sowing(kind)
+	var look := {"colour":FlowerSowing.look(kind),"spread":FlowerSowing.SPREAD,"carry":FlowerSowing.CARRY,"takes":func(p: Vector2) -> bool: return sowing.suits(p)}
+	handful.gather(hit,FlowerSowing.RADIUS*size,FlowerSowing.STRENGTH,"",hash([land_seed,_handful_serial]),look)
+	_handful_holding = true
+	return true
+
+## The sowing of flower `kind` on this world's ground: its wetness from the
+## live water and the emergence blend, its habitat from the blend.
+func _flower_sowing(kind: String) -> RefCounted:
+	var sowing := FlowerSowing.new(data,kind,land_seed)
+	var depths := PackedFloat32Array()
+	if flow != null and flow.ready: depths = flow.kernel.get_depth()
+	var live: RefCounted = flow if not depths.is_empty() else null
+	sowing.wet = func(p: Vector2) -> bool:
+		if live != null:
+			var cell: int = live.cell_at(p)
+			if cell >= 0 and cell < depths.size() and depths[cell] >= FLOWER_WET_DEPTH: return true
+		return emergence._blend != null and emergence._wet(p)
+	sowing.habitat = func(p: Vector2) -> String: return str(emergence._blend.pick(p)) if emergence._blend != null else ""
+	return sowing
+## Live water at least this deep (m) keeps flower seed off.
+const FLOWER_WET_DEPTH := 0.02
+const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 
 ## A stone set down by the hand (the materials tray), placed as the rock
 ## tool's click places one (`set_objects`).
@@ -3511,6 +3550,9 @@ func _pollen_settled(cloud: Dictionary) -> void:
 ## A settled cloud's seeds ask for forest, as one undo step, and go to
 ## emergence, which grows the forest out from them as the land allows.
 func _write_cloud(cloud: Dictionary) -> void:
+	if FlowerSowing.has(str(cloud.get("kind",""))):
+		_write_flowers(cloud)
+		return
 	var forest = brushes.get("forest")
 	var seeds: PackedVector2Array = cloud.seeds
 	if forest == null or seeds.is_empty(): return
@@ -3533,3 +3575,23 @@ func _write_cloud(cloud: Dictionary) -> void:
 	last_sowing = cloud.duplicate()
 	last_sowing.bounds = bounds
 	last_sowing.changed = changed
+
+## A settled veil of flower seed: where its motes came down the ground
+## decides, and what takes comes up as a drift of the seed's kind, blooming in
+## the order it landed (scripts/flower_sowing.gd `grow`), one undo step.
+func _write_flowers(cloud: Dictionary) -> void:
+	var points: PackedVector2Array = cloud.get("points",PackedVector2Array())
+	if points.is_empty(): return
+	var sowing := _flower_sowing(str(cloud.kind))
+	data.begin_stroke()
+	var grown: Dictionary = sowing.grow(points,cloud.get("times",PackedFloat32Array()),int(cloud.get("id",0))+_handful_serial*7919,preload("res://scripts/emergence.gd").time)
+	var changed := data.end_stroke()
+	_settle_pending = true
+	_settle_stroke()
+	var bounds: Rect2 = grown.bounds
+	var middle := bounds.get_center()
+	_emit_stroke(2,Vector3(middle.x,float(data.sample(middle,data.heights)),middle.y),bounds.size.length()*0.5,0.0)
+	last_sowing = cloud.duplicate()
+	last_sowing.bounds = bounds
+	last_sowing.changed = changed
+	last_sowing.flowers = grown
