@@ -77,6 +77,10 @@ var titled := false
 var world_session: Node
 ## The title's "Build this world": keeps the orbited world as the new place.
 var _keep_title: Button
+## The front page's way to the library page (with worlds).
+var _your_worlds: Button
+## The title's library page is up, over the front page's state.
+var library_open := false
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -107,14 +111,16 @@ func _ready() -> void:
 		and not preload("res://scripts/chunk_atlas_controller.gd").enabled() and "--verify-desktop-build" not in args))
 	var choice := ""
 	var veil: Node
-	# With worlds, the title is the library over its selected world, live:
-	# the world loads first, then the title opens over it (`open_worlds_title`).
+	# With worlds, the title's front page orbits a showcase world as before,
+	# but regrowth holds it, so the library page (`open_library`) can load each
+	# world live behind it; the front page opens once the shell is built.
 	var library_title: bool = titling and world_session.managing
 	if library_title:
 		veil = preload("res://scripts/title_loading.gd").new()
 		add_child(veil)
-		veil.stage("Opening your worlds")
-		choice = world_session.begin_title()
+		titled = true
+		await _form_showcase(veil)
+		choice = world_session.begin_showcase()
 	elif titling:
 		choice = await _run_title()
 		veil = preload("res://scripts/title_loading.gd").new()
@@ -126,6 +132,10 @@ func _ready() -> void:
 	await places.setup(self,choice,world_session.launch_seed)
 	places_ready = places.initialized
 	if places_ready and not library_title: world_session.opened()
+	if places_ready and library_title:
+		# Setup frames the place for play; the front page frames the showcase.
+		_frame_title()
+		world_session.kept_showcase()
 	# Pipelines for what the world will draw later build now, under the veil
 	# (scripts/pipeline_warmup.gd).
 	if places_ready and preload("res://scripts/pipeline_warmup.gd").enabled():
@@ -165,7 +175,7 @@ func _ready() -> void:
 			hand_reach.edge_spring_dragged.connect(func(at: Vector2, relative: Vector2) -> void: edge_spring.pull(at,relative))
 			hand_reach.edge_spring_released.connect(edge_spring.release)
 	if world_session.managing: _build_worlds_screens()
-	if library_title: open_worlds_title(world_session.current_id)
+	if library_title: open_title()
 	shell_ready = true
 
 func _fill_world_menu() -> void:
@@ -205,15 +215,7 @@ func _run_title() -> String:
 	var loading := preload("res://scripts/title_loading.gd").new()
 	add_child(loading)
 	titled = true
-	loading.stage("Raising the land · growing the forest")
-	resident_enabled = false
-	restore_cave_state({})
-	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
-	if title_recipe.has("terrain_recipe"):
-		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
-	else:
-		await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
-	_frame_title()
+	await _form_showcase(loading)
 	_has_world = false
 	show_menu()
 	loading.queue_free()
@@ -226,9 +228,21 @@ func _run_title() -> String:
 	set_building(false)
 	return choice
 
-## The title menu for this flow: Continue, build the world behind the menu,
-## a quiet plain, then Settings and Quit. The legacy diorama entries
-## (Fidelity, Open, Save a copy) are hidden.
+## A showcase world (scripts/title_showcase.gd) formed and framed for the title.
+func _form_showcase(loading: Node) -> void:
+	loading.stage("Raising the land · growing the forest")
+	resident_enabled = false
+	restore_cave_state({})
+	title_recipe = preload("res://scripts/title_showcase.gd").choose(title_seed if title_seed >= 0 else int(Time.get_unix_time_from_system()*1000000.0))
+	if title_recipe.has("terrain_recipe"):
+		await _chunk_editor.form_inland(title_recipe.terrain_recipe,true,false)
+	else:
+		await _chunk_editor.form_landscape(title_recipe.family,title_recipe.biome,true,title_recipe.variation)
+	_frame_title()
+
+## The title menu for this flow: Continue, your worlds (with worlds), build
+## the world behind the menu, a quiet plain, then Settings and Quit. The
+## legacy diorama entries (Fidelity, Open, Save a copy) are hidden.
 func _retitle_menu() -> void:
 	if _menu == null: return
 	_continue.text = "Continue your world"
@@ -243,10 +257,24 @@ func _retitle_menu() -> void:
 	for connection: Dictionary in fresh.pressed.get_connections(): fresh.pressed.disconnect(connection.callable)
 	fresh.pressed.connect(_new_world_from_menu)
 	# Only while the title's world is behind the menu (show_menu).
-	_keep_title = _menu.add_action("Build this world","The land behind the menu",
-		func() -> void: if titled: title_picked.emit("keep"),false,1)
+	_keep_title = _menu.add_action("Build this world","The land behind the menu",_build_this_world,false,1)
+	# The library page, with worlds (show_menu shows it and counts them).
+	_your_worlds = _menu.add_action("Your worlds","",func() -> void: if titled: open_library(),false,1)
+
+func _build_this_world() -> void:
+	if not titled: return
+	if not _worlds_screens():
+		title_picked.emit("keep")
+		return
+	# Named for its land: "Alpine massif", "Arid salt basin".
+	var land_name := ("%s %s" % [str(title_recipe.get("biome","")).capitalize(),str(title_recipe.get("family","")).replace("-"," ")]).strip_edges()
+	world_session.keep_showcase(land_name,"canyon" if title_recipe.get("biome","") == "arid" else "plain",
+		str(title_recipe.get("terrain_recipe",{}).get("seed",title_recipe.get("variation",""))))
 
 func _new_world_from_menu() -> void:
+	if titled and _worlds_screens():
+		world_session.create_world("","plain",world_session.roll_seed())
+		return
 	if titled:
 		title_picked.emit("plain")
 		return
@@ -257,13 +285,24 @@ func _new_world_from_menu() -> void:
 	else: places.new_plain()
 
 func continue_world() -> void:
+	if titled and _worlds_screens():
+		var worlds: Array = world_session.library.worlds()
+		if not worlds.is_empty(): world_session.open_world(worlds[0].id)
+		return
 	if titled:
 		if FileAccess.file_exists(places_path): title_picked.emit("resume")
 		return
 	super.continue_world()
 
-## Continue picks up the regrowth save, not the legacy diorama's recent file.
+## Continue picks up the regrowth save, not the legacy diorama's recent file;
+## with worlds, the most recently played world's.
 func _recent_path() -> String:
+	if _worlds_screens():
+		var worlds: Array = world_session.library.worlds()
+		if worlds.is_empty(): return ""
+		# A world with no save yet still continues, formed from its land.
+		var saved: String = world_session.library.save_path(worlds[0].id)
+		return saved if FileAccess.file_exists(saved) else world_session.library.root.path_join("index.json")
 	return places_path if FileAccess.file_exists(places_path) else ""
 
 func _places_idle() -> bool:
@@ -477,14 +516,21 @@ func _sync_creation_ui() -> void:
 ## title, which take the input (`_worlds_screens`).
 func show_menu() -> void:
 	if _menu != null and not _menu.visible: _craft_before_menu = crafting
-	if _keep_title != null: _keep_title.disabled = not titled
+	if _keep_title != null: _keep_title.disabled = not titled or (_worlds_screens() and not world_session.showing_showcase)
+	if _your_worlds != null:
+		_your_worlds.disabled = not (titled and _worlds_screens())
+		var kept: int = world_session.library.worlds().size() if _worlds_screens() else 0
+		_your_worlds.set("detail","%d kept" % kept)
 	super.show_menu()
 	_sync_creation_ui()
 	if _worlds_screens() and _menu.visible:
-		_menu.modulate.a = 0.0
-		var focus := get_viewport().gui_get_focus_owner()
-		if focus != null and _menu.is_ancestor_of(focus): focus.release_focus()
-		_screen_blocker.show()
+		# The front page is the old card itself; elsewhere it is unseen.
+		if titled and not library_open:
+			_screen_blocker.hide()
+		else:
+			_menu.modulate.a = 0.0
+			_release_menu_focus()
+			_screen_blocker.show()
 		if _has_world and not titled and not pause_panel.is_open:
 			pause_panel.open(str(world_session.library.find(world_session.current_id).get("name","Your world")))
 	# Pausing keeps the world.
@@ -535,14 +581,17 @@ func _build_worlds_screens() -> void:
 	pause_panel = preload("res://scripts/pause_panel.gd").new()
 	pause_panel.hide()
 	worlds_layer.add_child(pause_panel)
-	world_title.selection_changed.connect(func(world: Dictionary) -> void: world_session.show_backdrop(str(world.get("id",""))))
-	world_session.backdrop_ready.connect(func(_id: String) -> void: if titled: world_title.reveal_live())
-	world_title.enter_requested.connect(func(world: Dictionary) -> void: world_session.open_world(str(world.id)))
+	world_title.selection_changed.connect(func(world: Dictionary) -> void: if library_open: world_session.show_backdrop(str(world.get("id",""))))
+	world_session.backdrop_ready.connect(func(_id: String) -> void: if titled and library_open: world_title.reveal_live())
+	world_title.enter_requested.connect(func(world: Dictionary) -> void: if library_open: world_session.open_world(str(world.id)))
 	world_title.new_world_requested.connect(func() -> void:
+		if not library_open: return
 		world_title.hide()
 		new_world_panel.open())
 	world_title.settings_requested.connect(_show_settings)
-	world_title.quit_requested.connect(_quit_safely)
+	# The library is the title's second page: Back, where the front has Quit.
+	world_title.quit_button.text = preload("res://scripts/worlds_style.gd").caps("Back")
+	world_title.quit_requested.connect(close_library)
 	new_world_panel.land_changed.connect(world_session.preview_land)
 	new_world_panel.begin_requested.connect(func(world_name: String, land: String, seed_text: String) -> void:
 		world_session.create_world(world_name,land,seed_text))
@@ -564,37 +613,99 @@ func _sync_pause_status() -> void:
 	var played := float(world_session.library.find(world_session.current_id).get("last_played_at",0.0))
 	pause_panel.set_status(world_session.keeping,maxf(world_session.last_kept_at,played),Time.get_unix_time_from_system())
 
-## The title as the world library over `select_id`'s world (or the most
-## recent), live behind it and orbiting: browsing loads each world in turn
-## (scripts/world_session.gd `show_backdrop`), entering plays it, and New
-## world opens its panel.
-func open_worlds_title(select_id := "") -> void:
+## The title's front page: the old card over the showcase world, orbiting.
+## From play (scripts/world_session.gd `return_to_title`) the showcase comes
+## back from its scratch save under the loading veil.
+func open_title() -> void:
 	if not _worlds_screens(): return
+	var veil: Node
+	if not world_session.showing_showcase:
+		veil = preload("res://scripts/title_loading.gd").new()
+		veil.name = "TitleLoading"
+		add_child(veil)
+		veil.stage("Back to the title")
 	if photo != null and photo.get("active") == true: photo.leave()
 	if mood_open(): toggle_mood()
 	# No tool in hand behind the title.
 	if _has_world: _put_brush_away()
 	_set_looking_state(false)
 	titled = true
+	library_open = false
 	_has_world = false
 	_notice.text = ""
-	show_menu()
 	pause_panel.close()
+	new_world_panel.close()
+	world_title.hide()
+	await world_session.show_showcase()
+	_frame_title()
+	show_menu()
 	_before_menu_paused = false
 	_menu_orbit = false
-	_auto_orbit_speed = TAU/60.0*0.22
+	if veil != null: veil.queue_free()
+
+## The library page (scripts/world_title.gd): the card and wordmark fade out
+## and the library in, its selected world loading live behind it.
+func open_library() -> void:
+	if not titled or library_open or not _worlds_screens(): return
+	library_open = true
+	_release_menu_focus()
+	_screen_blocker.show()
 	new_world_panel.close()
+	world_title.mode = "idle"
+	# Announce the selection afresh, so its world loads behind the page.
+	world_title.set("_shown_id","~")
+	world_title.modulate.a = 0.0
 	world_title.show()
-	world_title.refresh(select_id)
-	if world_title.selected_world().get("id","") == world_session.current_id and not world_session.previewing: world_title.reveal_live()
+	world_title.refresh()
+	_crossfade(world_title,_menu)
+
+## Back from the library page (Back, or Esc with no rename or delete): the
+## showcase returns under the page's capture veil, then the card fades in.
+func close_library() -> void:
+	if not library_open or new_world_panel.visible: return
+	library_open = false
+	var cover := create_tween()
+	cover.tween_property(world_title.veil,"modulate:a",1.0,0.3)
+	await world_session.show_showcase()
+	if cover.is_running(): await cover.finished
+	if library_open or not titled: return
+	_frame_title()
+	_menu.present(false)
+	_menu.modulate.a = 0.0
+	_screen_blocker.hide()
+	await _crossfade(_menu,world_title).finished
+	if not library_open: world_title.hide()
+	world_title.modulate.a = 1.0
+
+func _crossfade(shown: CanvasItem, hidden: CanvasItem) -> Tween:
+	var fade := create_tween().set_parallel(true)
+	fade.tween_property(shown,"modulate:a",1.0,0.3).set_trans(Tween.TRANS_SINE)
+	fade.tween_property(hidden,"modulate:a",0.0,0.3).set_trans(Tween.TRANS_SINE)
+	return fade
+
+func _release_menu_focus() -> void:
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus != null and _menu.is_ancestor_of(focus): focus.release_focus()
+
+## Esc on the library page goes back to the front page, once the page's own
+## Esc (rename, delete) has nothing to cancel.
+func _input(event: InputEvent) -> void:
+	if library_open and titled and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE \
+			and world_title.mode == "idle" and not new_world_panel.visible:
+		get_viewport().set_input_as_handled()
+		close_library()
+		return
+	super._input(event)
 
 ## Leaves the title for the world now in the scene (scripts/world_session.gd
 ## `open_world` and `create_world` call this once it is open).
 func leave_title() -> void:
 	if not titled: return
 	world_title.hide()
+	world_title.modulate.a = 1.0
 	new_world_panel.close()
 	titled = false
+	library_open = false
 	_has_world = true
 	_before_menu_paused = false
 	_menu_orbit = false

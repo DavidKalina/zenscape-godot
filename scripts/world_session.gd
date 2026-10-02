@@ -11,10 +11,13 @@ extends Node
 ## --resume); other launch flags, probes and tests that build the scene keep
 ## the single legacy save and nothing autosaves.
 ##
-## On the title (studies/cozy_worlds.gd `open_worlds_title`) the selected
-## world is the live backdrop (`show_backdrop`): it is loaded but not played,
-## so nothing is kept or touched until it is entered (`open_world`), and the
-## title is left through the scene's `leave_title`.
+## The title's front page (studies/cozy_worlds.gd `open_title`) shows the
+## showcase world, kept in a scratch save to come back to (`show_showcase`)
+## and kept as a world by Build this world (`keep_showcase`). On its library
+## page (`open_library`) the selected world is the live backdrop
+## (`show_backdrop`): loaded but not played, so nothing is kept or touched
+## until it is entered (`open_world`), and the title is left through the
+## scene's `leave_title`.
 const Library = preload("res://scripts/world_library.gd")
 const Lands = preload("res://scripts/world_lands.gd")
 ## Seconds after the last edit before the world is kept, and the longest a
@@ -57,6 +60,8 @@ var previewing := false
 var previewed: Array = []
 ## True when the last `create_world` kept the preview as it stood.
 var reused_preview := false
+## The title's showcase world is in the scene, as formed.
+var showing_showcase := false
 var _fresh := false
 var _preview_serial := 0
 var _preview_forming := false
@@ -104,6 +109,53 @@ func begin_title() -> String:
 		return "plain"
 	return _setup_choice(false)
 
+## The launch title's showcase, formed in the scene before regrowth is set up:
+## its setup choice ("keep"), with nowhere to keep it but its scratch save.
+func begin_showcase() -> String:
+	if not managing: return ""
+	_backdrop_only(showcase_path())
+	if FileAccess.file_exists(showcase_path()): DirAccess.remove_absolute(showcase_path())
+	showing_showcase = true
+	previewed = []
+	return "keep"
+
+## Once regrowth holds the showcase: its scratch save, to come back to.
+func kept_showcase() -> void:
+	if showing_showcase: scene.places.save_places()
+
+func showcase_path() -> String:
+	return library.root.path_join("showcase.json")
+
+## The showcase back in the scene for the front page, from its scratch save.
+func show_showcase() -> void:
+	_backdrop_serial += 1
+	_preview_serial += 1
+	while _backdrop_loading or _preview_forming: await get_tree().process_frame
+	if showing_showcase: return
+	await _until_idle()
+	_backdrop_only(showcase_path())
+	if FileAccess.file_exists(showcase_path()): await scene.places.open_place(showcase_path())
+	showing_showcase = true
+
+## Build this world: the showcase as it stands becomes a new world, played.
+## Empty when the showcase is not in the scene.
+func keep_showcase(world_name: String, land: String, seed_text: String) -> Dictionary:
+	if not showing_showcase: return {}
+	_backdrop_serial += 1
+	_preview_serial += 1
+	var world: Dictionary = library.create(world_name,land if land in Lands.IDS else "plain",seed_text)
+	showing_showcase = false
+	previewing = false
+	previewed = []
+	_point_at(world.id)
+	_due = -1.0
+	_unkept = -1.0
+	_listen()
+	library.touch(world.id)
+	world_opened.emit(world.id)
+	_entered()
+	return library.find(world.id)
+
 func _setup_choice(entering: bool) -> String:
 	_fresh = false
 	if FileAccess.file_exists(library.save_path(current_id)): return "resume"
@@ -133,15 +185,21 @@ func show_backdrop(id: String) -> void:
 	if serial != _backdrop_serial: return
 	_backdrop_loading = true
 	if id.is_empty() or library.find(id).is_empty():
-		if not (previewing and current_id.is_empty() and previewed.size() == 2 and previewed[0] == "plain"):
+		if showing_showcase or not (previewing and current_id.is_empty() and previewed.size() == 2 and previewed[0] == "plain"):
 			await _until_idle()
 			_backdrop_only()
+			showing_showcase = false
 			await scene.places.open_land("plain",Library.seed_value(roll_seed()))
 			previewed = ["plain",""]
 		id = ""
 	else: await _switch(id,false)
 	_backdrop_loading = false
-	if serial == _backdrop_serial: backdrop_ready.emit(id)
+	if serial != _backdrop_serial: return
+	backdrop_ready.emit(id)
+	# A world first seen here (an adopted older save) gets its capture now.
+	if not id.is_empty() and not FileAccess.file_exists(library.thumbnail_path(id)):
+		for i in 3: await get_tree().process_frame
+		if serial == _backdrop_serial and current_id == id and not previewing: await capture_thumbnail()
 
 ## Saves the open world, then opens and plays `id`: its save, or its land and
 ## seed when it has none yet. From the title, the world behind it is entered
@@ -201,6 +259,7 @@ func preview_land(land: String, seed_text: String) -> void:
 		await _until_idle()
 		if not previewing and not _titled(): keep_now()
 		previewing = true
+		showing_showcase = false
 		await places.open_land(land,Library.seed_value(seed_text))
 	previewed = [land,seed_text]
 	_preview_forming = false
@@ -273,7 +332,7 @@ func return_to_title() -> void:
 	keep_now()
 	while keeping: await get_tree().process_frame
 	title_requested.emit()
-	if scene.has_method("open_worlds_title"): scene.open_worlds_title(current_id)
+	if scene.has_method("open_title"): scene.open_title()
 
 ## On quit, after the scene's last save: the time it was kept and its capture.
 func leaving() -> void:
@@ -351,6 +410,7 @@ func _switch(id: String, entering: bool) -> void:
 	if id != current_id or previewing:
 		previewing = false
 		previewed = []
+		showing_showcase = false
 		_due = -1.0
 		_unkept = -1.0
 		_point_at(id)
@@ -374,10 +434,10 @@ func _entered() -> void:
 	if not current_id.is_empty() and not FileAccess.file_exists(library.save_path(current_id)): keep_now()
 
 ## No world is played: the scene shows a land with nowhere to keep it.
-func _backdrop_only() -> void:
+func _backdrop_only(path := "") -> void:
 	current_id = ""
 	previewing = true
-	scene.places_path = library.root.path_join("backdrop.json")
+	scene.places_path = path if not path.is_empty() else library.root.path_join("backdrop.json")
 
 func _point_at(id: String) -> void:
 	current_id = id
