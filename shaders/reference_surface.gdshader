@@ -236,6 +236,11 @@ void vertex() {
 		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
 	}
 	if (blow_enabled && !sway_enabled && !conifer_sway) {
+		// A trunk under a swaying crown takes the crown's breeze too, over
+		// the same shape, so the two never part (no flutter: wood is stiff).
+		float trunk_gust;
+		float trunk_bow;
+		VERTEX += zs_breeze_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, 1.0, 0.0, trunk_gust, trunk_bow);
 		float blow_shiver;
 		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, blow_shiver);
 	}
@@ -243,31 +248,26 @@ void vertex() {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
-		float wave = sway_frequency.z * sin(zs_motion_time * sway_frequency.x + phase)
-			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
-		float g = zs_breeze_field(root);
-		float gust = 0.22 + 1.15 * g * g;
-		// Wind is a world-space direction; asset yaw must not rotate the air.
-		vec2 lean = zs_wind_direction * zs_wind_strength * zs_wind_strength * sway_shape.z * 0.55 * bend * gust;
-		vec2 flap = zs_wind_direction * (wave * bend * sway_shape.z * zs_wind_strength * gust);
-		float shiver = sin(zs_motion_time * 9.3 + phase * 4.7) * smoothstep(0.5, 0.85, g) * 0.35;
-		vec2 side = vec2(-zs_wind_direction.y, zs_wind_direction.x)
-			* ((sin(zs_motion_time * sway_frequency.y * 1.7 + phase * 2.1) + shiver) * bend * sway_shape.w * zs_wind_strength);
-		vec2 motion = lean + flap + side;
-		if (grass_blades) {
-			// The long wind waves the dense meadow rolls with (grass_look).
-			float crest = zs_grass_crest(root, ZS_GRASS_WAVE_LENGTH, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
-			float grass_air = min(zs_wind_strength, 1.5);
-			float blade_arm = max(VERTEX.y, 0.0) * length(MODEL_MATRIX[1].xyz);
-			motion += zs_wind_direction * min(grass_air * ZS_GRASS_WAVE_STRENGTH * crest * gust, 0.95) * grass_along * blade_arm;
-			grass_bow = crest * min(grass_air, 1.0) * gust;
-			grass_tilt = motion * 1.7;
-		}
+		// The ambient breeze (reference_wind, docs/scenic/breeze.md): stiff
+		// at the root, the tip lagging, swaying and fluttering; low plants
+		// roll with the meadow's waves. World-space, so asset yaw never
+		// rotates the air. Stiff species (a small sway_shape.z) take less.
+		float breeze_gust;
+		float breeze_bow;
+		vec2 motion = zs_breeze_offset(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y,
+			zs_breeze_flex(sway_shape.z), zs_breeze_flutter(sway_shape.z), breeze_gust, breeze_bow);
 		float instance_scale = length(MODEL_MATRIX[1].xyz);
-		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y) * instance_scale;
-		float arm = max(VERTEX.y - sway_shape.x, 0.25);
-		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7);
-		foliage_gust = clamp(gust * zs_wind_strength * bend * 0.5, 0.0, 1.0);
+		if (grass_blades) {
+			// Bowed blades pale and tip their soft-mass normal downwind (grass_look).
+			grass_bow = breeze_bow;
+			grass_tilt = motion / max(sway_shape.y * instance_scale, 0.1) * 0.6;
+		}
+		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y);
+		float arm = max(VERTEX.y - sway_shape.x, 0.05) * instance_scale;
+		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7) / max(instance_scale, 0.001);
+		// Plants bowed by a wave or gust pale a little (the plant_growth tint
+		// below), so the classic tufts show the rolling bands too.
+		foliage_gust = clamp(max(breeze_gust * 0.5, breeze_bow * 0.7) * bend, 0.0, 1.0);
 		// A walker's tread (shaders/foliage_tread.gdshaderinc): stems inside a
 		// tread lean away from it and lie over, and whatever is under the
 		// foot itself is pressed flat. World-space like the wind above.
@@ -390,7 +390,7 @@ void fragment() {
 	}
 	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	else if (palette_role == 1 || palette_role == 5) zs_season_grass(tint, leaf_season.x);
-	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.10 * foliage_gust);
+	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;

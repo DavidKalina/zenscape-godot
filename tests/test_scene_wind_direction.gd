@@ -24,6 +24,7 @@ func _run() -> void:
 	var wind = preload("res://scripts/local_wind_field.gd").new()
 	root.add_child(wind)
 	RenderingServer.global_shader_parameter_set("zs_wind_strength", 0.0)
+	RenderingServer.global_shader_parameter_set("zs_breeze", 0.0)
 	RenderingServer.global_shader_parameter_set("zs_motion_time", 0.0)
 	RenderingServer.global_shader_parameter_set("zs_exposure", 1.0)
 	RenderingServer.global_shader_parameter_set("zs_surface_post", false)
@@ -51,27 +52,33 @@ func _run() -> void:
 	material.set_shader_parameter("sway_shape", Vector4(-1,1,0.8,0.0))
 	material.set_shader_parameter("sway_frequency", Vector4.ZERO)
 	material.set_shader_parameter("base_color",Color.WHITE)
-	for i in range(2):
-		var instance := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.6,2,0.6)
-		instance.mesh = box
-		instance.material_override = material
-		instance.position = Vector3(-2 if i == 0 else 2,1,0)
-		if i == 1:
-			instance.rotation.y = PI * 0.5
-			instance.scale = Vector3(1.4,1,1.4)
-		viewport.add_child(instance)
-	await process_frame
-	RenderingServer.force_draw(false)
-	var before := viewport.get_texture().get_image()
-	RenderingServer.global_shader_parameter_set("zs_wind_strength", 2.0)
-	RenderingServer.global_shader_parameter_set("zs_wind_direction", Vector2.RIGHT)
-	await process_frame
-	RenderingServer.force_draw(false)
-	var after := viewport.get_texture().get_image()
-	var first := center(after,0,200) - center(before,0,200)
-	var rotated := center(after,200,400) - center(before,200,400)
+	# One stem at one root, drawn plain and then turned and widened in place,
+	# so both feel the same air (the breeze varies from root to root).
+	var instance := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.6,2,0.6)
+	instance.mesh = box
+	instance.material_override = material
+	instance.position = Vector3(0,1,0)
+	viewport.add_child(instance)
+	var shifts: Array[float] = []
+	for turned in [false,true]:
+		instance.rotation.y = PI * 0.5 if turned else 0.0
+		instance.scale = Vector3(1.4,1,1.4) if turned else Vector3.ONE
+		RenderingServer.global_shader_parameter_set("zs_wind_strength", 0.0)
+		RenderingServer.global_shader_parameter_set("zs_breeze", 0.0)
+		await process_frame
+		RenderingServer.force_draw(false)
+		var before := viewport.get_texture().get_image()
+		RenderingServer.global_shader_parameter_set("zs_wind_strength", 2.0)
+		RenderingServer.global_shader_parameter_set("zs_breeze", 2.0)
+		RenderingServer.global_shader_parameter_set("zs_wind_direction", Vector2.RIGHT)
+		await process_frame
+		RenderingServer.force_draw(false)
+		var after := viewport.get_texture().get_image()
+		shifts.append(center(after,0,400) - center(before,0,400))
+	var first := shifts[0]
+	var rotated := shifts[1]
 	check(first > 4, "Original crown bends right in world space: %s px" % first)
 	check(rotated > 4, "Rotated/scaled crown bends right in world space: %s px" % rotated)
 	check(absf(first-rotated) < 3, "Scale and rotation do not distort shared world displacement: %s vs %s" % [first,rotated])

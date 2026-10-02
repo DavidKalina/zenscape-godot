@@ -24,6 +24,7 @@ func _run() -> void:
 	var wind = preload("res://scripts/local_wind_field.gd").new()
 	root.add_child(wind)
 	RenderingServer.global_shader_parameter_set("zs_wind_strength", 0.0)
+	RenderingServer.global_shader_parameter_set("zs_breeze", 0.0)
 	RenderingServer.global_shader_parameter_set("zs_motion_time", 0.0)
 	RenderingServer.global_shader_parameter_set("zs_exposure", 1.0)
 	RenderingServer.global_shader_parameter_set("zs_surface_post", false)

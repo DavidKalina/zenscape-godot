@@ -90,7 +90,7 @@ Foliage now reads its own globals, `zs_blow_*`, published by `WindGust._publish_
   - `reference_leaves`: falling leaves drift with the lean;
   - `zs_water_gust`: water ripples, at 9 m/s per unit of lean.
 - **Trunks follow crowns.** A trunk that does not sway (`broadleaf:mesh-11`, the layered trunks) would stay put while its crown bent. It now bends with its crown's shape (`blow_enabled`, `blow_shape`), paired in `scripts/garden_view.gd` and `scripts/layered_tree.gd`, so a strong gust never pulls them apart.
-- **The steady breeze is unchanged.** Foliage's lean along the global wind now reads `zs_breeze_field`, which is `zs_gust_field` without the wind tool's parcels and without the clap ring while a burst owns it. With no wind-tool air about, the two are identical, and `zs_blow_at` returns 0 with a few comparisons.
+- **The steady breeze** is now its own model, `zs_breeze` and `zs_breeze_bend` ([the breeze](breeze.md)); the wind tool's lean adds on top, as before. Before that pass: Foliage's lean along the global wind now reads `zs_breeze_field`, which is `zs_gust_field` without the wind tool's parcels and without the clap ring while a burst owns it. With no wind-tool air about, the two are identical, and `zs_blow_at` returns 0 with a few comparisons.
 - **CPU mirror.** `WindGust.blow_at` is `zs_blow_at` in GDScript, fed from the same published values. The probe reads foliage through it. Keep it in step with the shader.
 
 ## Lasting wind

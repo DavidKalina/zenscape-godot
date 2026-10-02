@@ -8,15 +8,20 @@
 
 // Shifts the world-scale grass noise (dry patches, wave wander) per world
 // seed, so every tier puts them in the same places (scripts/dense_grass.gd).
+// Declared with the wind globals (reference_globals), so flowers and other
+// low plants ride the same waves.
+#ifndef ZS_GRASS_OFFSET_DECLARED
 global uniform vec2 zs_grass_offset;
+#endif
 
 // Defaults both use; dense grass exposes each as a uniform of the same name
 // without the prefix, the tufts use these as they are (the tufts' straw
-// share is their own `grass_dry` uniform).
-const float ZS_GRASS_WAVE_LENGTH = 6.5;
-const float ZS_GRASS_WAVE_SPEED = 1.0;
-const float ZS_GRASS_WAVE_STRENGTH = 0.6;
-const float ZS_GRASS_WAVE_SHEEN = 0.22;
+// share is their own `grass_dry` uniform). The wave itself is the shared
+// breeze's (reference_wind, docs/scenic/breeze.md).
+const float ZS_GRASS_WAVE_LENGTH = ZS_BREEZE_WAVE_LENGTH;
+const float ZS_GRASS_WAVE_SPEED = ZS_BREEZE_WAVE_SPEED;
+const float ZS_GRASS_WAVE_STRENGTH = ZS_BREEZE_WAVE;
+const float ZS_GRASS_WAVE_SHEEN = 0.34;
 const vec3 ZS_GRASS_ROOT_SHADE = vec3(0.46, 0.53, 0.46);
 const vec3 ZS_GRASS_TIP_LIFT = vec3(1.30, 1.28, 0.84);
 const float ZS_GRASS_TIP_CURVE = 0.8;
@@ -46,13 +51,10 @@ vec3 zs_grass_living(vec3 g_family, float g_pull, float g_saturation) {
 
 // 0..1: how near a wind wave's crest this root stands. Long waves roll
 // downwind on the air's own travel (zs_gust_distance), so they move with the
-// gust field and are frame-rate independent; a noise bends their crests.
+// gust field and are frame-rate independent; a noise bends their crests
+// (zs_wave_crest_at, shared with every plant the breeze bends).
 float zs_grass_crest(vec2 g_root, float g_wave_length, float g_wave_speed, vec2 g_offset) {
-	float g_along = dot(g_root, zs_wind_direction);
-	float g_side = dot(g_root, vec2(-zs_wind_direction.y, zs_wind_direction.x));
-	float g_wander = zs_noise(vec2(g_side * 0.16, g_along * 0.05) + g_offset) * 3.0;
-	float g_crest = 0.5 + 0.5 * sin((g_along - zs_gust_distance * g_wave_speed) * TAU / g_wave_length + g_wander);
-	return g_crest * g_crest;
+	return zs_wave_crest_at(g_root, g_wave_length, g_wave_speed, g_offset, zs_gust_distance);
 }
 
 // 0..1: how far this spot has gone to straw, from world noise.

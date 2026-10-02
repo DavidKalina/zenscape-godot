@@ -83,14 +83,15 @@ uniform float tuft_round = 0.55;
 // Sun through backlit tips when looking toward it.
 uniform float tip_translucency = 0.55;
 
-// Wind: long waves rolling downwind across the field, riding the same air
-// travel as the gust field so they are frame-rate independent. Metres per
-// wave, speed as a share of the air's travel, lean at a crest (in blade
-// heights), paling as the blades bow, and the small per-blade flutter left.
-uniform float wave_length = 6.5;
+// Wind: the shared breeze (reference_wind, docs/scenic/breeze.md), long
+// waves rolling downwind across the field on the same air travel as the
+// gust field, so they are frame-rate independent. Metres per wave, speed as
+// a share of the air's travel, lean a crest adds per unit of breeze (in
+// zs_blow_at's units), paling as the blades bow, and a per-blade flutter.
+uniform float wave_length = 9.0;
 uniform float wave_speed = 1.0;
-uniform float wave_strength = 0.6;
-uniform float wave_sheen = 0.22;
+uniform float wave_strength = 0.42;
+uniform float wave_sheen = 0.34;
 uniform float flutter = 0.06;
 
 // Accents: shares of tufts that carry a flower (in drifts) or a seed head,
@@ -217,17 +218,22 @@ void vertex() {
 		vec2 across = turn * VERTEX.xz * (blade_width / thin);
 		float arc = pow(blade_t, blade_curve);
 		vec2 bow = turn * CUSTOM0.xy * blade_lean * arc * blade_h;
-		// Wind: long waves rolling downwind, bent a little by noise so the
-		// crests wander, carried by the scene's gusts; a light flutter over it.
-		float crest = zs_grass_crest(root, wave_length, wave_speed, zs_grass_offset);
-		float gust = 0.22 + 1.15 * zs_breeze_field(root);
-		float wind = min(zs_wind_strength, 1.5);
-		float sway = (wind * wind * 0.35 + wind * wave_strength * crest) * gust;
+		// Wind: the shared breeze (zs_breeze_lean_wave): long waves rolling
+		// downwind with wandering crests, slow gust bands and the gust
+		// field's patches. The tip lags the air and sways round its lean a
+		// beat behind the root, each tuft at its own phase; a light flutter
+		// over it.
 		float bend = blade_t * blade_t;
-		float shiver = sin(zs_motion_time * 3.1 + CUSTOM0.w * TAU + dot(root, vec2(1.7, 1.3))) * flutter * wind;
-		vec2 motion = zs_wind_direction * min(sway, 0.95) * bend * blade_h;
+		float bowed;
+		float breeze_lean = zs_breeze_lean_wave(root, ZS_BREEZE_LAG * blade_h * blade_t, wave_strength / ZS_BREEZE_WAVE, wave_length, wave_speed, bowed);
+		wind_bow = bowed;
+		float sway_phase = dot(root, vec2(0.43, 0.71)) + CUSTOM0.w * 0.6;
+		float pace = zs_breeze_pace(blade_h);
+		float swing = sin(zs_motion_time * pace + sway_phase - blade_t * 0.9) * 0.7
+			+ sin(zs_motion_time * pace * 1.63 + sway_phase * 1.7 - blade_t * 1.3) * 0.3;
+		float shiver = sin(zs_motion_time * 5.3 + CUSTOM0.w * TAU + dot(root, vec2(1.7, 1.3))) * flutter * zs_breeze_air();
+		vec2 motion = zs_wind_direction * min(breeze_lean * (1.0 + ZS_BREEZE_SWING * swing), 0.95) * bend * blade_h;
 		motion += vec2(-zs_wind_direction.y, zs_wind_direction.x) * shiver * bend * blade_h;
-		wind_bow = crest * min(wind, 1.0) * gust;
 		// Local gusts (the wind tool's, scripts/wind_gust.gd, and the
 		// resident's) bow the blades their own way, as they bend the trees in
 		// reference_surface, and the bowed blades catch the sky.

@@ -100,22 +100,17 @@ void vertex() {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
-		float wave = sway_frequency.z * sin(zs_motion_time * sway_frequency.x + phase)
-			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
-		float g = zs_breeze_field(root);
-		float gust = 0.22 + 1.15 * g * g;
-		// Wind is a world-space direction; asset yaw must not rotate the air.
-		vec2 lean = zs_wind_direction * zs_wind_strength * zs_wind_strength * sway_shape.z * 0.55 * bend * gust;
-		vec2 flap = zs_wind_direction * (wave * bend * sway_shape.z * zs_wind_strength * gust);
-		float shiver = sin(zs_motion_time * 9.3 + phase * 4.7) * smoothstep(0.5, 0.85, g) * 0.35;
-		vec2 side = vec2(-zs_wind_direction.y, zs_wind_direction.x)
-			* ((sin(zs_motion_time * sway_frequency.y * 1.7 + phase * 2.1) + shiver) * bend * sway_shape.w * zs_wind_strength);
-		vec2 motion = lean + flap + side;
+		// The ambient breeze (reference_wind, docs/scenic/breeze.md), as the
+		// reference plants have it; the branchwork takes the same bend.
+		float breeze_gust;
+		float breeze_bow;
+		vec2 motion = zs_breeze_offset(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y,
+			zs_breeze_flex(sway_shape.z), zs_breeze_flutter(sway_shape.z), breeze_gust, breeze_bow);
 		float instance_scale = length(MODEL_MATRIX[1].xyz);
-		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y) * instance_scale;
-		float arm = max(VERTEX.y - sway_shape.x, 0.25);
-		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7);
-		foliage_gust = clamp(gust * zs_wind_strength * bend * 0.5, 0.0, 1.0);
+		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y);
+		float arm = max(VERTEX.y - sway_shape.x, 0.05) * instance_scale;
+		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7) / max(instance_scale, 0.001);
+		foliage_gust = clamp(breeze_gust * bend * 0.5, 0.0, 1.0);
 		VERTEX.y -= zs_foliage_wet * bend * wet_droop;
 		// Local gusts have a true world direction, even for rotated/scaled assets.
 		// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.

@@ -301,6 +301,146 @@ vec3 zs_blow_bend(vec3 vertex, mat4 model, float bend_from, float height, out fl
 	return inverse(mat3(model)) * vec3(lean.x, 0.0, lean.y) * scale + vec3(0.0, -drop, 0.0) + heave;
 }
 
+// --- The ambient breeze (docs/scenic/breeze.md) -----------------------------
+// What every plant does in the world's own air, between the wind tool's
+// gusts. It leans downwind by zs_breeze, more in the gust field's patches and
+// in slow gust bands rolling across the land, and low plants ride the
+// meadow's long waves. Stiff at the root, it bends most at the tip, which
+// lags the air there, sways round its lean at the plant's own pace and
+// flutters. Everything rides the air's travel (zs_gust_distance) and
+// zs_motion_time, so it is frame-rate independent and holds when paused.
+//
+// Flowers and other new plants: call zs_breeze_bend (model-space offset, as
+// zs_blow_bend) or zs_breeze_offset (world metres) for the stem's bend, and
+// add your own head nod or petal flutter from its `gust` and `bow`.
+
+// The meadow's waves: metres between crests, their speed as a share of the
+// air's travel, and the lean a crest adds per unit of breeze.
+const float ZS_BREEZE_WAVE_LENGTH = 9.0;
+const float ZS_BREEZE_WAVE_SPEED = 1.0;
+const float ZS_BREEZE_WAVE = 0.42;
+// Lean everywhere, and what a full gust patch adds, per unit of breeze.
+const float ZS_BREEZE_BASE = 0.10;
+const float ZS_BREEZE_GUST = 0.5;
+// The lean eases off toward this (zs_blow_at's units: 1 lays a small plant
+// over by about 45 degrees).
+const float ZS_BREEZE_MAX = 0.9;
+// Seconds a plant's tip lags the air at its root, per metre of plant.
+const float ZS_BREEZE_LAG = 0.3;
+// How far a plant sways round its lean, as a share of it.
+const float ZS_BREEZE_SWING = 0.4;
+
+float zs_breeze_air() {
+	return clamp(zs_breeze, 0.0, 2.5);
+}
+
+// 0.6..1.5: slow gust bands, about 30 m along the wind and 18 m across,
+// rolling downwind with the air. The stronger ones are the rarer.
+float zs_gust_band_at(vec2 position, float travel) {
+	vec2 dir = zs_wind_direction;
+	vec2 q = position - dir * travel;
+	vec2 p = vec2(dot(q, dir) * 0.035, dot(q, vec2(-dir.y, dir.x)) * 0.055) + vec2(17.3, 4.1);
+	return 0.6 + 0.9 * smoothstep(0.42, 0.8, zs_noise(p));
+}
+
+// 0..1: how near a meadow wave's crest `root` stands, the air having
+// travelled `travel` m. A train of crests `crest_length` m apart and a longer
+// one 24 degrees across it roll downwind at `crest_speed` of the air's
+// travel, bent by noise (shifted by `offset`), so the crests wander and swell
+// rather than march in stripes. Soft-edged, with a clear trough.
+float zs_wave_crest_at(vec2 root, float crest_length, float crest_speed, vec2 offset, float travel) {
+	vec2 dir = zs_wind_direction;
+	float along = dot(root, dir);
+	float side = dot(root, vec2(-dir.y, dir.x));
+	float wander = zs_noise(vec2(side * 0.11, along * 0.04) + offset) * 3.6;
+	float a = 0.5 + 0.5 * sin((along - travel * crest_speed) * TAU / crest_length + wander);
+	vec2 skew = vec2(dir.x * 0.9135 - dir.y * 0.4067, dir.x * 0.4067 + dir.y * 0.9135);
+	float b = 0.5 + 0.5 * sin((dot(root, skew) - travel * crest_speed * 0.92) * TAU / (crest_length * 1.7) + wander * 0.6 + 1.3);
+	return smoothstep(0.25, 0.95, a * 0.68 + b * 0.32);
+}
+
+// The breeze's lean at a plant's root, in zs_blow_at's units, `lag` s
+// behind the air there. `wave` is how much of the meadow's waves it rides
+// (0 trees, 1 grass), crests `crest_length` m apart rolling at `crest_speed`.
+// `bow` 0..1: how far it is bowed, for the paling of bowed grass.
+float zs_breeze_lean_wave(vec2 root, float lag, float wave, float crest_length, float crest_speed, out float bow) {
+	float travel = zs_gust_distance - zs_gust_speed * lag;
+	float g = zs_breeze_field_at(root, travel);
+	float band = zs_gust_band_at(root, travel);
+	float crest_now = wave > 0.0 ? zs_wave_crest_at(root, crest_length, crest_speed, zs_grass_offset, travel) : 0.0;
+	float lean = zs_breeze_air() * (ZS_BREEZE_BASE + ZS_BREEZE_GUST * g * g + ZS_BREEZE_WAVE * crest_now * wave) * band;
+	lean /= sqrt(1.0 + lean * lean / (ZS_BREEZE_MAX * ZS_BREEZE_MAX));
+	bow = smoothstep(0.08, 0.6, lean);
+	return lean;
+}
+
+float zs_breeze_lean_at(vec2 root, float lag, float wave, out float bow) {
+	return zs_breeze_lean_wave(root, lag, wave, ZS_BREEZE_WAVE_LENGTH, ZS_BREEZE_WAVE_SPEED, bow);
+}
+
+// A plant's own sway pace in rad/s, from its bending length in metres:
+// a 0.35 m tuft about 0.7 Hz, a 2 m crown 0.3 Hz, a 7 m spruce 0.16 Hz.
+float zs_breeze_pace(float span) {
+	return 2.6 / sqrt(max(span, 0.3));
+}
+
+// How much of the breeze a reference plant takes, from its sway amount
+// (`sway_shape.z`, 0.05 a grass tuft or flower, 0.012 to 0.018 the stiff
+// shrubs and reeds): stiff ones lean about half as far.
+float zs_breeze_flex(float sway_amount) {
+	return mix(0.45, 1.0, smoothstep(0.012, 0.05, sway_amount));
+}
+
+// How hard its tips flutter, from the same sway amount.
+float zs_breeze_flutter(float sway_amount) {
+	return clamp(sway_amount / 0.05, 0.3, 1.5);
+}
+
+// The breeze's bend of `vertex`, as a horizontal world offset in metres. The
+// part above `bend_from` (model units) of a plant `height` tall bends as a
+// cantilever, stiff at the root ((h / span)^2). Big plants give less
+// (zs_blow_give^1.5: trunks barely move, crowns sway). The tip lags the root
+// and sways round its lean with the tip a beat behind, a whip rather than a
+// pendulum, and wanders a little across the wind. `flex` 0..1 is how much
+// of the lean it takes; `flutter_share` (0 none, 1 a blade or leaf) a quick
+// tremble in its outer part. `gust` out: 0..1, how hard the air is on it
+// now; `bow`: 0..1, how far a wave or gust bows it.
+vec2 zs_breeze_offset(vec3 vertex, mat4 model, float bend_from, float height, float flex, float flutter_share, out float gust, out float bow) {
+	vec2 root = model[3].xz;
+	float scale = length(model[1].xyz);
+	float span = max(height - bend_from, 0.05);
+	float k = clamp(max(vertex.y - bend_from, 0.0) / span, 0.0, 1.5);
+	float tall = height * scale;
+	float span_m = span * scale;
+	float wave = 1.0 - smoothstep(0.7, 1.8, tall);
+	float lean = zs_breeze_lean_at(root, ZS_BREEZE_LAG * span_m * min(k, 1.0), wave, bow);
+	gust = clamp(lean / 0.6, 0.0, 1.0);
+	float phase = dot(root, vec2(0.43, 0.71));
+	float pace = zs_breeze_pace(span_m);
+	float t = zs_motion_time;
+	float swing = sin(t * pace + phase - k * 0.9) * 0.7 + sin(t * pace * 1.63 + phase * 1.7 - k * 1.3) * 0.3;
+	float wander = sin(t * pace * 0.71 + phase * 2.3 - k * 0.6);
+	float give = zs_blow_give(tall);
+	float reach = give * sqrt(give) * flex * span_m * k * k;
+	vec2 dir = zs_wind_direction;
+	vec2 side = vec2(-dir.y, dir.x);
+	vec2 offset = (dir * (1.0 + ZS_BREEZE_SWING * swing) + side * (0.22 * wander)) * lean * reach;
+	if (flutter_share > 0.0) {
+		float leaf = sin(t * 11.0 + phase * 5.0 + dot(vertex, vec3(5.1, 7.0, 3.7))) * smoothstep(0.55, 1.0, k);
+		offset += side * leaf * (0.015 + 0.03 * gust) * zs_breeze_air() * min(tall, 1.0) * flutter_share;
+	}
+	return offset;
+}
+
+// zs_breeze_offset as an offset in the plant's own (model) space, like
+// zs_blow_bend: the tip dips as it leans, keeping the plant's length.
+vec3 zs_breeze_bend(vec3 vertex, mat4 model, float bend_from, float height, float flex, float flutter_share, out float gust, out float bow) {
+	vec2 offset = zs_breeze_offset(vertex, model, bend_from, height, flex, flutter_share, gust, bow);
+	float h = max(vertex.y - bend_from, 0.0) * length(model[1].xyz);
+	float drop = min(dot(offset, offset) / (2.0 * max(h, 0.05)), h * 0.7);
+	return inverse(mat3(model)) * vec3(offset.x, -drop, offset.y);
+}
+
 float zs_gust_field(vec2 position) {
 	return zs_gust_field_at(position, zs_gust_distance);
 }
