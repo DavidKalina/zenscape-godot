@@ -85,6 +85,10 @@ zs_gust_speed={
 "type": "float",
 "value": 2.36
 }
+zs_breeze={
+"type": "float",
+"value": 0.53
+}
 zs_autumn={
 "type": "float",
 "value": 0.0

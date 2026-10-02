@@ -23,6 +23,14 @@ global uniform vec2 zs_wind_direction;
 global uniform vec2 zs_wind_offset;
 global uniform float zs_gust_distance;
 global uniform float zs_gust_speed;
+// The ambient breeze plants lean in (studies/atmosphere.gd `breeze`,
+// docs/scenic/breeze.md): the air's strength lifted to a gentle floor and
+// breathing slowly. 0 is a dead calm; a light day is about 0.53.
+global uniform float zs_breeze;
+// Shifts the world-scale grass noise per world seed (scripts/dense_grass.gd),
+// declared here so any plant can roll with the meadow's waves (grass_look).
+global uniform vec2 zs_grass_offset;
+#define ZS_GRASS_OFFSET_DECLARED
 global uniform vec4 zs_puff_0;
 global uniform vec4 zs_puff_1;
 global uniform vec4 zs_puff_2;

@@ -42,6 +42,14 @@ var _air_angle := deg_to_rad(19.290046)
 ## Short-lived extra air the painting hand stirs up (scripts/stroke_feedback.gd).
 ## Added on top of the eased dial for what the scenery shows, never saved.
 var swell := 0.0
+## The ambient breeze plants lean in (docs/scenic/breeze.md), published as
+## `zs_breeze`. The air's strength is lifted to a gentle floor, so a world is
+## never quite still, and breathes in slow swells and lulls (BREEZE_SWELLS:
+## period s, share) tens of seconds long and never in step, instead of the
+## whole land pulsing together with gust_at's quick terms. Strong air passes
+## through nearly unchanged, so storms still read stronger.
+const BREEZE_FLOOR := 0.35
+const BREEZE_SWELLS := [Vector3(53.0,0.2,0.6),Vector3(23.0,0.13,2.1),Vector3(9.7,0.07,4.0)]
 var _travel := Vector2.ZERO
 var _gust_distance := 0.0
 var _wind_time := 0.0
@@ -146,7 +154,27 @@ func _publish_wind() -> void:
 	RenderingServer.global_shader_parameter_set("zs_wind_offset", _travel)
 	RenderingServer.global_shader_parameter_set("zs_gust_distance", _gust_distance)
 	RenderingServer.global_shader_parameter_set("zs_gust_speed", 1.6 + 1.9 * _air_strength)
+	RenderingServer.global_shader_parameter_set("zs_breeze", breeze())
 	puffs.publish()
+
+## What `zs_breeze` is now: the eased air (and the hand's swell) lifted to
+## the floor, breathing on the wind clock, which holds while paused.
+func breeze() -> float:
+	return breeze_air(_air_strength + swell) * breeze_swell(_wind_time)
+
+## The air's strength lifted to BREEZE_FLOOR: about 0.38 for a calm world,
+## 0.53 for the default 0.4, 1.35 for a gale's 1.3.
+static func breeze_air(air: float) -> float:
+	var a := maxf(air, 0.0)
+	return sqrt(a * a + BREEZE_FLOOR * BREEZE_FLOOR)
+
+## The breeze's slow breathing at `t` s on the wind clock: 1 on average,
+## from 0.6 in the deepest lull to 1.4 at the fullest swell.
+static func breeze_swell(t: float) -> float:
+	var value := 1.0
+	for swell_term: Vector3 in BREEZE_SWELLS:
+		value += swell_term.y * sin(TAU * t / swell_term.x + swell_term.z)
+	return value
 
 func _add_fog() -> void:
 	_environment.volumetric_fog_enabled = native_volume

@@ -42,6 +42,7 @@ func run() -> void:
 	world.add_child(camera)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	RenderingServer.global_shader_parameter_set("zs_wind_strength",0.0)
+	RenderingServer.global_shader_parameter_set("zs_breeze", 0.0)
 	await create_timer(.5).timeout
 	for key: String in PARTS:
 		var mesh := MeshInstance3D.new()

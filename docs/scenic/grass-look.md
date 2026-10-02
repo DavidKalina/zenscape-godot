@@ -37,7 +37,7 @@ Measured from the code on `main` at 8ac595c:
 - **Colour:** runs from `root_shade` to `tip_lift` over the palette-tinted ground colour, with a per-tuft brightness jitter. World-noise dry patches go toward straw (`dry_amount`, `dry_scale`, `straw_tint`), but not beside water.
 - **Mass shading:** the normal is the ground's, domed outward over each tuft toward the tips (`tuft_round`) and tipped downwind as the blades bow. Only `1 - mass_shading` of the blade's own facing is left.
 - **Translucency:** the tips glow when you look toward the sun (`tip_translucency`). This is a new `ZS_GRASS_TRANSLUCENCY` block in `reference_direct_light.gdshaderinc`, shadowed like direct light. The grass no longer defines `ZS_FOLIAGE_TRANSMISSION`.
-- **Wind:** long waves roll downwind (`wave_length`, `wave_speed`, `wave_strength`). They ride `zs_gust_distance`, so they travel with the air and stay frame-rate independent. A noise bends the crests so they wander, and the gust field and puffs still scale them. Bowed blades read paler (`wave_sheen`). Only a small per-blade `flutter` is left.
+- **Wind:** long waves roll downwind (`wave_length`, `wave_speed`, `wave_strength`). They ride `zs_gust_distance`, so they travel with the air and stay frame-rate independent. A noise bends the crests so they wander, and the gust field and puffs still scale them. Bowed blades read paler (`wave_sheen`). Only a small per-blade `flutter` is left. Since the breeze pass this wave is the shared breeze's (`zs_wave_crest_at`, `zs_breeze_lean_wave`); see [the breeze](breeze.md).
 - **Accents:**
   - Flowers come in drifts of one kind: white daisy, buttercup, violet and clover. Their colours lean toward the palette's earth (`flower_palette_pull`).
   - Spring adds more flowers (`spring_flowers`) and winter takes them.
@@ -111,7 +111,7 @@ All tunables are shader uniforms on `DenseGrass.material` unless noted. Each gro
 - **Shape:** `tuft_spread` 1.0, `blade_lean` 1.0 and `blade_curve` 1.8.
 - **Colour:** `root_shade` (0.46, 0.53, 0.46), `tip_lift` (1.30, 1.28, 0.84), `tip_curve` 0.8, `dry_amount` 0.25, `dry_scale` 0.16, `straw_tint` and `tuft_variation` 0.12.
 - **Light:** `mass_shading` 0.9, `tuft_round` 0.55 and `tip_translucency` 0.55.
-- **Wind:** `wave_length` 6.5 m, `wave_speed` 1.0, `wave_strength` 0.6, `wave_sheen` 0.22 and `flutter` 0.06.
+- **Wind:** `wave_length` 9 m (was 6.5), `wave_speed` 1.0, `wave_strength` 0.42 (now a lean per unit of `zs_breeze`, was 0.6 per unit of the raw dial), `wave_sheen` 0.34 (was 0.22) and `flutter` 0.06. The tufts use the same values from `ZS_BREEZE_*` in `reference_wind`. See [the breeze](breeze.md).
 - **Accents:** `flower_amount` 0.035, `spring_flowers` 0.08, `seed_amount` 0.04, `flower_size` 0.026 m, `seed_head_size` (0.008, 0.075) and `flower_palette_pull` 0.3.
 - **Level of detail:** `fade_start` 22, `fade_end` 58 and `far_blades` 3.
 
