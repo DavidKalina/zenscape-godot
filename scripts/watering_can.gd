@@ -109,6 +109,15 @@ func release() -> void:
 	pouring = false
 	_still = 0.0
 
+## The stream stops at once, not easing off: the world it poured on was
+## replaced (the editor's `_world_restored`).
+func stop() -> void:
+	release()
+	flow_share = 0.0
+	landing = Vector2.INF
+	_beads.clear()
+	if flow != null: flow.taps.erase("can")
+
 func _exit_tree() -> void:
 	if flow != null: flow.taps.erase("can")
 

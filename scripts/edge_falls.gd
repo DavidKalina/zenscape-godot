@@ -224,6 +224,13 @@ func _ease(delta: float) -> void:
 		fall.presence = move_toward(fall.presence,1.0 if here else 0.0,delta/(GROW if here else FADE))
 		if not here and fall.presence <= 0.0: _drop(index)
 
+## Every fall goes at once, nodes and all, rather than fading out over its
+## GRACE and FADE: the water it stood on was replaced, by a new world or a
+## load (scripts/water_flow_view.gd `_water_replaced`).
+func reset() -> void:
+	for index in range(_falls.size()-1,-1,-1): _drop(index)
+	_since = 0.0
+
 func _drop(index: int) -> void:
 	var nodes: Dictionary = _falls[index].nodes
 	for node: Variant in nodes.values():

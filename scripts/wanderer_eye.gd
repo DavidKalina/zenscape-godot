@@ -107,6 +107,9 @@ func setup(owner_scene: Node3D) -> void:
 	# reads this frame's pose.
 	process_priority = -10
 	set_process(false)
+	# A new world (`reset_flat`: the flip, a new plain, a regrow) has no
+	# figure on it until the next V.
+	editor.data.state_restored.connect(_world_restored)
 	_layer = CanvasLayer.new()
 	_layer.layer = 5
 	_layer.visible = false
@@ -174,6 +177,20 @@ func _build_figure() -> void:
 	nose.position = Vector3(0.0,FIGURE_HEIGHT-0.1,-0.11)
 	figure.add_child(nose)
 	editor.terrain.add_child(figure)
+
+func _world_restored(state: Dictionary) -> void:
+	if state.is_empty(): forget()
+
+## The figure is gone, stepped out of first if the eye is in it; V sets a
+## new one down.
+func forget() -> void:
+	if active: leave()
+	if has_figure(): figure.queue_free()
+	figure = null
+	_feet = Vector3.ZERO
+	_obstacle_key = []
+	_obstacles = PackedVector3Array()
+	_depths = PackedFloat32Array()
 
 func has_figure() -> bool:
 	return figure != null and is_instance_valid(figure)

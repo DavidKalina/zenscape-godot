@@ -353,6 +353,7 @@ func setup(owner_scene: Node3D) -> void:
 	explosives.setup(self)
 	_setup_brushes()
 	if flow_wanted(): _setup_flow.call_deferred()
+	data.state_restored.connect(_world_restored)
 
 func _setup_brushes() -> void:
 	brushes = {"land":land_brush,"water":water_brush}
@@ -859,8 +860,10 @@ func finish_stroke() -> void:
 	if pouring: _release_pour()
 
 ## Hand a finished stroke's ground to emergence. Kept as one call so the
-## stroke_finished signal can take it over.
+## stroke_finished signal can take it over. The player's ground is tended:
+## live water changing there soon after grows too (`_flow_moved`).
 func _stroke_ended(kind := "") -> void:
+	_tend(_stroke_rect)
 	if emergence_enabled and _stroke_rect.has_area():
 		emergence.on_region_changed(_stroke_rect,stroke_mode() if kind.is_empty() else kind)
 
@@ -2265,6 +2268,8 @@ func _ball_press(hit: Vector3, scooped := false) -> void:
 		ball.ground_at = func(point: Vector2) -> Variant: return data.ground_height(point)
 	var life: Variant = scene.get("land_life")
 	_ball_serial += 1
+	# A scoop draws a pond down: its new shore is the player's doing.
+	if scooped: _tend(Vector2(hit.x,hit.z),FLOW_TENDED_REACH)
 	ball.condense(hit,life.material if life != null and life.get("material") != null else null,hash([land_seed,_ball_serial]),scooped)
 	ball_volume = 0.0 if scooped else BALL_MIN_VOLUME
 	_ball_scooping = scooped
@@ -2427,10 +2432,25 @@ const FLOW_AREA_CHANGE := 2.0
 const FLOW_FISH_SECONDS := 90.0
 ## Metres from its landing a ball's fish look for a pond.
 const FLOW_FISH_REACH := 12.0
+## Growth follows the player (docs/scenic/emergence.md "Whose water"): a
+## changed pond goes to emergence only where it meets the player's own work
+## of the last FLOW_TENDED_SECONDS, a stroke's rect or FLOW_TENDED_REACH m
+## round a ball's landing, the can's stream or a planted spring. Rain, runoff,
+## old springs grow nothing; life still reads every change (`water_settled`).
+const FLOW_TENDED_SECONDS := 75.0
+const FLOW_TENDED_REACH := 5.0
+const FLOW_TENDED_MAX := 96
 var _flow_read := 0.0
 var _flow_reported := 0.0
 var _flow_pools: Array = []
+## Changed ponds since the last report: all of them, and the tended ones.
 var _flow_changed := Rect2()
+var _flow_grown := Rect2()
+## The player's recent work: [{"rect", "until"}] on `_flow_clock`.
+var _flow_tended: Array[Dictionary] = []
+## After a restore the next read is only the baseline: the ponds then
+## standing are not news.
+var _flow_baseline := true
 ## Fish waiting for a pond: [{"point", "fish", "until"}].
 var _flow_fish: Array[Dictionary] = []
 var _flow_clock := 0.0
@@ -2477,14 +2497,17 @@ func _read_flow_pools() -> void:
 	var pools: Array = flow.pools()
 	flow_view.pools = pools
 	emergence.flow_wet = flow.wet_mask()
+	# The can's stream is the player's water while it runs.
+	if can != null and can.landing != Vector2.INF and float(can.flow_share) > 0.0: _tend(can.landing,FLOW_TENDED_REACH)
+	_flow_tended = _flow_tended.filter(func(tended: Dictionary) -> bool: return float(tended.until) > _flow_clock)
 	# What moved: new ponds, ponds gone, ponds that grew or shrank.
-	for pool: Dictionary in pools:
-		var before := _nearest_pool(_flow_pools,pool)
-		if before.is_empty() or absf(float(before.area)-float(pool.area)) >= FLOW_AREA_CHANGE:
-			_flow_changed = _flow_changed.merge(pool.rect) if _flow_changed.has_area() else pool.rect
-	for pool: Dictionary in _flow_pools:
-		if _nearest_pool(pools,pool).is_empty():
-			_flow_changed = _flow_changed.merge(pool.rect) if _flow_changed.has_area() else pool.rect
+	if not _flow_baseline:
+		for pool: Dictionary in pools:
+			var before := _nearest_pool(_flow_pools,pool)
+			if before.is_empty() or absf(float(before.area)-float(pool.area)) >= FLOW_AREA_CHANGE: _flow_moved(pool.rect)
+		for pool: Dictionary in _flow_pools:
+			if _nearest_pool(pools,pool).is_empty(): _flow_moved(pool.rect)
+	_flow_baseline = false
 	_flow_pools = pools
 	# A ball's fish go to the pond nearest where it landed.
 	var life: Variant = scene.get("land_life")
@@ -2496,15 +2519,58 @@ func _read_flow_pools() -> void:
 		if not home.is_empty() and life != null: life.carry_fish(Vector2(home.x,home.z),waiting.fish)
 		if not home.is_empty() or _flow_clock > float(waiting.until): _flow_fish.erase(waiting)
 	if _flow_changed.has_area() and _flow_reported >= FLOW_REPORT_SECONDS and not _painting:
-		# Grass creeps out from the new shores (scripts/emergence.gd), and life
-		# reads the water again (scripts/land_life.gd).
+		# Grass creeps out from the new shores of the player's water
+		# (scripts/emergence.gd), and life reads all the water again
+		# (scripts/land_life.gd).
 		var rect := _flow_changed.grow(1.0)
+		var grown := _flow_grown.grow(1.0) if _flow_grown.has_area() else Rect2()
 		_flow_changed = Rect2()
+		_flow_grown = Rect2()
 		_flow_reported = 0.0
-		_stroke_rect = rect
-		_stroke_ended("water")
-		_stroke_rect = Rect2()
+		if emergence_enabled and grown.has_area(): emergence.on_region_changed(grown,"water")
 		water_settled.emit(rect)
+
+## A pond changed under `rect`: news for life, and for emergence where the
+## player's recent work meets it.
+func _flow_moved(rect: Rect2) -> void:
+	_flow_changed = _flow_changed.merge(rect) if _flow_changed.has_area() else rect
+	if not _tended(rect): return
+	_flow_grown = _flow_grown.merge(rect) if _flow_grown.has_area() else rect
+
+## Mark the player's water or land work: `rect`, or `reach` m round a point.
+func _tend(at: Variant, reach := 0.0) -> void:
+	var rect: Rect2 = at if at is Rect2 else Rect2(at-Vector2.ONE*reach,Vector2.ONE*reach*2.0)
+	if not rect.has_area(): return
+	if _flow_tended.size() >= FLOW_TENDED_MAX: _flow_tended.pop_front()
+	_flow_tended.append({"rect":rect,"until":_flow_clock+FLOW_TENDED_SECONDS})
+
+func _tended(rect: Rect2) -> bool:
+	for tended: Dictionary in _flow_tended:
+		if (tended.rect as Rect2).intersects(rect,true): return true
+	return false
+
+## Undo, load and new worlds take the ground away (as the pollen's): the
+## ponds read so far, their changes, the player's recent water and the fish
+## waiting for a pond were the world left's, so the next read is only a
+## baseline. A ball still out, the can's stream and a pour not yet shown go
+## with them, rather than land on the world that replaced it.
+func _world_restored(_state: Dictionary) -> void:
+	_flow_pools = []
+	_flow_changed = Rect2()
+	_flow_grown = Rect2()
+	_flow_tended.clear()
+	_flow_fish.clear()
+	_flow_baseline = true
+	_flow_read = 0.0
+	_flow_reported = 0.0
+	if ball != null: ball.vanish()
+	_ball_holding = false
+	_ball_scooping = false
+	ball_supply = Callable()
+	if can != null: can.stop()
+	if not _pour.is_empty() and not _pour.open:
+		_drop_pour(_pour)
+		water_brush.begin()
 
 ## The pool in `pools` over the same water as `pool` (its deepest point
 ## inside the other's bounds), or {}.
@@ -2519,10 +2585,25 @@ func _flow_landed(point: Vector2, volume: float, fish: Array) -> void:
 	var kind: String = flow.drop(point,volume)
 	if kind.is_empty(): return
 	var bed: Dictionary = flow.last_bed
+	_tend_water(point,bed)
 	if not fish.is_empty(): _flow_fish.append({"point":bed.get("pool",point),"fish":fish.duplicate(),"until":_flow_clock+FLOW_FISH_SECONDS})
 	_set_status("A spring rises where the water landed." if kind == "spring" else "The water runs where the land takes it.")
 	ball_settled.emit({"kind":kind,"volume":snappedf(volume,0.01),"fish":fish.size(),"center":point,"pool":bed.get("pool",point)})
 	if not bed.is_empty(): _wear_spring_bed(bed)
+
+## The player's water came down at `point`: round it, the way it runs down
+## (WaterFlow `descent`) and a spring's bed and pool are tended (`_tend`).
+func _tend_water(point: Vector2, bed: Dictionary) -> void:
+	_tend(point,FLOW_TENDED_REACH)
+	var course: PackedVector3Array = flow.descent(data,point).points
+	if course.size() > 1:
+		var run := Rect2(Vector2(course[0].x,course[0].z),Vector2.ZERO)
+		for p in course: run = run.expand(Vector2(p.x,p.z))
+		_tend(run.grow(FLOW_TENDED_REACH*0.5))
+		_tend(Vector2(course[-1].x,course[-1].z),FLOW_TENDED_REACH)
+	if bed.is_empty(): return
+	_tend(bed.rect)
+	_tend(bed.pool,FLOW_TENDED_REACH)
 
 ## Seconds a spring's bed takes to settle into the ground (`_wear_spring_bed`).
 const SPRING_BED_SECONDS := 1.2
@@ -2636,6 +2717,7 @@ func _can_spring(point: Vector2) -> void:
 	_set_status("A spring rises where the water fell.")
 	preload("res://scripts/clay_sound.gd").cue_at(&"water_splash",terrain.to_global(Vector3(point.x,float(data.ground_height(point)),point.y)),0.6)
 	var bed: Dictionary = flow.last_bed
+	_tend_water(point,bed)
 	ball_settled.emit({"kind":"spring","volume":snappedf(float(can.poured),0.01),"fish":0,"center":point,"pool":bed.get("pool",point)})
 	if not bed.is_empty(): _wear_spring_bed(bed)
 
