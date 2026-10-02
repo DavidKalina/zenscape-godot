@@ -2,6 +2,7 @@ extends RefCounted
 const Desert = preload("res://scripts/desert_landscape.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const Stands = preload("res://scripts/tree_stands.gd")
+const MeadowTypes = preload("res://scripts/meadow_types.gd")
 ## Generated worlds draw emergence's species pools, but a redwood world stays
 ## led by redwoods, which carry its canopy mist (redwood_biome_mist.gd), and a
 ## desert's few trees by Joshua trees, its silhouette; spruce, broadleaf and
@@ -31,6 +32,9 @@ var stand_salt := 0
 var _stand_field: RefCounted
 var _pools: Dictionary = Stands.TREE_POOLS.merged(TREE_POOLS,true)
 var _drift: FastNoiseLite
+## The recipe's meadow type (scripts/meadow_types.gd), or null: its meadow
+## ground is dressed by the type, not by the cover cycle below.
+var meadow: RefCounted
 func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null) -> void:
 	data = terrain
 	data.reset_flat()
@@ -41,6 +45,8 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	_drift = FastNoiseLite.new()
 	_drift.seed = int(genome.plant_seed)+53
 	_drift.frequency = 0.3
+	meadow = null
+	if not MeadowTypes.of(settings).is_empty(): meadow = MeadowTypes.new(MeadowTypes.of(settings),int(genome.plant_seed))
 	data.grass.fill(preload("res://scripts/native_formation_shape.gd").BIOMES[genome.habitat].grass)
 	data.heights = data._recipe_heights.duplicate()
 	data.ponds.assign(data._recipe.inland.ponds.duplicate(true))
@@ -140,6 +146,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		if data.ground_height(p) == null or _is_salt(p): continue
 		var habitat := _habitat(p)
 		if blend != null and _hash(p+Vector2(0.71,0.29))*cover_count>=COVER.get(habitat,250): continue
+		if meadow != null and habitat == "meadow": continue
 		if (_is_wet(p) and not (habitat == "wetland" and float(data.ground_height(p))>1.30)) or preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.6: continue
 		if data.ground_height(p)>5.0: continue
 		var kind: String
@@ -160,6 +167,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 			elif blend.water_distance(p)>1.6: kind = "bank_grass"
 		data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.9))
 	if int(genome.version)>=4: await _dress_places(work)
+	if meadow != null: await meadow.dress(self,work)
 	data.objects_revision += 1
 	data.discard_cache()
 
@@ -167,6 +175,7 @@ func _habitat(p: Vector2) -> String:
 	return genome.habitat if blend == null else blend.pick(p)
 
 func _tree_budget(habitat: String) -> int:
+	if habitat == "meadow" and meadow != null: return int(meadow.type.trees)
 	return {"alpine":int(genome.tree_count),"woodland":int(genome.tree_count)+int(genome.broadleaf_count),"meadow":0 if genome.composition == "meadow" else 15,"wetland":0,"arid":12,"redwood":70}[habitat]
 
 ## A stable 0..1 value per position, so thinning a blend consumes no draws.
@@ -238,7 +247,21 @@ func _dress_places(work: RefCounted) -> void:
 			if preload("res://scripts/native_landscape_presets.gd")._slope(data,p)>0.65: continue
 			var choices: Array = palettes[habitat]
 			var kind: String = choices[(planted+int(place.kind))%choices.size()] if variety < 1 else _place_kind(choices,place_index,attempt)
-			if data.place(kind,p,rng.randf()*TAU,rng.randf_range(0.5,0.85))>=0: planted += 1
+			# Angle, then size: the planting stream's order as it always was.
+			var angle := rng.randf()*TAU
+			var size := rng.randf_range(0.5,0.85)
+			var tint := ""
+			var pose := {}
+			if meadow != null and habitat == "meadow":
+				var key := [salt,42,place_index,attempt]
+				var typed: Array = meadow.clearing_kind(p,Variety.unit(key),key,inverse_lerp(0.5,0.85,size))
+				kind = typed[0]
+				if typed.size() > 1:
+					size = typed[1]
+					tint = typed[2]
+					pose = typed[3]
+					angle = typed[4]
+			if data.place(kind,p,angle,size,pose,tint)>=0: planted += 1
 			if planted>=28: break
 
 ## Seeded low cover. Rates and flower mixes lean per world, and a position

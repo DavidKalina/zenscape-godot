@@ -9,8 +9,12 @@ extends RefCounted
 ## - isle: the inland marsh (wetland), under low cloud, mist and grey water.
 ## - hollow: the redwood grove formation, under the Hollow palette in deep
 ##   shade, thick mist and damp ground.
+## - the meadows (wildflowers, sunflowers, dandelions, cosmos, alpine_meadow):
+##   a generated inland world of the meadow type (scripts/meadow_types.gd),
+##   its land, neighbours and light drawn from the seed and the type.
 const Genesis = preload("res://scripts/genesis_canvas.gd")
-const IDS := ["plain","canyon","isle","hollow"]
+const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const IDS := ["plain","canyon","isle","hollow","wildflowers","sunflowers","dandelions","cosmos","alpine_meadow"]
 const ISLE := {"phase":0.37,"weather":"mist","clouds":0.66,"mist":0.58,"haze":0.24,"summit_mist":0.45,"rays":0.2,"wind":0.3,
 	"rainbow":0.0,"wet":0.35,"humidity":0.85,"sun_energy":0.82,"ambient_energy":1.45,"exposure":1.06,
 	"colors":{"sky":"98a5ab","horizon":"a9b1b1","glow":"d8d6cb","sun":"e8e2d2","ambient":"aebbc1","water":"8b9da1","grass":"7c9a80","foliage":"5d7e6e"}}
@@ -35,6 +39,13 @@ static func form(scene: Node3D, land: String, seed_value: int, live := true) -> 
 		"hollow":
 			await editor.form_landscape("redwood_grove","redwood",live,1+seed_value%999,"connected",false)
 			_mood(scene,"enchanted_forest",HOLLOW,{"fog_density":0.5,"fog_height":3.0,"peak_density":0.12})
+		_ when not MeadowTypes.type_of_land(land).is_empty():
+			var type_id := MeadowTypes.type_of_land(land)
+			await editor.form_inland(MeadowTypes.recipe(type_id,seed_value),live,false)
+			var mood: Dictionary = MeadowTypes.TYPES[type_id].mood.duplicate(true)
+			var preset: String = mood.preset
+			mood.erase("preset")
+			_mood(scene,preset,mood,MeadowTypes.TYPES[type_id].visuals)
 		_:
 			var world := Genesis.world(seed_value)
 			await Genesis.form(editor,world,false)

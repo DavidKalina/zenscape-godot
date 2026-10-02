@@ -10,7 +10,16 @@ const LANDS := [
 	{"id":"canyon","name":"Red canyon","description":"Banded stone and slow cactus."},
 	{"id":"isle","name":"Misty isle","description":"Low cloud and soft grey water."},
 	{"id":"hollow","name":"Moss hollow","description":"Deep shade and damp ground."},
+	# Meadows (scripts/meadow_types.gd `land`): the New world screen gathers
+	# lands of a `group` into one row and picks among them by `short` name.
+	{"id":"wildflowers","name":"Wildflower meadow","short":"Wildflower","group":"meadow","description":"Daisy, buttercup and poppy in drifts over soft rolling ground."},
+	{"id":"sunflowers","name":"Sunflower field","short":"Sunflower","group":"meadow","description":"Tall sunflowers in loose rows on golden grass."},
+	{"id":"dandelions","name":"Dandelion meadow","short":"Dandelion","group":"meadow","description":"Low lush green, yellow dandelions and white seed clocks."},
+	{"id":"cosmos","name":"Cosmos field","short":"Cosmos","group":"meadow","description":"Pink, magenta and white cosmos in great autumn sweeps."},
+	{"id":"alpine_meadow","name":"Alpine meadow","short":"Alpine","group":"meadow","description":"Short grass, small flowers and stones below the snow."},
 ]
+## What a `group` of lands is called as one row on the New world screen.
+const GROUPS := {"meadow":"Meadow"}
 const SEED_WORDS_A := ["basalt","cedar","ember","fern","flint","heather","juniper","lichen","marl","moss","ochre","pumice","quartz","rowan","sage","shale","slate","sorrel","tamarack","willow"]
 const SEED_WORDS_B := ["heron","wren","otter","finch","hare","lark","marten","newt","owl","plover","quail","robin","stoat","teal","vole","crane","kestrel","linnet","pika","swift"]
 const MONTHS := ["January","February","March","April","May","June","July","August","September","October","November","December"]

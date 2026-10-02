@@ -24,6 +24,7 @@ const WaterBrush = preload("res://scripts/water_brush.gd")
 const Guidance = preload("res://scripts/quiet_guidance.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const Stands = preload("res://scripts/tree_stands.gd")
+const MeadowTypes = preload("res://scripts/meadow_types.gd")
 
 ## An emerged tree was placed at plate point `p`; it grows in from `born` on
 ## `time` over TREE_RISE. Stroke feedback sends a little gust to settle it.
@@ -210,6 +211,12 @@ var _lobes: FastNoiseLite
 var _lobes_salt := 0
 ## World key for every hash. Two worlds with the same strokes differ by it.
 var salt := 0
+## The world's meadow type (scripts/meadow_types.gd), built when first asked
+## for; null in worlds without one, whose meadows grow as they always did.
+var _meadow_type: RefCounted
+## The flower record (MeadowTypes `flower`: asset, size, tint, pose, angle)
+## the meadow type gave the kind `_shrub_kind` just picked; empty for none.
+var _flower_look: Array = []
 var _fixed_salt := false
 var enabled := true
 var _blend: RefCounted
@@ -630,6 +637,7 @@ func _arrive(plant: Dictionary, born: float) -> bool:
 	return arrived
 
 func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
+	_flower_look = []
 	var h: Variant = data.ground_height(p)
 	if h == null or _wet(p):
 		return _refuse("water")
@@ -694,7 +702,7 @@ func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 		if guide != null and _near(p,Guidance.CLUTTER_RADIUS,false) >= Guidance.CLUTTER_MAX \
 				and Variety.unit(key+[21]) < Guidance.CLUTTER_DROP*float(guide.gain.clutter):
 			return _refuse("clutter")
-		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]))
+		kind = _shrub_kind(habitat,p,Variety.unit(key+[5]),key)
 	if plant.layer == "tree" and _shore(p):
 		return _refuse("water")
 	var sowing: bool = plant.get("sown",false) or plant.get("pollen",false)
@@ -714,7 +722,16 @@ func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 		elif leaned < draw-0.001: guided_sizes.down += 1
 		draw = leaned
 	var size := lerpf(span.x,span.y,draw)*float(KIND_SIZE.get(kind,1.0))
-	var id := data.place(kind,p,Variety.unit(key+[7])*TAU,size,{},_tree_tint(kind,p,key))
+	var tint := _tree_tint(kind,p,key)
+	var angle := Variety.unit(key+[7])*TAU
+	var pose := {}
+	if _flower_look.size() > 1:
+		# A meadow type's flower stands at its own height and colour.
+		size = _flower_look[1]
+		tint = _flower_look[2]
+		pose = _flower_look[3]
+		angle = _flower_look[4]
+	var id := data.place(kind,p,angle,size,pose,tint)
 	if id < 0:
 		return false
 	data.objects.back()["source"] = "emerged"
@@ -947,10 +964,14 @@ func _stand_autumn(p: Vector2) -> float:
 func _stand(p: Vector2) -> Dictionary:
 	return Stands.stand(p,salt,_blend)
 
-func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:
+func _shrub_kind(habitat: String, p: Vector2, pick: float, key := []) -> String:
 	match habitat:
 		"wetland": return "reeds" if _blend.water_distance(p) < 1.6 else "bank_grass"
 		"meadow":
+			var typed := _meadow()
+			if typed != null:
+				_flower_look = typed.emerged(p,pick,key)
+				return _flower_look[0]
 			var flowers := ["grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower"]
 			var weights := [1.2,1.0,1.0,1.0,0.4]
 			for n in range(flowers.size()): weights[n] *= Variety.lean(salt,flowers[n])
@@ -962,6 +983,15 @@ func _shrub_kind(habitat: String, p: Vector2, pick: float) -> String:
 			return kinds[Variety.weighted(weights,pick)]
 		"arid": return "shrub" if pick < 0.8 else "grass_tuft"
 	return "grass_tuft"
+
+## The meadow type of the world's recipe, or null.
+func _meadow() -> RefCounted:
+	var type_id := MeadowTypes.of(data._recipe_settings)
+	if type_id.is_empty() or data._recipe == null or data._recipe.get("inland") == null: return null
+	var plant_seed := int(data._recipe.inland.genome.plant_seed)
+	if _meadow_type == null or _meadow_type.id != type_id or _meadow_type.plant_seed != plant_seed:
+		_meadow_type = MeadowTypes.new(type_id,plant_seed)
+	return _meadow_type
 
 func _build_crowd() -> void:
 	if _crowd_built: return
