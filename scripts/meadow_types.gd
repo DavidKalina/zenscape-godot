@@ -40,11 +40,15 @@ const FLOWER_KEYS := {
 	"buttercup":{"fallback":"button_flower","height":0.38,"head":0.14,"tints":["f5c832"],"wash":"e9bd24"},
 	"dandelion":{"fallback":"button_flower","height":0.26,"head":0.17,"tints":["f6c21e"],"wash":"e8b81c"},
 	"dandelion_clock":{"fallback":"umbel_flower","height":0.45,"head":0.18,"tints":["f4f2ea"],"wash":"dcdccb"},
-	"cosmos":{"fallback":"daisy_flower","height":0.94,"head":0.22,"tints":["ef8fc0","cf4f97","f6eef2"],"wash":"de78a8"},
+	"cosmos":{"fallback":"daisy_flower","height":0.94,"head":0.22,"tints":["e8609f","c22f78","f6eef0"],"washes":["de78a8","b9468a","e4dcdf"],"wash":"de78a8","tint_real":true},
 	"sunflower":{"fallback":"daisy_flower","height":1.83,"head":0.36,"tints":["f4b61e"],"wash":"c99a2a"},
 	"poppy":{"fallback":"button_flower","height":0.63,"head":0.16,"tints":["e0442f"],"wash":"d8452c"},
-	"lupine":{"fallback":"spike_flower","height":0.85,"head":0.12,"tints":["8f7ad6"],"wash":"8e7bd0"},
+	"lupine":{"fallback":"spike_flower","height":0.85,"head":0.12,"tints":["6a5ccc","9a5cc4"],"washes":["8e7bd0","9c78c6"],"wash":"8e7bd0","tint_real":true},
 }
+## With the kit in the catalog a `tint_real` kind's `tints` are the kit's own
+## petal variants (MeadowFlowerMesh SPEC `variants`), so GardenView draws a
+## drift in that one variant, mesh shading intact (MeadowFlowerMesh
+## `instance_color`); `washes`, when present, is the ground under each.
 ## The stand-ins' own form at size 1, measured from the reference geometry
 ## (NativeAssetCatalog parts with their pivots): [top of the head, head width].
 const FALLBACK_FORMS := {"daisy_flower":[0.258,0.17],"button_flower":[0.242,0.088],"umbel_flower":[0.232,0.11],"spike_flower":[0.42,0.051]}
@@ -224,6 +228,14 @@ static func tint(kind: String, variant: float) -> String:
 	var tints: Array = entry.tints
 	return NativeObjectPose.encode_tint(Color(tints[mini(int(variant*tints.size()),tints.size()-1)]).srgb_to_linear())
 
+## The ground colour (sRGB) under a drift of `kind` in colour `variant`:
+## the wash of the same colour `tint` picks for its heads.
+static func wash_of(kind: String, variant: float) -> String:
+	var entry: Dictionary = FLOWER_KEYS[kind]
+	var washes: Array = entry.get("washes",[])
+	if washes.is_empty(): return str(entry.wash)
+	return str(washes[mini(int(variant*washes.size()),washes.size()-1)])
+
 ## A flower record's size and pose for `kind` at `size` (1 stands at the
 ## kind's own height) turned `angle`: [record size, pose]. The kit's mesh
 ## takes the size as it is; a stand-in is stretched to the kind's height and
@@ -321,7 +333,7 @@ func ground(p: Vector2) -> Array:
 	var colour := green.lerp(Color(grass.straw),dry*0.85)
 	var d := presence(p)
 	var kind := kind_at(p,1.0)
-	var wash := Color(FLOWER_KEYS[kind].wash) if FLOWER_KEYS.has(kind) else colour
+	var wash := Color(wash_of(kind,variant(p))) if FLOWER_KEYS.has(kind) else colour
 	# Under a drift's core the ground itself carries the flower's colour, so
 	# the carpet has no green between its heads from the diorama camera; the
 	# wash eases off toward the drift's edge, where the flowers thin out.

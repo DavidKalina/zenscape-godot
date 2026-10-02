@@ -800,6 +800,8 @@ func update_object_preview(record: Dictionary) -> void:
 	_instance_generation += 1
 	var basis := NativeObjectPose.decode_basis(record.pose) if record.has("pose") else Basis(Vector3.UP,record.angle).scaled(Vector3.ONE*record.scale)
 	var tint: Variant = NativeObjectPose.decode_tint(record.tint) if record.has("tint") else null
+	if tint != null and preload("res://scripts/meadow_flower_mesh.gd").SPEC.has(record.asset):
+		tint = preload("res://scripts/meadow_flower_mesh.gd").instance_color(record.asset,tint)
 	for batch in _batches:
 		var key: String = batch.get_meta("part")
 		var sources: Array = _sources.get(key,[])

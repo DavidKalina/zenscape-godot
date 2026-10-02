@@ -221,12 +221,17 @@ void vertex() {
 	if (flower_heads) {
 		// Flowers carry their glow share in grass_along (no spare varyings).
 		grass_along = zs_flower_glow_share(UV2.x);
+		// A placed colour (MeadowFlowerMesh.instance_color): GardenView sends a
+		// white instance colour whose alpha names the variant, (k + 0.5) / 8,
+		// so a meadow's drift keeps one colour; full alpha picks per plant.
+		int flower_chosen = COLOR.a < 0.5 ? clamp(int(COLOR.a * 8.0), 0, 3) : -1;
+		COLOR.a = 1.0;
 		if (UV2.x < 1.5) {
 			vec3 flower_living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
 			COLOR.rgb = flower_living * flower_stem_shade * UV.x;
 		} else {
 			if (UV2.x > 2.5 && UV2.x < 3.5 && flower_variant_count > 0) {
-				int flower_pick = min(int(fract(sin(dot(MODEL_MATRIX[3].xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
+				int flower_pick = flower_chosen >= 0 ? min(flower_chosen, flower_variant_count - 1) : min(int(fract(sin(dot(MODEL_MATRIX[3].xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
 				vec3 flower_variant = flower_variants[0];
 				if (flower_pick == 1) flower_variant = flower_variants[1];
 				else if (flower_pick == 2) flower_variant = flower_variants[2];

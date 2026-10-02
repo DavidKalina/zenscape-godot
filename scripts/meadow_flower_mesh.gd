@@ -79,6 +79,20 @@ static func drift_kind(x: int, z: int) -> String:
 	var cell := Vector2i(floori(float(x) / DRIFT_CELLS), floori(float(z) / DRIFT_CELLS))
 	return DRIFT[posmod(hash(cell), DRIFT.size())]
 
+## The instance colour GardenView draws a placed `kind` with, from the
+## record's linear `tint`. A tint that is one of the kind's own variants
+## (meadow drifts, scripts/meadow_types.gd) picks that variant for every
+## petal: white, its alpha (k + 0.5) / 8 naming variant k, which the
+## material reads; discs and stems keep their own colours. Any other tint
+## multiplies petals and discs as before.
+static func instance_color(kind: String, tint: Color) -> Color:
+	var variants: Array = SPEC[kind].variants if SPEC.has(kind) else []
+	for k in range(mini(variants.size(), 4)):
+		var c := Color(variants[k]).srgb_to_linear()
+		if Vector3(c.r - tint.r, c.g - tint.g, c.b - tint.b).length() < 0.01:
+			return Color(1.0, 1.0, 1.0, (k + 0.5) / 8.0)
+	return tint
+
 static func is_node(node_name: String) -> bool:
 	return node_name.begins_with(NODE_PREFIX) and node_name.trim_prefix(NODE_PREFIX) in KINDS
 

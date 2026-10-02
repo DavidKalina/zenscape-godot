@@ -102,7 +102,7 @@ func checks() -> void:
 			check(Vector3(grounds[a].r,grounds[a].g,grounds[a].b).distance_to(Vector3(grounds[b].r,grounds[b].g,grounds[b].b)) > 0.004,"%s and %s paint different ground" % [a,b])
 	check(looks.wildflower.size() >= 5,"The wildflower meadow mixes five kinds or more (%d)" % looks.wildflower.size())
 	check(looks.cosmos.size() >= 3,"The cosmos field sweeps in three colours or more (%d)" % looks.cosmos.size())
-	check(looks.dandelion.has("umbel_flower f4f2ea") or looks.dandelion.has("dandelion_clock"),"The dandelion meadow has seed clocks")
+	check(looks.dandelion.has("umbel_flower f4f2ea") or looks.dandelion.keys().any(func(look: String) -> bool: return look.begins_with("dandelion_clock ")),"The dandelion meadow has seed clocks")
 	for type_id: String in MeadowTypes.ORDER:
 		if type_id != "sunflower": check(heights.sunflower > 1.5*heights[type_id],"Sunflowers stand tallest (%.2f m against %s %.2f m)" % [heights.sunflower,type_id,heights[type_id]])
 	check(heights.alpine < heights.wildflower,"Alpine flowers stand low (%.2f m against %.2f m)" % [heights.alpine,heights.wildflower])
@@ -162,7 +162,8 @@ static func look_of(item: Dictionary) -> String:
 	return "%s %s" % [item.asset,NativeObjectPose.decode_tint(item.tint).linear_to_srgb().to_html(false) if item.has("tint") else ""]
 
 static func height_of(item: Dictionary) -> float:
-	if not item.has("pose"): return float(item.scale)*0.25
+	# The kit's own meshes stand at their kind's height at size 1.
+	if not item.has("pose"): return float(item.scale)*(float(MeadowTypes.FLOWER_KEYS[item.asset].height) if MeadowTypes.FLOWER_KEYS.has(item.asset) else 0.25)
 	var fallback: Array = MeadowTypes.FALLBACK_FORMS.get(item.asset,[0.25,0.1])
 	return NativeObjectPose.decode_basis(item.pose).y.length()*float(fallback[0])
 

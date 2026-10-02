@@ -47,6 +47,8 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 		if remap and Flowers.REMAP.has(drawn):
 			drawn = Flowers.REMAP[drawn]
 			tint = null
+		elif tint != null and Flowers.SPEC.has(drawn):
+			tint = Flowers.instance_color(drawn,tint)
 		if catalog_parts.has(drawn):
 			var part_keys: Array = catalog_parts[drawn]
 			var shaping := Transform3D.IDENTITY

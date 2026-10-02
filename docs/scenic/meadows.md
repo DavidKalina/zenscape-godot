@@ -100,3 +100,7 @@ Godot --windowed --path . --resolution 1280x720 -s res://tools/still_meadows.gd 
 - The stills use the fallback forms. The kit's meshes are not seen here.
 - Wind on the flowers is untouched (another agent owns wind).
 - Frame cost on the GPU is not measured: the triangle figures above are estimates from the kit's counts.
+
+## With the flower kit
+
+The kit (docs/scenic/flowers.md) is in `NativeTerrainData.ASSETS` and `NativeAssetCatalog.PARTS`, so `asset()` places its own keys and `form()` takes their size as it is. Kit flowers place untinted, except `tint_real` kinds (cosmos, lupine): their `tints` are the kit's own petal variants, one per drift, and GardenView draws such a tint as that variant (`MeadowFlowerMesh.instance_color`: a white instance colour whose alpha names the variant), so discs and stems keep their colours. `washes` gives the ground under each colour's drift (`wash_of`).
