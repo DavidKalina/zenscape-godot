@@ -145,6 +145,16 @@ func run() -> void:
 	# In its eyes: no outline, hover or hand.
 	await hover_on(over)
 	await frames(30)
+	check("in its eyes the view widens",absf(eye.camera.fov-eye.FOV) < 2.0,"%.1f deg" % eye.camera.fov)
+	# Mouse down looks down: the polar angle (0 straight down) shrinks.
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var polar: float = eye._polar
+		var motion := InputEventMouseMotion.new()
+		motion.relative = Vector2(0.0,40.0)
+		eye.handle(motion)
+		check("mouse down looks down",eye._polar < polar,[polar,eye._polar])
+	else:
+		print("     mouse not captured headless; look direction unverified")
 	check("in its eyes the tree outline is off",reach.outline == null or reach.outline.tree_id <= 0,reach.outline.tree_id if reach.outline != null else "")
 	check("in its eyes the hover is off",reach.hover_zone.is_empty() and reach.reaching.is_empty(),[reach.hover_zone,reach.reaching])
 	check("in its eyes the hand is gone",hand == null or (not hand.visible and hand.opacity == 0.0),[hand.visible,hand.opacity] if hand != null else "")
@@ -232,6 +242,7 @@ func run() -> void:
 	eye.leave()
 	await frames(60)
 	check("V steps out",not eye.active)
+	check("stepped out, the view narrows back",absf(eye.camera.fov-eye._fov_before) < 0.01,"%.1f deg (was %.1f)" % [eye.camera.fov,eye._fov_before])
 	await hover_on(over)
 	await frames(30)
 	var outlined_after: int = reach.outline.tree_id if reach.outline != null else -1

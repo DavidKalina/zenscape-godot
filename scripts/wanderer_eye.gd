@@ -25,6 +25,11 @@ const EASE_PACE := 0.12
 const EASE_HEIGHT := 0.08
 ## Radians of look per pixel of captured mouse movement.
 const LOOK := 0.0025
+## The eye's vertical field of view, in degrees: wider than the orbit's 45 so
+## the land round the figure fills the view as it would for someone standing
+## there. It eases in on stepping in and back on stepping out.
+const FOV := 70.0
+const EASE_FOV := 0.2
 ## The polar range of the look: near straight down to well above the horizon.
 const POLAR := Vector2(0.25,2.8)
 ## The walk stays on the plate.
@@ -82,6 +87,8 @@ var _polar := PI*0.5
 var _pace := Vector2.ZERO
 var _before := {}
 var _returning := 0.0
+## The orbit camera's field of view before stepping in.
+var _fov_before := 45.0
 var _hint_time := 0.0
 var _layer: CanvasLayer
 var _hint: Label
@@ -380,6 +387,7 @@ func summon(pointer: Vector2) -> void:
 func enter() -> void:
 	if not can_enter() or not has_figure(): return
 	_before = {"looking":scene.looking,"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance,"auto":scene._auto_orbit}
+	if _returning <= 0.0: _fov_before = camera.fov
 	if not scene.looking:
 		scene._set_looking_state(true)
 		editor.set_active(false)
@@ -471,6 +479,7 @@ func _advance_eye(delta: float) -> void:
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
+	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The figure keeps the eye's heading and place for when you step out.
 	_sync_figure()
 	_hint_time += delta
@@ -492,10 +501,12 @@ func _disturb(strength: float) -> void:
 
 func _advance_return(delta: float) -> void:
 	_returning = maxf(0.0,_returning-delta)
+	var k := _ease(0.18,delta) if _returning > 0.0 else 1.0
+	camera.fov = lerpf(camera.fov,_fov_before,k)
 	if scene._orbiting or scene._panning:
+		camera.fov = _fov_before
 		_returning = 0.0
 		return
-	var k := _ease(0.18,delta) if _returning > 0.0 else 1.0
 	scene.target = scene.target.lerp(_before.target,k)
 	scene.yaw = lerp_angle(scene.yaw,_before.yaw,k)
 	scene.polar = lerpf(scene.polar,_before.polar,k)
@@ -518,7 +529,7 @@ func handle(event: InputEvent) -> bool:
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			_yaw -= event.relative.x*LOOK
-			_polar = clampf(_polar+event.relative.y*LOOK,POLAR.x,POLAR.y)
+			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
 		return true
 	if event is InputEventMouseButton:
 		# A click takes the mouse back if the window let it go.
