@@ -11,8 +11,13 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##   pointer, as the pinch's summit does, but it never draws up into a horn.
 ## - **Tap:** a pat. The blade laid flat: the ground under it eases toward its
 ##   own mean, flattening bumps without raising or sinking the patch.
+## - **Plane** (its own mode on the fan, a drag): the blade drawn level. The
+##   ground under the stroke is planed to the height it stood at under the
+##   press, and its surface is laid afresh as one of SURFACES (grass, earth,
+##   rock or sand), picked on the swatch strip under the fan. So rock, or
+##   any paint, is never for keeping: plane it and it is grass again.
 ## - **Shift** at the moment the verb is decided: a narrower blade
-##   (NARROW of the width) for all three.
+##   (NARROW of the width) for all four.
 ##
 ## Each is one undo step. The Paddle is the landscape tool and the Modeller
 ## the detail one, so where the Modeller's groove is a crisp bare-earth line,
@@ -63,6 +68,24 @@ const PAT_SECONDS := 0.25
 const PAT_STRENGTH := 0.5
 ## Shift: the narrower blade, a share of every width above.
 const NARROW := 0.5
+## The plane: radius in metres; each dab moves a point PLANE_STEP of the way
+## to the press's height, fully inside PLANE_CORE of the radius and easing to
+## nothing at the rim, so the swath is flat and its edge a smooth shoulder.
+## Dabs fall the clay's DAB_SPACING (0.3 m) apart, so a point the core passes
+## over takes several of them and ends within a few centimetres of the level.
+## The surface takes the same falloff: the core is laid outright, the
+## shoulder blends into what was there.
+const PLANE_RADIUS := 2.5
+const PLANE_STEP := 0.5
+const PLANE_CORE := 0.5
+## The Plane's surfaces, offered on the swatch strip (no picker: these are
+## its only choices), each shown by its swatch (sRGB: the palette's middle
+## grass, the strata's topsoil, the palette's first rock, its shore sand)
+## and laid as the world lays it (Brush `surface_colour`). Grass is the
+## first, so a Plane taken fresh lays grass.
+const SURFACES := ["grass","earth","rock","sand"]
+const SURFACE_SWATCHES := [Color("7fb069"),Color("7a624b"),Color("8d8577"),Color("c9b57e")]
+const Brush = preload("res://scripts/clay_tools/brush.gd")
 ## The ground mark (`mark_size`): the pat's reach across the view, and
 ## MARK_DEPTH of it toward the camera. The pat is round, but the design draws
 ## the paddle's mark as an ellipse twice as wide as it is deep (its 180×54 px
@@ -84,19 +107,46 @@ var _narrow := false
 var _swept := PackedByteArray()
 var _shown_lift := INF
 var _pat_t := -1.0
+## The plane's level (m), and the stroke's starting cover, which each dab
+## lays over afresh: the tint, grass, meadow and blades as they stood at the
+## press, and each cell's surface share so far (cell -> 0..1, only rising).
+var _level := 0.0
+var _tint_from := PackedFloat32Array()
+var _grass_from := PackedFloat32Array()
+var _meadow_from := PackedFloat32Array()
+var _blades_from := PackedFloat32Array()
+var _laid := {}
 
-## The fan's modes (clay_tool `modes`): the swell, the sweep and the pat.
-const MODES := [{"id":"swell","kind":"hold"},{"id":"sweep","kind":"drag"},{"id":"pat","kind":"tap"}]
+## The fan's modes (clay_tool `modes`): the swell, the sweep, the pat and the
+## plane.
+const MODES := [{"id":"swell","kind":"hold"},{"id":"sweep","kind":"drag"},{"id":"pat","kind":"tap"},{"id":"plane","kind":"drag"}]
 func modes() -> Array: return MODES
 func id() -> String: return "paddle"
 func prop_tilt() -> float: return TILT
-func dirt_share(verb: String) -> float: return SWEEP_DIRT if verb.ends_with("sweep") else 1.0
-func stroke_radius() -> float: return _width()*SWEEP_HALF_WIDTH
+func swatches() -> Array: return SURFACE_SWATCHES if mode == "plane" else []
+func picks() -> bool: return false
+## The plane lays its own surface over the whole swath, so the clay's dirt
+## (which would write the cut's strata over it, and bare the cells at
+## release) stays out of it.
+func dirt_share(verb: String) -> float:
+	if verb.ends_with("plane"): return 0.0
+	return SWEEP_DIRT if verb.ends_with("sweep") else 1.0
+func stroke_radius() -> float: return _width()*(PLANE_RADIUS if mode == "plane" else SWEEP_HALF_WIDTH)
 func mark_size() -> Vector2: return Vector2(PAT_RADIUS,PAT_RADIUS*MARK_DEPTH)
 func gesture(verb: String) -> String: return "press" if verb.ends_with("pat") else "grip"
 
 ## The blade's width share: the size pips, and Shift's narrower blade.
 func _width() -> float: return clay.size_scale*(NARROW if _narrow else 1.0)
+
+## The surface the Plane lays: the swatch in hand's (SURFACES), grass if the
+## colour in hand is none of them.
+func surface() -> String:
+	for k in range(SURFACE_SWATCHES.size()):
+		if (SURFACE_SWATCHES[k] as Color).is_equal_approx(colour): return SURFACES[k]
+	return SURFACES[0]
+
+func _init() -> void:
+	colour = SURFACE_SWATCHES[0]
 
 func reset() -> void:
 	lift = 0.0
@@ -106,11 +156,13 @@ func reset() -> void:
 
 func drag_begin(fine: bool) -> String:
 	_narrow = fine
+	if mode == "plane": return _plane_begin(fine)
 	_swept = PackedByteArray()
 	_swept.resize(clay.base.size())
 	return "narrow_sweep" if fine else "sweep"
 
 func dab(heights: PackedFloat32Array, q: Vector2) -> float:
+	if str(clay.verb).ends_with("plane"): return _plane_dab(heights,q)
 	var half := SWEEP_HALF_WIDTH*_width()
 	var reach := half*RIDGE_OUT
 	var base: PackedFloat32Array = clay.base
@@ -137,6 +189,68 @@ func dab(heights: PackedFloat32Array, q: Vector2) -> float:
 func drag_end() -> bool:
 	clay.shake_trees(clay.center,0.0,clay.touched())
 	return false
+
+# --- Drag: the plane ---------------------------------------------------------------
+
+## The level is the ground under the press; the cover is taken as it stands.
+func _plane_begin(fine: bool) -> String:
+	var data: NativeTerrainData = clay.editor.data
+	_level = clay.ground_at(clay.center).y
+	_tint_from = data.tint.duplicate()
+	_grass_from = data.grass.duplicate()
+	_meadow_from = data.meadow.duplicate()
+	_blades_from = data.blades.duplicate()
+	_laid = {}
+	return "narrow_plane" if fine else "plane"
+
+## One dab of the plane: the ground round `q` toward the level, and the cover
+## cells round it laid afresh. A cell's share is the most any dab has given
+## it, written over the stroke's starting cover, so going over it again never
+## lays it twice and it comes out the same at any pace. A full share (the
+## core) replaces the cell outright (Brush `coat` at 1): the surface's colour
+## at full weight, whatever was painted there (the Brush's rock, a range's
+## rock, the clay's dirt). Grass brings the cover up to full and leaves the
+## meadow and blades as they stood, to grow; the bare surfaces take cover,
+## meadow and blades away. Every cell laid is hand-made.
+func _plane_dab(heights: PackedFloat32Array, q: Vector2) -> float:
+	var radius := PLANE_RADIUS*_width()
+	clay.gather(q,radius)
+	clay.touch(q,radius)
+	var near: PackedInt32Array = clay.near
+	var near_d: PackedFloat32Array = clay.near_d
+	for k in near.size():
+		var i := near[k]
+		var w: float = (1.0-smoothstep(PLANE_CORE,1.0,near_d[k]/radius))*clay.fade(i)
+		if w <= 0.0: continue
+		heights[i] = clampf(lerpf(heights[i],_level,PLANE_STEP*w),NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
+	var data: NativeTerrainData = clay.editor.data
+	var palette: NativeTerrainPalette = data._palette
+	var kind := surface()
+	var cover := 1.0 if kind == "grass" else 0.0
+	var side := NativeTerrainData.MEADOW_CELLS
+	var step := NativeTerrainData.MEADOW_STEP
+	var low := Vector2i(((q-Vector2.ONE*radius+Vector2.ONE*14.0)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((q+Vector2.ONE*radius+Vector2.ONE*14.0)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var tint := data.tint
+	var grass := data.grass
+	for z in range(low.y,high.y+1):
+		for x in range(low.x,high.x+1):
+			var p := data.meadow_position(x,z)+Vector2.ONE*step*0.5
+			var cell := z*side+x
+			var share := 1.0-smoothstep(PLANE_CORE*radius,radius,p.distance_to(q))
+			if share <= float(_laid.get(cell,0.0)): continue
+			_laid[cell] = share
+			var t := cell*NativeTerrainTint.STRIDE
+			for c in range(NativeTerrainTint.STRIDE): tint[t+c] = _tint_from[t+c]
+			Brush.coat(tint,cell,Brush.surface_colour(kind,palette,p),share)
+			grass[cell] = lerpf(_grass_from[cell],cover,share)
+			if kind != "grass":
+				data.meadow[cell] = _meadow_from[cell]*(1.0-share)
+				data.blades[cell] = _blades_from[cell]*(1.0-share)
+			data.provenance[cell] = NativeTerrainData.SOURCE_HAND
+	data.tint = tint
+	data.grass = grass
+	return 0.0
 
 # --- Hold: the swell -----------------------------------------------------------------
 

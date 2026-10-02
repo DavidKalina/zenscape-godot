@@ -288,7 +288,7 @@ func run() -> void:
 	# --- Other tools' modes: the fan picks the verb, no hold-then-drag ---
 	materials.select_tool("paddle")
 	await frames(30)
-	check("the paddle fans out its modes",roll.modes == ["swell","sweep","pat"] and roll.mode == "swell",[roll.modes,roll.mode])
+	check("the paddle fans out its modes",roll.modes == ["swell","sweep","pat","plane"] and roll.mode == "swell",[roll.modes,roll.mode])
 	var swell_base := data.heights.duplicate()
 	var swell_before := height(at)
 	button(spot,true)
@@ -313,6 +313,8 @@ func run() -> void:
 	if data._undo.size() > undo0:
 		editor.undo()
 		await settled()
+	await key(KEY_E)
+	check("E steps the paddle's mode on to the plane",roll.mode == "plane" and clay.tool.mode == "plane",[roll.mode,clay.tool.mode])
 	await key(KEY_E)
 	check("E steps the paddle's mode, wrapping round",roll.mode == "swell" and clay.tool.mode == "swell",[roll.mode,clay.tool.mode])
 	materials.select_tool("hand")

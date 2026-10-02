@@ -110,9 +110,11 @@ var hovered_mode := ""
 var fan := 0.0
 ## The swatch strip's colours (sRGB, empty for none), the colour in hand and
 ## the cell under the pointer (a swatch index, swatches.size() for the
-## picker, -1 for none).
+## picker, -1 for none); `picker` false when the strip has no picker's cell
+## (clay_tool `picks`).
 var swatches: Array = []
 var colour := Color.WHITE
+var picker := true
 var hovered_swatch := -1
 var quiet := false
 var pointer_override: Variant = null
@@ -187,7 +189,7 @@ func mode_at(point: Vector2) -> String:
 ## `swatches.size()` for the picker, or -1.
 func swatch_at(point: Vector2) -> int:
 	if shown < 0.5 or not _swatches_shown(): return -1
-	for k in range(swatches.size()+1):
+	for k in range(_swatch_cells()):
 		if _swatch_cell(k).has_point(point): return k
 	return -1
 
@@ -358,11 +360,13 @@ func set_modes(ids: Array, current: String) -> void:
 func _modes_shown() -> bool:
 	return not modes.is_empty() and not material_held
 
-## The swatch strip's colours (sRGB; empty hides it) and the colour in hand.
-func set_swatches(colours: Array, current: Color) -> void:
+## The swatch strip's colours (sRGB; empty hides it), the colour in hand, and
+## whether the strip ends with the full picker's cell.
+func set_swatches(colours: Array, current: Color, picks := true) -> void:
 	swatches = colours.duplicate()
 	colour = current
-	if swatches.is_empty() and picker_open(): _picker_popup.hide()
+	picker = picks
+	if (swatches.is_empty() or not picker) and picker_open(): _picker_popup.hide()
 
 func _swatches_shown() -> bool:
 	return not swatches.is_empty() and _modes_shown()
@@ -371,8 +375,12 @@ func _swatches_shown() -> bool:
 func _swatch_rect() -> Rect2:
 	if not _swatches_shown(): return Rect2()
 	var tag := _tag_rect()
-	var extent := Vector2(MODE_PAD*2.0+SWATCH_CELL*(swatches.size()+1),MODE_PAD*2.0+SWATCH_CELL)*ui_scale
+	var extent := Vector2(MODE_PAD*2.0+SWATCH_CELL*_swatch_cells(),MODE_PAD*2.0+SWATCH_CELL)*ui_scale
 	return Rect2(Vector2(tag.position.x,tag.end.y+SWATCH_GAP*ui_scale).round(),extent.round())
+
+## The strip's cells: a swatch each, and the picker's when it has one.
+func _swatch_cells() -> int:
+	return swatches.size()+(1 if picker else 0)
 
 func _swatch_cell(k: int) -> Rect2:
 	var strip := _swatch_rect()
@@ -518,14 +526,14 @@ func _paint_held(item: CanvasItem, top: bool, line: float) -> void:
 		Linen.tag(item,_font,text,x,tag.end.y-TAG_PAD.w*ui_scale,ui_scale,Linen.eased(held_awake))
 
 ## The swatch strip: each swatch a disc, the one in hand ringed as a size
-## pip is; the last cell a faceted hue wheel for the full picker, ringed when
-## the colour in hand came from it.
+## pip is; the last cell, when it has one, a faceted hue wheel for the full
+## picker, ringed when the colour in hand came from it.
 func _draw_swatches(item: CanvasItem, line: float) -> void:
 	if not _swatches_shown(): return
 	var out := Linen.eased(fan)
 	var picked := _swatch_index()
 	var r := SWATCH_PIP*0.5*ui_scale
-	for k in range(swatches.size(),-1,-1):
+	for k in range(_swatch_cells()-1,-1,-1):
 		var cell := _swatch_cell(k)
 		var centre := cell.get_center()
 		var alpha := 1.0 if k == 0 else out

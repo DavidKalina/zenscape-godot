@@ -201,6 +201,9 @@ static func _build() -> void:
 	_add("paddle_swell","Swell","Paddle","#c49a5e",["M2 20.6 Q12 6.4 22 20.6 V22.5 H2Z"],["M12 1.6 V6.8","M9.8 3.8 L12 1.6 L14.2 3.8"],33,1.0,1.5)
 	_add("paddle_sweep","Sweep","Paddle","#c49a5e",["M2 14.6 Q3.8 14.6 5.2 12.2 Q6.8 10.4 8.4 13 Q12 19.6 15.6 13 Q17.2 10.4 18.8 12.2 Q20.2 14.6 22 14.6 V22.5 H2Z"],[],34,1.0,1.5)
 	_add("paddle_pat","Pat","Paddle","#c49a5e",["M2 15.4 H22 V22.5 H2Z","M4.6 9 H19.4 V11.6 H4.6Z"],["M12 2.4 V9"],35,1.0,1.5)
+	# The Plane: the blade stood upright, drawn toward a rough rise; behind it
+	# the ground lies planed flat.
+	_add("paddle_plane","Plane","Paddle","#c49a5e",["M2 15.4 H13.4 V11.2 L16.2 8.6 L18.6 10.6 L22 9.4 V22.5 H2Z","M11.4 5.6 H13.4 V15.4 H11.4Z"],["M3 10.6 H9","M7 8.6 L9 10.6 L7 12.6"],56,1.0,1.5)
 	_add("chisel_mesa","Mesa","Chisel","#6f8aa6",["M2 19.4 H6.2 L7.2 8.4 H16.8 L17.8 19.4 H22 V22.5 H2Z"],[],36,1.0,1.5)
 	_add("chisel_shelf","Shelf","Chisel","#6f8aa6",["M2 8.4 H11.4 L12.2 15.4 H22 V22.5 H2Z"],[],37,1.0,1.5)
 	_add("chisel_notch","Notch","Chisel","#6f8aa6",["M2 12.4 H8.6 V17.4 H15.4 V12.4 H22 V22.5 H2Z"],[],38,1.0,1.5)

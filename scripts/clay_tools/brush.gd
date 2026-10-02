@@ -88,7 +88,6 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, work: float) -> float:
 	var high := Vector2i(((q+Vector2.ONE*radius+Vector2.ONE*14.0)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var tint := data.tint
 	var grass := data.grass
-	var earth := Color(preload("res://scripts/strata.gd").COLORS.topsoil).srgb_to_linear()
 	var verb: String = clay.verb
 	var own := colour.srgb_to_linear()
 	for z in range(low.y,high.y+1):
@@ -104,13 +103,7 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, work: float) -> float:
 			if verb == "wipe":
 				_wipe(tint,cell,added)
 				continue
-			var color: Color
-			match verb:
-				"grass": color = palette.grass[_grass_variant(palette,p)]
-				"rock": color = palette.rock[0 if palette.patch(p) > 0.5 else 1]
-				"colour": color = own
-				_: color = earth
-			_coat(tint,cell,color,added)
+			coat(tint,cell,own if verb == "colour" else surface_colour(verb,palette,p),added)
 			if verb != "colour": grass[cell] = lerpf(grass[cell],1.0 if verb == "grass" else 0.0,added)
 	data.tint = tint
 	data.grass = grass
@@ -128,6 +121,18 @@ func paint_end(_tapped: bool) -> void:
 	_cells = {}
 	_last = null
 
+## The tint (linear) a surface `kind` lays at plate point `p`, without the
+## shimmer (the mesh adds each face's own): "grass" the world's own grass,
+## patched as its noise patches it; "rock" its cliff rock, the palette's two
+## patched the same way; "sand" its shore sand; anything else bare earth, the
+## strata's topsoil. The Brush's modes and the Paddle's Plane both lay these.
+static func surface_colour(kind: String, palette: NativeTerrainPalette, p: Vector2) -> Color:
+	match kind:
+		"grass": return palette.grass[_grass_variant(palette,p)]
+		"rock": return palette.rock[0 if palette.patch(p) > 0.5 else 1]
+		"sand": return palette.sand
+	return Color(preload("res://scripts/strata.gd").COLORS.topsoil).srgb_to_linear()
+
 ## The palette's grass patching (NativeTerrainPalette.grass_at_coordinates),
 ## without the shimmer: the mesh adds each face's own.
 static func _grass_variant(palette: NativeTerrainPalette, p: Vector2) -> int:
@@ -138,8 +143,9 @@ static func _grass_variant(palette: NativeTerrainPalette, p: Vector2) -> int:
 ## way to it (all of it on an unpainted cell) and the weight that share of
 ## the way to full, so painting over another colour turns it as quickly as
 ## painting bare ground (NativeTerrainTint.paint's over-composite barely
-## moves a full-weight cell).
-static func _coat(tint: PackedFloat32Array, cell: int, color: Color, added: float) -> void:
+## moves a full-weight cell). A coat of 1 replaces the cell outright: the
+## colour, at full weight, whatever lay there (the Paddle's Plane).
+static func coat(tint: PackedFloat32Array, cell: int, color: Color, added: float) -> void:
 	var k := cell*NativeTerrainTint.STRIDE
 	var before := tint[k+3]
 	var share := 1.0 if before <= 0.0 else added
