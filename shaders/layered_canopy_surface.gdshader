@@ -10,6 +10,7 @@ shader_type spatial;
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
+#include "res://shaders/layered_clump_motion.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 // Throwaway pond study: broad material cues, no fine normal noise.
@@ -26,6 +27,11 @@ uniform float roughness_value = 1.0;
 uniform float metalness_value = 0.0;
 uniform bool sway_enabled = false;
 uniform bool conifer_sway = false;
+// Opt-in many-pieces motion (layered_clump_motion): each lump, baked with its
+// pivot and phase in CUSTOM1, swings whole instead of the crown moving as one
+// block with a per-vertex jiggle. 0..2 scales how far the lumps swing.
+uniform bool clump_sway = false;
+uniform float clump_gain : hint_range(0.0, 2.0) = 1.0;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -96,7 +102,69 @@ void vertex() {
 	if (conifer_sway) {
 		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
 	}
-	if (sway_enabled && !conifer_sway) {
+	if (sway_enabled && !conifer_sway && clump_sway) {
+		vec3 pivot = CUSTOM1.xyz;
+		float cphase = CUSTOM1.w;
+		mat3 inv = inverse(mat3(MODEL_MATRIX));
+		float scale = length(MODEL_MATRIX[1].xyz);
+		float air_now = zs_breeze_air();
+		float t = zs_motion_time;
+		vec3 pivot_world = (MODEL_MATRIX * vec4(pivot, 1.0)).xyz;
+		float span = max(sway_shape.y - sway_shape.x, 0.05);
+		float k = clamp(max(pivot.y - sway_shape.x, 0.0) / span, 0.0, 1.5);
+		// The air at this lump: the breeze's lean there (the tip a beat behind
+		// the root, as for the wood), and the wind tool's front, which reaches
+		// each lump at its own moment so a gust rolls through the crown.
+		float bow;
+		float lean = zs_breeze_lean_at(pivot_world.xz, ZS_BREEZE_LAG * span * scale * min(k, 1.0), 0.0, bow);
+		float shiver;
+		vec2 blow = zs_blow_at(pivot_world.xz, cphase, shiver);
+		float blow_size = length(blow);
+		vec2 wd = zs_wind_direction;
+		float along = dot(pivot_world.xz, wd);
+		float across = dot(pivot_world.xz, vec2(-wd.y, wd.x));
+		// A ripple of air a couple of metres long running downwind through the crown.
+		float ripple = 0.5 + 0.5 * sin(along * 2.2 - t * (1.6 + 1.2 * air_now) + zs_noise(vec2(across * 0.7, along * 0.25)) * 5.0);
+		// Translate the lump whole: the trunk's lean read at its pivot.
+		float breeze_gust;
+		vec2 motion = zs_breeze_offset_lean(pivot, MODEL_MATRIX, sway_shape.x, sway_shape.y, zs_breeze_flex(sway_shape.z), 0.0, lean, breeze_gust);
+		float arm = max(pivot.y - sway_shape.x, 0.05) * scale;
+		vec3 shift = inv * vec3(motion.x, 0.0, motion.y);
+		shift.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7) / max(scale, 0.001);
+		shift.y -= zs_foliage_wet * smoothstep(sway_shape.x, sway_shape.y, pivot.y) * wet_droop;
+		float bend = smoothstep(sway_shape.x, sway_shape.y, pivot.y);
+		foliage_gust = clamp(breeze_gust * bend * 0.5, 0.0, 1.0);
+		vec3 air = zs_local_wind((MODEL_MATRIX * vec4(pivot, 1.0)).xyz);
+		float speed = length(air);
+		if (speed > 0.001) {
+			float response = speed / (speed + 10.0);
+			float flutter = 0.90 + 0.10 * sin(t * 12.0 + cphase);
+			shift += inv * (air / speed * response * max(sway_shape.z, sway_shape.w) * 3.0 * bend * flutter);
+			foliage_gust = max(foliage_gust, response * bend);
+		}
+		float blow_shiver;
+		shift += zs_blow_bend(pivot, MODEL_MATRIX, sway_shape.x, sway_shape.y, blow_shiver);
+		shift += zs_bough_sway(pivot, MODEL_MATRIX, air_now);
+		foliage_gust = max(foliage_gust, max(blow_shiver, shiver) * bend);
+		// Swing the lump about its pivot: leaning with the air, lagging it
+		// and settling, each lump out of step with its neighbours.
+		vec2 push = wd * (lean * 1.4 + 0.1 * air_now * ripple) + blow * 1.1;
+		float push_size = length(push);
+		vec2 push_dir = push_size > 0.0001 ? push / push_size : wd;
+		vec3 push_local = inv * vec3(push_dir.x, 0.0, push_dir.y);
+		push_local = normalize(vec3(push_local.x, 0.0, push_local.z) + vec3(0.00001, 0.0, 0.0));
+		vec3 nod_axis = normalize(cross(vec3(0.0, 1.0, 0.0), push_local));
+		float quick = sin(t * (1.3 + 0.9 * fract(cphase * 0.37)) + cphase * 7.0);
+		float nod = clump_gain * (0.05 * air_now * (0.4 + ripple) + 0.30 * push_size
+			+ (0.04 * air_now * (0.4 + clamp(lean / 0.5, 0.0, 1.0)) + 0.10 * shiver) * quick);
+		float twist = clump_gain * ((0.05 + 0.18 * push_size) * sin(t * (0.8 + 0.5 * fract(cphase * 0.61)) + cphase * 3.1 + ripple * 2.0) * (0.5 + 0.5 * min(air_now, 1.5))
+			+ 0.08 * shiver * sin(t * 4.0 + cphase * 5.0));
+		nod = clamp(nod, -0.3, 0.45);
+		twist = clamp(twist, -0.3, 0.3);
+		VERTEX = pivot + zs_clump_rot(zs_clump_rot(VERTEX - pivot, nod_axis, nod), vec3(0.0, 1.0, 0.0), twist);
+		NORMAL = zs_clump_rot(zs_clump_rot(NORMAL, nod_axis, nod), vec3(0.0, 1.0, 0.0), twist);
+		VERTEX += shift;
+	} else if (sway_enabled && !conifer_sway) {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
 		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);

@@ -8,6 +8,7 @@ shader_type spatial;
 #include "res://shaders/reference_alpenglow.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
+#include "res://shaders/layered_clump_motion.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 // Throwaway pond study: broad material cues, no fine normal noise.
@@ -28,6 +29,8 @@ uniform bool conifer_sway = false;
 // tool (zs_blow_bend), over the crown's `blow_shape` (bend from, height).
 uniform bool blow_enabled = false;
 uniform vec2 blow_shape = vec2(0.5, 6.0);
+// Boughs sway slowly with the lumps of the crown (layered_clump_motion).
+uniform bool bough_sway = false;
 uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
@@ -85,6 +88,7 @@ void vertex() {
 		VERTEX += zs_breeze_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, 1.0, 0.0, trunk_gust, trunk_bow);
 		float blow_shiver;
 		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, blow_shiver);
+		if (bough_sway) VERTEX += zs_bough_sway(VERTEX, MODEL_MATRIX, zs_breeze_air());
 	}
 	if (sway_enabled && !conifer_sway) {
 		vec2 root = MODEL_MATRIX[3].xz;

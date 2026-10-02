@@ -15,6 +15,9 @@ func _ready() -> void:
 	name = "LayeredPondTree"
 	var leaves := SurfaceTool.new()
 	leaves.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# CUSTOM1 carries each lump's swing pivot (xyz) and phase (w) for the
+	# shader's clump_sway; CUSTOM0 stays free for terrain_growth.
+	leaves.set_custom_format(1,SurfaceTool.CUSTOM_RGBA_FLOAT)
 	# Broad, unequal tiers; lateral gaps reveal branches and break the silhouette.
 	var clusters := [
 		[Vector3(-0.15,4.9,-0.15),Vector3(1.25,0.85,1.0),0.2],
@@ -40,6 +43,8 @@ func _ready() -> void:
 	leaf_material.set_shader_parameter("roughness_value",0.9)
 	leaf_material.set_shader_parameter("foliage_transmission",0.3)
 	leaf_material.set_shader_parameter("sway_enabled",true)
+	# Each lump swings whole about its own pivot (shaders/layered_clump_motion.gdshaderinc).
+	leaf_material.set_shader_parameter("clump_sway",true)
 	leaf_material.set_shader_parameter("sway_shape",Vector4(0.5,6.0,0.20,0.07))
 	leaf_material.set_shader_parameter("sway_frequency",Vector4(0.8,1.7,0.6,0.22))
 	crown.material_override = leaf_material
@@ -66,6 +71,8 @@ func _ready() -> void:
 	# The branchwork bends with the crown under the wind tool (zs_blow_bend).
 	material.set_shader_parameter("blow_enabled",true)
 	material.set_shader_parameter("blow_shape",Vector2(0.5,6.0))
+	# Boughs sway slowly under the lumps, by the same field the lumps ride.
+	material.set_shader_parameter("bough_sway",true)
 	trunk.material_override = material
 	add_child(trunk)
 
@@ -112,6 +119,10 @@ func _cluster(tool: SurfaceTool, center: Vector3, shape: Vector3, angle: float, 
 			indices.append(points.size())
 			points.append(v)
 	var rotation := Basis(Vector3.UP,angle)
+	# The lump hangs from a point a little inside and above its middle, so it
+	# swings like a pendulum and the bough tips inside it stay buried.
+	var pivot := center + Vector3(-center.x,0.0,-center.z)*0.3 + Vector3(0.0,shape.y*0.2,0.0)
+	var pivot_phase := Color(pivot.x,pivot.y,pivot.z,angle+float(seed)*2.4)
 	for triangle in range(0,indices.size(),3):
 		var vertices: Array[Vector3] = []
 		for corner in range(3):
@@ -132,32 +143,7 @@ func _cluster(tool: SurfaceTool, center: Vector3, shape: Vector3, angle: float, 
 			var radial := rotation * (((rotation.inverse()*(vertex-center))/shape)/shape).normalized()
 			tool.set_normal(normal.lerp(radial,0.4).normalized())
 			tool.set_color(tint)
-			tool.add_vertex(vertex)
-
-	# A few opaque folded leaves interrupt the outline without alpha shimmer.
-	for spray in range(5):
-		var bearing := angle + float(spray)*TAU/5.0 + seed*0.37
-		var outward := Vector3(cos(bearing),0.10+0.14*sin(seed+spray),sin(bearing)).normalized()
-		var origin := center + outward*shape*0.92
-		for finger in range(3):
-			var direction := Basis(Vector3.UP,float(finger-1)*0.65)*outward
-			_leaf(tool,origin,direction,0.27+0.06*sin(seed+finger))
-
-func _leaf(tool: SurfaceTool, origin: Vector3, direction: Vector3, length: float) -> void:
-	var side := direction.cross(Vector3.UP).normalized()*length*0.34
-	var middle := origin+direction*length*0.52
-	var ridge := middle+Vector3.UP*length*0.16
-	var outline := [origin,middle+side,origin+direction*length,middle-side]
-	for i in range(4):
-		var a: Vector3 = outline[i]
-		var b: Vector3 = outline[(i+1)%4]
-		var normal := (b-a).cross(ridge-a).normalized()
-		var triangle := [a,b,ridge]
-		if normal.y < 0: normal = -normal
-		else: triangle.reverse()
-		for vertex in triangle:
-			tool.set_normal(normal)
-			tool.set_color(Color("709449").srgb_to_linear())
+			tool.set_custom(1,pivot_phase)
 			tool.add_vertex(vertex)
 
 func _branch(tool: SurfaceTool, base: Vector3, tip: Vector3, radius: float, end_radius: float) -> void:
