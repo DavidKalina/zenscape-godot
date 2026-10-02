@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Spectral:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#1d1c24}a{color:#e3d7bd}a:hover{color:#fffaf0}input::placeholder{color:#8f8676}</style>
+</helmet>
+<section style="padding:80px;display:flex;flex-direction:column;gap:48px;font-family:Spectral,serif;color:#e3d7bd;width:max-content;min-height:100vh;background:#1d1c24">
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="font:400 40px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em">ZenScape · Worlds</div>
+<div style="width:120px;border-top:1px solid rgba(227,215,189,.4)"></div>
+<div style="font:400 18px Spectral,serif;color:#a39a88;max-width:1100px;text-wrap:pretty">Every world keeps itself — autosaved as you work, so there is no Save button. Players only ever name, open, copy, rename or let a world go. Thumbnails, rename, duplicate, delete, biome and seed are all clickable.</div>
+</div>
+<div style="display:flex;gap:80px;align-items:flex-start">
+
+<div id="1b" style="display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;align-items:baseline;gap:16px">
+<div style="font:500 15px Newsreader,serif;letter-spacing:.12em;color:#1d1c24;background:#e3d7bd;border-radius:3px;padding:2px 9px">1b</div>
+<div style="font:400 26px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.18em">Living backdrop</div>
+<div style="font:400 16px Spectral,serif;color:#a39a88">The title screen is the library. The orbiting camera flies to whichever world you browse.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="font:400 16px Spectral,serif;color:#a39a88">Title + worlds in one · ◂ ▸ or click a tile; the backdrop becomes that world, still orbiting.</div>
+<sc-for list="{{ bFrames }}" as="fr" hint-placeholder-count="1">
+<div data-screen-label="{{ fr.label }}" style="position:relative;width:1440px;height:810px;overflow:hidden;background:#2a2228;margin-bottom:{{ fr.gap }}">
+<div style="position:absolute;inset:0;background-image:url({{ fr.L.cur.img }});background-size:{{ fr.L.cur.size }};background-position:{{ fr.L.cur.pos }};background-repeat:no-repeat;filter:{{ fr.L.cur.f }}"></div>
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,16,22,.45) 0%,rgba(20,16,22,0) 22%,rgba(20,16,22,0) 38%,rgba(16,12,16,.88) 100%)"></div>
+<div style="position:absolute;left:64px;top:46px;display:flex;flex-direction:column;gap:8px">
+<div style="font:400 32px Newsreader,serif;letter-spacing:.42em;color:#f1e8d4">ZENSCAPE</div>
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.3em;color:#d4c9b2">a little wilderness, made by you</div>
+</div>
+<div style="position:absolute;right:64px;top:56px;display:flex;gap:32px">
+<div style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.26em;color:#d4c9b2;cursor:pointer" style-hover="color:#fffaf0">Settings</div>
+<div style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.26em;color:#d4c9b2;cursor:pointer" style-hover="color:#fffaf0">Quit</div>
+</div>
+<div style="position:absolute;left:64px;right:64px;bottom:214px;display:flex;flex-direction:column;gap:14px">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.28em;color:#d4c9b2">{{ fr.L.posText }}</div>
+<sc-if value="{{ fr.L.notRenaming }}" hint-placeholder-val="{{ true }}">
+<div style="font:400 58px Newsreader,serif;color:#f6eedc;line-height:1.05;text-shadow:0 2px 18px rgba(10,8,10,.5)">{{ fr.L.cur.name }}</div>
+</sc-if>
+<sc-if value="{{ fr.L.renaming }}" hint-placeholder-val="{{ false }}">
+<input value="{{ fr.L.draft }}" onChange="{{ fr.L.onDraft }}" onKeyDown="{{ fr.L.onKey }}" autoFocus="{{ true }}" style="width:720px;background:rgba(20,16,12,.45);border:none;border-bottom:1px dashed rgba(227,215,189,.6);border-radius:8px 8px 0 0;outline:none;font:400 50px Newsreader,serif;color:#f6eedc;padding:4px 14px">
+</sc-if>
+<div style="font:400 17px Spectral,serif;color:#d4c9b2">{{ fr.L.cur.when }}</div>
+<div style="display:flex;align-items:center;gap:28px;margin-top:6px;min-height:46px">
+<sc-if value="{{ fr.L.idle }}" hint-placeholder-val="{{ true }}">
+<div style="font:500 18px Newsreader,serif;color:#2a251f;background:#e3d7bd;border-radius:8px;padding:10px 26px;cursor:pointer" style-hover="background:#f4ead3">Enter world ↵</div>
+<div onClick="{{ fr.L.rename }}" style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#e3d7bd;cursor:pointer" style-hover="color:#fffaf0">Rename</div>
+<div onClick="{{ fr.L.dup }}" style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#e3d7bd;cursor:pointer" style-hover="color:#fffaf0">Duplicate</div>
+<div onClick="{{ fr.L.del }}" style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#e3d7bd;cursor:pointer" style-hover="color:#f0a383">Delete</div>
+</sc-if>
+<sc-if value="{{ fr.L.renaming }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ fr.L.commit }}" style="font:500 18px Newsreader,serif;color:#2a251f;background:#e3d7bd;border-radius:8px;padding:10px 26px;cursor:pointer" style-hover="background:#f4ead3">Keep name ↵</div>
+<div onClick="{{ fr.L.cancel }}" style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#e3d7bd;cursor:pointer" style-hover="color:#fffaf0">Cancel · Esc</div>
+</sc-if>
+<sc-if value="{{ fr.L.deleting }}" hint-placeholder-val="{{ false }}">
+<div style="position:relative;display:flex;align-items:center;gap:22px;padding:12px 14px 12px 22px;border-radius:12px;background-color:rgba(84,75,63,.92);background-image:repeating-linear-gradient(0deg,rgba(20,14,8,.12) 0 1px,transparent 1px 3px);box-shadow:0 10px 30px rgba(10,8,12,.4)">
+<div style="position:absolute;inset:4px;border-radius:8px;border:1px dashed rgba(227,215,189,.3);pointer-events:none"></div>
+<div style="font:400 18px Spectral,serif;color:#f1e8d4">Let this world go? It can't be brought back.</div>
+<div onClick="{{ fr.L.cancel }}" style="font:500 17px Newsreader,serif;color:#2a251f;background:#e3d7bd;border-radius:8px;padding:8px 18px;cursor:pointer" style-hover="background:#f4ead3">Keep it</div>
+<div onClick="{{ fr.L.confirmDel }}" style="font:500 17px Newsreader,serif;color:#f0a383;border:1px solid rgba(240,163,131,.55);border-radius:8px;padding:7px 16px;cursor:pointer" style-hover="background:rgba(240,163,131,.12)">Let it go</div>
+</div>
+</sc-if>
+</div>
+</div>
+<div style="position:absolute;left:64px;right:64px;bottom:28px;box-sizing:border-box;padding:18px 24px 14px;border-radius:14px;background-color:rgba(84,75,63,.82);background-image:repeating-linear-gradient(0deg,rgba(20,14,8,.12) 0 1px,transparent 1px 3px);box-shadow:inset 0 1px 0 rgba(255,240,215,.09),0 10px 30px rgba(10,8,12,.35);backdrop-filter:blur(6px);display:flex;gap:14px;align-items:flex-end">
+<div style="position:absolute;inset:5px;border-radius:10px;border:1px dashed rgba(227,215,189,.3);pointer-events:none"></div>
+<sc-for list="{{ fr.L.worlds }}" as="w" hint-placeholder-count="6">
+<div onClick="{{ w.pick }}" style="width:156px;flex-shrink:0;display:flex;flex-direction:column;gap:7px;cursor:pointer;transform:{{ w.lift }};transition:transform .18s ease">
+<div style="position:relative;height:96px;border-radius:8px;overflow:hidden;border:{{ w.ring }};box-shadow:0 6px 16px rgba(8,6,8,.45)">
+<div style="position:absolute;inset:0;background-image:url({{ w.img }});background-size:{{ w.size }};background-position:{{ w.pos }};background-repeat:no-repeat;filter:{{ w.f }}"></div>
+</div>
+<div style="font:400 14px Spectral,serif;color:{{ w.labelColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px">{{ w.name }}</div>
+</div>
+</sc-for>
+<div style="width:156px;flex-shrink:0;display:flex;flex-direction:column;gap:7px;cursor:pointer">
+<div style="height:96px;box-sizing:border-box;border-radius:8px;border:1.5px dashed rgba(227,215,189,.55);background:rgba(20,15,10,.35);display:flex;align-items:center;justify-content:center;font:400 30px Newsreader,serif;color:#e3d7bd" style-hover="background:rgba(20,15,10,.55)">+</div>
+<div style="font:400 14px Spectral,serif;color:#d4c9b2;padding:0 2px">New world</div>
+</div>
+<div style="margin-left:auto;align-self:center;font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#a39a88;white-space:nowrap">◂ ▸ browse · ↵ enter</div>
+</div>
+</div>
+</sc-for>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="font:400 16px Spectral,serif;color:#a39a88">New world · the backdrop previews the land as you pick it. Settings dock to the side so the view stays open.</div>
+<div data-screen-label="1b New world" style="position:relative;width:1440px;height:810px;overflow:hidden;background:#2a2228">
+<div style="position:absolute;inset:0;background-image:url({{ b3.cur.img }});background-size:{{ b3.cur.size }};background-position:{{ b3.cur.pos }};background-repeat:no-repeat;filter:{{ b3.cur.f }}"></div>
+<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(16,12,16,.55) 0%,rgba(16,12,16,0) 30%,rgba(16,12,16,0) 50%,rgba(16,12,16,.5) 100%)"></div>
+<div style="position:absolute;left:64px;bottom:56px;display:flex;flex-direction:column;gap:8px;max-width:560px">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.28em;color:#d4c9b2">Preview</div>
+<div style="font:400 52px Newsreader,serif;color:#f6eedc;text-shadow:0 2px 18px rgba(10,8,10,.5)">{{ b3.cur.name }}</div>
+<div style="font:400 18px Spectral,serif;color:#e3d7bd;text-shadow:0 1px 10px rgba(10,8,10,.6)">{{ b3.cur.desc }}</div>
+</div>
+<div style="position:absolute;right:24px;top:24px;bottom:24px;width:440px;box-sizing:border-box;border-radius:16px;background-color:rgba(84,75,63,.9);background-image:repeating-linear-gradient(0deg,rgba(20,14,8,.12) 0 1px,transparent 1px 3px);box-shadow:inset 0 1px 0 rgba(255,240,215,.09),0 18px 50px rgba(10,8,12,.45);padding:30px 30px 24px;display:flex;flex-direction:column;gap:22px">
+<div style="position:absolute;inset:6px;border-radius:11px;border:1px dashed rgba(227,215,189,.3);pointer-events:none"></div>
+<div style="font:400 30px Newsreader,serif;color:#f1e8d4">A new world</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#a39a88">Name</div>
+<input value="{{ b3.name }}" onChange="{{ b3.onName }}" placeholder="{{ b3.placeholder }}" style="background:rgba(20,16,12,.35);border:none;border-bottom:1px dashed rgba(227,215,189,.5);border-radius:6px 6px 0 0;outline:none;font:400 22px Newsreader,serif;color:#f1e8d4;padding:8px 12px">
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#a39a88">Land</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<sc-for list="{{ b3.biomes }}" as="b" hint-placeholder-count="4">
+<div onClick="{{ b.pick }}" style="display:flex;align-items:center;gap:14px;padding:6px;border-radius:9px;border:{{ b.ring }};background:{{ b.bg }};cursor:pointer">
+<div style="position:relative;width:76px;height:48px;border-radius:5px;overflow:hidden;flex-shrink:0">
+<div style="position:absolute;inset:0;background-image:url({{ b.img }});background-size:{{ b.size }};background-position:{{ b.pos }};background-repeat:no-repeat;filter:{{ b.f }}"></div>
+</div>
+<div style="font:400 19px Newsreader,serif;color:#f1e8d4">{{ b.name }}</div>
+</div>
+</sc-for>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#a39a88">Seed</div>
+<div style="display:flex;gap:10px;align-items:center">
+<div style="flex:1;min-width:0;background:rgba(20,16,12,.35);border-bottom:1px dashed rgba(227,215,189,.5);border-radius:6px 6px 0 0;font:italic 400 19px Spectral,serif;color:#f1e8d4;padding:8px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b3.seed }}</div>
+<div onClick="{{ b3.roll }}" style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.22em;color:#c2b8a3;border:1px dashed rgba(227,215,189,.4);border-radius:8px;padding:9px 12px;cursor:pointer;white-space:nowrap" style-hover="color:#fffaf0;background:rgba(20,15,10,.2)">Roll</div>
+</div>
+</div>
+<div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;border-top:1px dashed rgba(227,215,189,.3);padding-top:18px">
+<div style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#a39a88;cursor:pointer" style-hover="color:#e3d7bd">Back</div>
+<div style="font:500 17px Newsreader,serif;color:#2a251f;background:#e3d7bd;border-radius:8px;padding:10px 24px;cursor:pointer" style-hover="background:#f4ead3">Begin ↵</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="font:400 16px Spectral,serif;color:#a39a88">In-game pause · centred over the dimmed world. "Save a copy as…" opens in place — click it.</div>
+<div data-screen-label="1b Pause" style="position:relative;width:1440px;height:810px;overflow:hidden;background:#5b6572 url(game-bg.png) center top/1440px auto no-repeat">
+<div style="position:absolute;inset:0;background:rgba(20,18,26,.42)"></div>
+<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:440px;box-sizing:border-box;border-radius:16px;background-color:rgba(84,75,63,.9);background-image:repeating-linear-gradient(0deg,rgba(20,14,8,.12) 0 1px,transparent 1px 3px);box-shadow:inset 0 1px 0 rgba(255,240,215,.09),0 18px 50px rgba(10,8,12,.45);padding:30px 22px 22px;display:flex;flex-direction:column;gap:4px">
+<div style="position:absolute;inset:6px;border-radius:11px;border:1px dashed rgba(227,215,189,.3);pointer-events:none"></div>
+<div style="padding:0 12px 14px;display:flex;flex-direction:column;gap:8px">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.26em;color:#a39a88">Paused</div>
+<div style="font:400 30px Newsreader,serif;color:#f1e8d4">The quiet plain</div>
+<div style="display:flex;align-items:center;gap:8px;font:400 15px Spectral,serif;color:#c2b8a3"><div style="width:7px;height:7px;border-radius:50%;background:#b9c99a"></div>Kept safe · just now</div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;border-radius:9px;background:rgba(20,15,10,.28);cursor:pointer"><div style="font:400 21px Newsreader,serif;color:#f1e8d4">Resume</div><div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.2em;color:#a39a88">Esc</div></div>
+<div onClick="{{ b4.toggle }}" style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;border-radius:9px;cursor:pointer" style-hover="background:rgba(20,15,10,.22)"><div style="font:400 21px Newsreader,serif;color:#f1e8d4">Save a copy as…</div><div style="font:400 16px Spectral,serif;color:#a39a88">{{ b4.chev }}</div></div>
+<sc-if value="{{ b4.open }}" hint-placeholder-val="{{ true }}">
+<div style="margin:2px 6px 8px;padding:14px;border-radius:10px;background:rgba(20,15,10,.3);display:flex;flex-direction:column;gap:12px">
+<input value="{{ b4.name }}" onChange="{{ b4.onName }}" style="background:rgba(20,16,12,.35);border:none;border-bottom:1px dashed rgba(227,215,189,.5);border-radius:6px 6px 0 0;outline:none;font:400 20px Newsreader,serif;color:#f1e8d4;padding:7px 10px">
+<div style="display:flex;flex-direction:column;gap:2px">
+<sc-for list="{{ b4.opts }}" as="o" hint-placeholder-count="2">
+<div onClick="{{ o.pick }}" style="display:flex;align-items:center;gap:12px;padding:6px;border-radius:7px;cursor:pointer" style-hover="background:rgba(20,15,10,.2)">
+<div style="width:14px;height:14px;border-radius:50%;border:1.5px solid #e3d7bd;display:flex;align-items:center;justify-content:center;flex-shrink:0"><div style="width:7px;height:7px;border-radius:50%;background:{{ o.dot }}"></div></div>
+<div style="font:400 16px Spectral,serif;color:#f1e8d4">{{ o.label }}</div>
+</div>
+</sc-for>
+</div>
+<div style="align-self:flex-end;font:500 16px Newsreader,serif;color:#2a251f;background:#e3d7bd;border-radius:8px;padding:8px 18px;cursor:pointer" style-hover="background:#f4ead3">Save copy ↵</div>
+</div>
+</sc-if>
+<div style="padding:10px 12px;border-radius:9px;cursor:pointer;font:400 21px Newsreader,serif;color:#f1e8d4" style-hover="background:rgba(20,15,10,.22)">Settings</div>
+<div style="border-top:1px dashed rgba(227,215,189,.3);margin:8px 6px"></div>
+<div style="padding:10px 12px;border-radius:9px;cursor:pointer;font:400 21px Newsreader,serif;color:#f1e8d4" style-hover="background:rgba(20,15,10,.22)">Return to title</div>
+<div style="padding:2px 12px 0;font:italic 400 15px Spectral,serif;color:#a39a88">Nothing is lost when you leave.</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const DES = 'title-desert.png';
+const ISL = 'game-bg.png';
+const W0 = [
+  { name: 'Valley of Sleeping Stones', when: 'Played 2 minutes ago', img: DES, size: '300%', pos: '0% 35%', f: 'none' },
+  { name: 'The quiet plain', when: 'Yesterday evening', img: ISL, size: '120%', pos: '50% 40%', f: 'none' },
+  { name: 'Lantern Mesa', when: 'Tuesday', img: DES, size: '300%', pos: '100% 38%', f: 'hue-rotate(-14deg) saturate(1.15)' },
+  { name: 'Fogwater', when: '12 September', img: ISL, size: '170%', pos: '45% 55%', f: 'saturate(.4) brightness(1.05)' },
+  { name: 'Juniper Steps', when: '3 September', img: DES, size: '300%', pos: '0% 0%', f: 'hue-rotate(20deg) brightness(1.1)' },
+  { name: 'Moss Hollow', when: 'August', img: ISL, size: '200%', pos: '60% 45%', f: 'hue-rotate(28deg) saturate(.85)' },
+];
+const BIOMES = [
+  { name: 'Quiet plain', desc: 'Flat and green. Raise every hill yourself.', img: ISL, size: '120%', pos: '50% 40%', f: 'none' },
+  { name: 'Red canyon', desc: 'Banded stone and slow cactus.', img: DES, size: '300%', pos: '0% 35%', f: 'none' },
+  { name: 'Misty isle', desc: 'Low cloud and soft grey water.', img: ISL, size: '170%', pos: '45% 55%', f: 'saturate(.4) brightness(1.05)' },
+  { name: 'Moss hollow', desc: 'Deep shade and damp ground.', img: ISL, size: '200%', pos: '60% 45%', f: 'hue-rotate(28deg) saturate(.85)' },
+];
+const WORDS = ['ochre', 'wren', 'fern', 'basalt', 'heron', 'thistle', 'amber', 'lichen', 'dusk', 'sorrel', 'pine', 'cinder'];
+const seed = () => { const p = () => WORDS[Math.floor(Math.random() * WORDS.length)]; return `${p()}-${p()}-${1000 + Math.floor(Math.random() * 9000)}`; };
+const mkList = (mode, sel = 0) => ({ worlds: W0.map((w, i) => ({ ...w, id: i })), sel, mode, draft: '', nextId: 100 });
+const RING = '1.5px solid #e3d7bd', NORING = '1.5px solid transparent';
+
+class Component extends DCLogic {
+  state = {
+    lists: { a2: mkList('idle'), b1: mkList('idle'), b2: mkList('delete', 2) },
+    nw: { a3: { biome: 0, seed: 'ochre-wren-4417', name: '' }, b3: { biome: 1, seed: 'basalt-heron-2081', name: '' } },
+    a5: { carry: 0, name: 'The quiet plain (copy)' },
+    b4: { open: true, carry: 0, name: 'The quiet plain (copy)' },
+  };
+  updL(k, p) { this.setState((s) => ({ lists: { ...s.lists, [k]: { ...s.lists[k], ...(typeof p === 'function' ? p(s.lists[k]) : p) } } })); }
+  updN(k, p) { this.setState((s) => ({ nw: { ...s.nw, [k]: { ...s.nw[k], ...p } } })); }
+  list(k) {
+    const L = this.state.lists[k], n = L.worlds.length, empty = n === 0;
+    const cur = L.worlds[L.sel] || { name: 'No worlds yet', when: 'Begin a new one', img: ISL, size: '120%', pos: '50% 40%', f: 'none' };
+    const commit = () => this.updL(k, (l) => ({ mode: 'idle', worlds: l.worlds.map((w, i) => i === l.sel && l.draft.trim() ? { ...w, name: l.draft.trim() } : w) }));
+    const cancel = () => this.updL(k, { mode: 'idle' });
+    return {
+      cur, empty,
+      idle: !empty && L.mode === 'idle', renaming: !empty && L.mode === 'rename', notRenaming: L.mode !== 'rename', deleting: !empty && L.mode === 'delete',
+      countText: empty ? 'none yet' : `${n} ${n === 1 ? 'world' : 'worlds'} · each one keeps itself`,
+      posText: empty ? 'Your worlds' : `Your worlds · ${L.sel + 1} of ${n}`,
+      draft: L.draft,
+      worlds: L.worlds.map((w, i) => ({ ...w, ring: i === L.sel ? RING : NORING, lift: i === L.sel ? 'translateY(-6px)' : 'none', labelColor: i === L.sel ? '#f6eedc' : '#bfb49e', pick: () => this.updL(k, { sel: i, mode: 'idle' }) })),
+      rename: () => this.updL(k, { mode: 'rename', draft: cur.name }),
+      onDraft: (e) => this.updL(k, { draft: e.target.value }),
+      onKey: (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); },
+      commit, cancel,
+      dup: () => this.updL(k, (l) => { const w = l.worlds[l.sel]; const c = { ...w, id: l.nextId, name: `${w.name} (copy)`, when: 'Just now' }; const ws = [...l.worlds]; ws.splice(l.sel + 1, 0, c); return { worlds: ws, sel: l.sel + 1, nextId: l.nextId + 1 }; }),
+      del: () => this.updL(k, { mode: 'delete' }),
+      confirmDel: () => this.updL(k, (l) => { const ws = l.worlds.filter((_, i) => i !== l.sel); return { worlds: ws, sel: Math.max(0, Math.min(l.sel, ws.length - 1)), mode: 'idle' }; }),
+    };
+  }
+  newWorld(k, compact) {
+    const N = this.state.nw[k], cur = BIOMES[N.biome];
+    return {
+      cur, name: N.name, seed: N.seed, placeholder: `${cur.name} — or leave it`,
+      finalName: N.name.trim() ? `“${N.name.trim()}”` : '',
+      onName: (e) => this.updN(k, { name: e.target.value }),
+      roll: () => this.updN(k, { seed: seed() }),
+      biomes: BIOMES.map((b, i) => ({ ...b, ring: i === N.biome ? RING : NORING, bg: i === N.biome ? 'rgba(20,15,10,.3)' : 'transparent', pick: () => this.updN(k, { biome: i }) })),
+    };
+  }
+  carry(key) {
+    const S = this.state[key];
+    const set = (p) => this.setState((s) => ({ [key]: { ...s[key], ...p } }));
+    return {
+      ...S, chev: S.open ? '▾' : '▸',
+      toggle: () => set({ open: !S.open }),
+      onName: (e) => set({ name: e.target.value }),
+      opts: ['Carry on in the copy', 'Stay here — keep the copy for later'].map((label, i) => ({ label, dot: i === S.carry ? '#e3d7bd' : 'transparent', pick: () => set({ carry: i }) })),
+    };
+  }
+  renderVals() {
+    return {
+      a2: this.list('a2'),
+      a3: this.newWorld('a3'),
+      a5: this.carry('a5'),
+      bFrames: [
+        { label: '1b Title + worlds', gap: '40px', L: this.list('b1') },
+        { label: '1b Delete confirm', gap: '0px', L: this.list('b2') },
+      ],
+      b3: this.newWorld('b3'),
+      b4: this.carry('b4'),
+    };
+  }
+}
+</script>
+</body>
+</html>
