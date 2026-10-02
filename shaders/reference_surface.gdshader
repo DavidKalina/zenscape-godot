@@ -96,6 +96,16 @@ uniform float flower_palette_pull = 0.12;
 uniform int flower_variant_count = 0;
 uniform vec3 flower_variants[4];
 uniform vec3 flower_petal_ref = vec3(1.0);
+// Distance thinning (docs/scenic/flowers.md, Cost), measured from the main
+// camera (zs_camera_position) so every pass thins alike: from `.x` to `.y`
+// metres a flower kind keeps down to `.z` of its plants, shrinking the
+// dropped ones into the ground, and the kept heads grow by keep^-`.w` so the
+// carpet keeps its cover. `.z` 1 turns it off.
+uniform vec4 flower_far = vec4(12.0, 30.0, 1.0, 0.4);
+// The plant's detail (leaves, bracts and buds: UV2.y's fraction,
+// MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
+// flowers are stems and heads. `.x` 0 keeps it at every distance.
+uniform vec2 flower_lod = vec2(0.0, 1.0);
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -209,205 +219,237 @@ vec3 zs_strata(vec3 p, float surface) {
 }
 
 void vertex() {
-	leaf_local = VERTEX;
-	if (earth_sides) {
-		float rim_top = UV.y > 0.5 ? UV.x : earth_sides_top;
-		earth_side = vec4(rim_top - VERTEX.y, rim_top - earth_sides_top, VERTEX.y - earth_sides_base, VERTEX.x + VERTEX.z);
-	}
-	plant_root = MODEL_MATRIX[3].xz;
-	if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
-	foliage_gust = 0.0;
-	grass_along = grass_blades ? clamp(UV.y, 0.0, 1.0) : 0.0;
-	if (flower_heads) {
-		// Flowers carry their glow share in grass_along (no spare varyings).
-		grass_along = zs_flower_glow_share(UV2.x);
-		// A placed colour (MeadowFlowerMesh.instance_color): GardenView sends a
-		// white instance colour whose alpha names the variant, (k + 0.5) / 8,
-		// so a meadow's drift keeps one colour; full alpha picks per plant.
-		int flower_chosen = COLOR.a < 0.5 ? clamp(int(COLOR.a * 8.0), 0, 3) : -1;
-		COLOR.a = 1.0;
-		if (UV2.x < 1.5) {
-			vec3 flower_living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
-			COLOR.rgb = flower_living * flower_stem_shade * UV.x;
-		} else {
-			if (UV2.x > 2.5 && UV2.x < 3.5 && flower_variant_count > 0) {
-				int flower_pick = flower_chosen >= 0 ? min(flower_chosen, flower_variant_count - 1) : min(int(fract(sin(dot(MODEL_MATRIX[3].xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
-				vec3 flower_variant = flower_variants[0];
-				if (flower_pick == 1) flower_variant = flower_variants[1];
-				else if (flower_pick == 2) flower_variant = flower_variants[2];
-				else if (flower_pick == 3) flower_variant = flower_variants[3];
-				COLOR.rgb = flower_variant * COLOR.rgb / max(flower_petal_ref, vec3(0.002));
-			}
-			COLOR.rgb = zs_flower_palette(COLOR.rgb, zs_palette_grass / ZS_GRASS_SOURCE, flower_palette_pull);
+	// A flower's head offset from its neck (CUSTOM0.xyz), as the distance
+	// thinning grows it; a dropped plant collapses to its root and skips the rest.
+	vec3 flower_offset = CUSTOM0.xyz;
+	bool flower_gone = false;
+	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0)) {
+		float far_d = distance(zs_camera_position, MODEL_MATRIX[3].xyz);
+		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);
+		float keep = mix(1.0, flower_far.z, far_t);
+		float rank = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(27.17, 63.41))) * 43758.5453);
+		float fade = smoothstep(keep * 1.08, keep * 1.08 - 0.08, rank);
+		if (flower_lod.x > 0.0 && fract(UV2.y) > 0.125) fade *= 1.0 - smoothstep(flower_lod.x, flower_lod.y, far_d);
+		if (UV2.y > 0.5) {
+			vec3 grown = flower_offset * (pow(1.0 / keep, flower_far.w) - 1.0);
+			VERTEX += grown;
+			flower_offset += grown;
 		}
+		VERTEX *= fade;
+		flower_offset *= fade;
+		// A dropped plant is one point: no motion, light or colour to work out
+		// (a vertex function cannot return early, so the rest is skipped).
+		flower_gone = fade <= 0.0;
 	}
-	grass_bow = 0.0;
-	vec2 grass_tilt = vec2(0.0);
-	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
-	char_clump = zs_char_clump(VERTEX);
-	char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
-	if (terrain_growth) {
-		float grown = max(max(smoothstep(UV.x, UV.x + 0.3, zs_growth_now().x), UV.y), zs_atlas_hold_at(VERTEX.xz));
-		VERTEX.y = mix(0.6, UV2.y, grown);
-		vec3 living = mix(CUSTOM0.rgb, COLOR.rgb, smoothstep(0.6, 1.0, grown));
-		vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
-		COLOR.rgb = mix(dirt, living, smoothstep(0.02, 0.42, grown));
-	}
-	if (bird_wings && source_bird_flight) {
-		float span = abs(VERTEX.x);
-		float lever = smoothstep(0.07, 1.12, span);
-		float angle = sin(INSTANCE_CUSTOM.g) * INSTANCE_CUSTOM.r * lever * lever;
-		float ca = cos(angle), sa = sin(angle);
-		float side = sign(VERTEX.x);
-		vec2 rotated = vec2(span * ca - VERTEX.y * sa, span * sa + VERTEX.y * ca);
-		VERTEX.x = rotated.x * side;
-		VERTEX.y = rotated.y;
-	} else if (bird_wings) {
-		float wing = smoothstep(0.09, 0.65, abs(VERTEX.x));
-		float phase = float(INSTANCE_ID) * 1.7;
-		float flap = smoothstep(0.45, 0.85, sin(zs_motion_time * 0.65 + phase));
-		float angle = sin(zs_motion_time * 7.5 + phase) * 0.40 * flap * wing;
-		VERTEX.y += abs(VERTEX.x) * sin(angle);
-		VERTEX.x *= cos(angle);
-	}
-	if (fish_swim) {
-		float phase = MODEL_MATRIX[3].x * 2.3 + MODEL_MATRIX[3].z * 1.7;
-		float whip = smoothstep(fish_wave.x, fish_wave.y, VERTEX.z);
-		VERTEX.x += sin(zs_motion_time * 9.0 + phase + VERTEX.z * fish_wave.w) * whip * fish_wave.z;
-	}
-	if (conifer_sway) {
-		VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
-	}
-	if (blow_enabled && !sway_enabled && !conifer_sway) {
-		// A trunk under a swaying crown takes the crown's breeze too, over
-		// the same shape, so the two never part (no flutter: wood is stiff).
-		float trunk_gust;
-		float trunk_bow;
-		VERTEX += zs_breeze_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, 1.0, 0.0, trunk_gust, trunk_bow);
-		float blow_shiver;
-		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, blow_shiver);
-	}
-	if (sway_enabled && !conifer_sway) {
-		vec2 root = MODEL_MATRIX[3].xz;
-		float phase = dot(root, sway_phase.xy);
-		// Flowers bend most toward the head (UV.y is the bend fraction; every
-		// vertex of a head takes its neck's), other plants by height.
-		float bend = flower_heads ? pow(clamp(UV.y, 0.0, 1.0), flower_bend) : smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
-		// A flower's head rides its neck whole (CUSTOM0.xyz is the offset from
-		// it): the breeze bends the stem, the nod below turns the head.
-		vec3 sway_at = flower_heads && UV2.y > 0.5 ? VERTEX - CUSTOM0.xyz : VERTEX;
-		// The ambient breeze (reference_wind, docs/scenic/breeze.md): stiff
-		// at the root, the tip lagging, swaying and fluttering; low plants
-		// roll with the meadow's waves. World-space, so asset yaw never
-		// rotates the air. Stiff species (a small sway_shape.z) take less.
-		float breeze_gust;
-		float breeze_bow;
-		vec2 motion = zs_breeze_offset(sway_at, MODEL_MATRIX, sway_shape.x, sway_shape.y,
-			zs_breeze_flex(sway_shape.z), zs_breeze_flutter(sway_shape.z), breeze_gust, breeze_bow);
+	if (!flower_gone) {
+		leaf_local = VERTEX;
+		if (earth_sides) {
+			float rim_top = UV.y > 0.5 ? UV.x : earth_sides_top;
+			earth_side = vec4(rim_top - VERTEX.y, rim_top - earth_sides_top, VERTEX.y - earth_sides_base, VERTEX.x + VERTEX.z);
+		}
+		plant_root = MODEL_MATRIX[3].xz;
+		if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
+		foliage_gust = 0.0;
+		grass_along = grass_blades ? clamp(UV.y, 0.0, 1.0) : 0.0;
 		if (flower_heads) {
-			// The meadow flower kit on top of the breeze (docs/scenic/flowers.md):
-			// stems take `flower_motion.x` of its bend (a sunflower stalk less).
-			motion *= mix(0.5, 1.0, clamp(flower_motion.x, 0.0, 1.0));
-			float flower_air = min(zs_breeze_air(), 1.5);
-			vec3 flower_down = inverse(mat3(MODEL_MATRIX)) * vec3(zs_wind_direction.x, 0.0, zs_wind_direction.y);
-			if (UV2.y > 0.5 && dot(flower_down.xz, flower_down.xz) > 1.0e-8) {
+			// Flowers carry their glow share in grass_along (no spare varyings).
+			grass_along = zs_flower_glow_share(UV2.x);
+			// A placed colour (MeadowFlowerMesh.instance_color): GardenView sends a
+			// white instance colour whose alpha names the variant, (k + 0.5) / 8,
+			// so a meadow's drift keeps one colour; full alpha picks per plant.
+			int flower_chosen = COLOR.a < 0.5 ? clamp(int(COLOR.a * 8.0), 0, 3) : -1;
+			COLOR.a = 1.0;
+			if (UV2.x < 1.5) {
+				vec3 flower_living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
+				COLOR.rgb = flower_living * flower_stem_shade * UV.x;
+			} else {
+				if (UV2.x > 2.5 && UV2.x < 3.5 && flower_variant_count > 0) {
+					int flower_pick = flower_chosen >= 0 ? min(flower_chosen, flower_variant_count - 1) : min(int(fract(sin(dot(MODEL_MATRIX[3].xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
+					vec3 flower_variant = flower_variants[0];
+					if (flower_pick == 1) flower_variant = flower_variants[1];
+					else if (flower_pick == 2) flower_variant = flower_variants[2];
+					else if (flower_pick == 3) flower_variant = flower_variants[3];
+					COLOR.rgb = flower_variant * COLOR.rgb / max(flower_petal_ref, vec3(0.002));
+				}
+				COLOR.rgb = zs_flower_palette(COLOR.rgb, zs_palette_grass / ZS_GRASS_SOURCE, flower_palette_pull);
+			}
+		}
+		grass_bow = 0.0;
+		vec2 grass_tilt = vec2(0.0);
+		char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
+		char_clump = zs_char_clump(VERTEX);
+		char_seed = zs_char_seed(MODEL_MATRIX[3].xz);
+		if (terrain_growth) {
+			float grown = max(max(smoothstep(UV.x, UV.x + 0.3, zs_growth_now().x), UV.y), zs_atlas_hold_at(VERTEX.xz));
+			VERTEX.y = mix(0.6, UV2.y, grown);
+			vec3 living = mix(CUSTOM0.rgb, COLOR.rgb, smoothstep(0.6, 1.0, grown));
+			vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
+			COLOR.rgb = mix(dirt, living, smoothstep(0.02, 0.42, grown));
+		}
+		if (bird_wings && source_bird_flight) {
+			float span = abs(VERTEX.x);
+			float lever = smoothstep(0.07, 1.12, span);
+			float angle = sin(INSTANCE_CUSTOM.g) * INSTANCE_CUSTOM.r * lever * lever;
+			float ca = cos(angle), sa = sin(angle);
+			float side = sign(VERTEX.x);
+			vec2 rotated = vec2(span * ca - VERTEX.y * sa, span * sa + VERTEX.y * ca);
+			VERTEX.x = rotated.x * side;
+			VERTEX.y = rotated.y;
+		} else if (bird_wings) {
+			float wing = smoothstep(0.09, 0.65, abs(VERTEX.x));
+			float phase = float(INSTANCE_ID) * 1.7;
+			float flap = smoothstep(0.45, 0.85, sin(zs_motion_time * 0.65 + phase));
+			float angle = sin(zs_motion_time * 7.5 + phase) * 0.40 * flap * wing;
+			VERTEX.y += abs(VERTEX.x) * sin(angle);
+			VERTEX.x *= cos(angle);
+		}
+		if (fish_swim) {
+			float phase = MODEL_MATRIX[3].x * 2.3 + MODEL_MATRIX[3].z * 1.7;
+			float whip = smoothstep(fish_wave.x, fish_wave.y, VERTEX.z);
+			VERTEX.x += sin(zs_motion_time * 9.0 + phase + VERTEX.z * fish_wave.w) * whip * fish_wave.z;
+		}
+		if (conifer_sway) {
+			VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
+		}
+		if (blow_enabled && !sway_enabled && !conifer_sway) {
+			// A trunk under a swaying crown takes the crown's breeze too, over
+			// the same shape, so the two never part (no flutter: wood is stiff).
+			float trunk_gust;
+			float trunk_bow;
+			VERTEX += zs_breeze_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, 1.0, 0.0, trunk_gust, trunk_bow);
+			float blow_shiver;
+			VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, blow_shape.x, blow_shape.y, blow_shiver);
+		}
+		if (sway_enabled && !conifer_sway) {
+			vec2 root = MODEL_MATRIX[3].xz;
+			float phase = dot(root, sway_phase.xy);
+			// Flowers bend most toward the head (UV.y is the bend fraction; every
+			// vertex of a head takes its neck's), other plants by height.
+			float bend = flower_heads ? pow(clamp(UV.y, 0.0, 1.0), flower_bend) : smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
+			// A flower's head rides its neck whole (CUSTOM0.xyz is the offset from
+			// it): the breeze bends the stem, the nod below turns the head.
+			vec3 sway_at = flower_heads && UV2.y > 0.5 ? VERTEX - flower_offset : VERTEX;
+			// The ambient breeze (reference_wind, docs/scenic/breeze.md): stiff
+			// at the root, the tip lagging, swaying and fluttering; low plants
+			// roll with the meadow's waves. World-space, so asset yaw never
+			// rotates the air. Stiff species (a small sway_shape.z) take less.
+			float breeze_gust;
+			float breeze_bow;
+			vec2 motion;
+			float flower_late = 0.0;
+			if (flower_heads) {
 				// A heavy head lags: it answers the breeze that was
 				// `flower_motion.y` m upwind (the gust or crest that passed its
-				// root a beat ago), nodding downwind about its neck, with a
-				// slow bob of its own.
+				// root a beat ago). The stem reads the same air, so the lean is
+				// read once a vertex (docs/scenic/flowers.md, Cost).
 				float flower_wave = 1.0 - smoothstep(0.7, 1.8, sway_shape.y * length(MODEL_MATRIX[1].xyz));
-				float flower_bow;
-				float flower_late = zs_breeze_lean_at(root, flower_motion.y / max(zs_gust_speed, 0.5), flower_wave, flower_bow);
-				vec3 flower_axis = normalize(cross(vec3(0.0, 1.0, 0.0), normalize(vec3(flower_down.x, 0.0, flower_down.z))));
-				float flower_nod = flower_motion.z * (0.3 * flower_air + clamp(flower_late / 0.6, 0.0, 1.5)
-					+ 0.25 * flower_air * sin(zs_motion_time * sway_frequency.x * 0.55 + phase * 1.3));
-				flower_nod = clamp(flower_nod, -0.5, 0.9);
-				VERTEX += zs_flower_turn(CUSTOM0.xyz, flower_axis, flower_nod) - CUSTOM0.xyz;
-				NORMAL = zs_flower_turn(NORMAL, flower_axis, flower_nod);
-				// Petals flutter a little, most at their tips, harder in a gust.
-				if (UV2.x > 2.5 && UV2.x < 3.5) VERTEX += NORMAL * sin(zs_motion_time * 13.0 + phase * 3.1 + CUSTOM0.w * 5.0) * flower_motion.w * CUSTOM0.w * flower_air * (0.4 + breeze_gust);
+				flower_late = zs_breeze_lean_at(root, flower_motion.y / max(zs_gust_speed, 0.5), flower_wave, breeze_bow);
+				motion = zs_breeze_offset_lean(sway_at, MODEL_MATRIX, sway_shape.x, sway_shape.y,
+					zs_breeze_flex(sway_shape.z), zs_breeze_flutter(sway_shape.z), flower_late, breeze_gust);
+			} else {
+				motion = zs_breeze_offset(sway_at, MODEL_MATRIX, sway_shape.x, sway_shape.y,
+					zs_breeze_flex(sway_shape.z), zs_breeze_flutter(sway_shape.z), breeze_gust, breeze_bow);
 			}
-		}
-		float instance_scale = length(MODEL_MATRIX[1].xyz);
-		if (grass_blades) {
-			// Bowed blades pale and tip their soft-mass normal downwind (grass_look).
-			grass_bow = breeze_bow;
-			grass_tilt = motion / max(sway_shape.y * instance_scale, 0.1) * 0.6;
-		}
-		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y);
-		float arm = max(sway_at.y - sway_shape.x, 0.05) * instance_scale;
-		VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7) / max(instance_scale, 0.001);
-		// Plants bowed by a wave or gust pale a little (the plant_growth tint
-		// below), so the classic tufts show the rolling bands too.
-		foliage_gust = clamp(max(breeze_gust * 0.5, breeze_bow * 0.7) * bend, 0.0, 1.0);
-		// A walker's tread (shaders/foliage_tread.gdshaderinc): stems inside a
-		// tread lean away from it and lie over, and whatever is under the
-		// foot itself is pressed flat. World-space like the wind above.
-		if (zs_tread_0.w > 0.0 && !tree_tread) {
-			float press = 0.0;
-			vec2 shove = zs_tread_push(root, press) * (arm * ZS_TREAD_REACH * bend);
-			if (press > 0.0) {
-				VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(shove.x, 0.0, shove.y) * instance_scale;
-				float lean_sq = min(dot(shove, shove), arm * arm * 0.96);
-				VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
+			if (flower_heads) {
+				// The meadow flower kit on top of the breeze (docs/scenic/flowers.md):
+				// stems take `flower_motion.x` of its bend (a sunflower stalk less).
+				motion *= mix(0.5, 1.0, clamp(flower_motion.x, 0.0, 1.0));
+				float flower_air = min(zs_breeze_air(), 1.5);
+				vec3 flower_down = inverse(mat3(MODEL_MATRIX)) * vec3(zs_wind_direction.x, 0.0, zs_wind_direction.y);
+				if (UV2.y > 0.5 && dot(flower_down.xz, flower_down.xz) > 1.0e-8) {
+					// The head nods downwind about its neck on the lagging lean
+					// read above, with a slow bob of its own.
+					vec3 flower_axis = normalize(cross(vec3(0.0, 1.0, 0.0), normalize(vec3(flower_down.x, 0.0, flower_down.z))));
+					float flower_nod = flower_motion.z * (0.3 * flower_air + clamp(flower_late / 0.6, 0.0, 1.5)
+						+ 0.25 * flower_air * sin(zs_motion_time * sway_frequency.x * 0.55 + phase * 1.3));
+					flower_nod = clamp(flower_nod, -0.5, 0.9);
+					VERTEX += zs_flower_turn(flower_offset, flower_axis, flower_nod) - flower_offset;
+					NORMAL = zs_flower_turn(NORMAL, flower_axis, flower_nod);
+					// Petals flutter a little, most at their tips, harder in a gust.
+					if (UV2.x > 2.5 && UV2.x < 3.5) VERTEX += NORMAL * sin(zs_motion_time * 13.0 + phase * 3.1 + CUSTOM0.w * 5.0) * flower_motion.w * CUSTOM0.w * flower_air * (0.4 + breeze_gust);
+				}
 			}
-		}
-		VERTEX.y -= zs_foliage_wet * bend * wet_droop;
-		// Local gusts have a true world direction, even for rotated/scaled assets.
-		// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.
-		vec3 air = zs_local_wind((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
-		float speed = length(air);
-		if (speed > 0.001) {
-			float response = speed / (speed + 10.0);
-			float flutter = 0.90 + 0.10 * sin(zs_motion_time * 12.0 + phase);
-			float flexibility = max(sway_shape.z, sway_shape.w);
-			vec3 displacement = air / speed * response * flexibility * 3.0 * bend * flutter;
-			VERTEX += inverse(mat3(MODEL_MATRIX)) * displacement;
-			foliage_gust = max(foliage_gust, response * bend);
-		}
-		// The wind tool (scripts/wind_gust.gd): its gusts, bursts and the
-		// blowing hand bend the plant its own way, with spring-back and
-		// sway after (zs_blow_bend).
-		float blow_shiver;
-		VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y, blow_shiver);
-		foliage_gust = max(foliage_gust, blow_shiver * bend);
-		if (grass_blades) grass_bow = max(grass_bow, blow_shiver * 0.8);
+			float instance_scale = length(MODEL_MATRIX[1].xyz);
+			if (grass_blades) {
+				// Bowed blades pale and tip their soft-mass normal downwind (grass_look).
+				grass_bow = breeze_bow;
+				grass_tilt = motion / max(sway_shape.y * instance_scale, 0.1) * 0.6;
+			}
+			VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y);
+			float arm = max(sway_at.y - sway_shape.x, 0.05) * instance_scale;
+			VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7) / max(instance_scale, 0.001);
+			// Plants bowed by a wave or gust pale a little (the plant_growth tint
+			// below), so the classic tufts show the rolling bands too.
+			foliage_gust = clamp(max(breeze_gust * 0.5, breeze_bow * 0.7) * bend, 0.0, 1.0);
+			// A walker's tread (shaders/foliage_tread.gdshaderinc): stems inside a
+			// tread lean away from it and lie over, and whatever is under the
+			// foot itself is pressed flat. World-space like the wind above.
+			if (zs_tread_0.w > 0.0 && !tree_tread) {
+				float press = 0.0;
+				vec2 shove = zs_tread_push(root, press) * (arm * ZS_TREAD_REACH * bend);
+				if (press > 0.0) {
+					VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(shove.x, 0.0, shove.y) * instance_scale;
+					float lean_sq = min(dot(shove, shove), arm * arm * 0.96);
+					VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
+				}
+			}
+			VERTEX.y -= zs_foliage_wet * bend * wet_droop;
+			// Local gusts have a true world direction, even for rotated/scaled assets.
+			// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.
+			vec3 air = zs_local_wind((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
+			float speed = length(air);
+			if (speed > 0.001) {
+				float response = speed / (speed + 10.0);
+				float flutter = 0.90 + 0.10 * sin(zs_motion_time * 12.0 + phase);
+				float flexibility = max(sway_shape.z, sway_shape.w);
+				vec3 displacement = air / speed * response * flexibility * 3.0 * bend * flutter;
+				VERTEX += inverse(mat3(MODEL_MATRIX)) * displacement;
+				foliage_gust = max(foliage_gust, response * bend);
+			}
+			// The wind tool (scripts/wind_gust.gd): its gusts, bursts and the
+			// blowing hand bend the plant its own way, with spring-back and
+			// sway after (zs_blow_bend).
+			float blow_shiver;
+			VERTEX += zs_blow_bend(VERTEX, MODEL_MATRIX, sway_shape.x, sway_shape.y, blow_shiver);
+			foliage_gust = max(foliage_gust, blow_shiver * bend);
+			if (grass_blades) grass_bow = max(grass_bow, blow_shiver * 0.8);
 
-	}
-	if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
-	if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth_now().x);
-	// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
-	// (born, seconds, with the stand's autumn packed above); instances without
-	// one stay at 1 (scripts/emergence.gd).
-	stand_autumn = instance_birth_enabled && !bird_wings ? zs_instance_autumn(INSTANCE_CUSTOM.a) : -1.0;
-	float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, zs_instance_rise(INSTANCE_CUSTOM.a)) : 1.0;
-	if (plant_growth || birth < 1.0) {
-		float t = birth;
-		if (plant_growth) {
-			float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
-			t = min(t, clamp((min(zs_growth_now().y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
 		}
-		float b = t - 1.0;
-		VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
+		if (tree_tread && zs_tread_0.w > 0.0) VERTEX += zs_tree_tread(VERTEX, MODEL_MATRIX, tree_tread_height);
+		if (cozy_prop_growth && !plant_growth) VERTEX *= smoothstep(0.70, 0.98, zs_growth_now().x);
+		// An emerged instance also pops in at its own birth, INSTANCE_CUSTOM.ba =
+		// (born, seconds, with the stand's autumn packed above); instances without
+		// one stay at 1 (scripts/emergence.gd).
+		stand_autumn = instance_birth_enabled && !bird_wings ? zs_instance_autumn(INSTANCE_CUSTOM.a) : -1.0;
+		float birth = instance_birth_enabled && !bird_wings ? zs_birth_growth(INSTANCE_CUSTOM.b, zs_instance_rise(INSTANCE_CUSTOM.a)) : 1.0;
+		if (plant_growth || birth < 1.0) {
+			float t = birth;
+			if (plant_growth) {
+				float seed = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+				t = min(t, clamp((min(zs_growth_now().y, zs_growth_wave_at(MODEL_MATRIX[3].xz)) - seed * 0.72) / 0.28, 0.0, 1.0));
+			}
+			float b = t - 1.0;
+			VERTEX *= 1.0 + 2.70158 * b * b * b + 1.70158 * b * b;
+		}
+		// Trunks, deadwood and stone char but never curl or thin.
+		zs_char_curl(VERTEX, char_state.x, char_clump, palette_role != 3 && palette_role != 4);
+		play_deform(VERTEX, NORMAL);
+		world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+		if (grass_blades) {
+			// Light the tuft as part of the field's soft mass: the ground's
+			// normal from the height map, domed outward toward the tips.
+			ivec2 texel = clamp(ivec2(floor((plant_root + 16.0) * 4.0)), ivec2(0), ivec2(126));
+			float h00 = texelFetch(zs_water_map, texel, 0).g;
+			float h10 = texelFetch(zs_water_map, texel + ivec2(1, 0), 0).g;
+			float h01 = texelFetch(zs_water_map, texel + ivec2(0, 1), 0).g;
+			vec2 slope = min(h00, min(h10, h01)) > -100.0 ? vec2(h10 - h00, h01 - h00) * 4.0 : vec2(0.0);
+			vec3 ground_normal = normalize(vec3(-slope.x, 1.0, -slope.y));
+			vec2 out_dir = (mat3(MODEL_MATRIX) * vec3(leaf_local.x, 0.0, leaf_local.z)).xz;
+			world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round, grass_tilt), 0.9));
+		}
+		contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 	}
-	// Trunks, deadwood and stone char but never curl or thin.
-	zs_char_curl(VERTEX, char_state.x, char_clump, palette_role != 3 && palette_role != 4);
-	play_deform(VERTEX, NORMAL);
-	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
-	if (grass_blades) {
-		// Light the tuft as part of the field's soft mass: the ground's
-		// normal from the height map, domed outward toward the tips.
-		ivec2 texel = clamp(ivec2(floor((plant_root + 16.0) * 4.0)), ivec2(0), ivec2(126));
-		float h00 = texelFetch(zs_water_map, texel, 0).g;
-		float h10 = texelFetch(zs_water_map, texel + ivec2(1, 0), 0).g;
-		float h01 = texelFetch(zs_water_map, texel + ivec2(0, 1), 0).g;
-		vec2 slope = min(h00, min(h10, h01)) > -100.0 ? vec2(h10 - h00, h01 - h00) * 4.0 : vec2(0.0);
-		vec3 ground_normal = normalize(vec3(-slope.x, 1.0, -slope.y));
-		vec2 out_dir = (mat3(MODEL_MATRIX) * vec3(leaf_local.x, 0.0, leaf_local.z)).xz;
-		world_normal = normalize(mix(world_normal, zs_grass_mass_normal(ground_normal, out_dir, grass_along, grass_round, grass_tilt), 0.9));
-	}
-	contact_height = (terrain_growth || bird_wings) ? 1000.0 : world_position.y - MODEL_MATRIX[3].y;
 }
 
 void fragment() {

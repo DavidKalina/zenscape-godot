@@ -591,6 +591,12 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 			# The painted meadow tufts are many and small; their shadows would not
 			# resolve, so they skip the shadow pass, as the dense grass does.
 			if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# Meadow flowers (docs/scenic/flowers.md, Cost): only the tall kinds
+			# cast a shadow that reads, and the low ones are specks in a pond.
+			var flower_kind := preload("res://scripts/meadow_flower_mesh.gd").kind_of_part(key)
+			if not flower_kind.is_empty():
+				if not preload("res://scripts/meadow_flower_mesh.gd").casts_shadow(flower_kind): batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				if not preload("res://scripts/meadow_flower_mesh.gd").reflects(flower_kind): batch.set_meta("skip_reflection",true)
 			add_child(batch)
 			nodes_changed = true
 		kept.erase(key)

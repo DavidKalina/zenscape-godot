@@ -15,7 +15,9 @@ extends RefCounted
 ##   plant's bend this vertex sits (0 root, 1 the tallest neck); a head's
 ##   vertices all take their neck's value, so the head rides its stem.
 ## - UV2.x: the part, STEM, LEAF, DISC, PETAL or PUFF. UV2.y: 1 where the
-##   vertex nods with its head.
+##   vertex nods with its head, plus DETAIL (0.25) on the plant's detail:
+##   leaves, bracts and buds, which the material lets go
+##   from the diorama's middle distance on (`flower_lod`).
 ## - CUSTOM0: xyz the offset from the head's neck, the pivot it nods about;
 ##   w the fraction out from the head's centre, for the petal flutter.
 ##
@@ -31,6 +33,9 @@ const LEAF := 1.0
 const DISC := 2.0
 const PETAL := 3.0
 const PUFF := 4.0
+## Added to UV2.y on detail vertices (see above): a fraction, so UV2.y > 0.5
+## still names the nodding head.
+const DETAIL := 0.25
 
 ## Per kind: the plant's height (m, the top of its tallest head), the
 ## material's sway (shape and frequency as the source flowers have them),
@@ -93,6 +98,38 @@ static func instance_color(kind: String, tint: Color) -> Color:
 			return Color(1.0, 1.0, 1.0, (k + 0.5) / 8.0)
 	return tint
 
+## Distance in the material (reference_surface `flower_far`, `flower_lod`),
+## measured from the camera:
+## - from LOD_NEAR to LOD_FAR metres each plant lets its detail go (leaves,
+##   bracts, buds), so beyond it is stems and heads over the painted carpet;
+## - from FAR_START to FAR_END metres a kind keeps down to its FAR_KEEP share
+##   of its plants, and the kept heads grow by keep^-FAR_GROW so a drift keeps
+##   its cover. Sunflowers stand in rows and keep everything.
+const FAR_KEEP := {"oxeye_daisy":0.6,"buttercup":0.6,"dandelion":0.6,"dandelion_clock":0.6,"cosmos":0.65,"sunflower":1.0,"poppy":0.65,"lupine":0.7}
+const FAR_START := 14.0
+const FAR_END := 32.0
+const FAR_GROW := 0.5
+const LOD_NEAR := 15.0
+const LOD_FAR := 20.0
+## The kinds whose batches cast shadows: the ones that stand clear of the
+## grass, whose shadows give a drift its depth. A shadow under a low flower
+## is a pixel at the diorama camera, and drawing them all doubled a meadow's
+## triangles.
+const SHADOW_KINDS := ["sunflower","cosmos","lupine","poppy","oxeye_daisy"]
+## The kinds a pond's reflection copies: the tall ones that stand over a bank.
+const REFLECT_KINDS := ["sunflower"]
+
+static func casts_shadow(kind: String) -> bool:
+	return kind in SHADOW_KINDS
+
+static func reflects(kind: String) -> bool:
+	return kind in REFLECT_KINDS
+
+## The kit kind a GardenView batch key ("<asset>:<node>") draws, or "".
+static func kind_of_part(key: String) -> String:
+	var node := key.get_slice(":", 1) if ":" in key else key
+	return node.trim_prefix(NODE_PREFIX) if is_node(node) else ""
+
 static func is_node(node_name: String) -> bool:
 	return node_name.begins_with(NODE_PREFIX) and node_name.trim_prefix(NODE_PREFIX) in KINDS
 
@@ -124,6 +161,8 @@ static func material(kind: String) -> ShaderMaterial:
 	m.set_shader_parameter("flower_motion", spec.motion)
 	m.set_shader_parameter("flower_glow", spec.glow)
 	m.set_shader_parameter("flower_roughness", spec.roughness)
+	m.set_shader_parameter("flower_far", Vector4(FAR_START, FAR_END, FAR_KEEP.get(kind, 1.0), FAR_GROW))
+	if FAR_KEEP.get(kind, 1.0) < 1.0: m.set_shader_parameter("flower_lod", Vector2(LOD_NEAR, LOD_FAR))
 	var variants: Array = spec.variants
 	if not variants.is_empty():
 		var colors := PackedVector3Array()
@@ -160,6 +199,11 @@ class Plant:
 	var rng := RandomNumberGenerator.new()
 	var bend_height: float
 	var head_scale: float
+	## Small petals are cut as kites (two rows and a tip) instead of three
+	## rows: the same face at the diorama camera for 40 % fewer vertices.
+	var kite_petals := false
+	## True while building detail the far plant goes without (DETAIL).
+	var detail := false
 	const STEM_GREEN := "4d7a34"
 	const LEAF_GREEN := "5d8c3c"
 
@@ -181,7 +225,7 @@ class Plant:
 
 	## A vertex that stays with its stem (no nod).
 	func plain(p: Vector3, n: Vector3, color: Color, part: float, shade: float) -> Array:
-		return [p, n.normalized(), color, Vector2(shade, along(p)), Vector2(part, 0.0), Color(0, 0, 0, 0)]
+		return [p, n.normalized(), color, Vector2(shade, along(p)), Vector2(part, DETAIL if detail else 0.0), Color(0, 0, 0, 0)]
 
 	## A vertex of `head`: it nods about the head's neck and rides the neck's bend.
 	func headed(h: Dictionary, p: Vector3, color: Color, part: float, shade := 1.0) -> Array:
@@ -197,7 +241,7 @@ class Plant:
 			n = (p - on_axis).normalized()
 		var offset: Vector3 = p - h.neck
 		var radial := clampf((p - middle).length() / maxf(h.radius * scale, 0.001), 0.0, 1.0)
-		return [p, n, color, Vector2(shade, h.along), Vector2(part, 1.0), Color(offset.x, offset.y, offset.z, radial)]
+		return [p, n, color, Vector2(shade, h.along), Vector2(part, 1.0 + (DETAIL if detail else 0.0)), Color(offset.x, offset.y, offset.z, radial)]
 
 	func tri(a: Array, b: Array, c: Array) -> void:
 		for v: Array in [a, b, c]:
@@ -268,6 +312,8 @@ class Plant:
 	## [fraction along, half width as a share of `width`] rows; `teeth` notches
 	## alternate rows outward. The midrib sits below the edges by `fold`.
 	func leaf(base: Vector3, azimuth: float, length: float, width: float, rise: float, droop: float, outline: Array, fold := 0.25, teeth := 0.0, shade := 0.9) -> void:
+		var was := detail
+		detail = true
 		var d := Vector3(cos(azimuth), 0.0, sin(azimuth))
 		var side := Vector3.UP.cross(d).normalized()
 		var color := MeadowFlowerColor.of(LEAF_GREEN)
@@ -288,6 +334,7 @@ class Plant:
 		var last: Array = rows[rows.size() - 1]
 		tri(last[0], last[1], tip)
 		tri(last[1], last[2], tip)
+		detail = was
 
 	## Basal leaves round the root, flat to the ground.
 	func rosette(count: int, length: Vector2, width: float, outline: Array, teeth := 0.0, rise := 0.18) -> void:
@@ -326,7 +373,7 @@ class Plant:
 				return head_point(h, a, r0 + length * t, length * (tilt * t + bend * t * t), across * w)
 			var shade := rng.randf_range(0.95, 1.05)
 			var col := func(t: float) -> Color: return base.lerp(tip, clampf(t, 0.0, 1.0)) * shade
-			var rows := [[0.0, 0.18], [0.5, 0.5], [0.82, 0.44]]
+			var rows := [[0.0, 0.18], [0.55, 0.5]] if kite_petals and notch <= 0.0 else [[0.0, 0.18], [0.5, 0.5], [0.82, 0.44]]
 			var verts: Array = []
 			for row: Array in rows:
 				verts.append([headed(h, at.call(row[0], -row[1]), col.call(row[0]), PETAL), headed(h, at.call(row[0], row[1]), col.call(row[0]), PETAL)])
@@ -370,17 +417,22 @@ class Plant:
 	## Thin green bracts folded back under a head.
 	func bracts(h: Dictionary, count: int, length: float, width: float, droop: float) -> void:
 		var green := MeadowFlowerColor.of(LEAF_GREEN)
+		var was := detail
+		detail = true
 		for i in range(count):
 			var a := TAU * (float(i) + 0.5) / count
 			var b0: Array = headed(h, head_point(h, a, length * 0.15, -length * 0.1, -width * 0.5), green, LEAF, 0.8)
 			var b1: Array = headed(h, head_point(h, a, length * 0.15, -length * 0.1, width * 0.5), green, LEAF, 0.8)
 			var t: Array = headed(h, head_point(h, a, length * 0.8, -length * droop), green, LEAF, 0.85)
 			tri(b0, b1, t)
+		detail = was
 
 	## A faceted ball (a bud, or a seed clock's core): an icosphere with
 	## radial normals, its radius and colour jittered by `jitter`.
-	func puff(h: Dictionary, radius: float, color: Color, part := DISC, jitter := Vector2(0.94, 1.05)) -> Array:
-		var base := _icosphere()
+	## `fine` subdivides the icosahedron once (42 points); a bud is a few
+	## pixels and keeps the plain 12.
+	func puff(h: Dictionary, radius: float, color: Color, part := DISC, jitter := Vector2(0.94, 1.05), fine := true) -> Array:
+		var base := _icosphere(fine)
 		var points: Array = base[0]
 		var faces: Array = base[1]
 		var placed: Array = []
@@ -415,12 +467,13 @@ class Plant:
 				corners.append(v)
 			tri(corners[0], corners[1], corners[2])
 
-	static func _icosphere() -> Array:
+	static func _icosphere(fine := true) -> Array:
 		var t := (1.0 + sqrt(5.0)) / 2.0
 		var points: Array = []
 		for p in [Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0), Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t), Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)]:
 			points.append(p.normalized())
 		var faces: Array = [Vector3i(0, 11, 5), Vector3i(0, 5, 1), Vector3i(0, 1, 7), Vector3i(0, 7, 10), Vector3i(0, 10, 11), Vector3i(1, 5, 9), Vector3i(5, 11, 4), Vector3i(11, 10, 2), Vector3i(10, 7, 6), Vector3i(7, 1, 8), Vector3i(3, 9, 4), Vector3i(3, 4, 2), Vector3i(3, 2, 6), Vector3i(3, 6, 8), Vector3i(3, 8, 9), Vector3i(4, 9, 5), Vector3i(2, 4, 11), Vector3i(6, 2, 10), Vector3i(8, 6, 7), Vector3i(9, 8, 1)]
+		if not fine: return [points, faces]
 		var split := {}
 		var finer: Array = []
 		for f: Vector3i in faces:
@@ -437,6 +490,11 @@ class Plant:
 	# --- the kinds ----------------------------------------------------------
 
 	const LANCE := [[0.0, 0.1], [0.3, 0.5], [0.65, 0.42]]
+	## A narrow leaf in one row and a tip: thread and leaflet leaves, which
+	## are a line or two of pixels from any camera.
+	const SLIM := [[0.0, 0.12], [0.45, 0.5]]
+	## A broad lobe in two rows: a buttercup's leaf fan.
+	const LOBE := [[0.0, 0.15], [0.4, 0.5], [0.75, 0.32]]
 	const BROAD := [[0.0, 0.15], [0.25, 0.48], [0.55, 0.5], [0.8, 0.3]]
 
 	## White rays round a raised yellow disc: two heads and a bud on a
@@ -449,13 +507,17 @@ class Plant:
 		var tops := [[Vector3(0.025, 0.55, 0.01), Vector3(0.25, 1.0, 0.1), 0.056], [Vector3(-0.075, 0.46, 0.04), Vector3(-0.35, 1.0, 0.15), 0.048]]
 		stem(Vector3.ZERO, tops[0][0], 0.0045, Vector3(0.02, 0.0, 0.0))
 		stem(Vector3(0.006, 0.24, 0.0), tops[1][0], 0.0035, Vector3(-0.02, 0.0, 0.01), 3)
-		for top: Array in tops:
+		kite_petals = true
+		detail = false
+		for i in range(tops.size()):
+			var top: Array = tops[i]
 			var h := head(top[0], top[1], top[2], 0.004)
-			petals(h, 15, top[2] * 0.3, top[2], top[2] * 0.36, cream, white, 0.0, 0.16, 0.0, 0.06, rng.randf() * TAU)
+			petals(h, 14, top[2] * 0.3, top[2], top[2] * 0.36, cream, white, 0.0, 0.16, 0.0, 0.06, rng.randf() * TAU)
 			disc(h, top[2] * 0.32, top[2] * 0.2, 9, gold, amber, 0.35)
-		rosette(4, Vector2(0.09, 0.12), 0.03, LANCE, 0.35)
+		detail = false
+		rosette(3, Vector2(0.09, 0.12), 0.03, LANCE, 0.35)
 		for y: float in [0.16, 0.3]:
-			leaf(Vector3(0.008, y, 0.0), rng.randf() * TAU, 0.06, 0.018, 0.6, 0.5, LANCE, 0.2, 0.3)
+			leaf(Vector3(0.008, y, 0.0), rng.randf() * TAU, 0.06, 0.018, 0.6, 0.5, SLIM, 0.2, 0.3)
 
 	## Low glossy gold cups, three on a forked stem, over three-lobed leaves.
 	func buttercup() -> void:
@@ -470,11 +532,12 @@ class Plant:
 			var h := head(tops[i][0], tops[i][1], r, 0.003, 1.2)
 			petals(h, 5, r * 0.15, r, r * 0.95, deep, gold, 0.55, 0.0, 0.0, 0.35, rng.randf() * TAU, 0.03)
 			disc(h, r * 0.24, r * 0.25, 6, MeadowFlowerColor.of("d39a0c"), MeadowFlowerColor.of("a8b437"), 0.4)
+		detail = false
 		# Basal leaves: each a fan of three broad lobes.
-		for i in range(3):
-			var a := TAU * i / 3.0 + rng.randf()
+		for i in range(2):
+			var a := PI * i + rng.randf()
 			for lobe in [-0.55, 0.0, 0.55]:
-				leaf(Vector3(cos(a), 0.0, sin(a)) * 0.012 + Vector3.UP * 0.03, a + lobe, 0.06, 0.04, 0.5, 0.6, BROAD, 0.2, 0.0, rng.randf_range(0.82, 0.95))
+				leaf(Vector3(cos(a), 0.0, sin(a)) * 0.012 + Vector3.UP * 0.03, a + lobe, 0.06, 0.04, 0.5, 0.6, LOBE, 0.2, 0.0, rng.randf_range(0.82, 0.95))
 
 	## A low golden pompom: three rings of strap florets, the inner ones
 	## rising, over a rosette of long toothed leaves.
@@ -484,12 +547,17 @@ class Plant:
 		var neck := Vector3(0.01, 0.23, 0.0)
 		stem(Vector3.ZERO, neck, 0.004, Vector3(0.012, 0.0, 0.0), 4, 4)
 		var h := head(neck, Vector3(0.12, 1.0, 0.05), 0.042, 0.006, 0.8)
-		petals(h, 22, 0.008, 0.042, 0.009, deep, gold, 0.0, 0.08, 0.0, 0.08, 0.0, 0.08)
-		petals(h, 16, 0.006, 0.032, 0.009, deep, gold, 0.0, 0.0, 0.0, 0.55, 0.2, 0.08)
-		petals(h, 10, 0.003, 0.02, 0.008, deep, gold, 0.0, 0.0, 0.0, 1.1, 0.4, 0.08)
+		kite_petals = true
+		petals(h, 18, 0.008, 0.042, 0.011, deep, gold, 0.0, 0.08, 0.0, 0.08, 0.0, 0.08)
+		# The middle ring is detail: from the middle distance the outer ring
+		# and the rising heart read as the same gold pompom.
+		detail = true
+		petals(h, 13, 0.006, 0.032, 0.011, deep, gold, 0.0, 0.0, 0.0, 0.55, 0.2, 0.08)
+		detail = false
+		petals(h, 8, 0.003, 0.02, 0.01, deep, gold, 0.0, 0.0, 0.0, 1.1, 0.4, 0.08)
 		disc(h, 0.009, 0.012, 6, deep, deep, 0.5)
-		bracts(h, 9, 0.022, 0.006, 0.9)
-		rosette(6, Vector2(0.12, 0.16), 0.024, LANCE, 0.7, 0.12)
+		bracts(h, 7, 0.022, 0.006, 0.9)
+		rosette(5, Vector2(0.12, 0.16), 0.024, LANCE, 0.7, 0.12)
 
 	## The seed clock: a faceted white puff on a tall stalk that glows when
 	## the sun is behind it, over a few rosette leaves.
@@ -510,19 +578,24 @@ class Plant:
 		var tops := [[Vector3(0.03, 0.9, 0.0), Vector3(0.3, 1.0, 0.1), 0.062], [Vector3(-0.11, 0.78, 0.06), Vector3(-0.4, 1.0, 0.2), 0.055]]
 		stem(Vector3.ZERO, tops[0][0], 0.004, Vector3(0.025, 0.0, -0.01), 5)
 		stem(Vector3(0.008, 0.45, 0.0), tops[1][0], 0.003, Vector3(-0.03, 0.0, 0.02), 4)
+		detail = true
 		stem(Vector3(0.01, 0.6, 0.0), Vector3(0.09, 0.74, -0.06), 0.0025, Vector3(0.01, 0.0, 0.0), 3)
-		for top: Array in tops:
+		detail = false
+		for i in range(tops.size()):
+			var top: Array = tops[i]
 			var h := head(top[0], top[1], top[2], 0.004)
 			petals(h, 8, top[2] * 0.2, top[2], top[2] * 0.62, blush, pink, 0.12, 0.0, 0.14, 0.04, rng.randf() * TAU, 0.04)
 			disc(h, top[2] * 0.22, top[2] * 0.18, 8, MeadowFlowerColor.of("f2b51e"), MeadowFlowerColor.of("e39a12"), 0.4)
+		detail = true
 		var bud := head(Vector3(0.09, 0.74, -0.06), Vector3(0.2, 1.0, -0.1), 0.014, 0.008)
 		bud.dome = bud.centre
-		puff(bud, 0.012, MeadowFlowerColor.of("8a7a3c"))
+		puff(bud, 0.012, MeadowFlowerColor.of("8a7a3c"), DISC, Vector2(0.94, 1.05), false)
+		detail = false
 		# Thread-fine leaves: narrow forks up the stem.
-		for y: float in [0.12, 0.25, 0.38, 0.52]:
+		for y: float in [0.14, 0.3, 0.48]:
 			var a := rng.randf() * TAU
 			for fork in [-0.5, 0.0, 0.5]:
-				leaf(Vector3(0.008, y, 0.0), a + fork, 0.08, 0.008, 0.5, 0.7, LANCE, 0.0, 0.0, rng.randf_range(0.85, 1.0))
+				leaf(Vector3(0.008, y, 0.0), a + fork, 0.085, 0.009, 0.5, 0.7, SLIM, 0.0, 0.0, rng.randf_range(0.85, 1.0))
 
 	## Tall and heavy: a thick stem that hooks over at the top so the big
 	## head droops toward the sun side, a dark domed disc in two rings of
@@ -558,10 +631,12 @@ class Plant:
 		petals(h, 2, 0.004, 0.052, 0.06, blotch.lerp(red, 0.35), red, 0.42, 0.0, 0.0, 0.32, PI / 2.0, 0.0)
 		disc(h, 0.011, 0.016, 7, MeadowFlowerColor.of("4c5a30"), MeadowFlowerColor.of("2b2a1c"), 0.4)
 		var bud_neck := Vector3(-0.07, 0.42, 0.03)
+		detail = true
 		hooked_stem(Vector3(0.005, 0.2, 0.0), bud_neck, Vector3(-0.3, -1.0, 0.1), 0.0028)
 		var bud := head(bud_neck, Vector3(-0.3, -1.0, 0.1), 0.016, 0.012)
 		bud.dome = bud.centre
-		puff(bud, 0.014, MeadowFlowerColor.of("5d7e36"))
+		puff(bud, 0.014, MeadowFlowerColor.of("5d7e36"), DISC, Vector2(0.94, 1.05), false)
+		detail = false
 		rosette(5, Vector2(0.08, 0.11), 0.026, LANCE, 0.7, 0.2)
 
 	## A tapering spike of pea florets in whorls, open below and budded at
@@ -577,14 +652,14 @@ class Plant:
 		h.centre = base + Vector3.UP * 0.2
 		h.radius = 0.2
 		tube([base, base + Vector3.UP * 0.4], [0.005, 0.002], 3)
-		var whorls := 11
+		var whorls := 9
 		for w in range(whorls):
 			var t := float(w) / (whorls - 1)
 			var y := base.y + 0.02 + t * 0.36
-			var size := lerpf(0.022, 0.009, t)
+			var size := lerpf(0.025, 0.011, t)
 			var color := violet.lerp(pale, smoothstep(0.55, 1.0, t))
-			for k in range(5):
-				var a := TAU * k / 5.0 + w * 0.6
+			for k in range(4):
+				var a := TAU * k / 4.0 + w * 0.8
 				var out := Vector3(cos(a), 0.0, sin(a))
 				var side := Vector3.UP.cross(out).normalized()
 				var root := Vector3(0.0, y, 0.0) + out * 0.006
@@ -597,12 +672,12 @@ class Plant:
 				var keel: Array = headed(h, root + out * size - Vector3.UP * size * 0.1, color * 0.9, PETAL)
 				tri(headed(h, root - side * size * 0.15, color * 0.8, PETAL), keel, headed(h, root + side * size * 0.15, color * 0.8, PETAL))
 		# Palmate leaves on short stalks: seven narrow leaflets in a star.
-		for i in range(4):
-			var a := TAU * i / 4.0 + rng.randf() * 0.6
+		for i in range(3):
+			var a := TAU * i / 3.0 + rng.randf() * 0.6
 			var at := Vector3(cos(a), 0.0, sin(a)) * 0.06 + Vector3.UP * rng.randf_range(0.1, 0.2)
 			tube([Vector3(0.0, at.y * 0.6, 0.0), at], [0.0025, 0.002], 3)
-			for k in range(7):
-				leaf(at, a + TAU * k / 7.0, 0.06, 0.012, 0.15, 0.4, LANCE, 0.2, 0.0, rng.randf_range(0.8, 0.95))
+			for k in range(6):
+				leaf(at, a + TAU * k / 6.0, 0.062, 0.014, 0.15, 0.4, SLIM, 0.2, 0.0, rng.randf_range(0.8, 0.95))
 
 ## Linear colours from sRGB hex, so the kinds read as their names.
 class MeadowFlowerColor:

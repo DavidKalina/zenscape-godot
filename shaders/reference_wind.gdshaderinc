@@ -405,15 +405,16 @@ float zs_breeze_flutter(float sway_amount) {
 // of the lean it takes; `flutter_share` (0 none, 1 a blade or leaf) a quick
 // tremble in its outer part. `gust` out: 0..1, how hard the air is on it
 // now; `bow`: 0..1, how far a wave or gust bows it.
-vec2 zs_breeze_offset(vec3 vertex, mat4 model, float bend_from, float height, float flex, float flutter_share, out float gust, out float bow) {
+// zs_breeze_offset with the lean already read (zs_breeze_lean_at), for a
+// plant that reads it once for several uses: a meadow flower's stem and
+// its head's nod share one, which halves the head's cost.
+vec2 zs_breeze_offset_lean(vec3 vertex, mat4 model, float bend_from, float height, float flex, float flutter_share, float lean, out float gust) {
 	vec2 root = model[3].xz;
 	float scale = length(model[1].xyz);
 	float span = max(height - bend_from, 0.05);
 	float k = clamp(max(vertex.y - bend_from, 0.0) / span, 0.0, 1.5);
 	float tall = height * scale;
 	float span_m = span * scale;
-	float wave = 1.0 - smoothstep(0.7, 1.8, tall);
-	float lean = zs_breeze_lean_at(root, ZS_BREEZE_LAG * span_m * min(k, 1.0), wave, bow);
 	gust = clamp(lean / 0.6, 0.0, 1.0);
 	float phase = dot(root, vec2(0.43, 0.71));
 	float pace = zs_breeze_pace(span_m);
@@ -430,6 +431,18 @@ vec2 zs_breeze_offset(vec3 vertex, mat4 model, float bend_from, float height, fl
 		offset += side * leaf * (0.015 + 0.03 * gust) * zs_breeze_air() * min(tall, 1.0) * flutter_share;
 	}
 	return offset;
+}
+
+vec2 zs_breeze_offset(vec3 vertex, mat4 model, float bend_from, float height, float flex, float flutter_share, out float gust, out float bow) {
+	vec2 root = model[3].xz;
+	float scale = length(model[1].xyz);
+	float span = max(height - bend_from, 0.05);
+	float k = clamp(max(vertex.y - bend_from, 0.0) / span, 0.0, 1.5);
+	float tall = height * scale;
+	float span_m = span * scale;
+	float wave = 1.0 - smoothstep(0.7, 1.8, tall);
+	float lean = zs_breeze_lean_at(root, ZS_BREEZE_LAG * span_m * min(k, 1.0), wave, bow);
+	return zs_breeze_offset_lean(vertex, model, bend_from, height, flex, flutter_share, lean, gust);
 }
 
 // zs_breeze_offset as an offset in the plant's own (model) space, like
