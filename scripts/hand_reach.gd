@@ -657,9 +657,10 @@ func handle(event: InputEvent) -> bool:
 			var what := reach_at(button.position)
 			if what.is_empty():
 				if modeless and _void_press(button.position): return true
-				# A shaping tool works the land under a tree; only a free hand bends
-				# it, or with Shift plucks it (or the undergrowth) out.
-				if modeless and not shaping() and _press_shift and _pluck_press(button.position): return true
+				# Shift on a plant plucks it (or the undergrowth) out, whatever tool
+				# is in hand. Otherwise a shaping tool works the land under a tree,
+				# and only a free hand bends it.
+				if modeless and _press_shift and _pluck_press(button.position): return true
 				if modeless and not shaping() and _tree_press(button.position): return true
 				return modeless and _land_press(button.position)
 			grab(what,button.position)
@@ -1050,9 +1051,11 @@ func _hover(point: Vector2) -> void:
 		if materials != null and hover_zone.is_empty() and materials.tray_under(point): hover_zone = "tray"
 		# With material in hand a press on a tree sows or pours, and with a
 		# shaping tool it works the land under it: no outline. With Shift
-		# held it outlines what a press would pluck, undergrowth too.
+		# held, with any tool, it outlines what a press would pluck,
+		# undergrowth too.
 		var carrying := materials != null and not materials.held.is_empty()
-		var free := what.is_empty() and hover_zone in ["land",""] and not carrying and not shaping()
+		var free := what.is_empty() and hover_zone in ["land",""] and not carrying \
+				and (Input.is_key_pressed(KEY_SHIFT) or not shaping())
 		_outline_tree((plant_under(point) if Input.is_key_pressed(KEY_SHIFT) else _tree_under(point)) if free else -1)
 	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone in ["cloud","tray"] else Input.CURSOR_ARROW)
 	var text := ""

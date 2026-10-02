@@ -262,6 +262,25 @@ func run() -> void:
 	if rock_p != null:
 		var rock := await plant("rock",rock_p,"hand")
 		check("a rock is not a plant",not reach.pluck(rock) and not record(rock).is_empty())
+		taken.append(rock_p)
+
+	# With the Modeller (a shaping tool) in hand, Shift on a plant still plucks.
+	reach.materials.select_tool("hand",true)
+	await frames(4)
+	check("with the Modeller the hand shapes",reach.shaping())
+	var weed_p: Variant = open_spot(1.6,taken)
+	if weed_p != null:
+		var weed := await plant("shrub",weed_p,"hand")
+		var at_weed := ground_screen(weed_p)
+		shift(true)
+		point(at_weed)
+		await frames(4)
+		check("with the Modeller, Shift outlines the shrub",reach.outline != null and reach.outline.tree_id == weed,reach.outline.tree_id if reach.outline != null else -1)
+		shift(false)
+		held = await press(at_weed,true)
+		check("with the Modeller, a Shift-press on the shrub plucks it",held == "pluck" and record(weed).is_empty(),held)
+		await settled()
+	else: check("an open spot for a shrub under the Modeller",false)
 	finish()
 
 func finish() -> void:
