@@ -79,7 +79,8 @@ func _tuft() -> void:
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 	var box := mesh.get_aabb()
-	check(indices.size()/3 == GrassTuft.BLADES*5, "Ten blades of five flat facets: %d triangles" % (indices.size()/3))
+	check(indices.size()/3 == GrassTuft.blade_count()*5 and GrassTuft.blade_count() == 16, "Ten blades and two small satellite clumps of three, five flat facets each: %d triangles" % (indices.size()/3))
+	check(maxf(box.size.x, box.size.z) <= 0.95, "The clump stays under a metre across: %.2f x %.2f m" % [box.size.x, box.size.z])
 	check(box.size.y <= 0.4 and box.size.y >= 0.3, "No taller than the source's 0.42 m: %.2f m" % box.size.y)
 	check(minf(box.size.x, box.size.z) >= 0.35, "A rounded mound at least 0.35 m across: %.2f x %.2f m" % [box.size.x, box.size.z])
 	var material := ShaderMaterial.new()

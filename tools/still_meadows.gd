@@ -4,6 +4,7 @@ extends SceneTree
 ## diorama overview and from a nearer, lower view across the meadow. Saves
 ## captures/meadows/<land>-<seed>-<view>.png. Rendered (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/still_meadows.gd -- --no-title [--lands=sunflowers,cosmos] [--seed=meadow-lark-2081] [--views=diorama,near] [--tag=name]
+##   [--set=ground_calm:0] sets a ground uniform for A/B.
 const Library = preload("res://scripts/world_library.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const OUT := "res://captures/meadows"
@@ -44,6 +45,15 @@ func run() -> void:
 		var formed := Time.get_ticks_msec()-started
 		scene.world_clock.running = false
 		for overlay: Node in scene.find_children("*","CanvasLayer",true,false): overlay.visible = false
+		# --set=ground_calm:0 and the like, on the ground's material, for A/B.
+		for arg in OS.get_cmdline_user_args():
+			if not arg.begins_with("--set="): continue
+			var pair := arg.trim_prefix("--set=").split(":")
+			var terrain: MeshInstance3D = scene._chunk_editor.terrain
+			var material := terrain.material_override as ShaderMaterial
+			if material == null: material = terrain.mesh.surface_get_material(0) as ShaderMaterial
+			material.set_shader_parameter(pair[0],float(pair[1]))
+			print("MEADOW set ",pair[0]," ",pair[1])
 		await frames(90)
 		var data: NativeTerrainData = scene._chunk_editor.data
 		print("MEADOW %s formed %d ms, %d records, %s" % [land,formed,data.objects.size(),preload("res://scripts/biome_blend.gd").title(data._recipe_settings)])

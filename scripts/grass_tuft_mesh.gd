@@ -12,6 +12,8 @@ extends RefCounted
 ## the ground's own colour (shaders/ground_look.gdshaderinc). The vertex
 ## colours are the source's (#38663a to #93c05f) and only carry each blade's
 ## jitter and any instance tint. UV.y is the height fraction up the blade.
+## Two small satellite clumps of three blades stand beside it (SATELLITES),
+## so a scatter of tufts reads as patches of field rather than lone plants.
 ## On by default since round three (docs/scenic/grass-look.md);
 ## `--classic-grass` draws the source tuft.
 const BLADES := 10
@@ -27,6 +29,10 @@ const LEAN_CURVE := 1.8
 const HALF_WIDTH := 0.04
 ## Lightness jitter on each blade's tip, as the source's offsetHSL.
 const TIP_JITTER := 0.04
+## Small clumps round the main one, so a tuft reads as a patch of field, not
+## a lone plant: [blades, distance from the centre (m), size] each, at
+## angles drawn from the seed. Placement is untouched (no digest changes).
+const SATELLITES := [[3, 0.27, 0.62], [3, 0.24, 0.55]]
 
 static func enabled() -> bool:
 	return not ("--classic-grass" in OS.get_cmdline_user_args() or "--classic-grass" in OS.get_cmdline_args())
@@ -72,22 +78,38 @@ static func dress(material: Material, mesh: Mesh = null) -> void:
 
 ## One line naming the tuft in use, for the startup grass log.
 static func describe() -> String:
-	return "soft tuft (%d blades, scripts/grass_tuft_mesh.gd; --classic-grass for the source tuft)" % BLADES if enabled() else "classic source tuft (--classic-grass)"
+	return "soft tuft (%d blades, scripts/grass_tuft_mesh.gd; --classic-grass for the source tuft)" % blade_count() if enabled() else "classic source tuft (--classic-grass)"
+
+## Blades in the whole clump: the main tuft and its satellites.
+static func blade_count() -> int:
+	var count := BLADES
+	for satellite: Array in SATELLITES: count += int(satellite[0])
+	return count
 
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for blade in range(BLADES):
-		var angle := (float(blade) / BLADES) * TAU + rng.randf() * 0.9
+	_clump(surface, rng, root, tip, BLADES, Vector2.ZERO, 1.0)
+	var turn := rng.randf() * TAU
+	for satellite: Array in SATELLITES:
+		turn += rng.randf_range(2.0, 3.6)
+		_clump(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]))
+	surface.index()
+	return surface.commit()
+
+## One clump of `blades` fanned round `at`, scaled by `size`.
+static func _clump(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color, tip: Color, blades: int, at: Vector2, size: float) -> void:
+	for blade in range(blades):
+		var angle := (float(blade) / blades) * TAU + rng.randf() * 0.9
 		var out := Vector2.from_angle(angle)
 		# Alternate inner and outer blades, jittered, so the mound fills.
 		var ring := clampf((0.25 if blade % 2 == 0 else 0.8) + rng.randf_range(-0.2, 0.2), 0.0, 1.0)
-		var base := out * lerpf(ROOT_RING.x, ROOT_RING.y, ring)
-		var height := lerpf(HEIGHT.y, HEIGHT.x, ring) * rng.randf_range(0.88, 1.08)
-		var lean := lerpf(LEAN.x, LEAN.y, ring) * rng.randf_range(0.85, 1.15)
-		var side := Vector2(-out.y, out.x) * HALF_WIDTH * rng.randf_range(0.85, 1.15)
+		var base := at + out * lerpf(ROOT_RING.x, ROOT_RING.y, ring) * size
+		var height := lerpf(HEIGHT.y, HEIGHT.x, ring) * rng.randf_range(0.88, 1.08) * size
+		var lean := lerpf(LEAN.x, LEAN.y, ring) * rng.randf_range(0.85, 1.15) * size
+		var side := Vector2(-out.y, out.x) * HALF_WIDTH * rng.randf_range(0.85, 1.15) * lerpf(1.0, size, 0.5)
 		var blade_tip := tip.lightened(rng.randf_range(0.0, TIP_JITTER)) if rng.randf() < 0.5 else tip.darkened(rng.randf_range(0.0, TIP_JITTER))
 		var strip := []
 		for k in range(ROWS.size()):
@@ -104,8 +126,6 @@ static func build(root: Color, tip: Color) -> ArrayMesh:
 		_vertex(surface, last[0], Vector2(0.0, last[2]), root.lerp(blade_tip, last[2]))
 		_vertex(surface, last[1], Vector2(1.0, last[2]), root.lerp(blade_tip, last[2]))
 		_vertex(surface, _point(base, out, height, lean, 1.0), Vector2(0.5, 1.0), blade_tip)
-	surface.index()
-	return surface.commit()
 
 ## A blade's centre line: rising, arcing outward, and dropping a little as it
 ## lies over so its length holds.

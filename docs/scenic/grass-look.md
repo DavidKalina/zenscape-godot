@@ -152,11 +152,33 @@ Placement is unchanged: no cover, digest or save format changed, and existing wo
 - Inland worlds use `prototype_inland_surface.gdshader` and are not changed. Dense grass (opt-in) still reads its own ground colour.
 - The tuft's wind, the soft normal under the wind tool and the chaff in flight were only seen in stills, not in motion.
 
+## Round four: somewhere in between (`beautification`, 2026-10-02)
+
+The user liked the calm field but found it "a little bit flat", and asked for somewhere between the old mosaic and the calm. The target was broad, soft patches of light and shade over tens of metres, a little warmer on sunny slopes and deeper in hollows, a gentle hint of facets, and no harsh per-triangle contrast.
+
+- **More of each face's own colour.** `ground_calm` 0.6 (was 0.8), so 40% of a grass face's own green is left where 20% was. `ground_soft` 0.6 (was 0.7), so a little more of the facet's light shows.
+- **A stronger broad field.** `zs_ground_field` now reads its two noises at 2.8 and 0.9 (were 1.8 and 0.7). The new `ground_patch` 1.3 (fixed at 0.65 before) is how far it leans to the sunlit and deep greens, a little past them at the extremes. At the same noise the field now leans about three times as far as in round three. In the stills, though, the spread between 33-pixel blocks of the plain rose only a little (2.1% to 2.2–2.4%): the mist, the facet light and each run's random plate weigh as much at that scale. The patches show, but gently.
+- **Warmer sunny slopes, deeper shaded ones.** `zs_ground_sun_warm` takes the smoothed ground normal (already on `world_normal`) and the sun's direction. Grass on a slope turned to the sun goes up to 10% warmer and lighter (×1.10, 1.05, 0.88), and grass on a slope turned away goes up to 10% deeper (×0.90, 0.95, 1.0), scaled by `ground_warm` 0.5. Flat ground and rock are left alone, it adds no varyings, and it runs after the palette, so muted families shift the same way. Lusher low ground still comes from water only (`ground_lush`). There is no height-based hollow term: the plate has no reference level to measure a hollow against.
+- **Tufts as small clumps.** The soft tuft now has two satellite clumps of three blades each, at 0.24–0.27 m from the centre and 0.55–0.62 of its size (`SATELLITES` in `grass_tuft_mesh.gd`). The clump is 0.71 × 0.46 m and has 16 blades and 80 triangles (was 50). Placement is unchanged, so no digest moved. A world with about 1,650 tufts draws about 132k triangles for them (was 82k). Real clustering of placements (emergence's shrub lattice) was left alone, because it would move the placement digests.
+
+**Measured.** `tools/still_noise.gd` (new, headless) gives the mean |luma − its 9×9 local mean| over a fixed patch of open plain in the diorama still (x 80–440, y 470–650 at 1280×720). It reads the grass agent's own stills as 0.77% before and 0.15% calm (`captures/grass/before-diorama.png` and `a2-diorama.png` in its worktree). That is about half the 1.6% and 0.3% quoted in round three, which used a different patch, so compare the ratios rather than the absolute numbers. On this branch:
+
+| Still | Noise | Mean luma |
+| --- | --- | --- |
+| Before round three (mosaic) | 0.77% | 0.49 |
+| Round three (calm) | 0.15–0.19% | 0.50–0.52 |
+| Round four, default palette | 0.35% | 0.49 |
+| Round four, Chalk & turquoise | 0.37% | 0.54 |
+
+That is roughly 45% of the way from calm to mosaic, or about 0.7% on round three's scale. Each run of `still_grass.gd` grows a different random plate, so expect ±0.05% between runs.
+
+Stills are in `captures/final/` in the main checkout: `plain-diorama-final.png`, `plain-close-final.png` and the `plain-chalk-*` pair, with `plain-*-merge.png` as the calm field for comparison.
+
 ## Tunables
 
 All tunables are shader uniforms on `DenseGrass.material` unless noted. Each group lists its defaults.
 
-- **Ground (reference_surface, every tier):** `ground_calm` 0.8, `ground_soft` 0.7, `ground_dry` 0.45, `ground_lush` 0.6 and `ground_living` 0.3 (`shaders/ground_look.gdshaderinc`).
+- **Ground (reference_surface, every tier):** `ground_calm` 0.6, `ground_soft` 0.6, `ground_patch` 1.3, `ground_warm` 0.5, `ground_dry` 0.45, `ground_lush` 0.6 and `ground_living` 0.3 (`shaders/ground_look.gdshaderinc`).
 - **Tufts (reference_surface, every tier):** `grass_dry` 0.25, `grass_living` 0.4, `grass_variation` 0.12, `grass_contact` 0.4, `grass_round` 0.55, `grass_tip_glow` 0.55, `grass_root_blend` (0.92, 0.6) and `grass_ground_pull` 0.4. The mesh constants are `BLADES`, `HALF_WIDTH`, `ROOT_RING`, `HEIGHT` and `LEAN` in `grass_tuft_mesh.gd`. Cover on the plain is `GENESIS_BLADES` and `GENESIS_FLOWERS` in `genesis_canvas.gd`; emerged cover is `_cover_target` in `emergence.gd`.
 - **Living colour (dense grass):** `living_pull` 0.4 and `living_saturation` 1.12.
 

@@ -32,8 +32,14 @@ const vec3 ZS_GROUND_LUSH = vec3(0.0880, 0.3150, 0.1250);
 // of the face (grass only; rock and snow stay faceted). dry, lush: the
 // patches' strength. living: how far the family's grass leans to living
 // green, as the tufts do (grass_look zs_grass_living).
-uniform float ground_calm : hint_range(0.0, 1.0) = 0.8;
-uniform float ground_soft : hint_range(0.0, 1.0) = 0.7;
+// patch: how far the broad field leans to the sunlit and deep greens (0.65
+// in round three; "somewhere in between" lifts it so the field has visible
+// light and shade over tens of metres). warm: how much warmer and lighter
+// grass on slopes turned to the sun reads (zs_ground_sun_warm).
+uniform float ground_calm : hint_range(0.0, 1.0) = 0.6;
+uniform float ground_soft : hint_range(0.0, 1.0) = 0.6;
+uniform float ground_patch : hint_range(0.0, 1.5) = 1.3;
+uniform float ground_warm : hint_range(0.0, 1.0) = 0.5;
 uniform float ground_dry : hint_range(0.0, 1.0) = 0.45;
 uniform float ground_lush : hint_range(0.0, 1.0) = 0.6;
 uniform float ground_living : hint_range(0.0, 1.0) = 0.3;
@@ -56,8 +62,8 @@ float zs_ground_grassness(vec3 g_face) {
 vec3 zs_ground_field(vec2 g_p, float g_lush) {
 	float g_broad = zs_noise(g_p * 0.06 + zs_grass_offset * 0.41 + 17.0) - 0.5;
 	float g_mid = zs_noise(g_p * 0.16 + zs_grass_offset * 0.57 + 41.0) - 0.5;
-	float g_sun = clamp(g_broad * 1.8 + g_mid * 0.7, -1.0, 1.0);
-	vec3 g_color = mix(ZS_GROUND_GREEN, g_sun > 0.0 ? ZS_GROUND_SUNLIT : ZS_GROUND_DEEP, abs(g_sun) * 0.65);
+	float g_sun = clamp(g_broad * 2.8 + g_mid * 0.9, -1.0, 1.0);
+	vec3 g_color = mix(ZS_GROUND_GREEN, g_sun > 0.0 ? ZS_GROUND_SUNLIT : ZS_GROUND_DEEP, abs(g_sun) * ground_patch);
 	float g_dry = zs_grass_dry(g_p, ZS_GRASS_DRY_SCALE, zs_grass_offset) * ground_dry * (1.0 - g_lush);
 	g_color = mix(g_color, ZS_GROUND_DRY, g_dry);
 	return mix(g_color, ZS_GROUND_LUSH, g_lush * ground_lush);
@@ -68,6 +74,18 @@ vec3 zs_ground_field(vec2 g_p, float g_lush) {
 // palette-tinted ground colour (linear) and `g_p` the world point.
 vec3 zs_ground_meadow_tint(vec3 g_ground, vec3 g_p) {
 	return g_ground;
+}
+
+// Grass on a slope turned to the sun reads a little warmer and lighter,
+// and on one turned away a little deeper, over the smoothed ground normal
+// `g_n` (world space), so rises and hollows show as broad soft light and
+// shade: `g_grass` the face's zs_ground_grassness, `g_sun` the direction
+// to the sun. Flat ground is left as it is.
+vec3 zs_ground_sun_warm(vec3 g_tint, vec3 g_n, vec3 g_sun, float g_grass) {
+	vec2 g_toward = g_sun.xz / max(length(g_sun.xz), 0.001);
+	float g_facing = clamp(dot(g_n.xz, g_toward) * 3.0, -1.0, 1.0) * smoothstep(-0.05, 0.15, g_sun.y);
+	vec3 g_shift = g_facing > 0.0 ? vec3(1.10, 1.05, 0.88) : vec3(0.90, 0.95, 1.0);
+	return g_tint * mix(vec3(1.0), g_shift, abs(g_facing) * ground_warm * g_grass);
 }
 
 // The ground's colour: face colour `g_face` (base colour times vertex

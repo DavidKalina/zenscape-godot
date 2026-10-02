@@ -506,6 +506,9 @@ void fragment() {
 	// The ground's colour is made in one place (ground_look zs_ground_color).
 	vec3 tint = ground ? zs_ground_color(base_color.rgb * COLOR.rgb, world_position, earth_side.x, ground_grass)
 		: scene_palette(base_color.rgb * COLOR.rgb);
+	// Slopes to the sun a little warmer, away from it a little deeper (the
+	// smoothed ground normal rides world_normal on the ground).
+	if (ground) tint = zs_ground_sun_warm(tint, normalize(world_normal), zs_sun_direction, ground_grass);
 	// The earth sides: strata, each facet a shade apart like the ground's,
 	// dimming toward the base where the void's mist takes over (EMISSION).
 	float side_mist = 0.0;
