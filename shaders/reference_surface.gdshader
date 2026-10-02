@@ -106,6 +106,11 @@ uniform vec4 flower_far = vec4(12.0, 30.0, 1.0, 0.4);
 // MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
 // flowers are stems and heads. `.x` 0 keeps it at every distance.
 uniform vec2 flower_lod = vec2(0.0, 1.0);
+// The root's colour: the ground's under it times x, giving way to the
+// tuft's own green by y of the way up.
+uniform vec2 grass_root_blend = vec2(0.92, 0.6);
+// How far the tuft's living green leans to the ground's colour under it.
+uniform float grass_ground_pull = 0.4;
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -154,13 +159,22 @@ uniform float earth_sides_top = 2.6;
 uniform float earth_sides_base = -2.8;
 // The earth sides' depth below the rim, the rim's rise, height above the
 // base and position along the side, packed in one varying: the shader is at
-// the 31-varying limit (Metal), and four floats would take four.
+// the 31-varying limit (Metal), and four floats would take four. The grass
+// ground (zs_is_ground) has no sides and reuses it: x is how near water it
+// lies (shaders/ground_look.gdshaderinc).
 varying vec4 earth_side;
 // The precipitation height map: 128 texels over the 32 m plate, alpha the
 // water surface height (-1000 where dry). Read for wet banks only.
 global uniform sampler2D zs_water_map;
 
 #include "res://shaders/terrain_geology.gdshaderinc"
+#include "res://shaders/ground_look.gdshaderinc"
+
+// The plate's ground: the terrain mesh, painted by the calm grass field
+// (ground_look) and lit partly by its smoothed normal.
+bool zs_is_ground() {
+	return terrain_growth && palette_role == 1 && !earth_sides;
+}
 
 // Chunk atlas: borders that meet a neighbour (n, e, s, w as 1) stay at their
 // pinned height while the live chunk folds down or grows back, so a seam never
@@ -436,6 +450,13 @@ void vertex() {
 		play_deform(VERTEX, NORMAL);
 		world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+		if (zs_is_ground()) {
+			// The smoothed ground normal rides world_normal (the fragment takes
+			// the face's own from derivatives), and the nearness of water rides
+			// the unused earth_side: no new varyings (Metal's 31, 4b6508e).
+			world_normal = normalize(MODEL_NORMAL_MATRIX * zs_ground_smooth_normal(VERTEX, NORMAL));
+			earth_side = vec4(zs_ground_lush_at(VERTEX), 0.0, 0.0, 0.0);
+		}
 		if (grass_blades) {
 			// Light the tuft as part of the field's soft mass: the ground's
 			// normal from the height map, domed outward toward the tips.
@@ -458,6 +479,19 @@ void fragment() {
 	// Trees thin round a shaping tool at work (shaders/shaping_reveal.gdshaderinc).
 	if (tree_tread && zs_revealed(leaf_local, plant_root, tree_tread_height, FRAGCOORD.xy)) discard;
 	vec3 face_normal = world_normal;
+	// The normal the light sees: the face's own, except on grass ground,
+	// which leans `ground_soft` of the way to the smoothed ground.
+	vec3 light_normal = world_normal;
+	bool ground = zs_is_ground();
+	float ground_grass = 0.0;
+	if (ground) {
+		vec3 facet = normalize(cross(dFdx(world_position), dFdy(world_position)));
+		if (dot(facet, world_normal) < 0.0) facet = -facet;
+		ground_grass = zs_ground_grassness(base_color.rgb * COLOR.rgb);
+		face_normal = facet;
+		light_normal = normalize(mix(facet, normalize(world_normal), ground_soft * ground_grass));
+		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
+	}
 	if (grass_blades || flower_heads) {
 		face_normal = normalize(face_normal);
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
@@ -468,7 +502,10 @@ void fragment() {
 		if (dot(face_normal, zs_camera_position - world_position) < 0.0) face_normal = -face_normal;
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
-	vec3 tint = scene_palette(base_color.rgb * COLOR.rgb);
+	if (!ground) light_normal = face_normal;
+	// The ground's colour is made in one place (ground_look zs_ground_color).
+	vec3 tint = ground ? zs_ground_color(base_color.rgb * COLOR.rgb, world_position, earth_side.x, ground_grass)
+		: scene_palette(base_color.rgb * COLOR.rgb);
 	// The earth sides: strata, each facet a shade apart like the ground's,
 	// dimming toward the base where the void's mist takes over (EMISSION).
 	float side_mist = 0.0;
@@ -489,9 +526,16 @@ void fragment() {
 		vec3 grass_src = max(mix(grass_source_root, grass_source_tip, grass_along), vec3(0.002));
 		vec3 own = clamp(COLOR.rgb / grass_src, vec3(0.0), vec3(3.0));
 		vec3 living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
+		// The tuft is the field's grass standing up: its green leans toward
+		// the ground's under it (ground_look), so it sits in the field.
+		vec3 ground_under = zs_ground_color(ZS_GROUND_GREEN, vec3(plant_root.x, 0.0, plant_root.y), 0.0, 1.0);
+		living = mix(living, ground_under, grass_ground_pull);
 		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation;
 		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
 		tint = zs_grass_paint(living * base_color.rgb * own, grass_along, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
+		// The root grows out of the ground's own colour (ground_look) and
+		// only the upper blade is the tuft's, so no dark base rings it.
+		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
 	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
@@ -575,11 +619,12 @@ void fragment() {
 	// Look pass: ambient-only contact occlusion. Emission bypasses Godot's SSAO,
 	// so the hemisphere term is where grounding has to happen.
 	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
-	if (grass_blades) contact = mix(1.0, contact, grass_contact);
+	// Tufts keep a little of it up the blade; the root matches the ground.
+	if (grass_blades) contact = mix(1.0, contact, grass_contact * smoothstep(0.0, grass_root_blend.y, grass_along));
 	if (flower_heads) contact = mix(1.0, contact, flower_contact);
 	// The sides hang below their origin; the contact term would halve them.
 	if (earth_sides) contact = 1.0;
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
 	// A seed clock holds light through itself: a soft sky glow of its own.
 	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;
@@ -589,9 +634,9 @@ void fragment() {
 		// Sky sheen on silhouettes, stronger against the sun; ground-facing
 		// and flat-lying faces stay out so meadows do not glaze over.
 		vec3 view_dir = normalize(zs_camera_position - world_position);
-		float edge = pow(1.0 - abs(dot(face_normal, view_dir)), 4.0);
+		float edge = pow(1.0 - abs(dot(light_normal, view_dir)), 4.0);
 		float backlit = 0.5 + 0.5 * max(dot(-view_dir, zs_sun_direction), 0.0);
-		float upright = 1.0 - smoothstep(0.6, 0.9, face_normal.y);
+		float upright = 1.0 - smoothstep(0.6, 0.9, light_normal.y);
 		EMISSION += mix(tint, vec3(0.5), 0.35) * zs_hemi_sky * zs_hemi_energy * edge * backlit * upright * contact * zs_look_rim;
 	}
 	vec3 alpen_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
