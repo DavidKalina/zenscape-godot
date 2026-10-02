@@ -121,6 +121,7 @@ Shift, read when the verb is decided.
 | `hold_begin(fine) -> String` | the hold is decided (still for `HOLD_SECONDS`, 0.3 s) | may move `clay.center`; set up, `clay.gather` the points it will move, return the verb's name. The undo step is already open |
 | `hold_step(heights, rise: float) -> bool` | each frame held, and once at release | `rise` is the pointer's travel up the screen, in metres standing at `clay.center` (down is negative). Write `heights` from `clay.base`, set `lift`, and return false when nothing changed |
 | `hold_end()` | release, or cut short | rock paint, trees sliding off |
+| `hold_tracks() -> bool` | the pointer moves while held | true and the clay picks the ground under the pointer's sideways travel into `clay.hold_point` (default false: nothing is picked). The Mountain's range runs to it |
 | `tap(fine)` | a tap (let go before 0.3 s, moved under 6 px) | anything. To keep a change, call `clay.open_stroke()`, write `clay.editor.data.heights`, then `clay.close_stroke()` |
 | `frame(delta)` / `finish()` / `busy() -> bool` | every frame / at once / probes | for anything that runs on after a press (the Hand's poke rings out; the paddle's pat holds the hand down; the Wire's cut draws through). `finish()` runs on an undo, a new press or a change of tool, and leaves what running out would have |
 
@@ -132,6 +133,7 @@ A drag's heights reach the land after each frame's dabs; a hold's after each
 | Member | What |
 |---|---|
 | `center: Vector2` | the plate point pressed (a hold may move it) |
+| `hold_point: Variant` | for a tool that `hold_tracks`: the ground under the pointer's sideways travel (plate), picked on the press's row of the screen on the ground as it stood at `base`, so the travel up the screen (the height) does not move it; null until the pointer moves on the land |
 | `base: PackedFloat32Array` | the heights when the stroke opened. Shape against it, so a verb never compounds within a stroke |
 | `verb: String` | the decided verb |
 | `speed: float` | the drag's pointer speed, px/s over `SPEED_WINDOW` |
@@ -904,3 +906,77 @@ groove or rub, Shift-drag the palm, hold-then-drag the pinch).
   Hand's was 0.82).
 - **Unverified.** Nothing of it has been seen rendered: the prop's size and
   lean against the land, and the icon at the roll's size.
+
+## The Mountain's range
+
+Asked 2026-10-01: "The ability to pull a mountain to create a range. Right
+now I have to do multiple points and pull up to stitch the mountain range.
+I'd like a horizontal pull." Decided: one gesture on the Mountain
+(`scripts/clay_tools/mountain.gd`), no new tool or mode.
+
+- **The gesture.** Press and pull up for height, as before. Moving the
+  pointer sideways as well stretches the peak into a range running from the
+  press to the ground under the pointer's sideways travel. The clay picks
+  that ground for a tool that `hold_tracks` (`clay.hold_point`): on the
+  press's row of the screen, on the ground as it stood when the stroke
+  opened, so pulling up never lengthens the range and the rising range never
+  catches the ray. A range runs across the view; the up-down axis of the
+  screen is the height.
+- **A pull straight up is the old peak, exactly.** Under `RANGE_DEAD`
+  (1.5 m) of sideways ground the Modeller's pinch step runs untouched. Past
+  it the peak eases into the range over `RANGE_EASE` (2.5 m), so nothing
+  jumps; coming back inside it eases back to the peak. The range is at most
+  the spec's `range` long: 20 m for the Mountain (the 28 m plate's edge fade
+  starts 11.4 m out), 10 m with Shift.
+- **The shape.** Summits every `spacing` (4 m, 2.2 m with Shift, times the
+  hand's size) from the press, each slipped along by up to 25 % of the
+  spacing and off the line by up to 0.4 m, and 72 to 100 % of the range's
+  height, seeded by the spot. Each is the pinch's horn (`_horn_from`, its own
+  three to five arêtes, the forms' crag and lump noise), at `RANGE_NARROW`
+  (0.45) of a lone peak's radius, which still grows with its own height, so
+  the range is a line of teeth and not a long dome. Between them the crest is
+  mountain_forms' ridge (its knife edge, one flank 0.72 as wide, serrated by
+  the crag noise) at `SADDLE` (0.55) of the summits; the higher of the two
+  wins, so neighbours join in notched cols. An envelope lowers the ends'
+  summits by `RANGE_TAPER` (40 %), and the tallest summit stands at the
+  pulled height. A summit further along rises out of the end as the line
+  reaches it. Low pulls stay rounded swells and turn into the range as the
+  peak turns into a horn (`HORN`); a pull down sinks a rounded trench.
+- **Points.** The range gathers the points within the widest horn's reach of
+  its line again whenever its end moves `REGATHER` (0.25 m), and keeps
+  writing every point it has reached this pull (from `base`), so a range
+  pulled back shorter lets its ground back down.
+- **Let go.** The range's rock along its whole length (`paint_rock` over a
+  square round its middle), trees on its flanks slide off, and the pull is
+  one undo step.
+
+### Checked headless
+
+`tools/probe_mountain_range.gd` (real cozy worlds scene, synthesized input):
+
+- a 150 px pull straight up gives the same heights as before the change on
+  the same world (`--seed 7`, `--peak-ref`): largest difference 9e-5 m,
+  which is the camera settling by a fraction of a pixel between runs; round
+  (12.6 by 12.9 m raised over 10 % of its 13.9 m top);
+- the same pull wobbling ±10 px sideways (under the dead zone) leaves that
+  peak and never turns into a range;
+- 150 px up and 16 m of ground sideways (rightward on most worlds, leftward
+  on seed 12): a range along the drag (its axis within 2.5° of it), 19.2 to
+  20.7 m long and 5.3 to 6.2 m wide at 10 % of its top (3.2 to 3.7 times),
+  5 or 6 summits standing 0.4 m or more over the cols between them, its top
+  11.6 to 12.9 m against the peak's 13.5 to 14 m, its crest down to 3 m or
+  less at both ends, and rock along all three thirds of its crest; on seeds
+  3, 7 and 12 and four runs of the default (random) world;
+- each pull is one undo step and one undo restores the heights and tint
+  exactly;
+- headless frame time while pulling is the peak's: p50 10.7 against 10.9 ms
+  in one run, 5.4 against 4.8 ms in another.
+
+`tools/probe_drag_tools.gd` passes as before.
+
+### Unverified
+
+Nothing of it has been seen rendered: how the range's teeth, cols and
+arêtes read against the edge spring's ranges, its rock, and how the
+sideways pull feels with a real pointer and camera angles other than the
+default view.

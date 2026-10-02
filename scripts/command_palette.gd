@@ -98,7 +98,7 @@ const SEEDS := [
 const TOOLS := [
 	["hand","Modeller","Mould","Push and pull soft ground into shape."],
 	["hills","Hills","Roll","Drag across the land to raise rolling hills."],
-	["mountain","Mountain","Peak","Press and drag up to pull a mountain."],
+	["mountain","Mountain","Peak","Press and drag up to pull a mountain; drag sideways too for a range."],
 	["bowl","Bowl","Hollow","Drag to press out a basin a pond can fill."],
 	["paddle","Paddle","Mass","Raise or flatten broad ground."],
 	["chisel","Chisel","Cut","Crisp rock: faces, cliffs, terraces."],

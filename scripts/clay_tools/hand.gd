@@ -351,22 +351,7 @@ func hold_begin(fine: bool) -> String:
 ## screen in metres standing at the spot.
 func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 	var spec: Dictionary = _pinch_spec(clay.verb == _pinch_verb(true))
-	var goal := clampf(rise*float(spec.scale),-float(spec.sink),float(spec.raise))
-	if clay.letting_go:
-		lift = goal
-		_lift_speed = 0.0
-	else:
-		# Semi-implicit steps of the spring, so a long frame cannot blow it up.
-		var dt := minf(clay.get_process_delta_time(),0.05)
-		var steps := ceili(dt/0.008)
-		for k in range(steps):
-			var h := dt/steps
-			_lift_speed += (PINCH_SPRING*PINCH_SPRING*(goal-lift)-2.0*PINCH_DAMPING*PINCH_SPRING*_lift_speed)*h
-			lift += _lift_speed*h
-		if absf(goal-lift) < 0.0005 and absf(_lift_speed) < 0.005:
-			lift = goal
-			_lift_speed = 0.0
-		lift = clampf(lift,-float(spec.sink)*1.08,float(spec.raise)*1.08)
+	_follow(spec,rise)
 	if is_equal_approx(lift,_shown_lift): return false
 	_shown_lift = lift
 	var radius: float = minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))*clay.size_scale
@@ -384,6 +369,26 @@ func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 		heights[i] = clampf(h,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
 	clay.touch(clay.center,radius*HORN_REACH)
 	return true
+
+## The lift follows the pointer's `rise` on the pinch's spring (PINCH_SPRING),
+## between the `spec`'s sink and raise; let go, it lands on it.
+func _follow(spec: Dictionary, rise: float) -> void:
+	var goal := clampf(rise*float(spec.scale),-float(spec.sink),float(spec.raise))
+	if clay.letting_go:
+		lift = goal
+		_lift_speed = 0.0
+		return
+	# Semi-implicit steps of the spring, so a long frame cannot blow it up.
+	var dt := minf(clay.get_process_delta_time(),0.05)
+	var steps := ceili(dt/0.008)
+	for k in range(steps):
+		var h := dt/steps
+		_lift_speed += (PINCH_SPRING*PINCH_SPRING*(goal-lift)-2.0*PINCH_DAMPING*PINCH_SPRING*_lift_speed)*h
+		lift += _lift_speed*h
+	if absf(goal-lift) < 0.0005 and absf(_lift_speed) < 0.005:
+		lift = goal
+		_lift_speed = 0.0
+	lift = clampf(lift,-float(spec.sink)*1.08,float(spec.raise)*1.08)
 
 ## Let go: a raise takes the range's rock (see ROCK_FROM), and trees that
 ## cannot hold the flanks slide down.
@@ -412,12 +417,17 @@ func _horn_setup() -> void:
 ## The horn's share of the lift at point `i`, `t` radii from the pinch: the
 ## alpine form (mountain_forms `_stamp`) scaled so its summit is 1.
 func _horn(i: int, t: float) -> float:
+	return _horn_from(i,clay.editor.data.points[i]-clay.center,t,_aretes)
+
+## The horn's share at point `i`, `d` from its summit and `t` of its radius
+## out, with arêtes at the angles `aretes`: any summit's (the Mountain's range
+## stands several along its crest).
+func _horn_from(i: int, d: Vector2, t: float, aretes: PackedFloat32Array) -> float:
 	var rw := t*(1.0+(_lump[i]-0.5)*0.4)
 	if rw >= 1.0: return 0.0
-	var d: Vector2 = clay.editor.data.points[i]-clay.center
 	var theta := atan2(d.y,d.x)
 	var arete := 0.0
-	for angle in _aretes: arete = maxf(arete,1.0-absf(angle_difference(theta,angle))/0.6)
+	for angle in aretes: arete = maxf(arete,1.0-absf(angle_difference(theta,angle))/0.6)
 	arete = arete*arete*smoothstep(0.02,0.25,rw)
 	var profile := pow(1.0-rw,1.9)
 	var crag := (_jag[i]-0.5)*0.16*rw*(1.0-rw)*4.0

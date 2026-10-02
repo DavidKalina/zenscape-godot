@@ -175,6 +175,11 @@ func hold_begin(_fine: bool) -> String: return "hold"
 ## the clay neither writes nor shows the land.
 func hold_step(_heights: PackedFloat32Array, _rise: float) -> bool: return false
 
+## Whether the hold wants the pointer's sideways travel as ground: true and
+## the clay picks it each time the pointer moves, into `clay.hold_point`
+## (the Mountain's range runs to it). Default false: the clay picks nothing.
+func hold_tracks() -> bool: return false
+
 ## The hold is let go (or cut short), before the stroke closes: rock paint,
 ## trees sliding off (`clay.paint_rock`, `clay.shake_trees`).
 func hold_end() -> void: pass
