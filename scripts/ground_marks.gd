@@ -16,6 +16,10 @@ extends Node
 ##   chunks will fall.
 ## - **Material:** a dotted drop ring under the carried item, as wide as the
 ##   spread it will set down (hand_materials SCATTER spread × size).
+## - **Flowers** (a flower slot in hand, painted, scripts/flower_paint.gd): the
+##   Modeller's soft loop and faint fill, as wide as the brush. Unlike the
+##   others it stays while the press paints, fainter (PAINT_SHOWN), so the
+##   brush's size is always there to see; Shift's thinning uses the same.
 ## - **Feather** (HUD 5 "Gust", wind in hand): at rest only a small stitched
 ##   hotspot ellipse (FEATHER_HOTSPOT); while a drag is under way the hotspot
 ##   rides under the feather, since the wind itself (the live wake) shows
@@ -45,8 +49,10 @@ extends Node
 ## The marks.
 ## The Sculpt's, the drag tools' and the Brush's are the Modeller's ring (the shader's kind
 ## 0), at their reach.
-const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl","brush"]
-const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0,"brush":0}
+const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl","brush","flower"]
+const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0,"brush":0,"flower":0}
+## The flower brush's mark while its press paints: this share of its full show.
+const PAINT_SHOWN := 0.55
 
 ## How faint (premultiplied alpha at full show, 0..1): the loops' and dots'
 ## thread, the hand's fill, and the wire's line while dragged. FAINT_CAP is the
@@ -100,8 +106,7 @@ const SCREE := [Vector3(-0.32,1.25,0.07),Vector3(0.18,1.55,0.09),Vector3(-0.08,1
 ## tree seeds gather a veil about the pollen cloud's CLOUD.y across before the
 ## wind takes it; the water ball's pool; a stone's biggest tap. Scattered
 ## things use their SCATTER spread, never under MATERIAL_MIN.
-const MATERIAL_RADIUS := {"oak":1.3,"pine":1.3,"willow":1.3,"birch":1.3,"water":1.0,"stone":0.45,
-	"wildflower":1.1,"dandelion":1.1,"poppy":1.1,"cosmos":1.1,"sunflower":1.1}
+const MATERIAL_RADIUS := {"oak":1.3,"pine":1.3,"willow":1.3,"birch":1.3,"water":1.0,"stone":0.45}
 const MATERIAL_MIN := 0.45
 ## The decal box: metres of margin round the mark, the ground samples round
 ## its outline for the box's height, metres of box under and over the ground
@@ -135,6 +140,8 @@ var material: ShaderMaterial
 var kind := "hand"
 var shown := 0.0
 var wanted := false
+## The show it fades toward while wanted (PAINT_SHOWN while flowers paint).
+var _full := 1.0
 ## Where it lies (terrain local), its half extents (terrain metres) along
 ## `axis` and across, the wire's press point and the path it has drawn
 ## (terrain local; the path's x, z, empty for a straight line).
@@ -226,6 +233,7 @@ func size_of(which: String, size_scale: float) -> Vector2:
 		"material":
 			var r := _material_radius()*size_scale
 			return Vector2(r,r)
+		"flower": return Vector2.ONE*preload("res://scripts/flower_paint.gd").RADIUS*size_scale
 	return Vector2.ZERO
 
 # --- Deciding, each frame --------------------------------------------------------
@@ -238,7 +246,8 @@ func step(delta: float) -> void:
 		hide(delta,"no tray")
 		return
 	var held: String = materials.held
-	var what := "material" if not held.is_empty() else str(materials.roll.tool)
+	var what := ("flower" if materials.paints(held) else "material") if not held.is_empty() else str(materials.roll.tool)
+	_full = 1.0
 	var size: float = materials.size_scale()
 	# The tool put down: nothing to mark.
 	if what.is_empty():
@@ -256,6 +265,15 @@ func step(delta: float) -> void:
 	var pointer := _pointer()
 	var holding: String = reach.holding
 	if not holding.is_empty():
+		# The flower brush keeps its mark while it paints, fainter.
+		if what == "flower" and holding == "paint":
+			var under: Variant = reach._land(pointer)
+			if under == null:
+				hide(delta,"off land")
+				return
+			_full = PAINT_SHOWN
+			update(what,under,size,delta)
+			return
 		# A drag or pinch has begun: only the wire's own line stays.
 		if what != "wire" or not holding in WIRE_HOLDS:
 			hide(delta,"held")
@@ -429,7 +447,7 @@ func _view_right() -> Vector3:
 	return right.normalized() if right.length() > 0.01 else Vector3.RIGHT
 
 func _fade(delta: float) -> void:
-	if wanted: shown = move_toward(shown,1.0,delta/FADE_IN)
+	if wanted: shown = move_toward(shown,_full,delta/FADE_IN)
 	else: shown = move_toward(shown,0.0,delta/FADE_OUT)
 
 ## Place the box round the mark and hand the shader its shape.
@@ -502,7 +520,7 @@ func _draw() -> void:
 	material.set_shader_parameter("speck_count",packed.size())
 	material.set_shader_parameter("shown",shown)
 	material.set_shader_parameter("line_alpha",WIRE_ALPHA if kind == "wire" else LINE_ALPHA)
-	material.set_shader_parameter("fill_alpha",FILL_ALPHA if kind in ["hand","feather_lane"] else 0.0)
+	material.set_shader_parameter("fill_alpha",FILL_ALPHA if kind in ["hand","feather_lane","flower"] else 0.0)
 	material.set_shader_parameter("line_px",WIRE_PX if kind == "wire" else LINE_PX)
 	material.set_shader_parameter("dot_px",DOT_PX)
 	material.set_shader_parameter("toggle_px",TOGGLE_PX)

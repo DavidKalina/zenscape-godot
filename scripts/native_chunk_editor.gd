@@ -780,6 +780,7 @@ func _process(delta: float) -> void:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995: _ball_release()
 		else: _ball_step(hit,delta)
 	_handful_process(hit,delta)
+	_flower_paint_process(hit,delta)
 	if _painting and _mountain_holding: _mountain_step(pointer,delta)
 	if gust != null: _gust_process(hit)
 	if can != null and hit != null: can.pointer = hit
@@ -828,6 +829,7 @@ func finish_pointer_gesture() -> void:
 func finish_stroke() -> void:
 	if _ball_holding: _ball_release()
 	if _handful_holding: _handful_release()
+	if flower_paint != null: paint_flowers_end()
 	_selection_drag = false
 	end_selection_edit()
 	if not _painting:
@@ -3491,6 +3493,84 @@ func _flower_sowing(kind: String) -> RefCounted:
 ## Live water at least this deep (m) keeps flower seed off.
 const FLOWER_WET_DEPTH := 0.02
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
+
+# --- Painting flowers ------------------------------------------------------------
+## Flowers painted from the hand (scripts/flower_paint.gd, docs/scenic/
+## handful.md "Flower seed"): with a flower slot in hand a press on the land
+## paints. The press opens one undo step and lays a tap's dab; each frame the
+## held press paints along the pointer's way (`_flower_paint_process`), and
+## what it places shows that frame through the view's paint preview
+## (GardenView `paint_preview`, `paint_hide`), with no refresh while the button
+## is down; the release lays the ground's faint wash, closes the step and
+## settles the view once (a yielding refresh: its instances are sampled on a
+## worker). The stroke in hand, or null.
+var flower_paint: RefCounted = null
+const FlowerPaint = preload("res://scripts/flower_paint.gd")
+## The last stroke's summary (FlowerPaint `finish`, with "changed"), and the
+## main-thread microseconds each painted frame took, for probes.
+var last_paint := {}
+var paint_usec: Array[int] = []
+
+## Paint flower `slot` from the hand at `screen_pos`, the brush `size` times
+## its own (the roll's pips), thinning instead when `thinning` (Shift). True
+## when the stroke began.
+func paint_flowers_begin(screen_pos: Vector2, slot: String, size := 1.0, thinning := false) -> bool:
+	if forming or not active or _ball_holding or _handful_holding or _painting or flower_paint != null: return false
+	if not FlowerSowing.has(slot): return false
+	var hit: Variant = pick(screen_pos)
+	if hit == null: return false
+	_land_mountain()
+	paint_usec.clear()
+	var began := Time.get_ticks_usec()
+	data.begin_stroke()
+	_handful_serial += 1
+	flower_paint = FlowerPaint.new(_flower_sowing(slot),size,thinning,hash([land_seed,_handful_serial,7919]))
+	_show_paint(flower_paint.press(Vector2(hit.x,hit.z)))
+	paint_usec.append(Time.get_ticks_usec()-began)
+	return true
+
+func _show_paint(made: Dictionary) -> void:
+	if not made.records.is_empty(): content.paint_preview(made.records)
+	if not made.removed.is_empty(): content.paint_hide(made.removed)
+
+## Each frame while the flowers' press is held: paint under the pointer.
+func _flower_paint_process(hit: Variant, delta: float) -> void:
+	if flower_paint == null: return
+	# Undone or reloaded under the brush: the stroke is gone with its step.
+	if data._before.is_empty() or forming:
+		flower_paint = null
+		return
+	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or scene._growth.terrain < 0.995:
+		paint_flowers_end()
+		return
+	if hit == null:
+		flower_paint.lift()
+		return
+	var began := Time.get_ticks_usec()
+	_show_paint(flower_paint.stroke(Vector2(hit.x,hit.z),delta))
+	paint_usec.append(Time.get_ticks_usec()-began)
+
+## The flowers' press comes up: the wash, one undo step, one settle.
+func paint_flowers_end() -> void:
+	if flower_paint == null: return
+	var stroke: RefCounted = flower_paint
+	flower_paint = null
+	if data._before.is_empty(): return
+	var began := Time.get_ticks_usec()
+	var summary: Dictionary = stroke.finish()
+	summary.finish_usec = Time.get_ticks_usec()-began
+	began = Time.get_ticks_usec()
+	summary.changed = data.end_stroke()
+	summary.end_stroke_usec = Time.get_ticks_usec()-began
+	began = Time.get_ticks_usec()
+	_settle_pending = true
+	_settle_stroke()
+	summary.settle_call_usec = Time.get_ticks_usec()-began
+	var bounds: Rect2 = summary.bounds
+	var middle := bounds.get_center()
+	var ground: Variant = data.ground_height(middle)
+	_emit_stroke(2,Vector3(middle.x,float(ground) if ground != null else 0.0,middle.y),bounds.size.length()*0.5,0.0)
+	last_paint = summary
 
 ## A stone set down by the hand (the materials tray), placed as the rock
 ## tool's click places one (`set_objects`).

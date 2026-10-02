@@ -23,16 +23,17 @@ extends Node
 ##   brush's own veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
 ##   a flicked tree's spores are: what comes up leans to it, as far as the
 ##   ground there allows (SEEDS).
-## - **Flower seed** (wildflower, dandelion, poppy, cosmos, sunflower;
-##   scripts/flower_sowing.gd SLOTS). Sown as the tree seeds are: press and
-##   drag over the land and the pinch flicks a light veil of seed and fluff
-##   out along the way; let go and the breeze carries it down, further than
-##   tree seed, a gust or the Feather further still. Where it settles the
-##   ground decides: it takes on open ground, not on water, rock, snow, steep
-##   slopes or under trees, and comes up as a drift of that kind, as a meadow
-##   type composes one (NativeChunkEditor `sow_from_hand`, `_write_flowers`),
-##   one undo step a sweep. A tap drops a small handful where the pointer is.
-##   The pips size the veil.
+## - **Flowers** (wildflower, dandelion, poppy, cosmos, sunflower;
+##   scripts/flower_sowing.gd SLOTS) are a paintbrush. Press and drag over the
+##   land: flowers come up under the brush as it goes, growing in at once; go
+##   over them again, or linger, and the drift packs toward a full core, its
+##   edge feathered. A tap paints a small dab. The ground still decides where
+##   they can stand (not on water, rock, snow, steep slopes, under trees or on
+##   stones), and they compose as a meadow type's drift. Shift thins the
+##   flowers under the brush instead, as the Brush's Shift wipes. The pips
+##   size the brush; one undo step a stroke (NativeChunkEditor
+##   `paint_flowers_begin`, scripts/flower_paint.gd). The wind's veil is kept
+##   for pollen from what already grows, later.
 ## - **Reeds.** Tap to set a clump of reeds; drag to scatter more under the
 ##   pointer (SCATTER: the build palette's plants, set down by
 ##   NativeChunkEditor `set_objects`, one undo step a drag). They sprout as a
@@ -78,8 +79,13 @@ const Modeless = preload("res://scripts/modeless_input.gd")
 ## Birch, redwood, juniper and Joshua have no slot in the case; the command
 ## palette (scripts/command_palette.gd) hands them over.
 const SEEDS := {"oak":"broadleaf","pine":"tree","willow":"willow","birch":"birch","redwood":"redwood","juniper":"juniper","joshua":"joshua"}
-## Flower seed: the slots scripts/flower_sowing.gd sows.
+## Flowers: the slots scripts/flower_sowing.gd composes, painted
+## (scripts/flower_paint.gd). PAINT is their press's hold.
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
+const PAINT := "paint"
+## While painting, the clump sheds a little and the brush is heard at most
+## every PAINT_CUE seconds that flowers come up under it.
+const PAINT_CUE := 0.28
 ## Things set down by a tap or a drag: the assets (one picked for each), how
 ## many one drop sets and how far they spread (m), a tap's size range (record
 ## scale, growing over `grow` s of holding) and a drag's (growing over
@@ -129,7 +135,7 @@ const FEATHER_RING := 1.5
 const CLICK_PIXELS := 6.0
 ## The hint line with material in hand, until each has been used once.
 const SOW_HINT := "Drag over the land to sow"
-const FLOWER_HINT := "Drag over the land to sow  ·  Tap for a handful"
+const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
 	"reed":"Tap to set reeds  ·  Drag to scatter"}
 const BACK_HINT := "Click the sky or the case to put it back"
@@ -188,6 +194,8 @@ var _stone_since := 0.0
 var _flick_in := FIRST_FLICK
 var _sowing := false
 var flicks := 0
+var _paint_cue := 0.0
+var _paint_seen := 0
 var _shell_lifted := false
 ## Seconds the Feather's press has been held, and what its last release sent
 ## ("wake", "burst" or "" for nothing), with counts, for the marks and probes.
@@ -473,7 +481,7 @@ func _feather_let_go() -> void:
 ## water or something to set down, whether or not it has a slot. False when
 ## it is not a material the hand knows.
 func take(id: String) -> bool:
-	if not (sows(id) or SCATTER.has(id) or id == "water"): return false
+	if not (sows(id) or paints(id) or SCATTER.has(id) or id == "water"): return false
 	if held == id: return true
 	if not held.is_empty(): put_back()
 	_take(id)
@@ -502,8 +510,19 @@ func put_back() -> void:
 ## hand is held here.
 func _use(point: Vector2) -> void:
 	var editor: Node = reach._editor()
-	if sows(held):
-		var sown: bool = editor.has_method("sow_from_hand") and (editor.sow_from_hand(point,held,size_scale()) if FlowerSowing.has(held) else editor.sow_from_hand(point,SEEDS[held]))
+	if paints(held):
+		# Shift thins, read at the press (or held as it is drawn out of the case).
+		var thinning: bool = reach._press_shift or Input.is_key_pressed(KEY_SHIFT)
+		if editor.has_method("paint_flowers_begin") and editor.paint_flowers_begin(point,held,size_scale(),thinning):
+			reach.take_hold(PAINT,point)
+			_press_pos = point
+			_travel = 0.0
+			_paint_cue = 0.0
+			_paint_seen = 0
+			ClaySound.cue(&"sow")
+			_used()
+	elif sows(held):
+		var sown: bool = editor.has_method("sow_from_hand") and editor.sow_from_hand(point,SEEDS[held])
 		if sown:
 			ClaySound.cue(&"sow")
 			_used()
@@ -527,9 +546,15 @@ func _use(point: Vector2) -> void:
 		_stone_count = 0
 		_stone_since = STONE_SECONDS
 
-## True for what the pinch sows as a veil: tree seed and flower seed.
+## True for what the pinch sows as a veil: tree seed. (Flowers were sown so
+## until 2026-10-02; they are painted now, `paints`. The veil stays for pollen
+## from what already grows.)
 static func sows(id: String) -> bool:
-	return SEEDS.has(id) or FlowerSowing.has(id)
+	return SEEDS.has(id)
+
+## True for what is painted under a brush: the flower slots.
+static func paints(id: String) -> bool:
+	return FlowerSowing.has(id)
 
 func _used() -> void:
 	reach.uses[held] = int(reach.uses.get(held,0))+1
@@ -560,6 +585,10 @@ func let_go(what: String, point: Vector2) -> void:
 	if what == CAN:
 		var can: Node = reach._editor().get("can")
 		if can != null: can.release()
+		return
+	if what == PAINT:
+		var editor: Node = reach._editor()
+		if editor.has_method("paint_flowers_end"): editor.paint_flowers_end()
 		return
 	var known := point != Vector2.INF
 	var over_land: bool = known and reach._land(point) != null
@@ -636,6 +665,7 @@ func step(delta: float) -> void:
 		shell.fit()
 		_shell_lifted = true
 	if reach.holding == "scatter": _scatter(delta)
+	if reach.holding == PAINT: _painting(delta)
 	if reach.holding == FEATHER: feather_seconds += delta
 	_carry(delta)
 
@@ -650,7 +680,7 @@ func _carry(delta: float) -> void:
 	var ball: Node = editor.get("ball")
 	var pouring: bool = held == "water" and ball != null and str(ball.state) in ["holding","tossed","falling"]
 	var sowing: bool = sows(held) and editor.get("_handful_holding") == true
-	var pressing: bool = reach.holding == "scatter" or sowing
+	var pressing: bool = reach.holding in ["scatter",PAINT] or sowing
 	var wanderer: Node = scene.get("wanderer")
 	var eye: bool = wanderer != null and wanderer.get("active") == true
 	var hit: Variant = editor.pointer_hit
@@ -703,6 +733,20 @@ func _tray_wanted() -> bool:
 		if node != null and node.get("active") == true: return false
 	return true
 
+## While flowers are painted: the clump sheds a little and the brush is heard
+## as they come up under it (thinning, as they go).
+func _painting(delta: float) -> void:
+	_paint_cue -= delta
+	var stroke: RefCounted = reach._editor().get("flower_paint")
+	if stroke == null: return
+	var count: int = stroke.placed.size()+stroke.removed.size()
+	if count > _paint_seen and _paint_cue <= 0.0:
+		_paint_cue = PAINT_CUE
+		clump.shed()
+		var hit: Variant = reach._editor().pointer_hit
+		if hit != null: ClaySound.cue_at(&"plant",reach._editor().terrain.to_global(hit),clampf(float(count-_paint_seen)/40.0,0.3,0.8))
+		_paint_seen = count
+
 ## A held drag sets more down under the pointer as it goes.
 func _scatter(delta: float) -> void:
 	_held_seconds += delta
@@ -721,7 +765,7 @@ func _scatter(delta: float) -> void:
 ## its reach. False when the hand reach drives it as usual.
 func drive_hand(hand: Node3D) -> bool:
 	var holding: String = reach.holding
-	if not holding in ["","jar","scatter","almanac"]: return false
+	if not holding in ["","jar","scatter","almanac",PAINT]: return false
 	if holding.is_empty():
 		if not reach.available(): return false
 		if reach.hover_zone == "rim" or (held.is_empty() and reach.hover_zone != "tray"): return false

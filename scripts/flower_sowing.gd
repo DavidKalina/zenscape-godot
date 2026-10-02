@@ -1,10 +1,12 @@
 extends RefCounted
-## Flowers sown from the hand (docs/scenic/handful.md "Flower seed"; the
-## materials bar's flower slots, scripts/hand_materials.gd). You release
-## something; the world decides what becomes of it.
+## Flower drifts on the ground (docs/scenic/handful.md "Flower seed"): the
+## slots, the ground's rules (`suits`, `_free`), the meadow type a slot
+## composes as, and the ground's faint `wash`. The hand paints flowers with
+## these (scripts/flower_paint.gd, since 2026-10-02).
 ##
-## A flower slot flicks a veil of seed and fluff (scripts/pollen_cloud.gd, the
-## tree seeds' own veil), light enough that the breeze and any gust carry it
+## `grow` is the veil's way, kept for pollen from existing life later (the
+## slots no longer use it): a veil of seed and fluff (scripts/pollen_cloud.gd,
+## the tree seeds' own veil), light enough that the breeze and any gust carry it
 ## further than tree seed (`CARRY`). Where its motes come down is all this
 ## module is told: the landings, and when each landed. It grows them into a
 ## drift the way a meadow type composes one (scripts/meadow_types.gd):
@@ -20,7 +22,7 @@ extends RefCounted
 ##   companions by its `mix`); sunflowers keep to their rows (`on_row`), so
 ##   they come up as stands, not carpets; size, colour variant and pose are
 ##   the type's (`flower`). The ground under the drift is only warmed toward
-##   the flower's colour (`_wash`), following the flowers that stand: the
+##   the flower's colour (`wash`), following the flowers that stand: the
 ##   flowers carry the colour.
 ## - **The ground decides.** Nothing takes on water, rock (too steep for the
 ##   habitat, or painted rock, earth or sand), snow, ground steeper than
@@ -323,7 +325,7 @@ func grow(points: PackedVector2Array, times: PackedFloat32Array, serial: int, no
 			placed.append(id)
 			result.kinds[kind] = int(result.kinds.get(kind,0))+1
 	if not placed.is_empty(): data.objects_revision += 1
-	result.washed = _wash(buckets,bounds)
+	result.washed = wash(func(p: Vector2) -> float: return float(_density(buckets,p)[0]),bounds)
 	return result
 
 ## The ground under the drift, warmed a little toward its flowers where they
@@ -337,7 +339,7 @@ func grow(points: PackedVector2Array, times: PackedFloat32Array, serial: int, no
 ## supports it, and a cell's edge never reads as a patch of bare earth.
 ## Painted cells are only ever deepened (NativeTerrainTint `coat`) and become
 ## hand work. Returns the cells washed.
-func _wash(buckets: Dictionary, bounds: Rect2) -> int:
+func wash(density_at: Callable, bounds: Rect2) -> int:
 	var drift: Dictionary = meadow.type.drift
 	var base := data.tint.duplicate()
 	var tint := data.tint
@@ -347,7 +349,7 @@ func _wash(buckets: Dictionary, bounds: Rect2) -> int:
 		for x in range(data.MEADOW_CELLS):
 			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5
 			if not bounds.has_point(p): continue
-			var d := presence(float(_density(buckets,p)[0]),p)
+			var d := presence(float(density_at.call(p)),p)
 			if d <= 0.0: continue
 			var kind: String = meadow.kind_at(p,1.0)
 			if not MeadowTypes.FLOWER_KEYS.has(kind): continue

@@ -579,24 +579,7 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 		if count == 0: continue
 		var batch: MultiMeshInstance3D = kept.get(key)
 		if batch == null:
-			batch = MultiMeshInstance3D.new()
-			batch.name = key.capitalize()
-			batch.set_meta("part", key)
-			batch.multimesh = MultiMesh.new()
-			batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
-			batch.multimesh.use_colors = true
-			batch.multimesh.use_custom_data = true
-			batch.multimesh.mesh = _meshes[key]
-			batch.material_override = _materials[key]
-			# The painted meadow tufts are many and small; their shadows would not
-			# resolve, so they skip the shadow pass, as the dense grass does.
-			if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			# Meadow flowers (docs/scenic/flowers.md, Cost): only the tall kinds
-			# cast a shadow that reads, and the low ones are specks in a pond.
-			var flower_kind := preload("res://scripts/meadow_flower_mesh.gd").kind_of_part(key)
-			if not flower_kind.is_empty():
-				if not preload("res://scripts/meadow_flower_mesh.gd").casts_shadow(flower_kind): batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				if not preload("res://scripts/meadow_flower_mesh.gd").reflects(flower_kind): batch.set_meta("skip_reflection",true)
+			batch = _new_batch(key)
 			add_child(batch)
 			nodes_changed = true
 		kept.erase(key)
@@ -609,10 +592,120 @@ func _rebuild_instances(frame_tree: SceneTree = null) -> bool:
 	_batches = published
 	_sources = sampled.sources
 	_index_fire_parts()
+	# The batches now draw every record, those painted this stroke too.
+	clear_paint_preview()
 	if nodes_changed: instances_revision += 1
 	instances_published.emit()
 	last_instance_usec.swap = Time.get_ticks_usec()-stage_start
 	return true
+
+## A batch for part `key`, not yet in the tree.
+func _new_batch(key: String) -> MultiMeshInstance3D:
+	var batch := MultiMeshInstance3D.new()
+	batch.name = key.capitalize()
+	batch.set_meta("part", key)
+	batch.multimesh = MultiMesh.new()
+	batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	batch.multimesh.use_colors = true
+	batch.multimesh.use_custom_data = true
+	batch.multimesh.mesh = _meshes[key]
+	batch.material_override = _materials[key]
+	# The painted meadow tufts are many and small; their shadows would not
+	# resolve, so they skip the shadow pass, as the dense grass does.
+	if key == "grass": batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Meadow flowers (docs/scenic/flowers.md, Cost): only the tall kinds
+	# cast a shadow that reads, and the low ones are specks in a pond.
+	var flower_kind := preload("res://scripts/meadow_flower_mesh.gd").kind_of_part(key)
+	if not flower_kind.is_empty():
+		if not preload("res://scripts/meadow_flower_mesh.gd").casts_shadow(flower_kind): batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if not preload("res://scripts/meadow_flower_mesh.gd").reflects(flower_kind): batch.set_meta("skip_reflection",true)
+	return batch
+
+# --- The paint preview ------------------------------------------------------------
+## Flowers painted from the hand (scripts/flower_paint.gd) show the frame they
+## are placed, without a rebuild: their records are drawn into small batches
+## of their own (`_paint`, one per part, on the same meshes and materials,
+## custom data and all, so they grow in as any birth does), and records thinned
+## away are folded to nothing where they stand in the live batches. The next
+## publish of the full batches draws (or drops) them there and clears this.
+## Part -> {"batch": MultiMeshInstance3D, "buffer": PackedFloat32Array}.
+var _paint := {}
+## Record id -> [[batch, index]] for what the preview draws of it.
+var _paint_parts := {}
+var _paint_layer: Node3D
+## Instances the preview has drawn and hidden, for probes.
+var paint_drawn := 0
+var paint_hidden := 0
+
+## Draws `records` (object records already in `data`) at once.
+func paint_preview(records: Array) -> void:
+	if records.is_empty(): return
+	if _paint_layer == null:
+		_paint_layer = Node3D.new()
+		_paint_layer.name = "PaintPreview"
+		add_child(_paint_layer)
+	const Flowers = preload("res://scripts/meadow_flower_mesh.gd")
+	var remap := Flowers.remap_enabled() and _catalog_parts.has(Flowers.KINDS[0])
+	var sampled := {"transforms":{},"tints":{},"sources":{}}
+	for record: Dictionary in records:
+		preload("res://scripts/garden_instance_samples.gd").add_item(record,data,_catalog_parts,_catalog_poses,_tints,_variety,remap,sampled.transforms,sampled.sources,sampled.tints)
+	var buffers := GardenView._pack(sampled,_tints)
+	for key: String in buffers:
+		if not _meshes.has(key): continue
+		var entry: Dictionary = _paint.get(key,{})
+		if entry.is_empty():
+			var batch := _new_batch(key)
+			batch.name = "Paint"+batch.name
+			_paint_layer.add_child(batch)
+			entry = {"batch":batch,"buffer":PackedFloat32Array()}
+			_paint[key] = entry
+		var buffer: PackedFloat32Array = entry.buffer
+		var first := buffer.size()/20
+		buffer.append_array(buffers[key])
+		entry.buffer = buffer
+		var multimesh: MultiMesh = entry.batch.multimesh
+		multimesh.instance_count = buffer.size()/20
+		multimesh.buffer = buffer
+		var sources: Array = sampled.sources[key]
+		for i in range(sources.size()):
+			var item: Variant = sources[i].item
+			if item == null: continue
+			_paint_parts.get_or_add(int(item.id),[]).append([entry.batch,first+i])
+		paint_drawn += sources.size()
+
+## Folds the instances of records `ids` to nothing, in the live batches and
+## the preview's, until the next publish drops them.
+func paint_hide(ids: Array) -> void:
+	var gone := Transform3D(Basis().scaled(Vector3.ZERO),Vector3.ZERO)
+	for id in ids:
+		for part: Dictionary in _fire_parts.get(int(id),[]):
+			var batch: MultiMeshInstance3D = part.batch
+			if is_instance_valid(batch) and batch.multimesh != null and int(part.index) < batch.multimesh.instance_count:
+				batch.multimesh.set_instance_transform(int(part.index),gone)
+				paint_hidden += 1
+		for pair: Array in _paint_parts.get(int(id),[]):
+			var batch: MultiMeshInstance3D = pair[0]
+			if not is_instance_valid(batch): continue
+			var entry: Dictionary = _paint.get(str(batch.get_meta("part")),{})
+			if entry.is_empty(): continue
+			var buffer: PackedFloat32Array = entry.buffer
+			var o: int = int(pair[1])*20
+			for k in range(12): buffer[o+k] = 0.0
+			entry.buffer = buffer
+			batch.multimesh.set_instance_transform(int(pair[1]),gone)
+			paint_hidden += 1
+
+## Instances the preview draws now.
+func paint_preview_count() -> int:
+	var count := 0
+	for entry: Dictionary in _paint.values(): count += (entry.buffer as PackedFloat32Array).size()/20
+	return count
+
+func clear_paint_preview() -> void:
+	for entry: Dictionary in _paint.values():
+		if is_instance_valid(entry.batch): entry.batch.free()
+	_paint.clear()
+	_paint_parts.clear()
 
 ## Every part's instances as one MultiMesh buffer (transform, colour, custom
 ## data: 20 floats each), on the worker. Colours land in the sources as the
