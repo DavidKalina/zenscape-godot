@@ -71,6 +71,10 @@ var edge_spring: Node
 signal title_picked(choice: String)
 ## True from the title world's forming until the pick.
 var titled := false
+## The player's worlds: which one is open, switching, copies and keeping
+## (scripts/world_session.gd). It takes the worlds over when the game opens on
+## the title or with --resume; other launches keep the single save.
+var world_session: Node
 ## The title's "Build this world": keeps the orbited world as the new place.
 var _keep_title: Button
 
@@ -93,17 +97,27 @@ func _ready() -> void:
 	mood_look.setup(self)
 	await super._ready()
 	_retitle_menu()
+	world_session = preload("res://scripts/world_session.gd").new()
+	world_session.name = "WorldSession"
+	add_child(world_session)
+	var titling := _title_wanted()
+	var args := OS.get_cmdline_user_args()
+	# A probe can set the "manage_worlds" meta, with its own places_path, to run the worlds without the title.
+	world_session.setup(self,has_meta("manage_worlds") or ((titling or "--resume" in args)
+		and not preload("res://scripts/chunk_atlas_controller.gd").enabled() and "--verify-desktop-build" not in args))
 	var choice := ""
 	var veil: Node
-	if _title_wanted():
+	if titling:
 		choice = await _run_title()
 		veil = preload("res://scripts/title_loading.gd").new()
 		add_child(veil)
 		veil.stage("Making this world yours" if choice == "keep" else "Opening your world")
+	choice = world_session.begin(choice)
 	places = preload("res://scripts/cozy_regrowth.gd").new()
 	add_child(places)
-	await places.setup(self,choice)
+	await places.setup(self,choice,world_session.launch_seed)
 	places_ready = places.initialized
+	if places_ready: world_session.opened()
 	# Pipelines for what the world will draw later build now, under the veil
 	# (scripts/pipeline_warmup.gd).
 	if places_ready and preload("res://scripts/pipeline_warmup.gd").enabled():
@@ -227,7 +241,9 @@ func _new_world_from_menu() -> void:
 		return
 	if not _places_idle(): return
 	close_menu()
-	places.new_plain()
+	# With worlds, a new plain is a new world; the one left keeps itself.
+	if world_session != null and world_session.managing: world_session.create_world("","plain",world_session.roll_seed())
+	else: places.new_plain()
 
 func continue_world() -> void:
 	if titled:
@@ -450,6 +466,8 @@ func show_menu() -> void:
 	if _keep_title != null: _keep_title.disabled = not titled
 	super.show_menu()
 	_sync_creation_ui()
+	# Pausing keeps the world.
+	if world_session != null and _has_world and not titled: world_session.keep_now()
 
 func close_menu() -> void:
 	super.close_menu()
@@ -601,6 +619,8 @@ func blocks_world_input(point: Vector2) -> bool:
 
 func save_current() -> bool:
 	if places == null or not places.initialized: return true
+	# A New world preview is not the open world, which was kept before it.
+	if world_session != null and world_session.previewing: return true
 	if places.holding or places.busy: return false
 	if not places.save_places():
 		_notice.text = "Could not save this place. Please try Save again."
@@ -623,7 +643,32 @@ func _quit_safely() -> void:
 		await places.cancel_carry()
 		while places.busy or places.holding: await get_tree().process_frame
 	if atlas != null: atlas.save()
-	if places != null and places.save_places(): get_tree().quit()
+	if world_session != null and world_session.previewing:
+		get_tree().quit()
+		return
+	if places != null and places.save_places():
+		if world_session != null: await world_session.leaving()
+		get_tree().quit()
+
+## Back to the title over the world just kept (scripts/world_session.gd
+## `return_to_title`): the camera orbits it under the title menu until a pick,
+## which the session turns into a world (`enter`). The worlds title UI takes
+## over from here.
+func reenter_title() -> void:
+	if titled or not _places_idle(): return
+	_close_craft_panels()
+	crafting = false
+	titled = true
+	_has_world = false
+	show_menu()
+	var choice: String = await title_picked
+	titled = false
+	_has_world = true
+	_before_menu_paused = false
+	_menu_orbit = false
+	close_menu()
+	set_building(false)
+	await world_session.enter(choice)
 
 func new_diorama() -> void:
 	if places == null or places.busy or places.holding or _chunk_editor.forming: return
