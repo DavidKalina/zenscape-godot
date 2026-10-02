@@ -45,6 +45,21 @@ into it. It is not saved with the place.
 
 Props and creatures under a press keep their own grab.
 
+## The Mountain (tool roll)
+
+With the **Mountain** (the pick in the tool roll, "Peak") a press pulls at once,
+no holding still:
+
+| Do | Result |
+|---|---|
+| Press and drag up | a peak pulled out of the land, its summit following the pointer; drag down and the land sinks |
+| Press and drag up **and sideways** | the peak stretches into a **range** from the press to the ground under the pointer: several summits along a jagged crest, tapering at both ends. Up is still the height; sideways is the length, up to about 20 m |
+| Shift + press and drag | a smaller peak, or a shorter range |
+
+A pull straight up stays a single peak: a little sideways wobble on the way up
+is ignored. Let go and the peak or range takes the mountains' rock. One
+Cmd+Z takes back the whole pull.
+
 ## The Paddle (tool roll)
 
 The Paddle's modes fan out beside its pocket: **Swell** (press and drag up or

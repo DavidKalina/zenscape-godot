@@ -18,7 +18,9 @@ extends Node
 ##   decided, makes it the palm.
 ## - **Hold still** for HOLD_SECONDS, then drag: the tool's hold, following the
 ##   pointer's travel up or down the screen in metres standing at the spot.
-##   The Modeller's is the pinch.
+##   The Modeller's is the pinch. A tool that `hold_tracks` is also given
+##   the pointer's sideways travel as ground (`hold_point`): the Mountain
+##   stretches its peak along it into a range.
 ## - **Paint:** a tool that paints (its `paints`, the Sculpt) skips all of
 ##   that: it works from the press to the release, at the pointer, held still
 ##   or dragged, each frame's dabs along the path sharing that frame's time
@@ -206,6 +208,12 @@ var hand: HandTool
 ## a stroke's heading (unit, plate) and the last path point laid, and the
 ## points `gather` found and their distances.
 var center := Vector2.ZERO
+## For a hold whose tool `hold_tracks`: the ground under the pointer's
+## sideways travel (plate), picked on the press's row of the screen, on the
+## ground as it stood when the stroke opened (so the hold's own rise does not
+## catch the ray, and its travel up the screen, the height, moves it not at
+## all). Null until the pointer moves on the land.
+var hold_point: Variant = null
 var base := PackedFloat32Array()
 var heading := Vector2.ZERO
 var last_plate: Variant = null
@@ -328,6 +336,7 @@ func press(screen_pos: Vector2) -> bool:
 	_pointer = screen_pos
 	center = Vector2(hit.x,hit.z)
 	last_plate = center
+	hold_point = null
 	_queued = PackedVector2Array()
 	_window.clear()
 	_moved = 0.0
@@ -359,6 +368,9 @@ func pull(screen_pos: Vector2, _relative := Vector2.ZERO) -> void:
 		var hit: Variant = _pick_base(screen_pos)
 		if hit != null: _queued.append(Vector2(hit.x,hit.z))
 		elif state == State.DRAG: tool.drag_off()
+	elif state == State.HOLD and tool.hold_tracks():
+		var hit: Variant = _pick_base(Vector2(screen_pos.x,_press.y))
+		if hit != null: hold_point = Vector2(hit.x,hit.z)
 
 ## The button came up: a tap is the tool's, a drag or a hold is kept as it
 ## stands.
