@@ -110,7 +110,7 @@ under "Pull feel (experiment)".
 | Swipe empty sky | a **gust** blows across the land the way you swiped, harder the faster you flick |
 | Drag from empty sky onto the land | you hold the **wind**: the plants lean under your hand. Keep swiping and let go to send a gust along the swipe, or hold still and let go for a burst |
 | Press empty sky, pull and hold | the prevailing wind turns the way you pull, stronger the further you pull, and stays when you let go |
-| Carry the tuft over the land | it becomes a **water ball** that fills from the cloud while you hold it; let go to drop it. On high or steep ground it becomes a spring. The water runs in a live simulation: it fills grooves, pools in palm pans and pours off notched edges. While you carry it, faint rings mark where dropped water would make a waterfall |
+| Carry the tuft over the land | it becomes a **water ball** that fills from the cloud while you hold it; let go to drop it. On high or steep ground it becomes a spring. The water runs in a live simulation: it fills grooves, pools in palm pans and pours off notched edges |
 
 Day and night live on the almanac, the linen strip on the right: click its
 sun (or moon) for night or day, Shift-click to step dawn → midday → dusk →
@@ -135,7 +135,6 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Wildflower: tap, or drag | sows a drift of meadow flowers; a drag scatters more drifts |
 | Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
-| Water or the **watering can** in hand, hovering the land | after a moment, a few faint rings mark where a pour would make a **waterfall**: just above a cliff's lip, or in a notch cut through the rim. They go once you pour, and also show while you carry a water ball |
 | Stone: tap | sets a stone down, bigger the longer you press |
 | Stone: drag | scatters a few pebbles |
 | Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
