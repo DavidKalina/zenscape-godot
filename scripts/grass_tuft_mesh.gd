@@ -1,37 +1,38 @@
 extends RefCounted
-## The painterly grass tuft every tier draws, behind the source's `mesh-10`
-## (the `grass_tuft` catalog part and the painted blades). The source tuft is
-## six flat single triangles; this one is a soft mound of broad blades fanned
-## out from the root, each a tapered strip that arcs outward and lies over
-## toward its tip: the inner blades stand tallest, the outer ones lean
-## furthest, so the tuft reads as one rounded clump from the diorama camera
-## (20-26 m, where a 3 cm blade is about one pixel). The material turns on
-## `grass_blades` in reference_surface.gdshader for the shared look
-## (shaders/grass_look.gdshaderinc), which colours it from the palette
-## family's living green; the vertex colours are the source's (#38663a to
-## #93c05f) and only carry each blade's jitter and any instance tint. UV.y
-## is the height fraction up the blade. Off by default: the user prefers the source's faceted look (2026-09-26);
-## `--painterly-grass` turns it on. Otherwise the source
-## tuft.
+## The soft tuft every tier draws, behind the source's `mesh-10` (the
+## `grass_tuft` catalog part and the painted blades). The source tuft is six
+## flat single triangles shaded facet by facet, which read as dark shards
+## beside the soft flowers. This one keeps flat, cleanly cut blades (three
+## planes each, a pointed tip) but is fuller and lower: ten broad blades
+## fanned from the root, the inner standing tallest and the outer leaning
+## furthest, so it reads as one rounded clump from the diorama camera (20-26
+## m, where a 3 cm blade is about one pixel). The material turns on
+## `grass_blades` in reference_surface.gdshader: soft mass light and the
+## family's living green (shaders/grass_look.gdshaderinc), the root taking
+## the ground's own colour (shaders/ground_look.gdshaderinc). The vertex
+## colours are the source's (#38663a to #93c05f) and only carry each blade's
+## jitter and any instance tint. UV.y is the height fraction up the blade.
+## On by default since round three (docs/scenic/grass-look.md);
+## `--classic-grass` draws the source tuft.
 const BLADES := 10
-const ROWS := [0.0, 0.4, 0.75]
-const TAPER := [1.0, 0.86, 0.5]
+const ROWS := [0.0, 0.42, 0.78]
+const TAPER := [1.0, 0.88, 0.55]
 ## Root ring, height and outward lean, in metres. Each blade's place from the
 ## centre (0 inner, 1 outer) picks its root, height (inner tallest) and lean
 ## (outer furthest); the lean arcs by LEAN_CURVE up the blade.
 const ROOT_RING := Vector2(0.015, 0.09)
-const HEIGHT := Vector2(0.24, 0.44)
-const LEAN := Vector2(0.08, 0.26)
+const HEIGHT := Vector2(0.2, 0.36)
+const LEAN := Vector2(0.09, 0.22)
 const LEAN_CURVE := 1.8
-const HALF_WIDTH := 0.042
+const HALF_WIDTH := 0.04
 ## Lightness jitter on each blade's tip, as the source's offsetHSL.
 const TIP_JITTER := 0.04
 
 static func enabled() -> bool:
-	return "--painterly-grass" in OS.get_cmdline_user_args() or "--painterly-grass" in OS.get_cmdline_args()
+	return not ("--classic-grass" in OS.get_cmdline_user_args() or "--classic-grass" in OS.get_cmdline_args())
 
 ## The replacement for `mesh-10`, carrying the original's material and root
-## and tip colours; any other mesh, or without `--painterly-grass`, the original.
+## and tip colours; any other mesh, or with `--classic-grass`, the original.
 static func swap(node_name: String, original: Mesh) -> Mesh:
 	if node_name != "mesh-10" or not enabled(): return original
 	var arrays := original.surface_get_arrays(0)
@@ -55,7 +56,7 @@ static func swap(node_name: String, original: Mesh) -> Mesh:
 	mesh.set_meta("grass_tip", tip)
 	return mesh
 
-## Material settings the painterly tuft needs on its reference_surface
+## Material settings the soft tuft needs on its reference_surface
 ## material: smooth mass normals instead of flat facets, the grass look, and
 ## the mesh's own root and tip colours for the shader to divide out.
 static func dress(material: Material, mesh: Mesh = null) -> void:
@@ -71,7 +72,7 @@ static func dress(material: Material, mesh: Mesh = null) -> void:
 
 ## One line naming the tuft in use, for the startup grass log.
 static func describe() -> String:
-	return "painterly tuft (%d blades, scripts/grass_tuft_mesh.gd)" % BLADES if enabled() else "classic source tuft (--painterly-grass for the blade tuft)"
+	return "soft tuft (%d blades, scripts/grass_tuft_mesh.gd; --classic-grass for the source tuft)" % BLADES if enabled() else "classic source tuft (--classic-grass)"
 
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()

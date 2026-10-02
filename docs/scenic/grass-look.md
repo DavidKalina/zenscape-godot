@@ -99,11 +99,65 @@ This is an estimate; nothing has been measured.
 - **Dense grass on Beauty:** 65,536 tufts are vertex-shaded wherever a tile is in view, and 70% of them are drawn. That is about 0.6–1.4 ms on the 4070 Super at 1440p, the earlier estimate. On the Mac it is probably 2–4 ms. Mac players who need the frames should use Balanced (`--balanced`) or `--no-beauty-grass`.
 - **CPU:** every garden rebuild samples and fills about 7,500 more multimesh instances. This runs on the worker, and the main-thread fill runs under the frame budget, but a stroke refresh on the Genesis plain now carries about 5× the grass instances.
 
+## Round three: a calm field (`beautification`, 2026-10-01)
+
+The user said the grass was "too noisy, too angular". The ground had become the grass since the blades were dropped (d367f2a), and it read as a mosaic of light and dark triangles. The tufts left on the plain (the `grass_tuft` part, which emergence, the inland places and the meadow brush still plant) read as dark shards beside the new soft flowers. The direction follows [the style rule](style.md): faceted shapes, soft light, and the field reading as one calm mass.
+
+### What made the ground noisy
+
+- **Three greens, picked per face by a hard threshold.** `NativeTerrainPalette.grass_at_coordinates` gives each face one of #5d9e53, #7fb069 or #4a8548 (after the seed-7 cover shift: linear luminance 0.29, 0.37 and 0.21), switching where an fbm at 0.4 per metre (about 2.5 m features) crosses 0.42 and 0.55. Neighbouring faces 1.7× apart in brightness sat side by side wherever the noise hovered near a threshold.
+- **A random shimmer on top.** Every face adds ±0.035 linear to all three channels from a hash, about ±12% of the middle green's luminance, so even a single class flickered face to face.
+- **Faceted light.** Each face is lit by its own normal (the mesh writes one normal per face), so rolling ground added a second light/dark pattern at the same scale.
+- **Muted families made it worse.** Palette families multiply by their ratio to #5d9e53. Under Chalk & turquoise (2.6, 1.0, 1.9) the light class went tan and the dark one olive-grey, so the plain read as a grey and mauve patchwork.
+
+The same colours are the source scene's (tests/test_native_palette.gd holds the palette to them), and the meadow brush and Paddle paint them into the tint layer, so the fix is in the shader rather than the palette.
+
+### What changed: the ground
+
+All in `shaders/ground_look.gdshaderinc`, used by `reference_surface.gdshader` on the ground only (`zs_is_ground`: `terrain_growth`, `palette_role` 1, not the earth sides).
+
+- **Grass faces go most of the way to one field.** `zs_ground_grassness` tells grass faces by chromaticity: the three greens and their shimmer lie within 0.06 of the middle green, while bare earth, rock, sand, gravel, snow, a face half earth and half grass, and painted colours lie 0.2 or more away. A grass face moves `ground_calm` 0.8 of the way to the field colour, so 20% of its own colour is left as a hint of facet.
+- **The field (`zs_ground_field`)** is the middle green leant toward the sunlit or deep green by two broad noises (about 16 m and 6 m), up to 0.65 of the way. Dry patches lean to a lighter, warmer green (`ground_dry` 0.45), in the same places as the tufts' straw (`zs_grass_dry` with `zs_grass_offset`). Within about 0.9 m of water (half by 1.8 m, none more than a metre above it) the green deepens (`ground_lush` 0.6).
+- **Muted families stay green.** After the palette, grass faces lean 0.3 toward living green at the same luminance (`ground_living`, the tufts' `zs_grass_living` with no extra saturation). Chalk & turquoise now reads as a soft sage, not grey and mauve.
+- **Softer light on grass.** The vertex stage takes a smoothed normal from the height map (`zs_water_map` green, central differences over 0.6 m), and grass faces are lit `ground_soft` 0.7 of the way to it, with 30% of the facet left. Rock and snow faces keep their facets. Geology, snow and wetness still read the face's own normal. Where the map does not match the vertex (mid-growth, mid-sculpt before the map catches up, a neighbouring chunk, off the plate), the face normal is used.
+- **No new varyings.** The smoothed normal rides `world_normal` (the fragment takes the facet from derivatives), and the water nearness rides `earth_side.x`, which the ground never used. reference_surface still has 14 varying declarations (Metal's 31-component limit, 4b6508e).
+
+Measured on the diorama stills (mean |luma − local 9×9 mean| over a patch of open plain): default palette 1.6% before, 0.3% after; Chalk & turquoise 1.2% before, 0.3% after. Mean brightness of the patch rose about 6%.
+
+**The hook for later tints.** `zs_ground_color` in `ground_look.gdshaderinc` is the one place the ground's colour is made, and it ends in `zs_ground_meadow_tint(ground, world point)`, which returns the colour unchanged for now. A meadow tint under flower drifts goes there. The tufts' root and body colour call `zs_ground_color` too, so a tint there reaches them as well.
+
+### What changed: the tufts
+
+- **The soft tuft is the default.** `scripts/grass_tuft_mesh.gd` now replaces `mesh-10` without a flag; `--classic-grass` draws the source tuft. Each blade is still three flat facets and a point. It is fuller and lower than round two's: half width 4 cm (was 4.2), tip taper 0.55 (was 0.5), heights 0.20–0.36 m (was 0.24–0.44) and lean 0.09–0.22 m (was 0.08–0.26). A tuft is about 0.5 m across and 0.34 m tall, against the source's 0.42 m. It has 10 blades and 50 triangles; the source had 6.
+- **Soft light by mass,** as the round-one painterly tuft had: the ground normal domed over the tuft (`grass_round`), tips glowing when backlit, no `flat_faces`, so neither side of a blade goes black.
+- **Roots grow out of the ground.** The root takes the ground's own colour under it (`zs_ground_color` at the root), times 0.92, and gives way to the tuft's green by 0.6 of the way up (`grass_root_blend`). Contact darkening now only applies up the blade, so there is no dark ring at the base.
+- **The tuft sits in the field.** Its living green leans 0.4 toward the ground colour under it (`grass_ground_pull`). Under Chalk & turquoise the tufts are a pale sage-green, not straw.
+
+Placement is unchanged: no cover, digest or save format changed, and existing worlds load as before. Cost: the default tuft is 50 triangles where the source's was 6. A world with about 1,650 tufts draws about 82k triangles for them, up from 10k. Each ground vertex adds 40 height-map fetches (normal and water nearness); a plate has about 13k ground vertices. Each ground fragment adds three value noises.
+
+### Loose grass chaff
+
+`scripts/wind_grass_chaff.gd` is the leaf litter (`wind_leaf_litter.gd`) with grass blades: 36 at most, one per anchor, laid on open grass (`ground_coverage` over 0.4, picked by an R2 sequence so the same ground gives the same places). Each is a thin bent sliver 10–16 cm long in a soft straw-green. They weigh 0.5–0.75 against the leaves' 0.8–1.4, so the same air moves them sooner: the ordinary breeze rocks them, a swell or puff drags them, and a gust lifts and tumbles them downwind. Under one wind-tool gust in the test, a blade travels 2.6 m where leaves travel 1.7 m. They are cosmetic and not saved. Fidelity (and so every world) seeds them with the leaves and hides them while the world grows in; the wind playground hands them its local wind.
+
+### Checks and stills
+
+- `tests/test_ground_look.gd` (headless) checks that the shader's greens are the palette's, that every palette grass face (with its shimmer) counts as grass while rock, sand, gravel, snow, bare earth, a half-earth face and a painted rose do not, the hook and the single call site, the varying count, and the default tuft's size, triangle count and dressing.
+- `tools/still_grass.gd` takes the stills: a flattened patch with 90 tufts, a hill and a small pond, in Alpine daylight, at close, mid, diorama and pond distances. `--chalk` uses Chalk & turquoise and `--set=ground_calm:0` sets a ground uniform for A/B. Run it windowed with `--no-title`.
+- `tests/test_wind_grass_chaff.gd` (headless) checks the anchors, calm air leaving the chaff still, a gust lifting it further than leaves, settling and pause.
+- Stills in `captures/grass/`: `before-*` and `before-chalk-*` are the base; `a2-*`, `a2-chalk-*`, `after-*` and `after-chalk-*` are the result. Each run grows a different random plate, so trees and rocks differ between stills.
+
+### Unverified and left alone
+
+- The pond's edge still shows a stair-stepped dark band. It comes from the water's edge and the damp-bank darkening (`zs_look_shore`, which reads the 0.25 m water map texel by texel), not from this pass.
+- Inland worlds use `prototype_inland_surface.gdshader` and are not changed. Dense grass (opt-in) still reads its own ground colour.
+- The tuft's wind, the soft normal under the wind tool and the chaff in flight were only seen in stills, not in motion.
+
 ## Tunables
 
 All tunables are shader uniforms on `DenseGrass.material` unless noted. Each group lists its defaults.
 
-- **Tufts (reference_surface, every tier):** `grass_dry` 0.25, `grass_living` 0.4, `grass_variation` 0.12, `grass_contact` 0.4, `grass_round` 0.55 and `grass_tip_glow` 0.55. The mesh constants are `BLADES`, `HALF_WIDTH`, `ROOT_RING`, `HEIGHT` and `LEAN` in `grass_tuft_mesh.gd`. Cover on the plain is `GENESIS_BLADES` and `GENESIS_FLOWERS` in `genesis_canvas.gd`; emerged cover is `_cover_target` in `emergence.gd`.
+- **Ground (reference_surface, every tier):** `ground_calm` 0.8, `ground_soft` 0.7, `ground_dry` 0.45, `ground_lush` 0.6 and `ground_living` 0.3 (`shaders/ground_look.gdshaderinc`).
+- **Tufts (reference_surface, every tier):** `grass_dry` 0.25, `grass_living` 0.4, `grass_variation` 0.12, `grass_contact` 0.4, `grass_round` 0.55, `grass_tip_glow` 0.55, `grass_root_blend` (0.92, 0.6) and `grass_ground_pull` 0.4. The mesh constants are `BLADES`, `HALF_WIDTH`, `ROOT_RING`, `HEIGHT` and `LEAN` in `grass_tuft_mesh.gd`. Cover on the plain is `GENESIS_BLADES` and `GENESIS_FLOWERS` in `genesis_canvas.gd`; emerged cover is `_cover_target` in `emergence.gd`.
 - **Living colour (dense grass):** `living_pull` 0.4 and `living_saturation` 1.12.
 
 - **Size:** `blade_height` 0.34 (was 0.26) and `blade_width` 1.0. The mesh constants in `dense_grass.gd` are `BLADES`, `BLADE_HALF_WIDTH`, `ROOT_SPREAD`, `LEAN` and `BLADE_SHARE`.
