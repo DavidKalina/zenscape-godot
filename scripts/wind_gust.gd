@@ -20,10 +20,11 @@ extends Node3D
 ##   riding with the head: foliage, trees, conifers and water bend and push
 ##   along the gust's true direction, and leaf litter blows with it;
 ## - a burst is the clap ring (zs_clap) with four steered gusts pushing out.
-## And it shows itself: ribbons of moving air ride just behind the head
-## (shaders/wind_gust_trail.gdshader), loose leaves and motes gathered by the
-## press are carried along and settle after, and a band of dappled shade and
-## sheen runs along the ground under it. It passes: nothing about the
+## And it shows itself, mostly through what it moves: a few thin streaks of
+## light ride just behind the head (shaders/wind_gust_trail.gdshader), leaves,
+## petals, seed fluff and pollen glints gathered by the press or picked up on
+## the way are carried along and settle after, and a faint band of dappled
+## shade and sheen runs along the ground under it. It passes: nothing about the
 ## weather changes, unless --gust-nudges (see `nudge`).
 ##
 ## The Feather's press (`press` with `wake`, NativeChunkEditor `gust_in_hand`)
@@ -146,30 +147,52 @@ const WAKE_TRAIL := 600
 const RIBBON_CHUNK := 8
 
 # --- How it looks ---------------------------------------------------------------
-## Ribbons: strands along a lane, spokes of a burst, how much of each shows
-## behind the head (m), and their width (m) at weakest and full.
+## Streaks (shaders/wind_gust_trail.gdshader): strands along a lane, arcs
+## curving out of a burst. Each shows one thin streak riding behind the head,
+## up to STREAK_LAG m behind it and STREAK_LENGTH m long (shortest, longest;
+## each strand draws its own, longer for a harder gust). Their true width (m)
+## at weakest and full; the shader never draws them under 1.6 px.
 const STRANDS := 5
-const SPOKES := 10
+const SPOKES := 7
 const TRAIL_LENGTH := 9.0
-const RIBBON_WIDTH := Vector2(0.08,0.16)
+const STREAK_LAG := 3.2
+const STREAK_LENGTH := Vector2(2.5,6.5)
+const RIBBON_WIDTH := Vector2(0.04,0.07)
+## How far a burst's arcs turn round (rad) by the time they reach the ring.
+const SPOKE_SWIRL := Vector2(0.25,0.6)
+## m/s the streaks drift on once the run is spent, while they thin away.
+const STREAK_COAST := 1.5
 ## The mark's box leaves room for the lane's arrow tip, which flares wider
 ## than the lane (the shader's TIP_FLARE).
 const TIP_WIDTH := 1.3
 ## Metres between a ribbon's points, and between ground samples under a gust.
 const RIBBON_STEP := 0.5
 const GRID_STEP := 1.0
-## Loose leaves and motes: the most at once, and how many a press gathers.
+## What the air carries: the most at once, and how many a press gathers.
 const MOTES := 64
 const PRESS_MOTES := 14
-## Their size (m); big enough to read from the creation camera, 50 m off.
-const MOTE_SIZE := Vector2(0.16,0.3)
-## Share that are leaves (the rest are pale motes, seed fluff).
-const LEAF_SHARE := 0.6
+## Kinds, with their share of a press's gathering and of what the air picks
+## up on its way, and their size (m). Leaves and petals are faceted solids;
+## seed fluff and pollen glints are soft specks (shaders/pollen_speck.gdshader)
+## that draw out along their motion.
+const KINDS := ["leaf","petal","fluff","glint"]
+const PRESS_SHARE := [0.45,0.2,0.25,0.1]
+const PICK_SHARE := [0.15,0.3,0.35,0.2]
+const KIND_SIZE := {"leaf":Vector2(0.11,0.2),"petal":Vector2(0.07,0.12),"fluff":Vector2(0.12,0.2),"glint":Vector2(0.07,0.11)}
+## How fast each kind falls once the air has left it, as a share of
+## MOTE_FALL: fluff floats down, leaves drop.
+const KIND_FALL := {"leaf":1.0,"petal":0.7,"fluff":0.3,"glint":0.4}
+## On its way the air picks up more: one every PICK_GAP m of a lane's run
+## (weakest, full) or every PICK_RING m the burst's ring grows, at most
+## PICK_MAX a gust.
+const PICK_GAP := Vector2(3.0,1.6)
+const PICK_RING := 0.8
+const PICK_MAX := 12
 ## The carry spring (1/s²) and damping (1/s): under critical, so a mote
 ## overshoots the air a little and drops back (follow-through).
 const CARRY := 38.0
 const CARRY_DAMP := 7.5
-## m/s a mote falls once the air has left it.
+## m/s a leaf falls once the air has left it.
 const MOTE_FALL := 0.9
 
 # --- Foliage (zs_blow_*, read by zs_blow_at in reference_wind.gdshaderinc) ---
@@ -263,6 +286,7 @@ var _aim_mark: MeshInstance3D
 var _marks: Array[MeshInstance3D] = []
 var _motes: Array[Dictionary] = []
 var _mote_node: MultiMeshInstance3D
+var _speck_node: MultiMeshInstance3D
 var _voices: Array[AudioStreamPlayer3D] = []
 var _voice_gain := PackedFloat32Array()
 var _voice_goal := PackedFloat32Array()
@@ -279,7 +303,10 @@ var _hand_fade := -1.0
 var blow := PackedVector4Array()
 var _rng := RandomNumberGenerator.new()
 const LEAF_COLORS := [Color("8fb35a"),Color("a9b957"),Color("c7b35c"),Color("6f9a4c"),Color("b98f4a")]
-const MOTE_COLOR := Color("ece6d2")
+const PETAL_COLORS := [Color("f3d9dc"),Color("f6efd9"),Color("f2e0a2"),Color("dccfee"),Color("f7f3ec")]
+## Fluff and glints: colour, its alpha how much they show at most.
+const FLUFF_COLOR := Color(0.93,0.91,0.85,0.6)
+const GLINT_COLOR := Color(1.0,0.9,0.66,0.85)
 
 func _ready() -> void:
 	_rng.seed = 5171
@@ -313,6 +340,28 @@ func _ready() -> void:
 	_mote_node.top_level = true
 	_mote_node.custom_aabb = AABB(Vector3(-400,-100,-400),Vector3(800,300,800))
 	add_child(_mote_node)
+	# Seed fluff and pollen glints: soft specks, lit by the scene, drawn out
+	# along their motion (INSTANCE_CUSTOM is their velocity).
+	var specks := MultiMesh.new()
+	specks.transform_format = MultiMesh.TRANSFORM_3D
+	specks.use_colors = true
+	specks.use_custom_data = true
+	specks.instance_count = MOTES
+	specks.visible_instance_count = 0
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	specks.mesh = quad
+	for i in range(MOTES): specks.set_instance_transform(i,Transform3D.IDENTITY)
+	var speck_material := ShaderMaterial.new()
+	speck_material.shader = preload("res://shaders/pollen_speck.gdshader")
+	_speck_node = MultiMeshInstance3D.new()
+	_speck_node.name = "Specks"
+	_speck_node.multimesh = specks
+	_speck_node.material_override = speck_material
+	_speck_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_speck_node.top_level = true
+	_speck_node.custom_aabb = AABB(Vector3(-400,-100,-400),Vector3(800,300,800))
+	add_child(_speck_node)
 	var stream: AudioStreamWAV = null
 	if ResourceLoader.exists(VOICE_CLIP):
 		stream = (load(VOICE_CLIP) as AudioStreamWAV).duplicate() as AudioStreamWAV
@@ -392,7 +441,7 @@ func release() -> Dictionary:
 	var began := Time.get_ticks_usec()
 	var plan := promise()
 	var g := plan.duplicate()
-	g.merge({"t":0.0,"head":0.0,"air":0.0,"speed":0.0,"slot":-1,"local":[],"y":float(_aim.start_y),"voice":-1,"done":false})
+	g.merge({"t":0.0,"head":0.0,"air":0.0,"speed":0.0,"slot":-1,"local":[],"y":float(_aim.start_y),"voice":-1,"done":false,"picked":0,"pick_at":0.0})
 	var travel: float = float(g.reach)+PULL_BACK*float(g.power) if g.kind == "lane" else float(g.reach)-RING_START+PULL_BACK*float(g.power)
 	var cruise := lerpf(CRUISE.x,CRUISE.y,g.power) if g.kind == "lane" else lerpf(BURST_CRUISE.x,BURST_CRUISE.y,g.power)
 	g.run = maxf(0.4,2.0*travel/(LAUNCH*cruise))
@@ -483,6 +532,7 @@ func clear() -> void:
 	_wake_points.clear()
 	_motes.clear()
 	_mote_node.multimesh.visible_instance_count = 0
+	_speck_node.multimesh.visible_instance_count = 0
 
 ## The gusts' push at a plate x, z (m/s, plate x, z): each lane along its
 ## heading and each burst outward, as strong as it is passing there now. For
@@ -600,14 +650,18 @@ func _step_gust(g: Dictionary, delta: float) -> void:
 			g.done = true
 			g.air = 0.0
 			_release_air(g)
-	if not g.done: _feed_air(g)
+	if not g.done:
+		_feed_air(g)
+		_pick_along(g)
 	var settle := clampf((t-WIND_UP-float(g.run))/SETTLE,0.0,1.0)
 	_paint(g.mark,g,(1.0-smoothstep(0.0,0.6,settle))*(1.0 if show_promise else 0.0),float(g.head),float(g.air),float(g.speed),Vector2(g.floor,g.ceiling))
 	var ribbons: MeshInstance3D = g.ribbons
 	var material := ribbons.material_override as ShaderMaterial
-	material.set_shader_parameter("head",float(g.head))
+	# Spent, the streaks drift on a little as they thin, rather than stop.
+	var coast := STREAK_COAST*maxf(t-WIND_UP-float(g.run),0.0)
+	material.set_shader_parameter("head",float(g.head)+coast)
 	material.set_shader_parameter("clock",clock)
-	material.set_shader_parameter("opacity",0.85*maxf(float(g.air),0.35*(1.0-settle)*float(t > WIND_UP)))
+	material.set_shader_parameter("opacity",maxf(float(g.air),0.35*(1.0-smoothstep(0.0,0.4,settle))*float(t > WIND_UP)))
 	material.set_shader_parameter("flow",float(g.speed)*0.5+2.0)
 	if g.voice >= 0 and not g.done:
 		_voice_goal[g.voice] = VOICE_GAIN*lerpf(0.6,1.0,power)*maxf(float(g.air),0.0)
@@ -711,10 +765,7 @@ func _begin_wake() -> void:
 	var w := {"kind":"wake","origin":start,"heading":heading,"half":float(_aim.half),"power":clampf(float(_aim.power)*float(_aim.scale),0.0,1.0),
 		"air":float(_aim.air),"let_air":0.0,"speed":float(_aim.speed),"live":true,"t":0.0,"y":y,"last":start,"dist":0.0,"head":0.0,"rest":0.0,"since":0.0,
 		"trail":PackedVector4Array([Vector4(start.x,start.y,0.0,y)]),"at":[start,heading,y],"chunks":[],"chunk_end":0,"strands":[],"slot":-1,"local":[],"voice":int(_aim.voice),"done":false}
-	var lifts := [0.55,1.15,0.35,1.55,0.8]
-	var lags := [0.0,1.4,0.7,2.4,1.9]
-	for k in range(STRANDS):
-		w.strands.append({"across":lerpf(-0.7,0.7,float(k)/(STRANDS-1.0))*float(w.half)+_rng.randf_range(-0.2,0.2),"lift":lifts[k%lifts.size()],"lag":lags[k%lags.size()],"phase":_rng.randf()})
+	for k in range(STRANDS): w.strands.append(_strand_style(k,STRANDS,float(w.half),float(w.power)))
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/wind_gust_trail.gdshader")
 	material.set_shader_parameter("width",lerpf(RIBBON_WIDTH.x,RIBBON_WIDTH.y,float(w.power)))
@@ -826,7 +877,7 @@ func _step_wake(w: Dictionary, delta: float) -> void:
 	var material: ShaderMaterial = w.material
 	material.set_shader_parameter("head",float(w.head))
 	material.set_shader_parameter("clock",clock)
-	material.set_shader_parameter("opacity",0.85*float(w.air))
+	material.set_shader_parameter("opacity",float(w.air))
 	material.set_shader_parameter("flow",float(w.speed)*0.5+2.0)
 	# Chunks the ribbons' window has left behind go.
 	var chunks: Array = w.chunks
@@ -902,7 +953,7 @@ func _path_at(w: Dictionary, u: float) -> Array:
 
 ## A leaf or mote lifts where the feather passes and rides its air.
 func _pick_up(w: Dictionary, at: Vector2, y: float) -> void:
-	if not _add_mote(at,y): return
+	if not _add_mote(at,y,PICK_SHARE): return
 	var mote: Dictionary = _motes.back()
 	mote.gust = w
 	mote.state = "ride"
@@ -957,13 +1008,10 @@ func _strand_mesh(w: Dictionary, from: int, to: int, extra: Array) -> ArrayMesh:
 	if line.size() < 2: return null
 	var before: Vector4 = trail[from-1] if from > 0 else line[0]
 	var after: Vector4 = trail[to+1] if extra.is_empty() and to+1 < trail.size() else line.back()
-	var vertices := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var colors := PackedColorArray()
-	var indices := PackedInt32Array()
+	var arrays := _strand_arrays()
 	for k in range(w.strands.size()):
 		var strand: Dictionary = w.strands[k]
-		var first := vertices.size()
+		var first: int = arrays[Mesh.ARRAY_VERTEX].size()
 		for s in range(line.size()):
 			var q := line[s]
 			var prev: Vector4 = line[s-1] if s > 0 else before
@@ -971,24 +1019,55 @@ func _strand_mesh(w: Dictionary, from: int, to: int, extra: Array) -> ArrayMesh:
 			var way := Vector2(next.x-prev.x,next.y-prev.y).normalized()
 			if way == Vector2.ZERO: way = w.heading if Vector2(w.heading) != Vector2.ZERO else Vector2.RIGHT
 			var a := q.z
-			var across: float = float(strand.across)+sin(a*0.3+k*1.7)*0.35
-			var point := Vector2(q.x,q.y)+Vector2(-way.y,way.x)*across
-			var world := _world(Vector3(point.x,q.w+float(strand.lift)+sin(a*0.21+k)*0.15,point.y))
-			for edge in [0.0,1.0]:
-				vertices.append(world)
-				uvs.append(Vector2(a,edge))
-				colors.append(Color(float(strand.lag),float(strand.phase),0,1))
+			var drift := _strand_drift(strand,a)
+			var point := Vector2(q.x,q.y)+Vector2(-way.y,way.x)*drift.x
+			_strand_vertex(arrays,_world(Vector3(point.x,q.w+drift.y,point.y)),_world_way(way),a,strand)
 			if s > 0:
 				var base := first+(s-1)*2
-				indices.append_array(PackedInt32Array([base,base+1,base+3,base,base+3,base+2]))
+				arrays[Mesh.ARRAY_INDEX].append_array(PackedInt32Array([base,base+1,base+3,base,base+3,base+2]))
+	return _strand_surface(arrays)
+
+## One strand's look, drawn at random so no two ride alike: its place across
+## the lane (m, from -0.7 to 0.7 of `half` with a little scatter), its height
+## (m), how far its streak lags the head (spread over STREAK_LAG by the golden
+## ratio, so no two ride together) and how long it is (m, longer for a harder
+## gust), its phase, and the slow wander of its line across and up.
+func _strand_style(k: int, count: int, half: float, power: float) -> Dictionary:
+	var spread := lerpf(-0.7,0.7,float(k)/maxf(count-1.0,1.0))
+	return {"across":spread*half+_rng.randf_range(-0.35,0.35),"lift":_rng.randf_range(0.3,1.6),"lag":fposmod(float(k)*0.618+_rng.randf_range(-0.06,0.06),1.0)*STREAK_LAG,
+		"length":lerpf(STREAK_LENGTH.x,STREAK_LENGTH.y,_rng.randf())*lerpf(0.75,1.15,power),"phase":_rng.randf(),
+		"wander":Vector4(_rng.randf_range(0.15,0.45),_rng.randf_range(0.15,0.55),_rng.randf_range(0.12,0.35),_rng.randf_range(0.06,0.22)),"seed":_rng.randf()*TAU}
+
+## A strand's wander `a` m along it: its (across, up) place (m), wandering.
+func _strand_drift(strand: Dictionary, a: float) -> Vector2:
+	var wander: Vector4 = strand.wander
+	var at: float = strand.seed
+	return Vector2(float(strand.across)+sin(a*wander.x+at)*wander.y,float(strand.lift)+sin(a*wander.z+at*1.7)*wander.w)
+
+## Empty strand arrays: vertices, the strand's way as NORMAL, UV (m along,
+## across), CUSTOM0 (lag m, phase, streak length m, 0; floats) and indices.
+func _strand_arrays() -> Array:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array()
+	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array()
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array()
+	arrays[Mesh.ARRAY_CUSTOM0] = PackedFloat32Array()
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array()
+	return arrays
+
+## The two vertices across a strand at `world`, heading `way` (world, unit),
+## `a` m along it.
+func _strand_vertex(arrays: Array, world: Vector3, way: Vector3, a: float, strand: Dictionary) -> void:
+	for edge in [0.0,1.0]:
+		arrays[Mesh.ARRAY_VERTEX].append(world)
+		arrays[Mesh.ARRAY_NORMAL].append(way)
+		arrays[Mesh.ARRAY_TEX_UV].append(Vector2(a,edge))
+		arrays[Mesh.ARRAY_CUSTOM0].append_array(PackedFloat32Array([float(strand.lag),float(strand.phase),float(strand.length),0.0]))
+
+func _strand_surface(arrays: Array) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	return mesh
 
 # --- Foliage -------------------------------------------------------------------
@@ -1368,66 +1447,61 @@ func _paint(node: MeshInstance3D, plan: Dictionary, shown: float, passed: float,
 
 # --- Ribbons -------------------------------------------------------------------------
 
-## Ribbons for a gust that has gone, laid over the ground it will cross.
+## Streaks for a gust that has gone, laid over the ground it will cross: a
+## lane's strands run along it, each wandering on its own line; a burst's
+## arcs curve out from the press, all turning the same way round, as air
+## thrown out of a turning hand does.
 func _ribbons(g: Dictionary) -> MeshInstance3D:
-	var vertices := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var colors := PackedColorArray()
-	var indices := PackedInt32Array()
-	var lifts := [0.55,1.15,0.35,1.55,0.8,1.3,0.45,0.95,1.7,0.6]
-	var lags := [0.0,1.4,0.7,2.4,1.9,0.4,1.1,2.8,0.2,1.7]
-	var count := STRANDS if g.kind == "lane" else SPOKES
+	var arrays := _strand_arrays()
+	var lane: bool = g.kind == "lane"
+	var count := STRANDS if lane else SPOKES
+	var turning := 1.0 if _rng.randf() < 0.5 else -1.0
+	var styles: Array[Dictionary] = []
 	for k in range(count):
-		var lag: float = lags[k%lags.size()]
-		var lift: float = lifts[k%lifts.size()]
-		var phase := _rng.randf()
-		var first := vertices.size()
-		var way: Vector2
-		var side: Vector2
-		var across := 0.0
-		var from := -1.5
-		var to: float = float(g.reach)+1.0
-		var angle := 0.0
-		if g.kind == "lane":
-			way = g.heading
-			side = Vector2(-way.y,way.x)
-			across = lerpf(-0.7,0.7,float(k)/maxf(count-1.0,1.0))*float(g.half)+_rng.randf_range(-0.2,0.2)
-		else:
-			angle = TAU*float(k)/count+_rng.randf_range(-0.2,0.2)
-			way = Vector2.RIGHT.rotated(angle)
-			side = Vector2(-way.y,way.x)
-			from = RING_START*0.5
-			to = float(g.reach)+1.5
+		var style := _strand_style(k,count,float(g.half),float(g.power))
+		if not lane:
+			style.length = float(style.length)*0.6
+			style.lag = float(style.lag)*0.5
+			style.angle = TAU*(float(k)+_rng.randf_range(-0.35,0.35))/count
+			style.swirl = turning*_rng.randf_range(SPOKE_SWIRL.x,SPOKE_SWIRL.y)
+			style.across = 0.0
+		styles.append(style)
+	g.strands = styles
+	for style: Dictionary in styles:
+		var first: int = arrays[Mesh.ARRAY_VERTEX].size()
+		var from := -1.5 if lane else RING_START*0.5
+		var to: float = float(g.reach)+(1.0 if lane else 1.5)
 		var steps := int(ceil((to-from)/RIBBON_STEP))
 		for s in range(steps+1):
 			var a := from+s*RIBBON_STEP
-			var sway := sin(a*0.3+k*1.7)*0.35
-			var point: Vector2 = Vector2(g.origin)+way*a+side*(across+sway)
-			var ground := _grid_height(g,a,across+sway) if g.kind == "lane" else _grid_height(g,a,angle)
-			var world := _world(Vector3(point.x,ground+lift+sin(a*0.21+k)*0.15,point.y))
-			for edge in [0.0,1.0]:
-				vertices.append(world)
-				uvs.append(Vector2(a,edge))
-				colors.append(Color(lag,phase,0,1))
+			var drift := _strand_drift(style,a)
+			var point: Vector2
+			var way: Vector2
+			var ground: float
+			if lane:
+				way = g.heading
+				point = Vector2(g.origin)+way*a+Vector2(-way.y,way.x)*drift.x
+				ground = _grid_height(g,a,drift.x)
+			else:
+				var reach := maxf(float(g.reach),1.0)
+				var angle: float = float(style.angle)+float(style.swirl)*a/reach
+				var out := Vector2.RIGHT.rotated(angle)
+				var turn_way := Vector2(-out.y,out.x)
+				point = Vector2(g.origin)+out*a+turn_way*(drift.x-float(style.across))
+				way = (out+turn_way*a*float(style.swirl)/reach).normalized()
+				ground = _grid_height(g,a,angle)
+			_strand_vertex(arrays,_world(Vector3(point.x,ground+drift.y,point.y)),_world_way(way),a,style)
 			if s > 0:
 				var base := first+(s-1)*2
-				indices.append_array(PackedInt32Array([base,base+1,base+3,base,base+3,base+2]))
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+				arrays[Mesh.ARRAY_INDEX].append_array(PackedInt32Array([base,base+1,base+3,base,base+3,base+2]))
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/wind_gust_trail.gdshader")
 	material.set_shader_parameter("width",lerpf(RIBBON_WIDTH.x,RIBBON_WIDTH.y,g.power))
-	material.set_shader_parameter("trail_length",TRAIL_LENGTH*(1.0 if g.kind == "lane" else 0.6))
+	material.set_shader_parameter("trail_length",TRAIL_LENGTH*(1.0 if lane else 0.6))
 	material.set_shader_parameter("opacity",0.0)
 	var node := MeshInstance3D.new()
 	node.name = "Ribbons"
-	node.mesh = mesh
+	node.mesh = _strand_surface(arrays)
 	node.material_override = material
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.top_level = true
@@ -1436,11 +1510,12 @@ func _ribbons(g: Dictionary) -> MeshInstance3D:
 	node.global_transform = Transform3D.IDENTITY
 	return node
 
-# --- Leaves and motes ------------------------------------------------------------
+# --- What the air carries ---------------------------------------------------------
 
-## A leaf or mote lifts and swirls in round a press at `start`. False when
+## A leaf, petal, tuft of seed fluff or pollen glint lifts and swirls in round
+## a press at `start`, its kind drawn by `shares` (KINDS order). False when
 ## there was no room.
-func _add_mote(start: Vector2, y: float) -> bool:
+func _add_mote(start: Vector2, y: float, shares: Array = PRESS_SHARE) -> bool:
 	if _motes.size() >= MOTES:
 		# The one that has been resting longest makes room.
 		for i in range(_motes.size()):
@@ -1448,13 +1523,26 @@ func _add_mote(start: Vector2, y: float) -> bool:
 				_motes.remove_at(i)
 				break
 		if _motes.size() >= MOTES: return false
-	var leaf := _rng.randf() < LEAF_SHARE
-	var color: Color = LEAF_COLORS[_rng.randi()%LEAF_COLORS.size()] if leaf else MOTE_COLOR
+	var kind := _pick_kind(shares)
+	var color: Color
+	match kind:
+		"leaf": color = LEAF_COLORS[_rng.randi()%LEAF_COLORS.size()]
+		"petal": color = PETAL_COLORS[_rng.randi()%PETAL_COLORS.size()]
+		"fluff": color = FLUFF_COLOR
+		_: color = GLINT_COLOR
+	var size_range: Vector2 = KIND_SIZE[kind]
 	_motes.append({"gust":null,"state":"gather","center":start,"y0":y,"rho":_rng.randf_range(0.6,1.6),"theta":_rng.randf()*TAU,
-		"u":0.0,"v":0.0,"vu":0.0,"vv":0.0,"y":_rng.randf_range(0.05,0.2),"lift":_rng.randf_range(0.35,1.9),"lag":_rng.randf_range(-0.5,4.5),
-		"home":0.0,"size":_rng.randf_range(MOTE_SIZE.x,MOTE_SIZE.y)*(1.0 if leaf else 0.7),"spin":_rng.randf()*TAU,"phase":_rng.randf()*TAU,
-		"leaf":leaf,"color":color,"shown":0.0,"rest":0.0})
+		"u":0.0,"v":0.0,"vu":0.0,"vv":0.0,"y":_rng.randf_range(0.05,0.2),"lift":_rng.randf_range(0.35,1.9)*(1.4 if kind in ["fluff","glint"] else 1.0),
+		"lag":_rng.randf_range(-0.5,4.5),"home":0.0,"size":_rng.randf_range(size_range.x,size_range.y),"spin":_rng.randf()*TAU,"phase":_rng.randf()*TAU,
+		"kind":kind,"leaf":kind == "leaf","color":color,"shown":0.0,"rest":0.0,"last":Vector3.INF})
 	return true
+
+func _pick_kind(shares: Array) -> String:
+	var roll := _rng.randf()
+	for i in range(KINDS.size()):
+		roll -= float(shares[i])
+		if roll <= 0.0: return KINDS[i]
+	return KINDS.back()
 
 ## A gathered mote rides the gust that just went (or the wake just begun).
 func _board(mote: Dictionary, g: Dictionary) -> void:
@@ -1473,15 +1561,49 @@ func _board(mote: Dictionary, g: Dictionary) -> void:
 	mote.vu = 0.0
 	mote.vv = 0.0
 
+## On its way the air picks up what lies in its path, mostly petals, fluff
+## and glints: a lane every PICK_GAP m its head runs, a burst every PICK_RING
+## m its ring grows, up to PICK_MAX. Each lifts just behind the head.
+func _pick_along(g: Dictionary) -> void:
+	if float(g.air) < 0.3: return
+	var lane: bool = g.kind == "lane"
+	var gap := lerpf(PICK_GAP.x,PICK_GAP.y,float(g.power)) if lane else PICK_RING
+	if float(g.pick_at) <= 0.0: g.pick_at = gap*0.5 if lane else RING_START+gap
+	while int(g.picked) < PICK_MAX and float(g.head) >= float(g.pick_at):
+		g.picked = int(g.picked)+1
+		g.pick_at = float(g.pick_at)+gap*_rng.randf_range(0.7,1.3)
+		var u := maxf(float(g.head)-_rng.randf_range(0.0,0.8),0.0)
+		var at: Vector2
+		var v: float
+		if lane:
+			v = _rng.randf_range(-0.85,0.85)*float(g.half)
+			at = Vector2(g.origin)+Vector2(g.heading)*u+Vector2(-g.heading.y,g.heading.x)*v
+		else:
+			v = _rng.randf()*TAU
+			at = Vector2(g.origin)+Vector2.RIGHT.rotated(v)*u
+		if not _add_mote(at,_ground(at,float(g.y)),PICK_SHARE): return
+		var mote: Dictionary = _motes.back()
+		mote.gust = g
+		mote.state = "ride"
+		mote.u = u
+		mote.v = v
+		mote.home = _rng.randf_range(-0.8,0.8)*float(g.half) if lane else v
+		mote.lag = _rng.randf_range(0.4,3.0)
+		mote.y = 0.04
+		mote.vu = float(g.speed)*0.4
+
 func _step_motes(delta: float) -> void:
 	var multimesh := _mote_node.multimesh
+	var specks := _speck_node.multimesh
 	var shown := 0
+	var specked := 0
 	for i in range(_motes.size()-1,-1,-1):
 		if _motes[i].state == "gone" and float(_motes[i].shown) <= 0.0: _motes.remove_at(i)
 	for mote: Dictionary in _motes:
 		var g: Variant = mote.gust
 		var world: Vector3
 		var tumble := 0.0
+		var soft: bool = mote.kind in ["fluff","glint"]
 		if g == null:
 			# Gathering: they swirl in round the press, a little higher and
 			# quicker the longer the hand holds.
@@ -1505,26 +1627,29 @@ func _step_motes(delta: float) -> void:
 				if g.kind == "burst": target = maxf(float(mote.u),float(g.head)-float(mote.lag)*0.5)
 				var pull := target-float(mote.u)
 				mote.vu = float(mote.vu)+(CARRY*pull-CARRY_DAMP*float(mote.vu))*delta
-				mote.y = lerpf(float(mote.y),float(mote.lift)*(0.35+0.65*air),1.0-exp(-4.0*delta))
+				# Fluff and glints ride higher and bob on the air's eddies.
+				var bob := sin(clock*1.7+float(mote.phase))*0.25*air if soft else 0.0
+				mote.y = lerpf(float(mote.y),float(mote.lift)*(0.35+0.65*air)+bob,1.0-exp(-4.0*delta))
 			else:
-				# The air has gone: they coast, slow, flutter and fall.
-				mote.vu = float(mote.vu)*exp(-2.2*delta)
-				mote.y = maxf(float(mote.y)-MOTE_FALL*delta*(0.6+0.4*sin(clock*4.0+float(mote.phase))),0.03)
+				# The air has gone: they coast, slow, flutter and fall, fluff
+				# slowest of all.
+				mote.vu = float(mote.vu)*exp(-(1.2 if soft else 2.2)*delta)
+				var fall: float = MOTE_FALL*float(KIND_FALL[mote.kind])
+				mote.y = maxf(float(mote.y)-fall*delta*(0.6+0.4*sin(clock*4.0+float(mote.phase))),0.03)
 			mote.u = float(mote.u)+float(mote.vu)*delta
-			var limit: float = float(g.head if g.kind == "wake" else g.reach)+1.0
+			var limit: float = float(g.head if g.kind == "wake" else g.reach)+(3.0 if soft else 1.0)
 			mote.u = clampf(float(mote.u),-1.5 if g.kind != "burst" else 0.0,limit)
 			var at: Vector2
 			var ground: float
+			var wander := sin(clock*2.6+float(mote.phase))*(0.6 if soft else 0.35)*air
 			if g.kind == "wake":
 				# Carried along the path the feather took, keeping to its side.
-				var wander := sin(clock*2.6+float(mote.phase))*0.35*air
 				mote.v = clampf(lerpf(float(mote.v),float(mote.home)+wander,1.0-exp(-2.5*delta)),-0.95*float(g.half),0.95*float(g.half))
 				var along: Array = _path_at(g,float(mote.u))
 				var way: Vector2 = along[1]
 				at = Vector2(along[0])+Vector2(-way.y,way.x)*float(mote.v)
 				ground = float(along[2])
 			elif g.kind == "lane":
-				var wander := sin(clock*2.6+float(mote.phase))*0.35*air
 				mote.v = lerpf(float(mote.v),float(mote.home)+wander,1.0-exp(-2.5*delta))
 				mote.v = clampf(float(mote.v),-0.95*float(g.half),0.95*float(g.half))
 				at = Vector2(g.origin)+Vector2(g.heading)*float(mote.u)+Vector2(-g.heading.y,g.heading.x)*float(mote.v)
@@ -1539,20 +1664,41 @@ func _step_motes(delta: float) -> void:
 				mote.state = "rest"
 				mote.rest = float(mote.rest)+delta
 		var goal_shown := 1.0
-		if mote.state == "gone" or float(mote.rest) > 0.4: goal_shown = 0.0
+		# Fluff and glints have nothing to lie as: they fade as they land.
+		if mote.state == "gone" or float(mote.rest) > (0.0 if soft else 0.4): goal_shown = 0.0
 		mote.shown = move_toward(float(mote.shown),goal_shown,delta*(4.0 if goal_shown > 0.0 else 1.6))
 		if mote.state == "rest" and float(mote.shown) <= 0.0: mote.state = "gone"
 		mote.spin = float(mote.spin)+delta*tumble*(1.0 if mote.state != "rest" else 0.0)
-		if shown >= MOTES: continue
+		var moving := Vector3.ZERO
+		var last: Vector3 = mote.last
+		if last != Vector3.INF and delta > 0.0: moving = (world-last)/delta
+		mote.last = world
 		var size: float = float(mote.size)*smoothstep(0.0,1.0,float(mote.shown))
+		if soft:
+			if specked >= MOTES: continue
+			var color: Color = mote.color
+			if mote.kind == "glint":
+				# A glint catches the sun now and then as it turns.
+				color.a *= 0.35+0.65*pow(0.5+0.5*sin(clock*6.0+float(mote.phase)*3.0),3.0)
+			color.a *= smoothstep(0.0,1.0,float(mote.shown))
+			specks.set_instance_transform(specked,Transform3D(Basis.from_scale(Vector3.ONE*maxf(size,0.0001)),world))
+			specks.set_instance_color(specked,color)
+			specks.set_instance_custom_data(specked,Color(moving.x,moving.y,moving.z,0.0))
+			specked += 1
+			continue
+		if shown >= MOTES: continue
 		var basis := Basis(Vector3.UP,float(mote.spin)*0.7+float(mote.phase))
 		if mote.state != "rest":
-			basis = basis*Basis(Vector3.RIGHT,float(mote.spin)*(1.3 if mote.leaf else 0.4))*Basis(Vector3.FORWARD,sin(clock*5.0+float(mote.phase))*0.6)
-		multimesh.set_instance_transform(shown,Transform3D(basis.scaled(Vector3.ONE*maxf(size,0.0001)),world))
+			basis = basis*Basis(Vector3.RIGHT,float(mote.spin)*(1.3 if mote.leaf else 0.9))*Basis(Vector3.FORWARD,sin(clock*5.0+float(mote.phase))*0.6)
+		# A petal is rounder than a leaf.
+		var shape := Vector3(1.0,1.0,1.7) if mote.kind == "petal" else Vector3.ONE
+		multimesh.set_instance_transform(shown,Transform3D(basis.scaled(shape*maxf(size,0.0001)),world))
 		multimesh.set_instance_color(shown,mote.color)
 		shown += 1
 	multimesh.visible_instance_count = shown
 	_mote_node.visible = shown > 0
+	specks.visible_instance_count = specked
+	_speck_node.visible = specked > 0
 
 # --- Sound ---------------------------------------------------------------------------
 

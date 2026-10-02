@@ -8,9 +8,9 @@ render_mode unshaded, blend_premul_alpha, depth_draw_never, depth_test_disabled,
 // as long as it will run, ending in an arrow tip, with chevrons of air light
 // flowing along it (faster for a harder gust). A still press shows a ring
 // instead, as far as the burst will reach, its chevrons drawing inward.
-// When the gust goes, the air runs along the mark: a band of dappled shade
-// and sheen at its head (cat's paws on the ground) and ripples across it,
-// and the mark behind the head is used up.
+// When the gust goes, the air runs along the mark: a faint, frayed band of
+// dappled shade and sheen at its head (cat's paws on the ground), and the
+// mark behind the head is used up.
 // Premultiplied: ALBEDO is light added, ALPHA how much of the ground is dimmed.
 #include "res://shaders/reference_globals.gdshaderinc"
 uniform sampler2D ground_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -51,6 +51,9 @@ const vec2 CHEVRON_FLOW = vec2(0.5, 2.2);
 const float PAW_FRONT = 1.8;
 const float PAW_TAIL = 4.5;
 const float USED_UP = 7.0;
+// The most the passing air dims the ground, and the sheen it lifts.
+const float PAW_SHADE = 0.09;
+const float PAW_SHEEN = 0.07;
 
 // pow() on a negative base is NaN on D3D12/Vulkan drivers (exp2(y·log2 x)),
 // where Metal follows C and squares it: square by hand.
@@ -133,21 +136,25 @@ void fragment() {
 		add *= mark;
 	}
 	// The air passing: a band of dappled shade and sheen rides at its head,
-	// sharp in front, trailing behind, with ripples running across it.
+	// sharp in front, trailing behind.
+	// Faint, broken and soft: no stripes, no straight edge. The patches are
+	// drawn out along the way the air goes, its sides frayed by the same
+	// noise, and the whole band only ever dims the ground by PAW_SHADE.
 	if (air > 0.001) {
-		float x = along - passed;
+		// Noise in a frame stretched along the heading (a burst's is the
+		// world's own, slowly drifting, so it does not fan into rays).
+		vec2 q = shape == 0 ? vec2(dot(world.xz, heading) * 0.45, dot(world.xz, vec2(-heading.y, heading.x)) * 1.1) : world.xz * 0.7;
+		q -= (shape == 0 ? vec2(age * head_speed * 0.25, 0.0) : vec2(age * 0.4, age * 0.25));
+		float n = noise2(q * 0.8) * 0.55 + noise2(q * 2.1 + vec2(0.0, age * 0.5)) * 0.3 + noise2(q * 5.3 - vec2(age * 1.3, 0.0)) * 0.15;
+		float x = along - passed + (n - 0.5) * 2.0;
 		float band = x > 0.0 ? exp(-x * x / (2.0 * PAW_FRONT * PAW_FRONT)) : exp(-x * x / (2.0 * PAW_TAIL * PAW_TAIL));
-		float lane = shape == 0 ? 1.0 - smoothstep(0.75, 1.2, across_share) : 1.0;
+		float lane = shape == 0 ? 1.0 - smoothstep(0.45, 1.25, across_share + (n - 0.5) * 0.6) : 1.0;
 		float paw = band * lane * air;
 		if (paw > 0.002) {
-			vec2 way = shape == 0 ? heading : rel / max(along, 0.001);
-			vec2 carried = world.xz - way * age * head_speed * 0.6;
-			float n = noise2(carried * 0.9) * 0.6 + noise2(carried * 2.3 + vec2(age * 0.7, 0.0)) * 0.4;
-			float dark = smoothstep(0.45, 0.8, n);
-			float sheen = 1.0 - smoothstep(0.1, 0.45, n);
-			float ripple = pow(0.5 + 0.5 * sin((along - passed) * 3.2 - age * 9.0), 6.0);
-			shade = max(shade, paw * dark * 0.24);
-			add += (sky_light * 0.6 + light * 0.25) * paw * (sheen * 0.16 + ripple * 0.1);
+			float dark = smoothstep(0.4, 0.85, n);
+			float sheen = smoothstep(0.55, 0.95, 1.0 - n);
+			shade = max(shade, paw * dark * PAW_SHADE);
+			add += (sky_light * 0.6 + light * 0.25) * paw * sheen * PAW_SHEEN;
 		}
 	}
 	ALBEDO = add * flat_ground;
