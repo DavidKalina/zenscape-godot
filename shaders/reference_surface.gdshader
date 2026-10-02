@@ -3,6 +3,7 @@ shader_type spatial;
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
+#include "res://shaders/meadow_flower.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
@@ -76,6 +77,25 @@ uniform float grass_variation = 0.12;
 // How much of the contact darkening the tufts keep; their root shade
 // already darkens the base.
 uniform float grass_contact = 0.4;
+// The meadow flower kit (scripts/meadow_flower_mesh.gd): mass normals baked
+// in the mesh, stems and leaves in the family's living green, petals in
+// their own colour, glowing when backlit. Motion: stems bend most toward
+// the head on the grass's rolling wave (`flower_motion.x` is the share they
+// take), heads lag the wave by `.y` metres and nod by `.z` radians at full
+// breeze, and petals flutter by `.w` metres.
+uniform bool flower_heads = false;
+uniform vec4 flower_motion = vec4(0.8, 0.7, 0.3, 0.004);
+uniform float flower_bend = 1.6;
+uniform float flower_glow = 0.0;
+uniform float flower_roughness = 1.0;
+uniform float flower_contact = 0.5;
+uniform float flower_stem_shade = 0.8;
+uniform float flower_palette_pull = 0.12;
+// Petal colour variants the material picks per plant (linear), over the
+// petal colour the mesh was authored in.
+uniform int flower_variant_count = 0;
+uniform vec3 flower_variants[4];
+uniform vec3 flower_petal_ref = vec3(1.0);
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -198,6 +218,24 @@ void vertex() {
 	if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
 	foliage_gust = 0.0;
 	grass_along = grass_blades ? clamp(UV.y, 0.0, 1.0) : 0.0;
+	if (flower_heads) {
+		// Flowers carry their glow share in grass_along (no spare varyings).
+		grass_along = zs_flower_glow_share(UV2.x);
+		if (UV2.x < 1.5) {
+			vec3 flower_living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
+			COLOR.rgb = flower_living * flower_stem_shade * UV.x;
+		} else {
+			if (UV2.x > 2.5 && UV2.x < 3.5 && flower_variant_count > 0) {
+				int flower_pick = min(int(fract(sin(dot(MODEL_MATRIX[3].xz, vec2(41.3, 17.9))) * 43758.5453) * float(flower_variant_count)), flower_variant_count - 1);
+				vec3 flower_variant = flower_variants[0];
+				if (flower_pick == 1) flower_variant = flower_variants[1];
+				else if (flower_pick == 2) flower_variant = flower_variants[2];
+				else if (flower_pick == 3) flower_variant = flower_variants[3];
+				COLOR.rgb = flower_variant * COLOR.rgb / max(flower_petal_ref, vec3(0.002));
+			}
+			COLOR.rgb = zs_flower_palette(COLOR.rgb, zs_palette_grass / ZS_GRASS_SOURCE, flower_palette_pull);
+		}
+	}
 	grass_bow = 0.0;
 	vec2 grass_tilt = vec2(0.0);
 	char_state = instance_fire_enabled ? INSTANCE_CUSTOM.rg : object_fire;
@@ -242,7 +280,7 @@ void vertex() {
 	if (sway_enabled && !conifer_sway) {
 		vec2 root = MODEL_MATRIX[3].xz;
 		float phase = dot(root, sway_phase.xy);
-		float bend = smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
+		float bend = flower_heads ? pow(clamp(UV.y, 0.0, 1.0), flower_bend) : smoothstep(sway_shape.x, sway_shape.y, VERTEX.y);
 		float wave = sway_frequency.z * sin(zs_motion_time * sway_frequency.x + phase)
 			+ sway_frequency.w * sin(zs_motion_time * sway_frequency.y + phase * sway_phase.z);
 		float g = zs_breeze_field(root);
@@ -262,6 +300,27 @@ void vertex() {
 			motion += zs_wind_direction * min(grass_air * ZS_GRASS_WAVE_STRENGTH * crest * gust, 0.95) * grass_along * blade_arm;
 			grass_bow = crest * min(grass_air, 1.0) * gust;
 			grass_tilt = motion * 1.7;
+		}
+		if (flower_heads) {
+			// The grass's rolling wave bends the stem, most toward the head.
+			float flower_air = min(zs_wind_strength, 1.5);
+			float flower_crest = zs_grass_crest(root, ZS_GRASS_WAVE_LENGTH, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
+			float flower_arm = max(VERTEX.y, 0.0) * length(MODEL_MATRIX[1].xyz);
+			motion += zs_wind_direction * min(flower_air * ZS_GRASS_WAVE_STRENGTH * flower_crest * gust, 0.95) * flower_motion.x * bend * flower_arm;
+			vec3 flower_down = inverse(mat3(MODEL_MATRIX)) * vec3(zs_wind_direction.x, 0.0, zs_wind_direction.y);
+			if (UV2.y > 0.5 && dot(flower_down.xz, flower_down.xz) > 1.0e-8) {
+				// A heavy head lags: it answers the crest that passed its
+				// root a beat ago (the wave read upwind), nodding downwind
+				// about its neck, with a slow bob of its own.
+				float flower_late = zs_grass_crest(root + zs_wind_direction * flower_motion.y, ZS_GRASS_WAVE_LENGTH, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
+				vec3 flower_axis = normalize(cross(vec3(0.0, 1.0, 0.0), normalize(vec3(flower_down.x, 0.0, flower_down.z))));
+				float flower_nod = flower_motion.z * flower_air * (0.3 + flower_late * gust + 0.25 * sin(zs_motion_time * sway_frequency.x * 0.55 + phase * 1.3));
+				flower_nod = clamp(flower_nod, -0.5, 0.9);
+				VERTEX += zs_flower_turn(CUSTOM0.xyz, flower_axis, flower_nod) - CUSTOM0.xyz;
+				NORMAL = zs_flower_turn(NORMAL, flower_axis, flower_nod);
+				// Petals flutter a little, most at their tips.
+				if (UV2.x > 2.5 && UV2.x < 3.5) VERTEX += NORMAL * sin(zs_motion_time * 13.0 + phase * 3.1 + CUSTOM0.w * 5.0) * flower_motion.w * CUSTOM0.w * flower_air * (0.4 + gust);
+			}
 		}
 		float instance_scale = length(MODEL_MATRIX[1].xyz);
 		VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y) * instance_scale;
@@ -344,7 +403,7 @@ void fragment() {
 	// Trees thin round a shaping tool at work (shaders/shaping_reveal.gdshaderinc).
 	if (tree_tread && zs_revealed(leaf_local, plant_root, tree_tread_height, FRAGCOORD.xy)) discard;
 	vec3 face_normal = world_normal;
-	if (grass_blades) {
+	if (grass_blades || flower_heads) {
 		face_normal = normalize(face_normal);
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
@@ -450,6 +509,8 @@ void fragment() {
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);
 	ROUGHNESS = mix(ROUGHNESS, 1.0, char_scorch);
+	// Glossy petals (buttercups) take a sheen; grass_along is 0.9 on petals.
+	if (flower_heads && grass_along > 0.85) ROUGHNESS = mix(flower_roughness, ROUGHNESS, char_scorch);
 	METALLIC = metalness_value;
 	// The source scene has no environment map; sky reflection would lift and
 	// desaturate every shaded facet.
@@ -460,10 +521,13 @@ void fragment() {
 	// so the hemisphere term is where grounding has to happen.
 	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
 	if (grass_blades) contact = mix(1.0, contact, grass_contact);
+	if (flower_heads) contact = mix(1.0, contact, flower_contact);
 	// The sides hang below their origin; the contact term would halve them.
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, face_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
+	// A seed clock holds light through itself: a soft sky glow of its own.
+	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;
 	// Toward the base the sides take on the sky's cool mist, never black.
 	if (earth_sides) EMISSION += zs_hemi_sky * zs_hemi_energy / PI * 0.07 * side_mist;
 	if (zs_look_rim > 0.0) {
@@ -484,4 +548,7 @@ void fragment() {
 #define ZS_GRASS_TRANSLUCENCY
 #define ZS_GRASS_ALONG grass_along
 #define ZS_GRASS_GLOW (grass_blades ? grass_tip_glow : 0.0)
+#define ZS_FLOWER_TRANSLUCENCY
+#define ZS_FLOWER_SHARE grass_along
+#define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)
 #include "res://shaders/reference_direct_light.gdshaderinc"

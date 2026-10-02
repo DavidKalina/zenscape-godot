@@ -10,6 +10,10 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 	const Stones = preload("res://scripts/rock_variants.gd")
 	const Variety = preload("res://scripts/seeded_variety.gd")
 	const Emergence = preload("res://scripts/emergence.gd")
+	const Flowers = preload("res://scripts/meadow_flower_mesh.gd")
+	# Opt-in (--meadow-flowers): draw the old flower forms and the painted
+	# meadow's flowers with the flower kit. Records and saves are untouched.
+	var remap := Flowers.remap_enabled() and catalog_parts.has(Flowers.KINDS[0])
 	var sources := {}
 	var transforms := {"trunk": [], "canopy": [], "grass": [], "stem": [], "petal": [], "rock": [], "explosive_leaves": []}
 	for kind in catalog_parts:
@@ -39,8 +43,12 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 			sources[stone].append(placed)
 			instance_tints[stone].append(Stones.color(item,tint,world))
 			continue
-		if catalog_parts.has(item.asset):
-			var part_keys: Array = catalog_parts[item.asset]
+		var drawn: String = item.asset
+		if remap and Flowers.REMAP.has(drawn):
+			drawn = Flowers.REMAP[drawn]
+			tint = null
+		if catalog_parts.has(drawn):
+			var part_keys: Array = catalog_parts[drawn]
 			var shaping := Transform3D.IDENTITY
 			if item.asset == "layered_tree" and catalog_parts.has("layered_variants"):
 				var form := 2*Variety.layered_index(item,world)
@@ -52,7 +60,7 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 				var part := anchor.duplicate()
 				part.pose = catalog_poses[key]*shaping
 				sources[key].append(part)
-				var colored: bool = catalog_parts[item.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
+				var colored: bool = catalog_parts[drawn].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 				instance_tints[key].append(tint if tint != null and colored else tints.get(key,Color.WHITE))
 		match item.asset:
 			"tree":
@@ -103,7 +111,16 @@ static func build(data: RefCounted, catalog_parts: Dictionary, catalog_poses: Di
 					blade.rise = Emergence.TUFT_RISE
 				transforms.grass.append(transform)
 				sources.grass.append(blade)
-				if i < int(data.meadow[index] * 8.0) and i % 4 == 0:
+				if i < int(data.meadow[index] * 8.0) and i % 4 == 0 and remap:
+					# One kind per drift of cells, as meadows bloom.
+					var kind: String = Flowers.drift_kind(x, z)
+					var key: String = catalog_parts[kind][0]
+					var bloom := blade.duplicate()
+					bloom.basis = transform.basis.scaled(Vector3.ONE * Flowers.DRIFT_SCALE)
+					transforms[key].append(Transform3D(bloom.basis, transform.origin))
+					sources[key].append(bloom)
+					instance_tints[key].append(Color.WHITE)
+				elif i < int(data.meadow[index] * 8.0) and i % 4 == 0:
 					transforms.stem.append(transform)
 					sources.stem.append(blade)
 					transforms.petal.append(transform)

@@ -22,6 +22,10 @@ void light() {
 	// instead. The shader names its tip fraction and strength.
 	if (ZS_GRASS_GLOW > 0.0) DIFFUSE_LIGHT += energy * zs_grass_translucency(LIGHT, VIEW, ALBEDO, ZS_GRASS_ALONG, ZS_GRASS_GLOW);
 #endif
+#ifdef ZS_FLOWER_TRANSLUCENCY
+	// Petals glow their own colour when backlit (shaders/meadow_flower.gdshaderinc).
+	if (ZS_FLOWER_GLOW > 0.0) DIFFUSE_LIGHT += energy * zs_flower_translucency(LIGHT, VIEW, NORMAL, ALBEDO, ZS_FLOWER_SHARE, ZS_FLOWER_GLOW);
+#endif
 	vec3 half_vector = normalize(LIGHT + VIEW);
 	float nv = max(dot(NORMAL, VIEW), 0.0001);
 	float nh = max(dot(NORMAL, half_vector), 0.0);

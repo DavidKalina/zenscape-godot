@@ -15,6 +15,14 @@ const PARTS := {
 	"spike_flower":["flower-stems","flowers-spike"],
 	"umbel_flower":["flower-stems","flowers-umbel"],
 	"daisy_flower":["flower-stems","flowers-daisy"],
+	"oxeye_daisy":["meadow-flower-oxeye_daisy"],
+	"buttercup":["meadow-flower-buttercup"],
+	"dandelion":["meadow-flower-dandelion"],
+	"dandelion_clock":["meadow-flower-dandelion_clock"],
+	"cosmos":["meadow-flower-cosmos"],
+	"sunflower":["meadow-flower-sunflower"],
+	"poppy":["meadow-flower-poppy"],
+	"lupine":["meadow-flower-lupine"],
 	"grass_tuft":["mesh-10"],
 	"log":["logs"],
 	"stump":["stumps"],
@@ -40,6 +48,9 @@ static func part_pose(key: String, original: Node3D, mesh: Mesh) -> Transform3D:
 		return Transform3D(Basis.from_scale(Vector3(1.0,STEM_SCALE[key],1.0)),Vector3.ZERO)
 	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-") or original.name.begins_with("joshua-") or preload("res://scripts/hero_trees.gd").species_of(original.name) != "":
 		return Transform3D.IDENTITY
+	# Meadow flowers stand on their root, wherever their heads lean.
+	if preload("res://scripts/meadow_flower_mesh.gd").is_node(original.name):
+		return Transform3D.IDENTITY
 	var pose := Transform3D(original.basis,Vector3.ZERO)
 	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var bounds := AABB(pose*vertices[0],Vector3.ZERO)
@@ -62,6 +73,12 @@ static func pivots() -> Dictionary:
 
 static func source_node(source: Node3D, node_name: String) -> Node3D:
 	if source.has_node(node_name): return source.get_node(node_name)
+	if preload("res://scripts/meadow_flower_mesh.gd").is_node(node_name):
+		var flower := MeshInstance3D.new()
+		flower.name = node_name
+		flower.mesh = preload("res://scripts/meadow_flower_mesh.gd").mesh(node_name.trim_prefix(preload("res://scripts/meadow_flower_mesh.gd").NODE_PREFIX))
+		source.add_child(flower)
+		return flower
 	if node_name == "desert-cactus":
 		var cactus := MeshInstance3D.new()
 		cactus.name = node_name
