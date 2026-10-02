@@ -244,6 +244,32 @@ const TREE_RESTING_HINT := "Resting"
 ## Tree kinds emergence can grow from spores; others (a snag, Bigfoot's tree)
 ## leave the kind to the stand.
 const SPORE_KINDS := ["tree","layered_tree","broadleaf","redwood","birch","willow","juniper"]
+## Plucking (`pluck`): a Shift-press where a plain press would bend a tree
+## pulls up the plant under it, one of PLUCK_TREES (a snag too, but never
+## Bigfoot's tree) or PLUCK_UNDERGROWTH (a shrub, fern, flower, reeds, a tuft
+## or a mushroom). Logs, stumps, rocks and the falls are not plants and stay.
+## Pinned plants pluck too: a pin keeps a plant from the world's own changes
+## (emergence, sliding, a clearing brush), not from the hand, and one undo
+## puts any plucked plant back.
+const PLUCK_TREES := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus"]
+const PLUCK_UNDERGROWTH := ["fern","shrub","reeds","bank_grass","grass_tuft","flower","button_flower","spike_flower","umbel_flower","daisy_flower","mushroom"]
+## Undergrowth has no pick of its own (world play registers only trees and
+## props): with no tree's mesh under the pointer, the plant whose root stands
+## nearest the ground under it, within PLUCK_REACH m, is the one taken.
+const PLUCK_REACH := 0.5
+## The ground left where a plant came up: the cover cells within PLUCK_BARE m
+## of its root (and the one under it) turn hand-made, so emergence plants
+## nothing there again; an emerged plant's cells also drop to the forest
+## brush's CLEAR_BELOW wish, as a firm clearing pass leaves them.
+const PLUCK_BARE := 0.5
+## The pop: the plant lifts PLUCK_LIFT m out of the ground (half that for
+## undergrowth), leaning a touch, and shrinks away over PLUCK_SECONDS, while
+## PLUCK_BITS crumbs of soil and leaf burst from its root.
+const PLUCK_LIFT := 0.6
+const PLUCK_SECONDS := 0.32
+const PLUCK_BITS := 14
+const PLUCK_SOIL := Color(0.36,0.26,0.17)
+const PLUCK_LEAF := Color(0.42,0.55,0.26)
 const SkyCloud = preload("res://scripts/sky_cloud.gd")
 const TreeOutline = preload("res://scripts/tree_outline.gd")
 const SkyWind = preload("res://scripts/sky_wind.gd")
@@ -292,6 +318,10 @@ var _tree_origin := Vector3.ZERO
 var _springing := {}
 var _tree_springs := {}
 const SPRING_STATE := ["bend","velocity","crown","crown_velocity","tip","tip_velocity"]
+## Plants plucked so far (for probes), and the outlined undergrowth's parts
+## read for an object id at an objects revision ([id, revision, parts]).
+var plucked := 0
+var _plant_outline := []
 ## Headless probes have no pointer: where they say it is, for the hover.
 var pointer_override: Variant = null
 ## The materials tray (scripts/hand_materials.gd, an experiment): the field
@@ -619,7 +649,9 @@ func handle(event: InputEvent) -> bool:
 			var what := reach_at(button.position)
 			if what.is_empty():
 				if modeless and _void_press(button.position): return true
-				# A shaping tool works the land under a tree; only a free hand bends it.
+				# A shaping tool works the land under a tree; only a free hand bends
+				# it, or with Shift plucks it (or the undergrowth) out.
+				if modeless and not shaping() and _press_shift and _pluck_press(button.position): return true
 				if modeless and not shaping() and _tree_press(button.position): return true
 				return modeless and _land_press(button.position)
 			grab(what,button.position)
@@ -715,6 +747,8 @@ func release(point := Vector2.INF) -> void:
 	elif what == "tree":
 		reach_point = null
 		_tree_let_go()
+	elif what == "pluck":
+		reach_point = null
 	elif what == "cloud":
 		reach_point = null
 		if _source != null: _source.let_go()
@@ -980,6 +1014,8 @@ func _hover(point: Vector2) -> void:
 	var key := [point,scene.camera.global_transform,snappedf(float(scene._celestial.phase),0.0005)]
 	# The cloud drifts under a still pointer.
 	if cloud != null: key.append(cloud.centre.snapped(Vector3.ONE*0.25))
+	# Shift outlines what a press would pluck; a plucked plant's outline goes.
+	if modeless: key.append_array([Input.is_key_pressed(KEY_SHIFT),_editor().data.objects_revision])
 	if key == _hover_key: return
 	_hover_key = key
 	var what := reach_at(point) if available() else ""
@@ -1004,9 +1040,11 @@ func _hover(point: Vector2) -> void:
 		_hover_void(point)
 		if materials != null and hover_zone.is_empty() and materials.tray_under(point): hover_zone = "tray"
 		# With material in hand a press on a tree sows or pours, and with a
-		# shaping tool it works the land under it: no outline.
+		# shaping tool it works the land under it: no outline. With Shift
+		# held it outlines what a press would pluck, undergrowth too.
 		var carrying := materials != null and not materials.held.is_empty()
-		_outline_tree(_tree_under(point) if what.is_empty() and hover_zone in ["land",""] and not carrying and not shaping() else -1)
+		var free := what.is_empty() and hover_zone in ["land",""] and not carrying and not shaping()
+		_outline_tree((plant_under(point) if Input.is_key_pressed(KEY_SHIFT) else _tree_under(point)) if free else -1)
 	_set_cursor(Input.CURSOR_POINTING_HAND if not what.is_empty() or hover_zone in ["cloud","tray"] else Input.CURSOR_ARROW)
 	var text := ""
 	var zone := ""
@@ -1489,6 +1527,203 @@ func _tree_under(point: Vector2) -> int:
 	if id <= 0 or not str(play._records.get(id,{}).get("asset","")) in play.TREES: return -1
 	return id
 
+## The plant a Shift-press at `point` would pluck (its object id), or -1: the
+## tree whose mesh is under the pointer, else the plant (`pluckable`) whose
+## root stands nearest the ground under it, within PLUCK_REACH. Bigfoot's
+## tree under the pointer is nobody's to pluck, and hides what is behind it.
+func plant_under(point: Vector2) -> int:
+	var tree := _tree_under(point)
+	if tree > 0: return tree if pluckable(str(_record(tree).get("asset",""))) else -1
+	var land: Variant = _land(point)
+	if land == null: return -1
+	var at := Vector2(land.x,land.z)
+	var best := -1
+	var nearest := PLUCK_REACH
+	for item: Dictionary in _editor().data.objects:
+		if not pluckable(str(item.asset)): continue
+		var gap := at.distance_to(Vector2(item.x,item.z))
+		if gap < nearest:
+			nearest = gap
+			best = int(item.id)
+	return best
+
+## True for a kind the hand may pluck: PLUCK_TREES or PLUCK_UNDERGROWTH.
+static func pluckable(asset: String) -> bool:
+	return asset in PLUCK_TREES or asset in PLUCK_UNDERGROWTH
+
+## The object record `id` in the land's data, or {} when there is none.
+func _record(id: int) -> Dictionary:
+	for item: Dictionary in _editor().data.objects:
+		if int(item.id) == id: return item
+	return {}
+
+## A Shift-press with a free hand: the plant under it comes up (`pluck`), and
+## the press is held as "pluck" until it is let go, so nothing else takes it.
+func _pluck_press(point: Vector2) -> bool:
+	var id := plant_under(point)
+	if id <= 0 or not pluck(id): return false
+	holding = "pluck"
+	_press_pos = point
+	_show_hint("")
+	holding_changed.emit("pluck")
+	return true
+
+## Pull plant `id` out of the land, as one undo step (the chunk editor's
+## `delete_selected`): its record goes, and the ground it stood on is kept
+## bare (`_keep_bare`) inside the same step, so emergence does not grow it
+## back and one undo brings the plant and its ground back together. A tree
+## the hand was springing is let go of first. It pops out of the ground on
+## its way (`_pop`). False when `id` is not a plant the hand may pluck.
+func pluck(id: int) -> bool:
+	var editor := _editor()
+	var data: NativeTerrainData = editor.data
+	var record := _record(id)
+	if record.is_empty() or not pluckable(str(record.asset)) or editor.get("forming") == true: return false
+	var parts := _plant_parts(id)
+	var root := Vector2(record.x,record.z)
+	var base: Vector3 = editor.terrain.to_global(data.object_position(record))
+	# A tree still springing back, or promoted for its bend, goes with it.
+	_springing.erase(id)
+	_tree_springs.erase(id)
+	if _tree_id == id:
+		_tree = null
+		_tree_id = -1
+	var play: Variant = scene.get("world_play")
+	if play != null and play._active.has(id):
+		var node: Variant = play._active[id]
+		play._active.erase(id)
+		if is_instance_valid(node): node.queue_free()
+	if outline != null and outline.tree_id == id: outline.show_tree(-1,[])
+	editor.finish_stroke()
+	data.begin_stroke()
+	data.remove_object(id)
+	_keep_bare(root,NativeTerrainData.object_source(record) == "emerged")
+	data.end_stroke()
+	editor.refresh()
+	var tree := str(record.asset) in PLUCK_TREES
+	_pop(parts,base,tree)
+	var clay: Node = scene.get("land_clay")
+	if clay != null and clay.has_method("sound"):
+		clay.sound(&"crumble" if tree else &"plant",root,0.8 if tree else 0.5)
+		if tree: clay.sound(&"trees",root,0.4)
+	plucked += 1
+	return true
+
+## The ground a plucked plant stood on stays clear: its cover cells within
+## PLUCK_BARE of `root` turn hand-made (as the clay's bared ground does,
+## scripts/land_clay.gd `_bare`), which emergence never plants; an `emerged`
+## plant's cells also drop to the forest brush's CLEAR_BELOW wish
+## (scripts/forest_brush.gd `_settle_clearing`), so the stand round it reads
+## the gap as cleared ground. Inside the open undo step.
+func _keep_bare(root: Vector2, emerged: bool) -> void:
+	var editor := _editor()
+	var data: NativeTerrainData = editor.data
+	var side := NativeTerrainData.MEADOW_CELLS
+	var step := NativeTerrainData.MEADOW_STEP
+	var under := data.meadow_cell(root)
+	var intent: RefCounted = editor.emergence.intent if editor.get("emergence") != null else null
+	var wish: PackedFloat32Array = intent.forest if intent != null else PackedFloat32Array()
+	var clear: float = preload("res://scripts/forest_brush.gd").CLEAR_BELOW
+	var low := Vector2i(((root-Vector2.ONE*PLUCK_BARE+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((root+Vector2.ONE*PLUCK_BARE+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	for z in range(low.y,high.y+1):
+		for x in range(low.x,high.x+1):
+			var cell := z*side+x
+			if cell != under and (data.meadow_position(x,z)+Vector2.ONE*step*0.5).distance_to(root) > PLUCK_BARE: continue
+			data.provenance[cell] = NativeTerrainData.SOURCE_HAND
+			if emerged and not wish.is_empty() and wish[cell] > clear: wish[cell] = clear
+	if emerged and intent != null:
+		intent.forest = wish
+		intent.revision += 1
+
+## The drawn parts of plant `id` ([{"mesh", "transform" (world), "material"}]):
+## the meshes of the tree world play has promoted, else its instances in the
+## land's batches, tinted as world play tints a promoted tree's.
+func _plant_parts(id: int) -> Array:
+	var parts := []
+	var play: Variant = scene.get("world_play")
+	var active: Variant = play._active.get(id) if play != null else null
+	if is_instance_valid(active):
+		for mesh: MeshInstance3D in active.find_children("*","MeshInstance3D",true,false):
+			if mesh.visible and mesh.mesh != null: parts.append({"mesh":mesh.mesh,"transform":mesh.global_transform,"material":mesh.get_active_material(0)})
+		return parts
+	var content: Node = _editor().content
+	for batch: MultiMeshInstance3D in content._batches:
+		if not is_instance_valid(batch) or batch.multimesh == null or batch.multimesh.mesh == null: continue
+		var sources: Array = content._sources.get(batch.get_meta("part"),[])
+		for i in range(sources.size()):
+			var item: Variant = sources[i].get("item")
+			if item == null or int(item.id) != id: continue
+			var placed: Variant = content._instance_transform(sources[i])
+			if placed == null: continue
+			var mesh: Mesh = batch.multimesh.mesh
+			var material: Material = batch.material_override if batch.material_override != null else mesh.surface_get_material(0)
+			if play != null: material = play._material(material,sources[i].get("color",Color.WHITE))
+			parts.append({"mesh":mesh,"transform":batch.global_transform*placed,"material":material})
+	return parts
+
+## The plucked plant's pop: a copy of its `parts` lifts out of the ground at
+## `base` (global), leaning a touch, and shrinks away over PLUCK_SECONDS,
+## while a burst of soil and leaf crumbs flies from its root. A `tree` lifts
+## the full PLUCK_LIFT, undergrowth less. Nothing is kept: the copy frees
+## itself when it has gone.
+func _pop(parts: Array, base: Vector3, tree: bool) -> void:
+	var pop := Node3D.new()
+	pop.name = "PluckPop"
+	pop.top_level = true
+	add_child(pop)
+	var meshes: Array[MeshInstance3D] = []
+	for part: Dictionary in parts:
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = part.mesh
+		if part.material != null: mesh.material_override = part.material
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mesh.top_level = true
+		pop.add_child(mesh)
+		mesh.global_transform = part.transform
+		meshes.append(mesh)
+	var bits := CPUParticles3D.new()
+	bits.one_shot = true
+	bits.explosiveness = 0.9
+	bits.amount = PLUCK_BITS
+	bits.lifetime = PLUCK_SECONDS*1.6
+	bits.direction = Vector3.UP
+	bits.spread = 55.0
+	bits.initial_velocity_min = 1.2
+	bits.initial_velocity_max = 2.4 if tree else 1.7
+	bits.gravity = Vector3(0,-7.0,0)
+	bits.scale_amount_min = 0.5
+	bits.scale_amount_max = 1.0
+	var crumb := BoxMesh.new()
+	crumb.size = Vector3.ONE*(0.07 if tree else 0.045)
+	var paint := StandardMaterial3D.new()
+	paint.vertex_color_use_as_albedo = true
+	paint.roughness = 1.0
+	crumb.material = paint
+	bits.mesh = crumb
+	var colours := Gradient.new()
+	colours.set_color(0,PLUCK_SOIL)
+	colours.set_color(1,PLUCK_LEAF)
+	bits.color_initial_ramp = colours
+	pop.add_child(bits)
+	bits.global_position = base+Vector3.UP*0.05
+	bits.emitting = true
+	var lift := PLUCK_LIFT*(1.0 if tree else 0.5)
+	var lean := Basis(Vector3(randf_range(-1.0,1.0),0.0,randf_range(-1.0,1.0)).normalized(),0.25)
+	var start: Array[Transform3D] = []
+	for mesh in meshes: start.append(mesh.global_transform)
+	var step := func(t: float) -> void:
+		var rise := lift*(1.0-pow(1.0-minf(t/0.6,1.0),3.0))
+		var size := 1.0+0.08*sin(minf(t/0.35,1.0)*PI)-smoothstep(0.45,1.0,t)
+		var held := Transform3D(Basis.IDENTITY.slerp(lean,t)*Basis.from_scale(Vector3.ONE*maxf(size,0.001)),base+Vector3.UP*rise)*Transform3D(Basis.IDENTITY,-base)
+		for i in range(meshes.size()): meshes[i].global_transform = held*start[i]
+	var tween := pop.create_tween()
+	tween.tween_method(step,0.0,1.0,PLUCK_SECONDS)
+	tween.tween_callback(func() -> void:
+		for mesh in meshes: mesh.hide())
+	tween.tween_interval(PLUCK_SECONDS)
+	tween.tween_callback(pop.queue_free)
+
 ## Outline tree `id` (or none, for -1): its parts as world play batches them,
 ## or the meshes of the tree it has promoted. A bent tree is not outlined,
 ## as the outline would not bend with it.
@@ -1502,8 +1737,14 @@ func _outline_tree(id: int) -> void:
 			if float(active.tension) < 0.03 and float(active.velocity.length()) < 0.05:
 				for child in active.get_children():
 					if child is MeshInstance3D and child.visible and child.mesh != null: parts.append({"mesh":child.mesh,"transform":child.global_transform})
+		elif play._parts.has(id):
+			for part: Dictionary in play._parts[id]: parts.append({"mesh":part.mesh,"transform":part.transform})
 		else:
-			for part: Dictionary in play._parts.get(id,[]): parts.append({"mesh":part.mesh,"transform":part.transform})
+			# Undergrowth (Shift, to pluck): its drawn parts, read once a revision.
+			var revision := int(_editor().data.objects_revision)
+			if _plant_outline.size() < 3 or _plant_outline[0] != id or _plant_outline[1] != revision:
+				_plant_outline = [id,revision,_plant_parts(id)]
+			parts = _plant_outline[2]
 	if parts.is_empty(): id = -1
 	if id == outline.tree_id and id <= 0: return
 	outline.show_tree(id,parts)
