@@ -35,6 +35,11 @@ const HUE_FREQUENCY := 0.12
 const FLOWERS := ["f2c53d","e9a93a","e2703f","e38aa0","f0a877","e27a6a","f2dc8c"]
 ## Cover the meadow eases toward.
 const COVER := 1.0
+## A meadow-type world (scripts/meadow_types.gd) blooms in its own flowers'
+## colours instead: its three most common kinds' drift washes.
+const MeadowTypes = preload("res://scripts/meadow_types.gd")
+
+var _type := ""
 
 var _green := Color()
 var _flowers: Array[Color] = []
@@ -58,10 +63,24 @@ func _prepared(data: NativeTerrainData) -> void:
 	_hue.seed = seed_value+227
 	_hue.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_hue.frequency = HUE_FREQUENCY
+	if not _type.is_empty():
+		_flowers.clear()
+		var kinds: Array = MeadowTypes.TYPES[_type].flowers.duplicate()
+		kinds.sort_custom(func(a: Array, b: Array) -> bool: return float(a[1]) > float(b[1]))
+		for i in range(3): _flowers.append(Color(MeadowTypes.FLOWER_KEYS[kinds[i%kinds.size()][0]].wash).srgb_to_linear())
+		return
 	var picks := range(FLOWERS.size())
 	picks.sort_custom(func(a: int, b: int) -> bool: return Variety.unit([seed_value,5,a]) < Variety.unit([seed_value,5,b]))
 	_flowers.clear()
 	for i in range(3): _flowers.append(Color(FLOWERS[picks[i]]).srgb_to_linear())
+
+## A world's meadow type changes the colours even on the same seed.
+func prepare(data: NativeTerrainData, world_seed: int) -> void:
+	var type_id := MeadowTypes.of(data._recipe_settings)
+	if type_id != _type:
+		_type = type_id
+		seed_value = -2
+	super.prepare(data,world_seed)
 
 ## The colour and weight a cell settles on: its own green patch washed toward
 ## its drift's flower colour, or that flower in full bloom.

@@ -22,7 +22,8 @@ const Library = preload("res://scripts/world_library.gd")
 const Style = preload("res://scripts/worlds_style.gd")
 const Linen = preload("res://scripts/hud_linen.gd")
 ## Muted fills standing in for a capture, by land.
-const LAND_TINTS := {"plain":Color("66704f"),"canyon":Color("7d5544"),"isle":Color("5f686d"),"hollow":Color("4a5743")}
+const LAND_TINTS := {"plain":Color("66704f"),"canyon":Color("7d5544"),"isle":Color("5f686d"),"hollow":Color("4a5743"),
+	"wildflowers":Color("7d8a4c"),"sunflowers":Color("a08a3c"),"dandelions":Color("6f8f45"),"cosmos":Color("9a7484"),"alpine_meadow":Color("5f7a66")}
 const TILE := Vector2(156,96)
 const TILE_GAP := 14.0
 const TILE_LABEL_GAP := 7.0

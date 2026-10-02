@@ -38,6 +38,13 @@ static func valid(value: Variant) -> bool:
 			var plain: Dictionary = value.duplicate()
 			plain.erase("variety")
 			return valid(plain)
+		# A meadow world names its meadow type (scripts/meadow_types.gd) over a
+		# meadow habitat. Without the key, a world dresses as it always did.
+		if value.has("meadow"):
+			if value.get("biome") != "meadow" or not value.meadow is String or not preload("res://scripts/meadow_types.gd").has(value.meadow): return false
+			var untyped: Dictionary = value.duplicate()
+			untyped.erase("meadow")
+			return valid(untyped)
 		# A generated world may add a biome blend on top of its dominant biome.
 		if value.has("blend"):
 			if not preload("res://scripts/biome_blend.gd").valid(value.blend,value.get("biome")): return false
@@ -66,7 +73,7 @@ static func valid(value: Variant) -> bool:
 static func encode(value: Dictionary) -> Dictionary:
 	var record := value.duplicate(true)
 	for key in record:
-		if key not in ["kind","variation","family","biome","blend","variety","water","version","seed","composition","archetype","landform"]:
+		if key not in ["kind","variation","family","biome","blend","variety","meadow","water","version","seed","composition","archetype","landform"]:
 			record[key] = PackedFloat64Array([float(record[key])]).to_byte_array().hex_encode()
 	return record
 
@@ -74,7 +81,7 @@ static func decode(record: Variant) -> Variant:
 	if not record is Dictionary: return null
 	var result: Dictionary = record.duplicate(true)
 	for key in result:
-		if key in ["kind","variation","family","biome","blend","variety","water","version","seed","composition","archetype","landform"]: continue
+		if key in ["kind","variation","family","biome","blend","variety","meadow","water","version","seed","composition","archetype","landform"]: continue
 		var value: Variant = result[key]
 		if not value is String or value.length() != 16: return null
 		for character in value:

@@ -359,6 +359,9 @@ static func snowline(settings: Dictionary,fallback: float) -> float:
 ## "Woodland", or "Woodland, meadow and alpine" for a blended world.
 static func title(settings: Dictionary) -> String:
 	var names: Array = [str(settings.get("biome","")).capitalize()]
+	# A meadow world names its meadow type (scripts/meadow_types.gd).
+	var meadow: Dictionary = load("res://scripts/meadow_types.gd").TYPES.get(settings.get("meadow",""),{})
+	if not meadow.is_empty(): names[0] = str(meadow.title)
 	for layer: Dictionary in settings.get("blend",[]): names.append(str(layer.biome))
 	if names.size()==1: return names[0]
 	return ", ".join(names.slice(0,-1))+" and "+names[-1]

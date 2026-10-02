@@ -7,6 +7,10 @@ extends Control
 ##
 ## A blank name is passed on blank: `begin_requested` carries "" and
 ## scripts/world_library.gd `create` names the world after its land.
+##
+## Lands of a `group` (the meadows) share one row; with it picked, a Kind
+## field under the list picks among them, Left and Right step through them,
+## and the row remembers the last one picked.
 
 signal land_changed(land: String, seed_text: String)
 signal begin_requested(world_name: String, land: String, seed_text: String)
@@ -31,6 +35,11 @@ var back_button: Button
 var begin_button: Button
 var caption_name: Label
 var caption_description: Label
+## The Kind field for a grouped land, its links by land id, and the land a
+## group's row last picked.
+var kind_field: Control
+var kind_links := {}
+var group_pick := {}
 
 ## A land to pick: its thumbnail and name; the picked one ringed in thread.
 class LandRow extends Control:
@@ -141,16 +150,31 @@ func _build_panel() -> void:
 	name_edit = Title.input(22,Style.INK,Style.INPUT_FILL,Style.INPUT_RULE,6,Vector2(12,8))
 	column.add_child(_field("Name",name_edit))
 	var list := Title.box(true,4)
+	var kinds := HFlowContainer.new()
+	kinds.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for entry: Dictionary in Library.LANDS:
+		var group := str(entry.get("group",""))
+		if not group.is_empty():
+			var link := Title.link(str(entry.short),13,Style.MUTED,Style.HOVER_INK,0.22)
+			var land_id := str(entry.id)
+			link.pressed.connect(func() -> void: pick(land_id))
+			kind_links[land_id] = link
+			kinds.add_child(link)
+			if group_pick.has(group): continue
+			group_pick[group] = land_id
+			entry = {"id":land_id,"name":Library.GROUPS.get(group,group.capitalize()),"group":group}
 		var row := LandRow.new()
 		row.land = entry
 		row.tint = Title.LAND_TINTS.get(entry.id,Color("66704f"))
-		var art := LAND_ART % entry.id
+		var art := LAND_ART % (group if not group.is_empty() else entry.id)
 		if ResourceLoader.exists(art): row.texture = load(art)
-		row.picked.connect(func(picked: LandRow) -> void: pick(str(picked.land.id)))
+		row.picked.connect(func(picked: LandRow) -> void: pick(_row_land(picked)))
 		rows.append(row)
 		list.add_child(row)
 	column.add_child(_field("Land",list))
+	kind_field = _field("Kind",kinds)
+	kind_field.hide()
+	column.add_child(kind_field)
 	var seed_row := Title.box(false,10)
 	seed_label = Title.label("",Style.spectral_italic(),19,Style.INK)
 	seed_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -222,15 +246,33 @@ func close() -> void:
 func pick(land_id: String) -> void:
 	land = land_id
 	var land_name := Library.land_name(land)
+	var group := _group_of(land)
+	if not group.is_empty(): group_pick[group] = land
 	for row: LandRow in rows:
-		row.selected = row.land.id == land
+		row.selected = row.land.id == land or (not group.is_empty() and row.land.get("group","") == group)
 		row.queue_redraw()
+	kind_field.visible = not group.is_empty()
+	for land_key: String in kind_links:
+		var link: Button = kind_links[land_key]
+		var colour := Style.INK if land_key == land else Style.MUTED
+		link.add_theme_color_override("font_color",colour)
+		link.add_theme_color_override("font_focus_color",colour)
 	name_edit.placeholder_text = "%s — or leave it" % land_name
 	caption_name.text = land_name
 	for entry: Dictionary in Library.LANDS:
 		if entry.id == land: caption_description.text = entry.description
 	seed_label.text = seed_text
 	land_changed.emit(land,seed_text)
+
+## The land a row picks: its own, or the land its group last picked.
+func _row_land(row: LandRow) -> String:
+	var group := str(row.land.get("group",""))
+	return str(group_pick.get(group,row.land.id)) if not group.is_empty() else str(row.land.id)
+
+static func _group_of(land_id: String) -> String:
+	for entry: Dictionary in Library.LANDS:
+		if entry.id == land_id: return str(entry.get("group",""))
+	return ""
 
 ## A new seed for the same land.
 func roll() -> void:
@@ -251,15 +293,22 @@ func _input(event: InputEvent) -> void:
 	elif key == KEY_ESCAPE: back_requested.emit()
 	elif key == KEY_UP or key == KEY_DOWN:
 		var index := 0
-		for i in Library.LANDS.size():
-			if Library.LANDS[i].id == land: index = i
-		pick(Library.LANDS[clampi(index+(1 if key == KEY_DOWN else -1),0,Library.LANDS.size()-1)].id)
+		for i in rows.size():
+			if rows[i].selected: index = i
+		pick(_row_land(rows[clampi(index+(1 if key == KEY_DOWN else -1),0,rows.size()-1)]))
+	elif (key == KEY_LEFT or key == KEY_RIGHT) and kind_field.visible and not name_edit.has_focus():
+		var kinds: Array = kind_links.keys().filter(func(id: String) -> bool: return _group_of(id) == _group_of(land))
+		pick(kinds[posmod(kinds.find(land)+(1 if key == KEY_RIGHT else -1),kinds.size())])
 	else: handled = false
 	if handled: get_viewport().set_input_as_handled()
 
 func _layout() -> void:
 	px = Linen.scale_for(size)
 	Title.rescale(self,px)
+	if kind_field != null:
+		var kinds: HFlowContainer = kind_field.get_child(1)
+		kinds.add_theme_constant_override("h_separation",roundi(16.0*px))
+		kinds.add_theme_constant_override("v_separation",roundi(6.0*px))
 	for node: Control in get_children():
 		if node.has_meta("dock"):
 			node.anchor_left = 1.0
