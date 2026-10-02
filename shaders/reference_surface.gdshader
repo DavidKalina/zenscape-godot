@@ -106,6 +106,16 @@ uniform vec4 flower_far = vec4(12.0, 30.0, 1.0, 0.4);
 // MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
 // flowers are stems and heads. `.x` 0 keeps it at every distance.
 uniform vec2 flower_lod = vec2(0.0, 1.0);
+// The dandelion's round (scripts/dandelion_seeds.gd, docs/scenic/dandelions.md),
+// on the seed clock's material only. The instance alpha is the clock's state:
+// 1 whole; 1 + f with the share f of its seeds blown away; 4 + t when it went
+// bare at t on Emergence's clock. From t it stands bare `.x` s, blooms gold
+// for `.y` s, closes over `.z` s and fluffs out again over `.w` s. CUSTOM0.w
+// names each head vertex's part in it (MeadowFlowerMesh ROLE_*): 2 + its
+// parachute's rank (seeds of rank under f are gone), 4 + r the gold head,
+// 6 + r the core, 8 + r the bracts.
+uniform bool flower_cycle = false;
+uniform vec4 flower_cycle_times = vec4(30.0, 50.0, 2.0, 5.0);
 // The root's colour: the ground's under it times x, giving way to the
 // tuft's own green by y of the way up.
 uniform vec2 grass_root_blend = vec2(0.92, 0.6);
@@ -254,6 +264,44 @@ void vertex() {
 		// A dropped plant is one point: no motion, light or colour to work out
 		// (a vertex function cannot return early, so the rest is skipped).
 		flower_gone = fade <= 0.0;
+	}
+	if (flower_cycle && !flower_gone && CUSTOM0.w >= 2.0) {
+		float cycle_state = COLOR.a;
+		float cycle_lost = cycle_state >= 1.0 && cycle_state < 2.0 ? cycle_state - 1.0 : 0.0;
+		float cycle_gold = 0.0;
+		float cycle_back = 0.0;
+		if (cycle_state >= 3.0) {
+			float cycle_age = zs_emergence_time - (cycle_state - 4.0);
+			float cycle_closes = flower_cycle_times.x + flower_cycle_times.y;
+			float cycle_shut = cycle_closes + flower_cycle_times.z;
+			// The gold head pops open (an easeOutBack, as a birth rises) and
+			// folds away as the clock comes back.
+			float cycle_open = clamp((cycle_age - flower_cycle_times.x) / 1.2, 0.0, 1.0) - 1.0;
+			cycle_gold = (1.0 + 2.70158 * cycle_open * cycle_open * cycle_open + 1.70158 * cycle_open * cycle_open)
+				* (1.0 - smoothstep(cycle_closes, cycle_shut, cycle_age));
+			cycle_back = clamp((cycle_age - cycle_shut + 0.5 * flower_cycle_times.z) / max(flower_cycle_times.w, 0.1), 0.0, 1.0);
+			cycle_lost = 1.0;
+		}
+		float cycle_role = CUSTOM0.w < 4.0 ? 2.0 : CUSTOM0.w < 6.0 ? 4.0 : CUSTOM0.w < 8.0 ? 6.0 : 8.0;
+		float cycle_value = CUSTOM0.w - cycle_role;
+		float cycle_show = 1.0;
+		// A seed stays until the air takes its rank, and comes back in the
+		// same order, each one growing out over a share of the fluffing.
+		if (cycle_role < 3.0) cycle_show = cycle_value >= cycle_lost ? 1.0 : smoothstep(cycle_value * 0.7, cycle_value * 0.7 + 0.3, cycle_back);
+		else if (cycle_role < 5.0) cycle_show = cycle_gold;
+		// The bracts fold away under the gold.
+		else if (cycle_role > 7.0) cycle_show = 1.0 - clamp(cycle_gold, 0.0, 1.0);
+		// The core: bare, it shrinks to the head's small tan nub, tucked away
+		// under the gold, and swells back as the seeds return.
+		else {
+			// (A thinning clock's core shrinks with what it has lost.)
+			float cycle_bare = cycle_lost >= 1.0 ? 1.0 - cycle_back : cycle_lost * cycle_lost * 0.7;
+			cycle_show = mix(1.0, 0.42, cycle_bare) * (1.0 - clamp(cycle_gold, 0.0, 1.0));
+			COLOR.rgb *= mix(vec3(1.0), vec3(0.74, 0.68, 0.48), cycle_bare);
+		}
+		VERTEX -= flower_offset * (1.0 - cycle_show);
+		flower_offset *= cycle_show;
+		flower_gone = cycle_show <= 0.0;
 	}
 	if (!flower_gone) {
 		leaf_local = VERTEX;

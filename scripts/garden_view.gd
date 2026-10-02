@@ -33,6 +33,10 @@ var _variety := {}
 var _sources := {}
 var _object_fire := {}
 var _fire_parts := {}
+## The dandelion's round (scripts/dandelion_seeds.gd): record id -> its seed
+## clock's state, written into its instances' colour alpha, which the flower
+## material reads (`flower_cycle`). Kept across rebuilds, never saved.
+var _flower_state := {}
 signal object_fire_changed(id: int, value: Vector2)
 ## Bumped by every full rebuild, so consumers of the rendered ponds and streams
 ## can tell whether those meshes are the ones they last read.
@@ -670,7 +674,8 @@ func paint_preview(records: Array) -> void:
 		for i in range(sources.size()):
 			var item: Variant = sources[i].item
 			if item == null: continue
-			_paint_parts.get_or_add(int(item.id),[]).append([entry.batch,first+i])
+			_paint_parts.get_or_add(int(item.id),[]).append([entry.batch,first+i,sources[i].get("color",Color.WHITE)])
+			if _flower_state.has(int(item.id)): _write_state(int(item.id))
 		paint_drawn += sources.size()
 
 ## Folds the instances of records `ids` to nothing, in the live batches and
@@ -764,6 +769,9 @@ func _index_fire_parts() -> void:
 		else:
 			# The record is gone - burnt away, deleted or undone.
 			_object_fire.erase(id)
+	for id: int in _flower_state.keys():
+		if _fire_parts.has(id): _write_state(id)
+		else: _flower_state.erase(id)
 
 ## Per-instance fire for one record without a rebuild: `char` 0..1 browns then
 ## skeletonises the foliage, `burn` 0..1 is live flame heat for the ember glow.
@@ -778,6 +786,32 @@ func set_object_fire(id: int, char: float, burn: float) -> void:
 		_object_fire[id] = value
 	_write_fire(id,value.x,value.y)
 	object_fire_changed.emit(id,value)
+
+## The seed clock `id`'s state in the dandelion's round (the flower
+## material's `flower_cycle`): 1 whole, 1 + f with a share f of its seeds
+## blown, 4 + t gone bare at t. Written into its instances without a rebuild.
+func set_flower_state(id: int, state: float) -> void:
+	if is_equal_approx(float(_flower_state.get(id,1.0)),state): return
+	if is_equal_approx(state,1.0): _flower_state.erase(id)
+	else: _flower_state[id] = state
+	_write_state(id)
+
+func flower_state(id: int) -> float:
+	return float(_flower_state.get(id,1.0))
+
+func _write_state(id: int) -> void:
+	var state := float(_flower_state.get(id,1.0))
+	for part: Dictionary in _fire_parts.get(id,[]):
+		var batch: MultiMeshInstance3D = part.batch
+		if not is_instance_valid(batch) or batch.multimesh == null or int(part.index) >= batch.multimesh.instance_count: continue
+		var source: Dictionary = _sources[batch.get_meta("part")][part.index]
+		var color: Color = source.get("color",Color.WHITE)
+		batch.multimesh.set_instance_color(int(part.index),Color(color.r,color.g,color.b,state))
+	for pair: Array in _paint_parts.get(id,[]):
+		var batch: MultiMeshInstance3D = pair[0]
+		if not is_instance_valid(batch): continue
+		var color: Color = pair[2] if pair.size() > 2 else Color.WHITE
+		batch.multimesh.set_instance_color(int(pair[1]),Color(color.r,color.g,color.b,state))
 
 ## Fire state for one record, (0, 0) when it never burnt.
 func object_fire(id: int) -> Vector2:

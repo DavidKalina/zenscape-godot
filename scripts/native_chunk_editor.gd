@@ -354,6 +354,7 @@ func setup(owner_scene: Node3D) -> void:
 	_setup_brushes()
 	if flow_wanted(): _setup_flow.call_deferred()
 	data.state_restored.connect(_world_restored)
+	_setup_dandelions()
 
 func _setup_brushes() -> void:
 	brushes = {"land":land_brush,"water":water_brush}
@@ -2755,6 +2756,7 @@ func _make_gust() -> void:
 		terrain.add_child(gust)
 		gust.ground_at = func(point: Vector2) -> Variant: return data.ground_height(point)
 		gust.scene = scene
+		if dandelions != null: dandelions.gust = gust
 		gust.atmosphere = scene.get("_atmosphere")
 		gust.lightning = scene.get("_lightning")
 		var resident: Variant = scene.get("_resident_wind")
@@ -2767,6 +2769,26 @@ func _make_gust() -> void:
 			low = low.min(point)
 			high = high.max(point)
 		gust.land = Rect2(low,high-low)
+
+# --- The dandelion's round -----------------------------------------------------------
+## Seed clocks shed on the air and come round again, and a few of their seeds
+## take near the flowers already standing (scripts/dandelion_seeds.gd,
+## docs/scenic/dandelions.md). Life spreading, not a tool.
+var dandelions: Node3D
+
+func _setup_dandelions() -> void:
+	dandelions = preload("res://scripts/dandelion_seeds.gd").new()
+	dandelions.name = "DandelionSeeds"
+	dandelions.data = data
+	dandelions.view = content
+	dandelions.scene = scene
+	dandelions.sowing_for = _flower_sowing
+	# Never into an open stroke (its undo step is the player's), nor while a
+	# world is being made.
+	dandelions.held = func() -> bool: return forming or not data._before.is_empty()
+	terrain.add_child(dandelions)
+	content.instances_published.connect(dandelions.land_changed)
+	data.state_restored.connect(func(_state: Dictionary) -> void: dandelions.restored())
 
 ## A swipe through the sky (scripts/sky_wind.gd): a gust at `power` (0..1)
 ## blown across the land along `heading` (plate x, z), from the land's upwind
@@ -3531,7 +3553,9 @@ func paint_flowers_begin(screen_pos: Vector2, slot: String, size := 1.0, thinnin
 
 func _show_paint(made: Dictionary) -> void:
 	if not made.records.is_empty(): content.paint_preview(made.records)
-	if not made.removed.is_empty(): content.paint_hide(made.removed)
+	if not made.removed.is_empty():
+		if dandelions != null: dandelions.cleared(made.removed)
+		content.paint_hide(made.removed)
 
 ## Each frame while the flowers' press is held: paint under the pointer.
 func _flower_paint_process(hit: Variant, delta: float) -> void:

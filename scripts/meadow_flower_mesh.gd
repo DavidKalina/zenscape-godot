@@ -19,7 +19,13 @@ extends RefCounted
 ##   leaves, bracts and buds, which the material lets go
 ##   from the diorama's middle distance on (`flower_lod`).
 ## - CUSTOM0: xyz the offset from the head's neck, the pivot it nods about;
-##   w the fraction out from the head's centre, for the petal flutter.
+##   w the fraction out from the head's centre, for the petal flutter. The
+##   seed clock's head (CYCLE_KINDS) names each vertex's part in the
+##   dandelion's round instead (`flower_cycle`, scripts/dandelion_seeds.gd):
+##   w is ROLE_SEED plus its parachute's rank (the order the seeds blow
+##   off), ROLE_GOLD plus its fraction out for the gold head the plant
+##   blooms again with, ROLE_CORE for the core and ROLE_BRACT for the
+##   bracts folded back under it.
 ##
 ## Heights are at scale 1. Heads are drawn about one and a half to two times
 ## life size, as the grass tufts are, so a daisy's face is four or five
@@ -98,6 +104,16 @@ static func instance_color(kind: String, tint: Color) -> Color:
 			return Color(1.0, 1.0, 1.0, (k + 0.5) / 8.0)
 	return tint
 
+## The kinds that go round the dandelion's cycle (docs/scenic/dandelions.md):
+## the seed clock sheds its seeds on the air, stands bare, blooms gold and
+## fluffs out again, all in its material (`flower_cycle`), from a state
+## scripts/dandelion_seeds.gd writes into its instance alpha.
+const CYCLE_KINDS := ["dandelion_clock"]
+const ROLE_SEED := 2.0
+const ROLE_GOLD := 4.0
+const ROLE_CORE := 6.0
+const ROLE_BRACT := 8.0
+
 ## Distance in the material (reference_surface `flower_far`, `flower_lod`),
 ## measured from the camera:
 ## - from LOD_NEAR to LOD_FAR metres each plant lets its detail go (leaves,
@@ -165,6 +181,9 @@ static func material(kind: String) -> ShaderMaterial:
 	m.set_shader_parameter("flower_roughness", spec.roughness)
 	m.set_shader_parameter("flower_far", Vector4(FAR_START, FAR_END, FAR_KEEP.get(kind, 1.0), FAR_GROW))
 	if not kind in KEEP_DETAIL: m.set_shader_parameter("flower_lod", Vector2(LOD_NEAR, LOD_FAR))
+	if kind in CYCLE_KINDS:
+		m.set_shader_parameter("flower_cycle", true)
+		m.set_shader_parameter("flower_cycle_times", preload("res://scripts/dandelion_seeds.gd").cycle_times())
 	var variants: Array = spec.variants
 	if not variants.is_empty():
 		var colors := PackedVector3Array()
@@ -206,6 +225,11 @@ class Plant:
 	var kite_petals := false
 	## True while building detail the far plant goes without (DETAIL).
 	var detail := false
+	## The dandelion's round: while `role` is set (ROLE_SEED, ROLE_GOLD,
+	## ROLE_CORE), head vertices carry it in CUSTOM0.w, plus `rank` when that
+	## is set (a seed's), else their fraction out.
+	var role := 0.0
+	var rank := -1.0
 	const STEM_GREEN := "4d7a34"
 	const LEAF_GREEN := "5d8c3c"
 
@@ -243,6 +267,7 @@ class Plant:
 			n = (p - on_axis).normalized()
 		var offset: Vector3 = p - h.neck
 		var radial := clampf((p - middle).length() / maxf(h.radius * scale, 0.001), 0.0, 1.0)
+		if role > 0.0: radial = role + minf(rank if rank >= 0.0 else radial, 0.999)
 		return [p, n, color, Vector2(shade, h.along), Vector2(part, 1.0 + (DETAIL if detail else 0.0)), Color(offset.x, offset.y, offset.z, radial)]
 
 	func tri(a: Array, b: Array, c: Array) -> void:
@@ -451,10 +476,25 @@ class Plant:
 	## A seed clock: a soft core inside a halo of seed parachutes, one small
 	## flat star of a triangle facing out along each of the core's 42
 	## directions, so the edge is airy and catches the light, not a stone.
+	## Each parachute has its own rank, the order the air takes them in
+	## (the dandelion's round), shuffled so a clock thins all over.
 	func seed_clock(h: Dictionary, radius: float) -> void:
+		role = ROLE_CORE
 		var points: Array = puff(h, radius * 0.6, MeadowFlowerColor.of("ddd8c8"), PUFF, Vector2(0.95, 1.03))
+		role = ROLE_SEED
 		var white := MeadowFlowerColor.of("f8f7f1")
-		for p: Vector3 in points:
+		var ranks: Array = []
+		for i in range(points.size()): ranks.append((float(i) + 0.5) / points.size())
+		var shuffle := RandomNumberGenerator.new()
+		shuffle.seed = 5521
+		for i in range(ranks.size() - 1, 0, -1):
+			var j := shuffle.randi_range(0, i)
+			var swap: float = ranks[i]
+			ranks[i] = ranks[j]
+			ranks[j] = swap
+		for s in range(points.size()):
+			var p: Vector3 = points[s]
+			rank = ranks[s]
 			var r := radius * rng.randf_range(0.9, 1.1)
 			var c: Vector3 = h.centre + p * r
 			var t1 := p.cross(Vector3.UP if absf(p.y) < 0.9 else Vector3.RIGHT).normalized()
@@ -468,6 +508,8 @@ class Plant:
 				v[1] = p
 				corners.append(v)
 			tri(corners[0], corners[1], corners[2])
+		role = 0.0
+		rank = -1.0
 
 	static func _icosphere(fine := true) -> Array:
 		var t := (1.0 + sqrt(5.0)) / 2.0
@@ -569,8 +611,23 @@ class Plant:
 		var h := head(neck, Vector3(0.1, 1.0, 0.0), 0.052, 0.046, 1.0)
 		h.dome = h.centre
 		seed_clock(h, 0.052)
+		role = ROLE_BRACT
 		bracts(h, 8, 0.018, 0.005, 1.4)
+		role = 0.0
 		rosette(4, Vector2(0.1, 0.13), 0.022, LANCE, 0.7, 0.1)
+		# The gold head it blooms again with in the dandelion's round, on the
+		# same neck, folded away while the clock stands (`flower_cycle`).
+		var bloom := head(neck, Vector3(0.12, 1.0, 0.05), 0.042, 0.006, 0.8)
+		bloom.scale = HEAD_SCALE["dandelion"]
+		var gold := MeadowFlowerColor.of("ffd024")
+		var deep := MeadowFlowerColor.of("f7b916")
+		role = ROLE_GOLD
+		kite_petals = true
+		petals(bloom, 18, 0.008, 0.042, 0.011, deep, gold, 0.0, 0.08, 0.0, 0.08, 0.0, 0.08)
+		petals(bloom, 8, 0.003, 0.02, 0.01, deep, gold, 0.0, 0.0, 0.0, 1.1, 0.4, 0.08)
+		disc(bloom, 0.009, 0.012, 6, deep, deep, 0.0)
+		kite_petals = false
+		role = 0.0
 
 	## Eight broad notched petals round a small gold disc, on a tall wiry
 	## branching stem with thread-fine leaves; a closed bud beside.

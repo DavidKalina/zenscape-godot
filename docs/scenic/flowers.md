@@ -17,7 +17,7 @@ The style was settled with the user: shapes are faceted, light is soft. Petals a
   - COLOR is the part's own colour, linear.
   - UV.x is a stem or leaf shade. UV.y is the bend fraction (0 at the root, 1 at the tallest neck); every vertex of a head takes its neck's value.
   - UV2.x is the part: stem 0, leaf 1, disc 2, petal 3, puff 4. UV2.y is 1 where the vertex nods with its head, plus 0.25 (`DETAIL`) on the detail a far plant goes without (see Cost).
-  - CUSTOM0.xyz is the offset from the head's neck, which is the nod pivot. CUSTOM0.w is the fraction out from the head's centre.
+  - CUSTOM0.xyz is the offset from the head's neck, which is the nod pivot. CUSTOM0.w is the fraction out from the head's centre. On the seed clock it instead names each head vertex's part in the dandelion's round (docs/scenic/dandelions.md).
 - **Mass normals are baked in.** Each head vertex's normal points out from a dome centre set 0.7–1.2 head radii behind the face. A spike's normals point out from its axis. Stems and leaves face up and out. The material does not flip normals on back faces, so a petal seen from below shades as part of the head.
 - **Shader** (`flower_heads` in `shaders/reference_surface.gdshader`, helpers in `shaders/meadow_flower.gdshaderinc`):
   - Stems and leaves take the family's living green (`zs_grass_living`, as the tufts do) times `flower_stem_shade` 0.8. A muted family cannot turn them to straw.
@@ -44,7 +44,7 @@ Catalog keys, heights at scale 1 (to the top of the tallest head) and triangle c
 | `oxeye_daisy` | 0.57 m | 240 (324) | 14 white rays round a raised gold disc; two heads; toothed rosette |
 | `buttercup` | 0.38 m | 267 (333) | three glossy five-petal gold cups (heads drawn 1.45×) on a forked stem; two fans of three-lobed leaves |
 | `dandelion` | 0.26 m | 230 (365) | bright gold pompom of three rising floret rings (heads drawn 1.5×); long toothed rosette |
-| `dandelion_clock` | 0.45 m | 202 | soft core inside a halo of 42 seed parachutes; glows |
+| `dandelion_clock` | 0.45 m | 286 (202) | soft core inside a halo of 42 seed parachutes; glows. Sheds on the air, stands bare, blooms gold and fluffs out again (docs/scenic/dandelions.md); the gold head is the added triangles, folded away while it stands whole |
 | `cosmos` | 0.94 m | 322 (448) | 8 broad notched petals, pink, magenta, cream white or pale pink; wiry stem, thread leaves, a bud |
 | `sunflower` | 1.84 m | 384 (430) | stem bends over so the 42 cm head faces up and out toward the sun side; a small brown disc in two long rings of bright gold petals, three heart leaves |
 | `poppy` | 0.63 m | 184 (244) | four broad petals with dark basal blotch, red to orange; nodding bud |
