@@ -16,6 +16,7 @@ it is taken off `UNBUILT`, with no discovery unlock.
 |---|---|---|---|---|---|
 | Modeller (id `hand`; was the Hand) | Mould | the thumb: a groove when slow, a rub when fast | the pinch: up raises, down sinks, a horn when tall | a poke that rings out | the palm; a smaller pinch |
 | Paddle | Mass | a broad sweep pushing earth ahead and aside, leaving a long soft trough with a ridge on either bank | a wide round-shouldered swell (several times the pinch's radius), up or down | a broad pat that flattens | a narrower blade |
+| Paddle's Plane (a fan mode) | Mass | levels the ground to the press's height and lays it afresh as grass, earth, rock or sand (the swatch in hand) | (drag only) | (drag only) | a narrower blade |
 | Chisel | Cut | a flat shelf at the press's height with a steep face downhill (terraces) | a flat-topped mesa or a sunk pit with cliff walls; its height follows the pointer | a step or notch | shallower |
 | Wire | Slice | a narrow deep gorge, near-vertical walls, rock painted on the walls | slices a hilltop off level at the pointer's height | (none yet) | shallower |
 | Hammer | Break | (none yet) | (none yet) | cracks rock, lowers peaks, spills scree to the angle of repose, as height changes only (no loose props) | smaller |
@@ -216,9 +217,34 @@ beside it.
   radius and easing to the rim. It flattens bumps and keeps the patch's earth.
   It is one undo step. The hand shows the Press pose for 0.25 s, and the life
   round it is stirred.
+- **Plane** (drag; the fan's fourth mode, added 2026-10-01 for "if I have
+  rock, I'm stuck with rock"). Flattens ground fast and changes what it is.
+  - Each dab moves the ground `PLANE_STEP` (half) of the way to the height
+    under the press. This is full inside `PLANE_CORE` (half) of
+    `PLANE_RADIUS` (2.5 m) and eases to nothing at the rim. Dabs fall 0.3 m
+    apart, so the swath ends level within millimetres, with a smooth
+    shoulder.
+  - The same falloff relays the surface. A cell's share is the most any dab
+    gave it, written over the stroke's starting cover, so a second pass never
+    lays it twice. A full share replaces the cell outright (Brush `coat` at
+    1): the surface at full weight, over any stored paint (the Brush's rock,
+    a range's `paint_rock`, dirt).
+  - The surface is one of `SURFACES`, picked on the swatch strip under the
+    fan: grass (the default), earth, rock or sand. The strip has no picker
+    cell (clay_tool `picks` false). The colours come from Brush
+    `surface_colour`: the palette's patched grass or rock, the strata's
+    topsoil, or the palette's shore `sand`.
+  - Grass brings the cover up to full and leaves the meadow and blades as
+    they stood. Earth, rock and sand take cover, meadow and blades away.
+    Every cell laid is hand-made.
+  - The clay's dirt stays out (`dirt_share` 0), so a cut through a peak
+    shows the planed surface, not its strata. Slope rock, which is derived
+    from slope when the mesh is built, goes with the slope. Snow still
+    settles over paint above the snowline. Trees slide off at release, as
+    after a sweep.
 - **Shift** halves every width (`NARROW`). The pips scale every width.
-- **Verbs reported:** `sweep`, `swell`, `pat`, or `narrow_sweep`,
-  `narrow_swell`, `narrow_pat` with Shift.
+- **Verbs reported:** `sweep`, `swell`, `pat`, `plane`, or `narrow_sweep`,
+  `narrow_swell`, `narrow_pat`, `narrow_plane` with Shift.
 - **Prop:** a hexagonal handle (`#9c7444`) under the grip, with a pommel and
   a collar (`#d9b57e`). An octagonal blade in `#c49a5e` sits 0.62 m wide,
   0.72 m tall and 0.1 m thick, tapering a little to its foot. It tilts -24°.
@@ -248,6 +274,29 @@ checks the following:
 - Each verb is one undo step, and one undo restores the heights exactly.
 - Esc gives back the Hand, whose drag digs a groove again.
 - Taking a stone puts the paddle back.
+
+That probe predates the mode fan and now fails its pat, sweep and groove
+checks (a press takes the fan's mode, not the gesture's shape). The fan is
+checked by `tools/probe_drag_tools.gd`. The Plane is checked by
+`tools/probe_paddle_plane.gd`:
+
+```sh
+godot --headless --fixed-fps 60 --path . -s res://tools/probe_paddle_plane.gd -- --modeless --no-title
+```
+
+- A Mountain peak (about 8 m) is painted rock by the Brush across its
+  summit. The Plane then fans out fourth, with four swatches and no picker,
+  and grass in hand.
+- Drawn flank to flank across the peak, the ground along the laid path ends
+  within 5 mm of the press's height. Before the stroke it was up to 7 m off.
+- A point 0.75 of the radius off the path is eased 0.5 to 0.8 of the way.
+  Ground past the rim is unmoved.
+- The summit's rock is replaced by the palette's grass at full weight. Its
+  cover is 1, and the cells are hand-made.
+- It is one undo step, and one undo restores the heights, tint, grass,
+  meadow, blades and provenance exactly.
+- With the sand swatch, the palette's sand is laid at full weight, and
+  cover, meadow and blades go to 0.
 
 ### Unverified
 

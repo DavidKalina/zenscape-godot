@@ -73,8 +73,13 @@ func mode_spec() -> Dictionary:
 
 ## The colours offered on the roll's swatch strip while the mode in hand
 ## lays one (sRGB), or [] when it lays none. The strip ends with a cell that
-## opens a full picker; either sets `colour`.
+## opens a full picker (unless `picks` is false); either sets `colour`.
 func swatches() -> Array: return []
+
+## Whether the swatch strip ends with the full picker's cell: false for a
+## mode whose swatches are the only choices (the Paddle's Plane, its four
+## surfaces), where any other colour would mean nothing.
+func picks() -> bool: return true
 
 ## Take the next or previous mode (Q and E).
 func step_mode(by: int) -> void:

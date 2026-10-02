@@ -385,7 +385,7 @@ func _show_swatches() -> void:
 	if made == null:
 		roll.set_swatches([],Color.WHITE)
 		return
-	roll.set_swatches(made.swatches(),made.colour)
+	roll.set_swatches(made.swatches(),made.colour,made.picks())
 
 # --- The Feather ------------------------------------------------------------------
 

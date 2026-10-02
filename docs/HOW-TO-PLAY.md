@@ -45,6 +45,18 @@ into it. It is not saved with the place.
 
 Props and creatures under a press keep their own grab.
 
+## The Paddle (tool roll)
+
+The Paddle's modes fan out beside its pocket: **Swell** (press and drag up or
+down), **Sweep** (drag a soft valley), **Pat** (tap to flatten bumps) and
+**Plane**. Q and E step through them, and Shift narrows the blade.
+
+**Plane** is for a quick change of ground: drag, and the ground under the
+blade levels to the height where you pressed. It is also laid afresh as the
+surface picked on the swatches under the fan: grass (the default), earth,
+rock or sand. Rock, from a mountain or the Brush, planes back to grass.
+Each stroke is one Cmd+Z.
+
 ## The edge (left button on the rim or the block's walls)
 
 The **rim** is the plate's top edge, the last metre or so of land. The

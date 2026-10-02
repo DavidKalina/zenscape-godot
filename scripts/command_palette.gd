@@ -100,7 +100,7 @@ const TOOLS := [
 	["hills","Hills","Roll","Drag across the land to raise rolling hills."],
 	["mountain","Mountain","Peak","Press and drag up to pull a mountain."],
 	["bowl","Bowl","Hollow","Drag to press out a basin a pond can fill."],
-	["paddle","Paddle","Mass","Raise or flatten broad ground."],
+	["paddle","Paddle","Mass","Raise or flatten broad ground. Plane levels it and lays grass, earth, rock or sand."],
 	["chisel","Chisel","Cut","Crisp rock: faces, cliffs, terraces."],
 	["wire","Wire","Slice","Cuts one straight gorge."],
 	["hammer","Hammer","Break","Cracks rock and sheds scree."],
