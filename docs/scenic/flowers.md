@@ -12,11 +12,11 @@ The style was settled with the user: shapes are faceted, light is soft. Petals a
 
 ## What changed
 
-- **Mesh** (`scripts/meadow_flower_mesh.gd`): one procedural plant per kind, built once and indexed. Each has a three- to five-sided stem, folded leaves (lance, broad, heart-shaped or palmate), and heads made of flat petals in rows, a domed disc with a green back, and bracts. Heads are drawn 1.2–1.35× the builders' sizes (`HEAD_SCALE`), so a daisy face is about 15 cm, six pixels at the diorama camera. The grass tufts are stylised the same way.
+- **Mesh** (`scripts/meadow_flower_mesh.gd`): one procedural plant per kind, built once and indexed. Each has a three- to five-sided stem, folded leaves (lance, broad, heart-shaped or palmate), and heads made of flat petals in rows, a domed disc with a green back, and bracts. Heads are drawn 1.2–1.5× the builders' sizes (`HEAD_SCALE`), so a daisy face is about 15 cm, six pixels at the diorama camera. The grass tufts are stylised the same way.
 - **Vertex data**, read by the material:
   - COLOR is the part's own colour, linear.
   - UV.x is a stem or leaf shade. UV.y is the bend fraction (0 at the root, 1 at the tallest neck); every vertex of a head takes its neck's value.
-  - UV2.x is the part: stem 0, leaf 1, disc 2, petal 3, puff 4. UV2.y is 1 where the vertex nods with its head.
+  - UV2.x is the part: stem 0, leaf 1, disc 2, petal 3, puff 4. UV2.y is 1 where the vertex nods with its head, plus 0.25 (`DETAIL`) on the detail a far plant goes without (see Cost).
   - CUSTOM0.xyz is the offset from the head's neck, which is the nod pivot. CUSTOM0.w is the fraction out from the head's centre.
 - **Mass normals are baked in.** Each head vertex's normal points out from a dome centre set 0.7–1.2 head radii behind the face. A spike's normals point out from its axis. Stems and leaves face up and out. The material does not flip normals on back faces, so a petal seen from below shades as part of the head.
 - **Shader** (`flower_heads` in `shaders/reference_surface.gdshader`, helpers in `shaders/meadow_flower.gdshaderinc`):
@@ -37,18 +37,18 @@ The style was settled with the user: shapes are faceted, light is soft. Petals a
 
 ## Kinds
 
-Catalog keys, heights at scale 1 (to the top of the tallest head) and triangle counts:
+Catalog keys, heights at scale 1 (to the top of the tallest head) and triangle counts (`tools/probe_meadow_flowers.gd`; the first kit's in brackets):
 
 | Key | Height | Tris | Reads as |
 |---|---|---|---|
-| `oxeye_daisy` | 0.57 m | 324 | 15 white rays round a raised gold disc; two heads; toothed rosette |
-| `buttercup` | 0.38 m | 333 | three glossy five-petal gold cups on a forked stem; three-lobed leaves |
-| `dandelion` | 0.26 m | 365 | gold pompom of three rising floret rings; long toothed rosette |
+| `oxeye_daisy` | 0.57 m | 240 (324) | 14 white rays round a raised gold disc; two heads; toothed rosette |
+| `buttercup` | 0.38 m | 267 (333) | three glossy five-petal gold cups (heads drawn 1.45×) on a forked stem; two fans of three-lobed leaves |
+| `dandelion` | 0.26 m | 230 (365) | bright gold pompom of three rising floret rings (heads drawn 1.5×); long toothed rosette |
 | `dandelion_clock` | 0.45 m | 202 | soft core inside a halo of 42 seed parachutes; glows |
-| `cosmos` | 0.94 m | 448 | 8 broad notched petals, pink, magenta, white or pale pink; wiry stem, thread leaves, a bud |
-| `sunflower` | 1.83 m | 430 | stem hooks over so the 34 cm head droops; dark disc, two petal rings, broad heart leaves |
-| `poppy` | 0.63 m | 244 | four broad petals with dark basal blotch, red to orange; nodding bud |
-| `lupine` | 0.85 m | 507 | spike of 11 whorls of pea florets, violet, purple, pink or white; palmate leaves |
+| `cosmos` | 0.94 m | 322 (448) | 8 broad notched petals, pink, magenta, cream white or pale pink; wiry stem, thread leaves, a bud |
+| `sunflower` | 1.84 m | 384 (430) | stem bends over so the 42 cm head faces up and out toward the sun side; a small brown disc in two long rings of bright gold petals, three heart leaves |
+| `poppy` | 0.63 m | 184 (244) | four broad petals with dark basal blotch, red to orange; nodding bud |
+| `lupine` | 0.85 m | 272 (507) | spike of 9 whorls of four pea florets, violet, purple, pink or white; three palmate leaves |
 
 For scale, the painterly tuft's tallest blade is 0.44 m and the source tuft is 0.42 m. Buttercups and dandelions sit among the tufts, daisies and poppies top them, cosmos and lupines stand well clear, and sunflowers tower.
 
@@ -64,7 +64,29 @@ For scale, the painterly tuft's tallest blade is 0.44 m and the source tuft is 0
 
 ## Cost
 
-This is an estimate; nothing has been measured. Plants are 200–510 triangles, against 150 for the old flower, which is two batches. A meadow of 1,000 kit flowers is about 0.35 M triangles in about eight batches, with shadows on. If that costs too much, the first levers are the dandelion's three floret rings, the lupine's whorls (11) and the daisy's two heads.
+The meadow types put 1,500–4,500 of these plants on a plate. Measured rendered (Forward+, Metal, macOS, 3024×1898 window) with `tools/film_breeze.gd --land=<meadow> --seconds=0 --probe`, which times 120 frames of the meadow view and then the same view with the flower batches hidden. Frame times swing by a third between runs on a busy machine, so the reliable figure is the flowers' own cost: the frame time less the same view without flowers, in one run.
+
+| Land | Before: frame (primitives) | After: frame (primitives) | Flowers' own cost after |
+|---|---|---|---|
+| canyon (no meadow) | 12.4 ms (0.08 M) | 8.8 ms (0.09 M), same machine state as the row below | none |
+| wildflowers | 40.2 ms (4.28 M) | 18.2 ms (2.07 M) | +6.5 ms over 11.7 ms without flowers |
+| sunflowers | 15.9 ms (0.90 M) | 12.5 ms (1.13 M) | +3.7 ms |
+| dandelions | 27.5 ms (2.63 M) | 14.5 ms (1.34 M) | +5.7 ms |
+| cosmos | 24.0 ms (2.67 M) | 14.7 ms (2.35 M) | +5.8 ms |
+| alpine meadow | 24.9 ms (2.05 M) | 23.6 ms (1.07 M), in a slower run | +3.9 ms over 19.7 ms without flowers |
+
+The "before" column ran in the machine's slower state (canyon 12.4 ms), the "after" column in a faster one (canyon 8.8 ms), so compare within a column. Primitive counts now include dropped plants, which are drawn as one point each and cost almost nothing.
+
+What the cost was. Probing one meadow showed the flowers' price was the material, not the triangles. The same meshes on a plain material cost +0.5 ms; on the flower material, +8.6 ms. About half of that was the breeze in the vertex stage, about half the rest of the uber-shader, run for every vertex in the depth pre-pass, the main pass and the shadow pass. So the levers are fewer vertices through that shader, not fewer triangles as such:
+
+- **Distance thinning** (`flower_far` in `shaders/reference_surface.gdshader`). From `FAR_START` (14 m) to `FAR_END` (32 m) from the camera a kind keeps down to its `FAR_KEEP` share of its plants (0.6–0.7, sunflowers 0.8). A plant ranked out shrinks into the ground over a short band, so the camera's moves never pop it. The kept heads grow by keep^-`FAR_GROW` (0.5) about their necks, so a drift keeps its cover. The distance is from `zs_camera_position`, so the shadow and reflection passes thin the same plants.
+- **A dropped vertex skips the vertex stage.** A shader's `vertex()` cannot return early, so the whole body sits under `if (!flower_gone)`. Before this, dropped plants still cost about two thirds of a drawn one.
+- **Far detail** (`flower_lod`). Leaves, bracts, buds and the dandelion's middle floret ring carry `DETAIL` (0.25 added to UV2.y). They shrink away from `LOD_NEAR` (15 m) to `LOD_FAR` (20 m), so a far plant is stems and heads over the painted carpet. Sunflowers keep their leaves (`KEEP_DETAIL`): they are the field's mass.
+- **Lighter meshes**, in looks that read the same at 3 m: small kinds' petals are kites (two rows and a tip, `kite_petals`) instead of three rows, thread and leaflet leaves are one row (`SLIM`), buttercup fans are two of three lobes (`LOBE`), buds are plain icosahedra, the daisy has 14 rays, the dandelion 18/13/8 florets, the lupine nine whorls of four florets and three palmate leaves of six. Vertices per plant went from 182–715 to 152–422.
+- **Shadows** only from the kinds that stand clear of the grass (`SHADOW_KINDS`: sunflower, cosmos, lupine, poppy, oxeye daisy). Buttercups, dandelions and clocks cast none. **Pond reflections** copy only sunflowers (`REFLECT_KINDS`); copying cosmos and lupines into the wildflower meadow's pond view cost 2.7 ms.
+- **The breeze is read once a vertex.** A flower's stem and its head's nod share one `zs_breeze_lean_at` (`zs_breeze_offset_lean` in `reference_wind`), instead of a head vertex reading it twice.
+
+Still to do: the flower fragment stage is the full surface shader (cloud shade, haze, afterglow, inversion), and from the diorama camera thousands of 2–6 px petals pay for it in 2×2 quads. A cheaper far shading path, or per-region MultiMesh batches so far regions draw a real low-detail mesh, are the next levers.
 
 ## Checks
 

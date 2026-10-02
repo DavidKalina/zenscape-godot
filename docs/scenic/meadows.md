@@ -23,10 +23,10 @@ Once it exists, a meadow world is an ordinary world. You sculpt, pour water and 
 | Type | Land | Flowers (drift weights) | Ground and grass | Neighbours |
 | --- | --- | --- | --- | --- |
 | Wildflower meadow | basin with a central pond | oxeye daisy 1, buttercup 1, poppy 0.8, cosmos 0.35, lupine 0.35 | warm green, a little straw | wetland ring by the pond, woodland on the shaded side, 6 lone trees |
-| Sunflower field | flat meadow (relief 0.55–0.75) | sunflower in loose rows 1.1 m apart, a few buttercups and daisies | golden green, 30% straw patches, straw-tinted tufts | a copse on the high ground, 3 lone trees |
+| Sunflower field | flat meadow (relief 0.55–0.75) | sunflower in rows 0.95 m apart, faces turned toward the noon sun's side; a few buttercups and daisies | warm green-gold, 14% straw patches, a quarter of tufts straw | a copse on the high ground, 3 lone trees |
 | Dandelion meadow | rounder meadow hills | dandelion 1, seed clock 0.6 (interleaved, 30% companion share), buttercup, daisy | lush green, no straw, short tufts | woodland on the shaded side, 4 lone trees |
-| Cosmos field | broad meadow sweeps | cosmos in pink, magenta and white drifts (one colour each), a few daisies | sage green, some straw | a few trees on the high ground |
-| Alpine meadow | mountain range with tarn and fall | buttercup 1, lupine 0.7, daisy 0.55, dandelion 0.25, all small | short green, stones scattered | alpine ground and snow above, woodland on the shaded side, no lone trees |
+| Cosmos field | broad meadow sweeps | cosmos in pink, magenta and cream-white drifts (one colour each), a few daisies | sage green, some straw | a few trees on the high ground |
+| Alpine meadow | mountain range with tarn and fall | buttercup 1, lupine 0.7, daisy 0.55, dandelion 0.25, at 0.65–1.05 of their height, mixing 30% | short green, stones scattered | alpine ground and snow above, woodland on the shaded side, no lone trees |
 
 Mixing follows `scripts/biome_blend.gd`. Each neighbour claims its share of the land by one rule: moist, high or facing the shade. The rules apply in order and a later one wins, so alpine wins over woodland on the alpine meadow's heights. A moist neighbour is dropped on land without water.
 
@@ -35,10 +35,11 @@ Mixing follows `scripts/biome_blend.gd`. Each neighbour claims its share of the 
 All of it is position hashes and seeded noise, so nothing draws from the planting stream:
 
 - **Drifts of one kind.** A cellular noise gives each drift its kind. A small domain warp makes neighbouring drifts interleave over about half a metre instead of meeting on a line. Each type has a companion share (`mix`) for the odd other kind inside a drift. Cosmos colour also follows the drift: one colour per drift.
-- **Soft edges and gaps.** A slow presence noise sets how much of a drift stands at a point. Flowers thin with presence to the power 1.2 toward the edge and leave grass between drifts. A few strays stand alone in that grass. The meadow fades out on a rounded square toward the plate's rim.
-- **Carpets.** Candidates sit on a 0.2 m jittered lattice, 25 per m². At a drift's heart, every candidate of a head 0.16 m wide or narrower is kept. Wider heads keep (0.16/head)² of them, so heads nearly touch. The ground under a drift's core is painted toward the flower's colour (`wash`) at a heavier weight (`carpet`). From the diorama camera the drift reads as one patch of colour, with no green between heads. The wash eases off toward the drift's edge.
-- **Layered heights.** Each kind keeps its own height: dandelion 0.26 m, buttercup 0.38 m, daisy 0.57 m, cosmos 0.94 m, sunflower 1.83 m. Alpine flowers stand at 0.6–0.8 of that.
-- **Sunflowers stand, never carpet.** They grow only on loose rows across the field (`rows`), with a weak wash, so they read as stands.
+- **Soft edges and gaps.** A slow presence noise sets how much of a drift stands at a point. Flowers thin with presence to the power 1.2 toward the edge and leave grass between drifts. A few strays stand alone in that grass. Drifts run to the plate's rim: they thin out between `RIM` 10.9 and 11.85 m on a rounded square, and the candidate lattice reaches `REACH` 11.9 m. Before, they stopped at 9.5–11.4 m and left the outer third plain green.
+- **Carpets.** Candidates sit on a 0.2 m jittered lattice, 25 per m². At a drift's heart, every candidate of a head 0.16 m wide or narrower is kept. Wider heads keep (0.16/head)² of them, so heads nearly touch; a key's `pack` overrides that (sunflowers keep 0.42). The ground under a drift is painted toward the flower's colour (`wash`) at a heavier weight (`carpet`).
+- **The wash supports, never stands in.** Under thin drifts of low flowers the wash read as a flat yellow stain from the diorama camera. Now it follows the flowers that actually stand at a point (presence^1.2 × density × packing), so it fades before they do and never runs past them. A fine noise feathers its edge. A low kind that hides little ground washes it less, by its key's `cover` (buttercup 0.65, dandelion 0.7, seed clock 0.6), at both colour and weight.
+- **Layered heights.** Each kind keeps its own height: dandelion 0.26 m, buttercup 0.38 m, daisy 0.57 m, cosmos 0.94 m, sunflower 1.83 m. Alpine flowers stand at 0.65–1.05 of that.
+- **Sunflowers stand in rows and face one way.** They grow only on rows across the field (`rows`: 0.95 m apart, 0.2 of each wide), with a weak green-gold wash. With `face` on, every row-planted head turns to `SUN_FACE` ±0.4 rad, the noon sun's side of the plate, which is also the side the diorama camera starts on. The head faces up and out at about 45°, so from above or at an angle the field reads as gold faces, not stalks.
 - **No stubble.** A typed meadow clears the standing blades and tuft flowers that `inland_landscape.gd` lays round its clearings. Its grass is painted ground plus a few tufts in the gaps, which is the settled look. Clearings get the type's flowers instead of the old four.
 
 ## The flower kit's keys
@@ -76,9 +77,7 @@ Measured headless (dummy renderer) at seeds 11, 2024 and 777 with `tools/probe_m
 
 **Flagged:**
 
-- There is no distance LOD for flowers yet. Every flower batch is one MultiMesh over the whole plate, so Godot's per-mesh LOD and visibility ranges cannot thin far flowers. That needs one of these:
-  - a head-only far mesh from the kit with shader-side distance thinning, as the dense grass does;
-  - per-region MultiMesh batches.
+- Rendered frame cost, before and after the distance thinning and far detail, is in docs/scenic/flowers.md, Cost. The record counts above predate the coverage to the rim, which adds roughly a fifth. Every flower batch is still one MultiMesh over the whole plate; thinning happens in the material.
 - If the kit's triangles prove too costly on the Mac, the levers are `spacing` (0.2 m) and `PACK_HEAD` (0.16 m) in `meadow_types.gd`.
 - Placement itself is fine in GDScript: the cheap noise tests run first and most candidates fall in the grass.
 - The view rebuilds the whole plate on every stroke, so a stroke on a meadow world costs about twice what it does on a forest world. An incremental (per-region) instance rebuild would fix that. Native code is not needed for placement.
@@ -95,11 +94,22 @@ Godot --windowed --path . --resolution 1280x720 -s res://tools/still_meadows.gd 
 - Headless top-down maps of the composition, with habitats, water, painted ground and every record as a dot: `godot --headless --path . -s res://tools/map_meadows.gd -- [--types=cosmos] [--seed=2081]` saves `captures/meadows/map-<type>-<seed>.png`.
 - In the game, use New world → Meadow → a kind with any seed. Seed text `meadow-lark-2081` reproduces the stills.
 
+## The look, 2026-10-02
+
+After the flower kit came in, a critique of the stills found: drifts stopping two metres short of the rim; the wash under thin buttercup, dandelion and alpine drifts reading as a flat stain; the sunflower field reading as dark leafy clumps on straw (small dark drooping heads, sparse rows); alpine flowers tiny and patchy; lupines reading blue; white cosmos going cool blue in shade. What changed for each is above (Composition, the table) and in docs/scenic/flowers.md (the sunflower head; lupine variants `7b4cc6` and `9c48b8` with paler tips `d4bfe6`; cosmos white `fcefe2`; dandelion gold `ffd024`). Stills from seed `meadow-lark-2081` are in `captures/meadows-v2/` on the machine that made them.
+
+Still not right:
+
+- The dandelion meadow reads as green with gold and white specks from the diorama camera, not a carpet. With the stain gone, the low heads alone cannot carry the colour at 20 m.
+- The alpine meadow stays patchy: the mountain, tarn and slopes over 0.75 leave its meadow in pockets, and the flowers are small by nature.
+- Cosmos and wildflower drifts are thinner past 14 m than before (distance thinning), with the grown heads holding most of the cover. Near the camera they are as dense as before.
+- In the wildflower meadow, ground left between drifts and the woodland edge is still plain green on some seeds.
+
 ## Unverified
 
-- The stills use the fallback forms. The kit's meshes are not seen here.
-- Wind on the flowers is untouched (another agent owns wind).
-- Frame cost on the GPU is not measured: the triangle figures above are estimates from the kit's counts.
+- The stills and films were taken at 1280×720 and 3024×1898 on one Mac. Other GPUs, and the frame cost while sculpting a meadow (a full instance rebuild per stroke), were not measured.
+- Only seed `meadow-lark-2081` was looked at rendered after the 2026-10-02 changes.
+- The sunflowers' facing assumes the default sun ring yaw (`SUN_FACE`); a world whose light is turned another way would show them facing off the sun.
 
 ## With the flower kit
 

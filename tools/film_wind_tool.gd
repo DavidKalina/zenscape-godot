@@ -11,6 +11,11 @@ extends SceneTree
 ##   Godot --windowed --resolution 1280x720 --path . \
 ##     -s res://tools/film_wind_tool.gd -- --no-title --shot=gust --tag=after
 ## Headless it runs the same steps and prints what was sent.
+## `--land=cosmos [--seed=meadow-lark-2081]` opens a New world land (a meadow
+## type, docs/scenic/meadows.md) instead of staging the plain's small meadow.
+## `--film` also saves every other frame for 4 s after the send (run with
+## --fixed-fps 60) as captures/wind-tool/<tag>-<shot>-frames/NNNN.jpg, for
+## `ffmpeg -framerate 30`.
 
 const MIDDLE := Vector2(0.0,0.0)
 
@@ -19,6 +24,9 @@ var editor: NativeChunkEditor
 var shot := "gust"
 var tag := "look"
 var out := ""
+var land := ""
+var seed_text := "meadow-lark-2081"
+var film := false
 
 func _initialize() -> void: run.call_deferred()
 
@@ -53,6 +61,7 @@ func hour(phase: float) -> void:
 
 func still(n: int) -> void:
 	if DisplayServer.get_name() == "headless": return
+	if film: return
 	await RenderingServer.frame_post_draw
 	var path := "%s/%s-%s-%d.png" % [out,tag,shot,n]
 	root.get_texture().get_image().save_png(path)
@@ -77,6 +86,9 @@ func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shot="): shot = arg.trim_prefix("--shot=")
 		if arg.begins_with("--tag="): tag = arg.trim_prefix("--tag=")
+		if arg.begins_with("--land="): land = arg.trim_prefix("--land=")
+		if arg.begins_with("--seed="): seed_text = arg.trim_prefix("--seed=")
+		if arg == "--film": film = true
 	out = ProjectSettings.globalize_path("res://captures/wind-tool")
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(300).timeout.connect(func() -> void: push_error("wind tool film timed out"); quit(2))
@@ -96,8 +108,14 @@ func run() -> void:
 		if rig != null and rig.get("layer") != null: rig.layer.visible = false
 		if scene.get("god_hand") != null: scene.god_hand.visible = false)
 	print("FILM ready ",Time.get_ticks_msec())
-	hour(0.36)
-	await stage()
+	if land.is_empty():
+		hour(0.36)
+		await stage()
+	else:
+		await scene.places.open_land(land,preload("res://scripts/world_library.gd").seed_value(seed_text))
+		scene._notice.visible = false
+		await frames(90)
+		hour(0.36)
 	editor._make_gust()
 	var gust: Node3D = editor.gust
 	match shot:
@@ -108,6 +126,7 @@ func run() -> void:
 			var origin := MIDDLE+Vector2(-9.0,1.5)
 			var g: Dictionary = gust.send_lane(Vector3(origin.x,ground(origin),origin.y),Vector2(1.0,-0.15),0.9,3.0)
 			print("FILM sent ",g.kind," reach ",g.reach," run ",g.run)
+			if film: await _film()
 			for n in range(5):
 				await seconds(0.35)
 				await still(n)
@@ -123,9 +142,21 @@ func run() -> void:
 			var g: Dictionary = gust.release()
 			editor.set_process(true)
 			print("FILM sent ",g.kind," reach ",g.reach," run ",g.run)
+			if film: await _film()
 			for n in range(1,5):
 				await seconds(0.3)
 				await still(n)
 	await seconds(2.0)
 	print("FILM done")
 	quit(0)
+
+## Every other frame for 4 s, as JPGs to play back at 30 fps.
+func _film() -> void:
+	if DisplayServer.get_name() == "headless": return
+	var dir := "%s/%s-%s-frames" % [out,tag,shot]
+	DirAccess.make_dir_recursive_absolute(dir)
+	for i in range(240):
+		await RenderingServer.frame_post_draw
+		if i % 2 == 0: root.get_texture().get_image().save_jpg("%s/%04d.jpg" % [dir,i/2],0.9)
+		await process_frame
+	print("FILM frames ",dir)

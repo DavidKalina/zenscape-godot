@@ -174,6 +174,12 @@ Foliage figures come from the `FOLIAGE` lines: the tip movement of a broadleaf c
 - The burst's arcs no longer read as a starburst, and its shade has no rays.
 - The world's own random tree sometimes lands near the close camera, and the living fog's pale lane over the gust is the fog parting (not this tool's drawing).
 
+**Over a dense meadow (2026-10-02).** `film_wind_tool.gd` now takes `--land=<meadow land>` (with `--seed=`) to open a New world meadow instead of the staged one, and `--film` to save 4 s of frames after the send (run with `--fixed-fps 60`, play back at 30 fps). A lane gust crossed the cosmos field and a burst went off in the wildflower meadow (seed `meadow-lark-2081`, 1280×720, 18–20 m):
+
+- The air reads through the flowers. The gust's band of bowed cosmos travels across the field clearly, and the burst's ring of flowers leaning outward is the strongest thing on screen. Carried petals show as specks downwind.
+- The streaks are near invisible over the cosmos. White and pink heads at the same brightness as the streaks swallow them. Over darker ground (the lupine drift, the pond) the burst's arcs show as faint curving hairs.
+- `PEAK` went from 0.75 to 0.9 and `MIN_PIXELS` from 2.5 to 3.0 in `shaders/wind_gust_trail.gdshader`. This is a small nudge: the streaks stay hairs, and pushing them further over a bright meadow would make them read as drawn lines again. The motion of the flowers carries the gust; the streaks are an accent where the ground is dark.
+
 ## Unverified
 
 The probe only checks CPU state. `tools/probe_wind_gust.gd` failed to make its gust headless on 2026-10-01, on this branch's base as well as with the new look, so its numbers above were not re-taken. Nothing below has been seen rendered:

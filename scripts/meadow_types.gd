@@ -143,7 +143,7 @@ const TYPES := {
 		"grass":{"green":"86b65c","weight":0.3,"straw":"b5ad7a","share":0.08,"tufts":0.12,"tuft_size":[0.35,0.55],"tuft_straw":0.1},
 		"flowers":[["buttercup",1.0],["lupine",0.7],["oxeye_daisy",0.55],["dandelion",0.25]],
 		"sizes":{"buttercup":[0.8,1.0],"lupine":[0.65,0.85],"oxeye_daisy":[0.75,0.95],"dandelion":[0.85,1.05]},
-		"drift":{"frequency":0.2,"cover":0.58,"spacing":0.17,"density":1.0,"mix":0.3,"stray":0.02,"wash":0.45,"carpet":0.55},
+		"drift":{"frequency":0.2,"cover":0.62,"spacing":0.2,"density":1.0,"mix":0.3,"stray":0.02,"wash":0.45,"carpet":0.55},
 		"trees":0,"rocks":0.06,
 		"mood":{"preset":"alpine_morning","phase":0.4,"weather":"clear","clouds":0.14,"mist":0.06,"haze":0.08,"rays":0.35,"wind":0.35,"summit_mist":0.12,
 			"colors":{"sky":"6f9fc4","horizon":"9fb6c6","glow":"e6dccb","grass":"7fa65c","foliage":"4e7a55","water":"4f93a3"}},

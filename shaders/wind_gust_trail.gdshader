@@ -27,8 +27,8 @@ uniform float width = 0.035;
 uniform float flow = 6.0;
 uniform vec4 tint : source_color = vec4(0.93, 0.96, 1.0, 1.0);
 // The most a streak ever covers what is behind it.
-const float PEAK = 0.75;
-const float MIN_PIXELS = 2.5;
+const float PEAK = 0.9;
+const float MIN_PIXELS = 3.0;
 // Nor over MAX_PIXELS wide, so a streak passing by the lens stays a hair.
 const float MAX_PIXELS = 5.0;
 // The curl: radius (m) round the strand's line and its turn along it (rad/m)
