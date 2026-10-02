@@ -698,7 +698,7 @@ func place_at(mouse: Vector2) -> bool:
 
 ## Trails share the normal stroke transaction: one drag is one undo step.
 func trail_available() -> bool:
-	return mode in ["flower","mountain"] or (mode == "assets" and catalog_asset in ["button_flower","daisy_flower","spike_flower","umbel_flower"])
+	return mode in ["flower","mountain"] or (mode == "assets" and catalog_asset in ["button_flower","daisy_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine"])
 
 func trail_spacing() -> float:
 	return mountain_radius*0.45 if mode == "mountain" else maxf(0.2,object_scale*0.45)

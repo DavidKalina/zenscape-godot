@@ -28,7 +28,7 @@ const MEMORY_STRIDE := 7
 
 ## Asset groups. The rows are the design's "kind group" table; `kind` in every
 ## signal is the asset name, which is what the record carries.
-const FAST_ASSETS := ["grass_tuft","flower","button_flower","spike_flower","umbel_flower","daisy_flower","fern","reeds","bank_grass","mushroom"]
+const FAST_ASSETS := ["grass_tuft","flower","button_flower","spike_flower","umbel_flower","daisy_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","fern","reeds","bank_grass","mushroom"]
 const SHRUB_ASSETS := ["shrub","cactus","leaf_bed"]
 const TREE_ASSETS := ["tree","layered_tree","redwood","broadleaf","bigfoot_tree","joshua","birch","willow","juniper"]
 const DEAD_ASSETS := ["log","stump","snag"]

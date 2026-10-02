@@ -46,7 +46,7 @@ const STONE_CHANCE := 0.34
 const STONE_SIZE := Vector2(0.1,0.22)
 const STONE_CAP := 80
 ## Generated records a path may clear from its tread.
-const UNDERGROWTH := ["grass_tuft","fern","shrub","mushroom","bank_grass","reeds","button_flower","spike_flower","umbel_flower","daisy_flower","flower","leaf_bed"]
+const UNDERGROWTH := ["grass_tuft","fern","shrub","mushroom","bank_grass","reeds","button_flower","spike_flower","umbel_flower","daisy_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","flower","leaf_bed"]
 
 var _earth := Color()
 var _dust := Color()
