@@ -41,6 +41,7 @@ into it. It is not saved with the place.
 | Thumb a groove **out through the edge** | notches the rim into a spillway; water pours off the chunk into the void |
 | Press a **tree** and drag | bends it; let go and it whips back |
 | Bend it all the way over | its spores shake loose into your hand; sweep and let go, and its own kind grows. It then rests for a while |
+| Shift + press a **tree**, shrub, fern, flower or reeds | **plucks** it: it pops out of the ground in a puff of soil and leaves. Nothing grows back on that spot; Cmd+Z puts it back |
 
 Props and creatures under a press keep their own grab.
 
@@ -123,8 +124,12 @@ Every new plain has one wild tree. Water splashing on the land grows trees too.
 |---|---|
 | Press a tree and drag | it bends after your hand |
 | Let go | it whips back. Bent far enough, it flicks its spores out the way it whips, further the more you bent it; they drift down in the wind and grow mostly the same kind of tree. The land bends it: an oak's seeds come up willow by water and pine up high, and now and then something new |
+| Shift + press a plant | plucks it out, a tree or the undergrowth (a shrub, fern, flower, reeds, a tuft or a mushroom). Hold Shift to see what a press would take: it is outlined. The bare spot stays clear, and Cmd+Z brings the plant back |
 
 A tree that has just thrown its spores only bends for about 45 seconds.
+Bending and plucking need a free hand: the Feather, not a shaping tool,
+which presses through plants to the land. Bigfoot's tree, logs, stumps and
+rocks can't be plucked; a pinned plant can.
 
 ## Keys
 

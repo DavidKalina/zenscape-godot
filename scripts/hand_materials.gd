@@ -317,8 +317,10 @@ func press(point: Vector2) -> bool:
 	# sky keep their own verbs (a sky swipe still sends a passing gust), and a
 	# grown tree is the hand's to bend and flick (hand_reach `_tree_press`): the
 	# shaping tools press through trees to the land, so this is where it lives.
+	# Shift on a plant, undergrowth too, is the hand's pluck (hand_reach `pluck`).
 	if held.is_empty() and roll.tool == FEATHER:
 		if reach.reach_at(point) == "rim" or reach._land(point) == null or reach._tree_under(point) > 0: return false
+		if reach._press_shift and reach.plant_under(point) > 0: return false
 		_feather_press(point)
 		return true
 	# The can in hand: a press on the land pours there (through trees too).
