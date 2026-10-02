@@ -46,6 +46,12 @@ class ZenScapeWaterFlow : public RefCounted {
     std::vector<float> ground, depth, next, vx, vz;
     std::vector<float> flux;     // 4 per cell: -x, +x, -z, +z outflow, m³/s
     std::vector<uint8_t> flowing;
+    // What `surface` draws: the depth and velocity eased towards the sim's
+    // (params `ease`, `ease_flow`), so the drawn water glides between steps
+    // and the sim's small sloshes and flicker never reach the screen; and
+    // whether each cell is drawn wet (on over `wet`, off under `wet_off`).
+    std::vector<float> show_depth, show_vx, show_vz;
+    std::vector<uint8_t> show_wet;
     // Seconds each cell's ground has stood wet, up to `saturate`: wet ground
     // soaks less and less, and saturated ground soaks nothing, so a stream
     // that keeps running carries its water on instead of losing it to the
@@ -62,9 +68,18 @@ class ZenScapeWaterFlow : public RefCounted {
     std::vector<float> edge_rate, edge_brink;
     // Seconds: the time constant the edge outflow is smoothed with.
     double edge_smooth = 0.5;
+    // The wind's push on the water (set_wind), m/s² per cell in x and z, read
+    // from a coarse grid of samples over the plate; off while empty.
+    std::vector<float> wax, waz;
+    bool wind_on = false;
+    // Extra friction, `calm` × √(g·depth) per second, on water deeper than about
+    // `calm_depth` running slower than about `calm_speed` where no wind pushes:
+    // a pond's slosh is damped to about critical, while streams and thin fronts
+    // run as before.
+    double calm = 0.0, calm_speed = 0.15, calm_depth = 0.05;
     // Tunables (set_params); the defaults match scripts/water_flow.gd.
     double gravity = 9.81, friction = 0.6, drag = 0.06, evaporation = 0.00006, soak = 0.0035, soak_depth = 0.03, max_speed = 4.0;
-    double saturate = 0.0, dry_rate = 0.1;
+    double saturate = 0.0, dry_rate = 0.1, soak_floor = 0.0;
     // Totals since configure, m³.
     double poured = 0.0, drained = 0.0, soaked = 0.0, removed = 0.0;
     int64_t last_usec = 0;
@@ -74,6 +89,7 @@ protected:
     static void _bind_methods() {
         ClassDB::bind_method(D_METHOD("configure", "width", "height", "cell", "origin", "faces", "weights"), &ZenScapeWaterFlow::configure);
         ClassDB::bind_method(D_METHOD("set_params", "params"), &ZenScapeWaterFlow::set_params);
+        ClassDB::bind_method(D_METHOD("set_wind", "values", "columns", "rows"), &ZenScapeWaterFlow::set_wind);
         ClassDB::bind_method(D_METHOD("step", "heights", "sources", "ticks", "dt"), &ZenScapeWaterFlow::step);
         ClassDB::bind_method(D_METHOD("add_water", "center", "radius", "volume"), &ZenScapeWaterFlow::add_water);
         ClassDB::bind_method(D_METHOD("drain", "center", "radius"), &ZenScapeWaterFlow::drain);
@@ -93,6 +109,11 @@ protected:
 
     static int64_t now_usec() {
         return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    static double smooth01(double t) {
+        t = std::min(1.0, std::max(0.0, t));
+        return t*t*(3.0-2.0*t);
     }
 
     int index(double x, double z) const {
@@ -156,14 +177,23 @@ protected:
             if (kind[c] != WATER || depth[c] <= 0.0f) { f[0] = f[1] = f[2] = f[3] = 0.0f; continue; }
             const double d = depth[c];
             const double surface = ground[c]+d;
-            const double damp = 1.0/(1.0+dt*(friction+drag/std::max(d, 0.004)));
+            const double ax = wind_on ? wax[c] : 0.0, az = wind_on ? waz[c] : 0.0;
+            double lambda = friction+drag/std::max(d, 0.004);
+            if (calm > 0.0) {
+                const double speed = std::sqrt(double(vx[c])*vx[c]+double(vz[c])*vz[c]);
+                const double quiet = smooth01((d-0.5*calm_depth)/(0.5*calm_depth))*(1.0-smooth01((speed-0.5*calm_speed)/(0.5*calm_speed)))*(1.0-smooth01(std::sqrt(ax*ax+az*az)/0.1));
+                lambda += calm*std::sqrt(gravity*d)*quiet;
+            }
+            const double damp = 1.0/(1.0+dt*lambda);
+            // The wind pushes the water along each pipe as a drop in surface would.
+            const double push[4] = {-ax*cell, ax*cell, -az*cell, az*cell};
             const int nb[4] = {i > 0 ? c-1 : -1, i < w-1 ? c+1 : -1, j > 0 ? c-w : -1, j < h-1 ? c+w : -1};
             double total = 0.0;
             for (int k = 0; k < 4; ++k) {
                 const int m = nb[k];
                 if (m < 0 || kind[m] == OUTSIDE) { f[k] = 0.0f; continue; }
                 const double drop = surface-(ground[m]+depth[m]);
-                double q = (f[k]+dt*gravity*d*drop)*damp;
+                double q = (f[k]+dt*d*(gravity*drop+push[k]))*damp;
                 if (q < 0.0) q = 0.0;
                 f[k] = float(q);
                 total += q;
@@ -201,8 +231,8 @@ protected:
                 d = 0.0;
             } else if (d > 0.0) {
                 // Evaporation everywhere; thin water soaks into ground not yet
-                // saturated too.
-                const double thirst = saturate > 0.0 ? std::max(0.0, 1.0-wet[c]/saturate) : 1.0;
+                // saturated too, and into saturated ground at `soak_floor` of that.
+                const double thirst = saturate > 0.0 ? std::max(soak_floor, 1.0-wet[c]/saturate) : 1.0;
                 const double loss = dt*(evaporation+soak*thirst*std::max(0.0, 1.0-d/soak_depth));
                 const double lost = std::min(d, loss);
                 soaked += lost*area;
@@ -242,6 +272,7 @@ public:
         face.assign(n*3, -1); weight.assign(n*2, 0.0f); kind.assign(n, OUTSIDE);
         ground.assign(n, 0.0f); depth.assign(n, 0.0f); next.assign(n, 0.0f);
         vx.assign(n, 0.0f); vz.assign(n, 0.0f); flux.assign(n*4, 0.0f); flowing.assign(n, 0); steep.assign(n, 0); wet.assign(n, 0.0f);
+        show_depth.assign(n, 0.0f); show_vx.assign(n, 0.0f); show_vz.assign(n, 0.0f); show_wet.assign(n, 0);
         edge_acc.assign(n, 0.0); edge_rate.assign(n, 0.0f); edge_brink.assign(n, 0.0f);
         edge_cells.clear(); edge_inner.clear(); edge_side.clear(); side_of.assign(n, -1);
         poured = drained = soaked = removed = 0.0;
@@ -283,7 +314,33 @@ public:
         evaporation = p.get("evaporation", evaporation); soak = p.get("soak", soak); soak_depth = p.get("soak_depth", soak_depth);
         max_speed = p.get("max_speed", max_speed);
         saturate = std::max(0.0, double(p.get("saturate", saturate))); dry_rate = std::max(0.0, double(p.get("dry_rate", dry_rate)));
+        soak_floor = std::min(1.0, std::max(0.0, double(p.get("soak_floor", soak_floor))));
         edge_smooth = std::max(0.01, double(p.get("edge_smooth", edge_smooth)));
+        calm = std::max(0.0, double(p.get("calm", calm)));
+        calm_speed = std::max(0.001, double(p.get("calm_speed", calm_speed)));
+        calm_depth = std::max(0.001, double(p.get("calm_depth", calm_depth)));
+    }
+
+    // The wind's push, m/s², as x, z pairs on a `columns` × `rows` grid of
+    // samples whose corners are the grid's corners; each cell takes the
+    // bilinear mix of the four round it. Empty (or the wrong size) turns it off.
+    void set_wind(const PackedFloat32Array &values, int columns, int rows) {
+        wind_on = columns >= 2 && rows >= 2 && values.size() == int64_t(columns)*rows*2 && w > 0;
+        if (!wind_on) return;
+        const int n = w*h;
+        wax.assign(n, 0.0f); waz.assign(n, 0.0f);
+        const float *p = values.ptr();
+        for (int j = 0; j < h; ++j) for (int i = 0; i < w; ++i) {
+            const double fa = (i+0.5)/w*(columns-1), fb = (j+0.5)/h*(rows-1);
+            const int a = std::min(int(fa), columns-2), b = std::min(int(fb), rows-2);
+            const double s = fa-a, t = fb-b;
+            for (int axis = 0; axis < 2; ++axis) {
+                const double v00 = p[(b*columns+a)*2+axis], v10 = p[(b*columns+a+1)*2+axis];
+                const double v01 = p[((b+1)*columns+a)*2+axis], v11 = p[((b+1)*columns+a+1)*2+axis];
+                const double v = (v00*(1-s)+v10*s)*(1-t)+(v01*(1-s)+v11*s)*t;
+                (axis == 0 ? wax : waz)[j*w+i] = float(v);
+            }
+        }
     }
 
     // `sources`: x, z, radius, rate (m³/s) per source. Returns the step's usec.
@@ -338,6 +395,10 @@ public:
         std::fill(vz.begin(), vz.end(), 0.0f);
         std::fill(edge_rate.begin(), edge_rate.end(), 0.0f);
         std::fill(edge_brink.begin(), edge_brink.end(), 0.0f);
+        // A load or a new world is drawn as it is, not eased in.
+        show_depth = depth;
+        std::fill(show_vx.begin(), show_vx.end(), 0.0f);
+        std::fill(show_vz.begin(), show_vz.end(), 0.0f);
     }
 
     PackedFloat32Array get_ground() const {
@@ -392,7 +453,8 @@ public:
     // the mean surface of its wet neighbours, or sits just under its own ground
     // when that is lower, so the sheet meets the bank and the terrain hides the
     // edge. Params: wet, lift, flow_on, flow_off, foam_from, foam_to, shallow,
-    // deep, foam (linear colours), depth_scale, under. Still water's UV.x is
+    // deep, foam (linear colours), depth_scale, under, and ease, ease_flow,
+    // wet_off, emerge (below; their defaults draw the sim as it is). Still water's UV.x is
     // its distance from dry ground, m (0 on the bank). With `under`, "still"
     // holds every drawn quad, the calm ones first ("calm" indices of them), so
     // moving water lies over still water; moving vertices carry in CUSTOM1.x
@@ -404,10 +466,35 @@ public:
         const Color shallow = p.get("shallow", Color(0.2, 0.42, 0.33)), deep = p.get("deep", Color(0.02, 0.1, 0.11)), foam = p.get("foam", Color(0.65, 0.8, 0.79));
         const bool under = p.get("under", false);
         const double edge_on = p.get("edge_on", 0.0005);
+        // `ease`, `ease_flow`: how far this build moves the drawn depth and
+        // velocity towards the sim's (1 draws the sim as it is). `wet_off`: a
+        // cell drawn wet stays drawn until it is this shallow. `emerge`: over
+        // this much depth above `wet_off` a cell's sheet rises out of the
+        // ground instead of standing at once (0 off).
+        const float ease = float(std::min(1.0, std::max(0.0, double(p.get("ease", 1.0)))));
+        const float ease_flow = float(std::min(1.0, std::max(0.0, double(p.get("ease_flow", 1.0)))));
+        const double wet_off = std::min(wet, double(p.get("wet_off", wet)));
+        const double emerge = std::max(0.0, double(p.get("emerge", 0.0)));
         const int n = w*h;
+        double unsettled = 0.0;
+        for (int c = 0; c < n; ++c) {
+            show_depth[c] = ease >= 1.0f ? depth[c] : show_depth[c]+(depth[c]-show_depth[c])*ease;
+            show_vx[c] = ease_flow >= 1.0f ? vx[c] : show_vx[c]+(vx[c]-show_vx[c])*ease_flow;
+            show_vz[c] = ease_flow >= 1.0f ? vz[c] : show_vz[c]+(vz[c]-show_vz[c])*ease_flow;
+            unsettled = std::max(unsettled, double(std::fabs(depth[c]-show_depth[c])));
+            unsettled = std::max(unsettled, 0.1*std::fabs(vx[c]-show_vx[c])+0.1*std::fabs(vz[c]-show_vz[c]));
+        }
+        const std::vector<float> &vx = show_vx, &vz = show_vz;
         std::vector<float> top(n, 0.0f);
         std::vector<uint8_t> state(n, 0); // 0 none, 1 wet, 2 shore
-        for (int c = 0; c < n; ++c) if (kind[c] != OUTSIDE && depth[c] > wet) { state[c] = 1; top[c] = ground[c]+depth[c]; }
+        for (int c = 0; c < n; ++c) {
+            const double d = show_depth[c];
+            show_wet[c] = kind[c] != OUTSIDE && d > (show_wet[c] ? wet_off : wet);
+            if (!show_wet[c]) continue;
+            state[c] = 1;
+            const double e = emerge > 0.0 ? smooth01((d-wet_off)/emerge) : 1.0;
+            top[c] = float(ground[c]+d-(1.0-e)*(d+lift+0.02));
+        }
         // An edge cell water leaves over is drawn at its brink depth, and its
         // vertex stands on the plate's rim, so the sheet runs to the lip.
         for (int c : edge_cells) if (edge_rate[c] > edge_on) { state[c] = 1; top[c] = float(ground[c]+std::max(double(edge_brink[c]), wet*1.5)); }
@@ -592,6 +679,9 @@ public:
             arrays["calm"] = calm;
             out[set == 0 ? "still" : "flow"] = arrays;
         }
+        // Whether the drawn water has caught up with the sim (within a
+        // millimetre), so a caller can stop rebuilding while nothing moves.
+        out["settled"] = unsettled < 0.001;
         return out;
     }
 

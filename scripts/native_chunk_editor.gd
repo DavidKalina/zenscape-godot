@@ -2484,6 +2484,8 @@ func _flow_process(delta: float) -> void:
 		flow.runoff.rain = fall*(1.0-phase)
 		flow.runoff.snowing = fall*phase
 		flow.runoff.snow_phase = phase
+	# The wind tool's gusts push the water while they blow.
+	flow.wind = gust if gust != null and (not gust.gusts.is_empty() or not gust.wakes.is_empty()) else null
 	flow.advance(delta)
 	flow_view.update(delta)
 	_flow_clock += delta

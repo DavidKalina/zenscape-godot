@@ -146,8 +146,9 @@ func run() -> void:
 	await frames(2.5)
 	editor.can.release()
 	mouse(top_screen,false)
-	# The can's pour eases off over frames, not in the synchronous runs below.
-	await frames(0.5)
+	# The can's pour eases off over frames (EASE_IN, 0.5 s), not in the
+	# synchronous runs below.
+	await frames(0.8)
 	check(not flow.taps.has("can"),"the can's tap is closed once it is lifted")
 	check(flow.springs.size() == springs+1,"holding still on the top planted a spring (%s, landing %s)" % [flow.source_kind(editor.can.landing) if editor.can.landing != Vector2.INF else "none",str(editor.can.landing)])
 	if flow.springs.size() > springs: print(JSON.stringify({"spring":flow.springs.back()}))
@@ -179,7 +180,18 @@ func run() -> void:
 	# Where the pool lands depends on the world (by the rim its water runs off
 	# the plate; on a wide plain the overflow spreads and evaporates), so the
 	# rows above are for reading. What holds everywhere: the ground does not
-	# drink the spring (before saturation it took ~60%).
-	check(float(budget.soaked) < float(budget.poured)*0.55,"under 55%% of the spring's water is lost to ground and air (%.0f%%)" % (100.0*float(budget.soaked)/maxf(float(budget.poured),0.001)))
+	# drink the spring (before saturation it took ~60%, and its pool drained
+	# away): once the spring has eased to its trickle (2026-10-01), its pool
+	# still stands and holds its level over the last 45 s. (This was "soaked
+	# under 55% of poured"; a settled spring pours a third as much while the
+	# can's earlier pour still soaks in, so that share read high with less
+	# water lost.)
+	var late: Dictionary = rows[rows.size()-4]
+	var last: Dictionary = rows.back()
+	# Where its course runs to the rim no pool forms, and the trickle must still
+	# reach the edge.
+	var pooled := rows.any(func(row: Dictionary) -> bool: return float(row.pool_area) >= 2.0)
+	if pooled: check(float(last.pool_area) >= 2.0 and float(last.pool_depth) >= 0.9*float(late.pool_depth),"the settled spring's pool stands and holds its level (%.1f m², %.2f → %.2f m deep)" % [last.pool_area,late.pool_depth,last.pool_depth])
+	else: check(float(last.edge_m3s) > 0.005,"with no pool on its course, the settled spring's trickle still reaches the edge (%.3f m³/s)" % float(last.edge_m3s))
 	print("Failures: %d" % failures)
 	quit(1 if failures > 0 else 0)

@@ -42,7 +42,7 @@ Checked headless (`tools/probe_water_flow.gd`, `tools/probe_water_flow_modeless.
 
 `scripts/water_flow_view.gd`, a child of the garden view (`LiveWater`), draws with copies of the garden view's own pond and stream materials (`_water_material`, `_stream_material`), so the look is today's. The copies follow their sources' parameters (bound through the reflection's material sync), and carry what is live water's own: the planar view and the moving water's edge fade.
 
-- Every 1/30 s (0.1 s on the mirror), when the water has stepped, the depth field becomes two meshes (`ZenScapeWaterFlow::surface` with `under`, about 0.1–0.2 ms natively):
+- Every frame (0.1 s on the mirror), when the water has stepped or the drawn water has not yet caught up with it (see "Glide" below), the eased depth field becomes two meshes (`ZenScapeWaterFlow::surface` with `under`, about 0.1–0.2 ms natively):
   - **Still water** (`FlowStill`) goes through the pond material, and covers **all** the wet quads, moving ones too (calm quads first; `calm` counts their indices, and only those are still water for life's survey). Depth is in UV2 for the shallows and shore foam. The depth palette is in COLOR, but live still water draws its own depth ramp over it (shader `depth_tint`, `water_flow_view.gd` `TINT`): teal shallows `6aad9e`, blue-teal `3f9196` by 0.3 m, deep blue-teal `2f6478` by 1.1 m, per pixel from the bed's depth under the planar view. Its bed fades out within about 0.22 m (red first, so what shows is teal-tinted), and only the last few centimetres at the bank let the scene through. The moving water's vertex palette runs between the same ends. Shore fetch in eight directions is in CUSTOM0/1 for the lake chop, in half-metre steps up to 9 m as `pond_fetch`. UV is zero, so it stands full: the water rises by itself.
   - **Moving water** (`FlowMoving`) lies over it through the stream material (`render_priority` 1, so it always draws after). Water faster than `flow_on` (0.22 m/s, with hysteresis down to `flow_off`) is drawn here. UV runs along and across the local flow, so the stream shader's streaks and wave run downstream. Foam (`0.65, 0.80, 0.79`) is blended into COLOR from `foam_from` to `foam_to` m/s. CUSTOM0.w is −1 so the stream shader's growth and front never hide it. CUSTOM1.x is how fast the vertex runs, 0 at `flow_off` to 1 at `flow_on` (a bank corner takes its fastest wet neighbour's), and the shader's `flow_edge_fade` multiplies the stream's alpha by it. So where a stream slows into a pond its streaks fade out over the pond's own surface, instead of two colour ramps meeting at a hard line. A library older than `under` (no `calm` in its output) turns the fade off and draws the two apart, as before.
 - **Reflections** (`scripts/live_water_reflection.gd`, `LiveReflection`, which extends `scripts/planar_water.gd` for its geometry copying and material sync). One planar view for all live water:
@@ -88,7 +88,8 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `WET_DEPTH` | 0.05 m | Water that stops emergence. |
 | `SURFACE` (`water_flow_view.gd`) | wet 1.2 cm, lift 1.2 cm, flow on/off 0.22/0.12 m/s, foam 0.8–2.2 m/s, depth scale 0.45 m, under | Surface build. |
 | `MIN_AREA`, `LEVEL_STEP`, `BAND`, `SWITCH_SHARE` (`live_water_reflection.gd`) | 1.5 m², 1 cm, 0.3 m, 1.6 | When the reflection view stands, how far the pond moves before it follows, how far from its level water still reflects, and when it changes pond. |
-| `SURFACE_SECONDS`, `FALLBACK_SURFACE_SECONDS` (`water_flow_view.gd`) | 1/30 s, 0.1 s | Surface rebuild interval. |
+| `SURFACE_SECONDS`, `FALLBACK_SURFACE_SECONDS` (`water_flow_view.gd`) | 0 (every frame), 0.1 s | Surface rebuild interval. Was 1/30 s. |
+| `DEPTH_SMOOTH`, `FLOW_SMOOTH`, `WET_OFF`, `EMERGE` (`water_flow_view.gd`) | 0.3 s, 0.4 s, 6 mm, 1.5 cm | How the drawn water follows the sim; see "Glide". |
 | Waterfalls (`flow_falls.gd`) | see "Waterfalls" | Detection, easing, look. |
 | `edge_on` (`SURFACE`, default in the kernel) | 0.0005 m³/s | An edge cell leaving more is drawn to the lip at its brink depth. |
 | Edge falls (`edge_falls.gd`) | see "Edge falls" | Spills, easing, course, look. |
@@ -425,6 +426,54 @@ Measured headless with a throwaway probe (native kernel):
 A full live launch under `--still-weather` with the storm preset rains into the flow, with the worst step at 143 µs.
 
 **Unverified on screen:** how the drops look where they meet the ground (a source can show as a small welling on a slope before it runs), how rills read in rain, and whether the pond fill pace feels right in play.
+
+## Glide (2026-10-01)
+
+The user: the water felt "chaotic, heavy", not cozy, worst while ponds settle, at the edges and fronts, and in the first surge. They chose "smooth and glassy" over slower water: the speed is fine, the motion should glide and not jitter or flicker.
+
+What was drawn: the raw sim, rebuilt every 1/30 s and held between, so the surface stepped at 30 Hz and every small slosh showed; each cell drawn or not at a hard 1.2 cm, so a front flickered cell by cell and a new cell stood at once 2.4 cm proud of the ground; the streaks' heading, the foam and the still/moving split read each step's raw velocity, so they shimmered.
+
+What changed (drawing only; the sim, pools, falls and life read the sim as before):
+- **Eased display.** The kernel keeps a drawn depth and velocity (`show_depth`, `show_vx`, `show_vz`) that `surface` moves towards the sim's by `ease` and `ease_flow` each build. The view sets them from the time since its last build, with time constants `DEPTH_SMOOTH` (0.3 s) and `FLOW_SMOOTH` (0.4 s). `set_depth` (a load, a new world) snaps the drawn depth; a drain eases out.
+- **Every frame.** The surface rebuilds every frame on the native kernel while the water steps, and on after it stops until `surface` reports `settled` (drawn within 1 mm of the sim). The mirror stays at 0.1 s.
+- **Soft edges.** A cell is drawn wet over `wet` (1.2 cm) and stays drawn until under `wet_off` (6 mm). Over `emerge` (1.5 cm) above `wet_off` its sheet rises out of the ground: at `wet_off` it stands 2 cm under its ground, so a front creeps in and a drying edge sinks away. A cell just turned wet now stands 4 mm under the ground, where it stood 2.4 cm over it.
+- The new params default to the old drawing (`ease` 1, `wet_off` = `wet`, `emerge` 0), so `surface({})` is unchanged.
+- `--no-glide` draws as before (raw, every 1/30 s, hard edges), for A/B.
+
+Filmed (`tools/film_water_flow.gd`, rendered, 1280×720), glide against `--no-glide`. The film's drag from the sky no longer brings a ball (the sky's door is now a tuft torn from the cloud), so where none comes it drops a 6 m³ ball at the groove's head through `_flow_landed`. The two takes shape different land (the synthesized strokes vary take to take), so they compare the water's motion, not the same pond.
+
+Checked headless: `tools/probe_water_glide.gd` (native and mirror agree to the digit). With `ease` 0.25 a new pond is drawn at a quarter of its depth, catches up within a millimetre and settles after 22 builds; a load is drawn at once; a cell just turned wet stands 4 mm under its ground while deep water stands at full height; a drawn cell stays drawn as it thins to 9 mm, and the same depth on a dry cell is not drawn.
+
+Not yet measured or seen (see also "Calm, wind and the first surge" below): the cost of a rebuild every frame in the product scene with water standing (an earlier measurement gave about 0.14 ms for a build and publish, so about 8 ms a second at 60 fps); how it looks and feels (needs a rendered run). Still to do from the same pass: ease the first surge (a burst lets its water go over 1.2 s, with no ramp), and damp sloshing in deep still water in the sim.
+
+## Calm, wind and the first surge (2026-10-01)
+
+The user, after the glide pass: "the water has to be great". They asked for the first surge eased, water that answers how the land is shaped, pond sloshing damped, and water the wind tool can push around.
+
+- **First surge.** A burst pours over `BURST_SECONDS` (3.5 s, was 1.2 s) on a smoothstep (`_poured`): its first quarter second pours 0.09 m³ of a 6 m³ ball, where the flat rate poured 1.25. A spring ball's head wells out on the same curve over `SPRING_HEAD_SECONDS`. A new spring opens over `SPRING_OPEN` (4 s; `spring_rate`). The watering can comes on over `EASE_IN` (0.5 s, was 0.25 s) on a smoothstep.
+- **Springs settle.** A spring pours its full rate (0.35–0.7 m³/s) for `SPRING_FILL` (20 s), then eases over `SPRING_EASE` (20 s) to `SPRING_REST` (0.06 m³/s), a trickle its groove carries. A spring's `age` is kept with it (and in undo); a loaded spring pours its rest rate.
+- **Thin water keeps soaking.** Saturated ground soaks thin water (under `soak_depth`) at `soak_floor` (0.3) of `soak`. Water deeper than 3 cm is untouched, so streams carry on.
+- **Why the plate flooded.** With saturation, a sheet on flat ground lost water only to evaporation, so it spread until rate / evaporation: 875 m² for a 0.35 m³/s spring, more than the 784 m² plate. `probe_water_flow.gd`'s five-minute spring wet 502 m² and 7 m³ of its first minute strayed outside the groove and basin; now it wets 74 m² and levels off at 14 m³, the basin full to its brim from 30 s, nothing straying (all of that probe passes).
+- **Calm.** Water deeper than about `calm_depth` (5 cm) running slower than about `calm_speed` (0.15 m/s), with no wind on it, takes extra friction `calm` × √(g·depth) per second (`calm` 0.5), about critical damping for both shapes tried. A tilted pond settles within 4 mm in 3.2 s in a shallow bowl (4.2 s without) and 1.8 s in a deep pit (4.8 s), without rocking back. More is not calmer: at 1.5 the bowl creeps level over 8 s. A stream down a slope drains the same to the litre.
+- **Wind.** While the wind tool's gusts blow, the editor sets `WaterFlow.wind` to the `WindGust`; each run samples `wind_at` on a 15 × 15 grid over the plate (`WIND_SAMPLES`) and hands the kernel `WIND_PUSH` (0.03 m/s² per m/s of air) through `set_wind`, which the kernel spreads bilinearly over its cells and adds to each pipe as a surface drop would. A 10 m/s gust piles a test pond 6.6 cm up downwind; a 15 m/s one piles the probe's basin 8.7 cm; once it drops the pond is level within 2 mm in 6 s, with no water lost. The shader's gust ripples (`zs_water_gust`) were already there.
+
+Checked headless, native and mirror alike: `tools/probe_water_calm.gd` (new), `tools/probe_water_flow.gd` (all pass; its burst check waits `BURST_SECONDS`, and it gained the wind checks through `WaterFlow.wind`), `tools/probe_water_glide.gd`, `tools/probe_watering_can.gd` (passes three runs; its last check changed, below). `tools/probe_water_flow_modeless.gd` fails as before at its sky drag.
+
+`probe_watering_can.gd`'s spring check was "under 55% of the spring's water is soaked", which read 58% with less water lost: a settled spring pours 15 m³ in the two minutes where it poured 42, and the can's earlier pour soaks in over the same window. It now checks the settled spring's pool stands and holds its depth over the last 45 s, or, where its course runs to the rim and no pool forms, that its trickle still reaches the edge.
+
+**Trade-off: edge falls thin out.** A settled spring sends 0.015–0.035 m³/s over the rim where it sent about 0.26, so an edge fall (`edge_falls.gd`) runs strong for the fill and then becomes a slender one. Raise `SPRING_REST` for stronger standing falls, at the cost of more overflow.
+
+Not yet seen or measured: how any of this feels on screen (wind especially); the cost of sampling `wind_at` (225 calls a run while a gust blows).
+
+## Clear shallows (2026-10-01)
+
+The user, on the film: shallow water "does look milky, kind of grayed out. We need it to look beautiful and cozy."
+
+**Why it was milky** (found by turning each term off in turn, `tools/still_shallow_water.gd`): over a live pond's shallow shelf the still surface stood nearly opaque. The lake opacity's floor is 0.38 at no depth, Fresnel pushes it up, and under the planar view `tint_alpha` reaches 0.97 by 5 cm. Its body there is the screen's copy of the grass, tinted and then lit a second time by the lake lighting, which comes out pale. The shore foam band, catching the thin outer rim of the shelf, drew jagged white patches over it.
+
+**What changed:** live still water (`water_flow_view.gd` `SHALLOW_CLEAR`, 0.25 m; shader `shallow_clear`, off by default, so other ponds draw as before) is clear in the shallows. Over its per-pixel depth (`shore_depth`), from 3 cm to 25 cm, it blends from a thin `shallow_body` layer (dark teal, 0.03/0.15/0.16) to the tinted body. Its alpha runs from 0.35 at the bank to 0.75 by 20 cm, so the real ground shows through, darkened and cooled as wet ground is. The rise to 0.75 also covers a steep bank's red earth, which showed as a halo at the first, clearer settings. Fresnel drops by up to 40% and the shore foam by up to 40% over clear water. Tuned over three rendered passes: at 0.1 alpha the shelf vanished into the grass.
+
+`tools/still_shallow_water.gd` (rendered) flattens a patch, presses a pond 0.8 m deep inside a shelf 0-5 cm deep, sets the water and pauses the sim, then saves oblique, low and high stills to /private/tmp/zs-shallows (`--shallow-clear=0` for the old look). The plants differ from run to run.
 
 ## Known gaps and follow-ups
 

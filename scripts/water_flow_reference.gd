@@ -21,6 +21,11 @@ var vx := PackedFloat32Array()
 var vz := PackedFloat32Array()
 var flux := PackedFloat32Array()
 var flowing := PackedByteArray()
+## What `surface` draws (ZenScapeWaterFlow `show_depth` ... `show_wet`).
+var show_depth := PackedFloat32Array()
+var show_vx := PackedFloat32Array()
+var show_vz := PackedFloat32Array()
+var show_wet := PackedByteArray()
 var steep := PackedByteArray()
 ## Seconds each cell has stood wet (ZenScapeWaterFlow `wet`).
 var wet := PackedFloat32Array()
@@ -33,6 +38,13 @@ var edge_acc := PackedFloat64Array()
 var edge_rate := PackedFloat32Array()
 var edge_brink := PackedFloat32Array()
 var edge_smooth := 0.5
+## The wind's push and the calm (ZenScapeWaterFlow `wax` ... `calm_depth`).
+var wax := PackedFloat32Array()
+var waz := PackedFloat32Array()
+var wind_on := false
+var calm := 0.0
+var calm_speed := 0.15
+var calm_depth := 0.05
 var gravity := 9.81
 var friction := 0.6
 var drag := 0.06
@@ -41,6 +53,7 @@ var soak := 0.0035
 var soak_depth := 0.03
 var saturate := 0.0
 var dry_rate := 0.1
+var soak_floor := 0.0
 var max_speed := 4.0
 var poured := 0.0
 var drained := 0.0
@@ -66,6 +79,11 @@ func configure(width: int, height: int, cell_size: float, origin: Vector2, faces
 	kind.fill(OUTSIDE)
 	flowing.resize(n)
 	flowing.fill(0)
+	show_depth = _zeros(n)
+	show_vx = _zeros(n)
+	show_vz = _zeros(n)
+	show_wet.resize(n)
+	show_wet.fill(0)
 	steep.resize(n)
 	steep.fill(0)
 	wet = _zeros(n)
@@ -130,8 +148,35 @@ func set_params(p: Dictionary) -> void:
 	soak_depth = p.get("soak_depth",soak_depth)
 	saturate = maxf(0.0,float(p.get("saturate",saturate)))
 	dry_rate = maxf(0.0,float(p.get("dry_rate",dry_rate)))
+	soak_floor = clampf(float(p.get("soak_floor",soak_floor)),0.0,1.0)
 	max_speed = p.get("max_speed",max_speed)
 	edge_smooth = maxf(0.01,p.get("edge_smooth",edge_smooth))
+	calm = maxf(0.0,float(p.get("calm",calm)))
+	calm_speed = maxf(0.001,float(p.get("calm_speed",calm_speed)))
+	calm_depth = maxf(0.001,float(p.get("calm_depth",calm_depth)))
+
+## See ZenScapeWaterFlow::set_wind.
+func set_wind(values: PackedFloat32Array, columns: int, rows: int) -> void:
+	wind_on = columns >= 2 and rows >= 2 and values.size() == columns*rows*2 and w > 0
+	if not wind_on: return
+	wax = _zeros(w*h)
+	waz = _zeros(w*h)
+	for j in range(h):
+		for i in range(w):
+			var fa := (i+0.5)/w*(columns-1)
+			var fb := (j+0.5)/h*(rows-1)
+			var a := mini(int(fa),columns-2)
+			var b := mini(int(fb),rows-2)
+			var s := fa-a
+			var t := fb-b
+			for axis in range(2):
+				var v00 := values[(b*columns+a)*2+axis]
+				var v10 := values[(b*columns+a+1)*2+axis]
+				var v01 := values[((b+1)*columns+a)*2+axis]
+				var v11 := values[((b+1)*columns+a+1)*2+axis]
+				var v := (v00*(1-s)+v10*s)*(1-t)+(v01*(1-s)+v11*s)*t
+				if axis == 0: wax[j*w+i] = v
+				else: waz[j*w+i] = v
 
 func _index(x: float, z: float) -> int:
 	var i := floori((x-ox)/cell)
@@ -193,7 +238,14 @@ func _tick(dt: float) -> void:
 				continue
 			var d := depth[c]
 			var surface := ground[c]+d
-			var damp := 1.0/(1.0+dt*(friction+drag/maxf(d,0.004)))
+			var ax := wax[c] if wind_on else 0.0
+			var az := waz[c] if wind_on else 0.0
+			var lambda := friction+drag/maxf(d,0.004)
+			if calm > 0.0:
+				var speed := sqrt(vx[c]*vx[c]+vz[c]*vz[c])
+				lambda += calm*sqrt(gravity*d)*smoothstep(0.0,1.0,(d-0.5*calm_depth)/(0.5*calm_depth))*(1.0-smoothstep(0.0,1.0,(speed-0.5*calm_speed)/(0.5*calm_speed)))*(1.0-smoothstep(0.0,1.0,sqrt(ax*ax+az*az)/0.1))
+			var damp := 1.0/(1.0+dt*lambda)
+			var push := [-ax*cell,ax*cell,-az*cell,az*cell]
 			var total := 0.0
 			for k in range(4):
 				var m := -1
@@ -205,7 +257,7 @@ func _tick(dt: float) -> void:
 				if m < 0 or kind[m] == OUTSIDE:
 					flux[at+k] = 0.0
 					continue
-				var q := maxf(0.0,(flux[at+k]+dt*gravity*d*(surface-(ground[m]+depth[m])))*damp)
+				var q := maxf(0.0,(flux[at+k]+dt*d*(gravity*(surface-(ground[m]+depth[m]))+push[k]))*damp)
 				flux[at+k] = q
 				total += q
 			var have := d*area
@@ -244,7 +296,7 @@ func _tick(dt: float) -> void:
 				edge_acc[c] += d*area
 				d = 0.0
 			elif d > 0.0:
-				var thirst := maxf(0.0,1.0-wet[c]/saturate) if saturate > 0.0 else 1.0
+				var thirst := maxf(soak_floor,1.0-wet[c]/saturate) if saturate > 0.0 else 1.0
 				var lost := minf(d,dt*(evaporation+soak*thirst*maxf(0.0,1.0-d/soak_depth)))
 				soaked += lost*area
 				d -= lost
@@ -314,6 +366,9 @@ func set_depth(values: PackedFloat32Array) -> void:
 	vz.fill(0.0)
 	edge_rate.fill(0.0)
 	edge_brink.fill(0.0)
+	show_depth = depth.duplicate()
+	show_vx.fill(0.0)
+	show_vz.fill(0.0)
 
 func get_ground() -> PackedFloat32Array:
 	return ground.duplicate()
@@ -355,15 +410,30 @@ func surface(p: Dictionary) -> Dictionary:
 	var foam: Color = p.get("foam",Color(0.65,0.8,0.79))
 	var under: bool = p.get("under",false)
 	var edge_on: float = p.get("edge_on",0.0005)
+	var ease := clampf(p.get("ease",1.0),0.0,1.0)
+	var ease_flow := clampf(p.get("ease_flow",1.0),0.0,1.0)
+	var wet_off := minf(wet,p.get("wet_off",wet))
+	var emerge := maxf(0.0,p.get("emerge",0.0))
 	var n := w*h
+	var unsettled := 0.0
+	for c in range(n):
+		show_depth[c] = depth[c] if ease >= 1.0 else show_depth[c]+(depth[c]-show_depth[c])*ease
+		show_vx[c] = vx[c] if ease_flow >= 1.0 else show_vx[c]+(vx[c]-show_vx[c])*ease_flow
+		show_vz[c] = vz[c] if ease_flow >= 1.0 else show_vz[c]+(vz[c]-show_vz[c])*ease_flow
+		unsettled = maxf(unsettled,maxf(absf(depth[c]-show_depth[c]),0.1*absf(vx[c]-show_vx[c])+0.1*absf(vz[c]-show_vz[c])))
+	var svx := show_vx
+	var svz := show_vz
 	var top := PackedFloat32Array()
 	top.resize(n)
 	var state := PackedByteArray()
 	state.resize(n)
 	for c in range(n):
-		if kind[c] != OUTSIDE and depth[c] > wet:
-			state[c] = 1
-			top[c] = ground[c]+depth[c]
+		var d := show_depth[c]
+		show_wet[c] = 1 if kind[c] != OUTSIDE and d > (wet_off if show_wet[c] != 0 else wet) else 0
+		if show_wet[c] == 0: continue
+		state[c] = 1
+		var e := smoothstep(0.0,1.0,(d-wet_off)/emerge) if emerge > 0.0 else 1.0
+		top[c] = ground[c]+d-(1.0-e)*(d+lift+0.02)
 	for c in edge_cells:
 		if edge_rate[c] > edge_on:
 			state[c] = 1
@@ -390,13 +460,13 @@ func surface(p: Dictionary) -> Dictionary:
 		if state[c] != 1:
 			flowing[c] = 0
 			continue
-		var speed := sqrt(vx[c]*vx[c]+vz[c]*vz[c])
+		var speed := sqrt(svx[c]*svx[c]+svz[c]*svz[c])
 		if speed > flow_on: flowing[c] = 1
 		elif speed < flow_off: flowing[c] = 0
 	var fade := PackedFloat32Array()
 	fade.resize(n)
 	for c in range(n):
-		if state[c] == 1: fade[c] = clampf((sqrt(vx[c]*vx[c]+vz[c]*vz[c])-flow_off)/maxf(flow_on-flow_off,0.000001),0.0,1.0)
+		if state[c] == 1: fade[c] = clampf((sqrt(svx[c]*svx[c]+svz[c]*svz[c])-flow_off)/maxf(flow_on-flow_off,0.000001),0.0,1.0)
 	for j in range(h):
 		for i in range(w):
 			var c := j*w+i
@@ -440,8 +510,8 @@ func surface(p: Dictionary) -> Dictionary:
 			var color := shallow.lerp(deep,1.0-exp(-d/depth_scale))
 			uv2.append(Vector2(d,0.0))
 			if set_index == 1:
-				var u := vx[c]
-				var v := vz[c]
+				var u := svx[c]
+				var v := svz[c]
 				var speed := sqrt(u*u+v*v)
 				if state[c] != 1 or speed < 0.0001:
 					u = 0.0
@@ -452,8 +522,8 @@ func surface(p: Dictionary) -> Dictionary:
 							var b := j+dj
 							if a < 0 or b < 0 or a >= w or b >= h: continue
 							if state[b*w+a] == 1:
-								u += vx[b*w+a]
-								v += vz[b*w+a]
+								u += svx[b*w+a]
+								v += svz[b*w+a]
 					speed = sqrt(u*u+v*v)
 				var ax := u/speed if speed > 0.0001 else 1.0
 				var az := v/speed if speed > 0.0001 else 0.0
@@ -471,8 +541,8 @@ func surface(p: Dictionary) -> Dictionary:
 						var b := j+dj
 						if a < 0 or b < 0 or a >= w or b >= h: continue
 						if state[b*w+a] == 1:
-							mu += vx[b*w+a]
-							mv += vz[b*w+a]
+							mu += svx[b*w+a]
+							mv += svz[b*w+a]
 							moving += 1
 				if moving > 0:
 					mu /= moving
@@ -519,6 +589,7 @@ func surface(p: Dictionary) -> Dictionary:
 					else: indices.append_array([va,vb,vc,vb,vd,vc])
 		if set_index == 0 and not under: calm = indices.size()
 		out["still" if set_index == 0 else "flow"] = {"vertices":vertices,"colors":colors,"uv":uv,"uv2":uv2,"custom0":custom0,"custom1":custom1,"indices":indices,"calm":calm}
+	out["settled"] = unsettled < 0.001
 	return out
 
 ## How far each wet cell (state 1) lies from dry ground, m, by a chamfer

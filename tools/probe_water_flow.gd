@@ -20,6 +20,10 @@ const WaterFlow := preload("res://scripts/water_flow.gd")
 
 func _initialize() -> void: run.call_deferred()
 
+## A gust that blows the same everywhere (WindGust.wind_at's shape).
+class SteadyWind:
+	func wind_at(_point: Vector2) -> Vector2: return Vector2(15.0,0.0)
+
 func check(label: String, ok: bool, detail: Variant = "") -> void:
 	if not ok: failures.append(label)
 	print(("OK   " if ok else "FAIL ")+label+("" if str(detail).is_empty() else "  "+str(detail)))
@@ -151,6 +155,22 @@ func run() -> void:
 	# 2. The land changes under the standing water: a trench to a lower basin.
 	var before_one: float = water_near(flow,BASIN,3.0)
 	flow.springs.clear()
+
+	# The wind tool's gust pushes the pond: a steady 15 m/s along +x through
+	# WaterFlow.wind (what the editor sets from WindGust) piles it up downwind,
+	# and once it drops the pond lies level again.
+	var downwind := BASIN+Vector2(1.0,0.0)
+	var upwind := BASIN-Vector2(1.0,0.0)
+	var still_tilt: float = level(flow,downwind)-level(flow,upwind)
+	flow.wind = SteadyWind.new()
+	for i in range(16): simulate(flow,0.25)
+	var blown_tilt: float = level(flow,downwind)-level(flow,upwind)
+	flow.wind = null
+	simulate(flow,0.25)
+	check("a gust piles the pond up downwind",blown_tilt-still_tilt > 0.02,"downwind %.3f m over upwind (%.3f still)" % [blown_tilt,still_tilt])
+	for i in range(24): simulate(flow,0.25)
+	var settled_tilt: float = level(flow,downwind)-level(flow,upwind)
+	check("once the gust drops the pond lies level again",absf(settled_tilt-still_tilt) < 0.01,"%.3f m" % settled_tilt)
 	simulate(flow,4.0)
 	before_one = water_near(flow,BASIN,3.0)
 	var level_one: float = level(flow,BASIN)
@@ -166,7 +186,7 @@ func run() -> void:
 	var springs_before: int = flow.springs.size()
 	kind = flow.drop(flat,4.0)
 	check("a ball on low flat ground is a burst, not a spring",kind == "burst" and flow.springs.size() == springs_before,kind)
-	simulate(flow,2.0)
+	simulate(flow,WaterFlow.BURST_SECONDS+0.5)
 	check("the burst has let all its water go",flow.bursts.is_empty())
 	var spread: float = water_near(flow,flat,4.0)
 	simulate(flow,60.0)

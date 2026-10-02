@@ -243,6 +243,11 @@ func run() -> void:
 	for i in range(240):
 		await frames(1)
 		if not outcome.is_empty(): break
+	# The sky's door has moved on (a tuft torn from the cloud); where the drag
+	# brings no ball, a 6 m³ ball lands at the groove's head as one would.
+	if outcome.is_empty() and editor.flow != null:
+		print("FILM no ball from the sky; dropping one at the groove's head")
+		editor._flow_landed(HEAD,6.0,[])
 	print("FILM ball settled ",outcome)
 	await glide(Vector2(1180,660),60)
 
@@ -272,6 +277,30 @@ func run() -> void:
 		print("FILM level %.2f, reflection %s" % [pond_level(),reflection_note()])
 	print("FILM pond level %.2f, rim %.2f, basin %.2f m³" % [pond_level(),height(BASIN+Vector2(2.2,1.3)),water_near(BASIN,3.0)])
 	await still("pond_live")
+	if not "--no-wind" in OS.get_cmdline_user_args():
+		# The wind tool's gust from the sky blows across the pond at real speed
+		# (docs/scenic/water-flow.md "Calm, wind and the first surge"): it piles
+		# the water up downwind, and once it drops the pond settles.
+		print("FILM wind")
+		lapse = 0
+		var pond := largest_pool()
+		var centre := Vector2(float(pond.x),float(pond.z)) if not pond.is_empty() else POND
+		print("FILM wind over the pool at %s (%.1f m²)" % [centre,float(pond.get("area",0.0))])
+		await frame_on(centre,12.0,0.9,1.2,2.0)
+		var across := Vector2(1.0,0.0)
+		var downwind := centre+Vector2(0.75,0.0)
+		var upwind := centre-Vector2(0.75,0.0)
+		var tilt := func() -> float: return water_level(downwind)-water_level(upwind)
+		print("FILM wind still tilt %.3f m" % tilt.call())
+		for gust in range(2):
+			editor.gust_from_sky(across,1.0)
+			for k in range(6):
+				await seconds(0.5)
+				print("FILM wind gust %d +%.1f s: tilt %.3f m" % [gust+1,(k+1)*0.5,tilt.call()])
+		for k in range(8):
+			await seconds(1.0)
+			print("FILM wind settling +%d s: tilt %.3f m" % [k+1,tilt.call()])
+		lapse = LAPSE
 	# The groove is cut facing the camera, from the pond towards the viewer.
 	await frame_on(BASIN+Vector2(3.0,1.8),14.0,0.9,0.75,2.0)
 
@@ -310,6 +339,17 @@ func reflection_note() -> String:
 	return "%.2f (%s, %d µs)" % [reflection.level,"shown" if reflection.visible and not reflection.views.is_empty() else "hidden",reflection.last_sync_usec]
 
 ## The surface level of the largest standing water, or -INF.
+func largest_pool() -> Dictionary:
+	var best := {}
+	for pool: Dictionary in editor.flow.pools():
+		if best.is_empty() or float(pool.area) > float(best.area): best = pool
+	return best
+
+## Ground plus water at the cell under `p`.
+func water_level(p: Vector2) -> float:
+	var at: int = editor.flow.cell_at(p)
+	return editor.flow.grounds()[at]+editor.flow.depths()[at] if at >= 0 else NAN
+
 func pond_level() -> float:
 	var best := {}
 	for pool: Dictionary in editor.flow.pools():

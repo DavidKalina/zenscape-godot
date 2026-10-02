@@ -51,11 +51,32 @@ const PARAMS := {
 	# water over 150 m² and its pond never filled.
 	"saturate":6.0,
 	"dry_rate":0.1,
+	# Saturated ground still soaks thin water (under soak_depth) at this share
+	# of `soak`: a stream deeper than that carries on untouched, but a sheet
+	# spilled over flat ground soaks in within a few tens of m² instead of
+	# spreading until evaporation alone balances it (a 0.35 m³/s spring wet
+	# 500 m² of the 784 m² plate).
+	"soak_floor":0.3,
 	"max_speed":4.0,
 	# s: the time constant the water leaving each edge cell is smoothed with
 	# (edge_outflow, spills; the edge falls read it).
 	"edge_smooth":0.5,
+	# Extra friction on still water (deeper than about calm_depth m, slower
+	# than about calm_speed m/s, no wind on it), calm × √(g·depth) per second:
+	# a pond's slosh is damped to about critical, so it settles without rocking
+	# back, sooner in a deep pit (whose waves run faster) as in a shallow bowl;
+	# streams and thin fronts run as before. More is not calmer: at 1.5 a
+	# shallow pond creeps level over 8 s instead of 3 (tools/probe_water_calm.gd).
+	"calm":0.5,
+	"calm_speed":0.15,
+	"calm_depth":0.05,
 }
+## The wind tool's gusts push the water: WIND_PUSH m/s² for each m/s of air
+## (WindGust.wind_at, 8-22 m/s), sampled on a WIND_SAMPLES × WIND_SAMPLES grid
+## over the plate while a gust blows (`wind`). Deep water piles up downwind and
+## a sheet drifts with the air; let go, it sloshes back and settles.
+const WIND_PUSH := 0.03
+const WIND_SAMPLES := 15
 ## A ball is a spring when it lands SPRING_RISE m above the plate's low ground
 ## (its LOW_SHARE quantile), or on ground steeper than SPRING_SLOPE.
 const SPRING_RISE := 1.2
@@ -76,8 +97,11 @@ const MAX_SPRINGS := 8
 ## A ball carrying less than SPRING_BALL m³ lets its water go wherever it
 ## lands: a sip scooped from a puddle is no spring.
 const SPRING_BALL := 1.0
-## A burst lets its volume go over BURST_SECONDS across BURST_RADIUS m.
-const BURST_SECONDS := 1.2
+## A burst lets its volume go over BURST_SECONDS across BURST_RADIUS m, on
+## a smoothstep (`_poured`): it starts as a trickle, peaks at half time at 1.5×
+## its mean rate, and tapers off. It used to pour at a flat rate over 1.2 s,
+## so a ball's water landed as a wall that ran out over the plain at once.
+const BURST_SECONDS := 3.5
 const BURST_RADIUS := 0.8
 ## A spring's ball does not burst on the summit: its water wells out of the
 ## spring over SPRING_HEAD_SECONDS (a strong first run that reaches the foot
@@ -86,6 +110,18 @@ const BURST_RADIUS := 0.8
 ## ended as a film a few centimetres deep over a hundred square metres of the
 ## plain, which soaked away.
 const SPRING_HEAD_SECONDS := 10.0
+## A new spring opens over SPRING_OPEN seconds (its rate eases in on a
+## smoothstep), so with its ball's head welling out on the same curve the
+## first run gathers rather than gushing out at full rate at once.
+const SPRING_OPEN := 4.0
+## A spring pours its full rate for SPRING_FILL s, enough to fill its stream
+## and the pond below, then eases over SPRING_EASE s to SPRING_REST m³/s (or
+## its rate, if less): a trickle the groove it runs in can carry, whose
+## overflow runs on as a rivulet. At full rate for ever its water overtopped
+## the groove and sheeted over the plain. A loaded spring pours its rest rate.
+const SPRING_FILL := 20.0
+const SPRING_EASE := 20.0
+const SPRING_REST := 0.06
 ## The spring rises down its course from where the ball landed, so on a
 ## summit its water takes one flank instead of splitting over all: only as far
 ## as it takes for its footprint (SPRING_RADIUS) to lie on the one flank (the
@@ -144,13 +180,21 @@ var dt := DT
 var width := 0
 var height := 0
 var origin := Vector2.ZERO
-## [{"x", "z", "rate", "radius"}], saved and undoable.
+## [{"x", "z", "rate", "radius", "age"}], saved and undoable. `age` (s) runs
+## a new spring through `spring_rate` (open, fill, rest); a load drops it, and
+## the spring pours its rest rate at once.
 var springs: Array[Dictionary] = []
-## [{"x", "z", "rate", "radius", "left"}], transient.
+## [{"x", "z", "radius", "volume", "seconds", "age"}], each pouring `volume`
+## over `seconds` on a smoothstep (`_poured`). Transient.
 var bursts: Array[Dictionary] = []
 ## Sources held open from outside, by name: [x, z, radius, rate], poured
 ## every step until erased (the watering can's stream). Transient.
 var taps: Dictionary = {}
+## What blows on the water: an object with `wind_at(point: Vector2) ->
+## Vector2` (m/s, plate x, z; scripts/wind_gust.gd), set while a gust blows and
+## null otherwise. The editor sets it every frame.
+var wind: Object = null
+var _wind_was := false
 ## The weather's water: set `runoff.rain`, `.snowing` and `.snow_phase`.
 var runoff := preload("res://scripts/rain_runoff.gd").new()
 ## 1 per grid cell over the plate, 0 outside it.
@@ -169,8 +213,8 @@ var worst_step_usec := 0
 ## the library is not built). Build the cell map with `map_cells` (or `setup`).
 func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	data = terrain
-	# A library built before the newest method (`spills`) is stale: use the mirror.
-	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","spills"):
+	# A library built before the newest method (`set_wind`) is stale: use the mirror.
+	if prefer_native and preload("res://scripts/native_terrain_kernels.gd").get_kernel() != null and ClassDB.class_exists("ZenScapeWaterFlow") and ClassDB.class_has_method("ZenScapeWaterFlow","set_wind"):
 		kernel = ClassDB.instantiate("ZenScapeWaterFlow")
 		native = true
 	else:
@@ -258,21 +302,58 @@ func advance(delta: float) -> bool:
 func run(ticks: int) -> void:
 	if not ready: return
 	var sources := PackedFloat32Array()
-	for spring: Dictionary in springs: sources.append_array([spring.x,spring.z,spring.radius,spring.rate])
 	var seconds := ticks*dt
+	for spring: Dictionary in springs:
+		var age: float = spring.get("age",SPRING_FILL+SPRING_EASE)
+		var mid := age+seconds*0.5
+		if age < SPRING_FILL+SPRING_EASE: spring.age = age+seconds
+		sources.append_array([spring.x,spring.z,spring.radius,spring_rate(spring.rate,mid)])
 	var finished := false
 	for burst: Dictionary in bursts:
-		# The last step of a burst pours only what is left.
-		var rate: float = minf(burst.rate,float(burst.left)/seconds)
-		sources.append_array([burst.x,burst.z,burst.radius,rate])
-		burst.left = float(burst.left)-rate*seconds
-		finished = finished or burst.left <= 0.0001
-	if finished: bursts = bursts.filter(func(burst: Dictionary) -> bool: return burst.left > 0.0001)
+		var age: float = burst.age
+		var poured := _poured(burst,age+seconds)-_poured(burst,age)
+		sources.append_array([burst.x,burst.z,burst.radius,poured/seconds])
+		burst.age = age+seconds
+		finished = finished or burst.age >= burst.seconds
+	if finished: bursts = bursts.filter(func(burst: Dictionary) -> bool: return burst.age < burst.seconds)
 	for tap: Array in taps.values(): sources.append_array(tap)
 	sources.append_array(runoff.sources())
+	_blow()
 	last_step_usec = kernel.step(data.heights,sources,ticks,dt)
 	worst_step_usec = maxi(worst_step_usec,last_step_usec)
 	revision += 1
+
+## What a spring of `rate` m³/s pours `age` s after it rose: opening over
+## SPRING_OPEN, full for SPRING_FILL, easing to SPRING_REST over SPRING_EASE.
+static func spring_rate(rate: float, age: float) -> float:
+	var rest := minf(rate,SPRING_REST)
+	return lerpf(rate,rest,smoothstep(SPRING_FILL,SPRING_FILL+SPRING_EASE,age))*smoothstep(0.0,1.0,age/SPRING_OPEN)
+
+## Hands the kernel the wind's push while a gust blows, and clears it once
+## the gust is gone.
+func _blow() -> void:
+	if wind == null:
+		if _wind_was: kernel.set_wind(PackedFloat32Array(),0,0)
+		_wind_was = false
+		return
+	var values := PackedFloat32Array()
+	values.resize(WIND_SAMPLES*WIND_SAMPLES*2)
+	var span := Vector2(width,height)*cell
+	for b in range(WIND_SAMPLES):
+		for a in range(WIND_SAMPLES):
+			var push: Vector2 = wind.wind_at(origin+span*Vector2(a,b)/float(WIND_SAMPLES-1))*WIND_PUSH
+			values[(b*WIND_SAMPLES+a)*2] = push.x
+			values[(b*WIND_SAMPLES+a)*2+1] = push.y
+	kernel.set_wind(values,WIND_SAMPLES,WIND_SAMPLES)
+	_wind_was = true
+
+## What a burst has poured by `age` seconds: its volume on a smoothstep over
+## its seconds, so it eases in and out and pours all of it.
+static func _poured(burst: Dictionary, age: float) -> float:
+	return float(burst.volume)*smoothstep(0.0,1.0,age/float(burst.seconds))
+
+static func _burst(at: Vector2, radius: float, volume: float, seconds: float) -> Dictionary:
+	return {"x":at.x,"z":at.y,"radius":radius,"volume":volume,"seconds":seconds,"age":0.0}
 
 ## What a ball of `volume` m³ landing at `point` becomes: "spring" or "burst".
 func source_kind(point: Vector2) -> String:
@@ -303,7 +384,7 @@ func drop(point: Vector2, volume: float) -> String:
 	last_bed = {}
 	if kind.is_empty() or not ready: return ""
 	if kind == "burst":
-		bursts.append({"x":point.x,"z":point.y,"rate":volume/BURST_SECONDS,"radius":BURST_RADIUS,"left":volume})
+		bursts.append(_burst(point,BURST_RADIUS,volume,BURST_SECONDS))
 		return kind
 	_spring(point,volume,true)
 	return kind
@@ -324,7 +405,7 @@ func _spring(point: Vector2, volume: float, head: bool) -> void:
 	var placed := spring_set(data,points)
 	var at: Vector2 = placed.at
 	var set: int = placed.index
-	if head: bursts.append({"x":at.x,"z":at.y,"rate":volume/SPRING_HEAD_SECONDS,"radius":SPRING_RADIUS,"left":volume})
+	if head: bursts.append(_burst(at,SPRING_RADIUS,volume,SPRING_HEAD_SECONDS))
 	data.begin_stroke()
 	# The rill starts at the spring, not a step above it (the summit).
 	var at_ground: Variant = data.ground_height(at)
@@ -335,7 +416,7 @@ func _spring(point: Vector2, volume: float, head: bool) -> void:
 		last_bed = {"from":data.heights.duplicate(),"heights":bed.heights.duplicate(),"rect":bed.rect,"pool":bed.pool,"radius":bed.radius}
 		data.heights = bed.heights
 	if springs.size() >= MAX_SPRINGS: springs.pop_front()
-	springs.append({"x":at.x,"z":at.y,"rate":clampf(volume*SPRING_SHARE,SPRING_MIN,SPRING_MAX),"radius":SPRING_RADIUS})
+	springs.append({"x":at.x,"z":at.y,"rate":clampf(volume*SPRING_SHARE,SPRING_MIN,SPRING_MAX),"radius":SPRING_RADIUS,"age":0.0})
 	data.end_stroke()
 
 ## Where on a `descent` course the spring wells (see SPRING_SET): {"at" (plate

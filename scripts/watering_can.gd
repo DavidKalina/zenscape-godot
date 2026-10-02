@@ -24,8 +24,10 @@ const RATE := 1.4
 const RADIUS := 0.45
 const SPRINKLE_SHARE := 0.4
 const SPRINKLE_SPREAD := 3.0
-## Seconds the pour takes to come on, as the can tips (and to stop).
-const EASE_IN := 0.25
+## Seconds the pour takes to come on, as the can tips (and to stop), on a
+## smoothstep, so the stream gathers rather than landing at full rate (it was
+## a straight ramp over 0.25 s).
+const EASE_IN := 0.5
 ## A spring: the landing held within STILL m for SPRING_HOLD s on ground
 ## where a ball would make a spring.
 const SPRING_HOLD := 1.6
@@ -141,7 +143,7 @@ func _process(delta: float) -> void:
 		_step_beads(delta,rose,tool)
 		return
 	landing = at
-	var rate := RATE*size_scale*flow_share*(SPRINKLE_SHARE if sprinkle else 1.0)
+	var rate := RATE*size_scale*smoothstep(0.0,1.0,flow_share)*(SPRINKLE_SHARE if sprinkle else 1.0)
 	var radius := RADIUS*size_scale*(SPRINKLE_SPREAD if sprinkle else 1.0)
 	if flow != null:
 		flow.taps["can"] = [at.x,at.y,radius,rate]

@@ -16,14 +16,29 @@ extends Node3D
 ## water leaves the plate over its rim, a fall pours down the block's side
 ## into the void (`edge_falls`, scripts/edge_falls.gd; --no-edge-falls leaves
 ## them out).
-## Seconds between surface rebuilds (native).
-const SURFACE_SECONDS := 1.0/30.0
+## Seconds between surface rebuilds (native): every frame, so the drawn
+## water glides rather than stepping (a build and publish is about 0.15 ms).
+const SURFACE_SECONDS := 0.0
 ## The GDScript mirror's coarser grid rebuilds less often (about 4 ms a build).
 const FALLBACK_SURFACE_SECONDS := 0.1
 ## Surface parameters (ZenScapeWaterFlow::surface). Water shallower than
 ## `wet` is not drawn; the sheet sits `lift` above the water.
 ## With `under`, still water is drawn everywhere wet, moving water over it.
 const SURFACE := {"wet":0.012,"lift":0.012,"flow_on":0.22,"flow_off":0.12,"foam_from":0.8,"foam_to":2.2,"depth_scale":0.45,"under":true}
+## Seconds the drawn depth and velocity take to follow the sim's (time
+## constants of the kernel's `ease`, `ease_flow`): a pond rises and settles
+## smoothly, and the sim's small sloshes, and the speed's jitter under the
+## streaks, foam and still/moving split, never reach the screen.
+const DEPTH_SMOOTH := 0.3
+const FLOW_SMOOTH := 0.4
+## A cell drawn wet stays drawn until it is WET_OFF m shallow, and over
+## EMERGE m above that its sheet rises out of the ground, so a front creeps
+## in and a drying edge sinks away instead of quads popping.
+const WET_OFF := 0.006
+const EMERGE := 0.015
+## --no-glide draws the sim as it is, every 1/30 s, with hard edges (the
+## drawing before 2026-10-01), for A/B.
+var glide := not "--no-glide" in OS.get_cmdline_user_args()
 ## Moving water from THIN.x (the drawn `wet` depth) to THIN.y m deep fades
 ## from a wet darkening of the ground to the stream's full look (shader
 ## `live_thin`). A sheet a centimetre or two deep running down a steep face
@@ -37,6 +52,10 @@ const THIN := Vector2(0.012,0.05)
 const BED_ABSORB := 2.0
 ## Live still water's depth ramp (shader `tint_*`), and the moving water's
 ## vertex palette ends, so a stream over a pond takes the pond's colour.
+## Live still water shallower than SHALLOW_CLEAR m is clear (shader
+## `shallow_clear`): the ground shows through it, darkened as wet ground is,
+## and the depth tint comes in as it deepens.
+const SHALLOW_CLEAR := 0.25
 const TINT := {"shallow":Color("6aad9e"),"mid":Color("3f9196"),"deep":Color("2f6478")}
 const FORMAT :=(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 
@@ -83,6 +102,8 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	still_material.set_shader_parameter("tint_shallow",TINT.shallow)
 	still_material.set_shader_parameter("tint_mid",TINT.mid)
 	still_material.set_shader_parameter("tint_deep",TINT.deep)
+	# Shallow water is clear: the ground shows through (shader `shallow_clear`).
+	still_material.set_shader_parameter("shallow_clear",SHALLOW_CLEAR)
 	still.material_override = still_material
 	moving.name = "FlowMoving"
 	var moving_material: ShaderMaterial = stream_material.duplicate()
@@ -102,6 +123,9 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		add_child(node)
 	var colors := {"shallow":TINT.shallow.srgb_to_linear(),"deep":TINT.deep.srgb_to_linear(),"foam":Color(0.65,0.8,0.79)}
 	_params = SURFACE.merged(colors)
+	if glide:
+		_params.wet_off = WET_OFF
+		_params.emerge = EMERGE
 	scene_node = scene
 	if scene != null and not "--no-live-falls" in OS.get_cmdline_user_args():
 		falls = preload("res://scripts/flow_falls.gd").new()
@@ -142,10 +166,18 @@ var pools: Array = []
 func update(delta: float) -> void:
 	if reflection != null: reflection.sync_live(scene_node,get_tree(),pools)
 	_since += delta
-	if _since >= (SURFACE_SECONDS if flow.native else FALLBACK_SURFACE_SECONDS) and flow.revision != _drawn:
+	var every: float = (SURFACE_SECONDS if glide else 1.0/30.0) if flow.native else FALLBACK_SURFACE_SECONDS
+	if _since >= every and (flow.revision != _drawn or not _settled):
+		if glide:
+			_params.ease = 1.0-exp(-_since/DEPTH_SMOOTH)
+			_params.ease_flow = 1.0-exp(-_since/FLOW_SMOOTH)
 		_since = 0.0
 		_drawn = flow.revision
 		publish()
+
+## Whether the last build had caught up with the sim; until it has, the
+## surface rebuilds though the water has not stepped.
+var _settled := true
 
 ## The still surface last published, as built (see `still_triangles`).
 var _still_vertices := PackedVector3Array()
@@ -155,6 +187,7 @@ var _still_indices := PackedInt32Array()
 func publish() -> void:
 	var began := Time.get_ticks_usec()
 	var arrays: Dictionary = flow.surface(_params)
+	_settled = arrays.get("settled",true)
 	last_build_usec = Time.get_ticks_usec()-began
 	began = Time.get_ticks_usec()
 	_fill(still.mesh,arrays.still)

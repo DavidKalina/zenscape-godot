@@ -85,6 +85,15 @@ varying vec2 live_velocity;
 // a face too. With `live_level` it fades out where its surface tilts (a pond
 // lies level), so on a slope only the moving water's own look shows.
 uniform bool live_level = false;
+// With `shallow_clear` (m, 0 off; live still water), water shallower than it
+// is clear: the ground under it shows through the blend itself, darkened and
+// cooled by a thin layer of `shallow_body` as wet ground under clear water
+// is, with less of the sky's sheen; the tinted body only comes in as the
+// water deepens towards it. Without it a shelf a few centimetres deep stood
+// nearly opaque, its body the screen's copy of the grass lit a second time,
+// and read as a milky grey sheet.
+uniform float shallow_clear = 0.0;
+uniform vec3 shallow_body : source_color = vec3(0.03, 0.15, 0.16);
 // Live waterfalls (scripts/flow_falls.gd) churn the water where they land and
 // whiten it where they tip over: x, z, radius, strength each.
 uniform vec4 fall_foam[8];
@@ -259,6 +268,11 @@ void fragment() {
 		body = mix(plain_body, body, planar_weight);
 		shore_depth = mix(plain_shore, shore_depth, planar_weight);
 	}
+	// Clear shallows: how clear this pixel is, by its per-pixel depth where the
+	// planar view reads the bed, else the mesh's.
+	float clear = shallow_clear > 0.0 && tinted ? (1.0 - smoothstep(0.03, shallow_clear, shore_depth)) * (1.0 - zs_ice) : 0.0;
+	body = mix(body, shallow_body * zs_palette_water, clear);
+	fresnel *= 1.0 - 0.4 * clear;
 	float glint = smoothstep(0.75, 1.0, zs_water_growth_now()) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
 	float cascade = 0.0;
@@ -290,7 +304,8 @@ void fragment() {
 		float lap = 0.035 + 0.02 * sin(zs_flow_time * 0.9 + zs_noise(world_position.xz * 0.6) * 6.2832) * (0.4 + min(zs_wind_strength, 1.0) * 0.6);
 		float band = (1.0 - smoothstep(lap * 0.5, lap, shore_depth)) * (1.0 - smoothstep(0.2, 0.55, shore_run));
 		float broken = smoothstep(0.35, 0.7, zs_noise(world_position.xz * 3.1 + vec2(zs_flow_time * 0.05, 0.0)));
-		foam = max(foam, band * mix(0.35, 0.8, broken) * zs_look_shore);
+		// Softer over clear shallows: a lap line, not a white crust.
+		foam = max(foam, band * mix(0.35, 0.8, broken) * zs_look_shore * (1.0 - 0.4 * clear));
 	}
 	body = mix(body, vec3(0.65, 0.80, 0.79), foam * (1.0 - zs_ice));
 	// Churn under a live fall, spreading outward in broken patches.
@@ -363,6 +378,10 @@ void fragment() {
 		alpha = mix(alpha, 1.0, zs_ice);
 	}
 	if (!flowing && source_lake_material && cut_face < 0.5) alpha = mix(alpha, 1.0, fresnel);
+	// Clear shallows let the ground through: a third at the bank to three
+	// quarters by 20 cm (which hides a steep bank's earth), then the body's
+	// own as it deepens; foam stays.
+	alpha = mix(alpha, max(mix(0.35, 0.75, smoothstep(0.0, 0.2, shore_depth)), foam * 0.85), clear);
 	ALBEDO = body;
 	EMISSION = body * mix(zs_hemi_ground, zs_hemi_sky, wave_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION += zs_afterglow(world_position, wave_normal, body);
