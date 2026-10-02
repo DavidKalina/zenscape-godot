@@ -50,17 +50,36 @@ The heading costs one branch and one vec4 read per parcel, inside one include.
 
 **Off by default since 2026-09-29.** The user found the lane, arrow, chevrons and ring too hand-holding, so they are drawn only with `--show-promise` (`WindGust.show_promise`). Without it, the hand's air leaning the foliage while you drag or hold is the only preview. A sent gust shows its passing band of shade at the head, but not the promise being used up behind it. `promise()` and `release()` are unchanged, so the gust still goes exactly where the hidden mark would have promised.
 
+**Why it changed (2026-10-01).** The user found the sent air "a little bit cheap... like cartoon, like comic book". Stills of a lane and a burst on the Genesis plain showed why:
+
+- The ribbons were bands 0.08 to 0.16 m wide, expanded toward camera-up, so near the camera they were fat tape. They were a flat mint white, unlit, at 0.85 opacity.
+- Each ribbon was a row of identical dashes, 3 m apart, with hard on and off edges. The five strands had the same width, the same sway formula and the same fixed lags, and lay evenly spaced across the lane. Together they read as drawn speed lines.
+- A burst's ten straight spokes, evenly spaced round the press, read as a comic action burst.
+- The passing band's sheen came from a sine raised to the 6th power: regular bright stripes across the lane. The shade was a hard noise threshold at up to 0.24, with a straight lateral edge. For a burst, the noise was carried outward from the centre, which smeared it into a sunburst of rays.
+- The leaves were 0.16 to 0.3 m diamonds, and the seed fluff was opaque pale diamonds of the same kind, like confetti.
+
+The style rule settled with the user is faceted solids, soft everything that flows or glows; air is fully soft. The air now shows mostly through what it moves: foliage leaning (see "Foliage"), leaves, petals, seed fluff and glints. The streaks are few, thin, tapered and lit, and the shade band is faint.
+
 - **The mark** is the water ball's mark adapted to air. It is a pale two-tone lane (0.2 and 0.07 shade, lighter than the ball's) with a rim of air light, lit by sky and sun with a night floor.
   - The lane's back is half a 12-gon. Its tip is an arrow `TIP_FLARE` (1.25) times its width.
   - Chevrons of air light flow along the lane, `CHEVRON_SPACING` 1.6 m apart, faster for a harder gust (`CHEVRON_FLOW` 0.5 to 2.2 spacings a second). The mark breathes ±3.5 % at 0.55 Hz.
   - A burst's promise is a turning 12-gon ring, with rings of light drawing inward while it gathers.
   - The mark paints only near-level ground inside the gust's height range, so trunks and cliffs stay clean.
-- **The passing air.** When the gust goes, a band of dappled shade and sheen rides at its head: sharp in front (`PAW_FRONT` 1.8 m), trailing behind (`PAW_TAIL` 4.5 m), with ripples running across it. This is what the bare painted plain shows, since it has no grass blades. The promise behind the head is used up over `USED_UP` (7 m).
-- **Ribbons.** A lane has five strands of moving air (`STRANDS`) and a burst has ten spokes (`SPOKES`), in `shaders/wind_gust_trail.gdshader`. They are laid over the ground once, when the gust goes. Only the `TRAIL_LENGTH` (9 m) just behind the head shows, so they ride with it. Each strand lags the head by its own distance, so they overlap, and each lifts and curls where the air is.
-- **Leaves and motes.** A press gathers `PRESS_MOTES` (14): 60 % leaves, the rest pale seed fluff, `MOTE_SIZE` 0.16 to 0.3 m so they read from 50 m. They swirl in round the press while the hand blows.
+- **The passing air.** When the gust goes, a faint band of dappled shade and sheen rides at its head: sharp in front (`PAW_FRONT` 1.8 m), trailing behind (`PAW_TAIL` 4.5 m). It dims the ground by at most `PAW_SHADE` 0.09 and lifts a sheen of at most `PAW_SHEEN` 0.07. Its patches are three octaves of noise drawn out 2.4 to 1 along the heading, and the same noise frays its front (±1 m) and its sides, so it has no straight edge. A burst's noise drifts slowly in world space instead of being carried outward, so it does not fan into rays. The promise behind the head is used up over `USED_UP` (7 m).
+- **Streaks.** A lane has five strands (`STRANDS`) and a burst seven arcs (`SPOKES`), in `shaders/wind_gust_trail.gdshader`. They are laid over the ground once, when the gust goes, and each shows one streak riding behind the head:
+  - Each strand is drawn at random: its lag behind the head is spread over `STREAK_LAG` (3.2 m) by the golden ratio, so no two ride together; its length is 2.5 to 6.5 m (`STREAK_LENGTH`), times 0.75 to 1.15 with power; its height is 0.3 to 1.6 m; and its line wanders across (0.15 to 0.55 m) and up (0.06 to 0.22 m) at its own rate.
+  - A streak is a hair of light. Its true width is `RIBBON_WIDTH` 0.04 to 0.07 m, drawn across its own way as the camera sees it, never under 2.5 or over 5 screen pixels. It tapers to nothing at both ends, is brightest just behind its front and fades down its tail, and is soft across. A streak seen end-on fades out.
+  - It covers at most 0.75 of what is behind it. Its colour is the sky's light plus a share of the sun's, which rises looking toward the sun, so it takes the scene's light, and the scene's fog. There is a small night floor.
+  - It curls slowly round its line (0.22 m at its tail, turning 1.6 rad/s), and a light runs gently along it.
+  - A burst's arcs start at random angles and all turn the same way round, by 0.25 to 0.6 rad (`SPOKE_SWIRL`) by the time they reach the ring. Their streaks are 0.6 times as long.
+  - Once the run is spent the streaks drift on at `STREAK_COAST` (1.5 m/s) while they thin over 0.8 s, rather than stopping.
+  - The Feather's wake draws the same streaks along the path it takes.
+- **What the air carries.** A press gathers `PRESS_MOTES` (14), which swirl in round the press while the hand blows: 45 % leaves, 20 % petals, 25 % seed fluff and 10 % pollen glints (`PRESS_SHARE`). On its way a lane picks up one more every `PICK_GAP` (3 m weakest, 1.6 m full) of its run, and a burst one every `PICK_RING` (0.8 m) its ring grows, at most `PICK_MAX` (12) a gust: 15 % leaves, 30 % petals, 35 % fluff and 20 % glints (`PICK_SHARE`). The Feather's wake picks up the same mix.
+  - Leaves (0.11 to 0.2 m) and petals (0.07 to 0.12 m, rounder, in pale pinks, creams, yellow and lilac) are faceted solids that tumble.
+  - Seed fluff (0.12 to 0.2 m, at most 0.6 opaque) and glints (0.07 to 0.11 m, warm) are soft specks in `shaders/pollen_speck.gdshader`, lit by the scene and drawn out along their motion. They ride 1.4 times higher, bob on the air, and glints catch the sun now and then.
   - When the air reaches them they are carried on an underdamped spring (`CARRY` 38, `CARRY_DAMP` 7.5), so they overshoot and drop back.
-  - They tumble, then coast and fall (`MOTE_FALL` 0.9 m/s) once the air has gone, and fade after landing.
-  - At most `MOTES` (64) are shown.
+  - Once the air has gone they coast and fall: leaves at `MOTE_FALL` 0.9 m/s, petals at 0.7 of that, glints at 0.4 and fluff at 0.3 (`KIND_FALL`). Leaves and petals fade after landing; fluff and glints fade as they land.
+  - At most `MOTES` (64) are carried at once.
 - **Sound.** A looped `wind-bed.wav` on the Genesis bus, placed at the head: `VOICE_GAIN` 0.34 while a gust runs and `AIM_GAIN` 0.07 while the hand blows. Its pitch (`VOICE_PITCH` 0.85 to 1.18) follows power and head speed. There are two voices (`VOICES`).
 - **Shell.** The Lantern shell recedes while the hand blows. The terrain brush circle hides while the mark shows.
 
@@ -144,13 +163,24 @@ Foliage figures come from the `FOLIAGE` lines: the tip movement of a broadleaf c
 - **Hold build-up.** The pressure grows the longer the hand holds: 1.5 m out, the lean along the outward way is 0.15, 0.37 and 0.47 at 0, 0.5 and 1.0 s. Swirl and tremble make it waver around that.
 - **Size of the change.** The new tip movement is 5 to 10 times the old in a lane's path, and 10 to 90 times the old for a burst.
 
+## The look, checked
+
+`tests/test_wind_gust_look.gd` (headless) checks what the shaders are given: the sent gust equals its promise; each strand carries its own lag (at least 0.05 m from the next) and length within range; strands follow the heading; the streak width stays under 0.08 m; streak opacity stays within 0 to 1; a lane picks up between 1 and `PICK_MAX` motes, with fluff or glints among them, drawn as specks; spent streaks drift past the lane's end; specks are gone after the gust settles; a burst has `SPOKES` arcs that all turn the same way; and a Feather's wake builds the same streaks.
+
+`tools/film_wind_tool.gd` takes rendered stills (`--shot=gust|burst|close`, `--tag=`, always with `--no-title`) into `captures/wind-tool/`, which Git ignores. Stills from 2026-10-01, morning light on a small staged meadow, were looked at:
+
+- From 20 m the streaks are faint threads, seen mostly where they cross darker ground. The air reads through the leaves, petals and glints and the foliage lean.
+- From 9 m, low and toward the sun, the streaks are long, tapered, translucent hairs that catch the light.
+- The burst's arcs no longer read as a starburst, and its shade has no rays.
+- The world's own random tree sometimes lands near the close camera, and the living fog's pale lane over the gust is the fog parting (not this tool's drawing).
+
 ## Unverified
 
-The probe only checks CPU state. Nothing below has been seen rendered:
+The probe only checks CPU state. `tools/probe_wind_gust.gd` failed to make its gust headless on 2026-10-01, on this branch's base as well as with the new look, so its numbers above were not re-taken. Nothing below has been seen rendered:
 
 - how the lane mark, arrow tip, chevrons and ring read on bright and dark ground, by day and at night, and the flat-ground mask on slopes;
-- the passing band (dappled shade, sheen, ripples), and whether it reads as air on the painted plain;
-- the ribbons' window, width and flow, and the leaves' size, colours and tumble;
+- the passing band and the streaks at dusk and at night, over water and snow, and on dark rock;
+- the streaks and specks in motion (only stills were taken), and their cost on the GPU;
 - how the new foliage bend reads on screen: its size (a 7 m conifer's top moving 2 m), the swing back, the shiver, the swirl while holding and the parting while dragging;
 - whether any crown and trunk still part: the broadleaf and layered trunks now follow their crowns, but the other pairs are conifer-swayed, and no pair has been looked at;
 - whether 0.35 m blades lying over by 45° look right, and the dense meadow front;
