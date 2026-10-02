@@ -6,6 +6,7 @@ extends Node
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
+const Lands = preload("res://scripts/world_lands.gd")
 ## The best-scoring seeds per landform family (tools/probe_world_beauty.gd),
 ## plus a few weathers. Step through them with [ and ] to check look changes.
 const SHOWCASE := [184,105,147,193,303,79,328,301,176,33,102,353,58,177,198,134,45,309,248,250,278,364]
@@ -80,7 +81,9 @@ static func launch_choice() -> String:
 	return "plain"
 
 ## `choice` overrides the launch flags (the title's pick); empty reads them.
-func setup(owner_scene: Node3D, choice := "") -> void:
+## A land of scripts/world_lands.gd ("plain", "canyon", "isle", "hollow")
+## forms that land from `land_seed`, or a random seed when it is negative.
+func setup(owner_scene: Node3D, choice := "", land_seed := -1) -> void:
 	primary = owner_scene
 	scene = primary
 	busy = true
@@ -88,23 +91,12 @@ func setup(owner_scene: Node3D, choice := "") -> void:
 	DirAccess.make_dir_recursive_absolute(scene.library_path)
 	if choice.is_empty(): choice = launch_choice()
 	var saved := _read_saved()
-	if choice in ["plain","keep"] and not saved.is_empty():
+	if (choice in Lands.IDS or choice == "keep") and not saved.is_empty():
 		# A new place replaces the saved one on the next save; keep one copy.
 		DirAccess.copy_absolute(primary.places_path,primary.places_path.get_basename()+"-previous.json")
 	scene._paused = true
-	if choice == "plain":
-		scene.restore_cave_state({})
-		var plain_seed := _plain_seed()
-		generated_world = Genesis.world(plain_seed)
-		await Genesis.form(scene._chunk_editor,generated_world,false)
-		scene._chunk_editor.data._undo.clear()
-		scene._chunk_editor.data._redo.clear()
-		Genesis.apply_mood(scene,generated_world)
-		world_seed = plain_seed
-		plain = true
-		_sync_plain_day(true)
-		slots = [{}]
-		active = 0
+	if choice in Lands.IDS:
+		await _form_land(choice,land_seed if land_seed >= 0 else _plain_seed())
 		saved = {}
 	elif choice == "keep":
 		# The title's world (studies/cozy_worlds.gd `_run_title`), already
@@ -170,6 +162,17 @@ func _fresh_seed() -> int:
 		rng.seed = candidate
 		if preload("res://scripts/inland_genome.gd").sample(rng.randi_range(0,999999)).composition != current: return candidate
 	return randi() % 1000000
+
+## A new world's land (scripts/world_lands.gd), formed at once: no fold, no growth.
+func _form_land(land: String, seed_value: int) -> void:
+	var formed: Dictionary = await Lands.form(scene,land,seed_value)
+	plain = formed.plain
+	generated_world = formed.world
+	world_seed = seed_value
+	_sync_plain_day(true)
+	if not plain and not _scenery(): scene._refresh_habitat()
+	slots = [{}]
+	active = 0
 
 func _plain_seed() -> int:
 	var args := OS.get_cmdline_user_args()
@@ -670,11 +673,41 @@ func resume_previous() -> bool:
 	if not save_places() or DirAccess.copy_absolute(primary.places_path,previous_path()) != OK:
 		scene._notice.text = "Could not set this place aside. It is still open."
 		return false
+	await _restore(previous)
+	save_places()
+	scene._notice.text = "" if _hand_only() else "Back to "+_label(scene)
+	return true
+
+## Opens the place saved at `path` in place of this one, which is not saved
+## (scripts/world_session.gd saves it first). Undo history starts over. False
+## when busy or when the file is missing or unreadable.
+func open_place(path: String) -> bool:
+	if busy or holding or not initialized or scene._chunk_editor.forming: return false
+	var saved := _read_saved(path)
+	if saved.is_empty(): return false
+	await _restore(saved)
+	scene._notice.text = ""
+	return true
+
+## Forms a new world's land in place of this one (scripts/world_lands.gd), at
+## once: a world opened or previewed, not regrown. Undo history starts over.
+func open_land(land: String, seed_value: int) -> bool:
+	if busy or holding or not initialized or scene._chunk_editor.forming: return false
 	busy = true
-	if scene.has_method("suspend_creation"): scene.suspend_creation()
-	else: scene.set_building(false)
-	slots = previous.slots
-	active = int(previous.active)
+	_suspend()
+	await _form_land(land,seed_value)
+	scene._chunk_editor.land_seed = world_seed
+	scene.position = Vector3.ZERO
+	scene._frame_diorama()
+	_settled()
+	scene._notice.text = _plain_notice() if plain else ""
+	return true
+
+func _restore(saved: Dictionary) -> void:
+	busy = true
+	_suspend()
+	slots = saved.slots
+	active = int(saved.active)
 	scene._chunk_editor.data.load_document(slots[active].document)
 	scene._chunk_editor.data._undo.clear()
 	scene._chunk_editor.data._redo.clear()
@@ -685,13 +718,17 @@ func resume_previous() -> bool:
 	_sync_plain_day(false)
 	generated_world = {}
 	world_seed = -1
+	_settled()
+
+func _suspend() -> void:
+	if scene.has_method("suspend_creation"): scene.suspend_creation()
+	else: scene.set_building(false)
+
+func _settled() -> void:
 	_set_growth(1.0)
 	busy = false
 	_update_badge()
 	if scene.has_method("resume_creation"): scene.resume_creation()
-	save_places()
-	scene._notice.text = "" if _hand_only() else "Back to "+_label(scene)
-	return true
 
 func _read_saved(path := "") -> Dictionary:
 	var source: String = primary.places_path if path.is_empty() else path
