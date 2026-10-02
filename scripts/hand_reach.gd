@@ -304,6 +304,10 @@ var materials: HandMaterials
 ## with the tray.
 const GroundMarks = preload("res://scripts/ground_marks.gd")
 var marks: GroundMarks
+## The faint rings where poured water would fall, while water is in hand
+## (scripts/fall_spots.gd), made with the marks unless --no-fall-spots.
+const FallSpots = preload("res://scripts/fall_spots.gd")
+var spots: FallSpots
 ## Trees thin round the pointer while a shaping tool works the land
 ## (scripts/shaping_reveal.gd), made in setup under --modeless.
 const ShapingReveal = preload("res://scripts/shaping_reveal.gd")
@@ -334,6 +338,10 @@ func setup(owner_scene: Node3D) -> void:
 			marks = GroundMarks.new()
 			add_child(marks)
 			marks.setup(scene,self)
+			if FallSpots.enabled():
+				spots = FallSpots.new()
+				add_child(spots)
+				spots.setup(scene,self)
 
 # --- What the pointer reaches --------------------------------------------------
 
@@ -909,6 +917,7 @@ func _process(delta: float) -> void:
 		if not eye: _drive_hand_modeless()
 		if materials != null: materials.step(delta)
 		if marks != null: marks.step(delta)
+		if spots != null: spots.step(delta)
 	elif not eye: _drive_hand()
 
 ## True while the camera looks out through the wanderer.

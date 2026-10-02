@@ -457,3 +457,37 @@ The user found filling streams with water balls tedious. Three changes:
 
 Where the pool ends up depends on the world. Near the rim its overflow runs off the plate. On a wide plain the overflow spreads, and evaporation over the wet area (0.4 mm/s × 200+ m²) becomes the main loss (47% in one world). Nothing here has been seen on screen yet.
 
+
+## Fall spots (2026-10-01)
+
+The user asked to "show different waterfall points on a mountain, highlighting where you can pour to make a waterfall". With water in hand, a few faint cream rings now mark the spots just above a lip where a pour runs over a drop big enough for the live water to stand a waterfall, or into a notch cut through the rim where it pours off the plate. `scripts/fall_spots.gd` (`FallSpots`, made by `hand_reach.gd` with the ground marks, stepped after them); `--no-fall-spots` leaves it out.
+
+### When they show
+
+- **Water in hand**: the watering can in the roll, the case's water in the hand, a water ball carried, or the cloud pinched.
+- The can and the case's water show the rings only while the hand hovers the land with nothing pressed. A press is the pour (or the scoop), and the rings go (`reason` "pouring"). A ball or a cloud is carried in a press already, and its pour is the letting go, so its rings stay while it is carried and go when it drops.
+- Quiet, as the user asked of ground previews (`ground_marks.gd`'s header): the ground marks' cream and stitched loop (`shaders/ground_mark.gdshader`, kind 0), fainter than the cursor's own mark (line 0.2, fill 0.035, against 0.3 and 0.05), 0.5 m across, at most `MAX_SPOTS` (5). They come only after `DELAY` (0.6 s) of water in hand, fade in over `FADE_IN` (0.8 s) and go in `FADE_OUT` (0.12 s). They hide while the camera moves, through the wanderer's eye, over the tray, and without live water. No pulse.
+
+### The scan
+
+`FallSpots.Scan` reads the ground on a 0.5 m grid (`STEP`) and walks the steepest way down from a source every metre (`SOURCE_EVERY`), as a spring's course does (`WaterFlow.descent`). It walks on the grid, so it costs no triangle walks.
+- **Lip**: within `APPROACH` (1.5 m) of the source, a step falls `LIP_SLOPE` (0.9) or more per metre. The face below it (steps falling `FACE_SLOPE`, 0.5, or more) then drops `MIN_DROP` (1 m) or more within `FACE_RUN` (3 m). These stand a little over what the flow's own falls want (`DETECT`: the water's surface falling 0.8 per metre, a 0.7 m drop). The spot is the source, and it scores the drop less `APPROACH_COST` (0.25) a metre of approach, so the source nearest the brink wins.
+- **Edge**: the walk leaves the plate within `EDGE_APPROACH` (2.5 m), where the rim stands `NOTCH` (0.15 m) or more under the rim `NOTCH_REACH` (1.5 m) along it on both sides. It scores `EDGE_SCORE` (0.5) plus the notch's depth: under any lip, so a mountain's falls come first. A rim without a notch is not marked, though water reaching it still drains.
+- The best are kept `SPACING` (3 m) apart.
+- **Once per shape of the land.** A scan keeps the heights it read and starts again when they differ (the terrain data has no heights revision; the comparison is one packed-array compare a frame while water is in hand). It runs only once water comes into hand, in slices of `SCAN_BUDGET_USEC` (2 ms) a frame, which `DELAY` hides.
+
+### Measured (headless, `tools/probe_fall_spots.gd`)
+
+`-- --no-title --no-rain-runoff`, on the cozy worlds scene. The GDScript mirror ran (no native library in the worktree).
+- A whole scan: 22–28 ms the first time on a world (the terrain's point-location cache is cold), 6 ms after (841 walks). In 2 ms slices that is 3 frames warm and about 14 cold, inside `DELAY`. While shown, a frame's step costs about 32 µs.
+- The opened world (a generated plain) has no spots. The plate laid flat has none.
+- A 2.5 m mesa with a cliff on its +x side and gentle flanks (under 0.65 per metre) has 3 spots, all on the top at x = −2, 0.6 m back from where the cliff begins (drops 2.1–2.4 m), 3 m or more apart, and none on its flanks or the flat below.
+- A 0.6 m notch through the +z rim adds an edge spot inside it, ranked after the mesa's three.
+- Water poured at the best spot (a 0.5 m³/s tap, as the can's) stood a waterfall within 1 s (`cascades` with `DETECT`), lip 0.31 m from the spot, a 2.0 m drop.
+- The rings: none with the Modeller, none 0.3 s into holding the can, all 3 at full show by 1.8 s; gone while the can pours (`reason` "pouring"), back after; gone with the can put down. They show with the case's water and with a carried ball, and go when the ball drops.
+
+### Unverified
+
+- **Nothing was drawn.** How faint the rings read on the land, by day and by night, and whether they still read as "hand holdy", needs a rendered look.
+- The native kernel's `cascades` was not run (the mirror was); the scan does not depend on it.
+- Lips nearer the rim than 0.5 m are read as the rim.
