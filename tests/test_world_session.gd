@@ -28,9 +28,11 @@ class StubPlaces extends Node:
 		if not parsed is Dictionary: return false
 		scene.land = parsed.land
 		return true
+	var formed := 0
 	func open_land(land: String, seed_value: int) -> bool:
 		await get_tree().process_frame
 		scene.land = "%s:%d" % [land,seed_value]
+		formed += 1
 		return true
 
 class StubScene extends Node3D:
@@ -39,6 +41,10 @@ class StubScene extends Node3D:
 	var places: Node
 	var titled := false
 	var land := ""
+	var left := 0
+	func leave_title() -> void:
+		titled = false
+		left += 1
 	func _places_idle() -> bool: return places != null and places.initialized and not places.busy and not places.holding
 	func save_current() -> bool: return places.save_places()
 
@@ -59,6 +65,8 @@ func make_scene(root_dir: String) -> Array:
 	scene.add_child(session)
 	root.add_child(scene)
 	session.set_process(false)
+	session.preview_delay = 0.0
+	session.backdrop_delay = 0.0
 	return [scene,places,session]
 
 func run() -> void:
@@ -166,15 +174,36 @@ func run() -> void:
 	check(not session.keep_now() and saved_land(scene.places_path) == "before preview", "A preview is not kept over the world")
 	await session.end_preview()
 	check(not session.previewing and scene.land == "before preview", "Ending the preview reopens the world")
-	# On the title, opening a world is the pick that leaves it.
+	# Begin on the preview just made keeps it as it stands.
+	await session.preview_land("isle","quartz-owl-0001")
+	var forms := places.formed
+	var isle: Dictionary = await session.create_world("","isle","quartz-owl-0001")
+	check(session.reused_preview and places.formed == forms and session.current_id == isle.id and not session.previewing, "Begin keeps a matching preview without forming it again")
+	check(saved_land(session.library.save_path(isle.id)) == "isle:%d" % Library.seed_value("quartz-owl-0001"), "The kept preview is the new world's save")
+	await session.preview_land("canyon","quartz-owl-0001")
+	forms = places.formed
+	var other: Dictionary = await session.create_world("","hollow","quartz-owl-0001")
+	check(not session.reused_preview and places.formed == forms+1 and scene.land.begins_with("hollow:") and other.land == "hollow", "Begin on another land forms it")
+	# The title: browsing loads each world live, writing and touching nothing.
 	scene.titled = true
-	var picks: Array = []
-	scene.title_picked.connect(func(choice: String) -> void:
-		picks.append(choice)
-		scene.titled = false
-		session.enter(choice))
+	writes = places.writes
+	var played: float = session.library.find(dunes.id).last_played_at
+	var ready: Array = []
+	session.backdrop_ready.connect(func(id: String) -> void: ready.append(id))
+	session.show_backdrop(yours)
+	await session.show_backdrop(dunes.id)
+	check(ready == [dunes.id] and session.current_id == dunes.id and scene.land == "dunes, watered", "Quick browsing loads only the last selection")
+	check(places.writes == writes and session.library.find(dunes.id).last_played_at == played, "The backdrop is neither kept nor touched")
+	check(not session.keep_now() and places.writes == writes, "Nothing is kept on the title")
 	await session.open_world(dunes.id)
-	check(picks == ["open"] and session.current_id == dunes.id and scene.land == "dunes, watered", "A title pick opens the world")
+	check(scene.left == 1 and not scene.titled and session.current_id == dunes.id and session.library.find(dunes.id).last_played_at > played, "Entering the backdrop world leaves the title and plays it")
+	# Deleting the backdrop world on the title, then entering another.
+	scene.titled = true
+	session.library.delete(dunes.id)
+	check(not session.keep_now() and session.current_id.is_empty(), "A world let go of is never kept again")
+	await session.show_backdrop(yours)
+	await session.open_world(yours)
+	check(not scene.titled and session.current_id == yours and scene.land == "legacy, planted", "Another world is entered after a delete")
 	scene.queue_free()
 	await process_frame
 	# A fresh launch: the title's new plain is a new world.
@@ -182,10 +211,18 @@ func run() -> void:
 	scene = parts[0]
 	session = parts[2]
 	session.setup(scene,true)
-	check(session.current_id == dunes.id, "Launch points at the most recent world")
-	var count: int = session.library.worlds().size()
-	check(session.begin("plain") == "plain" and session.library.worlds().size() == count+1 and session.launch_seed >= 0, "Begin on a plain creates a world with a seed")
-	check(scene.places_path == session.library.save_path(session.current_id) and not FileAccess.file_exists(scene.places_path), "The new world's save waits for its forming")
+	check(session.current_id == yours, "Launch points at the most recent world")
+	check(session.begin_title() == "resume" and session.current_id == yours, "The title opens over the most recent world")
+	for world: Dictionary in session.library.worlds(): session.library.delete(world.id)
+	scene.queue_free()
+	await process_frame
+	parts = make_scene(dir)
+	scene = parts[0]
+	session = parts[2]
+	session.setup(scene,true)
+	check(session.begin_title() == "plain" and session.current_id.is_empty() and session.previewing and session.launch_seed >= 0, "With no worlds the title shows a quiet plain, no world")
+	check(not session.keep_now(), "The empty title's plain is not kept")
+	check(session.begin("") == "plain" and not session.current_id.is_empty() and not FileAccess.file_exists(scene.places_path), "A launch without the title begins a new plain world, kept once formed")
 	scene.queue_free()
 	await process_frame
 	for path: String in DirAccess.get_files_at(dir.path_join("worlds")): DirAccess.remove_absolute(dir.path_join("worlds").path_join(path))

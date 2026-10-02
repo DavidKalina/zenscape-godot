@@ -18,6 +18,8 @@ const WEEKDAYS := ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","
 
 var root: String
 var _index: Array = []
+## Older saves already brought in (`adopt`), remembered after their world is deleted.
+var _adopted: Array = []
 
 func _init(root_path := "user://cozy-worlds/worlds") -> void:
 	root = root_path
@@ -79,7 +81,8 @@ func delete(id: String) -> bool:
 	for i in _index.size():
 		if _index[i].id == id:
 			_index.remove_at(i)
-			for path: String in [save_path(id),thumbnail_path(id)]:
+			# With the set-aside saves regrowth and the session leave beside it.
+			for path: String in [save_path(id),thumbnail_path(id),root.path_join(id+"-previous.json"),root.path_join(id+"-unreadable.json")]:
 				if FileAccess.file_exists(path): DirAccess.remove_absolute(path)
 			return _write_index()
 	return false
@@ -94,7 +97,7 @@ func touch(id: String, now := -1.0) -> void:
 ## Brings an older single-place save (user://cozy-worlds/places.json) into the
 ## library once, as a world of its own. The old file is left where it is.
 func adopt(path: String, world_name: String, now := -1.0) -> Dictionary:
-	if not FileAccess.file_exists(path): return {}
+	if not FileAccess.file_exists(path) or path in _adopted: return {}
 	for world: Dictionary in _index:
 		if world.get("adopted_from","") == path: return {}
 	var world := create(world_name,"plain","",now if now >= 0.0 else FileAccess.get_modified_time(path))
@@ -103,6 +106,7 @@ func adopt(path: String, world_name: String, now := -1.0) -> Dictionary:
 		return {}
 	for entry: Dictionary in _index:
 		if entry.id == world.id: entry.adopted_from = path
+	_adopted.append(path)
 	_write_index()
 	return find(world.id)
 
@@ -165,9 +169,11 @@ func _index_path() -> String:
 
 func _read_index() -> void:
 	_index = []
+	_adopted = []
 	if not FileAccess.file_exists(_index_path()): return
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(_index_path()))
 	if not parsed is Dictionary or not parsed.get("worlds") is Array: return
+	if parsed.get("adopted") is Array: _adopted = parsed.adopted.duplicate()
 	for world: Variant in parsed.worlds:
 		if world is Dictionary and world.get("id") is String and world.get("name") is String:
 			world.last_played_at = float(world.get("last_played_at",0.0))
@@ -179,6 +185,6 @@ func _write_index() -> bool:
 	var temporary := _index_path()+".tmp"
 	var file := FileAccess.open(temporary,FileAccess.WRITE)
 	if file == null: return false
-	file.store_string(JSON.stringify({"version":1,"worlds":_index},"\t"))
+	file.store_string(JSON.stringify({"version":1,"worlds":_index,"adopted":_adopted},"\t"))
 	file.close()
 	return DirAccess.rename_absolute(temporary,_index_path()) == OK

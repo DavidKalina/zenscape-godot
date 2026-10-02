@@ -16,6 +16,8 @@ func run() -> void:
 	var path := "/private/tmp/zenscape-scenery-test-%d/places.json" % Time.get_ticks_usec()
 	var world = load("res://studies/cozy_worlds.tscn").instantiate()
 	world.set_meta("movie_capture",true)
+	# Straight into a world, as before the worlds title.
+	world.set_meta("no_title",true)
 	world.places_path = path
 	root.add_child(world)
 	current_scene = world

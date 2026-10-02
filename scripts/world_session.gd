@@ -11,10 +11,10 @@ extends Node
 ## --resume); other launch flags, probes and tests that build the scene keep
 ## the single legacy save and nothing autosaves.
 ##
-## The title hands its pick to the session: `open_world`, `create_world` and
-## the title menu's own picks (studies/cozy_worlds.gd `title_picked`) leave
-## the title through `begin` (first launch) or `enter` (after
-## `return_to_title`).
+## On the title (studies/cozy_worlds.gd `open_worlds_title`) the selected
+## world is the live backdrop (`show_backdrop`): it is loaded but not played,
+## so nothing is kept or touched until it is entered (`open_world`), and the
+## title is left through the scene's `leave_title`.
 const Library = preload("res://scripts/world_library.gd")
 const Lands = preload("res://scripts/world_lands.gd")
 ## Seconds after the last edit before the world is kept, and the longest a
@@ -24,9 +24,16 @@ const AUTOSAVE_LONGEST := 30.0
 ## Seconds before a keep that found the world busy tries again.
 const RETRY := 0.5
 const THUMBNAIL_WIDTH := 640
+## Seconds a title selection or a New world pick settles before its land loads,
+## so fast browsing doesn't load every world on the way.
+const BACKDROP_DELAY := 0.5
+const PREVIEW_DELAY := 0.3
 signal keeping_changed(keeping: bool)
-## A world is open in the scene, kept at least once, and touched.
+## A world is open in the scene and played: kept at least once, and touched.
 signal world_opened(id: String)
+## The title's selected world (empty: the quiet plain of no worlds) is live
+## behind it.
+signal backdrop_ready(id: String)
 ## `return_to_title` kept the world and hands back to the title.
 signal title_requested
 var scene: Node3D
@@ -38,15 +45,23 @@ var keeping := false
 ## When the open world was last kept, unix seconds; 0 before the first keep.
 var last_kept_at := 0.0
 var autosave_delay := AUTOSAVE_DELAY
+var backdrop_delay := BACKDROP_DELAY
+var preview_delay := PREVIEW_DELAY
 var managing := false
 ## The seed the next land formed at launch grows from (`begin`).
 var launch_seed := -1
-## The scene shows a preview land (`preview_land`), not the open world.
+## The scene shows a preview land (`preview_land`, or the title's quiet plain
+## with no worlds), not the open world.
 var previewing := false
-var _picked := ""
-var _preview_next: Array = []
-var _preview_forming := false
+## The land and seed the preview shows, once formed.
+var previewed: Array = []
+## True when the last `create_world` kept the preview as it stood.
+var reused_preview := false
 var _fresh := false
+var _preview_serial := 0
+var _preview_forming := false
+var _backdrop_serial := 0
+var _backdrop_loading := false
 ## Seconds until the debounced keep, and how long edits have gone unkept;
 ## both negative when nothing waits.
 var _due := -1.0
@@ -69,107 +84,146 @@ func setup(owner_scene: Node3D, manage: bool) -> void:
 	var worlds: Array = library.worlds()
 	if not worlds.is_empty(): _point_at(worlds[0].id)
 
-## The title's pick (or a launch flag's) as the world to set up: the choice
-## for scripts/cozy_regrowth.gd `setup`, with `launch_seed` for a new land.
-## "open" is the world `open_world`/`create_world` picked, "resume" (or none)
-## the most recent, "plain" a new quiet plain, "keep" the title's land.
+## The world a launch without the title plays (--resume, probes): the most
+## recent, or a new quiet plain. Returns the choice for scripts/cozy_regrowth.gd
+## `setup`, with `launch_seed` for a land; `opened` follows it.
 func begin(choice: String) -> String:
 	if not managing: return choice
-	_fresh = false
 	previewing = false
-	match choice:
-		"open":
-			if not library.find(_picked).is_empty(): _point_at(_picked)
-		"keep":
-			var recipe: Variant = scene.get("title_recipe")
-			if not recipe is Dictionary: recipe = {}
-			var made: Dictionary = library.create("","canyon" if recipe.get("biome","") == "arid" else "plain",str(recipe.get("terrain_recipe",{}).get("seed","")))
-			_point_at(made.id)
-			_fresh = true
-			return "keep"
-		"", "resume":
-			pass
-		_:
-			_point_at(library.create("",choice if choice in Lands.IDS else "plain",roll_seed()).id)
 	if current_id.is_empty() or library.find(current_id).is_empty(): _point_at(library.create("","plain",roll_seed()).id)
-	_picked = ""
+	return _setup_choice(true)
+
+## The title's backdrop at launch: the most recent world, loaded but not
+## played, or a quiet plain when there are none.
+func begin_title() -> String:
+	if not managing: return ""
+	if current_id.is_empty() or library.find(current_id).is_empty():
+		_backdrop_only()
+		launch_seed = Library.seed_value(roll_seed())
+		previewed = ["plain",""]
+		return "plain"
+	return _setup_choice(false)
+
+func _setup_choice(entering: bool) -> String:
+	_fresh = false
 	if FileAccess.file_exists(library.save_path(current_id)): return "resume"
 	var world: Dictionary = library.find(current_id)
 	launch_seed = Library.seed_value(world.seed)
-	_fresh = true
+	_fresh = entering
 	return world.land
 
-## The launch's world is in the scene: a new one is kept at once, and edits
-## start keeping it.
+## The launch's world is in the scene and played: a new one is kept at once,
+## and edits start keeping it.
 func opened() -> void:
 	if not managing or current_id.is_empty(): return
 	_listen()
-	if _fresh: keep_now()
+	if _fresh or not FileAccess.file_exists(library.save_path(current_id)): keep_now()
 	_fresh = false
 	library.touch(current_id)
 	world_opened.emit(current_id)
 
-## A title pick after `return_to_title`, with a world already in the scene.
-func enter(choice: String) -> void:
-	match choice:
-		"open": await _switch(_picked)
-		"plain": await _switch(library.create("","plain",roll_seed()).id)
-		_:
-			if previewing: await _switch(current_id)
-			library.touch(current_id)
-			world_opened.emit(current_id)
-	_picked = ""
+## Shows the title's selected world live behind it, `backdrop_delay` after
+## the last selection; `id` empty shows the quiet plain of no worlds.
+## `backdrop_ready` follows unless a later selection took over.
+func show_backdrop(id: String) -> void:
+	_backdrop_serial += 1
+	var serial := _backdrop_serial
+	if backdrop_delay > 0.0: await get_tree().create_timer(backdrop_delay).timeout
+	while _backdrop_loading and serial == _backdrop_serial: await get_tree().process_frame
+	if serial != _backdrop_serial: return
+	_backdrop_loading = true
+	if id.is_empty() or library.find(id).is_empty():
+		if not (previewing and current_id.is_empty() and previewed.size() == 2 and previewed[0] == "plain"):
+			await _until_idle()
+			_backdrop_only()
+			await scene.places.open_land("plain",Library.seed_value(roll_seed()))
+			previewed = ["plain",""]
+		id = ""
+	else: await _switch(id,false)
+	_backdrop_loading = false
+	if serial == _backdrop_serial: backdrop_ready.emit(id)
 
-## Saves the open world, then opens `id`: its save, or its land and seed when
-## it has none yet. On the title, this is the pick that leaves it.
+## Saves the open world, then opens and plays `id`: its save, or its land and
+## seed when it has none yet. From the title, the world behind it is entered
+## as it stands, and the title is left.
 func open_world(id: String) -> void:
 	if library.find(id).is_empty(): return
-	if _titled():
-		_picked = id
-		scene.title_picked.emit("open")
-		await world_opened
-		return
-	await _switch(id)
+	_backdrop_serial += 1
+	while _backdrop_loading: await get_tree().process_frame
+	await _switch(id,true)
+	_entered()
 
-## A new world in the library, formed from its land and seed and opened.
-## Returns its entry once it is open (await it).
+## A new world in the library, formed from its land and seed and opened. A
+## preview of the same land and seed is kept as it stands. Returns its entry
+## once it is open (await it).
 func create_world(world_name: String, land: String, seed_text: String) -> Dictionary:
-	var world: Dictionary = library.create(world_name,land if land in Lands.IDS else "plain",seed_text)
-	await open_world(world.id)
+	land = land if land in Lands.IDS else "plain"
+	_preview_serial += 1
+	while _preview_forming: await get_tree().process_frame
+	var world: Dictionary = library.create(world_name,land,seed_text)
+	var places: Node = scene.get("places")
+	reused_preview = previewing and previewed == [land,seed_text] and places != null and places.initialized
+	if reused_preview:
+		previewing = false
+		previewed = []
+		_point_at(world.id)
+		_due = -1.0
+		_unkept = -1.0
+		keep_now()
+		library.touch(world.id)
+		_listen()
+		world_opened.emit(world.id)
+		_entered()
+	else: await open_world(world.id)
 	return library.find(world.id)
 
 ## Forms a land in the scene for the New world screen's backdrop without
-## creating a world. The open world is kept first; `end_preview` (or opening
-## or creating a world) puts a world back. Picks made while one forms wait,
-## and only the last of them forms next.
+## creating a world, `preview_delay` after the last pick; only the last of
+## quick picks forms. The open world is kept first (not on the title, where
+## it is unchanged); `end_preview` (or opening or creating a world) puts a
+## world back.
 func preview_land(land: String, seed_text: String) -> void:
-	_preview_next = [land,seed_text]
-	if _preview_forming: return
+	_preview_serial += 1
+	var serial := _preview_serial
+	# A title selection still settling would load over the preview.
+	_backdrop_serial += 1
+	if preview_delay > 0.0: await get_tree().create_timer(preview_delay).timeout
+	while (_preview_forming or _backdrop_loading) and serial == _preview_serial: await get_tree().process_frame
+	if serial != _preview_serial: return
 	_preview_forming = true
-	while not _preview_next.is_empty():
-		var next: Array = _preview_next
-		_preview_next = []
-		var places: Node = scene.get("places")
-		if places == null or not places.initialized:
-			# The launch title, before any world is set up: form in the scene directly.
-			while scene._chunk_editor.forming: await get_tree().process_frame
-			previewing = true
-			await Lands.form(scene,next[0],Library.seed_value(next[1]))
-			continue
-		await _until_idle()
-		if not previewing: keep_now()
+	var places: Node = scene.get("places")
+	if places == null or not places.initialized:
+		# Before any world is set up: form in the scene directly.
+		while scene._chunk_editor.forming: await get_tree().process_frame
 		previewing = true
-		await places.open_land(next[0],Library.seed_value(next[1]))
+		await Lands.form(scene,land,Library.seed_value(seed_text))
+	else:
+		await _until_idle()
+		if not previewing and not _titled(): keep_now()
+		previewing = true
+		await places.open_land(land,Library.seed_value(seed_text))
+	previewed = [land,seed_text]
 	_preview_forming = false
 
-## Back from the New world screen without a new world: the open world returns.
+## Back from the New world screen without a new world: the open world returns
+## (on the title, the selected one; with none, the preview stays as the
+## title's quiet plain).
 func end_preview() -> void:
+	_preview_serial += 1
+	while _preview_forming: await get_tree().process_frame
 	if not previewing: return
 	var places: Node = scene.get("places")
-	if places == null or not places.initialized or current_id.is_empty():
+	if places == null or not places.initialized:
 		previewing = false
 		return
-	await _switch(current_id)
+	if current_id.is_empty() or library.find(current_id).is_empty():
+		_backdrop_only()
+		if not (previewed.size() == 2 and previewed[0] == "plain"):
+			await _until_idle()
+			await places.open_land("plain",Library.seed_value(roll_seed()))
+			previewed = ["plain",""]
+		return
+	await _switch(current_id,not _titled())
 
 ## Keeps the open world now, then copies it as `copy_name` ("{name} (copy)"
 ## when blank). `carry_on` plays on in the copy: the scene already holds its
@@ -188,7 +242,10 @@ func save_copy(copy_name: String, carry_on: bool) -> Dictionary:
 ## The capture hides the UI for a frame, so autosaves skip it (`capture`
 ## false) once the world has one; pause, the title, copies and quit capture.
 func keep_now(capture := true) -> bool:
-	if current_id.is_empty() or previewing: return false
+	if not current_id.is_empty() and library.find(current_id).is_empty():
+		# Let go of on the title while it was the backdrop.
+		current_id = ""
+	if current_id.is_empty() or previewing or _titled(): return false
 	_capture_wanted = _capture_wanted or capture
 	if not _idle():
 		_due = RETRY
@@ -209,18 +266,18 @@ func keep_now(capture := true) -> bool:
 	return true
 
 ## Keeps the world, then hands back to the title (studies/cozy_worlds.gd
-## `reenter_title`, the hook the title UI takes over).
+## `open_worlds_title`) with this world selected and live.
 func return_to_title() -> void:
 	if _titled() or current_id.is_empty(): return
 	await _until_idle()
 	keep_now()
 	while keeping: await get_tree().process_frame
 	title_requested.emit()
-	if scene.has_method("reenter_title"): scene.reenter_title()
+	if scene.has_method("open_worlds_title"): scene.open_worlds_title(current_id)
 
 ## On quit, after the scene's last save: the time it was kept and its capture.
 func leaving() -> void:
-	if current_id.is_empty() or previewing: return
+	if current_id.is_empty() or previewing or _titled(): return
 	last_kept_at = Time.get_unix_time_from_system()
 	library.touch(current_id,last_kept_at)
 	await capture_thumbnail()
@@ -280,34 +337,47 @@ func _set_keeping(value: bool) -> void:
 	keeping = value
 	keeping_changed.emit(value)
 
-func _switch(id: String) -> void:
+## Puts `id`'s land in the scene. `entering` plays it: the world left is kept
+## first (not from the title), and the opened one is kept if new, touched
+## and listened to. Otherwise (the title's backdrop) nothing is written.
+func _switch(id: String, entering: bool) -> void:
 	var world: Dictionary = library.find(id)
 	if world.is_empty(): return
 	await _until_idle()
-	if not previewing and not current_id.is_empty() and id != current_id:
+	if entering and not previewing and not _titled() and not current_id.is_empty() and id != current_id:
 		# Kept and captured before its land leaves the scene.
 		keep_now()
 		while keeping: await get_tree().process_frame
-	if id == current_id and not previewing:
-		library.touch(id)
-		world_opened.emit(id)
-		return
-	previewing = false
-	_due = -1.0
-	_unkept = -1.0
-	_point_at(id)
-	var path: String = library.save_path(id)
-	var places: Node = scene.places
-	var opened := false
-	if FileAccess.file_exists(path): opened = await places.open_place(path)
-	if not opened:
-		# A save that will not read is set aside rather than written over.
-		if FileAccess.file_exists(path): DirAccess.rename_absolute(path,path.get_basename()+"-unreadable.json")
-		await places.open_land(world.land,Library.seed_value(world.seed))
-		keep_now()
-	library.touch(id)
+	if id != current_id or previewing:
+		previewing = false
+		previewed = []
+		_due = -1.0
+		_unkept = -1.0
+		_point_at(id)
+		var path: String = library.save_path(id)
+		var places: Node = scene.places
+		var opened := false
+		if FileAccess.file_exists(path): opened = await places.open_place(path)
+		if not opened:
+			# A save that will not read is set aside rather than written over.
+			if FileAccess.file_exists(path): DirAccess.rename_absolute(path,path.get_basename()+"-unreadable.json")
+			await places.open_land(world.land,Library.seed_value(world.seed))
+	if not entering: return
 	_listen()
+	if not FileAccess.file_exists(library.save_path(id)): keep_now()
+	library.touch(id)
 	world_opened.emit(id)
+
+func _entered() -> void:
+	if _titled() and scene.has_method("leave_title"): scene.leave_title()
+	# Kept now that the title is gone, if it was new.
+	if not current_id.is_empty() and not FileAccess.file_exists(library.save_path(current_id)): keep_now()
+
+## No world is played: the scene shows a land with nowhere to keep it.
+func _backdrop_only() -> void:
+	current_id = ""
+	previewing = true
+	scene.places_path = library.root.path_join("backdrop.json")
 
 func _point_at(id: String) -> void:
 	current_id = id

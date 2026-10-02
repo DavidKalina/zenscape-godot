@@ -10,6 +10,8 @@ func run() -> void:
 	root.size = Vector2i(1440,900)
 	var scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
+	# Straight into a world, as before the worlds title.
+	scene.set_meta("no_title",true)
 	scene.places_path = "/private/tmp/cozy-atmosphere-%d/places.json" % Time.get_ticks_usec()
 	root.add_child(scene)
 	current_scene = scene

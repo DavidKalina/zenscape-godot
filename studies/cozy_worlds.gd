@@ -107,17 +107,25 @@ func _ready() -> void:
 		and not preload("res://scripts/chunk_atlas_controller.gd").enabled() and "--verify-desktop-build" not in args))
 	var choice := ""
 	var veil: Node
-	if titling:
+	# With worlds, the title is the library over its selected world, live:
+	# the world loads first, then the title opens over it (`open_worlds_title`).
+	var library_title: bool = titling and world_session.managing
+	if library_title:
+		veil = preload("res://scripts/title_loading.gd").new()
+		add_child(veil)
+		veil.stage("Opening your worlds")
+		choice = world_session.begin_title()
+	elif titling:
 		choice = await _run_title()
 		veil = preload("res://scripts/title_loading.gd").new()
 		add_child(veil)
 		veil.stage("Making this world yours" if choice == "keep" else "Opening your world")
-	choice = world_session.begin(choice)
+	if not library_title: choice = world_session.begin(choice)
 	places = preload("res://scripts/cozy_regrowth.gd").new()
 	add_child(places)
 	await places.setup(self,choice,world_session.launch_seed)
 	places_ready = places.initialized
-	if places_ready: world_session.opened()
+	if places_ready and not library_title: world_session.opened()
 	# Pipelines for what the world will draw later build now, under the veil
 	# (scripts/pipeline_warmup.gd).
 	if places_ready and preload("res://scripts/pipeline_warmup.gd").enabled():
@@ -156,6 +164,8 @@ func _ready() -> void:
 			hand_reach.edge_spring_began.connect(func(at: Vector2) -> void: edge_spring.pull_begin(at))
 			hand_reach.edge_spring_dragged.connect(func(at: Vector2, relative: Vector2) -> void: edge_spring.pull(at,relative))
 			hand_reach.edge_spring_released.connect(edge_spring.release)
+	if world_session.managing: _build_worlds_screens()
+	if library_title: open_worlds_title(world_session.current_id)
 	shell_ready = true
 
 func _fill_world_menu() -> void:
@@ -181,8 +191,9 @@ func _fill_world_menu() -> void:
 	_world_menu.get_popup().add_separator()
 	add_world_action("Main menu",show_menu,124)
 
+## A test that makes the scene current can set the "no_title" meta, as --no-title.
 func _title_wanted() -> bool:
-	if get_tree().current_scene != self: return false
+	if get_tree().current_scene != self or has_meta("no_title"): return false
 	var args := OS.get_cmdline_user_args()
 	for flag: String in ["--no-title","--resume","--generated","--seed","--atlas","--verify-desktop-build"]:
 		if flag in args: return false
@@ -461,18 +472,141 @@ func _sync_creation_ui() -> void:
 		creation_palette.visible = _has_world and not crafting and _toolbar.visible and not _menu.visible
 		creation_palette.sync()
 
+## With worlds, the old menu still holds the paused state the shell and its
+## tools read (`_menu.visible`), drawn invisible under the pause panel or the
+## title, which take the input (`_worlds_screens`).
 func show_menu() -> void:
 	if _menu != null and not _menu.visible: _craft_before_menu = crafting
 	if _keep_title != null: _keep_title.disabled = not titled
 	super.show_menu()
 	_sync_creation_ui()
+	if _worlds_screens() and _menu.visible:
+		_menu.modulate.a = 0.0
+		var focus := get_viewport().gui_get_focus_owner()
+		if focus != null and _menu.is_ancestor_of(focus): focus.release_focus()
+		_screen_blocker.show()
+		if _has_world and not titled and not pause_panel.is_open:
+			pause_panel.open(str(world_session.library.find(world_session.current_id).get("name","Your world")))
 	# Pausing keeps the world.
 	if world_session != null and _has_world and not titled: world_session.keep_now()
+	if _worlds_screens(): _sync_pause_status()
 
 func close_menu() -> void:
 	super.close_menu()
+	if _worlds_screens():
+		pause_panel.close()
+		_screen_blocker.hide()
 	if creation_mode and _has_world and not _craft_before_menu: set_building(false)
 	_sync_creation_ui()
+
+# --- Worlds: the title, New world and pause screens (docs/design/worlds) -------------
+
+## The worlds screens, over everything: scripts/world_title.gd,
+## scripts/new_world_panel.gd and scripts/pause_panel.gd.
+var worlds_layer: CanvasLayer
+var world_title: Control
+var new_world_panel: Control
+var pause_panel: Control
+## Takes the clicks no screen control does, so none reach the world or the
+## old menu drawn invisible beneath.
+var _screen_blocker: Control
+
+func _worlds_screens() -> bool:
+	return pause_panel != null
+
+func _build_worlds_screens() -> void:
+	worlds_layer = CanvasLayer.new()
+	worlds_layer.name = "WorldsScreens"
+	worlds_layer.layer = 70
+	add_child(worlds_layer)
+	_screen_blocker = Control.new()
+	_screen_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	worlds_layer.add_child(_screen_blocker)
+	_screen_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_screen_blocker.hide()
+	world_title = preload("res://scripts/world_title.gd").new()
+	world_title.setup(world_session.library)
+	world_title.hide()
+	worlds_layer.add_child(world_title)
+	new_world_panel = preload("res://scripts/new_world_panel.gd").new()
+	new_world_panel.hide()
+	worlds_layer.add_child(new_world_panel)
+	new_world_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pause_panel = preload("res://scripts/pause_panel.gd").new()
+	pause_panel.hide()
+	worlds_layer.add_child(pause_panel)
+	world_title.selection_changed.connect(func(world: Dictionary) -> void: world_session.show_backdrop(str(world.get("id",""))))
+	world_session.backdrop_ready.connect(func(_id: String) -> void: if titled: world_title.reveal_live())
+	world_title.enter_requested.connect(func(world: Dictionary) -> void: world_session.open_world(str(world.id)))
+	world_title.new_world_requested.connect(func() -> void:
+		world_title.hide()
+		new_world_panel.open())
+	world_title.settings_requested.connect(_show_settings)
+	world_title.quit_requested.connect(_quit_safely)
+	new_world_panel.land_changed.connect(world_session.preview_land)
+	new_world_panel.begin_requested.connect(func(world_name: String, land: String, seed_text: String) -> void:
+		world_session.create_world(world_name,land,seed_text))
+	new_world_panel.back_requested.connect(_back_from_new_world)
+	pause_panel.resumed.connect(close_menu)
+	pause_panel.copy_requested.connect(func(copy_name: String, carry_on: bool) -> void:
+		var copy: Dictionary = world_session.save_copy(copy_name,carry_on)
+		close_menu()
+		if not copy.is_empty() and not hand_only: _notice.text = ("Playing on in " if carry_on else "Kept a copy · ")+str(copy.name))
+	pause_panel.settings_requested.connect(_show_settings)
+	pause_panel.title_requested.connect(world_session.return_to_title)
+	world_session.keeping_changed.connect(func(_keeping: bool) -> void: _sync_pause_status())
+
+func _show_settings() -> void:
+	_settings.popup_centered(Vector2i(400,260))
+
+func _sync_pause_status() -> void:
+	if pause_panel == null or not pause_panel.is_open: return
+	var played := float(world_session.library.find(world_session.current_id).get("last_played_at",0.0))
+	pause_panel.set_status(world_session.keeping,maxf(world_session.last_kept_at,played),Time.get_unix_time_from_system())
+
+## The title as the world library over `select_id`'s world (or the most
+## recent), live behind it and orbiting: browsing loads each world in turn
+## (scripts/world_session.gd `show_backdrop`), entering plays it, and New
+## world opens its panel.
+func open_worlds_title(select_id := "") -> void:
+	if not _worlds_screens(): return
+	if photo != null and photo.get("active") == true: photo.leave()
+	if mood_open(): toggle_mood()
+	# No tool in hand behind the title.
+	if _has_world: _put_brush_away()
+	_set_looking_state(false)
+	titled = true
+	_has_world = false
+	_notice.text = ""
+	show_menu()
+	pause_panel.close()
+	_before_menu_paused = false
+	_menu_orbit = false
+	_auto_orbit_speed = TAU/60.0*0.22
+	new_world_panel.close()
+	world_title.show()
+	world_title.refresh(select_id)
+	if world_title.selected_world().get("id","") == world_session.current_id and not world_session.previewing: world_title.reveal_live()
+
+## Leaves the title for the world now in the scene (scripts/world_session.gd
+## `open_world` and `create_world` call this once it is open).
+func leave_title() -> void:
+	if not titled: return
+	world_title.hide()
+	new_world_panel.close()
+	titled = false
+	_has_world = true
+	_before_menu_paused = false
+	_menu_orbit = false
+	_craft_before_menu = false
+	close_menu()
+	set_building(false)
+
+func _back_from_new_world() -> void:
+	new_world_panel.close()
+	world_title.show()
+	await world_session.end_preview()
+	if titled: world_title.reveal_live()
 
 func launch_fidelity() -> void:
 	# Startup is already the fully initialized Fidelity world. The cozy flow prepares
@@ -606,6 +740,7 @@ func _pages_preview() -> void:
 		almanac_pages.set_meta("preview_page","customise" if arg.ends_with("=customise") else "moods")
 
 func blocks_world_input(point: Vector2) -> bool:
+	if _worlds_screens() and (titled or pause_panel.is_open): return true
 	if almanac_pages != null and almanac_pages.contains_pointer(point): return true
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
@@ -643,32 +778,13 @@ func _quit_safely() -> void:
 		await places.cancel_carry()
 		while places.busy or places.holding: await get_tree().process_frame
 	if atlas != null: atlas.save()
-	if world_session != null and world_session.previewing:
+	# A preview, or the title's backdrop, is not a world being played.
+	if world_session != null and (world_session.previewing or (world_session.managing and titled)):
 		get_tree().quit()
 		return
 	if places != null and places.save_places():
 		if world_session != null: await world_session.leaving()
 		get_tree().quit()
-
-## Back to the title over the world just kept (scripts/world_session.gd
-## `return_to_title`): the camera orbits it under the title menu until a pick,
-## which the session turns into a world (`enter`). The worlds title UI takes
-## over from here.
-func reenter_title() -> void:
-	if titled or not _places_idle(): return
-	_close_craft_panels()
-	crafting = false
-	titled = true
-	_has_world = false
-	show_menu()
-	var choice: String = await title_picked
-	titled = false
-	_has_world = true
-	_before_menu_paused = false
-	_menu_orbit = false
-	close_menu()
-	set_building(false)
-	await world_session.enter(choice)
 
 func new_diorama() -> void:
 	if places == null or places.busy or places.holding or _chunk_editor.forming: return

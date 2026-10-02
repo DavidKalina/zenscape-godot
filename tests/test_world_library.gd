@@ -23,13 +23,18 @@ func _initialize() -> void:
 	check(library.duplicate_world(first.id,"Fork",4100.0).name == "Fork", "Save a copy can name the copy")
 	var reread := Library.new(root)
 	check(reread.worlds().size() == 4 and reread.find(first.id).name == "Ochre bluffs", "The index survives a reload")
+	for aside: String in ["-previous.json","-unreadable.json"]: FileAccess.open(root.path_join(copy.id+aside),FileAccess.WRITE).store_string("{}")
 	check(reread.delete(copy.id) and not FileAccess.file_exists(reread.save_path(copy.id)), "Delete removes the world and its save")
+	check(not FileAccess.file_exists(root.path_join(copy.id+"-previous.json")) and not FileAccess.file_exists(root.path_join(copy.id+"-unreadable.json")), "Delete removes the saves set aside beside it")
 	check(Library.new(root).worlds().size() == 3, "Delete is kept")
 	# Adopting the old single-place save happens once.
 	var legacy := root.path_join("legacy.json")
 	FileAccess.open(legacy,FileAccess.WRITE).store_string("{}")
 	check(not library.adopt(legacy,"Your world",500.0).is_empty(), "An older save is adopted")
 	check(library.adopt(legacy,"Your world",500.0).is_empty(), "It is adopted only once")
+	for world: Dictionary in library.worlds():
+		if world.name == "Your world": library.delete(world.id)
+	check(Library.new(root).adopt(legacy,"Your world",500.0).is_empty(), "Deleting the adopted world does not bring it back")
 	# Seeds.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
