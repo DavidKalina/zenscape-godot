@@ -34,16 +34,21 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 ## - `tints` (sRGB): the stand-in's head colours, one per drift;
 ## - `wash` (sRGB): the ground colour under its drift;
 ## - `tint_real`, when present and true, paints the kit's own mesh with
-##   `tints` too (absent: the kit's heads keep their own colours).
+##   `tints` too (absent: the kit's heads keep their own colours);
+## - `cover`, when present, how much of the ground a drift of it hides from
+##   the diorama camera (1 if absent): a low kind's wash is that much weaker,
+##   so the ground supports its heads instead of standing in for them;
+## - `pack`, when present, the share of candidates it keeps at a drift's
+##   heart instead of `packing`'s.
 const FLOWER_KEYS := {
 	"oxeye_daisy":{"fallback":"daisy_flower","height":0.57,"head":0.2,"tints":["f6f2e4"],"wash":"ece6cf"},
-	"buttercup":{"fallback":"button_flower","height":0.38,"head":0.14,"tints":["f5c832"],"wash":"e9bd24"},
-	"dandelion":{"fallback":"button_flower","height":0.26,"head":0.17,"tints":["f6c21e"],"wash":"e8b81c"},
-	"dandelion_clock":{"fallback":"umbel_flower","height":0.45,"head":0.18,"tints":["f4f2ea"],"wash":"dcdccb"},
-	"cosmos":{"fallback":"daisy_flower","height":0.94,"head":0.22,"tints":["e8609f","c22f78","f6eef0"],"washes":["de78a8","b9468a","e4dcdf"],"wash":"de78a8","tint_real":true},
-	"sunflower":{"fallback":"daisy_flower","height":1.83,"head":0.36,"tints":["f4b61e"],"wash":"c99a2a"},
+	"buttercup":{"fallback":"button_flower","height":0.38,"head":0.14,"tints":["f5c832"],"wash":"e9bd24","cover":0.65},
+	"dandelion":{"fallback":"button_flower","height":0.26,"head":0.17,"tints":["f6c21e"],"wash":"e8b81c","cover":0.7},
+	"dandelion_clock":{"fallback":"umbel_flower","height":0.45,"head":0.18,"tints":["f4f2ea"],"wash":"dcdccb","cover":0.6},
+	"cosmos":{"fallback":"daisy_flower","height":0.94,"head":0.22,"tints":["e8609f","c22f78","fcefe2"],"washes":["de78a8","b9468a","e8dccf"],"wash":"de78a8","tint_real":true},
+	"sunflower":{"fallback":"daisy_flower","height":1.83,"head":0.44,"tints":["f4b61e"],"wash":"c4b040","pack":0.42},
 	"poppy":{"fallback":"button_flower","height":0.63,"head":0.16,"tints":["e0442f"],"wash":"d8452c"},
-	"lupine":{"fallback":"spike_flower","height":0.85,"head":0.12,"tints":["6a5ccc","9a5cc4"],"washes":["8e7bd0","9c78c6"],"wash":"8e7bd0","tint_real":true},
+	"lupine":{"fallback":"spike_flower","height":0.85,"head":0.12,"tints":["7b4cc6","9c48b8"],"washes":["8a68c0","9a62b4"],"wash":"8a68c0","tint_real":true},
 }
 ## With the kit in the catalog a `tint_real` kind's `tints` are the kit's own
 ## petal variants (MeadowFlowerMesh SPEC `variants`), so GardenView draws a
@@ -95,11 +100,11 @@ const TYPES := {
 		"land":"sunflowers",
 		"terrain":{"composition":"meadow","archetype":"horn","landform":"original","relief":[0.55,0.75],"breadth":[1.15,1.35]},
 		"blend":[["woodland","high",0.12,0]],
-		"grass":{"green":"9cb043","weight":0.42,"straw":"bfae4a","share":0.3,"tufts":0.26,"tuft_size":[0.55,0.9],"tuft_straw":0.5},
+		"grass":{"green":"a2b84c","weight":0.42,"straw":"c8bc5c","share":0.14,"tufts":0.22,"tuft_size":[0.55,0.9],"tuft_straw":0.25},
 		"flowers":[["sunflower",1.0],["buttercup",0.1],["oxeye_daisy",0.08]],
-		"sizes":{"sunflower":[0.8,1.15],"buttercup":[0.85,1.1],"oxeye_daisy":[0.85,1.1]},
-		"drift":{"frequency":0.15,"cover":0.62,"spacing":0.2,"density":1.0,"mix":0.05,"stray":0.004,"wash":0.25,"carpet":0.5,
-			"rows":{"kind":"sunflower","spacing":1.1,"width":0.16}},
+		"sizes":{"sunflower":[0.9,1.15],"buttercup":[0.85,1.1],"oxeye_daisy":[0.85,1.1]},
+		"drift":{"frequency":0.13,"cover":0.7,"spacing":0.2,"density":1.0,"mix":0.05,"stray":0.004,"wash":0.3,"carpet":0.5,
+			"rows":{"kind":"sunflower","spacing":0.95,"width":0.2,"face":true}},
 		"trees":3,"rocks":0.0,
 		"mood":{"preset":"golden_meadow","phase":0.58,"weather":"clear","clouds":0.1,"mist":0.05,"haze":0.14,"rays":0.55,"wind":0.25,"summit_mist":0.0,"exposure":1.1,
 			"colors":{"sky":"84a9c4","horizon":"c9bba0","glow":"f6c88a","sun":"ffd79c","grass":"8eab4e","foliage":"6b8444","water":"62a0a0"}},
@@ -112,7 +117,7 @@ const TYPES := {
 		"grass":{"green":"7cbb48","weight":0.42,"straw":"b7c46a","share":0.0,"tufts":0.1,"tuft_size":[0.4,0.6],"tuft_straw":0.0},
 		"flowers":[["dandelion",1.0],["dandelion_clock",0.6],["buttercup",0.15],["oxeye_daisy",0.12]],
 		"sizes":{"dandelion":[0.85,1.15],"dandelion_clock":[0.85,1.15],"buttercup":[0.8,1.0],"oxeye_daisy":[0.8,1.0]},
-		"drift":{"frequency":0.15,"cover":0.7,"spacing":0.2,"density":0.95,"mix":0.3,"stray":0.015,"wash":0.55,"carpet":0.7},
+		"drift":{"frequency":0.15,"cover":0.7,"spacing":0.2,"density":1.0,"mix":0.3,"stray":0.015,"wash":0.55,"carpet":0.62},
 		"trees":4,"rocks":0.0,
 		"mood":{"preset":"after_the_rain","phase":0.36,"weather":"fair","clouds":0.28,"mist":0.1,"haze":0.08,"rays":0.55,"wind":0.35,"wet":0.12,"humidity":0.45,"rainbow":0.0,"summit_mist":0.03,"exposure":1.1,
 			"colors":{"sky":"76abc9","horizon":"aac3c2","glow":"ece2b8","grass":"72ab58","foliage":"4c8550","water":"58a2a3"}},
@@ -137,8 +142,8 @@ const TYPES := {
 		"blend":[["woodland","facing",0.12,"shade"],["alpine","high",0.34,0]],
 		"grass":{"green":"86b65c","weight":0.3,"straw":"b5ad7a","share":0.08,"tufts":0.12,"tuft_size":[0.35,0.55],"tuft_straw":0.1},
 		"flowers":[["buttercup",1.0],["lupine",0.7],["oxeye_daisy",0.55],["dandelion",0.25]],
-		"sizes":{"buttercup":[0.6,0.8],"lupine":[0.6,0.8],"oxeye_daisy":[0.6,0.8],"dandelion":[0.7,0.9]},
-		"drift":{"frequency":0.26,"cover":0.6,"spacing":0.2,"density":0.9,"mix":0.2,"stray":0.012,"wash":0.5,"carpet":0.65},
+		"sizes":{"buttercup":[0.8,1.0],"lupine":[0.65,0.85],"oxeye_daisy":[0.75,0.95],"dandelion":[0.85,1.05]},
+		"drift":{"frequency":0.2,"cover":0.58,"spacing":0.17,"density":1.0,"mix":0.3,"stray":0.02,"wash":0.45,"carpet":0.55},
 		"trees":0,"rocks":0.06,
 		"mood":{"preset":"alpine_morning","phase":0.4,"weather":"clear","clouds":0.14,"mist":0.06,"haze":0.08,"rays":0.35,"wind":0.35,"summit_mist":0.12,
 			"colors":{"sky":"6f9fc4","horizon":"9fb6c6","glow":"e6dccb","grass":"7fa65c","foliage":"4e7a55","water":"4f93a3"}},
@@ -153,6 +158,17 @@ const PACK_HEAD := 0.16
 const CLEARING := 1.15
 ## Meadow ground flowers stop this far below the snowline.
 const SNOW_GAP := 1.2
+## Drifts thin out between these distances from the centre, on the rounded
+## square `_rim` measures: the plate's edge is at 12 m, so the meadow runs
+## to its rim instead of stopping two metres short.
+const RIM := Vector2(10.9,11.85)
+## The flower candidates' lattice covers this half-width round the centre.
+const REACH := 11.9
+## The yaw that turns a kit flower's face (its local +x) toward the noon
+## sun's side of the plate: studies/celestial.gd's sun ring is yawed
+## atan2(20, 12) round, so at noon the sun stands toward +x, +z, which is
+## also the side the diorama camera starts on.
+const SUN_FACE := -0.54
 
 var id := ""
 var type: Dictionary = {}
@@ -251,11 +267,11 @@ static func form(kind: String, size: float, angle: float) -> Array:
 
 # --- Composition ------------------------------------------------------------------
 ## How much of a drift stands at `p`: 1 at its heart, easing to 0 in the
-## grass, and to nothing toward the plate's rim.
+## grass, and to nothing in the plate's last half metre (RIM).
 func presence(p: Vector2) -> float:
 	var cover := float(type.drift.cover)
 	var at := lerpf(0.42,-0.42,cover)
-	return smoothstep(at-0.12,at+0.22,_drift.get_noise_2d(p.x,p.y))*(1.0-smoothstep(9.5,11.4,_rim(p)))
+	return smoothstep(at-0.12,at+0.22,_drift.get_noise_2d(p.x,p.y))*(1.0-smoothstep(RIM.x,RIM.y,_rim(p)))
 
 ## The drift's colour variant at `p` (0..1), shared by the whole drift.
 func variant(p: Vector2) -> float:
@@ -289,7 +305,9 @@ func kind_at(p: Vector2, roll: float) -> String:
 ## The share of candidates `kind` keeps at a drift's heart, so its heads
 ## nearly touch there: PACK_HEAD (m) and smaller heads keep every one.
 static func packing(kind: String) -> float:
-	return clampf(pow(PACK_HEAD/float(FLOWER_KEYS[kind].head),2.0),0.0,1.0) if FLOWER_KEYS.has(kind) else 1.0
+	if not FLOWER_KEYS.has(kind): return 1.0
+	if FLOWER_KEYS[kind].has("pack"): return float(FLOWER_KEYS[kind].pack)
+	return clampf(pow(PACK_HEAD/float(FLOWER_KEYS[kind].head),2.0),0.0,1.0)
 
 ## True where a row-planted kind may stand: on loose rows across the field.
 func on_row(p: Vector2, kind: String) -> bool:
@@ -306,6 +324,10 @@ func flower(kind: String, p: Vector2, key: Array, draw := -1.0) -> Array:
 	var span: Array = type.sizes.get(kind,[0.85,1.15])
 	var size := lerpf(float(span[0]),float(span[1]),Variety.unit(key+[11]) if draw < 0.0 else draw)
 	var angle := Variety.unit(key+[5])*TAU
+	var rows: Dictionary = type.drift.get("rows",{})
+	# A field of row-planted heads that `face` turns them all one way, the
+	# noon sun's (SUN_FACE), each a little off it, as a real field does.
+	if rows.get("face",false) and rows.kind == kind: angle = SUN_FACE+(Variety.unit(key+[5])-0.5)*0.8
 	var shaped := form(kind,size,angle)
 	return [asset(kind),shaped[0],tint(kind,variant(p)),shaped[1],angle]
 
@@ -335,13 +357,20 @@ func ground(p: Vector2) -> Array:
 	var kind := kind_at(p,1.0)
 	var wash := Color(wash_of(kind,variant(p))) if FLOWER_KEYS.has(kind) else colour
 	# Under a drift's core the ground itself carries the flower's colour, so
-	# the carpet has no green between its heads from the diorama camera; the
-	# wash eases off toward the drift's edge, where the flowers thin out.
-	var core := smoothstep(0.25,0.85,d)
-	colour = colour.lerp(wash,float(type.drift.wash)*core)
-	# The paint fades out toward the plate's rim, so the meadow has no frame.
-	var rim := 1.0-smoothstep(10.0,13.0,_rim(p))
-	return [colour.srgb_to_linear(),lerpf(float(grass.weight),float(type.drift.get("carpet",grass.weight)),core)*rim]
+	# the carpet has no green between its heads from the diorama camera. The
+	# wash follows the flowers that actually stand there (presence, the drift's
+	# density and how close its heads pack), so it fades before the flowers do
+	# and never runs past them. A fine noise breaks its edge into feathers,
+	# and a low kind that hides little ground (`cover`) washes it less: the
+	# ground supports the heads instead of standing in for them.
+	var standing := float(type.drift.density)*pow(d,1.2)*packing(kind) if FLOWER_KEYS.has(kind) else 0.0
+	var feather := clampf(0.7+0.6*_warp.get_noise_2d(p.x*2.6+40.0,p.y*2.6-23.0),0.0,1.0)
+	var core := smoothstep(0.3,0.9,standing)*lerpf(feather,1.0,smoothstep(0.75,1.0,standing))
+	var hides := float(FLOWER_KEYS[kind].get("cover",1.0)) if FLOWER_KEYS.has(kind) else 1.0
+	colour = colour.lerp(wash,float(type.drift.wash)*core*hides)
+	# The paint fades out in the plate's last metre, so the meadow has no frame.
+	var rim := 1.0-smoothstep(RIM.x+0.5,RIM.y+1.0,_rim(p))
+	return [colour.srgb_to_linear(),lerpf(float(grass.weight),float(type.drift.get("carpet",grass.weight)),core*hides)*rim]
 
 ## Dresses the meadow ground of an inland world being formed by `land`
 ## (scripts/inland_landscape.gd): ground paint, flower drifts, grass tufts
@@ -380,12 +409,12 @@ func dress(land: RefCounted, work: RefCounted) -> void:
 	data.meadow = tufted
 	var drift: Dictionary = type.drift
 	var spacing := float(drift.spacing)
-	var steps := int(ceil(22.4/spacing))
+	var steps := int(ceil(2.0*REACH/spacing))
 	for gz in range(steps):
 		if gz%4 == 0: await work.checkpoint()
 		for gx in range(steps):
 			var key := [salt,71,gx,gz]
-			var p := Vector2(-11.2+(gx+Variety.unit(key+[1]))*spacing,-11.0+(gz+Variety.unit(key+[2]))*spacing)
+			var p := Vector2(-REACH+(gx+Variety.unit(key+[1]))*spacing,-REACH+(gz+Variety.unit(key+[2]))*spacing)
 			# The cheap draws first: most candidates fall in the grass.
 			var d := presence(p)
 			var roll := Variety.unit(key+[3])
@@ -399,11 +428,11 @@ func dress(land: RefCounted, work: RefCounted) -> void:
 	# Grass tufts in the gaps between drifts, few inside one; some straw-tinted
 	# in a dry meadow. Stones on a stony one.
 	var grass: Dictionary = type.grass
-	for gz in range(25):
+	for gz in range(27):
 		if gz%6 == 0: await work.checkpoint()
-		for gx in range(25):
+		for gx in range(27):
 			var key := [salt,73,gx,gz]
-			var p := Vector2(-11.2+(gx+Variety.unit(key+[1]))*0.9,-11.0+(gz+Variety.unit(key+[2]))*0.9)
+			var p := Vector2(-REACH+(gx+Variety.unit(key+[1]))*0.88,-REACH+(gz+Variety.unit(key+[2]))*0.88)
 			if not _meadow_ground(land,p,snow): continue
 			var stones := float(type.rocks)
 			if stones > 0.0 and Variety.unit(key+[6]) < stones:

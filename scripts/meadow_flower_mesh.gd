@@ -47,15 +47,15 @@ const SPEC := {
 	"buttercup":{"height":0.36,"sway":Vector4(0.0,0.34,0.05,0.02),"frequency":Vector4(2.9,4.5,0.7,0.3),"motion":Vector4(0.8,0.5,0.25,0.003),"glow":0.6,"roughness":0.34,"variants":[]},
 	"dandelion":{"height":0.26,"sway":Vector4(0.0,0.24,0.04,0.015),"frequency":Vector4(2.9,4.5,0.6,0.3),"motion":Vector4(0.7,0.5,0.22,0.002),"glow":0.55,"roughness":1.0,"variants":[]},
 	"dandelion_clock":{"height":0.40,"sway":Vector4(0.0,0.36,0.05,0.02),"frequency":Vector4(2.7,4.2,0.7,0.3),"motion":Vector4(0.8,0.6,0.18,0.0),"glow":0.95,"roughness":1.0,"variants":[]},
-	"cosmos":{"height":0.92,"sway":Vector4(0.0,0.9,0.07,0.03),"frequency":Vector4(2.2,3.7,0.8,0.35),"motion":Vector4(1.0,0.9,0.35,0.006),"glow":0.85,"roughness":1.0,"variants":["e8609f","c22f78","f6eef0","f2a2c4"]},
+	"cosmos":{"height":0.92,"sway":Vector4(0.0,0.9,0.07,0.03),"frequency":Vector4(2.2,3.7,0.8,0.35),"motion":Vector4(1.0,0.9,0.35,0.006),"glow":0.85,"roughness":1.0,"variants":["e8609f","c22f78","fcefe2","f2a2c4"]},
 	"sunflower":{"height":1.85,"sway":Vector4(0.0,1.8,0.03,0.012),"frequency":Vector4(1.3,2.2,0.5,0.2),"motion":Vector4(0.3,2.2,0.16,0.004),"glow":0.6,"roughness":1.0,"variants":[]},
 	"poppy":{"height":0.62,"sway":Vector4(0.0,0.6,0.06,0.025),"frequency":Vector4(2.4,3.9,0.8,0.3),"motion":Vector4(0.9,0.8,0.32,0.006),"glow":0.95,"roughness":1.0,"variants":["d92a1c","e8452a","f07a32"]},
-	"lupine":{"height":0.82,"sway":Vector4(0.0,0.8,0.04,0.015),"frequency":Vector4(2.0,3.4,0.6,0.25),"motion":Vector4(0.6,0.9,0.12,0.002),"glow":0.55,"roughness":1.0,"variants":["6a5ccc","9a5cc4","e07aae","f1e8f0"]},
+	"lupine":{"height":0.82,"sway":Vector4(0.0,0.8,0.04,0.015),"frequency":Vector4(2.0,3.4,0.6,0.25),"motion":Vector4(0.6,0.9,0.12,0.002),"glow":0.55,"roughness":1.0,"variants":["7b4cc6","9c48b8","e07aae","f1e8f0"]},
 }
 ## How much larger than the builders' sizes each kind's heads are drawn,
 ## about their centres, so a face is six to eight pixels across at the
 ## diorama camera. Buds scale with their plant. Sunflowers are big enough.
-const HEAD_SCALE := {"oxeye_daisy":1.35,"buttercup":1.3,"dandelion":1.25,"dandelion_clock":1.2,"cosmos":1.3,"poppy":1.3,"lupine":1.2}
+const HEAD_SCALE := {"oxeye_daisy":1.35,"buttercup":1.45,"dandelion":1.5,"dandelion_clock":1.2,"cosmos":1.3,"poppy":1.3,"lupine":1.2}
 ## Each kind's petal colour as authored in the mesh (sRGB): the material
 ## swaps it for a variant, keeping the mesh's own shading over it.
 const PETAL_REF := {"cosmos":"e8609f","poppy":"d92a1c","lupine":"6a5ccc"}
@@ -104,11 +104,13 @@ static func instance_color(kind: String, tint: Color) -> Color:
 ##   bracts, buds), so beyond it is stems and heads over the painted carpet;
 ## - from FAR_START to FAR_END metres a kind keeps down to its FAR_KEEP share
 ##   of its plants, and the kept heads grow by keep^-FAR_GROW so a drift keeps
-##   its cover. Sunflowers stand in rows and keep everything.
-const FAR_KEEP := {"oxeye_daisy":0.6,"buttercup":0.6,"dandelion":0.6,"dandelion_clock":0.6,"cosmos":0.65,"sunflower":1.0,"poppy":0.65,"lupine":0.7}
+##   its cover. Sunflowers stand in rows and keep the most.
+const FAR_KEEP := {"oxeye_daisy":0.6,"buttercup":0.6,"dandelion":0.6,"dandelion_clock":0.6,"cosmos":0.65,"sunflower":0.8,"poppy":0.65,"lupine":0.7}
 const FAR_START := 14.0
 const FAR_END := 32.0
 const FAR_GROW := 0.5
+## Sunflowers keep their leaves at any distance: they are the field's mass.
+const KEEP_DETAIL := ["sunflower"]
 const LOD_NEAR := 15.0
 const LOD_FAR := 20.0
 ## The kinds whose batches cast shadows: the ones that stand clear of the
@@ -162,7 +164,7 @@ static func material(kind: String) -> ShaderMaterial:
 	m.set_shader_parameter("flower_glow", spec.glow)
 	m.set_shader_parameter("flower_roughness", spec.roughness)
 	m.set_shader_parameter("flower_far", Vector4(FAR_START, FAR_END, FAR_KEEP.get(kind, 1.0), FAR_GROW))
-	if FAR_KEEP.get(kind, 1.0) < 1.0: m.set_shader_parameter("flower_lod", Vector2(LOD_NEAR, LOD_FAR))
+	if not kind in KEEP_DETAIL: m.set_shader_parameter("flower_lod", Vector2(LOD_NEAR, LOD_FAR))
 	var variants: Array = spec.variants
 	if not variants.is_empty():
 		var colors := PackedVector3Array()
@@ -542,8 +544,8 @@ class Plant:
 	## A low golden pompom: three rings of strap florets, the inner ones
 	## rising, over a rosette of long toothed leaves.
 	func dandelion() -> void:
-		var gold := MeadowFlowerColor.of("f8c21a")
-		var deep := MeadowFlowerColor.of("eea50c")
+		var gold := MeadowFlowerColor.of("ffd024")
+		var deep := MeadowFlowerColor.of("f7b916")
 		var neck := Vector3(0.01, 0.23, 0.0)
 		stem(Vector3.ZERO, neck, 0.004, Vector3(0.012, 0.0, 0.0), 4, 4)
 		var h := head(neck, Vector3(0.12, 1.0, 0.05), 0.042, 0.006, 0.8)
@@ -597,27 +599,29 @@ class Plant:
 			for fork in [-0.5, 0.0, 0.5]:
 				leaf(Vector3(0.008, y, 0.0), a + fork, 0.085, 0.009, 0.5, 0.7, SLIM, 0.0, 0.0, rng.randf_range(0.85, 1.0))
 
-	## Tall and heavy: a thick stem that hooks over at the top so the big
-	## head droops toward the sun side, a dark domed disc in two rings of
-	## gold petals, a green back, and broad heart-shaped leaves.
+	## Tall and bright: a thick stem bending over at the top so the big head
+	## turns its face up and out toward the sun side (local +x), a small
+	## brown disc inside two long rings of gold petals, a green back, and a
+	## few broad heart-shaped leaves. From the diorama camera the face is
+	## mostly gold: the petals reach out to 2.6 disc radii.
 	func sunflower() -> void:
-		var gold := MeadowFlowerColor.of("fcc51e")
-		var deep := MeadowFlowerColor.of("f0a412")
-		var face := Vector3(0.85, -0.3, 0.12).normalized()
-		var neck := Vector3(0.13, 1.68, 0.02)
-		stem(Vector3.ZERO, Vector3(0.0, 1.35, 0.0), 0.017, Vector3(0.02, 0.0, 0.0), 5, 5)
-		hooked_stem(Vector3(0.0, 1.35, 0.0), neck, face, 0.012, 5)
-		var h := head(neck, face, 0.17, 0.02, 0.7)
-		petals(h, 20, 0.095, 0.17, 0.034, deep, gold, 0.0, 0.1, 0.0, 0.0, 0.0, 0.05)
-		petals(h, 14, 0.09, 0.15, 0.03, deep, gold, 0.0, 0.0, 0.0, 0.12, PI / 14.0, 0.05)
-		disc(h, 0.1, 0.03, 12, MeadowFlowerColor.of("5a3414"), MeadowFlowerColor.of("2e1a0c"), 0.3)
-		bracts(h, 12, 0.06, 0.02, 0.5)
+		var gold := MeadowFlowerColor.of("ffd43a")
+		var deep := MeadowFlowerColor.of("f6b01c")
+		var face := Vector3(0.62, 0.72, 0.1).normalized()
+		var neck := Vector3(0.1, 1.7, 0.01)
+		stem(Vector3.ZERO, Vector3(0.0, 1.4, 0.0), 0.017, Vector3(0.02, 0.0, 0.0), 5, 5)
+		hooked_stem(Vector3(0.0, 1.4, 0.0), neck, face, 0.012, 5, 4)
+		var h := head(neck, face, 0.21, 0.02, 0.7)
+		petals(h, 22, 0.075, 0.21, 0.042, deep, gold, 0.0, 0.08, 0.0, 0.02, 0.0, 0.05)
+		petals(h, 16, 0.07, 0.18, 0.04, deep, gold, 0.0, 0.0, 0.0, 0.12, PI / 16.0, 0.05)
+		disc(h, 0.08, 0.025, 10, MeadowFlowerColor.of("7a4a1c"), MeadowFlowerColor.of("4a2c12"), 0.3)
+		bracts(h, 10, 0.06, 0.02, 0.5)
 		var heart := [[0.0, 0.08], [0.12, 0.42], [0.35, 0.5], [0.6, 0.4], [0.82, 0.22]]
-		var ys := [0.32, 0.55, 0.78, 1.0, 1.2]
+		var ys := [0.4, 0.75, 1.05]
 		for i in range(ys.size()):
 			var a := float(i) * 2.4 + 0.3
-			var length := lerpf(0.4, 0.28, float(i) / ys.size())
-			leaf(Vector3(0.0, ys[i], 0.0), a, length, length * 0.75, 0.55, 0.9, heart, 0.12, 0.0, rng.randf_range(0.78, 0.9))
+			var length := lerpf(0.32, 0.24, float(i) / ys.size())
+			leaf(Vector3(0.0, ys[i], 0.0), a, length, length * 0.72, 0.55, 0.9, heart, 0.12, 0.0, rng.randf_range(0.78, 0.9))
 
 	## Four broad scarlet petals cupped round a dark centre, each with a dark
 	## basal blotch, on a wiry stem; a nodding bud and a few lobed leaves.
@@ -643,7 +647,7 @@ class Plant:
 	## the tip, over palmate leaves of narrow leaflets.
 	func lupine() -> void:
 		var violet := MeadowFlowerColor.of("6a5ccc")
-		var pale := MeadowFlowerColor.of("c8c2ea")
+		var pale := MeadowFlowerColor.of("d4bfe6")
 		var base := Vector3(0.0, 0.42, 0.0)
 		stem(Vector3.ZERO, base, 0.006, Vector3(0.01, 0.0, 0.0), 4, 4)
 		var h := head(base, Vector3.UP, 0.04, 0.0)
