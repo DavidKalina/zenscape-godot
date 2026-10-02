@@ -198,6 +198,11 @@ var size_scale := 1.0
 ## The tool in hand, and every tool made so far by id.
 var tool: ClayTool
 var tool_id := "hand"
+## True while the hand has put its tool down (Esc, or its pocket pressed
+## again on the tool roll): the land is not worked, the prop is away, and a
+## press on a tree is the hand's to bend. `tool` stays as it was, for the
+## next `set_tool`.
+var put_down := false
 var _tools := {}
 ## The Modeller (id `hand`), always made: the probes read its state through
 ## the clay.
@@ -277,14 +282,22 @@ func setup(owner_scene: Node3D) -> void:
 ## Take the tool `id` (a tool roll id with a script in scripts/clay_tools/).
 ## Whatever is in hand finishes first. False when there is no such tool.
 func set_tool(id: String) -> bool:
-	if id == tool_id: return true
+	if id == tool_id:
+		put_down = false
+		return true
 	var next := _make(id)
 	if next == null: return false
 	finish_now()
+	put_down = false
 	tool = next
 	tool_id = id
 	_take_prop()
 	return true
+
+## Put the tool in hand down (`put_down`): whatever it was doing finishes.
+func put_tool_down() -> void:
+	finish_now()
+	put_down = true
 
 ## The tool in hand's stand-in prop, in place of the last one's, hidden until
 ## `_place_prop` shows it. The Modeller, the tool the clay starts with, has
@@ -329,7 +342,7 @@ func hover_gesture() -> String:
 ## the editor cannot take it.
 func press(screen_pos: Vector2) -> bool:
 	finish_now()
-	if editor == null or editor.forming or not editor.active: return false
+	if put_down or editor == null or editor.forming or not editor.active: return false
 	var hit: Variant = editor.pick(screen_pos)
 	if hit == null: return false
 	_press = screen_pos
@@ -965,7 +978,7 @@ func _place_prop(delta: float) -> void:
 		return
 	var reach: Node = scene.get("hand_reach")
 	var materials: Node = reach.get("materials") if reach != null else null
-	var carrying: bool = materials != null and not str(materials.get("held")).is_empty()
+	var carrying: bool = put_down or (materials != null and not str(materials.get("held")).is_empty())
 	var wanderer: Node = scene.get("wanderer")
 	var eye: bool = wanderer != null and wanderer.get("active") == true
 	# A press comes down at once, before its verb is decided.
@@ -1026,7 +1039,7 @@ static func _tip_depth(prop: Node3D) -> float:
 func _place_prop_in_hand(delta: float) -> void:
 	var god: Node3D = scene.get("god_hand") as Node3D
 	var materials: Node = scene.hand_reach.get("materials") if scene.get("hand_reach") != null else null
-	var carrying: bool = materials != null and not str(materials.get("held")).is_empty()
+	var carrying: bool = put_down or (materials != null and not str(materials.get("held")).is_empty())
 	_prop.visible = god != null and god.visible and float(god.opacity) > 0.3 and not carrying
 	if not _prop.visible:
 		_prop_last = null

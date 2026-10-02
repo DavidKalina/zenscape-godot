@@ -129,6 +129,10 @@ const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
 ## stream (NativeChunkEditor `can_in_hand`, scripts/watering_can.gd), which
 ## reads the pointer each frame until the button comes up.
 const CAN := "can"
+## The roll's tool while nothing is in hand: Esc, or the tool's own pocket
+## pressed again, puts the tool down (LandClay `put_tool_down`). The land is
+## not worked, and trees bend and flick as for the Feather.
+const FREE := ""
 ## Design units the Lantern hint line moves up to clear the case.
 const HINT_LIFT := 100.0
 
@@ -241,8 +245,8 @@ func set_size(level: int) -> void:
 	if clay != null: clay.size_scale = roll.size_scale()
 
 ## Keys for the hand's HUD: 1, 2, 3 or [ and ] size what is in hand; Q and E
-## step the mode of the tool in hand; Esc puts a material down (back to the
-## bare Hand). True when the key was used.
+## step the mode of the tool in hand; Esc puts a material down, else the tool
+## (FREE), else falls through to the menu. True when the key was used.
 func key(event: InputEventKey) -> bool:
 	if not event.pressed or event.echo or roll == null or roll.shown < 0.5: return false
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
@@ -257,7 +261,7 @@ func key(event: InputEventKey) -> bool:
 			set_mode(clay.tool.mode)
 		KEY_ESCAPE:
 			if not held.is_empty(): put_back()
-			elif roll.tool != "hand": select_tool("hand")
+			elif roll.tool != FREE: select_tool(FREE)
 			else: return false
 		_: return false
 	return true
@@ -292,6 +296,9 @@ func press(point: Vector2) -> bool:
 	var tool: String = roll.tool_at(point)
 	if not tool.is_empty():
 		if not roll.discovered(tool): roll.not_yet(tool)
+		# The tool in hand's own pocket puts it down, unless it puts a material
+		# down first.
+		elif tool == roll.tool and held.is_empty(): select_tool(FREE)
 		else:
 			put_back()
 			select_tool(tool)
@@ -343,10 +350,12 @@ func press(point: Vector2) -> bool:
 	return false
 
 ## Take the shaping tool `id` in the roll (the bare Hand is "hand"); the
-## clay works with it from the next press.
+## clay works with it from the next press. FREE puts the tool down.
 func select_tool(id: String, quiet := false) -> void:
 	var clay: Node = scene.get("land_clay")
-	if clay != null and not clay.set_tool(id): return
+	if id == FREE:
+		if clay != null: clay.put_tool_down()
+	elif clay != null and not clay.set_tool(id): return
 	if roll.tool != id and not quiet: ClaySound.cue(&"ui_pick")
 	roll.tool = id
 	_show_modes(id)

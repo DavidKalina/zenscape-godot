@@ -191,8 +191,24 @@ func run() -> void:
 	check("emergence will not plant there",not editor.emergence.takes(root_p))
 	check("the pluck is one undo step",editor.data._undo.size() == undo0+1,editor.data._undo.size()-undo0)
 	check("it pops out of the ground",reach.get_node_or_null("PluckPop") != null)
+	# Mid-pull: out of the ground and above where it stood, with its clod.
+	var pop: Node = reach.get_node_or_null("PluckPop")
+	var copy: MeshInstance3D = null
+	if pop != null:
+		for child in pop.get_children():
+			if child is MeshInstance3D:
+				copy = child
+				break
+	var root_y: float = copy.global_position.y if copy != null else 0.0
+	await frames(int(reach.PLUCK_SECONDS*0.6*60.0))
+	var clod_shown := false
+	if pop != null and is_instance_valid(pop):
+		for child in pop.get_children():
+			if child is MeshInstance3D and child.mesh is SphereMesh: clod_shown = child.visible
+	var risen: bool = copy != null and is_instance_valid(copy) and copy.global_position.y > root_y+reach.PLUCK_LIFT*0.4
+	check("mid-pull it hangs above the ground, its root clod with it",risen and clod_shown,[copy.global_position.y-root_y if copy != null and is_instance_valid(copy) else null,clod_shown])
 	await settled()
-	await frames(40)
+	await frames(int((reach.PLUCK_SECONDS+reach.PLUCK_HOLE)*60.0)+30)
 	check("the pop frees itself",reach.get_node_or_null("PluckPop") == null)
 	editor.undo()
 	await settled()
@@ -281,6 +297,48 @@ func run() -> void:
 		check("with the Modeller, a Shift-press on the shrub plucks it",held == "pluck" and record(weed).is_empty(),held)
 		await settled()
 	else: check("an open spot for a shrub under the Modeller",false)
+
+	# Esc puts the tool down: the land is not worked and a tree bends again.
+	var materials: Node = reach.materials
+	var clay: Node = scene.get("land_clay")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	check("Esc with the Modeller in hand is the roll's",materials.key(esc))
+	check("and puts the tool down",materials.roll.tool == "" and clay.put_down and not reach.shaping() and reach.tool_down(),[materials.roll.tool,clay.put_down])
+	check("Esc again falls through to the menu",not materials.key(esc))
+	if not record(tree_id).is_empty():
+		held = await press(at_tree)
+		check("with the tool down a press on the tree bends it",held == "tree",held)
+		for i in range(600):
+			await frames(1)
+			if not reach._springing.has(tree_id): break
+		await frames(5)
+	var land_p: Variant = open_spot(1.6,taken)
+	if land_p != null:
+		var heights_before: PackedFloat32Array = editor.data.heights.duplicate()
+		var undo_before: int = editor.data._undo.size()
+		var at_land := ground_screen(land_p)
+		point(at_land)
+		await frames(3)
+		button(at_land,true)
+		for i in range(8):
+			point(at_land+Vector2(0.0,-12.0*i))
+			await frames(2)
+		button(at_land+Vector2(0.0,-96.0),false)
+		await frames(4)
+		check("with the tool down a drag on the land works nothing",editor.data.heights == heights_before and editor.data._undo.size() == undo_before,editor.data._undo.size()-undo_before)
+	# The Modeller's own pocket takes it back up, and pressed again puts it down.
+	var pocket: Vector2 = materials.roll._cell(materials.roll.TOOLS.find("hand")).get_center()
+	materials.roll.shown = 1.0
+	if materials.roll.tool_at(pocket) == "hand":
+		materials.press(pocket)
+		check("its pocket takes the Modeller up",materials.roll.tool == "hand" and not clay.put_down and reach.shaping())
+		materials.press(pocket)
+		check("pressed again, it is put down",materials.roll.tool == "" and clay.put_down)
+		materials.press(pocket)
+		check("and up again",materials.roll.tool == "hand" and not clay.put_down)
+	else: check("the Modeller's pocket is found",false,materials.roll.tool_at(pocket))
 	finish()
 
 func finish() -> void:

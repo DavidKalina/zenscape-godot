@@ -239,6 +239,10 @@ func step(delta: float) -> void:
 	var held: String = materials.held
 	var what := "material" if not held.is_empty() else str(materials.roll.tool)
 	var size: float = materials.size_scale()
+	# The tool put down: nothing to mark.
+	if what.is_empty():
+		hide(delta,"tool down")
+		return
 	if what == "feather":
 		_step_feather(delta,materials)
 		return

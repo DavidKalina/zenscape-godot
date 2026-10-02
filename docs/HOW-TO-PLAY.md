@@ -154,8 +154,10 @@ Every new plain has one wild tree. Water splashing on the land grows trees too.
 | Shift + press a plant | plucks it out, a tree or the undergrowth (a shrub, fern, flower, reeds, a tuft or a mushroom). Hold Shift to see what a press would take: it is outlined. The bare spot stays clear, and Cmd+Z brings the plant back |
 
 A tree that has just thrown its spores only bends for about 45 seconds.
-Bending needs a free hand: the Feather, not a shaping tool, which presses
-through plants to the land. Plucking works with any tool but the can (whose
+Bending needs a free hand: the tool put down (**Esc**, or press the tool's
+pocket on the roll again; pick it to take it back up) or the Feather, not a
+shaping tool, which presses through plants to the land. With the tool down a
+press on the land does nothing. Plucking works with any tool but the can (whose
 Shift sprinkles). Bigfoot's tree, logs, stumps and
 rocks can't be plucked; a pinned plant can.
 
@@ -165,7 +167,7 @@ rocks can't be plucked; a pinned plant can.
 |---|---|
 | M | mood drawer |
 | P | photo mode |
-| Esc | close the moods, otherwise the menu |
+| Esc | close the moods; else put down a held material, else the tool in hand (a free hand bends trees); else the menu |
 | R | overview |
 | F | glide to what's under the pointer (Backspace goes back) |
 | Arrows | pan (Shift+arrows turn and tilt) |

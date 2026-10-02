@@ -262,12 +262,26 @@ const PLUCK_REACH := 0.5
 ## nothing there again; an emerged plant's cells also drop to the forest
 ## brush's CLEAR_BELOW wish, as a firm clearing pass leaves them.
 const PLUCK_BARE := 0.5
-## The pop: the plant lifts PLUCK_LIFT m out of the ground (half that for
-## undergrowth), leaning a touch, and shrinks away over PLUCK_SECONDS, while
-## PLUCK_BITS crumbs of soil and leaf burst from its root.
-const PLUCK_LIFT := 0.6
-const PLUCK_SECONDS := 0.32
-const PLUCK_BITS := 14
+## The pluck, played on a copy of the plant (`_pop`) over PLUCK_SECONDS (a
+## tree; undergrowth takes PLUCK_SMALL of it), in four beats as shares of it:
+## - grip, to PLUCK_GRIP: the plant shivers and settles a little into the
+##   ground, more and faster as the pull builds;
+## - rip, to PLUCK_RIP: it snaps up stretched, its root clod tears out with
+##   it and PLUCK_BITS crumbs of soil and leaf burst from the hole;
+## - dangle, to PLUCK_AWAY: it rises PLUCK_LIFT m (half for undergrowth),
+##   swinging under the hand like a pendulum that settles, shedding
+##   PLUCK_LEAVES leaves that drift down;
+## - away: a last flick up and it shrinks out.
+## The hole it leaves darkens the ground and fades over PLUCK_HOLE seconds.
+const PLUCK_LIFT := 1.1
+const PLUCK_SECONDS := 1.35
+const PLUCK_SMALL := 0.65
+const PLUCK_GRIP := 0.22
+const PLUCK_RIP := 0.3
+const PLUCK_AWAY := 0.8
+const PLUCK_BITS := 22
+const PLUCK_LEAVES := 10
+const PLUCK_HOLE := 2.5
 const PLUCK_SOIL := Color(0.36,0.26,0.17)
 const PLUCK_LEAF := Color(0.42,0.55,0.26)
 const SkyCloud = preload("res://scripts/sky_cloud.gd")
@@ -1134,7 +1148,7 @@ func _catch_spin(point: Vector2) -> void:
 ## and so does a tree but for a shaping tool, which works the land under it
 ## (`shaping`). The sky and the far ground are nobody's.
 func _land_press(point: Vector2) -> bool:
-	if _land(point) == null or _prop_at(point,not shaping()): return false
+	if tool_down() or _land(point) == null or _prop_at(point,not shaping()): return false
 	holding = "land"
 	_press_pos = point
 	_show_hint("")
@@ -1275,9 +1289,11 @@ func _drive_hand_modeless() -> void:
 			want = "rim"
 			target = _hover_point
 		elif hover_zone == "land":
-			# Ready to pinch, or gripping the shaping tool in hand.
+			# Ready to pinch, or gripping the shaping tool in hand; open with
+			# the tool put down.
 			var clay: Node = scene.get("land_clay")
-			want = clay.hover_gesture() if clay != null else "pinch"
+			if tool_down(): want = "void"
+			else: want = clay.hover_gesture() if clay != null else "pinch"
 			target = _hover_point
 		elif hover_zone == "void" and sky_snap:
 			want = "void"
@@ -1481,13 +1497,20 @@ func _cloud_drag(point: Vector2) -> void:
 
 ## True when a shaping tool is in hand: the clay's Modeller, Paddle, Chisel,
 ## Wire or Hammer (scripts/land_clay.gd), with no material held and not the
-## Feather. A press on a tree then works the land under it (the landscape
-## audit, docs/design/tools/LANDSCAPE-AUDIT.md: a press on a tree did nothing),
-## and the trees near the pointer thin so the ground shows (`reveal`).
+## Feather, nor the tool put down. A press on a tree then works the land
+## under it (the landscape audit, docs/design/tools/LANDSCAPE-AUDIT.md: a
+## press on a tree did nothing), and the trees near the pointer thin so the
+## ground shows (`reveal`).
 func shaping() -> bool:
 	if not modeless or scene == null or scene.get("land_clay") == null: return false
 	if materials == null: return true
-	return materials.held.is_empty() and (materials.roll == null or not materials.roll.tool in [HandMaterials.FEATHER,HandMaterials.CAN])
+	return materials.held.is_empty() and (materials.roll == null or not materials.roll.tool in [HandMaterials.FEATHER,HandMaterials.CAN,HandMaterials.FREE])
+
+## True when the hand has put its tool down (HandMaterials FREE) and holds no
+## material: a press on the land works nothing.
+func tool_down() -> bool:
+	return modeless and materials != null and materials.held.is_empty() and materials.roll != null \
+			and materials.roll.tool == HandMaterials.FREE
 
 ## The size in hand (the tool roll's pips), as the clay reads it.
 func _clay_size() -> float:
@@ -1674,17 +1697,18 @@ func _plant_parts(id: int) -> Array:
 			parts.append({"mesh":mesh,"transform":batch.global_transform*placed,"material":material})
 	return parts
 
-## The plucked plant's pop: a copy of its `parts` lifts out of the ground at
-## `base` (global), leaning a touch, and shrinks away over PLUCK_SECONDS,
-## while a burst of soil and leaf crumbs flies from its root. A `tree` lifts
-## the full PLUCK_LIFT, undergrowth less. Nothing is kept: the copy frees
-## itself when it has gone.
+## The plucked plant's pull (PLUCK_SECONDS, its beats above): a copy of its
+## `parts` grips, rips, dangles and goes from the ground at `base` (global),
+## with a root clod, a soil burst, drifting leaves and a fading hole. A `tree`
+## is pulled the full length and height; undergrowth quicker and lower.
+## Nothing is kept: the copy frees itself when it has gone.
 func _pop(parts: Array, base: Vector3, tree: bool) -> void:
 	var pop := Node3D.new()
 	pop.name = "PluckPop"
 	pop.top_level = true
 	add_child(pop)
 	var meshes: Array[MeshInstance3D] = []
+	var top := base.y
 	for part: Dictionary in parts:
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = part.mesh
@@ -1694,47 +1718,152 @@ func _pop(parts: Array, base: Vector3, tree: bool) -> void:
 		pop.add_child(mesh)
 		mesh.global_transform = part.transform
 		meshes.append(mesh)
+		if part.mesh != null: top = maxf(top,(part.transform*(part.mesh as Mesh).get_aabb()).end.y)
+	var height := maxf(top-base.y,0.3)
+	var seconds := PLUCK_SECONDS*(1.0 if tree else PLUCK_SMALL)
+	var lift := PLUCK_LIFT*(1.0 if tree else 0.5)
+	# The root clod: a squat lump of soil under the root, torn out with it.
+	var clod := MeshInstance3D.new()
+	var lump := SphereMesh.new()
+	lump.radius = 0.22 if tree else 0.1
+	lump.height = lump.radius*1.3
+	lump.radial_segments = 7
+	lump.rings = 3
+	lump.material = _pluck_paint(PLUCK_SOIL)
+	clod.mesh = lump
+	clod.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	clod.top_level = true
+	clod.visible = false
+	pop.add_child(clod)
+	meshes.append(clod)
+	var start: Array[Transform3D] = []
+	for mesh in meshes: start.append(mesh.global_transform)
+	start[start.size()-1] = Transform3D(Basis.IDENTITY,base+Vector3.DOWN*lump.height*0.3)
+	# The burst at the rip, and the leaves shed while it dangles.
+	var bits := _pluck_bits(PLUCK_BITS,0.07 if tree else 0.045,PLUCK_SOIL,PLUCK_LEAF)
+	bits.explosiveness = 0.95
+	bits.lifetime = 0.9
+	bits.spread = 50.0
+	bits.initial_velocity_min = 1.4
+	bits.initial_velocity_max = 2.8 if tree else 1.9
+	bits.gravity = Vector3(0,-8.0,0)
+	pop.add_child(bits)
+	bits.global_position = base+Vector3.UP*0.05
+	var leaves := _pluck_bits(PLUCK_LEAVES if tree else int(PLUCK_LEAVES*0.5),0.06 if tree else 0.04,PLUCK_LEAF,PLUCK_LEAF.lightened(0.25))
+	leaves.one_shot = true
+	leaves.explosiveness = 0.2
+	leaves.lifetime = 1.6
+	leaves.spread = 180.0
+	leaves.initial_velocity_min = 0.2
+	leaves.initial_velocity_max = 0.6
+	leaves.gravity = Vector3(0,-1.1,0)
+	leaves.damping_min = 0.6
+	leaves.damping_max = 1.2
+	leaves.angular_velocity_min = -240.0
+	leaves.angular_velocity_max = 240.0
+	leaves.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	leaves.emission_sphere_radius = height*0.25
+	pop.add_child(leaves)
+	# The hole left in the ground, darkening it and fading.
+	var hole := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.32 if tree else 0.15
+	disc.bottom_radius = disc.top_radius
+	disc.height = 0.01
+	disc.radial_segments = 10
+	var dark := _pluck_paint(PLUCK_SOIL.darkened(0.35))
+	dark.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	disc.material = dark
+	hole.mesh = disc
+	hole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	hole.top_level = true
+	hole.visible = false
+	pop.add_child(hole)
+	hole.global_position = base+Vector3.UP*0.02
+	var swing := Vector3(randf_range(-1.0,1.0),0.0,randf_range(-1.0,1.0)).normalized()
+	var ripped := [false]
+	var step := func(t: float) -> void:
+		var lean := 0.0
+		var rise := 0.0
+		var stretch := 1.0
+		var size := 1.0
+		var dangling := t >= PLUCK_RIP
+		if t < PLUCK_GRIP:
+			# Grip: a shiver that builds, and the plant settles into the ground.
+			var g := t/PLUCK_GRIP
+			lean = sin(g*TAU*4.0)*0.05*g
+			rise = -0.04*g
+			stretch = 1.0-0.06*g
+		elif t < PLUCK_RIP:
+			# Rip: up and stretched, the clod with it.
+			var r := (t-PLUCK_GRIP)/(PLUCK_RIP-PLUCK_GRIP)
+			if not ripped[0]:
+				ripped[0] = true
+				clod.visible = true
+				hole.visible = true
+				bits.emitting = true
+				leaves.emitting = true
+			rise = lift*0.35*(1.0-pow(1.0-r,2.0))
+			stretch = lerpf(0.94,1.14,sin(r*PI*0.5))
+		elif t < PLUCK_AWAY:
+			# Dangle: up the rest of the way, swinging and settling.
+			var d := (t-PLUCK_RIP)/(PLUCK_AWAY-PLUCK_RIP)
+			rise = lerpf(lift*0.35,lift,1.0-pow(1.0-d,3.0))
+			lean = sin(d*TAU*1.6)*0.22*exp(-2.2*d)
+			stretch = lerpf(1.14,1.0,minf(d*3.0,1.0))
+		else:
+			# Away: a flick up, and it shrinks out.
+			var a := (t-PLUCK_AWAY)/(1.0-PLUCK_AWAY)
+			rise = lift+lift*0.25*a
+			size = 1.0-smoothstep(0.0,1.0,a)
+		var turn := Basis(swing.cross(Vector3.UP).normalized(),lean) if lean != 0.0 else Basis.IDENTITY
+		var shape := Basis.from_scale(Vector3(1.0/sqrt(stretch),stretch,1.0/sqrt(stretch))*maxf(size,0.001))
+		# Stretched and shrunk about its root, then lifted; rooted, it shivers
+		# about its root, and once out it hangs from the hand above it, so it
+		# swings about its top. The lean is nil where the two meet.
+		var shaped := Transform3D(shape,base+Vector3.UP*rise)*Transform3D(Basis.IDENTITY,-base)
+		var root := base+Vector3.UP*rise
+		var pivot := root+Vector3.UP*height*stretch*size if dangling else root
+		var held := Transform3D(turn,pivot)*Transform3D(Basis.IDENTITY,-pivot)*shaped
+		for i in range(meshes.size()): meshes[i].global_transform = held*start[i]
+		leaves.global_position = root+Vector3.UP*height*0.65
+	var fade := func(t: float) -> void:
+		dark.albedo_color.a = 0.85*(1.0-t)
+	var tween := pop.create_tween()
+	tween.tween_method(step,0.0,1.0,seconds)
+	tween.tween_callback(func() -> void:
+		for mesh in meshes: mesh.hide())
+	pop.create_tween().tween_method(fade,0.0,1.0,PLUCK_HOLE).set_delay(seconds*PLUCK_RIP)
+	tween.tween_interval(maxf(PLUCK_HOLE+seconds*PLUCK_RIP-seconds,leaves.lifetime))
+	tween.tween_callback(pop.queue_free)
+
+## A flat-lit, vertex-coloured material for the pluck's pieces.
+func _pluck_paint(colour: Color) -> StandardMaterial3D:
+	var paint := StandardMaterial3D.new()
+	paint.albedo_color = colour
+	paint.vertex_color_use_as_albedo = true
+	paint.roughness = 1.0
+	return paint
+
+## A one-shot burst of `amount` little cubes `size` m across, coloured
+## between `from` and `to`; not yet emitting.
+func _pluck_bits(amount: int, size: float, from: Color, to: Color) -> CPUParticles3D:
 	var bits := CPUParticles3D.new()
 	bits.one_shot = true
-	bits.explosiveness = 0.9
-	bits.amount = PLUCK_BITS
-	bits.lifetime = PLUCK_SECONDS*1.6
+	bits.emitting = false
+	bits.amount = maxi(amount,1)
 	bits.direction = Vector3.UP
-	bits.spread = 55.0
-	bits.initial_velocity_min = 1.2
-	bits.initial_velocity_max = 2.4 if tree else 1.7
-	bits.gravity = Vector3(0,-7.0,0)
 	bits.scale_amount_min = 0.5
 	bits.scale_amount_max = 1.0
 	var crumb := BoxMesh.new()
-	crumb.size = Vector3.ONE*(0.07 if tree else 0.045)
-	var paint := StandardMaterial3D.new()
-	paint.vertex_color_use_as_albedo = true
-	paint.roughness = 1.0
-	crumb.material = paint
+	crumb.size = Vector3.ONE*size
+	crumb.material = _pluck_paint(Color.WHITE)
 	bits.mesh = crumb
 	var colours := Gradient.new()
-	colours.set_color(0,PLUCK_SOIL)
-	colours.set_color(1,PLUCK_LEAF)
+	colours.set_color(0,from)
+	colours.set_color(1,to)
 	bits.color_initial_ramp = colours
-	pop.add_child(bits)
-	bits.global_position = base+Vector3.UP*0.05
-	bits.emitting = true
-	var lift := PLUCK_LIFT*(1.0 if tree else 0.5)
-	var lean := Basis(Vector3(randf_range(-1.0,1.0),0.0,randf_range(-1.0,1.0)).normalized(),0.25)
-	var start: Array[Transform3D] = []
-	for mesh in meshes: start.append(mesh.global_transform)
-	var step := func(t: float) -> void:
-		var rise := lift*(1.0-pow(1.0-minf(t/0.6,1.0),3.0))
-		var size := 1.0+0.08*sin(minf(t/0.35,1.0)*PI)-smoothstep(0.45,1.0,t)
-		var held := Transform3D(Basis.IDENTITY.slerp(lean,t)*Basis.from_scale(Vector3.ONE*maxf(size,0.001)),base+Vector3.UP*rise)*Transform3D(Basis.IDENTITY,-base)
-		for i in range(meshes.size()): meshes[i].global_transform = held*start[i]
-	var tween := pop.create_tween()
-	tween.tween_method(step,0.0,1.0,PLUCK_SECONDS)
-	tween.tween_callback(func() -> void:
-		for mesh in meshes: mesh.hide())
-	tween.tween_interval(PLUCK_SECONDS)
-	tween.tween_callback(pop.queue_free)
+	return bits
 
 ## Outline tree `id` (or none, for -1): its parts as world play batches them,
 ## or the meshes of the tree it has promoted. A bent tree is not outlined,
