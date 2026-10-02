@@ -4,6 +4,7 @@ extends SceneTree
 ## the bars wake near their edges and stay down while quiet.
 ## godot --headless --path . --script res://tools/probe_hud_bars.gd
 
+const Linen = preload("res://scripts/hud_linen.gd")
 const Tray = preload("res://scripts/materials_tray.gd")
 const Roll = preload("res://scripts/tool_roll.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
@@ -31,10 +32,10 @@ func _init() -> void:
 	for i in range(40): await process_frame
 	check(tray.shown > 0.99 and roll.shown > 0.99,"both bars shown")
 	check(tray.awake < 0.01 and roll.awake < 0.01,"at rest with the pointer over the plate")
-	check(absf(tray.modulate.a-0.6) < 0.02,"rest opacity 0.6 (got %.2f)" % tray.modulate.a)
+	check(absf(tray.modulate.a-Linen.REST_OPACITY) < 0.02,"rest opacity %.2f (got %.2f)" % [Linen.REST_OPACITY,tray.modulate.a])
 	var bar: Rect2 = tray._bar()
 	print("bar ",bar," scale ",tray.ui_scale)
-	check(absf(bar.size.x-678.0*tray.ui_scale) < 2.0,"bar is 678 design px wide")
+	check(absf(bar.size.x-934.0*tray.ui_scale) < 2.0,"bar is 934 design px wide")
 	check(absf(bar.get_center().x-720.0) < 1.0,"bar centred")
 	for entry: Dictionary in Tray.SPECIMENS:
 		check(tray.specimen_at(tray.specimen_centre(entry.id)) == entry.id,"slot %s hit-tests to itself" % entry.id)

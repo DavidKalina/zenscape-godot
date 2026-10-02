@@ -68,6 +68,11 @@ const WHISPER_DESCENT := 4.0
 const WHISPER_INK := Color("d6cbb2")
 ## Hover and press take HOVER_TIME s (the Motion table's 150 ms, linear).
 const HOVER_TIME := 0.15
+## First steps (scripts/first_steps_card.gd) points at a pocket with `nudge`:
+## the ring takes NUDGE_FADE s to come and go and breathes once every
+## NUDGE_PERIOD s.
+const NUDGE_FADE := 0.5
+const NUDGE_PERIOD := 3.0
 
 ## The roll it hangs under, and the hand's materials node that owns the HUD
 ## (for the editor, the scene and the hud-hidden switch).
@@ -88,10 +93,40 @@ var _cloth: Linen.Cloth
 var _tag_cloth: Linen.Cloth
 var _states := {}
 var _photo_linked: Node = null
+## The pocket the first-steps card is pointing at, or "". While one is
+## pointed at the foot comes out with it (the roll keeps its own rest) and
+## that slot is stitched round, slowly.
+var nudged := ""
+var _nudge_for := ""
+var _nudge_a := 0.0
+var _nudge_t := 0.0
 
 func setup(tool_roll: Control, hand_materials: Node) -> void:
 	roll = tool_roll
 	materials = hand_materials
+
+## Points at slot `id` (one of SLOTS), or at none with "": the foot comes
+## out with it and the slot is stitched round and lifts a little, over and
+## over, until it is cleared.
+func nudge(id: String) -> void:
+	nudged = id
+	if not id.is_empty(): _nudge_for = id
+
+## The nudge's frame: its ring comes and goes eased, and breathes while it is on.
+func _nudge_step(delta: float) -> void:
+	_nudge_a = move_toward(_nudge_a,1.0 if not nudged.is_empty() else 0.0,delta/NUDGE_FADE)
+	_nudge_t = fposmod(_nudge_t+delta,NUDGE_PERIOD)
+	if _nudge_a <= 0.0: _nudge_for = ""
+
+## The pointing ring on `cell`: a faint lift of the hover patch and a stitched
+## ring in the pip's stitch, both breathing. Nothing without a nudge.
+func _nudge_ring(item: CanvasItem, cell: Rect2, line: float, radius: float) -> void:
+	var a := Linen.eased(_nudge_a)
+	if a <= 0.0: return
+	var breath := 0.5-0.5*cos(_nudge_t/NUDGE_PERIOD*TAU)
+	_patch(cell,Color(Linen.HOVER,Linen.HOVER.a*a*breath),Color(Linen.HOVER_SHADE,Linen.HOVER_SHADE.a*a*breath))
+	var ring := cell.grow((1.0-3.0*breath)*ui_scale)
+	Linen.dashed_round(item,ring,radius*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*a*(0.45+0.55*breath)),line,ui_scale)
 
 func _ready() -> void:
 	name = "ToolFoot"
@@ -189,7 +224,8 @@ func _process(delta: float) -> void:
 	_link_photo()
 	# It rests and wakes with the roll, and is hidden whenever the roll is.
 	shown = roll.shown
-	awake = roll.awake
+	awake = maxf(roll.awake,Linen.eased(_nudge_a))
+	_nudge_step(delta)
 	if not is_equal_approx(roll.ui_scale,ui_scale) or _textures.is_empty():
 		ui_scale = roll.ui_scale
 		var px := ICON*ui_scale
@@ -258,6 +294,7 @@ func _draw() -> void:
 		var cell := _cell(i)
 		var h := maxf(Linen.eased(state.hover)*0.5,Linen.eased(state.press))
 		if h > 0.0: _patch(cell,Color(Linen.PRESSED,Linen.PRESSED.a*h),Color(Linen.PRESSED_SHADE,Linen.PRESSED_SHADE.a*h))
+		if id == _nudge_for: _nudge_ring(self,cell,maxf(1.0,roundf(ui_scale)),SLOT_RADIUS)
 		Linen.icon(self,_textures,id,cell.get_center(),ICON*ui_scale,ui_scale,"icon",ICON_SHADOW_Y)
 	var tag := _tag_rect()
 	var alpha := Linen.eased(_tag_hover())

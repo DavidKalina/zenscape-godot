@@ -75,6 +75,11 @@ var titled := false
 ## (scripts/world_session.gd). It takes the worlds over when the game opens on
 ## the title or with --resume; other launches keep the single save.
 var world_session: Node
+## What the player has found the hand can do, and the first steps they are
+## walked through (scripts/first_steps.gd). Only under the hand scheme; none
+## with `--no-first-steps`. The worlds share it: it listens to the scene's
+## own pieces, which stay as worlds open.
+var first_steps: Node
 ## The title's "Build this world": keeps the orbited world as the new place.
 var _keep_title: Button
 ## The front page's way to the library page (with worlds).
@@ -174,9 +179,23 @@ func _ready() -> void:
 			hand_reach.edge_spring_began.connect(func(at: Vector2) -> void: edge_spring.pull_begin(at))
 			hand_reach.edge_spring_dragged.connect(func(at: Vector2, relative: Vector2) -> void: edge_spring.pull(at,relative))
 			hand_reach.edge_spring_released.connect(edge_spring.release)
+	_build_first_steps()
 	if world_session.managing: _build_worlds_screens()
 	if library_title: open_title()
 	shell_ready = true
+
+## The first steps' model, once the hand's reach is there. `--first-steps`
+## starts them from the top without saving, and a movie capture keeps them to
+## the session, as the almanac's whispers are (scripts/almanac.gd `_private`).
+func _build_first_steps() -> void:
+	var args := OS.get_cmdline_user_args()
+	if not hand_only or hand_reach == null or "--no-first-steps" in args or first_steps != null: return
+	first_steps = preload("res://scripts/first_steps.gd").new()
+	first_steps.name = "FirstSteps"
+	if "--first-steps" in args or has_meta("movie_capture"): first_steps.settings_path = ""
+	add_child(first_steps)
+	first_steps.setup(self,hand_reach)
+	if hand_reach.materials != null: hand_reach.materials.show_first_steps(first_steps)
 
 func _fill_world_menu() -> void:
 	if not creation_mode:
@@ -531,8 +550,7 @@ func show_menu() -> void:
 			_menu.modulate.a = 0.0
 			_release_menu_focus()
 			_screen_blocker.show()
-		if _has_world and not titled and not pause_panel.is_open:
-			pause_panel.open(str(world_session.library.find(world_session.current_id).get("name","Your world")))
+		if _has_world and not titled and not pause_panel.is_open and not field_notes.is_open: _open_pause_panel()
 	# Pausing keeps the world.
 	if world_session != null and _has_world and not titled: world_session.keep_now()
 	if _worlds_screens(): _sync_pause_status()
@@ -541,6 +559,7 @@ func close_menu() -> void:
 	super.close_menu()
 	if _worlds_screens():
 		pause_panel.close()
+		field_notes.close()
 		_screen_blocker.hide()
 	if creation_mode and _has_world and not _craft_before_menu: set_building(false)
 	_sync_creation_ui()
@@ -553,6 +572,9 @@ var worlds_layer: CanvasLayer
 var world_title: Control
 var new_world_panel: Control
 var pause_panel: Control
+## The field notes (scripts/field_notes.gd): the pause panel's page of what
+## the hand can do, over it. The panel offers it only with `first_steps`.
+var field_notes: Control
 ## Takes the clicks no screen control does, so none reach the world or the
 ## old menu drawn invisible beneath.
 var _screen_blocker: Control
@@ -581,6 +603,8 @@ func _build_worlds_screens() -> void:
 	pause_panel = preload("res://scripts/pause_panel.gd").new()
 	pause_panel.hide()
 	worlds_layer.add_child(pause_panel)
+	field_notes = preload("res://scripts/field_notes.gd").new()
+	worlds_layer.add_child(field_notes)
 	world_title.selection_changed.connect(func(world: Dictionary) -> void: if library_open: world_session.show_backdrop(str(world.get("id",""))))
 	world_session.backdrop_ready.connect(func(_id: String) -> void: if titled and library_open: world_title.reveal_live())
 	world_title.enter_requested.connect(func(world: Dictionary) -> void: if library_open: world_session.open_world(str(world.id)))
@@ -603,7 +627,20 @@ func _build_worlds_screens() -> void:
 		if not copy.is_empty() and not hand_only: _notice.text = ("Playing on in " if carry_on else "Kept a copy · ")+str(copy.name))
 	pause_panel.settings_requested.connect(_show_settings)
 	pause_panel.title_requested.connect(world_session.return_to_title)
+	pause_panel.notes_requested.connect(func() -> void:
+		pause_panel.close()
+		field_notes.open(first_steps))
+	# Deferred: the Esc that closed the page is still on its way round.
+	field_notes.closed.connect(func() -> void: _open_pause_panel.call_deferred())
+	# The card picks up from the model's restart; the world is given back.
+	field_notes.walk_requested.connect(close_menu)
 	world_session.keeping_changed.connect(func(_keeping: bool) -> void: _sync_pause_status())
+
+func _open_pause_panel() -> void:
+	if not _has_world or titled or not _menu.visible: return
+	pause_panel.notes_available = first_steps != null
+	pause_panel.open(str(world_session.library.find(world_session.current_id).get("name","Your world")))
+	_sync_pause_status()
 
 func _show_settings() -> void:
 	_settings.popup_centered(Vector2i(400,260))
@@ -634,6 +671,7 @@ func open_title() -> void:
 	_has_world = false
 	_notice.text = ""
 	pause_panel.close()
+	field_notes.close()
 	new_world_panel.close()
 	world_title.hide()
 	await world_session.show_showcase()
@@ -851,7 +889,7 @@ func _pages_preview() -> void:
 		almanac_pages.set_meta("preview_page","customise" if arg.ends_with("=customise") else "moods")
 
 func blocks_world_input(point: Vector2) -> bool:
-	if _worlds_screens() and (titled or pause_panel.is_open): return true
+	if _worlds_screens() and (titled or pause_panel.is_open or field_notes.is_open): return true
 	if almanac_pages != null and almanac_pages.contains_pointer(point): return true
 	if places != null and places.blocks(point): return true
 	if creation_palette != null and creation_palette.contains_pointer(point): return true

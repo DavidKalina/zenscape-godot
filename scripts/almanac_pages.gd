@@ -291,7 +291,7 @@ func item_rect(kind: String, id := "", value: Variant = null) -> Rect2:
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
 	var screen := get_viewport_rect().size
-	var scale_now := Linen.scale_for(screen)
+	var scale_now := Linen.hud_scale_for(screen)
 	if not is_equal_approx(scale_now,ui_scale):
 		ui_scale = scale_now
 		_vignettes.clear()

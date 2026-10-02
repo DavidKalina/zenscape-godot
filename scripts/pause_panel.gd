@@ -1,8 +1,10 @@
 extends Control
 ## The in-game pause (docs/design/worlds/README.md "3. In-game pause"): a
 ## scrim over the live world and a centred linen panel that says the world is
-## kept, with Resume, Save a copy as… (an inline well), Settings and Return to
-## title. It only shows and asks; the game wiring pauses, saves and leaves.
+## kept, with Resume, Save a copy as… (an inline well), Field notes, Settings
+## and Return to title. It only shows and asks; the game wiring pauses, saves
+## and leaves. Field notes (scripts/field_notes.gd) is left out when
+## `notes_available` is false, read at `open`.
 ##
 ## Lengths are design pixels at the 1440-wide frame, times scripts/hud_linen.gd
 ## `scale_for`. Keys: up/down move between rows (and through the open well),
@@ -13,6 +15,7 @@ extends Control
 
 signal resumed
 signal copy_requested(copy_name: String, carry_on: bool)
+signal notes_requested
 signal settings_requested
 signal title_requested
 
@@ -32,6 +35,8 @@ const GAP := 4.0
 const FADE := 0.15
 
 var is_open := false
+## Whether the Field notes row is offered; read at `open`.
+var notes_available := true
 var world_name := ""
 var carry_on := true
 var copy_open := false
@@ -41,6 +46,7 @@ var name_label := Label.new()
 var status := Status.new()
 var resume_row := Row.new()
 var copy_row := Row.new()
+var notes_row := Row.new()
 var settings_row := Row.new()
 var title_row := Row.new()
 var copy_name := LineEdit.new()
@@ -188,7 +194,7 @@ func _init() -> void:
 	status.text = status_text
 	_sheet.add_child(status)
 	for entry: Array in [[resume_row,"Resume",_resume],[copy_row,"Save a copy as…",func() -> void: set_copy_open(not copy_open)],
-			[settings_row,"Settings",settings_requested.emit],[title_row,"Return to title",title_requested.emit]]:
+			[notes_row,"Field notes",notes_requested.emit],[settings_row,"Settings",settings_requested.emit],[title_row,"Return to title",title_requested.emit]]:
 		var row: Row = entry[0]
 		row.font = _row_font
 		row.hint_font = _caps_font.duplicate() as FontVariation
@@ -248,6 +254,7 @@ func open(name_of_world: String) -> void:
 	name_label.text = world_name
 	copy_name.text = _default_copy_name()
 	copy_open = false
+	notes_row.visible = notes_available
 	set_carry_on(true)
 	is_open = true
 	show()
@@ -321,6 +328,7 @@ func _in_well(control: Control) -> bool:
 func _focus_order() -> Array[Control]:
 	var order: Array[Control] = [resume_row,copy_row]
 	if copy_open: order.append_array([copy_name,carry_radio,stay_radio,save_button])
+	if notes_row.visible: order.append(notes_row)
 	order.append_array([settings_row,title_row])
 	return order
 
@@ -395,6 +403,9 @@ func _layout() -> void:
 		inside = _place(save_button,well_width-pad-button_width,inside,button_width,16.0*px+_button_font.get_height(button_size))+pad
 		y += 2.0*px
 		y = _place(_well,left+6.0*px,y,well_width,inside)+8.0*px+GAP*px
+	if notes_row.visible:
+		notes_row.px = px
+		y = _place(notes_row,left,y,inner,row_height)+GAP*px
 	settings_row.px = px
 	y = _place(settings_row,left,y,inner,row_height)+GAP*px
 	_sheet.divider = Vector3(roundf(left+6.0*px),roundf(left+inner-6.0*px),roundf(y+8.0*px))
@@ -410,7 +421,7 @@ func _layout() -> void:
 	_sheet.position = ((size-_sheet.size)*0.5).round()
 	_place_cloth(Rect2(Vector2.ZERO,_sheet.size),px)
 	_sheet.queue_redraw()
-	for control: Control in [status,resume_row,copy_row,settings_row,title_row,carry_radio,stay_radio,save_button,_well,copy_name]: control.queue_redraw()
+	for control: Control in [status,resume_row,copy_row,notes_row,settings_row,title_row,carry_radio,stay_radio,save_button,_well,copy_name]: control.queue_redraw()
 
 ## Places `control` at `x`,`y` (rounded), `w` by `h`; returns its foot.
 func _place(control: Control, x: float, y: float, w: float, h: float) -> float:
