@@ -33,6 +33,15 @@ extends Node3D
 ##   emerged life: saved, drawn at once through the paint preview, growing in
 ##   with its birth, and never written into an open stroke.
 ##
+## - **Pollen, the other kinds** (docs/scenic/flower-spread.md). The kit's other
+##   flowers (BLOOMS: the per-kind spec, the seam) let faint pollen glints
+##   off their heads: a little in the breeze (`PUFF`), more under a wind-tool
+##   gust (`GUST_PUFF`). The glints ride the same air as the seeds and are
+##   drawn as the wind tool's specks (shaders/pollen_speck.gdshader). A
+##   grain that lands takes far more rarely (`POLLEN_TAKE`, a quarter of the
+##   dandelion's creep) under the very same rules, and what comes up copies
+##   its parent's kind. They have no round: no wilting, no regrowing.
+##
 ## Nothing here is saved: a world reopens with every clock whole.
 ##
 ## Lives under the terrain node, so its coordinates are the plate's.
@@ -64,6 +73,36 @@ const STRIP_LEAN := Vector2(0.25,0.85)
 const STRIP_SHOWN := 0.2
 ## The seeds in the air.
 const SEEDS_MAX := 360
+## The other kinds' spec: the flower slot whose ground rules and sizes a new
+## plant of the kind uses (FlowerSowing SLOTS), and the pollen's colour
+## (sRGB), warm and pale. Dandelions are the seeds' own and are not here.
+const BLOOMS := {
+	"oxeye_daisy":{"slot":"wildflower","pollen":"f3e18c"},
+	"buttercup":{"slot":"wildflower","pollen":"f6d94e"},
+	"poppy":{"slot":"poppy","pollen":"f0cf72"},
+	"cosmos":{"slot":"cosmos","pollen":"f6d88a"},
+	"lupine":{"slot":"wildflower","pollen":"f1e4a8"},
+	"sunflower":{"slot":"sunflower","pollen":"f5c94a"},
+}
+## Pollen: about once every 1 / PUFF seconds a bloom lets a grain go when the
+## air drifts at PEEL_AIR m/s (as the square of the air), at most POLLEN_RATE
+## a second over the whole land; under a gust a bloom lets GUST_PUFF a second
+## go at full lean, the lanes read GUST_TICK seconds apart.
+const PUFF := 1.0/25.0
+const POLLEN_RATE := 24.0
+const GUST_PUFF := 0.6
+const GUST_TICK := 0.25
+## The grains in the air, their radius (m), opacity, sinking speed (m/s), the
+## highest above the ground they ride (m), longest flight and settle (s).
+const POLLEN_MAX := 220
+const POLLEN_SIZE := Vector2(0.05,0.085)
+const POLLEN_OPACITY := 0.85
+const POLLEN_SINK := 0.22
+const POLLEN_CEILING := 3.0
+const POLLEN_LONGEST := 14.0
+const POLLEN_SETTLE := 1.0
+## Chance a landed grain takes: about a quarter of the dandelion's creep.
+const POLLEN_TAKE := 0.008
 ## Seed size (m), drawn larger than life as the heads are.
 const SIZE := Vector2(0.022,0.034)
 const COLOUR := Color(0.97,0.96,0.92)
@@ -133,6 +172,14 @@ var _flower_cells := {}
 ## Every plant's foot and room, bucketed by 0.5 m.
 var _room_cells := {}
 var _flower_ids := {}
+## The other kinds' heads (BLOOMS): x, height over the foot, z; the kind; and
+## the same bucketed by CELL, as indexes.
+var _bloom_p := PackedVector3Array()
+var _bloom_kind := PackedStringArray()
+var _bloom_cells := {}
+var _since_gust := 0.0
+var _pollen_n := 0
+var _pollen_tint := {}
 ## [Vector2 foot, time] where the hand thinned flowers.
 var _cleared: Array = []
 var _rng := RandomNumberGenerator.new()
@@ -141,8 +188,7 @@ var _stale := false
 var _read_revision := -1
 var _read_count := -1
 var _since_take := INF
-var _sowing: RefCounted
-var _sowing_made := -INF
+var _sowings := {}
 
 # The seeds in the air (plate space).
 var _pos := PackedVector3Array()
@@ -153,7 +199,11 @@ var _size := PackedFloat32Array()
 var _weight := PackedFloat32Array()
 var _turn := PackedFloat32Array()
 var _floor := PackedFloat32Array()
+## "" for a dandelion seed, else the kind of the bloom a grain came from.
+var _kind := PackedStringArray()
 var _buffer := PackedFloat32Array()
+var _pollen_buffer := PackedFloat32Array()
+var _pollen_node: MultiMeshInstance3D
 var _node: MultiMeshInstance3D
 var _air_cache := {}
 var _ground_cache := {}
@@ -162,6 +212,7 @@ var _blowing := false
 
 ## Counters for probes and tests.
 var peeled := 0
+var pollen_released := 0
 var stripped := 0
 var landed := 0
 ## Where seeds came down (the first 4096), for probes.
@@ -195,6 +246,25 @@ func _ready() -> void:
 	_node.custom_aabb = AABB(Vector3(-400,-100,-400),Vector3(800,300,800))
 	_node.visible = false
 	add_child(_node)
+	for kind: String in BLOOMS: _pollen_tint[kind] = Color(str(BLOOMS[kind].pollen)).srgb_to_linear()
+	var grains := MultiMesh.new()
+	grains.transform_format = MultiMesh.TRANSFORM_3D
+	grains.use_colors = true
+	grains.use_custom_data = true
+	grains.mesh = quad
+	grains.instance_count = POLLEN_MAX
+	grains.visible_instance_count = 0
+	var speck := ShaderMaterial.new()
+	speck.shader = preload("res://shaders/pollen_speck.gdshader")
+	_pollen_node = MultiMeshInstance3D.new()
+	_pollen_node.name = "Pollen"
+	_pollen_node.multimesh = grains
+	_pollen_node.material_override = speck
+	_pollen_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_pollen_node.top_level = true
+	_pollen_node.custom_aabb = _node.custom_aabb
+	_pollen_node.visible = false
+	add_child(_pollen_node)
 
 # --- What stands -------------------------------------------------------------------
 
@@ -219,6 +289,9 @@ func reindex() -> void:
 	_flower_cells.clear()
 	_room_cells.clear()
 	_flower_ids.clear()
+	_bloom_p.clear()
+	_bloom_kind.clear()
+	_bloom_cells.clear()
 	for item: Dictionary in data.objects:
 		var foot := Vector2(float(item.x),float(item.z))
 		var asset := str(item.asset)
@@ -228,10 +301,19 @@ func reindex() -> void:
 		_flower_ids[id] = foot
 		_flower_cells.get_or_add(_cell(foot),[]).append(foot)
 		if asset in Flowers.CYCLE_KINDS: kept[id] = _track(item,clocks.get(id,{}))
+		elif BLOOMS.has(asset): _add_bloom(item,asset)
 	for id: int in clocks.keys():
 		if not kept.has(id) and view != null: view.set_flower_state(id,1.0)
 	clocks = kept
 	for id: int in clocks: _clock_ids.append(id)
+
+## A bloom of a kind in BLOOMS: its head's place for the pollen.
+func _add_bloom(item: Dictionary, asset: String) -> void:
+	var scale := float(item.get("scale",1.0))
+	var head := Vector3(float(item.x),float(Flowers.SPEC[asset].height)*0.92*scale,float(item.z))
+	_bloom_cells.get_or_add(_cell(Vector2(head.x,head.z)),PackedInt32Array()).append(_bloom_p.size())
+	_bloom_p.append(head)
+	_bloom_kind.append(asset)
 
 ## A clock's entry: "p" its head's x, z (plate) with, in y, the head's height
 ## over its foot (its neck, 0.34 m, and the head's middle above, at the
@@ -258,10 +340,14 @@ func restored() -> void:
 	reindex()
 
 func clear_air() -> void:
-	_pos.clear(); _vel.clear(); _age.clear(); _landed.clear(); _size.clear(); _weight.clear(); _turn.clear(); _floor.clear()
+	_pos.clear(); _vel.clear(); _age.clear(); _landed.clear(); _size.clear(); _weight.clear(); _turn.clear(); _floor.clear(); _kind.clear()
+	_pollen_n = 0
 	if _node != null:
 		_node.multimesh.visible_instance_count = 0
 		_node.visible = false
+	if _pollen_node != null:
+		_pollen_node.multimesh.visible_instance_count = 0
+		_pollen_node.visible = false
 
 ## The hand thinned flowers `ids` (scripts/flower_paint.gd): seed keeps off
 ## where they stood for a while.
@@ -295,6 +381,13 @@ func step(delta: float) -> void:
 		if _since_round >= 0.5:
 			_since_round = 0.0
 			_turn_round()
+	if not _bloom_p.is_empty():
+		_puff(delta)
+		if _blowing:
+			_since_gust += delta
+			if _since_gust >= GUST_TICK:
+				_gust_puff(_since_gust)
+				_since_gust = 0.0
 	_fly(delta)
 	_draw_seeds()
 	last_step_usec = Time.get_ticks_usec()-began
@@ -347,6 +440,43 @@ func _peel(delta: float) -> void:
 		var count := 1 if _rng.randf() < 0.7 else 2
 		_lose(id,entry,float(count)/SEEDS,1.0)
 		peeled += count
+
+## The breeze lifts a grain of pollen off a few blooms. Never a loop over
+## them: the rate is for the whole land and each pick is a random bloom.
+func _puff(delta: float) -> void:
+	if _pollen_n >= POLLEN_MAX: return
+	var mean := air_at(Vector2.ZERO).length()
+	var rate := minf(PUFF*float(_bloom_p.size())*pow(mean/PEEL_AIR,2.0),POLLEN_RATE)
+	var events := int(rate*delta)
+	if _rng.randf() < rate*delta-float(events): events += 1
+	for i in range(mini(events,8)):
+		var index := _rng.randi_range(0,_bloom_p.size()-1)
+		var head := _bloom_p[index]
+		var local := air_at(Vector2(head.x,head.z)).length()
+		if _rng.randf() > clampf(pow(local/maxf(mean,0.05),2.0),0.0,2.0)*0.5: continue
+		_release(index)
+
+## The wind tool's lanes shake pollen from the blooms they lean on, read a
+## cell at a time every GUST_TICK seconds, and only the cells the air touches.
+func _gust_puff(span: float) -> void:
+	for cell: Vector2i in _bloom_cells:
+		if _pollen_n >= POLLEN_MAX: return
+		var middle := (Vector2(cell)+Vector2(0.5,0.5))*CELL
+		if _cell_lean(middle) < STRIP_LEAN.x*0.6: continue
+		var members: PackedInt32Array = _bloom_cells[cell]
+		var lean := lean_at(middle).length()
+		var rate := GUST_PUFF*float(members.size())*smoothstep(STRIP_LEAN.x*0.6,STRIP_LEAN.y,lean)
+		var events := int(rate*span)
+		if _rng.randf() < rate*span-float(events): events += 1
+		for i in range(mini(events,6)): _release(members[_rng.randi_range(0,members.size()-1)])
+
+## A grain of pollen leaves bloom `index`.
+func _release(index: int) -> void:
+	if _pollen_n >= POLLEN_MAX: return
+	var head := _bloom_p[index]
+	var ground: Variant = ground_at(Vector2(head.x,head.z))
+	var kind := _bloom_kind[index]
+	if _spawn(Vector3(head.x,(float(ground) if ground != null else 0.0)+head.y,head.z),1.0,kind): pollen_released += 1
 
 ## The wind tool's air strips the clocks it leans hard.
 func _strip(delta: float) -> void:
@@ -404,7 +534,14 @@ func _turn_round() -> void:
 # --- The seeds -------------------------------------------------------------------
 
 func _launch(head: Vector3, weight: float) -> void:
-	if _pos.size() >= SEEDS_MAX: return
+	if _pos.size()-_pollen_n >= SEEDS_MAX: return
+	_spawn(head,weight,"")
+
+## A seed (`kind` "") or a grain of pollen leaves `head`. False when the air
+## holds all it may.
+func _spawn(head: Vector3, weight: float, kind: String) -> bool:
+	var pollen := not kind.is_empty()
+	if pollen and _pollen_n >= POLLEN_MAX: return false
 	var out := Vector3(_rng.randfn(0.0,1.0),_rng.randfn(0.0,1.0)*0.6+0.4,_rng.randfn(0.0,1.0)).normalized()
 	var p := head+out*0.06
 	var air := air_at(Vector2(p.x,p.z))+lean_at(Vector2(p.x,p.z))*LEAN_CARRY
@@ -412,11 +549,15 @@ func _launch(head: Vector3, weight: float) -> void:
 	_vel.append(Vector3(air.x*0.5,0.25+_rng.randf()*0.35,air.y*0.5)+out*0.15)
 	_age.append(0.0)
 	_landed.append(-1.0)
-	_size.append(_rng.randf_range(SIZE.x,SIZE.y))
+	var size_range := POLLEN_SIZE if pollen else SIZE
+	_size.append(_rng.randf_range(size_range.x,size_range.y))
+	_kind.append(kind)
+	if pollen: _pollen_n += 1
 	_weight.append(weight)
 	_turn.append(_rng.randf()*TAU)
 	var ground: Variant = ground_at(Vector2(p.x,p.z))
 	_floor.append(float(ground) if ground != null else p.y)
+	return true
 
 func _fly(delta: float) -> void:
 	var i := 0
@@ -424,8 +565,9 @@ func _fly(delta: float) -> void:
 	while i < _pos.size():
 		_age[i] += delta
 		var p := _pos[i]
+		var pollen := not _kind[i].is_empty()
 		if _landed[i] >= 0.0:
-			if _age[i]-_landed[i] >= SETTLE:
+			if _age[i]-_landed[i] >= (POLLEN_SETTLE if pollen else SETTLE):
 				_drop(i)
 				continue
 			i += 1
@@ -435,15 +577,16 @@ func _fly(delta: float) -> void:
 		var speed := air.length()
 		# Each seed bobs on its own eddy.
 		var eddy := sin(t*1.7+float(i)*2.3)*0.12+sin(t*0.63+float(i)*0.71)*0.08
-		var want := Vector3(air.x,-SINK+LIFT*speed+eddy*(0.4+0.4*minf(speed,2.0)),air.y)
-		if p.y > _floor[i]+CEILING: want.y = minf(want.y,-SINK)
+		var sink := POLLEN_SINK if pollen else SINK
+		var want := Vector3(air.x,-sink+LIFT*speed+eddy*(0.4+0.4*minf(speed,2.0)),air.y)
+		if p.y > _floor[i]+(POLLEN_CEILING if pollen else CEILING): want.y = minf(want.y,-sink)
 		var v := _vel[i].lerp(want,1.0-exp(-FOLLOW*delta))
 		_vel[i] = v
 		p += v*delta
 		_pos[i] = p
 		var ground: Variant = ground_at(Vector2(p.x,p.z))
 		if ground != null: _floor[i] = float(ground)
-		if ground == null or _age[i] >= LONGEST:
+		if ground == null or _age[i] >= (POLLEN_LONGEST if pollen else LONGEST):
 			# Off the land, or long gone: it fades out in the air.
 			_landed[i] = _age[i]
 			_weight[i] = 0.0
@@ -452,76 +595,121 @@ func _fly(delta: float) -> void:
 			_landed[i] = _age[i]
 			landed += 1
 			if landings.size() < 4096: landings.append(Vector2(p.x,p.z))
-			_settle(Vector2(p.x,p.z),_weight[i])
+			_settle(Vector2(p.x,p.z),_weight[i],_kind[i])
 		i += 1
 
 func _drop(i: int) -> void:
 	var last := _pos.size()-1
+	if not _kind[i].is_empty(): _pollen_n -= 1
 	if i != last:
 		_pos[i] = _pos[last]; _vel[i] = _vel[last]; _age[i] = _age[last]; _landed[i] = _landed[last]
 		_size[i] = _size[last]; _weight[i] = _weight[last]; _turn[i] = _turn[last]; _floor[i] = _floor[last]
+		_kind[i] = _kind[last]
 	_pos.resize(last); _vel.resize(last); _age.resize(last); _landed.resize(last)
 	_size.resize(last); _weight.resize(last); _turn.resize(last); _floor.resize(last)
+	_kind.resize(last)
 
 func _draw_seeds() -> void:
 	if _node == null: return
 	var count := _pos.size()
-	_node.visible = count > 0
+	var grains := _pollen_n
+	var seeds := count-grains
+	_node.visible = seeds > 0
+	_pollen_node.visible = grains > 0
 	if count == 0:
 		_node.multimesh.visible_instance_count = 0
+		_pollen_node.multimesh.visible_instance_count = 0
 		return
 	var plate := get_parent() as Node3D
 	var to_world := plate.global_transform if plate != null else Transform3D.IDENTITY
 	var scale := to_world.basis.get_scale().x
-	# One buffer for the lot (transform, colour, custom: 20 floats a seed),
-	# not three calls a seed.
+	var t := Emergence.time
+	# One buffer a look for the lot (transform, colour, custom: 20 floats a
+	# particle), not three calls a particle.
 	if _buffer.size() != SEEDS_MAX*20: _buffer.resize(SEEDS_MAX*20)
+	if _pollen_buffer.size() != POLLEN_MAX*20: _pollen_buffer.resize(POLLEN_MAX*20)
 	var buffer := _buffer
+	var pollen_buffer := _pollen_buffer
+	var n_seed := 0
+	var n_grain := 0
 	for i in range(count):
+		var kind := _kind[i]
+		var pollen := not kind.is_empty()
 		var fade := 1.0
-		if _landed[i] >= 0.0: fade = 1.0-clampf((_age[i]-_landed[i])/SETTLE,0.0,1.0)
+		if _landed[i] >= 0.0: fade = 1.0-clampf((_age[i]-_landed[i])/(POLLEN_SETTLE if pollen else SETTLE),0.0,1.0)
 		fade *= clampf(_age[i]/0.25,0.0,1.0)
 		var world := to_world*_pos[i]
 		var size := _size[i]*scale
 		var moving := to_world.basis*_vel[i]
-		var o := i*20
+		if pollen:
+			if n_grain >= POLLEN_MAX: continue
+			# A glint: it catches the light now and then as it turns.
+			var twinkle := 0.7+0.3*sin(t*5.0+_turn[i]*3.0)
+			var tint: Color = _pollen_tint[kind]
+			var o := n_grain*20
+			n_grain += 1
+			pollen_buffer[o] = size; pollen_buffer[o+1] = 0.0; pollen_buffer[o+2] = 0.0; pollen_buffer[o+3] = world.x
+			pollen_buffer[o+4] = 0.0; pollen_buffer[o+5] = size; pollen_buffer[o+6] = 0.0; pollen_buffer[o+7] = world.y
+			pollen_buffer[o+8] = 0.0; pollen_buffer[o+9] = 0.0; pollen_buffer[o+10] = size; pollen_buffer[o+11] = world.z
+			pollen_buffer[o+12] = tint.r; pollen_buffer[o+13] = tint.g; pollen_buffer[o+14] = tint.b; pollen_buffer[o+15] = POLLEN_OPACITY*fade*twinkle
+			pollen_buffer[o+16] = moving.x; pollen_buffer[o+17] = moving.y; pollen_buffer[o+18] = moving.z; pollen_buffer[o+19] = 0.0
+			continue
+		var o := n_seed*20
+		n_seed += 1
 		buffer[o] = size; buffer[o+1] = 0.0; buffer[o+2] = 0.0; buffer[o+3] = world.x
 		buffer[o+4] = 0.0; buffer[o+5] = size; buffer[o+6] = 0.0; buffer[o+7] = world.y
 		buffer[o+8] = 0.0; buffer[o+9] = 0.0; buffer[o+10] = size; buffer[o+11] = world.z
 		buffer[o+12] = COLOUR.r; buffer[o+13] = COLOUR.g; buffer[o+14] = COLOUR.b; buffer[o+15] = OPACITY*fade
 		buffer[o+16] = moving.x; buffer[o+17] = moving.y; buffer[o+18] = moving.z; buffer[o+19] = _turn[i]+_age[i]*0.6
 	_buffer = buffer
-	_node.multimesh.buffer = buffer
-	_node.multimesh.visible_instance_count = count
+	_pollen_buffer = pollen_buffer
+	if n_seed > 0:
+		_node.multimesh.buffer = buffer
+	_node.multimesh.visible_instance_count = n_seed
+	if n_grain > 0:
+		_pollen_node.multimesh.buffer = pollen_buffer
+	_pollen_node.multimesh.visible_instance_count = n_grain
 
+## The dandelion's seeds on the wing (not the pollen).
 func seeds_in_air() -> int:
 	var count := 0
 	for i in range(_pos.size()):
-		if _landed[i] < 0.0: count += 1
+		if _landed[i] < 0.0 and _kind[i].is_empty(): count += 1
+	return count
+
+## The grains of pollen on the wing.
+func pollen_in_air() -> int:
+	var count := 0
+	for i in range(_pos.size()):
+		if _landed[i] < 0.0 and not _kind[i].is_empty(): count += 1
 	return count
 
 # --- Taking root ------------------------------------------------------------------
 
-## A seed came down at `p` carrying `weight` seeds' chance.
-func _settle(p: Vector2, weight: float) -> void:
+## A seed (`kind` "") or a grain from a bloom of `kind` came down at `p`
+## carrying `weight` seeds' chance.
+func _settle(p: Vector2, weight: float, kind := "") -> void:
 	if not spreading or weight <= 0.0 or _since_take < SPREAD_GAP: return
-	if _rng.randf() >= TAKE*weight: return
-	take(p)
+	if _rng.randf() >= (POLLEN_TAKE if not kind.is_empty() else TAKE)*weight: return
+	take(p,kind)
 
-## Tries to grow a new dandelion where a seed came down. Its id, or -1.
-func take(p: Vector2) -> int:
+## Tries to grow a new plant where a seed came down: a dandelion or a seed
+## clock for a dandelion's seed (`parent` ""), else a plant of the `parent`
+## bloom's own kind. Its id, or -1.
+func take(p: Vector2, parent := "") -> int:
 	if held.call(): return _refuse("held")
 	if _flower_ids.size() >= MOST_FLOWERS: return _refuse("land full")
 	if not _near_flowers(p): return _refuse("far or full")
 	for stamp: Array in _cleared:
 		if Emergence.time-float(stamp[1]) < CLEAR_HOLD and p.distance_to(stamp[0]) < CLEAR_REACH: return _refuse("thinned")
 	if not _roomy(p): return _refuse("no room")
-	var sowing := _the_sowing()
+	var sowing := _the_sowing("dandelion" if parent.is_empty() else str(BLOOMS[parent].slot))
 	if sowing == null: return _refuse("no sowing")
 	sowing._survey(Rect2(p,Vector2.ZERO).grow(1.0))
 	if not sowing.suits(p): return _refuse("ground")
 	var key := [sowing.salt,8807,int(roundf(p.x*40.0)),int(roundf(p.y*40.0))]
-	var kind := "dandelion_clock" if Variety.unit(key+[1]) < CLOCK_SHARE else "dandelion"
+	var kind := parent
+	if parent.is_empty(): kind = "dandelion_clock" if Variety.unit(key+[1]) < CLOCK_SHARE else "dandelion"
 	var record: Array = sowing.meadow.flower(kind,p,key)
 	var id: int = data.place(record[0],p,record[4],record[1],record[3],record[2])
 	if id < 0: return -1
@@ -537,6 +725,7 @@ func take(p: Vector2) -> int:
 	if str(item.asset) in Flowers.CYCLE_KINDS:
 		clocks[id] = _track(item,{})
 		_clock_ids.append(id)
+	elif BLOOMS.has(str(item.asset)): _add_bloom(item,str(item.asset))
 	# The index already has it: the publish this brings need not read the land.
 	_read_revision = data.objects_revision
 	_read_count = data.objects.size()
@@ -568,11 +757,12 @@ func _roomy(p: Vector2) -> bool:
 				if p.distance_to(foot) < ROOM: return false
 	return true
 
-## The dandelion slot's sowing (the ground's rules and the drift's sizes),
-## made afresh every SOWING_FRESH seconds so it reads the live water as it is.
-func _the_sowing() -> RefCounted:
+## The sowing of `slot` (the ground's rules and the drift's sizes), made
+## afresh every SOWING_FRESH seconds so it reads the live water as it is.
+func _the_sowing(slot: String) -> RefCounted:
 	if not sowing_for.is_valid(): return null
-	if _sowing == null or Emergence.time-_sowing_made > SOWING_FRESH or Emergence.time < _sowing_made:
-		_sowing = sowing_for.call("dandelion")
-		_sowing_made = Emergence.time
-	return _sowing
+	var made: Array = _sowings.get(slot,[null,-INF])
+	if made[0] == null or Emergence.time-float(made[1]) > SOWING_FRESH or Emergence.time < float(made[1]):
+		made = [sowing_for.call(slot),Emergence.time]
+		_sowings[slot] = made
+	return made[0]
