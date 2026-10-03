@@ -190,7 +190,13 @@ func run() -> void:
 	for i in range(120):
 		if tray.shown > 0.99: break
 		await process_frame
+	# The case fans a group out under a resting pointer (scripts/materials_tray.gd).
+	tray.pointer_override = tray.compartment_centre("fence")
+	for i in range(120):
+		if tray.showing("fence"): break
+		await process_frame
 	check("the case has a fence slot, found",tray.discovered("fence") and tray.specimen_at(tray.specimen_centre("fence")) == "fence")
+	tray.pointer_override = null
 	check("the hand takes the fence",materials.take("fence") and materials.held == "fence",materials.held)
 	await frames(5)
 

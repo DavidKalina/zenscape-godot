@@ -63,7 +63,7 @@ const VERBS := {
 	"water":{"group":"case","name":"Pour water","line":"The watering can is in your hand · hold it over the land to pour","clue":"A can on the strip along the top","near":"roll:can","take":"can"},
 	"scoop":{"group":"case","name":"Carry water","line":"Take the drop from the case and scoop where water lies · carry it and let go","clue":"The case along the bottom","near":"tray:water"},
 	"sow":{"group":"case","name":"Sow seeds","line":"Take a seed or a flower from the case and drag it over the land","clue":"A pinch of something","near":"tray:oak"},
-	"stone":{"group":"case","name":"Set a stone","line":"Take the stone from the case and tap the land · hold longer for a bigger one","clue":"The last compartment","near":"tray:stone"},
+	"stone":{"group":"case","name":"Set a stone","line":"Take the stone from the case and tap the land · hold longer for a bigger one","clue":"Beside the water","near":"tray:stone"},
 	"night":{"group":"air","name":"Bring the night","line":"Click the sun on the almanac · Shift-click steps the golden hours","clue":"The strip on the right","near":"almanac:time"},
 	"mood":{"group":"air","name":"Change the mood","line":"Press M, or the first pocket of the almanac","clue":"The same land, another light","near":"almanac:mood"},
 }

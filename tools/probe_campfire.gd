@@ -104,7 +104,13 @@ func take(id: String) -> void:
 	for i in range(120):
 		if materials.tray.shown > 0.99: break
 		await process_frame
+	# The case fans a group out under a resting pointer (scripts/materials_tray.gd).
+	materials.tray.pointer_override = materials.tray.compartment_centre(id)
+	for i in range(120):
+		if materials.tray.showing(id): break
+		await process_frame
 	await click(materials.tray.specimen_centre(id))
+	materials.tray.pointer_override = null
 	await frames(10)
 
 ## The real light on fire `id` now (0 for none).

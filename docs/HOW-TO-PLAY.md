@@ -168,18 +168,31 @@ and refills in about a minute; a dry cloud won't tear.
 
 ## The tray (experiment)
 
-Along the bottom edge sits a field case, a long, low case of smoked glass
-with one specimen in each compartment. The tree seeds are **acorn** (oak),
-**pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
-and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
-**cosmos** and **sunflower**, then **wheat** and **reed**. Then come **water**, a **river
-stone**, a **stone lamp**, a **campfire**, a **fence** and a **footbridge**. The case stays faint
-until the pointer comes near. Hover a specimen to read its name. Faint
-outlines are kinds you haven't found yet, and pressing one gives nothing.
+Along the bottom edge sits a field case, a short, low case with a
+compartment for each kind of specimen, left to right:
+
+- **Trees**: **acorn** (oak), **pine cone**, **willow catkin**, **birch
+  samara**, **redwood**, **juniper** and **Joshua**
+- **Flowers & crops**: **wildflower**, **dandelion**, **poppy**, **cosmos**,
+  **sunflower**, **wheat** and **reed**
+- **Water & stone**: **water** and a **river stone**
+- **Build**: a **stone lamp**, a **campfire**, a **fence** and a
+  **footbridge**
+- set apart past a stitched line, one you haven't found yet
+
+Each compartment shows one specimen, the last you took from it. Rest the
+pointer on a compartment and its specimens fan out above the case on a scrap
+of the same linen. Move along the fan and press the one you want; the
+compartment shows it from then on, so pressing the compartment itself takes
+the same thing again. The three stitches along a compartment's top mean it
+fans out. The case stays faint until the pointer comes near. Hover a
+specimen, on the case or the fan, to read its name. Faint outlines are kinds
+you haven't found yet, and pressing one gives nothing. The command palette
+(Cmd+K) still takes any of them by name.
 
 | Do | Result |
 |---|---|
-| Press a specimen | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment stays faintly outlined while you hold it |
+| Press a compartment, or a specimen on its fan | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment shows it, pressed in, while you hold it, and the fan folds away |
 | Tree seeds: tap | plants one tree of that kind where you press, if the ground takes a tree there and there is room |
 | Tree seeds: drag | paints a wood of that kind under the brush; go over it again, or linger, to fill it in. Shift-drag thins the trees under the brush. Not on water, rock, snow or too near another tree |
 | Flowers: press and drag over the land | paints flowers under the brush; go over them again to thicken the drift. Shift thins them |
@@ -192,7 +205,7 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Campfire: tap | sets a little campfire, a ring of stones with a fire dancing in it. It burns day and night, glows warm in the dark, smokes a little with the wind and never spreads to the land. Not on water or steep ground, not too close to another campfire, and not under a tree: the hint line says why. Cmd+Z or the trash can takes it away ([campfire](scenic/campfire.md)) |
 | Fence: press and drag a line | faint stakes show the way; let go and a split-rail fence follows the line. End where you began for a pen. Press or let go near a fence and the line snaps onto it, a bright ring marking the post: from a fence's end it carries that fence on, from one end round to the other it closes a pen, and anywhere else on a fence it makes a T sharing a post. Posts skip water and steep rock, leaving gaps; they ride the land when you reshape it. One Cmd+Z takes the whole fence, or the piece you just joined on; the trash can cuts it span by span ([docs/scenic/fences.md](scenic/fences.md)) |
 | Footbridge: drag across a stream or narrow water | a faint ghost shows the bridge the land would take, snapped bank to bank; let go and a timber footbridge is laid, its ends resting on the banks. Over dry land, across more than 6 m of water, or between banks too uneven, the ghost turns dull red and nothing is laid. Cmd+Z takes it back; the trash can clears it ([bridges](scenic/bridges.md)) |
-| Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
+| Click the sky, the case or the same specimen | puts the material back in its compartment |
 
 The trees' spores and the cloud still work as before. `--no-tray` hides the
 tray.

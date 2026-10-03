@@ -232,7 +232,13 @@ func take_material(id: String) -> void:
 	for i in range(90):
 		if materials.tray.shown > 0.99: break
 		await frames(1)
+	# The case fans a group out under a resting pointer (scripts/materials_tray.gd).
+	materials.tray.pointer_override = materials.tray.compartment_centre(id)
+	for i in range(120):
+		if materials.tray.showing(id): break
+		await frames(1)
 	await click_screen(materials.tray.specimen_centre(id))
+	materials.tray.pointer_override = null
 	var ok: bool = materials.held == id
 	log_line("take material %s: %s" % [id,"ok" if ok else "FAILED (holding '%s')" % materials.held])
 

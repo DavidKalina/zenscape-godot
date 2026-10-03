@@ -456,7 +456,13 @@ func run() -> void:
 	for i in range(60):
 		if materials.tray.shown > 0.99: break
 		await process_frame
+	# The case fans a group out under a resting pointer (scripts/materials_tray.gd).
+	materials.tray.pointer_override = materials.tray.compartment_centre("stone")
+	for i in range(120):
+		if materials.tray.showing("stone"): break
+		await process_frame
 	await click(materials.tray.specimen_centre("stone"))
+	materials.tray.pointer_override = null
 	check("taking a stone puts the Feather back",materials.held == "stone" and roll.tool == "hand" and clay.tool_id == "hand",[materials.held,roll.tool,clay.tool_id])
 	await key(KEY_ESCAPE)
 	check("Esc puts the stone down",materials.held.is_empty())
