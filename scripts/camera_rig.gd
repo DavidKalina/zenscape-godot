@@ -613,6 +613,7 @@ func zoom_at(point: Vector2, factor: float) -> void:
 	var high := maxf(DISTANCE.y,old)
 	var goal := clampf(old*factor,DISTANCE.x,high)
 	if is_equal_approx(goal,old): return
+	_used.zoom = true
 	if not following:
 		var hit: Variant = inspector.ground_hit(point)
 		if hit != null:

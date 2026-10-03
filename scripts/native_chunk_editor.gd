@@ -883,6 +883,10 @@ func _emit_stroke(phase: int, hit: Vector3, size: float, amount: float) -> void:
 		1: stroke_moved.emit(_stroke_center,_stroke_radius,stroke_mode(),amount)
 		_: stroke_finished.emit(_stroke_center,_stroke_radius,stroke_mode())
 
+## Steps taken back by `undo`, for probes and the first steps
+## (scripts/first_steps.gd).
+var undos := 0
+
 func undo() -> void:
 	_history_step(false)
 
@@ -911,6 +915,7 @@ func _history_step(forward: bool) -> void:
 	var saved_scene: Dictionary = history.back().get("favorite_scene",{})
 	var inverse := NativeGardenStore.capture(scene) if not saved_scene.is_empty() else {}
 	if data.redo() if forward else data.undo():
+		if not forward: undos += 1
 		var other: Array = data._undo if forward else data._redo
 		other.back().merge(operation)
 		if forward and operation.get("explosion",false) and scene.has_method("_continue_blast_fire"):

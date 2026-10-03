@@ -5,8 +5,7 @@ extends Control
 ## Type to search, Up and Down to move, Tab to change pocket, Enter to take it
 ## in hand, Esc to put the palette away. Cmd/Ctrl K or / opens it.
 ##
-## Pockets: Seeds (the case's seeds and those with no slot in it: birch,
-## redwood, juniper, Joshua), Tools (the roll), Elements (water, stone, and the
+## Pockets: Seeds (the case's seeds, trees and flowers, in its order), Tools (the roll), Elements (water, stone, and the
 ## undiscovered quartz and frost), Life (calls a creature now, whatever its
 ## chance or hour: scripts/land_life.gd `summon`), Moods (every mood_look mood
 ## and This world) and World (undo, redo, turning the view, the overview, the
@@ -81,8 +80,8 @@ const NOTICE_SECONDS := 3.0
 const TABS := ["All","Seeds","Tools","Elements","Life","Moods","World"]
 const TAB_ICONS := ["all","oak","hand","water","track","sun","globe"]
 
-## Seeds in the order the palette lists them: the case's, then the ones with
-## no slot in it. [id, name, sub, description].
+## Seeds in the order the palette lists them, the case's order
+## (scripts/materials_tray.gd SPECIMENS). [id, name, sub, description].
 const SEEDS := [
 	["oak","Acorn","Oak","Plants an oak. Slow to rise, long to stay."],
 	["pine","Cone","Pine","Plants a pine. They climb toward high ground."],

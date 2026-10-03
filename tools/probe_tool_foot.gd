@@ -13,6 +13,7 @@ extends SceneTree
 ## Nothing here is seen: the dummy renderer draws nothing, so the cloth, the
 ## icons and the tag are checked as layout and state only.
 const Foot = preload("res://scripts/tool_foot.gd")
+const Linen = preload("res://scripts/hud_linen.gd")
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -191,7 +192,7 @@ func run() -> void:
 
 	# --- Rest and wake with the roll ---
 	await rest(roll)
-	check("at rest together",roll.awake < 0.01 and foot.awake == roll.awake and absf(foot.modulate.a-0.6) < 0.02,[foot.awake,foot.modulate.a])
+	check("at rest together",roll.awake < 0.01 and foot.awake == roll.awake and absf(foot.modulate.a-Linen.REST_OPACITY) < 0.02,[foot.awake,foot.modulate.a])
 	roll.pointer_override = foot.slot_centre("undo")
 	await frames(30)
 	check("reaching for the foot wakes both",roll.awake > 0.99 and foot.awake == roll.awake and absf(foot.modulate.a-1.0) < 0.01,[roll.awake,foot.modulate.a])

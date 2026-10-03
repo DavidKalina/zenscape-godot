@@ -10,7 +10,7 @@ uniform float margin = 24.0;
 uniform float radius = 12.0;
 // One design pixel in viewport pixels.
 uniform float px = 1.0;
-uniform vec4 cloth : source_color = vec4(0.384, 0.345, 0.290, 0.76);
+uniform vec4 cloth : source_color = vec4(0.318, 0.282, 0.233, 0.9);
 uniform vec4 weave : source_color = vec4(0.078, 0.055, 0.031, 0.12);
 uniform vec4 weft : source_color = vec4(1.0, 0.941, 0.843, 0.035);
 uniform float grain = 0.16;
@@ -18,9 +18,9 @@ uniform vec4 highlight : source_color = vec4(1.0, 0.941, 0.843, 0.09);
 // The hem: inset from the edge, its radius, colour and dash; 0 inset hides it.
 uniform float hem_inset = 5.0;
 uniform float hem_radius = 8.0;
-uniform vec4 hem : source_color = vec4(0.890, 0.843, 0.741, 0.3);
+uniform vec4 hem : source_color = vec4(0.890, 0.843, 0.741, 0.42);
 uniform float dash = 3.0;
-uniform vec4 shadow : source_color = vec4(0.071, 0.086, 0.118, 0.2);
+uniform vec4 shadow : source_color = vec4(0.071, 0.086, 0.118, 0.3);
 uniform float shadow_y = 6.0;
 uniform float shadow_blur = 18.0;
 

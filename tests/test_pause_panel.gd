@@ -6,6 +6,7 @@ var view := SubViewport.new()
 var copies: Array = []
 var resumes := 0
 var settings := 0
+var notes := 0
 var titles := 0
 
 func _initialize() -> void:
@@ -18,6 +19,7 @@ func _initialize() -> void:
 	await process_frame
 	panel.copy_requested.connect(func(copy_name: String, carry_on: bool) -> void: copies.append([copy_name,carry_on]))
 	panel.resumed.connect(func() -> void: resumes += 1)
+	panel.notes_requested.connect(func() -> void: notes += 1)
 	panel.settings_requested.connect(func() -> void: settings += 1)
 	panel.title_requested.connect(func() -> void: titles += 1)
 	check(not panel.visible and not panel.is_open, "It starts hidden")
@@ -31,6 +33,8 @@ func _initialize() -> void:
 	check(panel.status.text == "Kept safe · just now", "Status starts kept safe: "+panel.status.text)
 	check(panel.resume_row.text == "Resume" and panel.resume_row.hint == "Esc", "Resume with its Esc hint")
 	check(panel.copy_row.text == "Save a copy as…" and panel.copy_row.chevron == 1, "Save a copy as… folded (▸)")
+	check(panel.notes_row.visible and panel.notes_row.text == "Field notes", "Field notes is offered")
+	check(panel.notes_row.position.y > panel.copy_row.position.y+panel.copy_row.size.y and panel.notes_row.position.y < panel.settings_row.position.y, "Field notes sits between Save a copy as… and Settings")
 	check(panel.settings_row.text == "Settings", "Settings")
 	check(panel.title_row.text == "Return to title", "Return to title")
 	check(panel.footnote.text == "Nothing is lost when you leave.", "Footnote")
@@ -41,6 +45,10 @@ func _initialize() -> void:
 	# Keys move between rows; Enter on a row activates it.
 	key(KEY_DOWN)
 	check(panel.copy_row.has_focus(), "Down moves to Save a copy as…")
+	key(KEY_DOWN)
+	check(panel.notes_row.has_focus(), "Down moves to Field notes")
+	key(KEY_ENTER)
+	check(notes == 1 and panel.is_open, "Enter on Field notes asks for the notes")
 	key(KEY_DOWN)
 	key(KEY_DOWN)
 	key(KEY_DOWN)
@@ -61,7 +69,7 @@ func _initialize() -> void:
 	check(panel.carry_on and panel.carry_radio.selected and not panel.stay_radio.selected, "Carry on in the copy by default")
 	check(panel.carry_radio.text == "Carry on in the copy" and panel.stay_radio.text == "Stay here — keep the copy for later", "Radio labels")
 	check(panel.save_button.text == "Save copy ↵", "Save copy ↵")
-	check(panel._well.position.y > panel.copy_row.position.y and panel._well.position.y < panel.settings_row.position.y, "The well opens in place")
+	check(panel._well.position.y > panel.copy_row.position.y and panel._well.position.y < panel.notes_row.position.y, "The well opens in place, above Field notes")
 	key(KEY_DOWN)
 	key(KEY_DOWN)
 	check(panel.stay_radio.has_focus(), "Down steps through the well")
@@ -93,6 +101,15 @@ func _initialize() -> void:
 	check(panel.copy_name.text == "Moss Hollow (copy)" and panel.carry_on and not panel.copy_open, "Reopening resets the well")
 	panel.resume_row.pressed.emit()
 	check(resumes == 2 and not panel.is_open, "Resume resumes")
+	# The owner can leave Field notes out.
+	panel.notes_available = false
+	panel.open("Moss Hollow")
+	check(not panel.notes_row.visible and not panel._focus_order().has(panel.notes_row), "Field notes is left out when not available")
+	check(panel.settings_row.position.y > panel.copy_row.position.y+panel.copy_row.size.y, "Settings closes the gap")
+	panel.notes_available = true
+	panel.open("Moss Hollow")
+	check(panel.notes_row.visible, "Field notes is back when available")
+	panel.close()
 	# Status.
 	var now := 1_800_000_000.0
 	panel.set_status(true,now-30.0,now)
