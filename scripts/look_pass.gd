@@ -19,6 +19,19 @@ var ridges := 0.85
 ## the backdrop the overview looks down into, below the ridges' reach.
 ## --no-cloud-sea leaves the old plain dome there, for a before/after.
 var cloud_sea := 0.0 if _flag("--no-cloud-sea") else 1.0
+## The cloud sea's style (shaders/sky_cloud_sea.gdshaderinc), the player's
+## choice in Settings > Clouds, kept for every world in user://look.cfg.
+## --cloud-style=opal|storybook|mystic picks one for a run (captures) and
+## leaves the kept choice alone.
+const CLOUD_STYLES := ["opal","storybook","mystic"]
+const CLOUD_STYLE_NAMES := ["Opal","Storybook","Mystic"]
+const SETTINGS_PATH := "user://look.cfg"
+var cloud_style := cloud_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_cloud_style())
+## Where the choice is kept (tests point it elsewhere).
+var settings_path := SETTINGS_PATH
+## Motes of light adrift round the plate over the sea (scripts/sky_motes.gd),
+## shown with the Mystic sea only.
+var _motes = preload("res://scripts/sky_motes.gd").new()
 var shore := 1.0
 var _scene: Node3D
 ## The grade alone, drawn only while native volumetric fog (the redwood and
@@ -54,6 +67,7 @@ func setup(scene: Node3D) -> void:
 	_grade_layer.visible = false
 	_grade_layer.add_child(rect)
 	scene.add_child(_grade_layer)
+	scene.add_child(_motes)
 	grass.setup(scene)
 
 func toggle() -> void:
@@ -163,9 +177,44 @@ func _update_cloud_sea(on: float) -> void:
 	var sky: ShaderMaterial = _scene._environment.sky.sky_material if _scene._environment.sky != null else null
 	if sky == null: return
 	var strength := cloud_sea * on
+	var style := maxi(CLOUD_STYLES.find(cloud_style), 0)
+	_motes.set_strength(strength if style == 2 else 0.0)
+	if sky.get_meta("look_cloud_sea_style", -1) != style:
+		sky.set_meta("look_cloud_sea_style", style)
+		sky.set_shader_parameter("cloud_sea_style", style)
 	if sky.get_meta("look_cloud_sea", -1.0) == strength: return
 	sky.set_meta("look_cloud_sea", strength)
 	sky.set_shader_parameter("cloud_sea", strength)
+
+## Paints the cloud sea in `style` (one of CLOUD_STYLES) from the next
+## update; `keep` saves it as the player's choice.
+func set_cloud_style(style: String, keep := true) -> void:
+	if style not in CLOUD_STYLES: return
+	cloud_style = style
+	if keep: save_cloud_style(style, settings_path)
+	if _scene != null: _update_cloud_sea(1.0 if enabled else 0.0)
+
+## The player's kept cloud style, Opal until they choose.
+static func load_cloud_style(path := SETTINGS_PATH) -> String:
+	var file := ConfigFile.new()
+	if file.load(path) != OK: return CLOUD_STYLES[0]
+	var style := String(file.get_value("clouds", "style", CLOUD_STYLES[0]))
+	return style if style in CLOUD_STYLES else CLOUD_STYLES[0]
+
+static func save_cloud_style(style: String, path := SETTINGS_PATH) -> void:
+	var file := ConfigFile.new()
+	file.load(path)
+	file.set_value("clouds", "style", style)
+	file.save(path)
+
+## --cloud-style=NAME among `args`, when it names a style; else `kept`.
+static func cloud_style_from_args(args: PackedStringArray, kept: String) -> String:
+	for arg: String in args:
+		if arg.begins_with("--cloud-style="):
+			var style := arg.get_slice("=", 1).to_lower()
+			if style in CLOUD_STYLES: return style
+			push_warning("--cloud-style: expected opal, storybook or mystic, not %s" % style)
+	return kept
 
 ## A color's hue at unit luminance, pulled `amount` of the way from white.
 func _tint(color: Variant, amount: float) -> Vector3:

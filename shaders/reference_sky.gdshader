@@ -193,8 +193,10 @@ render_mode use_half_res_pass;
           // The radiance map draws its half-resolution layer as a whole sky.
           if (AT_HALF_RES_PASS && !AT_CUBEMAP_PASS) {
             vec4 marched = half_res_clouds ? zs_cloud_march(POSITION, dir, FRAGCOORD.xy) : vec4(0.0);
-            // The cloud sea lies under the deck, at half resolution with it.
-            if (half_res_clouds) marched += cloud_sea_at(dir) * (1.0 - marched.a);
+            // The cloud sea lies under the deck. Storybook's is drawn here, at
+            // half resolution with it; the others in the full pass below
+            // (shaders/sky_cloud_sea.gdshaderinc zs_sea_half_res).
+            if (half_res_clouds && zs_sea_half_res()) marched += cloud_sea_at(dir) * (1.0 - marched.a);
             COLOR = marched.rgb;
             ALPHA = marched.a;
           } else {
@@ -418,7 +420,9 @@ render_mode use_half_res_pass;
           col = zsApplyBow(col, dir);
 
           vec4 cloud = half_res_clouds && !AT_CUBEMAP_PASS ? HALF_RES_COLOR : zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
-          if (!half_res_clouds && !AT_CUBEMAP_PASS) cloud += cloud_sea_at(dir) * (1.0 - cloud.a);
+          // The Opal and Mystic seas are drawn here at full resolution, so
+          // their billows stay crisp-soft (upscaled, they went soft and muddy).
+          if (!AT_CUBEMAP_PASS && (!half_res_clouds || !zs_sea_half_res())) cloud += cloud_sea_at(dir) * (1.0 - cloud.a);
           col = col * (1.0 - cloud.a) + cloud.rgb;
           // Keep the hue where light overflows: scale the colour down to fit
           // rather than clipping each channel, which bleached the sun white.
