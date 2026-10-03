@@ -57,7 +57,9 @@ extends Node
 ##   line is, scripts/clay_tools/drawn_line.gd), its stakes shown faintly as
 ##   it goes; on release a split-rail fence follows it where the land lets it
 ##   stand (scripts/fences.gd, NativeChunkEditor `lay_fence`), one undo step.
-##   Ended where it began, it closes into a pen.
+##   Ended where it began, it closes into a pen. Pressed or let go near a
+##   fence (Fences.SNAP_REACH m, or SNAP_PIXELS on screen), its end snaps
+##   onto it and joins it, ringed in the preview (`_fence_snap`).
 ## - **The footbridge.** Drag across a stream or a narrow water: while the
 ##   drag goes on a faint ghost shows the bridge the land would take, snapped
 ##   bank to bank (or a dull red one where it would not), and letting go lays
@@ -159,7 +161,7 @@ const TREE_HINT := "Tap to plant a tree  ·  drag to paint a wood  ·  Shift thi
 const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
 	"reed":"Tap to set reeds  ·  Drag to scatter","lamp":"Tap to set a stone lamp  ·  Drag to line a path with them",
-	"fence":"Drag a line to set a fence  ·  End where you began for a pen",
+	"fence":"Drag a line to set a fence  ·  Start or end on a fence to join it",
 	"bridge":"Drag across a stream to lay a footbridge"}
 ## The footbridge in hand: its hold, and what the hint line says when the land
 ## will not take one (Footbridge `plan`'s reasons).
@@ -191,6 +193,7 @@ const FREE := ""
 const FENCE := "fence"
 const FENCE_LINE := "fence_line"
 const DrawnLine = preload("res://scripts/clay_tools/drawn_line.gd")
+const Fences = preload("res://scripts/fences.gd")
 ## Design units the Lantern hint line moves up to clear the case.
 const HINT_LIFT := 124.0
 
@@ -263,6 +266,10 @@ var _fence_line := DrawnLine.new()
 var _fence_stands := Callable()
 var _fence_shown := -1
 var fence_ids: Array = []
+## The fence the line's press joined ({} for none, else Fences `snap`), and
+## the one the pointer would join if let go now, for the preview and probes.
+var fence_start_join: Dictionary = {}
+var fence_end_join: Dictionary = {}
 
 func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	scene = owner_scene
@@ -624,7 +631,10 @@ func _use(point: Vector2) -> void:
 	elif held == FENCE:
 		var at: Variant = _ground(point)
 		if at == null: return
-		_fence_line.begin(at)
+		# Pressed near a fence: the line starts on it.
+		fence_start_join = _fence_snap(point,at)
+		fence_end_join = {}
+		_fence_line.begin(fence_start_join.point if not fence_start_join.is_empty() else at)
 		_fence_stands = editor.fence_stands() if editor.has_method("fence_stands") else Callable()
 		_fence_shown = -1
 		reach.take_hold(FENCE_LINE,point)
@@ -808,11 +818,19 @@ func _crowded(at: Vector2, asset: String, clear: float) -> bool:
 func _fence_draw(point: Vector2) -> void:
 	if not _fence_line.drawing(): return
 	var at: Variant = _ground(point)
-	if at != null: _fence_line.add(at)
-	var path: PackedVector2Array = _fence_line.path()
+	if at != null:
+		_fence_line.add(at)
+		fence_end_join = _fence_end_snap(point,at)
+	var path: PackedVector2Array = _fence_snapped()
 	if path.size() == _fence_shown and at == null: return
 	_fence_shown = path.size()
-	reach._editor().fence_preview(path,_fence_stands)
+	var editor: Node = reach._editor()
+	var joins := PackedVector2Array()
+	if not fence_start_join.is_empty(): joins.append(fence_start_join.point)
+	if not fence_end_join.is_empty(): joins.append(fence_end_join.point)
+	# A pen closing on its own start: the start is ringed too.
+	elif path.size() >= 2 and Fences.closes(path) and fence_start_join.is_empty(): joins.append(path[0])
+	editor.fence_preview(path,_fence_stands,joins,editor.fence_opens(path,fence_end_join) if editor.has_method("fence_opens") else false)
 
 ## The fence's press comes up at `point`: the line is laid where the land lets
 ## it stand, one undo step, or nothing for a tap or all water and rock.
@@ -820,9 +838,13 @@ func _fence_lay(point: Vector2) -> void:
 	if not _fence_line.drawing(): return
 	if point != Vector2.INF:
 		var at: Variant = _ground(point)
-		if at != null: _fence_line.add(at)
-	var path: PackedVector2Array = _fence_line.path()
+		if at != null:
+			_fence_line.add(at)
+			fence_end_join = _fence_end_snap(point,at)
+	var path: PackedVector2Array = _fence_snapped()
 	_fence_line.clear()
+	fence_start_join = {}
+	fence_end_join = {}
 	var editor: Node = reach._editor()
 	editor.fence_preview(PackedVector2Array())
 	fence_ids = editor.lay_fence(path) if editor.has_method("lay_fence") else []
@@ -834,6 +856,48 @@ func _fence_lay(point: Vector2) -> void:
 	ClaySound.cue_at(&"stone_drop",editor.terrain.to_global(Vector3(middle.x,float(ground) if ground != null else 0.0,middle.y)),0.6)
 	clump.shed()
 	_used()
+
+## The line drawn so far, its end moved onto the fence it would join.
+func _fence_snapped() -> PackedVector2Array:
+	var path: PackedVector2Array = _fence_line.path()
+	if path.size() >= 2 and not fence_end_join.is_empty(): path[-1] = fence_end_join.point
+	return path
+
+## Where a press or the pointer at screen `point` (plate `at`) joins a fence:
+## within Fences.SNAP_REACH m, or SNAP_PIXELS on screen when that is more (so
+## it is as easy zoomed out). {} for none, else Fences `snap`.
+func _fence_snap(point: Vector2, at: Vector2) -> Dictionary:
+	var editor: Node = reach._editor()
+	if editor == null or not editor.has_method("fence_join") or editor.data.fences.is_empty(): return {}
+	var reach_m := Fences.SNAP_REACH
+	var camera: Camera3D = scene.camera if scene != null else null
+	var h: Variant = editor.data.ground_height(at)
+	if camera != null and h != null:
+		var here := Vector3(at.x,float(h),at.y)
+		var seen := camera.unproject_position(editor.terrain.to_global(here))
+		var pixels := 0.0
+		for step in [Vector3.RIGHT,Vector3.BACK]:
+			pixels = maxf(pixels,camera.unproject_position(editor.terrain.to_global(here+step)).distance_to(seen))
+		if pixels > 0.01: reach_m = maxf(reach_m,Fences.SNAP_PIXELS/pixels)
+	return editor.fence_join(at,reach_m)
+
+## The fence the pointer at `point` (plate `at`) would end the line on, if let
+## go now: none back on its own start unless that closes a pen, and none on
+## the fence it started from within a couple of metres of the start (the
+## line still leaving it).
+func _fence_end_snap(point: Vector2, at: Vector2) -> Dictionary:
+	var join := _fence_snap(point,at)
+	if join.is_empty(): return join
+	var path: PackedVector2Array = _fence_line.path()
+	if path.is_empty(): return {}
+	var from := path[0]
+	var to: Vector2 = join.point
+	if to.distance_to(from) <= Fences.JOIN_EPS:
+		var closing := path.duplicate()
+		closing[-1] = to
+		return join if Fences.closes(closing) else {}
+	if not fence_start_join.is_empty() and int(fence_start_join.id) == int(join.id) and to.distance_to(from) < Fences.SNAP_REACH*2.0: return {}
+	return join
 
 # --- Frames -----------------------------------------------------------------------
 
