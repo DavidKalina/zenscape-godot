@@ -225,6 +225,10 @@ static func _build() -> void:
 	_add("hand_groove","Groove","Modeller","#e0a07a",["M2 12.4 H5.6 Q7.2 11 8.6 12.4 Q12 21.4 15.4 12.4 Q16.8 11 18.4 12.4 H22 V22.5 H2Z"],[],30,1.0,1.5)
 	_add("hand_palm","Palm","Modeller","#e0a07a",["M2 12.4 H5 Q6.6 17.4 9 17.4 H15 Q17.4 17.4 19 12.4 H22 V22.5 H2Z"],["M7 9.2 H17","M9.6 4.4 V9.2 M14.4 4.4 V9.2"],31,1.0,1.5)
 	_add("hand_poke","Poke","Modeller","#e0a07a",["M2 14.4 H9.6 Q12 17.6 14.4 14.4 H22 V22.5 H2Z"],["M12 2.6 V10.4","M9.8 8.2 L12 10.4 L14.2 8.2"],32,1.0,1.5)
+	_add("mountain_pull","Pull","Mountain","#9a948c",["M2 22.5 L8.6 14.6 L12 9.8 L15.4 14.6 L22 22.5Z"],["M12 1.8 V7","M9.6 4.2 L12 1.8 L14.4 4.2"],65,1.0,1.5)
+	_add("mountain_draw","Draw","Mountain","#9a948c",["M1.6 22.5 L6 15.6 L8.4 17.6 L12.2 10.8 L15.6 15.8 L18 13.8 L22.4 22.5Z"],["M3 6.4 Q7.4 2.6 12 6 Q16.6 9.4 21 5.4"],66,1.0,1.5)
+	_add("crater_pull","Pull","Crater","#a08a68",["M2 17 H4.5 Q6.5 12.6 8 13.4 Q9.6 19.2 12 19.2 Q14.4 19.2 16 13.4 Q17.5 12.6 19.5 17 H22 V22.5 H2Z"],["M12 3.4 V9.4","M9.8 7.2 L12 9.4 L14.2 7.2"],67,1.0,1.5)
+	_add("crater_draw","Draw","Crater","#a08a68",["M2 13.4 H4 Q5.6 19.6 12 19.6 Q18.4 19.6 20 13.4 H22 V22.5 H2Z"],["M5 7.6 Q5 3.4 11.4 3.6 Q19.4 3.4 19 7.4 Q18.6 10.6 12 10.4 Q6.4 10.6 5 7.6Z"],68,1.0,1.5)
 	_add("paddle_pat","Pat","Paddle","#c49a5e",["M2 15.4 H22 V22.5 H2Z","M4.6 9 H19.4 V11.6 H4.6Z"],["M12 2.4 V9"],35,1.0,1.5)
 	# The Plane: the blade stood upright, drawn toward a rough rise; behind it
 	# the ground lies planed flat.

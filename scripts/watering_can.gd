@@ -51,8 +51,10 @@ const GUSH_SPREAD := 2.2
 ## A hollow: at one of BASIN_RINGS m round the landing, at least
 ## BASIN_SIDES of the 8 ways stand BASIN_RISE m or more above it; or water
 ## GUSH_POOL m deep or more stands there already. The land's shape decides,
-## not the can's own stream, which piles up a little under it anywhere.
-const BASIN_RINGS := [1.5,3.0,5.0,8.0]
+## not the can's own stream, which piles up a little under it anywhere. The
+## rings reach 16 m so the middle of a lake the Crater draws (its bed level
+## for metres every way) still reads as one.
+const BASIN_RINGS := [1.5,3.0,5.0,8.0,12.0,16.0]
 const BASIN_SIDES := 6
 const BASIN_RISE := 0.15
 const GUSH_POOL := 0.3
