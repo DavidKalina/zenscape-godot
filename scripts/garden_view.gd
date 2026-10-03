@@ -172,6 +172,25 @@ func _ready() -> void:
 	_meshes["explosive_leaves"] = _meshes["leaf_bed"]
 	_materials["explosive_leaves"] = rock_material.duplicate()
 	_catalog_poses["explosive_leaves"] = Transform3D.IDENTITY
+	# The stone lamp (scripts/stone_lamp.gd): faceted stone on the stones'
+	# material; its glow is scripts/stone_lamp_lights.gd's.
+	_catalog_parts["stone_lamp"] = ["stone_lamp"]
+	_catalog_poses["stone_lamp"] = Transform3D.IDENTITY
+	_meshes["stone_lamp"] = preload("res://scripts/stone_lamp.gd").mesh()
+	_materials["stone_lamp"] = rock_material.duplicate()
+	# The campfire (scripts/campfire.gd): its ring of stones and laid sticks
+	# on the same material; its fire is scripts/campfire_fire.gd's.
+	_catalog_parts["campfire"] = ["campfire"]
+	_catalog_poses["campfire"] = Transform3D.IDENTITY
+	_meshes["campfire"] = preload("res://scripts/campfire.gd").mesh()
+	_materials["campfire"] = rock_material.duplicate()
+	# The cabin (scripts/cabin.gd): the log cabin model baked to vertex
+	# colours on the same material; its windows and smoke are
+	# scripts/cabin_lights.gd's.
+	_catalog_parts["cabin"] = ["cabin"]
+	_catalog_poses["cabin"] = Transform3D.IDENTITY
+	_meshes["cabin"] = preload("res://scripts/cabin.gd").mesh()
+	_materials["cabin"] = rock_material.duplicate()
 	for key in _materials:
 		FireMaterial.enable_instances(_materials[key])
 		# Every batch has custom data; emerged instances read their birth there.

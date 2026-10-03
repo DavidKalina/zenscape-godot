@@ -122,7 +122,12 @@ var _stroke_rect := Rect2()
 var _stroke_first_id := 0
 var content: GardenView
 var landmarks: NativeGardenLandmarks
+## The fences' view (scripts/fences.gd), a child of the terrain.
+var fences: Node3D
 var falls: NativeGardenFalls
+## The footbridges laid over water (scripts/footbridge.gd), and its planner.
+const Footbridge = preload("res://scripts/footbridge.gd")
+var bridges: Node3D
 var reactions: NativeDropReactions
 ## Placement plays a short visual reaction. Tests that compare instances turn
 ## it off so a committed record renders exactly as it did before.
@@ -130,6 +135,14 @@ var reactions_enabled := true
 var _fall_start: Variant = null
 var pond_preview = preload("res://scripts/native_pond_preview.gd").new()
 var explosives: Node3D
+## The stone lamps' glow and their few real lights (scripts/stone_lamp_lights.gd).
+var lamps: Node3D
+## The campfires' flames, glow, smoke and sparks (scripts/campfire_fire.gd);
+## their light comes from the lamps' pool.
+var campfires: Node3D
+## The cabins' warm windows and chimney smoke (scripts/cabin_lights.gd);
+## their light comes from the lamps' pool too.
+var cabins: Node3D
 var blast_radius := 2.6
 var tunnel_width := 2.5
 var tunnel_depth := 5.0
@@ -336,9 +349,15 @@ func setup(owner_scene: Node3D) -> void:
 	landmarks = NativeGardenLandmarks.new()
 	landmarks.name = "AuthoredLandmarks"
 	scene.add_child(landmarks)
+	fences = Fences.new()
+	terrain.add_child(fences)
 	falls = NativeGardenFalls.new()
 	falls.name = "AuthoredFalls"
 	scene.add_child(falls)
+	# Footbridges ride the plate: drawn in its metres, under the terrain.
+	bridges = Footbridge.new()
+	bridges.editor = self
+	terrain.add_child(bridges)
 	reactions = NativeDropReactions.new()
 	reactions.name = "DropReactions"
 	scene.add_child(reactions)
@@ -351,6 +370,15 @@ func setup(owner_scene: Node3D) -> void:
 	explosives.name = "RemoteExplosives"
 	scene.add_child(explosives)
 	explosives.setup(self)
+	lamps = preload("res://scripts/stone_lamp_lights.gd").new()
+	scene.add_child(lamps)
+	lamps.setup(self)
+	campfires = preload("res://scripts/campfire_fire.gd").new()
+	scene.add_child(campfires)
+	campfires.setup(self)
+	cabins = preload("res://scripts/cabin_lights.gd").new()
+	scene.add_child(cabins)
+	cabins.setup(self)
 	_setup_brushes()
 	if flow_wanted(): _setup_flow.call_deferred()
 	data.state_restored.connect(_world_restored)
@@ -1025,7 +1053,9 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	stage_start = Time.get_ticks_usec()
 	_settle_bedding_cover()
 	landmarks.rebuild(data)
+	fences.rebuild(data)
 	falls.rebuild(data)
+	if bridges != null: bridges.rebuild()
 	if on_publish.is_valid(): on_publish.call("landmarks")
 	if not current.call(): return _finish_refresh(false)
 	if frame_tree != null:
@@ -1179,6 +1209,7 @@ func _refresh_light() -> bool:
 		return await refresh()
 	_settle_bedding_cover()
 	landmarks.lift(data)
+	fences.rebuild(data)
 	last_refresh_usec["content_elapsed"] = Time.get_ticks_usec()-stage_start
 	# Tell play systems once, on the stroke's first dab, so carried props and
 	# walking routes let go before the ground moves under them; they hear
@@ -1869,7 +1900,7 @@ func select_object(id: int) -> void:
 	finish_stroke()
 	reactions.finish_all()
 	var item := data.object_by_id(id)
-	selected_object_id = id if not item.is_empty() and item.asset != "waterfall" else -1
+	selected_object_id = id if not item.is_empty() and not item.asset in ["waterfall","bridge"] else -1
 	selection.update_marker(selected_object_id)
 	selection_changed.emit(selected_object_id)
 
@@ -3615,6 +3646,23 @@ func paint_flowers_end() -> void:
 
 ## A stone set down by the hand (the materials tray), placed as the rock
 ## tool's click places one (`set_objects`).
+## A footbridge for a drag from `from` to `to` (plate), as the land has it
+## (Footbridge `plan`): snapped bank to bank over the water the drag crosses,
+## its ends on the ground, one undo step. Returns the plan, with the record's
+## "id" when one was laid; a refusal ("ok" false, its "reason") lays nothing.
+func place_bridge(from: Vector2, to: Vector2) -> Dictionary:
+	if forming or not active or _painting: return {"ok":false,"reason":"busy"}
+	var found: Dictionary = Footbridge.plan(Footbridge.water(self),from,to)
+	if not found.ok: return found
+	_land_mountain()
+	data.begin_stroke()
+	var id := data.add_bridge(found.a,found.b)
+	if not data.end_stroke() or id < 0: return {"ok":false,"reason":"busy"}
+	found.id = id
+	if bridges != null: bridges.rebuild()
+	refresh(get_tree())
+	return found
+
 func set_stone(point: Vector2, size: float, angle: float, after: Variant = null) -> Variant:
 	return set_objects([{"asset":"rock","point":point,"size":size,"angle":angle}],after)
 
@@ -3649,6 +3697,85 @@ func set_objects(items: Array, after: Variant = null) -> Variant:
 			var index := data._object_index(id)
 			if index >= 0: reactions.play(str(data.objects[index].asset),reactions.record_pose(data.objects[index]),data.objects[index],id))
 	return step
+
+# --- Fences ------------------------------------------------------------------------
+## Fences drawn from the hand (the materials tray's "fence", scripts/fences.gd,
+## docs/scenic/fences.md).
+const Fences = preload("res://scripts/fences.gd")
+
+## Where a fence post can stand: on the plate, on dry ground (no live water
+## Fences.WET_DEPTH deep, no pond or lake emergence knows), no steeper than
+## the land's rock slope.
+func fence_stands() -> Callable:
+	var dry := fence_dry()
+	var drawn: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
+	var rock := float(drawn.get("rock_slope",data._palette.rock_slope))
+	var steep: float = rock if rock > 0.05 else Fences.STEEP
+	var presets := preload("res://scripts/native_landscape_presets.gd")
+	return func(p: Vector2) -> bool:
+		if data.ground_height(p) == null or not dry.call(p): return false
+		return presets._slope(data,p) <= steep
+
+## Whether plate point `p` is dry: no live water Fences.WET_DEPTH deep, and
+## not water emergence knows (ponds, lakes, streams).
+func fence_dry() -> Callable:
+	var depths := PackedFloat32Array()
+	if flow != null and flow.ready: depths = flow.kernel.get_depth()
+	var live: RefCounted = flow if not depths.is_empty() else null
+	return func(p: Vector2) -> bool:
+		if live != null:
+			var cell: int = live.cell_at(p)
+			if cell >= 0 and cell < depths.size() and depths[cell] >= Fences.WET_DEPTH: return false
+		return not (emergence._blend != null and emergence._wet(p))
+
+## Lays a fence along a drawn `path` (plate points): the runs the land lets
+## stand (Fences `plan`), all in one undo step. A path starting or ending on
+## a fence (within Fences.JOIN_EPS of its post or span: the hand snaps its ends
+## there, `fence_join`) joins it (Fences `lay`): continuing an open fence from
+## its end post, closing it into a pen, or a T sharing its post. Returns the
+## ids of the records the line is part of, empty when the land took none (all
+## water or rock, or a tap).
+func lay_fence(path: PackedVector2Array) -> Array:
+	if forming or not active or _painting or path.size() < 2: return []
+	var start := Fences.snap(data,path[0],Fences.JOIN_EPS)
+	var end := Fences.snap(data,path[-1],Fences.JOIN_EPS)
+	var open := fence_opens(path,end)
+	var joined := PackedVector2Array()
+	for join: Dictionary in [start,end]:
+		if not join.is_empty(): joined.append(join.point)
+	# A post already standing, or one put into a standing fence's span, stands.
+	var stands := fence_stands()
+	var on_join := func(p: Vector2) -> bool:
+		for q in joined:
+			if q.distance_to(p) <= Fences.JOIN_EPS: return true
+		return stands.call(p)
+	var planned: Array = Fences.plan(data,path,on_join,fence_dry(),open)
+	if planned.is_empty() or data.fences.size()+planned.size() > Fences.MAX_FENCES: return []
+	_land_mountain()
+	data.begin_stroke()
+	var ids: Array = Fences.lay(data,planned,start,end)
+	data.end_stroke()
+	fences.rebuild(data)
+	_set_status("Garden changed · Save to keep your work.")
+	return ids
+
+## Where a fence line pressed or let go at plate `q` joins a fence (Fences
+## `snap`, within `reach` m), {} for none.
+func fence_join(q: Vector2, reach := Fences.SNAP_REACH) -> Dictionary:
+	return Fences.snap(data,q,reach)
+
+## Whether a line `path` ending on fence join `end` is kept open: it ends on
+## a fence somewhere other than its own start, so it is not a pen of its own.
+static func fence_opens(path: PackedVector2Array, end: Dictionary) -> bool:
+	return not end.is_empty() and path.size() >= 2 and Vector2(end.point).distance_to(path[0]) > Fences.JOIN_EPS
+
+## The faint stakes of a fence being drawn along `path` (empty clears them);
+## `stands` is `fence_stands()`, taken once at the press; `joins` the plate
+## points it will join (ringed); `open` as `fence_opens`.
+func fence_preview(path: PackedVector2Array, stands := Callable(), joins := PackedVector2Array(), open := false) -> void:
+	if fences == null: return
+	if path.size() >= 2 and not stands.is_valid(): stands = fence_stands()
+	fences.preview(data,path,stands,joins,open)
 
 ## A flicked tree's veil starts FLING_FROM m out from its foot, with a knot
 ## each FLING_STEP m; its spores leave the crown at FLING_SPEED times the

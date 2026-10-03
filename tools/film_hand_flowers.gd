@@ -98,8 +98,15 @@ func glide(a: Vector2, b: Vector2, count: int, held: bool) -> void:
 ## Take `id` from the bar: reach down to it, press it.
 func take(id: String) -> void:
 	var from: Vector2 = reach.pointer_override if reach.pointer_override != null else Vector2(640,400)
-	await glide(from,materials.tray.specimen_centre(id)+Vector2(0,-30),20,false)
-	await glide(materials.tray.specimen_centre(id)+Vector2(0,-30),materials.tray.specimen_centre(id),10,false)
+	# Down to its compartment, a rest there for its group to fan out, then
+	# up to its cell on the fan (scripts/materials_tray.gd).
+	var compartment: Vector2 = materials.tray.compartment_centre(id)
+	await glide(from,compartment+Vector2(0,-30),20,false)
+	await glide(compartment+Vector2(0,-30),compartment,10,false)
+	for i in range(60):
+		if materials.tray.showing(id): break
+		await frames(1)
+	await glide(compartment,materials.tray.specimen_centre(id),10,false)
 	await frames(8)
 	var at: Vector2 = materials.tray.specimen_centre(id)
 	button(at,true)

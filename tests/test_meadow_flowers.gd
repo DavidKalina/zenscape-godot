@@ -11,7 +11,7 @@ const Kit := preload("res://scripts/meadow_flower_mesh.gd")
 const Catalog := preload("res://scripts/native_asset_catalog.gd")
 const Samples := preload("res://scripts/garden_instance_samples.gd")
 ## Expected height bands (m, at scale 1): the plant's tallest point.
-const HEIGHTS := {"oxeye_daisy":Vector2(0.5,0.62),"buttercup":Vector2(0.3,0.4),"dandelion":Vector2(0.2,0.3),"dandelion_clock":Vector2(0.34,0.5),"cosmos":Vector2(0.85,1.0),"sunflower":Vector2(1.6,2.0),"poppy":Vector2(0.55,0.7),"lupine":Vector2(0.72,0.9)}
+const HEIGHTS := {"oxeye_daisy":Vector2(0.5,0.62),"buttercup":Vector2(0.3,0.4),"dandelion":Vector2(0.2,0.3),"dandelion_clock":Vector2(0.34,0.5),"cosmos":Vector2(0.85,1.0),"sunflower":Vector2(1.6,2.0),"poppy":Vector2(0.55,0.7),"lupine":Vector2(0.72,0.9),"wheat":Vector2(0.6,0.72)}
 ## The painterly grass tuft's tallest blade (scripts/grass_tuft_mesh.gd HEIGHT.y).
 const TUFT := 0.44
 
@@ -37,7 +37,7 @@ func _run() -> void:
 	quit(1 if failures else 0)
 
 func _meshes() -> void:
-	check(Kit.KINDS == ["oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine"], "The kit has the eight agreed kinds, by their catalog keys")
+	check(Kit.KINDS == ["oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","wheat"], "The kit has the eight agreed kinds and wheat, by their catalog keys")
 	for kind: String in Kit.KINDS:
 		var mesh: ArrayMesh = Kit.mesh(kind)
 		check(mesh.get_surface_count() == 1, kind + " is one surface")
@@ -94,7 +94,8 @@ func _registration() -> void:
 		check(kind in NativeTerrainData.ASSETS, kind + " can be placed")
 		check(NativeDropReactions.REACTIONS.get(kind) == "sprout", kind + " sprouts when placed")
 		check(kind in preload("res://scripts/fire_field.gd").FAST_ASSETS, kind + " burns fast")
-		check(kind in preload("res://scripts/life_survey.gd").FLOWERS, kind + " draws butterflies")
+		# Wheat is wind-pollinated: a crop, not a butterfly flower (docs/scenic/wheat.md).
+		if not kind in Kit.RIPEN_KINDS: check(kind in preload("res://scripts/life_survey.gd").FLOWERS, kind + " draws butterflies")
 		check(kind in preload("res://scripts/native_build_palette.gd").FOLIAGE, kind + " sits with the flora in the palette")
 	# Old forms keep their parts, so existing worlds dress as before.
 	for old: String in ["button_flower","spike_flower","umbel_flower","daisy_flower"]:

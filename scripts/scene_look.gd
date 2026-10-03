@@ -176,6 +176,9 @@ static func leaf_season(key: String) -> Vector4:
 	if key == "willow:willow-canopies": return Vector4(1.0,0.5,0.0,0.0)
 	if key.begins_with("shrub:"): return Vector4(1.0,0.55,0.3,0.0)
 	if key.begins_with("fern:"): return Vector4(1.0,0.0,0.0,0.6)
+	# Wheat follows the year its own way (`flower_ripen`): no autumn paint over
+	# its gold, and cut to stubble rather than dying back.
+	if key.begins_with("wheat:"): return Vector4.ZERO
 	if key in ["petal","stem"] or "flower" in key: return Vector4(1.0,0.0,0.0,1.0)
 	if key == "grass" or key.begins_with("grass_tuft:") or key.begins_with("bank_grass:"): return Vector4(1.0,0.0,0.0,0.35)
 	return Vector4(1.0,0.0,0.0,0.0)
@@ -187,7 +190,7 @@ static func part_role(key: String) -> int:
 	if species >= 0: return species
 	if key in ["redwood:redwood-trunk","layered_tree:layered-trunk"] or (key.begins_with("layered_tree:") and key.ends_with("-trunk")): return 4
 	if key in ["grass","stem"] or "flower-stems" in key or "grass" in key: return 5
-	if key == "rock" or key.begins_with("boulder_"): return 3
+	if key == "rock" or key == "stone_lamp" or key == "campfire" or key == "cabin" or key.begins_with("boulder_"): return 3
 	if key == "trunk" or (key.begins_with("tree:") and key.ends_with("-trunk")) or key == "leaf_bed" or key.begins_with("log:") or key.begins_with("snag:") or key.begins_with("stump:") or key == "broadleaf:mesh-11": return 4
 	if key == "canopy" or "canopies" in key or key.begins_with("shrub:") or key.begins_with("reeds:"): return 2
 	return 0

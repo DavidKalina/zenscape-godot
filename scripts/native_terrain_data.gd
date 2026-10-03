@@ -21,7 +21,7 @@ const MIN_HEIGHT := -6.5
 const SLAB_BASE := -8.3
 const MAX_HEIGHT := 64.0
 const MAX_EXPLOSIVES := 32
-const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine"]
+const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","stone_lamp","bridge","wheat","campfire","cabin"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -43,6 +43,10 @@ var provenance := PackedByteArray()
 var cover_births := {}
 var cover_births_revision := 0
 var objects: Array[Dictionary] = []
+## Fences drawn on the land (scripts/fences.gd): {"id", "posts" (plate x, z
+## flat), "closed"}. In the undo snapshot and the save; seated on the ground
+## when drawn, so they follow it.
+var fences: Array[Dictionary] = []
 var ponds: Array[Dictionary] = []
 var streams: Array[Dictionary] = []
 var landscape_waterfall := false
@@ -1024,6 +1028,7 @@ func reset_flat() -> void:
 	provenance.fill(SOURCE_GENERATED)
 	objects.clear()
 	objects_revision += 1
+	fences.clear()
 	ponds.clear()
 	streams.clear()
 	landscape_waterfall=false
@@ -1031,7 +1036,7 @@ func reset_flat() -> void:
 	state_restored.emit({})
 
 func _snapshot() -> Dictionary:
-	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "provenance":provenance.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
+	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "provenance":provenance.duplicate(), "objects":objects.duplicate(true), "fences":fences.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
 	tunnels.assign(state.get("tunnels",[]).duplicate(true))
@@ -1050,6 +1055,7 @@ func _restore(state: Dictionary) -> void:
 	if objects.size() != state.objects.size() or var_to_bytes(objects) != var_to_bytes(state.objects):
 		objects_revision += 1
 	objects.assign(state.objects.duplicate(true))
+	fences.assign(state.get("fences",[]).duplicate(true))
 	ponds.assign(state.ponds.duplicate(true))
 	streams.assign(state.get("streams",[]).duplicate(true))
 	next_id = state.next_id
@@ -1165,7 +1171,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictionary = {}, tint := "") -> int:
 	if kind == "explosive" and explosive_count() >= MAX_EXPLOSIVES: return -1
-	if kind == "waterfall" or kind not in ASSETS or sample(point,heights) == null or (kind != "log" and ground_height(point) == null) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+	if kind in ["waterfall","bridge"] or kind not in ASSETS or sample(point,heights) == null or (kind != "log" and ground_height(point) == null) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
@@ -1196,10 +1202,11 @@ func _object_index(id: int) -> int:
 	return -1
 
 ## Patch editable properties atomically. Empty/null pose or tint restores the
-## asset default. Waterfalls need their dedicated two-endpoint editing tool.
+## asset default. Waterfalls and footbridges need their dedicated
+## two-endpoint tools.
 func update_object(id: int, changes: Dictionary) -> bool:
 	var index := _object_index(id)
-	if index < 0 or objects[index].asset == "waterfall":
+	if index < 0 or objects[index].asset in ["waterfall","bridge"]:
 		return false
 	var candidate := objects[index].duplicate(true)
 	for key in changes:
@@ -1242,9 +1249,9 @@ func update_object(id: int, changes: Dictionary) -> bool:
 ## `update_object` deliberately refuses asset changes and drops `landscape`.
 func replace_object_asset(id: int, asset: String, tint := "") -> bool:
 	var index := _object_index(id)
-	if index < 0 or asset not in ASSETS or asset in ["waterfall","explosive"]:
+	if index < 0 or asset not in ASSETS or asset in ["waterfall","explosive","bridge"]:
 		return false
-	if objects[index].asset in ["waterfall","explosive"]:
+	if objects[index].asset in ["waterfall","explosive","bridge"]:
 		return false
 	if not tint.is_empty() and (asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(tint)):
 		return false
@@ -1296,6 +1303,21 @@ func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
 	objects_revision += 1
 	next_id += 1
 	return true
+
+## A footbridge (scripts/footbridge.gd) from bank `start` to bank `finish`,
+## as the hand's own record. Its ends rest on the ground wherever that is, so
+## it is drawn from the land each time; it changes no height and no water.
+## The record's id, or -1 when an end is off the land or they are too close.
+func add_bridge(start: Vector2, finish: Vector2) -> int:
+	if ground_height(start) == null or ground_height(finish) == null or start.distance_to(finish) < 0.5:
+		return -1
+	if objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+		return -1
+	var id := next_id
+	next_id += 1
+	objects.append({"id":id,"asset":"bridge","x":start.x,"z":start.y,"end_x":finish.x,"end_z":finish.y,"angle":0.0,"scale":1.0,"source":"hand"})
+	objects_revision += 1
+	return id
 
 func object_position(item: Dictionary) -> Vector3:
 	return Vector3(item.x,(float(item.anchor_y) if item.asset == "explosive" else sample(Vector2(item.x,item.z),heights))+(preload("res://scripts/native_object_pose.gd").decode_offset(item.pose) if item.has("pose") else 0.0),item.z)
@@ -1372,7 +1394,7 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"fences":fences.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
 	document_captured.emit(document)
 	return document
 
@@ -1463,7 +1485,7 @@ func load_document(document: Variant) -> bool:
 					return false
 				if not GardenData._number(item.get("angle"),-TAU*100,TAU*100) or not GardenData._number(item.get("scale"),0.1,5.0):
 					return false
-				if item.asset == "waterfall":
+				if item.asset in ["waterfall","bridge"]:
 					if not GardenData._number(item.get("end_x"),-14,14) or not GardenData._number(item.get("end_z"),-14,14):
 						return false
 					var endpoint := Vector2(item.end_x,item.end_z)
@@ -1473,10 +1495,10 @@ func load_document(document: Variant) -> bool:
 				ids[item.id] = true
 				record.merge({"id":int(item.id),"asset":item.asset,"angle":float(item.angle),"scale":float(item.scale)})
 				if item.has("pose"):
-					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid(item.pose): return false
+					if item.asset in ["arch","bigfoot_tree","waterfall","bridge"] or not preload("res://scripts/native_object_pose.gd").valid(item.pose): return false
 					record.pose = item.pose.duplicate(true)
 				if item.has("tint"):
-					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
+					if item.asset in ["arch","bigfoot_tree","waterfall","bridge"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
 					record.tint = item.tint
 				if item.asset == "explosive":
 					if not valid_explosive(item): return false
@@ -1506,6 +1528,16 @@ func load_document(document: Variant) -> bool:
 	if loaded.objects.filter(func(item: Dictionary) -> bool: return item.asset == "explosive").size() > MAX_EXPLOSIVES: return false
 	if not preload("res://scripts/native_tunnels.gd").valid(document.get("tunnels",[])): return false
 	loaded.tunnels = document.get("tunnels",[]).duplicate(true)
+	# Fences (scripts/fences.gd), saved since 2026-10-03; older saves have none.
+	loaded.fences = []
+	var fenced: Variant = document.get("fences",[])
+	if not fenced is Array or fenced.size() > preload("res://scripts/fences.gd").MAX_FENCES: return false
+	for item: Variant in fenced:
+		if not preload("res://scripts/fences.gd").valid(item) or int(item.id) >= loaded.next_id or ids.has(int(item.id)): return false
+		ids[int(item.id)] = true
+		var flat: Array = []
+		for value in item.posts: flat.append(float(value))
+		loaded.fences.append({"id":int(item.id),"posts":flat,"closed":item.closed})
 	_restore(loaded)
 	_undo.clear()
 	_redo.clear()

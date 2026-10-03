@@ -32,14 +32,22 @@ const SPEED := Vector2(0.55, 1.1)
 const BEAT := Vector2(6.0, 8.5)
 const WANDER := 3.2
 const STEER := 1.7
-## Flight height over the ground (m), how much it bobs, and a flower's height.
+## Flight height over the ground (m), how much it bobs, a flower's height
+## where the survey doesn't know it (the older shrub flowers), and how far
+## over a known head it settles (the head's top is its tallest petal tip).
 const HEIGHT := Vector2(0.3, 0.85)
 const BOB := 0.14
 const BLOOM := 0.2
+const PERCH_DROP := 0.02
+## The least a flier keeps over the ground under it (m).
+const CLEAR := 0.06
 ## Seconds settled on a flower, and how far off its next flower may be (m).
 const REST := Vector2(1.6, 5.5)
 const NEXT := Vector2(0.9, 5.0)
-const SCALE := 2.4
+## Model size: the wings span 0.242 m at scale 1, so 0.9 gives about 0.22 m
+## (0.19 to 0.25 m with the per-fly size): twice a daisy's drawn head, about
+## two-thirds of a frog's length, a third of a fence's height. Not a bird.
+const SCALE := 0.9
 const TINTS := [Color(1.0,0.55,0.15), Color(1.0,0.9,0.3), Color(0.55,0.75,1.0), Color(1.0,0.97,0.9), Color(0.95,0.5,0.7)]
 
 var life: Node3D
@@ -108,11 +116,12 @@ func _sync() -> void:
 func _born(n: int) -> Dictionary:
 	var spots: PackedVector2Array = _survey.flower_spots
 	var h := Kit.unit([life.salt,n,81])
-	var flower := spots[int(Kit.unit([life.salt,n,82])*spots.size())]
+	var pick := int(Kit.unit([life.salt,n,82])*spots.size())
+	var flower := spots[pick]
 	var fly := {"slot":n,"fade":0.0,"wait":lerpf(ARRIVE.x,ARRIVE.y,h),"flower":flower,"phase":h*TAU,"time":0.0,"rest":lerpf(REST.x,REST.y,h),"resting":true,
 		"heading":Kit.unit([life.salt,n,83])*TAU,"turn":0.0,"beat":lerpf(BEAT.x,BEAT.y,Kit.unit([life.salt,n,84])),"lift":lerpf(HEIGHT.x,HEIGHT.y,h),
-		"tint":TINTS[int(Kit.unit([life.salt,n,85])*TINTS.size())],"size":lerpf(0.85,1.15,Kit.unit([life.salt,n,86])),"wings":0.0,"bank":0.0}
-	fly.pos = _perch(flower)
+		"tint":TINTS[int(Kit.unit([life.salt,n,85])*TINTS.size())],"size":lerpf(0.85,1.15,Kit.unit([life.salt,n,86])),"wings":0.0,"bank":0.0,"bloom":_bloom(pick)}
+	fly.pos = _perch(fly)
 	return fly
 
 func _hide(fly: Dictionary) -> void:
@@ -124,23 +133,31 @@ func _ground(p: Vector2) -> float:
 	var g: float = _survey.ground_at(p)
 	return g if not is_nan(g) else 0.0
 
-## Where a butterfly sits on the flower at `p`.
-func _perch(p: Vector2) -> Vector3:
-	return Vector3(p.x,_ground(p)+BLOOM,p.y)
+## The height over the ground of the survey's flower `index`'s head.
+func _bloom(index: int) -> float:
+	var tops: PackedFloat32Array = _survey.flower_tops
+	var top := tops[index] if index < tops.size() else -1.0
+	return maxf(top-PERCH_DROP,0.05) if top > 0.0 else BLOOM
+
+## Where a butterfly sits on its flower.
+func _perch(fly: Dictionary) -> Vector3:
+	var p: Vector2 = fly.flower
+	return Vector3(p.x,_ground(p)+float(fly.bloom),p.y)
 
 ## Pick the flower after this one: one of a few at random, the first that lies
 ## between NEXT.x and NEXT.y away, else any.
 func _flower(fly: Dictionary) -> void:
 	var spots: PackedVector2Array = _survey.flower_spots
 	var here := Vector2((fly.pos as Vector3).x,(fly.pos as Vector3).z)
-	var pick := spots[_rng.randi_range(0,spots.size()-1)]
+	var pick := _rng.randi_range(0,spots.size()-1)
 	for n in range(8):
-		var candidate := spots[_rng.randi_range(0,spots.size()-1)]
-		var d := here.distance_to(candidate)
+		var candidate := _rng.randi_range(0,spots.size()-1)
+		var d := here.distance_to(spots[candidate])
 		if d >= NEXT.x and d <= NEXT.y:
 			pick = candidate
 			break
-	fly.flower = pick
+	fly.flower = spots[pick]
+	fly.bloom = _bloom(pick)
 	fly.lift = _rng.randf_range(HEIGHT.x,HEIGHT.y)
 
 func _fly(fly: Dictionary, step: float, fair: bool) -> void:
@@ -155,7 +172,7 @@ func _fly(fly: Dictionary, step: float, fair: bool) -> void:
 	var flapping := 0.0
 	if bool(fly.resting):
 		fly.rest = float(fly.rest)-step
-		pos = pos.lerp(_perch(fly.flower),1.0-exp(-8.0*step))
+		pos = pos.lerp(_perch(fly),1.0-exp(-8.0*step))
 		# Wings held up, opening and closing slowly.
 		fly.wings = Kit.ease_to(float(fly.wings),1.15+0.3*sin(t*2.4)+0.15*sin(t*0.9),6.0,step)
 		if float(fly.rest) <= 0.0:
@@ -176,11 +193,14 @@ func _fly(fly: Dictionary, step: float, fair: bool) -> void:
 		var near := clampf(to.length()/0.8,0.25,1.0)
 		var heading := float(fly.heading)
 		pos += Vector3(sin(heading),0,cos(heading))*speed*near*step
-		# Height: toward the flight height, then down to the bloom as it nears.
+		# Height: toward the flight height (kept over a tall flower), then
+		# down to the bloom as it nears.
 		var ground := _ground(Vector2(pos.x,pos.z))
-		var aim := ground+lerpf(BLOOM,float(fly.lift),clampf(to.length()/1.2,0.0,1.0))
+		var bloom := float(fly.bloom)
+		var aim := ground+lerpf(bloom,maxf(float(fly.lift),bloom+0.15),clampf(to.length()/1.2,0.0,1.0))
 		aim += sin(t*2.3)*BOB+sin(beat)*BOB*0.35
-		pos.y = Kit.ease_to(pos.y,aim,3.0,step)
+		# The ease lags up a rising slope; never let it sink into the ground.
+		pos.y = maxf(Kit.ease_to(pos.y,aim,3.0,step),ground+CLEAR)
 		flapping = 1.0
 		fly.wings = Kit.ease_to(float(fly.wings),0.5+0.75*sin(beat),30.0,step)
 		if to.length() < 0.12:

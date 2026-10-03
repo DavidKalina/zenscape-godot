@@ -488,11 +488,20 @@ func bar() -> void:
 	for seed: String in ["oak","pine","willow","birch","redwood","juniper","joshua"]:
 		check(Materials.paints(seed) and not Materials.sows(seed),"%s seed is painted as trees, not sown as a veil (tests/test_hand_trees.gd)" % seed)
 	check(Materials.SCATTER.has("reed") and Materials.SCATTER.has("stone") and "reed" in ids,"Reeds and stones still scatter")
-	# The seed group: the tree seeds (first steps added birch, redwood, juniper
-	# and Joshua to the case), the five flowers, then reed.
-	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0).map(func(entry: Dictionary) -> String: return entry.id)
-	var expected := ["oak","pine","willow","birch","redwood","juniper","joshua","wildflower","dandelion","poppy","cosmos","sunflower","reed"]
-	check(seeds == expected,"The seed group is seven tree seeds, five flowers and reed (%s)" % str(seeds))
+	# The case's groups (scripts/materials_tray.gd GROUPS): the tree seeds
+	# (first steps added birch, redwood, juniper and Joshua), then the five
+	# flowers, wheat and reed in a compartment of their own.
+	var in_group := func(group: int) -> Array: return Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == group).map(func(entry: Dictionary) -> String: return entry.id)
+	# Joshua is held back with the desert (scripts/desert_landscape.gd).
+	var trees := ["oak","pine","willow","birch","redwood","juniper"]
+	if preload("res://scripts/desert_landscape.gd").on: trees.append("joshua")
+	check(in_group.call(0) == trees,"The trees' compartment holds the tree seeds (%s)" % str(in_group.call(0)))
+	check(in_group.call(3) == ["wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"],"The flowers' compartment holds five flowers, wheat and reed (%s)" % str(in_group.call(3)))
+	check(Tray.GROUPS.keys().slice(0,2) == [0,3],"Trees then flowers & crops lead the case")
+	# Water and stone share one; the stone lamp, the campfire, the cabin,
+	# fence, footbridge and the crystal still hidden are what is built.
+	check(in_group.call(4) == ["water","stone"],"Water and stone share a compartment (%s)" % str(in_group.call(4)))
+	check(in_group.call(1) == ["lamp","campfire","cabin","fence","bridge","crystal"],"The build compartment is lamp, campfire, cabin, fence, footbridge and crystal (%s)" % str(in_group.call(1)))
 
 # --- The cozy scene ---------------------------------------------------------------------
 

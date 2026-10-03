@@ -3,9 +3,13 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## land. Like the Brush it paints (the clay's paint, scripts/land_clay.gd
 ## State.PAINT): press and hold or drag, and every object whose foot is within
 ## the can's reach (trees, rocks, shrubs, flowers, logs, leaf beds...) goes,
-## flying up into its mouth and shrinking away. Waterfalls, explosives and
-## Bigfoot's tree stay. **Shift** spares the big things (BIG: trees, boulders,
-## arches): only the small stuff goes.
+## flying up into its mouth and shrinking away; a footbridge goes when any of
+## its span is in reach. Waterfalls, explosives and Bigfoot's tree stay.
+## **Shift** spares the big things (BIG: trees, rocks and boulders (a pebble
+## counts as a rock), arches, and everything built: lamps, campfires, cabins,
+## bridges and fences): only the small stuff goes, flowers, wheat, shrubs,
+## reeds and the like. Taking a built thing sounds as stone does (crumble),
+## the small stuff rustles (plant).
 ##
 ## One press is one undo step: the clay opens it at the press and closes it at
 ## the release, and the records go from the land's objects inside it. The
@@ -14,12 +18,18 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## back. Fallen branches (scripts/dead_wood.gd) and blown leaves
 ## (scripts/wind_leaf_litter.gd) are swept too; they are the world's own
 ## passing litter, not the land's, so no undo brings them back.
+##
+## Fences (scripts/fences.gd) go span by span: every span of rails the can's
+## reach touches goes, with any post left standing alone, so a sweep across a
+## fence cuts a gap in it (a run cut in two becomes two fences; a pen cut
+## opens). Shift spares fences whole, as it spares everything built. The spans
+## come back with the rest on Cmd+Z.
 
 ## Its reach (m) round the pointer at the middle pip.
 const RADIUS := 1.4
-## What it never takes, and what Shift spares.
+## What it never takes, and what Shift spares (fences too, `_cut_fences`).
 const KEPT := ["waterfall","bigfoot_tree","explosive"]
-const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch"]
+const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch","stone_lamp","campfire","bridge","cabin"]
 ## The flight into the mouth: seconds, and at most this many in the air.
 const SUCK_SECONDS := 0.45
 const MAX_FLYING := 48
@@ -35,6 +45,8 @@ const MOUTH := Color("1c241b")
 const TILT := -10.0
 const BODY_RADIUS := 0.24
 const BODY_HEIGHT := 0.46
+
+const Fences = preload("res://scripts/fences.gd")
 
 ## Ids taken this press, and what is flying: {"node", "from" (Transform3D,
 ## world), "t"}.
@@ -56,6 +68,17 @@ func paints() -> bool: return true
 static func takes(kind: String, spare_big := false) -> bool:
 	return not kind in KEPT and not (spare_big and kind in BIG)
 
+## How far (m) record `item` lies from plate point `q`: its foot, or for a
+## footbridge (scripts/footbridge.gd) the nearest point of its span, for a
+## cabin (scripts/cabin.gd) the nearest point of its footprint.
+static func reach_of(item: Dictionary, q: Vector2) -> float:
+	var foot := Vector2(float(item.x),float(item.z))
+	if str(item.asset) == "bridge" and item.has("end_x"):
+		return Geometry2D.get_closest_point_to_segment(q,foot,Vector2(float(item.end_x),float(item.end_z))).distance_to(q)
+	if str(item.asset) == "cabin":
+		return preload("res://scripts/cabin.gd").distance(foot,float(item.angle),q,float(item.scale))
+	return foot.distance_to(q)
+
 func reset() -> void:
 	lift = 0.0
 	taken = []
@@ -72,9 +95,16 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 	var going: Array[Dictionary] = []
 	for item: Dictionary in data.objects:
 		if not takes(str(item.asset),_spare_big): continue
-		if Vector2(float(item.x),float(item.z)).distance_to(q) <= radius: going.append(item)
+		if reach_of(item,q) <= radius: going.append(item)
 	_sweep_litter(q,radius)
-	if going.is_empty(): return 0.0
+	var fenced := not _spare_big and _cut_fences(q,radius)
+	if going.is_empty():
+		if fenced:
+			clay.touch(q,radius)
+			if _quiet <= 0.0:
+				clay.sound(&"crumble",q,0.6)
+				_quiet = SOUND_GAP
+		return 0.0
 	var reach: Node = clay.scene.get("hand_reach")
 	var play: Variant = clay.scene.get("world_play")
 	var ids := {}
@@ -86,11 +116,16 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 		# Its drawn parts fly before its record goes.
 		if reach != null and reach.has_method("_plant_parts"):
 			for part: Dictionary in reach._plant_parts(at): _fly(part.mesh,part.material,part.transform)
+		var bridges: Variant = editor.get("bridges")
+		if str(item.asset) == "bridge" and bridges != null:
+			for part: Dictionary in bridges.parts(at): _fly(part.mesh,part.material,part.transform)
 		if play != null and play._active.has(at):
 			var node: Variant = play._active[at]
 			play._active.erase(at)
 			if is_instance_valid(node): node.queue_free()
 		var root := Vector2(float(item.x),float(item.z))
+		# A bridge stood on no growing ground: nothing to keep bare.
+		if str(item.asset) == "bridge": continue
 		if reach != null and reach.has_method("_keep_bare"): reach._keep_bare(root,NativeTerrainData.object_source(item) == "emerged")
 		else: data.provenance[data.meadow_cell(root)] = NativeTerrainData.SOURCE_HAND
 	var kept: Array[Dictionary] = []
@@ -110,6 +145,21 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 
 func paint_end(_tapped: bool) -> void:
 	_spare_big = false
+
+## Fence spans in reach go (Fences `cut`, inside the press's undo step), their
+## lone posts flying up the mouth. True when any went.
+func _cut_fences(q: Vector2, radius: float) -> bool:
+	var editor: Node = clay.editor
+	var view: Variant = editor.get("fences")
+	if view == null or editor.data.fences.is_empty(): return false
+	var cut: Dictionary = Fences.cut(editor.data,q,radius)
+	if not cut.changed: return false
+	var terrain: Node3D = editor.terrain
+	for p: Vector2 in cut.taken:
+		var part: Dictionary = view.post_part(editor.data,p)
+		if not part.is_empty(): _fly(part.mesh,part.material,terrain.global_transform*part.transform)
+	view.rebuild(editor.data)
+	return true
 
 ## Fallen branches lying in reach go up the mouth; blown leaves in reach are
 ## lost (they fade and grow back under their trees in time, as blown away).

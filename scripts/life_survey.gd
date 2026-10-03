@@ -20,10 +20,11 @@ const HALF := 14.0
 ## Coarse 1 m grid for tree density sums.
 const COARSE := 28
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus","birch","willow","juniper"]
-const SHRUBS := ["shrub","fern","reeds","bank_grass","grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","mushroom"]
+const SHRUBS := ["shrub","fern","reeds","bank_grass","grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","wheat","mushroom"]
 ## Flowering shrubs (butterflies visit them) and dead standing wood (a woodpecker's drum).
 const FLOWERS := ["daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine"]
 const SNAG := "snag"
+const MeadowFlowers = preload("res://scripts/meadow_flower_mesh.gd")
 ## Water depth a fish needs, and the depth band frogspawn and waders like.
 const DEEP := 0.22
 const SHALLOW_MIN := 0.02
@@ -57,8 +58,10 @@ var shrub_grid := PackedInt32Array()
 var tree_count := 0
 var shrub_count := 0
 var stream_cells := 0
-## Flowering shrubs' plate positions, and snags' [x, z, height].
+## Flowering shrubs' plate positions, their heads' height over the ground
+## (m; -1 where the kind's height isn't known), and snags' [x, z, height].
 var flower_spots := PackedVector2Array()
+var flower_tops := PackedFloat32Array()
 var snag_spots := PackedVector3Array()
 ## Dry cells beside any water (still or flowing), for birds and frogs.
 var shore := PackedInt32Array()
@@ -206,7 +209,9 @@ func _advance() -> void:
 func _bucket_objects() -> void:
 	for item: Dictionary in _objects:
 		var asset := str(item.get("asset",""))
-		if asset in FLOWERS: flower_spots.append(Vector2(float(item.x),float(item.z)))
+		if asset in FLOWERS:
+			flower_spots.append(Vector2(float(item.x),float(item.z)))
+			flower_tops.append(_flower_top(asset,item))
 		elif asset == SNAG:
 			# The model stands a metre tall at unit scale (foliage.js snagGeometry).
 			var tall := NativeObjectPose.decode_basis(item.pose).y.length() if item.has("pose") else float(item.get("scale",1.0))
@@ -220,6 +225,14 @@ func _bucket_objects() -> void:
 		else:
 			shrub_grid[g.y*COARSE+g.x] += 1
 			shrub_count += 1
+
+## A meadow flower's tallest head over its root (MeadowFlowerMesh SPEC
+## height at the plant's scale); -1 for the older shrub flowers.
+static func _flower_top(asset: String, item: Dictionary) -> float:
+	var spec: Dictionary = MeadowFlowers.SPEC.get(asset,{})
+	if spec.is_empty(): return -1.0
+	var tall := NativeObjectPose.decode_basis(item.pose).y.length() if item.has("pose") else float(item.get("scale",1.0))
+	return float(spec.height)*tall
 
 ## Mark cells under pond triangles [first, first+count); returns the next.
 ## A triangle's water stands at its vertices' height.

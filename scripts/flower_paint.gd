@@ -29,9 +29,10 @@ extends RefCounted
 ##
 ## What stands where the coat lies is the meadow types' composition, exactly
 ## as a sown drift's (scripts/flower_sowing.gd `grow`): the world's own
-## jittered 0.2 m lattice, each spot kept at `pow(presence, 1.2)` times the
+## jittered 0.2 m lattice (wheat's on its rows themselves, FlowerSowing
+## `spot`), each spot kept at `pow(presence, 1.2)` times the
 ## kind's packing, the kind the type's (drifts of one kind, a few companions),
-## sunflowers only on their rows. The ground decides as ever (`suits`: no
+## sunflowers and wheat only on their rows. The ground decides as ever (`suits`: no
 ## flowers on water, rock, steep ground, near snow, under crowns or on
 ## stones). Each spot is judged once a stroke (`_spots`), and only once its
 ## coat could raise it, so a frame only compares numbers.
@@ -250,10 +251,10 @@ func _settle(area: Rect2) -> Dictionary:
 
 func _grow(area: Rect2) -> Array:
 	var made := []
-	var spacing := FlowerSowing.SPACING
 	var salt: int = sowing.salt
-	var first := Vector2i((area.position/spacing).floor())
-	var last := Vector2i((area.end/spacing).ceil())
+	var span: Array = sowing.cells(area)
+	var first: Vector2i = span[0]
+	var last: Vector2i = span[1]
 	var now: float = Emergence.time
 	for gz in range(first.y,last.y):
 		for gx in range(first.x,last.x):
@@ -261,7 +262,7 @@ func _grow(area: Rect2) -> Array:
 			var spot: Variant = _spots.get(cell)
 			if spot == null:
 				# Not judged yet: only once the coat here could bring it up.
-				var rough := Vector2((gx+0.5)*spacing,(gz+0.5)*spacing)
+				var rough: Vector2 = sowing.middle(cell)
 				if coat(rough)*1.2 < FlowerSowing.THIN: continue
 				spot = _judge(cell)
 				_spots[cell] = spot
@@ -272,14 +273,14 @@ func _grow(area: Rect2) -> Array:
 			# It comes up (or nothing will, if something took the spot).
 			_spots[cell] = []
 			if not sowing._free(p): continue
-			var key := [salt,71,gx,gz]
+			var key: Array = sowing.key_of(cell)
 			var record: Array = sowing.meadow.flower(str(spot[2]),p,key)
 			var id := data.place(record[0],p,record[4],record[1],record[3],record[2])
 			if id < 0: continue
 			var item: Dictionary = data.objects.back()
 			item["source"] = "hand"
 			item["born"] = now+SPROUT*Variety.unit([salt,serial,gx,gz,6])
-			sowing._taken.get_or_add(Vector2i((p/0.5).floor()),[]).append(Vector3(p.x,p.y,FlowerSowing.ROOM))
+			sowing._taken.get_or_add(Vector2i((p/0.5).floor()),[]).append(Vector3(p.x,p.y,sowing.room()))
 			placed.append(id)
 			kinds[spot[2]] = int(kinds.get(spot[2],0))+1
 			made.append(item)
@@ -291,9 +292,7 @@ func _grow(area: Rect2) -> Array:
 ## can stand (its draw is too high, off its row, or the ground refuses).
 func _judge(cell: Vector2i) -> Array:
 	var salt: int = sowing.salt
-	var spacing := FlowerSowing.SPACING
-	var key := [salt,71,cell.x,cell.y]
-	var p := Vector2((cell.x+Variety.unit(key+[1]))*spacing,(cell.y+Variety.unit(key+[2]))*spacing)
+	var p: Vector2 = sowing.spot(cell)
 	var roll := Variety.unit([salt,serial,cell.x,cell.y,3])
 	var meadow: RefCounted = sowing.meadow
 	var density := float(meadow.type.drift.get("density",1.0))

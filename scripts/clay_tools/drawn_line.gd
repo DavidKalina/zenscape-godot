@@ -4,7 +4,8 @@ extends RefCounted
 ## clay's queue while the drag lasts, kept PATH_SPACING apart and smoothed as
 ## the Ravine's are (scripts/clay_tools/wire.gd `drawn`), so the hand's jitter
 ## goes and its bends stay. The tool returns false from `drag_frame`, so the
-## queue is never laid as dabs and holds the whole stroke.
+## queue is never laid as dabs and holds the whole stroke. The tray's fence
+## draws its line with it too, handing it points with `add`.
 
 const Wire = preload("res://scripts/clay_tools/wire.gd")
 
@@ -37,16 +38,21 @@ func end() -> Vector2:
 func take(clay: Node) -> void:
 	if _kept.is_empty(): return
 	var queued: PackedVector2Array = clay.queued()
-	for k in range(_taken,queued.size()):
-		_end = queued[k]
-		if _end.distance_to(_kept[-1]) >= Wire.PATH_SPACING: _kept.append(_end)
+	for k in range(_taken,queued.size()): add(queued[k])
 	_taken = queued.size()
 
+## One more ground point of the pointer, given directly by a hand that is not
+## the clay's (the tray's fence, scripts/hand_materials.gd).
+func add(at: Vector2) -> void:
+	if _kept.is_empty(): return
+	_end = at
+	if _end.distance_to(_kept[-1]) >= Wire.PATH_SPACING: _kept.append(_end)
+
 ## The stroke so far (plate points, press first, the pointer last), smoothed.
-## Empty when none is being drawn.
-func path(clay: Node) -> PackedVector2Array:
+## Empty when none is being drawn. `clay` null: only the points `add`ed.
+func path(clay: Node = null) -> PackedVector2Array:
 	if _kept.is_empty(): return PackedVector2Array()
-	take(clay)
+	if clay != null: take(clay)
 	var out := _kept.duplicate()
 	# The pointer's point ends it: it stands in for a kept point too near it.
 	if out.size() > 1 and _end.distance_to(out[-1]) < Wire.PATH_SPACING*0.5: out[-1] = _end

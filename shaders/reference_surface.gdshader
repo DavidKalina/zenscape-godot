@@ -116,6 +116,19 @@ uniform vec2 flower_lod = vec2(0.0, 1.0);
 // 6 + r the core, 8 + r the bracts.
 uniform bool flower_cycle = false;
 uniform vec4 flower_cycle_times = vec4(30.0, 50.0, 2.0, 5.0);
+// A crop that ripens and is cut (MeadowFlowerMesh RIPEN_KINDS: wheat,
+// docs/scenic/wheat.md), read against the `zs_season` global: its straw keeps
+// the mesh's own gold rather than the living green, greens with the spring
+// bloom (and as it comes back once the dormancy eases), deepens toward amber
+// through autumn, and through the winter's dormancy its ears fold onto their
+// necks and every straw is held under `flower_stubble` metres (mesh space),
+// pale straw stubble.
+uniform bool flower_ripen = false;
+uniform float flower_stubble = 0.14;
+// Its spring green, times its own luminance: the ears' (lighter, yellower)
+// and the straw's (deeper), MeadowFlowerMesh RIPEN_GREEN_*.
+uniform vec3 flower_ripen_green_ear = vec3(0.62, 0.78, 0.22);
+uniform vec3 flower_ripen_green_straw = vec3(0.30, 0.62, 0.12);
 // The root's colour: the ground's under it times x, giving way to the
 // tuft's own green by y of the way up.
 uniform vec2 grass_root_blend = vec2(0.92, 0.6);
@@ -303,6 +316,15 @@ void vertex() {
 		flower_offset *= cycle_show;
 		flower_gone = cycle_show <= 0.0;
 	}
+	if (flower_ripen && !flower_gone && zs_season.z > 0.004) {
+		// Cut for the winter: ears fold onto their necks, straws stand as
+		// stubble, and the bend (UV.y, along a 1 m plant) is the stubble's.
+		float ripen_cut = zs_season.z;
+		VERTEX -= flower_offset * ripen_cut;
+		flower_offset *= 1.0 - ripen_cut;
+		VERTEX.y = mix(VERTEX.y, min(VERTEX.y, flower_stubble), ripen_cut);
+		UV.y = mix(UV.y, min(UV.y, flower_stubble), ripen_cut);
+	}
 	if (!flower_gone) {
 		leaf_local = VERTEX;
 		if (earth_sides) {
@@ -321,7 +343,19 @@ void vertex() {
 			// so a meadow's drift keeps one colour; full alpha picks per plant.
 			int flower_chosen = COLOR.a < 0.5 ? clamp(int(COLOR.a * 8.0), 0, 3) : -1;
 			COLOR.a = 1.0;
-			if (UV2.x < 1.5) {
+			if (flower_ripen) {
+				// Wheat keeps its authored gold, straw and ears alike, and follows
+				// the year: green with the spring bloom and as it comes back from
+				// the stubble (no autumn left, the dormancy easing), amber through
+				// autumn, pale straw while cut.
+				float ripen_lum = dot(COLOR.rgb, vec3(0.30, 0.55, 0.15));
+				float ripen_green = max(zs_season.x, (1.0 - zs_season.w) * (1.0 - smoothstep(0.5, 1.0, zs_season.z)) * smoothstep(0.0, 0.2, zs_season.z));
+				COLOR.rgb = mix(COLOR.rgb, (UV2.x < 1.5 ? flower_ripen_green_straw : flower_ripen_green_ear) * ripen_lum, 0.85 * ripen_green);
+				COLOR.rgb *= mix(vec3(1.0), vec3(1.0, 0.86, 0.64), 0.6 * zs_season.w);
+				COLOR.rgb = mix(COLOR.rgb, vec3(1.12, 1.0, 0.76) * ripen_lum, 0.7 * zs_season.z);
+				if (UV2.x < 1.5) COLOR.rgb *= mix(1.0, UV.x, 0.5);
+				COLOR.rgb = zs_flower_palette(COLOR.rgb, zs_palette_grass / ZS_GRASS_SOURCE, flower_palette_pull);
+			} else if (UV2.x < 1.5) {
 				vec3 flower_living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
 				COLOR.rgb = flower_living * flower_stem_shade * UV.x;
 			} else {

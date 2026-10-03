@@ -55,10 +55,19 @@ const SLOTS := {
 	"poppy":{"type":"wildflower","flowers":[["poppy",1.0],["oxeye_daisy",0.0]],"mix":0.08},
 	"cosmos":{"type":"cosmos","flowers":[["cosmos",1.0],["oxeye_daisy",0.0]]},
 	"sunflower":{"type":"sunflower","flowers":[["sunflower",1.0],["buttercup",0.0]],"mix":0.02},
+	# Wheat (docs/scenic/wheat.md): a crop, not a meadow. Only wheat, drilled
+	# in rows (`drift` is merged over the type's): rows `spacing` m apart, each
+	# clump on a `band` m wide line down its row with a clear furrow between,
+	# `square` to the plate's sides, wavering only a little; candidates on
+	# the rows themselves, `along` m apart down each (the row lattice,
+	# `spot`), `room` m kept between clumps, each turned along its row
+	# (`align`), so a patch reads as a tidy field.
+	"wheat":{"type":"sunflower","flowers":[["wheat",1.0]],"mix":0.0,"sizes":{"wheat":[0.82,0.95]},
+		"drift":{"rows":{"kind":"wheat","spacing":0.32,"band":0.1,"along":0.2,"room":0.05,"align":true,"face":false,"square":true,"waver":0.06}}},
 }
 ## The veil's look per slot (sRGB): seed and fluff, pale and warm, leaning to
 ## the flower's colour.
-const LOOKS := {"wildflower":"f2e2b4","dandelion":"f6f2e6","poppy":"f2b8a0","cosmos":"f4c8da","sunflower":"f0d27a"}
+const LOOKS := {"wildflower":"f2e2b4","dandelion":"f6f2e6","poppy":"f2b8a0","cosmos":"f4c8da","sunflower":"f0d27a","wheat":"eedcae"}
 ## The veil: brush radius (m) at the middle pip (pollen_cloud.gd scales it
 ## within its SIZE), its strength (more motes than a tree's veil, so the drift
 ## has a density to read), its spread (a share of the tree veil's: a flower
@@ -73,8 +82,13 @@ const CARRY := 1.3
 const KERNEL := 0.55
 const THIN := 1.6
 const FULL := 7.0
-## The candidate lattice (m), as the meadow types'.
+## The candidate lattice (m), as the meadow types'. A slot whose rows give
+## `along` (wheat) sets its candidates on its rows instead (`spot`).
 const SPACING := 0.2
+## The row lattice's jitter: down a row, the share of `along` a candidate
+## strays either side of its place; across, the share of the row's `band`.
+const ALONG_JITTER := 0.25
+const BAND_JITTER := 0.4
 ## Ground the flowers refuse: steeper than STEEP (the meadow types' 0.75),
 ## within SNOW_GAP below the snowline, painted at least PAINTED weight with a
 ## colour within BARE of rock, earth or sand.
@@ -116,6 +130,9 @@ var _bare: Array[Color] = []
 var _feather := FastNoiseLite.new()
 var _trees := {}
 var _taken := {}
+## The row lattice (`spot`): empty for the jittered square lattice, else
+## {"along", "spacing", "band", "room"} from the slot's rows.
+var _lattice := {}
 
 static func has(id: String) -> bool:
 	return SLOTS.has(id)
@@ -144,11 +161,19 @@ func _init(ground: NativeTerrainData, id: String, world_seed: int) -> void:
 		seed_value = int(data._recipe.inland.genome.plant_seed)
 	meadow = MeadowTypes.new(type_id,seed_value)
 	var spec: Dictionary = SLOTS[id]
-	if spec.has("flowers") or spec.has("mix"):
+	if spec.has("flowers") or spec.has("mix") or spec.has("drift") or spec.has("sizes"):
 		var type: Dictionary = meadow.type.duplicate(true)
 		if spec.has("flowers"): type.flowers = spec.flowers
 		if spec.has("mix"): type.drift.mix = float(spec.mix)
+		if spec.has("drift"): type.drift.merge(spec.drift.duplicate(true),true)
+		if spec.has("sizes"): type.sizes = spec.sizes
 		meadow.type = type
+		# Rows square to the plate's sides, along x or z by the world.
+		if type.drift.get("rows",{}).get("square",false):
+			meadow._row = Vector2.RIGHT if Variety.unit([salt,29]) < 0.5 else Vector2.DOWN
+		var rows: Dictionary = type.drift.get("rows",{})
+		if rows.has("along"):
+			_lattice = {"along":float(rows.along),"spacing":float(rows.spacing),"band":float(rows.get("band",0.0)),"room":float(rows.get("room",ROOM))}
 	_snowline = BiomeBlend.snowline(settings,data._palette.snowline)
 	for colour: Color in data._palette.rock: _bare.append(colour)
 	_bare.append(data._palette.sand)
@@ -225,7 +250,58 @@ func _survey(bounds: Rect2) -> void:
 		if asset in preload("res://scripts/emergence.gd").TREES:
 			_trees.get_or_add(Vector2i(p.floor()),[]).append(Vector3(p.x,p.y,clampf(float(item.get("scale",1.0)),0.5,2.0)))
 		var room := STONE*float(item.get("scale",1.0)) if asset == "rock" or asset.begins_with("boulder") else ROOM
+		if not _lattice.is_empty() and asset in kinds(): room = float(_lattice.room)
 		_taken.get_or_add(Vector2i((p/0.5).floor()),[]).append(Vector3(p.x,p.y,room))
+
+## The room a plant this sowing places keeps about it (m).
+func room() -> float:
+	return ROOM if _lattice.is_empty() else float(_lattice.room)
+
+# --- The lattice -----------------------------------------------------------------
+
+## The candidate cells over `area` (plate): [first, last), as Vector2i.
+## On the square lattice, SPACING cells of x and z; on the row lattice, x
+## counts `along` steps down the rows and y the rows across.
+func cells(area: Rect2) -> Array:
+	if _lattice.is_empty():
+		return [Vector2i((area.position/SPACING).floor()),Vector2i((area.end/SPACING).ceil())]
+	var u: Vector2 = meadow._row
+	var n := Vector2(-u.y,u.x)
+	var low := Vector2(INF,INF)
+	var high := Vector2(-INF,-INF)
+	for corner: Vector2 in [area.position,Vector2(area.end.x,area.position.y),Vector2(area.position.x,area.end.y),area.end]:
+		var q := Vector2(u.dot(corner),n.dot(corner))
+		low = low.min(q)
+		high = high.max(q)
+	var along := float(_lattice.along)
+	var spacing := float(_lattice.spacing)
+	return [Vector2i(floori(low.x/along),floori(low.y/spacing)-1),Vector2i(ceili(high.x/along),ceili(high.y/spacing)+1)]
+
+## The hash keying candidate `cell`'s draws, the world's own: a second
+## sowing finds the same spots.
+func key_of(cell: Vector2i) -> Array:
+	return [salt,71 if _lattice.is_empty() else 73,cell.x,cell.y]
+
+## Where candidate `cell` stands (plate). On the row lattice: down its row
+## at its `along` step, a little either way, and across within the row's
+## band, following the row's waver (MeadowTypes `row_waver`).
+func spot(cell: Vector2i) -> Vector2:
+	var key := key_of(cell)
+	if _lattice.is_empty():
+		return Vector2((cell.x+Variety.unit(key+[1]))*SPACING,(cell.y+Variety.unit(key+[2]))*SPACING)
+	var u: Vector2 = meadow._row
+	var n := Vector2(-u.y,u.x)
+	var down := (cell.x+0.5+(Variety.unit(key+[1])-0.5)*2.0*ALONG_JITTER)*float(_lattice.along)
+	var across := (cell.y+0.5)*float(_lattice.spacing)+(Variety.unit(key+[2])-0.5)*2.0*BAND_JITTER*float(_lattice.band)*0.5
+	var p := u*down+n*across
+	for i in range(3): p = u*down+n*(across-meadow.row_waver(p))
+	return p
+
+## Candidate `cell`'s middle, for a rough look before it is judged.
+func middle(cell: Vector2i) -> Vector2:
+	if _lattice.is_empty(): return Vector2((cell.x+0.5)*SPACING,(cell.y+0.5)*SPACING)
+	var u: Vector2 = meadow._row
+	return u*(cell.x+0.5)*float(_lattice.along)+Vector2(-u.y,u.x)*(cell.y+0.5)*float(_lattice.spacing)
 
 func _free(p: Vector2) -> bool:
 	var cell := Vector2i((p/0.5).floor())
@@ -294,14 +370,15 @@ func grow(points: PackedVector2Array, times: PackedFloat32Array, serial: int, no
 	var buckets := _buckets(points,times)
 	var drift: Dictionary = meadow.type.drift
 	var density := float(drift.get("density",1.0))
-	var first := Vector2i((bounds.position/SPACING).floor())
-	var last := Vector2i((bounds.end/SPACING).ceil())
+	var span: Array = cells(bounds)
+	var first: Vector2i = span[0]
+	var last: Vector2i = span[1]
 	var placed: Array = result.placed
 	for gz in range(first.y,last.y):
 		for gx in range(first.x,last.x):
 			# The lattice is the world's: a second sowing finds the same spots.
-			var key := [salt,71,gx,gz]
-			var p := Vector2((gx+Variety.unit(key+[1]))*SPACING,(gz+Variety.unit(key+[2]))*SPACING)
+			var key := key_of(Vector2i(gx,gz))
+			var p := spot(Vector2i(gx,gz))
 			var near: Array = _density(buckets,p)
 			var d := presence(float(near[0]),p)
 			if d <= 0.0: continue
@@ -321,7 +398,7 @@ func grow(points: PackedVector2Array, times: PackedFloat32Array, serial: int, no
 			item["source"] = "hand"
 			var order := (float(near[1])-t0)/maxf(t1-t0,0.001)
 			item["born"] = now+BLOOM_DELAY+BLOOM*order+BLOOM_JITTER*Variety.unit([salt,serial,gx,gz,6])
-			_taken.get_or_add(Vector2i((p/0.5).floor()),[]).append(Vector3(p.x,p.y,ROOM))
+			_taken.get_or_add(Vector2i((p/0.5).floor()),[]).append(Vector3(p.x,p.y,room()))
 			placed.append(id)
 			result.kinds[kind] = int(result.kinds.get(kind,0))+1
 	if not placed.is_empty(): data.objects_revision += 1

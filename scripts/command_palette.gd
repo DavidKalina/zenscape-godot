@@ -95,6 +95,7 @@ const SEEDS := [
 	["poppy","Poppy","Field","Red poppies in drifts, where the wind sets them down."],
 	["cosmos","Cosmos","Drift","Tall pink and white cosmos, a drift of one colour."],
 	["sunflower","Sunflower","Stand","Sunflowers in a stand, their faces to the sun."],
+	["wheat","Wheat","Field","Wheat in tidy rows: green in spring, gold by late summer, stubble in winter."],
 	["reed","Reed","Cattail","Cattails for the shallows."],
 ]
 const TOOLS := [
@@ -109,11 +110,16 @@ const TOOLS := [
 	["feather","Feather","Gust","Wind in hand."],
 	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
 	["brush","Brush","Paint","Paints grass, rock, bare earth or any colour onto the ground. Shift wipes."],
-	["trash","Trash can","Clear","Sucks up trees, rocks, shrubs, logs and leaves under it. Shift spares trees and rocks."],
+	["trash","Trash can","Clear","Sucks up trees, rocks, shrubs, logs and leaves under it. Shift spares trees, rocks and anything built."],
 ]
 const ELEMENTS := [
 	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],
 	["stone","River stone","Place","Sets a stone, or scatters pebbles."],
+	["lamp","Stone lamp","Glow","Sets a stone lamp, or lines a path with them. They glow at night."],
+	["campfire","Campfire","Hearth","Sets a little campfire in a ring of stones. It burns day and night, and keeps to itself."],
+	["cabin","Cabin","Shelter","Sets a small log cabin where the land is flat, dry and clear of trees. Its windows glow warm at dusk."],
+	["fence","Fence","Split rail","Draw a line and a rustic fence follows it; end where you began for a pen."],
+	["bridge","Footbridge","Span","Drag across a stream: a timber footbridge spans it, bank to bank."],
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],
 	["snow","Frost","Winter","Brings winter to the whole chunk."],
 ]
@@ -257,7 +263,10 @@ func type_text(text: String) -> void:
 
 func _build_items() -> void:
 	_items.clear()
+	var tray_ids: Array = Tray.SPECIMENS.map(func(slot: Dictionary) -> String: return slot.id)
 	for entry: Array in SEEDS:
+		# Not on the bar, not in the palette: the desert's Joshua while held back.
+		if not entry[0] in tray_ids: continue
 		_items.append({"kind":"seed","cat":1,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
 	for entry: Array in TOOLS:
 		_items.append({"kind":"tool","cat":2,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
@@ -727,7 +736,7 @@ func _take(item: Dictionary) -> void:
 	if not refusal.is_empty():
 		last_refusal = refusal
 		_notice_left = NOTICE_SECONDS
-		materials.reach._show_hint(refusal)
+		materials.reach.notice(refusal)
 		ClaySound.cue(&"ui_refuse")
 		return
 	last_taken = _key_of(item)

@@ -12,8 +12,13 @@ extends Node3D
 ## - "stride": the 1967 film. He strides out of the wood, across the open ground
 ##   along its edge and back in, turning to look at the camera mid-stride
 ##   (Stride, StrideLookL/R).
-## Whatever he is doing, he leaves (strides into the trees) if the camera
-## closes in or the player paints near him.
+## Patience pays: a calm camera (still, or closing slowly) lets him linger
+## for an extra beat before he goes back in: after Watch he looks out at
+## nearby water (Idle) or crouches to forage (Forage); after Listen he finds
+## you and watches (Watch); mid-stride he stops for a standing look (Watch).
+## A camera that is close or closing quickly, or any stroke, unsettles him and
+## he skips the lingering. He leaves at once (strides into the trees) if the
+## camera rushes him or comes very close, or the player paints beside him.
 ##
 ## The model loads on a worker thread at setup and is built hidden the first
 ## time LifeMoments polls after it lands, so nothing loads when he appears.
@@ -43,12 +48,25 @@ const SCREEN_MARGIN := 0.08
 ## OPEN_REACH metres.
 const OPEN_REACH := 8.0
 const OPEN_WIDTH := 1.1
-## Shy: he leaves if the camera comes within SHY_NEAR, or approaches faster
-## than SHY_APPROACH m/s while within SHY_WATCH, or a stroke lands within SHY_PAINT.
-const SHY_NEAR := 9.0
-const SHY_APPROACH := 5.0
+## Shy, by camera distance to his head (HEAD m up). He leaves if the camera
+## comes within SHY_NEAR, or rushes him: rush is the metres it closes inside
+## SHY_WATCH, drained at SHY_FORGIVE m/s, and he goes once it passes SHY_RUSH
+## after building for SHY_RUSH_TIME s. A slow approach (under SHY_FORGIVE)
+## never builds rush, and a jump counts only if it holds. One wheel notch
+## closes about 12% of the distance, so a lone notch does not send him off.
+## A stroke within SHY_PAINT sends him off too.
+const HEAD := 1.4
+const SHY_NEAR := 6.0
 const SHY_WATCH := 30.0
-const SHY_PAINT := 10.0
+const SHY_FORGIVE := 2.0
+const SHY_RUSH := 8.0
+const SHY_RUSH_TIME := 0.5
+const SHY_PAINT := 8.0
+## Unsettled: camera within SHY_WARY, rush above SHY_UNEASE, or any stroke.
+## He lingers only after CALM s of none.
+const SHY_WARY := 9.0
+const SHY_UNEASE := 4.0
+const CALM := 2.5
 ## How far out of and into the trees he walks for the edge sightings.
 const EDGE_DEPTH := 1.8
 const EDGE_OUT := 0.4
@@ -56,6 +74,16 @@ const WATCH_TIME := 9.5
 const LISTEN_TIME := 9.0
 ## Listen hears you off to his left: the body turns this far from the camera.
 const LISTEN_OFFSET := 0.42
+## Lingering after Watch: Idle looking out at water within WATER_REACH m (if it
+## is no more than WATER_TURN rad from the camera, WATER_ODDS of the time), or
+## the whole Forage clip (he notices you over his hand at the end), turned
+## FORAGE_TURN rad off the camera.
+const LINGER_IDLE := 12.0
+const WATER_REACH := 14.0
+const WATER_TURN := 2.0
+const WATER_ODDS := 0.6
+const FORAGE_TIME := 15.0
+const FORAGE_TURN := 0.5
 ## Stride: half the chord of the arc along the edge, how deep its ends go into
 ## the trees and how far its middle bulges into the open.
 const STRIDE_HALF := 6.0
@@ -86,7 +114,10 @@ var _loading := false
 var _eyes: ShaderMaterial
 var _glow := -1.0
 var _camera_distance := -1.0
-var _approach := 0.0
+## Metres of rush, how long it has stayed above SHY_UNEASE, and seconds calm.
+var _rush := 0.0
+var _rush_for := 0.0
+var _settled := 0.0
 
 func setup(owner: Node3D) -> void:
 	moments = owner
@@ -130,10 +161,14 @@ func _build(packed: PackedScene) -> void:
 		if player.has_animation(clip): player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	# The painted look: the scene's surface shader over the coat's vertex
 	# colours, and the eyes' own vertex colour with a night glow.
+	# The coat is faceted as all life is (flat_faces), so a re-export with
+	# welded vertices can't turn him smooth; the eyes stay smooth on purpose.
 	var coat := ShaderMaterial.new()
 	coat.shader = preload("res://shaders/reference_surface.gdshader")
+	coat.set_shader_parameter("flat_faces",true)
 	_eyes = ShaderMaterial.new()
 	_eyes.shader = coat.shader
+	_eyes.set_shader_parameter("flat_faces",false)
 	for mesh: MeshInstance3D in actor.find_children("*","MeshInstance3D",true,false):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		for surface in range(mesh.mesh.get_surface_count()):
@@ -178,7 +213,7 @@ func begin(kind: String, edges: Array, min_trees: int, in_view: bool) -> bool:
 		if not _open_view(p-into*EDGE_OUT,offset/distance,trunks): continue
 		var score := absf(distance-IDEAL)+rng.randf()*6.0
 		if in_view:
-			var centre := _on_screen(Vector3(p.x,moments._ground(p)+1.4,p.y))
+			var centre := _on_screen(Vector3(p.x,moments._ground(p)+HEAD,p.y))
 			if centre < 0.0: continue
 			var rise := atan2(eye.y-moments._ground(p),distance)
 			if rise > MAX_ELEVATION: continue
@@ -211,11 +246,33 @@ func _edge(edge: Dictionary, trunks: PackedVector2Array, eye: Vector3, kind: Str
 	var toward := atan2(eye.x-stand.x,eye.z-stand.y)
 	var clip := "Watch" if kind == "watch" else "Listen"
 	var face := toward if kind == "watch" else toward-LISTEN_OFFSET
+	# The linger beat, played only if the camera is calm when it comes up.
+	var linger := {"clip":"Watch","length":WATCH_TIME,"look":0.0,"blend":0.8,"linger":"second look"}
+	if kind == "watch":
+		var water := _water_yaw(stand,toward)
+		if not is_nan(water) and life._rng.randf() < WATER_ODDS:
+			linger = {"clip":"Idle","length":LINGER_IDLE,"face":water,"blend":0.8,"linger":"water"}
+		else:
+			linger = {"clip":"Forage","length":FORAGE_TIME,"look":FORAGE_TURN,"blend":0.8,"linger":"forage"}
 	return [
 		{"clip":"Walk","length":_length(out)/walk_speed,"path":out,"speed":walk_speed,"blend":0.0},
 		{"clip":clip,"length":WATCH_TIME if kind == "watch" else LISTEN_TIME,"face":face,"blend":0.8},
+		linger,
 		{"clip":"WalkGlance","length":_length(back)/walk_speed,"path":back,"speed":walk_speed,"blend":0.9,"fade":"out"},
 	]
+
+## Yaw toward the nearest water within WATER_REACH of `at`, no more than
+## WATER_TURN from `toward` (the camera); NAN if none.
+func _water_yaw(at: Vector2, toward: float) -> float:
+	var survey: RefCounted = life.survey
+	if survey == null: return NAN
+	var radius := 1.5
+	while radius <= WATER_REACH:
+		for i in range(24):
+			var yaw := toward+(float(i)/24.0-0.5)*2.0*WATER_TURN
+			if survey.wet_at(at+Vector2(sin(yaw),cos(yaw))*radius): return yaw
+		radius += 1.0
+	return NAN
 
 ## The film: an arc out of the wood, along its edge in the open and back in.
 func _stride(edge: Dictionary, trunks: PackedVector2Array, eye: Vector3) -> Array:
@@ -241,10 +298,13 @@ func _stride(edge: Dictionary, trunks: PackedVector2Array, eye: Vector3) -> Arra
 		var lead := maxf(0.0,roundf((total*0.5-3.5)/STRIDE_CYCLE))*STRIDE_CYCLE
 		var rest := total-lead-7.0
 		if rest < 1.0: continue
+		# A calm camera stops him after the look for a standing one; he then
+		# picks the stride back up with a blend ("resume").
 		return [
 			{"clip":"Stride","length":lead,"path":path,"speed":stride_speed,"blend":0.0,"travel":0.0},
 			{"clip":look,"length":7.0,"path":path,"speed":stride_speed,"blend":0.0,"travel":lead*stride_speed},
-			{"clip":"Stride","length":rest,"path":path,"speed":stride_speed,"blend":0.0,"fade":"out","travel":(lead+7.0)*stride_speed},
+			{"clip":"Watch","length":WATCH_TIME,"look":0.0,"blend":0.8,"linger":"stop and look"},
+			{"clip":"Stride","length":rest,"path":path,"speed":stride_speed,"blend":0.0,"resume":0.6,"fade":"out","travel":(lead+7.0)*stride_speed},
 		]
 	return []
 
@@ -320,13 +380,15 @@ func _on_screen(point: Vector3) -> float:
 # --- Staging --------------------------------------------------------------------
 
 func _start(kind: String, edge: Dictionary, beats: Array) -> void:
-	state = {"kind":kind,"edge":edge.p,"into":edge.into,"beats":beats,"i":-1,"t":0.0,"age":0.0,"p":Vector2.ZERO,"yaw":0.0,"size":0.0,"left":"","clip":""}
+	state = {"kind":kind,"edge":edge.p,"into":edge.into,"beats":beats,"i":-1,"t":0.0,"age":0.0,"p":Vector2.ZERO,"yaw":0.0,"size":0.0,"left":"","clip":"","lingered":[],"paused":false}
 	var first: Dictionary = beats[0]
 	var path: PackedVector2Array = first.path
 	state.p = path[0]
 	state.yaw = _heading(path,0.0)
 	_camera_distance = -1.0
-	_approach = 0.0
+	_rush = 0.0
+	_rush_for = 0.0
+	_settled = 0.0
 	visible = true
 	_next_beat(0.0)
 	_place()
@@ -334,13 +396,28 @@ func _start(kind: String, edge: Dictionary, beats: Array) -> void:
 func _next_beat(leftover: float) -> void:
 	state.i = int(state.i)+1
 	state.t = leftover
-	if int(state.i) >= (state.beats as Array).size():
+	var beats: Array = state.beats
+	# Lingering is for a calm camera; otherwise he moves on.
+	while int(state.i) < beats.size() and beats[state.i].has("linger") and not calm():
+		state.i = int(state.i)+1
+	if int(state.i) >= beats.size():
 		hide_now()
 		return
-	var beat: Dictionary = state.beats[state.i]
+	var beat: Dictionary = beats[state.i]
+	if beat.has("look"):
+		var eye := _eye()
+		var p: Vector2 = state.p
+		beat.face = atan2(eye.x-p.x,eye.z-p.y)-float(beat.look)
+	if beat.has("linger"): (state.lingered as Array).append(beat.linger)
+	var blend := float(beat.resume) if bool(state.paused) and beat.has("resume") else float(beat.blend)
+	state.paused = beat.has("linger")
 	state.clip = beat.clip
-	player.play(beat.clip,float(beat.blend))
+	player.play(beat.clip,blend)
 	player.advance(leftover)
+
+## No rush, no stroke and the camera not close for CALM s (filming: always).
+func calm() -> bool:
+	return not shy or _settled >= CALM
 
 ## Leave now, into the trees at a stride. `why` is kept for probes.
 func leave(why: String) -> void:
@@ -393,21 +470,24 @@ func _place() -> void:
 		_glow = glow
 		_eyes.set_shader_parameter("emissive_color",Vector3(EYE_COLOR.r,EYE_COLOR.g,EYE_COLOR.b)*glow)
 
-## Shy of a camera that comes too close or too fast.
+## Shy of a camera that comes too close or rushes him; unsettled by one that
+## is close or creeping in.
 func _watch_camera(real_step: float) -> void:
 	if state.left != "" or not shy: return
-	var eye := _eye()
-	var distance := Vector2(eye.x-position.x,eye.z-position.z).length()
-	if _camera_distance >= 0.0 and real_step > 0.0:
-		var rate := (_camera_distance-distance)/real_step
-		_approach = lerpf(_approach,rate,minf(1.0,real_step*6.0))
+	var distance := _eye().distance_to(position+Vector3.UP*HEAD)
+	var closed := minf(_camera_distance,SHY_WATCH)-distance if _camera_distance >= 0.0 and distance < SHY_WATCH else 0.0
+	_rush = maxf(0.0,_rush+closed-SHY_FORGIVE*real_step)
 	_camera_distance = distance
+	_rush_for = _rush_for+real_step if _rush > SHY_UNEASE else 0.0
+	_settled = 0.0 if distance < SHY_WARY or _rush > SHY_UNEASE else _settled+real_step
 	if distance < SHY_NEAR: leave("camera near")
-	elif distance < SHY_WATCH and _approach > SHY_APPROACH: leave("camera closing")
+	elif _rush > SHY_RUSH and _rush_for >= SHY_RUSH_TIME: leave("camera closing")
 
-## A stroke at `point` (plate metres): too close and he goes.
+## A stroke at `point` (plate metres): too close and he goes; anywhere, it
+## unsettles him.
 func stroke(point: Vector3) -> void:
 	if state.is_empty(): return
+	_settled = 0.0
 	if Vector2(point.x-position.x,point.z-position.z).length() < SHY_PAINT: leave("painting near")
 
 ## A bone's head height above the soles in the rest pose.
@@ -451,5 +531,5 @@ func report() -> Dictionary:
 	return {"kind":state.kind,"clip":player.current_animation,"clip_t":snappedf(player.current_animation_position,0.01),"beat":state.i,"age":snappedf(float(state.age),0.01),
 		"p":[snappedf(p.x,0.01),snappedf(position.y,0.01),snappedf(p.y,0.01)],"size":snappedf(float(state.size),0.01),
 		"edge_m":snappedf(p.distance_to(state.edge),0.01),"outside_m":snappedf(-(p-(state.edge as Vector2)).dot(state.into),0.01),
-		"camera_m":snappedf(Vector2(eye.x,eye.z).distance_to(p),0.1),"on_screen":snappedf(_on_screen(position+Vector3.UP*1.4),0.01),
+		"camera_m":snappedf(Vector2(eye.x,eye.z).distance_to(p),0.1),"rush_m":snappedf(_rush,0.1),"calm":calm(),"lingered":state.lingered,"on_screen":snappedf(_on_screen(position+Vector3.UP*HEAD),0.01),
 		"wet":life.survey.wet_at(p) if life.survey != null else false,"slope":snappedf(_slope(p),0.01),"feet":feet,"left":state.left,"eye_glow":snappedf(_glow,0.01)}

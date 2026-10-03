@@ -26,7 +26,8 @@ extends Node
 ##   snow or too near another tree). Shift thins the trees under the brush.
 ##   The pips size the brush; one undo step a stroke (`paint_flowers_begin`
 ##   with the tree kind, scripts/tree_paint.gd).
-## - **Flowers** (wildflower, dandelion, poppy, cosmos, sunflower;
+## - **Flowers** (wildflower, dandelion, poppy, cosmos, sunflower, and the
+##   wheat crop, docs/scenic/wheat.md;
 ##   scripts/flower_sowing.gd SLOTS) are a paintbrush. Press and drag over the
 ##   land: flowers come up under the brush as it goes, growing in at once; go
 ##   over them again, or linger, and the drift packs toward a full core, its
@@ -48,6 +49,38 @@ extends Node
 ##   bead comes back once the ball is down.
 ## - **Stones.** Tap to set one down, bigger the longer the press; drag to
 ##   scatter a few pebbles under the pointer (the rock tool's placement).
+## - **Stone lamps** ("lamp", docs/scenic/stone-lamps.md). Tap to set one
+##   lamp; drag to set a spaced row of them along the drag, like a path
+##   (`gap`), never closer than `clear` to another lamp. They glow at night
+##   (scripts/stone_lamp_lights.gd).
+## - **Campfire** ("campfire", docs/scenic/campfire.md). Tap to set one
+##   campfire, a ring of stones with a fire dancing in it
+##   (scripts/campfire.gd, scripts/campfire_fire.gd); a drag carries it and
+##   sets it where you let go. The land must take it (Campfire `refusal`): not
+##   on or half in water, not on a steep slope, not within a few metres of
+##   another campfire, not under or into a tree. Refused, nothing is set and
+##   the hint line says why (CAMPFIRE_REFUSALS).
+## - **Cabin** ("cabin", docs/scenic/cabin.md). Tap to set one small log
+##   cabin (scripts/cabin.gd); a drag carries it and sets it where you let
+##   go. Its door faces down the slope, or the camera on the flat (Cabin
+##   `facing`). The land must take it (Cabin `refusal`): its whole footprint
+##   on the plate, dry and near level, clear of trees, other cabins and
+##   anything else standing there. Refused, nothing is set and the hint line
+##   says why (CABIN_REFUSALS). Its windows glow from dusk
+##   (scripts/cabin_lights.gd).
+## - **Fence.** Press and drag a line over the land (drawn as the Ravine's
+##   line is, scripts/clay_tools/drawn_line.gd), its stakes shown faintly as
+##   it goes; on release a split-rail fence follows it where the land lets it
+##   stand (scripts/fences.gd, NativeChunkEditor `lay_fence`), one undo step.
+##   Ended where it began, it closes into a pen. Pressed or let go near a
+##   fence (Fences.SNAP_REACH m, or SNAP_PIXELS on screen), its end snaps
+##   onto it and joins it, ringed in the preview (`_fence_snap`).
+## - **The footbridge.** Drag across a stream or a narrow water: while the
+##   drag goes on a faint ghost shows the bridge the land would take, snapped
+##   bank to bank (or a dull red one where it would not), and letting go lays
+##   it (NativeChunkEditor `place_bridge`, scripts/footbridge.gd, one undo
+##   step). Over dry land, wider than six metres or too steep, nothing is
+##   laid, and the hint line says why.
 ##
 ## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
 ##   hand, taken like a tool. Drag it over the land: the wind goes with it
@@ -91,14 +124,20 @@ const PAINT_CUE := 0.28
 ## Things set down by a tap or a drag: the assets (one picked for each), how
 ## many one drop sets and how far they spread (m), a tap's size range (record
 ## scale, growing over `grow` s of holding) and a drag's (growing over
-## `scatter_grow` s), and at most `most` drops a drag.
+## `scatter_grow` s), and at most `most` drops a drag. Optional: `gap` (m at
+## the middle pip) between a drag's drops, STONE_GAP without, and `clear`
+## (m), how near another of the same asset a drop may stand. `tap_only`: a
+## drag sets nothing on the way, only one drop where it is let go.
 const SCATTER := {
 	"stone":{"assets":["rock"],"each":1,"spread":0.0,"tap":Vector2(0.5,1.4),"grow":1.6,"scatter":Vector2(0.26,0.6),"scatter_grow":2.5,"most":7},
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
+	"lamp":{"assets":["stone_lamp"],"each":1,"spread":0.0,"tap":Vector2(0.85,1.2),"grow":1.6,"scatter":Vector2(0.95,1.0),"scatter_grow":2.5,"most":12,"gap":2.0,"clear":1.1},
+	"campfire":{"assets":["campfire"],"each":1,"spread":0.0,"tap":Vector2(0.9,1.15),"grow":1.6,"scatter":Vector2(1.0,1.0),"scatter_grow":2.5,"most":1,"tap_only":true},
+	"cabin":{"assets":["cabin"],"each":1,"spread":0.0,"tap":Vector2(1.0,1.0),"grow":1.6,"scatter":Vector2(1.0,1.0),"scatter_grow":2.5,"most":1,"tap_only":true},
 }
 ## Pressed, the cursor comes down to PRESS_GAP m over the land: a stone
 ## touches it, a pinch of seeds or flowers stops short.
-const PRESS_GAP := {"stone":0.0}
+const PRESS_GAP := {"stone":0.0,"lamp":0.0,"fence":0.0,"campfire":0.0,"cabin":0.0}
 const PRESS_GAP_DEFAULT := 0.1
 ## Sowing from the pinch: while the button is held it flicks every
 ## FLICK_SECONDS (the first FIRST_FLICK after the press), and once more as the
@@ -139,7 +178,54 @@ const CLICK_PIXELS := 6.0
 const TREE_HINT := "Tap to plant a tree  ·  drag to paint a wood  ·  Shift thins"
 const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
-	"reed":"Tap to set reeds  ·  Drag to scatter"}
+	"reed":"Tap to set reeds  ·  Drag to scatter","lamp":"Tap to set a stone lamp  ·  Drag to line a path with them",
+	"fence":"Drag a line to set a fence  ·  Start or end on a fence to join it",
+	"bridge":"Drag across a stream to lay a footbridge",
+	"campfire":"Tap to set a campfire  ·  It needs flat, dry ground clear of trees",
+	"cabin":"Tap to set a cabin  ·  It needs a patch of flat, dry ground clear of trees"}
+## The cabin in hand, and what the hint line says when the land will not
+## take one (scripts/cabin.gd `refusal`).
+const CABIN := "cabin"
+const Cabin = preload("res://scripts/cabin.gd")
+const CABIN_REFUSALS := {
+	"edge":"Too near the edge  ·  A cabin needs room on the plate",
+	"water":"Too wet  ·  A cabin needs dry ground all round",
+	"steep":"Not flat enough for a cabin  ·  Find a level patch",
+	"tree":"Too near a tree  ·  A cabin needs room clear of branches",
+	"near":"Another cabin is too close",
+	"room":"Something stands there  ·  A cabin needs a clear patch",
+}
+## The campfire in hand, and what the hint line says when the land will not
+## take one (scripts/campfire.gd `refusal`).
+const CAMPFIRE := "campfire"
+const Campfire = preload("res://scripts/campfire.gd")
+const CAMPFIRE_REFUSALS := {
+	"water":"Not on the water  ·  A campfire needs dry ground",
+	"steep":"Too steep for a campfire  ·  Find flatter ground",
+	"near":"Another campfire is too close",
+	"tree":"Too near a tree  ·  Keep a campfire clear of branches",
+}
+## The footbridge in hand: its hold, and what the hint line says when the land
+## will not take one (Footbridge `plan`'s reasons).
+const BRIDGE := "bridge"
+const Footbridge = preload("res://scripts/footbridge.gd")
+const BRIDGE_REFUSALS := {
+	"short":"Drag across a stream to lay a footbridge",
+	"dry":"No water to cross here",
+	"too_long":"Too wide to bridge  ·  Six metres at most",
+	"too_steep":"The banks are too uneven to bridge",
+	"no_bank":"No bank to rest on there",
+	"edge":"No bank to rest on there",
+	"flooded":"The water stands too high to bridge",
+}
+## The stone lamp in hand, and what the hint line says when a tap sets none
+## (`_lamp_refusal`; a drag's row skips such spots without a word).
+const LAMP_REFUSALS := {
+	"water":"Not on the water  ·  A stone lamp needs dry ground",
+	"near":"Another lamp is too close",
+}
+## A fence line the land took none of (all water or too steep).
+const FENCE_REFUSAL := "No ground for a fence there  ·  It needs dry, gentle ground"
 const BACK_HINT := "Click the sky or the case to put it back"
 ## Water in hand pressed on dry land: nothing to scoop.
 const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
@@ -152,6 +238,12 @@ const CAN := "can"
 ## pressed again, puts the tool down (LandClay `put_tool_down`). The land is
 ## not worked, and trees bend and flick as for the Feather.
 const FREE := ""
+## The fence (scripts/fences.gd): its line is drawn while the press holds
+## FENCE_LINE, and laid on release.
+const FENCE := "fence"
+const FENCE_LINE := "fence_line"
+const DrawnLine = preload("res://scripts/clay_tools/drawn_line.gd")
+const Fences = preload("res://scripts/fences.gd")
 ## Design units the Lantern hint line moves up to clear the case.
 const HINT_LIFT := 124.0
 
@@ -188,7 +280,21 @@ var clump: Clump
 ## The specimen in hand (a materials_tray.gd SPECIMENS id) or "".
 var held := ""
 ## Stones, flowers and reeds set down, for probes.
+## Why the last campfire was refused ("" when it was set): Campfire `refusal`.
+var campfire_refused := ""
+## Why the last cabin was refused ("" when it was set): Cabin `refusal`.
+var cabin_refused := ""
+## Why the last lamp tapped down was refused ("" when it was set).
+var lamp_refused := ""
 var stones_set := 0
+## The footbridge's drag: where it started and where it is (plate), the water
+## read at its press, and the plan the ghost shows; the last laid or refused,
+## for probes.
+var _bridge_from: Variant = null
+var _bridge_to: Variant = null
+var _bridge_water := {}
+var bridge_plan := {}
+var bridge_last := {}
 var _press_pos := Vector2.ZERO
 var _left_tray := false
 var _held_seconds := 0.0
@@ -210,6 +316,16 @@ var _shell_lifted := false
 var feather_seconds := 0.0
 var feather_last := ""
 var feather_sent := {"wake":0,"burst":0,"none":0}
+## The fence's line being drawn, where its posts can stand (taken at the
+## press), and the ids the last release laid, for probes.
+var _fence_line := DrawnLine.new()
+var _fence_stands := Callable()
+var _fence_shown := -1
+var fence_ids: Array = []
+## The fence the line's press joined ({} for none, else Fences `snap`), and
+## the one the pointer would join if let go now, for the preview and probes.
+var fence_start_join: Dictionary = {}
+var fence_end_join: Dictionary = {}
 
 func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	scene = owner_scene
@@ -518,7 +634,7 @@ func _feather_let_go() -> void:
 ## water or something to set down, whether or not it has a slot. False when
 ## it is not a material the hand knows.
 func take(id: String) -> bool:
-	if not (sows(id) or paints(id) or SCATTER.has(id) or id == "water"): return false
+	if not (sows(id) or paints(id) or SCATTER.has(id) or id in ["water",FENCE,BRIDGE]): return false
 	if held == id: return true
 	if not held.is_empty(): put_back()
 	_take(id)
@@ -567,7 +683,20 @@ func _use(point: Vector2) -> void:
 		elif scooped == "dry":
 			clump.shed()
 			ClaySound.cue(&"ui_refuse")
-			reach._show_hint(DRY_HINT)
+			reach.notice(DRY_HINT)
+	elif held == FENCE:
+		var at: Variant = _ground(point)
+		if at == null: return
+		# Pressed near a fence: the line starts on it.
+		fence_start_join = _fence_snap(point,at)
+		fence_end_join = {}
+		_fence_line.begin(fence_start_join.point if not fence_start_join.is_empty() else at)
+		_fence_stands = editor.fence_stands() if editor.has_method("fence_stands") else Callable()
+		_fence_shown = -1
+		reach.take_hold(FENCE_LINE,point)
+		_press_pos = point
+		_travel = 0.0
+		ClaySound.cue(&"ui_take")
 	elif SCATTER.has(held):
 		reach.take_hold("scatter",point)
 		_press_pos = point
@@ -577,6 +706,52 @@ func _use(point: Vector2) -> void:
 		_stone_step = null
 		_stone_count = 0
 		_stone_since = STONE_SECONDS
+	elif held == BRIDGE:
+		var from: Variant = _ground(point)
+		if from == null or editor.get("bridges") == null: return
+		reach.take_hold(BRIDGE,point)
+		_press_pos = point
+		_travel = 0.0
+		_bridge_from = from
+		_bridge_to = from
+		_bridge_water = Footbridge.water(editor)
+		bridge_plan = {}
+
+## The footbridge's drag reaches `point`: the plan for the drag so far, and
+## the ghost showing it.
+func _bridge_drag(point: Vector2) -> void:
+	var to: Variant = _ground(point)
+	if to != null: _bridge_to = to
+	var editor: Node = reach._editor()
+	if _bridge_from == null or editor.get("bridges") == null: return
+	bridge_plan = Footbridge.plan(_bridge_water,_bridge_from,_bridge_to)
+	editor.bridges.show_ghost(bridge_plan,_bridge_from,_bridge_to)
+
+## The footbridge's drag ends: the bridge is laid where the land takes it, or
+## nothing is, and the hint line says why.
+func _bridge_let_go(point: Vector2) -> void:
+	var editor: Node = reach._editor()
+	if editor.get("bridges") != null: editor.bridges.hide_ghost()
+	# The window lost the pointer mid-drag: nothing is laid.
+	if _bridge_from == null or point == Vector2.INF:
+		_bridge_from = null
+		return
+	var to: Variant = _ground(point)
+	if to != null: _bridge_to = to
+	bridge_last = editor.place_bridge(_bridge_from,_bridge_to)
+	_bridge_from = null
+	_bridge_water = {}
+	if bridge_last.get("ok",false):
+		var a: Vector2 = bridge_last.a
+		var b: Vector2 = bridge_last.b
+		var middle: Vector2 = a.lerp(b,0.5)
+		ClaySound.cue_at(&"knock",editor.terrain.to_global(Vector3(middle.x,float(bridge_last.ya+bridge_last.yb)*0.5,middle.y)),0.7)
+		_used()
+		clump.shed()
+		return
+	clump.shed()
+	ClaySound.cue(&"ui_refuse")
+	reach.notice(str(BRIDGE_REFUSALS.get(str(bridge_last.get("reason","")),"")))
 
 ## True for what the pinch sows as a veil: nothing in the case since
 ## 2026-10-02, when tree seed joined the flowers under the brush (`paints`).
@@ -602,6 +777,12 @@ func drag(point: Vector2) -> void:
 		almanac.drag(point)
 		return
 	_travel = maxf(_travel,point.distance_to(_press_pos))
+	if reach.holding == FENCE_LINE:
+		_fence_draw(point)
+		return
+	if reach.holding == BRIDGE:
+		_bridge_drag(point)
+		return
 	if reach.holding != "jar": return
 	if tray.contains_pointer(point): return
 	_left_tray = true
@@ -626,6 +807,12 @@ func let_go(what: String, point: Vector2) -> void:
 		var editor: Node = reach._editor()
 		if editor.has_method("paint_flowers_end"): editor.paint_flowers_end()
 		return
+	if what == FENCE_LINE:
+		_fence_lay(point)
+		return
+	if what == BRIDGE:
+		_bridge_let_go(point)
+		return
 	var known := point != Vector2.INF
 	var over_land: bool = known and reach._land(point) != null
 	var home: bool = known and not over_land and reach.reach_at(point) != "rim"
@@ -635,7 +822,7 @@ func let_go(what: String, point: Vector2) -> void:
 		return
 	if _stone_count == 0 and SCATTER.has(held):
 		var spec: Dictionary = SCATTER[held]
-		if _travel <= CLICK_PIXELS: _drop(_ground(_press_pos),lerpf(spec.tap.x,spec.tap.y,smoothstep(0.12,float(spec.grow),_held_seconds)))
+		if _travel <= CLICK_PIXELS: _drop(_ground(_press_pos),lerpf(spec.tap.x,spec.tap.y,smoothstep(0.12,float(spec.grow),_held_seconds)),true)
 		elif over_land: _drop(_ground(point),_scatter_size())
 		elif home: put_back()
 	elif home: put_back()
@@ -651,16 +838,50 @@ func _ground(point: Vector2) -> Variant:
 	return Vector2(hit.x,hit.z) if hit != null else null
 
 ## Sets down one drop of what is held at `at` (plate): a stone, or a drift of
-## flowers or reeds round it.
-func _drop(at: Variant, size: float) -> bool:
+## flowers or reeds round it. A lamp `tapped` down where none may stand is
+## refused aloud; a drag's row passes such spots by.
+func _drop(at: Variant, size: float, tapped := false) -> bool:
 	if at == null or not SCATTER.has(held): return false
 	var spec: Dictionary = SCATTER[held]
+	if held == "lamp":
+		lamp_refused = _lamp_refusal(at,float(spec.clear))
+		if not lamp_refused.is_empty():
+			if tapped:
+				clump.shed()
+				ClaySound.cue(&"ui_refuse")
+				reach.notice(str(LAMP_REFUSALS[lamp_refused]))
+			return false
+	elif spec.has("clear") and _crowded(at,str(spec.assets[0]),float(spec.clear)): return false
+	if held == CAMPFIRE:
+		campfire_refused = Campfire.refusal(reach._editor(),at)
+		if not campfire_refused.is_empty():
+			clump.shed()
+			ClaySound.cue(&"ui_refuse")
+			reach.notice(str(CAMPFIRE_REFUSALS[campfire_refused]))
+			return false
+	var facing := NAN
+	if held == CABIN:
+		# One size, its door down the slope or toward the camera.
+		var editor: Node = reach._editor()
+		var camera: Camera3D = scene.camera if scene != null else null
+		var eye: Variant = null
+		if camera != null:
+			var local: Vector3 = editor.terrain.to_local(camera.global_position)
+			eye = Vector2(local.x,local.z)
+		facing = Cabin.facing(editor.data,at,eye)
+		cabin_refused = Cabin.refusal(editor,at,facing)
+		if not cabin_refused.is_empty():
+			clump.shed()
+			ClaySound.cue(&"ui_refuse")
+			reach.notice(str(CABIN_REFUSALS[cabin_refused]))
+			return false
 	var items := []
 	for i in range(int(spec.each)):
 		var offset := Vector2.ZERO
 		if i > 0: offset = Vector2.from_angle(randf()*TAU)*float(spec.spread)*size_scale()*sqrt(randf())
 		var assets: Array = spec.assets
 		items.append({"asset":assets[randi()%assets.size()],"point":at+offset,"size":size*randf_range(0.88,1.12)*(1.0 if i == 0 else randf_range(0.75,1.0)),"angle":randf()*TAU})
+	if held == CABIN: items = [{"asset":CABIN,"point":at,"size":1.0,"angle":facing}]
 	var step: Variant = reach._editor().set_objects(items,_stone_step)
 	if step == null: return false
 	_stone_step = step
@@ -669,10 +890,114 @@ func _drop(at: Variant, size: float) -> bool:
 	_stone_since = 0.0
 	stones_set += 1
 	var ground: Vector3 = reach._editor().terrain.to_global(Vector3(at.x,0.0,at.y))
-	ClaySound.cue_at(&"stone_drop" if held == "stone" else &"plant",ground,clampf(size,0.3,1.0))
+	ClaySound.cue_at(&"stone_drop" if held in ["stone","lamp",CAMPFIRE,CABIN] else &"plant",ground,clampf(size,0.3,1.0))
 	reach.uses[held] = int(reach.uses.get(held,0))+1
 	clump.shed()
 	return true
+
+## Why a stone lamp may not stand at plate point `at`, or "" when it may:
+## "water" (off the land, or wet as a fence post's foot would be:
+## NativeChunkEditor `fence_dry`) or "near" (another lamp within `clear` m).
+func _lamp_refusal(at: Vector2, clear: float) -> String:
+	var editor: Node = reach._editor()
+	if editor.data.ground_height(at) == null or not editor.fence_dry().call(at): return "water"
+	if _crowded(at,"stone_lamp",clear): return "near"
+	return ""
+
+## True when another `asset` stands within `clear` m of `at` (plate).
+func _crowded(at: Vector2, asset: String, clear: float) -> bool:
+	for item: Dictionary in reach._editor().data.objects:
+		if str(item.asset) == asset and Vector2(float(item.x),float(item.z)).distance_to(at) < clear: return true
+	return false
+# --- The fence ----------------------------------------------------------------------
+
+## The pointer moved while drawing a fence: its ground point joins the line,
+## and the stakes are shown again when the line has grown.
+func _fence_draw(point: Vector2) -> void:
+	if not _fence_line.drawing(): return
+	var at: Variant = _ground(point)
+	if at != null:
+		_fence_line.add(at)
+		fence_end_join = _fence_end_snap(point,at)
+	var path: PackedVector2Array = _fence_snapped()
+	if path.size() == _fence_shown and at == null: return
+	_fence_shown = path.size()
+	var editor: Node = reach._editor()
+	var joins := PackedVector2Array()
+	if not fence_start_join.is_empty(): joins.append(fence_start_join.point)
+	if not fence_end_join.is_empty(): joins.append(fence_end_join.point)
+	# A pen closing on its own start: the start is ringed too.
+	elif path.size() >= 2 and Fences.closes(path) and fence_start_join.is_empty(): joins.append(path[0])
+	editor.fence_preview(path,_fence_stands,joins,editor.fence_opens(path,fence_end_join) if editor.has_method("fence_opens") else false)
+
+## The fence's press comes up at `point`: the line is laid where the land lets
+## it stand, one undo step, or nothing for a tap or all water and rock.
+func _fence_lay(point: Vector2) -> void:
+	if not _fence_line.drawing(): return
+	if point != Vector2.INF:
+		var at: Variant = _ground(point)
+		if at != null:
+			_fence_line.add(at)
+			fence_end_join = _fence_end_snap(point,at)
+	var path: PackedVector2Array = _fence_snapped()
+	_fence_line.clear()
+	fence_start_join = {}
+	fence_end_join = {}
+	var editor: Node = reach._editor()
+	editor.fence_preview(PackedVector2Array())
+	fence_ids = editor.lay_fence(path) if editor.has_method("lay_fence") else []
+	if fence_ids.is_empty():
+		if _travel > CLICK_PIXELS:
+			ClaySound.cue(&"ui_refuse")
+			reach.notice(FENCE_REFUSAL)
+		return
+	var middle := path[path.size()/2]
+	var ground: Variant = editor.data.ground_height(middle)
+	ClaySound.cue_at(&"stone_drop",editor.terrain.to_global(Vector3(middle.x,float(ground) if ground != null else 0.0,middle.y)),0.6)
+	clump.shed()
+	_used()
+
+## The line drawn so far, its end moved onto the fence it would join.
+func _fence_snapped() -> PackedVector2Array:
+	var path: PackedVector2Array = _fence_line.path()
+	if path.size() >= 2 and not fence_end_join.is_empty(): path[-1] = fence_end_join.point
+	return path
+
+## Where a press or the pointer at screen `point` (plate `at`) joins a fence:
+## within Fences.SNAP_REACH m, or SNAP_PIXELS on screen when that is more (so
+## it is as easy zoomed out). {} for none, else Fences `snap`.
+func _fence_snap(point: Vector2, at: Vector2) -> Dictionary:
+	var editor: Node = reach._editor()
+	if editor == null or not editor.has_method("fence_join") or editor.data.fences.is_empty(): return {}
+	var reach_m := Fences.SNAP_REACH
+	var camera: Camera3D = scene.camera if scene != null else null
+	var h: Variant = editor.data.ground_height(at)
+	if camera != null and h != null:
+		var here := Vector3(at.x,float(h),at.y)
+		var seen := camera.unproject_position(editor.terrain.to_global(here))
+		var pixels := 0.0
+		for step in [Vector3.RIGHT,Vector3.BACK]:
+			pixels = maxf(pixels,camera.unproject_position(editor.terrain.to_global(here+step)).distance_to(seen))
+		if pixels > 0.01: reach_m = maxf(reach_m,Fences.SNAP_PIXELS/pixels)
+	return editor.fence_join(at,reach_m)
+
+## The fence the pointer at `point` (plate `at`) would end the line on, if let
+## go now: none back on its own start unless that closes a pen, and none on
+## the fence it started from within a couple of metres of the start (the
+## line still leaving it).
+func _fence_end_snap(point: Vector2, at: Vector2) -> Dictionary:
+	var join := _fence_snap(point,at)
+	if join.is_empty(): return join
+	var path: PackedVector2Array = _fence_line.path()
+	if path.is_empty(): return {}
+	var from := path[0]
+	var to: Vector2 = join.point
+	if to.distance_to(from) <= Fences.JOIN_EPS:
+		var closing := path.duplicate()
+		closing[-1] = to
+		return join if Fences.closes(closing) else {}
+	if not fence_start_join.is_empty() and int(fence_start_join.id) == int(join.id) and to.distance_to(from) < Fences.SNAP_REACH*2.0: return {}
+	return join
 
 # --- Frames -----------------------------------------------------------------------
 
@@ -726,7 +1051,7 @@ func _carry(delta: float) -> void:
 	var ball: Node = editor.get("ball")
 	var pouring: bool = held == "water" and ball != null and str(ball.state) in ["holding","tossed","falling"]
 	var sowing: bool = sows(held) and editor.get("_handful_holding") == true
-	var pressing: bool = reach.holding in ["scatter",PAINT] or sowing
+	var pressing: bool = reach.holding in ["scatter",PAINT,FENCE_LINE,BRIDGE] or sowing
 	var wanderer: Node = scene.get("wanderer")
 	var eye: bool = wanderer != null and wanderer.get("active") == true
 	var hit: Variant = editor.pointer_hit
@@ -798,12 +1123,13 @@ func _scatter(delta: float) -> void:
 	_held_seconds += delta
 	_stone_since += delta
 	if not SCATTER.has(held): return
-	if _travel <= CLICK_PIXELS or _stone_count >= int(SCATTER[held].most) or _stone_since < STONE_SECONDS: return
+	if _travel <= CLICK_PIXELS or _stone_count >= int(SCATTER[held].most) or _stone_since < STONE_SECONDS or SCATTER[held].get("tap_only",false): return
 	var editor: Node = reach._editor()
 	if int(editor.refresh_pending) > 0 or editor.reactions.active_count() > 0: return
 	var at: Variant = _ground(_pointer())
 	if at == null: return
-	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= STONE_GAP*size_scale(): _drop(at,_scatter_size())
+	var gap := float(SCATTER[held].get("gap",STONE_GAP))
+	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= gap*size_scale(): _drop(at,_scatter_size())
 
 ## The God Hand is for the whole world: material in hand is its own cursor,
 ## so the hand stands down while it is held over the land and the sky, while
@@ -811,7 +1137,7 @@ func _scatter(delta: float) -> void:
 ## its reach. False when the hand reach drives it as usual.
 func drive_hand(hand: Node3D) -> bool:
 	var holding: String = reach.holding
-	if not holding in ["","jar","scatter","almanac",PAINT]: return false
+	if not holding in ["","jar","scatter","almanac",PAINT,FENCE_LINE,BRIDGE]: return false
 	if holding.is_empty():
 		if not reach.available(): return false
 		if reach.hover_zone == "rim" or (held.is_empty() and reach.hover_zone != "tray"): return false
@@ -849,6 +1175,7 @@ class Clump extends Node3D:
 		"oak":["a57b48","8c6a3f","c09a66"],"pine":["7a5a3a","946f48","6a4c30"],"willow":["dcd8c4","c9c6ae","ece8d6"],
 		"birch":["c9ab7a","b89868","dcc190"],"redwood":["8a4a32","a15a3c","6e3a26"],"juniper":["5f6f8a","74849c","4c5a72"],"joshua":["9a8a5a","b2a06a","7e7048"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
 		"poppy":["3a2e2a","e0442f","f07a3a"],"cosmos":["4a3a30","e8609f","fcefe2"],"sunflower":["3e3226","f4b61e","d8cdb8"],
+		"wheat":["c99a46","e3bf62","b48a3e"],
 	}
 	## The flick: FLICK_SNAP s, tipping FLICK_TURN degrees forward and
 	## swelling by FLICK_SWELL at its height, then back.
@@ -960,6 +1287,14 @@ class Clump extends Node3D:
 				else:
 					_part(_egg(),tones[1],Vector3(0.03,0.11,0.02),Vector3(0.06,0.012,0.035),Vector3(0.3,0.6,0.0))
 					_part(_egg(),tones[2],Vector3(-0.04,0.1,-0.02),Vector3(0.055,0.012,0.032),Vector3(-0.25,2.2,0.0))
+			"wheat":
+				# Plump grains heaped in the pinch, and an ear lying across them.
+				var tones: Array = TONES.wheat
+				for i in range(7):
+					var angle := TAU*i/7.0
+					_part(_egg(),tones[i%2],Vector3(cos(angle)*0.06,0.03+(i%2)*0.035,sin(angle)*0.06),Vector3(0.03,0.024,0.042),Vector3(0.3*i,angle,0.2))
+				_part(_egg(),tones[1],Vector3(0.0,0.1,0.0),Vector3(0.035,0.032,0.13),Vector3(0.35,0.5,0.0))
+				_part(_egg(),tones[2],Vector3(0.0,0.12,0.0),Vector3(0.012,0.012,0.22),Vector3(0.35,0.5,0.0))
 			"water":
 				# A bead: a faceted drop coming to a point, a glint on it and
 				# a droplet beside it.
@@ -967,11 +1302,52 @@ class Clump extends Node3D:
 				_part(_cone(),"8ecaf0",Vector3(0.0,0.26,0.0),Vector3(0.085,0.12,0.085),Vector3.ZERO,true)
 				_part(_egg(),"f4fbff",Vector3(-0.05,0.18,0.08),Vector3.ONE*0.025,Vector3.ZERO,true)
 				_part(_egg(),"a9d8f4",Vector3(0.14,0.035,0.05),Vector3.ONE*0.035,Vector3.ZERO,true)
+			"lamp":
+				# A small stone lamp: foot, post, shelf, a warm fire box, a roof.
+				_part(_prism(6),"a39e93",Vector3(0.0,0.02,0.0),Vector3(0.09,0.04,0.09))
+				_part(_prism(6),"a39e93",Vector3(0.0,0.1,0.0),Vector3(0.035,0.13,0.035))
+				_part(_prism(4),"a39e93",Vector3(0.0,0.18,0.0),Vector3(0.08,0.03,0.08),Vector3(0.0,PI*0.25,0.0))
+				_part(_egg(),"f2c27a",Vector3(0.0,0.225,0.0),Vector3(0.035,0.04,0.035))
+				for k in range(4):
+					var corner := Vector3(0.045,0.0,0.045).rotated(Vector3.UP,PI*0.5*k)
+					_part(_prism(4),"a39e93",corner+Vector3(0.0,0.225,0.0),Vector3(0.016,0.07,0.016),Vector3(0.0,PI*0.25,0.0))
+				_part(_cone(),"716c64",Vector3(0.0,0.3,0.0),Vector3(0.13,0.07,0.13),Vector3(0.0,PI*0.25,0.0))
+			"campfire":
+				# A ring of pebbles, three sticks leaned together, a warm bead
+				# of fire between them.
+				for k in range(6):
+					var angle := TAU*k/6.0
+					_part(_egg(),["8f8a80","a39d92","7d786f"][k%3],Vector3(cos(angle)*0.11,0.02,sin(angle)*0.11),Vector3(0.035,0.025,0.03),Vector3(0.0,-angle,0.0))
+				for k in range(3):
+					var angle := TAU*k/3.0+0.4
+					var lean := Vector3(cos(angle),0.0,sin(angle))
+					_part(_stake(),"6b4a30",lean*0.04+Vector3.UP*0.07,Vector3(0.012,0.14,0.012),Vector3(-lean.z*0.5,0.0,lean.x*0.5))
+				_part(_egg(),"f2a04a",Vector3(0.0,0.06,0.0),Vector3(0.04,0.06,0.04))
+			"cabin":
+				# A little log cabin: a log box, a door, a warm window, a
+				# pitched roof of two boards and a stone chimney.
+				var block := BoxMesh.new()
+				_part(block,"9a7448",Vector3(0.0,0.07,0.0),Vector3(0.2,0.14,0.24))
+				_part(block,"6b5038",Vector3(0.0,0.055,0.121),Vector3(0.06,0.1,0.01))
+				_part(block,"f2c27a",Vector3(0.101,0.08,0.0),Vector3(0.01,0.045,0.06))
+				for side in [-1.0,1.0]: _part(block,"5a3f2a",Vector3(side*0.062,0.18,0.0),Vector3(0.15,0.016,0.29),Vector3(0.0,0.0,-side*0.7))
+				_part(block,"7f776e",Vector3(-0.115,0.15,-0.04),Vector3(0.05,0.3,0.05))
+			"fence":
+				# Two stakes and two rails between them.
+				for x in [-0.09,0.09]:
+					_part(_stake(),"8a7357",Vector3(x,0.11,0.0),Vector3(0.025,0.22,0.025),Vector3(0.0,0.0,x*0.6))
+				_part(_stake(),"9c8a70",Vector3(0.0,0.15,0.0),Vector3(0.02,0.26,0.018),Vector3(0.0,0.0,PI*0.5))
+				_part(_stake(),"7a6249",Vector3(0.0,0.07,0.0),Vector3(0.02,0.24,0.018),Vector3(0.0,0.0,PI*0.5-0.08))
 			"stone":
 				# A few pebbles, heaped.
 				_part(_egg(),"a89d91",Vector3(0.0,0.08,0.0),Vector3(0.14,0.09,0.12),Vector3(0.2,0.4,0.1))
 				_part(_egg(),"c6bbae",Vector3(0.07,0.15,0.03),Vector3(0.09,0.065,0.085),Vector3(-0.3,1.2,0.2))
 				_part(_egg(),"b7ab9f",Vector3(-0.12,0.05,0.06),Vector3(0.06,0.05,0.055),Vector3(0.5,2.0,-0.2))
+			"bridge":
+				# A few planks stacked crosswise on two short stringers.
+				var box := BoxMesh.new()
+				for side in [-1.0,1.0]: _part(box,"5a4330",Vector3(side*0.07,0.02,0.0),Vector3(0.035,0.04,0.3),Vector3.ZERO)
+				for i in range(4): _part(box,["8a6a4a","7d5f41","94734f"][i%3],Vector3(0.0,0.06,-0.11+i*0.075),Vector3(0.24,0.025,0.06),Vector3(0.0,0.04*(i%2*2-1),0.0))
 			_:
 				var tint: Variant = Icons.item(next).get("tint")
 				_part(_egg(),(tint as Color).to_html(false) if tint is Color else "c6bbae",Vector3(0.0,0.1,0.0),Vector3.ONE*0.1)
@@ -1005,6 +1381,26 @@ class Clump extends Node3D:
 		mesh.height = 2.0
 		mesh.radial_segments = 7
 		mesh.rings = 4
+		return mesh
+
+	## A unit upright prism of `sides` sides, for the lamp.
+	static func _prism(sides: int) -> Mesh:
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 1.0
+		mesh.bottom_radius = 1.0
+		mesh.height = 1.0
+		mesh.radial_segments = sides
+		mesh.rings = 0
+		return mesh
+
+	## A six-sided stake, unit tall and wide, for the fence.
+	static func _stake() -> Mesh:
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 1.0
+		mesh.bottom_radius = 1.0
+		mesh.height = 1.0
+		mesh.radial_segments = 6
+		mesh.rings = 1
 		return mesh
 
 	## A unit cone, point up, for the bead's tip.

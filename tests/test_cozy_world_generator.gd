@@ -24,7 +24,10 @@ func _initialize() -> void:
 		shapes[world.terrain.landform] = true
 		heights[world.terrain.relief] = true
 		previous = world.terrain
-	check(compositions.size()>=12 and shapes.size()>=6,"Sample spans broad native geometry families and crest shapes")
+	# Without desert (scripts/desert_landscape.gd) its seven compositions are re-rolled.
+	var desert: bool = preload("res://scripts/desert_landscape.gd").on
+	check(desert or not compositions.keys().any(func(kind: String) -> bool: return kind in preload("res://scripts/desert_landscape.gd").KINDS),"No desert composition while the desert is held back")
+	check(compositions.size()>=(12 if desert else 8) and shapes.size()>=6,"Sample spans broad native geometry families and crest shapes")
 	check(weathers.size()==6,"Sample includes sun, fair skies, overcast, mist, rain and snow")
 	check(palettes.size()==100 and heights.size()>95,"Palette and relief are continuous draws, not gallery presets")
 	print("Procedural world sampling: ",failures," failures; ",compositions.size()," compositions, ",shapes.size()," landforms, ",weathers.size()," weather types, ",palettes.size()," distinct palettes")

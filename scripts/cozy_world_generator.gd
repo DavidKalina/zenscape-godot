@@ -19,7 +19,10 @@ static func sample(seed_value: int, previous: Dictionary = {}) -> Dictionary:
 	rng.seed = seed_value
 	var terrain_seed := rng.randi_range(0,999999)
 	var g: Dictionary = Genome.sample(terrain_seed)
-	while g.composition==previous.get("composition",previous.get("family","")) or terrain_seed==previous.get("seed",-1):
+	# With desert held back (scripts/desert_landscape.gd `on`) a desert
+	# composition is drawn again; the genome itself is unchanged, so every
+	# seed that drew a non-desert world still draws the same one.
+	while g.composition==previous.get("composition",previous.get("family","")) or terrain_seed==previous.get("seed",-1) or (not Desert.on and g.composition in Desert.KINDS):
 		terrain_seed = rng.randi_range(0,999999)
 		g = Genome.sample(terrain_seed)
 	var dry: bool = g.composition in Desert.KINDS

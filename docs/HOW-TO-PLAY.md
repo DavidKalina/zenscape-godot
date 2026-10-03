@@ -168,26 +168,46 @@ and refills in about a minute; a dry cloud won't tear.
 
 ## The tray (experiment)
 
-Along the bottom edge sits a field case, a long, low case of smoked glass
-with one specimen in each compartment. The tree seeds are **acorn** (oak),
-**pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
-and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
-**cosmos** and **sunflower**, and **reed**. Then come **water** and a **river
-stone**. The case stays faint
-until the pointer comes near. Hover a specimen to read its name. Faint
-outlines are kinds you haven't found yet, and pressing one gives nothing.
+Along the bottom edge sits a field case, a short, low case with a
+compartment for each kind of specimen, left to right:
+
+- **Trees**: **acorn** (oak), **pine cone**, **willow catkin**, **birch
+  samara**, **redwood** and **juniper** (Joshua
+  is held back with the desert)
+- **Flowers & crops**: **wildflower**, **dandelion**, **poppy**, **cosmos**,
+  **sunflower**, **wheat** and **reed**
+- **Water & stone**: **water** and a **river stone**
+- **Build**: a **stone lamp**, a **campfire**, a **cabin**, a **fence** and a
+  **footbridge**
+- set apart past a stitched line, one you haven't found yet
+
+Each compartment shows one specimen, the last you took from it. Rest the
+pointer on a compartment and its specimens fan out above the case on a scrap
+of the same linen. Move along the fan and press the one you want; the
+compartment shows it from then on, so pressing the compartment itself takes
+the same thing again. The three stitches along a compartment's top mean it
+fans out. The case stays faint until the pointer comes near. Hover a
+specimen, on the case or the fan, to read its name. Faint outlines are kinds
+you haven't found yet, and pressing one gives nothing. The command palette
+(Cmd+K) still takes any of them by name.
 
 | Do | Result |
 |---|---|
-| Press a specimen | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment stays faintly outlined while you hold it |
+| Press a compartment, or a specimen on its fan | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment shows it, pressed in, while you hold it, and the fan folds away |
 | Tree seeds: tap | plants one tree of that kind where you press, if the ground takes a tree there and there is room |
 | Tree seeds: drag | paints a wood of that kind under the brush; go over it again, or linger, to fill it in. Shift-drag thins the trees under the brush. Not on water, rock, snow or too near another tree |
 | Flowers: press and drag over the land | paints flowers under the brush; go over them again to thicken the drift. Shift thins them |
+| Wheat: press and drag over the land | paints a wheat patch in tidy rows under the brush; go over it again to fill it in. It sways with the wind as one field, and with the clock running it is green in spring, gold by late summer and stubble in winter. Shift thins it; Cmd+Z undoes a stroke |
 | Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
 | Stone: tap | sets a stone down, bigger the longer you press |
 | Stone: drag | scatters a few pebbles |
-| Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
+| Stone lamp: tap, or drag | sets a small faceted stone lamp; a drag lines a path with them, a couple of metres apart. They glow warm from dusk to dawn. Not on water, and not too close to another lamp: the hint line says why. The trash can takes them away; Shift with the trash spares them |
+| Campfire: tap | sets a little campfire, a ring of stones with a fire dancing in it. It burns day and night, glows warm in the dark, smokes a little with the wind and never spreads to the land. Not on water or steep ground, not too close to another campfire, and not under a tree: the hint line says why. Cmd+Z or the trash can takes it away; Shift with the trash spares it ([campfire](scenic/campfire.md)) |
+| Cabin: tap | sets a small log cabin, its door turned down the slope (or toward you on the flat). Its window glows warm from dusk and a thin smoke leans from the chimney. It needs a patch of flat, dry ground about 3 by 3.5 m, clear of trees, other cabins and anything standing there: otherwise the hint line says why. The land is never levelled for it. Cmd+Z or the trash can takes it away; Shift with the trash spares it ([cabin](scenic/cabin.md)) |
+| Fence: press and drag a line | faint stakes show the way; let go and a split-rail fence follows the line. End where you began for a pen. Press or let go near a fence and the line snaps onto it, a bright ring marking the post: from a fence's end it carries that fence on, from one end round to the other it closes a pen, and anywhere else on a fence it makes a T sharing a post. Posts skip water and steep rock, leaving gaps; they ride the land when you reshape it. One Cmd+Z takes the whole fence, or the piece you just joined on; the trash can cuts it span by span, and Shift with the trash spares it ([docs/scenic/fences.md](scenic/fences.md)) |
+| Footbridge: drag across a stream or narrow water | a faint ghost shows the bridge the land would take, snapped bank to bank; let go and a timber footbridge is laid, its ends resting on the banks. Over dry land, across more than 6 m of water, or between banks too uneven, the ghost turns dull red and nothing is laid. Cmd+Z takes it back; the trash can clears it; Shift with the trash spares it ([bridges](scenic/bridges.md)) |
+| Click the sky, the case or the same specimen | puts the material back in its compartment |
 
 The trees' spores and the cloud still work as before. `--no-tray` hides the
 tray.
@@ -235,6 +255,16 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
 - `--no-tray` hides the materials tray.
 - `--no-first-steps` leaves out the first-steps card and the field notes; `--first-steps` shows the card from the top whatever was found before, without saving.
+
+### Desert (held back for an update)
+
+The desert is kept out of a default game for launch, to ship later as an
+update. `--desert` brings it all back for development: arid title worlds, the
+**Red canyon** land on the New world screen, desert compositions in generated
+worlds, the **Joshua** seed in the tray and palette, and the **Desert
+afternoon** mood. Worlds already made with desert still load and play as they
+were. The switch is `ENABLED` in `scripts/desert_landscape.gd`;
+`tools/probe_desert_gate.gd` checks both ways.
 
 ## Not reachable in the hand scheme yet
 

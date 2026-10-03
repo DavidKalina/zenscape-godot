@@ -33,7 +33,7 @@ extends RefCounted
 
 const NODE_PREFIX := "meadow-flower-"
 ## Every kind, in catalog order. These names are the catalog keys.
-const KINDS := ["oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine"]
+const KINDS := ["oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","wheat"]
 const STEM := 0.0
 const LEAF := 1.0
 const DISC := 2.0
@@ -57,11 +57,15 @@ const SPEC := {
 	"sunflower":{"height":1.85,"sway":Vector4(0.0,1.8,0.03,0.012),"frequency":Vector4(1.3,2.2,0.5,0.2),"motion":Vector4(0.3,2.2,0.16,0.004),"glow":0.6,"roughness":1.0,"variants":[]},
 	"poppy":{"height":0.62,"sway":Vector4(0.0,0.6,0.06,0.025),"frequency":Vector4(2.4,3.9,0.8,0.3),"motion":Vector4(0.9,0.8,0.32,0.006),"glow":0.95,"roughness":1.0,"variants":["d92a1c","e8452a","f07a32"]},
 	"lupine":{"height":0.82,"sway":Vector4(0.0,0.8,0.04,0.015),"frequency":Vector4(2.0,3.4,0.6,0.25),"motion":Vector4(0.6,0.9,0.12,0.002),"glow":0.55,"roughness":1.0,"variants":["7b4cc6","9c48b8","e07aae","f1e8f0"]},
+	# Wheat (docs/scenic/wheat.md) takes the whole of the grass's rolling wave,
+	# so a field leans and rights itself as one mass, its ears lagging a metre.
+	# Knee-high to a fence: under its posts' tops (scripts/fences.gd).
+	"wheat":{"height":0.66,"sway":Vector4(0.0,0.66,0.06,0.02),"frequency":Vector4(1.8,3.0,0.6,0.25),"motion":Vector4(1.0,1.0,0.3,0.0),"glow":0.8,"roughness":1.0,"variants":[]},
 }
 ## How much larger than the builders' sizes each kind's heads are drawn,
 ## about their centres, so a face is six to eight pixels across at the
 ## diorama camera. Buds scale with their plant. Sunflowers are big enough.
-const HEAD_SCALE := {"oxeye_daisy":1.35,"buttercup":1.45,"dandelion":1.5,"dandelion_clock":1.2,"cosmos":1.3,"poppy":1.3,"lupine":1.2}
+const HEAD_SCALE := {"oxeye_daisy":1.35,"buttercup":1.45,"dandelion":1.5,"dandelion_clock":1.2,"cosmos":1.3,"poppy":1.3,"lupine":1.2,"wheat":1.3}
 ## Each kind's petal colour as authored in the mesh (sRGB): the material
 ## swaps it for a variant, keeping the mesh's own shading over it.
 const PETAL_REF := {"cosmos":"e8609f","poppy":"d92a1c","lupine":"6a5ccc"}
@@ -121,7 +125,7 @@ const ROLE_BRACT := 8.0
 ## - from FAR_START to FAR_END metres a kind keeps down to its FAR_KEEP share
 ##   of its plants, and the kept heads grow by keep^-FAR_GROW so a drift keeps
 ##   its cover. Sunflowers stand in rows and keep the most.
-const FAR_KEEP := {"oxeye_daisy":0.6,"buttercup":0.6,"dandelion":0.6,"dandelion_clock":0.6,"cosmos":0.65,"sunflower":0.8,"poppy":0.65,"lupine":0.7}
+const FAR_KEEP := {"oxeye_daisy":0.6,"buttercup":0.6,"dandelion":0.6,"dandelion_clock":0.6,"cosmos":0.65,"sunflower":0.8,"poppy":0.65,"lupine":0.7,"wheat":0.7}
 const FAR_START := 14.0
 const FAR_END := 32.0
 const FAR_GROW := 0.5
@@ -136,6 +140,29 @@ const LOD_FAR := 20.0
 const SHADOW_KINDS := ["sunflower","cosmos","lupine","poppy","oxeye_daisy"]
 ## The kinds a pond's reflection copies: the tall ones that stand over a bank.
 const REFLECT_KINDS := ["sunflower"]
+
+## The kinds that ripen and are cut (`flower_ripen` in reference_surface,
+## docs/scenic/wheat.md): their straw keeps its own gold instead of the
+## grass's living green, greens in spring, deepens through autumn and stands
+## as stubble through the winter's dormancy (the `zs_season` global).
+const RIPEN_KINDS := ["wheat"]
+## The green a RIPEN_KINDS plant takes in spring, times its own luminance
+## (linear): its ears a lighter yellow-green over deeper green straw, so the
+## heads stand out from their stalks in the green months as in the gold.
+const RIPEN_GREEN_EAR := Vector3(0.62, 0.78, 0.22)
+const RIPEN_GREEN_STRAW := Vector3(0.30, 0.62, 0.12)
+## Wheat's look (sRGB), authored ripe: pale golden-cream ears (foot to tip)
+## over darker warm ochre straw and blades, so each head reads against its
+## stalk; its ears' and straws' radii (m, at size 1; ears are drawn a further
+## HEAD_SCALE larger), the ears plump against the straw.
+const WHEAT_STRAW := "a97d3e"
+const WHEAT_BLADE := "9c7438"
+const WHEAT_EAR_FOOT := "e2c27c"
+const WHEAT_EAR_TIP := "f5e4b0"
+const WHEAT_STRAW_RADIUS := 0.0075
+const WHEAT_EAR_RADIUS := 0.025
+## The stubble's height (m, at record size 1) through the winter.
+const STUBBLE := 0.14
 
 static func casts_shadow(kind: String) -> bool:
 	return kind in SHADOW_KINDS
@@ -181,6 +208,11 @@ static func material(kind: String) -> ShaderMaterial:
 	m.set_shader_parameter("flower_roughness", spec.roughness)
 	m.set_shader_parameter("flower_far", Vector4(FAR_START, FAR_END, FAR_KEEP.get(kind, 1.0), FAR_GROW))
 	if not kind in KEEP_DETAIL: m.set_shader_parameter("flower_lod", Vector2(LOD_NEAR, LOD_FAR))
+	if kind in RIPEN_KINDS:
+		m.set_shader_parameter("flower_ripen", true)
+		m.set_shader_parameter("flower_stubble", STUBBLE)
+		m.set_shader_parameter("flower_ripen_green_ear", RIPEN_GREEN_EAR)
+		m.set_shader_parameter("flower_ripen_green_straw", RIPEN_GREEN_STRAW)
 	if kind in CYCLE_KINDS:
 		m.set_shader_parameter("flower_cycle", true)
 		m.set_shader_parameter("flower_cycle_times", preload("res://scripts/dandelion_seeds.gd").cycle_times())
@@ -208,6 +240,7 @@ static func build(kind: String) -> ArrayMesh:
 		"sunflower": plant.sunflower()
 		"poppy": plant.poppy()
 		"lupine": plant.lupine()
+		"wheat": plant.wheat()
 	return plant.commit()
 
 static func _c(hex: String) -> Color:
@@ -230,6 +263,11 @@ class Plant:
 	## is set (a seed's), else their fraction out.
 	var role := 0.0
 	var rank := -1.0
+	## The stems' and leaves' authored colours. The material recolours them
+	## living green on every kind but RIPEN_KINDS, which keep these (wheat's
+	## straw).
+	var stem_hex := STEM_GREEN
+	var leaf_hex := LEAF_GREEN
 	const STEM_GREEN := "4d7a34"
 	const LEAF_GREEN := "5d8c3c"
 
@@ -287,7 +325,7 @@ class Plant:
 
 	## A faceted tube along `points`, `sides` round, tapering `radii`.
 	func tube(points: Array, radii: Array, sides := 3, shade := 0.8) -> void:
-		var color := MeadowFlowerColor.of(STEM_GREEN)
+		var color := MeadowFlowerColor.of(stem_hex)
 		var rings: Array = []
 		for i in range(points.size()):
 			var p: Vector3 = points[i]
@@ -343,7 +381,7 @@ class Plant:
 		detail = true
 		var d := Vector3(cos(azimuth), 0.0, sin(azimuth))
 		var side := Vector3.UP.cross(d).normalized()
-		var color := MeadowFlowerColor.of(LEAF_GREEN)
+		var color := MeadowFlowerColor.of(leaf_hex)
 		var up_n := (Vector3.UP + d * 0.45).normalized()
 		var rows: Array = []
 		for r in range(outline.size()):
@@ -739,6 +777,87 @@ class Plant:
 			tube([Vector3(0.0, at.y * 0.6, 0.0), at], [0.0025, 0.002], 3)
 			for k in range(6):
 				leaf(at, a + TAU * k / 6.0, 0.062, 0.014, 0.15, 0.4, SLIM, 0.2, 0.0, rng.randf_range(0.8, 0.95))
+
+	## A tidy clump of wheat from one root (docs/scenic/wheat.md): six
+	## straws in a short line along the clump's x (the row, as FlowerSowing
+	## turns each record along it), each a faceted three-sided stalk bowing a
+	## little, topped by an ear (a flattened four-sided spindle whose rings
+	## turn half a facet each, so its outline zigzags kernel by kernel, with
+	## one short awn at its tip), and a pair of slim blades low down along
+	## the row. Narrow across, so the furrows between rows stay open. Authored
+	## ripe: plump pale golden-cream ears, deepening toward their foot, over
+	## darker ochre straw (WHEAT_*); the material greens it in spring (ears
+	## lighter than straw, RIPEN_GREEN_*) and cuts it to stubble in winter
+	## (RIPEN_KINDS). One record is one clump, so a field is a sixth as many
+	## instances as it has straws.
+	func wheat() -> void:
+		stem_hex = WHEAT_STRAW
+		leaf_hex = WHEAT_BLADE
+		var gold := MeadowFlowerColor.of(WHEAT_EAR_TIP)
+		var deep := MeadowFlowerColor.of(WHEAT_EAR_FOOT)
+		var count := 6
+		for i in range(count):
+			var x := lerpf(-0.07, 0.07, (float(i) + rng.randf_range(0.2, 0.8)) / count)
+			var foot := Vector3(x * 0.3, 0.0, rng.randf_range(-0.006, 0.006))
+			var out := Vector3(x, 0.0, rng.randf_range(-0.014, 0.014))
+			var neck := out + Vector3.UP * rng.randf_range(0.48, 0.55)
+			stem(foot, neck, WHEAT_STRAW_RADIUS, Vector3(0.0, 0.0, rng.randf_range(-0.012, 0.012)), 2, 3)
+			var face := (Vector3.UP + out * 1.6 + Vector3(rng.randf_range(-0.05, 0.05), 0.0, rng.randf_range(-0.06, 0.06))).normalized()
+			ear(neck, face, rng.randf_range(0.085, 0.1), WHEAT_EAR_RADIUS, deep, gold)
+		for k in range(2):
+			var a := PI * k + rng.randf_range(-0.35, 0.35)
+			leaf(Vector3(cos(a), 0.0, sin(a)) * 0.01 + Vector3.UP * rng.randf_range(0.12, 0.2), a, 0.13, 0.011, 0.5, 0.8, SLIM, 0.0, 0.0, rng.randf_range(0.85, 0.95))
+		stem_hex = STEM_GREEN
+		leaf_hex = LEAF_GREEN
+
+	## One ear on `neck` heading `face`, `length` long and `radius` round,
+	## `foot` to `tip` in colour. Its vertices nod with it about the neck;
+	## their normals run out from its axis, so it shades as one spindle.
+	func ear(neck: Vector3, face: Vector3, length: float, radius: float, foot: Color, tip: Color) -> void:
+		var h := head(neck, face, length * 0.5, length * 0.5, 0.0)
+		h.dome = h.centre
+		var sides := 4
+		var rows := [[0.15, 0.85], [0.5, 1.0], [0.82, 0.75]]
+		var rings: Array = []
+		for r in range(rows.size()):
+			var t: float = rows[r][0]
+			var ring: Array = []
+			for k in range(sides):
+				var angle := TAU * (float(k) + 0.5 * float(r % 2)) / sides
+				# Flattened, two-rowed: the staggered rings cut its outline
+				# into a zigzag of kernels seen from the side.
+				var out: Vector3 = h.u * cos(angle) + h.v * sin(angle) * 0.7
+				var v: Array = headed(h, neck + face * (length * t) + out * (radius * float(rows[r][1])), foot.lerp(tip, t), PETAL)
+				v[1] = (out + face * 0.35).normalized()
+				ring.append(v)
+			rings.append(ring)
+		var bottom: Array = headed(h, neck + face * 0.004, foot, PETAL)
+		bottom[1] = -face
+		var top: Array = headed(h, neck + face * length, tip, PETAL)
+		top[1] = face
+		var last: Array = rings[rings.size() - 1]
+		for k in range(sides):
+			var k2 := (k + 1) % sides
+			tri(bottom, rings[0][k2], rings[0][k])
+			tri(last[k], last[k2], top)
+		for r in range(rings.size() - 1):
+			for k in range(sides):
+				var k2 := (k + 1) % sides
+				tri(rings[r][k], rings[r][k2], rings[r + 1][k])
+				tri(rings[r][k2], rings[r + 1][k2], rings[r + 1][k])
+		# One short awn from the tip: detail the far field goes without.
+		var was := detail
+		detail = true
+		for k in range(1):
+			var angle := 0.4
+			var out: Vector3 = h.u * cos(angle) + h.v * sin(angle)
+			var root: Vector3 = neck + face * (length * 0.86)
+			var a: Array = headed(h, root + out * radius * 0.35, tip, PETAL)
+			var b: Array = headed(h, root - out * radius * 0.05 + face * 0.004, tip, PETAL)
+			var end: Array = headed(h, root + face * length * 0.6 + out * radius * 0.9, tip.lerp(Color(1, 1, 1), 0.2), PETAL)
+			for v: Array in [a, b, end]: v[1] = (out + face).normalized()
+			tri(a, b, end)
+		detail = was
 
 ## Linear colours from sRGB hex, so the kinds read as their names.
 class MeadowFlowerColor:

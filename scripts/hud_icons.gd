@@ -184,9 +184,41 @@ static func _build() -> void:
 		var c := Vector2(12.0,9.0)
 		sunflower.append(_poly([c+way*3.6+side*1.0,c+way*8.0,c+way*3.6-side*1.0]))
 	_add("sunflower","Sunflower","Stand","#e2a62e",sunflower,[_circle(12.0,9.0,3.0),_circle(12.0,9.0,1.5)],59,1.0,1.4)
+	# Wheat (seed 60): three straws, each ear two rows of kernels staggered
+	# up a pointed spindle, awns flicking from the tips.
+	var wheat := []
+	for s: Array in [[12.0,3.4],[7.0,5.6],[17.0,5.6]]:
+		var base := Vector2(12.0,22.6)
+		var top := Vector2(float(s[0]),float(s[1]))
+		var way := (top-base).normalized()
+		var side := way.orthogonal()
+		var neck := top-way*8.0
+		wheat.append(_poly([base+side*0.5,top-way*1.0+side*0.4,top-way*1.0-side*0.4,base-side*0.5]))
+		for k in range(4):
+			for sign: float in [-1.0,1.0]:
+				var c := neck+way*(1.3+1.6*k+(0.5 if sign > 0.0 else 0.0))+side*sign*0.85
+				wheat.append(_poly([c-way*1.25,c+side*sign*1.05,c+way*1.2,c-side*sign*0.9]))
+		wheat.append(_poly([top-way*1.7+side*0.75,top,top-way*1.7-side*0.75]))
+		wheat.append(_poly([top-side*0.22,top+way*2.4+side*0.5,top+side*0.22]))
+	_add("wheat","Wheat","Field","#d9b24e",wheat,[],60,1.0,0.8)
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
 	_add("water","Water","Scoop","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)
+	# The stone lamp (scripts/stone_lamp.gd): a roof over a fire box between
+	# two pillars, a shelf, a post and a foot. Seed 60.
+	_add("lamp","Stone lamp","Glow","#9a958a",["M12 1.6 L13 3.2 L20.5 6.8 H3.5 L11 3.2Z","M5.6 7.6 H18.4 V8.8 H5.6Z","M6.4 8.8 H8.4 V13.2 H6.4Z","M15.6 8.8 H17.6 V13.2 H15.6Z","M5 13.2 H19 V14.8 H5Z","M10.6 14.8 H13.4 V20 H10.6Z","M7 20 H17 V22.4 H7Z"],[],60)
+	# The campfire (scripts/campfire.gd): a flame over two crossed sticks,
+	# three stones of the ring before them. Seed 74.
+	_add("campfire","Campfire","Hearth","#c8703a",["M12 2.4 Q16.8 7.6 15.6 12.2 Q14.8 15 12 15.4 Q9.2 15 8.4 12.2 Q7.6 9.4 10.2 7.2 Q10.4 9.6 11.6 10 Q10.6 6 12 2.4Z","M5 18.6 L18.4 14.2 L19 15.8 L5.6 20.2Z","M19 18.6 L5.6 14.2 L5 15.8 L18.4 20.2Z","M1.6 21.8 L3 18.6 L6.4 18.2 L7.6 21.8Z","M8.4 22.2 L9.6 19.4 L14.4 19.4 L15.6 22.2Z","M16.4 21.8 L17.6 18.2 L21 18.6 L22.4 21.8Z"],[],74,1.0,1.2)
+	# The cabin (scripts/cabin.gd): a gable roof over three log courses, the
+	# door a gap in the lower two, a chimney at the roof's shoulder, a sill
+	# stone. Seed 75.
+	_add("cabin","Cabin","Shelter","#9a7448",["M1.4 11.2 L12 3 L22.6 11.2 L20.8 12.2 L12 5.6 L3.2 12.2Z","M15.6 3.6 H18.4 V7.6 L15.6 5.5Z","M4.2 12.6 H19.8 V14.8 H4.2Z","M4.2 15.6 H9.8 V17.8 H4.2Z","M14.2 15.6 H19.8 V17.8 H14.2Z","M4.2 18.6 H9.8 V20.8 H4.2Z","M14.2 18.6 H19.8 V20.8 H14.2Z","M2.6 21.6 H21.4 V22.8 H2.6Z"],[],75,1.0,1.2)
+	# The fence (scripts/fences.gd): two cut-topped posts, two split rails.
+	_add("fence","Fence","Split rail","#9a7a52",["M4.6 5.2 L6.4 3 L8.2 4.6 V22.4 H4.6Z","M15.8 4.6 L17.6 3 L19.4 5.2 V22.4 H15.8Z","M1.6 8.4 L22.4 7.6 V10.6 L1.6 11.2Z","M1.6 15 L22.4 14.6 V17.4 L1.6 17.8Z"],["M3 9.6 H6","M18 16 H21"],73,1.0,1.2)
+	# The footbridge (scripts/footbridge.gd): a timber arch with its posts
+	# and rail, over a ripple.
+	_add("bridge","Footbridge","Span","#9a7550",["M1.5 15.2 Q12 8.6 22.5 15.2 L22.5 18.2 Q12 11.8 1.5 18.2Z","M3.2 9.6 H4.9 V16.4 H3.2Z","M11.15 6.4 H12.85 V12.4 H11.15Z","M19.1 9.6 H20.8 V16.4 H19.1Z"],["M3.6 10.4 Q12 4.4 20.4 10.4","M7 21.6 Q9.5 20.6 12 21.6 Q14.5 22.6 17 21.6"],81,1.0,1.4)
 	# The case's later tree seeds (and the command palette's,
 	# scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
 	_add("birch","Samara","Birch","#d8c79a",[_circle(6.8,12,4.6),_circle(17.2,12,4.6),"M10.2 6.6 Q12 4.8 13.8 6.6 V17.4 Q12 19.2 10.2 17.4Z"],["M12 7.5 V16.5"],40)

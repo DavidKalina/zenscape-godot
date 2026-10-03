@@ -53,6 +53,7 @@ const REACTIONS := {
 	"sunflower":"sprout",
 	"poppy":"sprout",
 	"lupine":"sprout",
+	"wheat":"sprout",
 	"mushroom":"sprout",
 	"bigfoot_tree":"thump",
 	"rock":"drop",
@@ -64,6 +65,9 @@ const REACTIONS := {
 	"stump":"settle",
 	"snag":"settle",
 	"log":"roll",
+	"stone_lamp":"settle",
+	"campfire":"settle",
+	"cabin":"settle",
 }
 const SPROUT_DURATION := 0.4
 const DROP_DURATION := 0.46

@@ -8,6 +8,10 @@ extends SceneTree
 ## New world previews a canyon and Begin keeps that preview. Headless:
 ## nothing is drawn, so captures and fades are not checked.
 const Library = preload("res://scripts/world_library.gd")
+## The canyon is held back with the desert (scripts/desert_landscape.gd);
+## these flows exercise it, so the desert is on. tools/probe_desert_gate.gd
+## checks the default game without it.
+const Desert = preload("res://scripts/desert_landscape.gd")
 var failures := 0
 
 func _initialize() -> void: run.call_deferred()
@@ -52,6 +56,7 @@ func back_to_title(world: Node3D, showcase: Dictionary) -> bool:
 	return await until(func() -> bool: return on_front(world,showcase) and world.get_node_or_null("TitleLoading") == null)
 
 func run() -> void:
+	Desert.on = true
 	create_timer(900).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	var dir := "/private/tmp/worlds-flow-%d" % Time.get_ticks_usec()
