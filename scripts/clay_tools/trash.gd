@@ -26,7 +26,7 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 const RADIUS := 1.4
 ## What it never takes, and what Shift spares.
 const KEPT := ["waterfall","bigfoot_tree","explosive"]
-const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch","bridge"]
+const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch","bridge","cabin"]
 ## The flight into the mouth: seconds, and at most this many in the air.
 const SUCK_SECONDS := 0.45
 const MAX_FLYING := 48
@@ -66,11 +66,14 @@ static func takes(kind: String, spare_big := false) -> bool:
 	return not kind in KEPT and not (spare_big and kind in BIG)
 
 ## How far (m) record `item` lies from plate point `q`: its foot, or for a
-## footbridge (scripts/footbridge.gd) the nearest point of its span.
+## footbridge (scripts/footbridge.gd) the nearest point of its span, for a
+## cabin (scripts/cabin.gd) the nearest point of its footprint.
 static func reach_of(item: Dictionary, q: Vector2) -> float:
 	var foot := Vector2(float(item.x),float(item.z))
 	if str(item.asset) == "bridge" and item.has("end_x"):
 		return Geometry2D.get_closest_point_to_segment(q,foot,Vector2(float(item.end_x),float(item.end_z))).distance_to(q)
+	if str(item.asset) == "cabin":
+		return preload("res://scripts/cabin.gd").distance(foot,float(item.angle),q,float(item.scale))
 	return foot.distance_to(q)
 
 func reset() -> void:

@@ -190,7 +190,7 @@ static func part_role(key: String) -> int:
 	if species >= 0: return species
 	if key in ["redwood:redwood-trunk","layered_tree:layered-trunk"] or (key.begins_with("layered_tree:") and key.ends_with("-trunk")): return 4
 	if key in ["grass","stem"] or "flower-stems" in key or "grass" in key: return 5
-	if key == "rock" or key == "stone_lamp" or key == "campfire" or key.begins_with("boulder_"): return 3
+	if key == "rock" or key == "stone_lamp" or key == "campfire" or key == "cabin" or key.begins_with("boulder_"): return 3
 	if key == "trunk" or (key.begins_with("tree:") and key.ends_with("-trunk")) or key == "leaf_bed" or key.begins_with("log:") or key.begins_with("snag:") or key.begins_with("stump:") or key == "broadleaf:mesh-11": return 4
 	if key == "canopy" or "canopies" in key or key.begins_with("shrub:") or key.begins_with("reeds:"): return 2
 	return 0

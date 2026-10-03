@@ -20,7 +20,8 @@ extends Node3D
 ## NativeChunkEditor (`lamps`), so every native world has them.
 ##
 ## The pool is shared: other warm things set on the land (the campfires,
-## scripts/campfire_fire.gd) join it as `guests`, and the nearest MAX_LIGHTS
+## scripts/campfire_fire.gd; the cabins' windows, scripts/cabin_lights.gd)
+## join it as `guests`, each owner its own list (`set_guests`), and the nearest MAX_LIGHTS
 ## of lamps and guests together get the lights. Guests bring their own reach,
 ## colour and strength (`guest_energy`, which may flicker), and are picked by
 ## day too while their energy is above nothing.
@@ -65,6 +66,9 @@ var slots: Array[Dictionary] = []
 ## energy now, 0 for none.
 var guests: Array[Dictionary] = []
 var guest_energy := Callable()
+## Each owner's guests and energy ({"list", "energy"}), and each guest's owner.
+var _guest_lists := {}
+var _guest_owner := {}
 var cores: MultiMeshInstance3D
 var halos: MultiMeshInstance3D
 var _core_material: StandardMaterial3D
@@ -180,14 +184,27 @@ func _read(data: NativeTerrainData) -> void:
 	lamps = found
 	_lay()
 
-## The guests now (see `guests`); a light whose guest is gone lets go.
-func set_guests(list: Array[Dictionary]) -> void:
-	guests = list
+## The guests of `owner` now (see `guests`), and how strong each one's light
+## is (`energy.call(id)`; without one, `guest_energy`). Each owner (the
+## campfires, the cabins) keeps its own list; a light whose guest is gone
+## lets go.
+func set_guests(list: Array[Dictionary], owner := "", energy := Callable()) -> void:
+	_guest_lists[owner] = {"list":list,"energy":energy}
+	var all: Array[Dictionary] = []
+	_guest_owner.clear()
+	for key in _guest_lists:
+		for guest: Dictionary in _guest_lists[key].list:
+			all.append(guest)
+			_guest_owner[int(guest.id)] = key
+	guests = all
 	_release_missing()
 
 ## A guest's energy now.
 func _guest_energy(id: int) -> float:
-	return float(guest_energy.call(id)) if guest_energy.is_valid() else 0.0
+	var owner: Variant = _guest_owner.get(id)
+	var energy: Callable = _guest_lists[owner].energy if owner != null else Callable()
+	if not energy.is_valid(): energy = guest_energy
+	return float(energy.call(id)) if energy.is_valid() else 0.0
 
 ## Lays the cores and halos on the lamps as read, and lets go of lights whose
 ## lamp has gone.

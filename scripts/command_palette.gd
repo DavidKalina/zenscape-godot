@@ -117,6 +117,7 @@ const ELEMENTS := [
 	["stone","River stone","Place","Sets a stone, or scatters pebbles."],
 	["lamp","Stone lamp","Glow","Sets a stone lamp, or lines a path with them. They glow at night."],
 	["campfire","Campfire","Hearth","Sets a little campfire in a ring of stones. It burns day and night, and keeps to itself."],
+	["cabin","Cabin","Shelter","Sets a small log cabin where the land is flat, dry and clear of trees. Its windows glow warm at dusk."],
 	["fence","Fence","Split rail","Draw a line and a rustic fence follows it; end where you began for a pen."],
 	["bridge","Footbridge","Span","Drag across a stream: a timber footbridge spans it, bank to bank."],
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],

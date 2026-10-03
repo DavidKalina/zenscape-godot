@@ -498,10 +498,10 @@ func bar() -> void:
 	check(in_group.call(0) == trees,"The trees' compartment holds the tree seeds (%s)" % str(in_group.call(0)))
 	check(in_group.call(3) == ["wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"],"The flowers' compartment holds five flowers, wheat and reed (%s)" % str(in_group.call(3)))
 	check(Tray.GROUPS.keys().slice(0,2) == [0,3],"Trees then flowers & crops lead the case")
-	# Water and stone share one; the stone lamp, the campfire beside it,
+	# Water and stone share one; the stone lamp, the campfire, the cabin,
 	# fence, footbridge and the crystal still hidden are what is built.
 	check(in_group.call(4) == ["water","stone"],"Water and stone share a compartment (%s)" % str(in_group.call(4)))
-	check(in_group.call(1) == ["lamp","campfire","fence","bridge","crystal"],"The build compartment is lamp, campfire, fence, footbridge and crystal (%s)" % str(in_group.call(1)))
+	check(in_group.call(1) == ["lamp","campfire","cabin","fence","bridge","crystal"],"The build compartment is lamp, campfire, cabin, fence, footbridge and crystal (%s)" % str(in_group.call(1)))
 
 # --- The cozy scene ---------------------------------------------------------------------
 

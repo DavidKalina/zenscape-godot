@@ -144,8 +144,6 @@ func setup(owner_editor: Node) -> void:
 	voice.max_distance = CRACKLE_REACH
 	voice.volume_db = -80.0
 	add_child(voice)
-	var lamps: Variant = editor.get("lamps")
-	if lamps != null: lamps.guest_energy = energy
 
 func _batch(label: String, mesh: Mesh, material: Material, colours: bool) -> MultiMeshInstance3D:
 	var node := MultiMeshInstance3D.new()
@@ -243,7 +241,7 @@ func _read(data: NativeTerrainData) -> void:
 	var guests: Array[Dictionary] = []
 	for fire in fires: guests.append({"id":fire.id,"at":fire.at,"range":LIGHT_RANGE*float(fire.scale),"color":LIGHT_COLOR})
 	var lamps: Variant = editor.get("lamps")
-	if lamps != null: lamps.set_guests(guests)
+	if lamps != null: lamps.set_guests(guests,ASSET,energy)
 	flames.multimesh.instance_count = fires.size()*FLAME_TONGUES.size()
 	halos.multimesh.instance_count = fires.size()
 	var bounds := AABB()

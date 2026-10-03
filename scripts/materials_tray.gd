@@ -51,6 +51,7 @@ const ALL_SPECIMENS := [
 	{"id":"stone","group":4},
 	{"id":"lamp","group":1},
 	{"id":"campfire","group":1},
+	{"id":"cabin","group":1},
 	{"id":"fence","group":1},
 	{"id":"bridge","group":1},
 	{"id":"crystal","group":1,"hidden":true},
