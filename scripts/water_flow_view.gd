@@ -17,7 +17,9 @@ extends Node3D
 ## is the moving sheet's wet film (2026-10-02). Where
 ## water leaves the plate over its rim, a fall pours down the block's side
 ## into the void (`edge_falls`, scripts/edge_falls.gd; --no-edge-falls leaves
-## them out).
+## them out). Its colour runs on past the deep stop to a deep blue in a
+## deep lake, and a lake steeps to tea in what grows round it (`steep`,
+## scripts/lake_tea.gd).
 ## Seconds between surface rebuilds (native): every frame, so the drawn
 ## water glides rather than stepping (a build and publish is about 0.15 ms).
 const SURFACE_SECONDS := 0.0
@@ -63,6 +65,10 @@ const FORMAT :=(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 
 var flow: RefCounted
 var data: NativeTerrainData
+## The lakes' tea and its map over the water grid (shader `tea_map`).
+var tea := preload("res://scripts/lake_tea.gd").new()
+var _tea_image: Image
+var _tea_texture: ImageTexture
 var still := MeshInstance3D.new()
 var moving := MeshInstance3D.new()
 var falls: Node3D
@@ -106,6 +112,11 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 	still_material.set_shader_parameter("tint_deep",TINT.deep)
 	# Shallow water is clear: the ground shows through (shader `shallow_clear`).
 	still_material.set_shader_parameter("shallow_clear",SHALLOW_CLEAR)
+	# Tea, a byte a cell over the water's grid, in the mesh's own x, z.
+	_tea_image = Image.create_empty(maxi(flow.width,1),maxi(flow.height,1),false,Image.FORMAT_R8)
+	_tea_texture = ImageTexture.create_from_image(_tea_image)
+	still_material.set_shader_parameter("tea_map",_tea_texture)
+	still_material.set_shader_parameter("tea_rect",Vector4(flow.origin.x,flow.origin.y,flow.width*flow.cell,flow.height*flow.cell))
 	still.material_override = still_material
 	moving.name = "FlowMoving"
 	var moving_material: ShaderMaterial = stream_material.duplicate()
@@ -163,6 +174,15 @@ func _exit_tree() -> void:
 ## The standing water the reflection follows (WaterFlow.pools), set by the
 ## editor as it reads them.
 var pools: Array = []
+
+## Steeps the lakes `seconds` toward what grows round them (`objects`,
+## NativeTerrainData.objects) and redraws the tea map if it changed; with
+## `snap` they take it at once (a load, a new world).
+func steep(pools_now: Array, objects: Array, seconds: float, snap := false) -> void:
+	if not tea.steep(pools_now,objects,flow,seconds,snap): return
+	if _tea_image.get_width() != flow.width or _tea_image.get_height() != flow.height: return
+	_tea_image.set_data(flow.width,flow.height,false,Image.FORMAT_R8,tea.grid)
+	_tea_texture.update(_tea_image)
 
 ## Rebuilds what changed since the last call.
 func update(delta: float) -> void:

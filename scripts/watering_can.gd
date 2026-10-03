@@ -5,9 +5,11 @@ extends Node3D
 ## and pours into the live water there (WaterFlow `taps`), RATE m³/s at the
 ## middle pip, following the pointer: drag it along a groove and the groove
 ## runs. Held over one spot (within GUSH_STILL m) in a hollow (a crater, a
-## pan, a pond already standing; `_basin`), it builds after GUSH_AFTER s to a gush GUSH
-## times as strong over GUSH_RISE s, its splash widening with it, so a crater
-## fills to its brim in seconds rather than minutes; moved on, it eases back
+## pan, a pond already standing; `_basin`), it builds after GUSH_AFTER s over
+## GUSH_RISE s to a gush sized to the hollow, its splash widening with it:
+## the gush is laid level over the water standing there (WaterFlow `lifts`),
+## so the hollow fills as one lake rising, to its brim in about FILL_SECONDS
+## however big, and eases back once it stands full; moved on, it eases back
 ## to the gentle pour. Where the water runs off (a hilltop, a slope) it stays
 ## gentle, so holding still there plants a spring as before. With Shift down at the press it sprinkles: a wider, gentler shower
 ## through the rose. Held still on high or steep ground (where a dropped ball
@@ -28,15 +30,21 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 const RATE := 1.4
 const RADIUS := 0.6
 ## The gush: held still (the landing within GUSH_STILL m of where it settled)
-## in a hollow (`_basin`) for GUSH_AFTER s, the pour climbs over GUSH_RISE s to GUSH times RATE, its
-## splash to GUSH_SPREAD times the radius; moved on, it falls back over
-## GUSH_FALL s. At the middle pip that is 12.6 m³/s, which fills a 110 m³
-## crater (12 m across, 2.2 m deep) to the brim in about 15 s held where the
-## plain pour took over 90 (tools/probe_can_fill.gd). The shallow-water sim
-## stays steady at 15 m³/s. A sprinkle never gushes.
+## in a hollow (`_basin`) for GUSH_AFTER s, the pour climbs over GUSH_RISE s to
+## the hollow's room (WaterFlow `room`, m³ to its brim) over FILL_SECONDS, at
+## least GUSH times RATE and at most GUSH_MOST m³/s, its splash to GUSH_SPREAD
+## times the radius; moved on, or once the hollow stands full, it falls back
+## over GUSH_FALL s. All but the plain pour is laid level (WaterFlow `lifts`),
+## so the sim never sees a fountain: a fixed 12.6 m³/s from the spout took
+## 50 s to fill the Crater's biggest hollow (620 m³); sized to it, about 6,
+## and the biggest pip's plate-wide crater as soon (the user, 2026-10-03:
+## "make the fill a little faster"; tools/probe_can_fill.gd). A sprinkle
+## never gushes.
 const GUSH := 9.0
+const FILL_SECONDS := 4.0
+const GUSH_MOST := 400.0
 const GUSH_AFTER := 0.6
-const GUSH_RISE := 3.0
+const GUSH_RISE := 1.5
 const GUSH_FALL := 0.4
 const GUSH_STILL := 1.2
 const GUSH_SPREAD := 2.2
@@ -99,6 +107,10 @@ var _planted_here := false
 var _gush_at := Vector2.INF
 var _gush_held := 0.0
 var _gush_basin := false
+## The gush's m³/s for the hollow it settled over, and whether that hollow
+## has stood full since.
+var _gush_rate := 0.0
+var _brimmed := false
 var _emit := 0.0
 var _beads: Array[Dictionary] = []
 var _bead_node: MultiMeshInstance3D
@@ -153,10 +165,14 @@ func stop() -> void:
 	gush = 0.0
 	landing = Vector2.INF
 	_beads.clear()
-	if flow != null: flow.taps.erase("can")
+	if flow != null:
+		flow.taps.erase("can")
+		flow.lifts.erase("can")
 
 func _exit_tree() -> void:
-	if flow != null: flow.taps.erase("can")
+	if flow != null:
+		flow.taps.erase("can")
+		flow.lifts.erase("can")
 
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
@@ -166,25 +182,33 @@ func _process(delta: float) -> void:
 	if tool != null: tool.pour = flow_share
 	var rose: Variant = _rose(tool)
 	if rose == null or flow_share <= 0.0:
-		if flow != null: flow.taps.erase("can")
+		if flow != null:
+			flow.taps.erase("can")
+			flow.lifts.erase("can")
 		landing = Vector2.INF
 		_step_beads(delta,null,tool)
 		return
 	var at := Vector2((rose as Vector3).x,(rose as Vector3).z)
 	var floor_y: Variant = ground_at.call(at) if ground_at.is_valid() else null
 	if floor_y == null:
-		if flow != null: flow.taps.erase("can")
+		if flow != null:
+			flow.taps.erase("can")
+			flow.lifts.erase("can")
 		landing = Vector2.INF
 		_step_beads(delta,rose,tool)
 		return
 	landing = at
 	_gush_step(at,delta)
 	var built := smoothstep(0.0,1.0,gush)
-	var rate := RATE*size_scale*smoothstep(0.0,1.0,flow_share)*(SPRINKLE_SHARE if sprinkle else lerpf(1.0,GUSH,built))
+	var plain := RATE*size_scale*smoothstep(0.0,1.0,flow_share)*(SPRINKLE_SHARE if sprinkle else 1.0)
+	var lifted := maxf(_gush_rate*smoothstep(0.0,1.0,flow_share)-plain,0.0)*built
 	var radius := RADIUS*size_scale*(SPRINKLE_SPREAD if sprinkle else lerpf(1.0,GUSH_SPREAD,built))
 	if flow != null:
-		flow.taps["can"] = [at.x,at.y,radius,rate]
-		poured += rate*delta
+		flow.taps["can"] = [at.x,at.y,radius,plain]
+		if lifted > 0.0: flow.lifts["can"] = [at.x,at.y,lifted]
+		else: flow.lifts.erase("can")
+		if flow.brimmed.has("can"): _brimmed = true
+		poured += (plain+lifted)*delta
 	ClaySound.voice(&"water_pour",flow_share*(0.6 if sprinkle else lerpf(1.0,1.4,built)),(get_parent() as Node3D).to_global(rose))
 	if pouring: _hold_still(at,delta)
 	_step_beads(delta,rose,tool)
@@ -199,8 +223,12 @@ func _gush_step(at: Vector2, delta: float) -> void:
 		_gush_at = at
 		_gush_held = 0.0
 		_gush_basin = _basin(at)
-	# Off a hollow the hold does not count: on high ground it is the spring's.
-	if _gush_basin: _gush_held += delta
+		_brimmed = false
+		if _gush_basin: _gush_rate = clampf(float(flow.room(at))/FILL_SECONDS if flow != null else 0.0,RATE*GUSH*size_scale,GUSH_MOST)
+	# Off a hollow the hold does not count: on high ground it is the spring's;
+	# a hollow standing full takes no more.
+	if _gush_basin and not _brimmed: _gush_held += delta
+	elif _brimmed: _gush_held = 0.0
 	if _gush_held >= GUSH_AFTER: gush = move_toward(gush,1.0,delta/GUSH_RISE)
 	else: gush = move_toward(gush,0.0,delta/GUSH_FALL)
 
