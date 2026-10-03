@@ -187,8 +187,8 @@ static func _build() -> void:
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
 	_add("water","Water","Scoop","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)
-	# Seeds with no slot in the case, reached through the command palette
-	# (scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
+	# The case's later tree seeds (and the command palette's,
+	# scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
 	_add("birch","Samara","Birch","#d8c79a",[_circle(6.8,12,4.6),_circle(17.2,12,4.6),"M10.2 6.6 Q12 4.8 13.8 6.6 V17.4 Q12 19.2 10.2 17.4Z"],["M12 7.5 V16.5"],40)
 	_add("redwood","Redwood","Giant","#a0563a",["M12 1.2 L15.4 7.6 H13.9 L16.8 13.4 H15.1 L18.2 19 H13.3 V22.8 H10.7 V19 H5.8 L8.9 13.4 H7.2 L10.1 7.6 H8.6Z"],["M12 9 V19"],41)
 	_add("juniper","Juniper","Berry","#64749c",[_circle(8.6,14.2,4.2),_circle(15.4,14.2,4.2),_circle(12,8.4,4.2),"M11.2 17.6 H12.8 V23 H11.2Z"],["M12 4.6 L12.6 3.4"],42)

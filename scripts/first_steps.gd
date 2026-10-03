@@ -62,11 +62,17 @@ const VERBS := {
 	"gust":{"group":"sky","name":"Send a gust","line":"Swipe across the empty sky","clue":"The air can be pushed","near":""},
 	"water":{"group":"case","name":"Pour water","line":"The watering can is in your hand · hold it over the land to pour","clue":"A can on the strip along the top","near":"roll:can","take":"can"},
 	"scoop":{"group":"case","name":"Carry water","line":"Take the drop from the case and scoop where water lies · carry it and let go","clue":"The case along the bottom","near":"tray:water"},
-	"sow":{"group":"case","name":"Sow seeds","line":"Take a seed from the case and drag it over the land","clue":"A pinch of something","near":"tray:oak"},
+	"sow":{"group":"case","name":"Sow seeds","line":"Take a seed or a flower from the case and drag it over the land","clue":"A pinch of something","near":"tray:oak"},
 	"stone":{"group":"case","name":"Set a stone","line":"Take the stone from the case and tap the land · hold longer for a bigger one","clue":"The last compartment","near":"tray:stone"},
 	"night":{"group":"air","name":"Bring the night","line":"Click the sun on the almanac · Shift-click steps the golden hours","clue":"The strip on the right","near":"almanac:time"},
 	"mood":{"group":"air","name":"Change the mood","line":"Press M, or the first pocket of the almanac","clue":"The same land, another light","near":"almanac:mood"},
 }
+
+const FlowerSowing = preload("res://scripts/flower_sowing.gd")
+## What the case holds that counts as sowing when used, besides the tree seeds
+## the pinch flicks: every flower slot (scripts/flower_sowing.gd SLOTS) and reed.
+static func sown() -> Array:
+	return FlowerSowing.SLOTS.keys()+["reed"]
 
 ## Verbs found so far, id -> true.
 var found := {}
@@ -176,7 +182,9 @@ func _poll(delta: float) -> void:
 		if uses is Dictionary:
 			if _grew("water",float(uses.get("water",0))): _water_out = true
 			if _grew("stone",float(uses.get("stone",0))): mark("stone")
-			for id: String in ["wildflower","dandelion","reed"]:
+			# Flowers are painted (scripts/flower_paint.gd), reeds set down:
+			# each counts a use of what was in hand.
+			for id: String in sown():
 				if _grew(id,float(uses.get(id,0))): mark("sow")
 		var materials: Variant = _prop(reach,"materials")
 		if materials != null:

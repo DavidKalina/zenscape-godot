@@ -12,8 +12,7 @@ takes back any shaping.
 ## First steps
 
 A new player gets a small card that asks for six things in turn: look round,
-raise a peak, thumb a groove, pour water, bend a tree, turn the world and call
-the cloud. It shows one at a time, puts the tool you need in your hand and rings its pocket, and goes away
+raise a peak, thumb a groove, pour water, bend a tree and turn the world. It shows one at a time, puts the tool you need in your hand and rings its pocket, and goes away
 when you finish or press **Skip**. **Esc**, then **Field notes**, lists
 everything the hand can do. What you have found reads in full. What you
 have not shows only a clue. "Walk me through it again" brings the card back.
@@ -132,9 +131,11 @@ and refills in about a minute; a dry cloud won't tear.
 ## The tray (experiment)
 
 Along the bottom edge sits a field case, a long, low case of smoked glass
-with one specimen in each compartment. The seeds are **acorn** (oak), **pine
-cone**, **willow catkin**, **birch samara**, **wildflower seed head** and
-**reed**. Then come **water** and a **river stone**. The case stays faint
+with one specimen in each compartment. The tree seeds are **acorn** (oak),
+**pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
+and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
+**cosmos** and **sunflower**, and **reed**. Then come **water** and a **river
+stone**. The case stays faint
 until the pointer comes near. Hover a specimen to read its name. Faint
 outlines are kinds you haven't found yet, and pressing one gives nothing.
 
@@ -142,7 +143,7 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 |---|---|
 | Press a specimen | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment stays faintly outlined while you hold it |
 | Tree seeds: drag over the land | sprinkles seeds along the way, and the wind carries them down. What comes up leans to that tree, as far as the ground there allows |
-| Wildflower: tap, or drag | sows a drift of meadow flowers; a drag scatters more drifts |
+| Flowers: press and drag over the land | paints flowers under the brush; go over them again to thicken the drift. Shift thins them |
 | Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
 | Stone: tap | sets a stone down, bigger the longer you press |

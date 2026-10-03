@@ -116,7 +116,7 @@ func alone() -> void:
 	print("strip ",strip," scale ",s)
 	check("in the hud_piece group",almanac.is_in_group("hud_piece"))
 	check("shown, at rest",almanac.shown > 0.99 and almanac.awake < 0.01)
-	check("rest opacity 0.6",absf(almanac.modulate.a-0.6) < 0.02,almanac.modulate.a)
+	check("rest opacity %.2f" % Linen.REST_OPACITY,absf(almanac.modulate.a-Linen.REST_OPACITY) < 0.02,almanac.modulate.a)
 	check("80 design px wide",absf(strip.size.x-80.0*s) < 2.0,strip.size.x/s)
 	check("about 370 design px tall",absf(strip.size.y/s-370.0) < 12.0,strip.size.y/s)
 	check("centred vertically",absf(strip.get_center().y-450.0) < 1.0)

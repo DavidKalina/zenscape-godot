@@ -3,7 +3,7 @@ extends SceneTree
 ## stand-in for the world, with the real roll, foot, materials bar and almanac
 ## so its pointing can be seen, to look at by eye. Windowed, by hand only:
 ##   godot --path . --script tools/preview_first_steps.gd
-## Every 4 s the current step is marked done, so the card walks its seven steps
+## Every 4 s the current step is marked done, so the card walks its six steps
 ## and its last card; a few seconds after that it restarts. Pointing prints.
 ## No hand is routing presses here, so Skip does nothing; nothing is saved.
 const Card = preload("res://scripts/first_steps_card.gd")

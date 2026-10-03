@@ -214,6 +214,16 @@ func _detection() -> void:
 	again._poll(0.1)
 	check(again.found.has("mood"),"A mood changed after it opened is")
 	again.free()
+	# Flowers are painted, not flicked: a painted poppy (a slot the case gained
+	# with the flower brush) is sowing too.
+	var painted := _fresh()
+	painted.setup(world.scene,world.reach)
+	painted._poll(0.1)
+	world.reach.uses["poppy"] = 1
+	painted._poll(0.1)
+	check(painted.found.has("sow"),"Painting flowers is sowing")
+	check(FirstSteps.sown().has("sunflower") and FirstSteps.sown().has("reed"),"Every flower slot and the reed count as sowing")
+	painted.free()
 	fs.free()
 	_free_world(world)
 

@@ -17,7 +17,7 @@ extends Node
 ## as a shaping tool's prop does (scripts/cursor_motion.gd). What is in hand
 ## decides what a press does.
 ##
-## - **Tree seeds** (oak, pine, willow; birch has no slot in 4c). Press and drag over the land:
+## - **Tree seeds** (oak, pine, willow, birch, redwood, juniper, Joshua). Press and drag over the land:
 ##   the pinch flicks the forest brush's veil out along the way (FLICK_SECONDS),
 ##   and the wind carries it down (NativeChunkEditor `sow_from_hand`, the Forest
 ##   brush's own veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
@@ -77,8 +77,6 @@ const Icons = preload("res://scripts/hud_icons.gd")
 const Modeless = preload("res://scripts/modeless_input.gd")
 ## Tree seeds: the specimen and the emergence tree kind it sows
 ## (scripts/tree_stands.gd TREE_POOLS; "tree" is the spruce family's pine).
-## Birch, redwood, juniper and Joshua have no slot in the case; the command
-## palette (scripts/command_palette.gd) hands them over.
 const SEEDS := {"oak":"broadleaf","pine":"tree","willow":"willow","birch":"birch","redwood":"redwood","juniper":"juniper","joshua":"joshua"}
 ## Flowers: the slots scripts/flower_sowing.gd composes, painted
 ## (scripts/flower_paint.gd). PAINT is their press's hold.
