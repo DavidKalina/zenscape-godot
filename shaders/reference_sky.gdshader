@@ -6,6 +6,7 @@ render_mode use_half_res_pass;
 #define ZS_NIGHT_LIGHTS_APART
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/sky_ridges.gdshaderinc"
 
         
         
@@ -40,20 +41,9 @@ render_mode use_half_res_pass;
         // that covers the whole sky (scripts/landscape_lighting.gd), which
         // Godot applies to that pass as well.
         uniform bool half_res_clouds = true;
-        // Ridged value noise round the circle of azimuths, so the line wraps
-        // with no seam. Nearer layers are busier and lower.
-        float ridge_line(vec2 around, float layer) {
-          float freq = 2.2 + layer * 1.6;
-          float amp = 0.5;
-          float h = 0.0;
-          for (int o = 0; o < 3; o++) {
-            vec3 p = vec3(around * freq, 0.0) + vec3(horizon_seed * 0.137 + layer * 17.3, layer * 5.1, horizon_seed * 0.071 + float(o) * 3.7);
-            h += (1.0 - abs(vnoise(p) * 2.0 - 1.0)) * amp;
-            freq *= 2.1;
-            amp *= 0.45;
-          }
-          return h;
-        }
+        // The stars are real objects in the room (scripts/sky_objects.gd), so
+        // the dome leaves out its painted ones. --shader-stars keeps them.
+        uniform bool real_stars = false;
         // Star colour by temperature, t in 0..1: hot blue-white through white
         // and yellow to orange and a rare ember red. Weighted toward white.
         vec3 star_tint(float t) {
@@ -129,6 +119,35 @@ render_mode use_half_res_pass;
           float dust = smoothstep(0.55, 0.75, vnoise(p * 2.6 + 4.0)) * density;
           return vec4(glow, dust);
         }
+        // The Milky Way beside the real stars (scripts/sky_objects.gd crowds
+        // its fine stars into the same band): a dusty-rose river of billowing
+        // light with ragged edges, warmer and wider toward the galactic
+        // centre, cut by sharp dark lanes of dust down its spine. Display
+        // colour, to be scaled by starK.
+        vec3 milky_way(vec3 room) {
+          vec3 n = normalize(vec3(0.6, 0.25, 0.75));
+          float d = dot(room, n);
+          if (abs(d) > 0.5) return vec3(0.0);
+          vec3 centre = normalize(cross(n, vec3(0.0, 1.0, 0.0)));
+          float core = pow(max(dot(room, centre), 0.0), 2.0);
+          // The centre line wanders, so the band's edges are ragged.
+          vec3 w = vec3(vnoise(room * 2.5 + 1.3), vnoise(room * 2.5 + 7.1), vnoise(room * 2.5 + 3.7)) - 0.5;
+          float off = d + w.x * 0.14 + w.y * 0.05;
+          float width = mix(0.13, 0.22, core);
+          float band = exp(-off * off / (width * width));
+          if (band < 0.01) return vec3(0.0);
+          // Broad, soft billows over a steady floor of light, so the band
+          // reads as one river rather than speckle.
+          float billow = fbm(room * 3.5 + w * 1.6);
+          float glow = band * mix(0.35, 1.0, smoothstep(0.25, 0.8, billow * 0.8 + band * 0.35));
+          // Ridged noise pinched to a few long, smooth dark lanes near the spine.
+          float ridge = 1.0 - abs(fbm(room * 5.0 + w * 2.2 + 5.0) * 2.0 - 1.0);
+          float lanes = smoothstep(0.76, 0.94, ridge) * exp(-off * off / (width * width * 0.35));
+          // Cool unresolved starlight under rose gas, warming at the core.
+          vec3 haze = vec3(0.1, 0.13, 0.2) * band;
+          vec3 rose = mix(vec3(0.42, 0.13, 0.2), vec3(0.62, 0.32, 0.28), core * 0.7 + 0.3 * smoothstep(0.55, 0.85, billow));
+          return (haze * 0.35 + rose * glow * 0.38) * (1.0 - 0.85 * lanes);
+        }
         // A brilliant star, as true HDR light: a pixel-sharp core, a soft halo
         // and faint four-point glints, twinkling with a slight shift of
         // colour. Returns zero outside a small radius so it costs little.
@@ -192,21 +211,36 @@ render_mode use_half_res_pass;
           // indigo overhead and a faint airglow along the horizon, so the
           // stars and nebulae sit on black rather than navy.
           float deep = zs_night * zs_celestial_clear;
-          if (deep > 0.001) {
+          if (deep > 0.001 && real_stars) {
+            // With the real stars: a deep teal-navy, lighter toward the
+            // horizon line either side, keeping a little of the look's own
+            // sky so moods still tint it.
+            float lift = exp(-abs(y) / 0.22);
+            vec3 navy = mix(vec3(0.018, 0.04, 0.085), vec3(0.06, 0.13, 0.18), lift);
+            vec3 night = mix(navy, col * 0.4, 0.25);
+            night += vec3(0.02, 0.05, 0.035) * exp(-abs(y) / 0.035) * 0.3;
+            col = mix(col, night, deep);
+          } else if (deep > 0.001) {
             float keep = mix(0.22, 0.5, exp(-abs(y) / 0.07));
             vec3 night = col * keep * mix(vec3(1.0), vec3(0.85, 0.9, 1.25), smoothstep(0.1, 0.8, y));
             night += vec3(0.02, 0.05, 0.035) * exp(-abs(y) / 0.035) * 0.35;
             col = mix(col, night, deep);
           }
           col += zsNightLights(dir);
+          if (starK > 0.001 && real_stars) {
+            col += milky_way(room) * starK;
+          }
           if (starK > 0.001) {
+            float veil = 1.0;
+            float mwBand = 0.0;
+            if (!real_stars) {
             // The Milky Way: a tilted great-circle band, clumped by smooth
             // noise so it reads as spilled light, not an airbrushed stripe.
             // One side of it swells warm toward the galactic centre, and a
             // dark rift of dust runs down its spine.
             vec3 mwN = normalize(vec3(0.6, 0.25, 0.75));
             float mwD = dot(room, mwN);
-            float mwBand = exp(-mwD * mwD / 0.045);
+            mwBand = exp(-mwD * mwD / 0.045);
             float mwSpine = exp(-mwD * mwD / 0.009);
             vec3 mwC = normalize(cross(mwN, vec3(0.0, 1.0, 0.0)));
             float bulge = pow(max(dot(room, mwC), 0.0), 3.0);
@@ -231,24 +265,27 @@ render_mode use_half_res_pass;
             float dust = clamp(nebA.a + nebB.a + nebC.a, 0.0, 1.0);
             col *= 1.0 - 0.45 * dust * starK;
             col += (nebA.rgb + nebB.rgb + nebC.rgb) * 0.3 * starK;
-            float veil = 1.0 - 0.6 * dust;
+            veil = 1.0 - 0.6 * dust;
+            }
 
-            // Three lattices: a sparse one for the named-feeling bright stars,
-            // a middle one, and a fine dust that fills the Milky Way's band,
-            // which is what the band actually IS.
-            col += star_layer(room, 46.0, 0.0, 0.7, 1.3, 5.0, pixel, y) * starK * veil;
-            col += star_layer(room, 97.0, 5.0, mix(0.74, 0.45, mwBand), 0.55, 4.0, pixel, y) * starK * veil;
-            col += star_layer(room, 190.0, 9.0, mix(0.86, 0.5, mwBand), 0.22, 3.0, pixel, y) * starK * veil;
+            if (!real_stars) {
+              // Three lattices: a sparse one for the named-feeling bright stars,
+              // a middle one, and a fine dust that fills the Milky Way's band,
+              // which is what the band actually IS.
+              col += star_layer(room, 46.0, 0.0, 0.7, 1.3, 5.0, pixel, y) * starK * veil;
+              col += star_layer(room, 97.0, 5.0, mix(0.74, 0.45, mwBand), 0.55, 4.0, pixel, y) * starK * veil;
+              col += star_layer(room, 190.0, 9.0, mix(0.86, 0.5, mwBand), 0.22, 3.0, pixel, y) * starK * veil;
 
-            // A handful of brilliant stars, placed, not hashed: the few
-            // points the eye lands on first.
-            float heroK = starK * veil;
-            skyHdr += hero_star(room, normalize(vec3(-0.32, 0.55, 0.77)), vec3(0.75, 0.85, 1.0), 2.6, 0.13, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(0.61, 0.35, 0.71)), vec3(1.0, 0.8, 0.55), 2.0, 0.41, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(0.12, 0.82, -0.56)), vec3(0.95, 0.97, 1.0), 2.3, 0.77, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(-0.83, 0.12, -0.54)), vec3(1.0, 0.62, 0.42), 1.6, 0.29, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(0.9, -0.1, 0.42)), vec3(0.7, 0.8, 1.0), 1.8, 0.93, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(-0.4, -0.15, -0.9)), vec3(1.0, 0.95, 0.85), 1.5, 0.57, pixel) * heroK;
+              // A handful of brilliant stars, placed, not hashed: the few
+              // points the eye lands on first.
+              float heroK = starK * veil;
+              skyHdr += hero_star(room, normalize(vec3(-0.32, 0.55, 0.77)), vec3(0.75, 0.85, 1.0), 2.6, 0.13, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(0.61, 0.35, 0.71)), vec3(1.0, 0.8, 0.55), 2.0, 0.41, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(0.12, 0.82, -0.56)), vec3(0.95, 0.97, 1.0), 2.3, 0.77, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(-0.83, 0.12, -0.54)), vec3(1.0, 0.62, 0.42), 1.6, 0.29, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(0.9, -0.1, 0.42)), vec3(0.7, 0.8, 1.0), 1.8, 0.93, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(-0.4, -0.15, -0.9)), vec3(1.0, 0.95, 0.85), 1.5, 0.57, pixel) * heroK;
+            }
 
             // The shooting star. The resident follows this same CPU-owned
             // head position. A tapered trail, teal-green as meteors burn,
@@ -334,6 +371,10 @@ render_mode use_half_res_pass;
           col += vec3(0.5, 0.6, 0.8) * 0.06 * pow(max(md, 0.0), 160.0) * moonVis * zs_night * moonLit;
           // A thin silver corona hugging the disc.
           col += vec3(0.7, 0.8, 1.0) * exp(-max(moonAng - 0.019, 0.0) / 0.006) * 0.22 * (1.0 - moon) * moonVis * zs_night * moonLit;
+          // With the real stars, a wide soft glow, faintly rose, that the
+          // moon lights round itself in the air.
+          if (real_stars)
+            col += vec3(0.78, 0.72, 0.8) * (exp(-moonAng / 0.07) * 0.09 + exp(-moonAng / 0.25) * 0.035) * (1.0 - moon) * moonVis * zs_night * (0.3 + 0.7 * moonLit);
 
           // Horizon ridges, far to near, each a step deeper into the haze and
           // pale at its feet where valley mist would lie. Painted over the sun
@@ -348,7 +389,7 @@ render_mode use_half_res_pass;
             float below = smoothstep(-0.14, -0.04, y);
             for (int k = 0; k < 3; k++) {
               float layer = float(k);
-              float top = mix(0.012, -0.015, layer * 0.5) + ridge_line(around, layer) * mix(0.07, 0.04, layer * 0.5) * horizon_relief;
+              float top = zs_ridge_top(around, layer, horizon_seed, horizon_relief);
               float cover = smoothstep(top + 0.0015, top - 0.0015, y) * below;
               float haze = mix(0.28, 0.62, layer * 0.5) * mix(0.55, 1.0, smoothstep(top - 0.05, top, y));
               col = mix(col, mix(horizon, horizon * vec3(0.58, 0.64, 0.76), haze), cover * horizon_ridges);
