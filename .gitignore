@@ -4,7 +4,6 @@ builds/
 
 # Local agent checkouts and disposable validation output.
 .claude/worktrees/
-docs/wind-playground/test-logs/
 
 # Generated documentation captures stay on the machine that recorded them.
 # Keep Markdown, measurements, fixtures, and capture scripts in Git.
