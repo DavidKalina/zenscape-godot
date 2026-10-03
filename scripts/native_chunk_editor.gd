@@ -2517,6 +2517,8 @@ func _read_flow_pools() -> void:
 			if before.is_empty() or absf(float(before.area)-float(pool.area)) >= FLOW_AREA_CHANGE: _flow_moved(pool.rect)
 		for pool: Dictionary in _flow_pools:
 			if _nearest_pool(pools,pool).is_empty(): _flow_moved(pool.rect)
+	# Lakes steep in what grows round them; after a restore they are as steeped as their shores.
+	flow_view.steep(pools,data.objects,FLOW_READ_SECONDS,_flow_baseline)
 	_flow_baseline = false
 	_flow_pools = pools
 	# A ball's fish go to the pond nearest where it landed.

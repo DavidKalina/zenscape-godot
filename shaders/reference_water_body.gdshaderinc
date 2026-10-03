@@ -46,14 +46,45 @@ uniform vec3 tint_shallow : source_color = vec3(0.42, 0.68, 0.62);
 uniform vec3 tint_mid : source_color = vec3(0.25, 0.57, 0.59);
 uniform vec3 tint_deep : source_color = vec3(0.18, 0.39, 0.47);
 uniform vec3 tint_depths = vec3(0.3, 1.1, 0.22);
-vec3 zs_depth_tint(float depth) {
+// Past the deep stop the ramp goes on to `tint_abyss`, from
+// tint_abyss_depths.x to .y m: a crater lake six metres deep is deep blue in
+// its middle and pale on its shelves, where by the three stops alone it was
+// one colour from a metre down and read as a puddle. The abyss stays blue
+// (Electron's DEEP_RAMP, water.js): run to black, a lake reads as a hole.
+uniform vec3 tint_abyss : source_color = vec3(0.09, 0.22, 0.32);
+uniform vec2 tint_abyss_depths = vec2(1.2, 4.5);
+// Tea: water steeped by the land round it (scripts/lake_tea.gd). `tea_map`
+// holds 0..1 a cell over the live water's grid, `tea_rect` its origin and
+// size in the mesh's own x, z (zero size: no tea). Steeped water is a dark
+// tarn: near-black slate-blue `tea_deep` from a little way out, a dark umber
+// `tea_shallow` only over the shelves where the bank shows through, and it
+// hides its bed sooner. It keeps the wind's chop and the sky's sheen on it,
+// as a mountain tarn does (the user's reference, 2026-10-03: "blackish, dark
+// blue", not brown; a brown ramp read as milky coffee, and a near-black one
+// made glossier and calmer read as a grey mirror of the sky). At most
+// TEA_TAKE of the clear colour gives way.
+uniform sampler2D tea_map : hint_default_black, filter_linear, repeat_disable;
+uniform vec4 tea_rect = vec4(0.0);
+uniform vec3 tea_shallow : source_color = vec3(0.23, 0.20, 0.14);
+uniform vec3 tea_deep : source_color = vec3(0.063, 0.09, 0.118);
+const float TEA_TAKE = 0.85;
+float zs_tea(vec2 local) {
+	if (tea_rect.z <= 0.0) return 0.0;
+	return textureLod(tea_map, (local - tea_rect.xy) / tea_rect.zw, 0.0).r;
+}
+vec3 zs_depth_tint(float depth, float tea) {
 	vec3 colour = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.x, depth));
-	return mix(colour, tint_deep, smoothstep(tint_depths.x * 0.7, tint_depths.y, depth));
+	colour = mix(colour, tint_deep, smoothstep(tint_depths.x * 0.7, tint_depths.y, depth));
+	colour = mix(colour, tint_abyss, smoothstep(tint_abyss_depths.x, tint_abyss_depths.y, depth));
+	vec3 steeped = mix(tea_shallow, tea_deep, smoothstep(0.0, 1.2, depth));
+	return mix(colour, steeped, tea * TEA_TAKE);
 }
 // How much of the bed shows through `depth` of tinted water, per channel:
-// red goes first, so what shows is tinted teal.
-vec3 zs_depth_tint_bed(float depth) {
-	return exp(-max(depth, 0.0) / max(tint_depths.z, 0.01) * vec3(1.35, 1.0, 0.9));
+// red goes first, so what shows is tinted teal; tea hides it three times as
+// soon, browning it as it goes.
+vec3 zs_depth_tint_bed(float depth, float tea) {
+	vec3 loss = mix(vec3(1.35, 1.0, 0.9), vec3(0.8, 1.0, 1.6), tea);
+	return exp(-max(depth, 0.0) / max(tint_depths.z, 0.01) * (1.0 + 2.0 * tea) * loss);
 }
 // Live moving water lies over still water drawn everywhere wet; CUSTOM1.x
 // fades it out towards the slow water round it, so the two meet softly.
@@ -118,6 +149,7 @@ varying float water_depth;
 varying vec3 lake_state;
 varying vec2 lake_local;
 varying float cut_face;
+varying float lake_tea;
 
 
 void vertex() {
@@ -129,6 +161,7 @@ void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	water_depth = max(UV2.x - level_drop, 0.0);
 	cut_face = UV2.y;
+	lake_tea = flowing ? 0.0 : zs_tea(VERTEX.xz);
 	// Pin the shoreline and cut walls. Both wave trains follow the wind.
 	float shore = smoothstep(0.015, 0.25, water_depth) * (1.0 - cut_face);
 	vec2 p = world_position.xz;
@@ -219,8 +252,8 @@ void fragment() {
 	// Under a tint, how opaque the water is for the bed it hides.
 	float tint_alpha = 0.0;
 	if (tinted) {
-		body = zs_depth_tint(water_depth) * zs_palette_water;
-		vec3 seen = zs_depth_tint_bed(water_depth);
+		body = zs_depth_tint(water_depth, lake_tea) * zs_palette_water;
+		vec3 seen = zs_depth_tint_bed(water_depth, lake_tea);
 		// Without the planar view the bed shows only through the blend:
 		// thin water lets most of it through, or a broad shallow flat is a
 		// milky sheet of the shallow colour over the grass.
@@ -253,9 +286,10 @@ void fragment() {
 			// The bed's own depth, so the colour deepens smoothly between
 			// the mesh's vertices; the shallows are tinted towards teal.
 			float bed_depth = max(submerged, 0.0);
-			vec3 seen = zs_depth_tint_bed(bed_depth) * (1.0 - zs_ice);
-			vec3 tinted_bed = bed * mix(vec3(1.0), tint_shallow / max(tint_shallow.g, 0.01), 0.5);
-			body = mix(zs_depth_tint(bed_depth) * zs_palette_water, tinted_bed, seen);
+			vec3 seen = zs_depth_tint_bed(bed_depth, lake_tea) * (1.0 - zs_ice);
+			vec3 hue = mix(tint_shallow / max(tint_shallow.g, 0.01), tea_shallow / max(tea_shallow.r, 0.01), lake_tea);
+			vec3 tinted_bed = bed * mix(vec3(1.0), hue, 0.5);
+			body = mix(zs_depth_tint(bed_depth, lake_tea) * zs_palette_water, tinted_bed, seen);
 			// The bed is in the body here: only the very edge lets the scene through.
 			tint_alpha = mix(tint_alpha, 0.97 * smoothstep(0.0, 0.05, bed_depth), planar_weight);
 		} else {
@@ -271,7 +305,7 @@ void fragment() {
 	// Clear shallows: how clear this pixel is, by its per-pixel depth where the
 	// planar view reads the bed, else the mesh's.
 	float clear = shallow_clear > 0.0 && tinted ? (1.0 - smoothstep(0.03, shallow_clear, shore_depth)) * (1.0 - zs_ice) : 0.0;
-	body = mix(body, shallow_body * zs_palette_water, clear);
+	body = mix(body, mix(shallow_body, vec3(0.09, 0.06, 0.02), lake_tea * TEA_TAKE) * zs_palette_water, clear);
 	fresnel *= 1.0 - 0.4 * clear;
 	float glint = smoothstep(0.75, 1.0, zs_water_growth_now()) * pow(max(dot(reflect(-zs_sun_direction, wave_normal), eye), 0.0), 240.0) * zs_daylight * zs_celestial_clear;
 	float foam = 0.0;
