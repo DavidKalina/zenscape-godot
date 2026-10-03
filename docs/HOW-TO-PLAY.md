@@ -172,7 +172,8 @@ Along the bottom edge sits a field case, a short, low case with a
 compartment for each kind of specimen, left to right:
 
 - **Trees**: **acorn** (oak), **pine cone**, **willow catkin**, **birch
-  samara**, **redwood**, **juniper** and **Joshua**
+  samara**, **redwood** and **juniper** (Joshua
+  is held back with the desert)
 - **Flowers & crops**: **wildflower**, **dandelion**, **poppy**, **cosmos**,
   **sunflower**, **wheat** and **reed**
 - **Water & stone**: **water** and a **river stone**
@@ -253,6 +254,16 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
 - `--no-tray` hides the materials tray.
 - `--no-first-steps` leaves out the first-steps card and the field notes; `--first-steps` shows the card from the top whatever was found before, without saving.
+
+### Desert (held back for an update)
+
+The desert is kept out of a default game for launch, to ship later as an
+update. `--desert` brings it all back for development: arid title worlds, the
+**Red canyon** land on the New world screen, desert compositions in generated
+worlds, the **Joshua** seed in the tray and palette, and the **Desert
+afternoon** mood. Worlds already made with desert still load and play as they
+were. The switch is `ENABLED` in `scripts/desert_landscape.gd`;
+`tools/probe_desert_gate.gd` checks both ways.
 
 ## Not reachable in the hand scheme yet
 

@@ -635,7 +635,8 @@ static func hour_of(phase: float) -> String:
 	return "high"
 
 static func seed_of(id: String) -> int:
-	var index: int = Mood.mood_ids().find(id)
+	# Every mood, offered or not, so each keeps its vignette's seed.
+	var index: int = Mood.Presets.PRESETS.keys().find(id)
 	return WORLD_SEED if index < 0 else FIRST_MOOD_SEED+index
 
 ## A vignette texture at `size_name`'s size, cached. This world's is keyed by

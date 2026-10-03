@@ -492,7 +492,10 @@ func bar() -> void:
 	# (first steps added birch, redwood, juniper and Joshua), then the five
 	# flowers, wheat and reed in a compartment of their own.
 	var in_group := func(group: int) -> Array: return Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == group).map(func(entry: Dictionary) -> String: return entry.id)
-	check(in_group.call(0) == ["oak","pine","willow","birch","redwood","juniper","joshua"],"The trees' compartment holds the seven tree seeds (%s)" % str(in_group.call(0)))
+	# Joshua is held back with the desert (scripts/desert_landscape.gd).
+	var trees := ["oak","pine","willow","birch","redwood","juniper"]
+	if preload("res://scripts/desert_landscape.gd").on: trees.append("joshua")
+	check(in_group.call(0) == trees,"The trees' compartment holds the tree seeds (%s)" % str(in_group.call(0)))
 	check(in_group.call(3) == ["wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"],"The flowers' compartment holds five flowers, wheat and reed (%s)" % str(in_group.call(3)))
 	check(Tray.GROUPS.keys().slice(0,2) == [0,3],"Trees then flowers & crops lead the case")
 	# Water and stone share one; the stone lamp, the campfire beside it,

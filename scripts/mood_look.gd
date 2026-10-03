@@ -114,8 +114,14 @@ func setup(owner_scene: Node3D) -> void:
 
 # --- Vocabulary ---------------------------------------------------------------
 
+## Moods held back with the desert (scripts/desert_landscape.gd `on`): not
+## offered, though a world saved under one keeps it.
+const DESERT_MOODS := ["desert_afternoon"]
+
+## The moods offered, in order.
 static func mood_ids() -> Array:
-	return Presets.PRESETS.keys()
+	if preload("res://scripts/desert_landscape.gd").on: return Presets.PRESETS.keys()
+	return Presets.PRESETS.keys().filter(func(id: String) -> bool: return not id in DESERT_MOODS)
 
 static func mood_title(id: String) -> String:
 	return str(Presets.PRESETS[id].title) if Presets.PRESETS.has(id) else "This world"

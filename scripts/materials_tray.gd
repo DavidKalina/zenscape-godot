@@ -30,14 +30,16 @@ const Icons = preload("res://scripts/hud_icons.gd")
 ## Every specimen, in order: id (what the hand holds) and the `group` (a key
 ## of GROUPS) whose compartment it lives in; within a group they fan out in
 ## this order. Those marked "hidden" are not found yet: a silhouette only.
-const SPECIMENS := [
+## Those marked "desert" are held back for an update
+## (scripts/desert_landscape.gd `on`): not in the case at all.
+const ALL_SPECIMENS := [
 	{"id":"oak","group":0},
 	{"id":"pine","group":0},
 	{"id":"willow","group":0},
 	{"id":"birch","group":0},
 	{"id":"redwood","group":0},
 	{"id":"juniper","group":0},
-	{"id":"joshua","group":0},
+	{"id":"joshua","group":0,"desert":true},
 	{"id":"wildflower","group":3},
 	{"id":"dandelion","group":3},
 	{"id":"poppy","group":3},
@@ -66,6 +68,12 @@ const GROUPS := {
 	1:{"name":"Build"},
 	2:{"name":"Not found yet","apart":true},
 }
+## The case: ALL_SPECIMENS, less the desert's while it is held back.
+static var SPECIMENS: Array = _offered()
+
+static func _offered() -> Array:
+	if preload("res://scripts/desert_landscape.gd").on: return ALL_SPECIMENS.duplicate()
+	return ALL_SPECIMENS.filter(func(entry: Dictionary) -> bool: return not entry.get("desert",false))
 ## Layout, design pixels: the gap between compartments, a divider's width (two
 ## lines 4 px apart) and height, the padding and the case's lift off the
 ## bottom edge. At rest it sinks REST_SINK. The name of the specimen hovered

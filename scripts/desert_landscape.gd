@@ -1,6 +1,14 @@
 extends RefCounted
 ## Source desert.js / desert-monuments.js / desert-mountains.js / desert-salt-basin.js.
 ## Regional 84-unit landscapes fit one 28-unit diorama; relief remains independently adjustable.
+## Held back for an update (docs/HOW-TO-PLAY.md "Desert"): a default game
+## offers no desert. With it off, the title never shows an arid world, the
+## New world screen has no Red canyon, generated worlds re-roll a desert
+## composition and the tray has no Joshua seed. The code all stays: saves
+## with desert load and play as before. ENABLED ships it; the --desert flag
+## turns it on for development. Tests may set `on` before building.
+const ENABLED := false
+static var on: bool = ENABLED or "--desert" in OS.get_cmdline_user_args()
 const KINDS := ["desert","dunes","tablelands","buttes","monuments","salt-basin","desert-mountains"]
 const PROFILES := {
 	"desert":[1.0,1.0,1.0,1.0,0.0,[[-6,-7.5,4.8,3.4,6.4],[7.6,-4.2,2,1.6,4.2]]],

@@ -15,10 +15,16 @@ const WORLDS := [
 	{"family":"plateau","biome":"woodland","looks":["rosewater_dusk","copper_autumn","alpine_morning"]},
 	{"family":"canyon","biome":"arid","looks":["golden_meadow","rosewater_dusk","alpine_morning"]}
 ]
+const Desert = preload("res://scripts/desert_landscape.gd")
+## The worlds the title may show: the arid ones only with desert on
+## (scripts/desert_landscape.gd `on`).
+static func worlds() -> Array:
+	return WORLDS if Desert.on else WORLDS.filter(func(world: Dictionary) -> bool: return world.biome != "arid")
 static func choose(seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var world: Dictionary = WORLDS[rng.randi_range(0,WORLDS.size()-1)]
+	var pool := worlds()
+	var world: Dictionary = pool[rng.randi_range(0,pool.size()-1)]
 	var mood: String = world.looks[rng.randi_range(0,world.looks.size()-1)]
 	var overrides := {"wind":0.9,"rays":1.0,"summit_mist":0.35}
 	if mood == "enchanted_forest": overrides.merge({"phase":0.335,"mist":0.40,"clouds":0.26},true)

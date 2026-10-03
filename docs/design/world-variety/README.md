@@ -13,6 +13,12 @@ and title generator. Original native landscapes and trees remain available.
 - **Title:** retains native formations and adds tall massifs, twin peaks, Nahanni-style
   valleys, desert monuments, salt basins and desert mountains with curated moods.
   Valley cameras sweep along the opening instead of orbiting behind the walls.
+- **Desert (held back for an update):** the desert compositions
+  (`scripts/desert_landscape.gd` KINDS), the arid title worlds, the Red canyon
+  land, the Joshua seed and the Desert afternoon mood are kept out of a default
+  game. `ENABLED` in that script ships them; `--desert` turns them on for
+  development. Generated worlds re-roll a desert draw, so the genome and every
+  non-desert seed are unchanged. `tools/probe_desert_gate.gd` checks both ways.
 
 ## Persistence and generation
 

@@ -15,12 +15,20 @@ extends RefCounted
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const IDS := ["plain","canyon","isle","hollow","wildflowers","sunflowers","dandelions","cosmos","alpine_meadow"]
+## Desert-only lands, offered for new worlds only with desert on
+## (scripts/desert_landscape.gd `on`). IDS keeps them: a world made on one
+## still forms and loads.
+const DESERT := ["canyon"]
 const ISLE := {"phase":0.37,"weather":"mist","clouds":0.66,"mist":0.58,"haze":0.24,"summit_mist":0.45,"rays":0.2,"wind":0.3,
 	"rainbow":0.0,"wet":0.35,"humidity":0.85,"sun_energy":0.82,"ambient_energy":1.45,"exposure":1.06,
 	"colors":{"sky":"98a5ab","horizon":"a9b1b1","glow":"d8d6cb","sun":"e8e2d2","ambient":"aebbc1","water":"8b9da1","grass":"7c9a80","foliage":"5d7e6e"}}
 const HOLLOW := {"phase":0.335,"weather":"mist","clouds":0.42,"mist":0.62,"haze":0.24,"summit_mist":0.3,"rays":0.85,"wind":0.18,
 	"wet":0.5,"humidity":0.85,"sun_energy":0.72,"ambient_energy":1.2,"exposure":1.02,
 	"colors":{"sky":"5f8a8e","horizon":"4b6c69","glow":"b2c7a8","ambient":"8fae9e","grass":"5c8a63","foliage":"3f7356","earth":"4f3f30","water":"4c8584"}}
+
+## The lands a new world may start from: IDS, less DESERT with desert held back.
+static func offered() -> Array:
+	return IDS if preload("res://scripts/desert_landscape.gd").on else IDS.filter(func(id: String) -> bool: return not id in DESERT)
 
 ## Forms `land` from `seed_value` in the scene's editor, with its mood. Returns
 ## {"plain":bool,"world":Genesis world or {}} for the regrowth controller.
