@@ -190,6 +190,8 @@ static func _build() -> void:
 	# The stone lamp (scripts/stone_lamp.gd): a roof over a fire box between
 	# two pillars, a shelf, a post and a foot. Seed 60.
 	_add("lamp","Stone lamp","Glow","#9a958a",["M12 1.6 L13 3.2 L20.5 6.8 H3.5 L11 3.2Z","M5.6 7.6 H18.4 V8.8 H5.6Z","M6.4 8.8 H8.4 V13.2 H6.4Z","M15.6 8.8 H17.6 V13.2 H15.6Z","M5 13.2 H19 V14.8 H5Z","M10.6 14.8 H13.4 V20 H10.6Z","M7 20 H17 V22.4 H7Z"],[],60)
+	# The fence (scripts/fences.gd): two cut-topped posts, two split rails.
+	_add("fence","Fence","Split rail","#9a7a52",["M4.6 5.2 L6.4 3 L8.2 4.6 V22.4 H4.6Z","M15.8 4.6 L17.6 3 L19.4 5.2 V22.4 H15.8Z","M1.6 8.4 L22.4 7.6 V10.6 L1.6 11.2Z","M1.6 15 L22.4 14.6 V17.4 L1.6 17.8Z"],["M3 9.6 H6","M18 16 H21"],73,1.0,1.2)
 	# The case's later tree seeds (and the command palette's,
 	# scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
 	_add("birch","Samara","Birch","#d8c79a",[_circle(6.8,12,4.6),_circle(17.2,12,4.6),"M10.2 6.6 Q12 4.8 13.8 6.6 V17.4 Q12 19.2 10.2 17.4Z"],["M12 7.5 V16.5"],40)

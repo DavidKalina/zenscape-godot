@@ -40,6 +40,7 @@ const SPECIMENS := [
 	{"id":"water","group":1},
 	{"id":"stone","group":1},
 	{"id":"lamp","group":1},
+	{"id":"fence","group":1},
 	{"id":"crystal","group":1,"hidden":true},
 	{"id":"snow","group":2,"hidden":true},
 ]

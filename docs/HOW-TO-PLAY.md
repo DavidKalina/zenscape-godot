@@ -173,7 +173,7 @@ with one specimen in each compartment. The tree seeds are **acorn** (oak),
 **pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
 and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
 **cosmos** and **sunflower**, and **reed**. Then come **water**, a **river
-stone** and a **stone lamp**. The case stays faint
+stone**, a **stone lamp** and a **fence**. The case stays faint
 until the pointer comes near. Hover a specimen to read its name. Faint
 outlines are kinds you haven't found yet, and pressing one gives nothing.
 
@@ -188,6 +188,7 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Stone: tap | sets a stone down, bigger the longer you press |
 | Stone: drag | scatters a few pebbles |
 | Stone lamp: tap, or drag | sets a small faceted stone lamp; a drag lines a path with them, a couple of metres apart. They glow warm from dusk to dawn. The trash can takes them away |
+| Fence: press and drag a line | faint stakes show the way; let go and a split-rail fence follows the line. End where you began for a pen. Posts skip water and steep rock, leaving gaps; they ride the land when you reshape it. One Cmd+Z takes the whole fence; the trash can cuts it span by span ([docs/scenic/fences.md](scenic/fences.md)) |
 | Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
 
 The trees' spores and the cloud still work as before. `--no-tray` hides the

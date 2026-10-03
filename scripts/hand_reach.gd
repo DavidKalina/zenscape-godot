@@ -751,7 +751,7 @@ func drag(point: Vector2, relative: Vector2) -> void:
 		_cloud_drag(point)
 	elif holding == "tree":
 		_tree_pull(point)
-	elif holding in ["jar","scatter","almanac","paint"]:
+	elif holding in ["jar","scatter","almanac","paint","fence_line"]:
 		materials.drag(point)
 	elif holding == "rim":
 		var angle: Variant = _angle_round(point)
@@ -785,7 +785,7 @@ func release(point := Vector2.INF) -> void:
 	elif what == "cloud":
 		reach_point = null
 		if _source != null: _source.let_go()
-	elif what in ["jar","scatter","almanac","feather","can","paint"]:
+	elif what in ["jar","scatter","almanac","feather","can","paint","fence_line"]:
 		reach_point = null
 		materials.let_go(what,point)
 	elif what == "sun":
