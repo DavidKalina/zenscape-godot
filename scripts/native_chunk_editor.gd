@@ -122,6 +122,8 @@ var _stroke_rect := Rect2()
 var _stroke_first_id := 0
 var content: GardenView
 var landmarks: NativeGardenLandmarks
+## The fences' view (scripts/fences.gd), a child of the terrain.
+var fences: Node3D
 var falls: NativeGardenFalls
 var reactions: NativeDropReactions
 ## Placement plays a short visual reaction. Tests that compare instances turn
@@ -336,6 +338,8 @@ func setup(owner_scene: Node3D) -> void:
 	landmarks = NativeGardenLandmarks.new()
 	landmarks.name = "AuthoredLandmarks"
 	scene.add_child(landmarks)
+	fences = Fences.new()
+	terrain.add_child(fences)
 	falls = NativeGardenFalls.new()
 	falls.name = "AuthoredFalls"
 	scene.add_child(falls)
@@ -1025,6 +1029,7 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	stage_start = Time.get_ticks_usec()
 	_settle_bedding_cover()
 	landmarks.rebuild(data)
+	fences.rebuild(data)
 	falls.rebuild(data)
 	if on_publish.is_valid(): on_publish.call("landmarks")
 	if not current.call(): return _finish_refresh(false)
@@ -1179,6 +1184,7 @@ func _refresh_light() -> bool:
 		return await refresh()
 	_settle_bedding_cover()
 	landmarks.lift(data)
+	fences.rebuild(data)
 	last_refresh_usec["content_elapsed"] = Time.get_ticks_usec()-stage_start
 	# Tell play systems once, on the stroke's first dab, so carried props and
 	# walking routes let go before the ground moves under them; they hear
@@ -3649,6 +3655,62 @@ func set_objects(items: Array, after: Variant = null) -> Variant:
 			var index := data._object_index(id)
 			if index >= 0: reactions.play(str(data.objects[index].asset),reactions.record_pose(data.objects[index]),data.objects[index],id))
 	return step
+
+# --- Fences ------------------------------------------------------------------------
+## Fences drawn from the hand (the materials tray's "fence", scripts/fences.gd,
+## docs/scenic/fences.md).
+const Fences = preload("res://scripts/fences.gd")
+
+## Where a fence post can stand: on the plate, on dry ground (no live water
+## Fences.WET_DEPTH deep, no pond or lake emergence knows), no steeper than
+## the land's rock slope.
+func fence_stands() -> Callable:
+	var dry := fence_dry()
+	var drawn: Dictionary = preload("res://scripts/native_formation_shape.gd").BIOMES.get(data._recipe_settings.get("biome",""),{})
+	var rock := float(drawn.get("rock_slope",data._palette.rock_slope))
+	var steep: float = rock if rock > 0.05 else Fences.STEEP
+	var presets := preload("res://scripts/native_landscape_presets.gd")
+	return func(p: Vector2) -> bool:
+		if data.ground_height(p) == null or not dry.call(p): return false
+		return presets._slope(data,p) <= steep
+
+## Whether plate point `p` is dry: no live water Fences.WET_DEPTH deep, and
+## not water emergence knows (ponds, lakes, streams).
+func fence_dry() -> Callable:
+	var depths := PackedFloat32Array()
+	if flow != null and flow.ready: depths = flow.kernel.get_depth()
+	var live: RefCounted = flow if not depths.is_empty() else null
+	return func(p: Vector2) -> bool:
+		if live != null:
+			var cell: int = live.cell_at(p)
+			if cell >= 0 and cell < depths.size() and depths[cell] >= Fences.WET_DEPTH: return false
+		return not (emergence._blend != null and emergence._wet(p))
+
+## Lays a fence along a drawn `path` (plate points): the runs the land lets
+## stand (Fences `plan`), all in one undo step. Returns the ids laid, empty
+## when the land took none (all water or rock, or a tap).
+func lay_fence(path: PackedVector2Array) -> Array:
+	if forming or not active or _painting or path.size() < 2: return []
+	var planned: Array = Fences.plan(data,path,fence_stands(),fence_dry())
+	if planned.is_empty() or data.fences.size()+planned.size() > Fences.MAX_FENCES: return []
+	_land_mountain()
+	data.begin_stroke()
+	var ids: Array = []
+	for run: Dictionary in planned:
+		ids.append(data.next_id)
+		data.fences.append(Fences.record(data.next_id,run))
+		data.next_id += 1
+	data.end_stroke()
+	fences.rebuild(data)
+	_set_status("Garden changed · Save to keep your work.")
+	return ids
+
+## The faint stakes of a fence being drawn along `path` (empty clears them);
+## `stands` is `fence_stands()`, taken once at the press.
+func fence_preview(path: PackedVector2Array, stands := Callable()) -> void:
+	if fences == null: return
+	if path.size() >= 2 and not stands.is_valid(): stands = fence_stands()
+	fences.preview(data,path,stands)
 
 ## A flicked tree's veil starts FLING_FROM m out from its foot, with a knot
 ## each FLING_STEP m; its spores leave the crown at FLING_SPEED times the

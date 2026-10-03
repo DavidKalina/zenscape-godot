@@ -187,6 +187,8 @@ static func _build() -> void:
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
 	_add("water","Water","Scoop","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)
+	# The fence (scripts/fences.gd): two cut-topped posts, two split rails.
+	_add("fence","Fence","Split rail","#9a7a52",["M4.6 5.2 L6.4 3 L8.2 4.6 V22.4 H4.6Z","M15.8 4.6 L17.6 3 L19.4 5.2 V22.4 H15.8Z","M1.6 8.4 L22.4 7.6 V10.6 L1.6 11.2Z","M1.6 15 L22.4 14.6 V17.4 L1.6 17.8Z"],["M3 9.6 H6","M18 16 H21"],73,1.0,1.2)
 	# The case's later tree seeds (and the command palette's,
 	# scripts/command_palette.gd): drawn as the tree they grow. Seeds 40-45.
 	_add("birch","Samara","Birch","#d8c79a",[_circle(6.8,12,4.6),_circle(17.2,12,4.6),"M10.2 6.6 Q12 4.8 13.8 6.6 V17.4 Q12 19.2 10.2 17.4Z"],["M12 7.5 V16.5"],40)

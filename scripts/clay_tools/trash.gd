@@ -14,6 +14,12 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## back. Fallen branches (scripts/dead_wood.gd) and blown leaves
 ## (scripts/wind_leaf_litter.gd) are swept too; they are the world's own
 ## passing litter, not the land's, so no undo brings them back.
+##
+## Fences (scripts/fences.gd) go span by span: every span of rails the can's
+## reach touches goes, with any post left standing alone, so a sweep across a
+## fence cuts a gap in it (a run cut in two becomes two fences; a pen cut
+## opens). Shift spares nothing of a fence: it counts as small. The spans come
+## back with the rest on Cmd+Z.
 
 ## Its reach (m) round the pointer at the middle pip.
 const RADIUS := 1.4
@@ -35,6 +41,8 @@ const MOUTH := Color("1c241b")
 const TILT := -10.0
 const BODY_RADIUS := 0.24
 const BODY_HEIGHT := 0.46
+
+const Fences = preload("res://scripts/fences.gd")
 
 ## Ids taken this press, and what is flying: {"node", "from" (Transform3D,
 ## world), "t"}.
@@ -74,7 +82,14 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 		if not takes(str(item.asset),_spare_big): continue
 		if Vector2(float(item.x),float(item.z)).distance_to(q) <= radius: going.append(item)
 	_sweep_litter(q,radius)
-	if going.is_empty(): return 0.0
+	var fenced := _cut_fences(q,radius)
+	if going.is_empty():
+		if fenced:
+			clay.touch(q,radius)
+			if _quiet <= 0.0:
+				clay.sound(&"crumble",q,0.6)
+				_quiet = SOUND_GAP
+		return 0.0
 	var reach: Node = clay.scene.get("hand_reach")
 	var play: Variant = clay.scene.get("world_play")
 	var ids := {}
@@ -110,6 +125,21 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 
 func paint_end(_tapped: bool) -> void:
 	_spare_big = false
+
+## Fence spans in reach go (Fences `cut`, inside the press's undo step), their
+## lone posts flying up the mouth. True when any went.
+func _cut_fences(q: Vector2, radius: float) -> bool:
+	var editor: Node = clay.editor
+	var view: Variant = editor.get("fences")
+	if view == null or editor.data.fences.is_empty(): return false
+	var cut: Dictionary = Fences.cut(editor.data,q,radius)
+	if not cut.changed: return false
+	var terrain: Node3D = editor.terrain
+	for p: Vector2 in cut.taken:
+		var part: Dictionary = view.post_part(editor.data,p)
+		if not part.is_empty(): _fly(part.mesh,part.material,terrain.global_transform*part.transform)
+	view.rebuild(editor.data)
+	return true
 
 ## Fallen branches lying in reach go up the mouth; blown leaves in reach are
 ## lost (they fade and grow back under their trees in time, as blown away).

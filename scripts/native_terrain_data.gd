@@ -43,6 +43,10 @@ var provenance := PackedByteArray()
 var cover_births := {}
 var cover_births_revision := 0
 var objects: Array[Dictionary] = []
+## Fences drawn on the land (scripts/fences.gd): {"id", "posts" (plate x, z
+## flat), "closed"}. In the undo snapshot and the save; seated on the ground
+## when drawn, so they follow it.
+var fences: Array[Dictionary] = []
 var ponds: Array[Dictionary] = []
 var streams: Array[Dictionary] = []
 var landscape_waterfall := false
@@ -1024,6 +1028,7 @@ func reset_flat() -> void:
 	provenance.fill(SOURCE_GENERATED)
 	objects.clear()
 	objects_revision += 1
+	fences.clear()
 	ponds.clear()
 	streams.clear()
 	landscape_waterfall=false
@@ -1031,7 +1036,7 @@ func reset_flat() -> void:
 	state_restored.emit({})
 
 func _snapshot() -> Dictionary:
-	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "provenance":provenance.duplicate(), "objects":objects.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
+	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "provenance":provenance.duplicate(), "objects":objects.duplicate(true), "fences":fences.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
 	tunnels.assign(state.get("tunnels",[]).duplicate(true))
@@ -1050,6 +1055,7 @@ func _restore(state: Dictionary) -> void:
 	if objects.size() != state.objects.size() or var_to_bytes(objects) != var_to_bytes(state.objects):
 		objects_revision += 1
 	objects.assign(state.objects.duplicate(true))
+	fences.assign(state.get("fences",[]).duplicate(true))
 	ponds.assign(state.ponds.duplicate(true))
 	streams.assign(state.get("streams",[]).duplicate(true))
 	next_id = state.next_id
@@ -1372,7 +1378,7 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"fences":fences.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
 	document_captured.emit(document)
 	return document
 
@@ -1506,6 +1512,16 @@ func load_document(document: Variant) -> bool:
 	if loaded.objects.filter(func(item: Dictionary) -> bool: return item.asset == "explosive").size() > MAX_EXPLOSIVES: return false
 	if not preload("res://scripts/native_tunnels.gd").valid(document.get("tunnels",[])): return false
 	loaded.tunnels = document.get("tunnels",[]).duplicate(true)
+	# Fences (scripts/fences.gd), saved since 2026-10-03; older saves have none.
+	loaded.fences = []
+	var fenced: Variant = document.get("fences",[])
+	if not fenced is Array or fenced.size() > preload("res://scripts/fences.gd").MAX_FENCES: return false
+	for item: Variant in fenced:
+		if not preload("res://scripts/fences.gd").valid(item) or int(item.id) >= loaded.next_id or ids.has(int(item.id)): return false
+		ids[int(item.id)] = true
+		var flat: Array = []
+		for value in item.posts: flat.append(float(value))
+		loaded.fences.append({"id":int(item.id),"posts":flat,"closed":item.closed})
 	_restore(loaded)
 	_undo.clear()
 	_redo.clear()
