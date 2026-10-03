@@ -23,7 +23,7 @@ mat3 zs_planet_axes() {
 // How strongly it shows along `dir` before lighting: whole at night, a pale
 // ghost by day, thinned toward the void and behind weather and ridges.
 float zs_planet_presence(vec3 dir, vec3 room) {
-  return zs_celestial_clear * smoothstep(-0.75, -0.45, dir.y) * zs_ridge_open(dir, room);
+  return zs_celestial_clear * smoothstep(-0.75, -0.45, dir.y) * zs_ridge_open(dir, room) * zs_sea_open(dir);
 }
 // Where a sky direction strikes the planet's sphere from `camera`, as the
 // distance along it, or -1.

@@ -7,6 +7,8 @@ render_mode use_half_res_pass;
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/sky_ridges.gdshaderinc"
+#define ZS_CLOUD_SEA_SHADE
+#include "res://shaders/sky_cloud_sea.gdshaderinc"
 
         
         
@@ -168,6 +170,21 @@ render_mode use_half_res_pass;
             * sin(t * (0.37 + seed * 0.2) + seed * 5.0);
           return tint * tw * (core + halo + spikes) * power;
         }
+        // The cloud sea under the plate (shaders/sky_cloud_sea.gdshaderinc),
+        // hazing into the sky's colour along the flattened direction, dimmed
+        // with the night as the ridges are. Left out of the radiance map, so
+        // it lights nothing.
+        vec4 cloud_sea_at(vec3 dir) {
+          if (cloud_sea <= 0.0 || dir.y > -0.02) return vec4(0.0);
+          vec2 seen = normalize(dir.xz + 1e-5);
+          float dim = mix(1.0, 0.4, zs_night * zs_celestial_clear);
+          vec3 horizon = zsSkyBase(vec3(seen.x, 0.0, seen.y)) * dim;
+          vec4 sea = zs_cloud_sea(dir, zsRoomDir(dir), horizon, zsSkyBase(dir) * dim);
+          // The bow stands in the rain in front of the sea: the dome lays it
+          // under the clouds, so the sea's own colour carries it too.
+          if (sea.a > 0.001 && zs_bow > 0.001) sea.rgb = zsApplyBow(sea.rgb / sea.a, dir) * sea.a;
+          return sea;
+        }
         void sky() {
           // Re-normalize per fragment: the dome's facets span ~15 degrees, and
           // the interpolated varying shrinks to ~0.991 mid-facet — under the
@@ -176,6 +193,8 @@ render_mode use_half_res_pass;
           // The radiance map draws its half-resolution layer as a whole sky.
           if (AT_HALF_RES_PASS && !AT_CUBEMAP_PASS) {
             vec4 marched = half_res_clouds ? zs_cloud_march(POSITION, dir, FRAGCOORD.xy) : vec4(0.0);
+            // The cloud sea lies under the deck, at half resolution with it.
+            if (half_res_clouds) marched += cloud_sea_at(dir) * (1.0 - marched.a);
             COLOR = marched.rgb;
             ALPHA = marched.a;
           } else {
@@ -399,6 +418,7 @@ render_mode use_half_res_pass;
           col = zsApplyBow(col, dir);
 
           vec4 cloud = half_res_clouds && !AT_CUBEMAP_PASS ? HALF_RES_COLOR : zs_cloud_march(POSITION, dir, FRAGCOORD.xy);
+          if (!half_res_clouds && !AT_CUBEMAP_PASS) cloud += cloud_sea_at(dir) * (1.0 - cloud.a);
           col = col * (1.0 - cloud.a) + cloud.rgb;
           // Keep the hue where light overflows: scale the colour down to fit
           // rather than clipping each channel, which bleached the sun white.

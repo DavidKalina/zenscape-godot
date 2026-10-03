@@ -15,6 +15,10 @@ var saturation := 1.06
 var vignette := 0.16
 var rays := 0.22
 var ridges := 0.85
+## The cloud sea under the floating plate (shaders/sky_cloud_sea.gdshaderinc):
+## the backdrop the overview looks down into, below the ridges' reach.
+## --no-cloud-sea leaves the old plain dome there, for a before/after.
+var cloud_sea := 0.0 if _flag("--no-cloud-sea") else 1.0
 var shore := 1.0
 var _scene: Node3D
 ## The grade alone, drawn only while native volumetric fog (the redwood and
@@ -83,6 +87,7 @@ func update(camera: Camera3D, celestial) -> void:
 	RenderingServer.global_shader_parameter_set("zs_look_ao", ao * on)
 	RenderingServer.global_shader_parameter_set("zs_look_rim", rim * on)
 	_update_ridges(on)
+	_update_cloud_sea(on)
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
 	var dense := enabled and beauty_grass and tier != 1
@@ -152,6 +157,15 @@ func _update_ridges(on: float) -> void:
 	sky.set_shader_parameter("horizon_ridges", state.x)
 	sky.set_shader_parameter("horizon_seed", state.y)
 	sky.set_shader_parameter("horizon_relief", state.z)
+
+## The cloud sea's strength on the sky (the sky objects copy it from there).
+func _update_cloud_sea(on: float) -> void:
+	var sky: ShaderMaterial = _scene._environment.sky.sky_material if _scene._environment.sky != null else null
+	if sky == null: return
+	var strength := cloud_sea * on
+	if sky.get_meta("look_cloud_sea", -1.0) == strength: return
+	sky.set_meta("look_cloud_sea", strength)
+	sky.set_shader_parameter("cloud_sea", strength)
 
 ## A color's hue at unit luminance, pulled `amount` of the way from white.
 func _tint(color: Variant, amount: float) -> Vector3:
