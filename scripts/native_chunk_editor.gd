@@ -3502,17 +3502,21 @@ func _flower_press(hit: Vector3, kind: String, size: float) -> bool:
 ## live water and the emergence blend, its habitat from the blend.
 func _flower_sowing(kind: String) -> RefCounted:
 	var sowing := FlowerSowing.new(data,kind,land_seed)
+	sowing.wet = _paint_wet()
+	sowing.habitat = func(p: Vector2) -> String: return str(emergence._blend.pick(p)) if emergence._blend != null else ""
+	return sowing
+## Whether a point is wet for painting (flowers, trees): live water there
+## FLOWER_WET_DEPTH deep or more, as read now, or the emergence blend's water.
+func _paint_wet() -> Callable:
 	var depths := PackedFloat32Array()
 	if flow != null and flow.ready: depths = flow.kernel.get_depth()
 	var live: RefCounted = flow if not depths.is_empty() else null
-	sowing.wet = func(p: Vector2) -> bool:
+	return func(p: Vector2) -> bool:
 		if live != null:
 			var cell: int = live.cell_at(p)
 			if cell >= 0 and cell < depths.size() and depths[cell] >= FLOWER_WET_DEPTH: return true
 		return emergence._blend != null and emergence._wet(p)
-	sowing.habitat = func(p: Vector2) -> String: return str(emergence._blend.pick(p)) if emergence._blend != null else ""
-	return sowing
-## Live water at least this deep (m) keeps flower seed off.
+## Live water at least this deep (m) keeps flower seed and painted trees off.
 const FLOWER_WET_DEPTH := 0.02
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 
@@ -3526,19 +3530,23 @@ const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 ## is down; the release lays the ground's faint wash, closes the step and
 ## settles the view once (a yielding refresh: its instances are sampled on a
 ## worker). The stroke in hand, or null.
+## Tree seed is painted the same way (scripts/tree_paint.gd): `slot` is then
+## the tree kind (an emergence tree, "broadleaf" for the oak).
 var flower_paint: RefCounted = null
 const FlowerPaint = preload("res://scripts/flower_paint.gd")
+const TreePaint = preload("res://scripts/tree_paint.gd")
 ## The last stroke's summary (FlowerPaint `finish`, with "changed"), and the
 ## main-thread microseconds each painted frame took, for probes.
 var last_paint := {}
 var paint_usec: Array[int] = []
 
-## Paint flower `slot` from the hand at `screen_pos`, the brush `size` times
-## its own (the roll's pips), thinning instead when `thinning` (Shift). True
-## when the stroke began.
+## Paint flower `slot` (or trees of kind `slot`) from the hand at
+## `screen_pos`, the brush `size` times its own (the roll's pips), thinning
+## instead when `thinning` (Shift). True when the stroke began.
 func paint_flowers_begin(screen_pos: Vector2, slot: String, size := 1.0, thinning := false) -> bool:
 	if forming or not active or _ball_holding or _handful_holding or _painting or flower_paint != null: return false
-	if not FlowerSowing.has(slot): return false
+	var trees := TreePaint.paints_kind(slot)
+	if not FlowerSowing.has(slot) and not trees: return false
 	var hit: Variant = pick(screen_pos)
 	if hit == null: return false
 	_land_mountain()
@@ -3546,7 +3554,9 @@ func paint_flowers_begin(screen_pos: Vector2, slot: String, size := 1.0, thinnin
 	var began := Time.get_ticks_usec()
 	data.begin_stroke()
 	_handful_serial += 1
-	flower_paint = FlowerPaint.new(_flower_sowing(slot),size,thinning,hash([land_seed,_handful_serial,7919]))
+	var serial := hash([land_seed,_handful_serial,7919])
+	if trees: flower_paint = TreePaint.new(emergence,data,slot,size,thinning,serial,_paint_wet())
+	else: flower_paint = FlowerPaint.new(_flower_sowing(slot),size,thinning,serial)
 	_show_paint(flower_paint.press(Vector2(hit.x,hit.z)))
 	paint_usec.append(Time.get_ticks_usec()-began)
 	return true

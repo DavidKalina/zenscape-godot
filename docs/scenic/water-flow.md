@@ -506,3 +506,15 @@ The user found filling streams with water balls tedious. Three changes:
 
 Where the pool ends up depends on the world. Near the rim its overflow runs off the plate. On a wide plain the overflow spreads, and evaporation over the wet area (0.4 mm/s × 200+ m²) becomes the main loss (47% in one world). Nothing here has been seen on screen yet.
 
+## The can's gush: filling a hollow to the brim (2026-10-02)
+
+The user: "The water tool is great, but it's too small, and I still can't tell if it can fill things up all the way. Like if I create a crater for a lake, would love to be able to fill it all the way."
+
+**It could, slowly.** `tools/probe_can_fill.gd` presses a crater 12 m across and 2.2 m deep (about 110 m³) into the plain and holds the can in it. At `RATE` (1.4 m³/s) the water stood 82% full after 60 s; nothing is lost to speak of (evaporation over a 110 m² pond is about 0.04 m³/s), so it fills in about 90 s of holding, and a bigger lake in minutes. The sim itself was steady with a tap of 8 and 15 m³/s, which filled the same crater in 15 and 10 s.
+
+**What changed** (scripts/watering_can.gd):
+- **The gush.** Held over one spot (the landing within `GUSH_STILL` 1.2 m) in a hollow for `GUSH_AFTER` (0.6 s), the pour climbs over `GUSH_RISE` (3 s) to `GUSH` (9) times its rate, 12.6 m³/s at the middle pip, its splash widening to `GUSH_SPREAD` (2.2) times its radius, the drops thicker and the voice a little louder. Moved on, it falls back over `GUSH_FALL` (0.4 s). A sprinkle never gushes. The crater now stands full in 10 to 15 s.
+- **Only in a hollow** (`_basin`): at one of 1.5, 3, 5 or 8 m round the landing, at least 6 of 8 ways stand 0.15 m higher; or water 0.3 m deep stands there already (a pond to top up). The land's shape decides, not the stream: on the probe's hilltop the can's own stream piles 10-12 cm under it before running off, so a first try that gushed over "pooling" water broke the hold-still spring there now and then. On a hilltop or slope the can stays gentle and planting a spring works as before; no spring is planted in a hollow, where the hold is filling it.
+- `RADIUS` 0.45 → 0.6 m, and `BEADS` 220 → 480 for the heavier stream.
+
+Checked headless: `tools/probe_can_fill.gd` (the crater 95% full in 10-15 s, was over 60), `tools/probe_wire_draw.gd` (a basin drawn with the Wire fills to the brim in 11 s), and `tools/probe_watering_can.gd`: all its checks pass in five of six runs; one run failed the settled spring's pool check (0.29 → 0.26 m against 0.261) with the gush off on the hilltop. The original can failed one of six runs at the same stage (its edge-trickle variant), so that stage is flaky on its own. Not yet seen: the gush on screen (the stream's look and sound at full rate, and how fast the pond rises to the eye).

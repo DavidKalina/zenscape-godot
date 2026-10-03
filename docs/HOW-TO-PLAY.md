@@ -72,6 +72,35 @@ surface picked on the swatches under the fan: grass (the default), earth,
 rock or sand. Rock, from a mountain or the Brush, planes back to grass.
 Each stroke is one Cmd+Z.
 
+## The Wire (tool roll)
+
+Draw a line on the land with the Wire and let go: what the line makes is
+the mode picked on its fan (Q and E step through them). It is built along
+the line you drew, bends and all, the wire running along it from where you
+pressed to where you let go. Each drawing is one Cmd+Z.
+
+| Mode | A line | A closed loop (end where you started) |
+|---|---|---|
+| **Gorge** | a deep, steep ravine; drawn out through the rim it opens the plate's side | a lake basin: the inside sinks to a level floor, the line is its shore |
+| **Range** | a jagged mountain range following the line, tapering at its ends | a ring of peaks |
+| **Hill** | a soft rolling ridge | one rounded hill filling the outline, bigger for a bigger outline |
+| **Trees** | a row of trees, one every 3 m, of whatever grows there | |
+| **Flowers** | a narrow border of wildflowers | |
+| **Slice** (hold, then drag up or down) | cuts a hilltop off level | |
+
+Shift makes each gentler: a shallower gorge or basin, a lower range or
+hill, a closer hedge of trees, a thinner border. The pips widen the
+shapes.
+
+## The watering can (tool roll)
+
+Hold to pour where the rose hangs; drag to run water along a groove; Shift
+sprinkles. **Hold it still over a hollow** (a crater, a pan, a basin drawn
+with the Wire, or a pond already standing) and after a moment it builds to
+a gush, nine times as strong, and fills the hollow to its brim in seconds.
+Move on and it eases back. Held still on a hilltop or a slope, where the
+water runs off, it stays gentle and plants a spring.
+
 ## The edge (left button on the rim or the block's walls)
 
 The **rim** is the plate's top edge, the last metre or so of land. The
@@ -131,8 +160,9 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Do | Result |
 |---|---|
 | Press a specimen | the hand takes some: a pinch of seeds or a stone, a cupped hand of water. Its compartment stays faintly outlined while you hold it |
-| Tree seeds: drag over the land | sprinkles seeds along the way, and the wind carries them down. What comes up leans to that tree, as far as the ground there allows |
-| Wildflower: tap, or drag | sows a drift of meadow flowers; a drag scatters more drifts |
+| Tree seeds: tap | plants one tree of that kind where you press, if the ground takes a tree there and there is room |
+| Tree seeds: drag | paints a wood of that kind under the brush; go over it again, or linger, to fill it in. Shift-drag thins the trees under the brush. Not on water, rock, snow or too near another tree |
+| Flowers: tap, or drag | paints a drift of that flower under the brush; Shift-drag thins |
 | Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
 | Stone: tap | sets a stone down, bigger the longer you press |

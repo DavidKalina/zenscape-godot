@@ -457,6 +457,59 @@ Nothing has been seen on screen:
 - the prop in the hand: where the grip sits, and whether the 12 mm wire shows
   at all
 
+### Drawing modes (2026-10-02)
+
+The user: "I feel like the wire tool is super useful, and almost under
+utilized? Would be cool to trace what you want. Same tool. Draw a ravine,
+draw a mountain range, draw a hill, hell, maybe draw a line of flowers,
+trees, etc." So the drawn path, kept and smoothed as the gorge's is, now
+makes what the fan's mode says: **Gorge**, **Range**, **Hill**, **Trees**,
+**Flowers**, then the **Slice**. Every drawing mode is built behind the same
+running head as the gorge's cut (heights raised with `max` where the gorge
+cuts with `min`; plants placed as the head passes them and shown through the
+view's paint preview), one undo step each.
+
+- **Range** (`_plan_range`): summits every `RANGE_SPACING` (4 m) along the
+  path, each `RANGE_TALL` of `RANGE_HEIGHT` (8.5 m), the crest between them
+  at `RANGE_SADDLE` and serrated by noise, a knife-edged profile
+  `RANGE_HALF` (3.4 m) either side; an open range tapers at its ends. Let go,
+  it takes the mountains' rock (`paint_rock`) and its cliffs the strata.
+- **Hill** (`_plan_hill`): a cosine ridge `HILL_HEIGHT` (2.4 m) over the
+  ground and `HILL_HALF` (4 m) either side, its crest rolling by `HILL_ROLL`.
+- **Trees** (`_plan_plants`): one every `TREE_STEP` (3 m; Shift's hedge
+  `HEDGE_STEP` 2 m), up to `TREE_WANDER` off the line, each the kind
+  emergence would grow there (`_tree_kind`), through `scripts/tree_paint.gd`'s
+  ground rules and room.
+- **Flowers**: the flower brush (`scripts/flower_paint.gd`) at `FLOWER_SIZE`
+  of its own, drawn along the path in `FLOWER_STEP` steps, each lingering
+  `FLOWER_LINGER` s, the wildflower mix (or the world's meadow type).
+- **A closed loop** (ends within `LOOP_GAP` 2 m, at least `LOOP_MIN` 8 m
+  round) is an outline. The Gorge sinks a level basin inside it, a lake's
+  bed `BASIN_DEPTH` (2.4 m) under the outline's lowest ground, its banks
+  rising to the outline over `BASIN_BANK` (`_plan_basin`); the Hill raises
+  one hill filling it, `MOUND_SLOPE` m tall for each metre its middle lies
+  in (`_plan_mound`); the Range stands a ring of peaks. The outline is built
+  first, then the inside settles from its edge in (`FILL_PACE`).
+- Shift: a shallower gorge or basin, a lower range or hill (`LOW`), a hedge,
+  a thinner border. Only the gorge runs on out through the rim.
+
+Checked headless (`tools/probe_wire_draw.gd`, all 47 pass): the fan holds the
+six modes, each with an icon; an open gorge cuts as before; a 5 m loop with
+the Gorge sinks a basin 2.65 m deep with a level floor and the ground outside
+untouched, and the watering can's gush fills it to its brim in 11 s; a Range
+along an L raises both legs 5.7-5.9 m, its highest summit 6.6 m,
+with nothing off the path moved; a Hill rises 2.2 m; a Hill loop stands 2.4 m
+in its middle and 0.9 m 3 m out; a 12 m Trees line plants 4 oaks within
+0.2 m of it; a Flowers line 90 flowers within 0.6 m; each one undo step that
+one undo takes back exactly. `tools/probe_tool_wire.gd` was already stale
+before these (30 of its checks fail on the untouched Wire, mostly from the
+fan modes); its results are unchanged, bar its "narrow" check, which fails
+about one run in three on the old Wire too.
+
+Unverified: everything on screen (the range's look against the Mountain's,
+the hill's softness, the rows' spacing and the drawing's pace), and Shift
+for the new modes (the probe draws without it).
+
 ## The Hammer
 
 `scripts/clay_tools/hammer.gd`. A rock hammer with one verb, the blow; the

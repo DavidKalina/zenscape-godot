@@ -17,7 +17,8 @@ extends SceneTree
 ## air further than tree seed's.
 ##
 ## The bar: every flower slot has a faceted icon and a small-caps name and is
-## painted; tree seeds are still sown as a veil; reeds still scatter.
+## painted; tree seeds are painted too (tests/test_hand_trees.gd); reeds
+## still scatter.
 ##
 ## In the cozy scene (the hand scheme, real input): a poppy stroke shows its
 ## flowers from the press's own frame, with no refresh while the button is
@@ -485,7 +486,7 @@ func bar() -> void:
 		check(not item.is_empty() and str(item.label).contains(" · ") and Icons.texture(slot,"icon",44.0) != null,"%s has its faceted icon and name (%s)" % [slot,item.get("label","")])
 		check(Palette.SEEDS.any(func(entry: Array) -> bool: return entry[0] == slot),"%s is in the command palette" % slot)
 	for seed: String in ["oak","pine","willow"]:
-		check(Materials.sows(seed) and not Materials.paints(seed),"%s seed is still sown as a veil" % seed)
+		check(Materials.paints(seed) and not Materials.sows(seed),"%s seed is painted as trees, not sown as a veil (tests/test_hand_trees.gd)" % seed)
 	check(Materials.SCATTER.has("reed") and Materials.SCATTER.has("stone") and "reed" in ids,"Reeds and stones still scatter")
 	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0)
 	check(seeds.size() == 9,"Nine seeds in the seed group (%d)" % seeds.size())

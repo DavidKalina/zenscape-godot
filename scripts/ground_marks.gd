@@ -233,7 +233,10 @@ func size_of(which: String, size_scale: float) -> Vector2:
 		"material":
 			var r := _material_radius()*size_scale
 			return Vector2(r,r)
-		"flower": return Vector2.ONE*preload("res://scripts/flower_paint.gd").RADIUS*size_scale
+		"flower":
+			var materials: Node = reach.get("materials") if reach != null else null
+			var trees: bool = materials != null and materials.plants_trees(materials.held)
+			return Vector2.ONE*(preload("res://scripts/tree_paint.gd").TREE_RADIUS if trees else preload("res://scripts/flower_paint.gd").RADIUS)*size_scale
 	return Vector2.ZERO
 
 # --- Deciding, each frame --------------------------------------------------------

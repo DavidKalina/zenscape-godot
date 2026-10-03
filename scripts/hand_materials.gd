@@ -17,12 +17,15 @@ extends Node
 ## as a shaping tool's prop does (scripts/cursor_motion.gd). What is in hand
 ## decides what a press does.
 ##
-## - **Tree seeds** (oak, pine, willow; birch has no slot in 4c). Press and drag over the land:
-##   the pinch flicks the forest brush's veil out along the way (FLICK_SECONDS),
-##   and the wind carries it down (NativeChunkEditor `sow_from_hand`, the Forest
-##   brush's own veil, scripts/pollen_cloud.gd). The seeds' kind is stamped on the veil, as
-##   a flicked tree's spores are: what comes up leans to it, as far as the
-##   ground there allows (SEEDS).
+## - **Tree seeds** (oak, pine, willow; birch has no slot in 4c) are a
+##   paintbrush too, since 2026-10-02 (they were a veil the wind carried down,
+##   NativeChunkEditor `sow_from_hand`, still there for a bent tree's spores).
+##   A tap sets one tree of that kind where it is pressed; a drag paints a
+##   stand of them under the brush, and going over it or lingering fills it
+##   in. The ground decides where one can stand (not on water, rock, snow or
+##   too near another tree). Shift thins the trees under the brush. The pips
+##   size the brush; one undo step a stroke (`paint_flowers_begin` with the
+##   tree kind, scripts/tree_paint.gd).
 ## - **Flowers** (wildflower, dandelion, poppy, cosmos, sunflower;
 ##   scripts/flower_sowing.gd SLOTS) are a paintbrush. Press and drag over the
 ##   land: flowers come up under the brush as it goes, growing in at once; go
@@ -134,7 +137,7 @@ const FEATHER_RING := 1.5
 ## Screen pixels a press may wander and still be a tap.
 const CLICK_PIXELS := 6.0
 ## The hint line with material in hand, until each has been used once.
-const SOW_HINT := "Drag over the land to sow"
+const TREE_HINT := "Tap to plant a tree  ·  drag to paint a wood  ·  Shift thins"
 const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
 	"reed":"Tap to set reeds  ·  Drag to scatter"}
@@ -513,17 +516,12 @@ func _use(point: Vector2) -> void:
 	if paints(held):
 		# Shift thins, read at the press (or held as it is drawn out of the case).
 		var thinning: bool = reach._press_shift or Input.is_key_pressed(KEY_SHIFT)
-		if editor.has_method("paint_flowers_begin") and editor.paint_flowers_begin(point,held,size_scale(),thinning):
+		if editor.has_method("paint_flowers_begin") and editor.paint_flowers_begin(point,str(SEEDS.get(held,held)),size_scale(),thinning):
 			reach.take_hold(PAINT,point)
 			_press_pos = point
 			_travel = 0.0
 			_paint_cue = 0.0
 			_paint_seen = 0
-			ClaySound.cue(&"sow")
-			_used()
-	elif sows(held):
-		var sown: bool = editor.has_method("sow_from_hand") and editor.sow_from_hand(point,SEEDS[held])
-		if sown:
 			ClaySound.cue(&"sow")
 			_used()
 	elif held == "water":
@@ -546,15 +544,19 @@ func _use(point: Vector2) -> void:
 		_stone_count = 0
 		_stone_since = STONE_SECONDS
 
-## True for what the pinch sows as a veil: tree seed. (Flowers were sown so
-## until 2026-10-02; they are painted now, `paints`. The veil stays for pollen
-## from what already grows.)
-static func sows(id: String) -> bool:
-	return SEEDS.has(id)
+## True for what the pinch sows as a veil: nothing in the case since
+## 2026-10-02, when tree seed joined the flowers under the brush (`paints`).
+## The veil stays for a bent tree's spores and pollen from what already grows.
+static func sows(_id: String) -> bool:
+	return false
 
-## True for what is painted under a brush: the flower slots.
+## True for what is painted under a brush: the flower slots and tree seed.
 static func paints(id: String) -> bool:
-	return FlowerSowing.has(id)
+	return FlowerSowing.has(id) or SEEDS.has(id)
+
+## True for tree seed, painted as trees (scripts/tree_paint.gd).
+static func plants_trees(id: String) -> bool:
+	return SEEDS.has(id)
 
 func _used() -> void:
 	reach.uses[held] = int(reach.uses.get(held,0))+1
@@ -778,7 +780,7 @@ func drive_hand(hand: Node3D) -> bool:
 ## the sky. [zone, text], or ["", ""].
 func hint(zone: String) -> Array:
 	if held.is_empty(): return ["",""]
-	if zone == "land": return [held,FLOWER_HINT if FlowerSowing.has(held) else SOW_HINT if SEEDS.has(held) else str(HINTS.get(held,""))]
+	if zone == "land": return [held,FLOWER_HINT if FlowerSowing.has(held) else TREE_HINT if SEEDS.has(held) else str(HINTS.get(held,""))]
 	if zone in ["void","cloud"]: return ["tray_back",BACK_HINT]
 	return ["",""]
 
