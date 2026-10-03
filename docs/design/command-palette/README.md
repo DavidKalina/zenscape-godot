@@ -1,6 +1,6 @@
 # Command palette design implementation
 
-Recreates the supplied `design_handoff_zenscape_command_palette` reference with native Godot Controls over the live scene. Run `run-nursery.command` from this worktree.
+Recreates the supplied `design_handoff_zenscape_command_palette` reference with native Godot Controls over the live scene. Run `run-nursery.command` (removed) from this worktree.
 
 - Fixed 880 × 540 reference panel, uniformly scaled to fit; plum surface, gold hairline, blurred veil, 240 ms entrance.
 - Bundled OFL Nunito and IBM Plex Mono fonts.
@@ -19,7 +19,7 @@ Bigfoot uses the existing animated `CreatureActor`, can be placed/repositioned a
 
 ## Verification
 
-- `tests/test_command_palette.gd`: 0 failures. Covers filtering, empty state, group navigation, wrapping, veil clicks, one-shot placement, cancellation, fit scaling, hidden scrollbars, and Bigfoot placement.
-- `tests/test_native_build_palette.gd`: 0 assertions failed. Existing native asset, drag, terrain, settings, weather, and save/undo coverage. This suite still emits existing Godot renderer null-material diagnostics during resource replacement; the focused palette run and capture do not.
+- `tests/test_command_palette.gd` (removed): 0 failures. Covers filtering, empty state, group navigation, wrapping, veil clicks, one-shot placement, cancellation, fit scaling, hidden scrollbars, and Bigfoot placement.
+- `tests/test_native_build_palette.gd` (removed): 0 assertions failed. Existing native asset, drag, terrain, settings, weather, and save/undo coverage. This suite still emits existing Godot renderer null-material diagnostics during resource replacement; the focused palette run and capture do not.
 - `tests/test_native_selection.gd`: 0 failures.
-- `tools/capture_command_palette.gd -- --film`: screenshots and six-second interaction clip in this folder, captured from the real scene. Film demonstrates opening, filtering, selection, and placement.
+- `tools/capture_command_palette.gd -- --film` (removed): screenshots and six-second interaction clip in this folder, captured from the real scene. Film demonstrates opening, filtering, selection, and placement.

@@ -13,7 +13,7 @@ The resident's transition from standing to choosing a walk could block the main 
 
 ## Validation
 
-`tests/test_ai_decision_budget.gd` loads the actual Diorama redwood preset and exercises eight seeded choices. Before: 58.252, 1854.180, 1398.738, 349.466, 497.839, 36.577, 201.841, 35.582 ms blocking decisions. After: peak slices of 1.541, 1.577, 1.568, 1.555, 1.520, 1.526, 1.589, 1.521 ms. Difficult decisions now complete across frames; measured wall time was 77–1344 ms, during which gameplay continues. The regression asserts safe completed routes, an 8 ms ceiling with scheduling margin, and cancellation on pickup, pause, and map replacement.
+`tests/test_ai_decision_budget.gd` (removed) loads the actual Diorama redwood preset and exercises eight seeded choices. Before: 58.252, 1854.180, 1398.738, 349.466, 497.839, 36.577, 201.841, 35.582 ms blocking decisions. After: peak slices of 1.541, 1.577, 1.568, 1.555, 1.520, 1.526, 1.589, 1.521 ms. Difficult decisions now complete across frames; measured wall time was 77–1344 ms, during which gameplay continues. The regression asserts safe completed routes, an 8 ms ceiling with scheduling margin, and cancellation on pickup, pause, and map replacement.
 
 `tests/test_route_query.gd` checks equivalent reachability for detours, complete walls and thin barriers, validates every published leg, and compares indexed clearance against the previous full scan at 10,404 positions/heights. Existing navigation, brain behavior, live editing, and main-world interaction tests also pass.
 

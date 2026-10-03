@@ -34,7 +34,7 @@ Run with the local Godot executable and `--headless --path . --script`:
 - `tests/test_native_explosives.gd`: real main-game placement, burial and occlusion, leaf rendering, save/reopen, malformed data rejection, pause, individual and X-key all-charge detonation, moving scenery, crater collision, exact undo/redo, and world cleanup.
 - `tests/test_explosive_landscapes.gd`: all eight curated families (redwood grove, valley, plateau, cone, ridgeback, horn, canyon, terraced pools), charge budgets, and the legacy fidelity scene including reference scenery destruction/restoration.
 - `tests/test_native_object_editing.gd`: existing object editing/persistence regression.
-- `tests/test_command_palette.gd`: existing palette interaction regression; requires graphics because it captures a viewport image.
+- `tests/test_command_palette.gd` (removed): existing palette interaction regression; requires graphics because it captures a viewport image.
 
 These checks passed. Main-game renders of exposed, leaf-covered, buried, detonated, and restored charges were inspected with Forward+. The remote occupies the lower-left corner to avoid the existing right-side tree controls and status text.
 
@@ -42,7 +42,7 @@ The broader `test_native_chunk_editor.gd` has three existing failures: blank gro
 
 ## Original playground
 
-`./run-destruction-playground.command` still opens the original isolated Blast Garden. It uses click to plant, Space to detonate, Shift-click for an instant blast, and R for full reset. Its 12-charge budget and small grid terrain are separate from the main game's native model. `tests/test_terrain_destruction.gd` verifies that experiment.
+`./run-destruction-playground.command` (removed) still opens the original isolated Blast Garden. It uses click to plant, Space to detonate, Shift-click for an instant blast, and R for full reset. Its 12-charge budget and small grid terrain are separate from the main game's native model. `tests/test_terrain_destruction.gd` (removed) verifies that experiment.
 
 ### Bigfoot blast reactions
 
@@ -56,7 +56,7 @@ Pause freezes the flight. Undo last blast restores his pre-blast position along
 with the terrain. Flight is transient and uses the existing resident collision
 proxy; normal wind behavior is preserved. Terrain rebuilds leave his flight alone.
 
-Validation: `tests/test_bigfoot_explosions.gd` exercises the actual main-game remote,
+Validation: `tests/test_bigfoot_explosions.gd` (removed) exercises the actual main-game remote,
 launch, landing, power scaling, pause, off-map respawn, safe placement, undo,
 out-of-range immunity, and carrying. `tests/test_creature_wind.gd` covers existing
 wind and recovery behavior.
@@ -108,7 +108,7 @@ debris unseats authored props it hits: the prop is promoted to a loose body and
 takes the hit, so saving after a slide records where knocked rocks came to rest.
 Undo last blast still restores Bigfoot's pre-blast position. Debris that reaches
 a pond splashes it once and then wallows under heavy damping instead of skating
-across the surface. `tests/test_debris_strikes.gd` covers these interactions through
+across the surface. `tests/test_debris_strikes.gd` (removed) covers these interactions through
 the live remote, plus frozen/non-colliding staging, restored collision masks,
 mass-independent launch velocity, and exactly-once impulse application.
 

@@ -4,7 +4,7 @@ Update: the [canopy second pass](canopy/README.md) now starts by default. Press 
 
 Question: can localized material response and an intentional light/color relationship make a simple ZenScape pond feel more tactile while preserving the faceted geometry?
 
-Run `./run-deliberate-pond.command` from this worktree. Press 1/2/3 or click the bottom arrows to compare, drag to orbit, scroll to zoom, Space for automatic orbit, P to pause, C to return to the study camera. The fixture is assembled in memory from editable terrain and existing assets. It does not load or save a user garden.
+Run `./run-deliberate-pond.command` (removed) from this worktree. Press 1/2/3 or click the bottom arrows to compare, drag to orbit, scroll to zoom, Space for automatic orbit, P to pause, C to return to the study camera. The fixture is assembled in memory from editable terrain and existing assets. It does not load or save a user garden.
 
 ## Treatments
 
@@ -27,7 +27,7 @@ Native Godot 4.7.2 / Metal Forward+ on Apple M5 Pro rendered the study without s
 ## Reproduce
 
 ```sh
-"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --windowed --resolution 1600x1000 --rendering-method forward_plus --script res://tools/prototype_capture_pond.gd -- --clean --balanced --study-film --study-profile
+# removed: "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --windowed --resolution 1600x1000 --rendering-method forward_plus --script res://tools/prototype_capture_pond.gd -- --clean --balanced --study-film --study-profile
 ffmpeg -y -framerate 30 -i /tmp/pond-film-0/%04d.jpg -framerate 30 -i /tmp/pond-film-2/%04d.jpg -filter_complex '[0:v]scale=800:500[l];[1:v]scale=800:500[r];[l][r]hstack=inputs=2[v]' -map '[v]' -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart docs/fidelity/deliberate-pond/comparison.mp4
 ```
 

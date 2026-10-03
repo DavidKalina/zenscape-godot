@@ -22,9 +22,9 @@ the shader cost has not been separately profiled.
 `comparison.mp4`: caustics LEFT, identical water without caustics RIGHT. Eight
 seconds at 24 FPS, fixed camera and clocks, normal prototype strength 0.45.
 The first full-network attempt was softened and broken into patches after visual
-inspection. Reproduce with native Forward+ and `tools/film_pool_caustics.gd`.
+inspection. Reproduce with native Forward+ and `tools/film_pool_caustics.gd` (removed).
 
-`tools/verify_visual_benchmark.gd` verifies exactly one enabled pool and the C-key
+`tools/verify_visual_benchmark.gd` (removed) verifies exactly one enabled pool and the C-key
 round trip, alongside pause/resume and the existing renderer comparison checks.
 The native Metal recording compiled and exercised the depth reconstruction and
 caustics shaders, and matched effect/control frames were inspected.

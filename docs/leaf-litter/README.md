@@ -19,7 +19,7 @@ seven-second clip was rendered at 24 FPS. The recording observed 454 airborne
 leaf-frames with the gust and zero in the control, with 70 leaves in each.
 
 Reproduce with Godot's native Forward+ renderer and
-`--path . --script res://tools/film_leaf_litter.gd`. Frames are written to
+`--path . --script res://tools/film_leaf_litter.gd` (removed). Frames are written to
 `/private/tmp/zs-leaf-gust` and `/private/tmp/zs-leaf-control`.
 
 ## Validation

@@ -21,7 +21,7 @@ Sculpting edits the banks but does not fill the missing triangles. Changing the 
 
 `tests/test_creature_void_fall.gd` checks gravity, paused simulation, recovery revalidation, landing events and rescue without GPU dependencies.
 
-`tests/test_bigfoot_chasm.gd` exercises the main menu, pointer log placement, autonomous crossing, bridge removal, falling and pause, both carry paths, below-deck release, physical pushing and fresh main-game restart.
+`tests/test_bigfoot_chasm.gd` (removed) exercises the main menu, pointer log placement, autonomous crossing, bridge removal, falling and pause, both carry paths, below-deck release, physical pushing and fresh main-game restart.
 
 Run focused headless checks with:
 
@@ -33,4 +33,4 @@ The full headless suite is attempted through the same tool without `--tests`. He
 
 Final focused run: **6/6 pass**, with the sandbox’s known macOS certificate diagnostic retained. The full bounded headless attempt covered **240 tests: 150 passed with that diagnostic, 50 failed and 40 timed out**. These broader failures and renderer limitations are not a clean full-suite validation. The earlier native run completed 74 tests with no newly failing test relative to the previous native run before the headless-only instruction was discovered.
 
-Only when a graphical capture is explicitly requested, run `tests/test_bigfoot_chasm.gd` with native rendering and `-- --capture`; it writes `/private/tmp/chasm-crossing.png`, `/private/tmp/chasm-fall.png` and `/private/tmp/chasm-glade.png`. Captures are deliberately not versioned.
+Only when a graphical capture is explicitly requested, run `tests/test_bigfoot_chasm.gd` (removed) with native rendering and `-- --capture`; it writes `/private/tmp/chasm-crossing.png`, `/private/tmp/chasm-fall.png` and `/private/tmp/chasm-glade.png`. Captures are deliberately not versioned.

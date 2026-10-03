@@ -24,7 +24,7 @@ The seven PNGs here and corresponding `assets/landscapes` thumbnails were render
 ## Validation
 
 - `tests/test_landscape_presets.gd`: all eight presets pass generation, specialized colors/time/clouds/mist/rays, saved atmosphere restoration, terrain history, world mood undo/redo, variation and biome preservation, and gallery checks.
-- `tests/test_curated_looks.gd`: standalone Looks gallery, undo/redo and saved look restoration pass.
+- `tests/test_curated_looks.gd` (removed): standalone Looks gallery, undo/redo and saved look restoration pass.
 - All seven native captures completed without script or rendering errors and were visually inspected.
 
 Headless runs emit sandbox log/certificate warnings and shutdown object-leak warnings; both suites reported zero failures.

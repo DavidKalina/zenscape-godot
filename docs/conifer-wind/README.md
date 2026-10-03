@@ -12,7 +12,7 @@ No new per-tree CPU update or mesh instances are added.
 
 `comparison.mp4`: new response LEFT, previous generic crown sway RIGHT. Same
 camera and wind, with a gust at 0.5 seconds. Look at the pine just right of the
-middle pool. Eight seconds at 24 FPS, filmed with `tools/film_conifer_wind.gd`.
+middle pool. Eight seconds at 24 FPS, filmed with `tools/film_conifer_wind.gd` (removed).
 The benchmark's copied reflection materials retain their initial settings in
 both reels; the comparison isolates the directly visible pine materials.
 

@@ -3,12 +3,9 @@
 Keep editable Blender sources in `art/blender/`. That folder has a `.gdignore`
 so Godot imports only the deliberate exports in `assets/models/`.
 
-Open `art/blender/zenscape-rock.blend` for a small faceted practice rock.
-Its matching game asset is `assets/models/zenscape-rock.glb`.
-
 ## First editing session
 
-- Select the rock, then press Tab to enter Edit Mode.
+- Select an object, then press Tab to enter Edit Mode.
 - Press 1 on the number row for vertex selection; select a vertex and use G to move it.
 - G moves, R rotates, S scales. Follow with X, Y, or Z to constrain an operation.
 - Left-click confirms; Esc cancels. Tab returns to Object Mode.
@@ -25,7 +22,7 @@ Its matching game asset is `assets/models/zenscape-rock.glb`.
    Do this before rigging for animated assets.
 4. Choose File > Export > glTF 2.0 and format glTF Binary (`.glb`).
 5. Enable Selected Objects, keep the default +Y Up conversion, and export to
-   `assets/models/zenscape-rock.glb` (or a new asset name).
+   `assets/models/` under the asset's name.
 6. Return to Godot and let it reimport. Drag the `.glb` from its FileSystem dock
    into a practice scene. Add gameplay and collision in a Godot wrapper scene.
 

@@ -1,9 +1,9 @@
 # Native garden implementation and validation
 
-The current editor runs **inside `studies/fidelity.tscn`**. `run-garden.command`
+The current editor runs **inside `studies/fidelity.tscn`**. `run-garden.command` (removed)
 opens that original scene with Build controls enabled. Inspect/Build retains the
 same camera, environment, imported chunk and shaders. Escape returns to Inspect.
-`run-sandbox.command` remains the older, separate prototype.
+`run-sandbox.command` (removed) remains the older, separate prototype.
 
 ## Current authoring loop
 
@@ -39,7 +39,7 @@ same camera, environment, imported chunk and shaders. Escape returns to Inspect.
   because JSON decimal decoding can round a final bit. Invalid documents are
   validated before replacement; saves use a sibling temporary file and rename.
   Version-3 documents migrate with an empty independent grass layer.
-- `run-garden.command` reopens that save automatically. `--garden-file=/path/file.json`
+- `run-garden.command` (removed) reopens that save automatically. `--garden-file=/path/file.json`
   selects a separate save for a playtest. Direct fidelity launches stay on the
   reference scene until the user chooses Open.
 
@@ -50,7 +50,7 @@ tool test passed again after review fixes for time-transition cancellation and
 authored-content framing. The expanded control panel was inspected in a native
 rendered screenshot.
 
-`tests/test_native_build_palette.gd` covers the bottom tool palette: a tile for
+`tests/test_native_build_palette.gd` (removed) covers the bottom tool palette: a tile for
 every tool in `tool_groups()` and every catalog piece, a rendered thumbnail on
 each placeable tile (sampled for opaque pixels after a forced draw), tile clicks
 and hotkey `2` moving the highlight, and a synthesized drag - press on the Tree
@@ -74,7 +74,7 @@ choosing it leaves `editor.mode` untouched, clicking a weather swatch moves
 slider drives `_celestial.phase` and follows the scene back after `set_phase`,
 the wind and haze sliders reach `_atmosphere.strength` and `haze_amount`, and
 `K` folds the tab in and out with the tool still in hand
-(`tests/test_native_editor_hotkeys.gd` checks the same through the hotkey).
+(`tests/test_native_editor_hotkeys.gd` (removed) checks the same through the hotkey).
 Strip height is checked rather than eyeballed: `palette.strip_fits()` compares
 the strip's content height against the scrolling area, and the test asserts it
 for the tree tool (the deepest set of sliders, eight of them) and for the sky
@@ -116,7 +116,7 @@ ambient-occlusion prepass happened to cover it; the Balanced preset, now the
 default, did not. Any alpha-blended geometry that skips depth is hidden the same
 way under Balanced, which is worth knowing for dust and mist sprites.
 
-`tests/test_native_build_palette.gd` adds checks for all of this: the Mountain
+`tests/test_native_build_palette.gd` (removed) adds checks for all of this: the Mountain
 and Range tiles carry rendered thumbnails while Raise and Ground keep glyphs; a
 synthesized Mountain drag produces a single-surface heightfield ghost wider than
 `mountain_radius` and taller than 0.4 of `mountain_peak`, with an identity basis
@@ -128,7 +128,7 @@ shadow casting and more than one distinct albedo. `docs/garden/ghost-object.png`
 and `docs/garden/ghost-landform.png` are the captures of the two ghosts in
 flight, taken with `tools/_ghost_probe.gd`.
 
-`tests/test_native_build_tools.gd` checks one-dab grass visibility without flowers,
+`tests/test_native_build_tools.gd` (removed) checks one-dab grass visibility without flowers,
 full coverage and undo, v3 migration and v4 roundtrip, malformed density rejection,
 actual mouse-event mountain placement, bounds, precipitation ceiling, alpine
 colors, camera framing, and native sky control/state synchronization.
@@ -182,7 +182,7 @@ mouse/keyboard workflow. A manual native app launch succeeded, but computer use
 reported that the Mac is locked. The user has been asked to unlock it.
 
 Next: use the visible Build controls to author the whole loop, check layout and
-brush responsiveness, save, close, reopen through `run-garden.command`, and save
+brush responsiveness, save, close, reopen through `run-garden.command` (removed), and save
 again. Inspect the resulting native scene and verify that saved content and
 framing survived. The dedicated manual app was closed after the locked-screen result; relaunch it
 with the current code. It uses `/tmp/native-manual.json` so it

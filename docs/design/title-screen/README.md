@@ -15,7 +15,7 @@ state. During a session, Menu uses the current world and Escape returns to it.
 Continue and Save a copy are shown only when available. Keyboard focus selects
 an action; hovering does not move the keyboard selection.
 
-Validation: `tests/test_diorama_flow.gd` covers the unsaved cover, initial focus,
+Validation: `tests/test_diorama_flow.gd` (removed) covers the unsaved cover, initial focus,
 arrow navigation, Escape, blank creation, save/open/continue, failed open, and
 content bounds down to a 480×320 logical Retina viewport. The PNGs were captured
 from the Forward+ renderer, including a 960×640 physical window.

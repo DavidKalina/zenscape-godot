@@ -27,7 +27,7 @@ The tool replaces only the live crown batch mesh/material parameters in its temp
 
 Native Godot 4.7.2 / Forward+ / Metal / Apple M5 Pro:
 
-- `tests/test_redwood_grove.gd`: 0 failures; editing, undo/redo, removal, mist binding, save/load, biome exit and variation.
+- `tests/test_redwood_grove.gd` (removed): 0 failures; editing, undo/redo, removal, mist binding, save/load, biome exit and variation.
 - `tests/test_conifer_wind.gd`: passed; crown movement, root anchoring, rotated/scaled instances, calm and frozen clocks.
 - Capture and recording logs contain no script or shader errors.
 - Four alternating unrecorded frozen-scene samples, 180 intervals each: control median 8.325 / 8.335 ms, improved 8.312 / 8.343 ms; p95 8.90–9.17 ms. No PNG readback or forced draw during measurement. Results in `performance.json`.

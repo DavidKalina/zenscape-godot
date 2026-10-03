@@ -26,11 +26,11 @@ Forward+ / Metal, Godot 4.7.2:
 - `tools/capture_tactile_editor.gd`: zero failures. Real rendered views at
   1440×900 and 960×640; terrain/base clearance, input shielding, quick size
   synchronization, per-piece size memory, popover behavior and Enjoy mode.
-- `tests/test_command_palette.gd`: zero failures. Search, placement, trails,
+- `tests/test_command_palette.gd` (removed): zero failures. Search, placement, trails,
   undo, cancellation and catalog behavior.
-- `tests/test_editor_coherence.gd`: zero failures. Shell actions, tool
+- `tests/test_editor_coherence.gd` (removed): zero failures. Shell actions, tool
   settings, small-window fitting and pond workflow.
-- `tests/test_diorama_flow.gd`: zero failures. New, save, open, Continue,
+- `tests/test_diorama_flow.gd` (removed): zero failures. New, save, open, Continue,
   failed-open preservation and menu fitting.
 - `git diff --check`: clean.
 

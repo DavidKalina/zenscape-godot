@@ -33,8 +33,8 @@ Headless Godot checks passed:
   profile switching, and held interruption.
 - `tests/test_creature_walk.gd`: movement, navigation waypoints, terrain projection,
   safe positions, pickup, and wind interruption.
-- `tests/test_rage_walk.gd`: rage doubles travel and cadence, cooling restores both.
-- `tests/test_bigfoot_motion_controls.gd`: idle/stroll controls and live profile switching.
+- `tests/test_rage_walk.gd` (removed): rage doubles travel and cadence, cooling restores both.
+- `tests/test_bigfoot_motion_controls.gd` (removed): idle/stroll controls and live profile switching.
 
 Headless runs emitted the environment's macOS certificate warning; scene-based
 tests also emitted shutdown resource-leak warnings after reporting zero failures.

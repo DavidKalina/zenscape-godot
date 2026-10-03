@@ -5,7 +5,7 @@ extends RefCounted
 ## lines at his walking pace, animations are timers, and the routine's fish and
 ## tree trips are reduced to walk there, sit, then carry it home through the real
 ## cave. Pure: no rendering, safe to run headless. Used by the slice 1 and slice 2
-## week tests (docs/world-progression/PLAN.md).
+## week tests of the world-progression plan.
 
 const Fish := preload("res://scripts/fidelity_fish.gd")
 const DT := 0.05  ## The resident clock's own step cap, so needs keep exact time.

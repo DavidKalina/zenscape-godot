@@ -47,7 +47,7 @@ The lower story is procedural geometry, not yet editable with terrain brushes.
 
 `tests/test_cave_genome.gd` checks deterministic generation across 100 seeds,
 connectivity, palette independence, schemas, and unchanged surface generation.
-`tests/test_cave_system_store.gd` checks actual main-game save/reopen, stash,
+`tests/test_cave_system_store.gd` (removed) checks actual main-game save/reopen, stash,
 fish depletion, regeneration, and legacy surface restoration.
 `tests/test_bigfoot_lair_foraging.gd` and `test_bigfoot_lair_fishing.gd` exercise
 collection, carry, deposit, cancellation, capacity, and source ownership.

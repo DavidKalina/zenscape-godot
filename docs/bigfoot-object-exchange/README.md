@@ -32,7 +32,7 @@ actor animation and frame loop. It covers unreachable offers, actual palm
 contact, single ownership, stale throw-sample removal, pause/resume, player
 click takeover, every outcome, return to ordinary life and Build cleanup.
 
-Run `tests/test_bigfoot_object_exchange.gd` with Godot's `--script` option.
+Run `tests/test_bigfoot_object_exchange.gd` (removed) with Godot's `--script` option.
 Add `-- --capture-exchange` with rendering enabled to save an inspection frame
 to `/private/tmp/bigfoot-exchange-inspect.png`.
 

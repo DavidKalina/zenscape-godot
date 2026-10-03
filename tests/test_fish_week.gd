@@ -1,5 +1,5 @@
 extends SceneTree
-## Slice 1's success criterion (docs/world-progression/PLAN.md): over a simulated
+## Slice 1's success criterion of the world-progression plan: over a simulated
 ## week the fish action keeps firing and the stash never sits empty for more than
 ## one world day. Drives the real mind, pond and cave through
 ## tests/fixtures/living_week.gd. Pure: safe to run headless.

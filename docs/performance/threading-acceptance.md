@@ -201,12 +201,12 @@ Outstanding acceptance work:
 Use Godot 4.7.2 with `--path . --rendering-method forward_plus --script` for native
 tests, one graphical process at a time. Pass test arguments after `--`.
 
-- `tests/test_formation_responsiveness.gd`: `--quality=balanced` or
+- `tests/test_formation_responsiveness.gd` (removed): `--quality=balanced` or
   `--quality=beauty`; optionally `--warm-scene` or `--workers=N`.
 - `tools/profile_explosions.gd`: `--quality=balanced` or `--quality=beauty`.
   `--capture` is visual evidence only: GPU readback changes timing.
-- `tests/test_live_edit_navigation.gd`: `--quality=beauty --benchmark`.
-- `tools/profile_sculpt.gd`: `--out=/tmp/sculpt.json --dabs=30 --size=1440x900`;
+- `tests/test_live_edit_navigation.gd` (removed): `--quality=beauty --benchmark`.
+- `tools/profile_sculpt.gd` (removed): `--out=/tmp/sculpt.json --dabs=30 --size=1440x900`;
   inspect the reported physical size rather than assuming the requested size.
 - `tests/test_threaded_recipe.gd`: CPU-only `--headless`; `--workers` enables
   its three-trial 1/2/4/8 sweep.

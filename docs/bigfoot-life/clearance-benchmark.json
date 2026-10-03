@@ -1,9 +1,0 @@
-{
-  "identical_safe_nodes": true,
-  "new_median_ms": 5.36,
-  "new_p95_ms": 5.625,
-  "old_median_ms": 8.934,
-  "old_p95_ms": 9.187,
-  "safe_node_count": 1280,
-  "samples": 20
-}

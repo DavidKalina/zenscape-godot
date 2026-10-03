@@ -20,9 +20,9 @@ Bigfoot uses props that fit his current hand choreography; the player can grab a
 
 ## Validation
 
-- `tests/test_diorama_world_play.gd`: all 13 tree/prop kinds, original mesh transforms, directional tension and recoil, actual rigid-body motion, pause, saving/reopening placements and rotations, Build ownership, world replacement, all three Bigfoot actions, rage speed, water sampling and swimming release. Passed headless and Metal.
+- `tests/test_diorama_world_play.gd` (removed): all 13 tree/prop kinds, original mesh transforms, directional tension and recoil, actual rigid-body motion, pause, saving/reopening placements and rotations, Build ownership, world replacement, all three Bigfoot actions, rage speed, water sampling and swimming release. Passed headless and Metal.
 - `tests/test_world_reference_play.gd`: legacy migration, idempotence, source suppression, save/reopen.
-- `tests/test_diorama_flow.gd`, `tests/test_resident_interaction.gd`, `tests/test_resident_gust.gd`, `tests/test_loose_props.gd`: product flow and existing gesture/physics regressions.
+- `tests/test_diorama_flow.gd` (removed), `tests/test_resident_interaction.gd` (removed), `tests/test_resident_gust.gd` (removed), `tests/test_loose_props.gd` (removed): product flow and existing gesture/physics regressions.
 - `tools/profile_diorama_world_play.gd`: in-memory frame measurements, no per-frame screenshots. Use the real renderer without `--fixed-fps`.
 
 ## Performance measurement

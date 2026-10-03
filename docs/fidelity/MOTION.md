@@ -68,7 +68,7 @@ godot --path . --rendering-method forward_plus --script tools/check_import.gd
 godot --path . --rendering-method forward_plus --script tests/test_fidelity.gd
 godot --headless --path . --script tests/test_camera_feedback.gd
 godot --headless --path . --script tests/test_landscape.gd
-godot --path . --rendering-method forward_plus --script tests/test_scene.gd
+# removed: godot --path . --rendering-method forward_plus --script tests/test_scene.gd
 ```
 
 The 17 landscape checks and native scene integration checks pass. The existing

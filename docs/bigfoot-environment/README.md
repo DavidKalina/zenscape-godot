@@ -48,7 +48,7 @@ Run with Godot from the project root:
 
 ```
 Godot --headless --path . --script tests/test_bigfoot_environment.gd
-Godot --path . --script tests/test_diorama_environment.gd
+# removed: Godot --path . --script tests/test_diorama_environment.gd
 Godot --path . --script tools/film_bigfoot_environment.gd
 ```
 

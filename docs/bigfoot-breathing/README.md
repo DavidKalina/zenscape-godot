@@ -11,8 +11,8 @@ A Head-attached BreathOrigin marker supplies the mouth bind offset. CreatureActo
 ## Validation
 
 - `tests/test_bigfoot_breathing.gd`: bob, planted feet, emission timing, pause, interruption, reset.
-- `tests/test_bigfoot_walk.gd -- --asset=res://assets/models/zenscape-bigfoot-breathing.glb`: walk contact and loop preservation.
-- `tests/test_diorama_flow.gd`: current scene integration.
+- `tests/test_bigfoot_walk.gd -- --asset=res://assets/models/zenscape-bigfoot-breathing.glb` (test removed): walk contact and loop preservation.
+- `tests/test_diorama_flow.gd` (removed): current scene integration.
 - `tools/film_bigfoot_breathing.gd`: native product scene captured at 30 fps for two complete breathing cycles. Uses a disposable world under /private/tmp.
 
 `comparison.mp4`: new breathing idle on the left, previous woodland idle on the right, matching camera and environment.

@@ -22,7 +22,7 @@ both halves to remove their independently randomized motion. Leaves and shared
 waterfall helpers use the current implementation in both halves.
 
 The earlier three shader sources are retained in `control/` for reproduction
-with `tools/film_scene_wind.gd`. The tool swaps shader source in memory; it does
+with `tools/film_scene_wind.gd` (removed). The tool swaps shader source in memory; it does
 not rewrite the working shaders. Native Forward+ is required for this footage.
 
 ## Validation

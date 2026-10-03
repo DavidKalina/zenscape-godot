@@ -23,7 +23,7 @@ depth testing retained. Separate performance profiling remains to be done.
 followed by impacts around 3.65 and 6.75 seconds. The benchmark accepts two
 emitters, one per waterfall, at normal production density.
 
-Reproduce with native Forward+ and `tools/film_waterfall_drips.gd`. Frames go
+Reproduce with native Forward+ and `tools/film_waterfall_drips.gd` (removed). Frames go
 to `/private/tmp/zs-drips-effect` and `/private/tmp/zs-drips-control`.
 
 `tests/test_waterfall_drips.gd` passed on Godot 4.7.2 / Metal. It checks falling,

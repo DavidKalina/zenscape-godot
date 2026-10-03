@@ -26,9 +26,9 @@ Validation:
 
 - tests/test_navigation_budget.gd: pass (yielding, restart, partial-route rejection,
   exact map equality).
-- tests/test_live_edit_navigation.gd: pass (Open Meadow edit/animation integration).
+- tests/test_live_edit_navigation.gd (removed): pass (Open Meadow edit/animation integration).
 - tests/test_creature_navigation.gd: pass (obstacles, slopes, water, detours).
-- tests/test_bigfoot_life_editor.gd: pass (physics boundary, carry, undo/redo,
+- tests/test_bigfoot_life_editor.gd (removed): pass (physics boundary, carry, undo/redo,
   blocked habitat, recovery, deferred reset).
 
 Terrain formation follow-up: the palette now runs recipe height/gradient sampling,
@@ -41,7 +41,7 @@ A second timing pass isolated 114 ms of recipe sampling, 21 ms of mesh work, and
 56 ms of surface-map work. Mountain generation additionally exposed about 100 ms
 of lazily sampled pond terrain, now prepared within the same frame budget.
 
-`tests/test_formation_responsiveness.gd` exercises the palette action dispatcher
+`tests/test_formation_responsiveness.gd` (removed) exercises the palette action dispatcher
 in Open Meadow for both foundation and mountain formation. The measured maximum
 main-loop gaps were 10.1 ms and 11.0 ms respectively (headless CPU measurements,
 not a claim about displayed FPS). Computation takes multiple frames to finish;

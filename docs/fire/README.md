@@ -55,10 +55,10 @@ Integration, with a renderer (the fidelity scene hangs headless):
 Regressions run alongside, all with a renderer, all 0 failures:
 
 - `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_native_explosives.gd`
-- `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_command_palette.gd`
-- `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_diorama_flow.gd`
+- `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_command_palette.gd` (removed)
+- `"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --rendering-method forward_plus --script res://tests/test_diorama_flow.gd` (removed)
 
-Additional transaction and physical-appearance regressions are in `tests/test_fire_transactions.gd` and `tests/test_fire_visual_state.gd`. `tools/profile_fire.gd` measures idle and active fire at Balanced 1440×900 (launch with `--windowed --resolution 1440x900`), with optional `--gdscript-kernels` for the fallback; it performs no image readback during timing.
+Additional transaction and physical-appearance regressions are in `tests/test_fire_transactions.gd` and `tests/test_fire_visual_state.gd` (removed). `tools/profile_fire.gd` measures idle and active fire at Balanced 1440×900 (launch with `--windowed --resolution 1440x900`), with optional `--gdscript-kernels` for the fallback; it performs no image readback during timing.
 
 The other sub-projects carry their own checks: `tests/test_fire_look.gd` for per-instance char and the burnt shader path, `tests/test_fire_effects.gd` for flames, smoke, embers and lights, and `tests/test_bigfoot_fire.gd` for the flee, watch and warm-hands behaviour.
 

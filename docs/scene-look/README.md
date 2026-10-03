@@ -83,7 +83,7 @@ triples and scalar settings. Missing records restore the original mountain
 look. Validation precedes world mutation. Shader multipliers default to one,
 so standalone studies retain the original appearance until a look is selected.
 
-`tests/test_curated_looks.gd` verifies every preset over conflicting settings,
+`tests/test_curated_looks.gd` (removed) verifies every preset over conflicting settings,
 full undo/redo including surface weather, save-state roundtrips, selected-card
 state, real preview textures, unchanged terrain/framing and small-window scrolling.
 `tools/capture_curated_looks.gd` renders the actual nine previews. Run it normally,

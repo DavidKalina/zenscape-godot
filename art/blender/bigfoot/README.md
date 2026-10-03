@@ -123,13 +123,13 @@ Current idle source: `zenscape-bigfoot-breathing.blend`, exported as `assets/mod
 The diorama now uses `zenscape-bigfoot-woodland.blend` /
 `assets/models/zenscape-bigfoot-woodland.glb`: simplified broad coat planes,
 fewer small fur pieces, and solid forefeet. It preserves all twelve routine
-clips and the existing skinned rig. See `docs/bigfoot-woodland/README.md` for
-matched in-product stills, validation, and editing context. Earlier studies
+clips and the existing skinned rig.
+Earlier studies
 below describe their historical passes.
 
 ## Native encounter lighting review
 
-Run `studies/bigfoot_lighting.tscn` to inspect the classic model in the actual
+Run `studies/bigfoot_lighting.tscn` (removed) to inspect the classic model in the actual
 seed-7 landscape beside the source encounter tree. Keys **1 / 2 / 3** select
 daylight / mist / night; normal mouse orbit and zoom controls remain available.
 Launch with `-- --paused --phase=0.0 --fog=0.35` for the captured nighttime setup.
@@ -158,26 +158,26 @@ body, controls and walk from the previous pass are retained. The result has
 Export: `assets/models/zenscape-bigfoot-classic.glb`. Previews:
 `bigfoot-classic.png` and `bigfoot-classic-face.png`. Skin checks are recorded in
 `classic-head-validation.json`; the exported asset passes the Godot walk check.
-`tools/refine_bigfoot_head.py` records the pass; its `--replace-generated` option
+`tools/refine_bigfoot_head.py` (removed) records the pass; its `--replace-generated` option
 is for generated iterations only and must not overwrite subsequent manual edits.
 
 ## Previous pass: refined hands and feet
 
-Open **`zenscape-bigfoot-hands-feet.blend`** for the hand/foot version. It retains
+Open **`zenscape-bigfoot-hands-feet.blend` (removed)** for the hand/foot version. It retains
 the unkempt coat below, with broader palms, angled thumbs, tapered faceted
 finger segments and flatter, graduated toes connected to a shared forefoot.
 Existing finger controls and the walk are preserved; thumbs follow palms and
 toes follow feet. The asset has 4,064 polygon faces and 32 skinned objects.
 
-Export: `assets/models/zenscape-bigfoot-hands-feet.glb`. Full-body preview:
+Export: `assets/models/zenscape-bigfoot-hands-feet.glb` (removed). Full-body preview:
 `bigfoot-hands-feet.png`; detail views: `bigfoot-refined-hands.png` and
 `bigfoot-refined-feet.png`. `hands-feet-validation.json` records complete skin
-weights and floor contact across the walk. `tools/refine_bigfoot_hands_feet.py`
+weights and floor contact across the walk. `tools/refine_bigfoot_hands_feet.py` (removed)
 reproduces this pass and refuses to overwrite the authored output.
 
 ## Previous pass: unkempt woodland coat
 
-Open **`zenscape-bigfoot-unkempt.blend`**. This extends the finished material
+Open **`zenscape-bigfoot-unkempt.blend` (removed)**. This extends the finished material
 study with uneven faceted fur wisps around the shoulders, outer arms, temples,
 crown and lower legs; six muted green/dry leaves; one small forked twig; and
 subtle coherent vertex-color mottling on the coat. The face stays clear.
@@ -191,18 +191,18 @@ independent fur/leaf wind motion is not implemented.
 `bigfoot-unkempt.png` is the matched studio view; `bigfoot-unkempt-face.png` is
 the head detail; `bigfoot-unkempt-stride.png` checks a raised-foot pose.
 `bigfoot-unkempt-comparison.png` shows the new version left, previous finish right.
-Export: `assets/models/zenscape-bigfoot-unkempt.glb` relative to the project root.
+Export: `assets/models/zenscape-bigfoot-unkempt.glb` (removed) relative to the project root.
 `unkempt-validation.json` records geometry/weight checks; the existing Godot
 walk test can target this asset with `--asset=res://assets/models/zenscape-bigfoot-unkempt.glb`.
 
-`tools/roughen_bigfoot.py` records the procedural first pass. Its optional
+`tools/roughen_bigfoot.py` (removed) records the procedural first pass. Its optional
 `--replace-generated` flag deliberately replaces the generated study; do not
 use it after making manual edits in that file. Earlier Blender variants remain
 available for comparison.
 
 ## Current material study
 
-Open **`zenscape-bigfoot-finished.blend`** for the coat/face pass, with the same
+Open **`zenscape-bigfoot-finished.blend` (removed)** for the coat/face pass, with the same
 rig and walk. Shoulders have warm, faded fur; forearms, legs, hands and feet are
 darker; temple patches are grayer. The exposed face, nose, mouth and recessed
 eye band have more contrast. Existing eye meshes now use dark amber shading
@@ -216,18 +216,18 @@ after. Studio lighting and the full-body camera match the previous study.
 
 Preview: `bigfoot-finished.png`; face detail: `bigfoot-finished-face.png`;
 comparison: `bigfoot-material-comparison.png` (new materials left, previous right).
-The corresponding game asset is `assets/models/zenscape-bigfoot-finished.glb`.
-The previous plain material study remains in `zenscape-bigfoot-walk.blend`.
+The corresponding game asset is `assets/models/zenscape-bigfoot-finished.glb` (removed).
+The previous plain material study remains in `zenscape-bigfoot-walk.blend` (removed).
 
 To check the finished export after Godot imports it:
 
 ```sh
-godot --headless --path . --script tests/test_bigfoot_walk.gd -- --asset=res://assets/models/zenscape-bigfoot-finished.glb
+# removed: godot --headless --path . --script tests/test_bigfoot_walk.gd -- --asset=res://assets/models/zenscape-bigfoot-finished.glb
 ```
 
 ## Original rig study
 
-Open **`zenscape-bigfoot-walk.blend`**, then press **Space** to play the walk.
+Open **`zenscape-bigfoot-walk.blend` (removed)**, then press **Space** to play the walk.
 The existing shaggy Wanderer model is preserved: 5,368 polygon faces, the same
 proportions, face, fur locks, fingers and feet. Skin weights and an armature are
 added; the geometry is not simplified or replaced.
@@ -254,7 +254,7 @@ preserving their faceted surfaces and the source's overlapping joint coverage.
 
 ## Godot export
 
-`assets/models/zenscape-bigfoot-walk.glb` (relative to the project root) contains
+`assets/models/zenscape-bigfoot-walk.glb` (removed) (relative to the project root) contains
 one skin, 32 skinned mesh objects, 31 bones and the baked `Walk` action. Select
 the rig and its meshes for re-export; enable animation sampling, deformation
 bones and **Set All glTF Animation Starting at 0**. Include the closing key at
@@ -276,13 +276,13 @@ errors below 0.006 mm, soles remaining above the floor within floating-point
 tolerance, and matching loop endpoints. The imported Godot animation has a
 3.6-second duration, 31 bones and 32 skinned meshes. A sampled stance interval
 drifts about 0.54 mm after export interpolation; the swing lifts the foot 11 cm.
-Run `tests/test_bigfoot_walk.gd` after Godot imports the asset to repeat the check.
+Run `tests/test_bigfoot_walk.gd` (removed) after Godot imports the asset to repeat the check.
 
 `bigfoot-walk.mp4` shows the walk; `bigfoot-walk-comparison.mp4` shows the animated
 rig on the left and the original rest pose on the right. Lighting and camera
 match; the animated camera follows the character over a tiled floor. The videos
 repeat one cycle twice. Studio helpers are excluded from the game export.
 
-`tools/rig_bigfoot.py` records how the initial rig was built and refuses to
-overwrite an existing authored rig. `tools/film_bigfoot_walk.py` regenerates
+`tools/rig_bigfoot.py` (removed) records how the initial rig was built and refuses to
+overwrite an existing authored rig. `tools/film_bigfoot_walk.py` (removed) regenerates
 the preview frames without saving changes into the Blender file.

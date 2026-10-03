@@ -57,7 +57,7 @@ recovers safe footing; an interrupted outing never counts as a visit.
 - `tests/test_stepping_route.gd`: disconnected banks and a center stone, checked
   water-gap hops, actual actor lift and landing, deleted stones, cancellation,
   and walking along the bank to a stone away from the direct destination line.
-- `tests/test_bigfoot_crossing.gd`: native product scene notices autonomously,
+- `tests/test_bigfoot_crossing.gd` (removed): native product scene notices autonomously,
   accepts an edited log crossing, walks with balance, completes rest, saves,
   reopens and revisits. It also sculpts a real center stone, completes two hops,
   pauses mid-hop, and removes a landing while airborne. The complete interaction
@@ -102,7 +102,7 @@ log support, stepping routes, home behavior, physical world play and the AI
 decision budget. Four retain the known native light-unpair teardown diagnostic.
 
 Several broader failures match the repository's existing
-[baseline audit](../bigfoot-living-world/regression-baseline-audit.md), including
+baseline audit (removed), including
 premature UI access, outdated catalog expectations and simulation tests that
 advance hundreds of ticks between asynchronous query frames. Exact-starting-
 revision comparisons are retained in the same validation file. Cave-store,

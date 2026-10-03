@@ -21,4 +21,4 @@ The historical benchmark remains available as an isolated A/B composition. It ex
 
 `tests/test_playable_visuals.gd` runs against the actual product scene. It checks three reflected terrace levels, caustics on every level, changing transforms/visibility/materials, object-only edits, save/load, landscape replacement, empty-world cleanup, water refill fallback and mist controls. Native Forward+ passed with zero failures; matched enabled/disabled water captures were inspected. Use `-- --capture` to save captures under `/private/tmp/zs-playable-*.png`.
 
-`tests/test_redwood_grove.gd` checks editable grove objects, changing cover, save/load, mist controls and transition to ordinary landscape mist.
+`tests/test_redwood_grove.gd` (removed) checks editable grove objects, changing cover, save/load, mist controls and transition to ordinary landscape mist.

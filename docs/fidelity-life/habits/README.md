@@ -57,7 +57,7 @@ Passed with Metal / Forward+:
 - `tests/test_native_chunk_editor.gd`: existing garden editing and saving tests.
 - Headless actor, authored routine actor, and hand-reach checks also passed.
 
-`tests/test_native_drop_reactions.gd` has one existing failure: “A paused
+`tests/test_native_drop_reactions.gd` (removed) has one existing failure: “A paused
 reaction stays live” (line 146). Its flower reaction count is zero. The same
 failure was reproduced with the new leaf asset, renderer registration and
 reaction classification removed, then those files were restored. Its asset

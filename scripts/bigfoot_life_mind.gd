@@ -58,7 +58,7 @@ func drift(cold: float, world_hours: float) -> void:
 
 ## Time of day, the weather and the season bend the scores; they never dictate
 ## the action.
-## A hungry or exhausted Bigfoot still overrides both. See docs/bigfoot-living-world.
+## A hungry or exhausted Bigfoot still overrides both.
 func ranked(context: Dictionary) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	var home := _available(context.get("home"))

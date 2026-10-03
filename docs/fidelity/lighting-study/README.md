@@ -95,8 +95,8 @@ need a separate compatibility study before either is adopted. See the
 
 ## Reproduce
 
-From the Godot repository, `./run-lighting-study.command` regenerates the stills
-and metadata. `./run-lighting-study.command --study-film` writes the two reels
+From the Godot repository, `./run-lighting-study.command` (removed) regenerates the stills
+and metadata. `./run-lighting-study.command --study-film` (removed) writes the two reels
 to `/tmp/zenscape-lighting-control` and `/tmp/zenscape-lighting-ambient-indirect`.
 
 ```sh

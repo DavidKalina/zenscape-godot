@@ -26,7 +26,7 @@ safety is disabled.
 
 ## Evidence
 
-`tests/test_creature_deliberation.gd` uses the current product scene and its real
+`tests/test_creature_deliberation.gd` (removed) uses the current product scene and its real
 brain settings. In a seeded 90-second open-ground simulation, mean uninterrupted
 walk duration changes from 3.62 to 8.51 seconds. A controlled obstacle detour
 changes from 39 route points to 3, with all segments safe. Tests also cover new

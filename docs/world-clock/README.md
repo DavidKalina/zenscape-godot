@@ -120,7 +120,7 @@ Slices 0 and 4 of the world-progression plan wire five consumers:
   instead of watched seconds: it chases `cold` with an 18-hour rise and a
   48-hour fall, so a garden that is fast-forwarded or reopened feels exactly as
   much winter as it lived through. It lifts a `hibernate` action and lowers his
-  leisure; see docs/bigfoot-living-world/README.md.
+  leisure.
 
 The preset is the base and the season is a **lift added on top**, clamped to
 0..1, so a snowy sky is still fully cold in midsummer and a clear day in late
@@ -251,7 +251,7 @@ world's time.
   weather mix looks like itself.
 - `tests/test_fish_restock.gd` — the pond's rate at all four seasons.
 - `tests/test_bigfoot_life_mind.gd` — the cold and gold scoring terms.
-- `tests/test_bigfoot_living_world.gd` — the season keys in `_context()`.
+- `tests/test_bigfoot_living_world.gd` (removed) — the season keys in `_context()`.
 
 Run one at a time, never headless:
 

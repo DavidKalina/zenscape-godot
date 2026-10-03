@@ -1,6 +1,6 @@
 # One animation: a shy tree peek
 
-Open `run-bigfoot-tree-hug.command` for the isolated study. Space pauses;
+Open `run-bigfoot-tree-hug.command` (removed) for the isolated study. Space pauses;
 R replays the same variation; Left/Right step by 0.1 seconds; the slider scrubs
 through the whole performance. Escape closes the study.
 
@@ -61,7 +61,7 @@ belongs to the isolated real-time performance.
 To record the study:
 
 ```
-./run-bigfoot-tree-hug.command -- --film
+# removed: ./run-bigfoot-tree-hug.command -- --film
 ffmpeg -framerate 30 -i /private/tmp/bigfoot-tree-hug-frames/%04d.png \
   -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
   docs/bigfoot-tree-hug/gentle-reset.mp4

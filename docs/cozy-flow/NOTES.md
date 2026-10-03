@@ -11,7 +11,7 @@ of play, and moving him to a new place preserves the home he left behind.
 
 ## Try it
 
-Open `studies/cozy_flow_prototype.tscn` in Godot and press F6 to revisit this
+Open `studies/cozy_flow_prototype.tscn` (removed) in Godot and press F6 to revisit this
 lightweight study. F5 and `./run-cozy-flow.command` now open the
 [full native-world version](REAL-WORLDS.md).
 

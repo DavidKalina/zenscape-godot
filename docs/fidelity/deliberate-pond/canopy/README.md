@@ -13,12 +13,12 @@ No performance claim is made for this pass: other Godot work was running on the 
 Run from the worktree:
 
 ```sh
-./run-deliberate-pond.command
+# removed: ./run-deliberate-pond.command
 ```
 
 Regenerate comparison frames:
 
 ```sh
-"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --windowed --resolution 1600x1000 --rendering-method forward_plus --script res://tools/prototype_capture_canopy.gd -- --clean --balanced --study-film
+# removed: "$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path . --windowed --resolution 1600x1000 --rendering-method forward_plus --script res://tools/prototype_capture_canopy.gd -- --clean --balanced --study-film
 ffmpeg -y -framerate 30 -i /tmp/canopy-film-original/%04d.jpg -framerate 30 -i /tmp/canopy-film-layered/%04d.jpg -filter_complex '[0:v]scale=800:500[l];[1:v]scale=800:500[r];[l][r]hstack=inputs=2[v]' -map '[v]' -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart docs/fidelity/deliberate-pond/canopy/comparison.mp4
 ```

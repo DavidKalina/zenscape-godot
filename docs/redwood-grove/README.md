@@ -13,7 +13,7 @@ Selecting Redwood Grove applies the demonstrated Golden Meadow lighting, clear w
 
 ## Validation
 
-- `tests/test_redwood_grove.gd`: native Forward+ run passed; generation, selectable palette assets, moving/scaling, undo/redo, tree removal and mist coverage, sculpted height-map binding, disk save/load, fog control, biome exit and variation.
+- `tests/test_redwood_grove.gd` (removed): native Forward+ run passed; generation, selectable palette assets, moving/scaling, undo/redo, tree removal and mist coverage, sculpted height-map binding, disk save/load, fog control, biome exit and variation.
 - `tests/test_landscape_presets.gd`: all eight landscape presets, biome combinations, history, document loading and gallery previews passed.
 - `tests/test_native_play_collisions.gd`: existing collision regression suite passed.
 - `tests/test_conifer_wind.gd`: native GPU checks passed for rooted trunks, crown deformation, world direction, calm and frozen clocks.

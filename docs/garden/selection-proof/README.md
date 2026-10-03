@@ -8,7 +8,7 @@ The save format is unchanged. Selection and highlight are transient; object IDs,
 
 ## Hands-on scene
 
-`run-selection-garden.command` opens the separate `selection-garden.json` demonstration made through computer use. It has a generated ridge, streams, waterfall, ground cover and 3,493 props. Two trees were customized through the inspector: an enlarged green tree at the front left and a taller gold copy at the front right. The ordinary garden save remains separate.
+`run-selection-garden.command` (removed) opens the separate `selection-garden.json` demonstration made through computer use. It has a generated ridge, streams, waterfall, ground cover and 3,493 props. Two trees were customized through the inspector: an enlarged green tree at the front left and a taller gold copy at the front right. The ordinary garden save remains separate.
 
 The live pass exercised canopy selection, drag, drag undo, size and rotation, duplication, color picker, proportions, deletion, undo/redo and saving. Automated integration additionally verifies reopening, live color preview, paused placement reactions, and inspector layout on shorter windows.
 
