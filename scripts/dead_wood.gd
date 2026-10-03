@@ -294,6 +294,21 @@ func release(id: String) -> void:
 		branch.node.position = Vector3(branch.position)
 		branch.node.visible = true
 
+## Branches lying within `radius` of `point` (world) are taken off the ground
+## for good (the trash can sweeping them up). Returns their nodes, still
+## shown, for the caller to send off and free.
+func sweep(point: Vector3, radius: float) -> Array[Node3D]:
+	var here := to_local(point)
+	var nodes: Array[Node3D] = []
+	var kept: Array[Dictionary] = []
+	for branch in branches:
+		if bool(branch.get("carried", false)) or Vector3(branch.position).distance_to(here) > radius:
+			kept.append(branch)
+			continue
+		if is_instance_valid(branch.node): nodes.append(branch.node)
+	branches = kept
+	return nodes
+
 ## The carry reached the lair: this branch is gone from the world for good.
 func consume(id: String) -> bool:
 	for index in range(branches.size()):

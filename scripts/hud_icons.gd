@@ -259,6 +259,8 @@ static func _build() -> void:
 	_add("brush_earth","Earth","Brush","#9a7652",["M2 15.4 H22 V22.5 H2Z",_circle(7,12.4,1.7),_circle(13.2,11.6,2.1),_circle(18.2,12.8,1.4)],[],53,1.0,1.5)
 	_add("brush_colour","Colour","Brush","#b06f4a",["M12 3 C18.6 3 22 7.4 22 11.8 C22 15.4 19.6 16.4 17.6 16 C15.6 15.6 14.6 16.8 15.4 18.4 C16.2 20 15.4 21.4 12.6 21.4 C6.6 21.4 2 17.4 2 12 C2 6.8 6.6 3 12 3Z"],[_circle(7.4,10.6,1.6),_circle(11.6,7.2,1.6),_circle(16.4,8.6,1.6),_circle(7.6,15.6,1.6)],55,1.0,1.3)
 	_add("brush_wipe","Wipe","Brush","#c8bfa6",["M2 16 H22 V22.5 H2Z"],["M4 10.4 Q12 3.6 20 10.4","M16.8 7.4 L20 10.4 L15.8 11.4"],54,1.0,1.5)
+	# The trash can, "Clear": a lidded bin, its lid's handle over it, ribbed.
+	_add("trash","Trash can","Clear","#7d9465",["M5.4 8 H18.6 L17.3 20.8 Q17.1 22 15.9 22 H8.1 Q6.9 22 6.7 20.8Z","M3.4 4.8 H20.6 V6.8 H3.4Z","M9.4 4.8 V3 Q9.4 2 10.4 2 H13.6 Q14.6 2 14.6 3 V4.8 H13 V3.6 H11 V4.8Z"],["M9.8 10.6 L10.2 19.4","M14.2 10.6 L13.8 19.4"],72,1.0,1.5)
 	# --- HUD 5 foot icons (docs/design/hud-5/lowpoly.js ROLL_FOOT; the tool
 	# roll's foot, scripts/tool_foot.gd). Undo seed 21, Photo seed 22. -------------
 	_add("undo","Undo","Back","#b5a78c",_undo_arrow(),[],21)
