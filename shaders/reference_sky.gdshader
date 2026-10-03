@@ -119,18 +119,6 @@ render_mode use_half_res_pass;
           float dust = smoothstep(0.55, 0.75, vnoise(p * 2.6 + 4.0)) * density;
           return vec4(glow, dust);
         }
-        // Six octaves, for the Milky Way's dust lanes: fine enough that their
-        // edges stay sharp on a Retina window. Run only inside the band.
-        float fbm6(vec3 p) {
-          float sum = 0.0;
-          float amp = 0.5;
-          for (int i = 0; i < 6; i++) {
-            sum += amp * vnoise(p);
-            p = p * 2.03 + vec3(1.7, 9.2, 3.1);
-            amp *= 0.5;
-          }
-          return sum;
-        }
         // The Milky Way beside the real stars (scripts/sky_objects.gd crowds
         // its fine stars into the same band): a dusty-rose river of billowing
         // light with ragged edges, warmer and wider toward the galactic
@@ -148,11 +136,13 @@ render_mode use_half_res_pass;
           float width = mix(0.13, 0.22, core);
           float band = exp(-off * off / (width * width));
           if (band < 0.01) return vec3(0.0);
-          float billow = fbm(room * 6.0 + w * 1.6);
-          float glow = band * smoothstep(0.3, 0.75, billow * 0.8 + band * 0.35);
-          // Ridged noise pinched to thin dark lanes near the spine.
-          float ridge = 1.0 - abs(fbm6(room * 9.0 + w * 2.2 + 5.0) * 2.0 - 1.0);
-          float lanes = smoothstep(0.72, 0.9, ridge) * exp(-off * off / (width * width * 0.35));
+          // Broad, soft billows over a steady floor of light, so the band
+          // reads as one river rather than speckle.
+          float billow = fbm(room * 3.5 + w * 1.6);
+          float glow = band * mix(0.35, 1.0, smoothstep(0.25, 0.8, billow * 0.8 + band * 0.35));
+          // Ridged noise pinched to a few long, smooth dark lanes near the spine.
+          float ridge = 1.0 - abs(fbm(room * 5.0 + w * 2.2 + 5.0) * 2.0 - 1.0);
+          float lanes = smoothstep(0.76, 0.94, ridge) * exp(-off * off / (width * width * 0.35));
           // Cool unresolved starlight under rose gas, warming at the core.
           vec3 haze = vec3(0.1, 0.13, 0.2) * band;
           vec3 rose = mix(vec3(0.42, 0.13, 0.2), vec3(0.62, 0.32, 0.28), core * 0.7 + 0.3 * smoothstep(0.55, 0.85, billow));
