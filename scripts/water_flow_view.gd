@@ -11,8 +11,10 @@ extends Node3D
 ## fading out towards the slow water round it so the two meet without a seam.
 ## The ponds reflect through one planar view that follows the largest pond
 ## (`reflection`, scripts/live_water_reflection.gd). Where fast water crosses
-## a big drop, a waterfall stands, traced from the flow and sized by its flux
-## (`falls`, scripts/flow_falls.gd; --no-live-falls leaves them out). Where
+## a big drop, a waterfall can stand, traced from the flow and sized by its
+## flux (`falls`, scripts/flow_falls.gd), but only with --live-falls: on
+## mountain faces they read badly, so for now a fall is opt-in and steep water
+## is the moving sheet's wet film (2026-10-02). Where
 ## water leaves the plate over its rim, a fall pours down the block's side
 ## into the void (`edge_falls`, scripts/edge_falls.gd; --no-edge-falls leaves
 ## them out).
@@ -127,7 +129,7 @@ func setup(water_flow: RefCounted, pond_material: Material, stream_material: Mat
 		_params.wet_off = WET_OFF
 		_params.emerge = EMERGE
 	scene_node = scene
-	if scene != null and not "--no-live-falls" in OS.get_cmdline_user_args():
+	if scene != null and "--live-falls" in OS.get_cmdline_user_args():
 		falls = preload("res://scripts/flow_falls.gd").new()
 		falls.name = "FlowFalls"
 		scene.add_child(falls)
