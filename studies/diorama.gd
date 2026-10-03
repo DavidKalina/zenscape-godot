@@ -281,6 +281,17 @@ func _make_shell() -> void:
 		_set_quality(index)
 		_defaults.quality = index)
 	options.add_child(quality)
+	# The cloud sea under the plate: three styles, kept for every world
+	# (scripts/look_pass.gd `set_cloud_style`, user://look.cfg).
+	var clouds_label := Label.new()
+	clouds_label.text = "Clouds"
+	options.add_child(clouds_label)
+	var clouds := OptionButton.new()
+	clouds.name = "CloudStyle"
+	for style_name: String in look_pass.CLOUD_STYLE_NAMES: clouds.add_item(style_name)
+	clouds.select(maxi(look_pass.CLOUD_STYLES.find(look_pass.cloud_style),0))
+	clouds.item_selected.connect(func(index: int) -> void: look_pass.set_cloud_style(look_pass.CLOUD_STYLES[index]))
+	options.add_child(clouds)
 	# Master volume and mute, and the creation Sound volume (scripts/sound_settings.gd).
 	preload("res://scripts/sound_settings.gd").build(options)
 	for group: String in ["_ambient_audio","_thunder_audio"]:

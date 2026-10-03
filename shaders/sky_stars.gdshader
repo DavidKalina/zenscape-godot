@@ -40,7 +40,7 @@ void vertex() {
   // camera looks down on the floating plate, so most of the sky it sees is
   // below the horizon line.
   float k = zs_night * zs_celestial_clear * smoothstep(-0.55, -0.2, dir.y);
-  if (k > 0.001) k *= zs_ridge_open(dir, room) * zs_moon_open(dir, 0.004);
+  if (k > 0.001) k *= zs_ridge_open(dir, room) * zs_moon_open(dir, 0.004) * zs_sea_open(dir);
   if (k > 0.001) k *= zs_cloud_transmit(CAMERA_POSITION_WORLD, dir);
   if (k * bright < 0.002) {
     POSITION = vec4(2.0, 2.0, 2.0, 1.0);

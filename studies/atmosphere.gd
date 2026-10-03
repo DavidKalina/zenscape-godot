@@ -31,8 +31,14 @@ const DAY_MIST_SUN := Vector2(0.14, 0.4)
 const DAY_MIST_COLD_SUN := Vector2(0.3, 0.6)
 const DAY_MIST_FLOOR := 0.2
 const DAY_MIST_WEATHER := Vector2(0.4, 0.55)
-## Sun height and season cold, set by the scene each frame from Celestial.
+## The evening's window: a setting sun leaves golden hour clear, and the mist
+## gathers in the hollows only as the sun goes down through dusk, whole by
+## the time the afterglow fades. Cold does not hold it, as it does mornings.
+const EVENING_MIST_SUN := Vector2(-0.16, 0.0)
+## Sun height, whether it is going down (afternoon to midnight), and season
+## cold, set by the scene each frame from Celestial.
 var sun_height := 0.0
+var sun_setting := false
 var cold := 0.0
 ## 0..1, the share of ground mist the hour leaves (1 at dawn and by night).
 var day_mist := 1.0
@@ -125,10 +131,11 @@ func send_gust(center: Vector3, strength := 0.45) -> void:
 	puffs.puff(Vector2(center.x, center.z), direction, _gust_distance, _air_strength, strength)
 	_publish_wind()
 
-## What the hour leaves of the ground mist: thin by day, whole at dawn, dusk,
-## night, on cold mornings and in misty weather.
+## What the hour leaves of the ground mist: thin by day and through golden
+## hour, whole at dawn, after dusk, by night, on cold mornings and in misty
+## weather.
 func _day_mist() -> float:
-	var window := DAY_MIST_SUN.lerp(DAY_MIST_COLD_SUN, clampf(cold, 0.0, 1.0))
+	var window := EVENING_MIST_SUN if sun_setting else DAY_MIST_SUN.lerp(DAY_MIST_COLD_SUN, clampf(cold, 0.0, 1.0))
 	var day := smoothstep(window.x, window.y, sun_height)
 	day *= 1.0 - smoothstep(DAY_MIST_WEATHER.x, DAY_MIST_WEATHER.y, fog_amount)
 	return lerpf(1.0, DAY_MIST_FLOOR, day)
