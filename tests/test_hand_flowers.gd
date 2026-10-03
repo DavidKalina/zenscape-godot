@@ -493,6 +493,10 @@ func bar() -> void:
 	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0).map(func(entry: Dictionary) -> String: return entry.id)
 	var expected := ["oak","pine","willow","birch","redwood","juniper","joshua","wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"]
 	check(seeds == expected,"The seed group is seven tree seeds, five flowers, wheat and reed (%s)" % str(seeds))
+	# The elements: water, stone, the stone lamp and the campfire beside it,
+	# fence, footbridge, and the crystal still hidden.
+	var elements: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 1).map(func(entry: Dictionary) -> String: return entry.id)
+	check(elements == ["water","stone","lamp","campfire","fence","bridge","crystal"],"The element group is water, stone, lamp, campfire, fence, footbridge and crystal (%s)" % str(elements))
 
 # --- The cozy scene ---------------------------------------------------------------------
 

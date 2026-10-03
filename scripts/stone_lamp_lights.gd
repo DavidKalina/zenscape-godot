@@ -18,6 +18,12 @@ extends Node3D
 ## sun goes down (daylight NIGHT_FROM..NIGHT_TO) and go out at dawn, eased
 ## over FADE_SECONDS so a skip through the day still fades. Made and owned by
 ## NativeChunkEditor (`lamps`), so every native world has them.
+##
+## The pool is shared: other warm things set on the land (the campfires,
+## scripts/campfire_fire.gd) join it as `guests`, and the nearest MAX_LIGHTS
+## of lamps and guests together get the lights. Guests bring their own reach,
+## colour and strength (`guest_energy`, which may flicker), and are picked by
+## day too while their energy is above nothing.
 
 const Lamp = preload("res://scripts/stone_lamp.gd")
 const ASSET := "stone_lamp"
@@ -54,6 +60,11 @@ var daylight_override := -1.0
 var lamps: Array[Dictionary] = []
 ## The light slots: {"light", "id" (-1 free), "weight" 0..1, "leaving"}.
 var slots: Array[Dictionary] = []
+## Guests sharing the lights: {"id", "at" (global), "range", "color"}, set
+## by their owner (`set_guests`); `guest_energy.call(id)` is a guest's light
+## energy now, 0 for none.
+var guests: Array[Dictionary] = []
+var guest_energy := Callable()
 var cores: MultiMeshInstance3D
 var halos: MultiMeshInstance3D
 var _core_material: StandardMaterial3D
@@ -90,7 +101,7 @@ func setup(owner_editor: Node) -> void:
 		light.omni_attenuation = 1.6
 		light.visible = false
 		add_child(light)
-		slots.append({"light":light,"id":-1,"weight":0.0,"leaving":false})
+		slots.append({"light":light,"id":-1,"weight":0.0,"leaving":false,"guest":false})
 
 func _batch(label: String, mesh: Mesh, material: Material) -> MultiMeshInstance3D:
 	var node := MultiMeshInstance3D.new()
@@ -167,6 +178,20 @@ func _read(data: NativeTerrainData) -> void:
 		var at := terrain.to_global(foot+Vector3.UP*Lamp.GLOW_HEIGHT*size)
 		found.append({"id":int(item.id),"at":at,"scale":size*_scale,"angle":float(item.angle)})
 	lamps = found
+	_lay()
+
+## The guests now (see `guests`); a light whose guest is gone lets go.
+func set_guests(list: Array[Dictionary]) -> void:
+	guests = list
+	_release_missing()
+
+## A guest's energy now.
+func _guest_energy(id: int) -> float:
+	return float(guest_energy.call(id)) if guest_energy.is_valid() else 0.0
+
+## Lays the cores and halos on the lamps as read, and lets go of lights whose
+## lamp has gone.
+func _lay() -> void:
 	cores.multimesh.instance_count = lamps.size()
 	halos.multimesh.instance_count = lamps.size()
 	for i in range(lamps.size()):
@@ -174,9 +199,18 @@ func _read(data: NativeTerrainData) -> void:
 		var s: float = lamp.scale
 		cores.multimesh.set_instance_transform(i,Transform3D(Basis(Vector3.UP,float(lamp.angle)).scaled(Vector3.ONE*s),lamp.at))
 		halos.multimesh.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*s*HALO_SIZE),lamp.at))
-	# A light whose lamp is gone lets go at once.
+	_release_missing()
+
+## Every light source now, by id: the lamps and the guests.
+func _sources() -> Dictionary:
 	var ids := {}
 	for lamp in lamps: ids[int(lamp.id)] = lamp
+	for guest in guests: ids[int(guest.id)] = guest
+	return ids
+
+## A light whose lamp or guest is gone lets go at once; the rest follow theirs.
+func _release_missing() -> void:
+	var ids := _sources()
 	for slot in slots:
 		if int(slot.id) >= 0 and not ids.has(int(slot.id)):
 			slot.id = -1
@@ -189,15 +223,20 @@ func _read(data: NativeTerrainData) -> void:
 ## The nearest MAX_LIGHTS lamps to the camera keep or get a light; a light on
 ## a lamp no longer among them fades out before it is handed on.
 func _pick() -> void:
-	if lamps.is_empty() or glow <= 0.0:
+	# What may shine: the lamps while it is dark, guests while they burn.
+	var shining: Array[Dictionary] = []
+	if glow > 0.0: shining.append_array(lamps)
+	for guest in guests:
+		if _guest_energy(int(guest.id)) > 0.0: shining.append(guest)
+	if shining.is_empty():
 		for slot in slots: slot.leaving = int(slot.id) >= 0
 		return
 	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var eye: Vector3 = camera.global_position if camera != null else Vector3.ZERO
-	var order := range(lamps.size())
-	order.sort_custom(func(a: int, b: int) -> bool: return eye.distance_squared_to(lamps[a].at) < eye.distance_squared_to(lamps[b].at))
+	var order := range(shining.size())
+	order.sort_custom(func(a: int, b: int) -> bool: return eye.distance_squared_to(shining[a].at) < eye.distance_squared_to(shining[b].at))
 	var near := {}
-	for k in range(mini(MAX_LIGHTS,order.size())): near[int(lamps[order[k]].id)] = order[k]
+	for k in range(mini(MAX_LIGHTS,order.size())): near[int(shining[order[k]].id)] = order[k]
 	var held := {}
 	for slot in slots:
 		var id := int(slot.id)
@@ -211,13 +250,16 @@ func _pick() -> void:
 				slot.id = id
 				slot.weight = 0.0
 				slot.leaving = false
-				_place(slot,lamps[near[id]])
+				_place(slot,shining[near[id]])
 				break
 
-func _place(slot: Dictionary, lamp: Dictionary) -> void:
+## Puts `slot`'s light on `source`, a lamp or a guest.
+func _place(slot: Dictionary, source: Dictionary) -> void:
 	var light: OmniLight3D = slot.light
-	light.global_position = lamp.at
-	light.omni_range = LIGHT_RANGE*float(lamp.scale)
+	slot.guest = source.has("range")
+	light.global_position = source.at
+	light.omni_range = float(source.range) if slot.guest else LIGHT_RANGE*float(source.scale)
+	light.light_color = source.get("color",LIGHT_COLOR)
 
 ## Each light eases toward its weight times the night's glow.
 func _shine(delta: float) -> void:
@@ -232,5 +274,6 @@ func _shine(delta: float) -> void:
 			slot.leaving = false
 			light.visible = false
 			continue
-		light.light_energy = LIGHT_ENERGY*glow*float(slot.weight)
+		var energy: float = _guest_energy(int(slot.id)) if slot.guest else LIGHT_ENERGY*glow
+		light.light_energy = energy*float(slot.weight)
 		light.visible = light.light_energy > 0.001
