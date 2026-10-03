@@ -34,7 +34,8 @@ void vertex() {
   vec3 dir = zs_world_from_room(room);
   float bright = INSTANCE_CUSTOM.y;
   float seed = INSTANCE_CUSTOM.z;
-  hero = INSTANCE_CUSTOM.w;
+  float kind = INSTANCE_CUSTOM.w;
+  hero = kind > 0.5 && kind < 1.5 ? 1.0 : 0.0;
   // Thinned toward the void under the slab, never cut at the horizon: the
   // camera looks down on the floating plate, so most of the sky it sees is
   // below the horizon line.
@@ -44,29 +45,35 @@ void vertex() {
   if (k * bright < 0.002) {
     POSITION = vec4(2.0, 2.0, 2.0, 1.0);
   } else {
-    // Scintillation: slow and small overhead, stronger where the air is
-    // thick near the horizon line. A hero star's colour shifts as it does.
     float t = zs_motion_time;
-    float scint = mix(0.1, 0.4, 1.0 - smoothstep(0.0, 0.6, abs(dir.y)));
-    vec3 tw = vec3(1.0 + scint * sin(t * (0.7 + seed * 2.3) + seed * 40.0) * sin(t * (0.45 + seed) + seed * 9.0));
-    if (hero > 0.5)
-      tw = 1.0 + 0.3 * sin(t * (1.3 + seed) + seed * 17.0 + vec3(0.0, 0.8, 1.6)) * sin(t * (0.37 + seed * 0.2) + seed * 5.0);
     vec3 tint = star_tint(INSTANCE_CUSTOM.x);
-    // Pixels at the reference 1080-line window.
+    // A breath of scintillation, only on stars bright enough to show it
+    // and a little more down by the horizon line; the faint dust holds
+    // steady, so the sky is still rather than busy.
+    float scint = mix(0.03, 0.09, 1.0 - smoothstep(0.0, 0.5, abs(dir.y))) * smoothstep(0.25, 0.8, bright);
+    vec3 tw = vec3(1.0 + scint * sin(t * (0.5 + seed * 0.9) + seed * 40.0) * sin(t * (0.31 + seed * 0.4) + seed * 9.0));
+    if (kind > 1.5) {
+      // A breather: its colour swells and settles over half a minute.
+      float breath = 0.5 + 0.5 * sin(t * (0.18 + seed * 0.08) + seed * 30.0);
+      tint = mix(vec3(0.85, 0.95, 1.0), mix(vec3(0.45, 1.0, 0.9), vec3(0.75, 0.6, 1.0), INSTANCE_CUSTOM.x), 0.35 + 0.65 * breath);
+      tw = vec3(0.65 + 0.35 * breath);
+    }
+    // Pixels at the reference 1080-line window. Never under about a pixel
+    // and a half across, so a star is a round point, not a square pixel.
     float px = VIEWPORT_SIZE.y / 1080.0;
     if (hero > 0.5) {
       // True HDR light that the glow picks up.
       light = tint * tw * bright * k / zs_exposure;
-      sigma = 1.1 * px;
+      sigma = 1.25 * px;
       halo = 1.0;
     } else {
       // Display light up to white, the overflow as HDR for the glow.
       vec3 peak = tint * tw * bright * k;
       light = scene_linear_for_display(min(peak, vec3(1.0))) + max(peak - 1.0, vec3(0.0)) * 0.5 / zs_exposure;
-      sigma = mix(0.6, 1.0, smoothstep(0.2, 2.0, bright)) * px;
-      halo = smoothstep(1.2, 2.4, bright);
+      sigma = mix(0.85, 1.25, smoothstep(0.1, 1.3, bright)) * px;
+      halo = kind > 1.5 ? 1.0 : smoothstep(0.7, 1.3, bright);
     }
-    reach = hero > 0.5 ? 18.0 * px : sigma * mix(3.5, 9.0, halo);
+    reach = sigma * (hero > 0.5 ? 9.0 : mix(4.0, 8.0, halo));
     offset = VERTEX.xy * reach;
     vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(CAMERA_POSITION_WORLD + dir * sky_distance, 1.0));
     clip.xy += offset * 2.0 / VIEWPORT_SIZE * clip.w;
@@ -76,19 +83,12 @@ void vertex() {
 
 void fragment() {
   float r2 = dot(offset, offset);
+  float r = sqrt(r2);
+  // A round core and, on the brightest, a soft glow round it. No spikes:
+  // they read as a lens, not as the sky.
   float profile = exp(-r2 / (2.0 * sigma * sigma));
-  if (hero > 0.5) {
-    // A soft halo and faint four-point glints.
-    float r = sqrt(r2);
-    float thin = sigma * 0.6;
-    float spike = sigma * 10.0;
-    profile += exp(-r / (sigma * 5.0)) * 0.12
-      + (exp(-abs(offset.y) / thin) * exp(-abs(offset.x) / spike)
-       + exp(-abs(offset.x) / thin) * exp(-abs(offset.y) / spike)) * 0.07;
-  } else {
-    profile += exp(-sqrt(r2) / (sigma * 3.0)) * 0.22 * halo;
-  }
-  // Ease to nothing at the quad's edge, so no square shows round a star.
-  profile *= 1.0 - smoothstep(0.7, 1.0, max(abs(offset.x), abs(offset.y)) / reach);
+  profile += exp(-r / (sigma * 2.2)) * (hero > 0.5 ? 0.1 : 0.06) * halo;
+  // Ease to nothing inside the quad's circle, so its square never shows.
+  profile *= 1.0 - smoothstep(0.6, 1.0, r / reach);
   ALBEDO = light * profile;
 }

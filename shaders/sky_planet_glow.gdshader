@@ -26,5 +26,5 @@ void fragment() {
   vec3 sun_across = zs_sun_direction - centre_dir * dot(zs_sun_direction, centre_dir);
   float side = 0.15 + 0.85 * smoothstep(-0.5, 0.8, dot(normalize(across + 1e-6), normalize(sun_across + 1e-6)));
   float presence = zs_planet_presence(view, zs_room_from_world(view)) * mix(0.25, 1.0, zs_night);
-  ALBEDO = scene_linear_for_display(vec3(0.55, 0.8, 1.0) * clamp(glow * side * presence * 0.55, 0.0, 1.0));
+  ALBEDO = scene_linear_for_display(vec3(0.55, 0.8, 1.0) * clamp(glow * side * presence * 0.35, 0.0, 1.0));
 }

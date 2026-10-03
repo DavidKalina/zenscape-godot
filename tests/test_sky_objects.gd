@@ -29,9 +29,10 @@ func run() -> void:
 			check(names.has(wanted), "%s compiles and takes %s" % [path.get_file(), wanted])
 
 	var multimesh: MultiMesh = objects.stars.multimesh
-	var expected: int = objects.HEROES.size()
+	var expected: int = objects.HEROES.size() + objects.BREATHERS.size()
 	for tier: Array in objects.TIERS: expected += int(tier[0])
-	check(multimesh.instance_count == expected, "One quad per field and hero star")
+	for cluster: Array in objects.CLUSTERS: expected += int(cluster[2])
+	check(multimesh.instance_count == expected, "One quad per field, cluster, hero and breathing star")
 	# The entries, not the MultiMesh: headless keeps no instance storage.
 	var entries: Array = objects.star_entries()
 	check(entries.size() == expected, "The stars are the same set each run")
@@ -42,7 +43,7 @@ func run() -> void:
 		var dir: Vector3 = entry[0]
 		unit = unit and absf(dir.length() - 1.0) < 0.001
 		above_void = above_void and dir.y >= -0.6
-		if (entry[1] as Color).a > 0.5: heroes += 1
+		if is_equal_approx((entry[1] as Color).a, 1.0): heroes += 1
 	check(unit, "Every star carries a unit room direction")
 	check(above_void, "No stars are spent on the void under the slab")
 	check(heroes == objects.HEROES.size(), "The placed brilliant stars are heroes")

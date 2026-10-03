@@ -15,23 +15,38 @@ const PLANET_RADIUS := 0.05
 const PLANET_POLE := Vector3(0.3, 1.0, -0.25)
 ## The Milky Way's plane, as the dome paints it.
 const GALAXY_NORMAL := Vector3(0.6, 0.25, 0.75)
-## The brilliant stars the dome used to place: direction, temperature
-## (star_tint in shaders/sky_stars.gdshader), HDR power, twinkle seed.
+## The few brilliant stars, placed: direction, temperature (star_tint in
+## shaders/sky_stars.gdshader), HDR power, twinkle seed.
 const HEROES := [
-	[Vector3(-0.32, 0.55, 0.77), 0.2, 2.6, 0.13],
-	[Vector3(0.61, 0.35, 0.71), 0.66, 2.0, 0.41],
-	[Vector3(0.12, 0.82, -0.56), 0.35, 2.3, 0.77],
-	[Vector3(-0.83, 0.12, -0.54), 0.9, 1.6, 0.29],
-	[Vector3(0.9, -0.1, 0.42), 0.08, 1.8, 0.93],
-	[Vector3(-0.4, -0.15, -0.9), 0.6, 1.5, 0.57],
+	[Vector3(-0.32, 0.55, 0.77), 0.2, 1.4, 0.13],
+	[Vector3(0.61, 0.35, 0.71), 0.66, 1.1, 0.41],
+	[Vector3(0.12, 0.82, -0.56), 0.35, 1.2, 0.77],
+	[Vector3(-0.83, 0.12, -0.54), 0.9, 0.9, 0.29],
+	[Vector3(0.9, -0.1, 0.42), 0.08, 1.0, 0.93],
+	[Vector3(-0.4, -0.15, -0.9), 0.6, 0.8, 0.57],
 ]
-## Field stars by tier, as the dome's three lattices had them: count, gain,
-## brightness spread (a power law: many faint, a few brilliant), and how much
-## of the tier crowds into the Milky Way's band.
+## The mystical part, kept rare: a few stars that slowly breathe a cool colour,
+## teal or violet, far slower than any twinkle. Direction, hue (0 teal, 1
+## violet), brightness, seed.
+const BREATHERS := [
+	[Vector3(-0.55, -0.32, 0.77), 0.0, 0.9, 0.21],
+	[Vector3(-0.98, -0.28, -0.05), 1.0, 0.8, 0.64],
+	[Vector3(0.2, 0.3, 0.93), 0.3, 0.7, 0.86],
+]
+## Field stars by tier: count, brightness range (display units), and how
+## much of the tier crowds into the Milky Way's band. Most are a faint dust
+## that only reads as texture; the bright ones are few.
 const TIERS := [
-	[1400, 1.3, 5.0, 0.0],
-	[4200, 0.55, 4.0, 0.35],
-	[9000, 0.22, 3.0, 0.6],
+	[4600, Vector2(0.025, 0.12), 0.55],
+	[1500, Vector2(0.12, 0.45), 0.3],
+	[150, Vector2(0.45, 1.3), 0.1],
+]
+## Tight clusters, the spots the eye settles on: centre, radius (radians),
+## count, temperature.
+const CLUSTERS := [
+	[Vector3(-0.62, -0.08, 0.78), 0.022, 34, 0.12],
+	[Vector3(-0.9, -0.35, 0.25), 0.035, 40, 0.45],
+	[Vector3(0.35, 0.15, 0.92), 0.018, 22, 0.2],
 ]
 
 var sky_material: ShaderMaterial
@@ -104,30 +119,54 @@ func _build_stars() -> MultiMeshInstance3D:
 	_sky_instance(node)
 	return node
 
-## Every star as [room direction, custom data], the same each run.
+## Every star as [room direction, custom data], the same each run. Custom
+## data: temperature, brightness, seed, kind (0 field, 1 hero, 2 breather).
 func star_entries() -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0x5747
-	var entries: Array = []
+	# Broad rich fields and empty reaches: field stars are kept by a slow
+	# noise over the sky, so some regions crowd and others go nearly dark.
+	var fields := FastNoiseLite.new()
+	fields.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	fields.seed = 11
+	fields.frequency = 1.0
+	fields.fractal_octaves = 3
 	var galaxy := GALAXY_NORMAL.normalized()
+	var entries: Array = []
 	for tier: Array in TIERS:
+		var span: Vector2 = tier[1]
 		for i in int(tier[0]):
-			var dir := _star_direction(rng, galaxy, rng.randf() < float(tier[3]))
-			var brightness := float(tier[1]) * (0.1 + 2.0 * pow(rng.randf(), float(tier[2])))
+			var dir := _star_direction(rng, fields, galaxy, rng.randf() < float(tier[2]))
+			# A power law within the tier: most at its faint end.
+			var brightness := lerpf(span.x, span.y, pow(rng.randf(), 2.5))
 			entries.append([dir, Color(rng.randf(), brightness, rng.randf(), 0.0)])
+	for cluster: Array in CLUSTERS:
+		var centre := (cluster[0] as Vector3).normalized()
+		var side := centre.cross(Vector3.UP).normalized()
+		var up := side.cross(centre)
+		for i in int(cluster[2]):
+			var spread := Vector2(rng.randfn(), rng.randfn()) * float(cluster[1]) * 0.5
+			var dir := (centre + side * spread.x + up * spread.y).normalized()
+			var brightness := lerpf(0.06, 0.7, pow(rng.randf(), 3.0))
+			entries.append([dir, Color(float(cluster[3]) + rng.randf_range(-0.08, 0.08), brightness, rng.randf(), 0.0)])
 	for hero: Array in HEROES:
 		entries.append([(hero[0] as Vector3).normalized(), Color(float(hero[1]), float(hero[2]), float(hero[3]), 1.0)])
+	for breather: Array in BREATHERS:
+		entries.append([(breather[0] as Vector3).normalized(), Color(float(breather[1]), float(breather[2]), float(breather[3]), 2.0)])
 	return entries
 
 ## A direction over the visible sky (the void under the slab thins them out
-## anyway); in the band, near the Milky Way's plane.
-func _star_direction(rng: RandomNumberGenerator, galaxy: Vector3, in_band: bool) -> Vector3:
+## anyway), kept where the rich fields are; in the band, near the Milky Way's
+## plane, where it crowds regardless.
+func _star_direction(rng: RandomNumberGenerator, fields: FastNoiseLite, galaxy: Vector3, in_band: bool) -> Vector3:
 	while true:
 		var dir := Vector3(rng.randfn(), rng.randfn(), rng.randfn()).normalized()
 		if dir.y < -0.6: continue
+		var rich := smoothstep(-0.35, 0.45, fields.get_noise_3dv(dir * 2.2))
 		if in_band:
 			var off := dir.dot(galaxy)
-			if rng.randf() > exp(-off * off / 0.02): continue
+			rich = maxf(rich, 0.6) * exp(-off * off / 0.018)
+		if rng.randf() > 0.06 + 0.94 * rich: continue
 		return dir
 	return Vector3.UP
 
