@@ -52,6 +52,24 @@ at the rim letting it out, an equilibrium) is left for later. The live water
 already holds a basin to its rim's lowest point and drains over the plate's
 edge (docs/scenic/water-flow.md).
 
+## The Island (2026-10-03)
+
+With lakes in (the Crater's Draw and the can), the user wanted little islands
+with trees on them. Pulling one up with the Modeller meant guessing how far
+the water's surface stood over the press, and there was no easy way to grow
+one. The **Island** (`island`, tag Isle, after the Crater) builds to the
+water, not to the press, and has a fan of two modes:
+
+- **Draw:** draw the shore and let go: the land inside rises to a beach at
+  the drawn line and a low crown, the bed shelving down outside it.
+- **Spread:** scrub to push land out from an isle or a shore, to a flat top
+  just over the water; it cannot overshoot.
+
+Neither lowers ground, so drawing or spreading over an isle extends it. The
+lake keeps its level: the water the new land displaces is taken away
+(`_keep_level`), rather than lifted with the bed and spilled over the rim.
+Probe: `tools/probe_island.gd`.
+
 The sections below are the design as first built; where they describe the
 cut verbs they are history.
 

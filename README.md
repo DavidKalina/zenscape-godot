@@ -26,7 +26,8 @@ Return to title. Worlds keep themselves a few seconds after each change.
 - **The tool roll** on the left edge holds the shaping tools, one per
   landform gesture: the **Modeller** (fine work: thumb a stream bed, pinch a
   knoll, palm a pan), **Hills** (scrub), **Mountain** (pull up a peak, or
-  sideways for a range), **Crater** (pull down), **Ravine** (draw a line; a
+  sideways for a range), **Crater** (pull down),
+  **Island** (draw an isle in a lake, or spread land out to the water), **Ravine** (draw a line; a
   loop sinks a basin), **Chisel** (mesa, shelf, notch, slice) and **Paddle**
   (plane and pat). The strip along the top holds the tools that tend: the
   **Feather** (wind), the **Watering can** and the **Brush** (colour).

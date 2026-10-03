@@ -213,6 +213,8 @@ static func _build() -> void:
 	_add("hills","Hills","Roll","#8fae78",["M2 22.5 V16.6 Q5.6 8.4 10 13.8 Q14.6 5.6 19.4 12.6 Q21 14.6 22 16 V22.5Z"],["M4.4 20 Q8 18.4 11.6 20"],47,1.0,1.3)
 	_add("mountain","Mountain","Peak","#9a948c",["M1.6 22.5 L9.2 9.4 L11.6 11.8 L14.4 4.2 L22.4 22.5Z"],["M12.2 9.6 L14.4 4.2 L16.6 9.8"],48,1.0,1.6)
 	_add("crater","Crater","Hollow","#a08a68",["M2 17 H4.5 Q6.5 12.6 8 13.4 Q9.6 19.2 12 19.2 Q14.4 19.2 16 13.4 Q17.5 12.6 19.5 17 H22 V22.5 H2Z"],["M12 3.4 V9.4","M9.8 7.2 L12 9.4 L14.2 7.2"],64,1.0,1.4)
+	# The Island: a mound standing out of the water, a sapling on it.
+	_add("island","Island","Isle","#b4a874",["M3.4 18.4 Q6.6 18.4 8.4 14.6 Q12 9.8 15.6 14.6 Q17.4 18.4 20.6 18.4Z",_circle(12,6.2,2.6)],["M12 8.6 V12.4","M1.6 21.2 Q4.4 19.8 7.2 21.2 Q10 22.6 12.8 21.2 Q15.6 19.8 18.4 21.2 Q20.4 22.2 22.4 21.4"],69,1.0,1.4)
 	_add("bowl","Bowl","Hollow","#a08a68",["M2 9.4 H5.2 Q7 17.6 12 17.6 Q17 17.6 18.8 9.4 H22 V22.5 H2Z"],["M8 14.4 Q12 15.6 16 14.4"],49,1.0,1.4)
 	# The Sculpt's modes, fanned out beside its pocket (scripts/tool_roll.gd
 	# SCULPT_MODES): the ground in profile, as each leaves it.
@@ -229,6 +231,8 @@ static func _build() -> void:
 	_add("mountain_draw","Draw","Mountain","#9a948c",["M1.6 22.5 L6 15.6 L8.4 17.6 L12.2 10.8 L15.6 15.8 L18 13.8 L22.4 22.5Z"],["M3 6.4 Q7.4 2.6 12 6 Q16.6 9.4 21 5.4"],66,1.0,1.5)
 	_add("crater_pull","Pull","Crater","#a08a68",["M2 17 H4.5 Q6.5 12.6 8 13.4 Q9.6 19.2 12 19.2 Q14.4 19.2 16 13.4 Q17.5 12.6 19.5 17 H22 V22.5 H2Z"],["M12 3.4 V9.4","M9.8 7.2 L12 9.4 L14.2 7.2"],67,1.0,1.5)
 	_add("crater_draw","Draw","Crater","#a08a68",["M2 13.4 H4 Q5.6 19.6 12 19.6 Q18.4 19.6 20 13.4 H22 V22.5 H2Z"],["M5 7.6 Q5 3.4 11.4 3.6 Q19.4 3.4 19 7.4 Q18.6 10.6 12 10.4 Q6.4 10.6 5 7.6Z"],68,1.0,1.5)
+	_add("island_draw","Draw","Island","#b4a874",["M5 17.6 Q8 12.4 12 12.6 Q16 12.4 19 17.6Z"],["M5 6.6 Q5 2.8 11.4 3 Q19.4 2.8 19 6.4 Q18.6 9.4 12 9.2 Q6.4 9.4 5 6.6Z","M1.6 20.6 Q4.4 19.2 7.2 20.6 Q10 22 12.8 20.6 Q15.6 19.2 18.4 20.6 Q20.4 21.6 22.4 20.8"],70,1.0,1.5)
+	_add("island_spread","Spread","Island","#b4a874",["M2 17.6 H11.6 Q14.4 17.6 15.6 20.4 Q16.2 21.4 17 21.4 H2Z"],["M13.6 9.4 H20.4","M18.4 7.4 L20.4 9.4 L18.4 11.4","M1.6 21.2 Q4.4 19.8 7.2 21.2","M17.6 20.8 Q20 19.6 22.4 20.8"],71,1.0,1.5)
 	_add("paddle_pat","Pat","Paddle","#c49a5e",["M2 15.4 H22 V22.5 H2Z","M4.6 9 H19.4 V11.6 H4.6Z"],["M12 2.4 V9"],35,1.0,1.5)
 	# The Plane: the blade stood upright, drawn toward a rough rise; behind it
 	# the ground lies planed flat.
