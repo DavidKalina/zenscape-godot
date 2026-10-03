@@ -13,6 +13,7 @@ func build() -> void:
 	heights_at({"pond":POND,"rim":Vector2(2.0,13.5)})
 	# The pond: Modeller palm (Shift+drag) pressed in a small circle, twice.
 	await take_tool("hand")
+	await take_mode("groove")
 	await size(3)
 	var ring := [POND+Vector2(-1.5,0),POND+Vector2(0,-1.5),POND+Vector2(1.5,0),POND+Vector2(0,1.0),POND+Vector2(-1.5,0)]
 	await brisk_drag(ring,1.5,true)

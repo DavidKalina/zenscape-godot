@@ -41,6 +41,7 @@ func build() -> void:
 	log_line("bed before: %s" % spread(grid(BED,6.0,0.5)))
 	# Level the bed: paddle pats over it, then the palm across it.
 	await take_tool("paddle")
+	await take_mode("pat")
 	await size(3)
 	for p: Vector2 in [Vector2(-4,-4),Vector2(0,-4),Vector2(4,-4),Vector2(-4,0),Vector2(0,0),Vector2(4,0),Vector2(-4,4),Vector2(0,4),Vector2(4,4)]:
 		await tap(p)
@@ -48,22 +49,20 @@ func build() -> void:
 	# Take 2: smooth with fast thumb rubs (take 1's palms each sank the bed
 	# 0.4 m and left it rougher, 0.65 m spread, than the pats alone).
 	await take_tool("hand")
+	await take_mode("groove")
 	await size(3)
 	await drag([Vector2(-5,-4),Vector2(5,-4),Vector2(-5,-2),Vector2(5,-2),Vector2(-5,0),Vector2(5,0),Vector2(-5,2),Vector2(5,2),Vector2(-5,4),Vector2(5,4)],80.0)
 	log_line("bed after rub: %s" % spread(grid(BED,6.0,0.5)))
 	await overview()
 	await still("bed")
-	# Rake, west half: the paddle's narrow blade at the smallest pip (a trough
-	# with a ridge either side is the nearest thing to a tine line), 1.5 m apart.
-	await take_tool("paddle")
+	# Rake, west half: the Modeller's thumb at the smallest pip, 1.5 m apart
+	# (it was the paddle's narrow sweep until the sweep went, 2026-10-02).
 	await size(1)
 	var z := -5.0
 	while z <= 5.01:
-		await drag([Vector2(-6.5,z),Vector2(-0.5,z)],3.0,true)
+		await drag([Vector2(-6.5,z),Vector2(-0.5,z)],3.0)
 		z += 1.5
 	# Rake, east half: the Modeller's thumb at the smallest pip, 2.5 m apart.
-	await take_tool("hand")
-	await size(1)
 	z = -5.0
 	while z <= 5.01:
 		await drag([Vector2(0.5,z),Vector2(6.5,z)],3.0)
@@ -84,10 +83,12 @@ func build() -> void:
 	for o: Dictionary in editor.data.objects:
 		if o.asset == "rock": log_line("rock at (%.1f, %.1f) scale %s" % [o.x,o.z,o.get("scale",o.get("s","?"))])
 	await overview()
-	# A small pond: a narrow paddle hollow in the corner, and a burst of water.
-	await take_tool("paddle")
+	# A small pond: a Modeller dip in the corner (the paddle's hollow until it
+	# went, 2026-10-02), and a burst of water.
+	await take_tool("hand")
+	await take_mode("pinch")
 	await size(1)
-	await hold_to(POND,-0.6)
+	await hold_to(POND,height(POND)-0.6)
 	await pour(POND,1.2)
 	await put_down()
 	await let_world_run(15.0)

@@ -34,6 +34,7 @@ func lip(c: Vector2, pip: int) -> Vector2:
 
 func build() -> void:
 	await take_tool("chisel")
+	await take_mode("mesa")
 	for m: Array in MESAS:
 		await size(m[1])
 		await hold_to(m[0],m[2],m[3])

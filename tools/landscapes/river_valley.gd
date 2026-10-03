@@ -1,6 +1,7 @@
 extends "res://tools/landscapes/harness.gd"
-## Meandering river valley: a broad paddle swell for high ground at the head,
-## an S-curve paddle sweep down the plate into a sunk lake, a thumb-groove
+## Meandering river valley: high ground at the head scrubbed up with the
+## Hills, an S-curve Ravine drawn down the plate into a lake basin drawn as a
+## loop (Paddle swells and a sweep until they went, 2026-10-02), a thumb-groove
 ## tributary, water poured at the head, willows and reeds on the banks.
 ## Tests: does water follow a long carved channel, does the meander read.
 
@@ -14,16 +15,18 @@ func title() -> String: return "river_valley"
 
 func build() -> void:
 	await still("start")
-	await take_tool("paddle")
+	await take_tool("hills")
 	await size(3)
-	await hold_drag(HEAD,-70.0)
-	await hold_drag(Vector2(-8.0,-7.0),-45.0)
-	await hold_drag(LAKE,55.0)
+	await scrub_to(HEAD,3.0)
+	await scrub_to(Vector2(-8.0,-7.0),2.0,2.0)
+	await take_tool("wire")
+	await loop(LAKE,4.5,true)
 	heights_at({"head":HEAD,"west":Vector2(-8,-7),"lake":LAKE})
 	await size(2)
-	await drag(RIVER,2.5)
+	await drag(RIVER,2.5,true)
 	heights_at({"r0":RIVER[0],"r2":RIVER[2],"r4":RIVER[4],"r6":RIVER[6],"lake":LAKE})
 	await take_tool("hand")
+	await take_mode("groove")
 	await size(2)
 	await drag(BROOK,2.0)
 	measure_verbs()

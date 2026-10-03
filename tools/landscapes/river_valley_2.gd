@@ -7,7 +7,9 @@ extends "res://tools/landscapes/harness.gd"
 ## the lake (its bed never climbs, so water should run its length), with a
 ## Paddle sweep over it to open the valley shoulders. Water as a spring on the
 ## head just above the gorge's top. Willows and reeds sown, oak seeds on the
-## shoulders.
+## shoulders. Take 3 (2026-10-02, the Paddle's swell and sweep gone): the head
+## scrubbed with the Hills, the lake a Ravine loop, the two grooves kept, and
+## the valley opened by a shallow Ravine along the S.
 
 const HEAD := Vector2(0.0,-10.0)
 const LAKE := Vector2(1.0,8.0)
@@ -30,26 +32,28 @@ func river_heights(label: String) -> void:
 
 func build() -> void:
 	yaw0 = scene.yaw
-	await take_tool("paddle")
+	await take_tool("hills")
 	await size(2)
-	await hold_to(HEAD,2.2)
+	await scrub_to(HEAD,2.2)
+	await take_tool("wire")
 	await size(3)
-	await hold_to(LAKE,-1.2)
+	await loop(LAKE,4.5,true)
 	river_heights("swells")
 	# Take 2: no Wire. Can the Modeller's thumb do it? Two slow grooves down
 	# the S (the second deepens the first), then the Paddle's sweep over them
 	# to open the valley shoulders.
 	await take_tool("hand")
+	await take_mode("groove")
 	await size(2)
 	await drag(RIVER,2.5)
 	river_heights("groove 1")
 	await drag(RIVER,2.5)
 	river_heights("groove 2")
-	await take_tool("paddle")
+	await take_tool("wire")
 	await size(3)
-	await drag(RIVER,2.5)
+	await drag(RIVER,2.5,true)
 	await settle()
-	river_heights("sweep")
+	river_heights("ravine")
 	measure_verbs()
 	await look("carved",Vector2(0,-1),20.0,0.0,0.9)
 	# The spring: on the head, just uphill of the gorge's top.

@@ -1,5 +1,6 @@
 extends "res://tools/landscapes/harness.gd"
-## Crater lake: a broad paddle swell, a wide shallow Chisel pit in its crown,
+## Crater lake: a broad hill scrubbed up with the Hills (it was a Paddle
+## swell until the swell went, 2026-10-02), a wide shallow Chisel pit in its crown,
 ## filled to the brim with two pours. Take 1: a size-2 Chisel pit 2 m deep,
 ## one pour: a sheer-walled well with the water a metre under the lip. Take 2:
 ## a Modeller pinch pulled down: a soft bowl that read as a pond on a hill. Tests: does a lake stand above the surrounding land.
@@ -10,11 +11,12 @@ func title() -> String: return "crater_lake"
 
 func build() -> void:
 	await still("start")
-	await take_tool("paddle")
+	await take_tool("hills")
 	await size(3)
-	await hold_to(HILL,4.5)
+	await scrub_to(HILL,4.5)
 	heights_at({"crown":HILL,"crown+2":HILL+Vector2(2,0),"shoulder":HILL+Vector2(5,0),"foot":HILL+Vector2(9,0)})
 	await take_tool("chisel")
+	await take_mode("mesa")
 	await size(3)
 	await hold_to(HILL,height(HILL)-1.3)
 	heights_at({"floor":HILL,"rim n":HILL+Vector2(0,-4.6),"rim s":HILL+Vector2(0,4.6),"rim e":HILL+Vector2(4.6,0),"rim w":HILL+Vector2(-4.6,0),"foot":HILL+Vector2(9,0)})

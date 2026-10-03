@@ -203,6 +203,10 @@ func metres_per_pixel(p: Vector2) -> float:
 ## "wire" (the Ravine), "chisel", "paddle", "hammer", "feather".
 func take_tool(id: String) -> void:
 	var roll: Control = materials.roll
+	# A click on the pocket of the tool already in hand puts it down.
+	if roll.tool == id and materials.held.is_empty():
+		log_line("take tool %s: already in hand" % id)
+		return
 	await glide(Vector2(30,360),15)
 	for i in range(90):
 		if roll.shown > 0.99: break
@@ -346,6 +350,43 @@ func hold_to(p: Vector2, target: float, fine := false, most_pixels := 400.0) -> 
 	await frames(2)
 	await settle()
 	log_line("hold_to %s: %.2f -> %.2f m (wanted %.2f, %d px)" % [p,start,height(p),target,int(moved)])
+
+## The Hills in hand: scrub back and forth across `p`, `reach` metres either
+## side, and let go once the ground at `p` stands at `target` (or after
+## `most` passes), as a player watching a rolling hill come up. Logs it.
+func scrub_to(p: Vector2, target: float, reach := 3.0, most := 24) -> void:
+	var start := height(p)
+	var ends: Array[Vector2] = [screen(p+Vector2(-reach,0.0)),screen(p+Vector2(reach,0.0))]
+	await glide(ends[0],25)
+	button(pointer,true)
+	await frames(2)
+	var passes := 0
+	var done := false
+	while passes < most and not done:
+		var a: Vector2 = ends[passes%2]
+		var b: Vector2 = ends[(passes+1)%2]
+		var steps := maxi(1,int(reach*2.0/6.0*60.0))
+		for k in range(steps):
+			move(a.lerp(b,float(k+1)/steps),true)
+			await frames(1)
+			if height(p) >= target:
+				done = true
+				break
+		passes += 1
+	button(pointer,false)
+	await frames(2)
+	await settle()
+	log_line("scrub_to %s: %.2f -> %.2f m (wanted %.2f, %d passes)" % [p,start,height(p),target,passes])
+
+## The Ravine in hand: draw a closed loop of `radius` metres round `p`, so the
+## inside sinks to a lake basin (Shift: the shallower one).
+func loop(p: Vector2, radius: float, fine := false) -> void:
+	var path := []
+	for k in range(25): path.append(p+Vector2.from_angle(TAU*k/24.0)*radius)
+	var start := height(p)
+	# The drag's settle waits out the cut drawing through.
+	await drag(path,4.0,fine)
+	log_line("loop %s r %.1f: %.2f -> %.2f m" % [p,radius,start,height(p)])
 
 ## Water from the bar, held over `p` for `secs` (the ball grows while held),
 ## then let go. Waits for the ball to land.

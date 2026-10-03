@@ -1,6 +1,6 @@
 extends "res://tools/landscapes/harness.gd"
-## Pastoral downs: rolling gentle hills from Paddle swells (1-2.5 m) with pats
-## between them, drifts of wildflowers and dandelions over the slopes, an oak
+## Pastoral downs: rolling gentle hills scrubbed up with the Hills (1-2.5 m;
+## Paddle swells until they went, 2026-10-02) with pats between them, drifts of wildflowers and dandelions over the slopes, an oak
 ## or two on a crest, and a little pond in a dip. The Feather blows wind
 ## across. Tests: does the gentle end look different from a fresh plate; how
 ## does wind read in stills.
@@ -45,16 +45,21 @@ func feather_with_still(path: Array, speed: float) -> void:
 func build() -> void:
 	yaw0 = scene.yaw
 	await look("fresh",Vector2.ZERO,20.0,0.0,1.0)
-	await take_tool("paddle")
+	await take_tool("hills")
 	await size(3)
-	for h: Array in HILLS: await hold_to(h[0],h[1])
+	for h: Array in HILLS: await scrub_to(h[0],h[1],2.5)
 	# Pats on the saddles soften the joins.
+	await take_tool("paddle")
+	await take_mode("pat")
 	for p: Vector2 in [Vector2(0,-6),Vector2(1,0),Vector2(-6,-1)]: await tap(p)
 	# Take 2: back to the overview first (take 1's pond hollow, pressed from
 	# the close view after the pats, never took: 402 px of pull, no swell).
+	# Take 3: the pond is a small Modeller dip (the paddle's hollow is gone).
 	await overview()
+	await take_tool("hand")
+	await take_mode("pinch")
 	await size(2)
-	await hold_to(POND,0.4)
+	await hold_to(POND,height(POND)-0.8)
 	heights_at({"h1":HILLS[0][0],"h2":HILLS[1][0],"h3":HILLS[2][0],"h4":HILLS[3][0],"pond":POND,"saddle":Vector2(0,-6)})
 	measure_verbs()
 	await look("downs",Vector2.ZERO,26.0,0.0,1.0)
