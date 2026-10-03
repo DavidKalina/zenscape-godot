@@ -207,6 +207,9 @@ static func _build() -> void:
 	# The stone lamp (scripts/stone_lamp.gd): a roof over a fire box between
 	# two pillars, a shelf, a post and a foot. Seed 60.
 	_add("lamp","Stone lamp","Glow","#9a958a",["M12 1.6 L13 3.2 L20.5 6.8 H3.5 L11 3.2Z","M5.6 7.6 H18.4 V8.8 H5.6Z","M6.4 8.8 H8.4 V13.2 H6.4Z","M15.6 8.8 H17.6 V13.2 H15.6Z","M5 13.2 H19 V14.8 H5Z","M10.6 14.8 H13.4 V20 H10.6Z","M7 20 H17 V22.4 H7Z"],[],60)
+	# The campfire (scripts/campfire.gd): a flame over two crossed sticks,
+	# three stones of the ring before them. Seed 74.
+	_add("campfire","Campfire","Hearth","#c8703a",["M12 2.4 Q16.8 7.6 15.6 12.2 Q14.8 15 12 15.4 Q9.2 15 8.4 12.2 Q7.6 9.4 10.2 7.2 Q10.4 9.6 11.6 10 Q10.6 6 12 2.4Z","M5 18.6 L18.4 14.2 L19 15.8 L5.6 20.2Z","M19 18.6 L5.6 14.2 L5 15.8 L18.4 20.2Z","M1.6 21.8 L3 18.6 L6.4 18.2 L7.6 21.8Z","M8.4 22.2 L9.6 19.4 L14.4 19.4 L15.6 22.2Z","M16.4 21.8 L17.6 18.2 L21 18.6 L22.4 21.8Z"],[],74,1.0,1.2)
 	# The fence (scripts/fences.gd): two cut-topped posts, two split rails.
 	_add("fence","Fence","Split rail","#9a7a52",["M4.6 5.2 L6.4 3 L8.2 4.6 V22.4 H4.6Z","M15.8 4.6 L17.6 3 L19.4 5.2 V22.4 H15.8Z","M1.6 8.4 L22.4 7.6 V10.6 L1.6 11.2Z","M1.6 15 L22.4 14.6 V17.4 L1.6 17.8Z"],["M3 9.6 H6","M18 16 H21"],73,1.0,1.2)
 	# The footbridge (scripts/footbridge.gd): a timber arch with its posts

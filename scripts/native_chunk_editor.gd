@@ -137,6 +137,9 @@ var pond_preview = preload("res://scripts/native_pond_preview.gd").new()
 var explosives: Node3D
 ## The stone lamps' glow and their few real lights (scripts/stone_lamp_lights.gd).
 var lamps: Node3D
+## The campfires' flames, glow, smoke and sparks (scripts/campfire_fire.gd);
+## their light comes from the lamps' pool.
+var campfires: Node3D
 var blast_radius := 2.6
 var tunnel_width := 2.5
 var tunnel_depth := 5.0
@@ -367,6 +370,9 @@ func setup(owner_scene: Node3D) -> void:
 	lamps = preload("res://scripts/stone_lamp_lights.gd").new()
 	scene.add_child(lamps)
 	lamps.setup(self)
+	campfires = preload("res://scripts/campfire_fire.gd").new()
+	scene.add_child(campfires)
+	campfires.setup(self)
 	_setup_brushes()
 	if flow_wanted(): _setup_flow.call_deferred()
 	data.state_restored.connect(_world_restored)

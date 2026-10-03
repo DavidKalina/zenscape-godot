@@ -116,6 +116,7 @@ const ELEMENTS := [
 	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],
 	["stone","River stone","Place","Sets a stone, or scatters pebbles."],
 	["lamp","Stone lamp","Glow","Sets a stone lamp, or lines a path with them. They glow at night."],
+	["campfire","Campfire","Hearth","Sets a little campfire in a ring of stones. It burns day and night, and keeps to itself."],
 	["fence","Fence","Split rail","Draw a line and a rustic fence follows it; end where you began for a pen."],
 	["bridge","Footbridge","Span","Drag across a stream: a timber footbridge spans it, bank to bank."],
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],

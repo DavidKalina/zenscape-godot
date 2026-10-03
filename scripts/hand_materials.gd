@@ -53,6 +53,13 @@ extends Node
 ##   lamp; drag to set a spaced row of them along the drag, like a path
 ##   (`gap`), never closer than `clear` to another lamp. They glow at night
 ##   (scripts/stone_lamp_lights.gd).
+## - **Campfire** ("campfire", docs/scenic/campfire.md). Tap to set one
+##   campfire, a ring of stones with a fire dancing in it
+##   (scripts/campfire.gd, scripts/campfire_fire.gd); a drag carries it and
+##   sets it where you let go. The land must take it (Campfire `refusal`): not
+##   on or half in water, not on a steep slope, not within a few metres of
+##   another campfire, not under or into a tree. Refused, nothing is set and
+##   the hint line says why (CAMPFIRE_REFUSALS).
 ## - **Fence.** Press and drag a line over the land (drawn as the Ravine's
 ##   line is, scripts/clay_tools/drawn_line.gd), its stakes shown faintly as
 ##   it goes; on release a split-rail fence follows it where the land lets it
@@ -111,15 +118,17 @@ const PAINT_CUE := 0.28
 ## scale, growing over `grow` s of holding) and a drag's (growing over
 ## `scatter_grow` s), and at most `most` drops a drag. Optional: `gap` (m at
 ## the middle pip) between a drag's drops, STONE_GAP without, and `clear`
-## (m), how near another of the same asset a drop may stand.
+## (m), how near another of the same asset a drop may stand. `tap_only`: a
+## drag sets nothing on the way, only one drop where it is let go.
 const SCATTER := {
 	"stone":{"assets":["rock"],"each":1,"spread":0.0,"tap":Vector2(0.5,1.4),"grow":1.6,"scatter":Vector2(0.26,0.6),"scatter_grow":2.5,"most":7},
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
 	"lamp":{"assets":["stone_lamp"],"each":1,"spread":0.0,"tap":Vector2(0.85,1.2),"grow":1.6,"scatter":Vector2(0.95,1.0),"scatter_grow":2.5,"most":12,"gap":2.0,"clear":1.1},
+	"campfire":{"assets":["campfire"],"each":1,"spread":0.0,"tap":Vector2(0.9,1.15),"grow":1.6,"scatter":Vector2(1.0,1.0),"scatter_grow":2.5,"most":1,"tap_only":true},
 }
 ## Pressed, the cursor comes down to PRESS_GAP m over the land: a stone
 ## touches it, a pinch of seeds or flowers stops short.
-const PRESS_GAP := {"stone":0.0,"lamp":0.0,"fence":0.0}
+const PRESS_GAP := {"stone":0.0,"lamp":0.0,"fence":0.0,"campfire":0.0}
 const PRESS_GAP_DEFAULT := 0.1
 ## Sowing from the pinch: while the button is held it flicks every
 ## FLICK_SECONDS (the first FIRST_FLICK after the press), and once more as the
@@ -162,7 +171,18 @@ const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
 	"reed":"Tap to set reeds  ·  Drag to scatter","lamp":"Tap to set a stone lamp  ·  Drag to line a path with them",
 	"fence":"Drag a line to set a fence  ·  Start or end on a fence to join it",
-	"bridge":"Drag across a stream to lay a footbridge"}
+	"bridge":"Drag across a stream to lay a footbridge",
+	"campfire":"Tap to set a campfire  ·  It needs flat, dry ground clear of trees"}
+## The campfire in hand, and what the hint line says when the land will not
+## take one (scripts/campfire.gd `refusal`).
+const CAMPFIRE := "campfire"
+const Campfire = preload("res://scripts/campfire.gd")
+const CAMPFIRE_REFUSALS := {
+	"water":"Not on the water  ·  A campfire needs dry ground",
+	"steep":"Too steep for a campfire  ·  Find flatter ground",
+	"near":"Another campfire is too close",
+	"tree":"Too near a tree  ·  Keep a campfire clear of branches",
+}
 ## The footbridge in hand: its hold, and what the hint line says when the land
 ## will not take one (Footbridge `plan`'s reasons).
 const BRIDGE := "bridge"
@@ -230,6 +250,8 @@ var clump: Clump
 ## The specimen in hand (a materials_tray.gd SPECIMENS id) or "".
 var held := ""
 ## Stones, flowers and reeds set down, for probes.
+## Why the last campfire was refused ("" when it was set): Campfire `refusal`.
+var campfire_refused := ""
 var stones_set := 0
 ## The footbridge's drag: where it started and where it is (plate), the water
 ## read at its press, and the plan the ghost shows; the last laid or refused,
@@ -787,6 +809,13 @@ func _drop(at: Variant, size: float) -> bool:
 	if at == null or not SCATTER.has(held): return false
 	var spec: Dictionary = SCATTER[held]
 	if spec.has("clear") and _crowded(at,str(spec.assets[0]),float(spec.clear)): return false
+	if held == CAMPFIRE:
+		campfire_refused = Campfire.refusal(reach._editor(),at)
+		if not campfire_refused.is_empty():
+			clump.shed()
+			ClaySound.cue(&"ui_refuse")
+			reach._show_hint(str(CAMPFIRE_REFUSALS[campfire_refused]))
+			return false
 	var items := []
 	for i in range(int(spec.each)):
 		var offset := Vector2.ZERO
@@ -801,7 +830,7 @@ func _drop(at: Variant, size: float) -> bool:
 	_stone_since = 0.0
 	stones_set += 1
 	var ground: Vector3 = reach._editor().terrain.to_global(Vector3(at.x,0.0,at.y))
-	ClaySound.cue_at(&"stone_drop" if held in ["stone","lamp"] else &"plant",ground,clampf(size,0.3,1.0))
+	ClaySound.cue_at(&"stone_drop" if held in ["stone","lamp",CAMPFIRE] else &"plant",ground,clampf(size,0.3,1.0))
 	reach.uses[held] = int(reach.uses.get(held,0))+1
 	clump.shed()
 	return true
@@ -1023,7 +1052,7 @@ func _scatter(delta: float) -> void:
 	_held_seconds += delta
 	_stone_since += delta
 	if not SCATTER.has(held): return
-	if _travel <= CLICK_PIXELS or _stone_count >= int(SCATTER[held].most) or _stone_since < STONE_SECONDS: return
+	if _travel <= CLICK_PIXELS or _stone_count >= int(SCATTER[held].most) or _stone_since < STONE_SECONDS or SCATTER[held].get("tap_only",false): return
 	var editor: Node = reach._editor()
 	if int(editor.refresh_pending) > 0 or editor.reactions.active_count() > 0: return
 	var at: Variant = _ground(_pointer())
@@ -1212,6 +1241,17 @@ class Clump extends Node3D:
 					var corner := Vector3(0.045,0.0,0.045).rotated(Vector3.UP,PI*0.5*k)
 					_part(_prism(4),"a39e93",corner+Vector3(0.0,0.225,0.0),Vector3(0.016,0.07,0.016),Vector3(0.0,PI*0.25,0.0))
 				_part(_cone(),"716c64",Vector3(0.0,0.3,0.0),Vector3(0.13,0.07,0.13),Vector3(0.0,PI*0.25,0.0))
+			"campfire":
+				# A ring of pebbles, three sticks leaned together, a warm bead
+				# of fire between them.
+				for k in range(6):
+					var angle := TAU*k/6.0
+					_part(_egg(),["8f8a80","a39d92","7d786f"][k%3],Vector3(cos(angle)*0.11,0.02,sin(angle)*0.11),Vector3(0.035,0.025,0.03),Vector3(0.0,-angle,0.0))
+				for k in range(3):
+					var angle := TAU*k/3.0+0.4
+					var lean := Vector3(cos(angle),0.0,sin(angle))
+					_part(_stake(),"6b4a30",lean*0.04+Vector3.UP*0.07,Vector3(0.012,0.14,0.012),Vector3(-lean.z*0.5,0.0,lean.x*0.5))
+				_part(_egg(),"f2a04a",Vector3(0.0,0.06,0.0),Vector3(0.04,0.06,0.04))
 			"fence":
 				# Two stakes and two rails between them.
 				for x in [-0.09,0.09]:
