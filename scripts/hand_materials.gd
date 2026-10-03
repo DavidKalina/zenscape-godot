@@ -212,12 +212,20 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const BRIDGE_REFUSALS := {
 	"short":"Drag across a stream to lay a footbridge",
 	"dry":"No water to cross here",
-	"too_long":"Too wide to bridge  ·  six metres at most",
+	"too_long":"Too wide to bridge  ·  Six metres at most",
 	"too_steep":"The banks are too uneven to bridge",
 	"no_bank":"No bank to rest on there",
 	"edge":"No bank to rest on there",
 	"flooded":"The water stands too high to bridge",
 }
+## The stone lamp in hand, and what the hint line says when a tap sets none
+## (`_lamp_refusal`; a drag's row skips such spots without a word).
+const LAMP_REFUSALS := {
+	"water":"Not on the water  ·  A stone lamp needs dry ground",
+	"near":"Another lamp is too close",
+}
+## A fence line the land took none of (all water or too steep).
+const FENCE_REFUSAL := "No ground for a fence there  ·  It needs dry, gentle ground"
 const BACK_HINT := "Click the sky or the case to put it back"
 ## Water in hand pressed on dry land: nothing to scoop.
 const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
@@ -276,6 +284,8 @@ var held := ""
 var campfire_refused := ""
 ## Why the last cabin was refused ("" when it was set): Cabin `refusal`.
 var cabin_refused := ""
+## Why the last lamp tapped down was refused ("" when it was set).
+var lamp_refused := ""
 var stones_set := 0
 ## The footbridge's drag: where it started and where it is (plate), the water
 ## read at its press, and the plan the ghost shows; the last laid or refused,
@@ -673,7 +683,7 @@ func _use(point: Vector2) -> void:
 		elif scooped == "dry":
 			clump.shed()
 			ClaySound.cue(&"ui_refuse")
-			reach._show_hint(DRY_HINT)
+			reach.notice(DRY_HINT)
 	elif held == FENCE:
 		var at: Variant = _ground(point)
 		if at == null: return
@@ -741,7 +751,7 @@ func _bridge_let_go(point: Vector2) -> void:
 		return
 	clump.shed()
 	ClaySound.cue(&"ui_refuse")
-	reach._show_hint(str(BRIDGE_REFUSALS.get(str(bridge_last.get("reason","")),"")))
+	reach.notice(str(BRIDGE_REFUSALS.get(str(bridge_last.get("reason","")),"")))
 
 ## True for what the pinch sows as a veil: nothing in the case since
 ## 2026-10-02, when tree seed joined the flowers under the brush (`paints`).
@@ -812,7 +822,7 @@ func let_go(what: String, point: Vector2) -> void:
 		return
 	if _stone_count == 0 and SCATTER.has(held):
 		var spec: Dictionary = SCATTER[held]
-		if _travel <= CLICK_PIXELS: _drop(_ground(_press_pos),lerpf(spec.tap.x,spec.tap.y,smoothstep(0.12,float(spec.grow),_held_seconds)))
+		if _travel <= CLICK_PIXELS: _drop(_ground(_press_pos),lerpf(spec.tap.x,spec.tap.y,smoothstep(0.12,float(spec.grow),_held_seconds)),true)
 		elif over_land: _drop(_ground(point),_scatter_size())
 		elif home: put_back()
 	elif home: put_back()
@@ -828,17 +838,26 @@ func _ground(point: Vector2) -> Variant:
 	return Vector2(hit.x,hit.z) if hit != null else null
 
 ## Sets down one drop of what is held at `at` (plate): a stone, or a drift of
-## flowers or reeds round it.
-func _drop(at: Variant, size: float) -> bool:
+## flowers or reeds round it. A lamp `tapped` down where none may stand is
+## refused aloud; a drag's row passes such spots by.
+func _drop(at: Variant, size: float, tapped := false) -> bool:
 	if at == null or not SCATTER.has(held): return false
 	var spec: Dictionary = SCATTER[held]
-	if spec.has("clear") and _crowded(at,str(spec.assets[0]),float(spec.clear)): return false
+	if held == "lamp":
+		lamp_refused = _lamp_refusal(at,float(spec.clear))
+		if not lamp_refused.is_empty():
+			if tapped:
+				clump.shed()
+				ClaySound.cue(&"ui_refuse")
+				reach.notice(str(LAMP_REFUSALS[lamp_refused]))
+			return false
+	elif spec.has("clear") and _crowded(at,str(spec.assets[0]),float(spec.clear)): return false
 	if held == CAMPFIRE:
 		campfire_refused = Campfire.refusal(reach._editor(),at)
 		if not campfire_refused.is_empty():
 			clump.shed()
 			ClaySound.cue(&"ui_refuse")
-			reach._show_hint(str(CAMPFIRE_REFUSALS[campfire_refused]))
+			reach.notice(str(CAMPFIRE_REFUSALS[campfire_refused]))
 			return false
 	var facing := NAN
 	if held == CABIN:
@@ -854,7 +873,7 @@ func _drop(at: Variant, size: float) -> bool:
 		if not cabin_refused.is_empty():
 			clump.shed()
 			ClaySound.cue(&"ui_refuse")
-			reach._show_hint(str(CABIN_REFUSALS[cabin_refused]))
+			reach.notice(str(CABIN_REFUSALS[cabin_refused]))
 			return false
 	var items := []
 	for i in range(int(spec.each)):
@@ -875,6 +894,15 @@ func _drop(at: Variant, size: float) -> bool:
 	reach.uses[held] = int(reach.uses.get(held,0))+1
 	clump.shed()
 	return true
+
+## Why a stone lamp may not stand at plate point `at`, or "" when it may:
+## "water" (off the land, or wet as a fence post's foot would be:
+## NativeChunkEditor `fence_dry`) or "near" (another lamp within `clear` m).
+func _lamp_refusal(at: Vector2, clear: float) -> String:
+	var editor: Node = reach._editor()
+	if editor.data.ground_height(at) == null or not editor.fence_dry().call(at): return "water"
+	if _crowded(at,"stone_lamp",clear): return "near"
+	return ""
 
 ## True when another `asset` stands within `clear` m of `at` (plate).
 func _crowded(at: Vector2, asset: String, clear: float) -> bool:
@@ -919,7 +947,9 @@ func _fence_lay(point: Vector2) -> void:
 	editor.fence_preview(PackedVector2Array())
 	fence_ids = editor.lay_fence(path) if editor.has_method("lay_fence") else []
 	if fence_ids.is_empty():
-		if _travel > CLICK_PIXELS: ClaySound.cue(&"ui_refuse")
+		if _travel > CLICK_PIXELS:
+			ClaySound.cue(&"ui_refuse")
+			reach.notice(FENCE_REFUSAL)
 		return
 	var middle := path[path.size()/2]
 	var ground: Variant = editor.data.ground_height(middle)

@@ -134,6 +134,9 @@ const RIM_HINT_MODELESS := "Push the rim to turn the seasons"
 const HINT_UNTIL := 1
 const HOVER_UNTIL := 3
 const HOVER_READ := 1.0
+## Seconds a refusal's line (`notice`: why the land would not take what the
+## hand set) holds the hint line before the hover may speak over it.
+const NOTICE_SECONDS := 3.0
 
 var scene: Node3D
 ## What the pointer is over now ("sun", "rim" or ""), and what the hand holds.
@@ -169,6 +172,11 @@ var _last_phase := 0.0
 var _turning := false
 var _rim_angle: Variant = null
 var _hint := ""
+## The notice on the hint line, the seconds it has left, and what was in hand
+## when it was given (`notice`).
+var _notice := ""
+var _notice_left := 0.0
+var _notice_held := ""
 var _cursor_owned := false
 var _block_low: Variant = null
 ## The earth sides' triangles (corners in threes) in plate coordinates, and the
@@ -928,6 +936,7 @@ func revert_season_to_grab() -> void:
 
 func _process(delta: float) -> void:
 	_hint_clock += delta
+	_notice_left -= delta
 	if scene == null or scene.camera == null or _editor() == null: return
 	delta = minf(delta,0.1)
 	var phase := float(scene._celestial.phase)
@@ -1049,6 +1058,8 @@ func _hover(point: Vector2) -> void:
 	if cloud != null: key.append(cloud.centre.snapped(Vector3.ONE*0.25))
 	# Shift outlines what a press would pluck; a plucked plant's outline goes.
 	if modeless: key.append_array([Input.is_key_pressed(KEY_SHIFT),_editor().data.objects_revision])
+	# A notice's end reads the hover afresh.
+	key.append(_noticing())
 	if key == _hover_key: return
 	_hover_key = key
 	var what := reach_at(point) if available() else ""
@@ -1102,8 +1113,26 @@ func _hover(point: Vector2) -> void:
 		zone = said[0]
 		text = said[1]
 	if _hint_quiet(zone): text = ""
+	# A notice holds the line until its time is up.
+	if _noticing(): return
 	_read_hint(zone if not text.is_empty() else "")
 	_show_hint(text)
+
+## A refusal's line (why the land would not take what the hand set): shown at
+## once, and held NOTICE_SECONDS against the hover, which would otherwise
+## write over it at the next sun step or pointer move. A press (its
+## `_show_hint("")`), another line, or something else taken up in hand ends
+## it sooner.
+func notice(text: String) -> void:
+	_show_hint(text)
+	_notice = text
+	_notice_left = NOTICE_SECONDS if not text.is_empty() else 0.0
+	_notice_held = materials.held if materials != null else ""
+
+## True while a notice holds the hint line.
+func _noticing() -> bool:
+	if _notice_left <= 0.0 or _notice.is_empty() or _hint != _notice: return false
+	return materials == null or materials.held == _notice_held
 
 ## A zone's hint is done: its verb used HINT_UNTIL times (the sky's snap or
 ## any gust counts for the void), or read HOVER_UNTIL times.

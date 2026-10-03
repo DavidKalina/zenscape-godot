@@ -19,7 +19,7 @@ Faceted low-poly timber, matching the props: a gentle arch (rise 0.08 x span + 0
 - **A record.** `NativeTerrainData.add_bridge` stores `{"asset": "bridge", x/z, end_x/end_z}`, marked hand-made, as waterfalls store their two ends. Undo, redo, saving and loading (the document validates both ends) work as they do for any record. `place`, `update_object` and `replace_object_asset` refuse bridges; they have their own two-ended tool.
 - **Drawn apart from the instance batches.** `GardenView` draws no "bridge" part. `scripts/footbridge.gd` is a node under the terrain, in plate metres. It redraws when the records change (`objects_revision`) and on every editor refresh. Each end sits on the ground wherever that is now: shaping a bank moves its end with it, and a bridge whose ends have not moved keeps its mesh.
 - **Water passes under.** A bridge changes no height and adds nothing to the water grid, so the live water runs under it untouched.
-- **Trash can.** The can takes a bridge when any part of its span is in reach, not only its first end (`Trash.reach_of`), and the mesh flies into the can. Shift spares it, as it spares trees and boulders. Explosions, fire, the selection tool and the creation brushes leave it alone.
+- **Trash can.** The can takes a bridge when any part of its span is in reach, not only its first end (`Trash.reach_of`), and the mesh flies into the can. Shift spares it, as it spares trees, rocks and everything built. Explosions, fire, the selection tool and the creation brushes leave it alone.
 - **Editor entry point.** `NativeChunkEditor.place_bridge(from, to)` plans, lays the bridge as one undo step and returns the plan. The command palette lists it under Elements.
 
 ## Probe

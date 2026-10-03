@@ -4,7 +4,9 @@ extends SceneTree
 ## it has a pocket on the top strip; a sweep takes a tree, a boulder, a log, a
 ## shrub and a leaf bed off its line and leaves one off it; it moves no
 ## ground; the stroke is one undo step that brings them all back; Shift
-## spares the tree and the boulder.
+## spares the tree and the boulder. Built things: Shift spares a stone lamp, a
+## campfire, a cabin, a footbridge and a fence, but takes wheat and flowers;
+## without Shift the sweep takes them all, and cuts the fence.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_trash.gd -- --modeless --no-title
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -115,6 +117,31 @@ func lay(spot: Vector2) -> Dictionary:
 	await settled()
 	return ids
 
+## Sets the built things down along the stroke's line (a cabin, a lamp, a
+## campfire, wheat and a flower), a footbridge and a fence across it.
+func lay_built(spot: Vector2) -> Dictionary:
+	var data := editor.data
+	data.begin_stroke()
+	var ids := {}
+	var kinds := {"cabin":-100,"stone_lamp":-60,"campfire":-20,"wheat":20,"daisy_flower":45}
+	for kind: String in kinds:
+		var p: Variant = plate(spot+Vector2(kinds[kind],0))
+		if p != null: ids[kind] = data.place(kind,p)
+	var a: Variant = plate(spot+Vector2(75,-45))
+	var b: Variant = plate(spot+Vector2(75,45))
+	if a != null and b != null: ids["bridge"] = data.add_bridge(a,b)
+	data.end_stroke()
+	if editor.bridges != null: editor.bridges.rebuild()
+	editor.force_refresh()
+	await settled()
+	var f0: Variant = plate(spot+Vector2(105,-70))
+	var f1: Variant = plate(spot+Vector2(105,70))
+	if f0 != null and f1 != null:
+		var laid: Array = editor.lay_fence(PackedVector2Array([f0,f1]))
+		if not laid.is_empty(): ids["fence"] = laid[0]
+	await settled()
+	return ids
+
 func run() -> void:
 	create_timer(200).timeout.connect(func() -> void: push_error("trash probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
@@ -187,6 +214,31 @@ func run() -> void:
 	shift(false)
 	check("Shift spares the tree and the boulder",has(int(ids.tree)) and has(int(ids.boulder_1)))
 	check("and takes the small things",not has(int(ids.log)) and not has(int(ids.shrub)) and not has(int(ids.leaf_bed)))
+
+	# --- Shift spares everything built; wheat and flowers are small ---
+	const Trash = preload("res://scripts/clay_tools/trash.gd")
+	check("lamps and campfires count as big, as cabins and bridges do","stone_lamp" in Trash.BIG and "campfire" in Trash.BIG and "cabin" in Trash.BIG and "bridge" in Trash.BIG)
+	check("wheat and flowers do not","wheat" not in Trash.BIG and "daisy_flower" not in Trash.BIG)
+	editor.undo()
+	await settled()
+	var built := await lay_built(spot)
+	check("laid a cabin, a lamp, a campfire, wheat, a flower, a footbridge and a fence",built.size() == 7,built)
+	var fences0: Array = data.fences.duplicate(true)
+	shift(true)
+	await stroke(spot)
+	shift(false)
+	var lost := []
+	for kind in ["cabin","stone_lamp","campfire","bridge"]:
+		if not has(int(built.get(kind,-1))): lost.append(kind)
+	check("Shift spares the cabin, lamp, campfire and bridge",lost.is_empty(),lost)
+	check("and the fence, whole",data.fences == fences0,[fences0.size(),data.fences.size()])
+	check("but takes the wheat and the flower",not has(int(built.get("wheat",-1))) and not has(int(built.get("daisy_flower",-1))))
+	await stroke(spot)
+	var kept := []
+	for kind in ["cabin","stone_lamp","campfire","bridge"]:
+		if has(int(built.get(kind,-1))): kept.append(kind)
+	check("without Shift the sweep takes them all",kept.is_empty(),kept)
+	check("and cuts the fence",data.fences != fences0,data.fences.size())
 
 	print("RESULT ","PASS" if failures.is_empty() else "FAIL "+str(failures))
 	quit(0 if failures.is_empty() else 1)

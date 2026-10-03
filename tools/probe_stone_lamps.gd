@@ -202,6 +202,45 @@ func run() -> void:
 			closest = minf(closest,pa.distance_to(Vector2(float(b.x),float(b.z))))
 	check("spaced like a path (closest pair %.2f m)" % closest,closest >= 1.1,closest)
 	check("and along the drag (furthest %.2f m off it)" % off_line,off_line < 0.6,off_line)
+
+	# --- Refusals: a tap that sets nothing says why ---
+	var first := data.object_by_id(row[0])
+	var crowd := Vector2(float(first.x),float(first.z))+Vector2(0.0,0.5)
+	undo0 = data._undo.size()
+	await click(screen(crowd))
+	await settled()
+	check("a tap beside a lamp is refused (reason 'near'), nothing set, no undo step",lamp_ids() == row and materials.lamp_refused == "near" and data._undo.size() == undo0,[lamp_ids().size(),materials.lamp_refused])
+	check("and the hint line says so",reach._hint == materials.LAMP_REFUSALS["near"],reach._hint)
+	# Water: some in view, or live water stood on a clear spot off the row
+	# (the campfire probe's way).
+	var dry: Callable = editor.fence_dry()
+	var wet: Variant = null
+	var clear: Variant = null
+	for x in range(-9,10):
+		for z in range(-9,10):
+			var p := Vector2(x,z)
+			if data.ground_height(p) == null or reach._land(screen(p)) == null or reach.reach_at(screen(p)) != "": continue
+			if wet == null and not dry.call(p): wet = p
+			if clear == null and bare(screen(p)) and Geometry2D.get_closest_point_to_segment(p,line[0],line[1]).distance_to(p) > 3.0: clear = p
+	if wet == null and clear != null and editor.flow != null and editor.flow.ready:
+		var flow: RefCounted = editor.flow
+		var depth: PackedFloat32Array = flow.kernel.get_depth()
+		for dx in range(-8,9):
+			for dz in range(-8,9):
+				var q: Vector2 = clear+Vector2(dx,dz)*0.25
+				var cell: int = flow.cell_at(q)
+				if q.distance_to(clear) <= 2.0 and cell >= 0 and cell < depth.size(): depth[cell] = 0.4
+		flow.kernel.set_depth(depth)
+		await frames(3)
+		wet = clear
+	if wet != null:
+		undo0 = data._undo.size()
+		await click(screen(wet))
+		await settled()
+		check("a tap on water is refused (reason 'water'), nothing set, no undo step",lamp_ids() == row and materials.lamp_refused == "water" and data._undo.size() == undo0,[lamp_ids().size(),materials.lamp_refused,wet])
+		check("and the hint line says so",reach._hint == materials.LAMP_REFUSALS["water"],reach._hint)
+	else:
+		check("found water in view to refuse on",false,"no water on this world")
 	materials.put_back()
 	await frames(30)
 
