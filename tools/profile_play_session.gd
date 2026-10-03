@@ -427,7 +427,13 @@ func take(id: String) -> void:
 	for i in range(120):
 		if materials.tray.shown > 0.99: break
 		await frames(1)
+	# The case fans a group out under a resting pointer (scripts/materials_tray.gd).
+	materials.tray.pointer_override = materials.tray.compartment_centre(id)
+	for i in range(120):
+		if materials.tray.showing(id): break
+		await frames(1)
 	await click(materials.tray.specimen_centre(id))
+	materials.tray.pointer_override = null
 	print("PLAY in hand: ",materials.held)
 
 ## Drop the held water on plate point `p`: press to form the ball, let go.
