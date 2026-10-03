@@ -163,6 +163,12 @@ func setup(land_clay: Node) -> void:
 
 func _exit_tree() -> void:
 	if current == self: current = null
+	# Stopped, so a take still sounding (a HUD cue as the game quits) doesn't
+	# hold its stream past the audio server's last mix.
+	for player in _land+_voices: player.stop()
+	for player in _ui: player.stop()
+	for entry: Dictionary in _other.values():
+		if not entry.is_empty(): (entry.player as AudioStreamPlayer3D).stop()
 
 ## The HUD's way in: play `name` if a ClaySound is running.
 static func cue(cue_name: StringName, strength := 1.0) -> void:

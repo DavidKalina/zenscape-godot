@@ -156,6 +156,9 @@ func run() -> void:
 	world.queue_free()
 	await process_frame
 	await process_frame
+	# Let the audio server let go of the freed world's playbacks (a HUD cue
+	# can still be sounding when it goes).
+	await create_timer(0.5).timeout
 	remove_tree(dir)
 	print("Worlds flow: %s" % ("PASS" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures else 0)
