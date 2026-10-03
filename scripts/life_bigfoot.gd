@@ -161,10 +161,14 @@ func _build(packed: PackedScene) -> void:
 		if player.has_animation(clip): player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 	# The painted look: the scene's surface shader over the coat's vertex
 	# colours, and the eyes' own vertex colour with a night glow.
+	# The coat is faceted as all life is (flat_faces), so a re-export with
+	# welded vertices can't turn him smooth; the eyes stay smooth on purpose.
 	var coat := ShaderMaterial.new()
 	coat.shader = preload("res://shaders/reference_surface.gdshader")
+	coat.set_shader_parameter("flat_faces",true)
 	_eyes = ShaderMaterial.new()
 	_eyes.shader = coat.shader
+	_eyes.set_shader_parameter("flat_faces",false)
 	for mesh: MeshInstance3D in actor.find_children("*","MeshInstance3D",true,false):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		for surface in range(mesh.mesh.get_surface_count()):

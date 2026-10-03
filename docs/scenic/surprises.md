@@ -223,7 +223,7 @@ A running list of what looks off or is still unverified, gathered from the first
 ### Small life
 - [look] Geese side-on read as a loose cluster; the V shows from above.
 - [unseen] The drum and honk sounds haven't been listened to.
-- [tune] Butterfly and woodpecker sizes were raised for readability (butterfly SCALE 2.4, woodpecker SIZE 2.2); judge at play distance.
+- [tune] Woodpecker size was raised for readability (SIZE 2.2); judge at play distance. Butterflies were raised to SCALE 2.4 and then brought back down to 0.9 (about 0.22 m wingspan, 2026-10-03); judge at play distance.
 - [look] Sine-driven motion may feel mechanical. The woodpecker is the first candidate for Blender clips if so.
 
 ### Pond seasons
