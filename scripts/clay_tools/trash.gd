@@ -3,9 +3,10 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## land. Like the Brush it paints (the clay's paint, scripts/land_clay.gd
 ## State.PAINT): press and hold or drag, and every object whose foot is within
 ## the can's reach (trees, rocks, shrubs, flowers, logs, leaf beds...) goes,
-## flying up into its mouth and shrinking away. Waterfalls, explosives and
-## Bigfoot's tree stay. **Shift** spares the big things (BIG: trees, boulders,
-## arches): only the small stuff goes.
+## flying up into its mouth and shrinking away; a footbridge goes when any of
+## its span is in reach. Waterfalls, explosives and Bigfoot's tree stay.
+## **Shift** spares the big things (BIG: trees, boulders, arches, bridges):
+## only the small stuff goes.
 ##
 ## One press is one undo step: the clay opens it at the press and closes it at
 ## the release, and the records go from the land's objects inside it. The
@@ -25,7 +26,7 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 const RADIUS := 1.4
 ## What it never takes, and what Shift spares.
 const KEPT := ["waterfall","bigfoot_tree","explosive"]
-const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch"]
+const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch","bridge"]
 ## The flight into the mouth: seconds, and at most this many in the air.
 const SUCK_SECONDS := 0.45
 const MAX_FLYING := 48
@@ -64,6 +65,14 @@ func paints() -> bool: return true
 static func takes(kind: String, spare_big := false) -> bool:
 	return not kind in KEPT and not (spare_big and kind in BIG)
 
+## How far (m) record `item` lies from plate point `q`: its foot, or for a
+## footbridge (scripts/footbridge.gd) the nearest point of its span.
+static func reach_of(item: Dictionary, q: Vector2) -> float:
+	var foot := Vector2(float(item.x),float(item.z))
+	if str(item.asset) == "bridge" and item.has("end_x"):
+		return Geometry2D.get_closest_point_to_segment(q,foot,Vector2(float(item.end_x),float(item.end_z))).distance_to(q)
+	return foot.distance_to(q)
+
 func reset() -> void:
 	lift = 0.0
 	taken = []
@@ -80,7 +89,7 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 	var going: Array[Dictionary] = []
 	for item: Dictionary in data.objects:
 		if not takes(str(item.asset),_spare_big): continue
-		if Vector2(float(item.x),float(item.z)).distance_to(q) <= radius: going.append(item)
+		if reach_of(item,q) <= radius: going.append(item)
 	_sweep_litter(q,radius)
 	var fenced := _cut_fences(q,radius)
 	if going.is_empty():
@@ -101,11 +110,16 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 		# Its drawn parts fly before its record goes.
 		if reach != null and reach.has_method("_plant_parts"):
 			for part: Dictionary in reach._plant_parts(at): _fly(part.mesh,part.material,part.transform)
+		var bridges: Variant = editor.get("bridges")
+		if str(item.asset) == "bridge" and bridges != null:
+			for part: Dictionary in bridges.parts(at): _fly(part.mesh,part.material,part.transform)
 		if play != null and play._active.has(at):
 			var node: Variant = play._active[at]
 			play._active.erase(at)
 			if is_instance_valid(node): node.queue_free()
 		var root := Vector2(float(item.x),float(item.z))
+		# A bridge stood on no growing ground: nothing to keep bare.
+		if str(item.asset) == "bridge": continue
 		if reach != null and reach.has_method("_keep_bare"): reach._keep_bare(root,NativeTerrainData.object_source(item) == "emerged")
 		else: data.provenance[data.meadow_cell(root)] = NativeTerrainData.SOURCE_HAND
 	var kept: Array[Dictionary] = []

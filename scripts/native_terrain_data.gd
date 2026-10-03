@@ -21,7 +21,7 @@ const MIN_HEIGHT := -6.5
 const SLAB_BASE := -8.3
 const MAX_HEIGHT := 64.0
 const MAX_EXPLOSIVES := 32
-const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","stone_lamp"]
+const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","stone_lamp","bridge"]
 const MEADOW_CELLS := 56
 const MEADOW_STEP := 0.5
 var meadow := PackedFloat32Array()
@@ -1171,7 +1171,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictionary = {}, tint := "") -> int:
 	if kind == "explosive" and explosive_count() >= MAX_EXPLOSIVES: return -1
-	if kind == "waterfall" or kind not in ASSETS or sample(point,heights) == null or (kind != "log" and ground_height(point) == null) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+	if kind in ["waterfall","bridge"] or kind not in ASSETS or sample(point,heights) == null or (kind != "log" and ground_height(point) == null) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
@@ -1202,10 +1202,11 @@ func _object_index(id: int) -> int:
 	return -1
 
 ## Patch editable properties atomically. Empty/null pose or tint restores the
-## asset default. Waterfalls need their dedicated two-endpoint editing tool.
+## asset default. Waterfalls and footbridges need their dedicated
+## two-endpoint tools.
 func update_object(id: int, changes: Dictionary) -> bool:
 	var index := _object_index(id)
-	if index < 0 or objects[index].asset == "waterfall":
+	if index < 0 or objects[index].asset in ["waterfall","bridge"]:
 		return false
 	var candidate := objects[index].duplicate(true)
 	for key in changes:
@@ -1248,9 +1249,9 @@ func update_object(id: int, changes: Dictionary) -> bool:
 ## `update_object` deliberately refuses asset changes and drops `landscape`.
 func replace_object_asset(id: int, asset: String, tint := "") -> bool:
 	var index := _object_index(id)
-	if index < 0 or asset not in ASSETS or asset in ["waterfall","explosive"]:
+	if index < 0 or asset not in ASSETS or asset in ["waterfall","explosive","bridge"]:
 		return false
-	if objects[index].asset in ["waterfall","explosive"]:
+	if objects[index].asset in ["waterfall","explosive","bridge"]:
 		return false
 	if not tint.is_empty() and (asset in ["arch","bigfoot_tree"] or not NativeObjectPose.valid_tint(tint)):
 		return false
@@ -1302,6 +1303,21 @@ func add_waterfall(start: Vector2, finish: Vector2, width: float) -> bool:
 	objects_revision += 1
 	next_id += 1
 	return true
+
+## A footbridge (scripts/footbridge.gd) from bank `start` to bank `finish`,
+## as the hand's own record. Its ends rest on the ground wherever that is, so
+## it is drawn from the land each time; it changes no height and no water.
+## The record's id, or -1 when an end is off the land or they are too close.
+func add_bridge(start: Vector2, finish: Vector2) -> int:
+	if ground_height(start) == null or ground_height(finish) == null or start.distance_to(finish) < 0.5:
+		return -1
+	if objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+		return -1
+	var id := next_id
+	next_id += 1
+	objects.append({"id":id,"asset":"bridge","x":start.x,"z":start.y,"end_x":finish.x,"end_z":finish.y,"angle":0.0,"scale":1.0,"source":"hand"})
+	objects_revision += 1
+	return id
 
 func object_position(item: Dictionary) -> Vector3:
 	return Vector3(item.x,(float(item.anchor_y) if item.asset == "explosive" else sample(Vector2(item.x,item.z),heights))+(preload("res://scripts/native_object_pose.gd").decode_offset(item.pose) if item.has("pose") else 0.0),item.z)
@@ -1469,7 +1485,7 @@ func load_document(document: Variant) -> bool:
 					return false
 				if not GardenData._number(item.get("angle"),-TAU*100,TAU*100) or not GardenData._number(item.get("scale"),0.1,5.0):
 					return false
-				if item.asset == "waterfall":
+				if item.asset in ["waterfall","bridge"]:
 					if not GardenData._number(item.get("end_x"),-14,14) or not GardenData._number(item.get("end_z"),-14,14):
 						return false
 					var endpoint := Vector2(item.end_x,item.end_z)
@@ -1479,10 +1495,10 @@ func load_document(document: Variant) -> bool:
 				ids[item.id] = true
 				record.merge({"id":int(item.id),"asset":item.asset,"angle":float(item.angle),"scale":float(item.scale)})
 				if item.has("pose"):
-					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid(item.pose): return false
+					if item.asset in ["arch","bigfoot_tree","waterfall","bridge"] or not preload("res://scripts/native_object_pose.gd").valid(item.pose): return false
 					record.pose = item.pose.duplicate(true)
 				if item.has("tint"):
-					if item.asset in ["arch","bigfoot_tree","waterfall"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
+					if item.asset in ["arch","bigfoot_tree","waterfall","bridge"] or not preload("res://scripts/native_object_pose.gd").valid_tint(item.tint): return false
 					record.tint = item.tint
 				if item.asset == "explosive":
 					if not valid_explosive(item): return false

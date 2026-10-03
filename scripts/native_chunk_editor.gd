@@ -125,6 +125,9 @@ var landmarks: NativeGardenLandmarks
 ## The fences' view (scripts/fences.gd), a child of the terrain.
 var fences: Node3D
 var falls: NativeGardenFalls
+## The footbridges laid over water (scripts/footbridge.gd), and its planner.
+const Footbridge = preload("res://scripts/footbridge.gd")
+var bridges: Node3D
 var reactions: NativeDropReactions
 ## Placement plays a short visual reaction. Tests that compare instances turn
 ## it off so a committed record renders exactly as it did before.
@@ -345,6 +348,10 @@ func setup(owner_scene: Node3D) -> void:
 	falls = NativeGardenFalls.new()
 	falls.name = "AuthoredFalls"
 	scene.add_child(falls)
+	# Footbridges ride the plate: drawn in its metres, under the terrain.
+	bridges = Footbridge.new()
+	bridges.editor = self
+	terrain.add_child(bridges)
 	reactions = NativeDropReactions.new()
 	reactions.name = "DropReactions"
 	scene.add_child(reactions)
@@ -1036,6 +1043,7 @@ func refresh(frame_tree: SceneTree = null, on_publish: Callable = Callable()) ->
 	landmarks.rebuild(data)
 	fences.rebuild(data)
 	falls.rebuild(data)
+	if bridges != null: bridges.rebuild()
 	if on_publish.is_valid(): on_publish.call("landmarks")
 	if not current.call(): return _finish_refresh(false)
 	if frame_tree != null:
@@ -1880,7 +1888,7 @@ func select_object(id: int) -> void:
 	finish_stroke()
 	reactions.finish_all()
 	var item := data.object_by_id(id)
-	selected_object_id = id if not item.is_empty() and item.asset != "waterfall" else -1
+	selected_object_id = id if not item.is_empty() and not item.asset in ["waterfall","bridge"] else -1
 	selection.update_marker(selected_object_id)
 	selection_changed.emit(selected_object_id)
 
@@ -3626,6 +3634,23 @@ func paint_flowers_end() -> void:
 
 ## A stone set down by the hand (the materials tray), placed as the rock
 ## tool's click places one (`set_objects`).
+## A footbridge for a drag from `from` to `to` (plate), as the land has it
+## (Footbridge `plan`): snapped bank to bank over the water the drag crosses,
+## its ends on the ground, one undo step. Returns the plan, with the record's
+## "id" when one was laid; a refusal ("ok" false, its "reason") lays nothing.
+func place_bridge(from: Vector2, to: Vector2) -> Dictionary:
+	if forming or not active or _painting: return {"ok":false,"reason":"busy"}
+	var found: Dictionary = Footbridge.plan(Footbridge.water(self),from,to)
+	if not found.ok: return found
+	_land_mountain()
+	data.begin_stroke()
+	var id := data.add_bridge(found.a,found.b)
+	if not data.end_stroke() or id < 0: return {"ok":false,"reason":"busy"}
+	found.id = id
+	if bridges != null: bridges.rebuild()
+	refresh(get_tree())
+	return found
+
 func set_stone(point: Vector2, size: float, angle: float, after: Variant = null) -> Variant:
 	return set_objects([{"asset":"rock","point":point,"size":size,"angle":angle}],after)
 
