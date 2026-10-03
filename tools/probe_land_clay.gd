@@ -350,9 +350,11 @@ func run() -> void:
 	check("one undo restores it exactly (palm)",data.heights == base)
 
 	# --- Pinch: hold, then up raises, following the pointer, and stays ---
-	var raised := await pinch(spot,-60.0,false)
+	# The Modeller's pinch is small (hand.gd PINCH: at most 1.5 m), so the
+	# pull that follows the pointer stays under its cap.
+	var raised := await pinch(spot,-25.0,false)
 	var raise_at_release: float = raised.release-raised.ground
-	check("hold then drag up raises the spot",raise_at_release > 1.0,"%.2f m" % raise_at_release)
+	check("hold then drag up raises the spot",raise_at_release > 0.4 and raise_at_release < HandTool.PINCH.raise,"%.2f m" % raise_at_release)
 	check("the summit follows the pointer (within 12 px)",raised.follow_px < 12.0,"%.1f px" % raised.follow_px)
 	check("it stays where it was let go",absf(raised.after-raised.release) < 0.01,"%.3f m later" % (raised.after-raised.release))
 	check("the land spring stays out of it",sprung == 0 and (spring == null or spring.state == 0))
@@ -363,6 +365,23 @@ func run() -> void:
 	await settled()
 	check("one undo restores it exactly (pinch up)",data.heights == base)
 
+	# --- A big pull: the Modeller tops out small, never a mountain ---
+	var big := await pinch(spot,-240.0,false)
+	# The summit's rise (the pinch takes the clay's nearest point, which may
+	# stand off the press point).
+	var big_lift := 0.0
+	var big_reach := 0.0
+	for i in range(data.points.size()):
+		big_lift = maxf(big_lift,data.heights[i]-big.base[i])
+		if absf(data.heights[i]-big.base[i]) > 0.01: big_reach = maxf(big_reach,data.points[i].distance_to(plate(spot)))
+	print("BIG PINCH ",JSON.stringify({"lift":snappedf(big_lift,0.01),"reach":snappedf(big_reach,0.01)}))
+	check("a big pull tops out at the pinch's cap (1.5 m), not a mountain",big_lift > HandTool.PINCH.raise*0.9 and big_lift < HandTool.PINCH.raise+0.05,"%.2f m" % big_lift)
+	check("over a small spread (within the pinch's widest reach)",big_reach < float(HandTool.PINCH.max_radius)*HandTool.HORN_REACH*clay.size_scale+0.8,"%.2f m" % big_reach)
+	check("and takes no rock",not big.rock,big.rock)
+	editor.undo()
+	await settled()
+	check("one undo restores it exactly (big pinch)",data.heights == base)
+
 	var sunk := await pinch(spot,30.0,false)
 	check("hold then drag down sinks the spot",sunk.release-sunk.ground < -0.4,"%.2f m" % (sunk.release-sunk.ground))
 	check("and it stays",absf(sunk.after-sunk.release) < 0.01)
@@ -371,7 +390,7 @@ func run() -> void:
 	await settled()
 
 	# --- Shift pinch: smaller and gentler ---
-	var fine := await pinch(spot,-60.0,true)
+	var fine := await pinch(spot,-25.0,true)
 	var fine_lift: float = fine.release-fine.ground
 	check("Shift pinch is the fine pinch",fine.verb == "fine_pinch",fine.verb)
 	check("it raises less than a plain pinch for the same pull",fine_lift > 0.1 and fine_lift < raise_at_release*0.6,"%.2f vs %.2f m" % [fine_lift,raise_at_release])
@@ -392,6 +411,7 @@ func pinch(spot: Vector2, pixels: float, fine: bool) -> Dictionary:
 	var data := editor.data
 	var undo0: int = data._undo.size()
 	var base := data.heights.duplicate()
+	var tint_before := data.tint.duplicate()
 	var at: Vector2 = plate(spot)
 	var ground := height(at)
 	if fine: shift(true)
@@ -426,4 +446,7 @@ func pinch(spot: Vector2, pixels: float, fine: bool) -> Dictionary:
 	for i in range(base.size()):
 		if absf(data.heights[i]-base[i]) > 0.01: moved += 1
 	print(("FINE PINCH " if fine else "PINCH ")+JSON.stringify({"pixels":pixels,"ground":snappedf(ground,0.01),"release":snappedf(release,0.01),"after":snappedf(after,0.01),"lift":snappedf(clay.lift,0.01),"follow_px":snappedf(follow,0.1),"moved_points":moved,"refreshes":clay.refreshes,"frames":stats(pinch_gaps)}))
-	return {"verb":verb,"ground":ground,"release":release,"after":after,"follow_px":follow,"moved":moved,"undo":data._undo.size()-undo0,"gaps":pinch_gaps}
+	var rocky := false
+	for c in range(data.tint.size()/NativeTerrainTint.STRIDE):
+		if not rocky and data.tint[c*NativeTerrainTint.STRIDE+3] != tint_before[c*NativeTerrainTint.STRIDE+3]: rocky = true
+	return {"verb":verb,"ground":ground,"release":release,"after":after,"follow_px":follow,"moved":moved,"undo":data._undo.size()-undo0,"gaps":pinch_gaps,"base":base,"rock":rocky}

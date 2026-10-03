@@ -30,12 +30,16 @@ into it. It is not saved with the place.
 
 ## The land (left button on the ground)
 
+The Modeller (the tool roll's first pocket) is the fine tool, for the work
+water follows: streams, notches, a pond's lip, a little dam. The big shapes
+are the Mountain's, the Hills', the Ravine's and the Chisel's.
+
 | Do | Result |
 |---|---|
 | Tap | a small poke; nearby creatures look round |
-| Drag slowly | the **thumb** digs a groove about 1 m deep; water will run along it |
+| Drag slowly | the **thumb** digs a stream bed about 0.6 m deep and 2 m wide; water will run along it |
 | Rub fast, back and forth | smooths the ground |
-| Press, **hold still a beat**, then drag up or down | the hand closes into a **pinch**: up raises a peak, down sinks a hollow |
+| Press, **hold still a beat**, then drag up or down | the hand closes into a **pinch**: up raises a knoll (at most 1.5 m), down sinks a dip |
 | Shift + drag | the **palm** levels a flat pan that a pond can fill |
 | Shift + hold, then drag | a smaller, gentler pinch |
 | Thumb a groove **out through the edge** | notches the rim into a spillway; water pours off the chunk into the void |
@@ -52,19 +56,37 @@ no holding still:
 
 | Do | Result |
 |---|---|
-| Press and drag up | a peak pulled out of the land, its summit following the pointer; drag down and the land sinks |
+| Press and drag up | a peak pulled out of the land, its summit following the pointer |
+| Press and drag down | a **crater**: a level floor sinks and a rim of thrown-out ground stands round it |
 | Press and drag up **and sideways** | the peak stretches into a **range** from the press to the ground under the pointer: several summits along a jagged crest, tapering at both ends. Up is still the height; sideways is the length, up to about 20 m |
-| Shift + press and drag | a smaller peak, or a shorter range |
+| Shift + press and drag | a smaller peak, a shorter range or a smaller crater |
 
 A pull straight up stays a single peak: a little sideways wobble on the way up
-is ignored. Let go and the peak or range takes the mountains' rock. One
-Cmd+Z takes back the whole pull.
+is ignored, and a pull down is always a crater. Let go and the peak or range
+takes the mountains' rock. One Cmd+Z takes back the whole pull.
+
+## The Ravine (tool roll)
+
+Draw a line on the land with the Ravine and let go: the wire is drawn
+through the land along your line, bends and all, from where you pressed to
+where you let go, and a deep, steep ravine opens behind it. Drawn out
+through the rim, it opens the plate's side. **Draw a loop** (end where you
+started) and the inside sinks to a level floor: a lake basin, the line its
+shore. Shift makes it shallower. The pips widen it. Each drawing is one
+Cmd+Z.
+
+## The Chisel (tool roll)
+
+The Chisel's modes fan out beside its pocket: **Mesa** (hold, then drag up
+for a flat-topped block or down for a pit), **Shelf** (drag a terrace),
+**Notch** (tap a step) and **Slice** (hold, then drag up or down: cuts a
+hilltop off level). Shift makes each cut shallower.
 
 ## The Paddle (tool roll)
 
-The Paddle's modes fan out beside its pocket: **Swell** (press and drag up or
-down), **Sweep** (drag a soft valley), **Pat** (tap to flatten bumps) and
-**Plane**. Q and E step through them, and Shift narrows the blade.
+The Paddle tidies up. Its modes fan out beside its pocket: **Plane** and
+**Pat** (tap to flatten bumps). Q and E step between them, and Shift narrows
+the blade.
 
 **Plane** is for a quick change of ground: drag, and the ground under the
 blade levels to the height where you pressed. It is also laid afresh as the
@@ -72,31 +94,11 @@ surface picked on the swatches under the fan: grass (the default), earth,
 rock or sand. Rock, from a mountain or the Brush, planes back to grass.
 Each stroke is one Cmd+Z.
 
-## The Wire (tool roll)
-
-Draw a line on the land with the Wire and let go: what the line makes is
-the mode picked on its fan (Q and E step through them). It is built along
-the line you drew, bends and all, the wire running along it from where you
-pressed to where you let go. Each drawing is one Cmd+Z.
-
-| Mode | A line | A closed loop (end where you started) |
-|---|---|---|
-| **Gorge** | a deep, steep ravine; drawn out through the rim it opens the plate's side | a lake basin: the inside sinks to a level floor, the line is its shore |
-| **Range** | a jagged mountain range following the line, tapering at its ends | a ring of peaks |
-| **Hill** | a soft rolling ridge | one rounded hill filling the outline, bigger for a bigger outline |
-| **Trees** | a row of trees, one every 3 m, of whatever grows there | |
-| **Flowers** | a narrow border of wildflowers | |
-| **Slice** (hold, then drag up or down) | cuts a hilltop off level | |
-
-Shift makes each gentler: a shallower gorge or basin, a lower range or
-hill, a closer hedge of trees, a thinner border. The pips widen the
-shapes.
-
 ## The watering can (tool roll)
 
 Hold to pour where the rose hangs; drag to run water along a groove; Shift
 sprinkles. **Hold it still over a hollow** (a crater, a pan, a basin drawn
-with the Wire, or a pond already standing) and after a moment it builds to
+with the Ravine, or a pond already standing) and after a moment it builds to
 a gush, nine times as strong, and fills the hollow to its brim in seconds.
 Move on and it eases back. Held still on a hilltop or a slope, where the
 water runs off, it stays gentle and plants a spring.

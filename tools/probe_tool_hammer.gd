@@ -4,8 +4,9 @@ extends SceneTree
 ## synthesized mouse and key input through hand_reach, as
 ## tools/probe_tool_paddle.gd drives the Paddle. Checks: pressing the
 ## hammer's pocket takes it (the clay works with it, its stand-in prop is
-## built in the icon's tint); a tap on grass only dents it; the Hand's pinch
-## raises a rock horn, and a tap on it lowers the peak and spills the volume
+## built in the icon's tint); a tap on grass only dents it; the Mountain's
+## pull raises a rock horn (the Modeller's pinch is too small since
+## 2026-10-02), and a tap on it lowers the peak and spills the volume
 ## downhill as scree (the heights' sum kept, the true volume roughly), no
 ## scree steeper than the repose angle, the scree painted; Shift is a
 ## smaller blow and the widest pip a wider one; a drag strikes along its
@@ -234,13 +235,15 @@ func run() -> void:
 	await key(KEY_2)
 	check("and 2 sets it back",is_equal_approx(clay.size_scale,1.0))
 
-	# --- Esc gives back the Hand; its pinch raises a rock horn ---
+	# --- Esc gives back the Hand; the Mountain raises a rock horn ---
 	await key(KEY_ESCAPE)
 	check("Esc puts the hammer back: the Hand again",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
 	check("its prop gives way to the Modeller's",not is_instance_valid(prop) and clay.get("_prop") is Node3D and (clay.get("_prop") as Node3D).find_children("*","MeshInstance3D",true,false).size() >= 3)
+	materials.select_tool("mountain")
+	await frames(10)
 	var pinch_undo: int = data._undo.size()
 	button(spot,true)
-	await frames(int(ceil(clay.HOLD_SECONDS*60.0))+3)
+	await frames(2)
 	var p := spot
 	for i in range(20):
 		p += Vector2(0,-6)
@@ -255,7 +258,7 @@ func run() -> void:
 	var top := data.heights[peak]
 	var cell := data.meadow_cell(summit)
 	print("PEAK ",JSON.stringify({"worked":worked.back(),"summit":summit,"height":snappedf(top,0.01),"rise":snappedf(top-height(at+Vector2(12,0)) if height(at+Vector2(12,0)) else 0.0,0.01),"tint_weight":snappedf(NativeTerrainTint.weight_at(data.tint,cell),0.01)}))
-	check("the Hand's pinch raised a horn",worked.back() == ["pinch",true] and data._undo.size() == pinch_undo+1)
+	check("the Mountain raised a horn",worked.back() == ["peak",true] and data._undo.size() == pinch_undo+1,worked.back())
 	await click(pocket)
 	check("the hammer again",clay.tool_id == "hammer")
 	# Aim just under the tip on screen: a ray at the tip's own vertex can

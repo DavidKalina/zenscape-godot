@@ -1,7 +1,11 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
-## The Wire, "Slice" (docs/design/tools/PLAN.md): a taut wire between two
-## wooden toggles, drawn through the land as a potter's wire goes through clay.
-## It cuts; it never raises.
+## The Ravine, "Carve" (docs/design/tools/PLAN.md; it keeps the id `wire`
+## from when it was the Wire, so probes and the roll read as before): a taut
+## wire between two wooden toggles, drawn through the land as a potter's wire
+## goes through clay. It cuts; it never raises. Its one gesture is drawing a
+## line (the user, 2026-10-02: drawing the line and watching it form the
+## terrain was the fun; mountains are pulled, not drawn), so a press is a
+## drag at once (`press_kind`) and it has no fan.
 ##
 ## - **Drag (press, drag, release):** a gorge along the path the pointer drew,
 ##   bends and all. The path is the pointer's ground points kept PATH_SPACING
@@ -15,31 +19,15 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##   down in the cut, then goes back to the pointer. The land it leaves is the
 ##   one `cut_gorge` writes at once along the same path; an undo, a new press,
 ##   a change of tool or Esc mid-cut lands the rest of it at once (`finish`).
-## - **Hold, then drag up or down:** a slice. Everything within SLICE_RADIUS of
-##   the press that stands above a level plane is cut down to it: a hilltop
-##   sliced off flat. The plane starts at the ground under the press and
-##   follows the pointer's height, as the pinch's summit does, so dragging
-##   down takes more of the hill.
-## - **Drag, with another mode on the fan:** the same drawn path builds instead
-##   of cutting (`_plan_range`, `_plan_hill`, `_plan_plants`), raised behind
-##   the same running head: **Range**, a line of jagged peaks along the path;
-##   **Hill**, a soft rolling ridge; **Trees**, a row of the land's own trees;
-##   **Flowers**, a narrow border of wildflowers. The user, 2026-10-02: "Would
-##   be cool to trace what you want. Same tool. Draw a ravine, draw a mountain
-##   range, draw a hill, hell, maybe draw a line of flowers, trees."
 ## - **A closed loop** (the path ends within LOOP_GAP of where it began, and
-##   runs at least LOOP_MIN round) is an outline: the Gorge sinks a level
-##   basin inside it for a lake (`_plan_basin`), the Hill raises one rounded
-##   hill filling it (`_plan_mound`), the Range stands a ring of peaks along
-##   it. The outline is built first, then the inside settles from its edge in.
-## - **Tap:** nothing yet.
-## - **Shift** at the moment the verb is decided: a shallower gorge (SHALLOW of
-##   the depth), and a slice whose plane follows the pointer at SHALLOW of the
-##   pace, so it takes a thinner cut for the same pull.
+##   runs at least LOOP_MIN round) is a shore: a level basin sinks inside it
+##   for a lake (`_plan_basin`), settling from its edge in.
+## - **Shift** at the moment the drag is decided: a shallower gorge or basin
+##   (SHALLOW of the depth).
 ##
-## Each is one undo step (the gorge's closes once its cut has run). The pips
-## (clay.size_scale) scale the reach: the gorge's width and the slice's
-## radius. Depth and wall steepness hold.
+## Each is one undo step, closed once its cut has run. The pips
+## (clay.size_scale) scale the gorge's width and the basin's bank. Depth and
+## wall steepness hold.
 ##
 ## ### The gorge
 ##
@@ -71,7 +59,7 @@ const GORGE_DEPTH := 2.6
 const BED_FALL := 0.02
 ## Metres between the stations the bed's fall is worked out on.
 const STATION := 0.25
-## Shift: the shallower share (of the gorge's depth, of the slice's pace).
+## Shift: the shallower share of the gorge's and the basin's depth.
 const SHALLOW := 0.4
 ## The drawn path: a pointer point is kept once it is PATH_SPACING metres from
 ## the last one kept, and the kept points are smoothed SMOOTH_PASSES times
@@ -92,16 +80,6 @@ const RIM_PAST := 0.6
 const CUT_SPEED := 8.0
 const CUT_SECONDS := Vector2(0.5,2.5)
 const CUT_EASE := 0.5
-## The slice: radius in metres at the middle pip; the plane rises and falls
-## with the pointer's travel at SLICE_SCALE metres per metre standing at the
-## press, between SLICE_SINK below and SLICE_RAISE above the pressed ground.
-## Inside the radius the cut is a hard, level plane: a wire does not feather.
-## A hill wider than the radius is left a step at its rim, which the rock
-## paint takes as a cliff.
-const SLICE_RADIUS := 7.0
-const SLICE_SCALE := 1.0
-const SLICE_SINK := 6.0
-const SLICE_RAISE := 8.0
 ## A loop: the drawn path's ends within LOOP_GAP m (at the middle pip) and
 ## its run at least LOOP_MIN m. Inside it the head runs on FILL_PACE m of
 ## arc for each metre in from the outline, so the inside settles edge first.
@@ -114,43 +92,6 @@ const FILL_PACE := 1.0
 const BASIN_DEPTH := 2.4
 const BASIN_BANK := 2.5
 const BASIN_BANK_SHARE := 0.45
-## The range: summits RANGE_HEIGHT m over the ground at the middle pip,
-## RANGE_HALF m either side of the path at their feet, every RANGE_SPACING m
-## along it (slipped by up to RANGE_SLIP of that), each RANGE_TALL of the
-## tallest; between them the crest at RANGE_SADDLE of the summits, serrated;
-## an open range tapers RANGE_TAPER lower at its ends. Shift: LOW of it all
-## but the spacing.
-const RANGE_HEIGHT := 8.5
-const RANGE_HALF := 3.4
-const RANGE_SPACING := 4.0
-const RANGE_SLIP := 0.25
-const RANGE_TALL := Vector2(0.72,1.0)
-const RANGE_SADDLE := 0.55
-const RANGE_TAPER := 0.4
-const LOW := 0.45
-## The hill: a soft ridge HILL_HEIGHT m over the ground and HILL_HALF m either
-## side of the path, its crest rolling by HILL_ROLL. A loop's hill stands
-## MOUND_SLOPE m for each metre the outline's middle lies in from it, between
-## MOUND_HEIGHT.x and .y m. Shift: LOW of the height.
-const HILL_HEIGHT := 2.4
-const HILL_HALF := 4.0
-const HILL_ROLL := 0.2
-const MOUND_SLOPE := 0.5
-const MOUND_HEIGHT := Vector2(1.2,8.0)
-## The row of trees: one every TREE_STEP m along the path (Shift: HEDGE_STEP,
-## closer), each up to TREE_WANDER m off it. The border of flowers: the flower
-## brush (scripts/flower_paint.gd) at FLOWER_SIZE of its own, drawn along the
-## path in steps FLOWER_STEP m apart, each lingering FLOWER_LINGER s, so one
-## draw comes up near a full drift's core.
-const TREE_STEP := 3.0
-const HEDGE_STEP := 2.0
-const TREE_WANDER := 0.3
-const FLOWER_SIZE := 0.6
-const FLOWER_STEP := 0.25
-const FLOWER_LINGER := 0.4
-const TreePaint = preload("res://scripts/tree_paint.gd")
-const FlowerPaint = preload("res://scripts/flower_paint.gd")
-const Variety = preload("res://scripts/seeded_variety.gd")
 ## The stand-in prop, metres at the hand's own size: two hexagonal toggles in
 ## the icon's tint (scripts/hud_icons.gd "wire"), darker end caps, and a thin
 ## lighter wire between them hanging down from the one in the grip.
@@ -162,8 +103,6 @@ const WIRE_LENGTH := 1.05
 const WIRE_THICK := 0.012
 
 var _shallow := false
-var _shown_level := INF
-var _level_at := 0.0
 ## False cuts the gorge whole at release, with no drawing through (for probes).
 var animate := true
 ## The drawn path: the points kept, how many of the clay's queued points have
@@ -181,22 +120,8 @@ var _box := Rect2()
 var _clock := 0.0
 var _seconds := 0.0
 var _running := false
-## The running build raises (max) rather than cuts (min); what it plants as
-## the head passes ([arc length, plate point], in order), the next to plant,
-## and the strokes planting them; the height rock is measured against.
-var _raise := false
-var _plants: Array = []
-var _next_plant := 0
-var _trees: RefCounted = null
-var _flowers: RefCounted = null
-var _rock_height := 0.0
-
-## The fan's modes (clay_tool `modes`): what a drawn path makes (the gorge,
-## a range, a hill, a row of trees, a border of flowers) and the slice.
-const MODES := [{"id":"gorge","kind":"drag"},{"id":"range","kind":"drag"},{"id":"hill","kind":"drag"},{"id":"trees","kind":"drag"},{"id":"flowers","kind":"drag"},{"id":"slice","kind":"hold"}]
-## Each drawing mode's verb, and its Shift verb.
-const VERBS := {"gorge":["gorge","shallow_gorge"],"range":["range","low_range"],"hill":["hill","low_hill"],"trees":["trees","hedge"],"flowers":["flowers","fine_flowers"]}
-func modes() -> Array: return MODES
+## No fan: the line is all it draws. A press is a drag from the start.
+func press_kind() -> String: return "drag"
 func id() -> String: return "wire"
 func stroke_radius() -> float: return (BED_HALF+WALL_RUN)*clay.size_scale
 
@@ -213,12 +138,7 @@ func drag_begin(fine: bool) -> String:
 	_kept = PackedVector2Array([clay.center])
 	_taken = 0
 	_end = clay.center
-	var verbs: Array = VERBS.get(mode,VERBS.gorge)
-	return verbs[1] if fine else verbs[0]
-
-## The drawing mode in hand ("gorge" for none or the slice's).
-func _drawing() -> String:
-	return mode if VERBS.has(mode) else "gorge"
+	return "shallow_gorge" if fine else "gorge"
 
 ## Nothing is laid while the wire is drawn: the path's points wait in the
 ## clay's queue and are read into the drawn path. The hand follows the pointer.
@@ -252,12 +172,11 @@ func drawn() -> PackedVector2Array:
 	if _closes(path):
 		path[-1] = path[0]
 		return path
-	# Only a gorge runs on out through the rim.
-	return _to_rim(path) if _drawing() == "gorge" else path
+	return _to_rim(path)
 
 ## Whether `path` closes on itself: a loop, an outline (LOOP_GAP, LOOP_MIN).
 func _closes(path: PackedVector2Array) -> bool:
-	if path.size() < 4 or _drawing() in ["trees","flowers"]: return false
+	if path.size() < 4: return false
 	var size: float = clay.size_scale if clay != null else 1.0
 	return path[0].distance_to(path[-1]) <= LOOP_GAP*maxf(size,1.0) and _arc(path)[-1] >= LOOP_MIN
 
@@ -290,32 +209,17 @@ static func _past_rim(end: Vector2, from: Vector2) -> Variant:
 ## while it runs. Without `animate` it lands whole now.
 func drag_end() -> bool:
 	_path = drawn()
-	var plan := _plan_drawn(_path)
+	var plan := _plan_basin(_path) if _path.size() > 3 and _path[0] == _path[-1] else _plan(_path)
 	_cuts = plan.cuts
 	_length = plan.length
 	_box = plan.box
-	_raise = plan.get("raise",false)
-	_plants = plan.get("plants",[])
-	_rock_height = float(plan.get("rock",0.0))
 	_next = 0
-	_next_plant = 0
 	_clock = 0.0
 	_seconds = clampf(_length/CUT_SPEED,CUT_SECONDS.x,CUT_SECONDS.y)
 	_running = true
 	if _length > 0.0: clay.sound(&"wire_start",_path[0])
 	if not animate: finish()
 	return false
-
-## The plan for the drawing mode in hand along `path`: `_plan`'s, plus
-## "raise" (the heights are built up, not cut), "plants" and "rock" (the
-## height a range's rock is measured against, 0 for none).
-func _plan_drawn(path: PackedVector2Array) -> Dictionary:
-	var loop := path.size() > 3 and path[0] == path[-1]
-	match _drawing():
-		"range": return _plan_range(path,loop)
-		"hill": return _plan_mound(path) if loop else _plan_hill(path)
-		"trees", "flowers": return _plan_plants(path)
-	return _plan_basin(path) if loop else _plan(path)
 
 ## The path the last cut ran along (plate points), for probes.
 func cut_path() -> PackedVector2Array:
@@ -349,17 +253,10 @@ func finish() -> void:
 	if not _running: return
 	_lay(INF)
 	_running = false
-	if not _plants.is_empty() or _drawing() in ["trees","flowers"]:
-		# Plants only: no ground moved. The flowers' faint wash, in the step.
-		if _flowers != null: _flowers.finish()
-		_trees = null
-		_flowers = null
-		return
 	var spread := maxf(_box.size.x,_box.size.y)*0.5
 	clay.touch(_box.get_center(),spread)
 	clay.lay_dirt(_box.get_center(),spread)
 	clay.sound(&"crumble",_box.get_center(),_length/20.0)
-	if _rock_height > 0.0: clay.paint_rock(_box.get_center(),spread,_rock_height)
 	clay.paint_faces(_box)
 	clay.show_land()
 	clay.shake_trees(clay.center,0.0,clay.touched())
@@ -368,7 +265,6 @@ func finish() -> void:
 ## write the land, lay the dirt under them and show it. Only the points cut
 ## this frame are written; the rest of the land is as it was.
 func _lay(head: float) -> void:
-	_plant(head)
 	if _next >= _cuts.size(): return
 	var data: NativeTerrainData = clay.editor.data
 	var heights := data.heights
@@ -378,7 +274,7 @@ func _lay(head: float) -> void:
 	while _next < _cuts.size() and (_cuts[_next] as Vector3).x <= head:
 		var cut: Vector3 = _cuts[_next]
 		var i := int(cut.y)
-		heights[i] = maxf(heights[i],cut.z) if _raise else minf(heights[i],cut.z)
+		heights[i] = minf(heights[i],cut.z)
 		area = Rect2(points[i],Vector2.ZERO) if first else area.expand(points[i])
 		first = false
 		_next += 1
@@ -388,32 +284,6 @@ func _lay(head: float) -> void:
 	clay.touch(area.get_center(),spread)
 	clay.lay_dirt(area.get_center(),spread)
 	clay.show_land()
-
-## Plant what the head has passed (arc length up to `head`), shown at once
-## through the view's paint preview, as the flower brush's are.
-func _plant(head: float) -> void:
-	if _next_plant >= _plants.size(): return
-	var made := []
-	while _next_plant < _plants.size() and float(_plants[_next_plant][0]) <= head:
-		var p: Vector2 = _plants[_next_plant][1]
-		if _trees != null:
-			var key := [int(_trees.sowing.salt),clay.editor.land_seed,"row",_next_plant]
-			if _trees.suits(p) and _trees._clear(p):
-				_trees.kind = _land_tree(p,key)
-				var item: Variant = _trees._plant(p,key)
-				if item != null: made.append(item)
-		elif _flowers != null:
-			var got: Dictionary = _flowers.press(p) if _next_plant == 0 else _flowers.stroke(p,FLOWER_LINGER)
-			made.append_array(got.records)
-		_next_plant += 1
-	if not made.is_empty(): clay.editor._show_paint({"records":made,"removed":[]})
-
-## The tree the land grows at `p`: emergence's own pick for its habitat, or an
-## oak before the habitat is known.
-func _land_tree(p: Vector2, key: Array) -> String:
-	var life: RefCounted = clay.editor.emergence
-	if life._blend == null: return "broadleaf"
-	return life._tree_kind(str(life._blend.pick(p)),p,Variety.unit(key+[5]),Variety.unit(key+[25]))
 
 ## The head's share of the path at `t` of the cut's seconds: even, with
 ## CUT_EASE of a smoothstep mixed in.
@@ -497,23 +367,6 @@ func _plan_basin(path: PackedVector2Array) -> Dictionary:
 	cuts.sort()
 	return {"cuts":cuts,"length":length+deepest*FILL_PACE,"box":inside.box}
 
-## One rounded hill filling a loop `path`: each point inside raised by a
-## smoothstep of its way in, MOUND_SLOPE m for each metre the middle lies in,
-## so a bigger outline stands a bigger hill.
-func _plan_mound(path: PackedVector2Array) -> Dictionary:
-	var base: PackedFloat32Array = clay.base
-	var length := _arc(path)[-1]
-	var inside := _inside(path)
-	var deepest: float = maxf(inside.deepest,0.01)
-	var tall := clampf(deepest*MOUND_SLOPE,MOUND_HEIGHT.x,MOUND_HEIGHT.y)*(LOW if _shallow else 1.0)
-	var cuts: Array = []
-	for entry: Vector2 in inside.points:
-		var i := int(entry.x)
-		var h := minf(base[i]+tall*smoothstep(0.0,1.0,entry.y/deepest)*clay.fade(i),NativeTerrainData.MAX_HEIGHT)
-		if h > base[i]: cuts.append(Vector3(length+entry.y*FILL_PACE,i,h))
-	cuts.sort()
-	return {"cuts":cuts,"length":length+deepest*FILL_PACE,"box":inside.box,"raise":true}
-
 ## The land's points inside a loop `path`: {"points": Vector2(point index,
 ## metres in from the outline), "deepest": the most metres in, "box"}.
 func _inside(path: PackedVector2Array) -> Dictionary:
@@ -532,130 +385,6 @@ func _inside(path: PackedVector2Array) -> Dictionary:
 		found.append(Vector2(i,d))
 		deepest = maxf(deepest,d)
 	return {"points":found,"deepest":deepest,"box":box.grow(1.0)}
-
-## Every point near `path` and its arc length and distance from it, nearest
-## stretch first: [Vector3(point index, arc length, distance)], within `reach`.
-func _beside(path: PackedVector2Array, arc: PackedFloat32Array, reach: float) -> Array:
-	var data: NativeTerrainData = clay.editor.data
-	var points := data.points
-	var best := {}
-	for j in range(path.size()-1):
-		var a := path[j]
-		var b := path[j+1]
-		var run := a.distance_to(b)
-		var along := (b-a)/run if run > 0.001 else Vector2.ZERO
-		clay.gather((a+b)*0.5,run*0.5+reach)
-		for i: int in clay.near:
-			var t := clampf((points[i]-a).dot(along),0.0,run)
-			var d := points[i].distance_to(a+along*t)
-			if d >= reach: continue
-			var was: Variant = best.get(i)
-			if was == null or d < (was as Vector3).z: best[i] = Vector3(i,arc[j]+t,d)
-	return best.values()
-
-## A range along `path` (a ring of peaks round a loop): summits every
-## RANGE_SPACING along the crest, the crest between them at RANGE_SADDLE,
-## each point raised by the crest at its arc length and a knife-edged
-## profile across, at the land's fade.
-func _plan_range(path: PackedVector2Array, loop: bool) -> Dictionary:
-	var base: PackedFloat32Array = clay.base
-	var size: float = clay.size_scale
-	if path.size() == 1: path = PackedVector2Array([path[0],path[0]])
-	var arc := _arc(path)
-	var length := arc[-1]
-	var low := LOW if _shallow else 1.0
-	var height := RANGE_HEIGHT*size*low
-	var half := RANGE_HALF*size*lerpf(1.0,low,0.5)
-	var spacing := RANGE_SPACING*size
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([clay.editor.land_seed,"wire range",path[0].snapped(Vector2.ONE*0.01)])
-	var noise := FastNoiseLite.new()
-	noise.seed = rng.randi()
-	noise.frequency = 0.9
-	var summits := PackedVector2Array()
-	var count := maxi(1,roundi(length/spacing))
-	for k in count:
-		summits.append(Vector2((k+0.5+rng.randf_range(-RANGE_SLIP,RANGE_SLIP))*length/count,rng.randf_range(RANGE_TALL.x,RANGE_TALL.y)))
-	var cuts: Array = []
-	var box := Rect2(path[0],Vector2.ZERO)
-	for p in path: box = box.expand(p)
-	for entry: Vector3 in _beside(path,arc,half*1.3):
-		var i := int(entry.x)
-		var s := entry.y
-		var crest := RANGE_SADDLE*(0.82+0.18*noise.get_noise_1d(s))
-		var width := half*(0.85+0.15*noise.get_noise_1d(s+40.0))
-		for top: Vector2 in summits:
-			var u := (s-top.x)/(spacing*0.6)
-			if absf(u) < 1.0:
-				crest = maxf(crest,top.y*pow(1.0-u*u,2.0))
-				width = maxf(width,half*(0.85+0.3*(1.0-absf(u))))
-		if not loop and length > 0.01: crest *= 1.0-RANGE_TAPER*(1.0-pow(sin(PI*clampf(s/length,0.0,1.0)),0.7))
-		var q := entry.z/width
-		if q >= 1.0: continue
-		var edge := lerpf(pow(1.0-q*q,2.0),pow(1.0-q,1.45),0.6)*(0.92+0.08*noise.get_noise_2dv(clay.editor.data.points[i]*1.3))
-		var h := minf(base[i]+height*crest*edge*clay.fade(i),NativeTerrainData.MAX_HEIGHT)
-		if h > base[i]+0.005: cuts.append(Vector3(s,i,h))
-	cuts.sort()
-	return {"cuts":cuts,"length":length,"box":box.grow(half*1.3),"raise":true,"rock":height}
-
-## A soft ridge along `path`: HILL_HEIGHT over the ground at its crest,
-## rolling a little along it, falling away on a cosine to HILL_HALF either side.
-func _plan_hill(path: PackedVector2Array) -> Dictionary:
-	var base: PackedFloat32Array = clay.base
-	var size: float = clay.size_scale
-	if path.size() == 1: path = PackedVector2Array([path[0],path[0]])
-	var arc := _arc(path)
-	var height := HILL_HEIGHT*size*(LOW if _shallow else 1.0)
-	var half := HILL_HALF*size
-	var noise := FastNoiseLite.new()
-	noise.seed = hash([clay.editor.land_seed,"wire hill",path[0].snapped(Vector2.ONE*0.01)])
-	noise.frequency = 0.12
-	var cuts: Array = []
-	var box := Rect2(path[0],Vector2.ZERO)
-	for p in path: box = box.expand(p)
-	for entry: Vector3 in _beside(path,arc,half):
-		var i := int(entry.x)
-		var q := entry.z/half
-		var crest := 1.0-HILL_ROLL+HILL_ROLL*noise.get_noise_1d(entry.y)
-		var h := minf(base[i]+height*crest*(0.5+0.5*cos(PI*q))*clay.fade(i),NativeTerrainData.MAX_HEIGHT)
-		if h > base[i]+0.005: cuts.append(Vector3(entry.y,i,h))
-	cuts.sort()
-	return {"cuts":cuts,"length":arc[-1],"box":box.grow(half),"raise":true}
-
-## What the Trees and Flowers modes plant along `path`: stations TREE_STEP
-## (or HEDGE_STEP) apart for a row of trees, wandering a little off the line,
-## or FLOWER_STEP apart for the flower brush to be drawn through; and the
-## stroke that plants them (scripts/tree_paint.gd, scripts/flower_paint.gd),
-## inside the clay's undo step. No ground moves.
-func _plan_plants(path: PackedVector2Array) -> Dictionary:
-	var editor: Node = clay.editor
-	var data: NativeTerrainData = editor.data
-	if path.size() == 1: path = PackedVector2Array([path[0],path[0]])
-	var arc := _arc(path)
-	var length := arc[-1]
-	var plants: Array = []
-	var box := Rect2(path[0],Vector2.ZERO)
-	for p in path: box = box.expand(p)
-	var serial := hash([editor.land_seed,"wire plants",path[0].snapped(Vector2.ONE*0.01)])
-	_trees = null
-	_flowers = null
-	if _drawing() == "trees":
-		_trees = TreePaint.new(editor.emergence,data,"broadleaf",clay.size_scale,false,serial,editor._paint_wet())
-		var step := (HEDGE_STEP if _shallow else TREE_STEP)*lerpf(1.0,clay.size_scale,0.5)
-		var count := maxi(1,floori(length/step)+1)
-		var start := (length-step*(count-1))*0.5
-		for k in count:
-			var s := start+step*k
-			var key := [serial,k]
-			var at := _point_at(path,s)+Vector2.from_angle(Variety.unit(key+[1])*TAU)*TREE_WANDER*Variety.unit(key+[2])
-			plants.append([s,at])
-	else:
-		_flowers = FlowerPaint.new(editor._flower_sowing("wildflower"),FLOWER_SIZE*clay.size_scale*(LOW if _shallow else 1.0),false,serial)
-		var count := maxi(1,ceili(length/FLOWER_STEP))
-		for k in count+1:
-			var s := length*k/count
-			plants.append([s,_point_at(path,s)])
-	return {"cuts":[],"length":length,"box":box.grow(TreePaint.TREE_RADIUS),"plants":plants}
 
 ## Arc length at each point of `path`.
 static func _arc(path: PackedVector2Array) -> PackedFloat32Array:
@@ -701,42 +430,6 @@ func _bed(path: PackedVector2Array, arc: PackedFloat32Array, depth: float) -> Pa
 		bed[k] = minf(bed[k],bed[before]-BED_FALL*step)
 	for k in count: bed[k] = maxf(bed[k],NativeTerrainData.MIN_HEIGHT)
 	return bed
-
-# --- Hold: the slice -----------------------------------------------------------------
-
-func hold_begin(fine: bool) -> String:
-	_shallow = fine
-	var ground: Variant = clay.editor.data.sample(clay.center,clay.base)
-	_level_at = float(ground) if ground != null else 0.0
-	clay.gather(clay.center,SLICE_RADIUS*clay.size_scale)
-	_shown_level = INF
-	return "shallow_slice" if fine else "slice"
-
-## The plane at the pressed ground plus the pointer's travel; every gathered
-## point above it is cut down to it.
-func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
-	lift = clampf(rise*SLICE_SCALE*(SHALLOW if _shallow else 1.0),-SLICE_SINK,SLICE_RAISE)
-	var level := maxf(_level_at+lift,NativeTerrainData.MIN_HEIGHT)
-	if is_equal_approx(level,_shown_level): return false
-	_shown_level = level
-	var base: PackedFloat32Array = clay.base
-	var near: PackedInt32Array = clay.near
-	var radius: float = SLICE_RADIUS*clay.size_scale
-	for i in near:
-		heights[i] = minf(base[i],level)
-	clay.touch(clay.center,radius)
-	clay.dirty(clay.center,radius)
-	return true
-
-## The level the slice stands at, in metres (for probes).
-func slice_level() -> float:
-	return _shown_level
-
-func hold_end() -> void:
-	var radius: float = SLICE_RADIUS*clay.size_scale
-	var reach := radius+1.0
-	clay.paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
-	clay.shake_trees(clay.center,reach)
 
 # --- The stand-in prop ------------------------------------------------------------------
 

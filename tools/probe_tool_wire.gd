@@ -1,6 +1,6 @@
 extends SceneTree
-## Headless probe of the Wire (scripts/clay_tools/wire.gd,
-## docs/design/tools/PLAN.md "The Wire") on the real cozy worlds scene,
+## Headless probe of the Ravine (id `wire`, scripts/clay_tools/wire.gd,
+## docs/design/tools/PLAN.md "The Wire" and "The roll, revised") on the real cozy worlds scene,
 ## driven by synthesized mouse and key input through hand_reach, as
 ## tools/probe_tool_paddle.gd drives the Paddle. Checks: pressing the wire's
 ## pocket in the tool roll takes it (the hand grips it over the land, its
@@ -13,8 +13,7 @@ extends SceneTree
 ## instant cut along the same path; an L-shaped drag cuts along both legs and
 ## leaves the corner's outside alone; an undo mid-cut takes it all back, and a
 ## new press or Esc mid-cut lands the same land (and tint) as the whole
-## drawing does; the hold-then-drag
-## slices a hill's top off level at the pointer's height; Shift is shallower
+## drawing does; Shift is shallower
 ## and the size pips widen it; each verb is one undo step that one undo takes
 ## back exactly; a tap keeps nothing; Esc gives back the Hand.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_wire.gd -- --modeless --no-title
@@ -332,63 +331,6 @@ func ell(across: float, down: float) -> Array:
 	for i in range(1,int(down/5.0)+1): offsets.append(Vector2(across,5.0*i))
 	return offsets
 
-## A round hill `tall` metres high and `radius` wide round `at` (the probe's
-## own set-up, not an undo step).
-func raise_hill(at: Vector2, tall: float, radius: float) -> void:
-	var data := editor.data
-	var hill := data.heights.duplicate()
-	for i in range(data.points.size()):
-		var t := data.points[i].distance_to(at)/radius
-		if t < 1.0: hill[i] += tall*pow(cos(t*PI*0.5),2.0)
-	data.heights = hill
-	editor.force_refresh()
-	await settled()
-
-## Press at `spot`, hold still past HOLD_SECONDS, drag `pixels` vertically
-## (positive is down) over 20 frames, measure while held, let go, and wait.
-func slice(spot: Vector2, at: Vector2, pixels: float, fine := false) -> Dictionary:
-	var data := editor.data
-	var undo0: int = data._undo.size()
-	var base := data.heights.duplicate()
-	if fine: shift(true)
-	button(spot,true)
-	await frames(int(ceil(clay.HOLD_SECONDS*60.0))+3)
-	var verb: String = clay.verb
-	var gesture: String = hand.reach_gesture if hand != null else ""
-	if fine: shift(false)
-	var p := spot
-	for i in range(20):
-		p += Vector2(0,pixels/20.0)
-		motion(p,Vector2(0,pixels/20.0))
-		await frames(1)
-	await frames(2)
-	var level: float = clay.tool.slice_level()
-	var top := height(at)
-	var shown: Vector2 = scene.camera.unproject_position(editor.terrain.to_global(Vector3(at.x,level,at.y)))
-	var follow := absf(shown.y-p.y)
-	# Every point in reach that stood over the plane is on it; none under it moved.
-	var radius: float = Wire.SLICE_RADIUS*clay.size_scale
-	var cut := 0
-	var off_plane := 0.0
-	var under_moved := 0.0
-	for i in range(data.points.size()):
-		if data.points[i].distance_to(clay.center) >= radius or clay.fade(i) < 1.0: continue
-		if base[i] > level:
-			cut += 1
-			off_plane = maxf(off_plane,absf(data.heights[i]-level))
-		else: under_moved = maxf(under_moved,absf(data.heights[i]-base[i]))
-	button(p,false)
-	await frames(1)
-	var release := height(at)
-	await settled()
-	await frames(30)
-	var after := height(at)
-	print(("SHALLOW SLICE " if fine else "SLICE ")+JSON.stringify({"pixels":pixels,"verb":verb,"hill_top":snappedf(height(at,base),0.01),"level":snappedf(level,0.01),
-		"top_now":snappedf(top,0.01),"cut_points":cut,"off_plane_max":snappedf(off_plane,0.0001),"under_moved_max":snappedf(under_moved,0.0001),
-		"follow_px":snappedf(follow,0.1),"release":snappedf(release,0.01),"after":snappedf(after,0.01)}))
-	return {"verb":verb,"gesture":gesture,"level":level,"top":top,"hill":height(at,base),"cut":cut,"off_plane":off_plane,"under_moved":under_moved,
-		"follow":follow,"release":release,"after":after,"undo":data._undo.size()-undo0,"base":base,"undo0":undo0}
-
 func run() -> void:
 	create_timer(280).timeout.connect(func() -> void: push_error("wire probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
@@ -441,6 +383,8 @@ func run() -> void:
 	var parts: Array = prop.find_children("*","MeshInstance3D",true,false) if prop != null else []
 	check("its stand-in prop is built, faceted, in the icon's tint",parts.size() >= 3 and (parts[-1] as MeshInstance3D).mesh is ArrayMesh and ((parts[-1] as MeshInstance3D).material_override as StandardMaterial3D).albedo_color == Color("b8683f"),parts.size())
 	check("and untilted",clay.tool.prop_tilt() == 0.0)
+	check("it is labelled the Ravine",str(preload("res://scripts/hud_icons.gd").item("wire").get("label","")) == "Ravine · Carve",preload("res://scripts/hud_icons.gd").item("wire").get("label",""))
+	check("it has no fan, and a press is a drag at once",clay.tool.modes().is_empty() and clay.tool.press_kind() == "drag",[clay.tool.modes(),clay.tool.press_kind()])
 	reach.pointer_override = spot
 	motion(spot,Vector2.ZERO,false)
 	await frames(20)
@@ -481,16 +425,17 @@ func run() -> void:
 	var undone := await gorge(spot+Vector2(-150,0),bowed(300.0),false,"bow","undo")
 	check("an undo mid-cut takes all of it back, heights and tint",not undone.partway.is_empty() and undone.restored and undone.tint_restored and undone.undo == 0,undone.partway)
 	for how in ["press","esc"]:
-		if clay.tool_id != "wire":
+		if clay.tool_id != "wire" or roll.tool != "wire":
 			await click(pocket)
 		var short := await gorge(spot+Vector2(-150,0),bowed(300.0),false,"bow",how)
+		if how == "esc": check("  Esc mid-cut gives back the Hand, in the roll and the clay alike",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
 		check("%s mid-cut lands the whole cut at once: the same land as the full drawing" % how,short.interrupted and short.heights == plain.heights and short.same_as_instant and short.ran < plain.ran,[short.ran,plain.ran])
 		check("  and the same dirt and rock",short.tint == plain.tint)
 		check("  in one undo step",short.undo == 1)
 		await undo_exact(short.base,short.undo0,"gorge cut short by "+how)
-	if clay.tool_id != "wire":
+	if clay.tool_id != "wire" or roll.tool != "wire":
 		await click(pocket)
-	check("the wire is in hand again",clay.tool_id == "wire")
+	check("the wire is in hand again",clay.tool_id == "wire" and roll.tool == "wire",[roll.tool,clay.tool_id])
 
 	# --- An L: the gorge takes the bend ---
 	# The corner picked on the ground as it stands before the cut, as the drag's are.
@@ -540,23 +485,6 @@ func run() -> void:
 	await undo_exact(small.base,small.undo0,"small gorge")
 	await key(KEY_2)
 	check("and 2 sets it back",is_equal_approx(clay.size_scale,1.0))
-
-	# --- Hold then drag: the slice ---
-	await raise_hill(at,3.0,5.0)
-	var hill_spot := screen(at)
-	var cut := await slice(hill_spot,at,40.0)
-	check("hold then drag is the slice, the hand gripping",cut.verb == "slice" and (hand == null or cut.gesture == "grip"),[cut.verb,cut.gesture])
-	check("it takes the hill's top off",cut.hill-cut.top > 0.8,"%.2f m off" % (cut.hill-cut.top))
-	check("level: every point in reach over the plane stands on it",cut.cut > 20 and cut.off_plane < 0.001,"%d points, %.4f m off" % [cut.cut,cut.off_plane])
-	check("and nothing under it moved",cut.under_moved < 0.0001,"%.5f m" % cut.under_moved)
-	check("the plane is at the pointer's height (within 12 px)",cut.follow < 12.0,"%.1f px" % cut.follow)
-	check("it stays where it was let go",absf(cut.after-cut.release) < 0.01)
-	check("one undo step for the slice",cut.undo == 1 and worked.back() == ["slice",true],worked.back())
-	await undo_exact(cut.base,cut.undo0,"slice")
-	var thin := await slice(hill_spot,at,40.0,true)
-	check("Shift slices shallower",thin.verb == "shallow_slice" and thin.hill-thin.top < (cut.hill-cut.top)*0.6 and thin.hill-thin.top > 0.1,"%.2f vs %.2f m off" % [thin.hill-thin.top,cut.hill-cut.top])
-	check("one undo step for the shallow slice",thin.undo == 1)
-	await undo_exact(thin.base,thin.undo0,"shallow slice")
 
 	# --- Esc gives back the Hand ---
 	await key(KEY_ESCAPE)

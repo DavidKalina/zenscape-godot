@@ -4,13 +4,13 @@ extends SceneTree
 ## synthesized mouse and key input through hand_reach, as
 ## tools/probe_land_clay.gd drives the Hand. Checks: pressing the paddle's
 ## pocket in the tool roll takes it (the clay works with it, the hand grips
-## it over the land, its stand-in prop is built); the tap pats the land flat
-## without raising or sinking it; the drag sweeps a trough with a ridge on
-## either bank; the hold-then-drag raises a wide round-shouldered swell that
-## follows the pointer, and sinks one; each is one undo step that one undo
-## takes back exactly; Shift narrows the blade and the size pips widen it;
-## Esc gives back the Hand, whose thumb digs a groove again; taking a
-## material puts the paddle back.
+## it over the land, its stand-in prop is built); its fan holds only the
+## Plane (first) and the Pat; with the Pat in hand a tap pats the land flat
+## without raising or sinking it; with the Plane a drag levels roughened
+## ground toward the height under the press; each is one undo step that one
+## undo takes back exactly; Shift narrows the blade and the size pips widen
+## it; Esc puts it down and the Modeller's pocket gives back the Modeller,
+## whose thumb digs a groove again; taking a material puts the paddle back.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_paddle.gd -- --modeless --no-title
 ## Nothing here is seen: the dummy renderer draws nothing, so the grip pose
 ## and the prop are checked as data only.
@@ -135,8 +135,11 @@ func undo_exact(base: PackedFloat32Array, undo0: int, what: String) -> void:
 	await settled()
 	check("one undo restores the ground exactly (%s)" % what,editor.data.heights == base and editor.data._undo.size() == undo0)
 
-## A drag of `pixels` px along screen x from `start`, 5 px a frame.
-func sweep(start: Vector2, pixels: float, fine := false) -> Dictionary:
+## A drag of `pixels` px along screen x from `start`, 5 px a frame. Reads
+## the path as picked, how far it stood off the Plane's level before and
+## after (the level is the tool's own, the ground under the press), and the
+## thumb's depth along it (for the Modeller's groove).
+func drag_line(start: Vector2, pixels: float, fine := false) -> Dictionary:
 	var data := editor.data
 	var undo0: int = data._undo.size()
 	var base := data.heights.duplicate()
@@ -154,62 +157,22 @@ func sweep(start: Vector2, pixels: float, fine := false) -> Dictionary:
 		var q: Variant = plate(p)
 		if q != null and i > 6 and i < int(pixels/5.0)-6: path.append(q)
 	if fine: shift(false)
+	var level: float = float(clay.tool.get("_level")) if clay.tool.get("_level") != null else 0.0
 	button(p,false)
 	await settled()
-	var mid: Vector2 = path[path.size()/2]
-	var along: Vector2 = (path[-1]-path[0]).normalized()
-	var across := Vector2(-along.y,along.x)
 	var depths: Array[float] = []
-	for q in path: depths.append(float(data.sample(q,base))-height(q))
-	var ridge := INF
-	var ridge_at: float = Paddle.SWEEP_HALF_WIDTH*clay.size_scale*(Paddle.NARROW if fine else 1.0)*1.6
-	for side in [1.0,-1.0]:
-		var r: Vector2 = mid+across*ridge_at*side
-		ridge = minf(ridge,height(r)-float(data.sample(r,base)))
-	var count := moved(base,0.03)
-	var result := {"verb":verb,"undo":data._undo.size()-undo0,"shallowest":depths.min(),"deepest":depths.max(),"ridge":ridge,"down":count.down,"up":count.up,"base":base,"undo0":undo0}
-	print(("NARROW SWEEP " if fine else "SWEEP ")+JSON.stringify({"size":clay.size_scale,"verb":verb,"shallowest":snappedf(depths.min(),0.01),"deepest":snappedf(depths.max(),0.01),"ridge_min_side":snappedf(ridge,0.01),"lowered":count.down,"raised":count.up,"dabs":clay.dabs}))
+	var off_before := 0.0
+	var off_after := 0.0
+	var worst := 0.0
+	for q in path:
+		depths.append(float(data.sample(q,base))-height(q))
+		off_before += absf(float(data.sample(q,base))-level)/path.size()
+		off_after += absf(height(q)-level)/path.size()
+		worst = maxf(worst,absf(height(q)-level))
+	var count := moved(base,0.01)
+	var result := {"verb":verb,"undo":data._undo.size()-undo0,"shallowest":depths.min(),"deepest":depths.max(),"level":level,"off_before":off_before,"off_after":off_after,"worst":worst,"moved":count.moved,"base":base,"undo0":undo0}
+	print(("NARROW DRAG " if fine else "DRAG ")+JSON.stringify({"size":clay.size_scale,"verb":verb,"level":snappedf(level,0.01),"off_before":snappedf(off_before,0.001),"off_after":snappedf(off_after,0.001),"worst":snappedf(worst,0.001),"shallowest":snappedf(depths.min(),0.01),"deepest":snappedf(depths.max(),0.01),"moved":count.moved,"dabs":clay.dabs}))
 	return result
-
-## Press at `spot`, hold still past HOLD_SECONDS, drag `pixels` vertically
-## (negative is up) over 20 frames, let go, and wait.
-func swell(spot: Vector2, pixels: float, fine := false) -> Dictionary:
-	var data := editor.data
-	var undo0: int = data._undo.size()
-	var base := data.heights.duplicate()
-	var at: Vector2 = plate(spot)
-	if fine: shift(true)
-	button(spot,true)
-	await frames(int(ceil(clay.HOLD_SECONDS*60.0))+3)
-	var verb: String = clay.verb
-	var gesture: String = hand.reach_gesture if hand != null else ""
-	if fine: shift(false)
-	var p := spot
-	for i in range(20):
-		p += Vector2(0,pixels/20.0)
-		motion(p,Vector2(0,pixels/20.0))
-		await frames(1)
-	await frames(2)
-	var crown := height(at)-float(data.sample(at,base))
-	var summit: Vector2 = scene.camera.unproject_position(editor.terrain.to_global(Vector3(at.x,height(at),at.y)))
-	var follow := absf(summit.y-p.y)
-	button(p,false)
-	await frames(1)
-	var release := height(at)
-	await settled()
-	await frames(30)
-	var after := height(at)
-	# The shoulder: the mean rise on a ring SHOULDER of the radius out, as a
-	# share of the crown's.
-	var radius: float = Paddle.SWELL_RADIUS*clay.size_scale*(Paddle.NARROW if fine else 1.0)
-	var ring := 0.0
-	for k in range(8):
-		var r := at+Vector2.from_angle(TAU*k/8.0)*radius*0.3
-		ring += height(r)-float(data.sample(r,base))
-	ring /= 8.0
-	var count := moved(base)
-	print(("NARROW SWELL " if fine else "SWELL ")+JSON.stringify({"pixels":pixels,"verb":verb,"crown":snappedf(crown,0.01),"shoulder_share":snappedf(ring/crown if absf(crown) > 0.001 else 0.0,0.01),"follow_px":snappedf(follow,0.1),"moved_points":count.moved,"release":snappedf(release,0.01),"after":snappedf(after,0.01)}))
-	return {"verb":verb,"gesture":gesture,"crown":crown,"ring":ring,"follow":follow,"moved":count.moved,"release":release,"after":after,"undo":data._undo.size()-undo0,"base":base,"undo0":undo0}
 
 ## Roughen the ground round `at` (the probe's own set-up, not an undo step).
 func roughen(at: Vector2, radius: float, seed_value: int) -> void:
@@ -282,7 +245,13 @@ func run() -> void:
 	reach.pointer_override = null
 	var undo0: int = data._undo.size()
 
-	# --- Tap: a pat flattens ---
+	# --- The fan: the Plane first, then the Pat ---
+	check("the paddle fans out only the plane and the pat",roll.modes == ["plane","pat"] and clay.tool.mode == "plane",[roll.modes,clay.tool.mode])
+
+	# --- Tap with the Pat: a pat flattens ---
+	materials.set_mode("pat")
+	await frames(5)
+	check("the pat is in hand",clay.tool.mode == "pat",clay.tool.mode)
 	await roughen(at,4.0,11)
 	var base := data.heights.duplicate()
 	var rough_before := roughness(at,2.0)
@@ -306,55 +275,45 @@ func run() -> void:
 	check("Shift pats with a narrower blade",worked.back() == ["narrow_pat",true] and narrow_pat < pat_moved*0.5,"%d vs %d points" % [narrow_pat,pat_moved])
 	await undo_exact(base,undo0,"narrow pat")
 
-	# --- Drag: the sweep ---
-	var plain := await sweep(spot+Vector2(-150,0),300.0)
-	check("a drag is the sweep",plain.verb == "sweep" and worked.back() == ["sweep",true],[plain.verb,worked.back()])
-	check("it leaves a soft trough all along the path",plain.shallowest > 0.15 and plain.deepest < Paddle.SWEEP_DEPTH+0.08,"%.2f..%.2f m" % [plain.shallowest,plain.deepest])
-	check("with a ridge on either bank",plain.ridge > 0.08 and plain.ridge < Paddle.SWEEP_RIDGE+0.05,"lower bank %.2f m" % plain.ridge)
-	check("one undo step for the sweep",plain.undo == 1)
-	await undo_exact(plain.base,plain.undo0,"sweep")
-	var fine := await sweep(spot+Vector2(-150,0),300.0,true)
-	check("Shift-drag is the narrower sweep",fine.verb == "narrow_sweep",fine.verb)
-	check("it cuts a narrower trough",fine.down < plain.down*0.7 and fine.shallowest > 0.1,"%d vs %d points lowered" % [fine.down,plain.down])
-	await undo_exact(fine.base,fine.undo0,"narrow sweep")
+	# --- Drag with the Plane: it levels to the press's height ---
+	materials.set_mode("plane")
+	await frames(5)
+	check("the plane is in hand",clay.tool.mode == "plane",clay.tool.mode)
+	await roughen(at,6.0,23)
+	var plain := await drag_line(spot+Vector2(-150,0),300.0)
+	check("a drag is the plane",plain.verb == "plane" and worked.back() == ["plane",true],[plain.verb,worked.back()])
+	check("the stroke's ground converges to the press's height",plain.off_before > 0.04 and plain.off_after < plain.off_before*0.4 and plain.worst < 0.1,"mean off %.3f -> %.3f m, worst %.3f m" % [plain.off_before,plain.off_after,plain.worst])
+	check("one undo step for the plane",plain.undo == 1)
+	await undo_exact(plain.base,plain.undo0,"plane")
+	var fine := await drag_line(spot+Vector2(-150,0),300.0,true)
+	check("Shift-drag is the narrower plane",fine.verb == "narrow_plane",fine.verb)
+	check("it planes a narrower swath",fine.moved < plain.moved*0.7 and fine.off_after < fine.off_before*0.5,"%d vs %d points moved" % [fine.moved,plain.moved])
+	await undo_exact(fine.base,fine.undo0,"narrow plane")
 
 	# --- The size pips widen it ---
 	await key(KEY_3)
 	check("the size key 3 sets 1.5x",is_equal_approx(clay.size_scale,1.5) and roll.size_level == 2,clay.size_scale)
-	var wide := await sweep(spot+Vector2(-150,0),300.0)
-	check("the widest pip sweeps a wider trough",wide.down > plain.down*1.3,"%d vs %d points lowered" % [wide.down,plain.down])
-	await undo_exact(wide.base,wide.undo0,"wide sweep")
+	var wide := await drag_line(spot+Vector2(-150,0),300.0)
+	check("the widest pip planes a wider swath",wide.moved > plain.moved*1.3,"%d vs %d points moved" % [wide.moved,plain.moved])
+	await undo_exact(wide.base,wide.undo0,"wide plane")
 	await key(KEY_2)
 	check("and 2 sets it back",is_equal_approx(clay.size_scale,1.0))
 
-	# --- Hold then drag: the swell ---
-	var up := await swell(spot,-60.0)
-	check("hold then drag up is the swell, the hand gripping",up.verb == "swell" and (hand == null or up.gesture == "grip"),[up.verb,up.gesture])
-	check("it raises the spot",up.crown > 1.0,"%.2f m" % up.crown)
-	check("round-shouldered: 0.3 of the way out it stands at least 0.7 of the crown",up.ring > up.crown*0.7,"%.2f of %.2f m" % [up.ring,up.crown])
-	check("wide: several times the pinch's spread",up.moved > 250,"%d points" % up.moved)
-	check("the crown follows the pointer (within 12 px)",up.follow < 12.0,"%.1f px" % up.follow)
-	check("it stays where it was let go",absf(up.after-up.release) < 0.01)
-	check("one undo step for the swell",up.undo == 1 and worked.back() == ["swell",true],worked.back())
-	await undo_exact(up.base,up.undo0,"swell")
-	var down := await swell(spot,30.0)
-	check("hold then drag down sinks a hollow",down.crown < -0.4,"%.2f m" % down.crown)
-	await undo_exact(down.base,down.undo0,"hollow")
-	var narrow := await swell(spot,-60.0,true)
-	check("Shift holds the narrower swell over less ground",narrow.verb == "narrow_swell" and narrow.moved < up.moved*0.5,"%d vs %d points" % [narrow.moved,up.moved])
-	await undo_exact(narrow.base,narrow.undo0,"narrow swell")
-
-	# --- Esc gives back the Hand ---
+	# --- Esc puts the paddle down; the Modeller's pocket gives it back ---
 	await key(KEY_ESCAPE)
-	check("Esc puts the paddle back: the Hand again",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
+	check("Esc puts the paddle down: the hand is free",roll.tool == materials.FREE and clay.put_down,[roll.tool,clay.put_down])
+	await click(roll._cell(roll.TOOLS.find("hand")).get_center())
+	check("the Modeller's pocket takes the Modeller again",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
 	check("its prop gives way to the Modeller's",not is_instance_valid(prop) and clay.get("_prop") is Node3D and (clay.get("_prop") as Node3D).find_children("*","MeshInstance3D",true,false).size() >= 3)
 	reach.pointer_override = spot
 	motion(spot,Vector2.ZERO,false)
 	await frames(20)
 	check("the hand hovers ready to pinch again",hand == null or hand.reach_gesture == "pinch",hand.reach_gesture if hand != null else "")
 	reach.pointer_override = null
-	var thumb := await sweep(spot+Vector2(-150,0),300.0)
-	check("a drag is the Hand's thumb again, digging a groove",thumb.verb == "thumb" and worked.back() == ["groove",true] and thumb.shallowest > 0.15,[thumb.verb,worked.back()])
+	materials.set_mode("groove")
+	await frames(5)
+	var thumb := await drag_line(spot+Vector2(-150,0),300.0)
+	check("a drag is the Modeller's thumb again, digging a groove",thumb.verb == "thumb" and worked.back() == ["groove",true] and thumb.shallowest > 0.15 and thumb.deepest < 0.6+0.25,[thumb.verb,worked.back(),snappedf(thumb.shallowest,0.01),snappedf(thumb.deepest,0.01)])
 	await undo_exact(thumb.base,thumb.undo0,"groove")
 
 	# --- One thing in hand: a material puts the paddle back ---

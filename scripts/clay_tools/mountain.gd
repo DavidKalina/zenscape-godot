@@ -1,6 +1,7 @@
 extends "res://scripts/clay_tools/hand.gd"
 ## The Mountain, "Peak": press on the land and drag up, and a mountain is pulled
-## out of it, its summit following the pointer; drag down and the land sinks.
+## out of it, its summit following the pointer; drag down and a crater is
+## pressed into it (see "The crater").
 ## It is the Modeller's pinch (scripts/clay_tools/hand.gd) made bigger
 ## (PEAK: a wider spread, a taller reach, a faster pull), and it is its only
 ## verb, taken at the press (`press_kind`): no holding still first. As it
@@ -33,6 +34,17 @@ extends "res://scripts/clay_tools/hand.gd"
 ## pulled. A low pull is a long swell and turns into the range as it grows, as
 ## the peak turns into a horn (HORN). Let go, the range takes the rock along
 ## its length, as the peak does.
+##
+## ### The crater
+##
+## Pulled down (the pointer below the press), the pull is a crater, never a
+## range: sideways travel is ignored, and a range already drawn goes back to
+## the ground it stood on. The floor sinks by the pull, level inside
+## CRATER_FLOOR of the radius and rising to the rim at CRATER_RIM_AT; a rim
+## CRATER_RIM of the depth stands round it, out to CRATER_RIM_OUT radii, the
+## ground thrown out of the hole. The radius widens with the depth as the
+## peak's does. The floor shows the stratum it reached (the clay's dirt). The
+## user, 2026-10-02: they like dragging up for mountains and dragging down.
 
 const PEAK := {"r0":3.0,"grow":0.55,"max_radius":8.0,"raise":14.0,"sink":6.0,"scale":1.4,"range":20.0,"spacing":4.0}
 const FINE_PEAK := {"r0":1.8,"grow":0.4,"max_radius":4.0,"raise":6.0,"sink":3.0,"scale":0.6,"range":10.0,"spacing":2.2}
@@ -48,6 +60,10 @@ const SADDLE := 0.55
 ## metres; every point it has reached stays written, so ground a shortening
 ## pull lets go of sinks back.
 const REGATHER := 0.25
+const CRATER_FLOOR := 0.45
+const CRATER_RIM_AT := 0.95
+const CRATER_RIM := 0.3
+const CRATER_RIM_OUT := 1.25
 
 ## The stand-in: a faceted stone pick, its head in the icon's tint
 ## (scripts/hud_icons.gd "mountain").
@@ -71,6 +87,7 @@ var _tall := PackedFloat32Array()
 var _summit_aretes: Array[PackedFloat32Array] = []
 
 func id() -> String: return "mountain"
+func horns() -> bool: return true
 func modes() -> Array: return []
 func press_kind() -> String: return "hold"
 func hover_gesture() -> String: return "pinch"
@@ -79,6 +96,11 @@ func mark_size() -> Vector2: return Vector2.ONE*float(PEAK.r0)
 func hold_tracks() -> bool: return true
 func _pinch_spec(fine: bool) -> Dictionary: return FINE_PEAK if fine else PEAK
 func _pinch_verb(fine: bool) -> String: return "fine_peak" if fine else "peak"
+## A pull let go below the press is reported as a crater.
+func worked_as(verb: String) -> String:
+	if lift < 0.0 and verb == _pinch_verb(true): return "fine_crater"
+	if lift < 0.0 and verb == _pinch_verb(false): return "crater"
+	return verb
 
 # --- The range -------------------------------------------------------------------------
 
@@ -113,9 +135,11 @@ func hold_begin(fine: bool) -> String:
 		_summit_aretes.append(aretes)
 	return verb
 
-## Straight up it is the peak's step, untouched; past the dead zone the range's.
+## Straight up it is the peak's step, untouched; past the dead zone the range's;
+## pulled down, the crater's.
 func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 	var spec: Dictionary = _pinch_spec(clay.verb == _pinch_verb(true))
+	if rise < 0.0: return _crater_step(heights,spec,rise)
 	var line := _line(spec)
 	if not ranged:
 		if line.length() < RANGE_DEAD: return super.hold_step(heights,rise)
@@ -130,6 +154,9 @@ func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 
 ## Let go: the peak's own, or the range's rock and trees along its length.
 func hold_end() -> void:
+	if lift < 0.0:
+		clay.shake_trees(clay.center,float(_pinch_spec(false).max_radius)*clay.size_scale*CRATER_RIM_OUT+1.0)
+		return
 	if not ranged:
 		super.hold_end()
 		return
@@ -231,6 +258,57 @@ func _shape_range(heights: PackedFloat32Array, spec: Dictionary, line: Vector2) 
 		if lift < 0.0: h = maxf(h,minf(base[i],clay.FLOOR))
 		heights[i] = clampf(h,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
 	clay.touch(center+line*0.5,length*0.5+reach)
+
+# --- The crater ------------------------------------------------------------------------
+
+## The crater's step: a range drawn this pull goes back first, then the
+## crater is written round the press from `clay.base`.
+func _crater_step(heights: PackedFloat32Array, spec: Dictionary, rise: float) -> bool:
+	if ranged: _unrange(heights,spec)
+	_follow(spec,rise)
+	if is_equal_approx(lift,_shown_lift): return false
+	_shown_lift = lift
+	var radius: float = minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))*clay.size_scale
+	var depth := maxf(-lift,0.0)
+	# The rim is the ground thrown out of the hole, so it stands by the depth
+	# the floor really reached under the clay's FLOOR, not by the pull.
+	var ground: Variant = clay.editor.data.sample(clay.center,clay.base)
+	var thrown := minf(depth,maxf(float(ground)-clay.FLOOR,0.0)) if ground != null else depth
+	var base: PackedFloat32Array = clay.base
+	var near: PackedInt32Array = clay.near
+	var near_d: PackedFloat32Array = clay.near_d
+	for k in near.size():
+		var i := near[k]
+		var t: float = near_d[k]/radius
+		var h: float
+		if lift >= 0.0:
+			# The grip's kick, before the pull has gone below the press.
+			h = base[i]+lift*(pow(1.0-t*t,2.0) if t < 1.0 else 0.0)*clay.fade(i)
+		else:
+			var bowl := 1.0-smoothstep(CRATER_FLOOR,CRATER_RIM_AT,t)
+			var rim := 0.0
+			if t > CRATER_FLOOR and t < CRATER_RIM_OUT: rim = pow(sin(PI*(t-CRATER_FLOOR)/(CRATER_RIM_OUT-CRATER_FLOOR)),2.0)
+			h = base[i]+(thrown*CRATER_RIM*rim-depth*bowl)*clay.fade(i)
+			if h < base[i]: h = maxf(h,minf(base[i],clay.FLOOR))
+		heights[i] = clampf(h,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
+	clay.touch(clay.center,radius*CRATER_RIM_OUT)
+	if lift < 0.0: clay.dirty(clay.center,radius*CRATER_RIM_AT)
+	return true
+
+## A range drawn this pull goes back to the ground it stood on, and the
+## peak's points round the press are gathered again for the crater.
+func _unrange(heights: PackedFloat32Array, spec: Dictionary) -> void:
+	var base: PackedFloat32Array = clay.base
+	for i in _reached: heights[i] = base[i]
+	if _shown_line != Vector2.INF:
+		clay.touch(clay.center+_shown_line*0.5,_shown_line.length()*0.5+float(spec.max_radius)*clay.size_scale*HORN_REACH)
+	ranged = false
+	_reached = PackedInt32Array()
+	_reached_mask.fill(0)
+	_shown_line = Vector2.INF
+	_gathered_line = Vector2.INF
+	_shown_lift = INF
+	clay.gather(clay.center,float(spec.max_radius)*clay.size_scale*HORN_REACH)
 
 # --- The stand-in prop ------------------------------------------------------------------
 

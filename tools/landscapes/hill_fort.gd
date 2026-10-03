@@ -1,9 +1,11 @@
 extends "res://tools/landscapes/harness.gd"
-## Hill fort: a Paddle swell for the hill, its top sliced level with the Wire
-## (hold, then drag down), a closed ring gorge cut round its foot with the Wire
-## (one drag round a closed path), and water poured in as a moat.
-## Tests: does the slice leave a flat fort top, does a closed Wire path make a
-## ring that holds water all the way round.
+## Hill fort: a Mountain pull for the hill, its top sliced level with the
+## Chisel's Slice (hold, then drag down), a closed ring gorge cut round its foot
+## with the Ravine (one drag round a closed path), and water poured in as a
+## moat. Tests: does the slice leave a flat fort top, does a closed Ravine
+## path make a ring that holds water all the way round. (Until 2026-10-02 the
+## hill was a Paddle swell and the slice the Wire's; both went in "The roll,
+## revised", docs/design/tools/PLAN.md.)
 
 const HILL := Vector2(0.0,0.0)
 ## Take 1: RING_R 5.0, full-depth gorge (hit the -1.5 m floor: a chasm).
@@ -35,17 +37,19 @@ func ring_heights(label: String) -> void:
 	log_line("ring %s (8 bearings): %s" % [label," ".join(parts)])
 
 func build() -> void:
-	await take_tool("paddle")
+	await take_tool("mountain")
 	await size(2)
 	await hold_to(HILL,4.2)
 	transect("hill",0.0)
-	await take_tool("wire")
+	await take_tool("chisel")
 	await size(2)
+	await take_mode("slice")
 	await hold_to(HILL,TOP)
 	transect("sliced",0.0)
 	transect("sliced side",PI*0.5)
 	await overview()
 	await still("sliced")
+	await take_tool("wire")
 	await drag(ring(RING_R),3.0,FINE)
 	await frames(200)
 	await settle()

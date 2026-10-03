@@ -199,8 +199,8 @@ func metres_per_pixel(p: Vector2) -> float:
 
 # --- The HUD: tools, materials, size ---
 
-## Take a tool from the roll: "hand" (the Modeller), "paddle", "chisel",
-## "wire", "hammer", "feather".
+## Take a tool from the roll: "hand" (the Modeller), "hills", "mountain",
+## "wire" (the Ravine), "chisel", "paddle", "hammer", "feather".
 func take_tool(id: String) -> void:
 	var roll: Control = materials.roll
 	await glide(Vector2(30,360),15)
@@ -211,6 +211,15 @@ func take_tool(id: String) -> void:
 	await click_screen(pocket)
 	var ok: bool = roll.tool == id
 	log_line("take tool %s: %s" % [id,"ok" if ok else "FAILED (roll has %s)" % roll.tool])
+
+## Pick a mode on the fan of the tool in hand ("slice", "mesa", "shelf",
+## "plane", ...), as Q and E would.
+func take_mode(mode: String) -> void:
+	materials.set_mode(mode)
+	await frames(2)
+	var clay: Node = scene.get("land_clay")
+	var ok: bool = clay != null and clay.tool.mode == mode
+	log_line("take mode %s: %s" % [mode,"ok" if ok else "FAILED"])
 
 ## Take a material from the bar: oak, pine, willow, wildflower, dandelion,
 ## reed, water, stone.

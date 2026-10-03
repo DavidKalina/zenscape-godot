@@ -1,21 +1,16 @@
 extends SceneTree
-## Headless probe of the Wire's drawing modes (scripts/clay_tools/wire.gd,
-## 2026-10-02) on the cozy worlds scene, driving the clay's own press, pull
-## and release along plate paths. Each drawing is one undo step that one undo
-## takes back exactly. Checks:
-## - Gorge, open: the path is cut down (as before).
-## - Gorge, a closed loop: a level basin inside the outline, the outline's
-##   outside untouched; the watering can's gush fills it.
-## - Range: peaks raised along a bent path, both legs, nothing far off it.
-## - Hill: a soft ridge along the path, lower than the range; a loop raises
-##   one hill, highest in its middle.
-## - Trees: a row along the path, about one every Wire.TREE_STEP m.
-## - Flowers: a border of flowers along the path.
+## Headless probe of the Ravine's drawn line (id `wire`,
+## scripts/clay_tools/wire.gd; docs/design/tools/PLAN.md "The roll, revised")
+## on the cozy worlds scene, driving the clay's own press, pull and release
+## along plate paths. Each drawing is one undo step that one undo takes back
+## exactly. Checks:
+## - An open line: the path is cut down into a gorge.
+## - A closed loop: a level basin inside the outline, the outline's outside
+##   untouched; the watering can's gush fills it.
+## (Its Range, Hill, Trees and Flowers modes were removed on 2026-10-02.)
 ##   perl -e 'alarm 600; exec @ARGV' Godot --headless --fixed-fps 60 --path . \
 ##     --script res://tools/probe_wire_draw.gd -- --no-title --no-rain-runoff
 const Wire = preload("res://scripts/clay_tools/wire.gd")
-const Emergence = preload("res://scripts/emergence.gd")
-const FlowerPaint = preload("res://scripts/flower_paint.gd")
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -41,14 +36,13 @@ func settled() -> void:
 		var busy: bool = editor.land_settling or editor.refresh_pending > 0 or clay.state != 0
 		quiet = 0 if busy else quiet+1
 
-## Draw `path` (plate points, a few metres apart) with the wire in `mode`:
+## Draw `path` (plate points, a few metres apart) with the Ravine:
 ## press at its start, pull through points every 0.3 m along it, let go, and
 ## wait for the build to run and settle. {"base", "undo0", "drawn"}.
-func draw(mode: String, path: Array) -> Dictionary:
-	clay.tool.mode = mode
+func draw(path: Array) -> Dictionary:
 	var base := editor.data.heights.duplicate()
 	var undo0: int = editor.data._undo.size()
-	check(clay.press(screen(path[0])),"%s: the press takes" % mode)
+	check(clay.press(screen(path[0])),"The press takes")
 	await process_frame
 	for j in range(path.size()-1):
 		var a: Vector2 = path[j]
@@ -62,11 +56,11 @@ func draw(mode: String, path: Array) -> Dictionary:
 	await settled()
 	return {"base":base,"undo0":undo0,"drawn":drawn}
 
-func undo_exact(stroke: Dictionary, what: String, objects := -1) -> void:
+func undo_exact(stroke: Dictionary, what: String) -> void:
 	check(editor.data._undo.size() == int(stroke.undo0)+1,"%s is one undo step (%d)" % [what,editor.data._undo.size()-int(stroke.undo0)])
 	editor.undo()
 	await settled()
-	check(editor.data.heights == stroke.base and (objects < 0 or editor.data.objects.size() == objects),"one undo takes the %s back exactly" % what)
+	check(editor.data.heights == stroke.base,"one undo takes the %s back exactly" % what)
 
 static func circle(centre: Vector2, radius: float, count := 24) -> Array:
 	var out := []
@@ -95,7 +89,7 @@ func change(stroke: Dictionary, path: Array, near: float, far: float) -> Diction
 	return {"up":up,"down":down,"stray":stray}
 
 func run() -> void:
-	create_timer(560).timeout.connect(func() -> void: push_error("Wire draw probe timed out"); quit(2))
+	create_timer(560).timeout.connect(func() -> void: push_error("Ravine draw probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
@@ -111,26 +105,20 @@ func run() -> void:
 	clay = scene.get("land_clay")
 	scene.world_clock.running = false
 	if not editor.active: scene.set_building(false)
-	check(clay != null and clay.set_tool("wire"),"The wire is taken")
-	var modes: Array = clay.tool.modes().map(func(spec: Dictionary) -> String: return spec.id)
-	check(modes == ["gorge","range","hill","trees","flowers","slice"],"Its fan: %s" % str(modes))
-	for id: String in modes: check(not preload("res://scripts/hud_icons.gd").item("wire_"+id).is_empty(),"wire_%s has an icon" % id)
-	# The plain's own trees out of the way, so the plants have room.
-	editor.data.objects.assign(editor.data.objects.filter(func(item: Dictionary) -> bool: return not str(item.asset) in Emergence.TREES))
-	editor.data.objects_revision += 1
-	await settled()
+	check(clay != null and clay.set_tool("wire"),"The Ravine is taken")
+	check(clay.tool.modes().is_empty() and clay.tool.press_kind() == "drag","It has no fan; a press is a drag at once")
 
-	# Gorge, open: as before.
+	# An open line: a gorge.
 	var line := [Vector2(-6.0,2.0),Vector2(0.0,3.0),Vector2(5.0,2.0)]
-	var gorge := await draw("gorge",line)
+	var gorge := await draw(line)
 	var cut := change(gorge,line,0.6,4.0)
 	print("gorge: %s" % str(cut))
 	check(cut.down < -1.5 and cut.up < 0.01,"Gorge: cut along the path (%.2f m)" % cut.down)
 	await undo_exact(gorge,"gorge")
 
-	# Gorge, a loop: a lake basin.
+	# A loop: a lake basin.
 	var lake := circle(Vector2(0.0,1.0),5.0)
-	var basin := await draw("gorge",lake)
+	var basin := await draw(lake)
 	check((basin.drawn as PackedVector2Array)[0] == (basin.drawn as PackedVector2Array)[-1],"A loop's drawn path closes")
 	var middle: float = height(Vector2(0.0,1.0))-height(Vector2(0.0,1.0),basin.base)
 	var floor_spread := 0.0
@@ -160,53 +148,5 @@ func run() -> void:
 		editor.flow.drain(Vector2(0.0,1.0),8.0)
 	await undo_exact(basin,"basin")
 
-	# Range along an L.
-	var bend := [Vector2(-6.0,-1.0),Vector2(0.0,-1.0),Vector2(0.0,5.0)]
-	var range_stroke := await draw("range",bend)
-	var leg_a := change(range_stroke,[Vector2(-5.0,-1.0),Vector2(-2.0,-1.0)],0.6,99.0)
-	var leg_b := change(range_stroke,[Vector2(0.0,2.0),Vector2(0.0,4.0)],0.6,99.0)
-	var whole := change(range_stroke,bend,1.0,Wire.RANGE_HALF*1.6)
-	print("range: legs %.2f and %.2f m, highest %.2f, stray %.3f" % [leg_a.up,leg_b.up,whole.up,whole.stray])
-	check(leg_a.up > 2.5 and leg_b.up > 2.5,"Range: peaks raised along both legs (%.2f, %.2f m)" % [leg_a.up,leg_b.up])
-	check(whole.up > 4.0 and whole.up <= Wire.RANGE_HEIGHT+0.01,"Its highest summit (%.2f m)" % whole.up)
-	check(whole.stray < 0.01 and whole.down > -0.01,"Nothing far off the path moves, nothing sinks")
-	await undo_exact(range_stroke,"range")
-
-	# Hill along a line, then round a loop.
-	var hill := await draw("hill",line)
-	var ridge := change(hill,line,0.6,Wire.HILL_HALF+0.8)
-	print("hill: %s" % str(ridge))
-	check(ridge.up > 1.4 and ridge.up < Wire.HILL_HEIGHT+0.01 and ridge.stray < 0.01,"Hill: a soft ridge along the path (%.2f m)" % ridge.up)
-	await undo_exact(hill,"hill")
-	var ring := circle(Vector2(0.0,1.0),5.0)
-	var mound := await draw("hill",ring)
-	var top: float = height(Vector2(0.0,1.0))-height(Vector2(0.0,1.0),mound.base)
-	var shoulder: float = height(Vector2(3.0,1.0))-height(Vector2(3.0,1.0),mound.base)
-	print("mound: middle %.2f m, 3 m out %.2f m" % [top,shoulder])
-	check(top > 1.2 and top > shoulder and shoulder > 0.0,"Hill loop: one hill filling the outline, highest in its middle (%.2f, %.2f m)" % [top,shoulder])
-	await undo_exact(mound,"mound")
-
-	# A row of trees.
-	var objects: int = editor.data.objects.size()
-	var row := [Vector2(-6.0,3.0),Vector2(6.0,3.0)]
-	var trees := await draw("trees",row)
-	var planted: Array = editor.data.objects.slice(objects).filter(func(item: Dictionary) -> bool: return str(item.asset) in Emergence.TREES)
-	var wander := 0.0
-	for item: Dictionary in planted: wander = maxf(wander,off_path(row,Vector2(item.x,item.z)))
-	print("trees: %d %s, %.2f m off the line at most" % [planted.size(),str(planted.map(func(item: Dictionary) -> String: return str(item.asset))),wander])
-	check(planted.size() >= 3 and planted.size() <= ceili(12.0/Wire.TREE_STEP)+1,"Trees: a row along the path (%d)" % planted.size())
-	check(wander <= Wire.TREE_WANDER+0.01,"Each on the line (%.2f m off)" % wander)
-	check(trees.base == editor.data.heights,"No ground moved")
-	await undo_exact(trees,"row of trees",objects)
-
-	# A border of flowers.
-	var border := await draw("flowers",row)
-	var flowers: Array = editor.data.objects.slice(objects).filter(func(item: Dictionary) -> bool: return FlowerPaint.is_flower(str(item.asset)))
-	var spread := 0.0
-	for item: Dictionary in flowers: spread = maxf(spread,off_path(row,Vector2(item.x,item.z)))
-	print("flowers: %d, %.2f m off the line at most" % [flowers.size(),spread])
-	check(flowers.size() >= 30,"Flowers: a border along the path (%d)" % flowers.size())
-	check(spread <= FlowerPaint.RADIUS*Wire.FLOWER_SIZE+0.3,"A narrow one (%.2f m off)" % spread)
-	await undo_exact(border,"border of flowers",objects)
 	print("Failures: %d" % failures)
 	quit(1 if failures > 0 else 0)

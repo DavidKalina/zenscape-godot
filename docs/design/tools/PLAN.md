@@ -5,6 +5,50 @@ the Modeller (once the Hand, see "The Modeller"), and four that were
 undiscovered silhouettes until they had verbs.
 This plan gives them verbs. The user approved the design on 2026-09-30.
 
+## The roll, revised (2026-10-02)
+
+The user played the branch and found it solid but not as fun as it could
+be: too many tools making the same shapes (a basin from four tools, hills
+from three, a range from two), and the Wire named for how it works where the
+Mountain and the Hills are named for what they make. The decision:
+
+- **One landform, one gesture, and the gesture fits the shape.** Mountains
+  are pulled up, ravines are drawn, hills are scrubbed in. Drawing a line
+  and watching the land form along it was the most fun on the branch, but
+  drawing a mountain range was not as good as pulling one up, so the line
+  stays with the shapes that are lines.
+- **Fewer tools, none overlapping.**
+
+| Tool (id) | Tag | Gesture | Makes |
+|---|---|---|---|
+| Modeller (`hand`) | Mould | as before, all small | the fine tool for the water's work: stream beds, notches, spillways, a pond's lip. Its pinch rises at most 1.5 m over 2.4 m and never horns (it was 8 m over 5.6 m, a mountain); the groove is 0.6 m deep and 1 m half-width (was 0.75 and 1.35); the palm 1.5 m (was 2) |
+| Hills (`hills`) | Roll | scrub | rolling hills, unchanged |
+| Mountain (`mountain`) | Peak | pull up; up and sideways | a peak; a range, unchanged |
+| | | pull down | a **crater** (new): a level floor and a thrown-out rim; sideways travel is ignored |
+| Ravine (`wire`) | Carve | draw a line; draw a loop | a gorge along the line; a lake basin inside the loop. No fan: a press is a drag from the start |
+| Chisel (`chisel`) | Cut | as before | mesa, shelf, notch, and the **Slice**, moved from the Wire |
+| Paddle (`paddle`) | Smooth | drag; tap | Plane and Pat only: the tidy-up tool |
+| Hammer (`hammer`) | Break | as before | kept for now; it may go to the Chisel's tap later |
+
+Cut: the **Bowl** (off the roll; Ravine's loop and the Mountain's crater make
+its basins; `scripts/clay_tools/bowl.gd` stays for the classic shell), the
+Wire's **Range**, **Hill**, **Trees** and **Flowers** (the Mountain, the
+Hills and the seed painting cover them), the Paddle's **Swell** and
+**Sweep** (the Hills and the Ravine). The Wire keeps its id `wire`, its
+script and its prop, so probes, sounds and the ground marks read as before;
+only its label ("Ravine · Carve") and icon changed.
+
+The roll's order is now Modeller, Hills, Mountain, Ravine, Chisel, Paddle,
+Hammer: makers first, then cutters, then tidying.
+
+Water level (the user's next question: a waterfall filling a ravine, a notch
+at the rim letting it out, an equilibrium) is left for later. The live water
+already holds a basin to its rim's lowest point and drains over the plate's
+edge (docs/scenic/water-flow.md).
+
+The sections below are the design as first built; where they describe the
+cut verbs they are history.
+
 ## The design
 
 Each tool keeps the Hand's gesture grammar: tap, drag, hold-then-drag, and
@@ -457,7 +501,10 @@ Nothing has been seen on screen:
 - the prop in the hand: where the grip sits, and whether the 12 mm wire shows
   at all
 
-### Drawing modes (2026-10-02)
+### Drawing modes (2026-10-02, removed the same day)
+
+Removed by "The roll, revised": the Wire is the Ravine, and only the gorge
+and the loop's basin stay. The Slice went to the Chisel.
 
 The user: "I feel like the wire tool is super useful, and almost under
 utilized? Would be cool to trace what you want. Same tool. Draw a ravine,

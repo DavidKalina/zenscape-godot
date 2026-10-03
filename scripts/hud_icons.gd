@@ -224,8 +224,6 @@ static func _build() -> void:
 	_add("hand_groove","Groove","Modeller","#e0a07a",["M2 12.4 H5.6 Q7.2 11 8.6 12.4 Q12 21.4 15.4 12.4 Q16.8 11 18.4 12.4 H22 V22.5 H2Z"],[],30,1.0,1.5)
 	_add("hand_palm","Palm","Modeller","#e0a07a",["M2 12.4 H5 Q6.6 17.4 9 17.4 H15 Q17.4 17.4 19 12.4 H22 V22.5 H2Z"],["M7 9.2 H17","M9.6 4.4 V9.2 M14.4 4.4 V9.2"],31,1.0,1.5)
 	_add("hand_poke","Poke","Modeller","#e0a07a",["M2 14.4 H9.6 Q12 17.6 14.4 14.4 H22 V22.5 H2Z"],["M12 2.6 V10.4","M9.8 8.2 L12 10.4 L14.2 8.2"],32,1.0,1.5)
-	_add("paddle_swell","Swell","Paddle","#c49a5e",["M2 20.6 Q12 6.4 22 20.6 V22.5 H2Z"],["M12 1.6 V6.8","M9.8 3.8 L12 1.6 L14.2 3.8"],33,1.0,1.5)
-	_add("paddle_sweep","Sweep","Paddle","#c49a5e",["M2 14.6 Q3.8 14.6 5.2 12.2 Q6.8 10.4 8.4 13 Q12 19.6 15.6 13 Q17.2 10.4 18.8 12.2 Q20.2 14.6 22 14.6 V22.5 H2Z"],[],34,1.0,1.5)
 	_add("paddle_pat","Pat","Paddle","#c49a5e",["M2 15.4 H22 V22.5 H2Z","M4.6 9 H19.4 V11.6 H4.6Z"],["M12 2.4 V9"],35,1.0,1.5)
 	# The Plane: the blade stood upright, drawn toward a rough rise; behind it
 	# the ground lies planed flat.
@@ -233,17 +231,10 @@ static func _build() -> void:
 	_add("chisel_mesa","Mesa","Chisel","#6f8aa6",["M2 19.4 H6.2 L7.2 8.4 H16.8 L17.8 19.4 H22 V22.5 H2Z"],[],36,1.0,1.5)
 	_add("chisel_shelf","Shelf","Chisel","#6f8aa6",["M2 8.4 H11.4 L12.2 15.4 H22 V22.5 H2Z"],[],37,1.0,1.5)
 	_add("chisel_notch","Notch","Chisel","#6f8aa6",["M2 12.4 H8.6 V17.4 H15.4 V12.4 H22 V22.5 H2Z"],[],38,1.0,1.5)
-	_add("wire_gorge","Gorge","Wire","#b8683f",["M2 10.4 H7.6 L8.6 19.4 H15.4 L16.4 10.4 H22 V22.5 H2Z"],[],39,1.0,1.5)
-	_add("wire_slice","Slice","Wire","#b8683f",["M2 21 Q5.8 20.4 7.6 15.6 L8.8 12.4 H15.2 L16.4 15.6 Q18.2 20.4 22 21 V22.5 H2Z"],["M3.4 9.4 H20.6"],46,1.0,1.4)
-	# The Wire's drawing modes (2026-10-02): what a drawn line makes, seeds
-	# 60-63. A jagged range; a soft ridge; a row of trees; a border of flowers.
-	_add("wire_range","Range","Wire","#b8683f",["M1.6 22.5 L6 13.4 L8.4 15.6 L12 6.4 L15 12.2 L17.4 9.8 L22.4 22.5Z"],["M10.4 10.6 L12 6.4 L13.6 10"],60,1.0,1.4)
-	_add("wire_hill","Hill","Wire","#b8683f",["M2 22.5 V18.4 Q7 11 12 11.4 Q17 11.8 22 17.6 V22.5Z"],["M5.4 15.8 Q9 13.4 12.6 13.6"],61,1.0,1.4)
-	_add("wire_trees","Trees","Wire","#b8683f",["M2 19.8 H22 V22.5 H2Z",_circle(5.6,11.6,3.1),_circle(12,9.4,3.6),_circle(18.4,11.6,3.1)],["M5.6 14.6 V19.8 M12 12.8 V19.8 M18.4 14.6 V19.8"],62,1.0,1.4)
-	_add("wire_flowers","Flowers","Wire","#b8683f",["M2 19.8 H22 V22.5 H2Z",_circle(4.8,14.2,1.9),_circle(9.6,12.6,2.1),_circle(14.4,14.2,1.9),_circle(19.2,12.6,2.1)],["M4.8 16.1 V19.8 M9.6 14.7 V19.8 M14.4 16.1 V19.8 M19.2 14.7 V19.8"],63,1.0,1.2)
-	_add("paddle","Paddle","Mass","#c49a5e",["M5.5 12 Q5.5 9.5 8 9.5 H16 Q18.5 9.5 18.5 12 V19 Q18.5 22 15.5 22 H8.5 Q5.5 22 5.5 19Z","M10.7 9.6 V2.9 A1.3 1.3 0 0 1 13.3 2.9 V9.6Z"],["M9 13 V19 M15 13 V19","M10.9 5.6 H13.1"],11)
+	_add("chisel_slice","Slice","Chisel","#6f8aa6",["M2 21 Q5.8 20.4 7.6 15.6 L8.8 12.4 H15.2 L16.4 15.6 Q18.2 20.4 22 21 V22.5 H2Z"],["M3.4 9.4 H20.6"],46,1.0,1.4)
+	_add("paddle","Paddle","Smooth","#c49a5e",["M5.5 12 Q5.5 9.5 8 9.5 H16 Q18.5 9.5 18.5 12 V19 Q18.5 22 15.5 22 H8.5 Q5.5 22 5.5 19Z","M10.7 9.6 V2.9 A1.3 1.3 0 0 1 13.3 2.9 V9.6Z"],["M9 13 V19 M15 13 V19","M10.9 5.6 H13.1"],11)
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
-	_add("wire","Wire","Slice","#b8683f",["M8.6 20.9 L6.6 22.9 L1.1 17.4 L3.1 15.4Z","M22.9 6.6 L20.9 8.6 L15.4 3.1 L17.4 1.1Z"],["M6.2 17.8 L17.8 6.2"],13)
+	_add("wire","Ravine","Carve","#b8683f",["M2 9.4 H8.2 L10.8 21.2 H13.2 L15.8 9.4 H22 V22.5 H2Z"],["M3.4 5.4 Q7.6 2.6 12 5.4 Q16.4 8.2 20.6 5.4"],13)
 	_add("hammer","Hammer","Break","#7a6a5a",["M3 5.5 Q3 4.5 4 4.5 H15 L20.5 7.2 L15 9.8 H4 Q3 9.8 3 8.8Z","M8.2 9.8 H10.8 V20.8 A1.3 1.3 0 0 1 8.2 20.8Z"],["M12.5 4.5 V9.8"],14)
 	# The Feather, "Gust" (HUD 5, lowpoly.js SHAPING_TOOLS[5]): wind held in
 	# hand, below the tools after the roll's divider. A finer quill line (1.2).
