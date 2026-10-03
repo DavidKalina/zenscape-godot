@@ -1,7 +1,9 @@
 # Deprecated and retired
 
 A running tally of what ZenScape no longer needs, so it can be removed on
-purpose rather than by accident. Nothing here has been deleted yet.
+purpose rather than by accident. The dead study scenes and prototypes
+(section 6) were removed on 2026-10-02, with the tests that drove the old
+build palette and the hidden Bigfoot resident; the rest is still in the tree.
 
 **The product (settled 2026-09-27):** relaxing Genesis-style landscape crafting.
 Life emerges from what you build, and Bigfoot is a rare random event. You tune
@@ -19,7 +21,8 @@ Status key:
 The in-tree survey was made from `feature/tree-mix` at fc0445d. Reachability
 means reachable from the main scene, `studies/cozy_worlds.tscn`, by following
 `res://` paths and `class_name` references. Tests and tools were not counted as
-entry points.
+entry points. Sections 2 to 8 were brought up to date after the 2026-10-02
+removal.
 
 ---
 
@@ -86,16 +89,15 @@ cave, routines, mischief, rage, object exchange, tree hugs and wetness.
   `scripts/creature_tree_peek.gd` and `scripts/resident_interaction.gd`.
   Check `creature_actor.gd` and `creature_navigation.gd` for the deer and
   heron before removing them.
-- Studies: `studies/bigfoot_*.{gd,tscn}` (cave, encounter, lair, life,
-  lighting, living_world, playground).
-- Launchers: `run-bigfoot-{cave,lair,life,living-world,personality,playground,tree-hug}.command`.
-- Tests: `tests/test_bigfoot*.gd` (about 40 files), `test_cave_genome.gd`,
-  `test_cave_system_store.gd`.
+- Studies: `studies/bigfoot_*.{gd,tscn}` (cave, encounter, lair). The cave
+  and lair scenes are also test harnesses; retarget or delete those tests first.
+- Launchers: `run-bigfoot-{cave,lair}.command`.
+- Tests: `tests/test_bigfoot*.gd` (25 files), `test_cave_genome.gd`.
 - Tools: `tools/*bigfoot*` (the Blender rig, restyle, animate and film
   scripts), `build_cave_study.py`, `export_cave.py`. **Keep** anything
   `feature/ambient-bigfoot` still uses to rebuild its model.
-- Docs: `docs/bigfoot-*` (22 folders), `docs/fidelity-life/`,
-  `docs/tree-personality/`.
+- Docs: `docs/bigfoot-*` (9 folders) and `docs/bigfoot-heavy-walk.md`,
+  `docs/fidelity-life/`.
 - Branches: `codex/bigfoot-*`, `codex/cozy-bigfoot`, `codex/resolve-pr10`,
   `feature/bigfoot-patterson-walk`, `feature/hide-cave`.
 
@@ -126,17 +128,13 @@ building game.
   `play_spring_tree.gd`, `play_water_mischief.gd`, `world_loose_body.gd`,
   `world_loose_props.gd`, `world_spring_tree.gd`, `world_water_play.gd`,
   `diorama_world_play.gd`.
-- Studies and launchers: `destruction_playground`, `god_mode_playground`,
-  `run-destruction-playground.command`, `run-god-mode-playground.command`.
 - Tests: `test_native_explosives`, `test_explosive_landscapes`,
   `test_internal_blast`, `test_mountain_collapse`, `test_native_tunnels`,
-  `test_terrain_destruction`, `test_threaded_destruction`,
-  `test_chasm_terrain`, `test_creature_void_fall`, `test_creature_tremor`,
-  `test_fidelity_tremor`, `test_god_mode_playground`, `test_water_mischief`,
-  `test_loose_props`, `test_loose_prop_cursor`, `test_rage_walk`.
-- Docs: `docs/terrain-destruction`, `docs/god-mode-playground`,
-  `docs/rage-heaves`, `docs/loose-mischief`, `docs/water-mischief`,
-  `docs/chasm`.
+  `test_threaded_destruction`, `test_chasm_terrain`, `test_creature_void_fall`,
+  `test_creature_tremor`, `test_fidelity_tremor`, `test_loose_prop_cursor`.
+  **Keep** `reference_tremor.gd`: the shaping tools' rumble
+  (`clay_tremor.gd`) kicks it now.
+- Docs: `docs/terrain-destruction`, `docs/chasm`.
 - Branches: `codex/terrain-destruction`, `codex/god-mode-playground`,
   `jolt-blast-debris-water`.
 
@@ -156,7 +154,7 @@ vision. Keeping it as a rare weather event could fit, the same way Bigfoot is.
 
 - Scripts: `fire_field.gd`, `fire_effects.gd`, `fire_look.gd`,
   `fire_material.gd`, `bigfoot_fire.gd`.
-- Tests: `test_fire_*` (six files). **Not** `test_fireflies.gd`: fireflies are
+- Tests: `test_fire_*` (five files). **Not** `test_fireflies.gd`: fireflies are
   ambient life and stay.
 - Tools: `film_fire*.gd`, `profile_fire.gd`.
 - Branches: `feature/fire`, `feature/fire-*`.
@@ -173,41 +171,42 @@ the crossing glade.
 - `scripts/crossing_glade.gd` (still reached from `studies/diorama.gd`),
   `log_walkways.gd` (reached through `fidelity_habitat.gd`),
   `stepping_route.gd`, `creature_route_query.gd`.
-- Tests: `test_log_walkways`, `test_stepping_route`, `test_log_animation`.
-- Tools and docs: `tools/render_crossing_glade.gd`, `docs/crossing-glade`,
-  `docs/log-animation`, `docs/stone-animation`.
+- Tests: `test_log_walkways`, `test_stepping_route`.
+- Tools and docs: `tools/render_crossing_glade.gd`, `docs/crossing-glade`.
 
 ---
 
-## 6. Dead study scenes and prototypes (safe: not reachable)
+## 6. Dead study scenes and prototypes (removed 2026-10-02)
 
-Nothing in the main scene references these. Tests, tools or launchers might,
-so grep first.
+Removed on branch `cleanup/dead-code`: the sandbox (`scenes/sandbox.tscn`,
+`sandbox.gd`, `terrain_view.gd`, `orbit_camera.gd`, `garden_look.gd`,
+`garden_weather.gd` and their shaders), `cozy_flow_prototype` with
+`cozy_chunk_prototype.gd`, `nursery_preview`, `open_meadow`, every
+`prototype_*` study, script and shader, `redwood_forest`, `visual_benchmark`
+with `benchmark_planar_water`, `wind_playground` with `wind_demo_landscape.gd`,
+the Bigfoot life, lighting, living-world and playground studies, the god mode
+and destruction playgrounds, the bear and the older Bigfoot model passes, the
+materials-tray specimen SVGs, their launchers, tests, tools and docs.
 
-- Studies: `cozy_flow_prototype`, `nursery_preview`, `open_meadow`,
-  `prototype_deliberate_pond`, `prototype_inland_worlds`,
-  `prototype_living_fog`, `prototype_mountain_clouds`,
-  `prototype_mountain_scale`, `prototype_nahanni_valley`,
-  `prototype_pond_canopy`, `prototype_valley_palettes`,
-  `prototype_valley_rock`, `redwood_forest`, `visual_benchmark`,
-  `wind_playground`, plus the unreferenced `.tscn` files `diorama.tscn`,
-  `fidelity.tscn` and `fidelity_life.tscn`. Their `.gd` files are still used.
-- Scripts: `sandbox.gd` with `scenes/sandbox.tscn`, `cozy_chunk_prototype.gd`,
-  `prototype_desert_*.gd`, `prototype_inland_*.gd`, `wind_demo_landscape.gd`,
-  `title_showcase.gd`, `orbit_camera.gd`, `garden_look.gd`,
-  `garden_weather.gd`, `benchmark_planar_water.gd`.
-- Shaders: `prototype_*.gdshader` and `.gdshaderinc`, `garden_foliage`,
-  `garden_water`, `ground`, `lake_reference_water`, `nursery_glass`,
-  `redwood_mist`, `benchmark_planar_water`.
-- Launchers: `run-sandbox`, `run-nursery`, `run-cozy-flow`,
-  `run-deliberate-pond`, `run-inland-worlds`, `run-living-fog`,
-  `run-mountain-clouds`, `run-mountain-scale`, `run-nahanni-valley`,
-  `run-open-meadow`, `run-redwood-forest`, `run-valley-palettes`,
-  `run-valley-rock`, `run-visual-benchmark`, `run-wind-playground`,
-  `run-selection-garden` with `selection-garden.json`.
+Corrections to the earlier list, all of which stay:
 
-Some of these are look references (the Fidelity scene is the aesthetic bar,
-see `docs/fidelity`). Keep the docs and captures even where the scene goes.
+- `run-cozy-flow.command` is the live launcher: it opens `cozy_worlds.tscn`.
+- `scripts/title_showcase.gd` is live (`cozy_worlds.gd` loads it).
+- `shaders/lake_reference_water.gdshader` is live through
+  `assets/zen_reference/geometry.scn`.
+- `studies/diorama.tscn`, `fidelity.tscn`, `fidelity_life.tscn`,
+  `bigfoot_lair.tscn` and `bigfoot_cave.tscn` are unreachable from the game
+  but are the harness scenes of about 70 tests and 30 tools. Their scripts are
+  the game's ancestors (`cozy_worlds.gd` → `diorama.gd` → `bigfoot_lair.gd` →
+  `bigfoot_cave.gd` → `fidelity_life.gd` → `fidelity.gd`).
+- `art/blender/bigfoot/zenscape-bigfoot-classic.blend` and
+  `assets/models/zenscape-bigfoot-classic.glb`:
+  `tools/animate_bigfoot_interactions.py` builds the interactions model the
+  creature tests load from them.
+- `docs/bigfoot-scale`: `tools/open_woodland.gd` opens its `woodland.json`.
+
+The look references stay: the Fidelity scene is the aesthetic bar, see
+`docs/fidelity`.
 
 ---
 
@@ -216,8 +215,9 @@ see `docs/fidelity`). Keep the docs and captures even where the scene goes.
 Genesis is now the only way to create. These keep the older paths alive:
 
 - `--classic-build` in `studies/cozy_worlds.gd`: the pre-Genesis build editor.
-- `--garden` in `studies/fidelity.gd`, with `run-garden.command`: the old
-  garden editor.
+- `--garden` in `studies/fidelity.gd`: the old garden editor (its
+  `run-garden.command` launcher is gone). `selection-garden.json` at the root is
+  its demonstration save, written by `tools/capture_selection_garden.gd`.
 - `--classic-trees`, `--classic-life`, `--classic-grass`, `--classic-rocks`,
   `--classic-palette`: A/B switches from the look passes. Once the new versions
   are accepted, the flags and the classic code paths can go.
@@ -233,7 +233,6 @@ Genesis is now the only way to create. These keep the older paths alive:
 - About 45 untracked `*.gd.uid` files in `scripts/`, `tests/` and `tools/`.
   Commit them or delete them along with their scripts.
 - `tools/blender_trees/__pycache__/` should be gitignored.
-- `docs/world-progression/sandbox.tscn` is a scene file inside docs.
 
 ---
 
@@ -241,8 +240,8 @@ Genesis is now the only way to create. These keep the older paths alive:
 
 1. Archive-tag, then delete, the retired branches and worktrees in section 1.
    Nothing in the tree changes.
-2. Delete the dead study scenes and prototypes in section 6. Low risk: parse
-   the project headless afterwards.
+2. ~~Delete the dead study scenes and prototypes in section 6.~~ Done
+   2026-10-02.
 3. Decide on fire (section 4) and the classic flags (section 7).
 4. Untangle `studies/diorama.gd`, `native_chunk_editor.gd`,
    `cozy_regrowth.gd` and `garden_view.gd` from Bigfoot, destruction and fire.
