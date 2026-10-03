@@ -252,7 +252,7 @@ const SPORE_KINDS := ["tree","layered_tree","broadleaf","redwood","birch","willo
 ## (emergence, sliding, a clearing brush), not from the hand, and one undo
 ## puts any plucked plant back.
 const PLUCK_TREES := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus"]
-const PLUCK_UNDERGROWTH := ["fern","shrub","reeds","bank_grass","grass_tuft","flower","button_flower","spike_flower","umbel_flower","daisy_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","mushroom"]
+const PLUCK_UNDERGROWTH := ["fern","shrub","reeds","bank_grass","grass_tuft","flower","button_flower","spike_flower","umbel_flower","daisy_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","wheat","mushroom"]
 ## Undergrowth has no pick of its own (world play registers only trees and
 ## props): with no tree's mesh under the pointer, the plant whose root stands
 ## nearest the ground under it, within PLUCK_REACH m, is the one taken.

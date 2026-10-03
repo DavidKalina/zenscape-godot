@@ -55,10 +55,16 @@ const SLOTS := {
 	"poppy":{"type":"wildflower","flowers":[["poppy",1.0],["oxeye_daisy",0.0]],"mix":0.08},
 	"cosmos":{"type":"cosmos","flowers":[["cosmos",1.0],["oxeye_daisy",0.0]]},
 	"sunflower":{"type":"sunflower","flowers":[["sunflower",1.0],["buttercup",0.0]],"mix":0.02},
+	# Wheat (docs/scenic/wheat.md): a crop, not a meadow. Only wheat, packed in
+	# rows (`drift` is merged over the type's: rows a hand's width of furrow
+	# apart, `square` to the plate's sides, wavering only a little), so a
+	# patch reads as a field.
+	"wheat":{"type":"sunflower","flowers":[["wheat",1.0]],"mix":0.0,"sizes":{"wheat":[0.85,1.1]},
+		"drift":{"rows":{"kind":"wheat","spacing":0.5,"width":0.3,"face":false,"square":true,"waver":0.06}}},
 }
 ## The veil's look per slot (sRGB): seed and fluff, pale and warm, leaning to
 ## the flower's colour.
-const LOOKS := {"wildflower":"f2e2b4","dandelion":"f6f2e6","poppy":"f2b8a0","cosmos":"f4c8da","sunflower":"f0d27a"}
+const LOOKS := {"wildflower":"f2e2b4","dandelion":"f6f2e6","poppy":"f2b8a0","cosmos":"f4c8da","sunflower":"f0d27a","wheat":"eedcae"}
 ## The veil: brush radius (m) at the middle pip (pollen_cloud.gd scales it
 ## within its SIZE), its strength (more motes than a tree's veil, so the drift
 ## has a density to read), its spread (a share of the tree veil's: a flower
@@ -144,11 +150,16 @@ func _init(ground: NativeTerrainData, id: String, world_seed: int) -> void:
 		seed_value = int(data._recipe.inland.genome.plant_seed)
 	meadow = MeadowTypes.new(type_id,seed_value)
 	var spec: Dictionary = SLOTS[id]
-	if spec.has("flowers") or spec.has("mix"):
+	if spec.has("flowers") or spec.has("mix") or spec.has("drift") or spec.has("sizes"):
 		var type: Dictionary = meadow.type.duplicate(true)
 		if spec.has("flowers"): type.flowers = spec.flowers
 		if spec.has("mix"): type.drift.mix = float(spec.mix)
+		if spec.has("drift"): type.drift.merge(spec.drift.duplicate(true),true)
+		if spec.has("sizes"): type.sizes = spec.sizes
 		meadow.type = type
+		# Rows square to the plate's sides, along x or z by the world.
+		if type.drift.get("rows",{}).get("square",false):
+			meadow._row = Vector2.RIGHT if Variety.unit([salt,29]) < 0.5 else Vector2.DOWN
 	_snowline = BiomeBlend.snowline(settings,data._palette.snowline)
 	for colour: Color in data._palette.rock: _bare.append(colour)
 	_bare.append(data._palette.sand)

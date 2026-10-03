@@ -26,7 +26,8 @@ extends Node
 ##   snow or too near another tree). Shift thins the trees under the brush.
 ##   The pips size the brush; one undo step a stroke (`paint_flowers_begin`
 ##   with the tree kind, scripts/tree_paint.gd).
-## - **Flowers** (wildflower, dandelion, poppy, cosmos, sunflower;
+## - **Flowers** (wildflower, dandelion, poppy, cosmos, sunflower, and the
+##   wheat crop, docs/scenic/wheat.md;
 ##   scripts/flower_sowing.gd SLOTS) are a paintbrush. Press and drag over the
 ##   land: flowers come up under the brush as it goes, growing in at once; go
 ##   over them again, or linger, and the drift packs toward a full core, its
@@ -1010,6 +1011,7 @@ class Clump extends Node3D:
 		"oak":["a57b48","8c6a3f","c09a66"],"pine":["7a5a3a","946f48","6a4c30"],"willow":["dcd8c4","c9c6ae","ece8d6"],
 		"birch":["c9ab7a","b89868","dcc190"],"redwood":["8a4a32","a15a3c","6e3a26"],"juniper":["5f6f8a","74849c","4c5a72"],"joshua":["9a8a5a","b2a06a","7e7048"],"wildflower":["c9a86a","f2c53d","e38aa0"],"dandelion":["efe9d6","d8cfb4","b89a5e"],"reed":["8a6a45","7a5c3a","a07e56"],
 		"poppy":["3a2e2a","e0442f","f07a3a"],"cosmos":["4a3a30","e8609f","fcefe2"],"sunflower":["3e3226","f4b61e","d8cdb8"],
+		"wheat":["c99a46","e3bf62","b48a3e"],
 	}
 	## The flick: FLICK_SNAP s, tipping FLICK_TURN degrees forward and
 	## swelling by FLICK_SWELL at its height, then back.
@@ -1121,6 +1123,14 @@ class Clump extends Node3D:
 				else:
 					_part(_egg(),tones[1],Vector3(0.03,0.11,0.02),Vector3(0.06,0.012,0.035),Vector3(0.3,0.6,0.0))
 					_part(_egg(),tones[2],Vector3(-0.04,0.1,-0.02),Vector3(0.055,0.012,0.032),Vector3(-0.25,2.2,0.0))
+			"wheat":
+				# Plump grains heaped in the pinch, and an ear lying across them.
+				var tones: Array = TONES.wheat
+				for i in range(7):
+					var angle := TAU*i/7.0
+					_part(_egg(),tones[i%2],Vector3(cos(angle)*0.06,0.03+(i%2)*0.035,sin(angle)*0.06),Vector3(0.03,0.024,0.042),Vector3(0.3*i,angle,0.2))
+				_part(_egg(),tones[1],Vector3(0.0,0.1,0.0),Vector3(0.035,0.032,0.13),Vector3(0.35,0.5,0.0))
+				_part(_egg(),tones[2],Vector3(0.0,0.12,0.0),Vector3(0.012,0.012,0.22),Vector3(0.35,0.5,0.0))
 			"water":
 				# A bead: a faceted drop coming to a point, a glint on it and
 				# a droplet beside it.

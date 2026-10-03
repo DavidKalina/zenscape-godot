@@ -95,6 +95,7 @@ const SEEDS := [
 	["poppy","Poppy","Field","Red poppies in drifts, where the wind sets them down."],
 	["cosmos","Cosmos","Drift","Tall pink and white cosmos, a drift of one colour."],
 	["sunflower","Sunflower","Stand","Sunflowers in a stand, their faces to the sun."],
+	["wheat","Wheat","Field","Wheat in tidy rows: green in spring, gold by late summer, stubble in winter."],
 	["reed","Reed","Cattail","Cattails for the shallows."],
 ]
 const TOOLS := [

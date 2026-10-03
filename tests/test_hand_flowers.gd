@@ -491,8 +491,8 @@ func bar() -> void:
 	# The seed group: the tree seeds (first steps added birch, redwood, juniper
 	# and Joshua to the case), the five flowers, then reed.
 	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0).map(func(entry: Dictionary) -> String: return entry.id)
-	var expected := ["oak","pine","willow","birch","redwood","juniper","joshua","wildflower","dandelion","poppy","cosmos","sunflower","reed"]
-	check(seeds == expected,"The seed group is seven tree seeds, five flowers and reed (%s)" % str(seeds))
+	var expected := ["oak","pine","willow","birch","redwood","juniper","joshua","wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"]
+	check(seeds == expected,"The seed group is seven tree seeds, five flowers, wheat and reed (%s)" % str(seeds))
 
 # --- The cozy scene ---------------------------------------------------------------------
 

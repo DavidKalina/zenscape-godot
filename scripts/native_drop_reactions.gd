@@ -53,6 +53,7 @@ const REACTIONS := {
 	"sunflower":"sprout",
 	"poppy":"sprout",
 	"lupine":"sprout",
+	"wheat":"sprout",
 	"mushroom":"sprout",
 	"bigfoot_tree":"thump",
 	"rock":"drop",

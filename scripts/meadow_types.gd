@@ -49,6 +49,11 @@ const FLOWER_KEYS := {
 	"sunflower":{"fallback":"daisy_flower","height":1.83,"head":0.44,"tints":["f4b61e"],"wash":"c4b040","pack":0.42},
 	"poppy":{"fallback":"button_flower","height":0.63,"head":0.16,"tints":["e0442f"],"wash":"d8452c"},
 	"lupine":{"fallback":"spike_flower","height":0.85,"head":0.12,"tints":["7b4cc6","9c48b8"],"washes":["8a68c0","9a62b4"],"wash":"8a68c0","tint_real":true},
+	# Wheat, painted from the hand only (FlowerSowing SLOTS "wheat",
+	# docs/scenic/wheat.md): one record a clump of five straws, its rows
+	# packed whole (a narrow head keeps every candidate), the ground under a
+	# patch warmed toward stubble gold.
+	"wheat":{"fallback":"spike_flower","height":0.97,"head":0.06,"tints":["e3bf62"],"wash":"c8a95a"},
 }
 ## With the kit in the catalog a `tint_real` kind's `tints` are the kit's own
 ## petal variants (MeadowFlowerMesh SPEC `variants`), so GardenView draws a
@@ -309,11 +314,12 @@ static func packing(kind: String) -> float:
 	if FLOWER_KEYS[kind].has("pack"): return float(FLOWER_KEYS[kind].pack)
 	return clampf(pow(PACK_HEAD/float(FLOWER_KEYS[kind].head),2.0),0.0,1.0)
 
-## True where a row-planted kind may stand: on loose rows across the field.
+## True where a row-planted kind may stand: on loose rows across the field,
+## wavering up to the rows' `waver` (m, 0.25 if absent) either side.
 func on_row(p: Vector2, kind: String) -> bool:
 	var rows: Dictionary = type.drift.get("rows",{})
 	if rows.is_empty() or rows.kind != kind: return true
-	var across := Vector2(-_row.y,_row.x).dot(p)+_warp.get_noise_2d(p.x*0.3,p.y*0.3)*0.25
+	var across := Vector2(-_row.y,_row.x).dot(p)+_warp.get_noise_2d(p.x*0.3,p.y*0.3)*float(rows.get("waver",0.25))
 	var f := fposmod(across/float(rows.spacing),1.0)
 	return absf(f-0.5) < float(rows.width)
 

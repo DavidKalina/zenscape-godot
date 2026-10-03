@@ -176,6 +176,9 @@ static func leaf_season(key: String) -> Vector4:
 	if key == "willow:willow-canopies": return Vector4(1.0,0.5,0.0,0.0)
 	if key.begins_with("shrub:"): return Vector4(1.0,0.55,0.3,0.0)
 	if key.begins_with("fern:"): return Vector4(1.0,0.0,0.0,0.6)
+	# Wheat follows the year its own way (`flower_ripen`): no autumn paint over
+	# its gold, and cut to stubble rather than dying back.
+	if key.begins_with("wheat:"): return Vector4.ZERO
 	if key in ["petal","stem"] or "flower" in key: return Vector4(1.0,0.0,0.0,1.0)
 	if key == "grass" or key.begins_with("grass_tuft:") or key.begins_with("bank_grass:"): return Vector4(1.0,0.0,0.0,0.35)
 	return Vector4(1.0,0.0,0.0,0.0)
