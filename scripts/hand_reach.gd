@@ -619,6 +619,24 @@ func _foot() -> float:
 			_block_low = editor.terrain.to_local(skirt.to_global(box.position)).y
 	return float(_block_low)
 
+## The rim's outline on screen, round the plate and closed, for the first
+## steps' card to light (scripts/first_steps_card.gd `rim`); empty when any
+## of it is behind the camera.
+func rim_outline() -> PackedVector2Array:
+	var camera: Camera3D = scene.camera
+	var terrain: Node3D = _editor().terrain
+	var points := PackedVector2Array()
+	var steps := 24
+	for side in range(4):
+		for i in range(steps):
+			var f := -PLATE_HALF+2.0*PLATE_HALF*float(i)/steps
+			var edge: Vector2 = [Vector2(f,-PLATE_HALF),Vector2(PLATE_HALF,f),Vector2(-f,PLATE_HALF),Vector2(-PLATE_HALF,-f)][side]
+			var world := terrain.to_global(Vector3(edge.x,_rim_height(edge),edge.y))
+			if camera.is_position_behind(world): return PackedVector2Array()
+			points.append(camera.unproject_position(world))
+	points.append(points[0])
+	return points
+
 ## [pixels, rim point] for the rim's outline sample nearest `point` on screen.
 func _outline_nearest(point: Vector2) -> Array:
 	var camera: Camera3D = scene.camera

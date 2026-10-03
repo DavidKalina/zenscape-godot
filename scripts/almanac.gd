@@ -145,6 +145,11 @@ const PRESS_TIME := 0.15
 ## Where retired whispers are kept, [whispers] id = true.
 const SETTINGS := "user://almanac.cfg"
 ## Compass points for the wind's tag, round from +x (east) toward +z (south).
+## First steps (scripts/first_steps_card.gd) points at a pocket with `nudge`:
+## the ring takes NUDGE_FADE s to come and go and breathes once every
+## NUDGE_PERIOD s.
+const NUDGE_FADE := 0.5
+const NUDGE_PERIOD := 3.0
 const COMPASS := ["east","south-east","south","south-west","west","north-west","north","north-east"]
 
 var scene: Node
@@ -168,6 +173,12 @@ var settings_path := SETTINGS
 var cues_played := {}
 var _want_shown := false
 var _away := 0.0
+## The pocket the first-steps card is pointing at, or "". While one is
+## pointed at the strip stays reached for and that pocket is stitched round, slowly.
+var nudged := ""
+var _nudge_for := ""
+var _nudge_a := 0.0
+var _nudge_t := 0.0
 var _font: FontVariation
 var _whisper: FontVariation
 var _textures := {}
@@ -223,6 +234,29 @@ func setup(owner_scene: Node, hand_reach: Node) -> void:
 ## Shows it (resting, or reached for) or puts it away, as the roll's `want`.
 func want(on: bool) -> void:
 	_want_shown = on
+
+## Points at pocket `id` (one of POCKETS), or at none with "": the strip stays reached for (a
+## drag still keeps it quiet) and the pocket is stitched round and lifts a
+## little, over and over, until it is cleared.
+func nudge(id: String) -> void:
+	nudged = id
+	if not id.is_empty(): _nudge_for = id
+
+## The nudge's frame: its ring comes and goes eased, and breathes while it is on.
+func _nudge_step(delta: float) -> void:
+	_nudge_a = move_toward(_nudge_a,1.0 if not nudged.is_empty() else 0.0,delta/NUDGE_FADE)
+	_nudge_t = fposmod(_nudge_t+delta,NUDGE_PERIOD)
+	if _nudge_a <= 0.0: _nudge_for = ""
+
+## The pointing ring on `cell`: a faint lift of the hover patch and a stitched
+## ring in the pip's stitch, both breathing. Nothing without a nudge.
+func _nudge_ring(item: CanvasItem, cell: Rect2, line: float, radius: float) -> void:
+	var a := Linen.eased(_nudge_a)
+	if a <= 0.0: return
+	var breath := 0.5-0.5*cos(_nudge_t/NUDGE_PERIOD*TAU)
+	Linen.pressed_patch(item,cell,ui_scale,Color(Linen.HOVER,Linen.HOVER.a*a*breath),Color(Linen.HOVER_SHADE,Linen.HOVER_SHADE.a*a*breath))
+	var ring := cell.grow((1.0-3.0*breath)*ui_scale)
+	Linen.dashed_round(item,ring,radius*ui_scale,Color(Linen.PIP_STITCH,Linen.PIP_STITCH.a*a*(0.45+0.55*breath)),line,ui_scale)
 
 # --- Reading the pointer --------------------------------------------------------
 
@@ -486,7 +520,7 @@ func tag_text(id: String) -> String:
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
 	var screen := get_viewport().get_visible_rect().size
-	var scale_now := Linen.scale_for(screen)
+	var scale_now := Linen.hud_scale_for(screen)
 	if not is_equal_approx(scale_now,ui_scale) or _textures.is_empty():
 		ui_scale = scale_now
 		var px := Linen.ICON*ui_scale
@@ -502,13 +536,14 @@ func _process(delta: float) -> void:
 	shown = move_toward(shown,1.0 if _want_shown else 0.0,delta/Linen.REACH)
 	var reaching := pointer.x >= size.x-(Linen.FRAME-REACH_X)*ui_scale
 	var over := awake > 0.0 and (_strip().grow(6.0*ui_scale).has_point(pointer) or not tag_at(pointer).is_empty())
-	var near := _want_shown and (holding() or (not quiet and (reaching or page_open or over)))
+	var near := _want_shown and (holding() or (not quiet and (reaching or page_open or over or not nudged.is_empty())))
 	if near:
 		_away = 0.0
 		awake = move_toward(awake,1.0,delta/Linen.REACH)
 	else:
 		_away += delta
 		if _away >= Linen.HOLD: awake = move_toward(awake,0.0,delta/Linen.RECEDE)
+	_nudge_step(delta)
 	visible = shown > 0.0
 	if not visible: return
 	modulate.a = Linen.eased(shown)*lerpf(Linen.REST_OPACITY,1.0,Linen.eased(awake))
@@ -629,7 +664,7 @@ func _draw() -> void:
 		if h > 0.0: Linen.pressed_patch(self,cell,ui_scale,Color(Linen.HOVER,Linen.HOVER.a*h),Color(Linen.HOVER_SHADE,Linen.HOVER_SHADE.a*h))
 		var centre := cell.get_center()-Vector2(0.0,Roll.LIFT*ui_scale)
 		_contents(id,centre,float(state.cue))
-		_pocket(cell,line)
+		if id == _nudge_for: _nudge_ring(self,cell,line,Linen.SLOT_RADIUS)
 		if pinned(id): _knot(cell)
 	# The double stitch under the Mood.
 	var first := _cell(0)
@@ -700,26 +735,6 @@ func _draw_vignette(centre: Vector2) -> void:
 	Linen.fill_round(self,rect.grow(ui_scale),radius+ui_scale,VIGNETTE_EDGE)
 	draw_texture_rect(_vignette,rect,false)
 	Linen.dashed_round(self,rect.grow(-2.0*ui_scale),maxf(radius-2.0*ui_scale,ui_scale),VIGNETTE_STITCH,maxf(1.0,roundf(ui_scale)),ui_scale)
-
-## A pocket across the slot's foot, as the roll's (scripts/tool_roll.gd `_pocket`).
-func _pocket(cell: Rect2, line: float) -> void:
-	var inset := Roll.POCKET_INSET*ui_scale
-	var rect := Rect2(Vector2(cell.position.x+inset,cell.end.y-inset-Roll.POCKET_H*ui_scale).round(),Vector2(cell.size.x-inset*2.0,Roll.POCKET_H*ui_scale).round())
-	var box := StyleBoxFlat.new()
-	box.bg_color = Linen.POCKET
-	box.corner_radius_bottom_left = int(round(Roll.POCKET_RADIUS*ui_scale))
-	box.corner_radius_bottom_right = box.corner_radius_bottom_left
-	box.anti_aliasing = true
-	draw_style_box(box,rect)
-	var points := Linen.round_points(rect,Roll.POCKET_RADIUS*ui_scale)
-	var open := PackedVector2Array()
-	open.append(Vector2(rect.end.x,rect.position.y))
-	for k in range(6,22): open.append(points[k])
-	open.append(Vector2(rect.position.x,rect.position.y))
-	Linen.dashed(self,open,Linen.POCKET_STITCH,line,3.0*ui_scale,3.0*ui_scale)
-	var y := rect.position.y+line*0.5
-	draw_line(Vector2(rect.position.x,y),Vector2(rect.end.x,y),Linen.POCKET_MOUTH,line)
-	draw_line(Vector2(rect.position.x,y+line),Vector2(rect.end.x,y+line),Linen.POCKET_LIGHT,line)
 
 ## The knot of a pinned pocket: a cream dot at its top right, with its halo,
 ## a drop under it and a shaded lower lip.

@@ -15,25 +15,25 @@ const SHADER = preload("res://shaders/hud_linen.gdshader")
 
 ## Tokens (4c "Design tokens").
 const INK := Color("e3d7bd")
-const HAIRLINE := Color(0.890,0.843,0.741,0.45)
+const HAIRLINE := Color(0.890,0.843,0.741,0.6)
 const PRESSED := Color(0.078,0.055,0.031,0.2)
 const PRESSED_SHADE := Color(0.039,0.031,0.016,0.32)
 const HOVER := Color(0.078,0.055,0.031,0.1)
 const HOVER_SHADE := Color(0.039,0.031,0.016,0.16)
 const FOCUS := Color("e3d7bd")
 const CUE := Color(0.890,0.843,0.741,0.5)
-const DIVIDER := Color(0.890,0.843,0.741,0.32)
-const ICON_SHADOW := Color(0.047,0.035,0.020,0.28)
+const DIVIDER := Color(0.890,0.843,0.741,0.45)
+const ICON_SHADOW := Color(0.047,0.035,0.020,0.42)
 const POCKET := Color(0.078,0.055,0.031,0.08)
 const POCKET_STITCH := Color(0.890,0.843,0.741,0.26)
 const POCKET_MOUTH := Color(0.078,0.055,0.031,0.34)
 const POCKET_LIGHT := Color(1.0,0.941,0.843,0.08)
-const PIP_REST := Color(0.890,0.843,0.741,0.42)
+const PIP_REST := Color(0.890,0.843,0.741,0.55)
 const PIP_STITCH := Color(0.890,0.843,0.741,0.75)
 ## At rest a bar shows REST_OPACITY of itself, sunk or tucked its REST_OFFSET;
 ## reached for, it comes up over REACH s, and goes back over RECEDE s after
 ## HOLD s.
-const REST_OPACITY := 0.6
+const REST_OPACITY := 0.82
 const REACH := 0.25
 const RECEDE := 0.4
 const HOLD := 0.3
@@ -49,9 +49,17 @@ const TAG_CAPS := 10.0
 ## The reference frame's width, which design pixels are measured against.
 const FRAME := 1440.0
 
+## The play HUD (the roll, the case, the almanac and its pages, the first
+## steps' card) is drawn at HUD_SCALE of the design: smaller, out of the way.
+const HUD_SCALE := 0.95
+
 ## One design pixel in viewport pixels.
 static func scale_for(viewport: Vector2) -> float:
 	return Style.ui_scale(viewport)*Style.DESIGN.x/FRAME
+
+## One design pixel of the play HUD in viewport pixels.
+static func hud_scale_for(viewport: Vector2) -> float:
+	return scale_for(viewport)*HUD_SCALE
 
 ## The tag's font: Newsreader at weight 500.
 static func tag_font() -> FontVariation:

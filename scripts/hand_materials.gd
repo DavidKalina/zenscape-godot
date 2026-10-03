@@ -70,6 +70,7 @@ const Roll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const Foot = preload("res://scripts/tool_foot.gd")
 const Almanac = preload("res://scripts/almanac.gd")
+const Card = preload("res://scripts/first_steps_card.gd")
 const Pages = preload("res://scripts/almanac_pages.gd")
 const Palette = preload("res://scripts/command_palette.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
@@ -151,7 +152,7 @@ const CAN := "can"
 ## not worked, and trees bend and flick as for the Feather.
 const FREE := ""
 ## Design units the Lantern hint line moves up to clear the case.
-const HINT_LIFT := 100.0
+const HINT_LIFT := 124.0
 
 static func enabled() -> bool:
 	return Modeless.enabled() and not "--no-tray" in OS.get_cmdline_user_args()
@@ -168,6 +169,12 @@ const HUD_GROUP := "hud_piece"
 var hud_hidden := false
 ## The almanac on the right edge (scripts/almanac.gd, HUD 5): the air's pockets.
 var almanac: Control
+## The first steps' card (scripts/first_steps_card.gd), top right, once the
+## scene has its model (`show_first_steps`); null without one.
+var card: Control
+var _first_steps: Node
+## The step the hand was last made ready for (`_take_for`).
+var _asked := ""
 ## The page the almanac last asked for, [page, row], until the pages
 ## (scripts/almanac_pages.gd, another branch) take the request.
 var page_asked := []
@@ -237,10 +244,38 @@ func setup(owner_scene: Node3D, hand_reach: Node) -> void:
 	clump.ground = func(flat: Vector2) -> Variant: return reach._editor().data.ground_height(flat)
 	reach._editor().terrain.add_child(clump)
 
-## True over the materials bar, the tool roll or its foot, the almanac or an
-## open page, while they show.
+## Puts the first steps' card on the HUD's layer for the scene's model
+## (scripts/first_steps.gd). The pocket its step names is nudged, the others
+## let go.
+func show_first_steps(steps: Node) -> void:
+	if card != null or steps == null or tray == null: return
+	card = Card.new()
+	tray.get_parent().add_child(card)
+	card.setup(scene,steps)
+	_first_steps = steps
+	card.pointing_changed.connect(func(piece: String, id: String) -> void:
+		var pieces := {"roll":roll,"tray":tray,"almanac":almanac,"foot":foot}
+		for key: String in pieces: pieces[key].nudge(id if key == piece else ""))
+
+## Makes the hand ready for the step the card asks (scripts/first_steps.gd
+## VERBS `take`): its tool from the roll, in its mode, or the tool put down,
+## and the mode's cell on the fan is ringed. A step without one leaves the
+## hand as it is.
+func _take_for(step_id: String) -> void:
+	var take := str(_first_steps.verb(step_id).get("take",""))
+	roll.nudge_mode("")
+	if take.is_empty(): return
+	var parts := take.split(":")
+	if not held.is_empty(): put_back()
+	select_tool(FREE if parts[0] == "free" else parts[0])
+	if parts.size() > 1:
+		set_mode(parts[1])
+		roll.nudge_mode(parts[1])
+
+## True over the materials bar, the tool roll or its foot, the almanac, the
+## first steps' card or an open page, while they show.
 func tray_under(point: Vector2) -> bool:
-	return (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point)) \
+	return (card != null and card.contains_pointer(point)) or (tray != null and tray.contains_pointer(point)) or (roll != null and roll.contains_pointer(point)) \
 		or (foot != null and foot.contains_pointer(point)) or (almanac != null and almanac.contains_pointer(point)) \
 		or (pages != null and pages.is_open() and pages.contains_pointer(point)) or (palette != null and palette.is_open())
 
@@ -293,6 +328,7 @@ func _pointer() -> Vector2:
 ## A left press the hand reach has let through (nothing held, the hand free).
 ## True when it was the case's or the material's.
 func press(point: Vector2) -> bool:
+	if card != null and card.press(point): return true
 	if foot != null and foot.press(point): return true
 	# The almanac: its pockets act at once, the Wind's press holds for a drag.
 	if almanac != null and almanac.press(point):
@@ -656,6 +692,16 @@ func step(delta: float) -> void:
 	tray.quiet = quiet
 	roll.quiet = quiet
 	almanac.quiet = quiet
+	if card != null:
+		card.quiet = quiet or reach.camera_moving()
+		# Never mid-stroke: the hand is made ready once it holds nothing.
+		var asked: String = card.asking()
+		if asked != _asked and str(reach.holding).is_empty():
+			_asked = asked
+			_take_for(asked)
+		# A step that shows the rim has it lit while it is asked.
+		var lit: bool = not asked.is_empty() and str(_first_steps.verb(asked).get("show","")) == "rim"
+		card.rim = reach.rim_outline() if lit else PackedVector2Array()
 	roll.material_held = not held.is_empty()
 	roll.held_tint = Icons.item(held if not held.is_empty() else roll.tool).get("tint",roll.held_tint)
 	# The Lantern hint line sits just over the case.

@@ -9,6 +9,16 @@ and what it does depends on where you press. The **right button is the eye**.
 The hand's pose shows what a press will do before you press, and **Cmd+Z**
 takes back any shaping.
 
+## First steps
+
+A new player gets a small card that asks for six things in turn: look round,
+raise a peak, thumb a groove, pour water, bend a tree, turn the world and call
+the cloud. It shows one at a time, puts the tool you need in your hand and rings its pocket, and goes away
+when you finish or press **Skip**. **Esc**, then **Field notes**, lists
+everything the hand can do. What you have found reads in full. What you
+have not shows only a clue. "Walk me through it again" brings the card back.
+Details are in [docs/scenic/first-steps.md](scenic/first-steps.md).
+
 The design, with the numbers, is in [docs/scenic/modeless.md](scenic/modeless.md).
 `--classic-controls` brings back the old shell: brushes, tool rail, Craft, the
 World menu and the Cmd+K palette.
@@ -184,6 +194,7 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--pull-cam=a|b|c|old` sets how the camera shows the edge pull (see "The edge" above). The default is `a`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
 - `--no-tray` hides the materials tray.
+- `--no-first-steps` leaves out the first-steps card and the field notes; `--first-steps` shows the card from the top whatever was found before, without saving.
 
 ## Not reachable in the hand scheme yet
 
