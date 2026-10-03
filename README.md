@@ -1,318 +1,101 @@
-# ZenScape — Landscape Sandbox
+# ZenScape
 
-A new Godot project exploring a cozy landscape sculpting toy. One continuous,
-editable diorama: shape a place with a brush, then gradually bring it to life.
+A cozy landscape toy in Godot. You shape a small square plate of land with
+your hand, and life arrives on what you make in its own time: grass, flowers,
+trees, fish, frogs, birds and deer.
 
-## Cozy Bigfoot worlds
+## Play
 
-Run **`run-cozy-flow.command`**, or press **F5** in Godot, to open the title: a
-generated world the camera orbits, under the main menu. **Create a new world**
-enters the cozy flow on a quiet **Genesis plain** with the hand ready
-([the creation plan](docs/scenic/PLAN.md), Phase 3); **Continue your world**
-picks up the last place. `--no-title` goes straight to a new plain, `--resume`
-to the last saved place, and `--generated` or `--seed N` to a generated world.
+Double-click **`run-cozy-flow.command`**, or open `project.godot` in
+**Godot 4.7.2** (standard edition; no .NET needed) and press **F5**. Both open
+`studies/cozy_worlds.tscn`.
 
-**[How to play](docs/HOW-TO-PLAY.md)** lists every control. There are no tool
-modes: the left button is the hand, and what it does depends on where you press
-(the land, the rim, or the sky); the right button is the camera.
-There is no toolbar, palette or button column; the keys left are **M** (moods),
-**P** (photo), **Esc** (menu), the camera's **R**, **F**, **Backspace** and
-arrows, and **Cmd+Z** / **Cmd+S**. `--classic-controls` brings back the old
-creation shell that the table, Craft and World notes below describe. Nothing is placed
-under the pointer: grass, shrubs, trees, fish, frogs, birds and deer arrive on the land
-you made in their own time ([brushes](docs/scenic/brushes.md),
-[life](docs/scenic/life.md)). The plain's day turns slowly and passes through
-the night in a few seconds, so dawn and dusk come round within a session.
+The title is a generated world the camera orbits behind the menu:
+**Continue your world**, **Your worlds** (the library of saved worlds),
+**Build this world** (keep the land behind the menu), **Begin on a quiet
+plain** (a bare Genesis plain), **Settings** and **Quit**. In a world, **Esc**
+opens the pause panel: Resume, Save a copy, Field notes, Settings and
+Return to title. Worlds keep themselves a few seconds after each change.
 
-| Control | While creating (`--classic-controls`) |
-| --- | --- |
-| **1**–**5** | Land, Water, Meadow, Forest, Path (or click a palette brush) |
-| **1** again / **Shift+1** (land in hand) | Next / previous land form: Hill, Alpine, Ridge, Mesa, Volcano, Tors ([mountain forms](docs/scenic/brushes.md#mountain-forms)) |
-| Left drag | Paint with the brush in hand (with a mountain form: press where the peak goes, drag out to grow it) |
-| Left press and hold (water in hand) | Gather a ball of water with fish in it; it grows while held and follows the pointer. Release to drop it, and the land decides: a pond, a lake, a stream, or a waterfall off a steep drop ([water ball](docs/scenic/water-brush.md#water-ball-featurewater-ball-2026-09-27)). `--pour-water` brings back drag-to-pour |
-| Shift-drag | Work the other way: land lowers, water drains, a meadow lifts, forest clears, a path grows back |
-| **`[ ]`** / **Shift+`[ ]`** | Brush size / strength |
-| Right drag, Ctrl-drag, Alt-drag, a drag off the land, or a two-finger swipe | Orbit, with the brush still in hand |
-| Middle drag, Shift + two-finger swipe, arrows | Pan (Shift+arrows turn and tilt) |
-| Scroll / pinch | Zoom toward the pointer |
-| **Double-click** (or point and press **F**) | Glide to a creature, tree, rock or pond and circle it; creatures are followed. On bare ground the view moves there. The first click's dab or pour is taken back |
-| **Backspace** or **Home** | Glide back to the view before |
-| **Tab** (or **Look**) | Put the brush away, so a left drag orbits too and pointing names things |
-| **R** | Overview |
-| **H** | Hide the controls (and the brush); H again restores both |
-| **P** (or **Photo**) | Photo mode (below) |
-| **M** (or **Mood**) | Moods: nine authored looks that cross-fade the sky, light, weather, season and colours; **Customise** sets season, time, weather, rock and colours, which stay through mood changes ([moods](docs/scenic/mood.md)). Esc closes |
-| **W** / **Shift+W** / **E** | Next weather / let the weather drift or hold it / next season. W and E pin their choice in the moods, as Customise would; letting the weather drift unpins it |
-| **Alt+`[ ]`** | Step through the showcase seeds |
-| **Cmd/Ctrl Z**, **Cmd/Ctrl Shift Z** | Undo, redo a stroke |
-| **Cmd/Ctrl S** | Save now |
-| **Esc** | Close the moods, otherwise open the menu |
+**[How to play](docs/HOW-TO-PLAY.md)** lists every control. In short:
 
-**Craft** at the top right opens the fine sculpt, paint and place tools (the
-Build palette below; there **1**–**4** pick raise, lower, smooth and flatten and
-**V** selects); it reads **Create** while open and returns to the brushes.
+- **The hand.** There are no tool modes. The **left button is the hand**, and
+  what a press does depends on where you press: the land, the plate's rim and
+  walls, or the sky. The **right button is the eye**: drag to look round,
+  scroll or pinch to zoom.
+- **The tool roll** on the left edge holds the shaping tools, one per
+  landform gesture: the **Modeller** (fine work: thumb a stream bed, pinch a
+  knoll, palm a pan), **Hills** (scrub), **Mountain** (pull up a peak, or
+  sideways for a range), **Crater** (pull down), **Ravine** (draw a line; a
+  loop sinks a basin), **Chisel** (mesa, shelf, notch, slice) and **Paddle**
+  (plane and pat). The strip along the top holds the tools that tend: the
+  **Feather** (wind), the **Watering can** and the **Brush** (colour).
+- **The materials case** along the bottom holds tree seeds, flowers, reeds,
+  water and a river stone. Take one and press or paint the land.
+- **The edge and the sky.** Push the rim to turn the world and wind time on;
+  pull it down and let go to spring the land up; flick it to flip to a new
+  world. Hold still in the sky to call the cloud; swipe the sky for a gust.
+- **First steps.** A new player gets a small card that walks through six
+  things in turn; **Field notes** on the pause panel lists everything the hand
+  can do ([first steps](docs/scenic/first-steps.md)).
+- **Keys.** **M** moods, **P** photo mode, **Esc** put down / pause, **R**
+  overview, **F** glide to what's under the pointer, arrows to pan,
+  **Cmd+Z** / **Shift+Cmd+Z** undo and redo, **Cmd+S** save now.
 
-**Photo mode.** **P** (or **Photo**) hides the controls while the world keeps
-living. Camera moves glide to rest. The creation camera, and why its
-controls are mapped as they are, is in [camera](docs/scenic/camera.md).
+Launch flags go after the launcher, for example
+`./run-cozy-flow.command --resume`: `--no-title` opens a new plain,
+`--resume` the last saved place, `--generated` or `--seed N` a generated
+world. HOW-TO-PLAY lists the rest.
 
-| Control | In photo mode |
-| --- | --- |
-| Drag / right drag / scroll | Orbit / pan / dolly |
-| **G** | Walk the ground at eye height (arrows or right drag walk) |
-| **`[ ]`** / **Shift+`[ ]`** | Lens / exposure |
-| **F**, then click | Depth of field; a click focuses there and names the creature or plant under it |
-| **H** | Hide the hints |
-| **Space** | Save a full-resolution PNG with no UI to **~/Pictures/ZenScape** (Show in Finder is on the "Saved" note) |
-| **P** or **Esc** | Back to where you were |
+For a standalone Windows or Mac app, see
+[desktop builds](docs/desktop-builds.md).
 
-The **World** menu holds **New open plain**, **Regenerate landscape** (fold this
-place away and grow a procedural world with its own terrain, palette,
-atmosphere, time of day and weather), **Return to previous place**, **Save now**,
-**Colors & sky** (the full look editor; **M** is the quick way), **Overview**, **Sound** (mute, Master and the creation volume for
-stroke voices, ambient beds and life) and **Main menu**. Quitting saves the place, with
-its forest wishes and the life that has arrived, and the next launch keeps one
-earlier place to return to. `--classic-build` restores the old Build/Enjoy
-toolbar, and `--beauty-grass` brings back the retired dense GPU grass. See
-[native world details](docs/cozy-flow/REAL-WORLDS.md).
+## Design notes
 
-Character selection remains deferred. The original lightweight study is still
-available by running `studies/cozy_flow_prototype.tscn` with F6; its
-[prototype notes](docs/cozy-flow/NOTES.md) describe that session-only version.
+- [The creation plan](docs/scenic/PLAN.md) and the hand scheme,
+  [modeless](docs/scenic/modeless.md); the other notes in `docs/scenic/`
+  cover water, life, sound, wind, the cloud and the look.
+- [The shaping tools](docs/design/tools/PLAN.md), the
+  [worlds and library](docs/design/worlds/README.md), the
+  [tool roll and materials case](docs/design/materials-tray/HUD-4c.md) and
+  the [almanac and HUD](docs/design/hud-5/README.md).
+- [Deprecated and retired](docs/DEPRECATED.md): what the game no longer
+  needs, and what has been removed.
 
-**World → New crossing glade** opens a small stream-side activity. Move the long
-log across the water or sculpt stepping stones so Bigfoot can reach the quiet
-bank. He balances or hops across, rests, and remembers the place for later visits.
-See [crossing glade](docs/crossing-glade/README.md) for controls and validation.
+## Older study scenes
 
-## Create a diorama
-
-Launch **`run-diorama.command`** to enter the inhabited
-**Fidelity world**. Choose **Menu → Fidelity world** anytime to start a fresh
-copy of that world, including Bigfoot, his two-story cave, and the original scenery. Your current
-world is saved before switching. **Menu** also offers New, Open, and Settings.
-**New diorama** opens a bare, flat chunk in Build mode. Each new diorama gets
-its own JSON file under Godot's `user://dioramas` folder. The current world is
-saved before New, Open, or Quit; a failed save prevents switching. **Continue**
-resumes the current world, or opens the last successfully saved/opened file.
-**Open diorama** chooses a file; **Save a copy** gives it a name and location.
-
-**World → See both stories** frames the forest and underground lair together.
-**Look through lair windows** inspects downstairs; **Find cave entrance** returns
-to the surface entrance. **Overview** and **R** also frame both stories when present.
-
-The top bar offers **Build / Enjoy**, **Save**, and **World**. World contains
-**Landscapes**, **Colors & sky**, **Bigfoot**, **Overview**, and **His spot**. Invite Bigfoot by choosing his button and clicking dry, open
-terrain; his presence and resting habits are saved with the diorama. He also embraces trees,
-visits overlooks, watches rainbows and shooting stars, and reacts to rain, snow
-and lightning. See [Bigfoot’s environmental life](docs/bigfoot-environment/README.md). **H** hides
-or restores the controls, **R** frames the whole chunk, and **Cmd/Ctrl S** saves.
-**Escape** returns to Select first, then opens the menu. Settings offers visual
-quality and nature/thunder sound controls. World files retain these settings;
-there is no separate global preferences file in this first pass.
-
-**Landscapes** opens seven curated formation families, each with a suggested biome:
-Riverfold valley, Skywater plateau, Sleeping volcano, Emerald ridgeback,
-Silverhorn tarn, Sunstone canyon, and Jade terraces. Each card forms the ground,
-water and planting in one undoable action. The **Biome** picker changes planting,
-ground cover and the snowline while preserving sculpting, water and hand-placed
-objects. **Swap palette…** opens the color controls; formation and biome changes
-keep your existing colors, lighting and weather. All seven families work with
-all five biomes. See [landscape presets](docs/landscapes/README.md).
-
-**Colors & sky** opens a visual **Looks** gallery with nine curated presets:
-Alpine morning, Golden meadow, Copper autumn, Rosewater dusk, Enchanted forest,
-Halloween hollow, First snow, Nordic night, and After the rain. Each card shows a real rendered
-preview and applies coordinated colors, lighting and weather in one click.
-Terrain and objects stay in place. The other tabs retain 13 base palettes,
-10 simple moods and all the manual controls. Customize grass,
-foliage, stone, earth, water, sky, light and mist colors; adjust lighting strength,
-exposure and the atmosphere in the Landscape, Sky & light, and Atmosphere tabs. Changes remain editable and save
-with the diorama. **Undo look / Redo** (or Cmd/Ctrl Z while this panel is open)
-restore color and atmosphere edits together. **Reset colors** restores the
-original mountain colors and lighting strengths. Older saves keep their original
-appearance. See [scene looks and controls](docs/scene-look/README.md).
-
-The older study launchers remain available. They keep their original entry
-scenes and save paths.
-
-The building tools live in one shallow bottom tray. Hover an icon for its name;
-click the current item’s name (for example **Pine ···**) to open its miniature
-choices and quick control. **Adjust** replaces that popover with detailed
-settings. **Browse** or **Cmd/Ctrl K** opens the full catalog. Overview frames
-the terrain and its base above the tray. See [the tactile editor pass](docs/design/tactile-editor/README.md).
-
-## Bigfoot makes a home
-
-Run **`run-bigfoot-living-world.command`** for the cave-based living-world
-experiment: consequential bedding, stored meals, curiosity, favorite places,
-observed disturbances, and a little stone arrangement. The **Activities** menu
-can invite a behavior; otherwise his needs choose. **His thoughts** explains the
-current scores. Worlds saved from the study can reopen in the main diorama.
-See [behavior, controls, and validation](docs/bigfoot-living-world/README.md).
-
-## Isolated Bigfoot animation study
-
-Open **`run-bigfoot-tree-hug.command`** to watch and refine one complete tree hug.
-Space pauses, **R** replays, and the timeline or arrow keys scrub the motion.
-See [the tree-hug study](docs/bigfoot-tree-hug/README.md).
-
-## ZenScape fidelity study
-
-Double-click **`run-fidelity.command`** to explore a real ZenScape scene rendered
-in Godot with Forward+. **Tab** compares it with the source screenshot; drag to
-orbit, scroll to zoom, and **Esc** returns to sculpting. This study imports the
-original terrain and 5,366 placed instances and adds native wind, bird, and water
-motion. The imported scenery is not yet sculptable.
-
-The motion pass preserves shallow-water depth, adds downstream stream highlights
-and a deforming waterfall, and gives birds alternating flaps and glides. Use the
-wind slider, **P** to pause motion, and middle-drag to pan. The quality selector
-offers Beauty and Balanced post-processing. The scene renders at the display's
-native resolution; see `docs/garden/VALIDATION.md` for the frame-time budget.
-
-The environment controls now include wind direction and gusts (**G**), valley
-fog, time of day and cycling (**N** advances the sun), aurora, rainbow, and
-clear/rain/storm/snow transitions. Cloud cover and light-shaft controls now
-share the source cloud field with terrain shadows and pooled fog. The **Cold**
-slider freezes water over time; snow accumulates on exposed surfaces and warmth
-thaws it. Rain wets ground and foliage, with rainbows emerging as clouds clear.
-**Night fill** adjusts landscape readability after dark while preserving the
-dark sky; set it to zero for deeper silhouettes.
-**Summit mist** independently adjusts the mountain's cloud cap and downwind
-spill; zero removes them while keeping valley fog.
-**Hold rainbow** keeps one visible while sunlight permits it. See the
-[winter comparison](docs/fidelity/winter-comparison.mp4) (winter left, warm right).
-**Face rainbow** turns toward the arc and raises the view. Automatic rainbows
-fade during snowfall and return in warm, humid clearing air.
-
-Fireflies drift and blink above damp undergrowth on warm nights. Rain quiets
-them and cold suppresses them. **Invite fireflies · even in daylight** brings
-them out during daytime exploration; **P** freezes their motion and blinking.
-Pond frogs breathe, hop into the water and paddle back to their banks, leaving
-soft contact ripples. **F** startles them; cold, ice and an empty pond hide them.
-
-Wind, rain and positional waterfall ambience follow weather, growth and freezing.
-Their checkbox and volume slider are independent of thunder. **P** pauses all
-audio along with scene motion.
-
-**B** summons the original Bigfoot peek rig
-in a terrain clearing; **T** triggers the original camera tremor. **P** freezes
-these animations, including weather transitions and the encounter pose.
-
-[Bigfoot motion check](docs/fidelity/bigfoot-motion.mp4): moving encounter on the
-left, frozen control on the right. The imported rig is checked against 1,300
-source joint transforms. See the [full parity checklist](docs/fidelity/PARITY.md)
-for completed pieces and remaining systems.
-
-[Six-second motion comparison](docs/fidelity/motion-comparison.mp4): updated Godot
-on the left, previous Godot on the right. See [motion pass notes](docs/fidelity/MOTION.md)
-for controls and the first motion pass; that video predates the environment work.
-
-[Moving cloud comparison](docs/fidelity/cloud-comparison.mp4) · Godot left,
-original Three.js right. The comparison still shows open lighting/fog differences.
-
-[Comparison and remaining gaps](docs/fidelity/NOTES.md) ·
-[Godot / Three.js video](docs/fidelity/comparison.mp4)
-
-## Run
-
-For a standalone Windows or Mac app, use the [desktop build downloads and instructions](docs/desktop-builds.md).
-
-Open `project.godot` in **Godot 4.7.2** (standard edition; no .NET needed), then
-press **F5** for the title and the cozy flow (the same as `run-cozy-flow.command`).
-Open `scenes/sandbox.tscn` and press **F6** for the sculpting prototype, or use
-**Esc** from the fidelity scene.
-
-## Build your own garden
-
-Double-click **`run-sandbox.command`**, open `scenes/sandbox.tscn` and press F6,
-or press Esc from the fidelity scene. Existing terrain saves migrate automatically.
-Use **Start flat** for bare earth; Undo restores the previous garden.
-
-Build opens a **palette** across the bottom of the screen: category tabs
-(Sculpt, Landscape, Cover, Place, Water, Sky) over one row of large tiles. Every
-tree, rock, flower, arch and catalog piece shows a portrait of the object itself,
-and every control for the tool in hand sits beside the row: its sliders, its
-one-shot actions (Form ground foundation, Form mountain landscape, Fill
-landscape streams / waterfall / flora, Cover chunk in grass, Remove Blades-tool
-patches) and its colour - the Paint colour, or the Custom color box and picker
-that tint a placement. Click a tile to pick the tool, or **drag a tile into the
-world**: a translucent ghost follows the ground under the pointer, and releasing
-plants the object with its drop reaction. Releasing away from the ground
-cancels.
-
-The **Sky** tab (or **K**) holds the weather instead of a tool, so the brush in
-hand is untouched while you work on it: swatches for Golden hour, Misty dawn and
-Night, one for every weather preset (Clear, Rain, Storm, Snow, Fair, Overcast,
-Mist, Autumn), and sliders for time of day, cloud cover, mist, wind, haze,
-autumn, cold, night fill and summit mist. They read the scene back as it drifts,
-so the fidelity study's own weather controls and these never disagree. The side
-panel keeps only what is not per-tool: the Build/Inspect toggle, Start flat,
-Undo/Redo, Save/Open and the status line.
-
-![Build palette](docs/garden/palette.png)
-
-![The Sky tab](docs/garden/palette-sky.png)
-
-- Raise a hill, lower a hollow, smooth slopes, or flatten to the clicked height.
-- **Meadow:** brush grass and wildflowers onto the earth; slower strokes add density.
-- **Tree / Rock / Flower:** click to place individual objects. Set Object size before
-  placing; zoom closely to position a single daisy. Objects follow sculpted ground.
-  Each placement plays a short reaction sized to the object: living things sprout
-  out of the ground, a stump or snag settles onto it with a wisp of dust, a log
-  lands and rocks to rest, and stone falls, squashes and throws a puff. Only a
-  fresh placement reacts — Redo and reopening a save restore objects silently.
-- **Pond:** dig a closed hollow, set Water level (default −0.1), then click its bed.
-  Water fills connected ground below that level. Levels that spill off the plot
-  are refused. Raising the bed can shrink or remove the visible pond; Undo restores it.
-- **Erase:** brush away meadow and objects.
-- Choose **Clear, Mist, Rain, or Snow**. Rain darkens surfaces and snow coats ground
-  and foliage, with falling precipitation and an icy pond appearance.
-- **Undo / Redo** cover terrain, planting, ponds, weather, and starting flat.
-- **Save** writes the whole garden and camera framing to `user://landscape.json`.
-  Reopening restores them. Changes also save on focus loss or normal close.
-
-| Control | Action |
-| --- | --- |
-| Left drag | Sculpt / paint / erase |
-| Left click | Place selected object / fill pond |
-| Drag from a palette tile | Carry the object into the world and drop it |
-| 1 / 2 / 3 / 4 | Raise / lower / smooth / flatten |
-| K | Open the Sky tab, or fold it away |
-| Right drag | Orbit |
-| Middle drag | Pan |
-| Scroll | Zoom, including close flower placement |
-| [ / ] | Brush size |
-| ⌘Z / Ctrl+Z | Undo |
-| ⌘⇧Z / Ctrl+Shift+Z | Redo |
-| ⌘S / Ctrl+S | Save |
-
-The editable plot is currently 24 × 24 units with a 0.5-unit terrain grid.
-It supports hills and hollows; caves and overhangs are outside this heightfield
-model. Garden surfaces, water, lighting and atmospheric compositing now reuse the port;
-precipitation remains a compact implementation. The next integration target is
-Build mode directly inside the fidelity scene, with its original chunk and camera.
+The game's scene inherits a chain of older scripts:
+`cozy_worlds.gd` → `diorama.gd` → `bigfoot_lair.gd` → `bigfoot_cave.gd` →
+`fidelity_life.gd` → `fidelity.gd`. Their scenes (`studies/diorama.tscn`,
+`fidelity.tscn`, `fidelity_life.tscn`, `bigfoot_lair.tscn` and
+`bigfoot_cave.tscn`) are not part of the game, but many tests and tools load
+them, and `run-diorama.command`, `run-fidelity.command`,
+`run-fidelity-life.command`, `run-bigfoot-lair.command`,
+`run-bigfoot-cave.command` and `run-godot-comparison.command` still open
+them. The fidelity study, a port of the original Three.js scene, is the look
+reference: see [comparison and remaining gaps](docs/fidelity/NOTES.md) and
+the [parity checklist](docs/fidelity/PARITY.md).
 
 ## Structure
 
-- `scripts/garden_data.gd`: meadow, object identities, ponds, weather, full-world history, and versioned saves.
-- `scripts/garden_view.gd`: original foliage meshes rendered from stable garden records.
-- `scripts/garden_water.gd`: connected basin filling and clipped shorelines.
-- `scripts/garden_weather.gd`: terrain-aware precipitation.
-- `scripts/landscape_data.gd`: editable heights, brush operations, history, and
-  validated serialization. Independent of scene nodes and rendering.
-- `scripts/terrain_view.gd`: terrain mesh, earth sides, brush preview, ray picking.
-- `scripts/orbit_camera.gd`: camera navigation.
-- `scripts/sandbox.gd`: input, brush interface, save lifecycle.
-- `scenes/sandbox.tscn`: scene composition, lighting, backdrop, and camera.
-- `shaders/reference_surface.gdshader`: shared source surface shading and optional brush footprint.
-- `scripts/landscape_lighting.gd`: the lighting/sky setup shared with the fidelity scene.
-- `scripts/garden_look.gd`: current garden adapter for source lighting and atmosphere.
-- `scripts/garden_surface_map.gd`: live ground/water fields for atmospheric occlusion.
-
-There is one terrain mesh for now. Introduce internal tiles when measurements
-justify local mesh rebuilds; tiles should remain invisible to the player.
+- `studies/cozy_worlds.gd`: the game's scene: title, worlds, the hand scheme.
+- `scripts/world_session.gd`, `scripts/world_library.gd`,
+  `scripts/world_lands.gd`: which world is open, the saved worlds, and the
+  lands a new world starts from.
+- `scripts/land_clay.gd` with `scripts/clay_tools/`: the land as clay; one
+  script per tool on the roll.
+- `scripts/tool_roll.gd`, `scripts/materials_tray.gd`,
+  `scripts/hand_materials.gd`: the tool roll, the materials case and the hand
+  that takes from them.
+- `scripts/native_chunk_editor.gd`: the editable chunk: terrain, water,
+  objects, undo and saves.
+- `scripts/land_life.gd`: life answering the land.
+- `scripts/first_steps.gd`, `scripts/first_steps_card.gd`,
+  `scripts/field_notes.gd`, `scripts/pause_panel.gd`: first steps, the field
+  notes and the pause panel.
+- `native/terrain_kernels/`: the optional native terrain kernels
+  (`tools/build_native_kernels.py`); without a built kernel the GDScript
+  versions run.
 
 ## Checks
 
@@ -339,62 +122,6 @@ a headless run does not replace those visual checks. Both Python runners accept
 `--rendered` for an explicitly requested Forward+ run, which opens windows and
 may take focus. They never automatically fall back to graphical execution.
 
-## Direction
-
-Future slices: selecting and moving existing objects; assisted river drawing with
-connected water; wildlife placement and gentle behavior; custom asset import.
-See [garden checks and scope](docs/garden/VALIDATION.md) for the current loop.
-
-An entire mountain that can be picked up would need an editable feature layer
-above the sampled heights. Establish that interaction before adding such a layer.
-
-The original Three.js ZenScape project remains a separate reference for landscape
-recipes, atmosphere, water, and wildlife. This project has no runtime dependency
-on it, and does not include its journal or writing-driven world structure.
-
-Press **Y** to replay landscape formation, or use the terrain and foliage sliders.
-**P** freezes the replay along with the other motion. Terrain, plants and water use
-source growth data. **Refill water** replays the falls, stream and lake alone;
-the water slider scrubs their fill. Wildlife arrival remains pending.
-
-[Wind response comparison](docs/fidelity/wind-response-comparison.mp4): new native
-wind on the left, previous native wind on the right, at strength 2. Source lean,
-flutter, shiver and bending now use the captured foliage tuning.
-
-Press **L** or **Lightning** for a strike; Storm also schedules strikes. Bolts
-light the clouds and ground, followed by a spreading gust. **P** freezes the
-sequence, including delayed thunder audio. Toggle **Thunder sound** to mute it. [Lightning comparison](docs/fidelity/lightning-comparison.mp4)
-shows a strike on the left and a control on the right.
-
-Around sunrise and sunset, a climbing shadow leaves the mountain peaks in
-gold and rose afterglow. [Sunset comparison](docs/fidelity/alpenglow-comparison.png)
-shows native Godot on the left and the original on the right.
-
-A calm, clear dawn now pools mist below the peaks, then breaks it into patches
-as the sun rises. Strong wind and overcast suppress the inversion.
-[Dawn comparison](docs/fidelity/inversion-comparison.png): Godot left, original right.
-
-**G** now sends traveling gusts through the shared air field. Nearby presses
-strengthen the latest gust; older gusts continue across the landscape.
-[Left-bank gust comparison](docs/fidelity/gust-comparison.mp4): gust left, control right.
-
-Weather presets now control wind, mist and haze together with precipitation.
-Fair, Overcast and Mist are available alongside Clear, Rain, Storm and Snow.
-Use **Haze** for atmospheric depth; the wind slider reaches full storm strength.
-
-Autumn is available in the weather selector, with a separate Autumn slider.
-The turn preserves warm/cool green differences and warms the lighting; Snow
-retains turned foliage under its snowpack. Canopy-bound falling leaves now share the seasonal and wind state.
-
-The fidelity scene now blends fog after tone mapping, matching the source
-compositing order. Use `--native-fog` to compare the previous volume renderer.
-See docs/fidelity/DISPLAY-FOG.md for validation and remaining gaps.
-
-
-**Landscapes** now includes connected rivers, cascades and lakes across all seven
-formation families. Choose a biome and water treatment, then swap colors freely.
-**Another like this** generates a reproducible variation with those choices kept.
-The **Favorites** tab saves discoveries with thumbnails and restores the complete
-edited scene with undo/redo. See [the landscape guide](docs/landscapes/README.md).
-
-See [playable visual effects](docs/playable-visuals.md) for reflections, caustics, mist, foliage and their editor integration checks.
+The original Three.js ZenScape project remains a separate reference for
+landscape recipes, atmosphere, water and wildlife. This project has no runtime
+dependency on it.
