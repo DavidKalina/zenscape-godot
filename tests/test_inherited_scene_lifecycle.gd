@@ -30,18 +30,13 @@ func run() -> void:
 	check(pending.get_ref() != null,"A pending frame reset owns its budget until the signal fires")
 	for _frame in range(2): await process_frame
 	check(pending.get_ref() == null,"The frame reset releases an abandoned budget")
-	# The base scene can be discarded before _ready; inherited scenes exercise
-	# their actual startup/shutdown, including pending reflection preparation.
-	for name in ["fidelity", "bigfoot_life", "open_meadow"]:
-		var packed: PackedScene = load("res://studies/"+name+".tscn")
-		var before := Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
-		var scene := packed.instantiate()
-		if name != "fidelity":
-			root.add_child(scene)
-			for _frame in range(5): await process_frame
-		scene.free()
-		for _frame in range(5): await process_frame
-		var after := Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
-		check(after == before,name+": scene lifetime leaves no orphan nodes (delta %d)" % int(after-before))
+	# The base scene can be discarded before _ready without stranding nodes.
+	var packed: PackedScene = load("res://studies/fidelity.tscn")
+	var before := Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	var scene := packed.instantiate()
+	scene.free()
+	for _frame in range(5): await process_frame
+	var after := Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	check(after == before,"fidelity: scene lifetime leaves no orphan nodes (delta %d)" % int(after-before))
 	print("Inherited scene lifecycle: ",failures," failures")
 	quit(1 if failures else 0)

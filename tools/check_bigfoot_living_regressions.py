@@ -28,10 +28,6 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GODOT = "/Users/davidkalina/Applications/Godot.app/Contents/MacOS/Godot"
-# Long life simulations advance thousands of synthetic frames. Their dedicated
-# integration tests have stronger timeout budgets than the small legacy checks.
-MINIMUM_TEST_TIMEOUTS = {"test_bigfoot_living_world.gd": 300.0,
-                         "test_bigfoot_living_store.gd": 240.0}
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 ERROR_START = re.compile(r"^(?:SCRIPT ERROR:|ERROR:|USER ERROR:|FATAL:|Parse Error:)", re.M)
 
@@ -82,11 +78,7 @@ def run_one(test: Path, args: argparse.Namespace, output_dir: Path) -> dict:
     command = [args.godot, *display_args, "--path", str(ROOT),
                "--resolution", "640x480", "--log-file", str(engine_path),
                "--script", str(test.relative_to(ROOT))]
-    if args.rendered and test.name == "test_bigfoot_living_world.gd":
-        # This test force-draws only at teardown; a GPU remains available for
-        # imported MultiMesh buffers without rendering each synthetic tick.
-        command.extend(["--disable-render-loop", "--disable-vsync"])
-    timeout = max(args.timeout, MINIMUM_TEST_TIMEOUTS.get(test.name, 0.0))
+    timeout = args.timeout
     started = time.monotonic()
     timed_out = False
     with stdout_path.open("w") as log:
@@ -145,7 +137,6 @@ def main() -> int:
     report = dict(started_at=datetime.now(timezone.utc).isoformat(), project=str(ROOT),
                   renderer="forward_plus" if args.rendered else "dummy", headless=not args.rendered,
                   resolution="640x480", timeout_seconds=args.timeout,
-                  minimum_test_timeouts=MINIMUM_TEST_TIMEOUTS,
                   expected_tests=len(tests), complete=False, passed=False, results=[])
     write_report(report_path, report)
     try:
