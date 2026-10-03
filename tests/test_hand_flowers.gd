@@ -484,11 +484,14 @@ func bar() -> void:
 		var item := Icons.item(slot)
 		check(not item.is_empty() and str(item.label).contains(" · ") and Icons.texture(slot,"icon",44.0) != null,"%s has its faceted icon and name (%s)" % [slot,item.get("label","")])
 		check(Palette.SEEDS.any(func(entry: Array) -> bool: return entry[0] == slot),"%s is in the command palette" % slot)
-	for seed: String in ["oak","pine","willow"]:
+	for seed: String in ["oak","pine","willow","birch","redwood","juniper","joshua"]:
 		check(Materials.sows(seed) and not Materials.paints(seed),"%s seed is still sown as a veil" % seed)
 	check(Materials.SCATTER.has("reed") and Materials.SCATTER.has("stone") and "reed" in ids,"Reeds and stones still scatter")
-	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0)
-	check(seeds.size() == 9,"Nine seeds in the seed group (%d)" % seeds.size())
+	# The seed group: the tree seeds (first steps added birch, redwood, juniper
+	# and Joshua to the case), the five flowers, then reed.
+	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0).map(func(entry: Dictionary) -> String: return entry.id)
+	var expected := ["oak","pine","willow","birch","redwood","juniper","joshua","wildflower","dandelion","poppy","cosmos","sunflower","reed"]
+	check(seeds == expected,"The seed group is seven tree seeds, five flowers and reed (%s)" % str(seeds))
 
 # --- The cozy scene ---------------------------------------------------------------------
 
