@@ -12,12 +12,16 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## The can tips forward while it pours (`pour`, set by the stream, 0..1),
 ## turning about its rose so the stream stays where it is.
 
-## The stand-in can, metres at the hand's own size: a galvanised body in the
-## icon's tint (scripts/hud_icons.gd "can"), a darker spout and handle, a
-## brass rose. Its origin is the rose: the stream falls from there.
-const TINT := Color("8aa6a8")
-const DARK := Color("6c8486")
-const ROSE := Color("c2a35a")
+## The stand-in can, metres at the hand's own size before GROW: a pale
+## galvanised body, a deep slate spout and handle, a bright brass rose. Paler
+## and darker than the icon's tint (scripts/hud_icons.gd "can") so it stands
+## out over grass and water alike. Its origin is the rose: the stream falls
+## from there.
+const TINT := Color("c9d9d7")
+const DARK := Color("34494e")
+const ROSE := Color("e0aa3e")
+## The whole can grown about its rose, so it reads at a glance over the land.
+const GROW := 1.6
 const BODY_RADIUS := 0.2
 const BODY_HEIGHT := 0.34
 ## The body's centre behind and below the rose, and where the spout leaves it.
@@ -44,6 +48,8 @@ var _pivot: Node3D
 func id() -> String: return "can"
 func prop_tilt() -> float: return TILT
 func prop_lift() -> float: return LIFT
+## It hovers over the water, not the lake bed, so a pour never drowns it.
+func rides_water() -> bool: return true
 ## The stream's reach: its splash at the middle pip.
 func stroke_radius() -> float: return 0.8*clay.size_scale
 
@@ -59,19 +65,24 @@ func frame(delta: float) -> void:
 	_tip = lerpf(_tip,lerpf(REST_TIP,POUR_TIP,clampf(pour,0.0,1.0)),1.0-exp(-TIP_RATE*delta))
 	_pivot.basis = Basis(Vector3.RIGHT,deg_to_rad(_tip))
 
-## A faceted can from primitives, turning about its rose (`_pivot`): an
+## A faceted can from primitives, grown GROW and turning about its rose
+## (`_pivot`): an
 ## eight-sided body, a tapered spout up to a brass rose, and a loop handle
 ## standing over the body. Replaced by a Blender glb later: only this function
 ## changes.
 func build_prop() -> Node3D:
 	var root := Node3D.new()
+	var grown := Node3D.new()
+	grown.name = "Grow"
+	grown.scale = Vector3.ONE*GROW
+	root.add_child(grown)
 	_pivot = Node3D.new()
 	_pivot.name = "Tip"
 	_pivot.basis = Basis(Vector3.RIGHT,deg_to_rad(_tip))
-	root.add_child(_pivot)
+	grown.add_child(_pivot)
 	_pivot.add_child(part(_prism(8),TINT,BODY_AT,Vector3(BODY_RADIUS,BODY_HEIGHT,BODY_RADIUS)))
 	# A rolled rim round the body's mouth.
-	_pivot.add_child(part(_prism(8),TINT.lightened(0.12),BODY_AT+Vector3.UP*BODY_HEIGHT*0.5,Vector3(BODY_RADIUS*1.06,0.025,BODY_RADIUS*1.06)))
+	_pivot.add_child(part(_prism(8),DARK.lightened(0.15),BODY_AT+Vector3.UP*BODY_HEIGHT*0.5,Vector3(BODY_RADIUS*1.06,0.025,BODY_RADIUS*1.06)))
 	var spout := rose()-SPOUT_FROM
 	var angle := atan2(spout.z,spout.y)
 	_pivot.add_child(part(_prism(6,SPOUT_RADIUS.x/SPOUT_RADIUS.y),DARK,(SPOUT_FROM+rose())*0.5,Vector3(SPOUT_RADIUS.y,spout.length(),SPOUT_RADIUS.y),Vector3(angle,0.0,0.0)))

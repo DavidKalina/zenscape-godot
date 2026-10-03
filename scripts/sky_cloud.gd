@@ -21,8 +21,9 @@ extends Node3D
 ## (`summon`): droplets and wisps swirl in round the hand and the puffs swell
 ## from nothing with an overshoot, already in the hand's pinch, so the same
 ## press pulls and tears. It lingers while it is used, then drifts off on the
-## wind and thins away (`presence`). On the session's first world it shows
-## itself once, unasked (the demo). `--always-cloud` keeps the old cloud that
+## wind and thins away (`presence`). With `--cloud-demo` it shows itself once,
+## unasked, on the session's first world (the demo; off by default since
+## 2026-10-03). `--always-cloud` keeps the old cloud that
 ## is always behind the diorama.
 
 ## Where it floats: FAR metres from the plate's middle toward the far rim (away
@@ -163,8 +164,9 @@ const LEAVE_GRAB := 0.6
 ## The demo: DEMO_DELAY seconds into the session's first calm world it forms
 ## by itself where the always-there cloud floats.
 const DEMO_DELAY := 4.0
-## True once this session's demo has shown (or `--no-cloud-demo`).
-static var demo_shown := "--no-cloud-demo" in OS.get_cmdline_user_args()
+## True once this session's demo has shown, or when it is not wanted: it
+## shows only with `--cloud-demo`.
+static var demo_shown := not "--cloud-demo" in OS.get_cmdline_user_args()
 
 var scene: Node3D
 ## Summoned (the default) or always there (`--always-cloud`).

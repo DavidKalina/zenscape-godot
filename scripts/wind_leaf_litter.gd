@@ -165,6 +165,13 @@ func _step(dt: float, air: Node) -> void:
 		leaf.position = p
 		leaf.velocity = velocity
 
+## Leaves within `radius` of `point` (world) are lost, as blown away (the
+## trash can sweeping them up): they fade and grow back under their trees.
+func sweep(point: Vector3, radius: float) -> void:
+	var here := to_local(point)
+	for leaf in leaves:
+		if not leaf.lost and (leaf.position as Vector3).distance_to(here) <= radius: _lose(leaf)
+
 ## A leaf blown away: it fades as it goes.
 func _lose(leaf: Dictionary) -> void:
 	leaf.lost = true

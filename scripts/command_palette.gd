@@ -109,6 +109,7 @@ const TOOLS := [
 	["feather","Feather","Gust","Wind in hand."],
 	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
 	["brush","Brush","Paint","Paints grass, rock, bare earth or any colour onto the ground. Shift wipes."],
+	["trash","Trash can","Clear","Sucks up trees, rocks, shrubs, logs and leaves under it. Shift spares trees and rocks."],
 ]
 const ELEMENTS := [
 	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],

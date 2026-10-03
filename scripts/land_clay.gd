@@ -153,6 +153,10 @@ const CELL := 1.5
 const HEADING_RUN := 0.6
 ## The held prop turns toward the way the hand goes at PROP_TURN (1/s).
 const PROP_TURN := 6.0
+## How fast a prop that rides the water (the can) follows the water's depth
+## under it up and down (1/s): smooth, so ripples and a shore crossed do not
+## jolt it.
+const WATER_RISE_RATE := 5.0
 ## The prop as its own cursor (`_place_prop`) moves as a material carried
 ## from the bar does (scripts/cursor_motion.gd): pinned by its working end,
 ## hovering, dropping onto the land on a press, leaning and idling.
@@ -259,6 +263,8 @@ var _prop_last: Variant = null
 ## The prop as a cursor: how it moves (its working end, lean, bob, growing).
 var _prop_motion := CursorMotion.new()
 var _prop_depth := 0.0
+## Metres of water the prop rides over (`rides_water`), eased.
+var _water_rise := 0.0
 ## Where the verb in hand works (plate), set with its gesture, or null.
 var _work_at: Variant = null
 ## The gesture the tool's mode says this press is ("tap", "drag", "hold",
@@ -998,7 +1004,10 @@ func _place_prop(delta: float) -> void:
 	var goal: Variant = _work_at if working and _work_at != null else hit
 	if goal == null: goal = motion.tip
 	var at_work := working and _work_at != null
-	var ground := func(flat: Vector2) -> Variant: return editor.data.ground_height(flat)
+	_water_rise = lerpf(_water_rise,_water_under(goal as Vector3) if tool.rides_water() else 0.0,1.0-exp(-WATER_RISE_RATE*delta))
+	var ground := func(flat: Vector2) -> Variant:
+		var height: Variant = editor.data.ground_height(flat)
+		return float(height)+_water_rise if height != null else null
 	# The can pours from above the land, not pressed onto it.
 	motion.advance(delta,goal,working or (blowing and tool.prop_lift() <= 0.0),ground,CursorMotion.across_view(editor.terrain,scene.camera),(goal as Vector3).y if at_work else -INF)
 	var turn := motion.turn(-tool.prop_tilt())
@@ -1006,6 +1015,12 @@ func _place_prop(delta: float) -> void:
 	# Pinned by its working end: the grip stands its depth above the tip.
 	var grip := motion.tip+turn*Vector3(0.0,_prop_depth*size,0.0)+Vector3.UP*tool.prop_lift()*size
 	_prop.transform = Transform3D(turn.scaled(Vector3.ONE*maxf(size,0.001)),grip)
+
+## Metres of live water standing at `at` (plate), 0 where there is none.
+func _water_under(at: Vector3) -> float:
+	var flow: Variant = editor.get("flow")
+	if flow == null or not bool(flow.ready): return 0.0
+	return maxf(float(flow.depth_at(Vector2(at.x,at.z))),0.0)
 
 ## A point given in the held prop's own space, in plate coordinates (the
 ## can's rose, for its stream), or null while the prop is not shown.

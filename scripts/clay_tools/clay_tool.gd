@@ -126,6 +126,10 @@ func dirt_share(_verb: String) -> float: return 1.0
 ## its rose up, to pour from).
 func prop_lift() -> float: return 0.0
 
+## Whether the prop hovers over standing water's surface rather than the
+## ground under it (the can, rising with the lake it fills).
+func rides_water() -> bool: return false
+
 ## The stand-in prop, the tool's own cursor over the land, or null for none.
 ## Built each time the tool is taken, in the terrain's space, with the
 ## handle's grip at the origin and the tool's working end down -Y. A Blender
