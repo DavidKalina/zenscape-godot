@@ -125,6 +125,10 @@ uniform vec4 flower_cycle_times = vec4(30.0, 50.0, 2.0, 5.0);
 // pale straw stubble.
 uniform bool flower_ripen = false;
 uniform float flower_stubble = 0.14;
+// Its spring green, times its own luminance: the ears' (lighter, yellower)
+// and the straw's (deeper), MeadowFlowerMesh RIPEN_GREEN_*.
+uniform vec3 flower_ripen_green_ear = vec3(0.62, 0.78, 0.22);
+uniform vec3 flower_ripen_green_straw = vec3(0.30, 0.62, 0.12);
 // The root's colour: the ground's under it times x, giving way to the
 // tuft's own green by y of the way up.
 uniform vec2 grass_root_blend = vec2(0.92, 0.6);
@@ -346,7 +350,7 @@ void vertex() {
 				// autumn, pale straw while cut.
 				float ripen_lum = dot(COLOR.rgb, vec3(0.30, 0.55, 0.15));
 				float ripen_green = max(zs_season.x, (1.0 - zs_season.w) * (1.0 - smoothstep(0.5, 1.0, zs_season.z)) * smoothstep(0.0, 0.2, zs_season.z));
-				COLOR.rgb = mix(COLOR.rgb, vec3(0.40, 0.72, 0.14) * ripen_lum, 0.85 * ripen_green);
+				COLOR.rgb = mix(COLOR.rgb, (UV2.x < 1.5 ? flower_ripen_green_straw : flower_ripen_green_ear) * ripen_lum, 0.85 * ripen_green);
 				COLOR.rgb *= mix(vec3(1.0), vec3(1.0, 0.86, 0.64), 0.6 * zs_season.w);
 				COLOR.rgb = mix(COLOR.rgb, vec3(1.12, 1.0, 0.76) * ripen_lum, 0.7 * zs_season.z);
 				if (UV2.x < 1.5) COLOR.rgb *= mix(1.0, UV.x, 0.5);

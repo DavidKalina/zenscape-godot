@@ -59,7 +59,8 @@ const SPEC := {
 	"lupine":{"height":0.82,"sway":Vector4(0.0,0.8,0.04,0.015),"frequency":Vector4(2.0,3.4,0.6,0.25),"motion":Vector4(0.6,0.9,0.12,0.002),"glow":0.55,"roughness":1.0,"variants":["7b4cc6","9c48b8","e07aae","f1e8f0"]},
 	# Wheat (docs/scenic/wheat.md) takes the whole of the grass's rolling wave,
 	# so a field leans and rights itself as one mass, its ears lagging a metre.
-	"wheat":{"height":1.0,"sway":Vector4(0.0,1.0,0.06,0.02),"frequency":Vector4(1.8,3.0,0.6,0.25),"motion":Vector4(1.0,1.0,0.3,0.0),"glow":0.8,"roughness":1.0,"variants":[]},
+	# Knee-high to a fence: under its posts' tops (scripts/fences.gd).
+	"wheat":{"height":0.66,"sway":Vector4(0.0,0.66,0.06,0.02),"frequency":Vector4(1.8,3.0,0.6,0.25),"motion":Vector4(1.0,1.0,0.3,0.0),"glow":0.8,"roughness":1.0,"variants":[]},
 }
 ## How much larger than the builders' sizes each kind's heads are drawn,
 ## about their centres, so a face is six to eight pixels across at the
@@ -145,6 +146,21 @@ const REFLECT_KINDS := ["sunflower"]
 ## grass's living green, greens in spring, deepens through autumn and stands
 ## as stubble through the winter's dormancy (the `zs_season` global).
 const RIPEN_KINDS := ["wheat"]
+## The green a RIPEN_KINDS plant takes in spring, times its own luminance
+## (linear): its ears a lighter yellow-green over deeper green straw, so the
+## heads stand out from their stalks in the green months as in the gold.
+const RIPEN_GREEN_EAR := Vector3(0.62, 0.78, 0.22)
+const RIPEN_GREEN_STRAW := Vector3(0.30, 0.62, 0.12)
+## Wheat's look (sRGB), authored ripe: pale golden-cream ears (foot to tip)
+## over darker warm ochre straw and blades, so each head reads against its
+## stalk; its ears' and straws' radii (m, at size 1; ears are drawn a further
+## HEAD_SCALE larger), the ears plump against the straw.
+const WHEAT_STRAW := "a97d3e"
+const WHEAT_BLADE := "9c7438"
+const WHEAT_EAR_FOOT := "e2c27c"
+const WHEAT_EAR_TIP := "f5e4b0"
+const WHEAT_STRAW_RADIUS := 0.0075
+const WHEAT_EAR_RADIUS := 0.025
 ## The stubble's height (m, at record size 1) through the winter.
 const STUBBLE := 0.14
 
@@ -195,6 +211,8 @@ static func material(kind: String) -> ShaderMaterial:
 	if kind in RIPEN_KINDS:
 		m.set_shader_parameter("flower_ripen", true)
 		m.set_shader_parameter("flower_stubble", STUBBLE)
+		m.set_shader_parameter("flower_ripen_green_ear", RIPEN_GREEN_EAR)
+		m.set_shader_parameter("flower_ripen_green_straw", RIPEN_GREEN_STRAW)
 	if kind in CYCLE_KINDS:
 		m.set_shader_parameter("flower_cycle", true)
 		m.set_shader_parameter("flower_cycle_times", preload("res://scripts/dandelion_seeds.gd").cycle_times())
@@ -760,33 +778,35 @@ class Plant:
 			for k in range(6):
 				leaf(at, a + TAU * k / 6.0, 0.062, 0.014, 0.15, 0.4, SLIM, 0.2, 0.0, rng.randf_range(0.8, 0.95))
 
-	## A tidy clump of wheat from one root (docs/scenic/wheat.md): five
-	## straws, each a faceted three-sided stalk bowing a little out from the
-	## clump, topped by an ear (a flattened four-sided spindle whose rings
+	## A tidy clump of wheat from one root (docs/scenic/wheat.md): six
+	## straws in a short line along the clump's x (the row, as FlowerSowing
+	## turns each record along it), each a faceted three-sided stalk bowing a
+	## little, topped by an ear (a flattened four-sided spindle whose rings
 	## turn half a facet each, so its outline zigzags kernel by kernel, with
-	## three short awns at its tip), and a pair of slim blades low down. Authored ripe:
-	## straw gold, the ears warmer, deepening toward their foot; the material
-	## greens it in spring and cuts it to stubble in winter (RIPEN_KINDS).
-	## One record is one clump, so a field is a fifth as many instances as
-	## it has straws.
+	## one short awn at its tip), and a pair of slim blades low down along
+	## the row. Narrow across, so the furrows between rows stay open. Authored
+	## ripe: plump pale golden-cream ears, deepening toward their foot, over
+	## darker ochre straw (WHEAT_*); the material greens it in spring (ears
+	## lighter than straw, RIPEN_GREEN_*) and cuts it to stubble in winter
+	## (RIPEN_KINDS). One record is one clump, so a field is a sixth as many
+	## instances as it has straws.
 	func wheat() -> void:
-		stem_hex = "d6b05a"
-		leaf_hex = "c8a552"
-		var gold := MeadowFlowerColor.of("f4d57c")
-		var deep := MeadowFlowerColor.of("d9ab4a")
-		var count := 5
-		var start := rng.randf() * TAU
+		stem_hex = WHEAT_STRAW
+		leaf_hex = WHEAT_BLADE
+		var gold := MeadowFlowerColor.of(WHEAT_EAR_TIP)
+		var deep := MeadowFlowerColor.of(WHEAT_EAR_FOOT)
+		var count := 6
 		for i in range(count):
-			var a := start + TAU * float(i) / count + rng.randf_range(-0.35, 0.35)
-			var out := Vector3(cos(a), 0.0, sin(a))
-			var spread := 0.0 if i == 0 else rng.randf_range(0.05, 0.09)
-			var neck := out * spread + Vector3.UP * rng.randf_range(0.76, 0.86)
-			stem(out * 0.008, neck, 0.0055, out * 0.015, 3, 3)
-			var face := (Vector3.UP + out * (0.2 + spread * 2.5)).normalized()
-			ear(neck, face, rng.randf_range(0.1, 0.12), 0.015, deep, gold)
+			var x := lerpf(-0.07, 0.07, (float(i) + rng.randf_range(0.2, 0.8)) / count)
+			var foot := Vector3(x * 0.3, 0.0, rng.randf_range(-0.006, 0.006))
+			var out := Vector3(x, 0.0, rng.randf_range(-0.014, 0.014))
+			var neck := out + Vector3.UP * rng.randf_range(0.48, 0.55)
+			stem(foot, neck, WHEAT_STRAW_RADIUS, Vector3(0.0, 0.0, rng.randf_range(-0.012, 0.012)), 2, 3)
+			var face := (Vector3.UP + out * 1.6 + Vector3(rng.randf_range(-0.05, 0.05), 0.0, rng.randf_range(-0.06, 0.06))).normalized()
+			ear(neck, face, rng.randf_range(0.085, 0.1), WHEAT_EAR_RADIUS, deep, gold)
 		for k in range(2):
-			var a := start + PI * k + 0.8
-			leaf(Vector3(cos(a), 0.0, sin(a)) * 0.01 + Vector3.UP * rng.randf_range(0.18, 0.3), a, 0.16, 0.012, 0.5, 0.8, SLIM, 0.0, 0.0, rng.randf_range(0.85, 0.95))
+			var a := PI * k + rng.randf_range(-0.35, 0.35)
+			leaf(Vector3(cos(a), 0.0, sin(a)) * 0.01 + Vector3.UP * rng.randf_range(0.12, 0.2), a, 0.13, 0.011, 0.5, 0.8, SLIM, 0.0, 0.0, rng.randf_range(0.85, 0.95))
 		stem_hex = STEM_GREEN
 		leaf_hex = LEAF_GREEN
 
@@ -797,7 +817,7 @@ class Plant:
 		var h := head(neck, face, length * 0.5, length * 0.5, 0.0)
 		h.dome = h.centre
 		var sides := 4
-		var rows := [[0.12, 0.85], [0.36, 1.0], [0.6, 0.95], [0.84, 0.7]]
+		var rows := [[0.15, 0.85], [0.5, 1.0], [0.82, 0.75]]
 		var rings: Array = []
 		for r in range(rows.size()):
 			var t: float = rows[r][0]
@@ -806,7 +826,7 @@ class Plant:
 				var angle := TAU * (float(k) + 0.5 * float(r % 2)) / sides
 				# Flattened, two-rowed: the staggered rings cut its outline
 				# into a zigzag of kernels seen from the side.
-				var out: Vector3 = h.u * cos(angle) + h.v * sin(angle) * 0.6
+				var out: Vector3 = h.u * cos(angle) + h.v * sin(angle) * 0.7
 				var v: Array = headed(h, neck + face * (length * t) + out * (radius * float(rows[r][1])), foot.lerp(tip, t), PETAL)
 				v[1] = (out + face * 0.35).normalized()
 				ring.append(v)
@@ -825,11 +845,11 @@ class Plant:
 				var k2 := (k + 1) % sides
 				tri(rings[r][k], rings[r][k2], rings[r + 1][k])
 				tri(rings[r][k2], rings[r + 1][k2], rings[r + 1][k])
-		# Three short awns from the tip: detail the far field goes without.
+		# One short awn from the tip: detail the far field goes without.
 		var was := detail
 		detail = true
-		for k in range(3):
-			var angle := TAU * float(k) / 3.0 + 0.4
+		for k in range(1):
+			var angle := 0.4
 			var out: Vector3 = h.u * cos(angle) + h.v * sin(angle)
 			var root: Vector3 = neck + face * (length * 0.86)
 			var a: Array = headed(h, root + out * radius * 0.35, tip, PETAL)
