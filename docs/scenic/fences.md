@@ -70,7 +70,7 @@ The trash can takes a fence **span by span**, not the whole fence:
 - Every span of rails that its reach (1.4 m at the middle pip) touches goes. So does any post left with no span on either side. Those posts fly into the can's mouth.
 - A run cut through the middle becomes two fences. The second one gets a new id.
 - A pen that is cut opens into a line.
-- Shift (spare the big things) does not spare fences.
+- Shift (spare the big things) spares fences whole, as it spares everything built.
 - The cut is part of the press's undo step.
 
 Per span was chosen because a fence can run across the whole plate. The can is the eraser, so a sweep across a fence should cut a gate in it, not remove all of it. To clear a whole fence, sweep along it, or Cmd+Z it straight after drawing.

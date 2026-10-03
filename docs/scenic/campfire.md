@@ -29,7 +29,8 @@ nothing is set, the case's refusal sound plays, and the hint line says why:
 A campfire is an ordinary object record (asset `campfire` in
 NativeTerrainData `ASSETS`). Each tap is one undo step, and campfires save
 and load with the world. The trash can takes them away like any other
-object, and the hand's pluck can pull one. It arrives with the drop
+object (Shift with the trash spares them, as it spares everything built),
+and the hand's pluck can pull one. It arrives with the drop
 reactions' `settle`.
 
 ## The look

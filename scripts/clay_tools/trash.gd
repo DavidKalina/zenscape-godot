@@ -5,8 +5,11 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## the can's reach (trees, rocks, shrubs, flowers, logs, leaf beds...) goes,
 ## flying up into its mouth and shrinking away; a footbridge goes when any of
 ## its span is in reach. Waterfalls, explosives and Bigfoot's tree stay.
-## **Shift** spares the big things (BIG: trees, boulders, arches, bridges):
-## only the small stuff goes.
+## **Shift** spares the big things (BIG: trees, rocks and boulders (a pebble
+## counts as a rock), arches, and everything built: lamps, campfires, cabins,
+## bridges and fences): only the small stuff goes, flowers, wheat, shrubs,
+## reeds and the like. Taking a built thing sounds as stone does (crumble),
+## the small stuff rustles (plant).
 ##
 ## One press is one undo step: the clay opens it at the press and closes it at
 ## the release, and the records go from the land's objects inside it. The
@@ -19,14 +22,14 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ## Fences (scripts/fences.gd) go span by span: every span of rails the can's
 ## reach touches goes, with any post left standing alone, so a sweep across a
 ## fence cuts a gap in it (a run cut in two becomes two fences; a pen cut
-## opens). Shift spares nothing of a fence: it counts as small. The spans come
-## back with the rest on Cmd+Z.
+## opens). Shift spares fences whole, as it spares everything built. The spans
+## come back with the rest on Cmd+Z.
 
 ## Its reach (m) round the pointer at the middle pip.
 const RADIUS := 1.4
-## What it never takes, and what Shift spares.
+## What it never takes, and what Shift spares (fences too, `_cut_fences`).
 const KEPT := ["waterfall","bigfoot_tree","explosive"]
-const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch","bridge","cabin"]
+const BIG := ["tree","layered_tree","redwood","broadleaf","snag","birch","willow","juniper","joshua","cactus","rock","boulder_1","boulder_2","boulder_3","boulder_4","arch","stone_lamp","campfire","bridge","cabin"]
 ## The flight into the mouth: seconds, and at most this many in the air.
 const SUCK_SECONDS := 0.45
 const MAX_FLYING := 48
@@ -94,7 +97,7 @@ func paint_dab(_heights: PackedFloat32Array, q: Vector2, _work: float) -> float:
 		if not takes(str(item.asset),_spare_big): continue
 		if reach_of(item,q) <= radius: going.append(item)
 	_sweep_litter(q,radius)
-	var fenced := _cut_fences(q,radius)
+	var fenced := not _spare_big and _cut_fences(q,radius)
 	if going.is_empty():
 		if fenced:
 			clay.touch(q,radius)

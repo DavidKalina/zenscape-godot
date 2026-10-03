@@ -110,7 +110,7 @@ const TOOLS := [
 	["feather","Feather","Gust","Wind in hand."],
 	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
 	["brush","Brush","Paint","Paints grass, rock, bare earth or any colour onto the ground. Shift wipes."],
-	["trash","Trash can","Clear","Sucks up trees, rocks, shrubs, logs and leaves under it. Shift spares trees and rocks."],
+	["trash","Trash can","Clear","Sucks up trees, rocks, shrubs, logs and leaves under it. Shift spares trees, rocks and anything built."],
 ]
 const ELEMENTS := [
 	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],
@@ -736,7 +736,7 @@ func _take(item: Dictionary) -> void:
 	if not refusal.is_empty():
 		last_refusal = refusal
 		_notice_left = NOTICE_SECONDS
-		materials.reach._show_hint(refusal)
+		materials.reach.notice(refusal)
 		ClaySound.cue(&"ui_refuse")
 		return
 	last_taken = _key_of(item)

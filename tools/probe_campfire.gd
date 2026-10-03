@@ -215,6 +215,17 @@ func run() -> void:
 	check("set again on the clear spot",first.size() == 1,first)
 	await tap(spot+Vector2(1.2,0.4))
 	check("too near another: refused",fire_ids() == first and materials.campfire_refused == "near",[fire_ids(),materials.campfire_refused])
+	# The refusal's line is a notice: with the day clock running (the hover
+	# reads afresh as the sun moves) it is still there two seconds on.
+	var said: String = materials.CAMPFIRE_REFUSALS["near"]
+	check("the hint line says why",reach._hint == said,reach._hint)
+	scene.world_clock.running = true
+	var phase0 := float(scene._celestial.phase)
+	await create_timer(2.0).timeout
+	check("two seconds on, with the clock running, it still says why",reach._hint == said,[reach._hint,float(scene._celestial.phase)-phase0])
+	await create_timer(materials.reach.NOTICE_SECONDS).timeout
+	check("and in time it goes",reach._hint != said,reach._hint)
+	scene.world_clock.running = false
 	if steep != null: check("steep ground is refused",Campfire.refusal(editor,steep) == "steep",steep)
 	else: print("(no steep ground on this world to test)")
 	# A tree beside the spot: a fire under it is refused.

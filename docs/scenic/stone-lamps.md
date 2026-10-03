@@ -16,12 +16,16 @@ like the stone (scripts/hand_materials.gd `SCATTER["lamp"]`):
   by the pips), up to 12 in one drag, along the line the pointer takes.
 - No lamp goes within `clear` (1.1 m) of another, so dragging back along a
   row does not stack them.
-- The land decides as it does for stones: no lamp on water.
+- No lamp on water: a lamp's foot must be dry, as a fence post's is
+  (NativeChunkEditor `fence_dry`). A tap on water, or too close to another
+  lamp, sets nothing: the refuse sound plays and the hint line says why
+  (`LAMP_REFUSALS`). A drag's row passes such spots by without a word.
 
 Each tap or drag is one undo step. A lamp is an ordinary object record
 (asset `stone_lamp` in NativeTerrainData `ASSETS`), so it saves and loads
-with the world. The trash can takes it away like any other object, and the
-hand's pluck can pull it too. It arrives with the drop reactions' `settle`.
+with the world. The trash can takes it away like any other object (Shift
+with the trash spares it, as it spares everything built), and the hand's
+pluck can pull it too. It arrives with the drop reactions' `settle`.
 
 ## The look
 
