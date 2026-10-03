@@ -740,6 +740,7 @@ func _process(delta: float) -> void:
 	_atmosphere.rain = maxf(_precipitation.state.x, _precipitation.state.y)
 	# Ground mist thins by day (atmosphere.gd DAY_MIST_SUN).
 	_atmosphere.sun_height = _celestial.sun_height
+	_atmosphere.sun_setting = fposmod(_celestial.phase, 1.0) >= 0.5
 	_atmosphere.cold = _celestial.cold
 	_thunder_audio.update_state(_paused)
 	_lightning.advance(delta, _paused, _precipitation.state.w, _atmosphere._air_strength, Vector2(cos(_atmosphere._air_angle), sin(_atmosphere._air_angle)), camera.global_position)

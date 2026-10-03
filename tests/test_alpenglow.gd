@@ -8,14 +8,21 @@ func run() -> void:
 	scene.set_process(false)
 	var sky = scene._celestial
 	var samples = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/alpenglow-checks.json"))
+	# The shade line (x, y) keeps the source's curves but runs ALPEN_LAG lower
+	# in sun height (golden hour keeps its sun); the afterglow (z) is the source's.
 	for sample in samples:
-		var theta := asin(float(sample.e) / cos(sky._tilt))
-		for angle in [theta, PI - theta]:
-			sky.cloud = sample.cloud
-			sky.set_phase(angle / TAU + 0.25)
-			var expected := Vector3(sample.value[0],sample.value[1],sample.value[2])
-			check(sky.state.zs_alpen.distance_to(expected) < 0.00001, "Source dawn/dusk paint at elevation " + str(sample.e))
-			check(absf(sky.state.zs_alpen_direction.length() - 1.0) < 0.00001, "Afterglow facing is normalized")
+		var expected := Vector3(sample.value[0],sample.value[1],sample.value[2])
+		for lag in [sky.ALPEN_LAG, 0.0]:
+			var theta := asin((float(sample.e) - lag) / cos(sky._tilt))
+			for angle in [theta, PI - theta]:
+				sky.cloud = sample.cloud
+				sky.set_phase(angle / TAU + 0.25)
+				var got: Vector3 = sky.state.zs_alpen
+				if lag > 0.0:
+					check(Vector2(got.x, got.y).distance_to(Vector2(expected.x, expected.y)) < 0.00001, "Source shade line, lagged, at elevation " + str(sample.e))
+				else:
+					check(absf(got.z - expected.z) < 0.00001, "Source afterglow at elevation " + str(sample.e))
+				check(absf(sky.state.zs_alpen_direction.length() - 1.0) < 0.00001, "Afterglow facing is normalized")
 	sky.cloud = 0.0
 	sky.set_phase(0.755)
 	check(sky.state.zs_alpen.z > 0.9, "Clear sunset retains peak afterglow")
