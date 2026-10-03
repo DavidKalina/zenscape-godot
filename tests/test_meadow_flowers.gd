@@ -11,7 +11,7 @@ const Kit := preload("res://scripts/meadow_flower_mesh.gd")
 const Catalog := preload("res://scripts/native_asset_catalog.gd")
 const Samples := preload("res://scripts/garden_instance_samples.gd")
 ## Expected height bands (m, at scale 1): the plant's tallest point.
-const HEIGHTS := {"oxeye_daisy":Vector2(0.5,0.62),"buttercup":Vector2(0.3,0.4),"dandelion":Vector2(0.2,0.3),"dandelion_clock":Vector2(0.34,0.5),"cosmos":Vector2(0.85,1.0),"sunflower":Vector2(1.6,2.0),"poppy":Vector2(0.55,0.7),"lupine":Vector2(0.72,0.9),"wheat":Vector2(0.88,1.1)}
+const HEIGHTS := {"oxeye_daisy":Vector2(0.5,0.62),"buttercup":Vector2(0.3,0.4),"dandelion":Vector2(0.2,0.3),"dandelion_clock":Vector2(0.34,0.5),"cosmos":Vector2(0.85,1.0),"sunflower":Vector2(1.6,2.0),"poppy":Vector2(0.55,0.7),"lupine":Vector2(0.72,0.9),"wheat":Vector2(0.6,0.72)}
 ## The painterly grass tuft's tallest blade (scripts/grass_tuft_mesh.gd HEIGHT.y).
 const TUFT := 0.44
 

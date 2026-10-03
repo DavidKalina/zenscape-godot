@@ -50,10 +50,10 @@ const FLOWER_KEYS := {
 	"poppy":{"fallback":"button_flower","height":0.63,"head":0.16,"tints":["e0442f"],"wash":"d8452c"},
 	"lupine":{"fallback":"spike_flower","height":0.85,"head":0.12,"tints":["7b4cc6","9c48b8"],"washes":["8a68c0","9a62b4"],"wash":"8a68c0","tint_real":true},
 	# Wheat, painted from the hand only (FlowerSowing SLOTS "wheat",
-	# docs/scenic/wheat.md): one record a clump of five straws, its rows
+	# docs/scenic/wheat.md): one record a clump of six straws, its rows
 	# packed whole (a narrow head keeps every candidate), the ground under a
 	# patch warmed toward stubble gold.
-	"wheat":{"fallback":"spike_flower","height":0.97,"head":0.06,"tints":["e3bf62"],"wash":"c8a95a"},
+	"wheat":{"fallback":"spike_flower","height":0.6,"head":0.06,"tints":["e3bf62"],"wash":"c8a95a"},
 }
 ## With the kit in the catalog a `tint_real` kind's `tints` are the kit's own
 ## petal variants (MeadowFlowerMesh SPEC `variants`), so GardenView draws a
@@ -73,7 +73,10 @@ const FALLBACK_FORMS := {"daisy_flower":[0.258,0.17],"button_flower":[0.242,0.08
 ##   ground's lean to the drift's colour under its core and `carpet` the
 ##   paint's weight there, so a dense drift reads as one carpet of colour;
 ##   `rows` for a kind planted in
-##   loose rows (`spacing` and `width` in metres).
+##   loose rows (`spacing` in metres apart; `width`, the share of `spacing`
+##   either side of a row's middle that counts as on it). A crop's rows
+##   (FlowerSowing SLOTS "wheat") may instead give `band`, the on-row band's
+##   whole width in metres, and `align`, turning each record along its row.
 ## - `grass`, the ground paint (sRGB): its `green` and `weight`, the `straw`
 ##   it turns in dry patches and their `share`; grass tufts per 0.9 m
 ##   candidate (`tufts`, fewer inside a drift), their `tuft_size` and the
@@ -321,7 +324,12 @@ func on_row(p: Vector2, kind: String) -> bool:
 	if rows.is_empty() or rows.kind != kind: return true
 	var across := Vector2(-_row.y,_row.x).dot(p)+_warp.get_noise_2d(p.x*0.3,p.y*0.3)*float(rows.get("waver",0.25))
 	var f := fposmod(across/float(rows.spacing),1.0)
+	if rows.has("band"): return absf(f-0.5)*float(rows.spacing) < float(rows.band)*0.5
 	return absf(f-0.5) < float(rows.width)
+
+## How far the rows waver at `p` (m, across them), as `on_row` reads them.
+func row_waver(p: Vector2) -> float:
+	return _warp.get_noise_2d(p.x*0.3,p.y*0.3)*float(type.drift.get("rows",{}).get("waver",0.25))
 
 ## A flower record for `kind` at `p` from the hash `key`, sized by `draw`
 ## (0..1, or a hash) within the type's range for it:
@@ -334,6 +342,9 @@ func flower(kind: String, p: Vector2, key: Array, draw := -1.0) -> Array:
 	# A field of row-planted heads that `face` turns them all one way, the
 	# noon sun's (SUN_FACE), each a little off it, as a real field does.
 	if rows.get("face",false) and rows.kind == kind: angle = SUN_FACE+(Variety.unit(key+[5])-0.5)*0.8
+	# A crop's clumps (`align`) turn their long side along the row, each a
+	# little off it, so a row reads as one drilled line.
+	if rows.get("align",false) and rows.kind == kind: angle = atan2(-_row.y,_row.x)+(Variety.unit(key+[5])-0.5)*0.5
 	var shaped := form(kind,size,angle)
 	return [asset(kind),shaped[0],tint(kind,variant(p)),shaped[1],angle]
 
