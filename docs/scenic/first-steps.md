@@ -15,13 +15,13 @@ Shown in this order, one at a time. The card shows the first step not found yet,
 | Step | Verb | Done by |
 |---|---|---|
 | 1 | `look` | right-drag to look round |
-| 2 | `raise` | with the Modeller's pinch (put in hand), press the land and pull up |
-| 3 | `groove` | drag slowly across the land |
+| 2 | `raise` | with the Mountain (put in hand), press the land and pull up |
+| 3 | `groove` | with the Modeller's thumb (put in hand), drag slowly across the land |
 | 4 | `water` | with the watering can (put in hand), hold it over the land to pour |
 | 5 | `tree` | bend a tree right over and let go |
 | 6 | `turn` | push the rim sideways (the rim is outlined while the step is asked) |
 
-A step completes the first time its verb is really done (`mark`). Nothing is checked while the card is up that was not checked before: the card only listens.
+A step completes the first time its verb is really done (`mark`). The Modeller is the small tool since the shaping tools' rework (its pinch tops out at 1.5 m), so the peak is the Mountain's pull; a Modeller pinch that lifts the land still counts. The field notes' "Sink a hollow" points at the Crater, and a Modeller pinch pulled down still counts. Painting tree seed counts as sowing, as painting flowers does. Nothing is checked while the card is up that was not checked before: the card only listens.
 
 - **Skip** puts the card away for good, wherever it was. Verbs keep being noted.
 - **Finishing** the last step also puts it away, and sends `finished`.

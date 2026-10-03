@@ -1,7 +1,7 @@
 extends SceneTree
 ## The land shudders under the shaping tools (scripts/clay_tremor.gd): a
 ## Mountain pull kicks the tremor in lurches by how fast it rises and a hand
-## held still lets it settle; the Wire's cut is lighter; the gentle tools never
+## held still lets it settle; the Crater's sink and the Ravine's cut are lighter; the gentle tools never
 ## shake. First on a stand-in clay (exact), then on the real clay in the
 ## Fidelity world, where the old painted-stroke rumble (scripts/
 ## stroke_feedback.gd) must leave the clay's strokes alone. Only the trauma is
@@ -100,14 +100,6 @@ func _stand_in() -> void:
 	tick(shudder,tremor,1.0,func() -> void: tool.lift += 0.8*DT)
 	var slow: float = tremor.trauma
 	check(shudder.kicks > kicks and slow < pulled*0.4,"a slow pull is a few small lurches (%.2f vs %.2f)" % [slow,pulled])
-	# Pulled down: it shakes, lighter than up.
-	tick(shudder,tremor,1.5)
-	tool.lift = 0.0
-	tick(shudder,tremor,0.05)
-	tremor.trauma = 0.0
-	tick(shudder,tremor,0.5,func() -> void: tool.lift -= 6.0*DT)
-	var sank: float = tremor.trauma
-	check(sank > 0.05,"a Mountain pulled down shakes too (%.2f)" % sank)
 	# Off: no shudder at all.
 	tick(shudder,tremor,1.5)
 	shudder.amount = 0.0
@@ -139,6 +131,26 @@ func _stand_in() -> void:
 	tool.running = false
 	tick(shudder,tremor,1.5)
 	check(tremor.trauma < 0.001,"and settles once the cut has run")
+	clay.queue_free()
+
+	# The Crater pulled down at 6 m/s to its 6 m floor: the Mountain goes
+	# up only, so a sink is the Crater's. It shakes, lighter than a pull up.
+	parts = rig("crater")
+	clay = parts[0]
+	tremor = parts[1]
+	shudder = parts[2]
+	tool = clay.tool
+	clay.state = FakeClay.State.HOLD
+	biggest = 0.0
+	tick(shudder,tremor,1.0,func() -> void: tool.lift = maxf(tool.lift-6.0*DT,-6.0))
+	var sank: float = tremor.trauma
+	check(sank > 0.1,"the Crater pulled down shakes (%.2f)" % sank)
+	check(sank < pulled,"lighter than a Mountain pull (%.2f vs %.2f)" % [sank,pulled])
+	check(shudder.kicks >= 8,"in lurches (%d kicks)" % shudder.kicks)
+	check(biggest < 0.2,"every kick under the stumble (%.3f)" % biggest)
+	clay.state = FakeClay.State.IDLE
+	tick(shudder,tremor,1.5)
+	check(tremor.trauma < 0.001,"and settles once let go")
 	clay.queue_free()
 
 	# The gentle tools never shake, however much they are worked.
@@ -218,6 +230,19 @@ func _real_clay() -> void:
 	while Time.get_ticks_msec()-settle < 2500: await process_frame
 	check(shudder.kicks <= kicks+2,"holding still stops the lurches (%d after)" % (shudder.kicks-kicks))
 	check(scene._tremor.trauma < 0.05,"and the shudder settles while held (%.3f)" % scene._tremor.trauma)
+	clay.release()
+	for k in range(5): await process_frame
+	# The Crater pulled straight down.
+	scene._tremor.trauma = 0.0
+	clay.set_tool("crater")
+	kicks = shudder.kicks
+	check(clay.press(spot),"the Crater takes the press")
+	var hole := 0.0
+	for k in range(40):
+		clay.pull(spot+Vector2(0.0,8.0*(k+1)))
+		await process_frame
+		hole = maxf(hole,float(scene._tremor.trauma))
+	check(shudder.kicks > kicks+3 and hole > 0.05,"a real Crater pull shudders (%d kicks, peak %.2f, lift %.1f m)" % [shudder.kicks-kicks,hole,float(clay.lift)])
 	clay.release()
 	for k in range(5): await process_frame
 	# Paused loops (the clay's sound) hold their playbacks past a free.

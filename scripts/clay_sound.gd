@@ -5,19 +5,22 @@ extends Node
 ## Two kinds of sound:
 ## - **Cues**: one-shots asked for by name. The tools call `LandClay.sound`
 ##   (its `sounded` signal lands here) at their moments: a poke, a pat, a
-##   hammer's crack, a chisel's step. The HUD calls the static `cue` for its
+##   chisel's step, the Ravine's start. The HUD calls the static `cue` for its
 ##   touches: a tool picked, the tray reached for, a slot hovered.
 ## - **Voices**: loops whose gain follows the press while it lasts: the thumb's
 ##   groove and rub, the paddle's sweep and the chisel's scrape by the
 ##   pointer's speed; a hold's stretch and low rumble by how fast the lift
-##   moves; the Wire's cut and grind by how fast its head runs.
+##   moves; the Ravine's cut (the tool id `wire`) and grind by how fast its
+##   head runs.
 ## - **Lurches**: the land voice's own cues, fired here rather than by a tool
 ##   (`_tremble`). Under a rising pull the rumble is a bed, and over it the
 ##   land gives in lurches (`lurch`: a thud dropping into a darkening rumble,
 ##   crumbling after), more often and louder the faster it rises, and none
-##   while the hold is still. The Wire's cut grinds instead (`grind`: lighter,
-##   grittier, no sub). After audio.js's formation rumble in the Electron
-##   ZenScape, which fired its lurches with the camera's kicks.
+##   while the hold is still. The Crater's sinking floor lurches too, a step
+##   softer (CRATER_GIVE). The Ravine's cut and the Chisel's slice grind
+##   instead (`grind`: lighter, grittier, no sub). After audio.js's formation
+##   rumble in the Electron ZenScape, which fired its lurches with the
+##   camera's kicks.
 ##
 ## Each cue has a few recorded takes (assets/audio/foley/<clip>-<n>.wav, CC0,
 ## credited in assets/audio/ATTRIBUTION.md, cut by tools/foley/make_foley.py).
@@ -94,7 +97,7 @@ const OTHER_VOICES := {&"water_swirl": {"clip":"water-swirl-loop","gain":0.2},&"
 ## 150 Hz and steady, so on a laptop it was close to silent.
 const RUMBLE_CLIP := DIR+"land-bed-loop.wav"
 ## A drag's voices come in from SPEED.x px/s and are full at SPEED.y; a hold's
-## from 0 to LIFT_RATE m/s of lift; the Wire's cut at CUT_RATE of its path a
+## from 0 to LIFT_RATE m/s of lift; the Ravine's cut at CUT_RATE of its path a
 ## second.
 const SPEED := Vector2(40.0,900.0)
 const LIFT_RATE := 6.0
@@ -102,7 +105,7 @@ const CUT_RATE := 0.8
 ## Lurches come in at LURCH_RISE.x m/s of rise and are at their most at
 ## LURCH_RISE.y, from LURCH_PACE.x to LURCH_PACE.y a second; at most
 ## LURCH_STACK sound at once. A pull's first comes FIRST_LURCH of a beat after
-## the land starts moving. The Wire's grinds run GRIND_PACE a second by its
+## the land starts moving. The Ravine's grinds run GRIND_PACE a second by its
 ## cut's pace (or a slice's), at most GRIND_STACK at once.
 const LURCH_RISE := Vector2(0.4,6.0)
 const LURCH_PACE := Vector2(1.4,4.5)
@@ -110,6 +113,10 @@ const LURCH_STACK := 4
 const FIRST_LURCH := 0.25
 const GRIND_PACE := Vector2(2.0,6.0)
 const GRIND_STACK := 3
+## The Crater's sinking floor rumbles and lurches at CRATER_GIVE of a rising
+## pull's: the ground caving in, a step under the Mountain (as ClayTremor's
+## SINK is for its shake).
+const CRATER_GIVE := 0.7
 ## Gains ease in at ATTACK and out at RELEASE (1/s), as GenesisAudio's do.
 const ATTACK := 9.0
 const RELEASE := 3.5
@@ -270,7 +277,7 @@ func _process(delta: float) -> void:
 	var tool: Object = clay.tool
 	var at := Vector3.ZERO
 	# How hard the land is giving this frame, 0..1: a rising pull's lurches,
-	# the Wire's grinding, and how big a lurch is (`heft`).
+	# the Ravine's and the slice's grinding, and how big a lurch is (`heft`).
 	var lurch := 0.0
 	var heft := 0.0
 	var grit := 0.0
@@ -305,17 +312,24 @@ func _process(delta: float) -> void:
 		var moved := (lift-_lift)/delta
 		var rate := smoothstep(0.0,LIFT_RATE,absf(moved))
 		_lift = lift
-		if id == "chisel": _target[SCRAPE] = rate*0.7
-		elif id != "hammer": _target[STRETCH] = rate
-		# The Wire's slice grinds through. The land groans as it rises, not as
-		# it sinks, and gives in lurches the faster it rises.
-		if id == "wire":
+		var slicing := str(clay.verb).ends_with("slice")
+		if id == "chisel" and not slicing: _target[SCRAPE] = rate*0.7
+		else: _target[STRETCH] = rate
+		# The Chisel's slice (the Wire's until the shaping tools' rework)
+		# grinds through. The land groans as it rises, not as it sinks, and
+		# gives in lurches the faster it rises; the Crater's floor is the one
+		# sink that does, at CRATER_GIVE, as the ground caves in.
+		if slicing:
 			_target[GRIND] = rate*0.8
 			grit = rate
-		elif lift > 0.0 and id != "hammer":
+		elif lift > 0.0:
 			heft = smoothstep(0.0,3.0,lift)
 			_target[RUMBLE] = rate*heft
 			lurch = smoothstep(LURCH_RISE.x,LURCH_RISE.y,moved)
+		elif lift < 0.0 and id == "crater":
+			heft = smoothstep(0.0,3.0,-lift)
+			_target[RUMBLE] = rate*heft*CRATER_GIVE
+			lurch = smoothstep(LURCH_RISE.x,LURCH_RISE.y,-moved)*CRATER_GIVE
 		at = clay.ground_at(clay.center)
 	else:
 		_lift = 0.0

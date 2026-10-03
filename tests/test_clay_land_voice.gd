@@ -1,7 +1,8 @@
 extends SceneTree
 ## The clay's land voice (scripts/clay_sound.gd): a rising pull rumbles on its
 ## bed and gives in lurches, more of them the faster it rises; a still hold, a
-## slow pull and a sinking one never lurch; the Wire's cut grinds instead.
+## slow pull and a sinking one never lurch, but for the Crater's caving
+## floor; the Ravine's cut and the Chisel's slice grind instead.
 ## Lurch takes never repeat back to back. Wiring only: it hears nothing, and
 ## an ear has to judge the sound itself.
 ##
@@ -75,7 +76,30 @@ func run() -> void:
 	check(pull(0.2/60.0,90).lurch == 0,"a creeping pull does not lurch")
 	check(pull(-7.0/60.0,60).lurch == 0,"a sinking pull does not lurch")
 
-	# The Wire's cut drawing through: grinding, not lurching.
+	# The Crater's floor sinking fast: the one sink that lurches, softer than
+	# a rise, on the rumble bed.
+	clay.tool_id = "crater"
+	clay.verb = "crater"
+	tool.lift = 0.0
+	pull(0.0,30)
+	var caved := pull(-7.0/60.0,120)
+	check(caved.lurch >= 2,"a fast Crater pull lurches as it caves in (%d)" % caved.lurch)
+	check(caved.lurch <= fast.lurch,"no more than a Mountain pull's (%d <= %d)" % [caved.lurch,fast.lurch])
+	check(caved.grind == 0,"a Crater pull does not grind")
+	check(sound._gain[ClaySound.RUMBLE] > 0.3,"it brings the rumble bed up (%.2f)" % sound._gain[ClaySound.RUMBLE])
+	pull(0.0,90)
+
+	# The Chisel's slice (the Wire's until the rework) grinds, not lurches.
+	clay.tool_id = "chisel"
+	clay.verb = "slice"
+	tool.lift = 0.0
+	var sliced := pull(5.0/60.0,90)
+	check(sliced.grind >= 2,"the Chisel's slice grinds (%d)" % sliced.grind)
+	check(sliced.lurch == 0,"the Chisel's slice does not lurch")
+	pull(0.0,90)
+	clay.verb = "peak"
+
+	# The Ravine's cut (the tool id wire) drawing through: grinding, not lurching.
 	clay.state = FakeClay.State.RUN
 	clay.tool_id = "wire"
 	tool.running = true

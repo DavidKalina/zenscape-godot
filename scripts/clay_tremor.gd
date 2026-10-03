@@ -14,15 +14,20 @@ extends Node
 ## then, and a hand held still is quiet ground, the last kicks tailing off.
 ##
 ## What moves the land, read each frame as ClaySound reads it:
-## - **a hold**, its lift (the Mountain's pull, the Chisel's mesa or pit, the
-##   Wire's slice, the Modeller's pinch): metres of lift, up or down. Sinking
-##   is SINK of a rise.
-## - **the Wire's cut** drawing through after the release: metres of its head.
+## - **a hold**, its lift (the Mountain's pull, up only; the Crater's floor,
+##   down only; the Chisel's mesa, pit or slice; the Modeller's pinch, a
+##   knoll or a dip): metres of lift, up or down. Sinking is SINK of a rise.
+## - **the Ravine's cut** (the tool id `wire`) drawing through after the
+##   release: metres of its head along its line, or a loop's basin settling.
 ##   Lighter and grittier than a pull: more, smaller kicks (CUT_LURCH).
 ##
-## Each tool's weight is FEEL; a tool not in it (the Brush, the Feather, the
-## Paddle, the Hills, the Bowl, the Sculpt, the can and the plants) never
-## shakes. Every kick stays under the resident's 0.2 stumble threshold
+## Each tool's weight is FEEL. The Crater sits between the Chisel and the
+## Mountain (0.75): a six-metre hole with a thrown-out rim moves more ground
+## than a chisel's block and less than a 14 m peak. Going down is its whole
+## gesture, so it is in DIGS and its sink kicks at full weight, not SINK of a
+## rise as a pit or a dip does. A tool not in FEEL
+## (the Brush, the Feather, the Paddle, the Hills, the Bowl, the Sculpt, the
+## can and the plants) never shakes. Every kick stays under the resident's 0.2 stumble threshold
 ## (scripts/creature_actor.gd `queue_tremor`), and the clay never pushes the
 ## trauma past CAP of its feel, so a long fast pull shakes hard but never
 ## unwatchably.
@@ -30,9 +35,9 @@ extends Node
 ## `amount` scales every kick, 0 turns the shudder off (`--no-shake`).
 
 ## Each tool's weight, 0..1: how hard its land moving kicks.
-const FEEL := {"mountain":1.0,"chisel":0.6,"wire":0.55,"hand":0.35}
+const FEEL := {"mountain":1.0,"crater":0.75,"chisel":0.6,"wire":0.55,"hand":0.35}
 ## Metres of lift per lurch (14 m, the Mountain's full pull, is ~28 lurches,
-## as the conductor's full rise was), and metres of the Wire's head.
+## as the conductor's full rise was), and metres of the Ravine's head.
 const LURCH := 0.5
 const CUT_LURCH := 0.35
 ## The biggest single kick, under the resident's 0.2 stumble threshold.
@@ -41,7 +46,7 @@ const KICK := 0.18
 ## shake of 0.49 (trauma²), about half a degree of roll.
 const CAP := 0.7
 ## Lift speeds (m/s) from which a hold's lurches start to swell, and at which
-## they are full (ClaySound's LIFT_RATE); the Wire's head at its CUT_SPEED.
+## they are full (ClaySound's LIFT_RATE); the Ravine's head at its CUT_SPEED.
 const LIFT_RATE := Vector2(0.3,6.0)
 const CUT_RATE := Vector2(0.5,8.0)
 ## How fast the rate follows the land (1/s), as the conductor's riseRate.
@@ -49,8 +54,10 @@ const RATE_EASE := 2.5
 ## A hold's kicks grow from GROW.x to 1 as its lift reaches TALL metres.
 const GROW := 0.6
 const TALL := 8.0
-## A sinking hold kicks at SINK of a rising one.
+## A sinking hold kicks at SINK of a rising one, but for the tools in DIGS,
+## whose landform is the sink.
 const SINK := 0.7
+const DIGS := ["crater"]
 
 var clay: Node
 var tremor: RefCounted
@@ -61,7 +68,7 @@ var kicks := 0
 ## The eased rate, 0..1, for probes.
 var rate := 0.0
 var _debt := 0.0
-## The last frame's lift (a hold) or head (the Wire's cut), metres; NAN when
+## The last frame's lift (a hold) or head (the Ravine's cut), metres; NAN when
 ## nothing was moving.
 var _last := NAN
 
@@ -101,7 +108,7 @@ func _process(delta: float) -> void:
 	# burst; the part of a step left over carries to the next.
 	_debt = fmod(_debt,step)
 	var size := 1.0 if cut else lerpf(GROW,1.0,smoothstep(0.0,TALL,absf(at)))
-	if not cut and moved < 0.0: size *= SINK
+	if not cut and moved < 0.0 and not id in DIGS: size *= SINK
 	var kick := KICK*feel*(0.35+0.65*rate)*size*amount
 	var room := CAP*feel-float(tremor.trauma)
 	if kick <= 0.0 or room <= 0.0: return

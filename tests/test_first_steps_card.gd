@@ -82,8 +82,8 @@ func test_copy_and_steps() -> void:
 	run(card,3.0)
 	check(card.words()[0] == "Raise a peak", "The next step eases in: %s" % [card.words()[0]])
 	check(card._content >= 1.0, "Its words are fully in")
-	check(card.near() == "roll:hand" and card.pointing() == ["roll","hand"], "near follows the step")
-	check(pointings == [["roll","hand"]], "It says when it points somewhere new: %s" % [pointings])
+	check(card.near() == "roll:mountain" and card.pointing() == ["roll","mountain"], "near follows the step")
+	check(pointings == [["roll","mountain"]], "It says when it points somewhere new: %s" % [pointings])
 	# A later step done early shows as a pip and is never asked.
 	model.mark("tree")
 	run(card,3.0)

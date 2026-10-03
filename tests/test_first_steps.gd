@@ -105,6 +105,18 @@ func _detection() -> void:
 	world.clay.lift = -1.5
 	world.clay.worked.emit("fine_pinch",true)
 	check(fs.found.has("hollow"),"A kept pinch that sank is a hollow")
+	# The Mountain's pull and the Crater's count the same way (the card's
+	# raise puts the Mountain in hand; the hollow points at the Crater).
+	var pulls := _fresh()
+	pulls.setup(world.scene,world.reach)
+	world.clay.lift = 6.0
+	world.clay.worked.emit("peak",true)
+	check(pulls.found.has("raise") and not pulls.found.has("hollow"),"A kept Mountain pull is a raise")
+	world.clay.lift = -3.0
+	world.clay.worked.emit("crater",true)
+	check(pulls.found.has("hollow"),"A kept Crater pull is a hollow")
+	pulls.free()
+	check(str(FirstSteps.VERBS.raise.take) == "mountain" and str(FirstSteps.VERBS.hollow.near) == "roll:crater","The raise takes the Mountain; the hollow points at the Crater")
 	world.clay.verb = "thumb"
 	world.clay.last_rub = 0.0
 	fs._poll(0.5)
@@ -223,6 +235,11 @@ func _detection() -> void:
 	painted._poll(0.1)
 	check(painted.found.has("sow"),"Painting flowers is sowing")
 	check(FirstSteps.sown().has("sunflower") and FirstSteps.sown().has("reed"),"Every flower slot and the reed count as sowing")
+	# Tree seed is painted too since the shaping tools' merge: no flick.
+	world.reach.uses["oak"] = 1
+	painted.found.erase("sow")
+	painted._poll(0.1)
+	check(painted.found.has("sow") and FirstSteps.sown().has("joshua"),"Painting trees is sowing")
 	painted.free()
 	fs.free()
 	_free_world(world)

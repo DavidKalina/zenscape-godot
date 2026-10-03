@@ -62,7 +62,7 @@ Any two arrival sounds are at least `SHOT_GAP` (1.5 s) apart. For `SHOT_QUIET` (
 
 ## Tool sound
 
-The shaping tools (Modeller, Paddle, Chisel, Hammer, Wire) and the linen HUD have their own sound. It lives in `scripts/clay_sound.gd` (`ClaySound`), which `studies/fidelity_life.gd` builds next to GenesisAudio when the clay is on (`--modeless`). These sounds are recorded foley, not synthesised: CC0 recordings from Freesound and Kenney, cut by `tools/foley/make_foley.py` into `assets/audio/foley/`. Each file is credited in `assets/audio/foley/SOURCES.tsv`. The one exception is the land voice (below), which is synthesised.
+The shaping tools (Modeller, Mountain, Crater, Ravine, Chisel, Paddle) and the linen HUD have their own sound. It lives in `scripts/clay_sound.gd` (`ClaySound`), which `studies/fidelity_life.gd` builds next to GenesisAudio when the clay is on (`--modeless`). These sounds are recorded foley, not synthesised: CC0 recordings from Freesound and Kenney, cut by `tools/foley/make_foley.py` into `assets/audio/foley/`. Each file is credited in `assets/audio/foley/SOURCES.tsv`. The one exception is the land voice (below), which is synthesised.
 
 **Cues** are one-shots, asked for by name:
 - The tools call `LandClay.sound(cue, at, strength)`, which emits `sounded`.
@@ -78,14 +78,14 @@ Each cue has up to eight takes (`<clip>-<n>.wav`). The same take never plays twi
 | Chisel shelf steps down a level | `chisel_step` | `chisel-tick` |
 | Chisel notch (tap) | `chisel_knock` | `chisel-knock` |
 | Chisel mesa breaks free (the lift passes `FLAT_FROM`) | `mesa_break` | `mesa-break` |
-| Chisel shelf let go, and the Wire's cut landing | `crumble` | `crumble` |
-| Hammer blow on rock / elsewhere | `crack` / `knock` | `hammer-rock` / `hammer-soil` |
+| Chisel shelf let go, and the Ravine's cut landing | `crumble` | `crumble` |
+| Hammer blow on rock / elsewhere (the Hammer is off the roll; its script and cues stay) | `crack` / `knock` | `hammer-rock` / `hammer-soil` |
 | Scree from a crack | `scree` | `scree` |
 | Rock painted on a raised peak | `rock_settle` | `pebbles` |
 | Trees slide off (`shake_trees` moved any) | `trees` | `trees` |
-| Wire's cut sets off | `wire_start` | `wire-start` |
-| Land lurches as a hold lifts it (see Land voice) | `lurch` | `land-lurch` |
-| The Wire's cut and slice grind (see Land voice) | `grind` | `land-grind` |
+| Ravine's cut sets off (tool id `wire`) | `wire_start` | `wire-start` |
+| Land lurches as a hold lifts it, or as the Crater caves in (see Land voice) | `lurch` | `land-lurch` |
+| The Ravine's cut and the Chisel's slice grind (see Land voice) | `grind` | `land-grind` |
 | Roll or tray reached for; slot hovered | `ui_reach`; `ui_hover` | `ui-cloth`; `ui-tick` |
 | Tool picked; size pip changed | `ui_pick`; `ui_size` | `ui-pick`; `ui-tick` |
 | Material taken; put back | `ui_take`; `ui_put` | `ui-take`; `ui-put` |
@@ -95,13 +95,13 @@ Each cue has up to eight takes (`<clip>-<n>.wav`). The same take never plays twi
 
 **Voices** are loops whose gain eases toward a target (in at `ATTACK` 9/s, out at `RELEASE` 3.5/s):
 - **Drags:** the Modeller's groove and rub crossfade by `LandClay.rub`. The palm and the Paddle use the sweep, and the Chisel uses the scrape. All of these follow the pointer's speed (`SPEED`, 40–900 px/s).
-- **Holds:** the pinch, swell and slice stretch. The Chisel's mesa scrapes. These follow how fast the lift moves (`LIFT_RATE`). A raise also brings in the land bed, deeper when it is slow.
-- **Wire:** the cut loop and the grind bed follow how fast its head runs. The Wire never brings in the deep land bed.
+- **Holds:** the pinch, the Mountain's pull and the Crater stretch. The Chisel's mesa scrapes; its slice grinds. These follow how fast the lift moves (`LIFT_RATE`). A raise also brings in the land bed, deeper when it is slow.
+- **Ravine** (tool id `wire`): the cut loop and the grind bed follow how fast its head runs. The Ravine never brings in the deep land bed.
 
 **Land voice.** Building mountains and ravines answers with a rumble in lurches, after the Electron ZenScape's formation rumble (`audio.js` `rumble`). It plays in step with the camera's shudder (`scripts/clay_tremor.gd`), but each is driven from the clay on its own; neither calls the other.
 - **Bed:** `land-bed-loop` is the RUMBLE voice (peak 0.38). It has a body under 180 Hz, a 430 Hz grind band, a faint drifting 41 Hz sub and soil grains, so it carries on laptop speakers. The old `genesis-rumble` put about 95% of its energy under 150 Hz and was nearly silent there; GenesisAudio and the world rumble still use it.
-- **Lurches:** while a hold's lift is above zero and rising (any tool but the Hammer and the Wire), `_tremble` fires `lurch` one-shots. They start at 0.4 m/s of rise and are at their most at 6 m/s (`LURCH_RISE`), at 1.4 to 4.5 a second (`LURCH_PACE`), each interval randomised. A faster, taller pull lurches louder and a little lower. At most four sound at once (`LURCH_STACK`). A still hold, a creep or a sink never lurches. When idle, the beat waits just short of firing (`FIRST_LURCH`), so land that starts moving gives almost at once.
-- **Ravine:** the Wire's running cut and its slice drive the GRIND voice (`land-grind-loop`, peak 0.24) and `grind` one-shots at 2 to 6 a second (`GRIND_PACE`), at most three at once (`GRIND_STACK`). There is no sub: it is grit dragged through clay, mostly 400 Hz to 3 kHz.
+- **Lurches:** while a hold's lift is above zero and rising (any hold but the Chisel's slice), `_tremble` fires `lurch` one-shots. They start at 0.4 m/s of rise and are at their most at 6 m/s (`LURCH_RISE`), at 1.4 to 4.5 a second (`LURCH_PACE`), each interval randomised. A faster, taller pull lurches louder and a little lower. At most four sound at once (`LURCH_STACK`). A still hold, a creep or a sink never lurches, except the Crater: its floor sinking lurches and brings up the bed at `CRATER_GIVE` (0.7) of a rise, the ground caving in. When idle, the beat waits just short of firing (`FIRST_LURCH`), so land that starts moving gives almost at once.
+- **Ravine and slice:** the Ravine's running cut and the Chisel's slice (the Wire's until the shaping tools' rework) drive the GRIND voice (`land-grind-loop`, peak 0.24) and `grind` one-shots at 2 to 6 a second (`GRIND_PACE`), at most three at once (`GRIND_STACK`). There is no sub: it is grit dragged through clay, mostly 400 Hz to 3 kHz.
 - **Cues:** `lurch` and `grind` use the takes machinery above, with a wider pitch spread (±10% and ±8%, the cue's `jitter` key). The land player pool is eight (`LAND_POOL`).
 - **Takes:** six of each. The lurches (1.3 to 2.4 s) are a sub falling from 58–72 Hz to 31 Hz, noise through a lowpass falling from 460–640 Hz to 70 Hz, crackle early and a thinning trickle of stones. Takes 4 and 6 stack a second, smaller lurch. The grinds (0.45 to 0.8 s) are a lowpass falling from 1100 to 260 Hz over a 540–880 Hz band with dense high grit.
 - **Not yet tuned by ear:** the lurch level against the bed, and whether 4.5 a second at full speed is too busy.

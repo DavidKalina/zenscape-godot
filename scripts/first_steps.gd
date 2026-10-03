@@ -44,8 +44,8 @@ const VERBS := {
 	"look":{"group":"eye","name":"Look round","line":"Right-drag to look round · scroll to come closer","clue":"The other button is the eye","near":""},
 	"glide":{"group":"eye","name":"Go and see","line":"Point at something and press F to glide to it · Backspace goes back","clue":"Something worth a closer look","near":""},
 	"photo":{"group":"eye","name":"Take a photo","line":"Press P and the cloth steps out of the shot · Space keeps it","clue":"A way to keep what you made","near":"foot:photo"},
-	"raise":{"group":"land","name":"Raise a peak","line":"The pinch is in your hand · press the land and pull up","clue":"The land is clay","near":"roll:hand","take":"hand:pinch"},
-	"hollow":{"group":"land","name":"Sink a hollow","line":"With the pinch, press the land and pull down","clue":"What goes up","near":"roll:hand"},
+	"raise":{"group":"land","name":"Raise a peak","line":"The Mountain is in your hand · press the land and pull up","clue":"The land is clay","near":"roll:mountain","take":"mountain"},
+	"hollow":{"group":"land","name":"Sink a hollow","line":"With the Crater, press the land and pull down","clue":"What goes up","near":"roll:crater"},
 	"groove":{"group":"land","name":"Thumb a groove","line":"The thumb is in your hand · drag slowly across the land · water will run along it","clue":"A slow thumb","near":"roll:hand","take":"hand:groove"},
 	"smooth":{"group":"land","name":"Smooth it over","line":"With the thumb, rub fast, back and forth","clue":"A quick rub","near":"roll:hand"},
 	"level":{"group":"land","name":"Level a pan","line":"With the palm, drag and it levels a flat a pond can fill","clue":"The flat of the hand","near":"roll:hand"},
@@ -69,10 +69,12 @@ const VERBS := {
 }
 
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
-## What the case holds that counts as sowing when used, besides the tree seeds
-## the pinch flicks: every flower slot (scripts/flower_sowing.gd SLOTS) and reed.
+## What the case holds that counts as sowing when used: every flower slot
+## (scripts/flower_sowing.gd SLOTS), the tree seeds (painted as trees since
+## 2026-10-02, scripts/hand_materials.gd SEEDS) and reed. Loaded, not
+## preloaded: the hand's materials preload the card, which preloads this.
 static func sown() -> Array:
-	return FlowerSowing.SLOTS.keys()+["reed"]
+	return FlowerSowing.SLOTS.keys()+load("res://scripts/hand_materials.gd").SEEDS.keys()+["reed"]
 
 ## Verbs found so far, id -> true.
 var found := {}
@@ -239,12 +241,12 @@ func _poll_air() -> void:
 		if key[1] != _air[1]: mark("night")
 	_air = key
 
-## A stroke ended: what the Modeller did (scripts/land_clay.gd `worked`). A
-## pinch counts for its lift, up or down; the thumb for how long it dug and
-## how long it rubbed.
+## A stroke ended: what the Modeller, the Mountain or the Crater did
+## (scripts/land_clay.gd `worked`). A pull counts for its lift, up or down;
+## the thumb for how long it dug and how long it rubbed.
 func _on_worked(verb: String, kept: bool) -> void:
 	match verb:
-		"pinch","fine_pinch","peak","fine_peak":
+		"pinch","fine_pinch","peak","fine_peak","crater","fine_crater":
 			var lift := _num(_prop(_scene,"land_clay"),"lift")
 			if kept and lift >= LIFTED: mark("raise")
 			elif kept and lift <= -LIFTED: mark("hollow")
