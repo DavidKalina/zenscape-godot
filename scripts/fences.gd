@@ -22,8 +22,19 @@ extends Node3D
 ## full refresh and on the light refresh a held brush makes, as it lifts the
 ## landmarks). The trash can takes a fence span by span (`cut`).
 ##
+## Joining (`snap`, `lay`): a line pressed or let go near a fence starts or
+## ends exactly on it. On an open fence's end post it continues that fence:
+## the new posts are added to its record (one record, the end post not
+## doubled), and a line from one end of a fence back to its other end closes
+## it into a pen. Anywhere else on a fence (near a post, or along a span, where
+## a post is put in) it makes a T: the new record's end post sits at the very
+## spot of the fence's post. Posts are shared by position, not by reference:
+## the view draws one post where two records meet (`rebuild`), and the trash
+## can flies a post away only when no fence is left standing on it (`cut`).
+##
 ## This node is the view: one faceted mesh per record, a child of the terrain
-## (plate space), and the faint stakes of a line still being drawn (`preview`).
+## (plate space), and the faint stakes of a line still being drawn (`preview`),
+## with a bright ring where it will join a fence.
 
 const POST_SPACING := 1.3
 ## A drawn line ending within CLOSE_REACH m of its start, at least CLOSE_MIN m
@@ -54,12 +65,28 @@ const RAIL_SIZE := Vector2(0.075,0.05)
 const WOOD := [Color("8a7357"),Color("7a6249"),Color("9c8a70"),Color("6f5a44")]
 const GHOST := Color(0.93,0.88,0.78,0.45)
 const GHOST_OFF := Color(0.85,0.45,0.35,0.35)
+## The ring the preview shows round a post the line will join.
+const JOIN_TINT := Color(1.0,0.84,0.42,0.9)
+
+## Joining: a press or release within SNAP_REACH m of a fence (or SNAP_PIXELS
+## on screen when zoomed out, whichever is more) joins it. An open fence's end
+## post wins within that reach; elsewhere the nearest point on a fence is
+## taken, the post there when within POST_SNAP m of one, else a new post on
+## the span. Posts within JOIN_EPS m are the same post.
+const SNAP_REACH := 1.0
+const SNAP_PIXELS := 28.0
+const POST_SNAP := 0.4
+const JOIN_EPS := 0.02
 
 var _material: StandardMaterial3D
 var _ghost: StandardMaterial3D
 var _preview: MeshInstance3D
 ## Builds, for probes.
 var rebuilds := 0
+## Where the view drew a post at its last build, and where the preview shows
+## a join ring, for probes.
+var drawn_posts := PackedVector2Array()
+var preview_joins := PackedVector2Array()
 
 func _init() -> void:
 	name = "Fences"
@@ -108,6 +135,8 @@ static func posts_along(path: PackedVector2Array, closed: bool) -> PackedVector2
 			at += 1
 		var piece := line[at].distance_to(line[at+1])
 		out.append(line[at].lerp(line[at+1],clampf((want-walked)/piece,0.0,1.0) if piece > 1e-6 else 0.0))
+	# A line's last post is its end exactly (a join there meets the post).
+	if not closed: out[-1] = path[-1]
 	return out
 
 ## The runs a line of `posts` breaks into where `span_ok[k]` (the span from
@@ -141,9 +170,10 @@ static func runs(posts: PackedVector2Array, closed: bool, span_ok: Array) -> Arr
 
 ## The runs a drawn `path` lays as on `data`'s land: posts along it where
 ## `stands` (plate point -> bool) allows, spans between them where `dry`
-## allows and the ground does not step more than STEP_MAX.
-static func plan(data: NativeTerrainData, path: PackedVector2Array, stands: Callable, dry: Callable) -> Array:
-	var closed := closes(path)
+## allows and the ground does not step more than STEP_MAX. `open`: never a
+## pen of its own (its ends join two ends of another fence).
+static func plan(data: NativeTerrainData, path: PackedVector2Array, stands: Callable, dry: Callable, open := false) -> Array:
+	var closed := closes(path) and not open
 	var posts := posts_along(path,closed)
 	if posts.size() > MAX_POSTS: posts = posts.slice(0,MAX_POSTS)
 	var up: Array = []
@@ -170,6 +200,121 @@ static func record(id: int, run: Dictionary) -> Dictionary:
 	var flat: Array = []
 	for p: Vector2 in run.posts: flat.append_array([snappedf(p.x,0.001),snappedf(p.y,0.001)])
 	return {"id":id,"posts":flat,"closed":bool(run.closed)}
+
+# --- Joining --------------------------------------------------------------------------
+
+## Where a line pressed or let go at plate `q` joins `data`'s fences within
+## `reach` m: {} for none, else {"point" (plate), "id" (the fence), "index"
+## (its post there, -1 for a new post on span "span"), "end" (an open
+## fence's end post: the line continues that fence)}.
+static func snap(data: NativeTerrainData, q: Vector2, reach: float) -> Dictionary:
+	var best := {}
+	var best_d := INF
+	# An open fence's end post wins within reach.
+	for item: Dictionary in data.fences:
+		if bool(item.closed): continue
+		var ps := posts_of(item)
+		for i in [0,ps.size()-1]:
+			var d := q.distance_to(ps[i])
+			if d <= reach and d < best_d:
+				best_d = d
+				best = {"point":ps[i],"id":int(item.id),"index":i,"end":true}
+	if not best.is_empty(): return best
+	# Else the nearest point on any fence: its post when one is near, else a
+	# new post on the span.
+	for item: Dictionary in data.fences:
+		var ps := posts_of(item)
+		var n := ps.size()
+		var closed := bool(item.closed)
+		for k in range(n if closed else n-1):
+			var a := ps[k]
+			var b := ps[(k+1)%n]
+			var c := Geometry2D.get_closest_point_to_segment(q,a,b)
+			var d := q.distance_to(c)
+			if d > reach or d >= best_d: continue
+			best_d = d
+			if minf(c.distance_to(a),c.distance_to(b)) <= POST_SNAP:
+				var i := k if c.distance_to(a) <= c.distance_to(b) else (k+1)%n
+				best = {"point":ps[i],"id":int(item.id),"index":i,"end":not closed and (i == 0 or i == n-1)}
+			else:
+				best = {"point":c,"id":int(item.id),"index":-1,"span":k,"end":false}
+	return best
+
+## Sets the `planned` runs of a drawn line (Fences `plan`) into `data`'s
+## fences, joined where the line's ends meet fences (`start` and `end`:
+## `snap`s within JOIN_EPS of its first and last points). A post is put into
+## a span joined in its middle; a run starting or ending on an open fence's
+## end post is merged into that fence (keeping its id, the post not doubled);
+## a run from one end of a fence round to its other end closes it into a pen.
+## Writes `data.fences` and `data.next_id` (inside the caller's stroke);
+## returns the ids of the records the line is now part of.
+static func lay(data: NativeTerrainData, planned: Array, start: Dictionary, end: Dictionary) -> Array:
+	for join: Dictionary in [start,end]:
+		if not join.is_empty() and int(join.index) < 0: _insert_post(data,join.point)
+	var ids: Array = []
+	for run: Dictionary in planned:
+		var id := data.next_id
+		data.next_id += 1
+		data.fences.append(record(id,run))
+		ids.append(id if bool(run.closed) else _merge_ends(data,id,start,end))
+	var out: Array = []
+	for id in ids:
+		if not id in out and _index(data,int(id)) >= 0: out.append(id)
+	return out
+
+## Record `id` (open, just laid) merged with the open fences whose end posts
+## its ends sit on; returns the id it now lives under.
+static func _merge_ends(data: NativeTerrainData, id: int, start: Dictionary, end: Dictionary) -> int:
+	for at_tail in [false,true]:
+		var join: Dictionary = end if at_tail else start
+		if join.is_empty() or not bool(join.end): continue
+		var mine := _index(data,id)
+		var posts := posts_of(data.fences[mine])
+		var tip: Vector2 = posts[-1] if at_tail else posts[0]
+		if tip.distance_to(join.point) > JOIN_EPS: continue
+		# Its own other end: the line came back round to it, a pen.
+		var other: Vector2 = posts[0] if at_tail else posts[-1]
+		if posts.size() >= 4 and other.distance_to(tip) <= JOIN_EPS:
+			posts.remove_at(posts.size()-1 if at_tail else 0)
+			data.fences[mine] = record(id,{"posts":posts,"closed":true})
+			continue
+		var host := -1
+		for k in range(data.fences.size()):
+			var item: Dictionary = data.fences[k]
+			if k == mine or bool(item.closed): continue
+			var ps := posts_of(item)
+			if ps[0].distance_to(tip) <= JOIN_EPS or ps[-1].distance_to(tip) <= JOIN_EPS:
+				host = k
+				break
+		if host < 0: continue
+		var theirs := posts_of(data.fences[host])
+		if theirs.size()+posts.size()-1 > MAX_POSTS: continue
+		# Theirs up to the shared post, then mine on from it (the post once),
+		# under their id.
+		if theirs[-1].distance_to(tip) > JOIN_EPS: theirs.reverse()
+		if at_tail: posts.reverse()
+		theirs.append_array(posts.slice(1))
+		var keep := int(data.fences[host].id)
+		data.fences[host] = record(keep,{"posts":theirs,"closed":false})
+		data.fences.remove_at(mine)
+		id = keep
+	return id
+
+## Puts a post into the fence span that plate `p` lies on (within JOIN_EPS),
+## unless the fence is full.
+static func _insert_post(data: NativeTerrainData, p: Vector2) -> void:
+	var on := snap(data,p,JOIN_EPS)
+	if on.is_empty() or int(on.index) >= 0: return
+	var k := _index(data,int(on.id))
+	var posts := posts_of(data.fences[k])
+	if posts.size() >= MAX_POSTS: return
+	posts.insert(int(on.span)+1,p)
+	data.fences[k] = record(int(on.id),{"posts":posts,"closed":bool(data.fences[k].closed)})
+
+static func _index(data: NativeTerrainData, id: int) -> int:
+	for k in range(data.fences.size()):
+		if int(data.fences[k].id) == id: return k
+	return -1
 
 ## Whether a saved record is sound: an integer id, 2..MAX_POSTS posts on the
 ## plate, `closed` a bool.
@@ -217,17 +362,39 @@ static func cut(data: NativeTerrainData, q: Vector2, radius: float) -> Dictionar
 		for p in posts:
 			if not still.has(p): taken.append(p)
 	if changed: data.fences.assign(kept)
-	return {"changed":changed,"taken":taken}
+	# A post where another fence still stands (a join) stays.
+	var standing := {}
+	for item: Dictionary in kept:
+		for p in posts_of(item): standing[_key(p)] = true
+	var gone := PackedVector2Array()
+	for p in taken:
+		if not _near_key(standing,p): gone.append(p)
+	return {"changed":changed,"taken":gone}
+
+## A key for plate point `p`, the same for posts within a centimetre or so.
+static func _key(p: Vector2) -> Vector2i:
+	return Vector2i(roundi(p.x*100.0),roundi(p.y*100.0))
+
+## Whether `keys` (from `_key`) holds a post within a centimetre or two of `p`.
+static func _near_key(keys: Dictionary, p: Vector2) -> bool:
+	var at := _key(p)
+	for dx in range(-1,2):
+		for dz in range(-1,2):
+			if keys.has(at+Vector2i(dx,dz)): return true
+	return false
 
 # --- The view -------------------------------------------------------------------------
 
-## Builds every record afresh on the ground as it is now.
+## Builds every record afresh on the ground as it is now. Where records meet
+## (a join), the post there is drawn once, by the first.
 func rebuild(data: NativeTerrainData) -> void:
 	rebuilds += 1
 	for child in get_children():
 		if child != _preview: child.free()
+	drawn_posts = PackedVector2Array()
+	var seen := {}
 	for item: Dictionary in data.fences:
-		var mesh := _fence_mesh(data,posts_of(item),bool(item.closed),int(item.id),false,[])
+		var mesh := _fence_mesh(data,posts_of(item),bool(item.closed),false,[],seen)
 		if mesh == null: continue
 		var node := MeshInstance3D.new()
 		node.name = "fence_%d" % int(item.id)
@@ -236,15 +403,30 @@ func rebuild(data: NativeTerrainData) -> void:
 		add_child(node)
 
 ## The faint stakes of a line being drawn, where it would stand and pale red
-## where it would not; an empty `path` clears them.
-func preview(data: NativeTerrainData, path: PackedVector2Array, stands: Callable) -> void:
+## where it would not, and a bright ring at each of `joins` (plate points: the
+## fence posts its ends will join, or its own start when it closes there); an
+## empty `path` clears them. `open`: never a pen of its own.
+func preview(data: NativeTerrainData, path: PackedVector2Array, stands: Callable, joins := PackedVector2Array(), open := false) -> void:
+	preview_joins = PackedVector2Array()
 	if path.size() < 2 or length(path) < MIN_LENGTH:
 		_preview.mesh = null
 		return
-	var posts := posts_along(path,closes(path))
+	var closed := closes(path) and not open
+	var posts := posts_along(path,closed)
+	var seen := {}
+	for p in joins: seen[_key(p)] = true
 	var up: Array = []
-	for p in posts: up.append(stands.call(p))
-	_preview.mesh = _fence_mesh(data,posts,closes(path),0,true,up)
+	for p in posts: up.append(_near_key(seen,p) or stands.call(p))
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_fence_parts(tool,data,posts,closed,true,up,seen)
+	for p in joins:
+		var h: Variant = data.ground_height(p)
+		if h == null: continue
+		_ring(tool,Vector3(p.x,float(h)+0.03,p.y),0.16,0.24)
+		_ring(tool,Vector3(p.x,float(h)+POST_HEIGHT+0.1,p.y),0.09,0.15)
+		preview_joins.append(p)
+	_preview.mesh = tool.commit()
 
 ## The posts' seats on the land now: [plate point, ground height] for each one
 ## the ground holds, for probes (`seat_of`).
@@ -260,15 +442,25 @@ func seats(data: NativeTerrainData, id: int) -> Array:
 	return out
 
 ## The lowest vertex of the drawn mesh within `reach` m of plate point `p`
-## (the post's foot), or NAN: what is drawn, for probes.
+## (the post's foot), or NAN: what is drawn, for probes. `id` 0: any fence's
+## (a post where fences join is drawn by one of them).
 func foot_at(id: int, p: Vector2, reach := 0.12) -> float:
-	var node := get_node_or_null("fence_%d" % id) as MeshInstance3D
-	if node == null or node.mesh == null: return NAN
-	var vertices: PackedVector3Array = node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var low := INF
-	for v in vertices:
-		if Vector2(v.x,v.z).distance_to(p) <= reach: low = minf(low,v.y)
+	for child in get_children():
+		if child == _preview or not (id == 0 or str(child.name) == "fence_%d" % id): continue
+		var node := child as MeshInstance3D
+		if node == null or node.mesh == null: continue
+		var vertices: PackedVector3Array = node.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		for v in vertices:
+			if Vector2(v.x,v.z).distance_to(p) <= reach: low = minf(low,v.y)
 	return low if low < INF else NAN
+
+## How many posts the view drew within `reach` m of plate `p`, for probes.
+func posts_drawn_at(p: Vector2, reach := 0.05) -> int:
+	var count := 0
+	for q in drawn_posts:
+		if q.distance_to(p) <= reach: count += 1
+	return count
 
 ## A post standing at plate `p` as drawn (mesh, material, terrain-local
 ## transform), for the trash can's flight.
@@ -277,22 +469,35 @@ func post_part(data: NativeTerrainData, p: Vector2) -> Dictionary:
 	if h == null: return {}
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_post(tool,Vector3.ZERO,7,WOOD[0],false)
+	var at := hash(_key(p))
+	_post(tool,Vector3.ZERO,at,_shade(at),false)
 	return {"mesh":tool.commit(),"material":_material,"transform":Transform3D(Basis(),Vector3(p.x,float(h),p.y))}
 
-func _fence_mesh(data: NativeTerrainData, posts: PackedVector2Array, closed: bool, seed: int, ghost: bool, up: Array) -> ArrayMesh:
-	var n := posts.size()
-	if n < 2: return null
-	var grounds: Array = []
-	for p in posts: grounds.append(data.ground_height(p))
+## A fence's mesh, null when nothing of it stands on ground.
+func _fence_mesh(data: NativeTerrainData, posts: PackedVector2Array, closed: bool, ghost: bool, up: Array, seen: Dictionary) -> ArrayMesh:
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if _fence_parts(tool,data,posts,closed,ghost,up,seen) == 0: return null
+	return tool.commit()
+
+## A fence's posts and rails into `tool`. A post already in `seen` (keys,
+## `_key`) is not drawn again (a join); those drawn are added to it. Every
+## piece's lean and shade is seeded by where it stands, so a fence looks the
+## same when it is extended, joined or cut. Returns the pieces drawn.
+func _fence_parts(tool: SurfaceTool, data: NativeTerrainData, posts: PackedVector2Array, closed: bool, ghost: bool, up: Array, seen: Dictionary) -> int:
+	var n := posts.size()
+	if n < 2: return 0
+	var grounds: Array = []
+	for p in posts: grounds.append(data.ground_height(p))
 	var drawn := 0
 	for k in range(n):
-		if grounds[k] == null: continue
+		if grounds[k] == null or _near_key(seen,posts[k]): continue
+		seen[_key(posts[k])] = true
 		var standing: bool = up.is_empty() or up[k]
-		var tint: Color = (GHOST if standing else GHOST_OFF) if ghost else _shade(seed,k)
-		_post(tool,Vector3(posts[k].x,float(grounds[k]),posts[k].y),seed*977+k,tint,ghost)
+		var at := hash(_key(posts[k]))
+		var tint: Color = (GHOST if standing else GHOST_OFF) if ghost else _shade(at)
+		_post(tool,Vector3(posts[k].x,float(grounds[k]),posts[k].y),at,tint,ghost)
+		if not ghost: drawn_posts.append(posts[k])
 		drawn += 1
 	var spans := n if closed else n-1
 	for k in range(spans):
@@ -301,17 +506,29 @@ func _fence_mesh(data: NativeTerrainData, posts: PackedVector2Array, closed: boo
 		if not up.is_empty() and not (up[k] and up[j]): continue
 		var a := Vector3(posts[k].x,float(grounds[k]),posts[k].y)
 		var b := Vector3(posts[j].x,float(grounds[j]),posts[j].y)
+		var ka := _key(posts[k])
+		var kb := _key(posts[j])
+		var span := hash([ka,kb]) if ka < kb else hash([kb,ka])
 		for r in range(RAIL_HEIGHTS.size()):
-			var tint: Color = GHOST if ghost else _shade(seed+31*r,k+7)
-			_rail(tool,a,b,float(RAIL_HEIGHTS[r]),seed*131+k*7+r,tint)
-	if drawn == 0: return null
-	return tool.commit()
+			var tint: Color = GHOST if ghost else _shade(hash([span,r]))
+			_rail(tool,a,b,float(RAIL_HEIGHTS[r]),hash([span,r,7]),tint)
+			drawn += 1
+	return drawn
 
-## A shade of weathered wood for piece `k` of fence `seed`.
-static func _shade(seed: int, k: int) -> Color:
-	var base: Color = WOOD[absi(hash([seed,k]))%WOOD.size()]
-	var jitter := float(absi(hash([k,seed,3]))%1000)/1000.0-0.5
+## A shade of weathered wood for the piece seeded `seed`.
+static func _shade(seed: int) -> Color:
+	var base: Color = WOOD[absi(hash([seed,1]))%WOOD.size()]
+	var jitter := float(absi(hash([seed,3]))%1000)/1000.0-0.5
 	return base.lightened(jitter*0.12) if jitter > 0.0 else base.darkened(-jitter*0.12)
+
+## A flat faceted ring (inner `inner`, outer `outer` m) round `centre`, lying
+## level, in JOIN_TINT: the preview's mark of a join.
+func _ring(tool: SurfaceTool, centre: Vector3, inner: float, outer: float) -> void:
+	var sides := 12
+	for s in range(sides):
+		var d0 := Vector3(cos(TAU*s/sides),0.0,sin(TAU*s/sides))
+		var d1 := Vector3(cos(TAU*(s+1)/sides),0.0,sin(TAU*(s+1)/sides))
+		_quad(tool,centre+d0*inner,centre+d0*outer,centre+d1*outer,centre+d1*inner,JOIN_TINT,centre+Vector3.DOWN)
 
 ## A six-sided post with its foot at `foot` (plate space), sunk POST_SINK,
 ## leaning a hair, its top cut on a slant.

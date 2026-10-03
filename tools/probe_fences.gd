@@ -15,6 +15,14 @@ extends SceneTree
 ## - a loop ending where it began closes into a pen;
 ## - the fences survive a save round trip (JSON and back), and a corrupt
 ##   fence record is refused;
+## - joins (docs/scenic/fences.md "Joining"): pressed near a fence's end, the
+##   line snaps to that post and continues the fence (one record, the post
+##   not doubled, the rail carrying on), ringed in the preview; let go near
+##   an end, it joins there; from one end round to the other closes a pen;
+##   pressed on a span, a T with a post put in; ended on a side, a T sharing
+##   its post. One Cmd+Z undoes a piece and its join; the trash can cuts
+##   across a join (a shared post flies only when no fence keeps it); the
+##   Hills carry a shared post; the joins survive the save;
 ## - a line drawn across a lake stands on both shores and skips the water: no
 ##   post in it and no span over it.
 ## Visuals (the look of the wood, the faint stakes while drawing) need a GPU
@@ -67,16 +75,56 @@ func height(p: Vector2) -> float:
 func screen(p: Vector2) -> Vector2:
 	return scene.camera.unproject_position(editor.terrain.to_global(Vector3(p.x,height(p),p.y)))
 
-## A drag through screen points, a frame a step.
-func drag(path: Array[Vector2]) -> void:
+## A drag through screen points, a frame a step; `before_release` is called
+## (awaited) with the press still held at the end.
+func drag(path: Array[Vector2], before_release := Callable()) -> void:
 	button(path[0],true)
 	await frames(2)
 	for k in range(1,path.size()):
 		motion(path[k],path[k]-path[k-1])
 		await frames(1)
 	await frames(2)
+	if before_release.is_valid(): await before_release.call()
 	button(path[-1],false)
 	await frames(2)
+
+## Screen points along a plate polyline through `corners`, about `per_m`
+## a metre.
+func poly(corners: Array[Vector2], per_m := 6.0) -> Array[Vector2]:
+	var out: Array[Vector2] = [screen(corners[0])]
+	for k in range(1,corners.size()):
+		var steps := maxi(2,ceili(corners[k-1].distance_to(corners[k])*per_m))
+		for s in range(1,steps+1): out.append(screen(corners[k-1].lerp(corners[k],float(s)/steps)))
+	return out
+
+func fence(id: int) -> Dictionary:
+	for item: Dictionary in data_fences():
+		if int(item.id) == id: return item
+	return {}
+
+func data_fences() -> Array:
+	return editor.data.fences
+
+## The closest gap (m) between two posts of one record, and between two posts
+## the view drew: a doubled post shows as ~0.
+func closest_posts() -> Dictionary:
+	var in_record := INF
+	for item: Dictionary in editor.data.fences:
+		var ps := Fences.posts_of(item)
+		for i in range(ps.size()):
+			for j in range(i+1,ps.size()): in_record = minf(in_record,ps[i].distance_to(ps[j]))
+	var drawn := INF
+	var all: PackedVector2Array = editor.fences.drawn_posts
+	for i in range(all.size()):
+		for j in range(i+1,all.size()): drawn = minf(drawn,all[i].distance_to(all[j]))
+	return {"in_record":in_record,"drawn":drawn}
+
+## Whether `p` is a post of record `item`, and how many times.
+func post_count(item: Dictionary, p: Vector2) -> int:
+	var count := 0
+	for q in Fences.posts_of(item):
+		if q.distance_to(p) <= 0.005: count += 1
+	return count
 
 ## Screen points along the plate line from `a` to `b`, `steps` of them.
 func line(a: Vector2, b: Vector2, steps := 40) -> Array[Vector2]:
@@ -101,7 +149,8 @@ func seat_error() -> float:
 	var worst := 0.0
 	for item: Dictionary in editor.data.fences:
 		for p in Fences.posts_of(item):
-			var drawn: float = editor.fences.foot_at(int(item.id),p)
+			# Any fence's: where fences join, one of them draws the post.
+			var drawn: float = editor.fences.foot_at(0,p)
 			var ground: Variant = editor.data.ground_height(p)
 			if ground == null: continue
 			if is_nan(drawn): return INF
@@ -248,6 +297,165 @@ func run() -> void:
 	for p in pen_posts: round_err = maxf(round_err,absf(p.distance_to(pen_at)-2.4))
 	check("its posts stand round the loop",pen_posts.size() >= 9 and round_err < 0.5,[pen_posts.size(),round_err])
 
+	# --- Joins: snap the start, snap the end, close a pen, T-joins ---
+	var n0 := data.fences.size()
+	await drag(line(Vector2(-8.0,-7.0),Vector2(-4.0,-7.0),30))
+	await settled()
+	check("a fence to join is laid",data.fences.size() == n0+1 and materials.fence_ids.size() == 1,data.fences.size()-n0)
+	var a_id := int(materials.fence_ids[0]) if materials.fence_ids.size() > 0 else -1
+	var a_posts := Fences.posts_of(fence(a_id))
+	var a_end := a_posts[-1]
+	var a_start := a_posts[0]
+	var a_count := a_posts.size()
+	var seen := {}
+	var watch := func() -> void:
+		seen.merge({"start":materials.fence_start_join.duplicate(),"end":materials.fence_end_join.duplicate(),"rings":editor.fences.preview_joins.duplicate()},true)
+	var ringed := func(p: Vector2) -> bool:
+		for q: Vector2 in seen.get("rings",[]):
+			if q.distance_to(p) <= 0.01: return true
+		return false
+
+	# Snap the start: pressed half a metre off its end post, the line carries on.
+	var undo_j: int = data._undo.size()
+	await drag(poly([a_end+Vector2(0.4,-0.3),Vector2(-1.0,-7.5)]),watch)
+	await settled()
+	var joined := Fences.posts_of(fence(a_id))
+	var kept_old := joined.size() > a_count and joined.slice(0,a_count) == a_posts
+	print("SNAP START ",JSON.stringify({"fences":data.fences.size()-n0,"posts_before":a_count,"posts_after":joined.size(),"start_join":seen.start,"rings":seen.rings,"closest":closest_posts()}))
+	check("pressed near a fence's end, the start snaps to its post",not seen.start.is_empty() and bool(seen.start.get("end",false)) and int(seen.start.get("id",-1)) == a_id)
+	check("and the preview rings the post it will join",ringed.call(a_end),seen.rings)
+	check("the line continues that fence: one record, its id",data.fences.size() == n0+1 and materials.fence_ids == [a_id],[data.fences.size()-n0,materials.fence_ids])
+	check("its old posts kept, the new ones after them",kept_old,[a_count,joined.size()])
+	check("the joined post is not doubled",post_count(fence(a_id),a_end) == 1 and editor.fences.posts_drawn_at(a_end) == 1 and closest_posts().in_record > 0.5,closest_posts())
+	check("the rail carries on from it (the post after it is a span away)",joined.size() > a_count and joined[a_count].distance_to(a_end) < Fences.POST_SPACING*1.4,joined[a_count].distance_to(a_end) if joined.size() > a_count else -1)
+	check("one undo step",data._undo.size() == undo_j+1,data._undo.size()-undo_j)
+	editor.undo()
+	await settled()
+	check("Cmd+Z takes the new piece and the join, the fence as it was",Fences.posts_of(fence(a_id)) == a_posts and data.fences.size() == n0+1)
+	editor.redo()
+	await settled()
+	check("redo joins it again",Fences.posts_of(fence(a_id)) == joined)
+
+	# Snap the end: let go half a metre off the fence's (new) end post.
+	var b_end := joined[-1]
+	var undo_k: int = data._undo.size()
+	await drag(poly([Vector2(-1.0,-10.0),b_end+Vector2(-0.35,-0.4)]),watch)
+	await settled()
+	var joined2 := Fences.posts_of(fence(a_id))
+	print("SNAP END ",JSON.stringify({"fences":data.fences.size()-n0,"posts":joined2.size(),"end_join":seen.end,"rings":seen.rings,"closest":closest_posts()}))
+	check("let go near a fence's end, the end snaps to its post",not seen.end.is_empty() and int(seen.end.get("id",-1)) == a_id and ringed.call(b_end),seen.end)
+	check("the two are one fence now",data.fences.size() == n0+1 and materials.fence_ids == [a_id] and joined2.size() > joined.size(),[data.fences.size()-n0,materials.fence_ids])
+	check("the joined post stands once",post_count(fence(a_id),b_end) == 1 and editor.fences.posts_drawn_at(b_end) == 1 and closest_posts().in_record > 0.5,closest_posts())
+	check("it runs on to the new line's far end",joined2[0].distance_to(a_start) < 0.01 and joined2[-1].distance_to(Vector2(-1.0,-10.0)) < 0.05,[joined2[0],joined2[-1]])
+	check("one undo step",data._undo.size() == undo_k+1)
+
+	# Close the pen: from its free end round to its first post.
+	var c_from := joined2[-1]
+	await drag(poly([c_from+Vector2(0.3,-0.3),Vector2(-8.0,-10.2),a_start+Vector2(-0.3,-0.35)]),watch)
+	await settled()
+	var pen2 := fence(a_id)
+	var pen2_posts := Fences.posts_of(pen2)
+	print("CLOSE ",JSON.stringify({"fences":data.fences.size()-n0,"closed":pen2.get("closed"),"posts":pen2_posts.size(),"rings":seen.rings,"closest":closest_posts()}))
+	check("ending on the fence's other end closes it into one pen",data.fences.size() == n0+1 and bool(pen2.get("closed",false)),[data.fences.size()-n0,pen2.get("closed")])
+	check("the preview rang both joins",ringed.call(c_from) and ringed.call(a_start),seen.rings)
+	check("no post doubled round the pen",post_count(pen2,a_start) == 1 and post_count(pen2,c_from) == 1 and editor.fences.posts_drawn_at(a_start) == 1 and closest_posts().in_record > 0.5 and closest_posts().drawn > 0.3,closest_posts())
+
+	# A T on a span: a post is put in where it joins.
+	var mid := Vector2.INF
+	var span_k := -1
+	for k in range(pen2_posts.size()):
+		var p0 := pen2_posts[k]
+		var p1 := pen2_posts[(k+1)%pen2_posts.size()]
+		var m := (p0+p1)*0.5
+		if p0.y < -9.8 and p1.y < -9.8 and m.x > -6.0 and m.x < -3.0 and p0.distance_to(p1) > 1.0:
+			mid = m
+			span_k = k
+			break
+	check("the pen has a bottom span to join",span_k >= 0)
+	var undo_t: int = data._undo.size()
+	await drag(poly([mid+Vector2(0.0,-0.3),mid+Vector2(0.2,-2.2)]),watch)
+	await settled()
+	var t_id := int(materials.fence_ids[0]) if materials.fence_ids.size() == 1 else -1
+	var t_posts := Fences.posts_of(fence(t_id))
+	var junction: Vector2 = t_posts[0] if t_posts.size() > 0 else Vector2.INF
+	var pen3_posts := Fences.posts_of(fence(a_id))
+	print("T SPAN ",JSON.stringify({"t":t_id,"start_join":seen.start,"junction":junction,"pen_posts":[pen2_posts.size(),pen3_posts.size()],"closest":closest_posts()}))
+	check("pressed on a span's middle, the start snaps onto the span",not seen.start.is_empty() and int(seen.start.get("index",0)) == -1 and ringed.call(Vector2(seen.start.get("point",Vector2.INF))),seen.start)
+	check("a new fence branches off: a T",t_id != a_id and t_id > 0 and data.fences.size() == n0+2,[t_id,data.fences.size()-n0])
+	check("a post is put into the span, shared by both",pen3_posts.size() == pen2_posts.size()+1 and post_count(fence(a_id),junction) == 1 and junction.distance_to(mid) < 0.05,[pen3_posts.size(),junction])
+	check("drawn once",editor.fences.posts_drawn_at(junction) == 1 and closest_posts().drawn > 0.3,closest_posts())
+	check("one undo step",data._undo.size() == undo_t+1)
+	editor.undo()
+	await settled()
+	check("Cmd+Z takes the T and the post it put in",data.fences.size() == n0+1 and Fences.posts_of(fence(a_id)) == pen2_posts)
+	editor.redo()
+	await settled()
+	check("redo puts both back",data.fences.size() == n0+2 and post_count(fence(a_id),junction) == 1 and Fences.posts_of(fence(t_id)).size() == t_posts.size())
+
+	# A T ending on a post: it shares the post (or one put in), drawn once.
+	await drag(poly([Vector2(-10.6,-8.6),Vector2(-8.3,-8.6)]),watch)
+	await settled()
+	var u_id := int(materials.fence_ids[0]) if materials.fence_ids.size() == 1 else -1
+	var u_end: Vector2 = Fences.posts_of(fence(u_id))[-1] if u_id > 0 else Vector2.INF
+	print("T END ",JSON.stringify({"u":u_id,"end_join":seen.end,"u_end":u_end}))
+	check("let go on the pen's side, a T ends on it",u_id > 0 and u_id != a_id and not seen.end.is_empty() and int(seen.end.get("id",-1)) == a_id)
+	check("its last post is the pen's post, once, drawn once",post_count(fence(a_id),u_end) == 1 and editor.fences.posts_drawn_at(u_end) == 1 and closest_posts().drawn > 0.3,closest_posts())
+	check("every post at every join sits on its ground",seat_error() < 0.005,seat_error())
+
+	# The trash can across a join: both fences cut, nothing doubled; undo mends.
+	materials.put_back()
+	materials.select_tool("trash")
+	await frames(10)
+	var undo_c: int = data._undo.size()
+	var before_cut: Array = data.fences.duplicate(true)
+	await drag(line(junction+Vector2(-0.3,0.0),junction+Vector2(0.3,0.0),6))
+	await settled()
+	await frames(40)
+	var t_left := 0
+	for item: Dictionary in data.fences:
+		if int(item.id) == t_id: t_left = Fences.posts_of(item).size()
+	var junction_left := 0
+	for item: Dictionary in data.fences: junction_left += post_count(item,junction)
+	print("TRASH JOIN ",JSON.stringify({"fences":data.fences.size()-n0,"pen_closed":fence(a_id).get("closed"),"t_posts":[t_posts.size(),t_left],"junction_left":junction_left,"closest":closest_posts()}))
+	check("the trash can cuts across the join: the pen opens, the T loses its foot",fence(a_id).get("closed",true) == false and t_left < t_posts.size() and junction_left == 0)
+	check("one undo step, nothing doubled, every post seated",data._undo.size() == undo_c+1 and closest_posts().drawn > 0.3 and seat_error() < 0.005,[data._undo.size()-undo_c,closest_posts(),seat_error()])
+	editor.undo()
+	await settled()
+	check("undo mends the pen and the T, joined again",str(data.fences) == str(before_cut) and editor.fences.posts_drawn_at(junction) == 1)
+	# A cut that takes the pen's spans either side of the join but not the
+	# T's: the shared post still stands (in the T), and does not fly.
+	var ring_posts := Fences.posts_of(fence(a_id))
+	var at := -1
+	for k in range(ring_posts.size()):
+		if ring_posts[k].distance_to(junction) < 0.005: at = k
+	data.begin_stroke()
+	var left_cut: Dictionary = Fences.cut(data,junction.lerp(ring_posts[at-1],0.5),0.12)
+	var right_cut: Dictionary = Fences.cut(data,junction.lerp(ring_posts[(at+1)%ring_posts.size()],0.5),0.12)
+	data.end_stroke()
+	editor.fences.rebuild(data)
+	var flew := false
+	for p in left_cut.taken+right_cut.taken: flew = flew or p.distance_to(junction) < 0.01
+	var in_pen := 0
+	for item: Dictionary in data.fences:
+		if int(item.id) != t_id: in_pen += post_count(item,junction)
+	check("cut away from the pen, the shared post stays with the T and does not fly",not flew and in_pen == 0 and post_count(fence(t_id),junction) == 1 and editor.fences.posts_drawn_at(junction) == 1,[flew,in_pen])
+	editor.undo()
+	await settled()
+	check("and undo mends that too",str(data.fences) == str(before_cut))
+
+	# The land reshaped under a join: both fences' posts ride it, still one.
+	materials.select_tool("hills")
+	await frames(10)
+	var ground_j := float(data.ground_height(junction))
+	await drag(line(junction+Vector2(-1.5,0.4),junction+Vector2(1.5,0.4),20))
+	await settled()
+	print("RESEAT JOIN ",JSON.stringify({"rose":snappedf(float(data.ground_height(junction))-ground_j,0.01),"seat_error":seat_error()}))
+	check("the Hills under a join: the shared post rides the ground, every post seated",float(data.ground_height(junction))-ground_j > 0.02 and seat_error() < 0.005 and editor.fences.posts_drawn_at(junction) == 1,[float(data.ground_height(junction))-ground_j,seat_error()])
+	editor.undo()
+	await settled()
+	materials.take("fence")
+	await frames(5)
+
 	# --- Save round trip ---
 	var saved: Array = data.fences.duplicate(true)
 	var text := JSON.stringify(data.to_document())
@@ -262,6 +470,8 @@ func run() -> void:
 			same = same and int(data.fences[k].id) == int(saved[k].id) and bool(data.fences[k].closed) == bool(saved[k].closed) and Fences.posts_of(data.fences[k]) == Fences.posts_of(saved[k])
 	check("the fences come back from a save, as they were",same,[loaded,data.fences.size()])
 	check("and are drawn again on load",fence_nodes().size() == saved.size() and seat_error() < 0.005)
+	check("the joins come back: the pen closed, the T's foot on its post, drawn once",bool(fence(a_id).get("closed",false)) and post_count(fence(a_id),junction) == 1 and Fences.posts_of(fence(t_id))[0].distance_to(junction) < 0.005 and editor.fences.posts_drawn_at(junction) == 1 and editor.fences.posts_drawn_at(u_end) == 1 and closest_posts().drawn > 0.3,closest_posts())
+	check("and a press there still snaps to the very post",Vector2(Fences.snap(data,junction+Vector2(0.2,-0.2),1.0).get("point",Vector2.INF)).distance_to(junction) < 0.005)
 	var corrupt: Dictionary = JSON.parse_string(text)
 	corrupt.fences[0].posts.pop_back()
 	check("a corrupt fence record is refused",not data.load_document(corrupt) and data.fences.size() == saved.size())

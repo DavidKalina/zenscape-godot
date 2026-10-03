@@ -3717,30 +3717,53 @@ func fence_dry() -> Callable:
 		return not (emergence._blend != null and emergence._wet(p))
 
 ## Lays a fence along a drawn `path` (plate points): the runs the land lets
-## stand (Fences `plan`), all in one undo step. Returns the ids laid, empty
-## when the land took none (all water or rock, or a tap).
+## stand (Fences `plan`), all in one undo step. A path starting or ending on
+## a fence (within Fences.JOIN_EPS of its post or span: the hand snaps its ends
+## there, `fence_join`) joins it (Fences `lay`): continuing an open fence from
+## its end post, closing it into a pen, or a T sharing its post. Returns the
+## ids of the records the line is part of, empty when the land took none (all
+## water or rock, or a tap).
 func lay_fence(path: PackedVector2Array) -> Array:
 	if forming or not active or _painting or path.size() < 2: return []
-	var planned: Array = Fences.plan(data,path,fence_stands(),fence_dry())
+	var start := Fences.snap(data,path[0],Fences.JOIN_EPS)
+	var end := Fences.snap(data,path[-1],Fences.JOIN_EPS)
+	var open := fence_opens(path,end)
+	var joined := PackedVector2Array()
+	for join: Dictionary in [start,end]:
+		if not join.is_empty(): joined.append(join.point)
+	# A post already standing, or one put into a standing fence's span, stands.
+	var stands := fence_stands()
+	var on_join := func(p: Vector2) -> bool:
+		for q in joined:
+			if q.distance_to(p) <= Fences.JOIN_EPS: return true
+		return stands.call(p)
+	var planned: Array = Fences.plan(data,path,on_join,fence_dry(),open)
 	if planned.is_empty() or data.fences.size()+planned.size() > Fences.MAX_FENCES: return []
 	_land_mountain()
 	data.begin_stroke()
-	var ids: Array = []
-	for run: Dictionary in planned:
-		ids.append(data.next_id)
-		data.fences.append(Fences.record(data.next_id,run))
-		data.next_id += 1
+	var ids: Array = Fences.lay(data,planned,start,end)
 	data.end_stroke()
 	fences.rebuild(data)
 	_set_status("Garden changed · Save to keep your work.")
 	return ids
 
+## Where a fence line pressed or let go at plate `q` joins a fence (Fences
+## `snap`, within `reach` m), {} for none.
+func fence_join(q: Vector2, reach := Fences.SNAP_REACH) -> Dictionary:
+	return Fences.snap(data,q,reach)
+
+## Whether a line `path` ending on fence join `end` is kept open: it ends on
+## a fence somewhere other than its own start, so it is not a pen of its own.
+static func fence_opens(path: PackedVector2Array, end: Dictionary) -> bool:
+	return not end.is_empty() and path.size() >= 2 and Vector2(end.point).distance_to(path[0]) > Fences.JOIN_EPS
+
 ## The faint stakes of a fence being drawn along `path` (empty clears them);
-## `stands` is `fence_stands()`, taken once at the press.
-func fence_preview(path: PackedVector2Array, stands := Callable()) -> void:
+## `stands` is `fence_stands()`, taken once at the press; `joins` the plate
+## points it will join (ringed); `open` as `fence_opens`.
+func fence_preview(path: PackedVector2Array, stands := Callable(), joins := PackedVector2Array(), open := false) -> void:
 	if fences == null: return
 	if path.size() >= 2 and not stands.is_valid(): stands = fence_stands()
-	fences.preview(data,path,stands)
+	fences.preview(data,path,stands,joins,open)
 
 ## A flicked tree's veil starts FLING_FROM m out from its foot, with a knot
 ## each FLING_STEP m; its spores leave the crown at FLING_SPEED times the
