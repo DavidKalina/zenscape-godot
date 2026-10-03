@@ -172,7 +172,7 @@ Along the bottom edge sits a field case, a long, low case of smoked glass
 with one specimen in each compartment. The tree seeds are **acorn** (oak),
 **pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
 and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
-**cosmos** and **sunflower**, and **reed**. Then come **water** and a **river
+**cosmos** and **sunflower**, then **wheat** and **reed**. Then come **water** and a **river
 stone**. The case stays faint
 until the pointer comes near. Hover a specimen to read its name. Faint
 outlines are kinds you haven't found yet, and pressing one gives nothing.
@@ -183,6 +183,7 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Tree seeds: tap | plants one tree of that kind where you press, if the ground takes a tree there and there is room |
 | Tree seeds: drag | paints a wood of that kind under the brush; go over it again, or linger, to fill it in. Shift-drag thins the trees under the brush. Not on water, rock, snow or too near another tree |
 | Flowers: press and drag over the land | paints flowers under the brush; go over them again to thicken the drift. Shift thins them |
+| Wheat: press and drag over the land | paints a wheat patch in tidy rows under the brush; go over it again to fill it in. It sways with the wind as one field, and with the clock running it is green in spring, gold by late summer and stubble in winter. Shift thins it; Cmd+Z undoes a stroke |
 | Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
 | Stone: tap | sets a stone down, bigger the longer you press |

@@ -20,7 +20,7 @@ const HALF := 14.0
 ## Coarse 1 m grid for tree density sums.
 const COARSE := 28
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus","birch","willow","juniper"]
-const SHRUBS := ["shrub","fern","reeds","bank_grass","grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","mushroom"]
+const SHRUBS := ["shrub","fern","reeds","bank_grass","grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","wheat","mushroom"]
 ## Flowering shrubs (butterflies visit them) and dead standing wood (a woodpecker's drum).
 const FLOWERS := ["daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine"]
 const SNAG := "snag"

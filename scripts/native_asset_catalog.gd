@@ -23,6 +23,7 @@ const PARTS := {
 	"sunflower":["meadow-flower-sunflower"],
 	"poppy":["meadow-flower-poppy"],
 	"lupine":["meadow-flower-lupine"],
+	"wheat":["meadow-flower-wheat"],
 	"grass_tuft":["mesh-10"],
 	"log":["logs"],
 	"stump":["stumps"],

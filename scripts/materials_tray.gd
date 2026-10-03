@@ -36,6 +36,7 @@ const SPECIMENS := [
 	{"id":"poppy","group":0},
 	{"id":"cosmos","group":0},
 	{"id":"sunflower","group":0},
+	{"id":"wheat","group":0},
 	{"id":"reed","group":0},
 	{"id":"water","group":1},
 	{"id":"stone","group":1},

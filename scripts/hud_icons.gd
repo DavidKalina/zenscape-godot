@@ -184,6 +184,23 @@ static func _build() -> void:
 		var c := Vector2(12.0,9.0)
 		sunflower.append(_poly([c+way*3.6+side*1.0,c+way*8.0,c+way*3.6-side*1.0]))
 	_add("sunflower","Sunflower","Stand","#e2a62e",sunflower,[_circle(12.0,9.0,3.0),_circle(12.0,9.0,1.5)],59,1.0,1.4)
+	# Wheat (seed 60): three straws, each ear two rows of kernels staggered
+	# up a pointed spindle, awns flicking from the tips.
+	var wheat := []
+	for s: Array in [[12.0,3.4],[7.0,5.6],[17.0,5.6]]:
+		var base := Vector2(12.0,22.6)
+		var top := Vector2(float(s[0]),float(s[1]))
+		var way := (top-base).normalized()
+		var side := way.orthogonal()
+		var neck := top-way*8.0
+		wheat.append(_poly([base+side*0.5,top-way*1.0+side*0.4,top-way*1.0-side*0.4,base-side*0.5]))
+		for k in range(4):
+			for sign: float in [-1.0,1.0]:
+				var c := neck+way*(1.3+1.6*k+(0.5 if sign > 0.0 else 0.0))+side*sign*0.85
+				wheat.append(_poly([c-way*1.25,c+side*sign*1.05,c+way*1.2,c-side*sign*0.9]))
+		wheat.append(_poly([top-way*1.7+side*0.75,top,top-way*1.7-side*0.75]))
+		wheat.append(_poly([top-side*0.22,top+way*2.4+side*0.5,top+side*0.22]))
+	_add("wheat","Wheat","Field","#d9b24e",wheat,[],60,1.0,0.8)
 	_add("reed","Reed","Cattail","#8a5a34",["M8.8 4.2 Q8.8 2.6 12 2.6 Q15.2 2.6 15.2 4.2 V13.4 Q15.2 15.2 12 15.2 Q8.8 15.2 8.8 13.4Z","M11.35 3 V0.8 H12.65 V3Z","M10.9 14.6 H13.1 V22.6 H10.9Z","M12.6 22.6 Q16.6 17 18 7.2 Q20.2 10 19.4 13.6 Q18 19.6 14.8 22.6Z"],[],5)
 	_add("water","Water","Scoop","#4f8fc0",["M12 3 Q19 12 19 16 A7 7 0 0 1 5 16 Q5 12 12 3Z"],["M9 15 Q9 18 11.5 19"],6)
 	_add("stone","River stone","Place","#8f8a86",["M2.5 14.5 C2.5 9.5 7.5 7.5 12.5 7.5 C18 7.5 21.5 10 21.5 14 C21.5 18 17 20 12 20 C6.5 20 2.5 18.5 2.5 14.5Z"],[],7)
