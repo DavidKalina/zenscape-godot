@@ -137,7 +137,10 @@ func _on_stroke_started(center: Vector3, radius: float, mode: String) -> void:
 		if not _land and not _growth:
 			return
 		feel = {"rumble": float(RUMBLE_MODE.get(mode, 0.0)), "swell": SWELL_LAND if _land else SWELL_GROWTH, "reveal": _land, "gust": GUST_INTERVAL if _land else 0.0, "wave": true}
-	_rumble = feel.rumble
+	# The clay's strokes shake by how far the land moves (scripts/clay_tremor.gd),
+	# not by the brush mode the editor was left in.
+	var clay: Node = _scene.get("land_clay") as Node
+	_rumble = 0.0 if clay != null and bool(clay.stroking) else feel.rumble
 	_swell_goal = feel.swell
 	_reveal = feel.reveal
 	_gust_interval = feel.gust
@@ -155,7 +158,7 @@ func _on_stroke_started(center: Vector3, radius: float, mode: String) -> void:
 		_reveal_center = _brush
 		_reveal_radius = maxf(REVEAL_MIN_RADIUS, radius * REVEAL_MARGIN)
 	if mode == "mountain" and not _scene._paused:
-		_tremor.add(MOUNTAIN_THUMP)
+		if _rumble > 0.0: _tremor.add(MOUNTAIN_THUMP)
 		_swell = maxf(_swell, SWELL_LAND * 0.6)
 
 func _on_stroke_moved(center: Vector3, radius: float, _mode_name: String, amount: float) -> void:

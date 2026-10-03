@@ -11,7 +11,7 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 ## A stand-in for LandClay: the fields ClaySound reads, and its signal.
 class FakeClay extends Node:
 	signal sounded(cue: StringName, at: Vector3, strength: float)
-	enum State { IDLE, PENDING, DRAG, HOLD, RUN }
+	enum State { IDLE, PENDING, DRAG, HOLD, RUN, PAINT }
 	var state := State.IDLE
 	var tool_id := "hand"
 	var tool: Object

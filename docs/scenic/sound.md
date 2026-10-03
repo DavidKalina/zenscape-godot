@@ -62,7 +62,7 @@ Any two arrival sounds are at least `SHOT_GAP` (1.5 s) apart. For `SHOT_QUIET` (
 
 ## Tool sound
 
-The shaping tools (Modeller, Paddle, Chisel, Hammer, Wire) and the linen HUD have their own sound. It lives in `scripts/clay_sound.gd` (`ClaySound`), which `studies/fidelity_life.gd` builds next to GenesisAudio when the clay is on (`--modeless`). These sounds are recorded foley, not synthesised: CC0 recordings from Freesound and Kenney, cut by `tools/foley/make_foley.py` into `assets/audio/foley/`. Each file is credited in `assets/audio/foley/SOURCES.tsv`.
+The shaping tools (Modeller, Paddle, Chisel, Hammer, Wire) and the linen HUD have their own sound. It lives in `scripts/clay_sound.gd` (`ClaySound`), which `studies/fidelity_life.gd` builds next to GenesisAudio when the clay is on (`--modeless`). These sounds are recorded foley, not synthesised: CC0 recordings from Freesound and Kenney, cut by `tools/foley/make_foley.py` into `assets/audio/foley/`. Each file is credited in `assets/audio/foley/SOURCES.tsv`. The one exception is the land voice (below), which is synthesised.
 
 **Cues** are one-shots, asked for by name:
 - The tools call `LandClay.sound(cue, at, strength)`, which emits `sounded`.
@@ -84,6 +84,8 @@ Each cue has up to eight takes (`<clip>-<n>.wav`). The same take never plays twi
 | Rock painted on a raised peak | `rock_settle` | `pebbles` |
 | Trees slide off (`shake_trees` moved any) | `trees` | `trees` |
 | Wire's cut sets off | `wire_start` | `wire-start` |
+| Land lurches as a hold lifts it (see Land voice) | `lurch` | `land-lurch` |
+| The Wire's cut and slice grind (see Land voice) | `grind` | `land-grind` |
 | Roll or tray reached for; slot hovered | `ui_reach`; `ui_hover` | `ui-cloth`; `ui-tick` |
 | Tool picked; size pip changed | `ui_pick`; `ui_size` | `ui-pick`; `ui-tick` |
 | Material taken; put back | `ui_take`; `ui_put` | `ui-take`; `ui-put` |
@@ -93,8 +95,16 @@ Each cue has up to eight takes (`<clip>-<n>.wav`). The same take never plays twi
 
 **Voices** are loops whose gain eases toward a target (in at `ATTACK` 9/s, out at `RELEASE` 3.5/s):
 - **Drags:** the Modeller's groove and rub crossfade by `LandClay.rub`. The palm and the Paddle use the sweep, and the Chisel uses the scrape. All of these follow the pointer's speed (`SPEED`, 40–900 px/s).
-- **Holds:** the pinch, swell and slice stretch. The Chisel's mesa scrapes. These follow how fast the lift moves (`LIFT_RATE`). A raise also brings in the Genesis rumble, deeper when it is slow.
-- **Wire:** the cut loop follows how fast its head runs.
+- **Holds:** the pinch, swell and slice stretch. The Chisel's mesa scrapes. These follow how fast the lift moves (`LIFT_RATE`). A raise also brings in the land bed, deeper when it is slow.
+- **Wire:** the cut loop and the grind bed follow how fast its head runs. The Wire never brings in the deep land bed.
+
+**Land voice.** Building mountains and ravines answers with a rumble in lurches, after the Electron ZenScape's formation rumble (`audio.js` `rumble`). It plays in step with the camera's shudder (`scripts/clay_tremor.gd`), but each is driven from the clay on its own; neither calls the other.
+- **Bed:** `land-bed-loop` is the RUMBLE voice (peak 0.38). It has a body under 180 Hz, a 430 Hz grind band, a faint drifting 41 Hz sub and soil grains, so it carries on laptop speakers. The old `genesis-rumble` put about 95% of its energy under 150 Hz and was nearly silent there; GenesisAudio and the world rumble still use it.
+- **Lurches:** while a hold's lift is above zero and rising (any tool but the Hammer and the Wire), `_tremble` fires `lurch` one-shots. They start at 0.4 m/s of rise and are at their most at 6 m/s (`LURCH_RISE`), at 1.4 to 4.5 a second (`LURCH_PACE`), each interval randomised. A faster, taller pull lurches louder and a little lower. At most four sound at once (`LURCH_STACK`). A still hold, a creep or a sink never lurches. When idle, the beat waits just short of firing (`FIRST_LURCH`), so land that starts moving gives almost at once.
+- **Ravine:** the Wire's running cut and its slice drive the GRIND voice (`land-grind-loop`, peak 0.24) and `grind` one-shots at 2 to 6 a second (`GRIND_PACE`), at most three at once (`GRIND_STACK`). There is no sub: it is grit dragged through clay, mostly 400 Hz to 3 kHz.
+- **Cues:** `lurch` and `grind` use the takes machinery above, with a wider pitch spread (±10% and ±8%, the cue's `jitter` key). The land player pool is eight (`LAND_POOL`).
+- **Takes:** six of each. The lurches (1.3 to 2.4 s) are a sub falling from 58–72 Hz to 31 Hz, noise through a lowpass falling from 460–640 Hz to 70 Hz, crackle early and a thinning trickle of stones. Takes 4 and 6 stack a second, smaller lurch. The grinds (0.45 to 0.8 s) are a lowpass falling from 1100 to 260 Hz over a 540–880 Hz band with dense high grit.
+- **Not yet tuned by ear:** the lurch level against the bed, and whether 4.5 a second at full speed is too busy.
 
 The Feather has no cue of its own, because the wind tool's own wind bed (`scripts/wind_gust.gd`) already answers it.
 
@@ -117,7 +127,7 @@ GenesisAudio leaves the clay's strokes alone (`LandClay.stroking`). Before this 
 
 The god hand's finger snap (`finger-snap-1..3`, `scripts/snap_sound.gd`, played on the Genesis bus when a click in the sky snaps day and night) is synthesised by `tools/generate_nature_audio.py --snap`; `docs/scenic/modeless.md` "Void slice" describes it.
 
-Every new sound is synthesised by `tools/generate_nature_audio.py` (`bake_genesis`) from noise, RBJ biquads, sines and Minnaert bubbles, so the project's own licence covers them. Deer steps reuse the baked footsteps and stream fronts reuse `stream-bed`; the Nature recordings are credited in `assets/audio/ATTRIBUTION.md`.
+Every new sound is synthesised by `tools/generate_nature_audio.py` (`bake_genesis`) from noise, RBJ biquads, sines and Minnaert bubbles, so the project's own licence covers them. The clay's land voice (`land-bed-loop`, `land-grind-loop`, `land-lurch-1..6`, `land-grind-1..6` in `assets/audio/foley/`) is synthesised by `tools/generate_nature_audio.py --land`, with the standard library only, and comes out the same on every run. Deer steps reuse the baked footsteps and stream fronts reuse `stream-bed`; the Nature recordings are credited in `assets/audio/ATTRIBUTION.md`.
 
 The files are mono 16-bit WAV at 12–24 kHz: 12 kHz for the rumble and thump, 16 kHz for the fill and the plain air. Loops are baked 0.6 s long and crossfaded into their heads, so they loop without a seam. Godot imports them compressed as QOA (`compress/mode=2`), like the existing beds. They are not Ogg because there is no Vorbis encoder here: ffmpeg's built-in one is experimental and stereo-only. The new files total about 1.9 MB on disk.
 

@@ -223,6 +223,11 @@ func cut_share() -> float:
 	if not _running: return 1.0
 	return _ease(clampf(_clock/_seconds,0.0,1.0))
 
+## The running cut's whole length along its path, metres (scripts/clay_tremor.gd
+## reads its head's travel as `cut_share` of it).
+func cut_length() -> float:
+	return _length
+
 func busy() -> bool: return _running
 func drag_running() -> bool: return _running
 

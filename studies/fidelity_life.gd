@@ -30,6 +30,8 @@ var land_life: Node3D
 var genesis_audio: Node
 ## The shaping tools' and the HUD's sound (scripts/clay_sound.gd), with the clay.
 var clay_sound: Node
+## The land's shudder under the shaping tools (scripts/clay_tremor.gd).
+var clay_tremor: Node
 
 func _ready() -> void:
 	super._ready()
@@ -124,6 +126,9 @@ func _ready() -> void:
 		clay_sound = preload("res://scripts/clay_sound.gd").new()
 		add_child(clay_sound)
 		clay_sound.setup(land_clay)
+		clay_tremor = preload("res://scripts/clay_tremor.gd").new()
+		add_child(clay_tremor)
+		clay_tremor.setup(land_clay,_tremor)
 	_choose_inhabited_shore()
 	_seed_loose_stones()
 	_focus_bigfoot()
@@ -369,7 +374,7 @@ func capture_cave_state() -> Dictionary:
 
 ## Scenery mode (diorama.gd) keeps Bigfoot's cave and lair out of the world.
 func _cave_hidden() -> bool:
-	return bool(get("scenery_mode"))
+	return get("scenery_mode") == true
 
 func restore_cave_state(state: Dictionary) -> void:
 	if not preload("res://scripts/cave_genome.gd").valid_state(state): return

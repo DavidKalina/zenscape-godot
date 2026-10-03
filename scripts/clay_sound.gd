@@ -10,7 +10,14 @@ extends Node
 ## - **Voices**: loops whose gain follows the press while it lasts: the thumb's
 ##   groove and rub, the paddle's sweep and the chisel's scrape by the
 ##   pointer's speed; a hold's stretch and low rumble by how fast the lift
-##   moves; the Wire's cut by how fast its head runs.
+##   moves; the Wire's cut and grind by how fast its head runs.
+## - **Lurches**: the land voice's own cues, fired here rather than by a tool
+##   (`_tremble`). Under a rising pull the rumble is a bed, and over it the
+##   land gives in lurches (`lurch`: a thud dropping into a darkening rumble,
+##   crumbling after), more often and louder the faster it rises, and none
+##   while the hold is still. The Wire's cut grinds instead (`grind`: lighter,
+##   grittier, no sub). After audio.js's formation rumble in the Electron
+##   ZenScape, which fired its lurches with the camera's kicks.
 ##
 ## Each cue has a few recorded takes (assets/audio/foley/<clip>-<n>.wav, CC0,
 ## credited in assets/audio/ATTRIBUTION.md, cut by tools/foley/make_foley.py).
@@ -49,6 +56,8 @@ const CUES := {
 	&"sow": {"clip":"sow","gain":0.2,"gap":0.12},
 	&"stone_drop": {"clip":"stone-drop","gain":0.3,"gap":0.06},
 	&"plant": {"clip":"plant","gain":0.18,"gap":0.08},
+	&"lurch": {"clip":"land-lurch","gain":0.42,"gap":0.22,"jitter":0.1},
+	&"grind": {"clip":"land-grind","gain":0.3,"gap":0.12,"jitter":0.08},
 	&"ui_reach": {"clip":"ui-cloth","gain":0.07,"gap":0.6,"ui":true},
 	&"ui_hover": {"clip":"ui-tick","gain":0.05,"gap":0.05,"ui":true},
 	&"ui_pick": {"clip":"ui-pick","gain":0.2,"gap":0.08,"ui":true},
@@ -60,32 +69,47 @@ const CUES := {
 	&"ui_page": {"clip":"ui-page","gain":0.16,"gap":0.15,"ui":true},
 	&"ui_shutter": {"clip":"ui-shutter","gain":0.2,"gap":0.3,"ui":true},
 }
-## Every play: pitch within ±PITCH_JITTER and level within ±GAIN_JITTER dB. A
+## Every play: pitch within ±PITCH_JITTER (or the cue's own `jitter`) and level
+## within ±GAIN_JITTER dB. A
 ## full-strength moment plays STRONG_PITCH lower than a faint one, and a faint
 ## one at FAINT_GAIN of the peak.
 const PITCH_JITTER := 0.05
 const GAIN_JITTER := 1.5
 const STRONG_PITCH := 0.1
 const FAINT_GAIN := 0.5
-const LAND_POOL := 6
+const LAND_POOL := 8
 const UI_POOL := 3
 
-enum {GROOVE, RUB, SWEEP, SCRAPE, STRETCH, RUMBLE, CUT, VOICES}
+enum {GROOVE, RUB, SWEEP, SCRAPE, STRETCH, RUMBLE, CUT, GRIND, VOICES}
 ## Each voice's loop and peak gain.
-const VOICE_CLIPS := ["groove-loop","rub-loop","sweep-loop","scrape-loop","stretch-loop","","cut-loop"]
-const VOICE_GAIN := [0.22,0.16,0.2,0.2,0.2,0.32,0.22]
+const VOICE_CLIPS := ["groove-loop","rub-loop","sweep-loop","scrape-loop","stretch-loop","","cut-loop","land-grind-loop"]
+const VOICE_GAIN := [0.22,0.16,0.2,0.2,0.2,0.38,0.22,0.24]
 ## Voices other things drive by name (`voice`), each a loop and its peak gain:
 ## the water ball's swirl while it is held.
 ## The watering can's stream borrows the swirl's loop until it has its own.
 const OTHER_VOICES := {&"water_swirl": {"clip":"water-swirl-loop","gain":0.2},&"water_pour": {"clip":"water-swirl-loop","gain":0.16}}
-## The held rumble is the Genesis land voice (assets/audio/genesis-rumble.wav).
-const RUMBLE_CLIP := "res://assets/audio/genesis-rumble.wav"
+## The held rumble's bed (tools/generate_nature_audio.py --land): audio.js's
+## strain, a body under 180 Hz with a 430 Hz grind on it that small speakers
+## can play. Genesis's own rumble (genesis-rumble.wav) is nearly all under
+## 150 Hz and steady, so on a laptop it was close to silent.
+const RUMBLE_CLIP := DIR+"land-bed-loop.wav"
 ## A drag's voices come in from SPEED.x px/s and are full at SPEED.y; a hold's
 ## from 0 to LIFT_RATE m/s of lift; the Wire's cut at CUT_RATE of its path a
 ## second.
 const SPEED := Vector2(40.0,900.0)
 const LIFT_RATE := 6.0
 const CUT_RATE := 0.8
+## Lurches come in at LURCH_RISE.x m/s of rise and are at their most at
+## LURCH_RISE.y, from LURCH_PACE.x to LURCH_PACE.y a second; at most
+## LURCH_STACK sound at once. A pull's first comes FIRST_LURCH of a beat after
+## the land starts moving. The Wire's grinds run GRIND_PACE a second by its
+## cut's pace (or a slice's), at most GRIND_STACK at once.
+const LURCH_RISE := Vector2(0.4,6.0)
+const LURCH_PACE := Vector2(1.4,4.5)
+const LURCH_STACK := 4
+const FIRST_LURCH := 0.25
+const GRIND_PACE := Vector2(2.0,6.0)
+const GRIND_STACK := 3
 ## Gains ease in at ATTACK and out at RELEASE (1/s), as GenesisAudio's do.
 const ATTACK := 9.0
 const RELEASE := 3.5
@@ -110,6 +134,8 @@ var _lift := 0.0
 ## frame falls back to 0.
 var _other := {}
 var _cut := 0.0
+## Each trembling cue's beat, 0..1: it fires at 1 (`_tremble`).
+var _beat := {&"lurch": 1.0-FIRST_LURCH,&"grind": 1.0-FIRST_LURCH}
 
 func setup(land_clay: Node) -> void:
 	name = "ClaySound"
@@ -201,7 +227,8 @@ func play(cue_name: StringName, at: Vector3, strength := 1.0) -> bool:
 	strength = clampf(strength,0.0,1.0)
 	player.stream = takes[pick]
 	player.volume_db = linear_to_db(float(spec.gain)*lerpf(FAINT_GAIN,1.0,strength))+_rng.randf_range(-GAIN_JITTER,GAIN_JITTER)
-	player.pitch_scale = (1.0+STRONG_PITCH*(0.5-strength))*(1.0+_rng.randf_range(-PITCH_JITTER,PITCH_JITTER))
+	var jitter := float(spec.get("jitter",PITCH_JITTER))
+	player.pitch_scale = (1.0+STRONG_PITCH*(0.5-strength))*(1.0+_rng.randf_range(-jitter,jitter))
 	if not ui: (player as AudioStreamPlayer3D).global_position = at
 	player.play()
 	tally[0] += 1
@@ -236,6 +263,11 @@ func _process(delta: float) -> void:
 	var id: String = clay.tool_id
 	var tool: Object = clay.tool
 	var at := Vector3.ZERO
+	# How hard the land is giving this frame, 0..1: a rising pull's lurches,
+	# the Wire's grinding, and how big a lurch is (`heft`).
+	var lurch := 0.0
+	var heft := 0.0
+	var grit := 0.0
 	if state == clay.State.DRAG:
 		var pace := smoothstep(SPEED.x,SPEED.y,float(clay.speed))
 		match id:
@@ -264,23 +296,37 @@ func _process(delta: float) -> void:
 		if clay.last_plate != null: at = clay.ground_at(clay.last_plate)
 	elif state == clay.State.HOLD and tool != null:
 		var lift := float(tool.lift)
-		var rate := smoothstep(0.0,LIFT_RATE,absf(lift-_lift)/delta)
+		var moved := (lift-_lift)/delta
+		var rate := smoothstep(0.0,LIFT_RATE,absf(moved))
 		_lift = lift
 		if id == "chisel": _target[SCRAPE] = rate*0.7
 		elif id != "hammer": _target[STRETCH] = rate
-		# The land groans as it rises, not as it sinks.
-		if lift > 0.0 and id != "hammer": _target[RUMBLE] = rate*smoothstep(0.0,3.0,lift)
+		# The Wire's slice grinds through. The land groans as it rises, not as
+		# it sinks, and gives in lurches the faster it rises.
+		if id == "wire":
+			_target[GRIND] = rate*0.8
+			grit = rate
+		elif lift > 0.0 and id != "hammer":
+			heft = smoothstep(0.0,3.0,lift)
+			_target[RUMBLE] = rate*heft
+			lurch = smoothstep(LURCH_RISE.x,LURCH_RISE.y,moved)
 		at = clay.ground_at(clay.center)
 	else:
 		_lift = 0.0
 	if id == "wire" and tool != null and tool.busy():
 		var share := float(tool.cut_share())
-		_target[CUT] = smoothstep(0.0,CUT_RATE,(share-_cut)/delta)
+		var pace := smoothstep(0.0,CUT_RATE,(share-_cut)/delta)
+		_target[CUT] = pace
+		_target[GRIND] = maxf(_target[GRIND],pace*0.8)
+		grit = maxf(grit,pace)
 		_cut = share
 		at = clay.ground_at(clay.center)
 	else:
 		_cut = 0.0
 	var place: Vector3 = clay.editor.terrain.to_global(at) if at != Vector3.ZERO else Vector3.INF
+	var here: Vector3 = place if place != Vector3.INF else clay.editor.terrain.global_position
+	_tremble(&"lurch",lurch,LURCH_PACE,LURCH_STACK,lerpf(0.35,1.0,lurch)*lerpf(0.6,1.0,heft),delta,here)
+	_tremble(&"grind",grit,GRIND_PACE,GRIND_STACK,lerpf(0.4,1.0,grit),delta,here)
 	for v in range(VOICES):
 		var player := _voices[v]
 		if player.stream == null: continue
@@ -298,6 +344,24 @@ func _process(delta: float) -> void:
 		if v == RUMBLE: player.pitch_scale = lerpf(0.82,1.0,_gain[v])
 		else: player.pitch_scale = lerpf(0.94,1.06,_gain[v])
 		if place != Vector3.INF: player.global_position = place
+
+## Fire `cue_name` on its beat while `drive` (0..1) holds: the beat runs from
+## pace.x to pace.y a second with the drive, and each give sets it back a
+## little at random, so the gives don't tick evenly. At most `stack` of its
+## takes sound at once. With no drive the beat waits FIRST_LURCH short of a
+## give, so land that starts moving again gives almost at once.
+func _tremble(cue_name: StringName, drive: float, pace: Vector2, stack: int, strength: float, delta: float, at: Vector3) -> void:
+	if drive <= 0.0:
+		_beat[cue_name] = 1.0-FIRST_LURCH
+		return
+	_beat[cue_name] = float(_beat[cue_name])+delta*lerpf(pace.x,pace.y,drive)
+	if float(_beat[cue_name]) < 1.0: return
+	_beat[cue_name] = _rng.randf_range(-0.3,0.25)
+	var takes := _takes_for(str(CUES[cue_name].clip))
+	var sounding := 0
+	for player in _land:
+		if player.playing and takes.has(player.stream): sounding += 1
+	if sounding < stack: play(cue_name,at,strength)
 
 # --- Players -----------------------------------------------------------------------
 

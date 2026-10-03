@@ -4,6 +4,7 @@ Run with Python 3; no external audio dependencies. Wildlife remains recordings.
 `--snap` bakes only the god hand's finger snaps (bake_snap, docs/scenic/modeless.md).
 `--howl` bakes only Bigfoot's far howl (bake_howl, docs/scenic/life.md "Bigfoot's trail").
 `--strain` bakes only the edge pull's strain (bake_strain, docs/scenic/modeless-spring.md "Pull feel").
+`--land` bakes only the clay's land voice (bake_land: beds, lurches and grinds for scripts/clay_sound.gd).
 """
 import math
 import random
@@ -430,6 +431,155 @@ def bake_strain():
     loop('edge-strain', 16000, 4, 0.7, strain)
 
 
+# --- The clay's land voice (docs/scenic/sound.md, "Tool sound") ---------------
+# Native takes on audio.js's formation rumble: a continuous bed under a pull
+# and discrete lurches over it, each lurch a sub that drops as the load lets go,
+# noise through a FALLING lowpass (the thunder's trick: it opens as a mid growl
+# a laptop can play and darkens into the sub tail) and a scatter of crackle
+# grains, the part that survives small speakers. The Wire's cut gets the same
+# idea lighter and grittier: no sub, a higher grind and more crumbling.
+
+def falling_lowpass(rng, count, rate, start, end, q=0.7):
+    """White noise through a lowpass sliding exponentially from `start` to `end` Hz."""
+    stages = [Biquad('low', start, q, rate), Biquad('low', start, q, rate)]
+    out = []
+    for i in range(count):
+        if i % 32 == 0:
+            f = start * (end / start) ** (i / count)
+            for stage in stages:
+                stage.tune('low', f, q, rate)
+        x = rng.uniform(-1, 1)
+        for stage in stages:
+            x = stage(x)
+        out.append(x)
+    return out
+
+
+def crackle(rng, count, rate, at, grains, band, length):
+    """`grains` short grains of a mid band, scattered over `at` (s, s): rock giving."""
+    raw = [0.0] * count
+    for _ in range(grains):
+        start = round(rng.uniform(*at) * rate)
+        level = rng.uniform(0.4, 1.4)
+        tau = rng.uniform(*length) * rate
+        for i in range(min(round(tau * 5), count - start)):
+            raw[start + i] += level * rng.uniform(-1, 1) * min(1.0, i / (rate * 0.002)) * math.exp(-i / tau)
+    filt = Biquad('band', rng.uniform(*band), 0.7, rate)
+    return [filt(x) for x in raw]
+
+
+def rms_of(values):
+    return math.sqrt(sum(v * v for v in values) / len(values)) or 1.0
+
+
+def lurch(seconds, sub_hz, crack_band, grains, stack=0.0, bright=520):
+    """One lurch of rising land, audio.js rumble({mag}) at a strong mag. `stack`
+    puts a second, smaller give that share of the way in (a lurch that catches
+    and goes again); `bright` is where the falling lowpass starts."""
+    def make(rng, count, rate):
+        dur = count / rate
+        body = falling_lowpass(rng, count, rate, bright, 70)
+        hits = [(0.0, 1.0)] + ([(stack * dur, 0.55)] if stack else [])
+        b = rms_of(body)
+        # The crack is only the give itself, in its first moments. No trickle of
+        # stones after: by ear it pattered like hail over the tail, so the tail
+        # is the lowpass darkening into the sub alone.
+        grit = crackle(rng, count, rate, (0.0, dur * 0.25), grains, crack_band, (0.012, 0.045))
+        g = rms_of(grit)
+        out = []
+        phase = 0.0
+        for i in range(count):
+            t = i / rate
+            swell = 0.0
+            for at, level in hits:
+                u = t - at
+                if u >= 0:
+                    swell += level * min(1.0, u / 0.1) * math.exp(-max(0.0, u - 0.15) / (dur * 0.3))
+            phase += math.tau * sub_hz * (31 / sub_hz) ** (t / dur) / rate
+            sub = math.sin(phase) * min(1.0, t / 0.06) * math.exp(-t / (dur * 0.4))
+            fall = math.exp(-t / (dur * 0.2))
+            out.append(1.0 * swell * body[i] / b + 0.55 * sub + 0.5 * fall * grit[i] / g)
+        return out
+    return make
+
+
+def grind(seconds, band, grains):
+    """The Wire's cut giving: a short grind with crumbling, no sub."""
+    def make(rng, count, rate):
+        dur = count / rate
+        body = falling_lowpass(rng, count, rate, 1100, 260)
+        mid = filtered(rng, count, [Biquad('band', band, 1.4, rate)])
+        grit = crackle(rng, count, rate, (0.0, dur * 0.7), grains, (1400, 2600), (0.006, 0.03))
+        trickle = crackle(rng, count, rate, (dur * 0.1, dur * 0.9), grains * 2, (2400, 4200), (0.003, 0.01))
+        b, m, g, t2 = rms_of(body), rms_of(mid), rms_of(grit), rms_of(trickle)
+        out = []
+        for i in range(count):
+            t = i / rate
+            swell = min(1.0, t / 0.03) * math.exp(-max(0.0, t - 0.05) / (dur * 0.3))
+            out.append(swell * (0.5 * body[i] / b + 0.45 * mid[i] / m) + 0.7 * math.exp(-t / (dur * 0.6)) * grit[i] / g + 0.3 * trickle[i] / t2)
+        return out
+    return make
+
+
+def land_bed(rng, count, rate):
+    # audio.js's strain bed: the slab taking load. A body under 180 Hz with a
+    # mid grind band (430 Hz) on top so a laptop hears it, a faint drifting sub
+    # for headphones, and a slow uneven swell so it breathes like moving rock
+    # rather than droning. Sparse grains through 700 Hz are soil shifting.
+    body = filtered(rng, count, [Biquad('low', 180, 0.7, rate), Biquad('low', 140, 0.7, rate)])
+    band = filtered(rng, count, [Biquad('band', 430, 1.1, rate)])
+    soil = Biquad('band', 700, 1.0, rate)
+    grains = [soil(x) for x in grains_of(rng, count, rate, 7, (0.02, 0.06))]
+    swell = smooth_random(rng, count, rate, 1.1)
+    churn = smooth_random(rng, count, rate, 3.0)
+    b, n, s = rms_of(body), rms_of(band), rms_of(grains)
+    out = []
+    for i in range(count):
+        t = i / rate
+        sub = math.sin(math.tau * 41 * t + 0.8 * math.sin(math.tau * 0.37 * t))
+        out.append((0.35 + 0.65 * swell[i]) * (body[i] / b + 0.85 * (0.5 + 0.5 * churn[i]) * band[i] / n)
+                   + 0.3 * sub * (0.6 + 0.4 * swell[i]) + 0.35 * grains[i] / s)
+    return out
+
+
+def grind_bed(rng, count, rate):
+    # Under the Wire's cut: grit dragged through clay. Two mid bands at a
+    # wandering level, a dense rattle of small grains and only a little body.
+    body = filtered(rng, count, [Biquad('low', 260, 0.7, rate)])
+    low_band = filtered(rng, count, [Biquad('band', 560, 1.3, rate)])
+    high_band = filtered(rng, count, [Biquad('band', 1250, 1.6, rate)])
+    rattle = Biquad('band', 2200, 0.8, rate)
+    grains = [rattle(x) for x in grains_of(rng, count, rate, 38, (0.004, 0.018), 1.6)]
+    churn = smooth_random(rng, count, rate, 4.0)
+    drift = smooth_random(rng, count, rate, 1.3)
+    b, lo, hi, g = rms_of(body), rms_of(low_band), rms_of(high_band), rms_of(grains)
+    return [0.35 * body[i] / b + (0.5 + 0.5 * churn[i]) * 0.6 * low_band[i] / lo
+            + (0.4 + 0.6 * drift[i]) * 0.4 * high_band[i] / hi + 0.6 * grains[i] / g for i in range(count)]
+
+
+# The lurches: (seconds, falling sub start Hz, crackle band, grains, stack, lowpass start).
+LURCHES = [
+    (1.6, 62, (1100, 1500), 5, 0.0, 520),
+    (2.1, 70, (1300, 1900), 7, 0.0, 600),
+    (1.3, 58, (1500, 2000), 4, 0.0, 460),
+    (2.4, 66, (1100, 1600), 8, 0.42, 560),
+    (1.8, 72, (1600, 2200), 6, 0.0, 640),
+    (2.2, 60, (1200, 1700), 6, 0.33, 500),
+]
+# The grinds: (seconds, mid band Hz, grains).
+GRINDS = [(0.55, 620, 7), (0.7, 760, 9), (0.45, 540, 6), (0.8, 880, 11), (0.6, 680, 8), (0.5, 820, 7)]
+
+
+def bake_land():
+    """The clay's land voice: the beds and the takes ClaySound plays (scripts/clay_sound.gd)."""
+    loop('foley/land-bed-loop', 16000, 6, 0.8, land_bed)
+    loop('foley/land-grind-loop', 22050, 4, 0.75, grind_bed)
+    for n, (seconds, sub_hz, band, grains, stack, bright) in enumerate(LURCHES, 1):
+        one_shot(f'foley/land-lurch-{n}', 22050, seconds, 0.9, lurch(seconds, sub_hz, band, grains, stack, bright))
+    for n, (seconds, band, grains) in enumerate(GRINDS, 1):
+        one_shot(f'foley/land-grind-{n}', 22050, seconds, 0.85, grind(seconds, band, grains))
+
+
 def bake_genesis():
     """The Genesis sounds: stroke voices, creation beds and one-shots."""
     loop('genesis-rumble', 12000, 6, 0.8, rumble)
@@ -507,6 +657,8 @@ if __name__ == '__main__':
         bake_howl()
     elif '--strain' in sys.argv:
         bake_strain()
+    elif '--land' in sys.argv:
+        bake_land()
     else:
         if '--genesis' not in sys.argv:
             bake_classic()

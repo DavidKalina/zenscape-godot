@@ -43,3 +43,10 @@ Cut from CC0 recordings on Freesound and from Kenney's CC0 packs (Impact
 Sounds, Interface Sounds, RPG Audio) by `tools/foley/make_foley.py`. CC0 asks
 for no credit; every file's source, author and page is listed anyway in
 `foley/SOURCES.tsv`.
+
+The clay's land voice (`foley/land-bed-loop.wav`, `foley/land-grind-loop.wav`,
+`foley/land-lurch-1..6.wav`, `foley/land-grind-1..6.wav`) is not cut from
+recordings: it is synthesised from noise, filters and sines by
+`tools/generate_nature_audio.py --land`, after the Electron ZenScape's
+formation rumble (audio.js `rumble` and the strain bed). It carries no licence
+beyond the project's own and is not listed in `foley/SOURCES.tsv`.
