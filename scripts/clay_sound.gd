@@ -331,6 +331,19 @@ func _process(delta: float) -> void:
 			_target[RUMBLE] = rate*heft*CRATER_GIVE
 			lurch = smoothstep(LURCH_RISE.x,LURCH_RISE.y,-moved)*CRATER_GIVE
 		at = clay.ground_at(clay.center)
+	elif tool != null and tool.has_method("growing") and tool.growing():
+		# A drawn range growing, or a drawn lake's bed sinking, groans and
+		# lurches as a pull does, by how fast its lift and its head along the
+		# line move together.
+		var risen := absf(float(tool.lift))+float(tool.head)
+		var moved := (risen-_lift)/delta
+		var rate := smoothstep(0.0,LIFT_RATE,absf(moved))
+		_lift = risen
+		_target[STRETCH] = rate
+		heft = smoothstep(0.0,3.0,absf(float(tool.lift)))
+		_target[RUMBLE] = rate*heft
+		lurch = smoothstep(LURCH_RISE.x,LURCH_RISE.y,absf(moved))
+		at = clay.ground_at(tool.head_point())
 	else:
 		_lift = 0.0
 	if id == "wire" and tool != null and tool.busy():

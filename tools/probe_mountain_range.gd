@@ -6,11 +6,16 @@ extends SceneTree
 ## stretches it into a range along the drag, at least RANGE_ASPECT times as
 ## long as it is wide, with several summits along its crest, standing about as
 ## tall as the peak, with the range's rock along it; each is one undo step one
-## undo takes back exactly, tint and all.
+## undo takes back exactly, tint and all. In Draw mode a stroke draws a
+## range instead: nothing rises while it is drawn, and let go it grows
+## along the drawn bend, all of it near the path and reaching both its ends,
+## to about the spec's `drawn` height, with its rock, shuddering as it grows,
+## as one undo step.
 ##
 ## `--peak-ref=<path>`: the straight pull's heights are compared with the file
 ## at `path` when it exists (a run before a change), else written there.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_mountain_range.gd -- --modeless --no-title [--peak-ref=/tmp/peak.bin]
+const Mountain = preload("res://scripts/clay_tools/mountain.gd")
 const RANGE_ASPECT := 3.0
 ## How far along the ground the range is dragged (m), and the pointer's
 ## travel up the screen for both pulls (px).
@@ -297,6 +302,68 @@ func run() -> void:
 	editor.undo()
 	await settled()
 	check("one undo takes the range back exactly",data.heights == base and data.tint == tint0 and data._undo.size() == undo0)
+
+	# --- (c) Draw mode: a range along a bend ---
+	materials.set_mode("draw")
+	await frames(2)
+	check("Draw is in hand",clay.tool.mode == "draw",clay.tool.mode)
+	var drawn_times: Array[float] = []
+	var bend: Array[Vector2] = []
+	for k in range(41):
+		var share := float(k)/40.0
+		bend.append(spot+Vector2(across*share,-90.0*sin(PI*share)))
+	button(bend[0],true)
+	await frames(1)
+	for k in range(1,bend.size()):
+		motion(bend[k],bend[k]-bend[k-1])
+		var started := Time.get_ticks_usec()
+		await frames(1)
+		drawn_times.append((Time.get_ticks_usec()-started)/1000.0)
+	var still := 0.0
+	for i in range(base.size()): still = maxf(still,absf(data.heights[i]-base[i]))
+	check("a Draw stroke draws: the land is untouched while it is drawn",clay.state == clay.State.DRAG and clay.verb == "drawn_range" and still < 1e-5,[clay.state,clay.verb,still])
+	var shudder: Node = scene.get("clay_tremor")
+	var kicks0: int = shudder.kicks if shudder != null else 0
+	button(bend[-1],false)
+	await frames(1)
+	check("let go, it grows",clay.tool.busy(),clay.tool.busy())
+	await settled()
+	var grow_kicks: int = (shudder.kicks if shudder != null else 0)-kicks0
+	check("the land shudders as it grows, as under a pull",shudder != null and grow_kicks >= 10,grow_kicks)
+	var path: PackedVector2Array = clay.tool.range_path()
+	var drawn_top := 0.0
+	for i in range(base.size()): drawn_top = maxf(drawn_top,data.heights[i]-base[i])
+	var drawn_pts := raised(base,drawn_top*0.1)
+	var reach_m: float = float(Mountain.PEAK.max_radius)*Mountain.HORN_REACH+0.5
+	var stray := 0
+	for i in drawn_pts:
+		var p: Vector2 = data.points[i]
+		var d := INF
+		for j in range(path.size()-1): d = minf(d,p.distance_to(Geometry2D.get_closest_point_to_segment(p,path[j],path[j+1])))
+		if d > reach_m: stray += 1
+	# Raised ground near each end of the path and at its middle.
+	var near_ends := [false,false,false]
+	for i in drawn_pts:
+		var p: Vector2 = data.points[i]
+		for e in range(3):
+			var at_e: Vector2 = path[[0,path.size()/2,path.size()-1][e]]
+			if p.distance_to(at_e) < 2.5 and data.heights[i]-base[i] > drawn_top*0.25: near_ends[e] = true
+	# The drawn bend leaves its chord: its middle stands off the line between its ends.
+	var chord_off := Geometry2D.get_closest_point_to_segment(path[path.size()/2],path[0],path[-1]).distance_to(path[path.size()/2])
+	var drawn_rock := 0
+	for p in path:
+		if tint_weight(data.tint,p)-tint_weight(tint0,p) > 0.1: drawn_rock += 1
+	drawn_times.sort()
+	print("DRAWN ",JSON.stringify({"top":snappedf(drawn_top,0.01),"raised":drawn_pts.size(),"stray":stray,"path_points":path.size(),"ends":near_ends,"chord_off":snappedf(chord_off,0.1),"rock_on_path":drawn_rock,"frame_ms_p50":snappedf(drawn_times[drawn_times.size()/2],0.1),"frame_ms_max":snappedf(drawn_times.back(),0.1)}))
+	check("a drawn range is one undo step",data._undo.size() == undo0+1,data._undo.size()-undo0)
+	check("about the spec's drawn height",drawn_top > float(Mountain.PEAK.drawn)*0.75 and drawn_top < float(Mountain.PEAK.drawn)*1.25,drawn_top)
+	check("the path was drawn as a bend",chord_off > 2.0,chord_off)
+	check("everything it raised is near the drawn path",stray == 0,stray)
+	check("it reaches both ends and the middle of the path",near_ends[0] and near_ends[1] and near_ends[2],near_ends)
+	check("the drawn range's rock along it",drawn_rock > path.size()/3,[drawn_rock,path.size()])
+	editor.undo()
+	await settled()
+	check("one undo takes the drawn range back exactly",data.heights == base and data.tint == tint0 and data._undo.size() == undo0)
 
 	print("MOUNTAIN RANGE PROBE: ",failures.size()," failures ",failures)
 	quit(1 if not failures.is_empty() else 0)

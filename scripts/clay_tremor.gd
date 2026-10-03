@@ -17,6 +17,10 @@ extends Node
 ## - **a hold**, its lift (the Mountain's pull, up only; the Crater's floor,
 ##   down only; the Chisel's mesa, pit or slice; the Modeller's pinch, a
 ##   knoll or a dip): metres of lift, up or down. Sinking is SINK of a rise.
+## - **a drawn landform** growing after the release (the Mountain's range,
+##   the Crater's lake: their Draw modes): its lift, up or down, and its
+##   head's metres along its line together, kicking as a pull does, its
+##   weight growing with the lift.
 ## - **the Ravine's cut** (the tool id `wire`) drawing through after the
 ##   release: metres of its head along its line, or a loop's basin settling.
 ##   Lighter and grittier than a pull: more, smaller kicks (CUT_LURCH).
@@ -88,6 +92,8 @@ func _process(delta: float) -> void:
 		if id == "wire" and tool.busy():
 			at = float(tool.cut_share())*float(tool.cut_length())
 			cut = true
+		elif tool.has_method("growing") and tool.growing():
+			at = absf(float(tool.lift))+float(tool.head)
 		elif clay.state == clay.State.HOLD:
 			at = float(tool.lift)
 	if is_nan(at):

@@ -5,8 +5,9 @@ extends SceneTree
 ## cozy worlds scene, driven by synthesized input through hand_reach. Checks:
 ## each drag tool has a pocket and no fan; a Hills drag raises the land along
 ## the path by how far it goes (rolling, not even), a second pass lifts it
-## more, and it lowers nothing; a Mountain press dragged up pulls a peak at
-## once, and dragged down leaves the land as it was; a Crater press dragged
+## more, and it lowers nothing; the Mountain fans out Pull and Draw, and a
+## Pull press dragged up pulls a peak at once, and dragged down leaves the
+## land as it was; a Crater press dragged
 ## down opens a crater (a sunk floor, a raised rim); the Bowl and the Hammer
 ## are off the roll; each is
 ## one undo step one undo takes back exactly; and the
@@ -257,7 +258,8 @@ func run() -> void:
 	var peak_before := height(at)
 	button(spot,true)
 	await frames(2)
-	check("a mountain press is a hold at once",clay.state == clay.State.HOLD and clay.verb == "peak",[clay.state,clay.verb])
+	check("the mountain fans out Pull and Draw, Pull in hand",roll.modes == ["pull","draw"] and clay.tool.mode == "pull",[roll.modes,clay.tool.mode])
+	check("a Pull press is a hold at once",clay.state == clay.State.HOLD and clay.verb == "peak",[clay.state,clay.verb])
 	for k in range(25):
 		motion(spot-Vector2(0,6*(k+1)),Vector2(0,-6))
 		await frames(1)
@@ -285,7 +287,7 @@ func run() -> void:
 	# --- Crater: press and drag down ---
 	materials.select_tool("crater")
 	await frames(30)
-	check("the crater has a pocket, no fan",roll.tool == "crater" and clay.tool_id == "crater" and roll.modes.is_empty(),[roll.tool,clay.tool_id,roll.modes])
+	check("the crater has a pocket, its fan Pull and Draw, Pull in hand",roll.tool == "crater" and clay.tool_id == "crater" and roll.modes == ["pull","draw"] and clay.tool.mode == "pull",[roll.tool,clay.tool_id,roll.modes,clay.tool.mode])
 	for fine in [false,true]:
 		var crater_base := data.heights.duplicate()
 		var crater_before := height(at)

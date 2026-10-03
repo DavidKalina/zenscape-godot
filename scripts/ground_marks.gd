@@ -277,16 +277,17 @@ func step(delta: float) -> void:
 			_full = PAINT_SHOWN
 			update(what,under,size,delta)
 			return
-		# A drag or pinch has begun: only the wire's own line stays.
-		if what != "wire" or not holding in WIRE_HOLDS:
+		# A drag or pinch has begun: only a drawn line stays, the wire's or a
+		# range the Mountain is drawing.
+		var drawing: RefCounted = _tool(what) if holding in WIRE_HOLDS else null
+		var path: PackedVector2Array = drawing.drawn() if drawing != null and drawing.has_method("drawn") else PackedVector2Array()
+		if not holding in WIRE_HOLDS or (what != "wire" and path.size() < 2):
 			hide(delta,"held")
 			return
 		var to: Variant = reach._land(pointer)
 		if to == null:
 			hide(delta,"off land")
 			return
-		var wire: RefCounted = _tool("wire")
-		var path: PackedVector2Array = wire.drawn() if wire != null and wire.has_method("drawn") else PackedVector2Array()
 		update("wire",to,size,delta,wire_start,path)
 		return
 	if reach.hover_zone != "land" or reach._hover_point == null:
