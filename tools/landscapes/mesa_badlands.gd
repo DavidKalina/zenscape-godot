@@ -1,9 +1,8 @@
 extends "res://tools/landscapes/harness.gd"
 ## Mesa badlands: Chisel mesas (hold, then drag up) at several sizes and
-## heights, some with Shift, then the Hammer: taps on a mesa's middle and on
-## its lip, a Shift tap, and a drag across a mesa, to knock tops down and
-## spill scree. Tests: does the Hammer feel distinct from the other tools,
-## and can the plate look dry (badlands) at all.
+## heights, some with Shift, then the Chisel breaks them: notches knocked into
+## one mesa's lip and another's top sliced lower (the Hammer did this until
+## it left the roll, 2026-10-02). Tests: can the plate look dry (badlands).
 
 ## [centre, size pip, top height wanted, fine]
 const MESAS := [
@@ -45,51 +44,28 @@ func build() -> void:
 	await still("mesas")
 	await view(Vector2(0,-1),20.0,scene.yaw+0.4,1.15)
 	await still("mesas-low")
-	await take_tool("hammer")
+	# Take 3 (2026-10-02, the Hammer off the roll): the Chisel breaks the
+	# mesas instead, notches knocked into A's lip and B's top sliced lower.
+	await take_tool("chisel")
+	await take_mode("notch")
 	await size(2)
 	var a: Vector2 = MESAS[0][0]
 	var b: Vector2 = MESAS[1][0]
-	var c: Vector2 = MESAS[2][0]
-	var d: Vector2 = MESAS[3][0]
 	await overview()
-	# A blow in the middle of a mesa's top (flat ground, not rock).
-	await tap(a)
-	across("A after a middle tap",a)
-	# Blows on its lip (the cliff edge).
-	await tap(lip(a,3))
-	await tap(lip(a,3)+Vector2(1.2,0.0))
-	across("A after two lip taps",a)
-	# Take 2: a row of blows along A's near lip, watching the foot for scree.
 	var cam: Vector3 = editor.terrain.to_local(scene.camera.global_position)
-	var toward := (Vector2(cam.x,cam.z)-a).normalized()
-	var side := toward.orthogonal()
-	var foot := a+toward*5.0
-	heights_at({"A foot":foot,"A foot+1":foot+toward,"A lip":lip(a,3)})
+	var side := (Vector2(cam.x,cam.z)-a).normalized().orthogonal()
 	for k in range(4): await tap(lip(a,3)+side*(-1.8+1.2*k))
-	heights_at({"A foot":foot,"A foot+1":foot+toward,"A lip":lip(a,3)})
-	across("A after a row of lip taps",a)
-	# A drag of blows straight across B (take 1 read it as one knock), after a pause.
-	await seconds(1.0)
-	await drag([b+Vector2(-3.5,0.4),b+Vector2(3.5,-0.4)],2.0)
-	across("B after a drag",b)
-	# And a drag of blows along B's near lip.
-	var tb := (Vector2(cam.x,cam.z)-b).normalized()
-	await drag([b+tb*1.8-tb.orthogonal()*2.0,b+tb*1.8+tb.orthogonal()*2.0],2.0)
-	across("B after a lip drag",b)
-	# Shift taps on C's lip.
-	await tap(lip(c,1),true)
-	await tap(lip(c,1)+Vector2(0.6,0.0),true)
-	across("C after fine lip taps",c)
-	# A held blow on D.
-	await tap(lip(d,2),false,0.6)
-	across("D after a held blow",d)
+	across("A after a row of lip notches",a)
+	await take_mode("slice")
+	await hold_to(b,height(b)-1.2)
+	across("B after a slice",b)
 	measure_verbs()
 	await overview()
-	await still("hammered")
+	await still("broken")
 	await view(a,13.0,scene.yaw+0.3,1.1)
-	await still("hammered-A")
+	await still("broken-A")
 	await view(b,12.0,scene.yaw-0.4,1.1)
-	await still("hammered-B")
+	await still("broken-B")
 	await put_down()
 	await let_world_run(20.0)
 	measure_life("plate")

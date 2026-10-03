@@ -105,7 +105,7 @@ const TOOLS := [
 	["paddle","Paddle","Smooth","Plane levels ground and lays grass, earth, rock or sand; Pat flattens bumps."],
 	["chisel","Chisel","Cut","Crisp rock: faces, cliffs, terraces."],
 	["wire","Ravine","Carve","Draw a line and a ravine is carved along it; draw a loop for a lake basin."],
-	["hammer","Hammer","Break","Cracks rock and sheds scree."],
+	["crater","Crater","Hollow","Press and drag down: a crater opens, its floor following the pointer, a rim thrown up round it."],
 	["feather","Feather","Gust","Wind in hand."],
 	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
 	["brush","Brush","Paint","Paints grass, rock, bare earth or any colour onto the ground. Shift wipes."],

@@ -212,6 +212,7 @@ static func _build() -> void:
 	# snow cap) and the Bowl (a basin in profile).
 	_add("hills","Hills","Roll","#8fae78",["M2 22.5 V16.6 Q5.6 8.4 10 13.8 Q14.6 5.6 19.4 12.6 Q21 14.6 22 16 V22.5Z"],["M4.4 20 Q8 18.4 11.6 20"],47,1.0,1.3)
 	_add("mountain","Mountain","Peak","#9a948c",["M1.6 22.5 L9.2 9.4 L11.6 11.8 L14.4 4.2 L22.4 22.5Z"],["M12.2 9.6 L14.4 4.2 L16.6 9.8"],48,1.0,1.6)
+	_add("crater","Crater","Hollow","#a08a68",["M2 17 H4.5 Q6.5 12.6 8 13.4 Q9.6 19.2 12 19.2 Q14.4 19.2 16 13.4 Q17.5 12.6 19.5 17 H22 V22.5 H2Z"],["M12 3.4 V9.4","M9.8 7.2 L12 9.4 L14.2 7.2"],64,1.0,1.4)
 	_add("bowl","Bowl","Hollow","#a08a68",["M2 9.4 H5.2 Q7 17.6 12 17.6 Q17 17.6 18.8 9.4 H22 V22.5 H2Z"],["M8 14.4 Q12 15.6 16 14.4"],49,1.0,1.4)
 	# The Sculpt's modes, fanned out beside its pocket (scripts/tool_roll.gd
 	# SCULPT_MODES): the ground in profile, as each leaves it.

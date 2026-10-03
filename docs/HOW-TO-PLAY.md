@@ -57,13 +57,20 @@ no holding still:
 | Do | Result |
 |---|---|
 | Press and drag up | a peak pulled out of the land, its summit following the pointer |
-| Press and drag down | a **crater**: a level floor sinks and a rim of thrown-out ground stands round it |
 | Press and drag up **and sideways** | the peak stretches into a **range** from the press to the ground under the pointer: several summits along a jagged crest, tapering at both ends. Up is still the height; sideways is the length, up to about 20 m |
-| Shift + press and drag | a smaller peak, a shorter range or a smaller crater |
+| Shift + press and drag | a smaller peak, or a shorter range |
 
 A pull straight up stays a single peak: a little sideways wobble on the way up
-is ignored, and a pull down is always a crater. Let go and the peak or range
-takes the mountains' rock. One Cmd+Z takes back the whole pull.
+is ignored. The Mountain only builds up: a pull down does nothing. Let go and
+the peak or range takes the mountains' rock. One Cmd+Z takes back the whole
+pull.
+
+## The Crater (tool roll)
+
+The Mountain turned over. Press and drag down: a crater opens under the
+press, a level floor following the pointer down and a rim of thrown-out
+ground standing round it. Shift makes a smaller one. A pull up does nothing.
+One Cmd+Z takes back the whole pull.
 
 ## The Ravine (tool roll)
 

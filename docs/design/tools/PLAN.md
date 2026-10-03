@@ -23,12 +23,11 @@ Mountain and the Hills are named for what they make. The decision:
 |---|---|---|---|
 | Modeller (`hand`) | Mould | as before, all small | the fine tool for the water's work: stream beds, notches, spillways, a pond's lip. Its pinch rises at most 1.5 m over 2.4 m and never horns (it was 8 m over 5.6 m, a mountain); the groove is 0.6 m deep and 1 m half-width (was 0.75 and 1.35); the palm 1.5 m (was 2) |
 | Hills (`hills`) | Roll | scrub | rolling hills, unchanged |
-| Mountain (`mountain`) | Peak | pull up; up and sideways | a peak; a range, unchanged |
-| | | pull down | a **crater** (new): a level floor and a thrown-out rim; sideways travel is ignored |
+| Mountain (`mountain`) | Peak | pull up; up and sideways | a peak; a range, unchanged. It only builds up: a pull down does nothing |
+| Crater (`crater`, new) | Hollow | pull down | a crater: a level floor following the pointer and a thrown-out rim (`scripts/clay_tools/crater.gd`, the Mountain's pull turned over) |
 | Ravine (`wire`) | Carve | draw a line; draw a loop | a gorge along the line; a lake basin inside the loop. No fan: a press is a drag from the start |
 | Chisel (`chisel`) | Cut | as before | mesa, shelf, notch, and the **Slice**, moved from the Wire |
 | Paddle (`paddle`) | Smooth | drag; tap | Plane and Pat only: the tidy-up tool |
-| Hammer (`hammer`) | Break | as before | kept for now; it may go to the Chisel's tap later |
 
 Cut: the **Bowl** (off the roll; Ravine's loop and the Mountain's crater make
 its basins; `scripts/clay_tools/bowl.gd` stays for the classic shell), the
@@ -38,8 +37,15 @@ Hills and the seed painting cover them), the Paddle's **Swell** and
 script and its prop, so probes, sounds and the ground marks read as before;
 only its label ("Ravine · Carve") and icon changed.
 
-The roll's order is now Modeller, Hills, Mountain, Ravine, Chisel, Paddle,
-Hammer: makers first, then cutters, then tidying.
+The roll's order is now Modeller, Hills, Mountain, Crater, Ravine, Chisel,
+Paddle: makers first, then cutters, then tidying.
+
+After playing it (the same day): the Hammer is unnecessary, and a crater
+wants its own tool. The crater first went on the Mountain's pull down; it
+moved to the Crater, which took the Hammer's place, and the Mountain went
+up-only. The Hammer is off the roll (`scripts/clay_tools/hammer.gd` stays,
+unreached, as the Bowl's does; its probe is gone, and the mesa badlands
+landscape breaks its mesas with the Chisel instead).
 
 Water level (the user's next question: a waterfall filling a ravine, a notch
 at the rim letting it out, an equilibrium) is left for later. The live water

@@ -34,8 +34,8 @@ func build() -> void:
 	await brisk_drag(SHELF_W,3.0)
 	await brisk_drag(SHELF_E,3.0)
 	heights_at({"shelf":Vector2(0,-3.5),"lip":LIP,"below lip":LIP+Vector2(0,1.0),"foot":LIP+Vector2(0,2.5)})
-	# The pool at the foot: a Mountain pulled down, a crater.
-	await take_tool("mountain")
+	# The pool at the foot: a Crater pulled down.
+	await take_tool("crater")
 	await size(1)
 	var was := height(POOL)
 	await hold_to(POOL,was-1.2)

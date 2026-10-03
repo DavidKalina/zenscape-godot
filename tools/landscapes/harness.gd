@@ -200,7 +200,7 @@ func metres_per_pixel(p: Vector2) -> float:
 # --- The HUD: tools, materials, size ---
 
 ## Take a tool from the roll: "hand" (the Modeller), "hills", "mountain",
-## "wire" (the Ravine), "chisel", "paddle", "hammer", "feather".
+## "crater", "wire" (the Ravine), "chisel", "paddle", "feather".
 func take_tool(id: String) -> void:
 	var roll: Control = materials.roll
 	# A click on the pocket of the tool already in hand puts it down.
