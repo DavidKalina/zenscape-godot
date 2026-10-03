@@ -48,6 +48,12 @@ extends Node
 ##   bead comes back once the ball is down.
 ## - **Stones.** Tap to set one down, bigger the longer the press; drag to
 ##   scatter a few pebbles under the pointer (the rock tool's placement).
+## - **The footbridge.** Drag across a stream or a narrow water: while the
+##   drag goes on a faint ghost shows the bridge the land would take, snapped
+##   bank to bank (or a dull red one where it would not), and letting go lays
+##   it (NativeChunkEditor `place_bridge`, scripts/footbridge.gd, one undo
+##   step). Over dry land, wider than six metres or too steep, nothing is
+##   laid, and the hint line says why.
 ##
 ## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
 ##   hand, taken like a tool. Drag it over the land: the wind goes with it
@@ -139,7 +145,20 @@ const CLICK_PIXELS := 6.0
 const TREE_HINT := "Tap to plant a tree  ·  drag to paint a wood  ·  Shift thins"
 const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
-	"reed":"Tap to set reeds  ·  Drag to scatter"}
+	"reed":"Tap to set reeds  ·  Drag to scatter","bridge":"Drag across a stream to lay a footbridge"}
+## The footbridge in hand: its hold, and what the hint line says when the land
+## will not take one (Footbridge `plan`'s reasons).
+const BRIDGE := "bridge"
+const Footbridge = preload("res://scripts/footbridge.gd")
+const BRIDGE_REFUSALS := {
+	"short":"Drag across a stream to lay a footbridge",
+	"dry":"No water to cross here",
+	"too_long":"Too wide to bridge  ·  six metres at most",
+	"too_steep":"The banks are too uneven to bridge",
+	"no_bank":"No bank to rest on there",
+	"edge":"No bank to rest on there",
+	"flooded":"The water stands too high to bridge",
+}
 const BACK_HINT := "Click the sky or the case to put it back"
 ## Water in hand pressed on dry land: nothing to scoop.
 const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
@@ -189,6 +208,14 @@ var clump: Clump
 var held := ""
 ## Stones, flowers and reeds set down, for probes.
 var stones_set := 0
+## The footbridge's drag: where it started and where it is (plate), the water
+## read at its press, and the plan the ghost shows; the last laid or refused,
+## for probes.
+var _bridge_from: Variant = null
+var _bridge_to: Variant = null
+var _bridge_water := {}
+var bridge_plan := {}
+var bridge_last := {}
 var _press_pos := Vector2.ZERO
 var _left_tray := false
 var _held_seconds := 0.0
@@ -518,7 +545,7 @@ func _feather_let_go() -> void:
 ## water or something to set down, whether or not it has a slot. False when
 ## it is not a material the hand knows.
 func take(id: String) -> bool:
-	if not (sows(id) or paints(id) or SCATTER.has(id) or id == "water"): return false
+	if not (sows(id) or paints(id) or SCATTER.has(id) or id in ["water",BRIDGE]): return false
 	if held == id: return true
 	if not held.is_empty(): put_back()
 	_take(id)
@@ -577,6 +604,52 @@ func _use(point: Vector2) -> void:
 		_stone_step = null
 		_stone_count = 0
 		_stone_since = STONE_SECONDS
+	elif held == BRIDGE:
+		var from: Variant = _ground(point)
+		if from == null or editor.get("bridges") == null: return
+		reach.take_hold(BRIDGE,point)
+		_press_pos = point
+		_travel = 0.0
+		_bridge_from = from
+		_bridge_to = from
+		_bridge_water = Footbridge.water(editor)
+		bridge_plan = {}
+
+## The footbridge's drag reaches `point`: the plan for the drag so far, and
+## the ghost showing it.
+func _bridge_drag(point: Vector2) -> void:
+	var to: Variant = _ground(point)
+	if to != null: _bridge_to = to
+	var editor: Node = reach._editor()
+	if _bridge_from == null or editor.get("bridges") == null: return
+	bridge_plan = Footbridge.plan(_bridge_water,_bridge_from,_bridge_to)
+	editor.bridges.show_ghost(bridge_plan,_bridge_from,_bridge_to)
+
+## The footbridge's drag ends: the bridge is laid where the land takes it, or
+## nothing is, and the hint line says why.
+func _bridge_let_go(point: Vector2) -> void:
+	var editor: Node = reach._editor()
+	if editor.get("bridges") != null: editor.bridges.hide_ghost()
+	# The window lost the pointer mid-drag: nothing is laid.
+	if _bridge_from == null or point == Vector2.INF:
+		_bridge_from = null
+		return
+	var to: Variant = _ground(point)
+	if to != null: _bridge_to = to
+	bridge_last = editor.place_bridge(_bridge_from,_bridge_to)
+	_bridge_from = null
+	_bridge_water = {}
+	if bridge_last.get("ok",false):
+		var a: Vector2 = bridge_last.a
+		var b: Vector2 = bridge_last.b
+		var middle: Vector2 = a.lerp(b,0.5)
+		ClaySound.cue_at(&"knock",editor.terrain.to_global(Vector3(middle.x,float(bridge_last.ya+bridge_last.yb)*0.5,middle.y)),0.7)
+		_used()
+		clump.shed()
+		return
+	clump.shed()
+	ClaySound.cue(&"ui_refuse")
+	reach._show_hint(str(BRIDGE_REFUSALS.get(str(bridge_last.get("reason","")),"")))
 
 ## True for what the pinch sows as a veil: nothing in the case since
 ## 2026-10-02, when tree seed joined the flowers under the brush (`paints`).
@@ -602,6 +675,9 @@ func drag(point: Vector2) -> void:
 		almanac.drag(point)
 		return
 	_travel = maxf(_travel,point.distance_to(_press_pos))
+	if reach.holding == BRIDGE:
+		_bridge_drag(point)
+		return
 	if reach.holding != "jar": return
 	if tray.contains_pointer(point): return
 	_left_tray = true
@@ -625,6 +701,9 @@ func let_go(what: String, point: Vector2) -> void:
 	if what == PAINT:
 		var editor: Node = reach._editor()
 		if editor.has_method("paint_flowers_end"): editor.paint_flowers_end()
+		return
+	if what == BRIDGE:
+		_bridge_let_go(point)
 		return
 	var known := point != Vector2.INF
 	var over_land: bool = known and reach._land(point) != null
@@ -726,7 +805,7 @@ func _carry(delta: float) -> void:
 	var ball: Node = editor.get("ball")
 	var pouring: bool = held == "water" and ball != null and str(ball.state) in ["holding","tossed","falling"]
 	var sowing: bool = sows(held) and editor.get("_handful_holding") == true
-	var pressing: bool = reach.holding in ["scatter",PAINT] or sowing
+	var pressing: bool = reach.holding in ["scatter",PAINT,BRIDGE] or sowing
 	var wanderer: Node = scene.get("wanderer")
 	var eye: bool = wanderer != null and wanderer.get("active") == true
 	var hit: Variant = editor.pointer_hit
@@ -811,7 +890,7 @@ func _scatter(delta: float) -> void:
 ## its reach. False when the hand reach drives it as usual.
 func drive_hand(hand: Node3D) -> bool:
 	var holding: String = reach.holding
-	if not holding in ["","jar","scatter","almanac",PAINT]: return false
+	if not holding in ["","jar","scatter","almanac",PAINT,BRIDGE]: return false
 	if holding.is_empty():
 		if not reach.available(): return false
 		if reach.hover_zone == "rim" or (held.is_empty() and reach.hover_zone != "tray"): return false
@@ -972,6 +1051,11 @@ class Clump extends Node3D:
 				_part(_egg(),"a89d91",Vector3(0.0,0.08,0.0),Vector3(0.14,0.09,0.12),Vector3(0.2,0.4,0.1))
 				_part(_egg(),"c6bbae",Vector3(0.07,0.15,0.03),Vector3(0.09,0.065,0.085),Vector3(-0.3,1.2,0.2))
 				_part(_egg(),"b7ab9f",Vector3(-0.12,0.05,0.06),Vector3(0.06,0.05,0.055),Vector3(0.5,2.0,-0.2))
+			"bridge":
+				# A few planks stacked crosswise on two short stringers.
+				var box := BoxMesh.new()
+				for side in [-1.0,1.0]: _part(box,"5a4330",Vector3(side*0.07,0.02,0.0),Vector3(0.035,0.04,0.3),Vector3.ZERO)
+				for i in range(4): _part(box,["8a6a4a","7d5f41","94734f"][i%3],Vector3(0.0,0.06,-0.11+i*0.075),Vector3(0.24,0.025,0.06),Vector3(0.0,0.04*(i%2*2-1),0.0))
 			_:
 				var tint: Variant = Icons.item(next).get("tint")
 				_part(_egg(),(tint as Color).to_html(false) if tint is Color else "c6bbae",Vector3(0.0,0.1,0.0),Vector3.ONE*0.1)

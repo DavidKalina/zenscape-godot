@@ -172,8 +172,8 @@ Along the bottom edge sits a field case, a long, low case of smoked glass
 with one specimen in each compartment. The tree seeds are **acorn** (oak),
 **pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
 and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
-**cosmos** and **sunflower**, and **reed**. Then come **water** and a **river
-stone**. The case stays faint
+**cosmos** and **sunflower**, and **reed**. Then come **water**, a **river
+stone** and a **footbridge**. The case stays faint
 until the pointer comes near. Hover a specimen to read its name. Faint
 outlines are kinds you haven't found yet, and pressing one gives nothing.
 
@@ -187,6 +187,7 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
 | Stone: tap | sets a stone down, bigger the longer you press |
 | Stone: drag | scatters a few pebbles |
+| Footbridge: drag across a stream or narrow water | a faint ghost shows the bridge the land would take, snapped bank to bank; let go and a timber footbridge is laid, its ends resting on the banks. Over dry land, across more than 6 m of water, or between banks too uneven, the ghost turns dull red and nothing is laid. Cmd+Z takes it back; the trash can clears it ([bridges](scenic/bridges.md)) |
 | Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |
 
 The trees' spores and the cloud still work as before. `--no-tray` hides the

@@ -114,6 +114,7 @@ const TOOLS := [
 const ELEMENTS := [
 	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],
 	["stone","River stone","Place","Sets a stone, or scatters pebbles."],
+	["bridge","Footbridge","Span","Drag across a stream: a timber footbridge spans it, bank to bank."],
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],
 	["snow","Frost","Winter","Brings winter to the whole chunk."],
 ]

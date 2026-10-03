@@ -2,7 +2,7 @@ extends Control
 ## The materials bar (design "ZenScape HUD 4c", scripts/hud_linen.gd;
 ## docs/design/materials-tray/HUD-4c.md): a strip of linen in shadow along
 ## the bottom edge, one faceted low-poly icon to a slot (scripts/hud_icons.gd).
-## Seeds, then water and stones, then frost, each group parted by a double
+## Seeds, then water, stones and the footbridge, then frost, each group parted by a double
 ## stitched line. What you ADD to the world; the tool roll on the left
 ## (scripts/tool_roll.gd) holds how you shape it. Kinds not found yet show
 ## only their silhouette in pale linen.
@@ -39,6 +39,7 @@ const SPECIMENS := [
 	{"id":"reed","group":0},
 	{"id":"water","group":1},
 	{"id":"stone","group":1},
+	{"id":"bridge","group":1},
 	{"id":"crystal","group":1,"hidden":true},
 	{"id":"snow","group":2,"hidden":true},
 ]

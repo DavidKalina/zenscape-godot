@@ -302,7 +302,7 @@ func detonate(live := false, only_id := -1) -> void:
 		if resident_enabled:
 			resident_kick += Blast.impulse(origin,resident.global_position+Vector3.UP*0.9,charge.blast_radius)*0.8
 		for item in editor.data.objects:
-			if item.asset == "explosive" or item.asset == "waterfall": continue
+			if item.asset in ["explosive","waterfall","bridge"]: continue
 			var world := editor.terrain.to_global(editor.data.object_position(item))
 			var kick := Blast.impulse(origin,world,charge.blast_radius)
 			if kick.length_squared() > 0.01:
@@ -334,7 +334,7 @@ func detonate(live := false, only_id := -1) -> void:
 	# even when it was outside the direct explosion's impulse radius.
 	for collapse in collapses:
 		for item in editor.data.objects:
-			if item.asset in ["explosive","waterfall"] or affected.has(item.id): continue
+			if item.asset in ["explosive","waterfall","bridge"] or affected.has(item.id): continue
 			var point := Vector2(item.x,item.z)
 			if absf(Collapse.displacement(editor.data,collapse,point)) < 0.18: continue
 			var downhill := Collapse._gradient(editor.data,collapse.before,point)
