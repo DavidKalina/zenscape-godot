@@ -6,7 +6,9 @@ extends Node3D
 ##
 ## Read from LandLife's survey (its still-water bodies and their banks), never
 ## from the world. Each fly is two batches' instances: a body (tinted blue,
-## green, red or amber) and two pairs of glassy wings beating in antiphase. The
+## green, red or amber) on the shared faceted life material, and two pairs of
+## translucent, faintly glassy wings (their own small alpha material, a soft
+## thing under the style rule) beating in antiphase. The
 ## motion has three parts, as a real one does: a hover that drifts and jitters
 ## a little, a tilt back of the nose in the moment before it goes, and a dart
 ## that starts hard and brakes late. Owned by LifeSmall.
@@ -42,9 +44,18 @@ const BANK_SHARE := 0.35
 const RECOIL := 0.3
 const RECOIL_TIME := 0.16
 const DASH_PITCH := -0.22
-## Wings: beats per second, sweep, and the glassy paint.
+## Wings: beats per second, sweep, and the glassy paint: a pale blue-grey
+## film and darker veins at the rim, how much of the light they stop
+## (alpha), and how sharp their glint is.
 const BEAT := 26.0
 const SWEEP := 0.5
+const WING_FILM := Color(0.8,0.9,0.96)
+const WING_RIM := Color(0.42,0.5,0.58)
+const WING_ALPHA := 0.32
+const WING_ROUGHNESS := 0.18
+## Drawn after the pond's blended water (priority 0), so a wing over the
+## pond isn't painted over by it.
+const WING_PRIORITY := 1
 const SCALE := 1.15
 const TINTS := [Color(0.25,0.55,1.0), Color(0.3,0.8,0.42), Color(0.95,0.28,0.2), Color(0.95,0.7,0.25), Color(0.4,0.75,0.9)]
 
@@ -61,7 +72,7 @@ func setup(owner: Node3D) -> void:
 	life = owner
 	name = "Dragonflies"
 	_bodies = Kit.batch(self,"Bodies",_body(life.material),MAX)
-	_wings = Kit.batch(self,"Wings",_wing(life.material),MAX*4)
+	_wings = Kit.batch(self,"Wings",_wing(wing_material()),MAX*4)
 
 func clear() -> void:
 	flies.clear()
@@ -87,10 +98,29 @@ static func _body(material: Material) -> ArrayMesh:
 		b.spindle(Vector3(0,0,z0),Vector3(0,0,z0-0.05),0.0105,light if i%2 == 0 else dark,4,0.5)
 	return b.commit(material)
 
-## One wing, fore and hind stacked by the instance, reaching along +X.
+## One wing, fore and hind stacked by the instance, reaching along +X. A
+## single sheet (the material draws both sides), so a see-through wing isn't
+## two layers of film.
 static func _wing(material: Material) -> ArrayMesh:
 	var rim := [Vector3(0.0,0,0.035),Vector3(0.07,0.004,0.048),Vector3(0.15,0.0,0.038),Vector3(0.205,0,0.012),Vector3(0.16,0,-0.014),Vector3(0.07,0,-0.02),Vector3(0.0,0,-0.012)]
-	return Kit.wing(material,rim,Color(0.78,0.86,0.9),Color(0.5,0.58,0.66))
+	var b := Models.Build.new()
+	b.fin(Vector3.ZERO,rim,WING_FILM,WING_RIM)
+	return b.commit(material)
+
+## The wings' glass: alpha-blended, lit (so they dim with the day and catch a
+## glint), both sides drawn, no shadows. One material for all nine flies.
+static func wing_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.resource_name = "DragonflyWingGlass"
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1,1,1,WING_ALPHA)
+	m.roughness = WING_ROUGHNESS
+	m.metallic_specular = 0.8
+	m.disable_receive_shadows = true
+	m.render_priority = WING_PRIORITY
+	return m
 
 func advance(step: float) -> void:
 	var began := Time.get_ticks_usec()
