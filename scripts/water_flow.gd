@@ -190,6 +190,19 @@ var bursts: Array[Dictionary] = []
 ## Sources held open from outside, by name: [x, z, radius, rate], poured
 ## every step until erased (the watering can's stream). Transient.
 var taps: Dictionary = {}
+## Water poured into a hollow from outside, by name: [x, z, rate] (the
+## watering can's gush). Each step its volume is laid level over the water
+## standing round the point, the hollow's lowest surface first (`fill_level`),
+## so a crater fills as one lake rising rather than a heap under the spout,
+## and stops at the lowest gap in its rim: what is poured past the brim is not
+## poured. `brimmed` holds the names whose hollow stood full at the last step.
+## Transient.
+var lifts: Dictionary = {}
+var brimmed: Dictionary = {}
+## Each lift's hollow, kept HOLLOW_SECONDS s (finding one floods the plate,
+## a few milliseconds): {"cell", "age", "hollow"}.
+const HOLLOW_SECONDS := 2.0
+var _hollows: Dictionary = {}
 ## What blows on the water: an object with `wind_at(point: Vector2) ->
 ## Vector2` (m/s, plate x, z; scripts/wind_gust.gd), set while a gust blows and
 ## null otherwise. The editor sets it every frame.
@@ -317,11 +330,62 @@ func run(ticks: int) -> void:
 		finished = finished or burst.age >= burst.seconds
 	if finished: bursts = bursts.filter(func(burst: Dictionary) -> bool: return burst.age < burst.seconds)
 	for tap: Array in taps.values(): sources.append_array(tap)
+	brimmed.clear()
+	for name: Variant in _hollows.keys():
+		if not lifts.has(name): _hollows.erase(name)
+	if not lifts.is_empty():
+		var ground := grounds()
+		var depth := depths()
+		for name: Variant in lifts:
+			var lift: Array = lifts[name]
+			var at := Vector2(lift[0],lift[1])
+			# The hollow is found again when the lift moves, and every
+			# HOLLOW_SECONDS for the land changing under it.
+			var known: Dictionary = _hollows.get(name,{})
+			if known.is_empty() or known.cell != cell_at(at) or float(known.age) >= HOLLOW_SECONDS:
+				known = {"cell":cell_at(at),"age":0.0,"hollow":hollow(at,ground)}
+				_hollows[name] = known
+			known.age = float(known.age)+seconds
+			var filled := fill_level(known.hollow,float(lift[2])*seconds,ground,depth)
+			if filled.is_empty(): continue
+			if filled.full: brimmed[name] = true
+			# One source a cell, smaller than the cell, so all of it lands there.
+			var cells: PackedInt32Array = filled.cells
+			var rise: PackedFloat32Array = filled.rise
+			for k in cells.size():
+				if rise[k] <= 0.0: continue
+				var c := cells[k]
+				depth[c] += rise[k]
+				sources.append_array([origin.x+(c%width+0.5)*cell,origin.y+(c/width+0.5)*cell,cell*0.5,rise[k]*cell*cell/seconds])
 	sources.append_array(runoff.sources())
 	_blow()
-	last_step_usec = kernel.step(data.heights,sources,ticks,dt)
+	# Deep water steps in shorter steps: the pipes are stable only while a
+	# step is shorter than a cell over twice the waves' speed, √(g·depth).
+	var split := substeps()
+	last_step_usec = kernel.step(data.heights,sources,ticks*split,dt/split)
 	worst_step_usec = maxi(worst_step_usec,last_step_usec)
 	revision += 1
+
+## How many steps each fixed step is split into for the deepest water
+## (read again every DEEP_SECONDS of steps): the virtual pipes are stable in
+## two dimensions only while dt ≤ cell / (2·√(g·depth)), with STABLE of that
+## for margin. On the 25 cm grid at 1/60 s that is 5.7 m: ponds are never
+## near it, but a Crater lake brimmed 7 m deep stood level until a splash,
+## then heaped 12 m deep on one side of its floor and 2 m on the other and
+## never settled (tools/probe_deep_lake.gd). At most MAX_SPLIT.
+const STABLE := 0.8
+const DEEP_SECONDS := 0.25
+const MAX_SPLIT := 6
+var _deepest := 0.0
+var _deep_age := INF
+func substeps() -> int:
+	_deep_age += dt
+	if _deep_age >= DEEP_SECONDS:
+		_deep_age = 0.0
+		_deepest = 0.0
+		for d: float in depths(): _deepest = maxf(_deepest,d)
+	var longest: float = STABLE*cell/(2.0*sqrt(float(PARAMS.gravity)*maxf(_deepest,0.001)))
+	return clampi(ceili(dt/longest),1,MAX_SPLIT)
 
 ## What a spring of `rate` m³/s pours `age` s after it rose: opening over
 ## SPRING_OPEN, full for SPRING_FILL, easing to SPRING_REST over SPRING_EASE.
@@ -599,6 +663,148 @@ static func wet_in(mask: Dictionary, point: Vector2) -> bool:
 
 func surface(params: Dictionary) -> Dictionary:
 	return kernel.surface(params)
+
+## The hollow round `at`, from the ground alone: the level water standing
+## there rises to before it spills (its sill), and the cells under that level
+## joined to it. The sill comes from a priority flood in from the plate's
+## edge cells (where water leaves the plate), each cell taking the higher of
+## its ground and the level of the cell it was reached from, which is the
+## lowest rim water there must top to get out; bumps inside a crater's wall
+## make no false rim. The hollow is found from the lowest ground within
+## FILL_START m of `at`, as a pour lands on a wall and runs to the floor.
+## {"cells", "sill"}, or {} off the plate. The water is left out: a live
+## pour's surface is not level (it heaps under the spout and slopes down its
+## sheet), and flooding over it found a sill a cell from the spout.
+const FILL_START := 2.0
+func hollow(at: Vector2, ground: PackedFloat32Array) -> Dictionary:
+	var start := cell_at(at)
+	if start < 0 or inside.is_empty() or inside[start] == 0 or ground.size() != width*height: return {}
+	var reach := ceili(FILL_START/cell)
+	var ci := start%width
+	var cj := start/width
+	for j in range(maxi(cj-reach,0),mini(cj+reach,height-1)+1):
+		for i in range(maxi(ci-reach,0),mini(ci+reach,width-1)+1):
+			var c := j*width+i
+			if inside[c] == 0 or (i-ci)*(i-ci)+(j-cj)*(j-cj) > reach*reach: continue
+			if ground[c] < ground[start]: start = c
+	var spill := PackedFloat32Array()
+	spill.resize(width*height)
+	spill.fill(INF)
+	# A binary heap of cells by spill level, seeded with the edge cells.
+	var keys := PackedFloat32Array()
+	var ids := PackedInt32Array()
+	for c in width*height:
+		if inside[c] == 0: continue
+		var i := c%width
+		var j := c/width
+		if i == 0 or j == 0 or i == width-1 or j == height-1 or inside[c-1] == 0 or inside[c+1] == 0 or inside[c-width] == 0 or inside[c+width] == 0:
+			spill[c] = ground[c]
+			_heap_push(keys,ids,ground[c],c)
+	while not keys.is_empty():
+		var level := keys[0]
+		var c := _heap_pop(keys,ids)
+		if c == start: break
+		for n: int in [c-1,c+1,c-width,c+width]:
+			if n < 0 or n >= width*height or inside[n] == 0 or spill[n] != INF: continue
+			spill[n] = maxf(ground[n],level)
+			_heap_push(keys,ids,spill[n],n)
+	var sill := spill[start]
+	if sill == INF: return {}
+	# The hollow: from the start, the cells under the sill.
+	var cells := PackedInt32Array()
+	var seen := PackedByteArray()
+	seen.resize(width*height)
+	var stack := PackedInt32Array([start])
+	seen[start] = 1
+	while not stack.is_empty():
+		var c := stack[stack.size()-1]
+		stack.resize(stack.size()-1)
+		cells.append(c)
+		for n: int in [c-1,c+1,c-width,c+width]:
+			if n < 0 or n >= width*height or seen[n] != 0 or inside[n] == 0 or ground[n] >= sill: continue
+			seen[n] = 1
+			stack.append(n)
+	return {"cells":cells,"sill":sill}
+
+## Laying `volume` m³ level into `found` (a `hollow`): the water's surface
+## (ground + depth) over its cells rises from the lowest up, to the level the
+## volume reaches, at most its sill; there it is full, and the rest is not
+## laid. With `volume` INF it measures what the hollow still holds.
+## {"cells", "rise" (m each), "level", "full", "room" (m³ to the sill)}.
+## `depth` is the grid (`depths`), read once by the caller.
+func fill_level(found: Dictionary, volume: float, ground: PackedFloat32Array, depth: PackedFloat32Array) -> Dictionary:
+	if found.is_empty(): return {}
+	var cells: PackedInt32Array = found.cells
+	var sill: float = found.sill
+	var surface := PackedFloat32Array()
+	surface.resize(cells.size())
+	var room := 0.0
+	for k in cells.size():
+		surface[k] = ground[cells[k]]+depth[cells[k]]
+		room += maxf(sill-surface[k],0.0)
+	var area := cell*cell
+	room *= area
+	var level := sill
+	var full := volume >= room
+	if not full:
+		# Water-filling: the level where the cells under it hold the volume.
+		var sorted := surface.duplicate()
+		sorted.sort()
+		var budget := volume/area
+		var total := 0.0
+		level = sorted[sorted.size()-1] if not sorted.is_empty() else sill
+		for k in sorted.size():
+			total += sorted[k]
+			var next := sorted[k+1] if k+1 < sorted.size() else sill
+			if (k+1)*next-total >= budget:
+				level = (budget+total)/(k+1)
+				break
+		level = minf(level,sill)
+	var rise := PackedFloat32Array()
+	rise.resize(cells.size())
+	for k in cells.size(): rise[k] = maxf(level-surface[k],0.0)
+	return {"cells":cells,"rise":rise,"level":level,"full":full,"room":room}
+
+## M³ the hollow round `at` still holds before it spills.
+func room(at: Vector2) -> float:
+	if not ready: return 0.0
+	var ground := grounds()
+	var filled := fill_level(hollow(at,ground),INF,ground,depths())
+	return float(filled.room) if not filled.is_empty() else 0.0
+
+static func _heap_push(keys: PackedFloat32Array, ids: PackedInt32Array, key: float, id: int) -> void:
+	keys.append(key)
+	ids.append(id)
+	var k := keys.size()-1
+	while k > 0:
+		var up := (k-1)/2
+		if keys[up] <= key: break
+		keys[k] = keys[up]
+		ids[k] = ids[up]
+		k = up
+	keys[k] = key
+	ids[k] = id
+
+static func _heap_pop(keys: PackedFloat32Array, ids: PackedInt32Array) -> int:
+	var top := ids[0]
+	var last := keys.size()-1
+	var key := keys[last]
+	var id := ids[last]
+	keys.resize(last)
+	ids.resize(last)
+	if last == 0: return top
+	var k := 0
+	while true:
+		var child := k*2+1
+		if child >= last: break
+		if child+1 < last and keys[child+1] < keys[child]: child += 1
+		if keys[child] >= key: break
+		keys[k] = keys[child]
+		ids[k] = ids[child]
+		k = child
+	keys[k] = key
+	ids[k] = id
+	return top
 
 ## Standing water: [{"x", "z", "cells", "area", "level", "depth", "rect"}].
 func pools() -> Array:
