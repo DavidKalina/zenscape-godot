@@ -64,6 +64,7 @@ const REACTIONS := {
 	"stump":"settle",
 	"snag":"settle",
 	"log":"roll",
+	"stone_lamp":"settle",
 }
 const SPROUT_DURATION := 0.4
 const DROP_DURATION := 0.46

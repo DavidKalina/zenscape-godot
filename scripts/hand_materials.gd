@@ -48,6 +48,10 @@ extends Node
 ##   bead comes back once the ball is down.
 ## - **Stones.** Tap to set one down, bigger the longer the press; drag to
 ##   scatter a few pebbles under the pointer (the rock tool's placement).
+## - **Stone lamps** ("lamp", docs/scenic/stone-lamps.md). Tap to set one
+##   lamp; drag to set a spaced row of them along the drag, like a path
+##   (`gap`), never closer than `clear` to another lamp. They glow at night
+##   (scripts/stone_lamp_lights.gd).
 ##
 ## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
 ##   hand, taken like a tool. Drag it over the land: the wind goes with it
@@ -91,14 +95,17 @@ const PAINT_CUE := 0.28
 ## Things set down by a tap or a drag: the assets (one picked for each), how
 ## many one drop sets and how far they spread (m), a tap's size range (record
 ## scale, growing over `grow` s of holding) and a drag's (growing over
-## `scatter_grow` s), and at most `most` drops a drag.
+## `scatter_grow` s), and at most `most` drops a drag. Optional: `gap` (m at
+## the middle pip) between a drag's drops, STONE_GAP without, and `clear`
+## (m), how near another of the same asset a drop may stand.
 const SCATTER := {
 	"stone":{"assets":["rock"],"each":1,"spread":0.0,"tap":Vector2(0.5,1.4),"grow":1.6,"scatter":Vector2(0.26,0.6),"scatter_grow":2.5,"most":7},
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
+	"lamp":{"assets":["stone_lamp"],"each":1,"spread":0.0,"tap":Vector2(0.85,1.2),"grow":1.6,"scatter":Vector2(0.95,1.0),"scatter_grow":2.5,"most":12,"gap":2.0,"clear":1.1},
 }
 ## Pressed, the cursor comes down to PRESS_GAP m over the land: a stone
 ## touches it, a pinch of seeds or flowers stops short.
-const PRESS_GAP := {"stone":0.0}
+const PRESS_GAP := {"stone":0.0,"lamp":0.0}
 const PRESS_GAP_DEFAULT := 0.1
 ## Sowing from the pinch: while the button is held it flicks every
 ## FLICK_SECONDS (the first FIRST_FLICK after the press), and once more as the
@@ -139,7 +146,7 @@ const CLICK_PIXELS := 6.0
 const TREE_HINT := "Tap to plant a tree  ·  drag to paint a wood  ·  Shift thins"
 const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
-	"reed":"Tap to set reeds  ·  Drag to scatter"}
+	"reed":"Tap to set reeds  ·  Drag to scatter","lamp":"Tap to set a stone lamp  ·  Drag to line a path with them"}
 const BACK_HINT := "Click the sky or the case to put it back"
 ## Water in hand pressed on dry land: nothing to scoop.
 const DRY_HINT := "No water here to scoop  ·  Pour some with the watering can"
@@ -655,6 +662,7 @@ func _ground(point: Vector2) -> Variant:
 func _drop(at: Variant, size: float) -> bool:
 	if at == null or not SCATTER.has(held): return false
 	var spec: Dictionary = SCATTER[held]
+	if spec.has("clear") and _crowded(at,str(spec.assets[0]),float(spec.clear)): return false
 	var items := []
 	for i in range(int(spec.each)):
 		var offset := Vector2.ZERO
@@ -669,10 +677,16 @@ func _drop(at: Variant, size: float) -> bool:
 	_stone_since = 0.0
 	stones_set += 1
 	var ground: Vector3 = reach._editor().terrain.to_global(Vector3(at.x,0.0,at.y))
-	ClaySound.cue_at(&"stone_drop" if held == "stone" else &"plant",ground,clampf(size,0.3,1.0))
+	ClaySound.cue_at(&"stone_drop" if held in ["stone","lamp"] else &"plant",ground,clampf(size,0.3,1.0))
 	reach.uses[held] = int(reach.uses.get(held,0))+1
 	clump.shed()
 	return true
+
+## True when another `asset` stands within `clear` m of `at` (plate).
+func _crowded(at: Vector2, asset: String, clear: float) -> bool:
+	for item: Dictionary in reach._editor().data.objects:
+		if str(item.asset) == asset and Vector2(float(item.x),float(item.z)).distance_to(at) < clear: return true
+	return false
 
 # --- Frames -----------------------------------------------------------------------
 
@@ -803,7 +817,8 @@ func _scatter(delta: float) -> void:
 	if int(editor.refresh_pending) > 0 or editor.reactions.active_count() > 0: return
 	var at: Variant = _ground(_pointer())
 	if at == null: return
-	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= STONE_GAP*size_scale(): _drop(at,_scatter_size())
+	var gap := float(SCATTER[held].get("gap",STONE_GAP))
+	if _stone_last == null or (at as Vector2).distance_to(_stone_last) >= gap*size_scale(): _drop(at,_scatter_size())
 
 ## The God Hand is for the whole world: material in hand is its own cursor,
 ## so the hand stands down while it is held over the land and the sky, while
@@ -967,6 +982,16 @@ class Clump extends Node3D:
 				_part(_cone(),"8ecaf0",Vector3(0.0,0.26,0.0),Vector3(0.085,0.12,0.085),Vector3.ZERO,true)
 				_part(_egg(),"f4fbff",Vector3(-0.05,0.18,0.08),Vector3.ONE*0.025,Vector3.ZERO,true)
 				_part(_egg(),"a9d8f4",Vector3(0.14,0.035,0.05),Vector3.ONE*0.035,Vector3.ZERO,true)
+			"lamp":
+				# A small stone lamp: foot, post, shelf, a warm fire box, a roof.
+				_part(_prism(6),"a39e93",Vector3(0.0,0.02,0.0),Vector3(0.09,0.04,0.09))
+				_part(_prism(6),"a39e93",Vector3(0.0,0.1,0.0),Vector3(0.035,0.13,0.035))
+				_part(_prism(4),"a39e93",Vector3(0.0,0.18,0.0),Vector3(0.08,0.03,0.08),Vector3(0.0,PI*0.25,0.0))
+				_part(_egg(),"f2c27a",Vector3(0.0,0.225,0.0),Vector3(0.035,0.04,0.035))
+				for k in range(4):
+					var corner := Vector3(0.045,0.0,0.045).rotated(Vector3.UP,PI*0.5*k)
+					_part(_prism(4),"a39e93",corner+Vector3(0.0,0.225,0.0),Vector3(0.016,0.07,0.016),Vector3(0.0,PI*0.25,0.0))
+				_part(_cone(),"716c64",Vector3(0.0,0.3,0.0),Vector3(0.13,0.07,0.13),Vector3(0.0,PI*0.25,0.0))
 			"stone":
 				# A few pebbles, heaped.
 				_part(_egg(),"a89d91",Vector3(0.0,0.08,0.0),Vector3(0.14,0.09,0.12),Vector3(0.2,0.4,0.1))
@@ -1005,6 +1030,16 @@ class Clump extends Node3D:
 		mesh.height = 2.0
 		mesh.radial_segments = 7
 		mesh.rings = 4
+		return mesh
+
+	## A unit upright prism of `sides` sides, for the lamp.
+	static func _prism(sides: int) -> Mesh:
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 1.0
+		mesh.bottom_radius = 1.0
+		mesh.height = 1.0
+		mesh.radial_segments = sides
+		mesh.rings = 0
 		return mesh
 
 	## A unit cone, point up, for the bead's tip.

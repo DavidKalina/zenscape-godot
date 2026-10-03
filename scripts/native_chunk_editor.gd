@@ -130,6 +130,8 @@ var reactions_enabled := true
 var _fall_start: Variant = null
 var pond_preview = preload("res://scripts/native_pond_preview.gd").new()
 var explosives: Node3D
+## The stone lamps' glow and their few real lights (scripts/stone_lamp_lights.gd).
+var lamps: Node3D
 var blast_radius := 2.6
 var tunnel_width := 2.5
 var tunnel_depth := 5.0
@@ -351,6 +353,9 @@ func setup(owner_scene: Node3D) -> void:
 	explosives.name = "RemoteExplosives"
 	scene.add_child(explosives)
 	explosives.setup(self)
+	lamps = preload("res://scripts/stone_lamp_lights.gd").new()
+	scene.add_child(lamps)
+	lamps.setup(self)
 	_setup_brushes()
 	if flow_wanted(): _setup_flow.call_deferred()
 	data.state_restored.connect(_world_restored)
