@@ -184,6 +184,13 @@ func _ready() -> void:
 	_catalog_poses["campfire"] = Transform3D.IDENTITY
 	_meshes["campfire"] = preload("res://scripts/campfire.gd").mesh()
 	_materials["campfire"] = rock_material.duplicate()
+	# The cabin (scripts/cabin.gd): the log cabin model baked to vertex
+	# colours on the same material; its windows and smoke are
+	# scripts/cabin_lights.gd's.
+	_catalog_parts["cabin"] = ["cabin"]
+	_catalog_poses["cabin"] = Transform3D.IDENTITY
+	_meshes["cabin"] = preload("res://scripts/cabin.gd").mesh()
+	_materials["cabin"] = rock_material.duplicate()
 	for key in _materials:
 		FireMaterial.enable_instances(_materials[key])
 		# Every batch has custom data; emerged instances read their birth there.

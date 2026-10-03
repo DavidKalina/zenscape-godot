@@ -173,7 +173,7 @@ with one specimen in each compartment. The tree seeds are **acorn** (oak),
 **pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
 and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
 **cosmos** and **sunflower**, then **wheat** and **reed**. Then come **water**, a **river
-stone**, a **stone lamp**, a **campfire**, a **fence** and a **footbridge**. The case stays faint
+stone**, a **stone lamp**, a **campfire**, a **cabin**, a **fence** and a **footbridge**. The case stays faint
 until the pointer comes near. Hover a specimen to read its name. Faint
 outlines are kinds you haven't found yet, and pressing one gives nothing.
 
@@ -190,6 +190,7 @@ outlines are kinds you haven't found yet, and pressing one gives nothing.
 | Stone: drag | scatters a few pebbles |
 | Stone lamp: tap, or drag | sets a small faceted stone lamp; a drag lines a path with them, a couple of metres apart. They glow warm from dusk to dawn. The trash can takes them away |
 | Campfire: tap | sets a little campfire, a ring of stones with a fire dancing in it. It burns day and night, glows warm in the dark, smokes a little with the wind and never spreads to the land. Not on water or steep ground, not too close to another campfire, and not under a tree: the hint line says why. Cmd+Z or the trash can takes it away ([campfire](scenic/campfire.md)) |
+| Cabin: tap | sets a small log cabin, its door turned down the slope (or toward you on the flat). Its window glows warm from dusk and a thin smoke leans from the chimney. It needs a patch of flat, dry ground about 3 by 3.5 m, clear of trees, other cabins and anything standing there: otherwise the hint line says why. The land is never levelled for it. Cmd+Z or the trash can takes it away; Shift with the trash spares it ([cabin](scenic/cabin.md)) |
 | Fence: press and drag a line | faint stakes show the way; let go and a split-rail fence follows the line. End where you began for a pen. Press or let go near a fence and the line snaps onto it, a bright ring marking the post: from a fence's end it carries that fence on, from one end round to the other it closes a pen, and anywhere else on a fence it makes a T sharing a post. Posts skip water and steep rock, leaving gaps; they ride the land when you reshape it. One Cmd+Z takes the whole fence, or the piece you just joined on; the trash can cuts it span by span ([docs/scenic/fences.md](scenic/fences.md)) |
 | Footbridge: drag across a stream or narrow water | a faint ghost shows the bridge the land would take, snapped bank to bank; let go and a timber footbridge is laid, its ends resting on the banks. Over dry land, across more than 6 m of water, or between banks too uneven, the ghost turns dull red and nothing is laid. Cmd+Z takes it back; the trash can clears it ([bridges](scenic/bridges.md)) |
 | Click the sky, the case or the same specimen | puts the material back; it glides home to its compartment |

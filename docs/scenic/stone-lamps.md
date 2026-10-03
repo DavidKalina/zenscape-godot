@@ -56,10 +56,12 @@ The glow eases over 2.5 s, so skipping time still fades them in and out.
   again every 0.25 s. When a light moves to a different lamp, it fades out
   and back in over 0.4 s, so moving the camera along a row does not pop.
   Lamps beyond the nearest 8 still glow but light nothing around them.
-- The pool is shared. Campfires (docs/scenic/campfire.md) join it as guests
-  (`set_guests`, `guest_energy`) with their own reach, colour and flickering
-  energy. The nearest 8 of lamps and campfires together get the lights, so
-  the cap holds however many of each there are.
+- The pool is shared. Campfires (docs/scenic/campfire.md) and the cabins'
+  windows (docs/scenic/cabin.md) join it as guests, each owner with its own
+  list and energy (`set_guests(list, owner, energy)`): their own reach,
+  colour and (flickering) energy. The nearest 8 of lamps, campfires and
+  windows together get the lights, so the cap holds however many of each
+  there are.
 - The records are read again when the objects change, and every 0.5 s
   otherwise, so lamps stay on reshaped ground.
 

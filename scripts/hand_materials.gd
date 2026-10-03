@@ -60,6 +60,14 @@ extends Node
 ##   on or half in water, not on a steep slope, not within a few metres of
 ##   another campfire, not under or into a tree. Refused, nothing is set and
 ##   the hint line says why (CAMPFIRE_REFUSALS).
+## - **Cabin** ("cabin", docs/scenic/cabin.md). Tap to set one small log
+##   cabin (scripts/cabin.gd); a drag carries it and sets it where you let
+##   go. Its door faces down the slope, or the camera on the flat (Cabin
+##   `facing`). The land must take it (Cabin `refusal`): its whole footprint
+##   on the plate, dry and near level, clear of trees, other cabins and
+##   anything else standing there. Refused, nothing is set and the hint line
+##   says why (CABIN_REFUSALS). Its windows glow from dusk
+##   (scripts/cabin_lights.gd).
 ## - **Fence.** Press and drag a line over the land (drawn as the Ravine's
 ##   line is, scripts/clay_tools/drawn_line.gd), its stakes shown faintly as
 ##   it goes; on release a split-rail fence follows it where the land lets it
@@ -125,10 +133,11 @@ const SCATTER := {
 	"reed":{"assets":["reeds"],"each":3,"spread":0.4,"tap":Vector2(0.6,1.0),"grow":1.6,"scatter":Vector2(0.55,0.85),"scatter_grow":2.5,"most":8},
 	"lamp":{"assets":["stone_lamp"],"each":1,"spread":0.0,"tap":Vector2(0.85,1.2),"grow":1.6,"scatter":Vector2(0.95,1.0),"scatter_grow":2.5,"most":12,"gap":2.0,"clear":1.1},
 	"campfire":{"assets":["campfire"],"each":1,"spread":0.0,"tap":Vector2(0.9,1.15),"grow":1.6,"scatter":Vector2(1.0,1.0),"scatter_grow":2.5,"most":1,"tap_only":true},
+	"cabin":{"assets":["cabin"],"each":1,"spread":0.0,"tap":Vector2(1.0,1.0),"grow":1.6,"scatter":Vector2(1.0,1.0),"scatter_grow":2.5,"most":1,"tap_only":true},
 }
 ## Pressed, the cursor comes down to PRESS_GAP m over the land: a stone
 ## touches it, a pinch of seeds or flowers stops short.
-const PRESS_GAP := {"stone":0.0,"lamp":0.0,"fence":0.0,"campfire":0.0}
+const PRESS_GAP := {"stone":0.0,"lamp":0.0,"fence":0.0,"campfire":0.0,"cabin":0.0}
 const PRESS_GAP_DEFAULT := 0.1
 ## Sowing from the pinch: while the button is held it flicks every
 ## FLICK_SECONDS (the first FIRST_FLICK after the press), and once more as the
@@ -172,7 +181,20 @@ const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a s
 	"reed":"Tap to set reeds  ·  Drag to scatter","lamp":"Tap to set a stone lamp  ·  Drag to line a path with them",
 	"fence":"Drag a line to set a fence  ·  Start or end on a fence to join it",
 	"bridge":"Drag across a stream to lay a footbridge",
-	"campfire":"Tap to set a campfire  ·  It needs flat, dry ground clear of trees"}
+	"campfire":"Tap to set a campfire  ·  It needs flat, dry ground clear of trees",
+	"cabin":"Tap to set a cabin  ·  It needs a patch of flat, dry ground clear of trees"}
+## The cabin in hand, and what the hint line says when the land will not
+## take one (scripts/cabin.gd `refusal`).
+const CABIN := "cabin"
+const Cabin = preload("res://scripts/cabin.gd")
+const CABIN_REFUSALS := {
+	"edge":"Too near the edge  ·  A cabin needs room on the plate",
+	"water":"Too wet  ·  A cabin needs dry ground all round",
+	"steep":"Not flat enough for a cabin  ·  Find a level patch",
+	"tree":"Too near a tree  ·  A cabin needs room clear of branches",
+	"near":"Another cabin is too close",
+	"room":"Something stands there  ·  A cabin needs a clear patch",
+}
 ## The campfire in hand, and what the hint line says when the land will not
 ## take one (scripts/campfire.gd `refusal`).
 const CAMPFIRE := "campfire"
@@ -252,6 +274,8 @@ var held := ""
 ## Stones, flowers and reeds set down, for probes.
 ## Why the last campfire was refused ("" when it was set): Campfire `refusal`.
 var campfire_refused := ""
+## Why the last cabin was refused ("" when it was set): Cabin `refusal`.
+var cabin_refused := ""
 var stones_set := 0
 ## The footbridge's drag: where it started and where it is (plate), the water
 ## read at its press, and the plan the ghost shows; the last laid or refused,
@@ -816,12 +840,29 @@ func _drop(at: Variant, size: float) -> bool:
 			ClaySound.cue(&"ui_refuse")
 			reach._show_hint(str(CAMPFIRE_REFUSALS[campfire_refused]))
 			return false
+	var facing := NAN
+	if held == CABIN:
+		# One size, its door down the slope or toward the camera.
+		var editor: Node = reach._editor()
+		var camera: Camera3D = scene.camera if scene != null else null
+		var eye: Variant = null
+		if camera != null:
+			var local: Vector3 = editor.terrain.to_local(camera.global_position)
+			eye = Vector2(local.x,local.z)
+		facing = Cabin.facing(editor.data,at,eye)
+		cabin_refused = Cabin.refusal(editor,at,facing)
+		if not cabin_refused.is_empty():
+			clump.shed()
+			ClaySound.cue(&"ui_refuse")
+			reach._show_hint(str(CABIN_REFUSALS[cabin_refused]))
+			return false
 	var items := []
 	for i in range(int(spec.each)):
 		var offset := Vector2.ZERO
 		if i > 0: offset = Vector2.from_angle(randf()*TAU)*float(spec.spread)*size_scale()*sqrt(randf())
 		var assets: Array = spec.assets
 		items.append({"asset":assets[randi()%assets.size()],"point":at+offset,"size":size*randf_range(0.88,1.12)*(1.0 if i == 0 else randf_range(0.75,1.0)),"angle":randf()*TAU})
+	if held == CABIN: items = [{"asset":CABIN,"point":at,"size":1.0,"angle":facing}]
 	var step: Variant = reach._editor().set_objects(items,_stone_step)
 	if step == null: return false
 	_stone_step = step
@@ -830,7 +871,7 @@ func _drop(at: Variant, size: float) -> bool:
 	_stone_since = 0.0
 	stones_set += 1
 	var ground: Vector3 = reach._editor().terrain.to_global(Vector3(at.x,0.0,at.y))
-	ClaySound.cue_at(&"stone_drop" if held in ["stone","lamp",CAMPFIRE] else &"plant",ground,clampf(size,0.3,1.0))
+	ClaySound.cue_at(&"stone_drop" if held in ["stone","lamp",CAMPFIRE,CABIN] else &"plant",ground,clampf(size,0.3,1.0))
 	reach.uses[held] = int(reach.uses.get(held,0))+1
 	clump.shed()
 	return true
@@ -1252,6 +1293,15 @@ class Clump extends Node3D:
 					var lean := Vector3(cos(angle),0.0,sin(angle))
 					_part(_stake(),"6b4a30",lean*0.04+Vector3.UP*0.07,Vector3(0.012,0.14,0.012),Vector3(-lean.z*0.5,0.0,lean.x*0.5))
 				_part(_egg(),"f2a04a",Vector3(0.0,0.06,0.0),Vector3(0.04,0.06,0.04))
+			"cabin":
+				# A little log cabin: a log box, a door, a warm window, a
+				# pitched roof of two boards and a stone chimney.
+				var block := BoxMesh.new()
+				_part(block,"9a7448",Vector3(0.0,0.07,0.0),Vector3(0.2,0.14,0.24))
+				_part(block,"6b5038",Vector3(0.0,0.055,0.121),Vector3(0.06,0.1,0.01))
+				_part(block,"f2c27a",Vector3(0.101,0.08,0.0),Vector3(0.01,0.045,0.06))
+				for side in [-1.0,1.0]: _part(block,"5a3f2a",Vector3(side*0.062,0.18,0.0),Vector3(0.15,0.016,0.29),Vector3(0.0,0.0,-side*0.7))
+				_part(block,"7f776e",Vector3(-0.115,0.15,-0.04),Vector3(0.05,0.3,0.05))
 			"fence":
 				# Two stakes and two rails between them.
 				for x in [-0.09,0.09]:
