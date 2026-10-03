@@ -6,6 +6,8 @@
 // over its own stars has to be asked here instead.
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/sky_ridges.gdshaderinc"
+// The cloud sea's veil (zs_sea_open), with its strength copied like the ridges'.
+#include "res://shaders/sky_cloud_sea.gdshaderinc"
 
 // The look pass's ridges, copied from the sky material.
 uniform float horizon_ridges = 0.0;
