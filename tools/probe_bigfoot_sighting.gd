@@ -60,6 +60,10 @@ func run() -> void:
 	create_timer(420).timeout.connect(func() -> void: push_error("Bigfoot probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
+	# The Genesis plain, not the title: with the title on (the worlds library,
+	# 2026-10-01) the probe would open a random showcase world, and on its
+	# valleys the test wood lands on a slope where no edge gives him footing.
+	scene.set_meta("no_title",true)
 	scene.places_path = "/private/tmp/zs-bigfoot-probe-%d/places.json" % Time.get_ticks_usec()
 	root.add_child(scene)
 	current_scene = scene
@@ -167,12 +171,18 @@ func frame_on_him(distance: float) -> void:
 	bigfoot._rush = 0.0
 	bigfoot._rush_for = 0.0
 
-## Move the camera's distance to `to` at `speed` m/s of real time.
+## Move the camera's distance to `to` at `speed` m/s of real time, as he
+## measures it: each frame's real step capped at 0.1 s (scripts/land_life.gd),
+## so a stalled frame on a busy machine does not turn a creep into a rush.
 func dolly(to: float, speed: float) -> void:
 	var from: float = scene.distance
-	var began := Time.get_ticks_msec()
+	var elapsed := 0.0
+	var last := Time.get_ticks_usec()
 	while bigfoot.showing():
-		var t := minf(1.0,(Time.get_ticks_msec()-began)/1000.0*speed/absf(from-to))
+		var now := Time.get_ticks_usec()
+		elapsed += minf((now-last)/1000000.0,0.1)
+		last = now
+		var t := minf(1.0,elapsed*speed/absf(from-to))
 		scene.distance = lerpf(from,to,t)
 		await frame()
 		if t >= 1.0: return
