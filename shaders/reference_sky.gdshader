@@ -6,6 +6,7 @@ render_mode use_half_res_pass;
 #define ZS_NIGHT_LIGHTS_APART
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/sky_ridges.gdshaderinc"
 
         
         
@@ -40,20 +41,9 @@ render_mode use_half_res_pass;
         // that covers the whole sky (scripts/landscape_lighting.gd), which
         // Godot applies to that pass as well.
         uniform bool half_res_clouds = true;
-        // Ridged value noise round the circle of azimuths, so the line wraps
-        // with no seam. Nearer layers are busier and lower.
-        float ridge_line(vec2 around, float layer) {
-          float freq = 2.2 + layer * 1.6;
-          float amp = 0.5;
-          float h = 0.0;
-          for (int o = 0; o < 3; o++) {
-            vec3 p = vec3(around * freq, 0.0) + vec3(horizon_seed * 0.137 + layer * 17.3, layer * 5.1, horizon_seed * 0.071 + float(o) * 3.7);
-            h += (1.0 - abs(vnoise(p) * 2.0 - 1.0)) * amp;
-            freq *= 2.1;
-            amp *= 0.45;
-          }
-          return h;
-        }
+        // The stars are real objects in the room (scripts/sky_objects.gd), so
+        // the dome leaves out its painted ones. --shader-stars keeps them.
+        uniform bool real_stars = false;
         // Star colour by temperature, t in 0..1: hot blue-white through white
         // and yellow to orange and a rare ember red. Weighted toward white.
         vec3 star_tint(float t) {
@@ -233,22 +223,24 @@ render_mode use_half_res_pass;
             col += (nebA.rgb + nebB.rgb + nebC.rgb) * 0.3 * starK;
             float veil = 1.0 - 0.6 * dust;
 
-            // Three lattices: a sparse one for the named-feeling bright stars,
-            // a middle one, and a fine dust that fills the Milky Way's band,
-            // which is what the band actually IS.
-            col += star_layer(room, 46.0, 0.0, 0.7, 1.3, 5.0, pixel, y) * starK * veil;
-            col += star_layer(room, 97.0, 5.0, mix(0.74, 0.45, mwBand), 0.55, 4.0, pixel, y) * starK * veil;
-            col += star_layer(room, 190.0, 9.0, mix(0.86, 0.5, mwBand), 0.22, 3.0, pixel, y) * starK * veil;
+            if (!real_stars) {
+              // Three lattices: a sparse one for the named-feeling bright stars,
+              // a middle one, and a fine dust that fills the Milky Way's band,
+              // which is what the band actually IS.
+              col += star_layer(room, 46.0, 0.0, 0.7, 1.3, 5.0, pixel, y) * starK * veil;
+              col += star_layer(room, 97.0, 5.0, mix(0.74, 0.45, mwBand), 0.55, 4.0, pixel, y) * starK * veil;
+              col += star_layer(room, 190.0, 9.0, mix(0.86, 0.5, mwBand), 0.22, 3.0, pixel, y) * starK * veil;
 
-            // A handful of brilliant stars, placed, not hashed: the few
-            // points the eye lands on first.
-            float heroK = starK * veil;
-            skyHdr += hero_star(room, normalize(vec3(-0.32, 0.55, 0.77)), vec3(0.75, 0.85, 1.0), 2.6, 0.13, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(0.61, 0.35, 0.71)), vec3(1.0, 0.8, 0.55), 2.0, 0.41, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(0.12, 0.82, -0.56)), vec3(0.95, 0.97, 1.0), 2.3, 0.77, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(-0.83, 0.12, -0.54)), vec3(1.0, 0.62, 0.42), 1.6, 0.29, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(0.9, -0.1, 0.42)), vec3(0.7, 0.8, 1.0), 1.8, 0.93, pixel) * heroK;
-            skyHdr += hero_star(room, normalize(vec3(-0.4, -0.15, -0.9)), vec3(1.0, 0.95, 0.85), 1.5, 0.57, pixel) * heroK;
+              // A handful of brilliant stars, placed, not hashed: the few
+              // points the eye lands on first.
+              float heroK = starK * veil;
+              skyHdr += hero_star(room, normalize(vec3(-0.32, 0.55, 0.77)), vec3(0.75, 0.85, 1.0), 2.6, 0.13, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(0.61, 0.35, 0.71)), vec3(1.0, 0.8, 0.55), 2.0, 0.41, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(0.12, 0.82, -0.56)), vec3(0.95, 0.97, 1.0), 2.3, 0.77, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(-0.83, 0.12, -0.54)), vec3(1.0, 0.62, 0.42), 1.6, 0.29, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(0.9, -0.1, 0.42)), vec3(0.7, 0.8, 1.0), 1.8, 0.93, pixel) * heroK;
+              skyHdr += hero_star(room, normalize(vec3(-0.4, -0.15, -0.9)), vec3(1.0, 0.95, 0.85), 1.5, 0.57, pixel) * heroK;
+            }
 
             // The shooting star. The resident follows this same CPU-owned
             // head position. A tapered trail, teal-green as meteors burn,
@@ -348,7 +340,7 @@ render_mode use_half_res_pass;
             float below = smoothstep(-0.14, -0.04, y);
             for (int k = 0; k < 3; k++) {
               float layer = float(k);
-              float top = mix(0.012, -0.015, layer * 0.5) + ridge_line(around, layer) * mix(0.07, 0.04, layer * 0.5) * horizon_relief;
+              float top = zs_ridge_top(around, layer, horizon_seed, horizon_relief);
               float cover = smoothstep(top + 0.0015, top - 0.0015, y) * below;
               float haze = mix(0.28, 0.62, layer * 0.5) * mix(0.55, 1.0, smoothstep(top - 0.05, top, y));
               col = mix(col, mix(horizon, horizon * vec3(0.58, 0.64, 0.76), haze), cover * horizon_ridges);

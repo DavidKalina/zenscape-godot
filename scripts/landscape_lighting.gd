@@ -5,6 +5,8 @@ var environment: Environment
 var lights: Array[DirectionalLight3D] = []
 ## Ultra's full-resolution cloud march (scripts/look_pass.gd apply_tier).
 var full_res_clouds := false
+## The stars and planet drawn as geometry, or null under --shader-stars.
+var sky_objects: Node3D
 
 func setup(source: Dictionary) -> void:
 	# The fog check below holds while the game is paused.
@@ -39,6 +41,12 @@ func setup(source: Dictionary) -> void:
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	add_child(world_environment)
+	# Stars and the planet as real objects (scripts/sky_objects.gd).
+	if not "--shader-stars" in OS.get_cmdline_user_args():
+		sky_objects = preload("res://scripts/sky_objects.gd").new()
+		sky_objects.name = "SkyObjects"
+		add_child(sky_objects)
+		sky_objects.setup(material)
 	for entry: Dictionary in source.lights:
 		if entry.type != "DirectionalLight":
 			continue
