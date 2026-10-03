@@ -10,9 +10,13 @@ extends SceneTree
 ## mesa whose top follows the pointer, and a drag down sinks a pit; the tap
 ## knocks a notch; a second shelf pressed on the first's bench cuts the
 ## next terrace down, never above the ground pressed, its face stopping at the
-## land's floor; Shift cuts shallower and the size pips widen the reach;
-## each is one undo step that one undo takes back exactly; Esc gives back
-## the Hand.
+## land's floor; the Slice (hold, then drag down, on a hill the probe raises
+## itself) cuts everything within SLICE_RADIUS above a level plane down to it,
+## leaves the ground under the plane untouched, and leaves a painted face at
+## its rim; Shift cuts shallower and the size pips widen the reach;
+## each is one undo step that one undo takes back exactly; Esc puts the
+## chisel down, leaving the hand free. Each verb is picked on the fan first (hand_materials `set_mode`):
+## the Modeller's groove, then the Chisel's shelf, mesa, notch and slice.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_tool_chisel.gd -- --modeless --no-title
 ## Nothing here is seen: the dummy renderer draws nothing, so the faces, the
 ## rock and the prop are checked as data only.
@@ -286,6 +290,73 @@ func notch(spot: Vector2, fine := false) -> Dictionary:
 	print(("SHALLOW NOTCH " if fine else "NOTCH ")+JSON.stringify({"depth":snappedf(depth,0.01),"moved_points":count.moved,"raised":count.up,"rock_cells":result.rock,"worked":result.worked}))
 	return result
 
+## The Slice: press at the top of a hill around `at` (the probe raises it as
+## its own set-up), hold, drag `pixels` down, let go. Measures the plane's
+## level, how flat the cut is inside the radius, whether ground under the
+## plane and outside the radius kept its height, the rim's face and its paint.
+func slice(at: Vector2, pixels: float, fine := false) -> Dictionary:
+	var data := editor.data
+	var undo0: int = data._undo.size()
+	var base := data.heights.duplicate()
+	var tint := data.tint.duplicate()
+	var spot := screen(at)
+	if fine: shift(true)
+	button(spot,true)
+	await frames(int(ceil(clay.HOLD_SECONDS*60.0))+3)
+	var verb: String = clay.verb
+	if fine: shift(false)
+	var p := spot
+	for i in range(20):
+		p += Vector2(0,pixels/20.0)
+		motion(p,Vector2(0,pixels/20.0))
+		await frames(1)
+	await frames(2)
+	var level: float = clay.tool.slice_level()
+	var center: Vector2 = clay.center
+	button(p,false)
+	await settled()
+	var radius: float = Chisel.SLICE_RADIUS*clay.size_scale
+	var flat_off := 0.0
+	var cut := 0
+	var below_moved := 0
+	var outside_moved := 0
+	for i in range(data.points.size()):
+		var d := data.points[i].distance_to(center)
+		var h := data.heights[i]
+		if d < radius-0.05:
+			if base[i] > level:
+				cut += 1
+				flat_off = maxf(flat_off,absf(h-level))
+			elif absf(h-base[i]) > 1e-5: below_moved += 1
+		elif d > radius+0.05 and absf(h-base[i]) > 1e-5: outside_moved += 1
+	# The rim's face: the steepest facet on eight rays across the rim, and the
+	# tint cells round the rim the stroke repainted.
+	var walls: Array[float] = []
+	for k in range(8):
+		var dir := Vector2.from_angle(TAU*k/8.0)
+		walls.append(steepest(center+dir*(radius-1.5),center+dir*(radius+1.5)))
+	walls.sort()
+	var side := NativeTerrainData.MEADOW_CELLS
+	var repainted := 0
+	for z in range(side):
+		for x in range(side):
+			var q := data.meadow_position(x,z)+Vector2.ONE*NativeTerrainData.MEADOW_STEP*0.5
+			var d := q.distance_to(center)
+			if d < radius-1.0 or d > radius+1.0: continue
+			var k := (z*side+x)*NativeTerrainTint.STRIDE
+			for c in range(NativeTerrainTint.STRIDE):
+				if absf(data.tint[k+c]-tint[k+c]) > 1e-4:
+					repainted += 1
+					break
+	var top := float(data.sample(center,base))
+	var result := {"verb":verb,"level":level,"top":top,"cut":cut,"flat_off":flat_off,"below_moved":below_moved,"outside_moved":outside_moved,
+		"wall":walls[walls.size()/2],"repainted":repainted,"undo":data._undo.size()-undo0,"base":base,"undo0":undo0,
+		"worked":worked.back() if not worked.is_empty() else []}
+	print(("SHALLOW SLICE " if fine else "SLICE ")+JSON.stringify({"verb":verb,"top":snappedf(top,0.01),"level":snappedf(level,0.01),"cut_points":cut,
+		"flat_off":snappedf(flat_off,0.0001),"below_moved":below_moved,"outside_moved":outside_moved,"rim_wall_median":snappedf(result.wall,0.01),
+		"rim_cells_repainted":repainted,"worked":result.worked}))
+	return result
+
 func run() -> void:
 	create_timer(280).timeout.connect(func() -> void: push_error("chisel probe timed out"); quit(2))
 	root.size = Vector2i(1440,900)
@@ -325,6 +396,8 @@ func run() -> void:
 	print("spot ",at," on screen ",spot," ground ",snappedf(height(at),0.01)," points ",data.points.size()," hand ",hand != null)
 
 	# --- The Hand's groove, the bar the chisel's faces must beat ---
+	materials.set_mode("groove")
+	check("the Modeller is on its groove",clay.tool_id == "hand" and clay.tool.mode == "groove",[clay.tool_id,clay.tool.mode])
 	var groove := await drag(spot+Vector2(-150,0),300.0)
 	check("the Hand's drag is its groove",groove.verb == "thumb",groove.verb)
 	await undo_exact(groove.base,groove.undo0,"groove")
@@ -349,8 +422,11 @@ func run() -> void:
 	check("the hand grips the chisel over the land",hand == null or hand.reach_gesture == "grip",hand.reach_gesture if hand != null else "")
 	reach.pointer_override = null
 	var undo0: int = data._undo.size()
+	check("the chisel's fan holds the mesa, shelf, notch and slice",roll.modes == ["mesa","shelf","notch","slice"],roll.modes)
 
 	# --- Drag: the shelf ---
+	materials.set_mode("shelf")
+	check("the shelf is picked on the fan",clay.tool.mode == "shelf" and roll.mode == "shelf",[clay.tool.mode,roll.mode])
 	var shelf := await drag(spot+Vector2(-150,0),300.0)
 	check("a drag is the shelf",shelf.verb == "shelf" and worked.back() == ["shelf",true],[shelf.verb,worked.back()])
 	check("the shelf is level along its line (within 3 cm)",shelf.level_spread < 0.03,"%.3f m" % shelf.level_spread)
@@ -428,6 +504,7 @@ func run() -> void:
 	await undo_exact(first.base,first.undo0,"terrace")
 
 	# --- Hold then drag: the mesa, and the pit ---
+	materials.set_mode("mesa")
 	var up := await hold(spot,-60.0)
 	check("hold then drag up is the mesa, the hand gripping",up.verb == "mesa" and (hand == null or up.gesture == "grip"),[up.verb,up.gesture])
 	check("it raises the spot",up.crown > 1.5,"%.2f m" % up.crown)
@@ -452,6 +529,7 @@ func run() -> void:
 	await key(KEY_2)
 
 	# --- Tap: the notch ---
+	materials.set_mode("notch")
 	var knock := await notch(spot)
 	check("a tap is the notch",knock.worked == ["notch",true],knock.worked)
 	check("it knocks the spot down",knock.depth > Chisel.NOTCH_DEPTH*0.6,"%.2f m" % knock.depth)
@@ -461,12 +539,60 @@ func run() -> void:
 	var soft := await notch(spot,true)
 	check("Shift knocks a shallower notch",soft.worked == ["shallow_notch",true] and soft.depth < knock.depth*0.7 and soft.depth > 0.1,"%.2f vs %.2f m" % [soft.depth,knock.depth])
 	await undo_exact(soft.base,soft.undo0,"shallow notch")
+
+	# --- Hold then drag down: the slice, on a hill the probe raises ---
+	materials.set_mode("slice")
+	check("the slice is picked on the fan",clay.tool.mode == "slice" and roll.mode == "slice",[clay.tool.mode,roll.mode])
+	var flat := data.heights.duplicate()
+	var hill := flat.duplicate()
+	# A flat-topped hill 3 m tall, its top wider than the slice (so the cut
+	# leaves a step at the slice's rim), with a hollow 4 m off the press whose
+	# floor lies under the plane (ground the slice must leave alone).
+	var top_radius: float = Chisel.SLICE_RADIUS+1.5
+	var hollow: Vector2 = at+Vector2(4.0,0.0)
+	for i in range(data.points.size()):
+		var d := data.points[i].distance_to(at)
+		var rise := 3.0*(1.0-smoothstep(top_radius,top_radius+2.5,d))
+		rise -= 2.6*(1.0-smoothstep(0.6,1.6,data.points[i].distance_to(hollow)))
+		hill[i] += rise
+	data.heights = hill
+	editor.force_refresh()
+	await settled()
+	var sliced := await slice(at,25.0)
+	check("hold then drag down is the slice",sliced.verb == "slice" and sliced.worked == ["slice",true],[sliced.verb,sliced.worked])
+	check("the plane went down from the hilltop, staying on the hill",sliced.level < sliced.top-0.5 and sliced.level > float(data.sample(at,flat))+0.3,"top %.2f, level %.2f m" % [sliced.top,sliced.level])
+	check("it cut the hilltop",sliced.cut >= 20,"%d points" % sliced.cut)
+	check("everything above the plane is cut to it (flat within 1 cm)",sliced.flat_off < 0.01,"%.4f m" % sliced.flat_off)
+	check("ground under the plane is untouched",sliced.below_moved == 0,"%d points moved" % sliced.below_moved)
+	check("ground outside the radius is untouched",sliced.outside_moved == 0,"%d points moved" % sliced.outside_moved)
+	check("a face stands at the rim, steeper than the groove's banks",sliced.wall > groove.steep*1.3,"%.2f vs %.2f" % [sliced.wall,groove.steep])
+	check("the rim's face is painted",sliced.repainted >= 4,"%d cells" % sliced.repainted)
+	check("one undo step for the slice",sliced.undo == 1)
+	await undo_exact(sliced.base,sliced.undo0,"slice")
+	var thin := await slice(at,25.0,true)
+	check("Shift holds the shallow slice",thin.verb == "shallow_slice" and thin.worked == ["shallow_slice",true],[thin.verb,thin.worked])
+	check("it cuts a thinner slice for the same pull",thin.top-thin.level < (sliced.top-sliced.level)*0.7 and thin.top-thin.level > 0.1,"%.2f vs %.2f m" % [thin.top-thin.level,sliced.top-sliced.level])
+	check("  flat within 1 cm, the ground under its plane untouched",thin.flat_off < 0.01 and thin.below_moved == 0,"%.4f m, %d points moved" % [thin.flat_off,thin.below_moved])
+	await undo_exact(thin.base,thin.undo0,"shallow slice")
+	# The hill was the probe's own set-up, not an undo step: put the land back.
+	data.heights = flat
+	editor.force_refresh()
+	await settled()
 	check("every verb undone: the undo stack is back where it began",data._undo.size() == undo0)
 
 	# --- Esc gives back the Hand ---
+	# Esc reaches the roll only while it is out: the pointer goes to its pocket.
+	reach.pointer_override = pocket
+	motion(pocket,Vector2.ZERO,false)
+	for i in range(120):
+		if roll.shown > 0.99: break
+		await process_frame
+	check("the tool roll is out for Esc",roll.shown > 0.5,roll.shown)
 	await key(KEY_ESCAPE)
-	check("Esc puts the chisel back: the Hand again",roll.tool == "hand" and clay.tool_id == "hand",[roll.tool,clay.tool_id])
-	check("its prop gives way to the Modeller's",not is_instance_valid(prop) and clay.get("_prop") is Node3D and (clay.get("_prop") as Node3D).find_children("*","MeshInstance3D",true,false).size() >= 3)
+	await frames(10)
+	check("Esc puts the chisel down: the hand is free",roll.tool == materials.FREE and clay.put_down,[roll.tool,clay.put_down])
+	check("its prop is no longer shown",not is_instance_valid(prop) or not prop.visible)
+	reach.pointer_override = null
 	print("FAILURES: ",failures)
 	scene.queue_free()
 	await frames(3)

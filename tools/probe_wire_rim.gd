@@ -1,9 +1,9 @@
 extends SceneTree
-## Headless probe of the Wire at the plate's rim (scripts/clay_tools/wire.gd
-## `_to_rim`): a gorge drawn to within RIM_REACH of the rim runs on out
-## through it and cuts the rim's own points to full depth; a slice held at
-## the rim and dragged down cuts the rim's points to its plane too; each is
-## one undo step.
+## Headless probe of the Ravine (id `wire`) at the plate's rim
+## (scripts/clay_tools/wire.gd `_to_rim`): a gorge drawn to within RIM_REACH
+## of the rim runs on out through it and cuts the rim's own points to full
+## depth, in one undo step. (The slice at the rim went with the slice to the
+## Chisel on 2026-10-02.)
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_wire_rim.gd -- --modeless --no-title
 const Wire = preload("res://scripts/clay_tools/wire.gd")
 var scene: Node3D
@@ -123,7 +123,7 @@ func run() -> void:
 		await process_frame
 	materials.select_tool("wire")
 	await frames(20)
-	check("the wire is in hand on its gorge",clay.tool_id == "wire" and clay.tool.mode == "gorge",[clay.tool_id,clay.tool.mode])
+	check("the Ravine is in hand",clay.tool_id == "wire",clay.tool_id)
 	# A run from the middle out to 12 m along whichever axis shows on screen.
 	var line: Array[Vector2] = []
 	for axis: Vector2 in [Vector2(1,0),Vector2(-1,0),Vector2(0,1),Vector2(0,-1)]:
@@ -167,28 +167,5 @@ func run() -> void:
 	await settled()
 	check("undo restores the ground",data.heights == base)
 
-	# --- The slice at the rim ---
-	materials.set_mode("slice")
-	await frames(10)
-	var at: Vector2 = line[1]+outward*0.8
-	var spot := screen(at)
-	var before := height(at)
-	button(spot,true)
-	await frames(3)
-	for k in range(20):
-		motion(spot+Vector2(0,4*(k+1)),Vector2(0,4))
-		await frames(1)
-	button(spot+Vector2(0,80),false)
-	await settled()
-	var level: float = clay.tool.slice_level()
-	var edge := rim_points(at,Wire.SLICE_RADIUS*clay.size_scale*0.9,13.6)
-	var standing := 0
-	for i in edge:
-		if data.heights[i] > level+0.01: standing += 1
-	print("SLICE ",JSON.stringify({"before":snappedf(before,0.01),"level":snappedf(level,0.01),"rim_points":edge.size(),"left_standing":standing}))
-	check("a slice cuts the rim's points to its plane",edge.size() > 0 and level < before-0.2 and standing == 0,[edge.size(),level,standing])
-	editor.undo()
-	await settled()
-	check("undo restores the ground after the slice",data.heights == base)
 	print("WIRE RIM PROBE ","PASS" if failures.is_empty() else "FAIL "+str(failures))
 	quit(0 if failures.is_empty() else 1)

@@ -15,6 +15,12 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##   an irregular straight-sided outline rises with cliff walls, its top
 ##   following the pointer as the pinch's summit does; drag down and it is a
 ##   pit with a flat floor and sheer walls.
+## - **Slice** (its own mode on the fan; hold, then drag up or down):
+##   everything within SLICE_RADIUS of the press standing above a level plane
+##   is cut down to it, a hilltop sliced off flat. The plane starts at the
+##   ground under the press and follows the pointer's height, so dragging down
+##   takes more of the hill. It was the Wire's until 2026-10-02, when the Wire
+##   became the Ravine and kept only its drawn line.
 ## - **Tap:** a notch. A small square is knocked NOTCH_DEPTH out of the ground
 ##   to a flat floor, squared to the fall line (on the flat, to the view), so
 ##   on a slope it is a single step.
@@ -107,6 +113,14 @@ const MESA_JAG := 0.18
 const MESA_RAISE := 6.0
 const PIT_SINK := 3.0
 const FLAT_FROM := 0.3
+## The slice: radius in metres at the middle pip; the plane rises and falls
+## with the pointer's travel 1:1 standing at the press (SHALLOW of it with
+## Shift), between SLICE_SINK below and SLICE_RAISE above the pressed ground.
+## Inside the radius the cut is a hard, level plane. A hill wider than the
+## radius is left a step at its rim, which the faces take as a cliff.
+const SLICE_RADIUS := 7.0
+const SLICE_SINK := 6.0
+const SLICE_RAISE := 8.0
 ## The notch: a square NOTCH_HALF metres from its middle to each side (the
 ## ground mark's chisel square, `mark_size`), its floor
 ## NOTCH_DEPTH below the ground at the tap. Only cut: where the ground inside
@@ -144,9 +158,9 @@ var _ground := 0.0
 var _shown_lift := INF
 var _knock_t := -1.0
 
-## The fan's modes (clay_tool `modes`): the mesa (or pit), the shelf and
-## the notch.
-const MODES := [{"id":"mesa","kind":"hold"},{"id":"shelf","kind":"drag"},{"id":"notch","kind":"tap"}]
+## The fan's modes (clay_tool `modes`): the mesa (or pit), the shelf, the
+## notch and the slice.
+const MODES := [{"id":"mesa","kind":"hold"},{"id":"shelf","kind":"drag"},{"id":"notch","kind":"tap"},{"id":"slice","kind":"hold"}]
 func modes() -> Array: return MODES
 func id() -> String: return "chisel"
 ## The Chisel stands upright in the hand, as its cursor sketch does.
@@ -293,6 +307,10 @@ func hold_begin(fine: bool) -> String:
 	_shallow = fine
 	var ground: Variant = clay.editor.data.sample(clay.center,clay.base)
 	_ground = float(ground) if ground != null else 0.0
+	_shown_lift = INF
+	if mode == "slice":
+		clay.gather(clay.center,SLICE_RADIUS*clay.size_scale)
+		return "shallow_slice" if fine else "slice"
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([clay.editor.land_seed,"chisel",(clay.center as Vector2).snapped(Vector2.ONE*0.01)])
 	var count := rng.randi_range(MESA_SIDES.x,MESA_SIDES.y)
@@ -301,12 +319,12 @@ func hold_begin(fine: bool) -> String:
 	for c in range(count):
 		_corners.append(Vector2(turn+TAU*(float(c)+rng.randf_range(-0.25,0.25))/count,1.0+rng.randf_range(-MESA_JAG,MESA_JAG)))
 	clay.gather(clay.center,_radius()*(1.0+MESA_JAG))
-	_shown_lift = INF
 	return "shallow_mesa" if fine else "mesa"
 
 func _radius() -> float: return MESA_RADIUS*clay.size_scale
 
 func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
+	if clay.verb.ends_with("slice"): return _slice_step(heights,rise)
 	var share := _depth()
 	lift = clampf(rise*share,-PIT_SINK*share,MESA_RAISE*share)
 	if is_equal_approx(lift,_shown_lift): return false
@@ -355,9 +373,32 @@ func _outline(theta: float) -> float:
 		return pa.cross(edge)/denom
 	return 1.0
 
+## The slice: the plane at the pressed ground plus the pointer's travel;
+## every gathered point above it is cut down to it.
+func _slice_step(heights: PackedFloat32Array, rise: float) -> bool:
+	lift = clampf(rise*_depth(),-SLICE_SINK,SLICE_RAISE)
+	if is_equal_approx(lift,_shown_lift): return false
+	_shown_lift = lift
+	var level := maxf(_ground+lift,NativeTerrainData.MIN_HEIGHT)
+	var base: PackedFloat32Array = clay.base
+	for i in clay.near: heights[i] = minf(base[i],level)
+	var radius: float = SLICE_RADIUS*clay.size_scale
+	clay.touch(clay.center,radius)
+	clay.dirty(clay.center,radius)
+	return true
+
+## The level the slice stands at, in metres (for probes).
+func slice_level() -> float:
+	return _ground+lift if _shown_lift != INF else INF
+
 ## Let go: the walls take rock, and trees on the moved ground slide off.
 func hold_end() -> void:
 	var reach := _radius()*(1.0+MESA_JAG)+1.0
+	if clay.verb.ends_with("slice"):
+		reach = SLICE_RADIUS*clay.size_scale+1.0
+		clay.paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
+		clay.shake_trees(clay.center,reach)
+		return
 	if absf(lift) >= FLAT_FROM: clay.paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
 	clay.shake_trees(clay.center,reach)
 

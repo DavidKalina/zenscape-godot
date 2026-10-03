@@ -3,7 +3,7 @@ extends SceneTree
 ## real cozy worlds scene, driven by synthesized input through hand_reach.
 ## A Mountain pulls a peak and lays its rock, the Brush paints rock over the
 ## summit too; then the Plane, drawn across the peak from one flank to the
-## other, must: fan out as the paddle's fourth mode with four surface swatches
+## other, must: fan out as the paddle's first mode with four surface swatches
 ## and no picker, grass in hand; bring the ground along the stroke to the
 ## press's height and leave the ground past its rim alone; replace the rock
 ## paint with grass at full weight, cover up and hand-made; take one undo
@@ -180,7 +180,7 @@ func run() -> void:
 	# --- The paddle's fan: the Plane, its swatches ---
 	materials.select_tool("paddle")
 	await frames(30)
-	check("the paddle fans out the plane",roll.modes == ["swell","sweep","pat","plane"],roll.modes)
+	check("the paddle fans out the plane",roll.modes == ["plane","pat"],roll.modes)
 	materials.set_mode("plane")
 	await frames(30)
 	check("the plane shows four surface swatches and no picker",roll.swatches == Paddle.SURFACE_SWATCHES and not roll.picker,[roll.swatches.size(),roll.picker])

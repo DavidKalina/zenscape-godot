@@ -13,10 +13,15 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##   smooths the land under it. **Shift** makes it the palm, which levels the
 ##   land to a little under the height under the press, a pan a pond can fill.
 ## - **Hold, then drag:** the pinch. Up raises and down sinks the pinched spot,
-##   directly: the summit follows the pointer. A low raise is a soft swell; a
-##   tall one draws up into a horn, the edge spring's jagged peaks' kind, and is
-##   painted with their rock when let go. Trees that cannot hold its flanks
-##   slide to its foot. **Shift** makes it a smaller, gentler pinch.
+##   directly: the summit follows the pointer. It is small: a knoll, a lip, a
+##   dam across a stream, a dip, never a mountain (that is the Mountain's).
+##   Trees that cannot hold its flanks slide to its foot. **Shift** makes it a
+##   smaller, gentler pinch.
+##
+## The Modeller is the fine tool, for the water's work (the user, 2026-10-02:
+## "it should really be for like creating streams, carving in little spots to
+## maybe create a waterfall"): streams, notches, spillways, a pond's lip. The
+## big shapes are the Mountain's, the Hills', the Ravine's and the Chisel's.
 ##
 ## The thumb's speed blend, pointer pixels per second over the clay's
 ## SPEED_WINDOW (path length, so a rub's turns do not read as slow): at
@@ -40,8 +45,8 @@ const RUB_SPEED := 1200.0
 ## that keeps falling across the ground's bumps; it cuts at most GROOVE_CUT
 ## metres deeper than GROOVE_DEPTH to do so, and past that it rises with a
 ## hump (an uphill stroke: level, then rising, so it drains back to its start).
-const GROOVE_HALF_WIDTH := 1.35
-const GROOVE_DEPTH := 0.75
+const GROOVE_HALF_WIDTH := 1.0
+const GROOVE_DEPTH := 0.6
 const GROOVE_FLOOR := 0.35
 const GROOVE_LIP := 0.12
 const LIP_OUT := 1.6
@@ -58,7 +63,7 @@ const RUB_CORE := 0.5
 ## is pressed PALM_SINK metres below the ground under the press, easing to
 ## none at the rim, so the palm leaves a level-floored pan a pond can fill;
 ## each stroke presses from the ground as it stands, so pressing again deepens it.
-const PALM_RADIUS := 2.0
+const PALM_RADIUS := 1.5
 const PALM_STEP := 0.5
 const PALM_CORE := 0.55
 const PALM_SINK := 0.4
@@ -69,16 +74,17 @@ const PALM_SINK := 0.4
 ## and sinking never takes ground below the clay's FLOOR (the land brush's
 ## floor). A Shift pinch is FINE_SCALE of the travel over a smaller spread.
 ##
-## A raise turns from that rounded swell into a horn as it grows (HORN, metres
-## of lift, as a smoothstep), the edge spring's peaks' kind (mountain_forms
-## "alpine", scripts/edge_spring.gd `_build_range`): concave faces up to a
-## sharp summit, three to five arêtes (seeded by the spot, so they hold while
-## the hand moves) standing proud between hollows, and the forms' crag noise
-## over the flanks, the outline wandering by the forms' lump noise (so the
-## points are gathered HORN_REACH of the widest radius out). The summit still
-## keeps to the pointer. Sinks stay rounded.
-const PINCH := {"r0":2.2,"grow":0.45,"max_radius":5.6,"raise":8.0,"sink":4.0,"scale":1.0}
-const FINE_PINCH := {"r0":1.2,"grow":0.3,"max_radius":2.6,"raise":2.0,"sink":1.0,"scale":0.4}
+## The Modeller's pinch stays that rounded swell, at most PINCH's raise. A
+## tool built on it that `horns` (the Mountain) turns a raise from the swell
+## into a horn as it grows (HORN, metres of lift, as a smoothstep), the edge
+## spring's peaks' kind (mountain_forms "alpine", scripts/edge_spring.gd
+## `_build_range`): concave faces up to a sharp summit, three to five arêtes
+## (seeded by the spot, so they hold while the hand moves) standing proud
+## between hollows, and the forms' crag noise over the flanks, the outline
+## wandering by the forms' lump noise (so the points are gathered HORN_REACH
+## of the widest radius out). The summit still keeps to the pointer.
+const PINCH := {"r0":1.4,"grow":0.5,"max_radius":2.4,"raise":1.5,"sink":1.2,"scale":1.0}
+const FINE_PINCH := {"r0":0.9,"grow":0.3,"max_radius":1.4,"raise":0.6,"sink":0.5,"scale":0.4}
 ## The pinch's give: the land does not hang rigidly off the pointer but
 ## follows it on a quick spring (PINCH_SPRING rad/s, PINCH_DAMPING of
 ## critical), so it stretches a little past and settles, as soft clay
@@ -169,6 +175,8 @@ func gesture(verb: String) -> String: return "pinch" if verb in [_pinch_verb(fal
 ## verb's name: a tool built on the pinch (the Mountain) gives its own.
 func _pinch_spec(fine: bool) -> Dictionary: return FINE_PINCH if fine else PINCH
 func _pinch_verb(fine: bool) -> String: return "fine_pinch" if fine else "pinch"
+## Whether a tall raise draws up into a horn: not the Modeller's.
+func horns() -> bool: return false
 func pace() -> float: return 1.0+1.5*rub
 func worked_as(verb: String) -> String: return "groove" if verb == "thumb" else verb
 func stroke_radius() -> float: return _groove_hw()
@@ -355,7 +363,7 @@ func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
 	if is_equal_approx(lift,_shown_lift): return false
 	_shown_lift = lift
 	var radius: float = minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))*clay.size_scale
-	var horn := smoothstep(HORN.x,HORN.y,lift)
+	var horn := smoothstep(HORN.x,HORN.y,lift) if horns() else 0.0
 	var base: PackedFloat32Array = clay.base
 	var near: PackedInt32Array = clay.near
 	var near_d: PackedFloat32Array = clay.near_d

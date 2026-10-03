@@ -4,7 +4,12 @@ extends Node3D
 ## can tips forward and water falls from its rose to the land straight below
 ## and pours into the live water there (WaterFlow `taps`), RATE m³/s at the
 ## middle pip, following the pointer: drag it along a groove and the groove
-## runs. With Shift down at the press it sprinkles: a wider, gentler shower
+## runs. Held over one spot (within GUSH_STILL m) in a hollow (a crater, a
+## pan, a pond already standing; `_basin`), it builds after GUSH_AFTER s to a gush GUSH
+## times as strong over GUSH_RISE s, its splash widening with it, so a crater
+## fills to its brim in seconds rather than minutes; moved on, it eases back
+## to the gentle pour. Where the water runs off (a hilltop, a slope) it stays
+## gentle, so holding still there plants a spring as before. With Shift down at the press it sprinkles: a wider, gentler shower
 ## through the rose. Held still on high or steep ground (where a dropped ball
 ## would make a spring) for SPRING_HOLD seconds, the pour takes: a spring
 ## rises there and keeps running after the can is lifted (WaterFlow
@@ -21,7 +26,28 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 ## splash RADIUS m across; a sprinkle pours SPRINKLE_SHARE of that over
 ## SPRINKLE_SPREAD times the radius.
 const RATE := 1.4
-const RADIUS := 0.45
+const RADIUS := 0.6
+## The gush: held still (the landing within GUSH_STILL m of where it settled)
+## in a hollow (`_basin`) for GUSH_AFTER s, the pour climbs over GUSH_RISE s to GUSH times RATE, its
+## splash to GUSH_SPREAD times the radius; moved on, it falls back over
+## GUSH_FALL s. At the middle pip that is 12.6 m³/s, which fills a 110 m³
+## crater (12 m across, 2.2 m deep) to the brim in about 15 s held where the
+## plain pour took over 90 (tools/probe_can_fill.gd). The shallow-water sim
+## stays steady at 15 m³/s. A sprinkle never gushes.
+const GUSH := 9.0
+const GUSH_AFTER := 0.6
+const GUSH_RISE := 3.0
+const GUSH_FALL := 0.4
+const GUSH_STILL := 1.2
+const GUSH_SPREAD := 2.2
+## A hollow: at one of BASIN_RINGS m round the landing, at least
+## BASIN_SIDES of the 8 ways stand BASIN_RISE m or more above it; or water
+## GUSH_POOL m deep or more stands there already. The land's shape decides,
+## not the can's own stream, which piles up a little under it anywhere.
+const BASIN_RINGS := [1.5,3.0,5.0,8.0]
+const BASIN_SIDES := 6
+const BASIN_RISE := 0.15
+const GUSH_POOL := 0.3
 const SPRINKLE_SHARE := 0.4
 const SPRINKLE_SPREAD := 3.0
 ## Seconds the pour takes to come on, as the can tips (and to stop), on a
@@ -38,7 +64,7 @@ const STILL := 0.35
 const DROPS_RATE := 70.0
 const DROP_SPEED := 1.3
 const GRAVITY := 9.8
-const BEADS := 220
+const BEADS := 480
 const SPLASH := 2
 ## The rose over the pointer's ground point when the prop is not shown (m).
 const FALLBACK_HEIGHT := 1.0
@@ -63,11 +89,16 @@ var flow_share := 0.0
 ## press.
 var landing := Vector2.INF
 var poured := 0.0
+## 0..1, how far the pour has built toward the gush (`_gush_step`).
+var gush := 0.0
 ## Springs this can has planted, for probes.
 var planted := 0
 var _still_at := Vector2.INF
 var _still := 0.0
 var _planted_here := false
+var _gush_at := Vector2.INF
+var _gush_held := 0.0
+var _gush_basin := false
 var _emit := 0.0
 var _beads: Array[Dictionary] = []
 var _bead_node: MultiMeshInstance3D
@@ -105,6 +136,9 @@ func press(point: Vector3, scale: float, fine: bool) -> void:
 	_still_at = Vector2.INF
 	_still = 0.0
 	_planted_here = false
+	gush = 0.0
+	_gush_at = Vector2.INF
+	_gush_held = 0.0
 
 func release() -> void:
 	if not pouring: return
@@ -116,6 +150,7 @@ func release() -> void:
 func stop() -> void:
 	release()
 	flow_share = 0.0
+	gush = 0.0
 	landing = Vector2.INF
 	_beads.clear()
 	if flow != null: flow.taps.erase("can")
@@ -143,16 +178,48 @@ func _process(delta: float) -> void:
 		_step_beads(delta,rose,tool)
 		return
 	landing = at
-	var rate := RATE*size_scale*smoothstep(0.0,1.0,flow_share)*(SPRINKLE_SHARE if sprinkle else 1.0)
-	var radius := RADIUS*size_scale*(SPRINKLE_SPREAD if sprinkle else 1.0)
+	_gush_step(at,delta)
+	var built := smoothstep(0.0,1.0,gush)
+	var rate := RATE*size_scale*smoothstep(0.0,1.0,flow_share)*(SPRINKLE_SHARE if sprinkle else lerpf(1.0,GUSH,built))
+	var radius := RADIUS*size_scale*(SPRINKLE_SPREAD if sprinkle else lerpf(1.0,GUSH_SPREAD,built))
 	if flow != null:
 		flow.taps["can"] = [at.x,at.y,radius,rate]
 		poured += rate*delta
-	ClaySound.voice(&"water_pour",flow_share*(0.6 if sprinkle else 1.0),(get_parent() as Node3D).to_global(rose))
+	ClaySound.voice(&"water_pour",flow_share*(0.6 if sprinkle else lerpf(1.0,1.4,built)),(get_parent() as Node3D).to_global(rose))
 	if pouring: _hold_still(at,delta)
 	_step_beads(delta,rose,tool)
 
-## Held still on spring ground long enough, the pour becomes a spring.
+## The gush builds while the landing stays put over pooling water and the
+## press is held, and falls back once it moves on or the can is lifted.
+func _gush_step(at: Vector2, delta: float) -> void:
+	if not pouring or sprinkle:
+		gush = move_toward(gush,0.0,delta/GUSH_FALL)
+		return
+	if _gush_at == Vector2.INF or at.distance_to(_gush_at) > GUSH_STILL:
+		_gush_at = at
+		_gush_held = 0.0
+		_gush_basin = _basin(at)
+	# Off a hollow the hold does not count: on high ground it is the spring's.
+	if _gush_basin: _gush_held += delta
+	if _gush_held >= GUSH_AFTER: gush = move_toward(gush,1.0,delta/GUSH_RISE)
+	else: gush = move_toward(gush,0.0,delta/GUSH_FALL)
+
+## Whether `at` lies in a hollow the can's water will stand in.
+func _basin(at: Vector2) -> bool:
+	if flow != null and float(flow.depth_at(at)) >= GUSH_POOL: return true
+	if not ground_at.is_valid(): return false
+	var here: Variant = ground_at.call(at)
+	if here == null: return false
+	for ring: float in BASIN_RINGS:
+		var higher := 0
+		for k in 8:
+			var around: Variant = ground_at.call(at+Vector2.from_angle(k*TAU/8.0)*ring)
+			if around != null and float(around) >= float(here)+BASIN_RISE: higher += 1
+		if higher >= BASIN_SIDES: return true
+	return false
+
+## Held still on spring ground long enough, the pour becomes a spring; not
+## into standing water, where the hold is filling it.
 func _hold_still(at: Vector2, delta: float) -> void:
 	if _still_at == Vector2.INF or at.distance_to(_still_at) > STILL:
 		_still_at = at
@@ -162,6 +229,7 @@ func _hold_still(at: Vector2, delta: float) -> void:
 	_still += delta
 	if _planted_here or _still < SPRING_HOLD or flow == null or sprinkle: return
 	_planted_here = true
+	if _gush_basin: return
 	if flow.source_kind(at) != "spring": return
 	planted += 1
 	spring_planted.emit(at)
@@ -188,12 +256,13 @@ func _step_beads(delta: float, rose: Variant, tool: RefCounted) -> void:
 		var foot: Variant = clay.prop_point(Vector3.ZERO) if tool != null else null
 		if tip != null and foot != null: way = ((tip as Vector3)-(foot as Vector3)).normalized()
 		elif tool != null: way = Vector3.DOWN
-		_emit += DROPS_RATE*flow_share*(2.0 if sprinkle else 1.0)*delta
+		var built := smoothstep(0.0,1.0,gush)
+		_emit += DROPS_RATE*flow_share*(2.0 if sprinkle else 1.0+built*2.5)*delta
 		while _emit >= 1.0:
 			_emit -= 1.0
-			var spread := 0.9 if sprinkle else 0.18
+			var spread := 0.9 if sprinkle else 0.18+built*0.22
 			var jitter := Vector3(randf_range(-1,1),randf_range(-1,1),randf_range(-1,1))*spread
-			var size := randf_range(0.02,0.035) if sprinkle else randf_range(0.035,0.06)
+			var size := randf_range(0.02,0.035) if sprinkle else randf_range(0.035,0.06)*(1.0+built*0.7)
 			_beads.append({"p":(rose as Vector3)+jitter*0.05,"v":(way+jitter).normalized()*DROP_SPEED*randf_range(0.85,1.15),"size":size*sqrt(size_scale),"splash":false,"t":0.0})
 	var kept: Array[Dictionary] = []
 	# The water's depth, read once a frame: drops splash on its surface.

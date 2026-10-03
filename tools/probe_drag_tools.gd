@@ -1,16 +1,20 @@
 extends SceneTree
 ## Headless probe of the drag tools (scripts/clay_tools/hills.gd, mountain.gd,
-## bowl.gd) and the mode fans of the tools with several verbs, on the real
+## crater.gd)
+## and the mode fans of the tools with several verbs, on the real
 ## cozy worlds scene, driven by synthesized input through hand_reach. Checks:
 ## each drag tool has a pocket and no fan; a Hills drag raises the land along
 ## the path by how far it goes (rolling, not even), a second pass lifts it
 ## more, and it lowers nothing; a Mountain press dragged up pulls a peak at
-## once; a Bowl drag presses out a basin with a level floor and raises
-## nothing; each is one undo step one undo takes back exactly; and the
+## once, and dragged down leaves the land as it was; a Crater press dragged
+## down opens a crater (a sunk floor, a raised rim); the Bowl and the Hammer
+## are off the roll; each is
+## one undo step one undo takes back exactly; and the
 ## Paddle's and Modeller's fans pick their verb, hold verbs starting at the
 ## press.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_drag_tools.gd -- --modeless --no-title
-const Bowl = preload("res://scripts/clay_tools/bowl.gd")
+const Mountain = preload("res://scripts/clay_tools/mountain.gd")
+const Crater = preload("res://scripts/clay_tools/crater.gd")
 var scene: Node3D
 var editor: NativeChunkEditor
 var reach: Node
@@ -184,9 +188,10 @@ func run() -> void:
 		if roll.shown > 0.99: break
 		await process_frame
 	var undo0: int = data._undo.size()
-	for id in ["hills","mountain","bowl"]:
+	for id in ["hills","mountain"]:
 		var pocket: Vector2 = roll._cell(roll.TOOLS.find(id)).get_center()
 		check("the %s has a pocket" % id,roll.tool_at(pocket) == id,roll.tool_at(pocket))
+	check("the bowl is off the roll",not "bowl" in roll.TOOLS,roll.TOOLS)
 	var hills_pocket: Vector2 = roll._cell(roll.TOOLS.find("hills")).get_center()
 	await click(hills_pocket)
 	await frames(10)
@@ -263,44 +268,74 @@ func run() -> void:
 	check("dragging up pulls a mountain",peak > 4.0,peak)
 	await undo_exact(peak_base,undo0,"mountain")
 
-	# --- Bowl: a drag presses out a level-floored basin ---
-	materials.select_tool("bowl")
-	await frames(10)
-	var bowl_base := data.heights.duplicate()
-	var level := height(at)
-	button(spot+Vector2(-60,0),true)
+	# --- Mountain: press and drag down, nothing ---
+	var down_base := data.heights.duplicate()
+	button(spot,true)
 	await frames(2)
-	for k in range(24):
-		motion(spot+Vector2(-60+5*(k+1),0),Vector2(5,0))
+	for k in range(20):
+		motion(spot+Vector2(0,5*(k+1)),Vector2(0,5))
 		await frames(1)
-	button(spot+Vector2(60,0),false)
+	button(spot+Vector2(0,100),false)
 	await settled()
-	var bowl_count: Dictionary = moved(bowl_base,0.05)
-	var floor_points := 0
-	for i in range(data.points.size()):
-		if data.points[i].distance_to(at) < 2.0 and absf(data.heights[i]-(level-Bowl.DEPTH)) < 0.25: floor_points += 1
-	print("BOWL ",JSON.stringify({"lowered":bowl_count.down,"raised":bowl_count.up,"centre_depth":snappedf(level-height(at),0.01),"floor_points":floor_points}))
-	check("a bowl drag lowers the land and raises none",bowl_count.down > 50 and bowl_count.up == 0,bowl_count)
-	check("to about its depth in the middle",absf(level-height(at)-Bowl.DEPTH) < 0.4,level-height(at))
-	check("with a level floor",floor_points >= 6,floor_points)
-	await undo_exact(bowl_base,undo0,"bowl")
+	var moved_down := 0.0
+	for i in range(data.points.size()): moved_down = maxf(moved_down,absf(data.heights[i]-down_base[i]))
+	check("the mountain only builds up: dragged down, the land stays (%.4f m)" % moved_down,moved_down < 0.005,moved_down)
+	if data._undo.size() > undo0: await undo_exact(down_base,undo0,"mountain down")
+
+	# --- Crater: press and drag down ---
+	materials.select_tool("crater")
+	await frames(30)
+	check("the crater has a pocket, no fan",roll.tool == "crater" and clay.tool_id == "crater" and roll.modes.is_empty(),[roll.tool,clay.tool_id,roll.modes])
+	for fine in [false,true]:
+		var crater_base := data.heights.duplicate()
+		var crater_before := height(at)
+		if fine: shift(true)
+		button(spot,true)
+		await frames(2)
+		check("a crater press is a hold at once",clay.state == clay.State.HOLD,clay.state)
+		for k in range(20):
+			motion(spot+Vector2(0,5*(k+1)),Vector2(0,5))
+			await frames(1)
+		if fine: shift(false)
+		button(spot+Vector2(0,100),false)
+		await settled()
+		var lift: float = clay.tool.lift
+		var spec: Dictionary = Crater.FINE_CRATER if fine else Crater.CRATER
+		var radius: float = minf(float(spec.r0)+float(spec.grow)*absf(lift),float(spec.max_radius))*clay.size_scale
+		var floor_drop := 0.0
+		var rim_rise := 0.0
+		var outside := 0
+		for i in range(data.points.size()):
+			var d: float = data.points[i].distance_to(clay.center)
+			var change: float = data.heights[i]-crater_base[i]
+			if d < radius*Crater.CRATER_FLOOR: floor_drop = minf(floor_drop,change)
+			elif d > radius*0.7 and d < radius*1.1: rim_rise = maxf(rim_rise,change)
+			elif d > radius*Crater.CRATER_RIM_OUT*1.05 and absf(change) > 0.005: outside += 1
+		var name := "fine_crater" if fine else "crater"
+		print(name.to_upper()," ",JSON.stringify({"lift":snappedf(lift,0.01),"radius":snappedf(radius,0.01),"centre":snappedf(height(at)-crater_before,0.01),"floor":snappedf(floor_drop,0.01),"rim":snappedf(rim_rise,0.01),"outside":outside}))
+		check("dragging down opens a %s: the floor sinks" % name,lift < -0.5 and floor_drop < -0.4,[lift,floor_drop])
+		check("with a rim raised round it (%s)" % name,rim_rise > 0.1,rim_rise)
+		check("nothing moved past the rim (%s)" % name,outside == 0,outside)
+		check("it is worked as %s, one undo step" % name,not worked.is_empty() and worked.back() == [name,true] and data._undo.size() == undo0+1,[worked.back() if not worked.is_empty() else [],data._undo.size()-undo0])
+		await undo_exact(crater_base,undo0,name)
+	# Dragged up, the crater does nothing.
+	var up_base := data.heights.duplicate()
+	button(spot,true)
+	await frames(2)
+	for k in range(20):
+		motion(spot-Vector2(0,5*(k+1)),Vector2(0,-5))
+		await frames(1)
+	button(spot-Vector2(0,100),false)
+	await settled()
+	var raised := 0.0
+	for i in range(data.points.size()): raised = maxf(raised,data.heights[i]-up_base[i])
+	check("dragged up, the crater raises nothing (%.4f m)" % raised,raised < 0.005,raised)
+	if data._undo.size() > undo0: await undo_exact(up_base,undo0,"crater up")
 
 	# --- Other tools' modes: the fan picks the verb, no hold-then-drag ---
 	materials.select_tool("paddle")
 	await frames(30)
-	check("the paddle fans out its modes",roll.modes == ["swell","sweep","pat","plane"] and roll.mode == "swell",[roll.modes,roll.mode])
-	var swell_base := data.heights.duplicate()
-	var swell_before := height(at)
-	button(spot,true)
-	await frames(2)
-	check("a swell press is a hold at once",clay.state == clay.State.HOLD and clay.verb == "swell",[clay.state,clay.verb])
-	for k in range(20):
-		motion(spot-Vector2(0,4*(k+1)),Vector2(0,-4))
-		await frames(1)
-	button(spot-Vector2(0,80),false)
-	await settled()
-	check("dragging up straight away swells the land",height(at) > swell_before+0.5,height(at)-swell_before)
-	await undo_exact(swell_base,undo0,"swell")
+	check("the paddle fans out its modes",roll.modes == ["plane","pat"] and roll.mode == "plane",[roll.modes,roll.mode])
 	materials.set_mode("pat")
 	button(spot,true)
 	await frames(2)
@@ -314,9 +349,7 @@ func run() -> void:
 		editor.undo()
 		await settled()
 	await key(KEY_E)
-	check("E steps the paddle's mode on to the plane",roll.mode == "plane" and clay.tool.mode == "plane",[roll.mode,clay.tool.mode])
-	await key(KEY_E)
-	check("E steps the paddle's mode, wrapping round",roll.mode == "swell" and clay.tool.mode == "swell",[roll.mode,clay.tool.mode])
+	check("E steps the paddle's mode, wrapping round to the plane",roll.mode == "plane" and clay.tool.mode == "plane",[roll.mode,clay.tool.mode])
 	materials.select_tool("hand")
 	await frames(30)
 	check("the modeller fans out its modes",roll.modes == ["pinch","groove","palm","poke"],roll.modes)
@@ -331,9 +364,7 @@ func run() -> void:
 	await settled()
 	check("the modeller's pinch starts at the press",height(at) > pinch_before+0.5,height(at)-pinch_before)
 	await undo_exact(pinch_base,undo0,"pinch")
-	materials.select_tool("hammer")
-	await frames(10)
-	check("the hammer, one verb, has no fan",roll.modes.is_empty())
+	check("the hammer is off the roll",not "hammer" in roll.TOOLS,roll.TOOLS)
 
 	print("DRAG TOOLS PROBE: ",failures.size()," failures ",failures)
 	quit(1 if not failures.is_empty() else 0)

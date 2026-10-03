@@ -4,8 +4,9 @@ extends SceneTree
 ## worlds scene with synthesized input through hand_reach:
 ## - the blank plate's relief is measured and a pull there still springs a
 ##   random range;
-## - the clay sculpts a peak (pinch), a groove (slow thumb) and a basin (Shift
-##   palm); a gentle and then a hard edge pull amplify them: peak height and
+## - the clay sculpts a peak (the Mountain's pull: the Modeller's pinch tops
+##   out at 1.5 m since 2026-10-02), a groove (the Modeller's slow thumb, its
+##   groove mode) and a basin (its palm mode); a gentle and then a hard edge pull amplify them: peak height and
 ##   prominence, groove and basin depth before and after, the rim unmoved, the
 ##   groove's dirt unpainted, one undo step each restoring heights and tint
 ##   exactly, and an undo mid-spring;
@@ -300,8 +301,15 @@ func run() -> void:
 	var worked := []
 	clay.worked.connect(func(verb: String, kept: bool) -> void: worked.append([verb,kept]))
 	print("sculpt spots on screen: peak %s groove %s basin %s; bare %s" % [screen(PEAK),screen(GROOVE[0]),screen(BASIN),[reach.reach_at(screen(PEAK)),reach._prop_at(screen(PEAK)),reach.reach_at(screen(BASIN)),reach._prop_at(screen(BASIN))]])
-	await pinch(PEAK,45.0)
+	var materials: Node = reach.get("materials")
+	materials.select_tool("mountain")
+	await frames(10)
+	await pinch(PEAK,18.0)
+	materials.select_tool("hand")
+	await frames(10)
+	materials.set_mode("groove")
 	await drag(GROOVE,3.0)
+	materials.set_mode("palm")
 	await palm(BASIN,1.8)
 	await palm(BASIN,1.8)
 	print("clay worked: ",worked)

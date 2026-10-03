@@ -1,8 +1,9 @@
 extends "res://tools/landscapes/harness.gd"
-## Plunge pool: high ground at the back from a paddle swell, a Chisel shelf
-## dragged across the plate to make a cliff, a Wire gorge notching the lip, a
-## paddle swell-down for a pool at the cliff's foot, water poured on the high
-## ground. Tests: can the tools make a real cliff, and does water drop off it
+## Plunge pool: high ground at the back from a low Mountain pull, a Chisel
+## shelf dragged across the plate to make a cliff, a Ravine gorge notching the
+## lip, a Mountain crater for a pool at the cliff's foot, water poured on the
+## high ground. (Until 2026-10-02 the high ground and the pool were Paddle
+## swells; "The roll, revised", docs/design/tools/PLAN.md, cut the swell.) Tests: can the tools make a real cliff, and does water drop off it
 ## into the pool.
 
 const UPLAND := Vector2(0.0,-7.0)
@@ -21,19 +22,20 @@ func title() -> String: return "plunge_pool"
 
 func build() -> void:
 	await still("start")
-	# The upland: a broad swell at the back.
-	await take_tool("paddle")
+	# The upland: a broad low pull at the back.
+	await take_tool("mountain")
 	await size(3)
 	await hold_to(UPLAND,4.0)
 	heights_at({"upland":UPLAND,"lip":LIP,"pool":POOL})
 	# The cliff: a Chisel shelf across the swell's front slope.
 	await take_tool("chisel")
 	await size(3)
+	await take_mode("shelf")
 	await brisk_drag(SHELF_W,3.0)
 	await brisk_drag(SHELF_E,3.0)
 	heights_at({"shelf":Vector2(0,-3.5),"lip":LIP,"below lip":LIP+Vector2(0,1.0),"foot":LIP+Vector2(0,2.5)})
-	# The pool at the foot: a paddle swell pulled down.
-	await take_tool("paddle")
+	# The pool at the foot: a Crater pulled down.
+	await take_tool("crater")
 	await size(1)
 	var was := height(POOL)
 	await hold_to(POOL,was-1.2)
@@ -43,7 +45,7 @@ func build() -> void:
 		# verb reported): a player would try again.
 		log_line("pool swell did nothing; pressing again")
 		await hold_to(POOL+Vector2(0.3,0.0),was-1.2)
-	# The notch: a Wire gorge from the upland out over the lip.
+	# The notch: a Ravine gorge from the upland out over the lip.
 	await take_tool("wire")
 	await size(1)
 	await brisk_drag(GORGE,3.0,true)

@@ -49,8 +49,8 @@ extends Node
 ## The marks.
 ## The Sculpt's, the drag tools' and the Brush's are the Modeller's ring (the shader's kind
 ## 0), at their reach.
-const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl","brush","flower"]
-const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0,"brush":0,"flower":0}
+const KINDS := ["hand","paddle","chisel","wire","hammer","material","feather","feather_lane","feather_burst","sculpt","hills","mountain","bowl","brush","flower","crater"]
+const KIND_INDEX := {"hand":0,"paddle":1,"chisel":2,"wire":3,"hammer":4,"material":5,"feather":6,"feather_lane":7,"feather_burst":8,"sculpt":0,"hills":0,"mountain":0,"bowl":0,"crater":0,"brush":0,"flower":0}
 ## The flower brush's mark while its press paints: this share of its full show.
 const PAINT_SHOWN := 0.55
 
@@ -233,7 +233,10 @@ func size_of(which: String, size_scale: float) -> Vector2:
 		"material":
 			var r := _material_radius()*size_scale
 			return Vector2(r,r)
-		"flower": return Vector2.ONE*preload("res://scripts/flower_paint.gd").RADIUS*size_scale
+		"flower":
+			var materials: Node = reach.get("materials") if reach != null else null
+			var trees: bool = materials != null and materials.plants_trees(materials.held)
+			return Vector2.ONE*(preload("res://scripts/tree_paint.gd").TREE_RADIUS if trees else preload("res://scripts/flower_paint.gd").RADIUS)*size_scale
 	return Vector2.ZERO
 
 # --- Deciding, each frame --------------------------------------------------------

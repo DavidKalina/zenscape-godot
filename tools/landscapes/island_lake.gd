@@ -1,6 +1,7 @@
 extends "res://tools/landscapes/harness.gd"
-## Island lake: a broad basin (a Paddle swell pulled down), one island pinched
-## up in it with the Modeller, an oak sown on the island, water poured round
+## Island lake: a broad basin (a loop drawn with the Ravine; a Paddle swell
+## pulled down until the swell went, 2026-10-02), one island pinched up in it
+## with the Modeller, an oak sown on the island, water poured round
 ## it. Then the levee test: a Chisel drag pressed on the shore and run across
 ## the lake's near end, to see whether a shelf set above the ground can stand
 ## as a dam (a line-raising verb is a suspected gap).
@@ -18,15 +19,18 @@ func line(label: String, z: float) -> void:
 	log_line("row %s z=%+.1f x -12..12: %s" % [label,z," ".join(parts)])
 
 func build() -> void:
-	await take_tool("paddle")
+	await take_tool("wire")
 	await size(3)
-	await hold_to(BASIN,-1.2)
+	await loop(BASIN,7.0,true)
 	line("basin",BASIN.y)
 	line("basin near",DAM_Z)
 	# Take 1 pinched the island with the Modeller (hold_to 1.6 m): a steep bare
 	# cone the sown oak could not stay on. Take 2: a narrow Paddle swell, lower.
+	# Take 3: the Modeller again, now that its pinch is small (a 0.7 m knoll).
+	await take_tool("hand")
+	await take_mode("pinch")
 	await size(2)
-	await hold_to(ISLAND,0.7,true)
+	await hold_to(ISLAND,height(ISLAND)+0.7)
 	heights_at({"island":ISLAND,"island+2":ISLAND+Vector2(2,0),"island-2":ISLAND-Vector2(2,0),"basin":BASIN+Vector2(-4,0)})
 	line("island",ISLAND.y)
 	measure_verbs()
@@ -57,16 +61,18 @@ func build() -> void:
 	# Take 2's mound and dam presses both did nothing; take 3 logs what stands
 	# under the press and, as a player would, tries again a step aside.
 	var shore := Vector2(-9.5,DAM_Z)
-	await take_tool("paddle")
+	await take_tool("hand")
+	await take_mode("pinch")
 	await size(1)
 	for attempt in range(3):
 		log_line("under the press at %s: %s, hover reach '%s'" % [shore,life_near(shore,0.9),reach.reach_at(screen(shore))])
 		var before := worked.size()
-		await hold_to(shore,1.4,true)
+		await hold_to(shore,1.4)
 		if worked.size() > before: break
 		shore += Vector2(0.7,-0.7)
 	heights_at({"mound":shore})
 	await take_tool("chisel")
+	await take_mode("shelf")
 	await size(2)
 	log_line("dam press ground %.2f" % height(shore))
 	line("before dam",DAM_Z)

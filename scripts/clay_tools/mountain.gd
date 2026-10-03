@@ -1,6 +1,8 @@
 extends "res://scripts/clay_tools/hand.gd"
 ## The Mountain, "Peak": press on the land and drag up, and a mountain is pulled
-## out of it, its summit following the pointer; drag down and the land sinks.
+## out of it, its summit following the pointer. It only builds up: dragging
+## down does nothing past the press's ground (the Crater is the tool that
+## goes down; the user, 2026-10-02: one landform, one tool).
 ## It is the Modeller's pinch (scripts/clay_tools/hand.gd) made bigger
 ## (PEAK: a wider spread, a taller reach, a faster pull), and it is its only
 ## verb, taken at the press (`press_kind`): no holding still first. As it
@@ -34,8 +36,8 @@ extends "res://scripts/clay_tools/hand.gd"
 ## the peak turns into a horn (HORN). Let go, the range takes the rock along
 ## its length, as the peak does.
 
-const PEAK := {"r0":3.0,"grow":0.55,"max_radius":8.0,"raise":14.0,"sink":6.0,"scale":1.4,"range":20.0,"spacing":4.0}
-const FINE_PEAK := {"r0":1.8,"grow":0.4,"max_radius":4.0,"raise":6.0,"sink":3.0,"scale":0.6,"range":10.0,"spacing":2.2}
+const PEAK := {"r0":3.0,"grow":0.55,"max_radius":8.0,"raise":14.0,"sink":0.0,"scale":1.4,"range":20.0,"spacing":4.0}
+const FINE_PEAK := {"r0":1.8,"grow":0.4,"max_radius":4.0,"raise":6.0,"sink":0.0,"scale":0.6,"range":10.0,"spacing":2.2}
 const RANGE_DEAD := 1.5
 const RANGE_EASE := 2.5
 const RANGE_NARROW := 0.45
@@ -71,6 +73,7 @@ var _tall := PackedFloat32Array()
 var _summit_aretes: Array[PackedFloat32Array] = []
 
 func id() -> String: return "mountain"
+func horns() -> bool: return true
 func modes() -> Array: return []
 func press_kind() -> String: return "hold"
 func hover_gesture() -> String: return "pinch"

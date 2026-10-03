@@ -1,61 +1,23 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
-## The Paddle, "Mass" (docs/design/tools/PLAN.md): the Modeller's grammar with a
-## broad blade, for moving a lot of land softly.
+## The Paddle, "Smooth" (docs/design/tools/PLAN.md): a broad blade for
+## levelling and resurfacing the land.
 ##
-## - **Drag:** a sweep. The blade pushes the earth under it ahead and aside:
-##   the path is left a long, soft trough, and the earth stands beside it as a
-##   soft ridge on either bank (and, where the stroke ends, a little ahead of
-##   it). Across, both follow the ground, as the thumb's groove does.
-## - **Hold, then drag up or down:** a swell. A wide, round-shouldered rise
-##   (or hollow) several times the pinch's spread; its crown follows the
-##   pointer, as the pinch's summit does, but it never draws up into a horn.
-## - **Tap:** a pat. The blade laid flat: the ground under it eases toward its
+## - **Drag (Plane):** the blade drawn level. The ground under the stroke is
+##   planed to the height it stood at under the press, and its surface is laid
+##   afresh as one of SURFACES (grass, earth, rock or sand), picked on the
+##   swatch strip under the fan. So rock, or any paint, is never for keeping:
+##   plane it and it is grass again.
+## - **Tap (Pat):** the blade laid flat: the ground under it eases toward its
 ##   own mean, flattening bumps without raising or sinking the patch.
-## - **Plane** (its own mode on the fan, a drag): the blade drawn level. The
-##   ground under the stroke is planed to the height it stood at under the
-##   press, and its surface is laid afresh as one of SURFACES (grass, earth,
-##   rock or sand), picked on the swatch strip under the fan. So rock, or
-##   any paint, is never for keeping: plane it and it is grass again.
 ## - **Shift** at the moment the verb is decided: a narrower blade
-##   (NARROW of the width) for all four.
+##   (NARROW of the width) for both.
 ##
-## Each is one undo step. The Paddle is the landscape tool and the Modeller
-## the detail one, so where the Modeller's groove is a crisp bare-earth line,
-## the sweep is a grassed valley: its ground shows only SWEEP_DIRT of the
-## clay's bare earth, a faint scuff that never kills the grass, and its
-## ridges stay grassed shoulders, without the groove's pale turned-clay
-## fringe (`turns_lip`), which outlined it as a trench. Trees on
-## ground the paddle moved and can no longer hold slide to its foot at release.
+## Each is one undo step. The Paddle is the tidy-up tool: it makes no
+## landforms of its own (the Hills, Mountain and Ravine do; its sweep and
+## swell went to them on 2026-10-02), it levels and resurfaces what they
+## leave. Trees on ground the plane moved and can no longer hold slide to its
+## foot at release.
 ##
-## The sweep: half-width SWEEP_HALF_WIDTH metres, SWEEP_DEPTH deep on the line
-## on a raised-cosine profile (no flat floor, no edge: soft), and a ridge
-## SWEEP_RIDGE high from the trough's edge out to RIDGE_OUT half-widths, on a
-## sin² profile. The ridge carries about the earth the trough takes out
-## (0.6 m × 2.8 m of trough against 2 × 0.5 × 0.43 m × 3.92 m of ridge). Both
-## are broader and gentler than the groove (steepest about 0.34 rise/run,
-## against the groove's 0.75 m within 1.35 m), so the sweep reads as a swale between low
-## shoulders, not a trench.
-## Each dab moves the ground SWEEP_STEP of the way to that shape and never past
-## it: going over a line again within one stroke does not dig it deeper, a
-## new stroke does. Ground the trough has taken is never raised again by a
-## later dab's ridge, so a curved sweep leaves its ridges outside the curve.
-const SWEEP_HALF_WIDTH := 2.8
-const SWEEP_DEPTH := 0.6
-const SWEEP_RIDGE := 0.43
-const RIDGE_OUT := 2.4
-const SWEEP_STEP := 0.5
-## The share of the clay's bare earth the sweep's ground shows (clay_tool
-## `dirt_share`): under the clay's DIRT_BARE, so the grass lives on.
-const SWEEP_DIRT := 0.2
-## The swell: radius in metres (the pinch opens at 2.2), its lift between
-## -SWELL_SINK and SWELL_RAISE metres (the clay's FLOOR still holds a sink),
-## at SWELL_SCALE of the pointer's travel in metres standing at the spot. The
-## profile is `1 - smoothstep(0, 1, t)`: level on the crown, steepest halfway
-## out, easing into the ground at the rim: round shoulders, a soft foot.
-const SWELL_RADIUS := 6.5
-const SWELL_RAISE := 5.0
-const SWELL_SINK := 3.0
-const SWELL_SCALE := 1.0
 ## The pat: radius in metres; each point moves PAT_STEP of the way to the
 ## patch's mean height, fully inside PAT_CORE of the radius and easing out to
 ## the rim. The mean is weighted the same way, so the patch keeps its earth.
@@ -104,8 +66,6 @@ const BLADE := Vector3(0.62,0.72,0.1)
 const TILT := -24.0
 
 var _narrow := false
-var _swept := PackedByteArray()
-var _shown_lift := INF
 var _pat_t := -1.0
 ## The plane's level (m), and the stroke's starting cover, which each dab
 ## lays over afresh: the tint, grass, meadow and blades as they stood at the
@@ -117,9 +77,8 @@ var _meadow_from := PackedFloat32Array()
 var _blades_from := PackedFloat32Array()
 var _laid := {}
 
-## The fan's modes (clay_tool `modes`): the swell, the sweep, the pat and the
-## plane.
-const MODES := [{"id":"swell","kind":"hold"},{"id":"sweep","kind":"drag"},{"id":"pat","kind":"tap"},{"id":"plane","kind":"drag"}]
+## The fan's modes (clay_tool `modes`): the plane and the pat.
+const MODES := [{"id":"plane","kind":"drag"},{"id":"pat","kind":"tap"}]
 func modes() -> Array: return MODES
 func id() -> String: return "paddle"
 func prop_tilt() -> float: return TILT
@@ -128,10 +87,8 @@ func picks() -> bool: return false
 ## The plane lays its own surface over the whole swath, so the clay's dirt
 ## (which would write the cut's strata over it, and bare the cells at
 ## release) stays out of it.
-func dirt_share(verb: String) -> float:
-	if verb.ends_with("plane"): return 0.0
-	return SWEEP_DIRT if verb.ends_with("sweep") else 1.0
-func stroke_radius() -> float: return _width()*(PLANE_RADIUS if mode == "plane" else SWEEP_HALF_WIDTH)
+func dirt_share(verb: String) -> float: return 0.0 if verb.ends_with("plane") else 1.0
+func stroke_radius() -> float: return _width()*PLANE_RADIUS
 func mark_size() -> Vector2: return Vector2(PAT_RADIUS,PAT_RADIUS*MARK_DEPTH)
 func gesture(verb: String) -> String: return "press" if verb.ends_with("pat") else "grip"
 
@@ -152,45 +109,19 @@ func reset() -> void:
 	lift = 0.0
 	_narrow = false
 
-# --- Drag: the sweep ---------------------------------------------------------------
+# --- Drag: the plane ---------------------------------------------------------------
 
 func drag_begin(fine: bool) -> String:
 	_narrow = fine
-	if mode == "plane": return _plane_begin(fine)
-	_swept = PackedByteArray()
-	_swept.resize(clay.base.size())
-	return "narrow_sweep" if fine else "sweep"
+	return _plane_begin(fine)
 
 func dab(heights: PackedFloat32Array, q: Vector2) -> float:
-	if str(clay.verb).ends_with("plane"): return _plane_dab(heights,q)
-	var half := SWEEP_HALF_WIDTH*_width()
-	var reach := half*RIDGE_OUT
-	var base: PackedFloat32Array = clay.base
-	clay.gather(q,reach)
-	clay.touch(q,reach)
-	var near: PackedInt32Array = clay.near
-	var near_d: PackedFloat32Array = clay.near_d
-	for k in near.size():
-		var i := near[k]
-		var t := near_d[k]/half
-		var fade: float = clay.fade(i)
-		var h := heights[i]
-		if t < 1.0:
-			_swept[i] = 1
-			var goal := base[i]-SWEEP_DEPTH*0.5*(1.0+cos(PI*t))
-			if goal < h: heights[i] = maxf(lerpf(h,goal,SWEEP_STEP*fade),NativeTerrainData.MIN_HEIGHT)
-		elif _swept[i] == 0:
-			var s := sin(PI*(t-1.0)/(RIDGE_OUT-1.0))
-			var goal := base[i]+SWEEP_RIDGE*s*s
-			if goal > h: heights[i] = minf(lerpf(h,goal,SWEEP_STEP*fade),NativeTerrainData.MAX_HEIGHT)
-	return half
+	return _plane_dab(heights,q)
 
-## Let go: trees the sweep left on ground they cannot hold slide off.
+## Let go: trees the plane left on ground they cannot hold slide off.
 func drag_end() -> bool:
 	clay.shake_trees(clay.center,0.0,clay.touched())
 	return false
-
-# --- Drag: the plane ---------------------------------------------------------------
 
 ## The level is the ground under the press; the cover is taken as it stands.
 func _plane_begin(fine: bool) -> String:
@@ -251,34 +182,6 @@ func _plane_dab(heights: PackedFloat32Array, q: Vector2) -> float:
 	data.tint = tint
 	data.grass = grass
 	return 0.0
-
-# --- Hold: the swell -----------------------------------------------------------------
-
-func hold_begin(fine: bool) -> String:
-	_narrow = fine
-	clay.gather(clay.center,SWELL_RADIUS*_width())
-	_shown_lift = INF
-	return "narrow_swell" if fine else "swell"
-
-func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
-	lift = clampf(rise*SWELL_SCALE,-SWELL_SINK,SWELL_RAISE)
-	if is_equal_approx(lift,_shown_lift): return false
-	_shown_lift = lift
-	var radius := SWELL_RADIUS*_width()
-	var base: PackedFloat32Array = clay.base
-	var near: PackedInt32Array = clay.near
-	var near_d: PackedFloat32Array = clay.near_d
-	for k in near.size():
-		var i := near[k]
-		var shape := 1.0-smoothstep(0.0,1.0,near_d[k]/radius)
-		var h: float = base[i]+lift*shape*clay.fade(i)
-		if lift < 0.0: h = maxf(h,minf(base[i],clay.FLOOR))
-		heights[i] = clampf(h,NativeTerrainData.MIN_HEIGHT,NativeTerrainData.MAX_HEIGHT)
-	clay.touch(clay.center,radius)
-	return true
-
-func hold_end() -> void:
-	clay.shake_trees(clay.center,SWELL_RADIUS*_width()+1.0)
 
 # --- Tap: the pat ---------------------------------------------------------------------
 

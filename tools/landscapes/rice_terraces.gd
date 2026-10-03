@@ -1,5 +1,6 @@
 extends "res://tools/landscapes/harness.gd"
-## Rice terraces: a big Paddle swell, then Chisel drags round its near flank at
+## Rice terraces: a big hill scrubbed up with the Hills (a Paddle swell until
+## it went, 2026-10-02), then Chisel drags round its near flank at
 ## stepped heights (a flight of terraces, top down), then water poured on the
 ## crown. Tests: does the chisel make a readable flight of steps on a dome,
 ## and does water step down the terraces or just run off.
@@ -35,13 +36,14 @@ func transect(label: String, bearing: float) -> void:
 func build() -> void:
 	var near := toward_camera()
 	log_line("camera bearing %.2f rad" % near)
-	await take_tool("paddle")
+	await take_tool("hills")
 	await size(3)
-	await hold_to(CROWN,5.0)
+	await scrub_to(CROWN,5.0,3.0,12)
 	transect("swell",near)
 	await overview()
 	await still("swell")
 	await take_tool("chisel")
+	await take_mode("shelf")
 	await size(2)
 	for r: float in RADII:
 		await drag(arc(r,near,SPREAD,18),3.0,FINE)

@@ -37,7 +37,7 @@ const ClaySound = preload("res://scripts/clay_sound.gd")
 ## Every tool. The Feather (HUD 5, "Gust") holds wind, the watering can
 ## ("Pour") water and the Brush ("Paint") colour, not clay: they are TOP, on
 ## the strip along the top edge, left to right; the rest go down the roll.
-const TOOLS := ["hand","hills","mountain","bowl","paddle","chisel","wire","hammer","feather","can","brush"]
+const TOOLS := ["hand","hills","mountain","crater","wire","chisel","paddle","feather","can","brush"]
 const TOP := ["feather","can","brush"]
 ## Places on the roll (not indices in TOOLS) that a stitched divider sits
 ## above (lowpoly.js TOOL_DIVIDER_BEFORE); none since the Feather went up top.

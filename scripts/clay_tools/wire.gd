@@ -1,7 +1,11 @@
 extends "res://scripts/clay_tools/clay_tool.gd"
-## The Wire, "Slice" (docs/design/tools/PLAN.md): a taut wire between two
-## wooden toggles, drawn through the land as a potter's wire goes through clay.
-## It cuts; it never raises.
+## The Ravine, "Carve" (docs/design/tools/PLAN.md; it keeps the id `wire`
+## from when it was the Wire, so probes and the roll read as before): a taut
+## wire between two wooden toggles, drawn through the land as a potter's wire
+## goes through clay. It cuts; it never raises. Its one gesture is drawing a
+## line (the user, 2026-10-02: drawing the line and watching it form the
+## terrain was the fun; mountains are pulled, not drawn), so a press is a
+## drag at once (`press_kind`) and it has no fan.
 ##
 ## - **Drag (press, drag, release):** a gorge along the path the pointer drew,
 ##   bends and all. The path is the pointer's ground points kept PATH_SPACING
@@ -15,19 +19,15 @@ extends "res://scripts/clay_tools/clay_tool.gd"
 ##   down in the cut, then goes back to the pointer. The land it leaves is the
 ##   one `cut_gorge` writes at once along the same path; an undo, a new press,
 ##   a change of tool or Esc mid-cut lands the rest of it at once (`finish`).
-## - **Hold, then drag up or down:** a slice. Everything within SLICE_RADIUS of
-##   the press that stands above a level plane is cut down to it: a hilltop
-##   sliced off flat. The plane starts at the ground under the press and
-##   follows the pointer's height, as the pinch's summit does, so dragging
-##   down takes more of the hill.
-## - **Tap:** nothing yet.
-## - **Shift** at the moment the verb is decided: a shallower gorge (SHALLOW of
-##   the depth), and a slice whose plane follows the pointer at SHALLOW of the
-##   pace, so it takes a thinner cut for the same pull.
+## - **A closed loop** (the path ends within LOOP_GAP of where it began, and
+##   runs at least LOOP_MIN round) is a shore: a level basin sinks inside it
+##   for a lake (`_plan_basin`), settling from its edge in.
+## - **Shift** at the moment the drag is decided: a shallower gorge or basin
+##   (SHALLOW of the depth).
 ##
-## Each is one undo step (the gorge's closes once its cut has run). The pips
-## (clay.size_scale) scale the reach: the gorge's width and the slice's
-## radius. Depth and wall steepness hold.
+## Each is one undo step, closed once its cut has run. The pips
+## (clay.size_scale) scale the gorge's width and the basin's bank. Depth and
+## wall steepness hold.
 ##
 ## ### The gorge
 ##
@@ -59,7 +59,7 @@ const GORGE_DEPTH := 2.6
 const BED_FALL := 0.02
 ## Metres between the stations the bed's fall is worked out on.
 const STATION := 0.25
-## Shift: the shallower share (of the gorge's depth, of the slice's pace).
+## Shift: the shallower share of the gorge's and the basin's depth.
 const SHALLOW := 0.4
 ## The drawn path: a pointer point is kept once it is PATH_SPACING metres from
 ## the last one kept, and the kept points are smoothed SMOOTH_PASSES times
@@ -80,16 +80,18 @@ const RIM_PAST := 0.6
 const CUT_SPEED := 8.0
 const CUT_SECONDS := Vector2(0.5,2.5)
 const CUT_EASE := 0.5
-## The slice: radius in metres at the middle pip; the plane rises and falls
-## with the pointer's travel at SLICE_SCALE metres per metre standing at the
-## press, between SLICE_SINK below and SLICE_RAISE above the pressed ground.
-## Inside the radius the cut is a hard, level plane: a wire does not feather.
-## A hill wider than the radius is left a step at its rim, which the rock
-## paint takes as a cliff.
-const SLICE_RADIUS := 7.0
-const SLICE_SCALE := 1.0
-const SLICE_SINK := 6.0
-const SLICE_RAISE := 8.0
+## A loop: the drawn path's ends within LOOP_GAP m (at the middle pip) and
+## its run at least LOOP_MIN m. Inside it the head runs on FILL_PACE m of
+## arc for each metre in from the outline, so the inside settles edge first.
+const LOOP_GAP := 2.0
+const LOOP_MIN := 8.0
+const FILL_PACE := 1.0
+## The basin: BASIN_DEPTH under the outline's lowest ground, level, its banks
+## rising to the outline over BASIN_BANK m (at most BASIN_BANK_SHARE of the
+## way to its middle).
+const BASIN_DEPTH := 2.4
+const BASIN_BANK := 2.5
+const BASIN_BANK_SHARE := 0.45
 ## The stand-in prop, metres at the hand's own size: two hexagonal toggles in
 ## the icon's tint (scripts/hud_icons.gd "wire"), darker end caps, and a thin
 ## lighter wire between them hanging down from the one in the grip.
@@ -101,8 +103,6 @@ const WIRE_LENGTH := 1.05
 const WIRE_THICK := 0.012
 
 var _shallow := false
-var _shown_level := INF
-var _level_at := 0.0
 ## False cuts the gorge whole at release, with no drawing through (for probes).
 var animate := true
 ## The drawn path: the points kept, how many of the clay's queued points have
@@ -120,10 +120,8 @@ var _box := Rect2()
 var _clock := 0.0
 var _seconds := 0.0
 var _running := false
-
-## The fan's modes (clay_tool `modes`): the gorge and the slice.
-const MODES := [{"id":"gorge","kind":"drag"},{"id":"slice","kind":"hold"}]
-func modes() -> Array: return MODES
+## No fan: the line is all it draws. A press is a drag from the start.
+func press_kind() -> String: return "drag"
 func id() -> String: return "wire"
 func stroke_radius() -> float: return (BED_HALF+WALL_RUN)*clay.size_scale
 
@@ -171,7 +169,16 @@ func drawn() -> PackedVector2Array:
 	for n in SMOOTH_PASSES:
 		var was := path.duplicate()
 		for k in range(1,path.size()-1): path[k] = was[k]*0.5+(was[k-1]+was[k+1])*0.25
+	if _closes(path):
+		path[-1] = path[0]
+		return path
 	return _to_rim(path)
+
+## Whether `path` closes on itself: a loop, an outline (LOOP_GAP, LOOP_MIN).
+func _closes(path: PackedVector2Array) -> bool:
+	if path.size() < 4: return false
+	var size: float = clay.size_scale if clay != null else 1.0
+	return path[0].distance_to(path[-1]) <= LOOP_GAP*maxf(size,1.0) and _arc(path)[-1] >= LOOP_MIN
 
 ## `path` with each end near the rim and heading out run on through it.
 static func _to_rim(path: PackedVector2Array) -> PackedVector2Array:
@@ -202,7 +209,7 @@ static func _past_rim(end: Vector2, from: Vector2) -> Variant:
 ## while it runs. Without `animate` it lands whole now.
 func drag_end() -> bool:
 	_path = drawn()
-	var plan := _plan(_path)
+	var plan := _plan_basin(_path) if _path.size() > 3 and _path[0] == _path[-1] else _plan(_path)
 	_cuts = plan.cuts
 	_length = plan.length
 	_box = plan.box
@@ -339,6 +346,51 @@ func _plan(path: PackedVector2Array) -> Dictionary:
 	cuts.sort()
 	return {"cuts":cuts,"length":length,"box":box.grow(top)}
 
+## The basin inside a loop `path`: each point inside sunk toward a level
+## floor BASIN_DEPTH under the outline's lowest ground, full past its bank
+## (`_inside`); a lake's bed, its shore the outline. Points are cut once the
+## outline's run is past, edge first.
+func _plan_basin(path: PackedVector2Array) -> Dictionary:
+	var base: PackedFloat32Array = clay.base
+	var data: NativeTerrainData = clay.editor.data
+	var arc := _arc(path)
+	var length := arc[-1]
+	var low := INF
+	for k in range(path.size()):
+		var ground: Variant = data.sample(path[k],base)
+		if ground != null: low = minf(low,float(ground))
+	if low == INF: return {"cuts":[],"length":0.0,"box":Rect2()}
+	var floor_h := maxf(low-BASIN_DEPTH*(SHALLOW if _shallow else 1.0),NativeTerrainData.MIN_HEIGHT)
+	var inside := _inside(path)
+	var deepest: float = inside.deepest
+	var bank := minf(BASIN_BANK*clay.size_scale,deepest*BASIN_BANK_SHARE)
+	var cuts: Array = []
+	for entry: Vector2 in inside.points:
+		var i := int(entry.x)
+		var goal := lerpf(base[i],floor_h,smoothstep(0.0,maxf(bank,0.01),entry.y))
+		if goal < base[i]: cuts.append(Vector3(length+entry.y*FILL_PACE,i,goal))
+	cuts.sort()
+	return {"cuts":cuts,"length":length+deepest*FILL_PACE,"box":inside.box}
+
+## The land's points inside a loop `path`: {"points": Vector2(point index,
+## metres in from the outline), "deepest": the most metres in, "box"}.
+func _inside(path: PackedVector2Array) -> Dictionary:
+	var data: NativeTerrainData = clay.editor.data
+	var points := data.points
+	var box := Rect2(path[0],Vector2.ZERO)
+	for p in path: box = box.expand(p)
+	var found := []
+	var deepest := 0.0
+	clay.gather(box.get_center(),box.size.length()*0.5+0.5)
+	for i: int in clay.near:
+		var p := points[i]
+		if not box.has_point(p) or not Geometry2D.is_point_in_polygon(p,path): continue
+		var d := INF
+		for j in range(path.size()-1): d = minf(d,p.distance_to(Geometry2D.get_closest_point_to_segment(p,path[j],path[j+1])))
+		found.append(Vector2(i,d))
+		deepest = maxf(deepest,d)
+	return {"points":found,"deepest":deepest,"box":box.grow(1.0)}
+
 ## Arc length at each point of `path`.
 static func _arc(path: PackedVector2Array) -> PackedFloat32Array:
 	var arc := PackedFloat32Array([0.0])
@@ -383,42 +435,6 @@ func _bed(path: PackedVector2Array, arc: PackedFloat32Array, depth: float) -> Pa
 		bed[k] = minf(bed[k],bed[before]-BED_FALL*step)
 	for k in count: bed[k] = maxf(bed[k],NativeTerrainData.MIN_HEIGHT)
 	return bed
-
-# --- Hold: the slice -----------------------------------------------------------------
-
-func hold_begin(fine: bool) -> String:
-	_shallow = fine
-	var ground: Variant = clay.editor.data.sample(clay.center,clay.base)
-	_level_at = float(ground) if ground != null else 0.0
-	clay.gather(clay.center,SLICE_RADIUS*clay.size_scale)
-	_shown_level = INF
-	return "shallow_slice" if fine else "slice"
-
-## The plane at the pressed ground plus the pointer's travel; every gathered
-## point above it is cut down to it.
-func hold_step(heights: PackedFloat32Array, rise: float) -> bool:
-	lift = clampf(rise*SLICE_SCALE*(SHALLOW if _shallow else 1.0),-SLICE_SINK,SLICE_RAISE)
-	var level := maxf(_level_at+lift,NativeTerrainData.MIN_HEIGHT)
-	if is_equal_approx(level,_shown_level): return false
-	_shown_level = level
-	var base: PackedFloat32Array = clay.base
-	var near: PackedInt32Array = clay.near
-	var radius: float = SLICE_RADIUS*clay.size_scale
-	for i in near:
-		heights[i] = minf(base[i],level)
-	clay.touch(clay.center,radius)
-	clay.dirty(clay.center,radius)
-	return true
-
-## The level the slice stands at, in metres (for probes).
-func slice_level() -> float:
-	return _shown_level
-
-func hold_end() -> void:
-	var radius: float = SLICE_RADIUS*clay.size_scale
-	var reach := radius+1.0
-	clay.paint_faces(Rect2(clay.center-Vector2.ONE*reach,Vector2.ONE*reach*2.0))
-	clay.shake_trees(clay.center,reach)
 
 # --- The stand-in prop ------------------------------------------------------------------
 
