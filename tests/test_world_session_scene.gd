@@ -4,6 +4,10 @@ extends SceneTree
 ## forms; switching writes and reads each world's own save. Slow headless
 ## (the scene and four landscapes form on the dummy renderer).
 const Library = preload("res://scripts/world_library.gd")
+## The canyon is held back with the desert (scripts/desert_landscape.gd);
+## these flows exercise it, so the desert is on. tools/probe_desert_gate.gd
+## checks the default game without it.
+const Desert = preload("res://scripts/desert_landscape.gd")
 var failures := 0
 
 func _initialize() -> void: run.call_deferred()
@@ -14,6 +18,7 @@ func check(ok: bool, message: String) -> void:
 		print("FAIL: "+message)
 
 func run() -> void:
+	Desert.on = true
 	create_timer(600).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	root.size = Vector2i(1440,900)
 	var dir := "/private/tmp/world-session-scene-%d" % Time.get_ticks_usec()

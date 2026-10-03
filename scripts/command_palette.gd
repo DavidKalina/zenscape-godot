@@ -261,7 +261,10 @@ func type_text(text: String) -> void:
 
 func _build_items() -> void:
 	_items.clear()
+	var tray_ids: Array = Tray.SPECIMENS.map(func(slot: Dictionary) -> String: return slot.id)
 	for entry: Array in SEEDS:
+		# Not on the bar, not in the palette: the desert's Joshua while held back.
+		if not entry[0] in tray_ids: continue
 		_items.append({"kind":"seed","cat":1,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
 	for entry: Array in TOOLS:
 		_items.append({"kind":"tool","cat":2,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})

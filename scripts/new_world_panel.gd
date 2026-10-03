@@ -152,7 +152,7 @@ func _build_panel() -> void:
 	var list := Title.box(true,4)
 	var kinds := HFlowContainer.new()
 	kinds.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for entry: Dictionary in Library.LANDS:
+	for entry: Dictionary in Library.lands():
 		var group := str(entry.get("group",""))
 		if not group.is_empty():
 			var link := Title.link(str(entry.short),13,Style.MUTED,Style.HOVER_INK,0.22)

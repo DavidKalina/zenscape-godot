@@ -7,6 +7,10 @@ extends SceneTree
 ## keeping while busy and the autosave debounce.
 const Session = preload("res://scripts/world_session.gd")
 const Library = preload("res://scripts/world_library.gd")
+## The canyon is held back with the desert (scripts/desert_landscape.gd);
+## these flows exercise it, so the desert is on. tools/probe_desert_gate.gd
+## checks the default game without it.
+const Desert = preload("res://scripts/desert_landscape.gd")
 var failures := 0
 
 class StubPlaces extends Node:
@@ -70,6 +74,7 @@ func make_scene(root_dir: String) -> Array:
 	return [scene,places,session]
 
 func run() -> void:
+	Desert.on = true
 	create_timer(30).timeout.connect(func() -> void: print("FAIL: timed out"); quit(2))
 	var dir := "user://test-world-session-%d" % Time.get_ticks_usec()
 	DirAccess.make_dir_recursive_absolute(dir)

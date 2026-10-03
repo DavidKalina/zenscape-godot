@@ -143,7 +143,7 @@ func keep_showcase(world_name: String, land: String, seed_text: String) -> Dicti
 	if not showing_showcase: return {}
 	_backdrop_serial += 1
 	_preview_serial += 1
-	var world: Dictionary = library.create(world_name,land if land in Lands.IDS else "plain",seed_text)
+	var world: Dictionary = library.create(world_name,land if land in Lands.offered() else "plain",seed_text)
 	showing_showcase = false
 	previewing = false
 	previewed = []
@@ -215,7 +215,7 @@ func open_world(id: String) -> void:
 ## preview of the same land and seed is kept as it stands. Returns its entry
 ## once it is open (await it).
 func create_world(world_name: String, land: String, seed_text: String) -> Dictionary:
-	land = land if land in Lands.IDS else "plain"
+	land = land if land in Lands.offered() else "plain"
 	_preview_serial += 1
 	while _preview_forming: await get_tree().process_frame
 	var world: Dictionary = library.create(world_name,land,seed_text)

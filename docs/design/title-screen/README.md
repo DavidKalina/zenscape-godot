@@ -44,3 +44,8 @@ pairings across 13 curated entries (11 distinct families), including inland
 massifs, twin peaks, glacial/buttressed valleys, monuments, salt basins and desert
 mountains. These use the same saved recipes and shared fog/cloud/rock controls
 as the editor. See [shared world variety](../world-variety/README.md).
+
+Desert (held back for an update): the four arid entries (monuments, salt
+basin, desert mountains, canyon) are only drawn with desert on
+(`scripts/desert_landscape.gd` `ENABLED`, or `--desert`). A default game
+picks from the nine others, seven families.

@@ -9,6 +9,9 @@ func _initialize() -> void:
 		assert(NativeTerrainRecipe.valid(recipe),"Every random cover must build")
 		assert(SceneLookPresets.PRESETS.has(choice.look))
 		seen[choice.family] = true
-	assert(seen.size() == 11,"All cinematic families must be reachable")
-	print("TITLE SHOWCASE: 500 valid, deterministic selections across eleven families")
+	# Without desert (scripts/desert_landscape.gd) the four arid worlds, and
+	# the monuments, salt-basin, desert-mountains and canyon families, are held back.
+	var families := 11 if preload("res://scripts/desert_landscape.gd").on else 7
+	assert(seen.size() == families,"All cinematic families must be reachable")
+	print("TITLE SHOWCASE: 500 valid, deterministic selections across %d families" % families)
 	quit()

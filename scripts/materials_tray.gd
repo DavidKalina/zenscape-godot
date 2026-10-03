@@ -21,16 +21,18 @@ extends Control
 const Linen = preload("res://scripts/hud_linen.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const Icons = preload("res://scripts/hud_icons.gd")
-## The bar, in order: id (what the hand holds) and group. Those marked
-## "hidden" are not found yet: a silhouette only.
-const SPECIMENS := [
+## Every slot, in order: id (what the hand holds) and group. Those marked
+## "hidden" are not found yet: a silhouette only. Those marked "desert" are
+## held back for an update (scripts/desert_landscape.gd `on`): not on the bar
+## at all.
+const ALL_SPECIMENS := [
 	{"id":"oak","group":0},
 	{"id":"pine","group":0},
 	{"id":"willow","group":0},
 	{"id":"birch","group":0},
 	{"id":"redwood","group":0},
 	{"id":"juniper","group":0},
-	{"id":"joshua","group":0},
+	{"id":"joshua","group":0,"desert":true},
 	{"id":"wildflower","group":0},
 	{"id":"dandelion","group":0},
 	{"id":"poppy","group":0},
@@ -46,6 +48,12 @@ const SPECIMENS := [
 	{"id":"crystal","group":1,"hidden":true},
 	{"id":"snow","group":2,"hidden":true},
 ]
+## The bar: ALL_SPECIMENS, less the desert's while it is held back.
+static var SPECIMENS: Array = _offered()
+
+static func _offered() -> Array:
+	if preload("res://scripts/desert_landscape.gd").on: return ALL_SPECIMENS.duplicate()
+	return ALL_SPECIMENS.filter(func(entry: Dictionary) -> bool: return not entry.get("desert",false))
 ## Layout, design pixels: the gap between slots, a group divider's width (two
 ## lines 4 px apart) and height, the padding and the bar's lift off the bottom
 ## edge. At rest it sinks REST_SINK. The name of the slot hovered or in hand is

@@ -18,6 +18,11 @@ const LANDS := [
 	{"id":"cosmos","name":"Cosmos field","short":"Cosmos","group":"meadow","description":"Pink, magenta and white cosmos in great autumn sweeps."},
 	{"id":"alpine_meadow","name":"Alpine meadow","short":"Alpine","group":"meadow","description":"Short grass, small flowers and stones below the snow."},
 ]
+## LANDS the New world screen offers (scripts/world_lands.gd `offered`).
+## Every LANDS entry still names its worlds (`land_name`).
+static func lands() -> Array:
+	var offered: Array = preload("res://scripts/world_lands.gd").offered()
+	return LANDS.filter(func(entry: Dictionary) -> bool: return entry.id in offered)
 ## What a `group` of lands is called as one row on the New world screen.
 const GROUPS := {"meadow":"Meadow"}
 const SEED_WORDS_A := ["basalt","cedar","ember","fern","flint","heather","juniper","lichen","marl","moss","ochre","pumice","quartz","rowan","sage","shale","slate","sorrel","tamarack","willow"]

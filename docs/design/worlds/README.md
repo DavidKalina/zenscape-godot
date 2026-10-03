@@ -80,7 +80,7 @@ Each frame is a **1440×810** reference viewport. Lay out the real UI relative t
     - Selected: border `1.5px solid #e3d7bd`, fill `rgba(20,15,10,.3)`.
   - Lands:
     - Quiet plain: "Flat and green. Raise every hill yourself."
-    - Red canyon: "Banded stone and slow cactus."
+    - Red canyon: "Banded stone and slow cactus." Desert (held back for an update): listed only with desert on (`scripts/desert_landscape.gd` `ENABLED`, or `--desert`); worlds already made on it still open.
     - Misty isle: "Low cloud and soft grey water."
     - Moss hollow: "Deep shade and damp ground."
   - **Seed**: the seed text in Spectral italic 19px (format `word-word-NNNN`, e.g. "basalt-heron-2081"), plus a **Roll** button (dashed outline) that generates a new seed. The same seed always grows the same land.

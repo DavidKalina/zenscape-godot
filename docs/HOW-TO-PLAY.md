@@ -170,8 +170,8 @@ and refills in about a minute; a dry cloud won't tear.
 
 Along the bottom edge sits a field case, a long, low case of smoked glass
 with one specimen in each compartment. The tree seeds are **acorn** (oak),
-**pine cone**, **willow catkin**, **birch samara**, **redwood**, **juniper**
-and **Joshua**; then the flowers, **wildflower**, **dandelion**, **poppy**,
+**pine cone**, **willow catkin**, **birch samara**, **redwood** and
+**juniper**; then the flowers, **wildflower**, **dandelion**, **poppy**,
 **cosmos** and **sunflower**, then **wheat** and **reed**. Then come **water**, a **river
 stone**, a **stone lamp**, a **fence** and a **footbridge**. The case stays faint
 until the pointer comes near. Hover a specimen to read its name. Faint
@@ -239,6 +239,16 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
 - `--no-tray` hides the materials tray.
 - `--no-first-steps` leaves out the first-steps card and the field notes; `--first-steps` shows the card from the top whatever was found before, without saving.
+
+### Desert (held back for an update)
+
+The desert is kept out of a default game for launch, to ship later as an
+update. `--desert` brings it all back for development: arid title worlds, the
+**Red canyon** land on the New world screen, desert compositions in generated
+worlds, the **Joshua** seed in the tray and palette, and the **Desert
+afternoon** mood. Worlds already made with desert still load and play as they
+were. The switch is `ENABLED` in `scripts/desert_landscape.gd`;
+`tools/probe_desert_gate.gd` checks both ways.
 
 ## Not reachable in the hand scheme yet
 

@@ -3,6 +3,10 @@ extends SceneTree
 ## a blank name begins blank, Enter begins and Escape goes back.
 const NewWorldPanel = preload("res://scripts/new_world_panel.gd")
 const Library = preload("res://scripts/world_library.gd")
+## The canyon is held back with the desert (scripts/desert_landscape.gd);
+## these flows exercise it, so the desert is on. tools/probe_desert_gate.gd
+## checks the default game without it.
+const Desert = preload("res://scripts/desert_landscape.gd")
 var failures := 0
 var lands: Array = []
 var begun: Array = []
@@ -12,6 +16,7 @@ func _initialize() -> void:
 	run.call_deferred()
 
 func run() -> void:
+	Desert.on = true
 	root.size = Vector2i(1440,810)
 	var panel := NewWorldPanel.new()
 	root.add_child(panel)

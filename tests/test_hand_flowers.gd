@@ -489,10 +489,13 @@ func bar() -> void:
 		check(Materials.paints(seed) and not Materials.sows(seed),"%s seed is painted as trees, not sown as a veil (tests/test_hand_trees.gd)" % seed)
 	check(Materials.SCATTER.has("reed") and Materials.SCATTER.has("stone") and "reed" in ids,"Reeds and stones still scatter")
 	# The seed group: the tree seeds (first steps added birch, redwood, juniper
-	# and Joshua to the case), the five flowers, then reed.
+	# and Joshua to the case; Joshua is held back with the desert,
+	# scripts/desert_landscape.gd), the five flowers, then reed.
 	var seeds: Array = Tray.SPECIMENS.filter(func(entry: Dictionary) -> bool: return entry.group == 0).map(func(entry: Dictionary) -> String: return entry.id)
-	var expected := ["oak","pine","willow","birch","redwood","juniper","joshua","wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"]
-	check(seeds == expected,"The seed group is seven tree seeds, five flowers, wheat and reed (%s)" % str(seeds))
+	var trees := ["oak","pine","willow","birch","redwood","juniper"]
+	if preload("res://scripts/desert_landscape.gd").on: trees.append("joshua")
+	var expected: Array = trees+["wildflower","dandelion","poppy","cosmos","sunflower","wheat","reed"]
+	check(seeds == expected,"The seed group is the tree seeds, five flowers, wheat and reed (%s)" % str(seeds))
 
 # --- The cozy scene ---------------------------------------------------------------------
 

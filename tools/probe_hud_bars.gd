@@ -35,7 +35,9 @@ func _init() -> void:
 	check(absf(tray.modulate.a-Linen.REST_OPACITY) < 0.02,"rest opacity %.2f (got %.2f)" % [Linen.REST_OPACITY,tray.modulate.a])
 	var bar: Rect2 = tray._bar()
 	print("bar ",bar," scale ",tray.ui_scale)
-	check(absf(bar.size.x-1382.0*tray.ui_scale) < 2.0,"bar is 1382 design px wide (21 slots: seven seeds, five flowers, wheat, reed, water, stone, stone lamp, fence, footbridge and the two hidden)")
+	# Joshua's slot (64 px) is held back with the desert (scripts/desert_landscape.gd).
+	var width := 1382.0 if preload("res://scripts/desert_landscape.gd").on else 1318.0
+	check(absf(bar.size.x-width*tray.ui_scale) < 2.0,"bar is %d design px wide (%d slots: the tree seeds, five flowers, wheat, reed, water, stone, stone lamp, fence, footbridge and the two hidden)" % [width,Tray.SPECIMENS.size()])
 	check(absf(bar.get_center().x-720.0) < 1.0,"bar centred")
 	for entry: Dictionary in Tray.SPECIMENS:
 		check(tray.specimen_at(tray.specimen_centre(entry.id)) == entry.id,"slot %s hit-tests to itself" % entry.id)
