@@ -172,6 +172,12 @@ func _ready() -> void:
 	_meshes["explosive_leaves"] = _meshes["leaf_bed"]
 	_materials["explosive_leaves"] = rock_material.duplicate()
 	_catalog_poses["explosive_leaves"] = Transform3D.IDENTITY
+	# The stone lamp (scripts/stone_lamp.gd): faceted stone on the stones'
+	# material; its glow is scripts/stone_lamp_lights.gd's.
+	_catalog_parts["stone_lamp"] = ["stone_lamp"]
+	_catalog_poses["stone_lamp"] = Transform3D.IDENTITY
+	_meshes["stone_lamp"] = preload("res://scripts/stone_lamp.gd").mesh()
+	_materials["stone_lamp"] = rock_material.duplicate()
 	for key in _materials:
 		FireMaterial.enable_instances(_materials[key])
 		# Every batch has custom data; emerged instances read their birth there.
