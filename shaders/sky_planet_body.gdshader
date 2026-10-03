@@ -1,7 +1,7 @@
 shader_type spatial;
-// The planet's body: a low-poly sphere lit flat per facet by the real sun,
-// so its terminator follows the day and it hangs as a lit crescent or a full
-// disc. Soft bands of weather run round it, and its limb glows.
+// The planet's body: a smooth sphere lit by the real sun, so its terminator
+// follows the day and it hangs as a lit crescent or a full disc. Soft bands
+// of weather run round it, and its limb glows.
 render_mode unshaded, blend_mix, depth_draw_never, cull_back, fog_disabled, shadows_disabled;
 #include "res://shaders/sky_planet.gdshaderinc"
 
@@ -22,11 +22,9 @@ void vertex() {
 void fragment() {
   vec3 view = normalize(world - CAMERA_POSITION_WORLD);
   vec3 centre = zs_planet_centre(CAMERA_POSITION_WORLD);
-  // The facet's own normal: the solid stays cut, the light on it soft.
-  vec3 facet = normalize(cross(dFdx(world), dFdy(world)));
-  if (dot(facet, view) > 0.0) facet = -facet;
+  // Lit round, not per facet: faceted, it read as a mirror ball.
   vec3 radial = normalize(world - centre);
-  float sun = dot(facet, zs_sun_direction);
+  float sun = dot(radial, zs_sun_direction);
   float lit = smoothstep(-0.12, 0.85, sun);
   // Bands of weather: cream, apricot and rust, wavering with latitude.
   vec3 p = normalize(local);

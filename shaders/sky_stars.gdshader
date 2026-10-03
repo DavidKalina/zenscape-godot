@@ -58,19 +58,20 @@ void vertex() {
       tint = mix(vec3(0.85, 0.95, 1.0), mix(vec3(0.45, 1.0, 0.9), vec3(0.75, 0.6, 1.0), INSTANCE_CUSTOM.x), 0.35 + 0.65 * breath);
       tw = vec3(0.65 + 0.35 * breath);
     }
-    // Pixels at the reference 1080-line window. Never under about a pixel
-    // and a half across, so a star is a round point, not a square pixel.
-    float px = VIEWPORT_SIZE.y / 1080.0;
+    // Screen pixels: a star is a crisp point a pixel or two across, as a
+    // real one is. Only a 4K-class window scales them up. The fade inside
+    // the quad is round, so even the glow round a bright one never squares.
+    float px = max(VIEWPORT_SIZE.y / 1800.0, 1.0);
     if (hero > 0.5) {
       // True HDR light that the glow picks up.
       light = tint * tw * bright * k / zs_exposure;
-      sigma = 1.25 * px;
+      sigma = 1.0 * px;
       halo = 1.0;
     } else {
       // Display light up to white, the overflow as HDR for the glow.
       vec3 peak = tint * tw * bright * k;
       light = scene_linear_for_display(min(peak, vec3(1.0))) + max(peak - 1.0, vec3(0.0)) * 0.5 / zs_exposure;
-      sigma = mix(0.85, 1.25, smoothstep(0.1, 1.3, bright)) * px;
+      sigma = mix(0.55, 0.85, smoothstep(0.1, 1.3, bright)) * px;
       halo = kind > 1.5 ? 1.0 : smoothstep(0.7, 1.3, bright);
     }
     reach = sigma * (hero > 0.5 ? 9.0 : mix(4.0, 8.0, halo));

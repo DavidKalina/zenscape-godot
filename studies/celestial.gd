@@ -36,6 +36,8 @@ var cycling: bool:
 ## The look's own aurora (sliders, moods, presets): a floor under the natural
 ## one, which comes on its own on clear winter nights (`_aurora`).
 var aurora_strength := 0.0
+## --aurora: a floor the world's mood can't reset, for looking at it.
+var forced_aurora := 1.2 if "--aurora" in OS.get_cmdline_user_args() else 0.0
 var rainbow_strength := 0.0
 var weather_bow := 0.0
 ## A rainbow that life calls after rain over a rich place (scripts/life_moments.gd).
@@ -323,7 +325,7 @@ func update_rig() -> void:
 	_publish("zs_dusk_direction", warmth * 0.9)
 	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)))
 	# The aurora's heading is a bearing, so the room's turn simply adds to it.
-	_publish("zs_aurora", Vector4(maxf(aurora_strength, _aurora), 1.0, 0.15, -1.2 + room_yaw))
+	_publish("zs_aurora", Vector4(maxf(maxf(aurora_strength, forced_aurora), _aurora), 1.0, 0.15, -1.2 + room_yaw))
 	_publish("zs_room_yaw", room_yaw)
 	_publish("zs_bow", maxf(maxf(rainbow_strength, weather_bow), moment_bow) * smoothstep(-0.03, 0.1, e))
 	_publish("zs_bow_grow", _rainbow_growth)

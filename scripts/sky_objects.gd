@@ -37,9 +37,9 @@ const BREATHERS := [
 ## much of the tier crowds into the Milky Way's band. Most are a faint dust
 ## that only reads as texture; the bright ones are few.
 const TIERS := [
-	[4600, Vector2(0.025, 0.12), 0.55],
-	[1500, Vector2(0.12, 0.45), 0.3],
-	[150, Vector2(0.45, 1.3), 0.1],
+	[11000, Vector2(0.03, 0.14), 0.75],
+	[2200, Vector2(0.14, 0.5), 0.4],
+	[180, Vector2(0.5, 1.3), 0.15],
 ]
 ## Tight clusters, the spots the eye settles on: centre, radius (radians),
 ## count, temperature.
@@ -165,7 +165,7 @@ func _star_direction(rng: RandomNumberGenerator, fields: FastNoiseLite, galaxy: 
 		var rich := smoothstep(-0.35, 0.45, fields.get_noise_3dv(dir * 2.2))
 		if in_band:
 			var off := dir.dot(galaxy)
-			rich = maxf(rich, 0.6) * exp(-off * off / 0.018)
+			rich = maxf(rich, 0.6) * exp(-off * off / 0.04)
 		if rng.randf() > 0.06 + 0.94 * rich: continue
 		return dir
 	return Vector3.UP
@@ -179,9 +179,9 @@ func _build_planet() -> Node3D:
 	var body := MeshInstance3D.new()
 	body.name = "Body"
 	var sphere := SphereMesh.new()
-	# Few enough facets to read as a cut solid at its size on screen.
-	sphere.radial_segments = 20
-	sphere.rings = 10
+	# Enough segments that its outline stays round on screen.
+	sphere.radial_segments = 64
+	sphere.rings = 32
 	body.mesh = sphere
 	body.material_override = _planet_material(preload("res://shaders/sky_planet_body.gdshader"), -3, frame)
 	var glow := MeshInstance3D.new()
