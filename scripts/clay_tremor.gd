@@ -39,7 +39,7 @@ extends Node
 ## `amount` scales every kick, 0 turns the shudder off (`--no-shake`).
 
 ## Each tool's weight, 0..1: how hard its land moving kicks.
-const FEEL := {"mountain":1.0,"crater":0.75,"chisel":0.6,"wire":0.55,"hand":0.35}
+const FEEL := {"mountain":1.0,"crater":0.75,"island":0.6,"chisel":0.6,"wire":0.55,"hand":0.35}
 ## Metres of lift per lurch (14 m, the Mountain's full pull, is ~28 lurches,
 ## as the conductor's full rise was), and metres of the Ravine's head.
 const LURCH := 0.5
