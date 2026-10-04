@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Spectral:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#1d1c24}a{color:#e3d7bd}a:hover{color:#fffaf0}</style>
+</helmet>
+<section style="padding:80px;display:flex;flex-direction:column;gap:40px;font-family:Spectral,serif;color:#e3d7bd;width:max-content;background:#1d1c24">
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="font:400 40px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em">Main menu & world select, dealt as cards</div>
+<div style="width:120px;border-top:1px solid rgba(227,215,189,.4)"></div>
+<div style="font:400 18px Spectral,serif;color:#a39a88;max-width:1100px;text-wrap:pretty">Five menu cards in the 5a and 5d faces. They bob at rest; hover one and it lifts, tilts toward the cursor and its neighbours lean away. Click (or ↵) to draw it; arrow keys work too. Top row (7a, 7b) is world select: your six worlds plus a blank card along the foot, and the scene behind turns to whichever world you hover. Bottom row is the main menu; Your worlds deals into the same select, Esc or ◂ Menu goes back.</div>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:56px;max-width:2936px">
+<sc-for list="{{ stages }}" as="st" hint-placeholder-count="2">
+<div id="{{ st.id }}" style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:baseline;gap:14px">
+<div style="font:500 15px Newsreader,serif;letter-spacing:.12em;color:#1d1c24;background:#e3d7bd;border-radius:3px;padding:2px 9px">{{ st.id }}</div>
+<div style="font:400 24px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.18em">{{ st.title }}</div>
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.2em;color:#8f8676">face from {{ st.from }}</div>
+</div>
+<div onMouseEnter="{{ st.focus }}" style="position:relative;width:1440px;height:810px;overflow:hidden;border-radius:12px;background:#2a2228">
+<div ref="{{ st.rBg }}" style="position:absolute;inset:-60px;transform:scale(1.15)">
+<sc-for list="{{ st.bgs }}" as="b" hint-placeholder-count="1">
+<div style="position:absolute;inset:0;background-image:url({{ b.img }});background-size:{{ b.size }};background-position:{{ b.pos }};background-repeat:no-repeat;filter:{{ b.f }};opacity:{{ b.op }};transition:opacity .9s ease"></div>
+</sc-for>
+</div>
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,16,22,.45) 0%,rgba(20,16,22,0) 30%,rgba(20,16,22,0) 55%,rgba(16,12,16,.7) 100%)"></div>
+<sc-if value="{{ st.isMenu }}" hint-placeholder-val="{{ true }}">
+<div style="position:absolute;left:0;right:0;top:92px;display:flex;flex-direction:column;align-items:center;gap:12px">
+<div style="font:400 44px Newsreader,serif;letter-spacing:.48em;padding-left:.48em;color:#f1e8d4">ZENSCAPE</div>
+<div style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.32em;color:#d4c9b2">a little wilderness, made by you</div>
+</div>
+<sc-for list="{{ st.cards }}" as="c" hint-placeholder-count="5">
+<div onMouseEnter="{{ c.enter }}" onMouseMove="{{ c.move }}" onMouseLeave="{{ c.leave }}" onMouseDown="{{ c.down }}" onMouseUp="{{ c.up }}" onClick="{{ c.click }}" style="position:absolute;left:{{ c.x }}px;top:{{ c.y }}px;width:173px;height:242px;cursor:pointer">
+<div style="position:absolute;left:0;top:0;width:240px;height:336px;transform:scale(.72);transform-origin:0 0">
+<div ref="{{ c.rShadow }}" style="position:absolute;left:30px;top:348px;width:180px;height:22px;border-radius:50%;background:rgba(8,6,10,.6);filter:blur(9px)"></div>
+<div ref="{{ c.rFloat }}" style="position:absolute;inset:0;perspective:900px">
+<sc-if value="{{ c.deck }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;border-radius:16px;background:#3e372e;transform:translate(10px,6px) rotate(5deg);box-shadow:0 10px 24px rgba(10,8,12,.35)"></div>
+<div style="position:absolute;inset:0;border-radius:16px;background:#463e34;transform:translate(5px,3px) rotate(2.5deg)"></div>
+</sc-if>
+<div ref="{{ c.rBody }}" style="position:absolute;inset:0;border-radius:16px">
+<sc-if value="{{ c.spec }}" hint-placeholder-val="{{ false }}">
+<div style="position:relative;width:240px;height:336px;border-radius:16px;background-color:#4e463b;background-image:repeating-linear-gradient(0deg,rgba(20,14,8,.16) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(255,240,215,.04) 0 1px,transparent 1px 4px);box-shadow:inset 0 1px 0 rgba(255,240,215,.1),inset 0 -2px 0 rgba(20,14,8,.25),0 16px 34px rgba(10,8,12,.45)">
+<div style="position:absolute;inset:8px;border-radius:10px;background-color:#eee5d1;background-image:repeating-linear-gradient(90deg,rgba(90,70,40,.03) 0 1px,transparent 1px 3px),radial-gradient(ellipse at 50% 30%,rgba(255,250,238,.6),rgba(255,250,238,0) 70%);box-shadow:inset 0 0 0 1px rgba(90,70,40,.18)">
+<div style="position:absolute;left:42px;top:30px;width:140px;height:140px;border-radius:50%;background:{{ c.it.paperSun }}"></div>
+<div ref="{{ c.rArt }}" style="position:absolute;left:0;top:0;width:224px;height:190px">
+<div style="position:absolute;left:72px;top:146px;width:80px;height:7px;border-radius:50%;background:rgba(20,14,8,.22);filter:blur(2px)"></div>
+<div style="position:absolute;left:66px;top:52px;width:92px;height:92px"><dc-import name="Glyph" k="{{ c.it.g }}" uid="{{ c.uid }}" style="width:100%;height:100%" hint-size="100%,100%"></dc-import></div>
+</div>
+<div style="position:absolute;left:94px;top:-7px;width:36px;height:16px;background:rgba(214,200,160,.78);transform:rotate(-4deg);box-shadow:0 1px 2px rgba(20,14,8,.15)"></div>
+<div style="position:absolute;left:20px;right:20px;top:192px;bottom:20px;box-sizing:border-box;border:1px solid rgba(46,40,32,.38);border-radius:3px;padding:9px 12px 10px;display:flex;flex-direction:column;gap:3px">
+<div style="display:flex;justify-content:space-between;font:500 11px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.22em;color:#8a7d68"><div>{{ c.rom }}</div><div>{{ c.it.tag }}</div></div>
+<div style="font:400 24px/28px Newsreader,serif;color:#2e2820">{{ c.it.label }}</div>
+<div style="margin-top:auto;border-top:1px solid rgba(46,40,32,.2);padding-top:6px;font:italic 400 12.5px Spectral,serif;color:#6a5f4f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.it.line }}</div>
+</div>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ c.coin }}" hint-placeholder-val="{{ false }}">
+<div style="position:relative;width:240px;height:336px;border-radius:16px;background-color:#4e463b;background-image:repeating-linear-gradient(0deg,rgba(20,14,8,.16) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(255,240,215,.04) 0 1px,transparent 1px 4px);box-shadow:inset 0 1px 0 rgba(255,240,215,.1),inset 0 -2px 0 rgba(20,14,8,.25),0 16px 34px rgba(10,8,12,.45)">
+<div style="position:absolute;left:14px;top:18px;width:212px;height:212px;box-sizing:border-box;border-radius:50%;border:2px dashed rgba(227,215,189,.42)"></div>
+<div style="position:absolute;left:24px;top:28px;width:192px;height:192px;border-radius:50%;overflow:hidden;background:linear-gradient(180deg,{{ c.it.top }} 0%,{{ c.it.low }} 70%);box-shadow:0 0 0 1px rgba(20,14,8,.5),inset 0 2px 8px rgba(10,8,6,.25)">
+<div style="position:absolute;left:62px;top:30px;width:68px;height:68px;border-radius:50%;background:{{ c.it.sun }}"></div>
+<div style="position:absolute;left:-40px;right:-40px;top:132px;height:180px;border-radius:50%;background:{{ c.it.hill }}"></div>
+<div ref="{{ c.rArt }}" style="position:absolute;left:0;top:0;width:192px;height:192px">
+<div style="position:absolute;left:62px;top:138px;width:68px;height:6px;border-radius:50%;background:rgba(20,14,8,.28);filter:blur(2px)"></div>
+<div style="position:absolute;left:57px;top:64px;width:78px;height:78px"><dc-import name="Glyph" k="{{ c.it.g }}" uid="{{ c.uid }}" style="width:100%;height:100%" hint-size="100%,100%"></dc-import></div>
+</div>
+<div style="position:absolute;left:0;right:0;top:156px;text-align:center;font:500 12px Newsreader,serif;letter-spacing:.34em;color:#f1e8d4">{{ c.rom }}</div>
+</div>
+<div style="position:absolute;left:16px;right:16px;top:246px;display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center">
+<div style="font:400 24px/28px Newsreader,serif;color:#f6eedc">{{ c.it.label }}</div>
+<div style="font:500 11px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.24em;color:#c2b8a3">{{ c.it.line }}</div>
+</div>
+</div>
+</sc-if>
+<div ref="{{ c.rSheen }}" style="position:absolute;inset:0;border-radius:16px;pointer-events:none"></div>
+</div>
+</div>
+</div>
+</div>
+</sc-for>
+</sc-if>
+<sc-if value="{{ st.isWorlds }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;left:64px;top:46px;display:flex;flex-direction:column;gap:10px">
+<div style="font:400 26px Newsreader,serif;letter-spacing:.42em;color:#f1e8d4">ZENSCAPE</div>
+<div onClick="{{ st.back }}" style="font:500 14px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.26em;color:#e3d7bd;cursor:pointer" style-hover="color:#fffaf0">◂ Menu</div>
+</div>
+<div style="position:absolute;right:64px;top:52px;font:400 17px Spectral,serif;color:#f1e8d4">{{ st.count }}</div>
+<div style="position:absolute;left:0;right:0;top:236px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+<div style="font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.3em;color:#d4c9b2">{{ st.info.kicker }}</div>
+<div style="font:400 56px/1.05 Newsreader,serif;color:#f6eedc;text-shadow:0 2px 18px rgba(10,8,10,.55)">{{ st.info.name }}</div>
+<div style="font:italic 400 17px Spectral,serif;color:#e3d7bd;text-shadow:0 1px 10px rgba(10,8,10,.6)">{{ st.info.line }}</div>
+</div>
+<sc-for list="{{ st.worlds }}" as="c" hint-placeholder-count="7">
+<div onMouseEnter="{{ c.enter }}" onMouseMove="{{ c.move }}" onMouseLeave="{{ c.leave }}" onMouseDown="{{ c.down }}" onMouseUp="{{ c.up }}" onClick="{{ c.click }}" style="position:absolute;left:{{ c.x }}px;top:{{ c.y }}px;width:149px;height:208px;cursor:pointer">
+<div style="position:absolute;left:0;top:0;width:240px;height:336px;transform:scale(.62);transform-origin:0 0">
+<div ref="{{ c.rShadow }}" style="position:absolute;left:30px;top:348px;width:180px;height:22px;border-radius:50%;background:rgba(8,6,10,.6);filter:blur(9px)"></div>
+<div ref="{{ c.rFloat }}" style="position:absolute;inset:0;perspective:900px">
+<div ref="{{ c.rBody }}" style="position:absolute;inset:0;border-radius:16px">
+<dc-import name="WorldCard" variant="{{ c.v }}" w="{{ c.w }}" uid="{{ c.uid }}" hint-size="240px,336px"></dc-import>
+<div ref="{{ c.rSheen }}" style="position:absolute;inset:0;border-radius:16px;pointer-events:none"></div>
+</div>
+</div>
+</div>
+</div>
+</sc-for>
+</sc-if>
+<div style="position:absolute;left:0;right:0;top:780px;text-align:center;font:500 13px Newsreader,serif;font-variant-caps:all-small-caps;letter-spacing:.26em;color:#c2b8a3">{{ st.hint }}</div>
+</div>
+</div>
+</sc-for>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;bob&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0,&quot;max&quot;:2,&quot;step&quot;:0.1,&quot;tsType&quot;:&quot;number&quot;},&quot;orbit&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0,&quot;max&quot;:3,&quot;step&quot;:0.1,&quot;tsType&quot;:&quot;number&quot;},&quot;tilt&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;lean&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const DES = 'uploads/pasted-1790903010267-0.png';
+const ISL = 'design_handoff_lowpoly_linen_hud_4c/game-bg.png';
+const W0 = [
+  { pal: { sky: '#b89c68', glow: '#f0cf86', land: '#c9944e', sun: '#fff3d6' }, id: 1, no: '01', name: 'Valley of Sleeping Stones', when: 'Played 2 minutes ago', short: '2 min ago', img: DES, size: '300%', pos: '0% 35%', f: 'none', mood: 'Summer · Golden hour · Clear', seed: 'ochre-wren-4417', els: [{ k: 'Crystal', n: 14 }, { k: 'Reed', n: 6 }, { k: 'Clock', n: 9 }, { k: 'Water', n: 3 }] },
+  { pal: { sky: '#8b95a2', glow: '#c4bfb2', land: '#4f8a5a', sun: '#fff3d6' }, id: 2, no: '02', name: 'The quiet plain', when: 'Yesterday evening', short: 'yesterday', img: ISL, size: 'cover', pos: '50% 30%', f: 'none', mood: 'Summer · Midday · Fair', seed: 'fern-dusk-2210', els: [{ k: 'Acorn', n: 1 }, { k: 'Water', n: 1 }, { k: 'Globe', n: '' }] },
+  { pal: { sky: '#8a7c9c', glow: '#e2a462', land: '#b0703c', sun: '#f2c79a' }, id: 3, no: '03', name: 'Lantern Mesa', when: 'Tuesday', short: 'Tuesday', img: DES, size: '300%', pos: '100% 38%', f: 'hue-rotate(-14deg) saturate(1.15)', mood: 'Autumn · Dusk · Clear', seed: 'amber-cinder-7702', els: [{ k: 'Crystal', n: 22 }, { k: 'Cone', n: 4 }, { k: 'Clock', n: 5 }, { k: 'Water', n: 2 }] },
+  { pal: { sky: '#7a8a96', glow: '#c8d0c6', land: '#5a8c62', sun: '#e8ece6' }, id: 4, no: '04', name: 'Fogwater', when: '12 September', short: '12 Sep', img: ISL, size: '170%', pos: '45% 55%', f: 'saturate(.4) brightness(1.05)', mood: 'Spring · Morning · Mist', seed: 'heron-lichen-3391', els: [{ k: 'Water', n: 18 }, { k: 'Reed', n: 11 }, { k: 'Sprig', n: 7 }] },
+  { pal: { sky: '#a8b2be', glow: '#e8e8ea', land: '#dde3e8', sun: '#fff3d6' }, id: 5, no: '05', name: 'Juniper Steps', when: '3 September', short: '3 Sep', img: DES, size: '300%', pos: '0% 0%', f: 'hue-rotate(20deg) brightness(1.1)', mood: 'Winter · Morning · Snow', seed: 'pine-basalt-5108', els: [{ k: 'Cone', n: 31 }, { k: 'Frost', n: 6 }, { k: 'Acorn', n: 8 }, { k: 'Clover', n: 12 }] },
+  { pal: { sky: '#4c6c6c', glow: '#9cc2a0', land: '#2f6c4c', sun: '#d8ecd4' }, id: 6, no: '06', name: 'Moss Hollow', when: 'August', short: 'August', img: ISL, size: '200%', pos: '60% 45%', f: 'hue-rotate(28deg) saturate(.85)', mood: 'Summer · Dusk · Mist', seed: 'sorrel-thistle-8846', els: [{ k: 'Sprig', n: 16 }, { k: 'Clover', n: 24 }, { k: 'Acorn', n: 5 }, { k: 'Clock', n: 3 }] },
+];
+const BLANK = { id: 'new', blank: true, name: 'A new world', img: ISL, size: 'cover', pos: '50% 30%', f: 'saturate(.6)' };
+const DECK = [...W0, BLANK];
+const ITEMS = [
+  { label: 'Continue', g: 'Globe', tag: 'yesterday', line: 'Back to The quiet plain', top: '#8b95a2', low: '#c4bfb2', sun: '#fff3d6', hill: '#4f8a5a', paperSun: '#d9dccf' },
+  { label: 'Your worlds', g: 'Crystal', tag: '6 kept', line: 'Draw from your deck', top: '#8a7c9c', low: '#e2a462', sun: '#f2c79a', hill: '#b0703c', paperSun: '#f0cfa8', deck: true },
+  { label: 'A new world', g: 'Sprig', tag: 'blank', line: 'Sow a fresh seed', top: '#4c6c6c', low: '#9cc2a0', sun: '#d8ecd4', hill: '#2f6c4c', paperSun: '#cfe2c8' },
+  { label: 'Almanac', g: 'Clock', tag: 'settings', line: 'Sound, light & hands', top: '#b89c68', low: '#f0cf86', sun: '#fff3d6', hill: '#c9944e', paperSun: '#f3dca0' },
+  { label: 'Rest', g: 'Reed', tag: 'quit', line: 'Leave the wilds for now', top: '#3c4458', low: '#7a8a96', sun: '#e8ece6', hill: '#3e5a4a', paperSun: '#cdd6dc' },
+];
+const ROM = ['I', 'II', 'III', 'IV', 'V'];
+const STAGES = [
+  { id: '7a', face: 'spec', wv: 'specimen', title: 'World select · Specimen', from: '5a', start: 'worlds' },
+  { id: '7b', face: 'coin', wv: 'coin', title: 'World select · Coin', from: '5d', start: 'worlds' },
+  { id: '6a', face: 'spec', wv: 'specimen', title: 'Main menu · Specimen', from: '5a' },
+  { id: '6b', face: 'coin', wv: 'coin', title: 'Main menu · Coin', from: '5d' },
+];
+const SETS = { menu: { n: ITEMS.length, sp: 188, cy: 606, arc: 6, sc: 0.72, rot: 2.5 }, worlds: { n: DECK.length, sp: 166, cy: 640, arc: 5, sc: 0.62, rot: 2 } };
+const blank = (i) => ({ l: 0, lv: 0, sk: 0, skv: 0, n: 0, nv: 0, p: 0, pv: 0, mx: 0, my: 0, sx: 0, sy: 0, down: false });
+const mk = (n) => ({ hov: -1, ch: -1, cards: Array.from({ length: n }, blank), els: Array.from({ length: n }, () => ({})) });
+
+class Component extends DCLogic {
+  state = { ch: {}, view: {}, foc: {} };
+  sim = Object.fromEntries(STAGES.flatMap((s) => [[s.id + ':menu', mk(SETS.menu.n)], [s.id + ':worlds', mk(SETS.worlds.n)]]));
+  bg = {};
+  kb = '6a';
+  refs = {};
+  timers = [];
+  ref(key, i, part) {
+    const k = key + i + part;
+    return this.refs[k] || (this.refs[k] = (el) => { this.sim[key].els[i][part] = el; });
+  }
+  view(sid) { return this.state.view[sid] || STAGES.find((s) => s.id === sid).start || 'menu'; }
+  deal(key) { const st = this.sim[key]; st.hov = -1; st.ch = -1; st.cards.forEach((c, i) => { Object.assign(c, blank()); c.sk = 2.2 + i * 0.35; }); }
+  componentDidMount() {
+    const tick = (now) => { this.step(now / 1000); this.raf = requestAnimationFrame(tick); };
+    this.raf = requestAnimationFrame(tick);
+    this.onKey = (e) => {
+      const sid = this.kb, set = this.view(sid), key = sid + ':' + set, st = this.sim[key], n = SETS[set].n;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const d = e.key === 'ArrowLeft' ? -1 : 1;
+        st.hov = st.hov < 0 ? Math.floor(n / 2) : Math.max(0, Math.min(n - 1, st.hov + d));
+        st.cards.forEach((c) => { c.mx = 0; c.my = 0; });
+        if (set === 'worlds') this.setState((s) => ({ foc: { ...s.foc, [sid]: st.hov } }));
+      } else if (e.key === 'Enter' && st.hov >= 0) this.choose(sid, set, st.hov);
+      else if (e.key === 'Escape' && set === 'worlds') this.back(sid);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', this.onKey);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.onKey); this.timers.forEach(clearTimeout); }
+  later(ms, fn) { this.timers.push(setTimeout(fn, ms)); }
+  back(sid) { this.deal(sid + ':menu'); this.setState((s) => ({ view: { ...s.view, [sid]: 'menu' }, ch: { ...s.ch, [sid + ':menu']: -1 } })); }
+  choose(sid, set, i) {
+    const key = sid + ':' + set, st = this.sim[key];
+    if (st.ch >= 0) return;
+    st.ch = i;
+    this.setState((s) => ({ ch: { ...s.ch, [key]: i } }));
+    if (set === 'menu' && i === 1) {
+      this.later(650, () => { this.deal(sid + ':worlds'); this.setState((s) => ({ view: { ...s.view, [sid]: 'worlds' }, ch: { ...s.ch, [key]: -1 }, foc: { ...s.foc, [sid]: 1 } })); });
+      return;
+    }
+    this.later(1700, () => { st.ch = -1; this.setState((s) => ({ ch: { ...s.ch, [key]: -1 } })); });
+  }
+  step(t) {
+    const bob = this.props.bob ?? 1, tilt = this.props.tilt ?? true, lean = this.props.lean ?? true;
+    const K = 0.085, D = 0.76;
+    const spring = (o, k, tg) => { o[k + 'v'] = (o[k + 'v'] + (tg - o[k]) * K) * D; o[k] += o[k + 'v']; };
+    const orbit = this.props.orbit ?? 1, a = t * 0.06 * orbit;
+    const bgT = `translate(${(Math.cos(a) * 38).toFixed(2)}px,${(Math.sin(a) * 14).toFixed(2)}px) rotate(${(Math.sin(a) * 1.2).toFixed(3)}deg) scale(${(1.15 + Math.sin(a) * 0.03).toFixed(4)})`;
+    for (const sid in this.bg) if (this.bg[sid]) this.bg[sid].style.transform = bgT;
+    for (const key in this.sim) {
+      const st = this.sim[key], { hov, ch } = st, L0 = SETS[key.split(':')[1]], mid = (L0.n - 1) / 2;
+      st.cards.forEach((s, i) => {
+        const e = st.els[i];
+        if (!e.float) return;
+        spring(s, 'l', ch === i ? 1.9 : ch < 0 && hov === i ? 1 : 0);
+        spring(s, 'sk', ch >= 0 && ch !== i ? 1 : 0);
+        spring(s, 'n', lean && ch < 0 && hov >= 0 && hov !== i ? Math.sign(i - hov) * (Math.abs(i - hov) === 1 ? 26 : 10) : 0);
+        spring(s, 'p', s.down ? 1 : 0);
+        const tx = hov === i ? s.mx : 0, ty = hov === i ? s.my : 0;
+        s.sx += (tx - s.sx) * 0.14; s.sy += (ty - s.sy) * 0.14;
+        const L = Math.max(0, Math.min(1, s.l)), d = i - mid;
+        const by = Math.sin(t * 1.15 + i * 1.7) * 7 * bob * (1 - L * 0.55);
+        const br = Math.sin(t * 0.8 + i * 2.1) * 0.9 * bob * (1 - L * 0.7);
+        const y = by - s.l * 30 + s.sk * 70 + Math.abs(s.n) * 0.4;
+        e.float.style.transform = `translate(${s.n.toFixed(2)}px,${y.toFixed(2)}px) rotate(${(d * L0.rot * (1 - L) + br + s.n * 0.08).toFixed(2)}deg) scale(${(1 + s.l * 0.07 - s.p * 0.05).toFixed(4)})`;
+        e.float.style.opacity = Math.max(0, 1 - s.sk * 0.5).toFixed(3);
+        if (e.body) e.body.style.transform = tilt ? `rotateX(${(-s.sy * 12 * L).toFixed(2)}deg) rotateY(${(s.sx * 14 * L).toFixed(2)}deg)` : 'none';
+        if (e.art) e.art.style.transform = `translate(${(s.sx * 7 * L).toFixed(2)}px,${(s.sy * 5 * L - L * 5).toFixed(2)}px) rotate(${(s.sx * -4 * L).toFixed(2)}deg)`;
+        if (e.sheen) e.sheen.style.background = `radial-gradient(circle at ${(50 + s.sx * 45).toFixed(1)}% ${(35 + s.sy * 45).toFixed(1)}%,rgba(255,246,224,${(0.22 * L).toFixed(3)}) 0%,rgba(255,246,224,0) 58%)`;
+        if (e.shadow) { e.shadow.style.transform = `translateX(${s.n.toFixed(2)}px) scale(${(1 - s.l * 0.2 + by * 0.012).toFixed(3)})`; e.shadow.style.opacity = Math.max(0, 0.75 - L * 0.3 - s.sk * 0.4).toFixed(3); }
+      });
+    }
+  }
+  cards(S, set, extra) {
+    const key = S.id + ':' + set, st = this.sim[key], L = SETS[set], mid = (L.n - 1) / 2;
+    return Array.from({ length: L.n }, (_, i) => {
+      const d = i - mid, s = st.cards[i];
+      return {
+        ...extra(i),
+        x: +(720 + d * L.sp - 120 * L.sc).toFixed(1), y: +(L.cy + d * d * L.arc - 168 * L.sc).toFixed(1),
+        rFloat: this.ref(key, i, 'float'), rBody: this.ref(key, i, 'body'), rArt: this.ref(key, i, 'art'), rSheen: this.ref(key, i, 'sheen'), rShadow: this.ref(key, i, 'shadow'),
+        enter: () => { st.hov = i; this.kb = S.id; if (set === 'worlds' && this.state.foc[S.id] !== i) this.setState((x) => ({ foc: { ...x.foc, [S.id]: i } })); },
+        move: (e) => { const r = e.currentTarget.getBoundingClientRect(); s.mx = ((e.clientX - r.left) / r.width - 0.5) * 2; s.my = ((e.clientY - r.top) / r.height - 0.5) * 2; },
+        leave: () => { if (st.hov === i) st.hov = -1; s.down = false; },
+        down: () => { s.down = true; },
+        up: () => { s.down = false; },
+        click: () => this.choose(S.id, set, i),
+      };
+    });
+  }
+  renderVals() {
+    const stages = STAGES.map((S) => {
+      const view = this.view(S.id), menu = view === 'menu';
+      const chM = this.state.ch[S.id + ':menu'] ?? -1, chW = this.state.ch[S.id + ':worlds'] ?? -1;
+      const foc = menu ? 1 : (this.state.foc[S.id] ?? 1), fw = DECK[foc];
+      return {
+        ...S, isMenu: menu, isWorlds: !menu,
+        focus: () => { this.kb = S.id; },
+        back: () => this.back(S.id),
+        rBg: this.refs['bg' + S.id] || (this.refs['bg' + S.id] = (el) => { this.bg[S.id] = el; }),
+        bgs: DECK.map((w, i) => ({ img: w.img, size: w.img === DES ? w.size : (w.size || 'cover'), pos: w.pos || '50% 30%', f: `${w.f && w.f !== 'none' ? w.f + ' ' : ''}blur(${menu ? 2 : 0}px) brightness(${menu ? 0.72 : 0.82})`, op: i === foc ? 1 : 0 })),
+        count: fw.blank ? 'A blank card' : `Your worlds · ${foc + 1} of ${W0.length}`,
+        info: fw.blank ? { kicker: 'Blank card', name: 'A new world', line: 'A fresh seed, nothing placed yet' } : { kicker: `No. ${fw.no} · ${fw.when}`, name: fw.name, line: `${fw.mood} · seed ${fw.seed}` },
+        hint: menu
+          ? (chM >= 0 ? `Opening · ${ITEMS[chM].label}` : 'hover or ◂ ▸ · ↵ to choose')
+          : (chW >= 0 ? (DECK[chW].blank ? 'Sowing a new world' : `Entering · ${DECK[chW].name}`) : '◂ ▸ browse · ↵ enter · esc menu'),
+        cards: this.cards(S, 'menu', (i) => ({ it: ITEMS[i], rom: ROM[i], uid: 'mm' + S.id + i, deck: !!ITEMS[i].deck, spec: S.face === 'spec', coin: S.face === 'coin' })),
+        worlds: this.cards(S, 'worlds', (i) => ({ w: DECK[i], v: S.wv, uid: 'mw' + S.id + DECK[i].id })),
+      };
+    });
+    return { stages };
+  }
+}
+</script>
+</body>
+</html>

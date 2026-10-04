@@ -319,7 +319,7 @@ func keep_now(capture := true) -> bool:
 	_due = -1.0
 	_unkept = -1.0
 	last_kept_at = Time.get_unix_time_from_system()
-	library.touch(current_id,last_kept_at)
+	library.touch(current_id,last_kept_at,preload("res://scripts/world_card.gd").summarize(scene))
 	if capture or not FileAccess.file_exists(library.thumbnail_path(current_id)): _capture_kept()
 	else: _set_keeping(false)
 	return true

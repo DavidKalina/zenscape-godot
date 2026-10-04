@@ -1,9 +1,12 @@
 # How to play
 
 Launch with `run-cozy-flow.command`, or press F5 in Godot. The game opens on
-the title: a generated world the camera orbits, under the menu. **Continue
-your world** picks up your last place; **Create a new world** starts a blank
-Genesis plate. In a world, **Esc** brings the menu back. There is no toolbar, palette or
+the title: a generated world the camera orbits, under a fan of cards that
+bob and lean toward the pointer. **Continue** picks up your last world;
+**Your worlds** deals every world you have kept as its own card, and the
+world behind turns to whichever card you point at; **A new world** names
+one and chooses its land; **Almanac** is the settings and **Rest** quits.
+◂ ▸ and ↵ work too, and Esc goes back. In a world, **Esc** brings the menu back. There is no toolbar, palette or
 button column: the hand is the only way to touch the world. There are no tool modes: the **left button is the hand**,
 and what it does depends on where you press. The **right button is the eye**.
 The hand's pose shows what a press will do before you press, and **Cmd+Z**

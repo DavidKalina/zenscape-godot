@@ -66,6 +66,8 @@ func run() -> void:
 	var ochre: Dictionary = seeded.create("Ochre steps","canyon","flint-wren-0002",now-60.0)
 	var world: Node3D = load("res://studies/cozy_worlds.tscn").instantiate()
 	world.set_meta("movie_capture",true)
+	# The old card and library strip (--classic-title); tests/test_title_cards_flow.gd runs the cards.
+	world.set_meta("classic_title",true)
 	world.places_path = dir.path_join("places.json")
 	root.add_child(world)
 	# As the game launches: the scene is the current one, so the title opens.

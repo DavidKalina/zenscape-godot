@@ -101,12 +101,22 @@ func delete(id: String) -> bool:
 			return _write_index()
 	return false
 
-func touch(id: String, now := -1.0) -> void:
+## Played now; `card` (scripts/world_card.gd `summarize`), when given, is
+## what its card shows from now on.
+func touch(id: String, now := -1.0, card := {}) -> void:
 	for world: Dictionary in _index:
 		if world.id == id:
 			world.last_played_at = _now(now)
+			if not card.is_empty(): world.card = card.duplicate(true)
 			_write_index()
 			return
+
+## A world's number on its card, in the order the worlds were made: 1 for
+## the first. 0 when it is not in the library.
+func number(id: String) -> int:
+	for i in _index.size():
+		if _index[i].id == id: return i+1
+	return 0
 
 ## Brings an older single-place save (user://cozy-worlds/places.json) into the
 ## library once, as a world of its own. The old file is left where it is.
