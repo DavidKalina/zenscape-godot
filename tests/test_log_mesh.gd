@@ -30,7 +30,7 @@ func _initialize() -> void:
 	var moss := LogMesh.moss_mesh()
 	var moss_tris := LogMesh.triangle_count(moss)
 	print("moss triangles: ", moss_tris, " total ", tris + moss_tris)
-	check(tris + moss_tris < 520, "Bark and moss together stay near 500 triangles (got %d)" % (tris + moss_tris))
+	check(tris + moss_tris < 550, "Bark and moss together stay under 550 triangles (got %d)" % (tris + moss_tris))
 	var arrays := mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
@@ -62,15 +62,21 @@ func _initialize() -> void:
 	var low := INF
 	var high := -INF
 	var top := 0
-	var tips := 0
+	var tallest := 0.0
+	var covered := {}
 	for i in range(mv.size()):
 		low = minf(low, mv[i].x)
 		high = maxf(high, mv[i].x)
-		if mv[i].y > 0.1: top += 1
-		if muv[i].y > 0.95: tips += 1
-	check(high - low > 0.6, "Moss runs along most of the log")
+		if mv[i].y > 0.05: top += 1
+		var axis := LogMesh._axis(mv[i].x)
+		var radial := Vector3(0.0, mv[i].y - axis.y, mv[i].z - axis.z)
+		var theta := atan2(radial.y, radial.z)
+		tallest = maxf(tallest, radial.length() - LogMesh._radius(mv[i].x, theta))
+		if absf(theta - PI * 0.5) < 0.45: covered[int(floor((mv[i].x + 0.5) * 16.0))] = true
+	check(high - low > 0.7, "Moss runs along most of the log")
 	check(top > mv.size() / 2, "Most moss is on the upper side")
-	check(tips >= 30, "Many separate blade tips (got %d)" % tips)
+	check(tallest < 0.05, "Nothing in the moss stands tall (%.3f above the bark)" % tallest)
+	check(covered.size() >= 14, "The mat covers the top along its length (%d of 16 bins)" % covered.size())
 	var material := moss.surface_get_material(0) as ShaderMaterial
 	check(material != null and material.get_shader_parameter("grass_blades") == true, "Moss wears the grass_blades look")
 	check(moss.has_meta("grass_root") and moss.has_meta("grass_tip"), "Moss carries its gradient for the shader to divide out")

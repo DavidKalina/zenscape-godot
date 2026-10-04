@@ -92,7 +92,7 @@ static func moss_material(mesh: Mesh) -> ShaderMaterial:
 	material.set_shader_parameter("plant_growth", true)
 	material.set_shader_parameter("flat_faces", false)
 	material.set_shader_parameter("grass_blades", true)
-	material.set_shader_parameter("grass_root_blend", Vector2(0.55, 0.2))
+	material.set_shader_parameter("grass_root_blend", Vector2(0.7, 0.1))
 	var root: Color = mesh.get_meta("grass_root")
 	var tip: Color = mesh.get_meta("grass_tip")
 	material.set_shader_parameter("grass_source_root", Vector3(root.r, root.g, root.b))
@@ -155,6 +155,17 @@ static func _build_bark() -> ArrayMesh:
 		var p: Vector3 = pts[RINGS - 1][i]
 		p.x -= pull
 		pts[RINGS - 1][i] = p
+	# Lightness runs in long streaks down each side strip (a vertical grain),
+	# drifting gently along the length, with only small variation between rings.
+	var streak: Array[float] = []
+	var hue: Array[Color] = []
+	var previous := 0.0
+	for i in range(SIDES):
+		previous = 0.6 * rng.randf_range(-0.13, 0.13) + 0.4 * previous
+		streak.append(previous)
+		hue.append(Color(rng.randf_range(0.97, 1.04), rng.randf_range(0.98, 1.03), rng.randf_range(0.96, 1.05)))
+	var drift: Array[float] = []
+	for i in range(SIDES): drift.append(rng.randf() * TAU)
 	for k in range(RINGS - 1):
 		for i in range(SIDES):
 			var j := (i + 1) % SIDES
@@ -165,10 +176,10 @@ static func _build_bark() -> ArrayMesh:
 			var mid := (a + b + c + d) * 0.25
 			var around := mid - _axis(mid.x)
 			around.x = 0.0
-			var shade := rng.randf_range(-0.14, 0.14)
+			var shade: float = streak[i] + 0.035 * sin(mid.x * 5.0 + drift[i]) + rng.randf_range(-0.02, 0.02)
 			var below := clampf(-around.normalized().y * 1.3, 0.0, 1.0)
-			var face_a := _bark(shade, below, rng)
-			var face_b := _bark(shade + rng.randf_range(-0.05, 0.05), below, rng)
+			var face_a := _bark(shade, below, hue[i])
+			var face_b := _bark(shade + rng.randf_range(-0.012, 0.012), below, hue[i])
 			cloth.facet(a, b, c, around, face_a, face_a, face_a)
 			cloth.facet(b, d, c, around, face_b, face_b, face_b)
 	_sawn_end(cloth, rng, pts[0], xs[0])
@@ -177,10 +188,10 @@ static func _build_bark() -> ArrayMesh:
 	_stub(cloth, rng, 0.22, 2.0, 0.028, 0.09, -0.35)
 	return cloth.surface.commit()
 
-static func _bark(shade: float, below: float, rng: RandomNumberGenerator) -> Color:
+static func _bark(shade: float, below: float, hue: Color) -> Color:
 	var c := BARK.lightened(shade) if shade >= 0.0 else BARK.darkened(-shade)
 	c = c.darkened(below * 0.3)
-	return Color(c.r * rng.randf_range(0.96, 1.05), c.g * rng.randf_range(0.97, 1.04), c.b * rng.randf_range(0.95, 1.06))
+	return Color(c.r * hue.r, c.g * hue.g, c.b * hue.b)
 
 ## The sawn end at x = -0.5: a thin cambium rim, then alternating light and dark
 ## rings of end grain round a pale heart.
@@ -256,68 +267,95 @@ static func _stub(cloth: Cloth, rng: RandomNumberGenerator, x0: float, theta: fl
 	for i in range(sides):
 		var j := (i + 1) % sides
 		var mid := (lower[i] + lower[j] + upper[i] + upper[j]) * 0.25 - base
-		var tone := _bark(rng.randf_range(-0.1, 0.1), 0.0, rng)
+		var tone := _bark(rng.randf_range(-0.05, 0.05), 0.0, Color.WHITE)
 		cloth.facet(lower[i], lower[j], upper[i], mid, tone, tone, tone)
 		cloth.facet(lower[j], upper[j], upper[i], mid, tone, tone, tone)
 		cloth.facet(upper[i], upper[j], top, dir, wood, wood, wood)
 
 # --- moss ---------------------------------------------------------------
 
+const MOSS_COLS := 18
+const MOSS_ROWS := 6
+const MOSS_REACH := 0.4
+const MOSS_MAX_LIFT := 0.04
+
+## The moss mat: one continuous, low, soft-lumped cover over the top (about a
+## third of the girth), a grid draped on the bark whose height is the sum of
+## many overlapping cushions, so there are no gaps between them. The edge is
+## lobed and creeps down the sides in a few places. Crests are lit, creases
+## and the rim darker. A few short leaning blades at the crests, nothing tall.
 static func _build_moss() -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 8821
 	var cloth := Cloth.new()
-	# A broken run of clumps along the top (wandering a little), a few lower
-	# on the shoulders, thicker toward the sawn end's side.
-	var x := -0.4
-	var index := 0
-	while x < 0.4:
-		var theta := PI * 0.5 + 0.35 * sin(x * 7.0 + 1.1) + rng.randf_range(-0.28, 0.28)
-		_clump(cloth, rng, x, theta, 5 if index % 3 != 2 else 4, 0.8 + rng.randf() * 0.5)
-		if index % 2 == 0: _cushion(cloth, rng, x + rng.randf_range(0.0, 0.06), theta + rng.randf_range(-0.4, 0.4))
-		x += rng.randf_range(0.075, 0.115)
-		index += 1
-	for side in [[-0.28, PI * 0.5 + 1.05], [0.12, PI * 0.5 - 1.1], [0.33, PI * 0.5 + 0.9]]:
-		_clump(cloth, rng, side[0], side[1], 3, 0.7)
-		_cushion(cloth, rng, side[0] + 0.05, side[1] + 0.1)
+	var phase_a := rng.randf() * TAU
+	var phase_b := rng.randf() * TAU
+	var phase_c := rng.randf() * TAU
+	# Cushions: centre along x, across (radians from the top), size, height.
+	var cushions: Array = []
+	var cx := -MOSS_REACH
+	while cx <= MOSS_REACH:
+		cushions.append([cx + rng.randf_range(-0.02, 0.02), rng.randf_range(-0.4, 0.4), rng.randf_range(0.075, 0.12), rng.randf_range(0.22, 0.42), rng.randf_range(0.6, 1.0)])
+		cx += rng.randf_range(0.05, 0.08)
+	# Lobes that creep down one side or the other: (x, side, extra reach).
+	var lobes := [[-0.27, 1.0, 0.55], [-0.02, -1.0, 0.6], [0.2, 1.0, 0.5], [0.33, -1.0, 0.35]]
+	var grid: Array = []
+	for ci in range(MOSS_COLS + 1):
+		var u := float(ci) / MOSS_COLS * 2.0 - 1.0
+		var x := u * MOSS_REACH
+		var close := smoothstep(1.0, 0.82, absf(u))
+		var shift := 0.2 * sin(phase_a + x * 6.0)
+		var reach := Vector2.ZERO
+		for side in [-1, 1]:
+			var w := 0.78 + 0.22 * sin(phase_b + x * 11.0 + side) + 0.12 * sin(phase_c + x * 23.0 + side * 2.0)
+			for lobe in lobes:
+				if signi(int(lobe[1])) == side:
+					w += lobe[2] * exp(-pow((x - lobe[0]) / 0.07, 2.0))
+			w = lerpf(0.08, w, close)
+			if side < 0: reach.x = w
+			else: reach.y = w
+		var column: Array = []
+		for ri in range(MOSS_ROWS + 1):
+			var v := float(ri) / MOSS_ROWS * 2.0 - 1.0
+			var theta := PI * 0.5 + shift + v * (reach.x if v < 0.0 else reach.y)
+			var lift := 0.0
+			var edge := absf(v) > 0.999 or ci == 0 or ci == MOSS_COLS
+			if edge:
+				lift = 0.007
+			else:
+				var bump := 0.0
+				for cushion in cushions:
+					var dx: float = (x - cushion[0]) / cushion[2]
+					var dv: float = (theta - PI * 0.5 - cushion[1]) / cushion[3]
+					bump += cushion[4] * pow(maxf(1.0 - dx * dx - dv * dv, 0.0), 1.5)
+				lift = 0.009 + MOSS_MAX_LIFT * clampf(bump, 0.0, 1.0) * 0.8 * (1.0 - 0.5 * absf(v))
+			var crest := clampf((lift - 0.007) / (MOSS_MAX_LIFT * 0.8), 0.0, 1.0)
+			var along := 0.2 + 0.5 * crest + rng.randf_range(-0.02, 0.02)
+			column.append([_surface(x, theta, lift), along, crest])
+		grid.append(column)
+	for ci in range(MOSS_COLS):
+		for ri in range(MOSS_ROWS):
+			var p00: Array = grid[ci][ri]
+			var p01: Array = grid[ci][ri + 1]
+			var p10: Array = grid[ci + 1][ri]
+			var p11: Array = grid[ci + 1][ri + 1]
+			var j := rng.randf_range(-0.02, 0.02)
+			var c00 := _tone(p00[1], j)
+			var c01 := _tone(p01[1], j)
+			var c10 := _tone(p10[1], j)
+			var c11 := _tone(p11[1], j)
+			cloth.blade(p00[0], p01[0], p10[0], c00, c01, c10, p00[1], p01[1], p10[1])
+			cloth.blade(p01[0], p11[0], p10[0], c01, c11, c10, p01[1], p11[1], p10[1])
+	# A handful of short blades leaning over from crest vertices.
+	for n in range(5):
+		var ci := rng.randi_range(3, MOSS_COLS - 3)
+		var ri := rng.randi_range(2, MOSS_ROWS - 2)
+		var root: Vector3 = grid[ci][ri][0]
+		var lean_dir := Vector3(rng.randf_range(-0.6, 0.6), 0.0, rng.randf_range(-1.0, 1.0)).normalized()
+		var tip := root + Vector3.UP * 0.006 + lean_dir * 0.024
+		var half := Vector3(0.0, 0.0, 0.006)
+		cloth.blade(root - half, root + half, tip, _tone(0.3, 0.0), _tone(0.3, 0.0), _tone(0.95, 0.04), 0.3, 0.3, 0.95)
 	return cloth.surface.commit()
-
-## A little clump of leaf blades rising from the bark at (x, theta): each a
-## kite of two triangles (base, widest point, tip), dark at the root and lit at
-## the tip, standing mostly upward, leaning away from the clump's middle.
-static func _clump(cloth: Cloth, rng: RandomNumberGenerator, x: float, theta: float, blades: int, size: float) -> void:
-	for b in range(blades):
-		var angle := TAU * b / blades + rng.randf_range(-0.5, 0.5)
-		var spot := _surface(x + cos(angle) * 0.008, theta + sin(angle) * 0.07 * size, 0.0)
-		var up := (_out(theta) * 0.35 + Vector3.UP * 0.65).normalized()
-		var height := rng.randf_range(0.045, 0.085) * size
-		var lean := Vector3(cos(angle) * 0.012, 0.0, 0.0) + _out(theta + sin(angle) * 0.5) * 0.02 * size
-		var half := Vector3(0.0, 0.0, 0.0085 * size)
-		var widest := spot + up * height * 0.38 + lean * 0.3
-		var tip := spot + up * height + lean
-		var tilt := rng.randf_range(-0.05, 0.08)
-		var root := _tone(0.0, 0.0)
-		var wide := _tone(0.4, tilt)
-		var end := _tone(1.0, tilt + 0.05)
-		cloth.blade(spot - half * 0.35, spot + half * 0.35, widest - half, root, root, wide, 0.04, 0.04, 0.4)
-		cloth.blade(spot + half * 0.35, widest + half, widest - half, root, wide, wide, 0.04, 0.4, 0.4)
-		cloth.blade(widest - half, widest + half, tip, wide, wide, end, 0.4, 0.4, 1.0)
-
-## A low faceted cushion: a six-sided dome set into the bark, soft-lit by the
-## grass shading, with the rim dark and the crown lit.
-static func _cushion(cloth: Cloth, rng: RandomNumberGenerator, x: float, theta: float) -> void:
-	var peak_lift := rng.randf_range(0.022, 0.034)
-	var radius := rng.randf_range(0.03, 0.05)
-	var peak := _surface(x, theta, peak_lift)
-	var rim: Array[Vector3] = []
-	var turn := rng.randf() * TAU
-	for i in range(6):
-		var a := turn + TAU * i / 6.0 + rng.randf_range(-0.2, 0.2)
-		rim.append(_surface(x + cos(a) * radius * 0.5, theta + sin(a) * radius / maxf(_radius(x, theta), 0.05), -0.004 + rng.randf_range(0.0, 0.004)))
-	var rim_c := _tone(0.12, 0.0)
-	for i in range(6):
-		var crown := _tone(0.62, rng.randf_range(-0.05, 0.1))
-		cloth.blade(rim[i], rim[(i + 1) % 6], peak, rim_c, rim_c, crown, 0.12, 0.12, 0.62)
 
 static func _tone(along: float, jitter: float) -> Color:
 	var colour := MOSS_ROOT.lerp(MOSS_TIP, clampf(along, 0.0, 1.0))
