@@ -158,7 +158,7 @@ vec4 zs_opal_planet_rings(vec3 local, float fw, float lit, float shade) {
 vec3 zs_opal_planet_glow(float x, float side) {
   float glow = x > 1.0 ? exp(-(x - 1.0) / 0.12) * 0.7 + exp(-(x - 1.0) / 0.4) * 0.3 : pow(x, 8.0) * 0.4;
   glow *= 1.0 - smoothstep(1.28, 1.6, x);
-  vec3 tint = mix(vec3(0.62, 0.66, 0.95), vec3(0.85, 0.74, 0.95), smoothstep(1.0, 1.4, x));
-  return tint * glow * (0.25 + 0.75 * side) * 0.30;
+  vec3 tint = mix(vec3(0.66, 0.72, 0.90), vec3(0.80, 0.76, 0.90), smoothstep(1.0, 1.4, x));
+  return tint * glow * (0.25 + 0.75 * side) * 0.17;
 }
 #endif
