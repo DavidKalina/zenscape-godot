@@ -13,6 +13,8 @@ const LOOKS := ["desert_afternoon", "misty_hollow", "storm_gathering", "rosewate
 var scene: Node3D
 var out := "/private/tmp/zs-backdrop/out"
 var only := ""
+var hours: Array = HOURS
+var yaws: Array = []
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -49,6 +51,11 @@ func run() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--backdrop-dir="): out = argument.trim_prefix("--backdrop-dir=")
 		if argument.begins_with("--only="): only = argument.trim_prefix("--only=")
+		if argument.begins_with("--hours="):
+			hours = []
+			for v in argument.trim_prefix("--hours=").split(","): hours.append(float(v))
+		if argument.begins_with("--yaws="):
+			for v in argument.trim_prefix("--yaws=").split(","): yaws.append(float(v))
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(600).timeout.connect(func() -> void: push_error("capture timed out"); quit(2))
 	root.mode = Window.MODE_WINDOWED
@@ -71,13 +78,19 @@ func run() -> void:
 		["wide", 0.95, 1.15, 0.9],
 		["low", 1.36, 0.7, 0.4],
 	]
-	for h in HOURS.size():
-		hour(HOURS[h], 0.06)
+	for h in hours.size():
+		hour(hours[h], 0.06)
+		# --yaws=A,B: extra overviews turned by these radians, to find peaks at other bearings.
+		for yi in yaws.size():
+			pose(0.0, 1.0, yaws[yi])
+			await frames(150)
+			await still("yaw%d-%02d%02d.png" % [yi, int(hours[h]), int(fposmod(hours[h], 1.0) * 60.0 + 0.5)])
+		if only == "yaws": continue
 		for s in shots:
 			if not only.is_empty() and only not in str(s[0]): continue
 			pose(s[1], s[2], s[3])
 			await frames(150 if s == shots[0] else 60)
-			await still("%s-%02d%02d.png" % [s[0], int(HOURS[h]), int(fposmod(HOURS[h], 1.0) * 60.0 + 0.5)])
+			await still("%s-%02d%02d.png" % [s[0], int(hours[h]), int(fposmod(hours[h], 1.0) * 60.0 + 0.5)])
 	# Overcast, mid-morning.
 	if only.is_empty() or only == "overcast":
 		hour(10.0, 0.75)
