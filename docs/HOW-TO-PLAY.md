@@ -86,7 +86,9 @@ One Cmd+Z takes back the whole pull.
 Draw a line on the land with the Ravine and let go: the wire is drawn
 through the land along your line, bends and all, from where you pressed to
 where you let go, and a deep, steep ravine opens behind it. Drawn out
-through the rim, it opens the plate's side. **Draw a loop** (end where you
+through the rim, it opens the plate's side, with a shallow sill at the mouth so
+the ravine can still hold water: pour into it with the can and it fills level
+to the notch, and what is poured past that spills off the side. **Draw a loop** (end where you
 started) and the inside sinks to a level floor: a lake basin, the line its
 shore. Shift makes it shallower. The pips widen it. Each drawing is one
 Cmd+Z.
@@ -113,7 +115,7 @@ Each stroke is one Cmd+Z.
 ## The watering can (tool roll)
 
 Hold to pour where the rose hangs; drag to run water along a groove; Shift
-sprinkles. **Hold it still over a hollow** (a crater, a pan, a basin drawn
+sprinkles. **Hold it still over a hollow** (a crater, a pan, a basin or ravine drawn
 with the Ravine, or a pond already standing) and after a moment it builds to
 a gush, nine times as strong, and fills the hollow to its brim in seconds.
 Move on and it eases back. Held still on a hilltop or a slope, where the

@@ -52,6 +52,14 @@ at the rim letting it out, an equilibrium) is left for later. The live water
 already holds a basin to its rim's lowest point and drains over the plate's
 edge (docs/scenic/water-flow.md).
 
+Update (2026-10-03): a ravine can be filled with the can, as a lake is. A
+ravine run out through the rim used to have a bed falling to the open side, so
+its hollow's sill was the bed at the mouth and it held ~7 m3. Its mouth now
+keeps a sill (`Wire.RIM_SILL_*`), a notch 30% of the gorge's depth under the
+rim, so it fills to the notch and spills the rest off the side. Open: setting
+the level by hand (a notch cut or raised) is still not a verb; the level is how
+much is poured, up to the notch. Test: `tests/test_ravine_fill.gd`.
+
 ## The Island (2026-10-03)
 
 With lakes in (the Crater's Draw and the can), the user wanted little islands
