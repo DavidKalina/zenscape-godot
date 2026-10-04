@@ -434,11 +434,12 @@ func wash(density_at: Callable, bounds: Rect2) -> int:
 			var core := smoothstep(WASH_FROM,1.0,standing)
 			if core <= 0.0 or not _ground_takes(p): continue
 			var hides := float(MeadowTypes.FLOWER_KEYS[kind].get("cover",1.0))
+			var soil := float(MeadowTypes.FLOWER_KEYS[kind].get("soil",0.0))
 			var cell := z*data.MEADOW_CELLS+x
 			var grass := Brush.surface_colour("grass",data._palette,p)
-			var colour := grass.lerp(Color(MeadowTypes.wash_of(kind,meadow.variant(p))).srgb_to_linear(),WASH_LEAN)
+			var colour := grass.lerp(Color(MeadowTypes.wash_of(kind,meadow.variant(p))).srgb_to_linear(),1.0 if soil > 0.0 else WASH_LEAN)
 			var before := NativeTerrainTint.weight_at(tint,cell)
-			NativeTerrainTint.coat(tint,base,cell,colour,maxf(before,WASH*core*hides))
+			NativeTerrainTint.coat(tint,base,cell,colour,maxf(before,(soil if soil > 0.0 else WASH)*core*hides))
 			if NativeTerrainTint.weight_at(tint,cell) > before:
 				provenance[cell] = NativeTerrainData.SOURCE_HAND
 				count += 1
