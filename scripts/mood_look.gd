@@ -32,13 +32,16 @@ const CONTROLS := [
 	{"id":"colors","title":"Colours"},
 ]
 const SEASONS := [{"id":"spring","title":"Spring"},{"id":"summer","title":"Summer"},{"id":"autumn","title":"Autumn"},{"id":"winter","title":"Winter"}]
-## A held hour, or the day turning on its own (`phase` < 0).
+## A held hour, or the day turning on its own (`phase` < 0). Golden hour holds
+## the sun 0.057 high (about 17:15 on the clock), warm light raking the land;
+## Dusk holds it 0.047 below the horizon (about 18:40), the afterglow at its
+## height (celestial.gd AFTERGLOW_E, DUSK_FILL).
 const TIMES := [
 	{"id":"dawn","title":"Dawn","phase":0.275},
 	{"id":"morning","title":"Morning","phase":0.345},
 	{"id":"midday","title":"Midday","phase":0.47},
-	{"id":"golden","title":"Golden hour","phase":0.645},
-	{"id":"dusk","title":"Dusk","phase":0.705},
+	{"id":"golden","title":"Golden hour","phase":0.738},
+	{"id":"dusk","title":"Dusk","phase":0.76},
 	{"id":"night","title":"Night","phase":0.035},
 	{"id":"turning","title":"Turning day","phase":-1.0},
 ]

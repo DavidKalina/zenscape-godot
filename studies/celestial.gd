@@ -131,6 +131,17 @@ const AFTERGLOW_E := Vector4(0.02, -0.03, -0.17, -0.07)
 const AFTERGLOW_SKY := Vector3(0.11, 0.07, 0.15)
 const AFTERGLOW_DOWN := Vector3(0.055, 0.04, 0.07)
 const AFTERGLOW_AMBIENT := Vector3(0.62, 0.5, 0.78)
+## Dusk's fill. After sunset the sun's key goes out and the night fill has not
+## come in, so between them the land fell darker than at night while the sky
+## over it was still bright: in a close view the ground went near black under
+## a rose sky. The glowing sky lights the land instead: this much more fill
+## energy (the night fill's measure) between DUSK_FILL_E's sun heights (in
+## from x to y, out from z to w, gone by the night look so night is as it
+## was), tinted toward AFTERGLOW_AMBIENT. Overcast keeps DUSK_FILL_CLOUD of it,
+## grey: a dim sky still lights the land.
+const DUSK_FILL := 0.42
+const DUSK_FILL_E := Vector4(0.04, -0.02, -0.2, -0.1)
+const DUSK_FILL_CLOUD := 0.6
 ## Golden hour's contrast: the sky's fill eases off by this share while the sun
 ## is low and up, so the warm key leads and shade goes cool and deep.
 const GOLDEN_FILL_DIP := 0.18
@@ -294,10 +305,14 @@ func update_rig() -> void:
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
 	# Keep sky/cloud/fog colors independent so stars retain their dark backdrop.
 	var fill := night * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
-	_publish("zs_hemi_sky", hemi_sky + NIGHT_FILL * fill)
+	# Dusk's fill (DUSK_FILL): the afterglow sky lighting the land, rose-lavender
+	# under a clear sky, grey under cloud.
+	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)
+	var surface_sky := hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_fill * (1.0 - minf(1.0, cloud * 1.3)) * 0.5)
+	_publish("zs_hemi_sky", surface_sky + NIGHT_FILL * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
 	var golden := smoothstep(0.3, 0.1, e) * smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill) * look.settings.ambient_energy)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(Vector3(0.055, 0.07, 0.1), sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(Vector3(0.1, 0.14, 0.24), sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(Vector3(0.3, 0.18, 0.14), sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
