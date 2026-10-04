@@ -501,6 +501,10 @@ zs_night={
 "type": "float",
 "value": 0.0
 }
+zs_night_style={
+"type": "int",
+"value": 2
+}
 zs_celestial_clear={
 "type": "float",
 "value": 0.922

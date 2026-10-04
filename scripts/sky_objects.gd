@@ -6,13 +6,16 @@ extends Node3D
 ## from here per frame but the look pass's ridges. --shader-stars leaves the
 ## dome's painted stars and builds none of this.
 
-## Room direction of the planet: up and left in the opening view, just under
-## the horizon ridges, in front of the Milky Way.
-const PLANET_DIRECTION := Vector3(-0.73, -0.21, 0.65)
+## Room direction of the planet: up in the sky, about 22 degrees over the
+## horizon, so it is looked up at, never down on. It is off unless the
+## player turns it on (scripts/look_pass.gd `sky_planet`).
+const PLANET_DIRECTION := Vector3(-0.73, 0.4, 0.65)
 ## Angular radius, radians: about twice the moon's.
 const PLANET_RADIUS := 0.05
-## The pole the rings circle, in the room.
-const PLANET_POLE := Vector3(0.3, 1.0, -0.25)
+## The pole the rings circle, in the room: tipped toward the ground eye's
+## side by about 27 degrees, so the rings open into an ellipse from below
+## rather than lying edge-on.
+const PLANET_POLE := Vector3(0.05, 1.0, 0.2)
 ## The Milky Way's plane, as the dome paints it.
 const GALAXY_NORMAL := Vector3(0.6, 0.25, 0.75)
 ## The few brilliant stars, placed: direction, temperature (star_tint in
@@ -185,6 +188,8 @@ func _build_planet() -> Node3D:
 	body.name = "Body"
 	var sphere := SphereMesh.new()
 	# Enough segments that its outline stays round on screen.
+	sphere.radius = 1.0
+	sphere.height = 2.0
 	sphere.radial_segments = 64
 	sphere.rings = 32
 	body.mesh = sphere

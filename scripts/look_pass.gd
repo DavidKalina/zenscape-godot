@@ -27,6 +27,18 @@ const CLOUD_STYLES := ["opal","storybook","mystic"]
 const CLOUD_STYLE_NAMES := ["Opal","Storybook","Mystic"]
 const SETTINGS_PATH := "user://look.cfg"
 var cloud_style := cloud_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_cloud_style())
+## The night sky's style (shaders/night_sky.gdshaderinc, the global
+## zs_night_style), chosen and kept like the clouds' in Settings > Night sky.
+## --night-style=nocturne|opal|storybook|mystic picks one for a run.
+const NIGHT_STYLES := ["nocturne","opal","storybook","mystic"]
+const NIGHT_STYLE_NAMES := ["Nocturne","Opal","Storybook","Mystic"]
+## The night until the player chooses.
+const NIGHT_DEFAULT := "storybook"
+var night_style := night_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_night_style())
+## The ringed planet (scripts/sky_objects.gd): off unless the player turns
+## it on in Settings > Planet, kept in user://look.cfg. --sky-planet or
+## --no-sky-planet for a run.
+var sky_planet := sky_planet_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_sky_planet())
 ## Where the choice is kept (tests point it elsewhere).
 var settings_path := SETTINGS_PATH
 ## Motes of light adrift round the plate over the sea (scripts/sky_motes.gd),
@@ -69,6 +81,7 @@ func setup(scene: Node3D) -> void:
 	scene.add_child(_grade_layer)
 	scene.add_child(_motes)
 	grass.setup(scene)
+	_publish_night_style()
 
 func toggle() -> void:
 	enabled = not enabled
@@ -102,6 +115,7 @@ func update(camera: Camera3D, celestial) -> void:
 	RenderingServer.global_shader_parameter_set("zs_look_rim", rim * on)
 	_update_ridges(on)
 	_update_cloud_sea(on)
+	_update_sky_planet()
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
 	var dense := enabled and beauty_grass and tier != 1
@@ -196,24 +210,86 @@ func set_cloud_style(style: String, keep := true) -> void:
 
 ## The player's kept cloud style, Opal until they choose.
 static func load_cloud_style(path := SETTINGS_PATH) -> String:
-	var file := ConfigFile.new()
-	if file.load(path) != OK: return CLOUD_STYLES[0]
-	var style := String(file.get_value("clouds", "style", CLOUD_STYLES[0]))
-	return style if style in CLOUD_STYLES else CLOUD_STYLES[0]
+	return _load_style("clouds", CLOUD_STYLES, path)
 
 static func save_cloud_style(style: String, path := SETTINGS_PATH) -> void:
-	var file := ConfigFile.new()
-	file.load(path)
-	file.set_value("clouds", "style", style)
-	file.save(path)
+	_save_style("clouds", style, path)
 
 ## --cloud-style=NAME among `args`, when it names a style; else `kept`.
 static func cloud_style_from_args(args: PackedStringArray, kept: String) -> String:
+	return _style_from_args("--cloud-style=", CLOUD_STYLES, args, kept)
+
+## Paints the night sky in `style` (one of NIGHT_STYLES); `keep` saves it
+## as the player's choice.
+func set_night_style(style: String, keep := true) -> void:
+	if style not in NIGHT_STYLES: return
+	night_style = style
+	if keep: save_night_style(style, settings_path)
+	_publish_night_style()
+
+func _publish_night_style() -> void:
+	RenderingServer.global_shader_parameter_set("zs_night_style", maxi(NIGHT_STYLES.find(night_style), 0))
+
+## Shows or hides the planet from the next update; `keep` saves the choice.
+func set_sky_planet(on: bool, keep := true) -> void:
+	sky_planet = on
+	if keep:
+		var file := ConfigFile.new()
+		file.load(settings_path)
+		file.set_value("sky", "planet", on)
+		file.save(settings_path)
+	if _scene != null: _update_sky_planet()
+
+func _update_sky_planet() -> void:
+	var lighting = _scene.get("_lighting")
+	var objects = lighting.sky_objects if lighting != null else null
+	if objects == null or objects.planet == null: return
+	if objects.planet.visible != sky_planet: objects.planet.visible = sky_planet
+
+## The player's kept planet choice, off until they turn it on.
+static func load_sky_planet(path := SETTINGS_PATH) -> bool:
+	var file := ConfigFile.new()
+	if file.load(path) != OK: return false
+	return bool(file.get_value("sky", "planet", false))
+
+## --sky-planet / --no-sky-planet among `args`; else `kept`.
+static func sky_planet_from_args(args: PackedStringArray, kept: bool) -> bool:
+	if "--no-sky-planet" in args: return false
+	if "--sky-planet" in args: return true
+	return kept
+
+## The player's kept night style, Storybook until they choose.
+static func load_night_style(path := SETTINGS_PATH) -> String:
+	return _load_style("night", NIGHT_STYLES, path, NIGHT_DEFAULT)
+
+static func save_night_style(style: String, path := SETTINGS_PATH) -> void:
+	_save_style("night", style, path)
+
+## --night-style=NAME among `args`, when it names a style; else `kept`.
+static func night_style_from_args(args: PackedStringArray, kept: String) -> String:
+	return _style_from_args("--night-style=", NIGHT_STYLES, args, kept)
+
+## A style kept under `section` in the settings file; `fallback` (the
+## first of `styles` unless given) when none or an unknown one is kept.
+static func _load_style(section: String, styles: Array, path: String, fallback := "") -> String:
+	if fallback.is_empty(): fallback = styles[0]
+	var file := ConfigFile.new()
+	if file.load(path) != OK: return fallback
+	var style := String(file.get_value(section, "style", fallback))
+	return style if style in styles else fallback
+
+static func _save_style(section: String, style: String, path: String) -> void:
+	var file := ConfigFile.new()
+	file.load(path)
+	file.set_value(section, "style", style)
+	file.save(path)
+
+static func _style_from_args(prefix: String, styles: Array, args: PackedStringArray, kept: String) -> String:
 	for arg: String in args:
-		if arg.begins_with("--cloud-style="):
+		if arg.begins_with(prefix):
 			var style := arg.get_slice("=", 1).to_lower()
-			if style in CLOUD_STYLES: return style
-			push_warning("--cloud-style: expected opal, storybook or mystic, not %s" % style)
+			if style in styles: return style
+			push_warning("%s expected %s, not %s" % [prefix, ", ".join(styles), style])
 	return kept
 
 ## A color's hue at unit luminance, pulled `amount` of the way from white.

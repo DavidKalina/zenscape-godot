@@ -292,6 +292,23 @@ func _make_shell() -> void:
 	clouds.select(maxi(look_pass.CLOUD_STYLES.find(look_pass.cloud_style),0))
 	clouds.item_selected.connect(func(index: int) -> void: look_pass.set_cloud_style(look_pass.CLOUD_STYLES[index]))
 	options.add_child(clouds)
+	# The night sky: four styles, kept the same way (`set_night_style`).
+	var night_label := Label.new()
+	night_label.text = "Night sky"
+	options.add_child(night_label)
+	var night := OptionButton.new()
+	night.name = "NightStyle"
+	for style_name: String in look_pass.NIGHT_STYLE_NAMES: night.add_item(style_name)
+	night.select(maxi(look_pass.NIGHT_STYLES.find(look_pass.night_style),0))
+	night.item_selected.connect(func(index: int) -> void: look_pass.set_night_style(look_pass.NIGHT_STYLES[index]))
+	options.add_child(night)
+	# The ringed planet, off until the player turns it on (`set_sky_planet`).
+	var planet := CheckButton.new()
+	planet.name = "SkyPlanet"
+	planet.text = "Planet in the night sky"
+	planet.button_pressed = look_pass.sky_planet
+	planet.toggled.connect(func(on: bool) -> void: look_pass.set_sky_planet(on))
+	options.add_child(planet)
 	# Master volume and mute, and the creation Sound volume (scripts/sound_settings.gd).
 	preload("res://scripts/sound_settings.gd").build(options)
 	for group: String in ["_ambient_audio","_thunder_audio"]:
