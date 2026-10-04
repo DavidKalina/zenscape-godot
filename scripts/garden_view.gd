@@ -5,6 +5,7 @@ const HeroTrees := preload("res://scripts/hero_trees.gd")
 const GrassTuft := preload("res://scripts/grass_tuft_mesh.gd")
 const Undergrowth := preload("res://scripts/undergrowth_mesh.gd")
 const Mushroom := preload("res://scripts/mushroom_mesh.gd")
+const LogMesh := preload("res://scripts/log_mesh.gd")
 const RockVariants := preload("res://scripts/rock_variants.gd")
 const Variety := preload("res://scripts/seeded_variety.gd")
 ## Seconds above every birth's rise (Emergence TREE_RISE and kin), where the
@@ -79,7 +80,7 @@ func _ready() -> void:
 			_catalog_parts[kind].append(key)
 			var source_mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
 			var mesh: Mesh = Undergrowth.swap(node_name,GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh)))
-			mesh = Mushroom.swap(node_name,mesh)
+			mesh = LogMesh.swap(node_name,Mushroom.swap(node_name,mesh))
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
 			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
@@ -978,5 +979,5 @@ func update_object_preview(record: Dictionary) -> void:
 				continue
 			var colored := key in ["canopy","petal","rock"] or (key.begins_with("tree:") and "canopies" in key)
 			if _catalog_parts.has(record.asset):
-				colored = _catalog_parts[record.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
+				colored = _catalog_parts[record.asset].size()==1 or key == "log:logs" or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 			batch.multimesh.set_instance_color(i,tint if tint != null and colored else _tints.get(key,Color.WHITE))

@@ -25,7 +25,7 @@ const PARTS := {
 	"lupine":["meadow-flower-lupine"],
 	"wheat":["meadow-flower-wheat"],
 	"grass_tuft":["mesh-10"],
-	"log":["logs"],
+	"log":["logs","log-moss"],
 	"stump":["stumps"],
 	"snag":["snags"],
 	"mushroom":["fungus-stems","fungus-caps"],
@@ -47,7 +47,7 @@ static var _pivots := {}
 static func part_pose(key: String, original: Node3D, mesh: Mesh) -> Transform3D:
 	if STEM_SCALE.has(key):
 		return Transform3D(Basis.from_scale(Vector3(1.0,STEM_SCALE[key],1.0)),Vector3.ZERO)
-	if original is MultiMeshInstance3D or original.name.begins_with("redwood-") or original.name.begins_with("layered-") or original.name.begins_with("joshua-") or preload("res://scripts/hero_trees.gd").species_of(original.name) != "":
+	if original is MultiMeshInstance3D or original.name == "log-moss" or original.name.begins_with("redwood-") or original.name.begins_with("layered-") or original.name.begins_with("joshua-") or preload("res://scripts/hero_trees.gd").species_of(original.name) != "":
 		return Transform3D.IDENTITY
 	# Meadow flowers stand on their root, wherever their heads lean.
 	if preload("res://scripts/meadow_flower_mesh.gd").is_node(original.name):
@@ -80,6 +80,12 @@ static func source_node(source: Node3D, node_name: String) -> Node3D:
 		flower.mesh = preload("res://scripts/meadow_flower_mesh.gd").mesh(node_name.trim_prefix(preload("res://scripts/meadow_flower_mesh.gd").NODE_PREFIX))
 		source.add_child(flower)
 		return flower
+	if node_name == "log-moss":
+		var moss := MeshInstance3D.new()
+		moss.name = node_name
+		moss.mesh = preload("res://scripts/log_mesh.gd").moss_mesh()
+		source.add_child(moss)
+		return moss
 	if node_name == "desert-cactus":
 		var cactus := MeshInstance3D.new()
 		cactus.name = node_name

@@ -178,13 +178,13 @@ static func leaf_season(key: String) -> Vector4:
 	if key.begins_with("fern:"): return Vector4(1.0,0.0,0.0,0.6)
 	# Wheat follows the year its own way (`flower_ripen`): no autumn paint over
 	# its gold, and cut to stubble rather than dying back.
-	if key.begins_with("wheat:"): return Vector4.ZERO
+	if key.begins_with("wheat:") or key == "log:log-moss": return Vector4.ZERO
 	if key in ["petal","stem"] or "flower" in key: return Vector4(1.0,0.0,0.0,1.0)
 	if key == "grass" or key.begins_with("grass_tuft:") or key.begins_with("bank_grass:"): return Vector4(1.0,0.0,0.0,0.35)
 	return Vector4(1.0,0.0,0.0,0.0)
 
 static func part_role(key: String) -> int:
-	if key.begins_with("fern:"): return 5
+	if key.begins_with("fern:") or key == "log:log-moss": return 5
 	if key.begins_with("joshua:"): return preload("res://scripts/hero_trees.gd").JOSHUA[key.get_slice(":",1)][1]
 	var species: int = preload("res://scripts/hero_trees.gd").species_role(key)
 	if species >= 0: return species
