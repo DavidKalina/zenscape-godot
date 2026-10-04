@@ -41,6 +41,7 @@ func _initialize() -> void:
 	_added_air()
 	_airspeed()
 	_flaps()
+	_approach()
 	print("PASS: sky glide" if failures == 0 else "FAIL: sky glide")
 	quit(1 if failures else 0)
 
@@ -472,3 +473,33 @@ func _flaps() -> void:
 	var top := high.position.y
 	for i in range(int(6.0/DT)): high.step(DT,{"flap":true},air)
 	check(high.position.y < top,"Over the ceiling, flaps don't lift it")
+
+## A plate 28 m across with its ground at 0, as the landing sees it.
+func plate(p: Vector3) -> Variant:
+	if absf(p.x) > 14.0 or absf(p.z) > 14.0: return null
+	return Vector2(0.0,-8.0)
+
+func _approach() -> void:
+	# From 20 m up beside the plate, heading away from it, it turns in, comes
+	# down steeply, flares and skims in at a walk.
+	var glide := SkyGlide.new()
+	glide.launch(Vector3(10.0,20.0,10.0),0.0,8.0,false)
+	glide.approach = true
+	glide.approach_target = Vector3.ZERO
+	var lowest_pitch := 0.0
+	var skimmed := -1.0
+	for i in range(int(20.0/DT)):
+		glide.step(DT,{},plate)
+		lowest_pitch = minf(lowest_pitch,glide.pitch)
+		if glide.skimming:
+			skimmed = i*DT
+			break
+	check(skimmed > 0.0 and skimmed < 12.0,"Coming in to land, it reaches the plate (%.1f s)" % skimmed)
+	check(absf(glide.position.x) <= 14.0 and absf(glide.position.z) <= 14.0,"On the plate, though it set off heading away")
+	check(glide.speed < SkyGlide.APPROACH_SPEED+0.5,"Slow enough to land (%.1f m/s)" % glide.speed)
+	check(lowest_pitch < -0.2 and glide.pitch > -0.15,"Nose down high, flared by the ground (%.2f, then %.2f rad)" % [lowest_pitch,glide.pitch])
+	var called := SkyGlide.new()
+	called.launch(Vector3(0.0,20.0,0.0),0.0,8.0,false)
+	called.approach = true
+	called.step(DT,{"flap":true},plate)
+	check(not called.approach,"A flap calls the landing off")

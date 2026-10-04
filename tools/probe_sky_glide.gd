@@ -11,7 +11,10 @@ extends SceneTree
 ##   - the chase camera trails the glider, drawn under its wing; C swaps to
 ##     its eyes and back;
 ##   - under the plate the glide stays under it, never snapped on top;
-##   - landing, the camera swoops down into the eyes.
+##   - landing, the camera swoops down into the eyes;
+##   - flown into, a chunk is claimed as the plate, the island left kept in
+##     the sky and the save; flown back, the island built returns;
+##   - F comes in to land, slows, flares and touches down.
 ## Visuals (the chunks' look, the streaks) need a rendered run.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_glide.gd -- --no-title
 var scene: Node3D
@@ -299,6 +302,76 @@ func run() -> void:
 	await frames(60)
 	check("V mid-glide steps out",not eye.active and not eye.flying)
 	check("stepped out, the figure stands on the plate",absf(eye._feet.x) <= eye.PLATE_REACH and absf(eye._feet.z) <= eye.PLATE_REACH,eye._feet)
+
+	# Claiming a chunk: flown into, it becomes the plate, as its own plain.
+	var spot := Vector2(3.0,-2.0)
+	var home_height: float = float(editor.data.ground_height(spot))
+	await frames(90)
+	eye.place(Vector3(eye.PLATE_REACH-0.6,0.0,0.0))
+	eye.enter()
+	eye._yaw = atan2(-1.0,0.0)+eye._turn()
+	eye._polar = PI*0.5
+	key(KEY_W,true)
+	for i in range(120):
+		await frames(1)
+		if eye.flying: break
+	key(KEY_W,false)
+	check("off the edge again, to go claiming",eye.flying,"active %s" % eye.active)
+	isl = eye.islands
+	var target: Vector3 = isl.offsets[0]
+	var target_home: Vector3 = isl.homes[0]
+	var target_seed: int = isl.seeds[0]
+	eye.glide.position = target+Vector3(2.0,25.0,1.0)
+	await frames(2)
+	for i in range(600):
+		if not isl.claiming: break
+		await frames(1)
+	var at: Vector2 = Vector2(eye.glide.position.x,eye.glide.position.z)
+	check("flown into a chunk, it becomes the plate",at.length() < 6.0 and eye.flying,at)
+	var plain := NativeTerrainData.new()
+	plain.setup(editor.data.source_mesh,editor.data._arrays.duplicate())
+	preload("res://scripts/genesis_canvas.gd").shape(plain,target_seed)
+	check("the plate is the chunk's own plain",absf(float(editor.data.ground_height(spot))-float(plain.ground_height(spot))) < 0.01 and isl.plate_seed == target_seed)
+	var left: int = isl.homes.find(Vector3.ZERO)
+	check("the island left is kept, and stands where it was",left >= 0 and isl.built_islands.has("0,0") and isl.offsets[left].is_equal_approx(-target),"%d islands kept" % isl.built_islands.size())
+	for i in range(600):
+		if left < 0 or isl.lands[left] != null: break
+		await frames(1)
+	var there: Variant = isl.ground(isl.offsets[left]+editor.terrain.to_global(Vector3(spot.x,0.0,spot.y)))
+	var home_y: float = editor.terrain.to_global(Vector3(spot.x,home_height,spot.y)).y+isl.offsets[left].y
+	check("it shows its own land",there != null and absf(float(there)-home_y) < 0.05,"%s vs %.2f" % [there,home_y])
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(scene.places_path))
+	check("the world's save keeps it",saved.has("islands") and saved.islands.built.size() == 1 and saved.islands.plate_seed == target_seed)
+	check("nothing of the plate stays hidden",editor.terrain.layers != 0)
+
+	# Back to the island left: its land comes back, and the fresh plain left
+	# untouched goes back to being a chunk.
+	eye.glide.position = isl.offsets[left]+Vector3(2.0,25.0,1.0)
+	await frames(2)
+	for i in range(600):
+		if not isl.claiming: break
+		await frames(1)
+	check("flown back, the island built is the plate again",absf(float(editor.data.ground_height(spot))-home_height) < 0.01 and isl.plate_seed == -1 and isl.built_islands.is_empty(),"%d kept" % isl.built_islands.size())
+	check("and the chunk is a fresh chunk again",isl.homes.has(target_home))
+
+	# F comes in to land: it slows, noses down, flares and touches down.
+	eye.glide.position = editor.terrain.to_global(Vector3(-6.0,18.0,-6.0))
+	eye.glide.heading = atan2(-1.0,-1.0)
+	eye.glide.speed = 7.0
+	eye.glide.pitch = 0.0
+	key(KEY_F,true)
+	key(KEY_F,false)
+	var slowest := INF
+	var landed_in := -1.0
+	for i in range(900):
+		await frames(1)
+		if not eye.flying:
+			landed_in = i/60.0
+			break
+		slowest = minf(slowest,eye.glide.speed)
+	check("F comes in to land and touches down",landed_in > 0.0 and landed_in < 12.0 and eye.active,"%.1f s" % landed_in)
+	check("it slows to land",slowest < eye.glide.APPROACH_SPEED+0.6,"%.1f m/s" % slowest)
+	check("landed on the plate",absf(eye._feet.x) <= eye.PLATE_REACH and absf(eye._feet.z) <= eye.PLATE_REACH,eye._feet)
 	finish()
 
 func finish() -> void:
