@@ -432,6 +432,8 @@ func can_enter() -> bool:
 	if scene._menu.visible or scene.crafting or editor.forming: return false
 	var photo: Node = scene.get("photo")
 	if photo != null and photo.active: return false
+	var watch: Node = scene.get("watch")
+	if watch != null and watch.active: return false
 	var places: Node = scene.get("places")
 	return places == null or not places.busy
 

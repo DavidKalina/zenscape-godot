@@ -28,6 +28,11 @@ var seed_text := "meadow-lark-2081"
 var near := false
 var probe := false
 var diorama := false
+## `--front-at=S`: send a gust front (studies/gust_fronts.gd) S s into the
+## film, so a short reel always catches one; the schedule runs on as well.
+## `--no-fronts` films the breeze alone, as before fronts.
+var front_at := -1.0
+var no_fronts := false
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -38,6 +43,8 @@ func _initialize() -> void:
 		if arg == "--near": near = true
 		if arg == "--probe": probe = true
 		if arg == "--diorama": diorama = true
+		if arg.begins_with("--front-at="): front_at = float(arg.trim_prefix("--front-at="))
+		if arg == "--no-fronts": no_fronts = true
 	out = ProjectSettings.globalize_path(out)
 	DirAccess.make_dir_recursive_absolute(out.path_join("frames"))
 	run.call_deferred()
@@ -126,12 +133,21 @@ func run() -> void:
 			print(await _time("NOTHIN"))
 			for batch: Node in hidden: batch.material_override = kept[batch]
 	var count := int(seconds*30.0)
+	# Clear any front sent while the land formed, then schedule (or not).
+	for slot in range(air.fronts.SLOTS): air.fronts.fronts[slot] = {}
+	if no_fronts: air.fronts._wait = INF
+	elif front_at >= 0.0: air.fronts._wait = maxf(front_at,0.01)
 	for i in range(count):
 		scene._update_camera()
 		await process_frame
 		var image := root.get_texture().get_image()
 		if image != null: image.save_jpg(out.path_join("frames/%04d.jpg" % i),0.88)
-		if i % 30 == 0: print("FRAME %d breeze %.3f" % [i,air.breeze()])
+		if i % 30 == 0:
+			var trails: Node = air.wind_trails
+			var drawn := ""
+			if trails != null and trails.get("ribbons") != null:
+				for r: Dictionary in trails.ribbons: drawn += " (%.1f,%.1f,%.1f a%.2f)" % [r.pos.x,r.pos.y,r.pos.z,r.fade]
+			print("FRAME %d breeze %.3f fronts sent %d plate %s r%.1f ribbons%s" % [i,air.breeze(),air.fronts.sent,air.fronts.center,air.fronts.radius,drawn])
 	scene.queue_free()
 	await process_frame
 	quit()

@@ -27,6 +27,26 @@ global uniform float zs_gust_speed;
 // docs/scenic/breeze.md): the air's strength lifted to a gentle floor and
 // breathing slowly. 0 is a dead calm; a light day is about 0.53.
 global uniform float zs_breeze;
+// The breeze's gust fronts (studies/gust_fronts.gd, docs/scenic/gust-fronts.md):
+// per slot, a = origin x, z and way x, z; b = age s, speed m/s, peak lean,
+// half width m. An empty slot is all zeros.
+global uniform vec4 zs_front_0_a;
+global uniform vec4 zs_front_0_b;
+global uniform vec4 zs_front_1_a;
+global uniform vec4 zs_front_1_b;
+// Breeze ribbons' heads (scripts/breeze_ribbons.gd `publish`): x, z and
+// their way scaled by how hard they bow plants (0 a free slot); lift_a/b
+// their heights above the ground, slots 0-3 and 4-7.
+global uniform vec4 zs_ribbon_0;
+global uniform vec4 zs_ribbon_1;
+global uniform vec4 zs_ribbon_2;
+global uniform vec4 zs_ribbon_3;
+global uniform vec4 zs_ribbon_4;
+global uniform vec4 zs_ribbon_5;
+global uniform vec4 zs_ribbon_6;
+global uniform vec4 zs_ribbon_7;
+global uniform vec4 zs_ribbon_lift_a;
+global uniform vec4 zs_ribbon_lift_b;
 // Shifts the world-scale grass noise per world seed (scripts/dense_grass.gd),
 // declared here so any plant can roll with the meadow's waves (grass_look).
 global uniform vec2 zs_grass_offset;

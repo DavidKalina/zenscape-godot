@@ -187,6 +187,10 @@ func creatures() -> Array[Dictionary]:
 	var snakes: Node3D = life.get("snakes")
 	if snakes != null and snakes.visible and not str(snakes.showing()).is_empty():
 		found.append({"kind":"snake","title":"Grass snake","p":snakes.to_global(snakes._head_pos)+Vector3.UP*0.08,"r":0.45,"node":snakes})
+	var songbirds: Node = life.get("songbirds")
+	if songbirds != null:
+		for bird: Dictionary in songbirds.visible_birds():
+			found.append({"kind":"songbird","title":bird.title,"p":(bird.node as Node3D).global_position+Vector3.UP*0.08,"r":0.3,"node":bird.node,"lift":0.08})
 	var moments: Node = life.get("moments")
 	if moments == null: return found
 	var heron: Node3D = moments.get("_heron")
@@ -203,7 +207,7 @@ func creatures() -> Array[Dictionary]:
 ## Where a found creature is now, or null once it has gone. Plants and ponds
 ## stay where they are.
 func track(found: Dictionary) -> Variant:
-	if not str(found.get("kind","")) in ["fish","spawn","frog","bird","snake","heron","deer","bigfoot"]: return found.get("point")
+	if not str(found.get("kind","")) in ["fish","spawn","frog","bird","snake","heron","deer","bigfoot","songbird"]: return found.get("point")
 	var node: Node3D = found.get("node")
 	if node != null:
 		if not is_instance_valid(node) or not node.is_visible_in_tree(): return null

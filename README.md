@@ -39,12 +39,14 @@ Return to title. Worlds keep themselves a few seconds after each change.
 - **First steps.** A new player gets a small card that walks through six
   things in turn; **Field notes** on the pause panel lists everything the hand
   can do ([first steps](docs/scenic/first-steps.md)).
-- **Keys.** **M** moods, **P** photo mode, **Esc** put down / pause, **R**
+- **Keys.** **M** moods, **P** photo mode, **O** watch mode
+  ([watch](docs/scenic/watch.md)), **Esc** put down / pause, **R**
   overview, **F** glide to what's under the pointer, arrows to pan,
   **Cmd+Z** / **Shift+Cmd+Z** undo and redo, **Cmd+S** save now.
 
 Launch flags go after the launcher, for example
 `./run-cozy-flow.command --resume`: `--no-title` opens a new plain,
+`--watch` opens it in watch mode,
 `--resume` the last saved place, `--generated` or `--seed N` a generated
 world. HOW-TO-PLAY lists the rest.
 

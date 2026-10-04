@@ -20,7 +20,7 @@ vec3 zs_conifer_offset(vec3 vertex, mat4 model) {
 	float give = zs_blow_give(tall);
 	vec2 crosswind = vec2(-zs_wind_direction.y, zs_wind_direction.x);
 	vec2 motion = (zs_wind_direction * (1.0 + ZS_BREEZE_SWING * swing) + crosswind * (0.22 * sin(t * pace * 0.71 + phase * 2.3 - k * 0.6)))
-		* lean * give * sqrt(give) * conifer_height * bend;
+		* lean * give * conifer_height * bend;
 	vec3 local = zs_local_wind(vec3(root.x, model[3].y + height, root.y));
 	motion += local.xz / (10.0 + length(local)) * bend * 0.32;
 	// Wide cone rims flutter; the narrow trunk receives no tip flutter.

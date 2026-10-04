@@ -8,7 +8,8 @@ func check(ok: bool, message: String) -> void:
 func _run() -> void:
 	var atmosphere = load("res://studies/atmosphere.gd").new()
 	root.add_child(atmosphere)
-	atmosphere.setup_wind_trails(func(_p: Vector2) -> float: return 0.0)
+	# The earlier stamped trails (scripts/weather_wind_trails.gd), kept behind --old-trails.
+	atmosphere.setup_wind_trails(func(_p: Vector2) -> float: return 0.0, true)
 	var trails = atmosphere.wind_trails
 	atmosphere.strength = 0.0
 	atmosphere._air_strength = 0.0

@@ -343,6 +343,8 @@ func _is_live() -> bool:
 	if photo != null and (photo.active or photo._returning > 0.0): return false
 	var wanderer: Node = scene.get("wanderer")
 	if wanderer != null and (wanderer.active or wanderer._returning > 0.0): return false
+	var watch: Node = scene.get("watch")
+	if watch != null and watch.active: return false
 	var places: Node = scene.get("places")
 	return places == null or not places.busy
 

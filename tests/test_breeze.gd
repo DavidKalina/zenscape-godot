@@ -36,9 +36,11 @@ func _strength() -> void:
 	var high := -INF
 	for i in range(1200):
 		air._wind_time = float(i)*0.5
-		low = minf(low, air.breeze())
-		high = maxf(high, air.breeze())
+		# Taken before the tuning gain (breeze_gain, docs/scenic/breeze-ribbons.md).
+		low = minf(low, air.breeze() / air.breeze_gain)
+		high = maxf(high, air.breeze() / air.breeze_gain)
 	check(low > 0.3 and high < 0.76, "A fresh world's breeze stays between 0.3 and 0.76: %.3f to %.3f" % [low,high])
+	check(air.breeze_gain >= 1.0, "The breeze is tuned up, never down: %.2f" % air.breeze_gain)
 	air.free()
 
 func _variation() -> void:
@@ -76,6 +78,9 @@ func _frame_rate() -> void:
 	for air in [fine, coarse]:
 		air.strength = 0.9
 		air._air_strength = 0.9
+		# The same gust fronts in both (studies/gust_fronts.gd).
+		air.fronts.rng.seed = 5
+		air.fronts._wait = 6.3
 	for i in range(600): fine.advance(1.0/60.0, false)
 	for i in range(10): coarse.advance(1.0, false)
 	check(absf(fine._wind_time-coarse._wind_time) < 1e-6, "The breeze clock is the same at 60 fps and 1 fps")

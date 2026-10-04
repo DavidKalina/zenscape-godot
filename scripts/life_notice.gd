@@ -203,7 +203,8 @@ func _gust(origin: Vector3, power: float, detail: Dictionary) -> void:
 		for site in life.present("firefly"):
 			var hit := _front(front,site.p,FLY_MARGIN)
 			if hit.y > 0.05: _later(now+hit.x,_scatter.bind(site,_downwind(front,site.p),hit.y*power))
-	var deer := _deer()
+	# Deer take the breeze's own gust fronts in their stride; only a sent gust alarms them.
+	var deer: Array = [] if bool(front.get("steady",false)) else _deer()
 	for m: Dictionary in deer:
 		var p := _plane(m.p)
 		var hit := _front(front,p,DEER_GUST_MARGIN)
@@ -609,8 +610,11 @@ func _front(front: Dictionary, p: Vector3, margin: float) -> Vector2:
 	var span := maxf(float(front.span),0.01)
 	if across > spread or along < from-margin or along > from+span+margin: return Vector2.ZERO
 	var k := clampf((along-from)/span,0.0,1.0)
-	var u := 1.0-sqrt(1.0-k)
-	var share := (1.0-smoothstep(0.55,1.0,u))*(1.0-smoothstep(spread-margin,spread,across))
+	# A gust front (studies/gust_fronts.gd) runs at a steady pace and keeps
+	# its strength across the plate; a sent gust's head eases out and fades.
+	var steady := bool(front.get("steady",false))
+	var u := k if steady else 1.0-sqrt(1.0-k)
+	var share := (1.0 if steady else 1.0-smoothstep(0.55,1.0,u))*(1.0-smoothstep(spread-margin,spread,across))
 	if str(front.shape) != "lane": share *= 1.0-smoothstep(from+span,from+span+margin,along)
 	return Vector2(float(front.wind_up)+u*float(front.run),share)
 

@@ -53,7 +53,10 @@ static func enabled() -> bool:
 static func swap(node_name: String, original: Mesh) -> Mesh:
 	if not enabled() or not SWAPS.has(node_name): return original
 	var entry: Array = SWAPS[node_name]
-	return _build(entry[0], entry[1], entry[2], entry[3], original.surface_get_material(0))
+	var built := _build(entry[0], entry[1], entry[2], entry[3], original.surface_get_material(0))
+	# The oak grows two limbs for songbirds to sit on (scripts/perch_limbs.gd).
+	if node_name == "mesh-11": built = preload("res://scripts/perch_limbs.gd").add_to(built)
+	return built
 
 ## Batch keys for the spruce family: [trunk, canopy] per variant, in SPRUCE order.
 ## Named so scene_look roles and the "canopies" tint rule apply unchanged.

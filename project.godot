@@ -89,6 +89,62 @@ zs_breeze={
 "type": "float",
 "value": 0.53
 }
+zs_front_0_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_front_0_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_front_1_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_front_1_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_4={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_5={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_6={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_7={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_lift_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_ribbon_lift_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_autumn={
 "type": "float",
 "value": 0.0

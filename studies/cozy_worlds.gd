@@ -37,6 +37,8 @@ var brush: String = brush_ids[0] if not brush_ids.is_empty() else "land"
 var creation_palette: Control
 ## Photo mode: compose, then capture (scripts/photo_mode.gd). P or the palette's camera.
 var photo: Node
+## Watch mode: the tools down, a slow director films the world (scripts/watch_mode.gd). O.
+var watch: Node
 ## A figure to set down and look through (scripts/wanderer_eye.gd). V.
 var wanderer: Node
 ## Moods and their pins (scripts/mood_look.gd), saved with the place, and the
@@ -373,6 +375,9 @@ func _setup_creation() -> void:
 	photo = preload("res://scripts/photo_mode.gd").new()
 	add_child(photo)
 	photo.setup(self)
+	watch = preload("res://scripts/watch_mode.gd").new()
+	add_child(watch)
+	watch.setup(self)
 	wanderer = preload("res://scripts/wanderer_eye.gd").new()
 	add_child(wanderer)
 	wanderer.setup(self)
@@ -465,6 +470,9 @@ func set_looking(enabled: bool) -> void:
 ## Photo mode from the shell: the brush goes away and the chrome hides.
 func enter_photo() -> void:
 	if photo != null: photo.enter()
+
+func toggle_watch() -> void:
+	if watch != null: watch.toggle()
 
 ## The mood panel over the palette: open or close it.
 func toggle_mood() -> void:
@@ -662,6 +670,7 @@ func open_title() -> void:
 		add_child(veil)
 		veil.stage("Back to the title")
 	if photo != null and photo.get("active") == true: photo.leave()
+	if watch != null and watch.get("active") == true: watch.leave()
 	if mood_open(): toggle_mood()
 	# No tool in hand behind the title.
 	if _has_world: _put_brush_away()
@@ -813,7 +822,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Keys while creating or looking: Tab looks, 1-9 pick brushes in palette
 ## order, H hides the chrome and puts the brush away with it, P opens photo
-## mode, M the moods, Esc closes the moods or opens the menu. Returns true when the key was used.
+## mode, O watch mode, M the moods, Esc closes the moods or opens the menu. Returns true when the key was used.
 func _creation_key(event: InputEventKey) -> bool:
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed: return false
 	if hand_only: return _hand_key(event)
@@ -842,6 +851,9 @@ func _creation_key(event: InputEventKey) -> bool:
 	if event.keycode == KEY_P:
 		enter_photo()
 		return true
+	if event.keycode == KEY_O:
+		toggle_watch()
+		return true
 	# Number keys pick brushes; V and unused numbers wait for the Craft palette.
 	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		var index: int = event.keycode-KEY_1
@@ -855,13 +867,14 @@ func _creation_key(event: InputEventKey) -> bool:
 	# Looking holds no brush: size keys have nothing to size.
 	return looking and event.keycode in [KEY_BRACKETLEFT,KEY_BRACKETRIGHT]
 
-## Keys in the hand scheme: M the moods, P photo mode, Esc closes the moods
+## Keys in the hand scheme: M the moods, P photo mode, O watch mode, Esc closes the moods
 ## or opens the menu. Returns true when the key was used.
 func _hand_key(event: InputEventKey) -> bool:
 	if not _creating(): return false
 	match event.keycode:
 		KEY_M: toggle_mood()
 		KEY_P: enter_photo()
+		KEY_O: toggle_watch()
 		KEY_ESCAPE:
 			if mood_open(): toggle_mood()
 			else: show_menu()
@@ -895,6 +908,7 @@ func blocks_world_input(point: Vector2) -> bool:
 	if creation_palette != null and creation_palette.contains_pointer(point): return true
 	if hand_reach != null and hand_reach.materials != null and hand_reach.materials.tray_under(point): return true
 	if photo != null and photo.contains_pointer(point): return true
+	if watch != null and watch.active: return true
 	if atlas != null and atlas.contains_pointer(point): return true
 	if mood_panel != null and mood_panel.contains_pointer(point): return true
 	if camera_rig != null and camera_rig.contains_pointer(point): return true
