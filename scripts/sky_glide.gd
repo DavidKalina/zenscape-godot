@@ -20,6 +20,11 @@ extends RefCounted
 ## stamina; the wing's stroke is the only limit, and a flap asked for
 ## mid-stroke waits for the next. Kept up, flapping climbs steadily, but
 ## the mountain, the dive and the wind still lift harder.
+## Coming in to land (`approach`) the glide slows to APPROACH_SPEED, turns
+## towards `approach_target` (the island's middle) unless steered, and
+## comes down steeply while high, then flares level just over the ground,
+## so it skims in slow enough to land. Turning still steers it; Rise, a
+## flap or a dive calls it off.
 ## Touching ground is a skim along it, never a crash (`skim`). An island
 ## is a solid with a top and an underside: the glide can pass under it,
 ## the rock above it is a ceiling it slides along, and its sides turn it
@@ -106,6 +111,23 @@ const CUSHION_PITCH := 0.2
 const CEILING := 95.0
 const CEILING_FADE := 25.0
 
+## Coming in to land: the speed it settles to and how fast (per second),
+## the share of the pull a dive would give that it keeps, the pitch it
+## comes down at from APPROACH_HIGH metres up or over open air, and the
+## height it flares level from.
+const APPROACH_SPEED := 4.2
+const APPROACH_SETTLE := 1.1
+const APPROACH_PULL := 0.15
+const APPROACH_PITCH := -0.42
+const APPROACH_HIGH := 14.0
+const APPROACH_OPEN := -0.22
+const FLARE := 3.5
+## The sink it adds from APPROACH_HIGH up (m/s), fading by the flare, and
+## how fast its heading turns to the target (seconds), from AIM_NEAR m out.
+const APPROACH_DROP := 3.2
+const APPROACH_AIM := 0.8
+const AIM_NEAR := 3.0
+
 ## In a jet with no steering, the heading eases downstream over VANE
 ## seconds, if downstream is within VANE_REACH radians of it.
 const VANE := 0.9
@@ -144,6 +166,10 @@ var in_thermal := 0.0
 var flap_lift := 0.0
 var stroke := INF
 var flaps := 0
+## True while coming in to land; Rise, a flap or a dive ends it.
+var approach := false
+## Where it comes in to land (global), or INF for wherever is under it.
+var approach_target := Vector3.INF
 var _flap_queued := false
 var _turn_rate := 0.0
 var _beat := 0.0
@@ -165,6 +191,7 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	flap_lift = 0.0
 	stroke = INF
 	flaps = 0
+	approach = false
 	_flap_queued = false
 	_turn_rate = 0.0
 	velocity = forward()*speed
@@ -198,6 +225,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var steer := clampf(float(input.get("pitch",0.0)),-1.0,1.0)
 	# Turning: held rates and direct mouse turn both feed the bank.
 	var turned := -float(input.get("turn",0.0))*TURN*delta-look.x
+	if approach and is_zero_approx(turned): turned = _aim(delta)
 	heading += turned
 	# Downstream in a jet, unless steering.
 	var along: Vector3 = here.get("along",Vector3.ZERO)
@@ -211,8 +239,11 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# Pitch: the mouse and stick steer it; tucked it heads down; let go it
 	# eases back to a gentle glide.
 	pitch += look.y+steer*PITCH_RATE*delta
+	if approach and (dive > 0.0 or rise > 0.0 or input.get("flap",false)): approach = false
 	if dive > 0.0:
 		pitch = move_toward(pitch,lerpf(pitch,TUCK_PITCH,dive),TUCK_RATE*delta)
+	elif approach and is_zero_approx(steer) and is_zero_approx(look.y):
+		pitch = lerpf(pitch,approach_pitch(ground),_ease(0.5,delta))
 	elif is_zero_approx(steer) and is_zero_approx(look.y):
 		pitch = lerpf(pitch,GLIDE_PITCH,_ease(1.0/LEVEL,delta)*0.5)
 	# The float: nose up, speed spent.
@@ -227,7 +258,10 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# Speed along the path.
 	var pull := PULL*lerpf(1.0,PULL_TUCK,dive)*(1.0-HANG*hang*float(pitch > 0.0))
 	var settle := lerpf(SETTLE,SETTLE_TUCK,dive)
-	speed += (-pull*sin(pitch)-settle*(speed-CRUISE))*delta
+	if approach:
+		speed += (-pull*APPROACH_PULL*sin(pitch)-APPROACH_SETTLE*(speed-APPROACH_SPEED))*delta
+	else:
+		speed += (-pull*sin(pitch)-settle*(speed-CRUISE))*delta
 	speed = clampf(speed,MIN,MAX)
 	# Rise eases in with a wingbeat; the ceiling fades it.
 	var ceiling := 1.0-clampf((position.y-CEILING)/CEILING_FADE,0.0,1.0)
@@ -259,10 +293,38 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var steering := clampf(absf(float(input.get("turn",0.0)))+absf(steer)+rise+flap_lift+look.length()*30.0,0.0,1.0)
 	var own := 1.0-CARRIED*in_jet*(1.0-steering)
 	var hold: Vector3 = here.get("hold",Vector3.ZERO)*(1.0-steering)
-	velocity = forward()*speed*own+Vector3.UP*(beat+flap_lift+lift-sink*own-fall)+wind+hold
+	var drop := approach_drop(ground) if approach else 0.0
+	velocity = forward()*speed*own+Vector3.UP*(beat+flap_lift+lift-sink*own-fall-drop)+wind+hold
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)
+
+## The pitch the approach heads for: down at APPROACH_PITCH from
+## APPROACH_HIGH up, easing level by the ground (the flare), and gentler
+## over open air, so it can be steered onto an island.
+func approach_pitch(ground: Callable) -> float:
+	var body := _solid(ground,position)
+	if body == Vector2.INF or position.y < body.y: return APPROACH_OPEN
+	var above := position.y-body.x
+	return APPROACH_PITCH*smoothstep(SKIM,FLARE,above)*clampf(above/APPROACH_HIGH+0.5,0.5,1.0)
+
+## The sink the approach adds: APPROACH_DROP from APPROACH_HIGH over the
+## ground, none by the flare. Over open air it comes down by half as much
+## while it is still above the target.
+func approach_drop(ground: Callable) -> float:
+	var body := _solid(ground,position)
+	if body == Vector2.INF or position.y < body.y:
+		if approach_target == Vector3.INF or position.y < approach_target.y+FLARE: return 0.0
+		return APPROACH_DROP*0.5
+	return APPROACH_DROP*smoothstep(FLARE,APPROACH_HIGH,position.y-body.x)
+
+## The turn this step that brings the heading round to the target.
+func _aim(delta: float) -> float:
+	if approach_target == Vector3.INF: return 0.0
+	var to := Vector2(approach_target.x-position.x,approach_target.z-position.z)
+	if to.length() < AIM_NEAR: return 0.0
+	var want := atan2(-to.x,-to.y)
+	return angle_difference(heading,want)*_ease(APPROACH_AIM,delta)
 
 ## No crashing. Inside an island (`ground`'s solid), what happens depends
 ## on where the eye came from: from above, or at the side near the rim, it
