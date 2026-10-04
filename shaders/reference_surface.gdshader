@@ -146,6 +146,10 @@ varying vec3 leaf_local;
 varying vec2 plant_root;
 varying float foliage_gust;
 varying float grass_along;
+// Soft light from under a mushroom cap (scripts/mushroom_mesh.gd): the gills
+// carry their share in UV2.x and glow warmly in their own colour, faintly.
+uniform float underglow = 0.0;
+varying float under_share;
 varying float grass_bow;
 varying float inversion_transmit;
 // Fire, written per instance by GardenView.set_object_fire: (char, burn).
@@ -335,6 +339,7 @@ void vertex() {
 		if (leaf_season.w > 0.0) VERTEX *= zs_season_dieback(leaf_season.w);
 		foliage_gust = 0.0;
 		grass_along = grass_blades ? clamp(UV.y, 0.0, 1.0) : 0.0;
+		under_share = underglow > 0.0 ? clamp(UV2.x, 0.0, 1.0) : 0.0;
 		if (flower_heads) {
 			// Flowers carry their glow share in grass_along (no spare varyings).
 			grass_along = zs_flower_glow_share(UV2.x);
@@ -711,6 +716,7 @@ void fragment() {
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
+	if (under_share > 0.0) EMISSION += tint * vec3(1.0, 0.88, 0.62) * underglow * under_share * (0.6 + 0.4 * zs_hemi_energy / PI);
 	// A seed clock holds light through itself: a soft sky glow of its own.
 	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;
 	// Toward the base the sides take on the sky's cool mist, never black.
