@@ -195,6 +195,54 @@ func run() -> void:
 	check("past the cap the farthest copies go",isl.copy_count() <= isl.CAP,"%d copies" % isl.copy_count())
 	check("never the newest",isl.homes.any(func(h: Vector3) -> bool: return h.distance_to(newest) < 1.0))
 
+	# Islets: small islands built round the glide; a slow skim on one perches
+	# there, the sky still out; walked off its rim, it glides again.
+	var islets: Node3D = isl.islets
+	await frames(90)
+	check("islets turn up round the glide",islets.islet_count() > 4 and islets.visible,"%d islets" % islets.islet_count())
+	var pick := {}
+	for k in islets.built:
+		var b: Dictionary = islets.built[k]
+		if pick.is_empty() or b.shape.radius > pick.shape.radius: pick = b
+	var shape: RefCounted = pick.shape
+	var clear_at := Vector2.ZERO
+	var outward := 0.0
+	for i in range(48):
+		var a := TAU*i/48.0
+		var good := true
+		for f in [0.3,0.45,0.6,0.75,0.9,1.0]:
+			var p: Vector2 = Vector2.from_angle(a)*shape.rim_radius(a)*f
+			if islets.blocked(shape,p) or shape.solid_top(p) > shape.ground_at(p)+0.01: good = false
+		if good:
+			clear_at = Vector2.from_angle(a)*shape.rim_radius(a)*0.3
+			outward = a
+			break
+	var islet_middle: Vector3 = islets.place(pick)
+	eye.glide.position = islet_middle+Vector3(clear_at.x,shape.ground_at(clear_at)+1.0,clear_at.y)
+	eye.glide.speed = 5.0
+	eye.glide.pitch = -0.3
+	eye.glide.heading = atan2(-cos(outward),-sin(outward))
+	for i in range(120):
+		await frames(1)
+		if not eye.perch.is_empty(): break
+	check("a slow skim on an islet perches there",not eye.perch.is_empty() and eye.flying and eye.active,shape.kind)
+	if not eye.perch.is_empty():
+		var feet: Vector3 = eye._perch_feet
+		check("perched, the feet are on its ground",absf(feet.y-shape.ground_at(Vector2(feet.x,feet.z))) < 0.01,feet)
+		check("perched, the glider is put away and the sky stays out",not eye.glider.visible and islets.visible and isl.clouds.visible)
+		check("the islet perched on is held",islets.pinned == pick.node)
+		await frames(60)
+		check("then it looks from the eyes on the islet",scene.camera.global_position.distance_to(eye._perch_eye_global()) < 0.3,scene.camera.global_position.distance_to(eye._perch_eye_global()))
+		eye._yaw = atan2(-cos(outward),-sin(outward))
+		key(KEY_W,true)
+		for i in range(600):
+			await frames(1)
+			if eye.perch.is_empty(): break
+		key(KEY_W,false)
+		check("walked off its rim, it glides again",eye.perch.is_empty() and eye.flying and eye.glider.visible)
+		check("and the islet is let be",islets.pinned == null)
+		await frames(30)
+
 	# A slow skim lands.
 	var ground: float = eye.islands.ground(Vector3(3.0,0.0,3.0))
 	eye.glide.position = Vector3(3.0,ground+1.0,3.0)
@@ -260,7 +308,11 @@ func run() -> void:
 		var expected: float = minf(steepest*0.5*breeze*eye.RIDGE_GAIN,eye.RIDGE_MAX)
 		check("where the wind blows up a slope, the air lifts in step with it",ridge.island.y > 0.1 and absf(ridge.island.y-expected) < 0.15,"%.2f m/s over a %.2f slope (expected %.2f)" % [ridge.island.y,steepest*0.5,expected])
 		var high: Dictionary = eye._fly_air(best+Vector3.UP*40.0)
-		check("high over the slope, the ridge lift is gone",high.island.y < 0.05,"%.2f m/s" % high.island.y)
+		# A gust front passing lifts at any height (checked below); take its
+		# share out so only the ridge's is left.
+		var gust_share: float = eye.GUST_LIFT*maxf(atmosphere.fronts.lean_at(Vector2(best.x,best.z),way),0.0)
+		var ridge_high: float = high.island.y-gust_share
+		check("high over the slope, the ridge lift is gone",ridge_high < 0.05,"%.2f m/s (%.2f with a gust's)" % [ridge_high,high.island.y])
 	else:
 		print("     (no windward slope on this world; ridge lift unchecked)")
 	# A gust front passing lifts it.

@@ -30,6 +30,7 @@ const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const IslandKeel = preload("res://scripts/island_keel.gd")
+const SkyIslets = preload("res://scripts/sky_islets.gd")
 ## The most copies standing at once. Each is ~140 draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -66,6 +67,8 @@ var skip: Array[Node] = []
 var currents: Node3D
 ## The clouds between them (scripts/sky_clouds.gd).
 var clouds: Node3D
+## The small islets scattered between them (scripts/sky_islets.gd).
+var islets: Node3D
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -79,6 +82,10 @@ func setup(owner_scene: Node3D) -> void:
 	clouds = SkyClouds.new()
 	add_child(clouds)
 	clouds.build(slots)
+	islets = SkyIslets.new()
+	islets.palette_source = editor.data._palette
+	add_child(islets)
+	skip.append(islets)
 	show_air(false)
 
 ## Copies the plate as it stands now to every offset, replacing any earlier
@@ -92,6 +99,8 @@ func build() -> void:
 	cells = SkyCells.new(slots)
 	var sources := _sources()
 	for offset: Vector3 in OFFSETS: _add(offset,offset,Vector3.ZERO,sources)
+	_islet_materials()
+	islets.reset(cells)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -101,6 +110,7 @@ func clear() -> void:
 	_rise.clear()
 	_newest = Vector3.INF
 	if currents != null: currents.drop_added()
+	if islets != null: islets.clear()
 
 func _add(home: Vector3, at: Vector3, rise: Vector3, sources: Array) -> void:
 	var island := Node3D.new()
@@ -127,6 +137,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	var found: Variant = cells.advance(delta,eye,heading,live,parted)
 	if found != null: realise(found.home,found.kind)
 	trim(eye)
+	islets.advance(delta,eye)
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
@@ -142,6 +153,16 @@ func realise(home: Vector3, kind: String) -> void:
 func _rise_for(kind: String) -> Vector3:
 	var r := FALL_RISE if kind == "fall" else WANDER_RISE
 	return Vector3(r.x,0.0,r.y)
+
+## The plate's own terrain and still-water materials for the islets, so
+## their grass and ponds are drawn as the plate's are.
+func _islet_materials() -> void:
+	islets.ground_source = editor.terrain.get_active_material(0)
+	var water: Material = null
+	var view: Node = editor.get("flow_view")
+	if view != null and view.get("still") != null: water = (view.still as MeshInstance3D).material_override
+	if water == null and editor.content != null: water = editor.content.get("_water_material")
+	islets.water_source = water
 
 ## How far under its spot copy `index` still is.
 func sunk(index: int) -> float:
@@ -239,6 +260,7 @@ func _copy(source: GeometryInstance3D) -> GeometryInstance3D:
 func show_air(on: bool) -> void:
 	currents.visible = on
 	clouds.visible = on
+	islets.visible = on
 
 ## The air at a global point (SkyCurrents `air_at`).
 func air(point: Vector3) -> Dictionary:
@@ -253,7 +275,8 @@ func ground(point: Vector3) -> Variant:
 		var offset := offsets[i]+Vector3.DOWN*sunk(i)
 		var h: Variant = _height(point-offset)
 		if h != null: return float(h)+offset.y
-	return null
+	var islet: Variant = islets.body(point)
+	return (islet as Vector2).x if islet != null else null
 
 ## The island whose footprint holds a global point, as a solid: Vector2(its
 ## ground's height there, the underside of the rock it hangs from
@@ -265,7 +288,7 @@ func body(point: Vector3) -> Variant:
 		var offset := offsets[i]+Vector3.DOWN*sunk(i)
 		var b: Variant = _body(point-offset)
 		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
-	return null
+	return islets.body(point)
 
 func _body(point: Vector3) -> Variant:
 	var top: Variant = _height(point)
@@ -303,6 +326,7 @@ func arrive(index: int) -> Vector3:
 		offsets[i] = shift if i == index else offsets[i]+shift
 		_copies[i].position = offsets[i]+Vector3.DOWN*sunk(i)
 	cells.origin += shift
+	islets.position = cells.origin
 	currents.position += shift
 	clouds.move(shift)
 	return shift

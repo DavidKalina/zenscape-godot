@@ -109,9 +109,11 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
+const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the edge or hold Space to glide  ·  V or Esc to step out"
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
+const SkyIslets = preload("res://scripts/sky_islets.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
@@ -223,6 +225,11 @@ var _hop := 0.0
 var _hop_rise := 0.0
 var _hop_held := -1.0
 var _jump_was := false
+## Perched on an islet (scripts/sky_islets.gd): its record, empty when not;
+## the feet in its frame and the eye's height over them.
+var perch := {}
+var _perch_feet := Vector3.ZERO
+var _perch_eye := EYE_HEIGHT
 ## What the copies were last built from, so a glide opened again from the
 ## same island keeps the sky as it was.
 var _built_key := []
@@ -706,7 +713,13 @@ func _swoop_in(delta: float) -> void:
 # --- The glide --------------------------------------------------------------------
 
 ## Off the edge: the plate is copied out into the sky and the glide takes the eye.
+## Off an islet the sky is already out, and the glide leaves from its top.
 func _launch(pace: float, drop := true) -> void:
+	var from := _eye_global()
+	var perched := not perch.is_empty()
+	if perched:
+		from = _perch_eye_global()
+		_unperch()
 	flying = true
 	_fly_look = Vector2.ZERO
 	_skim_time = 0.0
@@ -720,26 +733,28 @@ func _launch(pace: float, drop := true) -> void:
 	if not islands.built() or key != _built_key:
 		islands.build()
 		_built_key = key
-	_far_before = camera.far
+	if not perched: _far_before = camera.far
 	camera.far = FLY_FAR
 	islands.show_air(true)
-	glide.launch(_eye_global(),_yaw,pace,drop)
+	glide.launch(from,_yaw,pace,drop)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	_flap_asked = false
 	_flaps_heard = 0
 	# The camera pulls back out of the eyes to chase.
-	chase.reset(glide,_eye_global())
+	chase.reset(glide,from)
 	glider.visible = not chase.first_person
 	glider.reset(glide)
 	_swoop = 0.0
-	air.start()
-	sky.start(glide.position)
+	if not perched:
+		air.start()
+		sky.start(glide.position)
 	_hint.text = FLY_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
 	steps.step(_surface(),1.0)
 
 func _end_flight() -> void:
+	_unperch()
 	flying = false
 	scene.camera_roll = 0.0
 	glider.visible = false
@@ -786,6 +801,9 @@ func _show_keel(on: bool) -> void:
 	keel.visible = on
 
 func _advance_flight(delta: float) -> void:
+	if not perch.is_empty():
+		_advance_perch(delta)
+		return
 	var input := _fly_input()
 	_read_obstacles(false)
 	glide.step(delta,input,_fly_ground,_fly_air)
@@ -813,11 +831,17 @@ func _advance_flight(delta: float) -> void:
 	camera.fov = lerpf(camera.fov,fov-4.0*glide.hang,_ease(EASE_FLY_FOV,delta))
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
-	# Touching down slowly anywhere on the plate lands.
-	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and islands._height(glide.position) != null
+	# Touching down slowly anywhere on the plate lands; on an islet's ground
+	# (not its crowns or spire) it perches.
+	var on_plate: bool = islands._height(glide.position) != null
+	var islet: Dictionary = {} if on_plate else islands.islets.islet_at(glide.position)
+	var on_islet := not islet.is_empty() and _islet_ground_near(islet,glide.position)
+	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and (on_plate or on_islet)
 	glider.update(delta,glide,float(input.dive),_fly_ground,landable)
 	_skim_time = _skim_time+delta if glide.skimming and landable else 0.0
-	if _skim_time >= LAND_TIME: _land()
+	if _skim_time >= LAND_TIME:
+		if on_plate: _land()
+		else: _perch(islet)
 
 ## The chase camera's pose, written into the scene's orbit.
 func _write_chase() -> void:
@@ -897,6 +921,115 @@ func _fly_air(point: Vector3) -> Dictionary:
 	air["island"] = extra
 	return air
 
+# --- Perched on an islet ------------------------------------------------------------
+
+## True when a point over an islet is down near its ground, not riding over
+## a crown or the spire.
+func _islet_ground_near(islet: Dictionary, point: Vector3) -> bool:
+	var local: Vector3 = point-islands.islets.place(islet)
+	return local.y-float(islet.shape.ground_at(Vector2(local.x,local.z))) < SkyGlide.SKIM+0.5
+
+## Touched down on an islet: the glide stops and the eye walks its top,
+## still out in the sky. It is pinned so it is never let go while stood on.
+func _perch(islet: Dictionary) -> void:
+	_swoop = 0.0 if chase.first_person else SWOOP
+	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
+	perch = islet
+	islands.islets.pinned = islet.node
+	var local: Vector3 = glide.position-islands.islets.place(islet)
+	var at := _perch_free(islet.shape,Vector2(local.x,local.z))
+	_perch_feet = Vector3(at.x,islet.shape.ground_at(at),at.y)
+	_perch_eye = maxf(local.y-_perch_feet.y,EYE_HEIGHT*0.6)
+	_yaw = glide.heading
+	_polar = PI*0.5
+	glider.visible = false
+	scene.camera_roll = 0.0
+	# It lands at a run that eases off.
+	_pace = Vector2(0.0,-1.0)*RUN
+	_steps = FIRST_STEP
+	_bob = 0.0
+	_bob_offset = Vector3.ZERO
+	steps.step("grass",1.0)
+	_hint.text = PERCH_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+
+func _unperch() -> void:
+	if perch.is_empty(): return
+	perch = {}
+	if islands != null: islands.islets.pinned = null
+
+## The nearest point to `at` (islet frame) a walker can stand on: inside,
+## clear of trunks, the spire and the water.
+func _perch_free(shape: RefCounted, at: Vector2) -> Vector2:
+	if shape.share(at) > 0.92: at *= 0.92/shape.share(at)
+	if not SkyIslets.blocked(shape,at): return at
+	for ring in range(1,12):
+		for k in range(12):
+			var p := at+Vector2.from_angle(TAU*k/12.0)*ring*0.3
+			if shape.share(p) <= 0.92 and not SkyIslets.blocked(shape,p): return p
+	return at
+
+func _perch_eye_global() -> Vector3:
+	return islands.islets.place(perch)+_perch_feet+Vector3.UP*_perch_eye+_bob_offset
+
+## Walking an islet's top as the plate's: the same keys and pace, round
+## trunks and the pond; off the rim the glide opens, as off the plate's
+## edge, and Space held opens it from a jump.
+func _advance_perch(delta: float) -> void:
+	var node: Node3D = perch.node
+	if not is_instance_valid(node):
+		_launch(1.0)
+		return
+	var shape: RefCounted = perch.shape
+	var want := Vector2(
+		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
+		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))-float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
+	if want.length() > 1.0: want = want.normalized()
+	want *= RUN if Input.is_physical_key_pressed(KEY_SHIFT) else WALK
+	_pace = _pace.lerp(want,_ease(EASE_PACE,delta))
+	# Islets are never turned, so the eye's yaw is the islet's frame's too.
+	var forward := -Vector3(sin(_yaw),0.0,cos(_yaw))
+	var right := forward.cross(Vector3.UP)
+	var move := right*_pace.x-forward*_pace.y
+	var was := Vector2(_perch_feet.x,_perch_feet.z)
+	var step := Vector2(move.x,move.z)*delta
+	var next := was+step
+	if not shape.inside(next):
+		_launch(move.length())
+		return
+	if _advance_jump(delta):
+		_launch(move.length(),false)
+		return
+	# Round what blocks the way: slide along one axis or stand.
+	if SkyIslets.blocked(shape,next):
+		next = was+Vector2(step.x,0.0)
+		if SkyIslets.blocked(shape,next) or not shape.inside(next): next = was+Vector2(0.0,step.y)
+		if SkyIslets.blocked(shape,next) or not shape.inside(next): next = was
+	_perch_feet = Vector3(next.x,shape.ground_at(next),next.y)
+	var moved := next.distance_to(was)
+	_footfall(moved,delta,right)
+	_perch_eye = lerpf(_perch_eye,EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
+	_perch_eye = maxf(_perch_eye,EYE_HEIGHT+_hop) if _hop > 0.0 else _perch_eye
+	var eye := _perch_eye_global()
+	var reach := 6.0
+	scene.yaw = _yaw
+	scene.polar = _polar
+	scene.target = eye-_offset(_yaw,_polar)*reach
+	scene.distance = reach
+	_swoop_in(delta)
+	scene._auto_orbit = false
+	scene._orbit_delta = Vector2.ZERO
+	scene._pan_delta = Vector2.ZERO
+	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
+	# The sky goes on round it: the islets bob, the clouds drift, the wind
+	# quietens.
+	sky.advance(delta,eye,islands.clouds.inside(eye,scene._motion_time))
+	islands.advance(delta,eye,_yaw,sky.flight.w)
+	air.advance(delta,Vector3.ZERO,0.0,0.0)
+	_hint_time += delta
+	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+
 ## Down on the plate: back to walking where the glide touched.
 func _land() -> void:
 	var at := glide.position
@@ -948,6 +1081,7 @@ func _footfall(moved: float, delta: float, right: Vector3) -> void:
 ## bare ground and on a bare shore; grass where cover grows (GRASSY); else
 ## bare earth, as a worn path is.
 func _surface() -> String:
+	if not perch.is_empty(): return "grass"
 	var at := Vector2(_feet.x,_feet.z)
 	if not _deck(at).is_empty(): return "wood"
 	if _depth(at) >= Footbridge.WET: return "water"
@@ -999,7 +1133,10 @@ func handle(event: InputEvent) -> bool:
 			return true
 		return false
 	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and chase.free_held:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not perch.is_empty():
+			_yaw -= event.relative.x*LOOK
+			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and chase.free_held:
 			chase.turn(Vector2(-event.relative.x,-event.relative.y)*LOOK)
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying:
 			_fly_look += Vector2(event.relative.x,-event.relative.y)*LOOK
@@ -1012,7 +1149,7 @@ func handle(event: InputEvent) -> bool:
 		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		if event.button_index == MOUSE_BUTTON_RIGHT and flying: chase.free_held = event.pressed
-		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and flying: _flap_asked = true
+		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and flying and perch.is_empty(): _flap_asked = true
 		return true
 	if event is InputEventMagnifyGesture or event is InputEventPanGesture:
 		return true
@@ -1020,9 +1157,9 @@ func handle(event: InputEvent) -> bool:
 		if event.ctrl_pressed or event.meta_pressed: return false
 		if event.pressed and not event.echo and event.keycode in [KEY_V,KEY_ESCAPE]:
 			leave()
-		elif event.pressed and not event.echo and event.keycode == KEY_E and flying:
+		elif event.pressed and not event.echo and event.keycode == KEY_E and flying and perch.is_empty():
 			_flap_asked = true
-		elif event.pressed and not event.echo and event.keycode == KEY_C and flying:
+		elif event.pressed and not event.echo and event.keycode == KEY_C and flying and perch.is_empty():
 			chase.first_person = not chase.first_person
 			glider.visible = not chase.first_person
 		# Walking keys are read each frame; every plain key stays here.
