@@ -302,6 +302,13 @@ func _make_shell() -> void:
 	night.select(maxi(look_pass.NIGHT_STYLES.find(look_pass.night_style),0))
 	night.item_selected.connect(func(index: int) -> void: look_pass.set_night_style(look_pass.NIGHT_STYLES[index]))
 	options.add_child(night)
+	# The ringed planet, off until the player turns it on (`set_sky_planet`).
+	var planet := CheckButton.new()
+	planet.name = "SkyPlanet"
+	planet.text = "Planet in the night sky"
+	planet.button_pressed = look_pass.sky_planet
+	planet.toggled.connect(func(on: bool) -> void: look_pass.set_sky_planet(on))
+	options.add_child(planet)
 	# Master volume and mute, and the creation Sound volume (scripts/sound_settings.gd).
 	preload("res://scripts/sound_settings.gd").build(options)
 	for group: String in ["_ambient_audio","_thunder_audio"]:
