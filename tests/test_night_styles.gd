@@ -13,13 +13,13 @@ func _initialize() -> void:
 
 func run() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(KEPT))
-	check(LookPass.load_night_style(KEPT) == "nocturne", "Nocturne until the player chooses")
-	LookPass.save_night_style("storybook", KEPT)
-	check(LookPass.load_night_style(KEPT) == "storybook", "The chosen night style is kept")
+	check(LookPass.load_night_style(KEPT) == "storybook", "Storybook until the player chooses")
+	LookPass.save_night_style("opal", KEPT)
+	check(LookPass.load_night_style(KEPT) == "opal", "The chosen night style is kept")
 	LookPass.save_cloud_style("mystic", KEPT)
-	check(LookPass.load_night_style(KEPT) == "storybook" and LookPass.load_cloud_style(KEPT) == "mystic", "Night and clouds are kept apart")
+	check(LookPass.load_night_style(KEPT) == "opal" and LookPass.load_cloud_style(KEPT) == "mystic", "Night and clouds are kept apart")
 	LookPass.save_night_style("lava", KEPT)
-	check(LookPass.load_night_style(KEPT) == "nocturne", "An unknown kept style falls back to Nocturne")
+	check(LookPass.load_night_style(KEPT) == "storybook", "An unknown kept style falls back to Storybook")
 	check(LookPass.night_style_from_args(PackedStringArray(["--night-style=OPAL"]), "nocturne") == "opal", "--night-style overrides the kept style, any case")
 	check(LookPass.night_style_from_args(PackedStringArray(["--cloud-style=opal"]), "mystic") == "mystic", "Without the flag the kept style holds")
 	check(not LookPass.load_sky_planet(KEPT), "The planet is off until the player turns it on")

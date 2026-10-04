@@ -503,7 +503,7 @@ zs_night={
 }
 zs_night_style={
 "type": "int",
-"value": 0
+"value": 2
 }
 zs_celestial_clear={
 "type": "float",

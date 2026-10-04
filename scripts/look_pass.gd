@@ -32,6 +32,8 @@ var cloud_style := cloud_style_from_args(OS.get_cmdline_user_args() + OS.get_cmd
 ## --night-style=nocturne|opal|storybook|mystic picks one for a run.
 const NIGHT_STYLES := ["nocturne","opal","storybook","mystic"]
 const NIGHT_STYLE_NAMES := ["Nocturne","Opal","Storybook","Mystic"]
+## The night until the player chooses.
+const NIGHT_DEFAULT := "storybook"
 var night_style := night_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_night_style())
 ## The ringed planet (scripts/sky_objects.gd): off unless the player turns
 ## it on in Settings > Planet, kept in user://look.cfg. --sky-planet or
@@ -256,9 +258,9 @@ static func sky_planet_from_args(args: PackedStringArray, kept: bool) -> bool:
 	if "--sky-planet" in args: return true
 	return kept
 
-## The player's kept night style, Nocturne until they choose.
+## The player's kept night style, Storybook until they choose.
 static func load_night_style(path := SETTINGS_PATH) -> String:
-	return _load_style("night", NIGHT_STYLES, path)
+	return _load_style("night", NIGHT_STYLES, path, NIGHT_DEFAULT)
 
 static func save_night_style(style: String, path := SETTINGS_PATH) -> void:
 	_save_style("night", style, path)
@@ -267,13 +269,14 @@ static func save_night_style(style: String, path := SETTINGS_PATH) -> void:
 static func night_style_from_args(args: PackedStringArray, kept: String) -> String:
 	return _style_from_args("--night-style=", NIGHT_STYLES, args, kept)
 
-## A style kept under `section` in the settings file, the first of
-## `styles` when none or an unknown one is kept.
-static func _load_style(section: String, styles: Array, path: String) -> String:
+## A style kept under `section` in the settings file; `fallback` (the
+## first of `styles` unless given) when none or an unknown one is kept.
+static func _load_style(section: String, styles: Array, path: String, fallback := "") -> String:
+	if fallback.is_empty(): fallback = styles[0]
 	var file := ConfigFile.new()
-	if file.load(path) != OK: return styles[0]
-	var style := String(file.get_value(section, "style", styles[0]))
-	return style if style in styles else styles[0]
+	if file.load(path) != OK: return fallback
+	var style := String(file.get_value(section, "style", fallback))
+	return style if style in styles else fallback
 
 static func _save_style(section: String, style: String, path: String) -> void:
 	var file := ConfigFile.new()
