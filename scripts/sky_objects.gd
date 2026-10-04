@@ -12,8 +12,10 @@ extends Node3D
 const PLANET_DIRECTION := Vector3(-0.73, 0.4, 0.65)
 ## Angular radius, radians: about twice the moon's.
 const PLANET_RADIUS := 0.05
-## The pole the rings circle, in the room.
-const PLANET_POLE := Vector3(0.3, 1.0, -0.25)
+## The pole the rings circle, in the room: tipped toward the ground eye's
+## side by about 27 degrees, so the rings open into an ellipse from below
+## rather than lying edge-on.
+const PLANET_POLE := Vector3(0.05, 1.0, 0.2)
 ## The Milky Way's plane, as the dome paints it.
 const GALAXY_NORMAL := Vector3(0.6, 0.25, 0.75)
 ## The few brilliant stars, placed: direction, temperature (star_tint in
