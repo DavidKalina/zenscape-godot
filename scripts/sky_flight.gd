@@ -12,6 +12,11 @@ extends Node
 ##
 ## The vapour is a soft white-out over the view: deep in a cloud
 ## (scripts/sky_clouds.gd) and down in the cloud sea's top.
+##
+## The haze (scripts/sky_haze.gd) is on for the whole glide, perched or
+## flying, and eases off with the sea once it ends, so the build view's own
+## haze comes back as it was. It reads the rising islands off the islands
+## (scripts/sky_islands.gd), which the eye that owns this keeps as `islands`.
 
 ## The cloud sea's height in the world, in metres.
 const SEA_Y := -105.0
@@ -24,6 +29,7 @@ const VAPOUR_FULL := -100.0
 ## Seconds the sea takes to settle back to rest after the glide.
 const SETTLE := 1.2
 const EASE := 0.15
+const SkyHaze = preload("res://scripts/sky_haze.gd")
 
 var scene: Node3D
 ## Where the eye stepped off, moved with the islands' swaps, and its height
@@ -35,6 +41,8 @@ var active := false
 ## while settling back.
 var flight := Vector4(0.0,0.0,1.0,0.0)
 var vapour := 0.0
+## How much of the glide's haze is on (0 to 1).
+var haze := 0.0
 var _settling := 0.0
 var _layer: CanvasLayer
 var _veil: ColorRect
@@ -62,6 +70,9 @@ func start(eye: Vector3) -> void:
 	rest_height = maxf(eye.y-SEA_Y,1.0)
 	flight = Vector4(0.0,0.0,1.0,0.0)
 	vapour = 0.0
+	# On at once: the islands bake in over the next frames, out where the
+	# haze must already hide them, and near the plate it is all but clear.
+	haze = 1.0
 	_publish()
 
 ## The islands swapped: the world moved by `by`, the eye with it.
@@ -93,10 +104,23 @@ func _process(delta: float) -> void:
 	var k := 1.0-exp(-delta/(SETTLE*0.3)) if _settling > 0.0 else 1.0
 	flight = flight.lerp(Vector4(0.0,0.0,1.0,0.0),k)
 	vapour = lerpf(vapour,0.0,k)
+	haze = lerpf(haze,0.0,k)
 	_publish()
 
 func _publish() -> void:
 	RenderingServer.global_shader_parameter_set("zs_sea_flight",flight)
+	var islands: Node = get_parent().get("islands") if get_parent() != null else null
+	var view: Variant = scene.get("_display_fog") if scene != null else null
+	var blend: ShaderMaterial = view.blend if view != null else null
+	var eye: Vector3 = scene.camera.global_position if scene != null and scene.get("camera") != null else Vector3.ZERO
+	var sea := Vector2.ZERO
+	var environment: Variant = scene.get("_environment") if scene != null else null
+	var sky: ShaderMaterial = environment.sky.sky_material as ShaderMaterial if environment != null and environment.sky != null else null
+	if sky != null:
+		var strength: Variant = sky.get_shader_parameter("cloud_sea")
+		var style: Variant = sky.get_shader_parameter("cloud_sea_style")
+		sea = Vector2(0.0 if strength == null else float(strength),0.0 if style == null else float(style))
+	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [])
 	if _veil == null: return
 	_veil.visible = vapour > 0.003
 	(_veil.material as ShaderMaterial).set_shader_parameter("amount",vapour)

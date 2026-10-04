@@ -49,6 +49,10 @@ zs_sea_flight={
 "type": "vec4",
 "value": Vector4(0, 0, 1, 0)
 }
+zs_glide_haze={
+"type": "vec4",
+"value": Vector4(0, 520, 900, -105)
+}
 zs_room_yaw={
 "type": "float",
 "value": 0.0

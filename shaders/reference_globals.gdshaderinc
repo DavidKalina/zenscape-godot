@@ -139,6 +139,11 @@ global uniform float zs_room_yaw;
 // height at the step off (1 at rest); w how far the sea parts beneath it
 // (0 closed, 1 wide open).
 global uniform vec4 zs_sea_flight;
+// The glide's aerial perspective (scripts/sky_haze.gd): x how much of it is
+// on (0 in the build view), y the reach (m) its gentle curve is scaled by,
+// z the distance (m) where it is whole, w the cloud sea's height (m), where
+// the air lies thickest.
+global uniform vec4 zs_glide_haze;
 // Look pass (scripts/look_pass.gd): contact occlusion, silhouette rim and shore strengths.
 global uniform float zs_look_ao;
 global uniform float zs_look_rim;

@@ -12,6 +12,7 @@ render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_nev
 // y's the cloud's size. Clouds drift and wrap round the field (`field`),
 // a whole cloud at a time.
 #include "res://shaders/reference_globals.gdshaderinc"
+#include "res://shaders/glide_haze.gdshaderinc"
 
 uniform float strength = 1.0;
 // Metres a second the clouds drift on the breeze.
@@ -59,6 +60,10 @@ void vertex() {
 	float away = distance(CAMERA_POSITION_WORLD, centre);
 	// Thinned away close up; gone in the far haze.
 	opacity = smoothstep(radius * 0.35, radius * 1.4, away) * (1.0 - smoothstep(2600.0, 3000.0, away)) * strength;
+	// Into the glide's haze with distance (glide_haze.gdshaderinc): drawn
+	// over the open sky, which the display haze leaves be, a far cloud melts
+	// away into the sky behind it rather than standing out sharp.
+	opacity *= 1.0 - zs_glide_fog(away, centre.y) * zs_glide_haze.x;
 	// Light: the sky's colour all round, the sun's on the side and top
 	// facing it, a cool shade at the base.
 	vec3 offset = normalize(data.xyz + vec3(0.0, 0.25, 0.0));
