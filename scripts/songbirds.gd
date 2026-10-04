@@ -623,6 +623,9 @@ func _raised(point: Vector3, _radius: float, strength: float, kind: String, deta
 			var index := flock_near(point,FIGURE_NEAR)
 			if index >= 0: _flush(flocks[index],true)
 		"gust":
+			# The breeze's own gust fronts (studies/gust_fronts.gd) only sway
+			# the crowns; a sent gust flushes.
+			if bool(detail.get("steady",false)): return
 			for flock in flocks:
 				if flock.state != "settled" or _clock < float(flock.calm_until): continue
 				var hit := _gust_reach(detail,point,_world()*(groves[int(flock.grove)].centre as Vector3))
@@ -650,8 +653,11 @@ func _gust_reach(front: Dictionary, origin: Vector3, p: Vector3) -> Vector2:
 	var span := maxf(float(front.get("span",1.0)),0.01)
 	if across > spread or along < from-margin or along > from+span+margin: return Vector2.ZERO
 	var k := clampf((along-from)/span,0.0,1.0)
-	var u := 1.0-sqrt(1.0-k)
-	var share := (1.0-smoothstep(0.55,1.0,u))*(1.0-smoothstep(spread-margin,spread,across))
+	# A gust front (studies/gust_fronts.gd) runs at a steady pace and keeps
+	# its strength across the plate; a sent gust's head eases out and fades.
+	var steady := bool(front.get("steady",false))
+	var u := k if steady else 1.0-sqrt(1.0-k)
+	var share := (1.0 if steady else 1.0-smoothstep(0.55,1.0,u))*(1.0-smoothstep(spread-margin,spread,across))
 	return Vector2(float(front.get("wind_up",0.0))+u*float(front.get("run",0.0)),share)
 
 # --- Rustle and leaves --------------------------------------------------------------

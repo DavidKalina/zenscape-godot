@@ -320,7 +320,7 @@ const float ZS_BREEZE_WAVE_LENGTH = 9.0;
 const float ZS_BREEZE_WAVE_SPEED = 1.0;
 const float ZS_BREEZE_WAVE = 0.42;
 // Lean everywhere, and what a full gust patch adds, per unit of breeze.
-const float ZS_BREEZE_BASE = 0.10;
+const float ZS_BREEZE_BASE = 0.16;
 const float ZS_BREEZE_GUST = 0.5;
 // The lean eases off toward this (zs_blow_at's units: 1 lays a small plant
 // over by about 45 degrees).
@@ -359,6 +359,68 @@ float zs_wave_crest_at(vec2 root, float crest_length, float crest_speed, vec2 of
 	return smoothstep(0.25, 0.95, a * 0.68 + b * 0.32);
 }
 
+// --- Gust fronts (studies/gust_fronts.gd, docs/scenic/gust-fronts.md) -------
+// A front of stronger air rolling across the plate along its way. At a point
+// it arrives fast, holds and lets go slowly, overshooting at the hit. Its
+// line is ragged and its strength patchy across it. Keep in step with
+// GustFronts `push` and `front_lean`, and their constants.
+float zs_front_push(float fr_tau) {
+	float fr_rise = smoothstep(-0.35, 0.25, fr_tau);
+	if (fr_rise <= 0.0) return 0.0;
+	float fr_after = max(fr_tau, 0.0);
+	float fr_hold = exp(-max(fr_tau - 0.5, 0.0) / 2.2);
+	float fr_ring = 0.4 * exp(-2.4 * fr_after) * sin(6.0 * fr_after);
+	return fr_rise * (fr_hold + fr_ring);
+}
+
+// One front's lean at `p` along its own way, `lag` s behind the air there.
+float zs_front_one(vec4 fr_a, vec4 fr_b, vec2 p, float lag) {
+	if (fr_b.y <= 0.0) return 0.0;
+	vec2 fr_dir = fr_a.zw;
+	vec2 fr_rel = p - fr_a.xy;
+	float fr_across = dot(fr_rel, vec2(-fr_dir.y, fr_dir.x));
+	float fr_lateral = 1.0 - smoothstep(0.55 * fr_b.w, fr_b.w, abs(fr_across));
+	if (fr_lateral <= 0.0) return 0.0;
+	float fr_seed = fract(dot(fr_a.xy, vec2(0.137, 0.291)) * 7.31) * 40.0;
+	float fr_ragged = (zs_noise(vec2(fr_across * 0.06, fr_seed)) - 0.5) * 8.0;
+	float fr_tau = fr_b.x - lag - (dot(fr_rel, fr_dir) + fr_ragged) / fr_b.y;
+	float fr_cell = 0.35 + 0.65 * smoothstep(0.2, 0.75, zs_noise(vec2(fr_across * 0.12 + 5.3, fr_seed * 1.7)));
+	return fr_b.z * fr_lateral * fr_cell * zs_front_push(fr_tau);
+}
+
+// Every front's lean at `p`, along the wind (zs_wind_direction).
+float zs_front_at(vec2 p, float lag) {
+	return zs_front_one(zs_front_0_a, zs_front_0_b, p, lag) * dot(zs_front_0_a.zw, zs_wind_direction)
+		+ zs_front_one(zs_front_1_a, zs_front_1_b, p, lag) * dot(zs_front_1_a.zw, zs_wind_direction);
+}
+
+// --- Breeze ribbons' wakes (scripts/breeze_ribbons.gd) ----------------------
+// A ribbon bows what it passes over: a little ahead of its head, most just
+// behind it, easing back down its trail over about a second, about 2 m to
+// either side, and less the higher it flies. `lag` s puts a plant's tip
+// where the head was then. Keep in step with BreezeRibbons WAKE and
+// `wake_at`.
+const float ZS_RIBBON_SPEED = 5.5;
+float zs_ribbon_one(vec4 rw_head, float rw_lift, vec2 p, float lag) {
+	float rw_s = length(rw_head.zw);
+	if (rw_s <= 0.0001) return 0.0;
+	vec2 rw_dir = rw_head.zw / rw_s;
+	vec2 rw_rel = p - rw_head.xy;
+	float rw_across = dot(rw_rel, vec2(-rw_dir.y, rw_dir.x));
+	if (abs(rw_across) > 6.0) return 0.0;
+	float rw_along = dot(rw_rel, rw_dir) + ZS_RIBBON_SPEED * lag;
+	float rw_shape = rw_along > 0.0 ? exp(-rw_along * rw_along * 1.2) : exp(rw_along / (ZS_RIBBON_SPEED * 1.2));
+	float rw_high = 1.0 - smoothstep(3.0, 7.0, rw_lift);
+	return rw_s * rw_shape * exp(-rw_across * rw_across * 0.2) * rw_high * dot(rw_dir, zs_wind_direction);
+}
+
+float zs_ribbon_wake(vec2 p, float lag) {
+	return zs_ribbon_one(zs_ribbon_0, zs_ribbon_lift_a.x, p, lag) + zs_ribbon_one(zs_ribbon_1, zs_ribbon_lift_a.y, p, lag)
+		+ zs_ribbon_one(zs_ribbon_2, zs_ribbon_lift_a.z, p, lag) + zs_ribbon_one(zs_ribbon_3, zs_ribbon_lift_a.w, p, lag)
+		+ zs_ribbon_one(zs_ribbon_4, zs_ribbon_lift_b.x, p, lag) + zs_ribbon_one(zs_ribbon_5, zs_ribbon_lift_b.y, p, lag)
+		+ zs_ribbon_one(zs_ribbon_6, zs_ribbon_lift_b.z, p, lag) + zs_ribbon_one(zs_ribbon_7, zs_ribbon_lift_b.w, p, lag);
+}
+
 // The breeze's lean at a plant's root, in zs_blow_at's units, `lag` s
 // behind the air there. `wave` is how much of the meadow's waves it rides
 // (0 trees, 1 grass), crests `crest_length` m apart rolling at `crest_speed`.
@@ -369,6 +431,7 @@ float zs_breeze_lean_wave(vec2 root, float lag, float wave, float crest_length, 
 	float band = zs_gust_band_at(root, travel);
 	float crest_now = wave > 0.0 ? zs_wave_crest_at(root, crest_length, crest_speed, zs_grass_offset, travel) : 0.0;
 	float lean = zs_breeze_air() * (ZS_BREEZE_BASE + ZS_BREEZE_GUST * g * g + ZS_BREEZE_WAVE * crest_now * wave) * band;
+	lean += zs_front_at(root, lag) + zs_ribbon_wake(root, lag);
 	lean /= sqrt(1.0 + lean * lean / (ZS_BREEZE_MAX * ZS_BREEZE_MAX));
 	bow = smoothstep(0.08, 0.6, lean);
 	return lean;
@@ -422,7 +485,9 @@ vec2 zs_breeze_offset_lean(vec3 vertex, mat4 model, float bend_from, float heigh
 	float swing = sin(t * pace + phase - k * 0.9) * 0.7 + sin(t * pace * 1.63 + phase * 1.7 - k * 1.3) * 0.3;
 	float wander = sin(t * pace * 0.71 + phase * 2.3 - k * 0.6);
 	float give = zs_blow_give(tall);
-	float reach = give * sqrt(give) * flex * span_m * k * k;
+	// Trees give less than grass, but enough that a crown visibly answers
+	// the air (was give^1.5, which held a spruce top to a sixth).
+	float reach = give * flex * span_m * k * k;
 	vec2 dir = zs_wind_direction;
 	vec2 side = vec2(-dir.y, dir.x);
 	vec2 offset = (dir * (1.0 + ZS_BREEZE_SWING * swing) + side * (0.22 * wander)) * lean * reach;

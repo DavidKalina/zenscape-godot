@@ -279,6 +279,10 @@ func _ready() -> void:
 	add_child(_world_visuals)
 	add_child(_waterfall_drips)
 	_atmosphere.setup_wind_trails(_chunk_editor.data.ground_height)
+	# Breeze ribbons fly over woods: the trees' shade lifts their ride.
+	if _atmosphere.wind_trails.has_method("set_canopy"):
+		var editor := _chunk_editor
+		_atmosphere.wind_trails.set_canopy(func(p: Vector2) -> float: return editor.ground_shade.shade_at(p) if editor.ground_shade != null else 0.0)
 	_setup_fire()
 	_build_ui()
 	if not OS.get_cmdline_user_args().has("--native-fog") and RenderingServer.get_current_rendering_method() == "forward_plus":

@@ -58,20 +58,34 @@ var swell := 0.0
 ## whole land pulsing together with gust_at's quick terms. Strong air passes
 ## through nearly unchanged, so storms still read stronger.
 const BREEZE_FLOOR := 0.35
+## Tuning (`--breeze=`): scales the whole ambient breeze plants lean in.
+var breeze_gain := 1.6
 const BREEZE_SWELLS := [Vector3(53.0,0.2,0.6),Vector3(23.0,0.13,2.1),Vector3(9.7,0.07,4.0)]
 var _travel := Vector2.ZERO
 var _gust_distance := 0.0
 var _wind_time := 0.0
 var puffs := preload("res://studies/wind_puffs.gd").new()
+## The breeze's events: gust fronts rolling across the plate
+## (studies/gust_fronts.gd), with a quiet before each.
+var fronts := preload("res://studies/gust_fronts.gd").new()
+
+func _init() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--breeze="): breeze_gain = float(arg.get_slice("=", 1))
+		if arg.begins_with("--fronts="): fronts.gain = float(arg.get_slice("=", 1))
 var _fog_material: ShaderMaterial
 var _environment: Environment
 var wind_trails: Node3D
 
-func setup_wind_trails(probe: Callable) -> void:
+## The air drawn: painterly breeze ribbons riding the flow and the gust
+## fronts (scripts/breeze_ribbons.gd); `--old-trails` brings back the earlier
+## stamped trails (scripts/weather_wind_trails.gd) to compare.
+func setup_wind_trails(probe: Callable, old := OS.get_cmdline_user_args().has("--old-trails")) -> void:
 	if wind_trails != null: return
-	wind_trails = preload("res://scripts/weather_wind_trails.gd").new()
+	wind_trails = (preload("res://scripts/weather_wind_trails.gd") if old else preload("res://scripts/breeze_ribbons.gd")).new()
 	add_child(wind_trails)
 	wind_trails.setup(probe)
+	if wind_trails.has_method("set_bounds"): wind_trails.set_bounds(fronts.center, fronts.radius)
 
 func setup(geometry: Node3D, environment: Environment) -> void:
 	setup_ground(geometry.get_node("terrain"), environment)
@@ -85,11 +99,20 @@ func setup_ground(terrain: MeshInstance3D, environment: Environment, use_referen
 func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false) -> void:
 	_ground_min = INF
 	_summit = Vector3(0, -INF, 0)
+	var low := Vector2(INF, INF)
+	var high := -low
+	var placed := terrain.global_transform if terrain.is_inside_tree() else terrain.transform
 	for vertex: Vector3 in terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
 		var point := terrain.transform * vertex
 		_ground_min = minf(_ground_min, point.y)
 		if point.y > _summit.y:
 			_summit = point
+		var seen := placed * vertex
+		low = low.min(Vector2(seen.x, seen.z))
+		high = high.max(Vector2(seen.x, seen.z))
+	# Gust fronts roll across the plate as the world sees it.
+	fronts.set_bounds((low + high) * 0.5, (high - low).length() * 0.5)
+	if wind_trails != null and wind_trails.has_method("set_bounds"): wind_trails.set_bounds(fronts.center, fronts.radius)
 	if use_reference_bounds:
 		var reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/environment.json"))
 		var summit: Array = reference.uSummit
@@ -126,6 +149,11 @@ func advance(delta: float, paused: bool) -> void:
 	_cloud_drift.y += delta * 0.004
 	if wind_trails != null: wind_trails.advance(delta,_air_strength*gust_at(_wind_time),_air_angle)
 	puffs.retire(_gust_distance)
+	var sent: int = fronts.sent
+	fronts.advance(delta, direction, _air_strength, breeze_air(_air_strength + swell))
+	if fronts.sent > sent and wind_trails != null and wind_trails.has_method("carry_front"):
+		for front: Dictionary in fronts.fronts:
+			if not front.is_empty() and float(front.age) <= delta + 0.001: wind_trails.carry_front(front)
 	_publish_wind()
 
 ## `strength` is the puff's weight (wind_puffs.gd); 0.45 is a full gust.
@@ -166,11 +194,13 @@ func _publish_wind() -> void:
 	RenderingServer.global_shader_parameter_set("zs_gust_speed", 1.6 + 1.9 * _air_strength)
 	RenderingServer.global_shader_parameter_set("zs_breeze", breeze())
 	puffs.publish()
+	fronts.publish()
 
 ## What `zs_breeze` is now: the eased air (and the hand's swell) lifted to
-## the floor, breathing on the wind clock, which holds while paused.
+## the floor, breathing on the wind clock, which holds while paused, and
+## going quiet before a gust front (GustFronts `lull`).
 func breeze() -> float:
-	return breeze_air(_air_strength + swell) * breeze_swell(_wind_time)
+	return breeze_air(_air_strength + swell) * breeze_swell(_wind_time) * fronts.lull() * breeze_gain
 
 ## The air's strength lifted to BREEZE_FLOOR: about 0.38 for a calm world,
 ## 0.53 for the default 0.4, 1.35 for a gale's 1.3.
