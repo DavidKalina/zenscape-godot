@@ -50,9 +50,9 @@ uniform float ground_living : hint_range(0.0, 1.0) = 0.3;
 // paler green on crests, convex edges and high ground. steep: grass on steep
 // slopes thinning toward a dry olive. shade: the darker, cooler, mossy floor
 // under trees (scripts/ground_shade.gd).
-uniform float ground_hue : hint_range(0.0, 1.0) = 0.85;
+uniform float ground_hue : hint_range(0.0, 1.5) = 1.15;
 uniform float ground_hollow : hint_range(0.0, 1.0) = 0.7;
-uniform float ground_crest : hint_range(0.0, 1.0) = 0.7;
+uniform float ground_crest : hint_range(0.0, 1.0) = 0.55;
 uniform float ground_steep : hint_range(0.0, 1.0) = 0.6;
 uniform float ground_shade : hint_range(0.0, 1.0) = 0.9;
 // Source-space multipliers for the broad patches' hue drift.
@@ -63,6 +63,9 @@ const vec3 ZS_GROUND_COOL_DRIFT = vec3(0.76, 0.96, 1.20);
 const vec3 ZS_GROUND_HOLLOW = vec3(0.76, 0.88, 0.92);
 const vec3 ZS_GROUND_CREST = vec3(1.22, 1.12, 0.72);
 const vec3 ZS_GROUND_SHADE = vec3(0.50, 0.62, 0.55);
+// The same floor once autumn or the dry season has painted the ground: as
+// deep, but warm, so the turned ground darkens without going grey or muddy.
+const vec3 ZS_GROUND_SHADE_WARM = vec3(0.64, 0.56, 0.48);
 // How much of the snow the trees' shade keeps off the floor.
 const float ZS_GROUND_SNOW_SHELTER = 0.45;
 
@@ -81,6 +84,14 @@ float zs_ground_grassness(vec3 g_face) {
 // `g_lush` 0..1 near water. Two broad noises (about 16 m and 6 m) lean the
 // green toward the palette's sunlit or deep shade; the dry patches are the
 // tufts' own (zs_grass_dry), so ground and tufts dry out together.
+// 1 in a green season, falling to 0 as autumn (or the dry season) paints
+// the ground: the land-form terms step aside so the season's own colour
+// keeps its glow (autumn keys on the grass's warmth, which they would cool).
+float zs_ground_season_hold() {
+	float g_turn = max(smoothstep(0.03, 0.35, zs_autumn * leaf_season.x), zs_season.z);
+	return 1.0 - clamp(g_turn, 0.0, 1.0);
+}
+
 vec3 zs_ground_field(vec2 g_p, float g_lush) {
 	float g_broad = zs_noise(g_p * 0.06 + zs_grass_offset * 0.41 + 17.0) - 0.5;
 	float g_mid = zs_noise(g_p * 0.16 + zs_grass_offset * 0.57 + 41.0) - 0.5;
@@ -91,7 +102,7 @@ vec3 zs_ground_field(vec2 g_p, float g_lush) {
 	// Hue more than light, so the drift reads as meadow, not as noise.
 	float g_drift = zs_noise(g_p * 0.11 + zs_grass_offset * 0.73 + 73.0) - 0.5;
 	float g_warm = clamp(g_drift * 2.2 + g_broad * 1.4, -1.0, 1.0);
-	g_color *= mix(vec3(1.0), g_warm > 0.0 ? ZS_GROUND_WARM_DRIFT : ZS_GROUND_COOL_DRIFT, abs(g_warm) * ground_hue);
+	g_color *= mix(vec3(1.0), g_warm > 0.0 ? ZS_GROUND_WARM_DRIFT : ZS_GROUND_COOL_DRIFT, abs(g_warm) * ground_hue * zs_ground_season_hold());
 	float g_dry = zs_grass_dry(g_p, ZS_GRASS_DRY_SCALE, zs_grass_offset) * ground_dry * (1.0 - g_lush);
 	g_color = mix(g_color, ZS_GROUND_DRY, g_dry);
 	return mix(g_color, ZS_GROUND_LUSH, g_lush * ground_lush);
@@ -241,7 +252,8 @@ vec2 zs_ground_form_at(vec3 g_v) {
 // rock and paint, which only darken a little.
 vec3 zs_ground_shaded(vec3 g_tint, float g_shade, float g_grass) {
 	float g_amount = clamp(g_shade * ground_shade, 0.0, 1.0);
-	vec3 g_floor = mix(vec3(0.74, 0.74, 0.78), ZS_GROUND_SHADE, g_grass);
+	vec3 g_grass_floor = mix(ZS_GROUND_SHADE_WARM, ZS_GROUND_SHADE, zs_ground_season_hold());
+	vec3 g_floor = mix(vec3(0.74, 0.74, 0.78), g_grass_floor, g_grass);
 	return g_tint * mix(vec3(1.0), g_floor, g_amount * mix(0.6, 1.0, g_grass));
 }
 
@@ -250,21 +262,22 @@ vec3 zs_ground_shaded(vec3 g_tint, float g_shade, float g_grass) {
 // (zs_ground_lush_at, zs_ground_form_at), `g_n` the smoothed ground normal,
 // `g_grass` the face's zs_ground_grassness. Hollows go lusher and cooler,
 // crests, convex edges and high ground drier and paler, steep grass thins
-// toward a dry olive, and the floor under trees darkens. Painted ground,
-// rock and earth keep their own colour except for the trees' shade.
+// toward a dry olive. Painted ground, rock and earth keep their own colour.
+// The trees' shade (zs_ground_shaded) comes later, after the season's paint.
 vec3 zs_ground_form(vec3 g_tint, vec3 g_p, vec3 g_form, vec3 g_n, float g_grass) {
 	float g_hollow = smoothstep(0.05, 0.6, g_form.y);
 	float g_crest = smoothstep(0.05, 0.6, -g_form.y);
 	float g_high = smoothstep(0.35, 0.9, (g_p.y - 0.15) / max(zs_summit.y - 0.15, 1.0));
 	float g_wet = max(g_hollow, g_form.x * 0.5);
-	float g_dry = max(g_crest, g_high * 0.6) * (1.0 - g_wet);
+	float g_dry = max(g_crest * 0.85, g_high * 0.4) * (1.0 - g_wet);
+	// Autumn and the dry season paint the ground themselves.
+	g_grass *= zs_ground_season_hold();
 	g_tint *= mix(vec3(1.0), ZS_GROUND_HOLLOW, g_hollow * ground_hollow * g_grass);
 	g_tint *= mix(vec3(1.0), ZS_GROUND_CREST, g_dry * ground_crest * g_grass);
 	// Steep grass thins toward a dry olive of the same lightness.
 	float g_steep = 1.0 - smoothstep(0.62, 0.92, g_n.y);
 	float g_luma = dot(g_tint, vec3(0.2126, 0.7152, 0.0722));
 	vec3 g_thin = vec3(g_luma) * vec3(1.18, 1.0, 0.70);
-	g_tint = mix(g_tint, g_thin, g_steep * ground_steep * 0.6 * g_grass);
-	return zs_ground_shaded(g_tint, g_form.z, g_grass);
+	return mix(g_tint, g_thin, g_steep * ground_steep * 0.6 * g_grass);
 }
 #endif

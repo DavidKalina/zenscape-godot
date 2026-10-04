@@ -595,8 +595,8 @@ void fragment() {
 	// Slopes to the sun a little warmer, away from it a little deeper (the
 	// smoothed ground normal rides world_normal on the ground).
 	if (ground) tint = zs_ground_sun_warm(tint, normalize(world_normal), zs_sun_direction, ground_grass);
-	// The land's own colour: hollows lusher, crests drier, steep grass thin,
-	// and the floor under trees darker and mossy (ground_look zs_ground_form).
+	// The land's own colour: hollows lusher, crests drier, steep grass thin
+	// (ground_look zs_ground_form); the trees' shade comes after the seasons.
 	if (ground) tint = zs_ground_form(tint, world_position, earth_side.xyz, normalize(world_normal), ground_grass);
 	// The earth sides: strata, each facet a shade apart like the ground's,
 	// dimming toward the base where the void's mist takes over (EMISSION).
@@ -629,8 +629,6 @@ void fragment() {
 		// only the upper blade is the tuft's, so no dark base rings it.
 		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
-		// Tufts under trees share the wood's shaded floor.
-		tint = zs_ground_shaded(tint, zs_ground_shade_at(plant_root), 1.0);
 	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
 	vec3 before_autumn = tint;
@@ -642,6 +640,11 @@ void fragment() {
 	}
 	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	else if (palette_role == 1 || palette_role == 5) zs_season_grass(tint, leaf_season.x);
+	// The floor under trees, after the season's paint so autumn ground
+	// darkens warm there instead of failing to turn (ground_look); tufts
+	// share it.
+	if (ground) tint = zs_ground_shaded(tint, earth_side.z, ground_grass);
+	else if (grass_blades) tint = zs_ground_shaded(tint, zs_ground_shade_at(plant_root), 1.0);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
