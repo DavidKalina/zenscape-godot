@@ -88,6 +88,13 @@ var _keep_title: Button
 var _your_worlds: Button
 ## The title's library page is up, over the front page's state.
 var library_open := false
+## The title as cards (scripts/title_cards.gd): the main menu and world
+## select dealt as cards over the orbiting world, in place of the old card
+## and the library strip. `--classic-title`, or the "classic_title" meta on
+## a scene a test builds, keeps those.
+var title_cards: Control
+## New world was opened from the cards' main menu, not from world select.
+var _new_from_menu := false
 
 func _ready() -> void:
 	if "--verify-desktop-build" in OS.get_cmdline_user_args():
@@ -551,13 +558,17 @@ func show_menu() -> void:
 	super.show_menu()
 	_sync_creation_ui()
 	if _worlds_screens() and _menu.visible:
-		# The front page is the old card itself; elsewhere it is unseen.
-		if titled and not library_open:
+		# The front page is the old card itself (or the cards); elsewhere it is unseen.
+		if titled and not library_open and title_cards == null:
 			_screen_blocker.hide()
 		else:
 			_menu.modulate.a = 0.0
 			_release_menu_focus()
 			_screen_blocker.show()
+		if title_cards != null and titled and not library_open and not new_world_panel.visible:
+			title_cards.modulate.a = 1.0
+			title_cards.show()
+			title_cards.show_menu()
 		if _has_world and not titled and not pause_panel.is_open and not field_notes.is_open: _open_pause_panel()
 	# Pausing keeps the world.
 	if world_session != null and _has_world and not titled: world_session.keep_now()
@@ -600,6 +611,17 @@ func _build_worlds_screens() -> void:
 	worlds_layer.add_child(_screen_blocker)
 	_screen_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_screen_blocker.hide()
+	if _cards_wanted():
+		title_cards = preload("res://scripts/title_cards.gd").new()
+		title_cards.setup(world_session.library)
+		title_cards.hide()
+		worlds_layer.add_child(title_cards)
+		title_cards.picked.connect(_on_card_picked)
+		title_cards.selection_changed.connect(func(world: Dictionary) -> void: if library_open: world_session.show_backdrop(str(world.get("id",""))))
+		title_cards.enter_requested.connect(func(world: Dictionary) -> void: if library_open: world_session.open_world(str(world.id)))
+		title_cards.new_world_requested.connect(func() -> void: if library_open: _open_new_world(false))
+		title_cards.back_requested.connect(close_library)
+		world_session.backdrop_ready.connect(func(_id: String) -> void: if titled and library_open: title_cards.reveal_live())
 	world_title = preload("res://scripts/world_title.gd").new()
 	world_title.setup(world_session.library)
 	world_title.hide()
@@ -644,6 +666,25 @@ func _build_worlds_screens() -> void:
 	field_notes.walk_requested.connect(close_menu)
 	world_session.keeping_changed.connect(func(_keeping: bool) -> void: _sync_pause_status())
 
+func _cards_wanted() -> bool:
+	return "--classic-title" not in OS.get_cmdline_user_args() and not has_meta("classic_title")
+
+## A pick on the cards' main menu (scripts/title_cards.gd `ITEMS`).
+func _on_card_picked(action: String) -> void:
+	if not titled or library_open: return
+	match action:
+		"continue": continue_world()
+		"worlds": open_library()
+		"new": _open_new_world(true)
+		"settings": _show_settings()
+		"quit": _quit_safely()
+
+## New world over the title, from the menu or world select; Back returns there.
+func _open_new_world(from_menu: bool) -> void:
+	_new_from_menu = from_menu
+	title_cards.hide()
+	new_world_panel.open()
+
 func _open_pause_panel() -> void:
 	if not _has_world or titled or not _menu.visible: return
 	pause_panel.notes_available = first_steps != null
@@ -683,6 +724,7 @@ func open_title() -> void:
 	field_notes.close()
 	new_world_panel.close()
 	world_title.hide()
+	if title_cards != null: title_cards.hide()
 	await world_session.show_showcase()
 	_frame_title()
 	show_menu()
@@ -698,6 +740,10 @@ func open_library() -> void:
 	_release_menu_focus()
 	_screen_blocker.show()
 	new_world_panel.close()
+	if title_cards != null:
+		title_cards.show()
+		title_cards.show_worlds()
+		return
 	world_title.mode = "idle"
 	# Announce the selection afresh, so its world loads behind the page.
 	world_title.set("_shown_id","~")
@@ -711,6 +757,11 @@ func open_library() -> void:
 func close_library() -> void:
 	if not library_open or new_world_panel.visible: return
 	library_open = false
+	if title_cards != null:
+		# The menu is dealt at once; the showcase returns under the dark.
+		title_cards.show_menu()
+		await _cover_with_showcase()
+		return
 	var cover := create_tween()
 	cover.tween_property(world_title.veil,"modulate:a",1.0,0.3)
 	await world_session.show_showcase()
@@ -723,6 +774,18 @@ func close_library() -> void:
 	await _crossfade(_menu,world_title).finished
 	if not library_open: world_title.hide()
 	world_title.modulate.a = 1.0
+
+## The cards' veil darkens over the backdrop while the showcase comes back,
+## then lifts once it is framed.
+func _cover_with_showcase() -> void:
+	title_cards.capture.texture = null
+	var cover := create_tween()
+	cover.tween_property(title_cards.veil,"modulate:a",1.0,0.3)
+	await world_session.show_showcase()
+	if cover.is_running(): await cover.finished
+	if library_open or not titled: return
+	_frame_title()
+	title_cards.reveal_live()
 
 func _crossfade(shown: CanvasItem, hidden: CanvasItem) -> Tween:
 	var fade := create_tween().set_parallel(true)
@@ -737,7 +800,8 @@ func _release_menu_focus() -> void:
 ## Esc on the library page goes back to the front page, once the page's own
 ## Esc (rename, delete) has nothing to cancel.
 func _input(event: InputEvent) -> void:
-	if library_open and titled and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE \
+	# The cards take their own Esc (scripts/title_cards.gd `back_requested`).
+	if library_open and titled and title_cards == null and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE \
 			and world_title.mode == "idle" and not new_world_panel.visible:
 		get_viewport().set_input_as_handled()
 		close_library()
@@ -750,6 +814,7 @@ func leave_title() -> void:
 	if not titled: return
 	world_title.hide()
 	world_title.modulate.a = 1.0
+	if title_cards != null: title_cards.hide()
 	new_world_panel.close()
 	titled = false
 	library_open = false
@@ -762,6 +827,15 @@ func leave_title() -> void:
 
 func _back_from_new_world() -> void:
 	new_world_panel.close()
+	if title_cards != null:
+		title_cards.show()
+		if _new_from_menu and not library_open:
+			title_cards.show_menu()
+			await _cover_with_showcase()
+			return
+		await world_session.end_preview()
+		if titled: title_cards.reveal_live()
+		return
 	world_title.show()
 	await world_session.end_preview()
 	if titled: world_title.reveal_live()

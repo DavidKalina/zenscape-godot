@@ -10,10 +10,13 @@ Double-click **`run-cozy-flow.command`**, or open `project.godot` in
 **Godot 4.7.2** (standard edition; no .NET needed) and press **F5**. Both open
 `studies/cozy_worlds.tscn`.
 
-The title is a generated world the camera orbits behind the menu:
-**Continue your world**, **Your worlds** (the library of saved worlds),
-**Build this world** (keep the land behind the menu), **Begin on a quiet
-plain** (a bare Genesis plain), **Settings** and **Quit**. In a world, **Esc**
+The title is a generated world the camera orbits behind a fan of cards
+([title cards](docs/design/title-cards/README.md)): **Continue**, **Your
+worlds** (every kept world as its card, the world behind turning to the one
+you point at), **A new world**, **Almanac** (settings) and **Rest** (quit).
+`--classic-title` brings back the old card, with **Build this world** and
+**Begin on a quiet plain**, and the library strip with rename, duplicate
+and delete. In a world, **Esc**
 opens the pause panel: Resume, Save a copy, Field notes, Settings and
 Return to title. Worlds keep themselves a few seconds after each change.
 
@@ -82,6 +85,8 @@ the [parity checklist](docs/fidelity/PARITY.md).
 ## Structure
 
 - `studies/cozy_worlds.gd`: the game's scene: title, worlds, the hand scheme.
+- `scripts/title_cards.gd`, `scripts/menu_card.gd`, `scripts/world_card.gd`:
+  the title as cards, one card, and what a world's card shows.
 - `scripts/world_session.gd`, `scripts/world_library.gd`,
   `scripts/world_lands.gd`: which world is open, the saved worlds, and the
   lands a new world starts from.
