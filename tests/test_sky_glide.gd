@@ -37,6 +37,7 @@ func _initialize() -> void:
 	_cells_swap()
 	_cells_trim()
 	_added_air()
+	_airspeed()
 	print("PASS: sky glide" if failures == 0 else "FAIL: sky glide")
 	quit(1 if failures else 0)
 
@@ -372,3 +373,20 @@ func _added_air() -> void:
 	clouds.reset()
 	check(Vector2(clouds.field.x,clouds.field.y).distance_to(middle) > 100.0,"Reset puts it home")
 	clouds.free()
+
+## Rise needs airspeed, and a glide opened from a jump has no drop.
+func _airspeed() -> void:
+	var slow := SkyGlide.new()
+	slow.launch(Vector3(0.0,10.0,0.0),0.0,SkyGlide.MIN,false)
+	check(slow.airborne >= SkyGlide.FALL_TIME+SkyGlide.CATCH-0.001,"Opened from a jump, it glides at once")
+	slow.step(DT,{},air)
+	check(slow.velocity.y > -3.0,"No drop off a jump (%.1f m/s)" % slow.velocity.y)
+	var fresh := SkyGlide.new()
+	fresh.launch(Vector3(0.0,10.0,0.0),0.0,SkyGlide.MIN,false)
+	fresh.speed = SkyGlide.MIN
+	fresh.step(DT*30,{"rise":1.0},air)
+	var weak := fresh.climb
+	var fast := SkyGlide.new()
+	fast.launch(Vector3(0.0,10.0,0.0),0.0,12.0,false)
+	fast.step(DT*30,{"rise":1.0},air)
+	check(weak < fast.climb*0.2,"Slow, Rise barely bites; with speed it climbs (%.2f vs %.2f m/s)" % [weak,fast.climb])

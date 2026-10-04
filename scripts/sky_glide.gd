@@ -33,8 +33,12 @@ const PULL_TUCK := 1.35
 ## The steady sink of a level glide, in metres a second.
 const SINK := 0.75
 ## Rise: the climb it eases into (m/s), how fast it eases in and out, and the
-## wingbeat it pulses with (beats a second, share of the climb).
+## wingbeat it pulses with (beats a second, share of the climb). Wingbeats
+## need air over them: Rise bites from RISE_SPEED.x m/s and fully from
+## RISE_SPEED.y, so a hop off flat ground barely rises and height still
+## comes from the mountain, the dive and the wind.
 const RISE := 5.0
+const RISE_SPEED := Vector2(4.0,7.0)
 const EASE_RISE := 0.35
 const BEAT := 1.4
 const BEAT_SHARE := 0.45
@@ -115,7 +119,9 @@ var _turn_rate := 0.0
 var _beat := 0.0
 
 ## Steps off from `from` facing `towards` (the scene's yaw), at `pace` m/s.
-func launch(from: Vector3, towards: float, pace: float) -> void:
+## Off an edge (`drop`) it falls a moment before the glide catches; opened
+## from a jump it glides at once.
+func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	position = from
 	heading = towards
 	pitch = -0.2
@@ -124,7 +130,7 @@ func launch(from: Vector3, towards: float, pace: float) -> void:
 	climb = 0.0
 	lift = 0.0
 	hang = 0.0
-	airborne = 0.0
+	airborne = 0.0 if drop else FALL_TIME+CATCH
 	skimming = false
 	_turn_rate = 0.0
 	velocity = forward()*speed
@@ -188,7 +194,8 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	speed = clampf(speed,MIN,MAX)
 	# Rise eases in with a wingbeat; the ceiling fades it.
 	var ceiling := 1.0-clampf((position.y-CEILING)/CEILING_FADE,0.0,1.0)
-	climb = lerpf(climb,rise*RISE*ceiling,_ease(EASE_RISE,delta))
+	var airflow := smoothstep(RISE_SPEED.x,RISE_SPEED.y,speed)
+	climb = lerpf(climb,rise*RISE*ceiling*airflow,_ease(EASE_RISE,delta))
 	_beat += delta*BEAT*TAU*float(climb > 0.05)
 	var beat := climb*(1.0+BEAT_SHARE*sin(_beat))
 	# The air: the cushion below the floor.

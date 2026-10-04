@@ -163,6 +163,73 @@ func run() -> void:
 	check("landed, the cloud sea settles back to rest",eye.sky.flight.is_equal_approx(Vector4(0.0,0.0,1.0,0.0)) and eye.sky.vapour < 0.01,eye.sky.flight)
 	check("landed, the clouds hide",not eye.islands.clouds.visible)
 
+	# Glide from anywhere: a tap of Space hops; held, it opens the glide.
+	await frames(30)
+	eye._feet = eye._clamped(Vector3(2.0,0.0,2.0))
+	eye._pace = Vector2.ZERO
+	await frames(10)
+	var stand: float = eye._eye_y
+	key(KEY_SPACE,true)
+	await frames(4)
+	key(KEY_SPACE,false)
+	var peak := stand
+	for i in range(60):
+		await frames(1)
+		peak = maxf(peak,eye._eye_y)
+	check("a tap of Space jumps and comes down",peak > stand+0.3 and eye._hop == 0.0 and not eye.flying,"%.2f m up" % (peak-stand))
+	key(KEY_SPACE,true)
+	for i in range(40):
+		await frames(1)
+		if eye.flying: break
+	check("held, it opens the glide anywhere",eye.flying)
+	check("opened from a jump, there is no drop",eye.glide.airborne >= eye.glide.FALL_TIME)
+	check("off flat ground, Rise barely lifts it (no airspeed)",eye.glide.climb < 1.5,"%.2f m/s" % eye.glide.climb)
+	key(KEY_SPACE,false)
+	for i in range(360):
+		await frames(1)
+		if not eye.flying: break
+	check("off flat ground it flutters and lands",not eye.flying and eye.active)
+	# The wind over the island: up a windward slope the air rises.
+	var atmosphere: Node = scene._atmosphere
+	var way := Vector2(cos(atmosphere._air_angle),sin(atmosphere._air_angle))
+	var best := Vector3.ZERO
+	var steepest := 0.0
+	for x in range(-12,13):
+		for z in range(-12,13):
+			var p := Vector3(x,0.0,z)
+			var a: Variant = eye.islands._height(p+Vector3(way.x,0.0,way.y))
+			var b: Variant = eye.islands._height(p-Vector3(way.x,0.0,way.y))
+			if a == null or b == null: continue
+			if float(a)-float(b) > steepest:
+				steepest = float(a)-float(b)
+				best = Vector3(x,float(eye.islands._height(p)),z)
+	if steepest > 0.2:
+		var ridge: Dictionary = eye._fly_air(best+Vector3.UP*2.0)
+		var breeze: float = 1.6+1.9*float(atmosphere._air_strength)
+		var expected: float = minf(steepest*0.5*breeze*eye.RIDGE_GAIN,eye.RIDGE_MAX)
+		check("where the wind blows up a slope, the air lifts in step with it",ridge.island.y > 0.1 and absf(ridge.island.y-expected) < 0.15,"%.2f m/s over a %.2f slope (expected %.2f)" % [ridge.island.y,steepest*0.5,expected])
+		var high: Dictionary = eye._fly_air(best+Vector3.UP*40.0)
+		check("high over the slope, the ridge lift is gone",high.island.y < 0.05,"%.2f m/s" % high.island.y)
+	else:
+		print("     (no windward slope on this world; ridge lift unchecked)")
+	# A gust front passing lifts it.
+	var front: Dictionary = atmosphere.fronts.send(way,atmosphere._air_strength,0.5,1.0)
+	var gusted := 0.0
+	for i in range(600):
+		await frames(1)
+		gusted = maxf(gusted,eye._fly_air(Vector3(0.0,6.0,0.0)).island.y)
+		if gusted > 0.5: break
+	check("a gust front passing lifts the glide",gusted > 0.5,"%.2f m/s" % gusted)
+	# Tree crowns lift it over them.
+	eye._read_obstacles(true)
+	if not eye._crowns.is_empty():
+		var c: Vector4 = eye._crowns[0]
+		var over: Vector3 = editor.terrain.to_global(Vector3(c.x,c.w-0.5,c.y))
+		var ground_there: Variant = eye._fly_ground(over)
+		check("a tree's crown is ground to the glide",ground_there != null and float(ground_there) >= editor.terrain.to_global(Vector3(c.x,c.w,c.y)).y-0.01,"crown top %.2f" % c.w)
+	else:
+		print("     (no crowns on this world; crown lift unchecked)")
+
 	# Off again, and V mid-glide.
 	eye._feet = eye._clamped(Vector3(0.0,0.0,-(eye.PLATE_REACH-0.4)))
 	eye._yaw = 0.0+eye._turn()

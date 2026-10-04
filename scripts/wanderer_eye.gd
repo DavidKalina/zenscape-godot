@@ -18,8 +18,11 @@ extends Node
 ## over the cloud sea towards copies of the plate set in the sky
 ## (scripts/sky_islands.gd), with the air streaking past and the wind's sound
 ## (scripts/glide_air.gd). Touching down on land skims along it, and a
-## slow skim lands, back to walking. A prototype: `--no-glide` keeps the old
-## plate clamp.
+## slow skim lands, back to walking. Space jumps; held past the top of the
+## jump it opens the glide anywhere: a flutter off flat ground, a real glide
+## off a ridge. Over the island the wind lifts it where it blows up a slope
+## (ridge lift) and as a gust front passes, and tree crowns lift it over
+## them like the ground. A prototype: `--no-glide` keeps the old plate clamp.
 
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
@@ -96,7 +99,7 @@ const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
-const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Walk off the edge to glide  ·  V or Esc to step out"
+const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Space to rise  ·  Shift to dive  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
@@ -112,6 +115,22 @@ const LAND_SPEED := 10.0
 ## The islands stand hundreds of metres apart; the view reaches FLY_FAR m
 ## while gliding.
 const FLY_FAR := 3000.0
+## The jump: metres a second up, the fall's pull, and how long Space must be
+## held from the jump before the glide opens.
+const JUMP := 3.3
+const GRAVITY := 9.8
+const OPEN_AFTER := 0.2
+## Ridge lift: where the wind blows up a slope, the air rises by RIDGE_GAIN
+## times the wind's speed times the slope (sampled RIDGE_STEP m either way
+## along the wind), up to RIDGE_MAX m/s, fading out by RIDGE_REACH m over the
+## ground. Gust fronts lift by GUST_LIFT and push by GUST_PUSH m/s per unit of
+## their lean (studies/gust_fronts.gd `lean_at`).
+const RIDGE_GAIN := 2.2
+const RIDGE_STEP := 1.5
+const RIDGE_MAX := 6.5
+const RIDGE_REACH := 14.0
+const GUST_LIFT := 9.0
+const GUST_PUSH := 5.0
 const LAND_TIME := 0.8
 
 signal entered
@@ -166,6 +185,17 @@ var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
 var _far_before := 500.0
+## The jump: how high the feet are off the ground, how fast they rise, and
+## how long Space has been held since the jump (-1 once let go).
+var _hop := 0.0
+var _hop_rise := 0.0
+var _hop_held := -1.0
+var _jump_was := false
+## What the copies were last built from, so a glide opened again from the
+## same island keeps the sky as it was.
+var _built_key := []
+## Tree and rock crowns in the plate plane: (x, z, radius, top), terrain-local.
+var _crowns := PackedVector4Array()
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -337,6 +367,7 @@ func _read_obstacles(force: bool) -> void:
 	if not force and key == _obstacle_key: return
 	_obstacle_key = key
 	_obstacles = PackedVector3Array()
+	_crowns = PackedVector4Array()
 	var to_plate: Transform3D = editor.terrain.global_transform.affine_inverse()
 	for batch: MultiMeshInstance3D in batches:
 		if not is_instance_valid(batch) or batch.multimesh == null or batch.multimesh.mesh == null: continue
@@ -371,6 +402,11 @@ func _add_obstacle(mesh: Mesh, placed: Transform3D, item: Dictionary) -> void:
 		if high < ground+STEP or low > ground+HEAD: continue
 		reach = maxf(reach,profile[band+2]*wide)
 	if reach > 0.0: _obstacles.append(Vector3(placed.origin.x,placed.origin.z,reach+RADIUS))
+	# The whole crown, for the glide to lift over.
+	var crown := 0.0
+	for band in range(profile.size()-2): crown = maxf(crown,profile[band+2]*wide)
+	var top := placed.origin.y+lift*(profile[0]+profile[1]*(profile.size()-2))
+	if crown > 0.0 and top > ground+STEP: _crowns.append(Vector4(placed.origin.x,placed.origin.z,crown,top))
 
 ## A mesh's footprint by height: [lowest y, band height, then the widest
 ## any vertex in each band stands from the mesh's vertical axis]. Built once.
@@ -590,6 +626,9 @@ func _advance_eye(delta: float) -> void:
 	if glide_enabled and (absf(walked.x) > PLATE_REACH or absf(walked.z) > PLATE_REACH):
 		_launch(move.length())
 		return
+	if _advance_jump(delta):
+		_launch(move.length(),false)
+		return
 	_feet = _clamped(walked)
 	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length()
 	_notice_step(moved,delta)
@@ -597,6 +636,8 @@ func _advance_eye(delta: float) -> void:
 	_eye_y = lerpf(_eye_y,_feet.y+EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
 	# Never below the ground right under the eye.
 	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT*0.6)
+	# The jump rides on top, unsmoothed.
+	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT+_hop) if _hop > 0.0 else _eye_y
 	var reach := 6.0
 	scene.yaw = _yaw
 	scene.polar = _polar
@@ -614,15 +655,22 @@ func _advance_eye(delta: float) -> void:
 # --- The glide --------------------------------------------------------------------
 
 ## Off the edge: the plate is copied out into the sky and the glide takes the eye.
-func _launch(pace: float) -> void:
+func _launch(pace: float, drop := true) -> void:
 	flying = true
 	_fly_look = Vector2.ZERO
 	_skim_time = 0.0
-	islands.build()
+	_hop = 0.0
+	_hop_rise = 0.0
+	_hop_held = -1.0
+	# The sky stays as it was unless the island has changed since.
+	var key := [editor.data.objects_revision,hash(editor.data.heights)]
+	if not islands.built() or key != _built_key:
+		islands.build()
+		_built_key = key
 	_far_before = camera.far
 	camera.far = FLY_FAR
 	islands.show_air(true)
-	glide.launch(_eye_global(),_yaw,pace)
+	glide.launch(_eye_global(),_yaw,pace,drop)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	air.start()
 	sky.start(glide.position)
@@ -657,7 +705,8 @@ func _fly_input() -> Dictionary:
 
 func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
-	glide.step(delta,input,islands.ground,islands.air)
+	_read_obstacles(false)
+	glide.step(delta,input,_fly_ground,_fly_air)
 	# Over a copy, the copy becomes the plate.
 	var under: int = islands.copy_under(glide.position)
 	if under >= 0:
@@ -684,6 +733,65 @@ func _advance_flight(delta: float) -> void:
 	# A slow skim on the plate lands.
 	_skim_time = _skim_time+delta if glide.skimming and glide.speed < LAND_SPEED and float(input.dive) < 0.5 else 0.0
 	if _skim_time >= LAND_TIME and islands._height(glide.position) != null: _land()
+
+## Space (or the pad's A) jumps from the ground; held past OPEN_AFTER it
+## opens the glide. Returns true when it should open.
+func _advance_jump(delta: float) -> bool:
+	var down := Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)
+	var pressed := down and not _jump_was
+	_jump_was = down
+	if pressed and _hop <= 0.0:
+		_hop_rise = JUMP
+		_hop = 0.001
+		_hop_held = 0.0
+		steps.step(_surface(),0.3)
+	if _hop <= 0.0: return false
+	if _hop_held >= 0.0: _hop_held = _hop_held+delta if down else -1.0
+	if glide_enabled and _hop_held >= OPEN_AFTER: return true
+	_hop_rise -= GRAVITY*delta
+	_hop += _hop_rise*delta
+	if _hop <= 0.0:
+		_hop = 0.0
+		_hop_rise = 0.0
+		_hop_held = -1.0
+		steps.step(_surface(),0.5)
+	return false
+
+## What the glide stands on: the islands, and over the plate the crowns of
+## its trees and rocks.
+func _fly_ground(point: Vector3) -> Variant:
+	var under: Variant = islands.ground(point)
+	if under == null or islands._height(point) == null: return under
+	var local := editor.terrain.to_local(point)
+	var at := Vector2(local.x,local.z)
+	for c in _crowns:
+		if at.distance_squared_to(Vector2(c.x,c.y)) < c.z*c.z:
+			under = maxf(float(under),editor.terrain.to_global(Vector3(c.x,c.w,c.y)).y)
+	return under
+
+## The air the glide flies in: the sky's currents, and over the island the
+## breeze rising up its slopes and the gust fronts rolling across it.
+func _fly_air(point: Vector3) -> Dictionary:
+	var air: Dictionary = islands.air(point)
+	var atmosphere: Node = scene.get("_atmosphere")
+	if atmosphere == null: return air
+	var angle: float = atmosphere._air_angle
+	var way := Vector2(cos(angle),sin(angle))
+	var breeze: float = 1.6+1.9*float(atmosphere._air_strength)
+	var extra := Vector3.ZERO
+	var h: Variant = islands._height(point)
+	if h != null:
+		var ahead: Variant = islands._height(point+Vector3(way.x,0.0,way.y)*RIDGE_STEP)
+		var behind: Variant = islands._height(point-Vector3(way.x,0.0,way.y)*RIDGE_STEP)
+		if ahead != null and behind != null:
+			var slope := (float(ahead)-float(behind))/(2.0*RIDGE_STEP)
+			var near := 1.0-smoothstep(RIDGE_REACH*0.3,RIDGE_REACH,point.y-float(h))
+			extra.y += clampf(slope*breeze*RIDGE_GAIN,0.0,RIDGE_MAX)*near
+	var lean: float = atmosphere.fronts.lean_at(Vector2(point.x,point.z),way)
+	if lean > 0.0: extra += Vector3(way.x*GUST_PUSH,GUST_LIFT,way.y*GUST_PUSH)*lean
+	air.wind = (air.get("wind",Vector3.ZERO) as Vector3)+extra
+	air["island"] = extra
+	return air
 
 ## Down on the plate: back to walking where the glide touched.
 func _land() -> void:
