@@ -350,6 +350,8 @@ func contains_pointer(point: Vector2) -> bool:
 func can_enter() -> bool:
 	if active or scene == null or not scene.get("shell_ready") or not scene._has_world: return false
 	if scene._menu.visible or scene.crafting: return false
+	var watch: Node = scene.get("watch")
+	if watch != null and watch.active: return false
 	var places: Node = scene.get("places")
 	return places == null or not places.busy
 
