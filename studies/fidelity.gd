@@ -19,6 +19,9 @@ var _leaf_revision := -1
 var _leaf_objects_revision := -1
 var _display_fog: CanvasLayer
 var camera: Camera3D
+## Radians the camera leans about its view axis (the glide's bank,
+## scripts/sky_glide.gd); 0 everywhere else.
+var camera_roll := 0.0
 var target := Vector3.ZERO
 var distance := 43.0
 var yaw := 1.8893
@@ -509,6 +512,7 @@ func _reset_camera(reference_pose := false) -> void:
 func _update_camera() -> void:
 	camera.position = target + Vector3(sin(polar) * sin(yaw), cos(polar), sin(polar) * cos(yaw)) * distance
 	camera.look_at(target)
+	if camera_roll != 0.0: camera.rotate_object_local(Vector3.BACK, camera_roll)
 
 func _face_rainbow() -> void:
 	var sun: Vector3 = _celestial.state.zs_sun_direction
