@@ -15,6 +15,8 @@ const COLORS := ["b9c47e","cfc98f","a7b86f"]
 
 func _init() -> void:
 	super()
+	# Lighter than a leaf, so a sweep's updraft carries it a little higher.
+	rise_cap = 3.0
 	name = "WindGrassChaff"
 	multimesh.mesh = _chaff_mesh()
 

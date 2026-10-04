@@ -25,6 +25,15 @@ The pull toward ride height lets go through the loop.
 
 The tail is where the mote has been (`TAIL`, 1.6 to 2.6 s of path, sampled at 30 Hz), so the stroke is continuous and travels with the air.
 
+## Sweeps
+
+A sweep is a second kind of gust event, beside the eddy: a ribbon dives to skim just over the ground, then kicks up off it.
+
+- **Phases** (`SWEEP_DESCEND`, `SWEEP_SKIM`, `SWEEP_LIFT`). It eases down over 0.8 to 1.2 s, skims for 1.0 to 1.8 s at 0.2 to 0.35 m over the ground (`SWEEP_HEIGHT`), travelling 1.35 times faster (`SWEEP_FAST`), then lifts off over 1.5 to 2.5 s. The lift tips its path up through `SWEEP_PITCH` (1.1 rad) in the upright plane along the wind, the same turn an eddy's loop uses, so it climbs several metres, then flattens and settles back to its ride.
+- **Following the ground.** The skim reads the ground ahead like any ride, and holds its height at `SWEEP_PULL` both ways, so a rise lifts it clear. It is never allowed below the ground.
+- **When.** One ribbon of a front's few, with chance `SWEEP_CHANCE` (0.7), takes a sweep 0.8 to 1.8 s after it joins the plate. A ribbon in the open can also take one of itself, at `SWEEP_RATE` (0.02 a second, well under `EDDY_RATE`). Never under trees (shade on the ground along its way), never while dying, and never with an eddy: one or the other. `--sweeps=` scales the rates; 0 turns them off.
+- **What it kicks up.** `kicks()` lists each ribbon that is skimming (or within 0.7 m of the ground, or lifting off), with the ground point under its head, its velocity, `lift` (0 skimming to 1 at the strongest lift-off) and an eased `strength`. `air_at(p)` is the air it adds: within 1.5 m of its track (the head and 2 m behind) and near the ground, a drag along its way (0.8 of its velocity), an updraft in the lift (up to 3.5 m/s) and a gentle swirl round the head (0.8 m/s). The leaf litter (`scripts/wind_leaf_litter.gd`) and grass chaff read it through `atmosphere.wind_trails`: a leaf is dragged, hopped and tumbled, and tops out at about 2.5 m (chaff, lighter, at 3 m).
+
 ## When ribbons come
 
 - **With gust fronts** (`carry_front`, `studies/gust_fronts.gd`). A front brings 2 to 4 ribbons. They are spread along its line, join it where it enters the plate (`JOIN`, 0.85 of the radius upwind of the middle) and ride at its speed. The stroke and the plants bowing under it are the same air.
@@ -83,6 +92,8 @@ The user found single trees with "random gusts" on them, and still could not see
   - turns back on itself and lifts in an eddy;
   - comes in with a front where it enters the plate;
   - leaves at the edge;
+  - sweeps low over flat ground, kicks only while low or lifting, lifts well clear, and stays above a hill;
+  - never sweeps under trees, mid-eddy or while dying;
   - moves the same at 60 and 7 fps.
 - `tests/test_weather_wind_trails.gd` asks for the old trails (`setup_wind_trails(probe, true)`).
 - Films: `captures/wind-look/meadow-ribbons.mp4` and `meadow-ribbons-close.mp4`.

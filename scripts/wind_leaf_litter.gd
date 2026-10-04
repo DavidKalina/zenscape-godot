@@ -27,9 +27,16 @@ const REGROW_WAIT := Vector2(3.0,9.0)
 const FADE_IN := 1.5
 ## Physics steps at most this long, so contact stays stable at any frame rate.
 const MAX_STEP := 1.0/50.0
+## How hard a sweeping breeze ribbon's updraft (BreezeRibbons.air_at) lifts a
+## leaf against its weight, and the metres over the ground it tops out at
+## (`rise_cap`; the grass chaff, being lighter, goes higher). The updraft
+## throws a resting leaf up once it passes HOP_WIND × the leaf's weight.
+const RISE_LIFT := 2.0
+const RISE_CAP := 2.5
 var leaves: Array[Dictionary] = []
 var ground_height: Callable
 var local_wind: Node
+var rise_cap := RISE_CAP
 var _clock := 0.0
 var _accumulator := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -112,6 +119,11 @@ func _step(dt: float, air: Node) -> void:
 		# neighbours do not all move as one.
 		var patch := 0.75+0.35*sin(_clock*0.9+p.x*0.45+p.z*0.3)+0.2*sin(_clock*2.3+leaf.phase)
 		var wind := Vector3(direction.x,0,direction.y)*ambient*1.3*patch*float(leaf.exposure)+Vector3(gust.x,0,gust.y)*7.0+local
+		# A ribbon sweeping the ground drags the air along its track and kicks it up.
+		var sweep := Vector3.ZERO
+		var trails: Variant = air.get("wind_trails")
+		if trails != null and is_instance_valid(trails) and trails.has_method("air_at"): sweep = trails.air_at(p)
+		wind += Vector3(sweep.x,0,sweep.z)
 		var speed := Vector2(wind.x,wind.z).length()
 		var weight: float = leaf.weight
 		leaf.cooldown = maxf(0.0,leaf.cooldown-dt)
@@ -119,7 +131,7 @@ func _step(dt: float, air: Node) -> void:
 		# lift of the edges in a light breeze to a full rock and skid.
 		var stir_goal := smoothstep(0.05,SLIDE_WIND*weight*1.6,speed)
 		leaf.stir = lerpf(float(leaf.stir),stir_goal,1.0-exp(-(4.0 if stir_goal > leaf.stir else 1.5)*dt))
-		leaf.spin += dt*(2.0+speed*2.2)
+		leaf.spin += dt*(2.0+speed*2.2+maxf(sweep.y,0.0)*2.0)
 		var velocity: Vector3 = leaf.velocity
 		if not leaf.airborne:
 			var slide := maxf(0.0,speed-SLIDE_WIND*weight)/maxf(speed,0.001)
@@ -128,7 +140,12 @@ func _step(dt: float, air: Node) -> void:
 			velocity = velocity.lerp(goal,1.0-exp(-rate*dt))
 			velocity.y = 0.0
 			# A dry leaf skitters in little hops rather than gliding tip first.
-			if leaf.cooldown <= 0.0 and speed > HOP_WIND*weight and _rng.randf() < dt*(1.0+2.0*(speed/(HOP_WIND*weight)-1.0)):
+			if sweep.y > HOP_WIND*weight and leaf.cooldown <= 0.0:
+				# A lifting sweep's updraft throws it up at once.
+				leaf.airborne = true
+				velocity.y = minf(sweep.y*0.9/weight,3.0)
+				leaf.cooldown = 0.35
+			elif leaf.cooldown <= 0.0 and speed > HOP_WIND*weight and _rng.randf() < dt*(1.0+2.0*(speed/(HOP_WIND*weight)-1.0)):
 				leaf.airborne = true
 				velocity.y = minf(lerpf(0.5,0.9,_rng.randf())+speed*0.25,2.6)/weight
 				leaf.cooldown = 0.35
@@ -140,6 +157,13 @@ func _step(dt: float, air: Node) -> void:
 			velocity.z = lerpf(velocity.z,wind.z*0.65,dt*1.8)
 			velocity += Vector3(-direction.y,0,direction.x)*flutter*dt*0.6
 			velocity.y += (-2.3*weight + minf(speed*0.20,1.0))*dt
+			if sweep.y > 0.0:
+				# The updraft lifts it against its weight, easing off toward its
+				# cap so it tops out low rather than flying off.
+				var floor_height: Variant = ground_height.call(Vector2(p.x,p.z))
+				var above := p.y-float(floor_height) if floor_height != null else 0.0
+				velocity.y += sweep.y*RISE_LIFT/weight*(1.0-smoothstep(rise_cap*0.5,rise_cap,above))*dt
+				velocity.y = minf(velocity.y,3.0*(1.0-smoothstep(rise_cap*0.4,rise_cap,above)))
 			leaf.yaw += float(leaf.turn)*dt*(0.6+speed*0.3)
 		var next := p+velocity*dt
 		var height: Variant = ground_height.call(Vector2(next.x,next.z))
