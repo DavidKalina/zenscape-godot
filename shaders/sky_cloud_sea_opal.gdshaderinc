@@ -93,6 +93,9 @@ const float SEA_OVERCAST_LIFT = 0.3;
 // The land under the sea: x its scale per depth below the eye (larger is
 // deeper), y how much air veils it.
 const vec2 SEA_LAND = vec2(6.0, 0.42);
+// The ocean among that land: x its scale per depth (small is broad), y the
+// mask's threshold (higher is less sea).
+const vec2 SEA_OCEAN = vec2(0.3, 0.5);
 
 // Mother-of-pearl: a slow round of pastel tints at about unit brightness,
 // lilac to mint to peach and back, for the sea's opal sheen.
@@ -110,7 +113,7 @@ vec3 zs_opal_sea_opal(float t) {
 // The ground under the sea, seen through its rifts from `at` (the point on
 // the sea): far deeper, so its fields are small beside the puffs.
 // Display colour, already in the air's haze.
-vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pearl, float dusk) {
+vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pearl, float dusk, float glint) {
   vec2 g = at * SEA_LAND.x + vec2(41.0, 17.0);
   float fine = 1.0 - smoothstep(0.25, 0.8, blur * SEA_LAND.x * 3.0 / SEA_SCALE);
   float fields = zs_opal_sea_noise(g * 1.6);
@@ -127,11 +130,97 @@ vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pe
   // Seen only in reaches, where it catches the light.
   river *= smoothstep(0.45, 0.75, zs_opal_sea_noise(g * 0.6 + vec2(7.0, 1.0)));
   land = mix(land, pearl * 1.05, river * 0.28);
+  // Over broad regions of the world the ground is sea: a wide mask, a soft
+  // coast with a pale shore, deep blue farther out.
+  float coast = zs_opal_sea_noise(at * SEA_OCEAN.x + vec2(13.0, 7.0)) * 0.75 + zs_opal_sea_noise(g * 0.35) * 0.25;
+  float ocean = smoothstep(SEA_OCEAN.y - 0.035, SEA_OCEAN.y + 0.035, coast);
+  land = mix(land, vec3(0.74, 0.7, 0.56), smoothstep(SEA_OCEAN.y - 0.1, SEA_OCEAN.y - 0.02, coast) * (1.0 - ocean) * 0.6);
+  vec3 water = mix(vec3(0.22, 0.5, 0.58), vec3(0.1, 0.24, 0.46), smoothstep(SEA_OCEAN.y, SEA_OCEAN.y + 0.2, coast));
+  // Long soft swell, and a glint where the water catches the light.
+  float swell = zs_opal_sea_noise(g * vec2(2.2, 6.0) + vec2(3.0, 8.0)) * 0.6 + zs_opal_sea_noise(g * vec2(5.5, 14.0)) * 0.4;
+  float sparkle = smoothstep(0.55, 0.85, swell) * fine;
+  water *= 0.94 + 0.12 * swell * fine;
+  water += pearl * glint * (0.05 + 0.22 * sparkle);
+  land = mix(land, water / max(level * 1.05, 1e-3), ocean);
   // Lit by the hour, then deep in the air between: blue-grey and faint.
   land *= level * 1.05;
   vec3 air = shadow_hue * level * 0.88;
   // Low light leaves the land to the air: a hint, never a dark hole.
   return mix(land, air, min(SEA_LAND.y + 0.25 * dusk, 0.85));
+}
+
+
+// Distant peaks rising through the sea. Each is a cone of faceted rock with
+// its foot in the cloud: xy its place on the sea (depths from the eye, in the
+// room's frame), z its radius, w its height above the sea. The eye is one
+// depth above the sea, so a peak stays below the horizon.
+const int SEA_PEAKS = 5;
+vec4 zs_opal_sea_peak(int i) {
+  if (i == 0) return vec4(vec2(cos(0.5), sin(0.5)) * 1.7, 0.26, 0.5);
+  if (i == 1) return vec4(vec2(cos(2.5), sin(2.5)) * 2.0, 0.23, 0.44);
+  if (i == 2) return vec4(vec2(cos(2.78), sin(2.78)) * 2.3, 0.19, 0.37);
+  if (i == 3) return vec4(vec2(cos(4.7), sin(4.7)) * 1.8, 0.27, 0.52);
+  return vec4(vec2(cos(5.9), sin(5.9)) * 2.1, 0.21, 0.42);
+}
+// Value noise, linear between lattice points: flat planes, so rock facets.
+float zs_opal_sea_flat(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  return mix(mix(zs_opal_sea_hash(i), zs_opal_sea_hash(i + vec2(1.0, 0.0)), f.x),
+             mix(zs_opal_sea_hash(i + vec2(0.0, 1.0)), zs_opal_sea_hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float zs_opal_sea_peak_height(vec2 d, vec4 pk, float seed) {
+  float r = length(d) / pk.z;
+  if (r >= 1.0) return 0.0;
+  vec2 e = d / pk.z * 4.0 + vec2(seed, seed * 1.7);
+  float facet = zs_opal_sea_flat(e) * 0.6 + zs_opal_sea_flat(e * 2.1 + 4.0) * 0.4;
+  return pk.w * pow(1.0 - r, 1.15) * (0.62 + 0.76 * facet);
+}
+// The peaks along a ray: x coverage, rgb colour (already hazed, not premultiplied).
+vec4 zs_opal_sea_peaks(vec2 u, float far, vec3 lamp, float level, vec3 pearl, vec3 shadow_hue, vec3 air, float overcast) {
+  for (int i = 0; i < SEA_PEAKS; i++) {
+    vec4 pk = zs_opal_sea_peak(i);
+    float seed = float(i) * 5.3 + 1.0;
+    float s0 = dot(pk.xy, u);
+    vec2 perp = pk.xy - u * s0;
+    float d2 = dot(perp, perp);
+    if (s0 <= 0.0 || d2 >= pk.z * pk.z) continue;
+    float chord = sqrt(pk.z * pk.z - d2);
+    float sa = max(s0 - chord, 0.0), sb = min(s0 + chord, far);
+    if (sa >= sb) continue;
+    float prev_f = -1.0, prev_s = sa;
+    float hit_s = -1.0;
+    for (int k = 1; k <= 16; k++) {
+      float s = mix(sa, sb, float(k) / 16.0);
+      float f = zs_opal_sea_peak_height(u * s - pk.xy, pk, seed) - (1.0 - s / far);
+      if (f >= 0.0) {
+        hit_s = mix(prev_s, s, clamp(-prev_f / (f - prev_f + 1e-5), 0.0, 1.0));
+        break;
+      }
+      prev_f = f; prev_s = s;
+    }
+    if (hit_s < 0.0) continue;
+    vec2 pos = u * hit_s - pk.xy;
+    float hh = 1.0 - hit_s / far;
+    const float PEAK_EPS = 0.03;
+    float dx = zs_opal_sea_peak_height(pos + vec2(PEAK_EPS, 0.0), pk, seed) - zs_opal_sea_peak_height(pos - vec2(PEAK_EPS, 0.0), pk, seed);
+    float dz = zs_opal_sea_peak_height(pos + vec2(0.0, PEAK_EPS), pk, seed) - zs_opal_sea_peak_height(pos - vec2(0.0, PEAK_EPS), pk, seed);
+    vec3 n = normalize(vec3(-dx, 2.0 * PEAK_EPS, -dz));
+    float lam = clamp(dot(n, lamp) * 0.95 + 0.12, 0.0, 1.0);
+    // Snow on the high ground of the tall peaks, bare rock on the rest.
+    float line = (i == 0 || i == 3) ? 0.3 : 0.7;
+    float snow = smoothstep(line, line + 0.15, hh / pk.w + (zs_opal_sea_flat(pos * 9.0) - 0.5) * 0.18);
+    vec3 rock = vec3(0.4, 0.43, 0.52) * mix(1.0, 0.8, zs_opal_sea_flat(pos * 5.0 + seed));
+    vec3 albedo = mix(rock, vec3(0.97, 0.98, 1.0), snow);
+    vec3 lit = mix(shadow_hue * level * 0.7, pearl * min(level * 1.25, 0.97), lam);
+    vec3 c = albedo * lit;
+    // Far air: the shade side most of all.
+    float haze = clamp(1.0 - exp(-hit_s * 0.12) + 0.14 + 0.2 * (1.0 - lam), 0.0, 0.7);
+    c = mix(c, mix(air, shadow_hue * level, 0.4), haze);
+    // The foot is lost in the cloud.
+    float foot = smoothstep(0.03, 0.2 + 0.1 * zs_opal_sea_flat(pos * 6.0), hh);
+    return vec4(c, foot * (1.0 - 0.3 * overcast));
+  }
+  return vec4(0.0);
 }
 
 // The sea along `dir` (world) / `room` (the room's turn of it), premultiplied:
@@ -144,7 +233,9 @@ vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pe
 // the sky's colours, so golden hour stays peach and night stays silver.
 vec4 zs_cloud_sea_opal(vec3 dir, vec3 room, vec3 horizon, vec3 below) {
   float veil = zs_sea_veil(dir);
-  if (veil <= 0.0) return vec4(0.0);
+  // The peaks stand clear of the night's pulled-down veil: dim silver, not gone.
+  float peak_veil = (cloud_sea > 0.0 && dir.y < -0.02) ? cloud_sea * smoothstep(-0.02, -0.16, dir.y) : 0.0;
+  if (peak_veil <= 0.0) return vec4(0.0);
   float down = max(-dir.y, 0.02);
   // Where the ray meets the sea, in depths below the eye.
   vec2 at = room.xz / down;
@@ -209,14 +300,22 @@ vec4 zs_cloud_sea_opal(vec3 dir, vec3 room, vec3 horizon, vec3 below) {
     float wisp = zs_opal_sea_noise(q * 4.3 + vec2(1.7, 6.1)) * 0.6 + zs_opal_sea_noise(q * 9.1 + vec2(4.2, 0.3)) * 0.4;
     open = smoothstep(0.3, 0.85, open + (wisp - 0.5) * 0.45 * warp_keep);
     col += pearl * level * 0.04 * open * (1.0 - open) * 4.0;
-    col = mix(col, zs_opal_sea_land(at, blur, level, shadow_hue, pearl, max(golden, zs_night)), open);
+    // The light on the water: the sun by day, the moon by night.
+    vec3 lamp = normalize(mix(sun_room, zsRoomDir(zs_moon_direction), zs_night * zs_celestial_clear));
+    float lamp_az = dot(normalize(room.xz + 1e-5), normalize(lamp.xz + 1e-4));
+    float glint = pow(0.5 + 0.5 * lamp_az, 8.0) * smoothstep(-0.05, 0.2, lamp.y) * mix(1.0, 0.5, zs_night) * (1.0 - overcast);
+    col = mix(col, zs_opal_sea_land(at, blur, level, shadow_hue, pearl, max(golden, zs_night), glint), open);
   } else open = 0.0;
   // Clear air: the far sea lifts into a luminous haze, not into murk.
   float haze = 1.0 - exp(-far * SEA_HAZE);
   vec3 air = mix(horizon, pearl * level, 0.45);
   col = mix(col, air, haze);
+  // Distant peaks through the sea, in front of the cloud they rise from.
+  vec3 lamp_pk = normalize(mix(sun_room, zsRoomDir(zs_moon_direction), zs_night * zs_celestial_clear));
+  vec4 peak = zs_opal_sea_peaks(normalize(room.xz + 1e-5), far, lamp_pk, level * (1.0 + 1.4 * zs_night * zs_celestial_clear), pearl, shadow_hue, air, overcast);
+  float peak_a = peak.a * peak_veil;
   // At night the sea under the moon still reads, faintly silver.
   col += zs_cloud_sun * crown * lit * relief * (1.0 - haze) * 0.06 * zs_night * zs_celestial_clear;
-  return vec4(col * veil, veil);
+  return vec4(col * veil * (1.0 - peak_a) + peak.rgb * peak_a, mix(veil, 1.0, peak_a));
 }
 #endif

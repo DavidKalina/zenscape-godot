@@ -15,6 +15,7 @@ var scene: Node3D
 var out := "/private/tmp/zs-backdrop/out"
 var only := ""
 var hours: Array = HOURS
+var yaws: Array = []
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -52,6 +53,8 @@ func run() -> void:
 		if argument.begins_with("--backdrop-dir="): out = argument.trim_prefix("--backdrop-dir=")
 		if argument.begins_with("--only="): only = argument.trim_prefix("--only=")
 		if argument.begins_with("--hours="): hours = Array(argument.trim_prefix("--hours=").split(",")).map(func(h: String) -> float: return h.to_float())
+		if argument.begins_with("--yaws="):
+			for v in argument.trim_prefix("--yaws=").split(","): yaws.append(float(v))
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(600).timeout.connect(func() -> void: push_error("capture timed out"); quit(2))
 	root.mode = Window.MODE_WINDOWED
@@ -76,6 +79,12 @@ func run() -> void:
 	]
 	for h in hours.size():
 		hour(hours[h], 0.06)
+		# --yaws=A,B: extra overviews turned by these radians, to find peaks at other bearings.
+		for yi in yaws.size():
+			pose(0.0, 1.0, yaws[yi])
+			await frames(90)
+			await still("yaw%d-%02d%02d.png" % [yi, int(hours[h]), int(fposmod(hours[h], 1.0) * 60.0 + 0.5)])
+		if only == "yaws": continue
 		for s in shots:
 			if not only.is_empty() and only not in str(s[0]): continue
 			pose(s[1], s[2], s[3])
