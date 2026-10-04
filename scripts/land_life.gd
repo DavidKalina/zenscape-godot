@@ -160,6 +160,8 @@ var small: Node3D
 var notice: RefCounted
 ## Lilies on old ponds and autumn leaves on the water (scripts/pond_seasons.gd).
 var seasons: Node3D
+## Songbird flocks in the trees (scripts/songbirds.gd).
+var songbirds: Node3D
 var material: Material
 
 var _tick := 0.0
@@ -223,6 +225,9 @@ func setup(owner_scene: Node3D) -> void:
 	seasons = PondSeasons.new()
 	add_child(seasons)
 	seasons.setup(self)
+	songbirds = preload("res://scripts/songbirds.gd").new()
+	add_child(songbirds)
+	songbirds.setup(self)
 	editor.play_geometry_changed.connect(_changed)
 	editor.stroke_finished.connect(func(_center: Vector3, _radius: float, _mode: String) -> void: _changed(true))
 	# A pour lands after its stroke has finished, once it settles on a worker.
@@ -322,6 +327,7 @@ func clear() -> void:
 	if small != null: small.clear()
 	if notice != null: notice.clear()
 	if seasons != null: seasons.clear()
+	if songbirds != null: songbirds.clear()
 	_reading = null
 	_planning.clear()
 	survey = null
@@ -414,6 +420,7 @@ func _process(delta: float) -> void:
 		small.advance(step)
 		seasons.advance(step)
 		if not _force_kinds.is_empty(): _force_due()
+	songbirds.advance(step,minf(delta,0.1))
 	last_usec = Time.get_ticks_usec()-began
 	worst_usec = maxi(worst_usec,last_usec)
 
