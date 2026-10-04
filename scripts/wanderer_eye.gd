@@ -5,7 +5,9 @@ extends Node
 ## through it; V with the pointer off the land steps into it where it stands.
 ## In its eyes the mouse is captured: move to look, WASD or the arrows walk,
 ## Shift runs. V or Esc steps back out, and the camera glides back to where it
-## was; the figure stays where you walked it.
+## was; the figure stays where you walked it. Walking, the eye bobs with each
+## footfall and sways a little from foot to foot, and each footfall sounds
+## (scripts/wanderer_steps.gd): earth, a bridge's planks or a wade.
 ##
 ## Like photo mode (scripts/photo_mode.gd) this runs before the scene each
 ## frame (process_priority) and writes the pose into the scene's own orbit
@@ -66,6 +68,25 @@ const STRIDE := 0.7
 const STILL_PING := 2.0
 const STILL_STRENGTH := 0.15
 const PLACE_STRENGTH := 0.6
+## Footfalls: metres a step at a walk and at a full run. The eye dips BOB m at
+## each footfall (more at a run) and sways SWAY of that from side to side, a
+## sway a stride of two steps; the bob eases in and out with the pace.
+const STEP_WALK := 0.7
+const STEP_RUN := 1.25
+const BOB_WALK := 0.032
+const BOB_RUN := 0.06
+const SWAY := 0.6
+const EASE_BOB := 0.15
+## Where the first footfall comes on setting off, as a share of a step.
+const FIRST_STEP := 0.55
+## Ground cover at least GRASSY sounds as grass; bare ground within SHORE m of
+## water to wade sounds as sand.
+const GRASSY := 0.4
+const SHORE := 0.7
+const WandererSteps = preload("res://scripts/wanderer_steps.gd")
+const BiomeBlend = preload("res://scripts/biome_blend.gd")
+const Shape = preload("res://scripts/native_formation_shape.gd")
+const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  V or Esc to step out"
@@ -103,6 +124,12 @@ var _depths := PackedFloat32Array()
 ## Metres walked and seconds stood since the last disturbance.
 var _stride := 0.0
 var _still := 0.0
+## Steps walked (the fraction is the way through the current one), the bob's
+## depth now, and the eye's offset from it (terrain-local).
+var _steps := 0.0
+var _bob := 0.0
+var _bob_offset := Vector3.ZERO
+var steps: Node
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -118,6 +145,8 @@ func setup(owner_scene: Node3D) -> void:
 	# A new world (`reset_flat`: the flip, a new plain, a regrow) has no
 	# figure on it until the next V.
 	editor.data.state_restored.connect(_world_restored)
+	steps = WandererSteps.new()
+	add_child(steps)
 	_layer = CanvasLayer.new()
 	_layer.layer = 5
 	_layer.visible = false
@@ -432,6 +461,9 @@ func enter() -> void:
 	_read_depths()
 	_feet = _clamped(_free_spot(_clamped(_feet)))
 	_eye_y = _feet.y+EYE_HEIGHT
+	_steps = FIRST_STEP
+	_bob = 0.0
+	_bob_offset = Vector3.ZERO
 	scene._orbiting = false
 	scene._panning = false
 	scene._auto_orbit = false
@@ -464,7 +496,7 @@ static func _offset(yaw: float, polar: float) -> Vector3:
 	return Vector3(sin(polar)*sin(yaw),cos(polar),sin(polar)*cos(yaw))
 
 func _eye_global() -> Vector3:
-	return editor.terrain.to_global(Vector3(_feet.x,_eye_y,_feet.z))
+	return editor.terrain.to_global(Vector3(_feet.x,_eye_y,_feet.z)+_bob_offset)
 
 # --- Each frame -------------------------------------------------------------------
 
@@ -498,7 +530,9 @@ func _advance_eye(delta: float) -> void:
 	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
 	var was := _feet
 	_feet = _clamped(_walk(_feet,Vector2(move.x,move.z)*delta))
-	_notice_step(Vector2(_feet.x-was.x,_feet.z-was.z).length(),delta)
+	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length()
+	_notice_step(moved,delta)
+	_footfall(moved,delta,right)
 	_eye_y = lerpf(_eye_y,_feet.y+EYE_HEIGHT,_ease(EASE_HEIGHT,delta))
 	# Never below the ground right under the eye.
 	_eye_y = maxf(_eye_y,_feet.y+EYE_HEIGHT*0.6)
@@ -526,6 +560,47 @@ func _notice_step(moved: float, delta: float) -> void:
 	elif _still >= STILL_PING:
 		_still = 0.0
 		_disturb(STILL_STRENGTH)
+
+## The walk's rhythm: `moved` metres this frame count off steps, longer at a
+## run; each whole one sounds a footfall. The eye sits lowest at a footfall
+## and highest between, swaying toward each foot in turn along `right`.
+func _footfall(moved: float, delta: float, right: Vector3) -> void:
+	var speed := moved/maxf(delta,0.0001)
+	var effort := clampf((speed-WALK)/(RUN-WALK),0.0,1.0)
+	var before := _steps
+	_steps += moved/lerpf(STEP_WALK,STEP_RUN,effort)
+	if floorf(_steps) > floorf(before): steps.step(_surface(),effort)
+	var depth := lerpf(BOB_WALK,BOB_RUN,effort)*clampf(speed/WALK,0.0,1.0)
+	_bob = lerpf(_bob,depth,_ease(EASE_BOB,delta))
+	var phase := _steps-floorf(_steps)
+	_bob_offset = Vector3.UP*(-_bob*(0.5+0.5*cos(TAU*phase)))+right*(_bob*SWAY*sin(PI*_steps))
+
+## What the feet are on (scripts/wanderer_steps.gd SURFACES), read as the
+## terrain shades its faces (NativeTerrainData `rebuild_mesh`): a bridge's
+## planks; water to wade; snow over the snowline; stone where the land is
+## steeper than its rock slope or near the snowline; sand on an arid world's
+## bare ground and on a bare shore; grass where cover grows (GRASSY); else
+## bare earth, as a worn path is.
+func _surface() -> String:
+	var at := Vector2(_feet.x,_feet.z)
+	if not _deck(at).is_empty(): return "wood"
+	if _depth(at) >= Footbridge.WET: return "water"
+	var data: NativeTerrainData = editor.data
+	var h: Variant = data.ground_height(at)
+	if h == null: return "earth"
+	var settings: Dictionary = data._recipe_settings
+	var snowline: float = BiomeBlend.snowline(settings,data._palette.snowline)
+	var drawn: Dictionary = Shape.BIOMES.get(settings.get("biome",""),{})
+	var rock_slope: float = float(drawn.get("rock_slope",data._palette.rock_slope))
+	var slope: float = Presets._slope(data,at)
+	if float(h) > snowline and slope < 2.4: return "snow"
+	if slope > rock_slope or float(h) > snowline-1.8: return "stone"
+	var cover := data.ground_coverage(at)
+	if cover >= GRASSY: return "grass"
+	if settings.get("biome","") == "arid": return "sand"
+	for d: Vector2 in [Vector2(SHORE,0.0),Vector2(-SHORE,0.0),Vector2(0.0,SHORE),Vector2(0.0,-SHORE)]:
+		if _depth(at+d) >= Footbridge.WET: return "sand"
+	return "earth"
 
 func _disturb(strength: float) -> void:
 	Disturbance.raise(editor.terrain.to_global(_feet),RADIUS,strength,"figure")

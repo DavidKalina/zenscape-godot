@@ -36,6 +36,11 @@ const GAP := 1.0
 const FOOTING_REACH := 1.5
 const FOOTING := Vector2(0.8,0.8)
 const LEVEL := 0.2
+## A gap end's seat may have its ground fall SEAT_FALL m behind it over half
+## the pad (a crater's rim); seats within SEAT_TIE m of the highest count as
+## high, and the one nearest the gap is taken.
+const SEAT_FALL := 0.4
+const SEAT_TIE := 0.1
 ## How far (m) a gap bridge's planks may sink into the ground near an end.
 const SETTLE := 0.03
 ## Rise over run between the two banks beyond which it is too steep.
@@ -199,27 +204,36 @@ static func depth_under(data: NativeTerrainData, a: Vector2, b: Vector2, margin 
 		d += STEP
 	return deepest
 
-## Level, dry footing for the end of a bridge along `way` near plate point
-## `end`: a pad on the line within FOOTING_REACH whose ground varies by at
-## most LEVEL. The one furthest toward `toward` (+1 along `way`, -1 against
-## it), so an end stands at the gap's rim rather than back from it; with
-## `toward` 0, the nearest to `end`. Null where none.
+## Dry footing for the end of a bridge along `way` near plate point `end`, on
+## the line within FOOTING_REACH. With `toward` 0, a level pad: ground that
+## varies by at most LEVEL, the nearest to `end`. With `toward` (+1 along
+## `way`, -1 against it, the side the gap is on), a seat at the gap's lip
+## (`_seat`): the highest one, and of those as high, the furthest toward the
+## gap, so an end climbs to a crater's rim rather than settling on its floor
+## or walls, and stands at a plateau's edge rather than back from it. Null
+## where none.
 static func footing(found: Dictionary, end: Vector2, way: Vector2, toward := 0.0) -> Variant:
 	var data: NativeTerrainData = found.data
 	var across := Vector2(-way.y,way.x)
-	var offsets := []
-	if toward == 0.0:
-		offsets.append(0.0)
-		var d := STEP
-		while d <= FOOTING_REACH+0.001:
-			offsets.append(d)
-			offsets.append(-d)
-			d += STEP
-	else:
+	if toward != 0.0:
+		var ahead := way*signf(toward)
+		var best: Variant = null
+		var best_y := -INF
 		var d := FOOTING_REACH
 		while d >= -FOOTING_REACH-0.001:
-			offsets.append(d*signf(toward))
+			var at := end+ahead*d
+			var y := _seat(found,at,ahead)
+			if y > best_y+SEAT_TIE:
+				best = at
+				best_y = y
 			d -= STEP
+		return best
+	var offsets := [0.0]
+	var d := STEP
+	while d <= FOOTING_REACH+0.001:
+		offsets.append(d)
+		offsets.append(-d)
+		d += STEP
 	for offset: float in offsets:
 		var at := end+way*offset
 		var low := INF
@@ -237,6 +251,28 @@ static func footing(found: Dictionary, end: Vector2, way: Vector2, toward := 0.0
 			if not dry: break
 		if dry and high-low <= LEVEL: return at
 	return null
+
+## The ground under a bridge end at `at` facing the gap along `ahead`, or
+## -INF where it cannot stand: dry under a pad FOOTING wide whose ground
+## across the line varies by at most LEVEL, with nothing in the pad, ahead or
+## behind, more than LEVEL above the end. Behind the end the ground may fall,
+## by at most SEAT_FALL over half the pad, as a crater's rim falls away
+## outside its crest; a plateau's level top is a seat too.
+static func _seat(found: Dictionary, at: Vector2, ahead: Vector2) -> float:
+	var data: NativeTerrainData = found.data
+	var across := Vector2(-ahead.y,ahead.x)
+	var g: Variant = data.ground_height(at)
+	if g == null: return -INF
+	var y := float(g)
+	for i in [-1,0,1]:
+		for j in [-1,0,1]:
+			var p: Vector2 = at+ahead*FOOTING.x*0.5*float(i)+across*FOOTING.y*0.5*float(j)
+			var h: Variant = data.ground_height(p)
+			if h == null or level_at(found,p) > -INF: return -INF
+			if float(h) > y+LEVEL: return -INF
+			if i == -1 and float(h) < y-SEAT_FALL: return -INF
+			if i == 0 and absf(float(h)-y) > LEVEL: return -INF
+	return y
 
 ## A bridge across a gap in the land: {"gap": false} when the drag does not
 ## cross one, else the plan (or the refusal) with "gap": true.
