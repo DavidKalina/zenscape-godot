@@ -1,4 +1,5 @@
 extends MultiMeshInstance3D
+const LeafMesh := preload("res://scripts/leaf_litter_mesh.gd")
 ## A bounded, cosmetic layer of loose leaves. No saves or gameplay state.
 ##
 ## Every leaf answers the air it sits in, all the time: an ordinary breeze
@@ -39,26 +40,15 @@ func _init() -> void:
 	multimesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
+	multimesh.use_custom_data = true
 	multimesh.mesh = _leaf_mesh()
 	multimesh.instance_count = CAPACITY
 	multimesh.visible_instance_count = 0
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	material.roughness = 0.85
-	material_override = material
+	material_override = LeafMesh.material()
 	custom_aabb = AABB(Vector3(-16,-3,-16),Vector3(32,32,32))
 
 static func _leaf_mesh() -> Mesh:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var outline := [Vector3(0,0,-0.6),Vector3(-0.31,0,-0.16),Vector3(-0.36,0,0.2),Vector3(0,0,0.62),Vector3(0.33,0,0.18),Vector3(0.27,0,-0.18)]
-	for i in range(outline.size()):
-		for point in [Vector3(0,0.07,0),outline[i],outline[(i+1)%outline.size()]]:
-			surface.set_color(Color.WHITE if i<3 else Color(0.68,0.74,0.62))
-			surface.add_vertex(point)
-	surface.generate_normals()
-	return surface.commit()
+	return LeafMesh.instanced_mesh()
 
 func seed_from(anchors: Array, probe: Callable) -> void:
 	ground_height = probe
@@ -68,21 +58,30 @@ func seed_from(anchors: Array, probe: Callable) -> void:
 	_rng.seed = 7091
 	for index in range(0,anchors.size(),maxi(1,ceili(anchors.size()/24.0))):
 		var anchor: Vector2 = anchors[index]
-		for n in range(4):
+		# Each tree's leaves lie in a drift: a lee heaped near the trunk, a
+		# few strays, and the odd tree hardly drops any.
+		var heading := _rng.randf()*TAU
+		for n in range(_rng.randi_range(1,7)):
 			if leaves.size() >= CAPACITY: break
-			var angle := _rng.randf()*TAU
-			var point := anchor + Vector2(cos(angle),sin(angle))*_rng.randf_range(0.35,1.7)
+			var point := LeafMesh.drift_point(_rng,anchor,heading,ground_height)
 			var height: Variant = ground_height.call(point)
 			if height == null or not is_finite(float(height)): continue
 			var normal := _ground_normal(point,float(height))
 			if normal.y < 0.65: continue
 			var position := Vector3(point.x,float(height)+0.035,point.y)
-			leaves.append({"position":position,"home":position,"anchor":anchor,"velocity":Vector3.ZERO,"yaw":angle,"spin":0.0,
-				"phase":_rng.randf()*TAU,"size":_rng.randf_range(0.18,0.30),"weight":_rng.randf_range(0.8,1.4),
+			# Mostly small leaves, a few big ones; some curled, some resting on a neighbour.
+			var size := 0.11+0.2*pow(_rng.randf(),1.8)
+			var layer := 0.0
+			for other in leaves:
+				if Vector2(other.position.x-position.x,other.position.z-position.z).length() < 0.5*(float(other.size)+size): layer = maxf(layer,float(other.lift)+0.012)
+			leaves.append({"position":position,"home":position,"anchor":anchor,"heading":heading,"velocity":Vector3.ZERO,"yaw":_rng.randf()*TAU,"spin":0.0,
+				"phase":_rng.randf()*TAU,"size":size,"weight":_rng.randf_range(0.8,1.4),
 				"exposure":_rng.randf_range(0.65,1.35),"cooldown":_rng.randf_range(0.0,0.8),"airborne":false,"normal":normal,
-				"stir":0.0,"turn":-1.0 if _rng.randf() < 0.5 else 1.0,"shown":1.0,"lost":false,"wait":0.0})
-			var color := Color("b79545").lerp(Color("9b6139"),_rng.randf())
-			multimesh.set_instance_color(leaves.size()-1,color.srgb_to_linear())
+				"stir":0.0,"turn":-1.0 if _rng.randf() < 0.5 else 1.0,"shown":1.0,"lost":false,"wait":0.0,
+				"variant":_rng.randi_range(0,LeafMesh.ORDER.size()-1),"curl":_rng.randf_range(0.0,1.3) if _rng.randf() < 0.45 else 0.0,
+				"tilt":Vector2(_rng.randf_range(-0.12,0.12),_rng.randf_range(-0.12,0.12)),"lift":layer})
+			multimesh.set_instance_color(leaves.size()-1,LeafMesh.leaf_color(_rng))
+			multimesh.set_instance_custom_data(leaves.size()-1,Color(float(leaves[-1].variant),float(leaves[-1].curl),0,0))
 	multimesh.visible_instance_count = leaves.size()
 	_draw()
 
@@ -190,15 +189,14 @@ func _regrow(leaf: Dictionary, dt: float) -> void:
 	var anchor: Vector2 = leaf.anchor
 	var placed := false
 	for attempt in range(4):
-		var angle := _rng.randf()*TAU
-		var point := anchor+Vector2(cos(angle),sin(angle))*_rng.randf_range(0.35,1.7)
+		var point := _regrow_point(anchor,leaf)
 		var height: Variant = ground_height.call(point)
 		if height == null or not is_finite(float(height)): continue
 		var normal := _ground_normal(point,float(height))
 		if normal.y < 0.65: continue
 		leaf.position = Vector3(point.x,float(height)+0.035,point.y)
 		leaf.normal = normal
-		leaf.yaw = angle
+		leaf.yaw = _rng.randf()*TAU
 		placed = true
 		break
 	if not placed:
@@ -211,6 +209,10 @@ func _regrow(leaf: Dictionary, dt: float) -> void:
 	leaf.stir = 0.0
 	leaf.cooldown = 1.0
 	leaf.shown = 0.0001
+
+## Where a lost leaf grows back: in its tree's own drift.
+func _regrow_point(anchor: Vector2, leaf: Dictionary) -> Vector2:
+	return LeafMesh.drift_point(_rng,anchor,float(leaf.get("heading",0.0)),ground_height)
 
 func _draw() -> void:
 	for i in range(leaves.size()):
@@ -225,8 +227,12 @@ func _draw() -> void:
 			var rock := sin(float(leaf.spin)+leaf.phase)
 			var pitch := sin(float(leaf.spin)*0.73+leaf.phase*1.7)
 			basis = basis * Basis(Vector3.FORWARD,rock*0.32*stir) * Basis(Vector3.RIGHT,pitch*0.22*stir)
+		elif leaf.has("tilt"):
+			# Resting a little off flat, an edge propped on a twig or a neighbour.
+			basis = basis * Basis(Vector3.FORWARD,leaf.tilt.x) * Basis(Vector3.RIGHT,leaf.tilt.y)
 		var size: float = float(leaf.size)*smoothstep(0.0,1.0,float(leaf.shown))
-		multimesh.set_instance_transform(i,Transform3D(basis.scaled(Vector3.ONE*maxf(size,0.00001)),leaf.position))
+		var rest: Vector3 = leaf.position + Vector3.UP*float(leaf.get("lift",0.0))
+		multimesh.set_instance_transform(i,Transform3D(basis.scaled(Vector3.ONE*maxf(size,0.00001)),rest))
 
 func _ground_normal(point: Vector2, height: float) -> Vector3:
 	var x: Variant = ground_height.call(point+Vector2(0.12,0))

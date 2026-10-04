@@ -3,6 +3,9 @@ extends Node3D
 signal instances_published()
 const HeroTrees := preload("res://scripts/hero_trees.gd")
 const GrassTuft := preload("res://scripts/grass_tuft_mesh.gd")
+const Undergrowth := preload("res://scripts/undergrowth_mesh.gd")
+const Mushroom := preload("res://scripts/mushroom_mesh.gd")
+const LogMesh := preload("res://scripts/log_mesh.gd")
 const RockVariants := preload("res://scripts/rock_variants.gd")
 const Variety := preload("res://scripts/seeded_variety.gd")
 ## Seconds above every birth's rise (Emergence TREE_RISE and kin), where the
@@ -76,14 +79,17 @@ func _ready() -> void:
 			var key: String = kind+":"+node_name
 			_catalog_parts[kind].append(key)
 			var source_mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
-			var mesh: Mesh = GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh))
+			var mesh: Mesh = Undergrowth.swap(node_name,GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh)))
+			mesh = LogMesh.swap(node_name,Mushroom.swap(node_name,mesh))
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
 			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
+			if node_name == "mesh-13" and mesh != source_mesh: Undergrowth.dress(_materials[key], mesh)
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = HeroTrees.species_tint(node_name,Color.WHITE)
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
 				_tints[key] = original.multimesh.get_instance_color(0)
+			if Mushroom.is_part(node_name): Mushroom.dress(_materials[key],node_name,_tints,key)
 	# Pines grow as the Blender spruce family: one batch pair per variant.
 	var tread_pairs := [["trunk","canopy"],["broadleaf:mesh-11","broadleaf:broadleaf-canopies"],["layered_tree:layered-trunk","layered_tree:layered-canopies"],["redwood:redwood-trunk","redwood:redwood-canopies"],["birch:birch-trunk","birch:birch-canopies"],["willow:willow-trunk","willow:willow-canopies"],["juniper:juniper-trunk","juniper:juniper-deadwood","juniper:juniper-canopies"]]
 	if HeroTrees.enabled():
@@ -973,5 +979,5 @@ func update_object_preview(record: Dictionary) -> void:
 				continue
 			var colored := key in ["canopy","petal","rock"] or (key.begins_with("tree:") and "canopies" in key)
 			if _catalog_parts.has(record.asset):
-				colored = _catalog_parts[record.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
+				colored = _catalog_parts[record.asset].size()==1 or key == "log:logs" or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 			batch.multimesh.set_instance_color(i,tint if tint != null and colored else _tints.get(key,Color.WHITE))

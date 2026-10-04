@@ -52,6 +52,15 @@ at the rim letting it out, an equilibrium) is left for later. The live water
 already holds a basin to its rim's lowest point and drains over the plate's
 edge (docs/scenic/water-flow.md).
 
+Update (2026-10-03): a ravine can be filled with the can, as a lake is. A
+ravine run out through the rim used to have a bed falling to the open side, so
+its hollow's sill was the bed at the mouth and it held ~7 m3. Its mouth now
+climbs to the ground line (`Wire.RIM_SILL_*`), so it fills to the brim and
+spills the rest off the side. The level is set the way the user asked: fill to
+the brim with the can, then scoop some out with the Water compartment (the
+water ball's scoop, `NativeChunkEditor._scoop`; it already worked on any
+standing water). Test: `tests/test_ravine_fill.gd`.
+
 ## The Island (2026-10-03)
 
 With lakes in (the Crater's Draw and the can), the user wanted little islands

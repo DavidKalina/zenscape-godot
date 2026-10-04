@@ -37,6 +37,10 @@ static func _chaff_mesh() -> Mesh:
 	surface.generate_normals()
 	return surface.commit()
 
+## A lost blade grows back close to its anchor, not in a tree's drift.
+func _regrow_point(anchor: Vector2, _leaf: Dictionary) -> Vector2:
+	return anchor+Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.35,1.7)
+
 ## Blades rest one per anchor, anywhere within reach of it, and a lost one
 ## grows back near its anchor (WindLeafLitter._regrow).
 func seed_from(anchors: Array, probe: Callable) -> void:
