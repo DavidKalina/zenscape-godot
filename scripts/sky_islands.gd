@@ -29,6 +29,7 @@ const OFFSETS := [Vector3(380.0,-20.0,-160.0),Vector3(-260.0,25.0,-520.0),Vector
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
+const IslandKeel = preload("res://scripts/island_keel.gd")
 ## The most copies standing at once. Each is ~140 draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -253,6 +254,25 @@ func ground(point: Vector3) -> Variant:
 		var h: Variant = _height(point-offset)
 		if h != null: return float(h)+offset.y
 	return null
+
+## The island whose footprint holds a global point, as a solid: Vector2(its
+## ground's height there, the underside of the rock it hangs from
+## (scripts/island_keel.gd)), in global metres, or null over open air.
+func body(point: Vector3) -> Variant:
+	var plate: Variant = _body(point)
+	if plate != null: return plate
+	for i in range(offsets.size()):
+		var offset := offsets[i]+Vector3.DOWN*sunk(i)
+		var b: Variant = _body(point-offset)
+		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
+	return null
+
+func _body(point: Vector3) -> Variant:
+	var top: Variant = _height(point)
+	if top == null: return null
+	var local := editor.terrain.to_local(point)
+	var under := editor.terrain.to_global(Vector3(local.x,IslandKeel.underside(Vector2(local.x,local.z)),local.z)).y
+	return Vector2(float(top),under)
 
 ## The plate's height under a global point, in global metres, or null off it.
 func _height(point: Vector3) -> Variant:

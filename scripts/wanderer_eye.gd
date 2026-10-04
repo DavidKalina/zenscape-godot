@@ -23,6 +23,15 @@ extends Node
 ## off a ridge. Over the island the wind lifts it where it blows up a slope
 ## (ridge lift) and as a gust front passes, and tree crowns lift it over
 ## them like the ground. A prototype: `--no-glide` keeps the old plate clamp.
+##
+## In the air the camera chases the glider from behind (scripts/glide_camera.gd)
+## and the figure is drawn gliding under its cloth wing
+## (scripts/glider_figure.gd). A click (or E, or the pad's X) flaps for
+## lift of its own. C swaps to the old view from its eyes; the
+## right mouse button (or the right stick) looks round it. Each island hangs
+## from a rock (scripts/island_keel.gd) the glide can dip under. Near the
+## ground a mark shows where it would touch down, and touching down slowly
+## anywhere on the island lands, the camera swooping down into its eyes.
 
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
@@ -100,11 +109,21 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Space to jump, hold to glide  ·  V or Esc to step out"
-const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Space to rise  ·  Shift to dive  ·  V or Esc to step out"
+const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
+const GlideCamera = preload("res://scripts/glide_camera.gd")
+const GliderFigure = preload("res://scripts/glider_figure.gd")
+const IslandKeel = preload("res://scripts/island_keel.gd")
+## The chase view's field of view, widening with speed.
+const CHASE_FOV := 70.0
+const CHASE_FOV_FAST := 90.0
+## Seconds the camera takes to swoop from the chase into the eyes on landing.
+const SWOOP := 0.9
+## The right stick's free look, radians a second at full tilt.
+const STICK_LOOK := 2.4
 ## The glide's view widens from FLY_FOV at a cruise to FLY_FOV_FAST at full
 ## speed, and narrows a little at the float.
 const FLY_FOV := 78.0
@@ -131,7 +150,7 @@ const RIDGE_MAX := 6.5
 const RIDGE_REACH := 14.0
 const GUST_LIFT := 9.0
 const GUST_PUSH := 5.0
-const LAND_TIME := 0.8
+const LAND_TIME := 0.3
 
 signal entered
 signal left
@@ -184,6 +203,19 @@ var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
+## The chase camera, the figure drawn gliding, and the rock under the plate.
+var chase := GlideCamera.new()
+var glider: Node3D
+var keel: MeshInstance3D
+## The landing's swoop into the eyes: seconds left, and the chase pose it
+## leaves from.
+var _swoop := 0.0
+var _swoop_from := {}
+## A flap asked for since the last glide step (click, E or the pad's X),
+## the pad's X last frame, and the glide's flaps when last heard.
+var _flap_asked := false
+var _pad_flap_was := false
+var _flaps_heard := 0
 var _far_before := 500.0
 ## The jump: how high the feet are off the ground, how fast they rise, and
 ## how long Space has been held since the jump (-1 once let go).
@@ -227,8 +259,8 @@ func setup(owner_scene: Node3D) -> void:
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -56.0
 	_hint.offset_bottom = -30.0
-	_hint.offset_left = -400.0
-	_hint.offset_right = 400.0
+	_hint.offset_left = -640.0
+	_hint.offset_right = 640.0
 	_layer.add_child(_hint)
 	# A faint dot where the eye looks.
 	_dot = Control.new()
@@ -247,6 +279,10 @@ func setup(owner_scene: Node3D) -> void:
 		air = GlideAir.new()
 		add_child(air)
 		islands.skip.append(air)
+		glider = GliderFigure.new()
+		glider.visible = false
+		add_child(glider)
+		islands.skip.append(glider)
 
 # --- The figure -------------------------------------------------------------------
 
@@ -539,6 +575,7 @@ func enter() -> void:
 		scene._sync_creation_ui()
 	active = true
 	_returning = 0.0
+	_swoop = 0.0
 	_pace = Vector2.ZERO
 	_yaw = figure.rotation.y+_turn()
 	_polar = PI*0.5
@@ -564,9 +601,11 @@ func leave() -> void:
 	if not active: return
 	var eye := _eye_global()
 	if flying:
-		eye = glide.position
+		var at := glide.position
+		# From the chase the orbit takes over where the camera is.
+		eye = camera.global_position
 		_end_flight()
-		_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(eye))))
+		_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(at))))
 		_eye_y = _feet.y+EYE_HEIGHT
 	active = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -643,6 +682,7 @@ func _advance_eye(delta: float) -> void:
 	scene.polar = _polar
 	scene.target = _eye_global()-_offset(_yaw,_polar)*reach
 	scene.distance = reach
+	_swoop_in(delta)
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
@@ -651,6 +691,17 @@ func _advance_eye(delta: float) -> void:
 	_sync_figure()
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-4.0)/1.5,0.0,1.0)
+
+## Just landed from the chase: the camera swoops from where it was down
+## into the eyes.
+func _swoop_in(delta: float) -> void:
+	if _swoop <= 0.0: return
+	_swoop = maxf(0.0,_swoop-delta)
+	var k := smoothstep(0.0,1.0,1.0-_swoop/SWOOP)
+	scene.target = (_swoop_from.target as Vector3).lerp(scene.target,k)
+	scene.yaw = lerp_angle(float(_swoop_from.yaw),scene.yaw,k)
+	scene.polar = lerpf(float(_swoop_from.polar),scene.polar,k)
+	scene.distance = lerpf(float(_swoop_from.distance),scene.distance,k)
 
 # --- The glide --------------------------------------------------------------------
 
@@ -662,6 +713,8 @@ func _launch(pace: float, drop := true) -> void:
 	_hop = 0.0
 	_hop_rise = 0.0
 	_hop_held = -1.0
+	# The rock shows in the air, and is copied with the plate.
+	_show_keel(true)
 	# The sky stays as it was unless the island has changed since.
 	var key := [editor.data.objects_revision,hash(editor.data.heights)]
 	if not islands.built() or key != _built_key:
@@ -672,6 +725,13 @@ func _launch(pace: float, drop := true) -> void:
 	islands.show_air(true)
 	glide.launch(_eye_global(),_yaw,pace,drop)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
+	_flap_asked = false
+	_flaps_heard = 0
+	# The camera pulls back out of the eyes to chase.
+	chase.reset(glide,_eye_global())
+	glider.visible = not chase.first_person
+	glider.reset(glide)
+	_swoop = 0.0
 	air.start()
 	sky.start(glide.position)
 	_hint.text = FLY_HINT
@@ -682,6 +742,8 @@ func _launch(pace: float, drop := true) -> void:
 func _end_flight() -> void:
 	flying = false
 	scene.camera_roll = 0.0
+	glider.visible = false
+	_show_keel(false)
 	camera.far = _far_before
 	islands.show_air(false)
 	sky.stop()
@@ -701,7 +763,27 @@ func _fly_input() -> Dictionary:
 		"look":_fly_look,
 	}
 	_fly_look = Vector2.ZERO
+	var pad_flap := Input.is_joy_button_pressed(0,JOY_BUTTON_X)
+	input["flap"] = _flap_asked or (pad_flap and not _pad_flap_was)
+	_pad_flap_was = pad_flap
+	_flap_asked = false
+	# The right stick looks round the glider.
+	var right := Vector2(Input.get_joy_axis(0,JOY_AXIS_RIGHT_X),Input.get_joy_axis(0,JOY_AXIS_RIGHT_Y))
+	var stick_held := right.length() > 0.2
+	if stick_held: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*get_process_delta_time())
+	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or stick_held
 	return input
+
+## The rock under the plate (scripts/island_keel.gd), built the first time.
+func _show_keel(on: bool) -> void:
+	if keel == null or not is_instance_valid(keel):
+		if not on: return
+		keel = MeshInstance3D.new()
+		keel.name = "IslandKeel"
+		keel.mesh = IslandKeel.build_mesh()
+		keel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		editor.terrain.add_child(keel)
+	keel.visible = on
 
 func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
@@ -713,26 +795,47 @@ func _advance_flight(delta: float) -> void:
 		var shift: Vector3 = islands.arrive(under)
 		glide.position += shift
 		sky.move(shift)
+		glider.shift(shift)
 	sky.advance(delta,glide.position,islands.clouds.inside(glide.position,scene._motion_time))
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
 	air.advance(delta,glide.velocity,glide.hang,float(input.dive))
-	var reach := 6.0
-	scene.yaw = glide.heading
-	scene.polar = PI*0.5+glide.pitch
-	scene.target = glide.position-_offset(scene.yaw,scene.polar)*reach
-	scene.distance = reach
-	scene.camera_roll = -glide.bank
+	if glide.flaps != _flaps_heard:
+		_flaps_heard = glide.flaps
+		air.flap()
+	chase.step(delta,glide,float(input.dive),_solid)
+	_write_chase()
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
 	var fast := clampf((glide.velocity.length()-SkyGlide.CRUISE)/(SkyGlide.MAX-SkyGlide.CRUISE),0.0,1.0)
-	camera.fov = lerpf(camera.fov,lerpf(FLY_FOV,FLY_FOV_FAST,fast)-4.0*glide.hang,_ease(EASE_FLY_FOV,delta))
+	var fov := lerpf(FLY_FOV,FLY_FOV_FAST,fast) if chase.first_person else lerpf(CHASE_FOV,CHASE_FOV_FAST,fast)
+	camera.fov = lerpf(camera.fov,fov-4.0*glide.hang,_ease(EASE_FLY_FOV,delta))
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
-	# A slow skim on the plate lands.
-	_skim_time = _skim_time+delta if glide.skimming and glide.speed < LAND_SPEED and float(input.dive) < 0.5 else 0.0
-	if _skim_time >= LAND_TIME and islands._height(glide.position) != null: _land()
+	# Touching down slowly anywhere on the plate lands.
+	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and islands._height(glide.position) != null
+	glider.update(delta,glide,float(input.dive),_fly_ground,landable)
+	_skim_time = _skim_time+delta if glide.skimming and landable else 0.0
+	if _skim_time >= LAND_TIME: _land()
+
+## The chase camera's pose, written into the scene's orbit.
+func _write_chase() -> void:
+	var out := chase.eye-chase.look
+	var reach := maxf(out.length(),0.01)
+	var dir := out/reach
+	scene.target = chase.look
+	scene.distance = reach
+	scene.yaw = atan2(dir.x,dir.z)
+	scene.polar = clampf(acos(clampf(dir.y,-1.0,1.0)),0.05,PI-0.05)
+	scene.camera_roll = chase.roll
+
+## True inside an island's rock or ground, for the camera to keep out of.
+func _solid(point: Vector3) -> bool:
+	var body: Variant = _fly_ground(point)
+	if body == null: return false
+	var b := body as Vector2
+	return point.y < b.x+0.3 and point.y > b.y-0.3
 
 ## Space (or the pad's A) jumps from the ground; held past OPEN_AFTER it
 ## opens the glide. Returns true when it should open.
@@ -757,17 +860,18 @@ func _advance_jump(delta: float) -> bool:
 		steps.step(_surface(),0.5)
 	return false
 
-## What the glide stands on: the islands, and over the plate the crowns of
-## its trees and rocks.
+## What the glide stands on: the islands as solids, Vector2(top, underside)
+## (SkyIslands `body`), and over the plate the crowns of its trees and rocks.
 func _fly_ground(point: Vector3) -> Variant:
-	var under: Variant = islands.ground(point)
-	if under == null or islands._height(point) == null: return under
+	var body: Variant = islands.body(point)
+	if body == null or islands._height(point) == null: return body
 	var local := editor.terrain.to_local(point)
 	var at := Vector2(local.x,local.z)
+	var top: float = (body as Vector2).x
 	for c in _crowns:
 		if at.distance_squared_to(Vector2(c.x,c.y)) < c.z*c.z:
-			under = maxf(float(under),editor.terrain.to_global(Vector3(c.x,c.w,c.y)).y)
-	return under
+			top = maxf(top,editor.terrain.to_global(Vector3(c.x,c.w,c.y)).y)
+	return Vector2(top,(body as Vector2).y)
 
 ## The air the glide flies in: the sky's currents, and over the island the
 ## breeze rising up its slopes and the gust fronts rolling across it.
@@ -780,7 +884,7 @@ func _fly_air(point: Vector3) -> Dictionary:
 	var breeze: float = 1.6+1.9*float(atmosphere._air_strength)
 	var extra := Vector3.ZERO
 	var h: Variant = islands._height(point)
-	if h != null:
+	if h != null and point.y > float(h)-1.0:
 		var ahead: Variant = islands._height(point+Vector3(way.x,0.0,way.y)*RIDGE_STEP)
 		var behind: Variant = islands._height(point-Vector3(way.x,0.0,way.y)*RIDGE_STEP)
 		if ahead != null and behind != null:
@@ -796,6 +900,8 @@ func _fly_air(point: Vector3) -> Dictionary:
 ## Down on the plate: back to walking where the glide touched.
 func _land() -> void:
 	var at := glide.position
+	_swoop = 0.0 if chase.first_person else SWOOP
+	_swoop_from = {"target":scene.target,"yaw":scene.yaw,"polar":scene.polar,"distance":scene.distance}
 	_end_flight()
 	_yaw = glide.heading
 	_polar = PI*0.5
@@ -893,7 +999,9 @@ func handle(event: InputEvent) -> bool:
 			return true
 		return false
 	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying and chase.free_held:
+			chase.turn(Vector2(-event.relative.x,-event.relative.y)*LOOK)
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying:
 			_fly_look += Vector2(event.relative.x,-event.relative.y)*LOOK
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			_yaw -= event.relative.x*LOOK
@@ -903,6 +1011,8 @@ func handle(event: InputEvent) -> bool:
 		# A click takes the mouse back if the window let it go.
 		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if event.button_index == MOUSE_BUTTON_RIGHT and flying: chase.free_held = event.pressed
+		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and flying: _flap_asked = true
 		return true
 	if event is InputEventMagnifyGesture or event is InputEventPanGesture:
 		return true
@@ -910,6 +1020,11 @@ func handle(event: InputEvent) -> bool:
 		if event.ctrl_pressed or event.meta_pressed: return false
 		if event.pressed and not event.echo and event.keycode in [KEY_V,KEY_ESCAPE]:
 			leave()
+		elif event.pressed and not event.echo and event.keycode == KEY_E and flying:
+			_flap_asked = true
+		elif event.pressed and not event.echo and event.keycode == KEY_C and flying:
+			chase.first_person = not chase.first_person
+			glider.visible = not chase.first_person
 		# Walking keys are read each frame; every plain key stays here.
 		return true
 	return false

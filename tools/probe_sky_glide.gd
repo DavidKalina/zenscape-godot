@@ -3,12 +3,16 @@ extends SceneTree
 ## scene, through the wanderer (scripts/wanderer_eye.gd):
 ##   - walked off the plate's edge, the figure glides and the plate is copied
 ##     out into the sky (scripts/sky_islands.gd);
-##   - the view widens and leans into a turn;
+##   - the view leans into a turn;
 ##   - flying over a copy swaps it for the plate, the eye shifted with it;
 ##   - wandered far off, an island rises ahead with a thermal; fallen into
 ##     the parted sea, one surfaces just ahead; past the cap the farthest go;
 ##   - a slow skim on the plate lands, back to walking;
-##   - V mid-glide steps out onto the plate.
+##   - V mid-glide steps out onto the plate;
+##   - the chase camera trails the glider, drawn under its wing; C swaps to
+##     its eyes and back; the plate hangs from a rock, copied with it;
+##   - under the plate the glide stays under it, never snapped on top;
+##   - landing, the camera swoops down into the eyes.
 ## Visuals (the copies' look, the streaks) need a rendered run.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_glide.gd -- --no-title
 var scene: Node3D
@@ -68,12 +72,55 @@ func run() -> void:
 	var start_y: float = eye.glide.position.y
 	await frames(40)
 	check("it drops away off the edge",eye.glide.position.y < start_y-1.0,"%.1f to %.1f m" % [start_y,eye.glide.position.y])
-	check("the view widens",scene.camera.fov > eye.FOV+2.0,"%.1f deg" % scene.camera.fov)
+	check("the chase view takes its own field of view",absf(scene.camera.fov-eye.CHASE_FOV) < 3.0,"%.1f deg" % scene.camera.fov)
 	key(KEY_D,true)
 	await frames(45)
 	key(KEY_D,false)
 	check("a turn leans the view",scene.camera_roll < -0.2,"%.2f rad" % scene.camera_roll)
-	check("the camera follows the glide",scene.camera.global_position.distance_to(eye.glide.position) < 0.5,scene.camera.global_position.distance_to(eye.glide.position))
+	var cam_at: Vector3 = scene.camera.global_position
+	var trail: Vector3 = cam_at-eye.glide.position
+	check("the camera chases from behind and above",trail.length() > 2.5 and trail.length() < 10.0 and trail.dot(-eye.glide.forward()) > 1.0 and trail.y > 0.0,"%.1f m off" % trail.length())
+	check("the glider is drawn in the air",eye.glider.visible and eye.glider.position.distance_to(eye.glide.position) < 0.6)
+	check("the plate hangs from a rock while gliding",eye.keel != null and eye.keel.visible)
+	var keel_copied := false
+	for part in eye.islands._copies[0].get_children():
+		if part is MeshInstance3D and part.mesh == eye.keel.mesh: keel_copied = true
+	check("the copies hang from it too",keel_copied)
+	key(KEY_C,true)
+	key(KEY_C,false)
+	await frames(2)
+	check("C looks from its eyes",scene.camera.global_position.distance_to(eye.glide.position) < 0.5 and not eye.glider.visible)
+	key(KEY_C,true)
+	key(KEY_C,false)
+	await frames(2)
+	check("and C again chases",eye.glider.visible and not eye.chase.first_person)
+	var flaps_before: int = eye.glide.flaps
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	Input.parse_input_event(click)
+	Input.flush_buffered_events()
+	await frames(3)
+	key(KEY_E,true)
+	key(KEY_E,false)
+	await frames(40)
+	check("a click flaps, and so does E",eye.glide.flaps == flaps_before+2,"%d flaps" % (eye.glide.flaps-flaps_before))
+
+	# Under the plate: it stays under, and comes out beyond.
+	eye.glide.position = eye.editor.terrain.to_global(Vector3(-20.0,-22.0,0.0))
+	eye.glide.heading = -PI*0.5
+	eye.glide.pitch = 0.0
+	eye.glide.speed = 8.0
+	var below := 0
+	var snapped := false
+	for i in range(300):
+		await frames(1)
+		var local: Vector3 = eye.editor.terrain.to_local(eye.glide.position)
+		if absf(local.x) < 13.0 and absf(local.z) < 13.0:
+			below += 1
+			if local.y > NativeTerrainData.SLAB_BASE: snapped = true
+	check("under the plate it passes beneath",below > 60 and not snapped,"%d frames under" % below)
+	check("the camera keeps out of the rock",not eye._solid(scene.camera.global_position))
 
 	# Over a copy: the swap.
 	var offset: Vector3 = eye.islands.offsets[0]
@@ -159,6 +206,10 @@ func run() -> void:
 	check("a slow skim on the plate lands",not eye.flying and eye.active,"flying %s" % eye.flying)
 	check("landed, the feet are on the plate",absf(eye._feet.x) <= eye.PLATE_REACH and absf(eye._feet.z) <= eye.PLATE_REACH,eye._feet)
 	check("landed, the lean is gone",scene.camera_roll == 0.0)
+	check("landed, the camera swoops down into the eyes",eye._swoop > 0.0 and scene.camera.global_position.distance_to(eye._eye_global()) > 0.5,"%.2f s" % eye._swoop)
+	check("landed, the glider and rock are put away",not eye.glider.visible and not eye.keel.visible)
+	await frames(70)
+	check("then it looks from the eyes",scene.camera.global_position.distance_to(eye._eye_global()) < 0.3,scene.camera.global_position.distance_to(eye._eye_global()))
 	await frames(120)
 	check("landed, the cloud sea settles back to rest",eye.sky.flight.is_equal_approx(Vector4(0.0,0.0,1.0,0.0)) and eye.sky.vapour < 0.01,eye.sky.flight)
 	check("landed, the clouds hide",not eye.islands.clouds.visible)
@@ -226,7 +277,7 @@ func run() -> void:
 		var c: Vector4 = eye._crowns[0]
 		var over: Vector3 = editor.terrain.to_global(Vector3(c.x,c.w-0.5,c.y))
 		var ground_there: Variant = eye._fly_ground(over)
-		check("a tree's crown is ground to the glide",ground_there != null and float(ground_there) >= editor.terrain.to_global(Vector3(c.x,c.w,c.y)).y-0.01,"crown top %.2f" % c.w)
+		check("a tree's crown is ground to the glide",ground_there != null and (ground_there as Vector2).x >= editor.terrain.to_global(Vector3(c.x,c.w,c.y)).y-0.01,"crown top %.2f" % c.w)
 	else:
 		print("     (no crowns on this world; crown lift unchecked)")
 
