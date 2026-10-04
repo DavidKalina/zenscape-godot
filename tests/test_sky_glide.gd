@@ -4,7 +4,12 @@ extends SceneTree
 ## swings it higher than a plain glide would; there is a float at the top of
 ## the arc; Rise always climbs; it turns easily and banks into turns; it
 ## skims along the ground instead of crashing; and a long fall is caught.
+## The air (scripts/sky_currents.gd): the islands stand far apart, a jet
+## stream carries the glide fast and turns it downstream, steering hard
+## takes it out, and a thermal lifts it.
 const SkyGlide = preload("res://scripts/sky_glide.gd")
+const SkyCurrents = preload("res://scripts/sky_currents.gd")
+const SkyIslands = preload("res://scripts/sky_islands.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -16,6 +21,8 @@ func _initialize() -> void:
 	_turns()
 	_skim()
 	_caught()
+	_spread()
+	_currents()
 	print("PASS: sky glide" if failures == 0 else "FAIL: sky glide")
 	quit(1 if failures else 0)
 
@@ -121,3 +128,56 @@ func _caught() -> void:
 	check(lowest > SkyGlide.FLOOR-60.0,"A long dive is caught under the floor (lowest %.1f m)" % lowest)
 	fly(glide,20.0,{})
 	check(glide.position.y > SkyGlide.FLOOR-25.0,"Let go, the cushion lifts it back towards the band (%.1f m)" % glide.position.y)
+
+func _spread() -> void:
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	var nearest := INF
+	for i in range(slots.size()):
+		for j in range(i+1,slots.size()):
+			nearest = minf(nearest,Vector2(slots[i].x,slots[i].z).distance_to(Vector2(slots[j].x,slots[j].z)))
+	check(nearest > 350.0,"The islands stand far apart (nearest pair %.0f m)" % nearest)
+
+func _currents() -> void:
+	var currents := SkyCurrents.new()
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	currents.build(slots)
+	var jets := currents.currents.filter(func(c: Dictionary) -> bool: return c.kind == "jet")
+	var thermals := currents.currents.filter(func(c: Dictionary) -> bool: return c.kind == "thermal")
+	check(jets.size() == 2 and thermals.size() >= slots.size()*2,"Two jet loops and thermals by every island (%d jets, %d thermals)" % [jets.size(),thermals.size()])
+	check(currents.wisp_count() > 1000,"The currents are drawn (%d wisps)" % currents.wisp_count())
+	check(currents.air_at(Vector3(0.0,300.0,0.0)).wind == Vector3.ZERO,"Out of the currents the air is still")
+	# Into the low jet, facing across it.
+	var jet: Dictionary = jets[0]
+	var on: Vector3 = jet.points[10]
+	var way: Vector3 = (jet.points[11]-jet.points[10]).normalized()
+	var air := Callable(currents,"air_at")
+	var glide := SkyGlide.new()
+	glide.launch(on,atan2(-way.x,-way.z)+1.0,SkyGlide.CRUISE)
+	glide.airborne = 10.0
+	var carried := 0.0
+	for i in range(int(1.0/DT)): glide.step(DT,{},Callable(self,"air"),air)
+	carried = glide.velocity.length()
+	check(carried > 22.0,"A jet stream carries the glide fast (%.1f m/s)" % carried)
+	check(absf(angle_difference(glide.heading,atan2(-way.x,-way.z))) < 0.6,"In the jet it turns downstream (%.2f rad off)" % absf(angle_difference(glide.heading,atan2(-way.x,-way.z))))
+	var stayed := 0
+	for i in range(int(6.0/DT)):
+		glide.step(DT,{},Callable(self,"air"),air)
+		if glide.in_jet > 0.5: stayed += 1
+	check(stayed > int(5.0/DT),"Left alone it rides the jet (%.1f s of 6 in it)" % (stayed*DT))
+	for i in range(int(4.0/DT)): glide.step(DT,{"turn":1.0,"rise":1.0},Callable(self,"air"),air)
+	check(glide.in_jet < 0.1,"Steering hard takes it out of the jet")
+	# Into a thermal.
+	var thermal: Dictionary = thermals[0]
+	var column: Vector3 = thermal.points[20]
+	var lifted := SkyGlide.new()
+	lifted.launch(column,0.0,SkyGlide.MIN)
+	lifted.airborne = 10.0
+	var from := lifted.position.y
+	for i in range(int(3.0/DT)):
+		lifted.position.x = column.x
+		lifted.position.z = column.z
+		lifted.step(DT,{},Callable(self,"air"),air)
+	check(lifted.position.y-from > 12.0,"A thermal lifts the glide (%.1f m in 3 s)" % (lifted.position.y-from))
+	currents.free()

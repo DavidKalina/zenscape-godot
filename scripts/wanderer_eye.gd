@@ -108,6 +108,9 @@ const FLY_FOV_FAST := 104.0
 const EASE_FLY_FOV := 0.25
 ## A skim this slow for this long, not diving, lands.
 const LAND_SPEED := 10.0
+## The islands stand hundreds of metres apart; the view reaches FLY_FAR m
+## while gliding.
+const FLY_FAR := 3000.0
 const LAND_TIME := 0.8
 
 signal entered
@@ -159,6 +162,7 @@ var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
+var _far_before := 500.0
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -609,6 +613,8 @@ func _launch(pace: float) -> void:
 	_fly_look = Vector2.ZERO
 	_skim_time = 0.0
 	islands.build()
+	_far_before = camera.far
+	camera.far = FLY_FAR
 	glide.launch(_eye_global(),_yaw,pace)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	air.start()
@@ -620,6 +626,7 @@ func _launch(pace: float) -> void:
 func _end_flight() -> void:
 	flying = false
 	scene.camera_roll = 0.0
+	camera.far = _far_before
 	air.stop()
 	_hint.text = HINT
 
@@ -640,7 +647,7 @@ func _fly_input() -> Dictionary:
 
 func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
-	glide.step(delta,input,islands.ground)
+	glide.step(delta,input,islands.ground,islands.air)
 	# Over a copy, the copy becomes the plate.
 	var under: int = islands.copy_under(glide.position)
 	if under >= 0: glide.position += islands.arrive(under)
@@ -654,7 +661,7 @@ func _advance_flight(delta: float) -> void:
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
-	var fast := clampf((glide.speed-SkyGlide.CRUISE)/(SkyGlide.MAX-SkyGlide.CRUISE),0.0,1.0)
+	var fast := clampf((glide.velocity.length()-SkyGlide.CRUISE)/(SkyGlide.MAX-SkyGlide.CRUISE),0.0,1.0)
 	camera.fov = lerpf(camera.fov,lerpf(FLY_FOV,FLY_FOV_FAST,fast)-4.0*glide.hang,_ease(EASE_FLY_FOV,delta))
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)

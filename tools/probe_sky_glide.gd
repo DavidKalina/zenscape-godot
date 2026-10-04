@@ -61,8 +61,8 @@ func run() -> void:
 	if not eye.flying:
 		finish()
 		return
-	check("the plate is copied out into the sky",eye.islands.copy_count() == eye.islands.OFFSETS.size() and eye.islands.get_child(0).get_child_count() > 3,
-		"%d copies of %d parts" % [eye.islands.copy_count(),eye.islands.get_child(0).get_child_count()])
+	check("the plate is copied out into the sky",eye.islands.copy_count() == eye.islands.OFFSETS.size() and eye.islands._copies[0].get_child_count() > 3,
+		"%d copies of %d parts" % [eye.islands.copy_count(),eye.islands._copies[0].get_child_count()])
 	var start_y: float = eye.glide.position.y
 	await frames(40)
 	check("it drops away off the edge",eye.glide.position.y < start_y-1.0,"%.1f to %.1f m" % [start_y,eye.glide.position.y])

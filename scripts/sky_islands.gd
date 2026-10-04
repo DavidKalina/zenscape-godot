@@ -15,10 +15,11 @@ extends Node3D
 ## differently from the plate under the same sun, and the swap would show.
 
 const HALF := 14.0
-## Where the copies stand from the plate, in metres: out at different
-## distances and heights, so the sky has a near island, a far one, one
-## above and one below.
-const OFFSETS := [Vector3(96.0,-14.0,-44.0),Vector3(-58.0,10.0,-118.0),Vector3(-128.0,-26.0,40.0),Vector3(36.0,-36.0,140.0),Vector3(170.0,6.0,96.0)]
+## Where the copies stand from the plate, in metres: far apart (400 to
+## 950 m, over a minute's slow glide, half a minute down a jet stream) and
+## at different heights, so each is a destination.
+const OFFSETS := [Vector3(380.0,-20.0,-160.0),Vector3(-260.0,25.0,-520.0),Vector3(-640.0,-35.0,120.0),Vector3(180.0,-50.0,700.0),Vector3(820.0,15.0,420.0)]
+const SkyCurrents = preload("res://scripts/sky_currents.gd")
 ## Only parts this near the plate's middle, and smaller than this, are
 ## copied. That leaves out the sky, the fog and anything else world-sized.
 const NEAR := 22.0
@@ -34,16 +35,24 @@ var offsets: Array[Vector3] = []
 var _copies: Array[Node3D] = []
 ## Nodes never copied (the figure, the glide's own air).
 var skip: Array[Node] = []
+## The jet streams and thermals between the islands (scripts/sky_currents.gd).
+var currents: Node3D
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	editor = scene._chunk_editor
 	name = "SkyIslands"
+	currents = SkyCurrents.new()
+	add_child(currents)
+	var slots := [Vector3.ZERO]
+	slots.append_array(OFFSETS)
+	currents.build(slots)
 
 ## Copies the plate as it stands now to every offset, replacing any earlier
 ## copies.
 func build() -> void:
 	clear()
+	currents.position = Vector3.ZERO
 	var sources := _sources()
 	for offset: Vector3 in OFFSETS:
 		var island := Node3D.new()
@@ -71,7 +80,7 @@ func _sources() -> Array:
 	var stack: Array[Node] = [scene]
 	while not stack.is_empty():
 		var node: Node = stack.pop_back()
-		if node == self or node in skip or node is Camera3D: continue
+		if node == self or node == currents or node in skip or node is Camera3D: continue
 		if node is Node3D and not (node as Node3D).visible: continue
 		for child in node.get_children(): stack.append(child)
 		if not (node is MeshInstance3D or node is MultiMeshInstance3D): continue
@@ -108,6 +117,10 @@ func _copy(source: GeometryInstance3D) -> GeometryInstance3D:
 	copy.transform = source.global_transform
 	return copy
 
+## The air at a global point (SkyCurrents `air_at`).
+func air(point: Vector3) -> Dictionary:
+	return currents.air_at(point)
+
 ## The height of whatever island stands under a global point, or null over
 ## open air.
 func ground(point: Vector3) -> Variant:
@@ -142,4 +155,5 @@ func arrive(index: int) -> Vector3:
 	for i in range(offsets.size()):
 		offsets[i] = shift if i == index else offsets[i]+shift
 		_copies[i].position = offsets[i]
+	currents.position += shift
 	return shift
