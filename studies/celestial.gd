@@ -107,6 +107,44 @@ const NIGHT_HUE_FULL := Vector3(0.8, 0.98, 1.3)
 ## Sun heights (sun.y) over which the night look comes in: after the
 ## afterglow and the belt, so golden hour and dusk keep their colour.
 const NIGHT_LOOK_E := Vector2(-0.2, -0.03)
+## Golden hour. The source lets the earth's shadow (`zs_alpen` x and y, the
+## shade line that climbs the land) start rising at 6 degrees of sun, so on a
+## diorama the whole plate fell into shade from mid-afternoon and the low warm
+## sun never reached it. The line keeps the source's shape but runs this much
+## lower in sun height: the land holds its sun to within a degree or two of
+## the horizon, then the shadow climbs the peaks through sunset.
+const ALPEN_LAG := 0.05
+## Sun height over which the sky and the ground's bounce go from the night's
+## to the day's, wider and lower than `daylight`, so a low sun still has a
+## lit sky over it and dusk keeps colour after the sun has gone.
+const SKY_DAY_E := Vector2(-0.13, 0.16)
+## The sun as a light stands this much higher than its disc near the horizon
+## (fading out by KEY_LIFT_E.y of sun height): a sun two degrees up lights
+## flat land as if it stood eight, so golden hour's warm light reaches the
+## plate and its shadows still run long. The disc, the sky and the shade line
+## keep the true height.
+const KEY_LIFT := 0.1
+const KEY_LIFT_E := Vector2(0.05, 0.35)
+## Dusk's afterglow, the sky and shaded land going rose and violet in the
+## half hour after sunset, between these sun heights (in, then out again).
+const AFTERGLOW_E := Vector4(0.02, -0.03, -0.17, -0.07)
+const AFTERGLOW_SKY := Vector3(0.11, 0.07, 0.15)
+const AFTERGLOW_DOWN := Vector3(0.055, 0.04, 0.07)
+const AFTERGLOW_AMBIENT := Vector3(0.62, 0.5, 0.78)
+## Dusk's fill. After sunset the sun's key goes out and the night fill has not
+## come in, so between them the land fell darker than at night while the sky
+## over it was still bright: in a close view the ground went near black under
+## a rose sky. The glowing sky lights the land instead: this much more fill
+## energy (the night fill's measure) between DUSK_FILL_E's sun heights (in
+## from x to y, out from z to w, gone by the night look so night is as it
+## was), tinted toward AFTERGLOW_AMBIENT. Overcast keeps DUSK_FILL_CLOUD of it,
+## grey: a dim sky still lights the land.
+const DUSK_FILL := 0.42
+const DUSK_FILL_E := Vector4(0.04, -0.02, -0.2, -0.1)
+const DUSK_FILL_CLOUD := 0.6
+## Golden hour's contrast: the sky's fill eases off by this share while the sun
+## is low and up, so the warm key leads and shade goes cool and deep.
+const GOLDEN_FILL_DIP := 0.18
 ## Aurora: each night rolls once, with this chance by the season it falls in
 ## (winter, late autumn from AURORA_LATE_AUTUMN, and the rest of the year).
 const AURORA_CHANCE := Vector3(0.5, 0.2, 0.025)
@@ -209,7 +247,10 @@ func update_rig() -> void:
 	daylight = day
 	var night := 1.0 - smoothstep(-0.16, 0.02, e)
 	var warmth := exp(-e * e / (2.0 * 0.13 * 0.13))
-	var sun_energy := 3.4 * smoothstep(-0.03, 0.10, e) * (0.45 + 0.55 * smoothstep(0.08, 0.45, e))
+	# A low sun stays a strong key down to the horizon (golden hour's long
+	# light) and goes out over the last degree or two.
+	var sun_energy := 3.4 * smoothstep(-0.035, 0.05, e) * (0.68 + 0.32 * smoothstep(0.08, 0.45, e))
+	var sky_day := smoothstep(SKY_DAY_E.x, SKY_DAY_E.y, e)
 	var moon_up := smoothstep(0.02, 0.30, moon.y)
 	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit)
 	# How much moon there is to see by (phase and height), and how deep into
@@ -219,7 +260,7 @@ func update_rig() -> void:
 	var moon_tint := _rgb(MOON_TINT[0]).lerp(_rgb(MOON_TINT[1]), moon_lit)
 	var tint := look.rgb("sun").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
 	tint = _rgb("ff6222").lerp(_rgb("ffb45c"), smoothstep(-0.02, 0.1, e)).lerp(tint, smoothstep(0.1, 0.4, e))
-	var key_direction := sun
+	var key_direction := _lifted(sun)
 	var energy := sun_energy
 	if moon_energy > sun_energy:
 		key_direction = moon
@@ -235,15 +276,17 @@ func update_rig() -> void:
 	_sun.light_color = _color(tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4)).linear_to_srgb()
 	var ambient := smoothstep(-0.12, 0.10, e)
 	var hemi_sky := _rgb("26324e").lerp(_rgb("8fb3d9"), ambient).lerp(_rgb("7d92bd"), warmth * 0.5)
+	var dusk_glow := smoothstep(AFTERGLOW_E.x, AFTERGLOW_E.y, e) * smoothstep(AFTERGLOW_E.z, AFTERGLOW_E.w, e) * (1.0 - minf(1.0, cloud * 1.3))
+	hemi_sky = hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_glow * 0.6)
 	hemi_sky *= look.ratio("ambient")
 	hemi_sky = hemi_sky.lerp(Vector3(0.5, 0.55, 0.62), cloud * 0.6).lerp(Vector3(0.66, 0.58, 0.46), autumn * 0.3).lerp(Vector3(0.62, 0.70, 0.85), cold * 0.35)
-	var hemi_ground := _rgb("0d1016").lerp(_rgb("4a5240"), day)
+	var hemi_ground := _rgb("0d1016").lerp(_rgb("4a5240"), sky_day)
 	hemi_ground *= look.ratio("bounce")
 	if _rim_turned != room_yaw:
 		_rim.global_basis = Basis(Vector3.UP, room_yaw) * _rim_basis
 		_rim_turned = room_yaw
 	# The rim's night floor follows the moon: a new moon leaves silhouettes.
-	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(0.12, 0.3, moon_glow), dark) + 0.7 * day) * lerpf(1.0, 0.5, cloud) / PI
+	_rim.light_energy = 1.1 * (lerpf(0.3, lerpf(0.12, 0.3, moon_glow), dark) + 0.7 * sky_day) * lerpf(1.0, 0.5, cloud) / PI
 	_publish("zs_key_direction", _sun.global_basis.z.normalized())
 	var key_color := _sun.light_color.srgb_to_linear()
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
@@ -262,12 +305,19 @@ func update_rig() -> void:
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
 	# Keep sky/cloud/fog colors independent so stars retain their dark backdrop.
 	var fill := night * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
-	_publish("zs_hemi_sky", hemi_sky + NIGHT_FILL * fill)
+	# Dusk's fill (DUSK_FILL): the afterglow sky lighting the land, rose-lavender
+	# under a clear sky, grey under cloud.
+	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)
+	var surface_sky := hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_fill * (1.0 - minf(1.0, cloud * 1.3)) * 0.5)
+	_publish("zs_hemi_sky", surface_sky + NIGHT_FILL * fill)
 	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill) * look.settings.ambient_energy)
-	var down := Vector3(0.006, 0.009, 0.016).lerp(Vector3(0.055, 0.07, 0.1), day)
-	var up := Vector3(0.01, 0.016, 0.038).lerp(Vector3(0.1, 0.14, 0.24), day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
-	var glow := Vector3(0.016, 0.024, 0.045).lerp(Vector3(0.3, 0.18, 0.14), day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
+	var golden := smoothstep(0.3, 0.1, e) * smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) + 0.4 * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	var down := Vector3(0.006, 0.009, 0.016).lerp(Vector3(0.055, 0.07, 0.1), sky_day)
+	var up := Vector3(0.01, 0.016, 0.038).lerp(Vector3(0.1, 0.14, 0.24), sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
+	var glow := Vector3(0.016, 0.024, 0.045).lerp(Vector3(0.3, 0.18, 0.14), sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
+	up = up.lerp(AFTERGLOW_SKY, dusk_glow * 0.7)
+	down = down.lerp(AFTERGLOW_DOWN, dusk_glow * 0.7)
 	down *= look.ratio("horizon")
 	up *= look.ratio("sky")
 	glow *= look.ratio("glow")
@@ -284,9 +334,10 @@ func update_rig() -> void:
 	_publish("zs_moon_direction", moon)
 	_publish("zs_moon_shadow_direction", (moon - sun * 0.028).normalized())
 	var clear := 1.0 - minf(1.0, cloud * 1.4)
-	var alpen := smoothstep(0.13, 0.07, e) * smoothstep(-0.14, -0.07, e) * clear
+	var shade_e := e + ALPEN_LAG
+	var alpen := smoothstep(0.13, 0.07, shade_e) * smoothstep(-0.14, -0.07, shade_e) * clear
 	var afterglow := smoothstep(0.03, -0.02, e) * smoothstep(-0.13, -0.05, e) * clear
-	_publish("zs_alpen", Vector3(alpen if alpen_enabled else 0.0, smoothstep(0.10, -0.04, e), afterglow if alpen_enabled else 0.0))
+	_publish("zs_alpen", Vector3(alpen if alpen_enabled else 0.0, smoothstep(0.10, -0.04, shade_e), afterglow if alpen_enabled else 0.0))
 	var alpen_dir := Vector3(sun.x, 0.0, sun.z).normalized()
 	alpen_dir.y = 0.22
 	_publish("zs_alpen_direction", alpen_dir.normalized())
@@ -299,9 +350,13 @@ func update_rig() -> void:
 	var high := 12.6268235
 	var band := maxf(0.8, 0.08 * (high - low))
 	var lid := lerpf(low, high, inv_line)
+	# The dawn inversion's lid keeps the source's light (its shade line and sun
+	# strength at the true sun height): it is a dawn sight, not golden hour's.
+	var source_alpen := smoothstep(0.13, 0.07, e) * smoothstep(-0.14, -0.07, e) * clear
 	var shade_line := lerpf(low - band, high + band, smoothstep(0.10, -0.04, e))
-	var sun_on := lerpf(1.0, smoothstep(shade_line - band * 0.5, shade_line + band * 0.5, lid), alpen)
-	var sun_k := minf(1.0, energy / 2.0)
+	var sun_on := lerpf(1.0, smoothstep(shade_line - band * 0.5, shade_line + band * 0.5, lid), source_alpen)
+	var source_energy := 3.4 * smoothstep(-0.03, 0.10, e) * (0.45 + 0.55 * smoothstep(0.08, 0.45, e))
+	var sun_k := minf(1.0, (energy if moon_energy > sun_energy else source_energy) / 2.0)
 	var fog_color := (hemi_sky * 0.55 * 1.7).lerp(Vector3(0.30, 0.33, 0.38), storm * 0.6).lerp(Vector3(0.72, 0.66, 0.54), autumn * 0.35).lerp(Vector3(0.62, 0.68, 0.78), cold * 0.45)
 	fog_color *= look.ratio("fog")
 	fog_display = source_display_fog(fog_color, 1.15 * look.settings.exposure)
@@ -361,6 +416,14 @@ func _aurora_target() -> float:
 	var after_noon := fposmod(clock.hour - 12.0, WorldClock.HOURS_PER_DAY)
 	if after_noon < _aurora_plan.x or after_noon > _aurora_plan.y: return 0.0
 	return _aurora_plan.z * smoothstep(AURORA_CLOUD.y, AURORA_CLOUD.x, cloud)
+
+## The key light's direction for a sun at `sun`: raised near the horizon by
+## KEY_LIFT, keeping its bearing.
+func _lifted(sun: Vector3) -> Vector3:
+	var flat := Vector2(sun.x, sun.z).length()
+	if flat < 0.0001: return sun
+	var height := sun.y + KEY_LIFT * (1.0 - smoothstep(KEY_LIFT_E.x, KEY_LIFT_E.y, sun.y))
+	return Vector3(sun.x / flat * sqrt(maxf(0.0, 1.0 - height * height)), height, sun.z / flat * sqrt(maxf(0.0, 1.0 - height * height))).normalized()
 
 ## A body's direction on its ring, turned by the room.
 func _ring_direction(theta: float, tilt: float) -> Vector3:

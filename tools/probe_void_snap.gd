@@ -179,7 +179,7 @@ func run() -> void:
 		seen.append(snappedf(clock.phase,0.001))
 		await frames(30)
 	var steps_ok := true
-	for i in range(5): steps_ok = steps_ok and absf(seen[i]-[0.275,0.47,0.705,0.035,0.275][i]) < 0.0015
+	for i in range(5): steps_ok = steps_ok and absf(seen[i]-[0.275,0.47,0.76,0.035,0.275][i]) < 0.0015
 	check("Shift-click steps dawn, noon, dusk, night, dawn",steps_ok,seen)
 
 	# --- A drag in the void is not a snap.

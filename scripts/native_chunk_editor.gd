@@ -143,6 +143,8 @@ var campfires: Node3D
 ## The cabins' warm windows and chimney smoke (scripts/cabin_lights.gd);
 ## their light comes from the lamps' pool too.
 var cabins: Node3D
+## The shade the trees lay on the ground (scripts/ground_shade.gd).
+var ground_shade: Node
 var blast_radius := 2.6
 var tunnel_width := 2.5
 var tunnel_depth := 5.0
@@ -379,6 +381,9 @@ func setup(owner_scene: Node3D) -> void:
 	cabins = preload("res://scripts/cabin_lights.gd").new()
 	scene.add_child(cabins)
 	cabins.setup(self)
+	ground_shade = preload("res://scripts/ground_shade.gd").new()
+	scene.add_child(ground_shade)
+	ground_shade.setup(self)
 	_setup_brushes()
 	if flow_wanted(): _setup_flow.call_deferred()
 	data.state_restored.connect(_world_restored)

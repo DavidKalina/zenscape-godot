@@ -27,6 +27,46 @@ func _initialize() -> void:
 	var noon := WorldClock.phase_for_hour(12.1) - WorldClock.phase_for_hour(12.0)
 	check(horizon < noon * 0.75, "The sun lingers at the horizon while the hour keeps its pace")
 
+	# ------------------------------------------- golden hour's pace, real time
+	# A 480 s day walked in 60 fps frames: real seconds the setting sun spends in
+	# each band. Before the long golden hour these were ~30 s (warm light, sun
+	# 0.03..0.28), ~16 s (afterglow, 0..-0.10), ~169 s of full day, ~185 s night.
+	var paced := WorldClock.new()
+	paced.day_length = WorldClock.DEFAULT_DAY_LENGTH
+	paced.set_time(0, 12.0)
+	var warm := 0.0
+	var afterglow := 0.0
+	var rising_warm := 0.0
+	var full_day := 0.0
+	var night := 0.0
+	var worst_jump := 0.0
+	var last_step := -1.0
+	var frame := 1.0 / 60.0
+	for i in range(int(WorldClock.DEFAULT_DAY_LENGTH * 60.0)):
+		var was := paced.phase
+		paced.advance(frame, false)
+		var e := WorldClock.elevation_for_phase(paced.phase)
+		var setting := paced.phase >= 0.5
+		if setting and e >= 0.03 and e <= 0.28: warm += frame
+		if setting and e >= -0.10 and e < 0.0: afterglow += frame
+		if not setting and e >= 0.03 and e <= 0.28: rising_warm += frame
+		if e > 0.28: full_day += frame
+		if e < -0.2: night += frame
+		var step := fposmod(paced.phase - was, 1.0)
+		# Frame to frame the sun's pace may drift, never jump (a jump reads as a
+		# hitch in the shadows). A few percent is the warp table's sampling (the
+		# old linger showed 1.9%), far under a visible change.
+		if last_step > 0.0: worst_jump = maxf(worst_jump, absf(step / last_step - 1.0))
+		last_step = step
+	print("Golden pacing (real s at 480 s/day): warm %.1f, afterglow %.1f, morning warm %.1f, full day %.1f, night %.1f" % [warm, afterglow, rising_warm, full_day, night])
+	check(paced.day == 1 and absf(paced.hour - 12.0) < 0.01, "A day is still day_length real seconds long")
+	check(warm >= 55.0 and warm <= 90.0, "Golden hour's warm light lasts about twice as long: %.1f s" % warm)
+	check(afterglow >= 28.0 and afterglow <= 48.0, "The afterglow lasts about twice as long: %.1f s" % afterglow)
+	check(absf(rising_warm - warm) < 1.0, "Sunrise mirrors sunset")
+	check(full_day >= 85.0, "The high sun still has its stretch: %.1f s" % full_day)
+	check(night >= 120.0, "Night keeps most of its length: %.1f s" % night)
+	check(worst_jump < 0.04, "The sun changes pace smoothly, never in a step: worst %.1f%% frame to frame" % (worst_jump * 100.0))
+
 	# --------------------------------------------------------- rollover / speed
 	clock = WorldClock.new()
 	clock.day_length = 24.0  # one real second per world hour, easy arithmetic

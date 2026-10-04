@@ -54,6 +54,7 @@ var stars: MultiMeshInstance3D
 var planet: Node3D
 var _materials: Array[ShaderMaterial] = []
 var _ridges := Vector3(-1, -1, -1)
+var _sea := -1.0
 
 func setup(sky: ShaderMaterial) -> void:
 	sky_material = sky
@@ -67,9 +68,13 @@ func setup(sky: ShaderMaterial) -> void:
 func _process(_delta: float) -> void:
 	_sync_ridges()
 
-## The ridges hide what lies behind them, and the look pass changes them on
-## the sky material.
+## The ridges and the cloud sea hide what lies behind them, and the look
+## pass changes them on the sky material.
 func _sync_ridges() -> void:
+	var sea := _sky_parameter("cloud_sea", 0.0)
+	if sea != _sea:
+		_sea = sea
+		for material in _materials: material.set_shader_parameter("cloud_sea", sea)
 	var state := Vector3(_sky_parameter("horizon_ridges", 0.0), _sky_parameter("horizon_seed", 0.0),
 		_sky_parameter("horizon_relief", 1.0))
 	if state == _ridges: return

@@ -174,11 +174,30 @@ That is roughly 45% of the way from calm to mosaic, or about 0.7% on round three
 
 Stills are in `captures/final/` in the main checkout: `plain-diorama-final.png`, `plain-close-final.png` and the `plain-chalk-*` pair, with `plain-*-merge.png` as the calm field for comparison.
 
+## Round five: the land's own colour (`look/ground-variation`, 2026-10-03)
+
+After a play session the ground still read as flat, uniform green: the largest surface on screen with the least in it. Nothing darkened under trees, nothing told a hollow from a crest, and grass brushed onto a steep face stayed a bright slab. This round keeps the facets, adds no texture and no pattern, and lets colour follow what the land is doing. It builds on the unmerged `look/ground-form` (2052373, 2026-09-30), which carried the wet/dry/scree idea in the same varying slot but swapped the palette greens for a different blend; that branch was never adopted, so here the round-four field stays as it is and the new terms sit on top.
+
+All in `shaders/ground_look.gdshaderinc` (`zs_ground_form`, called once from `reference_surface.gdshader` after `zs_ground_sun_warm`), plus the trees' shade field (`scripts/ground_shade.gd`).
+
+- **Hue drift.** The field's broad light/deep patches now drift in hue as well, over about 9 m: sun-warmed patches yellower, deep ones cooler and bluer (`ground_hue` 1.15, `ZS_GROUND_WARM_DRIFT`/`ZS_GROUND_COOL_DRIFT`). Hue more than light, so it reads as meadow rather than noise. It is in the field, so the tufts' roots follow it.
+- **Hollows and crests.** The vertex stage reads the height map on two rings (1.5 m and 3.5 m, 16 taps) and keeps how far the ground round about stands above (a hollow) or below (a crest, a convex edge, a crater's lip) the vertex. Hollows go lusher and cooler (`ground_hollow` 0.7), crests and high ground drier and paler (`ground_crest` 0.55); ground near water never reads dry.
+- **Steep grass thins.** Grass on slopes past about 50 degrees (the smoothed normal) leans toward a dry olive of the same lightness (`ground_steep` 0.6), so grass brushed onto a cliff no longer stands out as a bright slab.
+- **The floor under trees.** `GroundShade` bakes the trees' records into a 64x64 field over the plate (0.5 m texels): a soft pool per crown, flat under it and easing out to 1.7 radii plus 0.8 m, overlapping toward 1 in a grove. The ground darkens toward a cool, mossy green there (`ground_shade` 0.9, `ZS_GROUND_SHADE`); bare earth, rock and painted ground only darken a little. The tufts under trees take the same shade, and snow lies thinner there (`ZS_GROUND_SNOW_SHELTER` 0.45). Crown radii per kind are the catalog meshes' bounds (`GroundShade.CROWN`); desert plants cast none.
+- **Autumn keeps its glow.** The first pass cooled the grass that the autumn paint keys its turn on, so autumn ground went muddier. Now the hue drift, hollow, crest and steep terms fade out as autumn (or the dry season) paints the ground (`zs_ground_season_hold`), and the trees' shade is laid after the season's paint, darkening warm (`ZS_GROUND_SHADE_WARM`) rather than grey.
+- **Painted ground, seasons and looks.** Every term but the shade is scaled by the face's grassness, so painted tints (wheat's warm ground, Paddle's earth, rock and sand) keep their colour. The multipliers work after the palette, so they shift every family the same way, and autumn, the season's grass, wetness, snow and cloud shade still come after. Desert ground is not grass, so it is untouched.
+
+**No new varyings.** The bowl and the shade ride `earth_side.y` and `.z` beside the water nearness in `.x`. `zs_ground_shade` is a new project shader global; its green channel is held at 0 so an unset texture (Godot's white) reads as no shade.
+
+**Cost.** Per ground vertex: 16 more height-map taps and 4 shade taps (a plate has about 13k ground vertices, and the shadow pass runs the vertex stage too), well under 0.1 ms. Per tuft fragment: 4 shade taps. On the CPU the field is read only when `objects_revision` or the record count moves, at most every 0.2 s: a walk of the records (about 1.3 ms for 3,000). It is baked only when the trees among them changed, on the worker pool, never on the frame: about 0.3 ms for 13 trees, 1 ms for 80 and 55 ms for 1,500 off-thread. Painting flowers never bakes.
+
+**Checks and stills.** `tests/test_ground_shade.gd` (headless) checks the pool's shape, that flowers, rocks and desert plants cast none, and on real terrain data that placing, removing, undo and redo a tree follow it while painting flowers does not bake. `tests/test_ground_look.gd` checks the hooks and that the varying count holds. `tools/capture_ground.gd` takes the stills (overview, low, a grove, a shore, golden hour, a mood, autumn and winter) of a saved world (`--resume --places=`), a seed, or `--diorama`, a fixed test scene with a hill, a lake and a grove; `--classic-form` turns the round-five terms off for a before/after on the same run.
+
 ## Tunables
 
 All tunables are shader uniforms on `DenseGrass.material` unless noted. Each group lists its defaults.
 
-- **Ground (reference_surface, every tier):** `ground_calm` 0.6, `ground_soft` 0.6, `ground_patch` 1.3, `ground_warm` 0.5, `ground_dry` 0.45, `ground_lush` 0.6 and `ground_living` 0.3 (`shaders/ground_look.gdshaderinc`).
+- **Ground (reference_surface, every tier):** `ground_calm` 0.6, `ground_soft` 0.6, `ground_patch` 1.3, `ground_warm` 0.5, `ground_dry` 0.45, `ground_lush` 0.6 and `ground_living` 0.3; round five's `ground_hue` 1.15, `ground_hollow` 0.7, `ground_crest` 0.55, `ground_steep` 0.6 and `ground_shade` 0.9 (`shaders/ground_look.gdshaderinc`). The shade field's crowns, reach and depth are constants in `scripts/ground_shade.gd`.
 - **Tufts (reference_surface, every tier):** `grass_dry` 0.25, `grass_living` 0.4, `grass_variation` 0.12, `grass_contact` 0.4, `grass_round` 0.55, `grass_tip_glow` 0.55, `grass_root_blend` (0.92, 0.6) and `grass_ground_pull` 0.4. The mesh constants are `BLADES`, `HALF_WIDTH`, `ROOT_RING`, `HEIGHT` and `LEAN` in `grass_tuft_mesh.gd`. Cover on the plain is `GENESIS_BLADES` and `GENESIS_FLOWERS` in `genesis_canvas.gd`; emerged cover is `_cover_target` in `emergence.gd`.
 - **Living colour (dense grass):** `living_pull` 0.4 and `living_saturation` 1.12.
 

@@ -69,6 +69,11 @@ func _hooks(include: String, surface: String) -> void:
 		if line.strip_edges().begins_with("varying "): varyings += 1
 	check(varyings <= 14, "reference_surface adds no varyings: %d declarations" % varyings)
 	check(not include.contains("varying "), "ground_look declares no varyings")
+	# Round five: the land's own colour rides the ground's spare earth_side
+	# lanes (y the bowl, z the trees' shade), no new varyings.
+	check(surface.contains("earth_side = vec4(zs_ground_lush_at(VERTEX), zs_ground_form_at(VERTEX), 0.0);"), "The ground's form and shade ride earth_side")
+	check(surface.contains("if (ground) tint = zs_ground_form(tint, world_position, earth_side.xyz"), "The ground's tint takes the land's form")
+	check(surface.contains("global uniform sampler2D zs_ground_shade;"), "reference_surface reads the trees' shade")
 
 ## The soft tuft is the default: fuller and lower than the source's six
 ## shards, dressed for the mass light.

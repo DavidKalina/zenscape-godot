@@ -17,9 +17,10 @@ func run() -> void:
 	var sky: ShaderMaterial = lighting.environment.sky.sky_material
 	check(sky.get_shader_parameter("real_stars") == true, "The dome leaves out its painted stars")
 	check(_uniforms(sky.shader).has("real_stars"), "The sky shader compiles and takes real_stars")
+	check(_uniforms(sky.shader).has("cloud_sea"), "The sky shader compiles and takes cloud_sea")
 	var shaders := {
-		"res://shaders/sky_stars.gdshader": ["horizon_ridges", "sky_distance"],
-		"res://shaders/sky_planet_body.gdshader": ["planet_direction", "planet_frame"],
+		"res://shaders/sky_stars.gdshader": ["horizon_ridges", "sky_distance", "cloud_sea"],
+		"res://shaders/sky_planet_body.gdshader": ["planet_direction", "planet_frame", "cloud_sea"],
 		"res://shaders/sky_planet_glow.gdshader": ["planet_radius"],
 		"res://shaders/sky_planet_rings.gdshader": ["planet_frame", "horizon_seed"],
 	}
@@ -62,6 +63,9 @@ func run() -> void:
 	sky.set_shader_parameter("horizon_seed", 3.0)
 	objects._sync_ridges()
 	check(stars_material.get_shader_parameter("horizon_ridges") == 0.75 and rings.get_shader_parameter("horizon_seed") == 3.0, "The look pass's ridges reach the sky objects")
+	sky.set_shader_parameter("cloud_sea", 0.6)
+	objects._sync_ridges()
+	check(stars_material.get_shader_parameter("cloud_sea") == 0.6 and body.get_shader_parameter("cloud_sea") == 0.6, "The cloud sea's strength reaches the sky objects, which it hides")
 	finish(scene)
 
 func _uniforms(shader: Shader) -> Array:
