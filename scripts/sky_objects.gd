@@ -6,9 +6,10 @@ extends Node3D
 ## from here per frame but the look pass's ridges. --shader-stars leaves the
 ## dome's painted stars and builds none of this.
 
-## Room direction of the planet: up and left in the opening view, just under
-## the horizon ridges, in front of the Milky Way.
-const PLANET_DIRECTION := Vector3(-0.73, -0.21, 0.65)
+## Room direction of the planet: up in the sky, about 22 degrees over the
+## horizon, so it is looked up at, never down on. It is off unless the
+## player turns it on (scripts/look_pass.gd `sky_planet`).
+const PLANET_DIRECTION := Vector3(-0.73, 0.4, 0.65)
 ## Angular radius, radians: about twice the moon's.
 const PLANET_RADIUS := 0.05
 ## The pole the rings circle, in the room.

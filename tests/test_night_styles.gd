@@ -22,6 +22,7 @@ func run() -> void:
 	check(LookPass.load_night_style(KEPT) == "nocturne", "An unknown kept style falls back to Nocturne")
 	check(LookPass.night_style_from_args(PackedStringArray(["--night-style=OPAL"]), "nocturne") == "opal", "--night-style overrides the kept style, any case")
 	check(LookPass.night_style_from_args(PackedStringArray(["--cloud-style=opal"]), "mystic") == "mystic", "Without the flag the kept style holds")
+	check(not LookPass.load_sky_planet(KEPT), "The planet is off until the player turns it on")
 
 	var scene = load("res://studies/diorama.tscn").instantiate()
 	root.add_child(scene)
@@ -46,6 +47,19 @@ func run() -> void:
 		night.item_selected.emit(2)
 		check(look.night_style == "storybook" and published() in [null, 2], "Choosing Storybook in Settings paints it")
 		check(LookPass.load_night_style(KEPT) == "storybook", "Choosing in Settings keeps the choice")
+	# The planet: off until chosen, kept, and hidden or shown on the sky.
+	check(LookPass.sky_planet_from_args(PackedStringArray(["--sky-planet"]), false), "--sky-planet shows the planet for a run")
+	check(not LookPass.sky_planet_from_args(PackedStringArray(["--no-sky-planet"]), true), "--no-sky-planet hides it for a run")
+	var objects = scene._lighting.sky_objects
+	var toggle: CheckButton = scene._settings.find_child("SkyPlanet", true, false)
+	check(toggle != null, "Settings offers the planet")
+	if toggle != null and objects != null:
+		toggle.button_pressed = true
+		look.update(scene.get_viewport().get_camera_3d(), scene._celestial)
+		check(objects.planet.visible and LookPass.load_sky_planet(KEPT), "Turning the planet on shows and keeps it")
+		toggle.button_pressed = false
+		look.update(scene.get_viewport().get_camera_3d(), scene._celestial)
+		check(not objects.planet.visible and not LookPass.load_sky_planet(KEPT), "Turning it off hides and keeps that")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(KEPT))
 	scene.queue_free()
 	await process_frame

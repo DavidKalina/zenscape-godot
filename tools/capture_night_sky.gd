@@ -47,6 +47,8 @@ func still(name: String) -> void:
 ## A camera of its own aimed at the planet, from the ground eye's place: the
 ## sky objects draw round whichever camera is current.
 func _planet_stills(yaw: float) -> void:
+	# Shown for these stills even when the player's choice keeps it off.
+	scene.look_pass.sky_planet = true
 	var eye := root.get_viewport().get_camera_3d()
 	var camera := Camera3D.new()
 	scene.add_child(camera)
