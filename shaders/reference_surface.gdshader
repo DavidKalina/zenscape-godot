@@ -184,11 +184,15 @@ uniform float earth_sides_base = -2.8;
 // base and position along the side, packed in one varying: the shader is at
 // the 31-varying limit (Metal), and four floats would take four. The grass
 // ground (zs_is_ground) has no sides and reuses it: x is how near water it
-// lies (shaders/ground_look.gdshaderinc).
+// lies, y whether it lies in a hollow or on a crest, z the trees' shade
+// (shaders/ground_look.gdshaderinc).
 varying vec4 earth_side;
 // The precipitation height map: 128 texels over the 32 m plate, alpha the
 // water surface height (-1000 where dry). Read for wet banks only.
 global uniform sampler2D zs_water_map;
+// The shade trees lay on the ground: 64 texels over the plate, red the
+// shade (scripts/ground_shade.gd).
+global uniform sampler2D zs_ground_shade;
 
 #include "res://shaders/terrain_geology.gdshaderinc"
 #include "res://shaders/ground_look.gdshaderinc"
@@ -537,7 +541,7 @@ void vertex() {
 			// the face's own from derivatives), and the nearness of water rides
 			// the unused earth_side: no new varyings (Metal's 31, 4b6508e).
 			world_normal = normalize(MODEL_NORMAL_MATRIX * zs_ground_smooth_normal(VERTEX, NORMAL));
-			earth_side = vec4(zs_ground_lush_at(VERTEX), 0.0, 0.0, 0.0);
+			earth_side = vec4(zs_ground_lush_at(VERTEX), zs_ground_form_at(VERTEX), 0.0);
 		}
 		if (grass_blades) {
 			// Light the tuft as part of the field's soft mass: the ground's
@@ -591,6 +595,9 @@ void fragment() {
 	// Slopes to the sun a little warmer, away from it a little deeper (the
 	// smoothed ground normal rides world_normal on the ground).
 	if (ground) tint = zs_ground_sun_warm(tint, normalize(world_normal), zs_sun_direction, ground_grass);
+	// The land's own colour: hollows lusher, crests drier, steep grass thin,
+	// and the floor under trees darker and mossy (ground_look zs_ground_form).
+	if (ground) tint = zs_ground_form(tint, world_position, earth_side.xyz, normalize(world_normal), ground_grass);
 	// The earth sides: strata, each facet a shade apart like the ground's,
 	// dimming toward the base where the void's mist takes over (EMISSION).
 	float side_mist = 0.0;
@@ -622,6 +629,8 @@ void fragment() {
 		// only the upper blade is the tuft's, so no dark base rings it.
 		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
+		// Tufts under trees share the wood's shaded floor.
+		tint = zs_ground_shaded(tint, zs_ground_shade_at(plant_root), 1.0);
 	}
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
 	vec3 before_autumn = tint;
@@ -676,6 +685,8 @@ void fragment() {
 		float line = mix(zs_summit.y + 2.0, 0.15 - 2.5, pow(zs_snow, 0.7));
 		float cover = smoothstep(line - 0.6, line + 2.4, world_position.y + (noise - 0.5) * 3.0)
 			* smoothstep(0.35, 0.72, face_normal.y) * smoothstep(0.0, 0.1, zs_snow);
+		// Crowns catch some of the snow: the floor under trees lies thinner.
+		if (ground) cover *= 1.0 - ZS_GROUND_SNOW_SHELTER * earth_side.z;
 		tint = mix(tint, vec3(0.88, 0.91, 0.95) * (0.90 + 0.18 * noise), cover);
 		surface_wet *= 1.0 - cover;
 	}

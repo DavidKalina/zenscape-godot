@@ -389,6 +389,10 @@ zs_water_map={
 "type": "sampler2D",
 "value": ""
 }
+zs_ground_shade={
+"type": "sampler2D",
+"value": ""
+}
 zs_sun_direction={
 "type": "vec3",
 "value": Vector3(0.744849, 0.445679, -0.496558)
