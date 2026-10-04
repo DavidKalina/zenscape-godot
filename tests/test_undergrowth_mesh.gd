@@ -72,6 +72,16 @@ func _fern() -> void:
 		var s := int((Vector2(v.x, v.z).angle() + PI) / TAU * 8.0) % 8
 		reach[s] = maxf(reach[s], Vector2(v.x, v.z).length())
 	check(reach.size() == 8 and (reach.max() - reach.min()) > 0.12, "The fern is not rotationally even: reach %.2f to %.2f m" % [reach.min(), reach.max()])
+	# Leaflets are attached wedges, not slivers: no triangle is needle-thin.
+	var slivers := 0
+	for t in range(indices.size() / 3):
+		var p0 := vertices[indices[t * 3]]
+		var p1 := vertices[indices[t * 3 + 1]]
+		var p2 := vertices[indices[t * 3 + 2]]
+		var longest := maxf(p0.distance_to(p1), maxf(p1.distance_to(p2), p2.distance_to(p0)))
+		var area := (p1 - p0).cross(p2 - p0).length() * 0.5
+		if area < 0.02 * longest * longest: slivers += 1
+	check(slivers <= 2, "The fern has no needle-thin slivers: %d" % slivers)
 	# Fresh, light colour: no dark tips (the brightest vertices are the highest-reaching ones).
 	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
 	var dark_tip := false

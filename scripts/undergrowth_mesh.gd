@@ -30,6 +30,7 @@ const GRASS_TIP := Color("93c05f")
 const SHRUB_TINT := Color("5c7a3e")
 ## How dark the inside of the bush is against its sunlit leaf tips.
 const SHRUB_ROOT_SHADE := 0.74
+const SHRUB_GREEN_SHIFT := Color(1.14, 0.98, 0.84)
 const SPRIGS := 18
 const LEAVES_MIN := 7
 const LEAVES_MAX := 10
@@ -50,8 +51,12 @@ static func shrub() -> ArrayMesh:
 	if not _cache.has("shrub"):
 		var mesh := _build_shrub()
 		var tint := SHRUB_TINT.srgb_to_linear()
-		mesh.set_meta("grass_root", Color(tint.r, tint.g, tint.b) * SHRUB_ROOT_SHADE)
-		mesh.set_meta("grass_tip", Color(tint.r, tint.g, tint.b))
+		# The shader divides this out of the instance tint, so a source that is
+		# a touch warmer than the tint leaves the bush a touch greener (the
+		# #5c7a3e tint alone reads yellow-olive beside the meadow).
+		var source := Color(tint.r * SHRUB_GREEN_SHIFT.r, tint.g * SHRUB_GREEN_SHIFT.g, tint.b * SHRUB_GREEN_SHIFT.b)
+		mesh.set_meta("grass_root", source * SHRUB_ROOT_SHADE)
+		mesh.set_meta("grass_tip", source)
 		_cache["shrub"] = mesh
 	return _cache["shrub"]
 
@@ -114,7 +119,9 @@ static func _frond(surface: SurfaceTool, rng: RandomNumberGenerator, angle: floa
 	var pitch := lerpf(deg_to_rad(52.0), deg_to_rad(78.0), upright) + rng.randf_range(-0.1, 0.1)
 	var bend := lerpf(deg_to_rad(105.0), deg_to_rad(35.0), upright) * rng.randf_range(0.85, 1.15)
 	var sway := rng.randf_range(-0.12, 0.12)
-	var spine: Array[Vector3] = [out * 0.012]
+	# Fronds start at staggered radii and heights, the inner ones at the very
+	# centre, so the crown is a knot of overlapping bases and not a ring.
+	var spine: Array[Vector3] = [out * rng.randf_range(0.0, 0.05) * (1.0 - upright) + Vector3.UP * rng.randf_range(0.0, 0.05)]
 	for k in range(steps):
 		var t := float(k) / steps
 		var p := pitch - bend * t * t
@@ -128,11 +135,11 @@ static func _frond(surface: SurfaceTool, rng: RandomNumberGenerator, angle: floa
 		var b := spine[k + 1]
 		# Leaflets are widest a third of the way up and taper to the tip; each
 		# pair sweeps forward and lifts a little, so a frond is a shallow V.
-		var reach := width * 0.17 * sin(PI * clampf(0.12 + 0.88 * t1, 0.0, 1.0)) * (1.0 - 0.25 * t1)
-		var forward := (b - a).normalized() * 0.5 * length / steps
+		var reach := width * 0.17 * sin(PI * (0.1 + 0.75 * t1)) * (1.0 - 0.25 * t1)
+		var forward := (b - a).normalized() * 0.8 * length / steps
 		for sign in [-1.0, 1.0]:
 			var tilt: Vector3 = across * sign * reach + Vector3.UP * reach * (0.38 - 0.5 * t1)
-			var leaflet: Vector3 = b + tilt + forward * rng.randf_range(0.6, 1.2)
+			var leaflet: Vector3 = (a + b) * 0.5 + tilt + forward * rng.randf_range(0.5, 1.0)
 			var jitter := rng.randf_range(-0.04, 0.04)
 			_vertex(surface, a, _along(t0), FERN_ROOT, FERN_TIP, jitter)
 			_vertex(surface, leaflet, _along(minf(t1 + 0.1, 1.0)), FERN_ROOT, FERN_TIP, jitter + lift)
@@ -140,13 +147,13 @@ static func _frond(surface: SurfaceTool, rng: RandomNumberGenerator, angle: floa
 	# The pointed tip of the rachis.
 	var last := spine[steps]
 	var end := last + (spine[steps] - spine[steps - 1]).normalized() * length / steps * 0.9
-	var span := across * width * 0.02 * length
+	var span := across * width * 0.03 * length
 	_vertex(surface, last - span, _along(0.95), FERN_ROOT, FERN_TIP, 0.0)
 	_vertex(surface, end + Vector3.DOWN * 0.02, 1.0, FERN_ROOT, FERN_TIP, lift)
 	_vertex(surface, last + span, _along(0.95), FERN_ROOT, FERN_TIP, 0.0)
 
 static func _along(t: float) -> float:
-	return lerpf(0.1, 1.0, clampf(t, 0.0, 1.0))
+	return lerpf(0.3, 1.0, clampf(t, 0.0, 1.0))
 
 # --- shrub --------------------------------------------------------------
 
@@ -173,7 +180,8 @@ static func _build_shrub() -> ArrayMesh:
 			var yaw := (1.0 if l % 2 == 0 else -1.0) * rng.randf_range(0.5, 1.2) + rng.randf_range(-0.3, 0.3)
 			var rise := rng.randf_range(0.0, 0.6)
 			var dir := (out * cos(rise) + Vector3.UP * sin(rise)).rotated(Vector3.UP, yaw).normalized()
-			var size := lerpf(0.075, 0.115, rng.randf()) * lerpf(0.8, 1.05, t)
+			# Many small leaves and a few larger ones.
+			var size := (rng.randf_range(0.12, 0.16) if rng.randf() < 0.14 else rng.randf_range(0.052, 0.09)) * lerpf(0.85, 1.05, t)
 			_leaf(surface, rng, at, dir, size, clampf(at.y / SHRUB_HEIGHT, 0.0, 1.0), t)
 	surface.index()
 	return surface.commit()
@@ -187,9 +195,11 @@ static func _leaf(surface: SurfaceTool, rng: RandomNumberGenerator, at: Vector3,
 	if right.length() < 0.05: right = Vector3.RIGHT
 	right = right.normalized()
 	var normal := right.cross(dir).normalized()
-	var half := size * 0.36
-	var mid := at + dir * size * 0.45
-	var fold := normal * size * 0.14
+	var half := size * rng.randf_range(0.26, 0.42)
+	var mid := at + dir * size * rng.randf_range(0.35, 0.55)
+	# Fold angles differ from leaf to leaf: some flat, some cupped up, a few
+	# folded down, so the bush is not a heap of identical creases.
+	var fold := normal * size * rng.randf_range(-0.06, 0.24)
 	var tip := at + dir * size + normal * size * rng.randf_range(-0.1, 0.12) - Vector3.UP * size * 0.12
 	var interior := clampf(0.2 + 0.5 * height + 0.3 * outer, 0.1, 1.0)
 	var tip_along := clampf(interior + 0.28, 0.0, 1.0)
