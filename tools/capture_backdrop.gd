@@ -3,7 +3,8 @@ extends SceneTree
 ## overview, a wider and higher view and a low view at a few hours (and one
 ## overcast), so the backdrop can be judged against the hour and the weather.
 ## --looks adds the overview under a few authored looks; --only=NAME keeps
-## only the shots whose name holds NAME (overview, wide, low, overcast).
+## only the shots whose name holds NAME (overview, wide, low, overcast);
+## --hours=23,1.5 shoots at those hours instead.
 ## Rendered only when asked for:
 ##   Godot --path . --windowed --resolution 1280x720 -s res://tools/capture_backdrop.gd \
 ##     -- --no-title --seed 184 --looks --backdrop-dir=/private/tmp/zs-backdrop/after
@@ -51,9 +52,7 @@ func run() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--backdrop-dir="): out = argument.trim_prefix("--backdrop-dir=")
 		if argument.begins_with("--only="): only = argument.trim_prefix("--only=")
-		if argument.begins_with("--hours="):
-			hours = []
-			for v in argument.trim_prefix("--hours=").split(","): hours.append(float(v))
+		if argument.begins_with("--hours="): hours = Array(argument.trim_prefix("--hours=").split(",")).map(func(h: String) -> float: return h.to_float())
 		if argument.begins_with("--yaws="):
 			for v in argument.trim_prefix("--yaws=").split(","): yaws.append(float(v))
 	DirAccess.make_dir_recursive_absolute(out)
