@@ -185,6 +185,8 @@ func _build_planet() -> Node3D:
 	body.name = "Body"
 	var sphere := SphereMesh.new()
 	# Enough segments that its outline stays round on screen.
+	sphere.radius = 1.0
+	sphere.height = 2.0
 	sphere.radial_segments = 64
 	sphere.rings = 32
 	body.mesh = sphere

@@ -32,6 +32,10 @@ func _run() -> void:
 	check(visuals.aim.mesh != null,"Drag produces a visible aiming shape")
 	visuals.clear_aim()
 	check(visuals.aim.mesh == null,"Cancelled aim disappears")
+	wind.clear()
+	await process_frame
+	var quiet := wind.emit_gust(Vector3(1,2,3),Vector3.FORWARD,8,1,0.6,true)
+	check(quiet != -1 and not visuals.trails.has(quiet),"A quiet gust (a songbird's rustle) draws no streaks")
 	print("Wind gust visuals: ",failures," failures")
 	visuals.free()
 	wind.free()
