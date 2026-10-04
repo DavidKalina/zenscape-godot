@@ -29,7 +29,5 @@ void fragment() {
   vec3 room = zs_room_from_world(view);
   float presence = zs_planet_presence(view, room) * clouds;
   ALBEDO = scene_linear_for_display(clamp(face.rgb, 0.0, 1.0));
-  // Opal's limb is antialiased over about a pixel.
-  float edge = zs_night_style == 1 ? zs_opal_planet_edge(radial, view) : 1.0;
-  ALPHA = presence * mix(face.a, 1.0, zs_night) * edge;
+  ALPHA = presence * mix(face.a, 1.0, zs_night);
 }

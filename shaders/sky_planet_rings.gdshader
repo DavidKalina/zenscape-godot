@@ -29,8 +29,6 @@ void fragment() {
   float b = dot(oc, zs_sun_direction);
   float rr = zs_planet_world_radius();
   float shade = (b < 0.0 && dot(oc, oc) - b * b < rr * rr) ? 0.0 : 1.0;
-  // Opal's shadow has a soft edge.
-  if (zs_night_style == 1) shade = b < 0.0 ? smoothstep(rr * 0.9, rr * 1.12, sqrt(max(dot(oc, oc) - b * b, 0.0))) : 1.0;
   float lit = abs(dot(zs_planet_axes()[1], zs_sun_direction));
   // Its dust is the night style's (zs_night_planet_rings), eased by the
   // screen footprint of a radius step so its lanes never alias.
