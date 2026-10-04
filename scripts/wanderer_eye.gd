@@ -208,6 +208,8 @@ func setup(owner_scene: Node3D) -> void:
 		islands = SkyIslands.new()
 		islands.setup(scene)
 		add_child(islands)
+		# The air shows only while gliding; the build view stays as it was.
+		islands.currents.visible = false
 		air = GlideAir.new()
 		add_child(air)
 		islands.skip.append(air)
@@ -615,6 +617,7 @@ func _launch(pace: float) -> void:
 	islands.build()
 	_far_before = camera.far
 	camera.far = FLY_FAR
+	islands.currents.visible = true
 	glide.launch(_eye_global(),_yaw,pace)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	air.start()
@@ -627,6 +630,7 @@ func _end_flight() -> void:
 	flying = false
 	scene.camera_roll = 0.0
 	camera.far = _far_before
+	islands.currents.visible = false
 	air.stop()
 	_hint.text = HINT
 
