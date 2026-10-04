@@ -33,7 +33,7 @@ extends RefCounted
 ## `spot`), each spot kept at `pow(presence, 1.2)` times the
 ## kind's packing, the kind the type's (drifts of one kind, a few companions),
 ## sunflowers and wheat only on their rows. The ground decides as ever (`suits`: no
-## flowers on water, rock, steep ground, near snow, under crowns or on
+## flowers on water, rock, steep ground, near snow, on a trunk or on
 ## stones). Each spot is judged once a stroke (`_spots`), and only once its
 ## coat could raise it, so a frame only compares numbers.
 ##

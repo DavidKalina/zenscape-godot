@@ -7,7 +7,7 @@ Style rule: plants have a faceted shape and soft light. Wheat has golden straws,
 ## How it plays
 
 - **Tray.** "Wheat · Field" sits after the sunflower in the seed group (`scripts/materials_tray.gd`). It is also in the command palette.
-- **Paint.** With wheat in hand, press and drag over the land. The brush is the flowers' brush (`scripts/flower_paint.gd`): passes, lingering and taps work the same way, and the pips size it. The ground still decides: no wheat on water, rock, snow, steep ground, under trees or on stones.
+- **Paint.** With wheat in hand, press and drag over the land. The brush is the flowers' brush (`scripts/flower_paint.gd`): passes, lingering and taps work the same way, and the pips size it. The ground still decides: no wheat on water, rock, snow, steep ground, tree trunks or stones.
 - **Shift** thins under the brush, as it does for flowers. Wheat counts as a flower to the thinning (`FlowerPaint.is_flower`), so a Shift pass with any flower or wheat in hand thins both.
 - **Cmd+Z** undoes one stroke whole, because each stroke is one undo step.
 - **Shift-press** plucks a single clump (`PLUCK_UNDERGROWTH`). The trash can sweeps wheat as small stuff, so Shift does not spare it.
