@@ -28,7 +28,9 @@ void fragment() {
   vec3 oc = world - centre;
   float b = dot(oc, zs_sun_direction);
   float rr = zs_planet_world_radius();
-  float shade = (b < 0.0 && dot(oc, oc) - b * b < rr * rr) ? 0.0 : 1.0;
+  // Soft-edged: a penumbra a few hundredths of a radius wide.
+  float miss = sqrt(max(dot(oc, oc) - b * b, 0.0)) / rr;
+  float shade = b < 0.0 ? smoothstep(0.93, 1.07, miss) : 1.0;
   float lit = abs(dot(zs_planet_axes()[1], zs_sun_direction));
   // Its dust is the night style's (zs_night_planet_rings), eased by the
   // screen footprint of a radius step so its lanes never alias.
