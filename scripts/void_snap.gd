@@ -32,14 +32,14 @@ extends RefCounted
 const NIGHT := 0.035
 const DAY := 0.345
 ## Shift: the golden hours in order (mood_look's Dawn, Midday, Dusk, Night).
-const STEPS := [0.275,0.47,0.705,0.035]
+const STEPS := [0.275,0.47,0.76,0.035]
 ## A phase this close ahead of a step counts as on it, so a step always moves.
 const STEP_EPSILON := 0.01
 ## Seconds of real-time radiance after a snap.
 const RADIANCE_SECONDS := 0.3
 const Disturbance = preload("res://scripts/disturbance.gd")
 ## mood_look's Time of day ids for the hours a snap lands on, to pin them.
-const PINS := {0.035:"night",0.345:"morning",0.275:"dawn",0.47:"midday",0.705:"dusk"}
+const PINS := {0.035:"night",0.345:"morning",0.275:"dawn",0.47:"midday",0.76:"dusk"}
 
 ## True with `--void-snap`: a click in the void snaps, as before the almanac.
 static func enabled() -> bool:

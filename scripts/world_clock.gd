@@ -6,13 +6,14 @@ extends RefCounted
 ##
 ## `hour` is honest clock time and always advances at a constant rate, so a world
 ## day of `day_length` real seconds is `day_length` real seconds long whatever
-## the sun is doing. The old sunrise/sunset "linger" therefore lives here, in the
+## the sun is doing. The sunrise/sunset "linger" therefore lives here, in the
 ## hour -> phase mapping (`phase_for_hour`), instead of in the celestial rig: the
-## celestial ring still slows to half speed while the sun crosses the horizon,
-## but the clock's hands do not. Because the linger density is symmetric about
-## phases 0.25 and 0.75, the quarter days are exact fixed points of the mapping
-## (hour 0/6/12/18 <-> phase 0.0/0.25/0.5/0.75), so authored preset phases still
-## land on the hour they always did.
+## sun slows through golden hour and the afterglow (`linger`) and hurries at
+## midday, but the clock's hands do not. The linger is a function of sun height,
+## so it is symmetric about phases 0.25 and 0.75, and the day's half weighs what
+## the night's does (NOON_HASTE), so the quarter days are fixed points of the
+## mapping (hour 0/6/12/18 <-> phase 0.0/0.25/0.5/0.75): the sun still rises at
+## 6:00 and sets at 18:00, and an authored phase shows the same sun as ever.
 
 const MAX_DELTA := 1.0             ## A stalled frame must not skip a day.
 const DEFAULT_DAY_LENGTH := 480.0  ## Real seconds per world day at speed 1.0.
@@ -25,9 +26,25 @@ const MAX_YEAR_DAYS := 100000
 const SEASON_NAMES := ["spring", "summer", "autumn", "winter"]
 const SKIP_RESPONSE := 1.6         ## Easing rate of skip_to, from celestial.next_hour.
 const SKIP_SNAP := 0.024           ## Hours; the old 0.001-of-a-turn snap.
-const LINGER_WIDTH := 0.09         ## Elevation sigma of the horizon linger.
-const LINGER_DEPTH := 0.5          ## Time runs at (1 - depth) rate at the horizon.
-const WARP_STEPS := 1024
+## The sun heights the sun lingers through: the slow band comes in over x..y
+## below the horizon (the afterglow's end) and goes out over z..w above it
+## (golden hour's start). Inside it the sun turns at (1 - depth) rate.
+const LINGER_E := Vector4(-0.22, -0.12, 0.28, 0.42)
+## The depth with the sun up (golden hour) and down (the afterglow), blended
+## over +-LINGER_SIDE_E of the horizon. At 480 s a day, golden hour (sun
+## 0.03..0.28 high) lasts ~62 real seconds, was 30; the afterglow (sun 0 to
+## -0.10) ~33, was 16. Sunrise mirrors it.
+const LINGER_DEPTH_UP := 0.72
+const LINGER_DEPTH_DOWN := 0.8
+const LINGER_SIDE_E := 0.05
+## The high sun hurries by this share more (from NOON_HASTE_E.x to .y of sun
+## height) to pay for golden hour, which lies all on the day's side. Sized so
+## the day's half takes exactly the night's twelve hours: the sun still rises
+## at 6:00 and sets at 18:00. Full day (sun above 0.28) is ~100 s, was 169;
+## night (below -0.2) ~133 s, was 185.
+const NOON_HASTE := 0.667
+const NOON_HASTE_E := Vector2(0.3, 0.6)
+const WARP_STEPS := 4096           ## Fine enough that the pace never steps (<3% a sample).
 
 var day := 0          ## Whole days elapsed, starts 0.
 var hour := 0.0       ## 0.0 ..< 24.0, fractional.
@@ -179,10 +196,14 @@ static func elevation_for_phase(value: float) -> float:
 static func daylight_for_phase(value: float) -> float:
 	return smoothstep(-0.06, 0.28, elevation_for_phase(value))
 
-## The rate the sun ring turns at this phase: half speed near the horizon.
+## The relative rate the sun ring turns at this phase: slow through golden
+## hour and the afterglow, quick at midday. Smooth in sun height (smoothsteps
+## all through), so the sun never visibly changes pace.
 static func linger(value: float) -> float:
 	var e := elevation_for_phase(value)
-	return 1.0 - LINGER_DEPTH * exp(-e * e / (2.0 * LINGER_WIDTH * LINGER_WIDTH))
+	var depth := lerpf(LINGER_DEPTH_DOWN, LINGER_DEPTH_UP, smoothstep(-LINGER_SIDE_E, LINGER_SIDE_E, e))
+	var band := smoothstep(LINGER_E.x, LINGER_E.y, e) * smoothstep(LINGER_E.w, LINGER_E.z, e)
+	return (1.0 - depth * band) * (1.0 + NOON_HASTE * smoothstep(NOON_HASTE_E.x, NOON_HASTE_E.y, e))
 
 static func phase_for_hour(value: float) -> float:
 	var table := _warp_table()
