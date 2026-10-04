@@ -36,21 +36,8 @@ static func mesh(part: String) -> ArrayMesh:
 					st.set_color(tint)
 					st.add_vertex(p)
 	else:
-		# Compound serrated fronds, sized to mix with the existing grass tufts.
-		# Nine full fronds in a fresh green: from above the clump reads as a
-		# leafy rosette, where seven thin dark ones read as a spider.
-		for frond in range(9):
-			var angle := frond*TAU/9+rng.randf_range(-0.12,0.12)
-			var direction := Vector3(cos(angle),0,sin(angle))
-			var across := Vector3(-direction.z,0,direction.x)
-			for segment in range(6):
-				var t := float(segment+1)/7
-				var center := direction*t*0.85+Vector3.UP*sin(t*PI*0.85)*0.55
-				var tip := direction*(t+0.13)*0.85+Vector3.UP*sin((t+0.13)*PI*0.85)*0.55
-				for sign in [-1.0,1.0]:
-					for p in [center,center+across*sign*(1.0-t)*0.34-direction*0.07,tip]:
-						st.set_color(Color("6c9a4a").darkened(rng.randf()*0.14).srgb_to_linear())
-						st.add_vertex(p)
+		# The fern is built in the grass tuft's manner (undergrowth_mesh.gd).
+		return _fern()
 	st.generate_normals()
 	var result := st.commit()
 	var material := ShaderMaterial.new()
@@ -66,4 +53,17 @@ static func mesh(part: String) -> ArrayMesh:
 		material.set_shader_parameter("sway_shape",Vector4(0,0.6,0.045,0.025))
 	result.surface_set_material(0,material)
 	cache[part] = result
+	return result
+
+## The fern: soft arching fronds from a closed crown, lit like the grass.
+static func _fern() -> ArrayMesh:
+	var result := preload("res://scripts/undergrowth_mesh.gd").fern()
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/reference_surface.gdshader")
+	material.set_shader_parameter("plant_growth",true)
+	material.set_shader_parameter("sway_enabled",true)
+	material.set_shader_parameter("sway_shape",Vector4(0,0.6,0.045,0.025))
+	preload("res://scripts/undergrowth_mesh.gd").dress(material,result)
+	result.surface_set_material(0,material)
+	cache["redwood-fern"] = result
 	return result
