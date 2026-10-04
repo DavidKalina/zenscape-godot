@@ -627,10 +627,11 @@ func _vignette_source(id: String) -> Dictionary:
 	return {"sky":pick.call("sky"),"glow":pick.call("glow"),"grass":pick.call("grass"),"hour":hour_of(phase)}
 
 ## "night", "low" (dawn, golden hour, dusk) or "high" for a day phase
-## (mood_look TIMES: dawn 0.275, golden 0.645, dusk 0.705, night 0.035).
+## (mood_look TIMES: dawn 0.275, golden 0.738, dusk 0.76, night 0.035): the
+## afterglow after sunset (to 0.775) still counts as low.
 static func hour_of(phase: float) -> String:
 	phase = fposmod(phase,1.0)
-	if phase < 0.25 or phase >= 0.75: return "night"
+	if phase < 0.25 or phase >= 0.775: return "night"
 	if phase < 0.31 or phase >= 0.6: return "low"
 	return "high"
 

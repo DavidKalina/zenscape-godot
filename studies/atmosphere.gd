@@ -33,8 +33,11 @@ const DAY_MIST_FLOOR := 0.2
 const DAY_MIST_WEATHER := Vector2(0.4, 0.55)
 ## The evening's window: a setting sun leaves golden hour clear, and the mist
 ## gathers in the hollows only as the sun goes down through dusk, whole by
-## the time the afterglow fades. Cold does not hold it, as it does mornings.
-const EVENING_MIST_SUN := Vector2(-0.16, 0.0)
+## the time the afterglow fades. Through the afterglow itself it stays a low
+## veil (about a third at its height), so a close view is not a grey bank
+## over a lit land; it thickens with the night look. Cold does not hold it,
+## as it does mornings.
+const EVENING_MIST_SUN := Vector2(-0.22, -0.04)
 ## Sun height, whether it is going down (afternoon to midnight), and season
 ## cold, set by the scene each frame from Celestial.
 var sun_height := 0.0
