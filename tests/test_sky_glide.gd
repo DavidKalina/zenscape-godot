@@ -7,10 +7,15 @@ extends SceneTree
 ## The air (scripts/sky_currents.gd): the islands stand far apart, a jet
 ## stream carries the glide fast and turns it downstream, steering hard
 ## takes it out, and a thermal lifts it.
+## Wandered off (scripts/sky_cells.gd): islands turn up in seeded cells, the
+## same spot each time, well apart; far for a while one turns up ahead,
+## fallen into the sea one turns up just ahead, unless one is in reach; the
+## swaps' shifts keep the cells in place; past the cap the farthest go.
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
+const SkyCells = preload("res://scripts/sky_cells.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -25,6 +30,13 @@ func _initialize() -> void:
 	_spread()
 	_currents()
 	_clouds()
+	_cells_determined()
+	_cells_spaced()
+	_cells_wander()
+	_cells_fall()
+	_cells_swap()
+	_cells_trim()
+	_added_air()
 	print("PASS: sky glide" if failures == 0 else "FAIL: sky glide")
 	quit(1 if failures else 0)
 
@@ -228,4 +240,135 @@ func _clouds() -> void:
 	check(far_later.x >= clouds.field.x and far_later.x <= clouds.field.x+clouds.field.z,"They wrap round the field")
 	clouds.move(Vector3(10.0,0.0,0.0))
 	check(clouds.centre(0,0.0).is_equal_approx(heart+Vector3(10.0,0.0,0.0)),"An island swap moves them with the world")
+	clouds.free()
+
+func cells() -> SkyCells:
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	return SkyCells.new(slots)
+
+## The same cell always gives the same island, from a fresh grid too.
+func _cells_determined() -> void:
+	var a := cells()
+	var b := cells()
+	var same := true
+	var held := 0
+	var heights := true
+	for x in range(-8,9):
+		for z in range(-8,9):
+			var sa: Variant = a.spot(Vector2i(x,z))
+			var sb: Variant = b.spot(Vector2i(x,z))
+			if (sa == null) != (sb == null) or (sa != null and not (sa as Vector3).is_equal_approx(sb)): same = false
+			if sa != null:
+				held += 1
+				if sa.y < SkyCells.BAND.x or sa.y > SkyCells.BAND.y: heights = false
+	check(same,"The same cell gives the same island every time")
+	check(held > 17*17/4,"Many cells hold an island (%d of %d)" % [held,17*17])
+	check(heights,"Every island stands in the height band")
+
+## No two islands, cells or fixed slots, stand closer than SPACING.
+func _cells_spaced() -> void:
+	var grid := cells()
+	var all: Array = grid.spots_near(Vector3.ZERO,5000.0)
+	var nearest := INF
+	for i in range(all.size()):
+		for j in range(i+1,all.size()):
+			nearest = minf(nearest,Vector2(all[i].x-all[j].x,all[i].z-all[j].z).length())
+	check(all.size() > 60 and nearest >= SkyCells.SPACING,"Islands keep apart (%d spots, nearest pair %.0f m)" % [all.size(),nearest])
+
+## Far from every island for long enough, one turns up ahead, about IDEAL
+## out, and not before.
+func _cells_wander() -> void:
+	var grid := cells()
+	var eye := Vector3(3000.0,0.0,-2000.0)
+	var heading := 0.8
+	var live := [Vector3.ZERO]
+	var early: Variant = null
+	var found: Variant = null
+	var t := 0.0
+	while t < 40.0 and found == null:
+		found = grid.advance(DT,eye,heading,live,0.0)
+		if t < SkyCells.WANDER_TIME-0.1 and found != null: early = found
+		t += DT
+	check(early == null,"Not before WANDER_TIME of wandering")
+	check(found != null and found.kind == "wander" and t < SkyCells.WANDER_TIME+1.0,"Wandered off, an island turns up (after %.1f s)" % t)
+	if found == null: return
+	var at: Vector3 = found.home+grid.origin
+	var to := Vector2(at.x-eye.x,at.z-eye.z)
+	var way := Vector2(-sin(heading),-cos(heading))
+	check(to.length() >= SkyCells.NEAR and to.length() <= SkyCells.FAR,"It turns up out in the haze (%.0f m out)" % to.length())
+	check(absf(way.angle_to(to)) < SkyCells.CONE,"It turns up ahead (%.2f rad off the heading)" % absf(way.angle_to(to)))
+	var again := cells()
+	again.wandered = SkyCells.WANDER_TIME
+	var twice: Variant = again.advance(DT,eye,heading,live,0.0)
+	check(twice != null and (twice.home as Vector3).is_equal_approx(found.home),"The same wander finds the same island")
+	# Near an island the clock doesn't run.
+	var near := cells()
+	for i in range(int(30.0/DT)): near.advance(DT,Vector3(100.0,0.0,0.0),heading,live,0.0)
+	check(near.wandered == 0.0,"Near an island nothing turns up")
+
+## Fallen into the parted sea with nothing in reach, one turns up just
+## ahead; with one in reach, none does.
+func _cells_fall() -> void:
+	var grid := cells()
+	var eye := Vector3(-2600.0,-75.0,1900.0)
+	var found: Variant = grid.advance(DT,eye,0.0,[Vector3.ZERO],0.9)
+	check(found != null and found.kind == "fall","Fallen into the parted sea, an island turns up at once")
+	if found == null: return
+	var ahead := eye+Vector3(0.0,0.0,-SkyCells.AHEAD)
+	var d := Vector2(found.home.x-ahead.x,found.home.z-ahead.z).length()
+	check(d <= SkyCells.RANGE,"It turns up just ahead (%.0f m from the point ahead)" % d)
+	var high: Variant = cells().advance(DT,Vector3(eye.x,-20.0,eye.z),0.0,[Vector3.ZERO],0.9)
+	check(high == null,"High in the band, no fall spawn")
+	var closed: Variant = cells().advance(DT,eye,0.0,[Vector3.ZERO],0.2)
+	check(closed == null,"With the sea closed, no fall spawn")
+	var reach: Variant = cells().advance(DT,eye,0.0,[Vector3.ZERO,eye+Vector3(150.0,0.0,0.0)],0.9)
+	check(reach == null,"With an island in reach, none turns up")
+
+## A swap shifts the world; with the origin shifted the same, the same place
+## gives the same island.
+func _cells_swap() -> void:
+	var grid := cells()
+	var eye := Vector3(2500.0,-90.0,2500.0)
+	var before: Variant = grid.advance(DT,eye,1.0,[Vector3.ZERO],0.9)
+	var shift := Vector3(-380.0,20.0,160.0)
+	var moved := cells()
+	moved.origin = shift
+	var after: Variant = moved.advance(DT,eye+shift,1.0,[shift],0.9)
+	check(before != null and after != null and (before.home as Vector3).is_equal_approx(after.home),"Across a swap the same place gives the same island")
+
+## Past the cap the farthest copies go, never the ones kept.
+func _cells_trim() -> void:
+	var copies := []
+	for i in range(12): copies.append(Vector3(400.0*(i+1),0.0,0.0))
+	var freed := SkyCells.trim(Vector3.ZERO,copies,9,[11])
+	check(freed.size() == 3 and 11 not in freed and 10 in freed and 9 in freed and 8 in freed,"Past the cap the farthest go, never the kept (freed %s)" % str(freed))
+	check(SkyCells.trim(Vector3.ZERO,copies.slice(0,9),9,[]).is_empty(),"Under the cap none go")
+
+## A later island's thermal lifts, and goes with it; the clouds follow a
+## far glide.
+func _added_air() -> void:
+	var currents := SkyCurrents.new()
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	currents.build(slots)
+	currents.position = Vector3(50.0,0.0,0.0)
+	var count := currents.currents.size()
+	var base := Vector3(2000.0,-30.0,2000.0)
+	currents.add_thermal(base,"far")
+	check(currents.air_at(base+Vector3.UP*10.0).thermal > 0.9,"A later island's thermal lifts")
+	currents.drop_thermals("far")
+	check(currents.currents.size() == count and currents.air_at(base+Vector3.UP*10.0).thermal == 0.0,"It goes with its island")
+	currents.free()
+	var clouds := SkyClouds.new()
+	clouds.build(slots)
+	var far := Vector3(3000.0,0.0,-2500.0)
+	clouds.follow(far)
+	var middle := Vector2(clouds.field.x+clouds.field.z*0.5,clouds.field.y+clouds.field.w*0.5)
+	check(middle.distance_to(Vector2(far.x,far.z)) < 1.0,"The clouds' field follows a far glide")
+	var held := clouds.field
+	clouds.follow(far+Vector3(100.0,0.0,0.0))
+	check(clouds.field == held,"A little way on, it stays put")
+	clouds.reset()
+	check(Vector2(clouds.field.x,clouds.field.y).distance_to(middle) > 100.0,"Reset puts it home")
 	clouds.free()

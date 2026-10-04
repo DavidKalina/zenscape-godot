@@ -5,6 +5,8 @@ extends SceneTree
 ##     out into the sky (scripts/sky_islands.gd);
 ##   - the view widens and leans into a turn;
 ##   - flying over a copy swaps it for the plate, the eye shifted with it;
+##   - wandered far off, an island rises ahead with a thermal; fallen into
+##     the parted sea, one surfaces just ahead; past the cap the farthest go;
 ##   - a slow skim on the plate lands, back to walking;
 ##   - V mid-glide steps out onto the plate.
 ## Visuals (the copies' look, the streaks) need a rendered run.
@@ -89,10 +91,62 @@ func run() -> void:
 	eye.glide.airborne = 10.0
 	await frames(30)
 	check("falling to the cloud sea parts it",eye.sky.flight.w > 0.5,"%.2f" % eye.sky.flight.w)
-	eye.glide.position = eye.islands.clouds.centre(0,scene._motion_time)
+	# A cloud near the field's middle, so following the eye doesn't re-wrap it.
+	var clouds: Node3D = eye.islands.clouds
+	var middle: Vector3 = Vector3(clouds.field.x+clouds.field.z*0.5,0.0,clouds.field.y+clouds.field.w*0.5)+clouds.shift
+	var cloud := 0
+	for i in range(clouds.clouds.size()):
+		var c: Vector3 = clouds.centre(i,scene._motion_time)
+		var best: Vector3 = clouds.centre(cloud,scene._motion_time)
+		if Vector2(c.x-middle.x,c.z-middle.z).length() < Vector2(best.x-middle.x,best.z-middle.z).length(): cloud = i
+	eye.glide.position = clouds.centre(cloud,scene._motion_time)
 	await frames(30)
 	check("flown into a cloud, the view goes to vapour",eye.sky.vapour > 0.3,"%.2f" % eye.sky.vapour)
 	check("the clouds show while gliding",eye.islands.clouds.visible)
+
+	# Wandered off: an island rises ahead, with a thermal.
+	var isl: Node3D = eye.islands
+	var thermals := func() -> int: return isl.currents.currents.filter(func(c: Dictionary) -> bool: return c.kind == "thermal").size()
+	var had: int = isl.copy_count()
+	var had_thermals: int = thermals.call()
+	eye.glide.position = Vector3(2600.0,10.0,-2300.0)
+	eye.glide.heading = 0.7
+	eye.glide.pitch = 0.0
+	await frames(2)
+	isl.cells.wandered = isl.cells.WANDER_TIME
+	await frames(2)
+	var new_at: Vector3 = isl.offsets[isl.offsets.size()-1]
+	var out := Vector2(new_at.x-eye.glide.position.x,new_at.z-eye.glide.position.z).length()
+	check("wandered off, an island turns up ahead",isl.copy_count() == had+1 and out > isl.cells.NEAR-20.0 and out < isl.cells.FAR+20.0,"%d copies, %.0f m out" % [isl.copy_count(),out])
+	check("it rises out of the haze",isl.sunk(isl.offsets.size()-1) > 30.0,"%.0f m below" % isl.sunk(isl.offsets.size()-1))
+	check("it brings a thermal",thermals.call() == had_thermals+1,"%d thermals" % thermals.call())
+	await frames(int(isl.WANDER_RISE.y*60.0)+10)
+	check("then it stands at its spot",isl.sunk(isl.offsets.size()-1) == 0.0 and isl._copies[isl.offsets.size()-1].position.is_equal_approx(new_at))
+	# Fallen into the parted sea: one surfaces just ahead.
+	had = isl.copy_count()
+	eye.glide.position = Vector3(-2400.0,-95.0,2600.0)
+	eye.glide.airborne = 10.0
+	for i in range(60):
+		await frames(1)
+		if isl.copy_count() > had: break
+	var fall_at: Vector3 = isl.offsets[isl.offsets.size()-1]
+	var gap := Vector2(fall_at.x-eye.glide.position.x,fall_at.z-eye.glide.position.z).length()
+	check("fallen into the sea, an island surfaces just ahead",isl.copy_count() == had+1 and gap < isl.cells.AHEAD+isl.cells.RANGE,"%.0f m off, parted %.2f" % [gap,eye.sky.flight.w])
+	await frames(30)
+	check("with one in reach, no more turn up",isl.copy_count() == had+1,"%d copies" % isl.copy_count())
+	# Past the cap the farthest go, never the newest.
+	var home: Vector3 = eye.glide.position-isl.cells.origin
+	var taken := []
+	for h: Vector3 in isl.homes: taken.append(h)
+	for s: Vector3 in isl.cells.spots_near(home,2000.0):
+		if isl.copy_count() >= isl.CAP+3: break
+		var free := true
+		for t: Vector3 in taken: if Vector2(t.x-s.x,t.z-s.z).length() < 1.0: free = false
+		if free: isl.realise(s,"wander")
+	var newest: Vector3 = isl._newest
+	await frames(2)
+	check("past the cap the farthest copies go",isl.copy_count() <= isl.CAP,"%d copies" % isl.copy_count())
+	check("never the newest",isl.homes.any(func(h: Vector3) -> bool: return h.distance_to(newest) < 1.0))
 
 	# A slow skim lands.
 	var ground: float = eye.islands.ground(Vector3(3.0,0.0,3.0))

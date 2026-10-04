@@ -10,7 +10,8 @@ extends Node3D
 ## is steering. Steering hard across the stream takes it out.
 ##
 ## Thermals are columns of rising air beside each island and out in open
-## sky between them. In one, the glide lifts at LIFT m/s.
+## sky between them. In one, the glide lifts at LIFT m/s. Islands that turn
+## up later (scripts/sky_cells.gd) bring one of their own (`add_thermal`).
 ##
 ## Both are drawn as soft wisps flowing along them
 ## (shaders/sky_current.gdshader): long streaks down a jet, short ones
@@ -100,11 +101,31 @@ func build(slots: Array) -> void:
 		_thermal((here+next)*0.5+across*rng.randf_range(-90.0,90.0))
 	_build_wisps()
 
-func _thermal(base: Vector3) -> void:
+func _thermal(base: Vector3, key := "") -> void:
 	var points := PackedVector3Array()
 	for i in range(SAMPLES):
 		points.append(base+Vector3.UP*lerpf(THERMAL_FROM,THERMAL_TO,float(i)/(SAMPLES-1)))
-	currents.append(_current(points,false,LIFT,THERMAL_RADIUS,"thermal"))
+	var current := _current(points,false,LIFT,THERMAL_RADIUS,"thermal")
+	current.key = key
+	currents.append(current)
+
+## A thermal at a global point, belonging to `key` (a later island), and
+## the wisps rebuilt to show it.
+func add_thermal(base: Vector3, key: String) -> void:
+	_thermal(base-position,key)
+	_build_wisps()
+
+## Takes away the thermals belonging to `key`.
+func drop_thermals(key: String) -> void:
+	var before := currents.size()
+	currents = currents.filter(func(c: Dictionary) -> bool: return c.get("key","") != key)
+	if currents.size() != before: _build_wisps()
+
+## Takes away every thermal a later island brought.
+func drop_added() -> void:
+	var before := currents.size()
+	currents = currents.filter(func(c: Dictionary) -> bool: return c.get("key","") == "")
+	if currents.size() != before: _build_wisps()
 
 func _current(points: PackedVector3Array, closed: bool, speed: float, radius: float, kind: String) -> Dictionary:
 	var length := 0.0

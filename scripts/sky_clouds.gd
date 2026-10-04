@@ -9,6 +9,12 @@ extends Node3D
 ## so they never hide a place. `inside` says how deep a point is in a cloud,
 ## which the vapour reads (scripts/sky_flight.gd).
 ##
+## The field follows the glide (`follow`): when the eye strays FOLLOW of
+## the field's span from its middle, the field recentres on it, so islands
+## that turn up far out (scripts/sky_cells.gd) have clouds round them too.
+## Only clouds in the strip that re-wraps jump, at the far side of the
+## field, most of a kilometre out in the haze.
+##
 ## The node stays at the origin. The islands' swaps move the clouds through
 ## the shader's `shift`, so the wrap works in one frame.
 
@@ -23,10 +29,12 @@ const CLEAR := 90.0
 const SIZE := Vector2(16.0,42.0)
 const PUFFS := Vector2i(9,18)
 const DRIFT := Vector2(0.6,0.3)
+const FOLLOW := 0.15
 
 ## Each cloud: Vector4(x, y, z, size) at motion time 0, before `shift`.
 var clouds := PackedVector4Array()
 var field := Vector4.ZERO
+var _home_field := Vector4.ZERO
 var shift := Vector3.ZERO
 var _puffs: MultiMeshInstance3D
 var _material: ShaderMaterial
@@ -41,6 +49,7 @@ func build(slots: Array) -> void:
 	lo -= Vector2.ONE*MARGIN
 	hi += Vector2.ONE*MARGIN
 	field = Vector4(lo.x,lo.y,hi.x-lo.x,hi.y-lo.y)
+	_home_field = field
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 23
 	clouds = PackedVector4Array()
@@ -103,7 +112,19 @@ func move(by: Vector3) -> void:
 
 func reset() -> void:
 	shift = Vector3.ZERO
+	field = _home_field
 	_material.set_shader_parameter("shift",shift)
+	_material.set_shader_parameter("field",field)
+
+## Recentres the field on a global point once it strays FOLLOW from the
+## middle.
+func follow(point: Vector3) -> void:
+	var at := Vector2(point.x-shift.x,point.z-shift.z)
+	var middle := Vector2(field.x+field.z*0.5,field.y+field.w*0.5)
+	if absf(at.x-middle.x) < field.z*FOLLOW and absf(at.y-middle.y) < field.w*FOLLOW: return
+	field.x = at.x-field.z*0.5
+	field.y = at.y-field.w*0.5
+	_material.set_shader_parameter("field",field)
 
 ## A cloud's middle now, at `time` (the scene's motion time), as the shader
 ## places it.

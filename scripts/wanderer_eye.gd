@@ -665,6 +665,8 @@ func _advance_flight(delta: float) -> void:
 		glide.position += shift
 		sky.move(shift)
 	sky.advance(delta,glide.position,islands.clouds.inside(glide.position,scene._motion_time))
+	# Wandered off or fallen into the sea, an island turns up.
+	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
 	air.advance(delta,glide.velocity,glide.hang,float(input.dive))
 	var reach := 6.0
 	scene.yaw = glide.heading
