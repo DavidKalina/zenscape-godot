@@ -86,9 +86,10 @@ One Cmd+Z takes back the whole pull.
 Draw a line on the land with the Ravine and let go: the wire is drawn
 through the land along your line, bends and all, from where you pressed to
 where you let go, and a deep, steep ravine opens behind it. Drawn out
-through the rim, it opens the plate's side, with a shallow sill at the mouth so
-the ravine can still hold water: pour into it with the can and it fills level
-to the notch, and what is poured past that spills off the side. **Draw a loop** (end where you
+through the rim, it opens the plate's side, with its bed rising to the ground line over
+the last few metres, so the ravine can still hold water: pour into it with the
+can and it fills level to the brim, and what is poured past that spills off the
+side. To lower the level, take water out with the Water compartment (below). **Draw a loop** (end where you
 started) and the inside sinks to a level floor: a lake basin, the line its
 shore. Shift makes it shallower. The pips widen it. Each drawing is one
 Cmd+Z.
@@ -201,7 +202,7 @@ you haven't found yet, and pressing one gives nothing. The command palette
 | Flowers: press and drag over the land | paints flowers under the brush; go over them again to thicken the drift. Shift thins them |
 | Wheat: press and drag over the land | paints a wheat patch in tidy rows under the brush; go over it again to fill it in. It sways with the wind as one field, and with the clock running it is green in spring, gold by late summer and stubble in winter. Shift thins it; Cmd+Z undoes a stroke |
 | Reed: tap, or drag | sets a clump of reeds; a drag scatters more clumps |
-| Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring |
+| Water: press and hold over the land | a water ball fills while you hold; let go and it drops, a pool or, up high, a spring. Held over a lake, pond, crater or ravine it scoops the water standing there instead, so the level drops the longer you hold (it stops at the bed). Fill a ravine to its brim with the watering can, then scoop out what you do not want to set its level |
 | Stone: tap | sets a stone down, bigger the longer you press |
 | Stone: drag | scatters a few pebbles |
 | Stone lamp: tap, or drag | sets a small faceted stone lamp; a drag lines a path with them, a couple of metres apart. They glow warm from dusk to dawn. Not on water, and not too close to another lamp: the hint line says why. The trash can takes them away; Shift with the trash spares them |

@@ -55,10 +55,11 @@ edge (docs/scenic/water-flow.md).
 Update (2026-10-03): a ravine can be filled with the can, as a lake is. A
 ravine run out through the rim used to have a bed falling to the open side, so
 its hollow's sill was the bed at the mouth and it held ~7 m3. Its mouth now
-keeps a sill (`Wire.RIM_SILL_*`), a notch 30% of the gorge's depth under the
-rim, so it fills to the notch and spills the rest off the side. Open: setting
-the level by hand (a notch cut or raised) is still not a verb; the level is how
-much is poured, up to the notch. Test: `tests/test_ravine_fill.gd`.
+climbs to the ground line (`Wire.RIM_SILL_*`), so it fills to the brim and
+spills the rest off the side. The level is set the way the user asked: fill to
+the brim with the can, then scoop some out with the Water compartment (the
+water ball's scoop, `NativeChunkEditor._scoop`; it already worked on any
+standing water). Test: `tests/test_ravine_fill.gd`.
 
 ## The Island (2026-10-03)
 

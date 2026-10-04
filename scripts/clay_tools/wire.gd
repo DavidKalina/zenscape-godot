@@ -76,13 +76,14 @@ const RIM_HEADING := 0.3
 const RIM_PAST := 0.6
 ## A ravine run out through the rim keeps a sill: over its last RIM_SILL_RUN
 ## metres before the rim the bed climbs to RIM_SILL_DEPTH of the gorge's depth
-## under the ground, a notch in the rim. Water holds a hollow to its rim's
+## under the ground (none: the mouth's bed rises to the ground line, which the
+## flow's cells read as a few cm under it), so the ravine fills to the brim. Water holds a hollow to its rim's
 ## lowest point (WaterFlow `hollow`), and a bed that fell to the open side held
 ## none: the can's gush found a few m3 and brimmed (tools/probe_ravine_fill.gd).
 ## With the sill the ravine fills to the notch, and what is poured past it
 ## spills off the plate's side as an edge fall.
 const RIM_SILL_RUN := 3.0
-const RIM_SILL_DEPTH := 0.3
+const RIM_SILL_DEPTH := 0.0
 ## The cut drawn through: the head's pace in metres a second, the whole cut's
 ## least and most seconds, and how much of a smoothstep's ease-in-out is
 ## mixed into its even pace (0 even, 1 a full smoothstep).
