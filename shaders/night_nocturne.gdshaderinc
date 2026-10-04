@@ -41,19 +41,20 @@ vec3 zs_nocturne_light(vec3 room, float pixel) {
   if (band < 0.01) return vec3(0.0);
   // Stretch the pattern along the band (its across-band part is scaled up).
   vec3 along = room - n * d;
-  vec3 q = along + n * d * 2.6 + vec3(wx, wy, wx - wy) * 0.15;
+  vec3 q = along + n * d * 4.0 + vec3(wx, wy, wx - wy) * 0.15;
   float billow = zs_night_fbm(q * 3.0, 3, pixel * 3.0);
-  float glow = band * mix(0.4, 1.0, smoothstep(0.3, 0.75, billow));
+  float glow = band * mix(0.55, 1.0, smoothstep(0.25, 0.7, billow));
   float r = zs_night_fbm(q * 6.0 + 5.0, 3, pixel * 6.0);
   float ridge = 1.0 - abs(r * 2.0 - 1.0);
-  float wisps = smoothstep(0.55, 0.95, ridge) * band;
-  float lanes = smoothstep(0.7, 0.93, ridge) * exp(-off * off / (width * width * 0.5));
+  float wisps = smoothstep(0.55, 1.0, ridge) * band;
+  float lane2 = zs_night_fbm(q * 2.2 + 17.0, 2, pixel * 2.2);
+  float lanes = smoothstep(0.47, 0.64, lane2) * exp(-off * off / (width * width * 0.45));
   // One long dark rift down the spine, broken by the noise.
-  float rift = exp(-pow((off - 0.012) / 0.028, 2.0)) * smoothstep(0.3, 0.6, billow);
-  float dark = clamp(0.8 * lanes + 0.6 * rift, 0.0, 0.9);
-  vec3 haze = vec3(0.07, 0.13, 0.19) * band;
-  vec3 rose = mix(vec3(0.46, 0.2, 0.26), vec3(0.78, 0.46, 0.36), clamp(core * 0.8 + 0.25 * billow, 0.0, 1.0));
-  return (haze * 0.5 + rose * (glow * 0.34 + wisps * 0.1)) * (1.0 - dark);
+  float rift = exp(-pow((off - 0.012) / 0.016, 2.0)) * smoothstep(0.4, 0.62, billow);
+  float dark = clamp(0.75 * lanes + 0.35 * rift, 0.0, 0.72);
+  vec3 haze = vec3(0.05, 0.09, 0.13) * band;
+  vec3 rose = mix(vec3(0.9, 0.18, 0.22), vec3(1.0, 0.5, 0.28), clamp(core * 0.8 + 0.25 * billow, 0.0, 1.0));
+  return (haze * 0.5 + rose * (glow * 0.5 + wisps * 0.14 + core * band * 0.1)) * (1.0 - dark);
 }
 
 // A star as the style sees it (shaders/sky_stars.gdshader): `tint` its
@@ -74,6 +75,10 @@ void zs_nocturne_star(inout vec3 tint, inout float bright, inout float size, flo
 vec4 zs_nocturne_planet_body(vec3 p, vec3 radial, vec3 view, vec3 sun) {
   float fwy = fwidth(p.y);
   float lit = smoothstep(-0.2, 0.9, dot(radial, sun));
+  // At night the real sun may be far round the other side: a soft key
+  // from upper left and a little behind the eye keeps the face painted.
+  vec3 key = normalize(vec3(-0.55, 0.6, 0.0) - view * 0.55);
+  lit = mix(lit, smoothstep(-0.25, 0.95, dot(radial, key)) * 0.92 + 0.08, zs_night);
   float mu = clamp(dot(radial, -view), 0.0, 1.0);
   // Streaks run along the latitudes: the noise is squeezed along y.
   float turb = zs_night_noise(vec3(p.x * 2.2, p.y * 7.0, p.z * 2.2));
@@ -83,20 +88,21 @@ vec4 zs_nocturne_planet_body(vec3 p, vec3 radial, vec3 view, vec3 sun) {
   float big = 0.5 + 0.5 * sin(lat * 9.0 + 1.1 * sin(lat * 3.1 + 0.6));
   float mid = 0.5 + 0.5 * sin(lat * 23.0 + 2.0 + 1.6 * turb) ;
   float fine = 0.5 + 0.5 * sin(lat * 57.0 + 4.0 * turb);
-  vec3 cream = vec3(0.93, 0.84, 0.66);
-  vec3 ochre = vec3(0.78, 0.57, 0.38);
-  vec3 rust = vec3(0.6, 0.39, 0.3);
+  vec3 cream = vec3(0.98, 0.83, 0.55);
+  vec3 ochre = vec3(0.86, 0.58, 0.3);
+  vec3 rust = vec3(0.62, 0.33, 0.22);
   vec3 grey = vec3(0.66, 0.68, 0.66);
   vec3 base = mix(rust, cream, big);
   base = mix(base, ochre, mid * 0.45 * keep1);
   base = mix(base, cream, fine * 0.22 * keep2);
-  base = mix(base, grey, smoothstep(0.7, 0.98, abs(p.y)) * 0.6);
+  base = mix(base, grey, smoothstep(0.75, 0.99, abs(p.y)) * 0.3);
+  base = mix(vec3(dot(base, vec3(0.3, 0.55, 0.15))), base, 1.25);
   // Soft limb darkening toward the edge.
   float limb = pow(mu, 0.45);
-  vec3 col = base * (0.1 + 0.9 * lit) * mix(0.35, 1.0, limb);
+  vec3 col = base * (0.06 + 0.94 * lit) * mix(0.45, 1.0, limb);
   // A thin pale rim of atmosphere.
   float rim = pow(1.0 - mu, 4.0);
-  col += vec3(0.6, 0.72, 0.85) * rim * (0.05 + 0.3 * lit);
+  col += vec3(0.7, 0.74, 0.8) * rim * (0.04 + 0.16 * lit);
   float day = smoothstep(-0.35, 0.5, dot(radial, sun));
   return vec4(clamp(col, 0.0, 1.0), max(lit, rim * day) * 0.35);
 }
@@ -129,7 +135,7 @@ vec4 zs_nocturne_planet_rings(vec3 local, float fw, float lit, float shade) {
   float light = (0.25 + 0.75 * lit) * mix(0.08, 1.0, s);
   vec3 tint = mix(vec3(0.72, 0.6, 0.48), vec3(0.93, 0.85, 0.7), ringB);
   tint = mix(tint, vec3(0.8, 0.76, 0.68), step(2.0, r) * 0.5);
-  return vec4(tint * (0.06 + 0.85 * light) * (0.85 + 0.2 * lanes), density * 0.72);
+  return vec4(tint * (0.06 + 0.9 * light) * (0.8 + 0.3 * lanes), density * 0.85);
 }
 
 // The planet's glow round its disc, added: `x` the distance from its centre
