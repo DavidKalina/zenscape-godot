@@ -13,6 +13,13 @@ extends Node
 ## frame (process_priority) and writes the pose into the scene's own orbit
 ## (target, yaw, polar, distance), so the fog, reflections and look pass read
 ## the same camera they always do. The figure is not saved with the place.
+##
+## Walked off the plate's edge, the figure glides (scripts/sky_glide.gd): out
+## over the cloud sea towards copies of the plate set in the sky
+## (scripts/sky_islands.gd), with the air streaking past and the wind's sound
+## (scripts/glide_air.gd). Touching down on land skims along it, and a
+## slow skim lands, back to walking. A prototype: `--no-glide` keeps the old
+## plate clamp.
 
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
@@ -89,7 +96,19 @@ const Shape = preload("res://scripts/native_formation_shape.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
-const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  V or Esc to step out"
+const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  Walk off the edge to glide  ·  V or Esc to step out"
+const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Space to rise  ·  Shift to dive  ·  V or Esc to step out"
+const SkyGlide = preload("res://scripts/sky_glide.gd")
+const SkyIslands = preload("res://scripts/sky_islands.gd")
+const GlideAir = preload("res://scripts/glide_air.gd")
+## The glide's view widens from FLY_FOV at a cruise to FLY_FOV_FAST at full
+## speed, and narrows a little at the float.
+const FLY_FOV := 78.0
+const FLY_FOV_FAST := 104.0
+const EASE_FLY_FOV := 0.25
+## A skim this slow for this long, not diving, lands.
+const LAND_SPEED := 10.0
+const LAND_TIME := 0.8
 
 signal entered
 signal left
@@ -130,6 +149,16 @@ var _steps := 0.0
 var _bob := 0.0
 var _bob_offset := Vector3.ZERO
 var steps: Node
+## The glide (scripts/sky_glide.gd), the islands it flies between and the air
+## round it; `flying` while it glides.
+var glide := SkyGlide.new()
+var islands: Node3D
+var air: Node3D
+var flying := false
+var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
+## Mouse look gathered for the glide's next step, and seconds of skim so far.
+var _fly_look := Vector2.ZERO
+var _skim_time := 0.0
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -171,6 +200,13 @@ func setup(owner_scene: Node3D) -> void:
 	_dot.draw.connect(func() -> void:
 		_dot.draw_circle(_dot.size*0.5,2.5,Color(1,1,1,0.55),true,-1.0,true))
 	_layer.add_child(_dot)
+	if glide_enabled:
+		islands = SkyIslands.new()
+		islands.setup(scene)
+		add_child(islands)
+		air = GlideAir.new()
+		add_child(air)
+		islands.skip.append(air)
 
 # --- The figure -------------------------------------------------------------------
 
@@ -214,6 +250,7 @@ func _build_figure() -> void:
 	nose.position = Vector3(0.0,FIGURE_HEIGHT-0.1,-0.11)
 	figure.add_child(nose)
 	editor.terrain.add_child(figure)
+	if islands != null: islands.skip.append(figure)
 
 func _world_restored(state: Dictionary) -> void:
 	if state.is_empty(): forget()
@@ -479,6 +516,12 @@ func enter() -> void:
 
 func leave() -> void:
 	if not active: return
+	var eye := _eye_global()
+	if flying:
+		eye = glide.position
+		_end_flight()
+		_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(eye))))
+		_eye_y = _feet.y+EYE_HEIGHT
 	active = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_layer.visible = false
@@ -488,7 +531,6 @@ func leave() -> void:
 	scene._auto_orbit = bool(_before.auto)
 	# Re-express the eye as an orbit around a point ahead of it, then glide home.
 	var reach := 6.0
-	var eye := _eye_global()
 	scene.target = eye-_offset(scene.yaw,scene.polar)*reach
 	scene.distance = reach
 	_returning = RETURN
@@ -514,6 +556,9 @@ func _advance_eye(delta: float) -> void:
 	if not has_figure() or scene._menu.visible:
 		leave()
 		return
+	if flying:
+		_advance_flight(delta)
+		return
 	var want := Vector2(
 		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
 		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))-float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
@@ -531,7 +576,11 @@ func _advance_eye(delta: float) -> void:
 	# Wading slows the walk as the water deepens.
 	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
 	var was := _feet
-	_feet = _clamped(_walk(_feet,Vector2(move.x,move.z)*delta))
+	var walked := _walk(_feet,Vector2(move.x,move.z)*delta)
+	if glide_enabled and (absf(walked.x) > PLATE_REACH or absf(walked.z) > PLATE_REACH):
+		_launch(move.length())
+		return
+	_feet = _clamped(walked)
 	var moved := Vector2(_feet.x-was.x,_feet.z-was.z).length()
 	_notice_step(moved,delta)
 	_footfall(moved,delta,right)
@@ -551,6 +600,84 @@ func _advance_eye(delta: float) -> void:
 	_sync_figure()
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-4.0)/1.5,0.0,1.0)
+
+# --- The glide --------------------------------------------------------------------
+
+## Off the edge: the plate is copied out into the sky and the glide takes the eye.
+func _launch(pace: float) -> void:
+	flying = true
+	_fly_look = Vector2.ZERO
+	_skim_time = 0.0
+	islands.build()
+	glide.launch(_eye_global(),_yaw,pace)
+	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
+	air.start()
+	_hint.text = FLY_HINT
+	_hint.modulate.a = 1.0
+	_hint_time = 0.0
+	steps.step(_surface(),1.0)
+
+func _end_flight() -> void:
+	flying = false
+	scene.camera_roll = 0.0
+	air.stop()
+	_hint.text = HINT
+
+## The glide's input this frame: keys, the first gamepad and the mouse.
+func _fly_input() -> Dictionary:
+	var key := func(a: Key, b: Key) -> float: return float(Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b))
+	var stick := Vector2(Input.get_joy_axis(0,JOY_AXIS_LEFT_X),Input.get_joy_axis(0,JOY_AXIS_LEFT_Y))
+	if stick.length() < 0.15: stick = Vector2.ZERO
+	var input := {
+		"turn":clampf(key.call(KEY_D,KEY_RIGHT)-key.call(KEY_A,KEY_LEFT)+stick.x,-1.0,1.0),
+		"pitch":clampf(key.call(KEY_S,KEY_DOWN)-key.call(KEY_W,KEY_UP)+stick.y,-1.0,1.0),
+		"rise":maxf(float(Input.is_physical_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0,JOY_BUTTON_A)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_LEFT)),
+		"dive":maxf(float(Input.is_physical_key_pressed(KEY_SHIFT)),Input.get_joy_axis(0,JOY_AXIS_TRIGGER_RIGHT)),
+		"look":_fly_look,
+	}
+	_fly_look = Vector2.ZERO
+	return input
+
+func _advance_flight(delta: float) -> void:
+	var input := _fly_input()
+	glide.step(delta,input,islands.ground)
+	# Over a copy, the copy becomes the plate.
+	var under: int = islands.copy_under(glide.position)
+	if under >= 0: glide.position += islands.arrive(under)
+	air.advance(delta,glide.velocity,glide.hang,float(input.dive))
+	var reach := 6.0
+	scene.yaw = glide.heading
+	scene.polar = PI*0.5+glide.pitch
+	scene.target = glide.position-_offset(scene.yaw,scene.polar)*reach
+	scene.distance = reach
+	scene.camera_roll = -glide.bank
+	scene._auto_orbit = false
+	scene._orbit_delta = Vector2.ZERO
+	scene._pan_delta = Vector2.ZERO
+	var fast := clampf((glide.speed-SkyGlide.CRUISE)/(SkyGlide.MAX-SkyGlide.CRUISE),0.0,1.0)
+	camera.fov = lerpf(camera.fov,lerpf(FLY_FOV,FLY_FOV_FAST,fast)-4.0*glide.hang,_ease(EASE_FLY_FOV,delta))
+	_hint_time += delta
+	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
+	# A slow skim on the plate lands.
+	_skim_time = _skim_time+delta if glide.skimming and glide.speed < LAND_SPEED and float(input.dive) < 0.5 else 0.0
+	if _skim_time >= LAND_TIME and islands._height(glide.position) != null: _land()
+
+## Down on the plate: back to walking where the glide touched.
+func _land() -> void:
+	var at := glide.position
+	_end_flight()
+	_yaw = glide.heading
+	_polar = PI*0.5
+	_read_obstacles(true)
+	_read_depths()
+	_feet = _clamped(_free_spot(_clamped(editor.terrain.to_local(at))))
+	_eye_y = maxf(editor.terrain.to_local(at).y,_feet.y+EYE_HEIGHT*0.6)
+	# It lands at a run that eases off.
+	_pace = Vector2(0.0,-1.0)*RUN
+	_steps = FIRST_STEP
+	steps.step(_surface(),1.0)
+	_disturb(PLACE_STRENGTH)
+	_sync_figure()
 
 ## A stride walked, or a while stood: the life round it hears.
 func _notice_step(moved: float, delta: float) -> void:
@@ -635,7 +762,9 @@ func handle(event: InputEvent) -> bool:
 			return true
 		return false
 	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and flying:
+			_fly_look += Vector2(event.relative.x,-event.relative.y)*LOOK
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			_yaw -= event.relative.x*LOOK
 			_polar = clampf(_polar-event.relative.y*LOOK,POLAR.x,POLAR.y)
 		return true
