@@ -170,7 +170,7 @@ func units() -> void:
 	ground.place("broadleaf",Vector2(-5.0,5.0),0.0,1.0)
 	ground.place("rock",Vector2(0.0,-5.0),0.0,1.0)
 	var refuse := FlowerSowing.new(ground,"poppy",4242)
-	for spot: Array in [["water",Vector2(4.0,-4.0),0.9],["a steep peak",Vector2(-5.0,-5.0),1.0],["painted rock",Vector2(5.0,5.0),0.7],["dense forest",Vector2(-5.0,5.0),1.0]]:
+	for spot: Array in [["water",Vector2(4.0,-4.0),0.9],["a steep peak",Vector2(-5.0,-5.0),1.0],["painted rock",Vector2(5.0,5.0),0.7]]:
 		var on: Array = handful(spot[1],float(spot[2]),110,3)
 		var made: Dictionary = refuse.grow(on[0],on[1],3,now)
 		var steep := 0
@@ -180,6 +180,9 @@ func units() -> void:
 			check(steep == 0,"No flower takes on a slope over %.2f (%d did)" % [FlowerSowing.STEEP,steep])
 		else:
 			check(made.placed.size() == 0,"No flower takes on %s (%d did, %d refused)" % [spot[0],made.placed.size(),made.refused])
+	var grove_made: Dictionary = refuse.grow(handful(Vector2(-5.0,5.0),1.0,110,3)[0],handful(Vector2(-5.0,5.0),1.0,110,3)[1],3,now)
+	var trunked := _sown(ground,grove_made.placed).filter(func(item: Dictionary) -> bool: return Vector2(item.x,item.z).distance_to(Vector2(-5.0,5.0)) < FlowerSowing.TRUNK*0.99).size()
+	check(grove_made.placed.size() > 0 and trunked == 0,"Seed lands between a grove's trunks, not on one (%d placed, %d on a trunk)" % [grove_made.placed.size(),trunked])
 	var stone := refuse.grow(handful(Vector2(0.0,-5.0),0.6,60,4)[0],handful(Vector2(0.0,-5.0),0.6,60,4)[1],4,now)
 	var on_stone := _sown(ground,stone.placed).filter(func(item: Dictionary) -> bool: return Vector2(item.x,item.z).distance_to(Vector2(0.0,-5.0)) < FlowerSowing.STONE*0.99).size()
 	check(on_stone == 0,"Nothing grows on a stone (%d did)" % on_stone)
@@ -411,7 +414,7 @@ func painting() -> void:
 	for k in range(6): ground.place("broadleaf",Vector2(-5.0,5.0)+Vector2.from_angle(k*TAU/6.0)*1.1,0.0,1.0)
 	ground.place("broadleaf",Vector2(-5.0,5.0),0.0,1.0)
 	ground.place("rock",Vector2(0.0,-5.0),0.0,1.0)
-	for spot: Array in [["water",Vector2(4.0,-4.0),0.4],["a steep peak",Vector2(-5.0,-5.0),0.0],["painted rock",Vector2(5.0,5.0),0.5],["dense forest",Vector2(-5.0,5.0),0.4]]:
+	for spot: Array in [["water",Vector2(4.0,-4.0),0.4],["a steep peak",Vector2(-5.0,-5.0),0.0],["painted rock",Vector2(5.0,5.0),0.5]]:
 		var at: Vector2 = spot[1]
 		var made: Dictionary = paint_on(ground,"poppy",[at-Vector2(float(spot[2]),0.0),at+Vector2(float(spot[2]),0.0)],1.0,4,0.6)
 		if spot[0] == "a steep peak":
@@ -421,6 +424,23 @@ func painting() -> void:
 			check(steep == 0 and made.refused > 0,"No flower is painted on a slope over %.2f (%d were; %d spots refused)" % [FlowerSowing.STEEP,steep,made.refused])
 		else:
 			check(made.placed.size() == 0,"No flower is painted on %s (%d were, %d refused)" % [spot[0],made.placed.size(),made.refused])
+	# Between trees: a ring of trees leaves its middle and its gaps to flowers, up
+	# to the trunks and not onto them (no bare rings).
+	var grove := _flat_data()
+	var heart := Vector2(-5.0,5.0)
+	for k in range(6): grove.place("broadleaf",heart+Vector2.from_angle(k*TAU/6.0)*1.1,0.0,1.0)
+	grove.place("broadleaf",heart,0.0,1.0)
+	var between: Dictionary = paint_on(grove,"poppy",[heart-Vector2(1.6,0.0),heart+Vector2(1.6,0.0)],1.0,4,0.6)
+	var among := _sown(grove,between.placed)
+	var on_trunk := 0
+	var gap := 0
+	for item in among:
+		var at := Vector2(item.x,item.z)
+		for tree: Dictionary in grove.objects.filter(func(o: Dictionary) -> bool: return not FlowerPaint.is_flower(str(o.asset))):
+			if at.distance_to(Vector2(tree.x,tree.z)) < FlowerSowing.TRUNK*0.99: on_trunk += 1
+		if at.distance_to(heart) > 0.6 and at.distance_to(heart) < 1.6: gap += 1
+	check(among.size() > 10 and gap > 0,"Flowers land between trees, in a grove (%d placed, %d in the gaps)" % [among.size(),gap])
+	check(on_trunk == 0,"None stands on a trunk (%d did)" % on_trunk)
 	var on_stone: Dictionary = paint_on(ground,"poppy",[Vector2(0.0,-5.0)],1.0,1,0.6,false,1.0)
 	var stone_hit := _sown(ground,on_stone.placed).filter(func(item: Dictionary) -> bool: return Vector2(item.x,item.z).distance_to(Vector2(0.0,-5.0)) < FlowerSowing.STONE*0.99).size()
 	check(stone_hit == 0,"Nothing is painted on a stone (%d were)" % stone_hit)

@@ -26,7 +26,7 @@ extends RefCounted
 ##   flowers carry the colour.
 ## - **The ground decides.** Nothing takes on water, rock (too steep for the
 ##   habitat, or painted rock, earth or sand), snow, ground steeper than
-##   STEEP, under a tree's crown or in dense forest (FOREST), or where a plant
+##   STEEP, on a tree's trunk (TRUNK), or where a plant
 ##   or stone already stands.
 ## - **It blooms as it landed.** Each flower is born (Emergence's clock, the
 ##   shader's grow-in, scripts/emergence.gd `rise_seconds`) in the order its
@@ -96,11 +96,13 @@ const STEEP := 0.75
 const SNOW_GAP := 1.2
 const PAINTED := 0.5
 const BARE := 0.07
-## Under trees: no flower within CROWN m of a tree's foot (times its record
-## scale), and none where FOREST trees or more stand within FOREST_REACH m.
-const CROWN := 0.9
-const FOREST := 3
-const FOREST_REACH := 2.6
+## Round trees: no flower within TRUNK m of a tree's foot (times its record
+## scale), so none clips a trunk but the ground between trees and right up to
+## them takes flowers, as wildflowers grow under and around trees. (The canopy
+## and forest-density rules once left bare rings and gaps between trees.)
+const TRUNK := 0.35
+## How far (m) the survey looks past the brush for trees.
+const TREE_REACH := 1.0
 ## Nothing grows within ROOM m of a plant already standing, STONE m (times its
 ## scale) of a stone.
 const ROOM := 0.12
@@ -225,24 +227,21 @@ func _cell(p: Vector2) -> int:
 	if g.x < 0 or g.y < 0 or g.x >= data.MEADOW_CELLS or g.y >= data.MEADOW_CELLS: return -1
 	return g.y*data.MEADOW_CELLS+g.x
 
-## Under a crown, or in dense forest.
+## On a trunk: within TRUNK m (times the tree's scale) of a tree's foot.
 func _shaded(p: Vector2) -> bool:
-	var near := 0
 	var cell := Vector2i(p.floor())
-	for dz in range(-3,4):
-		for dx in range(-3,4):
+	for dz in range(-2,3):
+		for dx in range(-2,3):
 			for tree: Vector3 in _trees.get(cell+Vector2i(dx,dz),[]):
-				var d := p.distance_to(Vector2(tree.x,tree.y))
-				if d < CROWN*tree.z: return true
-				if d < FOREST_REACH: near += 1
-	return near >= FOREST
+				if p.distance_to(Vector2(tree.x,tree.y)) < TRUNK*tree.z: return true
+	return false
 
 ## What already stands round `bounds`: trees (for shade), plants and stones
 ## (for room).
 func _survey(bounds: Rect2) -> void:
 	_trees.clear()
 	_taken.clear()
-	var reach := bounds.grow(FOREST_REACH+1.0)
+	var reach := bounds.grow(TREE_REACH+1.0)
 	for item: Dictionary in data.objects:
 		var p := Vector2(float(item.x),float(item.z))
 		if not reach.has_point(p): continue
