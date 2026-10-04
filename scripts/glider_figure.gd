@@ -12,6 +12,11 @@ extends Node3D
 ##
 ## Under it, near the ground, a soft mark shows where it would touch down:
 ## dim while too fast to land, bright once a touch would set it down.
+##
+## Close past rock at speed (scripts/glide_vapour.gd), vapour peels off the
+## wingtips: two soft pale ribbons left hanging in the air where the tips
+## passed, widening and drifting as they fade, stronger off the wing nearer
+## the rock. Breath, not smoke.
 
 const CLOTH := Color("c8643b")
 const SKIN := Color("e8c39e")
@@ -43,6 +48,15 @@ const SCARF_GAP := 0.13
 const SCARF_WIDTH := 0.075
 ## The landing mark shows within MARK_HEIGHT m of the ground.
 const MARK_HEIGHT := 28.0
+## The wingtip vapour: points a tip, the seconds between them (so it hangs
+## VAPOUR*VAPOUR_EVERY seconds), its width new and old (m), its most
+## opacity, its drift as it fades (m/s up and out), and its colour.
+const VAPOUR := 14
+const VAPOUR_EVERY := 0.04
+const VAPOUR_WIDTH := Vector2(0.06,0.55)
+const VAPOUR_ALPHA := 0.42
+const VAPOUR_DRIFT := Vector2(0.18,0.3)
+const VAPOUR_COLOR := Color(1.0,0.98,0.94)
 
 ## The hinges, root to tip, a side: [[left...], [right...]].
 var _hinges := [[],[]]
@@ -55,6 +69,14 @@ var _scarf_mesh: ImmediateMesh
 var _mark: MeshInstance3D
 var _mark_material: StandardMaterial3D
 var _mark_bright := 0.0
+## The vapour trails, the left tip's VAPOUR points then the right's: where
+## each point hangs and how strong it was when it left the tip; and the
+## clock to the next point.
+var _vapour: MeshInstance3D
+var _vapour_mesh: ImmediateMesh
+var _vapour_points := PackedVector3Array()
+var _vapour_strength := PackedFloat32Array()
+var _vapour_clock := 0.0
 
 func _init() -> void:
 	name = "Glider"
@@ -135,6 +157,23 @@ func _init() -> void:
 	_mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_mark.visible = false
 	add_child(_mark)
+	_vapour_mesh = ImmediateMesh.new()
+	_vapour = MeshInstance3D.new()
+	_vapour.name = "Vapour"
+	_vapour.mesh = _vapour_mesh
+	_vapour.top_level = true
+	var mist := StandardMaterial3D.new()
+	mist.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mist.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mist.vertex_color_use_as_albedo = true
+	mist.albedo_texture = _soft_band()
+	mist.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_vapour.material_override = mist
+	_vapour.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_vapour.visible = false
+	add_child(_vapour)
+	_vapour_points.resize(VAPOUR*2)
+	_vapour_strength.resize(VAPOUR*2)
 
 ## Its parent must be a plain Node (or the scene root): it is placed by its
 ## own transform. The scarf and the mark are top level, in global space.
@@ -146,16 +185,21 @@ func reset(glide: RefCounted) -> void:
 	for i in range(SCARF): _scarf_points[i] = glide.position+back*SCARF_GAP*i
 	_beat = 0.0
 	_mark_bright = 0.0
+	_vapour_clock = 0.0
+	_vapour_points.fill(glide.position)
+	_vapour_strength.fill(0.0)
 	update(0.0,glide,0.0,Callable(),false)
 
 ## The world moved under it (SkyIslands `arrive`): the scarf goes too.
 func shift(by: Vector3) -> void:
 	for i in range(_scarf_points.size()): _scarf_points[i] += by
+	for i in range(_vapour_points.size()): _vapour_points[i] += by
 
 ## One frame: posed on `glide`, `dive` held 0..1. `ground` is a
 ## Callable(Vector3) -> Variant (the height under a point, or null);
-## `landable` says whether a touch now would land.
-func update(delta: float, glide: RefCounted, dive: float, ground: Callable, landable: bool) -> void:
+## `landable` says whether a touch now would land; `near` (0 to 1) and
+## `lean` (-1 left to 1 right) are the vapour's (GlideVapour).
+func update(delta: float, glide: RefCounted, dive: float, ground: Callable, landable: bool, near := 0.0, lean := 0.0) -> void:
 	var at: Vector3 = glide.position
 	# Its parent is a plain Node, so its own transform is the global one.
 	transform = Transform3D(Basis.from_euler(Vector3(float(glide.pitch),float(glide.heading),-float(glide.bank))),at+Vector3.DOWN*0.35)
@@ -178,6 +222,7 @@ func update(delta: float, glide: RefCounted, dive: float, ground: Callable, land
 	for i in range(_legs.size()):
 		_legs[i].rotation.x = 0.08*sin(_beat*0.5+i*PI)+0.15*float(glide.hang)
 	_trail_scarf(delta,glide)
+	_trail_vapour(delta,near,lean)
 	_place_mark(delta,at,ground,landable)
 
 ## The wing's angle through a flap's stroke, `t` from 0 (it begins) to 1.
@@ -211,6 +256,58 @@ func _trail_scarf(delta: float, glide: RefCounted) -> void:
 		_scarf_mesh.surface_set_normal(basis.y)
 		_scarf_mesh.surface_add_vertex(_scarf_points[i]+side*w*0.5)
 	_scarf_mesh.surface_end()
+
+## The vapour: each tip lays a point every VAPOUR_EVERY seconds where it
+## is; the points hang there, drifting up and out and widening as they fade.
+func _trail_vapour(delta: float, near: float, side: float) -> void:
+	_vapour_clock += delta
+	var lay := _vapour_clock >= VAPOUR_EVERY
+	if lay: _vapour_clock = fmod(_vapour_clock,VAPOUR_EVERY)
+	var shown := false
+	for s in range(2):
+		var hand := -1.0 if s == 0 else 1.0
+		var o := s*VAPOUR
+		if lay:
+			for i in range(VAPOUR-1,0,-1):
+				_vapour_points[o+i] = _vapour_points[o+i-1]
+				_vapour_strength[o+i] = _vapour_strength[o+i-1]
+		var drift := (Vector3.UP*VAPOUR_DRIFT.x+basis.x.normalized()*hand*VAPOUR_DRIFT.y)*delta
+		for i in range(1,VAPOUR): _vapour_points[o+i] += drift*float(i)/VAPOUR
+		_vapour_points[o] = _tip(s)
+		_vapour_strength[o] = near*clampf(0.6+0.6*side*hand,0.25,1.0)
+		for i in range(VAPOUR): shown = shown or _vapour_strength[o+i] > 0.004
+	_vapour.visible = shown
+	if not shown: return
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	_vapour_mesh.clear_surfaces()
+	for s in range(2):
+		var o := s*VAPOUR
+		_vapour_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+		for i in range(VAPOUR):
+			var p := _vapour_points[o+i]
+			var age := float(i)/(VAPOUR-1)
+			var along := _vapour_points[o+maxi(i-1,0)]-_vapour_points[o+mini(i+1,VAPOUR-1)]
+			# Its width faces the camera, so the ribbon never goes edge on.
+			var facing := basis.y
+			if camera != null and along.length_squared() > 0.000001:
+				var across := along.cross(camera.global_position-p)
+				if across.length_squared() > 0.000001: facing = across
+			facing = facing.normalized()*lerpf(VAPOUR_WIDTH.x,VAPOUR_WIDTH.y,age)*0.5
+			var c := VAPOUR_COLOR
+			c.a = _vapour_strength[o+i]*VAPOUR_ALPHA*(1.0-age)*(1.0-age)*smoothstep(0.0,0.15,age+0.05)
+			_vapour_mesh.surface_set_color(c)
+			_vapour_mesh.surface_set_uv(Vector2(0.0,age))
+			_vapour_mesh.surface_add_vertex(p-facing)
+			_vapour_mesh.surface_set_color(c)
+			_vapour_mesh.surface_set_uv(Vector2(1.0,age))
+			_vapour_mesh.surface_add_vertex(p+facing)
+		_vapour_mesh.surface_end()
+
+## A wingtip, in global space: the middle of the outer panel's tip.
+func _tip(s: int) -> Vector3:
+	var at := transform*_wing_root.transform
+	for hinge: Node3D in _hinges[s]: at = at*hinge.transform
+	return at*Vector3(PANEL_SPAN[PANELS-1]*(-1.0 if s == 0 else 1.0),0.0,SWEEP)
 
 func _place_mark(delta: float, at: Vector3, ground: Callable, landable: bool) -> void:
 	var under: Variant = ground.call(at) if ground.is_valid() else null
@@ -349,6 +446,17 @@ static func _cloth(tris: Array) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	return mesh
+
+## A soft band, clear at its edges, for the vapour's width.
+static func _soft_band() -> Texture2D:
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0,0.5,1.0])
+	gradient.colors = PackedColorArray([Color(1,1,1,0.0),Color(1,1,1,1.0),Color(1,1,1,0.0)])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.width = 64
+	texture.height = 1
+	return texture
 
 ## A soft white ring with a faint centre, for the landing mark.
 static func _soft_ring() -> Texture2D:

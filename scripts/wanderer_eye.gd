@@ -118,18 +118,14 @@ const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
-## The chase view's field of view, widening with speed.
-const CHASE_FOV := 70.0
-const CHASE_FOV_FAST := 90.0
+const GlideVapour = preload("res://scripts/glide_vapour.gd")
+## The chase view's field of view at a cruise; the camera widens it with
+## speed (GlideCamera `fov`).
+const CHASE_FOV := GlideCamera.FOV
 ## Seconds the camera takes to swoop from the chase into the eyes on landing.
 const SWOOP := 0.9
 ## The right stick's free look, radians a second at full tilt.
 const STICK_LOOK := 2.4
-## The glide's view widens from FLY_FOV at a cruise to FLY_FOV_FAST at full
-## speed, and narrows a little at the float.
-const FLY_FOV := 78.0
-const FLY_FOV_FAST := 104.0
-const EASE_FLY_FOV := 0.25
 ## A skim this slow for this long, not diving, lands.
 const LAND_SPEED := 10.0
 ## The islands stand hundreds of metres apart; the view reaches FLY_FAR m
@@ -204,9 +200,11 @@ var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
-## The chase camera and the figure drawn gliding.
+## The chase camera, the figure drawn gliding, and how close it passes to
+## rock, for the vapour off its wingtips.
 var chase := GlideCamera.new()
 var glider: Node3D
+var vapour := GlideVapour.new()
 ## The landing's swoop into the eyes: seconds left, and the chase pose it
 ## leaves from.
 var _swoop := 0.0
@@ -737,7 +735,8 @@ func _launch(pace: float, drop := true) -> void:
 	_flap_asked = false
 	_flaps_heard = 0
 	# The camera pulls back out of the eyes to chase.
-	chase.reset(glide,from)
+	chase.reset(glide,from,camera.fov)
+	vapour.reset()
 	glider.visible = not chase.first_person
 	glider.reset(glide)
 	_swoop = 0.0
@@ -794,7 +793,8 @@ func _advance_flight(delta: float) -> void:
 	sky.advance(delta,glide.position,islands.clouds.inside(glide.position,scene._motion_time))
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
-	air.advance(delta,glide.velocity,glide.hang,float(input.dive))
+	vapour.step(delta,glide,_fly_ground)
+	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near)
 	if glide.flaps != _flaps_heard:
 		_flaps_heard = glide.flaps
 		air.flap()
@@ -803,9 +803,7 @@ func _advance_flight(delta: float) -> void:
 	scene._auto_orbit = false
 	scene._orbit_delta = Vector2.ZERO
 	scene._pan_delta = Vector2.ZERO
-	var fast := clampf((glide.velocity.length()-SkyGlide.CRUISE)/(SkyGlide.MAX-SkyGlide.CRUISE),0.0,1.0)
-	var fov := lerpf(FLY_FOV,FLY_FOV_FAST,fast) if chase.first_person else lerpf(CHASE_FOV,CHASE_FOV_FAST,fast)
-	camera.fov = lerpf(camera.fov,fov-4.0*glide.hang,_ease(EASE_FLY_FOV,delta))
+	camera.fov = chase.fov
 	_hint_time += delta
 	_hint.modulate.a = clampf(1.0-(_hint_time-6.0)/1.5,0.0,1.0)
 	# Touching down slowly anywhere on the plate lands; on an islet's ground
@@ -814,7 +812,7 @@ func _advance_flight(delta: float) -> void:
 	var islet: Dictionary = {} if on_plate else islands.islets.islet_at(glide.position)
 	var on_islet := not islet.is_empty() and _islet_ground_near(islet,glide.position)
 	var landable: bool = glide.speed < LAND_SPEED and float(input.dive) < 0.5 and (on_plate or on_islet)
-	glider.update(delta,glide,float(input.dive),_fly_ground,landable)
+	glider.update(delta,glide,float(input.dive),_fly_ground,landable,vapour.near,vapour.side)
 	_skim_time = _skim_time+delta if glide.skimming and landable else 0.0
 	if _skim_time >= LAND_TIME:
 		if on_plate: _land()

@@ -10,6 +10,10 @@ extends Node3D
 ## opens up with speed, and a low roar under it in a dive. At the float, at
 ## the top of an arc, it drops almost to nothing. Each flap is a soft
 ## whoosh of cloth on air (`flap`).
+##
+## Close past something big (scripts/glide_vapour.gd `near`), the air
+## thickens: the streaks brighten and the hiss rises and opens, a rush of
+## breath along the rock.
 
 const COUNT := 420
 const BOX := 36.0
@@ -20,6 +24,11 @@ const RATE := 22050.0
 ## The wind's loudness at a glide and at full speed, in linear gain.
 const GAIN := Vector2(0.05,0.55)
 const EASE := 0.12
+## Close past rock, at full `near`: the streaks' extra strength, the
+## wind's extra gain, and how much brighter the hiss opens.
+const NEAR_STREAKS := 0.45
+const NEAR_GAIN := 0.22
+const NEAR_OPEN := 0.18
 ## A flap's whoosh: its loudness, and how fast it swells and dies (per sample).
 const WHOOSH := 0.32
 const WHOOSH_IN := 0.0035
@@ -90,17 +99,17 @@ func stop() -> void:
 	_player.stop()
 	_playback = null
 
-## Each frame of the glide: its velocity, its float (0 to 1) and whether it is
-## tucked in a dive.
-func advance(delta: float, velocity: Vector3, hang: float, dive: float) -> void:
+## Each frame of the glide: its velocity, its float (0 to 1), whether it is
+## tucked in a dive, and how close it is passing to rock (0 to 1).
+func advance(delta: float, velocity: Vector3, hang: float, dive: float, near := 0.0) -> void:
 	var speed := velocity.length()
 	var fast := clampf((speed-QUIET)/(LOUD-QUIET),0.0,1.0)
 	var k := 1.0-exp(-delta/EASE)
-	_shown = lerpf(_shown,smoothstep(0.0,1.0,fast)*(1.0-hang*0.8),k)
+	_shown = lerpf(_shown,minf(smoothstep(0.0,1.0,fast)*(1.0-hang*0.8)+NEAR_STREAKS*near,1.0),k)
 	_material.set_shader_parameter("velocity",velocity)
 	_material.set_shader_parameter("strength",0.12+0.75*_shown)
-	_gain = lerpf(_gain,lerpf(GAIN.x,GAIN.y,fast*fast)*(1.0-0.9*hang),k)
-	_open = lerpf(_open,0.04+0.4*fast,k)
+	_gain = lerpf(_gain,lerpf(GAIN.x,GAIN.y,fast*fast)*(1.0-0.9*hang)+NEAR_GAIN*near,k)
+	_open = lerpf(_open,0.04+0.4*fast+NEAR_OPEN*near,k)
 	_deep = lerpf(_deep,clampf(dive*fast*1.4,0.0,1.0),k)
 	_fill()
 
