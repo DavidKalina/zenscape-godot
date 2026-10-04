@@ -81,7 +81,6 @@ func _ready() -> void:
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
 			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
-			if node_name == "logs" and mesh != source_mesh: LogMesh.dress(_materials[key])
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = HeroTrees.species_tint(node_name,Color.WHITE)
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
@@ -975,5 +974,5 @@ func update_object_preview(record: Dictionary) -> void:
 				continue
 			var colored := key in ["canopy","petal","rock"] or (key.begins_with("tree:") and "canopies" in key)
 			if _catalog_parts.has(record.asset):
-				colored = _catalog_parts[record.asset].size()==1 or "canopies" in key or "flowers-" in key or "fungus-caps" in key
+				colored = _catalog_parts[record.asset].size()==1 or key == "log:logs" or "canopies" in key or "flowers-" in key or "fungus-caps" in key
 			batch.multimesh.set_instance_color(i,tint if tint != null and colored else _tints.get(key,Color.WHITE))

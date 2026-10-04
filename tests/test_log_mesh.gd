@@ -19,7 +19,7 @@ func _initialize() -> void:
 	check(mesh.get_surface_count() == 1, "One surface, so the catalogue's single part draws it")
 	var tris := LogMesh.triangle_count(mesh)
 	print("log triangles: ", tris, " (source ", LogMesh.triangle_count(old_mesh), ")")
-	check(tris > 150 and tris < 500, "Triangle budget under 500 (got %d)" % tris)
+	check(tris > 150 and tris < 400, "Triangle budget under 500 (got %d)" % tris)
 	var bounds := mesh.get_aabb()
 	var old_bounds := old_mesh.get_aabb()
 	print("bounds ", bounds, " source ", old_bounds)
@@ -27,39 +27,66 @@ func _initialize() -> void:
 	check(bounds.size.z > old_bounds.size.z * 0.7 and bounds.size.z < old_bounds.size.z * 1.25, "Girth across Z close to the source")
 	check(bounds.position.y > old_bounds.position.y - 0.03 and bounds.position.y < old_bounds.position.y + 0.03, "Underside as deep as the source's")
 	check(bounds.end.y > 0.17 and bounds.end.y < old_bounds.end.y + 0.05, "Top (moss, stubs) no taller than the source's stub")
+	var moss := LogMesh.moss_mesh()
+	var moss_tris := LogMesh.triangle_count(moss)
+	print("moss triangles: ", moss_tris, " total ", tris + moss_tris)
+	check(tris + moss_tris < 520, "Bark and moss together stay near 500 triangles (got %d)" % (tris + moss_tris))
 	var arrays := mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var colours: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
 	check(vertices.size() == colours.size() and vertices.size() == normals.size(), "Colour and normal per vertex")
-	var soft := LogMesh.soft_vertex_count(mesh)
-	check(soft >= 60, "Moss and grass carry green vertex colour (got %d)" % soft)
-	# Moss lies along the top, over the bark's upper half.
-	var moss_top := -INF
-	var moss_x_low := INF
-	var moss_x_high := -INF
 	var pale := 0
-	for i in range(vertices.size()):
-		var c := colours[i]
-		if c.g > c.r * 1.2 and c.g > c.b * 1.3 and vertices[i].y > 0.05:
-			moss_top = maxf(moss_top, vertices[i].y)
-			moss_x_low = minf(moss_x_low, vertices[i].x)
-			moss_x_high = maxf(moss_x_high, vertices[i].x)
-		if c.r > 0.35 and c.r > c.b * 1.8: pale += 1
-	check(moss_top > 0.1 and moss_x_high - moss_x_low > 0.5, "A moss strip runs along the upper side")
-	check(pale >= 40, "Pale end grain and cut stubs are present (got %d)" % pale)
+	for c in colours:
+		if c.r > 0.35 and c.r > c.b * 1.6: pale += 1
+	var dark_ring := 0
+	for c in colours:
+		if absf(c.r - LogMesh.WOOD_RING.r) < 0.08 and c.r > 0.2 and c.b < 0.16: dark_ring += 1
+	check(pale >= 60, "Pale end grain and cut stubs are present (got %d)" % pale)
+	check(dark_ring >= 24, "Dark end-grain rings are present (got %d)" % dark_ring)
+	# Round outline: the cross-section's radii at mid-length differ little.
+	var mid: Array[float] = []
+	for v in vertices:
+		if absf(v.x) < 0.04 and v.y < 0.12:
+			mid.append(Vector2(v.y - LogMesh._centre(v.x).x, v.z - LogMesh._centre(v.x).y).length())
+	mid.sort()
+	check(mid.size() >= 12 and mid[mid.size() - 1] / mid[0] < 1.22, "Round cross-section (radius ratio %.2f)" % (mid[mid.size() - 1] / mid[0]))
 	var finite := true
 	for i in range(vertices.size()):
 		if not vertices[i].is_finite() or absf(normals[i].length() - 1.0) > 0.01: finite = false
 	check(finite, "Finite vertices and unit normals")
+	# Moss: many small clumps along the top, on its own grass-look material.
+	var moss_arrays := moss.surface_get_arrays(0)
+	var mv: PackedVector3Array = moss_arrays[Mesh.ARRAY_VERTEX]
+	var muv: PackedVector2Array = moss_arrays[Mesh.ARRAY_TEX_UV]
+	var low := INF
+	var high := -INF
+	var top := 0
+	var tips := 0
+	for i in range(mv.size()):
+		low = minf(low, mv[i].x)
+		high = maxf(high, mv[i].x)
+		if mv[i].y > 0.1: top += 1
+		if muv[i].y > 0.95: tips += 1
+	check(high - low > 0.6, "Moss runs along most of the log")
+	check(top > mv.size() / 2, "Most moss is on the upper side")
+	check(tips >= 30, "Many separate blade tips (got %d)" % tips)
+	var material := moss.surface_get_material(0) as ShaderMaterial
+	check(material != null and material.get_shader_parameter("grass_blades") == true, "Moss wears the grass_blades look")
+	check(moss.has_meta("grass_root") and moss.has_meta("grass_tip"), "Moss carries its gradient for the shader to divide out")
+	# The catalogue draws both parts and the log stays one asset.
+	check(NativeAssetCatalog.PARTS["log"] == ["logs", "log-moss"], "log has bark and moss parts")
+	check(NativeAssetCatalog.PARTS["log"][0] == "logs", "The first part is still the bark (collision and pivot read it)")
+	var holder: Node3D = Node3D.new()
+	var node := NativeAssetCatalog.source_node(holder, "log-moss")
+	check(node is MeshInstance3D and node.mesh == moss, "The catalogue builds the moss node")
+	check(NativeAssetCatalog.part_pose("log:log-moss", node, node.mesh) == Transform3D.IDENTITY, "The moss shares the log's transform")
+	holder.free()
 	# Swap: the log's node is replaced, keeping its material; others untouched.
 	var swapped := LogMesh.swap("logs", old_mesh)
 	check(swapped != old_mesh and LogMesh.triangle_count(swapped) == tris, "logs swaps to the new mesh")
 	check(swapped.surface_get_material(0) == old_mesh.surface_get_material(0), "The source material is kept")
 	check(LogMesh.swap("stumps", old_mesh) == old_mesh and LogMesh.swap("mesh-10", old_mesh) == old_mesh, "Other meshes are left alone")
-	var material := old_mesh.surface_get_material(0).duplicate()
-	LogMesh.dress(material)
-	check(material.get_shader_parameter("flat_faces") == false, "Dress turns derivative flat faces off for the soft moss")
 	check(LogMesh.log_mesh() == mesh, "Built once and cached")
 	source.free()
 	print("log mesh test ", "passed" if failures == 0 else "FAILED")
