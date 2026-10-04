@@ -82,7 +82,7 @@ func run() -> void:
 		# --yaws=A,B: extra overviews turned by these radians, to find peaks at other bearings.
 		for yi in yaws.size():
 			pose(0.0, 1.0, yaws[yi])
-			await frames(150)
+			await frames(90)
 			await still("yaw%d-%02d%02d.png" % [yi, int(hours[h]), int(fposmod(hours[h], 1.0) * 60.0 + 0.5)])
 		if only == "yaws": continue
 		for s in shots:
