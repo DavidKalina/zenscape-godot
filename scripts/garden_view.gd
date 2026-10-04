@@ -3,6 +3,7 @@ extends Node3D
 signal instances_published()
 const HeroTrees := preload("res://scripts/hero_trees.gd")
 const GrassTuft := preload("res://scripts/grass_tuft_mesh.gd")
+const LogMesh := preload("res://scripts/log_mesh.gd")
 const RockVariants := preload("res://scripts/rock_variants.gd")
 const Variety := preload("res://scripts/seeded_variety.gd")
 ## Seconds above every birth's rise (Emergence TREE_RISE and kin), where the
@@ -76,10 +77,11 @@ func _ready() -> void:
 			var key: String = kind+":"+node_name
 			_catalog_parts[kind].append(key)
 			var source_mesh: Mesh = original.multimesh.mesh if original is MultiMeshInstance3D else original.mesh
-			var mesh: Mesh = GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh))
+			var mesh: Mesh = LogMesh.swap(node_name,GrassTuft.swap(node_name,HeroTrees.swap(node_name,source_mesh)))
 			_meshes[key] = mesh
 			_materials[key] = mesh.surface_get_material(0).duplicate()
 			if node_name == "mesh-10" and mesh != source_mesh: GrassTuft.dress(_materials[key], mesh)
+			if node_name == "logs" and mesh != source_mesh: LogMesh.dress(_materials[key])
 			_catalog_poses[key] = preload("res://scripts/native_asset_catalog.gd").part_pose(key,original,mesh)
 			_tints[key] = HeroTrees.species_tint(node_name,Color.WHITE)
 			if original is MultiMeshInstance3D and original.multimesh.use_colors and original.multimesh.instance_count > 0:
