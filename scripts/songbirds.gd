@@ -671,7 +671,7 @@ func _rustle(id: int, shiver: Vector3, leaves: int, big: bool) -> void:
 	var field: Object = _field()
 	if field != null:
 		var way := Vector3(_rng.randf_range(-1,1),0.0,_rng.randf_range(-1,1)).normalized()
-		field.emit_gust(crown,way,shiver.x,shiver.y*maxf(float(trees[id].reach)/0.6,0.8),shiver.z)
+		field.emit_gust(crown,way,shiver.x,shiver.y*maxf(float(trees[id].reach)/0.6,0.8),shiver.z,true)
 	_count("rustle")
 	if leaves > 0: _shed(id,crown,big)
 
