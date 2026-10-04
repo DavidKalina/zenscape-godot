@@ -237,6 +237,8 @@ func gorge(start: Vector2, offsets: Array, fine := false, shape := "bow", interr
 	var digs: Array[float] = []
 	for k in range(41):
 		var q: Vector2 = along_path(path,length*(0.05+0.9*k/40.0))[0]
+		# A run out through the rim climbs to its sill over its last metres.
+		if preload("res://scripts/land_clay.gd").PLATE_HALF-maxf(absf(q.x),absf(q.y)) < Wire.RIM_SILL_RUN: continue
 		var dug := height(q,base)-height(q)
 		var room := minf(Wire.GORGE_DEPTH*(Wire.SHALLOW if fine else 1.0),height(q,base)-NativeTerrainData.MIN_HEIGHT)
 		shallowest_share = minf(shallowest_share,dug/room)

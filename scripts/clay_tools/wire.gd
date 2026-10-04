@@ -74,6 +74,16 @@ const SMOOTH_PASSES := 2
 const RIM_REACH := 2.5
 const RIM_HEADING := 0.3
 const RIM_PAST := 0.6
+## A ravine run out through the rim keeps a sill: over its last RIM_SILL_RUN
+## metres before the rim the bed climbs to RIM_SILL_DEPTH of the gorge's depth
+## under the ground (none: the mouth's bed rises to the ground line, which the
+## flow's cells read as a few cm under it), so the ravine fills to the brim. Water holds a hollow to its rim's
+## lowest point (WaterFlow `hollow`), and a bed that fell to the open side held
+## none: the can's gush found a few m3 and brimmed (tools/probe_ravine_fill.gd).
+## With the sill the ravine fills to the notch, and what is poured past it
+## spills off the plate's side as an edge fall.
+const RIM_SILL_RUN := 3.0
+const RIM_SILL_DEPTH := 0.0
 ## The cut drawn through: the head's pace in metres a second, the whole cut's
 ## least and most seconds, and how much of a smoothstep's ease-in-out is
 ## mixed into its even pace (0 even, 1 a full smoothstep).
@@ -419,6 +429,8 @@ func _bed(path: PackedVector2Array, arc: PackedFloat32Array, depth: float) -> Pa
 	bed.resize(count)
 	var last := 0.0
 	var found := false
+	var grounds := PackedFloat32Array()
+	grounds.resize(count)
 	for k in count:
 		var ground: Variant = data.sample(_point_at(path,step*k),base)
 		if ground != null:
@@ -428,11 +440,23 @@ func _bed(path: PackedVector2Array, arc: PackedFloat32Array, depth: float) -> Pa
 				for j in k: bed[j] = last-depth
 			found = true
 		bed[k] = last-depth
+		grounds[k] = last
 	var forward := bed[0] >= bed[count-1]
 	for n in range(1,count):
 		var k := n if forward else count-1-n
 		var before := k-1 if forward else k+1
 		bed[k] = minf(bed[k],bed[before]-BED_FALL*step)
+	# The sill at an end run out through the rim: the bed climbs to a notch.
+	var half: float = preload("res://scripts/land_clay.gd").PLATE_HALF
+	var open_head := maxf(absf(path[0].x),absf(path[0].y)) > half
+	var open_tail := maxf(absf(path[-1].x),absf(path[-1].y)) > half
+	for k in count:
+		var run := INF
+		if open_head: run = step*k
+		if open_tail: run = minf(run,length-step*k)
+		if run >= RIM_SILL_RUN: continue
+		var notch := grounds[k]-depth*RIM_SILL_DEPTH
+		bed[k] = maxf(bed[k],lerpf(bed[k],notch,smoothstep(RIM_SILL_RUN,RIM_SILL_RUN*0.5,run)))
 	for k in count: bed[k] = maxf(bed[k],NativeTerrainData.MIN_HEIGHT)
 	return bed
 
