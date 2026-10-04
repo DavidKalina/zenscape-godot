@@ -15,6 +15,7 @@ extends Node
 ## writes the eased pose into it, so the fog, reflections and look pass read
 ## the same camera they always do.
 const Glass = preload("res://scripts/glass_chrome.gd")
+const Footbridge = preload("res://scripts/footbridge.gd")
 const PAD := Vector2(10,8)
 ## Seconds for a glide to cover about 63 % of the way (exponential ease).
 const EASE_ORBIT := 0.22
@@ -522,12 +523,15 @@ static func _offset(yaw: float, polar: float) -> Vector3:
 func _orbit_camera() -> Vector3:
 	return _pivot+_offset(_yaw,_polar)*_distance
 
-## A plate point at eye height over the ground, clamped to the plate.
+## A plate point at eye height over the ground (or a footbridge's deck),
+## clamped to the plate.
 func _grounded(point: Vector3) -> Vector3:
 	var local := editor.terrain.to_local(point)
 	local.x = clampf(local.x,-PLATE_REACH,PLATE_REACH)
 	local.z = clampf(local.z,-PLATE_REACH,PLATE_REACH)
 	var h: Variant = editor.data.ground_height(Vector2(local.x,local.z))
+	var deck: Dictionary = Footbridge.deck_at(Footbridge.decks(editor.data),Vector2(local.x,local.z))
+	if not deck.is_empty(): h = maxf(float(deck.y),float(h) if h != null else -INF)
 	local.y = (float(h) if h != null else local.y-EYE_HEIGHT)+EYE_HEIGHT
 	return editor.terrain.to_global(local)
 

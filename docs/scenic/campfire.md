@@ -44,14 +44,26 @@ and the fire is soft.
   teepee, bark below and charred where they meet. A split log lies across
   the ash. It uses vertex colours on the stones' flat-faced material, and
   GardenView draws every campfire in one batch.
-- **The flame** is five tongues per fire (scripts/campfire_fire.gd
-  `FLAME_TONGUES`), one tall in the middle and four smaller round it. They
-  use the wildfire's own add-blended flame shader
-  (shaders/fire_flame.gdshader), so they boil, sway and lick on the GPU
-  exactly like a burning cell. Each tongue has its own phase, so no two lick
-  together. They lean with the wind where the fire stands. The lean is read
-  from the same wind pollen rides (scripts/pollen_wind.gd), so the wind
-  tool's gusts bend them too, and it eases in.
+- **The flame** (reworked 2026-10-03: the wildfire's noise-boil flame read
+  as amateur on a hearth) has its own shader, shaders/campfire_flame.gdshader.
+  The direction is one clear, confident flame shape in three warm bands: a
+  cream heart low in the flame, gold, and a deep orange skin with a thin
+  ember-red rim. It is not a translucent boil of noise. Rising noise bends
+  the column more at the tip than the foot, and splits the upper half into
+  tongues. The flame is alpha-clipped, so it draws in the opaque pass and
+  writes depth for the display fog composite. All the softness is round it,
+  in the halo, the light and the coals. Each fire has four bodies of flame
+  (one tall, three smaller) and three **licks**, scraps torn off the tip that
+  rise and dwindle on their own beat (scripts/campfire_fire.gd
+  `FLAME_TONGUES`, kind `FLAME` or `LICK`). Seen from above, each card tips
+  back from the eye a little, so the shape holds from the orbit. They lean
+  with the wind where the fire stands. The lean is read from the same wind
+  pollen rides (scripts/pollen_wind.gd), so the wind tool's gusts bend them
+  too, and it eases in.
+- **The coals** are a bed laid on the ash under the sticks
+  (shaders/campfire_coals.gdshader, add-blended). Clumps of coal breathe
+  slowly between deep red and orange, hottest in the middle, so the fire
+  stands on heat and not on grey ash. Rain dims them by half.
 - **The glow** is a soft camera-facing halo round each fire, using the stone
   lamp's halo shader. It is strong at night and very faint by day.
 - **Smoke** is thin pale puffs on the wildfire's smoke shader. They rise
@@ -59,10 +71,19 @@ and the fire is soft.
   gone in about five seconds.
 - **Sparks** are a few embers on the wildfire's ember shader. They fly up,
   cool from white-gold to red, drift with the wind and fall away.
-- **The crackle** is one quiet voice at the nearest fire, playing the
-  wildfire's own synthesized crackle (FireEffects `_build_audio`, no audio
-  file) every 0.25 to 0.9 s at a varied pitch. It follows the Nature sounds
-  toggle and volume.
+- **The hearth's sound** (reworked 2026-10-03: the wildfire's crackle,
+  retriggered every 0.25 to 0.9 s, was a near-constant burst of white-noise
+  pops, and the user called it obnoxious) is one looping voice at the
+  nearest fire, synthesized once (`hearth_sound`, no audio file). It is a
+  seamless 9 s loop in two layers. Under everything is a low, soft breath:
+  noise through two low-pass poles, about 250 Hz, swelling on slow beats.
+  Over it are sparse crackles of wood, about three a second, mostly tiny
+  and now and then a snap. Each crackle is a few clicks close together, and
+  each click is a short woody knock (a damped 0.9 to 2.6 kHz tone over a
+  breath of band-passed noise). Its average level is about 8 dB under the
+  old crackle. It is full loudness within 2.5 m and gone past 22 m, so from
+  the orbit it is faint and on foot it is near. It follows the Nature sounds
+  toggle and volume, and rain quiets it.
 
 ## Light
 
@@ -93,8 +114,8 @@ smoke and sparks are visual only. A tree beside a campfire stays a tree.
 
 ## Cost
 
-- The hearths are one GardenView batch. The flames (5 per fire), the glows,
-  the smoke and the sparks are one MultiMesh each, with one shared material
+- The hearths are one GardenView batch. The flames (7 cards per fire), the
+  coals, the glows, the smoke and the sparks are one MultiMesh each, with one shared material
   each, for any number of fires.
 - The flames' instance data (place, height, lean) is written every 0.1 s.
   That is five instances per fire, and the dancing itself is all in the
@@ -130,11 +151,15 @@ covers:
 Headless uses the dummy renderer, so none of the look is verified there:
 
 - the hearth's shape and colours;
-- the flame tongues' size, brightness and lean;
+- whether the shaders compile (the dummy renderer never compiles them);
+- the flame's shape, bands, licks, brightness and lean;
+- the coal bed;
 - the halo;
 - the smoke and sparks;
 - how the light falls on the ground and grass;
 - whether the flicker reads as gentle on screen.
 
-The crackle's level is not verified either. All of these need a rendered
+The hearth's level and character are not verified by a probe either. To hear
+the loop alone, write it out with `AudioStreamWAV.save_to_wav` on
+`hearth_sound()`. All of these need a rendered
 look by day and at night.

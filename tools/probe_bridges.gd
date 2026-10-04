@@ -214,6 +214,35 @@ func run() -> void:
 	await frames(5)
 	check("the water still stands under it after running on",editor.flow.depth_at(at) > 0.1,editor.flow.depth_at(at))
 
+	# --- Walked on foot: the wanderer crosses on the deck, not through it ---
+	var eye: Node = scene.wanderer
+	eye._read_obstacles(true)
+	eye._read_depths()
+	var way := (b-a).normalized()
+	var start := a+way*0.2
+	eye._feet = eye._clamped(Vector3(start.x,0.0,start.y))
+	var lowest := INF
+	var arch_y := INF
+	var walked := 0
+	while Vector2(eye._feet.x,eye._feet.z).distance_to(b) > 0.25 and walked < 400:
+		eye._feet = eye._clamped(eye._walk(eye._feet,way*0.03))
+		var feet := Vector2(eye._feet.x,eye._feet.z)
+		var deck: Dictionary = Footbridge.deck_at(Footbridge.decks(data),feet)
+		if not deck.is_empty(): lowest = minf(lowest,eye._feet.y-float(deck.y))
+		if absf(feet.distance_to(a)-feet.distance_to(b)) < 0.1: arch_y = eye._feet.y
+		walked += 1
+	var far := Vector2(eye._feet.x,eye._feet.z).distance_to(b)
+	var crown := lerpf(height(a),height(b),0.5)+Footbridge.bow(a.distance_to(b))
+	check("the wanderer walks across it to the far bank",far <= 0.25,"%.2f m short after %d steps" % [far,walked])
+	check("their feet stay on the planks all the way",lowest > -0.01,lowest)
+	check("at mid-span they stand on the arch, over the water",absf(arch_y-crown) < 0.03 and arch_y > float(materials.bridge_last.get("water",INF)),[arch_y,crown])
+	check("the deck is dry underfoot (no wading)",eye._depth((a+b)*0.5) == 0.0 and editor.flow.depth_at((a+b)*0.5) > Footbridge.WET)
+	if not short:
+		var aside: Vector3 = eye._walk(Vector3(((a+b)*0.5).x,crown,((a+b)*0.5).y),Vector2(-way.y,way.x)*0.6)
+		check("its rails keep them on it",absf((Vector2(aside.x,aside.z)-a).cross(way)) <= Footbridge.WIDTH*0.5,aside)
+	var ground_eye: Vector3 = scene.photo._grounded(editor.terrain.to_global(Vector3(((a+b)*0.5).x,0.0,((a+b)*0.5).y)))
+	check("the photo ground eye stands on the deck too",absf(editor.terrain.to_local(ground_eye).y-(crown+scene.photo.EYE_HEIGHT)) < 0.03,editor.terrain.to_local(ground_eye).y)
+
 	# --- Cmd+Z takes it away ---
 	var undos0: int = editor.undos
 	await cmd_z()
@@ -234,13 +263,14 @@ func run() -> void:
 	check("and nothing is laid",data.objects.size() == count0 and materials.bridge_last.get("reason","") == "dry",materials.bridge_last.get("reason",""))
 
 	# --- A basin too wide to span ---
-	var wide := at+Vector2(6.0,0.0)
-	await dig_and_fill(wide,Vector2(3.0,8.0),0.5,10.0)
+	# Long across x, clear of the trench, the dry test and the peaks.
+	var wide := Vector2(0.0,-6.0)
+	await dig_and_fill(wide,Vector2(22.0,3.0),0.5,28.0)
 	print("wide basin at %s: %.2f m deep" % [wide,editor.flow.depth_at(wide)])
 	check("the wide basin holds water",editor.flow.depth_at(wide) > 0.12,editor.flow.depth_at(wide))
 	count0 = data.objects.size()
-	var long := editor.place_bridge(wide+Vector2(0,-2.0),wide+Vector2(0,2.0))
-	check("a span 8 m across is refused as too long",not long.ok and long.reason == "too_long",long)
+	var long := editor.place_bridge(wide+Vector2(-2.0,0),wide+Vector2(2.0,0))
+	check("a span 22 m across is refused as too long",not long.ok and long.reason == "too_long",long)
 	check("and nothing is laid",data.objects.size() == count0)
 
 	# --- Banks too uneven: the far bank raised 2 m ---
@@ -317,6 +347,80 @@ func run() -> void:
 		if item.asset == "bridge": item.erase("end_x")
 	check("a saved bridge with no far end is refused",not data.load_document(broken))
 
+	await mountains()
 	print("RESULT ","PASS" if failures.is_empty() else "FAIL "+str(failures))
 	quit(0 if failures.is_empty() else 1)
+
+## Raises the ground in `box` (plate) to a flat top `top` m high, as one stroke.
+func plateau(box: Rect2, top: float) -> void:
+	var data := editor.data
+	data.begin_stroke()
+	for i in range(data.points.size()):
+		if box.has_point(data.points[i]): data.heights[i] = top
+	data.end_stroke()
+	editor.force_refresh()
+	await settled()
+
+## Bridges over a gap in the land: two flat peaks 8 m apart take a rope
+## bridge from rim to rim, walked across on its sag; a peak with no level
+## top takes none; a short dry ravine takes a timber one.
+func mountains() -> void:
+	var data := editor.data
+	var c := Vector2(0.0,9.5)
+	var top := -INF
+	for x in range(-8,9):
+		for z in range(-2,3): top = maxf(top,height(c+Vector2(x,z)))
+	top += 2.5
+	await plateau(Rect2(c+Vector2(-7.0,-1.5),Vector2(3.0,3.0)),top)
+	await plateau(Rect2(c+Vector2(4.0,-1.5),Vector2(3.0,3.0)),top)
+	var west := c+Vector2(-5.5,0.0)
+	var east := c+Vector2(5.5,0.0)
+	print("peaks at %.2f m, gap floor about %.2f m" % [top,height(c)])
+	var count0 := data.objects.size()
+	var found := editor.place_bridge(west,east)
+	check("a drag from peak to peak lays a bridge across the gap",found.get("ok",false) and found.get("gap",false),found)
+	if not found.get("ok",false): return
+	var a: Vector2 = found.a
+	var b: Vector2 = found.b
+	var span := a.distance_to(b)
+	# Within a metre of each rim (the heightfield's last raised row stands a
+	# little back from the plateau's drawn edge), not back where the drag began.
+	check("its ends stand at the rims, on the peaks",a.x <= c.x-4.0 and a.x >= c.x-5.0 and b.x >= c.x+4.0 and b.x <= c.x+5.0 and absf(height(a)-top) < 0.05 and absf(height(b)-top) < 0.05,[a,b])
+	check("past six metres it is a rope bridge",Footbridge.roped(span) and span <= Footbridge.MAX_SPAN,span)
+	check("one record, drawn",data.objects.size() == count0+1 and editor.bridges.node_of(int(found.id)) != null)
+	var middle := a.lerp(b,0.5)
+	var deck: Dictionary = Footbridge.deck_at(Footbridge.decks(data),middle)
+	var sagged := top-Footbridge.sag(span)
+	check("its deck sags at mid-span, high over the gap",not deck.is_empty() and absf(float(deck.y)-sagged) < 0.03 and float(deck.y)-height(middle) > 1.5,[deck.get("y"),sagged,height(middle)])
+	var eye: Node = scene.wanderer
+	eye._read_obstacles(true)
+	eye._read_depths()
+	var way := (b-a).normalized()
+	eye._feet = eye._clamped(Vector3(a.x,0.0,a.y))
+	var lowest := INF
+	var steps := 0
+	while Vector2(eye._feet.x,eye._feet.z).distance_to(b) > 0.25 and steps < 600:
+		eye._feet = eye._clamped(eye._walk(eye._feet,way*0.03))
+		var under: Dictionary = Footbridge.deck_at(Footbridge.decks(data),Vector2(eye._feet.x,eye._feet.z))
+		if not under.is_empty(): lowest = minf(lowest,eye._feet.y-float(under.y))
+		steps += 1
+	check("the wanderer walks it from peak to peak, on the planks",Vector2(eye._feet.x,eye._feet.z).distance_to(b) <= 0.25 and lowest > -0.01,[Vector2(eye._feet.x,eye._feet.z).distance_to(b),lowest])
+	editor.undo()
+	await settled()
+	# A peak with no level top: one end on a steep slope.
+	data.begin_stroke()
+	for i in range(data.points.size()):
+		var p: Vector2 = data.points[i]
+		if Rect2(c+Vector2(4.0,-1.5),Vector2(3.0,3.0)).has_point(p): data.heights[i] = top+(p.x-(c.x+4.0))*0.8
+	data.end_stroke()
+	editor.force_refresh()
+	await settled()
+	count0 = data.objects.size()
+	var steep := editor.place_bridge(west,east)
+	check("with no level ground for an end, nothing is laid",not steep.ok and steep.reason == "no_footing" and data.objects.size() == count0,steep)
+	# A short dry ravine: a timber bridge.
+	await plateau(Rect2(c+Vector2(4.0,-1.5),Vector2(3.0,3.0)),top)
+	await plateau(Rect2(c+Vector2(-4.0,-1.5),Vector2(5.0,3.0)),top)
+	var short := editor.place_bridge(c+Vector2(-0.5,0.0),c+Vector2(5.5,0.0))
+	check("a ravine 3 m across takes a timber arch",short.get("ok",false) and short.get("gap",false) and not Footbridge.roped(float(short.get("span",0.0))),short)
 

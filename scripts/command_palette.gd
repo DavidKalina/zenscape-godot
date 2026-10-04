@@ -119,7 +119,7 @@ const ELEMENTS := [
 	["campfire","Campfire","Hearth","Sets a little campfire in a ring of stones. It burns day and night, and keeps to itself."],
 	["cabin","Cabin","Shelter","Sets a small log cabin where the land is flat, dry and clear of trees. Its windows glow warm at dusk."],
 	["fence","Fence","Split rail","Draw a line and a rustic fence follows it; end where you began for a pen."],
-	["bridge","Footbridge","Span","Drag across a stream: a timber footbridge spans it, bank to bank."],
+	["bridge","Footbridge","Span","Drag across a stream or a gap: a footbridge spans it, timber or, past six metres, rope."],
 	["crystal","Crystal","Quartz","Quartz breaks through the rock."],
 	["snow","Frost","Winter","Brings winter to the whole chunk."],
 ]
