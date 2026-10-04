@@ -3,7 +3,9 @@
 Branch: worktree-agent-a43dbcd8e11087381 (based on 1f34b2e5).
 
 ## Where it stands
-`shaders/night_mystic.gdshaderinc` is fully rewritten but has never been seen rendered. No still was produced: the r0 and r1 windowed runs were killed or starved by the shared-render lock, and rendering was then stopped. The shader compiles and `tests/test_night_styles.gd` prints PASS headless. There are no baseline or final stills. Treat all colours and strengths as first guesses.
+Finished first-to-fifth pass, seen in rendered stills (runs r1 to r5, in /private/tmp/zs-night/mystic). Best: r5/sky-b1-up.png (Milky Way), r5/sky-b2-low.png (teal veils), r5/planet.png, r3/sky-b3-up.png (violet veil shaft). `tests/test_night_styles.gd` passes headless.
+
+Round notes: r1 showed a near-black dome, grey veils and a lumpy Milky Way (pebbles from strong lanes and wisps). Fixes: brighter violet-teal dome, saturated veil colours, softer lanes and wisps, wider patches, hue split so teal shows as well as violet. The planet is lavender, silver and teal bands, antialiased limb, rings with fine lanes; it is deliberately last priority.
 
 ## What was written
 - Dome: violet overhead easing to teal at the horizon, with a thin teal air line.
@@ -15,10 +17,10 @@ Branch: worktree-agent-a43dbcd8e11087381 (based on 1f34b2e5).
 - Glow: thin atmosphere rim and a faint halo.
 
 ## Change outside the file
-`shaders/sky_planet_rings.gdshader`: the planet's shadow on the rings is now a smoothstep penumbra (miss distance 0.93 to 1.07 radii) instead of a binary test. A style cannot soften it otherwise, because it receives only `shade`. This affects all styles slightly. It may conflict with other agents' edits.
+None. The scaffold's soft ring penumbra replaced my earlier edit.
 
 ## Next steps
-1. Render the 8 ground stills and the 23:00 overview, always through `/tmp/zs-render.sh` with `--no-title`. Check:
+1. The 23:00 overview (capture_backdrop) was never rendered. Check the sky there. Also:
    - whether the veils are too faint or too strong (the multipliers 0.09 and 0.07 in `zs_mystic_light`);
    - whether the Milky Way has boxy artefacts;
    - whether the rays read as soft.
