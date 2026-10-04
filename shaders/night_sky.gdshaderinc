@@ -8,6 +8,11 @@
 // dome's night, the Milky Way, the stars' look and the planet; the global
 // zs_night_style picks one, so every pixel takes the same branch.
 //
+// The planet's shaders lay the shared parts on every style: an antialiased
+// limb, a soft penumbra where the body shadows the rings (`shade` eases
+// 0..1), and the rings' shadow on the body, taken from the style's own ring
+// dust (so zs_*_planet_rings must stay cheap: the body calls it too).
+//
 // Included by the dome (shaders/reference_sky.gdshader), the stars
 // (shaders/sky_stars.gdshader) and the planet (shaders/sky_planet.gdshaderinc).
 #include "res://shaders/reference_globals.gdshaderinc"

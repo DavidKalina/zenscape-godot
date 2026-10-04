@@ -13,7 +13,9 @@ var _gusts: Array[Dictionary] = []
 var _next_id := 1
 var _published := false
 
-func emit_gust(origin: Vector3, direction: Vector3, strength: float, radius: float, duration: float) -> int:
+## A `quiet` gust moves what it reaches but draws no streaks
+## (scripts/wind_gust_visuals.gd): a songbird shaking its tree's crown.
+func emit_gust(origin: Vector3, direction: Vector3, strength: float, radius: float, duration: float, quiet := false) -> int:
 	if not origin.is_finite() or not direction.is_finite() or direction.length_squared() < 0.000001:
 		return -1
 	if not is_finite(strength) or not is_finite(radius) or not is_finite(duration) or strength <= 0.0 or radius <= 0.0 or duration <= 0.0:
@@ -22,7 +24,7 @@ func emit_gust(origin: Vector3, direction: Vector3, strength: float, radius: flo
 	_next_id += 1
 	if _gusts.size() == CAPACITY:
 		_gusts.pop_front()
-	_gusts.append({"id": id, "origin": origin, "direction": direction.normalized(), "strength": strength, "radius": radius, "duration": duration, "age": 0.0})
+	_gusts.append({"id": id, "origin": origin, "direction": direction.normalized(), "strength": strength, "radius": radius, "duration": duration, "age": 0.0, "quiet": quiet})
 	publish()
 	return id
 
