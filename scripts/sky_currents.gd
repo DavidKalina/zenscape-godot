@@ -115,7 +115,26 @@ func add_thermal(base: Vector3, key: String) -> void:
 	_thermal(base-position,key)
 	_build_wisps()
 
-## Takes away the thermals belonging to `key`.
+## An open jet stream along `path` (global points, upstream first),
+## belonging to `key` (a sky peak's gorge, scripts/sky_peaks.gd), and the
+## wisps rebuilt to show it. The path is resampled to SAMPLES points.
+func add_jet(path: PackedVector3Array, key: String) -> void:
+	var lengths := PackedFloat32Array([0.0])
+	for i in range(1,path.size()): lengths.append(lengths[i-1]+path[i].distance_to(path[i-1]))
+	var total := lengths[lengths.size()-1]
+	var points := PackedVector3Array()
+	var k := 0
+	for i in range(SAMPLES):
+		var at := total*float(i)/(SAMPLES-1)
+		while k < path.size()-2 and lengths[k+1] < at: k += 1
+		var span := maxf(lengths[k+1]-lengths[k],1e-4)
+		points.append(path[k].lerp(path[k+1],clampf((at-lengths[k])/span,0.0,1.0))-position)
+	var current := _current(points,false,JET,JET_RADIUS,"jet")
+	current.key = key
+	currents.append(current)
+	_build_wisps()
+
+## Takes away the currents (thermals, jets) belonging to `key`.
 func drop_thermals(key: String) -> void:
 	var before := currents.size()
 	currents = currents.filter(func(c: Dictionary) -> bool: return c.get("key","") != key)

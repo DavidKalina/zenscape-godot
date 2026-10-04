@@ -95,6 +95,12 @@ const SKIM_DRAG := 1.4
 const CLEAR := 1.0
 const LIP := 1.2
 const BRUSH := 0.25
+## Giant stone (`stone`: a mountain risen through the sea, scripts/
+## sky_peaks.gd) is ridden only where it rises no steeper than STEEP, metres
+## up per metre across, give or take RIDE m, so a cliff never carries the
+## eye up it at any speed; steeper, its face turns the glide aside.
+const RIDE := 0.05
+const STEEP := 1.0
 ## The band: below FLOOR the air lifts harder the deeper it goes (CUSHION m/s
 ## per metre, up to CUSHION_MAX), so a fall is always caught; above CEILING
 ## the rise fades out over CEILING_FADE metres.
@@ -147,6 +153,10 @@ var flaps := 0
 var _flap_queued := false
 var _turn_rate := 0.0
 var _beat := 0.0
+## Callable(Vector3) -> bool, true where the solid at a point is giant
+## stone (scripts/sky_peaks.gd `solid`); if not set, every solid is ground
+## the eye can ride up.
+var stone := Callable()
 
 ## Steps off from `from` facing `towards` (the scene's yaw), at `pace` m/s.
 ## Off an edge (`drop`) it falls a moment before the glide catches; opened
@@ -268,13 +278,24 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 ## on where the eye came from: from above, or at the side near the rim, it
 ## rides up along the ground, keeps its way and the ground drags a little
 ## speed off; from below, it slides along under the rock; at the side, the
-## face turns it aside.
+## face turns it aside. Giant stone (`stone`) is a heightfield with no side
+## and no underside the glide can reach: it rides up only what rises no
+## steeper than STEEP since the last step, and any steeper face turns it
+## aside, so it can skim a ledge or a col but never climbs a cliff.
 func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 	skimming = false
 	under_rock = false
 	brushing = false
 	var body := _solid(ground,position)
 	if body == Vector2.INF or position.y >= body.x+SKIM or position.y <= body.y-CLEAR: return
+	if stone.is_valid() and bool(stone.call(position)):
+		var give := RIDE+Vector2(position.x-was.x,position.z-was.z).length()*STEEP
+		var up := Vector3(position.x,body.x+SKIM,position.z)
+		if was.y >= body.x+SKIM-give:
+			_ride(delta,up)
+		else:
+			_brush(delta,ground,was)
+		return
 	var before := _solid(ground,was)
 	if before == Vector2.INF and position.y < body.x-LIP:
 		_brush(delta,ground,was)
@@ -284,11 +305,16 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 		if velocity.y > 0.0: velocity.y = 0.0
 		if pitch > 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
 	else:
-		skimming = true
-		position.y = body.x+SKIM
-		if velocity.y < 0.0: velocity.y = 0.0
-		if pitch < 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
-		speed = maxf(MIN,speed-SKIM_DRAG*delta)
+		_ride(delta,Vector3(position.x,body.x+SKIM,position.z))
+
+## Riding along the ground at `up`: the fall stops, the nose comes level and
+## the ground drags a little speed off.
+func _ride(delta: float, up: Vector3) -> void:
+	skimming = true
+	position = up
+	if velocity.y < 0.0: velocity.y = 0.0
+	if pitch < 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
+	speed = maxf(MIN,speed-SKIM_DRAG*delta)
 
 ## Vector2(top, underside) of the solid at a point, or INF off it. A plain
 ## height is a solid with no underside.
@@ -299,13 +325,18 @@ func _solid(ground: Callable, point: Vector3) -> Vector2:
 	return Vector2(float(under),-INF)
 
 ## At an island's side: back out along whichever way it crossed in, and the
-## heading turns along the face.
+## heading turns along the face. Against giant stone, whose solid stands
+## under every point near it, a way back counts as out if it is over the
+## rock there; failing all, back to where it was.
 func _brush(delta: float, ground: Callable, was: Vector3) -> void:
 	brushing = true
 	var tried := position
 	var options := [Vector3(was.x,position.y,position.z),Vector3(position.x,position.y,was.z),Vector3(was.x,position.y,was.z)]
+	var rock := stone.is_valid() and bool(stone.call(position))
+	if rock: options.append(was)
 	for p: Vector3 in options:
-		if _solid(ground,p) == Vector2.INF:
+		var s := _solid(ground,p)
+		if s == Vector2.INF or (rock and (p.y >= s.x+SKIM-0.01 or p.y <= s.y-CLEAR+0.01)):
 			position = p
 			break
 	# The face's outward normal is the way it was put back; the heading

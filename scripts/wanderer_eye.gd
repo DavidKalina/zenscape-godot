@@ -276,6 +276,9 @@ func setup(owner_scene: Node3D) -> void:
 		islands = SkyIslands.new()
 		islands.setup(scene)
 		add_child(islands)
+		# A mountain's rock is ridden only where it is no steeper than the
+		# glide can ride (SkyGlide `stone`).
+		glide.stone = Callable(islands.peaks,"solid")
 		sky = SkyFlight.new()
 		add_child(sky)
 		sky.setup(scene)

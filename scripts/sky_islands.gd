@@ -20,6 +20,11 @@ extends Node3D
 ## spot when flown back to.
 ##
 ## Chunks are only translated, never turned, so they light like the plate.
+##
+## Between them stand the islets (scripts/sky_islets.gd), small scenery, and
+## now and then a mountain range of the land far below risen up through the
+## cloud sea (scripts/sky_peaks.gd), giant stone with a gorge through it.
+## Both are solids to the glide (`body`); no island stands on a range.
 
 const HALF := 14.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
@@ -31,6 +36,7 @@ const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
+const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -69,6 +75,8 @@ var currents: Node3D
 var clouds: Node3D
 ## The small islets scattered between them (scripts/sky_islets.gd).
 var islets: Node3D
+## The mountain ranges risen through the cloud sea (scripts/sky_peaks.gd).
+var peaks: Node3D
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -86,6 +94,11 @@ func setup(owner_scene: Node3D) -> void:
 	islets.palette_source = editor.data._palette
 	add_child(islets)
 	skip.append(islets)
+	peaks = SkyPeaks.new()
+	peaks.palette_source = editor.data._palette
+	peaks.tree_parts = Callable(SkyIslets,"_tree_parts")
+	add_child(peaks)
+	skip.append(peaks)
 	show_air(false)
 
 ## Sets a flat chunk at every offset, replacing any earlier ones.
@@ -99,6 +112,9 @@ func build() -> void:
 	for offset: Vector3 in OFFSETS: _add(offset,offset,Vector3.ZERO)
 	_islet_materials()
 	islets.reset(cells)
+	peaks.ground_source = islets.ground_source
+	peaks.canopy_tint = SkyIslets._canopy_tint
+	peaks.reset(cells,currents)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -111,6 +127,7 @@ func clear() -> void:
 	_newest = Vector3.INF
 	if currents != null: currents.drop_added()
 	if islets != null: islets.clear()
+	if peaks != null: peaks.clear()
 
 func _add(home: Vector3, at: Vector3, rise: Vector3) -> void:
 	var island := Node3D.new()
@@ -140,6 +157,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	if found != null: realise(found.home,found.kind)
 	trim(eye)
 	islets.advance(delta,eye)
+	peaks.advance(delta,eye)
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
@@ -285,6 +303,7 @@ func show_air(on: bool) -> void:
 	currents.visible = on
 	clouds.visible = on
 	islets.visible = on
+	peaks.visible = on
 
 ## The air at a global point (SkyCurrents `air_at`).
 func air(point: Vector3) -> Dictionary:
@@ -301,7 +320,8 @@ func ground(point: Vector3) -> Variant:
 		var h: Variant = _height(point-offset,lands[i])
 		if h != null: return float(h)+offset.y
 	var islet: Variant = islets.body(point)
-	return (islet as Vector2).x if islet != null else null
+	if islet != null: return (islet as Vector2).x
+	return peaks.ground(point)
 
 ## The island whose footprint holds a global point, as a solid: Vector2(its
 ## ground's height there, the slab's flat underside (NativeTerrainData
@@ -314,7 +334,9 @@ func body(point: Vector3) -> Variant:
 		if lands[i] == null: continue
 		var b: Variant = _body(point-offset,lands[i])
 		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
-	return islets.body(point)
+	var islet: Variant = islets.body(point)
+	if islet != null: return islet
+	return peaks.body(point)
 
 func _body(point: Vector3, land: NativeTerrainData = null) -> Variant:
 	var top: Variant = _height(point,land)

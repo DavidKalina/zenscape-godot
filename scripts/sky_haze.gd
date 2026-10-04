@@ -23,6 +23,12 @@ extends RefCounted
 ## out of clear air. A fresh island rises into place (scripts/sky_islands.gd
 ## `sunk`) much nearer than that; while it rises it is hazed by how far it
 ## still has to come (`emerging`), so it comes up out of the haze.
+##
+## A mountain range risen through the sea (scripts/sky_peaks.gd) is a
+## landform, not scenery streamed in: within its reach (`publish`'s peaks)
+## the curve's reach and its whole are lengthened (`fog_far`), so a range
+## stands pale and blue in the distance long after an island would have
+## gone.
 
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
@@ -36,6 +42,11 @@ const LOW := 75.0
 const THICK := 0.6
 ## The most rising islands hazed at once (the shader's arrays).
 const EMERGING := 4
+## A range's curve: its reach and whole this many times the islands', and
+## the most ranges hazed at once.
+const PEAK_REACH := 1.9
+const PEAK_WHOLE := 3.0
+const PEAKS := 2
 
 ## How much of a thing `dist` metres off at height `y` has gone into the
 ## sky's colour (shaders/glide_haze.gdshaderinc, the same curve).
@@ -43,6 +54,14 @@ static func fog(dist: float, y: float) -> float:
 	var low := smoothstep(SEA+LOW,SEA,y)
 	var reach := dist*(1.0+THICK*low)/REACH
 	return 1.0-exp(-reach*reach)*(1.0-smoothstep(WHOLE*0.72,WHOLE,dist))
+
+## The same, `far` (0 to 1) of the way onto a range's gentler curve
+## (zs_glide_fog_far).
+static func fog_far(dist: float, y: float, far: float) -> float:
+	var low := smoothstep(SEA+LOW,SEA,y)
+	var reach := dist*(1.0+THICK*low)/(REACH*lerpf(1.0,PEAK_REACH,far))
+	var whole := WHOLE*lerpf(1.0,PEAK_WHOLE,far)
+	return 1.0-exp(-reach*reach)*(1.0-smoothstep(whole*0.72,whole,dist))
 
 ## The haze's colour along world ray `ray`, in display colour, from the
 ## sky's state (studies/celestial.gd `state`, plus zs_cloud) over a cloud sea
@@ -126,8 +145,9 @@ static func emerging(islands: Node, eye: Vector3) -> Array:
 
 ## Lays the haze on by `amount` (0 to 1) and hands the display haze's
 ## `blend` (studies/display_fog.gd) the cloud sea under it (`sea`, as in
-## `horizon`) and the rising islands' boxes.
-static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.ZERO, rising: Array = []) -> void:
+## `horizon`), the rising islands' boxes and the standing ranges' spots
+## (SkyPeaks `haze_spots`).
+static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.ZERO, rising: Array = [], peaks: Array = []) -> void:
 	RenderingServer.global_shader_parameter_set("zs_glide_haze",Vector4(amount,REACH,WHOLE,SEA))
 	if blend == null: return
 	blend.set_shader_parameter("glide_sea",sea)
@@ -139,3 +159,6 @@ static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.
 		highs.append(Vector4(box[1].x,box[1].y,box[1].z,0.0))
 	blend.set_shader_parameter("glide_emerge_lo",lows)
 	blend.set_shader_parameter("glide_emerge_hi",highs)
+	var spots := PackedVector4Array()
+	for i in range(PEAKS): spots.append(peaks[i] if i < peaks.size() else Vector4.ZERO)
+	blend.set_shader_parameter("glide_peaks",spots)

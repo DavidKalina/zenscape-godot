@@ -14,7 +14,8 @@ extends Node3D
 ## frame (BUILDS); beyond FORGET they are let go. Each islet's shape and
 ## meshes are worked out on a worker (`_make`, MAKING at once), so a glide
 ## into fresh sky never stalls; only the nodes are made here (`_finish`). A cell always grows the same
-## islet, so one flown back to is the one left.
+## islet, so one flown back to is the one left. None stands on a mountain
+## range risen through the sea (scripts/sky_peaks.gd `blocks`).
 ##
 ## Each bobs gently on its own slow beat. The glide reads them as solids
 ## (`body`); touching down slowly on one perches the wanderer there
@@ -26,6 +27,7 @@ const SkyCells = preload("res://scripts/sky_cells.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const FlowFalls = preload("res://scripts/flow_falls.gd")
 const WaterFlowView = preload("res://scripts/water_flow_view.gd")
+const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -205,6 +207,7 @@ func spot(cell: Vector2i) -> Variant:
 	if _spots.has(key): return _spots[key]
 	var here: Variant = raw(cell)
 	if here != null and cells != null and not cells.spots_near(here,CLEAR).is_empty(): here = null
+	if here != null and SkyPeaks.blocks(here): here = null
 	_spots[key] = here
 	return here
 

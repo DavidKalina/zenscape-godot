@@ -120,7 +120,8 @@ func _publish() -> void:
 		var strength: Variant = sky.get_shader_parameter("cloud_sea")
 		var style: Variant = sky.get_shader_parameter("cloud_sea_style")
 		sea = Vector2(0.0 if strength == null else float(strength),0.0 if style == null else float(style))
-	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [])
+	var peaks: Node = islands.get("peaks") if islands != null else null
+	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],peaks.haze_spots(eye) if peaks != null else [])
 	if _veil == null: return
 	_veil.visible = vapour > 0.003
 	(_veil.material as ShaderMaterial).set_shader_parameter("amount",vapour)

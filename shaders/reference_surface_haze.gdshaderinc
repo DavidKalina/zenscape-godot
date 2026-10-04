@@ -19,6 +19,10 @@ uniform vec3 aerial_sun_color;
 // a new island comes up out of the haze rather than appearing.
 uniform vec4 glide_emerge_lo[4];
 uniform vec4 glide_emerge_hi[4];
+// Mountain ranges risen through the sea (scripts/sky_haze.gd `publish`):
+// each (x, z) middle, reach (m), and 1 if standing. What stands within a
+// reach takes the landform's gentler curve (zs_glide_fog_far).
+uniform vec4 glide_peaks[2];
 
 // The cloud sea the glide flies over, as the sky's material has it
 // (scripts/sky_haze.gd `publish`): x its strength, y its style (0 Opal,
@@ -88,6 +92,18 @@ float zs_glide_emerge(vec3 point) {
 	return hidden;
 }
 
+// How far onto the landform's curve a surface point is: inside a range's
+// reach, eased off over its last tenth.
+float zs_glide_peak(vec3 point) {
+	float far = 0.0;
+	for (int i = 0; i < 2; i++) {
+		vec4 p = glide_peaks[i];
+		if (p.w <= 0.0) continue;
+		far = max(far, p.w * (1.0 - smoothstep(p.z * 0.9, p.z, length(point.xz - p.xy))));
+	}
+	return far;
+}
+
 vec3 zs_surface_haze(vec3 color, vec2 uv) {
 	vec2 depth_sample = texture(surface_depth, uv).rg;
 	float depth = depth_sample.r;
@@ -130,7 +146,8 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 	// near islands, far ones and the sky together.
 	if (zs_glide_haze.x > 0.0) {
 		vec3 point = ray_origin + offset;
-		float glide = max(zs_glide_fog(ray_length, point.y), zs_glide_emerge(point));
+		// A range's rock keeps the landform's gentler curve.
+		float glide = max(zs_glide_fog_far(ray_length, point.y, zs_glide_peak(point)), zs_glide_emerge(point));
 		result = mix(result, mix(color, zs_glide_horizon(ray), glide), zs_glide_haze.x);
 	}
 	return mix(color, result, depth_sample.g);

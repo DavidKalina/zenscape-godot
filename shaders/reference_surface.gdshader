@@ -167,6 +167,13 @@ uniform vec3 cutaway_normal = vec3(0.0);
 uniform float cutaway_half_width = 14.2;
 uniform float cutaway_ceiling = 8.3;
 uniform float cutaway_reveal = 0.0;
+// A sky peak's rock (scripts/sky_peaks.gd): nothing is drawn under the cloud
+// sea's top (`sea_cut`, world metres), the rock frays away into it over the
+// last `sea_fray.x` metres, and goes pale with the cloud's own light over
+// `sea_fray.y` metres above, so a mountain's foot is in the cloud, never
+// standing on it. Far below anything else, so it touches nothing else.
+uniform float sea_cut = -1.0e9;
+uniform vec2 sea_fray = vec2(10.0, 40.0);
 varying vec2 char_state;
 varying flat float char_clump;
 varying float char_seed;
@@ -566,6 +573,14 @@ void vertex() {
 }
 
 void fragment() {
+	float sea_mist = 0.0;
+	if (sea_cut > -1.0e8) {
+		float above = world_position.y - sea_cut;
+		vec3 cell = floor(world_position * vec3(0.9, 1.5, 0.9));
+		float rag = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+		if (above < rag * sea_fray.x) discard;
+		sea_mist = 1.0 - smoothstep(0.0, sea_fray.y, above);
+	}
 	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
 	// Trees thin round a shaping tool at work (shaders/shaping_reveal.gdshaderinc).
@@ -709,6 +724,8 @@ void fragment() {
 		tint = mix(tint, brush_color.rgb, max(ring * 0.9, fill));
 	}
 	tint *= mix(1.0, 0.56, coat_wetness);
+	// A sky peak's foot goes pale into the cloud sea.
+	if (sea_mist > 0.0) tint = mix(tint, zs_cloud_sky * 0.55 + zs_cloud_sun * 0.25, sea_mist * sea_mist * 0.85);
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);

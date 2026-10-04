@@ -22,6 +22,14 @@ uniform vec4 field = vec4(-1000.0, -1000.0, 2000.0, 2000.0);
 // How far the islands' swaps have moved the world (SkyIslands `arrive`).
 // The node itself stays at the origin, so the wrap can work in one frame.
 uniform vec3 shift = vec3(0.0);
+// How far onto a landform's gentler haze (glide_haze.gdshaderinc
+// zs_glide_fog_far): 1 for the cloud wrapped round a sky peak's foot
+// (scripts/sky_peaks.gd), so it fades with the rock it hugs.
+uniform float haze_far = 0.0;
+// Within this many metres of the scene behind it, a puff thins away, so
+// where it meets rock it is soft, never a cut card. 0 leaves it as it was.
+uniform float soft_depth = 0.0;
+uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
 
 varying vec2 across;
 varying float opacity;
@@ -63,7 +71,7 @@ void vertex() {
 	// Into the glide's haze with distance (glide_haze.gdshaderinc): drawn
 	// over the open sky, which the display haze leaves be, a far cloud melts
 	// away into the sky behind it rather than standing out sharp.
-	opacity *= 1.0 - zs_glide_fog(away, centre.y) * zs_glide_haze.x;
+	opacity *= 1.0 - zs_glide_fog_far(away, centre.y, haze_far) * zs_glide_haze.x;
 	// Light: the sky's colour all round, the sun's on the side and top
 	// facing it, a cool shade at the base.
 	vec3 offset = normalize(data.xyz + vec3(0.0, 0.25, 0.0));
@@ -82,4 +90,10 @@ void fragment() {
 	float body = edge * (0.55 + 0.45 * (1.0 - r * r));
 	ALBEDO = shade * (0.92 + 0.12 * (1.0 - r));
 	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity;
+	if (soft_depth > 0.0) {
+		float scene = texture(depth_texture, SCREEN_UV).r;
+		vec4 behind = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, scene, 1.0);
+		float gap = -VERTEX.z + behind.z / behind.w;
+		ALPHA *= clamp(-gap / soft_depth, 0.0, 1.0);
+	}
 }

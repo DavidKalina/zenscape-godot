@@ -6,7 +6,8 @@ extends Node3D
 ## Each cloud is a heap of soft puffs, flat underneath and rounded on top
 ## (shaders/sky_cloud_puff.gdshader). They drift on the breeze and wrap
 ## round the field a whole cloud at a time. They keep clear of the islands,
-## so they never hide a place. `inside` says how deep a point is in a cloud,
+## so they never hide a place, and are not set on a mountain range risen
+## through the sea (scripts/sky_peaks.gd), whose cloud hugs its foot. `inside` says how deep a point is in a cloud,
 ## which the vapour reads (scripts/sky_flight.gd).
 ##
 ## The field follows the glide (`follow`): when the eye strays FOLLOW of
@@ -18,6 +19,7 @@ extends Node3D
 ## The node stays at the origin. The islands' swaps move the clouds through
 ## the shader's `shift`, so the wrap works in one frame.
 
+const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const COUNT := 70
 ## The field round the islands' slots, and the band of heights clouds sit
 ## in (metres).
@@ -60,6 +62,8 @@ func build(slots: Array) -> void:
 		var clear := true
 		for s: Vector3 in slots:
 			if Vector2(at.x,at.z).distance_to(Vector2(s.x,s.z)) < CLEAR: clear = false
+		# Nor on a mountain risen through the sea: its cloud is at its foot.
+		if SkyPeaks.blocks(at): clear = false
 		if clear: clouds.append(Vector4(at.x,at.y,at.z,rng.randf_range(SIZE.x,SIZE.y)))
 	_build_puffs(rng)
 

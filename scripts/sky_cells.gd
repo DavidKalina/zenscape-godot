@@ -6,7 +6,8 @@ extends RefCounted
 ## holds an island and where, jittered in the cell, at a height in the band.
 ## Spots too near the fixed slots (the plate's first home and the copies'
 ## OFFSETS), or too near a neighbour that outranks them, are left empty, so
-## no two islands ever stand closer than SPACING. Spawning realises the
+## no two islands ever stand closer than SPACING; and so are spots on a
+## mountain range risen through the sea (scripts/sky_peaks.gd `blocks`). Spawning realises the
 ## best spot, so the same place gives the same island when flown back to.
 ##
 ## The cells live in home coordinates: where things stood when the copies
@@ -19,6 +20,7 @@ extends RefCounted
 ##   falling: down in the parted cloud sea with nothing in reach, the spot
 ##     nearest to a point just ahead.
 
+const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const CELL := 450.0
 ## The share of cells holding an island, and how far from a cell's middle
 ## its spot may sit, as a share of the cell.
@@ -79,6 +81,7 @@ static func raw(cell: Vector2i) -> Variant:
 func spot(cell: Vector2i) -> Variant:
 	var here: Variant = raw(cell)
 	if here == null: return null
+	if SkyPeaks.blocks(here): return null
 	for s in reserved:
 		if _flat(s,here) < SPACING: return null
 	var rank := noise(cell,4)
