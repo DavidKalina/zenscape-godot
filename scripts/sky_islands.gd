@@ -1,25 +1,25 @@
 extends Node3D
-## The glide prototype's other islands (scripts/sky_glide.gd): copies of the
-## live plate set out in the sky, so there is somewhere to fly to.
+## The glide prototype's other islands (scripts/sky_glide.gd): fresh chunks
+## set out in the sky, so there is somewhere to fly to.
 ##
-## Only the plate itself is ever live. Each copy is a snapshot: new instances
-## that share the plate's meshes, multimeshes and materials, so they cost
-## draws but no simulation, and plants that grow on the plate grow on the
-## copies too. Flying over a copy's footprint swaps the two (`arrive`). The
-## whole world is shifted so the copy's spot becomes the plate's own, and
-## every island, the one just left included, moves by the same amount. The
-## copies are exact, so the swap can't be seen, and the ~300 places that
-## assume the plate sits at the origin never notice.
+## Only the plate itself is ever live. Every other island is a fresh,
+## unbuilt chunk: the Quiet plain a new world starts as (scripts/
+## genesis_canvas.gd `shape`), from a seed of its own spot, so the same spot
+## always gives the same plain. Each is its ground and its earth sides,
+## baked on a worker as it turns up (`_bake`), and
+## stands exactly as the plate would if that plain were formed on it. They
+## are never copies of the plate: its water, grass, creatures and wind read
+## world-space maps and moving rigs that only make sense at the origin, and
+## copied out they showed as a hovering brown slab and frozen birds.
 ##
-## Wandering off from the copies, more turn up (scripts/sky_cells.gd): far
+## Wandering off from the chunks, more turn up (scripts/sky_cells.gd): far
 ## from every island for a while, one rises out of the haze ahead; fallen
 ## into the parted cloud sea, one surfaces from it just ahead. Each brings a
-## thermal. No more than CAP copies stand at once; beyond that the farthest
+## thermal. No more than CAP chunks stand at once; beyond that the farthest
 ## are let go, never the nearest or the newest, and come back in the same
 ## spot when flown back to.
 ##
-## Copies are only translated, never turned. A turned copy would light
-## differently from the plate under the same sun, and the swap would show.
+## Chunks are only translated, never turned, so they light like the plate.
 
 const HALF := 14.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
@@ -29,8 +29,8 @@ const OFFSETS := [Vector3(380.0,-20.0,-160.0),Vector3(-260.0,25.0,-520.0),Vector
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
-const IslandKeel = preload("res://scripts/island_keel.gd")
-## The most copies standing at once. Each is ~140 draws.
+const Genesis = preload("res://scripts/genesis_canvas.gd")
+## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
 ## gently out of the haze, or steeply up out of the cloud sea.
@@ -40,10 +40,6 @@ const FALL_RISE := Vector2(140.0,7.0)
 ## it reaches the cushion under the band.
 const THERMAL_SIDE := 24.0
 const THERMAL_DOWN := 25.0
-## Only parts this near the plate's middle, and smaller than this, are
-## copied. That leaves out the sky, the fog and anything else world-sized.
-const NEAR := 22.0
-const LARGEST := 80.0
 ## Height lookups snap to this grid. The terrain data memoises every point
 ## it is asked about, and a glide asks about a great many.
 const SNAP := 0.1
@@ -62,6 +58,10 @@ var cells: SkyCells
 var _newest := Vector3.INF
 ## Nodes never copied (the figure, the glide's own air).
 var skip: Array[Node] = []
+## Each chunk's plain, the same order as its node; null while it bakes.
+var lands: Array = []
+## Each chunk's seed (`seed_of`).
+var seeds: Array[int] = []
 ## The jet streams and thermals between the islands (scripts/sky_currents.gd).
 var currents: Node3D
 ## The clouds between them (scripts/sky_clouds.gd).
@@ -81,8 +81,7 @@ func setup(owner_scene: Node3D) -> void:
 	clouds.build(slots)
 	show_air(false)
 
-## Copies the plate as it stands now to every offset, replacing any earlier
-## copies.
+## Sets a flat chunk at every offset, replacing any earlier ones.
 func build() -> void:
 	clear()
 	currents.position = Vector3.ZERO
@@ -90,8 +89,7 @@ func build() -> void:
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
 	cells = SkyCells.new(slots)
-	var sources := _sources()
-	for offset: Vector3 in OFFSETS: _add(offset,offset,Vector3.ZERO,sources)
+	for offset: Vector3 in OFFSETS: _add(offset,offset,Vector3.ZERO)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -99,19 +97,23 @@ func clear() -> void:
 	offsets.clear()
 	homes.clear()
 	_rise.clear()
+	lands.clear()
+	seeds.clear()
 	_newest = Vector3.INF
 	if currents != null: currents.drop_added()
 
-func _add(home: Vector3, at: Vector3, rise: Vector3, sources: Array) -> void:
+func _add(home: Vector3, at: Vector3, rise: Vector3) -> void:
 	var island := Node3D.new()
 	island.name = "Island%d" % get_child_count()
 	island.position = at+Vector3.DOWN*rise.x
 	add_child(island)
-	for source: GeometryInstance3D in sources: island.add_child(_copy(source))
 	_copies.append(island)
 	offsets.append(at)
 	homes.append(home)
 	_rise.append(rise)
+	lands.append(null)
+	seeds.append(seed_of(home))
+	_bake(island,seeds[-1])
 
 ## Each frame of the glide: copies rise, a new one turns up if the glide has
 ## wandered off or fallen into the sea (SkyCells `advance`), the farthest
@@ -133,7 +135,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 ## unless it is one of the fixed slots (those have theirs).
 func realise(home: Vector3, kind: String) -> void:
 	var at := home+cells.origin
-	_add(home,at,_rise_for(kind),_sources())
+	_add(home,at,_rise_for(kind))
 	_newest = home
 	if _fixed(home): return
 	var a := fposmod(home.x*0.37+home.z*0.71,TAU)
@@ -175,6 +177,8 @@ func _free(index: int) -> void:
 	offsets.remove_at(index)
 	homes.remove_at(index)
 	_rise.remove_at(index)
+	lands.remove_at(index)
+	seeds.remove_at(index)
 
 func _fixed(home: Vector3) -> bool:
 	for s in cells.reserved:
@@ -190,28 +194,48 @@ func built() -> bool:
 func copy_count() -> int:
 	return _copies.size()
 
-## The plate's drawn parts worth copying.
-func _sources() -> Array:
-	var found := []
-	var stack: Array[Node] = [scene]
-	while not stack.is_empty():
-		var node: Node = stack.pop_back()
-		if node == self or node in skip or node is Camera3D: continue
-		if node is Node3D and not (node as Node3D).visible: continue
-		for child in node.get_children(): stack.append(child)
-		if not (node is MeshInstance3D or node is MultiMeshInstance3D): continue
-		var part := node as GeometryInstance3D
-		if node is MeshInstance3D and (node as MeshInstance3D).mesh == null: continue
-		if node is MultiMeshInstance3D and ((node as MultiMeshInstance3D).multimesh == null or (node as MultiMeshInstance3D).multimesh.visible_instance_count == 0): continue
-		var box := part.global_transform*part.get_aabb()
-		var middle := box.get_center()
-		if absf(middle.x) > NEAR or absf(middle.z) > NEAR: continue
-		if box.size.x > LARGEST or box.size.z > LARGEST: continue
-		found.append(part)
-	return found
+## The plain a spot gives: one seed per spot, so flown back to, it is the
+## same land.
+static func seed_of(home: Vector3) -> int:
+	return int(SkyCells.noise(Vector2i(roundi(home.x),roundi(home.z)),11)*1000000.0)
 
-## A new instance of `source` that shares its mesh and materials.
-func _copy(source: GeometryInstance3D) -> GeometryInstance3D:
+## On a worker, a detached copy of the land is shaped as the Quiet plain from
+## `chunk_seed` and its mesh built, as the flip bakes its underside
+## (scripts/diorama_flip.gd `_bake_underside`); its earth sides are fitted
+## here on the main thread. Drawn with the plate's own ground and earth-side
+## materials, only the plate's palette carries over, never what stands on it.
+func _bake(island: Node3D, chunk_seed: int) -> void:
+	var land := editor.data
+	var mesh := land.source_mesh
+	var arrays := land._arrays.duplicate()
+	var palette := {}
+	for key in ["sand","gravel","snowline","rock_slope"]: palette[key] = land._palette.get(key)
+	var tint: Variant = land._ground_tint
+	var offset := land.world_offset
+	var baked: Array = []
+	var task := WorkerThreadPool.add_task(func() -> void:
+		var plain := NativeTerrainData.new()
+		for key in palette: plain._palette.set(key,palette[key])
+		plain._ground_tint = tint
+		plain.world_offset = offset
+		plain.setup(mesh,arrays)
+		Genesis.shape(plain,chunk_seed)
+		baked.append(plain)
+		baked.append(plain.build_mesh()))
+	while not WorkerThreadPool.is_task_completed(task): await get_tree().process_frame
+	WorkerThreadPool.wait_for_task_completion(task)
+	if baked.size() < 2 or baked[1] == null or not is_instance_valid(island) or island.is_queued_for_deletion(): return
+	var index := _copies.find(island)
+	if index < 0: return
+	lands[index] = baked[0]
+	var ground := _copy(editor.terrain,baked[1])
+	var sides := _copy(editor._skirt,editor.skirt_mesh_for(baked[0]))
+	island.add_child(ground)
+	island.add_child(sides)
+
+## A new instance of `source` that shares its materials, and its mesh unless
+## given `drawn`.
+func _copy(source: GeometryInstance3D, drawn: Mesh = null) -> GeometryInstance3D:
 	var copy: GeometryInstance3D
 	if source is MultiMeshInstance3D:
 		copy = MultiMeshInstance3D.new()
@@ -219,7 +243,7 @@ func _copy(source: GeometryInstance3D) -> GeometryInstance3D:
 	else:
 		var mesh := MeshInstance3D.new()
 		var from := source as MeshInstance3D
-		mesh.mesh = from.mesh
+		mesh.mesh = drawn if drawn != null else from.mesh
 		# The two counts can differ if the plate's mesh is mid-rebuild.
 		for s in range(mini(from.get_surface_override_material_count(),mesh.get_surface_override_material_count())):
 			mesh.set_surface_override_material(s,from.get_surface_override_material(s))
@@ -251,58 +275,37 @@ func ground(point: Vector3) -> Variant:
 	if plate != null: return plate
 	for i in range(offsets.size()):
 		var offset := offsets[i]+Vector3.DOWN*sunk(i)
-		var h: Variant = _height(point-offset)
+		if lands[i] == null: continue
+		var h: Variant = _height(point-offset,lands[i])
 		if h != null: return float(h)+offset.y
 	return null
 
 ## The island whose footprint holds a global point, as a solid: Vector2(its
-## ground's height there, the underside of the rock it hangs from
-## (scripts/island_keel.gd)), in global metres, or null over open air.
+## ground's height there, the slab's flat underside (NativeTerrainData
+## .SLAB_BASE)), in global metres, or null over open air.
 func body(point: Vector3) -> Variant:
 	var plate: Variant = _body(point)
 	if plate != null: return plate
 	for i in range(offsets.size()):
 		var offset := offsets[i]+Vector3.DOWN*sunk(i)
-		var b: Variant = _body(point-offset)
+		if lands[i] == null: continue
+		var b: Variant = _body(point-offset,lands[i])
 		if b != null: return (b as Vector2)+Vector2(offset.y,offset.y)
 	return null
 
-func _body(point: Vector3) -> Variant:
-	var top: Variant = _height(point)
+func _body(point: Vector3, land: NativeTerrainData = null) -> Variant:
+	var top: Variant = _height(point,land)
 	if top == null: return null
 	var local := editor.terrain.to_local(point)
-	var under := editor.terrain.to_global(Vector3(local.x,IslandKeel.underside(Vector2(local.x,local.z)),local.z)).y
+	var under := editor.terrain.to_global(Vector3(local.x,NativeTerrainData.SLAB_BASE,local.z)).y
 	return Vector2(float(top),under)
 
-## The plate's height under a global point, in global metres, or null off it.
-func _height(point: Vector3) -> Variant:
+## The plate's height under a global point, in global metres, or null off it;
+## or, given the flat chunk's `land`, a chunk's at the plate's spot.
+func _height(point: Vector3, land: NativeTerrainData = null) -> Variant:
 	var local := editor.terrain.to_local(point)
 	if absf(local.x) > HALF or absf(local.z) > HALF: return null
 	var at := Vector2(snappedf(local.x,SNAP),snappedf(local.z,SNAP))
-	var h: Variant = editor.data.ground_height(at)
+	var h: Variant = (land if land != null else editor.data).ground_height(at)
 	if h == null: return null
 	return editor.terrain.to_global(Vector3(at.x,float(h),at.y)).y
-
-## The copy whose footprint holds a global point, or -1. A copy still
-## rising can't be arrived at yet.
-func copy_under(point: Vector3) -> int:
-	for i in range(offsets.size()):
-		if _rise[i] != Vector3.ZERO: continue
-		var local := editor.terrain.to_local(point-offsets[i])
-		if absf(local.x) <= HALF and absf(local.z) <= HALF: return i
-	return -1
-
-## Makes copy `index` the plate: every copy moves by the shift, and the one
-## arrived at takes the spot the plate is leaving. Returns the shift to add
-## to anything that flies (the eye). The copy then stands for the island
-## left, so it takes that one's home, and the cells' origin moves too.
-func arrive(index: int) -> Vector3:
-	var shift := -offsets[index]
-	homes[index] = -cells.origin
-	for i in range(offsets.size()):
-		offsets[i] = shift if i == index else offsets[i]+shift
-		_copies[i].position = offsets[i]+Vector3.DOWN*sunk(i)
-	cells.origin += shift
-	currents.position += shift
-	clouds.move(shift)
-	return shift

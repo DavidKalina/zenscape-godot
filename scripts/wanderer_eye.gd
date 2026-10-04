@@ -15,7 +15,7 @@ extends Node
 ## the same camera they always do. The figure is not saved with the place.
 ##
 ## Walked off the plate's edge, the figure glides (scripts/sky_glide.gd): out
-## over the cloud sea towards copies of the plate set in the sky
+## over the cloud sea towards fresh flat chunks set in the sky
 ## (scripts/sky_islands.gd), with the air streaking past and the wind's sound
 ## (scripts/glide_air.gd). Touching down on land skims along it, and a
 ## slow skim lands, back to walking. Space jumps; held past the top of the
@@ -28,8 +28,8 @@ extends Node
 ## and the figure is drawn gliding under its cloth wing
 ## (scripts/glider_figure.gd). A click (or E, or the pad's X) flaps for
 ## lift of its own. C swaps to the old view from its eyes; the
-## right mouse button (or the right stick) looks round it. Each island hangs
-## from a rock (scripts/island_keel.gd) the glide can dip under. Near the
+## right mouse button (or the right stick) looks round it. The glide can dip
+## under an island's slab. Near the
 ## ground a mark shows where it would touch down, and touching down slowly
 ## anywhere on the island lands, the camera swooping down into its eyes.
 
@@ -116,7 +116,6 @@ const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
-const IslandKeel = preload("res://scripts/island_keel.gd")
 ## The chase view's field of view, widening with speed.
 const CHASE_FOV := 70.0
 const CHASE_FOV_FAST := 90.0
@@ -203,10 +202,9 @@ var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
 var _fly_look := Vector2.ZERO
 var _skim_time := 0.0
-## The chase camera, the figure drawn gliding, and the rock under the plate.
+## The chase camera and the figure drawn gliding.
 var chase := GlideCamera.new()
 var glider: Node3D
-var keel: MeshInstance3D
 ## The landing's swoop into the eyes: seconds left, and the chase pose it
 ## leaves from.
 var _swoop := 0.0
@@ -713,8 +711,6 @@ func _launch(pace: float, drop := true) -> void:
 	_hop = 0.0
 	_hop_rise = 0.0
 	_hop_held = -1.0
-	# The rock shows in the air, and is copied with the plate.
-	_show_keel(true)
 	# The sky stays as it was unless the island has changed since.
 	var key := [editor.data.objects_revision,hash(editor.data.heights)]
 	if not islands.built() or key != _built_key:
@@ -743,7 +739,6 @@ func _end_flight() -> void:
 	flying = false
 	scene.camera_roll = 0.0
 	glider.visible = false
-	_show_keel(false)
 	camera.far = _far_before
 	islands.show_air(false)
 	sky.stop()
@@ -774,28 +769,10 @@ func _fly_input() -> Dictionary:
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or stick_held
 	return input
 
-## The rock under the plate (scripts/island_keel.gd), built the first time.
-func _show_keel(on: bool) -> void:
-	if keel == null or not is_instance_valid(keel):
-		if not on: return
-		keel = MeshInstance3D.new()
-		keel.name = "IslandKeel"
-		keel.mesh = IslandKeel.build_mesh()
-		keel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		editor.terrain.add_child(keel)
-	keel.visible = on
-
 func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
 	_read_obstacles(false)
 	glide.step(delta,input,_fly_ground,_fly_air)
-	# Over a copy, the copy becomes the plate.
-	var under: int = islands.copy_under(glide.position)
-	if under >= 0:
-		var shift: Vector3 = islands.arrive(under)
-		glide.position += shift
-		sky.move(shift)
-		glider.shift(shift)
 	sky.advance(delta,glide.position,islands.clouds.inside(glide.position,scene._motion_time))
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)

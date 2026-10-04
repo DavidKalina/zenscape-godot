@@ -1,19 +1,18 @@
 extends SceneTree
 ## Headless probe of the glide (scripts/sky_glide.gd) in the cozy worlds
 ## scene, through the wanderer (scripts/wanderer_eye.gd):
-##   - walked off the plate's edge, the figure glides and the plate is copied
-##     out into the sky (scripts/sky_islands.gd);
+##   - walked off the plate's edge, the figure glides, flat chunks
+##     out in the sky (scripts/sky_islands.gd);
 ##   - the view leans into a turn;
-##   - flying over a copy swaps it for the plate, the eye shifted with it;
 ##   - wandered far off, an island rises ahead with a thermal; fallen into
 ##     the parted sea, one surfaces just ahead; past the cap the farthest go;
 ##   - a slow skim on the plate lands, back to walking;
 ##   - V mid-glide steps out onto the plate;
 ##   - the chase camera trails the glider, drawn under its wing; C swaps to
-##     its eyes and back; the plate hangs from a rock, copied with it;
+##     its eyes and back;
 ##   - under the plate the glide stays under it, never snapped on top;
 ##   - landing, the camera swoops down into the eyes.
-## Visuals (the copies' look, the streaks) need a rendered run.
+## Visuals (the chunks' look, the streaks) need a rendered run.
 ##   godot --headless --fixed-fps 60 --path . -s res://tools/probe_sky_glide.gd -- --no-title
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -67,8 +66,21 @@ func run() -> void:
 	if not eye.flying:
 		finish()
 		return
-	check("the plate is copied out into the sky",eye.islands.copy_count() == eye.islands.OFFSETS.size() and eye.islands._copies[0].get_child_count() > 3,
-		"%d copies of %d parts" % [eye.islands.copy_count(),eye.islands._copies[0].get_child_count()])
+	# Their plains bake on a worker.
+	for i in range(600):
+		if not eye.islands.lands.has(null): break
+		await frames(1)
+	check("fresh chunks stand out in the sky",eye.islands.copy_count() == eye.islands.OFFSETS.size() and eye.islands._copies[0].get_child_count() == 2,
+		"%d chunks of %d parts" % [eye.islands.copy_count(),eye.islands._copies[0].get_child_count()])
+	# Each is the Quiet plain its seed forms, and no two seeds match.
+	var fresh := NativeTerrainData.new()
+	fresh.setup(eye.editor.data.source_mesh,eye.editor.data._arrays.duplicate())
+	preload("res://scripts/genesis_canvas.gd").shape(fresh,eye.islands.seeds[0])
+	var probe_at := Vector2(3.0,-2.0)
+	var chunk_ground: Variant = eye.islands.ground(eye.islands.offsets[0]+eye.editor.terrain.to_global(Vector3(probe_at.x,0.0,probe_at.y)))
+	var plain_y: float = eye.editor.terrain.to_global(Vector3(probe_at.x,float(fresh.ground_height(probe_at)),probe_at.y)).y+eye.islands.offsets[0].y
+	check("a chunk is the fresh plain of its seed",chunk_ground != null and absf(float(chunk_ground)-plain_y) < 0.05,"%s vs %.2f" % [chunk_ground,plain_y])
+	check("each chunk has its own seed",eye.islands.seeds[0] != eye.islands.seeds[1])
 	var start_y: float = eye.glide.position.y
 	await frames(40)
 	check("it drops away off the edge",eye.glide.position.y < start_y-1.0,"%.1f to %.1f m" % [start_y,eye.glide.position.y])
@@ -81,11 +93,6 @@ func run() -> void:
 	var trail: Vector3 = cam_at-eye.glide.position
 	check("the camera chases from behind and above",trail.length() > 2.5 and trail.length() < 10.0 and trail.dot(-eye.glide.forward()) > 1.0 and trail.y > 0.0,"%.1f m off" % trail.length())
 	check("the glider is drawn in the air",eye.glider.visible and eye.glider.position.distance_to(eye.glide.position) < 0.6)
-	check("the plate hangs from a rock while gliding",eye.keel != null and eye.keel.visible)
-	var keel_copied := false
-	for part in eye.islands._copies[0].get_children():
-		if part is MeshInstance3D and part.mesh == eye.keel.mesh: keel_copied = true
-	check("the copies hang from it too",keel_copied)
 	key(KEY_C,true)
 	key(KEY_C,false)
 	await frames(2)
@@ -122,19 +129,12 @@ func run() -> void:
 	check("under the plate it passes beneath",below > 60 and not snapped,"%d frames under" % below)
 	check("the camera keeps out of the rock",not eye._solid(scene.camera.global_position))
 
-	# Over a copy: the swap.
-	var offset: Vector3 = eye.islands.offsets[0]
-	eye.glide.position = offset+Vector3(2.0,25.0,1.0)
-	await frames(2)
-	var flat := Vector2(eye.glide.position.x,eye.glide.position.z)
-	check("over a copy, the copy becomes the plate",flat.length() < 4.0,flat)
-	check("the island left behind takes the copy's place",eye.islands.offsets[0].is_equal_approx(-offset),eye.islands.offsets[0])
-
 	# The sky answers: the sea slides by and swells, parts under a fall,
 	# and a cloud's heart is a white-out.
 	var flight: Vector4 = eye.sky.flight
 	check("the cloud sea follows the glide",flight.z != 1.0 or Vector2(flight.x,flight.y).length() > 0.0,flight)
-	eye.glide.position = Vector3(300.0,-95.0,300.0)
+	# Beside an island, so none surfaces to catch the fall yet.
+	eye.glide.position = Vector3(eye.islands.offsets[0].x+150.0,-95.0,eye.islands.offsets[0].z)
 	eye.glide.airborne = 10.0
 	await frames(30)
 	check("falling to the cloud sea parts it",eye.sky.flight.w > 0.5,"%.2f" % eye.sky.flight.w)
@@ -156,7 +156,10 @@ func run() -> void:
 	var thermals := func() -> int: return isl.currents.currents.filter(func(c: Dictionary) -> bool: return c.kind == "thermal").size()
 	var had: int = isl.copy_count()
 	var had_thermals: int = thermals.call()
-	eye.glide.position = Vector3(2600.0,10.0,-2300.0)
+	# Set back from a far spot along the heading, so it lies ahead.
+	var heading_way := Vector2(-sin(0.7),-cos(0.7))
+	var ahead: Vector3 = isl.cells.spots_near(Vector3(2600.0,0.0,-2300.0),600.0)[0]+isl.cells.origin
+	eye.glide.position = ahead-Vector3(heading_way.x,0.0,heading_way.y)*isl.cells.IDEAL+Vector3.UP*30.0
 	eye.glide.heading = 0.7
 	eye.glide.pitch = 0.0
 	await frames(2)
@@ -207,7 +210,7 @@ func run() -> void:
 	check("landed, the feet are on the plate",absf(eye._feet.x) <= eye.PLATE_REACH and absf(eye._feet.z) <= eye.PLATE_REACH,eye._feet)
 	check("landed, the lean is gone",scene.camera_roll == 0.0)
 	check("landed, the camera swoops down into the eyes",eye._swoop > 0.0 and scene.camera.global_position.distance_to(eye._eye_global()) > 0.5,"%.2f s" % eye._swoop)
-	check("landed, the glider and rock are put away",not eye.glider.visible and not eye.keel.visible)
+	check("landed, the glider is put away",not eye.glider.visible)
 	await frames(70)
 	check("then it looks from the eyes",scene.camera.global_position.distance_to(eye._eye_global()) < 0.3,scene.camera.global_position.distance_to(eye._eye_global()))
 	await frames(120)
