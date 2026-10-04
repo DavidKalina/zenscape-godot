@@ -19,6 +19,9 @@ extends RefCounted
 ## spring, so it bounces as it lands and as it lifts off.
 const FOLLOW := 900.0
 const FOLLOW_DAMP := 55.0
+## The follow spring's longest step (s): stable well past it at this
+## stiffness and damping, which a single step of a 1/30 s frame is not.
+const FOLLOW_STEP := 1.0/120.0
 const HOVER := 0.3
 const PRESS_IN := 0.05
 const DROP := 320.0
@@ -88,10 +91,20 @@ func advance(delta: float, target: Vector3, working: bool, ground: Callable, res
 		_lean_v = 0.0
 		way = Vector2.ZERO
 		_placed = true
-	# Across the land: a stiff spring, so the point is under the pointer.
+	# Across the land: a stiff spring, so the point is under the pointer. It
+	# is stepped at most FOLLOW_STEP s at a time: in one step of a long frame
+	# (a hitch while a shader compiles) it overshoots further each frame and
+	# runs off to infinity, and the cursor never comes back.
 	var flat := Vector2(tip.x,tip.z)
-	tip_velocity += ((Vector2(target.x,target.z)-flat)*FOLLOW-tip_velocity*FOLLOW_DAMP)*delta
-	flat += tip_velocity*delta
+	if not flat.is_finite() or not tip_velocity.is_finite():
+		flat = Vector2(target.x,target.z)
+		tip_velocity = Vector2.ZERO
+	var goal := Vector2(target.x,target.z)
+	var steps := maxi(1,ceili(delta/FOLLOW_STEP))
+	var h := delta/steps
+	for i in range(steps):
+		tip_velocity += ((goal-flat)*FOLLOW-tip_velocity*FOLLOW_DAMP)*h
+		flat += tip_velocity*h
 	var height: Variant = ground.call(flat) if ground.is_valid() else null
 	var floor_y: float = maxf(float(height) if height != null else target.y,floor_least)
 	speed = tip_velocity.length()

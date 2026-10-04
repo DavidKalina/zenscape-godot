@@ -14,6 +14,18 @@ var cover: ImageTexture
 var cover_image: Image
 var _cover_signature := PackedByteArray()
 var fog_material := ShaderMaterial.new()
+## The mist's drift with the wind (`_blow`): metres travelled downwind in the
+## stretched frame, and the scene clock it was last moved at.
+var air_travel := 0.0
+var _blown_at := -1.0
+## Metres a second the mist drifts in still air, and more per unit of wind
+## (the atmosphere's strength, gusts and all): a breeze of 0.4 moves it about
+## 0.35 m/s, a strong wind of 2 nearly 2 m/s.
+const DRIFT_CALM := 0.1
+const DRIFT_CARRY := 0.85
+## How far a wind draws the mist out along itself: at strength s the noise is
+## stretched 1 + STRETCH × s times along the wind.
+const STRETCH := 0.7
 
 func _init() -> void:
 	name = "RedwoodBiomeMist"
@@ -77,6 +89,7 @@ func sync(scene: Node3D) -> void:
 	visible = active
 	if not active: return
 	material = fog_material if redwood else woodland_material
+	_blow(scene)
 	woodland_material.set_shader_parameter("ground_map", scene._precipitation.ground_texture)
 	woodland_material.set_shader_parameter("stream_map", scene._precipitation.stream_texture)
 	woodland_material.set_shader_parameter("density", 0.145 * clampf(scene._atmosphere.fog_amount / 0.18, 0.0, 2.0))
@@ -91,3 +104,19 @@ func sync(scene: Node3D) -> void:
 	scene._atmosphere.get_node("ValleyFog").visible = false
 	for light in scene._lights:
 		light.light_volumetric_fog_energy = 2.2*scene._atmosphere.ray_strength if light.shadow_enabled else 0.0
+
+## Moves the mist on with the wind, by the scene's clock (so a paused world
+## holds it), and hands both mists the wind as it is now.
+func _blow(scene: Node3D) -> void:
+	var air: Node = scene._atmosphere
+	var now: float = scene._motion_time
+	var dt := clampf(now-_blown_at,0.0,0.1) if _blown_at >= 0.0 else 0.0
+	_blown_at = now
+	var steady := maxf(float(air._air_strength)+float(air.swell),0.0)
+	var blowing := steady*float(air.gust_at(float(air._wind_time)))
+	var stretch := 1.0/(1.0+STRETCH*steady)
+	air_travel += (DRIFT_CALM+DRIFT_CARRY*blowing)*stretch*dt
+	for target: ShaderMaterial in [woodland_material,fog_material]:
+		target.set_shader_parameter("air_travel",air_travel)
+		target.set_shader_parameter("air_stretch",stretch)
+		target.set_shader_parameter("air_strength",steady)

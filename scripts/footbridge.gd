@@ -1,11 +1,14 @@
 extends Node3D
-## Footbridges (docs/scenic/bridges.md): timber spans laid across a stream or
-## a narrow water by a drag with the case's footbridge in hand
-## (scripts/hand_materials.gd). The terrain decides. A drag only says roughly
-## where to cross; the bridge snaps from bank to bank across the water found
-## under it, its two ends resting on the ground. With no water there, a span
-## longer than MAX_SPAN or banks too far apart in height, nothing is laid; the
-## ghost shown while dragging says so.
+## Footbridges (docs/scenic/bridges.md): spans laid by a drag with the case's
+## footbridge in hand (scripts/hand_materials.gd), across a stream or a narrow
+## water, or across a gap in the land: a ravine, a crater, the drop between
+## two peaks. The terrain decides. Over water the bridge snaps from bank to
+## bank across the water found under the drag. Over a gap each end finds
+## level footing near where the drag began and ended (`footing`); with none,
+## nothing is laid. Up to TIMBER_SPAN it is a timber arch; longer, up to
+## MAX_SPAN, a rope bridge that sags. With nothing to cross, a span too long,
+## ends too far apart in height or land rising in the way, nothing is laid;
+## the ghost shown while dragging says so.
 ##
 ## A bridge is an object record (NativeTerrainData `add_bridge`: "bridge",
 ## x/z the near bank, end_x/end_z the far one), so undo, saving and the trash
@@ -20,9 +23,21 @@ extends Node3D
 
 const ClaySound = preload("res://scripts/clay_sound.gd")
 
-## The longest span (bank to bank, m), and the shortest worth a bridge.
-const MAX_SPAN := 6.0
+## The longest span (bank to bank, m), and the shortest worth a bridge. Past
+## TIMBER_SPAN a bridge is hung on ropes rather than arched in timber.
+const MAX_SPAN := 20.0
 const MIN_SPAN := 1.0
+const TIMBER_SPAN := 6.0
+## A gap: somewhere under the drag the ground falls at least GAP m below the
+## line between its ends. A footing: within FOOTING_REACH m of the drag's end
+## along its line, a pad FOOTING (along, across, m) whose ground varies by at
+## most LEVEL m, dry.
+const GAP := 1.0
+const FOOTING_REACH := 1.5
+const FOOTING := Vector2(0.8,0.8)
+const LEVEL := 0.2
+## How far (m) a gap bridge's planks may sink into the ground near an end.
+const SETTLE := 0.03
 ## Rise over run between the two banks beyond which it is too steep.
 const MAX_GRADE := 0.35
 ## How far onto each bank (m) past the water's edge an end rests.
@@ -36,6 +51,11 @@ const WET := 0.03
 const CLEARANCE := 0.02
 ## Spans this long and longer have hand rails; shorter ones only end posts.
 const RAILS_FROM := 2.5
+## A rope bridge: its hand ropes' height over the deck (m), and the tones of
+## rope and of its posts.
+const HAND_ROPE := 0.8
+const ROPE := Color("9a8360")
+const POST := Color("5a4330")
 ## The deck: width (m) and the planks' depth.
 const WIDTH := 0.74
 const PLANK := 0.2
@@ -59,6 +79,8 @@ var _revision := -1
 var _material: StandardMaterial3D
 var _ghost: MeshInstance3D
 var _ghost_key := PackedByteArray()
+static var _decks: Array[Dictionary] = []
+static var _decks_key := []
 
 func _init() -> void:
 	name = "Footbridges"
@@ -112,21 +134,151 @@ static func level_at(found: Dictionary, p: Vector2) -> float:
 		if Geometry2D.get_closest_point_to_segment(p,course.a,course.b).distance_to(p) <= float(course.half): best = maxf(best,float(course.level))
 	return best
 
-## The arch's rise (m) at mid-span for a span `span` m long.
+## The arch's rise (m) at mid-span for a timber span `span` m long.
 static func rise(span: float) -> float:
 	return clampf(0.08*span+0.1,0.15,0.6)
 
+## A rope bridge's sag (m) at mid-span.
+static func sag(span: float) -> float:
+	return clampf(0.05*span,0.3,1.0)
+
+## True for a span hung on ropes.
+static func roped(span: float) -> bool:
+	return span > TIMBER_SPAN
+
+## The deck's bow at mid-span (m): up for a timber arch, down for ropes.
+static func bow(span: float) -> float:
+	return -sag(span) if roped(span) else rise(span)
+
+## The deck's height over the straight line between its ends (m), at `u` (0
+## at one end, 1 at the other) of a span `span` m long. A timber arch is a
+## sine; a rope bridge's sag is a sine squared, leaving each anchor level so
+## the deck rests on the rim before it hangs out over the drop.
+static func lift(span: float, u: float) -> float:
+	var shape := sin(PI*u)
+	return bow(span)*(shape*shape if roped(span) else shape)
+
 ## Where a drag from `from` to `to` (plate) would lay a bridge over `found`
-## (`water`). {"ok": true, "a", "b" (banks, plate), "ya", "yb" (ground
-## there), "span", "water" (highest level crossed)}, or {"ok": false,
-## "reason"}: "short" (no drag to read), "dry" (no water near the drag),
-## "too_long" (more than MAX_SPAN bank to bank), "edge" (a bank off the
-## land), "no_bank" (water at an end), "too_steep", or "flooded" (the water
-## stands as high as the deck). A refusal past the snap keeps "a" and "b".
+## (`water`). {"ok": true, "a", "b" (ends, plate), "ya", "yb" (ground
+## there), "span", "water" (highest level crossed, -INF over a dry gap),
+## "gap" (true over a gap)}, or {"ok": false, "reason"}: "short" (no drag to
+## read), "dry" (no water and no gap near the drag), "too_long" (more than
+## MAX_SPAN end to end), "edge" (an end off the land), "no_bank" (water at an
+## end), "no_footing" (no level ground for an end), "too_steep", "blocked"
+## (the land rises into the deck) or "flooded" (the water stands as high as
+## the deck). A refusal past the snap keeps "a" and "b".
+##
+## A drag across a gap is read as one (`_plan_gap`). Where the gap will not
+## take a bridge, a bridge over water under the drag still may, if it spans at
+## least half the drag: a stream in a shallow valley is bridged bank to bank,
+## but a drag from peak to peak never drops to a little bridge over the stream
+## far below. With no gap, the water decides (`_plan_water`).
 static func plan(found: Dictionary, from: Vector2, to: Vector2) -> Dictionary:
+	if from.distance_to(to) < 0.25: return {"ok":false,"reason":"short"}
+	var gap := _plan_gap(found,from,to)
+	if gap.ok: return gap
+	var wet := _plan_water(found,from,to)
+	if not gap.get("gap",false): return wet
+	if wet.ok and float(wet.span) >= 0.5*from.distance_to(to): return wet
+	return gap
+
+## How far (m) the ground under the line from `a` to `b` falls below the
+## straight line between their ground, at most, from `margin` m in from
+## each end; or -INF where an end is off the land.
+static func depth_under(data: NativeTerrainData, a: Vector2, b: Vector2, margin := 0.0) -> float:
+	var ga: Variant = data.ground_height(a)
+	var gb: Variant = data.ground_height(b)
+	if ga == null or gb == null: return -INF
+	var span := a.distance_to(b)
+	var deepest := -INF
+	var d := margin
+	while d <= span-margin:
+		var u := d/span
+		var g: Variant = data.ground_height(a.lerp(b,u))
+		if g != null: deepest = maxf(deepest,lerpf(float(ga),float(gb),u)-float(g))
+		d += STEP
+	return deepest
+
+## Level, dry footing for the end of a bridge along `way` near plate point
+## `end`: a pad on the line within FOOTING_REACH whose ground varies by at
+## most LEVEL. The one furthest toward `toward` (+1 along `way`, -1 against
+## it), so an end stands at the gap's rim rather than back from it; with
+## `toward` 0, the nearest to `end`. Null where none.
+static func footing(found: Dictionary, end: Vector2, way: Vector2, toward := 0.0) -> Variant:
+	var data: NativeTerrainData = found.data
+	var across := Vector2(-way.y,way.x)
+	var offsets := []
+	if toward == 0.0:
+		offsets.append(0.0)
+		var d := STEP
+		while d <= FOOTING_REACH+0.001:
+			offsets.append(d)
+			offsets.append(-d)
+			d += STEP
+	else:
+		var d := FOOTING_REACH
+		while d >= -FOOTING_REACH-0.001:
+			offsets.append(d*signf(toward))
+			d -= STEP
+	for offset: float in offsets:
+		var at := end+way*offset
+		var low := INF
+		var high := -INF
+		var dry := true
+		for i in [-1,0,1]:
+			for j in [-1,0,1]:
+				var p: Vector2 = at+way*FOOTING.x*0.5*float(i)+across*FOOTING.y*0.5*float(j)
+				var g: Variant = data.ground_height(p)
+				if g == null or level_at(found,p) > -INF:
+					dry = false
+					break
+				low = minf(low,float(g))
+				high = maxf(high,float(g))
+			if not dry: break
+		if dry and high-low <= LEVEL: return at
+	return null
+
+## A bridge across a gap in the land: {"gap": false} when the drag does not
+## cross one, else the plan (or the refusal) with "gap": true.
+static func _plan_gap(found: Dictionary, from: Vector2, to: Vector2) -> Dictionary:
+	var data: NativeTerrainData = found.data
+	if depth_under(data,from,to) < GAP: return {"ok":false,"reason":"dry","gap":false}
+	var way := (to-from).normalized()
+	var fa: Variant = footing(found,from,way,1.0)
+	var fb: Variant = footing(found,to,way,-1.0)
+	if fa == null or fb == null: return {"ok":false,"reason":"no_footing","gap":true,"a":from,"b":to}
+	var a: Vector2 = fa
+	var b: Vector2 = fb
+	var span := a.distance_to(b)
+	if span < MIN_SPAN: return {"ok":false,"reason":"short","gap":true,"a":a,"b":b}
+	if span > MAX_SPAN: return {"ok":false,"reason":"too_long","gap":true,"a":a,"b":b}
+	var ya := float(data.ground_height(a))
+	var yb := float(data.ground_height(b))
+	if absf(yb-ya)/span > MAX_GRADE: return {"ok":false,"reason":"too_steep","gap":true,"a":a,"b":b}
+	# Clear of the land, and of any water, between the footings. Over its
+	# first and last metre the deck may rest on the ground, as an end does on
+	# its sill (sunk at most SETTLE); over the next its underside comes clear.
+	var top := -INF
+	var d := FOOTING.x*0.5
+	while d <= span-FOOTING.x*0.5:
+		var u := d/span
+		var p := a.lerp(b,u)
+		var deck := lerpf(ya,yb,u)+lift(span,u)
+		var under := deck-DECK_DEPTH
+		var settle := clampf(minf(d,span-d)-1.0,0.0,1.0)
+		var g: Variant = data.ground_height(p)
+		if g != null and float(g) > deck+SETTLE-(DECK_DEPTH+CLEARANCE+SETTLE)*settle: return {"ok":false,"reason":"blocked","gap":true,"a":a,"b":b}
+		var level := level_at(found,p)
+		if level > -INF and under < level+CLEARANCE: return {"ok":false,"reason":"flooded","gap":true,"a":a,"b":b}
+		top = maxf(top,level)
+		d += STEP
+	if depth_under(data,a,b) < GAP: return {"ok":false,"reason":"dry","gap":true,"a":a,"b":b}
+	return {"ok":true,"a":a,"b":b,"ya":ya,"yb":yb,"span":span,"water":top,"gap":true}
+
+## A bridge across the water found near the drag, bank to bank.
+static func _plan_water(found: Dictionary, from: Vector2, to: Vector2) -> Dictionary:
 	var axis := to-from
 	var length := axis.length()
-	if length < 0.25: return {"ok":false,"reason":"short"}
 	var way := axis/length
 	# The wet sample nearest the drag's middle, on the drag or just past it.
 	var seed_t := NAN
@@ -170,16 +322,15 @@ static func plan(found: Dictionary, from: Vector2, to: Vector2) -> Dictionary:
 	var yb := float(gb)
 	if absf(yb-ya)/span > MAX_GRADE: return {"ok":false,"reason":"too_steep","a":a,"b":b}
 	var top := -INF
-	var arch := rise(span)
 	t = low
 	while t <= high+0.001:
 		var level := level_at(found,from+way*t)
 		var u := (t-ta)/span
-		var under := lerpf(ya,yb,u)+arch*sin(PI*u)-DECK_DEPTH
+		var under := lerpf(ya,yb,u)+lift(span,u)-DECK_DEPTH
 		if level > -INF and under < level+CLEARANCE: return {"ok":false,"reason":"flooded","a":a,"b":b}
 		top = maxf(top,level)
 		t += STEP
-	return {"ok":true,"a":a,"b":b,"ya":ya,"yb":yb,"span":span,"water":top}
+	return {"ok":true,"a":a,"b":b,"ya":ya,"yb":yb,"span":span,"water":top,"gap":false}
 
 # --- Drawing ------------------------------------------------------------------
 
@@ -226,6 +377,58 @@ static func ends_of(data: NativeTerrainData, item: Dictionary) -> PackedVector3A
 	var yb: Variant = data.ground_height(b)
 	if ya == null or yb == null: return PackedVector3Array()
 	return PackedVector3Array([Vector3(a.x,float(ya),a.y),Vector3(b.x,float(yb),b.y)])
+
+# --- The deck underfoot -------------------------------------------------------
+
+## Every bridge's deck as something to stand on: one {"a", "b" (the ends on
+## the ground, plate), "span" (m, flat), "rails"} a record, from the same ends and
+## arch the mesh is built on. Read again at most once a frame, so a
+## reshaped bank moves the deck as it moves the drawing.
+static func decks(data: NativeTerrainData) -> Array[Dictionary]:
+	var key := [data.get_instance_id(),data.objects_revision,Engine.get_process_frames()]
+	if key == _decks_key: return _decks
+	_decks_key = key
+	_decks = []
+	for item: Dictionary in data.objects:
+		if item.asset != "bridge" or not item.has("end_x"): continue
+		var ends := ends_of(data,item)
+		if ends.is_empty(): continue
+		var span := Vector2(ends[1].x-ends[0].x,ends[1].z-ends[0].z).length()
+		if span < 0.01: continue
+		_decks.append({"a":ends[0],"b":ends[1],"span":span,"rails":span >= RAILS_FROM})
+	return _decks
+
+## The deck under plate point `p` (the highest, where two cross): {"y" (the
+## planks' top, plate m), "t" (0 at the near end to 1 at the far one),
+## "side" (m off the middle line), "deck"}, or {} off every deck.
+static func deck_at(found: Array[Dictionary], p: Vector2) -> Dictionary:
+	var best := {}
+	for deck in found:
+		var a: Vector3 = deck.a
+		var b: Vector3 = deck.b
+		var from := Vector2(a.x,a.z)
+		var way := Vector2(b.x,b.z)-from
+		var t := (p-from).dot(way)/way.length_squared()
+		if t < 0.0 or t > 1.0: continue
+		var side := (p-from).cross(way)/way.length()
+		if absf(side) > WIDTH*0.5: continue
+		var y := lerpf(a.y,b.y,t)+lift(float(deck.span),t)
+		if best.is_empty() or y > float(best.y): best = {"y":y,"t":t,"side":side,"deck":deck}
+	return best
+
+## `p` held on `deck` between its rails: pulled back in across the deck, as
+## far as `margin` m inside its edge, anywhere but past its ends.
+static func keep_on(deck: Dictionary, p: Vector2, margin: float) -> Vector2:
+	var a: Vector3 = deck.a
+	var b: Vector3 = deck.b
+	var from := Vector2(a.x,a.z)
+	var way := Vector2(b.x,b.z)-from
+	var t := (p-from).dot(way)/way.length_squared()
+	if t <= 0.0 or t >= 1.0: return p
+	var along := from+way*t
+	var off := p-along
+	var room := maxf(WIDTH*0.5-margin,0.0)
+	return along+off.limit_length(room)
 
 ## The drawn bridge for record `id`, or null.
 func node_of(id: int) -> MeshInstance3D:
@@ -295,12 +498,14 @@ static func build_mesh(a: Vector3, b: Vector3, seed: int) -> ArrayMesh:
 	var flat := Vector3(b.x-a.x,0.0,b.z-a.z)
 	var span := maxf(flat.length(),0.01)
 	var across := (flat/span).cross(Vector3.UP).normalized()
-	var arch := rise(span)
-	var curve := func(t: float) -> Vector3: return a.lerp(b,t)+Vector3.UP*arch*sin(PI*t)
+	var curve := func(t: float) -> Vector3: return a.lerp(b,t)+Vector3.UP*lift(span,t)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*7919+104729
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if roped(span):
+		_rope_bridge(st,a,b,span,across,curve,rng)
+		return st.commit()
 	# Planks across the arch, each on the curve's slope.
 	var planks := maxi(4,roundi(span/PLANK))
 	for i in range(planks):
@@ -336,6 +541,50 @@ static func build_mesh(a: Vector3, b: Vector3, seed: int) -> ArrayMesh:
 		if rails:
 			_beam(st,curve,offset+Vector3.UP*(tall-0.03),pieces,Vector2(0.028,0.032),RAIL,rng,stops[0],stops[-1])
 	return st.commit()
+
+## A rope bridge from `a` to `b` (plate, on the ground) along `curve`, its
+## sagging deck: spaced planks laid on two foot ropes, two hand ropes that
+## sag less, cords between them, and a pair of tall posts at each end, sunk
+## in the footing, with a sill log across under the planks' ends.
+static func _rope_bridge(st: SurfaceTool, a: Vector3, b: Vector3, span: float, across: Vector3, curve: Callable, rng: RandomNumberGenerator) -> void:
+	var way := (b-a).normalized()
+	var flat_way := Vector3(way.x,0.0,way.z).normalized()
+	var hand := func(t: float) -> Vector3: return a.lerp(b,t)+Vector3.UP*(HAND_ROPE+lift(span,t)*0.55)
+	# Planks across the sag, with gaps between, each on the curve's slope.
+	var planks := maxi(8,roundi(span/0.27))
+	for i in range(planks):
+		var t := (i+0.5)/planks
+		var along: Vector3 = (curve.call(minf(t+0.01,1.0))-curve.call(maxf(t-0.01,0.0))).normalized()
+		var up := across.cross(along).normalized()
+		if up.y < 0.0: up = -up
+		var yaw := Basis(up,rng.randf_range(-0.07,0.07))
+		var centre: Vector3 = curve.call(t)+across*rng.randf_range(-0.03,0.03)
+		var half := Vector3(span/planks*0.34,0.022+rng.randf_range(0.0,0.006),WIDTH*0.5+rng.randf_range(-0.05,0.02))
+		_box(st,centre-up*half.y,yaw*along,up,yaw*across,half,DECK.darkened(rng.randf_range(0.0,0.16)),rng)
+	var pieces := maxi(12,roundi(span*2.0))
+	for side in [-1.0,1.0]:
+		# The foot ropes under the planks' ends, the hand ropes above.
+		_beam(st,curve,across*side*WIDTH*0.42+Vector3.DOWN*0.05,pieces,Vector2(0.02,0.02),ROPE,rng)
+		var rail: Vector3 = across*side*(WIDTH*0.5+0.04)
+		_beam(st,hand,rail,pieces,Vector2(0.022,0.022),ROPE,rng,0.0,1.0)
+		# Cords from the hand rope down to the deck's edge, about every 0.5 m.
+		var cords := maxi(4,roundi(span/0.5))
+		for k in range(1,cords):
+			var t := float(k)/cords
+			var top: Vector3 = hand.call(t)+rail
+			var foot: Vector3 = curve.call(t)+across*side*WIDTH*0.46
+			var up := (top-foot).normalized()
+			var side_axis := up.cross(flat_way).normalized()
+			_box(st,(top+foot)*0.5,flat_way,up,side_axis,Vector3(0.01,top.distance_to(foot)*0.5,0.01),ROPE.darkened(rng.randf_range(0.05,0.15)),rng)
+		# A tall post at each end, sunk in the footing, just outside the deck.
+		for t in [0.0,1.0]:
+			var outward := -flat_way if t == 0.0 else flat_way
+			var foot: Vector3 = curve.call(t)+rail+outward*0.08+Vector3.DOWN*0.15
+			var tall := HAND_ROPE+0.15+0.15
+			_box(st,foot+Vector3.UP*tall*0.5,flat_way,Vector3.UP,across,Vector3(0.055,tall*0.5,0.055),POST.darkened(rng.randf_range(0.0,0.12)),rng)
+	# A sill log across under each end of the deck.
+	for t in [0.0,1.0]:
+		_box(st,curve.call(t)+Vector3.DOWN*0.1,flat_way,Vector3.UP,across,Vector3(0.09,0.08,WIDTH*0.62),SILL.darkened(rng.randf_range(0.0,0.1)),rng)
 
 ## A beam along the arch from `t0` to `t1` in `pieces` straight lengths,
 ## `offset` from the curve, `size` (half height, half width).

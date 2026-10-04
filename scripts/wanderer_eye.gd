@@ -67,6 +67,7 @@ const STILL_PING := 2.0
 const STILL_STRENGTH := 0.15
 const PLACE_STRENGTH := 0.6
 const Disturbance = preload("res://scripts/disturbance.gd")
+const Footbridge = preload("res://scripts/footbridge.gd")
 const HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Shift to run  ·  V or Esc to step out"
 
 signal entered
@@ -202,10 +203,19 @@ func forget() -> void:
 func has_figure() -> bool:
 	return figure != null and is_instance_valid(figure)
 
-## Terrain height under a local point, or the point's own height off the map.
+## What a local point stands on: a footbridge's deck where there is one
+## (scripts/footbridge.gd `deck_at`), else the terrain, or the point's own
+## height off the map.
 func _ground(local: Vector3) -> float:
-	var h: Variant = editor.data.ground_height(Vector2(local.x,local.z))
+	var at := Vector2(local.x,local.z)
+	var h: Variant = editor.data.ground_height(at)
+	var deck := _deck(at)
+	if not deck.is_empty(): return maxf(float(deck.y),float(h) if h != null else -INF)
 	return float(h) if h != null else local.y
+
+## The footbridge deck under a plate point, or {}.
+func _deck(point: Vector2) -> Dictionary:
+	return Footbridge.deck_at(Footbridge.decks(editor.data),point)
 
 func _clamped(local: Vector3) -> Vector3:
 	local.x = clampf(local.x,-PLATE_REACH,PLATE_REACH)
@@ -305,9 +315,9 @@ func _read_depths() -> void:
 	var flow: RefCounted = editor.get("flow")
 	_depths = flow.depths() if flow != null and flow.ready else PackedFloat32Array()
 
-## Live water depth at a plate point, 0 without live water.
+## Live water depth at a plate point, 0 without live water or on a bridge.
 func _depth(point: Vector2) -> float:
-	if _depths.is_empty(): return 0.0
+	if _depths.is_empty() or not _deck(point).is_empty(): return 0.0
 	var at: int = editor.flow.cell_at(point)
 	return _depths[at] if at >= 0 and at < _depths.size() else 0.0
 
@@ -351,6 +361,10 @@ func _walk(feet: Vector3, step: Vector2) -> Vector3:
 			var side := signf(normal.cross(step)) if absf(normal.cross(step)) > 1e-6 else 1.0
 			to += Vector2(-normal.y,normal.x)*side*step.length()*0.6
 	to = _pushed_out(to)
+	# A bridge with hand rails keeps the walker on it; one without lets them
+	# step off its side, where the water allows.
+	var deck := _deck(from)
+	if not deck.is_empty() and deck.deck.rails and _deck(to).is_empty(): to = Footbridge.keep_on(deck.deck,to,RADIUS*0.5)
 	if _wet(to) and not _wet(from):
 		var across := Vector2(to.x,from.y)
 		var along := Vector2(from.x,to.y)

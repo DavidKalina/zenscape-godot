@@ -4,10 +4,14 @@ extends Node3D
 ## scripts/campfire.gd: the ring of stones and the laid sticks); this follows
 ## them and keeps them burning. Soft things only, after the style rule:
 ##
-## - **Flames**: FLAME_TONGUES add-blended tongues a fire, every campfire in
-##   one MultiMesh on the wildfire's own flame shader
-##   (shaders/fire_flame.gdshader, as scripts/fire_effects.gd draws a burning
-##   cell): they dance on the GPU, lean with the wind and shrink in rain.
+## - **Flames**: FLAME_TONGUES cards a fire, every campfire in one MultiMesh
+##   on the campfire's own flame shader (shaders/campfire_flame.gdshader):
+##   a few clear flame shapes in three warm bands, and licks torn off the tip
+##   that rise and dwindle. They dance on the GPU, lean with the wind and
+##   shrink in rain.
+## - **Coals**: a glowing bed laid on the ash under the sticks
+##   (shaders/campfire_coals.gdshader), one MultiMesh, so the fire stands on
+##   heat. It breathes slowly and dims in rain.
 ## - **Glow**: a soft camera-facing halo round each fire (the stone lamp's
 ##   halo shader), one MultiMesh, strong at night, faint by day.
 ## - **Smoke and sparks**: from the ACTIVE_FIRES fires nearest the camera
@@ -19,9 +23,10 @@ extends Node3D
 ##   lamps and fires together get one, so many fires never add more lights.
 ##   A fire's light is warm and flickers gently (`flicker`, under 1 Hz); it
 ##   is strong at night, small by day, dimmed by rain.
-## - **Crackle**: one quiet voice at the nearest fire, the wildfire's own
-##   synthesized crackle (FireEffects `_build_audio`), following the Nature
-##   sounds toggle and volume.
+## - **Hearth**: one quiet looping voice at the nearest fire (`hearth_sound`,
+##   synthesized here): a low soft breath of burning with sparse small
+##   crackles of wood, an occasional snap. It follows the Nature sounds
+##   toggle and volume.
 ##
 ## A campfire is a contained hearth: nothing here touches the wildfire's
 ## FireField, and the asset is "inert" to it (FireField `group_of`), so it
@@ -32,16 +37,27 @@ const Campfire = preload("res://scripts/campfire.gd")
 const Lights = preload("res://scripts/stone_lamp_lights.gd")
 const PollenWind = preload("res://scripts/pollen_wind.gd")
 const ASSET := "campfire"
-## The tongues of one fire: (x, z) offset in m at fire scale 1, height in m,
-## and a phase so no two lick together.
+## The cards of one fire: (x, z) offset in m at fire scale 1, height in m, a
+## phase so no two move together, and the kind: FLAME a body of flame, LICK
+## a scrap torn off the tip that rises from it (its height is the flame's it
+## rises off).
+const FLAME := 0
+const LICK := 1
 const FLAME_TONGUES := [
-	[Vector2(0.0,0.0),0.62,0.0],
-	[Vector2(0.09,0.04),0.44,0.31],
-	[Vector2(-0.08,0.06),0.4,0.57],
-	[Vector2(0.02,-0.1),0.38,0.79],
-	[Vector2(-0.05,-0.04),0.3,0.13],
+	[Vector2(0.0,0.0),0.66,0.0,FLAME],
+	[Vector2(0.08,0.05),0.42,0.31,FLAME],
+	[Vector2(-0.07,-0.06),0.38,0.57,FLAME],
+	[Vector2(-0.02,0.08),0.3,0.79,FLAME],
+	[Vector2(0.0,0.0),0.66,0.13,LICK],
+	[Vector2(0.03,-0.02),0.6,0.46,LICK],
+	[Vector2(-0.03,0.02),0.62,0.78,LICK],
 ]
-const FLAME_INTENSITY := 1.25
+const FLAME_INTENSITY := 1.1
+## The coal bed: its width (m at fire scale 1), height over the fire's foot
+## (just over the ash), and strength.
+const COALS_SIZE := 0.62
+const COALS_LIFT := 0.03
+const COALS_STRENGTH := 1.0
 ## The halo's width (m at fire scale 1), and strength by night and by day.
 const HALO_SIZE := 2.0
 const HALO_NIGHT := 0.6
@@ -73,10 +89,16 @@ const SMOKE_RISE := 0.5
 const SPARK_CAP := 60
 const SPARK_RATE := 2.4
 const SPARK_GRAVITY := 1.2
-## The crackle: its loudness at volume 1, reach (m), and gaps between pops.
-const CRACKLE_GAIN := 0.3
-const CRACKLE_REACH := 30.0
-const CRACKLE_GAP := Vector2(0.25,0.9)
+## The hearth's voice: its loudness at volume 1, the distance (m) it holds
+## full loudness to, and its reach (m).
+const HEARTH_GAIN := 0.32
+const HEARTH_NEAR := 2.5
+const HEARTH_REACH := 22.0
+## The loop: its length (s), sample rate, and the seam's crossfade (s).
+const HEARTH_SECONDS := 9.0
+const HEARTH_RATE := 22050
+const HEARTH_SEAM := 0.4
+const HEARTH_PEAK := 0.85
 
 var editor: Node
 ## The fires as last read: {"id", "foot" (global), "at" (global, the fire's
@@ -91,6 +113,7 @@ var rain_override := -1.0
 var tall := 1.0
 var flames: MultiMeshInstance3D
 var halos: MultiMeshInstance3D
+var coals: MultiMeshInstance3D
 var smoke: MultiMeshInstance3D
 var sparks: MultiMeshInstance3D
 var voice: AudioStreamPlayer3D
@@ -101,6 +124,7 @@ var embers: Array[Dictionary] = []
 var active: Array[int] = []
 var _flame_material := ShaderMaterial.new()
 var _halo_material := ShaderMaterial.new()
+var _coals_material := ShaderMaterial.new()
 var _smoke_material := ShaderMaterial.new()
 var _spark_material := ShaderMaterial.new()
 var _rng := RandomNumberGenerator.new()
@@ -110,7 +134,6 @@ var _count := -1
 var _read_in := 0.0
 var _lay_in := 0.0
 var _pick_in := 0.0
-var _crackle_in := 0.5
 var _smoke_debt := 0.0
 var _spark_debt := 0.0
 var _scale := 1.0
@@ -120,28 +143,31 @@ func setup(owner_editor: Node) -> void:
 	editor = owner_editor
 	name = "Campfires"
 	_rng.seed = 51207
-	_flame_material.shader = preload("res://shaders/fire_flame.gdshader")
+	_flame_material.shader = preload("res://shaders/campfire_flame.gdshader")
 	_flame_material.set_shader_parameter("intensity",FLAME_INTENSITY)
 	_smoke_material.shader = preload("res://shaders/fire_smoke.gdshader")
 	_spark_material.shader = preload("res://shaders/fire_ember.gdshader")
 	_halo_material.shader = preload("res://shaders/stone_lamp_halo.gdshader")
 	_halo_material.set_shader_parameter("tint",LIGHT_COLOR)
-	var tongue := QuadMesh.new()
-	tongue.size = Vector2(0.7,1.0)
-	flames = _batch("Flames",tongue,_flame_material,true)
+	_coals_material.shader = preload("res://shaders/campfire_coals.gdshader")
+	_coals_material.set_shader_parameter("strength",COALS_STRENGTH)
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
+	flames = _batch("Flames",quad,_flame_material,true)
 	halos = _batch("Glow",quad,_halo_material,false)
+	var bed := PlaneMesh.new()
+	bed.size = Vector2.ONE
+	coals = _batch("Coals",bed,_coals_material,true)
 	smoke = _batch("Smoke",quad,_smoke_material,false)
 	sparks = _batch("Sparks",quad,_spark_material,false)
 	smoke.multimesh.instance_count = SMOKE_CAP
 	sparks.multimesh.instance_count = SPARK_CAP
 	for node in [smoke,sparks]: node.multimesh.visible_instance_count = 0
 	voice = AudioStreamPlayer3D.new()
-	voice.name = "Crackle"
-	voice.stream = FireEffects._build_audio()
-	voice.unit_size = 4.0
-	voice.max_distance = CRACKLE_REACH
+	voice.name = "Hearth"
+	voice.stream = hearth_sound()
+	voice.unit_size = HEARTH_NEAR
+	voice.max_distance = HEARTH_REACH
 	voice.volume_db = -80.0
 	add_child(voice)
 
@@ -195,12 +221,13 @@ func _process(delta: float) -> void:
 	if data.objects_revision != _revision or data.objects.size() != _count or _read_in <= 0.0: _read(data)
 	if fires.is_empty() and puffs.is_empty() and embers.is_empty():
 		voice.volume_db = -80.0
+		if voice.playing: voice.stop()
 		return
 	var dt := clampf(delta,0.0,0.1)
 	_clock += dt
 	night = _night()
 	rain = move_toward(rain,_rain(),dt/RAIN_SECONDS)
-	for material in [_flame_material,_smoke_material,_spark_material]: material.set_shader_parameter("time",_clock)
+	for material in [_flame_material,_coals_material,_smoke_material,_spark_material]: material.set_shader_parameter("time",_clock)
 	_halo_material.set_shader_parameter("glow",lerpf(HALO_DAY,HALO_NIGHT,night)*(1.0-RAIN_LIGHT*rain))
 	halos.visible = not fires.is_empty()
 	_lay_in -= dt
@@ -213,7 +240,7 @@ func _process(delta: float) -> void:
 		_pick()
 	_smoke(dt)
 	_sparks(dt)
-	_crackle(dt)
+	_hearth()
 
 ## Reads the campfire records into world points, and hands them to the
 ## lamps' light pool as guests.
@@ -232,6 +259,7 @@ func _read(data: NativeTerrainData) -> void:
 		var size := float(item.scale)
 		var foot: Vector3 = data.object_position(item)
 		var fire := {"id":id,"foot":terrain.to_global(foot+Vector3.UP*Campfire.FLAME_FOOT*size),
+			"bed":terrain.to_global(foot+Vector3.UP*COALS_LIFT*size),
 			"at":terrain.to_global(foot+Vector3.UP*Campfire.FIRE_HEIGHT*size),"scale":size*_scale,
 			"plate":Vector2(float(item.x),float(item.z)),"phase":fposmod(float(id)*0.6180339887,1.0),
 			"lean":old[id].lean if old.has(id) else Vector3.ZERO}
@@ -244,25 +272,31 @@ func _read(data: NativeTerrainData) -> void:
 	if lamps != null: lamps.set_guests(guests,ASSET,energy)
 	flames.multimesh.instance_count = fires.size()*FLAME_TONGUES.size()
 	halos.multimesh.instance_count = fires.size()
+	coals.multimesh.instance_count = fires.size()
 	var bounds := AABB()
 	for i in range(fires.size()):
 		var fire: Dictionary = fires[i]
 		halos.multimesh.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*float(fire.scale)*HALO_SIZE),fire.at))
 		halos.multimesh.set_instance_custom_data(i,Color())
+		var lie := Basis(terrain.global_basis.get_rotation_quaternion())
+		coals.multimesh.set_instance_transform(i,Transform3D(lie.scaled(Vector3.ONE*float(fire.scale)*COALS_SIZE),fire.bed))
+		coals.multimesh.set_instance_custom_data(i,Color(float(fire.phase),0.0,0.0,0.0))
+		coals.multimesh.set_instance_color(i,Color(1,1,1,1))
 		bounds = AABB(fire.foot,Vector3.ZERO) if i == 0 else bounds.expand(fire.foot)
 	# The shaders move the quads off their instance points: room round them all.
 	var room := bounds.grow(3.0*maxf(1.0,_scale))
 	room.size.y += 6.0*maxf(1.0,_scale)
-	for node in [flames,halos,smoke,sparks]: node.custom_aabb = room if not fires.is_empty() else AABB()
+	for node in [flames,halos,coals,smoke,sparks]: node.custom_aabb = room if not fires.is_empty() else AABB()
 	flames.visible = not fires.is_empty()
+	coals.visible = not fires.is_empty()
 	if fires.is_empty():
 		halos.visible = false
 		active.clear()
 	_lay()
 	_pick()
 
-## Lays every fire's tongues: where, how tall (less in rain) and how they
-## lean (with the wind there, eased).
+## Lays every fire's cards: where, how tall (less in rain) and how they
+## lean (with the wind there, eased); and dims the coals in rain.
 func _lay() -> void:
 	if fires.is_empty(): return
 	var scene: Node = editor.get("scene")
@@ -285,7 +319,8 @@ func _lay() -> void:
 			var at: Vector3 = fire.foot+Vector3(offset.x,0.0,offset.y)*s
 			mesh.set_instance_transform(i*n+k,Transform3D(Basis.IDENTITY,at))
 			mesh.set_instance_custom_data(i*n+k,Color(fposmod(float(fire.phase)+float(tongue[2]),1.0),float(tongue[1])*s*tall,fire.lean.x,fire.lean.z))
-			mesh.set_instance_color(i*n+k,Color(1,1,1,life))
+			mesh.set_instance_color(i*n+k,Color(float(tongue[3]),0,0,life))
+		coals.multimesh.set_instance_color(i,Color(1,1,1,1.0-0.5*rain))
 
 ## The fires nearest the camera, which smoke, spark and crackle.
 func _pick() -> void:
@@ -366,19 +401,90 @@ func _sparks(dt: float) -> void:
 	mesh.visible_instance_count = count
 	sparks.visible = count > 0
 
-## Now and then a pop from the nearest fire, quiet, following the ambience.
-func _crackle(dt: float) -> void:
+## The hearth's voice at the nearest fire, looping, following the ambience.
+func _hearth() -> void:
 	var scene: Variant = editor.get("scene")
 	var ambience: Variant = scene.get("_ambient_audio") if scene != null else null
 	var muted: bool = ambience != null and bool(ambience.get("muted"))
 	var volume: float = float(ambience.get("volume")) if ambience != null and ambience.get("volume") != null else 0.55
 	if muted or active.is_empty():
 		voice.volume_db = -80.0
+		if voice.playing: voice.stop()
 		return
-	voice.volume_db = linear_to_db(maxf(0.0001,CRACKLE_GAIN*volume*(1.0-0.6*rain)))
-	_crackle_in -= dt
-	if _crackle_in > 0.0 or voice.playing: return
-	_crackle_in = _rng.randf_range(CRACKLE_GAP.x,CRACKLE_GAP.y)
+	voice.volume_db = linear_to_db(maxf(0.0001,HEARTH_GAIN*volume*(1.0-0.5*rain)))
 	voice.global_position = fires[active[0]].at
-	voice.pitch_scale = _rng.randf_range(0.85,1.2)
-	voice.play()
+	if not voice.playing: voice.play(_rng.randf_range(0.0,HEARTH_SECONDS))
+
+## The sound of a small fire, synthesized once, a seamless HEARTH_SECONDS
+## loop. Two layers, neither of them raw noise:
+## - the breath: noise through two low-pass poles (about 250 Hz), swelling
+##   and settling on a few slow beats, quiet under everything;
+## - the wood: sparse crackles, about three a second, mostly tiny, now and
+##   then a snap; each a few clicks close together, every click a short
+##   woody knock (a damped tone, 0.9 to 2.6 kHz) over a breath of band-passed
+##   noise, gone within about 10 ms.
+## The tail is crossfaded into the head, so the loop has no seam.
+static func hearth_sound() -> AudioStreamWAV:
+	var rate := HEARTH_RATE
+	var count := int(rate*HEARTH_SECONDS)
+	var seam := int(rate*HEARTH_SEAM)
+	var total := count+seam
+	var noise := RandomNumberGenerator.new()
+	noise.seed = 90211
+	var mix := PackedFloat32Array()
+	mix.resize(total)
+	# The breath.
+	var low_a := 0.0
+	var low_b := 0.0
+	for i in range(total):
+		var t := float(i)/rate
+		low_a = lerpf(low_a,noise.randf_range(-1.0,1.0),0.07)
+		low_b = lerpf(low_b,low_a,0.07)
+		var swell := 0.7+0.18*sin(t*TAU*0.23)+0.12*sin(t*TAU*0.61+1.3)
+		mix[i] = low_b*0.55*swell
+	# The wood.
+	var bright := PackedFloat32Array()
+	bright.resize(total)
+	var fast := 0.0
+	var slow := 0.0
+	for i in range(total):
+		var white := noise.randf_range(-1.0,1.0)
+		fast = lerpf(fast,white,0.55)
+		slow = lerpf(slow,white,0.12)
+		bright[i] = fast-slow
+	var at := noise.randf_range(0.05,0.3)
+	while at < float(total)/rate-0.05:
+		var loud := 0.08+0.55*pow(noise.randf(),3.0)
+		var clicks := noise.randi_range(1,4)
+		var when := at
+		for c in range(clicks):
+			var tone := noise.randf_range(900.0,2600.0)
+			var decay := noise.randf_range(450.0,1100.0)
+			var size := loud*noise.randf_range(0.45,1.0)
+			var from := int(when*rate)
+			for j in range(int(0.012*rate)):
+				if from+j >= total: break
+				var age := float(j)/rate
+				var fade := exp(-age*decay)*minf(1.0,age*rate/3.0)
+				mix[from+j] += size*fade*(0.6*sin(TAU*tone*age)+0.9*bright[from+j])
+			when += noise.randf_range(0.006,0.045)
+		at += -log(maxf(noise.randf(),0.0001))/3.0
+	# Close the loop: the tail fades into the head.
+	for i in range(seam):
+		var k := float(i)/seam
+		mix[i] = mix[i]*sin(k*PI*0.5)+mix[count+i]*cos(k*PI*0.5)
+	# Its loudest snap at HEARTH_PEAK, so HEARTH_GAIN alone sets the level.
+	var peak := 0.0001
+	for i in range(count): peak = maxf(peak,absf(mix[i]))
+	var samples := PackedByteArray()
+	samples.resize(count*2)
+	for i in range(count):
+		samples.encode_s16(i*2,int(clampf(mix[i]*HEARTH_PEAK/peak,-1.0,1.0)*32767.0))
+	var sound := AudioStreamWAV.new()
+	sound.format = AudioStreamWAV.FORMAT_16_BITS
+	sound.mix_rate = rate
+	sound.data = samples
+	sound.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	sound.loop_begin = 0
+	sound.loop_end = count
+	return sound

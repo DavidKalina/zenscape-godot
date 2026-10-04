@@ -75,12 +75,15 @@ extends Node
 ##   Ended where it began, it closes into a pen. Pressed or let go near a
 ##   fence (Fences.SNAP_REACH m, or SNAP_PIXELS on screen), its end snaps
 ##   onto it and joins it, ringed in the preview (`_fence_snap`).
-## - **The footbridge.** Drag across a stream or a narrow water: while the
-##   drag goes on a faint ghost shows the bridge the land would take, snapped
-##   bank to bank (or a dull red one where it would not), and letting go lays
-##   it (NativeChunkEditor `place_bridge`, scripts/footbridge.gd, one undo
-##   step). Over dry land, wider than six metres or too steep, nothing is
-##   laid, and the hint line says why.
+## - **The footbridge.** Drag across a stream, a narrow water or a gap in
+##   the land (a ravine, from peak to peak): while the drag goes on a faint
+##   ghost shows the bridge the land would take, snapped bank to bank over
+##   water or onto level footing at each end of a gap (or a dull red one
+##   where it would not), and letting go lays it (NativeChunkEditor
+##   `place_bridge`, scripts/footbridge.gd, one undo step). Past six metres it
+##   is a rope bridge. With nothing to cross, no footing, wider than twenty
+##   metres, too steep or land in the way, nothing is laid, and the hint line
+##   says why.
 ##
 ## - **The Feather** (the tool roll's "feather", HUD 5 "Gust"): wind held in
 ##   hand, taken like a tool. Drag it over the land: the wind goes with it
@@ -180,7 +183,7 @@ const FLOWER_HINT := "Drag over the land to paint flowers  ·  Shift thins them"
 const HINTS := {"water":"Hold over water to scoop it up","stone":"Tap to set a stone  ·  Drag to scatter pebbles",
 	"reed":"Tap to set reeds  ·  Drag to scatter","lamp":"Tap to set a stone lamp  ·  Drag to line a path with them",
 	"fence":"Drag a line to set a fence  ·  Start or end on a fence to join it",
-	"bridge":"Drag across a stream to lay a footbridge",
+	"bridge":"Drag across a stream or a gap to lay a footbridge",
 	"campfire":"Tap to set a campfire  ·  It needs flat, dry ground clear of trees",
 	"cabin":"Tap to set a cabin  ·  It needs a patch of flat, dry ground clear of trees"}
 ## The cabin in hand, and what the hint line says when the land will not
@@ -210,10 +213,12 @@ const CAMPFIRE_REFUSALS := {
 const BRIDGE := "bridge"
 const Footbridge = preload("res://scripts/footbridge.gd")
 const BRIDGE_REFUSALS := {
-	"short":"Drag across a stream to lay a footbridge",
-	"dry":"No water to cross here",
-	"too_long":"Too wide to bridge  ·  Six metres at most",
+	"short":"Drag across a stream or a gap to lay a footbridge",
+	"dry":"Nothing to cross here",
+	"too_long":"Too wide to bridge  ·  Twenty metres at most",
 	"too_steep":"The banks are too uneven to bridge",
+	"no_footing":"No level ground for an end there",
+	"blocked":"The land rises in the way",
 	"no_bank":"No bank to rest on there",
 	"edge":"No bank to rest on there",
 	"flooded":"The water stands too high to bridge",
