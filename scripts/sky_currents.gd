@@ -22,15 +22,20 @@ extends Node3D
 ## then each copy's offset), so the currents move with the world when the
 ## islands swap (SkyIslands `arrive` shifts this node too).
 
-## Samples along each current's path, in the shader's texture and here.
-const SAMPLES := 64
+## Samples along each current's path, in the shader's texture and here,
+## and how many smoothing passes a loop gets, so it never turns a hairpin
+## round an island (at jet speed a sharp corner feels like a wall).
+const SAMPLES := 192
+const SMOOTHING := 6
 const JET := 26.0
 const JET_RADIUS := 9.0
 ## Metres a second the core pulls the glide in at the stream's edge.
 const JET_HOLD := 9.0
 ## The low loop passes this far out from each island's middle and this high
 ## over it; the high loop passes on the inside, higher. Between islands each
-## loop swells up or dips down by SWELL.
+## loop swells or dips by a share of SWELL, the low one only a little up and
+## the high one only up, so the two never meet: where loops running opposite
+## ways crossed, the glide was left at a stand.
 const LOW_OUT := 40.0
 const LOW_UP := 18.0
 const HIGH_IN := 40.0
@@ -71,9 +76,9 @@ func build(slots: Array) -> void:
 		var out := Vector3(here.x-centre.x,0.0,here.z-centre.z).normalized()
 		var next_out := Vector3(next.x-centre.x,0.0,next.z-centre.z).normalized()
 		low.append(here+out*LOW_OUT+Vector3.UP*LOW_UP)
-		low.append((here+out*LOW_OUT+next+next_out*LOW_OUT)*0.5+Vector3.UP*(LOW_UP+SWELL*(1.0 if n%2 == 0 else -0.6)))
+		low.append((here+out*LOW_OUT+next+next_out*LOW_OUT)*0.5+Vector3.UP*(LOW_UP+SWELL*(0.3 if n%2 == 0 else -0.6)))
 		high.append(here-out*HIGH_IN+Vector3.UP*HIGH_UP)
-		high.append((here-out*HIGH_IN+next-next_out*HIGH_IN)*0.5+Vector3.UP*(HIGH_UP+SWELL*(-0.7 if n%2 == 0 else 1.0)))
+		high.append((here-out*HIGH_IN+next-next_out*HIGH_IN)*0.5+Vector3.UP*(HIGH_UP+SWELL*(0.2 if n%2 == 0 else 1.0)))
 	high.reverse()
 	currents.append(_current(_loop(low),true,JET,JET_RADIUS,"jet"))
 	currents.append(_current(_loop(high),true,JET,JET_RADIUS,"jet"))
@@ -120,6 +125,12 @@ static func _loop(controls: Array) -> PackedVector3Array:
 		var p2: Vector3 = controls[(k+1)%n]
 		var p3: Vector3 = controls[(k+2)%n]
 		points.append(0.5*((2.0*p1)+(-p0+p2)*f+(2.0*p0-5.0*p1+4.0*p2-p3)*f*f+(-p0+3.0*p1-3.0*p2+p3)*f*f*f))
+	for pass_ in range(SMOOTHING):
+		var smoothed := PackedVector3Array()
+		smoothed.resize(SAMPLES)
+		for i in range(SAMPLES):
+			smoothed[i] = (points[(i-1+SAMPLES)%SAMPLES]+points[i]*2.0+points[(i+1)%SAMPLES])*0.25
+		points = smoothed
 	return points
 
 ## The air at a global point:
@@ -131,10 +142,14 @@ static func _loop(controls: Array) -> PackedVector3Array:
 func air_at(point: Vector3) -> Dictionary:
 	var local := point-position
 	var wind := Vector3.ZERO
-	var along := Vector3.ZERO
-	var hold := Vector3.ZERO
-	var jet := 0.0
 	var thermal := 0.0
+	# Only the jet it is deepest in counts. Two jets running opposite ways
+	# would cancel where they come close, and leave the glide at a stand.
+	var jet := 0.0
+	var jet_gap := INF
+	var jet_near := {}
+	var jet_reach := 1.0
+	var jet_speed := 0.0
 	for current: Dictionary in currents:
 		var nearest := _nearest(current,local)
 		var reach: float = current.radius
@@ -148,18 +163,28 @@ func air_at(point: Vector3) -> Dictionary:
 			wind += Vector3.UP*current.speed*inside
 			thermal = maxf(thermal,inside)
 			continue
-		var way: Vector3 = nearest.way
-		wind += way*current.speed*inside
+		if inside > jet or (is_equal_approx(inside,jet) and gap < jet_gap):
+			jet = inside
+			jet_gap = gap
+			jet_near = nearest
+			jet_reach = reach
+			jet_speed = current.speed
+	var along := Vector3.ZERO
+	var hold := Vector3.ZERO
+	if jet > 0.0:
+		var way: Vector3 = jet_near.way
+		wind += way*jet_speed*jet
+		along = way*jet
 		# Held to the core: a pull in, strongest at the edge.
-		var to_core: Vector3 = nearest.at-local
-		if to_core.length() > 0.01: hold += to_core.normalized()*JET_HOLD*inside*clampf(gap/reach,0.0,1.0)
-		along += way*inside
-		jet = maxf(jet,inside)
+		var to_core: Vector3 = jet_near.at-local
+		if to_core.length() > 0.01: hold = to_core.normalized()*JET_HOLD*jet*clampf(jet_gap/jet_reach,0.0,1.0)
 	return {"wind":wind,"hold":hold,"along":along,"jet":jet,"thermal":thermal}
 
 ## The nearest point on a current's path to a local point: {at, gap, way}.
 static func _nearest(current: Dictionary, local: Vector3) -> Dictionary:
 	var points: PackedVector3Array = current.points
+	# A thermal is straight: one segment, bottom to top.
+	if current.kind == "thermal": points = PackedVector3Array([points[0],points[points.size()-1]])
 	var count := points.size() if current.closed else points.size()-1
 	var best := {"at":points[0],"gap":INF,"way":Vector3.FORWARD}
 	for i in range(count):

@@ -150,6 +150,28 @@ func _currents() -> void:
 	check(jets.size() == 2 and thermals.size() >= slots.size()*2,"Two jet loops and thermals by every island (%d jets, %d thermals)" % [jets.size(),thermals.size()])
 	check(currents.wisp_count() > 1000,"The currents are drawn (%d wisps)" % currents.wisp_count())
 	check(currents.air_at(Vector3(0.0,300.0,0.0)).wind == Vector3.ZERO,"Out of the currents the air is still")
+	# Nowhere along either jet does the air stall: no crossing where the
+	# two loops cancel out, and the loops keep apart.
+	var weakest := INF
+	for c: Dictionary in currents.currents:
+		if c.kind != "jet": continue
+		var pts: PackedVector3Array = c.points
+		for i in range(pts.size()):
+			for f in [0.0,0.5]:
+				var p: Vector3 = pts[i].lerp(pts[(i+1)%pts.size()],f)
+				var along_jet: Vector3 = (pts[(i+1)%pts.size()]-pts[i]).normalized()
+				weakest = minf(weakest,currents.air_at(p).wind.dot(along_jet))
+	check(weakest > SkyCurrents.JET*0.7,"Along every jet the air runs strong (weakest %.1f m/s)" % weakest)
+	var apart := INF
+	var low: PackedVector3Array = jets[0].points
+	var high: PackedVector3Array = jets[1].points
+	for a in low:
+		for i in range(high.size()):
+			var h0: Vector3 = high[i]
+			var h1: Vector3 = high[(i+1)%high.size()]
+			var t := clampf((a-h0).dot(h1-h0)/maxf((h1-h0).length_squared(),1e-6),0.0,1.0)
+			apart = minf(apart,a.distance_to(h0.lerp(h1,t)))
+	check(apart > SkyCurrents.JET_RADIUS*2.6,"The two jet loops keep apart (closest %.1f m)" % apart)
 	# Into the low jet, facing across it.
 	var jet: Dictionary = jets[0]
 	var on: Vector3 = jet.points[10]
