@@ -33,6 +33,10 @@ var cloud_style := cloud_style_from_args(OS.get_cmdline_user_args() + OS.get_cmd
 const NIGHT_STYLES := ["nocturne","opal","storybook","mystic"]
 const NIGHT_STYLE_NAMES := ["Nocturne","Opal","Storybook","Mystic"]
 var night_style := night_style_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_night_style())
+## The ringed planet (scripts/sky_objects.gd): off unless the player turns
+## it on in Settings > Planet, kept in user://look.cfg. --sky-planet or
+## --no-sky-planet for a run.
+var sky_planet := sky_planet_from_args(OS.get_cmdline_user_args() + OS.get_cmdline_args(), load_sky_planet())
 ## Where the choice is kept (tests point it elsewhere).
 var settings_path := SETTINGS_PATH
 ## Motes of light adrift round the plate over the sea (scripts/sky_motes.gd),
@@ -109,6 +113,7 @@ func update(camera: Camera3D, celestial) -> void:
 	RenderingServer.global_shader_parameter_set("zs_look_rim", rim * on)
 	_update_ridges(on)
 	_update_cloud_sea(on)
+	_update_sky_planet()
 	var now := Time.get_ticks_usec()
 	grass.set_reduced(tier != 2)
 	var dense := enabled and beauty_grass and tier != 1
@@ -222,6 +227,34 @@ func set_night_style(style: String, keep := true) -> void:
 
 func _publish_night_style() -> void:
 	RenderingServer.global_shader_parameter_set("zs_night_style", maxi(NIGHT_STYLES.find(night_style), 0))
+
+## Shows or hides the planet from the next update; `keep` saves the choice.
+func set_sky_planet(on: bool, keep := true) -> void:
+	sky_planet = on
+	if keep:
+		var file := ConfigFile.new()
+		file.load(settings_path)
+		file.set_value("sky", "planet", on)
+		file.save(settings_path)
+	if _scene != null: _update_sky_planet()
+
+func _update_sky_planet() -> void:
+	var lighting = _scene.get("_lighting")
+	var objects = lighting.sky_objects if lighting != null else null
+	if objects == null or objects.planet == null: return
+	if objects.planet.visible != sky_planet: objects.planet.visible = sky_planet
+
+## The player's kept planet choice, off until they turn it on.
+static func load_sky_planet(path := SETTINGS_PATH) -> bool:
+	var file := ConfigFile.new()
+	if file.load(path) != OK: return false
+	return bool(file.get_value("sky", "planet", false))
+
+## --sky-planet / --no-sky-planet among `args`; else `kept`.
+static func sky_planet_from_args(args: PackedStringArray, kept: bool) -> bool:
+	if "--no-sky-planet" in args: return false
+	if "--sky-planet" in args: return true
+	return kept
 
 ## The player's kept night style, Nocturne until they choose.
 static func load_night_style(path := SETTINGS_PATH) -> String:
