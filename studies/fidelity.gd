@@ -13,6 +13,8 @@ var _leaf_litter: MultiMeshInstance3D
 var _waterfall_drips: Node3D
 ## Loose grass blades the wind lifts off the open meadow (scripts/wind_grass_chaff.gd).
 var _grass_chaff: MultiMeshInstance3D
+## Grass blades a sweeping breeze ribbon kicks up (scripts/wind_kicked_blades.gd).
+var _kicked_blades: MultiMeshInstance3D
 var _leaf_revision := -1
 var _leaf_objects_revision := -1
 var _display_fog: CanvasLayer
@@ -158,6 +160,7 @@ func _ready() -> void:
 	_redwood_mist = preload("res://scripts/redwood_biome_mist.gd").new()
 	_leaf_litter = preload("res://scripts/wind_leaf_litter.gd").new()
 	_grass_chaff = preload("res://scripts/wind_grass_chaff.gd").new()
+	_kicked_blades = preload("res://scripts/wind_kicked_blades.gd").new()
 	_waterfall_drips = preload("res://scripts/waterfall_drips.gd").new()
 	var engine_args := OS.get_cmdline_args()
 	var fps_index := engine_args.find("--fixed-fps")
@@ -274,6 +277,7 @@ func _ready() -> void:
 	world_rumble.setup(self)
 	add_child(_leaf_litter)
 	add_child(_grass_chaff)
+	add_child(_kicked_blades)
 	add_child(_planar_water)
 	add_child(_redwood_mist)
 	add_child(_world_visuals)
@@ -1525,11 +1529,14 @@ func _update_leaf_litter(delta: float) -> void:
 				anchors.append(Vector2(object.x,object.z))
 		_leaf_litter.seed_from(anchors,_leaf_ground)
 		_grass_chaff.seed_from(_grass_chaff.anchors_on(_chunk_editor.data.ground_coverage),_leaf_ground)
+		_kicked_blades.setup(_leaf_ground)
 		_waterfall_drips.seed_from(_chunk_editor.content._landscape_falls,_chunk_editor.data)
 	_leaf_litter.visible = _growth.terrain>=0.995 and _growth.foliage>=0.995
 	_leaf_litter.advance(delta,_paused or not _leaf_litter.visible,_atmosphere)
 	_grass_chaff.visible = _leaf_litter.visible
 	_grass_chaff.advance(delta,_paused or not _grass_chaff.visible,_atmosphere)
+	_kicked_blades.visible = _leaf_litter.visible
+	_kicked_blades.advance(delta,_paused or not _kicked_blades.visible,_atmosphere.wind_trails,_atmosphere)
 	_waterfall_drips.visible = _growth.terrain>=0.995 and _growth.water>=0.995 and _precipitation.surface_weather.ice<0.1
 	_waterfall_drips.advance(delta,_paused or not _waterfall_drips.visible)
 

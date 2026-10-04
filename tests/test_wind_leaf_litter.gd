@@ -39,6 +39,28 @@ func run() -> void:
 	for i in range(1000): anchors.append(Vector2.ZERO)
 	litter.seed_from(anchors,func(_p): return 0.0)
 	check(litter.leaves.size()<=litter.CAPACITY,"Population is bounded")
+	# A lifting breeze-ribbon sweep (a stub with a steady updraft over the leaf)
+	# throws a resting leaf up, and it rises but tops out low.
+	var stub := GDScript.new()
+	stub.source_code = "extends Node3D\nfunc air_at(p: Vector3) -> Vector3:\n\treturn Vector3(2.0, 3.5, 0.0) if Vector2(p.x, p.z).length() < 6.0 else Vector3.ZERO\n"
+	stub.reload()
+	var trails: Node3D = stub.new()
+	air.add_child(trails)
+	air.strength = 0.0
+	air._air_strength = 0.0
+	air.puffs.parcels.fill(Vector4.ZERO)
+	litter.seed_from([Vector2.ZERO],func(_p): return 0.0)
+	var peak := 0.0
+	for i in range(60): litter.advance(1.0/60.0,false,air)
+	for leaf in litter.leaves: check(is_equal_approx(leaf.position.y,0.035) and not leaf.airborne,"No sweep wired in: leaves rest")
+	air.wind_trails = trails
+	for i in range(180):
+		litter.advance(1.0/60.0,false,air)
+		for leaf in litter.leaves: peak = maxf(peak,leaf.position.y)
+	check(peak > 0.6,"A lifting sweep throws a leaf up: %.2f m" % peak)
+	check(peak < 3.2,"A leaf tops out low in a sweep's updraft: %.2f m" % peak)
+	air.wind_trails = null
+	trails.free()
 	litter.free()
 	air.free()
 	print("WIND LEAF LITTER: ",failures," failures")
