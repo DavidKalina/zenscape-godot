@@ -81,6 +81,19 @@ func run() -> void:
 	check("over a copy, the copy becomes the plate",flat.length() < 4.0,flat)
 	check("the island left behind takes the copy's place",eye.islands.offsets[0].is_equal_approx(-offset),eye.islands.offsets[0])
 
+	# The sky answers: the sea slides by and swells, parts under a fall,
+	# and a cloud's heart is a white-out.
+	var flight: Vector4 = eye.sky.flight
+	check("the cloud sea follows the glide",flight.z != 1.0 or Vector2(flight.x,flight.y).length() > 0.0,flight)
+	eye.glide.position = Vector3(300.0,-95.0,300.0)
+	eye.glide.airborne = 10.0
+	await frames(30)
+	check("falling to the cloud sea parts it",eye.sky.flight.w > 0.5,"%.2f" % eye.sky.flight.w)
+	eye.glide.position = eye.islands.clouds.centre(0,scene._motion_time)
+	await frames(30)
+	check("flown into a cloud, the view goes to vapour",eye.sky.vapour > 0.3,"%.2f" % eye.sky.vapour)
+	check("the clouds show while gliding",eye.islands.clouds.visible)
+
 	# A slow skim lands.
 	var ground: float = eye.islands.ground(Vector3(3.0,0.0,3.0))
 	eye.glide.position = Vector3(3.0,ground+1.0,3.0)
@@ -92,6 +105,9 @@ func run() -> void:
 	check("a slow skim on the plate lands",not eye.flying and eye.active,"flying %s" % eye.flying)
 	check("landed, the feet are on the plate",absf(eye._feet.x) <= eye.PLATE_REACH and absf(eye._feet.z) <= eye.PLATE_REACH,eye._feet)
 	check("landed, the lean is gone",scene.camera_roll == 0.0)
+	await frames(120)
+	check("landed, the cloud sea settles back to rest",eye.sky.flight.is_equal_approx(Vector4(0.0,0.0,1.0,0.0)) and eye.sky.vapour < 0.01,eye.sky.flight)
+	check("landed, the clouds hide",not eye.islands.clouds.visible)
 
 	# Off again, and V mid-glide.
 	eye._feet = eye._clamped(Vector3(0.0,0.0,-(eye.PLATE_REACH-0.4)))

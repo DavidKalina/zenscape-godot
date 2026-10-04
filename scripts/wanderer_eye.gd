@@ -101,6 +101,7 @@ const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Space to rise  ·
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
+const SkyFlight = preload("res://scripts/sky_flight.gd")
 ## The glide's view widens from FLY_FOV at a cruise to FLY_FOV_FAST at full
 ## speed, and narrows a little at the float.
 const FLY_FOV := 78.0
@@ -157,6 +158,8 @@ var steps: Node
 var glide := SkyGlide.new()
 var islands: Node3D
 var air: Node3D
+## The sky's answer to the glide: the cloud sea and the vapour (scripts/sky_flight.gd).
+var sky: Node
 var flying := false
 var glide_enabled := "--no-glide" not in OS.get_cmdline_user_args()
 ## Mouse look gathered for the glide's next step, and seconds of skim so far.
@@ -208,8 +211,9 @@ func setup(owner_scene: Node3D) -> void:
 		islands = SkyIslands.new()
 		islands.setup(scene)
 		add_child(islands)
-		# The air shows only while gliding; the build view stays as it was.
-		islands.currents.visible = false
+		sky = SkyFlight.new()
+		add_child(sky)
+		sky.setup(scene)
 		air = GlideAir.new()
 		add_child(air)
 		islands.skip.append(air)
@@ -617,10 +621,11 @@ func _launch(pace: float) -> void:
 	islands.build()
 	_far_before = camera.far
 	camera.far = FLY_FAR
-	islands.currents.visible = true
+	islands.show_air(true)
 	glide.launch(_eye_global(),_yaw,pace)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
 	air.start()
+	sky.start(glide.position)
 	_hint.text = FLY_HINT
 	_hint.modulate.a = 1.0
 	_hint_time = 0.0
@@ -630,7 +635,8 @@ func _end_flight() -> void:
 	flying = false
 	scene.camera_roll = 0.0
 	camera.far = _far_before
-	islands.currents.visible = false
+	islands.show_air(false)
+	sky.stop()
 	air.stop()
 	_hint.text = HINT
 
@@ -654,7 +660,11 @@ func _advance_flight(delta: float) -> void:
 	glide.step(delta,input,islands.ground,islands.air)
 	# Over a copy, the copy becomes the plate.
 	var under: int = islands.copy_under(glide.position)
-	if under >= 0: glide.position += islands.arrive(under)
+	if under >= 0:
+		var shift: Vector3 = islands.arrive(under)
+		glide.position += shift
+		sky.move(shift)
+	sky.advance(delta,glide.position,islands.clouds.inside(glide.position,scene._motion_time))
 	air.advance(delta,glide.velocity,glide.hang,float(input.dive))
 	var reach := 6.0
 	scene.yaw = glide.heading

@@ -1,9 +1,10 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_never;
-// The sky's currents (scripts/sky_currents.gd): soft wisps flowing along
-// each jet stream and spiralling up each thermal, so the air you can ride
-// shows from far off. Each wisp is one stroke, swelling in the middle and
-// fading at both ends, brighter looking towards the sun.
+// The sky's currents (scripts/sky_currents.gd): faint threads of air
+// flowing along each jet stream and drifting up each thermal, so the air
+// you can ride shows if you look for it. Each is a fine stroke that swells
+// and fades, tinted by the sky it crosses and only a touch warmer towards
+// the sun: air, not ice.
 // The paths come in `paths`: one row per current, `samples` points (xyz,
 // node-local), then (length, speed, radius, swirl) and (closed, kind).
 // Instance custom data: row (0..1), where along it starts, a seed, a size.
@@ -12,7 +13,7 @@ render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_nev
 uniform sampler2D paths : filter_nearest;
 uniform int samples = 64;
 // Strokes are kept at least MIN_PIXELS wide; far off they are threads.
-const float MIN_PIXELS = 1.5;
+const float MIN_PIXELS = 1.0;
 
 varying float opacity;
 varying vec2 across;
@@ -57,16 +58,16 @@ void vertex() {
 	vec3 wide = cross(dir, to_eye / max(away, 0.001));
 	wide = length(wide) > 0.001 ? normalize(wide) : INV_VIEW_MATRIX[0].xyz;
 	float pixel = away * 2.0 * tan(0.5 * 1.2) / max(VIEWPORT_SIZE.y, 1.0);
-	float width = (thermal ? 0.35 : 0.55) * (0.6 + 0.8 * seed.w);
+	float width = (thermal ? 0.14 : 0.2) * (0.6 + 0.8 * seed.w);
 	float drawn = max(width, pixel * MIN_PIXELS);
-	float long_ = (thermal ? 2.5 : 9.0) * (0.6 + 0.8 * seed.w);
+	float long_ = (thermal ? 4.0 : 16.0) * (0.6 + 0.8 * seed.w);
 	vec3 world = centre + wide * VERTEX.x * drawn + dir * VERTEX.y * long_;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world, 1.0);
 	across = VERTEX.xy * 2.0;
 	// In and out at an open current's ends, thinned when drawn wider than
 	// it is, gone right at the eye and far away.
 	float ends = closed ? 1.0 : smoothstep(0.0, 0.08, u) * (1.0 - smoothstep(0.8, 1.0, u));
-	opacity = ends * (width / drawn) * smoothstep(2.0, 8.0, away) * (1.0 - smoothstep(1400.0, 2200.0, away)) * (0.25 + 0.3 * seed.w);
+	opacity = ends * (width / drawn) * smoothstep(2.0, 8.0, away) * (1.0 - smoothstep(900.0, 1600.0, away)) * (0.07 + 0.09 * seed.w);
 	sun = max(dot(-to_eye / max(away, 0.001), normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0))), 0.0);
 }
 
@@ -74,6 +75,8 @@ void fragment() {
 	// Soft across, a swell in the middle along.
 	float a = 1.0 - smoothstep(0.0, 1.0, abs(across.x));
 	float b = 1.0 - smoothstep(0.2, 1.0, abs(across.y));
-	ALBEDO = mix(vec3(0.93, 0.95, 1.0), vec3(1.0, 0.95, 0.85), sun) * (1.0 + 0.5 * pow(sun, 4.0));
-	ALPHA = a * a * b * opacity;
+	// The sky's own light, a breath brighter, warming a little sunward.
+	vec3 air = min(zs_cloud_sky * 1.05 + zs_cloud_sun * 0.2, vec3(1.0));
+	ALBEDO = air * mix(vec3(1.0), vec3(1.04, 1.0, 0.94), sun);
+	ALPHA = a * a * b * b * opacity;
 }

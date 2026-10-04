@@ -10,6 +10,7 @@ extends SceneTree
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
+const SkyClouds = preload("res://scripts/sky_clouds.gd")
 const DT := 1.0/60.0
 var failures := 0
 
@@ -23,6 +24,7 @@ func _initialize() -> void:
 	_caught()
 	_spread()
 	_currents()
+	_clouds()
 	print("PASS: sky glide" if failures == 0 else "FAIL: sky glide")
 	quit(1 if failures else 0)
 
@@ -181,3 +183,27 @@ func _currents() -> void:
 		lifted.step(DT,{},Callable(self,"air"),air)
 	check(lifted.position.y-from > 12.0,"A thermal lifts the glide (%.1f m in 3 s)" % (lifted.position.y-from))
 	currents.free()
+
+## Clouds fill the air between the islands, keep clear of them, drift and
+## wrap whole, and say how deep a point is in one.
+func _clouds() -> void:
+	var clouds := SkyClouds.new()
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	clouds.build(slots)
+	check(clouds.clouds.size() == SkyClouds.COUNT and clouds.puff_count() > SkyClouds.COUNT*SkyClouds.PUFFS.x-1,"Clouds fill the air (%d clouds, %d puffs)" % [clouds.clouds.size(),clouds.puff_count()])
+	var nearest := INF
+	for i in range(clouds.clouds.size()):
+		var c := clouds.centre(i,0.0)
+		for s: Vector3 in slots: nearest = minf(nearest,Vector2(c.x,c.z).distance_to(Vector2(s.x,s.z)))
+	check(nearest >= SkyClouds.CLEAR,"They keep clear of the islands (nearest %.0f m)" % nearest)
+	var heart := clouds.centre(0,0.0)
+	check(clouds.inside(heart,0.0) > 0.9,"A cloud's heart is deep inside it")
+	check(clouds.inside(heart+Vector3.UP*200.0,0.0) == 0.0,"Clear air is outside every cloud")
+	var later := clouds.centre(0,100.0)
+	check(later.distance_to(heart) > 30.0,"Clouds drift (%.0f m in 100 s)" % later.distance_to(heart))
+	var far_later := clouds.centre(0,1e5)
+	check(far_later.x >= clouds.field.x and far_later.x <= clouds.field.x+clouds.field.z,"They wrap round the field")
+	clouds.move(Vector3(10.0,0.0,0.0))
+	check(clouds.centre(0,0.0).is_equal_approx(heart+Vector3(10.0,0.0,0.0)),"An island swap moves them with the world")
+	clouds.free()

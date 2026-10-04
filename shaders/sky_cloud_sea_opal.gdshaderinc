@@ -72,6 +72,9 @@ float zs_opal_sea_billows(vec2 q, float blur) {
 
 // The opal look's dials, display-space.
 const float SEA_WARP = 0.45;
+// Puffs a second the sea drifts, and how fast its warp turns over.
+const float SEA_DRIFT = 0.016;
+const float SEA_CHURN = 0.012;
 // Puffs per depth below the eye.
 const float SEA_SCALE = 1.25;
 const vec2 SEA_COVER = vec2(0.24, 0.42);
@@ -93,6 +96,8 @@ const float SEA_OVERCAST_LIFT = 0.3;
 // The land under the sea: x its scale per depth below the eye (larger is
 // deeper), y how much air veils it.
 const vec2 SEA_LAND = vec2(6.0, 0.42);
+// How far under the sea that land lies, in depths of the sea below the eye.
+const float SEA_LAND_DEPTH = 6.0;
 // The ocean among that land: x its scale per depth (small is broad), y the
 // mask's threshold (higher is less sea).
 const vec2 SEA_OCEAN = vec2(0.3, 0.5);
@@ -237,14 +242,20 @@ vec4 zs_cloud_sea_opal(vec3 dir, vec3 room, vec3 horizon, vec3 below) {
   float peak_veil = (cloud_sea > 0.0 && dir.y < -0.02) ? cloud_sea * smoothstep(-0.02, -0.16, dir.y) : 0.0;
   if (peak_veil <= 0.0) return vec4(0.0);
   float down = max(-dir.y, 0.02);
-  // Where the ray meets the sea, in depths below the eye.
-  vec2 at = room.xz / down;
-  float far = length(at);
-  // Broad billows, drifting slowly; a slow warp heaps them into rounded mounds.
-  vec2 q = at * SEA_SCALE + vec2(0.6, 0.35) * zs_motion_time * 0.004;
+  // Where the ray meets the sea, in depths below the eye. `far` stays the
+  // view's own (haze and peaks); `at`, the place on the sea, follows the
+  // glide (zs_sea_flight): nearer as it falls, sliding by as it flies.
+  vec2 seen = room.xz / down;
+  float far = length(seen);
+  vec2 at = seen * zs_sea_flight.z + zs_sea_flight.xy;
+  // Broad billows, drifting on the wind; a slow warp heaps them into
+  // rounded mounds, and the warp itself turns over in time, so the puffs
+  // swell and settle as they go.
+  vec2 q = at * SEA_SCALE + vec2(0.6, 0.35) * zs_motion_time * SEA_DRIFT;
   float blur = length(fwidth(q));
   float warp_keep = 1.0 - smoothstep(0.35, 1.1, blur);
-  q += (vec2(zs_opal_sea_noise(q * 0.45 + vec2(3.1, 7.7)), zs_opal_sea_noise(q * 0.45 + vec2(9.4, 1.3))) - 0.5) * SEA_WARP * warp_keep;
+  vec2 churn = vec2(1.0, -0.6) * zs_motion_time * SEA_CHURN;
+  q += (vec2(zs_opal_sea_noise(q * 0.45 + vec2(3.1, 7.7) + churn), zs_opal_sea_noise(q * 0.45 + vec2(9.4, 1.3) - churn)) - 0.5) * SEA_WARP * warp_keep;
   float h = zs_opal_sea_billows(q, blur);
   // The side of each billow that faces the sun, by a step toward it.
   vec3 sun_room = zsRoomDir(zs_sun_direction);
@@ -295,16 +306,28 @@ vec4 zs_cloud_sea_opal(vec3 dir, vec3 room, vec3 horizon, vec3 below) {
   // and the thinning cloud at the edge brightens rather than darkens.
   float rift = zs_opal_sea_rift(q);
   float open = rift * 1.3 - (h - 0.45) * 2.0;
-  if (open > 0.1) {
+  // Under a falling glide the sea parts: a ring opening round the point
+  // straight below, crowns holding out longest, the edge frayed.
+  float part = zs_sea_flight.w;
+  float hole = 0.0;
+  if (part > 0.0) {
+    float fray = zs_opal_sea_noise(q * 3.1 + vec2(8.2, 2.9)) - 0.5;
+    hole = (1.0 - smoothstep(part * 0.9, part * 0.9 + 0.45, length(seen) + fray * 0.5 + (h - 0.45) * 0.6)) * smoothstep(0.0, 0.25, part);
+  }
+  if (open > 0.1 || hole > 0.0) {
     // Ragged, wispy edges: fine cloud fraying over the land.
     float wisp = zs_opal_sea_noise(q * 4.3 + vec2(1.7, 6.1)) * 0.6 + zs_opal_sea_noise(q * 9.1 + vec2(4.2, 0.3)) * 0.4;
-    open = smoothstep(0.3, 0.85, open + (wisp - 0.5) * 0.45 * warp_keep);
+    open = open > 0.1 ? smoothstep(0.3, 0.85, open + (wisp - 0.5) * 0.45 * warp_keep) : 0.0;
+    open = max(open, hole);
     col += pearl * level * 0.04 * open * (1.0 - open) * 4.0;
     // The light on the water: the sun by day, the moon by night.
     vec3 lamp = normalize(mix(sun_room, zsRoomDir(zs_moon_direction), zs_night * zs_celestial_clear));
     float lamp_az = dot(normalize(room.xz + 1e-5), normalize(lamp.xz + 1e-4));
     float glint = pow(0.5 + 0.5 * lamp_az, 8.0) * smoothstep(-0.05, 0.2, lamp.y) * mix(1.0, 0.5, zs_night) * (1.0 - overcast);
-    col = mix(col, zs_opal_sea_land(at, blur, level, shadow_hue, pearl, max(golden, zs_night), glint), open);
+    // The land lies SEA_LAND_DEPTH depths under the sea, so a glide's fall
+    // and flight move it far less than the cloud.
+    vec2 land_at = (seen * (zs_sea_flight.z + SEA_LAND_DEPTH) + zs_sea_flight.xy) / (1.0 + SEA_LAND_DEPTH);
+    col = mix(col, zs_opal_sea_land(land_at, blur, level, shadow_hue, pearl, max(golden, zs_night), glint), open);
   } else open = 0.0;
   // Clear air: the far sea lifts into a luminous haze, not into murk.
   float haze = 1.0 - exp(-far * SEA_HAZE);

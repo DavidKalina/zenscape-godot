@@ -41,8 +41,8 @@ const THERMAL_RADIUS := 7.0
 const THERMAL_FROM := -70.0
 const THERMAL_TO := 55.0
 ## How the wisps fill each kind: per metre of jet and per thermal.
-const JET_WISPS := 0.7
-const THERMAL_WISPS := 140
+const JET_WISPS := 0.5
+const THERMAL_WISPS := 90
 
 ## Each current: {points: PackedVector3Array, closed, speed, radius, kind}.
 var currents := []
@@ -184,7 +184,7 @@ func _texture() -> ImageTexture:
 		for i in range(SAMPLES):
 			var p := points[i]
 			image.set_pixel(i,row,Color(p.x,p.y,p.z,1.0))
-		var swirl := 0.0 if current.kind == "jet" else 0.35
+		var swirl := 0.0 if current.kind == "jet" else 0.08
 		image.set_pixel(SAMPLES,row,Color(current.length,current.speed,current.radius,swirl))
 		image.set_pixel(SAMPLES+1,row,Color(1.0 if current.closed else 0.0,0.0 if current.kind == "jet" else 1.0,0.0,0.0))
 	return ImageTexture.create_from_image(image)

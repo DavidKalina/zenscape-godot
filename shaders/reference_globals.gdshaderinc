@@ -133,6 +133,12 @@ global uniform vec3 zs_sun_direction;
 // room_yaw): the sky's stars and horizon are drawn in the room, which keeps
 // its bearing to the camera while the diorama turns under it.
 global uniform float zs_room_yaw;
+// The glide's view of the Opal cloud sea (scripts/sky_flight.gd): xy how far
+// the eye has flown since stepping off, in depths of the sea below it, in
+// the room's frame; z the eye's height over the sea as a share of its
+// height at the step off (1 at rest); w how far the sea parts beneath it
+// (0 closed, 1 wide open).
+global uniform vec4 zs_sea_flight;
 // Look pass (scripts/look_pass.gd): contact occlusion, silhouette rim and shore strengths.
 global uniform float zs_look_ao;
 global uniform float zs_look_rim;

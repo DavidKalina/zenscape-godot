@@ -20,6 +20,7 @@ const HALF := 14.0
 ## at different heights, so each is a destination.
 const OFFSETS := [Vector3(380.0,-20.0,-160.0),Vector3(-260.0,25.0,-520.0),Vector3(-640.0,-35.0,120.0),Vector3(180.0,-50.0,700.0),Vector3(820.0,15.0,420.0)]
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
+const SkyClouds = preload("res://scripts/sky_clouds.gd")
 ## Only parts this near the plate's middle, and smaller than this, are
 ## copied. That leaves out the sky, the fog and anything else world-sized.
 const NEAR := 22.0
@@ -37,6 +38,8 @@ var _copies: Array[Node3D] = []
 var skip: Array[Node] = []
 ## The jet streams and thermals between the islands (scripts/sky_currents.gd).
 var currents: Node3D
+## The clouds between them (scripts/sky_clouds.gd).
+var clouds: Node3D
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -47,12 +50,17 @@ func setup(owner_scene: Node3D) -> void:
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
 	currents.build(slots)
+	clouds = SkyClouds.new()
+	add_child(clouds)
+	clouds.build(slots)
+	show_air(false)
 
 ## Copies the plate as it stands now to every offset, replacing any earlier
 ## copies.
 func build() -> void:
 	clear()
 	currents.position = Vector3.ZERO
+	clouds.reset()
 	var sources := _sources()
 	for offset: Vector3 in OFFSETS:
 		var island := Node3D.new()
@@ -80,7 +88,7 @@ func _sources() -> Array:
 	var stack: Array[Node] = [scene]
 	while not stack.is_empty():
 		var node: Node = stack.pop_back()
-		if node == self or node == currents or node in skip or node is Camera3D: continue
+		if node == self or node in skip or node is Camera3D: continue
 		if node is Node3D and not (node as Node3D).visible: continue
 		for child in node.get_children(): stack.append(child)
 		if not (node is MeshInstance3D or node is MultiMeshInstance3D): continue
@@ -116,6 +124,12 @@ func _copy(source: GeometryInstance3D) -> GeometryInstance3D:
 	copy.layers = source.layers
 	copy.transform = source.global_transform
 	return copy
+
+## The currents and clouds show only while gliding; the build view stays
+## as it was.
+func show_air(on: bool) -> void:
+	currents.visible = on
+	clouds.visible = on
 
 ## The air at a global point (SkyCurrents `air_at`).
 func air(point: Vector3) -> Dictionary:
@@ -156,4 +170,5 @@ func arrive(index: int) -> Vector3:
 		offsets[i] = shift if i == index else offsets[i]+shift
 		_copies[i].position = offsets[i]
 	currents.position += shift
+	clouds.move(shift)
 	return shift
