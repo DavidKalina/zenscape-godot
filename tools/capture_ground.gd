@@ -4,7 +4,7 @@ extends SceneTree
 ## and a low look across the land by day, a close meadow under the densest
 ## grove, a lake shore (when the world has water), golden hour, and the
 ## close meadow again under a mood (--mood=, default golden_meadow), in
-## autumn and in winter.
+## autumn and in winter, and under First snow.
 ##
 ## World: --resume with --places=PATH (a COPY: the world saves into it) opens
 ## a saved world; else --seed N grows a generated one in a temporary folder.
@@ -299,5 +299,15 @@ func run() -> void:
 		view(at.call(trees), 11.0, top[2] + 0.5, 1.05)
 		await frames(90)
 		await still(season + "-grove")
+	# Snow on the land: the First snow look.
+	if wanted("snow"):
+		scene.mood_look.choose("first_snow", false)
+		await frames(30)
+		view(top[0], top[1], top[2], top[3])
+		await frames(240)
+		await still("snow-overview")
+		view(at.call(trees), 11.0, top[2] + 0.5, 1.05)
+		await frames(90)
+		await still("snow-grove")
 	print("GROUND done")
 	quit(0)
