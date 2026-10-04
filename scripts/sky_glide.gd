@@ -15,7 +15,15 @@ extends RefCounted
 ## stomach-drop moment. Speed always settles back to CRUISE and never drops
 ## below MIN, so the glide never stalls. Rise (held) climbs gently for as long
 ## as it is held. Dive (held) tucks the nose down and lets the speed run.
-## Touching ground is a skim along it, never a crash (`skim`).
+## A flap is the glide's own lift: each one kicks it up and on a little, at
+## any speed, so it can climb out of a flutter by itself. There is no
+## stamina; the wing's stroke is the only limit, and a flap asked for
+## mid-stroke waits for the next. Kept up, flapping climbs steadily, but
+## the mountain, the dive and the wind still lift harder.
+## Touching ground is a skim along it, never a crash (`skim`). An island
+## is a solid with a top and an underside: the glide can pass under it,
+## the rock above it is a ceiling it slides along, and its sides turn it
+## aside, so it can circle an island, dip under and come up past the rim.
 ##
 ## Units are the diorama's toy metres: trees stand 3 to 5 m, the plate is 28 m.
 
@@ -42,6 +50,14 @@ const RISE_SPEED := Vector2(4.0,7.0)
 const EASE_RISE := 0.35
 const BEAT := 1.4
 const BEAT_SHARE := 0.45
+## A flap: the climb it kicks in (m/s) and how fast that fades (seconds),
+## the speed it adds, the nose it lifts (radians), and the stroke's length
+## (seconds), the soonest the next can come.
+const FLAP_LIFT := 2.6
+const FLAP_FADE := 0.35
+const FLAP_PUSH := 1.2
+const FLAP_NOSE := 0.04
+const FLAP_STROKE := 0.4
 ## The pitch limits (radians, nose up positive), the pitch an untouched glide
 ## eases back to, and how fast.
 const PITCH := Vector2(-1.45,1.0)
@@ -73,6 +89,12 @@ const CATCH := 0.9
 ## drags the speed by SKIM_DRAG m/s².
 const SKIM := 0.9
 const SKIM_DRAG := 1.4
+## Under an island the eye keeps CLEAR m below the rock. Coming in at its
+## side within LIP m of the rim it rides up over it; lower, the side turns
+## it along the face over BRUSH seconds.
+const CLEAR := 1.0
+const LIP := 1.2
+const BRUSH := 0.25
 ## The band: below FLOOR the air lifts harder the deeper it goes (CUSHION m/s
 ## per metre, up to CUSHION_MAX), so a fall is always caught; above CEILING
 ## the rise fades out over CEILING_FADE metres.
@@ -108,13 +130,21 @@ var velocity := Vector3.ZERO
 var hang := 0.0
 ## Seconds since leaving the edge.
 var airborne := 0.0
-## True while the eye rides along the ground.
+## True while the eye rides along the ground, under rock, or along a side.
 var skimming := false
+var under_rock := false
+var brushing := false
 ## The air it is in this step: the wind (m/s) and how far into a jet and a
 ## thermal it is (0 to 1).
 var wind := Vector3.ZERO
 var in_jet := 0.0
 var in_thermal := 0.0
+## The climb the flaps are giving now, seconds since the last flap's
+## stroke began (INF before any), and flaps so far.
+var flap_lift := 0.0
+var stroke := INF
+var flaps := 0
+var _flap_queued := false
 var _turn_rate := 0.0
 var _beat := 0.0
 
@@ -132,6 +162,10 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	hang = 0.0
 	airborne = 0.0 if drop else FALL_TIME+CATCH
 	skimming = false
+	flap_lift = 0.0
+	stroke = INF
+	flaps = 0
+	_flap_queued = false
 	_turn_rate = 0.0
 	velocity = forward()*speed
 
@@ -142,9 +176,12 @@ func forward() -> Vector3:
 ## One step. `input` holds:
 ##   turn, pitch: -1..1 held rates (keys, stick), right and nose-up positive;
 ##   look: Vector2 of radians to turn and pitch directly (the mouse);
-##   rise, dive: bools (or 0..1 for triggers).
+##   rise, dive: bools (or 0..1 for triggers);
+##   flap: true on the frame a flap is asked for.
 ## `ground` is a Callable(Vector3) -> Variant: the height of whatever stands
-## under a global point, or null over open air. `air`, if given, is a
+## under a global point, or null over open air; or Vector2(that height, the
+## underside of the island there), so the island is a solid it can pass
+## under. `air`, if given, is a
 ## Callable(Vector3) -> Dictionary (SkyCurrents `air_at`).
 func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) -> void:
 	airborne += delta
@@ -198,6 +235,19 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	climb = lerpf(climb,rise*RISE*ceiling*airflow,_ease(EASE_RISE,delta))
 	_beat += delta*BEAT*TAU*float(climb > 0.05)
 	var beat := climb*(1.0+BEAT_SHARE*sin(_beat))
+	# A flap kicks in at the start of each stroke; asked for mid-stroke, it
+	# waits for the stroke to end.
+	stroke += delta
+	if input.get("flap",false): _flap_queued = true
+	if _flap_queued and stroke >= FLAP_STROKE:
+		_flap_queued = false
+		stroke = 0.0
+		flaps += 1
+		flap_lift += FLAP_LIFT*ceiling
+		speed = minf(speed+FLAP_PUSH*ceiling,MAX)
+		pitch = minf(pitch+FLAP_NOSE*ceiling,PITCH.y)
+		hang = 0.0
+	flap_lift *= exp(-delta/FLAP_FADE)
 	# The air: the cushion below the floor.
 	lift = clampf((FLOOR-position.y)*CUSHION,0.0,CUSHION_MAX)
 	# The drop off the edge.
@@ -206,25 +256,66 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# In a jet the air does the flying: the glide's own way and sink count
 	# for less and the core holds it, so it rides the stream rather than
 	# sinking out of it. Steering lets go of both.
-	var steering := clampf(absf(float(input.get("turn",0.0)))+absf(steer)+rise+look.length()*30.0,0.0,1.0)
+	var steering := clampf(absf(float(input.get("turn",0.0)))+absf(steer)+rise+flap_lift+look.length()*30.0,0.0,1.0)
 	var own := 1.0-CARRIED*in_jet*(1.0-steering)
 	var hold: Vector3 = here.get("hold",Vector3.ZERO)*(1.0-steering)
-	velocity = forward()*speed*own+Vector3.UP*(beat+lift-sink*own-fall)+wind+hold
+	velocity = forward()*speed*own+Vector3.UP*(beat+flap_lift+lift-sink*own-fall)+wind+hold
+	var was := position
 	position += velocity*delta
-	_skim(delta,ground)
+	_skim(delta,ground,was)
 
-## No crashing: under the eye's skim height it rides up along the ground,
-## keeps its way along it, and the ground drags a little speed off.
-func _skim(delta: float, ground: Callable) -> void:
-	var under: Variant = ground.call(position)
+## No crashing. Inside an island (`ground`'s solid), what happens depends
+## on where the eye came from: from above, or at the side near the rim, it
+## rides up along the ground, keeps its way and the ground drags a little
+## speed off; from below, it slides along under the rock; at the side, the
+## face turns it aside.
+func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 	skimming = false
-	if under == null: return
-	var floor_y := float(under)+SKIM
-	if position.y >= floor_y: return
-	skimming = true
-	position.y = floor_y
-	if velocity.y < 0.0: velocity.y = 0.0
-	if pitch < 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
+	under_rock = false
+	brushing = false
+	var body := _solid(ground,position)
+	if body == Vector2.INF or position.y >= body.x+SKIM or position.y <= body.y-CLEAR: return
+	var before := _solid(ground,was)
+	if before == Vector2.INF and position.y < body.x-LIP:
+		_brush(delta,ground,was)
+	elif before != Vector2.INF and was.y <= before.y-CLEAR+0.01:
+		under_rock = true
+		position.y = body.y-CLEAR
+		if velocity.y > 0.0: velocity.y = 0.0
+		if pitch > 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
+	else:
+		skimming = true
+		position.y = body.x+SKIM
+		if velocity.y < 0.0: velocity.y = 0.0
+		if pitch < 0.0: pitch = lerpf(pitch,0.0,_ease(0.15,delta))
+		speed = maxf(MIN,speed-SKIM_DRAG*delta)
+
+## Vector2(top, underside) of the solid at a point, or INF off it. A plain
+## height is a solid with no underside.
+func _solid(ground: Callable, point: Vector3) -> Vector2:
+	var under: Variant = ground.call(point)
+	if under == null: return Vector2.INF
+	if under is Vector2: return under
+	return Vector2(float(under),-INF)
+
+## At an island's side: back out along whichever way it crossed in, and the
+## heading turns along the face.
+func _brush(delta: float, ground: Callable, was: Vector3) -> void:
+	brushing = true
+	var tried := position
+	var options := [Vector3(was.x,position.y,position.z),Vector3(position.x,position.y,was.z),Vector3(was.x,position.y,was.z)]
+	for p: Vector3 in options:
+		if _solid(ground,p) == Vector2.INF:
+			position = p
+			break
+	# The face's outward normal is the way it was put back; the heading
+	# turns to whichever way along the face is nearer.
+	var normal := Vector2(position.x-tried.x,position.z-tried.z)
+	if normal.length() > 0.0001:
+		normal = normal.normalized()
+		var along := Vector2(-normal.y,normal.x)
+		if along.dot(Vector2(-sin(heading),-cos(heading))) < 0.0: along = -along
+		heading = lerp_angle(heading,atan2(-along.x,-along.y),_ease(BRUSH,delta))
 	speed = maxf(MIN,speed-SKIM_DRAG*delta)
 
 func _ease(rate: float, delta: float) -> float:

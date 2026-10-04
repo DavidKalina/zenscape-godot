@@ -26,6 +26,8 @@ func _initialize() -> void:
 	_rise()
 	_turns()
 	_skim()
+	_under_island()
+	_island_side()
 	_caught()
 	_spread()
 	_currents()
@@ -38,6 +40,7 @@ func _initialize() -> void:
 	_cells_trim()
 	_added_air()
 	_airspeed()
+	_flaps()
 	print("PASS: sky glide" if failures == 0 else "FAIL: sky glide")
 	quit(1 if failures else 0)
 
@@ -133,6 +136,62 @@ func _skim() -> void:
 	glide.step(DT,{"rise":1.0},flat)
 	fly(glide,2.0,{"rise":1.0},flat)
 	check(glide.position.y > 2.0+SkyGlide.SKIM+1.0,"Rise lifts it off again")
+
+## A plate 28 m square, ground at 2 m, rock down to -10 m.
+func island(p: Vector3) -> Variant:
+	if absf(p.x) >= 14.0 or absf(p.z) >= 14.0: return null
+	return Vector2(2.0,-10.0)
+
+func inside(p: Vector3) -> bool:
+	return absf(p.x) < 14.0 and absf(p.z) < 14.0 and p.y > -10.0-SkyGlide.CLEAR+0.01 and p.y < 2.0+SkyGlide.SKIM-0.01
+
+## Under an island the glide passes beneath it, never snapped up on top;
+## climbing into the rock it slides along under it, and out past the rim
+## it can rise up beside it and over the top.
+func _under_island() -> void:
+	var glide := SkyGlide.new()
+	glide.launch(Vector3(-30.0,-18.0,0.0),-PI*0.5,8.0,false)
+	glide.pitch = 0.0
+	var was_inside := false
+	var below := 0
+	for i in range(int(9.0/DT)):
+		glide.step(DT,{},island)
+		was_inside = was_inside or inside(glide.position)
+		if absf(glide.position.x) < 14.0 and glide.position.y < 0.0: below += 1
+	check(not was_inside and below > 60,"It passes beneath an island, never snapped up on top (%d frames under)" % below)
+	check(glide.position.x > 14.0,"It comes out the far side (x %.1f m)" % glide.position.x)
+	glide.launch(Vector3(-10.0,-14.0,0.0),-PI*0.5,8.0,false)
+	var under_rock := false
+	for i in range(int(3.0/DT)):
+		glide.step(DT,{"rise":1.0,"pitch":1.0},island)
+		was_inside = was_inside or inside(glide.position)
+		under_rock = under_rock or glide.under_rock
+	check(under_rock and not was_inside,"Pressed up under the rock, it slides along under it")
+	fly(glide,25.0,{"rise":1.0,"pitch":1.0},island)
+	check(glide.position.y > 2.0,"Past the rim, Rise takes it up beside the island (%.1f m)" % glide.position.y)
+
+## Flown at an island's side below its rim, the face turns it aside along
+## the face; near the rim it rides up over the top.
+func _island_side() -> void:
+	var glide := SkyGlide.new()
+	glide.launch(Vector3(-25.0,-3.0,1.5),-PI*0.5-0.25,8.0,false)
+	glide.pitch = 0.05
+	var was_inside := false
+	var brushed := false
+	for i in range(int(4.0/DT)):
+		glide.step(DT,{"pitch":0.12},island)
+		was_inside = was_inside or inside(glide.position)
+		brushed = brushed or glide.brushing
+	check(brushed and not was_inside,"At an island's side it never goes in")
+	var along := Vector2(-sin(glide.heading),-cos(glide.heading))
+	check(absf(along.x) < 0.6,"The face turns it along the face (heading %.2f)" % glide.heading)
+	glide.launch(Vector3(-25.0,2.8,0.0),-PI*0.5,8.0,false)
+	glide.pitch = 0.0
+	var skimmed := false
+	for i in range(int(4.0/DT)):
+		glide.step(DT,{},island)
+		skimmed = skimmed or glide.skimming
+	check(skimmed and glide.position.x > -14.0,"Coming in just under the rim, it rides up over it")
 
 func _caught() -> void:
 	var glide := launched()
@@ -390,3 +449,26 @@ func _airspeed() -> void:
 	fast.launch(Vector3(0.0,10.0,0.0),0.0,12.0,false)
 	fast.step(DT*30,{"rise":1.0},air)
 	check(weak < fast.climb*0.2,"Slow, Rise barely bites; with speed it climbs (%.2f vs %.2f m/s)" % [weak,fast.climb])
+
+## Flapping is the glide's own lift: from a slow flutter, kept-up flaps
+## climb; asking faster than the stroke gives no more;
+## the steady climb stays under a thermal's; and the ceiling still holds.
+func _flaps() -> void:
+	var still := SkyGlide.new()
+	still.launch(Vector3(0.0,10.0,0.0),0.0,0.0,false)
+	fly(still,6.0,{})
+	var risen := SkyGlide.new()
+	risen.launch(Vector3(0.0,10.0,0.0),0.0,0.0,false)
+	for i in range(int(6.0/DT)): risen.step(DT,{"flap":i % 24 == 0},air)
+	check(risen.position.y > 14.0 and risen.position.y > still.position.y+8.0,"Flapping from a flutter climbs (%.1f m against %.1f m let be)" % [risen.position.y,still.position.y])
+	var mashed := SkyGlide.new()
+	mashed.launch(Vector3(0.0,10.0,0.0),0.0,0.0,false)
+	for i in range(int(6.0/DT)): mashed.step(DT,{"flap":true},air)
+	check(mashed.flaps <= int(6.0/SkyGlide.FLAP_STROKE)+1 and absf(mashed.position.y-risen.position.y) < 3.0,"Mashing flaps no faster than the stroke (%d flaps)" % mashed.flaps)
+	var climb := (mashed.position.y-10.0)/6.0
+	check(climb > 1.0 and climb < 3.5,"Kept up, it climbs steadily but gently (%.1f m/s)" % climb)
+	var high := SkyGlide.new()
+	high.launch(Vector3(0.0,SkyGlide.CEILING+SkyGlide.CEILING_FADE+5.0,0.0),0.0,6.0,false)
+	var top := high.position.y
+	for i in range(int(6.0/DT)): high.step(DT,{"flap":true},air)
+	check(high.position.y < top,"Over the ceiling, flaps don't lift it")

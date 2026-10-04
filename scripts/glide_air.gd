@@ -8,7 +8,8 @@ extends Node3D
 ##
 ## The wind is noise made here, through two low-passes: a breathy hiss that
 ## opens up with speed, and a low roar under it in a dive. At the float, at
-## the top of an arc, it drops almost to nothing.
+## the top of an arc, it drops almost to nothing. Each flap is a soft
+## whoosh of cloth on air (`flap`).
 
 const COUNT := 420
 const BOX := 36.0
@@ -19,6 +20,10 @@ const RATE := 22050.0
 ## The wind's loudness at a glide and at full speed, in linear gain.
 const GAIN := Vector2(0.05,0.55)
 const EASE := 0.12
+## A flap's whoosh: its loudness, and how fast it swells and dies (per sample).
+const WHOOSH := 0.32
+const WHOOSH_IN := 0.0035
+const WHOOSH_OUT := 0.99975
 
 var _streaks: MultiMeshInstance3D
 var _material: ShaderMaterial
@@ -33,6 +38,11 @@ var _gain := 0.0
 var _open := 0.0
 var _deep := 0.0
 var _shown := 0.0
+## The whoosh: its envelope, where it is heading, and its filter.
+var _whoosh := 0.0
+var _whoosh_goal := 0.0
+var _whoosh_f := 0.0
+var _whoosh_f2 := 0.0
 
 func _ready() -> void:
 	name = "GlideAir"
@@ -94,6 +104,10 @@ func advance(delta: float, velocity: Vector3, hang: float, dive: float) -> void:
 	_deep = lerpf(_deep,clampf(dive*fast*1.4,0.0,1.0),k)
 	_fill()
 
+## A flap: a whoosh.
+func flap() -> void:
+	_whoosh_goal = 1.0
+
 ## Fills the audio buffer with shaped noise.
 func _fill() -> void:
 	if _playback == null: return
@@ -106,6 +120,14 @@ func _fill() -> void:
 		_hiss += (white-_hiss)*_open
 		_roar += (white-_roar)*0.02
 		_roar2 += (_roar-_roar2)*0.05
-		var s := (_hiss*0.8+_roar2*6.0*_deep)*_gain
+		# The whoosh swells, then dies away; low and breathy.
+		if _whoosh_goal > 0.0:
+			_whoosh += (1.0-_whoosh)*WHOOSH_IN
+			if _whoosh > 0.95: _whoosh_goal = 0.0
+		else:
+			_whoosh *= WHOOSH_OUT
+		_whoosh_f += (white-_whoosh_f)*0.06
+		_whoosh_f2 += (_whoosh_f-_whoosh_f2)*0.12
+		var s := (_hiss*0.8+_roar2*6.0*_deep)*_gain+_whoosh_f2*_whoosh*WHOOSH*3.0
 		buffer[i] = Vector2(s,s)
 	_playback.push_buffer(buffer)
