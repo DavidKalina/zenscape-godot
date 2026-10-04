@@ -1,9 +1,11 @@
 #ifndef ZS_SKY_PLANET
 #define ZS_SKY_PLANET
-// The planet (scripts/sky_objects.gd): a faceted body, a soft atmosphere and
+// The planet (scripts/sky_objects.gd): a body, a soft atmosphere and
 // thin rings, sharing where it hangs and how much of it shows.
 #include "res://shaders/sky_objects.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+// Its look is the night style's (zs_night_planet_*).
+#include "res://shaders/night_sky.gdshaderinc"
 
 // The room direction of its centre, its angular radius in radians, and its
 // axes in the room (y is the pole the rings circle).

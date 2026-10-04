@@ -150,6 +150,9 @@ global uniform vec4 zs_aurora;
 // A moonbow's strength (studies/celestial.gd moon_bow), drawn about the antilunar point.
 global uniform float zs_moonbow;
 global uniform float zs_night;
+// The night sky's style (scripts/look_pass.gd NIGHT_STYLES; shaders/night_sky.gdshaderinc):
+// 0 Nocturne, 1 Opal, 2 Storybook, 3 Mystic.
+global uniform int zs_night_style;
 global uniform float zs_celestial_clear;
 global uniform float zs_daylight;
 global uniform float zs_exposure;

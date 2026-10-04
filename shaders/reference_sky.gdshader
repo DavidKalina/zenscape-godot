@@ -9,6 +9,7 @@ render_mode use_half_res_pass;
 #include "res://shaders/sky_ridges.gdshaderinc"
 #define ZS_CLOUD_SEA_SHADE
 #include "res://shaders/sky_cloud_sea.gdshaderinc"
+#include "res://shaders/night_sky.gdshaderinc"
 
         
         
@@ -121,35 +122,6 @@ render_mode use_half_res_pass;
           float dust = smoothstep(0.55, 0.75, vnoise(p * 2.6 + 4.0)) * density;
           return vec4(glow, dust);
         }
-        // The Milky Way beside the real stars (scripts/sky_objects.gd crowds
-        // its fine stars into the same band): a dusty-rose river of billowing
-        // light with ragged edges, warmer and wider toward the galactic
-        // centre, cut by sharp dark lanes of dust down its spine. Display
-        // colour, to be scaled by starK.
-        vec3 milky_way(vec3 room) {
-          vec3 n = normalize(vec3(0.6, 0.25, 0.75));
-          float d = dot(room, n);
-          if (abs(d) > 0.5) return vec3(0.0);
-          vec3 centre = normalize(cross(n, vec3(0.0, 1.0, 0.0)));
-          float core = pow(max(dot(room, centre), 0.0), 2.0);
-          // The centre line wanders, so the band's edges are ragged.
-          vec3 w = vec3(vnoise(room * 2.5 + 1.3), vnoise(room * 2.5 + 7.1), vnoise(room * 2.5 + 3.7)) - 0.5;
-          float off = d + w.x * 0.14 + w.y * 0.05;
-          float width = mix(0.13, 0.22, core);
-          float band = exp(-off * off / (width * width));
-          if (band < 0.01) return vec3(0.0);
-          // Broad, soft billows over a steady floor of light, so the band
-          // reads as one river rather than speckle.
-          float billow = fbm(room * 3.5 + w * 1.6);
-          float glow = band * mix(0.35, 1.0, smoothstep(0.25, 0.8, billow * 0.8 + band * 0.35));
-          // Ridged noise pinched to a few long, smooth dark lanes near the spine.
-          float ridge = 1.0 - abs(fbm(room * 5.0 + w * 2.2 + 5.0) * 2.0 - 1.0);
-          float lanes = smoothstep(0.76, 0.94, ridge) * exp(-off * off / (width * width * 0.35));
-          // Cool unresolved starlight under rose gas, warming at the core.
-          vec3 haze = vec3(0.1, 0.13, 0.2) * band;
-          vec3 rose = mix(vec3(0.42, 0.13, 0.2), vec3(0.62, 0.32, 0.28), core * 0.7 + 0.3 * smoothstep(0.55, 0.85, billow));
-          return (haze * 0.35 + rose * glow * 0.38) * (1.0 - 0.85 * lanes);
-        }
         // A brilliant star, as true HDR light: a pixel-sharp core, a soft halo
         // and faint four-point glints, twinkling with a slight shift of
         // colour. Returns zero outside a small radius so it costs little.
@@ -233,14 +205,9 @@ render_mode use_half_res_pass;
           // stars and nebulae sit on black rather than navy.
           float deep = zs_night * zs_celestial_clear;
           if (deep > 0.001 && real_stars) {
-            // With the real stars: a deep teal-navy, lighter toward the
-            // horizon line either side, keeping a little of the look's own
-            // sky so moods still tint it.
-            float lift = exp(-abs(y) / 0.22);
-            vec3 navy = mix(vec3(0.018, 0.04, 0.085), vec3(0.06, 0.13, 0.18), lift);
-            vec3 night = mix(navy, col * 0.4, 0.25);
-            night += vec3(0.02, 0.05, 0.035) * exp(-abs(y) / 0.035) * 0.3;
-            col = mix(col, night, deep);
+            // With the real stars, the night is the chosen style's
+            // (shaders/night_sky.gdshaderinc).
+            col = zs_night_dome(col, y, deep);
           } else if (deep > 0.001) {
             float keep = mix(0.22, 0.5, exp(-abs(y) / 0.07));
             vec3 night = col * keep * mix(vec3(1.0), vec3(0.85, 0.9, 1.25), smoothstep(0.1, 0.8, y));
@@ -249,7 +216,8 @@ render_mode use_half_res_pass;
           }
           col += zsNightLights(dir);
           if (starK > 0.001 && real_stars) {
-            col += milky_way(room) * starK;
+            // The Milky Way and the style's veils.
+            col += zs_night_light(room, pixel) * starK;
           }
           if (starK > 0.001) {
             float veil = 1.0;
