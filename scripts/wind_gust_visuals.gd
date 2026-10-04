@@ -23,7 +23,8 @@ func sync() -> void:
 	if field == null: return
 	for gust: Dictionary in field._gusts:
 		# Steered gusts (scripts/wind_gust.gd) draw their own air.
-		if gust.get("steered", false): continue
+		# Quiet gusts (a songbird's rustle) shake a crown without streaks.
+		if gust.get("steered", false) or gust.get("quiet", false): continue
 		alive[gust.id] = true
 		if not trails.has(gust.id): trails[gust.id] = _make_trail(gust)
 		var node: MeshInstance3D = trails[gust.id]
