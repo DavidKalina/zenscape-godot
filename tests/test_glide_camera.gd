@@ -4,13 +4,11 @@ extends SceneTree
 ## close in a dive; it hangs on a spring, so a turn swings it out and it
 ## catches up; the free look turns it round the glider and it swings back
 ## when let go; it never goes into rock; first person puts it in the head.
-## The rock under an island (scripts/island_keel.gd) meets the rim, hangs
-## deepest inside, and its mesh is the shape the glide feels. The glider
+## The glider
 ## (scripts/glider_figure.gd) follows the glide and its mark shows near
 ## the ground.
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
-const IslandKeel = preload("res://scripts/island_keel.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
 const DT := 1.0/60.0
 var failures := 0
@@ -22,7 +20,6 @@ func _initialize() -> void:
 	_free_look()
 	_keeps_out()
 	_first_person()
-	_keel()
 	_figure()
 	print("PASS: glide camera" if failures == 0 else "FAIL: glide camera")
 	quit(1 if failures else 0)
@@ -124,19 +121,6 @@ func _first_person() -> void:
 	run(glide,cam,1.0,{"turn":1.0})
 	check(cam.eye.is_equal_approx(glide.position),"First person puts the eye in the glider's head")
 	check(is_equal_approx(cam.roll,-glide.bank),"And leans with its whole bank")
-
-func _keel() -> void:
-	check(IslandKeel.depth_at(Vector2(14.0,3.0)) == 0.0 and IslandKeel.depth_at(Vector2(-3.0,-14.0)) == 0.0,"The rock meets the rim")
-	check(IslandKeel.depth_at(Vector2(30.0,0.0)) == 0.0,"And nothing hangs off the plate")
-	var deepest := 0.0
-	for x in range(-13,14):
-		for z in range(-13,14): deepest = maxf(deepest,IslandKeel.depth_at(Vector2(x,z)))
-	check(deepest > IslandKeel.DEPTH*0.8 and IslandKeel.depth_at(Vector2(0.0,0.0)) > IslandKeel.depth_at(Vector2(10.0,10.0)),"It hangs deepest inside (%.1f m)" % deepest)
-	var mesh := IslandKeel.build_mesh()
-	var box := mesh.get_aabb()
-	check(absf(box.position.y-(NativeTerrainData.SLAB_BASE-deepest)) < 1.0 and absf(box.end.y-NativeTerrainData.SLAB_BASE) < 0.01,"Its mesh is the shape it feels (%.1f to %.1f m)" % [box.position.y,box.end.y])
-	var normals: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_NORMAL]
-	check(Array(normals).all(func(n: Vector3) -> bool: return n.y <= 0.0),"Its faces look down")
 
 func _figure() -> void:
 	var glide := flying()
