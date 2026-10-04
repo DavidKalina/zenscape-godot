@@ -72,18 +72,18 @@ vec3 zs_opal_light(vec3 room, float pixel) {
   vec3 q = room - (centre * dot(room, centre) + tang * dot(room, tang)) * 0.62;
   q += vec3(w, 0.0) * 0.35;
   float billow = zs_night_fbm(q * 3.4, 3, pixel * 3.4);
-  float glow = band * mix(0.28, 1.0, smoothstep(0.30, 0.76, billow * 0.85 + band * 0.3));
+  float glow = band * mix(0.28, 1.0, smoothstep(0.36, 0.70, billow * 0.9 + band * 0.25));
   // Gentle dark lanes: thin, soft dust along the core.
-  float dust = zs_night_fbm(q * 5.0 + 5.0, 3, pixel * 5.0);
-  float lanes = smoothstep(0.52, 0.72, dust) * exp(-off * off / (width * width * 0.5));
+  float dust = zs_night_fbm(q * 5.5 + 5.0, 2, pixel * 5.5);
+  float lanes = smoothstep(0.55, 0.78, dust) * exp(-off * off / (width * width * 0.8));
   // Moonstone: pale blue-grey haze with pearl in the billows, and a
   // whisper of lilac, mint and peach shifting along the band.
   vec3 moon = vec3(0.26, 0.27, 0.40);
   vec3 pearl = zs_opal_pearl(billow * 1.1 + off * 2.0 + dot(room, tang) * 0.5);
   vec3 tone = mix(vec3(0.30, 0.30, 0.40), vec3(0.50, 0.45, 0.56), core * 0.6 + 0.4 * smoothstep(0.5, 0.8, billow));
-  tone = mix(tone, tone * pearl * 1.2, 0.45);
+  tone = mix(tone, tone * pearl * 1.25, 0.65);
   vec3 haze = moon * band * 0.17;
-  light += (haze + tone * glow * 0.27) * (1.0 - 0.55 * lanes);
+  light += (haze + tone * glow * 0.31) * (1.0 - 0.38 * lanes);
   return light;
 }
 
@@ -95,15 +95,6 @@ void zs_opal_star(inout vec3 tint, inout float bright, inout float size, float k
   // Toward pearl and pastel: a quarter of the way to a pale tint.
   vec3 pale = zs_opal_pearl(seed * 3.0);
   tint = mix(tint, pale * 1.0, 0.22);
-}
-
-// How much of the planet's disc a pixel covers at its limb: fades the edge
-// over about a pixel, so the silhouette is clean and antialiased.
-float zs_opal_planet_edge(vec3 radial, vec3 view) {
-  float c = clamp(dot(radial, -view), 0.0, 1.0);
-  float s = sqrt(1.0 - c * c);
-  float fw = max(fwidth(s), 1e-5);
-  return clamp((1.0 - s) / fw + 0.5, 0.0, 1.0);
 }
 
 // The planet's body at a point: `p` the point on the unit sphere in the
@@ -123,12 +114,13 @@ vec4 zs_opal_planet_body(vec3 p, vec3 radial, vec3 view, vec3 sun) {
   vec3 base = mix(pearl, lilac, smoothstep(0.2, 0.9, wide) * 0.8);
   base = mix(base, blush, smoothstep(0.55, 0.95, 0.5 + 0.5 * sin(lat * 5.0 + 2.0)) * 0.45);
   base = mix(base, mint, smoothstep(0.7, 1.0, 0.5 + 0.5 * sin(lat * 7.0 - 1.0)) * 0.35);
-  base = mix(base, base * 0.90, (fine - 0.5) * 0.7);
+  base = mix(base, base * 0.88, (fine - 0.5) * 0.8);
+  base *= vec3(1.0, 0.99, 1.04);
   // Lit from within as much as from the sun: a milky glow, softly shaded.
   float cosv = max(dot(radial, -view), 0.0);
-  float shade = 0.34 + 0.66 * lit;
+  float shade = 0.52 + 0.48 * lit;
   vec3 col = base * shade;
-  col *= mix(0.78, 1.0, smoothstep(0.0, 0.7, cosv));
+  col *= mix(0.88, 1.06, smoothstep(0.0, 0.7, cosv));
   // The opal sheen: pastel hues sliding with the angle near the limb.
   float limb = pow(1.0 - cosv, 2.4);
   vec3 sheen = zs_opal_pearl(cosv * 0.9 + p.y * 0.25 + 0.1);
@@ -150,7 +142,7 @@ vec4 zs_opal_planet_rings(vec3 local, float fw, float lit, float shade) {
   float l1 = zs_night_noise(vec3(r * 9.0, 2.3, 0.7));
   float l2 = zs_night_noise(vec3(r * 31.0, 5.1, 1.9)) * (1.0 - smoothstep(0.015, 0.05, fw));
   float l3 = zs_night_noise(vec3(r * 90.0, 8.4, 3.3)) * keep * (1.0 - smoothstep(0.006, 0.02, fw));
-  float lanes = clamp(0.62 + 0.20 * l1 + 0.16 * l2 + 0.10 * l3, 0.0, 1.0);
+  float lanes = clamp(0.58 + 0.26 * l1 + 0.30 * l2 + 0.22 * l3, 0.05, 1.0);
   float gap = 1.0 - 0.80 * exp(-pow((r - 1.86) / 0.045, 2.0));
   gap *= 1.0 - 0.35 * exp(-pow((r - 2.08) / 0.02, 2.0));
   float density = smoothstep(1.38, 1.52, r) * (1.0 - smoothstep(2.12, 2.3, r)) * lanes * gap;
