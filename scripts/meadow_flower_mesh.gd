@@ -155,12 +155,12 @@ const RIPEN_GREEN_STRAW := Vector3(0.30, 0.62, 0.12)
 ## over darker warm ochre straw and blades, so each head reads against its
 ## stalk; its ears' and straws' radii (m, at size 1; ears are drawn a further
 ## HEAD_SCALE larger), the ears plump against the straw.
-const WHEAT_STRAW := "a97d3e"
-const WHEAT_BLADE := "9c7438"
-const WHEAT_EAR_FOOT := "e2c27c"
-const WHEAT_EAR_TIP := "f5e4b0"
-const WHEAT_STRAW_RADIUS := 0.0075
-const WHEAT_EAR_RADIUS := 0.025
+const WHEAT_STRAW := "ad8540"
+const WHEAT_BLADE := "b08a48"
+const WHEAT_EAR_FOOT := "d8a250"
+const WHEAT_EAR_TIP := "f2c868"
+const WHEAT_STRAW_RADIUS := 0.0065
+const WHEAT_EAR_RADIUS := 0.019
 ## The stubble's height (m, at record size 1) through the winter.
 const STUBBLE := 0.14
 
@@ -799,25 +799,31 @@ class Plant:
 		for i in range(count):
 			var x := lerpf(-0.07, 0.07, (float(i) + rng.randf_range(0.2, 0.8)) / count)
 			var foot := Vector3(x * 0.3, 0.0, rng.randf_range(-0.006, 0.006))
-			var out := Vector3(x, 0.0, rng.randf_range(-0.014, 0.014))
-			var neck := out + Vector3.UP * rng.randf_range(0.48, 0.55)
+			# Fanned a little across the row too, so the heads close over
+			# the furrow while the feet keep to their drill line.
+			var out := Vector3(x, 0.0, rng.randf_range(-0.045, 0.045))
+			var neck := out + Vector3.UP * rng.randf_range(0.36, 0.48)
 			stem(foot, neck, WHEAT_STRAW_RADIUS, Vector3(0.0, 0.0, rng.randf_range(-0.012, 0.012)), 2, 3)
-			var face := (Vector3.UP + out * 1.6 + Vector3(rng.randf_range(-0.05, 0.05), 0.0, rng.randf_range(-0.06, 0.06))).normalized()
-			ear(neck, face, rng.randf_range(0.085, 0.1), WHEAT_EAR_RADIUS, deep, gold)
+			# Each head leans its own way, some nodding with their weight.
+			var lean := Vector3.UP + out * 2.0 + Vector3(rng.randf_range(-0.12, 0.12), 0.0, rng.randf_range(-0.16, 0.16))
+			lean += Vector3(out.x, 0.0, out.z).normalized() * (rng.randf_range(0.15, 0.4) if rng.randf() < 0.35 else 0.0)
+			ear(neck, lean.normalized(), rng.randf_range(0.11, 0.135), WHEAT_EAR_RADIUS, deep, gold)
 		for k in range(2):
 			var a := PI * k + rng.randf_range(-0.35, 0.35)
-			leaf(Vector3(cos(a), 0.0, sin(a)) * 0.01 + Vector3.UP * rng.randf_range(0.12, 0.2), a, 0.13, 0.011, 0.5, 0.8, SLIM, 0.0, 0.0, rng.randf_range(0.85, 0.95))
+			leaf(Vector3(cos(a), 0.0, sin(a)) * 0.01 + Vector3.UP * rng.randf_range(0.12, 0.2), a, 0.15, 0.011, 0.5, 0.9, SLIM, 0.0, 0.0, rng.randf_range(0.85, 0.95))
 		stem_hex = STEM_GREEN
 		leaf_hex = LEAF_GREEN
 
 	## One ear on `neck` heading `face`, `length` long and `radius` round,
-	## `foot` to `tip` in colour. Its vertices nod with it about the neck;
-	## their normals run out from its axis, so it shades as one spindle.
+	## `foot` to `tip` in colour: a slim spindle, fullest a third of the way
+	## up and drawn to a point, with a fan of long awns from its upper half.
+	## Its vertices nod with it about the neck; their normals run out from its
+	## axis, so it shades as one spindle.
 	func ear(neck: Vector3, face: Vector3, length: float, radius: float, foot: Color, tip: Color) -> void:
 		var h := head(neck, face, length * 0.5, length * 0.5, 0.0)
 		h.dome = h.centre
 		var sides := 4
-		var rows := [[0.15, 0.85], [0.5, 1.0], [0.82, 0.75]]
+		var rows := [[0.12, 0.8], [0.42, 1.0], [0.76, 0.7]]
 		var rings: Array = []
 		for r in range(rows.size()):
 			var t: float = rows[r][0]
@@ -826,7 +832,7 @@ class Plant:
 				var angle := TAU * (float(k) + 0.5 * float(r % 2)) / sides
 				# Flattened, two-rowed: the staggered rings cut its outline
 				# into a zigzag of kernels seen from the side.
-				var out: Vector3 = h.u * cos(angle) + h.v * sin(angle) * 0.7
+				var out: Vector3 = h.u * cos(angle) + h.v * sin(angle) * 0.62
 				var v: Array = headed(h, neck + face * (length * t) + out * (radius * float(rows[r][1])), foot.lerp(tip, t), PETAL)
 				v[1] = (out + face * 0.35).normalized()
 				ring.append(v)
@@ -845,17 +851,22 @@ class Plant:
 				var k2 := (k + 1) % sides
 				tri(rings[r][k], rings[r][k2], rings[r + 1][k])
 				tri(rings[r][k2], rings[r + 1][k2], rings[r + 1][k])
-		# One short awn from the tip: detail the far field goes without.
+		# A fan of long awns from the upper half, splayed out along the ear's
+		# flat face, so a field's top reads bristly: detail the far field goes
+		# without.
 		var was := detail
 		detail = true
-		for k in range(1):
-			var angle := 0.4
-			var out: Vector3 = h.u * cos(angle) + h.v * sin(angle)
-			var root: Vector3 = neck + face * (length * 0.86)
-			var a: Array = headed(h, root + out * radius * 0.35, tip, PETAL)
-			var b: Array = headed(h, root - out * radius * 0.05 + face * 0.004, tip, PETAL)
-			var end: Array = headed(h, root + face * length * 0.6 + out * radius * 0.9, tip.lerp(Color(1, 1, 1), 0.2), PETAL)
-			for v: Array in [a, b, end]: v[1] = (out + face).normalized()
+		var awn_tip := tip.lerp(Color(1, 1, 1), 0.25)
+		for k in range(4):
+			var side := -1.0 if k % 2 == 0 else 1.0
+			var t := 0.5 + 0.13 * float(k)
+			var root: Vector3 = neck + face * (length * t) + h.u * side * radius * 0.5
+			var heading: Vector3 = (face + h.u * side * rng.randf_range(0.3, 0.55)).normalized()
+			var reach := length * rng.randf_range(0.55, 0.75)
+			var a: Array = headed(h, root - face * 0.006, tip, PETAL)
+			var b: Array = headed(h, root + h.v * radius * 0.25, tip, PETAL)
+			var end: Array = headed(h, root + heading * reach, awn_tip, PETAL)
+			for v: Array in [a, b, end]: v[1] = (h.u * side + face).normalized()
 			tri(a, b, end)
 		detail = was
 

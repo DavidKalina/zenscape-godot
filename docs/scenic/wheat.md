@@ -23,12 +23,14 @@ Style rule: plants have a faceted shape and soft light. Wheat has golden straws,
   - `align` turns each clump's long side down its row, within about ±15°, so a row reads as one drilled line (`MeadowTypes.flower`).
   - `square` turns the rows to run along the plate's x or z axis, picked per world (`FlowerSowing._init`).
   - `waver` bends the rows only 6 cm, so they look tidy but hand-sown.
-- **One record is one clump** (`MeadowFlowerMesh.wheat`):
-  - Six straws in a short line along the clump's x (the row), each a three-sided stalk in two segments, 7.5 mm in radius.
-  - Each straw ends in a plump, flattened four-sided ear (`WHEAT_EAR_RADIUS` 2.5 cm, drawn 1.3× as the heads are). Its three rings turn half a facet each, so the ear's outline zigzags kernel by kernel. One short awn sits at each tip, and two slim blades grow low down along the row. The awns and blades are detail that the far field drops.
-  - A clump is 234 triangles and about 0.27 m along its row by 0.07 m across. It stands 0.68 m at size 1; the slot's sizes (0.82–0.95) put a field at 0.56–0.64 m, knee-high to a fence: under its posts' tops (0.62 m) on the whole, above its top rail (0.48 m).
-  - **Contrast.** Ripe, the ears are pale golden-cream (`e2c27c` at the foot to `f5e4b0` at the tip) over darker warm ochre straw (`a97d3e`, blades `9c7438`). After the material's shading the ears are about 3× the straw's luminance (it was about 1.35× before).
-- **Field cost.** The probe's 10 × 8 m stroke is 2,157 clumps, 505k triangles before distance thinning (it was 1,716 clumps and 475k). Painting stays within a frame.
+- **One record is one clump** (`MeadowFlowerMesh.wheat`). Reshaped on `fix/wheat-look` toward a golden, bristly field: slim awned ears, each leaning its own way.
+  - Six straws in a short line along the clump's x (the row), each a three-sided stalk in two segments, 6.5 mm in radius. Their feet keep to the drill line. Their heads fan up to 4.5 cm either side of it, so the canopy closes over the furrow while the rows stay clear at the ground.
+  - Each straw ends in a slim, flattened four-sided ear, 11–13.5 cm long (`WHEAT_EAR_RADIUS` 1.9 cm, drawn 1.3× as the heads are). It is fullest a third of the way up and drawn to a point. Its three rings turn half a facet each, so the outline zigzags kernel by kernel.
+  - A fan of four long awns grows from each ear's upper half, so a field's top reads bristly. Two slim blades grow low down along the row. The awns and blades are detail that the far field drops.
+  - Each head leans its own way, and about a third nod out with their weight. The necks vary 36–48 cm.
+  - A clump is 252 triangles and about 0.39 m along its row by 0.16 m across. The slot's sizes (0.82–0.95) put a field at 0.57–0.66 m, knee-high to a fence: about level with its posts' tops (0.62 m), above its top rail (0.48 m).
+  - **Contrast.** Ripe, the ears are warm gold (`d8a250` at the foot to `f2c868` at the tip) over darker ochre straw (`ad8540`, blades `b08a48`). After the material's shading the ears are about 2.4× the straw's luminance.
+- **Field cost.** The probe's 10 × 8 m stroke is 2,157 clumps, 544k triangles before distance thinning (it was 1,716 clumps and 475k, then 505k before the awned ears). Painting stays within a frame.
 - **Instancing.** Wheat is a kit kind: the catalog part is `meadow-flower-wheat`, and GardenView gives it one MultiMesh batch per kind, as for every flower. The paint preview draws a stroke as you paint it, without a refresh. Distance thinning keeps 70% of clumps (`FAR_KEEP`), and detail drops from 15–20 m. Wheat casts no shadows, for cost (`SHADOW_KINDS`).
 - **Wind.** Wheat uses the flower material's motion, with `flower_motion.x` set to 1. The straws take the whole of the grass's rolling breeze wave, so a field leans and rights itself as one mass. The ears lag 1 m upwind and nod about their necks.
 - **Seasons** (the `flower_ripen` path in `shaders/reference_surface.gdshader`, read against the `zs_season` global):
@@ -38,7 +40,7 @@ Style rule: plants have a faceted shape and soft light. Wheat has golden straws,
   - Through the winter dormancy (`.z`), the ears fold onto their necks and the straws are held under 14 cm (`STUBBLE`) as pale straw stubble. The bend is clamped too, so the stubble doesn't wave.
   - As the dormancy eases, the stubble comes back up green.
   - `SceneLook.leaf_season` gives wheat no autumn paint and no die-back.
-- **Ground.** A painted patch warms the grass under it slightly toward stubble gold (`FLOWER_KEYS.wheat.wash`), as flower drifts do.
+- **Ground.** A painted patch lays tilled earth (`a8743c`) under itself, so the furrows read as a worked field rather than lawn. Wheat's `soil` key (`MeadowTypes.FLOWER_KEYS`, 0.8) sets the coat's weight, and the coat goes all the way to the wash colour, where flower drifts only lean their grass slightly toward theirs.
 
 ## Known gaps
 

@@ -39,7 +39,10 @@ const Presets = preload("res://scripts/native_landscape_presets.gd")
 ##   the diorama camera (1 if absent): a low kind's wash is that much weaker,
 ##   so the ground supports its heads instead of standing in for them;
 ## - `pack`, when present, the share of candidates it keeps at a drift's
-##   heart instead of `packing`'s.
+##   heart instead of `packing`'s;
+## - `soil`, when present, the weight a drift of it lays its wash with, all
+##   the way to its colour, in place of FlowerSowing's light lean (a crop's
+##   tilled ground: wheat's furrows read as earth, not lawn).
 const FLOWER_KEYS := {
 	"oxeye_daisy":{"fallback":"daisy_flower","height":0.57,"head":0.2,"tints":["f6f2e4"],"wash":"ece6cf"},
 	"buttercup":{"fallback":"button_flower","height":0.38,"head":0.14,"tints":["f5c832"],"wash":"e9bd24","cover":0.65},
@@ -53,7 +56,7 @@ const FLOWER_KEYS := {
 	# docs/scenic/wheat.md): one record a clump of six straws, its rows
 	# packed whole (a narrow head keeps every candidate), the ground under a
 	# patch warmed toward stubble gold.
-	"wheat":{"fallback":"spike_flower","height":0.6,"head":0.06,"tints":["e3bf62"],"wash":"c8a95a"},
+	"wheat":{"fallback":"spike_flower","height":0.6,"head":0.06,"tints":["e3bf62"],"wash":"a8743c","soil":0.8},
 }
 ## With the kit in the catalog a `tint_real` kind's `tints` are the kit's own
 ## petal variants (MeadowFlowerMesh SPEC `variants`), so GardenView draws a
