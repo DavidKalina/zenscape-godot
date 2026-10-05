@@ -22,11 +22,12 @@ extends Node3D
 ## rises off the hidden meadow (SkyCurrents `add_jet`, `add_thermal`).
 
 const SkyPillar = preload("res://scripts/sky_pillar.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 
 ## The forest in sight of the plate: its middle (home coordinates) and turn
 ## (radians about y), local +z out toward the plate.
-const HOME := Vector3(-760.0,0.0,-560.0)
-const HOME_TURN := 0.9358
+const HOME := SkyHomes.PILLARS
+const HOME_TURN := SkyHomes.PILLARS_TURN
 ## The cells: size (m), the share holding a forest, the jitter (share of the
 ## cell), a salt apart from the ranges'.
 const CELL := 2600.0
@@ -34,7 +35,7 @@ const HOLDS := 0.0
 const JITTER := 0.2
 const SALT := 5000
 ## Nothing else stands within KEEP (m, plate plane) of a forest's middle.
-const KEEP := 470.0
+const KEEP := SkyHomes.PILLARS_KEEP
 const BUILD := 2300.0
 const FORGET := 2800.0
 const CHECK := 0.5
@@ -79,6 +80,15 @@ func reset(new_cells: RefCounted, air: Node3D = null, owner_node: Node3D = null)
 	_material = null
 	_puffs = null
 	_since = CHECK
+
+## Freed without leaving a tree (made and dropped outside one, as tests
+## and probes do), `_exit_tree` never runs: its workers are still waited
+## for, since a task never waited on outlives the scripts and crashes the
+## engine's exit.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE: return
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
 
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
@@ -142,6 +152,9 @@ static func spot(cell: Vector2i) -> Variant:
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
 	var off := Vector2(noise(cell,SALT+1)-0.5,noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
+	# Off every wonder in sight of the plate (the ranges' own cells keep
+	# off the forests: SkyPeaks `spot`).
+	if SkyHomes.blocks(Vector3(middle.x+off.x,0.0,middle.y+off.y),KEEP): return null
 	return Vector4(middle.x+off.x,0.0,middle.y+off.y,noise(cell,SALT+3)*TAU)
 
 static func seed_of(cell: Vector2i) -> int:

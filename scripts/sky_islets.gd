@@ -131,6 +131,15 @@ func reset(new_cells: SkyCells) -> void:
 	_since = CHECK
 	position = cells.origin
 
+## Freed without leaving a tree (made and dropped outside one, as tests
+## and probes do), `_exit_tree` never runs: its workers are still waited
+## for, since a task never waited on outlives the scripts and crashes the
+## engine's exit.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE: return
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
+
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
 	_making.clear()

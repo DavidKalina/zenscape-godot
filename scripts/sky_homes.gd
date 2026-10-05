@@ -1,0 +1,53 @@
+extends RefCounted
+## Where the wonders in sight of the plate stand: one of each kind risen
+## through the cloud sea round the plate's first home, laid out together so
+## none stands on another, on a fixed island or in the islands' currents,
+## and each in its own direction, so a first flight off the plate meets a
+## different one whichever way it goes (tests/test_sky_layout.gd). Home
+## coordinates (the plate at the origin); each turn is radians about y.
+##
+## Each kind reads its HOME, HOME_TURN and KEEP from here (scripts/
+## sky_peaks.gd, sky_pillars.gd, sky_tepuis.gd, sky_towers.gd,
+## sky_forest_isles.gd); and every kind scattered through the far cells
+## keeps off all of them (`blocks`). Nothing is preloaded here, so any kind
+## may read it without a preload cycle.
+
+## The mountain range: out along +x, a little toward -z, ~1210 m off; its
+## crest square to the plate, its long face and the gorge's mouth looking
+## back at it.
+const RANGE := Vector3(1105.0,0.0,-492.0)
+const RANGE_TURN := -1.1519
+const RANGE_KEEP := 720.0
+## The pillar forest: toward +z and -x, ~1050 m off; its face and thread
+## turned to the plate.
+const PILLARS := Vector3(-525.0,0.0,909.0)
+const PILLARS_TURN := 2.6178
+const PILLARS_KEEP := 470.0
+## The tepui: straight out along -z, ~1210 m off; its great fall pouring
+## toward the plate, turned a little off it (0.216 rad) so it is seen
+## three-quarter on.
+const TEPUI := Vector3(-42.0,0.0,-1209.0)
+const TEPUI_TURN := 0.2507
+const TEPUI_KEEP := 580.0
+## The towering cumulus: toward +x and +z, ~460 m off, inside the
+## archipelago between its islands, near enough that the haze leaves it
+## clear.
+const TOWER := Vector3(331.0,0.0,320.0)
+const TOWER_KEEP := 340.0
+## The forested isle: out along -x, a little toward -z, ~700 m off, out
+## past the archipelago's currents; its long side square to the plate.
+const ISLE := Vector3(-658.0,-14.0,-239.0)
+const ISLE_TURN := 1.2224
+const ISLE_KEEP := 300.0
+
+## Every home wonder: [middle, keep-out (m, plate plane)].
+static func spots() -> Array:
+	return [[RANGE,RANGE_KEEP],[PILLARS,PILLARS_KEEP],[TEPUI,TEPUI_KEEP],[TOWER,TOWER_KEEP],[ISLE,ISLE_KEEP]]
+
+## True if a home point lies within a home wonder's keep-out (plus
+## `margin`): where a kind scattered through the far cells must not stand.
+static func blocks(home: Vector3, margin := 0.0) -> bool:
+	for s: Array in spots():
+		var at: Vector3 = s[0]
+		if Vector2(at.x-home.x,at.z-home.z).length() < float(s[1])+margin: return true
+	return false

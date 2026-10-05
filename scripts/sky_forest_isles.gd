@@ -38,6 +38,8 @@ extends Node3D
 
 const SkyForestIsle = preload("res://scripts/sky_forest_isle.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyTowers = preload("res://scripts/sky_towers.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const RedwoodAssets = preload("res://scripts/redwood_assets.gd")
 const FlowFalls = preload("res://scripts/flow_falls.gd")
@@ -46,8 +48,8 @@ const Strata = preload("res://scripts/strata.gd")
 ## The isle within sight of the plate: its middle (home coordinates) and
 ## its turn (radians about y; local +x, its length, runs square to the
 ## plate). Out past the archipelago's own currents, clear of its islands.
-const HOME := Vector3(-588.0,-14.0,-314.0)
-const HOME_TURN := 1.08
+const HOME := SkyHomes.ISLE
+const HOME_TURN := SkyHomes.ISLE_TURN
 ## The cells: size (m), the share holding an isle, how far its spot may sit
 ## from the cell's middle (share of the cell), the height band (m) and the
 ## ring round the plate's first home that only HOME stands in.
@@ -59,7 +61,7 @@ const RING := 1500.0
 const SALT := 4000
 ## Nothing else stands within KEEP (m, plate plane) of an isle's middle:
 ## past the furthest any rim reaches.
-const KEEP := 300.0
+const KEEP := SkyHomes.ISLE_KEEP
 ## Made within BUILD of the eye, let go past FORGET.
 const BUILD := 2200.0
 const FORGET := 2700.0
@@ -135,6 +137,15 @@ func reset(new_cells: RefCounted) -> void:
 	_since = CHECK
 	position = cells.origin
 
+## Freed without leaving a tree (made and dropped outside one, as tests
+## and probes do), `_exit_tree` never runs: its workers are still waited
+## for, since a task never waited on outlives the scripts and crashes the
+## engine's exit.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE: return
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
+
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
 	_making.clear()
@@ -194,14 +205,15 @@ static func cell_of(home: Vector3) -> Vector2i:
 
 ## The cell's isle: Vector4(x, y, z of its middle (home), turn), or null.
 ## The plate's cell holds HOME and only it; elsewhere a share of cells hold
-## one, outside RING and off the ranges.
+## one, outside RING, off the ranges (and the kinds kept with them), off
+## the towers and off every wonder in sight of the plate (SkyHomes).
 static func spot(cell: Vector2i) -> Variant:
 	if cell == Vector2i.ZERO: return Vector4(HOME.x,HOME.y,HOME.z,HOME_TURN)
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
 	var off := Vector2(noise(cell,SALT+1)-0.5,noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
 	var at := Vector3(middle.x+off.x,lerpf(BAND.x,BAND.y,noise(cell,SALT+3)),middle.y+off.y)
-	if Vector2(at.x,at.z).length() < RING or SkyPeaks.blocks(at,KEEP): return null
+	if Vector2(at.x,at.z).length() < RING or SkyPeaks.blocks(at,KEEP) or SkyTowers.blocks(at,KEEP) or SkyHomes.blocks(at,KEEP): return null
 	return Vector4(at.x,at.y,at.z,noise(cell,SALT+5)*TAU)
 
 static func seed_of(cell: Vector2i) -> int:

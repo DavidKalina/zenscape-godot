@@ -38,11 +38,13 @@ const SkyCurrentsScript = preload("res://scripts/sky_currents.gd")
 ## landform of the same kind, held here so everything that reads the ranges
 ## (solids, `blocks`, the haze, the clouds' keep-out) reads it too.
 const SkyTepuis = preload("res://scripts/sky_tepuis.gd")
+## Where every wonder in sight of the plate stands (scripts/sky_homes.gd).
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
-const HOME := Vector3(450.0,0.0,-900.0)
-const HOME_TURN := -0.4636
+const HOME := SkyHomes.RANGE
+const HOME_TURN := SkyHomes.RANGE_TURN
 ## The cells: size (m), the share holding a range, how far its spot may sit
 ## from the cell's middle (share of the cell); the cell holding the plate's
 ## first home is (0, 0).
@@ -59,7 +61,7 @@ const JITTER := 0.12
 const SALT := 3000
 ## Nothing else stands within KEEP (m, plate plane, times its spread) of a
 ## range's middle.
-const KEEP := 720.0
+const KEEP := SkyHomes.RANGE_KEEP
 ## Made within BUILD of the eye, let go past FORGET.
 const BUILD := 2300.0
 const FORGET := 2800.0
@@ -126,6 +128,15 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	position = cells.origin
 	for kind in kinds: kind.reset(new_cells,air,self)
 	tepuis.reset(new_cells,air,self)
+
+## Freed without leaving a tree (made and dropped outside one, as tests
+## and probes do), `_exit_tree` never runs: its workers are still waited
+## for, since a task never waited on outlives the scripts and crashes the
+## engine's exit.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE: return
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
 
 func clear() -> void:
 	for kind in kinds: kind.clear()
@@ -195,13 +206,21 @@ static func cell_of(home: Vector3) -> Vector2i:
 	return Vector2i(floori(home.x/CELL+0.5),floori(home.z/CELL+0.5))
 
 ## The cell's range: Vector4(x, y, z of its middle (home), turn), or null.
-## The plate's cell always holds HOME.
+## The plate's cell always holds HOME; elsewhere none stands where its frame
+## would reach into the keep of a wonder in sight of the plate (SkyHomes
+## `blocks`) or of one of the other kinds kept here.
 static func spot(cell: Vector2i) -> Variant:
 	if cell == Vector2i.ZERO: return Vector4(HOME.x,HOME.y,HOME.z,HOME_TURN)
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
 	var off := Vector2(noise(cell,SALT+1)-0.5,noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
-	return Vector4(middle.x+off.x,0.0,middle.y+off.y,noise(cell,SALT+3)*TAU)
+	var at := Vector3(middle.x+off.x,0.0,middle.y+off.y)
+	# Its whole frame, spread, clear: no rock stands past it.
+	var room := maxf(KEEP,SkyPeak.HALF.length())*spread_of(cell)
+	if SkyHomes.blocks(at,room) or SkyTepuis.blocks(at,room): return null
+	for kind: GDScript in KINDS:
+		if kind.blocks(at,room): return null
+	return Vector4(at.x,0.0,at.z,noise(cell,SALT+3)*TAU)
 
 static func seed_of(cell: Vector2i) -> int:
 	return int(noise(cell,SALT+4)*16777216.0)

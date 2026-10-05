@@ -26,15 +26,16 @@ extends Node3D
 const SkyTepui = preload("res://scripts/sky_tepui.gd")
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const WaterFlowView = preload("res://scripts/water_flow_view.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 
 ## The tepui in sight of the plate: its middle (home coordinates) and its
 ## turn (radians about y; its great fall pours toward local +z, turned
 ## a little off the plate so it is seen three-quarter on).
-const HOME := Vector3(-1100.0,0.0,-700.0)
-const HOME_TURN := 1.22
+const HOME := SkyHomes.TEPUI
+const HOME_TURN := SkyHomes.TEPUI_TURN
 const SEED := 731
 ## Nothing else stands within KEEP (m, plate plane) of its middle.
-const KEEP := 580.0
+const KEEP := SkyHomes.TEPUI_KEEP
 const BUILD := 2300.0
 const FORGET := 2800.0
 const CHECK := 0.5
@@ -77,6 +78,15 @@ func reset(new_cells: RefCounted, air: Node3D, owner_peaks: Node3D) -> void:
 	currents = air
 	peaks = owner_peaks
 	_since = CHECK
+
+## Freed without leaving a tree (made and dropped outside one, as tests
+## and probes do), `_exit_tree` never runs: its workers are still waited
+## for, since a task never waited on outlives the scripts and crashes the
+## engine's exit.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE: return
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
 
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)

@@ -35,10 +35,11 @@ extends Node3D
 
 const SkyTower = preload("res://scripts/sky_tower.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
 
 ## The tower in sight of the plate (home coordinates; y is its foot's
 ## middle, the sea at SkyTower.SEA under it).
-const HOME := Vector3(-430.0,0.0,620.0)
+const HOME := SkyHomes.TOWER
 ## The cells: size (m), the share holding a tower, how far its spot may sit
 ## from the cell's middle (share of the cell). The cell holding the plate's
 ## first home is (0, 0).
@@ -48,7 +49,7 @@ const JITTER := 0.22
 const SALT := 5010
 ## Nothing else stands within KEEP (m, plate plane) of a tower's middle,
 ## and a tower keeps REACH clear of a mountain range's.
-const KEEP := 340.0
+const KEEP := SkyHomes.TOWER_KEEP
 const REACH := 300.0
 ## Made within BUILD of the eye, let go past FORGET.
 const BUILD := 2500.0
@@ -99,6 +100,15 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	currents = air
 	_since = CHECK
 	position = cells.origin
+
+## Freed without leaving a tree (made and dropped outside one, as tests
+## and probes do), `_exit_tree` never runs: its workers are still waited
+## for, since a task never waited on outlives the scripts and crashes the
+## engine's exit.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_PREDELETE: return
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
 
 func clear() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
@@ -171,14 +181,16 @@ static func cell_of(home: Vector3) -> Vector2i:
 
 ## The cell's tower: its middle (home coordinates), or null. The plate's
 ## cell always holds HOME; another holds one if its hash says so and it is
-## clear of every mountain range.
+## clear of every mountain range and kind kept with them (SkyPeaks
+## `blocks`) and of every wonder in sight of the plate (SkyHomes `blocks`).
 static func spot(cell: Vector2i) -> Variant:
 	if cell == Vector2i.ZERO: return HOME
 	if SkyPeaks.noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
 	var off := Vector2(SkyPeaks.noise(cell,SALT+1)-0.5,SkyPeaks.noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
 	var at := Vector3(middle.x+off.x,0.0,middle.y+off.y)
-	if SkyPeaks.blocks(at,REACH): return null
+	# Its whole keep clear of every other kind's (REACH is within it).
+	if SkyPeaks.blocks(at,KEEP) or SkyHomes.blocks(at,KEEP): return null
 	return at
 
 static func seed_of(cell: Vector2i) -> int:
