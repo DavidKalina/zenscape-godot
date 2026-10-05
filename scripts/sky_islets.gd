@@ -512,7 +512,7 @@ static func _grow_trees() -> void:
 ## The pond's water: the plate's still water as the live ponds draw it
 ## (scripts/water_flow_view.gd), with everything tied to the plate's own
 ## ponds let go: the planar mirror (its plane is the plate's water level),
-## the tea map, the falls' churn and the level fade. Its sky reflection,
+## the tea map, the falls' churn, the level fade and the algae film. Its sky reflection,
 ## chop, glints and depth tint stay. Made once per sky (`reset`).
 func _pond_material() -> Material:
 	if _water != null: return _water
@@ -525,6 +525,9 @@ func _pond_material() -> Material:
 	water.set_shader_parameter("planar_levels",Vector2(-1000000.0,-1000000.0))
 	water.set_shader_parameter("tea_rect",Vector4.ZERO)
 	water.set_shader_parameter("fall_foam_count",0)
+	# The plate's algae film is drawn by world position, so out here it lay
+	# as blotches unrelated to anything floating; the sky's water is clear.
+	water.set_shader_parameter("lake_algae_amount",0.0)
 	water.set_shader_parameter("live_level",false)
 	water.set_shader_parameter("live_flow_map",false)
 	water.set_shader_parameter("flow_edge_fade",false)

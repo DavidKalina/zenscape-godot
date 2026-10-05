@@ -86,6 +86,10 @@ const FALL_STRENGTH := 0.85
 ## How far over the keel's tip (in the rock mesh's own metres, ROCK_SCALE
 ## times small) the earth sides' mist begins to take the rock.
 const MIST := 1.2
+## The rock's beds undulate this much (in its own small metres) and this
+## many times as often as the plate's.
+const STRATA_WARP := 0.85
+const STRATA_WAVE := 2.5
 ## Roots: their thickness at the top (m), their colour (sRGB).
 const ROOT_THICK := Vector2(0.12,0.32)
 const ROOT_COLOR := Color("4d3a2c")
@@ -292,6 +296,11 @@ func _rock_material(shape: RefCounted) -> Material:
 	m.set_shader_parameter("earth_sides",true)
 	m.set_shader_parameter("earth_sides_base",float(shape.bottom)/SkyForestIsle.ROCK_SCALE+MIST)
 	Strata.for_seed(shape.seed).apply(m,Vector3.ZERO)
+	# The beds undulate far more than the plate's, so no band runs ruler
+	# straight round the rock like a cake's layer.
+	for key in ["strata_wave_a","strata_wave_b"]:
+		var w: Vector4 = m.get_shader_parameter(key)
+		m.set_shader_parameter(key,Vector4(w.x*STRATA_WAVE,w.y*STRATA_WAVE,w.z,STRATA_WARP if key == "strata_wave_a" else w.w))
 	return m
 
 func _stand_in_ground() -> Material:

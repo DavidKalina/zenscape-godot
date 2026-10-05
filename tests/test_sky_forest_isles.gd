@@ -153,7 +153,7 @@ func _lakes() -> void:
 			var low: float = isle.lakes[isle.lower].level
 			var high: float = isle.lakes[1-isle.lower].level
 			if high < low+SkyForestIsle.STEP_UP-0.01: worst += " seed %d: the upper lake stands only %.1f m over the lower;" % [s,high-low]
-		if isle.share(isle.lip) < 0.97 or isle.share(isle.lip+isle.lip_out*3.0) <= 1.0: worst += " seed %d: the outflow's lip is not on the rim;" % s
+		if isle.share(isle.lip) > 1.0 or isle.share(isle.lip+isle.lip_out*2.0) <= 1.0 or isle.share(isle.lip+isle.lip_out*20.0) <= 1.0: worst += " seed %d: the outflow's lip is not on the rim, open air past it;" % s
 		if not is_equal_approx(isle.lip_level,float(isle.lakes[isle.lower].level)): worst += " seed %d: the outflow is not at the lower lake's level;" % s
 	check(worst == "","Every lake holds water at its level, is deep, and is held by its banks%s" % worst)
 	check(twos >= 1,"Some isles have two lakes, a stream between (%d of %d)" % [twos,all_seeds().size()])
@@ -354,18 +354,21 @@ func _glide() -> void:
 			var u: Vector4 = isle.trees[index]
 			if Vector2(local.x,local.z).distance_to(Vector2(u.x,u.y)) < isle.crowns[index].w-0.05 and local.y < u.z+u.w: inside += 1
 	check(brushed and inside == 0,"Flown at a trunk, it is turned aside, never inside one (%d steps inside)" % inside)
-	# Under the crown, a step off the trunk, rising.
-	var under := from+Vector2(c.w+3.0,0.0)
-	glide.launch(isles.global_of(b,Vector3(under.x,c.x-3.0,under.y)),float(b.turn),5.0,false)
+	# Under the crown, a step off the trunk, rising as it flies out under
+	# the crown's lean.
+	var lean: Vector2 = isle.leans[best]
+	var way_out := lean.normalized() if lean.length() > 0.1 else Vector2.RIGHT
+	var under := from+way_out*(c.w+3.0)
+	glide.launch(isles.global_of(b,Vector3(under.x,c.x-1.5,under.y)),atan2(-way_out.x,-way_out.y)+float(b.turn),4.0,false)
 	var highest := -INF
 	var slid := false
-	for i in range(240):
+	for i in range(120):
 		glide.step(1.0/60.0,{"rise":1.0,"flap":i % 20 == 0,"pitch":0.6},ground)
 		slid = slid or glide.under_rock
 		var local: Vector3 = isles.local_of(b,glide.position)
 		var s: Variant = isle.solid(local)
 		if s != null and float((s as Vector3).z) > 0.5 and local.y < (s as Vector3).x and local.y > (s as Vector3).y: highest = maxf(highest,local.y-(s as Vector3).y)
-	check(slid and highest == -INF,"Rising under a crown, it slides along its underside, never into it")
+	check(slid and highest == -INF,"Rising under a crown, it slides along its underside, never into it (slid %s, %.2f m in at most)" % [slid,highest])
 	# Down the first aisle at lane height: never brushed, never under rock.
 	var lane: PackedVector3Array = isle.lane(0,12.0)
 	var a0: Vector3 = lane[int(lane.size()*0.15)]

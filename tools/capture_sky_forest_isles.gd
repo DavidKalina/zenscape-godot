@@ -112,8 +112,17 @@ func _shots(isles: Node3D, b: Dictionary) -> Array:
 	var side: float = 1.0 if (isles.local_of(b,plate) as Vector3).z > 0.0 else -1.0
 	shots.append({"label":"underside","eye":g.call(Vector3(-shape.half.x*0.35,shape.bottom-15.0,side*(shape.half.y+110.0))),"look":g.call(Vector3(shape.half.x*0.1,shape.bottom*0.55,0.0))})
 	# Down the first aisle, from the rim toward the lake, under the crowns.
+	# The aisle and the point along it most under the crowns.
 	var lane: PackedVector3Array = shape.lane(0,12.0)
-	var k := _shadiest(shape,lane)
+	var k := 0
+	var most := -1
+	for a in range(shape.aisles.size()):
+		var candidate: PackedVector3Array = shape.lane(a,12.0)
+		var found: Vector2i = _shadiest(shape,candidate)
+		if found.y > most:
+			most = found.y
+			lane = candidate
+			k = found.x
 	var ahead := mini(k+12,lane.size()-1)
 	shots.append({"label":"canopy","eye":g.call(lane[k]),"look":g.call(lane[ahead]+Vector3.UP*1.0)})
 	# Just out from under the trees at the lake's shore where the aisle
@@ -135,22 +144,27 @@ func _shots(isles: Node3D, b: Dictionary) -> Array:
 	shots.append({"label":"glider","eye":g.call(lane[k]),"look":g.call(lane[ahead]),"chase":true,"golden":false})
 	return shots
 
-## The lane's point most under the crowns, in its first two thirds: the one
-## the most crowns reach over, counting a little way ahead.
-func _shadiest(shape: RefCounted, lane: PackedVector3Array) -> int:
+## The lane's point most under the crowns, in its first two thirds, off the
+## water: the one the most crowns reach over, counting a little way ahead;
+## Vector2i(its index, that count).
+func _shadiest(shape: RefCounted, lane: PackedVector3Array) -> Vector2i:
 	var best := 0
 	var most := -1
 	for i in range(int(lane.size()*0.1),int(lane.size()*0.66)):
 		var covered := 0
 		for j in range(i,mini(i+6,lane.size())):
 			var p := Vector2(lane[j].x,lane[j].z)
+			if not shape._dry(p,1.6,SkyForestIsle_CHANNEL()+8.0): covered -= 100
 			for index in shape.near(p):
 				var t: Vector4 = shape.trees[index]
 				if shape.kinds[index] == -1 and p.distance_to(Vector2(t.x,t.y)) < shape.crowns[index].z+3.0: covered += 1
 		if covered > most:
 			most = covered
 			best = i
-	return best
+	return Vector2i(best,most)
+
+func SkyForestIsle_CHANNEL() -> float:
+	return preload("res://scripts/sky_forest_isle.gd").CHANNEL
 
 ## Holds the eye at a shot for `count` frames at `hour`, advancing the sky,
 ## the haze and the islands as the glide would.

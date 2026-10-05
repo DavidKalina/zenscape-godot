@@ -12,8 +12,10 @@ extends RefCounted
 ## Built the way the sky peaks are (scripts/sky_peak.gd), as heightfields
 ## over the isle's own (x, z), with the plate's own techniques:
 ##   the outline: a share field, 0 at the middle and 1 on the rim, from an
-##     egg-shaped ellipse with seeded lobes, its points pushed about by a
-##     slow warp so no edge runs true;
+##     egg-shaped ellipse with seeded lobes, a promontory or two toward the
+##     ends, bays bitten out, often a neck pinched in between two lobes,
+##     its points pushed about by a slow warp so no edge runs true; and often
+##     a small chunk broken off, hanging just off the rim;
 ##   the top: a low dome with rolling hills over it, weathered by the plate's
 ##     stream-power erosion (scripts/terrain_erosion.gd `erode`, run in plate
 ##     units on a grid whose cells are the plate's 0.7 m scaled up); then the
@@ -27,8 +29,12 @@ extends RefCounted
 ##     bedrock) as clean bands, scaled to the isle (ROCK_SCALE), misting
 ##     away toward the keel.
 ## The rim is the share field's contour, cut through the grid cells (each
-## cell clipped to the inside), with a grass lip and an earth band down to
-## the underside, and roots hanging from both.
+## cell clipped to the inside), with a ragged wall down to the rock: turf
+## hanging over by more or less, the earth slumping out here and there, its
+## foot reaching unevenly down; roots hang from it and from the rock.
+## The giants' heights are ragged too: stands of tall and lower, young ones
+## low among them, a few emergents far over the rest, lower toward the rim
+## and the shores.
 ##
 ## The frame is the isle's own: x along its length, y up, the top's plane at
 ## y 0 (the rim stands near it, the middle a few metres over it).
@@ -46,13 +52,34 @@ const SkyGlide = preload("res://scripts/sky_glide.gd")
 ## The outline: its length (m), its width as a share of that (and the
 ## width's bounds, m), lobes [count round, share out], how much longer one
 ## end is, and the warp (m, over a wavelength of m).
-const LENGTH := Vector2(280.0,470.0)
+const LENGTH := Vector2(280.0,420.0)
 const BREADTH := Vector2(0.34,0.46)
-const WIDE := Vector2(85.0,190.0)
+const WIDE := Vector2(85.0,165.0)
 const LOBES := [[2,0.07],[3,0.06],[5,0.04],[7,0.025]]
 const EGG := 0.18
 const WARP := 14.0
 const WARP_WAVE := 130.0
+## Promontories: [count range], how far out (share), how narrow (radians);
+## they stand toward the ends, within PROM_ENDS of the long axis.
+const PROMS := Vector2i(1,2)
+const PROM_OUT := Vector2(0.2,0.32)
+const PROM_WIDE := Vector2(0.09,0.16)
+const PROM_ENDS := 0.7
+## Bays bitten out of the rim: count, radius (share of the half width).
+const BAYS := Vector2i(1,3)
+const BAY_SIZE := Vector2(0.3,0.5)
+## The neck between two lobes: the odds of one, how hard it pinches (share
+## of the width taken), and its length (share of the half length).
+const NECK_ODDS := 0.6
+const NECK := Vector2(0.4,0.55)
+const NECK_LONG := 0.13
+## A small chunk broken off and hanging beside the rim: the odds, its
+## radius (m), the gap to the rim (m) and its rock's depth (times its
+## radius).
+const CHUNK_ODDS := 0.65
+const CHUNK := Vector2(13.0,22.0)
+const CHUNK_GAP := Vector2(6.0,13.0)
+const CHUNK_DEPTH := Vector2(1.4,2.2)
 ## The mesh grid's spacing (m) and the erosion grid's points a side.
 const STEP := 4.0
 const ERODE_N := 129
@@ -73,6 +100,13 @@ const ERODE_UNDER := {"detail":0.1,"frequency":0.18,"warp":1.3,"slope_ref":1.0,"
 ## foot under the top's plane (m), where the rock begins.
 const LIP := Vector2(1.2,0.7)
 const FOOT := 5.0
+## The earth band is ragged along the rim, over RAGGED_WAVE m: the turf hangs
+## over by LIP times LIP_RANGE, the foot reaches FOOT times FOOT_RANGE down,
+## and here and there the earth slumps out (m) at mid height.
+const RAGGED_WAVE := 16.0
+const LIP_RANGE := Vector2(0.5,2.4)
+const FOOT_RANGE := Vector2(0.5,1.7)
+const SLUMP := 2.2
 ## The rock: its depth under the foot at the middle (share of the width, and
 ## the most, m), how it tapers (the power of the share in from the rim), the
 ## cliff band under the rim (m), hanging spurs (count, share of the half
@@ -122,7 +156,24 @@ const WATER_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0
 ## the trunk's radius (m), how far
 ## apart trunks stand (m, give or take a share), and how far in from the rim
 ## (m). The forest leaves clearings where its noise is under CLEARING.
-const GIANT := Vector2(48.0,64.0)
+const GIANT := Vector2(42.0,66.0)
+## The giants' stands: their heights follow a slow noise (wavelength m), so
+## they grow in clusters of tall and lower; EMERGENT (a count) stand far
+## over the rest (EMERGE times the tallest stand); toward the rim and the lakes they are lower
+## (by as much as RIM_LOW and SHORE_LOW).
+const STAND_WAVE := 75.0
+const EMERGENT := Vector2i(3,6)
+const EMERGE := Vector2(1.3,1.5)
+## An emergent's crown spreads at most this many times its stand's, and it
+## stands at most EMERGE_MOST m, so the glide still clears its top.
+const EMERGE_WIDE := 1.25
+const EMERGE_MOST := 88.0
+## A share of the giants away from the aisles are young: lower (m), their
+## crowns low as the edges' are.
+const YOUNG := 0.3
+const YOUNG_TALL := Vector2(20.0,32.0)
+const RIM_LOW := 0.38
+const SHORE_LOW := 0.3
 const CROWN_FROM := Vector2(0.38,0.44)
 const EDGE_FROM := Vector2(0.28,0.36)
 const CROWN_WIDE := Vector2(0.27,0.31)
@@ -130,7 +181,7 @@ const TRUNK := Vector2(1.1,1.5)
 const APART := 18.0
 const APART_JITTER := 0.15
 const RIM_IN := 8.0
-const CLEARING := -0.6
+const CLEARING := -0.4
 ## Lanes: aisles kept clear of trunks for AISLE_HALF m either side of their
 ## line, and the band over the ground the glide flies them at (m).
 const AISLE_HALF := 10.0
@@ -182,6 +233,14 @@ var half := Vector2(150.0,60.0)
 var egg := 0.0
 var lobes := PackedVector3Array()
 var turn := 0.0
+## Promontories (angle, share out, width), bays (x, z, radius, 0) in the
+## warped frame, the neck (x, pinch, length), and the chunk (x, z, radius,
+## depth), zero radius if none.
+var proms := PackedVector3Array()
+var bays := PackedVector4Array()
+var neck := Vector3.ZERO
+var chunk := Vector4.ZERO
+var lake_side := 1.0
 ## The grid: its half extents (m), points along x and z, and per point the
 ## share, the top's height, the underside's and the erosion's cut (m).
 var ext := Vector2.ZERO
@@ -231,6 +290,7 @@ var wet := PackedFloat32Array()
 
 var _rng := RandomNumberGenerator.new()
 var _warp: FastNoiseLite
+var _rag: FastNoiseLite
 var _bv := PackedVector3Array()
 var _bn := PackedVector3Array()
 var _bc := PackedColorArray()
@@ -271,8 +331,30 @@ func _plan() -> void:
 	lobes = PackedVector3Array()
 	for l: Array in LOBES: lobes.append(Vector3(float(l[0]),float(l[1])*_rng.randf_range(0.6,1.3),_rng.randf()*TAU))
 	_warp = _noise(3,1.0/WARP_WAVE,2,FastNoiseLite.FRACTAL_FBM)
-	ext = Vector2(half.x*(1.0+absf(egg))*1.3+WARP*1.5,half.y*1.4+WARP*1.5)
+	_rag = _noise(7,1.0/RAGGED_WAVE,2,FastNoiseLite.FRACTAL_FBM)
+	lake_side = 1.0 if _rng.randf() < 0.5 else -1.0
+	proms = PackedVector3Array()
+	for i in range(_rng.randi_range(PROMS.x,PROMS.y)):
+		var a := (0.0 if _rng.randf() < 0.5 else PI)+_rng.randf_range(-PROM_ENDS,PROM_ENDS)
+		proms.append(Vector3(a,_rng.randf_range(PROM_OUT.x,PROM_OUT.y),_rng.randf_range(PROM_WIDE.x,PROM_WIDE.y)))
+	bays = PackedVector4Array()
+	for i in range(_rng.randi_range(BAYS.x,BAYS.y)):
+		var a := _rng.randf()*TAU
+		var r := half.y*_rng.randf_range(BAY_SIZE.x,BAY_SIZE.y)
+		var at := Vector2(cos(a)*half.x,sin(a)*half.y)*1.02
+		bays.append(Vector4(at.x,at.y,r,0.0))
+	neck = Vector3.ZERO
+	# Between where the two lakes will lie (`_lakes`).
+	if _rng.randf() < NECK_ODDS: neck = Vector3(-lake_side*half.x*_rng.randf_range(0.03,0.12),_rng.randf_range(NECK.x,NECK.y),half.x*NECK_LONG)
+	ext = Vector2(half.x*(1.0+absf(egg))*(1.25+PROM_OUT.y)+WARP*1.5,half.y*1.45+WARP*1.5)
 	ext = (ext/STEP).ceil()*STEP
+	chunk = Vector4.ZERO
+	if _rng.randf() < CHUNK_ODDS:
+		var a := _rng.randf()*TAU
+		var r := _rng.randf_range(CHUNK.x,CHUNK.y)
+		var dir := Vector2.from_angle(a)
+		var at := _main_rim(a)+dir*(_rng.randf_range(CHUNK_GAP.x,CHUNK_GAP.y)+r)
+		if absf(at.x)+r < ext.x-STEP*2.0 and absf(at.y)+r < ext.y-STEP*2.0: chunk = Vector4(at.x,at.y,r,r*_rng.randf_range(CHUNK_DEPTH.x,CHUNK_DEPTH.y))
 	nx = int(round(ext.x*2.0/STEP))+1
 	nz = int(round(ext.y*2.0/STEP))+1
 	depth = minf(width*_rng.randf_range(DEPTH.x,DEPTH.y),DEPTH_MOST)
@@ -284,27 +366,60 @@ func _plan() -> void:
 	bed = _rng.randf_range(BED.x,BED.y)
 	tilt = Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(BED_TILT.x,BED_TILT.y)
 
-## How far out toward the rim a point is: 0 at the middle, 1 on it.
+## How far out toward the rim a point is: 0 at the middle, 1 on it; on
+## the broken-off chunk, how far out from its own middle.
 func share(p: Vector2) -> float:
+	var s := main_share(p)
+	if chunk.z > 0.0: s = minf(s,chunk_share(p))
+	return s
+
+## The main body's share: the lobed egg, its promontories, the neck pinched
+## in, the bays bitten out.
+func main_share(p: Vector2) -> float:
 	var w := p+Vector2(_warp.get_noise_2d(p.x,p.y),_warp.get_noise_2d(p.x+911.0,p.y-337.0))*WARP
 	var ax := half.x*(1.0+egg*clampf(w.x/half.x*3.0,-1.0,1.0))
 	var q := Vector2(w.x/ax,w.y/half.y)
+	if neck.y > 0.0: q.y /= 1.0-neck.y*exp(-pow((w.x-neck.x)/neck.z,2.0))
 	var t := q.angle()
 	var out := 1.0
 	for l in lobes: out += l.y*sin(l.x*t+l.z)
-	return q.length()/out
+	for pr in proms: out += pr.y*exp(-pow(angle_difference(t,pr.x)/pr.z,2.0))
+	var s := q.length()/out
+	for b in bays:
+		var d := w.distance_to(Vector2(b.x,b.y))/b.z
+		if d < 1.0: s = maxf(s,1.0+0.8*(1.0-d))
+	return s
+
+## The chunk's share: 1 on its own rim.
+func chunk_share(p: Vector2) -> float:
+	var o := p-Vector2(chunk.x,chunk.y)
+	var t := o.angle()
+	return o.length()/(chunk.z*(1.0+0.12*sin(3.0*t+chunk.x)+0.08*sin(5.0*t+chunk.y)))
+
+## True on the chunk rather than the main body.
+func on_chunk(p: Vector2) -> bool:
+	return chunk.z > 0.0 and chunk_share(p) < main_share(p)
+
+## The main body's rim along the way from the middle at angle `a`.
+func _main_rim(a: float) -> Vector2:
+	var dir := Vector2.from_angle(a)
+	var d := 0.0
+	while d < ext.x*1.5 and main_share(dir*d) <= 1.0: d += 2.0
+	return dir*d
 
 func inside(p: Vector2) -> bool:
 	return share(p) <= 1.0
 
-## The rim's point along the way from the middle at angle `a`.
+## The main body's rim along the way from the middle at angle `a`: the
+## first way out, stepped then halved.
 func rim_point(a: float) -> Vector2:
 	var dir := Vector2.from_angle(a)
 	var lo := 0.0
-	var hi := ext.x
-	for k in range(24):
+	while lo < ext.x*1.5 and main_share(dir*(lo+2.0)) <= 1.0: lo += 2.0
+	var hi := lo+2.0
+	for k in range(12):
 		var m := (lo+hi)*0.5
-		if share(dir*m) <= 1.0: lo = m
+		if main_share(dir*m) <= 1.0: lo = m
 		else: hi = m
 	return dir*lo
 
@@ -322,7 +437,8 @@ func _grid_shares() -> void:
 func _base(p: Vector2, s: float) -> float:
 	var hills: FastNoiseLite = _top_delta.hills
 	var c := minf(s,1.0)
-	return float(_top_delta.dome)*(1.0-c*c)+float(_top_delta.hill)*hills.get_noise_2d(p.x,p.y)-ROUND*pow(smoothstep(0.8,1.0,c),2.0)
+	var dome: float = _top_delta.dome*(0.35 if chunk.z > 0.0 and chunk_share(p) < main_share(p) else 1.0)
+	return dome*(1.0-c*c)+float(_top_delta.hill)*hills.get_noise_2d(p.x,p.y)-ROUND*pow(smoothstep(0.8,1.0,c),2.0)
 
 ## The plate's erosion over the top, on a square grid over the whole isle.
 func _erode_top() -> void:
@@ -368,12 +484,12 @@ func _coarse(field: Callable, settings: Dictionary, salt: int) -> Dictionary:
 ## other, smaller. Each stands BANK under the lowest of its banks.
 func _lakes() -> void:
 	lakes.clear()
-	var side := 1.0 if _rng.randf() < 0.5 else -1.0
+	var side := lake_side
 	var count := 2 if _rng.randf() < LAKES_TWO else 1
 	for k in range(count):
 		var rx := length*_rng.randf_range(LAKE.x,LAKE.y)*(1.0 if k == 0 else 0.7)
 		var rz := minf(rx*_rng.randf_range(LAKE_ROUND.x,LAKE_ROUND.y),half.y*0.42)
-		var out := _rng.randf_range(0.15,0.4) if k == 0 else _rng.randf_range(0.35,0.6)
+		var out := _rng.randf_range(0.28,0.45) if k == 0 else _rng.randf_range(0.42,0.62)
 		var middle := Vector2(side*(1.0 if k == 0 else -1.0)*half.x*out,half.y*_rng.randf_range(-0.2,0.2))
 		var lake := {"middle":middle,"radii":Vector2(rx,rz),"turn":_rng.randf_range(-0.35,0.35),
 			"lobes":Vector4(_rng.randf_range(0.04,0.1),_rng.randf()*TAU,_rng.randf_range(0.03,0.07),_rng.randf()*TAU),
@@ -385,7 +501,7 @@ func _lakes() -> void:
 				if share(_lake_point(lake,TAU*a/24.0,1.5)) > LAKE_IN: fits = false
 			if fits: break
 			lake.radii = (lake.radii as Vector2)*0.88
-			lake.middle = (lake.middle as Vector2)*0.9
+			lake.middle = (lake.middle as Vector2)*0.95
 		# A second keeps its banks clear of the first's: shrunk until they
 		# are apart, or there is no second.
 		if k == 1:
@@ -448,6 +564,11 @@ func _channels() -> void:
 		var dir := Vector2.from_angle(a)
 		var d := 0.0
 		while d < ext.x and share(middle+dir*d) <= 1.0: d += 2.0
+		# Out into open air, not across a bay to land again.
+		var open := true
+		for step in range(2,16):
+			if share(middle+dir*(d+step*2.0)) <= 1.0: open = false
+		if not open: continue
 		# Away from the other lake.
 		if lakes.size() == 2 and dir.dot(((lakes[1-lower].middle as Vector2)-middle).normalized()) > 0.3: continue
 		if d < best:
@@ -564,6 +685,7 @@ func _depth(p: Vector2, s: float) -> float:
 	if s >= 1.0: return 0.0
 	# The keel's tip rounded off, not drawn to a point.
 	var round_s := sqrt(s*s+KEEL_ROUND*KEEL_ROUND)-KEEL_ROUND
+	if on_chunk(p): return chunk.w*pow(1.0-round_s,1.1)+WALL*0.5*smoothstep(1.0,0.9,s)
 	var d := depth*pow(1.0-round_s,taper)
 	var rim := 1.0-smoothstep(0.82,1.0,s)
 	for sp in spurs:
@@ -605,7 +727,18 @@ func _underside() -> void:
 				var lift := tilt.dot(p)+wobble.get_noise_2d(p.x,p.y)*4.0
 				var k := BED_SHARE*smoothstep(BED_STEEP.x,BED_STEEP.y,slope)*smoothstep(-0.45,0.1,mask.get_noise_2d(p.x,p.y))
 				d = maxf(0.0,lerpf(d,_terrace((d+lift)/bed)*bed-lift,k))
-			under[c] = minf(heights[c],0.0)-FOOT-d
+			under[c] = minf(heights[c],0.0)-foot(p)-d
+
+## How far down the earth band reaches under the top's plane at a point
+## along the rim (m): ragged, never even.
+func foot(p: Vector2) -> float:
+	return FOOT*lerpf(FOOT_RANGE.x,FOOT_RANGE.y,_rag.get_noise_2d(p.x,p.y)*0.5+0.5)
+
+## The rim's outward way at a point: down the share field's slope.
+func outward(p: Vector2) -> Vector2:
+	var e := 0.5
+	var g := Vector2(share(p+Vector2(e,0.0))-share(p-Vector2(e,0.0)),share(p+Vector2(0.0,e))-share(p-Vector2(0.0,e)))
+	return g.normalized() if g.length() > 1e-6 else p.normalized()
 
 static func _terrace(x: float) -> float:
 	var f := x-floorf(x)
@@ -652,6 +785,7 @@ func _plant() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*17+5
 	var forest := _noise(83,1.0/90.0,2,FastNoiseLite.FRACTAL_FBM)
+	_top_delta.stands = _noise(97,1.0/STAND_WAVE,2,FastNoiseLite.FRACTAL_FBM)
 	var patches := _noise(89,1.0/45.0,2,FastNoiseLite.FRACTAL_FBM)
 	var spots := []
 	var z := -ext.y
@@ -681,6 +815,7 @@ func _plant() -> void:
 					along += APART*rng.randf_range(1.02,1.2)
 				walked += piece
 	for p: Vector2 in spots: _giant(p,rng.randf_range(TRUNK.x,TRUNK.y),Vector2.ZERO,rng,forest)
+	_emerge(rng)
 	var spruces := 0
 	for p: Vector2 in spots:
 		if spruces >= SPRUCE_CAP: break
@@ -719,11 +854,24 @@ func _giant(p: Vector2, trunk: float, lean: Vector2, rng: RandomNumberGenerator,
 	if forest.get_noise_2d(p.x,p.y) < CLEARING and lean == Vector2.ZERO: return
 	if not _dry(p,1.25,CHANNEL+5.0) or aisle_distance(p) < AISLE_HALF+trunk: return
 	if _crowded(p,APART*(1.0+rng.randf_range(0.0,APART_JITTER)),true): return
-	var tall := rng.randf_range(GIANT.x,GIANT.y)
+	# Heights in stands: a slow noise sets each stand's, a few emergents
+	# tower over them, and toward the rim and the shores they come down.
+	var stand := float(_top_delta.stands.get_noise_2d(p.x,p.y))*0.5+0.5
+	var tall := lerpf(GIANT.x,GIANT.y,smoothstep(0.3,0.7,stand))*rng.randf_range(0.9,1.1)
+	if lean == Vector2.ZERO:
+		tall *= 1.0-RIM_LOW*smoothstep(1.0-(RIM_IN+45.0)/half.y,1.0-RIM_IN/half.y,s)
+		var shore := INF
+		for l: Dictionary in lakes: shore = minf(shore,lake_share(l,p))
+		tall *= 1.0-SHORE_LOW*(1.0-smoothstep(1.25,2.3,shore))
+	else:
+		# The colonnade stands tall, to vault the aisle.
+		tall = maxf(tall,GIANT.x+8.0)
 	var ground := ground_at(p)
 	# At the forest's edges (the rim, the shores) the crowns reach lower,
 	# as they do where light comes in from the side; never by an aisle.
-	var edge := lean == Vector2.ZERO and (s > 1.0-(RIM_IN+16.0)/half.y or _near_lake(p,1.6))
+	var young := lean == Vector2.ZERO and rng.randf() < YOUNG
+	if young: tall = rng.randf_range(YOUNG_TALL.x,YOUNG_TALL.y)
+	var edge := lean == Vector2.ZERO and (young or s > 1.0-(RIM_IN+16.0)/half.y or _near_lake(p,1.6))
 	var from := ground+tall*(rng.randf_range(EDGE_FROM.x,EDGE_FROM.y) if edge else rng.randf_range(CROWN_FROM.x,CROWN_FROM.y))
 	var radius := (ground+tall-from)*(CROWN_WIDE.y if lean != Vector2.ZERO else rng.randf_range(CROWN_WIDE.x,CROWN_WIDE.y))
 	if edge and aisle_distance(p) < AISLE_HALF+radius+2.0:
@@ -735,7 +883,30 @@ func _giant(p: Vector2, trunk: float, lean: Vector2, rng: RandomNumberGenerator,
 		var middle := p+shift
 		for o: Vector2 in [Vector2.ZERO,Vector2.RIGHT,Vector2.LEFT,Vector2.UP,Vector2.DOWN]:
 			from = maxf(from,ground_at(middle+o*radius)+GLIDE_LANE.y+SkyGlide.CLEAR+2.0)
+		# Never a crown squeezed to nothing over the lane.
+		if ground+tall < from+tall*0.5:
+			tall = (from-ground)/0.5
+			radius = tall*0.5*(CROWN_WIDE.y if lean != Vector2.ZERO else CROWN_WIDE.x)
 	_add(p,ground,tall,Vector4(from,ground+tall,radius,trunk),-1,shift)
+
+## A few emergents: giants well in from the rim, off the aisles, drawn up
+## far over the tallest stand, their crowns growing with them.
+func _emerge(rng: RandomNumberGenerator) -> void:
+	var tallest := 0.0
+	var picks := []
+	for i in range(trees.size()):
+		if kinds[i] != -1: continue
+		tallest = maxf(tallest,trees[i].w)
+		var at := Vector2(trees[i].x,trees[i].y)
+		if share(at) < 0.7 and leans[i] == Vector2.ZERO and crowns[i].x-trees[i].z > trees[i].w*0.3 \
+			and aisle_distance(at) > AISLE_HALF+crowns[i].z*EMERGE_WIDE+2.0: picks.append(i)
+	_shuffle(picks,rng)
+	for i: int in picks.slice(0,rng.randi_range(EMERGENT.x,EMERGENT.y)):
+		var t := trees[i]
+		var c := crowns[i]
+		var tall := minf(tallest*rng.randf_range(EMERGE.x,EMERGE.y),EMERGE_MOST)
+		trees[i] = Vector4(t.x,t.y,t.z,tall)
+		crowns[i] = Vector4(c.x,t.z+tall,minf((t.z+tall-c.x)*CROWN_WIDE.x,c.z*EMERGE_WIDE),c.w)
 
 func _add(p: Vector2, ground: float, tall: float, crown: Vector4, kind: int, shift := Vector2.ZERO) -> void:
 	var index := trees.size()
@@ -927,7 +1098,7 @@ func body_arrays(grass: Array, gravel: Color, bank: Color, shift := Vector3.ZERO
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*31+7
 	var fields := [_noise(67,1.0/60.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/110.0,2,FastNoiseLite.FRACTAL_FBM)]
-	var strata := {"topsoil":Color(Strata.COLORS.topsoil).srgb_to_linear()}
+	var strata := {"topsoil":Color(Strata.COLORS.topsoil).srgb_to_linear(),"clay":Color(Strata.COLORS.clay).srgb_to_linear()}
 	var normals := PackedVector3Array()
 	normals.resize(nx*nz)
 	for j in range(nz):
@@ -986,21 +1157,21 @@ func body_arrays(grass: Array, gravel: Color, bank: Color, shift := Vector3.ZERO
 				if int(e.kind) != 1 or int(f.kind) != 2: continue
 				var pe: Vector2 = e.p
 				var pf: Vector2 = f.p
-				var outward := (pf-pe).orthogonal().normalized()
-				if share((pe+pf)*0.5+outward) < share((pe+pf)*0.5): outward = -outward
-				var o3 := Vector3(outward.x,0.0,outward.y)
+				var out_e := outward(pe)
+				var out_f := outward(pf)
+				var o3 := Vector3(out_e.x+out_f.x,0.0,out_e.y+out_f.y).normalized()
 				var te := _up(e)
 				var tf := _up(f)
-				var le := te+o3*LIP.y+Vector3.DOWN*LIP.x
-				var lf := tf+o3*LIP.y+Vector3.DOWN*LIP.x
-				var fe := _down(e)
-				var ff := _down(f)
-				fe.y = minf(fe.y,le.y-0.5)
-				ff.y = minf(ff.y,lf.y-0.5)
+				var we := _wall(pe,out_e,te,_down(e))
+				var wf := _wall(pf,out_f,tf,_down(f))
 				var green: Color = grass[rng.randi() % grass.size()]
-				_quad(te,le,lf,tf,green*0.8,o3)
-				_rock_tri(le,fe,ff,o3)
-				_rock_tri(le,ff,lf,o3)
+				_quad(te,we[0],wf[0],tf,green*0.8,o3)
+				# The earth: turf's underside, then the slump, then down to the
+				# rock, darker where it hangs in shadow.
+				for band in range(2):
+					var tone: Color = (strata.topsoil as Color)*rng.randf_range(0.78,1.05)*(0.85 if band == 1 else 1.0)
+					if rng.randf() < 0.25: tone = tone.lerp(strata.clay,0.4)
+					_quad(we[band],we[band+1],wf[band+1],wf[band],tone,o3)
 	var top_arrays := _surface(_bv,_bn,_bc,true)
 	var rock_arrays := _surface(_rv,_rn,PackedColorArray(),false)
 	_bv = PackedVector3Array()
@@ -1032,6 +1203,19 @@ static func _surface(vertices: PackedVector3Array, normals: PackedVector3Array, 
 	arrays[Mesh.ARRAY_TEX_UV] = uv
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	return arrays
+
+## The rim's ragged wall at a rim point p (outward way `out`) from the top
+## `t` down to the rock's edge `d`: [the turf's lip, hanging over and down,
+## the earth's slump at mid height, the foot on the rock].
+func _wall(p: Vector2, out: Vector2, t: Vector3, d: Vector3) -> Array:
+	var o := Vector3(out.x,0.0,out.y)
+	var n := _rag.get_noise_2d(p.x*1.7+300.0,p.y*1.7)*0.5+0.5
+	var m := _rag.get_noise_2d(p.x+700.0,p.y-200.0)*0.5+0.5
+	var lip := t+o*LIP.y*lerpf(LIP_RANGE.x,LIP_RANGE.y,n)+Vector3.DOWN*LIP.x*lerpf(0.6,1.8,m)
+	d.y = minf(d.y,lip.y-0.5)
+	var slump := maxf(0.0,_rag.get_noise_2d(p.x-500.0,p.y+90.0)*1.6-0.1)*SLUMP
+	var mid := Vector3(p.x,lerpf(lip.y,d.y,0.5),p.y)+o*slump
+	return [lip,mid,d]
 
 ## A clipped cell's point: along the edge a to b by t, with the top, the
 ## underside and the top's normal there; kind 0 a corner, 1 leaving the
