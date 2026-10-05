@@ -168,12 +168,24 @@ uniform float cutaway_half_width = 14.2;
 uniform float cutaway_ceiling = 8.3;
 uniform float cutaway_reveal = 0.0;
 // A sky peak's rock (scripts/sky_peaks.gd): nothing is drawn under the cloud
-// sea's top (`sea_cut`, world metres), the rock frays away into it over the
-// last `sea_fray.x` metres, and goes pale with the cloud's own light over
-// `sea_fray.y` metres above, so a mountain's foot is in the cloud, never
-// standing on it. Far below anything else, so it touches nothing else.
+// sea's top (`sea_cut`, world metres), the line it is cut at wandering
+// `sea_fray.x` metres up and down over a few tens of metres, and over the
+// `sea_fray.y` metres above it the rock goes into the cloud's own glowing
+// light, wholly so at the line, so a mountain's foot is in the cloud, never
+// standing on it and never a ragged hem. Far below anything else, so it
+// touches nothing else.
 uniform float sea_cut = -1.0e9;
 uniform vec2 sea_fray = vec2(10.0, 40.0);
+// A sky peak's rock reads the plate's look (the field's patches, the rock's
+// world-space strata, terrain_geology) this many times larger, so a range
+// a few hundred metres high is the plate's mountain grown, not pinstriped.
+uniform float look_scale = 1.0;
+const vec3 SEA_MIST_ALBEDO = vec3(0.56, 0.57, 0.6);
+// The sun's colour the cloud sea holds at any hour (as the puffs do,
+// shaders/sky_cloud_puff.gdshader), glowing in the foot's mist.
+const float SEA_MIST_SUN = 0.15;
+// How much of its light the foot keeps seen level across the sea.
+const float SEA_MIST_LEVEL = 0.62;
 varying vec2 char_state;
 varying flat float char_clump;
 varying float char_seed;
@@ -575,11 +587,11 @@ void vertex() {
 void fragment() {
 	float sea_mist = 0.0;
 	if (sea_cut > -1.0e8) {
-		float above = world_position.y - sea_cut;
-		vec3 cell = floor(world_position * vec3(0.9, 1.5, 0.9));
-		float rag = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-		if (above < rag * sea_fray.x) discard;
+		float wander = zs_noise(world_position.xz * 0.021) * 0.7 + zs_noise(world_position.xz * 0.057 + 31.0) * 0.3;
+		float above = world_position.y - sea_cut - wander * sea_fray.x;
+		if (above < 0.0) discard;
 		sea_mist = 1.0 - smoothstep(0.0, sea_fray.y, above);
+		sea_mist *= sea_mist * (3.0 - 2.0 * sea_mist);
 	}
 	if (cutaway_reveal > 0.0 && cave_cutaway(world_position - cutaway_origin, cutaway_normal, cutaway_half_width, cutaway_ceiling, cutaway_reveal, FRAGCOORD.xy)) discard;
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
@@ -610,8 +622,15 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	if (!ground) light_normal = face_normal;
+	if (sea_mist > 0.0) {
+		// A sky peak's foot is lit as the cloud sea's level top is, so it
+		// takes the sea's light at every hour and no facet stands out dark.
+		light_normal = normalize(mix(light_normal, vec3(0.0, 1.0, 0.0), sea_mist));
+		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
+	}
 	// The ground's colour is made in one place (ground_look zs_ground_color).
-	vec3 tint = ground ? zs_ground_color(base_color.rgb * COLOR.rgb, world_position, earth_side.x, ground_grass)
+	vec3 look_position = world_position / look_scale;
+	vec3 tint = ground ? zs_ground_color(base_color.rgb * COLOR.rgb, look_position, earth_side.x, ground_grass)
 		: scene_palette(base_color.rgb * COLOR.rgb);
 	// Slopes to the sun a little warmer, away from it a little deeper (the
 	// smoothed ground normal rides world_normal on the ground).
@@ -651,7 +670,7 @@ void fragment() {
 		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
 		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
 	}
-	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,world_position,face_normal);
+	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
 	vec3 before_autumn = tint;
 	if (stand_autumn >= 0.0) zs_autumn_stand_paint(tint, plant_root, zs_autumn * leaf_season.x, stand_autumn);
 	else zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
@@ -724,8 +743,14 @@ void fragment() {
 		tint = mix(tint, brush_color.rgb, max(ring * 0.9, fill));
 	}
 	tint *= mix(1.0, 0.56, coat_wetness);
-	// A sky peak's foot goes pale into the cloud sea.
-	if (sea_mist > 0.0) tint = mix(tint, zs_cloud_sky * 0.55 + zs_cloud_sun * 0.25, sea_mist * sea_mist * 0.85);
+	// A sky peak's foot goes into the cloud: the cloud's own white.
+	// Seen level across the sea, as from far off, the sea reads deeper
+	// than seen from over it, and so does the foot.
+	float sea_level_view = 1.0;
+	if (sea_mist > 0.0) {
+		sea_level_view = mix(SEA_MIST_LEVEL, 1.0, smoothstep(0.02, 0.35, normalize(zs_camera_position - world_position).y));
+		tint = mix(tint, SEA_MIST_ALBEDO * sea_level_view, sea_mist);
+	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);
@@ -765,6 +790,7 @@ void fragment() {
 	vec3 alpen_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
 	if (dot(alpen_normal, face_normal) < 0.0) alpen_normal = -alpen_normal;
 	EMISSION += zs_afterglow(world_position, alpen_normal, tint) + char_ember;
+	if (sea_mist > 0.0) EMISSION += zs_cloud_sun * SEA_MIST_SUN * sea_level_view * sea_mist;
 	inversion_transmit = zs_inversion_paint(world_position, EMISSION);
 }
 

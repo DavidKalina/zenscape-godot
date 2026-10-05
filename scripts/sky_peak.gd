@@ -22,19 +22,25 @@ extends RefCounted
 ##   crags and ledges: fine ridged noise on the steep ground, and the rock's
 ##     beds: gently tilted strata that step some steep faces into cliffs and
 ##     ledges;
-##   the gorge: carved last, so nothing raises its floor or narrows it.
+##   the gorge: carved last, so nothing raises its floor or narrows it;
+##     couloirs cut down its walls and its pinch's fins broken along their
+##     tops, only ever lowering the rock, so the way stays open.
 ##
 ## Faces are flat and coloured per face as the islets' are (scripts/
 ## sky_islet.gd), for the plate's own ground material: the world's grass on
 ## gentle ground and ledges, an earth band under a ledge's lip, scree down
 ## the gullies, and on the steep faces the world's rock stepped through the
-## granite core's beds and an odd darker shale band (scripts/strata.gd's
-## colours), so the range reads as cut from the same stuff as the chunks'
-## sides. The flanks run on down past the sea to BASE; faces wholly below
-## CUT are left out, and what does stand under the sea's top is never drawn:
-## the rock frays away into the cloud there and goes pale with its light
-## over the last metres (reference_surface's `sea_cut`), wrapped in cloud
-## puffs (`wraps`).
+## granite core's beds, now and then a pale sand bed or a dark shale one
+## (scripts/strata.gd's colours), so the range is layered as an island's
+## side is and reads as cut from the same stuff. Grass and earth go by the
+## ground's broad lie (`_calm`) as well as each face's, so they lie in
+## patches. The material reads the plate's look LOOK_SCALE times larger
+## (scripts/sky_peaks.gd). The flanks run on down past the sea to BASE;
+## faces wholly below CUT are left out, and what does stand under the sea's
+## top is never drawn: over the last metres the rock goes into the cloud's
+## own light, lit as the sea's level top is, so the foot is soft cloud, not
+## a ragged hem (reference_surface's `sea_cut`), wrapped in cloud puffs
+## (`wraps`).
 ##
 ## The frame is the range's own: its spot on the islands' plane at the
 ## origin, x along the crest, heights the world's.
@@ -133,6 +139,12 @@ const BUTTRESS := 120.0
 const BUTTRESS_WAVE := 52.0
 const BUTTRESS_FROM := Vector2(30.0,50.0)
 const GORGE_BEDS := 0.45
+## Couloirs down the gorge's walls: how far (m) one cuts the wall back at
+## its deepest, and how much tighter than the buttresses they lie along it.
+const COULOIR := 12.0
+const COULOIR_STRETCH := 1.6
+## None are cut within COULOIR_SPARE m of a pinch's ends, so its walls stand.
+const COULOIR_SPARE := 60.0
 const GORGE_WANDER := Vector2(18.0,36.0)
 const GORGE_LONG := Vector2(520.0,760.0)
 ## The gorge is roughed out this much (m) wider before the weathering.
@@ -148,6 +160,8 @@ const PINCH_RAMP := 40.0
 const PINCH_HALF := 11.0
 const PINCH_TOP := Vector2(-5.0,15.0)
 const PINCH_JET_UNDER := 22.0
+## How far (m) the fins' tops are broken down at most, away from the slot.
+const FIN_TEETH := 18.0
 ## The glide's way through: its half width kept clear at glide heights (m)
 ## and the band of those heights (scripts/sky_glide.gd FLOOR to CEILING).
 const CLEAR_HALF := 20.0
@@ -161,10 +175,18 @@ const EARTH_SLOPE := 1.25
 const GRASS_HIGH := 240.0
 const LIP := 0.2
 const SCREE := 3.0
+## The lie colours read: the slope (gradient) averaged CALM_REACH grid
+## points round, and the steepest such lie a bed's tread still holds grass.
+const CALM_REACH := 3
+const LEDGE_CALM := 1.6
 ## How far a face's colour is nudged from its neighbours', and how far the
 ## beds' tones lighten and darken the rock.
 const FACE_JITTER := 0.045
-const BED_TONE := 0.45
+const BED_TONE := 0.8
+## The odds of a bed being a band of shale (x) or of sand (y), and how far
+## such a band takes its own colour over the rock's.
+const BANDS := Vector2(0.2,0.14)
+const BAND_TONE := 0.6
 ## Spruces on the gentle ground and ledges between LOW_TREES and HIGH_TREES
 ## m: tried every TREE_STEP m, kept where the slope is under TREE_SLOPE and
 ## the stands' noise is over TREE_PATCH, at most TREE_CAP; their heights (m)
@@ -196,7 +218,7 @@ const SNOW_JITTER := 0.03
 const SNOW_COLOUR := Color(0.9,0.93,0.96)
 ## The rock's cooling toward the far peaks' blue-grey, of its own lightness:
 ## half of COOL at the sea, all of it at the top; and that grey's hue.
-const COOL := 0.6
+const COOL := 0.3
 const COOL_HUE := Vector3(0.9,0.97,1.16)
 ## The plate's own rock (scripts/native_terrain_palette.gd's first grey,
 ## linear): the world's rock over this tints the beds.
@@ -239,6 +261,7 @@ var tilt := Vector2.ZERO
 var ridges: Array = []
 
 var _rng := RandomNumberGenerator.new()
+var _calm_field := PackedFloat32Array()
 var _spine := PackedFloat32Array()
 var _peaks: Array = []
 
@@ -254,6 +277,7 @@ func _shape(seed_value: int) -> void:
 	seed = seed_value
 	_rng.seed = seed_value
 	_plan()
+	_plan_pinch()
 	_skeleton()
 	var coarse := _coarse()
 	_fine(coarse)
@@ -359,10 +383,17 @@ func gorge_wall(d: float) -> float:
 ## The walls with their buttresses at a point `d` (m) out from the line
 ## (`gorge_distance`), `z` along the range (`ribs`: the buttresses' noise).
 ## Out where the buttresses stand, the walls step a little at the beds too.
+## Couloirs are cut down the walls (`ribs` read another way), only ever
+## lowering them, so the way through stays as open as the plain walls leave
+## it and no wall stands as one flat ramp.
 func gorge_face(d: float, z: float, ribs: FastNoiseLite) -> float:
 	var out := smoothstep(BUTTRESS_FROM.x,BUTTRESS_FROM.y,absf(d))
 	var rib := maxf(0.0,ribs.get_noise_2d(z,absf(d)*0.3+signf(d)*400.0))
-	var h := gorge_wall(d)+BUTTRESS*rib*out
+	var a := absf(d)
+	var flute := maxf(0.0,ribs.get_noise_2d(z*COULOIR_STRETCH+911.0,a*0.12+signf(d)*733.0))
+	if not pinch.is_empty(): flute *= smoothstep(0.0,COULOIR_SPARE,absf(z-float(pinch.z))-float(pinch.length)*0.5)
+	a = maxf(minf(a,GORGE_HALF),a-COULOIR*flute*flute*smoothstep(GORGE_HALF,GORGE_HALF+COULOIR,a))
+	var h := gorge_wall(a)+BUTTRESS*rib*out
 	return lerpf(h,_terrace(h/bed)*bed,GORGE_BEDS*out)
 
 ## Distance (m) from the gorge's line, across it, at a point.
@@ -646,11 +677,7 @@ func _carve() -> void:
 ## tight line, where the jet runs) and the wide way open above the fins.
 ## Drawn from a stream of its own; with none, `pinch` stays empty.
 func _pinch(ribs: FastNoiseLite) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed*61+3
-	pinch = {}
-	if rng.randf() >= PINCH_ODDS: return
-	pinch = {"z":spine(float(gorge.x))+rng.randf_range(PINCH_AT.x,PINCH_AT.y),"length":rng.randf_range(PINCH_LENGTH.x,PINCH_LENGTH.y),"top":rng.randf_range(PINCH_TOP.x,PINCH_TOP.y)}
+	if pinch.is_empty(): return
 	# The fins reach out to where the walls stand over their tops, and only
 	# where both walls do: never out over the open flanks.
 	var reach := GORGE_HALF
@@ -686,6 +713,16 @@ func _pinch(ribs: FastNoiseLite) -> void:
 			return
 		z += STEP
 
+## Where the pinch would stand, if the gorge has one (`_pinch` keeps it
+## only if the walls stand round it): drawn before the carving, so the
+## couloirs spare its walls.
+func _plan_pinch() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed*61+3
+	pinch = {}
+	if rng.randf() >= PINCH_ODDS: return
+	pinch = {"z":spine(float(gorge.x))+rng.randf_range(PINCH_AT.x,PINCH_AT.y),"length":rng.randf_range(PINCH_LENGTH.x,PINCH_LENGTH.y),"top":rng.randf_range(PINCH_TOP.x,PINCH_TOP.y)}
+
 ## How far into the pinch's stretch `z` is (0 outside, 1 in its middle).
 func pinch_share(z: float) -> float:
 	if pinch.is_empty(): return 0.0
@@ -699,7 +736,11 @@ func pinch_fin(d: float, z: float, ribs: FastNoiseLite) -> float:
 	var share := pinch_share(z)
 	if share <= 0.0 or absf(d) < PINCH_HALF: return -INF
 	var rise := smoothstep(PINCH_HALF,PINCH_HALF+3.0,absf(d))
+	# Broken along their tops, as teeth, not a slab: deepest away from the
+	# slot's lips, which stand nearly whole.
 	var crag := maxf(0.0,ribs.get_noise_2d(z*2.0,d))*8.0
+	var teeth := maxf(0.0,ribs.get_noise_2d(z*2.6+517.0,absf(d)*0.6+signf(d)*271.0))
+	crag += FIN_TEETH*teeth*smoothstep(PINCH_HALF+2.0,PINCH_HALF+14.0,absf(d))
 	var top := float(pinch.top)-crag
 	return lerpf(GORGE_FLOOR,top,share*rise)
 
@@ -838,6 +879,41 @@ func height_at(p: Vector2) -> Variant:
 static func _split(h00: float, h10: float, h01: float, h11: float) -> bool:
 	return absf(h00-h11) <= absf(h10-h01)
 
+## The slope (gradient) at each mesh point averaged over CALM_REACH points
+## each way (a box, run along x then z): the ground's broad lie. Made once,
+## for the near faces and the far alike.
+func _calm() -> PackedFloat32Array:
+	if _calm_field.size() == nx*nz: return _calm_field
+	var field := PackedFloat32Array()
+	field.resize(nx*nz)
+	for j in range(nz):
+		for i in range(nx): field[j*nx+i] = _gradient(heights,i,j).length()
+	field = _box(field,1,nx,nz)
+	_calm_field = _box(field,nx,nz,nx)
+	return _calm_field
+
+## A running box mean of CALM_REACH each way down lines `stride` apart
+## within a line, `count` long, `lines` of them (the other axis).
+static func _box(field: PackedFloat32Array, stride: int, count: int, lines: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(field.size())
+	var step := 1 if stride != 1 else count
+	for line in range(lines):
+		var first := line*step
+		var sum := 0.0
+		for k in range(mini(CALM_REACH,count-1)+1): sum += field[first+k*stride]
+		var lo := 0
+		var hi := mini(CALM_REACH,count-1)
+		for k in range(count):
+			out[first+k*stride] = sum/float(hi-lo+1)
+			if k+CALM_REACH+1 < count:
+				hi += 1
+				sum += field[first+hi*stride]
+			if k-CALM_REACH >= 0:
+				sum -= field[first+lo*stride]
+				lo += 1
+	return out
+
 ## How much each mesh point lies in a hollow (m): its neighbours' mean
 ## height two points out over its own; under 0 on a ridge.
 func _hollows() -> PackedFloat32Array:
@@ -908,6 +984,7 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 			var g := _gradient(heights,i,j)
 			normals[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
 	var hollows := _hollows()
+	var calm := _calm()
 	var colours := _strata_colours()
 	colours["snow"] = snow
 	var vertices := PackedVector3Array()
@@ -951,7 +1028,8 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 				var lie := (normals[t[3]]+normals[ib]+normals[id]+n*1.2).normalized()
 				var ledge := (stepped[t[3]]+stepped[ib]+stepped[id])/3.0
 				var hollow := (hollows[t[3]]+hollows[ib]+hollows[id])/3.0
-				var tone := _tone((a+b+d)/3.0,lie,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,grass,rock,gravel,colours,fields,rng)
+				var soft := (calm[t[3]]+calm[ib]+calm[id])/3.0
+				var tone := _tone((a+b+d)/3.0,lie,soft,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,grass,rock,gravel,colours,fields,rng)
 				# Godot's front faces wind clockwise seen from outside.
 				for q in [[a,t[3]],[d,id],[b,ib]]:
 					vertices.append((q[0] as Vector3)+shift)
@@ -998,7 +1076,7 @@ static func _strata_colours() -> Dictionary:
 ## erosion filled; and on the steep faces the world's rock, a little lighter
 ## or darker bed by bed (the granite core's three tones) with now and then a
 ## band of shale.
-func _tone(at: Vector3, n: Vector3, laid: float, ledge: float, hollow: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator) -> Color:
+func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, hollow: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator) -> Color:
 	var slope := sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
 	var p := Vector2(at.x,at.z)
 	var patch: float = (fields[0] as FastNoiseLite).get_noise_2d(p.x,p.y)
@@ -1028,22 +1106,39 @@ func _tone(at: Vector3, n: Vector3, laid: float, ledge: float, hollow: float, gr
 		var white: Color = strata.snow
 		var blue := clampf(hollow/18.0,0.0,1.0)
 		return Color(white.r*lerpf(1.0,0.93,blue),white.g*lerpf(1.0,0.965,blue),white.b,1.0)*(1.0+rng.randf_range(-SNOW_JITTER,SNOW_JITTER))
-	if slope < GRASS_SLOPE+patch*0.3 and high < GRASS_HIGH:
+	# Grass and earth by the ground's lie over CALM_REACH m as well as the
+	# face's own, so they lie in whole patches, never a lone green facet on
+	# a cliff.
+	if slope < GRASS_SLOPE*1.5 and calm < GRASS_SLOPE+patch*0.3 and high < GRASS_HIGH:
 		if laid > SCREE and slope > 0.35: return gravel.lerp(stone,0.3)*jitter
 		# Thinner and drier up high.
 		return green.lerp(stone,smoothstep(GRASS_HIGH-140.0,GRASS_HIGH+20.0,high)*0.45)*jitter
 	var earthy: Color = (strata.topsoil as Color).lerp(strata.clay,smoothstep(0.35,0.65,mix_green)*0.6)
-	if slope < EARTH_SLOPE+patch*0.25 and high < GRASS_HIGH+30.0:
+	if slope < EARTH_SLOPE*1.5 and calm < EARTH_SLOPE+patch*0.25 and high < GRASS_HIGH+30.0:
 		if laid > SCREE*0.6: return gravel.lerp(stone,0.45)*jitter
 		return earthy.lerp(stone,0.72+0.2*mix_rock)*jitter
 	# A stepped bed's tread holds grass; under its lip, the earth band.
-	if ledge > 0.5 and phase < 0.5 and slope < 1.4 and high < GRASS_HIGH+40.0:
+	if ledge > 0.5 and phase < 0.5 and slope < 1.4 and calm < LEDGE_CALM and high < GRASS_HIGH+40.0:
 		return green.lerp(stone,0.3)*jitter
 	if ledge > 0.6 and phase > 1.0-LIP and high < GRASS_HIGH+60.0:
 		return earthy.lerp(stone,0.5)*jitter
-	var beds := ["core_a","core_b","core_c"]
+	# The beds: the granite core's three tones, and now and then a band of
+	# the islands' own sides (scripts/strata.gd): a pale sand bed or a dark
+	# shale one, in the world's rock as the granite is, so the range is
+	# layered as an island's side is, only a hundredfold.
 	var core_a: Color = strata.core_a
-	var tone: Color = strata[beds[posmod(index,3)]]
+	var key := _bed_kind(index)
+	var tone: Color = strata[key]
+	var own := Color(stone.r/core_a.r,stone.g/core_a.g,stone.b/core_a.b)
+	if key == "sand" or key == "shale_dark":
+		return (tone*own).lerp(stone,1.0-BAND_TONE)*jitter
 	var shade := (tone.r+tone.g+tone.b)/(core_a.r+core_a.g+core_a.b)
-	if posmod(index+seed,4) == 0: shade *= 0.8
 	return stone*lerpf(1.0,shade,BED_TONE)*jitter
+
+## What a bed is, by its index up the range: mostly the granite's three
+## tones, with BANDS' odds of a sand or a shale band, seeded per range.
+func _bed_kind(index: int) -> String:
+	var h := absi(hash([seed,index,"bed"])) % 1000/1000.0
+	if h < BANDS.x: return "shale_dark"
+	if h < BANDS.x+BANDS.y: return "sand"
+	return ["core_a","core_b","core_c"][posmod(index,3)]

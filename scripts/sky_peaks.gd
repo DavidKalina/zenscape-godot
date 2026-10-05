@@ -20,7 +20,8 @@ extends Node3D
 ## cells' origin, so the swaps that move the world carry the ranges along.
 ##
 ## Its faces are drawn with the plate's own ground material, laid OFF_MAP off
-## so the plate's maps read nothing on them (as SkyIslets does). The glide
+## so the plate's maps read nothing on them (as SkyIslets does), its look
+## read LOOK_SCALE times larger and its foot gone into the cloud's light. The glide
 ## reads each as a solid (`body`): giant stone, ridden only where it is no
 ## steeper than the glide can ride (SkyGlide `stone`). The haze reads their
 ## spots (`haze_spots`): a range is a landform, not scenery streamed in, so
@@ -76,10 +77,16 @@ const PINCH_JET := 1.3
 const TREE_RANGE := 650.0
 ## The haze: a range's spot reaches this far out (m) for the gentler curve.
 const HAZE_REACH := 820.0
-## The cloud wrapped round the foot: puffs, held still; and how the rock
-## frays into the cloud (m) and goes pale over it (m).
+## The cloud wrapped round the foot: puffs, held still; how far (m) the
+## line the rock is cut at wanders up over the sea's top, and the height (m)
+## over it the rock goes into the cloud's light (reference_surface
+## `sea_fray`).
 const WRAP_STRENGTH := 0.85
-const SEA_FRAY := Vector2(7.0,45.0)
+const SEA_FRAY := Vector2(14.0,48.0)
+## The plate's look (its field's patches, its rock's strata) read this many
+## times larger on a range (reference_surface `look_scale`): the plate's
+## mountains are a few metres high, a range a few hundred.
+const LOOK_SCALE := 30.0
 
 ## The cells' origin keeper (scripts/sky_cells.gd), and the currents for the
 ## gorges' jets.
@@ -317,6 +324,7 @@ func _ground() -> Material:
 		m.set_shader_parameter("base_color",Color.WHITE)
 	m.set_shader_parameter("sea_cut",SkyPeak.SEA)
 	m.set_shader_parameter("sea_fray",SEA_FRAY)
+	m.set_shader_parameter("look_scale",LOOK_SCALE)
 	_material = m
 	return _material
 
