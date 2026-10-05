@@ -150,6 +150,18 @@ func _overview() -> void:
 	if lair != null: _focus_stack()
 	else: _frame_diorama()
 
+## The overview's default look (`_frame_diorama`): its angle from straight
+## down, tilted up from the 0.82 it was so the sky world's mountains stand
+## along the top of the frame, the plate still filling it (from 0.82 the
+## frame's top looked 20 degrees under the horizon: no range showed). A
+## view the player orbits is never reframed. (scripts/world_beauty.gd
+## scores generated worlds from the old 0.82 and keeps it, so the worlds
+## it picks stay the same.)
+var overview_polar := 1.15
+## How far the overview's aim drops toward the middle of the island and its
+## rock as framed (0 none, 1 all the way).
+const RECENTRE := 0.5
+
 func _frame_diorama() -> void:
 	_auto_orbit_speed = 0.055
 	# The island's land, not the plate's grid (scripts/island_frame.gd): its
@@ -158,7 +170,7 @@ func _frame_diorama() -> void:
 	target = Vector3(middle.x,-1.0,middle.z)
 	distance = 40.0*IslandFrame.scale(_chunk_editor.data)
 	yaw = 0.35
-	polar = 0.82
+	polar = overview_polar
 	_auto_orbit = false
 	_update_camera()
 	# Overview leaves a clear strip for the tools instead of hiding the
@@ -181,11 +193,50 @@ func _frame_diorama() -> void:
 			for vertex: Vector3 in vertices:
 				if mesh == _chunk_editor.terrain and not land.has_point(Vector2(vertex.x,vertex.z)): continue
 				outline[mesh.to_global(vertex)] = true
-	for step in range(60):
-		var fits := true
+	# Seen lower (overview_polar), the plate's points off the island but in
+	# its bounds reach far down the frame: the island's own land and its
+	# rock are what is fitted, where the plate has an island.
+	var data := _chunk_editor.data
+	if data.shore_distance.size() == data.points.size() and data.shore_distance.size() > 0:
+		var island := {}
+		for i in range(data.points.size()):
+			if data.shore_distance[i] < 0.0: continue
+			var p: Vector2 = data.points[i]
+			var h: Variant = data.ground_height(p)
+			island[_chunk_editor.terrain.to_global(Vector3(p.x,float(h) if h != null else 0.0,p.y))] = true
+		if not island.is_empty():
+			for vertex: Vector3 in _chunk_editor._skirt.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]: island[_chunk_editor._skirt.to_global(vertex)] = true
+			outline = island
+	var fits := func() -> bool:
 		for corner: Vector3 in outline:
-			if not safe.has_point(camera.unproject_position(corner)): fits = false
-		if fits: break
+			if not safe.has_point(camera.unproject_position(corner)): return false
+		return true
+	var start := distance
+	for step in range(60):
+		if fits.call(): break
+		distance *= 1.04
+		_update_camera()
+	# Seen lower, the rock under the island hangs further down the frame,
+	# the land high in it: the aim drops part way to the middle of the
+	# island and its rock on screen (RECENTRE), so it fills the frame about
+	# as it did, the mountains still over it.
+	var box := Rect2()
+	var first := true
+	for corner: Vector3 in outline:
+		var at := camera.unproject_position(corner)
+		box = Rect2(at,Vector2.ZERO) if first else box.expand(at)
+		first = false
+	var per_px := 2.0*distance*tan(deg_to_rad(camera.fov)*0.5)/screen.y
+	target.y -= (box.get_center().y-safe.get_center().y)*per_px/maxf(sin(polar),0.2)*RECENTRE
+	_update_camera()
+	# Then in while it still fits (a few steps at most), so it stays the
+	# focus; out again if it no longer does.
+	for step in range(4):
+		if distance/1.04 < start/1.2 or not fits.call(): break
+		distance /= 1.04
+		_update_camera()
+	for step in range(60):
+		if fits.call(): break
 		distance *= 1.04
 		_update_camera()
 
