@@ -24,6 +24,7 @@ extends Node3D
 
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
+const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const COUNT := 70
 ## The field round the islands' slots, and the band of heights clouds sit
 ## in (metres).
@@ -66,8 +67,10 @@ func build(slots: Array) -> void:
 		var clear := true
 		for s: Vector3 in slots:
 			if Vector2(at.x,at.z).distance_to(Vector2(s.x,s.z)) < CLEAR: clear = false
-		# Nor on a mountain risen through the sea: its cloud is at its foot.
+		# Nor on a mountain risen through the sea (its cloud is at its foot),
+		# in a tower, nor in a forested isle's trees.
 		if SkyPeaks.blocks(at) or SkyTowers.blocks(at,SIZE.y): clear = false
+		if SkyForestIsles.blocks(at,40.0): clear = false
 		if clear: clouds.append(Vector4(at.x,at.y,at.z,rng.randf_range(SIZE.x,SIZE.y)))
 	_build_puffs(rng)
 
@@ -114,7 +117,7 @@ func puff_count() -> int:
 	return _puffs.multimesh.instance_count if _puffs != null else 0
 
 ## Drifting clouds thin away over these places (Vector4(x, z, 0, radius),
-## global): the sky peaks' (SkyPeaks `keep_spots`), up to four.
+## global): the sky peaks' and forested isles' (`keep_spots`), up to four.
 func keep_off(spots: Array) -> void:
 	if _material == null: return
 	var list := PackedVector4Array()

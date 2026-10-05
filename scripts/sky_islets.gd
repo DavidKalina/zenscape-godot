@@ -15,8 +15,9 @@ extends Node3D
 ## meshes are worked out on a worker (`_make`, MAKING at once), so a glide
 ## into fresh sky never stalls; only the nodes are made here (`_finish`). A cell always grows the same
 ## islet, so one flown back to is the one left. None stands on a mountain
-## range risen through the sea (scripts/sky_peaks.gd `blocks`) or in a
-## towering cumulus (scripts/sky_towers.gd `blocks`).
+## range risen through the sea (scripts/sky_peaks.gd `blocks`), in a
+## towering cumulus (scripts/sky_towers.gd `blocks`) or by a forested isle
+## (scripts/sky_forest_isles.gd).
 ##
 ## Each bobs gently on its own slow beat. The glide reads them as solids
 ## (`body`); touching down slowly on one perches the wanderer there
@@ -30,6 +31,7 @@ const FlowFalls = preload("res://scripts/flow_falls.gd")
 const WaterFlowView = preload("res://scripts/water_flow_view.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
+const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 
 ## The cells: size (m), the share holding an islet, how far its spot may sit
 ## from the cell's middle (share of the cell), and the height band (m).
@@ -210,6 +212,7 @@ func spot(cell: Vector2i) -> Variant:
 	var here: Variant = raw(cell)
 	if here != null and cells != null and not cells.spots_near(here,CLEAR).is_empty(): here = null
 	if here != null and (SkyPeaks.blocks(here) or SkyTowers.blocks(here)): here = null
+	if here != null and SkyForestIsles.blocks(here,CLEAR*0.3): here = null
 	_spots[key] = here
 	return here
 
@@ -511,7 +514,7 @@ static func _grow_trees() -> void:
 ## The pond's water: the plate's still water as the live ponds draw it
 ## (scripts/water_flow_view.gd), with everything tied to the plate's own
 ## ponds let go: the planar mirror (its plane is the plate's water level),
-## the tea map, the falls' churn and the level fade. Its sky reflection,
+## the tea map, the falls' churn, the level fade and the algae film. Its sky reflection,
 ## chop, glints and depth tint stay. Made once per sky (`reset`).
 func _pond_material() -> Material:
 	if _water != null: return _water
@@ -524,6 +527,9 @@ func _pond_material() -> Material:
 	water.set_shader_parameter("planar_levels",Vector2(-1000000.0,-1000000.0))
 	water.set_shader_parameter("tea_rect",Vector4.ZERO)
 	water.set_shader_parameter("fall_foam_count",0)
+	# The plate's algae film is drawn by world position, so out here it lay
+	# as blotches unrelated to anything floating; the sky's water is clear.
+	water.set_shader_parameter("lake_algae_amount",0.0)
 	water.set_shader_parameter("live_level",false)
 	water.set_shader_parameter("live_flow_map",false)
 	water.set_shader_parameter("flow_edge_fade",false)

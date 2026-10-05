@@ -121,7 +121,13 @@ func _publish() -> void:
 		var style: Variant = sky.get_shader_parameter("cloud_sea_style")
 		sea = Vector2(0.0 if strength == null else float(strength),0.0 if style == null else float(style))
 	var peaks: Node = islands.get("peaks") if islands != null else null
-	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],peaks.haze_spots(eye) if peaks != null else [])
+	var isles: Node = islands.get("isles") if islands != null else null
+	# The ranges' and the forested isles' spots, nearest first.
+	var spots: Array = peaks.haze_spots(eye) if peaks != null else []
+	if isles != null:
+		spots.append_array(isles.haze_spots(eye))
+		spots.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
+	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots)
 	if _veil == null: return
 	_veil.visible = vapour > 0.003
 	(_veil.material as ShaderMaterial).set_shader_parameter("amount",vapour)
