@@ -34,6 +34,8 @@ const PACE := 0.24
 ## Seconds a shot lasts; a followed creature may end its shot sooner.
 const SHOT := Vector2(16.0,26.0)
 const POLAR := Vector2(0.5,1.4)
+## Shot distances; the far one grows with an island bigger than the old
+## square (scripts/island_frame.gd `scale`).
 const DISTANCE := Vector2(3.0,90.0)
 ## The camera stays this far above the ground under it: the director plans
 ## shots with CLEARANCE to spare, the mark and the pose's lift keep LIFT_MARGIN
@@ -44,7 +46,6 @@ const LIFT_MARGIN := 2.0
 const LIFT_W := 3.0
 const LOOK_AHEAD := 0.7
 const FLOOR := 0.35
-const PLATE_REACH := Plate.HALF-0.5
 ## Yaw drift, radians per second (a full turn in 2 to 4 minutes).
 const DRIFT := Vector2(0.025,0.05)
 ## The distance breathes by this much (log) over BREATH seconds.
@@ -64,7 +65,7 @@ const LIT := ["cabin","campfire","stone_lamp"]
 const TREES := ["tree","broadleaf","layered_tree","redwood","birch","willow","juniper"]
 const FOLLOWED := {"deer":1.6,"heron":1.6,"bird":1.0,"bigfoot":2.0}
 
-const Plate = preload("res://scripts/plate.gd")
+const IslandFrame = preload("res://scripts/island_frame.gd")
 
 signal entered
 signal left
@@ -276,15 +277,17 @@ func gather_places() -> Array[Dictionary]:
 	if not summit.is_empty(): found.append(summit)
 	return found
 
-## The highest point, when it stands well above the plate around it.
+## The highest point, when it stands well above the land around it: read on
+## a grid over the island's land (scripts/island_frame.gd), not the plate.
 func _summit() -> Dictionary:
+	var area := IslandFrame.reach(editor.data,0.5,0.85)
 	var best := Vector3.ZERO
 	var total := 0.0
 	var count := 0
 	var best_y := -INF
 	for i in range(13):
 		for j in range(13):
-			var local := Vector3((i-6)/6.0*PLATE_REACH*0.85,0.0,(j-6)/6.0*PLATE_REACH*0.85)
+			var local := Vector3(lerpf(area.position.x,area.end.x,i/12.0),0.0,lerpf(area.position.y,area.end.y,j/12.0))
 			var y: Variant = inspector.ground_y(editor.terrain.to_global(local))
 			if y == null: continue
 			total += float(y)
@@ -396,8 +399,9 @@ func _follow_shot() -> Dictionary:
 	return made
 
 func _shot(kind: String, pivot: Vector3, yaw: float, rate: float, polar: Vector2, distance: Vector2) -> Dictionary:
+	var far := DISTANCE.y*maxf(1.0,IslandFrame.scale(editor.data))
 	return {"kind":kind,"t":0.0,"length":_rng.randf_range(SHOT.x,SHOT.y),"pivot":pivot,"yaw":yaw,"rate":rate*_turn_sign,
-		"polar":polar.clamp(Vector2.ONE*POLAR.x,Vector2.ONE*POLAR.y),"distance":Vector2(log(clampf(distance.x,DISTANCE.x,DISTANCE.y)),log(clampf(distance.y,DISTANCE.x,DISTANCE.y))),
+		"polar":polar.clamp(Vector2.ONE*POLAR.x,Vector2.ONE*POLAR.y),"distance":Vector2(log(clampf(distance.x,DISTANCE.x,far)),log(clampf(distance.y,DISTANCE.x,far))),
 		"fov":FOV[kind]}
 
 func _followable() -> Array[Dictionary]:
@@ -478,9 +482,9 @@ func mark_at(made: Dictionary, t: float) -> Array:
 	var view := Vector3(float(made.yaw)+float(made.rate)*t,lerpf(polar.x,polar.y,e),lerpf(distance.x,distance.y,e)+BREATH*sin(t*TAU/BREATH_TIME))
 	return [made.pivot,view]
 
+## Whether a point is over the island's land (its bounds, 0.5 m in).
 func _on_plate(point: Vector3) -> bool:
-	var local := editor.terrain.to_local(point)
-	return absf(local.x) < PLATE_REACH and absf(local.z) < PLATE_REACH
+	return IslandFrame.holds(IslandFrame.reach(editor.data,0.5),editor.terrain.to_local(point))
 
 # --- Each frame -------------------------------------------------------------------
 

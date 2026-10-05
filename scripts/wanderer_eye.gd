@@ -121,6 +121,7 @@ const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
+const IslandFrame = preload("res://scripts/island_frame.gd")
 const GlideVapour = preload("res://scripts/glide_vapour.gd")
 ## The chase view's field of view at a cruise; the camera widens it with
 ## speed (GlideCamera `fov`).
@@ -233,6 +234,8 @@ var _perch_feet := Vector3.ZERO
 var _perch_eye := EYE_HEIGHT
 ## Tree and rock crowns in the plate plane: (x, z, radius, top), terrain-local.
 var _crowns := PackedVector4Array()
+## Each island's land middle for F's landing (`_land_middle`), by land.
+var _middles := {}
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -846,19 +849,33 @@ func _advance_flight(delta: float) -> void:
 		if on_plate: _land()
 		else: _perch(islet)
 
-## Where F comes in to land: the middle of the nearest island within
-## LANDING_REACH, or INF.
+## Where F comes in to land: the middle of the nearest island's land within
+## LANDING_REACH, or INF. An island's land need not sit in the middle of its
+## plate, nor hold its own middle (scripts/island_frame.gd `middle`).
 func _landing_spot() -> Vector3:
 	var best := Vector3.INF
 	var nearest := LANDING_REACH
-	var middles: Array[Vector3] = [editor.terrain.global_position]
-	for i in range(islands.offsets.size()): middles.append(editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i))
+	var middles: Array[Vector3] = [editor.terrain.global_position+_land_middle(editor.data)]
+	for i in range(islands.offsets.size()): middles.append(editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i)+_land_middle(islands.lands[i]))
 	for m in middles:
 		var d := Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
 		if d < nearest:
 			nearest = d
 			best = m
 	return best
+
+## The offset of `land`'s middle from its plate's, level; none for a land
+## still baking. Kept per land and outline: a ring search is not per frame.
+func _land_middle(land: NativeTerrainData) -> Vector3:
+	if land == null: return Vector3.ZERO
+	var kept: Array = _middles.get(land.get_instance_id(),[])
+	var bounds := land.land_rect()
+	if kept.is_empty() or kept[0] != bounds:
+		var at := IslandFrame.middle(land)
+		kept = [bounds,Vector3(at.x,0.0,at.y)]
+		if _middles.size() > 32: _middles.clear()
+		_middles[land.get_instance_id()] = kept
+	return kept[1]
 
 ## Claims an island (SkyIslands `claim`); once the plate is its land, the
 ## world has shifted, and everything that flies shifts with it.

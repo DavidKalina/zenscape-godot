@@ -482,6 +482,10 @@ func _reset_camera(reference_pose := false) -> void:
 			framing_nodes.append_array(_chunk_editor.content.get_children())
 			framing_nodes.append_array(_chunk_editor.falls.get_children())
 			framing_nodes.append_array(_chunk_editor.landmarks.find_children("*","MeshInstance3D",true,false))
+		# The ground's mesh keeps every plate point, the ones off the island
+		# too: only those on its land (scripts/island_frame.gd) are framed.
+		var land := Rect2()
+		if _chunk_editor != null: land = preload("res://scripts/island_frame.gd").rect(_chunk_editor.data).grow(0.01)
 		for node in framing_nodes:
 			if node.get_meta("source_kind","") == "birds":
 				continue
@@ -495,6 +499,7 @@ func _reset_camera(reference_pose := false) -> void:
 				for surface in range(node.mesh.get_surface_count()):
 					var vertices: PackedVector3Array = node.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
 					for vertex: Vector3 in vertices:
+						if _chunk_editor != null and node == _chunk_editor.terrain and not land.has_point(Vector2(vertex.x,vertex.z)): continue
 						points.append(global_transform.affine_inverse() * node.global_transform * vertex)
 		for point: Vector3 in points:
 			bounds = bounds.expand(point) if found else AABB(point,Vector3.ZERO)

@@ -49,10 +49,17 @@ const FOLLOW := 3.2
 const FLING := 0.35
 const FLING_DECAY := 0.22
 const POLAR := Vector2(0.22,1.45)
+## Zoom limits; the far one grows with an island bigger than the old square
+## (`_far`).
 const DISTANCE := Vector2(1.6,110.0)
 ## The camera stays this far above the ground under it.
 const CLEARANCE := 0.7
-const PLATE_REACH := Plate.HALF-0.5
+## The pivot pans over the island's land and a little past it
+## (scripts/island_frame.gd `reach`): each side PAN_INSET in, stretched by
+## PAN_STRETCH, and never less than PAN_ROOM m past the shore.
+const PAN_INSET := 0.5
+const PAN_STRETCH := 1.4
+const PAN_ROOM := 4.9
 ## Zoom per wheel notch; pinch factor exponent.
 const WHEEL := 1.12
 const PINCH := 1.3
@@ -106,7 +113,7 @@ const PULL_RETURN_W := 4.5
 const HINT := "Double-click anything to go there  ·  right-drag or swipe with two fingers to look around  ·  pinch or scroll to zoom  ·  Backspace goes back"
 const HINT_FILE := "user://camera.cfg"
 
-const Plate = preload("res://scripts/plate.gd")
+const IslandFrame = preload("res://scripts/island_frame.gd")
 
 var scene: Node3D
 var editor: NativeChunkEditor
@@ -198,6 +205,9 @@ func setup(owner_scene: Node3D) -> void:
 	turn.setup(self)
 	_hint_seen = _read_seen()
 	_build_chrome()
+	if editor != null and editor.data != null:
+		editor.data.void_changed.connect(_island_changed)
+		editor.data.state_restored.connect(func(_state: Dictionary) -> void: _island_changed())
 
 # --- Chrome ---------------------------------------------------------------------
 
@@ -604,17 +614,31 @@ func _pan_world(move: Vector3) -> Vector3:
 	_hand()
 	return _pivot_goal-before
 
+## A point kept over the island: its land and a little past its shore.
 func _on_plate(point: Vector3) -> Vector3:
 	var local := editor.terrain.to_local(point)
-	local.x = clampf(local.x,-PLATE_REACH*1.4,PLATE_REACH*1.4)
-	local.z = clampf(local.z,-PLATE_REACH*1.4,PLATE_REACH*1.4)
+	local = IslandFrame.clamp_local(local,IslandFrame.reach(editor.data,PAN_INSET,PAN_STRETCH,PAN_ROOM))
 	return editor.terrain.to_global(local)
+
+## The farthest zoom: DISTANCE's, or more for an island bigger than the old
+## square.
+func _far() -> float:
+	return DISTANCE.y*maxf(1.0,IslandFrame.scale(editor.data if editor != null else null))
+
+## The island's outline changed (a new world, a claim, an undo): a pivot
+## left off its new reach glides back over it.
+func _island_changed() -> void:
+	if not live: return
+	var held := _on_plate(_pivot_goal)
+	if held.is_equal_approx(_pivot_goal): return
+	_pivot_goal = held
+	_w_pivot = GLIDE
 
 ## Zoom by a factor (above 1 is out) toward what is under the pointer; a
 ## followed creature stays the pivot.
 func zoom_at(point: Vector2, factor: float) -> void:
 	var old := exp(_view_goal.z)
-	var high := maxf(DISTANCE.y,old)
+	var high := maxf(_far(),old)
 	var goal := clampf(old*factor,DISTANCE.x,high)
 	if is_equal_approx(goal,old): return
 	_used.zoom = true
@@ -630,7 +654,7 @@ func zoom_at(point: Vector2, factor: float) -> void:
 ## Glide to a pose; any input takes over from wherever the glide has got to.
 func glide_to(pivot: Vector3, yaw: float, polar: float, distance: float) -> void:
 	_pivot_goal = pivot
-	_view_goal = Vector3(_view.x+angle_difference(_view.x,yaw),clampf(polar,POLAR.x,POLAR.y),log(clampf(distance,DISTANCE.x,maxf(DISTANCE.y,distance))))
+	_view_goal = Vector3(_view.x+angle_difference(_view.x,yaw),clampf(polar,POLAR.x,POLAR.y),log(clampf(distance,DISTANCE.x,maxf(_far(),distance))))
 	_w_pivot = GLIDE
 	_w_view = GLIDE
 	_glide_time = 0.0

@@ -38,6 +38,7 @@ const LEVEL_POLAR := 1.5
 const LEVEL_RATE := 0.35
 const ORBIT_POLAR := Vector2(0.2,1.52)
 const GROUND_POLAR := Vector2(0.95,2.05)
+## Dolly limits; the far one grows with an island bigger than the old square.
 const DISTANCE := Vector2(2.0,120.0)
 ## Focal lengths on a full-frame 24 mm-high sensor; the scene's own 45° is
 ## about 29 mm.
@@ -53,6 +54,10 @@ const GROUND_HINT := "Ground eye  ·  drag to look  ·  right-drag or arrows to 
 const RETURN := 0.7
 
 const Plate = preload("res://scripts/plate.gd")
+const IslandFrame = preload("res://scripts/island_frame.gd")
+## The orbit's pivot pans over the island's land and a little past it, as
+## the shell's camera's does (scripts/camera_rig.gd PAN_INSET).
+const Rig = preload("res://scripts/camera_rig.gd")
 
 signal entered
 signal left
@@ -504,7 +509,7 @@ func set_ground(enabled: bool) -> void:
 	else:
 		_to_orbit_state()
 		ground = false
-		_goal.distance = clampf(maxf(_distance,14.0),DISTANCE.x,DISTANCE.y)
+		_goal.distance = clampf(maxf(_distance,14.0),DISTANCE.x,_far())
 		_goal.polar = 1.1
 		hint.text = HINT
 	hint.modulate.a = 1.0
@@ -776,9 +781,13 @@ func _pan(relative: Vector2) -> void:
 	var basis := camera.global_basis
 	var pivot: Vector3 = _goal.pivot+(-basis.x*relative.x+basis.y*relative.y)*reach
 	var local := editor.terrain.to_local(pivot)
-	local.x = clampf(local.x,-PLATE_REACH*1.4,PLATE_REACH*1.4)
-	local.z = clampf(local.z,-PLATE_REACH*1.4,PLATE_REACH*1.4)
+	local = IslandFrame.clamp_local(local,IslandFrame.reach(editor.data,Rig.PAN_INSET,Rig.PAN_STRETCH,Rig.PAN_ROOM))
 	_goal.pivot = editor.terrain.to_global(local)
+
+## The farthest dolly: DISTANCE's, or more for an island bigger than the old
+## square.
+func _far() -> float:
+	return DISTANCE.y*maxf(1.0,IslandFrame.scale(editor.data))
 
 ## Ground eye: x strafes, y walks (negative is forward), in metres.
 func _walk(move: Vector2) -> void:
@@ -790,7 +799,7 @@ func _dolly(amount: float) -> void:
 	if ground:
 		_walk(Vector2(0.0,amount*WALK_STEP))
 	else:
-		_goal.distance = clampf(_goal.distance*pow(1.12,amount),DISTANCE.x,DISTANCE.y)
+		_goal.distance = clampf(_goal.distance*pow(1.12,amount),DISTANCE.x,_far())
 
 # --- Inspect ------------------------------------------------------------------------
 
