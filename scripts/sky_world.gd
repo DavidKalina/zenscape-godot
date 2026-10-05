@@ -357,6 +357,13 @@ static func ring_on() -> bool:
 static func sea_peaks() -> float:
 	return 0.0 if ring_on() else 1.0
 
+## How much of the sky dome's painted horizon ridges to draw (shaders/
+## reference_sky.gdshader `horizon_ridges`, scripts/look_pass.gd): none
+## while the ring's real ranges stand, in the build view and the glide;
+## they showed through its notches and passes as flat grey bands.
+static func painted_ridges() -> float:
+	return 0.0 if ring_on() else 1.0
+
 static var _flags_read := false
 
 ## Reads `--no-ring` and `--no-peaks` from the command line, once, whoever
