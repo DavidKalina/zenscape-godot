@@ -74,6 +74,7 @@ func generator(data: NativeTerrainData) -> void:
 	var smallest := 1.0
 	var largest := 0.0
 	var shapes := {}
+	var banded_total := 0.0
 	for seed_value in range(1,41):
 		var mask := Outline.mask(points,ids,seed_value)
 		check(mask.size() == faces,"The outline holds a byte a face")
@@ -150,8 +151,32 @@ func generator(data: NativeTerrainData) -> void:
 				if g < 0 or mask[g] != 0: open_sides += 1
 			if open_sides >= 2: thin += 1
 		check(thin == 0,"Seed %d has no land face open on two sides (%d)" % [seed_value,thin])
+		# Sky all along the plate's rim, never less than about RIM.x of it,
+		# and the shore is the island's own shape, seldom held in by that
+		# band of sky (where it would follow the square).
+		var nearest_rim := INF
+		for f in range(faces):
+			if mask[f] != 0: continue
+			for j in range(3):
+				var p := points[ids[f*3+j]]
+				var reach := Outline.HALF-maxf(absf(p.x),absf(p.y))
+				nearest_rim = minf(nearest_rim,reach)
+		# The shore edges whose sky side is the rim's band, not the island's
+		# own shape.
+		var band: PackedByteArray = Outline._Rim.new(seed_value).faces(points,ids)
+		var shore := Outline.shore_edges(ids,mask)
+		var banded := 0
+		for k in range(0,shore.size(),3):
+			for f: int in star[shore[k]]:
+				if mask[f] != 0 and band[f] == 1 and shore[k+1] in [ids[f*3],ids[f*3+1],ids[f*3+2]]: banded += 1
+		var share_banded := float(banded)/(shore.size()/3)
+		banded_total += share_banded
+		check(nearest_rim >= 0.8,"Seed %d keeps %.2f m of sky to the plate's rim" % [seed_value,nearest_rim])
+		check(share_banded < 0.2,"Seed %d's shore is its own, not the square's (%.2f against the rim's band)" % [seed_value,share_banded])
 	check(shapes.size() == 40,"Every seed shapes its own island")
-	check(smallest < 0.5 and largest > 0.72,"Sizes vary clearly by seed (%.2f to %.2f)" % [smallest,largest])
+	print("islands %.2f to %.2f of the square; %.3f of their shores against the rim's band" % [smallest,largest,banded_total/40.0])
+	check(banded_total/40.0 < 0.04,"Shores are rarely held in by the rim's band (%.3f)" % (banded_total/40.0))
+	check(smallest < 0.5 and largest > 0.45,"Sizes vary clearly by seed (%.2f to %.2f)" % [smallest,largest])
 	check(absf(area(data,Outline.mask(points,ids,7,0.0))-Outline.AREA.x) < 0.06 and absf(area(data,Outline.mask(points,ids,7,1.0))-Outline.AREA.y) < 0.06,"An asked size gives its area")
 	# Not a circle: the shore wanders in and out round the middle.
 	var mask := Outline.mask(points,ids,11,0.5)

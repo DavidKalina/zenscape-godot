@@ -14,6 +14,9 @@ extends RefCounted
 ##   opening on the faces' middles), so no spit or neck is a triangle wide;
 ##   the plate's middle (MIDDLE) is always land: the player and the landing
 ##   spot arrive there;
+##   a band of sky along the plate's rim (RIM) is never land, a seeded
+##   width that wanders along the rim, and the shore leans in before it
+##   (RIM_SOFT), so no shore runs along the square;
 ##   only the piece holding the middle stays, and lakes of sky enclosed by
 ##   land are filled;
 ##   a face hanging on by one side goes, a notch open on one side is filled,
@@ -22,9 +25,21 @@ extends RefCounted
 
 ## The share of the square that is land, from the smallest island to the
 ## largest.
-const AREA := Vector2(0.35,0.85)
+const AREA := Vector2(0.32,0.5)
 ## Metres round the plate's middle that are always land.
 const MIDDLE := 3.0
+## The band along the plate's rim that is never land: its width (m) from
+## narrowest to widest, wandering along the rim over a wavelength (m). The
+## plate's rim stands HALF from its middle.
+const RIM := Vector2(0.9,3.2)
+const RIM_WAVE := 7.0
+const HALF := 14.0
+## The lean away from the band: share added over the last RIM_SOFT metres
+## before it, up to RIM_PUSH, measured to a square rounded by ROUND (a
+## superellipse's power) so a large island is not squared off either.
+const RIM_SOFT := 3.0
+const RIM_PUSH := 6.0
+const ROUND := 3.0
 ## The opening's reach (m): land narrower than twice this is cut away.
 const OPEN := 1.0
 ## The ellipse: its long half against its short (a range), the middle's drift
@@ -74,6 +89,9 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 		areas[f] = absf((b-a).cross(c-a))*0.5
 		shares[f] = field.share(middles[f])
 		total += areas[f]
+	var rim := _Rim.new(seed_value)
+	var near_rim := rim.faces(points,ids)
+	for f in range(faces): shares[f] = INF if near_rim[f] == 1 else shares[f]+rim.push(middles[f])
 	# The level: faces taken lowest share first until the island's area.
 	var order := range(faces)
 	order.sort_custom(func(x: int, y: int) -> bool: return shares[x] < shares[y] or (shares[x] == shares[y] and x < y))
@@ -82,7 +100,7 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 	var goal := area_for(size)*total
 	var taken := 0.0
 	for f: int in order:
-		if taken >= goal: break
+		if taken >= goal or near_rim[f] == 1: break
 		land[f] = 1
 		taken += areas[f]
 	var topology := _Topology.new(points,ids,middles)
@@ -91,7 +109,7 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 	land = topology.open(land,OPEN)
 	for f in range(faces):
 		if middles[f].length() <= MIDDLE: land[f] = 1
-	land = topology.tidy(land)
+	land = topology.tidy(land,near_rim)
 	var result := PackedByteArray()
 	result.resize(faces)
 	for f in range(faces): result[f] = 0 if land[f] == 1 else 1
@@ -208,6 +226,44 @@ class _Field:
 		for b in bays: out -= b.y*exp(-pow(angle_difference(t,b.x)/b.z,2.0))
 		return q.length()/maxf(out,0.2)
 
+## The band along the plate's rim that is never land (RIM), and the push
+## that leans the shore away from it before it gets there (RIM_SOFT), so a
+## large island's lobes are drawn in short of the band rather than cut off
+## along it.
+class _Rim:
+	var wander := FastNoiseLite.new()
+
+	func _init(seed_value: int) -> void:
+		wander.seed = hash([seed_value,"island rim"])
+		wander.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		wander.frequency = 1.0/RIM_WAVE
+
+	## The band's width (m) where it passes `p`.
+	func width(p: Vector2) -> float:
+		return lerpf(RIM.x,RIM.y,clampf(wander.get_noise_2d(p.x,p.y)*0.75+0.5,0.0,1.0))
+
+	## Metres from `p` to the plate's rim.
+	static func reach(p: Vector2) -> float:
+		return HALF-maxf(absf(p.x),absf(p.y))
+
+	## Share added at `p`: none until RIM_SOFT outside the band, rising to
+	## RIM_PUSH at its edge, the rim taken round the plate's corners (ROUND).
+	func push(p: Vector2) -> float:
+		var rounded := HALF-pow(pow(absf(p.x),ROUND)+pow(absf(p.y),ROUND),1.0/ROUND)
+		var u := clampf((width(p)+RIM_SOFT-rounded)/RIM_SOFT,0.0,1.0)
+		return RIM_PUSH*u*u
+
+	## The faces with a corner in the band: a byte a face, 1 there.
+	func faces(points: PackedVector2Array, ids: PackedInt32Array) -> PackedByteArray:
+		var inside := PackedByteArray()
+		inside.resize(points.size())
+		for i in range(points.size()): inside[i] = 1 if reach(points[i]) < width(points[i]) else 0
+		var result := PackedByteArray()
+		result.resize(ids.size()/3)
+		for f in range(result.size()):
+			result[f] = 1 if inside[ids[f*3]] == 1 or inside[ids[f*3+1]] == 1 or inside[ids[f*3+2]] == 1 else 0
+		return result
+
 ## The faces' neighbours, across an edge and within a reach, for the cleanup.
 class _Topology:
 	var points: PackedVector2Array
@@ -278,9 +334,9 @@ class _Topology:
 		return result
 
 	## One piece holding the middle, no enclosed sky, no face on one side, no
-	## one-sided notch and no two pieces meeting at a point. Repeats until
-	## nothing changes.
-	func tidy(land: PackedByteArray) -> PackedByteArray:
+	## one-sided notch and no two pieces meeting at a point, and never land on
+	## a face `kept_off` holds. Repeats until nothing changes.
+	func tidy(land: PackedByteArray, kept_off: PackedByteArray) -> PackedByteArray:
 		var count := land.size()
 		var middle := 0
 		for f in range(count):
@@ -306,7 +362,7 @@ class _Topology:
 				for g in range(count):
 					if reached[g] == 1: open_sky[g] = 1
 			for f in range(count):
-				if land[f] == 0 and open_sky[f] == 0:
+				if land[f] == 0 and open_sky[f] == 0 and kept_off[f] == 0:
 					land[f] = 1
 					changed = true
 			# Faces holding on by one side go; notches open on one side fill.
@@ -318,14 +374,20 @@ class _Topology:
 				if land[f] == 1 and sides <= 1 and f != middle:
 					land[f] = 0
 					changed = true
-				elif land[f] == 0 and sides == 3:
+				elif land[f] == 0 and sides == 3 and kept_off[f] == 0:
 					land[f] = 1
 					changed = true
-			# Two pieces of land meeting at one point: fill round it.
+			# Two pieces of land meeting at one point: fill round it, or where
+			# the rim's band is in the way, clear round it.
 			for i in range(points.size()):
 				if _fans(land,i) > 1:
+					var blocked := false
+					for f in star[i]: blocked = blocked or (land[f] == 0 and kept_off[f] == 1)
 					for f in star[i]:
-						if land[f] == 0:
+						if blocked and f != middle and land[f] == 1:
+							land[f] = 0
+							changed = true
+						elif not blocked and land[f] == 0:
 							land[f] = 1
 							changed = true
 			if not changed: break
