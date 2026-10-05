@@ -8,6 +8,8 @@ extends SceneTree
 ##   cliff: beside a face under the highest summit, looking along it;
 ##   gorge: inside the gorge at glide height, looking out of its far mouth;
 ##   base: over the flank, looking down to where it goes into the cloud;
+##   slot, fins: down a pinch's tight slot, and over its fins (if any);
+##   another: a range further off in the sky;
 ##   glider: the chase view behind the glider, heading for the gorge.
 ## The eye is held still at each spot (the glide's own stepping is paused),
 ## and the sky, the haze and the islands are advanced as the glide would.
@@ -80,7 +82,10 @@ func run() -> void:
 		push_error("no sky peak was made")
 		quit(1)
 		return
-	var b: Dictionary = islands.peaks.built.values()[0]
+	# Ranges further off too, so a scattered one stands for its still.
+	islands.peaks.advance(0.6,Vector3(-1200.0,0.0,1200.0))
+	islands.peaks.flush()
+	var b: Dictionary = islands.peaks.built["0,0"]
 	var shape: RefCounted = b.shape
 	print("PEAKS range at %s turn %.2f, top %.0f m, summits %s, %d wraps, %d spruces, %d faces" % [b.home,b.turn,shape.top,shape.summits,shape.wraps.size(),shape.trees.size(),(b.node.get_node("Body").mesh as ArrayMesh).surface_get_array_len(0)/3])
 	var shots := _shots(islands.peaks,b)
@@ -124,6 +129,21 @@ func _shots(peaks: Node3D, b: Dictionary) -> Array:
 	var fz := summit.z
 	while fz*side < SkyPeak_half() and shape.height_at(Vector2(summit.x+140.0,fz)) != null and float(shape.height_at(Vector2(summit.x+140.0,fz))) > -95.0: fz += side*4.0
 	shots.append({"label":"base","eye":g.call(Vector3(summit.x+140.0,70.0,fz+side*130.0)),"look":g.call(Vector3(summit.x+100.0,-105.0,fz-side*30.0))})
+	# Through a pinch, if the gorge has one: down the slot, and over the fins.
+	if not shape.pinch.is_empty():
+		var pz: float = shape.pinch.z
+		var top: float = shape.pinch.top
+		var from := pz+side*110.0
+		shots.append({"label":"slot","eye":g.call(Vector3(shape.gorge_x(from),top-24.0,from)),"look":g.call(Vector3(shape.gorge_x(pz),top-24.0,pz))})
+		shots.append({"label":"fins","eye":g.call(Vector3(shape.gorge_x(from),top+30.0,from)),"look":g.call(Vector3(shape.gorge_x(pz-side*60.0),top-10.0,pz-side*60.0))})
+	# Another range off in the sky, from out by the plate.
+	for key in peaks.built:
+		if key == "0,0": continue
+		var other: Dictionary = peaks.built[key]
+		var at: Vector3 = peaks.global_of(other,Vector3(0.0,120.0,0.0))
+		var to := Vector3(at.x,0.0,at.z).normalized()
+		shots.append({"label":"another","eye":Vector3(at.x,30.0,at.z)-to*1000.0,"look":at})
+		break
 	# The chase view behind the glider, heading into the gorge.
 	shots.append({"label":"glider","eye":g.call(Vector3(shape.gorge_x(side*300.0),30.0,side*300.0)),"look":g.call(Vector3(shape.gorge_x(0.0),20.0,0.0)),"chase":true,"golden":false})
 	return shots
@@ -162,6 +182,8 @@ func _hold(shot: Dictionary, hour: float, count: int) -> void:
 			view_look = eye.chase.look
 		eye.sky.advance(delta,view_eye,0.0)
 		eye.islands.advance(delta,at,glide.heading,0.0)
+		# A range let go while the eye was elsewhere is made again at once.
+		if i == 1: eye.islands.peaks.flush()
 		var o := view_eye-view_look
 		scene.target = view_look
 		scene.distance = maxf(o.length(),0.01)

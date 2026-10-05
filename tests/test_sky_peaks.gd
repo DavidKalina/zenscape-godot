@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_base()
 	_clear_of_islands()
 	_streaming()
+	_scattered()
 	_glide()
 	_haze()
 	print("PASS: sky peaks" if failures == 0 else "FAIL: sky peaks")
@@ -69,23 +70,44 @@ func _summits() -> void:
 	check(counts.size() >= 2,"Ranges vary in how many summits they have (%s)" % str(counts.keys()))
 
 ## Along the gorge's line, every point within CLEAR_HALF of it is open from
-## the glide's floor to its ceiling; at its middle the walls stand over the
-## ceiling on both sides; and both its mouths open out of the range.
+## the glide's floor to its ceiling, except through a pinch, where it is open
+## over the fins (the wide way, still most of the band) and the slot between
+## them (the tight line) is open the whole band down, and truly narrow; at
+## its middle the walls stand over the ceiling on both sides; and both its
+## mouths open out of the range.
 func _gorge() -> void:
-	for s: int in [home_seed(),SEEDS[1],SEEDS[2]]:
+	var pinched := 0
+	for s: int in [home_seed(),SEEDS[1],SEEDS[2],SEEDS[3],SEEDS[4]]:
 		var peak: RefCounted = shape(s)
 		var tightest := INF
+		var slot := INF
+		var narrow := INF
 		var z := -SkyPeak.HALF.y
 		while z <= SkyPeak.HALF.y:
 			var way: Vector2 = peak.gorge_way(z)
 			var across := Vector2(way.y,-way.x)
 			var line := Vector2(peak.gorge_x(z),z)
+			var share: float = peak.pinch_share(z)
+			var low: float = SkyPeak.GLIDE_BAND.x if share <= 0.0 else maxf(SkyPeak.GLIDE_BAND.x,float(peak.pinch.top)+2.0)
 			for k in range(-4,5):
 				var p := line+across*SkyPeak.CLEAR_HALF*float(k)/4.0
 				var h: Variant = peak.height_at(p)
-				if h != null: tightest = minf(tightest,SkyPeak.GLIDE_BAND.x-float(h))
+				if h != null: tightest = minf(tightest,low-float(h))
+			if share > 0.0:
+				for k in range(-2,3):
+					var h: Variant = peak.height_at(line+across*(SkyPeak.PINCH_HALF-3.0)*float(k)/2.0)
+					if h != null: slot = minf(slot,SkyPeak.GLIDE_BAND.x-float(h))
+			if share >= 0.999:
+				for side in [1.0,-1.0]:
+					var h: Variant = peak.height_at(line+across*side*(SkyPeak.PINCH_HALF+5.0))
+					narrow = minf(narrow,(float(h) if h != null else -INF)-SkyPeak.GLIDE_BAND.x)
 			z += 4.0
-		check(tightest > 1.0,"Seed %d: the gorge is open all the way through at glide height (%.1f m to spare)" % [s,tightest])
+		check(tightest > 1.0,"Seed %d: the gorge is open all the way through at glide height, 40 m wide (%.1f m to spare)" % [s,tightest])
+		if not peak.pinch.is_empty():
+			pinched += 1
+			check(float(peak.pinch.top) < SkyPeak.GLIDE_BAND.y-60.0,"Seed %d: over its pinch the wide way keeps most of the band (fins to %.0f m)" % [s,peak.pinch.top])
+			check(slot > 1.0,"Seed %d: the pinch's tight line is open the whole band down (%.1f m to spare)" % [s,slot])
+			check(narrow > 20.0,"Seed %d: and it is truly tight, rock %.0f m up just past it" % [s,narrow])
 		var middle := Vector2(peak.gorge_x(0.0),0.0)
 		var walls := []
 		for side in [1.0,-1.0]:
@@ -98,6 +120,7 @@ func _gorge() -> void:
 			var h: Variant = peak.height_at(Vector2(peak.gorge_x(zz),zz))
 			ends.append(h == null or float(h) < SkyPeak.SEA)
 		check(ends[0] and ends[1],"Seed %d: both mouths open out under the sea" % s)
+	check(pinched >= 1 and pinched < 5,"Some gorges have a pinch, not all (%d of 5)" % pinched)
 
 ## The faces stop only under the sea: every built cell that borders an
 ## unbuilt one, or the grid's edge, lies under the cloud sea's top.
@@ -130,6 +153,30 @@ func _base() -> void:
 		var h: Variant = peak.height_at(Vector2(v.x,v.z)+Vector2(0.01,0.01))
 		if h != null: worst = maxf(worst,absf(float(h)-v.y))
 	check(ok and faces < 160000,"The range is one surface of %d faces, coloured per face" % faces)
+	# Snow: on the high ground, none low down, steep faces left bare.
+	var white := Color(0.97,0.98,1.0)
+	arrays = peak.body_arrays([Color(0.1,0.3,0.1)],[Color(0.27,0.23,0.18)],Color(0.3,0.3,0.28),SkyPeaks.OFF_MAP,1,white)
+	vertices = arrays[Mesh.ARRAY_VERTEX]
+	colours = arrays[Mesh.ARRAY_COLOR]
+	var high := 0
+	var high_snow := 0
+	var low_snow := 0
+	var steep_snow := 0
+	var steep_high := 0
+	for k in range(0,vertices.size(),3):
+		var snowy: bool = colours[k].b > 0.8
+		var y: float = (vertices[k].y+vertices[k+1].y+vertices[k+2].y)/3.0
+		var n := (vertices[k+2]-vertices[k]).cross(vertices[k+1]-vertices[k]).normalized()
+		if y > peak.top-40.0:
+			high += 1
+			if snowy: high_snow += 1
+			if absf(n.y) < 0.3:
+				steep_high += 1
+				if snowy: steep_snow += 1
+		if y < peak.snowline-SkyPeak.SNOW_RAG-25.0*SkyPeak.SNOW_HOLLOW-SkyPeak.SNOW_LINGER*1.3-2.0 and snowy: low_snow += 1
+	check(high_snow > high/3,"Snow lies on the summits' high ground (%d of %d faces)" % [high_snow,high])
+	check(low_snow == 0,"None lies far under the snow line")
+	check(steep_snow < steep_high,"The sheerest faces up there stay bare rock (%d of %d snowed)" % [steep_snow,steep_high])
 	check(worst < 0.8,"Its faces are the heights the glide reads (worst %.2f m)" % worst)
 
 func _built(peak: RefCounted, i: int, j: int) -> bool:
@@ -208,8 +255,9 @@ func _streaming() -> void:
 	peaks.reset(cells,currents)
 	peaks.advance(1.0,Vector3.ZERO)
 	peaks.flush()
-	check(peaks.range_count() == 1,"Gliding off the plate, the range in sight of it is made (%d)" % peaks.range_count())
-	var b: Dictionary = peaks.built.values()[0]
+	check(peaks.built.has("0,0"),"Gliding off the plate, the range in sight of it is made (%d made in all)" % peaks.range_count())
+	var b: Dictionary = peaks.built["0,0"]
+	check(b.node.get_node_or_null("BodyFar") != null and (b.node.get_node("BodyFar").mesh as ArrayMesh).surface_get_array_len(0) < (b.node.get_node("Body").mesh as ArrayMesh).surface_get_array_len(0)/3,"Far off it draws a coarser body")
 	var shape_now: RefCounted = b.shape
 	check(shape_now.heights == shape(home_seed()).heights,"It is the range its spot's seed raises")
 	# Solid under its summit, open over it.
@@ -221,7 +269,7 @@ func _streaming() -> void:
 	# Its jet runs down the gorge, away from the plate, clear of the walls.
 	var jet: Dictionary = {}
 	for c: Dictionary in currents.currents:
-		if str(c.get("key","")).begins_with("peak:"): jet = c
+		if str(c.get("key","")) == "peak:0,0": jet = c
 	check(not jet.is_empty() and jet.kind == "jet" and not jet.closed,"A jet stream runs down the gorge")
 	if not jet.is_empty():
 		var points: PackedVector3Array = jet.points
@@ -250,6 +298,43 @@ func _streaming() -> void:
 	peaks.free()
 	currents.free()
 
+## Ranges scattered through the far cells: sparse, each its own height and
+## spread, far apart, with no island or islet on one, and the same one for
+## the same cell.
+func _scattered() -> void:
+	var cells := 0
+	var held: Array[Vector3] = []
+	var statures := {}
+	var spreads := {}
+	for x in range(-6,7):
+		for z in range(-6,7):
+			cells += 1
+			var cell := Vector2i(x,z)
+			var s: Variant = SkyPeaks.spot(cell)
+			if s == null: continue
+			held.append(Vector3(s.x,0.0,s.z))
+			statures[snappedf(SkyPeaks.stature_of(cell),0.01)] = true
+			spreads[snappedf(SkyPeaks.spread_of(cell),0.01)] = true
+			if SkyPeaks.stature_of(cell) < SkyPeaks.STATURE.x-0.001 or SkyPeaks.spread_of(cell) > SkyPeaks.SPREAD.y+0.001: statures[-1] = true
+	check(held.size() > 8 and held.size() < cells/2,"Ranges are scattered, sparsely (%d in %d cells)" % [held.size(),cells])
+	check(statures.size() > 4 and spreads.size() > 4 and not statures.has(-1),"Each stands its own height and spread")
+	var closest := INF
+	for i in range(held.size()):
+		for j in range(i+1,held.size()): closest = minf(closest,Vector2(held[i].x-held[j].x,held[i].z-held[j].z).length())
+	check(closest > SkyPeaks.KEEP*SkyPeaks.SPREAD.y*2.0,"No two stand close (%.0f m at the closest)" % closest)
+	var slots := [Vector3.ZERO]
+	slots.append_array(SkyIslands.OFFSETS)
+	var grid := SkyCells.new(slots)
+	var on := 0
+	for x in range(-30,31):
+		for z in range(-30,31):
+			var s: Variant = grid.spot(Vector2i(x,z))
+			if s != null and SkyPeaks.blocks(s): on += 1
+	check(on == 0,"No island turns up on any of them")
+	var cell := SkyPeaks.cell_of(held[held.size()-1])
+	var a: RefCounted = SkyPeak.make(SkyPeaks.seed_of(cell),SkyPeaks.stature_of(cell))
+	check(a.top >= 150.0 and a.top <= 350.0,"A far one's summit stands in the band too (%.0f m)" % a.top)
+
 ## The glide against the rock: dived onto a gentle ledge it skims; flown at a
 ## cliff it is turned aside, never carried up the face, never inside it.
 func _glide() -> void:
@@ -259,7 +344,7 @@ func _glide() -> void:
 	peaks.reset(SkyCells.new(slots),null)
 	peaks.advance(1.0,Vector3.ZERO)
 	peaks.flush()
-	var b: Dictionary = peaks.built.values()[0]
+	var b: Dictionary = peaks.built["0,0"]
 	var peak: RefCounted = b.shape
 	var ground := Callable(peaks,"body")
 	# A steep face: a spot over 1.6 rise per metre, flown at level, at glide
