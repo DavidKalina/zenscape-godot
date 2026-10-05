@@ -1,7 +1,9 @@
 extends Node3D
 ## The mountain ring's far skyline (scripts/sky_world.gd): every ring range
-## stood whole, at once, as coarse faces (every STRIDE-th grid point of its
-## heightfield, scripts/sky_peak.gd), so the ring stands round the world as
+## and every inner range laid out with it stood whole, at once, as coarse
+## faces (every STRIDE-th grid point of its heightfield, scripts/sky_peak.gd;
+## the low foothills and the far row every STRIDE_LOW-th), so the ring
+## stands round the world as
 ## a skyline from anywhere in it and never streams in or out. Near, a range
 ## is made in full by SkyPeaks (within its RING_BUILD), and its skyline
 ## steps aside for it (`advance`); let go again, the skyline comes back.
@@ -20,6 +22,8 @@ const SkyPeak = preload("res://scripts/sky_peak.gd")
 const SkyWorld = preload("res://scripts/sky_world.gd")
 ## The skyline's grid: every STRIDE-th point (SkyPeak STEP apart, so 16 m).
 const STRIDE := 4
+## The low foothills and the far row, coarser still (32 m).
+const STRIDE_LOW := 8
 
 ## The ranges (SkyPeaks), whose palette, material and built ranges this reads.
 var peaks: Node3D
@@ -71,12 +75,12 @@ func warm(owner: Node3D) -> void:
 		var key: String = peaks._key(cell)
 		if lines.has(key) or _making.has(key): continue
 		var out := {}
-		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),out),false,"Sky ring skyline")
+		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),STRIDE_LOW if peaks.kind_of(cell) in ["foot","far"] else STRIDE,peaks.gorge_of(cell),out),false,"Sky ring skyline")
 		_making[key] = {"task":task,"out":out,"cell":cell}
 
-static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, out: Dictionary) -> void:
-	var shape: RefCounted = SkyPeak.make(seed_value,stature)
-	out.arrays = shape.body_arrays(grass,rock,gravel,off_map,STRIDE,snow)
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, stride: int, gorge: bool, out: Dictionary) -> void:
+	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
+	out.arrays = shape.body_arrays(grass,rock,gravel,off_map,stride,snow)
 
 func _off_map() -> Vector3:
 	return (peaks.get_script() as GDScript).get_script_constant_map().OFF_MAP
@@ -124,10 +128,10 @@ func _stand(key: String) -> void:
 	if s == null: return
 	var node := Node3D.new()
 	node.name = "Skyline_%d" % line.cell.y
-	node.position = Vector3(s.x,s.y,s.z)
+	var scale: Vector3 = peaks.scale_of(line.cell)
+	node.position = Vector3(s.x,s.y+peaks.lift(scale.y),s.z)
 	node.rotation.y = s.w
-	var spread: float = peaks.spread_of(line.cell)
-	node.scale = Vector3(spread,1.0,spread)
+	node.scale = scale
 	var body := MeshInstance3D.new()
 	body.name = "Body"
 	body.mesh = SkyPeak.mesh_from(line.arrays,peaks._ground())

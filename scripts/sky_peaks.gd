@@ -27,8 +27,10 @@ extends Node3D
 ## it stays in sight further off than the islands do.
 ##
 ## The ring (scripts/sky_world.gd): with it on, the cells hold no scattered
-## ranges; the world's ranges are HOME and the ring's, laid out once for the
-## whole world. Each ring range streams in as a cell's does, keyed by its
+## ranges; the world's ranges are HOME and those laid out once for the whole
+## world (the band round its edge and the inner ranges), each scaled
+## (`scale_of`: along its crest, in height about the sea, across) and only
+## some keeping their gorge (`gorge_of`). Each streams in as a cell's does, keyed by its
 ## ring cell (`ring_cell`: a row no real cell reaches), within RING_BUILD,
 ## and far off stands as a coarse skyline (scripts/sky_ring.gd), so the ring
 ## is in sight right across the world. Nothing scattered stands outside the
@@ -59,6 +61,9 @@ const SkyRing = preload("res://scripts/sky_ring.gd")
 const RING_ROW := 1000000
 const RING_BUILD := 1800.0
 const RING_FORGET := 2200.0
+## Nothing scattered stands within INNER_CLEAR (m) of an inner range's
+## footprint (SkyWorld `box_distance`).
+const INNER_CLEAR := 120.0
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -278,8 +283,32 @@ static func stature_of(cell: Vector2i) -> float:
 	return 1.0 if cell == Vector2i.ZERO else lerpf(STATURE.x,STATURE.y,noise(cell,SALT+5))
 
 static func spread_of(cell: Vector2i) -> float:
-	if is_ring(cell): return float(_ring_range(cell).spread)
+	if is_ring(cell):
+		var s: Vector3 = _ring_range(cell).scale
+		return maxf(s.x,s.z)
 	return 1.0 if cell == Vector2i.ZERO else lerpf(SPREAD.x,SPREAD.y,noise(cell,SALT+6))
+
+## A laid range's scale (SkyWorld `layout`: along its crest, in height,
+## across), its height about the cloud sea's top; a cell's range spread
+## evenly, its height its own.
+static func scale_of(cell: Vector2i) -> Vector3:
+	if is_ring(cell): return _ring_range(cell).scale
+	var spread := spread_of(cell)
+	return Vector3(spread,1.0,spread)
+
+## Whether a range keeps its gorge: every cell's does; of the laid ones,
+## those the layout keeps (SkyWorld `layout` gorge).
+static func gorge_of(cell: Vector2i) -> bool:
+	return bool(_ring_range(cell).gorge) if is_ring(cell) else true
+
+## A laid range's kind (SkyWorld `layout`), or "" for a cell's.
+static func kind_of(cell: Vector2i) -> String:
+	return str(_ring_range(cell).kind) if is_ring(cell) else ""
+
+## How far a range scaled `height` in height stands raised (m), so its
+## heights scale about the cloud sea's top and its foot stays in the sea.
+static func lift(height: float) -> float:
+	return SkyPeak.SEA*(1.0-height)
 
 ## The ring's ranges' cells (SkyWorld `layout`), none with the ring off.
 static func ring_cells() -> Array[Vector2i]:
@@ -305,6 +334,11 @@ static func _ring_range(cell: Vector2i) -> Variant:
 static func blocks(home: Vector3, margin := 0.0) -> bool:
 	if not SkyWorld.inside(home,margin): return true
 	if not (SkyHomes.peaks or SkyHomes.stone): return false
+	# The inner ranges laid within the bounds: their whole footprint, and
+	# INNER_CLEAR past it.
+	if SkyWorld.ring_on():
+		for r: Dictionary in SkyWorld.layout().ranges:
+			if r.kind == "inner" and SkyWorld.box_distance(r,Vector2(home.x,home.z)) < INNER_CLEAR+margin: return true
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
@@ -326,11 +360,11 @@ func _start(cell: Vector2i, s: Vector4) -> void:
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out),false,"Sky peak")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell)),false,"Sky peak")
 	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
 
-static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary) -> void:
-	var shape: RefCounted = SkyPeak.make(seed_value,stature)
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true) -> void:
+	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
 	out.shape = shape
 	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,1,snow)
 	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,LOD_STRIDE,snow)
@@ -341,10 +375,10 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	var shape: RefCounted = out.shape
 	var node := Node3D.new()
 	node.name = "Peak_%d_%d" % [cell.x,cell.y]
-	node.position = Vector3(s.x,s.y,s.z)
+	var scale := scale_of(cell)
+	node.position = Vector3(s.x,s.y+lift(scale.y),s.z)
 	node.rotation.y = s.w
-	var spread := spread_of(cell)
-	node.scale = Vector3(spread,1.0,spread)
+	node.scale = scale
 	add_child(node)
 	# Near, every face; far, the coarse faces, crossfading between.
 	for far in [false,true]:
@@ -362,8 +396,8 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	if not shape.wraps.is_empty(): node.add_child(_wrap(shape))
 	if tree_parts.is_valid(): _plant(node,shape)
 	var key := _key(cell)
-	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread}
-	_jet(key)
+	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread_of(cell),"scale":scale}
+	if gorge_of(cell): _jet(key)
 
 ## The plate's ground material, cut at the cloud sea's top (reference_
 ## surface `sea_cut`): one copy a sky, made when the first range stands.
@@ -433,9 +467,9 @@ func _plant(node: Node3D, shape: RefCounted) -> void:
 		var poses := []
 		for t: Vector4 in by_variant[v]:
 			var at := Vector3(t.x,float(shape.height_at(Vector2(t.x,t.y)))-0.1,t.y)
-			# Upright and round however wide the range is spread.
-			var spread := node.scale.x
-			poses.append(Transform3D(Basis.from_scale(Vector3(1.0/spread,1.0,1.0/spread))*Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.z/tall),at))
+			# Upright and round however the range is scaled.
+			var spread := node.scale
+			poses.append(Transform3D(Basis.from_scale(Vector3(1.0/spread.x,1.0/spread.y,1.0/spread.z))*Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.z/tall),at))
 		for part in range(2):
 			var batch := MultiMeshInstance3D.new()
 			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
@@ -462,10 +496,11 @@ func _jet(key: String) -> void:
 	var shape: RefCounted = b.shape
 	var points := PackedVector3Array()
 	for p: Vector3 in shape.gorge_line(JET_Y,96): points.append(global_of(b,Vector3(p.x,shape.jet_height(p.z,JET_Y),p.z)))
-	# Downstream away from the plate; through a ring range, in toward the
-	# world's middle, so a gorge brings a glide back in, never out.
+	# Downstream away from the plate; through a range of the band, in toward
+	# the world's middle, so a gorge brings a glide back in, never out.
 	var away := points[0].distance_squared_to(cells.origin) > points[points.size()-1].distance_squared_to(cells.origin)
-	if away != is_ring(b.cell): points.reverse()
+	var inward := kind_of(b.cell) != "" and SkyWorld.in_band(kind_of(b.cell))
+	if away != inward: points.reverse()
 	# Strongest where it threads a pinch's slot.
 	currents.add_jet(points,_jet_key(key),SkyCurrentsScript.JET*(PINCH_JET if not shape.pinch.is_empty() else 1.0))
 
@@ -476,13 +511,13 @@ func _jet_key(key: String) -> String:
 
 ## A point in a range's own frame from a global one, and back.
 func local_of(b: Dictionary, point: Vector3) -> Vector3:
-	var at := (point-position-(b.home as Vector3)).rotated(Vector3.UP,-float(b.turn))
-	var spread: float = b.get("spread",1.0)
-	return Vector3(at.x/spread,at.y,at.z/spread)
+	var scale: Vector3 = b.get("scale",Vector3.ONE)
+	var at := (point-position-(b.home as Vector3)-Vector3.UP*lift(scale.y)).rotated(Vector3.UP,-float(b.turn))
+	return at/scale
 
 func global_of(b: Dictionary, local: Vector3) -> Vector3:
-	var spread: float = b.get("spread",1.0)
-	return position+(b.home as Vector3)+Vector3(local.x*spread,local.y,local.z*spread).rotated(Vector3.UP,float(b.turn))
+	var scale: Vector3 = b.get("scale",Vector3.ONE)
+	return position+(b.home as Vector3)+Vector3.UP*lift(scale.y)+(local*scale).rotated(Vector3.UP,float(b.turn))
 
 ## The range under a global point as a solid, Vector2(its ground's height,
 ## its underside far under the cloud) in global metres, or null.
@@ -494,8 +529,9 @@ func body(point: Vector3) -> Variant:
 		var local := local_of(b,point)
 		var h: Variant = b.shape.height_at(Vector2(local.x,local.z))
 		if h == null: continue
-		var y := position.y+float(b.home.y)
-		if found == null or float(h)+y > (found as Vector2).x: found = Vector2(float(h)+y,SkyPeak.BOTTOM+y)
+		var scale: Vector3 = b.get("scale",Vector3.ONE)
+		var y := position.y+float(b.home.y)+lift(scale.y)
+		if found == null or float(h)*scale.y+y > (found as Vector2).x: found = Vector2(float(h)*scale.y+y,SkyPeak.BOTTOM*scale.y+y)
 	if found != null: return found
 	for kind in kinds:
 		var b: Variant = kind.body(point)
@@ -518,8 +554,8 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 	var out := []
 	for key in built:
 		var b: Dictionary = built[key]
-		# The ring's take the ring's own haze (SkyWorld HAZE_REACH).
-		if is_ring(b.cell): continue
+		# The band's take the band's own haze (SkyWorld HAZE_REACH).
+		if is_ring(b.cell) and SkyWorld.in_band(kind_of(b.cell)): continue
 		var at := position+(b.home as Vector3)
 		out.append(Vector4(at.x,at.z,HAZE_REACH*float(b.get("spread",1.0)),1.0))
 	for kind in kinds: out.append_array(kind.haze_spots())

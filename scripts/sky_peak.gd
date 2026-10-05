@@ -244,11 +244,38 @@ var _peaks: Array = []
 
 ## The range for `seed_value` (a hash of its spot).
 ## `stature` (at most 1) brings its summits down, never its shoulder.
-static func make(seed_value: int, stature := 1.0) -> RefCounted:
+static func make(seed_value: int, stature := 1.0, gorge_cut := true) -> RefCounted:
 	var peak: RefCounted = new()
 	peak.stature = stature
+	peak.cut = gorge_cut
 	peak._shape(seed_value)
 	return peak
+
+# --- Ring hooks (scripts/sky_world.gd, sky/world-ring) -----------------------------
+## `cut` false leaves the gorge uncut (`make`'s `gorge_cut`): the ring keeps
+## only a few gorges through it.
+var cut := true
+
+## Where the planned crest stands over `above` m (the range's own x, before
+## the erosion and the crest's notches): Vector2(lowest x, highest x), or
+## Vector2.ZERO if nowhere; from the plan alone, so cheap. The ring lays its
+## ranges end to end by it.
+static func crest_span(seed_value: int, stature := 1.0, above := 140.0) -> Vector2:
+	var peak: RefCounted = new()
+	peak.stature = stature
+	peak.seed = seed_value
+	peak._rng.seed = seed_value
+	peak._plan()
+	var lo := INF
+	var hi := -INF
+	var x := -HALF.x
+	while x <= HALF.x:
+		if peak.crest(x) > above:
+			lo = minf(lo,x)
+			hi = maxf(hi,x)
+		x += 8.0
+	return Vector2(lo,hi) if lo <= hi else Vector2.ZERO
+# --- End of ring hooks ---------------------------------------------------------------
 
 func _shape(seed_value: int) -> void:
 	seed = seed_value
@@ -522,7 +549,7 @@ func _coarse() -> Dictionary:
 		for i in range(n):
 			var p := corner+Vector2(i,j)*cell
 			var d := gorge_distance(p)
-			base[j*n+i] = minf(base[j*n+i],gorge_face(signf(d)*maxf(0.0,absf(d)-GORGE_ROUGH),p.y,ribs))
+			if cut: base[j*n+i] = minf(base[j*n+i],gorge_face(signf(d)*maxf(0.0,absf(d)-GORGE_ROUGH),p.y,ribs))
 	# The plate's erosion, in plate units: this grid's cell is the plate's.
 	var scale := cell/PLATE_CELL
 	var plate := PackedFloat64Array()
@@ -633,13 +660,13 @@ func _carve() -> void:
 		for i in range(nx):
 			var c := j*nx+i
 			var p := point(i,j)
-			heights[c] = minf(heights[c],gorge_face(gorge_distance(p),p.y,ribs))
+			if cut: heights[c] = minf(heights[c],gorge_face(gorge_distance(p),p.y,ribs))
 			peak = maxf(peak,heights[c])
 	if peak > MOST:
 		var k := (MOST-BASE)/(peak-BASE)
 		for c in range(nx*nz):
 			heights[c] = BASE+(heights[c]-BASE)*k
-	_pinch(ribs)
+	if cut: _pinch(ribs)
 
 ## Some gorges narrow: for a stretch, two fins of rock jut in from the walls
 ## up to `pinch.top`, leaving a slot PINCH_HALF*2 m wide down the middle (the
@@ -765,7 +792,7 @@ func _wrap() -> void:
 		var at := p+down_way*size*0.35
 		wraps.append(Vector4(at.x,SEA+rng.randf_range(-4.0,6.0)+size*rng.randf_range(0.0,0.3),at.y,size))
 	# Along the gorge's floor, where its walls stand over the sea.
-	var z := -HALF.y
+	var z := -HALF.y if cut else HALF.y
 	while z < HALF.y:
 		var p := Vector2(gorge_x(z),z)
 		var wall: Variant = height_at(p+Vector2(GORGE_HALF*3.0,0.0))
@@ -787,7 +814,7 @@ func _plant() -> void:
 		while x < HALF.x-TREE_STEP:
 			var p := Vector2(x,z)+Vector2(rng.randf_range(-0.45,0.45),rng.randf_range(-0.45,0.45))*TREE_STEP
 			x += TREE_STEP
-			if stands.get_noise_2d(p.x,p.y) < TREE_PATCH or absf(gorge_distance(p)) < GORGE_HALF*2.5: continue
+			if stands.get_noise_2d(p.x,p.y) < TREE_PATCH or (cut and absf(gorge_distance(p)) < GORGE_HALF*2.5): continue
 			var h: Variant = height_at(p)
 			if h == null or float(h) < TREE_BAND.x or float(h) > minf(TREE_BAND.y,snowline-SNOW_LINGER): continue
 			var c := cell_of(p)

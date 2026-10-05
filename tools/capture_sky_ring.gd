@@ -8,7 +8,9 @@ extends SceneTree
 ##   skyline-N, -E, -S, -W: from the plate at glide height, looking out each
 ##     way, the ring as a skyline in the haze;
 ##   notch: from inside, near a notch, looking out through it;
-##   approach: a kilometre in from a ring range, the full range near;
+##   valley: down the valley between an inner range and the band, at glide
+##     height; inner: an inner range from out by the plate;
+##   approach: a kilometre in from a range of the band, the full range near;
 ##   outside: from out past the ring, looking back in over it.
 ## The eye is held still at each spot (the glide's own stepping is paused),
 ## and the sky, the haze and the islands are advanced as the glide would.
@@ -96,6 +98,16 @@ func _shots() -> Array:
 	var nw := Vector3(cos(float(n.angle)),0.0,sin(float(n.angle)))
 	var nc := SkyWorld.crest(float(n.angle))
 	shots.append({"label":"notch","eye":nw*(nc-1300.0)+Vector3.UP*60.0,"look":nw*(nc+600.0)+Vector3.UP*20.0})
+	# Down the valley between an inner range and the band, at glide height,
+	# looking along it; and the inner range from out by the plate.
+	for q: Dictionary in layout.ranges:
+		if q.kind != "inner": continue
+		var out := Vector3(q.at.x,0.0,q.at.z).normalized()
+		var along := out.cross(Vector3.UP)
+		var mid: Vector3 = q.at+out*(SkyWorld.FLANK*float(q.scale.z)+420.0)
+		shots.append({"label":"valley","eye":mid-along*900.0+Vector3.UP*35.0,"look":mid+along*900.0+Vector3.UP*25.0})
+		shots.append({"label":"inner","eye":Vector3(0.0,45.0,0.0)+out*80.0,"look":q.at+Vector3.UP*60.0})
+		break
 	var r: Dictionary = layout.ranges[layout.ranges.size()/2]
 	var rw := Vector3(r.at.x,0.0,r.at.z).normalized()
 	shots.append({"label":"approach","eye":r.at-rw*1100.0+Vector3.UP*70.0,"look":r.at+Vector3.UP*150.0})
