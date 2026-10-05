@@ -81,7 +81,7 @@ In `scripts/water_flow.gd` (`PARAMS` and constants) unless noted. The native def
 | `BURST_SECONDS`, `BURST_RADIUS` | 1.2 s, 0.8 m | How a burst ball's water leaves it. |
 | `SPRING_HEAD_SECONDS`, `SPRING_SET`, `SPRING_BACK` | 10 s, 1 m, 0.03 m | How a spring ball's own water leaves it; how far down its course the spring rises at most, and how far the ground `SPRING_RADIUS` behind it must stand over it (`spring_set`). |
 | `COURSE_STEP`, `COURSE_FLAT`, `COURSE_FLAT_STEPS`, `COURSE_RIM` | 0.5 m, 0.08, 2, 2 m | A spring's course (`descent`) and where its foot is. |
-| `RILL_DEPTH`, `RILL_HALF_WIDTH`, `POOL_RIM`, `POOL_HOLLOW` | 0.3 m, 1 m, 1.5 m, 0.25 m | A spring's bed (`spring_bed`): the rill, the pool's distance from the rim, and how deep a hollow at the foot already holds the water. The pool's size is the water brush's hollow (`WaterBrush._scoop_radius`, `SCOOP_DEPTH`). |
+| `RILL_DEPTH`, `RILL_HALF_WIDTH`, `POOL_RIM`, `POOL_HOLLOW` | 0.3 m, 1 m, 1.5 m, 0.25 m | A spring's bed (`spring_bed`): the rill, the pool's distance from the rim (an island's shore, `rim_gap`; a pool that does not fit shrinks or is not worn), and how deep a hollow at the foot already holds the water. The pool's size is the water brush's hollow (`WaterBrush._scoop_radius`, `SCOOP_DEPTH`). |
 | `SPRING_BED_SECONDS` (`native_chunk_editor.gd`) | 1.2 s | How long the bed takes to wear in on screen. |
 | `THIN` (`water_flow_view.gd`) | 1.2–5 cm | Moving water this thin fades from wet ground to the stream's look (shader `live_thin`). |
 | `POOL_DEPTH`, `POOL_SPEED`, `POOL_CELLS` | 0.15 m, 0.12 m/s, 12 | What counts as standing water for life. |
