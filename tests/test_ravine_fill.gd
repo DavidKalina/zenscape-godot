@@ -5,6 +5,7 @@ extends SceneTree
 ## plate's rim keeps a sill, a notch in the rim, so it holds water to the
 ## notch instead of draining to the open side (it held ~7 m3 before).
 const Wire = preload("res://scripts/clay_tools/wire.gd")
+const Plate = preload("res://scripts/plate.gd")
 
 var failures := 0
 
@@ -125,7 +126,7 @@ func closed_ravine() -> void:
 	await take_down(flow,mid,[Vector2(-6,0),Vector2(0,0),Vector2(6,0)],"closed ravine")
 
 func open_ravine() -> void:
-	var made: Array = await ravine(Vector2(-14.6,0),Vector2(14.6,0))
+	var made: Array = await ravine(Vector2(-Plate.HALF-0.6,0),Vector2(Plate.HALF+0.6,0))
 	var data: NativeTerrainData = made[0]
 	var flow: RefCounted = made[1]
 	var mid := Vector2.ZERO

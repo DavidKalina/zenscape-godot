@@ -73,7 +73,7 @@ func _follows_the_trees() -> void:
 	check(id > 0, "A broadleaf is placed")
 	shade.finish()
 	check(shade.bakes == bakes + 1 and shade.shade_at(Vector2(3.0, 3.0)) > 0.5, "Placing a tree bakes its shade: %.2f" % shade.shade_at(Vector2(3.0, 3.0)))
-	var texel := shade.image.get_pixel(int((3.0 + 16.0) / GroundShade.TEXEL), int((3.0 + 16.0) / GroundShade.TEXEL))
+	var texel := shade.image.get_pixel(int((3.0 + GroundShade.HALF) / GroundShade.TEXEL), int((3.0 + GroundShade.HALF) / GroundShade.TEXEL))
 	check(texel.r > 0.5 and texel.g == 0.0, "The texture carries it (red %.2f, green held at 0)" % texel.r)
 	print("     bake took %.2f ms" % (shade.last_bake_usec / 1000.0))
 	bakes = shade.bakes
