@@ -7,19 +7,23 @@ extends Node3D
 ##
 ## A few times a second the flow is asked which runs of edge cells water is
 ## leaving over (`WaterFlow.spills`, ZenScapeWaterFlow::spills): each is a
-## side, a lip on the rim, a width and the flux. Spills are matched to the
-## falls standing by side and place, and each fall eases to its latest spill
-## as the waterfalls do (scripts/flow_falls.gd: HOLD, GROW, GRACE, FADE).
+## lip where it leaves, the way out of the land there, a width and the flux.
+## On the square plate the lip is on one of its four sides; on an island with
+## an outline it is on the shore, facing any way. Spills are matched to the
+## falls standing by the way they face and their place, and each fall eases
+## to its latest spill as the waterfalls do (scripts/flow_falls.gd: HOLD,
+## GROW, GRACE, FADE).
 ##
 ## Each fall is the waterfalls' strand (shaders/flow_fall.gdshader) on a
 ## course of its own:
 ## - off the lip it arcs out at the water's speed and then hugs the earth
 ##   side, standing its own thickness plus GAP off the facets (read from the
-##   earth sides' mesh along rays, `_profile`), aerating and whitening as it
-##   falls;
-## - past the block's bottom it falls free for TAIL metres (more with more
-##   water), spreading as it breaks into strands, then droplets, then
-##   nothing (the shader's `break_from`, `break_length`);
+##   earth sides' mesh along rays, `_profile`: the square's sides or an
+##   island's shore wall), aerating and whitening as it falls;
+## - past the block's bottom, or where the rock under it falls away, it
+##   falls free for TAIL metres (more with more water), spreading as it
+##   breaks into strands, then droplets, then nothing (the shader's
+##   `break_from`, `break_length`);
 ## - droplets fall from where it breaks up (GPU beads), and mist trails below
 ##   it (studies/fall_mist.gd, sinking): there is no ground to plunge into,
 ##   so no plunge foam and no ripple rings.
@@ -34,9 +38,10 @@ const DETECT := {"cell_min":0.0004,"min_flux":0.003,"gap":1,"max":8}
 const READ_SECONDS := 0.25
 ## m³/s that makes a full curtain (as the waterfalls).
 const FULL_FLUX := 0.2
-## Metres a spill's middle may move along its side between reads and stay
-## the same fall.
+## Metres a spill's lip may move between reads and stay the same fall, and
+## the least cosine between the ways it faced.
 const MATCH := 1.5
+const MATCH_TURN := 0.5
 const HOLD := 0.75
 const GROW := 1.2
 const GRACE := 0.5
@@ -61,6 +66,11 @@ const BEND_RINGS := 4
 const FACE_RINGS := 12
 ## Metres between the face's samples (`_profile`).
 const PROFILE_STEP := 0.2
+## Metres out from the lip the rays start (less where other land stands
+## nearer, across a bay), and how far behind the lip the rock may stand and
+## still be under the fall.
+const PROFILE_REACH := 3.0
+const PROFILE_BEHIND := 0.4
 const MIST := 48
 const DROPS := 40
 const FOAM := Color("f2f7f8")
@@ -75,9 +85,12 @@ var _clock := 0.0
 var _ring_mesh: ArrayMesh
 var _drop_mesh: SphereMesh
 var _drop_material: ParticleProcessMaterial
-## The earth sides as read: [mesh, placing] and their faces by side.
+## The earth sides as read: [mesh, placing], their faces facing out (their
+## front, (c-a)×(b-a), as the terrain's) and their lowest point.
 var _sides_for: Array = []
-var _side_faces: Array = [PackedVector3Array(),PackedVector3Array(),PackedVector3Array(),PackedVector3Array()]
+var _side_faces := PackedVector3Array()
+var _side_fronts := PackedVector3Array()
+var _sides_low := BOTTOM
 var _sides_serial := 0
 ## Microseconds of the last read and frame update, for probes.
 var last_read_usec := 0
@@ -126,14 +139,15 @@ func shown_count() -> int:
 		if fall.shown and float(fall.presence) > 0.0: count += 1
 	return count
 
-## What stands, for probes and films: side, lip (plate metres), flux (m³/s),
+## What stands, for probes and films: side (-1 on a shore), normal, lip
+## (plate metres), flux (m³/s),
 ## width, the drop down the block's face and in all, presence (0..1).
 func describe() -> Array:
 	var out := []
 	for fall: Dictionary in _falls:
 		if not fall.shown or fall.now.is_empty(): continue
 		var now: Dictionary = fall.now
-		out.append({"id":fall.id,"side":now.side,"lip":now.lip,"flux":now.flux,"width":float(now.half)*2.0,
+		out.append({"id":fall.id,"side":now.side,"normal":now.normal,"lip":now.lip,"flux":now.flux,"width":float(now.half)*2.0,
 			"face_drop":float(now.lip.y)-float(fall.get("bottom",BOTTOM)),"drop":float(now.lip.y)-float(fall.get("end",BOTTOM)),"presence":fall.presence})
 	return out
 
@@ -170,8 +184,9 @@ func _read(elapsed: float) -> void:
 		var best := -1
 		var nearest := MATCH
 		for k in range(_falls.size()):
-			if taken.has(k) or int(_falls[k].target.side) != int(shape.side): continue
-			var gap := absf(float(_falls[k].target.along)-float(shape.along))
+			var target: Dictionary = _falls[k].target
+			if taken.has(k) or (target.normal as Vector2).dot(shape.normal) < MATCH_TURN: continue
+			var gap := Vector2(target.lip.x-shape.lip.x,target.lip.z-shape.lip.z).length()
 			if gap < nearest:
 				nearest = gap
 				best = k
@@ -199,12 +214,10 @@ func _read(elapsed: float) -> void:
 			standing += 1
 	last_read_usec = Time.get_ticks_usec()-began
 
-## A spill as a fall's shape: its side, where along it, the lip, half width,
+## A spill as a fall's shape: its side, the way out, the lip, half width,
 ## flux, and the water's speed out and depth at the brink.
 func _shape(spill: Dictionary) -> Dictionary:
-	var side := int(spill.side)
-	var lip: Vector3 = spill.lip
-	return {"side":side,"normal":spill.normal,"along":lip.z if side < 2 else lip.x,"lip":lip,"floor":float(spill.floor),
+	return {"side":int(spill.side),"normal":spill.normal,"lip":spill.lip,"floor":float(spill.floor),
 		"half":maxf(float(spill.half),W_MIN),"flux":float(spill.flux),"speed":float(spill.speed),"depth":float(spill.depth)}
 
 ## Eases every standing fall toward its latest spill, and its presence up or
@@ -218,8 +231,9 @@ func _ease(delta: float) -> void:
 			continue
 		var now: Dictionary = fall.now
 		var target: Dictionary = fall.target
-		for key in ["along","floor","half","flux","speed","depth"]: now[key] = lerpf(now[key],target[key],k)
+		for key in ["floor","half","flux","speed","depth"]: now[key] = lerpf(now[key],target[key],k)
 		now.lip = (now.lip as Vector3).lerp(target.lip,k)
+		now.normal = (now.normal as Vector2).lerp(target.normal,k).normalized()
 		var here := float(fall.lost) <= GRACE
 		fall.presence = move_toward(fall.presence,1.0 if here else 0.0,delta/(GROW if here else FADE))
 		if not here and fall.presence <= 0.0: _drop(index)
@@ -239,9 +253,10 @@ func _drop(index: int) -> void:
 
 # --- The earth sides -----------------------------------------------------------
 
-## The earth sides' faces in the terrain's frame, by side (0 -x, 1 +x, 2 -z,
-## 3 +z), read again whenever their mesh changes (a cut rim refits them).
-## False when there are none to read.
+## The earth sides' faces in the terrain's frame that face out (a ray in
+## from outside meets those first), read again whenever their mesh changes
+## (a cut rim refits them, a new outline hangs a new shore wall). False when
+## there are none to read.
 func _read_sides() -> bool:
 	var skirt: MeshInstance3D = editor.get("_skirt") as MeshInstance3D if editor != null else null
 	var terrain: Node3D = editor.get("terrain") as Node3D if editor != null else null
@@ -251,25 +266,30 @@ func _read_sides() -> bool:
 	_sides_for = [skirt.mesh,placing]
 	_sides_serial += 1
 	var faces: PackedVector3Array = placing*skirt.mesh.get_faces()
-	for s in range(4): _side_faces[s] = PackedVector3Array()
+	_side_faces = PackedVector3Array()
+	_side_fronts = PackedVector3Array()
+	_sides_low = BOTTOM
 	for i in range(0,faces.size()-2,3):
-		var middle := (faces[i]+faces[i+1]+faces[i+2])/3.0
-		for s in range(4):
-			var out: float = [-middle.x,middle.x,-middle.z,middle.z][s]
-			if out > 13.9: _side_faces[s].append_array(PackedVector3Array([faces[i],faces[i+1],faces[i+2]]))
+		var front := (faces[i+2]-faces[i]).cross(faces[i+1]-faces[i])
+		# Floors and ceilings: a level ray never meets them.
+		if Vector2(front.x,front.z).length_squared() < 0.000001: continue
+		_side_faces.append_array(PackedVector3Array([faces[i],faces[i+1],faces[i+2]]))
+		_side_fronts.append(front)
+		_sides_low = minf(_sides_low,minf(faces[i].y,minf(faces[i+1].y,faces[i+2].y)))
 	return true
 
-## How far the earth side stands out past the rim under a fall (the most of
-## three rays across its width), every PROFILE_STEP metres down from just
-## over its lip: {"top" (y of the first sample), "out" (PackedFloat32Array,
-## -1 where no side was hit), "bottom" (the lowest y a ray hit)}.
+## How far the earth side stands out past the lip under a fall (the most of
+## three rays across its width, in along its way out), every PROFILE_STEP
+## metres down from just over its lip: {"top" (y of the first sample), "out"
+## (PackedFloat32Array, -1 where no side was hit), "bottom" (the lowest y a
+## ray hit rock under the fall)}. Rock standing more than PROFILE_BEHIND back
+## from the lip is not under it: where the wall recedes (an overhang, the
+## island's hanging underside) the fall leaves it and falls free.
 func _profile(now: Dictionary) -> Dictionary:
-	var side := int(now.side)
 	var n := Vector3(now.normal.x,0.0,now.normal.y)
-	var axis := Vector3(absf(now.normal.y),0.0,absf(now.normal.x))
+	var axis := Vector3(-n.z,0.0,n.x)
 	var lip: Vector3 = now.lip
-	var rim := lip.dot(n)
-	var along: float = now.along
+	var at := Vector3(lip.x,0.0,lip.z)
 	var half: float = now.half
 	var top := lip.y+0.1
 	var out := PackedFloat32Array()
@@ -277,31 +297,50 @@ func _profile(now: Dictionary) -> Dictionary:
 	if not _read_sides():
 		for k in range(ceili((top-BOTTOM)/PROFILE_STEP)+1): out.append(0.3)
 		return {"top":top,"out":out,"bottom":BOTTOM}
-	# Only the facets under the fall.
-	var faces: PackedVector3Array = _side_faces[side]
+	var reach := _clearance(at,n)
+	# Only the facets under the fall that face its way.
+	var faces := _side_faces
 	var near := PackedVector3Array()
 	for i in range(0,faces.size()-2,3):
+		if _side_fronts[i/3].dot(n) <= 0.0: continue
 		var low := INF
 		var high := -INF
+		var back := INF
+		var front := -INF
 		for k in range(3):
-			var a := faces[i+k].dot(axis)
+			var p := faces[i+k]-at
+			var a := p.dot(axis)
+			var d := p.dot(n)
 			low = minf(low,a)
 			high = maxf(high,a)
-		if high >= along-half-0.2 and low <= along+half+0.2: near.append_array(PackedVector3Array([faces[i],faces[i+1],faces[i+2]]))
+			back = minf(back,d)
+			front = maxf(front,d)
+		if high >= -half-0.2 and low <= half+0.2 and front > -1.0 and back < reach: near.append_array(PackedVector3Array([faces[i],faces[i+1],faces[i+2]]))
 	var lowest := INF
 	var y := top
-	while y > BOTTOM-1.5:
+	while y > minf(BOTTOM,_sides_low)-1.5:
 		var most := -1.0
 		for across in [-0.7*half,0.0,0.7*half]:
-			var from: Vector3 = n*(rim+3.0)+axis*(along+across)+Vector3.UP*y
+			var from: Vector3 = at+n*reach+axis*across+Vector3.UP*y
 			for i in range(0,near.size()-2,3):
 				var hit: Variant = Geometry3D.ray_intersects_triangle(from,-n,near[i],near[i+1],near[i+2])
-				if hit != null: most = maxf(most,Vector3(hit).dot(n)-rim)
+				if hit != null: most = maxf(most,(Vector3(hit)-at).dot(n))
 		out.append(most)
-		if most > -1.0: lowest = y
+		if most > -PROFILE_BEHIND: lowest = y
 		y -= PROFILE_STEP
 	if lowest < INF: bottom = lowest
 	return {"top":top,"out":out,"bottom":bottom}
+
+## Metres out from `at` along `n` clear of other land, up to PROFILE_REACH:
+## across a narrow bay the rays start short of the far shore's wall.
+func _clearance(at: Vector3, n: Vector3) -> float:
+	var data: NativeTerrainData = editor.get("data") as NativeTerrainData if editor != null else null
+	if data == null or data.outline.is_empty(): return PROFILE_REACH
+	var r := 0.5
+	while r <= PROFILE_REACH:
+		if data.ground_height(Vector2(at.x+n.x*r,at.z+n.z*r)) != null: return maxf(r-0.25,0.3)
+		r += 0.25
+	return PROFILE_REACH
 
 ## The side's standing out at height `y` from a profile, and at its bottom
 ## below it; 0 (the rim) above the side's top.
@@ -320,19 +359,17 @@ static func _face_at(profile: Dictionary, y: float) -> float:
 # --- The fall --------------------------------------------------------------------
 
 ## The strand's rings for a fall: off the lip at the water's speed, down the
-## earth side just off its facets, and free below the block's bottom.
+## earth side just off its facets, and free below the rock under it.
 func _rings(fall: Dictionary, presence: float, strength: float) -> Dictionary:
 	var now: Dictionary = fall.now
-	var key := [_sides_serial,snappedf(now.along,0.1),snappedf(now.half,0.1),snappedf(now.lip.y,0.05)]
+	var key := [_sides_serial,snappedf(now.lip.x,0.1),snappedf(now.lip.z,0.1),snappedf(now.normal.x,0.05),snappedf(now.normal.y,0.05),snappedf(now.half,0.1),snappedf(now.lip.y,0.05)]
 	if fall.get("profile_key") != key:
 		fall.profile_key = key
 		fall.profile = _profile(now)
 	var profile: Dictionary = fall.profile
 	var n := Vector3(now.normal.x,0.0,now.normal.y)
-	var axis := Vector3(absf(now.normal.y),0.0,absf(now.normal.x))
 	var lip: Vector3 = now.lip
-	var rim := lip.dot(n)
-	var along: float = now.along
+	var at := Vector3(lip.x,0.0,lip.z)
 	var bottom: float = profile.bottom
 	var face_drop := maxf(lip.y-bottom,0.6)
 	var tail := TAIL+TAIL_FLOW*strength
@@ -368,7 +405,7 @@ func _rings(fall: Dictionary, presence: float, strength: float) -> Dictionary:
 			var thrown := speed*sqrt(2.0*drops[r]/9.81)*(CLING+CLING_FLOW*strength)
 			if r <= last_face: standing = _face_at(profile,y)+thick[r]+GAP
 			out = maxf(standing,thrown)
-		points.append(n*(rim+out)+axis*along+Vector3.UP*y)
+		points.append(at+n*out+Vector3.UP*y)
 	var across_axis := n.cross(Vector3.UP).normalized()
 	var tangents := PackedVector3Array()
 	var outward := PackedVector3Array()

@@ -877,6 +877,26 @@ func edge_outflow() -> Dictionary:
 		total += edge_rate[c]
 	return {"sides":along,"total":total}
 
+## See ZenScapeWaterFlow::edge_leaving.
+func edge_leaving(min_rate: float) -> Dictionary:
+	var cells := PackedInt32Array()
+	var rate := PackedFloat32Array()
+	var surface := PackedFloat32Array()
+	var floor := PackedFloat32Array()
+	var brink := PackedFloat32Array()
+	var velocity := PackedVector2Array()
+	for e in range(edge_cells.size()):
+		var c := edge_cells[e]
+		var inner := edge_inner[e]
+		if edge_rate[c] <= min_rate: continue
+		cells.append(c)
+		rate.append(edge_rate[c])
+		surface.append(maxf(ground[inner]+depth[inner],ground[c]+edge_brink[c]))
+		floor.append(ground[c])
+		brink.append(edge_brink[c])
+		velocity.append(Vector2(vx[inner],vz[inner]))
+	return {"cell":cells,"rate":rate,"surface":surface,"floor":floor,"brink":brink,"velocity":velocity}
+
 ## See ZenScapeWaterFlow::spills.
 func spills(p: Dictionary) -> Array:
 	var cell_min: float = p.get("cell_min",0.0004)
