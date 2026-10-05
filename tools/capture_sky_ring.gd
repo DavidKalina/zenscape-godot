@@ -8,8 +8,17 @@ extends SceneTree
 ##   skyline-N, -E, -S, -W: from the plate at glide height, looking out each
 ##     way, the ring as a skyline in the haze;
 ##   notch: from inside, near a notch, looking out through it;
-##   valley: down the valley between an inner range and the band, at glide
-##     height; inner: an inner range from out by the plate;
+##   map: straight down over the middle, closer than top, the haze off: the
+##     ridges dividing the middle into regions, the passes through them;
+##   plate-valley: from the plate at glide height, down the plate's valley
+##     to the pass through a side arm;
+##   pass: from inside one region, at glide height, through a side arm's
+##     pass into the next;
+##   col: through the col by the range in sight of the plate, into the
+##     region behind it;
+##   ridge: beside a side arm at glide height, looking along it from the
+##     knot out to the band;
+##   knot: the knot of peaks from out by the plate;
 ##   approach: a kilometre in from a range of the band, the full range near;
 ##   outside: from out past the ring, looking back in over it.
 ## The eye is held still at each spot (the glide's own stepping is paused),
@@ -82,6 +91,7 @@ func run() -> void:
 	peaks.flush()
 	var layout := SkyWorld.layout()
 	print("RING seed %d: %d ranges, %d skylines, notches at %s deg, camera far %.0f m" % [SkyWorld.seed,layout.ranges.size(),peaks.ring.line_count(),str(layout.notches.map(func(n: Dictionary) -> int: return roundi(rad_to_deg(n.angle)))),eye.camera.far])
+	print("RING regions %s, passes %s, knot %s" % [str(layout.regions.map(func(g: Dictionary) -> String: return "%s(%.0f, %.0f)" % ["home " if g.home else "",g.at.x,g.at.z])),str(layout.passes.map(func(p: Dictionary) -> String: return "(%.0f, %.0f) %d m" % [p.at.x,p.at.z,roundi(p.open)])),str(layout.knot)])
 	for hour: float in [noon,golden]:
 		var tag := "noon" if hour == noon else "golden"
 		for shot: Dictionary in _shots():
@@ -96,6 +106,7 @@ func _shots() -> Array:
 	var shots := []
 	var layout := SkyWorld.layout()
 	shots.append({"label":"top","eye":Vector3(0.0,7600.0,1.0),"look":Vector3.ZERO,"haze":false,"golden":false,"fov":70.0})
+	shots.append({"label":"map","eye":Vector3(0.0,6000.0,1.0),"look":Vector3.ZERO,"haze":false,"golden":false,"fov":66.0})
 	# The cloud sea out to the horizon each way, where the Opal sea painted
 	# its distant peaks.
 	for d: Array in [["N",Vector3(0,0,-1)],["E",Vector3(1,0,0)],["S",Vector3(0,0,1)],["W",Vector3(-1,0,0)]]:
@@ -108,16 +119,33 @@ func _shots() -> Array:
 	var nw := Vector3(cos(float(n.angle)),0.0,sin(float(n.angle)))
 	var nc := SkyWorld.crest(float(n.angle))
 	shots.append({"label":"notch","eye":nw*(nc-1300.0)+Vector3.UP*60.0,"look":nw*(nc+600.0)+Vector3.UP*20.0})
-	# Down the valley between an inner range and the band, at glide height,
-	# looking along it; and the inner range from out by the plate.
-	for q: Dictionary in layout.ranges:
-		if q.kind != "inner": continue
-		var out := Vector3(q.at.x,0.0,q.at.z).normalized()
-		var along := out.cross(Vector3.UP)
-		var mid: Vector3 = q.at+out*(SkyWorld.FLANK*float(q.scale.z)+420.0)
-		shots.append({"label":"valley","eye":mid-along*900.0+Vector3.UP*35.0,"look":mid+along*900.0+Vector3.UP*25.0})
-		shots.append({"label":"inner","eye":Vector3(0.0,45.0,0.0)+out*80.0,"look":q.at+Vector3.UP*60.0})
-		break
+	# The dividing ridges (SkyWorld `_ridges`): the passes laid out are the
+	# side arms' first, then the outer arms', then the cols by the range in
+	# sight of the plate.
+	var passes: Array = layout.passes
+	var knot: Vector3 = layout.knot
+	if not passes.is_empty():
+		# Down the plate's valley to the first side arm's pass.
+		var p0: Dictionary = passes[0]
+		var to0: Vector3 = (p0.at as Vector3).normalized()
+		shots.append({"label":"plate-valley","eye":to0*60.0+Vector3.UP*50.0,"look":p0.at+Vector3.UP*35.0,"fov":62.0})
+		# Through the second side arm's pass from the plate's side.
+		var p1: Dictionary = passes[mini(1,passes.size()-1)]
+		var way1: Vector3 = p1.way
+		if way1.dot(-(p1.at as Vector3)) < 0.0: way1 = -way1
+		shots.append({"label":"pass","eye":p1.at+way1*850.0+Vector3.UP*55.0,"look":p1.at-way1*900.0+Vector3.UP*30.0})
+		# Through a col by the range in sight of the plate.
+		var col: Dictionary = passes[-1]
+		var wayc: Vector3 = col.way
+		if wayc.dot(-(col.at as Vector3)) < 0.0: wayc = -wayc
+		shots.append({"label":"col","eye":col.at+wayc*800.0+Vector3.UP*55.0,"look":col.at-wayc*900.0+Vector3.UP*30.0,"golden":false})
+		# Along a side arm from beside the knot, out to the band.
+		var along: Vector3 = (p0.at-knot).normalized()
+		var side := along.cross(Vector3.UP)
+		if side.dot(-knot) < 0.0: side = -side
+		shots.append({"label":"ridge","eye":knot+side*650.0-along*250.0+Vector3.UP*60.0,"look":knot+along*2200.0+side*250.0+Vector3.UP*80.0,"fov":62.0})
+		# The knot from out by the plate.
+		shots.append({"label":"knot","eye":knot.normalized()*80.0+Vector3.UP*45.0,"look":knot+Vector3.UP*120.0,"golden":false})
 	var r: Dictionary = layout.ranges[layout.ranges.size()/2]
 	var rw := Vector3(r.at.x,0.0,r.at.z).normalized()
 	shots.append({"label":"approach","eye":r.at-rw*1100.0+Vector3.UP*70.0,"look":r.at+Vector3.UP*150.0})
