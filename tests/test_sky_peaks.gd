@@ -198,6 +198,20 @@ func _base() -> void:
 	for index in range(-10,30): kinds[peak._bed_kind(index)] = kinds.get(peak._bed_kind(index),0)+1
 	var granite: int = kinds.get("core_a",0)+kinds.get("core_b",0)+kinds.get("core_c",0)
 	check(kinds.has("sand") and kinds.has("shale_dark") and granite > 20,"The rock is layered: granite beds with bands of sand and shale (%s)" % str(kinds))
+	# Not a layer cake: the beds run unevenly thick, and the ledges and the
+	# colours read the same beds (`bed_height` undoes `bed_at`).
+	var thin := INF
+	var thick := 0.0
+	var worst_back := 0.0
+	for k in range(-8,12):
+		var at := Vector2(37.0*k,-21.0*k)
+		var a: float = peak.bed_height(float(k),at)
+		var b: float = peak.bed_height(float(k)+1.0,at)
+		thin = minf(thin,b-a)
+		thick = maxf(thick,b-a)
+		worst_back = maxf(worst_back,absf(peak.bed_at(a,at)-float(k)))
+	check(thin > 0.0 and thick > thin*2.0,"The beds run unevenly thick (%.0f to %.0f m)" % [thin,thick])
+	check(worst_back < 0.001,"The ledges and the colours read the same beds")
 
 func _built(peak: RefCounted, i: int, j: int) -> bool:
 	if i < 0 or j < 0 or i >= peak.nx-1 or j >= peak.nz-1: return false
@@ -370,7 +384,8 @@ func _glide() -> void:
 	# A steep face: a spot over 1.6 rise per metre, flown at level, at glide
 	# height, straight up the slope.
 	var face := _find(peak,func(slope: float, h: float) -> bool: return slope > 2.0 and h > 10.0 and h < 70.0)
-	var ledge := _find(peak,func(slope: float, h: float) -> bool: return slope < 0.35 and h > -40.0 and h < 80.0)
+	# A ledge, not a gully's floor between steep walls: gentle all round.
+	var ledge := _find(peak,func(slope: float, h: float) -> bool: return slope < 0.35 and h > -40.0 and h < 80.0,0.7)
 	check(not face.is_empty() and not ledge.is_empty(),"The range has steep faces and gentle ledges at glide height")
 	if face.is_empty() or ledge.is_empty():
 		peaks.free()
@@ -407,7 +422,9 @@ func _glide() -> void:
 
 ## A grid point of the range where `want(slope, height)` holds, as {at,
 ## h, up (the way uphill)}.
-func _find(peak: RefCounted, want: Callable) -> Dictionary:
+## With `around` under INF, each of its eight neighbours must also rise
+## less than that.
+func _find(peak: RefCounted, want: Callable, around := INF) -> Dictionary:
 	for j in range(10,peak.nz-10,3):
 		for i in range(10,peak.nx-10,3):
 			var g: Vector2 = peak._gradient(peak.heights,i,j)
@@ -415,6 +432,11 @@ func _find(peak: RefCounted, want: Callable) -> Dictionary:
 			var p: Vector2 = peak.point(i,j)
 			# Clear of the gorge, which has its own walls.
 			if absf(peak.gorge_distance(p)) < 120.0: continue
+			var steepest := 0.0
+			if around < INF:
+				for dj in range(-1,2):
+					for di in range(-1,2): steepest = maxf(steepest,(peak._gradient(peak.heights,i+di,j+dj) as Vector2).length())
+			if steepest >= around: continue
 			if want.call(g.length(),h): return {"at":p,"h":h,"up":g.normalized()}
 	return {}
 

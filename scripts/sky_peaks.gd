@@ -87,6 +87,9 @@ const SEA_FRAY := Vector2(14.0,48.0)
 ## times larger on a range (reference_surface `look_scale`): the plate's
 ## mountains are a few metres high, a range a few hundred.
 const LOOK_SCALE := 30.0
+## How far the rock's light leans to its broad lie from each small face's
+## (reference_surface `facet_soft`).
+const FACET_SOFT := 0.45
 
 ## The cells' origin keeper (scripts/sky_cells.gd), and the currents for the
 ## gorges' jets.
@@ -325,6 +328,7 @@ func _ground() -> Material:
 	m.set_shader_parameter("sea_cut",SkyPeak.SEA)
 	m.set_shader_parameter("sea_fray",SEA_FRAY)
 	m.set_shader_parameter("look_scale",LOOK_SCALE)
+	m.set_shader_parameter("facet_soft",FACET_SOFT)
 	_material = m
 	return _material
 

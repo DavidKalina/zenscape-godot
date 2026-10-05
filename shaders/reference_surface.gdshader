@@ -180,6 +180,9 @@ uniform vec2 sea_fray = vec2(10.0, 40.0);
 // world-space strata, terrain_geology) this many times larger, so a range
 // a few hundred metres high is the plate's mountain grown, not pinstriped.
 uniform float look_scale = 1.0;
+// A sky peak's rock is lit this far toward its mesh's own (broader) normal
+// from each small face's, so its facets read as big planes, not the grid.
+uniform float facet_soft : hint_range(0.0, 1.0) = 0.0;
 const vec3 SEA_MIST_ALBEDO = vec3(0.56, 0.57, 0.6);
 // The sun's colour the cloud sea holds at any hour (as the puffs do,
 // shaders/sky_cloud_puff.gdshader), glowing in the foot's mist.
@@ -608,7 +611,7 @@ void fragment() {
 		if (dot(facet, world_normal) < 0.0) facet = -facet;
 		ground_grass = zs_ground_grassness(base_color.rgb * COLOR.rgb);
 		face_normal = facet;
-		light_normal = normalize(mix(facet, normalize(world_normal), ground_soft * ground_grass));
+		light_normal = normalize(mix(facet, normalize(world_normal), max(ground_soft * ground_grass, facet_soft)));
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	if (grass_blades || flower_heads) {
@@ -622,6 +625,7 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	if (!ground) light_normal = face_normal;
+	else if (facet_soft > 0.0) NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	if (sea_mist > 0.0) {
 		// A sky peak's foot is lit as the cloud sea's level top is, so it
 		// takes the sea's light at every hour and no facet stands out dark.

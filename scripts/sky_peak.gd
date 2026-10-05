@@ -108,9 +108,26 @@ const BRANCH_TURN := Vector2(0.5,0.95)
 ## about before it is read (m), so no line runs ruler-straight.
 const KNOB := 14.0
 const WARP := 22.0
-## The plate's erosion, in plate metres (scripts/terrain_erosion.gd).
-const ERODE := {"detail":1.8,"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterations":40,"k":0.0035,
-	"channel_area":6.0,"jitter":0.6,"max_cut":7.0,"deposit":0.45,"deposit_slope":0.35,"deposit_cap":0.12}
+## The plate's erosion, in plate metres (scripts/terrain_erosion.gd). Its
+## own ridged detail is light, the most of it laid on unevenly beforehand (`_weather`), so
+## the channels it cuts gather into couloirs of every size, not a fluting
+## evenly spaced down every face. Only flow off a catchment of channel_area
+## cells cuts, so fewer, bigger gullies merge.
+const ERODE := {"detail":1.0,"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterations":40,"k":0.004,
+	"channel_area":10.0,"jitter":0.6,"max_cut":7.0,"deposit":0.45,"deposit_slope":0.35,"deposit_cap":0.12}
+## The weathering laid on before the erosion (`_weather`), on steep ground
+## from WEATHER_STEEP (gradient) and fully by its y: broad ribs and hollows
+## (m, wavelength m) that gather the flow; ridged rills (m, wavelength m),
+## domain-warped (m); and how their strength wanders over the range
+## (wavelength m), from none to RILL_MOST of it.
+const WEATHER_STEEP := Vector2(0.35,1.2)
+const HOLLOW := 16.0
+const HOLLOW_WAVE := 150.0
+const RILL := 15.0
+const RILL_WAVE := Vector2(48.0,105.0)
+const RILL_WARP := 30.0
+const RILL_PATCH := 330.0
+const RILL_MOST := 1.4
 ## Crags: height (m) on steep ground and wavelength (m).
 const CRAG := 4.0
 const CRAG_WAVE := 34.0
@@ -123,6 +140,13 @@ const BED_SHARE := 0.6
 const BED_SHARP := 4.0
 const BED_TILT := Vector2(0.03,0.09)
 const BED_STEEP := Vector2(0.5,1.25)
+## How unevenly thick the beds run (BED_SWAY beds over BED_SWAY_RUN beds,
+## under BED_SWAY_RUN/TAU, so the count only ever climbs), and the fold
+## that bows them (m, wavelength m).
+const BED_SWAY := 0.36
+const BED_SWAY_RUN := 3.4
+const BED_FOLD := 14.0
+const BED_FOLD_WAVE := 300.0
 ## The gorge: its floor (m), half its floor's width (m), its walls' rise per
 ## metre out (lower walls, then upper), the height over the floor they ease
 ## from one to the other, and how far its line wanders (m) over what
@@ -181,12 +205,20 @@ const CALM_REACH := 3
 const LEDGE_CALM := 1.6
 ## How far a face's colour is nudged from its neighbours', and how far the
 ## beds' tones lighten and darken the rock.
-const FACE_JITTER := 0.045
-const BED_TONE := 0.8
+const FACE_JITTER := 0.025
+## The faces' normals are read over this many grid points each way.
+const NORMAL_REACH := 2
+const BED_TONE := 0.62
 ## The odds of a bed being a band of shale (x) or of sand (y), and how far
 ## such a band takes its own colour over the rock's.
 const BANDS := Vector2(0.2,0.14)
-const BAND_TONE := 0.6
+const BAND_TONE := 0.5
+## The beds' colours show from BAND_SLOPE.x (gradient) and fully on cliffs
+## by its y; a gully cut (or a hollow) GULLY_CUT m deep breaks them; their
+## edges wander BED_EDGE m.
+const BAND_SLOPE := Vector2(0.75,1.9)
+const GULLY_CUT := Vector2(3.0,11.0)
+const BED_EDGE := 7.0
 ## Spruces on the gentle ground and ledges between LOW_TREES and HIGH_TREES
 ## m: tried every TREE_STEP m, kept where the slope is under TREE_SLOPE and
 ## the stands' noise is over TREE_PATCH, at most TREE_CAP; their heights (m)
@@ -262,6 +294,8 @@ var ridges: Array = []
 
 var _rng := RandomNumberGenerator.new()
 var _calm_field := PackedFloat32Array()
+var _fold_noise: FastNoiseLite
+var _bed_phase := 0.0
 var _spine := PackedFloat32Array()
 var _peaks: Array = []
 
@@ -342,6 +376,12 @@ func _plan() -> void:
 		"phase":_rng.randf()*TAU,"wall":_rng.randf_range(GORGE_WALL.x,GORGE_WALL.y)}
 	bed = _rng.randf_range(BED.x,BED.y)
 	tilt = Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(BED_TILT.x,BED_TILT.y)
+	# The beds' uneven count from a stream of its own, so the shape's draws
+	# stand.
+	var beds_rng := RandomNumberGenerator.new()
+	beds_rng.seed = seed*67+11
+	_bed_phase = beds_rng.randf()*TAU
+	_fold_noise = _noise(53,1.0/BED_FOLD_WAVE,2,FastNoiseLite.FRACTAL_FBM)
 
 ## The fall past an outer summit `h` high that takes the crest under the
 ## sea END_RUN m on.
@@ -554,6 +594,7 @@ func _coarse() -> Dictionary:
 			var p := corner+Vector2(i,j)*cell
 			var d := gorge_distance(p)
 			base[j*n+i] = minf(base[j*n+i],gorge_face(signf(d)*maxf(0.0,absf(d)-GORGE_ROUGH),p.y,ribs))
+	base = _weather(base,n,corner,cell)
 	# The plate's erosion, in plate units: this grid's cell is the plate's.
 	var scale := cell/PLATE_CELL
 	var plate := PackedFloat64Array()
@@ -571,9 +612,43 @@ func _coarse() -> Dictionary:
 	laid.resize(n*n)
 	for c in range(n*n):
 		var d := delta[c]*scale if delta.size() == n*n else 0.0
+		# Its cuts ease off under the sea, where nothing shows and a deep
+		# one would only hole the foot.
+		if d < 0.0: d *= smoothstep(SEA-70.0,SEA+10.0,base[c])
 		out[c] = base[c]+d
 		laid[c] = d
 	return {"h":out,"laid":laid,"n":n,"corner":corner,"cell":cell}
+
+## The faces' weathering, laid on the steep ground before the erosion, so
+## it has something uneven to work: broad ribs and hollows that gather the
+## flow into the bigger couloirs, and ridged rills at two wavelengths, warped,
+## whose strength wanders from bare smooth slabs to deeply fretted rock.
+func _weather(base: PackedFloat64Array, n: int, corner: Vector2, cell: float) -> PackedFloat64Array:
+	var hollows := _noise(91,1.0/HOLLOW_WAVE,3,FastNoiseLite.FRACTAL_FBM)
+	var fine := _noise(97,1.0/RILL_WAVE.x,2,FastNoiseLite.FRACTAL_RIDGED)
+	var broad := _noise(98,1.0/RILL_WAVE.y,2,FastNoiseLite.FRACTAL_RIDGED)
+	var push := _noise(99,1.0/(RILL_WAVE.y*1.6),2,FastNoiseLite.FRACTAL_FBM)
+	var patch := _noise(101,1.0/RILL_PATCH,2,FastNoiseLite.FRACTAL_FBM)
+	var mix_wave := _noise(103,1.0/(RILL_PATCH*0.6),1,FastNoiseLite.FRACTAL_NONE)
+	var out := base.duplicate()
+	for j in range(n):
+		for i in range(n):
+			var c := j*n+i
+			var h := base[c]
+			if h < CUT-60.0: continue
+			var gx := (base[j*n+mini(i+1,n-1)]-base[j*n+maxi(i-1,0)])/(2.0*cell)
+			var gz := (base[mini(j+1,n-1)*n+i]-base[maxi(j-1,0)*n+i])/(2.0*cell)
+			# None near and under the sea, where nothing shows and a deep
+			# cut would only hole the foot.
+			var steep := smoothstep(WEATHER_STEEP.x,WEATHER_STEEP.y,Vector2(gx,gz).length())*smoothstep(SEA-20.0,SEA+40.0,h)
+			if steep <= 0.0: continue
+			var p := corner+Vector2(i,j)*cell
+			var q := p+Vector2(push.get_noise_2d(p.x,p.y),push.get_noise_2d(p.x+733.0,p.y-419.0))*RILL_WARP
+			var which := mix_wave.get_noise_2d(p.x,p.y)*0.5+0.5
+			var rill := lerpf(fine.get_noise_2d(q.x,q.y),broad.get_noise_2d(q.x,q.y),smoothstep(0.3,0.7,which))
+			var strength := RILL_MOST*smoothstep(-0.35,0.45,patch.get_noise_2d(p.x,p.y))
+			out[c] = h+steep*(HOLLOW*hollows.get_noise_2d(p.x,p.y)+RILL*strength*(rill-0.2))
+	return out
 
 ## Catmull-Rom read of a coarse grid at a point, so its cells leave no
 ## creases.
@@ -620,7 +695,6 @@ func _fine(coarse: Dictionary) -> void:
 			settled[j*nx+i] = _sample(laid,n,corner,cell,p)
 	var crag := _noise(29,1.0/CRAG_WAVE,2,FastNoiseLite.FRACTAL_RIDGED)
 	var mask := _noise(41,1.0/260.0,2,FastNoiseLite.FRACTAL_FBM)
-	var wobble := _noise(53,1.0/180.0,2,FastNoiseLite.FRACTAL_FBM)
 	var hi := -INF
 	for h in heights: hi = maxf(hi,h)
 	var out := heights.duplicate()
@@ -636,12 +710,11 @@ func _fine(coarse: Dictionary) -> void:
 			var steep := smoothstep(BED_STEEP.x,BED_STEEP.y,slope)
 			var e := clampf((h-SEA)/(hi-SEA),0.0,1.0)
 			h += CRAG*steep*(0.4+0.6*e)*(crag.get_noise_2d(p.x,p.y)-0.2)
-			# The beds: tilted, wobbling a little; stepped only on steep
-			# ground, and not everywhere.
-			var lift := tilt.dot(p)+wobble.get_noise_2d(p.x,p.y)*6.0
+			# The beds (`bed_at`): stepped only on steep ground, and not
+			# everywhere.
 			var share := BED_SHARE*steep*smoothstep(0.0,0.3,mask.get_noise_2d(p.x,p.y))
 			stepped[c] = share/BED_SHARE
-			out[c] = lerpf(h,_terrace((h+lift)/bed)*bed-lift,share)
+			out[c] = lerpf(h,bed_height(_terrace(bed_at(h,p)),p),share)
 	heights = out
 	# The flanks run down to BASE at the edge.
 	for j in range(nz):
@@ -649,6 +722,26 @@ func _fine(coarse: Dictionary) -> void:
 			var p := point(i,j)
 			var edge := minf(HALF.x-absf(p.x),HALF.y-absf(p.y))
 			heights[j*nx+i] = minf(heights[j*nx+i],BASE+edge*1.6)
+
+## Where height `y` at `p` lies among the beds, in beds from their datum:
+## its integer part the bed, the rest how far up it. The beds dip by `tilt`
+## and fold over BED_FOLD_WAVE m (BED_FOLD m), and are not all one
+## thickness: the count runs on unevenly (BED_SWAY over BED_SWAY_RUN beds),
+## so some beds are thin and some several times as thick.
+func bed_at(y: float, p: Vector2) -> float:
+	var t := (y+tilt.dot(p)+_fold().get_noise_2d(p.x,p.y)*BED_FOLD)/bed
+	return t+BED_SWAY*sin(t*TAU/BED_SWAY_RUN+_bed_phase)
+
+## The height at `p` that lies `u` beds up (`bed_at`'s inverse).
+func bed_height(u: float, p: Vector2) -> float:
+	var t := u
+	var w := TAU/BED_SWAY_RUN
+	for k in range(5): t -= (t+BED_SWAY*sin(t*w+_bed_phase)-u)/(1.0+BED_SWAY*w*cos(t*w+_bed_phase))
+	return t*bed-tilt.dot(p)-_fold().get_noise_2d(p.x,p.y)*BED_FOLD
+
+func _fold() -> FastNoiseLite:
+	if _fold_noise == null: _fold_noise = _noise(53,1.0/BED_FOLD_WAVE,2,FastNoiseLite.FRACTAL_FBM)
+	return _fold_noise
 
 ## A bed's step: flat most of the way, then a cliff (only ever lower).
 static func _terrace(x: float) -> float:
@@ -925,6 +1018,14 @@ func _hollows() -> PackedFloat32Array:
 			out[j*nx+i] = around*0.25-heights[j*nx+i]
 	return out
 
+## The rise (per metre) at a mesh grid point, over `reach` points each way.
+func _gradient_over(field: PackedFloat32Array, i: int, j: int, reach: int) -> Vector2:
+	var i0 := maxi(i-reach,0)
+	var i1 := mini(i+reach,nx-1)
+	var j0 := maxi(j-reach,0)
+	var j1 := mini(j+reach,nz-1)
+	return Vector2((field[j*nx+i1]-field[j*nx+i0])/(maxf(i1-i0,1)*STEP),(field[j1*nx+i]-field[j0*nx+i])/(maxf(j1-j0,1)*STEP))
+
 ## The rise (per metre, in x and z) at a mesh grid point.
 func _gradient(field: PackedFloat32Array, i: int, j: int) -> Vector2:
 	var l := field[j*nx+maxi(i-1,0)]
@@ -977,12 +1078,20 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*31+7
 	var fields := [_noise(67,1.0/90.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/150.0,2,FastNoiseLite.FRACTAL_FBM),_noise(79,1.0/70.0,2,FastNoiseLite.FRACTAL_FBM)]
+	# The ground's lie at each point, for the colours; and over NORMAL_REACH
+	# points each way for the light, which leans on that broader lie
+	# (reference_surface `facet_soft`) so the grid's small steps don't each
+	# catch it.
 	var normals := PackedVector3Array()
 	normals.resize(nx*nz)
+	var broad := PackedVector3Array()
+	broad.resize(nx*nz)
 	for j in range(nz):
 		for i in range(nx):
 			var g := _gradient(heights,i,j)
 			normals[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
+			g = _gradient_over(heights,i,j,NORMAL_REACH)
+			broad[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
 	var hollows := _hollows()
 	var calm := _calm()
 	var colours := _strata_colours()
@@ -1033,7 +1142,7 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 				# Godot's front faces wind clockwise seen from outside.
 				for q in [[a,t[3]],[d,id],[b,ib]]:
 					vertices.append((q[0] as Vector3)+shift)
-					normal_list.append(normals[q[1]])
+					normal_list.append(broad[q[1]])
 					colour_list.append(tone)
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
@@ -1091,9 +1200,10 @@ func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, holl
 	# range and the backdrop read as one family.
 	var grey := (stone.r+stone.g+stone.b)/3.0
 	stone = stone.lerp(Color(grey*COOL_HUE.x,grey*COOL_HUE.y,grey*COOL_HUE.z),COOL*(0.5+0.5*smoothstep(SEA,top,at.y)))
-	var lift := tilt.dot(p)
-	var phase := fposmod((at.y+lift)/bed,1.0)
-	var index := floori((at.y+lift)/bed)
+	# The beds, their edges wandering a little across each face.
+	var u := bed_at(at.y+(fields[0] as FastNoiseLite).get_noise_2d(p.x*2.3+71.0,p.y*2.3-13.0)*BED_EDGE,p)
+	var phase := fposmod(u,1.0)
+	var index := floori(u)
 	# Snow above a ragged line: lower down the hollows and gullies, higher
 	# on the wind-scoured ridges; up high it holds on steeper ground. Below
 	# the line it lingers on the beds' treads and in the deeper hollows.
@@ -1126,14 +1236,18 @@ func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, holl
 	# the islands' own sides (scripts/strata.gd): a pale sand bed or a dark
 	# shale one, in the world's rock as the granite is, so the range is
 	# layered as an island's side is, only a hundredfold.
+	# They show on the cliffs, hardly on the easier rock, and a gully's
+	# scree and fresh-cut rock run down across them.
+	var show := smoothstep(BAND_SLOPE.x,BAND_SLOPE.y,slope)
+	show *= 1.0-maxf(smoothstep(GULLY_CUT.x,GULLY_CUT.y,-laid),smoothstep(GULLY_CUT.x,GULLY_CUT.y,hollow))
 	var core_a: Color = strata.core_a
 	var key := _bed_kind(index)
 	var tone: Color = strata[key]
 	var own := Color(stone.r/core_a.r,stone.g/core_a.g,stone.b/core_a.b)
 	if key == "sand" or key == "shale_dark":
-		return (tone*own).lerp(stone,1.0-BAND_TONE)*jitter
+		return (tone*own).lerp(stone,1.0-BAND_TONE*show)*jitter
 	var shade := (tone.r+tone.g+tone.b)/(core_a.r+core_a.g+core_a.b)
-	return stone*lerpf(1.0,shade,BED_TONE)*jitter
+	return stone*lerpf(1.0,shade,BED_TONE*show)*jitter
 
 ## What a bed is, by its index up the range: mostly the granite's three
 ## tones, with BANDS' odds of a sand or a shale band, seeded per range.
