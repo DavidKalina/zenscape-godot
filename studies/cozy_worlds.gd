@@ -153,7 +153,6 @@ func _ready() -> void:
 		await warmup.warm(self)
 		print_verbose("pipeline warm-up ",warmup.last_usec)
 		warmup.queue_free()
-	if veil != null: veil.queue_free()
 	get_window().title = "ZenScape · Gentle regrowth"
 	if preload("res://scripts/chunk_atlas_controller.gd").enabled():
 		atlas = preload("res://scripts/chunk_atlas_controller.gd").new()
@@ -183,7 +182,15 @@ func _ready() -> void:
 			hand_reach.edge_spring_released.connect(edge_spring.release)
 	_build_first_steps()
 	if world_session.managing: _build_worlds_screens()
+	# The world is shown once its sky is ready (scripts/sky_reveal.gd):
+	# under the veil from the title, or played straight on (--resume).
+	if veil == null and places_ready and _sky_veil_wanted():
+		veil = preload("res://scripts/title_loading.gd").new()
+		add_child(veil)
+	if veil != null and places_ready: await hold_for_sky(veil)
 	if library_title: open_title()
+	# One gentle fade in.
+	if veil != null: veil.fade_out()
 	shell_ready = true
 
 ## The first steps' model, once the hand's reach is there. `--first-steps`
@@ -221,6 +228,36 @@ func _fill_world_menu() -> void:
 	add_world_action("Sound",func() -> void: _settings.popup_centered(Vector2i(400,0)),125)
 	_world_menu.get_popup().add_separator()
 	add_world_action("Main menu",show_menu,124)
+
+## Whether a start with no title still waits for its sky under a veil:
+## played straight on (--resume), or asked for (the "sky_veil" meta: tools).
+func _sky_veil_wanted() -> bool:
+	return has_meta("sky_veil") or (get_tree().current_scene == self and not has_meta("no_title") and "--resume" in OS.get_cmdline_user_args() and not "--no-title" in OS.get_cmdline_user_args())
+
+## The last wait for the sky (scripts/sky_reveal.gd), for the record.
+var sky_reveal: Node
+
+## Holds the world under `veil` till its sky is made and warmed; with none
+## given, puts one up only if the sky is not ready yet (a world opened from
+## the library), and fades it after.
+func hold_for_sky(veil: Node = null) -> void:
+	var islands: Node = wanderer.islands if wanderer != null else null
+	const SkyReveal = preload("res://scripts/sky_reveal.gd")
+	if not SkyReveal.wanted(islands): return
+	var own := veil == null
+	if own:
+		# Tests and probes (no title) go on without waiting.
+		var played: bool = get_tree().current_scene == self and not has_meta("no_title") and not "--no-title" in OS.get_cmdline_user_args()
+		if islands.sky_ready() or not (played or has_meta("sky_veil")): return
+		veil = preload("res://scripts/title_loading.gd").new()
+		add_child(veil)
+	if sky_reveal == null:
+		sky_reveal = SkyReveal.new()
+		sky_reveal.name = "SkyReveal"
+		add_child(sky_reveal)
+	await sky_reveal.hold(islands,camera,veil)
+	print("sky reveal: waited %.2f s for the sky (made by, msec: %s), %d ms warming it; %.2f s from launch (cache: %d read, %d made)" % [sky_reveal.waited_ms/1000.0,str(islands.ahead_times),sky_reveal.warm_ms,Time.get_ticks_msec()/1000.0,preload("res://scripts/sky_cache.gd").hits,preload("res://scripts/sky_cache.gd").misses])
+	if own: veil.fade_out()
 
 ## A test that makes the scene current can set the "no_title" meta, as --no-title.
 func _title_wanted() -> bool:

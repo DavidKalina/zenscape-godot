@@ -173,18 +173,25 @@ func _log_grass(dense: bool) -> void:
 	print(line)
 
 ## The sky's horizon ridges follow the world: its terrain seed picks the
-## skyline and its relief how tall the hills stand.
+## skyline and its relief how tall the hills stand. None while the sky
+## world's ring of real ranges stands (SkyWorld `painted_ridges`): they
+## showed through its notches and passes as flat grey bands.
 func _update_ridges(on: float) -> void:
 	var sky: ShaderMaterial = _scene._environment.sky.sky_material if _scene._environment.sky != null else null
 	if sky == null: return
 	var editor = _scene.get("_chunk_editor")
 	var settings: Dictionary = editor.data._recipe_settings if editor != null else {}
-	var state := Vector3(ridges * on, float(int(settings.get("seed", 0)) % 997), clampf(float(settings.get("relief", 1.0)), 0.5, 1.4))
+	var state := Vector3(ridge_strength(ridges * on), float(int(settings.get("seed", 0)) % 997), clampf(float(settings.get("relief", 1.0)), 0.5, 1.4))
 	if sky.get_meta("look_ridges", Vector3(-1, -1, -1)) == state: return
 	sky.set_meta("look_ridges", state)
 	sky.set_shader_parameter("horizon_ridges", state.x)
 	sky.set_shader_parameter("horizon_seed", state.y)
 	sky.set_shader_parameter("horizon_relief", state.z)
+
+## The painted ridges' strength for a look's `strength`: none with the
+## ring's real ranges standing (SkyWorld `painted_ridges`).
+static func ridge_strength(strength: float) -> float:
+	return strength * preload("res://scripts/sky_world.gd").painted_ridges()
 
 ## The cloud sea's strength on the sky (the sky objects copy it from there).
 func _update_cloud_sea(on: float) -> void:

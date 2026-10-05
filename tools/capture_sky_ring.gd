@@ -35,7 +35,9 @@ extends SceneTree
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_sky_ring.gd \
 ##     -- --no-title --out=/private/tmp/zs-ring
-## Options: --out=DIR, --only=top,notch,..., --sky-seed=N, --painted-peaks.
+## Options: --out=DIR, --only=top,notch,..., --sky-seed=N, --painted-peaks,
+## --painted-ridges (the sky dome's painted horizon ridges drawn all the
+## same, as before they went off with the ring: a before).
 ##   sea-N, -E, -S, -W: the cloud sea out to the horizon from the plate, the
 ##     Opal sea's painted peaks off with the ring (on with --painted-peaks);
 const SkyWorld = preload("res://scripts/sky_world.gd")
@@ -51,6 +53,7 @@ var golden := WorldClock.hour_for_phase(0.75-asin(clampf(GOLDEN_SUN/WorldClock.e
 var only: Array = []
 ## --painted-peaks: the Opal sea's painted peaks drawn all the same (a before).
 var painted := false
+var painted_ridges := false
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -71,6 +74,7 @@ func run() -> void:
 		if argument.begins_with("--out="): out = argument.trim_prefix("--out=")
 		elif argument.begins_with("--only="): only = Array(argument.trim_prefix("--only=").split(","))
 		elif argument == "--painted-peaks": painted = true
+		elif argument == "--painted-ridges": painted_ridges = true
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(900).timeout.connect(func() -> void: push_error("sky ring capture timed out"); quit(2))
 	root.mode = Window.MODE_WINDOWED
@@ -295,6 +299,9 @@ func _hold(shot: Dictionary, hour: float, count: int) -> void:
 		eye.sky.haze = 1.0 if shot.get("haze",true) else 0.0
 		# The sea's painted peaks back, for a before (look_pass `apply_sea_peaks`).
 		if painted: scene._environment.sky.sky_material.set_shader_parameter("sea_peaks",1.0)
+		# The painted horizon ridges back, for a before (look_pass
+		# `ridge_strength`).
+		if painted_ridges: scene._environment.sky.sky_material.set_shader_parameter("horizon_ridges",scene.look_pass.ridges if scene.get("look_pass") != null else 0.85)
 		eye.sky.advance(delta,at,0.0)
 		eye.islands.advance(delta,at,glide.heading,0.0)
 		# The ranges near the eye made in full at once: surveyed here and now

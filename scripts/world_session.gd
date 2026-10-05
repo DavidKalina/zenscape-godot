@@ -423,6 +423,9 @@ func _switch(id: String, entering: bool) -> void:
 			if FileAccess.file_exists(path): DirAccess.rename_absolute(path,path.get_basename()+"-unreadable.json")
 			await places.open_land(world.land,Library.seed_value(world.seed))
 	if not entering: return
+	# Its sky made before it is played, under a veil if it is not yet
+	# (cozy_worlds `hold_for_sky`).
+	if scene.has_method("hold_for_sky"): await scene.hold_for_sky()
 	_listen()
 	if not FileAccess.file_exists(library.save_path(id)): keep_now()
 	library.touch(id)

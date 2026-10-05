@@ -39,6 +39,15 @@ extends Node3D
 ## scattered stands outside the world's bounds, on a ridge or on one of the
 ## sea's summits (`blocks`: SkyWorld `_summits`, stood with the skyline and
 ## read as stone in `body`).
+##
+## No pop: a range is made ahead along the glide's way (`_survey`: within
+## its reach of the eye, or of where the eye will be LEAD seconds on), its
+## meshes made on the worker so standing it up is only adding nodes, one a
+## frame; it comes in under its skyline, which fades out over it (SkyRing
+## SWAP, `swap_of`), the cloud at its foot fading in with it; let go, the
+## skyline fades back in over it before it goes (`_leaving`). The ranges
+## within reach of the plate are made ahead as the world starts (`premake`,
+## under the loading screen) and kept, so a glide starts among them whole.
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## Other landforms of the land below risen through the sea, kept with the
@@ -145,6 +154,23 @@ static var _quad: QuadMesh
 var tepuis: Node3D
 ## The ring's far skyline (scripts/sky_ring.gd).
 var ring: Node3D
+## Ahead along the glide's way: a range is made within its reach of where
+## the eye will be LEAD seconds on (at most LEAD_MOST m ahead), and let go
+## only once past its reach of both.
+const LEAD := 12.0
+const LEAD_MOST := 500.0
+## The eye's way over the plate (home coordinates, m/s), and where it was.
+var _way := Vector3.ZERO
+var _last := Vector3.INF
+## Ranges made in full let go but still fading under their skylines, by
+## key: {node, at (msec)}.
+var _leaving := {}
+## Ranges within reach of the plate made ahead (`premake`) and kept, by
+## key: the worker's out ({shape, body, far}), and those being made.
+var premade := {}
+var _premaking := {}
+## Tasks making ranges ahead for a layout gone, waited for and dropped.
+var _stale: Array[int] = []
 
 func _init() -> void:
 	name = "SkyPeaks"
@@ -167,6 +193,7 @@ func _exit_tree() -> void:
 func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	clear()
 	_material = null
+	_last = Vector3.INF
 	# None stand while the ranges and the stone wonders are off (SkyHomes
 	# `peaks`, `stone`).
 	if not (SkyHomes.peaks or SkyHomes.stone):
@@ -189,13 +216,27 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 ## engine's exit.
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE: return
-	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_wait_all()
 	_making.clear()
+	for key in _premaking: WorkerThreadPool.wait_for_task_completion(_premaking[key].task)
+	_premaking.clear()
+	for task in _stale: WorkerThreadPool.wait_for_task_completion(task)
+	_stale.clear()
+
+## Waits for every range being made (a premade one, task -1, has none).
+func _wait_all() -> void:
+	for key in _making:
+		if int(_making[key].task) >= 0: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+
+func _drop_leaving() -> void:
+	for key in _leaving: (_leaving[key].node as Node3D).queue_free()
+	_leaving.clear()
 
 func clear() -> void:
 	for kind in kinds: kind.clear()
-	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_wait_all()
 	_making.clear()
+	_drop_leaving()
 	for key in built:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_jet_key(key))
@@ -212,17 +253,25 @@ func advance(delta: float, eye: Vector3) -> void:
 	if cells == null: return
 	position = cells.origin
 	tepuis.advance(delta,eye)
+	var home: Vector3 = eye-cells.origin
+	# The eye's way, steadied; a jump (a claim, a new glide) starts it over.
+	if _last != Vector3.INF and delta > 0.0 and _last.distance_to(home) < 200.0:
+		_way = _way.lerp((home-_last)/delta,clampf(delta*2.0,0.0,1.0))
+	else: _way = Vector3.ZERO
+	_last = home
 	_since += delta
 	if _since >= CHECK:
 		_since = 0.0
-		_survey(eye-cells.origin)
+		_survey(home)
 	for key in _making.keys():
 		var m: Dictionary = _making[key]
-		if not WorkerThreadPool.is_task_completed(m.task): continue
-		WorkerThreadPool.wait_for_task_completion(m.task)
+		if int(m.task) >= 0:
+			if not WorkerThreadPool.is_task_completed(m.task): continue
+			WorkerThreadPool.wait_for_task_completion(m.task)
 		_making.erase(key)
 		_finish(m.cell,m.spot,m.out)
 		break
+	_fade_leaving()
 	for kind in kinds: kind.advance(delta,eye)
 	ring.advance()
 
@@ -235,12 +284,15 @@ func overview(origin: Vector3) -> void:
 	position = origin
 	if ring.lines.is_empty() and ring._making.is_empty(): ring.warm(self)
 	ring.advance()
+	_take_premade()
 
 ## Every range made in full let go, its skyline back (the glide over: the
 ## build view stands on the skylines alone).
 func let_go() -> void:
-	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_wait_all()
 	_making.clear()
+	_drop_leaving()
+	_last = Vector3.INF
 	for key in built:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_jet_key(key))
@@ -252,36 +304,159 @@ func let_go() -> void:
 func flush() -> void:
 	for key in _making.keys():
 		var m: Dictionary = _making[key]
-		WorkerThreadPool.wait_for_task_completion(m.task)
+		if int(m.task) >= 0: WorkerThreadPool.wait_for_task_completion(m.task)
 		_finish(m.cell,m.spot,m.out)
 	_making.clear()
+	# Every swap settled: the skylines gone over the ranges made, back over
+	# those let go.
+	for key in built: built[key].at = -int(ring.SWAP*1000.0)-1
+	_drop_leaving()
 	for kind in kinds: kind.flush()
 	tepuis.flush()
 	ring.flush()
+	_fade_leaving()
 
-func _survey(home: Vector3) -> void:
-	var gone := []
+## How far a range's skyline has faded out over it (SkyRing `_show`): 0
+## shown, 1 gone; going over a range just made in full, coming back over
+## one let go.
+func swap_of(key: String) -> float:
+	var swap := 0.0
+	if built.has(key): swap = (Time.get_ticks_msec()-int(built[key].get("at",0)))/(ring.SWAP*1000.0)
+	elif _leaving.has(key): swap = 1.0-(Time.get_ticks_msec()-int(_leaving[key].at))/(ring.SWAP*1000.0)
+	return clampf(swap,0.0,1.0)
+
+## The cloud round each range's foot fades with it (`swap_of`), and a
+## range let go goes once its skyline is back over it.
+func _fade_leaving() -> void:
 	for key in built:
-		if _flat(built[key].home,home) > (build_reach(built[key].cell).y if is_ring(built[key].cell) else FORGET): gone.append(key)
-	for key in gone:
-		(built[key].node as Node3D).queue_free()
-		if currents != null: currents.drop_thermals(_jet_key(key))
-		built.erase(key)
+		var wrap: Node = (built[key].node as Node3D).get_node_or_null("Wrap")
+		if wrap != null: (wrap as GeometryInstance3D).set_instance_shader_parameter("batch_fade",swap_of(key))
+	for key in _leaving.keys():
+		var wrap: Node = (_leaving[key].node as Node3D).get_node_or_null("Wrap")
+		if wrap != null: (wrap as GeometryInstance3D).set_instance_shader_parameter("batch_fade",swap_of(key))
+		if Time.get_ticks_msec()-int(_leaving[key].at) >= ring.SWAP*1000.0:
+			(_leaving[key].node as Node3D).queue_free()
+			_leaving.erase(key)
+
+## Lets a range made in full go: out of the solids at once; its nodes stay
+## under its skyline till that is back over them (a ring range's), or go at
+## once.
+func _let_go_of(key: String) -> void:
+	var b: Dictionary = built[key]
+	if currents != null: currents.drop_thermals(_jet_key(key))
+	# Still coming in: it goes back out from as far as it had come.
+	var shown := swap_of(key)
+	built.erase(key)
+	if ring.lines.has(key) and ring.lines[key].node != null and ring.whole:
+		_leaving[key] = {"node":b.node,"at":Time.get_ticks_msec()-int((1.0-shown)*ring.SWAP*1000.0)}
+	else: (b.node as Node3D).queue_free()
+
+# --- Made ahead as the world starts ----------------------------------------------------
+
+## Sets workers making, ahead, every range within its reach of the plate's
+## home `home` (home coordinates), so a glide starts among them whole; those
+## made for a plate stood elsewhere and now out of reach are let go. None
+## with the ranges off; nothing waits on them.
+func premake(home: Vector3) -> void:
+	if not (SkyHomes.peaks or SkyHomes.stone): return
+	if SkyWorld.ring_on() and not SkyWorld.ready(): return
+	var wanted := _near(home)
+	var stamp := _stamp()
+	_take_premade()
+	for key in premade.keys():
+		if not wanted.has(key) or premade[key].stamp != stamp: premade.erase(key)
+	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
+	for key in wanted:
+		if premade.has(key) or (_premaking.has(key) and _premaking[key].out.stamp == stamp): continue
+		var cell: Vector2i = wanted[key]
+		var out := {"stamp":stamp}
+		var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell),scale_of(cell).y),false,"Sky peak ahead")
+		# One being made for another layout or palette is let finish, and
+		# dropped (`_take_premade`).
+		if _premaking.has(key): _stale.append(_premaking[key].task)
+		_premaking[key] = {"task":task,"out":out}
+
+## What a range made ahead was made for: the layout and the world's
+## palette baked into its colours. One made for another is not used.
+func _stamp() -> String:
+	return "%s|%s|%s|%s|%s" % [SkyWorld._layout_key if SkyWorld.ring_on() else "",str(_palette("grass")),str(_palette("rock")),str(_gravel()),str(_snow())]
+
+## Every range within its reach of a home point, by key: cell.
+func _near(home: Vector3) -> Dictionary:
+	var out := {}
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
 			var cell := c+Vector2i(dx,dz)
-			var key := _key(cell)
-			if built.has(key) or _making.has(key): continue
 			var s: Variant = spot(cell)
-			if s == null or Vector2(s.x-home.x,s.z-home.z).length() > BUILD: continue
-			_start(cell,s)
-	# The ring's ranges near the eye.
+			if s != null and Vector2(s.x-home.x,s.z-home.z).length() <= BUILD: out[_key(cell)] = cell
 	for cell in ring_cells():
-		var key := _key(cell)
-		if built.has(key) or _making.has(key): continue
 		var s: Vector4 = spot(cell)
-		if Vector2(s.x-home.x,s.z-home.z).length() <= build_reach(cell).x: _start(cell,s)
+		if Vector2(s.x-home.x,s.z-home.z).length() <= build_reach(cell).x: out[_key(cell)] = cell
+	return out
+
+func _take_premade() -> void:
+	for key in _premaking.keys():
+		if not WorkerThreadPool.is_task_completed(_premaking[key].task): continue
+		WorkerThreadPool.wait_for_task_completion(_premaking[key].task)
+		premade[key] = _premaking[key].out
+		_premaking.erase(key)
+	for task: int in _stale.duplicate():
+		if not WorkerThreadPool.is_task_completed(task): continue
+		WorkerThreadPool.wait_for_task_completion(task)
+		_stale.erase(task)
+
+## True once every range within reach of `home` is made ahead.
+func premade_whole(home: Vector3) -> bool:
+	return premade_progress(home) >= 1.0
+
+## The share of the ranges within reach of `home` made ahead (0 to 1).
+func premade_progress(home: Vector3) -> float:
+	_take_premade()
+	if not (SkyHomes.peaks or SkyHomes.stone): return 1.0
+	if SkyWorld.ring_on() and not SkyWorld.ready(): return 0.0
+	var wanted := _near(home)
+	if wanted.is_empty(): return 1.0
+	var n := 0
+	var stamp := _stamp()
+	for key in wanted:
+		if premade.has(key) and premade[key].stamp == stamp: n += 1
+	return float(n)/float(wanted.size())
+
+func _survey(home: Vector3) -> void:
+	# Where the eye will be: along its way, LEAD seconds on.
+	var ahead := Vector3(_way.x,0.0,_way.z)*LEAD
+	if ahead.length() > LEAD_MOST: ahead = ahead.normalized()*LEAD_MOST
+	var lead := home+ahead
+	var gone := []
+	for key in built:
+		var forget: float = build_reach(built[key].cell).y if is_ring(built[key].cell) else FORGET
+		if minf(_flat(built[key].home,home),_flat(built[key].home,lead)) > forget: gone.append(key)
+	for key in gone: _let_go_of(key)
+	# Nearest first, by the nearer of the eye and where it will be.
+	var starts := []
+	var seen := {}
+	for at: Vector3 in [home,lead]:
+		var c := cell_of(at)
+		for dx in range(-1,2):
+			for dz in range(-1,2):
+				var cell := c+Vector2i(dx,dz)
+				if seen.has(cell): continue
+				seen[cell] = true
+				var s: Variant = spot(cell)
+				if s == null: continue
+				var d := minf(Vector2(s.x-home.x,s.z-home.z).length(),Vector2(s.x-lead.x,s.z-lead.z).length())
+				if d <= BUILD: starts.append([d,cell,s])
+	# The ring's ranges near the eye or ahead of it.
+	for cell in ring_cells():
+		var s: Vector4 = spot(cell)
+		var d := minf(Vector2(s.x-home.x,s.z-home.z).length(),Vector2(s.x-lead.x,s.z-lead.z).length())
+		if d <= build_reach(cell).x: starts.append([d,cell,s])
+	starts.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for st: Array in starts:
+		var key := _key(st[1])
+		if built.has(key) or _making.has(key): continue
+		_start(st[1],st[2])
 
 # --- Where they stand ------------------------------------------------------------
 
@@ -420,19 +595,27 @@ static func noise(cell: Vector2i, salt: int) -> float:
 # --- Making one --------------------------------------------------------------------
 
 func _start(cell: Vector2i, s: Vector4) -> void:
+	# Made ahead (`premake`): stood up from the next frame, one a frame.
+	var key := _key(cell)
+	_take_premade()
+	if premade.has(key) and premade[key].stamp == _stamp():
+		_making[key] = {"task":-1,"cell":cell,"spot":s,"out":premade[key]}
+		return
 	# The erosion's native kernel, if built, is found here on the main
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
 	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell),scale_of(cell).y),false,"Sky peak")
-	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
+	_making[key] = {"task":task,"cell":cell,"spot":s,"out":out}
 
 static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true, stride := 1, height := 1.0) -> void:
 	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
 	shape.snowline = maxf(shape.snowline,SkyPeak.snow_floor(height))
 	out.shape = shape
-	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow)
-	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow)
+	# The meshes made here, so standing the range up is only adding nodes
+	# (their material given then).
+	out.body = SkyPeak.mesh_from(shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow),null)
+	out.far = SkyPeak.mesh_from(shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow),null)
 
 ## The worker's range, stood up as nodes: its faces, the cloud at its foot,
 ## and the jet down its gorge.
@@ -449,7 +632,9 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	for far in [false,true]:
 		var body := MeshInstance3D.new()
 		body.name = "BodyFar" if far else "Body"
-		body.mesh = SkyPeak.mesh_from(out.far if far else out.body,_ground())
+		var mesh: ArrayMesh = out.far if far else out.body
+		mesh.surface_set_material(0,_ground())
+		body.mesh = mesh
 		body.position = -OFF_MAP
 		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if far: body.visibility_range_begin = LOD_NEAR
@@ -463,7 +648,15 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	if not shape.wraps.is_empty(): node.add_child(_wrap(shape))
 	if tree_parts.is_valid(): _plant(node,shape)
 	var key := _key(cell)
-	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread_of(cell),"scale":scale}
+	# One let go and still fading out under its skyline goes now.
+	if _leaving.has(key):
+		(_leaving[key].node as Node3D).queue_free()
+		_leaving.erase(key)
+	# A range with its skyline showing comes in under it as that fades out
+	# (`swap_of`); one with none showing (the skyline not yet whole, a
+	# cell's range) comes in at once.
+	var under: bool = ring.showing(key) and ring.whole
+	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread_of(cell),"scale":scale,"at":Time.get_ticks_msec() if under else -int(ring.SWAP*1000.0)-1}
 	if gorge_of(cell): _jet(key)
 
 ## The plate's ground material, cut at the cloud sea's top (reference_
