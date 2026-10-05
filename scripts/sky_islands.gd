@@ -135,6 +135,7 @@ func setup(owner_scene: Node3D) -> void:
 	clouds.build(slots)
 	islets = SkyIslets.new()
 	islets.palette_source = editor.data._palette
+	islets.flora_source = editor.content
 	add_child(islets)
 	skip.append(islets)
 	peaks = SkyPeaks.new()
@@ -172,6 +173,7 @@ func build() -> void:
 		_add(home,home+origin,Vector3.ZERO)
 		if not _fixed(home): _thermal(home)
 	_islet_materials()
+	islets.side_source = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
 	islets.reset(cells)
 	peaks.ground_source = islets.ground_source
 	peaks.canopy_tint = SkyIslets._canopy_tint
