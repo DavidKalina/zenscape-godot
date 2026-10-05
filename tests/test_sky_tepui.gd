@@ -290,6 +290,18 @@ func _placement() -> void:
 		for b: Vector3 in range_points: closest = minf(closest,Vector2(a.x-b.x,a.z-b.z).length())
 	check(closest > 150.0,"It stands clear of the mountain range (%.0f m between their rock)" % closest)
 	check(not SkyTepuis.blocks(SkyPeaks.HOME) and SkyPeaks.blocks(SkyTepuis.HOME),"The range's middle is clear of it, and nothing turns up on it")
+	# The ranges scattered through the far cells: their whole frame, spread,
+	# stands clear of its rock.
+	var worst := INF
+	var cell := SkyPeaks.cell_of(SkyTepuis.HOME)
+	for dx in range(-2,3):
+		for dz in range(-2,3):
+			var c := cell+Vector2i(dx,dz)
+			var sp: Variant = SkyPeaks.spot(c)
+			if sp == null or c == Vector2i.ZERO: continue
+			var far: float = Vector2(sp.x-SkyTepuis.HOME.x,sp.z-SkyTepuis.HOME.z).length()-SkyPeak.HALF.length()*SkyPeaks.spread_of(c)-t.reach()
+			worst = minf(worst,far)
+	check(worst > 50.0,"It stands clear of the ranges scattered round it (%.0f m to spare at the least)" % worst)
 	var currents: Node3D = SkyCurrents.new()
 	root.add_child(currents)
 	currents.build(slots)

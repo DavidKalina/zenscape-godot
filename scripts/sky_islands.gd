@@ -158,6 +158,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	trim(eye)
 	islets.advance(delta,eye)
 	peaks.advance(delta,eye)
+	clouds.keep_off(peaks.keep_spots(eye))
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it

@@ -118,9 +118,9 @@ func add_thermal(base: Vector3, key: String, top := NAN, radius := THERMAL_RADIU
 	_build_wisps()
 
 ## An open jet stream along `path` (global points, upstream first),
-## belonging to `key` (a sky peak's gorge, scripts/sky_peaks.gd), and the
-## wisps rebuilt to show it. The path is resampled to SAMPLES points.
-func add_jet(path: PackedVector3Array, key: String) -> void:
+## belonging to `key` (a sky peak's gorge, scripts/sky_peaks.gd), running
+## at `speed` m/s, and the wisps rebuilt to show it. The path is resampled to SAMPLES points.
+func add_jet(path: PackedVector3Array, key: String, speed := JET) -> void:
 	var lengths := PackedFloat32Array([0.0])
 	for i in range(1,path.size()): lengths.append(lengths[i-1]+path[i].distance_to(path[i-1]))
 	var total := lengths[lengths.size()-1]
@@ -131,7 +131,7 @@ func add_jet(path: PackedVector3Array, key: String) -> void:
 		while k < path.size()-2 and lengths[k+1] < at: k += 1
 		var span := maxf(lengths[k+1]-lengths[k],1e-4)
 		points.append(path[k].lerp(path[k+1],clampf((at-lengths[k])/span,0.0,1.0))-position)
-	var current := _current(points,false,JET,JET_RADIUS,"jet")
+	var current := _current(points,false,speed,JET_RADIUS,"jet")
 	current.key = key
 	currents.append(current)
 	_build_wisps()

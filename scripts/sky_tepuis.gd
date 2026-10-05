@@ -313,5 +313,14 @@ func haze_spots() -> Array:
 		out.append(Vector4(at.x,at.z,HAZE_REACH,1.0))
 	return out
 
+## Each standing tepui's keep-out for the drifting clouds: Vector4(global
+## x, global z, 0, KEEP).
+func keep_spots() -> Array:
+	var out := []
+	for key in built:
+		var at: Vector3 = cells.origin+(built[key].home as Vector3)
+		out.append(Vector4(at.x,at.z,0.0,KEEP))
+	return out
+
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x-b.x,a.z-b.z).length()

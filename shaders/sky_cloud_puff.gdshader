@@ -29,6 +29,10 @@ uniform float haze_far = 0.0;
 // Within this many metres of the scene behind it, a puff thins away, so
 // where it meets rock it is soft, never a cut card. 0 leaves it as it was.
 uniform float soft_depth = 0.0;
+// Places no drifting cloud stands (x, z middle, w radius, metres in the
+// world): the sky peaks (scripts/sky_peaks.gd), whose cloud is at their
+// foot. A puff thins away as its cloud drifts in. w 0 is none.
+uniform vec4 keep_out[4];
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
 
 varying vec2 across;
@@ -72,6 +76,11 @@ void vertex() {
 	// over the open sky, which the display haze leaves be, a far cloud melts
 	// away into the sky behind it rather than standing out sharp.
 	opacity *= 1.0 - zs_glide_fog_far(away, centre.y, haze_far) * zs_glide_haze.x;
+	for (int i = 0; i < 4; i++) {
+		if (keep_out[i].w <= 0.0) continue;
+		// The whole cloud by its middle, so it thins as one.
+		opacity *= smoothstep(keep_out[i].w * 0.8, keep_out[i].w, length(centre.xz - data.xz * size - keep_out[i].xy));
+	}
 	// Light: the sky's colour all round, the sun's on the side and top
 	// facing it, a cool shade at the base.
 	vec3 offset = normalize(data.xyz + vec3(0.0, 0.25, 0.0));

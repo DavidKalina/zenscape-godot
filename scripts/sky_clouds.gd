@@ -109,6 +109,14 @@ func _build_puffs(rng: RandomNumberGenerator) -> void:
 func puff_count() -> int:
 	return _puffs.multimesh.instance_count if _puffs != null else 0
 
+## Drifting clouds thin away over these places (Vector4(x, z, 0, radius),
+## global): the sky peaks' (SkyPeaks `keep_spots`), up to four.
+func keep_off(spots: Array) -> void:
+	if _material == null: return
+	var list := PackedVector4Array()
+	for i in range(4): list.append(spots[i] if i < spots.size() else Vector4.ZERO)
+	_material.set_shader_parameter("keep_out",list)
+
 ## Moves every cloud by `by` (an island swap) or back home (`reset`).
 func move(by: Vector3) -> void:
 	shift += by

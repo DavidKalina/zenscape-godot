@@ -21,7 +21,7 @@ float zs_glide_fog(float dist, float y) {
 // `far` of the way (0 to 1) onto the landform's curve: its reach and where
 // it is whole lengthened by ZS_PEAK_REACH and ZS_PEAK_WHOLE, so a range
 // stays in sight, pale and blue, long after an island would have gone.
-const float ZS_PEAK_REACH = 1.9;
+const float ZS_PEAK_REACH = 1.8;
 const float ZS_PEAK_WHOLE = 3.0;
 float zs_glide_fog_far(float dist, float y, float far) {
 	float low = smoothstep(zs_glide_haze.w + 75.0, zs_glide_haze.w, y);
