@@ -41,7 +41,8 @@ extends Node3D
 ## Only the land travels with an island. The sky, the day and the weather
 ## are the world's, and stay as they are.
 
-const HALF := 14.0
+const Plate = preload("res://scripts/plate.gd")
+const HALF := Plate.HALF
 ## How far past an outlined island's shore a glider is still over it (m).
 const CLAIM_MARGIN := 1.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
@@ -62,14 +63,15 @@ const CAP := 9
 ## gently out of the haze, or steeply up out of the cloud sea.
 const WANDER_RISE := Vector2(60.0,10.0)
 const FALL_RISE := Vector2(140.0,7.0)
-## Its thermal stands this far off its middle, its base this far down, so
-## it reaches the cushion under the band.
-const THERMAL_SIDE := 24.0
+## Its thermal stands this far off its middle (10 m clear of the plate's
+## side), its base this far down, so it reaches the cushion under the band.
+const THERMAL_SIDE := Plate.HALF+10.0
 const THERMAL_DOWN := 25.0
 ## Only parts this near the plate's middle, and smaller than this, are
 ## hidden while the plate is formed again (`_hide_plate`). That leaves out
-## the sky, the fog and anything else world-sized.
-const NEAR := 22.0
+## the sky, the fog and anything else world-sized. NEAR keeps 8 m past the
+## plate's rim.
+const NEAR := Plate.HALF+8.0
 const LARGEST := 80.0
 ## Height lookups snap to this grid. The terrain data memoises every point
 ## it is asked about, and a glide asks about a great many.

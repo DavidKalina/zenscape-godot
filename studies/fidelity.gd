@@ -855,7 +855,8 @@ func _fire_water(position: Vector3) -> bool:
 	if _fire_water_map == null:
 		return false
 	var size := _fire_water_map.get_width()
-	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+	var map_half: float = preload("res://scripts/plate.gd").MAP_HALF
+	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*map_half)/(map_half*2.0)*float(size)-Vector2.ONE*0.5
 	var x := clampi(roundi(pixel.x),0,size-1)
 	var z := clampi(roundi(pixel.y),0,size-1)
 	var value := _fire_water_map.get_pixel(x,z)

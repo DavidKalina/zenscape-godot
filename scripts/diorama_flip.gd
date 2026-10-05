@@ -79,6 +79,7 @@ enum Source { NEW, UNDO, KEPT }
 ## The render layer (bit) the real world moves to while its snapshot flips.
 ## Nothing looks at it: the camera and every light drop it.
 const HIDDEN_LAYER := 1 << 18
+const Plate = preload("res://scripts/plate.gd")
 ## Subtrees the snapshot leaves out, by script: the room (weather, sky, lights),
 ## things that are skinned or physical, and the hand, which is not a copy.
 ## The edge falls (scripts/edge_falls.gd) hide themselves while it flips. The
@@ -86,7 +87,7 @@ const HIDDEN_LAYER := 1 << 18
 const LEAVE_OUT := ["precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","creature_actor.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","bigfoot_encounter.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd","sky_cloud.gd"]
 ## The plate when its skirt cannot be read: half its width, the height of
 ## its middle and its thickness, rim to foot (m).
-const DEFAULT_HALF := 14.0
+const DEFAULT_HALF := Plate.HALF
 const DEFAULT_MIDDLE := (0.6+NativeTerrainData.SLAB_BASE)*0.5
 const DEFAULT_THICK := 0.6-NativeTerrainData.SLAB_BASE
 

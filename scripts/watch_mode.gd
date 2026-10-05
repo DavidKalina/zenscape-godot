@@ -44,7 +44,7 @@ const LIFT_MARGIN := 2.0
 const LIFT_W := 3.0
 const LOOK_AHEAD := 0.7
 const FLOOR := 0.35
-const PLATE_REACH := 13.5
+const PLATE_REACH := Plate.HALF-0.5
 ## Yaw drift, radians per second (a full turn in 2 to 4 minutes).
 const DRIFT := Vector2(0.025,0.05)
 ## The distance breathes by this much (log) over BREATH seconds.
@@ -63,6 +63,8 @@ const SPECIAL := {"cabin":3.0,"campfire":3.0,"waterfall":3.0,"bridge":2.0,"arch"
 const LIT := ["cabin","campfire","stone_lamp"]
 const TREES := ["tree","broadleaf","layered_tree","redwood","birch","willow","juniper"]
 const FOLLOWED := {"deer":1.6,"heron":1.6,"bird":1.0,"bigfoot":2.0}
+
+const Plate = preload("res://scripts/plate.gd")
 
 signal entered
 signal left

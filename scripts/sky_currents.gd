@@ -26,6 +26,7 @@ extends Node3D
 ## Samples along each current's path, in the shader's texture and here,
 ## and how many smoothing passes a loop gets, so it never turns a hairpin
 ## round an island (at jet speed a sharp corner feels like a wall).
+const Plate = preload("res://scripts/plate.gd")
 const SAMPLES := 192
 const SMOOTHING := 6
 const JET := 26.0
@@ -42,6 +43,9 @@ const LOW_UP := 18.0
 const HIGH_IN := 40.0
 const HIGH_UP := 48.0
 const SWELL := 26.0
+## A thermal beside an island stands this far off its middle: 10 m clear of
+## the plate's side (SkyIslands THERMAL_SIDE, for islands met later).
+const THERMAL_SIDE := Plate.HALF+10.0
 const LIFT := 7.0
 const THERMAL_RADIUS := 7.0
 const THERMAL_FROM := -70.0
@@ -93,7 +97,7 @@ func build(slots: Array) -> void:
 		var turn := rng.randf()*TAU
 		for k in range(sides):
 			var a := turn+TAU*k/sides
-			_thermal(here+Vector3(cos(a),0.0,sin(a))*24.0)
+			_thermal(here+Vector3(cos(a),0.0,sin(a))*THERMAL_SIDE)
 	for n in range(order.size()):
 		var here: Vector3 = slots[order[n]]
 		var next: Vector3 = slots[order[(n+1)%order.size()]]

@@ -52,7 +52,7 @@ const POLAR := Vector2(0.22,1.45)
 const DISTANCE := Vector2(1.6,110.0)
 ## The camera stays this far above the ground under it.
 const CLEARANCE := 0.7
-const PLATE_REACH := 13.5
+const PLATE_REACH := Plate.HALF-0.5
 ## Zoom per wheel notch; pinch factor exponent.
 const WHEEL := 1.12
 const PINCH := 1.3
@@ -105,6 +105,8 @@ const PULL_RETURN_AFTER := 0.9
 const PULL_RETURN_W := 4.5
 const HINT := "Double-click anything to go there  ·  right-drag or swipe with two fingers to look around  ·  pinch or scroll to zoom  ·  Backspace goes back"
 const HINT_FILE := "user://camera.cfg"
+
+const Plate = preload("res://scripts/plate.gd")
 
 var scene: Node3D
 var editor: NativeChunkEditor

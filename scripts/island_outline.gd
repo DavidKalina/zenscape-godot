@@ -23,6 +23,7 @@ extends RefCounted
 ##   and two pieces of land touching at a single point are joined there.
 ## Deterministic for a seed: the same seed is the same island.
 
+const Plate = preload("res://scripts/plate.gd")
 ## The share of the square that is land, from the smallest island to the
 ## largest.
 const AREA := Vector2(0.32,0.5)
@@ -33,7 +34,7 @@ const MIDDLE := 3.0
 ## plate's rim stands HALF from its middle.
 const RIM := Vector2(0.9,3.2)
 const RIM_WAVE := 7.0
-const HALF := 14.0
+const HALF := Plate.HALF
 ## The lean away from the band: share added over the last RIM_SOFT metres
 ## before it, up to RIM_PUSH, measured to a square rounded by ROUND (a
 ## superellipse's power) so a large island is not squared off either.

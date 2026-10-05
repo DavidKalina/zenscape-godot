@@ -33,6 +33,7 @@ extends Node
 ## ground a mark shows where it would touch down, and touching down slowly
 ## anywhere on the island lands, the camera swooping down into its eyes.
 
+const Plate = preload("res://scripts/plate.gd")
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
 ## eye sits at 0.85 m.
@@ -54,7 +55,7 @@ const EASE_FOV := 0.2
 ## The polar range of the look: near straight down to well above the horizon.
 const POLAR := Vector2(0.25,2.8)
 ## The walk stays on the plate.
-const PLATE_REACH := 13.5
+const PLATE_REACH := Plate.HALF-0.5
 ## How far inside the shore a walker is put back on an outlined island (m).
 const SHORE_INSET := 0.1
 ## Seconds the glide back to the orbit takes.

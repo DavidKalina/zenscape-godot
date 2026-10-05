@@ -30,7 +30,7 @@ const LOOK_TURN := 0.35
 const EYE_HEIGHT := 0.85
 const WALK_STEP := 0.7
 const WALK_DRAG := 6.0
-const PLATE_REACH := 13.5
+const PLATE_REACH := Plate.HALF-0.5
 ## Auto-level: after this many idle seconds the ground eye's pitch settles
 ## toward LEVEL_POLAR (just below the horizon) at LEVEL_RATE per second.
 const LEVEL_IDLE := 1.6
@@ -51,6 +51,8 @@ const HINT := "Drag to orbit  ·  right-drag to pan  ·  scroll to dolly  ·  G 
 const GROUND_HINT := "Ground eye  ·  drag to look  ·  right-drag or arrows to walk  ·  scroll to step  ·  G to rise"
 ## Seconds the return glide takes after leaving.
 const RETURN := 0.7
+
+const Plate = preload("res://scripts/plate.gd")
 
 signal entered
 signal left
