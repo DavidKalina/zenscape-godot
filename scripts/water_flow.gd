@@ -276,7 +276,12 @@ func setup(tree: SceneTree = null) -> void:
 	_topology = data.vertex_ids
 	_void = cut
 	_shore_cells.clear()
+	_hollows.clear()
 	ready = true
+	# The land changed while the cells were mapped (a fresh island's outline
+	# is set while the first map runs on a worker, and `_void_changed` waits
+	# for `ready`): map them again, or the water would run over the sky.
+	if data.void_faces != cut or data.vertex_ids != ids: await setup(tree)
 
 ## For each cell centre of a `w`×`h` grid, the triangle under it: three vertex
 ## ids and barycentric (u, v) as NativeTerrainData.sample weighs them, or -1.
@@ -548,7 +553,7 @@ static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
 		for k in range(16):
 			var next := at+Vector2.from_angle(TAU*k/16.0)*COURSE_STEP
 			var below: Variant = terrain.ground_height(next)
-			if below == null or Plate.HALF-maxf(absf(next.x),absf(next.y)) < COURSE_RIM:
+			if below == null or rim_gap(terrain,next) < COURSE_RIM:
 				blocked = true
 				continue
 			if float(below) < lowest:
@@ -565,6 +570,14 @@ static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
 			end = "foot"
 			break
 	return {"points":course,"end":end}
+
+## Metres from plate point `p` in to the land's rim: the square plate's edge,
+## or an island's shore (NativeTerrainData `shore_distance`); negative off
+## the island.
+static func rim_gap(terrain: NativeTerrainData, p: Vector2) -> float:
+	if terrain.shore_distance.is_empty(): return Plate.HALF-maxf(absf(p.x),absf(p.y))
+	var inland: Variant = terrain.sample(p,terrain.shore_distance)
+	return float(inland) if inland != null else -1.0
 
 ## The ground a spring's water wears on open ground: a rill down its
 ## `descent` from the `start`th point and a pool at its foot that holds
@@ -592,6 +605,15 @@ static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start:
 		limit = 0.0
 	if radius < BED_RADIUS.x: return {}
 	var pool := (foot+heading*radius*0.5).clamp(Vector2(-limit,-limit),Vector2(limit,limit))
+	# An island's shore is its rim: the pool shrinks to stay POOL_RIM inside
+	# it, back toward the foot if it must, or wears none where none fits.
+	if not terrain.shore_distance.is_empty():
+		var room := rim_gap(terrain,pool)-POOL_RIM
+		if room < BED_RADIUS.x:
+			pool = foot
+			room = rim_gap(terrain,pool)-POOL_RIM
+		radius = minf(radius,room)
+		if radius < BED_RADIUS.x: return {}
 	var depth := clampf(volume/(PI*radius*radius*BED_FILL)+BED_FREEBOARD,BED_DEPTH.x,BED_DEPTH.y)
 	var heights := terrain.heights.duplicate()
 	var top := course[maxi(start-1,0)].y

@@ -43,6 +43,7 @@ func run() -> void:
 	await shore_falls(plate(),true)
 	await shore_falls(plate(),false)
 	await shore_course(plate())
+	await shore_water(plate())
 	await square_falls(plate())
 	await far(plate())
 	rock(plate())
@@ -429,6 +430,22 @@ func check_on_shore(data: NativeTerrainData, spill: Dictionary) -> void:
 	check(data.ground_height(at+n*0.3) == null,"A spill pours out over the sky, not over land (%s, %s)" % [at,n])
 	check(shore_gap(data,at) < 0.01,"A spill's lip is on the shore (%.3f m off)" % shore_gap(data,at))
 
+## The height of the shore wall's foot at the shore point nearest `at`:
+## the rock's depth (`keel`) at the shore edge's ends, along the edge.
+static func wall_foot(data: NativeTerrainData, at: Vector2) -> float:
+	var best := INF
+	var foot := NativeTerrainData.SLAB_BASE
+	var edges := data.shore_edges
+	for k in range(0,edges.size(),3):
+		var a := data.points[edges[k]]
+		var b := data.points[edges[k+1]]
+		var on := Geometry2D.get_closest_point_to_segment(at,a,b)
+		if at.distance_to(on) < best:
+			best = at.distance_to(on)
+			var t := clampf(a.distance_to(on)/maxf(a.distance_to(b),0.000001),0.0,1.0)
+			foot = NativeTerrainData.SLAB_BASE-lerpf(data.keel[edges[k]],data.keel[edges[k+1]],t)
+	return foot
+
 ## Metres from `at` to the nearest shore edge.
 static func shore_gap(data: NativeTerrainData, at: Vector2) -> float:
 	var best := INF
@@ -450,25 +467,10 @@ func shore_falls(data: NativeTerrainData, native: bool) -> void:
 		check(false,"The native kernel is built")
 		data.release_listeners()
 		return
-	# The bay: the deepest dip of the shore's reach round the middle, below
-	# both its neighbours' reach a quarter turn either way.
-	var reach := PackedFloat32Array()
-	for k in range(144):
-		var way := Vector2.from_angle(TAU*k/144.0)
-		var r := 0.0
-		while data.ground_height(way*(r+0.1)) != null and r < 20.0: r += 0.1
-		reach.append(r)
-	var bay := -1
-	var deepest := 0.0
-	for k in range(144):
-		var dip := minf(reach[(k+18)%144],reach[(k+126)%144])-reach[k]
-		if dip > deepest:
-			deepest = dip
-			bay = k
-	check(bay >= 0 and deepest > 1.0,"Seed 31's island has a bay (%.1f m deep)" % deepest)
-	var way := Vector2.from_angle(TAU*bay/144.0)
-	var head := way*reach[bay]
-	var spring := way*maxf(reach[bay]-1.2,0.0)
+	var found := bay_of(data)
+	var way: Vector2 = found[0]
+	var head: Vector2 = way*float(found[1])
+	var spring := way*maxf(float(found[1])-1.2,0.0)
 	flow.springs.append({"x":spring.x,"z":spring.y,"rate":0.06,"radius":0.5,"age":100.0})
 	for k in range(150): flow.run(4)
 	var detect: Dictionary = preload("res://scripts/edge_falls.gd").DETECT.duplicate()
@@ -552,11 +554,15 @@ func shore_course(data: NativeTerrainData) -> void:
 			if r <= last_face: widest = maxf(widest,out)
 		print("bay fall: lip %s, normal %s, face %.2f m, out to %.2f m on the face" % [lip,n,float(rings.face_drop),widest])
 		check(behind == 0 and over_land == 0,"The fall pours out over the sky, never back into the land (%d behind, %d over land)" % [behind,over_land])
-		check(absf(float(fall.bottom)-NativeTerrainData.SLAB_BASE) < 0.5,"It hugs the shore wall down to its foot (%.2f)" % float(fall.bottom))
+		# The wall's foot under the lip: it wanders about SLAB_BASE along the
+		# shore, and the rock under it falls away inland.
+		var wall_at := wall_foot(data,Vector2(lip.x,lip.z))
+		check(absf(float(fall.bottom)-wall_at) < 0.5,"It hugs the shore wall down to its foot (%.2f, foot %.2f)" % [float(fall.bottom),wall_at])
 		check(widest < 0.8,"It clings to the wall rather than flying off it (%.2f m out)" % widest)
 		check(points[points.size()-1].y < float(fall.bottom)-1.0,"Below the wall it falls free")
 		# Rock that recedes 2 m back under the lip from 3 m down: the fall
-		# leaves it there.
+		# leaves it there, at the last sample (PROFILE_STEP apart) at or over the
+		# knee.
 		var shelf := ArrayMesh.new()
 		var at := Vector3(lip.x,0.0,lip.z)
 		var nn := Vector3(n.x,0.0,n.y)
@@ -580,9 +586,95 @@ func shore_course(data: NativeTerrainData) -> void:
 		editor._skirt.mesh = shelf
 		rings = falls._rings(fall,1.0,falls._strength(fall.now.flux))
 		print("receding rock: bottom %.2f (knee %.2f)" % [float(fall.bottom),knee.y])
-		check(float(fall.bottom) < knee.y+0.05 and float(fall.bottom) > knee.y-0.9,"Where the rock falls away under it the fall leaves it (%.2f, knee %.2f)" % [float(fall.bottom),knee.y])
+		check(float(fall.bottom) <= knee.y+falls.PROFILE_STEP+0.001 and float(fall.bottom) > knee.y-0.25,"Where the rock falls away under it the fall leaves it (%.2f, knee %.2f)" % [float(fall.bottom),knee.y])
 	falls.free()
 	editor.queue_free()
+	data.release_listeners()
+
+## The island's bay: [the way to it from the middle, the shore's reach that
+## way], the deepest dip of the shore's reach round the middle below both
+## its neighbours' reach a quarter turn either way.
+func bay_of(data: NativeTerrainData) -> Array:
+	var reach := PackedFloat32Array()
+	for k in range(144):
+		var way := Vector2.from_angle(TAU*k/144.0)
+		var r := 0.0
+		while data.ground_height(way*(r+0.1)) != null and r < 20.0: r += 0.1
+		reach.append(r)
+	var bay := -1
+	var deepest := 0.0
+	for k in range(144):
+		var dip := minf(reach[(k+18)%144],reach[(k+126)%144])-reach[k]
+		if dip > deepest:
+			deepest = dip
+			bay = k
+	check(bay >= 0 and deepest > 1.0,"The island has a bay (%.1f m deep)" % deepest)
+	return [Vector2.from_angle(TAU*maxi(bay,0)/144.0),reach[maxi(bay,0)]]
+
+## Water poured beside a bay stays on the island: a fresh island's outline
+## set while the water's first grid is still being mapped on a worker (as a
+## new world is shaped while the editor sets its water up) still leaves the
+## sky outside; a burst, a spring and the watering can's stream and lift by
+## the shore leave no depth over the sky and no surface drawn there; and a
+## spring's pool keeps POOL_RIM from the shore, or is not worn.
+func shore_water(data: NativeTerrainData) -> void:
+	var WaterFlow := preload("res://scripts/water_flow.gd")
+	var flow: RefCounted = WaterFlow.new(data)
+	var mapped := [false]
+	var first := func() -> void:
+		await flow.setup(self)
+		mapped[0] = true
+	first.call()
+	Genesis.shape(data,31)
+	while not mapped[0]: await process_frame
+	var off := 0
+	var wet_sky := 0
+	for c in range(flow.width*flow.height):
+		var at := Vector2(flow.origin.x+(c%flow.width+0.5)*flow.cell,flow.origin.y+(c/flow.width+0.5)*flow.cell)
+		if data.ground_height(at) == null and shore_gap(data,at) > flow.cell and flow.inside[c] != 0: off += 1
+	check(flow.inside.count(0) > 100 and off == 0,"An outline set while the grid is mapped leaves the sky outside (%d sky cells inside)" % off)
+	var found := bay_of(data)
+	var way: Vector2 = found[0]
+	var near := way*maxf(float(found[1])-1.0,0.0)
+	flow.bursts.append(WaterFlow._burst(near+way.orthogonal()*1.5,WaterFlow.BURST_RADIUS,4.0,WaterFlow.BURST_SECONDS))
+	flow.springs.append({"x":near.x,"z":near.y,"rate":0.1,"radius":0.5,"age":100.0})
+	var can := near-way.orthogonal()*1.5
+	flow.taps["can"] = [can.x,can.y,0.4,0.08]
+	flow.lifts["can"] = [can.x,can.y,0.05]
+	var drawn_sky := 0
+	for k in range(120):
+		flow.run(4)
+		if k%20 != 19: continue
+		var arrays: Dictionary = flow.surface(preload("res://scripts/water_flow_view.gd").SURFACE)
+		for part in ["still","flow"]:
+			for v: Vector3 in arrays[part].vertices:
+				var at := Vector2(v.x,v.z)
+				if data.ground_height(at) == null and shore_gap(data,at) > flow.cell*1.5: drawn_sky += 1
+	var depth: PackedFloat32Array = flow.depths()
+	for c in range(depth.size()):
+		var at := Vector2(flow.origin.x+(c%flow.width+0.5)*flow.cell,flow.origin.y+(c/flow.width+0.5)*flow.cell)
+		if depth[c] > 0.0 and data.ground_height(at) == null and shore_gap(data,at) > flow.cell: wet_sky += 1
+	check(flow.volume() > 0.1,"Water stands by the bay (%.2f m³)" % flow.volume())
+	check(wet_sky == 0,"No water stands over the sky (%d cells)" % wet_sky)
+	check(drawn_sky == 0,"No water is drawn over the sky (%d vertices)" % drawn_sky)
+	# Springs' pools round the shore: on land, POOL_RIM inside it, or none.
+	var pools := 0
+	for k in range(48):
+		var toward := Vector2.from_angle(TAU*k/48.0)
+		var r := 0.0
+		while data.ground_height(toward*(r+0.1)) != null and r < 20.0: r += 0.1
+		for back in [2.5,4.0,5.5]:
+			var start := toward*maxf(r-back,0.0)
+			var bed: Dictionary = WaterFlow.spring_bed(data,WaterFlow.descent(data,start),1,6.0)
+			if bed.is_empty(): continue
+			pools += 1
+			var centre: Vector2 = bed.pool
+			var reach: float = float(bed.radius)+WaterFlow.POOL_RIM-0.05
+			var spilt := 0
+			for j in range(32):
+				if data.ground_height(centre+Vector2.from_angle(TAU*j/32.0)*reach) == null: spilt += 1
+			check(spilt == 0,"A spring's pool at %s (r %.1f) keeps POOL_RIM from the shore (%d of 32 off the land)" % [centre,bed.radius,spilt])
+	print("shore water: %.2f m³ standing, %d spring pools near the shore" % [flow.volume(),pools])
 	data.release_listeners()
 
 ## The square plate's spills are the kernel's own, along its four sides, as
