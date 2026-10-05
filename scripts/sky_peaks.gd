@@ -34,6 +34,10 @@ const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## readers read them too.
 const KINDS := [preload("res://scripts/sky_pillars.gd")]
 const SkyCurrentsScript = preload("res://scripts/sky_currents.gd")
+## The table mountain within sight of the plate (scripts/sky_tepuis.gd): a
+## landform of the same kind, held here so everything that reads the ranges
+## (solids, `blocks`, the haze, the clouds' keep-out) reads it too.
+const SkyTepuis = preload("res://scripts/sky_tepuis.gd")
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -95,6 +99,7 @@ var _material: Material
 var kinds: Array[Node3D] = []
 static var _puff_material: ShaderMaterial
 static var _quad: QuadMesh
+var tepuis: Node3D
 
 func _init() -> void:
 	name = "SkyPeaks"
@@ -102,6 +107,8 @@ func _init() -> void:
 		var node: Node3D = kind.new()
 		kinds.append(node)
 		add_child(node)
+	tepuis = SkyTepuis.new()
+	add_child(tepuis)
 
 func _exit_tree() -> void:
 	clear()
@@ -118,6 +125,7 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	_since = CHECK
 	position = cells.origin
 	for kind in kinds: kind.reset(new_cells,air,self)
+	tepuis.reset(new_cells,air,self)
 
 func clear() -> void:
 	for kind in kinds: kind.clear()
@@ -127,6 +135,7 @@ func clear() -> void:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_jet_key(key))
 	built.clear()
+	if tepuis != null: tepuis.clear()
 
 func range_count() -> int:
 	return built.size()
@@ -137,6 +146,7 @@ func range_count() -> int:
 func advance(delta: float, eye: Vector3) -> void:
 	if cells == null: return
 	position = cells.origin
+	tepuis.advance(delta,eye)
 	_since += delta
 	if _since >= CHECK:
 		_since = 0.0
@@ -159,6 +169,7 @@ func flush() -> void:
 		_finish(m.cell,m.spot,m.out)
 	_making.clear()
 	for kind in kinds: kind.flush()
+	tepuis.flush()
 
 func _survey(home: Vector3) -> void:
 	var gone := []
@@ -210,7 +221,7 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 			if s != null and Vector2(s.x-home.x,s.z-home.z).length() < KEEP*spread_of(c+Vector2i(dx,dz))+margin: return true
 	for kind: GDScript in KINDS:
 		if kind.blocks(home,margin): return true
-	return false
+	return SkyTepuis.blocks(home,margin)
 
 ## A hash of a cell, 0 to 1, one per salt (as SkyCells `noise`).
 static func noise(cell: Vector2i, salt: int) -> float:
@@ -396,7 +407,7 @@ func body(point: Vector3) -> Variant:
 	for kind in kinds:
 		var b: Variant = kind.body(point)
 		if b != null: return b
-	return null
+	return tepuis.body(point)
 
 ## The ground's height under a global point, or null.
 func ground(point: Vector3) -> Variant:
@@ -417,6 +428,7 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 		var at := position+(b.home as Vector3)
 		out.append(Vector4(at.x,at.z,HAZE_REACH*float(b.get("spread",1.0)),1.0))
 	for kind in kinds: out.append_array(kind.haze_spots())
+	out.append_array(tepuis.haze_spots())
 	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
 	return out
 
@@ -429,6 +441,7 @@ func keep_spots(eye := Vector3.ZERO) -> Array:
 		var at := position+(b.home as Vector3)
 		out.append(Vector4(at.x,at.z,0.0,KEEP*float(b.get("spread",1.0))))
 	for kind in kinds: out.append_array(kind.keep_spots())
+	out.append_array(tepuis.keep_spots())
 	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
 	return out
 
