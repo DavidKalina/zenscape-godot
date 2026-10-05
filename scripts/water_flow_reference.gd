@@ -4,14 +4,15 @@ extends RefCounted
 ## library and for comparison (`--gdscript-kernels`). Same method names, same
 ## arithmetic, about fifty times slower, so scripts/water_flow.gd runs it on a
 ## coarser grid. Keep the two in step.
+const Plate = preload("res://scripts/plate.gd")
 const OUTSIDE := 0
 const WATER := 1
 const EDGE := 2
 var w := 0
 var h := 0
 var cell := 0.25
-var ox := -14.0
-var oz := -14.0
+var ox := -Plate.HALF
+var oz := -Plate.HALF
 var face := PackedInt32Array()
 var weight := PackedFloat32Array()
 var kind := PackedByteArray()

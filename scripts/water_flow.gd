@@ -23,7 +23,10 @@ extends RefCounted
 ## The depth itself is saved with the place but is not part of undo: undoing a
 ## sculpt puts the land back and the water follows it.
 
-## Grid cell, metres. The native grid is 112×112 over the 28 m plate.
+const Plate = preload("res://scripts/plate.gd")
+
+## Grid cell, metres. The native grid is (Plate.SIZE / CELL) a side, 112×112
+## over a 28 m plate; the grid itself is sized from the terrain's points.
 const CELL := 0.25
 const FALLBACK_CELL := 0.5
 ## Fixed step, seconds, and the most steps one frame may run (a slow frame
@@ -545,7 +548,7 @@ static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
 		for k in range(16):
 			var next := at+Vector2.from_angle(TAU*k/16.0)*COURSE_STEP
 			var below: Variant = terrain.ground_height(next)
-			if below == null or 14.0-maxf(absf(next.x),absf(next.y)) < COURSE_RIM:
+			if below == null or Plate.HALF-maxf(absf(next.x),absf(next.y)) < COURSE_RIM:
 				blocked = true
 				continue
 			if float(below) < lowest:
@@ -583,9 +586,9 @@ static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start:
 	# The pool lies on past the foot, so it meets the slope rather than
 	# cutting under it, and stays POOL_RIM inside the rim.
 	var heading := (foot-Vector2(course[-2].x,course[-2].z)).normalized()
-	var limit := 14.0-POOL_RIM-radius
+	var limit := Plate.HALF-POOL_RIM-radius
 	if limit < 0.0:
-		radius = 14.0-POOL_RIM
+		radius = Plate.HALF-POOL_RIM
 		limit = 0.0
 	if radius < BED_RADIUS.x: return {}
 	var pool := (foot+heading*radius*0.5).clamp(Vector2(-limit,-limit),Vector2(limit,limit))
@@ -1026,7 +1029,7 @@ static func decode(value: Variant) -> Variant:
 	for spring: Variant in value.springs:
 		if not spring is Dictionary: return null
 		for key in ["x","z"]:
-			if not GardenData._number(spring.get(key),-14.0,14.0): return null
+			if not GardenData._number(spring.get(key),-Plate.HALF,Plate.HALF): return null
 		if not GardenData._number(spring.get("rate"),0.0,1.0) or not GardenData._number(spring.get("radius"),0.05,3.0): return null
 		found.springs.append({"x":float(spring.x),"z":float(spring.z),"rate":float(spring.rate),"radius":float(spring.radius)})
 	if GardenData._number(value.get("cell"),0.05,2.0) and GardenData._integer(value.get("width")) and GardenData._integer(value.get("height")) and value.get("depth") is String:
