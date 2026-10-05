@@ -24,13 +24,21 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 			for x in range(W):
 				data._water_grid_h[z*W+x]=data._recipe.height(-Plate.HALF+x*CELL,-Plate.HALF+z*CELL)
 	var base: PackedFloat64Array=data._water_grid_h
+	# Away from the standing faces (a recipe world keeps to the old square in
+	# the middle of the plate) a node is void wherever it is over the plate,
+	# and its height is never read.
+	var ground := data.ground_rect().grow(CELL) if has_void else Rect2()
 	for z in range(W):
 		for x in range(W):
 			var px: float=-Plate.HALF+x*CELL
 			var pz: float=-Plate.HALF+z*CELL
 			var height: float=base[z*W+x]
-			if edited: height+=data._sculpt_delta(Vector2(px,pz))
-			var absent := has_void and data.is_void(Vector2(px,pz))
+			var absent := false
+			if has_void and not ground.has_point(Vector2(px,pz)):
+				absent = data.sample(Vector2(px,pz),data.heights) != null
+			else:
+				if edited: height+=data._sculpt_delta(Vector2(px,pz))
+				absent = has_void and data.is_void(Vector2(px,pz))
 			missing.append(1 if absent else 0)
 			h.append(NativeTerrainData.MAX_HEIGHT+1.0 if absent else height)
 			xy.append(Vector2(px,pz))
@@ -184,19 +192,25 @@ static func signed_distance(wet: PackedByteArray,nearest:=PackedByteArray()) -> 
 		inside.append(1000000.0 if value else 0.0)
 	for pass_index in range(2):
 		var distances: PackedFloat32Array=outside if pass_index==0 else inside
+		var carry:=pass_index==0 and not nearest.is_empty()
 		for direction in [1,-1]:
+			# The four neighbours already passed, made once per sweep rather than
+			# per cell, which was nearly half the sweep's time.
+			var offsets: Array[Vector2i]=[Vector2i(-direction,0),Vector2i(0,-direction),Vector2i(-direction,-direction),Vector2i(direction,-direction)]
+			var weights:=PackedFloat64Array([1.0,1.0,sqrt(2.0),sqrt(2.0)])
 			for z in range(0 if direction==1 else N,W if direction==1 else -1,direction):
 				for x in range(0 if direction==1 else N,W if direction==1 else -1,direction):
 					var k:=z*W+x
-					for offset in [Vector2i(-direction,0),Vector2i(0,-direction),Vector2i(-direction,-direction),Vector2i(direction,-direction)]:
-						var nx: int=x+offset.x
-						var nz: int=z+offset.y
+					var best: float=distances[k]
+					for o in range(4):
+						var nx: int=x+offsets[o].x
+						var nz: int=z+offsets[o].y
 						if nx<0 or nz<0 or nx>=W or nz>=W: continue
-						var weight:=sqrt(2.0) if offset.x!=0 and offset.y!=0 else 1.0
-						var candidate: float=distances[nz*W+nx]+weight
-						if candidate<distances[k]:
+						var candidate: float=distances[nz*W+nx]+weights[o]
+						if candidate<best:
 							distances[k]=candidate
-							if pass_index==0 and not nearest.is_empty(): nearest[k]=nearest[nz*W+nx]
+							best=distances[k]
+							if carry: nearest[k]=nearest[nz*W+nx]
 	var result:=PackedFloat32Array()
 	for k in range(W*W):
 		result.append((-minf(inside[k],40.0) if wet[k] else minf(outside[k],40.0))*CELL)

@@ -120,8 +120,7 @@ static func square_islands() -> bool:
 ## which meet their neighbours, stay square. `size` (0..1) asks for an
 ## island's size; left out, the seed's own.
 static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZERO, islanded := true, size := -1.0) -> void:
-	data.reset_flat()
-	data.set_outline(preload("res://scripts/island_outline.gd").mask(data.points,data.vertex_ids,seed_value,size) if islanded and not square_islands() else PackedByteArray())
+	data.reset_flat(preload("res://scripts/island_outline.gd").mask(data.points,data.vertex_ids,seed_value,size) if islanded and not square_islands() else PackedByteArray())
 	var swell := FastNoiseLite.new()
 	swell.seed = seed_value
 	swell.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH

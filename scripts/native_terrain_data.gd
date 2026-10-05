@@ -314,13 +314,51 @@ func _outline_changed() -> void:
 	underside_laid = []
 	_off_island = PackedInt32Array()
 	if not outline.is_empty():
-		var shape := preload("res://scripts/island_outline.gd")
-		shore_distance = shape.shore_distance(points,vertex_ids,outline)
-		shore_edges = shape.shore_edges(vertex_ids,outline)
-		keel = preload("res://scripts/island_shore.gd").keel(points,vertex_ids,outline,shore_distance)
-		for i in range(shore_distance.size()):
-			if shore_distance[i] < 0.0: _off_island.append(i)
+		var known := _known_shore()
+		if known.is_empty():
+			var shape := preload("res://scripts/island_outline.gd")
+			shore_distance = shape.shore_distance(points,vertex_ids,outline)
+			shore_edges = shape.shore_edges(vertex_ids,outline)
+			keel = preload("res://scripts/island_shore.gd").keel(points,vertex_ids,outline,shore_distance)
+			for i in range(shore_distance.size()):
+				if shore_distance[i] < 0.0: _off_island.append(i)
+			_keep_shore()
+		else:
+			shore_distance = known.distance.duplicate()
+			shore_edges = known.edges.duplicate()
+			keel = known.keel.duplicate()
+			_off_island = known.off.duplicate()
 	_combine_void()
+
+## The shores last read from outlines, newest last, shared by every plate on
+## the same triangulation (workers baking far islands too), the latest used
+## kept. Every setup and new world sets the square, and undo swaps between a
+## few outlines, so each is read once: 30 to 55 ms on the 48 m plate.
+const KNOWN_SHORES := 4
+static var _shores: Array[Dictionary] = []
+static var _shores_lock := Mutex.new()
+
+func _known_shore() -> Dictionary:
+	_shores_lock.lock()
+	var found := {}
+	for k in range(_shores.size()):
+		var known := _shores[k]
+		if known.outline == outline and known.ids == vertex_ids and known.points == points:
+			found = known
+			_shores.remove_at(k)
+			_shores.append(known)
+			break
+	_shores_lock.unlock()
+	return found
+
+func _keep_shore() -> void:
+	# The triangulation never changes after setup: shared, not copied.
+	var known := {"outline":outline.duplicate(),"points":points,"ids":vertex_ids,"distance":shore_distance.duplicate(),
+		"edges":shore_edges.duplicate(),"keel":keel.duplicate(),"off":_off_island.duplicate()}
+	_shores_lock.lock()
+	_shores.append(known)
+	if _shores.size() > KNOWN_SHORES: _shores.pop_front()
+	_shores_lock.unlock()
 
 ## The island's land: the bounds of its faces in plate XZ, and its area in
 ## square metres. The whole plate before any outline is set.
@@ -349,6 +387,24 @@ func _measure_land() -> void:
 var _land_rect := Rect2()
 var _land_area := 0.0
 var _land_rect_for := PackedByteArray([2])
+
+## The bounds of the faces standing (none void: off the island or cut by a
+## chasm). Everything outside them over the plate is void, so a grid laid
+## over the whole plate need only read heights inside. Kept for `void_faces`,
+## which a height snapshot carries and its outline does not.
+func ground_rect() -> Rect2:
+	if _ground_rect_for == void_faces: return _ground_rect
+	_ground_rect_for = void_faces.duplicate()
+	var started := false
+	for f in range(vertex_ids.size()/3):
+		if not void_faces.is_empty() and void_faces[f] != 0: continue
+		var bounds := Rect2(points[vertex_ids[f*3]],Vector2.ZERO).expand(points[vertex_ids[f*3+1]]).expand(points[vertex_ids[f*3+2]])
+		_ground_rect = _ground_rect.merge(bounds) if started else bounds
+		started = true
+	if not started: _ground_rect = Rect2()
+	return _ground_rect
+var _ground_rect := Rect2()
+var _ground_rect_for := PackedByteArray([2])
 
 ## `void_faces` from the outline and the chasm's cut.
 func _combine_void() -> void:
@@ -961,11 +1017,16 @@ func moved_region(snapshot: PackedFloat32Array) -> Variant:
 		return null
 	var region := Rect2()
 	var started := false
-	for i in range(points.size()):
-		if heights[i] == snapshot[i]:
+	# A run of points the same in both is skipped whole.
+	for first in range(0,points.size(),128):
+		var last := mini(first+128,points.size())
+		if heights.slice(first,last) == snapshot.slice(first,last):
 			continue
-		region = region.expand(points[i]) if started else Rect2(points[i],Vector2.ZERO)
-		started = true
+		for i in range(first,last):
+			if heights[i] == snapshot[i]:
+				continue
+			region = region.expand(points[i]) if started else Rect2(points[i],Vector2.ZERO)
+			started = true
 	if not started:
 		return null
 	return region.grow(_face_margin)
@@ -1059,16 +1120,24 @@ func _mesh_region() -> Variant:
 		region = vertical
 		started = true
 	if painted:
-		for k in range(grass.size()):
-			var recolored := false
-			for c in range(NativeTerrainTint.STRIDE):
-				recolored = recolored or tint[k*NativeTerrainTint.STRIDE+c] != _mesh_tint[k*NativeTerrainTint.STRIDE+c]
-			if grass[k] == _mesh_grass[k] and meadow[k] == _mesh_meadow[k] and not recolored:
+		# Row by row: a row the same in every layer is skipped whole, so a dab
+		# reads its own few rows cell by cell rather than all of the grid.
+		var stride := NativeTerrainTint.STRIDE
+		var row := MEADOW_CELLS
+		for first in range(0,grass.size(),row):
+			var last := mini(first+row,grass.size())
+			if grass.slice(first,last) == _mesh_grass.slice(first,last) and meadow.slice(first,last) == _mesh_meadow.slice(first,last) and tint.slice(first*stride,last*stride) == _mesh_tint.slice(first*stride,last*stride):
 				continue
-			var corner := meadow_position(k%MEADOW_CELLS,k/MEADOW_CELLS)
-			region = region.expand(corner) if started else Rect2(corner,Vector2.ZERO)
-			started = true
-			region = region.expand(corner+Vector2.ONE*MEADOW_STEP)
+			for k in range(first,last):
+				var recolored := false
+				for c in range(stride):
+					recolored = recolored or tint[k*stride+c] != _mesh_tint[k*stride+c]
+				if grass[k] == _mesh_grass[k] and meadow[k] == _mesh_meadow[k] and not recolored:
+					continue
+				var corner := meadow_position(k%MEADOW_CELLS,k/MEADOW_CELLS)
+				region = region.expand(corner) if started else Rect2(corner,Vector2.ZERO)
+				started = true
+				region = region.expand(corner+Vector2.ONE*MEADOW_STEP)
 	if not started:
 		return null
 	return region.grow(_face_margin)
@@ -1236,11 +1305,13 @@ func form_foundation(elevation := 0.0, relief := 1.0, frame_tree: SceneTree = nu
 
 ## A blank flat land on the square (`square_outline`): landscapes made
 ## from a recipe were authored at that size and stay it; a plain's own
-## outline (scripts/genesis_canvas.gd) is set after.
-func reset_flat() -> void:
+## outline (scripts/genesis_canvas.gd) is set after, or given as `island`
+## (set_outline's mask) so the land never stops at the square on the way:
+## each new outline maps the live water's grid again on this thread.
+func reset_flat(island := PackedByteArray()) -> void:
 	tunnels.clear()
 	_set_recipe({})
-	set_outline(PackedByteArray())
+	set_outline(island)
 	blank = true
 	source_replacements.clear()
 	heights.fill(0.0)
@@ -1323,10 +1394,16 @@ func erase_tint(center: Vector2, radius: float, amount: float) -> void:
 func mark_hand(center: Vector2, radius: float) -> void:
 	if radius <= 0.0:
 		return
-	for z in range(MEADOW_CELLS):
-		for x in range(MEADOW_CELLS):
+	var span := _cover_span(center,radius)
+	for z in range(span.position.y,span.end.y):
+		for x in range(span.position.x,span.end.x):
 			if (meadow_position(x,z)+Vector2.ONE*MEADOW_STEP*0.5).distance_to(center) < radius:
 				provenance[z*MEADOW_CELLS+x] = SOURCE_HAND
+
+## The cover cells whose middles can lie within `radius` of `center` (the
+## rest of the grid is skipped by a dab, not read cell by cell).
+func _cover_span(center: Vector2, radius: float) -> Rect2i:
+	return NativeTerrainTint._span(MEADOW_CELLS,MEADOW_STEP,center,radius)
 
 ## Objects minted from `first_id` on were placed by hand.
 func mark_objects_hand(first_id: int) -> void:
@@ -1382,8 +1459,9 @@ func _decode_provenance(value: Variant) -> Variant:
 func _paint_cover(layer: PackedFloat32Array, center: Vector2, radius: float, density: float) -> void:
 	if radius <= 0.0:
 		return
-	for z in range(MEADOW_CELLS):
-		for x in range(MEADOW_CELLS):
+	var span := _cover_span(center,radius)
+	for z in range(span.position.y,span.end.y):
+		for x in range(span.position.x,span.end.x):
 			var distance := (meadow_position(x,z)+Vector2.ONE*MEADOW_STEP*0.5).distance_to(center)
 			if distance < radius:
 				var index := z*MEADOW_CELLS+x
@@ -1401,8 +1479,9 @@ func mountain(center: Vector2, radius: float, peak: float, variation := 7, angle
 		heights[i] = maxf(heights[i],height)
 
 func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
-	for z in range(MEADOW_CELLS):
-		for x in range(MEADOW_CELLS):
+	var span := _cover_span(center,radius)
+	for z in range(span.position.y,span.end.y):
+		for x in range(span.position.x,span.end.x):
 			var point := meadow_position(x,z)+Vector2.ONE*MEADOW_STEP*0.5
 			var distance := point.distance_to(center)
 			if distance < radius:
