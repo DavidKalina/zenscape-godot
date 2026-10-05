@@ -15,6 +15,7 @@ shader_type spatial;
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
 #include "res://shaders/cave_cutaway.gdshaderinc"
+#include "res://shaders/sky_season.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -183,6 +184,10 @@ uniform float look_scale = 1.0;
 // A sky peak's rock is lit this far toward its mesh's own (broader) normal
 // from each small face's, so its facets read as big planes, not the grid.
 uniform float facet_soft : hint_range(0.0, 1.0) = 0.0;
+// A sky peak's snow (shaders/sky_season.gdshaderinc): the world's snow
+// (linear, scripts/sky_peaks.gd `_snow`), laid on each face whose line the
+// season has brought down far enough (UV.x, m; its shade packed in UV2.x).
+uniform vec3 peak_snow = vec3(0.905, 0.930, 0.956);
 const vec3 SEA_MIST_ALBEDO = vec3(0.56, 0.57, 0.6);
 // The sun's colour the cloud sea holds at any hour (as the puffs do,
 // shaders/sky_cloud_puff.gdshader), glowing in the foot's mist.
@@ -414,6 +419,10 @@ void vertex() {
 			vec3 dirt = vec3(0.1441, 0.0976, 0.0630) * (0.88 + 0.24 * UV2.x);
 			COLOR.rgb = mix(dirt, living, smoothstep(0.02, 0.42, grown));
 		}
+		// A sky peak's snow line follows the season (sky_season): the line's
+		// fall is the world's metres, the face's need the range's own.
+		if (sea_cut > -1.0e8 && zs_sky_snow_fall() / max(length(MODEL_MATRIX[1].xyz), 1e-3) > UV.x)
+			COLOR.rgb = zs_sky_snow_colour(peak_snow, UV2.x);
 		if (bird_wings && source_bird_flight) {
 			float span = abs(VERTEX.x);
 			float lever = smoothstep(0.07, 1.12, span);
@@ -677,13 +686,15 @@ void fragment() {
 	if (terrain_growth && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
 	vec3 before_autumn = tint;
 	if (stand_autumn >= 0.0) zs_autumn_stand_paint(tint, plant_root, zs_autumn * leaf_season.x, stand_autumn);
-	else zs_autumn_paint(tint, world_position, zs_autumn * leaf_season.x);
+	else zs_autumn_paint(tint, look_position, zs_autumn * leaf_season.x);
 	if (autumn_yellow > 0.0) {
 		float turned = clamp(length(tint - before_autumn) * 4.0, 0.0, 1.0);
 		tint.g = mix(tint.g, max(tint.g, tint.r * 0.8), turned * autumn_yellow);
 	}
 	if (palette_role == 2) zs_season_leaves(tint, leaf_local, plant_root, face_normal, leaf_season.x, leaf_season.z);
 	else if (palette_role == 1 || palette_role == 5) zs_season_grass(tint, leaf_season.x);
+	// A sky peak's grass dries a little through the summer (sky_season).
+	if (sea_cut > -1.0e8) zs_sky_summer_grass(tint);
 	// The floor under trees, after the season's paint so autumn ground
 	// darkens warm there instead of failing to turn (ground_look); tufts
 	// share it.
@@ -727,7 +738,8 @@ void fragment() {
 		surface_wet = max(surface_wet, bank);
 		tint *= 1.0 - bank * 0.32;
 	}
-	if (!bird_wings && zs_snow > 0.004) {
+	// A sky peak's snow is its season's line instead (vertex, sky_season).
+	if (!bird_wings && zs_snow > 0.004 && sea_cut <= -1.0e8) {
 		float noise = zs_noise(world_position.xz * 0.85);
 		float line = mix(zs_summit.y + 2.0, 0.15 - 2.5, pow(zs_snow, 0.7));
 		float cover = smoothstep(line - 0.6, line + 2.4, world_position.y + (noise - 0.5) * 3.0)
@@ -753,7 +765,7 @@ void fragment() {
 	float sea_level_view = 1.0;
 	if (sea_mist > 0.0) {
 		sea_level_view = mix(SEA_MIST_LEVEL, 1.0, smoothstep(0.02, 0.35, normalize(zs_camera_position - world_position).y));
-		tint = mix(tint, SEA_MIST_ALBEDO * sea_level_view, sea_mist);
+		tint = mix(tint, zs_sky_season_grade(SEA_MIST_ALBEDO, 1.0) * sea_level_view, sea_mist);
 	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);

@@ -248,6 +248,8 @@ const SNOW_SLOPE := Vector2(1.3,2.8)
 const SNOW_LINGER := 50.0
 const SNOW_JITTER := 0.03
 const SNOW_COLOUR := Color(0.9,0.93,0.96)
+## Seasons: a face's snow need (m) where it never holds snow.
+const SNOW_NEVER := 1.0e5
 ## The rock's cooling toward the far peaks' blue-grey, of its own lightness:
 ## half of COOL at the sea, all of it at the top; and that grey's hue.
 const COOL := 0.3
@@ -1138,6 +1140,13 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 	var vertices := PackedVector3Array()
 	var normal_list := PackedVector3Array()
 	var colour_list := PackedColorArray()
+	# Seasons: each face's snow need and shade (`_snow_need`), per vertex.
+	var snow_list := PackedVector2Array()
+	var snow_out := [SNOW_NEVER,0.0]
+	# Coarse faces (the far faces, the skyline) are gentler than the fine
+	# ones they stand for, so would snow more: theirs is read at a corner off
+	# the fine grid instead (`_point_need`), so near and far snow alike.
+	var point_needs := {}
 	for j in range(0,nz-stride,stride):
 		for i in range(0,nx-stride,stride):
 			var c00 := j*nx+i
@@ -1177,18 +1186,22 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 				var ledge := (stepped[t[3]]+stepped[ib]+stepped[id])/3.0
 				var hollow := (hollows[t[3]]+hollows[ib]+hollows[id])/3.0
 				var soft := (calm[t[3]]+calm[ib]+calm[id])/3.0
-				var tone := _tone((a+b+d)/3.0,lie,soft,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,grass,rock,gravel,colours,fields,rng)
+				var tone := _tone((a+b+d)/3.0,lie,soft,(settled[t[3]]+settled[ib]+settled[id])/3.0,ledge,hollow,grass,rock,gravel,colours,fields,rng,snow_out)
 				# Godot's front faces wind clockwise seen from outside.
 				for q in [[a,t[3]],[d,id],[b,ib]]:
 					vertices.append((q[0] as Vector3)+shift)
 					normal_list.append(broad[q[1]])
 					colour_list.append(tone)
+					snow_list.append(Vector2(snow_out[0] if stride == 1 else _point_need(t[3],normals,hollows,fields,point_needs),snow_out[1]))
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	uv.resize(vertices.size())
 	uv2.resize(vertices.size())
-	uv.fill(Vector2(0.0,1.0))
-	for k in range(vertices.size()): uv2[k] = Vector2(0.5,vertices[k].y)
+	# Seasons: the snow need rides UV.x and its shade UV2.x, both unread by
+	# the ground material's grown terrain (reference_surface `peak_snow`).
+	for k in range(vertices.size()):
+		uv[k] = Vector2(snow_list[k].x,1.0)
+		uv2[k] = Vector2(snow_list[k].y,vertices[k].y)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -1224,7 +1237,7 @@ static func _strata_colours() -> Dictionary:
 ## erosion filled; and on the steep faces the world's rock, a little lighter
 ## or darker bed by bed (the granite core's three tones) with now and then a
 ## band of shale.
-func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, hollow: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator) -> Color:
+func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, hollow: float, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator, snow_out := []) -> Color:
 	var slope := sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
 	var p := Vector2(at.x,at.z)
 	var patch: float = (fields[0] as FastNoiseLite).get_noise_2d(p.x,p.y)
@@ -1251,10 +1264,21 @@ func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, holl
 	var snowy := at.y > line and slope < lerpf(SNOW_SLOPE.x,SNOW_SLOPE.y,deep)
 	snowy = snowy or (ledge > 0.5 and phase < 0.5 and slope < 1.3 and at.y > line-SNOW_LINGER)
 	snowy = snowy or (hollow > 5.0 and slope < 1.1 and at.y > line-SNOW_LINGER*1.3)
+	# Seasons: the colour is the ground's under the snow; the shader lays the
+	# snow on once the season brings the line down past this face's need
+	# (shaders/sky_season.gdshaderinc). Snowy as drawn is a need under 0,
+	# and keeps its nudge from the same draw, so nothing else's changes.
+	var need := _snow_need(at.y,line,slope,ledge,phase,hollow)
+	var nudge := 0.0
 	if snowy:
-		var white: Color = strata.snow
-		var blue := clampf(hollow/18.0,0.0,1.0)
-		return Color(white.r*lerpf(1.0,0.93,blue),white.g*lerpf(1.0,0.965,blue),white.b,1.0)*(1.0+rng.randf_range(-SNOW_JITTER,SNOW_JITTER))
+		need = minf(need,-0.01)
+		nudge = rng.randf_range(-SNOW_JITTER,SNOW_JITTER)
+	else:
+		need = maxf(need,0.0)
+		nudge = (fposmod(sin(at.x*12.9898+at.z*78.233)*43758.5453,1.0)*2.0-1.0)*SNOW_JITTER
+	if snow_out.size() >= 2:
+		snow_out[0] = need
+		snow_out[1] = _snow_pack(clampf(hollow/18.0,0.0,1.0),nudge)
 	# Grass and earth by the ground's lie over CALM_REACH m as well as the
 	# face's own, so they lie in whole patches, never a lone green facet on
 	# a cliff.
@@ -1287,6 +1311,45 @@ func _tone(at: Vector3, n: Vector3, calm: float, laid: float, ledge: float, holl
 		return (tone*own).lerp(stone,1.0-BAND_TONE*show)*jitter
 	var shade := (tone.r+tone.g+tone.b)/(core_a.r+core_a.g+core_a.b)
 	return stone*lerpf(1.0,shade,BED_TONE*show)*jitter
+
+## Seasons: how far (m) the snow line must come down before a face at
+## height `y` whitens, by the same tests `_tone` draws the snow with (above
+## the line where the slope holds it, lingering on treads and in hollows);
+## SNOW_NEVER where it never would.
+static func _snow_need(y: float, line: float, slope: float, ledge: float, phase: float, hollow: float) -> float:
+	var need := SNOW_NEVER
+	if slope < SNOW_SLOPE.y:
+		# Holds on this slope once `deep` reaches d: the inverse smoothstep.
+		var d := clampf((slope-SNOW_SLOPE.x)/(SNOW_SLOPE.y-SNOW_SLOPE.x),0.0,1.0)
+		var t := 0.5-sin(asin(1.0-2.0*d)/3.0) if d > 0.0 else 0.0
+		need = maxf(line-y,line-20.0+80.0*t-y)
+	if ledge > 0.5 and phase < 0.5 and slope < 1.3: need = minf(need,line-SNOW_LINGER-y)
+	if hollow > 5.0 and slope < 1.1: need = minf(need,line-SNOW_LINGER*1.3-y)
+	return need
+
+## Seasons: a grid point's snow need, as `_tone` would test a fine face
+## lying there (its line, its fine slope, its tread and hollow), kept in
+## `cache`.
+func _point_need(c: int, normals: PackedVector3Array, hollows: PackedFloat32Array, fields: Array, cache: Dictionary) -> float:
+	if cache.has(c): return cache[c]
+	var i := c%nx
+	var j := c/nx
+	var at := _v(i,j,heights[c])
+	var n := normals[c]
+	var slope := sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
+	var p := Vector2(at.x,at.z)
+	var patch: float = (fields[0] as FastNoiseLite).get_noise_2d(p.x,p.y)
+	var phase := fposmod(bed_at(at.y+(fields[0] as FastNoiseLite).get_noise_2d(p.x*2.3+71.0,p.y*2.3-13.0)*BED_EDGE,p),1.0)
+	var line := snowline+patch*SNOW_RAG-clampf(hollows[c],-10.0,25.0)*SNOW_HOLLOW
+	var need := _snow_need(at.y,line,slope,stepped[c],phase,hollows[c])
+	cache[c] = need
+	return need
+
+## A snowy face's shade for the shader (sky_season zs_sky_snow_colour): the
+## nudge in 1/32 steps as the whole part, how blue as the fraction.
+static func _snow_pack(blue: float, nudge: float) -> float:
+	var step := roundf((clampf(nudge/SNOW_JITTER,-1.0,1.0)*0.5+0.5)*32.0)
+	return step+clampf(blue,0.0,1.0)*0.999
 
 ## What a bed is, by its index up the range: mostly the granite's three
 ## tones, with BANDS' odds of a sand or a shale band, seeded per range.

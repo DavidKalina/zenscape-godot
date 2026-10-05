@@ -17,6 +17,7 @@
 // ZS_CLOUD_SEA_SHADE to paint it) and the sky's real objects
 // (shaders/sky_objects.gdshaderinc, which only ask how much it hides).
 #include "res://shaders/reference_globals.gdshaderinc"
+#include "res://shaders/sky_season.gdshaderinc"
 
 // 0 paints nothing; the look pass sets it, and F6 turns it off with the rest.
 uniform float cloud_sea = 0.0;
@@ -52,13 +53,30 @@ bool zs_sea_half_res() {
   return cloud_sea_style == 1;
 }
 
+// How far each style takes the season's mood (shaders/sky_season.gdshaderinc):
+// Opal, Storybook, Mystic. Mystic's pastels carry their own colour, so less.
+// Night has its own palette (night_sky), so the mood all but leaves by dark.
+const vec3 SEA_SEASON_MOOD = vec3(1.0, 0.9, 0.6);
+const float SEA_SEASON_NIGHT = 0.8;
+
 // The sea along `dir` (world) / `room` (the room's turn of it), premultiplied,
-// in the chosen style. `horizon` is the sky's colour along the flattened
-// direction, `below` the dome's own colour along `dir`.
+// in the chosen style, in the season's mood. `horizon` is the sky's colour
+// along the flattened direction, `below` the dome's own colour along `dir`.
 vec4 zs_cloud_sea(vec3 dir, vec3 room, vec3 horizon, vec3 below) {
-  if (cloud_sea_style == 1) return zs_cloud_sea_storybook(dir, room, horizon, below);
-  if (cloud_sea_style == 2) return zs_cloud_sea_mystic(dir, room, horizon, below);
-  return zs_cloud_sea_opal(dir, room, horizon, below);
+  vec4 sea;
+  float mood;
+  if (cloud_sea_style == 1) {
+    sea = zs_cloud_sea_storybook(dir, room, horizon, below);
+    mood = SEA_SEASON_MOOD.y;
+  } else if (cloud_sea_style == 2) {
+    sea = zs_cloud_sea_mystic(dir, room, horizon, below);
+    mood = SEA_SEASON_MOOD.z;
+  } else {
+    sea = zs_cloud_sea_opal(dir, room, horizon, below);
+    mood = SEA_SEASON_MOOD.x;
+  }
+  sea.rgb = zs_sky_season_grade(sea.rgb, mood * (1.0 - SEA_SEASON_NIGHT * zs_night));
+  return sea;
 }
 #endif
 #endif
