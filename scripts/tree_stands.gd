@@ -5,6 +5,7 @@ extends RefCounted
 ## key, so no random stream is touched. `field` is a biome blend
 ## (scripts/biome_blend.gd): its moisture, altitude and water distance lean
 ## each stand. Preloaded, not a class_name.
+const Plate = preload("res://scripts/plate.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 
 ## Tree species by stand. The land is split into stands about STAND_SIZE
@@ -68,7 +69,7 @@ static func stand(p: Vector2, salt: int, field: RefCounted) -> Dictionary:
 			if d < nearest:
 				nearest = d
 				best = {"key":[salt,c.x,c.y,30],"seed":seed}
-	var at: Vector2 = best.seed.clamp(Vector2(-13.99,-13.99),Vector2(13.99,13.99))
+	var at: Vector2 = best.seed.clamp(-Vector2.ONE*(Plate.HALF-0.01),Vector2.ONE*(Plate.HALF-0.01))
 	best.moisture = field.moisture(at)
 	best.altitude = field.altitude(at)
 	return best

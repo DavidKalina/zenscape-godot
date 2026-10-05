@@ -23,6 +23,7 @@ extends Node3D
 
 const SkyPillar = preload("res://scripts/sky_pillar.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+const SkyWorld = preload("res://scripts/sky_world.gd")
 
 ## The forest in sight of the plate: its middle (home coordinates) and turn
 ## (radians about y), local +z out toward the plate.
@@ -171,11 +172,7 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 
 ## A hash of a cell, 0 to 1, one per salt (as SkyPeaks `noise`).
 static func noise(cell: Vector2i, salt: int) -> float:
-	var h := cell.x*73856093^cell.y*19349663^salt*83492791^7*2654435761
-	h = (h^(h >> 13))*1274126177
-	h = (h^(h >> 16))*668265263
-	h ^= h >> 15
-	return float(h & 0xFFFFFF)/float(0x1000000)
+	return SkyWorld.noise(cell,salt)
 
 # --- Making one -------------------------------------------------------------------
 

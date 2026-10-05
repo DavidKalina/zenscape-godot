@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 var failures := 0
 func _initialize() -> void:
 	_run.call_deferred()
@@ -23,14 +24,18 @@ func _run() -> void:
 	for i in range(editor.data.points.size()):
 		var point: Vector2 = editor.data.points[i]
 		var edge := maxf(absf(point.x),absf(point.y))
-		if edge > 13.9999:
+		if edge > Plate.RIM:
 			check(is_equal_approx(heights[i],0.6),"Sealed rim retains fidelity soil datum")
-		elif edge > 12.5 and edge < 13.5:
+		# The foundation stands on the 28 m square (NativeTerrainData.reset_flat).
+		elif edge > Plate.LEGACY_HALF-1.5 and edge < Plate.LEGACY_HALF-0.5:
 			near_edge.append(heights[i])
 	near_edge.sort()
 	check(near_edge[near_edge.size()/2] > 2.0,"Green thickness is actual raised ground above the rim")
 	check(editor._skirt.mesh.get_surface_count() == 1,"No artificial extra turf band")
-	check(editor._skirt.mesh.get_aabb().is_equal_approx(editor._skirt_mesh.get_aabb()),"Foundation preserves original soil thickness")
+	# The earth sides are the square's shore wall (scripts/island_shore.gd):
+	# the soil still runs from the land's edge down to the slab's base.
+	var sides: AABB = editor.terrain.global_transform.affine_inverse()*editor._skirt.global_transform*editor._skirt.mesh.get_aabb()
+	check(sides.position.y <= NativeTerrainData.SLAB_BASE+0.01 and sides.end.y >= Array(near_edge).min()-0.01,"Foundation preserves original soil thickness")
 	editor.grass_amount = 1.0
 	editor.cover_grass()
 	var colors: PackedColorArray = editor.terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
@@ -38,7 +43,7 @@ func _run() -> void:
 		check(colors[i] == colors[i+1] and colors[i] == colors[i+2],"Ground retains crisp per-face colors")
 	var vertices: PackedVector3Array = editor.terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	for i in range(vertices.size()):
-		if maxf(absf(vertices[i].x),absf(vertices[i].z)) > 13.9999:
+		if maxf(absf(vertices[i].x),absf(vertices[i].z)) > Plate.RIM:
 			check(colors[i].g > colors[i].r,"Painted cut rim remains green, not misclassified cliff rock")
 	check(editor.data.blades.count(0.0) == editor.data.blades.size(),"Ground adds no blades")
 	var saved = editor.data.to_document()

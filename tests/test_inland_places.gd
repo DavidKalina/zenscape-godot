@@ -2,6 +2,7 @@ extends SceneTree
 const Generator = preload("res://scripts/cozy_world_generator.gd")
 const World = preload("res://scripts/inland_world.gd")
 const Places = preload("res://scripts/inland_places.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func check(ok: bool,message: String) -> void:
 	if not ok:
@@ -27,10 +28,8 @@ func run() -> void:
 		for route: Dictionary in world.streams:
 			check(preload("res://scripts/native_stream_record.gd").valid(route),"Water remains downhill")
 	print("QUALITY worst=",worst," sampling_ms=",Time.get_ticks_msec()-started)
-	var reference: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(reference.get_node("terrain").mesh)
-	reference.free()
+	data.setup(PlateFixture.mesh())
 	for habitat in ["woodland","redwood","meadow","alpine","wetland","arid"]:
 		var settings := {"kind":"inland","version":4,"seed":7,"composition":{"woodland":"massif","redwood":"valley","meadow":"foothills","alpine":"mountain","wetland":"marsh","arid":"buttes"}[habitat],"archetype":"range","landform":"original","biome":habitat,"relief":1.0,"breadth":1.0}
 		await preload("res://scripts/inland_landscape.gd").new().form(data,settings)

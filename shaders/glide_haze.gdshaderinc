@@ -31,4 +31,17 @@ float zs_glide_fog_far(float dist, float y, float far) {
 	return 1.0 - seen;
 }
 
+// The mountain ring round the world's edge (scripts/sky_world.gd), its
+// skyline: a curve of its own, reach ZS_RING_REACH and whole by
+// ZS_RING_WHOLE (m: SkyWorld HAZE_REACH, HAZE_WHOLE), so the ring stands
+// pale and blue right across the world.
+const float ZS_RING_REACH = 3500.0;
+const float ZS_RING_WHOLE = 8500.0;
+float zs_glide_fog_ring(float dist, float y) {
+	float low = smoothstep(zs_glide_haze.w + 75.0, zs_glide_haze.w, y);
+	float reach = dist * (1.0 + 0.6 * low) / ZS_RING_REACH;
+	float seen = exp(-reach * reach) * (1.0 - smoothstep(ZS_RING_WHOLE * 0.72, ZS_RING_WHOLE, dist));
+	return 1.0 - seen;
+}
+
 #endif

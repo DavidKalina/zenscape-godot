@@ -20,6 +20,7 @@ extends Node3D
 signal arrived(kind: String, position: Vector3)
 signal moment(kind: String, position: Vector3)
 
+const Plate = preload("res://scripts/plate.gd")
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Moments = preload("res://scripts/life_moments.gd")
@@ -245,7 +246,7 @@ func _batch(label: String, mesh: Mesh, count: int, colors: bool, custom := false
 	instances.instance_count = count
 	instances.mesh = mesh
 	# Creatures wander; one generous box keeps the batch from culling itself.
-	instances.custom_aabb = AABB(Vector3(-16,NativeTerrainData.MIN_HEIGHT-1.0,-16),Vector3(32,45,32))
+	instances.custom_aabb = AABB(Vector3(-(Plate.HALF+2.0),NativeTerrainData.MIN_HEIGHT-1.0,-(Plate.HALF+2.0)),Vector3(Plate.SIZE+4.0,45,Plate.SIZE+4.0))
 	for i in range(count): instances.set_instance_transform(i,_hidden())
 	node.multimesh = instances
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -603,8 +604,8 @@ func _plan_bird() -> void:
 	for i in range(3):
 		var column: Dictionary = _birds.columns[i]
 		var ground: float = survey.ground_at(anchors[i])
-		column.x = clampf(anchors[i].x,-11.0,11.0)
-		column.z = clampf(anchors[i].y,-11.0,11.0)
+		column.x = clampf(anchors[i].x,-(Plate.HALF-3.0),Plate.HALF-3.0)
+		column.z = clampf(anchors[i].y,-(Plate.HALF-3.0),Plate.HALF-3.0)
 		column.top = (ground if not is_nan(ground) else 0.0)+9.0+2.0*i
 		column.base = column.top-8.0
 	# Birds are not tied to one cell; their sites are slots 0..count-1.

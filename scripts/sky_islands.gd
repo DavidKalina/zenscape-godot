@@ -21,6 +21,12 @@ extends Node3D
 ##
 ## Chunks are only translated, never turned, so they light like the plate.
 ##
+## The world is bounded (scripts/sky_world.gd): one seed for every placement
+## in the sky, saved with the world; islands, islets and clouds only within
+## the bounds round the plate's first home; and round them a ring of
+## mountain ranges with a few notches through it, past which an edge wind
+## turns the glide home (`air`). --no-ring opens the sky again, endless.
+##
 ## Between them stand the islets (scripts/sky_islets.gd), small scenery, a
 ## few big forested isles (scripts/sky_forest_isles.gd) to glide in under
 ## the trees of, and now and then a mountain range of the land far below
@@ -41,7 +47,10 @@ extends Node3D
 ## Only the land travels with an island. The sky, the day and the weather
 ## are the world's, and stay as they are.
 
-const HALF := 14.0
+const Plate = preload("res://scripts/plate.gd")
+const HALF := Plate.HALF
+## How far past an outlined island's shore a glider is still over it (m).
+const CLAIM_MARGIN := 1.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
 ## 950 m, over a minute's slow glide, half a minute down a jet stream) and
 ## at different heights, so each is a destination.
@@ -54,20 +63,24 @@ const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
+const SkyHomes = preload("res://scripts/sky_homes.gd")
+## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
+const SkyWorld = preload("res://scripts/sky_world.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
 ## gently out of the haze, or steeply up out of the cloud sea.
 const WANDER_RISE := Vector2(60.0,10.0)
 const FALL_RISE := Vector2(140.0,7.0)
-## Its thermal stands this far off its middle, its base this far down, so
-## it reaches the cushion under the band.
-const THERMAL_SIDE := 24.0
+## Its thermal stands this far off its middle (10 m clear of the plate's
+## side), its base this far down, so it reaches the cushion under the band.
+const THERMAL_SIDE := Plate.HALF+10.0
 const THERMAL_DOWN := 25.0
 ## Only parts this near the plate's middle, and smaller than this, are
 ## hidden while the plate is formed again (`_hide_plate`). That leaves out
-## the sky, the fog and anything else world-sized.
-const NEAR := 22.0
+## the sky, the fog and anything else world-sized. NEAR keeps 8 m past the
+## plate's rim.
+const NEAR := Plate.HALF+8.0
 const LARGEST := 80.0
 ## Height lookups snap to this grid. The terrain data memoises every point
 ## it is asked about, and a glide asks about a great many.
@@ -117,16 +130,28 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	editor = scene._chunk_editor
 	name = "SkyIslands"
+	# The wonders (SkyHomes): the ranges stand, the ring round the world with
+	# them (scripts/sky_world.gd); --wonders brings back every other one,
+	# --no-peaks takes the ranges away, --no-ring the ring and the bounds.
+	var args := OS.get_cmdline_user_args()
+	if "--wonders" in args:
+		SkyHomes.stone = true
+		SkyHomes.isles = true
+	if "--no-peaks" in args: SkyHomes.peaks = false
+	SkyWorld.read_flags()
 	currents = SkyCurrents.new()
 	add_child(currents)
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
 	currents.build(slots)
+	# The clouds are laid out with the islands (`build`), once the world's
+	# seed and its mountains are known: never here, where it would wait on
+	# the layout on the main thread.
 	clouds = SkyClouds.new()
 	add_child(clouds)
-	clouds.build(slots)
 	islets = SkyIslets.new()
 	islets.palette_source = editor.data._palette
+	islets.flora_source = editor.content
 	add_child(islets)
 	skip.append(islets)
 	peaks = SkyPeaks.new()
@@ -149,9 +174,11 @@ func setup(owner_scene: Node3D) -> void:
 ## plate's own, replacing any earlier ones.
 func build() -> void:
 	clear()
-	clouds.reset()
+	_keep()
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
+	clouds.build(slots)
+	clouds.reset()
 	cells = SkyCells.new(slots)
 	cells.origin = origin
 	currents.position = origin
@@ -164,6 +191,7 @@ func build() -> void:
 		_add(home,home+origin,Vector3.ZERO)
 		if not _fixed(home): _thermal(home)
 	_islet_materials()
+	islets.side_source = editor._skirt_mesh.surface_get_material(0) if editor._skirt_mesh != null else null
 	islets.reset(cells)
 	peaks.ground_source = islets.ground_source
 	peaks.canopy_tint = SkyIslets._canopy_tint
@@ -312,6 +340,8 @@ static func seed_of(home: Vector3) -> int:
 ## as the flip bakes its underside (scripts/diorama_flip.gd `_bake_underside`); its earth sides are fitted
 ## here on the main thread. Drawn with the plate's own ground and earth-side
 ## materials, only the plate's palette carries over, never what stands on it.
+## A fresh plain is its seed's island (Genesis `shape`), so the far islands
+## show their outlines and shore walls as the plate does.
 func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 	var land := editor.data
 	var mesh := land.source_mesh
@@ -329,7 +359,9 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 		plain.setup(mesh,arrays)
 		if document.is_empty() or not plain.load_document(document): Genesis.shape(plain,chunk_seed)
 		baked.append(plain)
-		baked.append(plain.build_mesh()))
+		# Only the island's faces (scripts/island_outline.gd); its shore wall
+		# comes with the earth sides below.
+		baked.append(plain.play_mesh(plain.build_mesh())))
 	while not WorkerThreadPool.is_task_completed(task): await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(task)
 	if baked.size() < 2 or baked[1] == null or not is_instance_valid(island) or island.is_queued_for_deletion(): return
@@ -347,8 +379,17 @@ func copy_under(point: Vector3) -> int:
 	for i in range(offsets.size()):
 		if _rise[i] != Vector3.ZERO or lands[i] == null: continue
 		var local := editor.terrain.to_local(point-offsets[i])
-		if absf(local.x) <= HALF and absf(local.z) <= HALF: return i
+		if absf(local.x) > HALF or absf(local.z) > HALF: continue
+		if _over_land(lands[i],Vector2(local.x,local.z)): return i
 	return -1
+
+## Whether plate point `p` is over `land`'s ground, or within CLAIM_MARGIN of
+## it (a full square is all ground). Snapped, as `_height` is, so the glide's
+## flight does not fill the terrain's lookup.
+func _over_land(land: NativeTerrainData, p: Vector2) -> bool:
+	if land.outline.is_empty(): return true
+	var at := Vector2(snappedf(p.x,SNAP),snappedf(p.y,SNAP))
+	return land.nearest_land(at,0.0,CLAIM_MARGIN) != Vector2.INF
 
 ## Makes copy `index` the plate. The island left is kept, and its look baked
 ## at the plate's spot; the plate's own parts hide while it is formed again
@@ -430,7 +471,7 @@ func save_state() -> Dictionary:
 	var kept := []
 	for entry: Dictionary in built_islands.values():
 		kept.append({"home":[entry.home.x,entry.home.y,entry.home.z],"label":entry.label,"document":entry.document})
-	return {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept}
+	return {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept,"seed":SkyWorld.seed}
 
 ## Takes a world's saved sky (`save_state`), or none for a new world. The
 ## islands stand again at the next glide.
@@ -446,6 +487,50 @@ func load_state(state: Dictionary) -> void:
 		if not entry is Dictionary or not entry.get("home") is Array or entry.home.size() != 3 or not entry.get("document") is Dictionary: continue
 		var home := Vector3(float(entry.home[0]),float(entry.home[1]),float(entry.home[2]))
 		built_islands[_key(home)] = {"home":home,"label":str(entry.get("label","Island")),"document":entry.document}
+	# The world's seed: a world saved before it had one keeps the sky it had
+	# (SkyWorld LEGACY_SEED); --sky-seed=N tries another. Never changed
+	# under a worker working out the layout.
+	SkyWorld.settle()
+	SkyWorld.seed = int(state.get("seed",SkyWorld.LEGACY_SEED))
+	if SkyWorld.seed_flag() >= 0: SkyWorld.seed = SkyWorld.seed_flag()
+	_keep()
+	# The world's layout worked out on a worker from here, as the world
+	# starts (SkyWorld `prepare`); the build view stands its ranges once it
+	# is (`_process`). A skyline made for another world's seed is let go.
+	SkyWorld.prepare()
+	if peaks != null and peaks.ring.line_count() > 0: peaks.ring.warm(peaks)
+
+## Sets the mountain ring's skyline (scripts/sky_ring.gd) to be worked out
+## on workers, if it isn't yet (it is from the world's start: `_process`);
+## nothing waits on it.
+func warm_ring() -> void:
+	if peaks == null: return
+	_keep()
+	peaks.ring.warm(peaks)
+
+## Whether the glide's sky is out (`show_air`).
+var _air := false
+
+## The build view: the mountains stand round the plate as they do round the
+## glide (SkyPeaks `overview`), on their skylines, warmed on workers as the
+## world starts; the rest of the glide's sky stays away.
+func _process(_delta: float) -> void:
+	if _air or peaks == null or not SkyWorld.ring_on(): return
+	if peaks.ground_source == null:
+		# The plate's own ground material, once it has one.
+		var ground: Material = editor.terrain.get_active_material(0) if editor != null and editor.terrain != null else null
+		if ground == null: return
+		peaks.ground_source = ground
+		peaks.canopy_tint = SkyIslets._canopy_tint
+		peaks._material = null
+	peaks.overview(origin)
+
+## Tells the ring which islands it must keep clear of and hold inside its
+## edge (SkyWorld `keep`): every one built and left, and the plate's own.
+func _keep() -> void:
+	var homes: Array[Vector3] = [-origin]
+	for entry: Dictionary in built_islands.values(): homes.append(entry.home)
+	SkyWorld.keep(homes)
 
 ## A new instance of `source` that shares its materials, and its mesh unless
 ## given `drawn`.
@@ -473,12 +558,16 @@ func _copy(source: GeometryInstance3D, drawn: Mesh = null) -> GeometryInstance3D
 	return copy
 
 ## The currents and clouds show only while gliding; the build view stays
-## as it was.
+## as it was, but for the mountains: they stand round the plate in both
+## (`_process`). Back from a glide, the ranges made in full near it are let
+## go, so the build view stands on their skylines.
 func show_air(on: bool) -> void:
+	_air = on
 	currents.visible = on
 	clouds.visible = on
 	islets.visible = on
-	peaks.visible = on
+	peaks.visible = on or SkyWorld.ring_on()
+	if not on: peaks.let_go()
 	towers.visible = on
 	isles.visible = on
 
@@ -488,9 +577,15 @@ func show_air(on: bool) -> void:
 func in_cloud(point: Vector3, time: float) -> float:
 	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
 
-## The air at a global point (SkyCurrents `air_at`).
+## The air at a global point (SkyCurrents `air_at`), and past the mountain
+## ring the edge wind blowing home (SkyWorld `edge_air`).
 func air(point: Vector3) -> Dictionary:
-	return currents.air_at(point)
+	var here: Dictionary = currents.air_at(point)
+	var edge := SkyWorld.edge_air(point-origin)
+	if edge.is_empty(): return here
+	here.wind = (here.get("wind",Vector3.ZERO) as Vector3)+(edge.wind as Vector3)
+	here.along = (here.get("along",Vector3.ZERO) as Vector3)+(edge.along as Vector3)
+	return here
 
 ## The height of whatever island stands under a global point, or null over
 ## open air.
@@ -509,8 +604,9 @@ func ground(point: Vector3) -> Variant:
 	return peaks.ground(point)
 
 ## The island whose footprint holds a global point, as a solid: Vector2(its
-## ground's height there, the slab's flat underside (NativeTerrainData
-## .SLAB_BASE)), in global metres, or null over open air.
+## ground's height there, the underside there: the hanging rock under an
+## island with an outline (NativeTerrainData `underside`), or the square
+## slab's flat base, SLAB_BASE), in global metres, or null over open air.
 func body(point: Vector3) -> Variant:
 	var plate: Variant = _body(point)
 	if plate != null: return plate
@@ -535,7 +631,11 @@ func _body(point: Vector3, land: NativeTerrainData = null) -> Variant:
 	var top: Variant = _height(point,land)
 	if top == null: return null
 	var local := editor.terrain.to_local(point)
-	var under := editor.terrain.to_global(Vector3(local.x,NativeTerrainData.SLAB_BASE,local.z)).y
+	# The rock under an island with an outline (NativeTerrainData `underside`),
+	# at the spot `_height` reads, or the slab's flat base.
+	var at := Vector2(snappedf(local.x,SNAP),snappedf(local.z,SNAP))
+	var base := (land if land != null else editor.data).underside(at)
+	var under := editor.terrain.to_global(Vector3(local.x,base,local.z)).y
 	return Vector2(float(top),under)
 
 ## The plate's height under a global point, in global metres, or null off it;

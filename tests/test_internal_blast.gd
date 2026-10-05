@@ -1,5 +1,6 @@
 extends SceneTree
 const Internal = preload("res://scripts/internal_blast.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -8,10 +9,8 @@ func check(ok: bool, message: String) -> void:
 		push_error(message)
 	else: print("PASS: "+message)
 func run() -> void:
-	var source = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	for i in range(data.points.size()): data.heights[i] = 2.0+maxf(0.0,12.0-data.points[i].length()*1.4)
 	var before := data.heights.duplicate()

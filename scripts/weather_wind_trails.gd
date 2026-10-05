@@ -1,6 +1,7 @@
 extends Node3D
 ## Sparse visual air parcels, driven by the weather clock rather than input.
 ## They depict existing wind; they never inject extra forces or gust events.
+const Plate = preload("res://scripts/plate.gd")
 const SHADER = preload("res://shaders/gust_trail.gdshader")
 const CAPACITY := 12
 var enabled := true
@@ -12,6 +13,10 @@ var parcels: Array[Dictionary] = []
 var _rng := RandomNumberGenerator.new()
 var _until_birth := 0.4
 var _mesh: ImmediateMesh
+## The square the parcels are born in and fade at the edge of: the land's
+## middle and half-width (`set_bounds`), the whole plate until told.
+var _middle := Vector2.ZERO
+var _half := Plate.HALF
 
 func setup(probe: Callable) -> void:
 	ground_height = probe
@@ -26,6 +31,12 @@ func setup(probe: Callable) -> void:
 				_mesh.surface_set_color(Color(lane*0.23,0,0,1))
 				_mesh.surface_add_vertex(Vector3((u-0.5)*6.0,sin(u*TAU)*0.14+lane*0.38,sin(u*PI)*0.4+lane*0.55))
 	_mesh.surface_end()
+
+## The land's middle and its reach (half its bounds' diagonal), as the gust
+## fronts take them (studies/atmosphere.gd).
+func set_bounds(middle: Vector2, reach: float) -> void:
+	_middle = middle
+	_half = maxf(reach*sqrt(0.5),4.0)
 
 func advance(delta: float, strength: float, angle: float) -> void:
 	if delta<=0.0 or not is_finite(delta) or not ground_height.is_valid(): return
@@ -43,7 +54,7 @@ func advance(delta: float, strength: float, angle: float) -> void:
 		# The curve stays anchored; the shader draws the stroke along it.
 		var phase: float = parcel.age/parcel.duration
 		var fade := smoothstep(0.0,0.18,phase)*(1.0-smoothstep(0.65,1.0,phase))
-		var edge := 1.0-smoothstep(11.0,14.0,maxf(absf(node.position.x),absf(node.position.z)))
+		var edge := 1.0-smoothstep(_half-minf(3.0,_half*0.25),_half,maxf(absf(node.position.x-_middle.x),absf(node.position.z-_middle.y)))
 		var material := node.material_override as ShaderMaterial
 		material.set_shader_parameter("clock",parcel.age)
 		material.set_shader_parameter("opacity",opacity_scale*fade*edge*smoothstep(0.03,0.35,power)*lerpf(0.30,0.55,clampf(power/2.0,0.0,1.0)))
@@ -61,7 +72,8 @@ func _height(point: Vector3, direction: Vector3) -> Variant:
 	return highest
 
 func _birth(power: float, direction: Vector3) -> void:
-	var location := Vector3(_rng.randf_range(-10.0,10.0),0,_rng.randf_range(-10.0,10.0))
+	var inset := minf(4.0,_half*0.3)
+	var location := Vector3(_middle.x+_rng.randf_range(-(_half-inset),_half-inset),0,_middle.y+_rng.randf_range(-(_half-inset),_half-inset))
 	var height: Variant = _height(location,direction)
 	if height == null: return
 	var lift := _rng.randf_range(1.0,2.8)

@@ -1,4 +1,5 @@
 extends SceneTree
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 
 func _initialize() -> void:
@@ -11,13 +12,8 @@ func check(ok: bool, message: String) -> void:
 
 func _run() -> void:
 	# A real triangulated chunk keeps this model contract independent of the UI.
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-14,0,-14),Vector3(14,0,-14),Vector3(-14,0,14),Vector3(14,0,-14),Vector3(14,0,14),Vector3(-14,0,14)])
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var data := NativeTerrainData.new()
-	data.setup(mesh)
+	data.setup(PlateFixture.mesh())
 	var pose := NativeObjectPose.make(Basis.from_euler(Vector3(0.1,0.3,0.2)).scaled(Vector3(1.2,1.8,0.7)),0.4)
 	var tint := NativeObjectPose.encode_tint(Color(0.3,0.6,0.2))
 	var id := data.place("tree",Vector2.ZERO,0.3,1.2,pose,tint)
@@ -74,10 +70,8 @@ func _run() -> void:
 	quit(1 if failures else 0)
 
 func _check_generated_flora() -> void:
-	var geometry: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(geometry.get_node("terrain").mesh)
-	geometry.free()
+	data.setup(PlateFixture.mesh())
 	data.form_range()
 	check(data.fill_landscape_flora(),"Range generates editable flora")
 	if data.objects.size() < 2:

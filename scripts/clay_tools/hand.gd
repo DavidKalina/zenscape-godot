@@ -119,7 +119,10 @@ const POKE_STRENGTH := 0.7
 ## so the rim's own points take the groove's bed. Only the groove itself is
 ## dug so: its banks' raised lip, the pinch, the palm, the rub and a thumb
 ## running along the edge still fade, so the plate's outline stays clean
-## round the notch.
+## round the notch. On an island with an outline (scripts/island_outline.gd)
+## the shore is the rim: a groove heading out across it within BREACH_ANGLE
+## of the shore's outward way breaches it, notching the shore's own points,
+## and is carried BREACH_PAST beyond the shore.
 const BREACH_ANGLE := 50.0
 const BREACH_PAST := 0.4
 
@@ -259,6 +262,7 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 	var near_d: PackedFloat32Array = clay.near_d
 	var points: PackedVector2Array = clay.editor.data.points
 	var notched := false
+	var shore: PackedFloat32Array = clay.editor.data.shore_distance
 	for k in near.size():
 		var i := near[k]
 		var t := near_d[k]/_groove_hw()
@@ -267,7 +271,7 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 			_dug[i] = 1
 			if breach != Vector2.ZERO:
 				fade = 1.0
-				notched = notched or points[i].dot(breach) >= half-0.001
+				notched = notched or (points[i].dot(breach) >= half-0.001 if shore.is_empty() else shore[i] == 0.0)
 			var goal := base[i]-depth*(1.0-smoothstep(GROOVE_FLOOR,1.0,t))
 			var h := heights[i]
 			if goal < h: heights[i] = maxf(lerpf(h,goal,GROOVE_STEP*g*fade),NativeTerrainData.MIN_HEIGHT)
@@ -278,17 +282,25 @@ func _groove(heights: PackedFloat32Array, q: Vector2, g: float, breach := Vector
 			if goal > h: heights[i] = lerpf(h,goal,GROOVE_STEP*g*fade)
 	if notched:
 		var last: Dictionary = clay.last_notch
-		if last.is_empty() or last.normal != breach or (last.at as Vector2).distance_to(q) > _groove_hw()*2.0:
+		if last.is_empty() or (last.normal as Vector2).dot(breach) < 0.9 or (last.at as Vector2).distance_to(q) > _groove_hw()*2.0:
 			clay.notches += 1
 			clay.sound(&"notch",q)
 		var along := Vector2(breach.y,-breach.x)
-		clay.last_notch = {"normal":breach,"at":breach*half+along*q.dot(along),"bed":bed}
+		var at := breach*half+along*q.dot(along)
+		if not shore.is_empty(): at = q+breach*maxf(clay.edge_way(clay.editor.data,q).z,0.0)
+		clay.last_notch = {"normal":breach,"at":at,"bed":bed}
 
 ## The outward normal of the side a groove dab at `q` breaches: the nearest
 ## side's, when `q` is in the edge fade and the stroke heads out across that
 ## side within BREACH_ANGLE degrees; else zero.
 func _breaching(q: Vector2) -> Vector2:
 	var heading: Vector2 = clay.heading
+	var data: NativeTerrainData = clay.editor.data
+	if not data.outline.is_empty():
+		var way: Vector3 = clay.edge_way(data,q)
+		var out := Vector2(way.x,way.y)
+		if heading == Vector2.ZERO or out == Vector2.ZERO or way.z > clay.PLATE_HALF-clay.EDGE.x: return Vector2.ZERO
+		return out if heading.dot(out) >= cos(deg_to_rad(BREACH_ANGLE)) else Vector2.ZERO
 	if maxf(absf(q.x),absf(q.y)) < clay.EDGE.x or heading == Vector2.ZERO: return Vector2.ZERO
 	var normal := Vector2(signf(q.x),0.0) if absf(q.x) >= absf(q.y) else Vector2(0.0,signf(q.y))
 	return normal if heading.dot(normal) >= cos(deg_to_rad(BREACH_ANGLE)) else Vector2.ZERO
@@ -301,6 +313,16 @@ func _carry_to_lip() -> bool:
 	var heading: Vector2 = clay.heading
 	var from: Vector2 = clay.path_end()
 	var out := heading.dot(_breach)
+	var data: NativeTerrainData = clay.editor.data
+	if not data.outline.is_empty():
+		# Along the heading to the shore, and BREACH_PAST beyond it.
+		if out <= 0.0: return false
+		var run := 0.0
+		while run < clay.PLATE_HALF and data.ground_height(from+heading*run) != null: run += 0.1
+		if run+BREACH_PAST <= 0.05: return false
+		_carried = true
+		clay.queue_point(from+heading*(run+BREACH_PAST))
+		return true
 	var left: float = clay.PLATE_HALF+BREACH_PAST-from.dot(_breach)
 	if out <= 0.0 or left <= 0.05: return false
 	_carried = true

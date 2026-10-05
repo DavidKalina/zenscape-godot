@@ -2,6 +2,7 @@ extends SceneTree
 ## The paintable tint layer: a dab colours only the ground it covers, its amount
 ## scales the coat, snow still caps the peaks, and undo, save and legacy saves
 ## all land back on byte-identical vertex colours.
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 
 func check(label: String, condition: bool) -> void:
@@ -10,8 +11,7 @@ func check(label: String, condition: bool) -> void:
 	print("%s: %s" % [label,"ok" if condition else "FAIL"])
 
 func _initialize() -> void:
-	var source: Node = load("res://assets/zen_reference/geometry.scn").instantiate()
-	var mesh: ArrayMesh = source.get_node("terrain").mesh
+	var mesh: ArrayMesh = PlateFixture.mesh()
 	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var centers := PackedVector2Array()
 	for i in range(0,vertices.size(),3):
@@ -112,7 +112,6 @@ func _initialize() -> void:
 	var before: Dictionary = reopened.to_document()
 	check("out-of-range tint rejects atomically",not reopened.load_document(bad) and reopened.to_document() == before)
 
-	source.free()
 	print("Native paint: %d failures" % failures)
 	quit(1 if failures else 0)
 

@@ -40,6 +40,7 @@ const ROWS: Dictionary = FlowerSowing.SLOTS.wheat.drift.rows
 ## 277 triangles (475k) before the rows were drilled; it may grow a little
 ## for the denser rows and the awned ears, not far past.
 const FIELD_TRIANGLES := 560000
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures: Array[String] = []
 var only := ""
@@ -68,11 +69,9 @@ func run() -> void:
 # --- On a flat plate ------------------------------------------------------------------
 
 func _flat_data() -> NativeTerrainData:
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
-	source.free()
 	return data
 
 ## One stroke of `slot` along `path` at `speed` m/s, `passes` times back and

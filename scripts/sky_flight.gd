@@ -99,13 +99,32 @@ func advance(delta: float, eye: Vector3, in_cloud: float) -> void:
 
 ## While no glide is on: the sea eases back to rest and the vapour clears.
 func _process(delta: float) -> void:
-	if active or _settling <= 0.0: return
+	if active: return
+	if _settling <= 0.0:
+		_publish_overview()
+		return
 	_settling = maxf(0.0,_settling-delta)
 	var k := 1.0-exp(-delta/(SETTLE*0.3)) if _settling > 0.0 else 1.0
 	flight = flight.lerp(Vector4(0.0,0.0,1.0,0.0),k)
 	vapour = lerpf(vapour,0.0,k)
 	haze = lerpf(haze,0.0,k)
 	_publish()
+
+## The build view's mountains' haze (SkyHaze `overview`), each frame the
+## glide is off: the cloud sea's style may change under it.
+func _publish_overview() -> void:
+	var view: Variant = scene.get("_display_fog") if scene != null else null
+	if view == null: return
+	SkyHaze.overview(view.blend,_sea(),Vector3.ZERO)
+
+## The sky's cloud sea: (strength, style).
+func _sea() -> Vector2:
+	var environment: Variant = scene.get("_environment") if scene != null else null
+	var sky: ShaderMaterial = environment.sky.sky_material as ShaderMaterial if environment != null and environment.sky != null else null
+	if sky == null: return Vector2.ZERO
+	var strength: Variant = sky.get_shader_parameter("cloud_sea")
+	var style: Variant = sky.get_shader_parameter("cloud_sea_style")
+	return Vector2(0.0 if strength == null else float(strength),0.0 if style == null else float(style))
 
 func _publish() -> void:
 	RenderingServer.global_shader_parameter_set("zs_sea_flight",flight)
@@ -127,7 +146,10 @@ func _publish() -> void:
 	if isles != null:
 		spots.append_array(isles.haze_spots(eye))
 		spots.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
-	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots)
+	# The world's middle, for the mountain ring's skyline (scripts/sky_world.gd).
+	var middle: Variant = islands.get("origin") if islands != null else null
+	var ring := SkyHaze.ring_spot(middle) if middle is Vector3 else Vector4.ZERO
+	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots,ring)
 	if _veil == null: return
 	_veil.visible = vapour > 0.003
 	(_veil.material as ShaderMaterial).set_shader_parameter("amount",vapour)

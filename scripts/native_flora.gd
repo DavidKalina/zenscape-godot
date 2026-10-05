@@ -4,11 +4,17 @@ extends RefCounted
 ## from the terrain recipe in source plot space. Placement arithmetic keeps
 ## doubles until the terrain data packs float32 poses and linear float32 tints,
 ## which is exactly what the source's Float32 instance buffers held.
-const SIZE := 28.0
+const Plate = preload("res://scripts/plate.gd")
+## The source plot: the old 28 m square a range landscape sits on. Scatter
+## and the site's height range are taken over it.
+const SIZE := Plate.LEGACY_HALF*2.0
+## Scales the scatter's try budgets; counts come from the recipe (content),
+## so this stays 1 whatever the plate's size.
 const AREA := 1.0
-const N := 51
-const W := 52
-const CELL := 28.0/51.0
+## The source water field, as NativeRecipeWater's.
+const N := Plate.RECIPE_WATER_CELLS
+const W := N+1
+const CELL := Plate.RECIPE_WATER_HALF*2.0/N
 const SAME_WATER := 0.001
 const FLOWER_PALETTES := [["#efc34f","#b7a3d5","#fff0cc"],["#a38bdd","#d6a6d9","#f4efe5"],["#de8599","#bc7198","#fff0df"],["#f1e8cf","#b7a3d5","#fff0df"]]
 const BLOSSOM_COLORS := ["#f1d7d7","#f4e8ce","#dba6bc"]
@@ -152,7 +158,7 @@ static func water_field(ground: Callable, ponds: Array, streams: Array) -> Dicti
 	h.resize(W*W)
 	for j in range(W):
 		for i in range(W):
-			h[j*W+i] = ground.call(-14.0+i*CELL,-14.0+j*CELL)
+			h[j*W+i] = ground.call(-Plate.RECIPE_WATER_HALF+i*CELL,-Plate.RECIPE_WATER_HALF+j*CELL)
 	var wet := PackedByteArray()
 	wet.resize(W*W)
 	var kind := PackedByteArray()
@@ -161,8 +167,8 @@ static func water_field(ground: Callable, ponds: Array, streams: Array) -> Dicti
 	dep.resize(W*W)
 	var bodies: Array = []
 	for body in ponds:
-		var bi := _js_round((float(body.x)+14.0)/CELL)
-		var bj := _js_round((float(body.z)+14.0)/CELL)
+		var bi := _js_round((float(body.x)+Plate.RECIPE_WATER_HALF)/CELL)
+		var bj := _js_round((float(body.z)+Plate.RECIPE_WATER_HALF)/CELL)
 		var best := INF
 		var bk := -1
 		for dj in [-1,0,1]:
@@ -206,8 +212,8 @@ static func water_field(ground: Callable, ponds: Array, streams: Array) -> Dicti
 	var sd: PackedFloat32Array = preload("res://scripts/native_recipe_water.gd").signed_distance(wet,kind)
 	return {"shore":sd,"depth":dep,"kind":kind}
 static func _sample(values: PackedFloat32Array, x: float, z: float, fallback: float) -> float:
-	var fi := (x+14.0)/CELL
-	var fj := (z+14.0)/CELL
+	var fi := (x+Plate.RECIPE_WATER_HALF)/CELL
+	var fj := (z+Plate.RECIPE_WATER_HALF)/CELL
 	if fi < 0.0 or fj < 0.0 or fi > N or fj > N: return fallback
 	var i := mini(N-1,floori(fi))
 	var j := mini(N-1,floori(fj))
@@ -218,8 +224,8 @@ static func _sample(values: PackedFloat32Array, x: float, z: float, fallback: fl
 static func shore_at(field: Dictionary, x: float, z: float) -> float: return _sample(field.shore,x,z,40.0)
 static func depth_at(field: Dictionary, x: float, z: float) -> float: return _sample(field.depth,x,z,0.0)
 static func kind_at(field: Dictionary, x: float, z: float) -> int:
-	var i := _js_round((x+14.0)/CELL)
-	var j := _js_round((z+14.0)/CELL)
+	var i := _js_round((x+Plate.RECIPE_WATER_HALF)/CELL)
+	var j := _js_round((z+Plate.RECIPE_WATER_HALF)/CELL)
 	if i < 0 or j < 0 or i > N or j > N: return 0
 	return field.kind[j*W+i]
 
@@ -228,9 +234,9 @@ class Site:
 	var ground: Callable
 	var fbm: Callable
 	var shore_of: Callable
-	var n := 225
 	var step := 0.125
-	var half := 14.0
+	var n := roundi(Plate.SIZE/step)+1
+	var half := Plate.HALF
 	var grid := PackedFloat32Array()
 	var lo := INF
 	var hi := -INF
@@ -262,7 +268,7 @@ class Site:
 		grid.fill(NAN)
 		for i in range(33):
 			for j in range(33):
-				var h := lattice((i/32.0-0.5)*28.0,(j/32.0-0.5)*28.0)
+				var h := lattice((i/32.0-0.5)*SIZE,(j/32.0-0.5)*SIZE)
 				if h < lo: lo = h
 				if h > hi: hi = h
 		span = maxf(0.001,hi-lo)
@@ -337,7 +343,7 @@ class Flowering:
 		var open := flag("open")
 		return (1.0-smoothstep(0.3,0.52,site.slope)) * ((0.65+0.35*smoothstep(0.08,0.32,site.moisture)) if open else smoothstep(0.3,0.58,site.moisture)) * (1.0 if open else 1.0-smoothstep(0.55,0.85,site.tree01)) * smoothstep(0.3,1.1,site.shore)
 	func _edge(x: float, z: float) -> float:
-		return smoothstep(0.6,1.3 if flag("open") else 3.0,28.0/2.0-maxf(absf(x),absf(z)))
+		return smoothstep(0.6,1.3 if flag("open") else 3.0,SIZE/2.0-maxf(absf(x),absf(z)))
 	func meadow_at(x: float, z: float, site: Dictionary) -> float:
 		if gene.is_empty(): return 0.0
 		var u := x*ca + z*sa

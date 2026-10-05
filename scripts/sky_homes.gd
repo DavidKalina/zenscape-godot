@@ -40,9 +40,26 @@ const ISLE := Vector3(-658.0,-14.0,-239.0)
 const ISLE_TURN := 1.2224
 const ISLE_KEEP := 300.0
 
-## Every home wonder: [middle, keep-out (m, plate plane)].
+## Whether the wonders stand at all. The mountain ranges (`peaks`) do: the
+## one in sight of the plate and the ring round the world's edge (scripts/
+## sky_world.gd); --no-peaks takes them away. The other stone wonders (the
+## pillar forests and the tepui) and the forested isles are off for now:
+## they clash with the islands' minimal look, and an isle can't be landed
+## on. `stone` brings every stone wonder back, the ranges scattered through
+## the cells with them where the ring is off. The towering cumulus always
+## stands. --wonders turns `stone` and `isles` on (scripts/sky_islands.gd);
+## tests and captures of a kind turn it on themselves.
+static var peaks := true
+static var stone := false
+static var isles := false
+
+## Every home wonder standing: [middle, keep-out (m, plate plane)].
 static func spots() -> Array:
-	return [[RANGE,RANGE_KEEP],[PILLARS,PILLARS_KEEP],[TEPUI,TEPUI_KEEP],[TOWER,TOWER_KEEP],[ISLE,ISLE_KEEP]]
+	var out := [[TOWER,TOWER_KEEP]]
+	if peaks or stone: out.append([RANGE,RANGE_KEEP])
+	if stone: out.append_array([[PILLARS,PILLARS_KEEP],[TEPUI,TEPUI_KEEP]])
+	if isles: out.append([ISLE,ISLE_KEEP])
+	return out
 
 ## True if a home point lies within a home wonder's keep-out (plus
 ## `margin`): where a kind scattered through the far cells must not stand.

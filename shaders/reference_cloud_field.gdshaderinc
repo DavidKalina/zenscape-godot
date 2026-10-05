@@ -116,7 +116,7 @@ float hg(float ct, float g) {
   return (1.0 - g2) / (12.566371 * pow(1.0 + g2 - 2.0 * g * ct, 1.5));
 }
 
-// Air belongs to the plate (scripts/land_clay.gd PLATE_HALF, 14 m). A fog point
+// Air belongs to the plate (scripts/plate.gd, zs_plate_half; 14 m). A fog point
 // is kept only where the eye sees it against land: the sight line through it,
 // carried on down to its ground, must still land inside the rim, with a soft
 // band from 5 m to 1.5 m in. Seen level or from below, the void is behind it.
@@ -127,7 +127,7 @@ float zs_plate_keep(vec3 p, float ground) {
   float drop = zs_camera_position.y - p.y;
   if (lift > 0.0 && drop <= 0.001) return 0.0;
   vec2 land = p.xz + (p.xz - zs_camera_position.xz) * (lift / max(drop, 0.001));
-  float clear = 14.0 - max(max(abs(p.x), abs(p.z)), max(abs(land.x), abs(land.y)));
+  float clear = zs_plate_half - max(max(abs(p.x), abs(p.z)), max(abs(land.x), abs(land.y)));
   return smoothstep(1.5, 5.0, clear);
 }
 

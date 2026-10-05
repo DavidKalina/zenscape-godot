@@ -10,6 +10,7 @@ const SkyHaze = preload("res://scripts/sky_haze.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
+const Plate = preload("res://scripts/plate.gd")
 const Celestial = preload("res://studies/celestial.gd")
 var failures := 0
 
@@ -152,9 +153,9 @@ func _flight() -> void:
 	scene.add_child(flight)
 	flight.setup(scene)
 	check(flight.haze == 0.0,"In the build view the glide's haze is off")
-	flight.start(Vector3(14,2,0))
+	flight.start(Vector3(Plate.HALF,2,0))
 	check(flight.haze == 1.0,"Off the edge it is on at once, before the islands bake in")
-	flight.advance(1.0/60.0,Vector3(20,0,0),0.0)
+	flight.advance(1.0/60.0,Vector3(Plate.HALF+6.0,0,0),0.0)
 	check(flight.haze == 1.0,"It holds through the glide")
 	flight.stop()
 	for i in range(int(SkyFlight.SETTLE*60.0)+5): await process_frame

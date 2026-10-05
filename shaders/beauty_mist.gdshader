@@ -13,10 +13,10 @@ uniform float air_stretch = 1.0;
 uniform float air_strength = 0.0;
 void fog() {
     vec3 p = WORLD_POSITION;
-    vec2 uv = (p.xz + 16.0) / 32.0;
+    vec2 uv = (p.xz + zs_map_half) / (zs_map_half * 2.0);
     float ground = zs_surface_height(texture(ground_map, uv), texture(stream_map, uv));
     float height = p.y - ground;
-    float edge = 1.0 - smoothstep(9.0, 13.0, length(p.xz));
+    float edge = 1.0 - smoothstep(zs_plate_half - 5.0, zs_plate_half - 1.0, length(p.xz));
     // A passing gust (the weather's or the wind tool's) shoves the mist along
     // its way and tears it thin.
     vec2 push;

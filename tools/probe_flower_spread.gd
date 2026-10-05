@@ -5,6 +5,7 @@ extends SceneTree
 const Seeds = preload("res://scripts/dandelion_seeds.gd")
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 const Emergence = preload("res://scripts/emergence.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 class Gust extends Node3D:
 	var gusts: Array = []
@@ -16,11 +17,9 @@ class Gust extends Node3D:
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
-	source.free()
 	var kinds := ["poppy","oxeye_daisy","cosmos","buttercup"]
 	for i in range(66):
 		for j in range(66):

@@ -18,6 +18,7 @@ extends Node3D
 ## water stops, and sinks after a while. Tinted by its tree's stand
 ## (scripts/tree_stands.gd autumn). One pooled MultiMesh.
 
+const Plate = preload("res://scripts/plate.gd")
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
@@ -189,7 +190,7 @@ func _batch(label: String, mesh: Mesh, count: int) -> MultiMeshInstance3D:
 	instances.use_colors = true
 	instances.instance_count = count
 	instances.mesh = mesh
-	instances.custom_aabb = AABB(Vector3(-16,NativeTerrainData.MIN_HEIGHT-1.0,-16),Vector3(32,45,32))
+	instances.custom_aabb = AABB(Vector3(-(Plate.HALF+2.0),NativeTerrainData.MIN_HEIGHT-1.0,-(Plate.HALF+2.0)),Vector3(Plate.SIZE+4.0,45,Plate.SIZE+4.0))
 	instances.buffer = _blank(count)
 	instances.visible_instance_count = 0
 	node.multimesh = instances

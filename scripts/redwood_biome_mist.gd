@@ -21,15 +21,21 @@ var _blown_at := -1.0
 ## Metres a second the mist drifts in still air, and more per unit of wind
 ## (the atmosphere's strength, gusts and all): a breeze of 0.4 moves it about
 ## 0.35 m/s, a strong wind of 2 nearly 2 m/s.
+const Plate := preload("res://scripts/plate.gd")
 const DRIFT_CALM := 0.1
 const DRIFT_CARRY := 0.85
 ## How far a wind draws the mist out along itself: at strength s the noise is
 ## stretched 1 + STRETCH × s times along the wind.
 const STRETCH := 0.7
+## The mist fills the box the ground maps cover (Plate MAP_HALF each way);
+## its tree cover is a mask of COVER_STEP texels over it, read by
+## shaders/redwood_biome_mist.gdshader.
+const COVER_STEP := 0.5
+const COVER_TEXELS := roundi(Plate.MAP_HALF*2.0/COVER_STEP)
 
 func _init() -> void:
 	name = "RedwoodBiomeMist"
-	size = Vector3(32,40,32)
+	size = Vector3(Plate.MAP_HALF*2.0,40,Plate.MAP_HALF*2.0)
 	position.y = 17.0
 	fog_material.shader = preload("res://shaders/redwood_biome_mist.gdshader")
 	woodland_material.shader = preload("res://shaders/beauty_mist.gdshader")
@@ -46,17 +52,17 @@ func _cover(data: NativeTerrainData) -> void:
 	var signature := var_to_bytes(footprints)
 	if cover != null and signature == _cover_signature: return
 	_cover_signature = signature
-	cover_image = Image.create(64,64,false,Image.FORMAT_RF)
+	cover_image = Image.create(COVER_TEXELS,COVER_TEXELS,false,Image.FORMAT_RF)
 	cover_image.fill(Color(0,0,0,1))
 	# A tree contributes nothing beyond its radius. Rasterize its footprint
 	# instead of testing every tree against every pixel on each edit.
 	for tree in trees:
 		var radius: float = clampf(tree.scale*3.5,1.5,6.0)
-		var low := Vector2i(clampi(floori((tree.x-radius+16)*2),0,64),clampi(floori((tree.z-radius+16)*2),0,64))
-		var high := Vector2i(clampi(ceili((tree.x+radius+16)*2),0,64),clampi(ceili((tree.z+radius+16)*2),0,64))
+		var low := Vector2i(clampi(floori((tree.x-radius+Plate.MAP_HALF)/COVER_STEP),0,COVER_TEXELS),clampi(floori((tree.z-radius+Plate.MAP_HALF)/COVER_STEP),0,COVER_TEXELS))
+		var high := Vector2i(clampi(ceili((tree.x+radius+Plate.MAP_HALF)/COVER_STEP),0,COVER_TEXELS),clampi(ceili((tree.z+radius+Plate.MAP_HALF)/COVER_STEP),0,COVER_TEXELS))
 		for y in range(low.y,high.y):
 			for x in range(low.x,high.x):
-				var point := Vector2((x+0.5)*0.5-16,(y+0.5)*0.5-16)
+				var point := Vector2((x+0.5)*COVER_STEP-Plate.MAP_HALF,(y+0.5)*COVER_STEP-Plate.MAP_HALF)
 				var distance := point.distance_to(Vector2(tree.x,tree.z))/radius
 				var value := maxf(cover_image.get_pixel(x,y).r,1.0-smoothstep(0.1,1.0,distance))
 				cover_image.set_pixel(x,y,Color(value,0,0,1))

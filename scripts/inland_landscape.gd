@@ -1,5 +1,10 @@
 extends RefCounted
+const Plate = preload("res://scripts/plate.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
+## The band the generator plants, half-widths in x and z: 3 and 3.5 m in
+## from the edge of the old 28 m square a generated world sits on, so its
+## fixed try counts plant the density they were tuned for.
+const BAND := Vector2(Plate.LEGACY_HALF-3.0,Plate.LEGACY_HALF-3.5)
 const Variety = preload("res://scripts/seeded_variety.gd")
 const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
@@ -98,7 +103,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 	habitat_noise.frequency = 0.22
 	for i in range(1600 if budget>0 else 0):
 		if i%16 == 0: await work.checkpoint()
-		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
+		var p := Vector2(rng.randf_range(-BAND.x,BAND.x),rng.randf_range(-BAND.y,BAND.y))
 		var angle := rng.randf()*TAU
 		var size := rng.randf_range(0.6,1.05)
 		var pick := rng.randf()
@@ -142,7 +147,7 @@ func form(terrain: NativeTerrainData,settings: Dictionary,tree: SceneTree = null
 		for b: String in blend.biomes: cover_count = maxi(cover_count,COVER.get(b,250))
 	for i in range(cover_count):
 		if i%16 == 0: await work.checkpoint()
-		var p := Vector2(rng.randf_range(-11,11),rng.randf_range(-10.5,10.5))
+		var p := Vector2(rng.randf_range(-BAND.x,BAND.x),rng.randf_range(-BAND.y,BAND.y))
 		if data.ground_height(p) == null or _is_salt(p): continue
 		var habitat := _habitat(p)
 		if blend != null and _hash(p+Vector2(0.71,0.29))*cover_count>=COVER.get(habitat,250): continue
@@ -219,7 +224,7 @@ func _dress_places(work: RefCounted) -> void:
 			if z%4==0: await work.checkpoint()
 			for x in range(data.MEADOW_CELLS):
 				var p := data.meadow_position(x,z)+Vector2.ONE*0.25
-				if maxf(absf(p.x),absf(p.y))>11.0 or _is_wet(p): continue
+				if maxf(absf(p.x),absf(p.y))>BAND.x or _is_wet(p): continue
 				var near := false
 				for place: Dictionary in data._recipe.inland.sampler.places:
 					if p.distance_to(place.center)<float(place.radius)+1.8: near = true

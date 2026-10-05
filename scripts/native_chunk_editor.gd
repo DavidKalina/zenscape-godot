@@ -127,6 +127,7 @@ var fences: Node3D
 var falls: NativeGardenFalls
 ## The footbridges laid over water (scripts/footbridge.gd), and its planner.
 const Footbridge = preload("res://scripts/footbridge.gd")
+const Plate := preload("res://scripts/plate.gd")
 var bridges: Node3D
 var reactions: NativeDropReactions
 ## Placement plays a short visual reaction. Tests that compare instances turn
@@ -317,6 +318,7 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	terrain = scene.get_node("Reference/terrain")
 	terrain.add_child(pond_preview)
+	preload("res://scripts/plate_mesh.gd").adopt(terrain)
 	data.setup(terrain.mesh)
 	data.stroke_starting.connect(_join_weathering)
 	data.stroke_starting.connect(_mountain_interrupted)
@@ -621,7 +623,7 @@ func handle_input(event: InputEvent) -> bool:
 				var ground: Variant = pick(event.position)
 				var item := selected_object()
 				_selection_plane_y = terrain.to_global(Vector3(item.x,data.sample(Vector2(item.x,item.z),data.heights),item.z)).y
-				if item.asset == "log" and not data.void_faces.is_empty():
+				if item.asset == "log" and data.has_chasm():
 					var plane_point: Variant = Plane(Vector3.UP,_selection_plane_y).intersects_ray(scene.camera.project_ray_origin(event.position),scene.camera.project_ray_normal(event.position))
 					ground = terrain.to_local(plane_point) if plane_point != null else null
 				if ground == null:
@@ -1127,7 +1129,7 @@ var _lifted_for: Array = []
 ## array the data edits in place, so the key would always match and a change
 ## made outside a stroke (erosion at the rim) left the sides standing proud.
 func _lift_key() -> Array:
-	return [data,data.heights.duplicate(),data.blank,open_sides.duplicate(),data.void_faces.is_empty()]
+	return [data,data.heights.duplicate(),data.blank,open_sides.duplicate(),data.void_faces.duplicate()]
 
 func _finish_refresh(published: bool) -> bool:
 	refresh_pending -= 1
@@ -1315,8 +1317,8 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
 		return true
 	var clip := Rect2i(0,0,size,size)
 	if region != null:
-		var low: Vector2 = (region.position+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
-		var high: Vector2 = (region.end+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+		var low: Vector2 = (region.position+Vector2.ONE*Plate.MAP_HALF)/(Plate.MAP_HALF*2.0)*float(size)-Vector2.ONE*0.5
+		var high: Vector2 = (region.end+Vector2.ONE*Plate.MAP_HALF)/(Plate.MAP_HALF*2.0)*float(size)-Vector2.ONE*0.5
 		clip = Rect2i(Vector2i(clampi(floori(low.x),0,size),clampi(floori(low.y),0,size)),Vector2i.ZERO)
 		clip = clip.expand(Vector2i(clampi(ceili(high.x)+1,0,size),clampi(ceili(high.y)+1,0,size)))
 	var image: Image
@@ -1345,7 +1347,7 @@ func _update_surface_maps(original: bool, frame_tree: SceneTree = null) -> bool:
 			for x in range(clip.position.x,clip.end.x):
 				if original and not data.blank:
 					continue
-				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*32.0-Vector2.ONE*16.0
+				var point := (Vector2(x,z)+Vector2.ONE*0.5)/float(size)*(Plate.MAP_HALF*2.0)-Vector2.ONE*Plate.MAP_HALF
 				var height: Variant = data.height_at(point.x,point.y)
 				var value := Color(-1000,-1000,-1000,-1000) if data.blank else _original_ground_map.get_pixel(x,z)
 				value.g = float(height) if height != null else -1000.0
@@ -1455,13 +1457,15 @@ func start_flat() -> void:
 	refresh()
 
 func _rebuild_skirt() -> void:
-	_skirt.visible = data.void_faces.is_empty()
+	# An island with an outline hangs its own shore wall in the sides' place
+	# (scripts/island_shore.gd); a chasm alone walls its banks itself.
+	_skirt.visible = data.void_faces.is_empty() or not data.outline.is_empty()
 	if not _skirt.visible: return
 	# The sides' strata, the same as cut ground's (scripts/strata.gd).
 	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
 	preload("res://scripts/strata.gd").for_seed(land_seed).apply(_skirt_mesh.surface_get_material(0) as ShaderMaterial,placing.origin)
 	var mesh := skirt_mesh_for(data)
-	_skirt.mesh = mesh if open_sides.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
+	_skirt.mesh = mesh if open_sides.is_empty() or not data.outline.is_empty() else AtlasView.cut_sides(mesh,_skirt.position,open_sides)
 
 ## The faceted earth sides fitted to `source`'s rim: the editor's own land, or
 ## a plain baked off to the side for the flip's underside
@@ -1473,6 +1477,7 @@ func _rebuild_skirt() -> void:
 ## their foot. Built again only when the rim moves.
 func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 	var placing := terrain.global_transform.affine_inverse()*_skirt.global_transform
+	if not source.outline.is_empty(): return _shore_mesh_for(source,placing)
 	var rim := PackedFloat32Array()
 	for i in _rim_ids(source): rim.append(source.heights[i])
 	var fitted_key := [source,source.points.size(),rim,_skirt_mesh,placing]
@@ -1544,9 +1549,23 @@ func skirt_mesh_for(source: NativeTerrainData) -> ArrayMesh:
 var _skirt_fitted_key: Array = []
 var _skirt_fitted: ArrayMesh
 
+## An island with an outline: its shore wall (scripts/island_shore.gd) in the
+## sides' own space and material. Built again only when the shore moves.
+func _shore_mesh_for(source: NativeTerrainData, placing: Transform3D) -> ArrayMesh:
+	var tops := PackedFloat32Array()
+	var edges := source.shore_edges
+	for k in range(0,edges.size(),3): tops.append(source.heights[edges[k]])
+	var key := [source,source.outline,tops,_skirt_mesh,placing]
+	if _shore_fitted_key == key: return _shore_fitted
+	_shore_fitted = preload("res://scripts/island_shore.gd").build(source,placing,_skirt_mesh.surface_get_material(0))
+	_shore_fitted_key = key
+	return _shore_fitted
+var _shore_fitted_key: Array = []
+var _shore_fitted: ArrayMesh
+
 ## The land's edge, metres from the middle: the terrain's rim points stand on
 ## it, and the earth sides' top ring is laid along it.
-const SIDES_HALF := 14.0
+const SIDES_HALF := Plate.HALF
 ## How much of the authored sides' lean past the edge they keep: up to
 ## 0.11 m out at the foot, which the grass's edge hides from above.
 const SIDES_BATTER := 0.25
@@ -1635,7 +1654,7 @@ func _rim_ids(source: NativeTerrainData) -> PackedInt32Array:
 	_rim_ids_found = PackedInt32Array()
 	for i in range(source.points.size()):
 		var point := source.points[i]
-		if maxf(absf(point.x),absf(point.y)) > 13.9999: _rim_ids_found.append(i)
+		if maxf(absf(point.x),absf(point.y)) > Plate.RIM: _rim_ids_found.append(i)
 	_rim_ids_key = [source,source.points.size()]
 	return _rim_ids_found
 
@@ -1647,8 +1666,8 @@ func _rim_sides(source: NativeTerrainData) -> Array:
 	var sides: Array = [[],[],[],[]]
 	for i in _rim_ids(source):
 		var point := source.points[i]
-		if absf(point.x) > 13.9999: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,i))
-		if absf(point.y) > 13.9999: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,i))
+		if absf(point.x) > Plate.RIM: sides[0 if point.x < 0.0 else 1].append(Vector2(point.y,i))
+		if absf(point.y) > Plate.RIM: sides[2 if point.y < 0.0 else 3].append(Vector2(point.x,i))
 	_rim_sides_found = []
 	for side: Array in sides:
 		side.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
@@ -1675,7 +1694,7 @@ func _skirt_reads_for(source: NativeTerrainData, sliced_key: Array, vertices: Pa
 		var weight := clampf((vertices[i].y-low)/(high-low),0.0,1.0)
 		if weight <= 0.0: continue
 		var local := placing*vertices[i]
-		var point := Vector2(local.x,local.z).clamp(Vector2(-14,-14),Vector2(14,14))
+		var point := Vector2(local.x,local.z).clamp(Vector2(-SIDES_HALF,-SIDES_HALF),Vector2(SIDES_HALF,SIDES_HALF))
 		# `sample` resolves and memoises the face; take its answer as is.
 		if source.sample(point,source.heights) == null: continue
 		var slot: int = source._locate_cache[point]
@@ -1846,12 +1865,15 @@ func open_garden() -> bool:
 		_set_status("Could not read this garden. Your open garden is unchanged.")
 		return false
 	finish_stroke()
+	# A garden saved on the 28 m plate: its scene's cells come over with it.
+	var state: Dictionary = document.scene_state
+	if preload("res://scripts/plate_migration.gd").needs(document): state = preload("res://scripts/plate_migration.gd").migrate_state(state)
 	if not data.load_document(document):
 		_set_status("This garden does not match the chunk. Your open garden is unchanged.")
 		return false
 	selected_object_id = -1
 	refresh()
-	NativeGardenStore.restore(scene,document.scene_state)
+	NativeGardenStore.restore(scene,state)
 	_set_status("Garden opened.")
 	return true
 
@@ -1944,7 +1966,7 @@ func move_selection_pointer(mouse: Vector2) -> void:
 	if not _selection_drag or mouse.distance_to(_selection_press) < 5.0 and not _selection_edit:
 		return
 	var ground: Variant = pick(mouse)
-	if selected_object().get("asset") == "log" and not data.void_faces.is_empty():
+	if selected_object().get("asset") == "log" and data.has_chasm():
 		var hit: Variant = Plane(Vector3.UP,_selection_plane_y).intersects_ray(scene.camera.project_ray_origin(mouse),scene.camera.project_ray_normal(mouse))
 		ground = terrain.to_local(hit) if hit != null else null
 	if ground == null:
@@ -2518,7 +2540,7 @@ func _setup_flow() -> void:
 ## Steps the water at its fixed rate, redraws it, and now and then reads the
 ## ponds it makes for life and emergence.
 func _flow_process(delta: float) -> void:
-	if flow == null or not flow.ready: return
+	if flow == null or not flow.ready or flow_view == null: return
 	flow.paused = forming
 	# The sky's rain and snow (and the snow globe's, added to it) reach the water.
 	var precipitation: Variant = scene.get("_precipitation") if scene != null else null

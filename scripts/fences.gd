@@ -36,6 +36,7 @@ extends Node3D
 ## (plate space), and the faint stakes of a line still being drawn (`preview`),
 ## with a bright ring where it will join a fence.
 
+const Plate = preload("res://scripts/plate.gd")
 const POST_SPACING := 1.3
 ## A drawn line ending within CLOSE_REACH m of its start, at least CLOSE_MIN m
 ## long, closes into a pen.
@@ -324,7 +325,7 @@ static func valid(item: Variant) -> bool:
 	var flat: Array = item.posts
 	if flat.size()%2 != 0 or flat.size() < 4 or flat.size() > MAX_POSTS*2: return false
 	for value in flat:
-		if not GardenData._number(value,-14,14): return false
+		if not GardenData._number(value,-Plate.HALF,Plate.HALF): return false
 	return true
 
 ## The trash can's reach (plate `q`, `radius` m) over `data`'s fences: every

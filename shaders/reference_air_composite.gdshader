@@ -23,8 +23,8 @@ void fragment() {
 	float drawn_floor = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
 	float drawn_top = mix(9.6, zs_summit.y + 9.0, smoothstep(0.13, 0.43, zs_growth.x));
 	vec3 inv = 1.0 / (rd + vec3(0.000001));
-	vec3 a = (vec3(-14.0, drawn_floor - 0.5, -14.0) - ro) * inv;
-	vec3 b = (vec3(14.0, drawn_top, 14.0) - ro) * inv;
+	vec3 a = (vec3(-zs_plate_half, drawn_floor - 0.5, -zs_plate_half) - ro) * inv;
+	vec3 b = (vec3(zs_plate_half, drawn_top, zs_plate_half) - ro) * inv;
 	vec3 lo = min(a, b), hi = max(a, b);
 	float near_t = max(max(max(lo.x, lo.y), lo.z), 0.0);
 	float far_t = min(min(hi.x, hi.y), hi.z);

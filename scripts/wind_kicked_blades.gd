@@ -1,5 +1,6 @@
 extends MultiMeshInstance3D
 const LeafMesh := preload("res://scripts/leaf_litter_mesh.gd")
+const Plate = preload("res://scripts/plate.gd")
 ## Single grass blades kicked up by a sweeping breeze ribbon, cosmetic only (no
 ## saves or gameplay state). Smaller and lighter than the grass chaff.
 ##
@@ -77,7 +78,7 @@ func _init() -> void:
 	multimesh.instance_count = CAPACITY
 	multimesh.visible_instance_count = 0
 	material_override = LeafMesh.material()
-	custom_aabb = AABB(Vector3(-16,-3,-16),Vector3(32,32,32))
+	custom_aabb = AABB(Vector3(-(Plate.HALF+2.0),-3,-(Plate.HALF+2.0)),Vector3(Plate.SIZE+4.0,32,Plate.SIZE+4.0))
 	_rng.seed = 3307
 
 ## `probe(Vector2)` is the ground height or null (water, off the plate);

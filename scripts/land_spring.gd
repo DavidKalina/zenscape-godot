@@ -28,6 +28,7 @@ extends Node
 ## `release` (connected in studies/fidelity.gd).
 
 const Mountains = preload("res://scripts/mountain_forms.gd")
+const Plate = preload("res://scripts/plate.gd")
 
 ## Emitted when a spring is kept: `kind` is "mountain" or "basin", `size` the
 ## pull it was let go at, 0..1.
@@ -68,7 +69,7 @@ const BOWL_EDGE := 0.75
 const RIM_RING := 0.85
 ## The plate's last metres, where the shape fades to nothing (as the mountain
 ## forms' EDGE).
-const EDGE := Vector2(11.4,13.6)
+const EDGE := Vector2(Plate.HALF-2.6,Plate.HALF-0.4)
 ## The spring: angular frequency (rad/s) and damping ratio for each kind
 ## (under 1 rings; 0.55 kicked overshoots about an eighth and settles within
 ## a hundredth in about 0.4 s, where 12.5 and 0.4 took 0.9 s), and the speed
@@ -313,6 +314,7 @@ func _gather(data: NativeTerrainData) -> void:
 		_near_d.append(d)
 
 func _fade(i: int, data: NativeTerrainData) -> float:
+	if not data.shore_distance.is_empty(): return preload("res://scripts/land_clay.gd").edge_fade(data,i)
 	var p: Vector2 = data.points[i]
 	var edge := maxf(absf(p.x),absf(p.y))
 	return clampf((EDGE.y-edge)/(EDGE.y-EDGE.x),0.0,1.0)

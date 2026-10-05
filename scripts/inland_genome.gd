@@ -1,4 +1,5 @@
 extends RefCounted
+const Plate = preload("res://scripts/plate.gd")
 ## Versioned inland genome. Independent feature streams; replayed by NativeTerrainRecipe.
 ## Compositions/archetypes and crest/wall profiles adapted from zenscape/genome.js and landforms.js.
 const VERSION := 7
@@ -101,7 +102,7 @@ static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 	if int(g.version) == 2: return Previous.height(g,p,noise)
 	if g.composition in Desert.KINDS:
 		var value := Desert.field(g,p).x
-		return lerpf(value,0.8,smoothstep(12.5,14.0,maxf(absf(p.x),absf(p.y))))
+		return lerpf(value,0.8,smoothstep(Plate.LEGACY_HALF-1.5,Plate.LEGACY_HALF,maxf(absf(p.x),absf(p.y))))
 	var q := p/float(g.breadth)
 	var n := noise.get_noise_2d(q.x,q.y)
 	var ground := 1.62+n*0.05 if g.composition == "marsh" else 1.45+n*0.22
@@ -168,7 +169,7 @@ static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 	# Inhabited worlds keep the peak behind gentler, lower foreground slopes.
 	if int(g.version)>=4 and comp in ["mountain","massif"]:
 		mass *= lerpf(0.72,0.30,smoothstep(-2.0,7.0,q.y))
-	var edge := 1.0-smoothstep(11.4,14.0,maxf(absf(p.x),absf(p.y)))
+	var edge := 1.0-smoothstep(Plate.LEGACY_HALF-2.6,Plate.LEGACY_HALF,maxf(absf(p.x),absf(p.y)))
 	return 0.8+(ground+mass*float(g.relief)-0.8)*edge
 
 ## Optional companion genome. Existing surface versions and RNG streams are unchanged.

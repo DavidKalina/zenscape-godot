@@ -36,6 +36,7 @@ extends Node3D
 const SkyTower = preload("res://scripts/sky_tower.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+const SkyWorld = preload("res://scripts/sky_world.gd")
 
 ## The tower in sight of the plate (home coordinates; y is its foot's
 ## middle, the sea at SkyTower.SEA under it).
@@ -183,8 +184,15 @@ static func cell_of(home: Vector3) -> Vector2i:
 ## cell always holds HOME; another holds one if its hash says so and it is
 ## clear of every mountain range and kind kept with them (SkyPeaks
 ## `blocks`) and of every wonder in sight of the plate (SkyHomes `blocks`).
+## In the bounded world (SkyWorld `ring_on`) none is scattered: each region
+## the ridges cut has its own, laid out with them (SkyWorld `layout`
+## towers, one to a cell).
 static func spot(cell: Vector2i) -> Variant:
 	if cell == Vector2i.ZERO: return HOME
+	if SkyWorld.ring_on():
+		for at: Vector3 in SkyWorld.layout().towers:
+			if cell_of(at) == cell: return at
+		return null
 	if SkyPeaks.noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
 	var off := Vector2(SkyPeaks.noise(cell,SALT+1)-0.5,SkyPeaks.noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL

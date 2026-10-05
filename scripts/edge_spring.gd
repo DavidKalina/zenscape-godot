@@ -79,12 +79,13 @@ const JAGGED := Vector2(0.15,0.85)
 const CEILING := 11.0
 const KNEE := 7.0
 ## Placement: the crest's ends stay within RANGE_ROOM metres of the middle
-## lines (the forms fade over the plate's last metres from 11.4), and a
-## basin's rim within ROOM. Of CANDIDATES random spots the best scores
+## lines (the forms fade over the plate's last metres, from EDGE.x), and a
+## basin's rim within ROOM. Both are held as margins in from the rim, so a
+## bigger plate gives them more room. Of CANDIDATES random spots the best scores
 ## -RIM_LEAN·(distance out / ROOM)² - TALL_LEAN·(mean ground there, m)
 ## + LUCK·random.
-const RANGE_ROOM := 9.0
-const ROOM := 11.0
+const RANGE_ROOM := Plate.HALF-5.0
+const ROOM := Plate.HALF-3.0
 const CANDIDATES := 24
 const RIM_LEAN := 3.0
 const TALL_LEAN := 0.6
@@ -129,7 +130,7 @@ const DEEP_DIP := 0.8
 ## the grabbed rim) to full at FILL_RAMP.y, then faded by the rim, with a
 ## rolling top (FILL_LUMP of its height either way) and a ragged foot.
 const FILL_HEIGHT := 3.0
-const FILL_RAMP := Vector2(-4.0,10.5)
+const FILL_RAMP := Vector2(-4.0,Plate.HALF-3.5)
 const FILL_LUMP := 0.25
 ## The grabbed side: amplify and the fill keep their full strength from
 ## SIDE_ACROSS.y metres toward the grabbed rim and fade to nothing by
@@ -168,7 +169,7 @@ var _counting := false
 var _held_pointer := false
 ## The grabbed side (plate-local, a unit axis) and the grip on its rim.
 var _side := Vector2(0.0,1.0)
-var _grip := Vector2(0.0,13.0)
+var _grip := Vector2(0.0,Plate.HALF-1.0)
 var _mode_before := Input.MOUSE_MODE_VISIBLE
 
 func setup(owner_scene: Node3D) -> void:
@@ -473,7 +474,7 @@ func _build_amplify(amount: float) -> bool:
 
 ## Each point's smooth base under `heights`: see BASE_CELL.
 func _smooth_base(data: NativeTerrainData, heights: PackedFloat32Array) -> PackedFloat32Array:
-	var side := int(round(28.0/BASE_CELL))+1
+	var side := int(round(Plate.SIZE/BASE_CELL))+1
 	var mean := PackedFloat32Array()
 	var weight := PackedFloat32Array()
 	mean.resize(side*side)
@@ -482,7 +483,7 @@ func _smooth_base(data: NativeTerrainData, heights: PackedFloat32Array) -> Packe
 	cells.resize(heights.size())
 	for i in range(heights.size()):
 		var p: Vector2 = data.points[i]
-		var c := clampi(roundi((p.y+14.0)/BASE_CELL),0,side-1)*side+clampi(roundi((p.x+14.0)/BASE_CELL),0,side-1)
+		var c := clampi(roundi((p.y+Plate.HALF)/BASE_CELL),0,side-1)*side+clampi(roundi((p.x+Plate.HALF)/BASE_CELL),0,side-1)
 		cells[i] = c
 		mean[c] += heights[i]
 		weight[c] += 1.0
@@ -499,8 +500,8 @@ func _smooth_base(data: NativeTerrainData, heights: PackedFloat32Array) -> Packe
 	out.resize(heights.size())
 	for i in range(heights.size()):
 		var p: Vector2 = data.points[i]
-		var fx := clampf((p.x+14.0)/BASE_CELL,0.0,side-1.001)
-		var fz := clampf((p.y+14.0)/BASE_CELL,0.0,side-1.001)
+		var fx := clampf((p.x+Plate.HALF)/BASE_CELL,0.0,side-1.001)
+		var fz := clampf((p.y+Plate.HALF)/BASE_CELL,0.0,side-1.001)
 		var x := int(fx)
 		var z := int(fz)
 		var u := fx-x

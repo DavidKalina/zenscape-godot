@@ -440,8 +440,8 @@ func _paint(area: Rect2, cut: PackedFloat32Array, loose: PackedFloat32Array, sal
 	var data: NativeTerrainData = clay.editor.data
 	var side := NativeTerrainData.MEADOW_CELLS
 	var step := NativeTerrainData.MEADOW_STEP
-	var low := Vector2i(((area.position+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var high := Vector2i(((area.end+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var low := Vector2i(((area.position+Vector2.ONE*Plate.HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((area.end+Vector2.ONE*Plate.HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	var tint := data.tint
 	var fresh := FRESH.srgb_to_linear()
 	for z in range(low.y,high.y+1):

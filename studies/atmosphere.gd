@@ -1,4 +1,5 @@
 extends Node3D
+const Plate = preload("res://scripts/plate.gd")
 ## One moving air field drives vegetation, water, fog and waterfall mist.
 
 var native_volume := true
@@ -102,7 +103,17 @@ func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false
 	var low := Vector2(INF, INF)
 	var high := -low
 	var placed := terrain.global_transform if terrain.is_inside_tree() else terrain.transform
-	for vertex: Vector3 in terrain.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+	var arrays := terrain.mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	# An island's mesh indexes only its land's faces; the points off it stand
+	# at the rim's height and must not stretch the bounds.
+	var used := PackedByteArray()
+	if arrays[Mesh.ARRAY_INDEX] != null and not (arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).is_empty():
+		used.resize(vertices.size())
+		for index: int in arrays[Mesh.ARRAY_INDEX]: used[index] = 1
+	for i in range(vertices.size()):
+		if not used.is_empty() and used[i] == 0: continue
+		var vertex := vertices[i]
 		var point := terrain.transform * vertex
 		_ground_min = minf(_ground_min, point.y)
 		if point.y > _summit.y:
@@ -110,7 +121,7 @@ func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false
 		var seen := placed * vertex
 		low = low.min(Vector2(seen.x, seen.z))
 		high = high.max(Vector2(seen.x, seen.z))
-	# Gust fronts roll across the plate as the world sees it.
+	# Gust fronts roll across the island's land as the world sees it.
 	fronts.set_bounds((low + high) * 0.5, (high - low).length() * 0.5)
 	if wind_trails != null and wind_trails.has_method("set_bounds"): wind_trails.set_bounds(fronts.center, fronts.radius)
 	if use_reference_bounds:
@@ -120,7 +131,7 @@ func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false
 		_ground_min = reference.uGroundRange[0]
 	var fog := get_node_or_null("ValleyFog") as FogVolume
 	if fog != null:
-		fog.size = Vector3(28.0, _summit.y - _ground_min + 10.0, 28.0)
+		fog.size = Vector3(Plate.SIZE, _summit.y - _ground_min + 10.0, Plate.SIZE)
 		fog.position = Vector3(0.0, _ground_min - 0.5 + fog.size.y * 0.5, 0.0)
 		_fog_material.set_shader_parameter("floor_height", _ground_min)
 	_publish_wind()
@@ -229,7 +240,7 @@ func _add_fog() -> void:
 	var fog := FogVolume.new()
 	fog.name = "ValleyFog"
 	fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
-	fog.size = Vector3(28.0, _summit.y - _ground_min + 10.0, 28.0)
+	fog.size = Vector3(Plate.SIZE, _summit.y - _ground_min + 10.0, Plate.SIZE)
 	fog.position = Vector3(0.0, _ground_min - 0.5 + fog.size.y * 0.5, 0.0)
 	fog.material = _fog_material
 	add_child(fog)

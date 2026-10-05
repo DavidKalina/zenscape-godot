@@ -25,14 +25,15 @@ extends Node3D
 ## The AnimationPlayer runs in manual mode on the life clock: a hidden Bigfoot
 ## costs nothing, and a paced probe sees the clips at its pace.
 
+const Plate = preload("res://scripts/plate.gd")
 const Survey = preload("res://scripts/life_survey.gd")
 const MODEL := "res://assets/models/zenscape-bigfoot-ambient.glb"
 ## Rig extras (walk_speed_mps, stride_speed_mps); these are the fallbacks.
 const WALK_SPEED := 0.336
 const STRIDE_SPEED := 0.971
 const STRIDE_CYCLE := 1.4
-## Plate half-size he keeps inside, metres.
-const PLATE := 12.8
+## Plate half-size he keeps inside, metres: 1.2 m in from the rim.
+const PLATE := Plate.HALF-1.2
 ## Footing: steepest rise per metre under him, and trunk clearance.
 const MAX_SLOPE := 0.45
 const TRUNK_CLEAR := 0.5

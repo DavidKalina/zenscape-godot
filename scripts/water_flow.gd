@@ -23,7 +23,10 @@ extends RefCounted
 ## The depth itself is saved with the place but is not part of undo: undoing a
 ## sculpt puts the land back and the water follows it.
 
-## Grid cell, metres. The native grid is 112×112 over the 28 m plate.
+const Plate = preload("res://scripts/plate.gd")
+
+## Grid cell, metres. The native grid is (Plate.SIZE / CELL) a side, 112×112
+## over a 28 m plate; the grid itself is sized from the terrain's points.
 const CELL := 0.25
 const FALLBACK_CELL := 0.5
 ## Fixed step, seconds, and the most steps one frame may run (a slow frame
@@ -210,7 +213,8 @@ var wind: Object = null
 var _wind_was := false
 ## The weather's water: set `runoff.rain`, `.snowing` and `.snow_phase`.
 var runoff := preload("res://scripts/rain_runoff.gd").new()
-## 1 per grid cell over the plate, 0 outside it.
+## 1 per grid cell over the plate's ground, 0 outside it (off the plate, off
+## the island's outline, or over the chasm).
 var inside := PackedByteArray()
 var ready := false
 var paused := false
@@ -218,6 +222,7 @@ var paused := false
 var revision := 0
 var _clock := 0.0
 var _topology := PackedInt32Array()
+var _void := PackedByteArray()
 ## Microseconds of the last step and the worst seen, for probes.
 var last_step_usec := 0
 var worst_step_usec := 0
@@ -237,8 +242,14 @@ func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	kernel.set_params(PARAMS)
 	data.history_captured.connect(func(state: Dictionary) -> void: state["water_springs"] = springs.duplicate(true))
 	data.state_restored.connect(_restore)
+	# A new outline (or chasm) is a new grid: the cells off the land are
+	# outside, and the cells beside them the edge water leaves by.
+	data.void_changed.connect(func() -> void: _void_changed())
 	data.document_captured.connect(func(document: Dictionary) -> void:
 		if ready and (not springs.is_empty() or volume() > 0.01): document["water_flow"] = encode())
+
+func _void_changed() -> void:
+	if ready: await setup()
 
 ## Maps every grid cell to the terrain triangle under its centre, synchronously
 ## or on a worker when `tree` is given. Call again if the mesh changes.
@@ -253,27 +264,42 @@ func setup(tree: SceneTree = null) -> void:
 	height = ceili((high.y-low.y)/cell-0.001)
 	var points := data.points
 	var ids := data.vertex_ids
+	var cut := data.void_faces.duplicate()
 	var w := width
 	var h := height
 	var size := cell
 	var start := origin
 	var job = preload("res://scripts/background_work.gd").new()
-	var mapped: Dictionary = await job.run(func() -> Dictionary: return map_cells(points,ids,size,start,w,h),tree)
+	var mapped: Dictionary = await job.run(func() -> Dictionary: return map_cells(points,ids,size,start,w,h,cut),tree)
 	kernel.configure(width,height,cell,origin,mapped.faces,mapped.weights)
 	inside = mapped.inside
 	_topology = data.vertex_ids
+	_void = cut
+	_shore_cells.clear()
+	_hollows.clear()
+	# The land changed while the cells were mapped (a fresh island's outline
+	# is set while the first map runs on a worker, and `_void_changed` waits
+	# for `ready`): map them again, or the water would run over the sky. The
+	# grid is not ready until the map it holds is the land's.
+	if data.void_faces != cut or data.vertex_ids != ids:
+		await setup(tree)
+		return
 	ready = true
 
 ## For each cell centre of a `w`×`h` grid, the triangle under it: three vertex
 ## ids and barycentric (u, v) as NativeTerrainData.sample weighs them, or -1.
-## Each triangle is rasterised over the cells its bounds cover.
-static func map_cells(points: PackedVector2Array, ids: PackedInt32Array, size: float, start: Vector2, w: int, h: int) -> Dictionary:
+## Each triangle is rasterised over the cells its bounds cover. Faces `cut`
+## marks (NativeTerrainData `void_faces`: off the island, or the chasm) are
+## not ground, so the cells over them are outside, as the plate's own
+## surroundings are; the kernel drains the cells beside them as its edge.
+static func map_cells(points: PackedVector2Array, ids: PackedInt32Array, size: float, start: Vector2, w: int, h: int, cut := PackedByteArray()) -> Dictionary:
 	var faces := PackedInt32Array()
 	faces.resize(w*h*3)
 	faces.fill(-1)
 	var weights := PackedFloat32Array()
 	weights.resize(w*h*2)
 	for f in range(0,ids.size(),3):
+		if not cut.is_empty() and cut[f/3] != 0: continue
 		var a := points[ids[f]]
 		var b := points[ids[f+1]]
 		var c := points[ids[f+2]]
@@ -530,7 +556,7 @@ static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
 		for k in range(16):
 			var next := at+Vector2.from_angle(TAU*k/16.0)*COURSE_STEP
 			var below: Variant = terrain.ground_height(next)
-			if below == null or 14.0-maxf(absf(next.x),absf(next.y)) < COURSE_RIM:
+			if below == null or rim_gap(terrain,next) < COURSE_RIM:
 				blocked = true
 				continue
 			if float(below) < lowest:
@@ -547,6 +573,14 @@ static func descent(terrain: NativeTerrainData, point: Vector2) -> Dictionary:
 			end = "foot"
 			break
 	return {"points":course,"end":end}
+
+## Metres from plate point `p` in to the land's rim: the square plate's edge,
+## or an island's shore (NativeTerrainData `shore_distance`); negative off
+## the island.
+static func rim_gap(terrain: NativeTerrainData, p: Vector2) -> float:
+	if terrain.shore_distance.is_empty(): return Plate.HALF-maxf(absf(p.x),absf(p.y))
+	var inland: Variant = terrain.sample(p,terrain.shore_distance)
+	return float(inland) if inland != null else -1.0
 
 ## The ground a spring's water wears on open ground: a rill down its
 ## `descent` from the `start`th point and a pool at its foot that holds
@@ -568,12 +602,21 @@ static func spring_bed(terrain: NativeTerrainData, descended: Dictionary, start:
 	# The pool lies on past the foot, so it meets the slope rather than
 	# cutting under it, and stays POOL_RIM inside the rim.
 	var heading := (foot-Vector2(course[-2].x,course[-2].z)).normalized()
-	var limit := 14.0-POOL_RIM-radius
+	var limit := Plate.HALF-POOL_RIM-radius
 	if limit < 0.0:
-		radius = 14.0-POOL_RIM
+		radius = Plate.HALF-POOL_RIM
 		limit = 0.0
 	if radius < BED_RADIUS.x: return {}
 	var pool := (foot+heading*radius*0.5).clamp(Vector2(-limit,-limit),Vector2(limit,limit))
+	# An island's shore is its rim: the pool shrinks to stay POOL_RIM inside
+	# it, back toward the foot if it must, or wears none where none fits.
+	if not terrain.shore_distance.is_empty():
+		var room := rim_gap(terrain,pool)-POOL_RIM
+		if room < BED_RADIUS.x:
+			pool = foot
+			room = rim_gap(terrain,pool)-POOL_RIM
+		radius = minf(radius,room)
+		if radius < BED_RADIUS.x: return {}
 	var depth := clampf(volume/(PI*radius*radius*BED_FILL)+BED_FREEBOARD,BED_DEPTH.x,BED_DEPTH.y)
 	var heights := terrain.heights.duplicate()
 	var top := course[maxi(start-1,0)].y
@@ -824,10 +867,178 @@ func cascades(params: Dictionary) -> Array:
 func edge_outflow() -> Dictionary:
 	return kernel.edge_outflow() if ready else {"sides":[],"total":0.0}
 
-## Runs of edge cells water leaves the plate over (ZenScapeWaterFlow::spills),
-## for scripts/edge_falls.gd.
+## Runs of edge cells water leaves the plate over, for scripts/edge_falls.gd:
+## each {"side", "normal" (Vector2, out of the land), "flux", "lip" (Vector3
+## where it leaves), "floor", "half", "from", "to", "depth", "speed"}, the
+## largest first (ZenScapeWaterFlow::spills has the meaning of each).
+## The square plate's come from the kernel, along its four sides. An island
+## with an outline leaves over its shore instead (`_shore_spills`), with
+## `side` -1.
 func spills(params: Dictionary) -> Array:
-	return kernel.spills(params) if ready else []
+	if not ready: return []
+	if data.outline.is_empty(): return kernel.spills(params)
+	if kernel.has_method("edge_leaving"): return _shore_spills(params)
+	# A library built before `edge_leaving` lays every lip on the square's
+	# rim: keep only those where the land itself reaches it, so no fall
+	# hangs in the air off a bay.
+	return kernel.spills(params).filter(func(spill: Dictionary) -> bool:
+		var lip: Vector3 = spill.lip
+		var normal: Vector2 = spill.normal
+		return data.ground_height(Vector2(lip.x,lip.z)-normal*0.3) != null)
+
+## Metres from an edge cell's centre to the shore past which its water is
+## not leaving over the shore (it drains into the chasm instead).
+const SHORE_REACH := 2.0
+## The least cosine between two edge cells' ways out for them to pour as one.
+const SHORE_TURN := 0.5
+
+## Spills over an island's shore. The edge cells leaving more than
+## `cell_min` (ZenScapeWaterFlow::edge_leaving) are joined into runs where
+## they lie within `gap` cells of each other on the grid and face the same
+## way out (`SHORE_TURN`). Each cell leaves at the nearest point of the shore
+## (`_shore_at`), out along the shore's normal there. A run carrying
+## `min_flux` is a spill: its lip is the shore point nearest the
+## flux-weighted middle of where its cells leave, its normal their
+## flux-weighted way out, and its half width, brink depth, speed (out along
+## that normal) and water top weighed as the kernel weighs a side's run.
+func _shore_spills(params: Dictionary) -> Array:
+	var cell_min: float = params.get("cell_min",0.0004)
+	var min_flux: float = params.get("min_flux",0.003)
+	var gap: int = params.get("gap",1)
+	var most: int = params.get("max",8)
+	if _shore_for != data.shore_edges:
+		_shore_for = data.shore_edges
+		_shore_cells.clear()
+		_shore_normals.clear()
+	var leaving: Dictionary = kernel.edge_leaving(cell_min)
+	var cells: PackedInt32Array = leaving.cell
+	var rate: PackedFloat32Array = leaving.rate
+	var shore: Array[Dictionary] = []
+	var at := {}
+	for k in range(cells.size()):
+		var near := _shore_at(cells[k])
+		shore.append(near)
+		if not near.is_empty(): at[cells[k]] = k
+	# Runs: union the cells within reach of each other that face alike.
+	var root := range(cells.size())
+	var find := func(k: int) -> int:
+		while root[k] != k: k = root[k]
+		return k
+	var reach := gap+1
+	for k in range(cells.size()):
+		if shore[k].is_empty(): continue
+		var i := cells[k]%width
+		var j := cells[k]/width
+		for dj in range(0,reach+1):
+			for di in range(-reach,reach+1):
+				if dj == 0 and di <= 0: continue
+				var m: Variant = at.get((j+dj)*width+i+di) if i+di >= 0 and i+di < width else null
+				if m == null or (shore[k].normal as Vector2).dot(shore[m].normal) < SHORE_TURN: continue
+				var a: int = find.call(k)
+				var b: int = find.call(m)
+				if a != b: root[maxi(a,b)] = mini(a,b)
+	var runs := {}
+	for k in range(cells.size()):
+		if shore[k].is_empty(): continue
+		var r: int = find.call(k)
+		if not runs.has(r): runs[r] = []
+		runs[r].append(k)
+	var surface: PackedFloat32Array = leaving.surface
+	var floor: PackedFloat32Array = leaving.floor
+	var brink: PackedFloat32Array = leaving.brink
+	var velocity: PackedVector2Array = leaving.velocity
+	var found := []
+	for members: Array in runs.values():
+		var q := 0.0
+		var point := Vector2.ZERO
+		var normal := Vector2.ZERO
+		var edges := {}
+		for k in members:
+			edges[shore[k].edge] = true
+			q += rate[k]
+			point += (shore[k].point as Vector2)*rate[k]
+			normal += (shore[k].normal as Vector2)*rate[k]
+		if q < min_flux: continue
+		normal = normal.normalized()
+		var lip_at: Dictionary = _shore_near(point/q,PackedInt32Array(edges.keys()))
+		var across := Vector2(-normal.y,normal.x)
+		var t := 0.0
+		var tt := 0.0
+		var low := INF
+		var high := -INF
+		var y := 0.0
+		var fl := 0.0
+		var dep := 0.0
+		var sp := 0.0
+		for k in members:
+			var r := rate[k]
+			var a := _cell_centre(cells[k]).dot(across)
+			t += r*a
+			tt += r*a*a
+			low = minf(low,a)
+			high = maxf(high,a)
+			y += r*surface[k]
+			fl += r*floor[k]
+			dep += r*brink[k]
+			sp += r*maxf(0.0,velocity[k].dot(normal))
+		var mid := t/q
+		var from := low-0.5*cell
+		var to := high+0.5*cell
+		var half := minf(0.5*(to-from),sqrt(3.0*maxf(0.0,tt/q-mid*mid))+0.5*cell)
+		var lip: Vector2 = lip_at.point
+		found.append({"side":-1,"normal":normal,"flux":q,"lip":Vector3(lip.x,y/q,lip.y),"floor":fl/q,"half":half,
+			"from":from,"to":to,"depth":dep/q,"speed":sp/q})
+	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.flux > b.flux)
+	return found.slice(0,most)
+
+func _cell_centre(c: int) -> Vector2:
+	return origin+Vector2((c%width)+0.5,(c/width)+0.5)*cell
+
+## Each edge cell's `_shore_at` and each shore point's summed edge normals,
+## for the shore they were found on.
+var _shore_cells := {}
+var _shore_normals := {}
+var _shore_for := PackedInt32Array()
+
+## Where edge cell `c`'s water leaves the island: `_shore_near` its centre,
+## or empty when the shore is further than SHORE_REACH (a chasm's bank).
+func _shore_at(c: int) -> Dictionary:
+	if _shore_cells.has(c): return _shore_cells[c]
+	var near := _shore_near(_cell_centre(c))
+	if near.is_empty() or (near.point as Vector2).distance_to(_cell_centre(c)) > SHORE_REACH: near = {}
+	_shore_cells[c] = near
+	return near
+
+## The nearest point on the outline's shore to `p` (NativeTerrainData
+## `shore_edges`; only those starting at `among` when given) and the way out
+## there: {"point", "normal", "edge"}. Each shore point's way out is the mean
+## of its edges' (away from the land face's third corner, as
+## scripts/island_shore.gd stands its wall), blended along the edge so it
+## turns smoothly round the shore. Empty without a shore.
+func _shore_near(p: Vector2, among := PackedInt32Array()) -> Dictionary:
+	var edges := data.shore_edges
+	var points := data.points
+	if _shore_normals.is_empty():
+		for k in range(0,edges.size(),3):
+			var a := points[edges[k]]
+			var b := points[edges[k+1]]
+			var out := (b-a).orthogonal().normalized()
+			if out.dot(a-points[edges[k+2]]) < 0.0: out = -out
+			for i in [edges[k],edges[k+1]]: _shore_normals[i] = _shore_normals.get(i,Vector2.ZERO)+out
+	var best := INF
+	var found := {}
+	for k in (among if not among.is_empty() else range(0,edges.size(),3)):
+		var a := points[edges[k]]
+		var b := points[edges[k+1]]
+		var ab := b-a
+		var s := clampf((p-a).dot(ab)/maxf(ab.length_squared(),0.000001),0.0,1.0)
+		var on := a+ab*s
+		var d := on.distance_squared_to(p)
+		if d < best:
+			best = d
+			var way := (_shore_normals[edges[k]] as Vector2).normalized().lerp((_shore_normals[edges[k+1]] as Vector2).normalized(),s)
+			found = {"point":on,"normal":way.normalized(),"edge":k}
+	return found
 
 ## The saved form: springs, and the depth grid deflated as float32, base64.
 func encode() -> Dictionary:
@@ -843,7 +1054,7 @@ static func decode(value: Variant) -> Variant:
 	for spring: Variant in value.springs:
 		if not spring is Dictionary: return null
 		for key in ["x","z"]:
-			if not GardenData._number(spring.get(key),-14.0,14.0): return null
+			if not GardenData._number(spring.get(key),-Plate.HALF,Plate.HALF): return null
 		if not GardenData._number(spring.get("rate"),0.0,1.0) or not GardenData._number(spring.get("radius"),0.05,3.0): return null
 		found.springs.append({"x":float(spring.x),"z":float(spring.z),"rate":float(spring.rate),"radius":float(spring.radius)})
 	if GardenData._number(value.get("cell"),0.05,2.0) and GardenData._integer(value.get("width")) and GardenData._integer(value.get("height")) and value.get("depth") is String:
@@ -871,7 +1082,7 @@ func _restore(state: Dictionary) -> void:
 	springs.clear()
 	runoff.reset()
 	if not ready: return
-	if data.vertex_ids != _topology: await setup()
+	if data.vertex_ids != _topology or data.void_faces != _void: await setup()
 	if saved is Dictionary:
 		springs.assign(saved.springs)
 		if saved.has("depth") and is_equal_approx(float(saved.cell),cell) and int(saved.width) == width and int(saved.height) == height:

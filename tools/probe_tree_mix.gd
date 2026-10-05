@@ -11,6 +11,7 @@ extends SceneTree
 ## godot --headless --path . -s res://tools/probe_tree_mix.gd -- [seed|-1] [salt] [radius]
 const Emergence = preload("res://scripts/emergence.gd")
 const LETTERS := {"broadleaf":"B","layered_tree":"L","tree":"S","redwood":"R","joshua":"J","cactus":"C","birch":"A","willow":"W","juniper":"P","snag":"n","log":"-","stump":"o"}
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:
@@ -18,9 +19,7 @@ func run() -> void:
 	var world_seed := int(args[0]) if not args.is_empty() and args[0].lstrip("-").is_valid_int() else -1
 	var salt := int(args[1]) if args.size() > 1 and args[1].is_valid_int() else 7
 	var radius := float(args[2]) if args.size() > 2 and args[2].is_valid_float() else 11.0
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
-	var mesh: ArrayMesh = reference.get_node("terrain").mesh
-	reference.free()
+	var mesh: ArrayMesh = PlateFixture.mesh()
 	var data := NativeTerrainData.new()
 	data.setup(mesh)
 	if world_seed < 0:

@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const Recipe = preload("res://scripts/native_terrain_recipe.gd")
@@ -102,7 +103,7 @@ func _run() -> void:
 		for biome: String in Shape.BIOMES:
 			var variant = Recipe.new(Presets.recipe(family,biome))
 			check(Recipe.valid(variant.settings),"Supported family / biome pairing")
-			for point in [Vector2.ZERO,Vector2(-4,-5),Vector2(7,8),Vector2(14,0)]:
+			for point in [Vector2.ZERO,Vector2(-4,-5),Vector2(7,8),Vector2(Plate.HALF,0)]:
 				check(is_equal_approx(reference.height(point.x,point.y),variant.height(point.x,point.y)),"Biome does not alter family profile")
 	# Exercise the actual yielding UI path and block competing writes mid-build.
 	var live_frames := [0]

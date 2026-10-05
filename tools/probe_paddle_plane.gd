@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless probe of the Paddle's Plane (scripts/clay_tools/paddle.gd) on the
 ## real cozy worlds scene, driven by synthesized input through hand_reach.
 ## A Mountain pulls a peak and lays its rock, the Brush paints rock over the
@@ -73,7 +74,7 @@ func bare(at: Vector2) -> bool:
 	return reach.reach_at(at) == "" and reach._land(at) != null and not reach._prop_at(at)
 
 func cell_of(p: Vector2) -> int:
-	var c := Vector2i(((p+Vector2.ONE*14.0)/NativeTerrainData.MEADOW_STEP).floor())
+	var c := Vector2i(((p+Vector2.ONE*Plate.HALF)/NativeTerrainData.MEADOW_STEP).floor())
 	return c.y*NativeTerrainData.MEADOW_CELLS+c.x
 
 func tint_color(cell: int) -> Color:

@@ -17,6 +17,7 @@ extends RefCounted
 ##
 ## Everything is position hashes and seeded noise: no draw is taken from the
 ## planting stream, so trees, water and the land are the recipe's own.
+const Plate = preload("res://scripts/plate.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const Genome = preload("res://scripts/inland_genome.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
@@ -170,11 +171,14 @@ const CLEARING := 1.15
 ## Meadow ground flowers stop this far below the snowline.
 const SNOW_GAP := 1.2
 ## Drifts thin out between these distances from the centre, on the rounded
-## square `_rim` measures: the plate's edge is at 12 m, so the meadow runs
-## to its rim instead of stopping two metres short.
-const RIM := Vector2(10.9,11.85)
+## square `_rim` measures: a meadow world sits on the old 28 m square, whose
+## edge is at 12 m (2 m in from its rim), so the meadow runs to its rim
+## instead of stopping two metres short. A sowing on a plain island, which
+## may reach further, thins at PLATE_RIM instead (`rim_band`).
+const RIM := Vector2(Plate.LEGACY_HALF-3.1,Plate.LEGACY_HALF-2.15)
+const PLATE_RIM := Vector2(Plate.HALF-3.1,Plate.HALF-2.15)
 ## The flower candidates' lattice covers this half-width round the centre.
-const REACH := 11.9
+const REACH := Plate.LEGACY_HALF-2.1
 ## The yaw that turns a kit flower's face (its local +x) toward the noon
 ## sun's side of the plate: studies/celestial.gd's sun ring is yawed
 ## atan2(20, 12) round, so at noon the sun stands toward +x, +z, which is
@@ -190,6 +194,8 @@ var _species := FastNoiseLite.new()
 var _warp := FastNoiseLite.new()
 var _straw := FastNoiseLite.new()
 var _row := Vector2.RIGHT
+## Where this meadow's drifts thin out: RIM, or PLATE_RIM on a plain.
+var rim_band := RIM
 
 ## A meadow of type `type_id` for the world planted from `seed_value` (the
 ## genome's `plant_seed`).
@@ -282,7 +288,7 @@ static func form(kind: String, size: float, angle: float) -> Array:
 func presence(p: Vector2) -> float:
 	var cover := float(type.drift.cover)
 	var at := lerpf(0.42,-0.42,cover)
-	return smoothstep(at-0.12,at+0.22,_drift.get_noise_2d(p.x,p.y))*(1.0-smoothstep(RIM.x,RIM.y,_rim(p)))
+	return smoothstep(at-0.12,at+0.22,_drift.get_noise_2d(p.x,p.y))*(1.0-smoothstep(rim_band.x,rim_band.y,_rim(p)))
 
 ## The drift's colour variant at `p` (0..1), shared by the whole drift.
 func variant(p: Vector2) -> float:
@@ -389,7 +395,7 @@ func ground(p: Vector2) -> Array:
 	var hides := float(FLOWER_KEYS[kind].get("cover",1.0)) if FLOWER_KEYS.has(kind) else 1.0
 	colour = colour.lerp(wash,float(type.drift.wash)*core*hides)
 	# The paint fades out in the plate's last metre, so the meadow has no frame.
-	var rim := 1.0-smoothstep(RIM.x+0.5,RIM.y+1.0,_rim(p))
+	var rim := 1.0-smoothstep(rim_band.x+0.5,rim_band.y+1.0,_rim(p))
 	return [colour.srgb_to_linear(),lerpf(float(grass.weight),float(type.drift.get("carpet",grass.weight)),core*hides)*rim]
 
 ## Dresses the meadow ground of an inland world being formed by `land`
@@ -407,7 +413,7 @@ func dress(land: RefCounted, work: RefCounted) -> void:
 		if z%8 == 0: await work.checkpoint()
 		for x in range(data.MEADOW_CELLS):
 			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5
-			if maxf(absf(p.x),absf(p.y)) > 13.0 or land._is_wet(p): continue
+			if maxf(absf(p.x),absf(p.y)) > Plate.LEGACY_HALF-1.0 or land._is_wet(p): continue
 			var share := 1.0
 			if land.blend != null: share = land.blend.weight(meadow_index,p) if meadow_index >= 0 else 0.0
 			elif land.genome.habitat != "meadow": share = 0.0

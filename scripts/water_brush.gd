@@ -19,10 +19,13 @@ extends "res://scripts/creation_brush.gd"
 ## the button is down, showing the latest plan, and once more at release
 ## (NativeChunkEditor `_pour_live`).
 
-## The planning grid: 0.5 m cells over the 28 m plate.
+## The planning grid: GRID cells over the plate, SIDE points a side from
+## ORIGIN (57 over a 28 m plate). Named PLATE_HALF, not Plate, so it cannot
+## clash with a `Plate` the parent brush may declare.
 const GRID := 0.5
-const SIDE := 57
-const ORIGIN := -14.0
+const PLATE_HALF: float = preload("res://scripts/plate.gd").HALF
+const SIDE := roundi(2.0*PLATE_HALF/GRID)+1
+const ORIGIN := -PLATE_HALF
 ## Cubic metres poured per second at strength 1 with a brush of REFERENCE_RADIUS.
 const RATE := 2.4
 const REFERENCE_RADIUS := 3.0
@@ -548,7 +551,7 @@ static func _scoop_sites(grid: Dictionary, lost: Array, ponds: Array = []) -> Ar
 		if best < 0:
 			# Too near the rim all the way down: step in toward the middle.
 			var p := position_of(chunk.start)
-			var limit := 14.0-reach
+			var limit := PLATE_HALF-reach
 			if limit <= 0.0: continue
 			best = cell_of(p.clamp(Vector2(-limit,-limit),Vector2(limit,limit)))
 		var merged := false
@@ -615,7 +618,7 @@ static func _scoop_radius(volume: float) -> float:
 
 static func _rim_distance(k: int) -> float:
 	var p := position_of(k)
-	return 14.0-maxf(absf(p.x),absf(p.y))
+	return PLATE_HALF-maxf(absf(p.x),absf(p.y))
 
 ## Lower a soft bowl, (1 - t²)² in profile, whose volume holds the site's
 ## water; update the grid under it. Returns the rect it touched.
@@ -668,7 +671,7 @@ static func _lip(data: NativeTerrainData, heights: PackedFloat32Array, grid: Dic
 	for i in range(data.points.size()):
 		var p := data.points[i]
 		if not bounds.has_point(p): continue
-		var edge := 14.0-maxf(absf(p.x),absf(p.y))
+		var edge := PLATE_HALF-maxf(absf(p.x),absf(p.y))
 		if edge >= LIP_WIDTH: continue
 		var near := INF
 		for f in frontage: near = minf(near,f.distance_to(p))
@@ -952,8 +955,8 @@ static func _stream_record(data: NativeTerrainData, stream: Dictionary, water: P
 	var points: Array = []
 	var ceiling := INF
 	for station in stations:
-		var x := clampf(station.x,-14.0,14.0)
-		var z := clampf(station.z,-14.0,14.0)
+		var x := clampf(station.x,-PLATE_HALF,PLATE_HALF)
+		var z := clampf(station.z,-PLATE_HALF,PLATE_HALF)
 		# The surface never climbs: `h` is non-increasing along a course.
 		ceiling = minf(ceiling,station.y+STREAM_DEPTH-STREAM_SURFACE)
 		var h := clampf(ceiling,NativeTerrainData.MIN_HEIGHT,66.0)

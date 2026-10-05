@@ -10,6 +10,7 @@ const PX := 16.0
 const HABITATS := {"meadow":Color("9fbe5c"),"woodland":Color("4f7d4a"),"alpine":Color("9a978c"),"wetland":Color("6f9c86"),"redwood":Color("3f5f3a"),"arid":Color("c2a678")}
 const KINDS := {"daisy_flower":Color("f6f2e4"),"button_flower":Color("f2c53d"),"spike_flower":Color("8f7ad6"),"umbel_flower":Color("f4f2ea")}
 const TREES := ["tree","broadleaf","birch","willow","juniper","layered_tree","redwood"]
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 func _initialize() -> void: run.call_deferred()
 
@@ -19,10 +20,8 @@ func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--types="): types = Array(arg.trim_prefix("--types=").split(","))
 		if arg.begins_with("--seed="): seed_value = int(arg.trim_prefix("--seed="))
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(reference.get_node("terrain").mesh)
-	reference.free()
+	data.setup(PlateFixture.mesh())
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 	for type_id: String in types:
 		var land = preload("res://scripts/inland_landscape.gd").new()

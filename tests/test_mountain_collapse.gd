@@ -2,6 +2,7 @@ extends SceneTree
 const Collapse = preload("res://scripts/mountain_collapse.gd")
 const Blast = preload("res://scripts/terrain_blast.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool,message: String) -> void:
@@ -19,10 +20,8 @@ func summit(data: NativeTerrainData) -> Vector3:
 func run() -> void:
 	root.size = Vector2i(1440,960)
 	create_timer(150).timeout.connect(func() -> void: quit(2))
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	data.heights.fill(2)
 	var original := data.heights.duplicate()

@@ -20,11 +20,23 @@ extends Node3D
 ## cells' origin, so the swaps that move the world carry the ranges along.
 ##
 ## Its faces are drawn with the plate's own ground material, laid OFF_MAP off
-## so the plate's maps read nothing on them (as SkyIslets does). The glide
+## so the plate's maps read nothing on them (as SkyIslets does), its look
+## read LOOK_SCALE times larger and its foot gone into the cloud's light. The glide
 ## reads each as a solid (`body`): giant stone, ridden only where it is no
 ## steeper than the glide can ride (SkyGlide `stone`). The haze reads their
 ## spots (`haze_spots`): a range is a landform, not scenery streamed in, so
 ## it stays in sight further off than the islands do.
+##
+## The ring (scripts/sky_world.gd): with it on, the cells hold no scattered
+## ranges; the world's ranges are HOME and those laid out once for the whole
+## world (the band round its edge and the ridges dividing its middle), each
+## scaled (`scale_of`: along its crest, in height about the sea, across) and
+## only some keeping their gorge (`gorge_of`). Each streams in as a cell's
+## does, keyed by its ring cell (`ring_cell`: a row no real cell reaches),
+## within its reach (`build_reach`), a ridge's piece drawn coarser near
+## (`detail_of`), and far off stands as a coarse skyline (scripts/
+## sky_ring.gd), so the ring is in sight right across the world. Nothing
+## scattered stands outside the world's bounds or on a ridge (`blocks`).
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 ## Other landforms of the land below risen through the sea, kept with the
@@ -40,6 +52,24 @@ const SkyCurrentsScript = preload("res://scripts/sky_currents.gd")
 const SkyTepuis = preload("res://scripts/sky_tepuis.gd")
 ## Where every wonder in sight of the plate stands (scripts/sky_homes.gd).
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+## The world's seed, bounds and ring (scripts/sky_world.gd), and the ring's
+## far skyline (scripts/sky_ring.gd).
+const SkyWorld = preload("res://scripts/sky_world.gd")
+const SkyRing = preload("res://scripts/sky_ring.gd")
+## The ring's ranges stand in cells (RING_ROW, index): a row no real cell
+## reaches (it would lie billions of metres off). Each is made within
+## RING_BUILD of the eye and let go past RING_FORGET; past that its skyline
+## stands in for it. A dividing ridge's piece, smaller and many together,
+## within RIDGE_BUILD and past RIDGE_FORGET (`build_reach`).
+const RING_ROW := 1000000
+const RING_BUILD := 1800.0
+const RING_FORGET := 2200.0
+const RIDGE_BUILD := 1400.0
+const RIDGE_FORGET := 1750.0
+const RIDGE_STRIDE := 2
+## Nothing scattered stands within INNER_CLEAR (m) of a dividing ridge's
+## footprint (SkyWorld `box_distance`, RIDGE_CLEAR).
+const INNER_CLEAR := SkyWorld.RIDGE_CLEAR
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -76,10 +106,19 @@ const PINCH_JET := 1.3
 const TREE_RANGE := 650.0
 ## The haze: a range's spot reaches this far out (m) for the gentler curve.
 const HAZE_REACH := 820.0
-## The cloud wrapped round the foot: puffs, held still; and how the rock
-## frays into the cloud (m) and goes pale over it (m).
+## The cloud wrapped round the foot: puffs, held still; how far (m) the
+## line the rock is cut at wanders up over the sea's top, and the height (m)
+## over it the rock goes into the cloud's light (reference_surface
+## `sea_fray`).
 const WRAP_STRENGTH := 0.85
-const SEA_FRAY := Vector2(7.0,45.0)
+const SEA_FRAY := Vector2(18.0,30.0)
+## The plate's look (its field's patches, its rock's strata) read this many
+## times larger on a range (reference_surface `look_scale`): the plate's
+## mountains are a few metres high, a range a few hundred.
+const LOOK_SCALE := 30.0
+## How far the rock's light leans to its broad lie from each small face's
+## (reference_surface `facet_soft`).
+const FACET_SOFT := 0.45
 
 ## The cells' origin keeper (scripts/sky_cells.gd), and the currents for the
 ## gorges' jets.
@@ -102,6 +141,8 @@ var kinds: Array[Node3D] = []
 static var _puff_material: ShaderMaterial
 static var _quad: QuadMesh
 var tepuis: Node3D
+## The ring's far skyline (scripts/sky_ring.gd).
+var ring: Node3D
 
 func _init() -> void:
 	name = "SkyPeaks"
@@ -111,6 +152,8 @@ func _init() -> void:
 		add_child(node)
 	tepuis = SkyTepuis.new()
 	add_child(tepuis)
+	ring = SkyRing.new()
+	add_child(ring)
 
 func _exit_tree() -> void:
 	clear()
@@ -122,12 +165,21 @@ func _exit_tree() -> void:
 func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	clear()
 	_material = null
+	# None stand while the ranges and the stone wonders are off (SkyHomes
+	# `peaks`, `stone`).
+	if not (SkyHomes.peaks or SkyHomes.stone):
+		cells = null
+		ring.reset(self)
+		return
 	cells = new_cells
 	currents = air
 	_since = CHECK
 	position = cells.origin
-	for kind in kinds: kind.reset(new_cells,air,self)
-	tepuis.reset(new_cells,air,self)
+	# The pillar forests and the tepui only with the other stone wonders.
+	if SkyHomes.stone:
+		for kind in kinds: kind.reset(new_cells,air,self)
+		tepuis.reset(new_cells,air,self)
+	ring.reset(self)
 
 ## Freed without leaving a tree (made and dropped outside one, as tests
 ## and probes do), `_exit_tree` never runs: its workers are still waited
@@ -170,6 +222,28 @@ func advance(delta: float, eye: Vector3) -> void:
 		_finish(m.cell,m.spot,m.out)
 		break
 	for kind in kinds: kind.advance(delta,eye)
+	ring.advance()
+
+## The build view (no glide): the ranges stand round the plate as their
+## skylines (scripts/sky_ring.gd: the range in sight of the plate's finer),
+## warmed on workers as the world starts, none made in full; the world's
+## middle at `origin` (global: SkyIslands `origin`). Nothing here waits on
+## a worker.
+func overview(origin: Vector3) -> void:
+	position = origin
+	if ring.lines.is_empty() and ring._making.is_empty(): ring.warm(self)
+	ring.advance()
+
+## Every range made in full let go, its skyline back (the glide over: the
+## build view stands on the skylines alone).
+func let_go() -> void:
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
+	for key in built:
+		(built[key].node as Node3D).queue_free()
+		if currents != null: currents.drop_thermals(_jet_key(key))
+	built.clear()
+	_since = CHECK
 
 ## Waits for every range being made and stands it up (tests, probes,
 ## captures).
@@ -181,11 +255,12 @@ func flush() -> void:
 	_making.clear()
 	for kind in kinds: kind.flush()
 	tepuis.flush()
+	ring.flush()
 
 func _survey(home: Vector3) -> void:
 	var gone := []
 	for key in built:
-		if _flat(built[key].home,home) > FORGET: gone.append(key)
+		if _flat(built[key].home,home) > (build_reach(built[key].cell).y if is_ring(built[key].cell) else FORGET): gone.append(key)
 	for key in gone:
 		(built[key].node as Node3D).queue_free()
 		if currents != null: currents.drop_thermals(_jet_key(key))
@@ -199,6 +274,12 @@ func _survey(home: Vector3) -> void:
 			var s: Variant = spot(cell)
 			if s == null or Vector2(s.x-home.x,s.z-home.z).length() > BUILD: continue
 			_start(cell,s)
+	# The ring's ranges near the eye.
+	for cell in ring_cells():
+		var key := _key(cell)
+		if built.has(key) or _making.has(key): continue
+		var s: Vector4 = spot(cell)
+		if Vector2(s.x-home.x,s.z-home.z).length() <= build_reach(cell).x: _start(cell,s)
 
 # --- Where they stand ------------------------------------------------------------
 
@@ -206,49 +287,127 @@ static func cell_of(home: Vector3) -> Vector2i:
 	return Vector2i(floori(home.x/CELL+0.5),floori(home.z/CELL+0.5))
 
 ## The cell's range: Vector4(x, y, z of its middle (home), turn), or null.
-## The plate's cell always holds HOME; elsewhere none stands where its frame
-## would reach into the keep of a wonder in sight of the plate (SkyHomes
-## `blocks`) or of one of the other kinds kept here.
+## The plate's cell always holds HOME; a ring cell its ring range; with the
+## ring on, no other; elsewhere none stands where its frame would reach into
+## the keep of a wonder in sight of the plate (SkyHomes `blocks`) or of one
+## of the other kinds kept here.
 static func spot(cell: Vector2i) -> Variant:
+	if not (SkyHomes.peaks or SkyHomes.stone): return null
 	if cell == Vector2i.ZERO: return Vector4(HOME.x,HOME.y,HOME.z,HOME_TURN)
+	if is_ring(cell):
+		var r: Variant = _ring_range(cell)
+		return null if r == null else Vector4(r.at.x,0.0,r.at.z,r.turn)
+	if SkyWorld.ring_on(): return null
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
 	var off := Vector2(noise(cell,SALT+1)-0.5,noise(cell,SALT+2)-0.5)*2.0*JITTER*CELL
 	var at := Vector3(middle.x+off.x,0.0,middle.y+off.y)
 	# Its whole frame, spread, clear: no rock stands past it.
 	var room := maxf(KEEP,SkyPeak.HALF.length())*spread_of(cell)
-	if SkyHomes.blocks(at,room) or SkyTepuis.blocks(at,room): return null
-	for kind: GDScript in KINDS:
-		if kind.blocks(at,room): return null
+	if SkyHomes.blocks(at,room) or (SkyHomes.stone and SkyTepuis.blocks(at,room)): return null
+	if SkyHomes.stone:
+		for kind: GDScript in KINDS:
+			if kind.blocks(at,room): return null
 	return Vector4(at.x,0.0,at.z,noise(cell,SALT+3)*TAU)
 
 static func seed_of(cell: Vector2i) -> int:
+	if is_ring(cell): return int(_ring_range(cell).seed)
 	return int(noise(cell,SALT+4)*16777216.0)
 
 static func stature_of(cell: Vector2i) -> float:
+	if is_ring(cell): return float(_ring_range(cell).stature)
 	return 1.0 if cell == Vector2i.ZERO else lerpf(STATURE.x,STATURE.y,noise(cell,SALT+5))
 
 static func spread_of(cell: Vector2i) -> float:
+	if is_ring(cell):
+		var s: Vector3 = _ring_range(cell).scale
+		return maxf(s.x,s.z)
 	return 1.0 if cell == Vector2i.ZERO else lerpf(SPREAD.x,SPREAD.y,noise(cell,SALT+6))
 
-## True if a home point lies within KEEP (plus `margin`) of a range's middle.
+## A laid range's scale (SkyWorld `layout`: along its crest, in height,
+## across), its height about the cloud sea's top; a cell's range spread
+## evenly, its height its own.
+static func scale_of(cell: Vector2i) -> Vector3:
+	if is_ring(cell): return _ring_range(cell).scale
+	var spread := spread_of(cell)
+	return Vector3(spread,1.0,spread)
+
+## Whether a range keeps its gorge: every cell's does; of the laid ones,
+## those the layout keeps (SkyWorld `layout` gorge).
+static func gorge_of(cell: Vector2i) -> bool:
+	return bool(_ring_range(cell).gorge) if is_ring(cell) else true
+
+## Whether a laid range's far skyline is drawn coarser (SkyRing
+## STRIDE_LOW): the band's foothills and far row, the ridges' low stretches
+## and spurs.
+static func coarse_of(cell: Vector2i) -> bool:
+	if not is_ring(cell): return false
+	var r: Dictionary = _ring_range(cell)
+	return bool(r.get("coarse",r.kind in ["foot","far"]))
+
+## Every how many grid points a range's near faces are drawn (its far ones
+## LOD_STRIDE times more): a dividing ridge's piece, squeezed along its
+## crest, every RIDGE_STRIDE-th, so its faces are about the band's size.
+static func detail_of(cell: Vector2i) -> int:
+	return RIDGE_STRIDE if is_ring(cell) and not SkyWorld.in_band(kind_of(cell)) else 1
+
+## How near the eye a laid range is made in full, and how far off it is
+## let go (m): a dividing ridge's piece nearer than the band's.
+static func build_reach(cell: Vector2i) -> Vector2:
+	if SkyWorld.in_band(kind_of(cell)): return Vector2(RING_BUILD,RING_FORGET)
+	return Vector2(RIDGE_BUILD,RIDGE_FORGET)
+
+## A laid range's kind (SkyWorld `layout`), or "" for a cell's.
+static func kind_of(cell: Vector2i) -> String:
+	return str(_ring_range(cell).kind) if is_ring(cell) else ""
+
+## How far a range scaled `height` in height stands raised (m), so its
+## heights scale about the cloud sea's top and its foot stays in the sea.
+static func lift(height: float) -> float:
+	return SkyPeak.SEA*(1.0-height)
+
+## The ring's ranges' cells (SkyWorld `layout`), none with the ring off.
+static func ring_cells() -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if not SkyWorld.ring_on(): return out
+	for r: Dictionary in SkyWorld.layout().ranges: out.append(Vector2i(RING_ROW,int(r.index)))
+	return out
+
+static func is_ring(cell: Vector2i) -> bool:
+	return cell.x == RING_ROW
+
+## A ring cell's range in the layout (SkyWorld `layout`), or null.
+static func _ring_range(cell: Vector2i) -> Variant:
+	if not SkyWorld.ring_on(): return null
+	for r: Dictionary in SkyWorld.layout().ranges:
+		if int(r.index) == cell.y: return r
+	return null
+
+## True if a home point lies within KEEP (plus `margin`) of a range's middle,
+## or (`margin` in) outside the world's bounds (SkyWorld `inside`): where
+## nothing scattered may stand. The ring's ranges stand well outside the
+## bounds (tests/test_sky_world.gd), so they need no keep of their own here.
 static func blocks(home: Vector3, margin := 0.0) -> bool:
+	if not SkyWorld.inside(home,margin): return true
+	if not (SkyHomes.peaks or SkyHomes.stone): return false
+	# The dividing ridges laid through the middle: their whole footprint,
+	# and INNER_CLEAR past it.
+	if SkyWorld.ring_on():
+		for r: Dictionary in SkyWorld.layout().ranges:
+			if not SkyWorld.in_band(r.kind) and SkyWorld.box_distance(r,Vector2(home.x,home.z)) < INNER_CLEAR+margin: return true
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
 			var s: Variant = spot(c+Vector2i(dx,dz))
 			if s != null and Vector2(s.x-home.x,s.z-home.z).length() < KEEP*spread_of(c+Vector2i(dx,dz))+margin: return true
+	if not SkyHomes.stone: return false
 	for kind: GDScript in KINDS:
 		if kind.blocks(home,margin): return true
 	return SkyTepuis.blocks(home,margin)
 
 ## A hash of a cell, 0 to 1, one per salt (as SkyCells `noise`).
 static func noise(cell: Vector2i, salt: int) -> float:
-	var h := cell.x*73856093^cell.y*19349663^salt*83492791^7*2654435761
-	h = (h^(h >> 13))*1274126177
-	h = (h^(h >> 16))*668265263
-	h ^= h >> 15
-	return float(h & 0xFFFFFF)/float(0x1000000)
+	return SkyWorld.noise(cell,salt)
 
 # --- Making one --------------------------------------------------------------------
 
@@ -257,14 +416,15 @@ func _start(cell: Vector2i, s: Vector4) -> void:
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out),false,"Sky peak")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell),scale_of(cell).y),false,"Sky peak")
 	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
 
-static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary) -> void:
-	var shape: RefCounted = SkyPeak.make(seed_value,stature)
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true, stride := 1, height := 1.0) -> void:
+	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
+	shape.snowline = maxf(shape.snowline,SkyPeak.snow_floor(height))
 	out.shape = shape
-	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,1,snow)
-	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,LOD_STRIDE,snow)
+	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow)
+	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow)
 
 ## The worker's range, stood up as nodes: its faces, the cloud at its foot,
 ## and the jet down its gorge.
@@ -272,10 +432,10 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 	var shape: RefCounted = out.shape
 	var node := Node3D.new()
 	node.name = "Peak_%d_%d" % [cell.x,cell.y]
-	node.position = Vector3(s.x,s.y,s.z)
+	var scale := scale_of(cell)
+	node.position = Vector3(s.x,s.y+lift(scale.y),s.z)
 	node.rotation.y = s.w
-	var spread := spread_of(cell)
-	node.scale = Vector3(spread,1.0,spread)
+	node.scale = scale
 	add_child(node)
 	# Near, every face; far, the coarse faces, crossfading between.
 	for far in [false,true]:
@@ -289,12 +449,14 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 		body.visibility_range_begin_margin = 80.0
 		body.visibility_range_end_margin = 80.0
 		body.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		# Kilometres off: never in the plate's water's mirror.
+		body.set_meta("skip_reflection",true)
 		node.add_child(body)
 	if not shape.wraps.is_empty(): node.add_child(_wrap(shape))
 	if tree_parts.is_valid(): _plant(node,shape)
 	var key := _key(cell)
-	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread}
-	_jet(key)
+	built[key] = {"node":node,"shape":shape,"home":Vector3(s.x,s.y,s.z),"turn":s.w,"cell":cell,"spread":spread_of(cell),"scale":scale}
+	if gorge_of(cell): _jet(key)
 
 ## The plate's ground material, cut at the cloud sea's top (reference_
 ## surface `sea_cut`): one copy a sky, made when the first range stands.
@@ -311,6 +473,8 @@ func _ground() -> Material:
 		m.set_shader_parameter("base_color",Color.WHITE)
 	m.set_shader_parameter("sea_cut",SkyPeak.SEA)
 	m.set_shader_parameter("sea_fray",SEA_FRAY)
+	m.set_shader_parameter("look_scale",LOOK_SCALE)
+	m.set_shader_parameter("facet_soft",FACET_SOFT)
 	_material = m
 	return _material
 
@@ -345,6 +509,7 @@ func _wrap(shape: RefCounted) -> MultiMeshInstance3D:
 	puffs.multimesh = multimesh
 	puffs.material_override = _puff_material
 	puffs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puffs.set_meta("skip_reflection",true)
 	puffs.custom_aabb = AABB(Vector3(-SkyPeak.HALF.x-60.0,SkyPeak.SEA-60.0,-SkyPeak.HALF.y-60.0),Vector3(SkyPeak.HALF.x*2.0+120.0,120.0,SkyPeak.HALF.y*2.0+120.0))
 	return puffs
 
@@ -364,9 +529,9 @@ func _plant(node: Node3D, shape: RefCounted) -> void:
 		var poses := []
 		for t: Vector4 in by_variant[v]:
 			var at := Vector3(t.x,float(shape.height_at(Vector2(t.x,t.y)))-0.1,t.y)
-			# Upright and round however wide the range is spread.
-			var spread := node.scale.x
-			poses.append(Transform3D(Basis.from_scale(Vector3(1.0/spread,1.0,1.0/spread))*Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.z/tall),at))
+			# Upright and round however the range is scaled.
+			var spread := node.scale
+			poses.append(Transform3D(Basis.from_scale(Vector3(1.0/spread.x,1.0/spread.y,1.0/spread.z))*Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*t.z/tall),at))
 		for part in range(2):
 			var batch := MultiMeshInstance3D.new()
 			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
@@ -380,6 +545,7 @@ func _plant(node: Node3D, shape: RefCounted) -> void:
 				multimesh.set_instance_color(i,canopy_tint*rng.randf_range(0.86,1.04) if part == 1 else Color.WHITE)
 			batch.multimesh = multimesh
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			batch.set_meta("skip_reflection",true)
 			batch.visibility_range_end = TREE_RANGE
 			batch.visibility_range_end_margin = 60.0
 			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -393,8 +559,11 @@ func _jet(key: String) -> void:
 	var shape: RefCounted = b.shape
 	var points := PackedVector3Array()
 	for p: Vector3 in shape.gorge_line(JET_Y,96): points.append(global_of(b,Vector3(p.x,shape.jet_height(p.z,JET_Y),p.z)))
-	# Downstream away from the plate.
-	if points[0].distance_squared_to(cells.origin) > points[points.size()-1].distance_squared_to(cells.origin): points.reverse()
+	# Downstream away from the plate; through a range of the band, in toward
+	# the world's middle, so a gorge brings a glide back in, never out.
+	var away := points[0].distance_squared_to(cells.origin) > points[points.size()-1].distance_squared_to(cells.origin)
+	var inward := kind_of(b.cell) != "" and SkyWorld.in_band(kind_of(b.cell))
+	if away != inward: points.reverse()
 	# Strongest where it threads a pinch's slot.
 	currents.add_jet(points,_jet_key(key),SkyCurrentsScript.JET*(PINCH_JET if not shape.pinch.is_empty() else 1.0))
 
@@ -405,24 +574,28 @@ func _jet_key(key: String) -> String:
 
 ## A point in a range's own frame from a global one, and back.
 func local_of(b: Dictionary, point: Vector3) -> Vector3:
-	var at := (point-position-(b.home as Vector3)).rotated(Vector3.UP,-float(b.turn))
-	var spread: float = b.get("spread",1.0)
-	return Vector3(at.x/spread,at.y,at.z/spread)
+	var scale: Vector3 = b.get("scale",Vector3.ONE)
+	var at := (point-position-(b.home as Vector3)-Vector3.UP*lift(scale.y)).rotated(Vector3.UP,-float(b.turn))
+	return at/scale
 
 func global_of(b: Dictionary, local: Vector3) -> Vector3:
-	var spread: float = b.get("spread",1.0)
-	return position+(b.home as Vector3)+Vector3(local.x*spread,local.y,local.z*spread).rotated(Vector3.UP,float(b.turn))
+	var scale: Vector3 = b.get("scale",Vector3.ONE)
+	return position+(b.home as Vector3)+Vector3.UP*lift(scale.y)+(local*scale).rotated(Vector3.UP,float(b.turn))
 
 ## The range under a global point as a solid, Vector2(its ground's height,
 ## its underside far under the cloud) in global metres, or null.
 func body(point: Vector3) -> Variant:
+	# Where two ranges overlap (the ring's meet end to end), the higher.
+	var found: Variant = null
 	for key in built:
 		var b: Dictionary = built[key]
 		var local := local_of(b,point)
 		var h: Variant = b.shape.height_at(Vector2(local.x,local.z))
 		if h == null: continue
-		var y := position.y+float(b.home.y)
-		return Vector2(float(h)+y,SkyPeak.BOTTOM+y)
+		var scale: Vector3 = b.get("scale",Vector3.ONE)
+		var y := position.y+float(b.home.y)+lift(scale.y)
+		if found == null or float(h)*scale.y+y > (found as Vector2).x: found = Vector2(float(h)*scale.y+y,SkyPeak.BOTTOM*scale.y+y)
+	if found != null: return found
 	for kind in kinds:
 		var b: Variant = kind.body(point)
 		if b != null: return b
@@ -444,6 +617,8 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 	var out := []
 	for key in built:
 		var b: Dictionary = built[key]
+		# The band's take the band's own haze (SkyWorld HAZE_REACH).
+		if is_ring(b.cell) and SkyWorld.in_band(kind_of(b.cell)): continue
 		var at := position+(b.home as Vector3)
 		out.append(Vector4(at.x,at.z,HAZE_REACH*float(b.get("spread",1.0)),1.0))
 	for kind in kinds: out.append_array(kind.haze_spots())

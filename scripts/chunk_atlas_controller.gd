@@ -160,7 +160,7 @@ func move(direction: Vector2i) -> bool:
 	var grown := not atlas.has(target)
 	atlas.live = target
 	if grown:
-		Genesis.shape(editor.data,atlas.seed_value,Atlas.world_origin(target))
+		Genesis.shape(editor.data,atlas.seed_value,Atlas.world_origin(target),false)
 	else:
 		editor.data.load_document(atlas.slots[target].document)
 	editor.data._undo.clear()

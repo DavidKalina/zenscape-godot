@@ -15,8 +15,8 @@ uniform sampler2D stream_map : filter_nearest, repeat_disable;
 uniform sampler2D ground_map : filter_nearest, repeat_disable;
 
 float groundAt(vec2 p) {
-	if (max(abs(p.x), abs(p.y)) > 16.0) return -1000.0;
-	return zs_surface_height(texture(ground_map, (p + 16.0) / 32.0), texture(stream_map, (p + 16.0) / 32.0));
+	if (max(abs(p.x), abs(p.y)) > zs_map_half) return -1000.0;
+	return zs_surface_height(texture(ground_map, (p + zs_map_half) / (zs_map_half * 2.0)), texture(stream_map, (p + zs_map_half) / (zs_map_half * 2.0)));
 }
 #include "res://shaders/reference_orographic.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
@@ -26,8 +26,8 @@ vec4 zs_air_sample(vec3 p) {
 	float over = p.y - ground;
 	float pool = exp(-max(over, 0.0) * 0.55) * exp(-max(p.y - mix(0.6, 0.15, smoothstep(0.13, 0.43, zs_growth.x)), 0.0) * 0.085);
 	// Ground mist thins over open water, so ponds read clear rather than milky.
-	if (max(abs(p.x), abs(p.z)) < 16.0) {
-		vec2 uv = (p.xz + 16.0) / 32.0;
+	if (max(abs(p.x), abs(p.z)) < zs_map_half) {
+		vec2 uv = (p.xz + zs_map_half) / (zs_map_half * 2.0);
 		pool *= 1.0 - 0.75 * zs_open_water(texture(ground_map, uv), texture(stream_map, uv));
 	}
 	vec3 q = p * vec3(0.22, 0.42, 0.22) + vec3(zs_cloud_drift.x * 3.0, zs_motion_time * 0.012, zs_cloud_drift.z * 3.0)
@@ -41,7 +41,7 @@ vec4 zs_air_sample(vec3 p) {
 	float bank = 1.0 - smoothstep(lid - 1.2, lid + 1.6, p.y);
 	float g = 0.5, puff = 0.0;
 	if (bank > 0.002 || pool > 0.03) g = zs_gust_parts_at(p.xz, zs_gust_distance, puff);
-	float along = dot(p.xz, zs_wind_direction) / 14.0;
+	float along = dot(p.xz, zs_wind_direction) / zs_plate_half;
 	float torn = 0.5 - 0.22 * along + (0.42 + 0.4 * loosen) * (g - 0.5);
 	float left = shroud * 1.12;
 	float keep = 1.0 - smoothstep(left - 0.14, left + 0.14, torn);
@@ -57,7 +57,7 @@ vec4 zs_air_sample(vec3 p) {
 		vec3 c = p * vec3(0.26, 0.5, 0.26) - vec3(zs_wind_direction.x, -0.25, zs_wind_direction.y) * zs_pour.w * 0.6;
 		float churn = clamp(wxFbm2(c) * 1.33, 0.0, 1.0);
 		float floor_y = mix(0.6, floor_height, smoothstep(0.13, 0.43, zs_growth.x));
-		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / 14.0));
+		poured = zs_pour_at(p, ground, floor_y, churn) * 0.8 * (1.0 - smoothstep(0.9, 1.05, max(abs(p.x), abs(p.z)) / zs_plate_half));
 	}
 	float d = (density * pool * noise * patch * 0.36 * stream + haze * 0.026 + blank) * fade * reveal + poured;
 	if (over < -0.4 || ground < -100.0) d = 0.0;

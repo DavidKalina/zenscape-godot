@@ -9,10 +9,12 @@ extends RefCounted
 ## chunk-local border they lie on: n is z = -HALF, s is z = +HALF, e is
 ## x = +HALF, w is x = -HALF.
 
-const SIZE := 28.0
-const HALF := 14.0
-## Border samples per edge: the reference terrain's 44 cells, 45 vertices.
-const SAMPLES := 45
+const Plate = preload("res://scripts/plate.gd")
+const SIZE := Plate.SIZE
+const HALF := Plate.HALF
+## Border samples per edge: the plate's points along its rim
+## (scripts/plate_mesh.gd, POINT_CELLS squares).
+const SAMPLES := Plate.POINT_CELLS+1
 ## Strip heights are frozen at this quantum (strips.js), so both sides of a
 ## seam hold the very same number.
 const QUANTUM := 1e-4

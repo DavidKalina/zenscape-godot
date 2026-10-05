@@ -1,6 +1,7 @@
 extends RefCounted
 ## Cancellable main-thread route work. Every terrain probe and graph expansion
 ## shares one frame budget; waiting never stalls the actor's animation/rendering.
+const Plate = preload("res://scripts/plate.gd")
 const BUDGET_USEC := 1500
 var navigation: CreatureNavigation
 var tree: SceneTree
@@ -65,7 +66,7 @@ func nearest(point: Vector3) -> Variant:
 	return result
 
 func connect_point(point: Vector3) -> int:
-	var cell := Vector2i(roundi((point.x+14.0)/navigation._grid_step),roundi((point.z+14.0)/navigation._grid_step))
+	var cell := Vector2i(roundi((point.x+Plate.HALF)/navigation._grid_step),roundi((point.z+Plate.HALF)/navigation._grid_step))
 	var candidates: Array[int] = []
 	for z in range(cell.y-2,cell.y+3):
 		for x in range(cell.x-2,cell.x+3):
@@ -110,7 +111,7 @@ func path(from: Vector3,to: Vector3) -> PackedVector3Array:
 	return empty
 
 func cell_id(point: Vector3) -> int:
-	return navigation._cells[Vector2i(roundi((point.x+14.0)/navigation._grid_step),roundi((point.z+14.0)/navigation._grid_step))]
+	return navigation._cells[Vector2i(roundi((point.x+Plate.HALF)/navigation._grid_step),roundi((point.z+Plate.HALF)/navigation._grid_step))]
 
 func graph_path(from: Vector3,to: Vector3,start: int,finish: int) -> PackedVector3Array:
 	var open: Array[int] = [start]
@@ -134,7 +135,7 @@ func graph_path(from: Vector3,to: Vector3,start: int,finish: int) -> PackedVecto
 			result.reverse()
 			return result
 		closed[node] = true
-		var cell := Vector2i(roundi((navigation._nodes[node].x+14.0)/navigation._grid_step),roundi((navigation._nodes[node].z+14.0)/navigation._grid_step))
+		var cell := Vector2i(roundi((navigation._nodes[node].x+Plate.HALF)/navigation._grid_step),roundi((navigation._nodes[node].z+Plate.HALF)/navigation._grid_step))
 		for offset in [Vector2i(-1,0),Vector2i(1,0),Vector2i(0,-1),Vector2i(0,1),Vector2i(-1,-1),Vector2i(-1,1),Vector2i(1,-1),Vector2i(1,1)]:
 			var next: int = navigation._cells.get(cell+offset,-1)
 			if next<0 or closed.has(next): continue

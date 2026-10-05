@@ -5,11 +5,12 @@ extends MultiMeshInstance3D
 ## per frame). Few, small and slow, so the plate stays the focus. The look
 ## pass shows them with the cloud sea and sets their strength.
 
+const Plate = preload("res://scripts/plate.gd")
 const COUNT := 18
-## The open air they keep to: clear of the plate (a 28 m square) by a margin,
-## out to `OUTER` metres, between `LOW` and `HIGH`.
-const INNER := 18.0
-const OUTER := 40.0
+## The open air they keep to: clear of the plate's square by a margin, out to
+## `OUTER` metres, between `LOW` and `HIGH`.
+const INNER := Plate.HALF + 4.0
+const OUTER := Plate.HALF + 26.0
 const LOW := -24.0
 const HIGH := 8.0
 

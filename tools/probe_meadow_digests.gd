@@ -4,6 +4,7 @@ extends SceneTree
 ## were. tests/test_meadow_types.gd holds the digests this printed on the
 ## commit before the meadow types. `-- types` also prints each type's counts.
 ##   godot --headless --path . -s res://tools/probe_meadow_digests.gd [-- types]
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 const CASES := [
 	["generated",79],["generated",105],["generated",177],["generated",58],["generated",198],["generated",33],
 	["single",79],["single",177],["plain_recipe",58],["isle",4021],
@@ -39,10 +40,8 @@ static func dress(data: NativeTerrainData, case: Array) -> void:
 		await preload("res://scripts/inland_landscape.gd").new().form(data,recipe_for(case))
 
 static func terrain() -> NativeTerrainData:
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(reference.get_node("terrain").mesh)
-	reference.free()
+	data.setup(PlateFixture.mesh())
 	return data
 
 func run() -> void:

@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## CPU-only fixture: the real recipe preparation path, without a renderer.
 signal pending_finished
 var failures := 0
@@ -22,12 +23,12 @@ func run() -> void:
 	process_frame.connect(count_frame)
 	var data = preload("res://scripts/native_terrain_data.gd").new()
 	for z in range(65):
-		for x in range(65): data.points.append(Vector2(-14.0+x*28.0/64.0,-14.0+z*28.0/64.0))
+		for x in range(65): data.points.append(Vector2(-Plate.HALF+x*Plate.SIZE/64.0,-Plate.HALF+z*Plate.SIZE/64.0))
 	for z in range(64):
 		for x in range(64):
 			for offset in [1.0/3.0,2.0/3.0]:
-				data._face_x.append(-14.0+(x+offset)*28.0/64.0)
-				data._face_z.append(-14.0+(z+offset)*28.0/64.0)
+				data._face_x.append(-Plate.HALF+(x+offset)*Plate.SIZE/64.0)
+				data._face_z.append(-Plate.HALF+(z+offset)*Plate.SIZE/64.0)
 	for kind in ["foundation","range"]:
 		var settings = {"kind":"foundation","elevation":0.0,"relief":1.0} if kind == "foundation" else {"kind":"range","height":1.0,"width":1.0,"heading":0.0,"variation":0}
 		data._set_recipe({})
@@ -76,7 +77,7 @@ func run() -> void:
 	var expected_water := PackedFloat64Array()
 	for z in range(NativeRecipeWater.W):
 		for x in range(NativeRecipeWater.W):
-			expected_water.append(data._recipe.height(-14.0+x*NativeRecipeWater.CELL,-14.0+z*NativeRecipeWater.CELL))
+			expected_water.append(data._recipe.height(-NativeRecipeWater.HALF+x*NativeRecipeWater.CELL,-NativeRecipeWater.HALF+z*NativeRecipeWater.CELL))
 	check(data._water_grid_h.to_byte_array() == expected_water.to_byte_array(),"Worker pond grid retains exact double precision")
 	# Cancel while the finite worker is still running. Even the cached empty
 	# recipe must supersede it, and the public formation caller must not apply it.
@@ -95,7 +96,7 @@ func run() -> void:
 	check(not data._recipe_busy,"Joined superseded and final jobs release the owner slot")
 	# Exercise connected water and inland constructors on the worker as well.
 	var small = preload("res://scripts/native_terrain_data.gd").new()
-	small.points = PackedVector2Array([Vector2(-14,-14),Vector2(0,0),Vector2(3,7)])
+	small.points = PackedVector2Array([Vector2(-Plate.HALF,-Plate.HALF),Vector2(0,0),Vector2(3,7)])
 	small._face_x = PackedFloat64Array([0.25,3.125])
 	small._face_z = PackedFloat64Array([-1.25,6.875])
 	var genome = preload("res://scripts/inland_genome.gd").sample(37,{"composition":"mountain"})

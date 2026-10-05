@@ -10,6 +10,9 @@ extends "res://scripts/creation_brush.gd"
 ## release the path clears emerged plants from its tread, and generated
 ## undergrowth too; hand-placed and pinned records, and generated trees and
 ## rocks, stay where they are. Nothing is handed to emergence.
+const Plate = preload("res://scripts/plate.gd")
+## Stones along a path keep this far (m) in from the plate's rim.
+const STONE_RIM := 1.5
 ## Seconds of brushing at strength 1 for the centre of the tread to wear.
 const RATE := 2.2
 ## The tread: cover left at its centre, the worn earth's weight, and how far
@@ -182,7 +185,7 @@ func _lay_stones(data: NativeTerrainData) -> void:
 				if Variety.unit(edge_key+[1]) >= STONE_CHANCE or laid >= STONE_CAP: continue
 				var out := _trail_radius*lerpf(0.72,1.05,Variety.unit(edge_key+[2]))
 				var p := a+direction*(s+(Variety.unit(edge_key+[3])-0.5)*STONE_SPACING)+side*edge*out
-				if maxf(absf(p.x),absf(p.y)) > 12.5 or _distance(p) < _trail_radius*0.6: continue
+				if maxf(absf(p.x),absf(p.y)) > Plate.HALF-STONE_RIM or _distance(p) < _trail_radius*0.6: continue
 				var h: Variant = data.ground_height(p)
 				if h == null or data.is_void(p) or _wet(data,p) or _crowded(near,p): continue
 				var size := lerpf(STONE_SIZE.x,STONE_SIZE.y,pow(Variety.unit(edge_key+[4]),1.6))

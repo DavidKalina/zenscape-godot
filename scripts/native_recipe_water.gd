@@ -1,9 +1,13 @@
 class_name NativeRecipeWater
 extends RefCounted
 ## Source water.js grid flood and contour clipping for continuous terrain recipes.
-const N := 51 # round(28 / 0.55), the source water-field resolution.
+const Plate = preload("res://scripts/plate.gd")
+## The source water-field resolution: about 0.55 m cells, 51 over the 28 m
+## square recipe landscapes stand on (Plate.RECIPE_WATER_HALF each way).
+const HALF := Plate.RECIPE_WATER_HALF
+const N := Plate.RECIPE_WATER_CELLS
 const W := N+1
-const CELL := 28.0/N
+const CELL := HALF*2.0/N
 static func surface(data: NativeTerrainData, pond: Dictionary) -> PackedVector3Array:
 	return build(data,pond).vertices
 
@@ -20,22 +24,30 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 		data._water_grid_h.resize(W*W)
 		for z in range(W):
 			for x in range(W):
-				data._water_grid_h[z*W+x]=data._recipe.height(-14.0+x*CELL,-14.0+z*CELL)
+				data._water_grid_h[z*W+x]=preload("res://scripts/native_recipe_samples.gd").height(data._recipe,-HALF+x*CELL,-HALF+z*CELL)
 	var base: PackedFloat64Array=data._water_grid_h
+	# Away from the standing faces (a recipe world keeps to the old square in
+	# the middle of the plate) a node is void wherever it is over the plate,
+	# and its height is never read.
+	var ground := data.ground_rect().grow(CELL) if has_void else Rect2()
 	for z in range(W):
 		for x in range(W):
-			var px: float=-14.0+x*CELL
-			var pz: float=-14.0+z*CELL
+			var px: float=-HALF+x*CELL
+			var pz: float=-HALF+z*CELL
 			var height: float=base[z*W+x]
-			if edited: height+=data._sculpt_delta(Vector2(px,pz))
-			var absent := has_void and data.is_void(Vector2(px,pz))
+			var absent := false
+			if has_void and not ground.has_point(Vector2(px,pz)):
+				absent = data.sample(Vector2(px,pz),data.heights) != null
+			else:
+				if edited: height+=data._sculpt_delta(Vector2(px,pz))
+				absent = has_void and data.is_void(Vector2(px,pz))
 			missing.append(1 if absent else 0)
 			h.append(NativeTerrainData.MAX_HEIGHT+1.0 if absent else height)
 			xy.append(Vector2(px,pz))
 	var seed := -1
 	var lowest := INF
-	var sx := int(floor((float(pond.x)+14.0)/CELL+0.5))
-	var sz := int(floor((float(pond.z)+14.0)/CELL+0.5))
+	var sx := int(floor((float(pond.x)+HALF)/CELL+0.5))
+	var sz := int(floor((float(pond.z)+HALF)/CELL+0.5))
 	for z in range(maxi(0,sz-1),mini(W,sz+2)):
 		for x in range(maxi(0,sx-1),mini(W,sx+2)):
 			var k:=z*W+x
@@ -82,8 +94,8 @@ static func build(data: NativeTerrainData, pond: Dictionary, prepared := {}) -> 
 		for x in range(1,N):
 			var k:=z*W+x
 			if wet[k] and wet[k-1] and wet[k+1] and wet[k-W] and wet[k+W]:
-				var px: float=-14.0+x*CELL
-				var pz: float=-14.0+z*CELL
+				var px: float=-HALF+x*CELL
+				var pz: float=-HALF+z*CELL
 				xy[k]=Vector2(float(xy[k].x)+(_hash(px*4.1,pz*4.1)-0.5)*CELL*0.4,float(xy[k].y)+(_hash(pz*6.3,px*6.3)-0.5)*CELL*0.4)
 	var fetch:=fetch_field(wet)
 	var fetch_a:=PackedColorArray()
@@ -144,8 +156,8 @@ static func fetch_field(wet: PackedByteArray) -> Array[PackedFloat32Array]:
 	return fields
 
 static func sample_grid(values: PackedFloat32Array,x: float,z: float) -> float:
-	var fi:=clampf((x+14.0)/CELL,0.0,N)
-	var fj:=clampf((z+14.0)/CELL,0.0,N)
+	var fi:=clampf((x+HALF)/CELL,0.0,N)
+	var fj:=clampf((z+HALF)/CELL,0.0,N)
 	var i:=mini(N-1,int(floor(fi)))
 	var j:=mini(N-1,int(floor(fj)))
 	var u:=fi-i
@@ -182,19 +194,25 @@ static func signed_distance(wet: PackedByteArray,nearest:=PackedByteArray()) -> 
 		inside.append(1000000.0 if value else 0.0)
 	for pass_index in range(2):
 		var distances: PackedFloat32Array=outside if pass_index==0 else inside
+		var carry:=pass_index==0 and not nearest.is_empty()
 		for direction in [1,-1]:
+			# The four neighbours already passed, made once per sweep rather than
+			# per cell, which was nearly half the sweep's time.
+			var offsets: Array[Vector2i]=[Vector2i(-direction,0),Vector2i(0,-direction),Vector2i(-direction,-direction),Vector2i(direction,-direction)]
+			var weights:=PackedFloat64Array([1.0,1.0,sqrt(2.0),sqrt(2.0)])
 			for z in range(0 if direction==1 else N,W if direction==1 else -1,direction):
 				for x in range(0 if direction==1 else N,W if direction==1 else -1,direction):
 					var k:=z*W+x
-					for offset in [Vector2i(-direction,0),Vector2i(0,-direction),Vector2i(-direction,-direction),Vector2i(direction,-direction)]:
-						var nx: int=x+offset.x
-						var nz: int=z+offset.y
+					var best: float=distances[k]
+					for o in range(4):
+						var nx: int=x+offsets[o].x
+						var nz: int=z+offsets[o].y
 						if nx<0 or nz<0 or nx>=W or nz>=W: continue
-						var weight:=sqrt(2.0) if offset.x!=0 and offset.y!=0 else 1.0
-						var candidate: float=distances[nz*W+nx]+weight
-						if candidate<distances[k]:
+						var candidate: float=distances[nz*W+nx]+weights[o]
+						if candidate<best:
 							distances[k]=candidate
-							if pass_index==0 and not nearest.is_empty(): nearest[k]=nearest[nz*W+nx]
+							best=distances[k]
+							if carry: nearest[k]=nearest[nz*W+nx]
 	var result:=PackedFloat32Array()
 	for k in range(W*W):
 		result.append((-minf(inside[k],40.0) if wet[k] else minf(outside[k],40.0))*CELL)
@@ -229,10 +247,10 @@ static func stamp_streams(streams: Array,wet: PackedByteArray,depth: PackedFloat
 			for t in range(steps+1):
 				var x: float=a.x+(b.x-a.x)*float(t)/steps
 				var z: float=a.z+(b.z-a.z)*float(t)/steps
-				for j in range(maxi(0,floori((z-radius+14.0)/CELL)),mini(N,ceili((z+radius+14.0)/CELL))+1):
-					for i in range(maxi(0,floori((x-radius+14.0)/CELL)),mini(N,ceili((x+radius+14.0)/CELL))+1):
-						var dx: float=-14.0+i*CELL-x
-						var dz: float=-14.0+j*CELL-z
+				for j in range(maxi(0,floori((z-radius+HALF)/CELL)),mini(N,ceili((z+radius+HALF)/CELL))+1):
+					for i in range(maxi(0,floori((x-radius+HALF)/CELL)),mini(N,ceili((x+radius+HALF)/CELL))+1):
+						var dx: float=-HALF+i*CELL-x
+						var dz: float=-HALF+j*CELL-z
 						var distance:=sqrt(dx*dx+dz*dz)
 						if distance>radius: continue
 						var k:=j*W+i
@@ -242,6 +260,6 @@ static func stamp_streams(streams: Array,wet: PackedByteArray,depth: PackedFloat
 						depth[k]=maxf(depth[k],0.06+stream.surface*(1.0-q*q))
 
 static func kind_at(field: Dictionary,x: float,z: float) -> int:
-	var i:=floori((x+14.0)/CELL+0.5)
-	var j:=floori((z+14.0)/CELL+0.5)
+	var i:=floori((x+HALF)/CELL+0.5)
+	var j:=floori((z+HALF)/CELL+0.5)
 	return field.kind[j*W+i] if i>=0 and j>=0 and i<W and j<W else 0

@@ -27,6 +27,7 @@ extends Node3D
 ##
 ## Owned and advanced by LandLife on its clock. At most one snake at a time.
 
+const Plate = preload("res://scripts/plate.gd")
 const Survey = preload("res://scripts/life_survey.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 
@@ -353,7 +354,7 @@ func setup(owner: Node3D) -> void:
 	_body.skeleton = NodePath("..")
 	_body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	# It roams the plate; one generous box keeps it from culling itself.
-	_body.custom_aabb = AABB(Vector3(-16,-4,-16),Vector3(32,40,32))
+	_body.custom_aabb = AABB(Vector3(-(Plate.HALF+2.0),-4,-(Plate.HALF+2.0)),Vector3(Plate.SIZE+4.0,40,Plate.SIZE+4.0))
 	_skeleton.add_child(_body)
 	visible = false
 
@@ -1443,7 +1444,7 @@ func _make_coil(from: Vector2, heading: float, side: float, size := 1.0) -> Pack
 	return points
 
 func _inside(p: Vector2) -> bool:
-	return absf(p.x) < 13.4 and absf(p.y) < 13.4
+	return absf(p.x) < Plate.HALF-0.6 and absf(p.y) < Plate.HALF-0.6
 
 func _passable(p: Vector2, water: bool) -> bool:
 	if not _inside(p): return false

@@ -33,6 +33,7 @@ var _source: Dictionary
 var _orbiting := false
 ## Source OrbitControls damping: pointer deltas pool here and 5 % of the pool
 ## is applied per 60 Hz frame, so the camera glides and settles.
+const Plate := preload("res://scripts/plate.gd")
 const CAMERA_DAMPING := 0.05
 ## Time-based by default so the glide is the same at 60, 144 or 240 Hz and
 ## frame-time jitter does not become speed jitter. False restores the source's
@@ -175,6 +176,10 @@ func _ready() -> void:
 	if get_tree().current_scene == self:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	var geometry: Node3D = $Reference
+	# The land is the plate's own made mesh (scripts/plate_mesh.gd); the
+	# authored one stays in the scene file as the 28 m template old worlds
+	# were saved on (scripts/plate_migration.gd).
+	preload("res://scripts/plate_mesh.gd").adopt(geometry.get_node("terrain"))
 	preload("res://scripts/scene_look.gd").source_roles(geometry)
 	_source = geometry.get_meta("source_settings", {})
 	if _source.is_empty():
@@ -477,6 +482,10 @@ func _reset_camera(reference_pose := false) -> void:
 			framing_nodes.append_array(_chunk_editor.content.get_children())
 			framing_nodes.append_array(_chunk_editor.falls.get_children())
 			framing_nodes.append_array(_chunk_editor.landmarks.find_children("*","MeshInstance3D",true,false))
+		# The ground's mesh keeps every plate point, the ones off the island
+		# too: only those on its land (scripts/island_frame.gd) are framed.
+		var land := Rect2()
+		if _chunk_editor != null: land = preload("res://scripts/island_frame.gd").rect(_chunk_editor.data).grow(0.01)
 		for node in framing_nodes:
 			if node.get_meta("source_kind","") == "birds":
 				continue
@@ -490,6 +499,7 @@ func _reset_camera(reference_pose := false) -> void:
 				for surface in range(node.mesh.get_surface_count()):
 					var vertices: PackedVector3Array = node.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
 					for vertex: Vector3 in vertices:
+						if _chunk_editor != null and node == _chunk_editor.terrain and not land.has_point(Vector2(vertex.x,vertex.z)): continue
 						points.append(global_transform.affine_inverse() * node.global_transform * vertex)
 		for point: Vector3 in points:
 			bounds = bounds.expand(point) if found else AABB(point,Vector3.ZERO)
@@ -855,7 +865,8 @@ func _fire_water(position: Vector3) -> bool:
 	if _fire_water_map == null:
 		return false
 	var size := _fire_water_map.get_width()
-	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*16.0)/32.0*float(size)-Vector2.ONE*0.5
+	var map_half: float = preload("res://scripts/plate.gd").MAP_HALF
+	var pixel := (Vector2(position.x,position.z)+Vector2.ONE*map_half)/(map_half*2.0)*float(size)-Vector2.ONE*0.5
 	var x := clampi(roundi(pixel.x),0,size-1)
 	var z := clampi(roundi(pixel.y),0,size-1)
 	var value := _fire_water_map.get_pixel(x,z)
@@ -1532,7 +1543,9 @@ func _update_leaf_litter(delta: float) -> void:
 			if object.asset in ["broadleaf","shrub","redwood"]:
 				anchors.append(Vector2(object.x,object.z))
 		_leaf_litter.seed_from(anchors,_leaf_ground)
-		_grass_chaff.seed_from(_grass_chaff.anchors_on(_chunk_editor.data.ground_coverage),_leaf_ground)
+		var land: NativeTerrainData = _chunk_editor.data
+		var on_land := func(p: Vector2) -> float: return land.ground_coverage(p) if land.has_land(p) else 0.0
+		_grass_chaff.seed_from(_grass_chaff.anchors_on(on_land,_grass_chaff.count_for(land.land_area()),land.land_rect()),_leaf_ground)
 		_kicked_blades.setup(_leaf_ground)
 		_waterfall_drips.seed_from(_chunk_editor.content._landscape_falls,_chunk_editor.data)
 	_leaf_litter.visible = _growth.terrain>=0.995 and _growth.foliage>=0.995

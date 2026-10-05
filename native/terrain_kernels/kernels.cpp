@@ -221,17 +221,28 @@ public:
         const double snowline = p["snowline"], rock_slope = p["rock_slope"];
         const Color ground = p["_ground_tint"], sand = p["sand"], gravel = p["gravel"];
         const bool paints_uv2 = uv2.size() == vertices.size();
+        // The plate's reach and the two grids' sizes (scripts/plate.gd,
+        // NativeRecipeWater, NativeTerrainData); a caller that sends none gets
+        // the 28 m plate's, which is what older callers meant.
+        const double half = p.get("plate_half", 14.0);
+        // The recipe's water field covers its own square (water_half), which
+        // libraries built before the key took to be the plate's.
+        const double water_half = p.get("water_half", half);
+        const int water_cells = p.get("water_cells", 51), water_stride = water_cells+1;
+        const double water_cell = 2.0*water_half/water_cells;
+        const int meadow_cells = p.get("meadow_cells", 56);
+        const float meadow_step = float(double(p.get("meadow_step", 0.5)));
         const bool wet = !water.is_empty();
         const PackedFloat32Array shore = wet ? PackedFloat32Array(water["shore"]) : PackedFloat32Array();
         const PackedFloat32Array depth = wet ? PackedFloat32Array(water["depth"]) : PackedFloat32Array();
         const PackedByteArray kind = wet ? PackedByteArray(water["kind"]) : PackedByteArray();
-        auto grid = [](const PackedFloat32Array &values, double x, double z) {
-            const double fi = std::clamp((x+14.0)/(28.0/51), 0.0, 51.0);
-            const double fj = std::clamp((z+14.0)/(28.0/51), 0.0, 51.0);
-            const int i = std::min(50, int(std::floor(fi))), j = std::min(50, int(std::floor(fj)));
+        auto grid = [&](const PackedFloat32Array &values, double x, double z) {
+            const double fi = std::clamp((x+water_half)/water_cell, 0.0, double(water_cells));
+            const double fj = std::clamp((z+water_half)/water_cell, 0.0, double(water_cells));
+            const int i = std::min(water_cells-1, int(std::floor(fi))), j = std::min(water_cells-1, int(std::floor(fj)));
             const double u = fi-i, v = fj-j;
-            const int k = j*52+i;
-            return values[k]*(1-u)*(1-v)+values[k+1]*u*(1-v)+values[k+52]*(1-u)*v+values[k+53]*u*v;
+            const int k = j*water_stride+i;
+            return values[k]*(1-u)*(1-v)+values[k+1]*u*(1-v)+values[k+water_stride]*(1-u)*v+values[k+water_stride+1]*u*v;
         };
         auto delta = [&](int slot) {
             const int i = locate[slot];
@@ -251,8 +262,8 @@ public:
             const Vector3 center = (vertices[i]+vertices[i+1]+vertices[i+2])/3.0f;
             const int face = i/3;
             const double x = xs[face], z = zs[face];
-            const Vector2 meadow_grid = (Vector2(center.x, center.z)+Vector2(14,14))/0.5f;
-            const int cell = std::clamp(int(meadow_grid.y), 0, 55)*56+std::clamp(int(meadow_grid.x), 0, 55);
+            const Vector2 meadow_grid = (Vector2(center.x, center.z)+Vector2(float(half), float(half)))/meadow_step;
+            const int cell = std::clamp(int(meadow_grid.y), 0, meadow_cells-1)*meadow_cells+std::clamp(int(meadow_grid.x), 0, meadow_cells-1);
             const double coverage = blank ? std::max(grass[cell], meadow[cell]) : grass[cell];
             Color color = ground.lerp(greens[face], float(coverage));
             bool snowed = false;
@@ -272,8 +283,8 @@ public:
                 if (center.y > snowline && slope < 2.4) { color = snows[face]; snowed = true; }
                 if (wet) {
                     const double distance = grid(shore, x, z);
-                    const int col = int(std::floor((x+14.0)/(28.0/51)+0.5)), row = int(std::floor((z+14.0)/(28.0/51)+0.5));
-                    const bool running = col >= 0 && row >= 0 && col < 52 && row < 52 && kind[row*52+col] == 2;
+                    const int col = int(std::floor((x+water_half)/water_cell+0.5)), row = int(std::floor((z+water_half)/water_cell+0.5));
+                    const bool running = col >= 0 && row >= 0 && col < water_stride && row < water_stride && kind[row*water_stride+col] == 2;
                     if (running && distance < 1.7 && center.y < snowline-1.8) color = greens[face];
                     if (distance < 0.75 && slope < 2.2) {
                         Color bank = running ? gravel : sand;

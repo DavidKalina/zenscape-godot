@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless probe of the edge falls (docs/scenic/water-flow.md "Edge falls",
 ## docs/scenic/modeless.md "The thumb at the rim"), on the cozy worlds scene
 ## under --modeless, driven by synthesized input through hand_reach:
@@ -94,7 +95,7 @@ func rim(z0: float, z1: float) -> Array:
 	var out := []
 	for i in range(data.points.size()):
 		var p := data.points[i]
-		if p.x > 13.9999 and p.y >= z0 and p.y <= z1: out.append([p.y,data.heights[i],data.heights[i]-base[i]])
+		if p.x > Plate.RIM and p.y >= z0 and p.y <= z1: out.append([p.y,data.heights[i],data.heights[i]-base[i]])
 	out.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 	return out
 
@@ -105,11 +106,11 @@ func skirt_gap(z0: float, z1: float) -> float:
 	var placing: Transform3D = editor.terrain.global_transform.affine_inverse()*skirt.global_transform
 	var top := {}
 	for v: Vector3 in placing*skirt.mesh.get_faces():
-		if absf(v.x-14.0) > 0.01 or v.z < z0 or v.z > z1: continue
+		if absf(v.x-Plate.HALF) > 0.01 or v.z < z0 or v.z > z1: continue
 		var key := snappedf(v.z,0.001)
 		top[key] = maxf(float(top.get(key,-INF)),v.y)
 	var worst := 0.0
-	for z: float in top: worst = maxf(worst,absf(float(top[z])-height(Vector2(13.999,z))))
+	for z: float in top: worst = maxf(worst,absf(float(top[z])-height(Vector2(Plate.HALF-0.001,z))))
 	return worst
 
 func run() -> void:
@@ -177,16 +178,16 @@ func run() -> void:
 	print("NOTCH rim change by z:",line)
 	print("NOTCH ",clay.last_notch," notches ",clay.notches)
 	check("the thumb heading out carries its groove to the lip and notches the rim",deepest < -0.6 and clay.notches == 1,"deepest %.2f m" % deepest)
-	var far := rim(-14.0,-7.0)+rim(1.5,3.0)
+	var far := rim(-Plate.HALF,-7.0)+rim(1.5,3.0)
 	var stray := 0.0
 	for r: Array in far: stray = maxf(stray,absf(r[2]))
 	check("the rim either side of the notch stays as it was",stray < 0.005,"%.3f m" % stray)
 	var at: Vector2 = clay.last_notch.get("at",Vector2.ZERO)
 	# The screen line from the flank to the rim lands a little off the plate
 	# line (the peak stands 3 m up), so the notch is near HEAD.y, not on it.
-	check("the notch is where the stroke met the rim",absf(at.x-14.0) < 0.01 and absf(at.y-HEAD.y) < 1.5,at)
-	var bed := height(Vector2(13.999,at.y))
-	var bank := height(Vector2(13.999,at.y+2.4))
+	check("the notch is where the stroke met the rim",absf(at.x-Plate.HALF) < 0.01 and absf(at.y-HEAD.y) < 1.5,at)
+	var bed := height(Vector2(Plate.HALF-0.001,at.y))
+	var bank := height(Vector2(Plate.HALF-0.001,at.y+2.4))
 	skirt_began = Time.get_ticks_usec()
 	editor.skirt_mesh_for(data)
 	print("SKIRT fit, notched rim: %d us" % (Time.get_ticks_usec()-skirt_began))
@@ -237,11 +238,11 @@ func run() -> void:
 	print("SPILLS ",spills)
 	check("one spill stands, on +x at the notch",spills.size() == 1 and int(spills[0].side) == 1 and absf(float(spills[0].lip.z)-at.y) < 1.0,spills.size())
 	if not spills.is_empty():
-		check("the water leaves at the lip, at the spillway's floor",absf(float(spills[0].lip.x)-14.0) < 0.01 and float(spills[0].lip.y) < bank and float(spills[0].lip.y) > bed-0.05,spills[0].lip)
+		check("the water leaves at the lip, at the spillway's floor",absf(float(spills[0].lip.x)-Plate.HALF) < 0.01 and float(spills[0].lip.y) < bank and float(spills[0].lip.y) > bed-0.05,spills[0].lip)
 	# The edge rule drains at the edge cell, not before: the channel holds
 	# water in the cells just inward of it.
 	var depths: PackedFloat32Array = flow.depths()
-	var j: int = flow.cell_at(Vector2(13.9,float(spills[0].lip.z) if not spills.is_empty() else at.y))/int(flow.width)
+	var j: int = flow.cell_at(Vector2(Plate.HALF-0.1,float(spills[0].lip.z) if not spills.is_empty() else at.y))/int(flow.width)
 	var row := ""
 	var wet_to := -1
 	for i in range(flow.width-8,flow.width):
@@ -253,7 +254,7 @@ func run() -> void:
 	var reach_x := -INF
 	for v in vertices:
 		if absf(v.z-at.y) < 1.5: reach_x = maxf(reach_x,v.x)
-	check("the drawn stream runs to the lip",reach_x > 13.99,"moving water drawn to x = %.3f" % reach_x)
+	check("the drawn stream runs to the lip",reach_x > Plate.HALF-0.01,"moving water drawn to x = %.3f" % reach_x)
 	var shown: Array = falls.describe()
 	print("FALLS ",shown)
 	check("the edge fall stands, full, on +x",shown.size() == 1 and int(shown[0].side) == 1 and float(shown[0].presence) > 0.99,shown.size())
@@ -262,11 +263,11 @@ func run() -> void:
 		var fall: Dictionary = falls._falls[0]
 		var points: PackedVector3Array = fall.rings.points
 		var hug := ""
-		for r in range(0,points.size(),3): hug += " (%.2f,%.2f)" % [points[r].x-14.0,points[r].y]
+		for r in range(0,points.size(),3): hug += " (%.2f,%.2f)" % [points[r].x-Plate.HALF,points[r].y]
 		print("COURSE out past the rim, height:",hug)
 		var inside := 0
 		for r in range(1,falls.BEND_RINGS+falls.FACE_RINGS):
-			if points[r].x-14.0 < falls._face_at(fall.profile,points[r].y): inside += 1
+			if points[r].x-Plate.HALF < falls._face_at(fall.profile,points[r].y): inside += 1
 		check("it stands off the earth side all the way down",inside == 0,"%d rings inside the side" % inside)
 
 	# The spring taken away: the flow dies down and the fall fades.
@@ -285,5 +286,5 @@ func run() -> void:
 
 static func _meadow_cell(data: NativeTerrainData, p: Vector2) -> int:
 	var side := NativeTerrainData.MEADOW_CELLS
-	var cell := Vector2i(((p+Vector2(14,14))/NativeTerrainData.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var cell := Vector2i(((p+Vector2.ONE*Plate.HALF)/NativeTerrainData.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	return cell.y*side+cell.x

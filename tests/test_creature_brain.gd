@@ -1,6 +1,7 @@
 extends SceneTree
 const Brain = preload("res://scripts/creature_brain.gd")
 const Navigation = preload("res://scripts/creature_navigation.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 var symbols: Array[String] = []
 func _initialize() -> void: _run.call_deferred()
@@ -10,9 +11,7 @@ func check(ok: bool, text: String) -> void:
 		push_error(text)
 func _run() -> void:
 	var data := NativeTerrainData.new()
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	var nav := Navigation.new()
 	nav.rebuild(data,func(_point: Vector3) -> bool: return true)

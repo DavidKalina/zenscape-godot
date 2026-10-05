@@ -25,6 +25,7 @@ extends RefCounted
 ## are nudged; hand, pinned and generated work never is. `--no-guidance` turns
 ## all of it off for A/B.
 const Variety = preload("res://scripts/seeded_variety.gd")
+const Plate = preload("res://scripts/plate.gd")
 const Beauty = preload("res://scripts/world_beauty.gd")
 
 ## False with --no-guidance: water plans, emergence and the probe read it.
@@ -32,8 +33,8 @@ static var enabled := "--no-guidance" not in OS.get_cmdline_user_args()
 ## The water nudges alone, for probes that hold the ground fixed.
 static var water_enabled := true
 
-## The guide grid: 1 m cells over the 28 m plate, as the biome blend's.
-const CELLS := 28
+## The guide grid: 1 m cells over the plate, as the biome blend's.
+const CELLS := Plate.COARSE_CELLS
 ## Weights of the score's terms.
 const WEIGHTS := {"relief":0.15,"water":0.2,"edges":0.2,"openness":0.15,"variety":0.1,"framing":0.2}
 ## Metres a region's fields reach past its rect, so edges and sightlines just
@@ -97,18 +98,18 @@ class Guide extends RefCounted:
 	var fray_noise: FastNoiseLite
 
 	func at(values: PackedFloat32Array, p: Vector2) -> float:
-		return values[clampi(floori(p.y+14.0),0,27)*28+clampi(floori(p.x+14.0),0,27)]
+		return values[clampi(floori(p.y+Plate.HALF),0,CELLS-1)*CELLS+clampi(floori(p.x+Plate.HALF),0,CELLS-1)]
 
 	## Bilinear read, for fields that move things smoothly.
 	func smooth(values: PackedFloat32Array, p: Vector2) -> float:
-		var g := p+Vector2(13.5,13.5)
-		var x0 := clampi(floori(g.x),0,27)
-		var z0 := clampi(floori(g.y),0,27)
-		var x1 := mini(x0+1,27)
-		var z1 := mini(z0+1,27)
+		var g := p+Vector2.ONE*(Plate.HALF-0.5)
+		var x0 := clampi(floori(g.x),0,CELLS-1)
+		var z0 := clampi(floori(g.y),0,CELLS-1)
+		var x1 := mini(x0+1,CELLS-1)
+		var z1 := mini(z0+1,CELLS-1)
 		var fx := clampf(g.x-x0,0.0,1.0)
 		var fz := clampf(g.y-z0,0.0,1.0)
-		return lerpf(lerpf(values[z0*28+x0],values[z0*28+x1],fx),lerpf(values[z1*28+x0],values[z1*28+x1],fx),fz)
+		return lerpf(lerpf(values[z0*CELLS+x0],values[z0*CELLS+x1],fx),lerpf(values[z1*CELLS+x0],values[z1*CELLS+x1],fx),fz)
 
 	## Where a candidate at `p` reads the forest wish: `p` itself where the
 	## edge already curves, up to WARP metres off along slow noise where it
@@ -158,7 +159,7 @@ static func thirds() -> PackedFloat32Array:
 	var view := Basis.looking_at(Beauty.TARGET-eye,Vector3.UP)
 	var low := Vector2(INF,INF)
 	var high := Vector2(-INF,-INF)
-	for corner in [Vector2(-14,-14),Vector2(14,-14),Vector2(14,14),Vector2(-14,14)]:
+	for corner in [Vector2(-Plate.HALF,-Plate.HALF),Vector2(Plate.HALF,-Plate.HALF),Vector2(Plate.HALF,Plate.HALF),Vector2(-Plate.HALF,Plate.HALF)]:
 		var s := Beauty._project(eye,view,Vector3(corner.x,0.0,corner.y))
 		low = low.min(s)
 		high = high.max(s)
@@ -166,7 +167,7 @@ static func thirds() -> PackedFloat32Array:
 	values.resize(CELLS*CELLS)
 	for z in range(CELLS):
 		for x in range(CELLS):
-			var s := (Beauty._project(eye,view,Vector3(x-13.5,0.0,z-13.5))-low)/(high-low)
+			var s := (Beauty._project(eye,view,Vector3(x+0.5-Plate.HALF,0.0,z+0.5-Plate.HALF))-low)/(high-low)
 			var near := INF
 			for t in [Vector2(1,1),Vector2(2,1),Vector2(1,2),Vector2(2,2)]:
 				near = minf(near,s.distance_to(t/3.0))
@@ -174,11 +175,11 @@ static func thirds() -> PackedFloat32Array:
 	return values
 
 static func _cell_center(x: int, z: int) -> Vector2:
-	return Vector2(x-13.5,z-13.5)
+	return Vector2(x+0.5-Plate.HALF,z+0.5-Plate.HALF)
 
 static func _cells(rect: Rect2) -> Rect2i:
-	var low := Vector2i(clampi(floori(rect.position.x+14.0),0,CELLS-1),clampi(floori(rect.position.y+14.0),0,CELLS-1))
-	var high := Vector2i(clampi(ceili(rect.end.x+14.0),0,CELLS),clampi(ceili(rect.end.y+14.0),0,CELLS))
+	var low := Vector2i(clampi(floori(rect.position.x+Plate.HALF),0,CELLS-1),clampi(floori(rect.position.y+Plate.HALF),0,CELLS-1))
+	var high := Vector2i(clampi(ceili(rect.end.x+Plate.HALF),0,CELLS),clampi(ceili(rect.end.y+Plate.HALF),0,CELLS))
 	return Rect2i(low,(high-low).max(Vector2i.ZERO))
 
 ## Plan a region's guide on the planner: fields over the rect and its reach,
@@ -285,8 +286,8 @@ static func sightlines(blend: RefCounted, area: Rect2i) -> PackedFloat32Array:
 			var d := 0.5
 			while d <= SIGHT_REACH:
 				var q := p+away*d
-				var qx := floori(q.x+14.0)
-				var qz := floori(q.y+14.0)
+				var qx := floori(q.x+Plate.HALF)
+				var qz := floori(q.y+Plate.HALF)
 				if qx < 0 or qz < 0 or qx >= CELLS or qz >= CELLS: break
 				if wet[qz*CELLS+qx] == 1:
 					values[z*CELLS+x] = 1.0-smoothstep(1.0,SIGHT_REACH,d)
@@ -356,8 +357,8 @@ static func score(data: NativeTerrainData, blend: RefCounted, known: PackedVecto
 	for plant in known:
 		var tree := plant.z > 0.5
 		var reach := OUTLINE_REACH if tree else 0.8
-		for z in range(maxi(floori(plant.y+14.0-reach),0),mini(floori(plant.y+14.0+reach)+1,CELLS)):
-			for x in range(maxi(floori(plant.x+14.0-reach),0),mini(floori(plant.x+14.0+reach)+1,CELLS)):
+		for z in range(maxi(floori(plant.y+Plate.HALF-reach),0),mini(floori(plant.y+Plate.HALF+reach)+1,CELLS)):
+			for x in range(maxi(floori(plant.x+Plate.HALF-reach),0),mini(floori(plant.x+Plate.HALF+reach)+1,CELLS)):
 				var d := _cell_center(x,z).distance_to(Vector2(plant.x,plant.y))
 				if tree:
 					canopy[z*CELLS+x] += maxf(0.0,1.0-d/2.2)
@@ -492,7 +493,7 @@ static func score(data: NativeTerrainData, blend: RefCounted, known: PackedVecto
 	return terms
 
 static func _at(values: PackedFloat32Array, p: Vector2) -> float:
-	return values[clampi(floori(p.y+14.0),0,CELLS-1)*CELLS+clampi(floori(p.x+14.0),0,CELLS-1)]
+	return values[clampi(floori(p.y+Plate.HALF),0,CELLS-1)*CELLS+clampi(floori(p.x+Plate.HALF),0,CELLS-1)]
 
 static func _around(near: Dictionary, p: Vector2, radius: float) -> Array:
 	var found := []
@@ -509,9 +510,9 @@ static func _around(near: Dictionary, p: Vector2, radius: float) -> Array:
 static func shore_shape(blend: RefCounted, rect: Rect2) -> Dictionary:
 	var raster: PackedByteArray = blend._sampler.get("_water") if blend._sampler != null and blend._sampler.get("_water") != null else PackedByteArray()
 	if raster.is_empty(): return {"quality":1.0,"thin":0,"water":0}
-	const SIDE := 112
-	var low := Vector2i(clampi(floori((rect.position.x+14.0)*4.0),0,SIDE-1),clampi(floori((rect.position.y+14.0)*4.0),0,SIDE-1))
-	var high := Vector2i(clampi(ceili((rect.end.x+14.0)*4.0),0,SIDE),clampi(ceili((rect.end.y+14.0)*4.0),0,SIDE))
+	const SIDE := Plate.FINE_CELLS
+	var low := Vector2i(clampi(floori((rect.position.x+Plate.HALF)/Plate.FINE_STEP),0,SIDE-1),clampi(floori((rect.position.y+Plate.HALF)/Plate.FINE_STEP),0,SIDE-1))
+	var high := Vector2i(clampi(ceili((rect.end.x+Plate.HALF)/Plate.FINE_STEP),0,SIDE),clampi(ceili((rect.end.y+Plate.HALF)/Plate.FINE_STEP),0,SIDE))
 	var water := 0
 	var thin := 0
 	for z in range(low.y,high.y,2):

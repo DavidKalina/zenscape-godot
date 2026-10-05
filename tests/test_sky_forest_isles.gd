@@ -21,6 +21,12 @@ var failures := 0
 var shapes := {}
 
 func _initialize() -> void:
+	# The wonders are off in play (SkyHomes `stone`, `isles`); on here.
+	preload("res://scripts/sky_homes.gd").stone = true
+	preload("res://scripts/sky_homes.gd").isles = true
+	# The open sky, endless, its kinds scattered through the cells (SkyWorld
+	# `ring` off); the bounded world's are checked in tests/test_sky_world.gd.
+	preload("res://scripts/sky_world.gd").ring = false
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	_same_seed()
 	_sizes()

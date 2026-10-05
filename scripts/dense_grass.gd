@@ -12,12 +12,14 @@ extends Node3D
 ## blades stand only where the ground reads green and match it at the root.
 ## The painterly look (tussocks, arcing blades, mass shading, rolling wind
 ## waves, seed heads and flowers) is in docs/scenic/grass-look.md.
-const HALF := 14.0
-const TILES := 8
+const Plate = preload("res://scripts/plate.gd")
+const HALF := Plate.HALF
+## Tiles a side, each 3.5 m (8 on the 28 m plate), so blade spacing holds.
+const TILES := roundi(Plate.SIZE/3.5)
 const SIDE := 32
-const MASK_SIZE := 128
+const MASK_SIZE := Plate.MAP_TEXELS
 ## The ground map's span, which the mask shares texel for texel.
-const MAP_SPAN := 32.0
+const MAP_SPAN := Plate.MAP_HALF*2.0
 ## Blades per tuft, fanned round its root and arcing outward, like the
 ## source's grass tuft (foliage.js grassTuftGeometry) but curved and softer.
 const BLADES := 6

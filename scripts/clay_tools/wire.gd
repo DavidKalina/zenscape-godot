@@ -70,7 +70,10 @@ const SMOOTH_PASSES := 2
 ## plate's rim (no clay `fade`), and a drawn end within RIM_REACH metres of
 ## the rim, heading out (its last run's direction at least RIM_HEADING
 ## along the rim's outward normal), runs on out through the rim, to RIM_PAST
-## beyond it, so a gorge drawn to the edge opens the plate's side.
+## beyond it, so a gorge drawn to the edge opens the plate's side. On an
+## island with an outline (scripts/island_outline.gd) the shore is its rim:
+## an end near the shore heading out runs on past it the same way, and the
+## gorge opens the island's shore wall there.
 const RIM_REACH := 2.5
 const RIM_HEADING := 0.3
 const RIM_PAST := 0.6
@@ -182,7 +185,7 @@ func drawn() -> PackedVector2Array:
 	if _closes(path):
 		path[-1] = path[0]
 		return path
-	return _to_rim(path)
+	return _to_rim(path,clay.editor.data if clay != null else null)
 
 ## Whether `path` closes on itself: a loop, an outline (LOOP_GAP, LOOP_MIN).
 func _closes(path: PackedVector2Array) -> bool:
@@ -190,19 +193,21 @@ func _closes(path: PackedVector2Array) -> bool:
 	var size: float = clay.size_scale if clay != null else 1.0
 	return path[0].distance_to(path[-1]) <= LOOP_GAP*maxf(size,1.0) and _arc(path)[-1] >= LOOP_MIN
 
-## `path` with each end near the rim and heading out run on through it.
-static func _to_rim(path: PackedVector2Array) -> PackedVector2Array:
+## `path` with each end near the rim (`data`'s shore, if it has an outline)
+## and heading out run on through it.
+static func _to_rim(path: PackedVector2Array, data: NativeTerrainData = null) -> PackedVector2Array:
 	if path.size() < 2: return path
 	var out := path.duplicate()
-	var tail: Variant = _past_rim(path[-1],path[-2])
+	var tail: Variant = _past_rim(path[-1],path[-2],data)
 	if tail != null: out.append(tail)
-	var head: Variant = _past_rim(path[0],path[1])
+	var head: Variant = _past_rim(path[0],path[1],data)
 	if head != null: out.insert(0,head)
 	return out
 
 ## Where the run from `from` through `end` leaves the plate RIM_PAST beyond
 ## its rim, or null when `end` is not near the rim or not heading out.
-static func _past_rim(end: Vector2, from: Vector2) -> Variant:
+static func _past_rim(end: Vector2, from: Vector2, data: NativeTerrainData = null) -> Variant:
+	if data != null and not data.outline.is_empty(): return _past_shore(end,from,data)
 	var half: float = preload("res://scripts/land_clay.gd").PLATE_HALF
 	if half-maxf(absf(end.x),absf(end.y)) > RIM_REACH or end.distance_to(from) < 0.01: return null
 	var heading := (end-from).normalized()
@@ -213,6 +218,25 @@ static func _past_rim(end: Vector2, from: Vector2) -> Variant:
 	if absf(heading.x) > 0.001: run = minf(run,(signf(heading.x)*reach-end.x)/heading.x)
 	if absf(heading.y) > 0.001: run = minf(run,(signf(heading.y)*reach-end.y)/heading.y)
 	return end+heading*maxf(run,0.0)
+
+## `_past_rim` on an island with an outline: the shore (its outward way
+## from the distance to it) stands for the rim.
+static func _past_shore(end: Vector2, from: Vector2, data: NativeTerrainData) -> Variant:
+	var way: Vector3 = preload("res://scripts/land_clay.gd").edge_way(data,end)
+	if way == Vector3.ZERO or way.z > RIM_REACH or end.distance_to(from) < 0.01: return null
+	var heading := (end-from).normalized()
+	if heading.dot(Vector2(way.x,way.y)) < RIM_HEADING: return null
+	var run := 0.0
+	while run < RIM_REACH+2.0 and data.ground_height(end+heading*run) != null: run += 0.1
+	return end+heading*(run+RIM_PAST)
+
+## Whether plate point `p` lies beyond the land's edge: past the plate's rim,
+## or off the island's outline.
+static func _past_edge(p: Vector2, data: NativeTerrainData) -> bool:
+	if data.outline.is_empty():
+		var half: float = preload("res://scripts/land_clay.gd").PLATE_HALF
+		return maxf(absf(p.x),absf(p.y)) > half
+	return data.ground_height(p) == null
 
 ## Let go: the cut is planned along the drawn path and drawn through the
 ## land by `frame`, inside the stroke's undo step, which the clay keeps open
@@ -447,9 +471,8 @@ func _bed(path: PackedVector2Array, arc: PackedFloat32Array, depth: float) -> Pa
 		var before := k-1 if forward else k+1
 		bed[k] = minf(bed[k],bed[before]-BED_FALL*step)
 	# The sill at an end run out through the rim: the bed climbs to a notch.
-	var half: float = preload("res://scripts/land_clay.gd").PLATE_HALF
-	var open_head := maxf(absf(path[0].x),absf(path[0].y)) > half
-	var open_tail := maxf(absf(path[-1].x),absf(path[-1].y)) > half
+	var open_head := _past_edge(path[0],data)
+	var open_tail := _past_edge(path[-1],data)
 	for k in count:
 		var run := INF
 		if open_head: run = step*k

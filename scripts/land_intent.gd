@@ -64,7 +64,8 @@ func forest_at(p: Vector2) -> float:
 func any_forest(rect: Rect2) -> bool:
 	var side := data.MEADOW_CELLS
 	var step := data.MEADOW_STEP
-	for z in range(clampi(floori((rect.position.y+14.0)/step),0,side-1),clampi(floori((rect.end.y+14.0)/step),0,side-1)+1):
-		for x in range(clampi(floori((rect.position.x+14.0)/step),0,side-1),clampi(floori((rect.end.x+14.0)/step),0,side-1)+1):
+	var half: float = preload("res://scripts/plate.gd").HALF
+	for z in range(clampi(floori((rect.position.y+half)/step),0,side-1),clampi(floori((rect.end.y+half)/step),0,side-1)+1):
+		for x in range(clampi(floori((rect.position.x+half)/step),0,side-1),clampi(floori((rect.end.x+half)/step),0,side-1)+1):
 			if forest[z*side+x] != 0.0: return true
 	return false

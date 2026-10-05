@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 const Walkways = preload("res://scripts/log_walkways.gd")
 class RiverHabitat extends "res://scripts/fidelity_habitat.gd":
 	func ground_height(point: Vector2) -> Variant:
@@ -21,7 +22,7 @@ func _initialize() -> void:
 	check(habitat.walkways.at(Vector2(0,1.0)).is_empty(),"No invisible support beside the log")
 	habitat.solids.append(box)
 	habitat._index_solids()
-	habitat.streams.append({"pts":[{"x":0.0,"z":-14.0,"h":-0.5},{"x":0.0,"z":14.0,"h":-0.5}],"width":0.6,"surface":0.0})
+	habitat.streams.append({"pts":[{"x":0.0,"z":-Plate.HALF,"h":-0.5},{"x":0.0,"z":Plate.HALF,"h":-0.5}],"width":0.6,"surface":0.0})
 	var nav := CreatureNavigation.new()
 	nav.rebuild(habitat,habitat.clear_at,0.35,0.3)
 	var route := nav.path(Vector3(-3,0,0),Vector3(3,0,0))

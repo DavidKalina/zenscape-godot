@@ -1,6 +1,7 @@
 extends SceneTree
 const Presets = preload("res://scripts/native_landscape_presets.gd")
 const Blast = preload("res://scripts/terrain_blast.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -11,10 +12,8 @@ func check(ok: bool, message: String) -> void:
 
 func run() -> void:
 	create_timer(180).timeout.connect(func() -> void: quit(2))
-	var reference: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(reference.get_node("terrain").mesh)
-	reference.free()
+	data.setup(PlateFixture.mesh())
 	for family in Presets.PRESETS:
 		await Presets.form(data,family)
 		var p := Vector2(4,4)

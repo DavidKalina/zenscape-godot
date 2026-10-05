@@ -43,8 +43,9 @@ static func paint(layer: PackedFloat32Array, cells: int, step: float, center: Ve
 		return
 	var origin := -0.5*float(cells)*step+step*0.5
 	var strength := clampf(amount,0.0,1.0)
-	for z in range(cells):
-		for x in range(cells):
+	var span := _span(cells,step,center,radius)
+	for z in range(span.position.y,span.end.y):
+		for x in range(span.position.x,span.end.x):
 			var distance := Vector2(origin+float(x)*step,origin+float(z)*step).distance_to(center)
 			if distance >= radius:
 				continue
@@ -80,8 +81,9 @@ static func erase(layer: PackedFloat32Array, cells: int, step: float, center: Ve
 	if radius <= 0.0 or amount <= 0.0:
 		return
 	var origin := -0.5*float(cells)*step+step*0.5
-	for z in range(cells):
-		for x in range(cells):
+	var span := _span(cells,step,center,radius)
+	for z in range(span.position.y,span.end.y):
+		for x in range(span.position.x,span.end.x):
 			var distance := Vector2(origin+float(x)*step,origin+float(z)*step).distance_to(center)
 			if distance >= radius:
 				continue
@@ -100,3 +102,14 @@ static func decode(values: Variant, cells: int) -> Variant:
 		if not GardenData._number(value,0.0,1.0):
 			return null
 	return PackedFloat32Array(values)
+
+## The cells whose middles can lie within `radius` of `center`: a dab skips
+## the rest of the grid rather than reading it cell by cell.
+static func _span(cells: int, step: float, center: Vector2, radius: float) -> Rect2i:
+	if not (center.is_finite() and is_finite(radius)): return Rect2i(0,0,cells,cells)
+	var half := 0.5*float(cells)*step
+	var low := (center-Vector2.ONE*radius+Vector2.ONE*half)/step-Vector2.ONE*0.5
+	var high := (center+Vector2.ONE*radius+Vector2.ONE*half)/step-Vector2.ONE*0.5
+	var first := Vector2i(clampi(floori(low.x)-1,0,cells),clampi(floori(low.y)-1,0,cells))
+	var last := Vector2i(clampi(ceili(high.x)+2,0,cells),clampi(ceili(high.y)+2,0,cells))
+	return Rect2i(first,(last-first).max(Vector2i.ZERO))

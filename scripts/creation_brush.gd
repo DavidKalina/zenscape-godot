@@ -79,13 +79,15 @@ func _grow_bounds(center: Vector2, reach: float) -> void:
 	has_bounds = true
 
 ## Cover-cell indices whose centres lie within `reach` of `center`, with the
-## distance of each, so a dab never walks the whole 56×56 grid.
+## distance of each, so a dab never walks the whole cover grid.
 func _cells_near(data: NativeTerrainData, center: Vector2, reach: float) -> Array:
 	var found := []
 	var side := data.MEADOW_CELLS
 	var step := data.MEADOW_STEP
-	var low := Vector2i(clampi(floori((center.x-reach+14.0)/step),0,side-1),clampi(floori((center.y-reach+14.0)/step),0,side-1))
-	var high := Vector2i(clampi(floori((center.x+reach+14.0)/step),0,side-1),clampi(floori((center.y+reach+14.0)/step),0,side-1))
+	# Inline, not a const: the brushes extending this one may name Plate.
+	var half: float = preload("res://scripts/plate.gd").HALF
+	var low := Vector2i(clampi(floori((center.x-reach+half)/step),0,side-1),clampi(floori((center.y-reach+half)/step),0,side-1))
+	var high := Vector2i(clampi(floori((center.x+reach+half)/step),0,side-1),clampi(floori((center.y+reach+half)/step),0,side-1))
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
 			var distance := (data.meadow_position(x,z)+Vector2.ONE*step*0.5).distance_to(center)

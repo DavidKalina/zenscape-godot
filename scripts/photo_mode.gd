@@ -30,7 +30,7 @@ const LOOK_TURN := 0.35
 const EYE_HEIGHT := 0.85
 const WALK_STEP := 0.7
 const WALK_DRAG := 6.0
-const PLATE_REACH := 13.5
+const PLATE_REACH := Plate.HALF-0.5
 ## Auto-level: after this many idle seconds the ground eye's pitch settles
 ## toward LEVEL_POLAR (just below the horizon) at LEVEL_RATE per second.
 const LEVEL_IDLE := 1.6
@@ -38,6 +38,7 @@ const LEVEL_POLAR := 1.5
 const LEVEL_RATE := 0.35
 const ORBIT_POLAR := Vector2(0.2,1.52)
 const GROUND_POLAR := Vector2(0.95,2.05)
+## Dolly limits; the far one grows with an island bigger than the old square.
 const DISTANCE := Vector2(2.0,120.0)
 ## Focal lengths on a full-frame 24 mm-high sensor; the scene's own 45° is
 ## about 29 mm.
@@ -51,6 +52,12 @@ const HINT := "Drag to orbit  ·  right-drag to pan  ·  scroll to dolly  ·  G 
 const GROUND_HINT := "Ground eye  ·  drag to look  ·  right-drag or arrows to walk  ·  scroll to step  ·  G to rise"
 ## Seconds the return glide takes after leaving.
 const RETURN := 0.7
+
+const Plate = preload("res://scripts/plate.gd")
+const IslandFrame = preload("res://scripts/island_frame.gd")
+## The orbit's pivot pans over the island's land and a little past it, as
+## the shell's camera's does (scripts/camera_rig.gd PAN_INSET).
+const Rig = preload("res://scripts/camera_rig.gd")
 
 signal entered
 signal left
@@ -496,13 +503,13 @@ func set_ground(enabled: bool) -> void:
 		var spot := camera_now+flat.normalized()*maxf(reach,0.0) if flat.length() > 0.01 else _pivot
 		_eye = camera_now
 		ground = true
-		_goal.eye = _grounded(spot)
+		_goal.eye = _grounded_on_land(spot)
 		_goal.polar = LEVEL_POLAR
 		hint.text = GROUND_HINT
 	else:
 		_to_orbit_state()
 		ground = false
-		_goal.distance = clampf(maxf(_distance,14.0),DISTANCE.x,DISTANCE.y)
+		_goal.distance = clampf(maxf(_distance,14.0),DISTANCE.x,_far())
 		_goal.polar = 1.1
 		hint.text = HINT
 	hint.modulate.a = 1.0
@@ -537,6 +544,13 @@ func _grounded(point: Vector3) -> Vector3:
 	local.y = (float(h) if h != null else local.y-EYE_HEIGHT)+EYE_HEIGHT
 	return editor.terrain.to_global(local)
 
+## `_grounded`, on an outlined island put over its land first.
+func _grounded_on_land(point: Vector3) -> Vector3:
+	var local := editor.terrain.to_local(point)
+	var land: Vector2 = editor.data.nearest_land(Vector2(local.x,local.z),0.1)
+	if land != Vector2.INF: point = editor.terrain.to_global(Vector3(land.x,local.y,land.y))
+	return _grounded(point)
+
 func _ground_hit(point: Vector2) -> Variant:
 	var hit: Variant = editor.pick(point)
 	return editor.terrain.to_global(hit) if hit != null else null
@@ -556,7 +570,7 @@ func _advance_camera(delta: float) -> void:
 	if ground:
 		if _idle > LEVEL_IDLE and _drag.is_empty():
 			_goal.polar = move_toward(_goal.polar,LEVEL_POLAR,LEVEL_RATE*delta*absf(_goal.polar-LEVEL_POLAR)*2.0+0.02*delta)
-		_goal.eye = _grounded(_goal.eye)
+		_goal.eye = _grounded_on_land(_goal.eye)
 		_eye = _eye.lerp(_goal.eye,_ease(EASE_ORBIT,delta))
 		_yaw = lerp_angle(_yaw,_goal.yaw,k)
 		_polar = lerpf(_polar,_goal.polar,k)
@@ -767,21 +781,25 @@ func _pan(relative: Vector2) -> void:
 	var basis := camera.global_basis
 	var pivot: Vector3 = _goal.pivot+(-basis.x*relative.x+basis.y*relative.y)*reach
 	var local := editor.terrain.to_local(pivot)
-	local.x = clampf(local.x,-PLATE_REACH*1.4,PLATE_REACH*1.4)
-	local.z = clampf(local.z,-PLATE_REACH*1.4,PLATE_REACH*1.4)
+	local = IslandFrame.clamp_local(local,IslandFrame.reach(editor.data,Rig.PAN_INSET,Rig.PAN_STRETCH,Rig.PAN_ROOM))
 	_goal.pivot = editor.terrain.to_global(local)
+
+## The farthest dolly: DISTANCE's, or more for an island bigger than the old
+## square.
+func _far() -> float:
+	return DISTANCE.y*maxf(1.0,IslandFrame.scale(editor.data))
 
 ## Ground eye: x strafes, y walks (negative is forward), in metres.
 func _walk(move: Vector2) -> void:
 	var forward := -_offset(_goal.yaw,PI*0.5)
 	var right := forward.cross(Vector3.UP)
-	_goal.eye = _grounded(_goal.eye+right*move.x-forward*move.y)
+	_goal.eye = _grounded_on_land(_goal.eye+right*move.x-forward*move.y)
 
 func _dolly(amount: float) -> void:
 	if ground:
 		_walk(Vector2(0.0,amount*WALK_STEP))
 	else:
-		_goal.distance = clampf(_goal.distance*pow(1.12,amount),DISTANCE.x,DISTANCE.y)
+		_goal.distance = clampf(_goal.distance*pow(1.12,amount),DISTANCE.x,_far())
 
 # --- Inspect ------------------------------------------------------------------------
 

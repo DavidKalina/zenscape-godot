@@ -1,6 +1,7 @@
 extends SceneTree
 ## FireField: spread, wind bias, suppression, objects, embers, regrowth,
 ## persistence and the undo bracket. Pure logic — no scene, no renderer.
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures := 0
 var _mesh: ArrayMesh = null
@@ -43,8 +44,7 @@ func world(air: Air, rng_seed := 7, patch: Array = []) -> Array:
 	return [data,field]
 
 func run() -> void:
-	var source := preload("res://assets/zen_reference/geometry.scn").instantiate()
-	_mesh = source.get_node("terrain").mesh
+	_mesh = PlateFixture.mesh()
 	_spread()
 	_suppression()
 	_objects()
@@ -53,7 +53,6 @@ func run() -> void:
 	_persistence()
 	_paused()
 	_stroke()
-	source.free()
 	print("FIRE FIELD: failures=",failures)
 	quit(1 if failures else 0)
 

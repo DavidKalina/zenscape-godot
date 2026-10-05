@@ -124,7 +124,7 @@ float grass_hash(vec2 p) {
 }
 
 vec4 ground_texel(ivec2 texel) {
-	return texelFetch(zs_water_map, clamp(texel, ivec2(0), ivec2(127)), 0);
+	return texelFetch(zs_water_map, clamp(texel, ivec2(0), ivec2(ZS_MAP_TEXELS - 1)), 0);
 }
 
 // 1 where this texel holds water standing above its ground.
@@ -138,7 +138,7 @@ void vertex() {
 	vec2 seed = tile_origin * 3.17 + cell;
 	vec2 root = tile_origin + (cell + vec2(grass_hash(seed), grass_hash(seed + 19.3))) * spacing;
 	// Bilinear ground height from four texels; any void or water tap drops the clump.
-	vec2 g = (root + 16.0) * 4.0 - 0.5;
+	vec2 g = (root + zs_map_half) * 4.0 - 0.5;
 	ivec2 base = ivec2(floor(g));
 	vec2 f = fract(g);
 	vec4 a = ground_texel(base);
@@ -149,7 +149,7 @@ void vertex() {
 	float ground = mix(mix(a.g, b.g, f.x), mix(c.g, d.g, f.x), f.y);
 	float water = max(max(a.a, b.a), max(c.a, d.a));
 	vec2 gradient = vec2((b.g - a.g) + (d.g - c.g), (c.g - a.g) + (d.g - b.g)) * 2.0;
-	vec4 mask = texture(grass_mask, (root + 16.0) / 32.0);
+	vec4 mask = texture(grass_mask, (root + zs_map_half) / (zs_map_half * 2.0));
 	float n = zs_noise(root * 0.85 + 3.1);
 	// Tussocks and the bare gaps between them.
 	float tussock = smoothstep(0.28, 0.72, zs_noise(root * tuft_scale + zs_grass_offset) * 0.75 + n * 0.25);
@@ -164,7 +164,7 @@ void vertex() {
 	// Emerged cover (scripts/emergence.gd): as the cell thickens, each new
 	// tuft rises from the ground in keep order, the first at the cell's birth
 	// and the last emergence_creep seconds later. Tufts it had before stay.
-	vec4 birth = texture(emergence_map, (floor((root + 14.0) * 2.0) + 0.5) / 56.0);
+	vec4 birth = texture(emergence_map, (floor((root + zs_plate_half) * 2.0) + 0.5) / (zs_plate_half * 4.0));
 	if (birth.a > 0.5) {
 		float rank = grass_hash(seed + 5.1) / max(keep * thin, 0.0001);
 		if (rank >= birth.g) {

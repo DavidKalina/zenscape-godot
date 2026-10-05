@@ -1,15 +1,14 @@
 extends SceneTree
 const Preview = preload("res://scripts/native_pond_preview.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func check(ok: bool, message: String) -> void:
 	if not ok:
 		failures += 1
 		push_error(message)
 func _initialize() -> void:
-	var source = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	check(Preview.evaluate(data,Vector2.ZERO,-0.2).message.contains("below"),"Flat ground explains why a hollow is needed")
 	check(Preview.evaluate(data,Vector2.ZERO,0.2).message.contains("spill"),"Unbounded water explains spill")

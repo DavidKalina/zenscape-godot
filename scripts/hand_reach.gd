@@ -78,8 +78,11 @@ signal land_released(screen_pos: Vector2)
 ## The hand took hold of "sun" or "rim", or let go ("").
 signal holding_changed(what: String)
 
-## Half the plate's side, metres (the terrain is 28 m square, centred).
-const PLATE_HALF := 14.0
+## Half the plate's side, metres (the terrain is square, centred).
+const PLATE_HALF := preload("res://scripts/plate.gd").HALF
+## Metres between the samples of the square rim's outline (24 a side on
+## the 28 m plate); a bigger plate takes more of them.
+const RIM_SAMPLE := 7.0/6.0
 ## The sun's disc is small (about 2 degrees), so it is grabbed generously:
 ## within this many pixels of its centre, or this many degrees of it.
 const SUN_PIXELS := 64.0
@@ -183,6 +186,8 @@ var _block_low: Variant = null
 ## mesh and placing they were read from.
 var _skirt_points := PackedVector3Array()
 var _skirt_read: Array = []
+var _shore_cache := PackedVector3Array()
+var _shore_read: Array = []
 var _hover_key := []
 var _land_cache := {}
 var _land_frame := -1
@@ -466,6 +471,12 @@ func _screen(direction: Vector3) -> Variant:
 ## whether a hill stands in front.
 func _rim_at(point: Vector2) -> Variant:
 	var hit: Variant = _land(point)
+	# An outlined island's rim is its shore, and it has no walls to stand on.
+	if _outlined():
+		var near: Array = _outline_nearest(point)
+		if float(near[0]) > RIM_PIXELS: return null
+		if hit != null and _shore_gap(Vector2(hit.x,hit.z)) > RIM_BAND: return null
+		return near[1]
 	var wall: Variant = _wall_hit(point)
 	if wall != null and (hit == null or _eye_distance(point,hit) > _eye_distance(point,wall)-0.05): return wall
 	var rim: Variant = null
@@ -487,6 +498,7 @@ func _eye_distance(point: Vector2, local: Vector3) -> float:
 ## The rim point nearest the pointer, wherever it is: for a drag, which may
 ## wander off the rim. Cheap: no ray into the terrain.
 func rim_point(point: Vector2) -> Vector3:
+	if _outlined(): return _outline_nearest(point)[1]
 	var wall: Variant = _wall_hit(point)
 	if wall != null: return wall
 	var at: Variant = _plate_at(point)
@@ -497,6 +509,7 @@ func rim_point(point: Vector2) -> Vector3:
 ## from it onto the face of the earth sides round the palm, so they do not
 ## hide it and the palm lies on them.
 func _hand_at(rim: Vector3) -> Vector3:
+	if _outlined(): return rim
 	var edge := Vector2(rim.x,rim.z)
 	if rim.y > _rim_height(edge)-0.05: return rim
 	var out := Vector3(signf(rim.x),0.0,0.0) if absf(rim.x) >= absf(rim.z) else Vector3(0.0,0.0,signf(rim.z))
@@ -591,6 +604,7 @@ func _rim_height(edge: Vector2) -> float:
 ## The block's walls: where the pointer's ray meets one from outside, between
 ## the block's foot and the rim over it (a little above it counts as the lip).
 func _wall_hit(point: Vector2) -> Variant:
+	if _outlined(): return null
 	var editor := _editor()
 	var terrain: Node3D = editor.terrain
 	var camera: Camera3D = scene.camera
@@ -631,10 +645,11 @@ func _foot() -> float:
 ## steps' card to light (scripts/first_steps_card.gd `rim`); empty when any
 ## of it is behind the camera.
 func rim_outline() -> PackedVector2Array:
+	if _outlined(): return PackedVector2Array()
 	var camera: Camera3D = scene.camera
 	var terrain: Node3D = _editor().terrain
 	var points := PackedVector2Array()
-	var steps := 24
+	var steps := roundi(2.0*PLATE_HALF/RIM_SAMPLE)
 	for side in range(4):
 		for i in range(steps):
 			var f := -PLATE_HALF+2.0*PLATE_HALF*float(i)/steps
@@ -650,7 +665,14 @@ func _outline_nearest(point: Vector2) -> Array:
 	var camera: Camera3D = scene.camera
 	var terrain: Node3D = _editor().terrain
 	var best := [INF,Vector3.ZERO]
-	var steps := 24
+	if _outlined():
+		for local in _shore_points():
+			var world := terrain.to_global(local)
+			if camera.is_position_behind(world): continue
+			var pixels := point.distance_to(camera.unproject_position(world))
+			if pixels < float(best[0]): best = [pixels,local]
+		return best
+	var steps := roundi(2.0*PLATE_HALF/RIM_SAMPLE)
 	for side in range(4):
 		for i in range(steps):
 			var f := -PLATE_HALF+2.0*PLATE_HALF*(i+0.5)/steps
@@ -661,6 +683,31 @@ func _outline_nearest(point: Vector2) -> Array:
 			var pixels := point.distance_to(camera.unproject_position(world))
 			if pixels < float(best[0]): best = [pixels,local]
 	return best
+
+## Whether the island has an outline: its rim is then its shore, not the
+## plate's square.
+func _outlined() -> bool:
+	return not _editor().data.outline.is_empty()
+
+## Metres a plate point stands inside the shore.
+func _shore_gap(p: Vector2) -> float:
+	var depth: Variant = _editor().data.sample(p,_editor().data.shore_distance)
+	return float(depth) if depth != null else 0.0
+
+## Points along the shore at the land's height, for the rim to be found on.
+func _shore_points() -> PackedVector3Array:
+	var data: NativeTerrainData = _editor().data
+	if _shore_read != [data,data.shore_edges]:
+		_shore_read = [data,data.shore_edges]
+		_shore_cache = PackedVector3Array()
+		var edges := data.shore_edges
+		for i in range(0,edges.size(),3):
+			var a: Vector2 = data.points[edges[i]]
+			var b: Vector2 = data.points[edges[i+1]]
+			for k in range(3):
+				var t := (k+0.5)/3.0
+				_shore_cache.append(Vector3(lerpf(a.x,b.x,t),lerpf(data.heights[edges[i]],data.heights[edges[i+1]],t),lerpf(a.y,b.y,t)))
+	return _shore_cache
 
 # --- Input ---------------------------------------------------------------------
 
@@ -1697,8 +1744,8 @@ func _keep_bare(root: Vector2, emerged: bool) -> void:
 	var intent: RefCounted = editor.emergence.intent if editor.get("emergence") != null else null
 	var wish: PackedFloat32Array = intent.forest if intent != null else PackedFloat32Array()
 	var clear: float = preload("res://scripts/forest_brush.gd").CLEAR_BELOW
-	var low := Vector2i(((root-Vector2.ONE*PLUCK_BARE+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
-	var high := Vector2i(((root+Vector2.ONE*PLUCK_BARE+Vector2(14,14))/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var low := Vector2i(((root-Vector2.ONE*PLUCK_BARE+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var high := Vector2i(((root+Vector2.ONE*PLUCK_BARE+Vector2.ONE*PLATE_HALF)/step).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	for z in range(low.y,high.y+1):
 		for x in range(low.x,high.x+1):
 			var cell := z*side+x

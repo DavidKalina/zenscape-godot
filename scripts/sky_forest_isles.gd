@@ -40,6 +40,7 @@ const SkyForestIsle = preload("res://scripts/sky_forest_isle.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+const SkyWorld = preload("res://scripts/sky_world.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const RedwoodAssets = preload("res://scripts/redwood_assets.gd")
 const FlowFalls = preload("res://scripts/flow_falls.gd")
@@ -133,6 +134,10 @@ func _exit_tree() -> void:
 func reset(new_cells: RefCounted) -> void:
 	clear()
 	_water = null
+	# None stand while the isles are off (SkyHomes `isles`).
+	if not SkyHomes.isles:
+		cells = null
+		return
 	cells = new_cells
 	_since = CHECK
 	position = cells.origin
@@ -208,6 +213,7 @@ static func cell_of(home: Vector3) -> Vector2i:
 ## one, outside RING, off the ranges (and the kinds kept with them), off
 ## the towers and off every wonder in sight of the plate (SkyHomes).
 static func spot(cell: Vector2i) -> Variant:
+	if not SkyHomes.isles: return null
 	if cell == Vector2i.ZERO: return Vector4(HOME.x,HOME.y,HOME.z,HOME_TURN)
 	if noise(cell,SALT) >= HOLDS: return null
 	var middle := Vector2(cell)*CELL
@@ -230,11 +236,7 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 
 ## A hash of a cell, 0 to 1, one per salt (as SkyCells `noise`).
 static func noise(cell: Vector2i, salt: int) -> float:
-	var h := cell.x*73856093^cell.y*19349663^salt*83492791^7*2654435761
-	h = (h^(h >> 13))*1274126177
-	h = (h^(h >> 16))*668265263
-	h ^= h >> 15
-	return float(h & 0xFFFFFF)/float(0x1000000)
+	return SkyWorld.noise(cell,salt)
 
 # --- Making one --------------------------------------------------------------------
 

@@ -4,14 +4,15 @@ extends RefCounted
 ## library and for comparison (`--gdscript-kernels`). Same method names, same
 ## arithmetic, about fifty times slower, so scripts/water_flow.gd runs it on a
 ## coarser grid. Keep the two in step.
+const Plate = preload("res://scripts/plate.gd")
 const OUTSIDE := 0
 const WATER := 1
 const EDGE := 2
 var w := 0
 var h := 0
 var cell := 0.25
-var ox := -14.0
-var oz := -14.0
+var ox := -Plate.HALF
+var oz := -Plate.HALF
 var face := PackedInt32Array()
 var weight := PackedFloat32Array()
 var kind := PackedByteArray()
@@ -876,6 +877,26 @@ func edge_outflow() -> Dictionary:
 		along[s][k] += edge_rate[c]
 		total += edge_rate[c]
 	return {"sides":along,"total":total}
+
+## See ZenScapeWaterFlow::edge_leaving.
+func edge_leaving(min_rate: float) -> Dictionary:
+	var cells := PackedInt32Array()
+	var rate := PackedFloat32Array()
+	var surface := PackedFloat32Array()
+	var floor := PackedFloat32Array()
+	var brink := PackedFloat32Array()
+	var velocity := PackedVector2Array()
+	for e in range(edge_cells.size()):
+		var c := edge_cells[e]
+		var inner := edge_inner[e]
+		if edge_rate[c] <= min_rate: continue
+		cells.append(c)
+		rate.append(edge_rate[c])
+		surface.append(maxf(ground[inner]+depth[inner],ground[c]+edge_brink[c]))
+		floor.append(ground[c])
+		brink.append(edge_brink[c])
+		velocity.append(Vector2(vx[inner],vz[inner]))
+	return {"cell":cells,"rate":rate,"surface":surface,"floor":floor,"brink":brink,"velocity":velocity}
 
 ## See ZenScapeWaterFlow::spills.
 func spills(p: Dictionary) -> Array:

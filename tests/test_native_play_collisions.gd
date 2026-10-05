@@ -1,5 +1,6 @@
 extends SceneTree
 const COLLISIONS = preload("res://scripts/native_play_collisions.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: _run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -7,10 +8,8 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 func _run() -> void:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	data.place("tree",Vector2(3,0),0,1)
 	data.place("rock",Vector2(-3,0),0,1)

@@ -15,13 +15,13 @@ uniform float water_clear = 0.85;
 uniform float water_lift = 1.4;
 
 float open_water_at(vec2 xz) {
-	vec2 uv = (xz+16.0)/32.0;
+	vec2 uv = (xz+zs_map_half)/(zs_map_half*2.0);
 	return zs_open_water(texture(ground_map,uv),texture(stream_map,uv));
 }
 
 void fog() {
 	vec3 p = WORLD_POSITION;
-	vec2 uv = (p.xz+16.0)/32.0;
+	vec2 uv = (p.xz+zs_map_half)/(zs_map_half*2.0);
 	float ground = zs_surface_height(texture(ground_map,uv),texture(stream_map,uv));
 	// Five taps soften the nearest-filtered map's edge into a fade at the shore.
 	float water = (open_water_at(p.xz)*2.0+open_water_at(p.xz+vec2(1.2,0.0))+open_water_at(p.xz-vec2(1.2,0.0))

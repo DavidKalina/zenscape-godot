@@ -1,5 +1,7 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 const NAV = preload("res://scripts/creature_navigation.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: _run.call_deferred()
 func check(ok: bool,message: String) -> void:
@@ -7,10 +9,8 @@ func check(ok: bool,message: String) -> void:
 		failures += 1
 		push_error(message)
 func _run() -> void:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	var nav := NAV.new()
 	var wall := func(p: Vector3) -> bool: return not (absf(p.x)<0.75 and absf(p.z)<3.0)
@@ -39,7 +39,7 @@ func _run() -> void:
 	# to enter an unsafe point from which all future routes were rejected.
 	nav.rebuild(data,func(p: Vector3) -> bool: return not (p.x>0.085 and p.x<0.125 and absf(p.z)<2.0))
 	check(not nav.segment_safe(Vector3.ZERO,Vector3(1,0,0)),"Swept checks detect hazards between old coarse samples")
-	data.streams = [{"pts":[{"x":0.0,"z":-14.0,"h":0.0},{"x":0.0,"z":14.0,"h":0.0}],"width":1.0,"depth":0.1,"surface":0.1,"capHead":false,"capTail":false}]
+	data.streams = [{"pts":[{"x":0.0,"z":-Plate.HALF,"h":0.0},{"x":0.0,"z":Plate.HALF,"h":0.0}],"width":1.0,"depth":0.1,"surface":0.1,"capHead":false,"capTail":false}]
 	nav.rebuild(data,Callable())
 	check(not nav.is_safe(Vector3.ZERO),"Flowing stream excludes the creature footprint")
 	check(nav.path(Vector3(-3,0,0),Vector3(3,0,0)).is_empty(),"Cannot route across a full-width stream")

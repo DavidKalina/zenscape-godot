@@ -1,5 +1,6 @@
 extends SceneTree
 const LIFE = preload("res://scripts/bigfoot_environment.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 class Flash extends Node:
 	signal struck(point: Vector3)
@@ -36,10 +37,8 @@ func run() -> void:
 	for child in [world.creature,world.brain,world.routine,world._lightning,life]: world.add_child(child)
 	world.creature.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
 	world.creature.set_process(false)
-	var source := preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	world.navigation.rebuild(data,func(p: Vector3) -> bool: return absf(p.x)>0.76 or absf(p.z)>0.76)
 	world.creature._ground_probe = world.navigation._ground

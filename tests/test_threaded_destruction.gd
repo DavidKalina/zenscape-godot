@@ -4,6 +4,7 @@ const Prepare = preload("res://scripts/native_blast_preparation.gd")
 const Blast = preload("res://scripts/terrain_blast.gd")
 const Collapse = preload("res://scripts/mountain_collapse.gd")
 const InternalBlast = preload("res://scripts/internal_blast.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 var frames := 0
 func _initialize() -> void: run.call_deferred()
@@ -15,10 +16,8 @@ func state(data: NativeTerrainData) -> PackedByteArray:
 	return var_to_bytes([data.heights,data.grass,data.meadow,data.blades,data.tint])
 func run() -> void:
 	create_timer(90).timeout.connect(func() -> void: quit(2))
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	process_frame.connect(func() -> void: frames += 1)
 	for mode in ["surface","buried","salvo"]:
 		await preload("res://scripts/native_landscape_presets.gd").form(data,"horn")

@@ -8,16 +8,15 @@ extends SceneTree
 const Stones = preload("res://scripts/rock_variants.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const LayeredTree = preload("res://scripts/layered_tree.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:
 	var args := OS.get_cmdline_user_args()
 	if "meshes" in args: _meshes()
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(reference.get_node("terrain").mesh)
-	reference.free()
+	data.setup(PlateFixture.mesh())
 	var names := []
 	for entry in Stones.VARIANTS: names.append(entry[0])
 	for arg in args:

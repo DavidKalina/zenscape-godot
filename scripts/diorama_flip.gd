@@ -79,14 +79,16 @@ enum Source { NEW, UNDO, KEPT }
 ## The render layer (bit) the real world moves to while its snapshot flips.
 ## Nothing looks at it: the camera and every light drop it.
 const HIDDEN_LAYER := 1 << 18
+const Plate = preload("res://scripts/plate.gd")
 ## Subtrees the snapshot leaves out, by script: the room (weather, sky, lights),
 ## things that are skinned or physical, and the hand, which is not a copy.
 ## The edge falls (scripts/edge_falls.gd) hide themselves while it flips. The
-## sky's cloud (scripts/sky_cloud.gd) floats in the room, so it stays put.
-const LEAVE_OUT := ["precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","creature_actor.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","bigfoot_encounter.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd","sky_cloud.gd"]
+## sky's cloud (scripts/sky_cloud.gd) floats in the room, so it stays put;
+## so do the sky world's mountains, kilometres off (scripts/sky_islands.gd).
+const LEAVE_OUT := ["sky_islands.gd","precipitation.gd","lightning.gd","atmosphere.gd","landscape_lighting.gd","fire_effects.gd","god_hand.gd","creature_actor.gd","diorama_world_play.gd","native_explosives.gd","native_object_selection.gd","bigfoot_encounter.gd","resident_wind.gd","diorama_flip.gd","edge_falls.gd","sky_cloud.gd"]
 ## The plate when its skirt cannot be read: half its width, the height of
 ## its middle and its thickness, rim to foot (m).
-const DEFAULT_HALF := 14.0
+const DEFAULT_HALF := Plate.HALF
 const DEFAULT_MIDDLE := (0.6+NativeTerrainData.SLAB_BASE)*0.5
 const DEFAULT_THICK := 0.6-NativeTerrainData.SLAB_BASE
 
@@ -797,6 +799,9 @@ func _grab_from(screen_pos: Vector2, reverse := false) -> void:
 	var along := _axis*clampf(pressed.dot(_axis),-(_half-2.0),_half-2.0) if not reverse else Vector3.ZERO
 	var rim := _grab_dir*(_half-0.4)+along
 	_rim_local = editor.terrain.global_transform.affine_inverse()*Vector3(rim.x,0.3,rim.z)
+	# An outlined island has no square lip: the grip is on its land nearest that.
+	var land: Vector2 = editor.data.nearest_land(Vector2(_rim_local.x,_rim_local.z),0.4)
+	if land != Vector2.INF: _rim_local = Vector3(land.x,_rim_local.y,land.y)
 
 ## The plate's bounds: half width and the height of its middle, from the skirt.
 func _plate_box() -> AABB:
@@ -1024,9 +1029,10 @@ func _bake_underside(signature: Array) -> void:
 		ghost._ground_tint = tint
 		ghost.world_offset = offset
 		ghost.setup(mesh,arrays)
-		Genesis.shape(ghost,chosen)
+		Genesis.shape(ghost,chosen,Vector2.ZERO,true,Genesis.first_size())
 		baked.append(ghost)
-		baked.append(ghost.build_mesh()))
+		# Its outline's faces only (an island's); the sides fit it below.
+		baked.append(ghost.play_mesh(ghost.build_mesh())))
 	while not WorkerThreadPool.is_task_completed(_baker): await get_tree().process_frame
 	_join_baker()
 	sample_ms = (Time.get_ticks_usec()-began)/1000.0
@@ -1148,7 +1154,9 @@ func _make_new(id: int) -> void:
 	_forming_started = true
 	Budget.override_usec = MAKE_BUDGET_USEC
 	var began := Time.get_ticks_usec()
-	await Genesis.form(editor,_world,true)
+	# The flip's new home is a comfortable size, as a new world's first, and
+	# the underside baked for it (`_bake_underside`) is the same island.
+	await Genesis.form(editor,_world,true,Vector2.ZERO,true,Genesis.first_size())
 	form_ms = (Time.get_ticks_usec()-began)/1000.0
 	Budget.override_usec = 0
 	_stamp("formed")

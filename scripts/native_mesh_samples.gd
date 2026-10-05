@@ -1,6 +1,10 @@
 extends RefCounted
 ## Mesh arithmetic on detached data. Mesh resources publish only on the caller.
 
+## Up to this many faces in all, the native shade runs inline when no worker
+## count is asked for.
+const INLINE_FACES := 16384
+
 static func snapshot(source: NativeTerrainData) -> NativeTerrainData:
 	var data := preload("res://scripts/native_terrain_snapshot.gd").for_height(source)
 	# Packed buffers retain their element precision. No render resource, live
@@ -38,7 +42,9 @@ static func build_parallel(data: NativeTerrainData, arrays: Array, faces: Packed
 	# The measured native pass is below the cooperative publication budget.
 	# Avoid a worker round trip and extra frame for this now-small operation.
 	# Explicit counts still exercise exactly the requested partition strategy.
-	if kernel != null and workers == 0 and total <= 8192:
+	# The 48 m plate's 10,368 faces all shade in about 1.3 ms, less than the
+	# snapshots a group of workers takes on this thread before it starts.
+	if kernel != null and workers == 0 and total <= INLINE_FACES:
 		var part := shade(data,arrays,faces,water,sculpted,has_recipe,0,total*3,kernel)
 		var merged := arrays.duplicate()
 		merged[Mesh.ARRAY_VERTEX] = part.vertices

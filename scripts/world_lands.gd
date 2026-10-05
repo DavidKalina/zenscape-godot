@@ -56,7 +56,8 @@ static func form(scene: Node3D, land: String, seed_value: int, live := true) -> 
 			_mood(scene,preset,mood,MeadowTypes.TYPES[type_id].visuals)
 		_:
 			var world := Genesis.world(seed_value)
-			await Genesis.form(editor,world,false)
+			# A new world's first island is a comfortable size, whatever its seed.
+			await Genesis.form(editor,world,false,Vector2.ZERO,true,Genesis.first_size())
 			Genesis.apply_mood(scene,world)
 			editor.data._undo.clear()
 			editor.data._redo.clear()

@@ -1,5 +1,6 @@
 extends "res://studies/bigfoot_lair.gd"
 ## Product entry point. Study scenes remain available through their launchers.
+const IslandFrame = preload("res://scripts/island_frame.gd")
 var library_path := "user://dioramas"
 var recent_file := "user://diorama-recent.cfg"
 var _has_world := false
@@ -110,7 +111,10 @@ func _process(delta: float) -> void:
 
 func _frame_title() -> void:
 	# Electron titleView: 72% of the chunk camera radius, with a raised target.
-	var radius := Vector3(19,12,22).length()*0.72
+	# Tuned on the old 28 m square: the island's own middle and size
+	# (scripts/island_frame.gd) move and scale it.
+	var spread := IslandFrame.scale(_chunk_editor.data)
+	var radius := Vector3(19,12,22).length()*0.72*spread
 	var eye := Vector3(sin(1.10)*sin(atan2(19.0,22.0)),cos(1.10),sin(1.10)*cos(atan2(19.0,22.0)))*radius
 	target = Vector3(0,4,0)
 	var offset := eye-target
@@ -120,7 +124,7 @@ func _frame_title() -> void:
 	_auto_orbit_speed = TAU/60.0*0.22
 	if title_recipe.family in ["valley","canyon"]:
 		target.y = 2.0
-		distance = 24.0
+		distance = 24.0*spread
 		polar = 1.12
 	if title_recipe.has("terrain_recipe"):
 		var peak: float = Array(_chunk_editor.data.heights).max()
@@ -128,10 +132,13 @@ func _frame_title() -> void:
 		distance = maxf(distance,peak*1.35)
 	if title_recipe.has("terrain_recipe") and title_recipe.family == "valley":
 		target.y = 3.5
-		distance = 32.0
+		distance = 32.0*spread
 		polar = 1.18
 		yaw = 0.0
 		_auto_orbit_speed = 0.0
+	var middle := _island_middle()
+	target.x = middle.x
+	target.z = middle.z
 	SceneLookPresets.apply(self,title_recipe.look,title_recipe.overrides)
 	_world_visuals.fog_density = 0.65 if title_recipe.family == "valley" else 0.0
 	_world_visuals.peak_density = 0.28 if title_recipe.family in ["massif","mountain","horn","cone"] else 0.0
@@ -145,8 +152,11 @@ func _overview() -> void:
 
 func _frame_diorama() -> void:
 	_auto_orbit_speed = 0.055
-	target = Vector3(0,-1.0,0)
-	distance = 40.0
+	# The island's land, not the plate's grid (scripts/island_frame.gd): its
+	# middle, and the 40 m the old 28 m square started from, scaled to it.
+	var middle := _island_middle()
+	target = Vector3(middle.x,-1.0,middle.z)
+	distance = 40.0*IslandFrame.scale(_chunk_editor.data)
 	yaw = 0.35
 	polar = 0.82
 	_auto_orbit = false
@@ -161,11 +171,16 @@ func _frame_diorama() -> void:
 	if safe.size.x <= 0.0 or safe.size.y <= 0.0:
 		push_warning("Overview framing skipped: the viewport is %s" % str(screen))
 		return
+	# The ground's mesh keeps every plate point, the ones off the island too:
+	# only those on its land count.
+	var land := IslandFrame.rect(_chunk_editor.data).grow(0.01)
 	var outline := {}
 	for mesh: MeshInstance3D in [_chunk_editor.terrain,_chunk_editor._skirt]:
 		for surface in range(mesh.mesh.get_surface_count()):
 			var vertices: PackedVector3Array = mesh.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
-			for vertex: Vector3 in vertices: outline[mesh.to_global(vertex)] = true
+			for vertex: Vector3 in vertices:
+				if mesh == _chunk_editor.terrain and not land.has_point(Vector2(vertex.x,vertex.z)): continue
+				outline[mesh.to_global(vertex)] = true
 	for step in range(60):
 		var fits := true
 		for corner: Vector3 in outline:
@@ -173,6 +188,12 @@ func _frame_diorama() -> void:
 		if fits: break
 		distance *= 1.04
 		_update_camera()
+
+## The middle of the island's land (scripts/island_frame.gd), in this
+## scene's frame, at the terrain's level.
+func _island_middle() -> Vector3:
+	var at := IslandFrame.centre(_chunk_editor.data)
+	return to_local(_chunk_editor.terrain.to_global(Vector3(at.x,0.0,at.y)))
 
 func _style(fill: Color, border: Color, radius := 18) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()

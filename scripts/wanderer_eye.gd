@@ -42,6 +42,7 @@ extends Node
 ## seconds before swinging back behind, for the view. The camera, the sky
 ## and the landing are the glide's.
 
+const Plate = preload("res://scripts/plate.gd")
 ## The figure's height and the eye's height above the ground, in metres. The
 ## diorama is toy-scaled: trees stand about 3 to 5 m and photo mode's ground
 ## eye sits at 0.85 m.
@@ -63,7 +64,9 @@ const EASE_FOV := 0.2
 ## The polar range of the look: near straight down to well above the horizon.
 const POLAR := Vector2(0.25,2.8)
 ## The walk stays on the plate.
-const PLATE_REACH := 13.5
+const PLATE_REACH := Plate.HALF-0.5
+## How far inside the shore a walker is put back on an outlined island (m).
+const SHORE_INSET := 0.1
 ## Seconds the glide back to the orbit takes.
 const RETURN := 0.7
 ## The figure's own radius in the plate plane, with room for the eye's near
@@ -126,11 +129,15 @@ const PLANE_LINGER := 2.5
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
+## The world's ring (scripts/sky_world.gd): with it, the view reaches across
+## the whole world (VIEW_FAR), so the ring stands as a skyline.
+const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const GliderFigure = preload("res://scripts/glider_figure.gd")
+const IslandFrame = preload("res://scripts/island_frame.gd")
 const GlideVapour = preload("res://scripts/glide_vapour.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -251,6 +258,8 @@ var _perch_feet := Vector3.ZERO
 var _perch_eye := EYE_HEIGHT
 ## Tree and rock crowns in the plate plane: (x, z, radius, top), terrain-local.
 var _crowns := PackedVector4Array()
+## Each island's land middle for F's landing (`_land_middle`), by land.
+var _middles := {}
 ## Footprint profile of a mesh: [y0, band height, radius per band...].
 static var _profiles := {}
 
@@ -317,6 +326,9 @@ func setup(owner_scene: Node3D) -> void:
 		glider.visible = false
 		add_child(glider)
 		islands.skip.append(glider)
+		# The mountains stand round the plate in the build view too
+		# (SkyIslands `_process`): the view reaches them.
+		if SkyWorld.ring_on(): camera.far = maxf(camera.far,SkyWorld.VIEW_FAR)
 
 # --- The figure -------------------------------------------------------------------
 
@@ -397,6 +409,12 @@ func _deck(point: Vector2) -> Dictionary:
 func _clamped(local: Vector3) -> Vector3:
 	local.x = clampf(local.x,-PLATE_REACH,PLATE_REACH)
 	local.z = clampf(local.z,-PLATE_REACH,PLATE_REACH)
+	# On an outlined island, the nearest land (a bridge's deck is footing too).
+	if not _on_land(Vector2(local.x,local.z)):
+		var land := editor.data.nearest_land(Vector2(local.x,local.z),SHORE_INSET)
+		if land != Vector2.INF:
+			local.x = land.x
+			local.z = land.y
 	local.y = _ground(local)
 	return local
 
@@ -577,7 +595,17 @@ func _free_spot(local: Vector3) -> Vector3:
 	return local
 
 func _free(p: Vector2) -> bool:
-	return absf(p.x) <= PLATE_REACH and absf(p.y) <= PLATE_REACH and not _blocked(p)
+	return absf(p.x) <= PLATE_REACH and absf(p.y) <= PLATE_REACH and _on_land(p) and not _blocked(p)
+
+## Whether the island holds plate point `p` as ground to stand on: its land
+## (the whole square if it has no outline), or a footbridge deck.
+func _on_land(p: Vector2) -> bool:
+	return editor.data.has_land(p) or not _deck(p).is_empty()
+
+## Whether a walk to plate point `p` has gone off the island: past the
+## square's reach, or past the shore of an outlined one.
+func _off_plate(p: Vector2) -> bool:
+	return absf(p.x) > PLATE_REACH or absf(p.y) > PLATE_REACH or not _on_land(p)
 
 # --- Stepping in and out ------------------------------------------------------------
 
@@ -612,6 +640,9 @@ func enter() -> void:
 	_returning = 0.0
 	_swoop = 0.0
 	_pace = Vector2.ZERO
+	# The mountain ring's skyline is worked out from here, so it stands
+	# whole by the time the glide opens (scripts/sky_ring.gd).
+	if islands != null: islands.warm_ring()
 	_yaw = figure.rotation.y+_turn()
 	_polar = PI*0.5
 	_read_obstacles(true)
@@ -697,7 +728,7 @@ func _advance_eye(delta: float) -> void:
 	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
 	var was := _feet
 	var walked := _walk(_feet,Vector2(move.x,move.z)*delta)
-	if glide_enabled and (absf(walked.x) > PLATE_REACH or absf(walked.z) > PLATE_REACH):
+	if glide_enabled and _off_plate(Vector2(walked.x,walked.z)):
 		_launch(move.length())
 		return
 	if _advance_jump(delta):
@@ -757,7 +788,7 @@ func _launch(pace: float, drop := true) -> void:
 	# The sky stays as it was between glides.
 	if not islands.built(): islands.build()
 	if not perched: _far_before = camera.far
-	camera.far = FLY_FAR
+	camera.far = SkyWorld.VIEW_FAR if SkyWorld.ring_on() else FLY_FAR
 	islands.show_air(true)
 	glide.launch(from,_yaw,pace,drop)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)
@@ -871,19 +902,33 @@ func _advance_flight(delta: float) -> void:
 		if on_plate: _land()
 		else: _perch(islet)
 
-## Where F comes in to land: the middle of the nearest island within
-## LANDING_REACH, or INF.
+## Where F comes in to land: the middle of the nearest island's land within
+## LANDING_REACH, or INF. An island's land need not sit in the middle of its
+## plate, nor hold its own middle (scripts/island_frame.gd `middle`).
 func _landing_spot() -> Vector3:
 	var best := Vector3.INF
 	var nearest := LANDING_REACH
-	var middles: Array[Vector3] = [editor.terrain.global_position]
-	for i in range(islands.offsets.size()): middles.append(editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i))
+	var middles: Array[Vector3] = [editor.terrain.global_position+_land_middle(editor.data)]
+	for i in range(islands.offsets.size()): middles.append(editor.terrain.global_position+islands.offsets[i]+Vector3.DOWN*islands.sunk(i)+_land_middle(islands.lands[i]))
 	for m in middles:
 		var d := Vector2(m.x-glide.position.x,m.z-glide.position.z).length()
 		if d < nearest:
 			nearest = d
 			best = m
 	return best
+
+## The offset of `land`'s middle from its plate's, level; none for a land
+## still baking. Kept per land and outline: a ring search is not per frame.
+func _land_middle(land: NativeTerrainData) -> Vector3:
+	if land == null: return Vector3.ZERO
+	var kept: Array = _middles.get(land.get_instance_id(),[])
+	var bounds := land.land_rect()
+	if kept.is_empty() or kept[0] != bounds:
+		var at := IslandFrame.middle(land)
+		kept = [bounds,Vector3(at.x,0.0,at.y)]
+		if _middles.size() > 32: _middles.clear()
+		_middles[land.get_instance_id()] = kept
+	return kept[1]
 
 ## Claims an island (SkyIslands `claim`); once the plate is its land, the
 ## world has shifted, and everything that flies shifts with it.

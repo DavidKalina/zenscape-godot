@@ -15,9 +15,11 @@ extends Node
 ## Made and owned by NativeChunkEditor (`ground_shade`), so every native
 ## world has it.
 
-## Texels a side over the plate's 32 m: 0.5 m each.
-const SIZE := 64
-const HALF := 16.0
+## Texels a side over the ground maps' reach (32 m on the 28 m plate): 0.5 m
+## each.
+const Plate = preload("res://scripts/plate.gd")
+const HALF := Plate.MAP_HALF
+const SIZE := roundi(HALF * 2.0 / 0.5)
 const TEXEL := HALF * 2.0 / SIZE
 ## Each kind's crown radius at scale 1 (m), from the catalog meshes' bounds.
 ## Desert plants (joshua, cactus) cast too thin a shade to darken the sand.
@@ -51,6 +53,7 @@ var _baked := PackedFloat32Array()
 var _baked_usec := 0
 
 func setup(owner_editor: Node) -> void:
+	Plate.publish_shader_globals()
 	editor = owner_editor
 	name = "GroundShade"
 	field.resize(SIZE * SIZE)

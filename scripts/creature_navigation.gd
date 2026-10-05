@@ -2,11 +2,12 @@ class_name CreatureNavigation
 extends RefCounted
 ## Small, deterministic navigation map for one authored chunk. Rebuild after a
 ## committed terrain/prop/water edit, not every frame. Routes are ground points.
+const Plate = preload("res://scripts/plate.gd")
 const STEP := 0.7
 const RADIUS := 0.5
 const SLOPE_PROBE := 0.3
 const MAX_RISE := 0.22
-const LIMIT := 41
+const LIMIT := roundi(Plate.SIZE/STEP)+1
 var _grid_step := STEP
 var _slope_rise := MAX_RISE
 var _data: RefCounted
@@ -96,7 +97,7 @@ func begin_rebuild(data: RefCounted, clearance: Callable, grid_step := STEP, slo
 			_courses.append({"a":Vector2(item.x,item.z),"b":Vector2(item.end_x,item.end_z),"radius":float(item.scale)*0.5+RADIUS,"level":INF})
 	_impacts = data.waterfall_impacts()
 	_rebuild_cell = 0
-	_rebuild_side = roundi(28.0/_grid_step)+1
+	_rebuild_side = roundi(Plate.SIZE/_grid_step)+1
 	rebuilding = true
 	last_rebuild_usec = Time.get_ticks_usec()-began
 
@@ -112,7 +113,7 @@ func advance_rebuild(budget_usec := 2000) -> bool:
 	while _rebuild_cell < _rebuild_side*_rebuild_side:
 		var x := _rebuild_cell % _rebuild_side
 		var z := _rebuild_cell / _rebuild_side
-		var point := Vector3(-14.0+x*_grid_step,0,-14.0+z*_grid_step)
+		var point := Vector3(-Plate.HALF+x*_grid_step,0,-Plate.HALF+z*_grid_step)
 		var grounded: Variant = _ground(point)
 		if grounded != null and _safe_grounded(grounded):
 			_cells[Vector2i(x,z)] = _nodes.size()
@@ -164,7 +165,7 @@ func _sample_cells(begin: int, end: int) -> Dictionary:
 	for index in range(begin,end):
 		var x := index % _rebuild_side
 		var z := index / _rebuild_side
-		var grounded: Variant = _ground(Vector3(-14.0+x*_grid_step,0,-14.0+z*_grid_step))
+		var grounded: Variant = _ground(Vector3(-Plate.HALF+x*_grid_step,0,-Plate.HALF+z*_grid_step))
 		if grounded != null and _safe_grounded(grounded):
 			nodes.append(grounded)
 			cells.append(Vector2i(x,z))
@@ -242,7 +243,7 @@ func is_safe(point: Vector3) -> bool:
 	return _safe_grounded(grounded)
 
 func _safe_grounded(point: Vector3) -> bool:
-	if absf(point.x) > 14.0-RADIUS or absf(point.z) > 14.0-RADIUS: return false
+	if absf(point.x) > Plate.HALF-RADIUS or absf(point.z) > Plate.HALF-RADIUS: return false
 	# A log supplies its own checked, narrower balancing footprint. Applying
 	# the ordinary terrain stencil again would require two overlapping feet.
 	if not _data.has_method("narrow_support") or not _data.narrow_support(point):
@@ -288,7 +289,7 @@ func nearest_safe(point: Vector3) -> Variant:
 
 func _connect(point: Vector3) -> int:
 	var closest := -1
-	var cell := Vector2i(roundi((point.x+14.0)/_grid_step),roundi((point.z+14.0)/_grid_step))
+	var cell := Vector2i(roundi((point.x+Plate.HALF)/_grid_step),roundi((point.z+Plate.HALF)/_grid_step))
 	var nearby: Array[int] = []
 	for z in range(cell.y-2,cell.y+3):
 		for x in range(cell.x-2,cell.x+3):
@@ -319,8 +320,8 @@ func path(from: Vector3,to: Vector3) -> PackedVector3Array:
 		if candidate.is_empty(): return candidate
 		var valid := true
 		for i in range(1,candidate.size()-2):
-			var a: int = _cells[Vector2i(roundi((candidate[i].x+14.0)/_grid_step),roundi((candidate[i].z+14.0)/_grid_step))]
-			var b: int = _cells[Vector2i(roundi((candidate[i+1].x+14.0)/_grid_step),roundi((candidate[i+1].z+14.0)/_grid_step))]
+			var a: int = _cells[Vector2i(roundi((candidate[i].x+Plate.HALF)/_grid_step),roundi((candidate[i].z+Plate.HALF)/_grid_step))]
+			var b: int = _cells[Vector2i(roundi((candidate[i+1].x+Plate.HALF)/_grid_step),roundi((candidate[i+1].z+Plate.HALF)/_grid_step))]
 			var key := Vector2i(mini(a,b),maxi(a,b))
 			if not _edges.has(key): _edges[key] = segment_safe(candidate[i],candidate[i+1])
 			if not _edges[key]:
@@ -353,8 +354,8 @@ func reject_segment(a: Vector3, b: Vector3) -> void:
 	# A runtime sample can expose a fine edge missed by a long shortcut.
 	# Replan on the original validated grid until the next terrain rebuild.
 	_use_shortcuts = false
-	var ac := Vector2i(roundi((a.x+14.0)/_grid_step),roundi((a.z+14.0)/_grid_step))
-	var bc := Vector2i(roundi((b.x+14.0)/_grid_step),roundi((b.z+14.0)/_grid_step))
+	var ac := Vector2i(roundi((a.x+Plate.HALF)/_grid_step),roundi((a.z+Plate.HALF)/_grid_step))
+	var bc := Vector2i(roundi((b.x+Plate.HALF)/_grid_step),roundi((b.z+Plate.HALF)/_grid_step))
 	var ai: int = _cells.get(ac,-1)
 	var bi: int = _cells.get(bc,-1)
 	var a_on_grid := ai>=0 and _nodes[ai].distance_to(a)<=0.01
@@ -392,7 +393,7 @@ func _candidate_path(from: Vector3,to: Vector3) -> PackedVector3Array:
 			result.reverse()
 			return result
 		closed[current] = true
-		var cell := Vector2i(roundi((_nodes[current].x+14.0)/_grid_step),roundi((_nodes[current].z+14.0)/_grid_step))
+		var cell := Vector2i(roundi((_nodes[current].x+Plate.HALF)/_grid_step),roundi((_nodes[current].z+Plate.HALF)/_grid_step))
 		for offset in [Vector2i(-1,0),Vector2i(1,0),Vector2i(0,-1),Vector2i(0,1),Vector2i(-1,-1),Vector2i(-1,1),Vector2i(1,-1),Vector2i(1,1)]:
 			if not _cells.has(cell+offset): continue
 			var next: int = _cells[cell+offset]

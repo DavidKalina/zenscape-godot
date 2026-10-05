@@ -1,102 +1,245 @@
 extends RefCounted
 ## One small islet floating between the sky islands (scripts/sky_islets.gd):
-## scenery to fly past, round and under, and to perch on. Not a chunk: nothing
-## is built on it and nothing on it is simulated.
+## scenery to fly past, round and under, and to perch on. Nothing is built on
+## it and nothing on it is simulated, but it is made the way the islands
+## are, only small, so it reads as cut from the same world:
+##   the grid: the plate's own triangulation (scripts/plate_mesh.gd: points
+##     Plate.POINT_STEP apart, nudged by the same fixed hash, every square
+##     split along the same diagonal), over a square just large enough for
+##     the islet (`_grid`, cached by size);
+##   the outline: the islands' own (scripts/island_outline.gd `mask`, asked
+##     for the islet's land in m^2 on its small grid), so it is lobed, bayed
+##     and warped as an island is; then its shore distance and edges;
+##   the top: heights on the grid's points, a seeded field by kind (KINDS)
+##     eased to Genesis RIM_HEIGHT over the last metres before the shore as
+##     the plain is (scripts/genesis_canvas.gd `shape`), to a rim that
+##     wanders and slumps, then weathered by the plate's own erosion
+##     (scripts/terrain_erosion.gd, `_erode`): gullies and runnels cut down
+##     to the shore and break the lip, scree left in them; drawn as the plate
+##     draws its ground: one flat face a triangle in the world's grass greens,
+##     rock where a face is steeper than the palette's rock slope, sand at a
+##     pond's bank and on a beach;
+##   the sides: the islands' shore wall and the hanging rock under the land
+##     (scripts/island_shore.gd: its facet ring, `keel`), from a shallower
+##     foot (BASE), in the earth sides' strata; the wall slumps out and
+##     overhangs along the shore and bulges part way down (`_wall_rings`);
+##   what grows: object records like the plate's ({asset, x, z, angle, scale,
+##     tint}), drawn with the plate's own catalog (GardenView, through
+##     scripts/garden_instance_samples.gd `add_item`): the world's tree
+##     species, its meadow flowers, grass tufts, ferns, shrubs, mushrooms,
+##     logs, reeds and stones.
+## Kinds (KINDS): meadow, open grass in drifts of flowers with a tree or two;
+## grove, a wood of one or two species over ferns and fallen wood; hills,
+## grassy mounds turning to rock where steep, with stones; crag, a rocky
+## knoll, a juniper or spruce clinging on; spring, a pond whose water leaves
+## over a lip in the rim (the fall, sky_islets.gd), reeds round it; shore, a
+## low islet ringed with sand and gravel, reeds and driftwood.
 ##
-## Its shape is a handful of seeded numbers, read the same way by the mesh and
-## by the glide (`top`, `underside`, `inside`), so what the glide rides along
-## is the faceted ground it sees. The frame is the islet's own: the middle of
-## the grass top at the origin, y up.
-##   outline: OUTLINE points round the middle, each at the radius times a
-##     jitter, joined by straight edges;
-##   top: a low dome with a few seeded swells; a spring's pond sits in a bowl
-##     with a channel out to the rim, where its fall pours off;
-##   rock: a grass lip, a band of earth, then stone hanging to a tip a little
-##     off the middle, with a spur or two hanging lower.
-## Kinds (KINDS): grove, a stand of spruces; spring, a pond with a fall off
-## the rim and a few spruces; crag, a stone spire and one windswept spruce;
-## tuft, a small one with a young spruce or two.
+## The frame is the islet's own: its grid's middle at the origin, y up, the
+## rim near RIM_HEIGHT. Every query (`ground_at`, `underside`, `inside`) reads
+## the same faces the mesh draws.
+
+const Plate = preload("res://scripts/plate.gd")
+const PlateMesh = preload("res://scripts/plate_mesh.gd")
+const IslandOutline = preload("res://scripts/island_outline.gd")
+const IslandShore = preload("res://scripts/island_shore.gd")
+const Genesis = preload("res://scripts/genesis_canvas.gd")
+const Emergence = preload("res://scripts/emergence.gd")
+const Stands = preload("res://scripts/tree_stands.gd")
+const MeadowTypes = preload("res://scripts/meadow_types.gd")
+const Samples = preload("res://scripts/garden_instance_samples.gd")
+const Erosion = preload("res://scripts/terrain_erosion.gd")
 
 ## Kinds and how often each turns up.
-const KINDS := [["grove",0.32],["spring",0.3],["crag",0.18],["tuft",0.2]]
-## Radius (m) by kind.
-const RADIUS := {"grove":Vector2(5.0,8.0),"spring":Vector2(6.0,8.5),"crag":Vector2(3.5,5.0),"tuft":Vector2(2.4,3.6)}
-## Outline points, and how far each may sit in or out (share of the radius).
-const OUTLINE := 11
-const RIM_JITTER := 0.2
-## The top's grid: rings out to the rim (shares of the rim) and segments
-## between outline points.
-const RINGS := [0.0,0.18,0.34,0.5,0.64,0.77,0.88,0.96,1.0]
-const SPLIT := 3
-## The dome's height at the middle, and the swells: count, height, radius
-## (shares of the islet's radius).
-const DOME := 0.45
-const SWELLS := 3
-const SWELL := Vector2(0.15,0.5)
-const SWELL_SIZE := Vector2(0.25,0.45)
-## The side: the grass lip (m below the rim, share out), and the earth band's
-## foot, where the stone begins.
-const LIP := Vector2(0.22,1.04)
-const EARTH_FOOT := 1.3
-## The stone: depth under the earth's foot as a share of the radius, how it
-## tapers (the power of the share in from the rim), and spurs.
-const DEPTH := Vector2(1.3,2.1)
-const TAPER := 1.3
-const SPURS := Vector2i(1,2)
-const SPUR := Vector2(0.4,0.9)
-## The pond: its middle's distance out (share), its radius (share), the
-## bowl's depth, the water's level, and the channel's half width (m).
-const POND_OUT := 0.42
-const POND_SIZE := 0.3
+const KINDS := [["meadow",0.22],["grove",0.22],["hills",0.15],["crag",0.11],["spring",0.18],["shore",0.12]]
+## How wide (m) the islet is, by kind: the width of a circle of its land.
+const ACROSS := {"meadow":Vector2(6.0,13.0),"grove":Vector2(8.0,15.0),"hills":Vector2(9.0,15.0),
+	"crag":Vector2(5.5,11.0),"spring":Vector2(9.0,14.0),"shore":Vector2(5.5,11.0)}
+## The grid reaches this many times the islet's radius past its middle, plus
+## MARGIN m, so the outline's lobes and the rim's band fit.
+const REACH := 1.45
+const MARGIN := 3.2
+## The grid's step and nudge: the plate's (scripts/plate_mesh.gd).
+const STEP := Plate.POINT_STEP
+## The shore's ease: the ground meets RIM_HEIGHT this far in (m), at most
+## a share of the islet's radius.
+const RIM_HEIGHT := Genesis.RIM_HEIGHT
+const RIM_EASE := 2.5
+const RIM_EASE_SHARE := 0.4
+## The rolling ground (as the plain's swell and ripple, finer for the small
+## islet): base height, swell (m, 1/m), ripple (m, 1/m), and the dome a kind
+## rises to inland (m).
+const GROUND := 0.32
+const SWELL := Vector2(0.42,0.085)
+const RIPPLE := Vector2(0.1,0.25)
+const DOME := {"meadow":0.5,"grove":0.65,"hills":0.35,"crag":0.4,"spring":0.45,"shore":0.12}
+## Hills: how many mounds, their height (m) and radius (share of the islet's).
+const MOUNDS := Vector2i(1,3)
+const MOUND := Vector2(1.4,3.0)
+const MOUND_SIZE := Vector2(0.4,0.7)
+## The crag: its peak (m), its reach (share of the radius), the ridged
+## noise's height (m), and a second, lower knob (share of the peak).
+const PEAK := Vector2(3.0,5.5)
+const PEAK_SIZE := Vector2(0.6,0.85)
+const RIDGE := 0.9
+const KNOB := Vector2(0.35,0.6)
+## The earth wall's foot under the rim (m): BASE.x plus BASE.y a metre of
+## radius. The hanging rock (IslandShore `keel`) hangs from it.
+const BASE := Vector2(1.5,0.25)
+## The rim (the ground's height at the shore): how far it wanders up and
+## down (m), how far it slumps where the lip has broken away (m), over
+## waves LIP_WAVE (1/m).
+const LIP := Vector2(0.16,0.4)
+const LIP_WAVE := 0.32
+## The erosion (`_erode`): its grid reaches ERODE_MARGIN m past the land,
+## the sky round it stands ERODE_DROP m under the lowest rim, and its
+## strengths by kind over the common settings (TerrainErosion `erode`; the
+## plate's own families run 0.004 to 0.010 for k and 0.3 to 1.1 m of cut,
+## an islet a little harder, so its small slopes show their weathering).
+const ERODE_MARGIN := 1.5
+const ERODE_DROP := 1.5
+const ERODE_COMMON := {"frequency":0.32,"warp":1.3,"slope_ref":1.0,"iterations":16,"channel_area":1.5,"jitter":0.6,
+	"deposit":0.45,"deposit_slope":0.35,"deposit_cap":0.06}
+const ERODE := {"meadow":{"detail":0.12,"k":0.02,"max_cut":0.5},"grove":{"detail":0.14,"k":0.02,"max_cut":0.55},
+	"hills":{"detail":0.3,"k":0.025,"max_cut":0.8},"crag":{"detail":0.5,"k":0.03,"max_cut":1.0},
+	"spring":{"detail":0.12,"k":0.02,"max_cut":0.5},"shore":{"detail":0.06,"k":0.015,"max_cut":0.35}}
+## Scree: ground the erosion cut this deep (m) and at least this steep
+## turns to gravel and earth, and a few loose stones lie in the deepest
+## gullies (SCREE_STONES).
+const SCREE := Vector2(0.12,0.3)
+const SCREE_STONES := Vector2i(0,4)
+## The shore wall: its facet ring's drop under the rim (m) and how far it
+## stands out (m, negative undercut under an overhanging lip), wandering
+## along the shore so the earth slumps out in places; a second ring part
+## way down bulges by up to WALL_BULGE m. Near the spring's lip the wall
+## stands back at most LIP_CLEAR m, so its fall pours clear.
+const WALL_DROP := Vector2(0.35,1.5)
+const WALL_OUT := Vector2(-0.12,0.45)
+const WALL_BULGE := 0.3
+const WALL_WAVE := 0.45
+const LIP_CLEAR := 0.15
+## The pond: its radius (m, and share of the islet's radius at most), the
+## bowl's depth under the water, the water's level, and the channel's half
+## width (m) out to the lip on the rim, where the fall pours off.
+const POND := Vector2(1.5,3.0)
+const POND_SHARE := 0.34
 const BOWL := 0.55
-const WATER := -0.14
-const CHANNEL := 0.45
+const WATER := RIM_HEIGHT-0.1
+const CHANNEL := 0.75
+const BANK := 0.28
 ## The water's arrays carry the fetch as two float vec4s.
 const WATER_FORMAT := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 ## Where the bowl's bank meets the water, as a share of the pond's radius.
 const SHORE := 0.85
-## The crag's spire: height (m), base radius (share), sides.
-const SPIRE := Vector2(3.5,6.0)
-const SPIRE_BASE := 0.32
-const SPIRE_SIDES := 6
-## Spruces by kind: count, height (m), and the variants (hero_trees.gd SPRUCE).
-const TREES := {"grove":Vector2i(4,8),"spring":Vector2i(2,4),"crag":Vector2i(1,1),"tuft":Vector2i(1,2)}
-const TREE_HEIGHT := {"grove":Vector2(3.0,5.0),"spring":Vector2(2.6,4.2),"crag":Vector2(2.2,3.2),"tuft":Vector2(1.6,2.6)}
-const TREE_VARIANTS := {"grove":[0,1,2,4],"spring":[0,1,2],"crag":[3],"tuft":[1]}
-## Trees keep this far apart (m), and in from the rim (share).
-const TREE_APART := 1.6
-const TREE_IN := 0.8
-## A tree's crown, for the glide to ride over: its radius as a share of its
-## height.
-const CROWN := 0.28
-## Colours down the stone (sRGB): earth under the grass, then stone, then a
-## cool, dusky tip, as the plate's own rock (scripts/island_keel.gd).
-const EARTH := Color("6e5340")
-const STONE := Color("7d7468")
-const TIP := Color("5c5a66")
+## A beach (shore kind): sand this far in from the shore (m), gravel in
+## patches through it.
+const BEACH := 1.5
+## What grows, by kind. Trees: how many a square metre, at least and most,
+## and the species pool (Stands TREE_POOLS' weights); a dominant species and
+## a companion are drawn from it per islet, the dominant taking PURITY.
+const TREE_DENSITY := {"meadow":0.012,"grove":0.06,"hills":0.022,"crag":0.018,"spring":0.025,"shore":0.012}
+const TREE_COUNT := {"meadow":Vector2i(1,3),"grove":Vector2i(4,14),"hills":Vector2i(1,5),"crag":Vector2i(1,2),"spring":Vector2i(1,4),"shore":Vector2i(0,2)}
+const TREE_POOLS := {
+	"meadow":{"broadleaf":1.0,"birch":0.8,"layered_tree":0.6,"tree":0.4,"willow":0.25},
+	"grove":{"tree":1.0,"broadleaf":1.0,"birch":0.7,"layered_tree":0.5,"redwood":0.45,"juniper":0.25,"willow":0.15},
+	"hills":{"tree":1.0,"juniper":0.7,"birch":0.5,"broadleaf":0.45},
+	"crag":{"juniper":1.0,"tree":1.0},
+	"spring":{"willow":1.0,"birch":0.8,"broadleaf":0.6,"tree":0.4,"layered_tree":0.3},
+	"shore":{"willow":0.8,"juniper":0.6,"birch":0.5},
+}
+const PURITY := Vector2(0.6,0.9)
+## Trees keep this far apart (m, times their record scale), in from the shore
+## (m), and off ground steeper than TREE_STEEP.
+const TREE_APART := 2.2
+const TREE_IN := 1.0
+const TREE_STEEP := 0.8
+## Flower drifts: the odds an islet has any, how many, flowers a drift and
+## its spread (m), and the kinds it draws from (MeadowTypes FLOWER_KEYS).
+## Each islet takes FLOWER_KINDS of them; sunflowers come up as a small
+## stand of their own.
+const FLOWER_ODDS := {"meadow":1.0,"grove":0.6,"hills":0.85,"crag":0.5,"spring":0.85,"shore":0.6}
+const DRIFTS := {"meadow":Vector2i(3,6),"grove":Vector2i(1,2),"hills":Vector2i(1,3),"crag":Vector2i(1,1),"spring":Vector2i(1,3),"shore":Vector2i(1,2)}
+const DRIFT_SIZE := Vector2i(7,20)
+const DRIFT_SPREAD := Vector2(0.7,1.5)
+const FLOWER_POOLS := {
+	"meadow":{"oxeye_daisy":1.0,"buttercup":0.9,"cosmos":0.8,"poppy":0.8,"lupine":0.6,"dandelion":0.6,"sunflower":0.45},
+	"grove":{"oxeye_daisy":1.0,"lupine":0.8,"buttercup":0.6},
+	"hills":{"poppy":1.0,"lupine":0.8,"buttercup":0.7,"oxeye_daisy":0.6,"sunflower":0.25},
+	"crag":{"lupine":1.0,"oxeye_daisy":0.6},
+	"spring":{"buttercup":1.0,"oxeye_daisy":0.8,"cosmos":0.6,"dandelion":0.6},
+	"shore":{"poppy":1.0,"oxeye_daisy":0.8,"cosmos":0.6},
+}
+const FLOWER_KINDS := Vector2i(1,3)
+const FLOWER_SIZE := Vector2(0.8,1.15)
+const SUNFLOWERS := Vector2i(3,8)
+## Grass tufts a square metre of grass, and the undergrowth by kind:
+## [asset, count a square metre, size range] (counts are the mean; each
+## islet draws round it).
+const TUFTS := 0.35
+const UNDERGROWTH := {
+	"meadow":[["shrub",0.01,Vector2(0.5,0.9)],["dandelion_clock",0.02,Vector2(0.8,1.1)]],
+	"grove":[["fern",0.05,Vector2(0.5,0.75)],["shrub",0.02,Vector2(0.5,0.9)],["mushroom",0.03,Vector2(0.6,1.1)],
+		["log",0.008,Vector2(0.75,1.0)],["stump",0.008,Vector2(0.6,0.95)]],
+	"hills":[["shrub",0.015,Vector2(0.5,0.9)]],
+	"crag":[["shrub",0.01,Vector2(0.45,0.8)]],
+	"spring":[["fern",0.015,Vector2(0.5,0.7)],["shrub",0.01,Vector2(0.5,0.9)]],
+	"shore":[["log",0.012,Vector2(0.75,1.0)]],
+}
+## Stones: how many on the islet (and their size), the boulders' kinds.
+const STONES := {"meadow":Vector2i(0,1),"grove":Vector2i(0,2),"hills":Vector2i(2,4),"crag":Vector2i(4,8),"spring":Vector2i(1,3),"shore":Vector2i(1,3)}
+const STONE_SIZE := Vector2(0.45,1.3)
+const BOULDERS := ["boulder_1","boulder_2","boulder_3","boulder_4","rock"]
+## Reeds and bank grass round a pond's water and along a beach.
+const REEDS := Vector2i(6,14)
+## A walker can't step within this share of a stone's reach, or a trunk's
+## TRUNK m (times the tree's record scale).
+const TRUNK := 0.35
+const STONE_BLOCK := 0.6
+
+static var _grids := {}
+static var _grid_lock := Mutex.new()
 
 var seed := 0
-var kind := "grove"
-var radius := 6.0
-## Outline points (islet frame, x and z).
-var rim := PackedVector2Array()
-## Swells: (x, z, radius, height).
-var swells := PackedVector4Array()
-## How deep the stone hangs under the earth's foot at the middle, and where
-## its deepest point lies.
-var depth := 10.0
-var keel_at := Vector2.ZERO
-## Spurs: (x, z, radius, extra depth).
-var spurs := PackedVector4Array()
-## The pond (x, z, radius), zero radius if none, and the fall's lip on the
-## rim with the way out (normal).
+var kind := "meadow"
+## The radius of a circle of the islet's land (m), and the farthest any of
+## its land reaches from the middle.
+var radius := 5.0
+var reach := 5.0
+## The grid: its points, three ids a face, cells a side and half its width.
+var points := PackedVector2Array()
+var ids := PackedInt32Array()
+var cells := 0
+var half := 0.0
+## The outline (a byte a face, 0 on the land: IslandOutline `mask`), each
+## point's metres in from the shore (-1 off the land), the shore's edges.
+var outline := PackedByteArray()
+var shore_distance := PackedFloat32Array()
+var shore_edges := PackedInt32Array()
+## Each point's ground height, and how far under BASE the rock hangs.
+var heights := PackedFloat32Array()
+var keel := PackedFloat32Array()
+## How deep the erosion cut each point (m): gully floors and scree.
+var wear := PackedFloat32Array()
+## The wall's foot (m, under 0), and how deep the islet hangs at its deepest
+## (m, positive).
+var base := -2.5
+var depth := 8.0
+## The land's faces (indices into the faces).
+var land := PackedInt32Array()
+## The pond (x, z, radius), zero radius if none; the lip on the rim where
+## the channel leaves, and the way out.
 var pond := Vector3.ZERO
 var lip := Vector2.ZERO
 var lip_out := Vector2.ZERO
-## The spire (x, z, base radius, height), zero height if none.
-var spire := Vector4.ZERO
-## Trees: (x, z, height, variant), standing on the top.
-var trees: Array[Vector4] = []
+## What grows: object records, as the plate's.
+var objects: Array[Dictionary] = []
+## Trees and stones, for the glide and the walker: crowns (x, z, top over
+## the ground, reach) and blocks (x, z, radius).
+var crowns: Array[Vector4] = []
+var blocks: Array[Vector3] = []
+## The tree species and flower kinds standing on it, for the curious.
+var species: Array[String] = []
+var flowers: Array[String] = []
 
 ## The islet for `seed` (a hash from its cell), of `kind` if given, or one
 ## drawn by the seed.
@@ -119,128 +262,328 @@ func _shape(seed_value: int, forced: String) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	kind = forced if forced != "" else pick_kind(rng)
-	var size: Vector2 = RADIUS[kind]
-	radius = rng.randf_range(size.x,size.y)
-	var turn := rng.randf()*TAU
-	rim.clear()
-	for i in range(OUTLINE):
-		var a := turn+TAU*i/OUTLINE+rng.randf_range(-0.12,0.12)
-		rim.append(Vector2.from_angle(a)*radius*rng.randf_range(1.0-RIM_JITTER,1.0+RIM_JITTER*0.6))
-	swells.clear()
-	for i in range(SWELLS):
-		var at := Vector2.from_angle(rng.randf()*TAU)*radius*rng.randf_range(0.1,0.6)
-		swells.append(Vector4(at.x,at.y,radius*rng.randf_range(SWELL_SIZE.x,SWELL_SIZE.y),rng.randf_range(SWELL.x,SWELL.y)))
-	depth = radius*rng.randf_range(DEPTH.x,DEPTH.y)
-	keel_at = Vector2.from_angle(rng.randf()*TAU)*radius*rng.randf_range(0.05,0.25)
-	spurs.clear()
-	for i in range(rng.randi_range(SPURS.x,SPURS.y)):
-		var at := Vector2.from_angle(rng.randf()*TAU)*radius*rng.randf_range(0.3,0.6)
-		spurs.append(Vector4(at.x,at.y,radius*rng.randf_range(0.2,0.32),depth*rng.randf_range(SPUR.x,SPUR.y)))
-	pond = Vector3.ZERO
-	spire = Vector4.ZERO
-	if kind == "spring":
-		var way := Vector2.from_angle(rng.randf()*TAU)
-		var middle := way*radius*POND_OUT
-		pond = Vector3(middle.x,middle.y,radius*POND_SIZE)
-		var edge := rim_point(way.angle())
-		lip = edge
-		lip_out = edge.normalized()
-	elif kind == "crag":
-		var at := Vector2.from_angle(rng.randf()*TAU)*radius*rng.randf_range(0.0,0.2)
-		spire = Vector4(at.x,at.y,radius*SPIRE_BASE*rng.randf_range(0.9,1.15),rng.randf_range(SPIRE.x,SPIRE.y))
+	var across: Vector2 = ACROSS[kind]
+	radius = rng.randf_range(across.x,across.y)*0.5
+	var area := PI*radius*radius
+	var grid := _grid(ceili((radius*REACH+MARGIN)/STEP))
+	points = grid.points
+	ids = grid.ids
+	cells = grid.cells
+	half = grid.half
+	outline = IslandOutline.mask(points,ids,seed_value,-1.0,half,area)
+	shore_distance = IslandOutline.shore_distance(points,ids,outline)
+	shore_edges = IslandOutline.shore_edges(ids,outline)
+	land.clear()
+	for f in range(outline.size()):
+		if outline[f] == 0: land.append(f)
+	reach = 0.0
+	for i in range(points.size()):
+		if shore_distance[i] >= 0.0: reach = maxf(reach,points[i].length())
+	_lay_ground(rng)
+	keel = IslandShore.keel(points,ids,outline,shore_distance)
+	base = -(BASE.x+BASE.y*radius)
+	var deepest := 0.0
+	for k in keel: deepest = maxf(deepest,k)
+	depth = -base+deepest
 	_plant(rng)
 
-## Spruces scattered on the top, apart, in from the rim, clear of the pond's
-## water and the spire.
-func _plant(rng: RandomNumberGenerator) -> void:
-	trees.clear()
-	var count: Vector2i = TREES[kind]
-	var heights: Vector2 = TREE_HEIGHT[kind]
-	var variants: Array = TREE_VARIANTS[kind]
-	var want := rng.randi_range(count.x,count.y)
-	for attempt in range(want*12):
-		if trees.size() >= want: break
-		var a := rng.randf()*TAU
-		var at := Vector2.from_angle(a)*rim_radius(a)*TREE_IN*sqrt(rng.randf())
-		if pond.z > 0.0 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z+0.8 or _near_channel(at,CHANNEL+0.6)): continue
-		if spire.w > 0.0 and at.distance_to(Vector2(spire.x,spire.y)) < spire.z+0.7: continue
-		var crowded := false
-		for t in trees:
-			if at.distance_to(Vector2(t.x,t.y)) < TREE_APART: crowded = true
-		if crowded: continue
-		var h := rng.randf_range(heights.x,heights.y)
-		# On a crag the one tree leans off the spire, out near the rim.
-		trees.append(Vector4(at.x,at.y,h,float(variants[rng.randi() % variants.size()])))
+## The grid of `n` cells each way from the middle (2n a side), the plate's
+## own triangulation: [points, ids, cells a side, half width]. Cached, and
+## shared by every islet of its size (read only).
+static func _grid(n: int) -> Dictionary:
+	_grid_lock.lock()
+	var made: Variant = _grids.get(n)
+	_grid_lock.unlock()
+	if made != null: return made
+	var side := n*2
+	var span := float(n)*STEP
+	var at := PackedVector2Array()
+	var plain := PackedVector2Array()
+	at.resize((side+1)*(side+1))
+	plain.resize(at.size())
+	var reach := PlateMesh.NUDGE*STEP
+	for j in range(side+1):
+		for i in range(side+1):
+			var p := Vector2(-span+i*STEP,-span+j*STEP)
+			plain[j*(side+1)+i] = p
+			if i > 0 and j > 0 and i < side and j < side:
+				p += Vector2(PlateMesh._hash(i,j,1)*2.0-1.0,PlateMesh._hash(i,j,2)*2.0-1.0)*reach
+			at[j*(side+1)+i] = p
+	var faces := PackedInt32Array()
+	for j in range(side):
+		for i in range(side):
+			var a := j*(side+1)+i
+			faces.append_array([a,a+1,a+side+1,a+side+1,a+1,a+side+2])
+	# As the plate: a face come out too sharp has its corners eased back.
+	for _pass in range(6):
+		var eased := false
+		for f in range(0,faces.size(),3):
+			if PlateMesh._sharpest(at[faces[f]],at[faces[f+1]],at[faces[f+2]]) >= PlateMesh.SHARPEST: continue
+			for k in range(3): at[faces[f+k]] = plain[faces[f+k]].lerp(at[faces[f+k]],0.5)
+			eased = true
+		if not eased: break
+	made = {"points":at,"ids":faces,"cells":side,"half":span}
+	_grid_lock.lock()
+	_grids[n] = made
+	_grid_lock.unlock()
+	return made
 
-## The rim's distance from the middle at angle `a` (radians, from +x toward
-## +z), along the straight edge between outline points.
-func rim_radius(a: float) -> float:
-	return _rim_hit(a).x
+static func forget_grids() -> void:
+	_grid_lock.lock()
+	_grids.clear()
+	_grid_lock.unlock()
 
-## Where the ray from the middle at angle `a` meets the outline: Vector3(its
-## distance, the edge's first point, the share along that edge).
-func _rim_hit(a: float) -> Vector3:
-	var dir := Vector2.from_angle(a)
-	for i in range(rim.size()):
-		var p := rim[i]
-		var q := rim[(i+1) % rim.size()]
-		var edge := q-p
-		var den := dir.cross(edge)
-		if absf(den) < 0.000001: continue
-		# Ray dir*t meets p + edge*u.
-		var t := p.cross(edge)/den
-		var u := p.cross(dir)/den
-		if t > 0.0 and u >= -0.0001 and u <= 1.0001: return Vector3(t,i,clampf(u,0.0,1.0))
-	return Vector3(radius,0.0,0.0)
+# --- The ground -----------------------------------------------------------------
 
-func rim_point(a: float) -> Vector2:
-	return Vector2.from_angle(a)*rim_radius(a)
+## Heights on every point: the kind's field, eased to the rim, then a
+## spring's pond and channel cut in.
+func _lay_ground(rng: RandomNumberGenerator) -> void:
+	var swell := FastNoiseLite.new()
+	swell.seed = seed
+	swell.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	swell.frequency = SWELL.y
+	swell.fractal_octaves = 2
+	var ripple := FastNoiseLite.new()
+	ripple.seed = seed+17
+	ripple.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	ripple.frequency = RIPPLE.y
+	ripple.fractal_octaves = 2
+	var ridge := FastNoiseLite.new()
+	ridge.seed = seed+29
+	ridge.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	ridge.frequency = 0.35
+	ridge.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	ridge.fractal_octaves = 2
+	var inland := 0.01
+	for d in shore_distance: inland = maxf(inland,d)
+	# The kind's shapes: mounds (hills), a peak and its knob (crag).
+	var mounds: Array[Vector4] = []
+	if kind == "hills":
+		for k in range(rng.randi_range(MOUNDS.x,MOUNDS.y)):
+			var at := _inland_point(rng,inland*0.35)
+			mounds.append(Vector4(at.x,at.y,radius*rng.randf_range(MOUND_SIZE.x,MOUND_SIZE.y),rng.randf_range(MOUND.x,MOUND.y)))
+	elif kind == "crag":
+		var at := _inland_point(rng,inland*0.5)
+		var peak := rng.randf_range(PEAK.x,PEAK.y)
+		mounds.append(Vector4(at.x,at.y,radius*rng.randf_range(PEAK_SIZE.x,PEAK_SIZE.y),peak))
+		var knob := _inland_point(rng,inland*0.2)
+		mounds.append(Vector4(knob.x,knob.y,radius*rng.randf_range(0.35,0.5),peak*rng.randf_range(KNOB.x,KNOB.y)))
+	var ease := minf(RIM_EASE,radius*RIM_EASE_SHARE)
+	var lip_noise := FastNoiseLite.new()
+	lip_noise.seed = seed+43
+	lip_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	lip_noise.frequency = LIP_WAVE
+	heights.resize(points.size())
+	for i in range(points.size()):
+		var d := shore_distance[i]
+		if d < 0.0:
+			heights[i] = RIM_HEIGHT
+			continue
+		var p := points[i]
+		var roll := swell.get_noise_2d(p.x,p.y)*SWELL.x+ripple.get_noise_2d(p.x,p.y)*RIPPLE.x
+		var dome := float(DOME[kind])*smoothstep(0.0,1.0,d/inland)
+		# A beach lies low and nearly flat.
+		var h := RIM_HEIGHT+0.05+roll*0.3+dome if kind == "shore" else GROUND+roll+dome
+		for m in mounds:
+			var r := p.distance_to(Vector2(m.x,m.y))/m.z
+			if r >= 1.0: continue
+			if kind == "crag":
+				var fall := pow(1.0-r,1.2)
+				h += m.w*fall+RIDGE*fall*(ridge.get_noise_2d(p.x,p.y)*0.5+0.5)
+			else:
+				h += m.w*(1.0-r*r)*(1.0-r*r)
+		# The lip wanders up and down, and slumps in places (`_rim_at`).
+		heights[i] = lerpf(_rim_at(p,lip_noise),h,smoothstep(0.0,ease,d))
+	_erode()
+	if kind == "spring": _cut_pond(rng,inland)
 
-## How far out toward the rim a point is: 0 at the middle, 1 on it.
+## The rim's height at shore point `p`: RIM_HEIGHT wandering by LIP.x, and
+## slumped down by up to LIP.y where the lip has broken away.
+func _rim_at(p: Vector2, noise: FastNoiseLite) -> float:
+	var wander := noise.get_noise_2d(p.x,p.y)
+	var slump := smoothstep(0.15,0.6,noise.get_noise_2d(p.x+137.0,p.y-59.0))
+	return RIM_HEIGHT+wander*LIP.x-slump*LIP.y
+
+## The plate's erosion (scripts/terrain_erosion.gd `erode`, the stream power
+## the islands' land is weathered by) over the islet's ground, on its own
+## 0.7 m grid over the land: the sky round the land is a fixed outlet just
+## under the lowest rim, so water runs off every side and cuts gullies and
+## runnels down to the shore, breaking the lip where they leave, and the
+## ridged detail roughens the slopes. Each point's cut is kept (`wear`) for
+## the scree it leaves.
+func _erode() -> void:
+	var cell := Erosion.CELL
+	var n := ceili((reach+ERODE_MARGIN)*2.0/cell)+1
+	var origin := -float(n-1)*0.5*cell
+	var low := INF
+	for k in range(0,shore_edges.size(),3): low = minf(low,heights[shore_edges[k]])
+	var base := PackedFloat64Array()
+	var fixed := PackedByteArray()
+	base.resize(n*n)
+	fixed.resize(n*n)
+	for j in range(n):
+		for i in range(n):
+			var p := Vector2(origin+i*cell,origin+j*cell)
+			var hit := _locate(p)
+			var f: int = hit[0]
+			if f < 0:
+				base[j*n+i] = low-ERODE_DROP
+				fixed[j*n+i] = 1
+				continue
+			var w: Vector3 = hit[1]
+			base[j*n+i] = w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
+	var settings: Dictionary = (ERODE[kind] as Dictionary).duplicate()
+	settings.merge(ERODE_COMMON)
+	settings.merge({"size":n,"cell":cell,"origin":origin,"seed":(seed*7+53) & 0x7fffffff,"edge_inner":1.0e5,"edge_outer":1.0e5+1.0})
+	var delta := Erosion.erode(base,fixed,settings)
+	wear.resize(points.size())
+	wear.fill(0.0)
+	if delta.size() != n*n: return
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		var p := points[i]
+		var cut := Erosion.sample(delta,p.x,p.y,n,origin)
+		heights[i] += cut
+		wear[i] = maxf(-cut,0.0)
+
+## A land point at least `inside` m in from the shore, seeded; the middle if
+## none.
+func _inland_point(rng: RandomNumberGenerator, inside: float) -> Vector2:
+	var choices := PackedInt32Array()
+	for i in range(points.size()):
+		if shore_distance[i] >= inside: choices.append(i)
+	if choices.is_empty(): return Vector2.ZERO
+	return points[choices[rng.randi_range(0,choices.size()-1)]]
+
+## The spring: a pond in the most inland ground, its banks standing over
+## its water, and a channel to the nearest shore point, the lip, cut under
+## the water's level so it leaves there.
+func _cut_pond(rng: RandomNumberGenerator, inland: float) -> void:
+	var middle := _inland_point(rng,inland*0.85)
+	var r := clampf(inland*0.6,POND.x,minf(POND.y,radius*POND_SHARE))
+	pond = Vector3(middle.x,middle.y,r)
+	# The lip: the shore point nearest the pond, a little seeded among the
+	# nearest few, so the channel is short.
+	var shore := []
+	for k in range(0,shore_edges.size(),3):
+		var i := shore_edges[k]
+		shore.append([points[i].distance_to(middle),i])
+	shore.sort()
+	var pick: int = shore[rng.randi_range(0,mini(2,shore.size()-1))][1]
+	lip = points[pick]
+	var outward: Dictionary = IslandShore._outward(points,shore_edges)
+	lip_out = outward.get(pick,(lip-middle).normalized())
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		var p := points[i]
+		var h := heights[i]
+		var d := p.distance_to(middle)/r
+		var cut := 1.0-smoothstep(CHANNEL*0.8,CHANNEL*1.45,_channel_distance(p))
+		# The bank stands over the water all round, but where the channel runs.
+		if d < 1.8 and cut <= 0.0: h = maxf(h,WATER+BANK*(1.0-smoothstep(1.2,1.8,d))+0.06)
+		var bowl := 1.0-smoothstep(0.55,1.15,d)
+		h = minf(h,lerpf(h,WATER-BOWL,bowl))
+		h = minf(h,lerpf(h,WATER-0.14,cut))
+		heights[i] = h
+
+## The pond's water in the islet frame: level, middle and radius, with the
+## lip and the way out; empty if the islet has none.
+func water() -> Dictionary:
+	if pond.z <= 0.0: return {}
+	return {"level":WATER,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+
+func _channel_distance(p: Vector2) -> float:
+	if pond.z <= 0.0: return INF
+	var a := Vector2(pond.x,pond.y)
+	var ab := lip-a
+	var t := clampf((p-a).dot(ab)/maxf(ab.length_squared(),0.0001),0.0,1.0)
+	return p.distance_to(a+ab*t)
+
+## True over the pond's water or its channel.
+func wet(p: Vector2) -> bool:
+	if pond.z <= 0.0: return false
+	return p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.05 or _channel_distance(p) < CHANNEL
+
+# --- Reading it -----------------------------------------------------------------
+
+## The land face holding `p`, as Vector4(face, weights a, b, c's first two),
+## or face -1 off the land.
+func _locate(p: Vector2) -> Array:
+	var i := floori((p.x+half)/STEP)
+	var j := floori((p.y+half)/STEP)
+	for dj in [0,-1,1]:
+		for di in [0,-1,1]:
+			var ci: int = i+di
+			var cj: int = j+dj
+			if ci < 0 or cj < 0 or ci >= cells or cj >= cells: continue
+			for side in range(2):
+				var f := (cj*cells+ci)*2+side
+				var w := _barycentric(p,points[ids[f*3]],points[ids[f*3+1]],points[ids[f*3+2]])
+				if w.x >= -0.0001 and w.y >= -0.0001 and w.z >= -0.0001:
+					return [f if outline[f] == 0 else -1,w]
+	return [-1,Vector3.ZERO]
+
+func inside(p: Vector2) -> bool:
+	if absf(p.x) > reach+0.5 or absf(p.y) > reach+0.5: return false
+	return int(_locate(p)[0]) >= 0
+
+## A per-point value at `p` on the faces it is drawn on, or `fallback` off
+## the land.
+func _sample(values: PackedFloat32Array, p: Vector2, fallback: float) -> float:
+	var hit := _locate(p)
+	var f: int = hit[0]
+	if f < 0: return fallback
+	var w: Vector3 = hit[1]
+	return w.x*values[ids[f*3]]+w.y*values[ids[f*3+1]]+w.z*values[ids[f*3+2]]
+
+## The ground's height as drawn, at a point inside (islet frame); off the
+## land, the rim's height.
+func ground_at(p: Vector2) -> float:
+	return _sample(heights,p,RIM_HEIGHT)
+
+func top(p: Vector2) -> float:
+	return ground_at(p)
+
+## Metres in from the shore at `p`, 0 off the land.
+func inland(p: Vector2) -> float:
+	return maxf(_sample(shore_distance,p,0.0),0.0)
+
+## The rock's underside under a point inside.
+func underside(p: Vector2) -> float:
+	return base-_sample(keel,p,0.0)
+
+## The height the glide rides over: the ground, the crowns, the stones.
+func solid_top(p: Vector2) -> float:
+	var h := ground_at(p)
+	for c in crowns:
+		if p.distance_to(Vector2(c.x,c.y)) < c.w: h = maxf(h,ground_at(Vector2(c.x,c.y))+c.z)
+	return h
+
+## How far out toward the rim a point is along its ray from the middle: 0 at
+## the middle, 1 where the ray first leaves the land.
 func share(p: Vector2) -> float:
 	if p.length() < 0.0001: return 0.0
 	return p.length()/rim_radius(p.angle())
 
-func inside(p: Vector2) -> bool:
-	return share(p) <= 1.0
+## The rim's distance from the middle at angle `a`: where the ray from the
+## middle first leaves the land (the middle is always land).
+func rim_radius(a: float) -> float:
+	var dir := Vector2.from_angle(a)
+	var r := 0.0
+	var step := 0.15
+	while r < reach+1.0:
+		if not inside(dir*(r+step)): break
+		r += step
+	return maxf(r,0.05)
 
-## The ground's height at a point inside (islet frame), without the trees.
-func top(p: Vector2) -> float:
-	var s := minf(share(p),1.0)
-	var h := DOME*(1.0-s*s)
-	for w in swells:
-		var d := p.distance_to(Vector2(w.x,w.y))/w.z
-		if d < 1.0: h += w.w*(1.0-d*d)*(1.0-d*d)
-	if pond.z > 0.0:
-		var middle := Vector2(pond.x,pond.y)
-		var d := p.distance_to(middle)/pond.z
-		var bowl := 1.0-smoothstep(0.55,1.15,d)
-		# The channel to the rim, a shallower cut.
-		var cut := 1.0-smoothstep(CHANNEL*0.6,CHANNEL*1.4,_channel_distance(p))
-		h = minf(h,lerpf(h,WATER-BOWL,bowl))
-		h = minf(h,lerpf(h,WATER-0.12,cut))
-	return h
+func rim_point(a: float) -> Vector2:
+	return Vector2.from_angle(a)*rim_radius(a)
 
-## The ground's height as drawn: on the mesh's own faceted triangles over
-## the grid (`_grid`), so a walker's feet and a skimming glide sit on what
-## is seen, not on the smooth shape under it.
-func ground_at(p: Vector2) -> float:
-	var s := share(p)
-	if s >= 1.0: return top(p)
-	var hit := _rim_hit(p.angle())
-	var along := (int(hit.y)+hit.z)*SPLIT
-	var j := mini(int(floor(along)),rim.size()*SPLIT-1)
-	var k := 0
-	while k < RINGS.size()-2 and s > float(RINGS[k+1]): k += 1
-	var a := _grid(k,j)
-	var b := _grid(k,j+1)
-	var c := _grid(k+1,j+1)
-	var d := _grid(k+1,j)
-	for tri: Array in [[a,b,c],[a,c,d]]:
-		var w := _barycentric(p,tri[0],tri[1],tri[2])
-		if w.x >= -0.001 and w.y >= -0.001 and w.z >= -0.001:
-			return w.x*top(tri[0])+w.y*top(tri[1])+w.z*top(tri[2])
-	return top(p)
+## True where a walker can't step: a trunk, a stone, the pond's water.
+func blocked(at: Vector2) -> bool:
+	for b in blocks:
+		if at.distance_to(Vector2(b.x,b.y)) < b.z: return true
+	return wet(at)
 
 static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vector3:
 	var v0 := b-a
@@ -252,234 +595,345 @@ static func _barycentric(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> Vect
 	var w := v0.cross(v2)/den
 	return Vector3(1.0-v-w,v,w)
 
-## The height the glide rides over: the ground, the spire, the crowns.
-func solid_top(p: Vector2) -> float:
-	var h := ground_at(p)
-	if spire.w > 0.0:
-		var d := p.distance_to(Vector2(spire.x,spire.y))/spire.z
-		if d < 1.0: h = maxf(h,top(Vector2(spire.x,spire.y))+spire.w*(1.0-d))
-	for t in trees:
-		if p.distance_to(Vector2(t.x,t.y)) < t.z*CROWN: h = maxf(h,top(Vector2(t.x,t.y))+t.z)
-	return h
+## The land's extent: Rect2 of its points.
+func extent() -> Rect2:
+	var box := Rect2()
+	var first := true
+	for i in range(points.size()):
+		if shore_distance[i] < 0.0: continue
+		if first:
+			box = Rect2(points[i],Vector2.ZERO)
+			first = false
+		else: box = box.expand(points[i])
+	return box
 
-## The stone's underside under a point inside.
-func underside(p: Vector2) -> float:
-	var s := minf(share(p),1.0)
-	# Deepest toward keel_at: measure the share in from the rim from there.
-	var off := p-keel_at
-	var reach := maxf(rim_radius(off.angle())*(1.0-keel_at.length()/maxf(radius,0.01)*0.5),0.5)
-	var k := clampf(1.0-off.length()/reach,0.0,1.0)
-	var d := depth*pow(k,TAPER)*(1.0-smoothstep(0.85,1.0,s))
-	for sp in spurs:
-		var near := 1.0-clampf(p.distance_to(Vector2(sp.x,sp.y))/sp.z,0.0,1.0)
-		d += sp.w*near*near
-	return -EARTH_FOOT-d
+func land_area() -> float:
+	var total := 0.0
+	for f in land:
+		var a := points[ids[f*3]]
+		total += absf((points[ids[f*3+1]]-a).cross(points[ids[f*3+2]]-a))*0.5
+	return total
 
-## The pond's water in the islet frame: level, middle and radius, with the
-## channel to the lip; empty if the islet has none.
-func water() -> Dictionary:
-	if pond.z <= 0.0: return {}
-	return {"level":WATER,"middle":Vector2(pond.x,pond.y),"radius":pond.z,"lip":lip,"out":lip_out}
+# --- What grows -------------------------------------------------------------------
 
-func _channel_distance(p: Vector2) -> float:
-	var a := Vector2(pond.x,pond.y)
-	var ab := lip-a
-	var t := clampf((p-a).dot(ab)/maxf(ab.length_squared(),0.0001),0.0,1.0)
-	return p.distance_to(a+ab*t)
+## The islet's plants and stones as object records, seeded: trees of its
+## species, flower drifts, undergrowth, tufts, stones, reeds.
+func _plant(rng: RandomNumberGenerator) -> void:
+	objects.clear()
+	species.clear()
+	flowers.clear()
+	var area := land_area()
+	var taken: Array[Vector3] = []
+	# Stones first: the trees and flowers go round them.
+	var stones: Vector2i = STONES[kind]
+	for n in range(rng.randi_range(stones.x,stones.y)):
+		var size := rng.randf_range(STONE_SIZE.x,STONE_SIZE.y)
+		var at: Variant = _find(rng,0.4,99.0,taken,size*0.6,false)
+		if at == null: continue
+		var asset: String = BOULDERS[rng.randi() % BOULDERS.size()]
+		_add(asset,at,rng.randf()*TAU,size)
+		taken.append(Vector3(at.x,at.y,size*0.6))
+	# Trees: a dominant species and a companion.
+	var pool: Dictionary = TREE_POOLS[kind]
+	var dominant := _weighted(pool,rng.randf())
+	var companion := _weighted(pool,rng.randf())
+	var purity := rng.randf_range(PURITY.x,PURITY.y)
+	var bounds: Vector2i = TREE_COUNT[kind]
+	var want := clampi(roundi(area*float(TREE_DENSITY[kind])*rng.randf_range(0.7,1.3)),bounds.x,bounds.y)
+	var tints := {}
+	for n in range(want):
+		var tree := dominant if rng.randf() < purity else companion
+		var size := rng.randf_range(Emergence.TREE_SIZE.x,Emergence.TREE_SIZE.y)*float(Emergence.KIND_SIZE.get(tree,1.0))
+		var room := TREE_APART*maxf(size,0.6)*(1.6 if tree in ["layered_tree","broadleaf","willow"] else 1.0)
+		var at: Variant = _find(rng,TREE_IN,TREE_STEEP,taken,room*0.5,true)
+		if at == null: continue
+		if not tints.has(tree): tints[tree] = _tree_tint(tree,rng)
+		_add(tree,at,rng.randf()*TAU,size,tints[tree])
+		taken.append(Vector3(at.x,at.y,room*0.5))
+		if not tree in species: species.append(tree)
+	# Flower drifts.
+	if rng.randf() < float(FLOWER_ODDS[kind]):
+		var kinds: Array[String] = []
+		var choices: Dictionary = (FLOWER_POOLS[kind] as Dictionary).duplicate()
+		for n in range(rng.randi_range(FLOWER_KINDS.x,FLOWER_KINDS.y)):
+			if choices.is_empty(): break
+			var k := _weighted(choices,rng.randf())
+			choices.erase(k)
+			kinds.append(k)
+		var drifts: Vector2i = DRIFTS[kind]
+		for d in range(rng.randi_range(drifts.x,drifts.y)):
+			var flower: String = kinds[d % kinds.size()]
+			var middle: Variant = _find(rng,0.6,TREE_STEEP,taken,0.0,true)
+			if middle == null: continue
+			var variant := rng.randf()
+			var tint := MeadowTypes.tint(flower,variant)
+			var count := rng.randi_range(SUNFLOWERS.x,SUNFLOWERS.y) if flower == "sunflower" else rng.randi_range(DRIFT_SIZE.x,DRIFT_SIZE.y)
+			var spread := rng.randf_range(DRIFT_SPREAD.x,DRIFT_SPREAD.y)*(0.8 if flower == "sunflower" else 1.0)
+			var placed := 0
+			for n in range(count*3):
+				if placed >= count: break
+				var p: Vector2 = middle+Vector2(rng.randfn(0.0,spread),rng.randfn(0.0,spread))
+				if not _ground_ok(p,0.3,TREE_STEEP,true) or _near(p,taken,0.0): continue
+				_add(flower,p,rng.randf()*TAU,rng.randf_range(FLOWER_SIZE.x,FLOWER_SIZE.y),tint)
+				placed += 1
+			if placed > 0 and not flower in flowers: flowers.append(flower)
+	# Undergrowth.
+	for entry: Array in UNDERGROWTH[kind]:
+		var count := _count(rng,area*float(entry[1]))
+		var sizes: Vector2 = entry[2]
+		for n in range(count):
+			var asset: String = entry[0]
+			var at: Variant = _find(rng,0.5,TREE_STEEP,taken,0.25,true)
+			if at == null: continue
+			if asset == "mushroom":
+				# Mushrooms come up in a little ring.
+				for m in range(rng.randi_range(3,6)):
+					var p: Vector2 = at+Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.1,0.45)
+					if _ground_ok(p,0.3,TREE_STEEP,true): _add(asset,p,rng.randf()*TAU,rng.randf_range(sizes.x,sizes.y))
+				continue
+			_add(asset,at,rng.randf()*TAU,rng.randf_range(sizes.x,sizes.y))
+			if asset in ["log","stump"]: taken.append(Vector3(at.x,at.y,0.5))
+	# Loose stones in the deepest gullies, where the erosion cut most.
+	if wear.size() == points.size():
+		var worn := []
+		for i in range(points.size()):
+			if wear[i] > SCREE.y and shore_distance[i] > 0.3 and not wet(points[i]): worn.append([wear[i],i])
+		worn.sort()
+		worn.reverse()
+		var placed := 0
+		var loose := rng.randi_range(SCREE_STONES.x,SCREE_STONES.y)
+		for entry: Array in worn:
+			if placed >= loose: break
+			var p: Vector2 = points[int(entry[1])]+Vector2(rng.randf_range(-0.2,0.2),rng.randf_range(-0.2,0.2))
+			if not inside(p) or _near(p,taken,0.2): continue
+			_add(BOULDERS[rng.randi() % BOULDERS.size()],p,rng.randf()*TAU,rng.randf_range(0.22,0.42))
+			taken.append(Vector3(p.x,p.y,0.3))
+			placed += 1
+	# Reeds and bank grass round the pond's water, and along a beach.
+	if pond.z > 0.0:
+		for n in range(rng.randi_range(REEDS.x,REEDS.y)):
+			var a := rng.randf()*TAU
+			var p := Vector2(pond.x,pond.y)+Vector2.from_angle(a)*pond.z*rng.randf_range(0.95,1.3)
+			if not inside(p) or _channel_distance(p) < CHANNEL*1.2: continue
+			_add("reeds" if rng.randf() < 0.6 else "bank_grass",p,rng.randf()*TAU,rng.randf_range(0.6,1.0))
+	if kind == "shore":
+		for n in range(rng.randi_range(REEDS.x,REEDS.y)):
+			var at: Variant = _find(rng,BEACH*0.8,TREE_STEEP,taken,0.0,false,BEACH*1.5)
+			if at == null: continue
+			_add("reeds" if rng.randf() < 0.5 else "bank_grass",at,rng.randf()*TAU,rng.randf_range(0.6,1.0))
+	# Grass tufts over the grass, thicker round trunks and stones.
+	for n in range(_count(rng,area*TUFTS)):
+		var at: Variant = _find(rng,0.25,TREE_STEEP,[],0.0,true)
+		if at == null: continue
+		_add("grass_tuft",at,rng.randf()*TAU,rng.randf_range(0.7,1.2))
+	for t in taken:
+		for n in range(rng.randi_range(1,3)):
+			var p := Vector2(t.x,t.y)+Vector2.from_angle(rng.randf()*TAU)*(t.z*rng.randf_range(0.5,0.9)+0.2)
+			if _ground_ok(p,0.25,TREE_STEEP,true): _add("grass_tuft",p,rng.randf()*TAU,rng.randf_range(0.6,1.0))
 
-func _near_channel(p: Vector2, reach: float) -> bool:
-	return _channel_distance(p) < reach
+## A seeded count round a mean: its whole part, and one more at the odds of
+## the rest.
+static func _count(rng: RandomNumberGenerator, mean: float) -> int:
+	mean *= rng.randf_range(0.6,1.4)
+	return int(mean)+(1 if rng.randf() < mean-floorf(mean) else 0)
 
-## Points on the top's grid: ring k, segment j (OUTLINE*SPLIT round).
-func _grid(k: int, j: int) -> Vector2:
-	var n := rim.size()*SPLIT
-	j = posmod(j,n)
-	var i := j/SPLIT
-	var f := float(j % SPLIT)/SPLIT
-	var edge := rim[i].lerp(rim[(i+1) % rim.size()],f)
-	return edge*float(RINGS[k])
+## A seeded spot on ground that suits (`_ground_ok`), clear of `taken`
+## (x, z, radius) by `room` more; null after a few tries. `most` keeps it
+## within that many metres of the shore.
+func _find(rng: RandomNumberGenerator, inset: float, steep: float, taken: Array, room: float, grassy: bool, most := INF) -> Variant:
+	for attempt in range(24):
+		var p := Vector2(rng.randf_range(-reach,reach),rng.randf_range(-reach,reach))
+		if not _ground_ok(p,inset,steep,grassy): continue
+		if most < INF and inland(p) > most: continue
+		if _near(p,taken,room): continue
+		return p
+	return null
 
-## The islet's body as one mesh, one draw: grass (the top and its lip),
-## earth (the band under it), stone (the rock hanging below, the spire).
-## Coloured per face as the plate's terrain is: `grass` and `rock` are the
-## world's palette (linear), a few greens and greys to pick between, and
-## `bank` the pond's bed. The top carries the ground's smoothed normals, so
-## the plate's terrain material (reference_surface's ground) lights it as
-## soft as the plate; the rest stays faceted. Every vertex is laid `shift`
-## off the islet's middle (see SkyIslets OFF_MAP).
-func build_mesh(grass: Array, rock: Array, material: Material, bank := Color(0.45,0.4,0.3), shift := Vector3.ZERO) -> ArrayMesh:
-	return mesh_from(body_arrays(grass,rock,bank,shift),material)
+func _near(p: Vector2, taken: Array, room: float) -> bool:
+	for t: Vector3 in taken:
+		if p.distance_to(Vector2(t.x,t.y)) < t.z+room: return true
+	return false
 
-## The body's surface arrays (`build_mesh`), safe to make on a worker.
-func body_arrays(grass: Array, rock: Array, bank := Color(0.45,0.4,0.3), shift := Vector3.ZERO) -> Array:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed*31+7
-	var lists := [[],[],[]]
-	var n := rim.size()*SPLIT
-	var last := RINGS.size()-1
-	# Each grid point's ground and stone, worked out once: every point is a
-	# corner of six faces.
-	var ups := []
-	var downs := []
-	for k in range(RINGS.size()):
-		var up_row := []
-		var down_row := []
-		for j in range(n):
-			var p := _grid(k,j)
-			up_row.append(_up(p))
-			down_row.append(_down(p))
-		ups.append(up_row)
-		downs.append(down_row)
-	var softs := []
-	for k in range(RINGS.size()):
-		var row := []
-		for j in range(n): row.append(soft_normal(_grid(k,j)))
-		softs.append(row)
-	var up := func(k: int, j: int) -> Vector3: return ups[k][posmod(j,n)]
-	var down := func(k: int, j: int) -> Vector3: return downs[k][posmod(j,n)]
-	var soft := func(k: int, j: int) -> Vector3: return softs[k][posmod(j,n)]
-	# The top: grass, and under the pond's water its bed.
-	for k in range(last):
-		for j in range(n):
-			var corners := [[k,j],[k,j+1],[k+1,j+1],[k+1,j]]
-			var tris := [[0,2,3]] if k == 0 else [[0,1,2],[0,2,3]]
-			for t: Array in tris:
-				var p := []
-				var normals := []
-				for i: int in t:
-					p.append(up.call(corners[i][0],corners[i][1]))
-					normals.append(soft.call(corners[i][0],corners[i][1]))
-				var low := minf((p[0] as Vector3).y,minf((p[1] as Vector3).y,(p[2] as Vector3).y))
-				var green: Color = grass[rng.randi() % grass.size()]
-				var tone := green*rng.randf_range(0.9,1.06)
-				if pond.z > 0.0 and low < WATER+0.04:
-					tone = bank*lerpf(1.0,0.72,clampf((WATER-low)/BOWL,0.0,1.0))*rng.randf_range(0.94,1.04)
-				_tri(lists[0],p[0],p[1],p[2],tone,Vector3.UP,normals)
-	# The side: rim, grass lip, earth foot.
-	for j in range(n):
-		var rp: Vector3 = up.call(last,j)
-		var rq: Vector3 = up.call(last,j+1)
-		var lp := Vector3(rp.x*LIP.y,-LIP.x,rp.z*LIP.y)
-		var lq := Vector3(rq.x*LIP.y,-LIP.x,rq.z*LIP.y)
-		var fp := Vector3(rp.x,-EARTH_FOOT,rp.z)
-		var fq := Vector3(rq.x,-EARTH_FOOT,rq.z)
-		var green: Color = grass[rng.randi() % grass.size()]
-		var out := Vector3(rp.x+rq.x,0.0,rp.z+rq.z)
-		_quad(lists[0],rp,lp,lq,rq,green*0.82,out)
-		var earth := EARTH.srgb_to_linear()*rng.randf_range(0.88,1.08)
-		_quad(lists[1],lp,fp,fq,lq,earth,out)
-	# The stone underneath, faced down and out.
-	for k in range(last):
-		for j in range(n):
-			var a: Vector3 = down.call(k,j)
-			var b: Vector3 = down.call(k,j+1)
-			var c: Vector3 = down.call(k+1,j+1)
-			var d: Vector3 = down.call(k+1,j)
-			if k == 0:
-				_tri(lists[2],a,d,c,_stone(a,rock,rng),Vector3.DOWN)
-			else:
-				_tri(lists[2],a,c,b,_stone((a+c)*0.5,rock,rng),Vector3.DOWN)
-				_tri(lists[2],a,d,c,_stone((a+c)*0.5,rock,rng),Vector3.DOWN)
-	if spire.w > 0.0: _spire(lists[2],rock,rng)
-	return _arrays(lists[0]+lists[1]+lists[2],shift)
+## Ground a plant stands on: on the land at least `inset` m in from the
+## shore, no steeper than `steep`, dry, and (if `grassy`) grass rather than
+## a beach.
+func _ground_ok(p: Vector2, inset: float, steep: float, grassy: bool) -> bool:
+	var hit := _locate(p)
+	var f: int = hit[0]
+	if f < 0: return false
+	if inland(p) < inset or wet(p): return false
+	if pond.z > 0.0 and p.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.25: return false
+	if _slope(f) > steep: return false
+	if grassy and kind == "shore" and inland(p) < BEACH: return false
+	return true
 
-## A one-surface mesh from surface arrays, with its material.
-static func mesh_from(arrays: Array, material: Material, format := 0) -> ArrayMesh:
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},format)
-	if material != null: mesh.surface_set_material(0,material)
-	return mesh
+## A face's slope (rise over run).
+func _slope(f: int) -> float:
+	var n := _face_normal(f)
+	return sqrt(maxf(0.0,1.0-n.y*n.y))/maxf(n.y,0.001)
 
-## The ground's smoothed normal at a point: central differences over the
-## shape, as the plate's ground takes its own from the height map.
-func soft_normal(p: Vector2) -> Vector3:
-	var e := 0.4
-	var dx := top(p+Vector2(e,0.0))-top(p-Vector2(e,0.0))
-	var dz := top(p+Vector2(0.0,e))-top(p-Vector2(0.0,e))
-	return Vector3(-dx/(2.0*e),1.0,-dz/(2.0*e)).normalized()
+func _face_normal(f: int) -> Vector3:
+	var a := _vertex(ids[f*3])
+	var b := _vertex(ids[f*3+1])
+	var c := _vertex(ids[f*3+2])
+	var n := (c-a).cross(b-a)
+	return n.normalized() if n.y >= 0.0 else -n.normalized()
 
-## A faceted stone spire, jittered, its sides leaning in to a blunt top.
-func _spire(out: Array, rock: Array, rng: RandomNumberGenerator) -> void:
-	var middle := Vector2(spire.x,spire.y)
-	var foot := top(middle)-0.3
-	var levels := [[0.0,1.0],[0.45,0.62],[0.8,0.32],[1.0,0.12]]
-	var ring := []
-	for l: Array in levels:
-		var points := []
-		for s in range(SPIRE_SIDES):
-			var a := TAU*s/SPIRE_SIDES+rng.randf_range(-0.15,0.15)
-			var r: float = spire.z*float(l[1])*rng.randf_range(0.85,1.1)
-			points.append(Vector3(middle.x+cos(a)*r,foot+spire.w*float(l[0])+rng.randf_range(-0.15,0.15),middle.y+sin(a)*r))
-		ring.append(points)
-	for l in range(levels.size()-1):
-		for s in range(SPIRE_SIDES):
-			var a: Vector3 = ring[l][s]
-			var b: Vector3 = ring[l][(s+1) % SPIRE_SIDES]
-			var c: Vector3 = ring[l+1][(s+1) % SPIRE_SIDES]
-			var d: Vector3 = ring[l+1][s]
-			var grey: Color = rock[rng.randi() % rock.size()]
-			var away := (a+b)*0.5-Vector3(middle.x,(a.y+b.y)*0.5,middle.y)
-			_quad(out,a,d,c,b,grey*rng.randf_range(0.85,1.05),away)
-	var cap: Array = ring[levels.size()-1]
-	var tip := Vector3(middle.x,foot+spire.w+0.25,middle.y)
-	for s in range(SPIRE_SIDES):
-		var grey: Color = rock[rng.randi() % rock.size()]
-		_tri(out,cap[s],tip,cap[(s+1) % SPIRE_SIDES],grey*rng.randf_range(0.9,1.1),Vector3.UP)
+func _vertex(i: int) -> Vector3:
+	return Vector3(points[i].x,heights[i],points[i].y)
 
-func _up(p: Vector2) -> Vector3:
-	return Vector3(p.x,top(p),p.y)
+func _add(asset: String, at: Vector2, angle: float, size: float, tint := "") -> void:
+	var item := {"id":objects.size()+1,"asset":asset,"x":at.x,"z":at.y,"angle":angle,"scale":size}
+	if tint != "": item.tint = tint
+	objects.append(item)
 
-func _down(p: Vector2) -> Vector3:
-	return Vector3(p.x,underside(p),p.y)
+## What the garden's instance builder asks of the land a record stands on.
+func object_position(item: Dictionary) -> Vector3:
+	return Vector3(item.x,ground_at(Vector2(item.x,item.z)),item.z)
 
-## A stone face's colour by how deep it hangs, nudged.
-func _stone(at: Vector3, rock: Array, rng: RandomNumberGenerator) -> Color:
-	var k := clampf((-at.y-EARTH_FOOT)/maxf(depth,0.01),0.0,1.0)
-	var grey: Color = rock[rng.randi() % rock.size()]
-	var band := EARTH.srgb_to_linear().lerp(grey,smoothstep(0.0,0.3,k)).lerp(TIP.srgb_to_linear(),smoothstep(0.55,1.0,k))
-	return band*rng.randf_range(0.88,1.08)
+static func _weighted(pool: Dictionary, roll: float) -> String:
+	var total := 0.0
+	for k in pool: total += float(pool[k])
+	roll *= total
+	for k in pool:
+		roll -= float(pool[k])
+		if roll <= 0.0: return k
+	return pool.keys()[0]
 
-## Adds a triangle facing the side `outward` points to: wound clockwise seen
-## from there (Godot's front), with that face's flat normal.
-## `normals`, if given, are the corners' own (smooth) normals in a, b, c order.
-static func _tri(out: Array, a: Vector3, b: Vector3, c: Vector3, tone: Color, outward: Vector3, normals := []) -> void:
-	var nrm := (c-a).cross(b-a)
-	if nrm.length_squared() < 0.0000001: return
-	var each := [nrm.normalized(),nrm.normalized(),nrm.normalized()] if normals.is_empty() else normals.duplicate()
-	if nrm.dot(outward) < 0.0:
-		var swap := b
-		b = c
-		c = swap
-		var turn: Vector3 = each[1]
-		each[1] = each[2]
-		each[2] = turn
-	tone.a = 1.0
-	if normals.is_empty():
-		for i in range(3): each[i] = -each[i] if nrm.dot(outward) < 0.0 else each[i]
-	var corners := [a,b,c]
-	for i in range(3): out.append([corners[i],each[i],tone])
+## A crown colour for `tree` (Stands TREE_COLOURS), as its record tint.
+static func _tree_tint(tree: String, rng: RandomNumberGenerator) -> String:
+	if not Stands.TREE_COLOURS.has(tree): return ""
+	var options: Array = Stands.TREE_COLOURS[tree]
+	var pool := {}
+	for n in range(options.size()): pool[str(n)] = float(options[n][1])
+	var pick := int(_weighted(pool,rng.randf()))
+	var color := Color(options[pick][0]).srgb_to_linear()*rng.randf_range(Stands.TREE_BRIGHTNESS.x,Stands.TREE_BRIGHTNESS.y)
+	return NativeObjectPose.encode_tint(Color(minf(color.r,1.0),minf(color.g,1.0),minf(color.b,1.0)))
 
-static func _quad(out: Array, a: Vector3, b: Vector3, c: Vector3, d: Vector3, tone: Color, outward: Vector3) -> void:
-	_tri(out,a,b,c,tone,outward)
-	_tri(out,a,c,d,tone,outward)
+## The plants drawn as the plate's catalog draws them (GardenInstanceSamples
+## `add_item`): per part, a multimesh buffer (TRANSFORM_3D with colours, 16
+## floats an instance) laid `shift` off, and its count. `catalog` is the
+## catalog's parts, poses and tints, and each part's box (`boxes`), all
+## plain data, so this is safe on a worker. Fills `crowns` and `blocks` from
+## what each record draws.
+func flora(catalog: Dictionary, shift := Vector3.ZERO) -> Dictionary:
+	var transforms := {}
+	var sources := {}
+	var tints := {}
+	var boxes: Dictionary = catalog.boxes
+	crowns.clear()
+	blocks.clear()
+	for item in objects:
+		var counts := {}
+		for key in transforms: counts[key] = (transforms[key] as Array).size()
+		Samples.add_item(item,self,catalog.parts,catalog.poses,catalog.tints,catalog.world,false,transforms,sources,tints)
+		var asset: String = item.asset
+		var tree := asset in Emergence.TREES
+		var stone := asset in BOULDERS
+		if not tree and not stone: continue
+		var box := AABB()
+		var any := false
+		for key in transforms:
+			var list: Array = transforms[key]
+			for n in range(int(counts.get(key,0)),list.size()):
+				if not boxes.has(key): continue
+				var drawn: AABB = (list[n] as Transform3D)*(boxes[key] as AABB)
+				box = drawn if not any else box.merge(drawn)
+				any = true
+		if not any: continue
+		var ground := ground_at(Vector2(item.x,item.z))
+		var top := box.end.y-ground
+		var spread := maxf(box.size.x,box.size.z)*0.5
+		if tree:
+			crowns.append(Vector4(item.x,item.z,top,maxf(spread*0.75,0.6)))
+			blocks.append(Vector3(item.x,item.z,TRUNK*maxf(float(item.scale),0.6)))
+		else:
+			crowns.append(Vector4(item.x,item.z,top,spread*0.9))
+			blocks.append(Vector3(item.x,item.z,spread*STONE_BLOCK))
+	var out := {}
+	for key: String in transforms:
+		var list: Array = transforms[key]
+		if list.is_empty(): continue
+		var colors: Array = tints[key]
+		var buffer := PackedFloat32Array()
+		buffer.resize(list.size()*16)
+		for i in range(list.size()):
+			var t: Transform3D = list[i]
+			var c: Color = colors[i] if i < colors.size() else Color.WHITE
+			var o := i*16
+			buffer[o] = t.basis.x.x; buffer[o+1] = t.basis.y.x; buffer[o+2] = t.basis.z.x; buffer[o+3] = t.origin.x+shift.x
+			buffer[o+4] = t.basis.x.y; buffer[o+5] = t.basis.y.y; buffer[o+6] = t.basis.z.y; buffer[o+7] = t.origin.y+shift.y
+			buffer[o+8] = t.basis.x.z; buffer[o+9] = t.basis.y.z; buffer[o+10] = t.basis.z.z; buffer[o+11] = t.origin.z+shift.z
+			buffer[o+12] = c.r; buffer[o+13] = c.g; buffer[o+14] = c.b; buffer[o+15] = c.a
+		out[key] = {"buffer":buffer,"count":list.size()}
+	return out
 
-## Surface arrays for faces [point, normal, colour]. Every vertex carries
-## what the plate terrain's growth reads (reference_surface
-## `terrain_growth`): UV.y 1, fully grown, and its height in UV2.y, where the
-## grown ground stands.
-static func _arrays(entries: Array, shift := Vector3.ZERO) -> Array:
+# --- Its meshes -------------------------------------------------------------------
+
+## The top's surface arrays, safe to make on a worker: one flat face a land
+## triangle, coloured as the plate's ground (`palette`: grass and rock lists,
+## sand, gravel, rock_slope, all linear), each point's normal the mean of
+## the faces round it (the ground's smoothed normal, which the plate's
+## terrain material lights by). Laid `shift` off (see SkyIslets OFF_MAP).
+func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
+	var grass: Array = palette.grass
+	var rock: Array = palette.rock
+	var sand: Color = palette.sand
+	var gravel: Color = palette.gravel
+	var rock_slope: float = palette.rock_slope
+	var earth: Color = palette.get("earth",Color(Genesis.FIDELITY.earth).srgb_to_linear())
+	var patch := FastNoiseLite.new()
+	patch.seed = seed+5
+	patch.frequency = 0.4
+	var smooth := PackedVector3Array()
+	smooth.resize(points.size())
+	for f in land:
+		var n := _face_normal(f)
+		for k in range(3): smooth[ids[f*3+k]] += n
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
-	for e: Array in entries:
-		var v: Vector3 = (e[0] as Vector3)+shift
-		vertices.append(v)
-		normals.append(e[1])
-		colors.append(e[2])
-		uv.append(Vector2(0.0,1.0))
-		uv2.append(Vector2(0.5,v.y))
+	var count := land.size()*3
+	vertices.resize(count)
+	normals.resize(count)
+	colors.resize(count)
+	uv.resize(count)
+	uv2.resize(count)
+	var v := 0
+	for f in land:
+		var a := _vertex(ids[f*3])
+		var b := _vertex(ids[f*3+1])
+		var c := _vertex(ids[f*3+2])
+		var middle := (a+b+c)/3.0
+		var at := Vector2(middle.x,middle.z)
+		var shimmer := (PlateMesh._hash(f,seed % 9973,5)-0.5)*0.07
+		var n := patch.get_noise_2d(at.x,at.y)*0.5+0.5
+		var tone: Color = grass[1 if n > 0.55 else (2 if n < 0.42 else 0) if grass.size() > 2 else 0]
+		var slope := _slope(f)
+		var worn := (wear[ids[f*3]]+wear[ids[f*3+1]]+wear[ids[f*3+2]])/3.0 if wear.size() == points.size() else 0.0
+		var edge := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
+		if slope > rock_slope:
+			tone = rock[0 if patch.get_noise_2d(at.x+71.0,at.y) > 0.0 else rock.size()-1]
+		elif (worn > SCREE.x and slope > SCREE.y) or (edge < 0.45 and slope > SCREE.y*2.0):
+			# Scree: a gully's floor or the crumbling lip, gravel and earth.
+			tone = gravel.lerp(earth,clampf(patch.get_noise_2d(at.x*3.0,at.y*3.0)*0.5+0.5,0.0,1.0))
+		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < WATER+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
+			tone = sand*lerpf(1.0,0.72,clampf((WATER-middle.y)/BOWL,0.0,1.0))
+		elif kind == "shore":
+			var d := (shore_distance[ids[f*3]]+shore_distance[ids[f*3+1]]+shore_distance[ids[f*3+2]])/3.0
+			if d < BEACH*(0.8+0.4*n): tone = gravel if patch.get_noise_2d(at.x*2.0,at.y*2.0) > 0.25 else sand
+		tone = Color(tone.r+shimmer,tone.g+shimmer,tone.b+shimmer,1.0)
+		var corners := [a,b,c]
+		for k in range(3):
+			var p: Vector3 = corners[k]
+			vertices[v] = p+shift
+			normals[v] = smooth[ids[f*3+k]].normalized()
+			colors[v] = tone
+			uv[v] = Vector2(0.0,1.0)
+			uv2[v] = Vector2(0.5,p.y+shift.y)
+			v += 1
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -489,6 +943,105 @@ static func _arrays(entries: Array, shift := Vector3.ZERO) -> Array:
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	return arrays
 
+## The sides' surface arrays, safe on a worker: the islands' shore wall
+## (scripts/island_shore.gd `build`) hung under every shore edge, from the
+## land's edge through a faceted ring to the foot, and under the land the
+## rock hanging from it (`keel`), one face under each land face. For the
+## earth sides' material: each wall vertex carries its rim top in UV.
+func side_arrays() -> Array:
+	var into := Transform3D.IDENTITY
+	var vertices := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var outward: Dictionary = IslandShore._outward(points,shore_edges)
+	var slump := FastNoiseLite.new()
+	slump.seed = seed+61
+	slump.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	slump.frequency = WALL_WAVE
+	var rings := {}
+	for k in range(0,shore_edges.size(),3):
+		for i in [shore_edges[k],shore_edges[k+1]]:
+			if not rings.has(i): rings[i] = _wall_rings(i,outward[i],slump)
+	for k in range(0,shore_edges.size(),3):
+		var a := shore_edges[k]
+		var b := shore_edges[k+1]
+		var pa := points[a]
+		var pb := points[b]
+		var out: Vector2 = ((outward[a] as Vector2)+(outward[b] as Vector2)).normalized()
+		var face := Vector3(out.x,0.0,out.y)
+		var ha := heights[a]
+		var hb := heights[b]
+		# Down the wall: the rim, the facet ring, the bulge, the foot.
+		var wall_a: Array = [Vector3(pa.x,ha,pa.y)]+(rings[a] as Array)+[Vector3(pa.x,base-keel[a],pa.y)]
+		var wall_b: Array = [Vector3(pb.x,hb,pb.y)]+(rings[b] as Array)+[Vector3(pb.x,base-keel[b],pb.y)]
+		for r in range(wall_a.size()-1):
+			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r],wall_b[r+1]],face,[ha,hb,hb],0.0)
+			IslandShore._add(vertices,uvs,into,[wall_a[r],wall_b[r+1],wall_a[r+1]],face,[ha,hb,ha],0.0)
+	for f in land:
+		var tri := []
+		for k in range(3):
+			var i := ids[f*3+k]
+			tri.append(Vector3(points[i].x,base-keel[i],points[i].y))
+		IslandShore._add(vertices,uvs,into,tri,Vector3.DOWN,[],0.0)
+	var normals := PackedVector3Array()
+	normals.resize(vertices.size())
+	for i in range(0,vertices.size(),3):
+		var normal := (vertices[i+2]-vertices[i]).cross(vertices[i+1]-vertices[i]).normalized()
+		for j in range(3): normals[i+j] = normal
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	return arrays
+
+## A shore point's wall under its rim: the facet ring and the bulge below
+## it, each stood out (or undercut) by a seeded amount that wanders along
+## the shore (`slump`), so the earth slumps out in places and the lip
+## overhangs in others; never further out than LIP_CLEAR near the spring's
+## lip, where the fall pours.
+func _wall_rings(i: int, out: Vector2, slump: FastNoiseLite) -> Array:
+	var p := points[i]
+	var top := heights[i]
+	var foot := base-keel[i]
+	var lean := slump.get_noise_2d(p.x,p.y)*0.5+0.5
+	var jitter := PlateMesh._hash(i,seed % 7919,9)
+	var drop := lerpf(WALL_DROP.x,WALL_DROP.y,clampf(lean*0.6+jitter*0.4,0.0,1.0))
+	var reach := lerpf(WALL_OUT.x,WALL_OUT.y,clampf(lean*0.75+jitter*0.25,0.0,1.0))
+	var bulge := reach*0.5+(PlateMesh._hash(i,seed % 7919,11)-0.35)*WALL_BULGE
+	var ring_y := maxf(top-drop,foot+0.6)
+	var ring := Vector3(p.x+out.x*reach,ring_y,p.y+out.y*reach)
+	var mid_y := lerpf(ring_y,foot,0.45+0.2*PlateMesh._hash(i,seed % 7919,13))
+	var mid := Vector3(p.x+out.x*bulge,mid_y,p.y+out.y*bulge)
+	if pond.z > 0.0 and p.distance_to(lip) < 2.0:
+		ring = _behind_lip(ring)
+		mid = _behind_lip(mid)
+	return [ring,mid]
+
+## A wall point near the spring's lip held back to no more than LIP_CLEAR m
+## ahead of the lip along its way out, so the fall pours clear of the wall.
+func _behind_lip(v: Vector3) -> Vector3:
+	var ahead := Vector2(v.x,v.z).dot(lip_out)-lip.dot(lip_out)-LIP_CLEAR
+	if ahead <= 0.0: return v
+	return v-Vector3(lip_out.x,0.0,lip_out.y)*ahead
+
+## The top as a mesh (tests): `palette` as `top_arrays` takes it.
+func build_mesh(palette: Dictionary, material: Material = null, shift := Vector3.ZERO) -> ArrayMesh:
+	return mesh_from(top_arrays(palette,shift),material)
+
+## A one-surface mesh from surface arrays, with its material.
+static func mesh_from(arrays: Array, material: Material, format := 0) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},format)
+	if material != null: mesh.surface_set_material(0,material)
+	return mesh
+
+## A plain palette, the plate's own colours (NativeTerrainPalette's sources),
+## for tests and stand-ins.
+static func plain_palette() -> Dictionary:
+	return {"grass":[Color("5d9e53").srgb_to_linear(),Color("7fb069").srgb_to_linear(),Color("4a8548").srgb_to_linear()],
+		"rock":[Color("8d8577").srgb_to_linear(),Color("6f6a5f").srgb_to_linear()],
+		"sand":Color("c9b57e").srgb_to_linear(),"gravel":Color("a8a08c").srgb_to_linear(),"rock_slope":0.93}
+
 ## The pond's surface for the plate's own still-water material
 ## (reference_water_body): a fine sheet, so its chop has vertices to stand
 ## on, a disc over the pond and a strip down the channel to the lip. Each
@@ -496,7 +1049,7 @@ static func _arrays(entries: Array, shift := Vector3.ZERO) -> Array:
 ## a run to the bank for the shore foam (UV.x), and the fetch, open water
 ## upwind in eight directions (CUSTOM0, CUSTOM1), for the chop. `color` is
 ## the body where the material has no depth tint. Laid `shift` off, as the
-## body is.
+## top is.
 func build_water(material: Material, color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> ArrayMesh:
 	var arrays := water_arrays(color,shift)
 	return null if arrays.is_empty() else mesh_from(arrays,material,WATER_FORMAT)
@@ -519,9 +1072,10 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 			var c: Vector2 = ring.call(k+1,s+1)
 			var d: Vector2 = ring.call(k+1,s)
 			if k == 0:
-				_tri(faces,at.call(a),at.call(c),at.call(d),color,Vector3.UP)
+				_tri(faces,at.call(a),at.call(c),at.call(d),color)
 			else:
-				_quad(faces,at.call(a),at.call(b),at.call(c),at.call(d),color,Vector3.UP)
+				_tri(faces,at.call(a),at.call(b),at.call(c),color)
+				_tri(faces,at.call(a),at.call(c),at.call(d),color)
 	# The channel: from inside the pond to just past the lip.
 	var way := (lip-middle).normalized()
 	var side := Vector2(-way.y,way.x)*CHANNEL*0.85
@@ -531,7 +1085,8 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	for i in range(steps):
 		var p0 := from.lerp(to,float(i)/steps)
 		var p1 := from.lerp(to,float(i+1)/steps)
-		_quad(faces,at.call(p0-side),at.call(p0+side),at.call(p1+side),at.call(p1-side),color,Vector3.UP)
+		_tri(faces,at.call(p0-side),at.call(p0+side),at.call(p1+side),color)
+		_tri(faces,at.call(p0-side),at.call(p1+side),at.call(p1-side),color)
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
@@ -544,16 +1099,15 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	for f: Array in faces:
 		var v: Vector3 = f[0]
 		var p := Vector2(v.x,v.z)
-		var depth := maxf(WATER-ground_at(p),0.0)
+		var deep := maxf(WATER-ground_at(p),0.0)
 		vertices.append(v+shift)
 		normals.append(Vector3.UP)
-		colors.append(f[2])
-		uv.append(Vector2(depth*2.5,0.0))
-		uv2.append(Vector2(depth,0.0))
+		colors.append(f[1])
+		uv.append(Vector2(deep*2.5,0.0))
+		uv2.append(Vector2(deep,0.0))
 		# Fetch order (reference_lake_chop zsFetch): +x, +x+z, +z, -x+z, then
-		# the opposites.
-		# The open water that way: to the pond's shore, taken as a circle
-		# where the bowl meets the water (SHORE of its radius).
+		# the opposites. The open water that way: to the pond's shore, taken
+		# as a circle where the bowl meets the water (SHORE of its radius).
 		var runs := []
 		for d: Vector2 in [dirs[0],dirs[1],dirs[2],dirs[3],-dirs[0],-dirs[1],-dirs[2],-dirs[3]]:
 			var o := p-middle
@@ -574,3 +1128,12 @@ func water_arrays(color := Color(0.25,0.57,0.59), shift := Vector3.ZERO) -> Arra
 	arrays[Mesh.ARRAY_CUSTOM0] = fetch_a
 	arrays[Mesh.ARRAY_CUSTOM1] = fetch_b
 	return arrays
+
+## A flat water triangle facing up (Godot's front, as the terrain's faces:
+## (c-a)×(b-a) up).
+static func _tri(out: Array, a: Vector3, b: Vector3, c: Vector3, tone: Color) -> void:
+	if (c-a).cross(b-a).y < 0.0:
+		var swap := b
+		b = c
+		c = swap
+	for p in [a,b,c]: out.append([p,tone])

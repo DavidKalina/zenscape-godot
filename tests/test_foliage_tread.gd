@@ -7,6 +7,7 @@ extends SceneTree
 
 const Tread := preload("res://scripts/foliage_tread.gd")
 const PARTS := ["flower-stems", "flowers-daisy", "flowers-spike", "flowers-umbel", "flowers-button", "mesh-15", "mesh-14", "fungus-stems", "fungus-caps"]
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures := 0
 
@@ -48,7 +49,7 @@ func _tree_envelopes() -> void:
 	tread.free()
 
 func _clearance() -> void:
-	var source = load("res://assets/zen_reference/geometry.scn").instantiate()
+	var source = PlateFixture.dress(load("res://assets/zen_reference/geometry.scn").instantiate())
 	var data := NativeTerrainData.new()
 	data.setup(source.get_node("terrain").mesh)
 	data.reset_flat()

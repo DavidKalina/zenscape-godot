@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless A/B probe of quiet guidance (scripts/quiet_guidance.gd,
 ## docs/scenic/guidance.md). Opens the product scene on the plain, paints a
 ## standard set of strokes (a hill, three pours, a ruled forest band, a round
@@ -154,7 +155,7 @@ func paint(guided: bool, blank: String) -> Dictionary:
 	_settle(emergence,seconds,guide_usec)
 	# Score the settled world with a fresh live blend, as a planner would.
 	var blend = BiomeBlend.live(data)
-	var known := Guidance.plants(data.objects,Rect2(-14,-14,28,28),Emergence.TREES)
+	var known := Guidance.plants(data.objects,Plate.RECT,Emergence.TREES)
 	var scores := {}
 	var all := Rect2()
 	var first := true
