@@ -62,7 +62,7 @@ const DEEP := 30.0
 ## How much of the glide's vapour (scripts/sky_flight.gd) comes on deep in
 ## a tower: the volume draws its own fog round the eye, the vapour only
 ## streams wisps past over it.
-const VEIL := 0.2
+const VEIL := 0.0
 ## The thermals in its heart: how many, how far round the middle (m), how
 ## high their bases stand over the islands (m), and their key's prefix.
 const THERMALS := 3

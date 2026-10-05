@@ -130,7 +130,7 @@ func _shots(towers: Node3D, b: Dictionary) -> Array:
 	shots.append({"label":"crown","eye":near_side-toward*170.0+Vector3.DOWN*30.0,"look":g.call(Vector3(shape._axis(shape.top()).x,shape.top()-60.0,shape._axis(shape.top()).y))})
 	shots.append({"label":"edge","eye":near_side-toward*110.0,"look":heart+Vector3.UP*5.0})
 	shots.append({"label":"inside","eye":heart,"look":heart+toward*100.0+Vector3.UP*4.0})
-	shots.append({"label":"burst","eye":far_side-toward*18.0,"look":far_side+toward*200.0+Vector3.DOWN*10.0})
+	shots.append({"label":"burst","eye":far_side-toward*6.0,"look":far_side+toward*200.0+Vector3.DOWN*10.0})
 	shots.append({"label":"glider","eye":near_side-toward*60.0,"look":heart,"chase":true,"golden":false})
 	return shots
 

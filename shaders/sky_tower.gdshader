@@ -15,13 +15,16 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 // to the eye, and soft wisps (green) fray the edge and leave pockets in the
 // heart, which is what the eye sees streaming past inside.
 //
-// Light, as the glide's other clouds take it (shaders/sky_cloud_puff
-// .gdshader): the sky's colour all round, cooler and dimmer low down and
-// deep in; the sun's where the body toward the sun is thin (three looks
-// along the sun through the grid), a soft glow of it everywhere (light
-// scattered on through the cloud, so the heart glows rather than going
-// grey), and a silver lining looking into the sun. At golden hour the
-// sun's colour carries the gold.
+// Light, in the glide's clouds' own colours (zs_cloud_sun, zs_cloud_sky)
+// but with a painter's contrast: the sun's side takes the sun's hue (gold,
+// peach at golden hour), kept under white so it never bleaches; the shaded
+// side and the crevices between lobes the sky's cool lavender-blue, darker
+// under a bump and deep in the body (a look overhead and a look toward the
+// sun at each lobe, two more along the grid); thin edges against the sun
+// a silver or gold lining. In the cloud the fog round the eye turns a
+// bright, faintly sun-tinted white, never grey, and thins into drifting
+// pockets and holes, so glimpses of sky and sunlit cloud open and close
+// as it is flown through.
 //
 // Into the glide's haze by how far off the cloud the ray met is
 // (glide_haze.gdshaderinc, on a landform's gentler curve): its colour goes
@@ -30,11 +33,11 @@ render_mode unshaded, blend_mix, cull_front, depth_draw_never, depth_test_disabl
 // sun never shows through it), and only near where the haze is whole does
 // it thin away. Its foot thins into the cloud sea.
 //
-// Cost: two reads a step (the body, the noise), a third close to the eye,
-// and eight more to light it (two pairs toward the sun near by, a pair
-// overhead, two along the grid), the near pairs skipped once the ray is
-// mostly spent. The ray stops
-// once all but 3% of the light is gone.
+// Cost: two reads a step (the body, the noise), two more close to the eye
+// (the finer bumps), and up to six more to light it (a pair overhead and a
+// pair toward the sun near the surface, two along the grid), the near
+// pairs skipped once the ray is mostly spent. The ray stops once all but 3%
+// of the light is gone.
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/glide_haze.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
@@ -53,21 +56,30 @@ uniform float haze_far = 1.0;
 uniform vec3 noise_shift = vec3(0.0);
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
 
-// How thick the cloud is (per metre at full density), and how it is lit
-// along the sun.
-const float SIGMA = 0.085;
-const float SUN_SIGMA = 0.03;
+// How thick the cloud is (per metre at full density) seen from outside
+// and round an eye inside it, and how it is shaded along the sun.
+const float SIGMA = 0.1;
+const float SIGMA_IN = 0.045;
+// The scene's exposure lifts what is drawn here about twice over: the
+// cloud is lit at this share so its sunny side keeps the sun's hue rather
+// than bleaching white; the fog round an eye inside it at GLOW.
+const float LIT_SHARE = 0.46;
+const float GLOW = 1.4;
+const float SUN_SIGMA = 0.028;
 const int STEPS = 56;
 // The noise's tile (m) and how far its bumps swell the body (m); the finer
-// octave's tile and swell, and how near the eye (m) it shows; how soft the
-// edge is at the crown and the foot (m); how fast the crown boils up (m/s).
+// octaves' tiles and swells, and how near the eye (m) they show; how soft
+// the edge is at the crown and the foot (m); how fast the crown boils up
+// and the pockets drift (m/s).
 const float TILE = 170.0;
-const float SWELL = 40.0;
+const float SWELL = 44.0;
 const float FINE = 46.0;
 const float FINE_SWELL = 10.0;
-const float FINE_NEAR = 220.0;
-const vec2 SOFT = vec2(3.0, 9.0);
-const float RISE = 0.6;
+const float FINEST = 15.0;
+const float FINEST_SWELL = 1.8;
+const float FINE_NEAR = 240.0;
+const vec2 SOFT = vec2(2.5, 8.0);
+const vec3 DRIFT = vec3(0.9, -0.7, 0.5);
 
 float body_at(vec3 p) {
 	return texture(body, (p - box_mid) / (2.0 * box_half) + 0.5).r;
@@ -77,7 +89,7 @@ float body_at(vec3 p) {
 // swollen by the cauliflower `n` (red the bumps, green the wisps), bigger
 // toward the crown (h, 0 at the sea to 1 at the top), and frayed.
 float cloud_at(float d, vec2 n, float h) {
-	return mix(0.4, 1.0, h) * SWELL * (n.r - 0.45) - d + (n.g - 0.5) * mix(9.0, 4.0, h);
+	return mix(0.45, 1.0, h) * SWELL * (n.r - 0.45) - d + (n.g - 0.5) * mix(8.0, 3.0, h);
 }
 
 void fragment() {
@@ -103,23 +115,28 @@ void fragment() {
 	float time = zs_motion_time;
 	vec3 sun = normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0));
 	float toward_sun = max(dot(rd, sun), 0.0);
-	// The sun's colour on the cloud, warmed toward gold as it gets low.
-	float golden = smoothstep(0.35, 0.05, sun.y) * smoothstep(-0.1, 0.02, sun.y);
-	vec3 sun_col = zs_cloud_sun * mix(vec3(1.0), vec3(1.0, 0.62, 0.36) * 0.85, golden * 0.9);
-	float lining = pow(toward_sun, 5.0) * 0.8 + pow(toward_sun, 30.0) * 1.5;
-	vec3 boil = vec3(0.0, -time * RISE, 0.0) + noise_shift;
+	float golden = smoothstep(0.35, 0.04, sun.y) * smoothstep(-0.1, 0.02, sun.y);
+	// The sun's hue, deepened toward peach and gold as it gets low, at no
+	// more than white; and the shade's cool lavender-blue off the sky.
+	float sun_level = max(max(zs_cloud_sun.r, zs_cloud_sun.g), max(zs_cloud_sun.b, 1e-3));
+	vec3 sun_hue = zs_cloud_sun / sun_level;
+	sun_hue *= mix(vec3(1.0), vec3(1.0, 0.8, 0.66), golden);
+	vec3 sun_col = sun_hue * min(sun_level, 1.0);
+	vec3 shade_col = zs_cloud_sky * vec3(1.3, 1.02, 0.98) * 1.55;
+	float lining = pow(toward_sun, 10.0) * 0.6 + pow(toward_sun, 60.0) * 1.6;
+	vec3 boil = DRIFT * time + noise_shift;
 	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	float span = top - sea;
 	float reach = SWELL * 0.6 + FINE_SWELL * 0.5 + 9.0;
-
 	// How deep in the cloud the eye itself is: in it, the fog round it is
-	// lit as the heart of a sunlit cloud is, a glowing white (gold at
-	// golden hour), not as its shaded side seen from out in the air.
+	// lit as a sunlit cloud's heart is, a glowing white, and thins into
+	// pockets.
 	float immersed = 0.0;
 	if (t_in <= 0.0) {
 		float h0 = clamp((ro.y - sea) / span, 0.0, 1.0);
 		immersed = smoothstep(-4.0, 24.0, cloud_at(body_at(ro), texture(cauliflower, (ro + boil) / TILE).rg, h0));
 	}
+	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.3) * GLOW;
 
 	float T = 1.0;
 	vec3 lit = vec3(0.0);
@@ -135,7 +152,7 @@ void fragment() {
 			t += max(d - reach, 3.0);
 			continue;
 		}
-		float step = clamp(3.0 + t * 0.022, 3.0, 18.0);
+		float step = clamp(2.5 + t * 0.02, 2.5, 16.0);
 		if (!started) {
 			started = true;
 			t += step * jitter;
@@ -147,44 +164,49 @@ void fragment() {
 		float inside = cloud_at(d, n, h);
 		// The finer bumps, close to the eye only.
 		float fine = 1.0 - smoothstep(FINE_NEAR * 0.6, FINE_NEAR, t);
-		if (fine > 0.0) inside += fine * FINE_SWELL * (texture(cauliflower, (p + boil * 1.6 + 71.0) / FINE).r - 0.45);
+		float pocket = n.g;
+		if (fine > 0.0) {
+			vec2 f = texture(cauliflower, (p + boil * 1.6 + 71.0) / FINE).rg;
+			inside += fine * (FINE_SWELL * (f.r - 0.45) + FINEST_SWELL * (texture(cauliflower, (p + boil * 2.2 + 13.0) / FINEST).r - 0.45));
+			pocket = mix(pocket, f.g, 0.6 * fine);
+		}
 		// Crisper close to the eye, so flying up to it the edge is never
 		// a blur.
-		float soft = mix(SOFT.y, SOFT.x, h) * mix(0.45, 1.0, smoothstep(40.0, 260.0, t));
-		float density = smoothstep(0.0, soft, inside) * mix(0.45, 1.0, smoothstep(0.3, 0.68, n.g));
+		float soft = mix(SOFT.y, SOFT.x, h) * mix(0.5, 1.0, smoothstep(40.0, 300.0, t));
+		float density = smoothstep(0.0, soft, inside) * mix(0.55, 1.0, smoothstep(0.3, 0.68, n.g));
+		// Round an eye inside: drifting pockets and holes.
+		density *= mix(1.0, smoothstep(0.47, 0.64, pocket), immersed);
 		// The foot thins into the cloud sea.
-		density *= smoothstep(sea - 8.0, sea + 45.0, p.y);
+		density *= smoothstep(sea - 8.0, sea + 40.0, p.y);
 		if (density > 0.002) {
-			// Toward the sun: its own bump in the way close by (while the
-			// ray still shows much): how much deeper in the cloud it gets
-			// going sunward, so a bump's sunny face is lit and its far side
-			// and underside shaded; then how much of the body lies beyond.
-			float near_sun = 0.0;
-			// And how open it is to the sky over it: a bump's top takes the
-			// dome's light, its underside and the folds under the next bump
-			// up are shaded, which is what models it on the shaded side.
+			// Overhead and toward the sun, close by (while the ray still
+			// shows much): how much deeper in the cloud it gets, so a
+			// bump's top and sunny face are lit and its underside and far
+			// side shaded; then how much of the body lies sunward.
 			float up_open = 1.0;
+			float near_sun = 0.0;
 			if (T > 0.3) {
-				vec3 u = p + vec3(0.0, 10.0, 0.0);
-				up_open = 1.0 - clamp((cloud_at(body_at(u), texture(cauliflower, (u + boil) / TILE).rg, h) - inside) / 14.0, 0.0, 1.0);
-				vec3 q = p + sun * 8.0;
-				near_sun = clamp(cloud_at(body_at(q), texture(cauliflower, (q + boil) / TILE).rg, h) - inside, 0.0, 30.0) * 0.9;
-				q = p + sun * 22.0;
-				near_sun += clamp(cloud_at(body_at(q), texture(cauliflower, (q + boil) / TILE).rg, h) - inside, 0.0, 40.0) * 0.7;
+				vec3 u = p + vec3(0.0, 12.0, 0.0);
+				up_open = 1.0 - clamp((cloud_at(body_at(u), texture(cauliflower, (u + boil) / TILE).rg, h) - inside) / 12.0, 0.0, 1.0);
+				vec3 q = p + sun * 14.0;
+				near_sun = clamp(cloud_at(body_at(q), texture(cauliflower, (q + boil) / TILE).rg, h) - inside, 0.0, 30.0);
 			}
 			float o2 = clamp((-body_at(p + sun * 40.0) + 12.0) / 40.0, 0.0, 1.0);
 			float o3 = clamp((-body_at(p + sun * 110.0) + 12.0) / 40.0, 0.0, 1.0);
-			float thick = near_sun + o2 * 60.0 + o3 * 100.0;
+			float thick = near_sun * 1.2 + o2 * 60.0 + o3 * 100.0;
 			float sunlit = exp(-thick * SUN_SIGMA);
-			// Light scattered on through the cloud: the heart glows.
-			float glow = mix(exp(-thick * 0.004) * 0.12, 1.4 + 1.0 * exp(-thick * 0.006), immersed);
-			// Open to the sky near the surface and high up; deep in and
-			// low down, less so, and cooler.
-			float open = mix(mix(0.72, 1.0, smoothstep(-40.0, 0.0, -inside)), 1.0, immersed);
-			vec3 sky = zs_cloud_sky * mix(vec3(0.76, 0.84, 1.0), vec3(0.95, 0.97, 1.0), h) * mix(0.4, 0.85, h) * open * mix(mix(0.5, 1.2, up_open), 0.6, immersed);
-			vec3 col = sky + sun_col * (sunlit * (0.85 + lining) + glow) * mix(0.6, 1.0, h);
-			// Thinner round an eye inside, so the wisps and pockets show.
-			float alpha = 1.0 - exp(-density * SIGMA * mix(1.0, 0.35, immersed) * step);
+			float deep = smoothstep(0.0, 45.0, inside);
+			// The sky's light, less of it where the sun's is strong, so the
+			// sunny side keeps the sun's hue.
+			vec3 ambient = shade_col * mix(0.4, 1.0, up_open) * mix(0.55, 1.0, h) * mix(1.0, 0.7, deep) * mix(1.0, 0.3, sunlit);
+			vec3 direct = sun_col * (sunlit * 0.88 + exp(-thick * 0.004) * 0.1);
+			// A lining on thin edges against the sun.
+			vec3 rim = sun_col * lining * (1.0 - smoothstep(0.1, 0.9, density)) * exp(-thick * 0.012) * 2.2;
+			vec3 col = (ambient + direct + rim) * LIT_SHARE;
+			// In it: bright, brightest looking toward the sun and where
+			// the sun comes through thin cloud.
+			col = mix(col, glow_col * (0.85 + 0.3 * sunlit + 0.7 * pow(toward_sun, 3.0)), immersed);
+			float alpha = 1.0 - exp(-density * mix(SIGMA, SIGMA_IN, immersed) * step);
 			lit += T * alpha * col;
 			met += T * alpha * t;
 			T *= 1.0 - alpha;
