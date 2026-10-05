@@ -108,6 +108,8 @@ var water_source: Material
 ## plants are drawn from. Without them, stand-ins and an offline catalog.
 var side_source: Material
 var flora_source: Node
+## The sides' materials made so far, by strata seed and depth.
+var _sides := {}
 var _water: Material
 var _since := CHECK
 var _clock := 0.0
@@ -153,6 +155,7 @@ func reset(new_cells: SkyCells) -> void:
 	if _tree_meshes.is_empty(): _grow_trees()
 	if _catalog.is_empty(): catalog(flora_source)
 	_water = null
+	_sides.clear()
 	_pond_material()
 	cells = new_cells
 	_spots.clear()
@@ -341,8 +344,9 @@ func _plant(node: Node3D, plants: Dictionary) -> void:
 		batch.visibility_range_end = TREE_RANGE if role == "tree" else (STONE_RANGE if role == "stone" else PLANT_RANGE)
 		batch.visibility_range_end_margin = 30.0
 		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-		var flower := MeadowFlowers.kind_of_part(key)
-		if role == "plant" and not (flower != "" and MeadowFlowers.casts_shadow(flower) and flower == "sunflower"):
+		# Small plants cast no shadow worth drawing out here, but the tall
+		# sunflowers.
+		if role == "plant" and MeadowFlowers.kind_of_part(key) != "sunflower":
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(batch)
 
@@ -410,8 +414,12 @@ func _ground_palette() -> Dictionary:
 
 ## The shore wall's and rock's material: the plate's earth sides (SkyIslands
 ## sets `side_source`), its strata in the islet's own frame (one of a few
-## seeds), the mist taking over only at the rock's tip.
+## seeds), the mist taking over only at the rock's tip. Shared by islets of
+## one strata seed and about one depth (`_sides`).
 func _side_material(shape: RefCounted) -> Material:
+	var strata := posmod(int(shape.seed),STRATA_SEEDS)
+	var key := Vector2i(strata,roundi(float(shape.depth)*2.0))
+	if _sides.has(key): return _sides[key]
 	var m: ShaderMaterial
 	if side_source is ShaderMaterial: m = side_source.duplicate()
 	else:
@@ -421,8 +429,9 @@ func _side_material(shape: RefCounted) -> Material:
 		m.set_shader_parameter("base_color",Color.WHITE)
 	m.set_shader_parameter("earth_sides",true)
 	m.set_shader_parameter("earth_sides_top",SkyIslet.RIM_HEIGHT)
-	m.set_shader_parameter("earth_sides_base",-float(shape.depth)+MIST)
-	Strata.for_seed(posmod(int(shape.seed),STRATA_SEEDS)).apply(m,Vector3.ZERO)
+	m.set_shader_parameter("earth_sides_base",-float(key.y)*0.5+MIST)
+	Strata.for_seed(strata).apply(m,Vector3.ZERO)
+	_sides[key] = m
 	return m
 
 ## The fall off a spring islet's lip: the waterfalls' strand on a course
