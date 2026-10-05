@@ -257,6 +257,7 @@ Pass these after the launcher, e.g. `./run-cozy-flow.command --resume`.
 - `--pull-cam=a|b|c|old` sets how the camera shows the edge pull (see "The edge" above). The default is `a`.
 - `--no-hand` hides the hand; `--planned-water` swaps the live water back to the one-shot plan.
 - `--no-tray` hides the materials tray.
+- `--square-islands` makes every new plain the full square plate, as before islands had outlines; places already saved keep the shape they were saved with.
 - `--no-first-steps` leaves out the first-steps card and the field notes; `--first-steps` shows the card from the top whatever was found before, without saving.
 
 ### Desert (held back for an update)

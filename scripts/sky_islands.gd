@@ -312,6 +312,8 @@ static func seed_of(home: Vector3) -> int:
 ## as the flip bakes its underside (scripts/diorama_flip.gd `_bake_underside`); its earth sides are fitted
 ## here on the main thread. Drawn with the plate's own ground and earth-side
 ## materials, only the plate's palette carries over, never what stands on it.
+## A fresh plain is its seed's island (Genesis `shape`), so the far islands
+## show their outlines and shore walls as the plate does.
 func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 	var land := editor.data
 	var mesh := land.source_mesh
@@ -329,7 +331,9 @@ func _bake(island: Node3D, chunk_seed: int, document: Dictionary = {}) -> void:
 		plain.setup(mesh,arrays)
 		if document.is_empty() or not plain.load_document(document): Genesis.shape(plain,chunk_seed)
 		baked.append(plain)
-		baked.append(plain.build_mesh()))
+		# Only the island's faces (scripts/island_outline.gd); its shore wall
+		# comes with the earth sides below.
+		baked.append(plain.play_mesh(plain.build_mesh())))
 	while not WorkerThreadPool.is_task_completed(task): await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(task)
 	if baked.size() < 2 or baked[1] == null or not is_instance_valid(island) or island.is_queued_for_deletion(): return

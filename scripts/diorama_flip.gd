@@ -1026,7 +1026,8 @@ func _bake_underside(signature: Array) -> void:
 		ghost.setup(mesh,arrays)
 		Genesis.shape(ghost,chosen)
 		baked.append(ghost)
-		baked.append(ghost.build_mesh()))
+		# Its outline's faces only (an island's); the sides fit it below.
+		baked.append(ghost.play_mesh(ghost.build_mesh())))
 	while not WorkerThreadPool.is_task_completed(_baker): await get_tree().process_frame
 	_join_baker()
 	sample_ms = (Time.get_ticks_usec()-began)/1000.0

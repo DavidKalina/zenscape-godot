@@ -93,13 +93,28 @@ const GENESIS_BLADES := Vector2(0.0,0.0)
 ## flower. None, for the same reason.
 const GENESIS_FLOWERS := 0.0
 
+## The plain as an island: its outline from its seed (scripts/
+## island_outline.gd, which sizes it by the seed too), and its ground easing
+## to RIM_HEIGHT metres over the last RIM_EASE metres before the shore, so
+## every shore meets its wall at one height instead of wherever the swells
+## stood. Points off the island stand at the rim height as well. Run with
+## --square-islands for the full square plate as before.
+const RIM_HEIGHT := 0.2
+const RIM_EASE := 2.5
+
+static func square_islands() -> bool:
+	return "--square-islands" in OS.get_cmdline_user_args()
+
 ## Heights, grass, a carpet of standing blades and a few flower drifts for a
 ## blank plain.
 ## Everything else (objects, water, recipe) is cleared. `origin` is the
 ## chunk's centre in world metres: atlas chunks (scripts/chunk_atlas.gd) sample
-## one field, so neighbouring plains roll into each other.
-static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZERO) -> void:
+## one field, so neighbouring plains roll into each other. `islanded` gives
+## the plain its seed's outline (unless --square-islands); atlas chunks,
+## which meet their neighbours, stay square.
+static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZERO, islanded := true) -> void:
 	data.reset_flat()
+	data.set_outline(preload("res://scripts/island_outline.gd").mask(data.points,data.vertex_ids,seed_value) if islanded and not square_islands() else PackedByteArray())
 	var swell := FastNoiseLite.new()
 	swell.seed = seed_value
 	swell.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -115,6 +130,8 @@ static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZE
 		var p: Vector2 = data.points[i]+origin
 		# Broad swells about a metre tall, with a faint ripple over them.
 		heights[i] = 0.35+swell.get_noise_2d(p.x,p.y)*0.55+ripple.get_noise_2d(p.x,p.y)*0.12
+		if not data.shore_distance.is_empty():
+			heights[i] = lerpf(RIM_HEIGHT,heights[i],smoothstep(0.0,RIM_EASE,maxf(data.shore_distance[i],0.0)))
 	data.heights = heights
 	data.grass.fill(1.0)
 	# A meadow carpet of standing tufts (about seven a square metre, see
@@ -146,15 +163,22 @@ static func shape(data: NativeTerrainData, seed_value: int, origin := Vector2.ZE
 const WILD_KINDS := ["broadleaf","tree","birch"]
 const WILD_RING := Vector2(3.0,6.5)
 const WILD_SIZE := 1.35
+## On an island the way turns on (by a golden angle) until it finds land.
 static func _wild_tree(data: NativeTerrainData, seed_value: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value+83
 	var at := Vector2.RIGHT.rotated(rng.randf()*TAU)*rng.randf_range(WILD_RING.x,WILD_RING.y)
-	data.place(WILD_KINDS[rng.randi()%WILD_KINDS.size()],at,rng.randf()*TAU,WILD_SIZE)
+	var kind: String = WILD_KINDS[rng.randi()%WILD_KINDS.size()]
+	var angle := rng.randf()*TAU
+	for turn in range(12):
+		var spot := at.rotated(turn*2.39996)
+		var inland: Variant = data.sample(spot,data.shore_distance) if not data.shore_distance.is_empty() else null
+		if inland != null and float(inland) < 1.0: continue
+		if data.place(kind,spot,angle,WILD_SIZE) > 0: return
 
 ## Form the plain as one undoable operation that also restores the previous
 ## scene look, as `form_inland` does for generated worlds.
-static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true, origin := Vector2.ZERO) -> void:
+static func form(editor: NativeChunkEditor, world_value: Dictionary, live := true, origin := Vector2.ZERO, islanded := true) -> void:
 	if editor.forming: return
 	editor.finish_stroke()
 	editor.selected_object_id = -1
@@ -162,7 +186,7 @@ static func form(editor: NativeChunkEditor, world_value: Dictionary, live := tru
 	editor.formation_started.emit()
 	editor.data.begin_stroke()
 	editor.data._before["favorite_scene"] = NativeGardenStore.capture(editor.scene)
-	shape(editor.data,int(world_value.seed),origin)
+	shape(editor.data,int(world_value.seed),origin,islanded)
 	editor.data.end_stroke()
 	await editor.refresh(editor.get_tree() if live else null)
 	editor.land_seed = int(world_value.seed)

@@ -18,7 +18,7 @@ func _initialize() -> void: run.call_deferred()
 func chunk(atlas, slot: Vector2i) -> NativeTerrainData:
 	var data := NativeTerrainData.new()
 	data.setup(source_mesh)
-	Genesis.shape(data,atlas.seed_value,Atlas.world_origin(slot))
+	Genesis.shape(data,atlas.seed_value,Atlas.world_origin(slot),false)
 	return data
 
 ## A few seconds of land brush dragged along a line, pinned after every step as
