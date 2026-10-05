@@ -1,5 +1,6 @@
 extends MultiMeshInstance3D
 const LeafMesh := preload("res://scripts/leaf_litter_mesh.gd")
+const Plate = preload("res://scripts/plate.gd")
 ## A bounded, cosmetic layer of loose leaves. No saves or gameplay state.
 ##
 ## Every leaf answers the air it sits in, all the time: an ordinary breeze
@@ -52,7 +53,7 @@ func _init() -> void:
 	multimesh.instance_count = CAPACITY
 	multimesh.visible_instance_count = 0
 	material_override = LeafMesh.material()
-	custom_aabb = AABB(Vector3(-16,-3,-16),Vector3(32,32,32))
+	custom_aabb = AABB(Vector3(-(Plate.HALF+2.0),-3,-(Plate.HALF+2.0)),Vector3(Plate.SIZE+4.0,32,Plate.SIZE+4.0))
 
 static func _leaf_mesh() -> Mesh:
 	return LeafMesh.instanced_mesh()

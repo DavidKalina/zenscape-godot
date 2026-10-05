@@ -16,6 +16,7 @@ extends Node3D
 ## and LifeMoments' light and weather and never scans the world by itself,
 ## except for the elder stand's dead wood when a sign needs a place there.
 
+const Plate = preload("res://scripts/plate.gd")
 const Survey = preload("res://scripts/life_survey.gd")
 const Models = preload("res://scripts/life_models.gd")
 
@@ -87,8 +88,8 @@ const PRINTS_PER_SET := 20
 const MARK_KEEP := 3
 const MARK_APART := 2.0
 const MARK_SHIFT := 0.25
-## Plate half-size signs keep inside, metres.
-const PLATE := 12.8
+## Plate half-size signs keep inside, metres: 1.2 m in from the rim.
+const PLATE := Plate.HALF-1.2
 ## A sighting's chance grows by up to SIGHTING_BOOST once BOOST_SIGNS signs
 ## have been left on this world.
 const SIGHTING_BOOST := 0.6
@@ -133,7 +134,7 @@ func setup(owner: Node3D) -> void:
 		batch.use_colors = true
 		batch.instance_count = TRACK_SETS*PRINTS_PER_SET
 		batch.mesh = _print_mesh(life.material,left)
-		batch.custom_aabb = AABB(Vector3(-16,-4,-16),Vector3(32,40,32))
+		batch.custom_aabb = AABB(Vector3(-(Plate.HALF+2.0),-4,-(Plate.HALF+2.0)),Vector3(Plate.SIZE+4.0,40,Plate.SIZE+4.0))
 		batch.visible_instance_count = 0
 		node.multimesh = batch
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

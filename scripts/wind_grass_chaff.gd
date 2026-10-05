@@ -76,6 +76,6 @@ static func anchors_on(cover: Callable, count := CHAFF) -> Array:
 	var anchors: Array = []
 	for i in range(count*4):
 		if anchors.size() >= count: break
-		var point := Vector2(fposmod(0.5+i*0.7548777,1.0),fposmod(0.5+i*0.5698403,1.0))*26.0-Vector2(13.0,13.0)
+		var point := Vector2(fposmod(0.5+i*0.7548777,1.0),fposmod(0.5+i*0.5698403,1.0))*(Plate.SIZE-2.0)-Vector2.ONE*(Plate.HALF-1.0)
 		if float(cover.call(point)) > 0.4: anchors.append(point)
 	return anchors

@@ -22,6 +22,7 @@ extends Node3D
 ## jumps. Everything is world space (the node is top level), worked out each
 ## frame from the content's transform, so a moving plate carries the birds.
 ## Birds are not saved; flocks settle again in a new session.
+const Plate = preload("res://scripts/plate.gd")
 const Body = preload("res://scripts/songbird_body.gd")
 const Limbs = preload("res://scripts/perch_limbs.gd")
 const Inspector = preload("res://scripts/scene_inspector.gd")
@@ -283,10 +284,11 @@ func _choose_grove(besides: int) -> int:
 		if roll <= 0.0: return key
 	return weights.keys().back()
 
-## High over the plate's edge nearest the grove, where an arriving flock comes in.
+## High over the plate's edge (a metre past the rim) nearest the grove, where
+## an arriving flock comes in.
 func _arrival_point() -> Vector3:
 	var angle := _rng.randf()*TAU
-	var local := Vector3(cos(angle)*15.0,0.0,sin(angle)*15.0)
+	var local := Vector3(cos(angle)*(Plate.HALF+1.0),0.0,sin(angle)*(Plate.HALF+1.0))
 	var at := editor.terrain.to_global(local)
 	var ground: Variant = inspector.ground_y(editor.terrain.to_global(Vector3.ZERO))
 	at.y = (float(ground) if ground != null else at.y)+7.0

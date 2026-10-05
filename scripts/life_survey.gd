@@ -1,7 +1,7 @@
 extends RefCounted
 ## What the land offers life, read from the live world (docs/scenic/life.md).
 ##
-## A 56×56 grid at 0.5 m, aligned with the terrain's cover cells, holding the
+## A SIDE×SIDE grid at 0.5 m (56×56 on the 28 m plate), aligned with the terrain's cover cells, holding the
 ## ground height, any still water (pond surfaces) or flowing water (stream
 ## beds) over it, and the trees and shrubs standing near it. From those it
 ## derives the places each creature looks for: deep water for fish, shallow
@@ -14,11 +14,12 @@ extends RefCounted
 ## looks at the world every frame; LandLife starts a survey only when the
 ## editor reports that the land, water or plants changed.
 
-const SIDE := 56
-const STEP := 0.5
-const HALF := 14.0
+const Plate = preload("res://scripts/plate.gd")
+const SIDE := Plate.COVER_CELLS
+const STEP := Plate.COVER_STEP
+const HALF := Plate.HALF
 ## Coarse 1 m grid for tree density sums.
-const COARSE := 28
+const COARSE := Plate.COARSE_CELLS
 const TREES := ["tree","layered_tree","broadleaf","redwood","joshua","cactus","birch","willow","juniper"]
 const SHRUBS := ["shrub","fern","reeds","bank_grass","grass_tuft","daisy_flower","button_flower","spike_flower","umbel_flower","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","wheat","mushroom"]
 ## Flowering shrubs (butterflies visit them) and dead standing wood (a woodpecker's drum).

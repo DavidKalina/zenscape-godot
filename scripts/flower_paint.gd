@@ -50,6 +50,7 @@ extends RefCounted
 ##
 ## Preloaded, not a class_name.
 
+const Plate = preload("res://scripts/plate.gd")
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
@@ -58,10 +59,10 @@ const Emergence = preload("res://scripts/emergence.gd")
 ## The brush's radius (m) at the roll's middle pip (× 0.6 and × 1.5 either
 ## side), the same reach as the Modeller's thumb.
 const RADIUS := 1.6
-## The coat's cells (m), over the plate's 28 m.
-const CELL := 0.25
-const SIDE := 112
-const HALF := 14.0
+## The coat's cells (m), over the plate (112 a side on the 28 m plate).
+const CELL := Plate.FINE_STEP
+const SIDE := Plate.FINE_CELLS
+const HALF := Plate.HALF
 ## What one pass lays along its middle; what holding lays a second; a tap's
 ## dab and its share of the brush; the most a cell holds.
 const PASS := 5.0

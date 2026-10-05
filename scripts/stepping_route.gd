@@ -1,6 +1,7 @@
 extends RefCounted
 ## A bounded, cancellable extension for one desired stream crossing. Ordinary
 ## inhabitants keep using ordinary navigation; only this outing can request hops.
+const Plate = preload("res://scripts/plate.gd")
 const REACH := 1.45
 const ARC := 0.42
 
@@ -65,7 +66,7 @@ func plan(nav: CreatureNavigation, tree: SceneTree, from: Vector3, to: Vector3, 
 			return {"points":points,"hops":hops}
 		closed[node] = true
 		var a: Vector3 = nav._nodes[node]
-		var cell := Vector2i(roundi((a.x+14.0)/nav._grid_step),roundi((a.z+14.0)/nav._grid_step))
+		var cell := Vector2i(roundi((a.x+Plate.HALF)/nav._grid_step),roundi((a.z+Plate.HALF)/nav._grid_step))
 		for offset in offsets:
 			if not await query.checkpoint(): return {}
 			var next: int = nav._cells.get(cell+offset,-1)

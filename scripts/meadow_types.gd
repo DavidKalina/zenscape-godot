@@ -17,6 +17,7 @@ extends RefCounted
 ##
 ## Everything is position hashes and seeded noise: no draw is taken from the
 ## planting stream, so trees, water and the land are the recipe's own.
+const Plate = preload("res://scripts/plate.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const Genome = preload("res://scripts/inland_genome.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
@@ -170,11 +171,11 @@ const CLEARING := 1.15
 ## Meadow ground flowers stop this far below the snowline.
 const SNOW_GAP := 1.2
 ## Drifts thin out between these distances from the centre, on the rounded
-## square `_rim` measures: the plate's edge is at 12 m, so the meadow runs
-## to its rim instead of stopping two metres short.
-const RIM := Vector2(10.9,11.85)
+## square `_rim` measures: the plate's edge is at 12 m (2 m in from its
+## rim), so the meadow runs to its rim instead of stopping two metres short.
+const RIM := Vector2(Plate.HALF-3.1,Plate.HALF-2.15)
 ## The flower candidates' lattice covers this half-width round the centre.
-const REACH := 11.9
+const REACH := Plate.HALF-2.1
 ## The yaw that turns a kit flower's face (its local +x) toward the noon
 ## sun's side of the plate: studies/celestial.gd's sun ring is yawed
 ## atan2(20, 12) round, so at noon the sun stands toward +x, +z, which is
@@ -407,7 +408,7 @@ func dress(land: RefCounted, work: RefCounted) -> void:
 		if z%8 == 0: await work.checkpoint()
 		for x in range(data.MEADOW_CELLS):
 			var p := data.meadow_position(x,z)+Vector2.ONE*data.MEADOW_STEP*0.5
-			if maxf(absf(p.x),absf(p.y)) > 13.0 or land._is_wet(p): continue
+			if maxf(absf(p.x),absf(p.y)) > Plate.HALF-1.0 or land._is_wet(p): continue
 			var share := 1.0
 			if land.blend != null: share = land.blend.weight(meadow_index,p) if meadow_index >= 0 else 0.0
 			elif land.genome.habitat != "meadow": share = 0.0

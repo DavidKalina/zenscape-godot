@@ -1,6 +1,7 @@
 extends Node3D
 ## Sparse visual air parcels, driven by the weather clock rather than input.
 ## They depict existing wind; they never inject extra forces or gust events.
+const Plate = preload("res://scripts/plate.gd")
 const SHADER = preload("res://shaders/gust_trail.gdshader")
 const CAPACITY := 12
 var enabled := true
@@ -43,7 +44,7 @@ func advance(delta: float, strength: float, angle: float) -> void:
 		# The curve stays anchored; the shader draws the stroke along it.
 		var phase: float = parcel.age/parcel.duration
 		var fade := smoothstep(0.0,0.18,phase)*(1.0-smoothstep(0.65,1.0,phase))
-		var edge := 1.0-smoothstep(11.0,14.0,maxf(absf(node.position.x),absf(node.position.z)))
+		var edge := 1.0-smoothstep(Plate.HALF-3.0,Plate.HALF,maxf(absf(node.position.x),absf(node.position.z)))
 		var material := node.material_override as ShaderMaterial
 		material.set_shader_parameter("clock",parcel.age)
 		material.set_shader_parameter("opacity",opacity_scale*fade*edge*smoothstep(0.03,0.35,power)*lerpf(0.30,0.55,clampf(power/2.0,0.0,1.0)))
@@ -61,7 +62,7 @@ func _height(point: Vector3, direction: Vector3) -> Variant:
 	return highest
 
 func _birth(power: float, direction: Vector3) -> void:
-	var location := Vector3(_rng.randf_range(-10.0,10.0),0,_rng.randf_range(-10.0,10.0))
+	var location := Vector3(_rng.randf_range(-(Plate.HALF-4.0),Plate.HALF-4.0),0,_rng.randf_range(-(Plate.HALF-4.0),Plate.HALF-4.0))
 	var height: Variant = _height(location,direction)
 	if height == null: return
 	var lift := _rng.randf_range(1.0,2.8)

@@ -37,6 +37,7 @@ extends RefCounted
 ##
 ## Preloaded, not a class_name.
 
+const Plate = preload("res://scripts/plate.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const Presets = preload("res://scripts/native_landscape_presets.gd")
@@ -223,7 +224,7 @@ func _painted_bare(p: Vector2) -> bool:
 	return false
 
 func _cell(p: Vector2) -> int:
-	var g := Vector2i(((p+Vector2(14,14))/data.MEADOW_STEP).floor())
+	var g := Vector2i(((p+Vector2.ONE*Plate.HALF)/data.MEADOW_STEP).floor())
 	if g.x < 0 or g.y < 0 or g.x >= data.MEADOW_CELLS or g.y >= data.MEADOW_CELLS: return -1
 	return g.y*data.MEADOW_CELLS+g.x
 

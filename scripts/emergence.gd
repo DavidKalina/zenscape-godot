@@ -16,6 +16,7 @@ extends RefCounted
 ## own birth on `time`, a little ahead of the step, and the shaders grow it in
 ## from there with the regrow pop, so arrivals rise one by one rather than
 ## switching on a step at a time. Plants that stood before carry no birth.
+const Plate = preload("res://scripts/plate.gd")
 const Variety = preload("res://scripts/seeded_variety.gd")
 const BiomeBlend = preload("res://scripts/biome_blend.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
@@ -86,9 +87,10 @@ const SHRUB_SIZE := Vector2(0.5,0.9)
 const KIND_SIZE := {"layered_tree":0.55,"broadleaf":1.45,"redwood":0.6,"fern":0.6,"birch":1.0,"willow":0.9,"juniper":1.0}
 ## Ferns read as dark spiders from above; woodland undergrowth takes few.
 const FERN_WEIGHT := 0.3
-## Plants stay inside the band the generator plants.
-const PLATE := 11.0
-## Metres² the generator's per-habitat tree counts are spread over.
+## Plants stay inside the band the generator plants: 3 m in from the rim.
+const PLATE := Plate.HALF-3.0
+## Metres² the per-habitat tree counts were tuned over (the generator's band
+## on the 28 m plate): a density, so it stays when the plate grows.
 const PLANTED_AREA := 462.0
 ## Tree species, crown colours and autumn come by stand (scripts/tree_stands.gd),
 ## shared with generated worlds.
@@ -301,7 +303,7 @@ func clear() -> void:
 func on_region_changed(rect: Rect2, source := "", sown := PackedVector2Array(), kind := "") -> void:
 	if not enabled:
 		return
-	rect = rect.intersection(Rect2(-14,-14,28,28))
+	rect = rect.intersection(Plate.RECT)
 	if rect.size.x > 0.0 and rect.size.y > 0.0:
 		_queued.append({"rect":rect,"born":_clock,"source":source,"sown":sown,"kind":kind})
 
@@ -641,7 +643,7 @@ func _arrive_as(plant: Dictionary, born: float, p: Vector2) -> bool:
 	var h: Variant = data.ground_height(p)
 	if h == null or _wet(p):
 		return _refuse("water")
-	var cell := Vector2i(((p+Vector2(14,14))/data.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(data.MEADOW_CELLS-1))
+	var cell := Vector2i(((p+Vector2.ONE*Plate.HALF)/data.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(data.MEADOW_CELLS-1))
 	if data.provenance[cell.y*data.MEADOW_CELLS+cell.x] == NativeTerrainData.SOURCE_HAND:
 		return _refuse("hand")
 	var habitat: String = _blend.pick(p)
@@ -844,7 +846,7 @@ func _dead_share(habitat: String, stand: Dictionary, slope: float, wish: float, 
 ## edge wanders into bays and bulges both ways.
 func _wish_at(p: Vector2, guide: RefCounted) -> float:
 	if guide == null: return intent.forest_at(p)
-	return intent.forest_at((p+guide.warp(p)).clamp(Vector2(-13.99,-13.99),Vector2(13.99,13.99)))
+	return intent.forest_at((p+guide.warp(p)).clamp(-Vector2.ONE*(Plate.HALF-0.01),Vector2.ONE*(Plate.HALF-0.01)))
 
 ## The forest wish at a candidate, frayed by its own scatter and slow lobes,
 ## so the forest's outline is ragged and its edge trees stand apart.
@@ -1073,7 +1075,7 @@ func _forget(region: Dictionary, rect: Rect2) -> void:
 func takes(p: Vector2) -> bool:
 	var h: Variant = data.ground_height(p)
 	if h == null: return false
-	var cell := Vector2i(((p+Vector2(14,14))/data.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(data.MEADOW_CELLS-1))
+	var cell := Vector2i(((p+Vector2.ONE*Plate.HALF)/data.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(data.MEADOW_CELLS-1))
 	if data.provenance[cell.y*data.MEADOW_CELLS+cell.x] == NativeTerrainData.SOURCE_HAND: return false
 	if _blend == null: return true
 	if _wet(p): return false
