@@ -53,6 +53,7 @@ var _baked := PackedFloat32Array()
 var _baked_usec := 0
 
 func setup(owner_editor: Node) -> void:
+	Plate.publish_shader_globals()
 	editor = owner_editor
 	name = "GroundShade"
 	field.resize(SIZE * SIZE)

@@ -5,6 +5,7 @@ extends Node3D
 const Plate = preload("res://scripts/plate.gd")
 ## The ground and stream maps' reach (the shaders' ground_half).
 const HALF := Plate.MAP_HALF
+const MAP_SIZE := Plate.MAP_SIZE
 const SKY_CLEARANCE := 32.0
 const COUNT := [6000, 3500, 1600]
 signal weather_selected(profile: Dictionary, instant: bool)
@@ -47,6 +48,7 @@ func _height(x: float, z: float) -> float:
 	return height
 
 func setup(geometry: Node3D, terrain: RefCounted) -> void:
+	Plate.publish_shader_globals()
 	leaves = preload("res://studies/falling_leaves.gd").new()
 	add_child(leaves)
 	var reference: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/environment.json"))

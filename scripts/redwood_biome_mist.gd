@@ -21,6 +21,7 @@ var _blown_at := -1.0
 ## Metres a second the mist drifts in still air, and more per unit of wind
 ## (the atmosphere's strength, gusts and all): a breeze of 0.4 moves it about
 ## 0.35 m/s, a strong wind of 2 nearly 2 m/s.
+const Plate := preload("res://scripts/plate.gd")
 const DRIFT_CALM := 0.1
 const DRIFT_CARRY := 0.85
 ## How far a wind draws the mist out along itself: at strength s the noise is
@@ -29,7 +30,6 @@ const STRETCH := 0.7
 ## The mist fills the box the ground maps cover (Plate MAP_HALF each way);
 ## its tree cover is a mask of COVER_STEP texels over it, read by
 ## shaders/redwood_biome_mist.gdshader.
-const Plate = preload("res://scripts/plate.gd")
 const COVER_STEP := 0.5
 const COVER_TEXELS := roundi(Plate.MAP_HALF*2.0/COVER_STEP)
 

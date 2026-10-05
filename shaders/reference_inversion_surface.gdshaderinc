@@ -1,3 +1,4 @@
+#include "res://shaders/reference_globals.gdshaderinc"
 // Shared source weather.js inversion lid and post-fog surface density.
 float zs_inversion_top(vec2 xz, float lid, float base) {
 	float ripple = (zs_noise(xz * 0.3 + 31.0) - 0.5) * 0.5;
@@ -16,6 +17,6 @@ float zs_inversion_surface_amount(vec3 p) {
 	float depth = max(top + 0.2 * band - p.y, 0.0);
 	// Match the volume's footprint; exposed island sides must not become a
 	// white wall where the actual mist has already faded away.
-	float footprint = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / 14.0);
+	float footprint = 1.0 - smoothstep(0.75, 1.0, max(abs(p.x), abs(p.z)) / zs_plate_half);
 	return (1.0 - exp(-depth * 0.9)) * smoothstep(0.0, 0.12, zs_inversion.x) * footprint;
 }

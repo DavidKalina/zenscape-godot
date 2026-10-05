@@ -30,7 +30,7 @@ vec3 terrain_geology(vec3 tint, vec3 geology_position, vec3 face_normal) {
 	float grain = zs_noise(geology_position.xz*0.55);
 	tint = mix(tint,vec3(0.24,0.265,0.29)*zs_palette_rock*(0.82+0.3*grain),rock_height);
 	if (desert_enabled) {
-		vec2 geology = desert_has_map ? texture(desert_geology,(geology_position.xz+14.0)/28.0).rg : vec2(rock_height,0.0);
+		vec2 geology = desert_has_map ? texture(desert_geology,(geology_position.xz+zs_plate_half)/(zs_plate_half*2.0)).rg : vec2(rock_height,0.0);
 		rock_height = geology.r;
 		vec3 sand = mix(desert_sand_b.rgb,desert_sand_a.rgb,smoothstep(0.35,0.65,grain));
 		float band = mod(floor((geology_position.y-0.8)/desert_band_height),3.0);

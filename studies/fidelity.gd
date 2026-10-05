@@ -33,6 +33,7 @@ var _source: Dictionary
 var _orbiting := false
 ## Source OrbitControls damping: pointer deltas pool here and 5 % of the pool
 ## is applied per 60 Hz frame, so the camera glides and settles.
+const Plate := preload("res://scripts/plate.gd")
 const CAMERA_DAMPING := 0.05
 ## Time-based by default so the glide is the same at 60, 144 or 240 Hz and
 ## frame-time jitter does not become speed jitter. False restores the source's

@@ -127,6 +127,7 @@ var fences: Node3D
 var falls: NativeGardenFalls
 ## The footbridges laid over water (scripts/footbridge.gd), and its planner.
 const Footbridge = preload("res://scripts/footbridge.gd")
+const Plate := preload("res://scripts/plate.gd")
 var bridges: Node3D
 var reactions: NativeDropReactions
 ## Placement plays a short visual reaction. Tests that compare instances turn
@@ -230,7 +231,6 @@ var land_brush = preload("res://scripts/land_brush.gd").new()
 ## a neighbour, whose earth-block walls are cut away.
 var border_pin: RefCounted = null
 const AtlasView = preload("res://scripts/chunk_atlas_view.gd")
-const Plate = preload("res://scripts/plate.gd")
 var open_sides := {}
 var land_radius := 4.5
 var land_strength := 1.0

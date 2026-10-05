@@ -34,3 +34,18 @@ const RECIPE_WATER_CELLS := roundi(SIZE / 0.55)
 ## -HALF; the last point lands on or just past the far rim.
 const EROSION_STEP := 0.7
 const EROSION_POINTS := ceili(SIZE / EROSION_STEP - 0.001) + 1
+
+## The maps sample the land at this many metres a texel, so each is MAP_SIZE
+## texels a side over MAP_SPAN metres; the shade map (zs_ground_shade) is
+## half as fine. The shaders read the same extent from the globals below.
+const MAP_TEXEL := 0.25
+const MAP_SPAN := MAP_HALF * 2.0
+const MAP_SIZE := int(MAP_SPAN / MAP_TEXEL)
+const SHADE_TEXEL := 0.5
+const SHADE_SIZE := int(MAP_SPAN / SHADE_TEXEL)
+
+## Hands the extent to the shaders (project.godot [shader_globals] holds the
+## values they start with, which are this file's at HALF 14).
+static func publish_shader_globals() -> void:
+	RenderingServer.global_shader_parameter_set(&"zs_plate_half",HALF)
+	RenderingServer.global_shader_parameter_set(&"zs_map_half",MAP_HALF)
