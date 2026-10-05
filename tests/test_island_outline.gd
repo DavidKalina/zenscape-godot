@@ -33,6 +33,7 @@ func run() -> void:
 	shaped(plate())
 	tools(plate())
 	await water(plate())
+	await far(plate())
 	print("ISLAND OUTLINE failures=",failures)
 	quit(1 if failures else 0)
 
@@ -387,3 +388,26 @@ func water(data: NativeTerrainData) -> void:
 		var n: Vector2 = spill.normal
 		check(data.ground_height(Vector2(lip.x,lip.z)-n*0.3) != null,"No edge fall stands off the island")
 	data.release_listeners()
+
+## A far island is baked as scripts/sky_islands.gd `_bake` does: a detached
+## plain shaped on a worker, its play mesh built there, and its earth sides
+## (the shore wall) fitted after.
+func far(data: NativeTerrainData) -> void:
+	var mesh := data.source_mesh
+	var arrays := data._arrays.duplicate()
+	var baked: Array = []
+	var task := WorkerThreadPool.add_task(func() -> void:
+		var plain := NativeTerrainData.new()
+		plain.setup(mesh,arrays)
+		Genesis.shape(plain,123)
+		baked.append(plain)
+		baked.append(plain.play_mesh(plain.build_mesh())))
+	while not WorkerThreadPool.is_task_completed(task): await process_frame
+	WorkerThreadPool.wait_for_task_completion(task)
+	check(baked.size() == 2,"The far island bakes on a worker")
+	var plain: NativeTerrainData = baked[0]
+	var ground: ArrayMesh = baked[1]
+	check(not plain.outline.is_empty() and plain.outline == Outline.mask(plain.points,plain.vertex_ids,123),"A far island is its seed's island")
+	check(ground.get_faces().size() == plain.outline.count(0)*3,"Its ground is only the island's faces")
+	var sides := preload("res://scripts/island_shore.gd").build(plain,Transform3D(Basis(),Vector3(0,-2,0)),null)
+	check(sides.get_surface_count() == 1 and sides.get_aabb().position.y < -6.0,"Its shore wall hangs under it")
