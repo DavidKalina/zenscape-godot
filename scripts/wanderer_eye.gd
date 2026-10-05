@@ -55,6 +55,8 @@ const EASE_FOV := 0.2
 const POLAR := Vector2(0.25,2.8)
 ## The walk stays on the plate.
 const PLATE_REACH := 13.5
+## How far inside the shore a walker is put back on an outlined island (m).
+const SHORE_INSET := 0.1
 ## Seconds the glide back to the orbit takes.
 const RETURN := 0.7
 ## The figure's own radius in the plate plane, with room for the eye's near
@@ -372,6 +374,12 @@ func _deck(point: Vector2) -> Dictionary:
 func _clamped(local: Vector3) -> Vector3:
 	local.x = clampf(local.x,-PLATE_REACH,PLATE_REACH)
 	local.z = clampf(local.z,-PLATE_REACH,PLATE_REACH)
+	# On an outlined island, the nearest land (a bridge's deck is footing too).
+	if not _on_land(Vector2(local.x,local.z)):
+		var land := editor.data.nearest_land(Vector2(local.x,local.z),SHORE_INSET)
+		if land != Vector2.INF:
+			local.x = land.x
+			local.z = land.y
 	local.y = _ground(local)
 	return local
 
@@ -552,7 +560,17 @@ func _free_spot(local: Vector3) -> Vector3:
 	return local
 
 func _free(p: Vector2) -> bool:
-	return absf(p.x) <= PLATE_REACH and absf(p.y) <= PLATE_REACH and not _blocked(p)
+	return absf(p.x) <= PLATE_REACH and absf(p.y) <= PLATE_REACH and _on_land(p) and not _blocked(p)
+
+## Whether the island holds plate point `p` as ground to stand on: its land
+## (the whole square if it has no outline), or a footbridge deck.
+func _on_land(p: Vector2) -> bool:
+	return editor.data.has_land(p) or not _deck(p).is_empty()
+
+## Whether a walk to plate point `p` has gone off the island: past the
+## square's reach, or past the shore of an outlined one.
+func _off_plate(p: Vector2) -> bool:
+	return absf(p.x) > PLATE_REACH or absf(p.y) > PLATE_REACH or not _on_land(p)
 
 # --- Stepping in and out ------------------------------------------------------------
 
@@ -672,7 +690,7 @@ func _advance_eye(delta: float) -> void:
 	move *= 1.0-WADE_SLOW*clampf(_depth(Vector2(_feet.x,_feet.z))/WADE,0.0,1.0)
 	var was := _feet
 	var walked := _walk(_feet,Vector2(move.x,move.z)*delta)
-	if glide_enabled and (absf(walked.x) > PLATE_REACH or absf(walked.z) > PLATE_REACH):
+	if glide_enabled and _off_plate(Vector2(walked.x,walked.z)):
 		_launch(move.length())
 		return
 	if _advance_jump(delta):

@@ -42,6 +42,8 @@ extends Node3D
 ## are the world's, and stay as they are.
 
 const HALF := 14.0
+## How far past an outlined island's shore a glider is still over it (m).
+const CLAIM_MARGIN := 1.0
 ## Where the copies stand from the plate, in metres: far apart (400 to
 ## 950 m, over a minute's slow glide, half a minute down a jet stream) and
 ## at different heights, so each is a destination.
@@ -351,8 +353,17 @@ func copy_under(point: Vector3) -> int:
 	for i in range(offsets.size()):
 		if _rise[i] != Vector3.ZERO or lands[i] == null: continue
 		var local := editor.terrain.to_local(point-offsets[i])
-		if absf(local.x) <= HALF and absf(local.z) <= HALF: return i
+		if absf(local.x) > HALF or absf(local.z) > HALF: continue
+		if _over_land(lands[i],Vector2(local.x,local.z)): return i
 	return -1
+
+## Whether plate point `p` is over `land`'s ground, or within CLAIM_MARGIN of
+## it (a full square is all ground). Snapped, as `_height` is, so the glide's
+## flight does not fill the terrain's lookup.
+func _over_land(land: NativeTerrainData, p: Vector2) -> bool:
+	if land.outline.is_empty(): return true
+	var at := Vector2(snappedf(p.x,SNAP),snappedf(p.y,SNAP))
+	return land.nearest_land(at,0.0,CLAIM_MARGIN) != Vector2.INF
 
 ## Makes copy `index` the plate. The island left is kept, and its look baked
 ## at the plate's spot; the plate's own parts hide while it is formed again

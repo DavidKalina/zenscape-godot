@@ -323,6 +323,37 @@ func land_only(next: PackedFloat32Array, before: PackedFloat32Array) -> PackedFl
 func off_island(i: int) -> bool:
 	return not shore_distance.is_empty() and shore_distance[i] < 0.0
 
+## Whether the island's outline holds plate point `p` as land. The full
+## square (no outline) holds everything on the plate; a chasm's cut is not
+## part of this, only the outline.
+func has_land(p: Vector2) -> bool:
+	if outline.is_empty(): return true
+	if sample(p,heights) == null: return false
+	return outline[_locate_face[_locate_cache[p]]/3] == 0
+
+## The point on the island's land nearest `p`, at least `inset` metres inside
+## the shore, or Vector2.INF if none lies within `reach`. `p` itself if it
+## qualifies; every point on a full square.
+func nearest_land(p: Vector2, inset := 0.0, reach := 28.0) -> Vector2:
+	if outline.is_empty(): return p
+	if _standing(p,inset): return p
+	var ring := 0.2
+	while ring <= reach:
+		var best := Vector2.INF
+		var count := maxi(8,int(TAU*ring/0.2))
+		for i in range(count):
+			var q := (p+Vector2.from_angle(TAU*i/count)*ring).snapped(Vector2.ONE*0.1)
+			if _standing(q,inset) and (best == Vector2.INF or q.distance_squared_to(p) < best.distance_squared_to(p)): best = q
+		if best != Vector2.INF: return best
+		ring += 0.2
+	return Vector2.INF
+
+func _standing(p: Vector2, inset: float) -> bool:
+	if not has_land(p): return false
+	if inset <= 0.0: return true
+	var depth: Variant = sample(p,shore_distance)
+	return depth != null and float(depth) >= inset
+
 func height_at(x: float, z: float) -> Variant:
 	var p := Vector2(x,z)
 	var h: Variant = sample(p, heights)
@@ -1828,6 +1859,8 @@ func fill_landscape_flora() -> bool:
 		var height: Variant=height_at(point.x,point.y)
 		var tint: String=""
 		if entry.color!=null: tint=preload("res://scripts/native_object_pose.gd").encode_tint(Color(entry.color[0],entry.color[1],entry.color[2]))
+		# Scatter over an outlined island's bays is left out, not the whole fill.
+		if height==null and not outline.is_empty(): continue
 		if height==null or place(entry.asset,point,0.0,1.0,preload("res://scripts/native_object_pose.gd").make(record.basis,record.origin.y-float(height)),tint)<0:
 			objects=before
 			objects_revision += 1
