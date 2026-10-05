@@ -82,10 +82,10 @@ func run() -> void:
 	check(data.redo() and data._recipe_geology==null,"Redo removes the restored desert image")
 	scene._world_visuals.sync(scene)
 	check(scene._world_visuals._geology==null,"The scene clears desert texture state after redo")
-	# Small geometry still has the plate's whole geology workload (219x219).
+	# Small geometry still has a substantial 128x128 geology workload.
 	var small := NativeTerrainData.new()
 	await small._set_recipe(settings("desert"),self)
-	check(small._recipe_geology.get_size()==Vector2i(219,219) and small.last_geology_worker,"Small terrain providers also prepare full geology on workers")
+	check(small._recipe_geology.get_size()==Vector2i(128,128) and small.last_geology_worker,"Small terrain providers also prepare full geology on workers")
 	await data._set_recipe(settings("salt-basin",13),self)
 	data._recipe_settings = settings("desert")
 	data._recipe = NativeTerrainRecipe.new(data._recipe_settings)
