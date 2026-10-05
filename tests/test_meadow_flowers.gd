@@ -14,6 +14,7 @@ const Samples := preload("res://scripts/garden_instance_samples.gd")
 const HEIGHTS := {"oxeye_daisy":Vector2(0.5,0.62),"buttercup":Vector2(0.3,0.4),"dandelion":Vector2(0.2,0.3),"dandelion_clock":Vector2(0.34,0.5),"cosmos":Vector2(0.85,1.0),"sunflower":Vector2(1.6,2.0),"poppy":Vector2(0.55,0.7),"lupine":Vector2(0.72,0.9),"wheat":Vector2(0.6,0.72)}
 ## The painterly grass tuft's tallest blade (scripts/grass_tuft_mesh.gd HEIGHT.y).
 const TUFT := 0.44
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures := 0
 
@@ -115,11 +116,9 @@ func _registration() -> void:
 	check(look.leaf_season("poppy:" + Kit.node_name("poppy")).w > 0.0, "Winter takes the flowers")
 
 func _flat_data() -> NativeTerrainData:
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
-	source.free()
 	return data
 
 func _parts() -> Array:
@@ -152,8 +151,8 @@ func _remap() -> void:
 	var data := _flat_data()
 	for old: String in Kit.REMAP:
 		data.place(old, Vector2(randf_range(-5.0, 5.0), randf_range(-5.0, 5.0)), 0.0, 1.0)
-	# A painted meadow patch, in full bloom.
-	for index in range(40, 46): data.meadow[index] = 1.0
+	# A painted meadow patch, in full bloom, on the island's north edge.
+	for x in range(6): data.meadow[data.meadow_cell(Vector2(6.25 + x * 0.5, -13.75))] = 1.0
 	var pair := _parts()
 	Kit.remap_override = 0
 	var plain: Dictionary = Samples.build(data, pair[0], pair[1], {})

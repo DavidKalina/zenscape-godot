@@ -3,6 +3,7 @@ extends SceneTree
 const Work = preload("res://scripts/background_work.gd")
 const OWNERS := 4
 const BURST := 7
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -80,8 +81,7 @@ func teardown(phase: String) -> void:
 	check(terrain.get_ref()==null,"Completed abandoned work releases its terrain inputs")
 func run() -> void:
 	create_timer(120).timeout.connect(func() -> void: quit(2))
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
-	var source_mesh: ArrayMesh = source.get_node("terrain").mesh
+	var source_mesh: ArrayMesh = PlateFixture.mesh()
 	var recipes: Array[NativeTerrainData] = []
 	var meshes: Array[NativeTerrainData] = []
 	var nav_data: Array[NativeTerrainData] = []
@@ -158,7 +158,6 @@ func run() -> void:
 	await drained("finite-helper")
 	await process_frame
 	check(finite_ref.get_ref()==null,"A completed finite helper releases itself after joining")
-	source.free()
 	for phase in ["recipe","mesh","maps","instances","blast","reflections"]: await teardown(phase)
 	print("Threaded lifecycle: ",failures," failures")
 	quit(1 if failures else 0)

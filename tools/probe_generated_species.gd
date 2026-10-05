@@ -5,15 +5,14 @@ extends SceneTree
 ## and the share of neighbour pairs (under 3 m) of one species.
 ## godot --headless --path . -s res://tools/probe_generated_species.gd -- 79,2,9,165
 const Emergence = preload("res://scripts/emergence.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var seeds: Array[int] = []
 	for s in (args[0] if not args.is_empty() else "79,2,9,165").split(","): seeds.append(int(s))
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
-	var mesh: ArrayMesh = reference.get_node("terrain").mesh
-	reference.free()
+	var mesh: ArrayMesh = PlateFixture.mesh()
 	for world_seed in seeds:
 		var data := NativeTerrainData.new()
 		data.setup(mesh)

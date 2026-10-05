@@ -4,6 +4,7 @@ extends SceneTree
 ## watering can read it as a hollow?
 ##   Godot --headless --path . --script res://tools/probe_ravine_fill.gd -- --slope=0.15 --from=-8,0 --to=8,0 --pips=1
 const Wire = preload("res://scripts/clay_tools/wire.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 class FakeEditor:
 	var data: NativeTerrainData
@@ -29,10 +30,8 @@ func run() -> void:
 		if arg.begins_with("--pips="): scale = float(arg.trim_prefix("--pips="))
 		if arg.begins_with("--start="): from = Vector2(float(arg.get_slice("=",1).get_slice(",",0)),float(arg.get_slice(",",1)))
 		if arg.begins_with("--finish="): to = Vector2(float(arg.get_slice("=",1).get_slice(",",0)),float(arg.get_slice(",",1)))
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	var heights := data.heights.duplicate()
 	for i in heights.size(): heights[i] += slope*(data.points[i] as Vector2).x

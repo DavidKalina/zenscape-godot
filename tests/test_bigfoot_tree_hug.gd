@@ -2,6 +2,7 @@ extends SceneTree
 ## Headless regression of the isolated embrace using the real actor and IK.
 const Fixture = preload("res://tests/test_bigfoot_environment.gd")
 const HUG = preload("res://scripts/bigfoot_tree_hug.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -16,10 +17,8 @@ func fixture() -> Dictionary:
 	for child in [world.creature,world.brain,world.routine,world._lightning,life]: world.add_child(child)
 	world.creature.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
 	world.creature.set_process(false)
-	var source := preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	world.navigation.rebuild(data,func(p: Vector3) -> bool: return absf(p.x)>0.76 or absf(p.z)>0.76)
 	world.creature._ground_probe = world.navigation._ground

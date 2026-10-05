@@ -34,6 +34,7 @@ const Materials = preload("res://scripts/hand_materials.gd")
 const Palette = preload("res://scripts/command_palette.gd")
 const Emergence = preload("res://scripts/emergence.gd")
 const Wind = preload("res://scripts/pollen_wind.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures := 0
 var only := ""
@@ -48,11 +49,9 @@ func check(ok: bool, message: String) -> void:
 		print("PASS: "+message)
 
 func _flat_data() -> NativeTerrainData:
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
-	source.free()
 	return data
 
 ## A handful's landings: `count` motes spread evenly over a disc of `radius`

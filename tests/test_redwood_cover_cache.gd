@@ -1,4 +1,7 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
+## The cover map's texels a side: 0.5 m ones over the plate's map.
+const TEXELS := roundi(Plate.MAP_HALF*4.0)
 var failures := 0
 
 func _initialize() -> void: run.call_deferred()
@@ -9,10 +12,10 @@ func check(ok: bool, label: String) -> void:
 		push_error(label)
 
 func reference(data: NativeTerrainData) -> PackedByteArray:
-	var image := Image.create(64,64,false,Image.FORMAT_RF)
-	for y in range(64):
-		for x in range(64):
-			var point := Vector2((x+0.5)*0.5-16,(y+0.5)*0.5-16)
+	var image := Image.create(TEXELS,TEXELS,false,Image.FORMAT_RF)
+	for y in range(TEXELS):
+		for x in range(TEXELS):
+			var point := Vector2((x+0.5)*0.5-Plate.MAP_HALF,(y+0.5)*0.5-Plate.MAP_HALF)
 			var value := 0.0
 			for tree in data.objects:
 				if tree.asset != "redwood" or data._recipe_settings.get("biome","") != "redwood": continue
@@ -25,10 +28,10 @@ func run() -> void:
 	var data := NativeTerrainData.new()
 	data._recipe_settings = {"biome":"redwood"}
 	data.objects.assign([
-		{"id":1,"asset":"redwood","x":-15.8,"z":15.9,"scale":0.2},
+		{"id":1,"asset":"redwood","x":-Plate.MAP_HALF+0.2,"z":Plate.MAP_HALF-0.1,"scale":0.2},
 		{"id":2,"asset":"redwood","x":0.0,"z":0.0,"scale":1.1},
 		{"id":3,"asset":"redwood","x":1.4,"z":-0.7,"scale":3.0},
-		{"id":4,"asset":"redwood","x":22.0,"z":0.0,"scale":0.5}])
+		{"id":4,"asset":"redwood","x":Plate.MAP_HALF+6.0,"z":0.0,"scale":0.5}])
 	var mist = preload("res://scripts/redwood_biome_mist.gd").new()
 	mist._cover(data)
 	check(mist.cover_image.get_data() == reference(data),"Cover matches full-grid reference")

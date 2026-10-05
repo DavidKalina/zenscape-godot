@@ -1,10 +1,9 @@
 extends SceneTree
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 func _initialize() -> void: run.call_deferred()
 func run() -> void:
 	var data := NativeTerrainData.new()
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	var nav := CreatureNavigation.new()
 	var walls := [

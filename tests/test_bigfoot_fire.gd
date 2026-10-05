@@ -8,6 +8,7 @@ extends SceneTree
 const FIRE = preload("res://scripts/bigfoot_fire.gd")
 const LIFE = preload("res://scripts/bigfoot_environment.gd")
 const WARM = preload("res://scripts/bigfoot_warm_hands.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 
 class Flash extends Node:
@@ -113,9 +114,7 @@ func run() -> void:
 	world.world_play.add_child(world.world_play.temper)
 	world.creature.setup("res://assets/models/zenscape-bigfoot-breathing.glb")
 	world.creature.set_process(false)
-	var source := preload("res://assets/zen_reference/geometry.scn").instantiate()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	fuel_patch(Vector2(3,0),3.5)
 	world.navigation.rebuild(data,func(_p: Vector3) -> bool: return true)

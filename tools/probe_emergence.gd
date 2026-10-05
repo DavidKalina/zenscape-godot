@@ -4,14 +4,13 @@ extends SceneTree
 ## varies the result, and that provenance survives a save round trip.
 ## godot --headless --path . -s res://tools/probe_emergence.gd -- [seed]
 const Emergence = preload("res://scripts/emergence.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 func _initialize() -> void: run.call_deferred()
 
 func run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var world_seed := int(args[0]) if not args.is_empty() and args[0].is_valid_int() else 184
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
-	var mesh: ArrayMesh = reference.get_node("terrain").mesh
-	reference.free()
+	var mesh: ArrayMesh = PlateFixture.mesh()
 	print("-- blank plain, salt 7")
 	var blank := await _world(mesh,-1)
 	var a := _run(blank,7,true)

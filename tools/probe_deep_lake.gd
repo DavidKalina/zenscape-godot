@@ -7,6 +7,7 @@ extends SceneTree
 ##   Godot --headless --path . --script res://tools/probe_deep_lake.gd -- --depth=7
 
 const CENTER := Vector2.ZERO
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var RADIUS := 8.0
 var DEPTH := 7.0
 
@@ -16,10 +17,8 @@ func run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--depth="): DEPTH = float(arg.trim_prefix("--depth="))
 		if arg.begins_with("--radius="): RADIUS = float(arg.trim_prefix("--radius="))
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	var heights := data.heights.duplicate()
 	for i in heights.size():

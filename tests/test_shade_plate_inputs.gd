@@ -61,7 +61,11 @@ func run() -> void:
 		var older := inputs.duplicate()
 		for key in ["plate_half","water_cells","meadow_cells","meadow_step"]: older.erase(key)
 		var bare: Dictionary = kernel.shade(older,arrays,faces,water,0,last)
-		check(var_to_bytes(full) == var_to_bytes(bare),"Keys absent shade the same as keys sent at today's plate")
+		# The library's own defaults are the 28 m plate's, as the literals were.
+		var legacy := inputs.duplicate()
+		legacy.merge({"plate_half":14.0,"water_cells":51,"meadow_cells":56,"meadow_step":0.5},true)
+		var before: Dictionary = kernel.shade(legacy,arrays,faces,water,0,last)
+		check(var_to_bytes(before) == var_to_bytes(bare),"Keys absent shade the same as keys sent at the 28 m plate")
 		# The keys are read: a different plate changes the shading (a library
 		# built before they existed ignores them, and reports no).
 		var shifted := inputs.duplicate()

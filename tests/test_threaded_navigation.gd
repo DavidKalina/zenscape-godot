@@ -1,5 +1,6 @@
 extends SceneTree
 ## Native geometry + live clearance regression. Run graphically, serialized.
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 var clearance_calls := 0
 func _initialize() -> void: run.call_deferred()
@@ -40,7 +41,7 @@ func complete(nav: CreatureNavigation, physics := false) -> Dictionary:
 	return {"completion_ms":elapsed,"slice_max_ms":max_slice/1000.0,"loop_p95_ms":gaps[int(gaps.size()*0.95)],"loop_p99_ms":gaps[int(gaps.size()*0.99)],"loop_max_ms":gaps[-1],"submit_ms":nav.last_submit_usec/1000.0,"validation_ms":nav.last_validation_usec/1000.0,"workers":nav.last_worker_count}
 func run() -> void:
 	create_timer(120).timeout.connect(func() -> void: quit(2))
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
+	var source: Node3D = PlateFixture.dress(load("res://assets/zen_reference/geometry.scn").instantiate())
 	var data := NativeTerrainData.new()
 	data.setup(source.get_node("terrain").mesh)
 	data.reset_flat()

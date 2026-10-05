@@ -11,8 +11,11 @@ func _run() -> void:
 	root.add_child(scene)
 	scene.set_process(false)
 	var source: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/growth.json"))
+	# The scene's land is the made plate now; the authored terrain these
+	# attributes were exported from is still in the asset.
+	var asset: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	for name: String in source:
-		var node: MeshInstance3D = scene.get_node("Reference/" + name)
+		var node: MeshInstance3D = asset.get_node(name) if name == "terrain" else scene.get_node("Reference/" + name)
 		var arrays := node.mesh.surface_get_arrays(0)
 		var attrs: Dictionary = source[name]
 		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -30,6 +33,7 @@ func _run() -> void:
 				max_error = maxf(max_error, absf(meadow[i * 3 + axis] - attrs.aBaseColor.array[index * 3 + axis]))
 			check(absf(uv2[i].y - vertices[i].y) < 0.00001, "Full growth retains imported vertex height")
 		check(max_error < 0.00001, "All source growth attributes survive winding conversion: " + name)
+	asset.free()
 	var growth: RefCounted = scene._growth
 	var encounter = scene._bigfoot
 	var tree_rest: Transform3D = encounter._tree.transform

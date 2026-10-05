@@ -112,7 +112,8 @@ func _fronts() -> void:
 	r.carry_front(front)
 	check(r._pending.size() >= GustFronts.SLOTS, "A front brings several ribbons: %d" % r._pending.size())
 	var first := INF
-	for i in range(600):
+	# Ten seconds saw a front across the 28 m plate; as long again per metre now.
+	for i in range(ceili(600 * Plate.HALF / Plate.LEGACY_HALF)):
 		r.advance(1.0 / 60.0, 0.4, 0.0)
 		if not r.ribbons.is_empty() and first == INF: first = float(i) / 60.0
 	var due := (Plate.HALF * (1.0 - Ribbons.JOIN) + GustFronts.LEAD_IN) / float(front.speed)

@@ -13,6 +13,7 @@ const Seeds = preload("res://scripts/dandelion_seeds.gd")
 const Flowers = preload("res://scripts/meadow_flower_mesh.gd")
 const FlowerSowing = preload("res://scripts/flower_sowing.gd")
 const Emergence = preload("res://scripts/emergence.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 
 var failures := 0
 
@@ -45,11 +46,9 @@ class Gust extends Node3D:
 		return Vector3(lean,0.0,0.0) if p.distance_to(at) < reach else Vector3.ZERO
 
 func _flat_data() -> NativeTerrainData:
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
-	source.free()
 	return data
 
 ## A drift on a 0.45 m grid over `size` m round `at`, each cell one of `kinds`.

@@ -3,14 +3,13 @@ extends SceneTree
 ## what each habitat planted. `single` strips the blend, which must dress
 ## exactly as the one-habitat code always did (compare the digest on main).
 ## godot --headless --path . -s res://tools/probe_biome_dressing.gd -- [single] seed...
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 func _initialize() -> void: run.call_deferred()
 func run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var single := "single" in args
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(reference.get_node("terrain").mesh)
-	reference.free()
+	data.setup(PlateFixture.mesh())
 	for arg in args:
 		if not arg.is_valid_int(): continue
 		var recipe: Dictionary = preload("res://scripts/cozy_world_generator.gd").sample(int(arg)).terrain

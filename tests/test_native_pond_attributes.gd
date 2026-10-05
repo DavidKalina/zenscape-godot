@@ -1,4 +1,5 @@
 extends SceneTree
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 var checked_vertices := 0
 func _initialize() -> void: run.call_deferred()
@@ -33,10 +34,8 @@ func verify(view: GardenView,label: String) -> void:
 	check(max_depth_error<0.000001,label+": every depth matches direct terrain query")
 	check(max_color_error<=1.0/255.0+0.000001,label+": every color matches depth palette within vertex storage precision")
 func run() -> void:
-	var source: Node3D = preload("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.reset_flat()
 	data.brush(Vector2.ZERO,3.0,1.0,"lower",0.0)
 	check(data.add_pond(Vector2.ZERO,-0.2),"Standalone pond exists")

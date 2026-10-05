@@ -1,5 +1,6 @@
 extends SceneTree
 ## Native mesh arrays remain byte-identical to the retained sequential builder.
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 var failures := 0
 func _initialize() -> void: run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -46,10 +47,8 @@ func run() -> void:
 		if failures:
 			quit(1)
 			return
-	var source: Node3D = load("res://assets/zen_reference/geometry.scn").instantiate()
 	var data := NativeTerrainData.new()
-	data.setup(source.get_node("terrain").mesh)
-	source.free()
+	data.setup(PlateFixture.mesh())
 	data.paint_grass(Vector2.ZERO,3.0,0.7)
 	await sweep(data,"imported-cover")
 	data.reset_flat()

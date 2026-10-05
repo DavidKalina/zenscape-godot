@@ -4,6 +4,7 @@ extends SceneTree
 ## neighbours meet agree, and the atlas survives a save and load.
 const Atlas = preload("res://scripts/chunk_atlas.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
+const PlateFixture := preload("res://tests/fixtures/plate.gd")
 const SEAM := 1e-3
 var failures := 0
 var source_mesh: ArrayMesh
@@ -35,9 +36,7 @@ func stroke(data: NativeTerrainData, pin, from: Vector2, to: Vector2, lower := f
 	return worst
 
 func run() -> void:
-	var reference = load("res://assets/zen_reference/geometry.scn").instantiate()
-	source_mesh = reference.get_node("terrain").mesh
-	reference.free()
+	source_mesh = PlateFixture.mesh()
 	var atlas = Atlas.new()
 	atlas.seed_value = 4242
 	var points: PackedVector2Array
