@@ -558,7 +558,7 @@ func _drag_step(delta: float) -> void:
 		last_plate = p
 		k += 1
 	_queued = PackedVector2Array()
-	data.heights = heights
+	data.heights = data.land_only(heights,base)
 	_dirt()
 	show_land()
 	var at := ground_at(last_plate)
@@ -591,7 +591,7 @@ func _paint_step(delta: float, work: float, ending := false) -> void:
 		if reach > 0.0: dirty(q,reach)
 		dabs += 1
 	if not wrote and path.is_empty(): return
-	data.heights = heights
+	data.heights = data.land_only(heights,base)
 	_dirt()
 	show_land()
 	var at := ground_at(last_plate)
@@ -604,7 +604,7 @@ func _hold_step() -> void:
 	var data := editor.data
 	var heights := data.heights
 	if not tool.hold_step(heights,(_press.y-_pointer.y)/_metre_pixels): return
-	data.heights = heights
+	data.heights = data.land_only(heights,base)
 	_dirt()
 	show_land()
 	hand_gesture(tool.gesture(verb),ground_at(center))
@@ -632,6 +632,7 @@ func dirty(q: Vector2, reach: float) -> void:
 	_dirt_rect = _dirt_rect.merge(area) if _dirt_rect.has_area() else area
 
 ## Every point within `radius` of `at` into `near` (and distances `near_d`).
+## Points off the island's outline are never gathered: no tool moves them.
 func gather(at: Vector2, radius: float) -> void:
 	var data := editor.data
 	if _cells_for != data or _cells_points != data.points.size():
@@ -647,22 +648,53 @@ func gather(at: Vector2, radius: float) -> void:
 	var low := Vector2i(floori((at.x-radius)/CELL),floori((at.y-radius)/CELL))
 	var high := Vector2i(floori((at.x+radius)/CELL),floori((at.y+radius)/CELL))
 	var points := data.points
+	var shore := data.shore_distance
+	var islanded := not shore.is_empty()
 	for x in range(low.x,high.x+1):
 		for y in range(low.y,high.y+1):
 			var cell: Variant = _cells.get(Vector2i(x,y))
 			if cell == null: continue
 			for i: int in cell:
 				var d := points[i].distance_to(at)
-				if d < radius:
+				if d < radius and (not islanded or shore[i] >= 0.0):
 					near.append(i)
 					near_d.append(d)
 
 ## How much shaping reaches point `i`: 1 inside, easing to 0 over the
 ## plate's last metres (EDGE).
 func fade(i: int) -> float:
-	var p: Vector2 = editor.data.points[i]
+	return edge_fade(editor.data,i)
+
+## How much shaping reaches point `i` of `data`: 1 inside, easing to 0 over
+## the land's last metres. On the square plate those are the plate's (EDGE);
+## on an island with an outline the same ramp is measured in from the shore
+## (NativeTerrainData `shore_distance`, which counts the plate's rim as
+## shore where the land reaches it), and a point off the island takes none.
+static func edge_fade(data: NativeTerrainData, i: int) -> float:
+	if not data.shore_distance.is_empty():
+		return clampf((data.shore_distance[i]-(PLATE_HALF-EDGE.y))/(EDGE.y-EDGE.x),0.0,1.0)
+	var p: Vector2 = data.points[i]
 	var edge := maxf(absf(p.x),absf(p.y))
 	return clampf((EDGE.y-edge)/(EDGE.y-EDGE.x),0.0,1.0)
+
+## The way out of the land at plate point `p` and how far in it stands: the
+## shore's outward normal and metres to it on an island with an outline, the
+## nearest side's and metres to the rim on the square plate.
+static func edge_way(data: NativeTerrainData, p: Vector2) -> Vector3:
+	if data.shore_distance.is_empty():
+		var out := Vector2(signf(p.x),0.0) if absf(p.x) >= absf(p.y) else Vector2(0.0,signf(p.y))
+		return Vector3(out.x,out.y,PLATE_HALF-maxf(absf(p.x),absf(p.y)))
+	var here: Variant = data.sample(p,data.shore_distance)
+	if here == null: return Vector3.ZERO
+	var step := 0.3
+	var east: Variant = data.sample(p+Vector2(step,0.0),data.shore_distance)
+	var west: Variant = data.sample(p-Vector2(step,0.0),data.shore_distance)
+	var south: Variant = data.sample(p+Vector2(0.0,step),data.shore_distance)
+	var north: Variant = data.sample(p-Vector2(0.0,step),data.shore_distance)
+	var fall := Vector2(float(west if west != null else here)-float(east if east != null else here),float(north if north != null else here)-float(south if south != null else here))
+	if fall.length() < 0.001: return Vector3(0.0,0.0,float(here))
+	fall = fall.normalized()
+	return Vector3(fall.x,fall.y,float(here))
 
 ## The stroke touched the ground `reach` round `q` (the settle refresh covers it).
 func touch(q: Vector2, reach: float) -> void:

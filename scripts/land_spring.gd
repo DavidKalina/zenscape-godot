@@ -313,6 +313,7 @@ func _gather(data: NativeTerrainData) -> void:
 		_near_d.append(d)
 
 func _fade(i: int, data: NativeTerrainData) -> float:
+	if not data.shore_distance.is_empty(): return preload("res://scripts/land_clay.gd").edge_fade(data,i)
 	var p: Vector2 = data.points[i]
 	var edge := maxf(absf(p.x),absf(p.y))
 	return clampf((EDGE.y-edge)/(EDGE.y-EDGE.x),0.0,1.0)
