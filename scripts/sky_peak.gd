@@ -232,8 +232,8 @@ const TREE_HEIGHT := Vector2(3.5,7.5)
 const TREE_VARIANTS := [0,1,2,4]
 ## The cloud round the foot: puffs (x, y, z, radius) WRAP_APART m apart along
 ## the sea line, WRAP_SIZE m across.
-const WRAP_APART := 58.0
-const WRAP_SIZE := Vector2(20.0,62.0)
+const WRAP_APART := 38.0
+const WRAP_SIZE := Vector2(28.0,78.0)
 ## Snow: the line stands SNOW_DEPTH m under the top, broken SNOW_RAG m
 ## either way by a noise, brought down SNOW_HOLLOW m a metre of hollow (and
 ## lifted on ridges); it holds on ground no steeper than SNOW_SLOPE (at the
@@ -242,6 +242,11 @@ const WRAP_SIZE := Vector2(20.0,62.0)
 ## (scripts/native_terrain_palette.gd), a touch blue in the hollows, each
 ## face nudged by SNOW_JITTER; the light makes it warm or cool by the hour.
 const SNOW_DEPTH := Vector2(135.0,165.0)
+## Placed scaled in height (scripts/sky_world.gd), a range holds no snow
+## under SNOW_WORLD (m, the world's height): the low ones (foothills, the
+## ridges' low stretches and cols) are bare rock going into the cloud, not
+## white blankets (`snow_floor`).
+const SNOW_WORLD := 140.0
 const SNOW_RAG := 32.0
 const SNOW_HOLLOW := 2.4
 const SNOW_SLOPE := Vector2(1.3,2.8)
@@ -317,6 +322,11 @@ var cut := true
 ## the erosion and the crest's notches): Vector2(lowest x, highest x), or
 ## Vector2.ZERO if nowhere; from the plan alone, so cheap. The ring lays its
 ## ranges end to end by it.
+## The snow line's floor in a range's own heights, placed scaled `height`
+## in height about the sea (SNOW_WORLD in the world's).
+static func snow_floor(height: float) -> float:
+	return SEA+(SNOW_WORLD-SEA)/maxf(height,0.01)
+
 static func crest_span(seed_value: int, stature := 1.0, above := 140.0) -> Vector2:
 	var peak: RefCounted = new()
 	peak.stature = stature
@@ -935,7 +945,7 @@ func _wrap() -> void:
 		var g := _gradient(heights,s.x,s.y)
 		var down_way := -g.normalized() if g.length() > 0.001 else Vector2.ZERO
 		var size := rng.randf_range(WRAP_SIZE.x,WRAP_SIZE.y)
-		var at := p+down_way*size*0.35
+		var at := p+down_way*size*0.15
 		wraps.append(Vector4(at.x,SEA+rng.randf_range(-4.0,6.0)+size*rng.randf_range(0.0,0.3),at.y,size))
 	# Along the gorge's floor, where its walls stand over the sea.
 	var z := -HALF.y if cut else HALF.y

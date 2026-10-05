@@ -111,7 +111,7 @@ const HAZE_REACH := 820.0
 ## over it the rock goes into the cloud's light (reference_surface
 ## `sea_fray`).
 const WRAP_STRENGTH := 0.85
-const SEA_FRAY := Vector2(14.0,48.0)
+const SEA_FRAY := Vector2(18.0,30.0)
 ## The plate's look (its field's patches, its rock's strata) read this many
 ## times larger on a range (reference_surface `look_scale`): the plate's
 ## mountains are a few metres high, a range a few hundred.
@@ -416,11 +416,12 @@ func _start(cell: Vector2i, s: Vector4) -> void:
 	# thread, before a worker asks for it.
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell)),false,"Sky peak")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),stature_of(cell),_palette("grass"),_palette("rock"),_gravel(),_snow(),out,gorge_of(cell),detail_of(cell),scale_of(cell).y),false,"Sky peak")
 	_making[_key(cell)] = {"task":task,"cell":cell,"spot":s,"out":out}
 
-static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true, stride := 1) -> void:
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, out: Dictionary, gorge := true, stride := 1, height := 1.0) -> void:
 	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
+	shape.snowline = maxf(shape.snowline,SkyPeak.snow_floor(height))
 	out.shape = shape
 	out.body = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride,snow)
 	out.far = shape.body_arrays(grass,rock,gravel,OFF_MAP,stride*LOD_STRIDE,snow)

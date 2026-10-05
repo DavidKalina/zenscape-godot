@@ -98,7 +98,7 @@ func warm(owner: Node3D) -> void:
 		var key: String = peaks._key(cell)
 		if lines.has(key) or _making.has(key): continue
 		var out := {}
-		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),stride_of(cell),peaks.gorge_of(cell),out),false,"Sky ring skyline")
+		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),stride_of(cell),peaks.gorge_of(cell),out,peaks.scale_of(cell).y),false,"Sky ring skyline")
 		_making[key] = {"task":task,"out":out,"cell":cell}
 		whole = false
 
@@ -107,8 +107,9 @@ func stride_of(cell: Vector2i) -> int:
 	if cell == Vector2i.ZERO: return HOME_STRIDE
 	return STRIDE_LOW if peaks.coarse_of(cell) else STRIDE
 
-static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, stride: int, gorge: bool, out: Dictionary) -> void:
+static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, stride: int, gorge: bool, out: Dictionary, height := 1.0) -> void:
 	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
+	shape.snowline = maxf(shape.snowline,SkyPeak.snow_floor(height))
 	out.arrays = shape.body_arrays(grass,rock,gravel,off_map,stride,snow)
 
 func _off_map() -> Vector3:
