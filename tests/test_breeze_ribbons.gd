@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Breeze ribbons (scripts/breeze_ribbons.gd, docs/scenic/breeze-ribbons.md):
 ## strokes ride the air downwind as one continuous path, climb over ground
 ## ahead, swell and sink, curl through eddies, sweep low and lift off, come in with gust fronts,
@@ -21,14 +22,14 @@ func _initialize() -> void:
 
 ## A plate 28 m across with a 3 m hill at x = 4.
 static func _ground(p: Vector2) -> Variant:
-	if absf(p.x) > 14.0 or absf(p.y) > 14.0: return null
+	if absf(p.x) > Plate.HALF or absf(p.y) > Plate.HALF: return null
 	return 3.0 * exp(-pow(p.x - 4.0, 2.0) / 8.0)
 
 func _make() -> Node3D:
 	var r: Node3D = Ribbons.new()
 	root.add_child(r)
 	r.setup(_ground)
-	r.set_bounds(Vector2.ZERO, 14.0)
+	r.set_bounds(Vector2.ZERO, Plate.HALF)
 	r._rng.seed = 21
 	r._until_lone = INF
 	return r
@@ -106,7 +107,7 @@ func _over_woods() -> void:
 func _fronts() -> void:
 	var r := _make()
 	var f: RefCounted = GustFronts.new()
-	f.set_bounds(Vector2.ZERO, 14.0)
+	f.set_bounds(Vector2.ZERO, Plate.HALF)
 	var front: Dictionary = f.send(Vector2.RIGHT, 0.4, 0.53, 1.0)
 	r.carry_front(front)
 	check(r._pending.size() >= GustFronts.SLOTS, "A front brings several ribbons: %d" % r._pending.size())
@@ -114,7 +115,7 @@ func _fronts() -> void:
 	for i in range(600):
 		r.advance(1.0 / 60.0, 0.4, 0.0)
 		if not r.ribbons.is_empty() and first == INF: first = float(i) / 60.0
-	var due := (14.0 * (1.0 - Ribbons.JOIN) + GustFronts.LEAD_IN) / float(front.speed)
+	var due := (Plate.HALF * (1.0 - Ribbons.JOIN) + GustFronts.LEAD_IN) / float(front.speed)
 	check(absf(first - due) < 0.8, "They join it where it enters the plate: at %.1f s, due %.1f s" % [first, due])
 	check(r.ribbons.is_empty(), "They leave at the plate's edge")
 	r.free()

@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 var failures := 0
 
 func _initialize() -> void:
@@ -13,7 +14,7 @@ func _run() -> void:
 	# A real triangulated chunk keeps this model contract independent of the UI.
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-14,0,-14),Vector3(14,0,-14),Vector3(-14,0,14),Vector3(14,0,-14),Vector3(14,0,14),Vector3(-14,0,14)])
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-Plate.HALF,0,-Plate.HALF),Vector3(Plate.HALF,0,-Plate.HALF),Vector3(-Plate.HALF,0,Plate.HALF),Vector3(Plate.HALF,0,-Plate.HALF),Vector3(Plate.HALF,0,Plate.HALF),Vector3(-Plate.HALF,0,Plate.HALF)])
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	var data := NativeTerrainData.new()

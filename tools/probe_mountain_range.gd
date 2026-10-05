@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless probe of the Mountain's range (scripts/clay_tools/mountain.gd), on
 ## the real cozy worlds scene, driven by synthesized input through hand_reach.
 ## Checks: a pull straight up is the single peak, round, and a little sideways
@@ -138,7 +139,7 @@ func main_axis(points: PackedInt32Array) -> Vector2:
 ## The tint layer's weight at plate point `p`.
 func tint_weight(tint: PackedFloat32Array, p: Vector2) -> float:
 	var side := NativeTerrainData.MEADOW_CELLS
-	var cell := Vector2i(((p+Vector2.ONE*14.0)/NativeTerrainData.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
+	var cell := Vector2i(((p+Vector2.ONE*Plate.HALF)/NativeTerrainData.MEADOW_STEP).floor()).clamp(Vector2i.ZERO,Vector2i.ONE*(side-1))
 	return NativeTerrainTint.weight_at(tint,cell.y*side+cell.x)
 
 func run() -> void:

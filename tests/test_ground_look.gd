@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## The calm grass ground and the soft tuft (docs/scenic/grass-look.md,
 ## "Round three"). Headless: the shader side is checked as source and by a
 ## GDScript copy of its grass test run over the real terrain palette; how the
@@ -39,8 +40,8 @@ func _grassness(include: String) -> void:
 	var palette := Palette.new()
 	var green := _const(include, "ZS_GROUND_GREEN")
 	var worst := 1.0
-	for x in range(-14, 15):
-		for z in range(-14, 15):
+	for x in range(-int(Plate.HALF), int(Plate.HALF)+1):
+		for z in range(-int(Plate.HALF), int(Plate.HALF)+1):
 			var c: Color = palette.grass_at_coordinates(float(x)+0.37, float(z)-0.21)
 			worst = minf(worst, _grassness_of(Vector3(c.r,c.g,c.b), green))
 	check(worst > 0.95, "Every palette grass face with its shimmer counts as grass: least %.3f" % worst)

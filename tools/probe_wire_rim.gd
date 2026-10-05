@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless probe of the Ravine (id `wire`) at the plate's rim
 ## (scripts/clay_tools/wire.gd `_to_rim`): a gorge drawn to within RIM_REACH
 ## of the rim runs on out through it and cuts the rim's own points to full
@@ -156,8 +157,8 @@ func run() -> void:
 	var path: PackedVector2Array = clay.tool.cut_path()
 	var outward: Vector2 = line[1].normalized()
 	print("CUT PATH END ",path[-1] if not path.is_empty() else null)
-	check("the drawn path runs on out through the rim",not path.is_empty() and path[-1].dot(outward) > 14.0,path[-1] if not path.is_empty() else null)
-	var rim := rim_points(line[1]+outward*2.0,0.8,13.6)
+	check("the drawn path runs on out through the rim",not path.is_empty() and path[-1].dot(outward) > Plate.HALF,path[-1] if not path.is_empty() else null)
+	var rim := rim_points(line[1]+outward*2.0,0.8,Plate.HALF-0.4)
 	var deepest := 0.0
 	for i in rim: deepest = maxf(deepest,base[i]-data.heights[i])
 	print("RIM ",JSON.stringify({"points":rim.size(),"deepest":snappedf(deepest,0.01)}))

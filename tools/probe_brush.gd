@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless probe of the Brush (scripts/clay_tools/brush.gd) on the real cozy
 ## worlds scene, driven by synthesized input through hand_reach. Checks: the
 ## Brush has a pocket and fans out grass/rock/earth/wipe; a Rock drag lays the
@@ -89,7 +90,7 @@ func bare(at: Vector2) -> bool:
 func cell_of(p: Vector2) -> int:
 	var data := editor.data
 	var step := NativeTerrainData.MEADOW_STEP
-	var c := Vector2i(((p+Vector2.ONE*14.0)/step).floor())
+	var c := Vector2i(((p+Vector2.ONE*Plate.HALF)/step).floor())
 	return c.y*NativeTerrainData.MEADOW_CELLS+c.x
 
 func tint_color(cell: int) -> Color:

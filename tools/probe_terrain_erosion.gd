@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 ## Headless probe for genome v7 erosion (scripts/terrain_erosion.gd).
 ## godot --headless --path . -s res://tools/probe_terrain_erosion.gd -- [count] [--reference N] [--candidates]
 ##  - per-family cut depth, deposit and timing of the grid sample and erosion;
@@ -124,7 +125,7 @@ func _argmax(values: Array[float]) -> int:
 ## (red cut, blue fill, full colour at 0.5 m).
 func _hillshade(recipe: Dictionary,path: String) -> void:
 	var size := 280
-	var step := 28.0/size
+	var step := Plate.SIZE/size
 	var image := Image.create(size*3+8,size,false,Image.FORMAT_RGB8)
 	image.fill(Color.BLACK)
 	var light := Vector3(-1,2.5,-0.6).normalized()
@@ -134,7 +135,7 @@ func _hillshade(recipe: Dictionary,path: String) -> void:
 		var rows: Array[PackedFloat64Array] = []
 		for j in range(size+1):
 			var row := PackedFloat64Array()
-			for i in range(size+1): row.append(fields[side].height(-14.0+i*step,-14.0+j*step))
+			for i in range(size+1): row.append(fields[side].height(-Plate.HALF+i*step,-Plate.HALF+j*step))
 			rows.append(row)
 		grids.append(rows)
 		for j in range(size):
@@ -143,7 +144,7 @@ func _hillshade(recipe: Dictionary,path: String) -> void:
 				var dz: float = rows[j+1][i]-rows[j][i]
 				var shade := clampf(Vector3(-dx,step,-dz).normalized().dot(light),0.0,1.0)
 				var tint := clampf((rows[j][i]-0.5)/12.0,0.0,1.0)
-				var ground: bool = fields[side].has_ground(Vector2(-14.0+i*step,-14.0+j*step))
+				var ground: bool = fields[side].has_ground(Vector2(-Plate.HALF+i*step,-Plate.HALF+j*step))
 				image.set_pixel(side*(size+4)+i,j,Color(0.3,0.1,0.1) if not ground else Color(shade*(0.7+0.3*tint),shade*0.85,shade*(1.0-0.3*tint)))
 	for j in range(size):
 		for i in range(size):

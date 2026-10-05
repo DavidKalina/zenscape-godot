@@ -9,6 +9,7 @@ extends SceneTree
 ## `keel`), which the glide's sense of the island (scripts/sky_islands.gd
 ## `_body`) matches.
 const Outline = preload("res://scripts/island_outline.gd")
+const Plate = preload("res://scripts/plate.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const LandClay = preload("res://scripts/land_clay.gd")
 const Wire = preload("res://scripts/clay_tools/wire.gd")
@@ -354,7 +355,7 @@ func tools(data: NativeTerrainData) -> void:
 	wire.clay = clay
 	var heights := data.heights.duplicate()
 	var path := PackedVector2Array()
-	for k in 33: path.append(Vector2(-14,-2).lerp(Vector2(14,2),k/32.0))
+	for k in 33: path.append(Vector2(-Plate.HALF,-2).lerp(Vector2(Plate.HALF,2),k/32.0))
 	wire.cut_gorge(heights,path)
 	data.heights = heights
 	var moved_off := false
@@ -408,7 +409,7 @@ func water(data: NativeTerrainData) -> void:
 	for k in range(8):
 		var way := Vector2.from_angle(TAU*k/8.0)
 		var r := 0.0
-		while data.ground_height(way*(r+0.5)) != null and r < 14.0: r += 0.25
+		while data.ground_height(way*(r+0.5)) != null and r < Plate.HALF: r += 0.25
 		flow.springs.append({"x":way.x*maxf(r-1.0,0.0),"z":way.y*maxf(r-1.0,0.0),"rate":0.05,"radius":0.6,"age":100.0})
 	for k in range(200): flow.run(4)
 	var spills: Array = flow.spills(preload("res://scripts/edge_falls.gd").DETECT)
@@ -599,7 +600,7 @@ func square_falls(data: NativeTerrainData) -> void:
 	print("square spills: ",spills.map(func(s: Dictionary) -> String: return "%d %s %.4f" % [s.side,s.lip,s.flux]))
 	check(spills.size() >= 3,"Water leaves the square over its sides (%d spills)" % spills.size())
 	check(spills == flow.kernel.spills(detect),"The square's spills are the kernel's, untouched")
-	for spill: Dictionary in spills: check(int(spill.side) >= 0 and absf(maxf(absf(spill.lip.x),absf(spill.lip.z))-14.0) < 0.01,"A square spill's lip is on the rim")
+	for spill: Dictionary in spills: check(int(spill.side) >= 0 and absf(maxf(absf(spill.lip.x),absf(spill.lip.z))-Plate.HALF) < 0.01,"A square spill's lip is on the rim")
 	data.release_listeners()
 
 ## A far island is baked as scripts/sky_islands.gd `_bake` does: a detached

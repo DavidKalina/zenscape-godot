@@ -1,8 +1,9 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 const Stepping = preload("res://scripts/stepping_route.gd")
 class Stones extends RefCounted:
 	var ponds: Array[Dictionary] = []
-	var streams: Array[Dictionary] = [{"pts":[{"x":0.0,"z":-14.0,"h":-0.5},{"x":0.0,"z":14.0,"h":-0.5}],"width":1.8,"surface":0.05}]
+	var streams: Array[Dictionary] = [{"pts":[{"x":0.0,"z":-Plate.HALF,"h":-0.5},{"x":0.0,"z":Plate.HALF,"h":-0.5}],"width":1.8,"surface":0.05}]
 	var objects: Array[Dictionary] = []
 	var stone := true
 	func ground_height(p: Vector2) -> float:

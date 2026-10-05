@@ -64,8 +64,8 @@ func run() -> void:
 	check(outside_moved == 0.0,"the pin moved ground outside its band by %f" % outside_moved)
 	var again := second.heights.duplicate()
 	check(pin.apply(second) == 0.0 and second.heights == again,"applying the pin twice changes nothing")
-	var closed: float = stroke(second,pin,Vector2(-10,-12),Vector2(-13.5,12))
-	stroke(second,pin,Vector2(-6,4),Vector2(-14,4),true)
+	var closed: float = stroke(second,pin,Vector2(-10,-12),Vector2(-(Atlas.HALF-0.5),12))
+	stroke(second,pin,Vector2(-6,4),Vector2(-Atlas.HALF,4),true)
 	var seam: float = atlas.seam_delta(atlas.live,second.heights,points)
 	print("seam: raw plain %.5f, largest offset closed during strokes %.4f, after strokes %.6f" % [raw_seam,closed,seam])
 	check(seam < SEAM,"seam after a stroke across the border is %f" % seam)
@@ -89,7 +89,7 @@ func run() -> void:
 	var fourth := chunk(atlas,atlas.live)
 	var fourth_pin = atlas.pin_for(atlas.live,points)
 	fourth_pin.apply(fourth)
-	stroke(fourth,fourth_pin,Vector2(-14,14),Vector2(0,0))
+	stroke(fourth,fourth_pin,Vector2(-Atlas.HALF,Atlas.HALF),Vector2(0,0))
 	var corner_seam: float = atlas.seam_delta(atlas.live,fourth.heights,points)
 	print("corner chunk seam %.6f" % corner_seam)
 	check(corner_seam < SEAM,"corner chunk seam is %f" % corner_seam)
@@ -125,7 +125,7 @@ func run() -> void:
 ## and its cover reaches the neighbour's at the seam.
 func check_carry_and_cover(atlas) -> void:
 	var west := chunk(atlas,Vector2i(5,0))
-	stroke(west,null,Vector2(9,-10),Vector2(13.5,10))
+	stroke(west,null,Vector2(9,-10),Vector2(Atlas.HALF-0.5,10))
 	var grass := west.grass
 	for z in range(west.MEADOW_CELLS): grass[z*west.MEADOW_CELLS+west.MEADOW_CELLS-1] = 0.25
 	west.grass = grass
@@ -138,7 +138,7 @@ func check_carry_and_cover(atlas) -> void:
 	check(widest > Atlas.BAND_FRAC*Atlas.SIZE,"a hill widens the carried band (%.1f m)" % widest)
 	var raised := 0.0
 	for id in range(fresh.points.size()):
-		if absf(fresh.points[id].x-(-14.0+7.0)) < 0.7: raised = maxf(raised,fresh.heights[id]-plain_heights[id])
+		if absf(fresh.points[id].x-(-Atlas.HALF+7.0)) < 0.7: raised = maxf(raised,fresh.heights[id]-plain_heights[id])
 	print("carry band %.1f m, raised 7 m in by %.2f m" % [widest,raised])
 	check(raised > 0.15,"the hill runs 7 m into the new chunk, past the 5 m pin band (%.2f m)" % raised)
 	check(atlas.seam_delta(Vector2i(6,0),fresh.heights,fresh.points) < SEAM,"carry-in leaves the seam shut")

@@ -1,4 +1,5 @@
 extends SceneTree
+const Plate = preload("res://scripts/plate.gd")
 func _initialize() -> void:
 	var genome = preload("res://scripts/inland_genome.gd")
 	var count := 0
@@ -11,8 +12,8 @@ func _initialize() -> void:
 			assert(decoded == settings,"Recipe round trip")
 			var a := NativeTerrainRecipe.new(settings)
 			var b := NativeTerrainRecipe.new(decoded)
-			for z in range(-13,14,2):
-				for x in range(-13,14,2):
+			for z in range(-int(Plate.HALF)+1,int(Plate.HALF),2):
+				for x in range(-int(Plate.HALF)+1,int(Plate.HALF),2):
 					var h := a.height(x,z)
 					assert(is_finite(h) and h >= NativeTerrainData.MIN_HEIGHT and h <= NativeTerrainData.MAX_HEIGHT,"Saveable height: "+kind+" "+str(h))
 					assert(h == b.height(x,z))
