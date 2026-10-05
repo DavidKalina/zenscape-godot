@@ -210,7 +210,8 @@ var wind: Object = null
 var _wind_was := false
 ## The weather's water: set `runoff.rain`, `.snowing` and `.snow_phase`.
 var runoff := preload("res://scripts/rain_runoff.gd").new()
-## 1 per grid cell over the plate, 0 outside it.
+## 1 per grid cell over the plate's ground, 0 outside it (off the plate, off
+## the island's outline, or over the chasm).
 var inside := PackedByteArray()
 var ready := false
 var paused := false
@@ -218,6 +219,7 @@ var paused := false
 var revision := 0
 var _clock := 0.0
 var _topology := PackedInt32Array()
+var _void := PackedByteArray()
 ## Microseconds of the last step and the worst seen, for probes.
 var last_step_usec := 0
 var worst_step_usec := 0
@@ -237,8 +239,14 @@ func _init(terrain: NativeTerrainData, prefer_native := true) -> void:
 	kernel.set_params(PARAMS)
 	data.history_captured.connect(func(state: Dictionary) -> void: state["water_springs"] = springs.duplicate(true))
 	data.state_restored.connect(_restore)
+	# A new outline (or chasm) is a new grid: the cells off the land are
+	# outside, and the cells beside them the edge water leaves by.
+	data.void_changed.connect(func() -> void: _void_changed())
 	data.document_captured.connect(func(document: Dictionary) -> void:
 		if ready and (not springs.is_empty() or volume() > 0.01): document["water_flow"] = encode())
+
+func _void_changed() -> void:
+	if ready: await setup()
 
 ## Maps every grid cell to the terrain triangle under its centre, synchronously
 ## or on a worker when `tree` is given. Call again if the mesh changes.
@@ -253,27 +261,33 @@ func setup(tree: SceneTree = null) -> void:
 	height = ceili((high.y-low.y)/cell-0.001)
 	var points := data.points
 	var ids := data.vertex_ids
+	var cut := data.void_faces.duplicate()
 	var w := width
 	var h := height
 	var size := cell
 	var start := origin
 	var job = preload("res://scripts/background_work.gd").new()
-	var mapped: Dictionary = await job.run(func() -> Dictionary: return map_cells(points,ids,size,start,w,h),tree)
+	var mapped: Dictionary = await job.run(func() -> Dictionary: return map_cells(points,ids,size,start,w,h,cut),tree)
 	kernel.configure(width,height,cell,origin,mapped.faces,mapped.weights)
 	inside = mapped.inside
 	_topology = data.vertex_ids
+	_void = cut
 	ready = true
 
 ## For each cell centre of a `w`×`h` grid, the triangle under it: three vertex
 ## ids and barycentric (u, v) as NativeTerrainData.sample weighs them, or -1.
-## Each triangle is rasterised over the cells its bounds cover.
-static func map_cells(points: PackedVector2Array, ids: PackedInt32Array, size: float, start: Vector2, w: int, h: int) -> Dictionary:
+## Each triangle is rasterised over the cells its bounds cover. Faces `cut`
+## marks (NativeTerrainData `void_faces`: off the island, or the chasm) are
+## not ground, so the cells over them are outside, as the plate's own
+## surroundings are; the kernel drains the cells beside them as its edge.
+static func map_cells(points: PackedVector2Array, ids: PackedInt32Array, size: float, start: Vector2, w: int, h: int, cut := PackedByteArray()) -> Dictionary:
 	var faces := PackedInt32Array()
 	faces.resize(w*h*3)
 	faces.fill(-1)
 	var weights := PackedFloat32Array()
 	weights.resize(w*h*2)
 	for f in range(0,ids.size(),3):
+		if not cut.is_empty() and cut[f/3] != 0: continue
 		var a := points[ids[f]]
 		var b := points[ids[f+1]]
 		var c := points[ids[f+2]]
@@ -826,8 +840,19 @@ func edge_outflow() -> Dictionary:
 
 ## Runs of edge cells water leaves the plate over (ZenScapeWaterFlow::spills),
 ## for scripts/edge_falls.gd.
+## The kernel lays every spill's lip on the square plate's rim
+## (ZenScapeWaterFlow::spills). On an island with an outline only a lip
+## where the land itself reaches that rim stands on ground: the others are
+## dropped, so no edge fall hangs in the air off a bay. Their water still
+## drains over the shore, unseen.
 func spills(params: Dictionary) -> Array:
-	return kernel.spills(params) if ready else []
+	if not ready: return []
+	var found: Array = kernel.spills(params)
+	if data.outline.is_empty(): return found
+	return found.filter(func(spill: Dictionary) -> bool:
+		var lip: Vector3 = spill.lip
+		var normal: Vector2 = spill.normal
+		return data.ground_height(Vector2(lip.x,lip.z)-normal*0.3) != null)
 
 ## The saved form: springs, and the depth grid deflated as float32, base64.
 func encode() -> Dictionary:
@@ -871,7 +896,7 @@ func _restore(state: Dictionary) -> void:
 	springs.clear()
 	runoff.reset()
 	if not ready: return
-	if data.vertex_ids != _topology: await setup()
+	if data.vertex_ids != _topology or data.void_faces != _void: await setup()
 	if saved is Dictionary:
 		springs.assign(saved.springs)
 		if saved.has("depth") and is_equal_approx(float(saved.cell),cell) and int(saved.width) == width and int(saved.height) == height:
