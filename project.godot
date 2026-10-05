@@ -47,11 +47,11 @@ environment/defaults/default_clear_color=Color(0.84, 0.87, 0.82, 1)
 
 zs_plate_half={
 "type": "float",
-"value": 14.0
+"value": 24.0
 }
 zs_map_half={
 "type": "float",
-"value": 16.0
+"value": 26.0
 }
 zs_sea_flight={
 "type": "vec4",

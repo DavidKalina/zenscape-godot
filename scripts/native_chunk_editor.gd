@@ -318,6 +318,7 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	terrain = scene.get_node("Reference/terrain")
 	terrain.add_child(pond_preview)
+	preload("res://scripts/plate_mesh.gd").adopt(terrain)
 	data.setup(terrain.mesh)
 	data.stroke_starting.connect(_join_weathering)
 	data.stroke_starting.connect(_mountain_interrupted)

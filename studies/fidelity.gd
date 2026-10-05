@@ -176,6 +176,10 @@ func _ready() -> void:
 	if get_tree().current_scene == self:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	var geometry: Node3D = $Reference
+	# The land is the plate's own made mesh (scripts/plate_mesh.gd); the
+	# authored one stays in the scene file as the 28 m template old worlds
+	# were saved on (scripts/plate_migration.gd).
+	preload("res://scripts/plate_mesh.gd").adopt(geometry.get_node("terrain"))
 	preload("res://scripts/scene_look.gd").source_roles(geometry)
 	_source = geometry.get_meta("source_settings", {})
 	if _source.is_empty():
