@@ -95,9 +95,12 @@ static func first_size() -> float:
 ## The outline for `seed_value` on the triangulation (`points`, and `ids`
 ## three a face, as NativeTerrainData holds them): a byte a face, 1 where
 ## the face is off the island. `size` 0..1 (AREA); left out, the seed's own
-## (`size_for`).
-static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: int, size := -1.0) -> PackedByteArray:
-	if size < 0.0: size = size_for(seed_value)
+## (`size_for`). A smaller grid than the plate's (the sky islets, scripts/
+## sky_islet.gd) gives its own `half` (its rim, m from the middle) and asks
+## for its land in m^2 (`area`), which then stands for `size`.
+static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: int, size := -1.0, half := HALF, area := -1.0) -> PackedByteArray:
+	if area > 0.0: size = size_of(area)
+	elif size < 0.0: size = size_for(seed_value)
 	var faces := ids.size()/3
 	var middles := PackedVector2Array()
 	var areas := PackedFloat32Array()
@@ -112,10 +115,10 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: 
 		areas[f] = absf((b-a).cross(c-a))*0.5
 		total += areas[f]
 	# Never more than the plate inside its rim's band can hold.
-	var goal := minf(area_for(size),total*0.6)
+	var goal := minf(area if area > 0.0 else area_for(size),total*0.6)
 	var radius := sqrt(goal/PI)
 	var field := _Field.new(seed_value,radius,1.0+BOLD*size_of(goal))
-	var rim := _Rim.new(seed_value)
+	var rim := _Rim.new(seed_value,half)
 	var near_rim := rim.faces(points,ids)
 	# The level: faces taken lowest share first until the island's area,
 	# sorted as [share, face] pairs (ties go to the lower face).
@@ -275,8 +278,11 @@ class _Field:
 ## along it.
 class _Rim:
 	var wander := FastNoiseLite.new()
+	## The grid's rim, m from its middle (the plate's HALF).
+	var half := HALF
 
-	func _init(seed_value: int) -> void:
+	func _init(seed_value: int, grid_half := HALF) -> void:
+		half = grid_half
 		wander.seed = hash([seed_value,"island rim"])
 		wander.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 		wander.frequency = 1.0/RIM_WAVE
@@ -285,14 +291,14 @@ class _Rim:
 	func width(p: Vector2) -> float:
 		return lerpf(RIM.x,RIM.y,clampf(wander.get_noise_2d(p.x,p.y)*0.75+0.5,0.0,1.0))
 
-	## Metres from `p` to the plate's rim.
-	static func reach(p: Vector2) -> float:
-		return HALF-maxf(absf(p.x),absf(p.y))
+	## Metres from `p` to the grid's rim.
+	func reach(p: Vector2) -> float:
+		return half-maxf(absf(p.x),absf(p.y))
 
 	## Share added at `p`: none until RIM_SOFT outside the band, rising to
 	## RIM_PUSH at its edge, the rim taken round the plate's corners (ROUND).
 	func push(p: Vector2) -> float:
-		var rounded := HALF-pow(pow(absf(p.x),ROUND)+pow(absf(p.y),ROUND),1.0/ROUND)
+		var rounded := half-pow(pow(absf(p.x),ROUND)+pow(absf(p.y),ROUND),1.0/ROUND)
 		var u := clampf((width(p)+RIM_SOFT-rounded)/RIM_SOFT,0.0,1.0)
 		return RIM_PUSH*u*u
 

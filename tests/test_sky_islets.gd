@@ -1,25 +1,33 @@
 extends SceneTree
-## The sky islets (scripts/sky_islet.gd, scripts/sky_islets.gd):
-## a seed always grows the same islet; its ground sits over its stone, the
-## mesh is what the queries say and faces outward; a spring's pond lies in
-## its bowl with a channel to the lip, and its fall pours off clear of the
-## rim; trees stand inside, apart and out of the water. Streamed round the
-## eye they keep clear of the islands' spots, come back the same, go when
-## far, never while perched on, ride the swaps' origin and are solids to the
-## glide.
+## The sky islets (scripts/sky_islet.gd, scripts/sky_islets.gd): made the
+## way the islands are, only small. A seed always grows the same islet; its
+## outline is an island's (one irregular piece, lobed, inside its grid) and
+## clearly smaller than an island's; its ground stands over its rock, the
+## top faces up and is what the queries read, the walls face out and the
+## rock down; a spring's pond lies in its bowl with a channel under its water
+## out to the lip, where its fall pours off clear of the rim. Across the
+## cells there is variety: every kind, several tree species, several flower
+## kinds, flowers on most islets; trees stand inside, apart, out of the
+## water, and the glide rides over their crowns. Streamed round the eye they
+## keep clear of the islands' spots, come back the same, go when far, never
+## while perched on, ride the swaps' origin, are solids to the glide and can
+## be walked on; their plants are drawn from the plate's catalog.
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
+const IslandOutline = preload("res://scripts/island_outline.gd")
+const Emergence = preload("res://scripts/emergence.gd")
 var failures := 0
 
 func _initialize() -> void:
 	_same_seed()
-	_kinds()
+	_outlines()
 	_ground_over_stone()
 	_mesh_matches()
 	_pond()
 	_fall()
+	_variety()
 	_trees()
 	_streaming()
 	print("PASS: sky islets" if failures == 0 else "FAIL: sky islets")
@@ -29,74 +37,185 @@ func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label)
 
+## A sample of cells' islets, in a fixed order.
+func _sample(count: int) -> Array:
+	var found := []
+	for x in range(-20,20):
+		for z in range(-20,20):
+			if found.size() >= count: return found
+			var cell := Vector2i(x,z)
+			if SkyIslets.raw(cell) != null: found.append(SkyIslet.make(SkyIslets.seed_of(cell)))
+	return found
+
 func _same_seed() -> void:
 	var a: RefCounted = SkyIslet.make(4242)
 	var b: RefCounted = SkyIslet.make(4242)
 	var c: RefCounted = SkyIslet.make(4243)
-	check(a.kind == b.kind and a.rim == b.rim and a.trees == b.trees and is_equal_approx(a.depth,b.depth),"A seed grows the same islet")
-	check(a.rim != c.rim,"Another seed grows another")
+	check(a.kind == b.kind and a.outline == b.outline and a.heights == b.heights and a.keel == b.keel and a.objects == b.objects,"A seed grows the same islet: outline, ground, rock and plants")
+	check(a.outline != c.outline or a.heights != c.heights,"Another seed grows another")
 
-func _kinds() -> void:
+func _outlines() -> void:
+	var low := INF
+	var high := 0.0
+	var largest_area := 0.0
+	var areas := 0.0
+	var one_piece := true
+	var clear_of_grid := true
+	var lobed := 0
+	var islets := _sample(80)
+	for islet: RefCounted in islets:
+		var box: Rect2 = islet.extent()
+		var across := maxf(box.size.x,box.size.y)
+		low = minf(low,across)
+		high = maxf(high,across)
+		var area: float = islet.land_area()
+		largest_area = maxf(largest_area,area)
+		areas += area
+		# One piece: every land face reached from the middle's across edges.
+		if _pieces(islet) != 1: one_piece = false
+		for f: int in islet.land:
+			for k in range(3):
+				var p: Vector2 = islet.points[islet.ids[f*3+k]]
+				if maxf(absf(p.x),absf(p.y)) > islet.half-0.01: clear_of_grid = false
+		# Irregular: the rim's reach round the middle varies well beyond a
+		# circle's, and bays leave the land well short of its bounding box.
+		var reaches := []
+		for i in range(48): reaches.append(islet.rim_radius(TAU*i/48.0))
+		reaches.sort()
+		if reaches[-1] > reaches[0]*1.35 and area < box.get_area()*0.85: lobed += 1
+	check(low >= 5.0 and high <= 21.0,"Islets are 5 to 21 m across (%.1f to %.1f m)" % [low,high])
+	var island_mean := 0.0
+	for i in range(21): island_mean += IslandOutline.area_for(i/20.0)/21.0
+	check(largest_area < IslandOutline.area_for(0.5) and areas/islets.size() < island_mean*0.3,"Clearly smaller than islands (largest %.0f m^2, mean %.0f m^2 against the islands' mean %.0f m^2)" % [largest_area,areas/islets.size(),island_mean])
+	check(one_piece,"Each outline is one piece")
+	check(clear_of_grid,"No land reaches its grid's edge")
+	check(lobed >= islets.size()*0.85,"Outlines are irregular, lobed and bayed (%d of %d)" % [lobed,islets.size()])
+
+## Land pieces joined across face edges.
+func _pieces(islet: RefCounted) -> int:
+	var edges := {}
+	var faces: PackedInt32Array = islet.land
+	var ids: PackedInt32Array = islet.ids
+	for f in faces:
+		for k in range(3):
+			var a := ids[f*3+k]
+			var b := ids[f*3+(k+1)%3]
+			var key := Vector2i(mini(a,b),maxi(a,b))
+			if not edges.has(key): edges[key] = []
+			edges[key].append(f)
 	var seen := {}
-	for s in range(200): seen[SkyIslet.make(s*7919).kind] = true
-	check(seen.size() == SkyIslet.KINDS.size(),"Every kind turns up (%s)" % ", ".join(seen.keys()))
+	var pieces := 0
+	for f in faces:
+		if seen.has(f): continue
+		pieces += 1
+		var stack := [f]
+		seen[f] = true
+		while not stack.is_empty():
+			var g: int = stack.pop_back()
+			for k in range(3):
+				var a := ids[g*3+k]
+				var b := ids[g*3+(k+1)%3]
+				for h: int in edges[Vector2i(mini(a,b),maxi(a,b))]:
+					if not seen.has(h):
+						seen[h] = true
+						stack.append(h)
+	return pieces
 
 func _ground_over_stone() -> void:
 	var worst := INF
 	var out_ok := true
-	for s in range(40):
-		var islet: RefCounted = SkyIslet.make(s*131+5)
-		for i in range(60):
-			var a := TAU*i/60.0
+	var deep_ok := true
+	for islet: RefCounted in _sample(30):
+		for i in range(48):
+			var a := TAU*i/48.0
+			var rim: float = islet.rim_radius(a)
 			for f in [0.0,0.3,0.6,0.9,0.99]:
-				var p: Vector2 = Vector2.from_angle(a)*islet.rim_radius(a)*f
-				worst = minf(worst,islet.top(p)-islet.underside(p))
-			if islet.inside(Vector2.from_angle(a)*islet.rim_radius(a)*1.05): out_ok = false
-	check(worst >= SkyIslet.EARTH_FOOT-SkyIslet.BOWL,"The ground stands over the stone everywhere (least %.2f m)" % worst)
-	check(out_ok,"Just past the rim is outside")
-	var islet: RefCounted = SkyIslet.make(77,"grove")
-	check(islet.underside(Vector2.ZERO) < -islet.radius,"The stone hangs deep under the middle (%.1f m, radius %.1f)" % [islet.underside(Vector2.ZERO),islet.radius])
+				var p: Vector2 = Vector2.from_angle(a)*rim*f
+				worst = minf(worst,islet.ground_at(p)-islet.underside(p))
+			if islet.inside(Vector2.from_angle(a)*(islet.reach+0.6)): out_ok = false
+		# Inside is the outline's own faces.
+		for f in range(0,islet.outline.size(),7):
+			var ids: PackedInt32Array = islet.ids
+			var middle: Vector2 = (islet.points[ids[f*3]]+islet.points[ids[f*3+1]]+islet.points[ids[f*3+2]])/3.0
+			if islet.inside(middle) != (islet.outline[f] == 0): out_ok = false
+		if islet.underside(Vector2.ZERO) > -islet.radius*0.6: deep_ok = false
+	check(worst >= 1.0,"The ground stands over the rock everywhere (least %.2f m)" % worst)
+	check(out_ok,"Inside is the outline's faces, and past its reach is off the land")
+	check(deep_ok,"The rock hangs deep under the middle")
 
 func _mesh_matches() -> void:
-	for kind in ["grove","spring","crag","tuft"]:
-		var islet: RefCounted = SkyIslet.make(900+kind.length(),kind)
-		var mesh: ArrayMesh = islet.build_mesh([Color(0.2,0.4,0.1)],[Color(0.4,0.4,0.4)],null)
-		var arrays := mesh.surface_get_arrays(0)
+	for kind in ["meadow","grove","hills","crag","spring","shore"]:
+		var islet: RefCounted = SkyIslet.make(900+kind.length()*31,kind)
+		var arrays: Array = islet.top_arrays(SkyIslet.plain_palette())
 		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-		var wound := 0
+		var up := 0
 		var off := 0.0
-		var up_faces := 0
-		var down_faces := 0
 		for t in range(0,v.size(),3):
 			var face := (v[t+2]-v[t]).cross(v[t+1]-v[t])
-			if face.dot(n[t]) > 0.0: wound += 1
+			if face.y > 0.0: up += 1
 			var mid := (v[t]+v[t+1]+v[t+2])/3.0
-			var at := Vector2(mid.x,mid.z)
-			if n[t].y > 0.5 and islet.share(at) < 0.95:
-				up_faces += 1
-				if islet.spire.w == 0.0: off = maxf(off,absf(mid.y-islet.ground_at(at)))
-			if n[t].y < -0.3: down_faces += 1
-		check(wound == v.size()/3,"%s: every face is wound to face out (%d of %d)" % [kind,wound,v.size()/3])
-		check(up_faces > 50 and down_faces > 50,"%s: a top facing up and stone facing down (%d, %d)" % [kind,up_faces,down_faces])
-		if islet.spire.w == 0.0: check(off < 0.005,"%s: the top is where the glide reads it (off by %.4f m)" % [kind,off])
-		var box := mesh.get_aabb()
-		check(box.size.x < islet.radius*2.8 and box.position.y < -islet.depth*0.5,"%s: the mesh is the islet's size (%.1f across, %.1f deep)" % [kind,box.size.x,-box.position.y])
+			off = maxf(off,absf(mid.y-islet.ground_at(Vector2(mid.x,mid.z))))
+		check(up == v.size()/3 and up == islet.land.size(),"%s: one top face a land face, every one facing up (%d of %d)" % [kind,up,v.size()/3])
+		check(off < 0.005,"%s: the top is where the glide reads it (off by %.4f m)" % [kind,off])
+		var sides: Array = islet.side_arrays()
+		var s: PackedVector3Array = sides[Mesh.ARRAY_VERTEX]
+		var wrong := 0
+		var down := 0
+		var walls := 0
+		for t in range(0,s.size(),3):
+			var face := (s[t+2]-s[t]).cross(s[t+1]-s[t]).normalized()
+			var mid := (s[t]+s[t+1]+s[t+2])/3.0
+			if face.y < -0.3: down += 1
+			elif absf(face.y) <= 0.3:
+				walls += 1
+				# A wall faces away from the land behind it: just out in front of
+				# it is sky, just behind it land.
+				var out := Vector2(face.x,face.z).normalized()
+				var at := Vector2(mid.x,mid.z)
+				if islet.inside(at+out*0.35) and not islet.inside(at-out*0.35): wrong += 1
+			else: wrong += 1
+		check(down >= islet.land.size()*0.85 and walls > 20 and wrong <= walls/20,"%s: the rock faces down, the walls out, none up (%d down, %d walls, %d wrong)" % [kind,down,walls,wrong])
+		var box := AABB(s[0],Vector3.ZERO)
+		for p in s: box = box.expand(p)
+		check(box.position.y < -islet.depth+0.01 and box.size.x < islet.reach*2.0+1.0,"%s: the sides are the islet's size (%.1f across, %.1f deep)" % [kind,box.size.x,-box.position.y])
 
 func _pond() -> void:
-	var islet: RefCounted = SkyIslet.make(31337,"spring")
-	var w: Dictionary = islet.water()
-	check(not w.is_empty(),"A spring islet has a pond")
-	check(islet.top(w.middle) < w.level-0.2,"The pond's bed lies under its water (%.2f under %.2f)" % [islet.top(w.middle),w.level])
-	var into := (w.lip as Vector2)-(w.out as Vector2)*0.2
-	check(islet.top(into) < w.level,"The channel runs under the water out to the lip (%.2f)" % islet.top(into))
-	var dry := 0
-	for i in range(24):
-		var p: Vector2 = (w.middle as Vector2)+Vector2.from_angle(TAU*i/24.0)*float(w.radius)*1.6
-		if islet.inside(p) and islet._channel_distance(p) > SkyIslet.CHANNEL*1.5 and islet.top(p) > w.level: dry += 1
-	check(dry > 8,"Round the pond the bank stands over the water (%d dry)" % dry)
-	check(SkyIslet.make(5,"grove").water().is_empty(),"A grove has none")
-	var mesh: ArrayMesh = islet.build_water(null)
+	var springs := 0
+	var ok := true
+	var dry_ok := true
+	var reason := ""
+	for s in range(12):
+		var islet: RefCounted = SkyIslet.make(31337+s*101,"spring")
+		var w: Dictionary = islet.water()
+		if w.is_empty():
+			ok = false
+			reason = "no pond"
+			continue
+		springs += 1
+		if not islet.ground_at(w.middle) < w.level-0.2:
+			ok = false
+			reason = "bed %.2f under %.2f" % [islet.ground_at(w.middle),w.level]
+		var into := (w.lip as Vector2)-(w.out as Vector2)*0.2
+		if not islet.ground_at(into) < w.level:
+			ok = false
+			reason = "channel %.2f at the lip" % islet.ground_at(into)
+		var outside: Vector2 = (w.lip as Vector2)+(w.out as Vector2)*0.4
+		if islet.inside(outside):
+			ok = false
+			reason = "the lip is not on the rim"
+		var dry := 0
+		var asked := 0
+		for i in range(24):
+			var p: Vector2 = (w.middle as Vector2)+Vector2.from_angle(TAU*i/24.0)*float(w.radius)*1.3
+			if not islet.inside(p) or islet._channel_distance(p) < SkyIslet.CHANNEL*1.6: continue
+			asked += 1
+			if islet.ground_at(p) > w.level: dry += 1
+		if dry < asked: dry_ok = false
+	check(springs == 12,"Every spring islet has a pond")
+	check(ok,"Each pond's bed lies under its water, and its channel runs under the water out to a lip on the rim (%s)" % ("ok" if reason == "" else reason))
+	check(dry_ok,"Round each pond the bank stands over the water but at the channel")
+	check(SkyIslet.make(5,"meadow").water().is_empty(),"A meadow has none")
+	var mesh: ArrayMesh = SkyIslet.make(31337,"spring").build_water(null)
 	check(mesh != null and mesh.get_aabb().size.y < 0.01,"The water is one flat level")
 
 func _fall() -> void:
@@ -111,26 +230,89 @@ func _fall() -> void:
 	var clear := true
 	for r in range(1,points.size()):
 		if points[r].x < lip.x+0.25: clear = false
-	check(clear,"It pours clear of the grass lip")
+	check(clear,"It pours clear of the wall's lip")
 	check(float(rings.break_from) > 9.0 and float(rings.break_length) > 5.0,"It breaks up below the sheet (from %.1f m, over %.1f m)" % [rings.break_from,rings.break_length])
+	var spring: RefCounted = SkyIslet.make(31337,"spring")
+	var made: Dictionary = SkyIslets._fall_rings(spring)
+	var first: Vector3 = (made.points as PackedVector3Array)[0]
+	check(Vector2(first.x,first.z).distance_to(spring.lip) < 0.2 and is_equal_approx(first.y,SkyIslet.WATER),"A spring's fall leaves from its lip at the water's level")
+
+func _variety() -> void:
+	var kinds := {}
+	var species := {}
+	var flowers := {}
+	var with_flowers := 0
+	var bare := 0
+	var trees_by_kind := {}
+	var islets := _sample(150)
+	for islet: RefCounted in islets:
+		kinds[islet.kind] = int(kinds.get(islet.kind,0))+1
+		for s in islet.species: species[s] = true
+		for f in islet.flowers: flowers[f] = true
+		if not islet.flowers.is_empty(): with_flowers += 1
+		if islet.objects.size() < 5: bare += 1
+		var trees := 0
+		for item: Dictionary in islet.objects:
+			if item.asset in Emergence.TREES: trees += 1
+		trees_by_kind[islet.kind] = (trees_by_kind.get(islet.kind,[]) as Array)+[trees]
+	check(kinds.size() == SkyIslet.KINDS.size(),"Every kind of ground turns up across the cells (%s)" % str(kinds))
+	check(species.size() >= 5,"Several tree species stand on them (%s)" % ", ".join(species.keys()))
+	check(flowers.size() >= 5,"Several kinds of flower bloom on them (%s)" % ", ".join(flowers.keys()))
+	check(with_flowers >= islets.size()*0.55,"Most islets carry flowers (%d of %d)" % [with_flowers,islets.size()])
+	check(bare == 0,"Every islet grows something (%d nearly bare)" % bare)
+	var mean := func(list: Array) -> float:
+		var total := 0.0
+		for v in list: total += float(v)
+		return total/maxf(list.size(),1.0)
+	check(mean.call(trees_by_kind.grove) > mean.call(trees_by_kind.meadow)*2.0,"A grove is a wood, a meadow open (%.1f trees against %.1f)" % [mean.call(trees_by_kind.grove),mean.call(trees_by_kind.meadow)])
+	var meadows_bloom := true
+	for islet: RefCounted in islets:
+		if islet.kind == "meadow" and islet.flowers.is_empty(): meadows_bloom = false
+	check(meadows_bloom,"Every meadow blooms")
+	var beach := SkyIslet.make(77,"shore")
+	var colours: PackedColorArray = beach.top_arrays(SkyIslet.plain_palette())[Mesh.ARRAY_COLOR]
+	var sandy := 0
+	var sand: Color = SkyIslet.plain_palette().sand
+	for c in colours:
+		if absf(c.r-sand.r) < 0.05 and absf(c.g-sand.g) < 0.05: sandy += 1
+	check(sandy > colours.size()/10,"A shore islet is ringed with sand (%d of %d)" % [sandy,colours.size()])
+	var crag := SkyIslet.make(77,"crag")
+	var rocky := 0
+	for f: int in crag.land:
+		if crag._slope(f) > SkyIslet.plain_palette().rock_slope: rocky += 1
+	check(rocky > crag.land.size()/8,"A crag stands in rock (%d of %d faces)" % [rocky,crag.land.size()])
 
 func _trees() -> void:
+	var catalog: Dictionary = SkyIslets.catalog().data
 	var ok := true
+	var crowns_ok := true
 	var any := 0
-	for s in range(60):
-		var islet: RefCounted = SkyIslet.make(s*977+3)
-		any += islet.trees.size()
-		for i in range(islet.trees.size()):
-			var t: Vector4 = islet.trees[i]
-			var at := Vector2(t.x,t.y)
-			if islet.share(at) > SkyIslet.TREE_IN+0.01: ok = false
-			if SkyIslets.blocked(islet,at+Vector2(0.5,0.0)) and islet.pond.z > 0.0 and at.distance_to(Vector2(islet.pond.x,islet.pond.y)) < islet.pond.z: ok = false
+	var reason := ""
+	for islet: RefCounted in _sample(60):
+		islet.flora(catalog)
+		var trees := []
+		for item: Dictionary in islet.objects:
+			if not item.asset in Emergence.TREES: continue
+			var at := Vector2(item.x,item.z)
+			trees.append(at)
+			any += 1
+			if not islet.inside(at) or islet.inland(at) < SkyIslet.TREE_IN-0.01:
+				ok = false
+				reason = "too near the shore"
+			if islet.wet(at):
+				ok = false
+				reason = "in the water"
+		for i in range(trees.size()):
 			for j in range(i):
-				if at.distance_to(Vector2(islet.trees[j].x,islet.trees[j].y)) < SkyIslet.TREE_APART: ok = false
-		var crown: Vector4 = islet.trees[0] if not islet.trees.is_empty() else Vector4.ZERO
-		if crown.z > 0.0 and islet.solid_top(Vector2(crown.x,crown.y)) < islet.top(Vector2(crown.x,crown.y))+crown.z-0.01: ok = false
-	check(any > 60,"Islets carry trees (%d on 60)" % any)
-	check(ok,"Trees stand inside, apart, out of the pond, and the glide rides over their crowns")
+				if (trees[i] as Vector2).distance_to(trees[j]) < SkyIslet.TREE_APART*0.6:
+					ok = false
+					reason = "crowded"
+		for c: Vector4 in islet.crowns:
+			if islet.solid_top(Vector2(c.x,c.y)) < islet.ground_at(Vector2(c.x,c.y))+c.z-0.01: crowns_ok = false
+		if islet.crowns.size() < trees.size(): crowns_ok = false
+	check(any > 120,"Islets carry trees (%d on 60)" % any)
+	check(ok,"Trees stand inside, in from the shore, apart and out of the water (%s)" % ("ok" if reason == "" else reason))
+	check(crowns_ok,"Every tree and stone has a crown the glide rides over")
 
 func _streaming() -> void:
 	var cells := SkyCells.new([Vector3.ZERO,Vector3(380.0,-20.0,-160.0)])
@@ -152,6 +334,20 @@ func _streaming() -> void:
 		if Vector2(home.x-eye.x,home.z-eye.z).length() > SkyIslets.VIEW: far = true
 	check(not near_island,"None stands near an island's spot")
 	check(not far,"None is built beyond VIEW")
+	# Their plants are the plate's own, drawn safe for the sky.
+	var batches := 0
+	var safe := true
+	var meshes: Dictionary = SkyIslets.catalog().meshes
+	for key in islets.built:
+		for child in (islets.built[key].node as Node3D).get_children():
+			if not child is MultiMeshInstance3D: continue
+			batches += 1
+			var batch := child as MultiMeshInstance3D
+			if not batch.multimesh.mesh in meshes.values(): safe = false
+			var m := batch.material_override as ShaderMaterial
+			if m != null and (m.get_shader_parameter("instance_birth_enabled") == true or m.get_shader_parameter("plant_growth") == true): safe = false
+	check(batches > count*3,"Their plants stand as batches of the catalog's own meshes (%d batches)" % batches)
+	check(safe,"No plant reads the plate's births or growth")
 	# A solid to the glide: over one, the ground and the stone.
 	var any: Dictionary = islets.built.values()[0]
 	var node: Node3D = any.node
@@ -166,11 +362,21 @@ func _streaming() -> void:
 		var here: Variant = islets.body(glide.position)
 		if here != null: lowest = minf(lowest,glide.position.y-(here as Vector2).x)
 	check(lowest > -0.05 or lowest == INF,"A dive onto one skims, never sinks in (%.2f m)" % lowest)
+	# Walking it: the middle is land, a trunk blocks, the rim is the edge.
+	var shape: RefCounted = any.shape
+	check(SkyIslets.blocked(shape,Vector2(-999.0,0.0)) == false and shape.inside(Vector2.ZERO) and shape.share(Vector2.ZERO) == 0.0,"Its middle is land a walker stands on")
+	var trunk_ok := true
+	for b: Vector3 in shape.blocks:
+		if not SkyIslets.blocked(shape,Vector2(b.x,b.y)): trunk_ok = false
+	check(trunk_ok,"Trunks and stones block a walker")
+	var perched: Dictionary = islets.islet_at(islets.place(any)+Vector3.UP*2.0)
+	check(not perched.is_empty() and perched.node == node,"The islet under a point is found for a perch")
 	# The same cell grows the same islet.
 	var key: String = islets.built.keys()[0]
-	var shape: RefCounted = islets.built[key].shape
+	var built_shape: RefCounted = islets.built[key].shape
 	var cell: Vector2i = islets.built[key].cell
-	check(SkyIslet.make(SkyIslets.seed_of(cell)).rim == shape.rim,"A cell always grows the same islet")
+	var again: RefCounted = SkyIslet.make(SkyIslets.seed_of(cell))
+	check(again.outline == built_shape.outline and again.objects == built_shape.objects,"A cell always grows the same islet")
 	# A swap: the origin moves, the islets with it.
 	var before: Vector3 = islets.place(any)
 	cells.origin += Vector3(-200.0,0.0,50.0)

@@ -1,10 +1,13 @@
 extends Node3D
 ## Islets: small floating islands scattered through the open sky between the
 ## sky islands (scripts/sky_islands.gd), so a glide always has something
-## passing by, to swing round, dip under or perch on. Each is scenery
-## (scripts/sky_islet.gd): a grassy top over faceted rock, spruces that sway
-## in the breeze, and on a spring islet a pond whose fall pours off the rim.
-## Nothing on them is simulated and nothing is built on them.
+## passing by, to swing round, dip under or perch on. Each is scenery made
+## the way the islands are, only small (scripts/sky_islet.gd): the plate's
+## grid, an island's outline, its shore wall and hanging rock, its ground
+## drawn in the plate's own terrain material, and the plate's own plants
+## drawn from its catalog (`catalog`): meadows of flowers, groves of the
+## world's tree species, hills, crags, springs whose fall pours off the rim,
+## and beaches. Nothing on them is simulated and nothing is built on them.
 ##
 ## They stand in seeded cells of their own, finer than the islands' (CELL),
 ## in the same home coordinates (scripts/sky_cells.gd). This node stands at
@@ -25,6 +28,11 @@ extends Node3D
 ## let go (`pinned`).
 
 const SkyIslet = preload("res://scripts/sky_islet.gd")
+const IslandShore = preload("res://scripts/island_shore.gd")
+const Strata = preload("res://scripts/strata.gd")
+const Emergence = preload("res://scripts/emergence.gd")
+const MeadowFlowers = preload("res://scripts/meadow_flower_mesh.gd")
+const Variety = preload("res://scripts/seeded_variety.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const FlowFalls = preload("res://scripts/flow_falls.gd")
@@ -50,9 +58,16 @@ const FORGET := 1050.0
 const BUILDS := 1
 const MAKING := 2
 const CHECK := 0.25
-## How far away the trees and the fall's droplets still draw (m).
+## How far away the trees, the stones, the small plants and the fall's
+## droplets still draw (m).
 const TREE_RANGE := 420.0
+const STONE_RANGE := 320.0
+const PLANT_RANGE := 170.0
 const SPRAY_RANGE := 260.0
+## The earth sides' mist takes over this far over the rock's tip (m), and
+## the islets share a few strata (scripts/strata.gd), by seed.
+const MIST := 0.6
+const STRATA_SEEDS := 8
 ## The bob: metres up and down, and its period (s, min to max).
 const BOB := 0.35
 const BOB_PERIOD := Vector2(7.0,11.0)
@@ -88,6 +103,11 @@ var pinned: Node3D
 ## are (SkyIslands sets them); without them, stand-ins.
 var ground_source: Material
 var water_source: Material
+## The plate's earth-sides material (the skirt's), for the shore wall and
+## the rock; and the plate's garden view (GardenView), whose catalog the
+## plants are drawn from. Without them, stand-ins and an offline catalog.
+var side_source: Material
+var flora_source: Node
 var _water: Material
 var _since := CHECK
 var _clock := 0.0
@@ -102,6 +122,10 @@ static var _canopy_tint := Color.WHITE
 static var _ring_mesh: ArrayMesh
 static var _drop_mesh: SphereMesh
 static var _drop_material: ParticleProcessMaterial
+## The plate's plant catalog (`catalog`), and each part's material made safe
+## for the sky (`_plant_material`).
+static var _catalog := {}
+static var _plant_materials := {}
 
 func _init() -> void:
 	name = "SkyIslets"
@@ -114,6 +138,9 @@ func _exit_tree() -> void:
 	_ground_material = null
 	_water_material = null
 	_tree_meshes.clear()
+	_catalog = {}
+	_plant_materials.clear()
+	SkyIslet.forget_grids()
 	_ring_mesh = null
 	_drop_mesh = null
 	_drop_material = null
@@ -124,6 +151,7 @@ func reset(new_cells: SkyCells) -> void:
 	clear()
 	_prepare()
 	if _tree_meshes.is_empty(): _grow_trees()
+	if _catalog.is_empty(): catalog(flora_source)
 	_water = null
 	_pond_material()
 	cells = new_cells
@@ -240,20 +268,26 @@ func _build(cell: Vector2i, home: Vector3) -> void:
 	_start(cell,home)
 	flush()
 
-## Sets a worker making the islet for `cell`: its shape, its body's and
-## pond's arrays and its fall's rings, all plain data.
+## Sets a worker making the islet for `cell`: its shape, the arrays of its
+## top, sides and pond, its plants' buffers and its fall's rings, all plain
+## data.
 func _start(cell: Vector2i, home: Vector3) -> void:
 	_prepare()
+	if _catalog.is_empty(): catalog(flora_source)
 	var out := {}
-	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),_palette("grass"),_palette("rock"),_bank(),out),false,"Sky islet")
+	var task := WorkerThreadPool.add_task(_make.bind(seed_of(cell),_ground_palette(),_catalog.data,out),false,"Sky islet")
 	_making[_key(cell)] = {"task":task,"cell":cell,"home":home,"out":out}
 
-static func _make(seed_value: int, grass: Array, rock: Array, bank: Color, out: Dictionary) -> void:
+static func _make(seed_value: int, palette: Dictionary, plants: Dictionary, out: Dictionary) -> void:
+	var began := Time.get_ticks_usec()
 	var shape: RefCounted = SkyIslet.make(seed_value)
 	out.shape = shape
-	out.body = shape.body_arrays(grass,rock,bank,OFF_MAP)
+	out.top = shape.top_arrays(palette,OFF_MAP)
+	out.sides = shape.side_arrays()
 	out.water = shape.water_arrays(WaterFlowView.TINT.mid.srgb_to_linear(),OFF_MAP)
+	out.plants = shape.flora(plants)
 	if not (out.water as Array).is_empty(): out.fall = _fall_rings(shape)
+	out.usec = Time.get_ticks_usec()-began
 
 ## The worker's islet, stood up as nodes.
 func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
@@ -264,9 +298,13 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 	add_child(node)
 	var body := MeshInstance3D.new()
 	body.name = "Body"
-	body.mesh = SkyIslet.mesh_from(out.body,ground_source if ground_source != null else _ground_material)
+	body.mesh = SkyIslet.mesh_from(out.top,ground_source if ground_source != null else _ground_material)
 	body.position = -OFF_MAP
 	node.add_child(body)
+	var sides := MeshInstance3D.new()
+	sides.name = "Sides"
+	sides.mesh = SkyIslet.mesh_from(out.sides,_side_material(shape))
+	node.add_child(sides)
 	if not (out.water as Array).is_empty():
 		var pond := MeshInstance3D.new()
 		pond.name = "Pond"
@@ -276,58 +314,129 @@ func _finish(cell: Vector2i, home: Vector3, out: Dictionary) -> void:
 		pond.set_meta("skip_reflection",true)
 		node.add_child(pond)
 		_fall(node,shape,out.fall)
-	_plant(node,shape)
+	_plant(node,out.plants)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape.seed
-	built[_key(cell)] = {"node":node,"shape":shape,"home":home,"cell":cell,
+	built[_key(cell)] = {"node":node,"shape":shape,"home":home,"cell":cell,"usec":out.get("usec",0),
 		"phase":rng.randf()*TAU,"period":rng.randf_range(BOB_PERIOD.x,BOB_PERIOD.y)}
 
-## The spruces: one batch pair (trunk, crown) per variant on this islet.
-func _plant(node: Node3D, shape: RefCounted) -> void:
-	var by_variant := {}
-	for t: Vector4 in shape.trees:
-		var v := int(t.w)
-		if not by_variant.has(v): by_variant[v] = []
-		by_variant[v].append(t)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = shape.seed*7+3
-	for v in by_variant:
-		var parts: Array = _tree_parts(v)
-		var standing: Array = by_variant[v]
-		var tall := maxf((parts[1] as Mesh).get_aabb().end.y,0.1)
-		var poses := []
-		var tints := []
-		for t: Vector4 in standing:
-			var scale := t.z/tall
-			var at := Vector3(t.x,shape.ground_at(Vector2(t.x,t.y))-0.05,t.y)
-			poses.append(Transform3D(Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*scale),at))
-			tints.append(_canopy_tint*rng.randf_range(0.88,1.06))
-		for part in range(2):
-			var batch := MultiMeshInstance3D.new()
-			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
-			var multimesh := MultiMesh.new()
-			multimesh.transform_format = MultiMesh.TRANSFORM_3D
-			multimesh.use_colors = true
-			multimesh.mesh = parts[part]
-			multimesh.instance_count = poses.size()
-			for i in range(poses.size()):
-				multimesh.set_instance_transform(i,poses[i])
-				multimesh.set_instance_color(i,tints[i] if part == 1 else Color.WHITE)
-			batch.multimesh = multimesh
-			batch.visibility_range_end = TREE_RANGE
-			batch.visibility_range_end_margin = 40.0
-			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-			node.add_child(batch)
+## The plants: one batch a catalog part standing on this islet, drawn with
+## the plate's own mesh and its material made safe for the sky. Trees draw
+## far, stones a little less, the small plants only near.
+func _plant(node: Node3D, plants: Dictionary) -> void:
+	var meshes: Dictionary = _catalog.meshes
+	for key: String in plants:
+		if not meshes.has(key): continue
+		var batch := MultiMeshInstance3D.new()
+		batch.name = key.replace(":","_")
+		var multimesh := MultiMesh.new()
+		multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		multimesh.use_colors = true
+		multimesh.mesh = meshes[key]
+		multimesh.instance_count = int(plants[key].count)
+		multimesh.buffer = plants[key].buffer
+		batch.multimesh = multimesh
+		batch.material_override = _plant_material(key)
+		var role: String = _catalog.roles.get(key,"plant")
+		batch.visibility_range_end = TREE_RANGE if role == "tree" else (STONE_RANGE if role == "stone" else PLANT_RANGE)
+		batch.visibility_range_end_margin = 30.0
+		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		var flower := MeadowFlowers.kind_of_part(key)
+		if role == "plant" and not (flower != "" and MeadowFlowers.casts_shadow(flower) and flower == "sunflower"):
+			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.add_child(batch)
+
+## The plate's plant catalog, read once from its garden view (`source`, the
+## live GardenView) or, without one, from an offline one: per part key its
+## mesh, its material, its box and its role (tree, stone or plant), and the
+## plain data a worker plants with (`data`: parts, poses, tints, the world's
+## variety and the boxes; GardenInstanceSamples `add_item`).
+static func catalog(source: Node = null) -> Dictionary:
+	if not _catalog.is_empty(): return _catalog
+	var view: Node = source if source != null and source.get("_meshes") is Dictionary and not (source.get("_meshes") as Dictionary).is_empty() else null
+	var own: Node = null
+	if view == null:
+		own = GardenView.new()
+		own._ready()
+		view = own
+	var meshes: Dictionary = (view.get("_meshes") as Dictionary).duplicate()
+	var materials: Dictionary = (view.get("_materials") as Dictionary).duplicate()
+	var parts: Dictionary = (view.get("_catalog_parts") as Dictionary).duplicate(true)
+	var poses: Dictionary = (view.get("_catalog_poses") as Dictionary).duplicate(true)
+	var tints: Dictionary = (view.get("_tints") as Dictionary).duplicate(true)
+	if own != null: own.free()
+	var boxes := {}
+	for key: String in meshes:
+		if meshes[key] is Mesh: boxes[key] = (meshes[key] as Mesh).get_aabb()
+	var roles := {}
+	for tree: String in Emergence.TREES:
+		for key: String in parts.get(tree,[]): roles[key] = "tree"
+	for group in ["tree_variants","layered_variants"]:
+		for key: String in parts.get(group,[]): roles[key] = "tree"
+	for key in ["trunk","canopy"]: roles[key] = "tree"
+	for stone: String in SkyIslet.BOULDERS+["rock_variants"]:
+		for key: String in parts.get(stone,[]): roles[key] = "stone"
+	roles["rock"] = "stone"
+	_catalog = {"meshes":meshes,"materials":materials,"roles":roles,
+		"data":{"parts":parts,"poses":poses,"tints":tints,"boxes":boxes,"world":Variety.world({})}}
+	return _catalog
+
+## A catalog part's material for the sky: as the plate draws it, swaying in
+## the breeze, but with nothing tied to the plate's own garden: no growth
+## wave or births read at the origin, no fire, no tread, no seed clock.
+static func _plant_material(key: String) -> Material:
+	if _plant_materials.has(key): return _plant_materials[key]
+	var source: Variant = (_catalog.materials as Dictionary).get(key)
+	var material: Material = (source as Material).duplicate() if source is Material else null
+	if material is ShaderMaterial:
+		for flag in ["instance_birth_enabled","instance_fire_enabled","tree_tread","plant_growth","flower_cycle","cozy_prop_growth"]:
+			(material as ShaderMaterial).set_shader_parameter(flag,false)
+	_plant_materials[key] = material
+	return material
+
+## The world's ground colours for the top (SkyIslet `top_arrays`), from the
+## plate's palette (scripts/native_terrain_palette.gd), linear.
+func _ground_palette() -> Dictionary:
+	var palette := SkyIslet.plain_palette()
+	if palette_source == null: return palette
+	for key in ["grass","rock"]:
+		var list: Variant = palette_source.get(key)
+		if list is Array and not (list as Array).is_empty(): palette[key] = (list as Array).duplicate()
+	for key in ["sand","gravel"]:
+		if palette_source.get(key) is Color: palette[key] = palette_source.get(key)
+	var slope: Variant = palette_source.get("rock_slope")
+	if slope is float and slope > 0.0: palette.rock_slope = slope
+	return palette
+
+## The shore wall's and rock's material: the plate's earth sides (SkyIslands
+## sets `side_source`), its strata in the islet's own frame (one of a few
+## seeds), the mist taking over only at the rock's tip.
+func _side_material(shape: RefCounted) -> Material:
+	var m: ShaderMaterial
+	if side_source is ShaderMaterial: m = side_source.duplicate()
+	else:
+		m = ShaderMaterial.new()
+		m.shader = preload("res://shaders/reference_surface.gdshader")
+		m.set_shader_parameter("flat_faces",true)
+		m.set_shader_parameter("base_color",Color.WHITE)
+	m.set_shader_parameter("earth_sides",true)
+	m.set_shader_parameter("earth_sides_top",SkyIslet.RIM_HEIGHT)
+	m.set_shader_parameter("earth_sides_base",-float(shape.depth)+MIST)
+	Strata.for_seed(posmod(int(shape.seed),STRATA_SEEDS)).apply(m,Vector3.ZERO)
+	return m
 
 ## The fall off a spring islet's lip: the waterfalls' strand on a course
 ## of its own, arcing off the rim and falling free until it breaks into
 ## strands and droplets, as an edge fall does past the plate's foot.
+## The lip is where the spring's channel leaves the rim (SkyIslet `water`),
+## at the water's level; `out` the shore's outward normal there; the wall's
+## facet ring stands at most RING_OUT.y past the rim.
 static func _fall_rings(shape: RefCounted) -> Dictionary:
 	var water: Dictionary = shape.water()
 	var lip := Vector3(water.lip.x,water.level,water.lip.y)
 	var out := Vector3(water.out.x,0.0,water.out.y)
-	var overhang: float = shape.radius*(SkyIslet.LIP.y-1.0)
-	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,SkyIslet.CHANNEL*0.8,overhang,FALL_STRENGTH)
+	var overhang := IslandShore.RING_OUT.y+0.05
+	return curtain(lip,out,shape.depth*FALL_DROP.x+FALL_DROP.y,FALL_TAIL,SkyIslet.CHANNEL*0.6,overhang,FALL_STRENGTH)
 
 func _fall(node: Node3D, shape: RefCounted, rings: Dictionary) -> void:
 	var water: Dictionary = shape.water()
@@ -551,23 +660,8 @@ func _pond_material() -> Material:
 	_water = water
 	return _water
 
-## The pond's bed: the world's sand, as a plate pond's bank.
-func _bank() -> Color:
-	if palette_source != null and palette_source.get("sand") is Color: return palette_source.sand
-	return Color("c9b57e").srgb_to_linear()
-
-## A few colours of the world's own ground (linear): its grass greens or
-## its rock greys, from the plate's palette (scripts/native_terrain_palette.gd).
+## The plate's palette (scripts/native_terrain_palette.gd), for the ground.
 var palette_source: RefCounted
-func _palette(which: String) -> Array:
-	var found: Array = []
-	if palette_source != null:
-		var list: Array = palette_source.get(which)
-		for c in list: found.append(c)
-	if found.is_empty():
-		found = [Color("5f8a3e").srgb_to_linear(),Color("6b9446").srgb_to_linear(),Color("557d3a").srgb_to_linear()] if which == "grass" \
-			else [Color("8a8478").srgb_to_linear(),Color("7a7468").srgb_to_linear()]
-	return found
 
 # --- Reading them -------------------------------------------------------------
 
@@ -583,12 +677,12 @@ func islet_at(point: Vector3) -> Dictionary:
 		var b: Dictionary = built[key]
 		var local := point-place(b)
 		var shape: RefCounted = b.shape
-		if absf(local.x) > shape.radius*1.3 or absf(local.z) > shape.radius*1.3: continue
+		if absf(local.x) > shape.reach+0.5 or absf(local.z) > shape.reach+0.5: continue
 		if shape.inside(Vector2(local.x,local.z)): return b
 	return {}
 
 ## The islet under a global point as a solid, Vector2(top, underside) in
-## global metres (the crowns and the spire count as top), or null.
+## global metres (the crowns and the stones count as top), or null.
 func body(point: Vector3) -> Variant:
 	var b := islet_at(point)
 	if b.is_empty(): return null
@@ -605,15 +699,9 @@ static func ground(shape: RefCounted, at: Vector2) -> Variant:
 	if not shape.inside(at): return null
 	return shape.ground_at(at)
 
-## True where a walker can't step: a trunk, the spire, the pond's water.
+## True where a walker can't step: a trunk, a stone, the pond's water.
 static func blocked(shape: RefCounted, at: Vector2) -> bool:
-	for t: Vector4 in shape.trees:
-		if at.distance_to(Vector2(t.x,t.y)) < TRUNK: return true
-	if shape.spire.w > 0.0 and at.distance_to(Vector2(shape.spire.x,shape.spire.y)) < shape.spire.z*0.9: return true
-	if shape.pond.z > 0.0:
-		if at.distance_to(Vector2(shape.pond.x,shape.pond.y)) < shape.pond.z*0.95: return true
-		if shape._channel_distance(at) < SkyIslet.CHANNEL*0.8: return true
-	return false
+	return shape.blocked(at)
 
 func _key(cell: Vector2i) -> String:
 	return "%d,%d" % [cell.x,cell.y]
