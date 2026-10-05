@@ -485,20 +485,42 @@ func load_state(state: Dictionary) -> void:
 		var home := Vector3(float(entry.home[0]),float(entry.home[1]),float(entry.home[2]))
 		built_islands[_key(home)] = {"home":home,"label":str(entry.get("label","Island")),"document":entry.document}
 	# The world's seed: a world saved before it had one keeps the sky it had
-	# (SkyWorld LEGACY_SEED); --sky-seed=N tries another.
+	# (SkyWorld LEGACY_SEED); --sky-seed=N tries another. Never changed
+	# under a worker working out the layout.
+	SkyWorld.settle()
 	SkyWorld.seed = int(state.get("seed",SkyWorld.LEGACY_SEED))
 	if SkyWorld.seed_flag() >= 0: SkyWorld.seed = SkyWorld.seed_flag()
 	_keep()
-	# A skyline made for another world's seed is let go.
+	# The world's layout worked out on a worker from here, as the world
+	# starts (SkyWorld `prepare`); the build view stands its ranges once it
+	# is (`_process`). A skyline made for another world's seed is let go.
+	SkyWorld.prepare()
 	if peaks != null and peaks.ring.line_count() > 0: peaks.ring.warm(peaks)
 
 ## Sets the mountain ring's skyline (scripts/sky_ring.gd) to be worked out
-## on workers, if it isn't yet: from the wanderer's first steps, so it
-## stands whole by the time the glide opens.
+## on workers, if it isn't yet (it is from the world's start: `_process`);
+## nothing waits on it.
 func warm_ring() -> void:
 	if peaks == null: return
 	_keep()
 	peaks.ring.warm(peaks)
+
+## Whether the glide's sky is out (`show_air`).
+var _air := false
+
+## The build view: the mountains stand round the plate as they do round the
+## glide (SkyPeaks `overview`), on their skylines, warmed on workers as the
+## world starts; the rest of the glide's sky stays away.
+func _process(_delta: float) -> void:
+	if _air or peaks == null or not SkyWorld.ring_on(): return
+	if peaks.ground_source == null:
+		# The plate's own ground material, once it has one.
+		var ground: Material = editor.terrain.get_active_material(0) if editor != null and editor.terrain != null else null
+		if ground == null: return
+		peaks.ground_source = ground
+		peaks.canopy_tint = SkyIslets._canopy_tint
+		peaks._material = null
+	peaks.overview(origin)
 
 ## Tells the ring which islands it must keep clear of and hold inside its
 ## edge (SkyWorld `keep`): every one built and left, and the plate's own.
@@ -533,12 +555,16 @@ func _copy(source: GeometryInstance3D, drawn: Mesh = null) -> GeometryInstance3D
 	return copy
 
 ## The currents and clouds show only while gliding; the build view stays
-## as it was.
+## as it was, but for the mountains: they stand round the plate in both
+## (`_process`). Back from a glide, the ranges made in full near it are let
+## go, so the build view stands on their skylines.
 func show_air(on: bool) -> void:
+	_air = on
 	currents.visible = on
 	clouds.visible = on
 	islets.visible = on
-	peaks.visible = on
+	peaks.visible = on or SkyWorld.ring_on()
+	if not on: peaks.let_go()
 	towers.visible = on
 	isles.visible = on
 

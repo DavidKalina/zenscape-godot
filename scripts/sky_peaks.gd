@@ -224,6 +224,27 @@ func advance(delta: float, eye: Vector3) -> void:
 	for kind in kinds: kind.advance(delta,eye)
 	ring.advance()
 
+## The build view (no glide): the ranges stand round the plate as their
+## skylines (scripts/sky_ring.gd: the range in sight of the plate's finer),
+## warmed on workers as the world starts, none made in full; the world's
+## middle at `origin` (global: SkyIslands `origin`). Nothing here waits on
+## a worker.
+func overview(origin: Vector3) -> void:
+	position = origin
+	if ring.lines.is_empty() and ring._making.is_empty(): ring.warm(self)
+	ring.advance()
+
+## Every range made in full let go, its skyline back (the glide over: the
+## build view stands on the skylines alone).
+func let_go() -> void:
+	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
+	_making.clear()
+	for key in built:
+		(built[key].node as Node3D).queue_free()
+		if currents != null: currents.drop_thermals(_jet_key(key))
+	built.clear()
+	_since = CHECK
+
 ## Waits for every range being made and stands it up (tests, probes,
 ## captures).
 func flush() -> void:
@@ -427,6 +448,8 @@ func _finish(cell: Vector2i, s: Vector4, out: Dictionary) -> void:
 		body.visibility_range_begin_margin = 80.0
 		body.visibility_range_end_margin = 80.0
 		body.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		# Kilometres off: never in the plate's water's mirror.
+		body.set_meta("skip_reflection",true)
 		node.add_child(body)
 	if not shape.wraps.is_empty(): node.add_child(_wrap(shape))
 	if tree_parts.is_valid(): _plant(node,shape)
@@ -485,6 +508,7 @@ func _wrap(shape: RefCounted) -> MultiMeshInstance3D:
 	puffs.multimesh = multimesh
 	puffs.material_override = _puff_material
 	puffs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puffs.set_meta("skip_reflection",true)
 	puffs.custom_aabb = AABB(Vector3(-SkyPeak.HALF.x-60.0,SkyPeak.SEA-60.0,-SkyPeak.HALF.y-60.0),Vector3(SkyPeak.HALF.x*2.0+120.0,120.0,SkyPeak.HALF.y*2.0+120.0))
 	return puffs
 
@@ -520,6 +544,7 @@ func _plant(node: Node3D, shape: RefCounted) -> void:
 				multimesh.set_instance_color(i,canopy_tint*rng.randf_range(0.86,1.04) if part == 1 else Color.WHITE)
 			batch.multimesh = multimesh
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			batch.set_meta("skip_reflection",true)
 			batch.visibility_range_end = TREE_RANGE
 			batch.visibility_range_end_margin = 60.0
 			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF

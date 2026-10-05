@@ -7,10 +7,14 @@ extends Node3D
 ## is made in full by SkyPeaks (within its `build_reach`), and its skyline
 ## steps aside for it (`advance`); let go again, the skyline comes back.
 ##
-## The skyline is worked out on workers from the wanderer's first steps
-## (`warm`, from SkyIslands `warm_ring`), before the first glide opens, and
-## kept across glides; only a new seed or a new set of saved islands (a new
-## layout) makes it again. No trees, no cloud wrapped round its foot and no
+## The range in sight of the plate stands so too, finer (HOME_STRIDE): it
+## is the one the plate looks at.
+##
+## The skyline is worked out on workers as the world starts (`warm`, from
+## SkyIslands `_overview` once the layout is worked out: scripts/
+## sky_world.gd `prepare`), so the ranges stand round the plate in the build
+## view as well as the glide's, and kept across glides; only a new seed or a
+## new set of saved islands (a new layout) makes it again. No trees, no cloud wrapped round its foot and no
 ## solid: those come with the full range near. Drawn with the ranges' own
 ## ground material (SkyPeaks `_ground`), laid OFF_MAP off as theirs are.
 ##
@@ -24,6 +28,8 @@ const STRIDE := 4
 ## The low foothills, the far row and the ridges' low stretches and spurs,
 ## coarser still (32 m: SkyPeaks `coarse_of`).
 const STRIDE_LOW := 8
+## The range in sight of the plate, nearer than any (8 m).
+const HOME_STRIDE := 2
 
 ## The ranges (SkyPeaks), whose palette, material and built ranges this reads.
 var peaks: Node3D
@@ -34,6 +40,14 @@ var lines := {}
 var _making := {}
 ## The layout the skyline was made for (SkyWorld `layout`).
 var _for := ""
+## Asked to warm before the layout was worked out.
+var _pending := false
+## The skyline shows only once every range's stands (`whole`), so the
+## mountains come into the world together rather than one by one, fading
+## in over FADE seconds from when it was (`_whole_at`, msec).
+const FADE := 2.5
+var whole := false
+var _whole_at := -1
 
 func _init() -> void:
 	name = "SkyRing"
@@ -53,6 +67,7 @@ func drop() -> void:
 		if lines[key].node != null: (lines[key].node as Node3D).queue_free()
 	lines.clear()
 	_for = ""
+	whole = false
 
 func line_count() -> int:
 	var n := 0
@@ -61,13 +76,21 @@ func line_count() -> int:
 	return n
 
 ## Sets workers making every ring range's skyline not yet made, for the
-## world's layout now; a skyline made for another layout goes first.
+## world's layout now; a skyline made for another layout goes first. With
+## the layout still being worked out on its worker (SkyWorld `prepare`),
+## nothing waits on it: the skyline is warmed once it is (`advance`).
 func warm(owner: Node3D) -> void:
 	peaks = owner
 	if not SkyWorld.ring_on():
 		drop()
 		return
+	if not SkyWorld.ready():
+		SkyWorld.prepare()
+		_pending = true
+		return
+	_pending = false
 	var cells: Array[Vector2i] = peaks.ring_cells()
+	if peaks.spot(Vector2i.ZERO) != null: cells.append(Vector2i.ZERO)
 	if SkyWorld._layout_key != _for: drop()
 	_for = SkyWorld._layout_key
 	preload("res://scripts/native_terrain_kernels.gd").get_kernel()
@@ -75,8 +98,14 @@ func warm(owner: Node3D) -> void:
 		var key: String = peaks._key(cell)
 		if lines.has(key) or _making.has(key): continue
 		var out := {}
-		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),STRIDE_LOW if peaks.coarse_of(cell) else STRIDE,peaks.gorge_of(cell),out),false,"Sky ring skyline")
+		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),stride_of(cell),peaks.gorge_of(cell),out),false,"Sky ring skyline")
 		_making[key] = {"task":task,"out":out,"cell":cell}
+		whole = false
+
+## Every how many grid points a range's skyline is drawn.
+func stride_of(cell: Vector2i) -> int:
+	if cell == Vector2i.ZERO: return HOME_STRIDE
+	return STRIDE_LOW if peaks.coarse_of(cell) else STRIDE
 
 static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, stride: int, gorge: bool, out: Dictionary) -> void:
 	var shape: RefCounted = SkyPeak.make(seed_value,stature,gorge)
@@ -96,6 +125,7 @@ func reset(owner: Node3D) -> void:
 ## Each frame of the glide (SkyPeaks `advance`): stands up one finished
 ## skyline, and hides each whose range stands in full.
 func advance() -> void:
+	if _pending and SkyWorld.ready(): warm(peaks)
 	for key in _making.keys():
 		var m: Dictionary = _making[key]
 		if not WorkerThreadPool.is_task_completed(m.task): continue
@@ -103,23 +133,34 @@ func advance() -> void:
 		_making.erase(key)
 		lines[key] = {"node":null,"arrays":m.out.arrays,"cell":m.cell}
 		break
+	var standing := true
 	for key in lines:
 		var line: Dictionary = lines[key]
-		if line.node == null and peaks.cells != null:
+		if line.node == null:
 			_stand(key)
+			standing = false
 			break
+	if not whole and standing and _making.is_empty() and not _pending and not lines.is_empty():
+		whole = true
+		_whole_at = Time.get_ticks_msec()
 	_show()
 
 ## Waits for every skyline and stands them all up (tests, captures).
 func flush() -> void:
+	if _pending:
+		SkyWorld.layout()
+		warm(peaks)
 	for key in _making.keys():
 		var m: Dictionary = _making[key]
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		lines[key] = {"node":null,"arrays":m.out.arrays,"cell":m.cell}
 	_making.clear()
-	if peaks == null or peaks.cells == null: return
+	if peaks == null: return
 	for key in lines:
 		if lines[key].node == null: _stand(key)
+	if not lines.is_empty():
+		whole = true
+		_whole_at = -1
 	_show()
 
 func _stand(key: String) -> void:
@@ -127,7 +168,7 @@ func _stand(key: String) -> void:
 	var s: Variant = peaks.spot(line.cell)
 	if s == null: return
 	var node := Node3D.new()
-	node.name = "Skyline_%d" % line.cell.y
+	node.name = "Skyline_home" if line.cell == Vector2i.ZERO else "Skyline_%d" % line.cell.y
 	var scale: Vector3 = peaks.scale_of(line.cell)
 	node.position = Vector3(s.x,s.y+peaks.lift(scale.y),s.z)
 	node.rotation.y = s.w
@@ -137,16 +178,26 @@ func _stand(key: String) -> void:
 	body.mesh = SkyPeak.mesh_from(line.arrays,peaks._ground())
 	body.position = -_off_map()
 	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Kilometres off: never in the plate's water's mirror (scripts/
+	# planar_water.gd).
+	body.set_meta("skip_reflection",true)
 	node.add_child(body)
 	add_child(node)
 	line.node = node
 	line.erase("arrays")
 
-## Each skyline shows unless its range stands in full.
+## Each skyline shows, once the skyline is whole, unless its range stands
+## in full; fading in at first.
 func _show() -> void:
+	var fade := 0.0
+	if _whole_at >= 0:
+		fade = 1.0-clampf((Time.get_ticks_msec()-_whole_at)/(FADE*1000.0),0.0,1.0)
+		if fade <= 0.0: _whole_at = -1
 	for key in lines:
 		var node: Node3D = lines[key].node
-		if node != null: node.visible = not peaks.built.has(key)
+		if node == null: continue
+		node.visible = whole and not peaks.built.has(key)
+		(node.get_child(0) as GeometryInstance3D).transparency = fade
 
 ## True if a ring range's skyline stands and shows.
 func showing(key: String) -> bool:

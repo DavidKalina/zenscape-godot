@@ -184,6 +184,19 @@ static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.
 	blend.set_shader_parameter("glide_peaks",spots)
 	blend.set_shader_parameter("glide_ring",ring)
 
+## The build view's mountains (shaders/reference_surface_haze.gdshaderinc
+## overview_far): past OVERVIEW_FROM to OVERVIEW_TO (m) from the plate's
+## middle (global, `middle`), the plate's haze gives way to the ring's
+## skyline curve, under the cloud sea's own air (`sea`, as in `publish`);
+## off with the ring off.
+const OVERVIEW_FROM := 450.0
+const OVERVIEW_TO := 850.0
+static func overview(blend: ShaderMaterial, sea: Vector2, middle: Vector3) -> void:
+	if blend == null: return
+	var on := SkyWorld.ring_on()
+	blend.set_shader_parameter("overview_far",Vector4(middle.x,middle.z,OVERVIEW_FROM,OVERVIEW_TO) if on else Vector4.ZERO)
+	blend.set_shader_parameter("glide_sea",sea)
+
 ## The ring's haze for the shader (glide_ring): the world's middle (global,
 ## `middle`) and where its curve starts and has taken over; none with the
 ## ring off.

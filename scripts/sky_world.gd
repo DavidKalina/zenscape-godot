@@ -449,18 +449,95 @@ static func in_band(kind: String) -> bool:
 ## (`_ridges`): regions, passes, towers, knot, islands (each region's),
 ## kept_rules (false only if no try kept every rule), tries}. A range's
 ## index stays its own when one before it is left out for a saved island.
+##
+## Worked out on a worker when asked ahead (`prepare`, from SkyIslands
+## `load_state`: as a world starts), so the main thread never waits on it in
+## play; asked for before that worker is done, it is waited for, and asked
+## for with none started, worked out here and now (tests, tools). Either way
+## the same seed lays the same world.
 static func layout() -> Dictionary:
 	var wonders := int(SkyHomes.stone)+2*int(SkyHomes.isles)
 	if _layout_seed == seed and not _kept_changed and _layout_wonders == wonders: return _layout
-	var key := "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
+	var key := _key_now()
+	var began := Time.get_ticks_usec()
+	# The one being worked out on a worker: waited for, and taken if it is
+	# this one.
+	if key != _layout_key and _task >= 0: settle()
 	_layout_seed = seed
 	_layout_wonders = wonders
 	_kept_changed = false
 	if key == _layout_key: return _layout
+	frame()
+	_layout = _compute()
 	_layout_key = key
+	main_ms += (Time.get_ticks_usec()-began)/1000.0
+	return _layout
+
+## The layout's key: the seed, the islands kept and the wonders standing.
+static func _key_now() -> String:
+	return "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
+
+## The worker working out a layout ahead (`prepare`), its key and its result.
+static var _task := -1
+static var _task_key := ""
+static var _task_out := {}
+## Main-thread milliseconds `prepare` and the waits on its worker took, for
+## the record (tests/test_sky_world.gd).
+static var main_ms := 0.0
+
+## Sets a worker working out the layout for the world as it stands (its
+## seed, kept islands and wonders), unless it is worked out or being worked
+## out already. The seed and the kept islands are not changed while it works
+## (`settle` first: SkyIslands `load_state`, `keep`).
+static func prepare() -> void:
+	var began := Time.get_ticks_usec()
+	read_flags()
+	if not ring_on(): return
+	var key := _key_now()
+	if key == _layout_key or (_task >= 0 and key == _task_key):
+		return
+	settle()
+	# The crest line's frame cached here, so the worker only reads it; the
+	# cells' script loaded here, so the worker only finds it.
+	frame()
+	load("res://scripts/sky_cells.gd")
+	_task_key = key
+	_task_out = {}
+	_task = WorkerThreadPool.add_task(_work.bind(_task_out),false,"Sky world layout")
+	main_ms += (Time.get_ticks_usec()-began)/1000.0
+
+static func _work(out: Dictionary) -> void:
+	out.layout = _compute()
+
+## True once the layout for the world as it stands is worked out (taking a
+## worker's if it is done): nothing then waits on it.
+static func ready() -> bool:
+	if _task >= 0 and WorkerThreadPool.is_task_completed(_task): settle()
+	return _key_now() == _layout_key
+
+## Waits for a worker still working out a layout, and takes its result.
+static func settle() -> void:
+	if _task < 0: return
+	var began := Time.get_ticks_usec()
+	WorkerThreadPool.wait_for_task_completion(_task)
+	_take()
+	main_ms += (Time.get_ticks_usec()-began)/1000.0
+
+static func _take() -> void:
+	_task = -1
+	if not _task_out.has("layout"): return
+	_layout = _task_out.layout
+	_layout_key = _task_key
+	# Read through the quick check again on the next ask.
+	_layout_seed = -1
+	_task_out = {}
+
+## The whole layout, worked out from the statics as they stand: only read
+## here, never written, so a worker may run it.
+static func _compute() -> Dictionary:
 	var f := frame()
-	_layout = {"ranges":[],"notches":[],"massifs":f.massifs,"regions":[],"passes":[],"towers":[],"knot":Vector3.ZERO,"kept_rules":true}
-	for a: float in f.notches: _layout.notches.append({"angle":a,"arc":NOTCH_ARC,"at":crest_point(a)})
+	var out := {"ranges":[],"notches":[],"massifs":f.massifs,"regions":[],"passes":[],"towers":[],"knot":Vector3.ZERO,"kept_rules":true}
+	for a: float in f.notches: out.notches.append({"angle":a,"arc":NOTCH_ARC,"at":crest_point(a)})
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(noise(Vector2i(seed,3),SALT)*2147483647.0)
 	# The band, a stretch between each notch and the next.
@@ -479,10 +556,10 @@ static func layout() -> Dictionary:
 	for foot: Dictionary in feet:
 		if not ridges.ranges.any(func(q: Dictionary) -> bool: return box_distance(q,Vector2(foot.at.x,foot.at.z)) < FOOT_ROOM): ranges.append(foot)
 	ranges.append_array(ridges.ranges)
-	for part in ["regions","passes","towers","knot"]: _layout[part] = ridges[part]
-	_layout.islands = ridges.get("islands",[])
-	_layout.tries = ridges.get("tries",0)
-	_layout.kept_rules = ridges.ok
+	for part in ["regions","passes","towers","knot"]: out[part] = ridges[part]
+	out.islands = ridges.get("islands",[])
+	out.tries = ridges.get("tries",0)
+	out.kept_rules = ridges.ok
 	# None on a saved island.
 	for i in range(ranges.size()):
 		var r: Dictionary = ranges[i]
@@ -490,8 +567,8 @@ static func layout() -> Dictionary:
 		for h: Vector3 in kept:
 			if box_distance(r,Vector2(h.x,h.z)) < 250.0: r.index = -1
 	for r: Dictionary in ranges:
-		if r.index >= 0: _layout.ranges.append(r)
-	return _layout
+		if r.index >= 0: out.ranges.append(r)
+	return out
 
 ## Half a notch's width, and the ranges' inset from it, as an angle at its
 ## place on the crest line.
@@ -1477,6 +1554,8 @@ static func box_gap(a: Dictionary, b: Dictionary) -> float:
 ## outside the bounds (only a world saved before the ring can have one) are
 ## `kept`; the rest change nothing, so a claim inside never moves a range.
 static func keep(homes: Array[Vector3]) -> void:
+	# Never changed under a worker reading it (`prepare`).
+	settle()
 	var out: Array[Vector3] = []
 	for h in homes:
 		if Vector2(h.x,h.z).length() > SCATTER: out.append(h)

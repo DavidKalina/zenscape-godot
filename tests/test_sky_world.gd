@@ -652,7 +652,9 @@ func _skyline() -> void:
 	peaks.ring.warm(peaks)
 	peaks.reset(cells,currents)
 	peaks.flush()
-	var count: int = SkyWorld.layout().ranges.size()
+	# Every range laid out, and the one in sight of the plate (its skyline
+	# finer: SkyRing HOME_STRIDE), which the build view stands on too.
+	var count: int = SkyWorld.layout().ranges.size()+1
 	print("     the skyline's %d ranges made in %.1f s (workers)" % [count,(Time.get_ticks_msec()-began)/1000.0])
 	var faces := 0
 	var bytes := 0
@@ -692,7 +694,7 @@ func _skyline() -> void:
 		drawn += full/(step*step)
 		every += full/(1 if d <= SkyPeaks.LOD_NEAR else SkyPeaks.LOD_STRIDE*SkyPeaks.LOD_STRIDE)
 	print("     at the worst spot (%.0f, %.0f) %d ranges stand in full at once: about %.0fk faces drawn (%.0fk were every ridge drawn at the band's detail)" % [worst_at.x,worst_at.y,worst,drawn/1000.0,every/1000.0])
-	check(peaks.ring.line_count() == count,"Every range laid out stands far off as a skyline (%d, %d faces in all)" % [count,faces])
+	check(peaks.ring.line_count() == count and peaks.ring.lines.has(peaks._key(Vector2i.ZERO)),"Every range laid out, and the one in sight of the plate, stands far off as a skyline (%d, %d faces in all)" % [count,faces])
 	# Near a band range keeping its gorge: made in full, its skyline aside.
 	var r: Dictionary = {}
 	for q: Dictionary in SkyWorld.layout().ranges:
@@ -736,7 +738,7 @@ func _skyline() -> void:
 func _ring_built(peaks: Node3D) -> int:
 	var n := 0
 	for key in peaks.built:
-		if SkyPeaks.is_ring(peaks.built[key].cell): n += 1
+		if peaks.ring.lines.has(key): n += 1
 	return n
 
 func _solid_somewhere(peaks: Node3D, r: Dictionary) -> bool:

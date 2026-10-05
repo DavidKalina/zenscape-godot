@@ -301,6 +301,9 @@ func setup(owner_scene: Node3D) -> void:
 		glider.visible = false
 		add_child(glider)
 		islands.skip.append(glider)
+		# The mountains stand round the plate in the build view too
+		# (SkyIslands `_process`): the view reaches them.
+		if SkyWorld.ring_on(): camera.far = maxf(camera.far,SkyWorld.VIEW_FAR)
 
 # --- The figure -------------------------------------------------------------------
 
