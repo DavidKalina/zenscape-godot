@@ -127,7 +127,10 @@ func _publish() -> void:
 	if isles != null:
 		spots.append_array(isles.haze_spots(eye))
 		spots.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())
-	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots)
+	# The world's middle, for the mountain ring's skyline (scripts/sky_world.gd).
+	var middle: Variant = islands.get("origin") if islands != null else null
+	var ring := SkyHaze.ring_spot(middle) if middle is Vector3 else Vector4.ZERO
+	SkyHaze.publish(haze,blend,sea,SkyHaze.emerging(islands,eye) if islands != null and haze > 0.0 else [],spots,ring)
 	if _veil == null: return
 	_veil.visible = vapour > 0.003
 	(_veil.material as ShaderMaterial).set_shader_parameter("amount",vapour)

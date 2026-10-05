@@ -116,6 +116,9 @@ const PERCH_HINT := "Mouse to look  ·  WASD or arrows to walk  ·  Walk off the
 const FLY_HINT := "Mouse or A D to turn  ·  W S to pitch  ·  Click or E to flap  ·  Space to rise  ·  Shift to dive  ·  F to land  ·  Right mouse to look round  ·  C for the camera  ·  V or Esc to step out"
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyIslands = preload("res://scripts/sky_islands.gd")
+## The world's ring (scripts/sky_world.gd): with it, the view reaches across
+## the whole world (VIEW_FAR), so the ring stands as a skyline.
+const SkyWorld = preload("res://scripts/sky_world.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const SkyFlight = preload("res://scripts/sky_flight.gd")
@@ -609,6 +612,9 @@ func enter() -> void:
 	_returning = 0.0
 	_swoop = 0.0
 	_pace = Vector2.ZERO
+	# The mountain ring's skyline is worked out from here, so it stands
+	# whole by the time the glide opens (scripts/sky_ring.gd).
+	if islands != null: islands.warm_ring()
 	_yaw = figure.rotation.y+_turn()
 	_polar = PI*0.5
 	_read_obstacles(true)
@@ -754,7 +760,7 @@ func _launch(pace: float, drop := true) -> void:
 	# The sky stays as it was between glides.
 	if not islands.built(): islands.build()
 	if not perched: _far_before = camera.far
-	camera.far = FLY_FAR
+	camera.far = SkyWorld.VIEW_FAR if SkyWorld.ring_on() else FLY_FAR
 	islands.show_air(true)
 	glide.launch(from,_yaw,pace,drop)
 	glide.pitch = clampf(_polar-PI*0.5,-0.6,0.3)

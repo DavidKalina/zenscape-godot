@@ -47,6 +47,11 @@ const EMERGING := 4
 const PEAK_REACH := 1.8
 const PEAK_WHOLE := 3.0
 const PEAKS := 2
+## The mountain ring's skyline curve (scripts/sky_world.gd): its reach and
+## whole (m), the shader's ZS_RING_REACH and ZS_RING_WHOLE.
+const RING_REACH := SkyWorld.HAZE_REACH
+const RING_WHOLE := SkyWorld.HAZE_WHOLE
+const SkyWorld = preload("res://scripts/sky_world.gd")
 
 ## How much of a thing `dist` metres off at height `y` has gone into the
 ## sky's colour (shaders/glide_haze.gdshaderinc, the same curve).
@@ -54,6 +59,18 @@ static func fog(dist: float, y: float) -> float:
 	var low := smoothstep(SEA+LOW,SEA,y)
 	var reach := dist*(1.0+THICK*low)/REACH
 	return 1.0-exp(-reach*reach)*(1.0-smoothstep(WHOLE*0.72,WHOLE,dist))
+
+## The same on the mountain ring's skyline curve (zs_glide_fog_ring).
+static func fog_ring(dist: float, y: float) -> float:
+	var low := smoothstep(SEA+LOW,SEA,y)
+	var reach := dist*(1.0+THICK*low)/RING_REACH
+	return 1.0-exp(-reach*reach)*(1.0-smoothstep(RING_WHOLE*0.72,RING_WHOLE,dist))
+
+## How far onto the ring's curve a point (global) is, the world's middle
+## at `middle` (global): zs_glide_ring.
+static func ring_share(point: Vector3, middle: Vector3) -> float:
+	if not SkyWorld.ring_on(): return 0.0
+	return smoothstep(SkyWorld.HAZE_FROM,SkyWorld.HAZE_TO,Vector2(point.x-middle.x,point.z-middle.z).length())
 
 ## The same, `far` (0 to 1) of the way onto a range's gentler curve
 ## (zs_glide_fog_far).
@@ -148,8 +165,9 @@ static func emerging(islands: Node, eye: Vector3) -> Array:
 ## Lays the haze on by `amount` (0 to 1) and hands the display haze's
 ## `blend` (studies/display_fog.gd) the cloud sea under it (`sea`, as in
 ## `horizon`), the rising islands' boxes and the standing ranges' spots
-## (SkyPeaks `haze_spots`).
-static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.ZERO, rising: Array = [], peaks: Array = []) -> void:
+## (SkyPeaks `haze_spots`), and the world's middle (global) for the mountain
+## ring's curve, if it stands (`ring_spot`).
+static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.ZERO, rising: Array = [], peaks: Array = [], ring := Vector4.ZERO) -> void:
 	RenderingServer.global_shader_parameter_set("zs_glide_haze",Vector4(amount,REACH,WHOLE,SEA))
 	if blend == null: return
 	blend.set_shader_parameter("glide_sea",sea)
@@ -164,3 +182,11 @@ static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.
 	var spots := PackedVector4Array()
 	for i in range(PEAKS): spots.append(peaks[i] if i < peaks.size() else Vector4.ZERO)
 	blend.set_shader_parameter("glide_peaks",spots)
+	blend.set_shader_parameter("glide_ring",ring)
+
+## The ring's haze for the shader (glide_ring): the world's middle (global,
+## `middle`) and where its curve starts and has taken over; none with the
+## ring off.
+static func ring_spot(middle: Vector3) -> Vector4:
+	if not SkyWorld.ring_on(): return Vector4.ZERO
+	return Vector4(middle.x,middle.z,SkyWorld.HAZE_FROM,SkyWorld.HAZE_TO)

@@ -23,6 +23,10 @@ uniform vec4 glide_emerge_hi[4];
 // each (x, z) middle, reach (m), and 1 if standing. What stands within a
 // reach takes the landform's gentler curve (zs_glide_fog_far).
 uniform vec4 glide_peaks[2];
+// The mountain ring (scripts/sky_world.gd, sky_haze.gd `publish`): the
+// world's middle (x, z), and the distance from it (m) the ring's curve
+// starts at (z) and has taken over by (w); w 0 with no ring.
+uniform vec4 glide_ring = vec4(0.0);
 
 // The cloud sea the glide flies over, as the sky's material has it
 // (scripts/sky_haze.gd `publish`): x its strength, y its style (0 Opal,
@@ -104,6 +108,13 @@ float zs_glide_peak(vec3 point) {
 	return far;
 }
 
+// How far onto the ring's curve a surface point is: none inside the
+// world's bounds, all past the ring's start.
+float zs_glide_ring(vec3 point) {
+	if (glide_ring.w <= 0.0) return 0.0;
+	return smoothstep(glide_ring.z, glide_ring.w, length(point.xz - glide_ring.xy));
+}
+
 vec3 zs_surface_haze(vec3 color, vec2 uv) {
 	vec2 depth_sample = texture(surface_depth, uv).rg;
 	float depth = depth_sample.r;
@@ -147,7 +158,10 @@ vec3 zs_surface_haze(vec3 color, vec2 uv) {
 	if (zs_glide_haze.x > 0.0) {
 		vec3 point = ray_origin + offset;
 		// A range's rock keeps the landform's gentler curve.
-		float glide = max(zs_glide_fog_far(ray_length, point.y, zs_glide_peak(point)), zs_glide_emerge(point));
+		float glide = zs_glide_fog_far(ray_length, point.y, zs_glide_peak(point));
+		// The ring's rock keeps its skyline's curve.
+		glide = mix(glide, min(glide, zs_glide_fog_ring(ray_length, point.y)), zs_glide_ring(point));
+		glide = max(glide, zs_glide_emerge(point));
 		result = mix(result, mix(color, zs_glide_horizon(ray), glide), zs_glide_haze.x);
 	}
 	return mix(color, result, depth_sample.g);

@@ -25,6 +25,7 @@ extends Node3D
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
+const SkyWorld = preload("res://scripts/sky_world.gd")
 const COUNT := 70
 ## The field round the islands' slots, and the band of heights clouds sit
 ## in (metres).
@@ -58,7 +59,7 @@ func build(slots: Array) -> void:
 	field = Vector4(lo.x,lo.y,hi.x-lo.x,hi.y-lo.y)
 	_home_field = field
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 23
+	rng.seed = SkyWorld.salted(23)
 	clouds = PackedVector4Array()
 	var tries := 0
 	while clouds.size() < COUNT and tries < COUNT*40:

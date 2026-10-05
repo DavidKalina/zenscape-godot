@@ -21,6 +21,12 @@ extends Node3D
 ##
 ## Chunks are only translated, never turned, so they light like the plate.
 ##
+## The world is bounded (scripts/sky_world.gd): one seed for every placement
+## in the sky, saved with the world; islands, islets and clouds only within
+## the bounds round the plate's first home; and round them a ring of
+## mountain ranges with a few notches through it, past which an edge wind
+## turns the glide home (`air`). --no-ring opens the sky again, endless.
+##
 ## Between them stand the islets (scripts/sky_islets.gd), small scenery, a
 ## few big forested isles (scripts/sky_forest_isles.gd) to glide in under
 ## the trees of, and now and then a mountain range of the land far below
@@ -58,6 +64,8 @@ const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
 const SkyHomes = preload("res://scripts/sky_homes.gd")
+## The world's seed, bounds, ring and edge (scripts/sky_world.gd).
+const SkyWorld = preload("res://scripts/sky_world.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -122,9 +130,15 @@ func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
 	editor = scene._chunk_editor
 	name = "SkyIslands"
-	if "--wonders" in OS.get_cmdline_user_args():
+	# The wonders (SkyHomes): the ranges stand, the ring round the world with
+	# them (scripts/sky_world.gd); --wonders brings back every other one,
+	# --no-peaks takes the ranges away, --no-ring the ring and the bounds.
+	var args := OS.get_cmdline_user_args()
+	if "--wonders" in args:
 		SkyHomes.stone = true
 		SkyHomes.isles = true
+	if "--no-peaks" in args: SkyHomes.peaks = false
+	SkyWorld.read_flags()
 	currents = SkyCurrents.new()
 	add_child(currents)
 	var slots := [Vector3.ZERO]
@@ -158,6 +172,7 @@ func setup(owner_scene: Node3D) -> void:
 ## plate's own, replacing any earlier ones.
 func build() -> void:
 	clear()
+	_keep()
 	clouds.reset()
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
@@ -453,7 +468,7 @@ func save_state() -> Dictionary:
 	var kept := []
 	for entry: Dictionary in built_islands.values():
 		kept.append({"home":[entry.home.x,entry.home.y,entry.home.z],"label":entry.label,"document":entry.document})
-	return {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept}
+	return {"origin":[origin.x,origin.y,origin.z],"plate_seed":plate_seed,"built":kept,"seed":SkyWorld.seed}
 
 ## Takes a world's saved sky (`save_state`), or none for a new world. The
 ## islands stand again at the next glide.
@@ -469,6 +484,28 @@ func load_state(state: Dictionary) -> void:
 		if not entry is Dictionary or not entry.get("home") is Array or entry.home.size() != 3 or not entry.get("document") is Dictionary: continue
 		var home := Vector3(float(entry.home[0]),float(entry.home[1]),float(entry.home[2]))
 		built_islands[_key(home)] = {"home":home,"label":str(entry.get("label","Island")),"document":entry.document}
+	# The world's seed: a world saved before it had one keeps the sky it had
+	# (SkyWorld LEGACY_SEED); --sky-seed=N tries another.
+	SkyWorld.seed = int(state.get("seed",SkyWorld.LEGACY_SEED))
+	if SkyWorld.seed_flag() >= 0: SkyWorld.seed = SkyWorld.seed_flag()
+	_keep()
+	# A skyline made for another world's seed is let go.
+	if peaks != null and peaks.ring.line_count() > 0: peaks.ring.warm(peaks)
+
+## Sets the mountain ring's skyline (scripts/sky_ring.gd) to be worked out
+## on workers, if it isn't yet: from the wanderer's first steps, so it
+## stands whole by the time the glide opens.
+func warm_ring() -> void:
+	if peaks == null: return
+	_keep()
+	peaks.ring.warm(peaks)
+
+## Tells the ring which islands it must keep clear of and hold inside its
+## edge (SkyWorld `keep`): every one built and left, and the plate's own.
+func _keep() -> void:
+	var homes: Array[Vector3] = [-origin]
+	for entry: Dictionary in built_islands.values(): homes.append(entry.home)
+	SkyWorld.keep(homes)
 
 ## A new instance of `source` that shares its materials, and its mesh unless
 ## given `drawn`.
@@ -511,9 +548,15 @@ func show_air(on: bool) -> void:
 func in_cloud(point: Vector3, time: float) -> float:
 	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
 
-## The air at a global point (SkyCurrents `air_at`).
+## The air at a global point (SkyCurrents `air_at`), and past the mountain
+## ring the edge wind blowing home (SkyWorld `edge_air`).
 func air(point: Vector3) -> Dictionary:
-	return currents.air_at(point)
+	var here: Dictionary = currents.air_at(point)
+	var edge := SkyWorld.edge_air(point-origin)
+	if edge.is_empty(): return here
+	here.wind = (here.get("wind",Vector3.ZERO) as Vector3)+(edge.wind as Vector3)
+	here.along = (here.get("along",Vector3.ZERO) as Vector3)+(edge.along as Vector3)
+	return here
 
 ## The height of whatever island stands under a global point, or null over
 ## open air.
