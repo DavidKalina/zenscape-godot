@@ -4,6 +4,8 @@ extends RefCounted
 ##
 ## The sky is laid out in square cells. A hash of each cell says whether it
 ## holds an island and where, jittered in the cell, at a height in the band.
+## None stands outside the world's bounds (scripts/sky_world.gd, read
+## through SkyPeaks `blocks`), and every hash reads the world's seed.
 ## Spots too near the fixed slots (the plate's first home and the copies'
 ## OFFSETS), or too near a neighbour that outranks them, are left empty, so
 ## no two islands ever stand closer than SPACING; and so are spots on a
@@ -25,6 +27,8 @@ extends RefCounted
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 const SkyForestIsles = preload("res://scripts/sky_forest_isles.gd")
+## The world's seed and bounds (scripts/sky_world.gd).
+const SkyWorld = preload("res://scripts/sky_world.gd")
 const CELL := 450.0
 ## No island within this far (m) past a forested isle's KEEP.
 const ISLE_CLEAR := 60.0
@@ -34,7 +38,6 @@ const HOLDS := 0.9
 const JITTER := 0.15
 const SPACING := 350.0
 const BAND := Vector2(-50.0,25.0)
-const SEED := 7
 ## Wandering: this far (plate plane) from every island for this long.
 const WANDER_FAR := 500.0
 const WANDER_TIME := 20.0
@@ -66,13 +69,10 @@ var wandered := 0.0
 func _init(fixed: Array = []) -> void:
 	for s: Vector3 in fixed: reserved.append(s)
 
-## A hash of a cell, 0 to 1, one per salt.
+## A hash of a cell, 0 to 1, one per salt, under the world's seed
+## (SkyWorld `noise`).
 static func noise(cell: Vector2i, salt: int) -> float:
-	var h := cell.x*73856093^cell.y*19349663^salt*83492791^SEED*2654435761
-	h = (h^(h >> 13))*1274126177
-	h = (h^(h >> 16))*668265263
-	h ^= h >> 15
-	return float(h & 0xFFFFFF)/float(0x1000000)
+	return SkyWorld.noise(cell,salt)
 
 ## The cell's spot before spacing (home), or null if it holds none.
 static func raw(cell: Vector2i) -> Variant:

@@ -1,7 +1,8 @@
 extends SceneTree
 ## The wonders round the plate laid out together (scripts/sky_homes.gd): the
 ## mountain range, the pillar forest, the tepui, the towering cumulus and
-## the forested isle in sight of the plate each stand within sight of it,
+## the forested isle in sight of the plate (all of them on, in the open sky:
+## SkyWorld `ring` off) each stand within sight of it,
 ## in their own directions, turned to it where that matters, their rock
 ## (cloud, for the tower) at least GAP from every other's and from every
 ## fixed island, out of the islands' jet streams and thermals, and out of
@@ -50,6 +51,10 @@ func _initialize() -> void:
 	_off_in_play()
 	SkyHomes.stone = true
 	SkyHomes.isles = true
+	# Every wonder, laid out in the open sky, endless, its kinds scattered
+	# through the cells (SkyWorld `ring` off); the bounded world's layout is
+	# checked in tests/test_sky_world.gd.
+	preload("res://scripts/sky_world.gd").ring = false
 	_gather()
 	_in_sight()
 	_facing()
@@ -63,18 +68,20 @@ func check(ok: bool, label: String) -> void:
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label)
 
-## Off in play (SkyHomes `stone`, `isles`): only the cumulus stands, and no
-## range, pillar forest, tepui or isle turns up or keeps anything out.
+## In play (SkyHomes `peaks`, `stone`, `isles`): of the wonders only the
+## ranges stand, the one in sight of the plate and the ring's (scripts/
+## sky_world.gd), and the cumulus; no other range, no pillar forest, tepui
+## or isle turns up or keeps anything out.
 func _off_in_play() -> void:
-	check(not SkyHomes.stone and not SkyHomes.isles,"The stone wonders and the forested isles start off")
-	check(SkyHomes.spots() == [[SkyHomes.TOWER,SkyHomes.TOWER_KEEP]],"Only the towering cumulus stands in sight of the plate")
+	check(SkyHomes.peaks and not SkyHomes.stone and not SkyHomes.isles,"Of the wonders, the ranges stand; the other stone wonders and the forested isles start off")
+	check(SkyHomes.spots() == [[SkyHomes.TOWER,SkyHomes.TOWER_KEEP],[SkyHomes.RANGE,SkyHomes.RANGE_KEEP]],"Only the towering cumulus and the range stand in sight of the plate")
 	var none := true
 	for x in range(-WINDOW,WINDOW+1):
 		for z in range(-WINDOW,WINDOW+1):
 			var cell := Vector2i(x,z)
-			if SkyPeaks.spot(cell) != null or SkyForestIsles.spot(cell) != null: none = false
-	check(none,"No range or isle turns up in any cell")
-	check(not SkyPeaks.blocks(SkyPeaks.HOME) and not SkyPeaks.blocks(SkyPillars.HOME) and not SkyPeaks.blocks(SkyTepuis.HOME) and not SkyForestIsles.blocks(SkyForestIsles.HOME),"Nothing is kept clear for them")
+			if (cell != Vector2i.ZERO and SkyPeaks.spot(cell) != null) or SkyForestIsles.spot(cell) != null: none = false
+	check(none and SkyPeaks.spot(Vector2i.ZERO) != null,"No range but the plate's (and the ring's) and no isle turns up in any cell")
+	check(SkyPeaks.blocks(SkyPeaks.HOME) and not SkyPeaks.blocks(SkyPillars.HOME) and not SkyPeaks.blocks(SkyTepuis.HOME) and not SkyForestIsles.blocks(SkyForestIsles.HOME),"The range is kept clear; nothing is kept clear for the others")
 	var peaks: Node3D = SkyPeaks.new()
 	var isles: Node3D = SkyForestIsles.new()
 	var cells := SkyCells.new([Vector3.ZERO])
@@ -84,7 +91,7 @@ func _off_in_play() -> void:
 	isles.advance(1.0,Vector3.ZERO)
 	peaks.flush()
 	isles.flush()
-	check(peaks.range_count() == 0 and peaks.kinds[0].forest_count() == 0 and peaks.tepuis.tepui_count() == 0 and isles.isle_count() == 0,"Reset and run, none is made")
+	check(peaks.range_count() == 1 and peaks.built.has("0,0") and peaks.kinds[0].forest_count() == 0 and peaks.tepuis.tepui_count() == 0 and isles.isle_count() == 0,"Reset and run, only the range in sight of the plate is made near it")
 	peaks.free()
 	isles.free()
 
