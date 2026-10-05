@@ -44,7 +44,7 @@ const THICK := 0.6
 const EMERGING := 4
 ## A range's curve: its reach and whole this many times the islands', and
 ## the most ranges hazed at once.
-const PEAK_REACH := 1.9
+const PEAK_REACH := 1.8
 const PEAK_WHOLE := 3.0
 const PEAKS := 2
 

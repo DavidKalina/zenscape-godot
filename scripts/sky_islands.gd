@@ -168,6 +168,7 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	peaks.advance(delta,eye)
 	towers.advance(delta,eye)
 	clouds.screen(towers.screens(eye),towers.fade(eye)*0.9)
+	clouds.keep_off(peaks.keep_spots(eye))
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
