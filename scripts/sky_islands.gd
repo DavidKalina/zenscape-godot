@@ -37,6 +37,7 @@ const SkyCells = preload("res://scripts/sky_cells.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyTowers = preload("res://scripts/sky_towers.gd")
 ## The most chunks standing at once. Each is three draws.
 const CAP := 9
 ## A copy that turns up rises this far (metres) over this long (seconds):
@@ -77,6 +78,8 @@ var clouds: Node3D
 var islets: Node3D
 ## The mountain ranges risen through the cloud sea (scripts/sky_peaks.gd).
 var peaks: Node3D
+## The towering cumulus risen out of the cloud sea (scripts/sky_towers.gd).
+var towers: Node3D
 
 func setup(owner_scene: Node3D) -> void:
 	scene = owner_scene
@@ -99,6 +102,9 @@ func setup(owner_scene: Node3D) -> void:
 	peaks.tree_parts = Callable(SkyIslets,"_tree_parts")
 	add_child(peaks)
 	skip.append(peaks)
+	towers = SkyTowers.new()
+	add_child(towers)
+	skip.append(towers)
 	show_air(false)
 
 ## Sets a flat chunk at every offset, replacing any earlier ones.
@@ -115,6 +121,7 @@ func build() -> void:
 	peaks.ground_source = islets.ground_source
 	peaks.canopy_tint = SkyIslets._canopy_tint
 	peaks.reset(cells,currents)
+	towers.reset(cells,currents)
 
 func clear() -> void:
 	for island in _copies: island.queue_free()
@@ -128,6 +135,7 @@ func clear() -> void:
 	if currents != null: currents.drop_added()
 	if islets != null: islets.clear()
 	if peaks != null: peaks.clear()
+	if towers != null: towers.clear()
 
 func _add(home: Vector3, at: Vector3, rise: Vector3) -> void:
 	var island := Node3D.new()
@@ -158,6 +166,8 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 	trim(eye)
 	islets.advance(delta,eye)
 	peaks.advance(delta,eye)
+	towers.advance(delta,eye)
+	clouds.screen(towers.screens(eye),towers.fade(eye)*0.9)
 	clouds.follow(eye)
 
 ## Puts a copy at a home spot, rising from below, with a thermal beside it
@@ -304,6 +314,13 @@ func show_air(on: bool) -> void:
 	clouds.visible = on
 	islets.visible = on
 	peaks.visible = on
+	towers.visible = on
+
+## How deep a global point is in cloud, for the vapour: a drifting one's
+## heap (SkyClouds `inside`) or a tower's (SkyTowers `fade`, by its VEIL:
+## a tower draws its own fog round the eye), 0 to 1.
+func in_cloud(point: Vector3, time: float) -> float:
+	return maxf(clouds.inside(point,time),towers.fade(point)*SkyTowers.VEIL)
 
 ## The air at a global point (SkyCurrents `air_at`).
 func air(point: Vector3) -> Dictionary:

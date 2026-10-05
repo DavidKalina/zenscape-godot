@@ -7,7 +7,10 @@ extends Node3D
 ## (shaders/sky_cloud_puff.gdshader). They drift on the breeze and wrap
 ## round the field a whole cloud at a time. They keep clear of the islands,
 ## so they never hide a place, and are not set on a mountain range risen
-## through the sea (scripts/sky_peaks.gd), whose cloud hugs its foot. `inside` says how deep a point is in a cloud,
+## through the sea (scripts/sky_peaks.gd), whose cloud hugs its foot, nor
+## in a towering cumulus (scripts/sky_towers.gd), and never show through
+## one (`screen`): it draws first, so the puffs fade where it stands
+## between them and the eye. `inside` says how deep a point is in a cloud,
 ## which the vapour reads (scripts/sky_flight.gd).
 ##
 ## The field follows the glide (`follow`): when the eye strays FOLLOW of
@@ -20,6 +23,7 @@ extends Node3D
 ## the shader's `shift`, so the wrap works in one frame.
 
 const SkyPeaks = preload("res://scripts/sky_peaks.gd")
+const SkyTowers = preload("res://scripts/sky_towers.gd")
 const COUNT := 70
 ## The field round the islands' slots, and the band of heights clouds sit
 ## in (metres).
@@ -63,7 +67,7 @@ func build(slots: Array) -> void:
 		for s: Vector3 in slots:
 			if Vector2(at.x,at.z).distance_to(Vector2(s.x,s.z)) < CLEAR: clear = false
 		# Nor on a mountain risen through the sea: its cloud is at its foot.
-		if SkyPeaks.blocks(at): clear = false
+		if SkyPeaks.blocks(at) or SkyTowers.blocks(at,SIZE.y): clear = false
 		if clear: clouds.append(Vector4(at.x,at.y,at.z,rng.randf_range(SIZE.x,SIZE.y)))
 	_build_puffs(rng)
 
@@ -129,6 +133,18 @@ func follow(point: Vector3) -> void:
 	field.x = at.x-field.z*0.5
 	field.y = at.y-field.w*0.5
 	_material.set_shader_parameter("field",field)
+
+## The towers the puffs must not show through (SkyTowers `screens`), and
+## how deep in one's fog the eye is (0 to 1): the puffs past it dim by that.
+func screen(spots: Array, veiled := 0.0) -> void:
+	var columns := PackedVector4Array()
+	var spans := PackedVector2Array()
+	for i in range(4):
+		columns.append(spots[i][0] if i < spots.size() else Vector4.ZERO)
+		spans.append(spots[i][1] if i < spots.size() else Vector2.ZERO)
+	_material.set_shader_parameter("towers",columns)
+	_material.set_shader_parameter("tower_spans",spans)
+	_material.set_shader_parameter("veiled",veiled)
 
 ## A cloud's middle now, at `time` (the scene's motion time), as the shader
 ## places it.

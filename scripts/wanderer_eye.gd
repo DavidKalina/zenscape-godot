@@ -793,11 +793,11 @@ func _advance_flight(delta: float) -> void:
 	var input := _fly_input()
 	_read_obstacles(false)
 	glide.step(delta,input,_fly_ground,_fly_air)
-	sky.advance(delta,glide.position,islands.clouds.inside(glide.position,scene._motion_time))
+	sky.advance(delta,glide.position,islands.in_cloud(glide.position,scene._motion_time))
 	# Wandered off or fallen into the sea, an island turns up.
 	islands.advance(delta,glide.position,glide.heading,sky.flight.w)
 	vapour.step(delta,glide,_fly_ground)
-	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near)
+	air.advance(delta,glide.velocity,glide.hang,float(input.dive),vapour.near,islands.towers.fade(glide.position))
 	if glide.flaps != _flaps_heard:
 		_flaps_heard = glide.flaps
 		air.flap()
@@ -1002,7 +1002,7 @@ func _advance_perch(delta: float) -> void:
 	camera.fov = lerpf(camera.fov,FOV,_ease(EASE_FOV,delta))
 	# The sky goes on round it: the islets bob, the clouds drift, the wind
 	# quietens.
-	sky.advance(delta,eye,islands.clouds.inside(eye,scene._motion_time))
+	sky.advance(delta,eye,islands.in_cloud(eye,scene._motion_time))
 	islands.advance(delta,eye,_yaw,sky.flight.w)
 	air.advance(delta,Vector3.ZERO,0.0,0.0)
 	_hint_time += delta

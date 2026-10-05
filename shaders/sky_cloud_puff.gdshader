@@ -30,6 +30,16 @@ uniform float haze_far = 0.0;
 // where it meets rock it is soft, never a cut card. 0 leaves it as it was.
 uniform float soft_depth = 0.0;
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
+// The towering cumulus near the eye (scripts/sky_towers.gd `screens`),
+// drawn before these: each a column, global x, z, radius (0 none), and its
+// span of heights. A puff seen through one fades by how much of it stands
+// between, so it never shows through the tower, nor through the fog round
+// an eye inside one.
+uniform vec4 towers[4];
+uniform vec2 tower_spans[4];
+// How deep the eye itself is in a tower's fog (0 to 1): the puffs beyond
+// it go dim behind the fog round the eye.
+uniform float veiled = 0.0;
 
 varying vec2 across;
 varying float opacity;
@@ -72,6 +82,24 @@ void vertex() {
 	// over the open sky, which the display haze leaves be, a far cloud melts
 	// away into the sky behind it rather than standing out sharp.
 	opacity *= 1.0 - zs_glide_fog_far(away, centre.y, haze_far) * zs_glide_haze.x;
+	vec3 eye = CAMERA_POSITION_WORLD;
+	vec3 ray = (centre - eye) / max(away, 1e-3);
+	for (int i = 0; i < 4; i++) {
+		if (towers[i].z <= 0.0) continue;
+		vec2 o = eye.xz - towers[i].xy;
+		float a = max(dot(ray.xz, ray.xz), 1e-6);
+		float b = dot(o, ray.xz);
+		float disc = b * b - a * (dot(o, o) - towers[i].z * towers[i].z);
+		if (disc <= 0.0) continue;
+		float t0 = max((-b - sqrt(disc)) / a, 0.0);
+		float t1 = min((-b + sqrt(disc)) / a, away);
+		float ta = (tower_spans[i].x - eye.y) / (abs(ray.y) > 1e-5 ? ray.y : 1e-5);
+		float tb = (tower_spans[i].y - eye.y) / (abs(ray.y) > 1e-5 ? ray.y : 1e-5);
+		t0 = max(t0, min(ta, tb));
+		t1 = min(t1, max(ta, tb));
+		opacity *= 1.0 - smoothstep(0.0, 50.0, t1 - t0);
+	}
+	opacity *= 1.0 - veiled * smoothstep(4.0, 30.0, away);
 	// Light: the sky's colour all round, the sun's on the side and top
 	// facing it, a cool shade at the base.
 	vec3 offset = normalize(data.xyz + vec3(0.0, 0.25, 0.0));
