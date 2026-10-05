@@ -539,7 +539,11 @@ func _body(point: Vector3, land: NativeTerrainData = null) -> Variant:
 	var top: Variant = _height(point,land)
 	if top == null: return null
 	var local := editor.terrain.to_local(point)
-	var under := editor.terrain.to_global(Vector3(local.x,NativeTerrainData.SLAB_BASE,local.z)).y
+	# The rock under an island with an outline (NativeTerrainData `underside`),
+	# at the spot `_height` reads, or the slab's flat base.
+	var at := Vector2(snappedf(local.x,SNAP),snappedf(local.z,SNAP))
+	var base := (land if land != null else editor.data).underside(at)
+	var under := editor.terrain.to_global(Vector3(local.x,base,local.z)).y
 	return Vector2(float(top),under)
 
 ## The plate's height under a global point, in global metres, or null off it;

@@ -1,13 +1,17 @@
 extends SceneTree
-## Irregular islands, phase 1: the outline is a land mask over the plate's own
+## Irregular islands: the outline is a land mask over the plate's own
 ## triangulation (scripts/island_outline.gd), owned by the terrain
 ## (NativeTerrainData `outline`, `shore_distance`): saved, loaded, undone; the
 ## Quiet plain takes one from its seed; tools leave the sky off the island
-## alone; and the live water has no cells there.
+## alone; and the live water has no cells there. Under it hangs its rock
+## (scripts/island_shore.gd `keel`), which the glide's sense of the island
+## (scripts/sky_islands.gd `_body`) matches.
 const Outline = preload("res://scripts/island_outline.gd")
 const Genesis = preload("res://scripts/genesis_canvas.gd")
 const LandClay = preload("res://scripts/land_clay.gd")
 const Wire = preload("res://scripts/clay_tools/wire.gd")
+const Shore = preload("res://scripts/island_shore.gd")
+const SkyIslands = preload("res://scripts/sky_islands.gd")
 
 var failures := 0
 
@@ -34,6 +38,8 @@ func run() -> void:
 	tools(plate())
 	await water(plate())
 	await far(plate())
+	rock(plate())
+	span(plate())
 	print("ISLAND OUTLINE failures=",failures)
 	quit(1 if failures else 0)
 
@@ -300,9 +306,9 @@ func shaped(data: NativeTerrainData) -> void:
 	# out; a floor under the land.
 	var wall := preload("res://scripts/island_shore.gd").build(data,Transform3D(),null)
 	var box := wall.get_aabb()
-	check(is_equal_approx(box.position.y,NativeTerrainData.SLAB_BASE),"The shore wall reaches the slab's base (%.2f)" % box.position.y)
+	check(box.position.y < NativeTerrainData.SLAB_BASE-Shore.DEEP.x*0.5,"The shore wall and its rock hang well under the slab's base (%.2f)" % box.position.y)
 	var soup := wall.get_faces()
-	check(soup.size() == (data.shore_edges.size()/3*4+data.outline.count(0))*3,"Four wall facets a shore edge and the land's floor")
+	check(soup.size() == (data.shore_edges.size()/3*4+data.outline.count(0))*3,"Four wall facets a shore edge and the land's rock")
 	var outward := 0
 	for k in range(0,data.shore_edges.size(),3):
 		var tri := k/3*4*3
@@ -436,3 +442,189 @@ func far(data: NativeTerrainData) -> void:
 	check(ground.get_faces().size() == plain.outline.count(0)*3,"Its ground is only the island's faces")
 	var sides := preload("res://scripts/island_shore.gd").build(plain,Transform3D(Basis(),Vector3(0,-2,0)),null)
 	check(sides.get_surface_count() == 1 and sides.get_aabb().position.y < -6.0,"Its shore wall hangs under it")
+
+## The rock under an island: one face under each land face, hung from the
+## wall's foot, facing down, closed against the wall, seeded by the outline,
+## deeper for a bigger island, and laid once per outline.
+func rock(data: NativeTerrainData) -> void:
+	Genesis.shape(data,77)
+	var mesh := Shore.build(data,Transform3D(),null)
+	var soup := mesh.get_faces()
+	var wall_count := data.shore_edges.size()/3*4*3
+	var faces := data.outline.count(0)
+	check(soup.size() == wall_count+faces*3,"The rock is one face under each land face (%d)" % faces)
+	print("island 77: %d triangles (%d wall, %d rock)" % [soup.size()/3,wall_count/3,faces])
+	# Every rock face looks down (the shader's front, as the wall's facets).
+	var down := 0
+	for k in range(wall_count,soup.size(),3):
+		if (soup[k+2]-soup[k]).cross(soup[k+1]-soup[k]).y < 0.0: down += 1
+	check(down == faces,"Every rock face looks down (%d of %d)" % [down,faces])
+	# Closed: the rock's open edges are the wall's feet, end for end.
+	var count := {}
+	for k in range(wall_count,soup.size(),3):
+		for j in range(3):
+			var key := _edge_key(soup[k+j],soup[k+(j+1)%3])
+			count[key] = int(count.get(key,0))+1
+	var open := {}
+	for key: String in count:
+		if count[key] == 1: open[key] = true
+	var wall_edges := {}
+	for k in range(0,wall_count,3):
+		for j in range(3): wall_edges[_edge_key(soup[k+j],soup[k+(j+1)%3])] = true
+	var in_wall := 0
+	for key: String in open:
+		if wall_edges.has(key): in_wall += 1
+	check(open.size() == data.shore_edges.size()/3,"The rock's open edges run along the shore (%d of %d)" % [open.size(),data.shore_edges.size()/3])
+	check(in_wall == open.size(),"The wall comes down to every one of them (%d of %d)" % [in_wall,open.size()])
+	# The wall's foot and the rock's edge are the keel's own depths there.
+	var base := NativeTerrainData.SLAB_BASE
+	var foot_off := 0.0
+	for k in range(wall_count,soup.size()):
+		var i := _nearest(data.points,Vector2(soup[k].x,soup[k].z))
+		foot_off = maxf(foot_off,absf(soup[k].y-(base-data.keel[i])))
+	check(foot_off < 0.0001,"The rock hangs at the keel's depths (%.5f m off)" % foot_off)
+	# Shallow at the shore, deep inland, its deepest off the middle.
+	var near_shore := 0.0
+	var near_n := 0
+	var inland := 0.0
+	var inland_n := 0
+	var deepest := 0.0
+	var tip := Vector2.ZERO
+	var foot_ok := true
+	for i in range(data.points.size()):
+		var s := data.shore_distance[i]
+		if s < 0.0: continue
+		if s == 0.0: foot_ok = foot_ok and data.keel[i] >= Shore.LIP.x-0.001 and data.keel[i] <= Shore.LIP.y+0.001
+		if s < 1.0:
+			near_shore += data.keel[i]
+			near_n += 1
+		elif s > 4.0:
+			inland += data.keel[i]
+			inland_n += 1
+		if data.keel[i] > deepest:
+			deepest = data.keel[i]
+			tip = data.points[i]
+	near_shore /= maxf(near_n,1)
+	inland /= maxf(inland_n,1)
+	check(foot_ok,"The wall's foot stays within the lip's range all round")
+	check(inland > near_shore+3.0,"The rock hangs deep inland (%.1f m) and shallow at the shore (%.1f m)" % [inland,near_shore])
+	check(deepest >= Shore.DEEP.x*(1.0-Shore.DEEP_SPREAD)*0.9 and deepest <= Shore.DEEPEST,"It hangs to a point %.1f m under the slab's base" % deepest)
+	check(data.shore_distance[_nearest(data.points,tip)] > 1.0,"Its deepest point is inland")
+	# Not one smooth bowl: the point and its spurs are separate low points.
+	var lows := 0
+	var across := {}
+	for f in range(data.outline.size()):
+		if data.outline[f] != 0: continue
+		for j in range(3):
+			var a := data.vertex_ids[f*3+j]
+			if not across.has(a): across[a] = {}
+			for k in range(3): across[a][data.vertex_ids[f*3+k]] = true
+	for i: int in across:
+		if data.shore_distance[i] <= 0.0: continue
+		var lowest := true
+		for j: int in across[i]: lowest = lowest and (j == i or data.keel[j] < data.keel[i])
+		if lowest and data.keel[i] > 3.0: lows += 1
+	check(lows >= 2,"It hangs to more than one low point (%d)" % lows)
+	# Deterministic for the outline; another island hangs other rock.
+	var again := plate()
+	Genesis.shape(again,77)
+	check(again.keel == data.keel and Shore.build(again,Transform3D(),null).get_faces() == soup,"The same island hangs the same rock")
+	var other := plate()
+	Genesis.shape(other,78)
+	check(other.keel != data.keel,"Another island hangs its own rock")
+	# A bigger island hangs deeper.
+	var small := 0.0
+	var big := 0.0
+	for seed_value in range(1,7):
+		for size: float in [0.0,1.0]:
+			var mask := Outline.mask(other.points,other.vertex_ids,seed_value,size)
+			var keel := Shore.keel(other.points,other.vertex_ids,mask,Outline.shore_distance(other.points,other.vertex_ids,mask))
+			var low := 0.0
+			for d in keel: low = maxf(low,d)
+			if size == 0.0: small += low/6.0
+			else: big += low/6.0
+	check(big > small+2.5,"A big island hangs deeper than a small one (%.1f m against %.1f m)" % [big,small])
+	# Laid once per outline: shaping the top moves the wall's top, not the rock.
+	var laid: Array = data.underside_laid
+	var heights := data.heights.duplicate()
+	for i in range(heights.size()): heights[i] += 0.5
+	data.heights = heights
+	var shaped := Shore.build(data,Transform3D(),null).get_faces()
+	check(data.underside_laid == laid and shaped.slice(wall_count) == soup.slice(wall_count),"Shaping the top leaves the rock as it was")
+	check(shaped.slice(0,wall_count) != soup.slice(0,wall_count),"The wall's top follows the land")
+	data.set_outline(Outline.mask(data.points,data.vertex_ids,5))
+	check(data.underside_laid.is_empty(),"A new outline lays its rock again")
+	# A sum of every island's triangles: a sensible budget for nine live.
+	var most := 0
+	for seed_value in range(1,21):
+		Genesis.shape(other,seed_value)
+		most = maxi(most,Shore.build(other,Transform3D(),null).get_faces().size()/3)
+	print("most triangles in an island's sides and rock, seeds 1-20: %d" % most)
+	check(most <= 3000,"An island's sides and rock stay within 3000 triangles (%d)" % most)
+	# No outline: the flat slab's base, as before.
+	Genesis.shape(other,77,Vector2.ZERO,false)
+	check(other.keel.is_empty() and other.underside(Vector2.ZERO) == NativeTerrainData.SLAB_BASE,"A square plate keeps its flat base")
+
+## Two corners as a key, either way round.
+static func _edge_key(a: Vector3, b: Vector3) -> String:
+	var x := "%.3f,%.3f,%.3f" % [a.x,a.y,a.z]
+	var y := "%.3f,%.3f,%.3f" % [b.x,b.y,b.z]
+	return x+"|"+y if x < y else y+"|"+x
+
+## The glide's solid at a point (SkyIslands `_body`) is the rock that is
+## drawn: its underside is the rock face's own height there, on the live
+## plate and on a far island alike.
+func span(data: NativeTerrainData) -> void:
+	Genesis.shape(data,77)
+	var far := plate()
+	Genesis.shape(far,123)
+	var editor := NativeChunkEditor.new()
+	editor.data = data
+	editor.terrain = MeshInstance3D.new()
+	root.add_child(editor.terrain)
+	editor.terrain.position = Vector3(5.0,-3.0,2.0)
+	var islands := SkyIslands.new()
+	islands.editor = editor
+	for land: NativeTerrainData in [data,far]:
+		var soup := Shore.build(land,Transform3D(),null).get_faces()
+		var rock := soup.slice(land.shore_edges.size()/3*4*3)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 3
+		var tried := 0
+		var worst := 0.0
+		var hidden := 0
+		while tried < 200:
+			var at := Vector2(snappedf(rng.randf_range(-13.0,13.0),SkyIslands.SNAP),snappedf(rng.randf_range(-13.0,13.0),SkyIslands.SNAP))
+			if land.ground_height(at) == null: continue
+			tried += 1
+			var body: Variant = islands._body(editor.terrain.to_global(Vector3(at.x,40.0,at.y)),land if land == far else null)
+			if body == null:
+				hidden += 1
+				continue
+			var drawn := _rock_under(rock,at)
+			worst = maxf(worst,absf((body as Vector2).y-editor.terrain.to_global(Vector3(at.x,drawn,at.y)).y))
+		check(hidden == 0,"The glide finds a solid over every land point (%d missed)" % hidden)
+		check(worst < 0.001,"The solid's underside is the drawn rock (%.4f m off at worst)" % worst)
+	var off := Vector2.ZERO
+	for i in range(data.points.size()):
+		if data.shore_distance[i] < 0.0:
+			off = data.points[i]
+			break
+	check(islands._body(editor.terrain.to_global(Vector3(off.x,40.0,off.y))) == null,"Off the island, open air")
+	islands.free()
+	editor.terrain.free()
+	editor.free()
+
+## The rock's height in `rock` (a face soup) straight under `at`.
+static func _rock_under(rock: PackedVector3Array, at: Vector2) -> float:
+	for k in range(0,rock.size(),3):
+		var a := Vector2(rock[k].x,rock[k].z)
+		var b := Vector2(rock[k+1].x,rock[k+1].z)
+		var c := Vector2(rock[k+2].x,rock[k+2].z)
+		var whole := (b-a).cross(c-a)
+		if absf(whole) < 0.000001: continue
+		var u := (b-at).cross(c-at)/whole
+		var v := (c-at).cross(a-at)/whole
+		if u < -0.00001 or v < -0.00001 or u+v > 1.00001: continue
+		return u*rock[k].y+v*rock[k+1].y+(1.0-u-v)*rock[k+2].y
+	return INF

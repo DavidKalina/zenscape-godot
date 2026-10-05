@@ -149,6 +149,13 @@ var shore_distance := PackedFloat32Array()
 ## third corner of the land face it bounds (scripts/island_shore.gd hangs
 ## the wall from them). Recomputed with `shore_distance`.
 var shore_edges := PackedInt32Array()
+## How far under SLAB_BASE the island's rock hangs at each point (m), 0 off
+## the island (scripts/island_shore.gd `keel`). Empty without an outline.
+## Recomputed with `shore_distance`; read it through `underside`.
+var keel := PackedFloat32Array()
+## The rock's faces as scripts/island_shore.gd last laid them, kept until the
+## outline changes: [placing, vertices, uvs].
+var underside_laid: Array = []
 ## Points with no land face round them: nothing ever moves them.
 var _off_island := PackedInt32Array()
 ## The faces left standing, as mesh indices, for `play_mesh`.
@@ -283,11 +290,14 @@ func set_outline(mask: PackedByteArray) -> void:
 func _outline_changed() -> void:
 	shore_distance = PackedFloat32Array()
 	shore_edges = PackedInt32Array()
+	keel = PackedFloat32Array()
+	underside_laid = []
 	_off_island = PackedInt32Array()
 	if not outline.is_empty():
 		var shape := preload("res://scripts/island_outline.gd")
 		shore_distance = shape.shore_distance(points,vertex_ids,outline)
 		shore_edges = shape.shore_edges(vertex_ids,outline)
+		keel = preload("res://scripts/island_shore.gd").keel(points,vertex_ids,outline,shore_distance)
 		for i in range(shore_distance.size()):
 			if shore_distance[i] < 0.0: _off_island.append(i)
 	_combine_void()
@@ -318,6 +328,14 @@ func land_only(next: PackedFloat32Array, before: PackedFloat32Array) -> PackedFl
 	if before.size() != next.size(): return next
 	for i in _off_island: next[i] = before[i]
 	return next
+
+## The island's underside under `point` in the terrain's frame: the rock
+## hung under an outline (`keel`, as scripts/island_shore.gd draws it), or
+## the square slab's flat SLAB_BASE.
+func underside(point: Vector2) -> float:
+	if keel.is_empty(): return SLAB_BASE
+	var depth: Variant = sample(point,keel)
+	return SLAB_BASE-float(depth) if depth != null else SLAB_BASE
 
 ## Whether point `i` is off the island (no land face round it).
 func off_island(i: int) -> bool:
