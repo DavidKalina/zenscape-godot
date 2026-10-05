@@ -10,7 +10,10 @@ extends SceneTree
 ##     the D-pad the case and the size, Y the mode; A taps a tree in with a
 ##     seed in hand, B puts it down, B held undoes;
 ##   - build -> walk (View) -> fly (A held) -> land (Y) -> walk -> build (B);
-##   - Menu pauses, the D-pad steps the panel, B resumes;
+##   - Menu pauses, the D-pad steps the panel, A opens the field notes and B
+##     comes back from them, B resumes;
+##   - L3 opens photo mode, its sticks compose, X is the ground eye, B leaves;
+##     View held watches, any button comes back;
 ##   - the keyboard and mouse still do what they did: V and Esc, the walk's
 ##     keys, the wheel, Q and Esc in hand, and a moved mouse takes the cursor.
 ##   godot --headless --path . --script tests/test_gamepad.gd
@@ -103,6 +106,7 @@ func run() -> void:
 	await _building()
 	await _modes()
 	await _pause()
+	await _photo_and_watch()
 	await _keys_and_mouse()
 	print("PASS: gamepad" if failures == 0 else "FAIL: gamepad (%d)" % failures)
 	quit(1 if failures else 0)
@@ -282,10 +286,44 @@ func _pause() -> void:
 	check(panel.copy_open,"A presses it: the copy well opens")
 	await tap(JOY_BUTTON_B)
 	check(not panel.copy_open and panel.is_open,"B folds the well")
+	if panel.notes_row.visible:
+		panel.notes_row.grab_focus()
+		await tap(JOY_BUTTON_A)
+		check(scene.field_notes.is_open and pad.context() == "notes","A on Field notes opens them")
+		await tap(JOY_BUTTON_B)
+		await frames(4)
+		check(not scene.field_notes.is_open and panel.is_open,"B comes back to the pause panel")
 	await tap(JOY_BUTTON_B)
 	await frames(3)
 	check(not panel.is_open and not scene._menu.visible and pad.context() == "world","B again resumes")
 	await seconds(0.5)
+
+func _photo_and_watch() -> void:
+	await tap(JOY_BUTTON_LEFT_STICK)
+	await frames(3)
+	var photo: Node = scene.photo
+	check(photo.active and pad.context() == "photo","L3 opens photo mode")
+	var yaw: float = photo._goal.yaw
+	axis(JOY_AXIS_RIGHT_X,1.0)
+	await seconds(0.3)
+	axis(JOY_AXIS_RIGHT_X,0.0)
+	check(absf(photo._goal.yaw-yaw) > 0.1,"The right stick turns the shot")
+	await tap(JOY_BUTTON_X)
+	check(photo.ground,"X is the ground eye")
+	await tap(JOY_BUTTON_X)
+	await tap(JOY_BUTTON_B)
+	await frames(3)
+	check(not photo.active and pad.context() == "world","B leaves photo mode")
+	await seconds(1.0)
+	button(JOY_BUTTON_BACK,true)
+	await seconds(0.7)
+	button(JOY_BUTTON_BACK,false)
+	await frames(3)
+	check(scene.watch.active and not eye.active,"View held: watch mode, not the eyes")
+	await tap(JOY_BUTTON_A)
+	await frames(3)
+	check(not scene.watch.active,"Any button comes back")
+	await seconds(1.0)
 
 func _keys_and_mouse() -> void:
 	var materials: Node = scene.hand_reach.materials

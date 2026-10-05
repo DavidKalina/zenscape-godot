@@ -436,19 +436,18 @@ func _front_frame() -> void:
 			button.grab_focus()
 			return
 
-## The Settings dialog: with the pad, every row can be reached.
+## The Settings dialog: with the pad, every row can be reached (the sound's
+## rows keep out of the mouse's focus), and the first takes the focus if
+## nothing holds it.
 func _settings_frame() -> void:
 	if not Pad.using_pad(): return
 	var dialog: Window = scene._settings
-	if dialog.gui_get_focus_owner() != null: return
 	var first: Control = null
 	for node: Node in dialog.find_children("*","Control",true,false):
-		if node is BaseButton or node is Range:
-			if node.focus_mode == Control.FOCUS_NONE:
-				node.focus_mode = Control.FOCUS_ALL
-				node.set_meta("pad_focus",true)
-			if first == null and node.is_visible_in_tree(): first = node
-	if first != null: first.grab_focus()
+		if not (node is BaseButton or node is Range): continue
+		if node.focus_mode == Control.FOCUS_NONE: node.focus_mode = Control.FOCUS_ALL
+		if first == null and node.is_visible_in_tree(): first = node
+	if first != null and dialog.gui_get_focus_owner() == null: first.grab_focus()
 
 ## The library: the pad's moves are the keys it reads (left and right
 ## browse, A enters, B goes back), up lifts focus onto the action row and
@@ -581,8 +580,15 @@ class FocusRing extends Control:
 	func target() -> Control:
 		if not Pad.using_pad() or not pad._context in ["front","library","new_world","pause","notes"]: return null
 		var focus := get_viewport().gui_get_focus_owner()
-		if focus == null or not focus.is_visible_in_tree() or focus.modulate.a < 0.1: return null
-		return focus
+		if focus == null or not focus.is_visible_in_tree(): return null
+		# Not round a control faded out (the card under the library) or not
+		# yet faded in.
+		var item: Node = focus
+		var alpha := 1.0
+		while item is CanvasItem:
+			alpha *= (item as CanvasItem).modulate.a
+			item = item.get_parent()
+		return focus if alpha >= 0.1 else null
 	func _process(delta: float) -> void:
 		var focus := target()
 		_alpha = move_toward(_alpha,1.0 if focus != null else 0.0,delta/0.15)
