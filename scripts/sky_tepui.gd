@@ -10,11 +10,11 @@ extends RefCounted
 ## The shape is a heightfield, height over the tepui's own (x, z), built the
 ## way a mesa weathers:
 ##   the outline: a wandering rim (broad lobes and bays), buttresses
-##     standing out of it and fine vertical flutes, so the walls read as
-##     fluted from top to bottom (a heightfield's walls are vertical lines);
-##   the walls: sheer, stepping out at one or two of the rock's beds into a
-##     ledge (gently tilted, as the beds are; where a ledge is pinched out
-##     the walls run on down in one face), and under the sea a talus slope;
+##     standing out of it and vertical flutes, round the middle;
+##   the walls: sheer, stepping out a little at every one of the rock's
+##     beds (in partial bands: where a bed's tread has worn away it lies
+##     flush) and at one or two into a broad ledge, and under the sea a
+##     talus slope;
 ##   the plateau: a rolling surface tilted gently toward the fall, weathered
 ##     by the plate's own stream-power erosion (scripts/terrain_erosion.gd
 ##     `erode`, in plate units, the walls held fixed so it drains off the
@@ -29,11 +29,15 @@ extends RefCounted
 ##     throws it out far enough that at glide height there is a flyable gap
 ##     between the curtain and the cove's back wall (`gap`).
 ##
-## Faces are flat and coloured per face from the world's own rock, grass and
-## the strata's warm tones (scripts/strata.gd), as the peaks' are: on the
-## walls the colour runs in vertical streaks (weathered dark rock, the
-## world's grey, warm fresh sandstone), wet and mossy in the coves; green on
-## the ledges and in the plateau's hollows, bare dark rock on its crowns.
+## The heightfield is what the glide reads, and the plateau's mesh; the
+## walls and the coves are drawn as rings (`body_arrays`), row by row down
+## the beds, on the same heights, so the bedding reads as level courses
+## round the mesa. Faces are flat and coloured per face from the world's
+## strata (scripts/strata.gd), rock and grass: the walls pale rosy-grey
+## sandstone warming to buff and ochre in broad stretches, each layer a
+## shade apart, long black algae streaks hanging down them, wet and mossy
+## in the coves; muted bog-green on the ledges and in the plateau's hollows,
+## weathered dark rock on its crowns.
 ##
 ## The frame is the tepui's own: its spot on the islands' plane at the
 ## origin, the great fall pouring off toward +z, heights the world's.
@@ -52,8 +56,8 @@ const ERODE_N := 193
 const PLATE_CELL := 0.7
 ## The rim's mean radius (m), its broad lobes (share of the radius, over
 ## LOBE_WAVE m of rim), its bays (m deep, BAY_WAVE m), buttresses (m out,
-## BUTTRESS_WAVE m) and flutes (m, FLUTE_WAVE m); the outline is pushed
-## about by WARP m besides.
+## BUTTRESS_WAVE m) and flutes (m, FLUTE_WAVE m). The labyrinth's joints are
+## pushed about by WARP m.
 const RADIUS := Vector2(360.0,405.0)
 const LOBES := 0.08
 const LOBE_WAVE := 420.0
@@ -61,8 +65,8 @@ const BAY := 55.0
 const BAY_WAVE := 170.0
 const BUTTRESS := 15.0
 const BUTTRESS_WAVE := 62.0
-const FLUTE := 3.2
-const FLUTE_WAVE := 15.0
+const FLUTE := 2.6
+const FLUTE_WAVE := 26.0
 const WARP := 9.0
 ## The plateau: its height at the middle (m), its rise per metre
 ## away from it, its roll (m, over ROLL_WAVE m) and hummocks (m).
@@ -117,22 +121,24 @@ const ERODE := {"detail":0.6,"frequency":0.16,"warp":1.3,"slope_ref":1.2,"iterat
 ## The stream's meanders (m across, how many), its pools (how many,
 ## radius m), the spring pool's radius, the tarn's radius and how far in
 ## from the rim it lies (m).
-const CHANNEL := 5.5
-const DEPTH := 2.4
-const BANK := 1.8
-const BANK_REACH := 14.0
+const CHANNEL := 3.2
+const DEPTH := 1.8
+const BANK := 1.4
+const BANK_REACH := 10.0
 const MEANDER := Vector2(35.0,60.0)
 const MEANDERS := Vector2(1.6,2.4)
 const POOLS := Vector2i(2,3)
-const POOL := Vector2(13.0,24.0)
-const SPRING := Vector2(11.0,16.0)
-const TARN := Vector2(16.0,22.0)
+const POOL := Vector2(8.0,14.0)
+const SPRING := Vector2(7.0,10.0)
+const TARN := Vector2(13.0,18.0)
 const TARN_IN := 70.0
 ## The great fall's cove (half width, depth m) and the small one's; the
 ## coves' walls' rise per metre out; how hard each lip throws its water
 ## (m/s off the lip), and where in the band the second fall sits (radians
 ## from the first).
-const COVE := Vector2(80.0,58.0)
+const COVE := Vector2(62.0,58.0)
+## The falls' half widths at the lip (m: great, small).
+const FALL_HALF := Vector2(6.3,3.3)
 const SMALL_COVE := Vector2(24.0,16.0)
 const COVE_SHEER := 30.0
 ## How far out past the rim the coves run on as slots (m).
@@ -155,7 +161,21 @@ const UPDRAFT_OVER := 45.0
 ## STREAK_WAVE m of rim; how far a face's colour is nudged.
 const GREEN_PATCH := 0.35
 const LEDGE_SLOPE := 0.8
-const STREAK_WAVE := 16.0
+const STREAK_WAVE := 7.0
+## The walls as rings: their spacing round the rim (m), the face's rows
+## between beds (m), the chamfer where a bed steps (m), the band over the
+## top in to the plateau (m), the ribs between flutes and the nudges in and
+## out (m), the cracks and the thin beds' thickness within a layer (m).
+## The rings start at FOOT, under the cut.
+const WALL_SEG := 3.5
+const WALL_ROW := 7.0
+const WALL_CHAMFER := 0.8
+const WALL_CAP := 2.0
+const WALL_RIB := 0.55
+const WALL_NUDGE := 0.35
+const CRACKS := 34
+const MINOR_BED := 4.0
+const FOOT := CUT-12.0
 ## The beds' thickness on the walls (m).
 const BED := 11.0
 const FACE_JITTER := 0.04
@@ -179,6 +199,14 @@ var nz := 0
 ## how far each point is from the nearest channel's line, as a share of its
 ## half width; and what each point is (KIND_*).
 var heights := PackedFloat32Array()
+## The plateau's surface at each point, run on out past the rim (the
+## plateau's mesh is cut at the rim from it), and how far each point is
+## inside the rim (m).
+var surf := PackedFloat32Array()
+var rim_d := PackedFloat32Array()
+## The heights before the coves were carved (the plateau's mesh and the
+## coves' walls read them).
+var uncut := PackedFloat32Array()
 var settled := PackedFloat32Array()
 var water := PackedFloat32Array()
 var wet := PackedFloat32Array()
@@ -224,6 +252,8 @@ var _crenel: FastNoiseLite
 var _bed_w: FastNoiseLite
 var _flute_reach: FastNoiseLite
 var _warp: FastNoiseLite
+var _laid := {}
+var _cove_flute: FastNoiseLite
 var _zone: FastNoiseLite
 var _joints: FastNoiseLite
 var _blocks: FastNoiseLite
@@ -333,6 +363,8 @@ func _plan_water() -> void:
 			half = maxf(half,CHANNEL+(r-CHANNEL)*smoothstep(0.0,1.0,bump))
 		if k == 0: half = spring
 		elif t < 0.06: half = maxf(half,lerpf(float(stream[0].half),CHANNEL,t/0.06))
+		# Spreading over the lip's sill to the fall's width.
+		half = maxf(half,lerpf(CHANNEL,FALL_HALF.x*0.85,smoothstep(0.9,1.0,t)))
 		# Always downhill: never over the ground's bank, and held level across
 		# a pool.
 		level = minf(level,_base(line[k])-BANK)
@@ -344,10 +376,10 @@ func _plan_water() -> void:
 			while j+1 < stream.size() and float(stream[j+1].half) > CHANNEL+1.0: j += 1
 			for m in range(k,j+1): stream[m].level = stream[j].level
 	# On past the lip a little, so the channel is cut clean through the rim.
-	stream.append({"at":lip_at+way*3.0,"level":level,"half":CHANNEL})
+	stream.append({"at":lip_at+way*3.0,"level":level,"half":FALL_HALF.x*0.85})
 	streams.append(stream)
 	var lip_y := level
-	falls.append({"lip":Vector3(lip_at.x,lip_y,lip_at.y),"out":way,"half":CHANNEL*1.15,"throw":THROW,"drop":lip_y-(SEA-6.0),"cove":COVE,"main":true})
+	falls.append({"lip":Vector3(lip_at.x,lip_y,lip_at.y),"out":way,"half":FALL_HALF.x,"throw":THROW,"drop":lip_y-(SEA-6.0),"cove":COVE,"main":true})
 	# The tarn and its spill, a turn round the rim.
 	var side := 1.0 if _rng.randf() < 0.5 else -1.0
 	var tway := way.rotated(side*_rng.randf_range(SECOND_TURN.x,SECOND_TURN.y))
@@ -359,14 +391,14 @@ func _plan_water() -> void:
 	var spill := []
 	for k in range(13):
 		var t := float(k)/12.0
-		spill.append({"at":tarn.lerp(slip,t),"level":minf(tlevel,_base(tarn.lerp(slip,t))-BANK),"half":tr if k == 0 else (tr*(1.0-smoothstep(0.0,0.4,t))+CHANNEL*0.6*smoothstep(0.0,0.4,t))})
+		spill.append({"at":tarn.lerp(slip,t),"level":minf(tlevel,_base(tarn.lerp(slip,t))-BANK),"half":tr if k == 0 else (tr*(1.0-smoothstep(0.0,0.4,t))+CHANNEL*smoothstep(0.0,0.4,t))})
 	var slevel := INF
 	for s: Dictionary in spill:
 		slevel = minf(slevel,float(s.level))
 		s.level = slevel
-	spill.append({"at":slip+tway*3.0,"level":slevel,"half":CHANNEL*0.6})
+	spill.append({"at":slip+tway*3.0,"level":slevel,"half":CHANNEL})
 	streams.append(spill)
-	falls.append({"lip":Vector3(slip.x,slevel,slip.y),"out":tway,"half":CHANNEL*0.6,"throw":SMALL_THROW,"drop":slevel-(SEA-6.0),"cove":SMALL_COVE,"main":false})
+	falls.append({"lip":Vector3(slip.x,slevel,slip.y),"out":tway,"half":FALL_HALF.y,"throw":SMALL_THROW,"drop":slevel-(SEA-6.0),"cove":SMALL_COVE,"main":false})
 
 ## The rim's radius toward `way` (unit, x and z): the lobes, bays,
 ## buttresses and flutes, read round a circle so they wrap.
@@ -378,13 +410,13 @@ func rim_radius(way: Vector2) -> float:
 	r += FLUTE*(0.35+1.0*maxf(0.0,_flute_reach.get_noise_2d(c.x,c.y)+0.4))*(_outline[3] as FastNoiseLite).get_noise_2d(c.x,c.y)
 	return r
 
-## How far a point is inside the rim (m; negative outside), read at the
-## point pushed about by WARP.
+## How far a point is inside the rim (m; negative outside), along its way
+## out from the middle, so the walls (`wall_out`) stand round the middle as
+## rings.
 func inside(p: Vector2) -> float:
-	var q := p+Vector2(_warp.get_noise_2d(p.x,p.y),_warp.get_noise_2d(p.x+311.0,p.y-173.0))*WARP
-	var l := q.length()
+	var l := p.length()
 	if l < 0.001: return radius
-	return rim_radius(q/l)-l
+	return rim_radius(p/l)-l
 
 ## The plateau's lie before the weathering: `plateau` high at the middle,
 ## rising away from the fall (TILT), rolling.
@@ -433,6 +465,9 @@ func _fine(coarse: Dictionary) -> void:
 	settled.resize(nx*nz)
 	kinds.resize(nx*nz)
 	var laid: PackedFloat64Array = coarse.laid
+	_laid = coarse
+	surf.resize(nx*nz)
+	rim_d.resize(nx*nz)
 	var crag := _noise(37,1.0/CRAG_WAVE,2,FastNoiseLite.FRACTAL_RIDGED)
 	_towers()
 	for j in range(nz):
@@ -440,21 +475,20 @@ func _fine(coarse: Dictionary) -> void:
 			var c := j*nx+i
 			var p := point(i,j)
 			var d := inside(p)
+			rim_d[c] = d
 			var change := SkyPeak._sample(laid,coarse.n,coarse.corner,coarse.cell,p) if d > -4.0 else 0.0
 			settled[c] = change
-			var surface := _base(p)+_hummock.get_noise_2d(p.x,p.y)*HUMMOCK+change
+			var surface := _surface(p,d)
 			var kind := KIND_PLATEAU
-			# The rim's crenels: notches down into its top near the edge.
-			var rim := 1.0-smoothstep(0.0,RIM_BAND,d)
-			if rim > 0.0: surface -= CRENEL*rim*smoothstep(0.15,0.55,_crenel.get_noise_2d(p.x,p.y))
 			surface += _labyrinth(p,d)
 			var tower := _tower_at(p)
 			if tower > 0.0 and d > 6.0:
 				surface += tower
 				if tower > 2.0: kind = KIND_TOWER
+			surf[c] = surface
 			var h := surface
 			if d < 0.0:
-				h = _walls(p,-d,surface)
+				h = _walls(p,-d,rim_top(p.normalized()))
 				kind = KIND_WALL
 			# Crags on the steep: the towers and the walls' faces.
 			if kind != KIND_PLATEAU: h += CRAG*(crag.get_noise_2d(p.x,p.y)-0.2)
@@ -467,31 +501,74 @@ func _fine(coarse: Dictionary) -> void:
 			var edge := HALF-maxf(absf(p.x),absf(p.y))
 			heights[j*nx+i] = minf(heights[j*nx+i],BASE+edge*6.0)
 
-## The walls `out` m outside the rim under a rim at `rim_h`: the highest of
-## the beds' tiers, each a ledge falling gently out to its edge and then a
-## sheer face; under the sea the talus.
-func _walls(p: Vector2, out: float, rim_h: float) -> float:
-	var h := rim_h-SHEER*out
+## The plateau's surface at a point `d` m inside the rim: its lie, the
+## hummocks, the erosion's change and the rim's crenels, notches down into
+## its top near the edge (no towers, no labyrinth).
+func _surface(p: Vector2, d: float) -> float:
+	var change := SkyPeak._sample(_laid.laid,_laid.n,_laid.corner,_laid.cell,p) if d > -4.0 else 0.0
+	var h := _base(p)+_hummock.get_noise_2d(p.x,p.y)*HUMMOCK+change
+	var rim := 1.0-smoothstep(0.0,RIM_BAND,d)
+	if rim > 0.0: h -= CRENEL*rim*smoothstep(0.15,0.55,_crenel.get_noise_2d(p.x,p.y))
+	return h
+
+## The rim's top toward `way` (unit): the plateau's surface at the rim.
+func rim_top(way: Vector2) -> float:
+	return _surface(way*rim_radius(way),0.0)
+
+## The walls' tiers toward `way` (unit): each bed's Vector4(level, where its
+## tread starts and ends (m out from the rim), 1 for a ledge), the beds'
+## levels tilted as the rock is (read at the rim), and last the talus's
+## (level, -, its foot's start, 0). The face above each tier runs down to
+## it, then its tread out to its edge; a ledge's face its own flutes. A bed
+## whose tread has worn away stands flush with the face above.
+func tiers(way: Vector2, rim_h: float) -> Array[Vector4]:
+	var out: Array[Vector4] = []
 	var edge := 0.0
 	var top_h := rim_h
-	var lift := tilt.dot(p)
-	var way := p.normalized()*300.0
+	var lift := tilt.dot(way*rim_radius(way))
+	var at := way*300.0
 	for k in range(beds.size()):
 		var b := beds[k]
 		var level := b.x+lift
-		var n := _bed_w.get_noise_2d(way.x+k*173.0,way.y-k*71.0)
+		var n := _bed_w.get_noise_2d(at.x+k*173.0,at.y-k*71.0)
 		var width := b.y*clampf(n*1.5+0.45,0.0,1.0)
-		# The face above runs down to this bed, then its tread out to its
-		# edge; a ledge's face its own flutes.
+		# Over the rim here (the plateau dips), flush in the face just under
+		# it, so every way round has the same beds.
+		if level > top_h-3.0:
+			level = top_h-3.0-k*0.1
+			width = 0.0
 		edge += (top_h-level)/SHEER+width
-		if b.z > 0.5: edge += FLUTE*0.5*(_outline[3] as FastNoiseLite).get_noise_2d(way.x*1.7+k*91.0,way.y*1.7)
-		var from := edge-width
-		h = maxf(h,minf(level-LEDGE_FALL*maxf(0.0,out-from),level-SHEER*(out-edge)))
+		if b.z > 0.5: edge += FLUTE*0.5*(_outline[3] as FastNoiseLite).get_noise_2d(at.x*1.7+k*91.0,at.y*1.7)
+		out.append(Vector4(level,edge-width,edge,b.z))
 		top_h = level
 	var talus := SEA-40.0+lift
 	edge += (top_h-talus)/SHEER
-	h = maxf(h,minf(talus,talus-TALUS*(out-edge)))
-	return h
+	out.append(Vector4(talus,edge,edge,0.0))
+	return out
+
+## The walls `out` m outside the rim under a rim at `rim_h`: the highest of
+## the tiers, each a ledge falling gently out to its edge and then a sheer
+## face; under the sea the talus.
+func _walls(p: Vector2, out: float, rim_h: float) -> float:
+	var list := tiers(p.normalized(),rim_h)
+	var h := rim_h-SHEER*out
+	for k in range(list.size()-1):
+		var t := list[k]
+		h = maxf(h,minf(t.x-LEDGE_FALL*maxf(0.0,out-t.y),t.x-SHEER*(out-t.z)))
+	var talus := list[list.size()-1]
+	return maxf(h,minf(talus.x,talus.x-TALUS*(out-talus.z)))
+
+## How far out from the rim (m) the walls stand at height `y`, under a rim
+## at `rim_h` with these `tiers`: `_walls` turned about, so the wall rings
+## (`wall_arrays`) lie on the heights the glide reads.
+static func wall_out(list: Array[Vector4], rim_h: float, y: float) -> float:
+	var out := (rim_h-y)/SHEER
+	for k in range(list.size()-1):
+		var t := list[k]
+		if y <= t.x: out = maxf(out,minf(t.y+(t.x-y)/LEDGE_FALL,t.z+(t.x-y)/SHEER))
+	var talus := list[list.size()-1]
+	if y <= talus.x: out = maxf(out,talus.z+(talus.x-y)/TALUS)
+	return out
 
 ## The towers: one tried in each TOWER_CELL cell, standing where the
 ## labyrinth's noise passes TOWER_ODDS, clear of the rim and the water.
@@ -519,7 +596,7 @@ func _towers() -> void:
 func _labyrinth(p: Vector2, d: float) -> float:
 	var zone := smoothstep(LABYRINTH.x,LABYRINTH.y,_zone.get_noise_2d(p.x,p.y))*smoothstep(20.0,45.0,d)
 	if zone <= 0.0: return 0.0
-	var q := p+Vector2(_warp.get_noise_2d(p.x*2.0,p.y*2.0),_warp.get_noise_2d(p.x*2.0+97.0,p.y*2.0-41.0))*6.0
+	var q := p+Vector2(_warp.get_noise_2d(p.x*2.0,p.y*2.0),_warp.get_noise_2d(p.x*2.0+97.0,p.y*2.0-41.0))*WARP*0.7
 	var edge := _joints.get_noise_2d(q.x,q.y)+1.0
 	var block := _blocks.get_noise_2d(q.x,q.y)*0.5+0.5
 	return zone*(BLOCK*block-FISSURE*(1.0-smoothstep(0.08,0.2,edge)))
@@ -626,16 +703,20 @@ func _water() -> void:
 		if kinds[c] == KIND_PLATEAU or kinds[c] == KIND_TOWER:
 			heights[c] = flat
 			if keep < 0.5: kinds[c] = KIND_PLATEAU
-		if d < half:
+		# Cut at least a grid cell wide, so a narrow creek is never lost
+		# between the grid's points.
+		var bed := maxf(half,STEP*1.1)
+		if d < bed:
 			var depth := DEPTH+(half-CHANNEL)*0.12
-			heights[c] = minf(heights[c],level-depth*(1.0-(d/half)*(d/half))-0.05)
+			heights[c] = minf(heights[c],level-depth*(1.0-(d/bed)*(d/bed))-0.05)
 		if d < half+STEP: water[c] = level
 
 ## The coves, carved last: under each lip a sheer amphitheatre from past the
 ## sea up to the rim, so its fall pours free of rock; their rims crenellated
 ## but for the notch.
 func _coves() -> void:
-	var flute := _noise(47,1.0/11.0,2,FastNoiseLite.FRACTAL_RIDGED)
+	_cove_flute = _noise(47,1.0/11.0,2,FastNoiseLite.FRACTAL_RIDGED)
+	uncut = heights.duplicate()
 	for f: Dictionary in falls:
 		var way: Vector2 = f.out
 		var rim := rim_radius(way)
@@ -648,22 +729,40 @@ func _coves() -> void:
 		for j in range(lo.y,hi.y+1):
 			for i in range(lo.x,hi.x+1):
 				var p := point(i,j)
-				var o := p-middle
-				var u := o.dot(across)
-				var v := -o.dot(way)
-				if v < -SLOT: continue
-				# Past the rim the cove runs on out as a slot through the
-				# ledges, so none stands as a sliver in front of the fall.
-				var e := sqrt((u/size.x)*(u/size.x)+(v/size.y)*(v/size.y)) if v > 0.0 else absf(u)/size.x
-				var a := atan2(u,v)
-				var notch := smoothstep(float(f.half)+2.0,float(f.half)+12.0,absf(u))
-				var out := (e-1.0)*size.y+flute.get_noise_2d(a*size.y,0.0)*2.2*notch
-				var cove := BASE+COVE_SHEER*maxf(0.0,out)
+				var cove := cove_floor(f,p)
 				var c := j*nx+i
 				if cove < heights[c]:
 					heights[c] = cove
 					kinds[c] = KIND_COVE
 					if not is_nan(water[c]) and cove < water[c]-DEPTH-1.0: water[c] = NAN
+
+## Fall `f`'s cove's floor under a point (x, z): a sheer amphitheatre
+## (COVE_SHEER) round the ellipse at the back of the cove, and past the rim
+## a slot running on out through the ledges, so none stands as a sliver in
+## front of the fall; INF where the cove does not reach.
+func cove_floor(f: Dictionary, p: Vector2) -> float:
+	var way: Vector2 = f.out
+	var middle := way*rim_radius(way)
+	var size: Vector2 = f.cove
+	var o := p-middle
+	var u := o.dot(Vector2(way.y,-way.x))
+	var v := -o.dot(way)
+	if v < -SLOT: return INF
+	var e := sqrt((u/size.x)*(u/size.x)+(v/size.y)*(v/size.y)) if v > 0.0 else absf(u)/size.x
+	var out := (e-1.0)*size.y+_cove_wobble(f,u,v)
+	return BASE+COVE_SHEER*maxf(0.0,out)
+
+## The flutes down a cove's walls (m, in its floor's run), none at the lip.
+func _cove_wobble(f: Dictionary, u: float, v: float) -> float:
+	var size: Vector2 = f.cove
+	var notch := smoothstep(float(f.half)+2.0,float(f.half)+12.0,absf(u))
+	return _cove_flute.get_noise_2d(atan2(u,v)*size.y,0.0)*2.2*notch
+
+## The lowest cove floor under a point over all the falls.
+func _coves_floor(p: Vector2) -> float:
+	var h := INF
+	for f: Dictionary in falls: h = minf(h,cove_floor(f,p))
+	return h
 
 # --- Measuring --------------------------------------------------------------------
 
@@ -850,62 +949,22 @@ func _noise(salt: int, frequency: float, octaves: int, fractal: int) -> FastNois
 ## The tepui's faces as surface arrays for the plate's ground material,
 ## coloured per face from the world's `grass` and `rock` (linear) and its
 ## `gravel`, laid `shift` off (as SkyPeak `body_arrays`). Safe on a worker.
+## Three parts, one surface:
+##   the plateau: the heightfield, cut clean at the rim (each face clipped
+##     where the rim crosses it), so no grid's staircase shows at the edge;
+##   the walls (`_wall_faces`): rings round the middle, row by row down the
+##     rock's beds, so the bedding reads as level courses;
+##   the coves: round each fall, the heightfield whole, cove, walls and all
+##     (the rings stop at the cove's sides, the heightfield's faces running a
+##     little under them).
 func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO) -> Array:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed*31+7
-	var fields := [_noise(67,1.0/60.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/STREAK_WAVE,2,FastNoiseLite.FRACTAL_FBM),
-		_noise(79,1.0/45.0,2,FastNoiseLite.FRACTAL_FBM),_noise(89,1.0/55.0,2,FastNoiseLite.FRACTAL_FBM)]
-	var normals := PackedVector3Array()
-	normals.resize(nx*nz)
-	for j in range(nz):
-		for i in range(nx):
-			var g := _gradient(heights,i,j)
-			normals[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
-	var strata := SkyPeak._strata_colours()
-	var vertices := PackedVector3Array()
-	var normal_list := PackedVector3Array()
-	var colour_list := PackedColorArray()
-	for j in range(nz-1):
-		for i in range(nx-1):
-			var c00 := j*nx+i
-			var c10 := c00+1
-			var c01 := c00+nx
-			var c11 := c01+1
-			var h00 := heights[c00]
-			var h10 := heights[c10]
-			var h01 := heights[c01]
-			var h11 := heights[c11]
-			if maxf(maxf(h00,h10),maxf(h01,h11)) < CUT: continue
-			var p00 := _v(i,j,h00)
-			var p10 := _v(i+1,j,h10)
-			var p01 := _v(i,j+1,h01)
-			var p11 := _v(i+1,j+1,h11)
-			var tris: Array
-			if SkyPeak._split(h00,h10,h01,h11): tris = [[p00,p11,p10,c00,c11,c10],[p00,p01,p11,c00,c01,c11]]
-			else: tris = [[p00,p01,p10,c00,c01,c10],[p10,p01,p11,c10,c01,c11]]
-			for t: Array in tris:
-				var a: Vector3 = t[0]
-				var b: Vector3 = t[1]
-				var d: Vector3 = t[2]
-				var ia: int = t[3]
-				var ib: int = t[4]
-				var id: int = t[5]
-				var n := (b-a).cross(d-a).normalized()
-				if n.y < 0.0:
-					var swap := b
-					b = d
-					d = swap
-					var turn := ib
-					ib = id
-					id = turn
-					n = -n
-				var lie := (normals[ia]+normals[ib]+normals[id]+n*1.2).normalized()
-				var kind := maxi(kinds[ia],maxi(kinds[ib],kinds[id]))
-				var tone := _tone((a+b+d)/3.0,lie,n,(settled[ia]+settled[ib]+settled[id])/3.0,minf(wet[ia],minf(wet[ib],wet[id])),kind,grass,rock,gravel,strata,fields,rng)
-				for q in [[a,ia],[d,id],[b,ib]]:
-					vertices.append((q[0] as Vector3)+shift)
-					normal_list.append(normals[q[1]])
-					colour_list.append(tone)
+	var look := _look(grass,rock,gravel)
+	var out := Faces.new()
+	_plateau_faces(out,look)
+	_wall_faces(out,look)
+	for f: Dictionary in falls: _cove_faces(f,out,look)
+	var vertices := out.v
+	for k in range(vertices.size()): vertices[k] += shift
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	uv.resize(vertices.size())
@@ -915,62 +974,413 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normal_list
-	arrays[Mesh.ARRAY_COLOR] = colour_list
+	arrays[Mesh.ARRAY_NORMAL] = out.n
+	arrays[Mesh.ARRAY_COLOR] = out.c
 	arrays[Mesh.ARRAY_TEX_UV] = uv
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	return arrays
+
+## Faces as they are laid: positions, normals, colours.
+class Faces:
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var c := PackedColorArray()
+
+## The colours and fields every face reads. The walls' sandstone: a pale
+## rosy grey, a paler buff, a warm ochre and a cool grey, from the world's
+## strata (scripts/strata.gd) and rock, and the black of the algae that
+## streak a tepui's walls. Greens muted toward the world's darker foliage,
+## as the boggy tops are.
+func _look(grass: Array, rock: Array, gravel: Color) -> Dictionary:
+	var strata := SkyPeak._strata_colours()
+	var stone := (rock[0] as Color).lerp(rock[rock.size()-1],0.5)
+	var rose: Color = (strata.core_b as Color).lerp(strata.clay,0.34)
+	var buff: Color = (strata.sand as Color).lerp(strata.core_b,0.55)
+	var ochre: Color = (strata.sand as Color).lerp(strata.clay,0.45)
+	var grey: Color = (strata.core_a as Color).lerp(stone,0.35)
+	var greens := []
+	for g: Color in grass:
+		var lum := (g.r+g.g+g.b)/3.0
+		greens.append(g.lerp(Color(lum,lum,lum),0.45).lerp(strata.topsoil,0.15)*0.62)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed*31+7
+	return {"strata":strata,"stone":stone,"sands":[rose,buff,ochre,rose.lerp(grey,0.5),grey],"algae":(strata.shale_dark as Color)*0.32,
+		"greens":greens,"gravel":gravel,"rng":rng,
+		"patch":_noise(67,1.0/60.0,3,FastNoiseLite.FRACTAL_FBM),"streak":_noise(73,1.0/STREAK_WAVE,2,FastNoiseLite.FRACTAL_FBM),
+		"run":_noise(77,1.0/90.0,1,FastNoiseLite.FRACTAL_NONE),"mix":_noise(79,1.0/45.0,2,FastNoiseLite.FRACTAL_FBM),
+		"veg":_noise(89,1.0/55.0,2,FastNoiseLite.FRACTAL_FBM)}
+
+## The plateau's faces: every heightfield triangle cut where it leaves the
+## plateau, at the rim and at the coves' edges (the walls are rings).
+func _plateau_faces(out: Faces, look: Dictionary) -> void:
+	var normals := PackedVector3Array()
+	normals.resize(nx*nz)
+	var keep := PackedFloat32Array()
+	keep.resize(nx*nz)
+	for j in range(nz):
+		for i in range(nx):
+			var c := j*nx+i
+			var g := _gradient(uncut,i,j)
+			normals[c] = Vector3(-g.x,1.0,-g.y).normalized()
+			keep[c] = rim_d[c]
+			if rim_d[c] > -STEP*2.0:
+				var floor_h := _coves_floor(point(i,j))
+				if floor_h < INF: keep[c] = minf(keep[c],(floor_h-uncut[c])/COVE_SHEER)
+	for j in range(nz-1):
+		for i in range(nx-1):
+			var corners := [j*nx+i,j*nx+i+1,(j+1)*nx+i,(j+1)*nx+i+1]
+			var ds := []
+			var hs := []
+			var any := false
+			for c: int in corners:
+				ds.append(keep[c])
+				hs.append(uncut[c] if rim_d[c] >= 0.0 else surf[c])
+				any = any or keep[c] >= 0.0
+			if not any: continue
+			var ps := [_v(i,j,hs[0]),_v(i+1,j,hs[1]),_v(i,j+1,hs[2]),_v(i+1,j+1,hs[3])]
+			var tris: Array
+			if SkyPeak._split(hs[0],hs[1],hs[2],hs[3]): tris = [[0,3,1],[0,2,3]]
+			else: tris = [[0,2,1],[1,2,3]]
+			for t: Array in tris:
+				var a: Vector3 = ps[t[0]]
+				var b: Vector3 = ps[t[1]]
+				var d: Vector3 = ps[t[2]]
+				var ia: int = corners[t[0]]
+				var ib: int = corners[t[1]]
+				var id: int = corners[t[2]]
+				var n := (b-a).cross(d-a).normalized()
+				if n.y < 0.0: n = -n
+				var lie := (normals[ia]+normals[ib]+normals[id]+n*1.2).normalized()
+				var kind := maxi(kinds[ia],maxi(kinds[ib],kinds[id]))
+				if kind == KIND_COVE or kind == KIND_WALL: kind = KIND_PLATEAU
+				var tone := _ground_tone((a+b+d)/3.0,lie,(settled[ia]+settled[ib]+settled[id])/3.0,minf(wet[ia],minf(wet[ib],wet[id])),kind,look)
+				var poly := _clip([a,b,d],[ds[t[0]],ds[t[1]],ds[t[2]]])
+				for k in range(1,poly.size()-1): _tri(out,poly[0],poly[k],poly[k+1],Vector3.UP,tone)
+
+## The part of a triangle (`points`) where `d` (at each corner) is not
+## under 0, read as varying straight along its edges.
+static func _clip(points: Array, d: Array) -> Array:
+	var out := []
+	for k in range(3):
+		var a: Vector3 = points[k]
+		var b: Vector3 = points[(k+1) % 3]
+		var da: float = d[k]
+		var db: float = d[(k+1) % 3]
+		if da >= 0.0: out.append(a)
+		if (da >= 0.0) != (db >= 0.0): out.append(a.lerp(b,da/(da-db)))
+	return out
+
+## A face wound clockwise seen from the side `facing` points to (Godot's
+## front), coloured `tone`, with its own normal.
+static func _tri(out: Faces, a: Vector3, b: Vector3, d: Vector3, facing: Vector3, tone: Color) -> void:
+	var n := (b-a).cross(d-a)
+	if n.length_squared() < 1e-8: return
+	n = n.normalized()
+	if n.dot(facing) < 0.0:
+		var swap := b
+		b = d
+		d = swap
+		n = -n
+	for v in [a,d,b]:
+		out.v.append(v)
+		out.n.append(n)
+		out.c.append(tone)
+
+## The rock's layer at a point (x, z) and height `y`: how many beds stand
+## over it there (each layer its own sandstone).
+func layer_at(p: Vector2, y: float) -> int:
+	var lift := tilt.dot(p)
+	var k := 0
+	for b in beds: k += int(b.x+lift > y)
+	return k
+
+## The walls as rings: WALL_SEG m apart round the rim, each ring a row down
+## the rock (where a cove's slot cuts through, its faces left out). Down from the rim's top, every
+## bed brings three rows: its chamfer's top, its tread's middle and its
+## tread's edge with the chamfer under it, so where the rock steps out it
+## does so crisply, and where its tread has worn away the rows lie flush in
+## the face; between beds the face's rows every WALL_ROW m or so, each
+## vertex nudged up or down its row and in or out so the facets are
+## irregular. The flutes come down from the rim's own (`rim_radius`), the
+## ribs between them wander a little down the face, and cracks open here
+## and there. Over the top, a narrow band in from the rim to the plateau's
+## cut edge, so no seam shows.
+func _wall_faces(out: Faces, look: Dictionary) -> void:
+	var seg := int(round(TAU*radius/WALL_SEG))
+	var rib := _noise(97,1.0/9.0,2,FastNoiseLite.FRACTAL_RIDGED)
+	var nudge := _noise(101,1.0/5.0,1,FastNoiseLite.FRACTAL_NONE)
+	# The rows' plan, the same round the whole rim: for each gap between
+	# anchors how many face rows, from the beds' levels as drawn.
+	var nominal := [plateau]
+	for b in beds: nominal.append(b.x)
+	nominal.append(SEA-40.0)
+	var gaps := []
+	for k in range(nominal.size()-1):
+		var room: float = float(nominal[k])-float(nominal[k+1])
+		gaps.append(maxi(0,int(round(room/(WALL_ROW if float(nominal[k+1]) > SEA-15.0 else WALL_ROW*2.0)))-1))
+	var cracks := _cracks(seg)
+	var rings := []
+	var keys := []
+	for s in range(seg+1):
+		var theta := TAU*float(s % seg)/seg
+		var way := Vector2.from_angle(theta)
+		var rho := rim_radius(way)
+		var top := rim_top(way)
+		var list := tiers(way,top)
+		var rows := []
+		# The band over the top, then the rim.
+		var inner := way*(rho-WALL_CAP)
+		rows.append([Vector3(inner.x,_surface(inner,WALL_CAP)+0.06,inner.y),-1,0])
+		rows.append([Vector3(way.x*rho,top,way.y*rho),0,0])
+		var above := top
+		for k in range(list.size()):
+			var t := list[k]
+			var talus := k == list.size()-1
+			var y1 := minf(t.x+WALL_CHAMFER,above-0.5)
+			for m in range(gaps[k]):
+				var y := lerpf(above,y1,float(m+1)/(gaps[k]+1))
+				y += (y1-above)/(gaps[k]+1)*0.28*nudge.get_noise_2d(float(s)*7.3,float(rows.size())*11.0)
+				rows.append(_ring_point(way,rho,top,list,y,k,1))
+			rows.append(_ring_point(way,rho,top,list,y1,k,2))
+			if talus:
+				for y: float in [t.x-WALL_CHAMFER,SEA-60.0,FOOT]: rows.append(_ring_point(way,rho,top,list,y,k+1,1))
+				break
+			var drop := LEDGE_FALL*(t.z-t.y)
+			rows.append(_ring_point(way,rho,top,list,t.x-drop*0.5,k+1,3 if t.w > 0.5 else 2))
+			var y3 := t.x-drop-WALL_CHAMFER
+			rows.append(_ring_point(way,rho,top,list,y3,k+1,2))
+			above = y3
+		# The ribs and cracks: in or out along the way, face rows only.
+		for r in range(2,rows.size()):
+			var row: Array = rows[r]
+			var at: Vector3 = row[0]
+			var push := WALL_RIB*(rib.get_noise_2d(theta*rho/1.0,at.y*0.08)-0.3)
+			if int(row[2]) == 1: push += WALL_NUDGE*nudge.get_noise_2d(float(s)*3.1+at.y,at.y*0.7)
+			for crack: Vector4 in cracks:
+				if absi(s-int(crack.x)) <= 0 and at.y < crack.y and at.y > crack.z: push -= crack.w*smoothstep(crack.z,crack.z+10.0,at.y)*(1.0-smoothstep(crack.y-10.0,crack.y,at.y))
+			row[0] = at+Vector3(way.x,0.0,way.y)*push
+		var cut := []
+		for row: Array in rows:
+			var at: Vector3 = row[0]
+			cut.append(_coves_floor(Vector2(at.x,at.z)) < at.y-0.3)
+		rings.append(rows)
+		keys.append(cut)
+	var count: int = (rings[0] as Array).size()
+	for s in range(seg):
+		var a: Array = rings[s]
+		var b: Array = rings[s+1]
+		if a.size() != count or b.size() != count: continue
+		for r in range(count-1):
+			var p0: Vector3 = a[r][0]
+			var p1: Vector3 = b[r][0]
+			var q0: Vector3 = a[r+1][0]
+			var q1: Vector3 = b[r+1][0]
+			if maxf(maxf(p0.y,p1.y),maxf(q0.y,q1.y)) < CUT: continue
+			if keys[s][r] and keys[s+1][r] and keys[s][r+1] and keys[s+1][r+1]: continue
+			var centre := (p0+p1+q0+q1)*0.25
+			var outward := Vector3(centre.x,0.0,centre.z).normalized()
+			var n := (q1-p0).cross(q0-p1)
+			if n.dot(outward) < 0.0: n = -n
+			if n.length_squared() < 1e-8: continue
+			n = n.normalized()
+			var tone: Color
+			if int(a[r][1]) < 0:
+				tone = _ground_tone(centre,Vector3.UP,0.0,INF,KIND_PLATEAU,look)
+			else:
+				var ledge := int(a[r+1][2]) == 3 or int(a[r][2]) == 3
+				tone = _wall_tone(centre,n,int(a[r+1][1]),ledge,false,look)
+			var facing := outward if absf(n.y) < 0.7 else Vector3.UP*signf(n.y)
+			_tri(out,p0,p1,q1,facing,tone)
+			_tri(out,p0,q1,q0,facing,tone)
+
+## A cove's walls, as rings of their own: its path round from the far end
+## of the slot on one side, along the slot, round the amphitheatre at the
+## back and out along the slot on the other, WALL_SEG m a step; down it rows
+## level with the beds (so the layers run on round the cove) and between,
+## each row the cove's floor turned about (`cove_floor`: where it stands at
+## that height). A row's top is the ground the cove cut into there; rows
+## over it fold onto it.
+func _cove_faces(f: Dictionary, out: Faces, look: Dictionary) -> void:
+	var way: Vector2 = f.out
+	var middle := way*rim_radius(way)
+	var size: Vector2 = f.cove
+	var across := Vector2(way.y,-way.x)
+	var path := []
+	var slot_n := int(SLOT/WALL_SEG)
+	for k in range(slot_n,0,-1): path.append(Vector2(-1.0,-k*WALL_SEG))
+	var arc_n := int(PI*(size.x+size.y)*0.5*1.3/WALL_SEG)
+	for k in range(arc_n+1): path.append(Vector2(0.0,lerpf(-PI*0.5,PI*0.5,float(k)/arc_n)))
+	for k in range(1,slot_n+1): path.append(Vector2(1.0,-k*WALL_SEG))
+	var lift := tilt.dot(middle)
+	var ys := [plateau+TILT*radius+ROLL+12.0]
+	for b in beds:
+		var level: float = b.x+lift
+		var above: float = ys[ys.size()-1]
+		var n := maxi(0,int(round((above-level)/(WALL_ROW if level > SEA-15.0 else WALL_ROW*2.0)))-1)
+		for m in range(n): ys.append(lerpf(above,level+WALL_CHAMFER,float(m+1)/(n+1)))
+		ys.append(level+WALL_CHAMFER)
+		ys.append(level-WALL_CHAMFER)
+	for y: float in [SEA-40.0,SEA-60.0,FOOT]: ys.append(y)
+	var rings := []
+	for entry: Vector2 in path:
+		var at := func(y: float) -> Vector2: return _cove_point(f,middle,across,entry,y)
+		# The top: the uncut ground where the wall stands, found in a few
+		# steps.
+		var top := plateau
+		for k in range(5):
+			var h: Variant = _uncut_at(at.call(top))
+			if h == null:
+				top = -INF
+				break
+			top = float(h)
+		var rows := []
+		for y: float in ys:
+			var yy := minf(y,top)
+			var q: Vector2 = at.call(yy)
+			rows.append(Vector3(q.x,yy,q.y))
+		rings.append(rows)
+	for k in range(path.size()-1):
+		var a: Array = rings[k]
+		var b: Array = rings[k+1]
+		var entry: Vector2 = path[k]
+		for r in range(ys.size()-1):
+			var p0: Vector3 = a[r]
+			var p1: Vector3 = b[r]
+			var q0: Vector3 = a[r+1]
+			var q1: Vector3 = b[r+1]
+			if maxf(maxf(p0.y,p1.y),maxf(q0.y,q1.y)) < CUT: continue
+			var centre := (p0+p1+q0+q1)*0.25
+			var inward := (Vector3(middle.x,centre.y,middle.y)-centre) if entry.x == 0.0 else Vector3(across.x,0.0,across.y)*-entry.x
+			var n := (q1-p0).cross(q0-p1)
+			if n.length_squared() < 1e-6: continue
+			if n.dot(inward) < 0.0: n = -n
+			var tone := _wall_tone(centre,n.normalized(),layer_at(Vector2(centre.x,centre.z),centre.y),false,true,look)
+			_tri(out,p0,p1,q1,inward,tone)
+			_tri(out,p0,q1,q0,inward,tone)
+
+## Where a cove's wall stands at height `y` along its path (`entry`: x -1
+## or 1 a slot's side with y how far out, 0 the amphitheatre with y its
+## angle): `cove_floor` turned about.
+func _cove_point(f: Dictionary, middle: Vector2, across: Vector2, entry: Vector2, y: float) -> Vector2:
+	var size: Vector2 = f.cove
+	var way: Vector2 = f.out
+	var run := (y-BASE)/COVE_SHEER
+	var u: float
+	var v: float
+	if entry.x == 0.0:
+		var e0 := 1.0+run/size.y
+		var e := 1.0+(run-_cove_wobble(f,size.x*e0*sin(entry.y),size.y*e0*cos(entry.y)))/size.y
+		u = size.x*e*sin(entry.y)
+		v = size.y*e*cos(entry.y)
+	else:
+		v = entry.y
+		var e0 := 1.0+run/size.y
+		var e := 1.0+(run-_cove_wobble(f,entry.x*size.x*e0,v))/size.y
+		u = entry.x*size.x*e
+	return middle+across*u-way*v
+
+## The uncut heights at a point (x, z), read as `height_at` reads, or null
+## off the grid.
+func _uncut_at(p: Vector2) -> Variant:
+	var fx := (p.x+HALF)/STEP
+	var fz := (p.y+HALF)/STEP
+	if fx < 0.0 or fz < 0.0 or fx >= nx-1 or fz >= nz-1: return null
+	var i := int(fx)
+	var j := int(fz)
+	var u := fx-i
+	var v := fz-j
+	return lerpf(lerpf(uncut[j*nx+i],uncut[j*nx+i+1],u),lerpf(uncut[(j+1)*nx+i],uncut[(j+1)*nx+i+1],u),v)
+
+## A ring's row: the point toward `way` at height `y` on the walls (rim at
+## `rho`, its top `top`, these tiers), its layer and what it is (1 a face
+## row, 2 a chamfer's edge, 3 a ledge's tread).
+func _ring_point(way: Vector2, rho: float, top: float, list: Array[Vector4], y: float, layer: int, what: int) -> Array:
+	var r := rho+wall_out(list,top,y)
+	return [Vector3(way.x*r,y,way.y*r),layer,what]
+
+## The cracks: Vector4(ring, top, foot, depth m), a few round the rim.
+func _cracks(seg: int) -> Array[Vector4]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed*41+9
+	var out: Array[Vector4] = []
+	for k in range(CRACKS):
+		var top := rng.randf_range(plateau-30.0,plateau+10.0)
+		out.append(Vector4(rng.randi_range(0,seg-1),top,top-rng.randf_range(60.0,200.0),rng.randf_range(1.5,4.0)))
+	return out
 
 func _v(i: int, j: int, h: float) -> Vector3:
 	var p := point(i,j)
 	return Vector3(p.x,h,p.y)
 
-## A face's colour. On the walls and towers the rock runs in vertical
-## streaks, read round the rim and barely changing with height (water and
-## lichen stain a tepui's walls top to bottom): weathered dark rock, the
-## world's grey, and warm fresh sandstone where a slab has come away, with
-## the beds lightening and darkening it faintly; in the coves the rock is
-## wet, dark and mossy. Gentle ground: green on the ledges, and on the
-## plateau green in the hollows and near water, bare dark rock and pale
-## gravel on the crowns.
-func _tone(at: Vector3, lie: Vector3, face: Vector3, laid: float, wet_share: float, kind: int, grass: Array, rock: Array, gravel: Color, strata: Dictionary, fields: Array, rng: RandomNumberGenerator) -> Color:
-	var slope := sqrt(maxf(0.0,1.0-lie.y*lie.y))/maxf(lie.y,0.001)
-	var p := Vector2(at.x,at.z)
-	var patch: float = (fields[0] as FastNoiseLite).get_noise_2d(p.x,p.y)
+## A wall face's colour. Each layer of the rock its own sandstone (pale
+## rosy grey, buff, ochre or grey, by a hash of the layer), thin beds within
+## it a shade lighter or darker; long black streaks of algae hanging down
+## from the rim and the treads, broken off here and there; a tread's top
+## lit paler, the underside of a step in shadow; a broad ledge carrying
+## muted green in soft patches; in a cove wet, darker and mossy; toward the
+## cloud a little damp.
+func _wall_tone(at: Vector3, n: Vector3, layer: int, ledge: bool, cove: bool, look: Dictionary) -> Color:
+	var rng: RandomNumberGenerator = look.rng
 	var jitter := 1.0+rng.randf_range(-FACE_JITTER,FACE_JITTER)
-	var stone := (rock[0] as Color).lerp(rock[rock.size()-1],smoothstep(-0.3,0.3,patch))
-	var dark := (strata.shale_dark as Color).lerp(stone,0.3)*0.55
-	var warm: Color = (strata.clay as Color).lerp(strata.topsoil,0.4).lerp(stone,0.35)
-	var green := (grass[0] as Color).lerp(grass[2 if grass.size() > 2 else 0],smoothstep(-0.3,0.3,(fields[2] as FastNoiseLite).get_noise_2d(p.x,p.y)))
-	var moss := green.lerp(dark,0.35)
-	if slope < LEDGE_SLOPE and kind != KIND_COVE:
-		if kind == KIND_WALL:
-			# A ledge: green, thinning to earth at its lip.
-			return moss.lerp(green,0.3).lerp(stone,0.2+0.4*smoothstep(0.4,LEDGE_SLOPE,slope))*jitter
-		# The plateau: bare dark rock, pale gravel where the erosion laid it
-		# or the crowns are scoured, and green bog in the hollows and by the
-		# water.
-		var near := 1.0-smoothstep(1.2,3.5,wet_share)
-		var veg := (fields[3] as FastNoiseLite).get_noise_2d(p.x,p.y)+near*0.8-maxf(laid,0.0)*0.02
-		if veg > GREEN_PATCH: return green.lerp(moss,0.55+0.3*smoothstep(0.0,-0.4,patch))*jitter
-		if laid > 1.0 or veg < -0.42: return gravel.lerp(dark,0.5)*jitter
-		return dark.lerp(stone,0.25+0.25*smoothstep(-0.2,0.4,patch))*jitter
-	# The walls: the beds in faint bands (each its own tone, tilted as the
-	# beds are), long vertical joints read round the rim, and blots of warm
-	# fresh sandstone where slabs have come away.
+	var p := Vector2(at.x,at.z)
 	var along := atan2(p.y,p.x)*radius
-	var bed_at := 0
-	for bk in beds: bed_at += int(bk.x+tilt.dot(p) > at.y)
-	var bed_tone := fposmod(sin(float(bed_at)*12.9898+float(seed % 101))*43758.5453,1.0)*2.0-1.0
-	var joint: float = (fields[1] as FastNoiseLite).get_noise_2d(along,at.y*0.025)
-	var blot: float = (fields[2] as FastNoiseLite).get_noise_2d(along*0.6,at.y*0.9)
-	var tone := dark.lerp(stone,clampf(0.2+0.22*bed_tone+0.28*smoothstep(-0.35,0.35,joint),0.0,1.0))
-	tone = tone.lerp(warm,smoothstep(0.28,0.6,blot)*0.75)
-	if kind == KIND_COVE:
-		var wetness := 1.0-smoothstep(SEA,plateau,at.y)*0.5
-		tone = tone.lerp(dark*0.8,0.45*wetness).lerp(moss,smoothstep(0.0,0.5,joint)*0.35)
-	if slope < 1.6 and kind == KIND_TOWER: tone = tone.lerp(moss,0.3)
-	return tone*jitter
+	# The rock is mostly the pale rosy grey; broad stretches of the wall
+	# warm to buff or ochre or cool to grey, and each layer only nudges it.
+	var sands: Array = look.sands
+	var h := fposmod(sin(float(layer)*12.9898+float(seed % 101)*1.7)*43758.5453,1.0)
+	var mix: float = (look.mix as FastNoiseLite).get_noise_2d(along*0.3,at.y*0.2)
+	var zone: float = (look.run as FastNoiseLite).get_noise_2d(along*0.35+931.0,at.y*0.15)
+	var sand: Color = sands[0]
+	sand = sand.lerp(sands[1 if zone > 0.0 else 4],smoothstep(0.1,0.5,absf(zone))*0.6)
+	sand = sand.lerp(sands[2],smoothstep(0.35,0.7,zone)*0.5)
+	sand = sand.lerp(sands[1+int(h*3.0)],0.22)
+	sand *= 1.0+0.07*(h*2.0-1.0)
+	var minor := floori((at.y+1.5*mix)/MINOR_BED)
+	sand *= 1.0+0.035*(fposmod(float(minor)*0.618,1.0)*2.0-1.0)
+	var greens: Array = look.greens
+	var green: Color = (greens[0] as Color).lerp(greens[greens.size()-1],smoothstep(-0.3,0.3,mix))
+	if n.y > 0.55:
+		var veg := (look.veg as FastNoiseLite).get_noise_2d(at.x,at.z)
+		if ledge: return sand.lerp(green,smoothstep(-0.35,0.15,veg))*jitter
+		return sand.lerp(green,smoothstep(0.2,0.55,veg)*0.6)*1.03*jitter
+	var colour := sand
+	if n.y > 0.3: colour *= 1.05
+	# The algae: long and narrow, hanging from where the water runs off.
+	var streak: float = (look.streak as FastNoiseLite).get_noise_2d(along,at.y*0.012)
+	var run: float = (look.run as FastNoiseLite).get_noise_2d(along*0.7,at.y)
+	var black := smoothstep(0.18,0.48,streak)*smoothstep(-0.25,0.15,run)
+	colour = colour.lerp(look.algae,black*0.82)
+	if n.y < -0.2: colour *= 0.72
+	if cove:
+		var wetness := 1.0-smoothstep(SEA,plateau,at.y)*0.6
+		colour = colour.lerp((look.algae as Color)*1.6,0.4*wetness).lerp(green,smoothstep(0.0,0.5,mix)*0.3)
+	colour = colour.lerp(green*0.9,(1.0-smoothstep(SEA,SEA+60.0,at.y))*smoothstep(0.3,0.6,mix)*0.25)
+	return colour*jitter
+
+## A plateau face's colour: the tops weathered dark grey-black, pale gravel
+## where the erosion laid it or the crowns are scoured, and the bog's muted
+## green in the hollows and by the water, its patches fading over a few
+## faces; the towers their layers' sandstone, weathered dark.
+func _ground_tone(at: Vector3, lie: Vector3, laid: float, wet_share: float, kind: int, look: Dictionary) -> Color:
+	var rng: RandomNumberGenerator = look.rng
+	var jitter := 1.0+rng.randf_range(-FACE_JITTER,FACE_JITTER)
+	var p := Vector2(at.x,at.z)
+	var patch: float = (look.patch as FastNoiseLite).get_noise_2d(p.x,p.y)
+	var stone: Color = look.stone
+	var dark: Color = (look.sands[4] as Color).lerp(look.algae,0.7)
+	var rock := dark.lerp(stone,0.18+0.2*smoothstep(-0.2,0.4,patch))
+	var greens: Array = look.greens
+	var green: Color = (greens[0] as Color).lerp(greens[greens.size()-1],smoothstep(-0.3,0.3,(look.mix as FastNoiseLite).get_noise_2d(p.x,p.y)))
+	var slope := sqrt(maxf(0.0,1.0-lie.y*lie.y))/maxf(lie.y,0.001)
+	if kind == KIND_TOWER and slope > LEDGE_SLOPE:
+		return _wall_tone(at,lie,layer_at(p,at.y),false,false,look).lerp(dark,0.45)
+	var near := 1.0-smoothstep(1.2,3.5,wet_share)
+	var veg := (look.veg as FastNoiseLite).get_noise_2d(p.x,p.y)+near*0.8-maxf(laid,0.0)*0.02
+	var base := rock
+	if laid > 1.0 or veg < -0.42: base = rock.lerp(look.gravel,0.22)
+	var colour := base.lerp(green,smoothstep(GREEN_PATCH-0.16,GREEN_PATCH+0.14,veg))
+	if slope > LEDGE_SLOPE: colour = colour.lerp(rock,0.6)
+	return colour*jitter
 
 ## The water's surface arrays over every wet point (the pools, the streams,
 ## the tarn), each cell a flat quad at its water's level, for the islets'

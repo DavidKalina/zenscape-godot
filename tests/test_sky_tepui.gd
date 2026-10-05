@@ -224,12 +224,31 @@ func _base() -> void:
 	var t: RefCounted = shape(SkyTepuis.SEED)
 	var arrays: Array = t.body_arrays([Color.GREEN],[Color.GRAY],Color.WHITE,SkyTepuis.OFF_MAP)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	# The faces lie on the heights the glide reads: the plateau's on them,
+	# and every wall's within a grid cell or so of where the heightfield
+	# passes through its height (the walls are sheer: a cell across is many
+	# metres up).
 	var worst := 0.0
-	for k in range(0,vertices.size(),997):
+	var tried := 0
+	for k in range(0,vertices.size(),331):
 		var v := vertices[k]-SkyTepuis.OFF_MAP
-		var h: Variant = t.height_at(Vector2(v.x,v.z)+Vector2(0.01,0.01))
-		if h != null: worst = maxf(worst,absf(float(h)-v.y))
-	check(vertices.size()/3 < 160000 and worst < 0.8,"The tepui is one surface of %d faces, the heights the glide reads (worst %.2f m)" % [vertices.size()/3,worst])
+		if v.y < SkyTepui.CUT: continue
+		tried += 1
+		var found := INF
+		var lo := INF
+		var hi := -INF
+		for ring in range(0,9):
+			var reach := ring*0.75
+			for m in range(16 if ring > 0 else 1):
+				var h: Variant = t.height_at(Vector2(v.x,v.z)+Vector2.from_angle(TAU*m/16.0)*reach+Vector2(0.01,0.01))
+				if h == null: continue
+				lo = minf(lo,float(h))
+				hi = maxf(hi,float(h))
+			if lo <= v.y+1.0 and hi >= v.y-1.0:
+				found = reach
+				break
+		worst = maxf(worst,found)
+	check(vertices.size()/3 < 200000 and tried > 300 and worst <= 6.0,"The tepui is one surface of %d faces, lying on the heights the glide reads (within %.1f m)" % [vertices.size()/3,worst])
 	var water: Array = t.water_arrays(Color.BLUE)
 	check(not water.is_empty() and (water[Mesh.ARRAY_CUSTOM0] as PackedFloat32Array).size() == (water[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()*4,"Its water is one surface for the pond water")
 
@@ -410,11 +429,11 @@ func _glide() -> void:
 	var ground := Callable(peaks,"body")
 	var glide := SkyGlide.new()
 	glide.stone = Callable(peaks,"solid")
-	# At a wall away from the coves, flown straight in at glide height.
+	# At a wall away from the coves, flown straight in over the ledge.
 	var way := Vector2.from_angle(PI*0.5+2.6)
 	while _near_cove(t,way): way = way.rotated(0.3)
 	var r: float = t.rim_radius(way)
-	var start: Vector3 = tepuis.global_of(b,Vector3(way.x*(r+120.0),75.0,way.y*(r+120.0)))
+	var start: Vector3 = tepuis.global_of(b,Vector3(way.x*(r+60.0),118.0,way.y*(r+60.0)))
 	var heading := atan2(way.x,way.y)+float(b.turn)
 	glide.launch(start,heading,12.0,false)
 	var inside := 0
@@ -447,7 +466,7 @@ func _glide() -> void:
 	var d := lip.y-40.0
 	var at := SkyTepui.fall_point(f,d)
 	var middle: Vector2 = Vector2(at.x,at.z)-out*(SkyTepui.fall_thick(f,d)+t.gap(40.0)*0.5)
-	var from: Vector2 = middle-across*45.0
+	var from: Vector2 = middle-across*30.0
 	glide.launch(tepuis.global_of(b,Vector3(from.x,40.0,from.y)),atan2(-across.x,-across.y)+float(b.turn),12.0,false)
 	glide.airborne = 10.0
 	var touched := false
@@ -456,7 +475,7 @@ func _glide() -> void:
 		glide.step(1.0/60.0,{"rise":0.6},ground)
 		touched = touched or glide.brushing or glide.skimming
 		var local: Vector3 = tepuis.local_of(b,glide.position)
-		if (Vector2(local.x,local.z)-middle).dot(across) > 40.0:
+		if (Vector2(local.x,local.z)-middle).dot(across) > 30.0:
 			passed = true
 			break
 	check(passed and not touched,"Threaded behind the great fall's curtain, it passes through without touching rock")

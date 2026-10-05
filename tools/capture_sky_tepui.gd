@@ -115,7 +115,7 @@ func _shots(tepuis: Node3D, b: Dictionary) -> Array:
 	shots.append({"label":"approach","eye":plate+toward*250.0+Vector3.UP*10.0,"look":g.call(mid)})
 	shots.append({"label":"fall","eye":g.call(mid+out3*170.0+across*120.0+Vector3.UP*-10.0),"look":g.call(mid+Vector3.UP*10.0)})
 	var behind: Vector3 = SkyTepui.fall_point(f,lip.y-40.0)-out3*(shape.gap(40.0)*0.5+1.5)
-	shots.append({"label":"behind","eye":g.call(behind+across*45.0),"look":g.call(behind-across*30.0+out3*6.0)})
+	shots.append({"label":"behind","eye":g.call(behind+across*28.0),"look":g.call(behind-across*30.0+out3*6.0)})
 	shots.append({"label":"plateau","eye":g.call(Vector3(lip.x,shape.top+35.0,lip.z)+out3*40.0),"look":g.call(Vector3(0.0,shape.plateau,-shape.radius*0.6))})
 	shots.append({"label":"down","eye":g.call(lip+out3*25.0+across*115.0+Vector3.UP*60.0),"look":g.call(SkyTepui.fall_point(f,float(f.drop)*0.8))})
 	var side_way := Vector2(way.x,way.y).rotated(-1.3)
