@@ -165,6 +165,31 @@ static func season_plants(season: float) -> Vector4:
 	var along := 0.0 if year >= float(SEASON_AUTUMN_ALONG[2]) else snappedf(clampf(inverse_lerp(float(SEASON_AUTUMN_ALONG[0]), float(SEASON_AUTUMN_ALONG[1]), year), 0.0, 1.0), 1.0/64.0)
 	return Vector4(_season_plateau(season, SEASON_BLOOM), _season_plateau(season, SEASON_BARE), _season_plateau(season, SEASON_DORMANT), along)
 
+## Where one quarter hands over to the next on the 0..1 year, [start, end]:
+## winter to spring with the thaw (SEASON_COLD's fall), spring to summer as
+## the blossom goes, summer to autumn as the gold rises, autumn to winter as
+## it fades into the cold. The landings E steps to (living_weather SEASONS)
+## lie wholly inside one quarter each.
+const SKY_HANDOVER := [[0.94, 1.0], [0.19, 0.28], [0.50, 0.56], [0.72, 0.80]]
+
+## The sky layer's season as the `zs_sky_season` shader global: how much of
+## each quarter the year stands in, (spring, summer, autumn, winter), summing
+## to 1 and smooth all round the year, so a glide from winter to spring never
+## passes through a summer the way the plants' plateaus touch neutral at the
+## year's end. The peaks' snow line and the cloud sea's mood read it
+## (shaders/sky_season.gdshaderinc). Snapped, so a slowly turning year
+## changes the global in steps rather than every frame.
+static func season_sky(season: float) -> Vector4:
+	var year := fposmod(season, 1.0) if is_finite(season) else 0.0
+	var thaw := smoothstep(float(SKY_HANDOVER[0][0]), float(SKY_HANDOVER[0][1]), year)
+	var ripe := smoothstep(float(SKY_HANDOVER[1][0]), float(SKY_HANDOVER[1][1]), year)
+	var gold := smoothstep(float(SKY_HANDOVER[2][0]), float(SKY_HANDOVER[2][1]), year)
+	var cold := smoothstep(float(SKY_HANDOVER[3][0]), float(SKY_HANDOVER[3][1]), year)
+	var weights := Vector4(1.0 - ripe, ripe - gold, gold - cold, cold - thaw)
+	if year >= 0.5: weights.x = thaw
+	var step := 1.0/256.0
+	return Vector4(snappedf(weights.x, step), snappedf(weights.y, step), snappedf(weights.z, step), snappedf(weights.w, step))
+
 ## A symmetric bump, [centre, half width, strength]; the weather mix's quarter
 ## weights still use it.
 static func _season_bump(season: float, shape: Array) -> float:

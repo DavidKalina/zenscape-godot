@@ -159,11 +159,14 @@ func _base() -> void:
 		var h: Variant = peak.height_at(Vector2(v.x,v.z)+Vector2(0.01,0.01))
 		if h != null: worst = maxf(worst,absf(float(h)-v.y))
 	check(ok and faces < 160000,"The range is one surface of %d faces, coloured per face" % faces)
-	# Snow: on the high ground, none low down, steep faces left bare.
+	# Snow: on the high ground, none low down, steep faces left bare. The
+	# snow is the shader's (shaders/sky_season.gdshaderinc): a face is white
+	# once the season brings the line down past its need (UV.x); as drawn,
+	# the spring the sky starts in, that is every need under 0.
 	var white := Color(0.97,0.98,1.0)
 	arrays = peak.body_arrays([Color(0.1,0.3,0.1)],[Color(0.27,0.23,0.18)],Color(0.3,0.3,0.28),SkyPeaks.OFF_MAP,1,white)
 	vertices = arrays[Mesh.ARRAY_VERTEX]
-	colours = arrays[Mesh.ARRAY_COLOR]
+	colours = _as_drawn(arrays,0.0,white)
 	var high := 0
 	var high_snow := 0
 	var low_snow := 0
@@ -215,6 +218,20 @@ func _base() -> void:
 		worst_back = maxf(worst_back,absf(peak.bed_at(a,at)-float(k)))
 	check(thin > 0.0 and thick > thin*2.0,"The beds run unevenly thick (%.0f to %.0f m)" % [thin,thick])
 	check(worst_back < 0.001,"The ledges and the colours read the same beds")
+
+## The colours a range's arrays are drawn in once the season has brought
+## its snow line `fall` m down (reference_surface `peak_snow`): a face whose
+## need (UV.x) is under the fall takes the snow, shaded as UV2.x packs it.
+static func _as_drawn(arrays: Array, fall: float, snow: Color) -> PackedColorArray:
+	var colours: PackedColorArray = (arrays[Mesh.ARRAY_COLOR] as PackedColorArray).duplicate()
+	var need: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var shade: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	for k in range(colours.size()):
+		if fall <= need[k].x: continue
+		var blue := clampf(fposmod(shade[k].x,1.0)/0.999,0.0,1.0)
+		var nudge := (floorf(shade[k].x)/32.0*2.0-1.0)*SkyPeak.SNOW_JITTER
+		colours[k] = Color(snow.r*lerpf(1.0,0.93,blue),snow.g*lerpf(1.0,0.965,blue),snow.b,1.0)*(1.0+nudge)
+	return colours
 
 func _built(peak: RefCounted, i: int, j: int) -> bool:
 	if i < 0 or j < 0 or i >= peak.nx-1 or j >= peak.nz-1: return false
