@@ -57,7 +57,8 @@ const W_MIN := 0.1
 const CLING := 0.25
 const CLING_FLOW := 0.35
 ## Metres it falls free below the block's bottom: TAIL, plus TAIL_FLOW at a
-## full curtain. The block's bottom when the earth sides cannot be read.
+## full curtain. The square block's bottom when the earth sides cannot be
+## read (an island's is the rock under the lip, `_foot`).
 const TAIL := 2.6
 const TAIL_FLOW := 2.0
 const BOTTOM := NativeTerrainData.SLAB_BASE
@@ -67,10 +68,12 @@ const FACE_RINGS := 12
 ## Metres between the face's samples (`_profile`).
 const PROFILE_STEP := 0.2
 ## Metres out from the lip the rays start (less where other land stands
-## nearer, across a bay), and how far behind the lip the rock may stand and
-## still be under the fall.
+## nearer, across a bay), how far behind the lip the rock may stand and
+## still be under the fall, and how far back (m a metre down) it may lean
+## under the fall before the fall leaves it.
 const PROFILE_REACH := 3.0
 const PROFILE_BEHIND := 0.4
+const PROFILE_LEAN := 0.25
 const MIST := 48
 const DROPS := 40
 const FOAM := Color("f2f7f8")
@@ -281,10 +284,13 @@ func _read_sides() -> bool:
 ## How far the earth side stands out past the lip under a fall (the most of
 ## three rays across its width, in along its way out), every PROFILE_STEP
 ## metres down from just over its lip: {"top" (y of the first sample), "out"
-## (PackedFloat32Array, -1 where no side was hit), "bottom" (the lowest y a
-## ray hit rock under the fall)}. Rock standing more than PROFILE_BEHIND back
-## from the lip is not under it: where the wall recedes (an overhang, the
-## island's hanging underside) the fall leaves it and falls free.
+## (PackedFloat32Array, -1 where no side was hit), "bottom" (where the fall
+## leaves the rock)}. Each ray starts clear of other land in front of it
+## (`_clearance`), so a far shore across a bay is never read as the wall.
+## Down the face, the fall leaves the rock at the first sample where it
+## stands more than PROFILE_BEHIND back from the lip, or leans back under
+## the fall more than PROFILE_LEAN: where the wall ends on the island's
+## hanging underside, or under an overhang, it falls free from there.
 func _profile(now: Dictionary) -> Dictionary:
 	var n := Vector3(now.normal.x,0.0,now.normal.y)
 	var axis := Vector3(-n.z,0.0,n.x)
@@ -293,11 +299,14 @@ func _profile(now: Dictionary) -> Dictionary:
 	var half: float = now.half
 	var top := lip.y+0.1
 	var out := PackedFloat32Array()
-	var bottom := BOTTOM
+	var bottom := _foot(at)
 	if not _read_sides():
-		for k in range(ceili((top-BOTTOM)/PROFILE_STEP)+1): out.append(0.3)
-		return {"top":top,"out":out,"bottom":BOTTOM}
-	var reach := _clearance(at,n)
+		for k in range(ceili((top-bottom)/PROFILE_STEP)+1): out.append(0.3)
+		return {"top":top,"out":out,"bottom":bottom}
+	var acrosses := [-0.7*half,0.0,0.7*half]
+	var reaches := []
+	for across: float in acrosses: reaches.append(_clearance(at+axis*across,n))
+	var reach: float = reaches.max()
 	# Only the facets under the fall that face its way.
 	var faces := _side_faces
 	var near := PackedVector3Array()
@@ -317,22 +326,35 @@ func _profile(now: Dictionary) -> Dictionary:
 			front = maxf(front,d)
 		if high >= -half-0.2 and low <= half+0.2 and front > -1.0 and back < reach: near.append_array(PackedVector3Array([faces[i],faces[i+1],faces[i+2]]))
 	var lowest := INF
+	var was := -1.0
 	var y := top
 	while y > minf(BOTTOM,_sides_low)-1.5:
 		var most := -1.0
-		for across in [-0.7*half,0.0,0.7*half]:
-			var from: Vector3 = at+n*reach+axis*across+Vector3.UP*y
+		for k in range(3):
+			var from: Vector3 = at+n*float(reaches[k])+axis*float(acrosses[k])+Vector3.UP*y
 			for i in range(0,near.size()-2,3):
 				var hit: Variant = Geometry3D.ray_intersects_triangle(from,-n,near[i],near[i+1],near[i+2])
 				if hit != null: most = maxf(most,(Vector3(hit)-at).dot(n))
+		var under := most > -PROFILE_BEHIND and (lowest == INF or most >= was-PROFILE_LEAN*PROFILE_STEP)
+		if not under and lowest < INF: break
 		out.append(most)
-		if most > -PROFILE_BEHIND: lowest = y
+		if under:
+			lowest = y
+			was = most
 		y -= PROFILE_STEP
 	if lowest < INF: bottom = lowest
 	return {"top":top,"out":out,"bottom":bottom}
 
+## Where the earth ends under `at` when no side is read there: the rock
+## under an island's shore (NativeTerrainData `underside`), or the square
+## block's bottom.
+func _foot(at: Vector3) -> float:
+	var data: NativeTerrainData = editor.get("data") as NativeTerrainData if editor != null else null
+	if data == null or data.outline.is_empty(): return BOTTOM
+	return data.underside(Vector2(at.x,at.z))
+
 ## Metres out from `at` along `n` clear of other land, up to PROFILE_REACH:
-## across a narrow bay the rays start short of the far shore's wall.
+## across a bay the rays start short of the far shore's wall.
 func _clearance(at: Vector3, n: Vector3) -> float:
 	var data: NativeTerrainData = editor.get("data") as NativeTerrainData if editor != null else null
 	if data == null or data.outline.is_empty(): return PROFILE_REACH

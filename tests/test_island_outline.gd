@@ -428,6 +428,22 @@ func check_on_shore(data: NativeTerrainData, spill: Dictionary) -> void:
 	check(data.ground_height(at+n*0.3) == null,"A spill pours out over the sky, not over land (%s, %s)" % [at,n])
 	check(shore_gap(data,at) < 0.01,"A spill's lip is on the shore (%.3f m off)" % shore_gap(data,at))
 
+## The height of the shore wall's foot at the shore point nearest `at`:
+## the rock's depth (`keel`) at the shore edge's ends, along the edge.
+static func wall_foot(data: NativeTerrainData, at: Vector2) -> float:
+	var best := INF
+	var foot := NativeTerrainData.SLAB_BASE
+	var edges := data.shore_edges
+	for k in range(0,edges.size(),3):
+		var a := data.points[edges[k]]
+		var b := data.points[edges[k+1]]
+		var on := Geometry2D.get_closest_point_to_segment(at,a,b)
+		if at.distance_to(on) < best:
+			best = at.distance_to(on)
+			var t := clampf(a.distance_to(on)/maxf(a.distance_to(b),0.000001),0.0,1.0)
+			foot = NativeTerrainData.SLAB_BASE-lerpf(data.keel[edges[k]],data.keel[edges[k+1]],t)
+	return foot
+
 ## Metres from `at` to the nearest shore edge.
 static func shore_gap(data: NativeTerrainData, at: Vector2) -> float:
 	var best := INF
@@ -551,11 +567,15 @@ func shore_course(data: NativeTerrainData) -> void:
 			if r <= last_face: widest = maxf(widest,out)
 		print("bay fall: lip %s, normal %s, face %.2f m, out to %.2f m on the face" % [lip,n,float(rings.face_drop),widest])
 		check(behind == 0 and over_land == 0,"The fall pours out over the sky, never back into the land (%d behind, %d over land)" % [behind,over_land])
-		check(absf(float(fall.bottom)-NativeTerrainData.SLAB_BASE) < 0.5,"It hugs the shore wall down to its foot (%.2f)" % float(fall.bottom))
+		# The wall's foot under the lip: it wanders about SLAB_BASE along the
+		# shore, and the rock under it falls away inland.
+		var wall_at := wall_foot(data,Vector2(lip.x,lip.z))
+		check(absf(float(fall.bottom)-wall_at) < 0.5,"It hugs the shore wall down to its foot (%.2f, foot %.2f)" % [float(fall.bottom),wall_at])
 		check(widest < 0.8,"It clings to the wall rather than flying off it (%.2f m out)" % widest)
 		check(points[points.size()-1].y < float(fall.bottom)-1.0,"Below the wall it falls free")
 		# Rock that recedes 2 m back under the lip from 3 m down: the fall
-		# leaves it there.
+		# leaves it there, at the last sample (PROFILE_STEP apart) at or over the
+		# knee.
 		var shelf := ArrayMesh.new()
 		var at := Vector3(lip.x,0.0,lip.z)
 		var nn := Vector3(n.x,0.0,n.y)
@@ -579,7 +599,7 @@ func shore_course(data: NativeTerrainData) -> void:
 		editor._skirt.mesh = shelf
 		rings = falls._rings(fall,1.0,falls._strength(fall.now.flux))
 		print("receding rock: bottom %.2f (knee %.2f)" % [float(fall.bottom),knee.y])
-		check(float(fall.bottom) < knee.y+0.05 and float(fall.bottom) > knee.y-0.9,"Where the rock falls away under it the fall leaves it (%.2f, knee %.2f)" % [float(fall.bottom),knee.y])
+		check(float(fall.bottom) <= knee.y+falls.PROFILE_STEP+0.001 and float(fall.bottom) > knee.y-0.25,"Where the rock falls away under it the fall leaves it (%.2f, knee %.2f)" % [float(fall.bottom),knee.y])
 	falls.free()
 	editor.queue_free()
 	data.release_listeners()

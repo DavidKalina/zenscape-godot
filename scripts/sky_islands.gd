@@ -524,8 +524,9 @@ func ground(point: Vector3) -> Variant:
 	return peaks.ground(point)
 
 ## The island whose footprint holds a global point, as a solid: Vector2(its
-## ground's height there, the slab's flat underside (NativeTerrainData
-## .SLAB_BASE)), in global metres, or null over open air.
+## ground's height there, the underside there: the hanging rock under an
+## island with an outline (NativeTerrainData `underside`), or the square
+## slab's flat base, SLAB_BASE), in global metres, or null over open air.
 func body(point: Vector3) -> Variant:
 	var plate: Variant = _body(point)
 	if plate != null: return plate
