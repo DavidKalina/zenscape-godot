@@ -496,7 +496,7 @@ func set_ground(enabled: bool) -> void:
 		var spot := camera_now+flat.normalized()*maxf(reach,0.0) if flat.length() > 0.01 else _pivot
 		_eye = camera_now
 		ground = true
-		_goal.eye = _grounded(spot)
+		_goal.eye = _grounded_on_land(spot)
 		_goal.polar = LEVEL_POLAR
 		hint.text = GROUND_HINT
 	else:
@@ -537,6 +537,13 @@ func _grounded(point: Vector3) -> Vector3:
 	local.y = (float(h) if h != null else local.y-EYE_HEIGHT)+EYE_HEIGHT
 	return editor.terrain.to_global(local)
 
+## `_grounded`, on an outlined island put over its land first.
+func _grounded_on_land(point: Vector3) -> Vector3:
+	var local := editor.terrain.to_local(point)
+	var land: Vector2 = editor.data.nearest_land(Vector2(local.x,local.z),0.1)
+	if land != Vector2.INF: point = editor.terrain.to_global(Vector3(land.x,local.y,land.y))
+	return _grounded(point)
+
 func _ground_hit(point: Vector2) -> Variant:
 	var hit: Variant = editor.pick(point)
 	return editor.terrain.to_global(hit) if hit != null else null
@@ -556,7 +563,7 @@ func _advance_camera(delta: float) -> void:
 	if ground:
 		if _idle > LEVEL_IDLE and _drag.is_empty():
 			_goal.polar = move_toward(_goal.polar,LEVEL_POLAR,LEVEL_RATE*delta*absf(_goal.polar-LEVEL_POLAR)*2.0+0.02*delta)
-		_goal.eye = _grounded(_goal.eye)
+		_goal.eye = _grounded_on_land(_goal.eye)
 		_eye = _eye.lerp(_goal.eye,_ease(EASE_ORBIT,delta))
 		_yaw = lerp_angle(_yaw,_goal.yaw,k)
 		_polar = lerpf(_polar,_goal.polar,k)
@@ -775,7 +782,7 @@ func _pan(relative: Vector2) -> void:
 func _walk(move: Vector2) -> void:
 	var forward := -_offset(_goal.yaw,PI*0.5)
 	var right := forward.cross(Vector3.UP)
-	_goal.eye = _grounded(_goal.eye+right*move.x-forward*move.y)
+	_goal.eye = _grounded_on_land(_goal.eye+right*move.x-forward*move.y)
 
 func _dolly(amount: float) -> void:
 	if ground:

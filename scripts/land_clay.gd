@@ -840,7 +840,7 @@ func shake_trees(at: Vector2, reach: float, area := Rect2()) -> void:
 			var fall := _fall(p)
 			if fall == Vector2.ZERO: break
 			var next := p+fall*SLIDE_STEP
-			if maxf(absf(next.x),absf(next.y)) > EDGE.x or data.ground_height(next) == null or _in_pond(next): break
+			if edge_way(data,next).z < PLATE_HALF-EDGE.x or data.ground_height(next) == null or _in_pond(next): break
 			p = next
 			travelled += SLIDE_STEP
 		if p == from: continue

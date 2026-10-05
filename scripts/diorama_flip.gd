@@ -797,6 +797,9 @@ func _grab_from(screen_pos: Vector2, reverse := false) -> void:
 	var along := _axis*clampf(pressed.dot(_axis),-(_half-2.0),_half-2.0) if not reverse else Vector3.ZERO
 	var rim := _grab_dir*(_half-0.4)+along
 	_rim_local = editor.terrain.global_transform.affine_inverse()*Vector3(rim.x,0.3,rim.z)
+	# An outlined island has no square lip: the grip is on its land nearest that.
+	var land: Vector2 = editor.data.nearest_land(Vector2(_rim_local.x,_rim_local.z),0.4)
+	if land != Vector2.INF: _rim_local = Vector3(land.x,_rim_local.y,land.y)
 
 ## The plate's bounds: half width and the height of its middle, from the skirt.
 func _plate_box() -> AABB:
