@@ -322,6 +322,34 @@ func _outline_changed() -> void:
 			if shore_distance[i] < 0.0: _off_island.append(i)
 	_combine_void()
 
+## The island's land: the bounds of its faces in plate XZ, and its area in
+## square metres. The whole plate before any outline is set.
+func land_rect() -> Rect2:
+	if _land_rect_for != outline: _measure_land()
+	return _land_rect
+
+func land_area() -> float:
+	if _land_rect_for != outline: _measure_land()
+	return _land_area
+
+func _measure_land() -> void:
+	_land_rect_for = outline.duplicate()
+	_land_area = 0.0
+	var started := false
+	for f in range(vertex_ids.size()/3):
+		if not outline.is_empty() and outline[f] != 0: continue
+		var a := points[vertex_ids[f*3]]
+		var b := points[vertex_ids[f*3+1]]
+		var c := points[vertex_ids[f*3+2]]
+		_land_area += absf((b-a).cross(c-a))*0.5
+		var bounds := Rect2(a,Vector2.ZERO).expand(b).expand(c)
+		_land_rect = _land_rect.merge(bounds) if started else bounds
+		started = true
+	if not started: _land_rect = Rect2()
+var _land_rect := Rect2()
+var _land_area := 0.0
+var _land_rect_for := PackedByteArray([2])
+
 ## `void_faces` from the outline and the chasm's cut.
 func _combine_void() -> void:
 	var combined := outline.duplicate() if chasm_faces.is_empty() else chasm_faces.duplicate()
