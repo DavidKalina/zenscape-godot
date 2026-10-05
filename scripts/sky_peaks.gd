@@ -27,6 +27,12 @@ extends Node3D
 ## it stays in sight further off than the islands do.
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
+## Other landforms of the land below risen through the sea, kept with the
+## ranges: each kind a node made the same way (`reset` (cells, currents,
+## this node), `clear`, `advance`, `flush`, `body`, `haze_spots`, static
+## `blocks`), standing as a child here at the cells' origin, so the ranges'
+## readers read them too.
+const KINDS := [preload("res://scripts/sky_pillars.gd")]
 
 ## The range in sight of the plate: its middle (home coordinates) and the
 ## way its crest runs (radians about y; local +x is the crest's way).
@@ -75,11 +81,16 @@ var built := {}
 var _making := {}
 var _since := CHECK
 var _material: Material
+var kinds: Array[Node3D] = []
 static var _puff_material: ShaderMaterial
 static var _quad: QuadMesh
 
 func _init() -> void:
 	name = "SkyPeaks"
+	for kind: GDScript in KINDS:
+		var node: Node3D = kind.new()
+		kinds.append(node)
+		add_child(node)
 
 func _exit_tree() -> void:
 	clear()
@@ -95,8 +106,10 @@ func reset(new_cells: RefCounted, air: Node3D = null) -> void:
 	currents = air
 	_since = CHECK
 	position = cells.origin
+	for kind in kinds: kind.reset(new_cells,air,self)
 
 func clear() -> void:
+	for kind in kinds: kind.clear()
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
 	_making.clear()
 	for key in built:
@@ -124,6 +137,7 @@ func advance(delta: float, eye: Vector3) -> void:
 		_making.erase(key)
 		_finish(m.cell,m.spot,m.out)
 		break
+	for kind in kinds: kind.advance(delta,eye)
 
 ## Waits for every range being made and stands it up (tests, probes,
 ## captures).
@@ -133,6 +147,7 @@ func flush() -> void:
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		_finish(m.cell,m.spot,m.out)
 	_making.clear()
+	for kind in kinds: kind.flush()
 
 func _survey(home: Vector3) -> void:
 	var gone := []
@@ -176,6 +191,8 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 		for dz in range(-1,2):
 			var s: Variant = spot(c+Vector2i(dx,dz))
 			if s != null and Vector2(s.x-home.x,s.z-home.z).length() < KEEP+margin: return true
+	for kind: GDScript in KINDS:
+		if kind.blocks(home,margin): return true
 	return false
 
 ## A hash of a cell, 0 to 1, one per salt (as SkyCells `noise`).
@@ -344,6 +361,9 @@ func body(point: Vector3) -> Variant:
 		if h == null: continue
 		var y := position.y+float(b.home.y)
 		return Vector2(float(h)+y,SkyPeak.BOTTOM+y)
+	for kind in kinds:
+		var b: Variant = kind.body(point)
+		if b != null: return b
 	return null
 
 ## The ground's height under a global point, or null.
@@ -364,6 +384,7 @@ func haze_spots(eye := Vector3.ZERO) -> Array:
 		var b: Dictionary = built[key]
 		var at := position+(b.home as Vector3)
 		out.append(Vector4(at.x,at.z,HAZE_REACH,1.0))
+	for kind in kinds: out.append_array(kind.haze_spots())
 	out.sort_custom(func(a: Vector4, c: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(c.x-eye.x,c.y-eye.z).length())
 	return out
 
