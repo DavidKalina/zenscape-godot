@@ -198,12 +198,25 @@ static var _frame_seed := -1
 
 ## True while the ring, the bounds and the edge wind stand.
 static func ring_on() -> bool:
+	read_flags()
 	return ring and (SkyHomes.peaks or SkyHomes.stone)
 
-## Reads `--no-ring` from the command line (SkyIslands `setup`).
+## How much of the Opal cloud sea's painted distant peaks to draw (shaders/
+## sky_cloud_sea_opal.gdshaderinc `sea_peaks`): none while the ring's real
+## ranges stand (they travel with the eye and read wrong beside them).
+static func sea_peaks() -> float:
+	return 0.0 if ring_on() else 1.0
+
+static var _flags_read := false
+
+## Reads `--no-ring` and `--no-peaks` from the command line, once, whoever
+## asks first (the look pass sets the sky before the glide's islands exist).
 static func read_flags() -> void:
+	if _flags_read: return
+	_flags_read = true
 	var args := OS.get_cmdline_user_args()
 	if "--no-ring" in args: ring = false
+	if "--no-peaks" in args: SkyHomes.peaks = false
 
 ## `--sky-seed=N`, or -1.
 static func seed_flag() -> int:

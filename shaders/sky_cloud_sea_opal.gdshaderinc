@@ -160,6 +160,11 @@ vec3 zs_opal_sea_land(vec2 at, float blur, float level, vec3 shadow_hue, vec3 pe
 // room's frame), z its radius, w its height above the sea. The eye is one
 // depth above the sea, so a peak stays below the horizon.
 const int SEA_PEAKS = 5;
+// How much of them is painted (0 to 1): none where real ranges stand round
+// the sky world (scripts/sky_world.gd: the look pass sets it, LookPass
+// `apply_sea_peaks`), since these travel with the eye and beside the real
+// rock read wrong.
+uniform float sea_peaks = 1.0;
 vec4 zs_opal_sea_peak(int i) {
   if (i == 0) return vec4(vec2(cos(0.5), sin(0.5)) * 1.7, 0.26, 0.5);
   if (i == 1) return vec4(vec2(cos(2.5), sin(2.5)) * 2.0, 0.23, 0.44);
@@ -335,8 +340,8 @@ vec4 zs_cloud_sea_opal(vec3 dir, vec3 room, vec3 horizon, vec3 below) {
   col = mix(col, air, haze);
   // Distant peaks through the sea, in front of the cloud they rise from.
   vec3 lamp_pk = normalize(mix(sun_room, zsRoomDir(zs_moon_direction), zs_night * zs_celestial_clear));
-  vec4 peak = zs_opal_sea_peaks(normalize(room.xz + 1e-5), far, lamp_pk, level * (1.0 + 1.4 * zs_night * zs_celestial_clear), pearl, shadow_hue, air, overcast);
-  float peak_a = peak.a * peak_veil;
+  vec4 peak = sea_peaks > 0.0 ? zs_opal_sea_peaks(normalize(room.xz + 1e-5), far, lamp_pk, level * (1.0 + 1.4 * zs_night * zs_celestial_clear), pearl, shadow_hue, air, overcast) : vec4(0.0);
+  float peak_a = peak.a * peak_veil * clamp(sea_peaks, 0.0, 1.0);
   // At night the sea under the moon still reads, faintly silver.
   col += zs_cloud_sun * crown * lit * relief * (1.0 - haze) * 0.06 * zs_night * zs_celestial_clear;
   return vec4(col * veil * (1.0 - peak_a) + peak.rgb * peak_a, mix(veil, 1.0, peak_a));

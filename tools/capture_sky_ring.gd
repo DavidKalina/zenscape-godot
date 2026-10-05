@@ -17,7 +17,9 @@ extends SceneTree
 ## Rendered only when asked for (needs a window):
 ##   Godot --windowed --path . --resolution 1280x720 -s res://tools/capture_sky_ring.gd \
 ##     -- --no-title --out=/private/tmp/zs-ring
-## Options: --out=DIR, --only=top,notch,..., --sky-seed=N.
+## Options: --out=DIR, --only=top,notch,..., --sky-seed=N, --painted-peaks.
+##   sea-N, -E, -S, -W: the cloud sea out to the horizon from the plate, the
+##     Opal sea's painted peaks off with the ring (on with --painted-peaks);
 const SkyWorld = preload("res://scripts/sky_world.gd")
 const GOLDEN_SUN := 0.1
 var scene: Node3D
@@ -26,6 +28,8 @@ var out := "/private/tmp/zs-ring"
 var noon := WorldClock.hour_for_phase(0.5)
 var golden := WorldClock.hour_for_phase(0.75-asin(clampf(GOLDEN_SUN/WorldClock.elevation_for_phase(0.5),-1.0,1.0))/TAU)
 var only: Array = []
+## --painted-peaks: the Opal sea's painted peaks drawn all the same (a before).
+var painted := false
 
 func _initialize() -> void:
 	run.call_deferred()
@@ -45,6 +49,7 @@ func run() -> void:
 	for argument: String in OS.get_cmdline_user_args():
 		if argument.begins_with("--out="): out = argument.trim_prefix("--out=")
 		elif argument.begins_with("--only="): only = Array(argument.trim_prefix("--only=").split(","))
+		elif argument == "--painted-peaks": painted = true
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(900).timeout.connect(func() -> void: push_error("sky ring capture timed out"); quit(2))
 	root.mode = Window.MODE_WINDOWED
@@ -91,6 +96,11 @@ func _shots() -> Array:
 	var shots := []
 	var layout := SkyWorld.layout()
 	shots.append({"label":"top","eye":Vector3(0.0,7600.0,1.0),"look":Vector3.ZERO,"haze":false,"golden":false,"fov":70.0})
+	# The cloud sea out to the horizon each way, where the Opal sea painted
+	# its distant peaks.
+	for d: Array in [["N",Vector3(0,0,-1)],["E",Vector3(1,0,0)],["S",Vector3(0,0,1)],["W",Vector3(-1,0,0)]]:
+		var way: Vector3 = d[1]
+		shots.append({"label":"sea-"+d[0],"eye":Vector3.UP*60.0,"look":way*1200.0+Vector3.DOWN*260.0,"golden":false,"fov":75.0})
 	for d: Array in [["N",Vector3(0,0,-1)],["E",Vector3(1,0,0)],["S",Vector3(0,0,1)],["W",Vector3(-1,0,0)]]:
 		var way: Vector3 = d[1]
 		shots.append({"label":"skyline-"+d[0],"eye":way*30.0+Vector3.UP*45.0,"look":way*3000.0+Vector3.UP*120.0})
@@ -135,6 +145,8 @@ func _hold(shot: Dictionary, hour: float, count: int) -> void:
 		scene.world_clock.set_time(scene.world_clock.day,hour)
 		var delta := 1.0/60.0
 		eye.sky.haze = 1.0 if shot.get("haze",true) else 0.0
+		# The sea's painted peaks back, for a before (look_pass `apply_sea_peaks`).
+		if painted: scene._environment.sky.sky_material.set_shader_parameter("sea_peaks",1.0)
 		eye.sky.advance(delta,at,0.0)
 		eye.islands.advance(delta,at,glide.heading,0.0)
 		# The ranges near the eye made in full at once.

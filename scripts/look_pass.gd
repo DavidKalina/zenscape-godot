@@ -196,9 +196,18 @@ func _update_cloud_sea(on: float) -> void:
 	if sky.get_meta("look_cloud_sea_style", -1) != style:
 		sky.set_meta("look_cloud_sea_style", style)
 		sky.set_shader_parameter("cloud_sea_style", style)
+	apply_sea_peaks(sky)
 	if sky.get_meta("look_cloud_sea", -1.0) == strength: return
 	sky.set_meta("look_cloud_sea", strength)
 	sky.set_shader_parameter("cloud_sea", strength)
+
+## The Opal sea's painted distant peaks off while the sky world's ring of
+## real ranges stands (SkyWorld `sea_peaks`), in the overview and the glide.
+static func apply_sea_peaks(sky: ShaderMaterial) -> void:
+	var peaks: float = preload("res://scripts/sky_world.gd").sea_peaks()
+	if sky.get_meta("look_sea_peaks", -1.0) == peaks: return
+	sky.set_meta("look_sea_peaks", peaks)
+	sky.set_shader_parameter("sea_peaks", peaks)
 
 ## Paints the cloud sea in `style` (one of CLOUD_STYLES) from the next
 ## update; `keep` saves it as the player's choice.
