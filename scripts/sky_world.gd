@@ -194,7 +194,7 @@ const RIDGE_Z := Vector2(0.5,0.62)
 const KNOT_X := Vector2(0.6,0.75)
 const KNOT_Y := Vector2(1.15,1.28)
 const WALL_Y := Vector2(0.9,1.12)
-const LOW_Y := Vector2(0.3,0.36)
+const LOW_Y := Vector2(0.36,0.42)
 const SPUR_X := Vector2(0.6,0.8)
 const SPUR_Z := Vector2(0.5,0.6)
 const SPUR_Y := Vector2(0.5,0.66)
@@ -314,6 +314,9 @@ static var _layout := {}
 ## `kept` has changed since.
 static var _layout_key := ""
 static var _layout_seed := -1
+## Which wonders stood (SkyHomes `stone`, `isles`): the ridges keep clear of
+## them.
+static var _layout_wonders := 0
 static var _kept_changed := true
 ## The crest line's frame for a seed: its waves' phases, the notches' and
 ## the massifs' angles.
@@ -447,9 +450,11 @@ static func in_band(kind: String) -> bool:
 ## kept_rules (false only if no try kept every rule), tries}. A range's
 ## index stays its own when one before it is left out for a saved island.
 static func layout() -> Dictionary:
-	if _layout_seed == seed and not _kept_changed: return _layout
-	var key := "%d|%s" % [seed,str(kept)]
+	var wonders := int(SkyHomes.stone)+2*int(SkyHomes.isles)
+	if _layout_seed == seed and not _kept_changed and _layout_wonders == wonders: return _layout
+	var key := "%d|%s|%s%s" % [seed,str(kept),SkyHomes.stone,SkyHomes.isles]
 	_layout_seed = seed
+	_layout_wonders = wonders
 	_kept_changed = false
 	if key == _layout_key: return _layout
 	_layout_key = key
@@ -1154,13 +1159,17 @@ static func _spur(pieces: Array, rng: RandomNumberGenerator) -> Dictionary:
 	return r
 
 ## True if a ridge piece stands clear of the plate, the fixed islands, the
-## cumulus in sight of the plate, the range in sight of it and the islands'
-## jet streams.
+## cumulus in sight of the plate (and the other wonders there, if they
+## stand), the range in sight of it and the islands' jet streams.
 static func _clear(r: Dictionary, home: Dictionary, air: Array) -> bool:
 	if box_distance(r,Vector2.ZERO) < PLATE_ROOM: return false
 	for s: Vector3 in SLOTS.slice(1):
 		if box_distance(r,Vector2(s.x,s.z)) < ISLAND_ROOM: return false
 	if box_distance(r,Vector2(SkyHomes.TOWER.x,SkyHomes.TOWER.z)) < SkyHomes.TOWER_KEEP+60.0: return false
+	# The other wonders in sight of the plate, those standing (--wonders).
+	for w: Array in SkyHomes.spots():
+		var at: Vector3 = w[0]
+		if at != SkyHomes.TOWER and at != SkyHomes.RANGE and box_distance(r,Vector2(at.x,at.z)) < float(w[1]): return false
 	if not r.get("home_arm",false) and box_gap(r,home) < CORRIDOR: return false
 	for p: Vector2 in air:
 		if box_distance(r,p) < AIR_ROOM: return false

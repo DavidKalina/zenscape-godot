@@ -81,13 +81,13 @@ func _off_in_play() -> void:
 			var cell := Vector2i(x,z)
 			if (cell != Vector2i.ZERO and SkyPeaks.spot(cell) != null) or SkyForestIsles.spot(cell) != null: none = false
 	check(none and SkyPeaks.spot(Vector2i.ZERO) != null,"No range but the plate's (and the ring's) and no isle turns up in any cell")
-	# Only an inner range laid out (scripts/sky_world.gd) keeps anything clear
+	# Only a dividing ridge laid out (scripts/sky_world.gd) keeps anything clear
 	# where the others would stand.
 	var others := true
 	for p: Vector3 in [SkyPillars.HOME,SkyTepuis.HOME,SkyForestIsles.HOME]:
 		var inner := false
 		for r: Dictionary in preload("res://scripts/sky_world.gd").layout().ranges:
-			if r.kind == "inner" and preload("res://scripts/sky_world.gd").box_distance(r,Vector2(p.x,p.z)) < SkyPeaks.INNER_CLEAR: inner = true
+			if r.kind == "ridge" and preload("res://scripts/sky_world.gd").box_distance(r,Vector2(p.x,p.z)) < SkyPeaks.INNER_CLEAR: inner = true
 		if SkyPeaks.blocks(p) != inner: others = false
 	check(SkyPeaks.blocks(SkyPeaks.HOME) and others and not SkyForestIsles.blocks(SkyForestIsles.HOME),"The range is kept clear; nothing is kept clear for the others")
 	var peaks: Node3D = SkyPeaks.new()
@@ -101,8 +101,8 @@ func _off_in_play() -> void:
 	isles.flush()
 	var laid := true
 	for key in peaks.built:
-		if key != "0,0" and SkyPeaks.kind_of(peaks.built[key].cell) != "inner": laid = false
-	check(laid and peaks.built.has("0,0") and peaks.kinds[0].forest_count() == 0 and peaks.tepuis.tepui_count() == 0 and isles.isle_count() == 0,"Reset and run, only the ranges laid out near the plate are made near it (%d: the one in sight of it and the inner ranges)" % peaks.range_count())
+		if key != "0,0" and SkyPeaks.kind_of(peaks.built[key].cell) != "ridge": laid = false
+	check(laid and peaks.built.has("0,0") and peaks.kinds[0].forest_count() == 0 and peaks.tepuis.tepui_count() == 0 and isles.isle_count() == 0,"Reset and run, only the ranges laid out near the plate are made near it (%d: the one in sight of it and the dividing ridges)" % peaks.range_count())
 	peaks.free()
 	isles.free()
 
