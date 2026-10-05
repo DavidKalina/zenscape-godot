@@ -17,7 +17,9 @@ extends RefCounted
 ##   live water's depths are re-laid on the new grid the same way;
 ##   objects, fences, ponds, streams and tunnels are in metres from the
 ##   middle and stay where they are.
-## The scene's own saved state is moved over by `migrate_state`.
+## The scene's own saved state is moved over by `migrate_state`; `migrate_slot`
+## does both for a saved place's slot, so a file is migrated once as it is read
+## and written back migrated.
 
 const Plate = preload("res://scripts/plate.gd")
 ## The version a migrated document is written as; NativeTerrainData saves it.
@@ -106,6 +108,51 @@ static func migrate(document: Dictionary, target: NativeTerrainData) -> Variant:
 	var result: Variant = _land(document,made,recipe,target)
 	_lock.unlock()
 	return result
+
+## A saved place's slot ({"document", "state"}) whose document was saved on
+## the 28 m plate, both brought over for `target`'s plate; the slot as it is
+## when it needs nothing; null when its document cannot be read.
+static func migrate_slot(slot: Dictionary, target: NativeTerrainData) -> Variant:
+	if not needs(slot.get("document")): return slot
+	var document: Variant = migrate(slot.document,target)
+	if document == null: return null
+	var made := slot.duplicate()
+	made.document = document
+	if slot.get("state") is Dictionary: made.state = migrate_state(slot.state)
+	return made
+
+## A scene state saved with a 28 m document: what it keeps by cover cell
+## moved OFFSET cells in. Life's sites (not birds', which are slots) and its
+## ponds' first cells (scripts/land_life.gd, pond_seasons.gd), and the fire's
+## cells and memory (scripts/fire_field.gd). Anything malformed is left as it
+## is for its own reader to refuse.
+static func migrate_state(state: Dictionary) -> Dictionary:
+	var made := state.duplicate(true)
+	var life: Variant = made.get("land_life")
+	if life is Dictionary:
+		if life.get("sites") is Dictionary:
+			for kind: Variant in life.sites:
+				if kind == "bird" or not life.sites[kind] is Array: continue
+				for row: Variant in life.sites[kind]:
+					if row is Array and not row.is_empty() and GardenData._integer(row[0]): row[0] = cell(int(row[0]))
+		if life.get("ponds") is Array:
+			for row: Variant in life.ponds:
+				if row is Array and not row.is_empty() and GardenData._integer(row[0]): row[0] = cell(int(row[0]))
+	var fire: Variant = made.get("fire")
+	if fire is Dictionary:
+		for key in ["cells","memory_cells"]:
+			var hex: Variant = fire.get(key)
+			if not hex is String or hex.length()%8 != 0 or not (hex.is_empty() or hex.is_valid_hex_number()): continue
+			var cells: PackedInt32Array = hex.hex_decode().to_int32_array()
+			for k in range(cells.size()): cells[k] = cell(cells[k])
+			fire[key] = cells.to_byte_array().hex_encode()
+	return made
+
+## A cover cell of the 28 m plate as the cell at the same place now; out of
+## range stays out of range.
+static func cell(index: int) -> int:
+	if index < 0 or index >= LEGACY_COVER*LEGACY_COVER: return Plate.COVER_CELLS*Plate.COVER_CELLS+index
+	return (index/LEGACY_COVER+OFFSET)*Plate.COVER_CELLS+index%LEGACY_COVER+OFFSET
 
 ## Heights and outline, read off the old mesh. Holds `_lock`.
 static func _land(document: Dictionary, made: Dictionary, recipe: Dictionary, target: NativeTerrainData) -> Variant:

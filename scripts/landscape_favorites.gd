@@ -46,8 +46,11 @@ func prepare(scene: Node3D,id: String) -> Dictionary:
 	# history, so the active garden must never be the validation target.
 	var candidate := NativeTerrainData.new()
 	candidate.setup(scene._chunk_editor.data.source_mesh)
+	var scene_state: Dictionary = document.scene
+	# A favourite kept on the 28 m plate: its scene's cells come over with it.
+	if preload("res://scripts/plate_migration.gd").needs(document.get("terrain")): scene_state = preload("res://scripts/plate_migration.gd").migrate_state(scene_state)
 	if not candidate.load_document(document.get("terrain",{})): return {}
-	return {"terrain":candidate._snapshot(),"scene":document.scene}
+	return {"terrain":candidate._snapshot(),"scene":scene_state}
 
 func preview(id: String) -> Texture2D:
 	if not _id_valid(id): return null

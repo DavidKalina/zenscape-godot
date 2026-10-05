@@ -1865,12 +1865,15 @@ func open_garden() -> bool:
 		_set_status("Could not read this garden. Your open garden is unchanged.")
 		return false
 	finish_stroke()
+	# A garden saved on the 28 m plate: its scene's cells come over with it.
+	var state: Dictionary = document.scene_state
+	if preload("res://scripts/plate_migration.gd").needs(document): state = preload("res://scripts/plate_migration.gd").migrate_state(state)
 	if not data.load_document(document):
 		_set_status("This garden does not match the chunk. Your open garden is unchanged.")
 		return false
 	selected_object_id = -1
 	refresh()
-	NativeGardenStore.restore(scene,document.scene_state)
+	NativeGardenStore.restore(scene,state)
 	_set_status("Garden opened.")
 	return true
 

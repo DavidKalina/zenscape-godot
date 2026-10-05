@@ -758,9 +758,14 @@ func _read_saved(path := "") -> Dictionary:
 	var saved: Variant = JSON.parse_string(file.get_as_text())
 	if not saved is Dictionary or saved.get("version")!=1 or not saved.get("slots") is Array: return {}
 	if saved.slots.size() not in [1,2,3] or not GardenData._integer(saved.get("active")) or int(saved.active)<0 or int(saved.active)>=saved.slots.size(): return {}
-	for slot in saved.slots:
+	for index in range(saved.slots.size()):
+		var slot: Variant = saved.slots[index]
 		if not slot is Dictionary or not slot.get("document") is Dictionary or not NativeGardenStore.valid(primary,slot.get("state")): return {}
 		var data := NativeTerrainData.new()
 		data.setup(primary._chunk_editor.data.source_mesh)
-		if not data.load_document(slot.document): return {}
+		# A place saved on the 28 m plate comes over whole, its state's cells
+		# with its land (scripts/plate_migration.gd), and is kept that way.
+		slot = preload("res://scripts/plate_migration.gd").migrate_slot(slot,data)
+		if slot == null or not data.load_document(slot.document): return {}
+		saved.slots[index] = slot
 	return saved
