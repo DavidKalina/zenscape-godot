@@ -235,6 +235,10 @@ func _add(home: Vector3, at: Vector3, rise: Vector3) -> Node3D:
 	_bake(island,seeds[-1],built_islands.get(_key(home),{}).get("document",{}))
 	return island
 
+## The main thread's microseconds each part of the last `advance` took,
+## for the record (tools/profile_sky_glide.gd).
+var spent := {}
+
 ## Each frame of the glide: copies rise, a new one turns up if the glide has
 ## wandered off or fallen into the sea (SkyCells `advance`), the farthest
 ## are let go past CAP, and the clouds follow.
@@ -246,13 +250,21 @@ func advance(delta: float, eye: Vector3, heading: float, parted: float) -> void:
 		_copies[i].position = offsets[i]+Vector3.DOWN*sunk(i)
 	var live := [Vector3.ZERO]
 	live.append_array(offsets)
+	var t := Time.get_ticks_usec()
 	var found: Variant = cells.advance(delta,eye,heading,live,parted)
 	if found != null: realise(found.home,found.kind)
 	trim(eye)
+	spent.islands = Time.get_ticks_usec()-t
+	t = Time.get_ticks_usec()
 	islets.advance(delta,eye)
+	spent.islets = Time.get_ticks_usec()-t
+	t = Time.get_ticks_usec()
 	peaks.advance(delta,eye)
+	spent.peaks = Time.get_ticks_usec()-t
+	t = Time.get_ticks_usec()
 	towers.advance(delta,eye)
 	isles.advance(delta,eye)
+	spent.towers = Time.get_ticks_usec()-t
 	clouds.screen(towers.screens(eye),towers.fade(eye)*0.9)
 	var keep: Array = peaks.keep_spots(eye)+isles.keep_spots(eye)
 	keep.sort_custom(func(a: Vector4, b: Vector4) -> bool: return Vector2(a.x-eye.x,a.y-eye.z).length() < Vector2(b.x-eye.x,b.y-eye.z).length())

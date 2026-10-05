@@ -30,6 +30,8 @@ func run() -> void:
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
 	scene.set_meta("no_title",true)
+	# --veil: the world shown as a start shows it (scripts/sky_reveal.gd).
+	if "--veil" in OS.get_cmdline_user_args(): scene.set_meta("sky_veil",true)
 	scene.places_path = "/private/tmp/zs-glide-profile-%d/places.json" % Time.get_ticks_usec()
 	DirAccess.make_dir_recursive_absolute(scene.places_path.get_base_dir())
 	root.add_child(scene)
@@ -92,7 +94,7 @@ func run() -> void:
 		if frames.size() > 0 or travelled > speed*delta*2.0:
 			frames.append(wall)
 			advances.append(spent)
-			if count_after != count_before or spent > 4.0: events.append([frames.size(),wall,spent,count_after-count_before,peaks.range_count()])
+			if count_after != count_before or spent > 4.0: events.append([frames.size(),wall,spent,count_after-count_before,peaks.range_count(),str(islands.get("spent"))])
 		await process_frame
 	var report := _summary("frame",frames)+"\n"+_summary("islands.advance",advances)
 	var worst := []
@@ -103,6 +105,8 @@ func run() -> void:
 	var stand_ms: Array[float] = []
 	for e: Array in stands: stand_ms.append(e[2])
 	report += "\n"+_summary("advance on frames something stood up or went (%d)" % stands.size(),stand_ms)
+	events.sort_custom(func(a: Array, b: Array) -> bool: return a[2] > b[2])
+	report += "\nslowest advances (frame, wall ms, advance ms, things stood up, parts usec): %s" % str(events.slice(0,8).map(func(e: Array) -> String: return "@%d %.1f/%.1f %+d %s" % [e[0],e[1],e[2],e[3],e[5]]))
 	report += "\nranges made in full on the way: %d standing at the end (%d at the start)" % [peaks.range_count(),built_before]
 	print(report)
 	if out != "":
