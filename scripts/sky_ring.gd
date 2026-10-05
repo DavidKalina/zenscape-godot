@@ -20,6 +20,14 @@ extends Node3D
 ##
 ## A child of SkyPeaks, so it stands at the cells' origin and the swaps that
 ## move the world carry it along.
+##
+## The sea's summits (SkyWorld `_summits`) stand with it: each a range of
+## its own made on a worker as the skyline is, sunk so only its top
+## (`show` m) stands over the sea, its faces only where they stand over it
+## (SUMMIT_STRIDE apart), snow down SUMMIT_SNOW of the way to the sea; and
+## its rock over the sea kept as a small heightfield (`summit_body`), so
+## the glide meets it as giant stone (SkyPeaks `body`). Never made in full:
+## they stand under the glide's ceiling, so nothing about them needs more.
 
 const SkyPeak = preload("res://scripts/sky_peak.gd")
 const SkyWorld = preload("res://scripts/sky_world.gd")
@@ -30,6 +38,13 @@ const STRIDE := 4
 const STRIDE_LOW := 8
 ## The range in sight of the plate, nearer than any (8 m).
 const HOME_STRIDE := 2
+## The sea's summits' faces (4 m: they stand small), how far down from their tops toward the
+## sea their snow lies (a share), and how far (m) under the sea their faces
+## and solid still reach, for the sea's line wandering up and down
+## (SkyPeaks SEA_FRAY).
+const SUMMIT_STRIDE := 1
+const SUMMIT_SNOW := 0.4
+const SUMMIT_UNDER := 24.0
 
 ## The ranges (SkyPeaks), whose palette, material and built ranges this reads.
 var peaks: Node3D
@@ -48,6 +63,13 @@ var _pending := false
 const FADE := 2.5
 var whole := false
 var _whole_at := -1
+## The sea's summits, by their index in the layout: {node (or null until
+## stood up), arrays (until then), sink (its frame's height), solid ({i0,
+## j0, w, h: the shape's grid's box over the sea; heights; sea: its own
+## height at the sea}), over (how many of its summits stand over the sea),
+## top}; and those being made on workers: {task, out}.
+var summits := {}
+var _summit_making := {}
 
 func _init() -> void:
 	name = "SkyRing"
@@ -59,6 +81,8 @@ func _notification(what: int) -> void:
 func _wait() -> void:
 	for key in _making: WorkerThreadPool.wait_for_task_completion(_making[key].task)
 	_making.clear()
+	for key in _summit_making: WorkerThreadPool.wait_for_task_completion(_summit_making[key].task)
+	_summit_making.clear()
 
 ## Every skyline gone.
 func drop() -> void:
@@ -66,6 +90,9 @@ func drop() -> void:
 	for key in lines:
 		if lines[key].node != null: (lines[key].node as Node3D).queue_free()
 	lines.clear()
+	for key in summits:
+		if summits[key].node != null: (summits[key].node as Node3D).queue_free()
+	summits.clear()
 	_for = ""
 	whole = false
 
@@ -101,6 +128,14 @@ func warm(owner: Node3D) -> void:
 		var task := WorkerThreadPool.add_task(_make.bind(peaks.seed_of(cell),peaks.stature_of(cell),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),stride_of(cell),peaks.gorge_of(cell),out,peaks.scale_of(cell).y),false,"Sky ring skyline")
 		_making[key] = {"task":task,"out":out,"cell":cell}
 		whole = false
+	var laid: Array = SkyWorld.layout().get("summits",[])
+	for i in range(laid.size()):
+		if summits.has(i) or _summit_making.has(i): continue
+		var summit: Dictionary = laid[i]
+		var out := {}
+		var task := WorkerThreadPool.add_task(_make_summit.bind(int(summit.seed),float(summit.show),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),_off_map(),out),false,"Sea summit")
+		_summit_making[i] = {"task":task,"out":out}
+		whole = false
 
 ## Every how many grid points a range's skyline is drawn.
 func stride_of(cell: Vector2i) -> int:
@@ -112,6 +147,38 @@ static func _make(seed_value: int, stature: float, grass: Array, rock: Array, gr
 	shape.snowline = maxf(shape.snowline,SkyPeak.snow_floor(height))
 	out.arrays = shape.body_arrays(grass,rock,gravel,off_map,stride,snow)
 
+## A sea's summit (SkyWorld `_summits`): its range made (its gorge uncut),
+## sunk `show` m under its top; its faces over the sea, its snow, how far
+## it is sunk (`sink`: its frame's height) and its rock over the sea as a
+## small heightfield (`solid`).
+static func _make_summit(seed_value: int, show: float, grass: Array, rock: Array, gravel: Color, snow: Color, off_map: Vector3, out: Dictionary) -> void:
+	var shape: RefCounted = SkyPeak.make(seed_value,1.0,false)
+	var sea: float = shape.top-show
+	shape.snowline = shape.top-show*SUMMIT_SNOW
+	out.arrays = shape.body_arrays(grass,rock,gravel,off_map,SUMMIT_STRIDE,snow,sea-SUMMIT_UNDER)
+	out.sink = SkyPeak.SEA-sea
+	# The grid's box over the sea, and its heights.
+	var nx: int = shape.nx
+	var all: PackedFloat32Array = shape.heights
+	var lo := Vector2i(nx,shape.nz)
+	var hi := Vector2i(-1,-1)
+	for j in range(shape.nz):
+		for i in range(nx):
+			if all[j*nx+i] < sea-SUMMIT_UNDER: continue
+			lo = Vector2i(mini(lo.x,i),mini(lo.y,j))
+			hi = Vector2i(maxi(hi.x,i),maxi(hi.y,j))
+	var heights := PackedFloat32Array()
+	if hi.x >= lo.x:
+		lo = Vector2i(maxi(lo.x-1,0),maxi(lo.y-1,0))
+		hi = Vector2i(mini(hi.x+1,nx-1),mini(hi.y+1,shape.nz-1))
+		for j in range(lo.y,hi.y+1): heights.append_array(all.slice(j*nx+lo.x,j*nx+hi.x+1))
+	out.solid = {"i0":lo.x,"j0":lo.y,"w":hi.x-lo.x+1,"h":hi.y-lo.y+1,"heights":heights,"sea":sea}
+	var over := 0
+	for q: Vector3 in shape.summits:
+		if q.y > sea: over += 1
+	out.over = over
+	out.top = shape.top
+
 func _off_map() -> Vector3:
 	return (peaks.get_script() as GDScript).get_script_constant_map().OFF_MAP
 
@@ -122,6 +189,8 @@ func reset(owner: Node3D) -> void:
 	for key in lines:
 		var line: Dictionary = lines[key]
 		if line.node != null: ((line.node as Node3D).get_child(0) as MeshInstance3D).mesh.surface_set_material(0,peaks._ground())
+	for key in summits:
+		if summits[key].node != null: ((summits[key].node as Node3D).get_child(0) as MeshInstance3D).mesh.surface_set_material(0,peaks._ground())
 
 ## Each frame of the glide (SkyPeaks `advance`): stands up one finished
 ## skyline, and hides each whose range stands in full.
@@ -134,6 +203,14 @@ func advance() -> void:
 		_making.erase(key)
 		lines[key] = {"node":null,"arrays":m.out.arrays,"cell":m.cell}
 		break
+	for i in _summit_making.keys():
+		var m: Dictionary = _summit_making[i]
+		if not WorkerThreadPool.is_task_completed(m.task): continue
+		WorkerThreadPool.wait_for_task_completion(m.task)
+		_summit_making.erase(i)
+		summits[i] = m.out
+		summits[i].node = null
+		break
 	var standing := true
 	for key in lines:
 		var line: Dictionary = lines[key]
@@ -141,7 +218,13 @@ func advance() -> void:
 			_stand(key)
 			standing = false
 			break
-	if not whole and standing and _making.is_empty() and not _pending and not lines.is_empty():
+	if standing:
+		for i in summits:
+			if summits[i].node == null:
+				_stand_summit(i)
+				standing = false
+				break
+	if not whole and standing and _making.is_empty() and _summit_making.is_empty() and not _pending and not lines.is_empty():
 		whole = true
 		_whole_at = Time.get_ticks_msec()
 	_show()
@@ -156,9 +239,16 @@ func flush() -> void:
 		WorkerThreadPool.wait_for_task_completion(m.task)
 		lines[key] = {"node":null,"arrays":m.out.arrays,"cell":m.cell}
 	_making.clear()
+	for i in _summit_making.keys():
+		WorkerThreadPool.wait_for_task_completion(_summit_making[i].task)
+		summits[i] = _summit_making[i].out
+		summits[i].node = null
+	_summit_making.clear()
 	if peaks == null: return
 	for key in lines:
 		if lines[key].node == null: _stand(key)
+	for i in summits:
+		if summits[i].node == null: _stand_summit(i)
 	if not lines.is_empty():
 		whole = true
 		_whole_at = -1
@@ -187,6 +277,61 @@ func _stand(key: String) -> void:
 	line.node = node
 	line.erase("arrays")
 
+## A sea's summit stood up: sunk in its spot, turned, its faces in the
+## ranges' material; no shadow, and out of the plate's water's mirror.
+func _stand_summit(i: int) -> void:
+	var laid: Array = SkyWorld.layout().get("summits",[])
+	if i >= laid.size(): return
+	var summit: Dictionary = summits[i]
+	var node := Node3D.new()
+	node.name = "Summit_%d" % i
+	node.position = Vector3(laid[i].at.x,float(summit.sink),laid[i].at.z)
+	node.rotation.y = float(laid[i].turn)
+	var body := MeshInstance3D.new()
+	body.name = "Body"
+	body.mesh = SkyPeak.mesh_from(summit.arrays,peaks._ground())
+	body.position = -_off_map()
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Kilometres off: never in the plate's water's mirror.
+	body.set_meta("skip_reflection",true)
+	node.add_child(body)
+	add_child(node)
+	summit.node = node
+	summit.erase("arrays")
+
+## The sea's summit under a global point as a solid, Vector2(its rock's
+## height, its underside far under the cloud) in global metres, or null:
+## off its rock, or where its rock is under the sea.
+func summit_body(point: Vector3) -> Variant:
+	if peaks == null: return null
+	for i in summits:
+		var summit: Dictionary = summits[i]
+		var node: Node3D = summit.node
+		if node == null: continue
+		var local := node.transform.affine_inverse()*(point-peaks.position)
+		var solid: Dictionary = summit.solid
+		var fx := (local.x+SkyPeak.HALF.x)/SkyPeak.STEP-int(solid.i0)
+		var fz := (local.z+SkyPeak.HALF.y)/SkyPeak.STEP-int(solid.j0)
+		if fx < 0.0 or fz < 0.0 or fx >= int(solid.w)-1 or fz >= int(solid.h)-1: continue
+		var ix := int(fx)
+		var iz := int(fz)
+		var w := int(solid.w)
+		var heights: PackedFloat32Array = solid.heights
+		var u := fx-ix
+		var v := fz-iz
+		var h := lerpf(lerpf(heights[iz*w+ix],heights[iz*w+ix+1],u),lerpf(heights[(iz+1)*w+ix],heights[(iz+1)*w+ix+1],u),v)
+		if h < float(solid.sea): continue
+		var y := peaks.position.y+node.position.y
+		return Vector2(h+y,SkyPeak.BOTTOM+y)
+	return null
+
+## How many of the sea's summits stand.
+func summit_count() -> int:
+	var n := 0
+	for i in summits:
+		if summits[i].node != null: n += 1
+	return n
+
 ## Each skyline shows, once the skyline is whole, unless its range stands
 ## in full; fading in at first.
 func _show() -> void:
@@ -198,6 +343,11 @@ func _show() -> void:
 		var node: Node3D = lines[key].node
 		if node == null: continue
 		node.visible = whole and not peaks.built.has(key)
+		(node.get_child(0) as GeometryInstance3D).transparency = fade
+	for i in summits:
+		var node: Node3D = summits[i].node
+		if node == null: continue
+		node.visible = whole
 		(node.get_child(0) as GeometryInstance3D).transparency = fade
 
 ## True if a ring range's skyline stands and shows.

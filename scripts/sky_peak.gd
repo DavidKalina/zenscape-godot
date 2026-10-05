@@ -343,6 +343,27 @@ static func crest_span(seed_value: int, stature := 1.0, above := 140.0) -> Vecto
 		x += 8.0
 	return Vector2(lo,hi) if lo <= hi else Vector2.ZERO
 
+## The planned summits and the shoulder (the range's own frame: x, height,
+## z on the spine), from the plan alone, so cheap: the sea's buried
+## summits (scripts/sky_world.gd `_summits`) are laid by which of them
+## stand over the sea once the range is sunk.
+static func plan_peaks(seed_value: int, stature := 1.0) -> Array[Vector3]:
+	return planned(seed_value,stature).planned_peaks()
+
+## A range planned only (its `crest` and `spine` read), not built.
+static func planned(seed_value: int, stature := 1.0) -> RefCounted:
+	var peak: RefCounted = new()
+	peak.stature = stature
+	peak.seed = seed_value
+	peak._rng.seed = seed_value
+	peak._plan()
+	return peak
+
+func planned_peaks() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for k: Dictionary in _peaks: out.append(Vector3(k.x,k.h,spine(k.x)))
+	return out
+
 ## Where the gorge crosses the crest (the range's own x), from the plan
 ## alone: the dividing ridges keep their roots off a kept gorge's mouth.
 static func gorge_at(seed_value: int, stature := 1.0) -> float:
@@ -1123,7 +1144,12 @@ func _noise(salt: int, frequency: float, octaves: int, fractal: int) -> FastNois
 ## coloured per face from the world's `grass` and `rock` (linear) and its
 ## `gravel`, every vertex laid `shift` off (SkyIslets OFF_MAP). Safe on a
 ## worker.
-func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO, stride := 1, snow := SNOW_COLOUR) -> Array:
+## Faces wholly under `above` (the range's own heights) are left out: CUT,
+## or for a range sunk so only its summits stand over the sea (scripts/
+## sky_ring.gd `summit_arrays`), just under the sea's line there; and the
+## lie, the light's normals and the colours are read only over the faces
+## kept (and NORMAL_REACH round).
+func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO, stride := 1, snow := SNOW_COLOUR, above := CUT) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed*31+7
 	var fields := [_noise(67,1.0/90.0,3,FastNoiseLite.FRACTAL_FBM),_noise(73,1.0/150.0,2,FastNoiseLite.FRACTAL_FBM),_noise(79,1.0/70.0,2,FastNoiseLite.FRACTAL_FBM)]
@@ -1131,12 +1157,25 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 	# points each way for the light, which leans on that broader lie
 	# (reference_surface `facet_soft`) so the grid's small steps don't each
 	# catch it.
+	# The grid's box holding every face kept.
+	var lo := Vector2i(nx,nz)
+	var hi := Vector2i(-1,-1)
+	for j in range(nz):
+		for i in range(nx):
+			if heights[j*nx+i] < above: continue
+			lo = Vector2i(mini(lo.x,i),mini(lo.y,j))
+			hi = Vector2i(maxi(hi.x,i),maxi(hi.y,j))
+	var reach := stride+NORMAL_REACH+1
+	lo = Vector2i(maxi(lo.x-reach,0),maxi(lo.y-reach,0))
+	hi = Vector2i(mini(hi.x+reach,nx-1),mini(hi.y+reach,nz-1))
+	# Kept on the stride's own grid, so the faces fall where they always do.
+	lo = Vector2i(lo.x-lo.x%stride,lo.y-lo.y%stride)
 	var normals := PackedVector3Array()
 	normals.resize(nx*nz)
 	var broad := PackedVector3Array()
 	broad.resize(nx*nz)
-	for j in range(nz):
-		for i in range(nx):
+	for j in range(lo.y,hi.y+1):
+		for i in range(lo.x,hi.x+1):
 			var g := _gradient(heights,i,j)
 			normals[j*nx+i] = Vector3(-g.x,1.0,-g.y).normalized()
 			g = _gradient_over(heights,i,j,NORMAL_REACH)
@@ -1148,8 +1187,8 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 	var vertices := PackedVector3Array()
 	var normal_list := PackedVector3Array()
 	var colour_list := PackedColorArray()
-	for j in range(0,nz-stride,stride):
-		for i in range(0,nx-stride,stride):
+	for j in range(lo.y,mini(nz-stride,hi.y+1),stride):
+		for i in range(lo.x,mini(nx-stride,hi.x+1),stride):
 			var c00 := j*nx+i
 			var c10 := c00+stride
 			var c01 := c00+nx*stride
@@ -1158,7 +1197,7 @@ func body_arrays(grass: Array, rock: Array, gravel: Color, shift := Vector3.ZERO
 			var h10 := heights[c10]
 			var h01 := heights[c01]
 			var h11 := heights[c11]
-			if maxf(maxf(h00,h10),maxf(h01,h11)) < CUT: continue
+			if maxf(maxf(h00,h10),maxf(h01,h11)) < above: continue
 			var p00 := _v(i,j,h00)
 			var p10 := _v(i+stride,j,h10)
 			var p01 := _v(i,j+stride,h01)
