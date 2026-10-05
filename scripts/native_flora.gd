@@ -5,7 +5,9 @@ extends RefCounted
 ## doubles until the terrain data packs float32 poses and linear float32 tints,
 ## which is exactly what the source's Float32 instance buffers held.
 const Plate = preload("res://scripts/plate.gd")
-const SIZE := Plate.SIZE
+## The source plot: the old 28 m square a range landscape sits on. Scatter
+## and the site's height range are taken over it.
+const SIZE := Plate.LEGACY_HALF*2.0
 ## Scales the scatter's try budgets; counts come from the recipe (content),
 ## so this stays 1 whatever the plate's size.
 const AREA := 1.0
@@ -266,7 +268,7 @@ class Site:
 		grid.fill(NAN)
 		for i in range(33):
 			for j in range(33):
-				var h := lattice((i/32.0-0.5)*Plate.SIZE,(j/32.0-0.5)*Plate.SIZE)
+				var h := lattice((i/32.0-0.5)*SIZE,(j/32.0-0.5)*SIZE)
 				if h < lo: lo = h
 				if h > hi: hi = h
 		span = maxf(0.001,hi-lo)
@@ -341,7 +343,7 @@ class Flowering:
 		var open := flag("open")
 		return (1.0-smoothstep(0.3,0.52,site.slope)) * ((0.65+0.35*smoothstep(0.08,0.32,site.moisture)) if open else smoothstep(0.3,0.58,site.moisture)) * (1.0 if open else 1.0-smoothstep(0.55,0.85,site.tree01)) * smoothstep(0.3,1.1,site.shore)
 	func _edge(x: float, z: float) -> float:
-		return smoothstep(0.6,1.3 if flag("open") else 3.0,Plate.SIZE/2.0-maxf(absf(x),absf(z)))
+		return smoothstep(0.6,1.3 if flag("open") else 3.0,SIZE/2.0-maxf(absf(x),absf(z)))
 	func meadow_at(x: float, z: float, site: Dictionary) -> float:
 		if gene.is_empty(): return 0.0
 		var u := x*ca + z*sa

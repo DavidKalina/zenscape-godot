@@ -22,7 +22,7 @@ static func field(data: NativeTerrainData, pond: Dictionary) -> Dictionary:
 		data._water_grid_h.resize(W*W)
 		for z in range(W):
 			for x in range(W):
-				data._water_grid_h[z*W+x]=data._recipe.height(-Plate.HALF+x*CELL,-Plate.HALF+z*CELL)
+				data._water_grid_h[z*W+x]=preload("res://scripts/native_recipe_samples.gd").height(data._recipe,-Plate.HALF+x*CELL,-Plate.HALF+z*CELL)
 	var base: PackedFloat64Array=data._water_grid_h
 	# Away from the standing faces (a recipe world keeps to the old square in
 	# the middle of the plate) a node is void wherever it is over the plate,

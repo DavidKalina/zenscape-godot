@@ -84,11 +84,7 @@ func sync(scene: Node3D) -> void:
 			# Canonical recipe preparation publishes this CPU image with its
 			# height tables. Retain the old loop for hand-constructed providers.
 			if image == null:
-				image = Image.create(Geology.SIZE,Geology.SIZE,false,Image.FORMAT_RGBA8)
-				for z in range(Geology.SIZE):
-					for x in range(Geology.SIZE):
-						var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-Plate.HALF+(x+0.5)*Plate.SIZE/float(Geology.SIZE),-Plate.HALF+(z+0.5)*Plate.SIZE/float(Geology.SIZE)))
-						image.set_pixel(x,z,Color(field.y,field.z,0,1))
+				image = Geology.build(_genome)
 			_geology = ImageTexture.create_from_image(image)
 	var material: ShaderMaterial = scene._chunk_editor.terrain.get_active_material(0)
 	if material != null and material.shader.resource_path == "res://shaders/reference_surface.gdshader":
@@ -98,6 +94,7 @@ func sync(scene: Node3D) -> void:
 		material.set_shader_parameter("desert_enabled",_geology != null)
 		material.set_shader_parameter("desert_has_map",_geology != null)
 		material.set_shader_parameter("desert_geology",_geology)
+		material.set_shader_parameter("desert_geology_half",Geology.HALF)
 		material.set_shader_parameter("desert_band_height",0.85*float(_genome.get("relief",1.0)))
 		# Colours change only with the world, not per frame.
 		if _geology_dirty or material != _geology_material:

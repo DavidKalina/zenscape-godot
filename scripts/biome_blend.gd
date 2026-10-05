@@ -131,7 +131,10 @@ func refresh_rect(rect: Rect2) -> void:
 func _read(i: int) -> void:
 	var p := _center(i%CELLS,i/CELLS)
 	_heights[i] = _sampler.height(p.x,p.y)
-	_land[i] = 1 if maxf(absf(p.x),absf(p.y))<Plate.HALF-1.5 and Genome.has_ground(_genome,p) else 0
+	# A generated world's sampler keeps to the old square it sits on; the
+	# live ground counts only the island's own land.
+	var reach: float = _sampler.land_reach() if _sampler.has_method("land_reach") else Plate.HALF
+	_land[i] = 1 if maxf(absf(p.x),absf(p.y))<reach-1.5 and Genome.has_ground(_genome,p) and (not _sampler.has_method("has_land") or _sampler.has_land(p)) else 0
 	_jitter[i] = _noise.get_noise_2d(p.x,p.y)*JITTER
 	_wet[i] = 1 if _sampler.wet(p) else 0
 
@@ -400,6 +403,8 @@ class LiveGround extends RefCounted:
 	func height(x: float,z: float) -> float:
 		var h: Variant = data.height_at(x,z)
 		return float(h) if h != null else 0.0
+	func has_land(p: Vector2) -> bool:
+		return data.height_at(p.x,p.y) != null
 	func wet(p: Vector2) -> bool:
 		var g := ((p+Vector2.ONE*Plate.HALF)/STEP).round()
 		var x := clampi(int(g.x),0,SIDE-1)

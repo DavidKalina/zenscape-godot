@@ -1,6 +1,7 @@
 extends RefCounted
 ## One continuous surface for mesh, habitat placement, and native water flooding.
 const Genome = preload("res://scripts/inland_genome.gd")
+const Plate = preload("res://scripts/plate.gd")
 const Places = preload("res://scripts/inland_places.gd")
 const Erosion = preload("res://scripts/terrain_erosion.gd")
 var places: Array[Dictionary] = []
@@ -21,6 +22,11 @@ func _init(g: Dictionary,ponds: Array,water_plan: RefCounted,preview := false) -
 	noise.frequency = 0.13
 	if not preview: erosion = Erosion.delta(genome,noise)
 	if int(genome.version)>=4: places = Places.plan(self)
+## The half-width of the land a generated world has: the old 28 m square
+## (scripts/biome_blend.gd reads its habitats inside it).
+func land_reach() -> float:
+	return Plate.LEGACY_HALF
+
 func height(x: float,z: float) -> float:
 	var p := Vector2(x,z)
 	# From version 6 the clearings are only dressed; the land keeps its shape.
@@ -29,7 +35,7 @@ func height(x: float,z: float) -> float:
 
 func original_height(x: float,z: float) -> float:
 	var base := Genome.height(genome,Vector2(x,z),noise)
-	if not erosion.is_empty(): base += Erosion.sample(erosion,x,z)
+	if not erosion.is_empty(): base += Erosion.sample(erosion,x,z,Erosion.RECIPE_SIZE,Erosion.RECIPE_ORIGIN)
 	return _water_height(x,z,base)
 
 func _water_height(x: float,z: float,base: float) -> float:

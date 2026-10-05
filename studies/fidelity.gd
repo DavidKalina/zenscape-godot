@@ -1543,7 +1543,9 @@ func _update_leaf_litter(delta: float) -> void:
 			if object.asset in ["broadleaf","shrub","redwood"]:
 				anchors.append(Vector2(object.x,object.z))
 		_leaf_litter.seed_from(anchors,_leaf_ground)
-		_grass_chaff.seed_from(_grass_chaff.anchors_on(_chunk_editor.data.ground_coverage),_leaf_ground)
+		var land: NativeTerrainData = _chunk_editor.data
+		var on_land := func(p: Vector2) -> float: return land.ground_coverage(p) if land.has_land(p) else 0.0
+		_grass_chaff.seed_from(_grass_chaff.anchors_on(on_land,_grass_chaff.count_for(land.land_area()),land.land_rect()),_leaf_ground)
 		_kicked_blades.setup(_leaf_ground)
 		_waterfall_drips.seed_from(_chunk_editor.content._landscape_falls,_chunk_editor.data)
 	_leaf_litter.visible = _growth.terrain>=0.995 and _growth.foliage>=0.995

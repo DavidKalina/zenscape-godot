@@ -14,6 +14,12 @@ const Plate = preload("res://scripts/plate.gd")
 const SIZE := Plate.EROSION_POINTS
 const CELL := Plate.EROSION_STEP
 const ORIGIN := -Plate.HALF
+## Generated worlds sit on the old 28 m square (scripts/native_recipe_samples.gd
+## SQUARE_KINDS), so their delta grid covers that square alone: RECIPE_SIZE
+## points a side from RECIPE_ORIGIN, the 41x41 it always was. The tools'
+## erosion (scripts/land_brush.gd, mountain_forms.gd) uses the plate's grid.
+const RECIPE_SIZE := ceili(Plate.LEGACY_HALF*2.0/CELL-0.001)+1
+const RECIPE_ORIGIN := -Plate.LEGACY_HALF
 const CACHE_LIMIT := 8
 static var _cache := {}
 static var _order: Array = []
@@ -41,10 +47,10 @@ static func params(genome: Dictionary) -> Dictionary:
 	if int(genome.version)<7 or not FAMILIES.has(genome.composition): return {}
 	var family: Dictionary = FAMILIES[genome.composition]
 	var relief := float(genome.relief)
-	return {"size":SIZE,"cell":CELL,"origin":ORIGIN,"seed":int(genome.noise_seed)&0xffffffff,
+	return {"size":RECIPE_SIZE,"cell":CELL,"origin":RECIPE_ORIGIN,"seed":int(genome.noise_seed)&0xffffffff,
 		"detail":float(family.detail)*relief,"frequency":0.16/float(genome.breadth),"warp":1.3,"slope_ref":1.2,
 		"iterations":20,"k":float(family.k),"channel_area":4.0,"jitter":0.6,"max_cut":float(family.max_cut)*relief,"deposit":float(family.deposit),
-		"deposit_slope":0.35,"deposit_cap":0.06,"edge_inner":Plate.HALF-3.2,"edge_outer":Plate.HALF-1.4}
+		"deposit_slope":0.35,"deposit_cap":0.06,"edge_inner":Plate.LEGACY_HALF-3.2,"edge_outer":Plate.LEGACY_HALF-1.4}
 
 ## Delta grid for a genome, or an empty array when the family is not eroded.
 ## Parallel recipe workers build the same world at once; the first computes,
@@ -60,13 +66,13 @@ static func delta(genome: Dictionary,noise: FastNoiseLite) -> PackedFloat64Array
 		return hit
 	var base := PackedFloat64Array()
 	var fixed := PackedByteArray()
-	base.resize(SIZE*SIZE)
-	fixed.resize(SIZE*SIZE)
-	for j in range(SIZE):
-		for i in range(SIZE):
-			var p := Vector2(ORIGIN+i*CELL,ORIGIN+j*CELL)
-			base[j*SIZE+i] = Genome.height(genome,p,noise)
-			fixed[j*SIZE+i] = 0 if Genome.has_ground(genome,p) else 1
+	base.resize(RECIPE_SIZE*RECIPE_SIZE)
+	fixed.resize(RECIPE_SIZE*RECIPE_SIZE)
+	for j in range(RECIPE_SIZE):
+		for i in range(RECIPE_SIZE):
+			var p := Vector2(RECIPE_ORIGIN+i*CELL,RECIPE_ORIGIN+j*CELL)
+			base[j*RECIPE_SIZE+i] = Genome.height(genome,p,noise)
+			fixed[j*RECIPE_SIZE+i] = 0 if Genome.has_ground(genome,p) else 1
 	var result := erode(base,fixed,settings)
 	_cache[key] = result
 	_order.append(key)
@@ -80,21 +86,22 @@ static func erode(base: PackedFloat64Array,fixed: PackedByteArray,settings: Dict
 	return erode_reference(base,fixed,settings)
 
 ## Catmull-Rom read of the delta grid, so the 0.7 m cells leave no creases
-## in the surface. Zero for an empty grid; clamped at the plate edge.
-static func sample(grid: PackedFloat64Array,x: float,z: float) -> float:
+## in the surface. Zero for an empty grid; clamped at the grid's edge. A
+## generated world's grid (`delta`) is read with RECIPE_SIZE and RECIPE_ORIGIN.
+static func sample(grid: PackedFloat64Array,x: float,z: float,side := SIZE,origin := ORIGIN) -> float:
 	if grid.is_empty(): return 0.0
-	var fi := clampf((x-ORIGIN)/CELL,0.0,SIZE-1.0)
-	var fj := clampf((z-ORIGIN)/CELL,0.0,SIZE-1.0)
-	var i := mini(SIZE-2,int(fi))
-	var j := mini(SIZE-2,int(fj))
+	var fi := clampf((x-origin)/CELL,0.0,side-1.0)
+	var fj := clampf((z-origin)/CELL,0.0,side-1.0)
+	var i := mini(side-2,int(fi))
+	var j := mini(side-2,int(fj))
 	var u := fi-i
 	var v := fj-j
 	var i0 := maxi(i-1,0)
-	var i3 := mini(i+2,SIZE-1)
-	var r0 := maxi(j-1,0)*SIZE
-	var r1 := j*SIZE
-	var r2 := r1+SIZE
-	var r3 := mini(j+2,SIZE-1)*SIZE
+	var i3 := mini(i+2,side-1)
+	var r0 := maxi(j-1,0)*side
+	var r1 := j*side
+	var r2 := r1+side
+	var r3 := mini(j+2,side-1)*side
 	return _spline(_spline(grid[r0+i0],grid[r0+i],grid[r0+i+1],grid[r0+i3],u),
 		_spline(grid[r1+i0],grid[r1+i],grid[r1+i+1],grid[r1+i3],u),
 		_spline(grid[r2+i0],grid[r2+i],grid[r2+i+1],grid[r2+i3],u),

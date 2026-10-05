@@ -87,8 +87,12 @@ const SHRUB_SIZE := Vector2(0.5,0.9)
 const KIND_SIZE := {"layered_tree":0.55,"broadleaf":1.45,"redwood":0.6,"fern":0.6,"birch":1.0,"willow":0.9,"juniper":1.0}
 ## Ferns read as dark spiders from above; woodland undergrowth takes few.
 const FERN_WEIGHT := 0.3
-## Plants stay inside the band the generator plants: 3 m in from the rim.
+## Plants stay inside the band the generator plants: 3 m in from the rim,
+## or on a generated world (scripts/native_recipe_samples.gd SQUARE_KINDS)
+## from the edge of the old square it sits on (`_band`). An island's shore
+## needs no band: there is no ground past it.
 const PLATE := Plate.HALF-3.0
+const SQUARE_BAND := Plate.LEGACY_HALF-3.0
 ## Metres² the per-habitat tree counts were tuned over (the generator's band
 ## on the 28 m plate): a density, so it stays when the plate grows.
 const PLANTED_AREA := 462.0
@@ -440,6 +444,7 @@ func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2A
 			region.targets.append(target)
 			region.fronts.append(GRASS_DELAY+p.distance_to(origin)/GRASS_SPEED+Variety.unit([salt,11,index])*0.6)
 	var reach := maxf(rect.size.length()*0.5,1.0)
+	var band := _band()
 	# A guided forest's edge may bulge past the stroke's own bounds.
 	var span := rect.grow(Guidance.WARP) if forest and guide != null else rect
 	var wished := PackedVector2Array()
@@ -449,7 +454,7 @@ func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2A
 			for i in range(floori(span.position.x/lattice),ceili(span.end.x/lattice)):
 				var key := [salt,layer[0].hash(),i,j]
 				var p := (Vector2(i,j)+Vector2(Variety.unit(key+[1]),Variety.unit(key+[2])))*lattice
-				if not span.has_point(p) or maxf(absf(p.x),absf(p.y)) > PLATE:
+				if not span.has_point(p) or maxf(absf(p.x),absf(p.y)) > band:
 					continue
 				var wish := _wish_at(p,guide)
 				if forest and _frayed(p,key,wish) <= FOREST_MARGIN.x:
@@ -467,7 +472,7 @@ func _plan_region(rect: Rect2, born: float, source := "", sown := PackedVector2A
 	# Each landed seed is a candidate of its own, first to come up.
 	for k in range(sown.size()):
 		var p: Vector2 = sown[k]
-		if maxf(absf(p.x),absf(p.y)) > PLATE: continue
+		if maxf(absf(p.x),absf(p.y)) > band: continue
 		var key := [salt,"sown".hash(),roundi(p.x*100.0),roundi(p.y*100.0)]
 		region.plants.append({"at":SOWN_DELAY+SOWN_STAGGER*Variety.unit(key+[3]),"layer":"tree","p":p,"key":key,"forest":true,"guide":guide,"sown":true,"kind":kind})
 	if guide != null: _count_mates(region.plants,known)
@@ -1088,6 +1093,10 @@ func takes(p: Vector2) -> bool:
 func seed_family(p: Vector2) -> String:
 	if _blend == null: return ""
 	return _tree_kind(_blend.pick(p),p,0.0)
+
+## How far from the middle plants may stand, either way (PLATE, SQUARE_BAND).
+func _band() -> float:
+	return SQUARE_BAND if data._recipe_settings.get("kind") in preload("res://scripts/native_recipe_samples.gd").SQUARE_KINDS else PLATE
 
 ## Live water within TREE_SHORE of `p`.
 func _shore(p: Vector2) -> bool:

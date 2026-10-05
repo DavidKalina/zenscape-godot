@@ -7,6 +7,12 @@ extends "res://scripts/wind_leaf_litter.gd"
 ## Sparse on purpose (CHAFF at most, one per anchor), small (10-16 cm), and
 ## a soft straw-green so they read as grass, not litter.
 const CHAFF := 36
+## Square metres CHAFF was tuned over (the 28 m plate's land): an island
+## takes CHAFF a CHAFF_AREA of its land (`count_for`), so a small one is not
+## littered and a big one not bare, between CHAFF_FEWEST and the litter's
+## CAPACITY.
+const CHAFF_AREA := 784.0
+const CHAFF_FEWEST := 6
 ## Weight per blade, against the leaves' 0.8-1.4: a blade slides in air of
 ## about 0.55 × weight and hops over 1.3 × weight (WindLeafLitter).
 const WEIGHT := Vector2(0.5,0.75)
@@ -52,7 +58,7 @@ func seed_from(anchors: Array, probe: Callable) -> void:
 	_accumulator = 0.0
 	_rng.seed = 5113
 	for anchor: Vector2 in anchors:
-		if leaves.size() >= CHAFF: break
+		if leaves.size() >= CAPACITY: break
 		var angle := _rng.randf()*TAU
 		var point := anchor + Vector2(cos(angle),sin(angle))*_rng.randf_range(0.0,0.6)
 		var height: Variant = ground_height.call(point)
@@ -69,13 +75,18 @@ func seed_from(anchors: Array, probe: Callable) -> void:
 	multimesh.visible_instance_count = leaves.size()
 	_draw()
 
-## Up to `count` resting places on open grass: an even spread over the
-## plate (the R2 low-discrepancy sequence, the same for the same ground)
-## kept where `cover` (0..1 at a point) says grass grows.
-static func anchors_on(cover: Callable, count := CHAFF) -> Array:
+## The blades an island with `land_area` square metres of land rests.
+static func count_for(land_area: float) -> int:
+	return clampi(roundi(CHAFF*land_area/CHAFF_AREA),CHAFF_FEWEST,CAPACITY)
+
+## Up to `count` resting places on open grass: an even spread over `area`
+## (the island's land bounds; the plate a metre in from its rim by default)
+## by the R2 low-discrepancy sequence, the same for the same ground, kept
+## where `cover` (0..1 at a point) says grass grows.
+static func anchors_on(cover: Callable, count := CHAFF, area := Plate.RECT.grow(-1.0)) -> Array:
 	var anchors: Array = []
 	for i in range(count*4):
 		if anchors.size() >= count: break
-		var point := Vector2(fposmod(0.5+i*0.7548777,1.0),fposmod(0.5+i*0.5698403,1.0))*(Plate.SIZE-2.0)-Vector2.ONE*(Plate.HALF-1.0)
+		var point := area.position+Vector2(fposmod(0.5+i*0.7548777,1.0),fposmod(0.5+i*0.5698403,1.0))*area.size
 		if float(cover.call(point)) > 0.4: anchors.append(point)
 	return anchors

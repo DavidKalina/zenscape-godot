@@ -2,8 +2,9 @@ extends RefCounted
 const Plate = preload("res://scripts/plate.gd")
 const Desert = preload("res://scripts/desert_landscape.gd")
 ## The band the generator plants, half-widths in x and z: 3 and 3.5 m in
-## from the rim (Emergence.PLATE keeps to the same 3 m).
-const BAND := Vector2(Plate.HALF-3.0,Plate.HALF-3.5)
+## from the edge of the old 28 m square a generated world sits on, so its
+## fixed try counts plant the density they were tuned for.
+const BAND := Vector2(Plate.LEGACY_HALF-3.0,Plate.LEGACY_HALF-3.5)
 const Variety = preload("res://scripts/seeded_variety.gd")
 const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")

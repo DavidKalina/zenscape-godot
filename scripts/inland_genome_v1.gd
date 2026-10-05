@@ -94,5 +94,5 @@ static func height(g: Dictionary,p: Vector2,noise: FastNoiseLite) -> float:
 			var r := Vector2(q.x,z).length()/9.5
 			mass = h*pow(maxf(0.0,1.0-r),1.45 if g.archetype == "horn" else 0.9)
 		if comp == "massif": mass *= 1.15
-	var edge := 1.0-smoothstep(Plate.HALF-2.6,Plate.HALF,maxf(absf(p.x),absf(p.y)))
+	var edge := 1.0-smoothstep(Plate.LEGACY_HALF-2.6,Plate.LEGACY_HALF,maxf(absf(p.x),absf(p.y)))
 	return 0.8+(ground+mass*float(g.relief)-0.8)*edge

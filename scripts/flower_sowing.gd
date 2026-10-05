@@ -163,6 +163,8 @@ func _init(ground: NativeTerrainData, id: String, world_seed: int) -> void:
 	if type_id == MeadowTypes.of(settings) and data._recipe != null and data._recipe.get("inland") != null:
 		seed_value = int(data._recipe.inland.genome.plant_seed)
 	meadow = MeadowTypes.new(type_id,seed_value)
+	# A plain island has no recipe and may reach past the old square.
+	if data._recipe == null: meadow.rim_band = MeadowTypes.PLATE_RIM
 	var spec: Dictionary = SLOTS[id]
 	if spec.has("flowers") or spec.has("mix") or spec.has("drift") or spec.has("sizes"):
 		var type: Dictionary = meadow.type.duplicate(true)
