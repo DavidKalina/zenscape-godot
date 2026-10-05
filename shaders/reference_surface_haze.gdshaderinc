@@ -24,9 +24,12 @@ uniform vec4 glide_emerge_hi[4];
 // reach takes the landform's gentler curve (zs_glide_fog_far).
 uniform vec4 glide_peaks[2];
 // The mountain ring (scripts/sky_world.gd, sky_haze.gd `publish`): the
-// world's middle (x, z), and the distance from it (m) the ring's curve
-// starts at (z) and has taken over by (w); w 0 with no ring.
+// world's middle (x, z), and how far (m) in from where the band's rock
+// starts the ring's curve starts (z), and out past it it has taken over
+// (w); w 0 with no ring. Where the rock starts, each way out from the
+// middle, 128 ways a turn from +x toward +z (SkyWorld `haze_inner`).
 uniform vec4 glide_ring = vec4(0.0);
+uniform float glide_ring_inner[128];
 // The build view's mountains (scripts/sky_haze.gd `overview`): the plate's
 // middle (x, z), and the distance from it (m) where its own haze gives way
 // (z) to the ring's skyline curve (w), so ranges a kilometre and more off
@@ -118,7 +121,11 @@ float zs_glide_peak(vec3 point) {
 // world's bounds, all past the ring's start.
 float zs_glide_ring(vec3 point) {
 	if (glide_ring.w <= 0.0) return 0.0;
-	return smoothstep(glide_ring.z, glide_ring.w, length(point.xz - glide_ring.xy));
+	vec2 d = point.xz - glide_ring.xy;
+	float f = fract(atan(d.y, d.x) / 6.28318530718) * 128.0;
+	int i = int(floor(f));
+	float inner = mix(glide_ring_inner[i % 128], glide_ring_inner[(i + 1) % 128], f - float(i));
+	return smoothstep(inner - glide_ring.z, inner + glide_ring.w, length(d));
 }
 
 vec3 zs_surface_haze(vec3 color, vec2 uv) {

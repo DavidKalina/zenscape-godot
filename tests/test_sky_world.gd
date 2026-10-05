@@ -9,11 +9,12 @@ extends SceneTree
 ## and GORGES kept gorges in it; the band's footprints clear of the bounds
 ## (the notches read on the real shapes); the band within BAND_WORLD, far row
 ## within WORLD; the ridges laid keeping every rule, REGIONS regions with
-## the plate's one of them and a pass for every arm, the ridges clear of
+## the plate's one of them and a pass through every wall across the world, the ridges clear of
 ## the plate, the fixed islands and the cumulus in sight of the plate; each
 ## region's cumulus in a region of its own; the plate, the fixed islands and
 ## the wonders in sight of the plate inside the bounds; nothing scattered
-## (islands, islets, cumulus) outside them or on a ridge.
+## (islands, islets, cumulus) outside them (SCATTER, clear of the band's
+## rock) or on a ridge.
 ##
 ## For SHAPED seeds, from the ranges' real shapes (scripts/sky_peak.gd) (the
 ## band's on BAND_SHAPED): the band stands over the glide's ceiling (CEILING) all the way round, its
@@ -53,11 +54,10 @@ const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const SkyHaze = preload("res://scripts/sky_haze.gd")
 const SEEDS := [7,1,99,12345,31337,424242,5,2024]
-## The seeds whose ranges are made for real: the ridges read on all of
-## them, the band on BAND_SHAPED (its notches and saddles fail on 99 and
-## 31337 as laid before the ridges: an open question of the band's own).
+## The seeds whose ranges are made for real: the band and the ridges read
+## on all of them (BAND_SHAPED).
 const SHAPED := [7,12345,99,31337]
-const BAND_SHAPED := [7,12345]
+const BAND_SHAPED := [7,12345,99,31337]
 ## How many regions the ridges cut the middle into (at least, at most).
 const REGIONS := Vector2i(3,5)
 ## The real rock's grid (m) for the regions.
@@ -152,7 +152,7 @@ func _laid_out(s: int) -> void:
 			nearest = minf(nearest,p.length())
 			far = maxf(far,maxf(absf(p.x),absf(p.y)))
 			if r.kind != "far": band_far = maxf(band_far,maxf(absf(p.x),absf(p.y)))
-	check(nearest >= SkyWorld.SCATTER+GAP,"Seed %d: the band's footprints %.0f m out at the nearest (bounds %.0f m)" % [s,nearest,SkyWorld.SCATTER])
+	check(nearest >= SkyWorld.BAND_IN,"Seed %d: the band's footprints %.0f m out at the nearest (its own bound %.0f m)" % [s,nearest,SkyWorld.BAND_IN])
 	check(band_far <= BAND_WORLD and far <= WORLD,"Seed %d: the band within %.0f m (%.0f m), its far row within %.0f m (%.0f m)" % [s,BAND_WORLD,band_far,WORLD,far])
 	_ridges_laid(s)
 
@@ -163,13 +163,13 @@ func _ridges_laid(s: int) -> void:
 	var l := SkyWorld.layout()
 	var regions: Array = l.regions
 	var homes := regions.filter(func(g: Dictionary) -> bool: return g.home)
-	var arms := 0
-	for r: Dictionary in l.ranges:
-		if r.kind == "ridge" and r.role == "knot": arms += 1
+	# Every wall across the world has a pass.
+	var walls := {}
+	for p: Dictionary in l.passes: walls[int(p.get("chord",-1))] = true
 	check(bool(l.kept_rules),"Seed %d: the ridges are laid keeping every rule (try %d)" % [s,int(l.tries)])
 	check(regions.size() >= REGIONS.x and regions.size() <= REGIONS.y and homes.size() == 1,"Seed %d: the ridges cut the middle into %d regions, the plate's one of them (room for islands %s km^2)" % [s,regions.size(),str(regions.map(func(g: Dictionary) -> String: return ("home " if g.home else "")+str(g.area)))])
 	var narrow: Array = l.passes.filter(func(p: Dictionary) -> bool: return float(p.open) < SkyWorld.PASS_OPEN.x-1.0)
-	check(l.passes.size() >= arms+1 and narrow.is_empty(),"Seed %d: a pass through each of the knot's %d arms and by the range in sight of the plate, every one at least %.0f m open (%s m)" % [s,arms,SkyWorld.PASS_OPEN.x,str(l.passes.map(func(p: Dictionary) -> int: return roundi(p.open)))])
+	check(walls.size() == SkyWorld.CHORDS and not walls.has(-1) and narrow.is_empty(),"Seed %d: a pass through each of the %d walls across the world, the one through the range in sight of the plate among them, every one at least %.0f m open (%s m)" % [s,SkyWorld.CHORDS,SkyWorld.PASS_OPEN.x,str(l.passes.map(func(p: Dictionary) -> int: return roundi(p.open)))])
 	var near_plate := INF
 	var near_slot := INF
 	var near_tower := INF
@@ -230,8 +230,8 @@ func _inside() -> void:
 				if found == null: continue
 				counts.island += 1
 				spots.append(["island",found])
-		for x in range(int(-reach/SkyIslets.CELL),int(reach/SkyIslets.CELL)+1,2):
-			for z in range(int(-reach/SkyIslets.CELL),int(reach/SkyIslets.CELL)+1,2):
+		for x in range(int(-reach/SkyIslets.CELL),int(reach/SkyIslets.CELL)+1):
+			for z in range(int(-reach/SkyIslets.CELL),int(reach/SkyIslets.CELL)+1):
 				var found: Variant = islets.spot(Vector2i(x,z))
 				if found == null: continue
 				counts.islet += 1
@@ -244,7 +244,7 @@ func _inside() -> void:
 				spots.append(["tower",found])
 		for sp: Array in spots:
 			var p: Vector3 = sp[1]
-			if Vector2(p.x,p.z).length() > SkyWorld.SCATTER: out += " %s %s;" % sp
+			if Vector2(p.x,p.z).length() > SkyWorld.SCATTER or not SkyWorld.clear_of_band(Vector2(p.x,p.z),SkyWorld.layout().ranges): out += " %s %s;" % sp
 			for r: Dictionary in inner:
 				var room := SkyTowers.KEEP if sp[0] == "tower" else SkyPeaks.INNER_CLEAR
 				if SkyWorld.box_distance(r,Vector2(p.x,p.z)) < room: on += " %s %s;" % sp
@@ -351,7 +351,7 @@ func _band_real(s: int, made: Array) -> void:
 		var c := SkyWorld.crest(angle)
 		var way := Vector2(cos(angle),sin(angle))
 		var top := -INF
-		var r := SkyWorld.SCATTER
+		var r := SkyWorld.BAND_IN-200.0
 		while r <= c+1700.0:
 			var h := rock(made,way*r,band)
 			if h > SkyPeak.SEA: nearest = minf(nearest,r)
@@ -416,7 +416,7 @@ func _band_real(s: int, made: Array) -> void:
 			looked += 1
 			if tops[k] > SkyGlide.FLOOR: shut += 1
 	check(shut == 0 and looked > 0,"Seed %d: every notch is open at glide height across its middle (%d of %d looked at shut)" % [s,shut,looked])
-	check(nearest >= SkyWorld.SCATTER+GAP,"Seed %d: the band's rock stands %.0f m out at the nearest (bounds %.0f m)" % [s,nearest,SkyWorld.SCATTER])
+	check(nearest >= SkyWorld.BAND_IN,"Seed %d: the band's rock stands %.0f m out at the nearest (its own bound %.0f m)" % [s,nearest,SkyWorld.BAND_IN])
 	# The band's tops by kind: massifs over the runs, foothills under them.
 	var by_kind := {}
 	var outlines := {}
@@ -760,6 +760,21 @@ func _haze() -> void:
 	check(across < 0.05,"From one edge, the far side of the band is all but gone (%.1f%% seen)" % (across*100.0))
 	check(SkyWorld.VIEW_FAR > SkyWorld.HAZE_WHOLE,"The glide's view reaches past where the band's haze is whole (%.0f m)" % SkyWorld.VIEW_FAR)
 	# Nothing scattered takes the band's curve: the bounds stand inside it.
-	check(SkyHaze.ring_share(Vector3(SkyWorld.SCATTER+50.0,0.0,0.0),middle) == 0.0 and SkyHaze.ring_share(Vector3(SkyWorld.SCATTER+GAP,0.0,0.0),middle) > 0.0,"The islands' haze keeps to the bounds; the band's rock takes its own")
+	# Nothing scattered takes the band's curve, all the way out to the
+	# bounds; the band's rock does, every way round.
+	var cells := SkyCells.new([Vector3.ZERO])
+	var ringed := 0
+	var looked := 0
+	for x in range(-7,7):
+		for z in range(-7,7):
+			var at: Variant = cells.spot(Vector2i(x,z))
+			if at == null: continue
+			looked += 1
+			if SkyHaze.ring_share(at,middle) > 0.0: ringed += 1
+	var bare := 0
+	for r: Dictionary in SkyWorld.layout().ranges:
+		if r.kind != "run" and r.kind != "massif": continue
+		if SkyHaze.ring_share(r.at,middle) < 1.0: bare += 1
+	check(looked > 20 and ringed == 0 and bare == 0,"The islands' haze keeps to the bounds (%d islands, %d on the band's curve, out to %.0f m); the band's rock takes its own (%d of its ranges' middles not)" % [looked,ringed,SkyWorld.SCATTER,bare])
 	var spot := SkyHaze.ring_spot(Vector3(100.0,0.0,-50.0))
 	check(spot == Vector4(100.0,-50.0,SkyWorld.HAZE_FROM,SkyWorld.HAZE_TO),"The shader is told where the world's middle is now")

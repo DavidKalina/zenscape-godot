@@ -144,9 +144,11 @@ func setup(owner_scene: Node3D) -> void:
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
 	currents.build(slots)
+	# The clouds are laid out with the islands (`build`), once the world's
+	# seed and its mountains are known: never here, where it would wait on
+	# the layout on the main thread.
 	clouds = SkyClouds.new()
 	add_child(clouds)
-	clouds.build(slots)
 	islets = SkyIslets.new()
 	islets.palette_source = editor.data._palette
 	islets.flora_source = editor.content
@@ -173,9 +175,10 @@ func setup(owner_scene: Node3D) -> void:
 func build() -> void:
 	clear()
 	_keep()
-	clouds.reset()
 	var slots := [Vector3.ZERO]
 	slots.append_array(OFFSETS)
+	clouds.build(slots)
+	clouds.reset()
 	cells = SkyCells.new(slots)
 	cells.origin = origin
 	currents.position = origin

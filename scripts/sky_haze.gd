@@ -67,10 +67,10 @@ static func fog_ring(dist: float, y: float) -> float:
 	return 1.0-exp(-reach*reach)*(1.0-smoothstep(RING_WHOLE*0.72,RING_WHOLE,dist))
 
 ## How far onto the ring's curve a point (global) is, the world's middle
-## at `middle` (global): zs_glide_ring.
+## at `middle` (global): zs_glide_ring, by where the band's rock starts
+## each way round (SkyWorld `haze_share`).
 static func ring_share(point: Vector3, middle: Vector3) -> float:
-	if not SkyWorld.ring_on(): return 0.0
-	return smoothstep(SkyWorld.HAZE_FROM,SkyWorld.HAZE_TO,Vector2(point.x-middle.x,point.z-middle.z).length())
+	return SkyWorld.haze_share(Vector2(point.x-middle.x,point.z-middle.z))
 
 ## The same, `far` (0 to 1) of the way onto a range's gentler curve
 ## (zs_glide_fog_far).
@@ -183,6 +183,7 @@ static func publish(amount: float, blend: ShaderMaterial = null, sea := Vector2.
 	for i in range(PEAKS): spots.append(peaks[i] if i < peaks.size() else Vector4.ZERO)
 	blend.set_shader_parameter("glide_peaks",spots)
 	blend.set_shader_parameter("glide_ring",ring)
+	blend.set_shader_parameter("glide_ring_inner",ring_inner())
 
 ## The build view's mountains (shaders/reference_surface_haze.gdshaderinc
 ## overview_far): past OVERVIEW_FROM to OVERVIEW_TO (m) from the plate's
@@ -203,3 +204,13 @@ static func overview(blend: ShaderMaterial, sea: Vector2, middle: Vector3) -> vo
 static func ring_spot(middle: Vector3) -> Vector4:
 	if not SkyWorld.ring_on(): return Vector4.ZERO
 	return Vector4(middle.x,middle.z,SkyWorld.HAZE_FROM,SkyWorld.HAZE_TO)
+
+## Where the band's rock starts round the middle (m, SkyWorld HAZE_ANGLES a
+## turn: glide_ring_inner), once the layout is worked out; far out before.
+static func ring_inner() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(SkyWorld.HAZE_ANGLES)
+	out.fill(1.0e6)
+	if not SkyWorld.ring_on() or not SkyWorld.ready(): return out
+	var inner: PackedFloat32Array = SkyWorld.layout().get("haze_inner",PackedFloat32Array())
+	return inner if inner.size() == SkyWorld.HAZE_ANGLES else out

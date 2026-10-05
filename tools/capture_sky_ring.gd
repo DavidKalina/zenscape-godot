@@ -10,15 +10,18 @@ extends SceneTree
 ##   notch: from inside, near a notch, looking out through it;
 ##   map: straight down over the middle, closer than top, the haze off: the
 ##     ridges dividing the middle into regions, the passes through them;
-##   plate-valley: from the plate at glide height, down the plate's valley
-##     to the pass through a side arm;
-##   pass: from inside one region, at glide height, through a side arm's
-##     pass into the next;
+##   plate-valley: from the plate at glide height, down the plate's region
+##     to the pass through one of the walls across the world;
+##   pass: from inside the plate's region, at glide height, through
+##     another wall's pass into the valley beyond;
 ##   col: through the col by the range in sight of the plate, into the
-##     region behind it;
-##   ridge: beside a side arm at glide height, looking along it from the
-##     knot out to the band;
-##   knot: the knot of peaks from out by the plate;
+##     valley behind it;
+##   ridge: inside the plate's region at glide height, by a wall's middle
+##     (its knot), looking along it out to a corner;
+##   knot: a wall's knot of peaks from out by the plate;
+##   valley-region: down a valley between a wall and the band, at glide
+##     height;
+##   overhead: from high over the plate, out over a wall and its corner;
 ##   approach: a kilometre in from a range of the band, the full range near;
 ##   outside: from out past the ring, looking back in over it.
 ## The eye is held still at each spot (the glide's own stepping is paused),
@@ -62,6 +65,8 @@ func run() -> void:
 	DirAccess.make_dir_recursive_absolute(out)
 	create_timer(900).timeout.connect(func() -> void: push_error("sky ring capture timed out"); quit(2))
 	root.mode = Window.MODE_WINDOWED
+	# Never takes the keyboard: keys meant for another window stay there.
+	root.unfocusable = true
 	root.size = Vector2i(1280,720)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("movie_capture",true)
@@ -119,34 +124,50 @@ func _shots() -> Array:
 	var nw := Vector3(cos(float(n.angle)),0.0,sin(float(n.angle)))
 	var nc := SkyWorld.crest(float(n.angle))
 	shots.append({"label":"notch","eye":nw*(nc-1300.0)+Vector3.UP*60.0,"look":nw*(nc+600.0)+Vector3.UP*20.0})
-	# The dividing ridges (SkyWorld `_ridges`): the passes laid out are the
-	# side arms' first, then the outer arms', then the cols by the range in
-	# sight of the plate.
+	# The walls across the world (SkyWorld `_ridge_plan`): each pass knows
+	# its wall (`chord`, 0 the one through the range in sight of the plate).
 	var passes: Array = layout.passes
 	var knot: Vector3 = layout.knot
-	if not passes.is_empty():
-		# Down the plate's valley to the first side arm's pass.
-		var p0: Dictionary = passes[0]
+	var chords: Array = layout.get("chords",[])
+	var outer: Array = passes.filter(func(p: Dictionary) -> bool: return int(p.get("chord",1)) != 0)
+	var homes: Array = passes.filter(func(p: Dictionary) -> bool: return int(p.get("chord",1)) == 0)
+	if not outer.is_empty():
+		# Down the plate's valley to a wall's pass.
+		var p0: Dictionary = outer[0]
 		var to0: Vector3 = (p0.at as Vector3).normalized()
 		shots.append({"label":"plate-valley","eye":to0*60.0+Vector3.UP*50.0,"look":p0.at+Vector3.UP*35.0,"fov":62.0})
-		# Through the second side arm's pass from the plate's side.
-		var p1: Dictionary = passes[mini(1,passes.size()-1)]
+		# Through another wall's pass from the plate's side.
+		var p1: Dictionary = outer[mini(1,outer.size()-1)]
 		var way1: Vector3 = p1.way
 		if way1.dot(-(p1.at as Vector3)) < 0.0: way1 = -way1
 		shots.append({"label":"pass","eye":p1.at+way1*850.0+Vector3.UP*55.0,"look":p1.at-way1*900.0+Vector3.UP*30.0})
+	if not homes.is_empty():
 		# Through a col by the range in sight of the plate.
-		var col: Dictionary = passes[-1]
+		var col: Dictionary = homes[0]
 		var wayc: Vector3 = col.way
 		if wayc.dot(-(col.at as Vector3)) < 0.0: wayc = -wayc
 		shots.append({"label":"col","eye":col.at+wayc*800.0+Vector3.UP*55.0,"look":col.at-wayc*900.0+Vector3.UP*30.0,"golden":false})
-		# Along a side arm from beside the knot, out to the band.
-		var along: Vector3 = (p0.at-knot).normalized()
-		var side := along.cross(Vector3.UP)
-		if side.dot(-knot) < 0.0: side = -side
-		shots.append({"label":"ridge","eye":knot+side*650.0-along*250.0+Vector3.UP*60.0,"look":knot+along*2200.0+side*250.0+Vector3.UP*80.0,"fov":62.0})
-		# The knot from out by the plate.
+	if chords.size() > 1:
+		# Along a wall from inside the plate's region, by its middle (the
+		# knot), out to a corner.
+		var c: Dictionary = chords[1]
+		var mid: Vector3 = c.at
+		var along: Vector3 = c.along
+		var inward: Vector3 = -mid.normalized()
+		shots.append({"label":"ridge","eye":mid+inward*700.0-along*500.0+Vector3.UP*60.0,"look":mid+along*2200.0+Vector3.UP*80.0,"fov":62.0})
 		shots.append({"label":"knot","eye":knot.normalized()*80.0+Vector3.UP*45.0,"look":knot+Vector3.UP*120.0,"golden":false})
-	var r: Dictionary = layout.ranges[layout.ranges.size()/2]
+		# Down a valley between a wall and the band, at glide height.
+		for g: Dictionary in layout.regions:
+			if g.home: continue
+			var heart: Vector3 = g.at
+			var round := Vector3(-heart.z,0.0,heart.x).normalized()
+			shots.append({"label":"valley-region","eye":heart-round*700.0+Vector3.UP*55.0,"look":heart+round*1500.0+Vector3.UP*40.0,"fov":64.0})
+			break
+	# The walls from high over the plate, looking out over a corner.
+	shots.append({"label":"overhead","eye":Vector3(0.0,1500.0,1.0)-knot.normalized()*900.0,"look":knot*1.6,"haze":true,"golden":false,"fov":66.0})
+	# A range of the band's (its runs and massifs, halfway round them).
+	var band: Array = layout.ranges.filter(func(q: Dictionary) -> bool: return q.kind == "run" or q.kind == "massif")
+	var r: Dictionary = band[band.size()/2]
 	var rw := Vector3(r.at.x,0.0,r.at.z).normalized()
 	shots.append({"label":"approach","eye":r.at-rw*1100.0+Vector3.UP*70.0,"look":r.at+Vector3.UP*150.0})
 	var o: Dictionary = layout.ranges[1]
@@ -177,8 +198,13 @@ func _hold(shot: Dictionary, hour: float, count: int) -> void:
 		if painted: scene._environment.sky.sky_material.set_shader_parameter("sea_peaks",1.0)
 		eye.sky.advance(delta,at,0.0)
 		eye.islands.advance(delta,at,glide.heading,0.0)
-		# The ranges near the eye made in full at once.
-		if i == 1: eye.islands.peaks.flush()
+		# The ranges near the eye made in full at once: surveyed here and now
+		# (SkyPeaks surveys every CHECK seconds), then waited for.
+		if i == 1:
+			var peaks: Node3D = eye.islands.peaks
+			peaks._since = peaks.CHECK
+			peaks.advance(0.0,at)
+			peaks.flush()
 		var o := at-look
 		scene.target = look
 		scene.distance = maxf(o.length(),0.01)
