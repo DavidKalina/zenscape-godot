@@ -1,4 +1,5 @@
 extends Node3D
+const Plate = preload("res://scripts/plate.gd")
 ## Source weather.js strike timing and wind.js downburst, native tube/light rendering.
 signal thunder(distance: float, energy: float)
 signal struck(point: Vector3)
@@ -46,7 +47,7 @@ func strike(at: Vector2, camera_position: Vector3) -> void:
 	for child in _bolts.get_children():
 		_bolts.remove_child(child)
 		child.queue_free()
-	var height = _ground.height_at(clampf(at.x, -14, 14), clampf(at.y, -14, 14))
+	var height = _ground.height_at(clampf(at.x, -Plate.HALF, Plate.HALF), clampf(at.y, -Plate.HALF, Plate.HALF))
 	var gy: float = height if height != null else 0.15
 	var main := _jagged(at, 22.0, gy, 28.0 * 0.22)
 	_add_tube(main, 0.055)
@@ -75,7 +76,7 @@ func advance(dt: float, paused: bool, storm: float, wind: float, direction: Vect
 	if storm > 0.01:
 		next_strike -= dt * (0.12 + storm * 0.9)
 		if next_strike <= 0.0:
-			strike(Vector2(_rng.randf_range(-14, 14), _rng.randf_range(-14, 14)), camera_position)
+			strike(Vector2(_rng.randf_range(-Plate.HALF, Plate.HALF), _rng.randf_range(-Plate.HALF, Plate.HALF)), camera_position)
 			next_strike = 5.0 + _rng.randf() * 25.0 * (1.05 - storm)
 	var clap_dt := dt
 	if _clap_at >= 0.0 and clock >= _clap_at:

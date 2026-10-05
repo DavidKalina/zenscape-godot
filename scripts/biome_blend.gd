@@ -16,12 +16,13 @@ extends RefCounted
 ## soft in hundredths), so a saved recipe replays exactly after JSON. Recipes
 ## without `blend`, which is every save from before this, dress as they always
 ## did. The generator derives the blend from the terrain seed (`plan`).
+const Plate = preload("res://scripts/plate.gd")
 const Genome = preload("res://scripts/inland_genome.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const RULES := ["moist","high","low","facing"]
 const MAX_LAYERS := 2
-## One-metre cells across the 28 m plate.
-const CELLS := 28
+## One-metre cells across the plate (28 on the 28 m plate).
+const CELLS := Plate.COARSE_CELLS
 const JITTER := 0.08
 ## Metres. Woodland below alpine ground stays under the rock band, which the
 ## mesh paints from 1.8 m below the alpine snowline.
@@ -117,12 +118,12 @@ func copy_onto(sampler: RefCounted) -> RefCounted:
 
 ## Re-read the cells under `rect` (plate metres) after an edit. Sampling is
 ## the only per-cell cost; altitude, water distance and weights are rederived
-## across the 28×28 grid, which is cheap and keeps the chamfer exact.
+## across the CELLS×CELLS grid, which is cheap and keeps the chamfer exact.
 func refresh_rect(rect: Rect2) -> void:
 	if _sampler.has_method("refresh"): _sampler.refresh()
 	var area := rect.grow(1.0)
-	for z in range(clampi(int(floor(area.position.y+14.0)),0,CELLS),clampi(int(ceil(area.end.y+14.0)),0,CELLS)):
-		for x in range(clampi(int(floor(area.position.x+14.0)),0,CELLS),clampi(int(ceil(area.end.x+14.0)),0,CELLS)):
+	for z in range(clampi(int(floor(area.position.y+Plate.HALF)),0,CELLS),clampi(int(ceil(area.end.y+Plate.HALF)),0,CELLS)):
+		for x in range(clampi(int(floor(area.position.x+Plate.HALF)),0,CELLS),clampi(int(ceil(area.end.x+Plate.HALF)),0,CELLS)):
 			_read(z*CELLS+x)
 	_derive()
 	if not biomes.is_empty(): apply(biomes[0],layers)
@@ -130,7 +131,7 @@ func refresh_rect(rect: Rect2) -> void:
 func _read(i: int) -> void:
 	var p := _center(i%CELLS,i/CELLS)
 	_heights[i] = _sampler.height(p.x,p.y)
-	_land[i] = 1 if maxf(absf(p.x),absf(p.y))<12.5 and Genome.has_ground(_genome,p) else 0
+	_land[i] = 1 if maxf(absf(p.x),absf(p.y))<Plate.HALF-1.5 and Genome.has_ground(_genome,p) else 0
 	_jitter[i] = _noise.get_noise_2d(p.x,p.y)*JITTER
 	_wet[i] = 1 if _sampler.wet(p) else 0
 
@@ -174,7 +175,7 @@ func _derive() -> void:
 			_facing[i] = -gradient.normalized()*steep if gradient.length()>0.0001 else Vector2.ZERO
 
 static func _center(x: int,z: int) -> Vector2:
-	return Vector2(-14.0+x+0.5,-14.0+z+0.5)
+	return Vector2(-Plate.HALF+x+0.5,-Plate.HALF+z+0.5)
 
 func _signal(rule: String,i: int,turn: int) -> float:
 	match rule:
@@ -217,7 +218,7 @@ func apply(base: String,blend: Array) -> void:
 	for j in range(biomes.size()): shares[j] /= maxf(1.0,float(land_count))
 
 func _bilinear(values: PackedFloat32Array,p: Vector2) -> float:
-	var g := p+Vector2(14.0-0.5,14.0-0.5)
+	var g := p+Vector2(Plate.HALF-0.5,Plate.HALF-0.5)
 	var x0 := clampi(int(floor(g.x)),0,CELLS-1)
 	var z0 := clampi(int(floor(g.y)),0,CELLS-1)
 	var x1 := mini(x0+1,CELLS-1)
@@ -371,8 +372,8 @@ static func title(settings: Dictionary) -> String:
 ## are rasterised once per refresh onto a 0.25 m lattice rather than tested
 ## triangle by triangle for every cell.
 class LiveGround extends RefCounted:
-	const STEP := 0.25
-	const SIDE := 112
+	const STEP := Plate.FINE_STEP
+	const SIDE := Plate.FINE_CELLS
 	var data: NativeTerrainData
 	## A recipe world's pond impacts and colour ramp, when `data` is a detached
 	## copy without the recipe (NativeRecipeWater.build's `prepared`).
@@ -391,16 +392,16 @@ class LiveGround extends RefCounted:
 				var a := Vector2(surface[t].x,surface[t].z)
 				var b := Vector2(surface[t+1].x,surface[t+1].z)
 				var c := Vector2(surface[t+2].x,surface[t+2].z)
-				var lo := (a.min(b).min(c)+Vector2(14,14))/STEP
-				var hi := (a.max(b).max(c)+Vector2(14,14))/STEP
+				var lo := (a.min(b).min(c)+Vector2.ONE*Plate.HALF)/STEP
+				var hi := (a.max(b).max(c)+Vector2.ONE*Plate.HALF)/STEP
 				for z in range(clampi(int(floor(lo.y)),0,SIDE),clampi(int(ceil(hi.y))+1,0,SIDE)):
 					for x in range(clampi(int(floor(lo.x)),0,SIDE),clampi(int(ceil(hi.x))+1,0,SIDE)):
-						if Geometry2D.point_is_inside_triangle(Vector2(x,z)*STEP-Vector2(14,14),a,b,c): _water[z*SIDE+x] = 1
+						if Geometry2D.point_is_inside_triangle(Vector2(x,z)*STEP-Vector2.ONE*Plate.HALF,a,b,c): _water[z*SIDE+x] = 1
 	func height(x: float,z: float) -> float:
 		var h: Variant = data.height_at(x,z)
 		return float(h) if h != null else 0.0
 	func wet(p: Vector2) -> bool:
-		var g := ((p+Vector2(14,14))/STEP).round()
+		var g := ((p+Vector2.ONE*Plate.HALF)/STEP).round()
 		var x := clampi(int(g.x),0,SIDE-1)
 		var z := clampi(int(g.y),0,SIDE-1)
 		if _water[z*SIDE+x]==1: return true

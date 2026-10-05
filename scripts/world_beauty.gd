@@ -3,7 +3,9 @@ extends RefCounted
 ## Pure CPU work on the inland sampler, so the generator can run it on a worker.
 ## Each term lies in 0..1; `total` is their weighted sum.
 const Desert = preload("res://scripts/desert_landscape.gd")
-const HALF := 13.0
+const Plate = preload("res://scripts/plate.gd")
+## Samples the land a metre inside the plate's rim.
+const HALF := Plate.HALF-1.0
 const STEP := 1.0
 const COLUMNS := 32
 # The overview framing in studies/diorama.gd `_frame_diorama`, at a typical fitted distance.
@@ -43,7 +45,7 @@ static func score(field: RefCounted) -> Dictionary:
 	var top: float = sorted[-1]
 	# The same plate with no relief: its far edge is the skyline to beat.
 	var flat := PackedVector2Array()
-	for p in [Vector2(-14,-14),Vector2(14,-14),Vector2(14,14),Vector2(-14,14)]:
+	for p in [Vector2(-Plate.HALF,-Plate.HALF),Vector2(Plate.HALF,-Plate.HALF),Vector2(Plate.HALF,Plate.HALF),Vector2(-Plate.HALF,Plate.HALF)]:
 		flat.append(_project(eye,view,Vector3(p.x,median,p.y)))
 	var left := INF
 	var right := -INF

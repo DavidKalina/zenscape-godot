@@ -1,5 +1,6 @@
 class_name NativeTerrainData
 extends RefCounted
+const Plate = preload("res://scripts/plate.gd")
 ## History-only companion state never enters terrain worker snapshots.
 signal stroke_starting
 signal history_captured(state: Dictionary)
@@ -25,8 +26,8 @@ const SLAB_BASE := -8.3
 const MAX_HEIGHT := 64.0
 const MAX_EXPLOSIVES := 32
 const ASSETS := ["explosive","cactus","joshua","layered_tree","redwood","fern","leaf_bed","tree","rock","flower","arch","bigfoot_tree","waterfall","broadleaf","shrub","reeds","bank_grass","button_flower","spike_flower","umbel_flower","daisy_flower","grass_tuft","log","stump","snag","mushroom","boulder_1","boulder_2","boulder_3","boulder_4","birch","willow","juniper","oxeye_daisy","buttercup","dandelion","dandelion_clock","cosmos","sunflower","poppy","lupine","stone_lamp","bridge","wheat","campfire","cabin"]
-const MEADOW_CELLS := 56
-const MEADOW_STEP := 0.5
+const MEADOW_CELLS := Plate.COVER_CELLS
+const MEADOW_STEP := Plate.COVER_STEP
 var meadow := PackedFloat32Array()
 var grass := PackedFloat32Array()
 var blades := PackedFloat32Array()
@@ -260,7 +261,7 @@ func setup(mesh: ArrayMesh, arrays: Array = []) -> void:
 				if neighbor != id and neighbor not in _neighbors[id]:
 					_neighbors[id].append(neighbor)
 		_face_margin = maxf(_face_margin,(high-low).length())
-		_face_rim.append(1 if maxf(absf(low.x),maxf(absf(low.y),maxf(absf(high.x),absf(high.y)))) > 13.9999 else 0)
+		_face_rim.append(1 if maxf(absf(low.x),maxf(absf(low.y),maxf(absf(high.x),absf(high.y)))) > Plate.RIM else 0)
 		for z in range(floori(low.y/2), floori(high.y/2)+1):
 			for x in range(floori(low.x/2), floori(high.x/2)+1):
 				var key := Vector2i(x,z)
@@ -352,7 +353,7 @@ func has_land(p: Vector2) -> bool:
 ## The point on the island's land nearest `p`, at least `inset` metres inside
 ## the shore, or Vector2.INF if none lies within `reach`. `p` itself if it
 ## qualifies; every point on a full square.
-func nearest_land(p: Vector2, inset := 0.0, reach := 28.0) -> Vector2:
+func nearest_land(p: Vector2, inset := 0.0, reach := Plate.SIZE) -> Vector2:
 	if outline.is_empty(): return p
 	if _standing(p,inset): return p
 	var ring := 0.2
@@ -678,7 +679,7 @@ func redo() -> bool:
 	return true
 
 func meadow_cell(point: Vector2) -> int:
-	var grid := (point+Vector2(14,14))/MEADOW_STEP
+	var grid := (point+Vector2.ONE*Plate.HALF)/MEADOW_STEP
 	return clampi(int(grid.y),0,MEADOW_CELLS-1)*MEADOW_CELLS+clampi(int(grid.x),0,MEADOW_CELLS-1)
 
 func ground_coverage(point: Vector2) -> float:
@@ -725,7 +726,7 @@ func build_mesh_budgeted(force := false, frame_tree: SceneTree = null) -> ArrayM
 		water_field = _shore_field
 		_shore_changed = false
 		# A full rebuild, such as a recipe's first sculpt, owes the whole chunk.
-		var owed: Rect2 = region if region != null else Rect2(-16,-16,32,32)
+		var owed: Rect2 = region if region != null else Rect2(-Plate.MAP_HALF,-Plate.MAP_HALF,Plate.MAP_HALF*2.0,Plate.MAP_HALF*2.0)
 		_shore_debt = owed if _shore_debt == null else _shore_debt.merge(owed)
 	else:
 		water_field = _shoreline_field(region) if blank else {}
@@ -937,8 +938,8 @@ func discard_cache() -> void:
 func water_reaches(region: Rect2) -> bool:
 	if not _shore_ready:
 		return true
-	var first := (region.position+Vector2(14,14))/NativeRecipeWater.CELL
-	var last := (region.end+Vector2(14,14))/NativeRecipeWater.CELL
+	var first := (region.position+Vector2.ONE*Plate.HALF)/NativeRecipeWater.CELL
+	var last := (region.end+Vector2.ONE*Plate.HALF)/NativeRecipeWater.CELL
 	for j in range(maxi(0,ceili(first.y)),mini(NativeRecipeWater.W-1,floori(last.y))+1):
 		for i in range(maxi(0,ceili(first.x)),mini(NativeRecipeWater.W-1,floori(last.x))+1):
 			if _shore_mask[j*NativeRecipeWater.W+i] == 1:
@@ -1057,8 +1058,8 @@ func _shoreline_mask(field: Dictionary) -> PackedByteArray:
 				for i in range(maxi(0,k%side-1),mini(side-1,k%side+1)+1):
 					mask[j*side+i] = 1
 	for pond in ponds:
-		var seed_x := int(floor((float(pond.x)+14.0)/NativeRecipeWater.CELL+0.5))
-		var seed_z := int(floor((float(pond.z)+14.0)/NativeRecipeWater.CELL+0.5))
+		var seed_x := int(floor((float(pond.x)+Plate.HALF)/NativeRecipeWater.CELL+0.5))
+		var seed_z := int(floor((float(pond.z)+Plate.HALF)/NativeRecipeWater.CELL+0.5))
 		for j in range(maxi(0,seed_z-1),mini(side-1,seed_z+1)+1):
 			for i in range(maxi(0,seed_x-1),mini(side-1,seed_x+1)+1):
 				mask[j*side+i] = 1
@@ -1154,7 +1155,7 @@ func _ensure_face_probes() -> void:
 	_face_probe.clear()
 	for face in range(_face_center.size()):
 		for offset: Vector2 in [Vector2(0.25,0),Vector2(-0.25,0),Vector2(0,0.25),Vector2(0,-0.25)]:
-			var point := (_face_center[face]+offset).clamp(Vector2(-14,-14),Vector2(14,14))
+			var point := (_face_center[face]+offset).clamp(-Vector2.ONE*Plate.HALF,Vector2.ONE*Plate.HALF)
 			var slot: int = _locate_cache.get(point,-1)
 			if slot < 0:
 				slot = _locate_face.size()
@@ -1174,7 +1175,7 @@ func _probe_delta(slot: int) -> float:
 	return (u*heights[a]+v*heights[b]+(1.0-u-v)*heights[c])-(u*_recipe_heights[a]+v*_recipe_heights[b]+(1.0-u-v)*_recipe_heights[c])
 
 func _sculpt_delta(point: Vector2) -> float:
-	point = point.clamp(Vector2(-14,-14),Vector2(14,14))
+	point = point.clamp(-Vector2.ONE*Plate.HALF,Vector2.ONE*Plate.HALF)
 	return float(sample(point,heights))-float(sample(point,_recipe_heights))
 
 func form_range(height_scale := 1.0, width_scale := 1.0, heading := 0.0, variation := 0, frame_tree: SceneTree = null) -> void:
@@ -1244,7 +1245,7 @@ func meadow_step() -> float:
 	return MEADOW_STEP
 
 func meadow_position(x: int, z: int) -> Vector2:
-	return Vector2(x,z)*MEADOW_STEP-Vector2(14,14)
+	return Vector2(x,z)*MEADOW_STEP-Vector2.ONE*Plate.HALF
 
 func ground_height(point: Vector2) -> Variant:
 	return height_at(point.x,point.y)
@@ -1407,7 +1408,7 @@ func update_object(id: int, changes: Dictionary) -> bool:
 			candidate.erase(key)
 		else:
 			candidate[key] = value
-	if not GardenData._number(candidate.x,-14,14) or not GardenData._number(candidate.z,-14,14):
+	if not GardenData._number(candidate.x,-Plate.HALF,Plate.HALF) or not GardenData._number(candidate.z,-Plate.HALF,Plate.HALF):
 		return false
 	if sample(Vector2(candidate.x,candidate.z),heights) == null or (candidate.asset != "log" and ground_height(Vector2(candidate.x,candidate.z)) == null):
 		return false
@@ -1671,7 +1672,7 @@ func load_document(document: Variant) -> bool:
 		if not records is Array or records.size() > (GardenData.MAX_OBJECTS if field == "objects" else GardenData.MAX_PONDS):
 			return false
 		for item: Variant in records:
-			if not item is Dictionary or not GardenData._number(item.get("x"),-14,14) or not GardenData._number(item.get("z"),-14,14):
+			if not item is Dictionary or not GardenData._number(item.get("x"),-Plate.HALF,Plate.HALF) or not GardenData._number(item.get("z"),-Plate.HALF,Plate.HALF):
 				return false
 			var point := Vector2(item.x,item.z)
 			if sample(point,heights) == null:
@@ -1683,7 +1684,7 @@ func load_document(document: Variant) -> bool:
 				if not GardenData._number(item.get("angle"),-TAU*100,TAU*100) or not GardenData._number(item.get("scale"),0.1,5.0):
 					return false
 				if item.asset in ["waterfall","bridge"]:
-					if not GardenData._number(item.get("end_x"),-14,14) or not GardenData._number(item.get("end_z"),-14,14):
+					if not GardenData._number(item.get("end_x"),-Plate.HALF,Plate.HALF) or not GardenData._number(item.get("end_z"),-Plate.HALF,Plate.HALF):
 						return false
 					var endpoint := Vector2(item.end_x,item.end_z)
 					if sample(endpoint,heights) == null or endpoint.distance_to(point) < 0.5:
@@ -1719,7 +1720,7 @@ func load_document(document: Variant) -> bool:
 				if item.has("basin"):
 					if not item.basin is Array or item.basin.size()!=2: return false
 					for radius in item.basin:
-						if not GardenData._number(radius,0.1,14.0): return false
+						if not GardenData._number(radius,0.1,Plate.HALF): return false
 					record.basin = item.basin.duplicate()
 			loaded[field].append(record)
 	if loaded.objects.filter(func(item: Dictionary) -> bool: return item.asset == "explosive").size() > MAX_EXPLOSIVES: return false
@@ -1758,7 +1759,7 @@ func fill_landscape_streams() -> bool:
 	return true
 
 func stream_ground_height(x: float,z: float) -> float:
-	var p:=Vector2(x,z).clamp(Vector2(-14,-14),Vector2(14,14))
+	var p:=Vector2(x,z).clamp(-Vector2.ONE*Plate.HALF,Vector2.ONE*Plate.HALF)
 	if _recipe==null: return float(height_at(p.x,p.y))
 	return _recipe_height(x,z)+(_sculpt_delta(p) if heights!=_recipe_heights else 0.0)
 

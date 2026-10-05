@@ -1,4 +1,6 @@
 extends Node3D
+const Plate = preload("res://scripts/plate.gd")
+const Geology = preload("res://scripts/native_geology_samples.gd")
 ## Shared, saved atmosphere and geology for editor worlds and title covers.
 const LIMITS := {"fog_density":[0.0,1.8],"fog_height":[1.5,14.0],"peak_density":[0.0,0.7],"peak_altitude":[2.0,24.0],"rock_style":[0,2],"rock_detail":[0.0,1.0]}
 var fog_density := 0.0
@@ -53,9 +55,9 @@ func _volume(shader: Shader, extent: Vector3) -> FogVolume:
 	return volume
 func sync(scene: Node3D) -> void:
 	if _fog == null:
-		_fog = _volume(preload("res://shaders/living_fog.gdshader"),Vector3(28,24,28))
+		_fog = _volume(preload("res://shaders/living_fog.gdshader"),Vector3(Plate.SIZE,24,Plate.SIZE))
 		_fog.position.y = 10.0
-		_peaks = _volume(preload("res://shaders/peak_clouds.gdshader"),Vector3(28,7,28))
+		_peaks = _volume(preload("res://shaders/peak_clouds.gdshader"),Vector3(Plate.SIZE,7,Plate.SIZE))
 	_fog.visible = fog_density>0.0
 	_peaks.visible = peak_density>0.0
 	_peaks.position.y = peak_altitude
@@ -82,10 +84,10 @@ func sync(scene: Node3D) -> void:
 			# Canonical recipe preparation publishes this CPU image with its
 			# height tables. Retain the old loop for hand-constructed providers.
 			if image == null:
-				image = Image.create(128,128,false,Image.FORMAT_RGBA8)
-				for z in range(128):
-					for x in range(128):
-						var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-14.0+(x+0.5)*28.0/128.0,-14.0+(z+0.5)*28.0/128.0))
+				image = Image.create(Geology.SIZE,Geology.SIZE,false,Image.FORMAT_RGBA8)
+				for z in range(Geology.SIZE):
+					for x in range(Geology.SIZE):
+						var field: Vector3 = preload("res://scripts/desert_landscape.gd").field(_genome,Vector2(-Plate.HALF+(x+0.5)*Plate.SIZE/float(Geology.SIZE),-Plate.HALF+(z+0.5)*Plate.SIZE/float(Geology.SIZE)))
 						image.set_pixel(x,z,Color(field.y,field.z,0,1))
 			_geology = ImageTexture.create_from_image(image)
 	var material: ShaderMaterial = scene._chunk_editor.terrain.get_active_material(0)

@@ -1,4 +1,5 @@
 extends Node3D
+const Plate = preload("res://scripts/plate.gd")
 ## One moving air field drives vegetation, water, fog and waterfall mist.
 
 var native_volume := true
@@ -120,7 +121,7 @@ func update_ground_bounds(terrain: MeshInstance3D, use_reference_bounds := false
 		_ground_min = reference.uGroundRange[0]
 	var fog := get_node_or_null("ValleyFog") as FogVolume
 	if fog != null:
-		fog.size = Vector3(28.0, _summit.y - _ground_min + 10.0, 28.0)
+		fog.size = Vector3(Plate.SIZE, _summit.y - _ground_min + 10.0, Plate.SIZE)
 		fog.position = Vector3(0.0, _ground_min - 0.5 + fog.size.y * 0.5, 0.0)
 		_fog_material.set_shader_parameter("floor_height", _ground_min)
 	_publish_wind()
@@ -229,7 +230,7 @@ func _add_fog() -> void:
 	var fog := FogVolume.new()
 	fog.name = "ValleyFog"
 	fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
-	fog.size = Vector3(28.0, _summit.y - _ground_min + 10.0, 28.0)
+	fog.size = Vector3(Plate.SIZE, _summit.y - _ground_min + 10.0, Plate.SIZE)
 	fog.position = Vector3(0.0, _ground_min - 0.5 + fog.size.y * 0.5, 0.0)
 	fog.material = _fog_material
 	add_child(fog)

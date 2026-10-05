@@ -1,4 +1,5 @@
 extends RefCounted
+const Plate = preload("res://scripts/plate.gd")
 ## Upgrade legacy reference scenery into ordinary saved object records once.
 ## Individual source parts are suppressed only after a replacement is accepted.
 const GROUPS := {
@@ -32,7 +33,7 @@ static func migrate(editor: NativeChunkEditor) -> bool:
 			var record_pose: Transform3D = editor.terrain.global_transform.affine_inverse()*source_pose*pivot.affine_inverse()
 			var point := Vector2(record_pose.origin.x,record_pose.origin.z)
 			var ground: Variant = editor.data.ground_height(point)
-			if ground == null or absf(point.x)>14.0 or absf(point.y)>14.0: continue
+			if ground == null or absf(point.x)>Plate.HALF or absf(point.y)>Plate.HALF: continue
 			var pose := NativeObjectPose.make(record_pose.basis,record_pose.origin.y-ground)
 			var color_node: Node3D = reference.get_node(names[-1])
 			var tint := ""

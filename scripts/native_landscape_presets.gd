@@ -1,6 +1,7 @@
 extends RefCounted
 ## Curated worlds pair editable composition and biome with an authored mood. All ground,
 ## planting and water use the ordinary editable, undoable garden records.
+const Plate = preload("res://scripts/plate.gd")
 const Shape = preload("res://scripts/native_formation_shape.gd")
 const PRESETS := {
 	"redwood_grove":{"title":"Redwood Grove","family":"redwood_grove","biome":"redwood","palette":"Hollow","description":"Tall redwoods, fern-filled hollows and low drifting forest mist."},
@@ -78,7 +79,7 @@ static func dress(data: NativeTerrainData,tree: SceneTree = null) -> void:
 			if z%4 == 0: await budget.checkpoint()
 			for x in range(data.MEADOW_CELLS):
 				var p := data.meadow_position(x,z)+Vector2.ONE*0.25
-				if maxf(absf(p.x),absf(p.y))>11.0 or _wet(data,p) or _slope(data,p)>0.65: continue
+				if maxf(absf(p.x),absf(p.y))>Plate.HALF-3.0 or _wet(data,p) or _slope(data,p)>0.65: continue
 				if data.ground_height(p)>minf(b.treeline,b.snowline-1.0): continue
 				if data._recipe.source.noise_at(p.x*0.4,p.y*0.4)>0.42:
 					data.blades[z*data.MEADOW_CELLS+x] = 0.28
@@ -90,7 +91,7 @@ static func dress(data: NativeTerrainData,tree: SceneTree = null) -> void:
 	# enough to read the water and silhouette from the default viewing angle.
 	for i in range(1500):
 		if i%32 == 0: await budget.checkpoint()
-		var p := Vector2(rng.randf_range(-11.2,11.2),rng.randf_range(-10.8,10.8))
+		var p := Vector2(rng.randf_range(-(Plate.HALF-2.8),Plate.HALF-2.8),rng.randf_range(-(Plate.HALF-3.2),Plate.HALF-3.2))
 		var h: float = data.ground_height(p)
 		var slope := _slope(data,p)
 		if h > b.treeline or slope > 1.0 or _wet(data,p): continue
@@ -114,7 +115,7 @@ static func dress(data: NativeTerrainData,tree: SceneTree = null) -> void:
 		if occupied.size() >= b.trees: break
 	for i in range(340):
 		if i%32 == 0: await budget.checkpoint()
-		var p := Vector2(rng.randf_range(-11.5,11.5),rng.randf_range(-11.0,11.0))
+		var p := Vector2(rng.randf_range(-(Plate.HALF-2.5),Plate.HALF-2.5),rng.randf_range(-(Plate.HALF-3.0),Plate.HALF-3.0))
 		var h: float = data.ground_height(p)
 		if h > b.snowline-0.7 or _slope(data,p)>1.2 or _wet(data,p): continue
 		var kind := "grass_tuft"

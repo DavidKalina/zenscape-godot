@@ -1,4 +1,5 @@
 extends RefCounted
+const Plate = preload("res://scripts/plate.gd")
 ## Large silhouettes first, surface detail second. Inspired by the original
 ## landforms.js / world.js profiles; water bowls are part of the same ground.
 const FAMILIES := ["redwood_grove","valley","plateau","cone","ridgeback","horn","canyon","terraced_pools"]
@@ -91,7 +92,7 @@ func raw_height(x: float,z: float) -> float:
 		if r < 1.6:
 			var bowl: float = pool.level-1.1+1.5*smoothstep(0.48,1.02,r)
 			h = lerpf(bowl,h,smoothstep(1.2,1.6,r))
-	var rim := 1.0-smoothstep(11.3,14.0,maxf(absf(x),absf(z)))
+	var rim := 1.0-smoothstep(Plate.HALF-2.7,Plate.HALF,maxf(absf(x),absf(z)))
 	return 0.6+(h-0.6)*rim
 
 func pools() -> Array:

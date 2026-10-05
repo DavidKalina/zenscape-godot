@@ -1,8 +1,8 @@
 extends RefCounted
 ## Genome version 7 terrain detail: ridged, domain-warped noise on the slopes,
 ## then stream-power erosion down a drainage tree with sediment settling where
-## the flow slackens. The result is a height delta on a 41x41 grid (0.7 m cells,
-## about the terrain mesh spacing)
+## the flow slackens. The result is a height delta on a SIZE x SIZE grid (0.7 m
+## cells, about the terrain mesh spacing; 41x41 on the 28 m plate)
 ## added to the analytic genome height before water is carved.
 ##
 ## The native kernel (`ZenScapeTerrainKernels.erode`) does the work when built.
@@ -10,9 +10,10 @@ extends RefCounted
 ## unbuilt checkouts grow the same world. Both use only + - * / sqrt floor on
 ## doubles and 64-bit integer hashing, so no platform's libm can change a seed.
 const Genome = preload("res://scripts/inland_genome.gd")
-const SIZE := 41
-const CELL := 0.7
-const ORIGIN := -14.0
+const Plate = preload("res://scripts/plate.gd")
+const SIZE := Plate.EROSION_POINTS
+const CELL := Plate.EROSION_STEP
+const ORIGIN := -Plate.HALF
 const CACHE_LIMIT := 8
 static var _cache := {}
 static var _order: Array = []
@@ -43,7 +44,7 @@ static func params(genome: Dictionary) -> Dictionary:
 	return {"size":SIZE,"cell":CELL,"origin":ORIGIN,"seed":int(genome.noise_seed)&0xffffffff,
 		"detail":float(family.detail)*relief,"frequency":0.16/float(genome.breadth),"warp":1.3,"slope_ref":1.2,
 		"iterations":20,"k":float(family.k),"channel_area":4.0,"jitter":0.6,"max_cut":float(family.max_cut)*relief,"deposit":float(family.deposit),
-		"deposit_slope":0.35,"deposit_cap":0.06,"edge_inner":10.8,"edge_outer":12.6}
+		"deposit_slope":0.35,"deposit_cap":0.06,"edge_inner":Plate.HALF-3.2,"edge_outer":Plate.HALF-1.4}
 
 ## Delta grid for a genome, or an empty array when the family is not eroded.
 ## Parallel recipe workers build the same world at once; the first computes,
