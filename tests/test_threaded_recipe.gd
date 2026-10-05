@@ -77,7 +77,7 @@ func run() -> void:
 	var expected_water := PackedFloat64Array()
 	for z in range(NativeRecipeWater.W):
 		for x in range(NativeRecipeWater.W):
-			expected_water.append(data._recipe.height(-Plate.HALF+x*NativeRecipeWater.CELL,-Plate.HALF+z*NativeRecipeWater.CELL))
+			expected_water.append(data._recipe.height(-NativeRecipeWater.HALF+x*NativeRecipeWater.CELL,-NativeRecipeWater.HALF+z*NativeRecipeWater.CELL))
 	check(data._water_grid_h.to_byte_array() == expected_water.to_byte_array(),"Worker pond grid retains exact double precision")
 	# Cancel while the finite worker is still running. Even the cached empty
 	# recipe must supersede it, and the public formation caller must not apply it.

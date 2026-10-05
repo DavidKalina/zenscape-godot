@@ -48,6 +48,7 @@ static func shade_inputs(data: NativeTerrainData, sculpted: bool, has_recipe: bo
 	# The plate's reach and the grids' sizes; a library built before these keys
 	# existed ignores them and shades the 28 m plate.
 	inputs.plate_half = Plate.HALF
+	inputs.water_half = NativeRecipeWater.HALF
 	inputs.water_cells = NativeRecipeWater.N
 	inputs.meadow_cells = NativeTerrainData.MEADOW_CELLS
 	inputs.meadow_step = NativeTerrainData.MEADOW_STEP

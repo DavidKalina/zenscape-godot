@@ -40,7 +40,7 @@ static func build(settings: Dictionary, points: PackedVector2Array, face_x: Pack
 		if prepare_water:
 			for z in range(water_begin,water_end):
 				for x in range(NativeRecipeWater.W):
-					water.append(height(recipe,-Plate.HALF+x*NativeRecipeWater.CELL,-Plate.HALF+z*NativeRecipeWater.CELL))
+					water.append(height(recipe,-NativeRecipeWater.HALF+x*NativeRecipeWater.CELL,-NativeRecipeWater.HALF+z*NativeRecipeWater.CELL))
 		if recipe.inland != null and recipe.inland.genome.composition in preload("res://scripts/desert_landscape.gd").KINDS:
 			var began := Time.get_ticks_usec()
 			geology = preload("res://scripts/native_geology_samples.gd").build(recipe.inland.genome,geology_begin,geology_end)

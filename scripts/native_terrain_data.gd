@@ -1046,8 +1046,8 @@ func discard_cache() -> void:
 func water_reaches(region: Rect2) -> bool:
 	if not _shore_ready:
 		return true
-	var first := (region.position+Vector2.ONE*Plate.HALF)/NativeRecipeWater.CELL
-	var last := (region.end+Vector2.ONE*Plate.HALF)/NativeRecipeWater.CELL
+	var first := (region.position+Vector2.ONE*NativeRecipeWater.HALF)/NativeRecipeWater.CELL
+	var last := (region.end+Vector2.ONE*NativeRecipeWater.HALF)/NativeRecipeWater.CELL
 	for j in range(maxi(0,ceili(first.y)),mini(NativeRecipeWater.W-1,floori(last.y))+1):
 		for i in range(maxi(0,ceili(first.x)),mini(NativeRecipeWater.W-1,floori(last.x))+1):
 			if _shore_mask[j*NativeRecipeWater.W+i] == 1:
@@ -1174,8 +1174,8 @@ func _shoreline_mask(field: Dictionary) -> PackedByteArray:
 				for i in range(maxi(0,k%side-1),mini(side-1,k%side+1)+1):
 					mask[j*side+i] = 1
 	for pond in ponds:
-		var seed_x := int(floor((float(pond.x)+Plate.HALF)/NativeRecipeWater.CELL+0.5))
-		var seed_z := int(floor((float(pond.z)+Plate.HALF)/NativeRecipeWater.CELL+0.5))
+		var seed_x := int(floor((float(pond.x)+NativeRecipeWater.HALF)/NativeRecipeWater.CELL+0.5))
+		var seed_z := int(floor((float(pond.z)+NativeRecipeWater.HALF)/NativeRecipeWater.CELL+0.5))
 		for j in range(maxi(0,seed_z-1),mini(side-1,seed_z+1)+1):
 			for i in range(maxi(0,seed_x-1),mini(side-1,seed_x+1)+1):
 				mask[j*side+i] = 1

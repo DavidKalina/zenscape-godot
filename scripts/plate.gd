@@ -40,8 +40,11 @@ const COARSE_CELLS := roundi(SIZE)
 ## Texels a side of the ground and stream maps: FINE_STEP over MAP_HALF.
 const MAP_TEXELS := roundi(MAP_HALF * 2.0 / FINE_STEP)
 ## The recipe's water field: about 0.55 m cells, RECIPE_WATER_CELLS a side
-## (the source project's round(28 / 0.55) on the 28 m plate).
-const RECIPE_WATER_CELLS := roundi(SIZE / 0.55)
+## over ±RECIPE_WATER_HALF (the source project's round(28 / 0.55)). Recipe
+## landscapes always stand on the old square (NativeTerrainData.reset_flat),
+## so their water keeps the source's grid there exactly.
+const RECIPE_WATER_HALF := LEGACY_HALF
+const RECIPE_WATER_CELLS := roundi(RECIPE_WATER_HALF * 2.0 / 0.55)
 ## Erosion's height grid: EROSION_STEP cells, EROSION_POINTS a side, from
 ## -HALF; the last point lands on or just past the far rim.
 const EROSION_STEP := 0.7

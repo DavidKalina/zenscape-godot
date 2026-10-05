@@ -225,8 +225,11 @@ public:
         // NativeRecipeWater, NativeTerrainData); a caller that sends none gets
         // the 28 m plate's, which is what older callers meant.
         const double half = p.get("plate_half", 14.0);
+        // The recipe's water field covers its own square (water_half), which
+        // libraries built before the key took to be the plate's.
+        const double water_half = p.get("water_half", half);
         const int water_cells = p.get("water_cells", 51), water_stride = water_cells+1;
-        const double water_cell = 2.0*half/water_cells;
+        const double water_cell = 2.0*water_half/water_cells;
         const int meadow_cells = p.get("meadow_cells", 56);
         const float meadow_step = float(double(p.get("meadow_step", 0.5)));
         const bool wet = !water.is_empty();
@@ -234,8 +237,8 @@ public:
         const PackedFloat32Array depth = wet ? PackedFloat32Array(water["depth"]) : PackedFloat32Array();
         const PackedByteArray kind = wet ? PackedByteArray(water["kind"]) : PackedByteArray();
         auto grid = [&](const PackedFloat32Array &values, double x, double z) {
-            const double fi = std::clamp((x+half)/water_cell, 0.0, double(water_cells));
-            const double fj = std::clamp((z+half)/water_cell, 0.0, double(water_cells));
+            const double fi = std::clamp((x+water_half)/water_cell, 0.0, double(water_cells));
+            const double fj = std::clamp((z+water_half)/water_cell, 0.0, double(water_cells));
             const int i = std::min(water_cells-1, int(std::floor(fi))), j = std::min(water_cells-1, int(std::floor(fj)));
             const double u = fi-i, v = fj-j;
             const int k = j*water_stride+i;
@@ -280,7 +283,7 @@ public:
                 if (center.y > snowline && slope < 2.4) { color = snows[face]; snowed = true; }
                 if (wet) {
                     const double distance = grid(shore, x, z);
-                    const int col = int(std::floor((x+half)/water_cell+0.5)), row = int(std::floor((z+half)/water_cell+0.5));
+                    const int col = int(std::floor((x+water_half)/water_cell+0.5)), row = int(std::floor((z+water_half)/water_cell+0.5));
                     const bool running = col >= 0 && row >= 0 && col < water_stride && row < water_stride && kind[row*water_stride+col] == 2;
                     if (running && distance < 1.7 && center.y < snowline-1.8) color = greens[face];
                     if (distance < 0.75 && slope < 2.2) {

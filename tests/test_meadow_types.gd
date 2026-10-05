@@ -10,12 +10,15 @@ const Lands = preload("res://scripts/world_lands.gd")
 const Library = preload("res://scripts/world_library.gd")
 const Emergence = preload("res://scripts/emergence.gd")
 ## tools/probe_meadow_digests.gd on b1e74ec, the commit before meadow types:
-## objects, grass, meadow, blades and painted ground of each case.
+## objects, grass, meadow, blades and painted ground of each case. Pinned
+## again when the plate grew to 48 m and its mesh became made (plate/48):
+## every point, cell and array changed under them; the counts of what each
+## case dresses stayed those of b1e74ec within a few per cent.
 const BEFORE := {
-	"generated 79":"ec109c04196f","generated 105":"0c298ae0a84e","generated 177":"3ec08347b751",
-	"generated 58":"0dfd3db2ad2a","generated 198":"dcfc379aeb42","generated 33":"660a244377c1",
-	"single 79":"d396143f7fea","single 177":"70e12d67b843","plain_recipe 58":"197da137f95f","isle 4021":"248ba890ce79",
-	"formation valley":"d7fd44750b24","formation terraced_pools":"751d62092fff","formation redwood_grove":"2a16812e6b69",
+	"generated 79":"fefdb5d03658","generated 105":"f751be66997c","generated 177":"d41f3ca60582",
+	"generated 58":"819137542726","generated 198":"767ed9a6c579","generated 33":"00079c868440",
+	"single 79":"ba3ffe7dfea8","single 177":"f1490d33e615","plain_recipe 58":"2e35f9c9579a","isle 4021":"be6dada046c8",
+	"formation valley":"ce8a4446e12d","formation terraced_pools":"d52ab18cdc3a","formation redwood_grove":"21b0a163f5a3",
 }
 const SEED := 2081
 const FLOWER_ASSETS := ["daisy_flower","button_flower","spike_flower","umbel_flower"]

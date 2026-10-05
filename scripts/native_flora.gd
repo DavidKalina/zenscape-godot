@@ -14,7 +14,7 @@ const AREA := 1.0
 ## The source water field, as NativeRecipeWater's.
 const N := Plate.RECIPE_WATER_CELLS
 const W := N+1
-const CELL := Plate.SIZE/N
+const CELL := Plate.RECIPE_WATER_HALF*2.0/N
 const SAME_WATER := 0.001
 const FLOWER_PALETTES := [["#efc34f","#b7a3d5","#fff0cc"],["#a38bdd","#d6a6d9","#f4efe5"],["#de8599","#bc7198","#fff0df"],["#f1e8cf","#b7a3d5","#fff0df"]]
 const BLOSSOM_COLORS := ["#f1d7d7","#f4e8ce","#dba6bc"]
@@ -158,7 +158,7 @@ static func water_field(ground: Callable, ponds: Array, streams: Array) -> Dicti
 	h.resize(W*W)
 	for j in range(W):
 		for i in range(W):
-			h[j*W+i] = ground.call(-Plate.HALF+i*CELL,-Plate.HALF+j*CELL)
+			h[j*W+i] = ground.call(-Plate.RECIPE_WATER_HALF+i*CELL,-Plate.RECIPE_WATER_HALF+j*CELL)
 	var wet := PackedByteArray()
 	wet.resize(W*W)
 	var kind := PackedByteArray()
@@ -167,8 +167,8 @@ static func water_field(ground: Callable, ponds: Array, streams: Array) -> Dicti
 	dep.resize(W*W)
 	var bodies: Array = []
 	for body in ponds:
-		var bi := _js_round((float(body.x)+Plate.HALF)/CELL)
-		var bj := _js_round((float(body.z)+Plate.HALF)/CELL)
+		var bi := _js_round((float(body.x)+Plate.RECIPE_WATER_HALF)/CELL)
+		var bj := _js_round((float(body.z)+Plate.RECIPE_WATER_HALF)/CELL)
 		var best := INF
 		var bk := -1
 		for dj in [-1,0,1]:
@@ -212,8 +212,8 @@ static func water_field(ground: Callable, ponds: Array, streams: Array) -> Dicti
 	var sd: PackedFloat32Array = preload("res://scripts/native_recipe_water.gd").signed_distance(wet,kind)
 	return {"shore":sd,"depth":dep,"kind":kind}
 static func _sample(values: PackedFloat32Array, x: float, z: float, fallback: float) -> float:
-	var fi := (x+Plate.HALF)/CELL
-	var fj := (z+Plate.HALF)/CELL
+	var fi := (x+Plate.RECIPE_WATER_HALF)/CELL
+	var fj := (z+Plate.RECIPE_WATER_HALF)/CELL
 	if fi < 0.0 or fj < 0.0 or fi > N or fj > N: return fallback
 	var i := mini(N-1,floori(fi))
 	var j := mini(N-1,floori(fj))
@@ -224,8 +224,8 @@ static func _sample(values: PackedFloat32Array, x: float, z: float, fallback: fl
 static func shore_at(field: Dictionary, x: float, z: float) -> float: return _sample(field.shore,x,z,40.0)
 static func depth_at(field: Dictionary, x: float, z: float) -> float: return _sample(field.depth,x,z,0.0)
 static func kind_at(field: Dictionary, x: float, z: float) -> int:
-	var i := _js_round((x+Plate.HALF)/CELL)
-	var j := _js_round((z+Plate.HALF)/CELL)
+	var i := _js_round((x+Plate.RECIPE_WATER_HALF)/CELL)
+	var j := _js_round((z+Plate.RECIPE_WATER_HALF)/CELL)
 	if i < 0 or j < 0 or i > N or j > N: return 0
 	return field.kind[j*W+i]
 

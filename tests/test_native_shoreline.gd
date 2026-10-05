@@ -6,7 +6,13 @@ func run() -> void:
 	root.add_child(scene)
 	scene.set_process(false)
 	var editor=scene._chunk_editor
-	var reference=editor.data.source_mesh.surface_get_arrays(0)
+	# The source's baked colours are the authored 28 m mesh's: the shoreline
+	# is shaded on that mesh to be compared with them, face for face.
+	var authored: Node3D=load("res://assets/zen_reference/geometry.scn").instantiate()
+	var reference=authored.get_node("terrain").mesh.surface_get_arrays(0)
+	var imported:=NativeTerrainData.new()
+	imported.setup(authored.get_node("terrain").mesh,[],false)
+	authored.free()
 	editor.start_flat()
 	editor.select_tool("range")
 	editor.form_range()
@@ -19,7 +25,15 @@ func run() -> void:
 	var with_streams: bool="--with-streams" in OS.get_cmdline_user_args()
 	if with_streams: scene._build_palette.action_for("FillLandscapeStreams").pressed.emit()
 	var field=preload("res://scripts/native_recipe_water.gd").shoreline(editor.data)
-	var generated=editor.data.build_mesh().surface_get_arrays(0)
+	var plate_colors: PackedColorArray=editor.data.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	imported.blank=true
+	imported.form_range(editor.range_height,editor.range_width,deg_to_rad(editor.range_heading),editor.range_variation)
+	imported.grass.fill(editor.grass_amount)
+	imported.ponds.assign(editor.data.ponds.duplicate(true))
+	imported.streams.assign(editor.data.streams.duplicate(true))
+	var imported_before=before
+	before=imported.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	var generated=imported.build_mesh(true).surface_get_arrays(0)
 	var vertices: PackedVector3Array=generated[Mesh.ARRAY_VERTEX]
 	var colors: PackedColorArray=generated[Mesh.ARRAY_COLOR]
 	var matched:=0
@@ -30,7 +44,7 @@ func run() -> void:
 		var point:=Vector2(c.x,c.z)
 		var shore: float=preload("res://scripts/native_recipe_water.gd").sample_grid(field.shore,c.x,c.z)
 		if colors[i]!=before[i]: changed+=1
-		if shore>=0.6 or editor.data._recipe_gradients[i/3].length()>=2.1: continue
+		if shore>=0.6 or imported._recipe_gradients[i/3].length()>=2.1: continue
 		var near_stream:=false
 		for stream in source.genome.streams:
 			for j in range(stream.pts.size()-1):
@@ -50,6 +64,10 @@ func run() -> void:
 			full_error=maxf(full_error,error)
 			if error>0.00001: full_mismatches+=1
 		print("Whole terrain color mismatches ",full_mismatches," / ",colors.size()/3,"; max error ",full_error)
+	colors=plate_colors
+	changed=0
+	for i in range(0,colors.size(),3):
+		if colors[i]!=imported_before[i]: changed+=1
 	var saved=JSON.parse_string(JSON.stringify(editor.data.to_document(),"",true,true))
 	var reopened: bool=editor.data.load_document(saved) and editor.data.build_mesh().surface_get_arrays(0)[Mesh.ARRAY_COLOR]==colors
 	editor.data.begin_stroke()
