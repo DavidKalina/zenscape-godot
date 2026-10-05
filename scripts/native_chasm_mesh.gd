@@ -17,7 +17,10 @@ static func mask(points: PackedVector2Array, ids: PackedInt32Array, genome: Dict
 		result[i/3] = 1 if low<=half and high>=-half else 0
 	return result
 
-static func build(source: ArrayMesh, removed: PackedByteArray, ids: PackedInt32Array) -> ArrayMesh:
+## `walled`, when given, holds the faces whose banks take a wall (the chasm's
+## own, on an island with an outline, whose shore the earth sides close:
+## scripts/island_shore.gd); left out, every open edge does.
+static func build(source: ArrayMesh, removed: PackedByteArray, ids: PackedInt32Array, walled := PackedByteArray()) -> ArrayMesh:
 	var arrays := source.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var indices := PackedInt32Array()
@@ -39,7 +42,13 @@ static func build(source: ArrayMesh, removed: PackedByteArray, ids: PackedInt32A
 		var b := Vector3(vertices[i+1].x,floor_y,vertices[i+1].z)
 		var c := Vector3(vertices[i+2].x,floor_y,vertices[i+2].z)
 		_triangle(walls,a,c,b)
-	for edge: Array in edges.values():
+	var banks := {}
+	for i in range(0,walled.size()*3,3):
+		if walled[i/3] == 0: continue
+		for j in range(3): banks[Vector2i(mini(ids[i+j],ids[i+(j+1)%3]),maxi(ids[i+j],ids[i+(j+1)%3]))] = true
+	for key: Vector2i in edges:
+		if not walled.is_empty() and not banks.has(key): continue
+		var edge: Array = edges[key]
 		var a: Vector3 = edge[0]
 		var b: Vector3 = edge[1]
 		var c := Vector3(a.x,floor_y,a.z)

@@ -7,6 +7,9 @@ signal state_restored(state: Dictionary)
 ## A document is being written: companions that keep saved state outside the
 ## terrain (the forest wish, scripts/land_intent.gd) add their own fields.
 signal document_captured(document: Dictionary)
+## `void_faces` changed: the outline or the chasm cut moved (the live water
+## sets its grid up again, scripts/water_flow.gd).
+signal void_changed
 ## Edit the imported chunk's own welded vertices, retaining every material/UV
 ## channel and the original irregular topology. No replacement heightfield.
 ## The floor: no ground goes below MIN_HEIGHT metres. The plain stands near
@@ -128,8 +131,30 @@ var _strands_probe := {}
 var _strands_seen := {}
 var _strands_ready := false
 var _face_center := PackedVector2Array()
-## Removed top faces, derived from the versioned terrain recipe.
+## Removed top faces: the island's outline and the chasm composition's cut
+## together (a byte a face, 1 where there is no ground). Empty when neither
+## cuts anything. Kept by `_combine_void`; read it, never write it.
 var void_faces := PackedByteArray()
+## The island's outline (scripts/island_outline.gd): a byte a face, 1 where
+## the face is off the island. Empty for the full square plate. Saved and
+## undone with the land; set it with `set_outline`.
+var outline := PackedByteArray()
+## The chasm composition's cut, derived from the versioned terrain recipe.
+var chasm_faces := PackedByteArray()
+## Metres inside the outline at each point: 0 on the shore (and on the
+## plate's rim where the land reaches it), -1 off the island. Empty without
+## an outline. Recomputed whenever the outline changes.
+var shore_distance := PackedFloat32Array()
+## The outline's shore edges, three ids each: the edge's two ends and the
+## third corner of the land face it bounds (scripts/island_shore.gd hangs
+## the wall from them). Recomputed with `shore_distance`.
+var shore_edges := PackedInt32Array()
+## Points with no land face round them: nothing ever moves them.
+var _off_island := PackedInt32Array()
+## The faces left standing, as mesh indices, for `play_mesh`.
+var _land_indices := PackedInt32Array()
+var _land_indices_for := PackedByteArray()
+var _cut_faces_for: ArrayMesh
 var _chasm_source: ArrayMesh
 var _chasm_mesh: ArrayMesh
 var _chasm_faces := PackedVector3Array()
@@ -244,6 +269,60 @@ func setup(mesh: ArrayMesh, arrays: Array = []) -> void:
 func is_void(point: Vector2) -> bool:
 	return not void_faces.is_empty() and height_at(point.x,point.y) == null and sample(point,heights) != null
 
+## The island's outline from now on (`outline`, as scripts/island_outline.gd
+## `mask` makes it). An empty mask, or one with every face on the island, is
+## the full square. Part of the undo step it is set in.
+func set_outline(mask: PackedByteArray) -> void:
+	if mask.size() != vertex_ids.size()/3 or mask.count(0) == mask.size(): mask = PackedByteArray()
+	if mask == outline: return
+	outline = mask.duplicate()
+	_outline_changed()
+
+## The shore read again from `outline`: the distance field, the shore's
+## edges, the points off the island, and the cut faces.
+func _outline_changed() -> void:
+	shore_distance = PackedFloat32Array()
+	shore_edges = PackedInt32Array()
+	_off_island = PackedInt32Array()
+	if not outline.is_empty():
+		var shape := preload("res://scripts/island_outline.gd")
+		shore_distance = shape.shore_distance(points,vertex_ids,outline)
+		shore_edges = shape.shore_edges(vertex_ids,outline)
+		for i in range(shore_distance.size()):
+			if shore_distance[i] < 0.0: _off_island.append(i)
+	_combine_void()
+
+## `void_faces` from the outline and the chasm's cut.
+func _combine_void() -> void:
+	var combined := outline.duplicate() if chasm_faces.is_empty() else chasm_faces.duplicate()
+	if not outline.is_empty() and not chasm_faces.is_empty():
+		for f in range(combined.size()): combined[f] = 1 if outline[f] != 0 or chasm_faces[f] != 0 else 0
+	if combined == void_faces: return
+	void_faces = combined
+	# The recipe's water reads the void (scripts/native_recipe_water.gd).
+	_shore_ready = false
+	void_changed.emit()
+
+## Whether the chasm composition cuts the land (an outline alone does not).
+func has_chasm() -> bool:
+	return not chasm_faces.is_empty()
+
+## Whether `point` lies over a face the chasm cut.
+func over_chasm(point: Vector2) -> bool:
+	if chasm_faces.is_empty() or sample(point,heights) == null: return false
+	return chasm_faces[_locate_face[_locate_cache[point]]/3] != 0
+
+## `next` (heights a tool wrote) with every point off the island put back as
+## it stood in `before`: nothing moves the sky's points. Returns `next`.
+func land_only(next: PackedFloat32Array, before: PackedFloat32Array) -> PackedFloat32Array:
+	if before.size() != next.size(): return next
+	for i in _off_island: next[i] = before[i]
+	return next
+
+## Whether point `i` is off the island (no land face round it).
+func off_island(i: int) -> bool:
+	return not shore_distance.is_empty() and shore_distance[i] < 0.0
+
 func height_at(x: float, z: float) -> Variant:
 	var p := Vector2(x,z)
 	var h: Variant = sample(p, heights)
@@ -316,8 +395,10 @@ func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
 	if source == null: source = build_mesh()
 	if not void_faces.is_empty():
 		if source != _chasm_source or void_faces != _chasm_signature:
-			_chasm_mesh = preload("res://scripts/native_chasm_mesh.gd").build(source,void_faces,vertex_ids)
-			_chasm_faces = _chasm_mesh.get_faces()
+			# An outline alone only drops faces: its walls are the earth sides'
+			# (scripts/island_shore.gd). A chasm walls its own banks.
+			if chasm_faces.is_empty(): _chasm_mesh = _land_mesh(source)
+			else: _chasm_mesh = preload("res://scripts/native_chasm_mesh.gd").build(source,void_faces,vertex_ids,chasm_faces if not outline.is_empty() else PackedByteArray())
 			_chasm_source = source
 			_chasm_signature = void_faces.duplicate()
 		source = _chasm_mesh
@@ -330,13 +411,49 @@ func play_mesh(source: ArrayMesh = null) -> ArrayMesh:
 		_tunnel_signature = signature
 	return _tunnel_mesh
 
+## `source` with only the faces left standing, indexed: every vertex and its
+## channels as built, no wall. The build's own CPU arrays are reused, so a
+## light refresh reads nothing back from the renderer and builds nothing but
+## the index list (once per outline).
+func _land_mesh(source: ArrayMesh) -> ArrayMesh:
+	var arrays: Array
+	if source == _mesh_result: arrays = _mesh_arrays.duplicate()
+	elif source == source_mesh: arrays = _arrays.duplicate()
+	else: arrays = source.surface_get_arrays(0)
+	if _land_indices_for != void_faces:
+		_land_indices = PackedInt32Array()
+		for f in range(void_faces.size()):
+			if void_faces[f] == 0: _land_indices.append_array([f*3,f*3+1,f*3+2])
+		_land_indices_for = void_faces.duplicate()
+	arrays[Mesh.ARRAY_INDEX] = _land_indices
+	var mesh := ArrayMesh.new()
+	var flags := source.surface_get_format(0) & (Mesh.ARRAY_FORMAT_CUSTOM_MASK << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},flags)
+	mesh.surface_set_material(0,source.surface_get_material(0))
+	return mesh
+
+## The cut play mesh's faces, read when first asked for (collision and the
+## chasm's pick); a light refresh never asks.
+func _cut_faces() -> PackedVector3Array:
+	if _cut_faces_for == _chasm_mesh: return _chasm_faces
+	_cut_faces_for = _chasm_mesh
+	if not chasm_faces.is_empty():
+		_chasm_faces = _chasm_mesh.get_faces()
+		return _chasm_faces
+	# The outline's: the standing faces as the collision path snaps them.
+	var vertices: PackedVector3Array = _arrays[Mesh.ARRAY_VERTEX] if _chasm_source == source_mesh else (_mesh_arrays[Mesh.ARRAY_VERTEX] if _chasm_source == _mesh_result else _chasm_source.surface_get_arrays(0)[Mesh.ARRAY_VERTEX])
+	_chasm_faces = PackedVector3Array()
+	_chasm_faces.resize(_land_indices.size())
+	for k in range(_land_indices.size()): _chasm_faces[k] = vertices[_land_indices[k]].snappedf(0.0001)
+	return _chasm_faces
+
 ## The renderer already received these CPU arrays. Avoid reading that upload
 ## back just to build physics geometry. Match TriangleMesh::create's snapping
 ## exactly; returning raw unsnapped vertices would subtly change collisions.
 func play_collision_faces() -> PackedVector3Array:
 	var mesh := play_mesh()
 	if not tunnels.is_empty(): return _tunnel_faces.duplicate()
-	if not void_faces.is_empty(): return _chasm_faces.duplicate()
+	if not void_faces.is_empty(): return _cut_faces().duplicate()
 	if mesh == _collision_source: return _collision_faces.duplicate()
 	var arrays: Array = _arrays if mesh == source_mesh else _mesh_arrays
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -361,9 +478,9 @@ func plant_underground(point: Vector3, blast_radius := 2.6) -> int:
 	return id
 
 func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
-	if not void_faces.is_empty() or tunnels.any(func(item: Dictionary) -> bool: return not item.sealed):
+	if not chasm_faces.is_empty() or tunnels.any(func(item: Dictionary) -> bool: return not item.sealed):
 		play_mesh()
-		var faces := _tunnel_faces if not tunnels.is_empty() else _chasm_faces
+		var faces := _tunnel_faces if not tunnels.is_empty() else _cut_faces()
 		var closest: Variant = null
 		var best := INF
 		for i in range(0,faces.size(),3):
@@ -377,6 +494,9 @@ func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
 	# face's bucket span covers its XZ extent, so a hit is in the bucket under
 	# it; once the nearest hit lies before the next bucket, none beyond can
 	# beat it. Ties keep the lowest face, as a walk over all faces would.
+	# Faces off the island are not there to hit; the shore's wall is the
+	# earth sides', never picked, as the square plate's sides are not.
+	var cut := not void_faces.is_empty()
 	if _bucket_span_for != _buckets.size():
 		_bucket_span_for = _buckets.size()
 		_bucket_low = Vector2i(1 << 30, 1 << 30)
@@ -420,6 +540,7 @@ func ray_hit(origin: Vector3, direction: Vector3) -> Variant:
 		# A little slack so a hit rounded onto a bucket's edge is still found.
 		if nearest_t < cell_enter-0.001: break
 		for i: int in _buckets.get(cell,[]):
+			if cut and void_faces[i/3] != 0: continue
 			var hit: Variant = Geometry3D.ray_intersects_triangle(origin, direction, _vertex(vertex_ids[i]), _vertex(vertex_ids[i+1]), _vertex(vertex_ids[i+2]))
 			if hit == null: continue
 			var d := origin.distance_squared_to(hit)
@@ -476,7 +597,7 @@ func brush(center: Vector2, radius: float, amount: float, mode: String, level: f
 	var before := heights.duplicate()
 	for i in range(points.size()):
 		var distance := points[i].distance_to(center)
-		if distance >= radius:
+		if distance >= radius or off_island(i):
 			continue
 		var weight := 1.0-smoothstep(0.0,radius,distance)
 		match mode:
@@ -938,7 +1059,8 @@ func _set_recipe(settings: Dictionary, frame_tree: SceneTree = null) -> bool:
 	_recipe_settings = snapshot
 	last_recipe_workers = workers
 	_recipe = sampled.recipe
-	void_faces = preload("res://scripts/native_chasm_mesh.gd").mask(points,vertex_ids,_recipe.inland.genome) if snapshot.get("composition") == "chasm" else PackedByteArray()
+	chasm_faces = preload("res://scripts/native_chasm_mesh.gd").mask(points,vertex_ids,_recipe.inland.genome) if snapshot.get("composition") == "chasm" else PackedByteArray()
+	_combine_void()
 	_recipe_heights = sampled.heights
 	_recipe_gradients = sampled.gradients
 	_recipe_geology = sampled.geology
@@ -1036,10 +1158,15 @@ func reset_flat() -> void:
 	state_restored.emit({})
 
 func _snapshot() -> Dictionary:
-	return {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "provenance":provenance.duplicate(), "objects":objects.duplicate(true), "fences":fences.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
+	return {"outline":outline.duplicate(),"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"landscape_waterfall":landscape_waterfall,"terrain_recipe":_recipe_settings.duplicate(true), "heights": heights.duplicate(), "blank": blank, "meadow":meadow.duplicate(), "grass":grass.duplicate(), "blades":blades.duplicate(), "tint":tint.duplicate(), "provenance":provenance.duplicate(), "objects":objects.duplicate(true), "fences":fences.duplicate(true), "ponds":ponds.duplicate(true), "streams":streams.duplicate(true), "next_id":next_id}
 
 func _restore(state: Dictionary) -> void:
 	tunnels.assign(state.get("tunnels",[]).duplicate(true))
+	# A state from before outlines is the full square.
+	var mask: PackedByteArray = state.get("outline",PackedByteArray())
+	if mask != outline:
+		outline = mask.duplicate()
+		_outline_changed()
 	_set_recipe(state.get("terrain_recipe",{}))
 	landscape_waterfall=state.get("landscape_waterfall",false)
 	heights = state.heights.duplicate()
@@ -1131,6 +1258,18 @@ func _blank_provenance() -> PackedByteArray:
 	made.fill(SOURCE_GENERATED)
 	return made
 
+## A saved outline, or null when it is not one for this triangulation.
+func _decode_outline(value: Variant) -> Variant:
+	if not value is String: return null
+	var packed := Marshalls.base64_to_raw(value)
+	if packed.is_empty(): return null
+	var mask := packed.decompress(vertex_ids.size()/3,FileAccess.COMPRESSION_DEFLATE)
+	if mask.size() != vertex_ids.size()/3: return null
+	for byte in mask:
+		if byte > 1: return null
+	if mask.count(0) == 0: return null
+	return mask
+
 func _decode_provenance(value: Variant) -> Variant:
 	if not value is String or value.length() != MEADOW_CELLS*MEADOW_CELLS*2 or not value.is_valid_hex_number():
 		return null
@@ -1155,7 +1294,7 @@ func mountain(center: Vector2, radius: float, peak: float, variation := 7, angle
 	var shape := NativeMountainShape.new(variation)
 	for i in range(points.size()):
 		var local := (points[i]-center).rotated(-angle)/radius
-		if local.length() >= 1.0:
+		if local.length() >= 1.0 or off_island(i):
 			continue
 		var height := clampf(peak*shape.height(local),0.0,MAX_HEIGHT)
 		heights[i] = maxf(heights[i],height)
@@ -1171,7 +1310,7 @@ func paint_meadow(center: Vector2, radius: float, amount: float) -> void:
 
 func place(kind: String, point: Vector2, angle := 0.0, size := 1.0, pose: Dictionary = {}, tint := "") -> int:
 	if kind == "explosive" and explosive_count() >= MAX_EXPLOSIVES: return -1
-	if kind in ["waterfall","bridge"] or kind not in ASSETS or sample(point,heights) == null or (kind != "log" and ground_height(point) == null) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
+	if kind in ["waterfall","bridge"] or kind not in ASSETS or sample(point,heights) == null or (ground_height(point) == null and (kind != "log" or not over_chasm(point))) or objects.size() >= GardenData.MAX_OBJECTS or next_id >= 2147483647:
 		return -1
 	if not GardenData._number(angle,-TAU*100,TAU*100) or not GardenData._number(size,0.1,5.0):
 		return -1
@@ -1394,7 +1533,10 @@ func add_pond(point: Vector2, level: float) -> bool:
 	return true
 
 func to_document() -> Dictionary:
-	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":10,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"fences":fences.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	var document := {"tunnels":tunnels.duplicate(true),"source_replacements":source_replacements.duplicate(),"version":11,"tint":Array(tint),"landscape_waterfall":landscape_waterfall,"terrain_recipe":preload("res://scripts/native_terrain_recipe.gd").encode(_recipe_settings),"template":_template_id(),"heights":Array(heights),"blank":blank,"meadow":Array(meadow),"grass":Array(grass),"blades":Array(blades),"provenance":provenance.hex_encode(),"objects":_saved_objects(),"fences":fences.duplicate(true),"ponds":ponds.duplicate(true),"streams":streams.map(func(value): return preload("res://scripts/native_stream_record.gd").encode(value)),"next_id":next_id}
+	# Since version 11: the island's outline, deflated, base64. None for the
+	# full square.
+	if not outline.is_empty(): document["outline"] = Marshalls.raw_to_base64(outline.compress(FileAccess.COMPRESSION_DEFLATE))
 	document_captured.emit(document)
 	return document
 
@@ -1408,7 +1550,7 @@ func _template_id() -> String:
 	return var_to_bytes([points,vertex_ids,original_heights]).hex_encode().sha256_text()
 
 func load_document(document: Variant) -> bool:
-	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9 and document.get("version") != 10) or document.get("template") != _template_id() or not document.get("blank") is bool:
+	if not document is Dictionary or (document.get("version") != 3 and document.get("version") != 4 and document.get("version") != 5 and document.get("version") != 6 and document.get("version") != 7 and document.get("version") != 8 and document.get("version") != 9 and document.get("version") != 10 and document.get("version") != 11) or document.get("template") != _template_id() or not document.get("blank") is bool:
 		return false
 	var recipe: Variant = preload("res://scripts/native_terrain_recipe.gd").decode(document.get("terrain_recipe",{})) if document.version >= 6 else {}
 	if not preload("res://scripts/native_terrain_recipe.gd").valid(recipe):
@@ -1442,6 +1584,12 @@ func load_document(document: Variant) -> bool:
 	if made == null:
 		return false
 	loaded.provenance = made
+	# Optional since version 11: islands without it are the full square.
+	if document.has("outline"):
+		var mask: Variant = _decode_outline(document.outline)
+		if mask == null:
+			return false
+		loaded.outline = mask
 	# Optional: the forest wish the brushes left (scripts/land_intent.gd).
 	# Saves without it have no wish anywhere.
 	if document.has("intent_forest"):

@@ -129,7 +129,7 @@ func _valid_spot(point: Vector3) -> bool:
 func _discover(query: RefCounted) -> Variant:
 	var scene: Node = routine.scene
 	var origin: Vector3 = scene.creature.position
-	if scene._chunk_editor.data.void_faces.is_empty() and not scene.navigation._courses.any(func(course: Dictionary) -> bool: return course.radius<=1.4 and is_finite(course.level)): return null
+	if not scene._chunk_editor.data.has_chasm() and not scene.navigation._courses.any(func(course: Dictionary) -> bool: return course.radius<=1.4 and is_finite(course.level)): return null
 	var best: Variant = null
 	var score := INF
 	# First rank cheap geometric candidates, then test a bounded shortlist for
@@ -162,7 +162,7 @@ func _discover(query: RefCounted) -> Variant:
 
 func _across_gap(a: Vector3, b: Vector3) -> bool:
 	var data: NativeTerrainData = routine.scene._chunk_editor.data
-	if not data.void_faces.is_empty():
+	if data.has_chasm():
 		var genome: Dictionary = data._recipe.inland.genome
 		var shape = preload("res://scripts/inland_genome.gd")
 		var da: float = shape.chasm_distance(genome,Vector2(a.x,a.z))
