@@ -31,21 +31,29 @@ static func wanted(islands: Node) -> bool:
 func hold(islands: Node, camera: Camera3D, veil: Node) -> void:
 	var began := Time.get_ticks_msec()
 	if veil != null: veil.stage("Raising the mountains")
-	while not islands.sky_ready():
-		islands.make_ahead(get_process_delta_time())
-		if veil != null: veil.progress(islands.sky_progress())
-		if Time.get_ticks_msec()-began > TIMEOUT*1000.0:
-			push_warning("The sky was not ready after %.0f s; the world is shown as it stands" % TIMEOUT)
-			break
-		await get_tree().process_frame
-	if veil != null: veil.progress(1.0)
-	waited_ms = Time.get_ticks_msec()-began
-	var warming := Time.get_ticks_msec()
-	await warm(islands,camera)
-	warm_ms = Time.get_ticks_msec()-warming
+	# Ready, warmed, and still ready after the warming's frames (a new
+	# layout or palette in them would want its sky made again): only then.
+	while true:
+		while not islands.sky_ready():
+			islands.make_ahead(get_process_delta_time())
+			if veil != null: veil.progress(islands.sky_progress())
+			if _late(began): break
+			await get_tree().process_frame
+		if veil != null: veil.progress(1.0)
+		waited_ms = Time.get_ticks_msec()-began
+		var warming := Time.get_ticks_msec()
+		await warm(islands,camera)
+		warm_ms += Time.get_ticks_msec()-warming
+		if islands.sky_ready() or _late(began): break
 	var ring: Variant = islands.get("peaks")
 	if ring != null and ring.get("ring") != null: ring.ring.settle_fade()
 	revealed = true
+
+## Past TIMEOUT: the world is shown as it stands.
+func _late(began: int) -> bool:
+	if Time.get_ticks_msec()-began <= TIMEOUT*1000.0: return false
+	push_warning("The sky was not ready after %.0f s; the world is shown as it stands" % TIMEOUT)
+	return true
 
 ## The sky's stand-ins (SkyIslands `standins`) a hand's width before the
 ## lens, 1 cm across, for FRAMES frames.

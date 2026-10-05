@@ -577,11 +577,18 @@ func make_ahead(delta: float) -> void:
 ## True once the sky the world will show is made (`make_ahead`): with the
 ## ring off, at once (nothing is laid out ahead then).
 func sky_ready() -> bool:
-	if not SkyWorld.ring_on() or peaks == null: return true
-	if not SkyWorld.ready() or not peaks.ring.whole: return false
-	if not peaks.premade_whole(-origin): return false
-	if not built() or lands.has(null): return false
-	return islets._making.is_empty() and towers._making.is_empty() and isles._making.is_empty() and islets._wanted.is_empty()
+	return sky_waiting() == ""
+
+## What the sky still waits on ("" if nothing): the layout, the skylines,
+## the ranges near, the islands, the islets and cumulus.
+func sky_waiting() -> String:
+	if not SkyWorld.ring_on() or peaks == null: return ""
+	if not SkyWorld.ready(): return "layout"
+	if not peaks.ring.whole: return "skylines"
+	if not peaks.premade_whole(-origin): return "ranges"
+	if not built() or lands.has(null): return "islands"
+	if not (islets._making.is_empty() and towers._making.is_empty() and isles._making.is_empty() and islets._wanted.is_empty()): return "islets"
+	return ""
 
 ## When each part of it was made (msec, from the first ask), for the
 ## record (scripts/sky_reveal.gd).

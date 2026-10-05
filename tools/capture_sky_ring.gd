@@ -23,7 +23,13 @@ extends SceneTree
 ##     height;
 ##   overhead: from high over the plate, out over a wall and its corner;
 ##   approach: a kilometre in from a range of the band, the full range near;
-##   outside: from out past the ring, looking back in over it.
+##   outside: from out past the ring, looking back in over it;
+##   summit-N: each of the sea's summits (SkyWorld `_summits`) from 900 m
+##     off across the open sea at glide height;
+##   summit-plate: from the plate toward the nearest summit;
+##   summit-high: the nearest summit from high up and a way off;
+##   summit-map: straight down over the middle, the haze off, a red ring
+##     over every summit's tip.
 ## The eye is held still at each spot (the glide's own stepping is paused),
 ## and the sky, the haze and the islands are advanced as the glide would.
 ## Rendered only when asked for (needs a window):
@@ -35,6 +41,9 @@ extends SceneTree
 ##   sea-N, -E, -S, -W: the cloud sea out to the horizon from the plate, the
 ##     Opal sea's painted peaks off with the ring (on with --painted-peaks);
 const SkyWorld = preload("res://scripts/sky_world.gd")
+const SkyPeakScript = preload("res://scripts/sky_peak.gd")
+const SkyPeaksScript = preload("res://scripts/sky_peaks.gd")
+const SkyHomesScript = preload("res://scripts/sky_homes.gd")
 const GOLDEN_SUN := 0.1
 var scene: Node3D
 var eye: Node
@@ -106,8 +115,10 @@ func run() -> void:
 		for shot: Dictionary in _shots():
 			if not only.is_empty() and shot.label not in only: continue
 			if hour == golden and not shot.get("golden",true): continue
+			var marks: Node3D = _marks() if shot.get("mark",false) else null
 			await _hold(shot,hour,60)
 			await still("%s-%s" % [shot.label,tag])
+			if marks != null: marks.free()
 	print("RING done")
 	quit(0)
 
@@ -174,6 +185,23 @@ func _shots() -> Array:
 					break
 			shots.append({"label":"valley-region","eye":from+Vector3.UP*55.0,"look":from+(heart-from).normalized()*2000.0 if from.distance_to(heart) > 300.0 else from+round*2000.0,"fov":64.0})
 			break
+	# The sea's summits (SkyWorld `_summits`): each from 900 m off across
+	# the open sea at glide height, from the side its region opens to; from
+	# the plate toward the nearest; and from straight above, marked.
+	var summits: Array = layout.get("summits",[])
+	# The nearest the plate sees with no cumulus in the way.
+	var nearest := -1
+	for i in range(summits.size()):
+		var tip: Vector3 = summits[i].tips[0]
+		if _clear_way(Vector3.ZERO,tip) and (nearest < 0 or Vector2(tip.x,tip.z).length() < Vector2(summits[nearest].tips[0].x,summits[nearest].tips[0].z).length()): nearest = i
+		var from := _open_side(tip,900.0)
+		shots.append({"label":"summit-%d" % i,"eye":from+Vector3.UP*45.0,"look":tip+Vector3.UP*(SkyPeakScript.SEA+30.0),"fov":56.0})
+	if not summits.is_empty():
+		var t0: Vector3 = summits[maxi(nearest,0)].tips[0]
+		var w0 := Vector3(t0.x,0.0,t0.z).normalized()
+		shots.append({"label":"summit-plate","eye":w0*40.0+Vector3.UP*90.0,"look":t0+Vector3.UP*(SkyPeakScript.SEA+20.0),"fov":44.0})
+		shots.append({"label":"summit-high","eye":_open_side(t0,1500.0)+Vector3.UP*420.0,"look":t0+Vector3.UP*SkyPeakScript.SEA,"golden":false,"fov":60.0})
+		shots.append({"label":"summit-map","eye":Vector3(0.0,6000.0,1.0),"look":Vector3.ZERO,"haze":false,"golden":false,"fov":66.0,"mark":true})
 	# The walls from high over the plate, looking out over a corner.
 	shots.append({"label":"overhead","eye":Vector3(0.0,1500.0,1.0)-knot.normalized()*900.0,"look":knot*1.6,"haze":true,"golden":false,"fov":66.0})
 	# A range of the band's (its runs and massifs, halfway round them).
@@ -185,6 +213,70 @@ func _shots() -> Array:
 	var ow := Vector3(o.at.x,0.0,o.at.z).normalized()
 	shots.append({"label":"outside","eye":o.at+ow*1500.0+Vector3.UP*90.0,"look":-ow*2000.0+Vector3.UP*60.0,"golden":false})
 	return shots
+
+## A point `reach` m from `tip` (home, plate plane) to see it from at glide
+## height across the open sea: of sixteen ways round, the one whose spot
+## and way in to the tip stand clearest of rock, islands and the bounds.
+func _open_side(tip: Vector3, reach: float) -> Vector3:
+	var best := Vector3.ZERO
+	var best_score := -INF
+	var slots: Array = [Vector3.ZERO]
+	slots.append_array(preload("res://scripts/sky_islands.gd").OFFSETS)
+	for k in range(16):
+		var way := Vector3(cos(TAU*k/16.0),0.0,sin(TAU*k/16.0))
+		var from := Vector3(tip.x,0.0,tip.z)+way*reach
+		var score := 0.0
+		for s in range(0,11):
+			var p := from-way*reach*0.08*s
+			if SkyPeaksScript.blocks(p) and _flat(p,tip) > SkyWorld.SUMMIT_KEEP*1.5: score -= 1.0
+			for q: Vector3 in slots:
+				if _flat(p,q) < 120.0: score -= 1.0
+			if _in_cumulus(p): score -= 3.0
+		if not SkyWorld.inside(from): score -= 20.0
+		# Toward the world's middle a little: the islands stand behind.
+		score += 0.3*way.dot(-Vector3(tip.x,0.0,tip.z).normalized())
+		if score > best_score:
+			best_score = score
+			best = from
+	return best
+
+static func _flat(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x-b.x,a.z-b.z).length()
+
+## True if a home point stands in a cumulus's keep (SkyHomes TOWER_KEEP).
+static func _in_cumulus(p: Vector3) -> bool:
+	var towers: Array = [SkyHomesScript.TOWER]
+	towers.append_array(SkyWorld.layout().towers)
+	for t: Vector3 in towers:
+		if _flat(p,t) < SkyHomesScript.TOWER_KEEP+60.0: return true
+	return false
+
+## True if the way from `a` to `b` (home) runs clear of every cumulus.
+static func _clear_way(a: Vector3, b: Vector3) -> bool:
+	for s in range(21):
+		if _in_cumulus(a.lerp(b,s/20.0)): return false
+	return true
+
+## A bright ring over each of the sea's summits' tips, for the map.
+func _marks() -> Node3D:
+	var node := Node3D.new()
+	node.name = "SummitMarks"
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(1.0,0.15,0.1)
+	var ring := TorusMesh.new()
+	ring.inner_radius = 150.0
+	ring.outer_radius = 190.0
+	ring.material = material
+	var peaks: Node3D = eye.islands.peaks
+	for summit: Dictionary in SkyWorld.layout().get("summits",[]):
+		for tip: Vector3 in summit.tips:
+			var m := MeshInstance3D.new()
+			m.mesh = ring
+			m.position = Vector3(tip.x,SkyPeakScript.SEA+120.0,tip.z)
+			node.add_child(m)
+	peaks.add_child(node)
+	return node
 
 ## Holds the eye at a shot for `count` frames at `hour`, advancing the sky,
 ## the haze and the islands as the glide would.

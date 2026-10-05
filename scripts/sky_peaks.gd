@@ -36,7 +36,9 @@ extends Node3D
 ## within its reach (`build_reach`), a ridge's piece drawn coarser near
 ## (`detail_of`), and far off stands as a coarse skyline (scripts/
 ## sky_ring.gd), so the ring is in sight right across the world. Nothing
-## scattered stands outside the world's bounds or on a ridge (`blocks`).
+## scattered stands outside the world's bounds, on a ridge or on one of the
+## sea's summits (`blocks`: SkyWorld `_summits`, stood with the skyline and
+## read as stone in `body`).
 ##
 ## No pop: a range is made ahead along the glide's way (`_survey`: within
 ## its reach of the eye, or of where the eye will be LEAD seconds on), its
@@ -570,6 +572,12 @@ static func blocks(home: Vector3, margin := 0.0) -> bool:
 	if SkyWorld.ring_on():
 		for r: Dictionary in SkyWorld.layout().ranges:
 			if not SkyWorld.in_band(r.kind) and SkyWorld.box_distance(r,Vector2(home.x,home.z)) < INNER_CLEAR+margin: return true
+		# The sea's summits: their rock over the sea, round their crests.
+		for summit: Dictionary in SkyWorld.summits():
+			var tip: Vector3 = summit.tips[0]
+			if _flat(tip,home) > float(summit.reach)+margin: continue
+			for q: Vector3 in summit.crest:
+				if _flat(q,home) < SkyWorld.SUMMIT_KEEP+margin: return true
 	var c := cell_of(home)
 	for dx in range(-1,2):
 		for dz in range(-1,2):
@@ -789,6 +797,9 @@ func body(point: Vector3) -> Variant:
 		var y := position.y+float(b.home.y)+lift(scale.y)
 		if found == null or float(h)*scale.y+y > (found as Vector2).x: found = Vector2(float(h)*scale.y+y,SkyPeak.BOTTOM*scale.y+y)
 	if found != null: return found
+	# The sea's summits (scripts/sky_ring.gd).
+	var summit: Variant = ring.summit_body(point)
+	if summit != null: return summit
 	for kind in kinds:
 		var b: Variant = kind.body(point)
 		if b != null: return b

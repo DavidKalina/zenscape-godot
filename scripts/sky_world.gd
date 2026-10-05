@@ -65,6 +65,15 @@ extends RefCounted
 ##     taken (`_balance`). Each region past the plate's has its own cumulus
 ##     where one has room (`towers`, SkyTowers `spot`).
 ##
+##   the sea's summits (`_summits`): a handful of the land's peaks out in
+##     the open sea of the regions, sunk so only their tips stand over the
+##     cloud (20 to 80 m), lone mostly, one maybe a small cluster: so the
+##     sea reads as lying over a mountain land. Laid last, clear of
+##     everything above and of the islands, cumulus and jet streams; under
+##     the glide's ceiling, so never a wall. Drawn with the skyline
+##     (scripts/sky_ring.gd), and nothing scattered stands on them
+##     (SkyPeaks `blocks`).
+##
 ## Ranges on an island the world has saved (`kept`) are left out: a world
 ## saved before the ring might have one out where it would stand.
 ##
@@ -333,6 +342,42 @@ const VIEW_FAR := 9000.0
 const VIEW_OPEN := 3000.0
 ## The salt for the layout's hashes.
 const SALT := 9100
+## The sea's summits (`_summits`): how many ranges (at least, at most), one
+## of them, if any can, a cluster of CLUSTER tips; each a range of its own
+## (SkyPeak, its gorge uncut) sunk so its highest point stands SUMMIT_SHOW
+## (m) over the sea (CLUSTER_SHOW for the cluster), its other summits
+## counted as tips where they stand TIP_LEAST (m) over the sea (by the
+## plan) and kept TIP_UNDER under it if not. Its rock over the sea stands
+## within SUMMIT_KEEP (m) of its crest over the sea (`crest`, by the plan,
+## CREST_EVERY m apart, the sea's fray under it counted in), where nothing
+## scattered stands (SkyPeaks `blocks`); and every point of that crest
+## stands SUMMIT_KEEP and more clear of what the world holds
+## (`_summit_room`): ISLAND_GAP from an island's spot, TOWER_GAP from a
+## cumulus's keep, MOUTH_GAP from a notch or a kept gorge's mouth,
+## BAND_CLEAR from the band's rock, RIDGE_GAP from a ridge's, PLATE_OPEN
+## from the plate, a pass's opening (PASS_OPEN) and AIR_ROOM from the jet
+## streams; and
+## SUMMIT_APART from another range's tips. Looked for on a grid SUMMIT_GRID
+## apart, spread round the regions, the roomiest by a little chance
+## (SUMMIT_LUCK, m).
+const SUMMITS := Vector2i(4,6)
+const CLUSTER := Vector2i(2,3)
+const SUMMIT_SHOW := Vector2(25.0,65.0)
+const CLUSTER_SHOW := Vector2(70.0,80.0)
+const TIP_LEAST := 18.0
+const TIP_UNDER := 25.0
+const SUMMIT_KEEP := 110.0
+const CREST_EVERY := 30.0
+## How far the sea's line wanders up and down (m: SkyPeaks SEA_FRAY x).
+const FRAY := 18.0
+const ISLAND_GAP := 60.0
+const RIDGE_GAP := 60.0
+const TOWER_GAP := 0.0
+const MOUTH_GAP := 500.0
+const SUMMIT_APART := 800.0
+const SUMMIT_GRID := 100.0
+const SUMMIT_LUCK := 250.0
+const SUMMIT_TURNS := 6
 
 static var _layout := {}
 ## The seed and saved islands the layout was worked out for, and whether
@@ -568,6 +613,9 @@ static var _task_out := {}
 ## Main-thread milliseconds `prepare` and the waits on its worker took, for
 ## the record (tests/test_sky_world.gd).
 static var main_ms := 0.0
+## Milliseconds the last layout's summits (`_summits`) took, on whichever
+## thread worked it out, for the record (tests/test_sky_summits.gd).
+static var summit_ms := 0.0
 
 ## Sets a worker working out the layout for the world as it stands (its
 ## seed, kept islands and wonders), unless it is worked out or being worked
@@ -670,6 +718,11 @@ static func _compute() -> Dictionary:
 	for r: Dictionary in ranges:
 		if r.index >= 0: out.ranges.append(r)
 	out.haze_inner = inner
+	# The sea's summits, laid last; how long they took, for the record
+	# (kept apart: the layout is the same for the same seed).
+	var began := Time.get_ticks_usec()
+	out.summits = _summits(ranges,out,ridges.get("_judged",{}))
+	summit_ms = (Time.get_ticks_usec()-began)/1000.0
 	return out
 
 ## Half a notch's width, and the ranges' inset from it, as an angle at its
@@ -1160,6 +1213,7 @@ static func _ridge_plan(mouths: Array[float], band_open: PackedByteArray, band: 
 			plan.towers.erase(t)
 			islands = _islands(pieces,judged,plan.towers)
 	plan.islands = islands
+	plan._judged = judged
 	if islands.min() < 1: return plan
 	plan.ok = true
 	return plan
@@ -1169,6 +1223,20 @@ static func _ridge_plan(mouths: Array[float], band_open: PackedByteArray, band: 
 ## slots included, none within the bounds' edge, RIDGE_CLEAR of a ridge's
 ## box, the range in sight of the plate's keep or a cumulus's.
 static func _islands(pieces: Array, judged: Dictionary, towers: Array) -> Array:
+	var n := grid_size()
+	var labels: PackedInt32Array = judged.basins.labels
+	var out := []
+	out.resize(int(judged.basins.count))
+	out.fill(0)
+	for p: Vector3 in _island_spots(pieces,judged,towers):
+		var k := labels[_grid_index(Vector2(p.x,p.z),n)]
+		if k >= 0: out[k] += 1
+	return out
+
+## Every island's spot (home) in the plan (`judged`), its own towers among
+## the cumulus, as `_islands` counts them: the fixed slots and every cell's
+## pick.
+static func _island_spots(pieces: Array, judged: Dictionary, towers: Array) -> Array:
 	var cells: GDScript = load("res://scripts/sky_cells.gd")
 	var keeps := [Vector3(SkyHomes.TOWER.x,0.0,SkyHomes.TOWER.z)]
 	keeps.append_array(towers)
@@ -1179,21 +1247,13 @@ static func _islands(pieces: Array, judged: Dictionary, towers: Array) -> Array:
 		for t: Vector3 in keeps:
 			if flat.distance_to(Vector2(t.x,t.z)) < SkyHomes.TOWER_KEEP: return true
 		return pieces.any(func(r: Dictionary) -> bool: return box_distance(r,flat) < RIDGE_CLEAR)
-	var n := grid_size()
-	var labels: PackedInt32Array = judged.basins.labels
-	var out := []
-	out.resize(int(judged.basins.count))
-	out.fill(0)
 	var spots: Array = SLOTS.duplicate()
 	var size: float = cells.CELL
 	for x in range(floori(-SCATTER/size)-1,ceili(SCATTER/size)+1):
 		for z in range(floori(-SCATTER/size)-1,ceili(SCATTER/size)+1):
 			var found: Variant = cells.pick(Vector2i(x,z),SLOTS,blocked)
 			if found != null: spots.append(found)
-	for p: Vector3 in spots:
-		var k := labels[_grid_index(Vector2(p.x,p.z),n)]
-		if k >= 0: out[k] += 1
-	return out
+	return spots
 
 ## The way (radians) nearest `way` out of `from` whose root on the band
 ## keeps off the notches and the kept gorges' mouths (`_root_ok`), turned
@@ -1738,6 +1798,209 @@ static func _air() -> Array:
 			var p := a.lerp(b,float(k)/n)
 			out.append(Vector2(p.x,p.z))
 	return out
+
+# --- The sea's summits ----------------------------------------------------------------
+
+## The sea's summits: [{at (home: the range's spot, on the islands' plane),
+## turn, seed, show (m its highest point stands over the sea), tips (home,
+## each a summit standing over the sea, the highest first), crest (home,
+## its crest over the sea), reach (m from its first tip that its crest and
+## keep reach), region (its label)}]. A stream of their own, so nothing else laid moves for them;
+## laid against everything else (`_summit_room`), round the regions in
+## turn, each at the roomiest open spot of its region the grid finds (by a
+## little chance) SUMMIT_APART from the others'. One of them a cluster if
+## a range can be drawn whose CLUSTER tips stand; the rest lone tips. None
+## with the ring's plan unjudged (a seed whose ridges broke a rule).
+static func _summits(ranges: Array, laid: Dictionary, judged: Dictionary) -> Array:
+	var out := []
+	if judged.is_empty(): return out
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(noise(Vector2i(seed,9),SALT)*2147483647.0)
+	var want := rng.randi_range(SUMMITS.x,SUMMITS.y)
+	var cluster := rng.randi_range(0,want-1)
+	var world := _summit_world(ranges,laid,judged)
+	var n := grid_size()
+	var labels: PackedInt32Array = judged.basins.labels
+	# The open spots, each with its room past every keep and its region.
+	var spots := []
+	var g := int(SCATTER/SUMMIT_GRID)
+	for gx in range(-g,g+1):
+		for gz in range(-g,g+1):
+			var p := Vector2(gx,gz)*SUMMIT_GRID
+			var room := _summit_room(p,world)
+			if room < 0.0: continue
+			var label := labels[_grid_index(p,n)]
+			if label < 0: continue
+			spots.append([p,room,label])
+	var count := {}
+	for k in range(want):
+		# The cluster, or failing it a lone one in its place.
+		var placed := {}
+		for as_cluster in ([true,false] if k == cluster else [false]):
+			var drawn := _summit_draw(rng,as_cluster)
+			if drawn.is_empty(): continue
+			placed = _summit_place(drawn,spots,world,out,count,(judged.regions as Array).size(),rng)
+			if not placed.is_empty(): break
+		if placed.is_empty(): continue
+		out.append(placed)
+		count[placed.region] = int(count.get(placed.region,0))+1
+	return out
+
+## Where a drawn summit (`_summit_draw`) stands, among the open `spots`:
+## its highest tip on one of them, turned SUMMIT_TURNS ways, in a region
+## with the fewest of those laid (`out`, counted by region in `count`) if
+## one has room, any if not; at the roomiest, by a little chance. Every
+## point of its crest keeps its room (`_summit_room`) and SUMMIT_APART from
+## every other's. The summit as laid ({at, turn, seed, show, tips, crest,
+## reach, region}: `_summits`), or empty if it stands nowhere.
+static func _summit_place(drawn: Dictionary, spots: Array, world: Dictionary, out: Array, count: Dictionary, regions: int, rng: RandomNumberGenerator) -> Dictionary:
+	if spots.is_empty(): return {}
+	var top: Vector3 = drawn.peaks[0]
+	var from_top := 0.0
+	for q: Vector2 in drawn.crest: from_top = maxf(from_top,q.distance_to(Vector2(top.x,top.z)))
+	var least := INF
+	for c: Variant in count.values(): least = minf(least,float(c))
+	if count.size() < regions: least = 0.0
+	var others := []
+	for other: Dictionary in out:
+		for t: Vector3 in other.crest: others.append(Vector2(t.x,t.z))
+	var first := rng.randf()*TAU
+	var luck := PackedFloat32Array()
+	for spot: Array in spots: luck.append(rng.randf()*SUMMIT_LUCK)
+	var best := []
+	var best_score := -INF
+	for i in range(spots.size()*2):
+		# Failing a region with the fewest, any.
+		if i == spots.size():
+			if not best.is_empty(): break
+			least = INF
+		var spot: Array = spots[i%spots.size()]
+		if float(count.get(spot[2],0)) > least: continue
+		var at: Vector2 = spot[0]
+		var apart := INF
+		for q: Vector2 in others: apart = minf(apart,at.distance_to(q)-SUMMIT_APART)
+		# Its room lessens no faster than the distance from the spot (away
+		# from the band's haze): with room for the whole crest round the
+		# spot, every point keeps it, whichever way it turns.
+		var whole: bool = minf(float(spot[1]),apart) >= from_top and at.length()+from_top < BAND_IN-BAND_CLEAR-SUMMIT_KEEP
+		if whole and minf(float(spot[1]),apart)-from_top+luck[i%spots.size()] <= best_score: continue
+		for t in range(SUMMIT_TURNS):
+			var turn := first+TAU*t/SUMMIT_TURNS
+			var score := minf(float(spot[1]),apart)
+			var crest := []
+			for q: Vector2 in drawn.crest:
+				var off := Vector3(q.x-top.x,0.0,q.y-top.z).rotated(Vector3.UP,turn)
+				var p := Vector2(at.x+off.x,at.y+off.z)
+				if not whole:
+					score = minf(score,_summit_room(p,world))
+					for o: Vector2 in others: score = minf(score,p.distance_to(o)-SUMMIT_APART)
+					if score < 0.0: break
+				crest.append(Vector3(p.x,0.0,p.y))
+			if score < 0.0: continue
+			score = minf(score,800.0)+luck[i%spots.size()]
+			if score > best_score:
+				best_score = score
+				best = [spot,crest,turn]
+			if whole: break
+	if best.is_empty(): return {}
+	var turn: float = best[2]
+	var at: Vector2 = best[0][0]
+	var origin := Vector3(at.x,0.0,at.y)-Vector3(top.x,0.0,top.z).rotated(Vector3.UP,turn)
+	var tips := []
+	for q: Vector3 in drawn.peaks: tips.append(origin+Vector3(q.x,0.0,q.z).rotated(Vector3.UP,turn))
+	# How far its crest reaches from its first tip, its keep added: past
+	# that nothing need be looked at (SkyPeaks `blocks`).
+	var reach := 0.0
+	for q: Vector3 in best[1]: reach = maxf(reach,Vector2(q.x-tips[0].x,q.z-tips[0].z).length())
+	return {"at":origin,"turn":turn,"seed":drawn.seed,"show":drawn.show,"tips":tips,"crest":best[1],"reach":reach+SUMMIT_KEEP,"region":best[0][2]}
+
+## A range drawn for the sea's summits: {seed, show, peaks (its planned
+## summits standing over the sea, SkyPeak `planned_peaks`, the highest
+## first), crest (its planned crest over the sea, less the sea's fray:
+## points CREST_EVERY m apart, its own x and z)}: a cluster's CLUSTER of
+## summits, a lone one's one, the rest TIP_UNDER under the sea or more; or
+## empty if none is drawn in a few tries.
+static func _summit_draw(rng: RandomNumberGenerator, cluster: bool) -> Dictionary:
+	for tries in range(60):
+		var s := int(rng.randf()*16777216.0)
+		var show := rng.randf_range(CLUSTER_SHOW.x,CLUSTER_SHOW.y) if cluster else rng.randf_range(SUMMIT_SHOW.x,SUMMIT_SHOW.y)
+		var plan: RefCounted = SkyPeak.planned(s)
+		var peaks: Array[Vector3] = plan.planned_peaks()
+		peaks.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.y > b.y)
+		var top := peaks[0].y
+		var tips: Array[Vector3] = []
+		var near := false
+		for q in peaks:
+			var over := q.y-(top-show)
+			if over >= TIP_LEAST: tips.append(q)
+			elif over > -TIP_UNDER: near = true
+		if near: continue
+		if not ((cluster and tips.size() >= CLUSTER.x and tips.size() <= CLUSTER.y) or (not cluster and tips.size() == 1)): continue
+		var crest := PackedVector2Array()
+		var x := -SkyPeak.HALF.x
+		while x <= SkyPeak.HALF.x:
+			if float(plan.crest(x)) > top-show-FRAY: crest.append(Vector2(x,float(plan.spine(x))))
+			x += CREST_EVERY
+		for q in tips: crest.append(Vector2(q.x,q.z))
+		return {"seed":s,"show":show,"peaks":tips,"crest":crest}
+	return {}
+
+## What a summit keeps clear of, from the layout as laid: the band's rock
+## and haze, the ridges' boxes, the passes, the notches and the kept
+## gorges' mouths, the plate, the range and the cumulus in sight of it (and
+## the other wonders, standing), the regions' cumulus, every island's spot
+## and the islands' jet streams.
+static func _summit_world(ranges: Array, laid: Dictionary, judged: Dictionary) -> Dictionary:
+	var ridges: Array = ranges.filter(func(r: Dictionary) -> bool: return not in_band(r.kind))
+	var mouths: Array = []
+	for r: Dictionary in ranges:
+		if not r.gorge: continue
+		var x := SkyPeak.gorge_at(int(r.seed),float(r.stature))
+		var sc: Vector3 = r.scale
+		var m: Vector3 = r.at+Vector3(x*sc.x,0.0,0.0).rotated(Vector3.UP,float(r.turn))
+		mouths.append(Vector2(m.x,m.z))
+	for notch: Dictionary in laid.notches: mouths.append(Vector2(notch.at.x,notch.at.z))
+	var towers: Array = [Vector2(SkyHomes.TOWER.x,SkyHomes.TOWER.z)]
+	for t: Vector3 in laid.towers: towers.append(Vector2(t.x,t.z))
+	var wonders: Array = []
+	for w: Array in SkyHomes.spots():
+		var at: Vector3 = w[0]
+		if at != SkyHomes.TOWER: wonders.append([Vector2(at.x,at.z),float(w[1])])
+	var islands: Array = []
+	for p: Vector3 in _island_spots(ridges,judged,laid.towers): islands.append(Vector2(p.x,p.z))
+	return {"band":judged.band,"inner":judged.inner,"ridges":ridges,"passes":laid.passes.map(func(q: Dictionary) -> Vector2: return Vector2(q.at.x,q.at.z)),
+		"mouths":mouths,"towers":towers,"wonders":wonders,"islands":islands,"air":_air(),
+		"home":{"at":SkyHomes.RANGE,"turn":SkyHomes.RANGE_TURN,"scale":Vector3.ONE}}
+
+## How much room a summit's tip at `p` (home, plate plane) has past every
+## keep (`_summit_world`), m; under 0 where it may not stand.
+static func _summit_room(p: Vector2, world: Dictionary) -> float:
+	var room := SCATTER-SUMMIT_KEEP-p.length()
+	room = minf(room,p.length()-PLATE_OPEN-SUMMIT_KEEP)
+	if room < 0.0: return room
+	if p.length() > BAND_IN-BAND_CLEAR-SUMMIT_KEEP:
+		if not clear_of_band(p,world.band,SUMMIT_KEEP) or _share(p,world.inner) > 0.0: return -1.0
+		# Nor its keep reaching onto the band's haze.
+		for k in range(8):
+			if _share(p+Vector2.from_angle(TAU*k/8.0)*SUMMIT_KEEP,world.inner) > 0.0: return -1.0
+	for r: Dictionary in world.ridges: room = minf(room,box_distance(r,p)-RIDGE_GAP-SUMMIT_KEEP)
+	room = minf(room,box_distance(world.home,p)-RIDGE_GAP-SUMMIT_KEEP)
+	room = minf(room,p.distance_to(Vector2(SkyHomes.RANGE.x,SkyHomes.RANGE.z))-SkyHomes.RANGE_KEEP-SUMMIT_KEEP)
+	if room < 0.0: return room
+	for q: Vector2 in world.passes: room = minf(room,p.distance_to(q)-PASS_OPEN.y-SUMMIT_KEEP)
+	for q: Vector2 in world.mouths: room = minf(room,p.distance_to(q)-MOUTH_GAP-SUMMIT_KEEP)
+	for q: Vector2 in world.towers: room = minf(room,p.distance_to(q)-SkyHomes.TOWER_KEEP-TOWER_GAP-SUMMIT_KEEP)
+	for w: Array in world.wonders: room = minf(room,p.distance_to(w[0])-float(w[1])-SUMMIT_KEEP)
+	if room < 0.0: return room
+	for q: Vector2 in world.islands: room = minf(room,p.distance_to(q)-ISLAND_GAP-SUMMIT_KEEP)
+	for q: Vector2 in world.air: room = minf(room,p.distance_to(q)-AIR_ROOM-SUMMIT_KEEP)
+	return room
+
+## The sea's summits (`_summits`), for what keeps clear of them (SkyPeaks
+## `blocks`); none with the ring off.
+static func summits() -> Array:
+	if not ring_on(): return []
+	return layout().get("summits",[])
 
 # --- Footprints ---------------------------------------------------------------------
 

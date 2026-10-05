@@ -7,7 +7,8 @@ extends SceneTree
 ## view and when inspecting the chunk, every one as its skyline (the range
 ## in sight of the plate's finer), none made in full; the camera's view
 ## reaches the band; the glide's other sky (currents, clouds, islets,
-## cumulus, isles) stays away; the plate's water mirror and the diorama's
+## cumulus, isles) stays away; the sea's summits stand with the skyline
+## (scripts/sky_world.gd `_summits`); the plate's water mirror and the diorama's
 ## flip leave them out; and the build view's haze lets them stand pale in
 ## the distance (shaders/reference_surface_haze.gdshaderinc overview_far).
 ## Back from a glide the ranges made in full near it are let go.
@@ -49,7 +50,7 @@ func run() -> void:
 	# Before any wander: the layout and the skyline worked out on workers.
 	var began := Time.get_ticks_msec()
 	var expected: int = SkyWorld.layout().ranges.size()+1 if SkyWorld.ready() else -1
-	while (not SkyWorld.ready() or peaks.ring.line_count() < SkyWorld.layout().ranges.size()+1) and Time.get_ticks_msec()-began < 240000:
+	while (not SkyWorld.ready() or peaks.ring.line_count() < SkyWorld.layout().ranges.size()+1 or peaks.ring.summit_count() < SkyWorld.layout().summits.size()) and Time.get_ticks_msec()-began < 240000:
 		await process_frame
 	expected = SkyWorld.layout().ranges.size()+1
 	print("     the skyline stood whole %.1f s after the shell (%d ranges); the layout took %.1f ms of the main thread" % [(Time.get_ticks_msec()-began)/1000.0,expected,SkyWorld.main_ms])
@@ -91,6 +92,13 @@ func _seen(scene: Node, islands: Node3D, peaks: Node3D, label: String) -> void:
 	for r: Dictionary in SkyWorld.layout().ranges:
 		if r.kind != "far": far_band = maxf(far_band,Vector2(r.at.x,r.at.z).length()+SkyWorld.SEA_HALF*float(r.scale.x))
 	check(peaks.is_visible_in_tree() and _shown(peaks) == expected and peaks.range_count() == 0,"%s: the ranges stand round the plate, every one as its skyline (%d), none made in full" % [label.capitalize(),_shown(peaks)])
+	# The sea's summits with them (scripts/sky_ring.gd).
+	var summits := 0
+	for i in peaks.ring.summits:
+		var node: Node3D = peaks.ring.summits[i].node
+		if node != null and node.is_visible_in_tree() and (node.get_node("Body") as Node).has_meta("skip_reflection"): summits += 1
+	var laid: int = SkyWorld.layout().summits.size()
+	check(laid > 0 and summits == laid,"%s: the sea's summits stand with them (%d of %d), out of the plate's water's mirror" % [label.capitalize(),summits,laid])
 	var camera: Camera3D = scene.camera
 	check(camera.far >= far_band,"%s: the view reaches the band (far %.0f m, the band out to %.0f m)" % [label.capitalize(),camera.far,far_band])
 	var others := [islands.currents,islands.clouds,islands.islets,islands.towers,islands.isles].filter(func(n: Node3D) -> bool: return n.visible)

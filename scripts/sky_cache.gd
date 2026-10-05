@@ -26,7 +26,7 @@ extends RefCounted
 
 const MAGIC := "ZSC1"
 ## Bump by hand for a change to the file layout or the codec here.
-const FORMAT := 1
+const FORMAT := 2
 const DIR := "user://sky_cache"
 const MOST := 160*1024*1024
 ## The scripts whose code shapes each kind cached: "follow", read with
@@ -37,6 +37,7 @@ const MOST := 160*1024*1024
 const ROOTS := ["res://scripts/sky_cache.gd","res://scripts/sky_world.gd","res://scripts/sky_peak.gd","res://scripts/sky_peaks.gd","res://scripts/sky_ring.gd"]
 const KINDS := {
 	"skyline":{"follow":["res://scripts/sky_peak.gd"],"only":["res://scripts/sky_ring.gd","res://scripts/sky_cache.gd"]},
+	"summit":{"follow":["res://scripts/sky_peak.gd"],"only":["res://scripts/sky_ring.gd","res://scripts/sky_cache.gd"]},
 	"layout":{"follow":["res://scripts/sky_world.gd"],"only":["res://scripts/sky_cache.gd"]},
 }
 ## Other sources (not scripts) the shapes read: the native erosion kernel.
@@ -218,8 +219,9 @@ static func arrays(entry_key: String, make: Callable) -> Array:
 # --- The codec --------------------------------------------------------------------
 # Exact: what is read back is what was kept. A vertex attribute the same
 # for every vertex is kept once ("all"); one the same for each triangle's
-# three, once a triangle ("face", the faceted ranges' colours); a UV of a
-# fixed x and the vertex's height, by that x ("height").
+# three, once a triangle ("face", the faceted ranges' colours); a UV's two
+# channels apart ("xy": the seasons' snow need and shade on x), each by
+# these rules, a y that is the vertex's height as that ("height").
 
 static func encode(arrays: Array) -> Dictionary:
 	var vertices: Variant = arrays[Mesh.ARRAY_VERTEX] if arrays.size() > Mesh.ARRAY_VERTEX else null
@@ -242,13 +244,17 @@ static func _encode_slot(a: Variant, n: int, vertices: Variant) -> Dictionary:
 			same = false
 			break
 	if same: return {"all":first,"type":typeof(a)}
-	if a is PackedVector2Array and vertices is PackedVector3Array:
-		var height := true
+	# A UV: its two channels kept apart, each by its own rule (the seasons'
+	# snow need and shade ride x; the height, y).
+	if a is PackedVector2Array:
+		var x := PackedFloat32Array()
+		var y := PackedFloat32Array()
+		x.resize(n)
+		y.resize(n)
 		for k in range(n):
-			if a[k].x != first.x or a[k].y != vertices[k].y:
-				height = false
-				break
-		if height: return {"height":first.x}
+			x[k] = a[k].x
+			y[k] = a[k].y
+		return {"xy":[_encode_slot(x,n,null),_encode_channel_y(y,n,vertices)]}
 	if n%3 == 0:
 		var face := true
 		for k in range(0,n,3):
@@ -263,6 +269,17 @@ static func _encode_slot(a: Variant, n: int, vertices: Variant) -> Dictionary:
 			return {"face":out}
 	return {"raw":a}
 
+## A UV's y: kept as the vertices' heights if it is them.
+static func _encode_channel_y(y: PackedFloat32Array, n: int, vertices: Variant) -> Dictionary:
+	if vertices is PackedVector3Array and vertices.size() == n:
+		var height := true
+		for k in range(n):
+			if y[k] != vertices[k].y:
+				height = false
+				break
+		if height: return {"height":true}
+	return _encode_slot(y,n,null)
+
 static func decode(value: Dictionary) -> Variant:
 	if not (value.get("size") is int and value.get("n") is int and value.get("slots") is Dictionary): return null
 	var arrays := []
@@ -274,35 +291,46 @@ static func decode(value: Dictionary) -> Variant:
 	order.sort_custom(func(a: int, b: int) -> bool: return a == Mesh.ARRAY_VERTEX or (b != Mesh.ARRAY_VERTEX and a < b))
 	for slot: int in order:
 		if slot < 0 or slot >= arrays.size(): return null
-		var e: Variant = slots[slot]
-		if not e is Dictionary: return null
-		if e.has("raw"): arrays[slot] = e.raw
-		elif e.has("all"):
-			var out: Variant = type_convert([],int(e.type))
-			out.resize(n)
-			out.fill(e.all)
-			arrays[slot] = out
-		elif e.has("height"):
-			var v: Variant = arrays[Mesh.ARRAY_VERTEX]
-			if not v is PackedVector3Array or v.size() != n: return null
-			var out := PackedVector2Array()
-			out.resize(n)
-			var x := float(e.height)
-			for k in range(n): out[k] = Vector2(x,v[k].y)
-			arrays[slot] = out
-		elif e.has("face"):
-			var f: Variant = e.face
-			if f.size()*3 != n: return null
-			var out: Variant = f.duplicate()
-			out.resize(n)
-			for k in range(f.size()-1,-1,-1):
-				var c: Variant = f[k]
-				out[k*3] = c
-				out[k*3+1] = c
-				out[k*3+2] = c
-			arrays[slot] = out
-		else: return null
+		var out: Variant = _decode_slot(slots[slot],n,arrays[Mesh.ARRAY_VERTEX] if slot != Mesh.ARRAY_VERTEX else null)
+		if out == null: return null
+		arrays[slot] = out
 	return arrays
+
+static func _decode_slot(e: Variant, n: int, vertices: Variant) -> Variant:
+	if not e is Dictionary: return null
+	if e.has("raw"): return e.raw
+	if e.has("all"):
+		var out: Variant = type_convert([],int(e.type))
+		out.resize(n)
+		out.fill(e.all)
+		return out
+	if e.has("height"):
+		if not vertices is PackedVector3Array or vertices.size() != n: return null
+		var out := PackedFloat32Array()
+		out.resize(n)
+		for k in range(n): out[k] = vertices[k].y
+		return out
+	if e.has("xy"):
+		if not e.xy is Array or e.xy.size() != 2: return null
+		var x: Variant = _decode_slot(e.xy[0],n,vertices)
+		var y: Variant = _decode_slot(e.xy[1],n,vertices)
+		if not (x is PackedFloat32Array and y is PackedFloat32Array) or x.size() != n or y.size() != n: return null
+		var out := PackedVector2Array()
+		out.resize(n)
+		for k in range(n): out[k] = Vector2(x[k],y[k])
+		return out
+	if e.has("face"):
+		var f: Variant = e.face
+		if f.size()*3 != n: return null
+		var out: Variant = f.duplicate()
+		out.resize(n)
+		for k in range(f.size()-1,-1,-1):
+			var c: Variant = f[k]
+			out[k*3] = c
+			out[k*3+1] = c
+			out[k*3+2] = c
+		return out
+	return null
 
 # --- Keeping it small -----------------------------------------------------------------
 

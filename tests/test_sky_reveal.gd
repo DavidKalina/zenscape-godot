@@ -97,7 +97,9 @@ func _live() -> void:
 		var islands: Node = scene.wanderer.islands if scene.wanderer != null else null
 		if veil != null and not veil.fading: veiled += 1
 		# Shown (fading, or gone) while the sky is not ready.
-		if islands != null and (veil == null or veil.fading) and not islands.sky_ready(): early += 1
+		if islands != null and (veil == null or veil.fading) and not islands.sky_ready():
+			early += 1
+			print("     shown at frame %d while waiting on %s (veil %s, revealed %s)" % [waited,islands.sky_waiting(),"gone" if veil == null else "fading",str(scene.sky_reveal.revealed) if scene.sky_reveal != null else "-"])
 	var islands: Node3D = scene.wanderer.islands
 	var peaks: Node3D = islands.peaks
 	var veil: Node = _veil(scene)
@@ -105,6 +107,8 @@ func _live() -> void:
 	check(scene.shell_ready and early == 0 and veiled > 0,"The world was veiled (%d frames) and never shown before its sky was ready" % veiled)
 	var home: Vector3 = -islands.origin
 	check(SkyWorld.ready() and peaks.ring.whole and peaks.ring.line_count() == SkyWorld.layout().ranges.size()+1,"Shown with the layout worked out and every skyline standing (%d)" % peaks.ring.line_count())
+	var summits: int = SkyWorld.layout().get("summits",[]).size()
+	check(summits > 0 and peaks.ring.summit_count() == summits,"... and every one of the sea's summits (%d of %d)" % [peaks.ring.summit_count(),summits])
 	check(peaks.premade_whole(home) and peaks.premade.size() > 0 and peaks.range_count() == 0,"... the %d ranges within reach of the plate made in full ahead, none standing in the build view" % peaks.premade.size())
 	check(islands.built() and not islands.lands.has(null) and islands._copies.all(func(c: Node3D) -> bool: return not c.visible),"... the islands round it baked (%d), out of the build view till a glide" % islands.copy_count())
 	check(veil != null and veil.fading and peaks.ring._whole_at < 0 and scene.sky_reveal != null and scene.sky_reveal.revealed,"... its pipelines warmed, the veil fading in one gentle fade, the ring with no fade of its own")

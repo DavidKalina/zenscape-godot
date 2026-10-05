@@ -52,7 +52,18 @@ func _round_trip() -> void:
 		if a != null: raw += var_to_bytes(a).size()
 	var on_disk := FileAccess.get_size("%s/%s.zsc" % [SkyCache.dir,key])
 	check(same and (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() > 1000,"A skyline reads back exactly as made (%d vertices; %.0f KB on disk of %.0f KB)" % [(arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(),on_disk/1024.0,raw/1024.0])
-	check((SkyCache.encode(arrays).slots[Mesh.ARRAY_COLOR] as Dictionary).has("face") and (SkyCache.encode(arrays).slots[Mesh.ARRAY_TEX_UV2] as Dictionary).has("height"),"Its colours are kept once a face, its second UV by the height")
+	var enc: Dictionary = SkyCache.encode(arrays).slots
+	check((enc[Mesh.ARRAY_COLOR] as Dictionary).has("face") and (enc[Mesh.ARRAY_TEX_UV2] as Dictionary).has("xy") and (enc[Mesh.ARRAY_TEX_UV2].xy[1] as Dictionary).has("height"),"Its colours are kept once a face, its second UV's y by the height")
+	# The seasons' snow need (UV.x) and shade (UV2.x) read back exactly,
+	# varied as they are.
+	var need: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var shade: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	var needs := {}
+	var shades := {}
+	for k in range(0,need.size(),97):
+		needs[need[k].x] = true
+		shades[shade[k].x] = true
+	check(needs.size() > 3 and shades.size() > 1 and back[Mesh.ARRAY_TEX_UV] == need and back[Mesh.ARRAY_TEX_UV2] == shade,"The seasons' snow need and shade (UV.x, UV2.x: %d and %d kinds sampled) read back exactly" % [needs.size(),shades.size()])
 	# A mesh from the read-back arrays matches one from the made.
 	var a := SkyPeaks.SkyPeak.mesh_from(arrays,null)
 	var b := SkyPeaks.SkyPeak.mesh_from(back,null)
@@ -60,6 +71,27 @@ func _round_trip() -> void:
 	var layout := SkyWorld._compute()
 	var lkey := SkyCache.key("layout",[SkyWorld._key_now()])
 	SkyCache.save_value(lkey,layout)
+	# A sea's summit: its faces (their snow moved by its season share) and
+	# its solid, read back as made.
+	var laid: Array = layout.get("summits",[])
+	if laid.is_empty(): check(false,"The layout has sea summits to cache")
+	else:
+		var made_summit: Array = [int(laid[0].seed),float(laid[0].show),peaks._palette("grass"),peaks._palette("rock"),peaks._gravel(),peaks._snow(),SkyPeaks.OFF_MAP]
+		var skey := SkyCache.key("summit",made_summit)
+		var first := {}
+		SkyRing._make_summit_cached(made_summit,skey,first)
+		var fresh := {}
+		SkyRing._make_summit(int(made_summit[0]),float(made_summit[1]),made_summit[2],made_summit[3],made_summit[4],made_summit[5],made_summit[6],fresh)
+		var hits_before := SkyCache.hits
+		var again := {}
+		SkyRing._make_summit_cached(made_summit,skey,again)
+		var mesh_a := SkyPeaks.SkyPeak.mesh_from(fresh.arrays,null)
+		var same_summit: bool = SkyCache.hits == hits_before+1 and var_to_bytes(again.solid) == var_to_bytes(fresh.solid) and again.sink == fresh.sink and again.over == fresh.over and again.top == fresh.top
+		var faces_back: Array = (again.mesh as ArrayMesh).surface_get_arrays(0)
+		check(same_summit and (again.mesh as ArrayMesh).surface_get_array_len(0) == mesh_a.surface_get_array_len(0) and faces_back[Mesh.ARRAY_VERTEX] == fresh.arrays[Mesh.ARRAY_VERTEX],"A sea's summit reads back as made: its faces, its solid, how far it is sunk (%d vertices)" % mesh_a.surface_get_array_len(0))
+		var kept: Dictionary = SkyCache.load_value(skey)
+		var faces: Variant = SkyCache.decode(kept.faces)
+		check(faces is Array and faces[Mesh.ARRAY_TEX_UV] == fresh.arrays[Mesh.ARRAY_TEX_UV] and faces[Mesh.ARRAY_TEX_UV2] == fresh.arrays[Mesh.ARRAY_TEX_UV2] and faces[Mesh.ARRAY_COLOR] == fresh.arrays[Mesh.ARRAY_COLOR],"... its season-shifted snow need and shade exactly")
 	var lback: Variant = SkyCache.load_value(lkey)
 	check(lback is Dictionary and var_to_bytes(lback) == var_to_bytes(layout),"The layout reads back exactly as worked out (%d ranges)" % layout.ranges.size())
 	peaks.free()
@@ -106,6 +138,7 @@ func _keys() -> void:
 		var text := SkyCache._source(path)
 		if path == "res://scripts/sky_ring.gd": text.append_array(" ".to_utf8_buffer())
 		return text,"skyline")
+	check(SkyCache.code("summit") != base and "res://scripts/sky_ring.gd" in SkyCache.scripts_of("summit",SkyCache._source),"The sea's summits are a kind of their own, read through the range's shape and the ring")
 	check(changed != base and erosion != base and ring != base,"A change to the range's shape, the erosion it reads or the skyline's making gives a new code hash, so no old skyline is read")
 	peaks.free()
 
@@ -176,7 +209,8 @@ func _ring() -> void:
 	for key in peaks.ring.lines:
 		if (peaks.ring.lines[key].node.get_node("Body").mesh as ArrayMesh).surface_get_array_len(0) != faces.get(key,-1): same = false
 	print("     the skyline: %d ranges, made cold in %.1f s, read back in %.2f s; %.1f MB on disk" % [count,cold/1000.0,warm/1000.0,size/1048576.0])
-	check(same and SkyCache.hits-hits == count and SkyCache.misses == misses,"Warmed again, every skyline (%d) is read back from disk, the same" % count)
+	var summits: int = peaks.ring.summit_count()
+	check(same and summits == SkyWorld.layout().get("summits",[]).size() and SkyCache.hits-hits == count+summits and SkyCache.misses == misses,"Warmed again, every skyline (%d) and sea summit (%d) is read back from disk, the same" % [count,summits])
 	check(warm*4 < cold,"Reading back is much quicker than making (%.2f s against %.1f s)" % [warm/1000.0,cold/1000.0])
 	check(size < 32*1024*1024,"The cache holds %.1f MB" % (size/1048576.0))
 	peaks.free()

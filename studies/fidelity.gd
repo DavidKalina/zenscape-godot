@@ -90,6 +90,9 @@ var season_glide := false
 const SEASON_GLIDE_SECONDS := 30.0
 var _season_shown := -1.0
 var _season_plants := Vector4(-1.0, -1.0, -1.0, -1.0)
+var _season_sky := Vector4(-1.0, -1.0, -1.0, -1.0)
+## How many times zs_sky_season has been published (tests/test_sky_seasons.gd).
+var sky_season_published := 0
 var _season_claim_pending := false
 var _lights: Array[DirectionalLight3D] = []
 var _aurora_slider: HSlider
@@ -662,7 +665,8 @@ func _advance_weather_drift(delta := 0.0) -> void:
 ## again. See docs/world-clock/README.md.
 ##
 ## Plants read the same season through the `zs_season` global (bloom, leaf
-## fall, dormancy; WeatherScheduler.season_plants), set only when it changes.
+## fall, dormancy; WeatherScheduler.season_plants), and the sky layer through
+## `zs_sky_season` (WeatherScheduler.season_sky), each set only when it changes.
 ## With living weather the season owns the leaves' gold outright: the weather
 ## preset adds none, so a snow shower does not turn a summer wood orange.
 func _apply_season(delta := 0.0) -> void:
@@ -681,6 +685,13 @@ func _apply_season(delta := 0.0) -> void:
 	if plants != _season_plants:
 		_season_plants = plants
 		RenderingServer.global_shader_parameter_set("zs_season", plants)
+	# The sky layer's quarters (the peaks' snow line, the cloud sea's mood),
+	# also only when they change.
+	var sky := WeatherScheduler.season_sky(season)
+	if sky != _season_sky:
+		_season_sky = sky
+		sky_season_published += 1
+		RenderingServer.global_shader_parameter_set("zs_sky_season", sky)
 
 ## The season on screen. Without a glide it is the clock's. With one it moves
 ## forward through the year toward the clock's season, so pressing E walks the
